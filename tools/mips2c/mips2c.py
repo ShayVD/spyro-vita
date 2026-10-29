@@ -276,7 +276,11 @@ class Translator:
             c, k = self.symaddr(g.group(1))
             return c if c is not None else cnum(k)
         ea = f"{base} + {self.imm(off, 's')}" if off else base
-        return f"MIPS_KUSEG({ea})" if self.kuseg else ea
+        # The game dereferences KUSEG addresses, in hand-written and compiled
+        # code alike (bit-31-tagged model pointers with the tag cleared, packed
+        # 21-bit pointers, speculative loads through null): on the PS1
+        # 0x00000000-0x001FFFFF mirrors RAM, so every access maps that range.
+        return f"MIPS_KUSEG({ea})"
 
     # ---------- emission ----------
     def lab(self, addr):

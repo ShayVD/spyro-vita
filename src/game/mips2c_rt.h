@@ -32,8 +32,8 @@ extern uintptr_t g_psx_arena_base;
 #define M_S16(a) (*(s16 *)(uintptr_t)(u32)(a))
 #define M_U32(a) (*(u32 *)(uintptr_t)(u32)(a))
 
-/* PS1 KUSEG RAM mirror: addresses below 2 MB read the arena (only used for
- * speculative loads in hand-written code's delay slots). */
+/* PS1 KUSEG RAM mirror: addresses below 2 MB are the arena (every memory
+ * access in translated code goes through it, tools/mips2c). */
 #define MIPS_KUSEG(a) ((u32)(a) < 0x200000u ? (u32)g_psx_arena_base + (u32)(a) : (u32)(a))
 
 #define MIPS_HI(x) ((((u32)(x)) + 0x8000u) & 0xFFFF0000u)
