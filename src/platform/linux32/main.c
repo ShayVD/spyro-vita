@@ -2,7 +2,10 @@
  *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
  *         [--shot-dir DIR] [--vram-shot] [--dither] [--tri-dump V] [--pad FILE]
  *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
- *         [--serve PORT]
+ *         [--serve PORT] [--trace FILE]
+ *         [--step DIR]
+ * --trace: one TSV row of game state per vblank (src/game/trace.c).
+ * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
  * --serve: real-time vblanks and a browser player on PORT (decisions D22).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
@@ -22,7 +25,8 @@ static void usage(void) {
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
-          "[--serve PORT]\n");
+          "[--serve PORT] [--trace FILE]\n"
+          "             [--step DIR]\n");
   exit(2);
 }
 
@@ -72,6 +76,13 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--serve") == 0) {
       TAKE();
       serve_port = to_int(val);
+    } else if (strcmp(a, "--step") == 0) {
+      TAKE();
+      host_step_set_dir(val);
+    } else if (strcmp(a, "--trace") == 0) {
+      TAKE();
+      if (spyro_trace_open(val) != 0)
+        return 1;
     } else if (strcmp(a, "--wav") == 0) {
       TAKE();
       if (host_audio_wav_open(val) != 0)

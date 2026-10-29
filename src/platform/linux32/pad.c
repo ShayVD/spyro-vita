@@ -41,8 +41,10 @@ static int cmp_event(const void *a, const void *b) {
   return (x->vblank > y->vblank) - (x->vblank < y->vblank);
 }
 
-static int parse_buttons(char *s, uint16_t *mask) {
+int host_pad_parse(const char *text, uint16_t *mask) {
+  char buf[256], *s = buf;
   char *tok;
+  snprintf(buf, sizeof buf, "%s", text);
   *mask = 0;
   if (strcmp(s, "none") == 0)
     return 0;
@@ -88,7 +90,7 @@ int host_pad_load(const char *path) {
       s_events = realloc(s_events, cap * sizeof *s_events);
     }
     s_events[s_nevents].vblank = v;
-    if (parse_buttons(btn, &s_events[s_nevents].mask) != 0) {
+    if (host_pad_parse(btn, &s_events[s_nevents].mask) != 0) {
       host_log("pad: %s:%d: unknown button in '%s'", path, lineno, btn);
       fclose(f);
       return -1;

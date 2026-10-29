@@ -9,3 +9,5 @@ int rand(void) {
 }
 
 void srand(unsigned int seed) { s_seed = seed; }
+
+unsigned int psyq_rand_seed(void) { return s_seed; } /* for trace.c */

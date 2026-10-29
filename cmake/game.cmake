@@ -36,12 +36,22 @@ foreach(f ${S1_DATA_FILES})
   string(REGEX REPLACE ":.*" "" f "${f}")
   list(APPEND S1_DATA_DEPS "${S1_DIR}/${f}")
 endforeach()
+# PS1 layout (decisions D23): the game's data labels sit at their psx.map
+# addresses in the RAM arena, which needs the arena at 0x80000000 (linux32).
+option(SPYRO_PSX_LAYOUT "Game data at its PS1 addresses in the arena" ON)
+set(S1_DATA_LAYOUT)
+set(S1_DATA_LAYOUT_DEPS)
+if(SPYRO_PSX_LAYOUT)
+  set(S1_DATA_LAYOUT --map "${SPYRO_MATCHING_DIR}/build/psx.map")
+  set(S1_DATA_LAYOUT_DEPS "${SPYRO_MATCHING_DIR}/build/psx.map")
+  add_compile_definitions(SPYRO_PSX_LAYOUT=1)
+endif()
 add_custom_command(OUTPUT "${GEN_DIR}/s1_data.S"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/data2s.py"
     --root "${S1_DIR}" --allow "${CMAKE_SOURCE_DIR}/tools/data2s_allow.txt"
-    -o "${GEN_DIR}/s1_data.S" ${S1_DATA_FILES}
+    ${S1_DATA_LAYOUT} -o "${GEN_DIR}/s1_data.S" ${S1_DATA_FILES}
   DEPENDS ${S1_DATA_DEPS} "${CMAKE_SOURCE_DIR}/tools/data2s.py"
-          "${CMAKE_SOURCE_DIR}/tools/data2s_allow.txt"
+          "${CMAKE_SOURCE_DIR}/tools/data2s_allow.txt" ${S1_DATA_LAYOUT_DEPS}
   COMMENT "data2s: decomp asm/data -> host assembly")
 add_library(spyro_game_data OBJECT "${GEN_DIR}/s1_data.S")
 target_compile_options(spyro_game_data PRIVATE -m32)

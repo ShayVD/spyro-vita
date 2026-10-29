@@ -37,6 +37,11 @@ void host_pad_vblank(int vblank);
 
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
+int host_pad_parse(const char *text, uint16_t *mask); /* "up+cross", "none" */
+
+/* step.c: --step DIR, closed-loop stepping (tools/step.sh) */
+void host_step_set_dir(const char *dir);
+void host_step_vblank(int vblank);
 
 /* serve.c: --serve PORT (decisions D22) */
 int host_serve_start(int port); /* 0 = ok; vblanks then run at real time */

@@ -38,4 +38,8 @@ file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")
 add_library(spyro_game_port OBJECT ${PORT_SRCS})
 target_include_directories(spyro_game_port PRIVATE
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
+# trace.c reads game state through the decomp's headers.
+target_include_directories(spyro_game_port AFTER PRIVATE
+  "${CMAKE_SOURCE_DIR}/src/compat" "${S1_DIR}/include")
+target_link_libraries(spyro_game_port PRIVATE psycross)
 target_compile_options(spyro_game_port PRIVATE ${SPYRO_HOST_FLAGS})
