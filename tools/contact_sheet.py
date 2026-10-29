@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tile a run's screenshots (shot-<vblank>.png, as written by the linux32
-host) into one PNG, in vblank order.  tools/contact_sheet.py DIR [OUT.png]"""
+host) into one PNG, in vblank order.
+   tools/contact_sheet.py DIR [OUT.png] [--from V] [--to V]"""
 import glob
 import re
 import struct
@@ -32,8 +33,9 @@ def write_png(path, w, h, rgb):
                 + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
-def main(d, out=None, tw=256, th=120, cols=6):
-    files = sorted(glob.glob(f"{d}/shot-*.png"), key=lambda p: int(re.findall(r"(\d+)", p)[-1]))
+def main(d, out=None, lo=0, hi=1 << 30, tw=256, th=120, cols=6):
+    vb = lambda p: int(re.findall(r"(\d+)", p)[-1])
+    files = sorted((f for f in glob.glob(f"{d}/shot-*.png") if lo <= vb(f) <= hi), key=vb)
     rows = (len(files) + cols - 1) // cols
     W, H = cols * tw, rows * th
     img = bytearray(W * H * 3)
@@ -50,4 +52,11 @@ def main(d, out=None, tw=256, th=120, cols=6):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    args, lo, hi = sys.argv[1:], 0, 1 << 30
+    for flag in ("--from", "--to"):
+        if flag in args:
+            i = args.index(flag)
+            v = int(args[i + 1])
+            del args[i:i + 2]
+            lo, hi = (v, hi) if flag == "--from" else (lo, v)
+    main(args[0], args[1] if len(args) > 1 else None, lo, hi)

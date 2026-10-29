@@ -16,6 +16,7 @@ typedef struct {
   const char *shot_dir;
   int vram_shot;       /* also dump the whole VRAM at each shot */
   int dither;          /* PS1 4x4 dither on shaded/modulated prims */
+  int tri_dump;        /* log every triangle of the frame shown at this vblank */
 } HostOpts;
 
 extern HostOpts g_host_opts;

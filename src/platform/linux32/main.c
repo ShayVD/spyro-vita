@@ -1,6 +1,7 @@
 /* linux32 headless host entry point (docs/porting-plan.md §5).
  *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
- *         [--shot-dir DIR] [--vram-shot] [--dither] [--pad FILE] [--log FILE]
+ *         [--shot-dir DIR] [--vram-shot] [--dither] [--tri-dump V] [--pad FILE]
+ *         [--log FILE]
  *         [--cd-latency TICKS] [--save DIR]
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
@@ -66,6 +67,9 @@ int main(int argc, char **argv) {
       g_host_opts.shot_dir = val;
     } else if (strcmp(a, "--vram-shot") == 0) {
       g_host_opts.vram_shot = 1;
+    } else if (strcmp(a, "--tri-dump") == 0) {
+      TAKE();
+      g_host_opts.tri_dump = to_int(val);
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
     } else if (strcmp(a, "--pad") == 0) {

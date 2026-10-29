@@ -137,5 +137,17 @@ int host_shot_vram(const char *path) {
   }
   r = host_png_write(path, rgb, 1024, 512);
   free(rgb);
+  if (r == 0) { /* and the raw 16-bit words next to it, for tools/vram.py */
+    char raw[1024];
+    FILE *f;
+    const char *dot = strrchr(path, '.');
+    snprintf(raw, sizeof raw, "%.*s.bin",
+             dot ? (int)(dot - path) : (int)strlen(path), path);
+    f = fopen(raw, "wb");
+    if (!f || fwrite(vram, 2, 1024 * 512, f) != 1024 * 512)
+      r = -1;
+    if (f)
+      fclose(f);
+  }
   return r;
 }
