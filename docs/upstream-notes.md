@@ -19,3 +19,14 @@ Problems found in the submodules that we work around locally instead of reportin
 
 ### Nested submodule `tools/maspsx`
 - Not an upstream bug, but easy to miss: clone with `--recursive`, or run `git submodule update --init --recursive`. `tools/build_matching.sh` checks for it.
+
+## OpenDriver2/PsyCross (`e56e4cd`)
+
+Found while running Spyro on the linux32 host (M1). Each is worked around in `patches/PsyCross/` or by replacing a file.
+
+- **Multi-command OT packets.** The non-extended OT walker expects a tag word before every command in a packet. `ProcessDrawEnv` treats an E1h–E6h command as consuming the packet's whole length. Spyro's renderers put several GP0 commands after one tag, as the GPU allows: 710 parse errors in 30 s. Patch 0003 splits packets by GP0 command size.
+- **`DRAWENV` layout.** It has an extra `drt` byte under `#pragma pack(1)`, so it is 93 bytes against PsyQ's 92. That shifts every game struct that embeds it (Spyro's `DB`). Patch 0004 removes the (unused) byte. Found by `tools/layoutcheck.sh`.
+- **GP0(01h)** is treated as `DR_MOVE`, so a cache-clear command would trigger a VRAM move. GP0(02h) fill rectangles aren't handled. Patch 0003 handles these.
+- **`LIBMCRD.C`** calls `fopen` and uses the result without a NULL check (crash when the card file is missing). It has no file-level operations behind it. Replaced by `src/platform/common/libmcrd.c`.
+- **`GR_ClearVRAM`** (GL renderer) packs the colour as `b<<11` with no 8-to-5-bit conversion. `DR_AREA` parsing makes the clip one pixel narrow. `isbg` clears only happen in `BeginScene`, behind a flag that only `EndScene` resets. The software renderer works around these; the vitaGL backend (M3) needs to as well.
+- **`PutDispEnv`:** `activeDispEnv` lags one call behind with double buffering. Use `currentDispEnv` for what's on screen.

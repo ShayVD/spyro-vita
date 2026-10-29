@@ -308,56 +308,58 @@ See `docs/decisions.md` D4–D8. Briefly:
 Order matters: each step runs before the next starts.
 
 1. **Scaffolding**
-   - [ ] `CMakeLists.txt` (cmake 3.20, C11, `SPYRO_HOST=linux32|vita`), `src/platform/linux32/CMakeLists.txt`, `cmake/` helpers.
-   - [ ] `tools/docker/host.Dockerfile` (`--platform linux/amd64`, debian, `gcc-multilib`, `libsdl2-dev:i386`, `libgl-dev:i386`, gdb, python3) and the `tools/tc` wrapper.
+   - [x] `CMakeLists.txt` (cmake 3.20, C11, `SPYRO_HOST=linux32|vita`), `src/platform/linux32/CMakeLists.txt`, `cmake/` helpers (`prepare.cmake` copies and patches the submodules into the build tree).
+   - [x] `tools/docker/host.Dockerfile` and the `tools/tc` wrapper. *Changed:* native arm64 with `gcc-i686-linux-gnu` and `qemu-user`, no SDL/GL (decisions D14, D18).
    - [x] `tools/build_matching.sh`: rsync to `build/s1-matching`, apply `patches/spyro-1/`, `make all` under `pipefail`, SHA-1 check. Leaves `build/s1-matching/build/psx.map`, `psx.elf` (DWARF) and `wad/*.ovl` for the generators. *(Done in M0 as an environment fix.)*
-   - [ ] `tools/check_no_assets.sh` plus a pre-commit hook (from kh1/kh-bbs).
+   - [x] `tools/check_no_assets.sh`. The pre-commit hook isn't installed (installing it was blocked for the agent; the user can run `ln -s ../../tools/check_no_assets.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"`).
 2. **PsyCross on the host, as a library**
-   - [ ] Add PsyCross as a CMake subdirectory with `USE_EXTENDED_PRIM_POINTERS=0` and `USE_PGXP=0`.
-   - [ ] Patch 1 (`patches/PsyCross/0001-arena-ot.patch`): `nextPrim` adds `g_arena_base`.
-   - [ ] Patch 2: exclude `LIBCD.C`, `LIBSPU.C` and `PsyX_SPUAL.cpp` (we supply our own); add a `CdMix` stub if needed.
-   - [ ] Confirm it builds `-m32`.
+   - [x] PsyCross as a static library (`cmake/psycross.cmake`) with `USE_EXTENDED_PRIM_POINTERS=0` and `USE_PGXP=0`.
+   - [x] Patch 1 (`patches/PsyCross/0001-arena-ot.patch`): `nextPrim` ORs in `g_psx_arena_base`.
+   - [x] Excluded by CMake: `LIBCD.C`, `LIBSPU.C`, `LIBMCRD.C`, `PsyX_SPUAL.cpp` and the SDL/GL platform files. Patch 2 makes SDL optional, 3 splits OT packets into GP0 commands, 4 gives `DRAWENV` PsyQ's layout (see `upstream-notes.md`).
+   - [x] Builds for i686.
 3. **Decomp C on the host**
-   - [ ] A compatibility header mapping the decomp's PsyQ includes onto PsyCross `include/psx` (no Sony headers).
-   - [ ] Compile all of `src/*.c` and `src/gamestates/*.c` with `-m32 -funsigned-char -fno-strict-aliasing -ffp-contract=off`.
-   - [ ] Patches for the §4.4 constants (`0x80200000`, the devkit branches, `LoadExec`).
-   - [ ] Our `rand/srand` (PsyQ LCG).
+   - [x] `src/compat/` (`libgpu.h` adds `RECT`; `port_prefix.h` empties `INCLUDE_ASM`, adds `PSX_ADDR` and `PortFatal`). No Sony headers.
+   - [x] All of `src/*.c` and `src/gamestates/*.c` compile with `-m32 -funsigned-char -fno-strict-aliasing -ffp-contract=off` (plus `-fcommon`, `MODERN_COMPILER`; D21).
+   - [x] Patches for the §4.4 constants (`patches/spyro-1-port/0003`: `0x80200000` via `PSX_ADDR`, the devkit branches). `LoadExec` and hiding the Crash demo entry: not done yet (the entry isn't reached in M1).
+   - [x] Our `rand/srand` (PsyQ LCG, seed 0 at boot): `src/game/rand_psyq.c`.
 4. **Data**
-   - [ ] `tools/data2c.py`: `asm/data/{game,math,titlescreen,…}.s` → generated C arrays with symbolic pointers, plus `abscheck`.
-   - [ ] `tools/layoutcheck.py`: generates `_Static_assert`s for struct sizes and field offsets from the matching build's DWARF.
+   - [x] `tools/data2s.py` (host assembly instead of C, D15) plus `abscheck` and the scratchpad relocation table.
+   - [x] `tools/layoutcheck.sh`/`.py`: compares DWARF layouts of the decomp compiled for mipsel against PsyQ's headers with the port's objects. 94 types, 0 mismatches after PsyCross patch 0004.
 5. **Arena and start-up**
-   - [ ] `src/platform/common/arena.c`: mmap at 0x80000000 on the host, `g_scratch[1024]`, rebuild the scratchpad tables `D_8006CF48/58`, set `_ramsize`-equivalents.
-   - [ ] `main()` → decomp `main()`.
-   - [ ] Audit primitives in static globals that are linked into the OT. Move them into the arena if any exist.
+   - [x] `src/platform/common/arena.c` (mmap at 0x80000000) and `src/game/port.c`: scratchpad = first KB of the arena, scratchpad tables rebased (`D_8006CF48`, `D_8006CF58`, `D_8006D0D8`), emulated stack top at 0x80020000.
+   - [x] `main()` → `spyro_main()` (port set-up) → decomp `main()`.
+   - [x] Audit: the only static primitive linked into the OT is `D_8006BBE0` (terminator, `order_table.s`); C code only links poly-buffer primitives. Its copy lives in the arena at its PS1 address.
 6. **Overlays**
-   - [ ] CMake rules compiling `src/overlays/*.c` per overlay (`-DOVERLAY_NAME`, plus the strip pipeline).
-   - [ ] Generated `ovl_table.c` with `Terminator_<ovl>` = overlay space + `.ovl` size.
-   - [ ] For M1, all 37 build, but only `titlescreen_code` must run.
+   - [x] `cmake/overlays.cmake` + `tools/overlays/port_overlays.py`.
+   - [x] Generated `ovl_table.c`: `Terminator_<ovl>` = its matching-build address in the arena (D20).
+   - [x] All 37 build. `titlescreen_code` and the two attract-demo levels run.
 7. **`tools/mips2c` v0**
-   - [ ] Parser for splat `.s` (glabel/jlabel/dlabel, `.rodata.jtbl`, `%hi/%lo`).
-   - [ ] Emitter: delay slots, all MIPS I ALU/branch/load/store, `mult/div` with HI/LO, `jal` thunks, `jr $ra`, jump tables.
-   - [ ] Self-check: no untranslated instruction.
-   - [ ] First targets: `math.s`, `42CC4.s`, `moby_lists.s`, `particle_alloc.s`.
+   - [x] Parser for splat `.s` (glabel/jlabel/dlabel, `.rodata.jtbl` and rodata strings, `%hi/%lo/%gp_rel`).
+   - [x] Emitter: delay slots, load delays, all MIPS I ALU/branch/load/store, `mult/div`, calls, `jr`/`jalr` dispatch, jump tables (D16).
+   - [x] Self-check: unknown instructions or operands stop the build.
+   - [x] First targets: `math.s`, `42CC4.s`, `moby_lists.s`, `particle_alloc.s`, plus everything else (below).
 8. **GTE model**
-   - [ ] Decide between wrapping PsyCross's `PsyX_GTE.cpp` and writing our own (decision D2).
-   - [ ] A unit test with ~1,000 vectors per op captured from PCSX-Redux.
+   - [ ] Decide between wrapping PsyCross's `PsyX_GTE.cpp` and writing our own (decision D2). **Interim:** PsyCross's GTE is used (D21); decide after the unit test.
+   - [ ] A unit test with ~1,000 vectors per op captured from PCSX-Redux. **Blocked:** needs PCSX-Redux (download not yet approved).
 9. **mips2c v1: the renderers for the title screen**
-   - [ ] Hints for `r_moby` (`jr $t4`, `$sp=scratch`), `r_environment`, `r_cyclorama` (`j`-tables), `order_table` (or hand-write it).
-   - [ ] Translate them and link them.
-   - [ ] Other renderers and collision: translate them too if v1 handles them, otherwise stub with a loud log.
+   - [x] No hints needed: unit-wide gotos and address dispatch cover `jr $t4`, `$sp` as data and `j`-tables. `order_table` is hand-written.
+   - [x] Translated and linked.
+   - [x] All seven renderers and `collision.s` are translated; no stubs.
 10. **libcd over files plus a minimal SPU**
-    - [ ] Virtual disc from the manifest, async `CdRead` with callback, `CdSync`, Setloc/Setmode/ReadS/Setfilter/GetlocP (XA can return silence in M1).
-    - [ ] SPU: SpuWrite to a RAM image, key status. Audio output can be silent in M1.
+    - [x] `src/platform/common/libcd.c` (tests/cd).
+    - [x] `src/platform/common/libspu.c`: SPU RAM image, voice lifetime from ADPCM end flags, `SPU_RESET`. Silent.
 11. **Unmatched functions for M1**
-    - [ ] Run mips2c on all 18. Anything that fails translation becomes a stub that logs the first call and aborts. The title path shouldn't reach pete or camera; the log will show whether it does.
+    - [x] All 18 translate; no stubs. The attract demos run pete and camera code.
 12. **Boot to the title**
-    - [ ] Fix whatever breaks: expect CD timing, `isrgb24` boot logos (decode, or skip with a flag), VRAM loads, OT walk.
-    - [ ] Run `--frames N --shot` headless (kh1 `KH1_HOST_SHOT` pattern) and save the screenshot and log to `logs/run1-*`.
+    - [x] Fixed: CD busy-wait (D17), KUSEG pointers (D16), scratchpad tables, memory cards (D19), OT packets (PsyCross 0003), `DRAWENV` layout (0004). The `isrgb24` logos work in the soft renderer.
+    - [x] `--frames N --shot/--shot-every --pad --save`: `logs/run1-final3` (title and menu), `logs/run1-demo4` (attract demos).
 13. **Oracle bring-up (can run in parallel from step 7)**
-    - [ ] Install PCSX-Redux (ask before downloading). Write `tools/oracle/oracle.lua`: boot `disc/image` with `disc/bios/SCPH1001.BIN`, break at a function's entry and return, dump RAM, scratchpad and GTE to `logs/oracle/`.
-    - [ ] The first differential test: `math.s` translated vs the original.
+    - [ ] Install PCSX-Redux (ask before downloading). **Not started:** waiting for approval to download. Then write `tools/oracle/oracle.lua`.
+    - [ ] The first differential test: `math.s` translated vs the original. Blocked on the oracle.
 
 **M1 is not:** playable levels, audio output, the Vita, widescreen or 60 fps.
+
+**M1 status (2026-10-29):** the definition of done is met on the host (`logs/run1-final3`). The boot logos, intro, Spyro logo with PRESS START, then Start → "Create save file?" → New Game / Load Game with three slots, and the cursor follows the pad script. The idle attract demos also play two levels and return to the title (`logs/run1-demo4`). Still open: step 8's GTE test and step 13's oracle (both need PCSX-Redux), and hiding the Crash demo entry.
 
 ---
 

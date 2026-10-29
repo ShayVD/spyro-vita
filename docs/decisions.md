@@ -72,3 +72,42 @@ Record each decision with its date, what was chosen, and why.
 ### D13. Environment
 - Docker Desktop already has **Rosetta for x86/amd64 emulation** turned on. The M0 Python segfaults happened under Rosetta, so amd64 emulation is still considered flaky. The matching build runs natively as arm64 (D5). For the `-m32` host build, retry or drop parallelism if steps crash, and fall back to an x86 Linux VM if it stays unreliable.
 - **The upstream build break isn't reported upstream** (user's choice). It's recorded in `docs/upstream-notes.md`, with our patch in `patches/spyro-1/`.
+
+## 2026-10-29: M1 decisions
+
+### D14. Host build: native arm64 container, i686 cross compiler, game under qemu-i386
+- **Chosen:** `tools/docker/host.Dockerfile` is a native arm64 Debian image with `gcc-i686-linux-gnu`, cmake, ninja, python3, `gdb-multiarch` and `qemu-user`. `tools/tc` runs commands in it. Only the i386 game binary is emulated (binfmt or `qemu-i386`, `QEMU_LD_PREFIX=/usr/i686-linux-gnu`); gdb attaches through `qemu-i386 -g` (`tools/gdb_run.sh`).
+- **Why:** the `linux/amd64` image segfaulted python3 under Docker Desktop's emulation again (during `apt`'s post-install), as in M0 (D5, D13). This is the same split the matching build uses. Speed: 1800 vblanks (30 s of game) take 5 s.
+- **Replaces** D5's "amd64 image" for the host build.
+
+### D15. Decomp data: host assembly, not C arrays
+- **Chosen:** `tools/data2s.py` turns `asm/data/*.s` into host GNU as (`.word`→`.long`, `.align N`→`.balign 2^N`) with every label kept. Only `D_80074B84` (PsyQ's sqrt table, read by `collision.s` and `42CC4.s`) is taken from the PsyQ data. Words in PS1 RAM range must be allowlisted (abscheck); words holding scratchpad addresses go to a table (`s1_scratch_relocs`) that start-up rebases.
+- **Why:** this gives the same bytes, layout and symbols with no typing work. It was checked against `psx.map` (513 label spacings, 0 differences) and works with ARM gas too.
+
+### D16. mips2c v0 design
+- One C function per `.s` file (unit). Every glabel is an entry: `NAME(a0..a7)` for C callers (args 5–8 go to the emulated stack) and `NAME__m2c(a0..a3)` for translated callers. Local `j`/`jal`/branches are gotos, so code that falls through or jumps across glabels and `jr $t4` local subroutines keep working. `jr reg` goes through one switch over PS1 code addresses: labels, jump-table entries, local return points, and every instruction after an address-taken label.
+- Registers are locals. `$sp` is the emulated stack (`g_mips_sp`), top at PS1 0x80020000 in the arena. `$v1` crosses calls in `g_mips_v1`. C callees get 8 arguments (the 4 registers plus 4 stack words).
+- `%hi`/`%lo` use the host symbol's address. `lui 0x1F80` is the scratchpad: the first KB of the arena (PS1 0x80000000, 64 KB aligned). GTE ops call PsyCross's GTE (D2).
+- **The KUSEG RAM mirror matters:** the game dereferences 0x000xxxxx addresses, through cleared bit-31 model tags, packed 21-bit pointers (also in compiled code) and speculative delay-slot loads through null. Every translated load and store maps 0–2 MB onto the arena (`MIPS_KUSEG`). Hand-written `sll 11; srl 10/11` pairs are also rebased on the arena.
+- MIPS I load delays are honoured (none found in practice).
+- **Later:** drop the per-access KUSEG check where analysis proves the base is a host pointer (speed on the Vita), and replace `0x80000000` tag ORs with `g_psx_arena_base` for a Vita arena that isn't at 0x80000000 (M3).
+
+### D17. Deterministic virtual time on the host
+- `VSync(0)` is exactly one vblank. `VSync(-1)` doesn't advance. Per vblank: pad script, `psx_cd_vblank`, `psx_spu_vblank`, the game's VSync callback, then screenshots.
+- CD reads complete inside `CdRead` by default (`--cd-latency N` delays them), because `CDLoadSync` (`cd.c:105`) busy-waits on `m_IsReading` without VSync; on the PS1 the CD interrupt ends that loop.
+- Runs are reproducible: two runs of the same build give byte-identical screenshots.
+
+### D18. Headless host renderer behind PsyCross's GR_* layer
+- The linux32 host doesn't use PsyCross's SDL/GL platform files (`SPYRO_PSYCROSS_PLATFORM=OFF`, patch 0002 `PSYX_NO_SDL`). It has its own: virtual vblanks, a pad script, PNG screenshots of the displayed VRAM rect, and a software rasterizer that implements `GR_*` into a CPU 1024×512 VRAM. PsyCross's OT walker and primitive parser (the code the Vita uses) are exercised unchanged apart from our patches.
+- **Why:** there's no display in Docker on macOS, and GL under qemu would be slow and fragile. The Vita gets a vitaGL `GR_*` backend in M3.
+
+### D19. Memory cards: a directory per card
+- `src/platform/common/libmcrd.c` replaces PsyCross's `LIBMCRD.C`, which crashed on a missing file. `<save>/card0` is port A (always present, created on first use) and `card1` is port B (present if its directory exists). Each card file is a host file of blocks × 8 KB. Async calls complete at the next `MemCardSync`. Host: `--save DIR`. Vita: `ux0:data/spyro/save/` (M3).
+
+### D20. Overlay Terminators are arena pointers; no rename header
+- Supersedes D3's rename header: overlay symbols are already unique, as porting-plan §4.2 found. `Terminator_<ovl>` (end of overlay code, used as the copy buffer) becomes a `void *` set at start-up to its matching-build address in the arena (`gen/ovl_table.c`), and so does `g_OverlaySpacePointer` (`main_BSS_END`). The overlay bytes are still read into the overlay space as data.
+
+### D21. Decomp compile mode for the port
+- `MODERN_COMPILER` is defined. Its branches only replace type puns with field copies and fix an implicit return. The one behavioural change is `MobyRotateToAngle`'s 5th argument (`upstream-notes.md`), still to check with the oracle.
+- `-fcommon`, because the decomp's uninitialised C globals are also defined in `asm/data` (GCC 2.7.2 merged them as common symbols).
+- **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. The bit-exactness test against PCSX-Redux is pending the oracle (step 8 and step 13).
