@@ -1,0 +1,6 @@
+[submodule "third_party/spyro-1"]
+	path = third_party/spyro-1
+	url = https://github.com/TheMobyCollective/spyro-1
+[submodule "third_party/PsyCross"]
+	path = third_party/PsyCross
+	url = https://github.com/OpenDriver2/PsyCross

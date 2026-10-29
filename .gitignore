@@ -1,0 +1,16 @@
+# Copyrighted game data — never commit
+disc/
+*.bin
+*.cue
+*.iso
+*.img
+WAD.WAD
+PSX.EXE
+SCPH*.BIN
+
+# Build output and run artifacts
+build*/
+logs/
+*.vpk
+*.self
+*.velf
