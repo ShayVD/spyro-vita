@@ -1,0 +1,4 @@
+# tools/mips2c hints, per unit (path relative to the decomp root).
+#   asm/x.s:
+#     dispatch: [0x8001xxxx, ...]   extra computed-jump targets
+{}

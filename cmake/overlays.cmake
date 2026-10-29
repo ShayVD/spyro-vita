@@ -49,4 +49,4 @@ add_custom_command(OUTPUT "${GEN_DIR}/ovl_table.c"
 
 add_library(spyro_game_ovl OBJECT ${OVL_SRCS} "${GEN_DIR}/ovl_table.c")
 target_include_directories(spyro_game_ovl PRIVATE "${CMAKE_SOURCE_DIR}/src/platform/common")
-target_compile_options(spyro_game_ovl PRIVATE ${SPYRO_HOST_FLAGS} -w)
+target_compile_options(spyro_game_ovl PRIVATE ${SPYRO_HOST_FLAGS} -fcommon -w)

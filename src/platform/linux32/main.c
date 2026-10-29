@@ -1,3 +1,94 @@
-/* linux32 host entry point (placeholder until step 5). */
+/* linux32 headless host entry point (docs/porting-plan.md §5).
+ *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
+ *         [--shot-dir DIR] [--vram-shot] [--dither] [--pad FILE] [--log FILE]
+ * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
+#include "host.h"
+#include "psx_arena.h"
+#include "psx_hooks.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 extern void spyro_main(void);
-int main(void) { spyro_main(); return 0; }
+
+static void usage(void) {
+  fprintf(stderr,
+          "usage: spyro --disc DIR [--frames N] [--shot V1,V2,...] "
+          "[--shot-every N]\n"
+          "             [--shot-dir DIR] [--vram-shot] [--dither] "
+          "[--pad FILE] [--log FILE]\n");
+  exit(2);
+}
+
+static int to_int(const char *s) {
+  char *end;
+  long v = strtol(s, &end, 10);
+  if (*s == 0 || *end != 0 || v < 0)
+    usage();
+  return (int)v;
+}
+
+int main(int argc, char **argv) {
+  const char *pad = NULL;
+  int i;
+  for (i = 1; i < argc; i++) {
+    const char *a = argv[i];
+    const char *val = i + 1 < argc ? argv[i + 1] : NULL;
+#define TAKE()                                                                 \
+  do {                                                                         \
+    if (!val)                                                                  \
+      usage();                                                                 \
+    i++;                                                                       \
+  } while (0)
+    if (strcmp(a, "--disc") == 0) {
+      TAKE();
+      g_host_opts.disc_dir = val;
+    } else if (strcmp(a, "--frames") == 0) {
+      TAKE();
+      g_host_opts.frames = to_int(val);
+    } else if (strcmp(a, "--shot") == 0) {
+      char buf[4096], *tok;
+      TAKE();
+      snprintf(buf, sizeof buf, "%s", val);
+      for (tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
+        if (g_host_opts.nshots == HOST_MAX_SHOTS)
+          usage();
+        g_host_opts.shots[g_host_opts.nshots++] = to_int(tok);
+      }
+    } else if (strcmp(a, "--shot-every") == 0) {
+      TAKE();
+      g_host_opts.shot_every = to_int(val);
+    } else if (strcmp(a, "--shot-dir") == 0) {
+      TAKE();
+      g_host_opts.shot_dir = val;
+    } else if (strcmp(a, "--vram-shot") == 0) {
+      g_host_opts.vram_shot = 1;
+    } else if (strcmp(a, "--dither") == 0) {
+      g_host_opts.dither = 1;
+    } else if (strcmp(a, "--pad") == 0) {
+      TAKE();
+      pad = val;
+    } else if (strcmp(a, "--log") == 0) {
+      TAKE();
+      host_log_open(val);
+    } else {
+      usage();
+    }
+#undef TAKE
+  }
+  if (!g_host_opts.disc_dir)
+    usage();
+  if (pad && host_pad_load(pad) != 0)
+    return 1;
+
+  psx_arena_init();
+  if (psx_cd_open(g_host_opts.disc_dir) != 0) {
+    host_log("psx_cd_open(%s) failed", g_host_opts.disc_dir);
+    host_log_flush();
+    return 1;
+  }
+  host_log("disc %s, frames %d", g_host_opts.disc_dir, g_host_opts.frames);
+  spyro_main(); /* never returns */
+  return 0;
+}
