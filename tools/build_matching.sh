@@ -27,8 +27,21 @@ image="s1_dev_env_${platform#linux/}"
   exit 1
 }
 
+# Sony's PsyQ headers are user-supplied and gitignored inside the submodule, so
+# a fresh worktree has none: fall back to PSYQ_INCLUDE (or the main checkout's).
+psyq_inc="${PSYQ_INCLUDE:-$src/psyq/include}"
+if [ ! -d "$psyq_inc" ]; then
+  main_co="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)/.."
+  psyq_inc="$main_co/third_party/spyro-1/psyq/include"
+fi
+[ -f "$psyq_inc/libgpu.h" ] || {
+  echo "missing PsyQ headers: set PSYQ_INCLUDE to your psyq/include" >&2
+  exit 1
+}
+
 mkdir -p "$out"
-rsync -a --delete --exclude .git --exclude /build "$src/" "$out/"
+rsync -a --delete --exclude .git --exclude /build --exclude /psyq/include "$src/" "$out/"
+rsync -a --delete "$psyq_inc/" "$out/psyq/include/"
 for p in "$root"/patches/spyro-1/*.patch; do
   [ -e "$p" ] || continue
   (cd "$out" && patch -p1 --forward --quiet < "$p")
