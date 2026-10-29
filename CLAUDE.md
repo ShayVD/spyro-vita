@@ -26,6 +26,12 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **GPU:** SGX543MP4+ via vitaGL. Keep draw calls batched. Don't do per-primitive state changes.
 - **Rendering:** PS1 primitives go through PsyCross's ordering tables into vitaGL. Depth-buffer or perspective-correct improvements come later and must be optional.
 - **Files:** `ux0:data/spyro/` (files extracted from the user's disc). Saves go to `ux0:data/spyro/save/`.
+- **Disc data on the host** (gitignored):
+  - `disc/image/` holds the original bin/cue.
+  - `disc/files/` holds the extracted files, written by `tools/extract_disc.py`, with a `manifest.json` of each file's LBA, size and type.
+  - The executable on the disc is `SCUS_942.28`. It's the same file the decomp builds as `PSX.EXE` (SHA-1 verified).
+  - Level overlays live inside `WAD.WAD`.
+  - The `PETEXA*.STR` music streams are XA, stored as 2336-byte sectors (subheader + data).
 - **Audio:** the SPU and CD-XA music go through PsyCross, with SDL2 audio on the Vita.
 
 ## Builds
@@ -43,7 +49,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 ## Reference projects (ours)
 - `~/Projects/kh1-decomp`: decomp layout, host shims, data relocations (`data_relocs.tsv`), overlay handling.
 - `~/Projects/kh-bbs-vita`: Vita CMake, vitaGL setup, runtime and host layering, test harness, VPK packaging.
-- **Duke Nukem Advance Vita port:** path still to fill in. Input mapping, LiveArea and release packaging.
+- `~/Projects/duke-nukem-advance-tc-vita`: EDuke32 Vita port (`platform/PSVita`, `package/`). Input mapping, LiveArea, release packaging, and a README for user-supplied game data.
 
 Copy build and packaging patterns from these instead of inventing new ones.
 

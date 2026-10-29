@@ -5,7 +5,8 @@ This session is milestone M0. It's investigation and planning only: no port code
 1. **Check the environment.**
    - The submodules are checked out.
    - The decomp's matching build in Docker produces a PSX.EXE whose SHA-1 equals `84E3728AB94720D0873E2514ADF4AADE4935E0C5`.
-   - `disc/` contains the extracted SCUS-94228 files.
+   - `disc/files/` contains the extracted SCUS-94228 files, and `SCUS_942.28` has the SHA-1 above.
+   - PsyQ headers are present in `third_party/spyro-1/psyq/include`. If they're missing, stop and tell me.
    - The VitaSDK, vitaGL and SDL2 packages are installed.
 
    Report each check as pass or fail. Fix only environment problems.

@@ -76,18 +76,28 @@ PSX.EXE
 
 ## 4. Game data (from your own disc only)
 
-1. Dump your own **NTSC-U disc, `SCUS-94228`**, to bin/cue.
-2. Extract the files with `dumpsxiso` from [mkpsxiso](https://github.com/Lameguy64/mkpsxiso) into `disc/`.
-3. Check that `PSX.EXE` matches the hash the decomp targets:
+**Done:** the image is in `disc/image/`, the files are extracted to `disc/files/`, and both hashes below match.
+
+1. Dump your own **NTSC-U disc, `SCUS-94228`**, to bin/cue. It's a single MODE2/2352 data track.
+2. Put the bin/cue in `disc/image/` and extract them:
+
+   ```bash
+   python3 -I tools/extract_disc.py "disc/image/Spyro the Dragon (USA).bin" disc/files
+   ```
+3. Check that the game executable `disc/files/SCUS_942.28` matches the hash the decomp targets. The decomp calls this file `PSX.EXE`.
    - SHA-1 `84E3728AB94720D0873E2514ADF4AADE4935E0C5`
    - SHA-256 `A533D75CAB8AFAAE6107EC35A02A9A5FE979A92C7C955F9CF1EE50F693A1B998`
 
    ```bash
-   shasum -a 1 disc/PSX.EXE
+   shasum -a 1 disc/files/SCUS_942.28
    ```
 4. Never commit anything from `disc/`. The runtime reads `WAD.WAD` and friends from `ux0:data/spyro/` on the Vita.
 
 ## 5. Sanity-check the decomp
+
+The build doesn't read the disc. It rebuilds `build/PSX.EXE` and the level overlays, then checks them against `sha256sum.txt`.
+
+You need the **PsyQ SDK headers** in `third_party/spyro-1/psyq/include`. That folder is gitignored inside the submodule, and the headers come from your own PsyQ SDK: they aren't distributed with the decomp. The PsyQ 4.0 libraries are already in the repo, in disassembled form.
 
 ```bash
 cd third_party/spyro-1 && ./docker_env.sh
