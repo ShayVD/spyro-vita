@@ -2,6 +2,7 @@
  * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
  * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
 #include "host.h"
+#include "psx_arena.h"
 #include "psx_hooks.h"
 
 #include <assert.h>
@@ -43,6 +44,12 @@ static int shot_due(int v) {
 void host_vblank(void) {
   int v = ++s_vblank;
 
+  for (int i = 0; i < g_host_opts.npokes; i++)
+    if (g_host_opts.pokes[i].vblank == v) {
+      *(uint32_t *)PSX_ARENA(g_host_opts.pokes[i].addr) = g_host_opts.pokes[i].value;
+      host_log("poke %08x = %08x", g_host_opts.pokes[i].addr,
+               g_host_opts.pokes[i].value);
+    }
   host_pad_vblank(v);
   psx_cd_vblank();
   psx_spu_vblank();

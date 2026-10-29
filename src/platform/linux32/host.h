@@ -18,6 +18,8 @@ typedef struct {
   int vram_shot;       /* also dump the whole VRAM at each shot */
   int dither;          /* PS1 4x4 dither on shaded/modulated prims */
   int tri_dump;        /* log every triangle of the frame shown at this vblank */
+  int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
+  struct { int vblank; uint32_t addr, value; } pokes[16];
 } HostOpts;
 
 extern HostOpts g_host_opts;

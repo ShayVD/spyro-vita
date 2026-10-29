@@ -4,6 +4,9 @@
  *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
+ *         [--poke V:ADDR=VALUE]...
+ * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
+ *   for test set-ups such as "no lives left".
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
  * --serve: real-time vblanks and a browser player on PORT (decisions D22).
@@ -26,7 +29,7 @@ static void usage(void) {
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE]\n"
-          "             [--step DIR]\n");
+          "             [--step DIR] [--poke V:ADDR=VALUE]...\n");
   exit(2);
 }
 
@@ -87,6 +90,16 @@ int main(int argc, char **argv) {
       TAKE();
       if (host_audio_wav_open(val) != 0)
         return 1;
+    } else if (strcmp(a, "--poke") == 0) {
+      unsigned v, addr, value;
+      TAKE();
+      if (g_host_opts.npokes == 16 ||
+          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 ||
+          addr < 0x80000000u || addr > 0x801FFFFCu)
+        usage();
+      g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
+      g_host_opts.pokes[g_host_opts.npokes].addr = addr;
+      g_host_opts.pokes[g_host_opts.npokes++].value = value;
     } else if (strcmp(a, "--tri-dump") == 0) {
       TAKE();
       g_host_opts.tri_dump = to_int(val);

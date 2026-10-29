@@ -4,6 +4,8 @@ One entry per function translated from asm to C: function, method, how it was ve
 
 **mips2c v0** (`tools/mips2c/mips2c.py`, M1): one C function per `.s` file, every glabel an entry; registers as locals, `$sp` on the emulated stack in the arena; every load and store maps the KUSEG RAM mirror (0x00000000-0x001FFFFF) onto the arena; computed jumps dispatch on PS1 code addresses. "Ran without fault" means no crash, no `mips2c_bad_jump` and no PsyCross parse error in `logs/run1-final3` (title and menu, 2600 vblanks) and `logs/run1-demo4` (12000 vblanks, two attract demos). It is not proof of equivalence: the differential tests against PCSX-Redux (porting-plan §7.3) are still to come.
 
+**M2 status (2026-10-29):** still **no function is verified against the emulator**: PCSX-Redux is waiting for download approval. What M2 adds is gameplay coverage on the host, which exercises the translated pete, camera, collision, renderer and gamestate code in Artisans: walking, charge, flame, jump and glide, freeing Nestor (dragon cutscene), the save fairy and "GAME SAVED", pause, options and inventory, respawn and game over, plus gem collection in both attract demos (logs `run3-*` to `run6-*`, listed in `docs/host-build.md`). One translation-environment bug was found and fixed this way: `r_environment.s` tests the sign bit of a pointer into `D_8006FCF4`, which only works with the game's data at its PS1 addresses (decisions D23). "Ran without fault" below now also covers these runs.
+
 | Function | Method | Verified by | Notes |
 |---|---|---|---|
 | `Memset` | hand (`asm/memory.s`), src/game/memory.c | Read against the asm. Called in run1 (no fault). | Same stop condition as the asm (size must be a non-zero multiple of 4). |
@@ -159,3 +161,11 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `func_80047B60` | mips2c v0, unit `asm/nonmatchings/pete/func_80047B60.s` (889 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
 | `func_80048D10` | mips2c v0, unit `asm/nonmatchings/pete/func_80048D10.s` (562 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
 | `func_80049FAC` | mips2c v0, unit `asm/nonmatchings/pete/func_80049FAC.s` (149 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
+
+## M2 additions
+
+| Function | Method | Verified by | Notes |
+|---|---|---|---|
+| libspu mixer (`psx_spu_vblank`) | hand, `src/platform/common/libspu.c` | WAV of title, intro cutscene and Artisans (`logs/run5-audio/audio.wav`): music and effects present, stereo. Not compared with the emulator. | Linear interpolation, not the SPU's 4-tap Gaussian; envelope is the gate Spyro's fixed ADSR produces; no reverb (Spyro uses none); sweep volumes play at their base level. |
+| XA ADPCM decoder | hand, `src/platform/common/xa.c` | PETEXA sectors decode and play in the WAV above; filter by Setfilter file/channel. | 8-bit XA not handled (Spyro's tracks are 4-bit stereo 37.8 kHz). |
+| `CdMix` routing | hand, `libspu.c` | Read against PsyQ's `CdMix` (`asm/psyq.s` `func_80065108`) and the register docs. | val0 L→L, val1 L→R, val2 R→R, val3 R→L. |
