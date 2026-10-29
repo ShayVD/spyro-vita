@@ -4,7 +4,7 @@
 #   tools/tc cmake --build build/linux32
 # Generated C goes to ${CMAKE_BINARY_DIR}/gen and is never committed.
 cmake_minimum_required(VERSION 3.20)
-project(spyro C CXX)
+project(spyro C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
