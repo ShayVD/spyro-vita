@@ -1,0 +1,33 @@
+diff --git a/src/platform.h b/src/platform.h
+index 3f16bbe..7453c75 100644
+--- a/src/platform.h
++++ b/src/platform.h
+@@ -9,7 +9,13 @@
+ 
+ //-----------------------------------------------------------------------
+ 
+-#if defined(__APPLE__)
++#if defined(PSYX_NO_SDL)
++    /* Spyro port: the platform layer (window, timing, pad, renderer) is ours.
++     * SDL.h used to pull these in. */
++#   include <stdarg.h>
++#   include <stdlib.h>
++#   include <string.h>
++#elif defined(__APPLE__)
+ #   include <SDL2/SDL.h>
+ #elif defined(__EMSCRIPTEN__)
+ #   include <emscripten/emscripten.h>
+diff --git a/src/psx/LIBETC.C b/src/psx/LIBETC.C
+index 9102047..f476338 100644
+--- a/src/psx/LIBETC.C
++++ b/src/psx/LIBETC.C
+@@ -3,7 +3,9 @@
+ #include "../PsyX_main.h"
+ #include "PsyX/PsyX_public.h"
+ 
++#ifndef PSYX_NO_SDL
+ #include <SDL_timer.h>
++#endif
+ 
+ #ifdef DEBUG
+ char scratchData[4096 + 8];

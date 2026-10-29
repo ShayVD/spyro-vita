@@ -1,5 +1,6 @@
 # Copyrighted game data — never commit
 disc/
+/disc
 *.bin
 *.cue
 *.iso
