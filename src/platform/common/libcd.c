@@ -6,6 +6,7 @@
  * real rate (75 or 150 sectors/s) per virtual vblank; no audio yet. */
 #include "psx_cd.h"
 #include "psx_hooks.h"
+#include "psx_xa.h"
 
 #include <libcd.h>
 
@@ -270,8 +271,11 @@ static void cd_tick(void) {
 void psx_cd_vblank(void) {
   cd_tick();
   if (s_stream.active) {
+    int from = s_stream.lba;
     cd.head_q += (cd.mode & CdlModeSpeed) ? 150 * 4 / VBLANK_HZ : 75 * 4 / VBLANK_HZ;
     s_stream.lba = cd.head_q / 4;
+    for (; from < s_stream.lba; from++) /* sectors the head passed */
+      psx_xa_sector(from);
   }
 }
 
@@ -337,6 +341,7 @@ static int cd_command(u_char com, u_char *param, u_char *result) {
     s_stream.active = 1;
     cd.head_q = cd.setloc * 4;
     s_stream.lba = cd.setloc;
+    psx_xa_reset(); /* a seek drops what the XA buffer held */
     break;
   case CdlPlay:
   case CdlSeekL:

@@ -299,6 +299,9 @@ static void test_cd_xa(const char *dir) {
   CdControl(CdlPause, 0, 0);
 }
 
+/* The platform's audio sink; this test only needs SPU state. */
+void psx_audio_out(const short *pcm, int frames) { (void)pcm; (void)frames; }
+
 int main(int argc, char **argv) {
   const char *dir = argc > 1 ? argv[1] : "disc/files";
   char path[512];

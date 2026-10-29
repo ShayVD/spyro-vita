@@ -16,7 +16,7 @@ typedef struct {
   unsigned char file;   /* Setfilter */
   unsigned char chan;
   unsigned char muted;  /* Mute/Demute */
-  unsigned char mix[4]; /* CdMix: L->L, L->R, R->L, R->R */
+  unsigned char mix[4]; /* CdMix val0..3: L->L, L->R, R->R, R->L */
 } PsxCdStream;
 
 const PsxCdStream *psx_cd_stream(void);
