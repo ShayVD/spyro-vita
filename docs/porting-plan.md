@@ -363,6 +363,20 @@ Order matters: each step runs before the next starts.
 
 ---
 
+## 9b. M2 status (2026-10-29): Artisans on the host
+
+**Definition of done (CLAUDE.md):** all unmatched and asm-only functions in C (done in M1 by mips2c, D16), and Artisans fully playable on the host.
+
+- [x] **Rendering gap found and fixed.** Near world geometry was missing (the title intro's "sky and sand", flat clear colour under Spyro). Cause: `r_environment.s` uses the sign bit of a pointer into `D_8006FCF4` as a mode flag. Fix: the game's data at its PS1 addresses (D23).
+- [x] **Playable in Artisans (scripted evidence, `docs/host-build.md`):** walk, run, charge, flame (kills an enemy), jump and glide, free Nestor (dragon cutscene), save fairy (`func_800314B4`, "GAME SAVED", card file written), pause, options, inventory (StoreImage grayscale background), respawn and game over. Gem collection: in the attract demos (Stone Hill, Doctor Shemp).
+- [x] **A human can play it:** `--serve PORT` in any browser, keyboard or gamepad, with sound (D22).
+- [x] **Audio:** software SPU mixer and XA decoder (`libspu.c`, `xa.c`), WAV output; `CdMix` order from the hardware registers.
+- [x] Crash demo combo disabled (D11, patch 0004). `MobyRotateToAngle`'s missing argument analysed (`upstream-notes.md`, deferred to the oracle in M4).
+- [x] Tooling: `--trace`, `--step`/`tools/step.sh`, `--poke`, `--tri-dump`, raw VRAM dumps, `tools/oracle/trace_diff.py`.
+- [ ] **Oracle (PCSX-Redux): not started, waiting for download approval.** So no GTE unit vectors, no function-level differential tests, no emulator frame traces. Nothing in `translation-log.md` is "verified against the emulator" yet.
+- [ ] Not shown by a run yet: loading a save from the title (the slot is listed), collecting a gem in Artisans itself, supercharge, a human playing through the whole homeworld.
+- [ ] Readable hand-written C for pete and camera (for M4's interpolation): not started.
+
 ## 10. Open questions: answered 2026-10-29
 1. **Bounty:** a decomp-based native port counts. There are no extra rules. Aim for high FPS: 60 if possible (§5).
 2. **m2c:** allowed, as an offline tool (§7.2).
