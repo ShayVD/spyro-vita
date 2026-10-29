@@ -19,6 +19,9 @@ void psx_cd_set_log(int on); /* one stderr line per CdRead; also SPYRO_CD_LOG=1 
 /* SPU (src/platform/common/libspu.c). */
 void psx_spu_vblank(void); /* once per virtual vblank */
 
+/* Memory cards (src/platform/common/libmcrd.c): <dir>/card0, card1. */
+void psx_mcrd_set_root(const char *dir);
+
 #ifdef __cplusplus
 }
 #endif

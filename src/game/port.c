@@ -13,25 +13,22 @@ extern void spyro_decomp_main(void);
 extern void psx_overlays_init(void);
 extern uint32_t g_mips_sp;
 extern char D_8006BBE0[];               /* OT terminator primitive (order_table.c) */
-extern uint32_t D_8006CF48[4], D_8006CF58[16]; /* scratchpad address tables */
+extern uint32_t *s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xxxx */
 
 #define EMU_STACK_TOP 0x80020000u /* free on the host: part of the PS1 exe image */
 
-static void scratch_tables(uint32_t *t, int n) {
-  int i;
-  for (i = 0; i < n; i++) {
-    if ((t[i] & 0xFFFFFC00u) != 0x1F800000u)
-      PortFatal("scratchpad table entry %d = %08X", i, t[i]);
-    t[i] = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (t[i] & 0x3FFu));
-  }
+/* Data words that hold scratchpad addresses point at the port's scratchpad,
+ * the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h). */
+static void scratch_relocs(void) {
+  uint32_t **r;
+  for (r = s1_scratch_relocs; *r; r++)
+    **r = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (**r & 0x3FFu));
 }
 
 void spyro_main(void) {
   psx_overlays_init();
   memcpy(PSX_ARENA(0x8006BBE0), D_8006BBE0, 0x14);
-  /* The scratchpad is the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h). */
-  scratch_tables(D_8006CF48, 4);
-  scratch_tables(D_8006CF58, 16);
+  scratch_relocs();
   g_mips_sp = (uint32_t)(uintptr_t)PSX_ARENA(EMU_STACK_TOP);
   spyro_decomp_main();
 }

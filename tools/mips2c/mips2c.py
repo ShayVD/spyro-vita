@@ -275,10 +275,8 @@ class Translator:
         if g:
             c, k = self.symaddr(g.group(1))
             return c if c is not None else cnum(k)
-        if not off:
-            return base
-        o = self.imm(off, "s")
-        return f"{base} + {o}"
+        ea = f"{base} + {self.imm(off, 's')}" if off else base
+        return f"MIPS_KUSEG({ea})" if self.kuseg else ea
 
     # ---------- emission ----------
     def lab(self, addr):
@@ -509,6 +507,7 @@ class Translator:
         self.data_refs, self.ext_funcs, self.ext_m2c = set(), set(), set()
         self.ret_points, self.has_jalr = set(), False
         self.hazards = []
+        self.kuseg = False
         body = []
         insns = u.insns
         dispatch = set(a for _, a in u.glabels)
@@ -555,7 +554,12 @@ class Translator:
                 d = insns[k + 1]
                 if d.op in BRANCHES or d.op in JUMPS:
                     raise Fail(f"branch in delay slot {d.where()}")
+                # Hand-written code loads speculatively in delay slots, also
+                # through null pointers: on the PS1 that reads the RAM mirror
+                # at 0x00000000 (KUSEG), so map low addresses to the arena.
+                self.kuseg = u.hand and (d.op in LOADS or d.op == "lwc2")
                 dstmt = self.simple(d)
+                self.kuseg = False
                 body.append(f"  {self.control(ins, dstmt)}")
                 d_is_target = d.addr in branch_targets or d.addr in dispatch
                 if d_is_target:
@@ -568,6 +572,14 @@ class Translator:
                 k += 2
                 continue
             stmt = self.simple(ins)
+            # Packed RAM pointers (porting-plan §4.4): hand-written code keeps the
+            # low 21 bits (`sll 11; srl 11`, or `srl 10` for a halved field) and
+            # dereferences the result as a KUSEG address. Rebase it on the arena.
+            if (u.hand and ins.op == "srl" and k > 0 and insns[k - 1].op == "sll"
+                    and eval_num(insns[k - 1].args[2]) == 11 and eval_num(ins.args[2]) in (10, 11)
+                    and self.reg(insns[k - 1].args[0]) == self.reg(ins.args[0]) == self.reg(ins.args[1])):
+                r = self.reg(ins.args[0])
+                stmt += f" {r} += (u32)g_psx_arena_base; /* KUSEG pointer -> arena */"
             # MIPS I load delay: the next instruction still sees the old value
             if self.is_load(ins) and k + 1 < n and ins.op not in ("lwl", "lwr"):
                 nx = insns[k + 1]

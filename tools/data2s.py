@@ -11,6 +11,9 @@ MIPS `.word` (4 bytes) becomes `.long`, `.short`/`.half` stays 2 bytes,
 global object label, `.incbin` paths are made absolute. Symbolic words
 (`.word D_800752C8`) stay symbolic, so the host linker relocates them.
 
+Raw words holding scratchpad addresses (0x1F800000-0x1F8003FF) are listed in
+`s1_scratch_relocs` (a null-terminated table of their addresses).
+
 abscheck: a raw `.word` whose value lies in PS1 main RAM (0x80000000-0x801FFFFF)
 may be an unrelocated pointer. Each one must be listed in --allow (one
 `SYMBOL+0xOFFSET` per line, # comments) or the conversion fails.
@@ -23,6 +26,9 @@ import sys
 SECTIONS = {".data": ".data", ".sdata": ".data", ".rodata": ".section .rodata",
             ".bss": ".bss", ".sbss": ".bss"}
 DIRECTIVE = re.compile(r"^(\.\w+)\s*(.*?)\s*$")
+
+
+scratch_relocs = []  # words holding scratchpad addresses (0x1F800000-0x1F8003FF)
 
 
 def convert(path, root, allow, problems, only=None):
@@ -67,6 +73,8 @@ def convert(path, root, allow, problems, only=None):
             for w in [a.strip() for a in args.split(",")]:
                 if re.match(r"^-?(0x[0-9A-Fa-f]+|\d+)$", w):
                     v = int(w, 0) & 0xFFFFFFFF
+                    if 0x1F800000 <= v < 0x1F800400 and out is full:
+                        scratch_relocs.append(f"{label}+0x{offset:X}")
                     if 0x80000000 <= v < 0x80200000:
                         key = f"{label}+0x{offset:X}"
                         if key not in allow and out is full:
@@ -122,6 +130,9 @@ def main():
         sys.stderr.write("abscheck: raw words that look like PS1 RAM pointers:\n  "
                          + "\n  ".join(problems) + "\n")
         return 1
+    # Start-up code (src/game/port.c) rebases these onto the port's scratchpad.
+    lines += [".data", ".balign 4", ".globl s1_scratch_relocs", "s1_scratch_relocs:"]
+    lines += [f".long {r}" for r in scratch_relocs] + [".long 0"]
     lines.append('.section .note.GNU-stack,"",%progbits')
     with open(a.out, "w") as f:
         f.write("\n".join(lines) + "\n")

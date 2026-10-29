@@ -1,6 +1,7 @@
 /* linux32 headless host entry point (docs/porting-plan.md §5).
  *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
  *         [--shot-dir DIR] [--vram-shot] [--dither] [--pad FILE] [--log FILE]
+ *         [--cd-latency TICKS] [--save DIR]
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
 #include "psx_arena.h"
@@ -17,7 +18,8 @@ static void usage(void) {
           "usage: spyro --disc DIR [--frames N] [--shot V1,V2,...] "
           "[--shot-every N]\n"
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
-          "[--pad FILE] [--log FILE]\n");
+          "[--pad FILE] [--log FILE]\n"
+          "             [--cd-latency TICKS] [--save DIR]\n");
   exit(2);
 }
 
@@ -31,7 +33,7 @@ static int to_int(const char *s) {
 
 int main(int argc, char **argv) {
   const char *pad = NULL;
-  int i;
+  int i, cd_latency = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
     const char *val = i + 1 < argc ? argv[i + 1] : NULL;
@@ -69,6 +71,12 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;
+    } else if (strcmp(a, "--save") == 0) {
+      TAKE();
+      psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
+    } else if (strcmp(a, "--cd-latency") == 0) {
+      TAKE();
+      cd_latency = to_int(val);
     } else if (strcmp(a, "--log") == 0) {
       TAKE();
       host_log_open(val);
@@ -88,7 +96,12 @@ int main(int argc, char **argv) {
     host_log_flush();
     return 1;
   }
-  host_log("disc %s, frames %d", g_host_opts.disc_dir, g_host_opts.frames);
+  /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1
+   * the CD interrupt ends it. With no interrupts here, a read completes
+   * inside CdRead unless a latency is asked for (decisions D17). */
+  psx_cd_set_read_latency(cd_latency);
+  host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
+           g_host_opts.frames, cd_latency);
   spyro_main(); /* never returns */
   return 0;
 }
