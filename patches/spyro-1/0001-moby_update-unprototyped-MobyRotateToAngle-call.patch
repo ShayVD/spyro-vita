@@ -1,0 +1,19 @@
+--- a/src/overlays/moby_update.c	2026-10-29 20:26:09
++++ b/src/overlays/moby_update.c	2026-10-29 21:10:58
+@@ -22099,13 +22099,13 @@
+ 
+               // SKELETON: One param too little lol
+ #ifndef MODERN_COMPILER
+-              MobyRotateToAngle(moby, props->m_0x14, 4, 0x10);
++              ((int (*)())MobyRotateToAngle)(moby, props->m_0x14, 4, 0x10);
+ #else
+               MobyRotateToAngle(moby, props->m_0x14, 4, 0x10, 0);
+ #endif
+             } else {
+ #ifndef MODERN_COMPILER
+-              MobyRotateToAngle(moby, props->m_0x14, 4, 0x10);
++              ((int (*)())MobyRotateToAngle)(moby, props->m_0x14, 4, 0x10);
+ #else
+               MobyRotateToAngle(moby, props->m_0x14, 4, 0x10, 0);
+ #endif
+\ No newline at end of file

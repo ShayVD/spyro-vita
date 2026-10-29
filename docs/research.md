@@ -3,7 +3,7 @@
 ## Bounty
 - **Listing:** zealouschuck.com/ps-vita-bounty, "Bounty for a Spyro 1 Decomp ( Open Pete )".
 - **Amount:** $32.50, active, unclaimed.
-- **Terms:** none stated. Other bounties on the site add rules like a 60 fps minimum or an AI policy, so confirm with the poster.
+- **Terms:** confirmed by the poster on 2026-10-29: a decomp-based native port counts, and there are no extra rules. Our own goal is high frame rate, 60 fps if possible.
 
 ## Who else is working on it
 - **No public Vita, Switch, Android or 32-bit ARM effort found.** GitHub search for "spyro vita" returns nothing.
@@ -19,10 +19,12 @@
 |---|---|---|
 | TheMobyCollective/spyro-1 | 254/270 functions (94.1%), 65% of bytes. Overlays matched except 2 credits functions. Active as of Oct 2026, builds on a modern GCC. | CC0 |
 | OpenDriver2/PsyCross | PsyQ reimplementation (GPU, GTE, SPU, CD) on SDL and OpenGL | MIT |
-| RetroPortingToolKit/psxrecomp | PS1 MIPS → C static recompiler. SDL3, OpenGL or Vulkan. Desktop only. | Unclear (NOASSERTION) |
+| RetroPortingToolKit/psxrecomp | PS1 MIPS → C static recompiler. SDL3, OpenGL or Vulkan. Desktop only. | PolyForm Noncommercial 1.0.0 (its `LICENSE`, checked 2026-10-29). Reference only. |
 | OpenPete | Recomp plus decomp hybrid with its own renderer (reads game state directly, Vulkan) | Noncommercial, closed source |
 
 ## Unmatched functions (size of the .s file)
+
+File size overstates the work. Instruction counts are in `docs/porting-plan.md` §2: `func_80043FE4` is 3,865 instructions, and all 18 together are ~20,000. The hand-written assembly is ~24,500.
 | Size | Function |
 |---|---|
 | 227 KB | `pete/func_80043FE4` |
