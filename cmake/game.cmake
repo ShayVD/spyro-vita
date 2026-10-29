@@ -40,5 +40,7 @@ add_custom_command(OUTPUT "${GEN_DIR}/s1_data.S"
 add_library(spyro_game_data OBJECT "${GEN_DIR}/s1_data.S")
 target_compile_options(spyro_game_data PRIVATE -m32)
 
+include(cmake/overlays.cmake)
+
 add_library(spyro_game STATIC $<TARGET_OBJECTS:spyro_game_main>
-  $<TARGET_OBJECTS:spyro_game_data>)
+  $<TARGET_OBJECTS:spyro_game_data> $<TARGET_OBJECTS:spyro_game_ovl>)

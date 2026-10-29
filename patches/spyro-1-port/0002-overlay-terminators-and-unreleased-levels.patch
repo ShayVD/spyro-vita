@@ -1,0 +1,178 @@
+diff --git a/include/overlay_pointers.h b/include/overlay_pointers.h
+index cefdaa8..4ea11e6 100644
+--- a/include/overlay_pointers.h
++++ b/include/overlay_pointers.h
+@@ -11,6 +11,16 @@
+ #define NAME_OVERLAY_FUNCTION(func) CAT3(func, _, OVERLAY_NAME)
+ #define NAME_OVERLAY_FUNCTION_LEVEL(func, level) CAT3(func, _LEVEL_, level)
+ 
++// Spyro port: an overlay's Terminator marks the end of its code and is used
++// as a data pointer (the copy buffer). Overlay code isn't loaded into RAM in
++// the port, so it's a pointer into the PS1 RAM arena (gen/ovl_table.c).
++#ifdef SPYRO_PORT
++#define OVERLAY_TERMINATOR_DECL(name) extern void *name
++void PortFatal(const char *fmt, ...);
++#else
++#define OVERLAY_TERMINATOR_DECL(name) void name(void)
++#endif
++
+ extern Moby *(*g_SpawnMoby)(int pClass, Moby *pParent); // g_MobySpawn
+ extern void (*g_UpdateMoby)();
+ 
+@@ -44,7 +54,7 @@ extern int (*D_800758C4)(int pTimer, Vector3D *pPos, int pColor); // g_DrawTime
+ 
+ 
+ #define o(level) \
+-    void NAME_OVERLAY_FUNCTION_LEVEL(Terminator, level)(void); \
++    OVERLAY_TERMINATOR_DECL(NAME_OVERLAY_FUNCTION_LEVEL(Terminator, level)); \
+     Moby *NAME_OVERLAY_FUNCTION_LEVEL(SpawnMoby, level)(int pClass, Moby *pParent); \
+     void NAME_OVERLAY_FUNCTION_LEVEL(UpdateMoby, level)(void); \
+     void NAME_OVERLAY_FUNCTION_LEVEL(SpawnParticle, level)(int pAmount, int pClass, void *spawnParam, int extraParam); \
+diff --git a/src/gamestates/update.c b/src/gamestates/update.c
+index 39e64e1..39232f9 100644
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -173,7 +173,7 @@ extern int D_80075720; // Selected menu item index
+ extern int D_800757C8; // OptionsSubmenuIsOpen
+ extern int D_80075900; // Flight Pause Menu Quit related?
+ 
+-void Terminator_titlescreen_code(void); // Titlescreen terminator
++OVERLAY_TERMINATOR_DECL(Terminator_titlescreen_code); // Titlescreen terminator
+ 
+ /// @brief Gamestate 2, the pause menu
+ void func_8002E12C(void) {
+@@ -1285,7 +1285,7 @@ void func_800333DC(void) {
+ }
+ 
+ // Titlescreen terminator
+-extern void Terminator_titlescreen_code(void);
++OVERLAY_TERMINATOR_DECL(Terminator_titlescreen_code); // Titlescreen terminator
+ 
+ /// @brief Update demo mode
+ int func_800334D4(void) {
+@@ -1334,8 +1334,8 @@ int func_800334D4(void) {
+     ClearImage(&r, 0, 0, 0);
+     DrawSync(0);
+ 
+-    g_Buffers.m_CopyBuf = &Terminator_titlescreen_code;
+-    g_Buffers.m_DiscCopyBuf = &Terminator_titlescreen_code;
++    g_Buffers.m_CopyBuf = (void *)Terminator_titlescreen_code;
++    g_Buffers.m_DiscCopyBuf = (void *)Terminator_titlescreen_code;
+ 
+     D_80075904 = 0;
+     D_80075764 = 0;
+diff --git a/src/initialization.c b/src/initialization.c
+index 84fe262..1d1e3d8 100644
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -20,6 +20,7 @@
+ #include "loaders.h"
+ #include "memory.h"
+ #include "music.h"
++#include "overlay_pointers.h"
+ #include "save_file.h"
+ #include "sony_image.h"
+ #include "spu.h"
+@@ -226,7 +227,7 @@ void func_8001277C(void) {
+   func_80012604(); // Resets some saved stuff
+ }
+ 
+-void Terminator_titlescreen_code(void); // Titlescreen terminator
++OVERLAY_TERMINATOR_DECL(Terminator_titlescreen_code); // Titlescreen terminator
+ 
+ // Init function
+ void Initialize(void) {
+diff --git a/src/overlay_pointers.c b/src/overlay_pointers.c
+index 8b8b411..1ad0336 100644
+--- a/src/overlay_pointers.c
++++ b/src/overlay_pointers.c
+@@ -425,6 +425,7 @@ void func_level_64_800840FC();
+ 
+ void SetOverlayPointers(void) {
+   switch (g_LevelId) {
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 0:
+     g_Buffers.m_CopyBuf = func_level_0_80082068; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_0_80080548;         // g_SpawnMoby
+@@ -441,6 +442,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 1:
+     g_Buffers.m_CopyBuf = func_level_1_8007BFF0; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_1_8007B070;         // g_SpawnMoby
+@@ -457,6 +460,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 2:
+     g_Buffers.m_CopyBuf = func_level_2_8007F490; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_2_8007D970;         // g_SpawnMoby
+@@ -473,6 +478,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 3:
+     g_Buffers.m_CopyBuf = func_level_3_8007C7B0; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_3_8007B0AC;         // g_SpawnMoby
+@@ -489,6 +496,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 4:
+     g_Buffers.m_CopyBuf = func_level_4_8007C204; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_4_8007B08C;         // g_SpawnMoby
+@@ -505,6 +514,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 7:
+     g_Buffers.m_CopyBuf = func_level_7_8007F2F4; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_7_8007D970;         // g_SpawnMoby
+@@ -521,6 +532,8 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 9:
+     g_Buffers.m_CopyBuf = func_level_9_8007C204; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_9_8007B08C;         // g_SpawnMoby
+@@ -537,6 +550,7 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
+ 
+     // Cases
+ 
+@@ -587,6 +601,7 @@ void SetOverlayPointers(void) {
+     LEVEL_CASE(63);
+     LEVEL_CASE(64);
+ 
++#ifndef SPYRO_PORT /* unreleased levels: no overlay in the WAD (porting-plan §4.2) */
+   case 99:
+     g_Buffers.m_CopyBuf = func_level_99_8007C654; // g_CopyBufferPointer
+     g_SpawnMoby = func_level_99_8007B0C0;         // g_SpawnMoby
+@@ -603,6 +618,11 @@ void SetOverlayPointers(void) {
+     // D_8007567C = (int *)0x0;
+     // D_800758C4 = (int *)0x0;
+     break;
++#endif
++#ifdef SPYRO_PORT
++  default:
++    PortFatal("SetOverlayPointers: no overlay for level %d", g_LevelId);
++#endif
+ #if 0
+   default:
+     // There used to be a printf here that said:

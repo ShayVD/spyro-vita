@@ -10,5 +10,14 @@
 #define INCLUDE_ASM_MACRO
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
+#include <stdint.h>
+
+/* PS1 RAM address -> host address in the arena (src/platform/common/arena.c).
+ * Used by patches/spyro-1-port for the decomp's hard-coded RAM addresses. */
+extern uintptr_t g_psx_arena_base;
+#define PSX_ADDR(a) (g_psx_arena_base + ((uint32_t)(a) - 0x80000000u))
+
+/* Log and abort on a path the port doesn't support (src/game/port.c). */
+void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 
 #endif
