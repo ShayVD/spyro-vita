@@ -374,7 +374,8 @@ Order matters: each step runs before the next starts.
 - [x] Crash demo combo disabled (D11, patch 0004). `MobyRotateToAngle`'s missing argument analysed (`upstream-notes.md`, deferred to the oracle in M4).
 - [x] Tooling: `--trace`, `--step`/`tools/step.sh`, `--poke`, `--tri-dump`, raw VRAM dumps, `tools/oracle/trace_diff.py`.
 - [ ] **Oracle (PCSX-Redux): not started, waiting for download approval.** So no GTE unit vectors, no function-level differential tests, no emulator frame traces. Nothing in `translation-log.md` is "verified against the emulator" yet.
-- [ ] Not shown by a run yet: loading a save from the title (the slot is listed), collecting a gem in Artisans itself, supercharge, a human playing through the whole homeworld.
+- [x] Loading the save from the title (`logs/run7-load`: Artisans, 1 dragon).
+- [ ] Not shown by a run yet: collecting a gem in Artisans itself, supercharge, a human playing through the whole homeworld.
 - [ ] Readable hand-written C for pete and camera (for M4's interpolation): not started.
 
 ## 10. Open questions: answered 2026-10-29

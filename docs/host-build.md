@@ -59,6 +59,7 @@ Then open http://localhost:8642/ . Keys: arrows (D-pad), X (cross), Z (square), 
   - `logs/run6-inventory`: pause → inventory ("ARTISANS Home 0/100 0/4").
   - `logs/run6-fairy2`, `logs/run6-fairy3`: the save fairy on Nestor's pad, "GAME SAVED", `save/card0/BASCUS-94228SPYRO`.
   - `logs/run6-load`: the title lists the saved slot (Artisans, 1 dragon).
+  - `logs/run7-load` (step session; replay with its `pad.txt` and a copy of `logs/run6-fairy3/save`): Load Game → slot 1 → Artisans with 1 dragon, Nestor freed, the fairy at his pad.
   - `logs/run6-respawn`, `logs/run6-gameover2`: z poked below 1024 → respawn (lives 4→3) or, with 0 lives, game over.
   - `logs/run4-demo`: attract demos with `trace.tsv` (Stone Hill 5 gems, Doctor Shemp 45).
   - `logs/run5-audio/audio.wav`: 120 s of title, intro and Artisans audio.
