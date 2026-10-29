@@ -25,6 +25,10 @@ function(spyro_prepare name src patchdir outvar)
         message(FATAL_ERROR "patch failed: ${p}")
       endif()
     endforeach()
+    # file(COPY) keeps the submodule's mtimes, so a changed or dropped patch
+    # could leave objects newer than their sources: touch the whole copy.
+    file(GLOB_RECURSE copied "${dst}/*")
+    file(TOUCH_NOCREATE ${copied})
     file(WRITE "${stamp}" "${want}")
   endif()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${patches})
