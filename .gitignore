@@ -15,3 +15,8 @@ logs/
 *.vpk
 *.self
 *.velf
+
+# qemu/gdb leftovers
+core
+*.core
+__pycache__/
