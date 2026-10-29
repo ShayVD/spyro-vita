@@ -111,3 +111,11 @@ Record each decision with its date, what was chosen, and why.
 - `MODERN_COMPILER` is defined. Its branches only replace type puns with field copies and fix an implicit return. The one behavioural change is `MobyRotateToAngle`'s 5th argument (`upstream-notes.md`), still to check with the oracle.
 - `-fcommon`, because the decomp's uninitialised C globals are also defined in `asm/data` (GCC 2.7.2 merged them as common symbols).
 - **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. The bit-exactness test against PCSX-Redux is pending the oracle (step 8 and step 13).
+
+## 2026-10-29: M2 decisions
+
+### D22. A human plays the host build in a browser (`--serve PORT`)
+- **Chosen:** the linux32 binary itself runs a small HTTP server (`src/platform/linux32/serve.c`, plain sockets and pthreads). With `--serve PORT`, vblanks are paced to real time (60 Hz) and `http://localhost:PORT/` shows the picture on a canvas (raw RGB per frame via long-polled `/frame`), sends keyboard or Gamepad-API buttons to `/pad`, and plays the SPU mix through WebAudio from `/audio`. `TC_PORT=PORT tools/tc ...` publishes the port on the Mac's 127.0.0.1 only.
+- **Why:** it needs nothing installed on the Mac or in the image, works with any browser and pad, and the game still runs headless under qemu-i386 (D14, D18). At 6× real time under qemu, there's headroom for pacing.
+- **Rejected:** X11 via XQuartz (a new install on the Mac, and GL or SDL in the container under emulation), VNC (a server in the image, and macOS Screen Sharing insists on VNC passwords, so DES too), a native Mac viewer for a frame stream (a second program to maintain).
+- **Evidence stays scripted:** milestone evidence is still pad scripts plus screenshots in `logs/runN-*`, which are deterministic; served runs are not.

@@ -52,6 +52,10 @@ extern PsxSpu g_psx_spu;
  * the ADPCM block flags (loop start, loop end, repeat). */
 void psx_spu_voice_advance(PsxSpuVoice *v, unsigned int samples);
 
+/* Provided by the platform: the mixer's output, 44.1 kHz s16 interleaved
+ * stereo, pushed once per vblank from psx_spu_vblank(). */
+void psx_audio_out(const short *pcm, int frames);
+
 #ifdef __cplusplus
 }
 #endif

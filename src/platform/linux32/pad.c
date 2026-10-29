@@ -33,6 +33,7 @@ static PadEvent *s_events;
 static int s_nevents;
 static int s_next;
 static uint16_t s_mask;
+static volatile uint16_t s_live; /* set by serve.c's thread */
 static unsigned char *s_pad[2];
 
 static int cmp_event(const void *a, const void *b) {
@@ -123,9 +124,11 @@ void host_pad_vblank(int vblank) {
   }
   if (!g_padCommEnable)
     return;
-  fill(s_pad[0], 1, s_mask);
+  fill(s_pad[0], 1, s_mask | s_live);
   fill(s_pad[1], 0, 0);
 }
+
+void host_pad_set_live(uint16_t mask) { s_live = mask; }
 
 /* The PsyX_Pad_* calls LIBPAD.C makes. */
 void PsyX_Pad_InitPad(int slot, unsigned char *padData) {

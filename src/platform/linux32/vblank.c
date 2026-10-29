@@ -59,8 +59,10 @@ void host_vblank(void) {
       host_shot_vram(path);
     }
   }
+  host_serve_vblank(v);
   if (g_host_opts.frames > 0 && v >= g_host_opts.frames) {
     host_log("--frames %d reached, exiting", g_host_opts.frames);
+    host_audio_close();
     host_log_flush();
     fflush(stdout);
     exit(0);

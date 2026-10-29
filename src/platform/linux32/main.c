@@ -1,8 +1,9 @@
 /* linux32 headless host entry point (docs/porting-plan.md §5).
  *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
  *         [--shot-dir DIR] [--vram-shot] [--dither] [--tri-dump V] [--pad FILE]
- *         [--log FILE]
- *         [--cd-latency TICKS] [--save DIR]
+ *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
+ *         [--serve PORT]
+ * --serve: real-time vblanks and a browser player on PORT (decisions D22).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
 #include "psx_arena.h"
@@ -20,7 +21,8 @@ static void usage(void) {
           "[--shot-every N]\n"
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
           "[--pad FILE] [--log FILE]\n"
-          "             [--cd-latency TICKS] [--save DIR]\n");
+          "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
+          "[--serve PORT]\n");
   exit(2);
 }
 
@@ -34,7 +36,7 @@ static int to_int(const char *s) {
 
 int main(int argc, char **argv) {
   const char *pad = NULL;
-  int i, cd_latency = 0;
+  int i, cd_latency = 0, serve_port = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
     const char *val = i + 1 < argc ? argv[i + 1] : NULL;
@@ -67,6 +69,13 @@ int main(int argc, char **argv) {
       g_host_opts.shot_dir = val;
     } else if (strcmp(a, "--vram-shot") == 0) {
       g_host_opts.vram_shot = 1;
+    } else if (strcmp(a, "--serve") == 0) {
+      TAKE();
+      serve_port = to_int(val);
+    } else if (strcmp(a, "--wav") == 0) {
+      TAKE();
+      if (host_audio_wav_open(val) != 0)
+        return 1;
     } else if (strcmp(a, "--tri-dump") == 0) {
       TAKE();
       g_host_opts.tri_dump = to_int(val);
@@ -94,6 +103,8 @@ int main(int argc, char **argv) {
   if (pad && host_pad_load(pad) != 0)
     return 1;
 
+  if (serve_port && host_serve_start(serve_port) != 0)
+    return 1;
   psx_arena_init();
   if (psx_cd_open(g_host_opts.disc_dir) != 0) {
     host_log("psx_cd_open(%s) failed", g_host_opts.disc_dir);

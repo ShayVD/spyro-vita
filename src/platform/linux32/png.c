@@ -95,12 +95,12 @@ int host_png_write(const char *path, const uint8_t *rgb, int w, int h) {
 
 static uint8_t c5to8(int c) { return (uint8_t)(c << 3 | c >> 2); }
 
-int host_shot_display(const char *path) {
+uint8_t *host_display_rgb(int *pw, int *ph) {
   const DISPENV *d = &currentDispEnv; /* what the PS1 scans out now */
   int w = d->disp.w > 0 ? d->disp.w : 320, h = d->disp.h > 0 ? d->disp.h : 240;
   uint8_t *rgb = calloc((size_t)w * h, 3);
   const uint16_t *vram = host_vram();
-  int x, y, r;
+  int x, y;
   if (d->disp.w > 0 && !g_GPUDisabledState) {
     for (y = 0; y < h; y++) {
       const uint8_t *row =
@@ -121,6 +121,14 @@ int host_shot_display(const char *path) {
       }
     }
   }
+  *pw = w;
+  *ph = h;
+  return rgb;
+}
+
+int host_shot_display(const char *path) {
+  int w, h, r;
+  uint8_t *rgb = host_display_rgb(&w, &h);
   r = host_png_write(path, rgb, w, h);
   free(rgb);
   return r;
