@@ -18,16 +18,22 @@ for w in list {
   let area = (b["Width"] ?? 0) * (b["Height"] ?? 0)
   if area > bestArea { best = CGWindowID(num); bestArea = area }
 }
-guard best != 0,
-      let shot = CGWindowListCreateImage(.null, .optionIncludingWindow, best,
-                                         [.boundsIgnoreFraming, .bestResolution]) else { exit(1) }
+func fail(_ why: String) -> Never {
+  FileHandle.standardError.write((why + "\n").data(using: .utf8)!)
+  exit(1)
+}
+guard best != 0 else { fail("no Vita3K window among \(list.count)") }
+guard let shot = CGWindowListCreateImage(.null, .optionIncludingWindow, best,
+                                         [.boundsIgnoreFraming, .bestResolution])
+else { fail("window \(best): no image") }
 
 // The title bar: the rows above the first one that is the game's (black)
 // border colour all the way across, searched in the top 10%.
 let w = shot.width, h = shot.height
 guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                           space: CGColorSpaceCreateDeviceRGB(),
-                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { exit(1) }
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+else { fail("window \(best): no context") }
 ctx.draw(shot, in: CGRect(x: 0, y: 0, width: w, height: h))
 let px = ctx.data!.assumingMemoryBound(to: UInt8.self) // row 0 is the top
 func dark(_ x: Int, _ y: Int) -> Bool {
@@ -51,7 +57,7 @@ for y in stride(from: top, to: h, by: 5) {
 let body = shot.cropping(to: CGRect(x: 0, y: top, width: w, height: h - top))!
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
-else { exit(1) }
+else { fail("can't write \(url.path)") }
 CGImageDestinationAddImage(dest, body, nil)
 CGImageDestinationFinalize(dest)
 exit(hi - lo < 4 ? 2 : 0)

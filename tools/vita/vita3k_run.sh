@@ -10,10 +10,9 @@
 # VITA3K_LOG=N sets Vita3K's log level (default 4, ERROR) through a copy of
 # its config.yml in OUT_DIR; the user's own config is left as it is.
 # VPK=FILE runs another build than build/vita/spyro-vita.vpk. CAPTURE=1 also
-# captures the Vita3K window at every shot, as OUT_DIR/win-V.png: the GPU's
-# own picture, which the shots (the readback replay) don't show
-# (docs/vita-testing.md). It adds shot_hold=: the app logs "hold V" and waits
-# for hold.ack, written here once the window is captured.
+# grabs the Vita3K window as each shot is logged, as OUT_DIR/win-V.png: the
+# GPU's own picture, which the shots (the readback replay) don't show. The
+# grab comes a few frames after the shot (docs/vita-testing.md).
 # One run at a time: every run shares Vita3K's ux0:data/spyro and title
 # SPYV00001, so a lock (ux0:data/spyro.lock, holding the run's PID) makes a
 # second run wait (up to VITA3K_LOCK_WAIT seconds, default 1800). Vita3K is
@@ -74,7 +73,7 @@ mkdir -p "$out"
 : > "$data/config.txt"
 [ "${REALTIME:-0}" = 1 ] || echo "realtime=0" >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
-rm -rf "$data/shots" "$data/spyro.log" "$data/hold.ack" "$data/audio.wav" "$data/save"
+rm -rf "$data/shots" "$data/spyro.log" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"
 if [ -n "${PAD:-}" ]; then
   cp "$PAD" "$data/pad.txt"; cp "$PAD" "$out/pad.txt"
@@ -82,7 +81,6 @@ if [ -n "${PAD:-}" ]; then
 fi
 [ -n "${SAVE:-}" ] && cp -R "$SAVE/." "$data/save/"
 if [ "${CAPTURE:-0}" = 1 ]; then
-  echo "shot_hold=20000" >> "$data/config.txt"
   winid="$root/build/vita3k_window"
   [ "$winid" -nt "$root/tools/vita/vita3k_window.swift" ] ||
     swiftc -O -o "$winid" "$root/tools/vita/vita3k_window.swift"
@@ -97,20 +95,21 @@ pid=$!
 if [ "${CAPTURE:-0}" = 1 ]; then
   ( done_n=0
     while :; do
-      n=$(grep -c '^\[ *[0-9]*\] vita hold ' "$data/spyro.log" 2>/dev/null || true)
+      n=$(grep -c '^\[ *[0-9]*\] vita shot ' "$data/spyro.log" 2>/dev/null || true)
       if [ "${n:-0}" -gt "$done_n" ]; then
-        v=$(grep '^\[ *[0-9]*\] vita hold ' "$data/spyro.log" | sed -n "$((done_n + 1))p" | awk '{print $NF}')
-        # a blank grab: the window wasn't drawn; bring Vita3K forward once
-        r=0; "$winid" "$out/win-$v.png" || r=$?
-        if [ $r = 2 ]; then
-          osascript -e 'tell application "Vita3K" to activate' 2>/dev/null || true
-          sleep 1; r=0; "$winid" "$out/win-$v.png" || r=$?
+        v=$(grep '^\[ *[0-9]*\] vita shot ' "$data/spyro.log" | tail -1 | sed 's/.*shot-\([0-9]*\).*/\1/')
+        # no grab, or a blank one: the window wasn't drawn (covered by
+        # another); bring this Vita3K forward and try once more
+        r=0; "$winid" "$out/win-$v.png" 2>> "$out/capture.log" || r=$?
+        if [ $r != 0 ]; then
+          osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
+            >/dev/null 2>> "$out/capture.log" || true
+          sleep 1; r=0; "$winid" "$out/win-$v.png" 2>> "$out/capture.log" || r=$?
         fi
-        [ $r = 0 ] || echo "hold $v: no capture ($r)" >> "$out/capture.log"
-        : > "$data/hold.ack"
-        done_n=$((done_n + 1))
+        [ $r = 0 ] || echo "shot $v: no capture ($r)" >> "$out/capture.log"
+        done_n=$n
       fi
-      sleep 0.2
+      sleep 0.1
     done ) &
   cap=$!
 fi

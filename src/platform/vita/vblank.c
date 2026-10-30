@@ -13,8 +13,6 @@
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <psp2/display.h>
-#include <psp2/io/fcntl.h>
-#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +30,6 @@ static int s_vblank;
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
 static int s_vcount_base = -1; /* display vcount at our vblank 0 */
-static int s_hold; /* shot_hold: the vblank of a shot taken since the last present */
 
 #define MAX_CATCH_UP 8 /* vblanks run at once after a slow frame; more are dropped */
 
@@ -79,7 +76,6 @@ static void vblank(void) {
     }
   if (shot_due(v)) {
     char path[256];
-    s_hold = v;
     if (g_vita_gpu) { /* the shot reads VRAM: bring in what the GPU drew */
       vita_gpu_sync_display();
       if (g_vita_opts.shot_hd)
@@ -112,26 +108,6 @@ static void vblank(void) {
   }
 }
 
-/* shot_hold: the picture just presented stays on screen while the window
- * is captured: "hold V" in the log, then up to shot_hold ms until the
- * capture script writes hold.ack (virtual time, realtime=0, is not
- * affected). */
-static void present(void) {
-  s_stat_shown += vita_video_present();
-  if (s_hold && g_vita_opts.shot_hold > 0) {
-    const char *ack = VITA_DATA_DIR "/hold.ack";
-    SceIoStat st;
-    int ms;
-    sceKernelDelayThread(200 * 1000); /* the flip */
-    sceIoRemove(ack);
-    vita_log("hold %d", s_hold);
-    for (ms = 0; ms < g_vita_opts.shot_hold && sceIoGetstat(ack, &st) < 0; ms += 50)
-      sceKernelDelayThread(50 * 1000);
-    sceIoRemove(ack);
-  }
-  s_hold = 0;
-}
-
 static int real_vblanks(void) {
   return sceDisplayGetVcount() - s_vcount_base;
 }
@@ -141,7 +117,7 @@ void PsyX_WaitForTimestep(int count) {
   if (!g_vita_opts.realtime) {
     while (count-- > 0)
       vblank();
-    present();
+    s_stat_shown += vita_video_present();
     return;
   }
   if (s_vcount_base < 0)
@@ -160,7 +136,7 @@ void PsyX_WaitForTimestep(int count) {
   }
   while (n-- > 0)
     vblank();
-  present();
+  s_stat_shown += vita_video_present();
 }
 
 void PsyX_UpdateInput(void) {}
