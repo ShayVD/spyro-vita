@@ -19,6 +19,15 @@ void psx_cd_set_log(int on); /* one stderr line per CdRead; also SPYRO_CD_LOG=1 
 /* SPU (src/platform/common/libspu.c). */
 void psx_spu_vblank(void); /* once per virtual vblank */
 
+/* Per-vblank game-state trace (src/game/trace.c). */
+int spyro_trace_open(const char *path); /* 0 = ok */
+void spyro_trace_vblank(int vblank);
+void spyro_trace_close(void);
+void spyro_moby_dump(const char *path); /* level mobys as TSV (trace.c) */
+
+/* Function-level oracle replay (src/game/oracle_replay.c). */
+int spyro_replay(const char *dir, const char *only, const char *ignore, const char *fnmap);
+
 /* Memory cards (src/platform/common/libmcrd.c): <dir>/card0, card1. */
 void psx_mcrd_set_root(const char *dir);
 

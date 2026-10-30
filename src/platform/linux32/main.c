@@ -1,7 +1,20 @@
 /* linux32 headless host entry point (docs/porting-plan.md §5).
  *   spyro --disc DIR [--frames N] [--shot V1,V2,...] [--shot-every N]
- *         [--shot-dir DIR] [--vram-shot] [--dither] [--pad FILE] [--log FILE]
- *         [--cd-latency TICKS] [--save DIR]
+ *         [--shot-dir DIR] [--vram-shot] [--dither] [--tri-dump V] [--pad FILE]
+ *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
+ *         [--serve PORT] [--trace FILE]
+ *         [--step DIR]
+ *         [--poke V:ADDR=VALUE]...
+ *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]
+ * --replay: replay the oracle's function samples in DIR through the
+ *   translated C and compare (src/game/oracle_replay.c); no disc needed.
+ * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
+ *   for test set-ups such as "no lives left".
+ * --trace: one TSV row of game state per vblank (src/game/trace.c).
+ * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
+ *   every shot, and DIR/now.tsv at every --step stop.
+ * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
+ * --serve: real-time vblanks and a browser player on PORT (decisions D22).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
 #include "psx_arena.h"
@@ -19,7 +32,10 @@ static void usage(void) {
           "[--shot-every N]\n"
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
           "[--pad FILE] [--log FILE]\n"
-          "             [--cd-latency TICKS] [--save DIR]\n");
+          "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
+          "[--serve PORT] [--trace FILE]\n"
+          "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
+          "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]\n");
   exit(2);
 }
 
@@ -32,8 +48,8 @@ static int to_int(const char *s) {
 }
 
 int main(int argc, char **argv) {
-  const char *pad = NULL;
-  int i, cd_latency = 0;
+  const char *pad = NULL, *replay = NULL, *only = NULL, *ignore = NULL, *fnmap = NULL;
+  int i, cd_latency = 0, serve_port = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
     const char *val = i + 1 < argc ? argv[i + 1] : NULL;
@@ -46,6 +62,20 @@ int main(int argc, char **argv) {
     if (strcmp(a, "--disc") == 0) {
       TAKE();
       g_host_opts.disc_dir = val;
+    } else if (strcmp(a, "--replay") == 0) {
+      TAKE();
+      replay = val;
+    } else if (strcmp(a, "--only") == 0) {
+      TAKE();
+      only = val;
+    } else if (strcmp(a, "--ignore") == 0) {
+      TAKE();
+      ignore = val;
+    } else if (strcmp(a, "--moby-dump") == 0) {
+      g_host_opts.moby_dump = 1;
+    } else if (strcmp(a, "--fnmap") == 0) {
+      TAKE();
+      fnmap = val;
     } else if (strcmp(a, "--frames") == 0) {
       TAKE();
       g_host_opts.frames = to_int(val);
@@ -66,6 +96,33 @@ int main(int argc, char **argv) {
       g_host_opts.shot_dir = val;
     } else if (strcmp(a, "--vram-shot") == 0) {
       g_host_opts.vram_shot = 1;
+    } else if (strcmp(a, "--serve") == 0) {
+      TAKE();
+      serve_port = to_int(val);
+    } else if (strcmp(a, "--step") == 0) {
+      TAKE();
+      host_step_set_dir(val);
+    } else if (strcmp(a, "--trace") == 0) {
+      TAKE();
+      if (spyro_trace_open(val) != 0)
+        return 1;
+    } else if (strcmp(a, "--wav") == 0) {
+      TAKE();
+      if (host_audio_wav_open(val) != 0)
+        return 1;
+    } else if (strcmp(a, "--poke") == 0) {
+      unsigned v, addr, value;
+      TAKE();
+      if (g_host_opts.npokes == 16 ||
+          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 ||
+          addr < 0x80000000u || addr > 0x801FFFFCu)
+        usage();
+      g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
+      g_host_opts.pokes[g_host_opts.npokes].addr = addr;
+      g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--tri-dump") == 0) {
+      TAKE();
+      g_host_opts.tri_dump = to_int(val);
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
     } else if (strcmp(a, "--pad") == 0) {
@@ -85,11 +142,17 @@ int main(int argc, char **argv) {
     }
 #undef TAKE
   }
+  if (replay) {
+    psx_arena_init();
+    return spyro_replay(replay, only, ignore, fnmap) == 0 ? 0 : 1;
+  }
   if (!g_host_opts.disc_dir)
     usage();
   if (pad && host_pad_load(pad) != 0)
     return 1;
 
+  if (serve_port && host_serve_start(serve_port) != 0)
+    return 1;
   psx_arena_init();
   if (psx_cd_open(g_host_opts.disc_dir) != 0) {
     host_log("psx_cd_open(%s) failed", g_host_opts.disc_dir);

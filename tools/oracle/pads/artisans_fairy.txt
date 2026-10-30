@@ -1,0 +1,30 @@
+# New game, walk up to Nestor and free him, then stand still for the save
+# fairy and save (from the host run logs/run6-fairy3/pad.txt; the menu part
+# is absolute, run with ORACLE_PAD_SHIFT=1520; gameplay is state-anchored).
+# The emulator's memory card checks take real time, so the menu needs two
+# more CROSS presses than the host's (3002, 3202: the slot select screen).
+2 none
+1902 start
+1908 none
+2102 cross
+2108 none
+2402 cross
+2408 none
+2602 cross
+2608 none
+2802 cross
+2808 none
+3002 cross
+3008 none
+3202 cross
+3208 none
+@gs=0,level=10 +59 none
+@gs=0,level=10 +71 up
+@gs=0,level=10 +251 none
+@gs=8 +0 none
+@gs=0 +7 up
+@gs=0 +57 none
+@gs=11 +183 cross
+@gs=11 +189 none
+@gs=11 +433 cross
+@gs=11 +439 none

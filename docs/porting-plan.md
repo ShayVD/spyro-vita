@@ -286,6 +286,8 @@ Three layers, from cheapest to most complete:
 
 Each translated or replaced function gets a `docs/translation-log.md` row: method (mips2c vX, or hand), tests (snapshot count, demo or trace coverage) and known differences.
 
+**As built (M2, 2026-10-30):** layers 1–3 run (`tools/oracle/`, `docs/host-build.md` "Oracle"). Layer 1 needed no symbol-by-symbol loading: with the PS1 layout (D23) the emulator's RAM loads into the arena with one `memcpy`. What differs by construction is handled explicitly in `spyro --replay`: scratchpad pointers (0x1F80xxxx) compare in the port's form, packed pointers that mips2c rebases on the arena count as equal, v0/v1 count only when the function set them, saved caller registers are told apart, and interrupt-written RAM is listed with its writer in `tools/oracle/ignore_ranges.txt`. Results: `docs/translation-log.md`.
+
 Optional later: a "PS1-exact layout" host build (each global in its own section via `-fdata-sections`, placed at its `psx.map` address by a generated linker script). Snapshots would then load with a single `memcpy`. Only worth it if pointer remapping in layer 1 turns out to be painful.
 
 ---
@@ -311,7 +313,7 @@ Order matters: each step runs before the next starts.
    - [x] `CMakeLists.txt` (cmake 3.20, C11, `SPYRO_HOST=linux32|vita`), `src/platform/linux32/CMakeLists.txt`, `cmake/` helpers (`prepare.cmake` copies and patches the submodules into the build tree).
    - [x] `tools/docker/host.Dockerfile` and the `tools/tc` wrapper. *Changed:* native arm64 with `gcc-i686-linux-gnu` and `qemu-user`, no SDL/GL (decisions D14, D18).
    - [x] `tools/build_matching.sh`: rsync to `build/s1-matching`, apply `patches/spyro-1/`, `make all` under `pipefail`, SHA-1 check. Leaves `build/s1-matching/build/psx.map`, `psx.elf` (DWARF) and `wad/*.ovl` for the generators. *(Done in M0 as an environment fix.)*
-   - [x] `tools/check_no_assets.sh`. The pre-commit hook isn't installed (installing it was blocked for the agent; the user can run `ln -s ../../tools/check_no_assets.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"`).
+   - [x] `tools/check_no_assets.sh`. The pre-commit hook is a wrapper script in `$(git rev-parse --git-common-dir)/hooks/pre-commit` that runs `$(git rev-parse --show-toplevel)/tools/check_no_assets.sh` from whichever checkout or worktree is committing, and exits 0 when that file is missing (branches that predate it). A symlink doesn't work: it resolves against the main checkout. The wrapper's text is in the script's header comment.
 2. **PsyCross on the host, as a library**
    - [x] PsyCross as a static library (`cmake/psycross.cmake`) with `USE_EXTENDED_PRIM_POINTERS=0` and `USE_PGXP=0`.
    - [x] Patch 1 (`patches/PsyCross/0001-arena-ot.patch`): `nextPrim` ORs in `g_psx_arena_base`.
@@ -354,7 +356,7 @@ Order matters: each step runs before the next starts.
     - [x] Fixed: CD busy-wait (D17), KUSEG pointers (D16), scratchpad tables, memory cards (D19), OT packets (PsyCross 0003), `DRAWENV` layout (0004). The `isrgb24` logos work in the soft renderer.
     - [x] `--frames N --shot/--shot-every --pad --save`: `logs/run1-final3` (title and menu), `logs/run1-demo4` (attract demos).
 13. **Oracle bring-up (can run in parallel from step 7)**
-    - [x] PCSX-Redux `a5d621af`, native macOS, headless (D22): `tools/oracle/redux OUTDIR ORACLE_*=…` runs `tools/oracle/oracle.lua`. That gives a pad script, VRAM dumps, GTE capture and function snapshots.
+    - [x] PCSX-Redux `a5d621af`, native macOS, headless (D24): `tools/oracle/redux OUTDIR ORACLE_*=…` runs `tools/oracle/oracle.lua`. That gives a pad script, VRAM dumps, GTE capture and function snapshots.
     - [x] The first differential test is `tests/m2c_diff`: `math.s` snapshots replayed against the translation. 33 of 45 entry points were called in a 9,000-vblank run: 615 cases, 0 mismatched. The 20 incomplete cases are all `ColTriUnpack`, which reads level data outside the captured pages. The 12 entry points the run never called aren't tested (`logs/m2c-math1`).
     - [ ] Frame traces (§7.3 item 2) and aligning the oracle's vblank count with the host's. Not done. The oracle counts from reset, including about 900 BIOS vblanks.
 
@@ -365,6 +367,22 @@ Order matters: each step runs before the next starts.
 **2026-10-30:** steps 8 and 13 are done (the GTE and `math.s` results above). The oracle shows that the host intro's Spyro flight is missing world geometry. Host frames ~1140–1320 show a flat sand fill and holes, where the real game draws terrain, rivers and grass (`logs/intro-compare1/contact.png`: host on top, oracle below). That's the first oracle-found bug, open for M2. Also still open: hiding the Crash demo entry.
 
 ---
+
+## 9b. M2 status (2026-10-29): Artisans on the host
+
+**Definition of done (CLAUDE.md):** all unmatched and asm-only functions in C (done in M1 by mips2c, D16), and Artisans fully playable on the host.
+
+- [x] **Rendering gap found and fixed.** Near world geometry was missing (the title intro's "sky and sand", flat clear colour under Spyro). Cause: `r_environment.s` uses the sign bit of a pointer into `D_8006FCF4` as a mode flag. Fix: the game's data at its PS1 addresses (D23).
+- [x] **Playable in Artisans (scripted evidence, `docs/host-build.md`):** walk, run, charge, flame (kills an enemy), jump and glide, free Nestor (dragon cutscene), save fairy (`func_800314B4`, "GAME SAVED", card file written), pause, options, inventory (StoreImage grayscale background), respawn and game over. Gem collection: in the attract demos (Stone Hill, Doctor Shemp).
+- [x] **A human can play it:** `--serve PORT` in any browser, keyboard or gamepad, with sound (D22).
+- [x] **Audio:** software SPU mixer and XA decoder (`libspu.c`, `xa.c`), WAV output; `CdMix` order from the hardware registers.
+- [x] Crash demo combo disabled (D11, patch 0004). `MobyRotateToAngle`'s missing argument analysed (`upstream-notes.md`, deferred to the oracle in M4).
+- [x] Tooling: `--trace`, `--step`/`tools/step.sh`, `--poke`, `--tri-dump`, raw VRAM dumps, `tools/oracle/trace_diff.py`.
+- [x] **Oracle (PCSX-Redux, D8):** function replay 948/948 samples of 98 translated entry points match (`logs/run8-oracle/cap3`, `cap5-fairy`, `cap6-tour` 30 levels), covering all 11 GTE ops the asm uses; both attract demos match tick for tick; the intro geometry matches; MobyRotateToAngle's 5th argument checked at Wizard Peak. Still without a sample: 47 translation-log rows, mostly jump-only labels, functions these runs don't call, and the credits overlay.
+- [x] Loading the save from the title (`logs/run7-load`: Artisans, 1 dragon).
+- [x] Collecting gems in Artisans itself: four red gems on the stone platform by the waterfall pool (`logs/run9-gems`). Supercharge isn't in Artisans (no type-4 surface).
+- [ ] Not shown by a run yet: a human playing through the whole homeworld.
+- [x] Readable hand-written C for pete and camera started (for M4's interpolation): `func_80033F08` (camera) and `func_80049FAC` (pete) replace their mips2c units and match the oracle. The rest continue in M3/M4.
 
 ## 10. Open questions: answered 2026-10-29
 1. **Bounty:** a decomp-based native port counts. There are no extra rules. Aim for high FPS: 60 if possible (§5).

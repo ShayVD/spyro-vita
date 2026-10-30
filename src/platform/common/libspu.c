@@ -1,11 +1,14 @@
-/* Minimal PsyQ libspu (docs/porting-plan.md §6): register state, the SPU RAM
- * image and voice lifetime, no audio output yet. Spyro's ADSR is fixed (ar dr
+/* PsyQ libspu over a software SPU (docs/porting-plan.md §6): register state,
+ * the SPU RAM image, voice lifetime and a mixer (ADPCM, pitch, volumes, CD
+ * input from xa.c) that outputs through psx_audio_out(). Spyro's ADSR is fixed (ar dr
  * sr rr 0, sl 15; spu.c:39-56), which on hardware is a gate: full level within
  * a few samples of key on, silent within a few of key off. So a voice's
  * envelope is 0x7FFF from key on until key off or until its sample hits an
  * end flag without repeat, which is what SpuGetKeyStatus reports from. */
 #include "psx_hooks.h"
+#include "psx_cd.h"
 #include "psx_spu.h"
+#include "psx_xa.h"
 
 #include <libspu.h>
 
@@ -23,35 +26,132 @@ static void voice_block_start(PsxSpuVoice *v) {
     v->loop_addr = v->cur_addr;
 }
 
+static const int k_f0[5] = {0, 60, 115, 98, 122};
+static const int k_f1[5] = {0, 0, -52, -55, -60};
+
+/* Decode the 16-byte SPU ADPCM block at cur_addr (psx-spx "SPU ADPCM"). */
+static void voice_decode(PsxSpuVoice *v) {
+  const unsigned char *b = g_psx_spu.ram + v->cur_addr;
+  int shift = b[0] & 15, filter = (b[0] >> 4) & 7, i;
+  if (shift > 12)
+    shift = 9; /* hardware quirk */
+  if (filter > 4)
+    filter = 4;
+  for (i = 0; i < BLOCK_SAMPLES; i++) {
+    int nib = (b[2 + i / 2] >> ((i & 1) * 4)) & 15;
+    int s = (short)(nib << 12) >> shift;
+    s += (v->hist[1] * k_f0[filter] + v->hist[0] * k_f1[filter] + 32) >> 6;
+    s = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
+    v->hist[0] = v->hist[1];
+    v->hist[1] = (short)s;
+    v->dec[i] = (short)s;
+  }
+  v->dec_valid = 1;
+}
+
+/* Past the end of cur_addr's block: follow its flags (loop end jumps to the
+ * loop address; without repeat the voice goes silent). Returns 0 if it did. */
+static int voice_next_block(PsxSpuVoice *v) {
+  unsigned char flags = g_psx_spu.ram[v->cur_addr + 1];
+  if (v->dec_valid)
+    v->prev = v->dec[BLOCK_SAMPLES - 1];
+  if (flags & 1) {
+    v->cur_addr = v->loop_addr & ~15u;
+    if (!(flags & 2)) {
+      v->env_phase = PSX_ENV_OFF;
+      v->envx = 0;
+      v->counter = 0;
+      return 0;
+    }
+  } else {
+    v->cur_addr = ram_addr(v->cur_addr + 16);
+  }
+  voice_block_start(v);
+  v->dec_valid = 0;
+  return 1;
+}
+
 void psx_spu_voice_advance(PsxSpuVoice *v, unsigned int samples) {
   unsigned int step = v->pitch > 0x4000 ? 0x4000 : v->pitch;
   unsigned int total;
-
   if (v->env_phase == PSX_ENV_OFF || v->env_phase == PSX_ENV_RELEASE)
     return;
   total = v->counter + step * samples;
   while (total >= BLOCK_SAMPLES << 12) {
-    unsigned char flags = g_psx_spu.ram[v->cur_addr + 1];
     total -= BLOCK_SAMPLES << 12;
-    if (flags & 1) { /* loop end: jump; without repeat the voice goes silent */
-      v->cur_addr = v->loop_addr & ~15u;
-      if (!(flags & 2)) {
-        v->env_phase = PSX_ENV_OFF;
-        v->envx = 0;
-        v->counter = 0;
-        return;
-      }
-    } else {
-      v->cur_addr = ram_addr(v->cur_addr + 16);
-    }
-    voice_block_start(v);
+    if (!v->dec_valid)
+      voice_decode(v); /* keep the decoder history right */
+    if (!voice_next_block(v))
+      return;
   }
   v->counter = total;
 }
 
+/* Volume registers in fixed mode: -0x4000..0x3FFF means -1.0..+1.0. Sweep
+ * modes (bit 15) aren't used by Spyro and play at the base level. */
+static int vol_q15(short reg) {
+  int v = (reg & 0x8000) ? 0x3FFF : reg;
+  if (v > 0x3FFF)
+    v = 0x3FFF;
+  return v * 2;
+}
+
+/* One voice's next output sample (linear interpolation between ADPCM
+ * samples; the hardware uses a 4-tap Gaussian, see translation-log). */
+static int voice_sample(PsxSpuVoice *v) {
+  unsigned int step = v->pitch > 0x4000 ? 0x4000 : v->pitch;
+  int i, a, b, frac, out;
+  if (!v->dec_valid)
+    voice_decode(v);
+  i = (int)(v->counter >> 12);
+  frac = (int)(v->counter & 0xFFF);
+  a = i == 0 ? v->prev : v->dec[i - 1];
+  b = v->dec[i];
+  out = a + (((b - a) * frac) >> 12);
+  v->counter += step;
+  while (v->counter >= BLOCK_SAMPLES << 12) {
+    v->counter -= BLOCK_SAMPLES << 12;
+    if (!voice_next_block(v))
+      break;
+    voice_decode(v);
+  }
+  return out * v->envx >> 15;
+}
+
+#define VBLANK_SAMPLES (PSX_SPU_RATE / PSX_SPU_VBLANK_HZ)
+
 void psx_spu_vblank(void) {
-  for (int i = 0; i < PSX_SPU_VOICES; i++)
-    psx_spu_voice_advance(&g_psx_spu.voice[i], PSX_SPU_RATE / PSX_SPU_VBLANK_HZ);
+  static short out[VBLANK_SAMPLES * 2];
+  const PsxCdStream *cd = psx_cd_stream();
+  int n, i;
+  for (n = 0; n < VBLANK_SAMPLES; n++) {
+    int l = 0, r = 0, cl, cr;
+    for (i = 0; i < PSX_SPU_VOICES; i++) {
+      PsxSpuVoice *v = &g_psx_spu.voice[i];
+      int s;
+      if (v->env_phase == PSX_ENV_OFF || v->env_phase == PSX_ENV_RELEASE)
+        continue;
+      s = voice_sample(v);
+      l += s * vol_q15(v->vol_l) >> 15;
+      r += s * vol_q15(v->vol_r) >> 15;
+    }
+    l = l * vol_q15(g_psx_spu.mvol_l) >> 15;
+    r = r * vol_q15(g_psx_spu.mvol_r) >> 15;
+    psx_xa_next(&cl, &cr);
+    if (g_psx_spu.cd_mix && !cd->muted) {
+      /* CdMix routes the drive's channels (0x80 = 1.0): PsyQ's CdMix writes
+       * val0..3 to the L->L, L->R, R->R, R->L registers (asm/psyq.s
+       * func_80065108; psx-spx CDROM "Audio Volume"), not in the order its
+       * header comments say. Then the SPU's CD input volume (0x7FFF = 1.0). */
+      int ml = (cl * cd->mix[0] + cr * cd->mix[3]) >> 7;
+      int mr = (cl * cd->mix[1] + cr * cd->mix[2]) >> 7;
+      l += ml * g_psx_spu.cd_vol_l >> 15;
+      r += mr * g_psx_spu.cd_vol_r >> 15;
+    }
+    out[n * 2] = (short)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
+    out[n * 2 + 1] = (short)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
+  }
+  psx_audio_out(out, VBLANK_SAMPLES);
 }
 
 void SpuInit(void) {
@@ -110,6 +210,8 @@ static void voice_key_on(PsxSpuVoice *v) {
   v->cur_addr = v->start_addr & ~15u;
   v->counter = 0;
   v->hist[0] = v->hist[1] = 0;
+  v->prev = 0;
+  v->dec_valid = 0;
   v->keyon_seq++;
   voice_block_start(v);
 }

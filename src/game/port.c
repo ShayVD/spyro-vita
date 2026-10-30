@@ -25,9 +25,31 @@ static void scratch_relocs(void) {
     **r = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (**r & 0x3FFu));
 }
 
+#if SPYRO_PSX_LAYOUT
+/* tools/data2s.py --map: the game's data labels are absolute symbols at their
+ * PS1 addresses (decisions D23); copy their initial bytes into the arena. */
+typedef struct {
+  uint32_t psx_addr;
+  const void *image;
+  uint32_t image_size, psx_span;
+} PsxImage;
+extern const PsxImage s1_psx_image[];
+
+static void psx_layout(void) {
+  const PsxImage *p;
+  for (p = s1_psx_image; p->psx_addr; p++)
+    memcpy(PSX_ARENA(p->psx_addr), p->image,
+           p->image_size < p->psx_span ? p->image_size : p->psx_span);
+}
+#endif
+
 void spyro_main(void) {
   psx_overlays_init();
+#if SPYRO_PSX_LAYOUT
+  psx_layout(); /* D_8006BBE0, the OT terminator, is already in place */
+#else
   memcpy(PSX_ARENA(0x8006BBE0), D_8006BBE0, 0x14);
+#endif
   scratch_relocs();
   g_mips_sp = (uint32_t)(uintptr_t)PSX_ARENA(EMU_STACK_TOP);
   spyro_decomp_main();

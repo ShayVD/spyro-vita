@@ -2,6 +2,7 @@
  * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
  * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
 #include "host.h"
+#include "psx_arena.h"
 #include "psx_hooks.h"
 
 #include <assert.h>
@@ -43,6 +44,12 @@ static int shot_due(int v) {
 void host_vblank(void) {
   int v = ++s_vblank;
 
+  for (int i = 0; i < g_host_opts.npokes; i++)
+    if (g_host_opts.pokes[i].vblank == v) {
+      *(uint32_t *)PSX_ARENA(g_host_opts.pokes[i].addr) = g_host_opts.pokes[i].value;
+      host_log("poke %08x = %08x", g_host_opts.pokes[i].addr,
+               g_host_opts.pokes[i].value);
+    }
   host_pad_vblank(v);
   psx_cd_vblank();
   psx_spu_vblank();
@@ -58,9 +65,18 @@ void host_vblank(void) {
       snprintf(path, sizeof path, "%s/vram-%d.png", g_host_opts.shot_dir, v);
       host_shot_vram(path);
     }
+    if (g_host_opts.moby_dump) {
+      snprintf(path, sizeof path, "%s/mobys-%d.tsv", g_host_opts.shot_dir, v);
+      spyro_moby_dump(path);
+    }
   }
+  spyro_trace_vblank(v);
+  host_serve_vblank(v);
+  host_step_vblank(v);
   if (g_host_opts.frames > 0 && v >= g_host_opts.frames) {
     host_log("--frames %d reached, exiting", g_host_opts.frames);
+    host_audio_close();
+    spyro_trace_close();
     host_log_flush();
     fflush(stdout);
     exit(0);

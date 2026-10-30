@@ -340,6 +340,20 @@ static void raster_tri(const GrVertex *v0, const GrVertex *v1,
   }
 }
 
+/* --tri-dump V: one log line per triangle drawn after vblank V (DrawOTag
+ * runs between vblanks; the next shot or two shows that frame). */
+static void dump_tri(const GrVertex *p) {
+  int k;
+  char buf[512], *o = buf;
+  o += sprintf(o, "tri %s blend %d page %04x clut %04x org %d,%d",
+               s_tex == g_vramTexture ? "tex" : "flat", (int)s_blend,
+               (uint16_t)p[0].page, (uint16_t)p[0].clut, s_org_x, s_org_y);
+  for (k = 0; k < 3; k++)
+    o += sprintf(o, " | %d,%d uv %d,%d rgb %d,%d,%d", p[k].x, p[k].y, p[k].u,
+                 p[k].v, p[k].r, p[k].g, p[k].b);
+  host_log("%s", buf);
+}
+
 void GR_DrawTriangles(int start_vertex, int triangles) {
   int i;
   if (!s_verts || start_vertex < 0 || start_vertex + triangles * 3 > s_nverts)
@@ -352,6 +366,8 @@ void GR_DrawTriangles(int start_vertex, int triangles) {
   }
   for (i = 0; i < triangles; i++) {
     const GrVertex *p = s_verts + start_vertex + i * 3;
+    if (g_host_opts.tri_dump && host_vblank_count() == g_host_opts.tri_dump)
+      dump_tri(p);
     raster_tri(&p[0], &p[1], &p[2]);
   }
 }

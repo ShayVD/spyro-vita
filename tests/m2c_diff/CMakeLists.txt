@@ -17,8 +17,11 @@ target_include_directories(test_m2c_diff PRIVATE "${GEN_DIR}"
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
 target_compile_definitions(test_m2c_diff PRIVATE
   M2C_DIFF_ENTRIES="m2c_diff_math_entries.h")
-target_link_libraries(test_m2c_diff PRIVATE spyro_game spyro_platform_linux32
-  spyro_platform_common psycross m pthread)
+# A group: the game, platform and PsyCross libraries refer to each other
+# (libspu's audio sink is in the linux32 layer, PsyCross's LIBETC calls back
+# into it), and nothing in the test pulls those objects in first.
+target_link_libraries(test_m2c_diff PRIVATE -Wl,--start-group spyro_game
+  spyro_platform_linux32 spyro_platform_common psycross -Wl,--end-group m pthread)
 target_compile_options(test_m2c_diff PRIVATE ${SPYRO_HOST_FLAGS})
 target_link_options(test_m2c_diff PRIVATE -m32 -no-pie)
 add_test(NAME m2c_diff_math COMMAND test_m2c_diff "${CMAKE_SOURCE_DIR}/logs/m2c-math")

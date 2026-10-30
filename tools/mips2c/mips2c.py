@@ -639,6 +639,19 @@ class Translator:
         out.append("  u32 sp = g_mips_sp, jt_ = entry_;")
         out.append("  const u32 sp_entry_ = sp;")
         out.append("  (void)at; (void)k0; (void)k1; (void)gp; (void)hi; (void)lo;")
+        # Oracle replay (src/game/oracle_replay.c): the outermost call takes the
+        # emulator's registers, as hand-written entry points pass inputs in
+        # any register. Host debug build only.
+        out.append("#if MIPS2C_REPLAY")
+        out.append("  if (g_m2c_seed) {")
+        out.append("    const u32 *r_ = g_m2c_seed;")
+        out.append("    g_m2c_seed = 0;")
+        out.append("    at = r_[1]; v0 = r_[2]; v1 = r_[3]; t0 = r_[8]; t1 = r_[9]; t2 = r_[10]; t3 = r_[11];")
+        out.append("    t4 = r_[12]; t5 = r_[13]; t6 = r_[14]; t7 = r_[15]; s0 = r_[16]; s1 = r_[17]; s2 = r_[18];")
+        out.append("    s3 = r_[19]; s4 = r_[20]; s5 = r_[21]; s6 = r_[22]; s7 = r_[23]; t8 = r_[24]; t9 = r_[25];")
+        out.append("    gp = r_[28]; fp = r_[30]; lo = r_[32]; hi = r_[33];")
+        out.append("  }")
+        out.append("#endif")
         out.append("  goto dispatch_;")
         out += body
         out.append("end_:")
@@ -672,6 +685,26 @@ class Translator:
         return "\n".join(out) + "\n"
 
 
+def index_source(entries):
+    """m2c_index.c: PS1 address, name and NAME__m2c of every entry point, for
+    spyro --replay (tools/oracle/capture.lua)."""
+    out = ['#include "mips2c_rt.h"', ""]
+    for a, g in sorted(entries):
+        out.append(f"u32 {g}__m2c(u32, u32, u32, u32);")
+    out += ["", "const M2cEntry m2c_index[] = {"]
+    for a, g in sorted(entries):
+        out.append(f'  {{0x{a:08X}u, "{g}", {g}__m2c}},')
+    out += ["  {0, 0, 0},", "};", ""]
+    return "\n".join(out)
+
+
+def write_if_changed(path, src):
+    old = open(path).read() if os.path.exists(path) else None
+    if old != src:
+        with open(path, "w") as f:
+            f.write(src)
+
+
 def load_hints(path):
     if not path:
         return {}
@@ -686,13 +719,14 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--hints")
     ap.add_argument("--list", help="write the generated file names here")
+    ap.add_argument("--index", help="write a table of every entry point here (oracle replay)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
     try:
         units = [Unit(os.path.join(a.root, f), f) for f in a.files]
         tr = Translator(units, load_hints(a.hints))
         os.makedirs(a.out_dir, exist_ok=True)
-        names = []
+        names, entries = [], []
         for u in units:
             src = tr.translate(u)
             out = os.path.join(a.out_dir, u.name + ".c")
@@ -701,7 +735,10 @@ def main():
             if old != src:
                 with open(out, "w") as f:
                     f.write(src)
+            entries += [(a, g) for g, a in u.glabels]
             print(f"mips2c: {u.rel}: {len(u.insns)} insns, {len(u.glabels)} entries", file=sys.stderr)
+        if a.index:
+            write_if_changed(a.index, index_source(entries))
     except Fail as e:
         print(f"mips2c: error: {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,16 @@
+# New game from the title (the menu part of artisans_fairy.txt).
+2 none
+1902 start
+1908 none
+2102 cross
+2108 none
+2402 cross
+2408 none
+2602 cross
+2608 none
+2802 cross
+2808 none
+3002 cross
+3008 none
+3202 cross
+3208 none

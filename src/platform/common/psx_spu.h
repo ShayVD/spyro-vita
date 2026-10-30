@@ -1,7 +1,7 @@
 /* SPU state behind our libspu (docs/porting-plan.md §6): the 512 KB SPU RAM
  * image and 24 voices with the hardware's playback position (current ADPCM
- * block + 4.12 sample counter). psx_spu_vblank() advances positions without
- * decoding; a mixer can later walk the same state per output sample. */
+ * block + 4.12 sample counter). psx_spu_vblank() mixes one vblank of output
+ * (735 samples at 44.1 kHz) and hands it to psx_audio_out(). */
 #ifndef PSX_SPU_H
 #define PSX_SPU_H
 
@@ -30,8 +30,12 @@ typedef struct {
   short envx;              /* 0..0x7FFF */
   unsigned int cur_addr;   /* current 16-byte ADPCM block */
   unsigned int counter;    /* position in the block, 4.12 samples (28 per block) */
-  short hist[2];           /* ADPCM decoder history, for the mixer */
+  short hist[2];           /* ADPCM decoder history (older, old) */
   unsigned int keyon_seq;  /* bumped on each key on */
+  /* mixer */
+  short dec[28];           /* cur_addr's block, decoded */
+  short prev;              /* last sample of the block before it */
+  int dec_valid;
 } PsxSpuVoice;
 
 typedef struct {
@@ -51,6 +55,10 @@ extern PsxSpu g_psx_spu;
 /* Moves a keyed voice on by `samples` output samples at 44100 Hz, following
  * the ADPCM block flags (loop start, loop end, repeat). */
 void psx_spu_voice_advance(PsxSpuVoice *v, unsigned int samples);
+
+/* Provided by the platform: the mixer's output, 44.1 kHz s16 interleaved
+ * stereo, pushed once per vblank from psx_spu_vblank(). */
+void psx_audio_out(const short *pcm, int frames);
 
 #ifdef __cplusplus
 }

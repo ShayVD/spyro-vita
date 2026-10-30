@@ -146,6 +146,23 @@ static void protect_pages(const Snap *s, int prot) {
   }
 }
 
+/* With the PS1 layout (decisions D23) the game's globals live in the arena
+ * at their PS1 addresses, so the captured globals' pages need mapping too. */
+static void protect_globals(const Snap *s, int prot) {
+  const u8 *p = s->globals;
+  for (u32 i = 0; i < s->nglobals; i++) {
+    u32 a, size;
+    memcpy(&a, p, 4);
+    memcpy(&size, p + 4, 4);
+    uintptr_t h = (uintptr_t)global_host(a, size);
+    if (h >= g_psx_arena_base + PAGE && h < g_psx_arena_base + PSX_RAM_SIZE) {
+      uintptr_t lo = h & ~(uintptr_t)(PAGE - 1);
+      mprotect((void *)lo, (h + size - lo + PAGE - 1) & ~(uintptr_t)(PAGE - 1), prot);
+    }
+    p += 8 + size;
+  }
+}
+
 static int verbose;
 static unsigned g_mismatch_shown;
 
@@ -161,6 +178,7 @@ static int run_case(const char *name, u32 (*fn)(u32, u32, u32, u32),
   const u8 *p;
   /* Entry state. */
   protect_pages(e, PROT_READ | PROT_WRITE);
+  protect_globals(e, PROT_READ | PROT_WRITE);
   p = e->pages;
   for (u32 i = 0; i < e->npages; i++, p += 4 + PAGE) {
     u32 a;
@@ -265,6 +283,7 @@ static int run_case(const char *name, u32 (*fn)(u32, u32, u32, u32),
   }
 out:
   protect_pages(e, PROT_NONE);
+  protect_globals(e, PROT_NONE);
   if (result == 1)
     g_mismatch_shown++;
   return result;

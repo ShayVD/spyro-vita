@@ -252,6 +252,11 @@ static void test_time_and_pad(const char *outdir) {
   VSyncCallback(NULL);
 }
 
+/* The game-side trace (src/game/trace.c) isn't linked into this test. */
+void spyro_trace_vblank(int vblank) { (void)vblank; }
+void spyro_trace_close(void) {}
+void spyro_moby_dump(const char *path) { (void)path; }
+
 int main(int argc, char **argv) {
   const char *outdir = argc > 1 ? argv[1] : ".";
   psx_arena_init();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the pinned PCSX-Redux build used as the behaviour oracle (porting-plan
 # §7.3, step 13) and print the path of its executable. macOS arm64 build, run
-# natively (decisions D22). PCSX-Redux is GPL: it runs out of process only and
+# natively (decisions D24). PCSX-Redux is GPL: it runs out of process only and
 # is never linked.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"

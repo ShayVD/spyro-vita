@@ -4,6 +4,10 @@ One entry per function translated from asm to C: function, method, how it was ve
 
 **mips2c v0** (`tools/mips2c/mips2c.py`, M1): one C function per `.s` file, every glabel an entry; registers as locals, `$sp` on the emulated stack in the arena; every load and store maps the KUSEG RAM mirror (0x00000000-0x001FFFFF) onto the arena; computed jumps dispatch on PS1 code addresses. "Ran without fault" means no crash, no `mips2c_bad_jump` and no PsyCross parse error in `logs/run1-final3` (title and menu, 2600 vblanks) and `logs/run1-demo4` (12000 vblanks, two attract demos). It is not proof of equivalence. "Differential test" means `tests/m2c_diff` replayed calls captured in PCSX-Redux (porting-plan §7.3, decision D22) against the translation and compared registers, GTE, scratchpad and memory.
 
+**M2 status (2026-10-29, before the oracle; superseded below):** no function was verified against the emulator yet, as PCSX-Redux was waiting for download approval. What M2 adds is gameplay coverage on the host, which exercises the translated pete, camera, collision, renderer and gamestate code in Artisans: walking, charge, flame, jump and glide, freeing Nestor (dragon cutscene), the save fairy and "GAME SAVED", pause, options and inventory, respawn and game over, plus gem collection in both attract demos (logs `run3-*` to `run6-*`, listed in `docs/host-build.md`). One translation-environment bug was found and fixed this way: `r_environment.s` tests the sign bit of a pointer into `D_8006FCF4`, which only works with the game's data at its PS1 addresses (decisions D23). "Ran without fault" below now also covers these runs.
+
+**Oracle status (2026-10-30):** PCSX-Redux runs (decisions D8). The "Verified by" column of 98 translated entry points now reads "Oracle replay": every sampled call was replayed through the translated C from the emulator's entry state (registers, RAM, scratchpad, GTE) and matched the emulator's exit state (948 of 948 samples; `logs/run8-oracle/cap3` boot, title and both attract demos; `logs/run8-oracle/cap5-fairy` new game, freeing Nestor, the save fairy; `logs/run8-oracle/cap6-tour` the pete and camera functions in 30 levels, reached with the level-warp cheat). What isn't compared is listed with reasons in `tools/oracle/ignore_ranges.txt` (interrupt-written state, the asm spill area, libcd DMA, dead return registers); how the replay works is in `src/game/oracle_replay.c`. M1's runner (decisions D24) adds `tests/m2c_diff` differential cases for `math.s` and `tests/gte`, where PsyCross's GTE matches PCSX-Redux bit for bit on 9,314 vectors; rows that have both say "Also differential test". The 47 rows still without a replay are mostly internal labels (`D_…`, entered by jumps, not calls), functions these runs don't call, and the credits overlay. Both attract demos also match the emulator tick for tick on every traced field (Stone Hill 866 ticks, Doctor Shemp 768).
+
 | Function | Method | Verified by | Notes |
 |---|---|---|---|
 | `Memset` | hand (`asm/memory.s`), src/game/memory.c | Read against the asm. Called in run1 (no fault). | Same stop condition as the asm (size must be a non-zero multiple of 4). |
@@ -14,76 +18,76 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `func_800168DC` | hand (`asm/order_table.s`), src/game/order_table.c | Read against the asm. Called in run1 (no fault). |  |
 | `rand`, `srand` | hand (`asm/psyq.s`, PsyQ libc), src/game/rand_psyq.c | Read against the asm. Called in run1 (no fault). | PsyQ LCG; seed 0 at boot, as its BSS word. |
 | `func_80017FD4` | hand (`asm/system_time.s`), src/game/system_time.c | Read against the asm. Called in run1 (no fault). | Root counter 2 derived from the vblank count (4,233,600 Hz / 59.94), deterministic; only seeds the title fairy. |
-| `Atan2Fast` | mips2c v0, unit `asm/math.s` (1322 insns) | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | GTE via PsyCross |
-| `Atan2` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `Sin` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `Cos` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80016D08` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `RotVec8ToMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `Atan2Fast` | mips2c v0, unit `asm/math.s` (1322 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | GTE via PsyCross |
+| `Atan2` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `Sin` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `Cos` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80016D08` | mips2c v0, unit `asm/math.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `RotVec8ToMatrix` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
 | `func_80016FD0` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `VecRotateByMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecRotateByLastMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecRotateByCam` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRotateByMatrix` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRotateByLastMatrix` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRotateByCam` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
 | `func_80017188` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `VecMagnitude` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecRefineMagnitude` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017330` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017428` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 10/10 cases match PCSX-Redux. | see first row of unit |
+| `VecMagnitude` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRefineMagnitude` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017330` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017428` | mips2c v0, unit `asm/math.s` | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 10/10 cases match PCSX-Redux. | see first row of unit |
 | `func_80017548` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `VecScaleToLength` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecScaleToLength` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
 | `func_80017614` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `VecShiftLeft` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecShiftRight` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecNull` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecCopy` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecShiftLeft` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecShiftRight` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecNull` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecCopy` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
 | `func_8001771C` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `VecAdd` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecSub` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecMult` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_800177F8` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 4/4 cases match PCSX-Redux. | see first row of unit |
+| `VecAdd` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecSub` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecMult` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_800177F8` | mips2c v0, unit `asm/math.s` | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 4/4 cases match PCSX-Redux. | see first row of unit |
 | `func_80017854` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
 | `func_80017894` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `func_80017908` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017928` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017948` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `func_8001796C` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `OctDistance` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_800179F0` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017A38` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017AA4` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017B48` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `func_80017BFC` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017908` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017928` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017948` | mips2c v0, unit `asm/math.s` | Oracle replay: 1/1 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8001796C` | mips2c v0, unit `asm/math.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `OctDistance` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_800179F0` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017A38` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017AA4` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017B48` | mips2c v0, unit `asm/math.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80017BFC` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
 | `func_80017C24` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
-| `func_80017C4C` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `VecToShortVec` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `func_80017C84` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
-| `ColTriUnpack` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20 cases incomplete, it reads level data through `g_Environment` outside the captured pages. Ran without fault in run1. | see first row of unit |
-| `func_80017D7C` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 1/1 cases match PCSX-Redux. | see first row of unit |
-| `MobyAlloc` | mips2c v0, unit `asm/42CC4.s` (1067 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 4 packed-pointer rebase(s); scratchpad (2 bases); GTE via PsyCross |
-| `MobyFree` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `MobyUpdateCollision` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `MobySetShaded` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800529E4` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `MobyGetAnimatedVertex` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `func_80017C4C` | mips2c v0, unit `asm/math.s` | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecToShortVec` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017C84` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `ColTriUnpack` | mips2c v0, unit `asm/math.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 20 cases incomplete, it reads level data through `g_Environment` outside the captured pages. Ran without fault in run1. | see first row of unit |
+| `func_80017D7C` | mips2c v0, unit `asm/math.s` | Oracle replay: 1/1 samples match PCSX-Redux (run8-oracle/cap3). Also differential test (tests/m2c_diff, `logs/m2c-math1`): 1/1 cases match PCSX-Redux. | see first row of unit |
+| `MobyAlloc` | mips2c v0, unit `asm/42CC4.s` (1067 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 4 packed-pointer rebase(s); scratchpad (2 bases); GTE via PsyCross |
+| `MobyFree` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `MobyUpdateCollision` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 5/5 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `MobySetShaded` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_800529E4` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `MobyGetAnimatedVertex` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). | see first row of unit |
 | `func_80052F38` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800530C0` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `MobyUpdateShadow` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80051FEC` | mips2c v0, unit `asm/moby_lists.s` (310 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | scratchpad (1 bases); GTE via PsyCross |
-| `func_800521C0` | mips2c v0, unit `asm/moby_lists.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800522C0` | mips2c v0, unit `asm/moby_lists.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80053570` | mips2c v0, unit `asm/particle_alloc.s` (77 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80053608` | mips2c v0, unit `asm/particle_alloc.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColorLerp` | mips2c v0, unit `asm/images.s` (96 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | GTE via PsyCross |
+| `func_800530C0` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). | see first row of unit |
+| `MobyUpdateShadow` | mips2c v0, unit `asm/42CC4.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80051FEC` | mips2c v0, unit `asm/moby_lists.s` (310 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | scratchpad (1 bases); GTE via PsyCross |
+| `func_800521C0` | mips2c v0, unit `asm/moby_lists.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_800522C0` | mips2c v0, unit `asm/moby_lists.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80053570` | mips2c v0, unit `asm/particle_alloc.s` (77 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
+| `func_80053608` | mips2c v0, unit `asm/particle_alloc.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `ColorLerp` | mips2c v0, unit `asm/images.s` (96 insns) | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | GTE via PsyCross |
 | `func_80017E98` | mips2c v0, unit `asm/images.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017F24` | mips2c v0, unit `asm/images.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColTraceRay` | mips2c v0, unit `asm/collision.s` (3932 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 4 packed-pointer rebase(s); scratchpad (18 bases); GTE via PsyCross |
+| `func_80017F24` | mips2c v0, unit `asm/images.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap3). | see first row of unit |
+| `ColTraceRay` | mips2c v0, unit `asm/collision.s` (3932 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 4 packed-pointer rebase(s); scratchpad (18 bases); GTE via PsyCross |
 | `D_8004B528` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004B590` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004B610` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004BC60` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004BCC8` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004BD48` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColSphere` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `ColSphere` | mips2c v0, unit `asm/collision.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `D_8004C4EC` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004C550` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004C5D0` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
@@ -94,68 +98,76 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `D_8004D090` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004D0E0` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004D2E0` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColFindFloor` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8004DF24` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `ColFindFloor` | mips2c v0, unit `asm/collision.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8004DF24` | mips2c v0, unit `asm/collision.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `ColSpyroInHitbox` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColMoby` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `ColMoby` | mips2c v0, unit `asm/collision.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `D_8004E5B8` | mips2c v0, unit `asm/collision.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8001F158` | mips2c v0, unit `asm/renderers/r_moby.s` (4699 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 4 packed-pointer rebase(s); scratchpad (6 bases); GTE via PsyCross |
-| `func_8001F798` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800208FC` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80020F34` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `func_8001F158` | mips2c v0, unit `asm/renderers/r_moby.s` (4699 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 4 packed-pointer rebase(s); scratchpad (6 bases); GTE via PsyCross |
+| `func_8001F798` | mips2c v0, unit `asm/renderers/r_moby.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_800208FC` | mips2c v0, unit `asm/renderers/r_moby.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80020F34` | mips2c v0, unit `asm/renderers/r_moby.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `D_80022110` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_80022148` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_80022180` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80022A2C` | mips2c v0, unit `asm/renderers/r_moby.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800258F0` | mips2c v0, unit `asm/renderers/r_environment.s` (6199 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | scratchpad (16 bases); GTE via PsyCross |
-| `func_8002A6FC` | mips2c v0, unit `asm/renderers/r_environment.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `func_80022A2C` | mips2c v0, unit `asm/renderers/r_moby.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_800258F0` | mips2c v0, unit `asm/renderers/r_environment.s` (6199 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | scratchpad (16 bases); GTE via PsyCross |
+| `func_8002A6FC` | mips2c v0, unit `asm/renderers/r_environment.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `EnvAnimSetFlags` | mips2c v0, unit `asm/renderers/r_environment.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `EnvAnimGetState` | mips2c v0, unit `asm/renderers/r_environment.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `EnvAnimGetState` | mips2c v0, unit `asm/renderers/r_environment.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
 | `EnvAnimSetFrame` | mips2c v0, unit `asm/renderers/r_environment.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8002B4AC` | mips2c v0, unit `asm/renderers/r_environment.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8004EBA8` | mips2c v0, unit `asm/renderers/r_cyclorama.s` (2058 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | scratchpad (8 bases); GTE via PsyCross |
+| `func_8002B4AC` | mips2c v0, unit `asm/renderers/r_environment.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8004EBA8` | mips2c v0, unit `asm/renderers/r_cyclorama.s` (2058 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | scratchpad (8 bases); GTE via PsyCross |
 | `func_8004F000` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `func_8004F4BC` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `func_8004F7E8` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_8004F890` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8004FDAC` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8004FEA0` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8004FF90` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `D_80050028` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `func_8004FDAC` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8004FEA0` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8004FF90` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `D_80050028` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
 | `func_80050240` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `func_8005060C` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_800506B4` | mips2c v0, unit `asm/renderers/r_cyclorama.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80023AC4` | mips2c v0, unit `asm/renderers/r_pete.s` (1931 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 6 packed-pointer rebase(s); scratchpad (4 bases); GTE via PsyCross |
+| `func_80023AC4` | mips2c v0, unit `asm/renderers/r_pete.s` (1931 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 6 packed-pointer rebase(s); scratchpad (4 bases); GTE via PsyCross |
 | `D_80024054` | mips2c v0, unit `asm/renderers/r_pete.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_800240F8` | mips2c v0, unit `asm/renderers/r_pete.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `D_800241A8` | mips2c v0, unit `asm/renderers/r_pete.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800573C8` | mips2c v0, unit `asm/renderers/r_particles.s` (1540 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | scratchpad (4 bases); GTE via PsyCross |
-| `func_800580F4` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800584C4` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8005882C` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80058864` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80058AE8` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `func_800573C8` | mips2c v0, unit `asm/renderers/r_particles.s` (1540 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | scratchpad (4 bases); GTE via PsyCross |
+| `func_800580F4` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_800584C4` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_8005882C` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80058864` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80058AE8` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `func_80058B60` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80058B68` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80058BA8` | mips2c v0, unit `asm/renderers/r_particles.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80059A48` | mips2c v0, unit `asm/renderers/r_shadows.s` (650 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 3 packed-pointer rebase(s); scratchpad (12 bases); GTE via PsyCross |
-| `func_80059F8C` | mips2c v0, unit `asm/renderers/r_shadows.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80058D64` | mips2c v0, unit `asm/renderers/r_flame.s` (452 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | GTE via PsyCross |
-| `func_80033F08` | mips2c v0, unit `asm/nonmatchings/camera/func_80033F08.s` (164 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80034480` | mips2c v0, unit `asm/nonmatchings/camera/func_80034480.s` (513 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80034CE8` | mips2c v0, unit `asm/nonmatchings/camera/func_80034CE8.s` (687 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_800357A4` | mips2c v0, unit `asm/nonmatchings/camera/func_800357A4.s` (493 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80035FB4` | mips2c v0, unit `asm/nonmatchings/camera/func_80035FB4.s` (1302 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80050BD0` | mips2c v0, unit `asm/nonmatchings/cyclorama/func_80050BD0.s` (1287 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_8002F3E4` | mips2c v0, unit `asm/nonmatchings/gamestates/update/func_8002F3E4.s` (2108 insns) | Not reached in run1. Builds and links. |  |
-| `func_800314B4` | mips2c v0, unit `asm/nonmatchings/gamestates/update/func_800314B4.s` (1041 insns) | Not reached in run1. Builds and links. |  |
+| `func_80058B68` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80058BA8` | mips2c v0, unit `asm/renderers/r_particles.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80059A48` | mips2c v0, unit `asm/renderers/r_shadows.s` (650 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 3 packed-pointer rebase(s); scratchpad (12 bases); GTE via PsyCross |
+| `func_80059F8C` | mips2c v0, unit `asm/renderers/r_shadows.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
+| `func_80058D64` | mips2c v0, unit `asm/renderers/r_flame.s` (452 insns) | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). | GTE via PsyCross |
+| `func_80033F08` | hand (M2) from `asm/nonmatchings/camera/func_80033F08.s`, src/game/camera_hand.c; replaces the mips2c v0 unit | Oracle replay of the hand C: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour: 30 levels), and so do all samples of its callers (func_80034480, func_800357A4, func_80035FB4); both attract demos match tick for tick. | Returns its result in v0 only (the asm leaves an angle in v1, dead at all 22 call sites: `tools/oracle/v1_live.py`). |
+| `func_80034480` | mips2c v0, unit `asm/nonmatchings/camera/func_80034480.s` (513 insns) | Oracle replay: 35/35 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80034CE8` | mips2c v0, unit `asm/nonmatchings/camera/func_80034CE8.s` (687 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_800357A4` | mips2c v0, unit `asm/nonmatchings/camera/func_800357A4.s` (493 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80035FB4` | mips2c v0, unit `asm/nonmatchings/camera/func_80035FB4.s` (1302 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80050BD0` | mips2c v0, unit `asm/nonmatchings/cyclorama/func_80050BD0.s` (1287 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
+| `func_8002F3E4` | mips2c v0, unit `asm/nonmatchings/gamestates/update/func_8002F3E4.s` (2108 insns) | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). |  |
+| `func_800314B4` | mips2c v0, unit `asm/nonmatchings/gamestates/update/func_800314B4.s` (1041 insns) | Oracle replay: 3/3 samples match PCSX-Redux (run8-oracle/cap5-fairy). |  |
 | `func_8003BFC0` | mips2c v0, unit `asm/nonmatchings/moby_helpers/func_8003BFC0.s` (230 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
 | `func_credits_8007AA50` | mips2c v0, unit `asm/nonmatchings/overlays/credits/func_credits_8007AA50.s` (1381 insns) | Not reached in run1. Builds and links. |  |
 | `func_credits_8007BFD0` | mips2c v0, unit `asm/nonmatchings/overlays/credits/func_credits_8007BFD0.s` (218 insns) | Not reached in run1. Builds and links. |  |
-| `func_8003EA68` | mips2c v0, unit `asm/nonmatchings/pete/func_8003EA68.s` (1324 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_8003FE40` | mips2c v0, unit `asm/nonmatchings/pete/func_8003FE40.s` (1098 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80041670` | mips2c v0, unit `asm/nonmatchings/pete/func_80041670.s` (2699 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80043FE4` | mips2c v0, unit `asm/nonmatchings/pete/func_80043FE4.s` (3865 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80047B60` | mips2c v0, unit `asm/nonmatchings/pete/func_80047B60.s` (889 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80048D10` | mips2c v0, unit `asm/nonmatchings/pete/func_80048D10.s` (562 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
-| `func_80049FAC` | mips2c v0, unit `asm/nonmatchings/pete/func_80049FAC.s` (149 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). |  |
+| `func_8003EA68` | mips2c v0, unit `asm/nonmatchings/pete/func_8003EA68.s` (1324 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_8003FE40` | mips2c v0, unit `asm/nonmatchings/pete/func_8003FE40.s` (1098 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80041670` | mips2c v0, unit `asm/nonmatchings/pete/func_80041670.s` (2699 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80043FE4` | mips2c v0, unit `asm/nonmatchings/pete/func_80043FE4.s` (3865 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80047B60` | mips2c v0, unit `asm/nonmatchings/pete/func_80047B60.s` (889 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80048D10` | mips2c v0, unit `asm/nonmatchings/pete/func_80048D10.s` (562 insns) | Oracle replay: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour). |  |
+| `func_80049FAC` | hand (M2) from `asm/nonmatchings/pete/func_80049FAC.s`, src/game/pete_hand.c; replaces the mips2c v0 unit | Oracle replay of the hand C: 37/37 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy, run8-oracle/cap6-tour: 30 levels); both attract demos match tick for tick. | Void; v0/v1 at return are dead at every call site. |
+
+## M2 additions
+
+| Function | Method | Verified by | Notes |
+|---|---|---|---|
+| libspu mixer (`psx_spu_vblank`) | hand, `src/platform/common/libspu.c` | WAV of title, intro cutscene and Artisans (`logs/run5-audio/audio.wav`): music and effects present, stereo. Not compared with the emulator. | Linear interpolation, not the SPU's 4-tap Gaussian; envelope is the gate Spyro's fixed ADSR produces; no reverb (Spyro uses none); sweep volumes play at their base level. |
+| XA ADPCM decoder | hand, `src/platform/common/xa.c` | PETEXA sectors decode and play in the WAV above; filter by Setfilter file/channel. | 8-bit XA not handled (Spyro's tracks are 4-bit stereo 37.8 kHz). |
+| `CdMix` routing | hand, `libspu.c` | Read against PsyQ's `CdMix` (`asm/psyq.s` `func_80065108`) and the register docs. | val0 L→L, val1 L→R, val2 R→R, val3 R→L. |
