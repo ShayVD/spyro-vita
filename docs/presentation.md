@@ -233,6 +233,8 @@ From the hardware benchmark log (`logs/hw-be37191-bench`, main `be37191`, 16:9 n
 
 Nothing is removed. With the budget, the 60 fps option can't make the game slower than 30 fps; at 16:9 it just rarely fires yet.
 
+**Confirmed on hardware (main `26f3138`, `logs/hw-26f3138-bench/spyro.log`):** at 30 fps the game thread is already 93–94% busy in free play. OT walk plus raster are 7.9–8.4 ms per vblank, so ~16 ms of each 16:9 frame goes to the OT walk and GPU submission alone. With 60 fps switched on, the in-between frame fitted in 0–41% of ticks, and the picture switched between 60 and 30 fps. **So 60 fps is experimental and off by default (D44)**; widescreen stays on. Making it the default again needs that ~16 ms brought under ~8.
+
 ## Verification
 
 | Check | Result | Logs |
@@ -272,7 +274,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 ## On the Vita
 
-Wired in on 2026-10-30, **on by default** on the Vita (the linux32 host keeps both off, so its oracle checks stay exact). `config.txt` keys: `widescreen=0/1`, `interp=0/1` (`2` without animation, `3` camera only) and `interp_budget=MS` (default 26). The user's guide is `docs/vita-testing.md`. Scripted Vita3K runs (`tools/vita/vita3k_run.sh`) write `widescreen=0` and `interp=0` first, so they still compare with the host unless a run turns them on.
+Wired in on 2026-10-30. On the Vita, **widescreen is on by default; 60 fps is experimental and off by default** (D44: it doesn't fit the CPU at 16:9 yet; see "60 fps on the Vita" above). The linux32 host keeps both off, so its oracle checks stay exact. `config.txt` keys: `widescreen=0/1`, `interp=0/1` (`2` without animation, `3` camera only; `interp=1` counts only with `config_version=2`, which the menu writes, D44) and `interp_budget=MS` (default 26). The user's guide is `docs/vita-testing.md`. Scripted Vita3K runs (`tools/vita/vita3k_run.sh`) write `widescreen=0` and `interp=0` first, so they still compare with the host unless a run turns them on.
 
 **Options menu** (`src/platform/vita/menu.c`, panel drawn by `src/platform/common/menu_panel.c`): hold SELECT and press START.
 - **Pausing:** the menu runs inside the game's VSync wait (`vblank.c`), so the game is paused. Afterwards the real-time count starts again, with no catch-up, so `g_DeltaTime` doesn't jump.
@@ -280,7 +282,8 @@ Wired in on 2026-10-30, **on by default** on the Vita (the linux32 host keeps bo
 - **Changes:**
   - they apply at once (`vita_present_apply`; `present.c` takes them at its next tick, drops its queue when switched off, and starts blending afresh when switched on);
   - widescreen re-scales the GPU targets (`vita_gpu_rescale`);
-  - closing writes the three keys back to `config.txt` and keeps its other lines.
+  - closing writes the three keys back to `config.txt`, with `config_version=2`, and keeps its other lines.
+- **Labels:** `WIDESCREEN`, `60 FPS (EXPERIMENTAL)` (OFF by default; ON, `NO ANIM`, `CAMERA`) and `60 FPS BUDGET`.
 - **Drawing:** the panel is drawn on the CPU, uploaded once, and drawn 1:1 over the last picture by either renderer.
 - **Tests:** `tests/menu_panel` renders the panel on the host; `menu_test=V` drives the menu in scripted runs.
 

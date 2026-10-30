@@ -41,12 +41,13 @@ static const int k_budgets[] = {0, 20, 23, 26, 30}; /* ms; 0: never skip */
 #define NROWS 3
 
 static void rows_for(MenuRow *rows, char *budget, size_t budget_len) {
-  static const char *const k_interp[] = {"OFF", "ON", "ON (NO ANIMATION)", "CAMERA ONLY"};
+  /* short enough to fit beside the label when selected ("< NO ANIM >") */
+  static const char *const k_interp[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
   int i = g_vita_opts.interp;
   rows[0].label = "WIDESCREEN";
   rows[0].value = g_vita_opts.widescreen ? "ON" : "OFF";
-  rows[1].label = "60 FPS";
-  rows[1].value = k_interp[i >= 0 && i <= 3 ? i : 1];
+  rows[1].label = "60 FPS (EXPERIMENTAL)"; /* off by default (D44) */
+  rows[1].value = k_interp[i >= 0 && i <= 3 ? i : 0];
   rows[2].label = "60 FPS BUDGET";
   if (g_vita_opts.interp_budget > 0)
     snprintf(budget, budget_len, "%d MS", g_vita_opts.interp_budget);
@@ -80,7 +81,7 @@ static void save(void) {
   if (f) {
     while (fgets(line, sizeof line, f)) {
       if (!strncmp(line, "widescreen=", 11) || !strncmp(line, "interp=", 7) ||
-          !strncmp(line, "interp_budget=", 14))
+          !strncmp(line, "interp_budget=", 14) || !strncmp(line, "config_version=", 15))
         continue;
       len = strlen(line);
       if (n + len + 1 > cap) {
@@ -102,8 +103,9 @@ static void save(void) {
   }
   if (n)
     fwrite(keep, 1, n, f);
-  fprintf(f, "widescreen=%d\ninterp=%d\ninterp_budget=%d\n", g_vita_opts.widescreen,
-          g_vita_opts.interp, g_vita_opts.interp_budget);
+  /* config_version=2: this interp= is the player's (main.c, read_config) */
+  fprintf(f, "config_version=2\nwidescreen=%d\ninterp=%d\ninterp_budget=%d\n",
+          g_vita_opts.widescreen, g_vita_opts.interp, g_vita_opts.interp_budget);
   fclose(f);
   free(keep);
   vita_log("menu: saved widescreen=%d interp=%d interp_budget=%d", g_vita_opts.widescreen,
@@ -112,8 +114,8 @@ static void save(void) {
 
 /* menu_test=V: what a player would press, one button per 4 pictures
  * (pressed for 2, released for 2), after letting go of the combo: 60 fps
- * off, widescreen off, close. */
-static const uint16_t k_test[] = {0, B_DOWN, B_LEFT, B_UP, B_RIGHT, B_CIRCLE};
+ * one step right (off -> on from the default), widescreen toggled, close. */
+static const uint16_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_RIGHT, B_CIRCLE};
 #define NTEST (int)(sizeof k_test / sizeof k_test[0])
 
 /* vblank.c, at each VSync: runs the menu if it was asked for. Returns 1 if

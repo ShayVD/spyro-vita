@@ -38,13 +38,15 @@
  *                       software rasterizer (default 1)
  *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
  *                       game logic is unchanged; docs/presentation.md, D30)
- *       interp=0        30 fps instead of the default 60: interp=1 adds an
- *                       in-between frame per tick (camera, Spyro, mobys,
+ *       interp=1        60 fps, experimental (default 0: 30 fps; D44):
+ *                       an in-between frame per tick (camera, Spyro, mobys,
  *                       animation, particles); 2: no animation blending;
- *                       3: camera only
+ *                       3: camera only. interp=1 needs config_version=2 in
+ *                       the file too: without it the line is taken as the
+ *                       old default the menu used to write, and read as 0
  *                       (widescreen, interp and interp_budget can also be
  *                       set in the game: hold SELECT and press START; the
- *                       menu writes them back here)
+ *                       menu writes them back here, with config_version=2)
  *       interp_budget=MS  skip the in-between frame while the game's CPU
  *                       time per tick would pass MS (default 26; 0: never)
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
@@ -92,7 +94,7 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 1,
+                        .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 0,
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1};
 
 extern void spyro_main(void);
@@ -154,6 +156,7 @@ static void parse_poke(const char *v) {
 
 static void read_config(void) {
   char line[512];
+  int version = 1, interp_line = 0;
   FILE *f = fopen(VITA_DATA_DIR "/config.txt", "r");
   if (!f)
     return;
@@ -206,7 +209,7 @@ static void read_config(void) {
     else if (!strcmp(line, "widescreen"))
       g_vita_opts.widescreen = atoi(v);
     else if (!strcmp(line, "interp"))
-      g_vita_opts.interp = atoi(v);
+      g_vita_opts.interp = atoi(v), interp_line = 1;
     else if (!strcmp(line, "interp_budget"))
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -223,10 +226,19 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
+    else if (!strcmp(line, "config_version"))
+      version = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
   fclose(f);
+  /* Before 60 fps went experimental (D44) it was the default, and the menu
+   * wrote interp=1 on every save whether or not the player chose it. */
+  if (interp_line && g_vita_opts.interp == 1 && version < 2) {
+    g_vita_opts.interp = 0;
+    vita_log("config: interp=1 without config_version=2 is the old default: 60 fps stays off "
+             "(turn it on in the menu, SELECT+START)");
+  }
 }
 
 /* Without the disc files there is nothing to run: say so on screen (a red

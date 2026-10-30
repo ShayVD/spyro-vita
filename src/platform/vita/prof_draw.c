@@ -10,6 +10,7 @@
 
 #include <psp2/kernel/processmgr.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 enum { D_UPDATE, D_ENV, D_MOBYS, D_PETE, D_FX, D_PARTICLES, D_SKY, D_COUNT };
