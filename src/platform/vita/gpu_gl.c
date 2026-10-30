@@ -28,6 +28,7 @@
 #include "vita.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1258,6 +1259,42 @@ static void write_hd_shot(void) {
   s_hd_shot = 0;
 }
 
+/* Where the part of target t inside VRAM rect (x, y, w, h) goes in a
+ * picture of pw x ph pixels that shows that rect: pos = pixels (x0, y0, x1,
+ * y1, top row first), uv = the target's texture rect. When the picture has
+ * the targets' own scale (res=native, presentation frames) the part starts on
+ * a whole pixel and gets one pixel per target pixel, so nothing is resampled
+ * (Spyro's buffers start 8 lines into the 240-line display: 18.13 of the
+ * screen's 544). 0: t isn't inside the rect. */
+static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, float pos[4],
+                 float uv[4]) {
+  int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
+  int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
+  int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
+  float kx = (float)pw / w, ky = (float)ph / h;
+  float tx0 = (x0 - t->x) * s_sx, tx1 = (x1 - t->x) * s_sx;
+  float ty0 = (y0 - t->y) * s_sy, ty1 = (y1 - t->y) * s_sy;
+  if (x0 >= x1 || y0 >= y1)
+    return 0;
+  pos[0] = (x0 - x) * kx, pos[2] = (x1 - x) * kx;
+  pos[1] = (y0 - y) * ky, pos[3] = (y1 - y) * ky;
+  if (kx - s_sx < 0.01f && s_sx - kx < 0.01f) {
+    tx0 = floorf(tx0 + 0.5f);
+    tx1 = x1 == t->x + t->w ? t->pw : floorf(tx1 + 0.5f);
+    pos[0] = floorf(pos[0] + 0.5f);
+    pos[2] = pos[0] + (tx1 - tx0);
+  }
+  if (ky - s_sy < 0.01f && s_sy - ky < 0.01f) {
+    ty0 = floorf(ty0 + 0.5f);
+    ty1 = y1 == t->y + t->h ? t->ph : floorf(ty1 + 0.5f);
+    pos[1] = floorf(pos[1] + 0.5f);
+    pos[3] = pos[1] + (ty1 - ty0);
+  }
+  uv[0] = tx0 / t->pw, uv[2] = tx1 / t->pw;
+  uv[1] = ty0 / t->ph, uv[3] = ty1 / t->ph;
+  return 1;
+}
+
 /* ---- presentation frames (src/game/present.c: widescreen, 60 fps; D30) ---- */
 
 /* PRESENT_SLOTS textures for present.c's queue, plus a staging one: a
@@ -1309,19 +1346,13 @@ static void pres_capture(int x, int y, int w, int h) {
   glUseProgram(s_prog[P_TEX].prog);
   for (i = 0; i < s_ntargets; i++) {
     const Target *t = &s_targets[i];
-    int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
-    int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
-    int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
-    if (x0 >= x1 || y0 >= y1)
+    float pos[4];
+    if (!place(t, x, y, w, h, s_pw, s_ph, pos, src))
       continue;
-    ndc[0] = (float)(x0 - x) / w * 2 - 1;
-    ndc[2] = (float)(x1 - x) / w * 2 - 1;
-    ndc[1] = (float)(y0 - y) / h * 2 - 1;
-    ndc[3] = (float)(y1 - y) / h * 2 - 1;
-    src[0] = (float)(x0 - t->x) / t->w;
-    src[2] = (float)(x1 - t->x) / t->w;
-    src[1] = (float)(y0 - t->y) / t->h;
-    src[3] = (float)(y1 - t->y) / t->h;
+    ndc[0] = pos[0] / s_pw * 2 - 1;
+    ndc[2] = pos[2] / s_pw * 2 - 1;
+    ndc[1] = pos[1] / s_ph * 2 - 1;
+    ndc[3] = pos[3] / s_ph * 2 - 1;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, t->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1463,22 +1494,13 @@ int vita_gpu_present(void) {
       glUseProgram(s_prog[P_TEX].prog);
       for (i = 0; i < s_ntargets; i++) {
         const Target *t = &s_targets[i];
-        int x0 = d->disp.x > t->x ? d->disp.x : t->x, y0 = d->disp.y > t->y ? d->disp.y : t->y;
-        int x1 = d->disp.x + dw < t->x + t->w ? d->disp.x + dw : t->x + t->w;
-        int y1 = d->disp.y + dh < t->y + t->h ? d->disp.y + dh : t->y + t->h;
-        float fx0, fx1, fy0, fy1;
-        if (x0 >= x1 || y0 >= y1)
+        float pos[4];
+        if (!place(t, d->disp.x, d->disp.y, dw, dh, area_w, SCREEN_H, pos, src))
           continue;
-        fx0 = (float)(x0 - d->disp.x) / dw, fx1 = (float)(x1 - d->disp.x) / dw;
-        fy0 = (float)(y0 - d->disp.y) / dh, fy1 = (float)(y1 - d->disp.y) / dh;
-        ndc[0] = (area_x + fx0 * area_w) / SCREEN_W * 2 - 1;
-        ndc[2] = (area_x + fx1 * area_w) / SCREEN_W * 2 - 1;
-        ndc[1] = 1 - fy0 * 2;
-        ndc[3] = 1 - fy1 * 2;
-        src[0] = (float)(x0 - t->x) / t->w;
-        src[2] = (float)(x1 - t->x) / t->w;
-        src[1] = (float)(y0 - t->y) / t->h;
-        src[3] = (float)(y1 - t->y) / t->h;
+        ndc[0] = (area_x + pos[0]) / SCREEN_W * 2 - 1;
+        ndc[2] = (area_x + pos[2]) / SCREEN_W * 2 - 1;
+        ndc[1] = 1 - pos[1] / SCREEN_H * 2;
+        ndc[3] = 1 - pos[3] / SCREEN_H * 2;
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, t->tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
