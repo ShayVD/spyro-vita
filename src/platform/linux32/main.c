@@ -6,7 +6,7 @@
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
  *         [--pad-after FILE] [--peek ADDR:N]...
- *         [--widescreen | --widescreen-logic]
+ *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats | --present-dirty] [--vcache]
@@ -24,9 +24,11 @@
  *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
  * --serve: real-time vblanks and a browser player on PORT (decisions D22).
- * --widescreen: 16:9 picture from a presentation pass; the logic still sees
- *   the 4:3 frustum. --widescreen-logic: one pass, wider frustum in the logic
- *   too (gameplay can differ). --interp: 60 fps, an extra frame between ticks
+ * --widescreen: 16:9, drawn once (the wider view reaches the logic: mobys
+ *   visible at the edges count as on screen), except in attract demos, which
+ *   keep the original 4:3 logic (a hidden 4:3 draw plus a 16:9 pass) so they
+ *   replay. --widescreen-exact: that two-draw form always (logic identical
+ *   to 4:3); --widescreen-logic: one draw always, demos too (they desync). --interp: 60 fps, an extra frame between ticks
  *   with camera, Spyro, mobys, their animation frames and the particles
  *   blended; --interp-no-anim: transforms only; --interp-camera: camera only.
  *   --interp-budget US: skip the in-between frame while the last tick's game
@@ -68,7 +70,7 @@ static void usage(void) {
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]...\n"
-          "             [--widescreen | --widescreen-logic] "
+          "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
@@ -96,7 +98,7 @@ static void present_report(void) {
     return;
   host_log("present: %lld ticks; per tick us: update %lld, logic draw %lld "
            "(+%lld in VSync waits), passes %lld (%lld passes), snapshot %lld",
-           s->ticks, s->us_update / t, (s->us_logic - s->us_vsync) / t,
+           s->ticks, s->us_update / t, s->us_logic / t,
            s->us_vsync / t, s->us_pass / t, s->passes, s->us_snapshot / t);
   host_log("present: interp frames %lld, skipped %lld (%lld for the budget), "
            "2D narrowed %lld, SPU writes dropped %lld", s->interp_frames,
@@ -237,6 +239,8 @@ int main(int argc, char **argv) {
       g_present.widescreen = 1;
     } else if (strcmp(a, "--widescreen-logic") == 0) {
       g_present.widescreen = g_present.ws_logic = 1;
+    } else if (strcmp(a, "--widescreen-exact") == 0) {
+      g_present.widescreen = g_present.ws_exact = 1;
     } else if (strcmp(a, "--interp") == 0) {
       g_present.interp = g_present.interp_mobys = g_present.interp_anim = 1;
     } else if (strcmp(a, "--interp-no-anim") == 0) {

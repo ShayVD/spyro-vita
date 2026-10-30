@@ -1,0 +1,81 @@
+diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -864,6 +864,11 @@
+ /* Spyro port (docs/decisions.md D39): called when DrawOTag returns, whether
+  * the list was drawn or the pre hook skipped it. */
+ extern void (*g_psyxDrawOTagDone)(void);
++/* Spyro port (docs/presentation.md): nonzero makes ClearImage, LoadImage,
++ * StoreImage and MoveImage do nothing. A presentation pass re-runs the
++ * game's draw; VRAM bookkeeping there (the pause screen saves the texture
++ * pages and overwrites them) must happen once, in the real draw. */
++extern int g_psyxVramFrozen;
+ extern void DrawOTagIO(u_long *p);
+ extern void DrawOTagEnv(u_long *p, DRAWENV *env);
+ extern void DrawPrim(void *p);
+diff --git a/src/psx/LIBGPU.C b/src/psx/LIBGPU.C
+--- a/src/psx/LIBGPU.C
++++ b/src/psx/LIBGPU.C
+@@ -23,8 +23,13 @@
+ 
+ void(*drawsync_callback)(void) = NULL;
+ 
++int g_psyxVramFrozen = 0;
++
+ int ClearImage(RECT16* rect, u_char r, u_char g, u_char b)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
+ 
+ 	// TODO: clear all affected backbuffers
+@@ -34,6 +39,9 @@
+ 
+ int ClearImage2(RECT16* rect, u_char r, u_char g, u_char b)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
+ 
+ 	// TODO: clear all affected backbuffers
+@@ -63,12 +71,18 @@
+ 
+ int LoadImage(RECT16* rect, u_long* p)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_CopyVRAM((unsigned short*)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
+ 	return 0;
+ }
+ 
+ int LoadImage2(RECT16* rect, u_long* p)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_CopyVRAM((unsigned short*)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
+ 
+ 	// simulate immediate mode
+@@ -130,6 +144,9 @@
+ 
+ int MoveImage(RECT16* rect, int x, int y)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_CopyVRAM(NULL, rect->x, rect->y, rect->w, rect->h, x, y);
+ 	return 0;
+ }
+@@ -167,6 +184,9 @@
+ 
+ int StoreImage(RECT16* rect, u_long* p)
+ {
++	if (g_psyxVramFrozen)
++		return 0;
++
+ 	GR_ReadVRAM((unsigned short*)p, rect->x, rect->y, rect->w, rect->h);
+ 	return 0;
+ }

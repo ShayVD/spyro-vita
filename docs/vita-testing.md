@@ -88,6 +88,7 @@ Files the app writes:
 | `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
 | `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
+| `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
@@ -304,22 +305,27 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    flickering or stretched polygons (a wrong depth would show as one), and for dark or pink
    edges on plants and fences (there should be none).
 
-**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default), with the GPU build:
+**First hardware test (main `3b4126a`, user):** red and green textures after the pause menu, the picture snapping between 16:9 and 4:3, scenery popping at the edges, 20–26 fps with widescreen. Causes and fixes: `docs/presentation.md` "Fixes from the first hardware test".
 
-1. `config.txt`: `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
-   (title, and the first attract demo), `stats=1`. Leave it at the title until the demo plays
-   (about 75 s).
-2. In the log: `present: widescreen 1, interp 1 (budget 26 ms), GPU capture`;
-   `gpu: presentation frames 960x544`; `present N:` lines (in-between frames per tick, skips);
-   `vblank N: ... P pictures` (P/5 near 60 when every in-between frame makes it); `busy` in the
-   `time` lines.
-3. The `shot-V-hd.png` files: the picture fills the 16:9 screen, upright, the HUD and the
-   "DEMO MODE" letters keep their shape, and consecutive vblanks show different pictures.
-4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
-   right? Open the options menu (hold SELECT, press START): the panel is readable, the game is
-   paused behind it, and switching widescreen or 60 fps takes effect when it closes. Then try
-   60 fps alone (4:3) and widescreen alone, to see each one's cost in the `time` and `present`
-   lines.
+**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default; second test, after the fixes), with the GPU build:
+
+1. `config.txt`: only `stats=1` (and `shot_hd=1`, `shot=1800,1801,4400,4401,4402` for 960x544
+   pictures of the title and the first attract demo). Leave it at the title until the demo plays
+   (about 75 s), then start a game.
+2. **Red/green:** in Artisans, pause, open the inventory, close it, unpause, several times. The
+   textures must stay right (this broke every texture before).
+3. **Snapping:** play for a few minutes through busy spots. The picture must stay 16:9 the
+   whole time (before, it jumped to 4:3 and back when the game slowed down). In the log,
+   `present N:` lines end with `0 pictures from the 4:3 display` (a few are fine around level
+   loads).
+4. **Popping:** objects and scenery at the left and right edges should not flicker in and out.
+5. **Speed:** `vblank N: … P pictures`: with widescreen on, P should be near 150 per 300 vblanks
+   (30 fps) in gameplay, like 4:3 (before: 100-130). `present N:` lines show how many
+   in-between frames fit (60 fps needs about 300 pictures).
+6. **Menu:** hold SELECT, press START; switch widescreen off and on and 60 fps off and on; the
+   log says `menu: closed after N ms`, and the picture follows each change.
+7. Send back `spyro.log`, the shots, and anything that looked wrong (when, and what you did
+   just before).
 
 **Testing the render resolution** (`res=`, decisions D40), with the GPU build:
 
