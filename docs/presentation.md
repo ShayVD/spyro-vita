@@ -183,6 +183,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 ## For the Vita (M3/M4)
 
+- The Vita target builds with this code (VPK checked after merging M3); nothing there calls the presenter yet, so its picture is unchanged.
 - The platform calls `port_present_frame()` once per vblank. When it returns a frame, show that instead of the PS1 display rect, 16:9 if `port_present_frame_is_wide()`. Set `g_present` from a menu or config file.
 - With the CPU rasteriser (`gpu_soft.c`), the capture is a `StoreImage` of the drawn area, as on the host. With a vitaGL backend, a presentation pass should render into its own target instead (no readback), and 960×544 can be the render resolution. Integer PS1 coordinates then show as wobble at high resolution; that's the existing "sub-pixel later" item.
 - `present.c` reads `g_LevelMobys` and `g_Camera` as C pointers into the arena, as `trace.c` does. Check that this holds with the Vita arena (D25) on the Vita.

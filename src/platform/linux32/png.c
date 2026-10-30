@@ -6,7 +6,7 @@
  * presentation frame (src/game/present.c) scaled to 960x544: full width when
  * widescreen, pillarboxed 4:3 otherwise. */
 #include "host.h"
-#include "present.h"
+#include "../../game/present.h" /* also built by the Vita target */
 
 #include <assert.h>
 #include <stdio.h>
