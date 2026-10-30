@@ -127,5 +127,7 @@ ret func_800357A4
 # and call it again or call the C function func_80034204 (camera.c 141),
 # with v1 unread.
 ret func_80034CE8
+# func_80035FB4 (camera.c 267, void): called only from C (camera.c 564).
+ret func_80035FB4
 # func_80043FE4 (pete.c 1373): called only from C (pete.c 1547, 2091, 2190).
 ret func_80043FE4

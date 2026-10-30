@@ -524,3 +524,477 @@ switchState:
   }
 }
 #endif
+
+#if !M2C_func_80035FB4
+/* camera.c functions without a prototype in camera.h. */
+void ApplySphericalPreset(void);
+void CameraForceToDestination(void);
+void func_80034480(void);
+void func_80034CE8(int pRow);
+void func_80035F58(void);
+
+/* Sphere presets (decomp data). */
+extern SphericalCoordsOffset D_8006C8D4; // Follow
+extern SphericalCoordsOffset D_8006C934; // Behind Spyro
+extern SphericalCoordsOffset D_8006C94C; // Flying ability, turning one way
+extern SphericalCoordsOffset D_8006C964; // Spyro turned towards the camera
+extern SphericalCoordsOffset D_8006C97C; // Flying ability, turning the other way
+extern SphericalCoordsOffset D_8006C994; // State 3
+extern SphericalCoordsOffset D_8006C9AC; // State 4
+extern SphericalCoordsOffset D_8006C9DC; // State 4, Spyro turned towards the camera
+extern SphericalCoordsOffset D_8006CA0C; // Look mode
+extern SphericalCoordsOffset D_8006CB5C; // Beside a moby (CTRL_CAMERA_8000)
+extern SphericalCoordsOffset D_8006CB74; // Facing a moby (CTRL_CAMERA_10000)
+
+extern u_char D_8007527C;  // How far ahead of Spyro's velocity the camera leads
+extern Vector3D D_80077798; // State 6's frozen focus point
+
+static_assert(offsetof(Spyro, m_State) == 0x78, "Spyro.m_State");
+static_assert(offsetof(Spyro, m_walkingState) == 0x7C, "Spyro.m_walkingState");
+static_assert(offsetof(Spyro, m_Physics.m_TrueVelocity) == 0x10C, "Spyro.m_TrueVelocity");
+static_assert(offsetof(Spyro, m_Physics.m_SpeedAngle.m_RotZ) == 0x11C, "Spyro.m_RotZ");
+static_assert(offsetof(Spyro, m_Physics.m_TurnMomentum) == 0x148, "Spyro.m_TurnMomentum");
+static_assert(offsetof(Spyro, m_HeadLookTarget.y) == 0x1A8, "Spyro.m_HeadLookTarget");
+static_assert(offsetof(Spyro, m_ControlFlags) == 0x1F4, "Spyro.m_ControlFlags");
+static_assert(offsetof(Spyro, m_mobyInUseBySpyro) == 0x224, "Spyro.m_mobyInUseBySpyro");
+static_assert(offsetof(Spyro, m_flyingAbility) == 0x24C, "Spyro.m_flyingAbility");
+static_assert(offsetof(Moby, m_Position) == 0xC, "Moby.m_Position");
+static_assert(offsetof(Moby, m_Rotation.z) == 0x46, "Moby.m_Rotation.z");
+static_assert(offsetof(Gamepad, m_Held) == 0x8, "Gamepad.m_Held");
+static_assert(offsetof(Gamepad, m_NoButtonsDown) == 0x18, "Gamepad.m_NoButtonsDown");
+
+/* Which components of m_Simulation SyncSphere copies into m_Sphere. */
+enum { SYNC_AZIMUTH = 1, SYNC_ELEVATION = 2, SYNC_RADIUS = 4 };
+
+static inline int Clamp(int pValue, int pMin, int pMax) {
+  if (pValue < pMin)
+    pValue = pMin;
+  if (pValue > pMax)
+    pValue = pMax;
+  return pValue;
+}
+
+/* Re-derive the simulated sphere from where the camera is, and take the
+ * chosen components of it into the sphere the camera follows. */
+static void SyncSphere(int pWhich) {
+  g_Cam.m_SimFlipped = func_80033F08(&g_Cam.m_Position);
+  if (pWhich & SYNC_AZIMUTH)
+    g_Cam.m_Sphere.m_Coords.azimuth = g_Cam.m_Simulation.m_Coords.azimuth;
+  if (pWhich & SYNC_ELEVATION)
+    g_Cam.m_Sphere.m_Coords.elevation = g_Cam.m_Simulation.m_Coords.elevation;
+  if (pWhich & SYNC_RADIUS)
+    g_Cam.m_Sphere.m_Coords.radius = g_Cam.m_Simulation.m_Coords.radius;
+}
+
+/* The whole sphere becomes the simulated one, so the camera stays where it
+ * is: what most states do while a nudge found by func_80034480 holds
+ * (m_NudgeTicks). */
+static void TakeSimulatedSphere(void) {
+  g_Cam.m_SimFlipped = func_80033F08(&g_Cam.m_Position);
+  g_Cam.m_Sphere = g_Cam.m_Simulation;
+}
+
+static void FocusOnSpyro(void) {
+  g_Cam.m_Focus = &g_Spyro.m_Position;
+  g_Cam.m_FocusRotation = g_Spyro.m_Physics.m_SpeedAngle.m_RotZ;
+}
+
+static void StopSphere(void) {
+  g_Cam.m_SphereSpeed.m_Coords.azimuth = 0;
+  g_Cam.m_SphereSpeed.m_Coords.elevation = 0;
+  g_Cam.m_SphereSpeed.m_Coords.radius = 0;
+  g_Cam.m_SphereSpeed.m_Offset.azimuth = 0;
+  g_Cam.m_SphereSpeed.m_Offset.elevation = 0;
+  g_Cam.m_SphereSpeed.m_Offset.radius = 0;
+}
+
+/* Spyro's heading is more than 0x578 (123 degrees) off the camera's. */
+static int IsSpyroTurnedToCamera(void) {
+  return func_80017928(g_Spyro.m_Physics.m_SpeedAngle.m_RotZ, g_Cam.m_Rotation.z) >= 0x579;
+}
+
+/* Spyro's heading relative to the camera's, -0x7FF..0x800. */
+static int SpyroTurn(void) {
+  return AngleDelta(g_Spyro.m_Physics.m_SpeedAngle.m_RotZ - g_Cam.m_Rotation.z);
+}
+
+/* Turn the target's yaw offset to lead Spyro's movement: the angle, seen
+ * from the camera, between Spyro and where his velocity (times
+ * D_8007527C >> pShift) takes him. */
+static void LeadSpyro(int pShift) {
+  Vector3D toSpyro, ahead;
+
+  VecSub(&toSpyro, &g_Spyro.m_Position, &g_Cam.m_Position);
+  VecMult(&ahead, &g_Spyro.m_Physics.m_TrueVelocity, D_8007527C);
+  VecShiftRight(&ahead, pShift);
+  VecAdd(&ahead, &toSpyro, &ahead);
+  g_Cam.m_LastSimulation.m_Offset.radius =
+      (Atan2(toSpyro.x, toSpyro.y, 1) - Atan2(ahead.x, ahead.y, 1)) & 0xFFF;
+}
+
+/* Follow (states 0 and 0x80000000): the follow preset behind Spyro. The
+ * passive camera instead holds still while D_80075894 runs (see the end of
+ * func_80035FB4); the timer restarts at 90 whenever a button is down, Spyro
+ * is hidden or the camera rides a platform, and only counts down while the
+ * simulated sphere is off the follow preset. */
+static void UpdateFollow(void) {
+  int azimuth, elevation;
+
+  if (!(CAMERA_PASSIVE() && !g_Cam.m_OnMovingPlatform && D_80075924 == 0 && !g_Cam.m_NudgeTicks &&
+        (D_80075894 != 0 || g_Spyro.m_State == 27))) {
+    g_Cam.m_SphericalPreset = &D_8006C8D4;
+    FocusOnSpyro();
+    SyncSphere(SYNC_AZIMUTH);
+    if (!g_Cam.m_NudgeTicks || g_GameTick < 120)
+      ApplySphericalPreset();
+  }
+
+  if (!(CAMERA_AUTO() && g_Pad.m_NoButtonsDown && D_800756B8) || g_Cam.m_OnMovingPlatform) {
+    D_80075894 = 90;
+    return;
+  }
+  if (D_80075894 == 0)
+    return;
+
+  azimuth = AngleDelta(g_Cam.m_Simulation.m_Coords.azimuth + g_Spyro.m_Physics.m_SpeedAngle.m_RotZ - 0x800);
+  elevation = AngleDelta(g_Cam.m_Simulation.m_Coords.elevation - D_8006C8D4.m_Coords.elevation);
+  if (Abs(azimuth) <= 0x190 && Abs(elevation) <= 0x100)
+    return;
+
+  D_80075894 -= g_DeltaTime;
+  if (D_80075894 <= 0) {
+    D_80075894 = 0;
+    StopSphere();
+  }
+}
+
+/* 0x80000010: recentre behind Spyro with the follow preset. */
+static void UpdateRecentre(void) {
+  g_Cam.m_SphericalPreset = &D_8006C8D4;
+  FocusOnSpyro();
+  SyncSphere(SYNC_AZIMUTH);
+  if (!g_Cam.m_NudgeTicks)
+    ApplySphericalPreset();
+}
+
+static void UpdateState1(void) {
+  FocusOnSpyro();
+  if (g_Cam.m_NudgeTicks)
+    return;
+  if (IsSpyroTurnedToCamera()) {
+    g_Cam.m_SphericalPreset = &D_8006C964;
+  } else {
+    g_Cam.m_SphericalPreset = &D_8006C934;
+    if (!CAMERA_PASSIVE_40())
+      SyncSphere(SYNC_AZIMUTH);
+  }
+  ApplySphericalPreset();
+  LeadSpyro(6);
+}
+
+static void UpdateState2(void) {
+  FocusOnSpyro();
+  if (g_Cam.m_NudgeTicks) {
+    TakeSimulatedSphere();
+    return;
+  }
+  g_Cam.m_SphericalPreset = IsSpyroTurnedToCamera() ? &D_8006C964 : &D_8006C934;
+  ApplySphericalPreset();
+}
+
+/* State 3: the yaw offset leans with Spyro's turn. */
+static void UpdateState3(void) {
+  g_Cam.m_SphericalPreset = &D_8006C994;
+  FocusOnSpyro();
+  SyncSphere(SYNC_AZIMUTH);
+  if (g_Cam.m_NudgeTicks) {
+    TakeSimulatedSphere();
+    return;
+  }
+  ApplySphericalPreset();
+  g_Cam.m_LastSimulation.m_Offset.radius = (-g_Spyro.m_Physics.m_TurnMomentum * 8) & 0xFFF;
+}
+
+static void UpdateState4(void) {
+  FocusOnSpyro();
+  if (g_Cam.m_NudgeTicks) {
+    TakeSimulatedSphere();
+    return;
+  }
+  if (IsSpyroTurnedToCamera()) {
+    g_Cam.m_SphericalPreset = &D_8006C9DC;
+  } else {
+    g_Cam.m_SphericalPreset = &D_8006C9AC;
+    if (!CAMERA_PASSIVE_40())
+      SyncSphere(SYNC_AZIMUTH);
+  }
+  ApplySphericalPreset();
+}
+
+/* State 5. With the flying ability (flight levels), m_walkingState 2 and 1
+ * swing the camera to the side Spyro turns to. */
+static void UpdateState5(void) {
+  int turn;
+
+  FocusOnSpyro();
+  if (g_Cam.m_NudgeTicks) {
+    TakeSimulatedSphere();
+    return;
+  }
+
+  if (g_Spyro.m_flyingAbility) {
+    if (g_Spyro.m_walkingState == 2) {
+      g_Cam.m_SphericalPreset = SpyroTurn() > 0 ? &D_8006C94C : &D_8006C97C;
+      g_Cam.m_FocusRotation = (g_Spyro.m_Physics.m_SpeedAngle.m_RotZ + 0x800) & 0xFFF;
+      SyncSphere(SYNC_AZIMUTH);
+      ApplySphericalPreset();
+      return;
+    }
+    if (g_Spyro.m_walkingState == 1) {
+      /* Only the preset changes; the target stays as it is. */
+      turn = SpyroTurn();
+      if (turn > 0x100)
+        g_Cam.m_SphericalPreset = &D_8006C94C;
+      else if (turn < -0x100)
+        g_Cam.m_SphericalPreset = &D_8006C97C;
+      else
+        g_Cam.m_SphericalPreset = &D_8006C934;
+      SyncSphere(SYNC_AZIMUTH);
+      return;
+    }
+    g_Cam.m_SphericalPreset = &D_8006C934;
+    SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION);
+  } else if (g_Spyro.m_walkingState != 11 && IsSpyroTurnedToCamera()) {
+    g_Cam.m_SphericalPreset = &D_8006C964;
+  } else {
+    g_Cam.m_SphericalPreset = &D_8006C934;
+    SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION);
+  }
+  ApplySphericalPreset();
+  LeadSpyro(5);
+}
+
+/* State 6: the focus point freezes where it is (copied into D_80077798)
+ * and the springs run with no pull, so the camera coasts to a stop. Then
+ * the sphere is whatever the camera's position gives. */
+static void UpdateHeld(void) {
+  SphericalCoordsOffset *speed = &g_Cam.m_SphereSpeed;
+  int i;
+
+  if (g_Cam.m_Focus != &D_80077798) {
+    VecCopy(&D_80077798, g_Cam.m_Focus);
+    g_Cam.m_Focus = &D_80077798;
+  }
+  D_80075924 = 0;
+
+  if (Abs(speed->m_Coords.azimuth) + Abs(speed->m_Coords.elevation) + Abs(speed->m_Coords.radius) +
+          Abs(speed->m_Offset.azimuth) + Abs(speed->m_Offset.elevation) + Abs(speed->m_Offset.radius) >
+      0x20) {
+    for (i = 0; i < g_DeltaTime; i++)
+      func_80034CE8(0);
+    func_80034204(&g_Cam.m_DestinationPosition);
+    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, g_Cam.m_Focus);
+    CameraForceToDestination();
+    func_800342F8();
+  }
+
+  TakeSimulatedSphere();
+}
+
+/* State 15 (Spyro in a portal): the follow preset; the elevation stays
+ * the sphere's. */
+static void UpdateState15(void) {
+  g_Cam.m_SphericalPreset = &D_8006C8D4;
+  FocusOnSpyro();
+  SyncSphere(SYNC_AZIMUTH | SYNC_RADIUS);
+  if (g_Cam.m_NudgeTicks)
+    TakeSimulatedSphere();
+  else
+    ApplySphericalPreset();
+}
+
+/* Look mode (triangle): the stick or the d-pad moves the target around the
+ * look preset, and Spyro's head looks the opposite way. */
+static void UpdateLook(void) {
+  PadFrame *pad;
+
+  g_Cam.m_SphericalPreset = &D_8006CA0C;
+  FocusOnSpyro();
+  SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION | SYNC_RADIUS);
+  if (g_Cam.m_NudgeTicks)
+    return;
+  ApplySphericalPreset();
+
+  pad = g_PadFrame;
+  if (pad->m_Type == CONTROLLER_TYPE_STICK &&
+      !(pad->m_Sticks.m_LeftX == 0x7F && pad->m_Sticks.m_LeftY == 0x7F)) {
+    g_Cam.m_LookYaw += (pad->m_Sticks.m_LeftX - 0x7F) >> 1;
+    g_Cam.m_LookPitch += (0x7F - pad->m_Sticks.m_LeftY) >> 1;
+  } else {
+    if (g_Pad.m_Held & PAD_LEFT)
+      g_Cam.m_LookYaw -= 0x30;
+    else if (g_Pad.m_Held & PAD_RIGHT)
+      g_Cam.m_LookYaw += 0x30;
+    if (g_Pad.m_Held & PAD_UP)
+      g_Cam.m_LookPitch += 0x30;
+    else if (g_Pad.m_Held & PAD_DOWN)
+      g_Cam.m_LookPitch -= 0x30;
+  }
+  g_Cam.m_LookYaw = Clamp(g_Cam.m_LookYaw, -0x400, 0x400);
+  g_Cam.m_LookPitch = Clamp(g_Cam.m_LookPitch, -0x3D0, 0x500);
+
+  /* Looking down further than 0x140 tilts the view instead. */
+  g_Cam.m_LastSimulation.m_Coords.azimuth += g_Cam.m_LookYaw;
+  if (g_Cam.m_LookPitch < -0x140) {
+    g_Cam.m_LastSimulation.m_Coords.elevation -= 0x140;
+    g_Cam.m_LastSimulation.m_Offset.elevation += 0x140 + g_Cam.m_LookPitch;
+  } else {
+    g_Cam.m_LastSimulation.m_Coords.elevation += g_Cam.m_LookPitch;
+  }
+
+  g_Spyro.m_HeadLookTarget.z = Clamp(-g_Cam.m_LookYaw, -0x300, 0x300);
+  g_Spyro.m_HeadLookTarget.y = Clamp(-g_Cam.m_LookPitch, -0x200, 0x200);
+}
+
+/* 0x80000007 (CTRL_CAMERA_8000): beside the moby Spyro uses, at Spyro's
+ * height, facing the way the moby does. */
+static void UpdateBesideMoby(void) {
+  Moby *moby = g_Spyro.m_mobyInUseBySpyro;
+
+  g_Cam.m_SphericalPreset = &D_8006CB5C;
+  g_Cam.m_Focus = &g_Cam.m_MobyFocus;
+  g_Cam.m_MobyFocus.x = moby->m_Position.x;
+  g_Cam.m_MobyFocus.z = g_Spyro.m_Position.z;
+  g_Cam.m_MobyFocus.y = moby->m_Position.y;
+  g_Cam.m_FocusRotation = moby->m_Rotation.z << 4;
+  SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION | SYNC_RADIUS);
+  ApplySphericalPreset();
+}
+
+/* 0x8000000C (CTRL_CAMERA_10000): on Spyro, turned to face from him
+ * towards the moby he uses. */
+static void UpdateFacingMoby(void) {
+  Moby *moby = g_Spyro.m_mobyInUseBySpyro;
+
+  g_Cam.m_Focus = &g_Spyro.m_Position;
+  g_Cam.m_FocusRotation = Atan2(moby->m_Position.x - g_Spyro.m_Position.x,
+                                moby->m_Position.y - g_Spyro.m_Position.y, 1);
+  if (g_Cam.m_NudgeTicks)
+    return;
+  g_Cam.m_SphericalPreset = &D_8006CB74;
+  SyncSphere(0);
+  ApplySphericalPreset();
+}
+
+/* 0x8000000A (CTRL_CAMERA_0200): the preset set by whoever set the flag. */
+static void UpdateScripted0200(void) {
+  SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION | SYNC_RADIUS);
+  if (g_Cam.m_NudgeTicks)
+    TakeSimulatedSphere();
+  else
+    ApplySphericalPreset();
+}
+
+/* No L2/R2 turning in these states. */
+static int IsTurnLocked(u_int pState) {
+  return pState == CAM_LOOK || pState == CAM_SCRIPT_8000 || pState == CAM_LEVEL_TRANSITION ||
+         pState == CAM_PATH || pState == CAM_FLY_IN || pState == CAM_STATE_3;
+}
+
+/// @brief Camera update for every state but the path (0x8000000B), the
+/// fly-in (0x8000000E) and the level transition (0x80000012): sets the
+/// focus and the target sphere for the state, runs the springs
+/// (func_80034CE8) g_DeltaTime times, moves the camera with collision
+/// (func_80034480) and re-derives the sphere from where it ended up.
+/// @note asm/nonmatchings/camera/func_80035FB4.s, by hand.
+void func_80035FB4(void) {
+  int row, i;
+
+  if (CAMERA_AUTO() && g_Cam.m_State == CAM_STATE_15)
+    g_Cam.m_State = CAM_FOLLOW;
+
+  /* The springs stiffen the longer Spyro is off the middle of the screen. */
+  row = (g_Cam.m_SpyroOffCenterFrames + 1) >> 1;
+  if (row >= 5)
+    row = 4;
+
+  switch (g_Cam.m_State) {
+  case CAM_FOLLOW:
+  case CAM_SPEED_CHECK:
+    UpdateFollow();
+    break;
+  case CAM_RECENTRE:
+    UpdateRecentre();
+    D_80075938--;
+    break;
+  case CAM_RECENTRE_SLOW:
+    D_80075938--;
+    break;
+  case CAM_STATE_1:
+    UpdateState1();
+    break;
+  case CAM_STATE_2:
+    UpdateState2();
+    break;
+  case CAM_STATE_3:
+    UpdateState3();
+    break;
+  case CAM_STATE_4:
+    UpdateState4();
+    break;
+  case CAM_STATE_5:
+    UpdateState5();
+    break;
+  case CAM_STATE_6:
+    UpdateHeld();
+    return;
+  case CAM_STATE_15:
+    UpdateState15();
+    break;
+  case CAM_LOOK:
+    UpdateLook();
+    row = 5;
+    break;
+  case CAM_SCRIPT_8000:
+    UpdateBesideMoby();
+    break;
+  case CAM_SCRIPT_10000:
+    UpdateFacingMoby();
+    break;
+  case CAM_SCRIPT_0200:
+    UpdateScripted0200();
+    if (g_Spyro.m_ControlFlags & CTRL_SKIP_CAMERA_CENTER)
+      row = 5;
+    break;
+  }
+
+  if (IsTurnLocked(g_Cam.m_State))
+    D_80075924 = 0;
+  else
+    func_80035F58(); /* L2/R2 */
+
+  if (CAMERA_AUTO() && D_800756B8 && D_80075894 != 0 && !g_Cam.m_OnMovingPlatform &&
+      D_80075924 == 0 && (g_Cam.m_State == CAM_FOLLOW || g_Cam.m_State == CAM_SPEED_CHECK)) {
+    /* The passive camera holds still. */
+    VecCopy(&g_Cam.m_DestinationPosition, &g_Cam.m_Position);
+    StopSphere();
+  } else {
+    for (i = 0; i < g_DeltaTime; i++)
+      func_80034CE8(row);
+    func_80034204(&g_Cam.m_DestinationPosition);
+    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, g_Cam.m_Focus);
+    func_80034480();
+    func_800342F8();
+  }
+
+  /* The sphere becomes what the camera's position gives, except the
+   * passive camera's azimuth while a slow Spyro jumps. */
+  g_Cam.m_SimFlipped = func_80033F08(&g_Cam.m_Position);
+  if (!(CAMERA_PASSIVE() && g_Spyro.m_State == 5 && !g_Cam.m_OnMovingPlatform &&
+        g_Spyro.m_Physics.m_SpeedAngle.m_Speed < 0x400))
+    g_Cam.m_Sphere.m_Coords.azimuth = g_Cam.m_Simulation.m_Coords.azimuth;
+  g_Cam.m_Sphere.m_Coords.elevation = g_Cam.m_Simulation.m_Coords.elevation;
+  g_Cam.m_Sphere.m_Coords.radius = g_Cam.m_Simulation.m_Coords.radius;
+  g_Cam.m_Sphere.m_Offset = g_Cam.m_Simulation.m_Offset;
+}
+#endif
