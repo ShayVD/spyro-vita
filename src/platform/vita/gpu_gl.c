@@ -23,7 +23,7 @@
  * Semi-transparency follows the PS1: only texels with STP set blend (one
  * premultiplied pass for average/add/quarter, two passes for subtract).
  * Not modelled (as in gpu_soft.c): mask bit, texture window, dithering.
- * Optional (decisions D38, all off by default): tex_filter= filters textures
+ * Optional (decisions D39, all off by default): tex_filter= filters textures
  * after the palette lookup; persp= and subpixel= use the GTE's exact
  * projections (src/platform/common/vcache.c) for perspective-correct
  * textures and sub-pixel vertices. Any of them switches to an expanded
@@ -148,7 +148,7 @@ static GrVertex s_vbuf[MAX_VERTEX_BUFFER_SIZE];
 static const GrVertex *s_vorig; /* PsyX's own buffer, as it was given */
 static int s_nverts;
 
-/* The expanded vertex (D38): float position, so a vertex can sit between
+/* The expanded vertex (D39): float position, so a vertex can sit between
  * pixels, and w, which the GPU divides by when it interpolates (w = 1 is
  * the PS1's affine mapping). box: the texels the filter may read. */
 typedef struct {
@@ -200,7 +200,7 @@ static const char k_vs_prim[] =
     "              md(qclut, 64.0, 0.015625) * 16.0, md(floor(qclut * 0.015625), 512.0, 1.0 / 512.0));\n"
     "}\n";
 
-/* k_vs_prim for the expanded vertex (D38). Clip coordinates times w: the
+/* k_vs_prim for the expanded vertex (D39). Clip coordinates times w: the
  * same picture for w = 1, perspective-correct varyings otherwise. */
 static const char k_vs_prim_x[] =
     "attribute vec3 a_pos;\n" /* x, y, w */
@@ -284,7 +284,7 @@ static const char k_fs_tex_body[] =
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
     "}\n";
 
-/* tex_filter= (D38): the palette lookup first, then the filter (FILTER 1:
+/* tex_filter= (D39): the palette lookup first, then the filter (FILTER 1:
  * N64-style 3-point, 2: bilinear), over texels clamped to the triangle's UV
  * box, so the neighbouring textures in a page never bleed in, or wrapped
  * within its 32x32 tile (v_filt.y; expand() says which). Transparent
@@ -898,7 +898,7 @@ void gl_GR_PopDebugLabel(void) {}
 void gl_GR_UpdateVRAM(void) {}
 void gl_GR_ReadFramebufferDataToVRAM(void) {}
 
-/* s_vbuf -> s_xbuf (D38). A polygon's vertices carry the vertex cache's
+/* s_vbuf -> s_xbuf (D39). A polygon's vertices carry the vertex cache's
  * answer (psx_vcache.h): its exact position (subpixel=1), and its depth as w
  * when every vertex of the polygon was found (persp=1). Polygons are
  * filtered (tex_filter=), clamped to each triangle's UV box, its lowest to
@@ -1347,7 +1347,7 @@ int vita_gpu_init(void) {
   if (s_xmode) {
     /* polygons are marked for the filter; projections only for persp/subpixel */
     psx_vcache_enable(s_persp || s_subpixel ? 2 : 1);
-    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d (D38)", s_filter, s_persp, s_subpixel);
+    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d (D39)", s_filter, s_persp, s_subpixel);
   }
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);

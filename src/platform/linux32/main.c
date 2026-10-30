@@ -37,7 +37,7 @@
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
  * --vcache: record the GTE's projections in the vertex cache the Vita's
- *   persp=/subpixel= use (decisions D38) and log its counters at exit. The
+ *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */

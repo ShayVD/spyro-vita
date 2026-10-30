@@ -1,4 +1,4 @@
-/* Vertex cache (psx_vcache.h, decisions D38).
+/* Vertex cache (psx_vcache.h, decisions D39).
  *
  * RTPS/RTPT: PsyCross's GTE calls rtp_hook after the integer projection.
  * The hook recomputes the same transform from the input registers without

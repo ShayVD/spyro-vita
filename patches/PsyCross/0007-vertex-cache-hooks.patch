@@ -6,7 +6,7 @@ diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
  extern void			GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g, unsigned char b);
  extern void			GR_UpdateVertexBuffer(const GrVertex* vertices, int count);
 +
-+/* Spyro port (docs/decisions.md D38): called for each polygon's vertices
++/* Spyro port (docs/decisions.md D39): called for each polygon's vertices
 + * (POLY_F/G/FT/GT, 3 or 4, before a quad is split into triangles) with the
 + * prim's own screen coordinates. It may fill each vertex's tcx/tcy/_p0/_p1
 + * (otherwise unused in this build) and nothing else. */
@@ -21,7 +21,7 @@ diff --git a/include/psx/gtereg.h b/include/psx/gtereg.h
  extern int GTE_operator(int);
  extern int LIM(int value, int max, int min, unsigned int flag);
  
-+/* Spyro port (docs/decisions.md D38): called after RTPS/RTPT has projected
++/* Spyro port (docs/decisions.md D39): called after RTPS/RTPT has projected
 + * vertex idx (0-2), with every register already written. It may only read
 + * gteRegs, so the results the game sees don't change. sf is the command's
 + * shift flag. */
@@ -37,7 +37,7 @@ diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
   * skips the list. The post hook runs after the list is drawn. */
  extern int (*g_psyxDrawOTagPre)(u_long *p);
  extern void (*g_psyxDrawOTagPost)(u_long *p);
-+/* Spyro port (docs/decisions.md D38): called when DrawOTag returns, whether
++/* Spyro port (docs/decisions.md D39): called when DrawOTag returns, whether
 + * the list was drawn or the pre hook skipped it. */
 +extern void (*g_psyxDrawOTagDone)(void);
  extern void DrawOTagIO(u_long *p);

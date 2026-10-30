@@ -89,9 +89,9 @@ Files the app writes:
 | `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 | `menu_test=V` | tests without a controller: open the options menu at vblank V and press down, left, up, right, circle |
-| `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D38) |
-| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D38) |
-| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D38) |
+| `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D39) |
+| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
+| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 
 **Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen, 60 fps and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
 
@@ -240,7 +240,7 @@ Same host references (`run6-host-base`, `run7-host-gems`; this tree's linux32 bu
 
 `run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 
-### Texture filtering and perspective (D38, on main `3b4126a`)
+### Texture filtering and perspective (D39, on main `3b4126a`)
 
 Gems script plus the pause and inventory screens, window captures at the same 8 vblanks in every run
 (`win-V.png`; the app holds each picture until it is captured):
@@ -250,7 +250,7 @@ Gems script plus the pause and inventory screens, window captures at the same 8 
 | `run15-vita-mbase`, `run16-vita-moff` | main's `gpu_gl.c`, and this build with all three switches off | 8/8 captures pixel-identical (0 of 2,196,480 pixels differ). Replay shots byte-identical. |
 | `run28-vita-mall2` | `tex_filter=1 persp=1 subpixel=1` | Textures smooth and straight; cut-outs keep clean edges; the waterfalls, sky, HUD, 3D font and menus are right. Replay shots byte-identical to off: the game sees the same pictures. 79–85% of Artisans' polygons perspective-correct. |
 | `run18-vita-mfilt2`, `run19-vita-mpersp`, `run20-vita-mws-all` | bilinear only; perspective and sub-pixel only; all on with widescreen and 60 fps | as expected; with the presentation passes the cache follows each pass. |
-| `run29`–`run33` | `REALTIME=1`, CPU cost | about +0.6 ms busy per vblank at 4:3 with all on, +0.2 with widescreen and 60 fps; `tex_filter` alone ~0 (D38). |
+| `run29`–`run33` | `REALTIME=1`, CPU cost | about +0.6 ms busy per vblank at 4:3 with all on, +0.2 with widescreen and 60 fps; `tex_filter` alone ~0 (D39). |
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
@@ -278,11 +278,11 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
    and `mixer=0` and say which ones are.
 
-**Testing texture filtering and perspective** (decisions D38, all off by default), with the GPU build:
+**Testing texture filtering and perspective** (decisions D39, all off by default), with the GPU build:
 
 1. Play a minute of Artisans as usual, then again with `tex_filter=1`, `persp=1` and `subpixel=1`
    in `config.txt` (then `tex_filter=2` once, if there is time).
-2. In the log: `gpu: tex_filter=1 persp=1 subpixel=1 (D38)`, no shader errors, and `vcache N:`
+2. In the log: `gpu: tex_filter=1 persp=1 subpixel=1 (D39)`, no shader errors, and `vcache N:`
    lines (the share of polygons with every vertex found should be about 80%).
 3. Compare the runs' `time N:` lines (game and ot columns: the cost of persp and subpixel) and
    pictures per 300 vblanks (the GPU cost of the filter shows as fewer pictures and more wait).

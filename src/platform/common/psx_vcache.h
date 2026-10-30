@@ -1,4 +1,4 @@
-/* Vertex cache (decisions D38): a side channel from the GTE's RTPS/RTPT to
+/* Vertex cache (decisions D39): a side channel from the GTE's RTPS/RTPT to
  * the GPU renderer, like PsyCross's PGXP but without changing the primitive
  * layout. Each projected vertex is recorded under the 16-bit screen
  * coordinates the game got back (SXY2) with its sub-pixel position and view

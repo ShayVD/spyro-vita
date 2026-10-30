@@ -33,9 +33,9 @@ typedef struct {
   int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
                          sequence (tests without a controller: menu.c) */
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
-  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D38) */
-  int persp;          /* persp=1: perspective-correct textures (gpu=1, D38) */
-  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D38) */
+  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D39) */
+  int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
+  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

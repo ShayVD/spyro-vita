@@ -47,11 +47,11 @@
  *                       for its mix; 0 the game thread, as before
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 3-point (N64 style), 2 bilinear (default 0: off;
- *                       decisions D38)
+ *                       decisions D39)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
- *                       the GTE projected (D38)
+ *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
- *                       sub-pixel positions (D38)
+ *                       sub-pixel positions (D39)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
