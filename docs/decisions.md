@@ -143,3 +143,16 @@ Record each decision with its date, what was chosen, and why.
   - `PCSX.GPU.takeScreenShot()` throws under `-no-ui` on 24-bit frames. Dump VRAM with `getVRAM()` instead.
   - Redux commits `mtc2`/`ctc2`/`lwc2` and GPR loads after the next instruction. So at a breakpoint, the move or load in the slot just before it is still pending. `oracle.lua` replays those into its "before" snapshots.
 - **Vblank numbering** counts from reset, so it includes the BIOS boot (~900 vblanks before the game's main loop). It is not aligned with the host's count yet.
+
+## 2026-10-30: hand-written C for pete and camera
+
+### D30. Hand-written C replaces mips2c units one function at a time, with the generated version a build switch away
+- **Replace, don't fork:** a hand-written function in `src/game/*_hand.c` takes its unit out of the mips2c build (`M2C_HAND` in `cmake/mips2c.cmake`). The oracle replay finds it through `src/game/hand_index.c`.
+- **A/B switch:** `-DSPYRO_M2C_FUNCS=name;name` (or `all`) builds those units from mips2c again and compiles their hand C out (`M2C_<name>=1`). It's for A/B tests and bisecting, on any target.
+- **Partly hand-written units** (`M2C_PARTIAL`; so far `func_80043FE4`, the 3,865-instruction pete physics): the mips2c unit stays linked under `<name>_gen`, and the hand C calls it for the cases it doesn't cover yet (the flying-ability phases). The big function can then be done and verified state by state instead of all at once.
+- **Differential sweeps for paths no capture reaches** (`SPYRO_REPLAY_SWEEP`, `SPYRO_REPLAY_POKE` in `src/game/oracle_replay.c`): one RAM word set to each value of a list, the mips2c unit as the reference, then the hand C from the same entry state. The reference is itself checked against the emulator on every captured sample, and it is a per-instruction translation, so agreement over the swept inputs is strong evidence. It does not replace oracle samples where a capture can reach the path.
+- **Names for decomp fields stay in our headers:** `src/game/hand_structs.h` has layout-identical views (`SpyroFlameView`, `PadFrame`), checked with `static_assert` against the decomp's `offsetof`. The decomp's own matched C uses the same `unk_` names, so a renaming patch would have to touch it all.
+
+### D31. Hand C doesn't depend on return values the decomp's C doesn't return
+- `func_80043FE4` reads v0 after calling `UpdateSpyroTurnMomentum` and `ApplySpyroSoftTurn`. The decomp declares both `void`, and they compile to functions whose last call (`func_80017928`, the absolute 12-bit angle difference) leaves its result in v0. The mips2c unit reads the host's return register after a `void` C call. That works on i686 at -O1 because the tail call's result is still in eax, but nothing guarantees it, on the Vita or with other flags.
+- The hand C calls `func_80017928` again on the same fields (`TurnLeft` in `pete_hand.c`). It is pure, so the result is identical and doesn't depend on the ABI. Any other mips2c unit that reads v0 after a `void` decomp function has the same latent dependence. None is known to have failed.
