@@ -22,7 +22,7 @@ typedef struct {
   int wav;            /* wav=1 also writes the audio to audio.wav */
   int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
-  int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D30) */
+  int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
   int gpu_res;        /* gpu_res=N: GPU targets at N x the PS1's pixels; 0 (default): the screen's */
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
@@ -43,7 +43,7 @@ int vita_video_init(void); /* 0 = ok */
 int vita_video_present(void); /* 1 = a new picture */
 void vita_video_fill_red(void); /* the no-disc screen */
 
-/* gpu.c: which renderer the GR_* calls reach, and who presents (D30) */
+/* gpu.c: which renderer the GR_* calls reach, and who presents (D35) */
 extern int g_vita_gpu;
 extern int g_vita_gl;
 

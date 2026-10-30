@@ -10,7 +10,7 @@ plays, drawn by the Vita's GPU. Read "What to expect" before you test.
   (MODE2/2352, one data track). The VPK contains no game data at all.
 - A computer with Python 3, to extract the files from the dump.
 - **`ur0:data/libshacccg.suprx`, for the GPU renderer.** The GPU renderer (`gpu=1`, the default,
-  decisions D30) compiles its shaders on the device with vitaGL, which needs Sony's shader compiler
+  decisions D35) compiles its shaders on the device with vitaGL, which needs Sony's shader compiler
   module. It's the usual file for vitaGL ports, extracted from your own Vita with ShaRKBR33D.
   `ur0:data/external/libshacccg.suprx` works too. Without it the app logs
   `gpu: no ur0:data/libshacccg.suprx ...` and draws on the CPU instead (`gpu=0`, decisions D26):
@@ -82,7 +82,7 @@ Files the app writes:
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
 | `gpu_res=N` | GPU: draw at N times the PS1's resolution (1 = the PS1's own pixels, cheapest); 0, the default, draws at the screen's own resolution |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
-| `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D30; for testing) |
+| `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
@@ -113,7 +113,7 @@ the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 
 ## What to expect (be direct)
 
-- **The picture is drawn by the GPU** (decisions D30), 4:3 in the middle of the 960×544 screen, at
+- **The picture is drawn by the GPU** (decisions D35), 4:3 in the middle of the 960×544 screen, at
   the screen's resolution: sharper than the PS1, with the PS1's own textures, colours and
   semi-transparency. There is no dithering. The pause and inventory screens show the game frame
   at the PS1's resolution, as the game itself copies it. Widescreen and 60 fps come later (M4).
@@ -122,7 +122,7 @@ the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 - **Speed on hardware (first test, 2026-10-30, build `a60dd0b`): too slow.** 14–20 vblanks per
   second in 3D scenes (60 is full speed): about 120 ms of CPU per game frame against 33 ms. Builds
   from `D28` on keep real time instead (the game catches up, the audio stays whole). The GPU
-  renderer takes the rasterizer, about 60% of the CPU time, off the CPU (decisions D29, D30). Game
+  renderer takes the rasterizer, about 60% of the CPU time, off the CPU (decisions D29, D35). Game
   logic is still on the CPU, so how close the GPU build gets to 30 pictures a second is what the
   next hardware log will tell.
 - **Audio**: the software SPU and XA music go through SDL2. In Vita3K the WAV the build writes
@@ -184,7 +184,7 @@ Each run was replayed on the linux32 host from the same commit with the same scr
 | `run9`–`run11` | after each speed change (D29) | still byte-identical (shots, WAV). |
 | `run12-vita-realtime` | `REALTIME=1`, no input, 7200 vblanks | ~60 vblanks/s kept, audio continuous (120 s for 7200 vblanks), no errors. |
 
-### The GPU renderer (D30, on main `8662485`)
+### The GPU renderer (D35, on main `8662485`)
 
 Compared with the same host runs (`run6-host-base`, `run7-host-gems` from the M3 session; this
 change touches nothing the linux32 host builds), and with window captures of the GPU's own picture
@@ -200,7 +200,7 @@ change touches nothing the linux32 host builds), and with window captures of the
 | `run50-vita-soft-gems` | gems script, `gpu=0` | 36/36 shots and the card byte-identical to the host. |
 | `run51-vita-gpu-realtime`, `run52-vita-soft-realtime` | gems script, `REALTIME=1` | 60 vblanks/s in both. Busy CPU per vblank (`tools/vita/time_summary.py`): 2.79 ms with `gpu=1`, 6.82 ms with `gpu=0`. Raster 0.90 vs 4.85 ms, present 0.05 vs 0.55 ms. Vita3K's times, not the Vita's. |
 
-`run14`–`run43` were the bring-up (decisions D30's vitaGL findings) and are kept only as records.
+`run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).

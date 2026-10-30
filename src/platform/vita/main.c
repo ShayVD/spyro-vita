@@ -24,7 +24,7 @@
  *                       scripted runs compared with the host; D28)
  *       gpu=0           the software rasterizer instead of the GPU renderer
  *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
- *                       and falls back to gpu=0 without it; D30)
+ *                       and falls back to gpu=0 without it; D35)
  *       gpu_res=N       GPU targets at N times the PS1's pixels (default 0:
  *                       the screen's own resolution)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG

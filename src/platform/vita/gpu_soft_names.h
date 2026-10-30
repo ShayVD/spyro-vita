@@ -1,5 +1,5 @@
 /* Force-included into src/platform/linux32/gpu_soft.c in the Vita build
- * (decisions D30): the software rasterizer's GR_* entry points and globals
+ * (decisions D35): the software rasterizer's GR_* entry points and globals
  * get a soft_ prefix, so it links next to the GPU renderer (gpu_gl.c's gl_*)
  * and gpu.c's dispatch owns the names PsyCross calls. */
 #define GR_SetupClipMode soft_GR_SetupClipMode

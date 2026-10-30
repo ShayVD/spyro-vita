@@ -1,4 +1,4 @@
-/* Vita GPU renderer (gpu=1, decisions D30): PsyCross's GR_* interface on
+/* Vita GPU renderer (gpu=1, decisions D35): PsyCross's GR_* interface on
  * vitaGL. PsyX_GPU.cpp's OT walker hands us the same GrVertex triangles and
  * splits as the software rasterizer (src/platform/linux32/gpu_soft.c); here
  * they are drawn by the GPU at the screen's resolution.
@@ -59,7 +59,7 @@ typedef struct { /* PsyX_GPU.cpp's GPUDrawSplit starts like this (gpu_soft.c) */
 /* What has been drawn into a target since its log began (when it was made,
  * or last cleared whole). Replayed through the software rasterizer, it gives
  * s_vram the target's pixels as the PS1 (and gpu=0) would have drawn them,
- * with no GPU readback (which Vita3K can't do; decisions D30). */
+ * with no GPU readback (which Vita3K can't do; decisions D35). */
 enum { LOG_DRAW, LOG_COPY, LOG_CLEAR };
 typedef struct {
   int kind;

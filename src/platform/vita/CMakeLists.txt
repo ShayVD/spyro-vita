@@ -34,7 +34,7 @@ endforeach()
 file(GLOB VITA_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 # The software rasterizer and display-rect reader are linux32's (D26). The
 # rasterizer's GR_* names get a soft_ prefix: gpu.c picks it or the GPU
-# renderer (gpu_gl.c) at run time (D30).
+# renderer (gpu_gl.c) at run time (D35).
 set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/gpu_soft_names.h")
@@ -45,7 +45,7 @@ target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
-# and the vitaGL stack for the GPU renderer (D30).
+# and the vitaGL stack for the GPU renderer (D35).
 target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common psycross
   SDL2 vitaGL vitashark SceShaccCgExt mathneon taihen_stub SceShaccCg_stub
   SceDisplay_stub SceCtrl_stub SceAudio_stub SceAudioIn_stub SceSysmodule_stub

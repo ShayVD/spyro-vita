@@ -1,4 +1,4 @@
-/* The GR_* names PsyCross calls (decisions D30): config.txt gpu=1 (default)
+/* The GR_* names PsyCross calls (decisions D35): config.txt gpu=1 (default)
  * sends them to the GPU renderer (gpu_gl.c), gpu=0 to the software
  * rasterizer (linux32's gpu_soft.c, compiled with gpu_soft_names.h). prof.c
  * wraps these (-Wl,--wrap=GR_DrawTriangles, ...), so its timing covers
