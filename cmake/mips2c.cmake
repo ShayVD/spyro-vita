@@ -18,8 +18,22 @@ list(APPEND M2C_UNITS ${m2c_nonmatching})
 # oracle replay finds them through src/game/hand_index.c.
 set(M2C_HAND
   asm/nonmatchings/camera/func_80033F08.s
+  asm/nonmatchings/pete/func_80048D10.s
   asm/nonmatchings/pete/func_80049FAC.s)
-list(REMOVE_ITEM M2C_UNITS ${M2C_HAND})
+# A/B tests: functions listed here (or "all") build from the mips2c unit
+# instead, and their hand C compiles out (M2C_<name>=1).
+set(SPYRO_M2C_FUNCS "" CACHE STRING
+  "Hand-written functions to take from mips2c instead (names, or all)")
+set(M2C_HAND_DEFS)
+foreach(u ${M2C_HAND})
+  get_filename_component(f "${u}" NAME_WE)
+  if(SPYRO_M2C_FUNCS STREQUAL "all" OR f IN_LIST SPYRO_M2C_FUNCS)
+    list(APPEND M2C_HAND_DEFS M2C_${f}=1)
+  else()
+    list(APPEND M2C_HAND_DEFS M2C_${f}=0)
+    list(REMOVE_ITEM M2C_UNITS ${u})
+  endif()
+endforeach()
 
 set(M2C_OUTS)
 set(M2C_DEPS "${M2C_TOOL}" "${M2C_HINTS}")
@@ -51,7 +65,7 @@ target_compile_options(spyro_game_m2c PRIVATE ${SPYRO_HOST_FLAGS} -w)
 
 file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")
 add_library(spyro_game_port OBJECT ${PORT_SRCS})
-target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF})
+target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF} ${M2C_HAND_DEFS})
 target_include_directories(spyro_game_port PRIVATE
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
 # trace.c reads game state through the decomp's headers.

@@ -2,7 +2,11 @@
  * written by hand from the asm so they read as C (docs/porting-plan.md §7,
  * M2): M4's 60 fps presentation needs to see what the camera does. Each one
  * replaces its mips2c unit (cmake/mips2c.cmake M2C_HAND) and is checked
- * against PCSX-Redux with the oracle replay (docs/translation-log.md). */
+ * against PCSX-Redux with the oracle replay (docs/translation-log.md).
+ * M2C_<name>=1 compiles one out for the mips2c unit (cmake SPYRO_M2C_FUNCS,
+ * A/B tests). */
+#include <assert.h> /* PsyCross headers use C11 static_assert */
+
 #include "common.h"
 
 #include "camera.h"
@@ -11,15 +15,16 @@
 
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
  * -0x7FF..0x800, as the asm does: `andi 0xFFF; slti 0x801; addiu -0x1000`. */
-static int AngleDelta(int delta) {
+static inline int AngleDelta(int delta) {
   delta &= 0xFFF;
   if (delta > 0x800)
     delta -= 0x1000;
   return delta;
 }
 
-static int Abs(int v) { return v < 0 ? -v : v; }
+static inline int Abs(int v) { return v < 0 ? -v : v; }
 
+#if !M2C_func_80033F08
 /// @brief Updates the camera's simulated spherical coordinates for a camera
 /// at pVec looking at the focus. Returns 1 when the azimuth was flipped by
 /// half a turn (the camera passed over the focus), else 0.
@@ -68,3 +73,4 @@ int func_80033F08(Vector3D *pVec) {
 
   return flipped;
 }
+#endif
