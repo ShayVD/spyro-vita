@@ -154,7 +154,7 @@ static int s_nverts;
 typedef struct {
   float x, y, w;
   int16_t page, clut;
-  uint8_t u, v, filt, pad;
+  uint8_t u, v, filt, wrap;
   uint8_t r, g, b, a;
   uint8_t box[4]; /* u0, v0, u1, v1 */
 } XVertex;
@@ -205,7 +205,7 @@ static const char k_vs_prim[] =
 static const char k_vs_prim_x[] =
     "attribute vec3 a_pos;\n" /* x, y, w */
     "attribute vec2 a_pc;\n"  /* tpage, clut (shorts) */
-    "attribute vec4 a_tex;\n" /* u, v, filter, 0 (bytes) */
+    "attribute vec4 a_tex;\n" /* u, v, filter, wrap (bytes) */
     "attribute vec4 a_col;\n"
     "attribute vec4 a_box;\n" /* u0, v0, u1, v1: texels the filter may read */
     "uniform vec4 u_xf;\n"
@@ -213,12 +213,12 @@ static const char k_vs_prim_x[] =
     "varying vec4 v_col;\n"
     "varying vec4 v_pc;\n"
     "varying vec4 v_box;\n"
-    "varying float v_filt;\n"
+    "varying vec2 v_filt;\n"
     GLSL_MD
     "void main() {\n"
     "  gl_Position = vec4(((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0) * a_pos.z, 0.0, a_pos.z);\n"
     "  v_uv = a_tex.xy;\n"
-    "  v_filt = a_tex.z;\n"
+    "  v_filt = a_tex.zw;\n"
     "  v_box = a_box;\n"
     "  v_col = a_col;\n"
     "  float qpage = md(a_pc.x, 65536.0, 1.0 / 65536.0);\n"
@@ -286,15 +286,16 @@ static const char k_fs_tex_body[] =
 
 /* tex_filter= (D38): the palette lookup first, then the filter (FILTER 1:
  * N64-style 3-point, 2: bilinear), over texels clamped to the triangle's UV
- * box, so the neighbouring textures in a page never bleed in. Transparent
+ * box, so the neighbouring textures in a page never bleed in, or wrapped
+ * within its 32x32 tile (v_filt.y; expand() says which). Transparent
  * texels (0x0000) get no weight and the colour is renormalised over the
  * rest, so cut-out edges don't darken; a pixel is drawn where at least half
  * the weight is opaque. STP is the weighted majority, the same in both
- * subtract passes. v_filt = 0 (sprites, tiles) samples the nearest texel,
+ * subtract passes. v_filt.x = 0 (sprites, tiles) samples the nearest texel,
  * as k_fs_tex_body does. */
 static const char k_fs_filt_body[] =
     "varying vec4 v_box;\n"
-    "varying float v_filt;\n"
+    "varying vec2 v_filt;\n"
     "vec2 qfetch(vec2 quv, vec4 qpc) {\n"
     "#if FMT == 0\n"
     "  vec2 qword = vram(qpc.x + floor(quv.x * 0.25), qpc.y + quv.y);\n"
@@ -318,12 +319,14 @@ static const char k_fs_filt_body[] =
     "void main() {\n"
     "  vec4 qpc = floor(v_pc + 0.5);\n"
     "  vec4 qbox = floor(v_box + 0.5);\n"
-    "  float qfilt = step(0.5, v_filt);\n"
+    "  float qfilt = step(0.5, v_filt.x);\n"
+    "  float qwrap = step(0.5, v_filt.y);\n"
     "  vec2 qf = v_uv + mix(vec2(0.002), vec2(-0.5), qfilt);\n"
     "  vec2 qb = floor(qf);\n"
     "  vec2 qfr = (qf - qb) * qfilt;\n"
-    "  vec2 q0 = clamp(qb, qbox.xy, qbox.zw);\n"
-    "  vec2 q1 = clamp(qb + 1.0, qbox.xy, qbox.zw);\n"
+    "  vec2 qr0 = qb - qbox.xy, qr1 = qr0 + 1.0;\n"
+    "  vec2 q0 = mix(clamp(qb, qbox.xy, qbox.zw), qbox.xy + qr0 - 32.0 * floor(qr0 * 0.03125), qwrap);\n"
+    "  vec2 q1 = mix(clamp(qb + 1.0, qbox.xy, qbox.zw), qbox.xy + qr1 - 32.0 * floor(qr1 * 0.03125), qwrap);\n"
     "  vec4 qt10 = qtap(vec2(q1.x, q0.y), qpc);\n"
     "  vec4 qt01 = qtap(vec2(q0.x, q1.y), qpc);\n"
     "#if FILTER == 1\n"
@@ -901,20 +904,33 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
  * filtered (tex_filter=), clamped to each triangle's UV box, its lowest to
  * its highest u and v: Spyro's polygons give their texture's last texel as
  * the far corner (a 32-texel texture is u0..u0+31; logs/run14-host-tridump),
- * and a triangle has two opposite corners of its quad. Sprites and tiles keep
- * the nearest texel. */
+ * and a triangle has two opposite corners of its quad. 88% of the world's
+ * textured triangles map one whole aligned 32x32 tile, repeated from polygon
+ * to polygon, and subdivided near terrain maps its quarters: those wrap
+ * within the tile, so the filter blends across polygon edges as the texture
+ * was drawn to. Sprites and tiles keep the nearest texel. */
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
   for (i = 0; i < count; i += 3) {
     const GrVertex *v = s_vbuf + i;
     int n = count - i < 3 ? count - i : 3;
-    int u0 = 255, v0 = 255, u1 = 0, v1 = 0;
+    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0;
     for (k = 0; k < n; k++) {
       u0 = v[k].u < u0 ? v[k].u : u0;
       v0 = v[k].v < v0 ? v[k].v : v0;
       u1 = v[k].u > u1 ? v[k].u : u1;
       v1 = v[k].v > v1 ? v[k].v : v1;
+    }
+    /* inside one aligned 32x32 tile and at least half of it: a repeating
+     * ground tile, or a quarter of one (subdivided near terrain), so the
+     * filter wraps within the tile instead of stopping at the edge */
+    if ((u0 >> 5) == (u1 >> 5) && (v0 >> 5) == (v1 >> 5) && u1 - u0 >= 15 && v1 - v0 >= 15) {
+      wrap = 1;
+      u0 &= ~31;
+      v0 &= ~31;
+      u1 = u0 + 31;
+      v1 = v0 + 31;
     }
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
@@ -937,7 +953,7 @@ static void expand(int count) {
       x->u = v[k].u;
       x->v = v[k].v;
       x->filt = s_filter && (ref & VREF_POLY);
-      x->pad = 0;
+      x->wrap = (uint8_t)(wrap && (ref & VREF_POLY));
       x->r = v[k].r;
       x->g = v[k].g;
       x->b = v[k].b;
