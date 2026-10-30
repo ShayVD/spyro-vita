@@ -1,0 +1,42 @@
+# RAM the oracle replay doesn't compare (src/game/oracle_replay.c --ignore):
+# START END NAME, hex, END exclusive. Each entry says why it isn't an output
+# of the sampled function.
+#
+# Spill area of the hand-written asm (asm/data/game.bss.s, 0xC8 bytes): the
+# renderers, collision.s and moby_lists.s save s0-s7, gp, sp, fp, ra (0x00-
+# 0x2C) and temporaries (0x30 up, ra at 0x54) here and load them back before
+# returning. The host's translated C doesn't carry registers between units,
+# so the saved values differ; nothing reads them afterwards.
+80077DD8 80077EA0 D_80077DD8
+#
+# Written by interrupt handlers, which run in the emulator while a sampled
+# call is in flight (the host replay runs no interrupts):
+# PsyQ's interrupt dispatcher stack: ResetCallback (asm/psyq.s 8005DFD8) sets
+# D_80073960 to D_80073960+0xFDC, the top of the stack the handlers run on.
+80073964 80074940 D_80073960 (interrupt stack)
+# libetc's vblank counter, read by VSync() (asm/psyq.s 8005DC04), counted by
+# its VBlank handler.
+800749E0 800749E4 D_800749E0
+# libcd's CD interrupt state: func_80064218 (asm/psyq.s 80064494) stores the
+# status byte and the BCD position results.
+80075114 80075118 D_80075114
+80075AD0 80075AD8 D_80075AD0
+# The game's VSync callback, PadVSync (src/gamepad.c): level tick counter and
+# the buffered pad inputs.
+800758C8 800758CC g_LevelTicks
+80075760 80075764 g_UnprocessedFrames
+# libpad state (PadInitDirect's D_80075D18; func_80069C08's D_80076B78),
+# updated from the pad and VBlank interrupts.
+80075E54 80075E58 D_80075D18+0x13c
+80076B78 80076B7C D_80076B78
+# PadVSync (src/gamepad.c) also writes the whole of g_Pad (0xA4 bytes:
+# held/down/released, sticks, buffered inputs) when not in demo mode.
+80077378 8007741C g_Pad
+#
+# Functions whose v1 at return is dead at every call site ("v1 NAME"):
+# ColMoby returns int in v0; its callers (func_8003FE40 80040810, 8004085C,
+# 800408D8; func_80048D10 80049324) read only v0.
+v1 ColMoby
+# func_800522C0 is void (moby_lists.h); func_800314B4 reloads v1 right after
+# the call (80031514).
+v1 func_800522C0

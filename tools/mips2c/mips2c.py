@@ -672,6 +672,26 @@ class Translator:
         return "\n".join(out) + "\n"
 
 
+def index_source(entries):
+    """m2c_index.c: PS1 address, name and NAME__m2c of every entry point, for
+    spyro --replay (tools/oracle/capture.lua)."""
+    out = ['#include "mips2c_rt.h"', ""]
+    for a, g in sorted(entries):
+        out.append(f"u32 {g}__m2c(u32, u32, u32, u32);")
+    out += ["", "const M2cEntry m2c_index[] = {"]
+    for a, g in sorted(entries):
+        out.append(f'  {{0x{a:08X}u, "{g}", {g}__m2c}},')
+    out += ["  {0, 0, 0},", "};", ""]
+    return "\n".join(out)
+
+
+def write_if_changed(path, src):
+    old = open(path).read() if os.path.exists(path) else None
+    if old != src:
+        with open(path, "w") as f:
+            f.write(src)
+
+
 def load_hints(path):
     if not path:
         return {}
@@ -686,13 +706,14 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--hints")
     ap.add_argument("--list", help="write the generated file names here")
+    ap.add_argument("--index", help="write a table of every entry point here (oracle replay)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
     try:
         units = [Unit(os.path.join(a.root, f), f) for f in a.files]
         tr = Translator(units, load_hints(a.hints))
         os.makedirs(a.out_dir, exist_ok=True)
-        names = []
+        names, entries = [], []
         for u in units:
             src = tr.translate(u)
             out = os.path.join(a.out_dir, u.name + ".c")
@@ -701,7 +722,10 @@ def main():
             if old != src:
                 with open(out, "w") as f:
                     f.write(src)
+            entries += [(a, g) for g, a in u.glabels]
             print(f"mips2c: {u.rel}: {len(u.insns)} insns, {len(u.glabels)} entries", file=sys.stderr)
+        if a.index:
+            write_if_changed(a.index, index_source(entries))
     except Fail as e:
         print(f"mips2c: error: {e}", file=sys.stderr)
         return 1

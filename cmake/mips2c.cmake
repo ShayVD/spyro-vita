@@ -24,9 +24,11 @@ foreach(u ${M2C_UNITS})
   list(APPEND M2C_OUTS "${GEN_DIR}/mips2c/m2c_${n}.c")
   list(APPEND M2C_DEPS "${S1_DIR}/${u}")
 endforeach()
+list(APPEND M2C_OUTS "${GEN_DIR}/mips2c/m2c_index.c")
 add_custom_command(OUTPUT ${M2C_OUTS}
   COMMAND "${Python3_EXECUTABLE}" "${M2C_TOOL}" --root "${S1_DIR}"
-    --out-dir "${GEN_DIR}/mips2c" --hints "${M2C_HINTS}" ${M2C_UNITS}
+    --out-dir "${GEN_DIR}/mips2c" --hints "${M2C_HINTS}"
+    --index "${GEN_DIR}/mips2c/m2c_index.c" ${M2C_UNITS}
   DEPENDS ${M2C_DEPS}
   COMMENT "mips2c: translating decomp asm to C")
 

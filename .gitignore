@@ -21,3 +21,6 @@ core
 *.core
 __pycache__/
 /save/
+
+# PCSX-Redux oracle binary (D8), downloaded, never committed
+tools/oracle/bin/

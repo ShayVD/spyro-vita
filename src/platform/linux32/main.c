@@ -5,6 +5,9 @@
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]...
+ *   spyro --replay DIR [--only NAME] [--ignore FILE]
+ * --replay: replay the oracle's function samples in DIR through the
+ *   translated C and compare (src/game/oracle_replay.c); no disc needed.
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
@@ -29,7 +32,8 @@ static void usage(void) {
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE]\n"
-          "             [--step DIR] [--poke V:ADDR=VALUE]...\n");
+          "             [--step DIR] [--poke V:ADDR=VALUE]...\n"
+          "       spyro --replay DIR [--only NAME] [--ignore FILE]\n");
   exit(2);
 }
 
@@ -42,7 +46,7 @@ static int to_int(const char *s) {
 }
 
 int main(int argc, char **argv) {
-  const char *pad = NULL;
+  const char *pad = NULL, *replay = NULL, *only = NULL, *ignore = NULL;
   int i, cd_latency = 0, serve_port = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -56,6 +60,15 @@ int main(int argc, char **argv) {
     if (strcmp(a, "--disc") == 0) {
       TAKE();
       g_host_opts.disc_dir = val;
+    } else if (strcmp(a, "--replay") == 0) {
+      TAKE();
+      replay = val;
+    } else if (strcmp(a, "--only") == 0) {
+      TAKE();
+      only = val;
+    } else if (strcmp(a, "--ignore") == 0) {
+      TAKE();
+      ignore = val;
     } else if (strcmp(a, "--frames") == 0) {
       TAKE();
       g_host_opts.frames = to_int(val);
@@ -121,6 +134,10 @@ int main(int argc, char **argv) {
       usage();
     }
 #undef TAKE
+  }
+  if (replay) {
+    psx_arena_init();
+    return spyro_replay(replay, only, ignore) == 0 ? 0 : 1;
   }
   if (!g_host_opts.disc_dir)
     usage();
