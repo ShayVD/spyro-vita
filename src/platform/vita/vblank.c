@@ -77,6 +77,7 @@ static void vblank(void) {
       vita_log("poke %08x = %08x", (unsigned)g_vita_opts.pokes[i].addr,
                (unsigned)g_vita_opts.pokes[i].value);
     }
+  vita_bench_vblank(v);
   if (shot_due(v)) {
     char path[256];
     s_hold = v;
@@ -117,7 +118,9 @@ static void vblank(void) {
  * for a window capture and the game waits for hold.ack. Files, not the log:
  * Vita3K writes the log to the host in 4 KB blocks. */
 static void present(void) {
-  s_stat_shown += vita_video_present();
+  int shown = vita_video_present();
+  s_stat_shown += shown;
+  vita_bench_present(shown);
   if (s_hold && g_vita_opts.shot_hold > 0) {
     char buf[16];
     SceIoStat st;

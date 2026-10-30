@@ -16,19 +16,24 @@
  * differ between its passes by powers of two: the same screen point comes
  * back with depths 4 or 16 times apart, and its near "precision" path
  * (all three coordinates within +-256) projects single vertices with their
- * coordinates times 16, so one polygon can mix scales. Perspective needs
- * only the ratios of a polygon's depths, so each entry keeps up to three
- * depths for its point that differ by a power of two, plus depth / 16 for a
- * vertex that may be a precision one (no translation, every coordinate a
- * multiple of 16 below 4096). poly_hook then picks, for each polygon, the
- * depths with the smallest spread: a real polygon's depths are much closer
- * than a factor of 4.
+ * coordinates times 16, so one polygon can mix scales. Two different
+ * vertices can also land on the same integer pixel in one frame. So each
+ * entry keeps up to four candidates (position and depth): every distinct
+ * projection under its key, plus depth / 16 for a vertex that may be a
+ * precision one (no translation, every coordinate a multiple of 16 below
+ * 4096). poly_hook then picks, for each polygon, the candidates whose depths
+ * have the smallest spread: one point at another scale is 4 or 16 times
+ * off, another point on the same pixel is as far off as it is in depth,
+ * and a real polygon's depths are much closer. A key with more than four
+ * is ambiguous and never used. Vertices whose projection the GTE clamped
+ * (IR or SX/SY saturated, divide overflow) are recorded as invalid, so a
+ * polygon using them falls back too.
  *
- * Two different vertices at the same integer pixel in one frame (positions
- * more than a pixel apart, or depths not a power of two apart) make that
- * key ambiguous; it is never used. Vertices whose projection the GTE
- * clamped (IR or SX/SY saturated, divide overflow) are recorded as invalid,
- * so a polygon using them falls back too.
+ * Sub-pixel positions are decided per key, not per polygon: a key that
+ * is found gives every polygon using it the same point, and one that isn't
+ * leaves it at the integer position everywhere, so polygons sharing a
+ * vertex never crack apart. (A key with different points and no depth to
+ * choose by stays integer.)
  *
  * DrawOTag: each polygon's vertices are looked up (poly_hook) while the OT
  * is parsed, which happens inside DrawOTag, before the table moves on to the
@@ -45,24 +50,31 @@
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
 
-/* 8192 entries (256 KB) stay in the A9's L2; a frame projects up to ~4100
+/* 8192 entries (360 KB) stay in the A9's L2; a frame projects up to ~4100
  * distinct points (logs/run6-host-demo-vcache2), and recording stops at
  * 3/4 full rather than probe far */
 #define VC_BITS 13
 #define VC_SIZE (1u << VC_BITS)
 #define VC_PROBE 32
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
-#define VC_DEPTHS 3
-#define VREF_DEPTH_SHIFT 24 /* which of the entry's depths (VREF bits 24-25) */
+#define VC_CANDS 4
+#define VREF_CAND_SHIFT 24 /* which of the entry's candidates (VREF bits 24-25) */
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
+
+/* One projection recorded under a key: its position (1/256 pixel, from the
+ * pixel centre) and depth. */
+typedef struct {
+  int16_t dx, dy;
+  float w;
+} Cand;
 
 typedef struct {
   uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
   uint32_t gen; /* frame; an entry from another frame is empty */
   uint8_t state, n;
-  float dx, dy;
-  float w[VC_DEPTHS];
+  uint8_t multi; /* candidates more than a pixel apart: different points */
+  Cand c[VC_CANDS];
 } Entry;
 
 static Entry s_tab[VC_SIZE];
@@ -87,6 +99,8 @@ static Entry *find(uint32_t key, int add) {
       e->gen = s_gen;
       e->key = key;
       e->state = 0;
+      e->n = 0;
+      e->multi = 0;
       s_count++;
       return e;
     }
@@ -98,56 +112,62 @@ static Entry *find(uint32_t key, int add) {
 
 static inline float ratio(float a, float b) { return a > b ? a / b : b / a; }
 
-/* w as one more depth of e's point: 0 = kept (or already there), -1 = it
- * isn't the same point at another scale. */
-static int add_depth(Entry *e, float w) {
-  float r;
-  int j, k;
-  for (j = 0; j < e->n; j++)
-    if (ratio(w, e->w[j]) <= 1.02f)
-      return 0;
-  r = ratio(w, e->w[0]);
-  for (k = 2; k <= 16; k *= 2)
-    if (fabsf(r / k - 1) <= 0.02f) {
-      if (e->n < VC_DEPTHS)
-        e->w[e->n++] = w;
-      return 0; /* a fourth scale: the polygon can still use the others */
+static inline int16_t fix8(float d) {
+  float f = d * 256.0f;
+  return (int16_t)(f > 32767.0f ? 32767 : f < -32767.0f ? -32767 : f);
+}
+
+/* One more projection under e's key: 0 = kept (or already there), -1 = no
+ * room. The same point at the same depth is kept once. */
+static int add_cand(Entry *e, int16_t dx, int16_t dy, float w) {
+  int j;
+  for (j = 0; j < e->n; j++) {
+    int ddx = e->c[j].dx - dx, ddy = e->c[j].dy - dy;
+    if (ddx <= 256 && ddx >= -256 && ddy <= 256 && ddy >= -256) {
+      if (ratio(w, e->c[j].w) <= 1.02f)
+        return 0;
+    } else {
+      e->multi = 1;
     }
-  return -1;
+  }
+  if (e->n == VC_CANDS)
+    return -1;
+  e->c[e->n].dx = dx;
+  e->c[e->n].dy = dy;
+  e->c[e->n].w = w;
+  e->n++;
+  return 0;
 }
 
 static void record(uint32_t key, int state, float dx, float dy, float w, float w_alt) {
   Entry *e = find(key, 1);
+  int16_t fx = fix8(dx), fy = fix8(dy);
   if (!e) {
     g_vcache_stats.full++;
     return;
   }
   if (e->state == 0) {
     e->state = state;
-    e->dx = dx;
-    e->dy = dy;
-    e->w[0] = w;
-    e->n = 1;
-    if (state == E_VALID && w_alt > 0)
-      add_depth(e, w_alt);
-    if (state == E_INVALID)
+    if (state == E_INVALID) {
       g_vcache_stats.invalid++;
+      return;
+    }
+  } else if (e->state != state || state != E_VALID) {
+    /* a clamped projection and another one under the same key: the prims
+     * that use it can't be told apart */
+    if (e->state != E_AMBIGUOUS && !(e->state == E_INVALID && state == E_INVALID))
+      g_vcache_stats.ambiguous++;
+    if (!(e->state == E_INVALID && state == E_INVALID))
+      e->state = E_AMBIGUOUS;
     return;
   }
-  if (e->state == E_INVALID && state == E_INVALID)
-    return;
-  /* The same key again: the same point (shared by several polygons, or
-   * projected by another pass at another scale) keeps the entry; anything
-   * else makes it unusable. */
-  if (e->state == E_VALID && state == E_VALID && fabsf(e->dx - dx) <= 1.0f &&
-      fabsf(e->dy - dy) <= 1.0f && add_depth(e, w) == 0) {
-    if (w_alt > 0)
-      add_depth(e, w_alt);
-    return;
-  }
-  if (e->state != E_AMBIGUOUS)
+  /* Another projection under this key: the same point again (shared by
+   * several polygons), the same point at another scale, or a different
+   * point on the same pixel. Each is a candidate; each polygon picks. */
+  if (add_cand(e, fx, fy, w) || (w_alt > 0 && add_cand(e, fx, fy, w_alt))) {
     g_vcache_stats.ambiguous++;
-  e->state = E_AMBIGUOUS;
+    e->state = E_AMBIGUOUS;
+  }
 }
 
 /* PsyX_GTE.cpp's VX/VY/VZ for idx 0-2 */
@@ -222,7 +242,7 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
     const Entry *f = find(key, 0);
-    e[i] = f && f->state == E_VALID ? f : NULL;
+    e[i] = f && f->state == E_VALID && f->n ? f : NULL;
     ref[i] = VREF_POLY;
     if (e[i]) {
       ref[i] |= (uint32_t)(f - s_tab) + 1;
@@ -237,15 +257,17 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
         g_vcache_stats.miss_ambiguous++;
     }
   }
-  /* each depth of the first vertex against the closest of every other's;
-   * the choice whose worst ratio is smallest */
+  /* each candidate of the first vertex against the closest of every
+   * other's; the choice whose worst depth ratio is smallest. Candidates of
+   * one point at other scales differ by 4 or 16 times, different points on
+   * one pixel by their distance: a polygon's real depths are much closer. */
   for (c = 0; persp && c < e[0]->n; c++) {
     float worst = 1;
     try_pick[0] = c;
     for (i = 1; i < n; i++) {
       float r_best = 1e30f;
       for (j = 0; j < e[i]->n; j++) {
-        float r = ratio(e[i]->w[j], e[0]->w[c]);
+        float r = ratio(e[i]->c[j].w, e[0]->c[c].w);
         if (r < r_best) {
           r_best = r;
           try_pick[i] = j;
@@ -264,7 +286,12 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
   if (persp)
     g_vcache_stats.persp++;
   for (i = 0; i < n; i++) {
-    uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_DEPTH_SHIFT;
+    uint32_t r = ref[i];
+    /* different points under one key and no depth to choose by: its
+     * position stays the integer one, in every polygon that uses it */
+    if (!persp && e[i] && e[i]->multi)
+      r &= ~VREF_SLOT;
+    r |= persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
 }
@@ -281,14 +308,16 @@ static void done_hook(void) {
 }
 
 int psx_vcache_get(uint32_t ref, VCacheVert *out) {
-  uint32_t slot = ref & VREF_SLOT, d = (ref >> VREF_DEPTH_SHIFT) & 3;
+  uint32_t slot = ref & VREF_SLOT, d = (ref >> VREF_CAND_SHIFT) & 3;
   const Entry *e;
   if (!slot || slot > VC_SIZE)
     return 0;
   e = &s_tab[slot - 1];
-  out->dx = e->dx;
-  out->dy = e->dy;
-  out->w = e->w[d < e->n ? d : 0];
+  if (d >= e->n)
+    d = 0;
+  out->dx = e->c[d].dx * (1.0f / 256);
+  out->dy = e->c[d].dy * (1.0f / 256);
+  out->w = e->c[d].w;
   return 1;
 }
 

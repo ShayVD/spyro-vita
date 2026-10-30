@@ -64,6 +64,7 @@ int host_png_write(const char *path, const uint8_t *rgb, int w, int h);
 
 static uint16_t s_vram[VW * VH];
 static int s_vram_dirty = 1; /* s_vram newer than the GPU's copy */
+static int s_aflush = 1;     /* s_vram changed: the decoded atlas starts over (D41) */
 
 typedef struct { /* PsyX_GPU.cpp's GPUDrawSplit starts like this (gpu_soft.c) */
   DRAWENV drawenv;
@@ -130,9 +131,16 @@ static int s_npending;
 enum { P_UNTEX, P_T4, P_T8, P_T16, P_VRAM15, P_TEX, P_COUNT };
 typedef struct {
   GLuint prog;
-  GLint xf, semi, vram, tex;
+  GLint xf, semi, vram, tex, atlas;
 } Prog;
 static Prog s_prog[P_COUNT];
+
+/* The primitive programs (P_UNTEX..P_T16) of each picture option set: off;
+ * persp/subpixel only; tex_filter=1; tex_filter=2. Only the configured one
+ * is built, or all of them for bench= (D41), which switches between them. */
+enum { V_PLAIN, V_X0, V_X1, V_X2, V_COUNT };
+static Prog s_vprog[V_COUNT][P_T16 + 1];
+static Prog s_dprog[3]; /* the atlas's decode pass, per texture format */
 
 static GLuint s_vram_tex, s_vbo, s_rgb_tex, s_down_tex, s_down_fbo;
 static int s_down_w, s_down_h;
@@ -161,12 +169,14 @@ static int s_nverts;
 typedef struct {
   float x, y, w;
   int16_t page, clut;
-  uint8_t u, v, filt, wrap;
+  uint16_t u, v;  /* texel in the page, or in the atlas when filt */
+  uint8_t filt, wrap, pad[2]; /* filt: filtered from the atlas (D41) */
   uint8_t r, g, b, a;
-  uint8_t box[4]; /* u0, v0, u1, v1 */
+  uint16_t box[4]; /* u0, v0, u1, v1: atlas texels the filter may read */
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
+static int s_xattr;    /* attribute arrays 3-5 are enabled */
 static int s_filter;   /* tex_filter=: 0 off, 1 3-point, 2 bilinear */
 static int s_persp;    /* persp=1 */
 static int s_subpixel; /* subpixel=1 */
@@ -187,8 +197,23 @@ static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 static struct {
   int state; /* 0 idle, 1 armed, 2 timing */
   uint64_t t0;
-  unsigned frame_us, tail_us, n;
+  unsigned frame_us, tail_us, n, seq, taken;
 } s_sample;
+
+/* bench= (D41): time the next picture too, and read the last one timed */
+void vita_gpu_arm_sample(void) {
+  if (!s_sample.state)
+    s_sample.state = 1;
+}
+
+int vita_gpu_take_sample(unsigned *frame_us, unsigned *tail_us) {
+  if (s_sample.seq == s_sample.taken)
+    return 0;
+  s_sample.taken = s_sample.seq;
+  *frame_us = s_sample.frame_us;
+  *tail_us = s_sample.tail_us;
+  return 1;
+}
 
 static void sample_begin(void) {
   if (s_sample.state == 1) {
@@ -207,6 +232,7 @@ static void swap(void) {
     s_sample.frame_us = (unsigned)(t2 - s_sample.t0);
     s_sample.tail_us = (unsigned)(t2 - t1);
     s_sample.n++;
+    s_sample.seq++;
     s_sample.state = 0;
   }
   vglSwapBuffers(GL_FALSE);
@@ -243,11 +269,12 @@ static const char k_vs_prim[] =
 /* k_vs_prim for the expanded vertex (D39). Clip coordinates times w: the
  * same picture for w = 1, perspective-correct varyings otherwise. */
 static const char k_vs_prim_x[] =
-    "attribute vec3 a_pos;\n" /* x, y, w */
-    "attribute vec2 a_pc;\n"  /* tpage, clut (shorts) */
-    "attribute vec4 a_tex;\n" /* u, v, filter, wrap (bytes) */
+    "attribute vec3 a_pos;\n"   /* x, y, w */
+    "attribute vec2 a_pc;\n"    /* tpage, clut (shorts) */
+    "attribute vec2 a_tex;\n"   /* u, v */
+    "attribute vec4 a_flags;\n" /* filtered from the atlas, wrap (bytes) */
     "attribute vec4 a_col;\n"
-    "attribute vec4 a_box;\n" /* u0, v0, u1, v1: texels the filter may read */
+    "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: atlas texels the filter may read */
     "uniform vec4 u_xf;\n"
     "varying vec2 v_uv;\n"
     "varying vec4 v_col;\n"
@@ -257,8 +284,8 @@ static const char k_vs_prim_x[] =
     GLSL_MD
     "void main() {\n"
     "  gl_Position = vec4(((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0) * a_pos.z, 0.0, a_pos.z);\n"
-    "  v_uv = a_tex.xy;\n"
-    "  v_filt = a_tex.zw;\n"
+    "  v_uv = a_tex;\n"
+    "  v_filt = a_flags.xy;\n"
     "  v_box = a_box;\n"
     "  v_col = a_col;\n"
     "  float qpage = md(a_pc.x, 65536.0, 1.0 / 65536.0);\n"
@@ -285,6 +312,23 @@ static const char k_vs_prim_x[] =
   "  float qgreen = floor(qc.x * 0.03125) + md(qc.y, 4.0, 0.25) * 8.0;\n"      \
   "  return vec3(md(qc.x, 32.0, 0.03125), qgreen, md(floor(qc.y * 0.25), 32.0, 0.03125)) * (8.0 / 255.0);\n" \
   "}\n"
+
+/* The texel quv of the page qpc (VRAM words: page x, y; clut x, y) as its
+ * 16-bit colour qc (low, high byte), for FMT 0 (4-bit), 1 (8-bit), 2 (15-bit) */
+#define TEX_DECODE                                                             \
+  "#if FMT == 0\n"                                                             \
+  "  vec2 qword = vram(qpc.x + floor(quv.x * 0.25), qpc.y + quv.y);\n"         \
+  "  float qn = md(quv.x, 4.0, 0.25);\n"                                       \
+  "  float qbyte = mix(qword.x, qword.y, step(2.0, qn));\n"                    \
+  "  float qhi = floor(qbyte * 0.0625);\n"                                     \
+  "  float qidx = mix(qbyte - qhi * 16.0, qhi, md(qn, 2.0, 0.5));\n"           \
+  "  vec2 qc = vram(qpc.z + qidx, qpc.w);\n"                                   \
+  "#elif FMT == 1\n"                                                           \
+  "  vec2 qword = vram(qpc.x + floor(quv.x * 0.5), qpc.y + quv.y);\n"          \
+  "  vec2 qc = vram(qpc.z + mix(qword.x, qword.y, md(quv.x, 2.0, 0.5)), qpc.w);\n" \
+  "#else\n"                                                                    \
+  "  vec2 qc = vram(qpc.x + quv.x, qpc.y + quv.y);\n"                          \
+  "#endif\n"
 
 /* u_semi: x = colour scale and y = alpha for blended pixels (the blend is
  * ONE, ONE_MINUS_SRC_ALPHA); z = 1: draw only STP=0 texels, 2: only STP=1. */
@@ -324,73 +368,100 @@ static const char k_fs_tex_body[] =
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
     "}\n";
 
-/* tex_filter= (D39): the palette lookup first, then the filter (FILTER 1:
- * N64-style 3-point, 2: bilinear), over texels clamped to the triangle's UV
- * box, so the neighbouring textures in a page never bleed in, or wrapped
- * within its 32x32 tile (v_filt.y; expand() says which). Transparent
- * texels (0x0000) get no weight and the colour is renormalised over the
- * rest, so cut-out edges don't darken; a pixel is drawn where at least half
- * the weight is opaque. STP is the weighted majority, the same in both
- * subtract passes. v_filt.x = 0 (sprites, tiles) samples the nearest texel,
- * as k_fs_tex_body does. */
+/* tex_filter= (D39, D41): textured polygons are filtered from the decoded
+ * atlas (v_filt.x), where each texel is already RGB with its kind in alpha:
+ * 0 transparent, 1 opaque, 0.5 opaque with STP. The filter (FILTER 1:
+ * N64-style 3-point, 2: bilinear) reads texels clamped to the triangle's UV
+ * box, so neighbouring textures never bleed in, or wrapped within its
+ * 32x32 tile (v_filt.y; expand() says which). Transparent texels get no
+ * weight and the colour is renormalised over the rest, so cut-out edges
+ * don't darken; a pixel is drawn where at least half the weight is opaque.
+ * STP is the weighted majority, the same in both subtract passes.
+ * Everything else (sprites, tiles, anything not in the atlas) samples the
+ * nearest texel from VRAM, as k_fs_tex_body does. Each triangle takes one
+ * branch for all its pixels. */
 static const char k_fs_filt_body[] =
     "varying vec4 v_box;\n"
     "varying vec2 v_filt;\n"
-    "vec2 qfetch(vec2 quv, vec4 qpc) {\n"
-    "#if FMT == 0\n"
-    "  vec2 qword = vram(qpc.x + floor(quv.x * 0.25), qpc.y + quv.y);\n"
-    "  float qn = md(quv.x, 4.0, 0.25);\n"
-    "  float qbyte = mix(qword.x, qword.y, step(2.0, qn));\n"
-    "  float qhi = floor(qbyte * 0.0625);\n"
-    "  float qidx = mix(qbyte - qhi * 16.0, qhi, md(qn, 2.0, 0.5));\n"
-    "  return vram(qpc.z + qidx, qpc.w);\n"
-    "#elif FMT == 1\n"
-    "  vec2 qword = vram(qpc.x + floor(quv.x * 0.5), qpc.y + quv.y);\n"
-    "  return vram(qpc.z + mix(qword.x, qword.y, md(quv.x, 2.0, 0.5)), qpc.w);\n"
-    "#else\n"
-    "  return vram(qpc.x + quv.x, qpc.y + quv.y);\n"
-    "#endif\n"
-    "}\n"
+    "uniform sampler2D s_atlas;\n"
     /* rgb; w: 0 transparent, 1 opaque, 2 opaque with STP */
-    "vec4 qtap(vec2 quv, vec4 qpc) {\n"
-    "  vec2 qc = qfetch(quv, qpc);\n"
-    "  return vec4(rgb15(qc), step(0.5, qc.x + qc.y) * (1.0 + step(128.0, qc.y)));\n"
+    "vec4 qtap(vec2 q) {\n"
+    "  vec4 qt = texture2D(s_atlas, (q + 0.5) * (1.0 / 1024.0));\n"
+    "  return vec4(qt.xyz, step(0.25, qt.w) * (1.0 + step(qt.w, 0.75)));\n"
     "}\n"
     "void main() {\n"
-    "  vec4 qpc = floor(v_pc + 0.5);\n"
-    "  vec4 qbox = floor(v_box + 0.5);\n"
-    "  float qfilt = step(0.5, v_filt.x);\n"
-    "  float qwrap = step(0.5, v_filt.y);\n"
-    "  vec2 qf = v_uv + mix(vec2(0.002), vec2(-0.5), qfilt);\n"
-    "  vec2 qb = floor(qf);\n"
-    "  vec2 qfr = (qf - qb) * qfilt;\n"
-    "  vec2 qr0 = qb - qbox.xy, qr1 = qr0 + 1.0;\n"
-    "  vec2 q0 = mix(clamp(qb, qbox.xy, qbox.zw), qbox.xy + qr0 - 32.0 * floor(qr0 * 0.03125), qwrap);\n"
-    "  vec2 q1 = mix(clamp(qb + 1.0, qbox.xy, qbox.zw), qbox.xy + qr1 - 32.0 * floor(qr1 * 0.03125), qwrap);\n"
-    "  vec4 qt10 = qtap(vec2(q1.x, q0.y), qpc);\n"
-    "  vec4 qt01 = qtap(vec2(q0.x, q1.y), qpc);\n"
+    "  vec3 qrgb;\n"
+    "  float qstp;\n"
+    "  if (v_filt.x > 0.5) {\n"
+    "    vec4 qbox = floor(v_box + 0.5);\n"
+    "    float qwrap = step(0.5, v_filt.y);\n"
+    "    vec2 qf = v_uv - 0.5;\n"
+    "    vec2 qb = floor(qf);\n"
+    "    vec2 qfr = qf - qb;\n"
+    "    vec2 qr0 = qb - qbox.xy, qr1 = qr0 + 1.0;\n"
+    "    vec2 q0 = mix(clamp(qb, qbox.xy, qbox.zw), qbox.xy + qr0 - 32.0 * floor(qr0 * 0.03125), qwrap);\n"
+    "    vec2 q1 = mix(clamp(qb + 1.0, qbox.xy, qbox.zw), qbox.xy + qr1 - 32.0 * floor(qr1 * 0.03125), qwrap);\n"
+    "    vec4 qt10 = qtap(vec2(q1.x, q0.y));\n"
+    "    vec4 qt01 = qtap(vec2(q0.x, q1.y));\n"
     "#if FILTER == 1\n"
-    "  float qlo = step(qfr.x + qfr.y, 1.0);\n"
-    "  vec4 qta = qtap(mix(q1, q0, qlo), qpc);\n"
-    "  vec3 qw = mix(vec3(qfr.x + qfr.y - 1.0, 1.0 - qfr.y, 1.0 - qfr.x),\n"
-    "                vec3(1.0 - qfr.x - qfr.y, qfr.x, qfr.y), qlo);\n"
-    "  vec4 qtb = vec4(0.0);\n"
-    "  float qwb = 0.0;\n"
+    "    float qlo = step(qfr.x + qfr.y, 1.0);\n"
+    "    vec4 qta = qtap(mix(q1, q0, qlo));\n"
+    "    vec3 qw = mix(vec3(qfr.x + qfr.y - 1.0, 1.0 - qfr.y, 1.0 - qfr.x),\n"
+    "                  vec3(1.0 - qfr.x - qfr.y, qfr.x, qfr.y), qlo);\n"
+    "    vec4 qtb = vec4(0.0);\n"
+    "    float qwb = 0.0;\n"
     "#else\n"
-    "  vec4 qta = qtap(q0, qpc);\n"
-    "  vec4 qtb = qtap(q1, qpc);\n"
-    "  vec3 qw = vec3((1.0 - qfr.x) * (1.0 - qfr.y), qfr.x * (1.0 - qfr.y), (1.0 - qfr.x) * qfr.y);\n"
-    "  float qwb = qfr.x * qfr.y;\n"
+    "    vec4 qta = qtap(q0);\n"
+    "    vec4 qtb = qtap(q1);\n"
+    "    vec3 qw = vec3((1.0 - qfr.x) * (1.0 - qfr.y), qfr.x * (1.0 - qfr.y), (1.0 - qfr.x) * qfr.y);\n"
+    "    float qwb = qfr.x * qfr.y;\n"
     "#endif\n"
-    "  vec4 qcode = vec4(qta.w, qt10.w, qt01.w, qtb.w);\n"
-    "  vec4 qa = vec4(qw, qwb) * min(qcode, 1.0);\n"
-    "  float qsum = qa.x + qa.y + qa.z + qa.w;\n"
-    "  if (qsum < 0.5) discard;\n"
-    "  vec3 qrgb = (qta.xyz * qa.x + qt10.xyz * qa.y + qt01.xyz * qa.z + qtb.xyz * qa.w) / qsum;\n"
-    "  float qstp = step(0.5 * qsum, dot(qa, step(1.5, qcode)));\n"
+    "    vec4 qcode = vec4(qta.w, qt10.w, qt01.w, qtb.w);\n"
+    "    vec4 qa = vec4(qw, qwb) * min(qcode, 1.0);\n"
+    "    float qsum = qa.x + qa.y + qa.z + qa.w;\n"
+    "    if (qsum < 0.5) discard;\n"
+    "    qrgb = (qta.xyz * qa.x + qt10.xyz * qa.y + qt01.xyz * qa.z + qtb.xyz * qa.w) / qsum;\n"
+    "    qstp = step(0.5 * qsum, dot(qa, step(1.5, qcode)));\n"
+    "  } else {\n"
+    "    vec2 quv = floor(v_uv + 0.002);\n"
+    "    quv = quv - 256.0 * floor(quv * (1.0 / 256.0));\n"
+    "    vec4 qpc = floor(v_pc + 0.5);\n"
+    TEX_DECODE
+    "    if (qc.x + qc.y == 0.0) discard;\n"
+    "    qstp = step(128.0, qc.y);\n"
+    "    qrgb = rgb15(qc);\n"
+    "  }\n"
     "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
     "  qrgb = qrgb * v_col.xyz * (255.0 / 128.0);\n"
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
+    "}\n";
+
+/* The atlas's decode pass (D41): one texel of a page at v_src -> RGB, and
+ * in alpha 0 transparent, 1 opaque, 0.5 opaque with STP. */
+static const char k_vs_decode[] =
+    "attribute vec2 a_ndc;\n"
+    "attribute vec2 a_src;\n" /* texel in the page (centres at +0.5) */
+    "attribute vec2 a_pc;\n"  /* tpage, clut */
+    "varying vec2 v_src;\n"
+    "varying vec4 v_pc;\n"
+    GLSL_MD
+    "void main() {\n"
+    "  gl_Position = vec4(a_ndc, 0.0, 1.0);\n"
+    "  v_src = a_src;\n"
+    "  float qpage = md(a_pc.x, 65536.0, 1.0 / 65536.0);\n"
+    "  float qclut = md(a_pc.y, 65536.0, 1.0 / 65536.0);\n"
+    "  v_pc = vec4(md(qpage, 16.0, 0.0625) * 64.0, md(floor(qpage * 0.0625), 2.0, 0.5) * 256.0,\n"
+    "              md(qclut, 64.0, 0.015625) * 16.0, md(floor(qclut * 0.015625), 512.0, 1.0 / 512.0));\n"
+    "}\n";
+
+static const char k_fs_decode[] =
+    "varying vec2 v_src;\n"
+    "varying vec4 v_pc;\n" FS_VRAM
+    "void main() {\n"
+    "  vec2 quv = floor(v_src);\n"
+    "  vec4 qpc = floor(v_pc + 0.5);\n"
+    TEX_DECODE
+    "  gl_FragColor = vec4(rgb15(qc), step(0.5, qc.x + qc.y) * mix(1.0, 0.5, step(128.0, qc.y)));\n"
     "}\n";
 
 static const char k_vs_quad[] =
@@ -460,13 +531,16 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
   if (quad) {
     glBindAttribLocation(p->prog, 0, "a_ndc");
     glBindAttribLocation(p->prog, 1, "a_src");
+    if (vs[0] == k_vs_decode)
+      glBindAttribLocation(p->prog, 3, "a_pc");
   } else {
     glBindAttribLocation(p->prog, 0, "a_pos");
     glBindAttribLocation(p->prog, 1, "a_tex");
     glBindAttribLocation(p->prog, 2, "a_col");
-    if (s_xmode) {
+    if (vs[0] == k_vs_prim_x) {
       glBindAttribLocation(p->prog, 3, "a_pc");
       glBindAttribLocation(p->prog, 4, "a_box");
+      glBindAttribLocation(p->prog, 5, "a_flags");
     }
   }
   glLinkProgram(p->prog);
@@ -481,45 +555,73 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
   p->semi = glGetUniformLocation(p->prog, "u_semi");
   p->vram = glGetUniformLocation(p->prog, "s_vram");
   p->tex = glGetUniformLocation(p->prog, "s_tex");
+  p->atlas = glGetUniformLocation(p->prog, "s_atlas");
   glUseProgram(p->prog);
   if (p->vram >= 0)
     glUniform1i(p->vram, 0);
   if (p->tex >= 0)
     glUniform1i(p->tex, 1);
+  if (p->atlas >= 0)
+    glUniform1i(p->atlas, 2);
+  return 0;
+}
+
+static int variant_of(int filter, int xmode) { return filter ? V_X0 + filter : xmode ? V_X0 : V_PLAIN; }
+
+/* The primitive programs of option set v; 0 = ok. */
+static int build_variant(int v) {
+  static const char *const fmt_def[3] = {"#define FMT 0\n", "#define FMT 1\n", "#define FMT 2\n"};
+  static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
+  const char *vs[1] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x};
+  const char *fs[4];
+  int i, filter = v >= V_X1 ? v - V_X0 : 0;
+  if (s_vprog[v][P_UNTEX].prog)
+    return 0;
+  fs[0] = k_fs_prim_head;
+  fs[1] = k_fs_untex;
+  if (link(&s_vprog[v][P_UNTEX], vs, 1, fs, 2, 0, "untextured"))
+    return -1;
+  for (i = 0; i < 3; i++) {
+    fs[0] = fmt_def[i];
+    fs[1] = k_fs_prim_head;
+    fs[2] = k_fs_tex_body;
+    if (filter) {
+      fs[2] = filt_def[filter];
+      fs[3] = k_fs_filt_body;
+    }
+    if (link(&s_vprog[v][P_T4 + i], vs, 1, fs, filter ? 4 : 3, 0,
+             i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
+      return -1;
+  }
+  if (filter && !s_dprog[0].prog) {
+    const char *dvs[1] = {k_vs_decode};
+    for (i = 0; i < 3; i++) {
+      fs[0] = fmt_def[i];
+      fs[1] = k_fs_decode;
+      if (link(&s_dprog[i], dvs, 1, fs, 2, 1, "atlas decode"))
+        return -1;
+    }
+  }
   return 0;
 }
 
 /* 0 = ok. The blit alone is enough to show the software rasterizer's
  * picture: if only the others fail, *present_only is set. */
 static int build_programs(int *present_only) {
-  static const char *const fmt_def[3] = {"#define FMT 0\n", "#define FMT 1\n", "#define FMT 2\n"};
-  static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
-  const char *vs[1] = {s_xmode ? k_vs_prim_x : k_vs_prim}, *qvs[1] = {k_vs_quad};
-  const char *fs[4];
-  int i;
+  const char *qvs[1] = {k_vs_quad};
+  const char *fs[1];
+  int v;
   fs[0] = k_fs_tex;
-  if (link(&s_prog[P_TEX], qvs, 1, fs, 1, 1, "blit"))
+  if (!s_prog[P_TEX].prog && link(&s_prog[P_TEX], qvs, 1, fs, 1, 1, "blit"))
     return -1;
   *present_only = 1;
   fs[0] = k_fs_vram15;
-  if (link(&s_prog[P_VRAM15], qvs, 1, fs, 1, 1, "vram15"))
+  if (!s_prog[P_VRAM15].prog && link(&s_prog[P_VRAM15], qvs, 1, fs, 1, 1, "vram15"))
     return 0;
-  fs[0] = k_fs_prim_head;
-  fs[1] = k_fs_untex;
-  if (link(&s_prog[P_UNTEX], vs, 1, fs, 2, 0, "untextured"))
-    return 0;
-  for (i = 0; i < 3; i++) {
-    fs[0] = fmt_def[i];
-    fs[1] = k_fs_prim_head;
-    fs[2] = k_fs_tex_body;
-    if (s_filter) {
-      fs[2] = filt_def[s_filter];
-      fs[3] = k_fs_filt_body;
-    }
-    if (link(&s_prog[P_T4 + i], vs, 1, fs, s_filter ? 4 : 3, 0,
-             i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
+  for (v = 0; v < V_COUNT; v++)
+    if ((g_vita_opts.bench || v == variant_of(s_filter, s_xmode)) && build_variant(v))
       return 0;
-  }
+  memcpy(s_prog, s_vprog[variant_of(s_filter, s_xmode)], sizeof s_vprog[0]);
   *present_only = 0;
   return 0;
 }
@@ -581,9 +683,11 @@ static void quad(const float ndc[4], const float src[4]) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glDisableVertexAttribArray(2);
-  if (s_xmode) {
+  if (s_xattr) {
     glDisableVertexAttribArray(3);
     glDisableVertexAttribArray(4);
+    glDisableVertexAttribArray(5);
+    s_xattr = 0;
   }
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, p);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, s);
@@ -655,6 +759,175 @@ static void flush_pending(void) {
 
 static int overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh) {
   return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+}
+
+/* ---- decoded-texture atlas (tex_filter, D41) ----
+ *
+ * The filter reads 3 or 4 texels a pixel. Decoding each one from VRAM
+ * (index fetch, nibble or byte, CLUT fetch, 15-bit unpack) made the
+ * filtered shader several times the SGX's budget on hardware. So each
+ * texture block a filtered polygon uses (format, page, CLUT, and the 32x32
+ * texel blocks its UV box covers) is decoded once, by a GPU pass, into a
+ * 1024x1024 RGBA8 atlas, and kept there while VRAM stays as it is (in
+ * gameplay it does: no VRAM uploads for minutes). Any change to s_vram
+ * starts over, in the other of two atlases, so draws already queued keep
+ * theirs. Blocks over a target (a page or CLUT the game draws into) are
+ * never cached: those polygons take the nearest texel from VRAM, as do
+ * sprites and anything once the atlas is full. */
+#define ATLAS 1024
+#define ACELL 32 /* texels per block side */
+#define AGRID (ATLAS / ACELL)
+#define AMAP 4096
+#define AMAXNEW 512 /* blocks decoded per vertex buffer */
+
+typedef struct {
+  uint32_t k0, k1, gen;
+  uint16_t ax, ay; /* atlas texel of the entry's first block */
+} AEntry;
+static AEntry s_amap[AMAP];
+static uint32_t s_agen = 1;
+static GLuint s_atex[2], s_afbo[2];
+static int s_acur;
+static int s_ax, s_ay, s_ah; /* shelf allocator, in blocks */
+static int s_afull;
+static float s_aq[3][AMAXNEW * 6 * 6]; /* decode quads per format: ndc, src, pc */
+static int s_aqn[3];
+static struct {
+  unsigned blocks, decoded, misses, used;
+} s_ast;
+
+static void atlas_reset(void) {
+  int i;
+  if (!s_atex[0]) {
+    for (i = 0; i < 2; i++) {
+      s_atex[i] = new_tex(ATLAS, ATLAS, NULL);
+      glGenFramebuffers(1, &s_afbo[i]);
+      glBindFramebuffer(GL_FRAMEBUFFER, s_afbo[i]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_atex[i], 0);
+    }
+    s_bound_fbo = (GLuint)-1;
+  }
+  s_acur ^= 1;
+  s_ax = s_ay = s_ah = 0;
+  s_ast.used = 0;
+  s_afull = 0;
+  s_aflush = 0;
+  if (++s_agen == 0) {
+    memset(s_amap, 0, sizeof s_amap);
+    s_agen = 1;
+  }
+}
+
+/* The atlas texel of block (bx0, by0) of texture (fmt, page, clut), with
+ * blocks up to (bx1, by1) decoded after it, or -1. */
+static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, int by1, int *ax,
+                      int *ay) {
+  uint32_t k0 = (uint32_t)fmt | (uint32_t)(page & 31) << 2 | (uint32_t)(uint16_t)clut << 7;
+  uint32_t k1 = (uint32_t)(bx0 | by0 << 3 | bx1 << 6 | by1 << 9);
+  uint32_t h = ((k0 * 0x9E3779B1u) ^ (k1 * 0x85EBCA6Bu)) >> 20, n;
+  int bw = bx1 - bx0 + 1, bh = by1 - by0 + 1, px, py, vx, vw, i;
+  AEntry *e = NULL;
+  for (n = 0; n < 16; n++) {
+    AEntry *f = &s_amap[(h + n) & (AMAP - 1)];
+    if (f->gen != s_agen) {
+      e = f;
+      break;
+    }
+    if (f->k0 == k0 && f->k1 == k1) {
+      *ax = f->ax;
+      *ay = f->ay;
+      return 0;
+    }
+  }
+  if (!e || s_afull || s_aqn[fmt] == AMAXNEW)
+    return -1;
+  /* not over a target: what the game draws there changes every frame */
+  px = (page & 15) * 64;
+  py = (page >> 4 & 1) * 256;
+  vx = px + (bx0 * ACELL >> (2 - fmt));
+  vw = bw * ACELL >> (2 - fmt);
+  for (i = 0; i < s_ntargets; i++) {
+    const Target *t = &s_targets[i];
+    if (overlap(vx, py + by0 * ACELL, vw, bh * ACELL, t->x, t->y, t->w, t->h) ||
+        (fmt < 2 && overlap((clut & 63) * 16, clut >> 6 & 511, fmt ? 256 : 16, 1, t->x, t->y,
+                            t->w, t->h)))
+      return -1;
+  }
+  if (s_ax + bw > AGRID) {
+    s_ax = 0;
+    s_ay += s_ah;
+    s_ah = 0;
+  }
+  if (s_ay + bh > AGRID) {
+    s_afull = 1;
+    return -1;
+  }
+  e->gen = s_agen;
+  e->k0 = k0;
+  e->k1 = k1;
+  e->ax = (uint16_t)(s_ax * ACELL);
+  e->ay = (uint16_t)(s_ay * ACELL);
+  {
+    /* the decode quad: atlas rect <- page texels (centres at +0.5) */
+    static const int ix[6] = {0, 2, 0, 2, 2, 0}, iy[6] = {1, 1, 3, 1, 3, 3};
+    float r[4], t[4], *q = s_aq[fmt] + s_aqn[fmt]++ * 36;
+    r[0] = (float)e->ax / ATLAS * 2 - 1;
+    r[2] = (float)(e->ax + bw * ACELL) / ATLAS * 2 - 1;
+    r[1] = (float)e->ay / ATLAS * 2 - 1;
+    r[3] = (float)(e->ay + bh * ACELL) / ATLAS * 2 - 1;
+    t[0] = (float)(bx0 * ACELL);
+    t[2] = (float)((bx1 + 1) * ACELL);
+    t[1] = (float)(by0 * ACELL);
+    t[3] = (float)((by1 + 1) * ACELL);
+    for (i = 0; i < 6; i++) {
+      q[i * 6 + 0] = r[ix[i]];
+      q[i * 6 + 1] = r[iy[i]];
+      q[i * 6 + 2] = t[ix[i]];
+      q[i * 6 + 3] = t[iy[i]];
+      q[i * 6 + 4] = (float)(uint16_t)page;
+      q[i * 6 + 5] = (float)(uint16_t)clut;
+    }
+  }
+  s_ax += bw;
+  if (bh > s_ah)
+    s_ah = bh;
+  s_ast.decoded += (unsigned)(bw * bh);
+  s_ast.used += (unsigned)(bw * bh);
+  *ax = e->ax;
+  *ay = e->ay;
+  return 0;
+}
+
+/* The blocks found new since the last call, decoded into the atlas. */
+static void atlas_decode(void) {
+  int fmt;
+  if (!s_aqn[0] && !s_aqn[1] && !s_aqn[2])
+    return;
+  upload_vram();
+  bind_fbo(s_afbo[s_acur]);
+  glViewport(0, 0, ATLAS, ATLAS);
+  no_blend();
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, s_vram_tex);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glEnableVertexAttribArray(0);
+  glEnableVertexAttribArray(1);
+  glDisableVertexAttribArray(2);
+  glEnableVertexAttribArray(3);
+  glDisableVertexAttribArray(4);
+  glDisableVertexAttribArray(5);
+  for (fmt = 0; fmt < 3; fmt++) {
+    if (!s_aqn[fmt])
+      continue;
+    glUseProgram(s_dprog[fmt].prog);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt]);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt] + 2);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt] + 4);
+    glDrawArrays(GL_TRIANGLES, 0, s_aqn[fmt] * 6);
+    s_aqn[fmt] = 0;
+  }
+  glDisableVertexAttribArray(3);
+  s_xattr = 0;
 }
 
 /* ---- target logs ---- */
@@ -805,7 +1078,7 @@ static void readback(Target *t) {
   }
 done:
   t->cpu_stale = 0;
-  s_vram_dirty = 1;
+  s_vram_dirty = s_aflush = 1;
   s_st.readbacks++;
   s_st.readback_us += now_us() - t0;
 }
@@ -820,7 +1093,7 @@ static void sync_rect(int x, int y, int w, int h) {
     if (t->cpu_stale)
       readback(t);
     if (t->tex_stale) /* the GPU's VRAM texture is behind there */
-      s_vram_dirty = 1;
+      s_vram_dirty = 1; /* inside a target: never in the atlas */
   }
 }
 
@@ -900,6 +1173,7 @@ static Target *target_for(int x, int y, int w, int h) {
   }
   t = &s_targets[s_ntargets++];
   memset(t, 0, sizeof *t);
+  s_aflush = 1; /* atlas blocks decoded from what is now a target's rect */
   t->x = x;
   t->y = y;
   t->w = x1 - x;
@@ -979,14 +1253,19 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
  * textured triangles map one whole aligned 32x32 tile, repeated from polygon
  * to polygon, and subdivided near terrain maps its quarters: those wrap
  * within the tile, so the filter blends across polygon edges as the texture
- * was drawn to. Sprites and tiles keep the nearest texel. */
+ * was drawn to. A filtered polygon's u, v and box are in the decoded atlas
+ * (D41); sprites, tiles and polygons the atlas can't hold keep the nearest
+ * texel, in page coordinates. */
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
+  if (s_filter && (s_aflush || s_afull))
+    atlas_reset();
   for (i = 0; i < count; i += 3) {
     const GrVertex *v = s_vbuf + i;
     int n = count - i < 3 ? count - i : 3;
-    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0;
+    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0, filt = 0, du = 0, dv = 0;
+    uint32_t ref0;
     for (k = 0; k < n; k++) {
       u0 = v[k].u < u0 ? v[k].u : u0;
       v0 = v[k].v < v0 ? v[k].v : v0;
@@ -1002,6 +1281,20 @@ static void expand(int count) {
       v0 &= ~31;
       u1 = u0 + 31;
       v1 = v0 + 31;
+    }
+    /* a textured polygon: filtered from its blocks in the atlas */
+    memcpy(&ref0, &v[0].tcx, sizeof ref0);
+    if (s_filter && (ref0 & VREF_POLY) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
+      int ax, ay;
+      s_ast.blocks++;
+      if (!atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
+                      v1 >> 5, &ax, &ay)) {
+        filt = 1;
+        du = ax - (u0 & ~31);
+        dv = ay - (v0 & ~31);
+      } else {
+        s_ast.misses++;
+      }
     }
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
@@ -1021,22 +1314,22 @@ static void expand(int count) {
         x->w = c->w;
       x->page = v[k].page;
       x->clut = v[k].clut;
-      x->u = v[k].u;
-      x->v = v[k].v;
-      x->filt = s_filter && (ref & VREF_POLY);
-      x->wrap = (uint8_t)(wrap && (ref & VREF_POLY));
+      x->u = (uint16_t)(v[k].u + du);
+      x->v = (uint16_t)(v[k].v + dv);
+      x->filt = (uint8_t)filt;
+      x->wrap = (uint8_t)(wrap && filt);
       x->r = v[k].r;
       x->g = v[k].g;
       x->b = v[k].b;
       x->a = v[k].a;
-      if (ref & VREF_POLY) {
-        x->box[0] = u0, x->box[1] = v0, x->box[2] = u1, x->box[3] = v1;
-      } else {
-        x->box[0] = x->box[1] = 0;
-        x->box[2] = x->box[3] = 255;
-      }
+      x->box[0] = (uint16_t)(u0 + du);
+      x->box[1] = (uint16_t)(v0 + dv);
+      x->box[2] = (uint16_t)(u1 + du);
+      x->box[3] = (uint16_t)(v1 + dv);
     }
   }
+  if (s_filter)
+    atlas_decode();
   s_st.expand_us += now_us() - t0;
 }
 
@@ -1158,12 +1451,26 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   if (s_xmode) {
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
+    glEnableVertexAttribArray(5);
+    s_xattr = 1;
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, x));
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, u));
+    glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, u));
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(XVertex), (void *)offsetof(XVertex, r));
     glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, page));
-    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
+    glVertexAttribPointer(4, 4, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
+    glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, filt));
+    if (s_filter && s_texmode != P_UNTEX) {
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
+      glActiveTexture(GL_TEXTURE0);
+    }
   } else {
+    if (s_xattr) { /* bench= switched the options off */
+      glDisableVertexAttribArray(3);
+      glDisableVertexAttribArray(4);
+      glDisableVertexAttribArray(5);
+      s_xattr = 0;
+    }
     glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, x));
     glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, u));
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GrVertex), (void *)offsetof(GrVertex, r));
@@ -1225,7 +1532,7 @@ static int s_move_dx, s_move_dy;
 /* rect (x, y, w, h) of VRAM changed in s_vram: targets over it get it too */
 static void wrote_rect(int x, int y, int w, int h) {
   int i;
-  s_vram_dirty = 1;
+  s_vram_dirty = s_aflush = 1;
   s_gen++;
   for (i = 0; i < s_ntargets; i++) {
     Target *t = &s_targets[i];
@@ -1287,7 +1594,7 @@ static void clear_dirty(int x, int y, int w, int h) {
       return;
     }
   }
-  s_vram_dirty = 1;
+  s_vram_dirty = s_aflush = 1;
 }
 
 static void clear_targets(int x, int y, int w, int h) {
@@ -1434,9 +1741,10 @@ int vita_gpu_init(void) {
   s_xmode = s_filter || s_persp || s_subpixel;
   if (build_programs(&present_only) != 0)
     return -1;
-  if (s_xmode && present_only) {
+  if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
     s_xmode = s_filter = s_persp = s_subpixel = 0;
+    g_vita_opts.bench = 0;
     if (build_programs(&present_only) != 0)
       return -1;
   }
@@ -1845,6 +2153,24 @@ void vita_gpu_fill(float r, float g, float b) {
   vglSwapBuffers(GL_FALSE);
 }
 
+/* bench= (D41): other picture options from the next frame on. res as
+ * gpu_res (0 native, 1 the PS1's); a change redraws every target. */
+void vita_gpu_set_options(int res, int filter, int persp, int subpixel) {
+  int v = variant_of(filter, filter || persp || subpixel);
+  if (!s_vprog[v][P_UNTEX].prog)
+    return;
+  s_filter = filter;
+  s_persp = persp;
+  s_subpixel = subpixel;
+  s_xmode = filter || persp || subpixel;
+  memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
+  psx_vcache_enable(!s_xmode ? 0 : persp || subpixel ? 2 : 1);
+  if (res != g_vita_opts.gpu_res) {
+    g_vita_opts.gpu_res = res;
+    vita_gpu_rescale();
+  }
+}
+
 void vita_gpu_report(int vblank) {
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
            "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
@@ -1872,6 +2198,12 @@ void vita_gpu_report(int vblank) {
              c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
              (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
     psx_vcache_stats_reset();
+  }
+  if (s_filter) {
+    vita_log("atlas %d: %u textured polygons looked up, %u not in the atlas (sprite-sharp), "
+             "%u blocks decoded; %u of %u blocks in use",
+             vblank, s_ast.blocks, s_ast.misses, s_ast.decoded, s_ast.used, AGRID * AGRID);
+    s_ast.blocks = s_ast.misses = s_ast.decoded = 0;
   }
   memset(&s_st, 0, sizeof s_st);
 }
