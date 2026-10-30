@@ -313,7 +313,7 @@ Order matters: each step runs before the next starts.
    - [x] `CMakeLists.txt` (cmake 3.20, C11, `SPYRO_HOST=linux32|vita`), `src/platform/linux32/CMakeLists.txt`, `cmake/` helpers (`prepare.cmake` copies and patches the submodules into the build tree).
    - [x] `tools/docker/host.Dockerfile` and the `tools/tc` wrapper. *Changed:* native arm64 with `gcc-i686-linux-gnu` and `qemu-user`, no SDL/GL (decisions D14, D18).
    - [x] `tools/build_matching.sh`: rsync to `build/s1-matching`, apply `patches/spyro-1/`, `make all` under `pipefail`, SHA-1 check. Leaves `build/s1-matching/build/psx.map`, `psx.elf` (DWARF) and `wad/*.ovl` for the generators. *(Done in M0 as an environment fix.)*
-   - [x] `tools/check_no_assets.sh`. The pre-commit hook isn't installed (installing it was blocked for the agent; the user can run `ln -s ../../tools/check_no_assets.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"`).
+   - [x] `tools/check_no_assets.sh`. The pre-commit hook is a wrapper script in `$(git rev-parse --git-common-dir)/hooks/pre-commit` that runs `$(git rev-parse --show-toplevel)/tools/check_no_assets.sh` from whichever checkout or worktree is committing, and exits 0 when that file is missing (branches that predate it). A symlink doesn't work: it resolves against the main checkout. The wrapper's text is in the script's header comment.
 2. **PsyCross on the host, as a library**
    - [x] PsyCross as a static library (`cmake/psycross.cmake`) with `USE_EXTENDED_PRIM_POINTERS=0` and `USE_PGXP=0`.
    - [x] Patch 1 (`patches/PsyCross/0001-arena-ot.patch`): `nextPrim` ORs in `g_psx_arena_base`.

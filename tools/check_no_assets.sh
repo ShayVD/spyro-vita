@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Refuse to commit game data or BIOS. Fails if any tracked or staged file is a
 # PS-X EXE, an ELF, a raw CD image (sector sync pattern), an ISO, game data by
-# name, or larger than 512 KiB. Run in CI and as a pre-commit hook:
-#   ln -s ../../tools/check_no_assets.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+# name, or larger than 512 KiB. Run in CI and from the pre-commit hook. The
+# hook is a small wrapper (not a symlink: hooks live in the main checkout's
+# .git, and a relative link there resolves against the main checkout, which
+# may not have this script), saved as "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+# and made executable:
+#   #!/bin/sh
+#   s="$(git rev-parse --show-toplevel)/tools/check_no_assets.sh"
+#   [ -x "$s" ] || exit 0   # branches that predate this script
+#   exec "$s"
 # Same rules as kh-bbs-vita's and kh1-decomp's scripts, with PS1 formats.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"

@@ -66,7 +66,7 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
 ## Checks
 
 - `tools/layoutcheck.sh`: decomp struct layouts, mipsel + PsyQ vs i686 + PsyCross (must report 0 mismatches).
-- `tools/check_no_assets.sh`: no game data in git.
+- `tools/check_no_assets.sh`: no game data in git. The pre-commit hook runs it through a wrapper (text in the script's header comment), not a symlink.
 - After changing anything in `patches/`, the next build reconfigures and rebuilds everything that uses the patched copy.
 
 ## Milestone runs
