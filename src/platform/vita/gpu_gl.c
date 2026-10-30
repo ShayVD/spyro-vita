@@ -169,10 +169,10 @@ static int s_nverts;
 typedef struct {
   float x, y, w;
   int16_t page, clut;
-  uint16_t u, v;  /* texel in the page, or in the atlas when filt */
+  int16_t u, v;  /* texel in the page, or in the atlas when filt */
   uint8_t filt, wrap, pad[2]; /* filt: filtered from the atlas (D41) */
   uint8_t r, g, b, a;
-  uint16_t box[4]; /* u0, v0, u1, v1: atlas texels the filter may read */
+  int16_t box[4]; /* u0, v0, u1, v1: atlas texels the filter may read */
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
@@ -1314,18 +1314,18 @@ static void expand(int count) {
         x->w = c->w;
       x->page = v[k].page;
       x->clut = v[k].clut;
-      x->u = (uint16_t)(v[k].u + du);
-      x->v = (uint16_t)(v[k].v + dv);
+      x->u = (int16_t)(v[k].u + du);
+      x->v = (int16_t)(v[k].v + dv);
       x->filt = (uint8_t)filt;
       x->wrap = (uint8_t)(wrap && filt);
       x->r = v[k].r;
       x->g = v[k].g;
       x->b = v[k].b;
       x->a = v[k].a;
-      x->box[0] = (uint16_t)(u0 + du);
-      x->box[1] = (uint16_t)(v0 + dv);
-      x->box[2] = (uint16_t)(u1 + du);
-      x->box[3] = (uint16_t)(v1 + dv);
+      x->box[0] = (int16_t)(u0 + du);
+      x->box[1] = (int16_t)(v0 + dv);
+      x->box[2] = (int16_t)(u1 + du);
+      x->box[3] = (int16_t)(v1 + dv);
     }
   }
   if (s_filter)
@@ -1455,10 +1455,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     glEnableVertexAttribArray(5);
     s_xattr = 1;
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, x));
-    glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, u));
+    /* GL_SHORT: vitaGL took GL_UNSIGNED_SHORT attributes as all but zero */
+    glVertexAttribPointer(1, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, u));
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(XVertex), (void *)offsetof(XVertex, r));
     glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, page));
-    glVertexAttribPointer(4, 4, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
+    glVertexAttribPointer(4, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
     glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, filt));
     if (s_filter && s_texmode != P_UNTEX) {
       glActiveTexture(GL_TEXTURE2);
