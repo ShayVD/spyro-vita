@@ -22,6 +22,11 @@ typedef struct {
   int wav;            /* wav=1 also writes the audio to audio.wav */
   int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
+  int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D30) */
+  int gpu_res;        /* gpu_res=N: GPU targets at N x the PS1's pixels; 0 (default): the screen's */
+  int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
+  int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
+  int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -33,9 +38,22 @@ void vita_log(const char *fmt, ...);  /* one line, no trailing \n needed */
 /* vblank.c */
 int vita_vblank_count(void);
 
-/* video.c: the PS1 display rect, scaled 4:3 into 960x544 */
+/* video.c: the PS1 display rect, scaled 4:3 into 960x544 (either renderer) */
 int vita_video_init(void); /* 0 = ok */
 int vita_video_present(void); /* 1 = a new picture */
+void vita_video_fill_red(void); /* the no-disc screen */
+
+/* gpu.c: which renderer the GR_* calls reach, and who presents (D30) */
+extern int g_vita_gpu;
+extern int g_vita_gl;
+
+/* gpu_gl.c: the GPU renderer on vitaGL */
+int vita_gpu_init(void); /* 0 = ok, 1 = only presenting works (use gpu=0), <0 = failed */
+int vita_gpu_present(void);
+void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the display */
+void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
+void vita_gpu_fill(float r, float g, float b);
+void vita_gpu_report(int vblank); /* "gpu" line in the log */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);

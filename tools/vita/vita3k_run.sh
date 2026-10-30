@@ -7,6 +7,8 @@
 # starts from a copy of that memory-card folder (card0, ...); the cards the
 # run leaves and audio.wav (wav=1) are copied to OUT_DIR too. REALTIME=1
 # runs with the device's real-time vblanks instead of virtual ones.
+# VITA3K_LOG=N sets Vita3K's log level (default 4, ERROR) through a copy of
+# its config.yml in OUT_DIR; the user's own config is left as it is.
 # Needs Vita3K (macOS app) with firmware installed, and the extracted disc
 # files in Vita3K's ux0:data/spyro (docs/vita-testing.md). Vita3K is not a
 # Vita: what runs here still has to be checked on hardware.
@@ -33,8 +35,11 @@ if [ -n "${PAD:-}" ]; then
 fi
 [ -n "${SAVE:-}" ] && cp -R "$SAVE/." "$data/save/"
 
+cfg="$HOME/Library/Application Support/Vita3K/Vita3K/config.yml"
+sed "s/^log-level: .*/log-level: ${VITA3K_LOG:-4}/" "$cfg" > "$out/vita3k-config.yml"
+
 # A .vpk argument installs (over an older install) and runs it.
-"$vita3k" --frontend sdl -l 4 "$vpk" > "$out/vita3k.txt" 2>&1 &
+"$vita3k" --frontend sdl -c "$out/vita3k-config.yml" -w "$vpk" > "$out/vita3k.txt" 2>&1 &
 pid=$!
 t=0
 while [ $t -lt "$timeout" ] && kill -0 $pid 2>/dev/null; do
