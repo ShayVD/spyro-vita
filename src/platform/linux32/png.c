@@ -1,8 +1,12 @@
 /* Screenshots for the headless linux32 host (docs/porting-plan.md §5): a tiny
  * PNG writer (stored deflate blocks, CRC32, Adler32; no zlib) and the
  * picture a TV would show: the VRAM rect of the last PutDispEnv, 15-bit or
- * 24-bit (isrgb24, the boot logos), black while SetDispMask(0). */
+ * 24-bit (isrgb24, the boot logos), black while SetDispMask(0). With
+ * --out960 (on by itself with --widescreen or --interp) the picture is the
+ * presentation frame (src/game/present.c) scaled to 960x544: full width when
+ * widescreen, pillarboxed 4:3 otherwise. */
 #include "host.h"
+#include "present.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -95,7 +99,7 @@ int host_png_write(const char *path, const uint8_t *rgb, int w, int h) {
 
 static uint8_t c5to8(int c) { return (uint8_t)(c << 3 | c >> 2); }
 
-uint8_t *host_display_rgb(int *pw, int *ph) {
+static uint8_t *ps1_display_rgb(int *pw, int *ph) {
   const DISPENV *d = &currentDispEnv; /* what the PS1 scans out now */
   int w = d->disp.w > 0 ? d->disp.w : 320, h = d->disp.h > 0 ? d->disp.h : 240;
   uint8_t *rgb = calloc((size_t)w * h, 3);
@@ -124,6 +128,69 @@ uint8_t *host_display_rgb(int *pw, int *ph) {
   *pw = w;
   *ph = h;
   return rgb;
+}
+
+/* ---- 960x544 output ---- */
+
+#define OUT_W 960
+#define OUT_H 544
+
+static const uint16_t *s_present; /* this vblank's presentation frame */
+
+void host_present_vblank(void) { s_present = port_present_frame(); }
+
+/* Bilinear scale of src (sw x sh RGB) into the dst rectangle x0..x0+w. */
+static void scale_into(uint8_t *dst, int x0, int w, const uint8_t *src, int sw,
+                       int sh) {
+  int x, y, c;
+  for (y = 0; y < OUT_H; y++) {
+    int fy = (int)(((long long)(2 * y + 1) * sh * 256 / (2 * OUT_H)) - 128);
+    int y0 = fy < 0 ? 0 : fy >> 8, ty = fy < 0 ? 0 : fy & 255;
+    int y1 = y0 + 1 < sh ? y0 + 1 : sh - 1;
+    for (x = 0; x < w; x++) {
+      int fx = (int)(((long long)(2 * x + 1) * sw * 256 / (2 * w)) - 128);
+      int xa = fx < 0 ? 0 : fx >> 8, tx = fx < 0 ? 0 : fx & 255;
+      int xb = xa + 1 < sw ? xa + 1 : sw - 1;
+      const uint8_t *p00 = src + ((size_t)y0 * sw + xa) * 3;
+      const uint8_t *p01 = src + ((size_t)y0 * sw + xb) * 3;
+      const uint8_t *p10 = src + ((size_t)y1 * sw + xa) * 3;
+      const uint8_t *p11 = src + ((size_t)y1 * sw + xb) * 3;
+      uint8_t *o = dst + ((size_t)y * OUT_W + x0 + x) * 3;
+      for (c = 0; c < 3; c++) {
+        int top = p00[c] * (256 - tx) + p01[c] * tx;
+        int bot = p10[c] * (256 - tx) + p11[c] * tx;
+        o[c] = (uint8_t)((top * (256 - ty) + bot * ty + 32768) >> 16);
+      }
+    }
+  }
+}
+
+uint8_t *host_display_rgb(int *pw, int *ph) {
+  uint8_t *src, *out;
+  int sw, sh, wide = 0, i;
+  if (!g_host_opts.out960)
+    return ps1_display_rgb(pw, ph);
+  if (s_present) {
+    sw = PRESENT_W, sh = PRESENT_H;
+    src = malloc((size_t)sw * sh * 3);
+    for (i = 0; i < sw * sh; i++) {
+      src[i * 3 + 0] = c5to8(s_present[i] & 31);
+      src[i * 3 + 1] = c5to8((s_present[i] >> 5) & 31);
+      src[i * 3 + 2] = c5to8((s_present[i] >> 10) & 31);
+    }
+    wide = port_present_frame_is_wide();
+  } else {
+    src = ps1_display_rgb(&sw, &sh);
+  }
+  out = calloc((size_t)OUT_W * OUT_H, 3);
+  if (wide)
+    scale_into(out, 0, OUT_W, src, sw, sh);
+  else /* 4:3 at 544 lines is 725 wide */
+    scale_into(out, (OUT_W - 725) / 2, 725, src, sw, sh);
+  free(src);
+  *pw = OUT_W;
+  *ph = OUT_H;
+  return out;
 }
 
 int host_shot_display(const char *path) {

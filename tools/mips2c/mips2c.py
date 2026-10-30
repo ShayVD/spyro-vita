@@ -544,6 +544,12 @@ class Translator:
                 if t is not None:
                     branch_targets.add(t)
 
+        before = self.hints.get(u.rel, {}).get("before", {})
+        for a in before:
+            k = u.by_addr.get(a)
+            prev = insns[k - 1] if k else None
+            if k is None or (prev and (prev.op in BRANCHES or prev.op in JUMPS or self.is_load(prev))):
+                raise Fail(f"{u.rel}: `before` hint at {a:#x} must follow neither a branch nor a load")
         k = 0
         n = len(insns)
         while k < n:
@@ -552,6 +558,8 @@ class Translator:
                           or ins.addr in self.ret_points)
             if label_here:
                 body.append(f"{self.lab(ins.addr)}:;")
+            if ins.addr in before:
+                body.append(f"  {before[ins.addr]} /* hints.yaml `before` */")
             if ins.op in BRANCHES or ins.op in JUMPS:
                 if k + 1 >= n:
                     raise Fail(f"branch without delay slot {ins.where()}")
