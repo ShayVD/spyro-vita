@@ -647,8 +647,8 @@ static int FromCirclingMoby(void) {
   return 0;
 }
 
-/* State 29: sinking (water, lava). Cross jumps out between ticks 16 and
- * 60; after that Spyro dies and the surface's moby spawns. */
+/* State 29: sinking (water, lava). Cross held jumps out between ticks 16
+ * and 60; after that Spyro dies and the surface's moby spawns. */
 static int FromSinking(void) {
   if (HandleSpyroDamage(DAMAGE_NO_CHARGE))
     return NONE;
@@ -659,7 +659,7 @@ static int FromSinking(void) {
     g_SpawnMoby(D_8006EA40[D_80075728], 0);
     return NONE;
   }
-  if (g_Spyro.m_idleTimer >= 16 && (g_Pad.m_Down & PAD_CROSS))
+  if (g_Spyro.m_idleTimer >= 16 && (g_Pad.m_Held & PAD_CROSS))
     return 5;
   return NONE;
 }
