@@ -181,6 +181,47 @@ Record each decision with its date, what was chosen, and why.
   - Clocks were already at the maximum (444/222/222/166).
 - **Decision:** the CPU fixes can't close a 4× gap, so the GPU renderer starts in M3, not M4. The first attempt is PsyCross's own GL renderer (`src/render/PsyX_render.cpp`, VRAM as a texture with CLUT in a shader) on vitaGL, whose GLSL translator is in the installed library (`glsl_utils.o`). It needs `ur0:data/libshacccg.suprx` on the device. The software path stays as the fallback (`gpu=0`, and automatically when shaders can't be built).
 
+## 2026-10-30: presentation (widescreen, 60 fps)
+
+### D30. Widescreen and 60 fps as presentation passes over the unchanged game
+- **Chosen:** both features run the game's own `GamestateDraw` again in a *presentation pass*:
+  1. snapshot the 2 MB arena, scratchpad, GTE registers and PsyCross's envs;
+  2. adjust the state (projection X row at 3/4; camera, Spyro and mobys halfway between ticks);
+  3. render with VSync frozen and SPU writes dropped;
+  4. capture the picture;
+  5. restore.
+
+  The original `GamestateDraw` still runs once per tick as the logic pass. Under widescreen its `DrawOTag` is skipped, so its side effects keep the 4:3 frustum. Off is the default, and then nothing runs: the demos match the oracle and the screenshots are byte-identical. Design, costs and logs: `docs/presentation.md`.
+- **Widescreen goes in the camera's projection matrix, not RTPS/RTPT** (revises D2's plan). `CameraUpdateMatrices` already scales the Y row by 320/512 for the 4:3 TV. Scaling the X row by 3/4 there squeezes the picture *and* widens the frustum tests that `r_moby` does in that space. A GTE-level squeeze would leave those culls at 4:3, and it would reach gameplay: the camera logic projects Spyro through RTPS (`func_80017AA4`). HUD models (`func_80022A2C`) and C-built 2D primitives (the HUD OT) are narrowed separately.
+- **Why a logic pass instead of one widescreen pass:** `r_moby` sets `m_WasDrawn` from its frustum test, and `func_80051FEC` uses that flag to pick which mobys update. With the wider frustum in the logic (`--widescreen-logic`), the Stone Hill attract demo desyncs: rand diverges at tick 123, Spyro's position at tick 541 (`logs/run5-wslogic`). The cost is the render path once more per tick, without rasterisation.
+- **Why snapshot everything rather than list what the draw writes:** the draw path writes game state in many places (render lists, the double-buffer flip, animation advance, border and transition counters, `m_WasDrawn`). A full snapshot can't miss a writer. `--present-dirty` measured 22–40 dirty 4 KB pages per pass, so a region snapshot is the planned optimisation, checked against that map.
+
+## 2026-10-30: whole game on the host (groundwork for M4)
+
+*Numbering:* D25–D29 are M3's and D30 the presentation's (above), so this section is D31.
+
+### D31. The whole-game check: a level tour by the game's own cheats, on both sides
+- **Chosen:** the host's `--tour` (`src/platform/linux32/tour.c`) and the oracle's `ORACLE_TOUR` (`tools/oracle/capture.lua`) play the same script. After a new game, each entry is a level reached with the game's level-warp cheat from the inventory (`CheatProcessLevelWarp`, cheats.c; world 6 needs LEFT for the digit 6), or the credits, LEVELS OPEN or 99 LIVES cheat typed in the inventory, or an ending. `--pad-after` / `ORACLE_PAD_AFTER` then frees Nestor and saves at the fairy.
+- **Endings by poke:** `end2` and `end3` write what the game's own moby code writes when Gnasty Gnorc is beaten (moby_update.c, Gnasty state 9: cutscene 2, then `InitCreditsSequence(0)`) and when Spyro enters Gnasty's Loot's vortex with 14000 gems (moby 217: cutscene 3, then the full credits). Beating Gnasty or collecting every gem with a pad script isn't practical; from the cutscene on, the code that runs is the game's own.
+- **Flight levels:** the tour stays at most 60 vblanks in x5 levels. Left alone, Spyro flies into the water there and drowns about 240 vblanks after arriving, and the flight results keep interrupting the warp.
+- **What compares, and what can't:** function samples replay exactly (as in M2). The per-vblank game-state traces can't be matched tick for tick outside the attract demos: the PS1 drops frames (`g_DeltaTime` 3 or 4), the host never does, so Spyro's glide into each level integrates differently (positions apart by up to ~60 units after 300 vblanks). PCSX-Redux `a5d621af` has no CPU overclock setting that would remove the drops. So each level is compared by function replay, by a screenshot from each side taken when the tour leaves it (`tools/oracle/tour_pairs.py`), and by the visit and sequence lengths in the traces (`tools/oracle/tour_report.py`).
+- **Evidence:** `docs/whole-game-host.md`.
+
+## 2026-10-30: Vita packaging
+
 ### D32. Vita link: 16 KiB of headroom after the text segment
 - **Problem:** `vita-elf-create` appends its SCE data (module info and the import tables, about 2.8 KB here) at the end of the text segment. The linker starts the data segment at a 64 KiB boundary picked by `DATA_SEGMENT_ALIGN`, which can be right after the text. When the text ends less than ~2.8 KB below that boundary, packaging fails: "Cannot allocate 2776 bytes for SCE data at end of segment 0; segment 1 overlaps". Main had 43 KiB to spare by chance. The hand-written pete/camera branch shrank the text, left 704 bytes, and hit it. Reproduced on main by padding `.rodata` so that the text ends at `0x8132FD40`.
 - **Decision:** link with `-Wl,--defsym=__sce_headroom=0x4000` (`src/platform/vita/CMakeLists.txt`). vitasdk's default linker script adds `__sce_headroom` bytes before aligning the data segment, so the data segment always starts at least 16 KiB after the text. Costs at most one 64 KiB step of address space, no memory. The padded build packages with it; main's layout is unchanged (data at `0x81340000` before and after).
+
+## 2026-10-30: hand-written C for pete and camera
+
+### D33. Hand-written C replaces mips2c units one function at a time, with the generated version a build switch away
+- **Replace, don't fork:** a hand-written function in `src/game/*_hand.c` takes its unit out of the mips2c build (`M2C_HAND` in `cmake/mips2c.cmake`). The oracle replay finds it through `src/game/hand_index.c`.
+- **A/B switch:** `-DSPYRO_M2C_FUNCS=name;name` (or `all`) builds those units from mips2c again and compiles their hand C out (`M2C_<name>=1`). It's for A/B tests and bisecting, on any target.
+- **Partly hand-written units** (`M2C_PARTIAL`; so far `func_80043FE4`, the 3,865-instruction pete physics): the mips2c unit stays linked under `<name>_gen`, and the hand C calls it for the cases it doesn't cover yet (the flying-ability phases). The big function can then be done and verified state by state instead of all at once.
+- **Differential sweeps for paths no capture reaches** (`SPYRO_REPLAY_SWEEP`, `SPYRO_REPLAY_POKE` in `src/game/oracle_replay.c`): one RAM word set to each value of a list, the mips2c unit as the reference, then the hand C from the same entry state. The reference is itself checked against the emulator on every captured sample, and it is a per-instruction translation, so agreement over the swept inputs is strong evidence. It does not replace oracle samples where a capture can reach the path.
+- **Names for decomp fields stay in our headers:** `src/game/hand_structs.h` has layout-identical views (`SpyroFlameView`, `PadFrame`), checked with `static_assert` against the decomp's `offsetof`. The decomp's own matched C uses the same `unk_` names, so a renaming patch would have to touch it all.
+
+### D34. Hand C doesn't depend on return values the decomp's C doesn't return
+- `func_80043FE4` reads v0 after calling `UpdateSpyroTurnMomentum` and `ApplySpyroSoftTurn`. The decomp declares both `void`, and they compile to functions whose last call (`func_80017928`, the absolute 12-bit angle difference) leaves its result in v0. The mips2c unit reads the host's return register after a `void` C call. That works on i686 at -O1 because the tail call's result is still in eax, but nothing guarantees it, on the Vita or with other flags.
+- The hand C calls `func_80017928` again on the same fields (`TurnLeft` in `pete_hand.c`). It is pure, so the result is identical and doesn't depend on the ABI. Any other mips2c unit that reads v0 after a `void` decomp function has the same latent dependence. None is known to have failed.

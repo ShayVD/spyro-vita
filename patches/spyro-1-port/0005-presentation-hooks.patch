@@ -1,0 +1,87 @@
+diff --git a/src/camera.c b/src/camera.c
+--- a/src/camera.c
++++ b/src/camera.c
+@@ -24,6 +24,10 @@
+ // Flag: set to 1 when camera forced to destination, 0 in collision func
+ int D_800756B8;
+ 
++#ifdef SPYRO_PORT
++void PortProjectionHook(short pM[3][3]); /* src/game/present.c */
++#endif
++
+ /// @brief Creates the Camera's view and projection matrices
+ void CameraUpdateMatrices(void) {
+   // If it wasn't for the projection part, this function could've
+@@ -82,6 +86,11 @@
+   mtx.m[1][0] = mtx.m[1][0] * 320 / 512;
+   mtx.m[1][1] = mtx.m[1][1] * 320 / 512;
+   mtx.m[1][2] = mtx.m[1][2] * 320 / 512;
++
++#ifdef SPYRO_PORT
++  // Widescreen presentation narrows the X row the same way (present.c)
++  PortProjectionHook(mtx.m);
++#endif
+ 
+   Memcpy(&g_Camera.m_ProjectionMatrix, &mtx, sizeof(SHORTMATRIX));
+ }
+diff --git a/src/gamestates/draw.c b/src/gamestates/draw.c
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -796,6 +796,10 @@
+ }
+ 
+ /// @brief Gamestate 1
++#ifdef SPYRO_PORT
++void PortProjectionHook(short pM[3][3]); /* src/game/present.c */
++#endif
++
+ void func_8001A050(void) {
+   MATRIX A;
+   MATRIX B;
+@@ -842,6 +846,9 @@
+       B.m[1][0] = (A.m[1][0] * 320) / 512;
+       B.m[1][1] = (A.m[1][1] * 320) / 512;
+       B.m[1][2] = (A.m[1][2] * 320) / 512;
++#ifdef SPYRO_PORT
++      PortProjectionHook(B.m); // widescreen presentation (present.c)
++#endif
+       func_8004EBA8(-1, (SHORTMATRIX *)&A, (SHORTMATRIX *)&B);
+     } else {
+       func_8004EBA8(-1, &g_Camera.m_ViewMatrix, &g_Camera.m_ProjectionMatrix);
+diff --git a/src/main.c b/src/main.c
+--- a/src/main.c
++++ b/src/main.c
+@@ -13,11 +13,21 @@
+ int g_DeltaTime;
+ int g_UnprocessedFrames;
+ 
++#ifdef SPYRO_PORT
++/* Optional widescreen and 60 fps presentation (src/game/present.c,
++ * docs/presentation.md). With both off, PortPresentDraw() is GamestateDraw(). */
++void PortPresentBeforeUpdate(void);
++void PortPresentDraw(void);
++#endif
++
+ void main(void) {
+   Initialize();
+ 
+   while (1) {
+     g_PadMutex = 0;
++#ifdef SPYRO_PORT
++    PortPresentBeforeUpdate();
++#endif
+     GamestateUpdate();
+     g_PadMutex = 1;
+ 
+@@ -32,7 +42,11 @@
+     g_UnprocessedFrames = 0;
+ 
+     if (!g_StateSwitch) {
++#ifdef SPYRO_PORT
++      PortPresentDraw();
++#else
+       GamestateDraw();
++#endif
+     }
+   }
+ }

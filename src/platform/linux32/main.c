@@ -4,19 +4,34 @@
  *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
- *         [--poke V:ADDR=VALUE]...
- *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]
+ *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
+ *         [--pad-after FILE] [--peek ADDR:N]...
+ *         [--widescreen | --widescreen-logic] [--interp | --interp-camera]
+ *         [--out960] [--present-stats | --present-dirty]
+ *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
- *   translated C and compare (src/game/oracle_replay.c); no disc needed.
+ *   translated C and compare (src/game/oracle_replay.c); --disc only for
+ *   samples that read the CD.
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
+ * --peek: log N words of PS1 RAM from hex ADDR with every shot.
+ * --tour: after the pad script, visit levels with the level-warp cheat, run
+ *   the credits or an ending (src/platform/linux32/tour.c).
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
  * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
  *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
  * --serve: real-time vblanks and a browser player on PORT (decisions D22).
+ * --widescreen: 16:9 picture from a presentation pass; the logic still sees
+ *   the 4:3 frustum. --widescreen-logic: one pass, wider frustum in the logic
+ *   too (gameplay can differ). --interp: 60 fps, an extra frame between ticks
+ *   with camera, Spyro and mobys blended; --interp-camera: camera only.
+ *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
+ * --present-stats: time update, draw and passes; logged at exit.
+ *   --present-dirty also lists the arena pages the passes wrote.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
+#include "present.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
 
@@ -25,6 +40,10 @@
 #include <string.h>
 
 extern void spyro_main(void);
+/* libcd (PsyQ signatures) and the game's read callback (cd.c) */
+typedef void (*CdlCB)(unsigned char, unsigned char *);
+CdlCB CdReadCallback(CdlCB func);
+void CDReadDone(unsigned char intr, unsigned char *result);
 
 static void usage(void) {
   fprintf(stderr,
@@ -35,8 +54,42 @@ static void usage(void) {
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
-          "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]\n");
+          "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
+          "             [--peek ADDR:N]...\n"
+          "             [--widescreen | --widescreen-logic] "
+          "[--interp | --interp-camera] [--out960] [--present-stats]\n"
+          "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
+}
+
+static void present_report(void) {
+  const PresentStats *s = &g_present_stats;
+  long long t = s->ticks ? s->ticks : 1;
+  if (!g_present.stats)
+    return;
+  host_log("present: %lld ticks; per tick us: update %lld, logic draw %lld "
+           "(+%lld in VSync waits), passes %lld (%lld passes), snapshot %lld",
+           s->ticks, s->us_update / t, (s->us_logic - s->us_vsync) / t,
+           s->us_vsync / t, s->us_pass / t, s->passes, s->us_snapshot / t);
+  host_log("present: interp frames %lld, skipped %lld, 2D narrowed %lld, "
+           "SPU writes dropped %lld",
+           s->interp_frames, s->skipped_interp, s->squeezed_2d, s->spu_dropped);
+  if (g_present.stats > 1 && s->passes) {
+    int i, start = -1;
+    host_log("present: pages dirtied per pass: avg %lld, max %lld (4 KB)",
+             s->dirty_pages / s->passes, s->dirty_max);
+    for (i = 0; i <= PRESENT_PAGES; i++) {
+      int d = i < PRESENT_PAGES && (s->dirty_union[i / 32] >> (i % 32) & 1);
+      if (d && start < 0)
+        start = i;
+      if (!d && start >= 0) {
+        host_log("present: dirty %08x-%08x", 0x80000000u + start * 4096,
+                 0x80000000u + i * 4096 - 1);
+        start = -1;
+      }
+    }
+  }
+  host_log_flush();
 }
 
 static int to_int(const char *s) {
@@ -48,7 +101,7 @@ static int to_int(const char *s) {
 }
 
 int main(int argc, char **argv) {
-  const char *pad = NULL, *replay = NULL, *only = NULL, *ignore = NULL, *fnmap = NULL;
+  const char *pad = NULL, *pad_after = NULL, *replay = NULL, *only = NULL, *ignore = NULL, *fnmap = NULL;
   int i, cd_latency = 0, serve_port = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -120,14 +173,48 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--peek") == 0) {
+      unsigned addr;
+      int n;
+      TAKE();
+      if (g_host_opts.npeeks == 8 || sscanf(val, "%x:%d", &addr, &n) != 2 || n < 1 ||
+          n > 64 || addr < 0x80000000u || addr + 4u * n > 0x80200000u)
+        usage();
+      g_host_opts.peeks[g_host_opts.npeeks].addr = addr;
+      g_host_opts.peeks[g_host_opts.npeeks++].n = n;
+    } else if (strcmp(a, "--tour") == 0) {
+      TAKE();
+      if (host_tour_set(val) != 0)
+        usage();
+    } else if (strcmp(a, "--tour-stay") == 0) {
+      TAKE();
+      host_tour_set_stay(to_int(val));
     } else if (strcmp(a, "--tri-dump") == 0) {
       TAKE();
       g_host_opts.tri_dump = to_int(val);
+    } else if (strcmp(a, "--widescreen") == 0) {
+      g_present.widescreen = 1;
+    } else if (strcmp(a, "--widescreen-logic") == 0) {
+      g_present.widescreen = g_present.ws_logic = 1;
+    } else if (strcmp(a, "--interp") == 0) {
+      g_present.interp = g_present.interp_mobys = 1;
+    } else if (strcmp(a, "--interp-camera") == 0) {
+      g_present.interp = 1;
+      g_present.interp_mobys = 0;
+    } else if (strcmp(a, "--out960") == 0) {
+      g_host_opts.out960 = 1;
+    } else if (strcmp(a, "--present-stats") == 0) {
+      g_present.stats = 1;
+    } else if (strcmp(a, "--present-dirty") == 0) {
+      g_present.stats = 2;
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;
+    } else if (strcmp(a, "--pad-after") == 0) {
+      TAKE();
+      pad_after = val;
     } else if (strcmp(a, "--save") == 0) {
       TAKE();
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
@@ -144,11 +231,26 @@ int main(int argc, char **argv) {
   }
   if (replay) {
     psx_arena_init();
+    /* With --disc, CD reads made inside a sampled call (the credits overlay's
+     * CDLoadSync) read the disc; without, they never complete. The game's
+     * read callback (cd.c, set at start-up) is libcd state on the host, not
+     * RAM, so the replay sets it as the game does. */
+    if (g_host_opts.disc_dir) {
+      if (psx_cd_open(g_host_opts.disc_dir) != 0)
+        return 1;
+      psx_cd_set_read_latency(0); /* no vblanks here: reads end inside CdRead */
+      CdReadCallback(CDReadDone);
+    }
     return spyro_replay(replay, only, ignore, fnmap) == 0 ? 0 : 1;
   }
   if (!g_host_opts.disc_dir)
     usage();
+  if (port_present_active())
+    g_host_opts.out960 = 1;
+  atexit(present_report);
   if (pad && host_pad_load(pad) != 0)
+    return 1;
+  if (pad_after && host_pad_load_after(pad_after) != 0)
     return 1;
 
   if (serve_port && host_serve_start(serve_port) != 0)

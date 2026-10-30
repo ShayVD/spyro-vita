@@ -1,0 +1,72 @@
+diff --git a/include/psx/libetc.h b/include/psx/libetc.h
+--- a/include/psx/libetc.h
++++ b/include/psx/libetc.h
+@@ -50,6 +50,9 @@
+ extern int StopCallback(void);
+ extern int VSync(int mode);
+ extern int VSyncCallback(void (*f)(void)) ;
++/* Spyro port: when set, VSync(mode) returns this instead (presentation
++ * passes re-run the game's draw without waiting; docs/presentation.md). */
++extern int (*g_psyxVSyncHook)(int mode);
+ extern int GetVideoMode (void);
+ extern int SetVideoMode (int mode);
+ extern u_int PadRead(int id);
+diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -855,6 +855,10 @@
+ extern void AddPrims(void *ot, void *p0, void *p1);
+ extern void CatPrim(void *p0, void *p1);
+ extern void DrawOTag(u_long *p);
++/* Spyro port (docs/presentation.md): called first by DrawOTag; nonzero
++ * skips the list. The post hook runs after the list is drawn. */
++extern int (*g_psyxDrawOTagPre)(u_long *p);
++extern void (*g_psyxDrawOTagPost)(u_long *p);
+ extern void DrawOTagIO(u_long *p);
+ extern void DrawOTagEnv(u_long *p, DRAWENV *env);
+ extern void DrawPrim(void *p);
+diff --git a/src/psx/LIBETC.C b/src/psx/LIBETC.C
+--- a/src/psx/LIBETC.C
++++ b/src/psx/LIBETC.C
+@@ -30,8 +30,13 @@
+ 	return old;
+ }
+ 
++int (*g_psyxVSyncHook)(int mode) = NULL;
++
+ int VSync(int mode)
+ {
++	if (g_psyxVSyncHook)
++		return g_psyxVSyncHook(mode);
++
+ 	if (mode < 0)
+ 	{
+ 		// don't wait but still return vblank count
+diff --git a/src/psx/LIBGPU.C b/src/psx/LIBGPU.C
+--- a/src/psx/LIBGPU.C
++++ b/src/psx/LIBGPU.C
+@@ -416,8 +416,14 @@
+ 	DrawOTag(p);
+ }
+ 
++int (*g_psyxDrawOTagPre)(u_long* p) = NULL;
++void (*g_psyxDrawOTagPost)(u_long* p) = NULL;
++
+ void DrawOTag(u_long* p)
+ {
++	if (g_psyxDrawOTagPre && g_psyxDrawOTagPre(p))
++		return;
++
+ 	do
+ 	{
+ 		if (g_GPUDisabledState)
+@@ -438,6 +444,9 @@
+ 
+ 		DrawAllSplits();
+ 	} while (g_dbg_emulatorPaused);
++
++	if (g_psyxDrawOTagPost)
++		g_psyxDrawOTagPost(p);
+ }
+  
+ void DrawPrim(void* p)

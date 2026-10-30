@@ -8,6 +8,7 @@
 
 #include "common.h"
 #include "environment.h"
+#include "loaders.h"
 #include "moby.h"
 #include "spyro.h"
 #include "variables.h"
@@ -44,11 +45,15 @@ void spyro_trace_close(void) {
 }
 
 /* The level's mobys (class, position, state) as TSV, for finding things to
- * walk to in scripted runs (--moby-dump). */
+ * walk to in scripted runs (--moby-dump). Only in the level's own gamestates
+ * and not while it loads (g_LoadStage >= 0): the title, cutscenes and the
+ * credits (13-15) reuse the buffers, and a loading level's tables are
+ * half-written. */
 void spyro_moby_dump(const char *path) {
   FILE *f;
   int i;
-  if (!g_LevelMobys || !(f = fopen(path, "w")))
+  if (g_Gamestate >= GS_TitleScreen || g_LoadStage >= 0 || !g_LevelMobys ||
+      !(f = fopen(path, "w")))
     return;
   fprintf(f, "index\tclass\tx\ty\tz\tstate\tspyro_x\tspyro_y\tspyro_z\tgems\n");
   for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++)
