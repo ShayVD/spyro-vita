@@ -42,7 +42,7 @@ python3 tools/contact_sheet.py logs/runN-x
 Optional, off by default (`docs/presentation.md`):
 - `--widescreen`: 16:9, with the logic kept at the 4:3 frustum.
 - `--interp`: an extra in-between frame per tick, so 60 fps. `--interp-camera` blends the camera only.
-- `--widescreen-logic`: diagnostic only. The wider frustum reaches the gameplay, and the demos desync.
+- `--widescreen` draws once in 16:9 (the wider view reaches the logic) except in attract demos, which keep the exact 4:3 logic. `--widescreen-exact`: the exact two-draw form always. `--widescreen-logic`: one draw always (diagnostic: the demos desync).
 - Any of these turns on `--out960`, which writes 960×544 pictures (shots and `--serve`).
 - `--present-stats` logs per-tick costs at exit. `--present-dirty` also maps the arena pages a pass writes.
 - `tools/side_by_side.py OUT.png A.png B.png … [--cols N] [--scale F] [--crop X,Y,W,H]` puts shots next to each other.

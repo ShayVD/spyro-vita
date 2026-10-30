@@ -26,6 +26,7 @@
 #include "common.h"
 #include "camera.h"
 #include "environment.h"
+#include "gamepad.h"
 #include "graphics.h"
 #include "moby.h"
 #include "renderers.h"
@@ -82,6 +83,12 @@ void PortProjectionHook(short pM[3][3]) {
 unsigned int port_ws_hud_ofx(unsigned int ofx) {
   long long d = (long long)(int)ofx - (SCREEN_CX << 16);
   return (unsigned int)((SCREEN_CX << 16) + d * WS_NUM / WS_DEN);
+}
+
+unsigned int port_ws_r1112(unsigned int r11r12) {
+  short r11 = (short)(r11r12 & 0xFFFF), r12 = (short)(r11r12 >> 16);
+  return (unsigned short)(r11 * WS_NUM / WS_DEN) |
+         (unsigned int)(unsigned short)(r12 * WS_NUM / WS_DEN) << 16;
 }
 
 unsigned int port_ws_hud_r11(unsigned int r11r12) {
@@ -254,6 +261,8 @@ static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H];
 static uint8_t s_frame_wide[PRESENT_SLOTS];
 static int s_qhead, s_qcount; /* oldest queued slot, number queued */
 static int s_shown = -1;      /* slot on screen */
+static int s_in_game_draw;    /* inside GamestateDraw (a pass or the real one) */
+static int s_foreign_vblank = -1; /* last DrawOTag from anywhere else */
 static int s_popped;          /* the last port_present_frame_slot() took a new one */
 static int s_last_push_vblank = -1000;
 
@@ -268,10 +277,14 @@ static void capture_now(void) {
   r.y = activeDrawEnv.ofs[1];
   r.w = PRESENT_W;
   r.h = PRESENT_H;
-  if (g_present_capture)
+  if (g_present_capture) {
     g_present_capture->capture(r.x, r.y, r.w, r.h);
-  else
+  } else {
+    int frozen = g_psyxVramFrozen;
+    g_psyxVramFrozen = 0; /* our own read, not the game's */
     StoreImage(&r, (u_long *)s_capture);
+    g_psyxVramFrozen = frozen;
+  }
   s_captured = 1;
 }
 
@@ -308,10 +321,14 @@ int port_present_frame_slot(void) {
     s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
   }
-  /* Nothing presented lately (boot logos, loading, code that draws from
-   * GamestateUpdate): show the PS1 display. */
-  if (s_shown < 0 || PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+  /* The game drew outside GamestateDraw since our last frame (loading
+   * screens, code that draws from GamestateUpdate): that picture is the PS1
+   * display's. A slow tick alone keeps the last frame on screen: falling
+   * back then made the picture jump between 16:9 and 4:3. */
+  if (s_shown < 0 || s_foreign_vblank > s_last_push_vblank) {
+    g_present_stats.display_fallbacks++;
     return -1;
+  }
   return s_shown;
 }
 
@@ -320,8 +337,7 @@ const uint16_t *port_present_slot_pixels(int slot) {
 }
 
 const uint16_t *port_present_shown_pixels(void) {
-  if (s_shown < 0 || g_present_capture ||
-      PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+  if (s_shown < 0 || g_present_capture || s_foreign_vblank > s_last_push_vblank)
     return NULL;
   return s_frames[s_shown];
 }
@@ -343,6 +359,8 @@ static int s_suppress_ot; /* logic pass under faithful widescreen */
 
 static int ot_pre(u_long *p) {
   (void)p;
+  if (!s_in_game_draw)
+    s_foreign_vblank = PsyX_Sys_GetVBlankCount();
   if (s_suppress_ot) {
     s_n2d = 0;
     return 1;
@@ -880,8 +898,51 @@ static int blend_state(void) {
 /* interp_budget_us bookkeeping (PortPresentDraw) */
 static long long s_busy_wo_interp, s_interp_cost;
 
-/* Runs one pass and leaves its picture in s_capture; the caller queues it. */
-static void presentation_pass(int wide) {
+/* While the logic draws 4:3 (attract demos, ws_exact), the 16:9 passes keep
+ * their own copy of the renderer's visibility state: D_800771C8, one byte
+ * per sector that r_environment's last draw found visible, which
+ * func_800521C0 reads at the start of the next draw to drop mobys in hidden
+ * sectors; and the sector caches (SECTOR_CACHE). With the 4:3 copy, mobys
+ * in sectors only the 16:9 view shows were dropped: they popped in at the
+ * edges. */
+#define SECTOR_FLAGS 0x800771C8u /* psx.map D_800771C8, 0x100 bytes */
+static uint8_t s_wide_flags[0x100];
+static uint32_t s_wide_cache[MAX_SECTORS];
+static int s_wide_valid, s_wide_level, s_wide_nsectors;
+
+static void wide_state_in(void) {
+  int i;
+  if (!s_wide_valid || s_wide_level != g_LevelId ||
+      s_wide_nsectors != g_Environment.m_SectorCount)
+    return;
+  memcpy(PSX_ARENA(SECTOR_FLAGS), s_wide_flags, sizeof s_wide_flags);
+  for (i = 0; i < s_wide_nsectors && i < MAX_SECTORS; i++) {
+    unsigned char *c = sector_cache(i);
+    if (c)
+      memcpy(c, &s_wide_cache[i], 4);
+  }
+}
+
+static void wide_state_out(void) {
+  int i;
+  memcpy(s_wide_flags, PSX_ARENA(SECTOR_FLAGS), sizeof s_wide_flags);
+  s_wide_nsectors = 0;
+  if (in_arena(g_Environment.m_SectorPointer, 4) && g_Environment.m_SectorCount > 0 &&
+      g_Environment.m_SectorCount <= MAX_SECTORS) {
+    s_wide_nsectors = g_Environment.m_SectorCount;
+    for (i = 0; i < s_wide_nsectors; i++) {
+      unsigned char *c = sector_cache(i);
+      if (c)
+        memcpy(&s_wide_cache[i], c, 4);
+    }
+  }
+  s_wide_level = g_LevelId;
+  s_wide_valid = 1;
+}
+
+/* Runs one pass and leaves its picture in s_capture; the caller queues it.
+ * own_state: the pass keeps its own visibility state (wide_state_in). */
+static void presentation_pass(int wide, int own_state) {
   long long t = now_us();
   int (*vsync_hook)(int) = g_psyxVSyncHook;
   g_present_narrow = wide;
@@ -890,7 +951,15 @@ static void presentation_pass(int wide) {
   s_capture_on = 1;
   g_psyxVSyncHook = pass_vsync;
   g_psx_spu_frozen = 1;
+  g_psyxVramFrozen = 1; /* the pause screen's VRAM saves happen once, for real */
+  if (own_state)
+    wide_state_in();
+  s_in_game_draw = 1;
   GamestateDraw();
+  s_in_game_draw = 0;
+  if (own_state)
+    wide_state_out();
+  g_psyxVramFrozen = 0;
   g_psx_spu_frozen = 0;
   g_present_stats.spu_dropped = g_psx_spu_dropped;
   g_psyxVSyncHook = vsync_hook;
@@ -913,20 +982,27 @@ void PortPresentDraw(void) {
   if (!port_present_active()) {
     if (g_present.stats) {
       t = now_us();
+      s_tick_vsync_us = 0;
       g_psyxVSyncHook = timed_vsync;
       GamestateDraw();
       g_psyxVSyncHook = NULL;
       g_present_stats.logic_passes++;
-      g_present_stats.us_logic += now_us() - t;
+      g_present_stats.us_logic += now_us() - t - s_tick_vsync_us;
     } else {
       GamestateDraw();
     }
     return;
   }
   hooks_init();
-  /* faithful widescreen: picture from a presentation pass, logic pass 4:3 */
-  wide_pass = g_present.widescreen && !g_present.ws_logic;
-  logic_wide = g_present.widescreen && g_present.ws_logic;
+  /* Widescreen: one 16:9 draw (the logic draw itself), except in attract
+   * demos (or with ws_exact), where the logic must stay the original 4:3 one
+   * for the recorded input to replay: there the logic draw stays 4:3 and
+   * hidden, and the picture comes from a 16:9 presentation pass. */
+  {
+    int exact = g_present.ws_exact || (!g_present.ws_logic && g_DemoMode != DEMO_MODE_NONE);
+    wide_pass = g_present.widescreen && exact;
+    logic_wide = g_present.widescreen && !exact;
+  }
 
   interp = g_present.interp && can_interp();
   if (g_present.interp && !interp)
@@ -948,7 +1024,7 @@ void PortPresentDraw(void) {
       int blended = blend_state();
       g_present_stats.us_blend += now_us() - tb;
       if (blended) {
-        presentation_pass(g_present.widescreen);
+        presentation_pass(g_present.widescreen, wide_pass);
         push_capture(g_present.widescreen); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
       } else {
@@ -959,7 +1035,7 @@ void PortPresentDraw(void) {
       s_interp_cost = t_interp;
     }
     if (wide_pass) {
-      presentation_pass(1); /* queued after the logic pass, below */
+      presentation_pass(1, 1); /* queued after the logic pass, below */
       snap_restore();
     }
   }
@@ -973,7 +1049,9 @@ void PortPresentDraw(void) {
   g_present_narrow = logic_wide;
   s_record_2d = logic_wide;
   s_capture_on = !wide_pass;
+  s_in_game_draw = 1;
   GamestateDraw();
+  s_in_game_draw = 0;
   s_capture_on = 0;
   s_record_2d = 0;
   g_present_narrow = 0;
@@ -983,7 +1061,7 @@ void PortPresentDraw(void) {
    * so real frames are shown on the same vblanks as without presentation. */
   push_capture(wide_pass || logic_wide);
   g_present_stats.logic_passes++;
-  g_present_stats.us_logic += now_us() - t;
+  g_present_stats.us_logic += now_us() - t - (timed ? s_tick_vsync_us : 0);
   if (g_present.interp_budget_us)
     s_busy_wo_interp = now_us() - s_t_update - s_tick_vsync_us - t_interp;
 }

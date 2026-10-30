@@ -18,8 +18,11 @@ extern "C" {
 
 typedef struct {
   int widescreen; /* narrow the projection to 3/4 and show at 16:9 */
-  int ws_logic;   /* widescreen in the logic pass too: one pass, but the
-                     wider frustum reaches m_WasDrawn (gameplay differs) */
+  int ws_logic;   /* one 16:9 draw always, attract demos too (diagnostic:
+                     the demos desync) */
+  int ws_exact;   /* the original 4:3 logic always: a hidden 4:3 draw plus a
+                     16:9 presentation pass (the default does this only in
+                     attract demos, and draws once in 16:9 otherwise) */
   int interp;     /* an extra frame between ticks, blended state */
   int interp_mobys; /* blend mobys and Spyro too, not only the camera */
   int interp_anim;  /* with interp_mobys: animation frames and particles too */
@@ -31,13 +34,15 @@ typedef struct {
 
 typedef struct {
   long long ticks, passes, logic_passes, interp_frames, skipped_interp;
-  long long us_pass, us_snapshot, us_logic, us_update; /* summed microseconds */
+  long long us_pass, us_snapshot, us_logic, us_update; /* summed microseconds;
+                                                   us_logic leaves out VSync waits */
   long long us_vsync; /* inside VSync(0) during the logic pass (host vblank work) */
   long long us_blend; /* saving the previous tick and blending (interp) */
   long long spu_dropped; /* SPU writes swallowed inside presentation passes */
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
+  long long display_fallbacks; /* pictures that showed the PS1 display instead */
   long long particles_blended;
   long long snapshot_bytes; /* copied in and out by the region snapshot */
   long long dirty_pages, dirty_max; /* stats 2: 4 KB pages a pass wrote */

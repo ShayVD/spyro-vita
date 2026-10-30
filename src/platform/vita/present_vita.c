@@ -15,6 +15,7 @@ static long long vita_clock_us(void) { return (long long)sceKernelGetProcessTime
  * present.c takes new switches at its next tick. */
 void vita_present_apply(void) {
   g_present.widescreen = g_vita_opts.widescreen != 0;
+  g_present.ws_exact = g_vita_opts.widescreen_exact != 0;
   g_present.interp = g_vita_opts.interp != 0;
   g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
   g_present.interp_anim = g_vita_opts.interp == 1;
@@ -40,13 +41,17 @@ void vita_present_report(int vblank) {
   static PresentStats last;
   const PresentStats *s = &g_present_stats;
   long long ticks = s->ticks - last.ticks;
-  if (!port_present_active() || ticks <= 0)
+  if (!port_present_active() || ticks <= 0) {
+    last = *s; /* windows with both off aren't reported, nor carried over */
     return;
+  }
   vita_log("present %d: %lld ticks; per tick us: logic draw %lld, passes %lld, snapshot %lld, "
-           "blend %lld; %lld in-between frames, %lld skipped for the budget, %lld otherwise",
-           vblank, ticks, (s->us_logic - last.us_logic - (s->us_vsync - last.us_vsync)) / ticks,
+           "blend %lld; %lld in-between frames, %lld skipped for the budget, %lld otherwise; "
+           "%lld pictures from the 4:3 display",
+           vblank, ticks, (s->us_logic - last.us_logic) / ticks,
            (s->us_pass - last.us_pass) / ticks, (s->us_snapshot - last.us_snapshot) / ticks,
            (s->us_blend - last.us_blend) / ticks, s->interp_frames - last.interp_frames,
-           s->budget_skips - last.budget_skips, s->skipped_interp - last.skipped_interp);
+           s->budget_skips - last.budget_skips, s->skipped_interp - last.skipped_interp,
+           s->display_fallbacks - last.display_fallbacks);
   last = *s;
 }

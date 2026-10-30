@@ -47,6 +47,17 @@ extern uintptr_t g_psx_arena_base;
 extern int g_present_narrow;
 u32 port_ws_hud_ofx(u32 ofx);
 u32 port_ws_hud_r11(u32 r11r12);
+u32 port_ws_r1112(u32 r11r12);
+/* r_environment: R11R12 already went into the GTE (re-written here), R13 is
+ * the low half of the next word */
+#define PORT_WS_VIEW_ROW0(r1112, r13r21)                                        \
+  do {                                                                         \
+    if (g_present_narrow) {                                                    \
+      (r1112) = port_ws_r1112(r1112);                                          \
+      CTC2((r1112), 0);                                                        \
+      (r13r21) = port_ws_hud_r11(r13r21);                                      \
+    }                                                                          \
+  } while (0)
 #define PORT_WS_HUD_OFX(x) (g_present_narrow ? port_ws_hud_ofx(x) : (x))
 #define PORT_WS_HUD_R11(x) (g_present_narrow ? port_ws_hud_r11(x) : (x))
 
