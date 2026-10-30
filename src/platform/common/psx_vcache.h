@@ -24,7 +24,7 @@ extern "C" {
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
 typedef struct {
-  float dx, dy; /* exact screen position - (integer SX/SY + 0.5) */
+  int16_t dx, dy; /* exact screen position - (integer SX/SY + 0.5), 1/256 pixel */
   float w;      /* view-space depth (> 0), at the scale the polygon's other
                    vertices use: only ratios within a polygon mean anything */
 } VCacheVert;
@@ -36,6 +36,15 @@ void psx_vcache_enable(int mode);
 /* The vertex a reference names (1), or 0 if none; valid until the next
  * DrawOTag returns. */
 int psx_vcache_get(uint32_t ref, VCacheVert *out);
+
+/* PsyX's vertex buffer (the renderer's GR_UpdateVertexBuffer gets it). Once
+ * known, each polygon's answer is also written to g_vcache_side at the
+ * same index as its vertices, after PsyX's quad split: dx, dy (0 where the
+ * position stays integer) and w (1 unless the whole polygon was found), so
+ * the renderer reads them in order instead of looking each one up (D43).
+ * Valid for the vertices whose reference has VREF_POLY. */
+void psx_vcache_set_base(const void *vertex_buffer);
+extern VCacheVert g_vcache_side[];
 
 /* Counters since the last psx_vcache_stats_reset(). */
 typedef struct {

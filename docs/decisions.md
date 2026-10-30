@@ -420,7 +420,32 @@ Record each decision with its date, what was chosen, and why.
   - **Game unchanged:** the replay shots (what the game reads back) are byte-identical to options off.
   - **Atlas:** in Artisans, every textured triangle (~1,400 a frame) is filtered from it; 41–464 blocks are decoded per 300 vblanks; at most 464 of 1,024 blocks are in use.
   - **`bench=1`** (`logs/run66-vita-bench`): runs the 10 sets through 20 rounds and logs per-set lines at rounds 5, 10, 15 and at the end, then restores the options. Vita3K's GPU timings say nothing about the Vita's GPU.
-- **Not measured on hardware yet.** `bench=1` is for that. The target is everything on at native resolution holding 30 pictures per second in Artisans; if it doesn't, the defaults stay off and the bench lines give each option's cost.
+- **Hardware bench** (user, main `be37191`, `bench=1`, `logs/hw-be37191-bench/spyro.log` lines 498–513; pictures/s, GPU-timed frame, GPU tail):
+
+  | Set | pictures/s | frame ms | tail ms |
+  |---|---|---|---|
+  | 4:3 native, all off, `tex_cache=0` (the old default) | 22.9 | 40.6 | 27.0 |
+  | 4:3 native, all off, `tex_cache=1` | **29.7** | 25.1 | 14.5 |
+  | 4:3 native, `tex_filter=1` | 21.5 | 43.7 | 27.5 |
+  | 4:3 native, `tex_filter=2` | 20.9 | 42.1 | 29.6 |
+  | 4:3 native, `persp=1` | 25.4 | 31.0 | 16.6 |
+  | 4:3 native, `subpixel=1` | 25.9 | 30.5 | 16.1 |
+  | 4:3 native, filter 1 + persp + subpixel | 16.5 | 53.7 | 37.0 |
+  | 4:3 native, filter 2 + persp + subpixel | 15.4 | 56.5 | 38.8 |
+  | 4:3 ps1, all off, `tex_cache=0` | 29.6 | 24.4 | 13.2 |
+  | 4:3 ps1, all off, `tex_cache=1` | 29.4 | 17.9 | 6.9 |
+  | 4:3 ps1, filter 1 + persp + subpixel | 27.0 | 29.1 | 14.8 |
+  | 16:9 native, all off, `tex_cache=0` | 18.5 | 48.5 | 31.9 |
+  | 16:9 native, all off, `tex_cache=1` | **28.5** | 25.7 | 13.9 |
+  | 16:9 native, filter 1 + persp + subpixel | 21.0 | 39.7 | 23.6 |
+  | 16:9 ps1, all off, `tex_cache=0` | 34.3 | 15.1 | 3.3 |
+  | 16:9 ps1, all off, `tex_cache=1` | 33.2 | 12.5 | 1.5 |
+
+  - **`tex_cache=1` works:** at native resolution the GPU tail halves (27 → 14.5 ms at 4:3, 32 → 14 ms at 16:9), and both reach ~29–30 pictures/s. Free play at 16:9 native afterwards held 148–150 pictures per 300 vblanks, with 0–20 atlas misses per 300 vblanks.
+  - **The filter barely gained:** `tex_filter=1` at 4:3 native costs about 13 ms of GPU over the cached default (tail 27.5 vs 14.5 ms). Its 3–4 manual atlas taps a pixel, each a dependent read with its own address maths, cost about what the old decode did. D43 replaces them.
+  - **`persp`/`subpixel` alone** cost ~6 ms per timed frame, only ~2 ms of it GPU: CPU (D43).
+  - **`expand` ran with both off:** with only `tex_cache`, the vertex expansion took 210–316 ms per 300 vblanks (~1 ms per vblank), and the vcache found nothing (D43).
+  - **The atlas was near full:** 824–900 of 1,024 blocks in use at 16:9.
 
 ## 2026-10-30: the game's stray stores through small integers
 
@@ -432,3 +457,30 @@ Record each decision with its date, what was chosen, and why.
 - **Translated asm needs nothing:** every load and store in mips2c output already goes through `MIPS_KUSEG`. The only low-address accesses the emulator saw from asm are delay-slot loads after the `beqz` that ends a list walk, whose value is dead when the pointer is NULL (`docs/whole-game-host.md`, "Stray accesses").
 - **Evidence:** host repro `logs/run27-basket/repro2` (SIGSEGV in `PlaySound`, `pSoundRefOut = 0x2`, core dump) and the same case fixed in `logs/run32-verify/basket`. Emulator `logs/run28-oracle-basket`: PC `0x80056184` (`PlaySound`) stores the byte 1 to `0x00000001`, then PC `0x800565BC` stores to it again when the sound ends.
 
+
+## 2026-10-30: the filter on the GPU's own bilinear, and a leaner vertex
+
+### D43. tex_filter=1 is the GPU's bilinear from the atlas; no vcache work unless persp/subpixel
+- **Why** (D41's hardware bench, main `be37191`):
+  - `tex_filter` still cost ~13 ms of GPU over the cached default at native resolution. Its 3–4 manual taps a pixel, each a dependent texture read behind its own clamp/wrap maths, cost the SGX about what the old palette decode did.
+  - `persp`/`subpixel` cost ~6 ms per timed frame, mostly CPU.
+  - With only `tex_cache` on, the vertex expansion still took ~1 ms per vblank, and the vcache was polled for nothing.
+  - The CPU is also what holds back 60 fps (logic draw 17–27 ms a tick at 16:9).
+- **`tex_filter=1` = bilinear by the GPU's own filter** (`k_fs_hw_body`), on opaque draws (`BM_NONE`): one `GL_LINEAR` fetch from the atlas.
+  - Transparent texels are black with alpha 0, so the fetched colour is already weighted by coverage. Dividing by alpha renormalises it, and pixels under half coverage are discarded, the same rule as before.
+  - The UV is clamped half a texel inside the triangle's box, so the neighbouring block gets no weight.
+  - A repeating tile is decoded with a 16-texel margin from its other sides (a 64×64 atlas entry), so the filter crosses its edges as the manual wrap did.
+  - The atlas is switched between `GL_LINEAR` and `GL_NEAREST` per run, since the nearest and manual paths need exact texels.
+  - Blended draws (water, glass) keep the manual bilinear taps, because the PS1 decides per texel (STP) which pixels blend.
+- **STP is now alpha 254/255** (opaque 1, transparent 0), so the GPU's filter treats STP and non-STP texels alike as opaque, and an exact fetch still tells them apart.
+- **`tex_filter=2` = 3-point** (N64 style), by hand as in D39. It costs more GPU than bilinear; the bench says how much. (In D39, 1 was 3-point and 2 bilinear. The cheap one is now 1.)
+- **Atlas 2048×2048** (2 × 16 MB): the margins take four blocks per tile, and the 1024 atlas was already 824–900 blocks full at 16:9.
+- **Leaner vertex:** `XVertex` is PsyX's `GrVertex`, copied whole, plus box, atlas offset, sub-pixel offset (1/256 pixel) and w (40 bytes). `expand()` copies the vertex and a per-triangle tail instead of rebuilding every field.
+- **No vcache work unless it is used:** projections are recorded and read only with `persp` or `subpixel`. Polygons are marked (cheaply) only for `tex_filter`. `tex_cache` alone does neither. The `vcache` log line appears only with `persp`/`subpixel`, and `expand` time is now on the `atlas` line.
+- **The vcache's answer in vertex order:** `poly_hook` already touches each polygon's entries, so it also writes each vertex's sub-pixel offset and depth into `g_vcache_side`, at the vertex's index in PsyX's buffer, following PsyX's quad split (0 1 3 / 1 3 2). `expand()` reads that array in order instead of calling `psx_vcache_get()` per vertex into the 360 KB table. A triangle the PS1 rule collapses (an edge of 1024×512 or more) drops its references, so it stays a point. Vita3K, gems script, all three on: `expand` went from 153 to 25 ms per 300 vblanks (`logs/run90`, `logs/run91`).
+- **Checked:**
+  - **Host:** both attract demos match the oracle tick for tick with `--vcache` (`logs/run89-host-h1`, `logs/run92-host-h2`); `ctest` 5/5.
+  - **Vita3K picture** (gems script, window captures at the same 8 vblanks): the default (`tex_cache=1`) matches `tex_cache=0` except for ±2 at a few dozen pixels (`logs/run83` against `logs/run74`). `tex_filter=1` on the GPU's bilinear looks the same as the manual bilinear, edges across tiles included (`logs/run84` against `logs/run61`). `tex_filter=2` (`run85`), all three on (`run91`, no cracks in the waterfall) and all three with widescreen + 60 fps (`run87`) are right.
+  - **Game unchanged:** the replay shots are byte-identical to options off at 4:3 and to an earlier widescreen run at 16:9.
+  - **`bench=1`** runs its 16 sets (`logs/run88-vita-bench`).
+- **To measure on hardware:** `bench=1` again. The question is whether `tex_filter=1` now costs a few ms of GPU over the cached default, rather than 13, and how much `persp`/`subpixel` cost now.

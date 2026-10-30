@@ -93,7 +93,7 @@ Files the app writes:
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, left, up, right, circle |
-| `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D39) |
+| `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43) |
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
