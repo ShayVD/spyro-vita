@@ -19,6 +19,7 @@ extern "C" {
  * a polygon (sprites, tiles, lines) or no cache. */
 #define VREF_POLY 0x80000000u  /* built by MakeVertexTriangle/Quad */
 #define VREF_PERSP 0x40000000u /* every vertex of its polygon was found */
+#define VREF_NOPOS 0x20000000u /* different points share the key: integer position */
 #define VREF_SLOT 0x00FFFFFFu  /* entry + 1, or 0: not found or ambiguous */
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
