@@ -390,8 +390,8 @@ Record each decision with its date, what was chosen, and why.
 - **vcache candidates** (`vcache.c`): ambiguous keys were the main reason vertices were missed.
   - Each key now keeps up to four candidates, each a position and a depth. Every distinct projection under the key counts: the same point at another scale (the ×4/×16 of D39), or a different point on the same pixel.
   - Each polygon picks the candidates with the smallest depth spread, as before.
-  - Attract demos (host): polygons with every vertex found 87% → **97.7%**, vertices 95% → 99.1%, ambiguous keys 0. Artisans (Vita3K): 79–85% → **95–96%**. The remaining ~30 per frame have no entry: coordinates the game didn't take from RTPS.
-  - Both attract demos still match the oracle tick for tick (`logs/run40-host-vcache4`), and so does the logic trace with `--widescreen --interp` (`logs/run46-host-ws-vcache4`). `ctest` 5/5.
+  - Attract demos (host): polygons with every vertex found 87% → **96.9%**, vertices 95% → 98.7%, ambiguous keys (more than four candidates) 4 per frame. Artisans (Vita3K): 79–85% → **95%**. The remaining ~37 vertices per frame have no entry: coordinates the game didn't take from RTPS.
+  - Both attract demos still match the oracle tick for tick (`logs/run40-host-vcache4`, `logs/run70-host-final2`), and so does the logic trace with `--widescreen --interp` (`logs/run46-host-ws-vcache4`). `ctest` 5/5.
 - **Sub-pixel stays per key, not per polygon** (asked: "never mix precise and integer vertices in a polygon"):
   - A found key gives every polygon that uses it the same exact point, and a key not found leaves the vertex at its integer position in every polygon. So polygons sharing a vertex never crack.
   - All-or-nothing per polygon would put a shared vertex at its exact point in one polygon and its integer one in the neighbour, which is a crack of up to a pixel.
@@ -403,3 +403,11 @@ Record each decision with its date, what was chosen, and why.
   - **What's logged:** `bench round N:` lines every 5 rounds, then `bench final:` at vblank 12600, after which the configured options come back.
   - **Modes:** bench=1 forces 4:3 at 30 fps; bench=2 keeps `widescreen=`/`interp=`.
   - **Cost:** all option programs are compiled at start-up, so the shader compile takes longer.
+- **Checked in Vita3K** (`realtime=0`, gems script plus the pause and inventory screens, window captures at the same 8 vblanks):
+  - **Off unchanged:** with all options off, the captures are pixel-identical to main's `gpu_gl.c` and `vblank.c` (0 of 2,088,960 pixels differ in each; `logs/run42-vita-mainref`, `logs/run43-vita-off-t1`).
+  - **All on** (`logs/run68-vita-all-t8`): textures filtered from the atlas, the terrain, Spyro, the waterfalls, the sky, HUD, 3D font and menus right, and no cracks.
+  - **Game unchanged:** the replay shots (what the game reads back) are byte-identical to options off.
+  - **Atlas:** in Artisans, every textured triangle (~1,400 a frame) is filtered from it; 41–464 blocks are decoded per 300 vblanks; at most 464 of 1,024 blocks are in use.
+  - **`bench=1`** (`logs/run66-vita-bench`): runs the 10 sets through 20 rounds and logs per-set lines at rounds 5, 10, 15 and at the end, then restores the options. Vita3K's GPU timings say nothing about the Vita's GPU.
+- **Not measured on hardware yet.** `bench=1` is for that. The target is everything on at native resolution holding 30 pictures per second in Artisans; if it doesn't, the defaults stay off and the bench lines give each option's cost.
+
