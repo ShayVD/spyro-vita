@@ -7,6 +7,8 @@
 #include <stdio.h>
 
 #include "common.h"
+#include "environment.h"
+#include "moby.h"
 #include "spyro.h"
 #include "variables.h"
 
@@ -39,4 +41,22 @@ void spyro_trace_close(void) {
   if (s_trace)
     fclose(s_trace);
   s_trace = NULL;
+}
+
+/* The level's mobys (class, position, state) as TSV, for finding things to
+ * walk to in scripted runs (--moby-dump). */
+void spyro_moby_dump(const char *path) {
+  FILE *f;
+  int i;
+  if (!g_LevelMobys || !(f = fopen(path, "w")))
+    return;
+  fprintf(f, "index\tclass\tx\ty\tz\tstate\tspyro_x\tspyro_y\tspyro_z\tgems\n");
+  for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++)
+    fprintf(f, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", i, g_LevelMobys[i].m_Class,
+            g_LevelMobys[i].m_Position.x, g_LevelMobys[i].m_Position.y, g_LevelMobys[i].m_Position.z,
+            g_LevelMobys[i].m_State, g_Spyro.m_Position.x, g_Spyro.m_Position.y, g_Spyro.m_Position.z,
+            g_GemTotal);
+  for (i = 0; i < g_Environment.m_SurfaceCount && g_Environment.m_SurfaceData; i++)
+    fprintf(f, "# surface %d type %d\n", i, g_Environment.m_SurfaceData[i]->m_Type);
+  fclose(f);
 }

@@ -65,6 +65,10 @@ void host_vblank(void) {
       snprintf(path, sizeof path, "%s/vram-%d.png", g_host_opts.shot_dir, v);
       host_shot_vram(path);
     }
+    if (g_host_opts.moby_dump) {
+      snprintf(path, sizeof path, "%s/mobys-%d.tsv", g_host_opts.shot_dir, v);
+      spyro_moby_dump(path);
+    }
   }
   spyro_trace_vblank(v);
   host_serve_vblank(v);

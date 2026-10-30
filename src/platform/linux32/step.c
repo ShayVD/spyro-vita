@@ -6,6 +6,7 @@
  * a scripted run. Files, not FIFOs, because Docker Desktop's bind mounts
  * don't carry FIFOs. "quit" ends the run. tools/step.sh is the client. */
 #include "host.h"
+#include "psx_hooks.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,10 @@ void host_step_vblank(int vblank) {
   host_shot_display(path);
   snprintf(path, sizeof path, "%s/shot-%d.png", s_dir, vblank);
   host_shot_display(path);
+  if (g_host_opts.moby_dump) {
+    snprintf(path, sizeof path, "%s/now.tsv", s_dir);
+    spyro_moby_dump(path);
+  }
   snprintf(path, sizeof path, "%s/ready", s_dir);
   if ((f = fopen(path, "w"))) {
     fprintf(f, "%d\n", vblank);

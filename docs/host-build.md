@@ -42,6 +42,10 @@ TC_PORT=8642 tools/tc build/linux32/src/platform/linux32/spyro --disc disc/files
 
 Then open http://localhost:8642/ . Keys: arrows (D-pad), X (cross), Z (square), C (circle), S (triangle), Enter (start), Backspace (select), Q/E (L1/R1), 1/3 (L2/R2). A gamepad works too (browser Gamepad API). Click "Sound on" for audio. Stop it with Ctrl-C, or `docker stop` on the container.
 
+## Finding and reaching things in a level
+
+`--moby-dump` writes the level's mobys (index, class, position, state), Spyro's position, the gem count and the special surface types: `mobys-V.tsv` next to every shot, and `DIR/now.tsv` at every `--step` stop. `tools/steer.py DIR X Y` steers Spyro there in a step session (UP, plus LEFT or RIGHT toward the target); jumps and the like go through `tools/step.sh` directly. The session's `DIR/pad.txt` replays it.
+
 ## Oracle: PCSX-Redux (D8)
 
 The original game runs in PCSX-Redux, out of process, driven by Lua scripts in `tools/oracle/`. The emulator is the official macOS Arm build in the gitignored `tools/oracle/bin/` (version and hashes in `docs/decisions.md` D8). It runs at real time, about a minute per 3,600 vblanks, and boots the BIOS first: its title starts 1,520 vblanks after the host's.
@@ -84,6 +88,8 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
   - `logs/run6-respawn`, `logs/run6-gameover2`: z poked below 1024 → respawn (lives 4→3) or, with 0 lives, game over.
   - `logs/run4-demo`: attract demos with `trace.tsv` (Stone Hill 5 gems, Doctor Shemp 45).
   - `logs/run5-audio/audio.wav`: 120 s of title, intro and Artisans audio.
+  - `logs/run9-gems/steer` (step session steered by `tools/steer.py`; `logs/run9-gems/replay_pad.txt` replays it in `logs/run9-gems/replay`): over the ledge to the waterfall pool, onto the stone platform, four red gems collected (`gems.png`, trace gems 0 → 4).
+  - Supercharge isn't part of Artisans: its special surfaces are types 0 and 6 (portals) only, no type 4 (`logs/run9-gems/dump2/mobys-6400.tsv`, `src/special_surfaces.c`).
 - Oracle (PCSX-Redux, `logs/run8-oracle`, emulator version in `EMULATOR.txt`):
   - `cap3`: function samples through boot, title and both attract demos; `replay.txt` 329/329 match.
   - `cap5-fairy`: new game, Nestor freed, the save fairy (`tools/oracle/pads/artisans_fairy.txt`); `replay.txt` 261/261 match.

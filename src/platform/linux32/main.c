@@ -11,6 +11,8 @@
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
+ * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
+ *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
  * --serve: real-time vblanks and a browser player on PORT (decisions D22).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
@@ -32,7 +34,7 @@ static void usage(void) {
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE]\n"
-          "             [--step DIR] [--poke V:ADDR=VALUE]...\n"
+          "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]\n");
   exit(2);
 }
@@ -69,6 +71,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--ignore") == 0) {
       TAKE();
       ignore = val;
+    } else if (strcmp(a, "--moby-dump") == 0) {
+      g_host_opts.moby_dump = 1;
     } else if (strcmp(a, "--fnmap") == 0) {
       TAKE();
       fnmap = val;

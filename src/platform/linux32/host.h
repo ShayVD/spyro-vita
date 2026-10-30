@@ -17,6 +17,7 @@ typedef struct {
   const char *shot_dir;
   int vram_shot;       /* also dump the whole VRAM at each shot */
   int dither;          /* PS1 4x4 dither on shaded/modulated prims */
+  int moby_dump;       /* --moby-dump: mobys-V.tsv with every shot and step */
   int tri_dump;        /* log every triangle of the frame shown at this vblank */
   int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
   struct { int vblank; uint32_t addr, value; } pokes[16];

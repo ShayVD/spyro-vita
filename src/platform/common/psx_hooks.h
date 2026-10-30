@@ -23,6 +23,7 @@ void psx_spu_vblank(void); /* once per virtual vblank */
 int spyro_trace_open(const char *path); /* 0 = ok */
 void spyro_trace_vblank(int vblank);
 void spyro_trace_close(void);
+void spyro_moby_dump(const char *path); /* level mobys as TSV (trace.c) */
 
 /* Function-level oracle replay (src/game/oracle_replay.c). */
 int spyro_replay(const char *dir, const char *only, const char *ignore, const char *fnmap);
