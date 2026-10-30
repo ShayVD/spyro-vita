@@ -22,6 +22,7 @@ set(M2C_HAND
   asm/nonmatchings/camera/func_80034CE8.s
   asm/nonmatchings/camera/func_800357A4.s
   asm/nonmatchings/camera/func_80035FB4.s
+  asm/nonmatchings/pete/func_80041670.s
   asm/nonmatchings/pete/func_80043FE4.s
   asm/nonmatchings/pete/func_80047B60.s
   asm/nonmatchings/pete/func_80048D10.s

@@ -15,6 +15,7 @@ u32 func_800357A4(); /* camera_hand.c */
 u32 func_80035FB4(); /* camera_hand.c */
 u32 func_80043FE4(); /* pete_hand.c */
 u32 func_80047B60(); /* pete_dispatch_hand.c */
+u32 func_80041670(); /* pete_transition_hand.c */
 u32 func_80048D10(); /* pete_hand.c */
 u32 func_80049FAC(); /* pete_hand.c */
 
@@ -40,6 +41,9 @@ const M2cEntry m2c_hand_index[] = {
 #if !M2C_func_80047B60
     HAND(0x80047B60u, func_80047B60),
 #endif
+#if !M2C_func_80041670
+    HAND(0x80041670u, func_80041670),
+#endif
 #if !M2C_func_80048D10
     HAND(0x80048D10u, func_80048D10),
 #endif
@@ -60,6 +64,7 @@ u32 func_800357A4_gen__m2c();
 u32 func_80035FB4_gen__m2c();
 u32 func_80043FE4_gen__m2c();
 u32 func_80047B60_gen__m2c();
+u32 func_80041670_gen__m2c();
 u32 func_80048D10_gen__m2c();
 u32 func_80049FAC_gen__m2c();
 
@@ -84,6 +89,9 @@ const M2cEntry m2c_gen_index[] = {
 #endif
 #if M2C_REF && !M2C_func_80047B60
     GEN(0x80047B60u, func_80047B60),
+#endif
+#if M2C_REF && !M2C_func_80041670
+    GEN(0x80041670u, func_80041670),
 #endif
 #if M2C_REF && !M2C_func_80048D10
     GEN(0x80048D10u, func_80048D10),
