@@ -45,6 +45,13 @@
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
+ *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
+ *                       1 3-point (N64 style), 2 bilinear (default 0: off;
+ *                       decisions D39)
+ *       persp=1         with gpu=1, perspective-correct textures on polygons
+ *                       the GTE projected (D39)
+ *       subpixel=1      with gpu=1, those polygons' vertices at their exact
+ *                       sub-pixel positions (D39)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -159,6 +166,12 @@ static void read_config(void) {
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "menu_test"))
       g_vita_opts.menu_test = atoi(v);
+    else if (!strcmp(line, "tex_filter"))
+      g_vita_opts.tex_filter = atoi(v);
+    else if (!strcmp(line, "persp"))
+      g_vita_opts.persp = atoi(v);
+    else if (!strcmp(line, "subpixel"))
+      g_vita_opts.subpixel = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
