@@ -131,6 +131,16 @@ ret func_80034CE8
 ret func_80035FB4
 # func_80043FE4 (pete.c 1373): called only from C (pete.c 1547, 2091, 2190).
 ret func_80043FE4
+# func_8003EA68 (pete.c 1070, declared void in spyro.h): the asm leaves the
+# new state in v1 and its animation's frame rate in v0. C callers can't read
+# them. Asm callers: func_80041670's 36 sites (itself void, called only from
+# C, pete.c 1920) write v0 and v1 before reading them or return; the sites in
+# func_8003FE40 and func_80043FE4 are hand C now. (CFG walk of each site.)
+ret func_8003EA68
+# func_8003FE40 returns 1 in v0; its only caller, func_80047B60, calls
+# another function right after each of its 16 asm sites without reading v0
+# or v1 (func_80047B60 is itself void, pete.c 1377).
+ret func_8003FE40
 # func_80047B60 (pete.c 1377): called only from C (pete.c 1551).
 ret func_80047B60
 # func_80041670 (pete.c 1368): called only from C (pete.c 1920).
