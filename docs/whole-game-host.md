@@ -129,16 +129,68 @@ Each row of `docs/translation-log.md` now says what happened. In short:
 | Callable, now sampled | 12 | All samples match: `ColSpyroInHitbox` (12), `func_80058B60` (2), `func_8003BFC0` (24), `func_80052F38` (30), `func_80017E98` (70), `EnvAnimSetFlags` (42), `EnvAnimSetFrame` (4), `func_80050240` (6), `func_80017894` (30), `func_80017C24` (24), `func_credits_8007AA50` (36), `func_credits_8007BFD0` (36). |
 | Computed-jump labels (`D_…`, entered by `jr`, never called) | 25 | 7 ran inside matching samples of their own function. 4 ran, but never during a completed sample. 14 never ran in the tour (`logs/run19-oracle-labels/labels.txt`). |
 | No caller anywhere (dead) | 4 | `func_80017188`, `func_80017548`, `func_8001771C`, `func_80017854`: no reference in the asm or C, and no word in `SCUS_942.28` equal to their address. |
-| Not called in the tour | 6 | `func_8004F000` (the sky in the level-exit and balloonist gamestates, which warps skip), `func_8004F4BC` and `func_8004F7E8` (the cyclorama's other branch), `func_80016FD0` and `func_80017614` (rare moby and pete paths), `func_8005060C` (3 calls, all entered by tail jumps, so no sample completes; it ran inside matching samples of its callers). |
+| Not called in the tour | 6 | `func_8004F000` (the sky in the level-exit and balloonist gamestates, which warps skip), `func_8004F4BC` and `func_8004F7E8` (the cyclorama's other branch); all three are now sampled and match, see "Portals, exits and the balloonist" below; `func_80016FD0` and `func_80017614` (rare moby and pete paths), `func_8005060C` (3 calls, all entered by tail jumps, so no sample completes; it ran inside matching samples of its callers). |
+
+## Portals, exits and the balloonist
+
+The warps skip four things: entering a level through a homeworld portal (gamestate 1 with its transition, `g_HasLevelTransition = 1`), leaving through the pause menu's EXIT LEVEL (gamestate 10, `GS_ExitLevel`), leaving through a level's exit vortex (moby class 9, which goes straight to gamestate 1 with the transition home), and the balloonist rides between homeworlds (gamestate 12). Two scripted routes cover them, the same on both sides (decisions D36). Each is the pad-after script of a new game and the LEVELS OPEN cheat:
+
+- **Route A** (`tools/oracle/pads/route_portal_exit.txt`, after `--tour levels`): Artisans. Spyro runs and jumps into Stone Hill's portal, then pauses in Stone Hill and takes EXIT LEVEL back to Artisans.
+- **Route B** (`tools/oracle/pads/route_vortex_balloon.txt`, after `--tour levels,21`): Dry Canyon's exit vortex ("Returning home..." to Peace Keepers), then Gosnold the balloonist (dialogue, destination menu, the ride) to Magic Crafters.
+
+**How the routes were made.** The routes were steered on the host in `--step` sessions (`tools/steer.py`, `--jump` over curbs; `--moby-dump` now lists the portals and each moby's facing). `tools/anchor_pad.py` then turned each session's `pad.txt` into state-anchored lines. A long walk doesn't replay the same in the emulator. The PS1 runs Artisans at a variable frame time (`g_DeltaTime` 2 or 3: 25 game ticks per 60 vblanks against the host's 30), so the first version of route A drifted, missed the portal and never left Artisans (`logs/run7-oracle-routeA-long`). Each route therefore starts its walks from a `poke:` of Spyro's position (0x80078A58): on the lawn 6,000 units before the portal, on the vortex's ledge, and on the balloonist's dock. From there Spyro walks for a few seconds. Everything that follows is the game's own code: the portal surface (type 6), the vortex moby, the balloonist moby (it arms only once Spyro has been 0x1000 away) and the gamestates. The vortex ledge is 3,600 units above Dry Canyon's start, and reaching it by play takes a long detour. The balloonist is 60,000 units from where the vortex drops Spyro in Peace Keepers.
+
+**Result (2026-10-30):** both routes play through on the host and in PCSX-Redux, with the same sequence of gamestates and levels. Oracle replay of every translated function sampled per level and gamestate along them: 946 of 946 completed samples match (385 on route A, 561 on route B). Among them are the three functions no earlier run had reached:
+
+| Function | Where it ran | Samples |
+|---|---|---|
+| `func_8004F000` | the sky in EXIT LEVEL (gamestate 10, Stone Hill) and on the balloon ride (12, Peace Keepers and Magic Crafters) | 16/16 |
+| `func_8004F4BC` | a portal's sky when Spyro is near it (gamestate 0, Artisans and Peace Keepers); `func_80050BD0` draws it for portals within 0x3000, and `func_80050240` for those farther away | 22/22 |
+| `func_8004F7E8` | inside `func_8004F4BC`: the portal sky's triangles | 22/22 |
+
+Samples by gamestate (completed function samples, labels not counted): route A 26 in gamestate 1, 26 in 9 (entrance animation), 27 in 10, 51 in 2 (pause); route B 45 in 1, 126 in 12. The 63 NOEXIT lines are computed-jump labels (`D_…`), which are entered by jumps and never return. `D_8004F890`, the label inside `func_8004F7E8`, has 2 matching samples too.
+
+| Phase (route) | Host vblanks | Oracle vblanks | Picture difference (+30, +90, +180, +300, +420) |
+|---|---|---|---|
+| Portal flight to Stone Hill (A, gamestate 1) | 402 | 468 | 13.0, 10.6, 7.9, 6.7, 7.8 |
+| Entrance animation (A, 9) | 68 | 67 | 6.8 |
+| EXIT LEVEL (A, 10) | 128 | 128 | 0.9, 2.6 |
+| Flight home to Artisans (A, 1) | 418 | 454 | 10.5, 32.6, 31.0, 31.2, 31.9 |
+| Vortex flight home to Peace Keepers (B, 1) | 402 | 448 | 6.2, 44.0, 49.8, 49.7, 26.2 |
+| Balloonist in Peace Keepers (B, 12) | 666 | 669 | 4.7, 4.9, 4.6, 5.8, 6.0 |
+| Balloon arrival in Magic Crafters (B, 12) | 702 | 820 | 4.2, 4.6, 4.5, 13.8, 24.3 |
+
+The picture difference works as in the level table above. It is taken at the same vblank offset from the start of each phase: the host was rerun with `--shot` at the emulator's offsets (`tools/oracle/route_pairs.py --host-shots`). Sheets, host left: `logs/run18-host-routeA-merged/pairs.png`, `logs/run19-host-routeB-merged/pairs.png`.
+- In EXIT LEVEL, the dialogue and the ride, the pictures match.
+- **The flights home differ in the sky only.** The scene, Spyro, the camera and the HUD are the same. The host's sky turns into the homeworld's about 150 vblanks into the flight, the PS1's near the end. Load stage 9 (`src/loaders.c`) swaps `g_Cyclorama` for the destination's sky, and the stages before it wait for the CD (`CdSync`, `g_CdState.m_IsReading`). The host's CD reads finish at once, the PS1's take real time, which also makes its phases longer (468 against 402 vblanks). This explanation comes from the code, not from an experiment. A host rerun with `--cd-latency 15` never got past the title (its absolute new-game presses no longer land), so it wasn't pursued.
+- Arrival in Magic Crafters (+300, +420) differs for the same reason: the PS1's ride lasts 118 vblanks longer.
+
+Nothing broke in the game or the port. One oracle bug was found and fixed. `func_8004F7E8` returns through `.L8004FC3C`, whose delay slot does `addi $sp, $fp, 0`: this hand-written renderer uses `$sp` as its primitive cursor and returns with another `$sp`. `capture.lua` ends a sample at the first return to `$ra` with the entry `$sp`, so it missed the real return and took a much later one, 5 to 325 vblanks later. 10 of its 12 samples "failed" that way in `logs/run11-oracle-routeA`, whose `func_8004F4BC` samples (the code around it) all matched. A new `$ORACLE_FUNCS` option `anysp` ends a sample at the first return to `$ra`; with it, all 22 match.
+
+Rerun:
+
+```bash
+logs/run18-host-routeA-merged/cmd.sh; logs/run19-host-routeB-merged/cmd.sh   # host, about 5 min each
+logs/run13-oracle-routeA/cmd.sh; logs/run14-oracle-routeB/cmd.sh             # PCSX-Redux, about 6 min each
+tools/oracle/replay.sh logs/run13-oracle-routeA; tools/oracle/replay.sh logs/run14-oracle-routeB
+python3 tools/oracle/shot2png.py logs/run13-oracle-routeA/shot-*.raw
+python3 tools/oracle/route_pairs.py logs/run18-host-routeA-merged logs/run13-oracle-routeA pairs.png --offsets 30,90,180,300,420
+```
+
+| Log | What |
+|---|---|
+| `logs/run1-step-portal` | First step session: Artisans to Stone Hill's portal by steering from the start, EXIT LEVEL (`exit-sheet.png`) |
+| `logs/run3-step-vortex`, `logs/run4-step-balloon` | Step sessions for route B: the poke onto the vortex ledge and the vortex (`vortex-sheet.png`), the balloonist and the ride (`balloon-sheet.png`) |
+| `logs/run9-step-portal` | Step session for the final route A (poke before the portal) |
+| `logs/run6-host-routeB`, `logs/run10-host-routeA` | Host replays of the two pad scripts: the same vblanks as the step sessions |
+| `logs/run7-oracle-routeA-long` | The emulator on the first route A (walk from the start): Spyro drifts and never reaches the portal |
+| `logs/run8-oracle-routeB`, `logs/run11-oracle-routeA` | Emulator captures before `anysp`: route A's 11 failures are the `func_8004F7E8` sample ends above |
+| `logs/run13-oracle-routeA`, `logs/run14-oracle-routeB` | **Final emulator captures**: trace, shots every 30 vblanks, samples per level and gamestate; `replay.txt` and `summary_replay.txt` |
+| `logs/run18-host-routeA-merged`, `logs/run19-host-routeB-merged` | **Final host runs** on the tree merged with main (hand-written pete and camera C, presentation): the same gamestate sequence at the same vblanks; shots at the emulator's offsets; `pairs.png` |
 
 ## Limits
 
 - **The endings are reached by pokes.** A poke writes what the game's own code writes on beating Gnasty Gnorc and on entering Gnasty's Loot's vortex with 14000 gems (D31). From the cutscene on, everything is the game's code. Beating the game by play (pad scripts for the boss fight, every gem) is M4 work. The ending pokes don't set `g_LevelVortexExitFlags` as the real moby code does, so the saved "levels completed" flags are all 0.
 - **Traces can't be compared tick for tick here**, as they are for the attract demos. The PS1 drops frames while Spyro glides into a level and the host doesn't (D31); PCSX-Redux `a5d621af` has no CPU overclock setting that would stop it. `tools/oracle/level_diff.py` lines visits up by tick and shows where they part, typically on the first ticks.
 - **The late-game save was only checked on the host.** The emulator's fresh memory card is unformatted, and the scripted presses don't leave it a save slot. So its fairy scene is short (185 vblanks against the host's 434, as in M2's `cap5-fairy`) and nothing is written. Comparing a save across both sides needs a formatted card image for the oracle.
-- **Not covered by the tour:**
-  - the level-exit (10) and balloonist (12) gamestates: vortex exits and the balloon rides between homeworlds;
-  - portal entries with their transition;
-  - gameplay beyond standing at each level's entrance.
-
-  A portal-and-vortex pass through a homeworld is the next step.
+- **Not covered by the tour:** gameplay beyond standing at each level's entrance. Portal entries, EXIT LEVEL, vortex exits and the balloonist are covered by the routes above, once each: one portal, one vortex, one ride, with pokes before the walks.

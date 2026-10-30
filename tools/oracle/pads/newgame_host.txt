@@ -1,0 +1,13 @@
+# New game from the title on the linux32 host (logs/run21-host-whole/pad.txt,
+# from M2 run4-layout). The emulator needs newgame.txt (two more CROSS presses
+# for its memory-card checks).
+1900 start
+1906 none
+2100 cross
+2106 none
+2400 cross
+2406 none
+2600 cross
+2606 none
+2800 cross
+2806 none
