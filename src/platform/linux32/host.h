@@ -19,6 +19,7 @@ typedef struct {
   int dither;          /* PS1 4x4 dither on shaded/modulated prims */
   int moby_dump;       /* --moby-dump: mobys-V.tsv with every shot and step */
   int tri_dump;        /* log every triangle of the frame shown at this vblank */
+  int out960;          /* pictures at 960x544 (presentation frames, present.c) */
   int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
   struct { int vblank; uint32_t addr, value; } pokes[16];
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
@@ -72,5 +73,6 @@ int host_png_write(const char *path, const uint8_t *rgb, int w, int h); /* 0 = o
 int host_shot_display(const char *path); /* the picture the TV would show */
 int host_shot_vram(const char *path);    /* whole VRAM as 15-bit (+ raw .bin) */
 uint8_t *host_display_rgb(int *w, int *h); /* malloc'd RGB of the display */
+void host_present_vblank(void); /* take this vblank's presentation frame */
 
 #endif

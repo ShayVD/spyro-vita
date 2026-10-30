@@ -4,6 +4,7 @@
  * links. The chain ends at D_8006BBE0, a NOP primitive whose tag is the
  * 0xFFFFFF terminator; OT links can only reach arena memory, so the port
  * keeps its copy at the same PS1 address in the arena (port.c). */
+#include "present.h"
 #include "psx_arena.h"
 
 #include <stdint.h>
@@ -81,9 +82,11 @@ void func_800168A0(void *pPoly, int pOTIndex) {
     bucket[1] = (u32)(uintptr_t)pPoly;
 }
 
-/* func_800168DC: append a primitive to the HUD OT. */
+/* func_800168DC: append a primitive to the HUD OT. Only C code calls it,
+ * with 2D primitives: widescreen keeps their shape (present.c). */
 void func_800168DC(void *pPoly) {
   u32 *tail = (u32 *)(uintptr_t)g_HudOT[0];
+  port_present_note_2d(pPoly);
   g_HudOT[0] = (u32)(uintptr_t)pPoly;
   if (tail)
     link24(tail, pPoly);
