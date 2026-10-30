@@ -123,11 +123,13 @@ int vita_menu_service(void) {
   uint16_t prev = 0xFFFF; /* what opened the menu is already held */
   MenuRow rows[NROWS];
   char budget[32];
-  int test = 0, step = 0;
-  if (g_vita_opts.menu_test > 0 && vita_vblank_count() >= g_vita_opts.menu_test) {
-    g_vita_opts.menu_test = 0;
-    s_requested = test = 1;
-  }
+  int test = 0, step = 0, i;
+  for (i = 0; i < g_vita_opts.nmenu_test; i++)
+    if (g_vita_opts.menu_test[i] > 0 && vita_vblank_count() >= g_vita_opts.menu_test[i]) {
+      g_vita_opts.menu_test[i] = 0;
+      s_requested = test = 1;
+      break;
+    }
   if (!s_requested)
     return 0;
   s_requested = 0;

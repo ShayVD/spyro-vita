@@ -201,7 +201,7 @@ static void read_config(void) {
     else if (!strcmp(line, "interp_budget"))
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "menu_test"))
-      g_vita_opts.menu_test = atoi(v);
+      parse_list(v, g_vita_opts.menu_test, &g_vita_opts.nmenu_test, 4);
     else if (!strcmp(line, "tex_filter"))
       g_vita_opts.tex_filter = atoi(v);
     else if (!strcmp(line, "persp"))
