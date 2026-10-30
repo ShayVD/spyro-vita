@@ -6,7 +6,8 @@
  * result with the emulator's: v0, v1, RAM from 0x80010000 up (except the
  * stack below the entry $sp, which is the callee's scratch), the scratchpad
  * and the GTE registers. Each sample runs in a child process, so one that
- * crashes is reported and the rest still run.
+ * crashes is reported and the rest still run (SPYRO_REPLAY_NOFORK=1 runs
+ * them in process instead, for gdb).
  *
  * Output: one line per sample, then the differing words of failures:
  *   NAME K vblank PASS|FAIL|CRASH v0 emu/host v1 emu/host ram N ignored N
@@ -48,27 +49,60 @@ typedef struct {
 
 enum { R_V0 = 2, R_V1 = 3, R_A0 = 4, R_SP = 29 };
 
+const u32 *g_m2c_seed; /* mips2c_rt.h */
+
 static struct {
   u32 lo, hi;
 } s_ignore[256];
 static int s_nignore;
-static char s_dead_v1[64][64]; /* "v1 NAME": v1 at return is dead at every call site */
-static int s_ndead_v1;
+/* "v1 NAME": v1 at return is dead at every call site; "ret NAME": v0 and
+ * v1 are (a void function). */
+static struct {
+  char name[64];
+  int v0;
+} s_dead[64];
+static int s_ndead;
 
-static int v1_dead(const char *name) {
+static int ret_dead(const char *name, int v0) {
   int i;
-  for (i = 0; i < s_ndead_v1; i++)
-    if (strcmp(s_dead_v1[i], name) == 0)
+  for (i = 0; i < s_ndead; i++)
+    if (strcmp(s_dead[i].name, name) == 0 && (!v0 || s_dead[i].v0))
       return 1;
   return 0;
 }
+#define v1_dead(name) ret_dead(name, 0)
+
+/* "dma ADDR": the word at ADDR is a DMA destination that an interrupt
+ * handler advances (libcd's sector pointer); when it moved during the call,
+ * RAM from its old to its new value was written by DMA. s_dyn holds those
+ * ranges for the sample being compared. */
+static u32 s_dma[8];
+static int s_ndma;
+static struct {
+  u32 lo, hi;
+} s_dyn[8];
+static int s_ndyn;
 
 static int ignored(u32 a) {
   int i;
   for (i = 0; i < s_nignore; i++)
     if (a >= s_ignore[i].lo && a < s_ignore[i].hi)
       return 1;
+  for (i = 0; i < s_ndyn; i++)
+    if (a >= s_dyn[i].lo && a < s_dyn[i].hi)
+      return 1;
   return 0;
+}
+
+static void dma_ranges(const Snap *in, const Snap *out) {
+  int i;
+  s_ndyn = 0;
+  for (i = 0; i < s_ndma; i++) {
+    u32 off = s_dma[i] - 0x80000000u;
+    u32 lo = *(const u32 *)(in->ram + off), hi = *(const u32 *)(out->ram + off);
+    if (hi > lo && hi - lo <= 0x10000u)
+      s_dyn[s_ndyn].lo = lo, s_dyn[s_ndyn++].hi = hi;
+  }
 }
 
 static void load_ignore(const char *path) {
@@ -82,8 +116,12 @@ static void load_ignore(const char *path) {
     unsigned lo, hi;
     if (line[0] == '#')
       continue;
-    if (strncmp(line, "v1 ", 3) == 0 && s_ndead_v1 < 64)
-      sscanf(line + 3, "%63s", s_dead_v1[s_ndead_v1++]);
+    if (strncmp(line, "v1 ", 3) == 0 && s_ndead < 64)
+      s_dead[s_ndead].v0 = 0, sscanf(line + 3, "%63s", s_dead[s_ndead++].name);
+    else if (strncmp(line, "ret ", 4) == 0 && s_ndead < 64)
+      s_dead[s_ndead].v0 = 1, sscanf(line + 4, "%63s", s_dead[s_ndead++].name);
+    else if (strncmp(line, "dma ", 4) == 0 && s_ndma < 8)
+      sscanf(line + 4, "%x", &s_dma[s_ndma++]);
     else if (sscanf(line, "%x %x", &lo, &hi) == 2)
       s_ignore[s_nignore].lo = lo, s_ignore[s_nignore++].hi = hi;
   }
@@ -110,6 +148,72 @@ static FILE *open_snap(const char *path, int *piped) {
 /* Entry snapshot (version 1): registers, scratchpad, all of RAM. Exit
  * snapshot (version 2, base = its entry): registers, scratchpad, and the RAM
  * words that changed. */
+/* PS1 function address -> host function (tools/oracle/fnmap.py, --fnmap):
+ * the emulator's RAM holds code pointers (moby update tables, overlay
+ * pointers) as PS1 addresses; translated code calls them directly. */
+typedef struct {
+  u32 psx, host;
+  char name[64];
+} FnMap;
+static FnMap *s_fn, *s_fn_level; /* all entries; those for the sample's level */
+static int s_nfn, s_nfn_level;
+
+static void load_fnmap(const char *path) {
+  FILE *f = fopen(path, "r");
+  char line[256];
+  int cap = 0;
+  if (!f) {
+    fprintf(stderr, "replay: can't read %s\n", path);
+    exit(1);
+  }
+  while (fgets(line, sizeof line, f)) {
+    FnMap e;
+    if (sscanf(line, "%x %x %63s", &e.psx, &e.host, e.name) != 3)
+      continue;
+    if (s_nfn == cap)
+      s_fn = realloc(s_fn, (cap = cap ? cap * 2 : 1024) * sizeof *s_fn);
+    s_fn[s_nfn++] = e;
+  }
+  fclose(f);
+}
+
+static int by_psx(const void *a, const void *b) {
+  u32 x = ((const FnMap *)a)->psx, y = ((const FnMap *)b)->psx;
+  return x < y ? -1 : x > y;
+}
+
+/* Overlay variants share addresses; keep those of the snapshot's level
+ * (names ending in _LEVEL_<id>) and every non-overlay function. */
+static void fnmap_for_level(int level) {
+  char want[24];
+  int i;
+  snprintf(want, sizeof want, "_LEVEL_%d", level);
+  s_fn_level = realloc(s_fn_level, (s_nfn ? s_nfn : 1) * sizeof *s_fn_level);
+  s_nfn_level = 0;
+  for (i = 0; i < s_nfn; i++) {
+    const char *v = strstr(s_fn[i].name, "_LEVEL_");
+    if (v && strcmp(v, want) != 0)
+      continue;
+    s_fn_level[s_nfn_level++] = s_fn[i];
+  }
+  qsort(s_fn_level, s_nfn_level, sizeof *s_fn_level, by_psx);
+}
+
+static void fn_ptrs(u8 *p, u32 size) {
+  u32 *w = (u32 *)p, i;
+  if (!s_nfn_level)
+    return;
+  for (i = 0; i < size / 4; i++) {
+    FnMap key, *e;
+    if (w[i] < 0x80010000u || w[i] >= 0x80200000u)
+      continue;
+    key.psx = w[i];
+    e = bsearch(&key, s_fn_level, s_nfn_level, sizeof key, by_psx);
+    if (e)
+      w[i] = e->host;
+  }
+}
+
 static int load(const char *path, Snap *s, const Snap *base) {
   int piped, ok;
   u32 n, pair[2];
@@ -220,15 +324,21 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
   memcpy(arena, in->ram, RAM_SIZE);
   memcpy(arena, in->scratch, SCRATCH_SIZE);
   scratch_ptrs(arena, RAM_SIZE);
+  fnmap_for_level(*(s32 *)(in->ram + (0x8007596Cu - 0x80000000u))); /* g_LevelId */
+  fn_ptrs(arena, RAM_SIZE);
   gte_load(in);
   g_mips_sp = sp;
+  g_m2c_seed = in->gpr; /* the whole entry register file, not just a0-a3 */
   v0 = e->fn(in->gpr[R_A0], in->gpr[R_A0 + 1], in->gpr[R_A0 + 2], in->gpr[R_A0 + 3]);
   v1 = g_mips_v1;
 
   /* Expected state, in the host's terms. */
+  dma_ranges(in, out);
   scratch_ptrs(out->ram, RAM_SIZE);
   scratch_ptrs(out->scratch, SCRATCH_SIZE);
   scratch_ptrs(in->ram, RAM_SIZE);
+  fn_ptrs(out->ram, RAM_SIZE);
+  fn_ptrs(in->ram, RAM_SIZE);
   for (i = CMP_FROM; i < RAM_SIZE; i += 4) {
     u32 a = 0x80000000u + i, h = *(u32 *)(arena + i), x = *(u32 *)(out->ram + i);
     if (a < sp && a >= sp - 0x10000u)
@@ -285,13 +395,13 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
     /* v0/v1 count only if the emulator's function changed them: a function
      * that returns nothing leaves the caller's values there, which the
      * host's translated C doesn't have. */
-    int v0_ok = v0 == ev0 || out->gpr[R_V0] == in->gpr[R_V0];
+    int v0_ok = v0 == ev0 || out->gpr[R_V0] == in->gpr[R_V0] || ret_dead(name, 1);
     int v1_ok = v1 == ev1 || out->gpr[R_V1] == in->gpr[R_V1] || v1_dead(name);
     int pass = v0_ok && v1_ok && !nram && !nscr && !ngte;
     printf("%s %d %u %s v0 %08x/%08x%s v1 %08x/%08x%s ram %u ignored %u regsave %u rebased %u scratch %u "
            "gte %u\n%.*s",
            name, k, in->hdr[4], pass ? "PASS" : "FAIL", out->gpr[R_V0], v0,
-           out->gpr[R_V0] == in->gpr[R_V0] ? "(unset)" : "", out->gpr[R_V1], v1,
+           out->gpr[R_V0] == in->gpr[R_V0] ? "(unset)" : ret_dead(name, 1) ? "(dead)" : "", out->gpr[R_V1], v1,
            out->gpr[R_V1] == in->gpr[R_V1] ? "(unset)" : v1_dead(name) ? "(dead)" : "", nram, nirq, nsave,
            nrebased, nscr, ngte,
            pass ? 0 : len, diffs);
@@ -304,9 +414,9 @@ static int by_name(const void *a, const void *b) {
 }
 
 /* Replay every NAME_K.in in dir that has a .out (only: a name filter or
- * NULL; ignore: the interrupt ranges file or NULL). Returns the number of
- * samples that didn't pass. */
-int spyro_replay(const char *dir, const char *only, const char *ignore) {
+ * NULL; ignore: the ignore file or NULL; fnmap: the PS1-to-host function
+ * map or NULL). Returns the number of samples that didn't pass. */
+int spyro_replay(const char *dir, const char *only, const char *ignore, const char *fnmap) {
   DIR *dp = opendir(dir);
   struct dirent *de;
   char **names = NULL, path[4096];
@@ -315,6 +425,8 @@ int spyro_replay(const char *dir, const char *only, const char *ignore) {
   Snap *in = malloc(sizeof *in), *out = malloc(sizeof *out);
   if (ignore)
     load_ignore(ignore);
+  if (fnmap)
+    load_fnmap(fnmap);
   if (!dp || !in || !out) {
     fprintf(stderr, "replay: can't open %s\n", dir);
     return -1;
@@ -356,6 +468,10 @@ int spyro_replay(const char *dir, const char *only, const char *ignore) {
     }
     total++;
     fflush(stdout);
+    if (getenv("SPYRO_REPLAY_NOFORK")) { /* debugging under gdb: one sample, in process */
+      bad += run_one(name, k, in, out);
+      continue;
+    }
     pid = fork();
     if (pid == 0)
       { int r_ = run_one(name, k, in, out); fflush(stdout); _exit(r_); }

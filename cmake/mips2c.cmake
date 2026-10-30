@@ -33,11 +33,19 @@ add_custom_command(OUTPUT ${M2C_OUTS}
   COMMENT "mips2c: translating decomp asm to C")
 
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS})
+# Register seeding for the oracle replay (spyro --replay): host debug build only.
+if(SPYRO_HOST STREQUAL "linux32")
+  set(M2C_REPLAY_DEF MIPS2C_REPLAY=1)
+else()
+  set(M2C_REPLAY_DEF MIPS2C_REPLAY=0)
+endif()
+target_compile_definitions(spyro_game_m2c PRIVATE ${M2C_REPLAY_DEF})
 target_include_directories(spyro_game_m2c PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro_game_m2c PRIVATE ${SPYRO_HOST_FLAGS} -w)
 
 file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")
 add_library(spyro_game_port OBJECT ${PORT_SRCS})
+target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF})
 target_include_directories(spyro_game_port PRIVATE
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
 # trace.c reads game state through the decomp's headers.

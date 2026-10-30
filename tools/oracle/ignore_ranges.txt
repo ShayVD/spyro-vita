@@ -40,3 +40,14 @@ v1 ColMoby
 # func_800522C0 is void (moby_lists.h); func_800314B4 reloads v1 right after
 # the call (80031514).
 v1 func_800522C0
+# "ret NAME": void functions, v0 and v1 at return are dead. Both are declared
+# void in src/gamestates/update.c (746, 750) and called only from C there
+# (1438, 1444).
+ret func_8002F3E4
+ret func_800314B4
+#
+# libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
+# asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that
+# pointer and its counters (D_80075148..D_8007516C).
+80075148 80075170 libcd read state
+dma 80075150

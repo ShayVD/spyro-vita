@@ -25,7 +25,7 @@ void spyro_trace_vblank(int vblank);
 void spyro_trace_close(void);
 
 /* Function-level oracle replay (src/game/oracle_replay.c). */
-int spyro_replay(const char *dir, const char *only, const char *ignore);
+int spyro_replay(const char *dir, const char *only, const char *ignore, const char *fnmap);
 
 /* Memory cards (src/platform/common/libmcrd.c): <dir>/card0, card1. */
 void psx_mcrd_set_root(const char *dir);

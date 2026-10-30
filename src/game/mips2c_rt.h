@@ -26,6 +26,13 @@ typedef struct {
 } M2cEntry;
 extern const M2cEntry m2c_index[];
 
+#if MIPS2C_REPLAY
+/* Registers r0..ra, lo, hi for the next translated call to start with, then
+ * cleared (oracle_replay.c); hand-written entry points take inputs in any
+ * register. Host debug build only (cmake/mips2c.cmake). */
+extern const u32 *g_m2c_seed;
+#endif
+
 extern u32 g_mips_sp;          /* emulated $sp between translated calls */
 extern u32 g_mips_v1;          /* $v1 of the last translated function's return */
 extern uintptr_t g_psx_arena_base;

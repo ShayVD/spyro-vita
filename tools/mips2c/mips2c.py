@@ -639,6 +639,19 @@ class Translator:
         out.append("  u32 sp = g_mips_sp, jt_ = entry_;")
         out.append("  const u32 sp_entry_ = sp;")
         out.append("  (void)at; (void)k0; (void)k1; (void)gp; (void)hi; (void)lo;")
+        # Oracle replay (src/game/oracle_replay.c): the outermost call takes the
+        # emulator's registers, as hand-written entry points pass inputs in
+        # any register. Host debug build only.
+        out.append("#if MIPS2C_REPLAY")
+        out.append("  if (g_m2c_seed) {")
+        out.append("    const u32 *r_ = g_m2c_seed;")
+        out.append("    g_m2c_seed = 0;")
+        out.append("    at = r_[1]; v0 = r_[2]; v1 = r_[3]; t0 = r_[8]; t1 = r_[9]; t2 = r_[10]; t3 = r_[11];")
+        out.append("    t4 = r_[12]; t5 = r_[13]; t6 = r_[14]; t7 = r_[15]; s0 = r_[16]; s1 = r_[17]; s2 = r_[18];")
+        out.append("    s3 = r_[19]; s4 = r_[20]; s5 = r_[21]; s6 = r_[22]; s7 = r_[23]; t8 = r_[24]; t9 = r_[25];")
+        out.append("    gp = r_[28]; fp = r_[30]; lo = r_[32]; hi = r_[33];")
+        out.append("  }")
+        out.append("#endif")
         out.append("  goto dispatch_;")
         out += body
         out.append("end_:")
