@@ -31,8 +31,11 @@ typedef struct {
   long long us_vsync; /* inside VSync(0) during the logic pass (host vblank work) */
   long long spu_dropped; /* SPU writes swallowed inside presentation passes */
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
+  long long snapshot_bytes; /* copied in and out by the region snapshot */
   long long dirty_pages, dirty_max; /* stats 2: 4 KB pages a pass wrote */
   uint32_t dirty_union[PRESENT_PAGES / 32]; /* every page any pass wrote */
+  long long missed_pages; /* stats 2: dirty pages outside snapshot and scratch */
+  uint32_t missed_union[PRESENT_PAGES / 32];
 } PresentStats;
 
 extern PresentConfig g_present;

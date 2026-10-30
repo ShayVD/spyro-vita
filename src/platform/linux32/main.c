@@ -51,6 +51,20 @@ static void usage(void) {
   exit(2);
 }
 
+static void log_pages(const char *what, const uint32_t *bits) {
+  int i, start = -1;
+  for (i = 0; i <= PRESENT_PAGES; i++) {
+    int d = i < PRESENT_PAGES && (bits[i / 32] >> (i % 32) & 1);
+    if (d && start < 0)
+      start = i;
+    if (!d && start >= 0) {
+      host_log("present: %s %08x-%08x", what, 0x80000000u + start * 4096,
+               0x80000000u + i * 4096 - 1);
+      start = -1;
+    }
+  }
+}
+
 static void present_report(void) {
   const PresentStats *s = &g_present_stats;
   long long t = s->ticks ? s->ticks : 1;
@@ -63,20 +77,14 @@ static void present_report(void) {
   host_log("present: interp frames %lld, skipped %lld, 2D narrowed %lld, "
            "SPU writes dropped %lld",
            s->interp_frames, s->skipped_interp, s->squeezed_2d, s->spu_dropped);
+  host_log("present: snapshot %lld bytes copied per tick (in and out)",
+           s->snapshot_bytes / t);
   if (g_present.stats > 1 && s->passes) {
-    int i, start = -1;
-    host_log("present: pages dirtied per pass: avg %lld, max %lld (4 KB)",
-             s->dirty_pages / s->passes, s->dirty_max);
-    for (i = 0; i <= PRESENT_PAGES; i++) {
-      int d = i < PRESENT_PAGES && (s->dirty_union[i / 32] >> (i % 32) & 1);
-      if (d && start < 0)
-        start = i;
-      if (!d && start >= 0) {
-        host_log("present: dirty %08x-%08x", 0x80000000u + start * 4096,
-                 0x80000000u + i * 4096 - 1);
-        start = -1;
-      }
-    }
+    host_log("present: pages still changed after the region restore, per pass: avg %lld, max %lld (4 KB); "
+             "outside the snapshot and scratch: %lld",
+             s->dirty_pages / s->passes, s->dirty_max, s->missed_pages);
+    log_pages("dirty", s->dirty_union);
+    log_pages("MISSED", s->missed_union);
   }
   host_log_flush();
 }

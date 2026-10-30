@@ -22,8 +22,10 @@
 #include <string.h>
 #include <time.h>
 
+#include "buffers.h"
 #include "common.h"
 #include "camera.h"
+#include "environment.h"
 #include "graphics.h"
 #include "moby.h"
 #include "spyro.h"
@@ -345,18 +347,124 @@ static void hooks_init(void) {
 
 /* ---------- snapshot of the game-visible state ---------- */
 
-static unsigned char *s_arena_snap;
+/* A pass may write anywhere the draw path writes, but the game only reads
+ * some of it again (docs/presentation.md, --present-dirty):
+ *  - the scratchpad (first KB of the arena) and g_psx_scratch;
+ *  - the game's data, sdata, sbss and bss, 0x8006BBE0-0x8007AA38 (psx.map
+ *    main_DATA_START..main_BSS_END): camera, Spyro, g_SonyImage, the globals;
+ *  - the level's moby array (m_WasDrawn, animation state, blended transforms);
+ *  - the particle space under m_SharedAnimations (AllocateBuffers, 4BEF8.c);
+ *  - bytes 0x18-0x1B of every sector header, a cache func_800258F0 reads
+ *    (`lw $gp, 0x18($s1)`) and rewrites (`sb $sp, 0x18..0x1B($s1)`).
+ * Those are saved and restored. Everything else a pass writes is scratch the
+ * next real draw rewrites before anyone reads it: the two primitive buffers
+ * and the OTs (linking clears every bucket) and the emulated stack below
+ * the caller's $sp. --present-dirty keeps a full copy as well and reports
+ * any other page left changed. */
+#define DATA_LO 0x8006BBE0u
+#define DATA_HI 0x8007AA38u
+#define STACK_LO 0x80010000u /* mips2c's emulated stack, top 0x80020000 */
+#define STACK_HI 0x80020000u
+#define PARTICLE_SPACE 0x2000
+#define OT_BYTES 0x4000
+#define MAX_REGIONS 4
+
+typedef struct {
+  unsigned char *at;
+  uint32_t len;
+} Region;
+
+static Region s_regions[MAX_REGIONS];
+static int s_nregions;
+static unsigned char *s_region_snap;
+static size_t s_region_cap;
+static unsigned char *s_arena_full; /* --present-dirty only */
 static unsigned char s_scratch_snap[sizeof g_psx_scratch];
 static GTERegisters s_gte_snap;
 static DRAWENV s_drawenv_snap;
 static DISPENV s_dispenv_snap;
 static unsigned int s_v1_snap;
 
+#define SECTOR_CACHE 0x18
+#define MAX_SECTORS 4096
+static uint32_t s_sector_snap[MAX_SECTORS];
+static int s_nsectors;
+
+static int count_mobys(void);
+
+static int in_arena(const void *p, uint32_t len) {
+  uintptr_t a = (uintptr_t)p;
+  return a >= g_psx_arena_base && len <= PSX_RAM_SIZE &&
+         a - g_psx_arena_base <= PSX_RAM_SIZE - len;
+}
+
+static void add_region(void *at, uint32_t len) {
+  if (s_nregions < MAX_REGIONS && len && in_arena(at, len)) {
+    s_regions[s_nregions].at = at;
+    s_regions[s_nregions].len = len;
+    s_nregions++;
+  }
+}
+
+static void collect_regions(void) {
+  s_nregions = 0;
+  add_region(PSX_ARENA(0x80000000u), sizeof g_psx_scratch);
+  add_region(PSX_ARENA(DATA_LO), DATA_HI - DATA_LO);
+  add_region(g_LevelMobys, (uint32_t)(count_mobys() + 1) * sizeof(Moby));
+  add_region(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
+}
+
+static unsigned char *sector_cache(int i) {
+  unsigned char *sec =
+      (unsigned char *)(uintptr_t)((uint32_t *)g_Environment.m_SectorPointer)[i];
+  return in_arena(sec + SECTOR_CACHE, 4) ? sec + SECTOR_CACHE : NULL;
+}
+
+static void sectors_take(void) {
+  int i;
+  s_nsectors = 0;
+  if (!in_arena(g_Environment.m_SectorPointer, 4) ||
+      g_Environment.m_SectorCount <= 0 || g_Environment.m_SectorCount > MAX_SECTORS)
+    return;
+  s_nsectors = g_Environment.m_SectorCount;
+  for (i = 0; i < s_nsectors; i++) {
+    unsigned char *c = sector_cache(i);
+    if (c)
+      memcpy(&s_sector_snap[i], c, 4);
+  }
+}
+
+static void sectors_restore(void) {
+  int i;
+  for (i = 0; i < s_nsectors; i++) {
+    unsigned char *c = sector_cache(i);
+    if (c)
+      memcpy(c, &s_sector_snap[i], 4);
+  }
+}
+
 static void snap_take(void) {
   long long t = now_us();
-  if (!s_arena_snap)
-    s_arena_snap = malloc(PSX_RAM_SIZE);
-  memcpy(s_arena_snap, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  size_t need = 0;
+  unsigned char *o;
+  int i;
+  collect_regions();
+  for (i = 0; i < s_nregions; i++)
+    need += s_regions[i].len;
+  if (need > s_region_cap) {
+    free(s_region_snap);
+    s_region_snap = malloc(need);
+    s_region_cap = need;
+  }
+  for (o = s_region_snap, i = 0; i < s_nregions; o += s_regions[i].len, i++)
+    memcpy(o, s_regions[i].at, s_regions[i].len);
+  sectors_take();
+  g_present_stats.snapshot_bytes += (long long)need + s_nsectors * 4;
+  if (g_present.stats > 1) {
+    if (!s_arena_full)
+      s_arena_full = malloc(PSX_RAM_SIZE);
+    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  }
   memcpy(s_scratch_snap, g_psx_scratch, sizeof s_scratch_snap);
   s_gte_snap = gteRegs;
   s_drawenv_snap = activeDrawEnv;
@@ -365,33 +473,75 @@ static void snap_take(void) {
   g_present_stats.us_snapshot += now_us() - t;
 }
 
-/* --present-stats 2: which pages did the pass change? (sizes a cheaper
- * snapshot, docs/presentation.md) */
-static void dirty_scan(void) {
+/* PS1 address range [lo, hi) the next real draw rewrites: the primitive
+ * buffers and both OTs (AllocateBuffers: lower, higher, HUD OT, world OT). */
+static int scratch_range(uint32_t *lo, uint32_t *hi) {
+  if (!in_arena(g_Buffers.m_LowerPolyBuffer, 1) ||
+      !in_arena(g_Buffers.m_WorldOTStart, OT_BYTES))
+    return 0;
+  *lo = 0x80000000u +
+        (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
+  *hi = 0x80000000u +
+        (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart - g_psx_arena_base) +
+        OT_BYTES;
+  return 1;
+}
+
+/* Does page `page` differ from the full copy outside the scratch areas? */
+static int page_missed(int page) {
+  const unsigned char *a = (const unsigned char *)g_psx_arena_base;
+  uint32_t lo = 0x80000000u + (uint32_t)page * 4096, hi = lo + 4096;
+  uint32_t s_lo, s_hi, k;
+  if (lo >= STACK_LO && hi <= STACK_HI)
+    return 0;
+  if (!scratch_range(&s_lo, &s_hi) || hi <= s_lo || lo >= s_hi)
+    return 1;
+  for (k = lo; k < hi; k++)
+    if ((k < s_lo || k >= s_hi) &&
+        a[k - 0x80000000u] != s_arena_full[k - 0x80000000u])
+      return 1;
+  return 0;
+}
+
+/* --present-dirty: which pages did the pass change, and did the regions
+ * cover every one the game can read? Runs after the region restore, against
+ * the full copy; then restores the full copy so the run stays exact. */
+static void dirty_check(void) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
   long long n = 0;
   int i;
-  for (i = 0; i < PRESENT_PAGES; i++)
-    if (memcmp(a + i * 4096, s_arena_snap + i * 4096, 4096) != 0) {
-      g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
-      n++;
+  for (i = 0; i < PRESENT_PAGES; i++) {
+    if (memcmp(a + i * 4096, s_arena_full + i * 4096, 4096) == 0)
+      continue;
+    g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
+    n++;
+    if (page_missed(i)) {
+      g_present_stats.missed_union[i / 32] |= 1u << (i % 32);
+      g_present_stats.missed_pages++;
     }
+  }
   g_present_stats.dirty_pages += n;
   if (n > g_present_stats.dirty_max)
     g_present_stats.dirty_max = n;
+  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_RAM_SIZE);
 }
 
 static void snap_restore(void) {
-  if (g_present.stats > 1)
-    dirty_scan();
   long long t = now_us();
-  memcpy((void *)g_psx_arena_base, s_arena_snap, PSX_RAM_SIZE);
+  const unsigned char *o;
+  int i;
+  for (o = s_region_snap, i = 0; i < s_nregions; o += s_regions[i].len, i++)
+    memcpy(s_regions[i].at, o, s_regions[i].len);
+  sectors_restore();
+  g_present_stats.snapshot_bytes += (long long)(o - s_region_snap) + s_nsectors * 4;
   memcpy(g_psx_scratch, s_scratch_snap, sizeof s_scratch_snap);
   gteRegs = s_gte_snap;
   activeDrawEnv = s_drawenv_snap;
   activeDispEnv = s_dispenv_snap;
   g_mips_v1 = s_v1_snap;
   g_present_stats.us_snapshot += now_us() - t;
+  if (g_present.stats > 1)
+    dirty_check(); /* after the timing: it isn't part of the cost */
 }
 
 /* ---------- interpolation: transforms of the previous tick ---------- */
