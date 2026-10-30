@@ -164,7 +164,13 @@ How to read it for the Vita:
   - Both: R + 2 × (R + raster).
   - With a GPU backend (vitaGL), rasterisation leaves the CPU, and the cost is roughly 2R or 3R per tick.
 - **Snapshot.** Now ~170–260 KB per tick (region snapshot, above), down from 4–6 MB. On the Vita that's a fraction of a millisecond even at a few hundred MB/s.
-- **Hardware.** 60 fps needs two renders per 33 ms tick, so R must stay well under ~12 ms on the Vita's A9 at 444 MHz. M3 runs at ~60 vblanks/s in Vita3K, which says nothing about hardware. The first hardware measurement (M3/M4) decides whether the in-between frame is affordable in all levels, or should drop to camera-only (`--interp-camera`, same cost, less state) or turn itself off when a tick runs long.
+- **Hardware.** First real-Vita numbers (GPU renderer, build `c40c9cf`, `docs/vita-testing.md`; features off). The CPU is 43–78% busy per 30 Hz tick, so 14–26 ms of the 33 ms. Per vblank in levels: game 3–5 ms, raster 3–4, SPU ~2.5, OT walk 1–1.5.
+  - **Estimate (not measured):** an in-between frame costs one more render path, OT walk and GPU submission, about 12–17 ms per tick. That fits in light scenes and overruns heavy ones. Faithful widescreen adds one render path without raster, ~4–6 ms.
+  - The region snapshot (<0.3 MB per tick) and the blending (~26 µs) are not the limit any more.
+  - What would make 60 fps hold everywhere:
+    - drop the in-between frame when the previous tick ran long (adaptive: the game then shows 30 fps for that tick, never slower);
+    - a cheaper render path (readable C for the renderers);
+    - cheaper submission in the GPU backend.
 
 ## Verification
 
@@ -214,6 +220,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 ## Follow-ups
 
 1. Wire the presenter into the Vita platform (the Vita GPU renderer session has the notes) and measure on hardware.
-2. Flame, line-particle end points and the HUD counters' spin at 60 fps.
-3. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
-4. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.
+2. Adaptive in-between frame: skip it when the last tick's CPU time leaves too little headroom (hardware estimate above).
+3. Flame, line-particle end points and the HUD counters' spin at 60 fps.
+4. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
+5. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.
