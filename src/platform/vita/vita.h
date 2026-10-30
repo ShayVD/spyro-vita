@@ -9,6 +9,7 @@
 
 #define VITA_DATA_DIR "ux0:data/spyro"
 #define VITA_MAX_SHOTS 32
+#define VITA_MAX_POKES 16
 
 typedef struct {
   char disc_dir[256]; /* disc=  (default ux0:data/spyro) */
@@ -23,7 +24,12 @@ typedef struct {
   int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
-  int gpu_res;        /* gpu_res=N: GPU targets at N x the PS1's pixels; 0 (default): the screen's */
+  int gpu_res;        /* res= (gpu_res=): GPU targets at N x the PS1's pixels; 0 (default,
+                         res=native): the screen's; 1: res=ps1 (D37) */
+  int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */
+  int shot_hold;      /* shot_hold=MS: hold the picture after each shot (window captures) */
+  struct { int vblank; uint32_t addr, value; } pokes[VITA_MAX_POKES]; /* poke=V:ADDR=VALUE */
+  int npokes;
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */

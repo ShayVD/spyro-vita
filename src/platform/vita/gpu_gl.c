@@ -8,9 +8,11 @@
  *     shaders read the 16-bit words themselves (4/8-bit CLUT lookup, 15-bit,
  *     texel 0 transparent, STP), as PsyX_render.cpp's shaders do.
  *   - Each draw area the game draws into (Spyro: its two 512x224 buffers) is
- *     a "target": an FBO covering that VRAM rect at a higher resolution.
+ *     a "target": an FBO covering that VRAM rect at a higher resolution
+ *     (config.txt res=: the screen's pixels by default, decisions D37).
  *     Inside its rect a target is newer than s_vram; LoadImage/MoveImage into
- *     it are drawn into it too, ClearImage clears both.
+ *     it are drawn into it too (a MoveImage from another target at the
+ *     targets' resolution), ClearImage clears both.
  *   - s_vram gets a target's pixels back only when something reads that
  *     VRAM: StoreImage (the pause and inventory background), MoveImage from
  *     it, a textured prim whose page overlaps it, a screenshot, a 24-bit
@@ -143,11 +145,44 @@ static int s_nverts;
 
 /* per 300-vblank report */
 static struct {
-  unsigned draws, tris, uploads, readbacks, replays, copies, presents;
+  unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
   uint64_t upload_us, readback_us;
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+
+/* One frame per report is timed on the GPU: glFinish before its first draw
+ * (the GPU is idle from there) and again before its swap. "frame" is from
+ * that first draw to the GPU being done, CPU work included; "tail" is how
+ * long the GPU still worked after the CPU had sent everything. A small tail
+ * means the GPU keeps up with the CPU at this resolution. */
+static struct {
+  int state; /* 0 idle, 1 armed, 2 timing */
+  uint64_t t0;
+  unsigned frame_us, tail_us, n;
+} s_sample;
+
+static void sample_begin(void) {
+  if (s_sample.state == 1) {
+    glFinish();
+    s_sample.t0 = now_us();
+    s_sample.state = 2;
+  }
+}
+
+/* every swap goes through here */
+static void swap(void) {
+  if (s_sample.state == 2) {
+    uint64_t t1 = now_us(), t2;
+    glFinish();
+    t2 = now_us();
+    s_sample.frame_us = (unsigned)(t2 - s_sample.t0);
+    s_sample.tail_us = (unsigned)(t2 - t1);
+    s_sample.n++;
+    s_sample.state = 0;
+  }
+  vglSwapBuffers(GL_FALSE);
+}
 
 /* ---- shaders (GLSL ES 1.00, run through vitaGL's translator) ---- */
 
@@ -443,6 +478,33 @@ static void copy_into(Target *t, int x, int y, int w, int h) {
   s_st.copies++;
 }
 
+/* VRAM rect (x, y, w, h) of target t from target src's pixels at (x + dx,
+ * y + dy): a MoveImage between targets (the game-over and credits freeze
+ * frames) keeps the targets' resolution. s_vram got the same move. */
+static void move_into(Target *t, const Target *src, int x, int y, int w, int h, int dx, int dy) {
+  float ndc[4], uv[4];
+  bind_fbo(t->fbo);
+  glViewport(0, 0, t->pw, t->ph);
+  no_blend();
+  glUseProgram(s_prog[P_TEX].prog);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, src->tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glActiveTexture(GL_TEXTURE0);
+  ndc[0] = (float)(x - t->x) / t->w * 2 - 1;
+  ndc[1] = (float)(y - t->y) / t->h * 2 - 1;
+  ndc[2] = (float)(x + w - t->x) / t->w * 2 - 1;
+  ndc[3] = (float)(y + h - t->y) / t->h * 2 - 1;
+  uv[0] = (float)(x + dx - src->x) / src->w;
+  uv[1] = (float)(y + dy - src->y) / src->h;
+  uv[2] = (float)(x + w + dx - src->x) / src->w;
+  uv[3] = (float)(y + h + dy - src->y) / src->h;
+  quad(ndc, uv);
+  s_st.copies++;
+  s_st.moves++;
+}
+
 static void flush_pending(void) {
   int i;
   if (!s_npending)
@@ -639,9 +701,9 @@ static void set_scale(void) {
   /* the screen's pixels: the display rect fills a 4:3 area 544 lines high */
   int dw = currentDispEnv.disp.w > 0 ? currentDispEnv.disp.w : 512;
   int dh = currentDispEnv.disp.h > 0 ? currentDispEnv.disp.h : 240;
-  if (g_vita_opts.gpu_res > 0) {
+  if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
-  } else {
+  } else { /* res=native */
     s_sx = (float)(SCREEN_H * 4 / 3) / dw;
     s_sy = (float)SCREEN_H / dh;
   }
@@ -842,6 +904,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
              v[2].y, (uint16_t)v[0].page, (uint16_t)v[0].clut, v[0].u, v[0].v, v[0].r, v[0].g,
              v[0].b);
   }
+  sample_begin();
   if (s_texmode != P_UNTEX && any_stale())
     sync_pages(start_vertex, n);
   flush_pending();
@@ -859,9 +922,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
 
   p = &s_prog[s_texmode];
   glUseProgram(p->prog);
-  /* VRAM x = vertex x + org; +0.5: the PS1 samples at the pixel's corner,
-   * GL at its centre */
-  glUniform4f(p->xf, (float)(s_org_x - t->x) + 0.5f, (float)(s_org_y - t->y) + 0.5f,
+  /* VRAM x = vertex x + org; + half a target pixel: the PS1 samples at the
+   * pixel's corner, GL at its centre. (Half a PS1 pixel would shift what is
+   * drawn against what LoadImage put there, and leave the target's first
+   * rows and columns uncovered, once targets have more pixels than VRAM.) */
+  glUniform4f(p->xf, (float)(s_org_x - t->x) + 0.5f / s_sx, (float)(s_org_y - t->y) + 0.5f / s_sy,
               2.0f / t->w, 2.0f / t->h);
   if (s_texmode != P_UNTEX) {
     glActiveTexture(GL_TEXTURE0);
@@ -923,6 +988,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
 
 /* ---- VRAM transfers (coordinates wrap like the PS1's) ---- */
 
+/* gl_GR_CopyVRAM's MoveImage, while its source lies inside one target:
+ * that target, and source minus destination */
+static const Target *s_move_src;
+static int s_move_dx, s_move_dy;
+
 /* rect (x, y, w, h) of VRAM changed in s_vram: targets over it get it too */
 static void wrote_rect(int x, int y, int w, int h) {
   int i;
@@ -944,6 +1014,11 @@ static void wrote_rect(int x, int y, int w, int h) {
           memcpy(t->log.data + e->off + (size_t)r * e->w * 2, s_vram + (y0 + r) * VW + x0,
                  (size_t)e->w * 2);
       }
+    }
+    if (s_move_src && s_move_src != t) {
+      flush_pending(); /* in order, and the source's own pending writes first */
+      move_into(t, s_move_src, x0, y0, x1 - x0, y1 - y0, s_move_dx, s_move_dy);
+      continue;
     }
     if (s_npending == MAX_PENDING)
       flush_pending();
@@ -1051,6 +1126,17 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
   if (!src) {
     static uint16_t tmp[VW * VH];
     pieces(x, y, w, h, sync_rect);
+    if (x >= 0 && y >= 0 && x + w <= VW && y + h <= VH && dst_x >= 0 && dst_y >= 0 &&
+        dst_x + w <= VW && dst_y + h <= VH) {
+      for (i = 0; i < s_ntargets; i++) {
+        const Target *t = &s_targets[i];
+        if (x >= t->x && y >= t->y && x + w <= t->x + t->w && y + h <= t->y + t->h) {
+          s_move_src = t;
+          s_move_dx = x - dst_x;
+          s_move_dy = y - dst_y;
+        }
+      }
+    }
     for (i = 0; i < h; i++)
       for (j = 0; j < w; j++)
         tmp[i * w + j] = s_vram[((y + i) & (VH - 1)) * VW + ((x + j) & (VW - 1))];
@@ -1064,6 +1150,7 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
       row[(dst_x + j) & (VW - 1)] = s[j];
   }
   pieces(dst_x, dst_y, w, h, wrote_rect);
+  s_move_src = NULL;
 }
 
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
@@ -1261,7 +1348,7 @@ int vita_gpu_present(void) {
   s_st.presents++;
   prof_leave();
   prof_enter(PROF_WAIT);
-  vglSwapBuffers(GL_FALSE);
+  swap();
   prof_leave();
   return 1;
 }
@@ -1278,10 +1365,19 @@ void vita_gpu_fill(float r, float g, float b) {
 
 void vita_gpu_report(int vblank) {
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
-           "%u copies into targets, %u readbacks (%u replayed; %u.%02u ms), %d targets",
+           "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
+           "%u.%02u ms), %d targets at %dx%d",
            vblank, s_st.draws, s_st.tris, s_st.presents, s_st.uploads,
            (unsigned)(s_st.upload_us / 1000), (unsigned)(s_st.upload_us % 1000 / 10),
-           s_st.copies, s_st.readbacks, s_st.replays, (unsigned)(s_st.readback_us / 1000),
-           (unsigned)(s_st.readback_us % 1000 / 10), s_ntargets);
+           s_st.copies, s_st.moves, s_st.readbacks, s_st.replays,
+           (unsigned)(s_st.readback_us / 1000), (unsigned)(s_st.readback_us % 1000 / 10),
+           s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0);
+  if (s_sample.n)
+    vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
+             s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,
+             s_sample.tail_us % 1000 / 10);
+  s_sample.n = 0;
+  if (g_vita_opts.gpu_time)
+    s_sample.state = 1;
   memset(&s_st, 0, sizeof s_st);
 }

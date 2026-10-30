@@ -80,10 +80,13 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `gpu_res=N` | GPU: draw at N times the PS1's resolution (1 = the PS1's own pixels, cheapest); 0, the default, draws at the screen's own resolution |
+| `res=native` | GPU: the resolution it draws at (decisions D37). `native`, the default: the screen's own pixels (the 4:3 picture is 725×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
+| `shot_hold=MS` | after each shot, keep the picture on screen MS milliseconds and log `hold V` (Vita3K window captures) |
+| `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -97,7 +100,14 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   models, the picture upload, and waiting for the display (with the GPU this includes waiting for
   the GPU to finish).
 - With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
-  into targets, R readbacks (… replayed; Y ms), K targets`, counted over the same 300 vblanks.
+  into targets (M moves between them), R readbacks (… replayed; Y ms), K targets at W×H`, counted
+  over the same 300 vblanks. W×H is the size the GPU draws a 512×224 game buffer at (`res=`).
+- With the GPU, also `gpu N: timed frame F ms, GPU tail after the CPU G ms`: one frame in the
+  window is timed with `glFinish` before its first draw and before its swap. F is that frame from
+  its first draw to the GPU being done (CPU and GPU work overlapped); G is how long the GPU still
+  worked after the CPU had sent the whole frame. A G near 0 means the GPU keeps up at this
+  resolution; the frame is ~G ms late on screen at most, once per 5 seconds (`gpu_time=0` turns it
+  off).
   The upload and readback times are CPU time.
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
@@ -155,9 +165,12 @@ Keep Vita3K's log level at ERROR (the default; `VITA3K_LOG=N` changes it): TRACE
   `shot_hd=1` and `gpu_readback=0`). The normal shots still work. They come from the readback
   replay, the PS1-exact picture the game sees through `StoreImage`, so they compare byte for byte
   with `gpu=0` and the host. They don't show the GPU's own output.
-- To see the GPU's picture, capture the Vita3K window while it runs:
-  `screencapture -x -o -l<window id>`, with the window id from `CGWindowListCopyWindowInfo`
-  (owner "Vita3K").
+- To see the GPU's picture, capture the Vita3K window: `CAPTURE=1 tools/vita/vita3k_run.sh …`
+  writes `win-V.png` for every shot V. The app holds the picture after each shot (`shot_hold=`)
+  until `tools/vita/vita3k_window.swift` has grabbed the window, so the capture is the same frame
+  as the shot. A blank grab (the window wasn't being drawn: covered, on another Space) brings
+  Vita3K to the front once and retries; failures go to `capture.log`. Don't compare timing from
+  capture runs: the holds count as game time.
 
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
