@@ -46,6 +46,10 @@
 #define VH 512
 #define SCREEN_W 960
 #define SCREEN_H 544
+/* The 4:3 picture's width on the screen (and at res=native the targets').
+ * 544 * 4 / 3 is 725, but a 725-wide render target lost its last column
+ * (black in every Vita3K capture, main's renderer too); 726 fills it. */
+#define AREA43_W 726
 #define MAX_TARGETS 8
 #define MAX_PENDING 64
 
@@ -707,7 +711,7 @@ static void set_scale(void) {
   if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
   } else { /* res=native */
-    s_sx = (float)(g_present.widescreen ? SCREEN_W : SCREEN_H * 4 / 3) / dw;
+    s_sx = (float)(g_present.widescreen ? SCREEN_W : AREA43_W) / dw;
     s_sy = (float)SCREEN_H / dh;
   }
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
@@ -1434,7 +1438,7 @@ static void draw_overlay(void) {
  * 4:3 in the middle. GPU slots (gpu=1) or present.c's pixels (the software
  * rasterizer shown through vitaGL). */
 static int present_slot(int slot) {
-  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : SCREEN_H * 4 / 3;
+  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : AREA43_W;
   int area_x = (SCREEN_W - area_w) / 2;
   float ndc[4], src[4] = {0, 0, 1, 1};
   if (!port_present_frame_new() && s_pres_on_screen == slot && !s_hd_shot)
@@ -1483,17 +1487,13 @@ static int present_slot(int slot) {
   return 1;
 }
 
-/* One frame: the display rect 4:3 in the middle of the screen. Returns 1 if
- * it was a new picture. */
-int vita_gpu_present(void) {
+/* The display rect 4:3 in the middle of the screen. Returns 1 if it was a
+ * new picture. */
+static int present_display(void) {
   const DISPENV *d = &currentDispEnv;
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
-  int area_w = SCREEN_H * 4 / 3, area_x = (SCREEN_W - area_w) / 2, i;
+  int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i;
   float ndc[4], src[4];
-  i = port_present_frame_slot();
-  if (i >= 0)
-    return present_slot(i);
-  s_pres_on_screen = -1;
   prof_enter(PROF_PRESENT);
   if (s_last.valid && s_last.gen == s_gen && s_last.vgen == prof_vram_gen() &&
       s_last.disabled == g_GPUDisabledState && !memcmp(&s_last.disp, d, sizeof s_last.disp) &&
@@ -1574,6 +1574,27 @@ int vita_gpu_present(void) {
   swap();
   prof_leave();
   return 1;
+}
+
+/* One frame: a presentation frame (widescreen, 60 fps), or the display
+ * rect. Returns 1 if it was a new picture. */
+int vita_gpu_present(void) {
+  int slot = port_present_frame_slot();
+  if (slot >= 0)
+    return present_slot(slot);
+  s_pres_on_screen = -1;
+  return present_display();
+}
+
+/* The picture on screen drawn and swapped again, without taking a new
+ * presentation frame (shot_hold: Vita3K can show an older swap buffer). */
+void vita_gpu_repeat(void) {
+  int slot = s_pres_on_screen;
+  vita_gpu_force_redraw();
+  if (slot >= 0)
+    present_slot(slot);
+  else
+    present_display();
 }
 
 /* the no-disc screen: red until START */

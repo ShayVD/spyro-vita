@@ -123,6 +123,8 @@ static void present(void) {
     SceIoStat st;
     SceUID fd;
     int ms, n = snprintf(buf, sizeof buf, "%d\n", s_hold);
+    for (ms = 0; ms < 3 && g_vita_gl; ms++) /* Vita3K can show an older swap buffer */
+      vita_gpu_repeat();
     sceKernelDelayThread(100 * 1000); /* the flip */
     fd = sceIoOpen(VITA_DATA_DIR "/hold.req", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd >= 0) {

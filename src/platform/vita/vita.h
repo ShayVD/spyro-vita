@@ -82,6 +82,7 @@ void vita_video_overlay(const uint8_t *rgb, int w, int h);
 void vita_video_force_redraw(void);
 void vita_gpu_overlay(const uint8_t *rgb, int w, int h); /* gpu_gl.c */
 void vita_gpu_force_redraw(void);
+void vita_gpu_repeat(void); /* the picture on screen again (shot_hold) */
 void vita_gpu_rescale(void); /* targets again at the current widescreen width */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;

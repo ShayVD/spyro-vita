@@ -80,7 +80,7 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `res=native` | GPU: the resolution it draws at (decisions D38). `native`, the default: the screen's own pixels (the 4:3 picture is 725×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `res=native` | GPU: the resolution it draws at (decisions D38). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
 | `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
@@ -293,7 +293,7 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 **Testing the render resolution** (`res=`, decisions D38), with the GPU build:
 
 1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 960x508` (16:9,
-   the default) or `725x508` (`widescreen=0`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
+   the default) or `726x508` (`widescreen=0`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
    ms` line every 300 vblanks. G is the GPU's cost beyond the CPU's; near 0 means the GPU keeps up.
 2. Look at the boot logos (Sony, Universal: are they there, sharp and centred?), the title's
    PRESS START and the HUD in Artisans: letters should have hard edges, no soft or doubled rows,
@@ -320,4 +320,5 @@ Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "ol
 | `run98`, `run99` | widescreen pause script, `res=native` vs `res=ps1` | `targets at 960x508`; the 16:9 picture fills the screen at native resolution; `res=ps1` softer as expected. |
 | `run100`–`run103` | `REALTIME=1`, 6000 vblanks of title and attract demo: native, ps1, 2, widescreen+interp | 60 vblanks/s and 134–150 pictures per 300 vblanks at every resolution. Vita3K's GPU timings are not the Vita's: hardware decides the cost. |
 | `run104` | `REALTIME=1`, boot logos, old and new | The 24-bit logos are black in the window in both builds (the replay shots show them): not caused by D37. |
-| `run106`–`run110` | after merging main #13/#14: title native and `res=ps1`, game over, title with `widescreen=1 interp=1` | Replay shots byte-identical to `run91`/`run97`; title windows pixel-identical to `run91`/`run92`; ws+60 fps: `targets at 960x508`, `presentation frames 960x544`. One capture of the game-over freeze frame (`run108`, 6504) had a 1-px light column at the picture's right edge that `run97` (same frame, same path) didn't; reruns at that moment caught Vita3K's own "compiling shaders" overlay instead (`run110`). Not settled in Vita3K: hardware check item 3. |
+| `run106`–`run110` | after merging main #13/#14: title native and `res=ps1`, game over, title with `widescreen=1 interp=1` | Replay shots byte-identical to `run91`/`run97`; title windows pixel-identical to `run91`/`run92`; ws+60 fps: `targets at 960x508`, `presentation frames 960x544`. One capture of the game-over freeze frame (`run108`, 6504) had a 1-px light column at the picture's right edge that `run97` (same frame, same path) didn't; reruns at that moment caught Vita3K's own "compiling shaders" overlay instead (`run110`). Settled in `run111`–`run117`, below. |
+| `run111`–`run117` | captures now present the held frame again 3 times first (Vita3K could show an older swap buffer); 4:3 area 726 wide | Captures repeatable (two game-over runs pixel-identical). The light column was real: a 725-wide target never drew its last column (black at native in every capture, main's build too) and the game-over move left a stray colour there. 726 and 728 both fill it; with 726 every capture is lit to the last column, which matches the PS1 replay's column 511 at the freeze frame. Replay shots unchanged. |
