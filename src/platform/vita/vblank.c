@@ -62,7 +62,7 @@ static void vblank(void) {
   vita_pad_vblank();
   prof_enter(PROF_SPU);
   psx_cd_vblank();
-  psx_spu_vblank();
+  vita_mixer_vblank(); /* psx_spu_vblank on the mixer thread (mixer.c) */
   prof_leave();
   if (vsync_callback)
     vsync_callback();
@@ -91,6 +91,7 @@ static void vblank(void) {
     s_stat_v0 = v;
     s_stat_shown = s_stat_late = 0;
     prof_report(v);
+    vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);
   }

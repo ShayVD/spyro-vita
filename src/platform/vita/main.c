@@ -31,6 +31,9 @@
  *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
  *                       (glReadPixels) instead of replaying the draws in the
  *                       software rasterizer (default 1)
+ *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
+ *                       their own thread; 2 that thread, but each vblank waits
+ *                       for its mix; 0 the game thread, as before
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -52,7 +55,7 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1};
+                        .gpu = 1, .gpu_readback = 1, .mixer = 1};
 
 extern void spyro_main(void);
 
@@ -132,6 +135,8 @@ static void read_config(void) {
       g_vita_opts.gpu_dump = atoi(v);
     else if (!strcmp(line, "gpu_readback"))
       g_vita_opts.gpu_readback = atoi(v);
+    else if (!strcmp(line, "mixer"))
+      g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else
