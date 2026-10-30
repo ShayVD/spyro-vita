@@ -10,6 +10,7 @@
 
 #include "common.h"
 
+#include "camera.h"
 #include "gamepad.h"
 #include "matrix.h"
 #include "spyro.h"
@@ -61,6 +62,47 @@ typedef struct {
 
 #define g_PadFrame ((PadFrame *)g_ActivePad)
 
+/* Camera (camera.h): the same fields, with names for the unk_ ones the
+ * hand-written camera functions use (src/game/camera_hand.c). The camera
+ * follows m_Sphere, spherical coordinates around m_Focus; springs pull
+ * m_Sphere towards m_LastSimulation, the target (func_80034CE8). */
+typedef struct {
+  SHORTMATRIX m_ProjectionMatrix;
+  SHORTMATRIX m_ViewMatrix;
+  Vector3D m_Position;
+  Vector3D m_DestinationPosition;
+  int unk_0x40[3];
+  Vector3D16 m_Rotation;
+  short unk_0x52;
+  int m_OcclusionGroup;
+  u_int m_State;
+  int unk_0x5C;
+  SphericalCoordsOffset m_LastSimulation; /* The springs' target */
+  SphericalCoordsOffset m_Sphere;
+  SphericalCoordsOffset m_Simulation;
+  SphericalCoordsOffset m_SphereSpeed; /* Per component, 1/256 a tick (unk_0xA8) */
+  int m_NextState;  /* unk_0xC0 */
+  int m_NudgeTicks; /* Ticks a nudge found by func_80034480 holds (unk_0xC4) */
+  int m_SpyroOffCenterFrames;
+  int m_AtDestination; /* The last move reached m_DestinationPosition (unk_0xCC) */
+  Vector3D *m_Focus;
+  int m_FocusRotation;
+  SphericalCoordsOffset *m_SphericalPreset;
+  int m_LookYaw;   /* Look mode's stick/d-pad offsets (unk_0xDC) */
+  int m_LookPitch; /* (unk_0xE0) */
+  int unk_0xE4;
+  int m_SimFlipped; /* func_80033F08's result for m_Position (unk_0xE8) */
+  LevelFlyInParameters *unk_0xEC;
+  int m_OnMovingPlatform;
+  int unk_0xF4;
+  int unk_0xF8;
+  int unk_0xFC;
+  Vector3D m_MobyFocus; /* Focus point beside a moby, state 0x80000007 (unk_0x100) */
+  int unk_0x10C;
+} CameraView;
+
+#define g_Cam (*(CameraView *)&g_Camera)
+
 #define HAND_SAME_OFFSET(view, field, orig, origField)                         \
   static_assert(offsetof(view, field) == offsetof(orig, origField),            \
                 #view "." #field " is not " #orig "." #origField)
@@ -81,5 +123,20 @@ HAND_SAME_OFFSET(SpyroFlameView, m_PuffLastPos, SpyroFlame, unk_d8);
 static_assert(sizeof(PadFrame) == sizeof(g_Pad.m_BufferedInputs[0]), "PadFrame size");
 static_assert(offsetof(PadFrame, m_LeftStickMoved) == offsetof(Gamepad, m_LeftStickMoved), "PadFrame stick flag");
 static_assert(offsetof(PadFrame, m_Sticks) == offsetof(Gamepad, m_Sticks), "PadFrame sticks");
+
+static_assert(sizeof(CameraView) == sizeof(Camera), "CameraView size");
+HAND_SAME_OFFSET(CameraView, m_Rotation, Camera, m_Rotation);
+HAND_SAME_OFFSET(CameraView, m_State, Camera, m_State);
+HAND_SAME_OFFSET(CameraView, m_LastSimulation, Camera, m_LastSimulation);
+HAND_SAME_OFFSET(CameraView, m_SphereSpeed, Camera, unk_0xA8);
+HAND_SAME_OFFSET(CameraView, m_NextState, Camera, unk_0xC0);
+HAND_SAME_OFFSET(CameraView, m_NudgeTicks, Camera, unk_0xC4);
+HAND_SAME_OFFSET(CameraView, m_AtDestination, Camera, unk_0xCC);
+HAND_SAME_OFFSET(CameraView, m_Focus, Camera, m_Focus);
+HAND_SAME_OFFSET(CameraView, m_LookYaw, Camera, unk_0xDC);
+HAND_SAME_OFFSET(CameraView, m_LookPitch, Camera, unk_0xE0);
+HAND_SAME_OFFSET(CameraView, m_SimFlipped, Camera, unk_0xE8);
+HAND_SAME_OFFSET(CameraView, m_OnMovingPlatform, Camera, m_OnMovingPlatform);
+HAND_SAME_OFFSET(CameraView, m_MobyFocus, Camera, unk_0x100);
 
 #endif

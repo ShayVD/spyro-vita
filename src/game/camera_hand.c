@@ -12,7 +12,9 @@
 #include "camera.h"
 #include "collision.h"
 #include "gamepad.h"
+#include "hand_structs.h"
 #include "math.h"
+#include "moby.h"
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
@@ -27,6 +29,41 @@ static inline int AngleDelta(int delta) {
 }
 
 static inline int Abs(int v) { return v < 0 ? -v : v; }
+
+extern int D_800756B8; // Spyro visible from the camera (camera.c)
+extern int D_80075894; // Passive camera's hold timer (camera.c)
+extern int D_80075924; // L2/R2 turn speed (camera.c, func_80035F58)
+extern int D_80075938; // Ticks before an auto-centre may end
+
+/* D_80075914 is the camera mode: 2 active, 0x52 passive. Both of its bits
+ * 0x10 and 0x40 are set only in passive mode; the asm tests them
+ * separately. */
+#define CAMERA_PASSIVE() (D_80075914 & 0x10)
+#define CAMERA_PASSIVE_40() (D_80075914 & 0x40)
+
+/* The passive camera's behaviour, which D_8007592C (Spyro in state 0x1B,
+ * CameraUpdate) also turns on. */
+#define CAMERA_AUTO() (CAMERA_PASSIVE() || D_8007592C)
+
+/* Camera states in m_State / unk_0xC0 (the requested next state). */
+#define CAM_FOLLOW 0
+#define CAM_STATE_1 1
+#define CAM_STATE_2 2
+#define CAM_STATE_3 3
+#define CAM_STATE_4 4
+#define CAM_STATE_5 5
+#define CAM_STATE_6 6               /* Held: the focus frozen, springs off */
+#define CAM_STATE_15 15
+#define CAM_SPEED_CHECK 0x80000000u /* Follow, recentring once Spyro slows */
+#define CAM_LOOK 0x80000009u        /* Triangle look mode */
+#define CAM_SCRIPT_0200 0x8000000Au /* Held while CTRL_CAMERA_0200 is set */
+#define CAM_PATH 0x8000000Bu        /* Held while CTRL_CAMERA_0400 is set */
+#define CAM_SCRIPT_8000 0x80000007u /* Held while CTRL_CAMERA_8000 is set */
+#define CAM_SCRIPT_10000 0x8000000Cu /* Held while CTRL_CAMERA_10000 is set */
+#define CAM_FLY_IN 0x8000000Eu
+#define CAM_RECENTRE 0x80000010u
+#define CAM_RECENTRE_SLOW 0x80000011u
+#define CAM_LEVEL_TRANSITION 0x80000012u
 
 #if !M2C_func_80033F08
 /// @brief Updates the camera's simulated spherical coordinates for a camera
@@ -80,7 +117,6 @@ int func_80033F08(Vector3D *pVec) {
 #endif
 
 #if !M2C_func_80034480
-extern int D_800756B8;                  // Spyro visible from the camera (camera.c)
 extern SphericalCoordsOffset D_8006CAB4[5]; // Presets tried when Spyro stays hidden
 extern SphericalCoordsOffset D_8006C82C[5]; // Sphere nudges tried when Spyro is hidden
 
@@ -231,28 +267,139 @@ void func_80034480(void) {
 }
 #endif
 
+#if !M2C_func_80034CE8
+/* Spring constants, decomp data: one table per component of the sphere
+ * (azimuth, elevation, radius, then the offset's three), each with six
+ * rows by stiffness, 0 the softest. The pull towards the target and the
+ * damping are in 1/256; a speed under the rest value stops the spring. */
+extern short D_8006C754[6], D_8006C760[6], D_8006C76C[6], D_8006C778[6], D_8006C784[6], D_8006C790[6];
+extern short D_8006C79C[6], D_8006C7A8[6], D_8006C7B4[6], D_8006C7C0[6], D_8006C7CC[6], D_8006C7D8[6];
+extern short D_8006C7E4[6], D_8006C7F0[6], D_8006C7FC[6], D_8006C808[6], D_8006C814[6], D_8006C820[6];
+
+static short *const s_SpringPull[6] = {D_8006C754, D_8006C760, D_8006C76C,
+                                       D_8006C778, D_8006C784, D_8006C790};
+static short *const s_SpringDamping[6] = {D_8006C79C, D_8006C7A8, D_8006C7B4,
+                                          D_8006C7C0, D_8006C7CC, D_8006C7D8};
+static short *const s_SpringRest[6] = {D_8006C7E4, D_8006C7F0, D_8006C7FC,
+                                       D_8006C808, D_8006C814, D_8006C820};
+
+/* The six components of a SphericalCoordsOffset, in memory order. */
+enum { SPH_AZIMUTH, SPH_ELEVATION, SPH_RADIUS, SPH_OFF_AZIMUTH, SPH_OFF_ELEVATION, SPH_OFF_RADIUS };
+static_assert(sizeof(SphericalCoordsOffset) == 6 * sizeof(int), "SphericalCoordsOffset");
+
+static inline int *Components(SphericalCoordsOffset *pCoords) { return &pCoords->m_Coords.azimuth; }
+
+/* The error the spring of one component works on: target - sphere,
+ * wrapped for the angles. */
+static int SphereError(int pComp) {
+  int delta = Components(&g_Cam.m_LastSimulation)[pComp] - Components(&g_Cam.m_Sphere)[pComp];
+  return pComp == SPH_RADIUS ? delta : AngleDelta(delta);
+}
+
+/* One tick of a component's spring: speed += (pull * error - damping *
+ * speed) / 256, in the asm's wrapping 32-bit arithmetic. Under its rest
+ * speed the spring stops, except that a camera at its destination keeps
+ * creeping at 0x100 towards the target. */
+static void SpringStep(int pComp, int pRow, int pPull, int pError) {
+  int *speed = &Components(&g_Cam.m_SphereSpeed)[pComp];
+  u_int force = (u_int)pPull * (u_int)pError - (u_int)s_SpringDamping[pComp][pRow] * (u_int)*speed;
+
+  *speed = (int)((u_int)*speed + (u_int)((int)force >> 8));
+  if (Abs(*speed) < s_SpringRest[pComp][pRow]) {
+    *speed = 0;
+    if (g_Cam.m_AtDestination) {
+      if (pError > 0)
+        *speed = 0x100;
+      else if (pError < 0)
+        *speed = -0x100;
+    }
+  }
+}
+
+static void ClampSpeed(int pComp, int pLimit) {
+  int *speed = &Components(&g_Cam.m_SphereSpeed)[pComp];
+
+  if (*speed < -pLimit)
+    *speed = -pLimit;
+  if (*speed > pLimit)
+    *speed = pLimit;
+}
+
+/* Move the component by its speed. Angles aren't wrapped here. */
+static void SphereMove(int pComp) {
+  Components(&g_Cam.m_Sphere)[pComp] += Components(&g_Cam.m_SphereSpeed)[pComp] >> 8;
+}
+
+/* All but the azimuth stop pulling during the passive camera's slow
+ * recentre and in state 6. */
+static int IsSphereHeld(void) {
+  return (CAMERA_AUTO() && g_Cam.m_State == CAM_RECENTRE_SLOW) || g_Cam.m_State == CAM_STATE_6;
+}
+
+/// @brief Moves the camera's sphere (m_Sphere) one tick towards its target
+/// (m_LastSimulation), each of the six components on a damped spring.
+/// @param pRow Stiffness row of the spring tables, 0 (softest) to 5.
+/// @note asm/nonmatchings/camera/func_80034CE8.s, by hand.
+void func_80034CE8(int pRow) {
+  int pull, error, comp;
+
+  /* Azimuth: L2/R2 turn it directly; the passive camera lets a slow Spyro
+   * jump or fall without swinging round. */
+  pull = s_SpringPull[SPH_AZIMUTH][pRow];
+  if (g_Cam.m_State == CAM_STATE_3 && pull < 0x400)
+    pull = 0x400;
+  if (D_80075924 != 0) {
+    error = D_80075924;
+  } else if (CAMERA_AUTO() && g_Cam.m_State == CAM_RECENTRE_SLOW && D_800756B8) {
+    error = 0;
+  } else if (((CAMERA_PASSIVE() && (g_Spyro.m_State == 5 || g_Spyro.m_State == 6)) || D_8007592C) &&
+             g_Spyro.m_Physics.m_SpeedAngle.m_Speed < 0x400 && !g_Cam.m_NudgeTicks &&
+             !g_Cam.m_OnMovingPlatform) {
+    g_Cam.m_SphereSpeed.m_Coords.azimuth = 0;
+    error = 0;
+  } else if (g_Cam.m_State == CAM_STATE_6) {
+    error = 0;
+  } else {
+    error = SphereError(SPH_AZIMUTH);
+  }
+  SpringStep(SPH_AZIMUTH, pRow, pull, error);
+
+  if (g_Spyro.m_State == 15 && g_Spyro.m_walkingState == 11)
+    ClampSpeed(SPH_AZIMUTH, 0x800);
+  if (CAMERA_PASSIVE_40() && !g_Cam.m_NudgeTicks &&
+      (g_Cam.m_State == CAM_LOOK || g_Cam.m_State == CAM_STATE_3))
+    ClampSpeed(SPH_AZIMUTH, 0x2000);
+  if (CAMERA_AUTO() && D_80075894 == 0 && D_800756B8 && !g_Cam.m_OnMovingPlatform &&
+      (g_Cam.m_State == CAM_FOLLOW || g_Cam.m_State == CAM_SPEED_CHECK))
+    ClampSpeed(SPH_AZIMUTH, 0x800);
+  SphereMove(SPH_AZIMUTH);
+
+  /* Elevation: the passive camera holds it while Spyro is in the air. */
+  if (CAMERA_AUTO() && g_Cam.m_State == CAM_RECENTRE_SLOW) {
+    error = 0;
+  } else if (CAMERA_PASSIVE() && g_Spyro.m_State == 6 && !g_Cam.m_NudgeTicks) {
+    g_Cam.m_SphereSpeed.m_Coords.elevation = 0;
+    error = 0;
+  } else if (g_Cam.m_State == CAM_STATE_6) {
+    error = 0;
+  } else {
+    error = SphereError(SPH_ELEVATION);
+  }
+  SpringStep(SPH_ELEVATION, pRow, s_SpringPull[SPH_ELEVATION][pRow], error);
+  if (CAMERA_PASSIVE_40() && g_Cam.m_State == CAM_LOOK && !g_Cam.m_NudgeTicks)
+    ClampSpeed(SPH_ELEVATION, 0x2000);
+  SphereMove(SPH_ELEVATION);
+
+  /* Radius and the offset angles. */
+  for (comp = SPH_RADIUS; comp <= SPH_OFF_RADIUS; comp++) {
+    error = IsSphereHeld() ? 0 : SphereError(comp);
+    SpringStep(comp, pRow, s_SpringPull[comp][pRow], error);
+    SphereMove(comp);
+  }
+}
+#endif
+
 #if !M2C_func_800357A4
-extern int D_800756B8; // Spyro visible from the camera (camera.c)
-extern int D_80075894; // camera.c
-extern int D_80075938; // Ticks before an auto-centre may end
-
-/* D_80075914 is the camera mode: 2 active, 0x52 passive. */
-#define CAMERA_PASSIVE() (D_80075914 & 0x10)
-
-/* Camera states in m_State / unk_0xC0 (the requested next state). */
-#define CAM_FOLLOW 0
-#define CAM_STATE_2 2
-#define CAM_STATE_6 6
-#define CAM_SPEED_CHECK 0x80000000u /* Follow, recentring once Spyro slows */
-#define CAM_LOOK 0x80000009u        /* Triangle look mode */
-#define CAM_SCRIPT_0200 0x8000000Au /* Held while CTRL_CAMERA_0200 is set */
-#define CAM_PATH 0x8000000Bu        /* Held while CTRL_CAMERA_0400 is set */
-#define CAM_SCRIPT_8000 0x80000007u /* Held while CTRL_CAMERA_8000 is set */
-#define CAM_SCRIPT_10000 0x8000000Cu /* Held while CTRL_CAMERA_10000 is set */
-#define CAM_FLY_IN 0x8000000Eu
-#define CAM_RECENTRE 0x80000010u
-#define CAM_RECENTRE_SLOW 0x80000011u
-
 /* The camera state Spyro's state asks for. */
 #define SPYRO_CAMERA_STATE() (D_8006C588[g_Spyro.m_State])
 

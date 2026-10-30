@@ -10,6 +10,7 @@
  * tests; m2c_index.c then lists it instead. */
 u32 func_80033F08(); /* camera_hand.c */
 u32 func_80034480(); /* camera_hand.c */
+u32 func_80034CE8(); /* camera_hand.c */
 u32 func_800357A4(); /* camera_hand.c */
 u32 func_80048D10(); /* pete_hand.c */
 u32 func_80049FAC(); /* pete_hand.c */
@@ -20,6 +21,9 @@ const M2cEntry m2c_hand_index[] = {
 #endif
 #if !M2C_func_80034480
     HAND(0x80034480u, func_80034480),
+#endif
+#if !M2C_func_80034CE8
+    HAND(0x80034CE8u, func_80034CE8),
 #endif
 #if !M2C_func_800357A4
     HAND(0x800357A4u, func_800357A4),
@@ -42,6 +46,7 @@ u32 func_80043FE4_gen__m2c(); /* its mips2c unit, renamed */
   { addr, #name, (u32(*)(u32, u32, u32, u32))name##_gen__m2c }
 u32 func_80033F08_gen__m2c();
 u32 func_80034480_gen__m2c();
+u32 func_80034CE8_gen__m2c();
 u32 func_800357A4_gen__m2c();
 u32 func_80048D10_gen__m2c();
 u32 func_80049FAC_gen__m2c();
@@ -55,6 +60,9 @@ const M2cEntry m2c_gen_index[] = {
 #endif
 #if M2C_REF && !M2C_func_80034480
     GEN(0x80034480u, func_80034480),
+#endif
+#if M2C_REF && !M2C_func_80034CE8
+    GEN(0x80034CE8u, func_80034CE8),
 #endif
 #if M2C_REF && !M2C_func_800357A4
     GEN(0x800357A4u, func_800357A4),
