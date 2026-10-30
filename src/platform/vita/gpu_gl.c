@@ -8,9 +8,11 @@
  *     shaders read the 16-bit words themselves (4/8-bit CLUT lookup, 15-bit,
  *     texel 0 transparent, STP), as PsyX_render.cpp's shaders do.
  *   - Each draw area the game draws into (Spyro: its two 512x224 buffers) is
- *     a "target": an FBO covering that VRAM rect at a higher resolution.
+ *     a "target": an FBO covering that VRAM rect at a higher resolution
+ *     (config.txt res=: the screen's pixels by default, decisions D40).
  *     Inside its rect a target is newer than s_vram; LoadImage/MoveImage into
- *     it are drawn into it too, ClearImage clears both.
+ *     it are drawn into it too (a MoveImage from another target at the
+ *     targets' resolution), ClearImage clears both.
  *   - s_vram gets a target's pixels back only when something reads that
  *     VRAM: StoreImage (the pause and inventory background), MoveImage from
  *     it, a textured prim whose page overlaps it, a screenshot, a 24-bit
@@ -31,6 +33,7 @@
 #include "vita.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +52,10 @@
 #define VH 512
 #define SCREEN_W 960
 #define SCREEN_H 544
+/* The 4:3 picture's width on the screen (and at res=native the targets').
+ * 544 * 4 / 3 is 725, but a 725-wide render target lost its last column
+ * (black in every Vita3K capture, main's renderer too); 726 fills it. */
+#define AREA43_W 726
 #define MAX_TARGETS 8
 #define MAX_PENDING 64
 
@@ -166,11 +173,44 @@ static int s_subpixel; /* subpixel=1 */
 
 /* per 300-vblank report */
 static struct {
-  unsigned draws, tris, uploads, readbacks, replays, copies, presents;
+  unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
   uint64_t upload_us, readback_us, expand_us;
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+
+/* One frame per report is timed on the GPU: glFinish before its first draw
+ * (the GPU is idle from there) and again before its swap. "frame" is from
+ * that first draw to the GPU being done, CPU work included; "tail" is how
+ * long the GPU still worked after the CPU had sent everything. A small tail
+ * means the GPU keeps up with the CPU at this resolution. */
+static struct {
+  int state; /* 0 idle, 1 armed, 2 timing */
+  uint64_t t0;
+  unsigned frame_us, tail_us, n;
+} s_sample;
+
+static void sample_begin(void) {
+  if (s_sample.state == 1) {
+    glFinish();
+    s_sample.t0 = now_us();
+    s_sample.state = 2;
+  }
+}
+
+/* every swap goes through here */
+static void swap(void) {
+  if (s_sample.state == 2) {
+    uint64_t t1 = now_us(), t2;
+    glFinish();
+    t2 = now_us();
+    s_sample.frame_us = (unsigned)(t2 - s_sample.t0);
+    s_sample.tail_us = (unsigned)(t2 - t1);
+    s_sample.n++;
+    s_sample.state = 0;
+  }
+  vglSwapBuffers(GL_FALSE);
+}
 
 /* ---- shaders (GLSL ES 1.00, run through vitaGL's translator) ---- */
 
@@ -576,6 +616,33 @@ static void copy_into(Target *t, int x, int y, int w, int h) {
   s_st.copies++;
 }
 
+/* VRAM rect (x, y, w, h) of target t from target src's pixels at (x + dx,
+ * y + dy): a MoveImage between targets (the game-over and credits freeze
+ * frames) keeps the targets' resolution. s_vram got the same move. */
+static void move_into(Target *t, const Target *src, int x, int y, int w, int h, int dx, int dy) {
+  float ndc[4], uv[4];
+  bind_fbo(t->fbo);
+  glViewport(0, 0, t->pw, t->ph);
+  no_blend();
+  glUseProgram(s_prog[P_TEX].prog);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, src->tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glActiveTexture(GL_TEXTURE0);
+  ndc[0] = (float)(x - t->x) / t->w * 2 - 1;
+  ndc[1] = (float)(y - t->y) / t->h * 2 - 1;
+  ndc[2] = (float)(x + w - t->x) / t->w * 2 - 1;
+  ndc[3] = (float)(y + h - t->y) / t->h * 2 - 1;
+  uv[0] = (float)(x + dx - src->x) / src->w;
+  uv[1] = (float)(y + dy - src->y) / src->h;
+  uv[2] = (float)(x + w + dx - src->x) / src->w;
+  uv[3] = (float)(y + h + dy - src->y) / src->h;
+  quad(ndc, uv);
+  s_st.copies++;
+  s_st.moves++;
+}
+
 static void flush_pending(void) {
   int i;
   if (!s_npending)
@@ -773,10 +840,10 @@ static void set_scale(void) {
    * or the whole width with widescreen (presentation frames, D30) */
   int dw = currentDispEnv.disp.w > 0 ? currentDispEnv.disp.w : 512;
   int dh = currentDispEnv.disp.h > 0 ? currentDispEnv.disp.h : 240;
-  if (g_vita_opts.gpu_res > 0) {
+  if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
-  } else {
-    s_sx = (float)(g_present.widescreen ? SCREEN_W : SCREEN_H * 4 / 3) / dw;
+  } else { /* res=native */
+    s_sx = (float)(g_present.widescreen ? SCREEN_W : AREA43_W) / dw;
     s_sy = (float)SCREEN_H / dh;
   }
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
@@ -1052,6 +1119,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
              v[2].y, (uint16_t)v[0].page, (uint16_t)v[0].clut, v[0].u, v[0].v, v[0].r, v[0].g,
              v[0].b);
   }
+  sample_begin();
   if (s_texmode != P_UNTEX && any_stale())
     sync_pages(start_vertex, n);
   flush_pending();
@@ -1069,9 +1137,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
 
   p = &s_prog[s_texmode];
   glUseProgram(p->prog);
-  /* VRAM x = vertex x + org; +0.5: the PS1 samples at the pixel's corner,
-   * GL at its centre */
-  glUniform4f(p->xf, (float)(s_org_x - t->x) + 0.5f, (float)(s_org_y - t->y) + 0.5f,
+  /* VRAM x = vertex x + org; + half a target pixel: the PS1 samples at the
+   * pixel's corner, GL at its centre. (Half a PS1 pixel would shift what is
+   * drawn against what LoadImage put there, and leave the target's first
+   * rows and columns uncovered, once targets have more pixels than VRAM.) */
+  glUniform4f(p->xf, (float)(s_org_x - t->x) + 0.5f / s_sx, (float)(s_org_y - t->y) + 0.5f / s_sy,
               2.0f / t->w, 2.0f / t->h);
   if (s_texmode != P_UNTEX) {
     glActiveTexture(GL_TEXTURE0);
@@ -1143,6 +1213,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
 
 /* ---- VRAM transfers (coordinates wrap like the PS1's) ---- */
 
+/* gl_GR_CopyVRAM's MoveImage, while its source lies inside one target:
+ * that target, and source minus destination */
+static const Target *s_move_src;
+static int s_move_dx, s_move_dy;
+
 /* rect (x, y, w, h) of VRAM changed in s_vram: targets over it get it too */
 static void wrote_rect(int x, int y, int w, int h) {
   int i;
@@ -1164,6 +1239,11 @@ static void wrote_rect(int x, int y, int w, int h) {
           memcpy(t->log.data + e->off + (size_t)r * e->w * 2, s_vram + (y0 + r) * VW + x0,
                  (size_t)e->w * 2);
       }
+    }
+    if (s_move_src && s_move_src != t) {
+      flush_pending(); /* in order, and the source's own pending writes first */
+      move_into(t, s_move_src, x0, y0, x1 - x0, y1 - y0, s_move_dx, s_move_dy);
+      continue;
     }
     if (s_npending == MAX_PENDING)
       flush_pending();
@@ -1271,6 +1351,17 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
   if (!src) {
     static uint16_t tmp[VW * VH];
     pieces(x, y, w, h, sync_rect);
+    if (x >= 0 && y >= 0 && x + w <= VW && y + h <= VH && dst_x >= 0 && dst_y >= 0 &&
+        dst_x + w <= VW && dst_y + h <= VH) {
+      for (i = 0; i < s_ntargets; i++) {
+        const Target *t = &s_targets[i];
+        if (x >= t->x && y >= t->y && x + w <= t->x + t->w && y + h <= t->y + t->h) {
+          s_move_src = t;
+          s_move_dx = x - dst_x;
+          s_move_dy = y - dst_y;
+        }
+      }
+    }
     for (i = 0; i < h; i++)
       for (j = 0; j < w; j++)
         tmp[i * w + j] = s_vram[((y + i) & (VH - 1)) * VW + ((x + j) & (VW - 1))];
@@ -1284,6 +1375,7 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
       row[(dst_x + j) & (VW - 1)] = s[j];
   }
   pieces(dst_x, dst_y, w, h, wrote_rect);
+  s_move_src = NULL;
 }
 
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
@@ -1404,6 +1496,43 @@ static void write_hd_shot(void) {
   s_hd_shot = 0;
 }
 
+/* Where the part of target t inside VRAM rect (x, y, w, h) goes in a
+ * picture of pw x ph pixels that shows that rect: pos = pixels (x0, y0, x1,
+ * y1, top row first), uv = the target's texture rect. When the picture has
+ * the target's own scale (res=native, presentation frames) the part starts on
+ * a whole pixel and gets one pixel per target pixel, so nothing is resampled
+ * (Spyro's buffers start 8 lines into the 240-line display: 18.13 of the
+ * screen's 544). 0: t isn't inside the rect. */
+static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, float pos[4],
+                 float uv[4]) {
+  int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
+  int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
+  int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
+  float kx = (float)pw / w, ky = (float)ph / h;
+  float sx = (float)t->pw / t->w, sy = (float)t->ph / t->h; /* as drawn */
+  float tx0 = (x0 - t->x) * sx, tx1 = (x1 - t->x) * sx;
+  float ty0 = (y0 - t->y) * sy, ty1 = (y1 - t->y) * sy;
+  if (x0 >= x1 || y0 >= y1)
+    return 0;
+  pos[0] = (x0 - x) * kx, pos[2] = (x1 - x) * kx;
+  pos[1] = (y0 - y) * ky, pos[3] = (y1 - y) * ky;
+  if (kx - sx < 0.01f && sx - kx < 0.01f) {
+    tx0 = floorf(tx0 + 0.5f);
+    tx1 = x1 == t->x + t->w ? t->pw : floorf(tx1 + 0.5f);
+    pos[0] = floorf(pos[0] + 0.5f);
+    pos[2] = pos[0] + (tx1 - tx0);
+  }
+  if (ky - sy < 0.01f && sy - ky < 0.01f) {
+    ty0 = floorf(ty0 + 0.5f);
+    ty1 = y1 == t->y + t->h ? t->ph : floorf(ty1 + 0.5f);
+    pos[1] = floorf(pos[1] + 0.5f);
+    pos[3] = pos[1] + (ty1 - ty0);
+  }
+  uv[0] = tx0 / t->pw, uv[2] = tx1 / t->pw;
+  uv[1] = ty0 / t->ph, uv[3] = ty1 / t->ph;
+  return 1;
+}
+
 /* ---- presentation frames (src/game/present.c: widescreen, 60 fps; D30) ---- */
 
 /* PRESENT_SLOTS textures for present.c's queue, plus a staging one: a
@@ -1455,19 +1584,13 @@ static void pres_capture(int x, int y, int w, int h) {
   glUseProgram(s_prog[P_TEX].prog);
   for (i = 0; i < s_ntargets; i++) {
     const Target *t = &s_targets[i];
-    int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
-    int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
-    int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
-    if (x0 >= x1 || y0 >= y1)
+    float pos[4];
+    if (!place(t, x, y, w, h, s_pw, s_ph, pos, src))
       continue;
-    ndc[0] = (float)(x0 - x) / w * 2 - 1;
-    ndc[2] = (float)(x1 - x) / w * 2 - 1;
-    ndc[1] = (float)(y0 - y) / h * 2 - 1;
-    ndc[3] = (float)(y1 - y) / h * 2 - 1;
-    src[0] = (float)(x0 - t->x) / t->w;
-    src[2] = (float)(x1 - t->x) / t->w;
-    src[1] = (float)(y0 - t->y) / t->h;
-    src[3] = (float)(y1 - t->y) / t->h;
+    ndc[0] = pos[0] / s_pw * 2 - 1;
+    ndc[2] = pos[2] / s_pw * 2 - 1;
+    ndc[1] = pos[1] / s_ph * 2 - 1;
+    ndc[3] = pos[3] / s_ph * 2 - 1;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, t->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1548,7 +1671,7 @@ static void draw_overlay(void) {
  * 4:3 in the middle. GPU slots (gpu=1) or present.c's pixels (the software
  * rasterizer shown through vitaGL). */
 static int present_slot(int slot) {
-  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : SCREEN_H * 4 / 3;
+  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : AREA43_W;
   int area_x = (SCREEN_W - area_w) / 2;
   float ndc[4], src[4] = {0, 0, 1, 1};
   if (!port_present_frame_new() && s_pres_on_screen == slot && !s_hd_shot)
@@ -1592,22 +1715,18 @@ static int present_slot(int slot) {
   s_st.presents++;
   prof_leave();
   prof_enter(PROF_WAIT);
-  vglSwapBuffers(GL_FALSE);
+  swap();
   prof_leave();
   return 1;
 }
 
-/* One frame: the display rect 4:3 in the middle of the screen. Returns 1 if
- * it was a new picture. */
-int vita_gpu_present(void) {
+/* The display rect 4:3 in the middle of the screen. Returns 1 if it was a
+ * new picture. */
+static int present_display(void) {
   const DISPENV *d = &currentDispEnv;
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
-  int area_w = SCREEN_H * 4 / 3, area_x = (SCREEN_W - area_w) / 2, i;
+  int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i;
   float ndc[4], src[4];
-  i = port_present_frame_slot();
-  if (i >= 0)
-    return present_slot(i);
-  s_pres_on_screen = -1;
   prof_enter(PROF_PRESENT);
   if (s_last.valid && s_last.gen == s_gen && s_last.vgen == prof_vram_gen() &&
       s_last.disabled == g_GPUDisabledState && !memcmp(&s_last.disp, d, sizeof s_last.disp) &&
@@ -1663,22 +1782,13 @@ int vita_gpu_present(void) {
       glUseProgram(s_prog[P_TEX].prog);
       for (i = 0; i < s_ntargets; i++) {
         const Target *t = &s_targets[i];
-        int x0 = d->disp.x > t->x ? d->disp.x : t->x, y0 = d->disp.y > t->y ? d->disp.y : t->y;
-        int x1 = d->disp.x + dw < t->x + t->w ? d->disp.x + dw : t->x + t->w;
-        int y1 = d->disp.y + dh < t->y + t->h ? d->disp.y + dh : t->y + t->h;
-        float fx0, fx1, fy0, fy1;
-        if (x0 >= x1 || y0 >= y1)
+        float pos[4];
+        if (!place(t, d->disp.x, d->disp.y, dw, dh, area_w, SCREEN_H, pos, src))
           continue;
-        fx0 = (float)(x0 - d->disp.x) / dw, fx1 = (float)(x1 - d->disp.x) / dw;
-        fy0 = (float)(y0 - d->disp.y) / dh, fy1 = (float)(y1 - d->disp.y) / dh;
-        ndc[0] = (area_x + fx0 * area_w) / SCREEN_W * 2 - 1;
-        ndc[2] = (area_x + fx1 * area_w) / SCREEN_W * 2 - 1;
-        ndc[1] = 1 - fy0 * 2;
-        ndc[3] = 1 - fy1 * 2;
-        src[0] = (float)(x0 - t->x) / t->w;
-        src[2] = (float)(x1 - t->x) / t->w;
-        src[1] = (float)(y0 - t->y) / t->h;
-        src[3] = (float)(y1 - t->y) / t->h;
+        ndc[0] = (area_x + pos[0]) / SCREEN_W * 2 - 1;
+        ndc[2] = (area_x + pos[2]) / SCREEN_W * 2 - 1;
+        ndc[1] = 1 - pos[1] / SCREEN_H * 2;
+        ndc[3] = 1 - pos[3] / SCREEN_H * 2;
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, t->tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
@@ -1694,9 +1804,30 @@ int vita_gpu_present(void) {
   s_st.presents++;
   prof_leave();
   prof_enter(PROF_WAIT);
-  vglSwapBuffers(GL_FALSE);
+  swap();
   prof_leave();
   return 1;
+}
+
+/* One frame: a presentation frame (widescreen, 60 fps), or the display
+ * rect. Returns 1 if it was a new picture. */
+int vita_gpu_present(void) {
+  int slot = port_present_frame_slot();
+  if (slot >= 0)
+    return present_slot(slot);
+  s_pres_on_screen = -1;
+  return present_display();
+}
+
+/* The picture on screen drawn and swapped again, without taking a new
+ * presentation frame (shot_hold: Vita3K can show an older swap buffer). */
+void vita_gpu_repeat(void) {
+  int slot = s_pres_on_screen;
+  vita_gpu_force_redraw();
+  if (slot >= 0)
+    present_slot(slot);
+  else
+    present_display();
 }
 
 /* the no-disc screen: red until START */
@@ -1711,11 +1842,20 @@ void vita_gpu_fill(float r, float g, float b) {
 
 void vita_gpu_report(int vblank) {
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
-           "%u copies into targets, %u readbacks (%u replayed; %u.%02u ms), %d targets",
+           "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
+           "%u.%02u ms), %d targets at %dx%d",
            vblank, s_st.draws, s_st.tris, s_st.presents, s_st.uploads,
            (unsigned)(s_st.upload_us / 1000), (unsigned)(s_st.upload_us % 1000 / 10),
-           s_st.copies, s_st.readbacks, s_st.replays, (unsigned)(s_st.readback_us / 1000),
-           (unsigned)(s_st.readback_us % 1000 / 10), s_ntargets);
+           s_st.copies, s_st.moves, s_st.readbacks, s_st.replays,
+           (unsigned)(s_st.readback_us / 1000), (unsigned)(s_st.readback_us % 1000 / 10),
+           s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0);
+  if (s_sample.n)
+    vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
+             s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,
+             s_sample.tail_us % 1000 / 10);
+  s_sample.n = 0;
+  if (g_vita_opts.gpu_time)
+    s_sample.state = 1;
   if (s_xmode) {
     const VCacheStats *c = &g_vcache_stats;
     unsigned f = c->frames ? c->frames : 1;

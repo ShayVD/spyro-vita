@@ -13,6 +13,8 @@
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <psp2/display.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,7 @@ static int s_vblank;
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
 static int s_vcount_base = -1; /* display vcount at our vblank 0 */
+static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 
 #define MAX_CATCH_UP 8 /* vblanks run at once after a slow frame; more are dropped */
 
@@ -55,7 +58,7 @@ static int shot_due(int v) {
 }
 
 static void vblank(void) {
-  int v = ++s_vblank;
+  int v = ++s_vblank, i;
   SceUInt64 now;
 
   vita_pad_poll();
@@ -68,8 +71,15 @@ static void vblank(void) {
     vsync_callback();
   prof_vblank();
 
+  for (i = 0; i < g_vita_opts.npokes; i++)
+    if (g_vita_opts.pokes[i].vblank == v) {
+      *(uint32_t *)PSX_ARENA(g_vita_opts.pokes[i].addr) = g_vita_opts.pokes[i].value;
+      vita_log("poke %08x = %08x", (unsigned)g_vita_opts.pokes[i].addr,
+               (unsigned)g_vita_opts.pokes[i].value);
+    }
   if (shot_due(v)) {
     char path[256];
+    s_hold = v;
     if (g_vita_gpu) { /* the shot reads VRAM: bring in what the GPU drew */
       vita_gpu_sync_display();
       if (g_vita_opts.shot_hd)
@@ -103,6 +113,32 @@ static void vblank(void) {
   }
 }
 
+/* shot_hold: after the shot's picture is shown, hold.req (its vblank) asks
+ * for a window capture and the game waits for hold.ack. Files, not the log:
+ * Vita3K writes the log to the host in 4 KB blocks. */
+static void present(void) {
+  s_stat_shown += vita_video_present();
+  if (s_hold && g_vita_opts.shot_hold > 0) {
+    char buf[16];
+    SceIoStat st;
+    SceUID fd;
+    int ms, n = snprintf(buf, sizeof buf, "%d\n", s_hold);
+    for (ms = 0; ms < 3 && g_vita_gl; ms++) /* Vita3K can show an older swap buffer */
+      vita_gpu_repeat();
+    sceKernelDelayThread(100 * 1000); /* the flip */
+    fd = sceIoOpen(VITA_DATA_DIR "/hold.req", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (fd >= 0) {
+      sceIoWrite(fd, buf, n);
+      sceIoClose(fd);
+    }
+    for (ms = 0; ms < g_vita_opts.shot_hold && sceIoGetstat(VITA_DATA_DIR "/hold.ack", &st) < 0;
+         ms += 20)
+      sceKernelDelayThread(20 * 1000);
+    sceIoRemove(VITA_DATA_DIR "/hold.ack");
+  }
+  s_hold = 0;
+}
+
 static int real_vblanks(void) {
   return sceDisplayGetVcount() - s_vcount_base;
 }
@@ -114,7 +150,7 @@ void PsyX_WaitForTimestep(int count) {
   if (!g_vita_opts.realtime) {
     while (count-- > 0)
       vblank();
-    s_stat_shown += vita_video_present();
+    present();
     return;
   }
   if (s_vcount_base < 0)
@@ -133,7 +169,7 @@ void PsyX_WaitForTimestep(int count) {
   }
   while (n-- > 0)
     vblank();
-  s_stat_shown += vita_video_present();
+  present();
 }
 
 void PsyX_UpdateInput(void) {}
