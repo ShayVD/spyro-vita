@@ -1,0 +1,21 @@
+diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
+index b924865..36f70ff 100644
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -190,8 +190,15 @@ extern	int (*GPU_printf)(const char *fmt, ...);
+ 
+ #else
+ 
++/* Spyro port: OT links are 24-bit PS1 addresses into a 16 MB-aligned arena
++ * that stands in for PS1 RAM (docs/porting-plan.md §4.3, §5). */
++#ifdef __cplusplus
++extern "C" uintptr_t g_psx_arena_base;
++#else
++extern uintptr_t g_psx_arena_base;
++#endif
+ #define isendprim(p) 		((((P_TAG *)(p))->addr)==0xffffff)
+-#define nextPrim(p)  		(void *)((((P_TAG *)(p))->addr))
++#define nextPrim(p)  		(void *)(g_psx_arena_base | (((P_TAG *)(p))->addr))
+ 
+ #define setaddr(p, _addr)	(((P_TAG *)(p))->addr = (u_int)((u_int*)_addr))
+ #define getaddr(p)   		(u_int)(((P_TAG *)(p))->addr)

@@ -1,0 +1,112 @@
+diff --git a/src/4BEF8.c b/src/4BEF8.c
+index 8e24d34..c1061ab 100644
+--- a/src/4BEF8.c
++++ b/src/4BEF8.c
+@@ -50,7 +50,7 @@ void func_8005B7D8(void) {
+       int m_Offset;
+       int m_Class;
+     } models[64];
+-  } *peteData = (void *)(0x80200000 - g_WadHeader.m_PETE.m_Length -
++  } *peteData = (void *)(PSX_ADDR(0x80200000) - g_WadHeader.m_PETE.m_Length -
+                          g_WadHeader.m_PETE.m_Length - _stacksize);
+ 
+   // PETE.WAD is loaded below the bottom of the stack,
+@@ -60,7 +60,7 @@ void func_8005B7D8(void) {
+ 
+   // The shared animations are loaded below the bottom of the stack
+   g_Buffers.m_SharedAnimations =
+-      (void *)(0x80200000 - peteData->m_DataSize - _stacksize);
++      (void *)(PSX_ADDR(0x80200000) - peteData->m_DataSize - _stacksize);
+ 
+   Memcpy(g_Buffers.m_SharedAnimations, (void *)((int)peteData + 0x800),
+          peteData->m_DataSize);
+diff --git a/src/gamestates/update.c b/src/gamestates/update.c
+index 39232f9..24d3065 100644
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -1134,7 +1134,7 @@ void GamestateCutsceneTransition(void) {
+         rect.h = 480;
+         ClearImage(&rect, 0, 0, 0);
+         DrawSync(0);
+-        g_Buffers.m_SharedAnimations = (void *)(0x80200000 - _stacksize);
++        g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1);
+         while (g_LoadStage < 10) {
+           LoadCutscene();
+@@ -1188,7 +1188,7 @@ void GamestateCutsceneUpdate(void) {
+       g_Buffers.m_DiscCopyBuf = g_OverlaySpacePointer;
+ 
+       if (g_CutsceneIdx == 3) {
+-        g_Buffers.m_SharedAnimations = (void *)(0x80200000 - _stacksize);
++        g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1); // Allocate buffers with reduced space for credits 2
+       }
+ 
+diff --git a/src/initialization.c b/src/initialization.c
+index 1d1e3d8..8d8eabe 100644
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -301,7 +301,7 @@ void Initialize(void) {
+   Memcpy(&g_LevelHeader, g_OverlaySpacePointer,
+          sizeof(g_LevelHeader)); // Copy it to the header struct
+ 
+-  levelVram = (char *)0x80200000 - _stacksize - 0x40000;
++  levelVram = (char *)PSX_ADDR(0x80200000) - _stacksize - 0x40000;
+ 
+   CDLoadSync(g_CdState.m_WadSector, levelVram, 0x40000,
+              g_LevelHeader.m_VramSramOffset +
+@@ -398,7 +398,7 @@ void Initialize(void) {
+   LoadImage(&frameRect, (u_long *)levelVram);
+   DrawSync(0);
+ 
+-  g_Buffers.m_SharedAnimations = (char *)0x80200000 - _stacksize;
++  g_Buffers.m_SharedAnimations = (char *)PSX_ADDR(0x80200000) - _stacksize;
+ 
+   func_8005B7D8();         // Load shared models from WAD.WAD
+   StartCutscenePlayback(); // Initialize the gamestate to cutscene
+diff --git a/src/loaders.c b/src/loaders.c
+index bd2bf14..29eb2c6 100644
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -686,8 +686,12 @@ void LoadLevelScene(int pAnimationsAndSparx) {
+       g_DemoDataPtr = (int *)data;
+     } else {
+       // Set the pointer for recording (requires 8MB RAM)
++#ifdef SPYRO_PORT
++      PortFatal("demo recording needs an 8 MB devkit");
++#else
+       g_DemoDataPtr = (int *)0x80600000;
+       Memset((void *)0x80600000, 0, 0x4000);
++#endif
+     }
+   }
+ 
+diff --git a/src/overlay_pointers.c b/src/overlay_pointers.c
+index 1ad0336..ddf7a9d 100644
+--- a/src/overlay_pointers.c
++++ b/src/overlay_pointers.c
+@@ -9,7 +9,11 @@ extern void *main_BSS_END;
+ 
+ // This is placed into sdata, but I think this is cleaner than having an
+ // assembly file
++#ifdef SPYRO_PORT
++void *g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
++#else
+ void *g_OverlaySpacePointer = &main_BSS_END;
++#endif
+ 
+ // TODO: This file is fucked up
+ 
+diff --git a/src/overlays/balloonist.c b/src/overlays/balloonist.c
+index 8dc8fcc..76f0002 100644
+--- a/src/overlays/balloonist.c
++++ b/src/overlays/balloonist.c
+@@ -588,7 +588,7 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+       Memcpy(&g_SonyImage.m_WorldFarQueued[106], D_800777E8.m_BalloonMoby,
+              0x58);
+       D_800777E8.m_BalloonMoby = (Moby *)&g_SonyImage.m_WorldFarQueued[106];
+-      if ((u_int)g_Buffers.m_LowerPolyBuffer < 0x80200000) {
++      if ((u_int)g_Buffers.m_LowerPolyBuffer < PSX_ADDR(0x80200000)) {
+         dataBuffer = (int *)((int)g_Cyclorama.m_Sectors - 0x400c);
+       } else {
+         dataBuffer = (int *)0x801FE000;

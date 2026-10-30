@@ -37,7 +37,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 
 ## Builds
 1. **Matching build:** run `tools/build_matching.sh`. It builds a patched copy in `build/s1-matching` with Docker (native arm64; the decomp's own Makefile under `pipefail`) and checks the SHA-1. This is the oracle for symbols and layouts. It must stay green. Known upstream problems are in `docs/upstream-notes.md`.
-2. **Host debug build:** 32-bit Linux (`-m32`) in Docker (amd64 emulation, which was flaky in M0), using the same `src/` code. Use it for gdb and quick iteration. Compile with `-funsigned-char` (as the decomp does).
+2. **Host debug build:** 32-bit Linux (i686) in a native arm64 Docker image with a cross compiler; the game binary runs under qemu-i386 (D14). It's headless, with deterministic vblanks, a pad script and PNG screenshots, and it uses the same `src/` code. Use it for gdb and quick iteration. Compile with `-funsigned-char` (as the decomp does). How-to: `docs/host-build.md`.
 3. **Vita build:** VitaSDK, CMake, vitaGL, SDL2, packaged as a VPK. Test in Vita3K first. A milestone only counts as done on real hardware.
 4. **Behaviour oracle:** PCSX-Redux, run out of process (Lua scripts in `tools/oracle/`). It's never linked.
 

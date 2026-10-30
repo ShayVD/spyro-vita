@@ -1,0 +1,93 @@
+/* Deterministic virtual time for the headless linux32 host
+ * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
+ * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
+#include "host.h"
+#include "psx_hooks.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "psx/libetc.h"
+#include "PsyX/PsyX_render.h"
+#include "PsyX/PsyX_public.h"
+#include "gpu/PsyX_GPU.h"
+
+HostOpts g_host_opts = {.shot_dir = "."};
+
+extern void (*vsync_callback)(void); /* LIBETC.C */
+
+int g_vmode = MODE_NTSC;
+static int s_vblank;
+
+int host_vblank_count(void) { return s_vblank; }
+
+int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }
+
+int PsyX_Sys_SetVMode(int mode) {
+  int old = g_vmode;
+  g_vmode = mode;
+  return old;
+}
+
+static int shot_due(int v) {
+  int i;
+  if (g_host_opts.shot_every > 0 && v % g_host_opts.shot_every == 0)
+    return 1;
+  for (i = 0; i < g_host_opts.nshots; i++)
+    if (g_host_opts.shots[i] == v)
+      return 1;
+  return 0;
+}
+
+void host_vblank(void) {
+  int v = ++s_vblank;
+
+  host_pad_vblank(v);
+  psx_cd_vblank();
+  psx_spu_vblank();
+  if (vsync_callback)
+    vsync_callback();
+
+  if (shot_due(v)) {
+    char path[1024];
+    snprintf(path, sizeof path, "%s/shot-%d.png", g_host_opts.shot_dir, v);
+    if (host_shot_display(path) == 0)
+      host_log("shot %s", path);
+    if (g_host_opts.vram_shot) {
+      snprintf(path, sizeof path, "%s/vram-%d.png", g_host_opts.shot_dir, v);
+      host_shot_vram(path);
+    }
+  }
+  if (g_host_opts.frames > 0 && v >= g_host_opts.frames) {
+    host_log("--frames %d reached, exiting", g_host_opts.frames);
+    host_log_flush();
+    fflush(stdout);
+    exit(0);
+  }
+}
+
+void PsyX_WaitForTimestep(int count) {
+  while (count-- > 0)
+    host_vblank();
+}
+
+void PsyX_UpdateInput(void) {}
+
+/* DrawOTag/DrawPrim call this first. Draw anything DrawPrim left pending so
+ * GPU order holds, then do the isbg clear once per PutDrawEnv (the real
+ * PutDrawEnv clears when it is called; LIBGPU's copy of the env is ours to
+ * mark as done). Returning 0 stops DrawOTag from dropping pending splits. */
+char PsyX_BeginScene(void) {
+  if (g_splitIndex > 0)
+    DrawAllSplits();
+  if (activeDrawEnv.isbg) {
+    const RECT16 *c = &activeDrawEnv.clip;
+    GR_ClearVRAM(c->x, c->y, c->w, c->h, activeDrawEnv.r0, activeDrawEnv.g0,
+                 activeDrawEnv.b0);
+    activeDrawEnv.isbg = 0;
+  }
+  return 0;
+}
+
+void PsyX_EndScene(void) {}

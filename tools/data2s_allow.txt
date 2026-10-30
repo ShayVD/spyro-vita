@@ -1,0 +1,8 @@
+# tools/data2s.py abscheck allowlist: raw .words in PS1-RAM range that are not
+# pointers. g_TitlescreenSprites entries are 8-byte {u16 tpage, clut; u8 w, h,
+# u, v} records (include/titlescreen.h); a word like 0x80000FFF is a w/h/u/v
+# group with u = 0x00, v = 0x80, not an address.
+g_TitlescreenSprites+0x14
+g_TitlescreenSprites+0x104
+g_TitlescreenSprites+0x18C
+g_TitlescreenSprites+0x1E4

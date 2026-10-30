@@ -1,0 +1,14 @@
+diff --git a/src/moby_helpers.c b/src/moby_helpers.c
+index 5b2c75e..1483574 100644
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -18,7 +18,9 @@
+ #include "strings.h"
+ #include "variables.h"
+ 
++#ifndef SPYRO_PORT /* host libc already declares it, with a const char * */
+ extern unsigned int strlen(char *);
++#endif
+ 
+ /// @brief Function that ticks a timer
+ /// @param pTimer The timer to update

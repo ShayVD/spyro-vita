@@ -1,0 +1,109 @@
+diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
+index 6e9e6f6..2fc27bc 100644
+--- a/src/gpu/PsyX_GPU.cpp
++++ b/src/gpu/PsyX_GPU.cpp
+@@ -795,6 +795,9 @@ void DrawAllSplits()
+ 
+ // forward declarations
+ int ParsePrimitive(P_TAG* polyTag);
++#if !USE_EXTENDED_PRIM_POINTERS
++static int Gp0CommandWords(const u_int* cmd, const u_int* end);
++#endif
+ 
+ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ {
+@@ -829,6 +832,7 @@ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ 					eprinterr("got invalid tag length %d, code %d\n", tagLength, reinterpret_cast<P_TAG*>(basePacket)->code);
+ 				}
+ 
++#if USE_EXTENDED_PRIM_POINTERS
+ 				uintptr_t currentPacket = basePacket;
+ 				const uintptr_t endPacket = basePacket + (tagLength + P_LEN) * sizeof(u_int);
+ 				int primLength = 0;
+@@ -842,6 +846,40 @@ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ 				{
+ 					eprinterr("did not output valid primitive or ptag length is not valid (diff=%d)\n", endPacket-currentPacket);
+ 				}
++#else
++				// Spyro port: a PS1 packet is one tag followed by GP0 commands back
++				// to back (hand-written renderers pack several per packet). Split it
++				// with the GPU's own command sizes and parse each with a tag of its own.
++				const u_int* cmd = reinterpret_cast<const u_int*>(basePacket) + P_LEN;
++				const u_int* const cmdEnd = cmd + tagLength;
++				u_int single[1 + 64];
++				while (cmd < cmdEnd)
++				{
++					const int words = Gp0CommandWords(cmd, cmdEnd);
++					if (words <= 0 || words > 64 || cmd + words > cmdEnd)
++					{
++						eprinterr("bad GP0 command %08x in packet (len %d)\n", cmd[0], tagLength);
++						break;
++					}
++					const u_int code = cmd[0] >> 24;
++					if (code == 0x02)	// GP0(02h) fill rectangle
++					{
++						RECT16 rect;
++						rect.x = cmd[1] & 0x3F0;
++						rect.y = (cmd[1] >> 16) & 0x1FF;
++						rect.w = ((cmd[2] & 0x3FF) + 0xF) & ~0xF;
++						rect.h = (cmd[2] >> 16) & 0x1FF;
++						ClearImage(&rect, cmd[0] & 0xFF, (cmd[0] >> 8) & 0xFF, (cmd[0] >> 16) & 0xFF);
++					}
++					else if (code >= 0x20)	// 00h-1Fh other than 02h are NOPs here
++					{
++						single[0] = 0xFFFFFF | (words << 24);
++						memcpy(&single[1], cmd, words * sizeof(u_int));
++						ParsePrimitive(reinterpret_cast<P_TAG*>(single));
++					}
++					cmd += words;
++				}
++#endif
+ 			}
+ 
+ 			GPUDrawSplit& lastSplit = g_splits[g_splitIndex];
+@@ -853,6 +891,45 @@ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ 	}
+ }
+ 
++#if !USE_EXTENDED_PRIM_POINTERS
++// Spyro port: words in the GP0 command starting at cmd (psx-spx "GPU Render
++// Polygon/Line/Rectangle Commands"), or 0 if it doesn't fit before end.
++static int Gp0CommandWords(const u_int* cmd, const u_int* end)
++{
++	const u_int c = cmd[0] >> 24;
++	switch (c >> 5)
++	{
++	case 1:	// polygon: colour, then per vertex xy (+uv), Gouraud adds colours
++	{
++		const int verts = (c & 8) ? 4 : 3;
++		return 1 + verts * ((c & 4) ? 2 : 1) + ((c & 0x10) ? verts - 1 : 0);
++	}
++	case 2:	// line, or polyline ended by a 0x5xxx5xxx word
++	{
++		if (!(c & 8))
++			return (c & 0x10) ? 4 : 3;
++		const int step = (c & 0x10) ? 2 : 1;
++		const u_int* w = cmd + 1 + 1;	// first vertex xy
++		while (w < end && (*w & 0xF000F000) != 0x50005000)
++			w += step;
++		return w < end ? int(w - cmd) + 1 : 0;
++	}
++	case 3:	// rectangle: colour, xy, (uv+clut), (wh if variable size)
++		return 2 + ((c & 4) ? 1 : 0) + (((c >> 3) & 3) == 0 ? 1 : 0);
++	case 4:	// VRAM to VRAM copy
++		return 4;
++	case 5:	// CPU to VRAM: command, xy, wh, then the pixels
++		return cmd + 2 < end ? 3 + int(((cmd[2] & 0xFFFF) * (cmd[2] >> 16) + 1) / 2) : 0;
++	case 6:	// VRAM to CPU
++		return 3;
++	case 7:	// environment (E1h-E6h)
++		return 1;
++	default:	// 00h NOP, 01h cache clear, 02h fill, 1Fh IRQ
++		return c == 0x02 ? 3 : 1;
++	}
++}
++#endif
++
+ inline int IsNull(POLY_FT3* poly)
+ {
+ 	return  poly->x0 == -1 &&

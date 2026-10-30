@@ -1,5 +1,6 @@
 # Copyrighted game data — never commit
 disc/
+/disc
 *.bin
 *.cue
 *.iso
@@ -14,3 +15,10 @@ logs/
 *.vpk
 *.self
 *.velf
+
+# qemu/gdb leftovers
+core
+*.core
+__pycache__/
+/save/
+/.tools/

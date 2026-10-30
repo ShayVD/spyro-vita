@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Run a command inside the spyro-host container (tools/docker/host.Dockerfile)
+# with the repo mounted at /work and the same relative working directory.
+# disc/ may be a symlink to the main checkout's disc/, so that is mounted too.
+#   tools/tc cmake --build build/linux32
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+rel=${PWD#"$root"}
+[[ "$rel" == "$PWD" ]] && rel=""
+mounts=(-v "$root:/work")
+if [ -L "$root/disc" ]; then
+  mounts+=(-v "$(cd "$root/disc" && pwd -P):/work/disc:ro")
+fi
+tty=()
+[ -t 0 ] && [ -t 1 ] && tty=(-it)
+exec docker run --rm ${tty[@]+"${tty[@]}"} --security-opt seccomp=unconfined \
+  "${mounts[@]}" -w "/work$rel" spyro-host "$@"

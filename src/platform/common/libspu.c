@@ -1,0 +1,284 @@
+/* Minimal PsyQ libspu (docs/porting-plan.md §6): register state, the SPU RAM
+ * image and voice lifetime, no audio output yet. Spyro's ADSR is fixed (ar dr
+ * sr rr 0, sl 15; spu.c:39-56), which on hardware is a gate: full level within
+ * a few samples of key on, silent within a few of key off. So a voice's
+ * envelope is 0x7FFF from key on until key off or until its sample hits an
+ * end flag without repeat, which is what SpuGetKeyStatus reports from. */
+#include "psx_hooks.h"
+#include "psx_spu.h"
+
+#include <libspu.h>
+
+#include <string.h>
+
+#define BLOCK_SAMPLES 28
+#define ALL_VOICES 0xFFFFFFu
+
+PsxSpu g_psx_spu;
+
+static unsigned int ram_addr(unsigned int a) { return a & (PSX_SPU_RAM_SIZE - 1); }
+
+static void voice_block_start(PsxSpuVoice *v) {
+  if (g_psx_spu.ram[v->cur_addr + 1] & 4) /* loop start */
+    v->loop_addr = v->cur_addr;
+}
+
+void psx_spu_voice_advance(PsxSpuVoice *v, unsigned int samples) {
+  unsigned int step = v->pitch > 0x4000 ? 0x4000 : v->pitch;
+  unsigned int total;
+
+  if (v->env_phase == PSX_ENV_OFF || v->env_phase == PSX_ENV_RELEASE)
+    return;
+  total = v->counter + step * samples;
+  while (total >= BLOCK_SAMPLES << 12) {
+    unsigned char flags = g_psx_spu.ram[v->cur_addr + 1];
+    total -= BLOCK_SAMPLES << 12;
+    if (flags & 1) { /* loop end: jump; without repeat the voice goes silent */
+      v->cur_addr = v->loop_addr & ~15u;
+      if (!(flags & 2)) {
+        v->env_phase = PSX_ENV_OFF;
+        v->envx = 0;
+        v->counter = 0;
+        return;
+      }
+    } else {
+      v->cur_addr = ram_addr(v->cur_addr + 16);
+    }
+    voice_block_start(v);
+  }
+  v->counter = total;
+}
+
+void psx_spu_vblank(void) {
+  for (int i = 0; i < PSX_SPU_VOICES; i++)
+    psx_spu_voice_advance(&g_psx_spu.voice[i], PSX_SPU_RATE / PSX_SPU_VBLANK_HZ);
+}
+
+void SpuInit(void) {
+  memset(&g_psx_spu, 0, sizeof g_psx_spu);
+  g_psx_spu.cd_mix = 1;
+}
+
+void SpuQuit(void) {}
+
+static void voice_set(PsxSpuVoice *v, const SpuVoiceAttr *a) {
+  unsigned int m = a->mask;
+  if (m == 0)
+    m = 0xFFFFFFFFu; /* PsyQ: mask 0 sets everything */
+  if (m & SPU_VOICE_VOLL)
+    v->vol_l = a->volume.left;
+  if (m & SPU_VOICE_VOLR)
+    v->vol_r = a->volume.right;
+  if (m & SPU_VOICE_VOLMODEL)
+    v->volmode_l = a->volmode.left;
+  if (m & SPU_VOICE_VOLMODER)
+    v->volmode_r = a->volmode.right;
+  if (m & SPU_VOICE_PITCH)
+    v->pitch = a->pitch;
+  if (m & SPU_VOICE_WDSA)
+    v->start_addr = ram_addr(a->addr) & ~7u;
+  if (m & SPU_VOICE_LSAX)
+    v->loop_addr = ram_addr(a->loop_addr) & ~7u;
+  if (m & SPU_VOICE_ADSR_AMODE)
+    v->a_mode = a->a_mode;
+  if (m & SPU_VOICE_ADSR_SMODE)
+    v->s_mode = a->s_mode;
+  if (m & SPU_VOICE_ADSR_RMODE)
+    v->r_mode = a->r_mode;
+  if (m & SPU_VOICE_ADSR_AR)
+    v->ar = a->ar;
+  if (m & SPU_VOICE_ADSR_DR)
+    v->dr = a->dr;
+  if (m & SPU_VOICE_ADSR_SR)
+    v->sr = a->sr;
+  if (m & SPU_VOICE_ADSR_RR)
+    v->rr = a->rr;
+  if (m & SPU_VOICE_ADSR_SL)
+    v->sl = a->sl;
+}
+
+void SpuSetVoiceAttr(SpuVoiceAttr *arg) {
+  for (int i = 0; i < PSX_SPU_VOICES; i++)
+    if (arg->voice & (1u << i))
+      voice_set(&g_psx_spu.voice[i], arg);
+}
+
+static void voice_key_on(PsxSpuVoice *v) {
+  v->key_on = 1;
+  v->env_phase = PSX_ENV_SUSTAIN; /* ar 0 reaches full level in ~3 samples */
+  v->envx = 0x7FFF;
+  v->cur_addr = v->start_addr & ~15u;
+  v->counter = 0;
+  v->hist[0] = v->hist[1] = 0;
+  v->keyon_seq++;
+  voice_block_start(v);
+}
+
+static void voice_key_off(PsxSpuVoice *v) {
+  v->key_on = 0;
+  v->env_phase = PSX_ENV_OFF; /* rr 0 releases in ~2 samples */
+  v->envx = 0;
+}
+
+void SpuSetKey(int on_off, unsigned int voice_bit) {
+  for (int i = 0; i < PSX_SPU_VOICES; i++) {
+    if (!(voice_bit & (1u << i)))
+      continue;
+    if (on_off == SPU_ON)
+      voice_key_on(&g_psx_spu.voice[i]);
+    else if (on_off == SPU_OFF)
+      voice_key_off(&g_psx_spu.voice[i]);
+  }
+}
+
+static int key_status(const PsxSpuVoice *v) {
+  if (v->key_on)
+    return v->envx ? SPU_ON : SPU_ON_ENV_OFF;
+  return v->envx ? SPU_OFF_ENV_ON : SPU_OFF;
+}
+
+/* Status of the lowest voice in voice_bit, -1 if none (as PsyQ does). */
+int SpuGetKeyStatus(unsigned int voice_bit) {
+  for (int i = 0; i < PSX_SPU_VOICES; i++)
+    if (voice_bit & (1u << i))
+      return key_status(&g_psx_spu.voice[i]);
+  return -1;
+}
+
+void SpuGetAllKeysStatus(char *status) {
+  for (int i = 0; i < PSX_SPU_VOICES; i++)
+    status[i] = (char)key_status(&g_psx_spu.voice[i]);
+}
+
+void SpuSetVoiceVolume(int vNum, short volL, short volR) {
+  if (vNum < 0 || vNum >= PSX_SPU_VOICES)
+    return;
+  g_psx_spu.voice[vNum].vol_l = volL;
+  g_psx_spu.voice[vNum].vol_r = volR;
+}
+
+void SpuGetVoiceVolume(int vNum, short *volL, short *volR) {
+  if (vNum < 0 || vNum >= PSX_SPU_VOICES)
+    return;
+  *volL = g_psx_spu.voice[vNum].vol_l;
+  *volR = g_psx_spu.voice[vNum].vol_r;
+}
+
+void SpuSetVoicePitch(int vNum, unsigned short pitch) {
+  if (vNum >= 0 && vNum < PSX_SPU_VOICES)
+    g_psx_spu.voice[vNum].pitch = pitch;
+}
+
+void SpuGetVoicePitch(int vNum, unsigned short *pitch) {
+  if (vNum >= 0 && vNum < PSX_SPU_VOICES)
+    *pitch = g_psx_spu.voice[vNum].pitch;
+}
+
+void SpuGetVoiceEnvelope(int vNum, short *envx) {
+  if (vNum >= 0 && vNum < PSX_SPU_VOICES)
+    *envx = g_psx_spu.voice[vNum].envx;
+}
+
+void SpuSetCommonAttr(SpuCommonAttr *attr) {
+  unsigned int m = attr->mask;
+  if (m == 0)
+    m = 0xFFFFFFFFu;
+  if (m & SPU_COMMON_MVOLL)
+    g_psx_spu.mvol_l = attr->mvol.left;
+  if (m & SPU_COMMON_MVOLR)
+    g_psx_spu.mvol_r = attr->mvol.right;
+  if (m & SPU_COMMON_MVOLMODEL)
+    g_psx_spu.mvolmode_l = attr->mvolmode.left;
+  if (m & SPU_COMMON_MVOLMODER)
+    g_psx_spu.mvolmode_r = attr->mvolmode.right;
+  if (m & SPU_COMMON_CDVOLL)
+    g_psx_spu.cd_vol_l = attr->cd.volume.left;
+  if (m & SPU_COMMON_CDVOLR)
+    g_psx_spu.cd_vol_r = attr->cd.volume.right;
+  if (m & SPU_COMMON_CDREV)
+    g_psx_spu.cd_reverb = attr->cd.reverb;
+  if (m & SPU_COMMON_CDMIX)
+    g_psx_spu.cd_mix = attr->cd.mix;
+  if (m & SPU_COMMON_EXTVOLL)
+    g_psx_spu.ext_vol_l = attr->ext.volume.left;
+  if (m & SPU_COMMON_EXTVOLR)
+    g_psx_spu.ext_vol_r = attr->ext.volume.right;
+  if (m & SPU_COMMON_EXTREV)
+    g_psx_spu.ext_reverb = attr->ext.reverb;
+  if (m & SPU_COMMON_EXTMIX)
+    g_psx_spu.ext_mix = attr->ext.mix;
+}
+
+void SpuGetCommonAttr(SpuCommonAttr *attr) {
+  attr->mvol.left = g_psx_spu.mvol_l;
+  attr->mvol.right = g_psx_spu.mvol_r;
+  attr->mvolmode.left = g_psx_spu.mvolmode_l;
+  attr->mvolmode.right = g_psx_spu.mvolmode_r;
+  attr->mvolx.left = g_psx_spu.mvol_l;
+  attr->mvolx.right = g_psx_spu.mvol_r;
+  attr->cd.volume.left = g_psx_spu.cd_vol_l;
+  attr->cd.volume.right = g_psx_spu.cd_vol_r;
+  attr->cd.reverb = g_psx_spu.cd_reverb;
+  attr->cd.mix = g_psx_spu.cd_mix;
+  attr->ext.volume.left = g_psx_spu.ext_vol_l;
+  attr->ext.volume.right = g_psx_spu.ext_vol_r;
+  attr->ext.reverb = g_psx_spu.ext_reverb;
+  attr->ext.mix = g_psx_spu.ext_mix;
+}
+
+/* Transfers are immediate; the address wraps at 512 KB like the hardware's. */
+unsigned int SpuSetTransferStartAddr(unsigned int addr) {
+  if (addr - 0x1010u > 0x7EFE8u) /* PsyQ accepts 0x1010..0x7FFF8 */
+    return 0;
+  g_psx_spu.transfer_addr = (addr + 7) & ~7u;
+  return g_psx_spu.transfer_addr;
+}
+
+unsigned int SpuGetTransferStartAddr(void) { return g_psx_spu.transfer_addr; }
+
+int SpuSetTransferMode(int mode) {
+  g_psx_spu.transfer_mode = mode;
+  return mode;
+}
+
+int SpuGetTransferMode(void) { return g_psx_spu.transfer_mode; }
+
+static void spu_copy(unsigned char *buf, unsigned int size, int write) {
+  unsigned int a = g_psx_spu.transfer_addr;
+  while (size) {
+    unsigned int n = PSX_SPU_RAM_SIZE - a;
+    if (n > size)
+      n = size;
+    if (write)
+      memcpy(g_psx_spu.ram + a, buf, n);
+    else
+      memcpy(buf, g_psx_spu.ram + a, n);
+    buf += n;
+    size -= n;
+    a = 0;
+  }
+}
+
+unsigned int SpuWrite(unsigned char *addr, unsigned int size) {
+  if (size > 0x7EFF0)
+    size = 0x7EFF0;
+  spu_copy(addr, size, 1);
+  return size;
+}
+
+unsigned int SpuRead(unsigned char *addr, unsigned int size) {
+  if (size > 0x7EFF0)
+    size = 0x7EFF0;
+  spu_copy(addr, size, 0);
+  return size;
+}
+
+int SpuIsTransferCompleted(int flag) {
+  (void)flag;
+  return 1;
+}
+
+SpuTransferCallbackProc SpuSetTransferCallback(SpuTransferCallbackProc func) {
+  (void)func; /* transfers complete before SpuWrite returns */
+  return NULL;
+}
