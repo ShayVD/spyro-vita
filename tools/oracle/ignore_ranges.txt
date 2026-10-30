@@ -130,3 +130,7 @@ ret func_80043FE4
 # C, pete.c 1920) write v0 and v1 before reading them or return; the sites in
 # func_8003FE40 and func_80043FE4 are hand C now. (CFG walk of each site.)
 ret func_8003EA68
+# func_8003FE40 returns 1 in v0; its only caller, func_80047B60, calls
+# another function right after each of its 16 asm sites without reading v0
+# or v1 (func_80047B60 is itself void, pete.c 1377).
+ret func_8003FE40

@@ -1,16 +1,19 @@
-/* Spyro's state change (func_8003EA68), a player-controller (pete)
- * function the decomp hasn't matched, written by hand from the asm so it
- * reads as C (docs/porting-plan.md §7, M2). It replaces its mips2c unit
- * (cmake/mips2c.cmake M2C_HAND) and is checked against PCSX-Redux with the
- * oracle replay (docs/translation-log.md). M2C_<name>=1 compiles it out for
- * the mips2c unit (cmake SPYRO_M2C_FUNCS, A/B tests).
+/* Spyro's state change (func_8003EA68) and movement with collision
+ * (func_8003FE40), two player-controller (pete) functions the decomp hasn't
+ * matched, written by hand from the asm so they read as C (docs/porting-
+ * plan.md §7, M2). Each one replaces its mips2c unit (cmake/mips2c.cmake
+ * M2C_HAND) and is checked against PCSX-Redux with the oracle replay
+ * (docs/translation-log.md). M2C_<name>=1 compiles one out for the mips2c
+ * unit (cmake SPYRO_M2C_FUNCS, A/B tests).
  *
- * Spyro fields spyro.h still calls unk_, as this function uses them:
+ * Spyro fields spyro.h still calls unk_, as these functions use them:
  *   unk_0x84        ticks Spyro spent in the state before this one
  *   unk_0x15c       Spyro may jump (func_80041670 checks it with cross)
  *   unk_0x194       a cutscene is walking Spyro (forced flame, pete.c)
- *   unk_0x208       a scripted velocity per tick (states 22, 28)
+ *   unk_0x208       a scripted velocity per tick (m_ControlFlags 0x40)
+ *   unk_0x21c/220   camera focus and preset for m_ControlFlags 0x200
  *   unk_0x254       entered a glide climbing steeply (m_RotY > 0x400)
+ *   unk_0x17c       portal flight's target when a step first hit terrain
  *   m_Physics.unk_0x144  ground speed limit (func_8003D3B8)
  *   m_Physics.unk_0xe8   horizontal momentum (jump, charge, flight) */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -45,7 +48,9 @@ static inline int Abs(int v) { return v < 0 ? -v : v; }
 void func_8003E1AC(void);
 void ApplySlopeGravity(void);
 void func_8003E90C(void);
+void func_8003D3B8(int speed);
 void func_8003EA68(int pNewState);
+void func_8003FE40(void);
 
 static_assert(offsetof(Spyro, m_State) == 0x78, "Spyro.m_State");
 static_assert(offsetof(Spyro, m_Physics.m_TrueVelocity) == 0x10C, "Spyro.m_TrueVelocity");
@@ -584,5 +589,348 @@ void func_8003EA68(int pNewState) {
   g_Spyro.unk_0x84 = ticks;
   g_Spyro.m_bodyAnimationSpeed =
       spyro_AnimationDetails[spyro_StateDefaultAnimation[g_Spyro.m_State]].m_FrameRate;
+}
+#endif
+
+/* ------------------------------------------------------------------------ */
+#if !M2C_func_8003FE40
+extern Moby *D_80075804;                 // Moby Spyro last touched (pete.c)
+extern int D_800758A0;                   // Circling speed around m_mobyInUseBySpyro
+extern int D_80075948;                   // Ticks the camera has been behind the moby (0x1000)
+extern Vector3D D_80077798;              // Camera focus above the moby (0x1000)
+extern SphericalCoordsOffset D_8006CB2C; // Camera preset for it
+extern Vector3D D_80077858;              // Portal flight: the point flown towards
+
+#define SPYRO_RADIUS 0x164 /* ColSphere and ColMoby */
+#define MAX_PUSH 0x140     /* a collision moves him at most this from the step's start */
+#define SUBSTEP 0x154      /* longest movement per collision step */
+
+/* m_ControlFlags (spyro.h ControlFlags), the bits used here. */
+enum {
+  CTRL_MOVE_X = 0x1, CTRL_MOVE_Y = 0x2, CTRL_MOVE_Z = 0x4, /* velocity set by script */
+  CTRL_ANGLE_X = 0x8, CTRL_ANGLE_Y = 0x10, CTRL_ANGLE_Z = 0x20, /* m_portalAngle */
+  CTRL_MOVE_BY_VELOCITY = 0x40, /* unk_0x208 per tick, else to m_portalEndPos */
+  CTRL_FALLING_STATE = 0x100,   /* hold m_fallingState */
+  CTRL_CAMERA_FOCUS = 0x200,    /* camera on unk_0x21c with preset unk_0x220 */
+  CTRL_FOLLOW_MOBY = 0x1000,    /* camera behind m_mobyInUseBySpyro */
+  CTRL_PAD_LOCKED = 0x2000,
+  CTRL_FORCE_RUN = 0x20000,     /* cutscene walk (state 1) */
+};
+
+/* One scripted axis: the velocity for this tick, and the acceleration that
+ * gives it over g_DeltaTime. */
+static void ScriptAxis(int *pVelocity, int *pAcceleration, int pDistance) {
+  int v = pDistance << 6;
+  *pVelocity = v;
+  *pAcceleration = v / g_DeltaTime;
+}
+
+/* m_ControlFlags 0x1000: Spyro rides or circles m_mobyInUseBySpyro with
+ * the camera behind it. Once the camera has been behind for 30 ticks,
+ * walking at the moby from the side (within 0x28..0x38 of its heading)
+ * puts Spyro into state 26 to circle it (m_walkingState 1 or 2 for the
+ * direction). */
+static void FollowMoby(int pFlags) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  Vector3D d;
+  int targetRotZ = ph->m_TargetSpeedAngle.m_RotZ;
+  int rel, limit, left, heading;
+
+  rel = (g_Spyro.m_mobyInUseBySpyro->m_Rotation.z - (g_Camera.m_Rotation.z >> 4)) & 0xFF;
+  if (rel > 0x80)
+    rel -= 0x100;
+
+  if (Abs(rel) >= 0x10) {
+    D_80075948 = 0;
+    g_Spyro.m_ControlFlags = pFlags | CTRL_PAD_LOCKED;
+    if (g_Spyro.m_noGamepadUpdateFrames < 2)
+      g_Spyro.m_noGamepadUpdateFrames = 2;
+  } else {
+    if (D_80075948 < 30) {
+      D_800758A0 = 0;
+      g_Spyro.m_ControlFlags = pFlags | CTRL_PAD_LOCKED;
+      if (g_Spyro.m_noGamepadUpdateFrames < 2)
+        g_Spyro.m_noGamepadUpdateFrames = 2;
+    } else {
+      func_8003D3B8(ph->unk_0x144);
+      if (ph->m_TargetSpeedAngle.m_Speed == 0) {
+        D_800758A0 = 0;
+      } else {
+        VecSub(&d, &g_Spyro.m_Position, &g_Spyro.m_mobyInUseBySpyro->m_Position);
+        rel = (Atan2(d.x, d.y, 0) - g_Spyro.m_mobyInUseBySpyro->m_Rotation.z + 0x80) & 0xFF;
+        if (rel > 0x80)
+          rel -= 0x100;
+        if (g_LevelId == 20)
+          limit = g_Spyro.m_State == 26 ? 0x32 : 0x28;
+        else
+          limit = g_Spyro.m_State == 26 ? 0x38 : 0x30;
+        if (Abs(rel) >= limit) {
+          D_800758A0 = 0;
+        } else {
+          VecSub(&d, &g_Spyro.m_mobyInUseBySpyro->m_Position, &g_Spyro.m_Position);
+          heading = g_Spyro.m_mobyInUseBySpyro->m_Rotation.z;
+          left = ((Atan2(d.x, d.y, 1) - (heading << 4)) & 0xFFF) < 0x800;
+          heading += left ? 0x40 : -0x40;
+          if (Abs(AngleDelta((heading << 4) - ph->m_TargetSpeedAngle.m_RotZ)) < 0x200) {
+            if (g_Spyro.m_State != 26)
+              func_8003EA68(26);
+            g_Spyro.m_ControlFlags |= CTRL_FALLING_STATE;
+            g_Spyro.m_walkingState = left ? 1 : 2;
+          }
+        }
+      }
+    }
+    D_80075948 += g_DeltaTime;
+  }
+
+  g_Camera.m_Focus = &D_80077798;
+  VecCopy(&D_80077798, &g_Spyro.m_mobyInUseBySpyro->m_Position);
+  D_80077798.z += 0x200;
+  g_Camera.m_SphericalPreset = &D_8006CB2C;
+  g_Camera.unk_0xC0 = 0x8000000A;
+  ph->m_TargetSpeedAngle.m_RotZ = targetRotZ;
+  g_Spyro.m_ControlFlags |= CTRL_CAMERA_FOCUS;
+  g_Camera.m_FocusRotation = g_Spyro.m_mobyInUseBySpyro->m_Rotation.z << 4;
+}
+
+/* m_ControlFlags bit 31: a script moves Spyro (portals, cutscenes, mobys
+ * he rides). */
+static void ScriptedControl(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int flags = g_Spyro.m_ControlFlags;
+
+  if ((flags & CTRL_FALLING_STATE) && g_Spyro.m_health >= 0 && g_Spyro.m_State != g_Spyro.m_fallingState) {
+    func_8003EA68(g_Spyro.m_fallingState);
+    g_Spyro.m_airTime = 1;
+  }
+
+  flags = g_Spyro.m_ControlFlags;
+  if (flags & (CTRL_MOVE_X | CTRL_MOVE_Y | CTRL_MOVE_Z)) {
+    if (flags & CTRL_MOVE_BY_VELOCITY) {
+      if (flags & CTRL_MOVE_X)
+        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.unk_0x208.x);
+      if (flags & CTRL_MOVE_Y)
+        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, g_Spyro.unk_0x208.y);
+      if (flags & CTRL_MOVE_Z)
+        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, g_Spyro.unk_0x208.z);
+    } else {
+      if (flags & CTRL_MOVE_X)
+        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.m_portalEndPos.x - g_Spyro.m_Position.x);
+      if (flags & CTRL_MOVE_Y)
+        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, g_Spyro.m_portalEndPos.y - g_Spyro.m_Position.y);
+      if (flags & CTRL_MOVE_Z)
+        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, g_Spyro.m_portalEndPos.z - g_Spyro.m_Position.z);
+    }
+    ph->m_SpeedAngle.m_Speed = VecMagnitude(&ph->m_Acceleration, 0);
+  }
+
+  flags = g_Spyro.m_ControlFlags;
+  if (flags & CTRL_ANGLE_X) {
+    g_Spyro.m_bodyRotation.x = g_Spyro.m_portalAngle.x;
+    ph->m_SpeedAngle.m_RotX = g_Spyro.m_portalAngle.x << 4;
+  }
+  if (flags & CTRL_ANGLE_Y) {
+    g_Spyro.m_bodyRotation.y = g_Spyro.m_portalAngle.y;
+    ph->m_SpeedAngle.m_RotY = g_Spyro.m_portalAngle.y << 4;
+  }
+  if (flags & CTRL_ANGLE_Z) {
+    g_Spyro.m_bodyRotation.z = g_Spyro.m_portalAngle.z;
+    ph->m_SpeedAngle.m_RotZ = g_Spyro.m_portalAngle.z << 4;
+  }
+
+  /* Camera modes (camera.c unk_0xC0), unless it's already in 0x80000009. */
+  if (g_Camera.unk_0xC0 != (int)0x80000009) {
+    if (flags & CTRL_CAMERA_FOCUS) {
+      g_Camera.m_FocusRotation = 0;
+      g_Camera.unk_0xC0 = 0x8000000A;
+      g_Camera.m_Focus = g_Spyro.unk_0x21c;
+      g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
+    } else if (flags & 0x400) {
+      g_Camera.unk_0xC0 = 0x8000000B;
+    } else if (flags & CTRL_FOLLOW_MOBY) {
+      FollowMoby(flags);
+    } else if (flags & 0x8000) {
+      g_Camera.unk_0xC0 = 0x80000007;
+    } else if (flags & 0x10000) {
+      g_Camera.unk_0xC0 = 0x8000000C;
+    }
+  }
+
+  if (g_Spyro.m_ControlFlags & CTRL_FORCE_RUN) {
+    g_Spyro.unk_0x194 = 1;
+    func_8003EA68(1);
+  }
+}
+
+static Moby *ColMobyAt(int pApplyingDamage, int pCollide) {
+  return (Moby *)ColMoby(&g_Spyro.m_Position, SPYRO_RADIUS, (int *)&g_Spyro.m_DamageFlags, pApplyingDamage,
+                         NULL, pCollide);
+}
+
+/* Moby collision at Spyro's position for this step, by state. Returns the
+ * moby hit, or NULL. */
+static Moby *CollideMobys(void) {
+  Moby *hit;
+  int state = g_Spyro.m_State;
+
+  if (state == 11 || (state == 20 && !(g_Spyro.m_walkingState & 0x40))) {
+    /* charging damages what it hits, with a rumble */
+    hit = ColMobyAt(0x20000, 1);
+    if (hit) {
+      Rumble(&D_8007584C, 0x64);
+      Rumble(&D_800757D0, 0xC);
+    }
+    return hit;
+  }
+  if (state == 20 || state == 24 || state == 44) {
+    /* flying and gliding: test first, collide only if it can hurt Spyro */
+    hit = ColMobyAt(0x80000, 0);
+    if (hit && (g_Spyro.m_DamageFlags & 0x4000))
+      hit = ColMobyAt(0x80000, 1);
+    return hit;
+  }
+  return ColMobyAt(0, 1);
+}
+
+/* Move Spyro back towards pFrom so he is at most MAX_PUSH from it. */
+static void LimitPush(Vector3D *pFrom) {
+  Vector3D push;
+  int len;
+
+  VecSub(&push, &g_Spyro.m_Position, pFrom);
+  len = VecMagnitude(&push, 1);
+  if (len > MAX_PUSH) {
+    VecScaleToLength(&push, len, MAX_PUSH);
+    VecAdd(&g_Spyro.m_Position, pFrom, &push);
+  }
+}
+
+/* ColSphere hit terrain: Spyro is pushed out to g_CollisionPoint. Records
+ * a wall (steeper than 0x17, not surface type 6), the first surface touched
+ * this tick, and that he is on something (m_floorIdleTime 0; in portal
+ * flight only when not flying on towards D_80077858). */
+static void HitTerrain(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  Vector3D toTarget, dir;
+  int state = g_Spyro.m_State, steep, surface, type;
+
+  if (state == 15 || state == 32 || state == 33 || state == 34) {
+    VecSub(&toTarget, &D_80077858, &g_Spyro.m_Position);
+    func_80017330(&toTarget, 0x100);
+    if (toTarget.z < -0xC8) {
+      g_Spyro.m_floorIdleTime = 0;
+    } else {
+      VecCopy(&dir, &ph->m_Velocity);
+      func_80017330(&dir, 0x100);
+      if ((toTarget.x * dir.x + toTarget.y * dir.y + toTarget.z * dir.z) >> 8 >= 0xE1)
+        g_Spyro.m_floorIdleTime = 0;
+    }
+  } else {
+    g_Spyro.m_floorIdleTime = 0;
+  }
+
+  steep = (signed char)Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0);
+  if (steep >= 0x17) {
+    surface = g_SurfaceBelowFlags & 0x3F;
+    type = surface == 0x3F ? 0 : g_Environment.m_SurfaceData[surface]->m_Type;
+    if (type != 6) {
+      g_Spyro.m_againstWall = 1;
+      func_80017330(&g_CollisionNormal, 0x400);
+      VecAdd(&g_Spyro.m_wallAgainstSpyro, &g_Spyro.m_wallAgainstSpyro, &g_CollisionNormal);
+    }
+  }
+
+  VecCopy(&g_Spyro.m_Position, &g_CollisionPoint);
+  if (g_Spyro.m_touchingSurface == 0xFF) {
+    g_Spyro.m_touchingSurface = g_SurfaceBelowFlags;
+    VecCopy(&g_Spyro.unk_0x17c, &D_80077858);
+    VecCopy(&g_Spyro.m_KnockbackDirection, &g_CollisionNormal);
+  }
+}
+
+/* One collision step: move by the (sub-step) velocity, then up to six
+ * rounds of moby and terrain collision; if Spyro is still in terrain after
+ * that, up to six more of terrain only. The asm keeps the step's start in
+ * m_TrueVelocity (rewritten at the end of the tick) for the first rounds
+ * and in a local copy for the others. */
+static void CollisionStep(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  Vector3D start;
+  Moby *hit;
+  int tries;
+
+  VecCopy(&ph->m_TrueVelocity, &g_Spyro.m_Position);
+  VecCopy(&start, &g_Spyro.m_Position);
+  VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_Velocity);
+
+  for (tries = 0; tries < 6; tries++) {
+    hit = CollideMobys();
+    if (hit) {
+      D_80075804 = hit;
+      g_Spyro.m_touchingMoby = 1;
+      LimitPush(&ph->m_TrueVelocity);
+    }
+    if (ColSphere(&g_Spyro.m_Position, SPYRO_RADIUS, SPYRO_RADIUS) == 0) {
+      if (!hit)
+        return;
+      continue;
+    }
+    HitTerrain();
+    LimitPush(&ph->m_TrueVelocity);
+  }
+
+  for (tries = 0; tries < 6; tries++) {
+    if (ColSphere(&g_Spyro.m_Position, SPYRO_RADIUS, SPYRO_RADIUS) == 0)
+      return;
+    HitTerrain();
+    LimitPush(&start);
+  }
+}
+
+/// @brief Moves Spyro by this tick's velocity with collision: scripted
+/// control first (m_ControlFlags bit 31), then sub-steps of at most
+/// SUBSTEP against mobys and terrain, and finally his true velocity from
+/// where he ended up.
+/// @note asm/nonmatchings/pete/func_8003FE40.s, by hand. The asm returns 1
+/// in v0; its only caller, func_80047B60 (16 asm call sites), reads neither
+/// v0 nor v1 after any of them, so this returns nothing.
+void func_8003FE40(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int steps, i;
+
+  g_Spyro.m_touchingMoby = 0;
+  g_Spyro.m_touchingSurface = 0xFF;
+  g_Spyro.m_againstWall = 0;
+  g_Spyro.m_floorIdleTime++;
+  VecNull(&g_Spyro.m_wallAgainstSpyro);
+  VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_CollisionMovement);
+  VecNull(&ph->m_CollisionMovement);
+  VecCopy(&g_Spyro.m_previousPosition, &g_Spyro.m_Position);
+
+  if (g_Spyro.m_ControlFlags < 0)
+    ScriptedControl();
+  else
+    g_Spyro.m_ControlFlags = 0;
+
+  VecShiftRight(&ph->m_Velocity, 6);
+  if (g_Spyro.m_ControlFlags & CTRL_SKIP_SURFACE_CHECK) {
+    VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_Velocity);
+  } else {
+    steps = VecMagnitude(&ph->m_Velocity, 1) / SUBSTEP + 1;
+    if (steps >= 2) {
+      ph->m_Velocity.x /= steps;
+      ph->m_Velocity.y /= steps;
+      ph->m_Velocity.z /= steps;
+    }
+    for (i = 0; i < steps; i++)
+      CollisionStep();
+  }
+
+  VecSub(&ph->m_TrueVelocity, &g_Spyro.m_Position, &g_Spyro.m_previousPosition);
+  VecShiftLeft(&ph->m_TrueVelocity, 6);
+  ph->m_TrueVelocity.x /= g_DeltaTime;
+  ph->m_TrueVelocity.y /= g_DeltaTime;
+  ph->m_TrueVelocity.z /= g_DeltaTime;
+  ph->m_TrueSpeed = VecMagnitude(&ph->m_TrueVelocity, 1);
 }
 #endif
