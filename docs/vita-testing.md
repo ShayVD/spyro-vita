@@ -87,6 +87,7 @@ Files the app writes:
 | `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
 | `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
+| `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 | `menu_test=V` | tests without a controller: open the options menu at vblank V and press down, left, up, right, circle |
 
@@ -258,6 +259,8 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    `audio queue dry` near 0 in gameplay, and the mixer's ms per vblank (the time `spu` had before).
    `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
    and `mixer=0` and say which ones are.
+
+**First hardware test (main `3b4126a`, user):** red and green textures after the pause menu, the picture snapping between 16:9 and 4:3, scenery popping at the edges, 20–26 fps with widescreen. Causes and fixes: `docs/presentation.md` "Fixes from the first hardware test".
 
 **Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default), with the GPU build:
 

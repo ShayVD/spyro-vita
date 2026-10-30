@@ -6,8 +6,9 @@ Prototype on the linux32 host (2026-10-30). Both features are optional, and off 
 
 | Flag | Effect |
 |---|---|
-| `--widescreen` | 16:9 picture. The logic still sees the original 4:3 frustum (faithful). |
-| `--widescreen-logic` | 16:9 in one pass: cheaper, but the wider frustum reaches gameplay (see [Why a logic pass](#why-a-logic-pass)). Diagnostic only. |
+| `--widescreen` | 16:9 picture, drawn once: the wider view is also what the logic sees (mobys visible at the 16:9 edges count as on screen). Attract demos keep the original 4:3 logic, a hidden 4:3 draw plus a 16:9 pass, so they replay exactly. See [One draw or two](#one-draw-or-two). |
+| `--widescreen-exact` | the two-draw form always: the logic identical to 4:3 in play too, at the cost of one more render path per tick. |
+| `--widescreen-logic` | one draw always, attract demos too. Diagnostic only: the demos desync. |
 | `--interp` | 60 fps: one extra frame between ticks, with the camera, Spyro, mobys, their animation frames and the particles blended. |
 | `--interp-no-anim` | 60 fps, transforms only (no animation frames or particles); for comparisons. |
 | `--interp-camera` | 60 fps, camera only. |
@@ -54,7 +55,11 @@ D2 planned to scale X in RTPS/RTPT. The prototype found a better place: the proj
 
 The capture is the drawn 512×240 area. The host scales it bilinearly to 960×544, full width for widescreen frames. 960×544 is 30:17, 0.7% wider than 16:9, which is close enough not to correct.
 
-### Why a logic pass
+### One draw or two
+
+**Revised 2026-10-30 after the first hardware test (D30).** By default, widescreen draws the scene once, in 16:9, and that draw is also the game's logic draw. Only attract demos (`g_DemoMode`), or `--widescreen-exact` / `widescreen_exact=1`, keep the two-draw form described below. On the Vita, the hidden 4:3 draw cost 4–8 ms per tick and pushed busy scenes to 20–26 fps (`logs/hw-3b4126a-user`, in the main checkout). The user chose one draw: enemies visible only in the side strips then act as on-screen ones do. In the Artisans gem script that changes the random seed from tick 19 and four rows of gem-count timing; Spyro's path, health and the gems collected are the same (`logs/run32-gems-wsi`). The attract demos still match the oracle tick for tick (`logs/run32-wsi`).
+
+Why the two-draw form exists at all (it's what keeps the demos replaying):
 
 The renderers write gameplay state:
 
@@ -124,6 +129,16 @@ Saved per tick for blending (`PortPresentBeforeUpdate`, before `GamestateUpdate`
 
 What a pass writes beyond that is scratch the next real draw rewrites before anything reads it: the two primitive buffers and both OTs (linking clears every bucket), and the emulated stack below the caller's `$sp`. `--present-dirty` keeps a full copy as well and, after the region restore, reports every page that still differs outside those areas, byte for byte. Result: **0** over both attract demos, pause/inventory and the Artisans gem script (`logs/run11-check-*`, `logs/run14-check`). Its first run found two things that shaped the list: the sector cache, and the primitive buffer starting mid-page. With the region snapshot only, all traces stay identical, and 110 widescreen+interp shots are byte-identical to the full-snapshot build (`logs/run12-*`).
 
+### Fixes from the first hardware test (2026-10-30)
+
+| Seen on the Vita | Cause | Fix |
+|---|---|---|
+| Every texture red and green, after the pause menu | The pause screen saves the texture pages at VRAM x=512–767 into RAM and overwrites them with a grayscale copy of the frame (`draw.c` `func_8001A40C`); unpausing loads them back. The 16:9 presentation pass ran that pause-entry code too. The snapshot restores RAM but not VRAM, so the real draw then saved the grayscale picture as the "textures". Reproduced on the host: 57,344 of 57,600 texture words differ after pause and unpause (`logs/run31-pause-ws`). | PsyCross patch 0006: `g_psyxVramFrozen` makes `ClearImage`, `LoadImage`, `StoreImage` and `MoveImage` no-ops during presentation passes, so the game's VRAM bookkeeping happens once, in the real draw. After the fix: 0 words differ, in both widescreen modes (`logs/run32-pause-ws`, `run32-pause-exact`). |
+| The picture snapping between 16:9 and 4:3 | The presenter fell back to the PS1 display (drawn 4:3) whenever 4 vblanks passed without a new frame, which on the Vita happens on every slow tick. | It falls back only when the game drew outside `GamestateDraw` since the last frame (loading screens). A slow tick keeps the last frame. Vita3K in real time, with ~200 late vblanks per 300: 0 pictures from the 4:3 display (`logs/run33-vita3k-rt`). |
+| Scenery popping at the edges | With a hidden 4:3 logic draw, `func_800521C0` sorted mobys by the 4:3 draw's sector visibility (`D_800771C8`), so mobys in sectors only the 16:9 view shows were dropped. | Gone in normal play (one draw: logic, culling and picture share one view). In the two-draw form, the 16:9 passes keep their own copy of `D_800771C8` and the sector caches. No demo shot changed with it (39 compared). |
+| 20–26 fps with widescreen on | The hidden 4:3 draw (above). | One draw. |
+| "Stall" after each menu use | Not a stall: the game is paused while the menu is open, and the next stats window counts that time. Its extra presents are the menu redrawn at 60 Hz. | The log now says `menu: closed after N ms`. |
+
 ### Results
 
 - `logs/run3-interp`, `logs/run3-off960`, vblanks 4400–4431 (Stone Hill demo):
@@ -178,7 +193,7 @@ How to read it for the Vita:
 |---|---|---|
 | Features off: trace vs baseline build and oracle | identical; both attract demos match the oracle (Stone Hill 866 ticks, Doctor Shemp 768, 11 columns) | `logs/run1-baseline`, `logs/run4-off-stats` |
 | Features off: 110 screenshots vs baseline build | byte-identical | `logs/run4-off-stats` vs `logs/run1-baseline` |
-| `--widescreen`, `--interp`, `--interp-camera`, both: trace over 11,000 vblanks | identical to baseline (so the demos still match the oracle) | `logs/run5-*` |
+| `--widescreen`, `--interp`, `--interp-camera`, both: trace over 11,000 vblanks | identical to baseline (so the demos still match the oracle) | `logs/run5-*`; after the one-draw change, `logs/run32-wsi` |
 | `--widescreen-logic` | diverges (rand at tick 123, Spyro at 541): why the default needs a logic pass | `logs/run5-wslogic` |
 | SPU writes inside passes | 0 dropped (none attempted) | `logs/run5-*/spyro.log` |
 | Artisans: new game, pause, inventory (`logs/pads/inventory.txt`, from M2's run6) | trace with `--widescreen --interp` identical to off | `logs/run8-inv-*` |
@@ -240,7 +255,7 @@ Checked in Vita3K (not hardware):
 
 ## Follow-ups
 
-1. Hardware test of the Vita build (`docs/vita-testing.md`): picture under `gpu=1`, the in-between frame rate per scene, and a tuned `interp_budget` default.
+1. Second hardware test after the fixes above (`docs/vita-testing.md`): no snapping, no red/green after pausing, 30 fps held with widescreen, how often the in-between frame fits, and a tuned `interp_budget` default.
 3. Flame, line-particle end points and the HUD counters' spin at 60 fps.
 4. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
 5. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.

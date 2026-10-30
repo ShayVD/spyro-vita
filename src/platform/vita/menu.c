@@ -8,6 +8,7 @@
 #include "../../game/present.h"
 #include "menu_panel.h"
 
+#include <psp2/kernel/processmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,6 +134,7 @@ int vita_menu_service(void) {
   s_requested = 0;
   if (!panel)
     panel = malloc((size_t)MENU_PANEL_W * h * 3);
+  SceUInt64 t0 = sceKernelGetProcessTimeWide();
   vita_log("menu: open%s", test ? " (menu_test)" : "");
   while (open) {
     uint16_t m, pressed;
@@ -172,6 +174,8 @@ int vita_menu_service(void) {
   s_swallow = prev; /* what closed it stays away from the game until released */
   s_prev = prev;
   save();
-  vita_log("menu: closed");
+  /* the game was paused this long: the next stats line's vblank rate and
+   * presents include it */
+  vita_log("menu: closed after %u ms", (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   return 1;
 }

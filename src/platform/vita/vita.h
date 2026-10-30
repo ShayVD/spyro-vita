@@ -29,6 +29,8 @@ typedef struct {
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
   int widescreen;     /* widescreen=1 (default): 16:9 (docs/presentation.md) */
   int interp;         /* interp=1 (default): 60 fps; 2: no animation blending; 3: camera only; 0: off */
+  int widescreen_exact; /* widescreen_exact=1: keep the original 4:3 logic in play too (a hidden
+                           4:3 draw: costs CPU); attract demos always do */
   int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
   int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
                          sequence (tests without a controller: menu.c) */

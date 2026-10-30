@@ -157,6 +157,8 @@ static void read_config(void) {
       g_vita_opts.interp = atoi(v);
     else if (!strcmp(line, "interp_budget"))
       g_vita_opts.interp_budget = atoi(v);
+    else if (!strcmp(line, "widescreen_exact"))
+      g_vita_opts.widescreen_exact = atoi(v);
     else if (!strcmp(line, "menu_test"))
       g_vita_opts.menu_test = atoi(v);
     else
