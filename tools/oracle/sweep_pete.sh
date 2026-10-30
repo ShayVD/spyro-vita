@@ -62,7 +62,8 @@ for S in 15 23 32 33 34; do
   run fly-ws-$S-half2 $P 80078AD0=$S,$FLY,80078CAC=1 80078AD4=0-3,10
 done
 run fly-flightlevel $P 80078AD0=32,$FLY,80075690=1 80078AD4=0-3,10
-run fly-flightlevel-64 $P 80078AD0=32,$FLY,80075690=1,8007596C=64 80078AD4=0-3,10
+# (Not g_LevelId 64 here: the replay maps the level's overlay function
+# pointers by it, so g_SpawnParticle would point into the wrong overlay.)
 run fly-groundlevel $P 80078AD0=33,$FLY,80075690=0 80078AD4=0-3,10
 run fly-pitch-0 $P 80078AD0=32,$FLY,80078AD4=0 80078B78=$A
 run fly-pitch-1 $P 80078AD0=32,$FLY,80078AD4=1 80078B78=$A
@@ -80,6 +81,11 @@ run fly-dpad-y $P 80078AD0=32,$FLY,80078AD4=0 80075700=-127,-120,-64,-16,0,16,64
 run fly-dpad-x $P 80078AD0=32,$FLY,80078AD4=0 800758A0=-127,-120,-64,-16,0,16,64,120,127
 run fly-wake $P 80078AD0=32,$FLY,80078AD4=0 80078BC8=0,1
 run fly-speed $P 80078AD0=32,$FLY,80078AD4=10 80078B70=0,0x700,0x1880,0x1900,0x1980,0x3000
+# Free flight past the flight area's edge (x), and low with ground ahead
+# (z under a high m_highestFlightPoint, +158; diving: m_Acceleration.z, +FC).
+run fly-area $P 80078AD0=32,$FLY,80078AD4=0,80075690=1 80078A58=0,0x8000,0x10000,0x1F800,0x30000,0x40000,0x50000,-0x10000
+run fly-low $P 80078AD0=32,$FLY,80078AD4=0,80078BB0=0x10000 80078A60=0x400,0x800,0x1000,0x2000,0x3000,0x4000,0x6000,0x8000
+run fly-low-dive $P 80078AD0=32,$FLY,80078AD4=0,80078BB0=0x10000,80078B54=-0x4000 80078A60=0x400,0x800,0x1000,0x2000,0x3000,0x4000,0x6000,0x8000
 fi
 # func_80047B60, the per-frame collision dispatch.
 Q=func_80047B60
