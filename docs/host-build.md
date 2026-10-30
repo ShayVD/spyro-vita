@@ -97,3 +97,26 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
   - `intro`, `intro-host`: title intro screenshots, emulator and host.
   - `wizard6`: Wizard Peak via the level-warp cheat; MobyRotateToAngle's 5th argument (`docs/upstream-notes.md`).
   - `cap6-tour`: level tour (`ORACLE_TOUR`, the level-warp cheat) through 30 levels, pete and camera functions; `replay.txt` 358/358 match.
+
+## Oracle, M1 runner (PCSX-Redux, D24)
+
+A second runner for the same emulator build, from M1, with GTE vectors and per-function snapshots for `tests/gte` and `tests/m2c_diff`. The M2 runner (function replay, demo traces, pad scripts) is "Oracle: PCSX-Redux (D8)" above.
+
+`tools/oracle/redux OUTDIR [ORACLE_VAR=value …]` runs the original game headless and writes into OUTDIR. On first use it fetches the pinned build into `.tools/` and checks its SHA-1 (decision D24). The variables are documented at the top of `tools/oracle/oracle.lua`.
+
+- **VRAM dumps:**
+  ```bash
+  tools/oracle/redux logs/oracle-x ORACLE_END=2800 ORACLE_SHOTS=2400,2700
+  ```
+  Then convert them with `tools/oracle/raw2png.py logs/oracle-x --rect 0,0,512,240`.
+- **GTE vectors for `tests/gte`:**
+  ```bash
+  tools/oracle/gte_sites.py disc/files/SCUS_942.28 logs/gte/sites.txt
+  ```
+  Then run `tools/oracle/redux logs/gte ORACLE_END=9000 ORACLE_GTE=$PWD/logs/gte/sites.txt` (about 4 min).
+- **Function snapshots for `tests/m2c_diff`:**
+  ```bash
+  tools/oracle/redux logs/m2c-math ORACLE_END=9000 ORACLE_TRACE_MAX=20 ORACLE_TRACE=$(tools/oracle/asm_entries.py third_party/spyro-1/asm/math.s --trace) ORACLE_GLOBALS=80076DD0:110,800785A8:30
+  ```
+- **Vblank numbering:** the oracle counts from reset, and the game's main loop starts about 1,400 vblanks in. The host's vblank 0 is the game's `main`, so the host is about 1,380 vblanks ahead (the Insomniac sign is at host ~420, oracle ~1800).
+- **Without vectors:** `tests/gte` and `tests/m2c_diff` read their vectors from `logs/gte` and `logs/m2c-math`. They are skipped when those are missing, because the vectors hold game RAM and stay out of git.

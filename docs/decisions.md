@@ -51,7 +51,8 @@ Record each decision with its date, what was chosen, and why.
 - **BIOS:** `disc/bios/SCPH1001.BIN` (SHA-1 `10155d8d6e6e832d6ea66db9bc098321fb5e8ebf`, NTSC-U v2.2). It's gitignored through `disc/` and `SCPH*.BIN`, and moved there from `~/Downloads` at the user's request.
 - **Why out of process:** licensing, and so the shipped binary contains only our code, CC0 decomp code and MIT PsyCross.
 - **Installed (2026-10-30, M2, with the user's approval for the official macOS build only):** PCSX-Redux dev channel build 413, version `a5d621af` (changeset `a5d621af59cd1453b31bc18d3812670b742eb712`), "MacOS Arm", from the project's official distribution (`https://distrib.app/pub/org/pcsx-redux/project/dev-macos-arm`, linked from the PCSX-Redux README; the `distrib.app.pcsx-redux.consoledev.net` host doesn't resolve). File `PCSX-Redux-a5d621af-Arm.dmg`, 50,155,556 bytes, SHA-256 `367e23ba9fa7e05513b6599bc181281be44ef0e4e148026ddb09ea0d17804efc`, SHA-1 `b442d0eb3bf049d471aea3d54680613e7ccc428a` (matches the publisher's manifest). The `.app` is copied out of the image into `tools/oracle/bin/`, which is gitignored. Driven by `tools/oracle/run.sh` (`-no-ui -testmode -interpreter -debugger`, portable settings in `tools/oracle/bin/home`).
-- **Pacing:** the emulator runs at real time (paced to audio output); `settings.spu.UseNullSync = true` stalls it at the BIOS, so it stays off. About a minute per 3,600 vblanks.
+- **Pacing:** `tools/oracle/run.sh` runs at real time (paced to audio output), about a minute per 3,600 vblanks: setting `settings.spu.UseNullSync` from Lua after start stalls it at the BIOS. M1's runner (D24) sets `UseNullSync` and `Speed 8` in `pcsx.json` before start and gets about 40 vblanks/s with breakpoints, 250/s without; adopting that in `run.sh` is a follow-up.
+- **Pending loads at breakpoints (from D24):** Redux commits `mtc2`/`ctc2`/`lwc2` and loads one instruction late, so at an entry breakpoint a load in the caller's delay slot may still be pending. `capture.lua` doesn't replay those (M1's `oracle.lua` does); none of the 948 replayed samples failed from it.
 
 ### D9. Data ownership
 - The decomp's `asm/data/*.s` turn out to be almost free of raw pointers: of the ~3,250 `.word`s in the game's own (non-PsyQ) data files, the only pointers are 24 words in `math.data.s`, and splat already emitted those symbolically (`.word D_800752C8`), so they relocate at link time. The `0x80xxxxxx` values in `titlescreen_data.s` and `math.data.s` are packed sprite or colour words, not addresses. So we don't need kh1's 10k-row `data_relocs.tsv` machinery for the executable's data. A small `abscheck` still guards it. WAD-loaded data is a separate question (see `docs/porting-plan.md` §4).
@@ -112,7 +113,7 @@ Record each decision with its date, what was chosen, and why.
 ### D21. Decomp compile mode for the port
 - `MODERN_COMPILER` is defined. Its branches only replace type puns with field copies and fix an implicit return. The one behavioural change is `MobyRotateToAngle`'s 5th argument (`upstream-notes.md`), still to check with the oracle.
 - `-fcommon`, because the decomp's uninitialised C globals are also defined in `asm/data` (GCC 2.7.2 merged them as common symbols).
-- **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. The bit-exactness test against PCSX-Redux is pending the oracle (step 8 and step 13).
+- **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. Settled on 2026-10-30: `tests/gte` matches PCSX-Redux bit for bit on 9,314 vectors over the 11 ops the main executable uses, so we keep it and won't write our own (D24).
 
 ## 2026-10-29: M2 decisions
 
@@ -129,3 +130,16 @@ Record each decision with its date, what was chosen, and why.
 - **Not covered:** globals defined with initialisers in the decomp's own C files (e.g. `CheatTable`) stay ordinary host globals. PsyQ's own data is PsyCross's.
 - **Vita (M3):** absolute symbols need the arena at `0x80000000`, which a Vita executable can't ask for. Vita user memory is at `0x81000000+`, so pointers there are negative too, but the `sll 1; srl 1` alias (`0x01xxxxxx`) must then map back to the arena (extend `MIPS_KUSEG`), and data symbols must resolve to the arena (a generated `#define` header for C plus mips2c emitting arena addresses). Decide in M3.
 - **Evidence:** `logs/run3-replay/exp2/shot-6569.png` (Artisans: waterfall, gem platform, textured ground) against `logs/run3-step1/glide.png` (before); `logs/run4-layout/contact.png` (title intro canyon at 1080–1200).
+
+
+### D24. Behaviour oracle (M1 runner): PCSX-Redux a5d621af, native macOS, interpreter + debugger
+- *Numbering:* written as D22 on the M1 branch, at the same time as M2's D22/D23; renumbered when M2 merged. Both runners use the same build: M1's `tools/oracle/redux` + `oracle.lua` (in `.tools/`, function snapshots, `tests/gte`, `tests/m2c_diff`) and M2's `tools/oracle/run.sh` + `capture.lua` (in `tools/oracle/bin/`, `spyro --replay`, demo traces; D8).
+- **Build:** the pinned dev build `a5d621af` (2026-10-30) from distrib.app, the download location PCSX-Redux's README points to (the old `distrib.app.pcsx-redux.consoledev.net` no longer resolves). `tools/oracle/fetch_redux.sh` checks the published SHA-1 and unpacks it into the gitignored `.tools/`. It runs out of process only and is never linked (GPL).
+- **Native macOS arm64, not Docker.** The Linux arm64 AppImage needs glibc 2.38 plus X11 libraries. Its dynarec crashed during the BIOS boot, and under the interpreter it seemed to hang in the game's CD retry. That hang turned out to be our own Lua bug (below), but the native build is faster and needs no image, so it stays the runner.
+- **Flags:** `-no-ui -debugger -interpreter -softgpu`. Breakpoints only fire with the debugger on. The interpreter keeps them exact. The cost is about 40 vblanks/s with breakpoints and about 250/s without.
+- **`pcsx.json` in the run directory:** `UseNullSync` (the SPU paces the CPU from the audio callback otherwise), `Mute`, `Speed 8`. The file also makes Redux portable, so settings and memory cards stay in the run directory. Emulated timing is cycle-counted and doesn't depend on host speed.
+- **Lua gotchas:**
+  - Event listeners and breakpoints held only by chunk locals are garbage-collected after the first large allocation. The vsync listener silently stopped, which looked like an emulator hang. Keep them in globals.
+  - `PCSX.GPU.takeScreenShot()` throws under `-no-ui` on 24-bit frames. Dump VRAM with `getVRAM()` instead.
+  - Redux commits `mtc2`/`ctc2`/`lwc2` and GPR loads after the next instruction. So at a breakpoint, the move or load in the slot just before it is still pending. `oracle.lua` replays those into its "before" snapshots.
+- **Vblank numbering** counts from reset, so it includes the BIOS boot (~900 vblanks before the game's main loop). It is not aligned with the host's count yet.
