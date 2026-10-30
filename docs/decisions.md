@@ -207,6 +207,12 @@ Record each decision with its date, what was chosen, and why.
 - **What compares, and what can't:** function samples replay exactly (as in M2). The per-vblank game-state traces can't be matched tick for tick outside the attract demos: the PS1 drops frames (`g_DeltaTime` 3 or 4), the host never does, so Spyro's glide into each level integrates differently (positions apart by up to ~60 units after 300 vblanks). PCSX-Redux `a5d621af` has no CPU overclock setting that would remove the drops. So each level is compared by function replay, by a screenshot from each side taken when the tour leaves it (`tools/oracle/tour_pairs.py`), and by the visit and sequence lengths in the traces (`tools/oracle/tour_report.py`).
 - **Evidence:** `docs/whole-game-host.md`.
 
+## 2026-10-30: Vita packaging
+
+### D32. Vita link: 16 KiB of headroom after the text segment
+- **Problem:** `vita-elf-create` appends its SCE data (module info and the import tables, about 2.8 KB here) at the end of the text segment. The linker starts the data segment at a 64 KiB boundary picked by `DATA_SEGMENT_ALIGN`, which can be right after the text. When the text ends less than ~2.8 KB below that boundary, packaging fails: "Cannot allocate 2776 bytes for SCE data at end of segment 0; segment 1 overlaps". Main had 43 KiB to spare by chance. The hand-written pete/camera branch shrank the text, left 704 bytes, and hit it. Reproduced on main by padding `.rodata` so that the text ends at `0x8132FD40`.
+- **Decision:** link with `-Wl,--defsym=__sce_headroom=0x4000` (`src/platform/vita/CMakeLists.txt`). vitasdk's default linker script adds `__sce_headroom` bytes before aligning the data segment, so the data segment always starts at least 16 KiB after the text. Costs at most one 64 KiB step of address space, no memory. The padded build packages with it; main's layout is unchanged (data at `0x81340000` before and after).
+
 ## 2026-10-30: hand-written C for pete and camera
 
 ### D33. Hand-written C replaces mips2c units one function at a time, with the generated version a build switch away

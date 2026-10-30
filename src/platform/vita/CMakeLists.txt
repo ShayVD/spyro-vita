@@ -49,6 +49,11 @@ target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common psycro
   SceHid_stub SceMotion_stub ScePower_stub SceProcessmgr_stub SceIme_stub
   SceKernelDmacMgr_stub SceIofilemgr_stub SceLibKernel_stub stdc++ pthread m)
 target_link_options(spyro_vita PRIVATE -Wl,-q
+  # vita-elf-create appends its SCE data (~3 KB) after the text segment, and
+  # the data segment starts at the next 64 KiB boundary: keep 16 KiB free
+  # there (vitasdk's linker script reads __sce_headroom), or a build whose
+  # text ends just below a boundary fails "segment 1 overlaps" (D32).
+  -Wl,--defsym=__sce_headroom=0x4000
   # prof.c times these (the "time" lines in spyro.log)
   -Wl,--wrap=DrawOTag,--wrap=DrawPrim,--wrap=GR_DrawTriangles
   -Wl,--wrap=GR_CopyVRAM,--wrap=GR_ClearVRAM,--wrap=GR_ReadVRAM)
