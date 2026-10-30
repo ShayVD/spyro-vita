@@ -19,6 +19,7 @@ list(APPEND M2C_UNITS ${m2c_nonmatching})
 set(M2C_HAND
   asm/nonmatchings/camera/func_80033F08.s
   asm/nonmatchings/camera/func_80034480.s
+  asm/nonmatchings/camera/func_800357A4.s
   asm/nonmatchings/pete/func_80048D10.s
   asm/nonmatchings/pete/func_80049FAC.s)
 # A/B tests: functions listed here (or "all") build from the mips2c unit

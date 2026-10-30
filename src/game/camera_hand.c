@@ -11,6 +11,7 @@
 
 #include "camera.h"
 #include "collision.h"
+#include "gamepad.h"
 #include "math.h"
 #include "spyro.h"
 #include "variables.h"
@@ -226,6 +227,153 @@ void func_80034480(void) {
     }
     if (freeNudges == 0)
       return;
+  }
+}
+#endif
+
+#if !M2C_func_800357A4
+extern int D_800756B8; // Spyro visible from the camera (camera.c)
+extern int D_80075894; // camera.c
+extern int D_80075938; // Ticks before an auto-centre may end
+
+/* D_80075914 is the camera mode: 2 active, 0x52 passive. */
+#define CAMERA_PASSIVE() (D_80075914 & 0x10)
+
+/* Camera states in m_State / unk_0xC0 (the requested next state). */
+#define CAM_FOLLOW 0
+#define CAM_STATE_2 2
+#define CAM_STATE_6 6
+#define CAM_SPEED_CHECK 0x80000000u /* Follow, recentring once Spyro slows */
+#define CAM_LOOK 0x80000009u        /* Triangle look mode */
+#define CAM_SCRIPT_0200 0x8000000Au /* Held while CTRL_CAMERA_0200 is set */
+#define CAM_PATH 0x8000000Bu        /* Held while CTRL_CAMERA_0400 is set */
+#define CAM_SCRIPT_8000 0x80000007u /* Held while CTRL_CAMERA_8000 is set */
+#define CAM_SCRIPT_10000 0x8000000Cu /* Held while CTRL_CAMERA_10000 is set */
+#define CAM_FLY_IN 0x8000000Eu
+#define CAM_RECENTRE 0x80000010u
+#define CAM_RECENTRE_SLOW 0x80000011u
+
+/* The camera state Spyro's state asks for. */
+#define SPYRO_CAMERA_STATE() (D_8006C588[g_Spyro.m_State])
+
+/* Spyro is near the middle of the screen and not too deep. */
+static int IsSpyroCentred(void) {
+  Vector3D screen;
+
+  func_80017AA4(&screen, &g_Spyro.m_Position);
+  screen.x -= 0x100;
+  screen.y -= 0x78;
+  return Abs(screen.x) <= 0x40 && Abs(screen.y) <= 0x28 && (u_int)screen.z <= 0x1400;
+}
+
+/* Re-derive the simulated sphere from where the camera is now and make it
+ * the sphere the camera follows. */
+static void ResyncSphere(void) {
+  g_Camera.unk_0xE8 = func_80033F08(&g_Camera.m_Position);
+  g_Camera.m_Sphere = g_Camera.m_Simulation;
+}
+
+static void StartRecentre(void) {
+  g_Camera.unk_0xC0 = CAM_RECENTRE;
+  D_80075938 = 45;
+}
+
+/* Leave a scripted state once its control flag is cleared; while it's set,
+ * resync once on entering. */
+static void UpdateScripted(u_int pState, int pFlag) {
+  if (!(g_Spyro.m_ControlFlags & pFlag)) {
+    g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
+    g_Camera.m_Focus = &g_Spyro.m_Position;
+  } else if (g_Camera.m_State == pState) {
+    return;
+  }
+  ResyncSphere();
+}
+
+/// @brief Picks the camera's next state (unk_0xC0) from Spyro's state, the
+/// look button, scripted control flags and the passive camera's
+/// auto-centring, then switches m_State to it.
+/// @note asm/nonmatchings/camera/func_800357A4.s, by hand.
+void func_800357A4(void) {
+  u_int next = g_Camera.unk_0xC0;
+
+  if (next == CAM_LOOK) {
+    if (CAMERA_PASSIVE() && g_Spyro.m_State != 0 && g_Spyro.m_State != 0xD) {
+      /* Passive camera, Spyro busy: drop look mode. */
+    } else if (CAMERA_PASSIVE()) {
+      if (!(g_Pad.m_Held & PAD_TRIANGLE)) {
+        /* Triangle let go while standing: recentre. */
+        StartRecentre();
+        VecNull(&g_Spyro.m_HeadLookTarget);
+      }
+      goto switchState;
+    } else if ((g_Pad.m_Held & PAD_TRIANGLE) && g_Spyro.m_State == 0) {
+      goto switchState;
+    }
+    g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
+    VecNull(&g_Spyro.m_HeadLookTarget);
+  } else if (next == CAM_SCRIPT_0200) {
+    if (!(g_Spyro.m_ControlFlags & CTRL_CAMERA_0200)) {
+      g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
+      g_Camera.m_Focus = &g_Spyro.m_Position;
+      ResyncSphere();
+      if ((CAMERA_PASSIVE() || D_8007592C) && g_Camera.unk_0xC0 == CAM_FOLLOW &&
+          !g_Camera.m_OnMovingPlatform)
+        StartRecentre();
+    } else if (g_Camera.m_State != CAM_SCRIPT_0200) {
+      ResyncSphere();
+    }
+  } else if (next == CAM_SCRIPT_8000) {
+    UpdateScripted(CAM_SCRIPT_8000, CTRL_CAMERA_8000);
+  } else if (next == CAM_SCRIPT_10000) {
+    UpdateScripted(CAM_SCRIPT_10000, CTRL_CAMERA_10000);
+  } else if (next == CAM_PATH) {
+    if (!(g_Spyro.m_ControlFlags & CTRL_CAMERA_0400)) {
+      g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
+      g_Camera.m_Focus = &g_Spyro.m_Position;
+    } else if (g_Camera.m_State != CAM_PATH) {
+      /* Entering: start the path at the end Spyro travels from. */
+      g_Spyro.unk_0x240->m_CurrentNode = g_Spyro.unk_0x248 ? g_Spyro.unk_0x240->m_NodeCount - 1 : 0;
+    }
+  } else if (next == CAM_RECENTRE || next == CAM_RECENTRE_SLOW) {
+    /* Recentring runs out its time unless Spyro asks for another state. */
+    u_int wanted = SPYRO_CAMERA_STATE();
+    if (!((wanted == CAM_FOLLOW || wanted == 4) && D_80075938 > 0))
+      g_Camera.unk_0xC0 = wanted;
+  } else if (next == CAM_SPEED_CHECK) {
+    if (g_Spyro.m_Physics.m_SpeedAngle.m_Speed > 0x400 || !IsSpyroCentred())
+      g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
+  } else if (next == CAM_FOLLOW && g_Spyro.unk_0x194 == 0 && (CAMERA_PASSIVE() || D_8007592C) &&
+             !g_Camera.m_OnMovingPlatform) {
+    /* Passive camera: recentre when Spyro drifts off the middle. */
+    if (!IsSpyroCentred())
+      StartRecentre();
+  } else if (g_Camera.m_Focus != &g_Spyro.m_Position && g_Camera.m_State != CAM_STATE_6) {
+    g_Camera.m_Focus = &g_Spyro.m_Position;
+    ResyncSphere();
+  }
+
+switchState:
+  if (g_Camera.unk_0xC0 == g_Camera.m_State)
+    return;
+
+  if ((CAMERA_PASSIVE() || D_8007592C) && g_Spyro.unk_0x194 == 0 && !g_Camera.m_OnMovingPlatform &&
+      (g_Camera.unk_0xC0 == CAM_FOLLOW || g_Camera.unk_0xC0 == CAM_SPEED_CHECK) &&
+      g_Camera.m_State != CAM_RECENTRE_SLOW && g_Camera.m_Focus == &g_Spyro.m_Position) {
+    /* Passive camera returning to follow: recentre slowly first. */
+    D_80075938 = 8;
+    g_Camera.unk_0xC0 = CAM_RECENTRE_SLOW;
+    D_80075894 = 90;
+  } else if (g_Camera.m_State == CAM_STATE_2 || g_Camera.m_State == CAM_FLY_IN) {
+    ResyncSphere();
+  }
+
+  g_Camera.m_State = g_Camera.unk_0xC0;
+  if (g_Camera.m_State == CAM_LOOK) {
+    if (D_800756B8)
+      g_Camera.unk_0xC4 = 0;
+    g_Camera.unk_0xDC = 0;
+    g_Camera.unk_0xE0 = 0;
   }
 }
 #endif
