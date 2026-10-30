@@ -434,6 +434,30 @@ static void upload_vram(void) {
   s_st.upload_us += now_us() - t0;
 }
 
+/* An RGB picture into s_rgb_tex (bound on unit 1), as RGBA: Vita3K draws a
+ * 24-bit (GL_RGB) texture as near-black (the boot logos were missing in
+ * window captures, decisions D37). */
+static void upload_rgb(const uint8_t *rgb, int w, int h) {
+  static uint8_t *rgba;
+  static int cap;
+  int i;
+  if (w * h > cap) {
+    free(rgba);
+    rgba = malloc((size_t)w * h * 4);
+    cap = rgba ? w * h : 0;
+    if (!rgba)
+      return;
+  }
+  for (i = 0; i < w * h; i++) {
+    rgba[i * 4] = rgb[i * 3];
+    rgba[i * 4 + 1] = rgb[i * 3 + 1];
+    rgba[i * 4 + 2] = rgb[i * 3 + 2];
+    rgba[i * 4 + 3] = 255;
+  }
+  glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+}
+
 static void quad(const float ndc[4], const float src[4]) {
   /* two triangles: x0,y0 x1,y0 x0,y1 / x1,y0 x1,y1 x0,y1 */
   float p[12], s[12];
@@ -1406,8 +1430,7 @@ static int present_slot(int slot) {
       rgb[i * 3 + 1] = (uint8_t)(g << 3 | g >> 2);
       rgb[i * 3 + 2] = (uint8_t)(b << 3 | b >> 2);
     }
-    glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    upload_rgb(rgb, PRESENT_W, PRESENT_H);
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
@@ -1470,8 +1493,7 @@ int vita_gpu_present(void) {
       vita_gpu_sync_display();
       rgb = host_display_rgb(&w, &h);
       glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+      upload_rgb(rgb, w, h);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
       glActiveTexture(GL_TEXTURE0);
