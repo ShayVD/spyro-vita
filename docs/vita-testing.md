@@ -110,7 +110,7 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
   vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
   and SPU models). W/K are the game thread waiting for it: at loads (SPU RAM writes), otherwise 0.
-  E must be 0. D counts mixes that found the audio queue empty (a gap you can hear), C the times
+  E (counted from start-up) must be 0. D counts mixes that found the audio queue empty (a gap you can hear), C the times
   it was cut back to 150 ms (the game ran ahead).
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
@@ -225,6 +225,8 @@ Same host references (`run6-host-base`, `run7-host-gems`; this tree's linux32 bu
 | `run68-vita-gpu-base`, `run69-vita-soft-base` | no input, 12000 vblanks, shot every 120, `wav=1`, `gpu=1` / `gpu=0` | 100/100 shots and the 35 MB WAV byte-identical to the host, both. 0 position mismatches. |
 | `run72-vita-gpu-gems`, `run71-vita-soft-gems` | gems script, `gpu=1` / `gpu=0` | 36/36 shots and the card byte-identical to the host, both. |
 | `run73-vita-gpu-realtime`, `run74-vita-gpu-realtime-before` | gems script, `REALTIME=1`, `wav=1`, with and without this change | Both ~60 vblanks/s, WAV 8768 vblanks long. Game-thread `spu` 0.47 → 0.09 ms per vblank, busy 3.16 → 2.73 ms; mixer thread 0.4–0.6 ms per vblank. |
+| `run75`–`run78` | the four runs above again after merging main (Vita widescreen and 60 fps) | all byte-identical again (shots, WAV, card); 0 position mismatches |
+| `run79-vita-merged-realtime-ws` | gems script, `REALTIME=1`, `wav=1 widescreen=1 interp=1` | 58.6 vblanks/s, WAV 8768 vblanks long; `spu` 0.15 ms per vblank, mixer 0.5–0.7 ms; audio queue dry 0–11 times per 300 vblanks |
 
 `run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 

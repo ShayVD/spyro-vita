@@ -291,4 +291,7 @@ Record each decision with its date, what was chosen, and why.
   - With `REALTIME=1` on the gems script, `gpu=1`: ~60 vblanks/s, and `audio.wav` holds all 8768 vblanks.
   - Game-thread "spu" time fell from 0.47 to 0.09 ms per vblank, and busy time from 3.16 to 2.73 ms (`run74` is the branch before this change). The mixer thread took 0.4–0.6 ms per vblank (Vita3K's times).
   - What remains on the game thread is the CD model, the XA sector reads, the step and the 2.6 KB voice copy.
+- **After merging main (PR #12, Vita widescreen and 60 fps)**, `logs/run75`–`run79`:
+  - The demo is still byte-identical in both GPU modes (shots and WAV), and so are the gems runs (shots and card).
+  - `REALTIME=1` with `widescreen=1 interp=1` on the gems script: 58.6 vblanks/s in Vita3K, the WAV holds all 8768 vblanks, game-thread `spu` is 0.15 ms per vblank and the mixer takes 0.5–0.7 ms. The audio queue ran dry 0–11 times per 300 vblanks.
 - **Expected on hardware:** most of the ~2.5 ms "spu" per vblank (D35's `c40c9cf` run) moves to core 1, and the `mixer N:` line shows it there. Not yet run on hardware.
