@@ -84,6 +84,7 @@ Files the app writes:
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
+| `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
 | `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
 | `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
@@ -105,6 +106,12 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
   The upload and readback times are CPU time.
+- `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
+  mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
+  vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
+  and SPU models). W/K are the game thread waiting for it: at loads (SPU RAM writes), otherwise 0.
+  E (counted from start-up) must be 0. D counts mixes that found the audio queue empty (a gap you can hear), C the times
+  it was cut back to 150 ms (the game ran ahead).
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
 `gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,
@@ -206,6 +213,21 @@ change touches nothing the linux32 host builds), and with window captures of the
 | `run50-vita-soft-gems` | gems script, `gpu=0` | 36/36 shots and the card byte-identical to the host. |
 | `run51-vita-gpu-realtime`, `run52-vita-soft-realtime` | gems script, `REALTIME=1` | 60 vblanks/s in both. Busy CPU per vblank (`tools/vita/time_summary.py`): 2.79 ms with `gpu=1`, 6.82 ms with `gpu=0`. Raster 0.90 vs 4.85 ms, present 0.05 vs 0.55 ms. Vita3K's times, not the Vita's. |
 
+### The mixer on its own core (D37)
+
+Same host references (`run6-host-base`, `run7-host-gems`; this tree's linux32 build reproduces
+`run6-host-base`'s WAV byte for byte, `logs/run63-host-base`):
+
+| Run | What | Result |
+|---|---|---|
+| `run62-vita-gpu-base`, `run64`–`run66` | first try | WAV wrong from vblank 438 and a hang at 5640: the mixer's XA reset went through `--wrap` back into the queue (D37). Kept as the record. |
+| `run67-vita-mixer1-short` | fixed, 1500 vblanks, `wav=1` | WAV byte-identical. |
+| `run68-vita-gpu-base`, `run69-vita-soft-base` | no input, 12000 vblanks, shot every 120, `wav=1`, `gpu=1` / `gpu=0` | 100/100 shots and the 35 MB WAV byte-identical to the host, both. 0 position mismatches. |
+| `run72-vita-gpu-gems`, `run71-vita-soft-gems` | gems script, `gpu=1` / `gpu=0` | 36/36 shots and the card byte-identical to the host, both. |
+| `run73-vita-gpu-realtime`, `run74-vita-gpu-realtime-before` | gems script, `REALTIME=1`, `wav=1`, with and without this change | Both ~60 vblanks/s, WAV 8768 vblanks long. Game-thread `spu` 0.47 → 0.09 ms per vblank, busy 3.16 → 2.73 ms; mixer thread 0.4–0.6 ms per vblank. |
+| `run75`–`run78` | the four runs above again after merging main (Vita widescreen and 60 fps) | all byte-identical again (shots, WAV, card); 0 position mismatches |
+| `run79-vita-merged-realtime-ws` | gems script, `REALTIME=1`, `wav=1 widescreen=1 interp=1` | 58.6 vblanks/s, WAV 8768 vblanks long; `spu` 0.15 ms per vblank, mixer 0.5–0.7 ms; audio queue dry 0–11 times per 300 vblanks |
+
 `run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
@@ -229,6 +251,10 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 4. `gpu N:` lines: `VRAM uploads` should be a handful per 300 vblanks (level loads, menus), not
    one per picture.
 5. Open the pause menu and the inventory: the background should be the game's frame in green.
+6. `mixer: thread on core 1` at start-up, then `mixer N:` lines: `position mismatches` 0,
+   `audio queue dry` near 0 in gameplay, and the mixer's ms per vblank (the time `spu` had before).
+   `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
+   and `mixer=0` and say which ones are.
 
 **Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30), with the GPU build:
 
