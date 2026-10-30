@@ -1,10 +1,10 @@
 diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
 --- a/include/psx/libgpu.h
 +++ b/include/psx/libgpu.h
-@@ -861,6 +861,11 @@
-  * skips the list. The post hook runs after the list is drawn. */
- extern int (*g_psyxDrawOTagPre)(u_long *p);
- extern void (*g_psyxDrawOTagPost)(u_long *p);
+@@ -864,6 +864,11 @@
+ /* Spyro port (docs/decisions.md D39): called when DrawOTag returns, whether
+  * the list was drawn or the pre hook skipped it. */
+ extern void (*g_psyxDrawOTagDone)(void);
 +/* Spyro port (docs/presentation.md): nonzero makes ClearImage, LoadImage,
 + * StoreImage and MoveImage do nothing. A presentation pass re-runs the
 + * game's draw; VRAM bookkeeping there (the pause screen saves the texture
