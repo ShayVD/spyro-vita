@@ -21,6 +21,7 @@ typedef struct {
                      wider frustum reaches m_WasDrawn (gameplay differs) */
   int interp;     /* an extra frame between ticks, blended state */
   int interp_mobys; /* blend mobys and Spyro too, not only the camera */
+  int interp_anim;  /* with interp_mobys: animation frames and particles too */
   int stats;        /* time update and draw (also with both features off);
                      2 also maps the arena pages each pass dirties */
 } PresentConfig;
@@ -29,10 +30,16 @@ typedef struct {
   long long ticks, passes, logic_passes, interp_frames, skipped_interp;
   long long us_pass, us_snapshot, us_logic, us_update; /* summed microseconds */
   long long us_vsync; /* inside VSync(0) during the logic pass (host vblank work) */
+  long long us_blend; /* saving the previous tick and blending (interp) */
   long long spu_dropped; /* SPU writes swallowed inside presentation passes */
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
+  long long anim_blended, anim_kept; /* animation tracks in in-between frames */
+  long long particles_blended;
+  long long snapshot_bytes; /* copied in and out by the region snapshot */
   long long dirty_pages, dirty_max; /* stats 2: 4 KB pages a pass wrote */
   uint32_t dirty_union[PRESENT_PAGES / 32]; /* every page any pass wrote */
+  long long missed_pages; /* stats 2: dirty pages outside snapshot and scratch */
+  uint32_t missed_union[PRESENT_PAGES / 32];
 } PresentStats;
 
 extern PresentConfig g_present;
