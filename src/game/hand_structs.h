@@ -10,6 +10,7 @@
 
 #include "common.h"
 
+#include "gamepad.h"
 #include "matrix.h"
 #include "spyro.h"
 #include "vector.h"
@@ -46,6 +47,20 @@ enum {
 
 #define g_Flame (*(SpyroFlameView *)&g_SpyroFlame)
 
+/* One frame of g_Pad.m_BufferedInputs, which g_ActivePad points at. The
+ * decomp types g_ActivePad as Gamepad *, whose first fields are in another
+ * order (its "m_Released" at +4 is this m_Held). */
+typedef struct {
+  int m_Type;
+  int m_Held;
+  int m_Down;
+  int m_Released;
+  int m_LeftStickMoved;
+  GamepadSticks m_Sticks;
+} PadFrame;
+
+#define g_PadFrame ((PadFrame *)g_ActivePad)
+
 #define HAND_SAME_OFFSET(view, field, orig, origField)                         \
   static_assert(offsetof(view, field) == offsetof(orig, origField),            \
                 #view "." #field " is not " #orig "." #origField)
@@ -62,5 +77,9 @@ HAND_SAME_OFFSET(SpyroFlameView, m_HeadRotation, SpyroFlame, unk_a4);
 HAND_SAME_OFFSET(SpyroFlameView, m_RenderRotation, SpyroFlame, unk_b8);
 HAND_SAME_OFFSET(SpyroFlameView, m_OffsetFromSpyro, SpyroFlame, unk_cc);
 HAND_SAME_OFFSET(SpyroFlameView, m_PuffLastPos, SpyroFlame, unk_d8);
+
+static_assert(sizeof(PadFrame) == sizeof(g_Pad.m_BufferedInputs[0]), "PadFrame size");
+static_assert(offsetof(PadFrame, m_LeftStickMoved) == offsetof(Gamepad, m_LeftStickMoved), "PadFrame stick flag");
+static_assert(offsetof(PadFrame, m_Sticks) == offsetof(Gamepad, m_Sticks), "PadFrame sticks");
 
 #endif

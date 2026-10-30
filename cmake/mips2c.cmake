@@ -37,6 +37,25 @@ foreach(u ${M2C_HAND})
   endif()
 endforeach()
 
+# Partly hand-written: the hand C handles what it covers and calls the mips2c
+# unit, renamed <name>_gen, for the rest (docs/translation-log.md).
+set(M2C_PARTIAL
+  asm/nonmatchings/pete/func_80043FE4.s)
+set(M2C_PARTIAL_DEFS)
+foreach(u ${M2C_PARTIAL})
+  get_filename_component(f "${u}" NAME_WE)
+  if(SPYRO_M2C_FUNCS STREQUAL "all" OR f IN_LIST SPYRO_M2C_FUNCS)
+    list(APPEND M2C_HAND_DEFS M2C_${f}=1)
+  else()
+    list(APPEND M2C_HAND_DEFS M2C_${f}=0)
+    string(REGEX REPLACE "^asm/" "" n "${u}")
+    string(REGEX REPLACE "\\.s$" "" n "${n}")
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
+    list(APPEND M2C_PARTIAL_DEFS "${GEN_DIR}/mips2c/m2c_${n}.c"
+      "${f}=${f}_gen|${f}__m2c=${f}_gen__m2c")
+  endif()
+endforeach()
+
 set(M2C_OUTS)
 set(M2C_DEPS "${M2C_TOOL}" "${M2C_HINTS}")
 foreach(u ${M2C_UNITS})
@@ -55,6 +74,12 @@ add_custom_command(OUTPUT ${M2C_OUTS}
   COMMENT "mips2c: translating decomp asm to C")
 
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS})
+while(M2C_PARTIAL_DEFS)
+  list(POP_FRONT M2C_PARTIAL_DEFS src defs)
+  string(REPLACE "|" ";" defs "${defs}")
+  set_source_files_properties("${src}" TARGET_DIRECTORY spyro_game_m2c
+    PROPERTIES COMPILE_DEFINITIONS "${defs}")
+endwhile()
 # Register seeding for the oracle replay (spyro --replay): host debug build only.
 if(SPYRO_HOST STREQUAL "linux32")
   set(M2C_REPLAY_DEF MIPS2C_REPLAY=1)

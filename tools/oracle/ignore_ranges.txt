@@ -70,3 +70,5 @@ ret func_80048D10
 ret func_80034480
 # func_800357A4 (camera.c 244): called only from C (camera.c 554).
 ret func_800357A4
+# func_80043FE4 (pete.c 1373): called only from C (pete.c 1547, 2091, 2190).
+ret func_80043FE4
