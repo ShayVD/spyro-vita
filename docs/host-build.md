@@ -33,9 +33,19 @@ python3 tools/contact_sheet.py logs/runN-x
 - `--wav FILE`: the SPU mix (44.1 kHz s16 stereo) as a WAV file.
 - `--tri-dump V`: logs every triangle drawn after vblank V; `tools/tri_at.py LOG X,Y` lists those covering a screen point. `--vram-shot` also writes the raw VRAM (`vram-N.bin`) for `tools/vram.py`.
 - `--peek ADDR:N`: logs N words of PS1 RAM from hex ADDR with every shot (up to 8 of them).
-- `--tour LIST` (`--tour-stay N`): after the pad script, visits levels with the game's level-warp cheat, types the credits, LEVELS OPEN or 99 LIVES cheat, or sets up an ending (`end2`, `end3`), as the oracle's `ORACLE_TOUR` does (`src/platform/linux32/tour.c`, decisions D30). Leaving a level writes `tour-K-LEVEL.png`. `--pad-after FILE` is a pad script that starts once the tour is done.
+- `--tour LIST` (`--tour-stay N`): after the pad script, visits levels with the game's level-warp cheat, types the credits, LEVELS OPEN or 99 LIVES cheat, or sets up an ending (`end2`, `end3`), as the oracle's `ORACLE_TOUR` does (`src/platform/linux32/tour.c`, decisions D31). Leaving a level writes `tour-K-LEVEL.png`. `--pad-after FILE` is a pad script that starts once the tour is done.
 - Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`).
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
+
+## Widescreen and 60 fps (D30)
+
+Optional, off by default (`docs/presentation.md`):
+- `--widescreen`: 16:9, with the logic kept at the 4:3 frustum.
+- `--interp`: an extra in-between frame per tick, so 60 fps. `--interp-camera` blends the camera only.
+- `--widescreen-logic`: diagnostic only. The wider frustum reaches the gameplay, and the demos desync.
+- Any of these turns on `--out960`, which writes 960×544 pictures (shots and `--serve`).
+- `--present-stats` logs per-tick costs at exit. `--present-dirty` also maps the arena pages a pass writes.
+- `tools/side_by_side.py OUT.png A.png B.png … [--cols N] [--scale F] [--crop X,Y,W,H]` puts shots next to each other.
 
 ## Playing it yourself (D22)
 
@@ -65,7 +75,7 @@ tools/oracle/replay.sh $D
 python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --where gamestate=0,level=11
 ```
 
-- `capture.lua` also takes `ORACLE_TOUR` entries `credits`, `levels`, `lives`, `end2`, `end3` (decisions D30), `ORACLE_PAD_AFTER`, `ORACLE_LABELS` (count hits on computed-jump labels inside completed samples, `labels.txt`), `ORACLE_WATCH=ADDR:LEN` (log game stores into a RAM range) and `ORACLE_SAMPLE_TIMEOUT`; `$ORACLE_FUNCS` lines may end in `n=K` (sample budget) and `gs=G` (only in that gamestate, for overlay code).
+- `capture.lua` also takes `ORACLE_TOUR` entries `credits`, `levels`, `lives`, `end2`, `end3` (decisions D31), `ORACLE_PAD_AFTER`, `ORACLE_LABELS` (count hits on computed-jump labels inside completed samples, `labels.txt`), `ORACLE_WATCH=ADDR:LEN` (log game stores into a RAM range) and `ORACLE_SAMPLE_TIMEOUT`; `$ORACLE_FUNCS` lines may end in `n=K` (sample budget) and `gs=G` (only in that gamestate, for overlay code).
 - `capture.lua` (environment variables): `ORACLE_FUNCS`/`ORACLE_SAMPLES`/`ORACLE_GAP`/`ORACLE_FROM` sample function calls; `ORACLE_TRACE` writes the same TSV as the host's `--trace`; `ORACLE_SHOTS`/`ORACLE_SHOT_EVERY` save the display (`tools/oracle/shot2png.py`) and VRAM; `ORACLE_PAD` drives pad 1, with absolute lines shifted by `ORACLE_PAD_SHIFT` and gameplay lines anchored to the game state (`@gs=0,level=10 +71 up`). Scripts are in `tools/oracle/pads/`. `ORACLE_TOUR=11,12,...` (with `ORACLE_TOUR_STAY`) then warps from level to level with the game's level-warp cheat, and `ORACLE_PER_LEVEL=1` makes `ORACLE_SAMPLES` a per-level budget.
 - `spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]` loads each sample's entry state into the arena, the GTE and (host build only) all the registers of the call, calls the function's translated C and compares v0/v1, RAM, scratchpad and GTE registers. `--fnmap` (`tools/oracle/fnmap.py`, built by `replay.sh`) turns PS1 function pointers in the emulator's RAM into the host's functions. `SPYRO_REPLAY_NOFORK=1` runs samples in process, for gdb (`handle SIGALRM stop print` to catch one that hangs); `SPYRO_REPLAY_TIMEOUT` (default 60 s) reports a sample that never returns as a crash; `SPYRO_REPLAY_DUMP=FILE` writes the host's RAM after the call. `--disc` lets samples that read the CD (the credits overlay) do so. Function and scratchpad pointers in the emulator's RAM are rewritten only below the loaded overlay's end (`TERM` lines of the fnmap): above it is level data, where a word can equal such a pointer by chance. `tools/oracle/ignore_ranges.txt` lists, with reasons, the RAM that isn't a function output (the asm spill area, state written by interrupt handlers, libcd's DMA'd sectors) and the functions whose return registers are dead.
 - Each run gets fresh memory cards (`$ORACLE_OUT/home`): what's on the card changes the title menu.
