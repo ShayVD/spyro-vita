@@ -10,6 +10,10 @@
 
 uintptr_t g_psx_arena_base;
 unsigned char g_psx_scratch[1024];
+/* PS1 kernel RAM (0x00000000-0x0000FFFF) for the game's stray stores through
+ * small integers (PSX_KUSEG, src/compat/port_prefix.h). The arena's own first
+ * KB is the scratchpad, so they can't go there. */
+unsigned char g_psx_kernel_ram[0x10000];
 
 #if defined(__linux__)
 #include <sys/mman.h>
