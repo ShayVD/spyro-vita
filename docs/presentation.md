@@ -36,6 +36,8 @@ The presenter queue shows one captured frame per vblank. Real frames land on the
 
 ### Projection: the camera matrix, not the GTE
 
+(The environment renderer's sector tests use the view matrix instead; they're narrowed separately, see [Fixes from the first hardware test](#fixes-from-the-first-hardware-test-2026-10-30).)
+
 D2 planned to scale X in RTPS/RTPT. The prototype found a better place: the projection matrix.
 
 - `CameraUpdateMatrices` (`camera.c`) builds `g_Camera.m_ProjectionMatrix` from the view matrix, scaling the Y row by 320/512 for the 4:3 TV. Widescreen scales the X row by 3/4 the same way (`PortProjectionHook`). That squeezes the 16:9 view into the 512 PS1 columns, which the display then stretches to 16:9.
@@ -137,6 +139,7 @@ What a pass writes beyond that is scratch the next real draw rewrites before any
 | The picture snapping between 16:9 and 4:3 | The presenter fell back to the PS1 display (drawn 4:3) whenever 4 vblanks passed without a new frame, which on the Vita happens on every slow tick. | It falls back only when the game drew outside `GamestateDraw` since the last frame (loading screens). A slow tick keeps the last frame. Vita3K in real time, with ~200 late vblanks per 300: 0 pictures from the 4:3 display (`logs/run33-vita3k-rt`). |
 | Scenery popping at the edges | With a hidden 4:3 logic draw, `func_800521C0` sorted mobys by the 4:3 draw's sector visibility (`D_800771C8`), so mobys in sectors only the 16:9 view shows were dropped. | Gone in normal play (one draw: logic, culling and picture share one view). In the two-draw form, the 16:9 passes keep their own copy of `D_800771C8` and the sector caches. No demo shot changed with it (39 compared). |
 | 20–26 fps with widescreen on | The hidden 4:3 draw (above). | One draw. |
+| Textures and geometry "loading in" at the left and right edges (second hardware test, main `d67e6fc`) | `r_environment` (`func_800258F0`) runs its per-sector frustum tests on the camera's **view** matrix (`g_Camera+0x14`), which widescreen didn't narrow. Its draw uses the projection matrix, which it did. So sectors only in the 16:9 strips stayed culled to the 4:3 view: their textured near geometry was missing, and parts of buildings floated over holes, until they reached the 4:3 area. | A mips2c `before` hint at `0x8002594C` (`PORT_WS_VIEW_ROW0`) narrows the X row of that view matrix by the same 3/4 as it goes into the GTE, so every X test in the sector loop sees the 16:9 frustum. Host: Artisans' castle tower at the right edge is whole again, and Stone Hill's wall keeps its detail (`logs/run41-compare/edge-zoom-before-after.png`). With features off, the trace and 110 shots are still byte-identical; with both on, the demos still match the oracle (`logs/run40-*`). |
 | "Stall" after each menu use | Not a stall: the game is paused while the menu is open, and the next stats window counts that time. Its extra presents are the menu redrawn at 60 Hz. | The log now says `menu: closed after N ms`. |
 
 ### Results

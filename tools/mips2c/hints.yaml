@@ -15,6 +15,14 @@ asm/renderers/r_particles.s:
 # Widescreen presentation (src/game/present.c, docs/presentation.md): HUD
 # models in func_80022A2C project with OFX = their screen x and a fixed
 # diag(1, 0.625, 1) matrix; narrow both. Identity while widescreen is off.
+# r_environment's per-sector frustum tests (func_800258F0) run on the camera's
+# VIEW matrix, not the projection matrix widescreen narrows: narrow its X row
+# too as it goes into the GTE, or sectors in the 16:9 strips stay culled to the
+# 4:3 view (their textured near geometry appeared only once they reached it).
+asm/renderers/r_environment.s:
+  before:
+    0x8002594C: "PORT_WS_VIEW_ROW0(t2, t3);"  # ctc2 $t3, C2_R13R21 (after R11R12)
+
 asm/renderers/r_moby.s:
   before:
     0x80022D2C: "at = PORT_WS_HUD_OFX(at);"   # ctc2 $at, C2_OFX
