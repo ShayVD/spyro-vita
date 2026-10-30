@@ -84,9 +84,12 @@ Files the app writes:
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
-| `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
-| `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
+| `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
+| `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
+| `menu_test=V` | tests without a controller: open the options menu at vblank V and press down, left, up, right, circle |
+
+**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen, 60 fps and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -230,9 +233,9 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    one per picture.
 5. Open the pause menu and the inventory: the background should be the game's frame in green.
 
-**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30), with the GPU build:
+**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default), with the GPU build:
 
-1. `config.txt`: `widescreen=1`, `interp=1`, `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
+1. `config.txt`: `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
    (title, and the first attract demo), `stats=1`. Leave it at the title until the demo plays
    (about 75 s).
 2. In the log: `present: widescreen 1, interp 1 (budget 26 ms), GPU capture`;
@@ -242,5 +245,7 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 3. The `shot-V-hd.png` files: the picture fills the 16:9 screen, upright, the HUD and the
    "DEMO MODE" letters keep their shape, and consecutive vblanks show different pictures.
 4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
-   right? Then `interp=1` alone (4:3) and `widescreen=1` alone, to see each one's cost in the
-   `time` and `present` lines.
+   right? Open the options menu (hold SELECT, press START): the panel is readable, the game is
+   paused behind it, and switching widescreen or 60 fps takes effect when it closes. Then try
+   60 fps alone (4:3) and widescreen alone, to see each one's cost in the `time` and `present`
+   lines.

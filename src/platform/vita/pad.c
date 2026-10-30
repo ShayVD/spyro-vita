@@ -197,13 +197,19 @@ static uint16_t read_mask(void) {
   return m;
 }
 
+/* The controller now, for the port's menu (menu.c). */
+uint16_t vita_pad_read(void) {
+  SDL_GameControllerUpdate();
+  return read_mask();
+}
+
 void vita_pad_vblank(void) {
   uint16_t m;
   int v = vita_vblank_count();
   while (s_next < s_nevents && s_events[s_next].vblank <= v)
     s_script = s_events[s_next++].mask;
   SDL_GameControllerUpdate();
-  m = read_mask() | s_script;
+  m = vita_menu_filter(read_mask()) | s_script; /* SELECT+START: the port's menu */
   if (m != s_last && g_vita_opts.stats > 1)
     vita_log("pad: buttons %04x", m);
   s_last = m;

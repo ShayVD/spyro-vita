@@ -108,6 +108,8 @@ static int real_vblanks(void) {
 
 void PsyX_WaitForTimestep(int count) {
   int target, n;
+  if (vita_menu_service())
+    s_vcount_base = -1; /* the game was paused: start counting again, no catch-up */
   if (!g_vita_opts.realtime) {
     while (count-- > 0)
       vblank();
