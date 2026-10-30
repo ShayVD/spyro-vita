@@ -28,4 +28,5 @@ target_include_directories(psycross PRIVATE "${PSYCROSS_DIR}/src")
 target_compile_definitions(psycross PRIVATE $<$<NOT:$<BOOL:${SPYRO_PSYCROSS_PLATFORM}>>:PSYX_NO_SDL>)
 target_compile_definitions(psycross PUBLIC
   USE_EXTENDED_PRIM_POINTERS=0 USE_PGXP=0)
-target_compile_options(psycross PRIVATE ${SPYRO_GUARD_FLAGS} -w)
+target_compile_options(psycross PRIVATE ${SPYRO_GUARD_FLAGS} -w
+  $<$<COMPILE_LANGUAGE:CXX>:-Wno-narrowing>)

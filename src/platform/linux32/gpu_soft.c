@@ -171,12 +171,26 @@ static uint16_t texel(int fmt, int bx, int by, int cx, int cy, int u, int v) {
 
 static inline int clamp8(int c) { return c < 0 ? 0 : c > 255 ? 255 : c; }
 
+/* n * 65536 / area (area > 0), truncated, low 32 bits: what
+ * (int32_t)((int64_t)n * 65536 / area) gives, but with 32-bit divisions
+ * where they suffice (the Vita's Cortex-A9 divides in software, and a 64-bit
+ * division costs several 32-bit ones). n = q * area + r with r of n's sign,
+ * so n * 65536 / area = q * 65536 + r * 65536 / area exactly. */
+static int32_t div16(int32_t n, int area) {
+  int32_t q, r;
+  if (area >= 32768)
+    return (int32_t)((int64_t)n * 65536 / area);
+  q = n / area;
+  r = n % area;
+  return (int32_t)((uint32_t)q * 65536u + (uint32_t)(r * 65536 / area));
+}
+
 /* 16.16 plane gradients of a over the triangle (x relative to vertex 0). */
 static void gradients(int a0, int a1, int a2, int X1, int Y1, int X2, int Y2,
                       int area, int32_t *dx, int32_t *dy) {
   int d1 = a1 - a0, d2 = a2 - a0;
-  *dx = (int32_t)((int64_t)(d1 * Y2 - d2 * Y1) * 65536 / area);
-  *dy = (int32_t)((int64_t)(d2 * X1 - d1 * X2) * 65536 / area);
+  *dx = div16(d1 * Y2 - d2 * Y1, area);
+  *dy = div16(d2 * X1 - d1 * X2, area);
 }
 
 static void raster_tri(const GrVertex *v0, const GrVertex *v1,
