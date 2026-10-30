@@ -896,9 +896,11 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
 /* s_vbuf -> s_xbuf (D36). A polygon's vertices carry the vertex cache's
  * answer (psx_vcache.h): its exact position (subpixel=1), and its depth as w
  * when every vertex of the polygon was found (persp=1). Polygons are
- * filtered (tex_filter=), clamped to each triangle's UV box: the texels
- * from its lowest u, v to one below its highest, the last texel a PS1 quad
- * with u1 = u0 + width samples. Sprites and tiles keep the nearest texel. */
+ * filtered (tex_filter=), clamped to each triangle's UV box, its lowest to
+ * its highest u and v: Spyro's polygons give their texture's last texel as
+ * the far corner (a 32-texel texture is u0..u0+31; logs/run14-host-tridump),
+ * and a triangle has two opposite corners of its quad. Sprites and tiles keep
+ * the nearest texel. */
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
@@ -912,8 +914,6 @@ static void expand(int count) {
       u1 = v[k].u > u1 ? v[k].u : u1;
       v1 = v[k].v > v1 ? v[k].v : v1;
     }
-    u1 = u1 > u0 ? u1 - 1 : u0;
-    v1 = v1 > v0 ? v1 - 1 : v0;
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
       VCacheVert cv;
