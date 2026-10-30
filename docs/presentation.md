@@ -209,18 +209,29 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 | `src/game/present.c/.h` | everything else | |
 | `src/platform/linux32` | flags, 960×544 output (`png.c`), presenter per vblank (`vblank.c`) | `--out960` off: old output path |
 
-## For the Vita (M3/M4)
+## On the Vita
 
-- The Vita target builds with this code (VPK checked after merging M3); nothing there calls the presenter yet, so its picture is unchanged.
-- The platform calls `port_present_frame()` once per vblank. When it returns a frame, show that instead of the PS1 display rect, 16:9 if `port_present_frame_is_wide()`. Set `g_present` from a menu or config file.
-- With the CPU rasteriser (`gpu_soft.c`), the capture is a `StoreImage` of the drawn area, as on the host. With a vitaGL backend, a presentation pass should render into its own target instead (no readback), and 960×544 can be the render resolution. Integer PS1 coordinates then show as wobble at high resolution; that's the existing "sub-pixel later" item.
-- `present.c` reads `g_LevelMobys` and `g_Camera` as C pointers into the arena, as `trace.c` does. Check that this holds with the Vita arena (D25) on the Vita.
-- Keep the presenter's real-frame-first ordering. If a tick takes more than 2 vblanks (`g_DeltaTime` 3–4), the in-between frame is still at ½, and the last frame repeats. Blending at ⅓ and ⅔ would need the tick length ahead of time.
+Wired in on 2026-10-30. `config.txt` keys: `widescreen=1`, `interp=1` (`2` without animation, `3` camera only) and `interp_budget=MS` (default 26). The user's guide is `docs/vita-testing.md`.
+
+- **gpu=1 (vitaGL):** a presentation pass draws into the renderer's targets as usual. Then `present.c`'s capture interface (`g_present_capture`) has `gpu_gl.c` copy those targets on the GPU into one of 7 textures (6 slots plus staging; filing a frame swaps handles). There's no readback and no replay, and the present draws the slot texture full width or 4:3. With widescreen on, the targets render 960 wide (`set_scale`), so frames are captured at 960×544.
+- **gpu=0 (software rasteriser):** the capture is `StoreImage`, as on the host. `video.c` uploads the 512×240 frame and SDL scales it.
+- **Pacing:** the presenter takes one frame per picture shown (`vita_video_present`). Real frames land where the original's would.
+- **Budget:** `interp_budget` uses the platform clock (`sceKernelGetProcessTimeWide`). Before a tick's in-between pass, it checks that the last tick's game CPU time without the in-between frame, plus that frame's last cost, fits. VSync waits (SPU mix, present, display wait) don't count. If it doesn't fit, the tick shows its real frame twice instead of running late. Running late would make the game's own `g_DeltaTime` jump (D28).
+
+Checked in Vita3K (not hardware):
+
+| Run | Result |
+|---|---|
+| `gpu=0 widescreen=1 interp=1 interp_budget=0`, Stone Hill demo, vblanks 4396–4419 (`logs/run21-vita3k-soft-nobudget`) | every Vita frame, real and in-between, byte-identical to the host's (`--present-native`, `logs/run19-host-native`), one vblank apart: the Vita's shot is taken before that VSync's present |
+| the same with the default budget (`logs/run20-vita3k-soft`) | real frames identical to the host's; the in-between frames were all skipped, because Vita3K runs the CPU path far slower than a Vita |
+| `gpu=1 widescreen=1 interp=1` (`logs/run22-vita3k-gpu`, `run23-vita3k-gpu-wide`) | runs to vblank 9,600: 300 presents per 300 vblanks, an in-between frame in every tick (150/150), no VRAM uploads or readbacks added, no GL errors, frames 960×544 |
+
+**Not yet seen:** the GPU-path picture itself. Vita3K returns zeros for anything read back from the GPU, and `shot_hd=1` only works on hardware. So orientation, edges and the HUD under `gpu=1` wait for the hardware test in `docs/vita-testing.md`. The software path's frames are the host's, byte for byte.
 
 ## Follow-ups
 
-1. Wire the presenter into the Vita platform (the Vita GPU renderer session has the notes) and measure on hardware.
-2. Adaptive in-between frame: skip it when the last tick's CPU time leaves too little headroom (hardware estimate above).
+1. Hardware test of the Vita build (`docs/vita-testing.md`): picture under `gpu=1`, the in-between frame rate per scene, and a tuned `interp_budget` default.
+2. An in-game option for both switches (now `config.txt` only).
 3. Flame, line-particle end points and the HUD counters' spin at 60 fps.
 4. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
 5. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.
