@@ -383,6 +383,7 @@ Order matters: each step runs before the next starts.
 - [x] Collecting gems in Artisans itself: four red gems on the stone platform by the waterfall pool (`logs/run9-gems`). Supercharge isn't in Artisans (no type-4 surface).
 - [ ] Not shown by a run yet: a human playing through the whole homeworld.
 - [x] Readable hand-written C for pete and camera started (for M4's interpolation): `func_80033F08` (camera) and `func_80049FAC` (pete) replace their mips2c units and match the oracle. The rest continue in M3/M4.
+- [x] More hand-written pete and camera C (decisions D33): the flame `func_80048D10`, the camera collision `func_80034480` and state switch `func_800357A4`, and all of the pete physics `func_80043FE4` except its flying-ability phases, which still run the mips2c unit. All match the oracle (`logs/run10-handcov`) and both attract demos. Still mips2c: pete `func_8003EA68`, `func_8003FE40`, `func_80041670`, `func_80047B60`; camera `func_80034CE8`, `func_80035FB4`.
 
 ## 9c. Whole game on the host (2026-10-30, groundwork for M4)
 

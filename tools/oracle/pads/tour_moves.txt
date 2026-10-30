@@ -1,0 +1,25 @@
+# Played on repeat during each level-tour stay (capture.lua ORACLE_TOUR_PAD):
+# run, flame on the run, charge, jump and glide, turn, flame standing, look,
+# rotate the camera. Offsets in vblanks within the period.
+0 up
+40 up+circle
+46 up
+80 up+square
+150 up+cross
+158 up
+170 up+cross
+176 up
+230 up+left
+260 left
+270 circle
+276 none
+300 triangle
+340 none
+350 l1
+370 none
+380 r2
+400 none
+410 down
+440 down+circle
+446 none
+470 loop
