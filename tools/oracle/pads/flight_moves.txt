@@ -1,0 +1,21 @@
+# Played on repeat during level-tour stays in the flight levels
+# (capture.lua ORACLE_TOUR_PAD with ORACLE_FLIGHT_STAY): a loop (R1), turn,
+# a turn-around (L1), bank both ways, dive and climb a little, so the
+# flying-ability phases of Spyro's physics (func_80043FE4) run. Climbing
+# well over the flight ceiling stalls him (state 6) into the water.
+# Offsets in vblanks.
+0 none
+60 r1
+66 none
+200 left
+250 none
+280 l1
+286 none
+400 right
+440 up
+455 down
+470 none
+540 right+r1
+546 right
+580 none
+600 loop

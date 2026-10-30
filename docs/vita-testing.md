@@ -80,7 +80,7 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `res=native` | GPU: the resolution it draws at (decisions D38). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `res=native` | GPU: the resolution it draws at (decisions D39). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
 | `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
@@ -290,7 +290,7 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    60 fps alone (4:3) and widescreen alone, to see each one's cost in the `time` and `present`
    lines.
 
-**Testing the render resolution** (`res=`, decisions D38), with the GPU build:
+**Testing the render resolution** (`res=`, decisions D39), with the GPU build:
 
 1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 960x508` (16:9,
    the default) or `726x508` (`widescreen=0`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
@@ -300,13 +300,13 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    and no light line along the left or top edge of the 4:3 picture during fades.
 3. Lose all lives once (or skip it): the frozen frame that darkens before GAME OVER should be as
    sharp as the game was, not blocky.
-4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D38 with
+4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D39 with
    `gpu_res=1` (softer, PS1 pixels scaled up). Compare `busy`, `P pictures` and the `timed frame`
    line with the default.
 5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
    and how big G gets.
 
-### The render resolution (D38, branch `claude/recursing-wilbur-baad6f`)
+### The render resolution (D39, branch `claude/recursing-wilbur-baad6f`)
 
 Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "old" = main
 `4ced09a` (with PR #12) and "new" = this branch, `realtime=0` unless noted. Logs in `logs/`:

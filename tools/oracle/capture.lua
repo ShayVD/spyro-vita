@@ -4,7 +4,9 @@
 -- $ORACLE_FROM on (options, to reach a function's other paths: n=N and gap=G
 -- override those two; key=ADDR:SIZE gives each value of that RAM word its own
 -- budget of N, such as one per Spyro state; if=ADDR:SIZE!=V or =V samples only
--- calls where it holds; SIZE is 1, 2 or 4 bytes, signed): the machine state on entry (NAME_K.in) and when the call
+-- calls where it holds; SIZE is 1, 2 or 4 bytes, signed; several key= give
+-- each combination of values its own budget, several if= must all hold):
+-- the machine state on entry (NAME_K.in) and when the call
 -- returns to its caller with the same $sp (NAME_K.out). The host replays each
 -- .in through its translated C and compares with .out (spyro --replay,
 -- tools/oracle/replay.sh). Quits at vblank $ORACLE_TO. With $ORACLE_TRACE,
@@ -200,12 +202,15 @@ for line in (funcs and io.lines(funcs) or function() end) do
     for k, v in opts:gmatch('(%w+)=(%S+)') do
       if k == 'n' then st.max = tonumber(v)
       elseif k == 'gap' then st.gap = tonumber(v)
-      elseif k == 'key' then st.key = ramword(v)
+      elseif k == 'key' then
+        local get, prev = ramword(v), st.key
+        st.key = prev and function() return prev() .. ',' .. get() end or get
       elseif k == 'gs' then st.gs = tonumber(v)
       elseif k == 'if' then
         local w, op, val = v:match('^(%x+:[124])(!?=)(%-?%d+)$')
-        local get, want = ramword(w), tonumber(val)
-        st.cond = op == '=' and function() return get() == want end or function() return get() ~= want end
+        local get, want, prev = ramword(w), tonumber(val), st.cond
+        local c = op == '=' and function() return get() == want end or function() return get() ~= want end
+        st.cond = prev and function() return prev() and c() end or c
       end
     end
     st.any_sp = opts:match('%f[%w]anysp%f[%W]') ~= nil
@@ -314,6 +319,9 @@ end
 local tour = {}
 for v in (os.getenv('ORACLE_TOUR') or ''):gmatch('[%w]+') do tour[#tour + 1] = tonumber(v) or v end
 local tour_stay = tonumber(os.getenv('ORACLE_TOUR_STAY') or '300')
+-- $ORACLE_FLIGHT_STAY (default 60) raises the flight levels' cap, for a
+-- $ORACLE_TOUR_PAD that keeps Spyro flying (tools/oracle/pads/flight_moves.txt).
+local flight_stay = tonumber(os.getenv('ORACLE_FLIGHT_STAY') or '60')
 -- While staying in a level, $ORACLE_TOUR_PAD ("OFFSET buttons" lines, then
 -- "PERIOD loop") plays a pad pattern on repeat, and $ORACLE_TOUR_POKE
 -- ("ADDR=VALUE,...", 32-bit words) is written once, 60 vblanks in.
@@ -391,7 +399,7 @@ local function tour_step(gs, level)
   if t == 60 then
     for _, p in ipairs(tour_poke) do ffi.cast('int32_t*', mem + p[1])[0] = p[2] end
   end
-  local stay = (level % 10 == 5) and math.min(tour_stay, 60) or tour_stay
+  local stay = (level % 10 == 5) and math.min(tour_stay, flight_stay) or tour_stay
   if t < stay then
     if tour_period > 0 and tour_pad[t % tour_period] then setpad(tour_pad[t % tour_period]) end
     return

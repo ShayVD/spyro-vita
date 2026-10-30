@@ -9,7 +9,7 @@
  *     texel 0 transparent, STP), as PsyX_render.cpp's shaders do.
  *   - Each draw area the game draws into (Spyro: its two 512x224 buffers) is
  *     a "target": an FBO covering that VRAM rect at a higher resolution
- *     (config.txt res=: the screen's pixels by default, decisions D38).
+ *     (config.txt res=: the screen's pixels by default, decisions D39).
  *     Inside its rect a target is newer than s_vram; LoadImage/MoveImage into
  *     it are drawn into it too (a MoveImage from another target at the
  *     targets' resolution), ClearImage clears both.

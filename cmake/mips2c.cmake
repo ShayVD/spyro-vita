@@ -19,14 +19,26 @@ list(APPEND M2C_UNITS ${m2c_nonmatching})
 set(M2C_HAND
   asm/nonmatchings/camera/func_80033F08.s
   asm/nonmatchings/camera/func_80034480.s
+  asm/nonmatchings/camera/func_80034CE8.s
   asm/nonmatchings/camera/func_800357A4.s
+  asm/nonmatchings/camera/func_80035FB4.s
+  asm/nonmatchings/pete/func_8003EA68.s
+  asm/nonmatchings/pete/func_8003FE40.s
+  asm/nonmatchings/pete/func_80041670.s
+  asm/nonmatchings/pete/func_80043FE4.s
+  asm/nonmatchings/pete/func_80047B60.s
   asm/nonmatchings/pete/func_80048D10.s
   asm/nonmatchings/pete/func_80049FAC.s)
 # A/B tests: functions listed here (or "all") build from the mips2c unit
 # instead, and their hand C compiles out (M2C_<name>=1).
 set(SPYRO_M2C_FUNCS "" CACHE STRING
   "Hand-written functions to take from mips2c instead (names, or all)")
+# Differential sweeps (oracle_replay.c SPYRO_REPLAY_SWEEP) need a reference:
+# SPYRO_M2C_REF=ON also links each hand-written function's mips2c unit,
+# renamed <name>_gen, and lists it in hand_index.c's m2c_gen_index.
+option(SPYRO_M2C_REF "Link the mips2c units of hand-written functions as <name>_gen" OFF)
 set(M2C_HAND_DEFS)
+set(M2C_REF_UNITS)
 foreach(u ${M2C_HAND})
   get_filename_component(f "${u}" NAME_WE)
   if(SPYRO_M2C_FUNCS STREQUAL "all" OR f IN_LIST SPYRO_M2C_FUNCS)
@@ -34,13 +46,21 @@ foreach(u ${M2C_HAND})
   else()
     list(APPEND M2C_HAND_DEFS M2C_${f}=0)
     list(REMOVE_ITEM M2C_UNITS ${u})
+    if(SPYRO_M2C_REF)
+      list(APPEND M2C_REF_UNITS ${u})
+    endif()
   endif()
 endforeach()
+if(SPYRO_M2C_REF)
+  list(APPEND M2C_HAND_DEFS M2C_REF=1)
+else()
+  list(APPEND M2C_HAND_DEFS M2C_REF=0)
+endif()
 
 # Partly hand-written: the hand C handles what it covers and calls the mips2c
-# unit, renamed <name>_gen, for the rest (docs/translation-log.md).
-set(M2C_PARTIAL
-  asm/nonmatchings/pete/func_80043FE4.s)
+# unit, renamed <name>_gen, for the rest (docs/translation-log.md). None at
+# the moment (func_80043FE4 was, until its flying-ability phases).
+set(M2C_PARTIAL)
 set(M2C_PARTIAL_DEFS)
 foreach(u ${M2C_PARTIAL})
   get_filename_component(f "${u}" NAME_WE)
@@ -73,7 +93,28 @@ add_custom_command(OUTPUT ${M2C_OUTS}
   DEPENDS ${M2C_DEPS}
   COMMENT "mips2c: translating decomp asm to C")
 
-add_library(spyro_game_m2c OBJECT ${M2C_OUTS})
+# The reference units go to their own directory, with an index nothing
+# compiles: m2c_index.c must not name their entry points. One mips2c run per
+# unit, so their calls to other hand-written functions take the C entry (a
+# batch would call its own units' register entries, <name>__m2c).
+set(M2C_REF_OUTS)
+foreach(u ${M2C_REF_UNITS})
+  get_filename_component(f "${u}" NAME_WE)
+  string(REGEX REPLACE "^asm/" "" n "${u}")
+  string(REGEX REPLACE "\\.s$" "" n "${n}")
+  string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
+  set(o "${GEN_DIR}/mips2c-ref/m2c_${n}.c")
+  list(APPEND M2C_REF_OUTS "${o}")
+  list(APPEND M2C_PARTIAL_DEFS "${o}" "${f}=${f}_gen|${f}__m2c=${f}_gen__m2c")
+  add_custom_command(OUTPUT "${o}"
+    COMMAND "${Python3_EXECUTABLE}" "${M2C_TOOL}" --root "${S1_DIR}"
+      --out-dir "${GEN_DIR}/mips2c-ref" --hints "${M2C_HINTS}"
+      --index "${GEN_DIR}/mips2c-ref/${f}_index.c" ${u}
+    DEPENDS "${M2C_TOOL}" "${M2C_HINTS}" "${S1_DIR}/${u}"
+    COMMENT "mips2c: ${f} as a reference for differential sweeps")
+endforeach()
+
+add_library(spyro_game_m2c OBJECT ${M2C_OUTS} ${M2C_REF_OUTS})
 while(M2C_PARTIAL_DEFS)
   list(POP_FRONT M2C_PARTIAL_DEFS src defs)
   string(REPLACE "|" ";" defs "${defs}")

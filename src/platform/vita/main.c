@@ -29,7 +29,7 @@
  *                       the 4:3 picture is 726x544 screen pixels, 16:9 is
  *                       960x544); res=ps1 (or 1): at the PS1's own 512x240,
  *                       scaled up when shown (filter=); res=N, 2..4: N times
- *                       the PS1's, scaled down when shown (D38). gpu_res=
+ *                       the PS1's, scaled down when shown (D39). gpu_res=
  *                       is the old name.
  *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
