@@ -85,6 +85,12 @@ unsigned int port_ws_hud_ofx(unsigned int ofx) {
   return (unsigned int)((SCREEN_CX << 16) + d * WS_NUM / WS_DEN);
 }
 
+unsigned int port_ws_r1112(unsigned int r11r12) {
+  short r11 = (short)(r11r12 & 0xFFFF), r12 = (short)(r11r12 >> 16);
+  return (unsigned short)(r11 * WS_NUM / WS_DEN) |
+         (unsigned int)(unsigned short)(r12 * WS_NUM / WS_DEN) << 16;
+}
+
 unsigned int port_ws_hud_r11(unsigned int r11r12) {
   short r11 = (short)(r11r12 & 0xFFFF);
   return (r11r12 & 0xFFFF0000u) | (unsigned short)(r11 * WS_NUM / WS_DEN);
