@@ -292,8 +292,8 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 
 **Testing the render resolution** (`res=`, decisions D38), with the GPU build:
 
-1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 725x508` (4:3)
-   or `960x508` (with `widescreen=1`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
+1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 960x508` (16:9,
+   the default) or `725x508` (`widescreen=0`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
    ms` line every 300 vblanks. G is the GPU's cost beyond the CPU's; near 0 means the GPU keeps up.
 2. Look at the boot logos (Sony, Universal: are they there, sharp and centred?), the title's
    PRESS START and the HUD in Artisans: letters should have hard edges, no soft or doubled rows,
