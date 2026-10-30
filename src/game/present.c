@@ -53,9 +53,13 @@ int g_present_narrow; /* projection narrowed to 3/4 (camera matrix, HUD) */
 
 int port_present_active(void) { return g_present.widescreen || g_present.interp; }
 
-static long long now_us(void) {
+static long long clock_cpu_us(void) {
   return (long long)clock() * 1000000 / CLOCKS_PER_SEC;
 }
+
+long long (*g_present_clock_us)(void) = clock_cpu_us;
+
+static long long now_us(void) { return g_present_clock_us(); }
 
 /* ---------- projection (camera.c, draw.c and r_moby's HUD path) ---------- */
 
@@ -240,13 +244,20 @@ static void unsqueeze_2d(void) {
 
 /* ---------- presenter: captured frames, shown one per vblank ---------- */
 
+/* A ring of PRESENT_SLOTS frames: up to QUEUE waiting and the one on
+ * screen. Without a
+ * platform capture (g_present_capture NULL) a slot holds the pixels
+ * (StoreImage of the drawn area); with one (the Vita's GPU renderer) the
+ * platform keeps the picture in its own slot and we only number them. */
 #define QUEUE 4
-static uint16_t s_frames[QUEUE][PRESENT_W * PRESENT_H];
-static uint8_t s_frame_wide[QUEUE];
-static int s_qhead, s_qcount; /* oldest queued frame, number queued */
-static uint16_t s_shown[PRESENT_W * PRESENT_H];
-static int s_shown_wide, s_have_shown;
+static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H];
+static uint8_t s_frame_wide[PRESENT_SLOTS];
+static int s_qhead, s_qcount; /* oldest queued slot, number queued */
+static int s_shown = -1;      /* slot on screen */
+static int s_popped;          /* the last port_present_frame_slot() took a new one */
 static int s_last_push_vblank = -1000;
+
+const PresentCapture *g_present_capture;
 
 static uint16_t s_capture[PRESENT_W * PRESENT_H];
 static int s_captured, s_capture_on;
@@ -257,7 +268,10 @@ static void capture_now(void) {
   r.y = activeDrawEnv.ofs[1];
   r.w = PRESENT_W;
   r.h = PRESENT_H;
-  StoreImage(&r, (u_long *)s_capture);
+  if (g_present_capture)
+    g_present_capture->capture(r.x, r.y, r.w, r.h);
+  else
+    StoreImage(&r, (u_long *)s_capture);
   s_captured = 1;
 }
 
@@ -267,34 +281,58 @@ static void push_capture(int wide) {
     return;
   s_captured = 0;
   if (s_qcount == QUEUE) { /* drop the oldest */
-    s_qhead = (s_qhead + 1) % QUEUE;
+    s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
   }
-  slot = (s_qhead + s_qcount) % QUEUE;
-  memcpy(s_frames[slot], s_capture, sizeof s_capture);
+  /* This may be the slot on screen (after a run of drops); harmless: the
+   * queue isn't empty now, so the next vblank shows a newer slot. */
+  slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
+  if (g_present_capture)
+    g_present_capture->commit(slot);
+  else
+    memcpy(s_frames[slot], s_capture, sizeof s_capture);
   s_frame_wide[slot] = (uint8_t)wide;
   s_qcount++;
   s_last_push_vblank = PsyX_Sys_GetVBlankCount();
 }
 
-const uint16_t *port_present_frame(void) {
+int port_present_frame_slot(void) {
   if (!port_present_active())
-    return NULL;
+    return -1;
+  s_popped = s_qcount > 0;
   if (s_qcount > 0) {
-    memcpy(s_shown, s_frames[s_qhead], sizeof s_shown);
-    s_shown_wide = s_frame_wide[s_qhead];
-    s_qhead = (s_qhead + 1) % QUEUE;
+    s_shown = s_qhead;
+    s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
-    s_have_shown = 1;
   }
   /* Nothing presented lately (boot logos, loading, code that draws from
    * GamestateUpdate): show the PS1 display. */
-  if (!s_have_shown || PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
-    return NULL;
+  if (s_shown < 0 || PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+    return -1;
   return s_shown;
 }
 
-int port_present_frame_is_wide(void) { return s_shown_wide; }
+const uint16_t *port_present_slot_pixels(int slot) {
+  return slot < 0 || slot >= PRESENT_SLOTS || g_present_capture ? NULL : s_frames[slot];
+}
+
+const uint16_t *port_present_shown_pixels(void) {
+  if (s_shown < 0 || g_present_capture ||
+      PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+    return NULL;
+  return s_frames[s_shown];
+}
+
+const uint16_t *port_present_frame(void) {
+  int slot = port_present_frame_slot();
+  return slot < 0 || g_present_capture ? NULL : s_frames[slot];
+}
+
+int port_present_frame_new(void) { return s_popped; }
+
+int port_present_frame_is_wide(void) {
+  return s_shown >= 0 && s_frame_wide[s_shown];
+}
 
 /* ---------- PsyCross hooks ---------- */
 
@@ -326,13 +364,19 @@ static int pass_vsync(int mode) {
   return PsyX_Sys_GetVBlankCount() + 1000;
 }
 
-/* --present-stats: LIBETC's VSync, timing the waits (the host mixes audio
- * and writes screenshots there) so the draw cost can leave them out. */
-static int stats_vsync(int mode) {
+/* LIBETC's VSync, timing the waits (the host mixes audio and writes
+ * screenshots there; the Vita mixes, presents and waits for the display) so
+ * the game's own CPU time can leave them out: --present-stats and
+ * interp_budget_us. */
+static long long s_tick_vsync_us;
+
+static int timed_vsync(int mode) {
   if (mode == 0) {
-    long long t = now_us();
+    long long t = now_us(), d;
     PsyX_WaitForTimestep(1);
-    g_present_stats.us_vsync += now_us() - t;
+    d = now_us() - t;
+    g_present_stats.us_vsync += d;
+    s_tick_vsync_us += d;
   }
   return PsyX_Sys_GetVBlankCount();
 }
@@ -671,7 +715,7 @@ static long long s_t_update;
 void PortPresentBeforeUpdate(void) {
   long long t;
   int i;
-  if (g_present.stats)
+  if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
   if (!g_present.interp)
     return;
@@ -828,6 +872,9 @@ static int blend_state(void) {
 
 /* ---------- passes ---------- */
 
+/* interp_budget_us bookkeeping (PortPresentDraw) */
+static long long s_busy_wo_interp, s_interp_cost;
+
 /* Runs one pass and leaves its picture in s_capture; the caller queues it. */
 static void presentation_pass(int wide) {
   long long t = now_us();
@@ -851,16 +898,17 @@ static void presentation_pass(int wide) {
 
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp;
-  long long t;
+  int wide_pass, logic_wide, interp, timed;
+  long long t, t_interp = 0;
   if (g_present.stats) {
     g_present_stats.us_update += now_us() - s_t_update;
     g_present_stats.ticks++;
   }
+  timed = g_present.stats || g_present.interp_budget_us;
   if (!port_present_active()) {
     if (g_present.stats) {
       t = now_us();
-      g_psyxVSyncHook = stats_vsync;
+      g_psyxVSyncHook = timed_vsync;
       GamestateDraw();
       g_psyxVSyncHook = NULL;
       g_present_stats.logic_passes++;
@@ -878,9 +926,19 @@ void PortPresentDraw(void) {
   interp = g_present.interp && can_interp();
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
+  /* interp_budget_us: the last tick's game CPU time without the in-between
+   * frame, plus what that frame cost when it last ran, must fit. Otherwise
+   * this tick shows its real frame for both vblanks (30 fps for a moment)
+   * instead of running late, which would slow the game itself (D28). */
+  if (interp && g_present.interp_budget_us &&
+      s_busy_wo_interp + s_interp_cost > g_present.interp_budget_us) {
+    interp = 0;
+    g_present_stats.budget_skips++;
+  }
   if (interp || wide_pass) {
     snap_take();
     if (interp) {
+      t_interp = now_us();
       long long tb = now_us();
       int blended = blend_state();
       g_present_stats.us_blend += now_us() - tb;
@@ -892,6 +950,8 @@ void PortPresentDraw(void) {
         g_present_stats.skipped_interp++;
       }
       snap_restore();
+      t_interp = now_us() - t_interp;
+      s_interp_cost = t_interp;
     }
     if (wide_pass) {
       presentation_pass(1); /* queued after the logic pass, below */
@@ -901,8 +961,9 @@ void PortPresentDraw(void) {
 
   /* The logic pass: the game's own draw, side effects and all. */
   t = now_us();
-  if (g_present.stats)
-    g_psyxVSyncHook = stats_vsync;
+  s_tick_vsync_us = 0;
+  if (timed)
+    g_psyxVSyncHook = timed_vsync;
   s_suppress_ot = wide_pass;
   g_present_narrow = logic_wide;
   s_record_2d = logic_wide;
@@ -918,4 +979,6 @@ void PortPresentDraw(void) {
   push_capture(wide_pass || logic_wide);
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t;
+  if (g_present.interp_budget_us)
+    s_busy_wo_interp = now_us() - s_t_update - s_tick_vsync_us - t_interp;
 }

@@ -135,9 +135,9 @@ static uint8_t *ps1_display_rgb(int *pw, int *ph) {
 #define OUT_W 960
 #define OUT_H 544
 
-static const uint16_t *s_present; /* this vblank's presentation frame */
-
-void host_present_vblank(void) { s_present = port_present_frame(); }
+/* linux32: one presentation frame per vblank (the Vita takes them when it
+ * presents, video.c and gpu_gl.c). */
+void host_present_vblank(void) { (void)port_present_frame(); }
 
 /* Bilinear scale of src (sw x sh RGB) into the dst rectangle x0..x0+w. */
 static void scale_into(uint8_t *dst, int x0, int w, const uint8_t *src, int sw,
@@ -168,15 +168,22 @@ static void scale_into(uint8_t *dst, int x0, int w, const uint8_t *src, int sw,
 uint8_t *host_display_rgb(int *pw, int *ph) {
   uint8_t *src, *out;
   int sw, sh, wide = 0, i;
-  if (!g_host_opts.out960)
-    return ps1_display_rgb(pw, ph);
-  if (s_present) {
+  const uint16_t *px = g_host_opts.out960 ? port_present_shown_pixels() : NULL;
+  if (!px)
+    if (!g_host_opts.out960 || g_host_opts.out960 == 2)
+      return ps1_display_rgb(pw, ph);
+  if (px) {
     sw = PRESENT_W, sh = PRESENT_H;
     src = malloc((size_t)sw * sh * 3);
     for (i = 0; i < sw * sh; i++) {
-      src[i * 3 + 0] = c5to8(s_present[i] & 31);
-      src[i * 3 + 1] = c5to8((s_present[i] >> 5) & 31);
-      src[i * 3 + 2] = c5to8((s_present[i] >> 10) & 31);
+      src[i * 3 + 0] = c5to8(px[i] & 31);
+      src[i * 3 + 1] = c5to8((px[i] >> 5) & 31);
+      src[i * 3 + 2] = c5to8((px[i] >> 10) & 31);
+    }
+    if (g_host_opts.out960 == 2) { /* --present-native: the frame as drawn */
+      *pw = sw;
+      *ph = sh;
+      return src;
     }
     wide = port_present_frame_is_wide();
   } else {
