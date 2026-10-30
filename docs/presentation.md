@@ -1,6 +1,6 @@
 # Presentation: 16:9 widescreen and 60 fps over 30 Hz logic
 
-Prototype on the linux32 host (2026-10-30). Both features are optional, and off is the default. With both off, nothing in this document runs: the attract demos match the oracle tick for tick, and every screenshot is byte-identical to a build without this code. With them on, the logic trace is still identical; only the picture changes. Code: `src/game/present.c`, plus hooks listed under [What changed](#what-changed). Decision: D26 in `docs/decisions.md`.
+Prototype on the linux32 host (2026-10-30). Both features are optional, and off is the default. With both off, nothing in this document runs: the attract demos match the oracle tick for tick, and every screenshot is byte-identical to a build without this code. With them on, the logic trace is still identical; only the picture changes. Code: `src/game/present.c`, plus hooks listed under [What changed](#what-changed). Decision: D30 in `docs/decisions.md`.
 
 ## Switches (linux32 host)
 
@@ -185,7 +185,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 - The platform calls `port_present_frame()` once per vblank. When it returns a frame, show that instead of the PS1 display rect, 16:9 if `port_present_frame_is_wide()`. Set `g_present` from a menu or config file.
 - With the CPU rasteriser (`gpu_soft.c`), the capture is a `StoreImage` of the drawn area, as on the host. With a vitaGL backend, a presentation pass should render into its own target instead (no readback), and 960×544 can be the render resolution. Integer PS1 coordinates then show as wobble at high resolution; that's the existing "sub-pixel later" item.
-- `present.c` reads `g_LevelMobys` and `g_Camera` as C pointers into the arena, as `trace.c` does. Check that this holds with the D24 arena on the Vita.
+- `present.c` reads `g_LevelMobys` and `g_Camera` as C pointers into the arena, as `trace.c` does. Check that this holds with the Vita arena (D25) on the Vita.
 - Keep the presenter's real-frame-first ordering. If a tick takes more than 2 vblanks (`g_DeltaTime` 3–4), the in-between frame is still at ½, and the last frame repeats. Blending at ⅓ and ⅔ would need the tick length ahead of time.
 
 ## Follow-ups

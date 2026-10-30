@@ -265,6 +265,14 @@ class Translator:
             raise Fail(f"bad immediate {s}")
         return cnum(v)
 
+    def arena_tag(self, k):
+        """hints `arena_tags: true`: the unit's 0x8N000000 constants are OT tags
+        (len << 24 | 0x80000000) that the code XORs with arena pointers to cancel
+        bit 31 (r_cyclorama.s, r_shadows.s, r_particles.s), so they must carry
+        the arena's own top byte. GP0 commands such as 0xE1000000 are left alone."""
+        return (self.hints.get(self.u.rel, {}).get("arena_tags")
+                and (k & 0xF0FFFFFF) == 0x80000000)
+
     def mem(self, s):
         """`off($base)` -> C address expression."""
         m = re.match(r"^(.*)\((\$\w+)\)$", s.strip())
@@ -351,6 +359,9 @@ class Translator:
             s = a[1].strip()
             m = re.match(r"^%hi\((.*)\)$", s)
             if m:
+                k = eval_num(m.group(1))
+                if k is not None and self.arena_tag(k):
+                    return f"{d} = MIPS_ARENA_TAG({cnum(k)});"
                 return f"{d} = {self.imm(s)};"
             v = eval_num(s)
             if v is None:
@@ -358,6 +369,8 @@ class Translator:
             v &= 0xFFFF
             if v == 0x1F80:
                 return f"{d} = MIPS_SCRATCH_HI; /* scratchpad */"
+            if self.arena_tag(v << 16):
+                return f"{d} = MIPS_ARENA_TAG({cnum(v << 16)});"
             return f"{d} = {cnum(v << 16)};"
         if op == "li":
             d = self.dst(a[0])

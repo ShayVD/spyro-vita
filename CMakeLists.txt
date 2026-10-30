@@ -27,6 +27,22 @@ file(MAKE_DIRECTORY "${GEN_DIR}")
 
 # Flags that guard behaviour on every target (decisions D6).
 set(SPYRO_GUARD_FLAGS -funsigned-char -fno-strict-aliasing -ffp-contract=off)
+# Code generation per host: the linux32 debug build is -m32 -O1; the Vita's
+# toolchain file picks the CPU (decisions D25).
+if(SPYRO_HOST STREQUAL "vita")
+  set(SPYRO_ARCH_FLAGS)
+  # GCC 15 makes these errors; the decomp's C (written for GCC 2.7.2) and
+  # the i686 GCC of the linux32 build take them as warnings.
+  set(SPYRO_OPT_FLAGS -O2 -g -Wno-error=int-conversion
+      -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration
+      -Wno-error=implicit-int -Wno-error=return-mismatch
+      # save_file.c's SaveCreate writes past m_CollectedEggs as the original
+      # does; at -O2 GCC would otherwise rewrite the loop around that UB.
+      -fno-aggressive-loop-optimizations)
+else()
+  set(SPYRO_ARCH_FLAGS -m32)
+  set(SPYRO_OPT_FLAGS -O1 -g)
+endif()
 
 include(cmake/psycross.cmake)
 include(cmake/platform_common.cmake)

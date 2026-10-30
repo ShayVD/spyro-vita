@@ -34,7 +34,7 @@ python3 tools/contact_sheet.py logs/runN-x
 - `--tri-dump V`: logs every triangle drawn after vblank V; `tools/tri_at.py LOG X,Y` lists those covering a screen point. `--vram-shot` also writes the raw VRAM (`vram-N.bin`) for `tools/vram.py`.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more).
 
-## Widescreen and 60 fps (D26)
+## Widescreen and 60 fps (D30)
 
 Optional, off by default (`docs/presentation.md`):
 - `--widescreen`: 16:9, with the logic kept at the 4:3 frustum.
