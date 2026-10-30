@@ -34,6 +34,16 @@ python3 tools/contact_sheet.py logs/runN-x
 - `--tri-dump V`: logs every triangle drawn after vblank V; `tools/tri_at.py LOG X,Y` lists those covering a screen point. `--vram-shot` also writes the raw VRAM (`vram-N.bin`) for `tools/vram.py`.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more).
 
+## Widescreen and 60 fps (D26)
+
+Optional, off by default (`docs/presentation.md`):
+- `--widescreen`: 16:9, with the logic kept at the 4:3 frustum.
+- `--interp`: an extra in-between frame per tick, so 60 fps. `--interp-camera` blends the camera only.
+- `--widescreen-logic`: diagnostic only. The wider frustum reaches the gameplay, and the demos desync.
+- Any of these turns on `--out960`, which writes 960×544 pictures (shots and `--serve`).
+- `--present-stats` logs per-tick costs at exit. `--present-dirty` also maps the arena pages a pass writes.
+- `tools/side_by_side.py OUT.png A.png B.png … [--cols N] [--scale F] [--crop X,Y,W,H]` puts shots next to each other.
+
 ## Playing it yourself (D22)
 
 ```bash

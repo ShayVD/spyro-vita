@@ -523,6 +523,7 @@ static int blend_state(void) {
 
 /* ---------- passes ---------- */
 
+/* Runs one pass and leaves its picture in s_capture; the caller queues it. */
 static void presentation_pass(int wide) {
   long long t = now_us();
   int (*vsync_hook)(int) = g_psyxVSyncHook;
@@ -539,14 +540,13 @@ static void presentation_pass(int wide) {
   s_capture_on = 0;
   s_record_2d = 0;
   g_present_narrow = 0;
-  push_capture(wide);
   g_present_stats.passes++;
   g_present_stats.us_pass += now_us() - t;
 }
 
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide;
+  int wide_pass, logic_wide, interp;
   long long t;
   if (g_present.stats) {
     g_present_stats.us_update += now_us() - s_t_update;
@@ -570,11 +570,15 @@ void PortPresentDraw(void) {
   wide_pass = g_present.widescreen && !g_present.ws_logic;
   logic_wide = g_present.widescreen && g_present.ws_logic;
 
-  if (g_present.interp || wide_pass) {
+  interp = g_present.interp && can_interp();
+  if (g_present.interp && !interp)
+    g_present_stats.skipped_interp++;
+  if (interp || wide_pass) {
     snap_take();
-    if (g_present.interp) {
-      if (can_interp() && blend_state()) {
+    if (interp) {
+      if (blend_state()) {
         presentation_pass(g_present.widescreen);
+        push_capture(g_present.widescreen); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
       } else {
         g_present_stats.skipped_interp++;
@@ -582,7 +586,7 @@ void PortPresentDraw(void) {
       snap_restore();
     }
     if (wide_pass) {
-      presentation_pass(1);
+      presentation_pass(1); /* queued after the logic pass, below */
       snap_restore();
     }
   }
@@ -601,8 +605,9 @@ void PortPresentDraw(void) {
   g_present_narrow = 0;
   s_suppress_ot = 0;
   g_psyxVSyncHook = NULL;
-  if (!wide_pass)
-    push_capture(logic_wide);
+  /* This tick's frame goes in the queue where the original draw finishes,
+   * so real frames are shown on the same vblanks as without presentation. */
+  push_capture(wide_pass || logic_wide);
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t;
 }

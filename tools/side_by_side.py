@@ -3,8 +3,10 @@
 presentation modes (docs/presentation.md). Images may differ in size: each
 cell is the largest one, smaller images are centred on black.
    tools/side_by_side.py OUT.png A.png B.png ... [--cols N] [--scale F]
+                         [--crop X,Y,W,H]
 --cols N   images per row (default: all in one row)
---scale F  shrink every cell by F (e.g. 0.5), nearest neighbour"""
+--scale F  shrink every cell by F (e.g. 0.5), nearest neighbour
+--crop     cut the same rectangle out of every image first"""
 import os
 import sys
 
@@ -14,8 +16,15 @@ from contact_sheet import read_png, write_png  # noqa: E402
 GAP = 8
 
 
-def main(out, files, cols=None, scale=1.0):
+def crop(img, x, y, w, h):
+    _, _, px = img
+    return w, h, [row[x * 3:(x + w) * 3] for row in px[y:y + h]]
+
+
+def main(out, files, cols=None, scale=1.0, rect=None):
     imgs = [read_png(f) for f in files]
+    if rect:
+        imgs = [crop(i, *rect) for i in imgs]
     cols = cols or len(imgs)
     rows = (len(imgs) + cols - 1) // cols
     cw = int(max(w for w, _, _ in imgs) * scale)
@@ -44,16 +53,18 @@ def main(out, files, cols=None, scale=1.0):
 
 
 if __name__ == "__main__":
-    args, cols, scale = sys.argv[1:], None, 1.0
-    for flag in ("--cols", "--scale"):
+    args, cols, scale, rect = sys.argv[1:], None, 1.0, None
+    for flag in ("--cols", "--scale", "--crop"):
         if flag in args:
             i = args.index(flag)
             v = args[i + 1]
             del args[i:i + 2]
             if flag == "--cols":
                 cols = int(v)
+            elif flag == "--crop":
+                rect = [int(n) for n in v.split(",")]
             else:
                 scale = float(v)
     if len(args) < 2:
         sys.exit(__doc__)
-    main(args[0], args[1:], cols, scale)
+    main(args[0], args[1:], cols, scale, rect)
