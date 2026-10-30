@@ -19,6 +19,7 @@
 #include "rand.h"
 #include "spu.h"
 #include "spyro.h"
+#include "variables.h"
 #include "vector.h"
 
 #if !M2C_func_80049FAC
@@ -292,10 +293,6 @@ void func_80048D10(int pDeltaTime) {
 #endif
 
 #if !M2C_func_80043FE4
-/* func_80043FE4 is hand-written state by state: the states not done yet run
- * the whole mips2c unit, renamed func_80043FE4_gen (cmake M2C_PARTIAL). */
-u_int func_80043FE4_gen(u_int, u_int, u_int, u_int, u_int, u_int, u_int, u_int);
-
 /* pete.c */
 void func_8003D3B8(int speed);
 void func_8003D52C(int pTurn);
@@ -1022,6 +1019,44 @@ static void UpdateCircleMoby(void) {
     ApplyGroundGravity();
 }
 
+static inline int Clamp(int v, int pMin, int pMax) { return v < pMin ? pMin : v > pMax ? pMax : v; }
+
+/* As the asm computes it: shifted left first, so the top bits drop. */
+static inline int ShiftUpDown(int v, int pUp, int pDown) { return (int)((u_int)v << pUp) >> pDown; }
+
+
+
+/* Ease the speed to pTarget by 0x80 a tick, at least 0x780. */
+static void EaseSpeedTo(int pTarget) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+
+  if (ph->m_SpeedAngle.m_Speed < pTarget) {
+    ph->m_SpeedAngle.m_Speed += 0x80;
+    if (pTarget < ph->m_SpeedAngle.m_Speed)
+      ph->m_SpeedAngle.m_Speed = pTarget;
+  } else if (pTarget < ph->m_SpeedAngle.m_Speed) {
+    ph->m_SpeedAngle.m_Speed -= 0x80;
+    if (ph->m_SpeedAngle.m_Speed < pTarget)
+      ph->m_SpeedAngle.m_Speed = pTarget;
+  }
+  if (ph->m_SpeedAngle.m_Speed < 0x780)
+    ph->m_SpeedAngle.m_Speed = 0x780;
+}
+
+/* Roll towards wings level, at most 0x10 a tick: the step. */
+static int RollToLevel(void) { return Clamp(AngleDelta(-g_Spyro.m_Physics.m_SpeedAngle.m_RotX), -0x10, 0x10); }
+
+static void AddRoll(int pStep) {
+  g_Spyro.m_Physics.m_SpeedAngle.m_RotX = (g_Spyro.m_Physics.m_SpeedAngle.m_RotX + pStep) & 0xFFF;
+}
+
+/* Bank into the turn (m_TurnMomentum), at most 0x10 a tick. */
+static void BankIntoTurn(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+
+  AddRoll(Clamp(AngleDelta(-ph->m_TurnMomentum * 8 - ph->m_SpeedAngle.m_RotX), -0x10, 0x10));
+}
+
 /* Head for the camera state Spyro's state asks for, drawn in front. */
 static void EndPortalFlight(void) {
   g_Spyro.m_walkingState = 0;
@@ -1082,7 +1117,7 @@ static int PortalPitchStep(void) {
  * 10 fly out and land, 11 fall. */
 static void UpdatePortalFlight(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
-  int stickX, stickY, heading, cosH, sinH, turn, ahead, roll;
+  int stickX, stickY, heading, cosH, sinH, turn, ahead;
 
   ReadStick(&stickX, &stickY);
   heading = (ph->m_SpeedAngle.m_RotZ - g_Camera.m_Rotation.z) & 0xFFF;
@@ -1095,17 +1130,7 @@ static void UpdatePortalFlight(void) {
 
   /* Back on the stick slows down to as little as 0x780. */
   ph->m_TargetSpeedAngle.m_Speed = ahead >= 0 ? 0x1900 : ((int)((u_int)(ahead * 35) << 7) >> 7) + 0x1900;
-  if (ph->m_SpeedAngle.m_Speed < ph->m_TargetSpeedAngle.m_Speed) {
-    ph->m_SpeedAngle.m_Speed += 0x80;
-    if (ph->m_TargetSpeedAngle.m_Speed < ph->m_SpeedAngle.m_Speed)
-      ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed;
-  } else if (ph->m_TargetSpeedAngle.m_Speed < ph->m_SpeedAngle.m_Speed) {
-    ph->m_SpeedAngle.m_Speed -= 0x80;
-    if (ph->m_SpeedAngle.m_Speed < ph->m_TargetSpeedAngle.m_Speed)
-      ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed;
-  }
-  if (ph->m_SpeedAngle.m_Speed < 0x780)
-    ph->m_SpeedAngle.m_Speed = 0x780;
+  EaseSpeedTo(ph->m_TargetSpeedAngle.m_Speed);
 
   ph->m_TurnMomentum = turn * 20 >> 7;
   ph->m_SpeedAngle.m_RotZ += ph->m_TurnMomentum; /* not wrapped here */
@@ -1153,10 +1178,355 @@ static void UpdatePortalFlight(void) {
     break;
   }
 
-  /* Bank into the turn, at most 0x10 a tick. */
-  roll = AngleDelta(-ph->m_TurnMomentum * 8 - ph->m_SpeedAngle.m_RotX);
-  roll = roll > 0x10 ? 0x10 : roll < -0x10 ? -0x10 : roll;
-  ph->m_SpeedAngle.m_RotX = (ph->m_SpeedAngle.m_RotX + roll) & 0xFFF;
+  BankIntoTurn();
+}
+
+/* The flying ability's flight (flight levels, Gnasty's Loot): states 15,
+ * 23, 32, 33 and 34 with m_flyingAbility set. */
+
+/* The d-pad as a stick axis (-0x7F..0x7F): held, it moves 0x10 a tick
+ * towards pPlus or pMinus; released, it eases back to 0 by up to 0x20. */
+static void DpadAxis(int *pAxis, int pPlus, int pMinus) {
+  int held = g_PadFrame->m_Held;
+
+  if (held & pPlus) {
+    *pAxis += 0x10;
+    if (*pAxis >= 0x80)
+      *pAxis = 0x7F;
+  } else if (held & pMinus) {
+    *pAxis -= 0x10;
+    if (*pAxis < -0x7F)
+      *pAxis = -0x7F;
+  } else {
+    *pAxis += Clamp(-*pAxis, -0x20, 0x20);
+  }
+}
+
+/* Flying speed from the height below the highest point: 0x1040 level,
+ * gaining with the square root of the drop, losing faster climbing. Returns
+ * that height. */
+static int SpeedFromHeight(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int below = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z;
+
+  if (below < 0)
+    ph->m_SpeedAngle.m_Speed = 0x1040 - (func_80017A38(-below) << 7);
+  else
+    ph->m_SpeedAngle.m_Speed = (func_80017A38(below) << 6) + 0x1040;
+  return below;
+}
+
+static void CapSpeed(void) {
+  if (g_Spyro.m_Physics.m_SpeedAngle.m_Speed > 0x5900)
+    g_Spyro.m_Physics.m_SpeedAngle.m_Speed = 0x5900;
+}
+
+/* A manoeuvre (loop, turn-around) is over: back to free flight with the
+ * d-pad's stick centred. */
+static void EndManoeuvre(void) {
+  g_Spyro.m_walkingState = 0;
+  D_800758A0 = 0;
+  D_80075700 = 0;
+}
+
+extern Vector3D D_8006E7DC[]; // Flight levels, by world: the area's centre (x, y) and radius (z)
+
+/* Flight levels: past the edge of the level's circle Spyro is pushed back
+ * in, and turned towards the centre, the harder the further out. */
+static void KeepInsideFlightArea(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  Vector3D *area = &D_8006E7DC[g_LevelId / 10 - 1];
+  Vector3D back;
+  int distance, radius, over, turn;
+
+  VecSub(&back, area, &g_Spyro.m_Position);
+  VecShiftRight(&back, 4);
+  distance = VecMagnitude(&back, 0);
+  radius = area->z >> 4;
+  if (distance <= radius)
+    return;
+
+  over = distance - radius;
+  VecScaleToLength(&back, distance, over);
+  VecShiftLeft(&back, 5);
+  back.z = 0;
+  VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &back);
+  turn = AngleDelta(Atan2(back.x, back.y, 1) - ph->m_SpeedAngle.m_RotZ) * over >> 15;
+  ph->m_SpeedAngle.m_RotZ += Clamp(turn, -0x20, 0x20); /* not wrapped here */
+}
+
+/* m_walkingState 0: free flight. The stick (or the d-pad, eased) pitches
+ * and turns; centred, Spyro levels out, nose down when slow. Below the
+ * highest point, ground ahead pulls the nose up. Roll follows the turn on a
+ * spring (D_80075960). */
+static void FlyFree(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int stickX, stickY, pitchIn, cosPitch, pitchStep, turnStep, below, ceiling;
+
+  if (g_PadFrame->m_LeftStickMoved) {
+    stickX = g_PadFrame->m_Sticks.m_LeftX - 0x7F;
+    stickY = 0x7F - g_PadFrame->m_Sticks.m_LeftY;
+  } else {
+    DpadAxis(&D_80075700, PAD_UP, PAD_DOWN);
+    stickY = D_80075700;
+    DpadAxis(&D_800758A0, PAD_RIGHT, PAD_LEFT);
+    stickX = D_800758A0;
+  }
+
+  if (stickY != 0) {
+    pitchIn = stickY;
+  } else {
+    pitchIn = ph->m_SpeedAngle.m_RotY >> 3;
+    if (ph->m_SpeedAngle.m_Speed < 0x1040)
+      pitchIn += (0x1040 - ph->m_SpeedAngle.m_Speed) >> 6;
+    pitchIn = Clamp(pitchIn, -0x7F, 0x7F);
+  }
+
+  cosPitch = Cos(ph->m_SpeedAngle.m_RotY);
+  pitchStep = pitchIn * -15 >> 7;
+  turnStep = -stickX * 20 >> 7;
+
+  if (g_Spyro.m_Position.z < g_Spyro.m_highestFlightPoint) {
+    Vector3D ahead;
+    ahead.z = (ph->m_Acceleration.z >> 3) - 0x400;
+    if (ahead.z < 0) {
+      ahead.x = ph->m_Acceleration.x >> 3;
+      ahead.y = ph->m_Acceleration.y >> 3;
+      VecAdd(&ahead, &ahead, &g_Spyro.m_Position);
+      if (func_80033E40(&g_Spyro.m_Position, &ahead) == 0) { /* blocked */
+        int lift = (g_Spyro.m_Position.z - g_CollisionPoint.z) >> 3;
+        if (lift >= 8)
+          lift = 7;
+        pitchStep += lift;
+      }
+    }
+  }
+
+  ph->m_SpeedAngle.m_RotZ = (ph->m_SpeedAngle.m_RotZ + turnStep) & 0xFFF;
+  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + pitchStep);
+  if (ph->m_SpeedAngle.m_RotY > 0x320)
+    ph->m_SpeedAngle.m_RotY = 0x320;
+
+  below = SpeedFromHeight();
+  if (!g_IsFlightLevel)
+    ph->m_SpeedAngle.m_Speed += 0x41E;
+  CapSpeed();
+  /* Can't dive steeper than the height below the highest point allows. */
+  ceiling = (below + 0x132) >> 2;
+  if (ceiling < 0)
+    ceiling = 0;
+  if (ceiling < ph->m_SpeedAngle.m_RotY)
+    ph->m_SpeedAngle.m_RotY = ceiling;
+  if (ph->m_SpeedAngle.m_RotY < -0x320)
+    ph->m_SpeedAngle.m_RotY = -0x320;
+  if (ph->m_SpeedAngle.m_Speed < 0x780)
+    ph->m_SpeedAngle.m_Speed = 0x780;
+
+  /* Roll spring: D_80075960 is the roll rate x 64, driven by the turn
+   * (less when pitched), damped, and pulled back to level. */
+  D_80075960 += (turnStep * -(cosPitch << 5) >> 12) - ShiftUpDown(D_80075960, 4, 6) -
+                ShiftUpDown(ph->m_SpeedAngle.m_RotX, 6, 6);
+  ph->m_SpeedAngle.m_RotX = AngleDelta(ph->m_SpeedAngle.m_RotX + (D_80075960 >> 6));
+  ph->m_SpeedAngle.m_RotX = Clamp(ph->m_SpeedAngle.m_RotX, -0x300, 0x300);
+
+  func_8003D978();
+  if (g_IsFlightLevel)
+    KeepInsideFlightArea();
+}
+
+/* m_walkingState 1: a loop, pitching up 0x1E a tick. unk_0x254 is set once
+ * he's past vertical; nose level again, the loop is done. Too slow, it ends
+ * early. */
+static void FlyLoop(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+
+  ph->m_SpeedAngle.m_RotZ &= 0xFFF;
+  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + 0x1E);
+  if (ph->m_SpeedAngle.m_RotY > 0x400) {
+    g_Spyro.unk_0x254 = 1;
+  } else if (ph->m_SpeedAngle.m_RotY > 0) {
+    if (g_Spyro.unk_0x254)
+      g_Spyro.m_walkingState = 0;
+    g_Spyro.unk_0x254 = 0;
+  }
+  AddRoll(RollToLevel());
+
+  SpeedFromHeight();
+  CapSpeed();
+  if (ph->m_SpeedAngle.m_Speed < 0x1E00 && !g_Spyro.unk_0x254)
+    EndManoeuvre();
+  func_8003D978();
+}
+
+/* m_walkingState 2: turn around (half a loop, then roll upright). Pitching
+ * up 0x1E a tick until upside down past vertical, where heading, pitch and
+ * roll flip round (unk_0x254 set); then pitch back to level at the height
+ * D_80075700 while rolling upright, D_800758A0 the roll rate. */
+static void FlyTurnAround(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+
+  if (g_Spyro.unk_0x254) {
+    int toHeight = D_80075700 - g_Spyro.m_Position.z;
+    int pitchStep = AngleDelta(-ph->m_SpeedAngle.m_RotY) + ((toHeight - (ph->m_TrueVelocity.z >> 5)) >> 2);
+
+    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(pitchStep, -0x1E, 0x1E));
+    ph->m_SpeedAngle.m_RotZ &= 0xFFF;
+    if (Abs(ph->m_SpeedAngle.m_RotX) < 0x40) {
+      if (Abs(toHeight) < 0x100 && Abs(ph->m_SpeedAngle.m_RotY) < 0x80) {
+        g_Spyro.unk_0x254 = 0;
+        EndManoeuvre();
+      }
+      ph->m_SpeedAngle.m_RotX = 0;
+    } else {
+      D_800758A0 = Clamp(D_800758A0 + RollToLevel(), -0x40, 0x40);
+      AddRoll(D_800758A0);
+    }
+    if (ph->m_SpeedAngle.m_RotX > 0x800)
+      ph->m_SpeedAngle.m_RotX -= 0x1000;
+  } else {
+    ph->m_SpeedAngle.m_RotZ &= 0xFFF;
+    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + 0x1E);
+    if (ph->m_SpeedAngle.m_RotY < -0x400) {
+      g_Spyro.unk_0x254 = 1;
+      ph->m_SpeedAngle.m_RotZ = (ph->m_SpeedAngle.m_RotZ + 0x800) & 0xFFF;
+      ph->m_SpeedAngle.m_RotY = (0x800 - ph->m_SpeedAngle.m_RotY) & 0xFFF;
+      D_800758A0 = 0;
+      ph->m_SpeedAngle.m_RotX = (ph->m_SpeedAngle.m_RotX + 0x800) & 0xFFF;
+    }
+    AddRoll(RollToLevel());
+  }
+
+  SpeedFromHeight();
+  CapSpeed();
+  if (ph->m_SpeedAngle.m_Speed < 0x1E00 && !g_Spyro.unk_0x254 && ph->m_SpeedAngle.m_RotY < 0x400)
+    EndManoeuvre();
+  func_8003D978();
+}
+
+/* m_walkingState 3: climb out of the level, straight up, spinning, at speed
+ * 0x1040; the camera stays where it is (state 0x8000000E). */
+static void FlyClimbOut(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int roll;
+
+  if (g_Camera.m_State != 0x8000000E) {
+    VecCopy(&D_8006EBCC.m_CameraPosition, &g_Camera.m_Position);
+    func_80037714(&D_8006EBCC);
+  }
+
+  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(AngleDelta(0x400 - ph->m_SpeedAngle.m_RotY), -0x1E, 0x1E));
+  ph->m_SpeedAngle.m_RotZ &= 0xFFF;
+  roll = Abs(ph->m_SpeedAngle.m_RotY - 0x400) < 0x80 ? 0x40 : RollToLevel();
+  AddRoll(roll);
+  ph->m_SpeedAngle.m_Speed += Clamp(0x1040 - ph->m_SpeedAngle.m_Speed, -0x80, 0x80);
+  func_8003D978();
+}
+
+/* m_walkingState 10: flying in (the level start, out of a portal), at speed
+ * 0x1900, pitching up 0x1E a tick until a dive from above levels out
+ * (unk_0x254 set once pitched down). */
+static void FlyIn(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int pitch;
+
+  ph->m_TargetSpeedAngle.m_Speed = 0x1900;
+  EaseSpeedTo(0x1900);
+  g_Spyro.m_bodyRotation.z = ph->m_SpeedAngle.m_RotZ >> 4;
+  if (g_Spyro.unk_0x254) {
+    if (ph->m_SpeedAngle.m_RotY >= -0xFF)
+      EndPortalFlight();
+  } else if (ph->m_SpeedAngle.m_RotY < 0) {
+    g_Spyro.unk_0x254 = 1;
+  }
+
+  pitch = (ph->m_SpeedAngle.m_RotY + 0x1E) & 0xFFF;
+  ph->m_SpeedAngle.m_RotY = pitch;
+  g_Spyro.m_bodyRotation.y = pitch >> 4;
+  if (pitch > 0x800)
+    ph->m_SpeedAngle.m_RotY = pitch - 0x1000;
+  func_8003D978();
+  KeepGamepadLocked();
+  BankIntoTurn();
+}
+
+/* Low over water (m_SurfaceProximityState): a wake on its surface,
+ * particle 0x1B, bigger with speed (0x10000: Spyro isn't moving). */
+static void SpawnWake(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  Vector3D at;
+  int size;
+
+  if (g_Spyro.m_SurfaceProximityState == 0 || g_Spyro.m_Position.z - g_Spyro.m_surfaceBelowSpyro > 0xC00)
+    return;
+  size = (ph->m_SpeedAngle.m_Speed >> 11) + 2;
+  if (ph->m_Velocity.x == 0 && ph->m_Velocity.y == 0)
+    size += 0x10000;
+  VecCopy(&at, &ph->m_Velocity);
+  VecShiftRight(&at, 6);
+  at.x += g_Spyro.m_Position.x;
+  at.y += g_Spyro.m_Position.y;
+  at.z = g_Spyro.m_surfaceBelowSpyro;
+  g_SpawnParticle(1, 0x1B, &at, size);
+}
+
+/* 42CC4.s: model vertex pVertex of Spyro's body in an animation frame. */
+void func_80052F38(int pVertex, Vector3D *pOut, int pAnimation, int pFrame);
+/* math.s: pOut = pA + (pB - pA) * pT / 0x1000, through the GTE. */
+void func_80017894(Vector3D *pOut, Vector3D *pA, Vector3D *pB, int pT);
+
+/* Vapour trails from both wing tips (model vertices 9 and 0x64),
+ * particle 0x1A, lasting longer the faster he flies. */
+static void SpawnWingTrails(void) {
+  SpyroPhysics *ph = &g_Spyro.m_Physics;
+  int moving = ph->m_Velocity.x != 0 || ph->m_Velocity.y != 0;
+  int life, blend, vertex, i;
+
+  life = (ph->m_SpeedAngle.m_Speed >> 11) - (moving - (g_Spyro.m_State == 32 ? 3 : 1));
+  if (life <= 0)
+    life = 1;
+  blend = g_Spyro.m_bodyFrameProgress;
+  if (moving && blend < 13)
+    blend += 4;
+
+  for (i = 0, vertex = 9; i < 2; i++, vertex += 0x5B) {
+    Vector3D tip, other;
+
+    func_80052F38(vertex, &tip, g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame);
+    if (blend != 0) {
+      func_80052F38(vertex, &other, g_Spyro.m_nextBodyAnimation, g_Spyro.m_nextBodyAnimationFrame);
+      func_80017894(&tip, &tip, &other, blend << 8);
+    }
+    VecRotateByMatrix(&g_Spyro.m_RotationMatrix, &tip, &tip);
+    VecAdd(&tip, &tip, &g_Spyro.m_Position);
+    VecCopy(&other, &ph->m_Velocity);
+    VecShiftRight(&other, 6);
+    VecAdd(&tip, &tip, &other);
+    g_SpawnParticle(1, 0x1A, &tip, life);
+  }
+}
+
+/* States 15, 23, 32, 33 and 34 with the flying ability: the phase by
+ * m_walkingState (others just coast), then the wake and wing trails. */
+static void UpdateAbilityFlight(void) {
+  switch (g_Spyro.m_walkingState) {
+  case 0:
+    FlyFree();
+    break;
+  case 1:
+    FlyLoop();
+    break;
+  case 2:
+    FlyTurnAround();
+    break;
+  case 3:
+    FlyClimbOut();
+    break;
+  case 10:
+    FlyIn();
+    break;
+  }
+  SpawnWake();
+  SpawnWingTrails();
 }
 
 /* Flying (flight levels): turn from the stick, or ramp the turn momentum
@@ -1220,46 +1590,10 @@ static void UpdateFlying(void) {
 /// for some states speed and heading) by state, then integrates velocity
 /// and writes his body rotation.
 /// @param pDeltaTimeIndex This tick's frame in the pad input buffer.
-/// @note asm/nonmatchings/pete/func_80043FE4.s, by hand state by state; the
-/// rest still runs the mips2c unit (func_80043FE4_gen).
+/// @note asm/nonmatchings/pete/func_80043FE4.s, by hand, state by state.
 void func_80043FE4(int pDeltaTimeIndex) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
   int ticksInState;
-
-  switch (g_Spyro.m_State) {
-  case 1: case 2: case 21:
-  case 3:
-  case 4:
-  case 5:
-  case 6:
-  case 9: case 10:
-  case 11:
-  case 7: case 14:
-  case 12:
-  case 25: case 27:
-  case 16:
-  case 17:
-  case 19:
-  case 20:
-  case 22: case 28:
-  case 24:
-  case 26:
-  case 0: case 13: case 18: case 36: case 37: case 38: case 39: case 40:
-  case 41: case 42: case 43:
-  case 8: case 35:
-  case 29:
-  case 30: case 31:
-  case 44:
-    break;
-  case 15: case 23: case 32: case 33: case 34:
-    if (!g_Spyro.m_flyingAbility)
-      break; /* else the flying-ability phases: mips2c, below */
-  default:
-    if ((u_int)g_Spyro.m_State < 45) {
-      func_80043FE4_gen(pDeltaTimeIndex, 0, 0, 0, 0, 0, 0, 0);
-      return;
-    }
-  }
 
   g_ActivePad = (Gamepad *)&g_Pad.m_BufferedInputs[pDeltaTimeIndex];
   ticksInState = g_Spyro.m_idleTimer + pDeltaTimeIndex;
@@ -1323,7 +1657,10 @@ void func_80043FE4(int pDeltaTimeIndex) {
     break;
   case 15: case 23: case 32: case 33: case 34:
     TickInvulnerability();
-    UpdatePortalFlight();
+    if (g_Spyro.m_flyingAbility)
+      UpdateAbilityFlight();
+    else
+      UpdatePortalFlight();
     break;
   case 0: case 13: case 18: case 36: case 37: case 38: case 39: case 40:
   case 41: case 42: case 43:
@@ -1347,12 +1684,5 @@ void func_80043FE4(int pDeltaTimeIndex) {
   g_Spyro.m_bodyRotation.x = ph->m_SpeedAngle.m_RotX >> 4;
   g_Spyro.m_bodyRotation.z = ph->m_SpeedAngle.m_RotZ >> 4;
   g_Spyro.m_bodyRotation.y = ph->m_SpeedAngle.m_RotY >> 4;
-}
-
-/* Entry for the oracle replay's m2c_index (the unit's own is renamed). */
-u_int func_80043FE4__m2c(u_int a0, u_int a1, u_int a2, u_int a3) {
-  (void)a1; (void)a2; (void)a3;
-  func_80043FE4((int)a0);
-  return 0;
 }
 #endif

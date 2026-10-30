@@ -22,6 +22,8 @@ set(M2C_HAND
   asm/nonmatchings/camera/func_80034CE8.s
   asm/nonmatchings/camera/func_800357A4.s
   asm/nonmatchings/camera/func_80035FB4.s
+  asm/nonmatchings/pete/func_80043FE4.s
+  asm/nonmatchings/pete/func_80047B60.s
   asm/nonmatchings/pete/func_80048D10.s
   asm/nonmatchings/pete/func_80049FAC.s)
 # A/B tests: functions listed here (or "all") build from the mips2c unit
@@ -53,9 +55,9 @@ else()
 endif()
 
 # Partly hand-written: the hand C handles what it covers and calls the mips2c
-# unit, renamed <name>_gen, for the rest (docs/translation-log.md).
-set(M2C_PARTIAL
-  asm/nonmatchings/pete/func_80043FE4.s)
+# unit, renamed <name>_gen, for the rest (docs/translation-log.md). None at
+# the moment (func_80043FE4 was, until its flying-ability phases).
+set(M2C_PARTIAL)
 set(M2C_PARTIAL_DEFS)
 foreach(u ${M2C_PARTIAL})
   get_filename_component(f "${u}" NAME_WE)
