@@ -1,7 +1,10 @@
 -- Function-level oracle capture (docs/porting-plan.md §7.3, layer 1).
--- For each function in $ORACLE_FUNCS ("ADDR NAME" lines), take up to
--- $ORACLE_SAMPLES calls, at least $ORACLE_GAP vblanks apart, from vblank
--- $ORACLE_FROM on: the machine state on entry (NAME_K.in) and when the call
+-- For each function in $ORACLE_FUNCS ("ADDR NAME [OPTION...]" lines), take
+-- up to $ORACLE_SAMPLES calls, at least $ORACLE_GAP vblanks apart, from vblank
+-- $ORACLE_FROM on (options, to reach a function's other paths: n=N and gap=G
+-- override those two; key=ADDR:SIZE gives each value of that RAM word its own
+-- budget of N, such as one per Spyro state; if=ADDR:SIZE!=V or =V samples only
+-- calls where it holds; SIZE is 1, 2 or 4 bytes, signed): the machine state on entry (NAME_K.in) and when the call
 -- returns to its caller with the same $sp (NAME_K.out). The host replays each
 -- .in through its translated C and compares with .out (spyro --replay,
 -- tools/oracle/replay.sh). Quits at vblank $ORACLE_TO. With $ORACLE_TRACE,
@@ -84,21 +87,27 @@ end
 -- fires 71 vblanks after gamestate and level first match, counting from when
 -- the line before was applied; consecutive lines with the same condition
 -- share one anchor.
-local pad = {}
+-- $ORACLE_PAD_AFTER is a second script of the same kind that starts once
+-- the $ORACLE_TOUR below is done (the host's --pad-after).
 local pad_shift = tonumber(os.getenv('ORACLE_PAD_SHIFT') or '0')
-if padfile then
-  for line in io.lines(padfile) do
+local function load_pad(file)
+  local list = {}
+  if not file then return list end
+  for line in io.lines(file) do
     local cond, off, rest = line:match('^%s*@(%S+)%s+%+(%d+)%s+(.*)$')
     if cond then
       local c = {}
       for k, v in cond:gmatch('(%w+)=(%-?%d+)') do c[k] = tonumber(v) end
-      pad[#pad + 1] = { cond = cond, c = c, off = tonumber(off), spec = rest }
+      list[#list + 1] = { cond = cond, c = c, off = tonumber(off), spec = rest }
     else
       local v, r = line:match('^%s*(%d+)%s+(.*)$')
-      if v then pad[#pad + 1] = { at = tonumber(v) + pad_shift, spec = r } end
+      if v then list[#list + 1] = { at = tonumber(v) + pad_shift, spec = r } end
     end
   end
+  return list
 end
+local pad = load_pad(padfile)
+local pad_after = load_pad(os.getenv('ORACLE_PAD_AFTER'))
 local B = PCSX.CONSTS.PAD.BUTTON
 local names = { select = B.SELECT, start = B.START, up = B.UP, right = B.RIGHT,
   down = B.DOWN, left = B.LEFT, l2 = B.L2, r2 = B.R2, l1 = B.L1, r1 = B.R1,
@@ -113,101 +122,292 @@ local function setpad(spec)
     if b then held[b] = true; pad1.setOverride(b) end
   end
 end
-local padi, anchor_cond, anchor = 1, nil, nil
-local function pad_step(gs, level)
-  while padi <= #pad do
-    local p = pad[padi]
+local main_st, after_st = { list = pad, i = 1 }, { list = pad_after, i = 1 }
+local function run_pad(st, gs, level)
+  while st.i <= #st.list do
+    local p = st.list[st.i]
     if p.at then
       if vblank < p.at then return end
     else
-      if p.cond ~= anchor_cond then
+      if p.cond ~= st.cond then
         local ok = (p.c.gs == nil or p.c.gs == gs) and (p.c.level == nil or p.c.level == level)
         if not ok then return end
-        anchor_cond, anchor = p.cond, vblank
+        st.cond, st.anchor = p.cond, vblank
         print(string.format('oracle: pad anchor @%s at vblank %d', p.cond, vblank))
       end
-      if vblank < anchor + p.off then return end
+      if vblank < st.anchor + p.off then return end
     end
     setpad(p.spec)
-    padi = padi + 1
+    st.i = st.i + 1
   end
 end
+local function pad_step(gs, level) run_pad(main_st, gs, level) end
+local function pad_done() return main_st.i > #pad end
 
 -- Level ID, for per-level sample budgets ($ORACLE_PER_LEVEL=1: up to
 -- $ORACLE_SAMPLES per function in each level, not overall).
 local per_level = os.getenv('ORACLE_PER_LEVEL') == '1'
 local function level_now() return ffi.cast('int32_t*', mem + 0x7596C)[0] end
 
+-- RAM word for key= and if= ("ADDR:SIZE", PS1 address in hex).
+local function ramword(spec)
+  local a, size = spec:match('^(%x+):([124])$')
+  assert(a, 'bad RAM word ' .. spec)
+  local off, ty = bit.band(tonumber(a, 16), 0x1fffff), ({ ['1'] = 'int8_t*', ['2'] = 'int16_t*', ['4'] = 'int32_t*' })[size]
+  return function() return ffi.cast(ty, mem + off)[0] end
+end
+
 local state = {}
+-- Samples in progress ("NAME_K" -> vblank started) and finished ones, for
+-- $ORACLE_LABELS below. A call entered by a tail jump returns with another
+-- $sp, so a sample whose return hasn't come within $ORACLE_SAMPLE_TIMEOUT
+-- vblanks (default 600) is dropped: its .in stays without an .out.
+local busy, completed = {}, {}
+local sample_timeout = tonumber(os.getenv('ORACLE_SAMPLE_TIMEOUT') or '600')
 -- Global: PCSX-Redux removes a breakpoint when its handle is garbage collected.
 oracleBreakpoints = {}
 local bps = oracleBreakpoints
+-- One more $ORACLE_FUNCS option: gs=G only samples while g_Gamestate is G,
+-- for overlay code whose address other overlays share (the credits overlay
+-- runs in gamestate 15).
 for line in (funcs and io.lines(funcs) or function() end) do
-  local a, name = line:match('^%s*(%x+)%s+(%S+)')
+  local a, name, opts = line:match('^%s*(%x+)%s+(%S+)%s*(.*)$')
   if a then
     local addr = tonumber(a, 16)
-    local st = { name = name, n = 0, next = from, busy = false, lev = {} }
+    local st = { name = name, n = 0, next = from, busy = false, lev = {}, max = samples, gap = gap }
+    for k, v in opts:gmatch('(%w+)=(%S+)') do
+      if k == 'n' then st.max = tonumber(v)
+      elseif k == 'gap' then st.gap = tonumber(v)
+      elseif k == 'key' then st.key = ramword(v)
+      elseif k == 'gs' then st.gs = tonumber(v)
+      elseif k == 'if' then
+        local w, op, val = v:match('^(%x+:[124])(!?=)(%-?%d+)$')
+        local get, want = ramword(w), tonumber(val)
+        st.cond = op == '=' and function() return get() == want end or function() return get() ~= want end
+      end
+    end
     state[#state + 1] = st
     bps[#bps + 1] = PCSX.addBreakpoint(addr, 'Exec', 4, 'oracle ' .. name, function()
       if st.busy or vblank < st.next then return true end
-      local lvl = per_level and level_now() or 0
-      if (st.lev[lvl] or 0) >= samples then return true end
+      if st.gs and ffi.cast('int32_t*', mem + 0x757D8)[0] ~= st.gs then return true end
+      if st.cond and not st.cond() then return true end
+      local lvl = st.key and st.key() or (per_level and level_now() or 0)
+      if (st.lev[lvl] or 0) >= st.max then return true end
       local regs = PCSX.getRegisters()
       local sp, ra, k = regs.GPR.n.sp, regs.GPR.n.ra, st.n
-      st.busy, st.n, st.next = true, st.n + 1, vblank + gap
+      st.busy, st.n, st.next = true, st.n + 1, vblank + st.gap
       st.lev[lvl] = (st.lev[lvl] or 0) + 1
+      local key = name .. '_' .. k
       local copy = dump_in(string.format('%s/%s_%d.in', out, name, k), addr, k)
+      busy[key] = vblank
       local done = false
       st.exit = PCSX.addBreakpoint(ra, 'Exec', 4, 'oracle ret ' .. name, function()
         if done then return false end
+        if busy[key] == nil then done, copy = true, nil return false end -- timed out
         if PCSX.getRegisters().GPR.n.sp ~= sp then return true end
         dump_out(string.format('%s/%s_%d.out', out, name, k), addr, k, copy)
-        done, st.busy, copy = true, false, nil
+        done, st.busy, copy, busy[key], completed[key] = true, false, nil, nil, true
         return false
       end)
+      st.cur = key
       return true
     end)
   end
 end
 
+-- $ORACLE_LABELS ("ADDR NAME" lines): code labels that are entered by
+-- computed jumps inside a function rather than called (collision.s's
+-- unrolled loops, say). Each hit is counted, and so are the samples in
+-- progress at the time: labels.txt lists, per label, all hits, hits inside
+-- samples that completed, and the first 8 of those samples. The replay of
+-- such a sample runs the label's translated code.
+local labels = {}
+for line in (os.getenv('ORACLE_LABELS') and io.lines(os.getenv('ORACLE_LABELS')) or function() end) do
+  local a, name = line:match('^%s*(%x+)%s+(%S+)')
+  if a then
+    local lb = { name = name, hits = 0, inside = {}, keys = {}, nkeys = 0 }
+    labels[#labels + 1] = lb
+    bps[#bps + 1] = PCSX.addBreakpoint(tonumber(a, 16), 'Exec', 4, 'oracle label ' .. name, function()
+      lb.hits = lb.hits + 1
+      for key in pairs(busy) do
+        if not lb.keys[key] and lb.nkeys < 256 then lb.keys[key], lb.nkeys = true, lb.nkeys + 1 end
+        lb.inside[key] = (lb.inside[key] or 0) + 1
+      end
+      return true
+    end)
+  end
+end
+-- $ORACLE_WATCH="ADDR:LEN" (hex): log stores into that RAM range made by
+-- game code (PC in 0x80010000-0x801FFFFF, not the BIOS), with the PC and vblank.
+-- For game bugs that store through small integers (KUSEG addresses).
+local watch = os.getenv('ORACLE_WATCH')
+if watch then
+  local wa, wl = watch:match('^(%x+):(%x+)$')
+  wa, wl = tonumber(wa, 16), tonumber(wl, 16)
+  local nlog = 0
+  bps[#bps + 1] = PCSX.addBreakpoint(wa, 'Write', wl, 'oracle watch', function(address, width)
+    local pc = PCSX.getRegisters().pc
+    if pc >= 0x80010000 and pc < 0x80200000 and nlog < 200 then
+      nlog = nlog + 1
+      print(string.format('oracle: watch store %08x width %d pc %08x vblank %d gamestate %d level %d',
+        address, width, pc, vblank, ffi.cast('int32_t*', mem + 0x757D8)[0], level_now()))
+    end
+    return true
+  end)
+end
+
+local function write_labels()
+  if #labels == 0 then return end
+  local f = assert(io.open(out .. '/labels.txt', 'w'))
+  for _, lb in ipairs(labels) do
+    local ks, n = {}, 0
+    for key in pairs(lb.keys) do
+      if completed[key] then ks[#ks + 1], n = key, n + lb.inside[key] end
+    end
+    table.sort(ks)
+    f:write(string.format('%s %d %d %s\n', lb.name, lb.hits, n, table.concat(ks, ',', 1, math.min(#ks, 8))))
+  end
+  f:close()
+end
+
 -- Level tour ($ORACLE_TOUR="11,12,..."): once the pad script is done and
--- Spyro is playing, stay $ORACLE_TOUR_STAY vblanks (default 300), then warp
--- to the next level with the game's level-warp cheat: Pause, Down, Down,
--- Cross opens the inventory, where CheatProcessLevelWarp (cheats.c) runs
--- while g_LevelCheatActive; it takes the world digit, then the level digit
--- (CIRCLE 0, CROSS 1, SQUARE 2, TRIANGLE 3, RIGHT 4, DOWN 5).
+-- Spyro is playing, stay $ORACLE_TOUR_STAY vblanks (default 300; at most 60
+-- in the flight levels, x5, where Spyro flies into the water and drowns if
+-- left alone), then take the next entry. The host's --tour does the same (src/platform/linux32/tour.c).
+--   NN       warp to level NN with the game's level-warp cheat: Pause, Down,
+--            Down, Cross opens the inventory, where CheatProcessLevelWarp
+--            (cheats.c) runs while g_LevelCheatActive; it takes the world
+--            digit, then the level digit (CIRCLE 0, CROSS 1, SQUARE 2,
+--            TRIANGLE 3, RIGHT 4, DOWN 5, LEFT 6).
+--   credits  the credits cheat (cheats.c CheatTable[2]) in the inventory.
+--   levels   the LEVELS OPEN cheat (CheatTable[3]); lives the 99 LIVES cheat
+--            (CheatTable[4]); then Triangle and Start back to the game.
+--   end2     what Gnasty Gnorc's moby does when he is beaten (cutscene 2,
+--            then the credits); end3 what Gnasty's Loot's moby 217 does with
+--            14000 gems (cutscene 3, then the full credits).
+-- In the flight results (gamestate 7, the timer ran out) Cross is pressed.
+-- Leaving a level saves the display as tour-K-LEVEL.raw (K the entry's
+-- index, from 0), as the host's tour-K-LEVEL.png.
 local tour = {}
-for v in (os.getenv('ORACLE_TOUR') or ''):gmatch('%d+') do tour[#tour + 1] = tonumber(v) end
+for v in (os.getenv('ORACLE_TOUR') or ''):gmatch('[%w]+') do tour[#tour + 1] = tonumber(v) or v end
 local tour_stay = tonumber(os.getenv('ORACLE_TOUR_STAY') or '300')
-local digit = { [0] = 'circle', 'cross', 'square', 'triangle', 'right', 'down' }
-local tour_i, tour_t0, tour_seq, tour_at = 1, nil, nil, nil
+-- While staying in a level, $ORACLE_TOUR_PAD ("OFFSET buttons" lines, then
+-- "PERIOD loop") plays a pad pattern on repeat, and $ORACLE_TOUR_POKE
+-- ("ADDR=VALUE,...", 32-bit words) is written once, 60 vblanks in.
+local tour_pad, tour_period = {}, 0
+for line in (os.getenv('ORACLE_TOUR_PAD') and io.lines(os.getenv('ORACLE_TOUR_PAD')) or function() end) do
+  local off, rest = line:match('^%s*(%d+)%s+(.*)$')
+  if off and rest:match('^loop') then tour_period = tonumber(off)
+  elseif off then tour_pad[tonumber(off)] = rest end
+end
+local tour_poke = {}
+for a, v in (os.getenv('ORACLE_TOUR_POKE') or ''):gmatch('(%x+)=(%-?%w+)') do
+  tour_poke[#tour_poke + 1] = { bit.band(tonumber(a, 16), 0x1fffff), tonumber(v) }
+end
+local digit = { [0] = 'circle', 'cross', 'square', 'triangle', 'right', 'down', 'left' }
+local tour_i, tour_t0, tour_seq, tour_at, tour_len = 1, nil, nil, nil, 400
+local function w32(a, v) ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] = v end
+local function r32(a) return ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] end
+local function ending(idx)
+  if idx == 3 then w32(0x80075860, 14000) else w32(0x800757AC, 0) end -- g_GemTotal, g_CreditsSequence
+  w32(0x8007566C, idx) -- g_CutsceneIdx
+  w32(0x800757D8, 14)  -- g_Gamestate = GS_Cutscene
+  w32(0x8007579C, 1)   -- g_StateSwitch
+  w32(0x8007570C, 0)   -- g_ScreenBorderEnabled
+  w32(0x80075814, 0)   -- g_IsSpyroHidden
+  w32(r32(0x80075680), 0) -- g_CutsceneLayout->m_CurrentTick
+  print(string.format('oracle: tour ending %d set up at vblank %d', idx, vblank))
+end
+-- The display as NAME.raw (width, height, bpp words, then pixels;
+-- tools/oracle/shot2png.py) and, with VNAME, VRAM as VNAME.bin.
+function save_shot(name, vname)
+  local ss = PCSX.GPU.takeScreenShot()
+  local f = assert(io.open(string.format('%s/%s.raw', out, name), 'wb'))
+  f:write(u32le(tonumber(ss.width)), u32le(tonumber(ss.height)), u32le(tonumber(ss.bpp)), tostring(ss.data))
+  f:close()
+  if vname then
+    f = assert(io.open(string.format('%s/%s.bin', out, vname), 'wb'))
+    f:write(tostring(PCSX.GPU.getVRAM()))
+    f:close()
+  end
+end
+local function open_inventory()
+  return { [0] = 'start', [6] = 'none', [60] = 'down', [66] = 'none', [100] = 'down',
+    [106] = 'none', [140] = 'cross', [146] = 'none' }
+end
+local function tour_done() return tour_i > #tour and not tour_seq end
 local function tour_step(gs, level)
-  if tour_i > #tour or padi <= #pad then return end
+  if not pad_done() then return end
   if tour_seq then
     local t = vblank - tour_at
     local e = tour_seq[t]
     if e == 'cheat' then
-      ffi.cast('int32_t*', mem + 0x75880)[0] = 1 -- g_LevelCheatActive
-      ffi.cast('int32_t*', mem + 0x758EC)[0] = 0 -- cheat_HomeworldSelected
+      w32(0x80075880, 1) -- g_LevelCheatActive
+      w32(0x800758EC, 0) -- cheat_HomeworldSelected
+    elseif e == 'end2' or e == 'end3' then
+      ending(e == 'end2' and 2 or 3)
     elseif e then
       setpad(e)
     end
-    if t > 400 then tour_seq = nil end
+    if t >= tour_len then tour_seq = nil end
     return
   end
-  if gs ~= 0 then tour_t0 = nil return end
+  if gs == 7 then
+    tour_t0 = nil
+    setpad(vblank % 60 < 6 and 'cross' or 'none')
+    return
+  end
+  if tour_i > #tour then return end
+  if gs ~= 0 then
+    if tour_t0 and tour_period > 0 then setpad('none') end
+    tour_t0 = nil
+    return
+  end
   tour_t0 = tour_t0 or vblank
-  if vblank - tour_t0 < tour_stay then return end
+  local t = vblank - tour_t0
+  if t == 60 then
+    for _, p in ipairs(tour_poke) do ffi.cast('int32_t*', mem + p[1])[0] = p[2] end
+  end
+  local stay = (level % 10 == 5) and math.min(tour_stay, 60) or tour_stay
+  if t < stay then
+    if tour_period > 0 and tour_pad[t % tour_period] then setpad(tour_pad[t % tour_period]) end
+    return
+  end
+  if tour_period > 0 then setpad('none') end
   local L = tour[tour_i]
-  print(string.format('oracle: tour leaving level %d for %d at vblank %d', level, L, vblank))
+  print(string.format('oracle: tour leaving level %d for %s at vblank %d', level, tostring(L), vblank))
+  save_shot(string.format('tour-%02d-%d', tour_i - 1, level))
   tour_i, tour_t0, tour_at = tour_i + 1, nil, vblank + 1 -- [0] runs next vblank
-  tour_seq = { [0] = 'start', [6] = 'none', [60] = 'down', [66] = 'none', [100] = 'down',
-    [106] = 'none', [140] = 'cross', [146] = 'none', [200] = 'cheat',
-    [220] = digit[math.floor(L / 10)], [226] = 'none', [260] = digit[L % 10], [266] = 'none' }
+  tour_len = 400
+  local codes = {
+    credits = { 'left', 'right', 'up', 'down', 'circle', 'circle', 'square', 'r1', 'r2', 'l1', 'l2' },
+    levels = { 'square', 'square', 'circle', 'square', 'left', 'right', 'left', 'right', 'circle',
+      'up', 'right', 'down' },
+    lives = { 'square', 'square', 'square', 'square', 'square', 'square', 'circle', 'up', 'circle',
+      'left', 'circle', 'right', 'circle' },
+  }
+  if codes[L] then
+    tour_seq = open_inventory()
+    local n = #codes[L]
+    for k, b in ipairs(codes[L]) do
+      tour_seq[180 + 20 * k] = b
+      tour_seq[186 + 20 * k] = 'none'
+    end
+    if L ~= 'credits' then -- Triangle: inventory to the pause menu, Start: to the game
+      tour_seq[200 + 20 * n + 40], tour_seq[206 + 20 * n + 40] = 'triangle', 'none'
+      tour_seq[200 + 20 * n + 100], tour_seq[206 + 20 * n + 100] = 'start', 'none'
+    end
+    tour_len = 200 + 20 * n + 160
+  elseif L == 'end2' or L == 'end3' then
+    tour_seq, tour_len = { [0] = L }, 0
+  else
+    tour_seq = open_inventory()
+    tour_seq[200], tour_seq[220], tour_seq[226] = 'cheat', digit[math.floor(L / 10)], 'none'
+    tour_seq[260], tour_seq[266] = digit[L % 10], 'none'
+  end
 end
 
--- psx.map addresses; the rand seed is PsyQ rand()'s D_80075AC0.
-local function r32(a) return ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] end
+-- psx.map addresses (r32 above); the rand seed is PsyQ rand()'s D_80075AC0.
 local trace = tracefile and assert(io.open(tracefile, 'w'))
 if trace then
   trace:write('vblank\tgamestate\tlevel\ttick\tx\ty\tz\tstate\thealth\t' ..
@@ -225,16 +425,16 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
   vblank = vblank + 1
   if trace then trace_row() end
   if shots[vblank] or (shot_every > 0 and vblank % shot_every == 0) then
-    local ss = PCSX.GPU.takeScreenShot()
-    local f = assert(io.open(string.format('%s/shot-%d.raw', out, vblank), 'wb'))
-    f:write(u32le(tonumber(ss.width)), u32le(tonumber(ss.height)), u32le(tonumber(ss.bpp)), tostring(ss.data))
-    f:close()
-    f = assert(io.open(string.format('%s/vram-%d.bin', out, vblank), 'wb'))
-    f:write(tostring(PCSX.GPU.getVRAM()))
-    f:close()
+    save_shot('shot-' .. vblank, 'vram-' .. vblank)
+  end
+  for _, st in ipairs(state) do
+    if st.busy and busy[st.cur] and vblank - busy[st.cur] > sample_timeout then
+      busy[st.cur], st.busy = nil, false
+    end
   end
   pad_step(r32(0x800757D8), r32(0x8007596C))
   tour_step(r32(0x800757D8), r32(0x8007596C))
+  if pad_done() and tour_done() then run_pad(after_st, r32(0x800757D8), r32(0x8007596C)) end
   if vblank % 600 == 0 then
     local taken = 0
     for _, st in ipairs(state) do taken = taken + st.n end
@@ -242,6 +442,7 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
   end
   if vblank >= to then
     if trace then trace:close() end
+    write_labels()
     if not funcs then PCSX.quit(0) return end
     local f = assert(io.open(out .. '/summary.txt', 'w'))
     for _, st in ipairs(state) do f:write(string.format('%s %d\n', st.name, st.n)) end

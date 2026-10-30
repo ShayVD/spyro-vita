@@ -39,6 +39,9 @@ for line in open(a.log):
             v = f" Oracle replay: {n}/{n} samples match PCSX-Redux ({runs}). "
         else:
             v = f" Oracle replay: {c['PASS']}/{n} samples match PCSX-Redux, {n - c['PASS']} differ ({runs}). "
+        also = re.search(r"Also differential test.*?(?=\s*$)", m.group(3))
+        if also:  # tests/m2c_diff results are another source: keep them
+            v += also.group(0) + " "
         line = f"| `{m.group(1)}` | {m.group(2)}|{v}|{m.group(4)}\n"
     out.append(line)
 open(a.log, "w").write("".join(out))

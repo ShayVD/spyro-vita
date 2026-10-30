@@ -22,6 +22,8 @@ typedef struct {
   int out960;          /* pictures at 960x544 (presentation frames, present.c) */
   int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
   struct { int vblank; uint32_t addr, value; } pokes[16];
+  int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
+  struct { uint32_t addr; int n; } peeks[8];
 } HostOpts;
 
 extern HostOpts g_host_opts;
@@ -37,11 +39,18 @@ void host_vblank(void); /* advance exactly one virtual vblank */
 
 /* pad.c */
 int host_pad_load(const char *path); /* 0 = ok */
+int host_pad_load_after(const char *path); /* --pad-after: once the tour is done */
 void host_pad_vblank(int vblank);
 
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
 int host_pad_parse(const char *text, uint16_t *mask); /* "up+cross", "none" */
+
+/* tour.c: --tour LIST, --tour-stay N (level warps, credits, endings) */
+int host_tour_set(const char *list); /* 0 = ok */
+void host_tour_set_stay(int vblanks);
+int host_tour_vblank(int vblank, int pad_done); /* buttons, or -1 */
+int host_tour_done(void); /* every entry taken and its sequence over */
 
 /* step.c: --step DIR, closed-loop stepping (tools/step.sh) */
 void host_step_set_dir(const char *dir);

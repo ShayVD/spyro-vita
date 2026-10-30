@@ -32,7 +32,10 @@ python3 tools/contact_sheet.py logs/runN-x
 - `--poke V:ADDR=VALUE`: writes a 32-bit word to PS1 RAM at vblank V (hex address and value), for test set-ups. With the PS1 layout (D23) addresses come straight from `psx.map`: `g_SpyroLifeCount` is `8007582c`, `g_Spyro` `80078a58` (+8 is z).
 - `--wav FILE`: the SPU mix (44.1 kHz s16 stereo) as a WAV file.
 - `--tri-dump V`: logs every triangle drawn after vblank V; `tools/tri_at.py LOG X,Y` lists those covering a screen point. `--vram-shot` also writes the raw VRAM (`vram-N.bin`) for `tools/vram.py`.
-- Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more).
+- `--peek ADDR:N`: logs N words of PS1 RAM from hex ADDR with every shot (up to 8 of them).
+- `--tour LIST` (`--tour-stay N`): after the pad script, visits levels with the game's level-warp cheat, types the credits, LEVELS OPEN or 99 LIVES cheat, or sets up an ending (`end2`, `end3`), as the oracle's `ORACLE_TOUR` does (`src/platform/linux32/tour.c`, decisions D31). Leaving a level writes `tour-K-LEVEL.png`. `--pad-after FILE` is a pad script that starts once the tour is done.
+- Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`).
+- Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
 
 ## Widescreen and 60 fps (D30)
 
@@ -72,8 +75,13 @@ tools/oracle/replay.sh $D
 python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --where gamestate=0,level=11
 ```
 
+- `capture.lua` also takes `ORACLE_TOUR` entries `credits`, `levels`, `lives`, `end2`, `end3` (decisions D31), `ORACLE_PAD_AFTER`, `ORACLE_LABELS` (count hits on computed-jump labels inside completed samples, `labels.txt`), `ORACLE_WATCH=ADDR:LEN` (log game stores into a RAM range) and `ORACLE_SAMPLE_TIMEOUT`; `$ORACLE_FUNCS` lines may end in `n=K` (sample budget) and `gs=G` (only in that gamestate, for overlay code).
 - `capture.lua` (environment variables): `ORACLE_FUNCS`/`ORACLE_SAMPLES`/`ORACLE_GAP`/`ORACLE_FROM` sample function calls; `ORACLE_TRACE` writes the same TSV as the host's `--trace`; `ORACLE_SHOTS`/`ORACLE_SHOT_EVERY` save the display (`tools/oracle/shot2png.py`) and VRAM; `ORACLE_PAD` drives pad 1, with absolute lines shifted by `ORACLE_PAD_SHIFT` and gameplay lines anchored to the game state (`@gs=0,level=10 +71 up`). Scripts are in `tools/oracle/pads/`. `ORACLE_TOUR=11,12,...` (with `ORACLE_TOUR_STAY`) then warps from level to level with the game's level-warp cheat, and `ORACLE_PER_LEVEL=1` makes `ORACLE_SAMPLES` a per-level budget.
-- `spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]` loads each sample's entry state into the arena, the GTE and (host build only) all the registers of the call, calls the function's translated C and compares v0/v1, RAM, scratchpad and GTE registers. `--fnmap` (`tools/oracle/fnmap.py`, built by `replay.sh`) turns PS1 function pointers in the emulator's RAM into the host's functions. `SPYRO_REPLAY_NOFORK=1` runs samples in process, for gdb. `tools/oracle/ignore_ranges.txt` lists, with reasons, the RAM that isn't a function output (the asm spill area, state written by interrupt handlers, libcd's DMA'd sectors) and the functions whose return registers are dead.
+- `spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]` loads each sample's entry state into the arena, the GTE and (host build only) all the registers of the call, calls the function's translated C and compares v0/v1, RAM, scratchpad and GTE registers. `--fnmap` (`tools/oracle/fnmap.py`, built by `replay.sh`) turns PS1 function pointers in the emulator's RAM into the host's functions. `SPYRO_REPLAY_NOFORK=1` runs samples in process, for gdb (`handle SIGALRM stop print` to catch one that hangs); `SPYRO_REPLAY_TIMEOUT` (default 60 s) reports a sample that never returns as a crash; `SPYRO_REPLAY_DUMP=FILE` writes the host's RAM after the call. `--disc` lets samples that read the CD (the credits overlay) do so. Function and scratchpad pointers in the emulator's RAM are rewritten only below the loaded overlay's end (`TERM` lines of the fnmap): above it is level data, where a word can equal such a pointer by chance. `tools/oracle/ignore_ranges.txt` lists, with reasons, the RAM that isn't a function output (the asm spill area, state written by interrupt handlers, libcd's DMA'd sectors) and the functions whose return registers are dead.
+- Reaching a function's other paths: a line of `ORACLE_FUNCS` can take options after the name. `n=N` and `gap=G` override the sample count and spacing. `key=ADDR:SIZE` gives each value of that RAM word its own budget (`80078AD0:4`, Spyro's state, samples every state that occurs). `if=ADDR:SIZE!=V` (or `=V`) samples only calls where the condition holds (`80078760:1!=0`, the flame on). During level-tour stays, `ORACLE_TOUR_PAD` plays a pad pattern on repeat (`tools/oracle/pads/tour_moves.txt`: run, flame, charge, jump, glide, look, camera buttons). `ORACLE_TOUR_POKE=ADDR=VALUE,...` writes words 60 vblanks into each stay (`80078768=300` starts a fairy kiss). The command for `logs/run10-handcov` is in its `cmd.txt`. The tour can stall in a flight level, so put those last.
+- `tools/oracle/sample_fields.py --func NAME DIR... SYMBOL[+OFF][:SIZE]...` prints game fields at each sample's entry, to see which paths the samples cover.
+- Differential sweeps, for paths no capture reaches (decisions D33): `SPYRO_REPLAY_SWEEP=ADDR=LIST` (e.g. `80078AD0=0-44`) replays each sample of a partly hand-written function once per value, with the mips2c unit as the reference. `SPYRO_REPLAY_POKE=ADDR=VALUE,...` sets other words first (`80078C7C=@80075828` copies `g_LevelMobys` into `m_mobyInUseBySpyro`). Pass them through `tools/tc env ...`; `tools/oracle/sweep_pete.sh CAPTURE OUTDIR` runs the `func_80043FE4` set.
+- A/B against the generated C: configure another build directory with `-DSPYRO_M2C_FUNCS=all` (or a list of function names) and replay with its binary and its own `fnmap.txt` (`logs/run11-ab`).
 - Each run gets fresh memory cards (`$ORACLE_OUT/home`): what's on the card changes the title menu.
 - Breakpoint handles must stay referenced from a global: PCSX-Redux removes a breakpoint when Lua collects its handle.
 
@@ -107,6 +115,13 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
   - `intro`, `intro-host`: title intro screenshots, emulator and host.
   - `wizard6`: Wizard Peak via the level-warp cheat; MobyRotateToAngle's 5th argument (`docs/upstream-notes.md`).
   - `cap6-tour`: level tour (`ORACLE_TOUR`, the level-warp cheat) through 30 levels, pete and camera functions; `replay.txt` 358/358 match.
+- Hand-written pete and camera C (decisions D33):
+  - `logs/run10-handcov`: targeted samples for the hand C (one budget per Spyro state, per camera state and per hidden-tick count; the flame sampled only while on; pad pattern and fairy kiss poke in the tour stays; levels 10-15); `replay.txt` 292/292 match.
+  - `logs/run10-demo-host`: host `--trace` of both attract demos with the hand C; identical to `run8-oracle/cap3/trace.tsv` tick for tick (Stone Hill 866, Doctor Shemp 768).
+  - `logs/run11-sweep`: `func_80043FE4` hand C against its mips2c unit on the run10-handcov samples (`tools/oracle/sweep_pete.sh`): every state, and the state-dependent cases; 8,547 runs, all match except state 26 with no moby in use (translation log).
+  - `logs/run11-ab`: the `SPYRO_M2C_FUNCS=all` build replaying cap3, cap5-fairy, cap6-tour and run10-handcov: 1,240/1,240 match.
+
+- Whole game (`docs/whole-game-host.md`): `logs/run14-oracle-tour` and `logs/run21-host-whole`, the same tour on both sides; per-level table, screenshot pairs and replay results there.
 
 ## Oracle, M1 runner (PCSX-Redux, D24)
 

@@ -70,6 +70,11 @@ static void vblank(void) {
 
   if (shot_due(v)) {
     char path[256];
+    if (g_vita_gpu) { /* the shot reads VRAM: bring in what the GPU drew */
+      vita_gpu_sync_display();
+      if (g_vita_opts.shot_hd)
+        vita_gpu_shot_hd(v);
+    }
     snprintf(path, sizeof path, VITA_DATA_DIR "/shots/shot-%d.png", v);
     if (host_shot_display(path) == 0)
       vita_log("shot %s", path);
@@ -86,6 +91,8 @@ static void vblank(void) {
     s_stat_v0 = v;
     s_stat_shown = s_stat_late = 0;
     prof_report(v);
+    if (g_vita_gpu)
+      vita_gpu_report(v);
   }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
