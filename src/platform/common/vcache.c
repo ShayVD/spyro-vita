@@ -45,7 +45,10 @@
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
 
-#define VC_BITS 15
+/* 8192 entries (256 KB) stay in the A9's L2; a frame projects up to ~4100
+ * distinct points (logs/run6-host-demo-vcache2), and recording stops at
+ * 3/4 full rather than probe far */
+#define VC_BITS 13
 #define VC_SIZE (1u << VC_BITS)
 #define VC_PROBE 32
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
@@ -158,7 +161,7 @@ static void rtp_hook(int idx, int sf) {
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16);
   const int sz = (unsigned short)C2_SZ3, h = (unsigned short)C2_H;
   int64_t mx, my, mz;
-  float x, y, z, iz, isz, ox, oy, ex, ey, w_alt = 0;
+  float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
   g_vcache_stats.records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
@@ -178,12 +181,18 @@ static void rtp_hook(int idx, int sf) {
   z = (float)(int32_t)(mz >> 12) + (float)(mz & 0xFFF) * (1.0f / 4096);
   ox = (float)C2_OFX * (1.0f / 65536);
   oy = (float)C2_OFY * (1.0f / 65536);
+  if (z <= 0) {
+    record(key, E_INVALID, 0, 0, 0, 0);
+    return;
+  }
+  r = (float)h / (z * sz); /* one division for h / sz and h / z */
+  isz = r * z;
+  iz = r * sz;
   /* Check against the GTE's own model (truncated x, y and SZ3): off by more
    * than its rounding means SX/SY saturated. */
-  isz = (float)h / sz;
   ex = ox + (float)(int32_t)(mx >> 12) * isz - sx;
   ey = oy + (float)(int32_t)(my >> 12) * isz - sy;
-  if (z <= 0 || ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
+  if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
     record(key, E_INVALID, 0, 0, 0, 0);
     return;
   }
@@ -192,7 +201,6 @@ static void rtp_hook(int idx, int sf) {
     w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
-  iz = (float)h / z;
   record(key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
 }
 
@@ -204,6 +212,13 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
 
   g_vcache_stats.polys++;
   g_vcache_stats.verts += n;
+  if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
+    for (i = 0; i < n; i++) {
+      uint32_t r = VREF_POLY;
+      memcpy(&vertex[i].tcx, &r, sizeof r);
+    }
+    return;
+  }
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
     const Entry *f = find(key, 0);
