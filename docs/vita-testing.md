@@ -258,3 +258,34 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
    right? Then `interp=1` alone (4:3) and `widescreen=1` alone, to see each one's cost in the
    `time` and `present` lines.
+
+**Testing the render resolution** (`res=`, decisions D37), with the GPU build:
+
+1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 725x508` (4:3)
+   or `960x508` (with `widescreen=1`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
+   ms` line every 300 vblanks. G is the GPU's cost beyond the CPU's; near 0 means the GPU keeps up.
+2. Look at the boot logos (Sony, Universal: are they there, sharp and centred?), the title's
+   PRESS START and the HUD in Artisans: letters should have hard edges, no soft or doubled rows,
+   and no light line along the left or top edge of the 4:3 picture during fades.
+3. Lose all lives once (or skip it): the frozen frame that darkens before GAME OVER should be as
+   sharp as the game was, not blocky.
+4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D37 with
+   `gpu_res=1` (softer, PS1 pixels scaled up). Compare `busy`, `P pictures` and the `timed frame`
+   line with the default.
+5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
+   and how big G gets.
+
+### The render resolution (D37, branch `claude/recursing-wilbur-baad6f`)
+
+Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "old" = main
+`4ced09a` (with PR #12) and "new" = this branch, `realtime=0` unless noted. Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `run90`, `run91` | title, old vs new at `res=native` | Same frames (Spyro's pose matches); replay shots byte-identical. New: PRESS START's letters have hard row edges where old had in-between shaded rows (the 18.13-line offset), and the picture sits ~1 px differently (half a target pixel). |
+| `run92`, `run93` | title, new `res=ps1` vs old `gpu_res=1` | Window captures pixel-identical (0 of 2,088,960 differ); replay shots byte-identical. |
+| `run94`, `run95` | Artisans, pause, inventory (M2 pause script) | Replay shots and memory card byte-identical; pause and inventory backgrounds right in both (green frozen frame, sharp menu). |
+| `run96`, `run97` | game over (`poke=` lives 0, Spyro under the floor) | Replay shots byte-identical; the log shows `1 moves between them`. The frozen frame is blocky (PS1 pixels) in old and at full resolution in new. |
+| `run98`, `run99` | widescreen pause script, `res=native` vs `res=ps1` | `targets at 960x508`; the 16:9 picture fills the screen at native resolution; `res=ps1` softer as expected. |
+| `run100`–`run103` | `REALTIME=1`, 6000 vblanks of title and attract demo: native, ps1, 2, widescreen+interp | 60 vblanks/s and 134–150 pictures per 300 vblanks at every resolution. Vita3K's GPU timings are not the Vita's: hardware decides the cost. |
+| `run104` | `REALTIME=1`, boot logos, old and new | The 24-bit logos are black in the window in both builds (the replay shots show them): not caused by D37. |
