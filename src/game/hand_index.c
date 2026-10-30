@@ -11,6 +11,8 @@
 u32 func_80033F08(); /* camera_hand.c */
 u32 func_80034480(); /* camera_hand.c */
 u32 func_800357A4(); /* camera_hand.c */
+u32 func_80043FE4(); /* pete_hand.c */
+u32 func_80047B60(); /* pete_dispatch_hand.c */
 u32 func_80048D10(); /* pete_hand.c */
 u32 func_80049FAC(); /* pete_hand.c */
 
@@ -24,6 +26,12 @@ const M2cEntry m2c_hand_index[] = {
 #if !M2C_func_800357A4
     HAND(0x800357A4u, func_800357A4),
 #endif
+#if !M2C_func_80043FE4
+    HAND(0x80043FE4u, func_80043FE4),
+#endif
+#if !M2C_func_80047B60
+    HAND(0x80047B60u, func_80047B60),
+#endif
 #if !M2C_func_80048D10
     HAND(0x80048D10u, func_80048D10),
 #endif
@@ -33,9 +41,6 @@ const M2cEntry m2c_hand_index[] = {
     {0, 0, 0},
 };
 
-u32 func_80043FE4__m2c(); /* pete_hand.c, partly hand-written */
-u32 func_80043FE4_gen__m2c(); /* its mips2c unit, renamed */
-
 /* The mips2c units of fully hand-written functions, linked as <name>_gen
  * only with cmake SPYRO_M2C_REF=ON (M2C_REF=1), for differential sweeps. */
 #define GEN(addr, name)                                                        \
@@ -43,13 +48,12 @@ u32 func_80043FE4_gen__m2c(); /* its mips2c unit, renamed */
 u32 func_80033F08_gen__m2c();
 u32 func_80034480_gen__m2c();
 u32 func_800357A4_gen__m2c();
+u32 func_80043FE4_gen__m2c();
+u32 func_80047B60_gen__m2c();
 u32 func_80048D10_gen__m2c();
 u32 func_80049FAC_gen__m2c();
 
 const M2cEntry m2c_gen_index[] = {
-#if !M2C_func_80043FE4
-    {0x80043FE4u, "func_80043FE4", (u32(*)(u32, u32, u32, u32))func_80043FE4_gen__m2c},
-#endif
 #if M2C_REF && !M2C_func_80033F08
     GEN(0x80033F08u, func_80033F08),
 #endif
@@ -58,6 +62,12 @@ const M2cEntry m2c_gen_index[] = {
 #endif
 #if M2C_REF && !M2C_func_800357A4
     GEN(0x800357A4u, func_800357A4),
+#endif
+#if M2C_REF && !M2C_func_80043FE4
+    GEN(0x80043FE4u, func_80043FE4),
+#endif
+#if M2C_REF && !M2C_func_80047B60
+    GEN(0x80047B60u, func_80047B60),
 #endif
 #if M2C_REF && !M2C_func_80048D10
     GEN(0x80048D10u, func_80048D10),
