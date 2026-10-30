@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "common.h"
+#include "cyclorama.h"
 #include "environment.h"
 #include "loaders.h"
 #include "moby.h"
@@ -55,13 +56,18 @@ void spyro_moby_dump(const char *path) {
   if (g_Gamestate >= GS_TitleScreen || g_LoadStage >= 0 || !g_LevelMobys ||
       !(f = fopen(path, "w")))
     return;
-  fprintf(f, "index\tclass\tx\ty\tz\tstate\tspyro_x\tspyro_y\tspyro_z\tgems\n");
+  fprintf(f, "index\tclass\tx\ty\tz\tstate\tspyro_x\tspyro_y\tspyro_z\tgems\trot_z\n");
   for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++)
-    fprintf(f, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", i, g_LevelMobys[i].m_Class,
+    fprintf(f, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", i, g_LevelMobys[i].m_Class,
             g_LevelMobys[i].m_Position.x, g_LevelMobys[i].m_Position.y, g_LevelMobys[i].m_Position.z,
             g_LevelMobys[i].m_State, g_Spyro.m_Position.x, g_Spyro.m_Position.y, g_Spyro.m_Position.z,
-            g_GemTotal);
+            g_GemTotal, g_LevelMobys[i].m_Rotation.z);
   for (i = 0; i < g_Environment.m_SurfaceCount && g_Environment.m_SurfaceData; i++)
     fprintf(f, "# surface %d type %d\n", i, g_Environment.m_SurfaceData[i]->m_Type);
+  for (i = 0; i < g_PortalCount && i < 6 && g_Portals[i]; i++)
+    fprintf(f, "# portal %d level %d center %d %d %d point0 %d %d %d path_moby %d\n", i,
+            g_Portals[i]->m_LevelId, g_Portals[i]->m_Center.x, g_Portals[i]->m_Center.y,
+            g_Portals[i]->m_Center.z, g_Portals[i]->m_Points[0].x, g_Portals[i]->m_Points[0].y,
+            g_Portals[i]->m_Points[0].z, g_Portals[i]->m_PathMoby);
   fclose(f);
 }

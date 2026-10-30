@@ -5,7 +5,11 @@ DIR/now.tsv, holds UP (plus LEFT or RIGHT when the target is off to one
 side) for a few vblanks, and repeats until Spyro is within --radius of the
 target. Which of LEFT/RIGHT turns which way is learned from the first turns.
 
-    tools/steer.py DIR X Y [--radius R] [--step N] [--max-steps M] [--extra BUTTONS]
+    tools/steer.py DIR X Y [--radius R] [--step N] [--max-steps M] [--extra BUTTONS] [--jump]
+
+--jump: when Spyro hasn't moved since the last step (a curb or a low
+wall), the next step holds CROSS too, and the one after it as well (UP+CROSS
+held for two steps jumps and starts a glide over it).
 """
 import argparse
 import csv
@@ -21,6 +25,7 @@ ap.add_argument("--radius", type=int, default=400)
 ap.add_argument("--step", type=int, default=4, help="vblanks per command")
 ap.add_argument("--max-steps", type=int, default=400)
 ap.add_argument("--extra", default="", help="buttons added to every command, e.g. square to charge")
+ap.add_argument("--jump", action="store_true", help="jump when stuck")
 a = ap.parse_args()
 
 
@@ -42,6 +47,7 @@ def angle(v):
 
 
 prev = state()
+jump_left = 0
 left_sign = None  # +1: LEFT turns counter-clockwise (x right, y up)
 for i in range(a.max_steps):
     x, y, gems = state()
@@ -59,6 +65,11 @@ for i in range(a.max_steps):
             side = "left" if (left_sign is None and ccw) or (left_sign == 1 and ccw) or (left_sign == -1 and not ccw) else "right"
             btn = "up+" + side
             last_turn, last_err = side, err
+    if a.jump and i > 0 and math.hypot(*v) < 40 and jump_left == 0:
+        jump_left = 2
+    if jump_left:
+        btn += "+cross"
+        jump_left -= 1
     if a.extra:
         btn += "+" + a.extra
     prev = (x, y, gems)

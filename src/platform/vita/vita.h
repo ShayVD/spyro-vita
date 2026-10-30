@@ -33,6 +33,9 @@ typedef struct {
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
+  int widescreen;     /* widescreen=1: 16:9 (docs/presentation.md) */
+  int interp;         /* interp=1: 60 fps; 2: no animation blending; 3: camera only */
+  int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -60,6 +63,13 @@ void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the displ
 void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
 void vita_gpu_fill(float r, float g, float b);
 void vita_gpu_report(int vblank); /* "gpu" line in the log */
+
+/* present_vita.c: widescreen and 60 fps (D30) */
+void vita_present_init(void); /* after vita_video_init */
+void vita_present_report(int vblank);
+/* gpu_gl.c: presentation frames captured and kept on the GPU */
+struct PresentCapture;
+const struct PresentCapture *vita_gpu_present_capture(void);
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);

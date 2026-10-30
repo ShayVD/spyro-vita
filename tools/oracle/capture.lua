@@ -86,7 +86,9 @@ end
 -- lines can instead be anchored to the game state: "@gs=0,level=10 +71 up"
 -- fires 71 vblanks after gamestate and level first match, counting from when
 -- the line before was applied; consecutive lines with the same condition
--- share one anchor.
+-- share one anchor. "poke:ADDR=VALUE" (hex) in place of the buttons writes
+-- that word of RAM when the line fires and leaves the buttons alone (test
+-- set-ups, as the host's pad.c).
 -- $ORACLE_PAD_AFTER is a second script of the same kind that starts once
 -- the $ORACLE_TOUR below is done (the host's --pad-after).
 local pad_shift = tonumber(os.getenv('ORACLE_PAD_SHIFT') or '0')
@@ -137,7 +139,15 @@ local function run_pad(st, gs, level)
       end
       if vblank < st.anchor + p.off then return end
     end
-    setpad(p.spec)
+    local pa, pv = p.spec:match('^poke:(%x+)=(%x+)')
+    if pa then
+      local v = tonumber(pv, 16)
+      if v >= 0x80000000 then v = v - 0x100000000 end
+      ffi.cast('int32_t*', mem + bit.band(tonumber(pa, 16), 0x1fffff))[0] = v
+      print(string.format('oracle: pad poke %s = %s at vblank %d', pa, pv, vblank))
+    else
+      setpad(p.spec)
+    end
     st.i = st.i + 1
   end
 end
@@ -146,8 +156,15 @@ local function pad_done() return main_st.i > #pad end
 
 -- Level ID, for per-level sample budgets ($ORACLE_PER_LEVEL=1: up to
 -- $ORACLE_SAMPLES per function in each level, not overall).
+-- $ORACLE_PER_STATE=1 makes it per level and gamestate (the portal, exit
+-- and balloonist gamestates of docs/whole-game-host.md's routes).
 local per_level = os.getenv('ORACLE_PER_LEVEL') == '1'
-local function level_now() return ffi.cast('int32_t*', mem + 0x7596C)[0] end
+local per_state = os.getenv('ORACLE_PER_STATE') == '1'
+local function level_now()
+  local level = ffi.cast('int32_t*', mem + 0x7596C)[0]
+  if per_state then return level * 100 + ffi.cast('int32_t*', mem + 0x757D8)[0] end
+  return level
+end
 
 -- RAM word for key= and if= ("ADDR:SIZE", PS1 address in hex).
 local function ramword(spec)
@@ -170,6 +187,11 @@ local bps = oracleBreakpoints
 -- One more $ORACLE_FUNCS option: gs=G only samples while g_Gamestate is G,
 -- for overlay code whose address other overlays share (the credits overlay
 -- runs in gamestate 15).
+-- A sample ends at the first return to its $ra with the entry $sp (so a
+-- recursive call's return doesn't end it). The word anysp ends it at the
+-- first return to $ra whatever $sp is, for hand-written asm that uses $sp as
+-- a data register (r_cyclorama.s's func_8004F7E8 returns with $sp pointing
+-- into its primitive buffer).
 for line in (funcs and io.lines(funcs) or function() end) do
   local a, name, opts = line:match('^%s*(%x+)%s+(%S+)%s*(.*)$')
   if a then
@@ -186,6 +208,7 @@ for line in (funcs and io.lines(funcs) or function() end) do
         st.cond = op == '=' and function() return get() == want end or function() return get() ~= want end
       end
     end
+    st.any_sp = opts:match('%f[%w]anysp%f[%W]') ~= nil
     state[#state + 1] = st
     bps[#bps + 1] = PCSX.addBreakpoint(addr, 'Exec', 4, 'oracle ' .. name, function()
       if st.busy or vblank < st.next then return true end
@@ -204,7 +227,7 @@ for line in (funcs and io.lines(funcs) or function() end) do
       st.exit = PCSX.addBreakpoint(ra, 'Exec', 4, 'oracle ret ' .. name, function()
         if done then return false end
         if busy[key] == nil then done, copy = true, nil return false end -- timed out
-        if PCSX.getRegisters().GPR.n.sp ~= sp then return true end
+        if not st.any_sp and PCSX.getRegisters().GPR.n.sp ~= sp then return true end
         dump_out(string.format('%s/%s_%d.out', out, name, k), addr, k, copy)
         done, st.busy, copy, busy[key], completed[key] = true, false, nil, nil, true
         return false

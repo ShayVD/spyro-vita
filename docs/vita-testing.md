@@ -87,6 +87,9 @@ Files the app writes:
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
 | `shot_hold=MS` | after each shot, keep the picture on screen MS milliseconds and log `hold V` (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
+| `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
+| `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
+| `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -102,13 +105,16 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 - With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
   into targets (M moves between them), R readbacks (… replayed; Y ms), K targets at W×H`, counted
   over the same 300 vblanks. W×H is the size the GPU draws a 512×224 game buffer at (`res=`).
+  The upload and readback times are CPU time.
 - With the GPU, also `gpu N: timed frame F ms, GPU tail after the CPU G ms`: one frame in the
   window is timed with `glFinish` before its first draw and before its swap. F is that frame from
   its first draw to the GPU being done (CPU and GPU work overlapped); G is how long the GPU still
   worked after the CPU had sent the whole frame. A G near 0 means the GPU keeps up at this
   resolution; the frame is ~G ms late on screen at most, once per 5 seconds (`gpu_time=0` turns it
   off).
-  The upload and readback times are CPU time.
+- With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
+  …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
+  how often the 60 fps picture made it; S counts ticks the budget turned it off.
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
 `gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,
@@ -236,3 +242,18 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 4. `gpu N:` lines: `VRAM uploads` should be a handful per 300 vblanks (level loads, menus), not
    one per picture.
 5. Open the pause menu and the inventory: the background should be the game's frame in green.
+
+**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30), with the GPU build:
+
+1. `config.txt`: `widescreen=1`, `interp=1`, `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
+   (title, and the first attract demo), `stats=1`. Leave it at the title until the demo plays
+   (about 75 s).
+2. In the log: `present: widescreen 1, interp 1 (budget 26 ms), GPU capture`;
+   `gpu: presentation frames 960x544`; `present N:` lines (in-between frames per tick, skips);
+   `vblank N: ... P pictures` (P/5 near 60 when every in-between frame makes it); `busy` in the
+   `time` lines.
+3. The `shot-V-hd.png` files: the picture fills the 16:9 screen, upright, the HUD and the
+   "DEMO MODE" letters keep their shape, and consecutive vblanks show different pictures.
+4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
+   right? Then `interp=1` alone (4:3) and `widescreen=1` alone, to see each one's cost in the
+   `time` and `present` lines.

@@ -39,6 +39,7 @@
 
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
+#include "../../game/present.h"
 
 #define VW 1024
 #define VH 512
@@ -698,13 +699,14 @@ static void drop_target(int i) {
 }
 
 static void set_scale(void) {
-  /* the screen's pixels: the display rect fills a 4:3 area 544 lines high */
+  /* the screen's pixels: the display rect fills a 4:3 area 544 lines high,
+   * or the whole width with widescreen (presentation frames, D30) */
   int dw = currentDispEnv.disp.w > 0 ? currentDispEnv.disp.w : 512;
   int dh = currentDispEnv.disp.h > 0 ? currentDispEnv.disp.h : 240;
   if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
   } else { /* res=native */
-    s_sx = (float)(SCREEN_H * 4 / 3) / dw;
+    s_sx = (float)(g_present.widescreen ? SCREEN_W : SCREEN_H * 4 / 3) / dw;
     s_sy = (float)SCREEN_H / dh;
   }
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
@@ -1256,6 +1258,145 @@ static void write_hd_shot(void) {
   s_hd_shot = 0;
 }
 
+/* ---- presentation frames (src/game/present.c: widescreen, 60 fps; D30) ---- */
+
+/* PRESENT_SLOTS textures for present.c's queue, plus a staging one: a
+ * presentation pass's picture is copied from the targets on the GPU (no
+ * readback, no replay) and filed by swapping handles. */
+#define STAGING PRESENT_SLOTS
+static GLuint s_ptex[PRESENT_SLOTS + 1], s_pfbo[PRESENT_SLOTS + 1];
+static int s_pw, s_ph;
+static int s_pres_on_screen = -1; /* slot the screen shows, -1: the display rect */
+
+static void pres_alloc(int w, int h) {
+  int i;
+  if (s_pw == w && s_ph == h)
+    return;
+  for (i = 0; i <= PRESENT_SLOTS; i++) {
+    if (s_ptex[i]) {
+      glDeleteFramebuffers(1, &s_pfbo[i]);
+      glDeleteTextures(1, &s_ptex[i]);
+    }
+    s_ptex[i] = new_tex(w, h, NULL);
+    glGenFramebuffers(1, &s_pfbo[i]);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_pfbo[i]);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_ptex[i], 0);
+    s_bound_fbo = s_pfbo[i];
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      vita_log("gpu: presentation FBO %dx%d incomplete", w, h);
+  }
+  s_pw = w;
+  s_ph = h;
+  s_pres_on_screen = -1;
+  vita_log("gpu: presentation frames %dx%d", w, h);
+}
+
+/* The VRAM rect a presentation pass just drew -> staging: every target over
+ * it, at the targets' resolution; black elsewhere (Spyro's border lines).
+ * Inside an FBO the image's top is NDC -1, as in copy_into(). */
+static void pres_capture(int x, int y, int w, int h) {
+  float ndc[4], src[4];
+  int i;
+  if (!s_sx)
+    set_scale();
+  flush_pending();
+  pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
+  bind_fbo(s_pfbo[STAGING]);
+  glViewport(0, 0, s_pw, s_ph);
+  no_blend();
+  glClearColor(0, 0, 0, 1);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glUseProgram(s_prog[P_TEX].prog);
+  for (i = 0; i < s_ntargets; i++) {
+    const Target *t = &s_targets[i];
+    int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
+    int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
+    int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
+    if (x0 >= x1 || y0 >= y1)
+      continue;
+    ndc[0] = (float)(x0 - x) / w * 2 - 1;
+    ndc[2] = (float)(x1 - x) / w * 2 - 1;
+    ndc[1] = (float)(y0 - y) / h * 2 - 1;
+    ndc[3] = (float)(y1 - y) / h * 2 - 1;
+    src[0] = (float)(x0 - t->x) / t->w;
+    src[2] = (float)(x1 - t->x) / t->w;
+    src[1] = (float)(y0 - t->y) / t->h;
+    src[3] = (float)(y1 - t->y) / t->h;
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, t->tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glActiveTexture(GL_TEXTURE0);
+    quad(ndc, src);
+  }
+}
+
+static void pres_commit(int slot) {
+  GLuint t = s_ptex[slot], f = s_pfbo[slot];
+  s_ptex[slot] = s_ptex[STAGING];
+  s_pfbo[slot] = s_pfbo[STAGING];
+  s_ptex[STAGING] = t;
+  s_pfbo[STAGING] = f;
+  if (slot == s_pres_on_screen)
+    s_pres_on_screen = -1; /* new content: draw it again */
+}
+
+static const PresentCapture s_pres_capture = {pres_capture, pres_commit};
+
+const struct PresentCapture *vita_gpu_present_capture(void) { return &s_pres_capture; }
+
+/* Presentation frame `slot` on the screen: full width when widescreen, else
+ * 4:3 in the middle. GPU slots (gpu=1) or present.c's pixels (the software
+ * rasterizer shown through vitaGL). */
+static int present_slot(int slot) {
+  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : SCREEN_H * 4 / 3;
+  int area_x = (SCREEN_W - area_w) / 2;
+  float ndc[4], src[4] = {0, 0, 1, 1};
+  if (!port_present_frame_new() && s_pres_on_screen == slot && !s_hd_shot)
+    return 0; /* the display keeps showing it */
+  prof_enter(PROF_PRESENT);
+  s_pres_on_screen = slot;
+  s_last.valid = 0; /* the display rect must be drawn again when it's back */
+  bind_fbo(0);
+  glViewport(0, 0, SCREEN_W, SCREEN_H);
+  no_blend();
+  glClearColor(0, 0, 0, 1);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glActiveTexture(GL_TEXTURE1);
+  if (g_present_capture) {
+    glBindTexture(GL_TEXTURE_2D, s_ptex[slot]);
+  } else {
+    const uint16_t *px = port_present_slot_pixels(slot);
+    static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
+    int i;
+    for (i = 0; px && i < PRESENT_W * PRESENT_H; i++) {
+      int r = px[i] & 31, g = (px[i] >> 5) & 31, b = (px[i] >> 10) & 31;
+      rgb[i * 3] = (uint8_t)(r << 3 | r >> 2);
+      rgb[i * 3 + 1] = (uint8_t)(g << 3 | g >> 2);
+      rgb[i * 3 + 2] = (uint8_t)(b << 3 | b >> 2);
+    }
+    glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+  }
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
+  glActiveTexture(GL_TEXTURE0);
+  glUseProgram(s_prog[P_TEX].prog);
+  ndc[0] = (float)area_x / SCREEN_W * 2 - 1;
+  ndc[2] = (float)(area_x + area_w) / SCREEN_W * 2 - 1;
+  ndc[1] = 1;
+  ndc[3] = -1;
+  quad(ndc, src);
+  if (s_hd_shot)
+    write_hd_shot();
+  s_st.presents++;
+  prof_leave();
+  prof_enter(PROF_WAIT);
+  swap();
+  prof_leave();
+  return 1;
+}
+
 /* One frame: the display rect 4:3 in the middle of the screen. Returns 1 if
  * it was a new picture. */
 int vita_gpu_present(void) {
@@ -1263,6 +1404,10 @@ int vita_gpu_present(void) {
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
   int area_w = SCREEN_H * 4 / 3, area_x = (SCREEN_W - area_w) / 2, i;
   float ndc[4], src[4];
+  i = port_present_frame_slot();
+  if (i >= 0)
+    return present_slot(i);
+  s_pres_on_screen = -1;
   prof_enter(PROF_PRESENT);
   if (s_last.valid && s_last.gen == s_gen && s_last.vgen == prof_vram_gen() &&
       s_last.disabled == g_GPUDisabledState && !memcmp(&s_last.disp, d, sizeof s_last.disp) &&
