@@ -95,6 +95,7 @@ static void vblank(void) {
     s_stat_t0 = now;
   if (g_vita_opts.stats && v - s_stat_v0 >= 300) {
     unsigned us = (unsigned)(now - s_stat_t0);
+    int window = v - s_stat_v0;
     vita_log("vblank %d: %d vblanks in %u ms (%u.%u per second), %d pictures, %d vblanks late",
              v, v - s_stat_v0, us / 1000, (v - s_stat_v0) * 1000000u / us,
              (v - s_stat_v0) * 10000000u / us % 10, s_stat_shown, s_stat_late);
@@ -102,6 +103,7 @@ static void vblank(void) {
     s_stat_v0 = v;
     s_stat_shown = s_stat_late = 0;
     prof_report(v);
+    prof_draw_report(v, window);
     vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);

@@ -129,6 +129,7 @@ void prof_enter(int part);
 void prof_leave(void);
 void prof_vblank(void);
 void prof_report(int vblank);
+void prof_draw_report(int vblank, int vblanks); /* prof_draw.c: "draw" lines */
 unsigned prof_vram_gen(void); /* changes whenever the rasterizer writes VRAM */
 
 #endif

@@ -343,6 +343,12 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 7. Send back `spyro.log`, the shots, and anything that looked wrong (when, and what you did
    just before).
 
+**Measuring what 60 fps costs** (`docs/presentation.md` "60 fps on the Vita"):
+
+1. Play two minutes of Artisans free roam with the defaults (`widescreen=1`, `interp=1`).
+2. Then two minutes in the same places with `widescreen=0`.
+3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky), next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit).
+
 **Testing the render resolution** (`res=`, decisions D40), with the GPU build:
 
 1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 960x508` (16:9,

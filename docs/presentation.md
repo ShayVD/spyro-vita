@@ -190,6 +190,49 @@ How to read it for the Vita:
     - a cheaper render path (readable C for the renderers);
     - cheaper submission in the GPU backend.
 
+## 60 fps on the Vita: where a frame's CPU goes (2026-10-30)
+
+From the hardware benchmark log (`logs/hw-be37191-bench`, main `be37191`, 16:9 native, texture cache on; free play after vblank 12120). The GPU is no longer the limit there: GPU tail 12–16 ms, 30 pictures/s. Per vblank: game 3.65 ms, OT 2.95, raster 3.49, SPU 0.02 (it has its own core). A tick is two vblanks, and update is ~0.5 ms of "game", so one 16:9 frame costs:
+
+| Part | ms per frame | What it is |
+|---|---|---|
+| Render path | ≈ 6.8 | the translated renderers, mostly the GTE model they call |
+| OT walk | ≈ 5.9 | PsyCross's primitive parse and split set-up (`DrawOTag` minus GL) |
+| Raster | ≈ 7.0 | `gpu_gl.c`'s vertex handling and GL submission (`GR_DrawTriangles`) |
+| **Frame** | **≈ 19.7** | `present`'s "logic draw" reads 17–27 ms per tick |
+
+"Logic draw" was 4–8 ms before PR #19 because then it held no OT walk and no raster: the logic draw skipped `DrawOTag`, and a second, 16:9 pass paid for them (15–30 ms per tick in total). Now it's the one and only draw.
+
+**What 60 fps needs:** update + the real frame + the in-between frame + snapshot ≈ 0.5 + 2 × frame + 0.3 ms, with room left for presenting and for heavy scenes in a 33 ms tick. So a frame must cost at most ~14 ms. Today it's ~19.7 ms at 16:9. That's why the budget skipped the in-between frame in 49 of 52 windows: it never slows the game down, it just keeps 30 fps.
+
+**Host profile** (gprof, linux32 at `-O2` like the Vita, the Artisans gem script at 16:9; `logs/run45-gprof-O2`). Leaving out the host-only software rasteriser, x86 artifacts and audio:
+
+| Share of the game's own CPU work | Functions |
+|---|---|
+| **≈ 50%: the GTE model** | `GTE_operator`, `GTE_RotTransPers`, `MTC2`/`MFC2`/`CTC2` (66 million `MTC2` calls in the run), `A3`, `gte_divide` |
+| ≈ 25%: the translated renderers' own code | `func_80022A2C` (shaded mobys), sky, collision |
+| ≈ 20%: PsyCross's OT parse | `MakeVertexTriangle`/`Quad`, `ParsePrimitive`, `AddSplit` |
+
+**Done here:**
+- **Inline GTE register moves.** `src/game/mips2c_rt.h` now does `MTC2`/`MFC2`/`CTC2`/`CFC2` itself, register for register as PsyCross's `INLINE_C.C`. With a constant register number, a plain move becomes one load or store; IRGB/ORGB/LZCS/LZCR/FLAG still go to PsyCross. On the host it removes ~3.7 s of ~16.6 s of the game's own CPU work (`logs/run47-gprof-O2-inline`), and the shaded-moby renderer runs in less than half the time.
+- **Checked:**
+  - with features off, trace and 110 shots byte-identical to the baseline;
+  - with both features on, demos match and the 110 shots are byte-identical to the previous build;
+  - gem script identical;
+  - `tests/gte`, `m2c_diff_math` and the rest of ctest pass.
+- **On the Vita:** expect a share of the 6.8 ms render path back (estimate ~1–1.5 ms per frame). It's not measured on hardware; Vita3K's timings vary 3–4× from run to run and can't tell.
+- **Per-renderer timing:** spyro.log now has `draw N:` lines, per vblank: update, env, mobys, spyro, fx, particles, sky (`src/platform/vita/prof_draw.c`). The next hardware run says which renderer to cut.
+
+**Verdict (estimates from the numbers above, to confirm on hardware):**
+
+| Mode | Frame CPU | 60 fps |
+|---|---|---|
+| 16:9 native | ≈ 19.7 ms; ≈ 18.3 with the inline moves | **doesn't fit**. It needs about 4 ms more cut from the OT walk and the GPU submission (13 ms of the frame), e.g. the texture session's vertex-cache work when persp/subpixel are off, and a faster PsyCross parse |
+| 4:3 native | 11–18 ms in the first hardware log (`logs/hw-3b4126a-user`, widescreen off): ≈ 25% less geometry than 16:9 | **borderline**: fits in lighter scenes, and the budget already turns it on and off tick by tick |
+| `res=ps1` | the same CPU as native (the bench's timed frame minus GPU tail is the same: resolution only moves GPU time) | no better than native for 60 fps |
+
+Nothing is removed. With the budget, the 60 fps option can't make the game slower than 30 fps; at 16:9 it just rarely fires yet.
+
 ## Verification
 
 | Check | Result | Logs |
