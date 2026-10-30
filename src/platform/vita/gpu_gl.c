@@ -22,7 +22,12 @@
  *     on top, 4:3 into the 960x544 screen.
  * Semi-transparency follows the PS1: only texels with STP set blend (one
  * premultiplied pass for average/add/quarter, two passes for subtract).
- * Not modelled (as in gpu_soft.c): mask bit, texture window, dithering. */
+ * Not modelled (as in gpu_soft.c): mask bit, texture window, dithering.
+ * Optional (decisions D36, all off by default): tex_filter= filters textures
+ * after the palette lookup; persp= and subpixel= use the GTE's exact
+ * projections (src/platform/common/vcache.c) for perspective-correct
+ * textures and sub-pixel vertices. Any of them switches to an expanded
+ * vertex (XVertex); with all off the draws are as before. */
 #include "vita.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -37,6 +42,7 @@
 
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
+#include "psx_vcache.h"
 
 #define VW 1024
 #define VH 512
@@ -141,10 +147,26 @@ static GrVertex s_vbuf[MAX_VERTEX_BUFFER_SIZE];
 static const GrVertex *s_vorig; /* PsyX's own buffer, as it was given */
 static int s_nverts;
 
+/* The expanded vertex (D36): float position, so a vertex can sit between
+ * pixels, and w, which the GPU divides by when it interpolates (w = 1 is
+ * the PS1's affine mapping). box: the texels the filter may read. */
+typedef struct {
+  float x, y, w;
+  int16_t page, clut;
+  uint8_t u, v, filt, pad;
+  uint8_t r, g, b, a;
+  uint8_t box[4]; /* u0, v0, u1, v1 */
+} XVertex;
+static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
+static int s_xmode;    /* any of the three below: draws use s_xbuf */
+static int s_filter;   /* tex_filter=: 0 off, 1 3-point, 2 bilinear */
+static int s_persp;    /* persp=1 */
+static int s_subpixel; /* subpixel=1 */
+
 /* per 300-vblank report */
 static struct {
   unsigned draws, tris, uploads, readbacks, replays, copies, presents;
-  uint64_t upload_us, readback_us;
+  uint64_t upload_us, readback_us, expand_us;
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
@@ -173,6 +195,33 @@ static const char k_vs_prim[] =
     "  v_col = a_col;\n"
     "  float qpage = md(a_pos.z, 65536.0, 1.0 / 65536.0);\n"
     "  float qclut = md(a_pos.w, 65536.0, 1.0 / 65536.0);\n"
+    "  v_pc = vec4(md(qpage, 16.0, 0.0625) * 64.0, md(floor(qpage * 0.0625), 2.0, 0.5) * 256.0,\n"
+    "              md(qclut, 64.0, 0.015625) * 16.0, md(floor(qclut * 0.015625), 512.0, 1.0 / 512.0));\n"
+    "}\n";
+
+/* k_vs_prim for the expanded vertex (D36). Clip coordinates times w: the
+ * same picture for w = 1, perspective-correct varyings otherwise. */
+static const char k_vs_prim_x[] =
+    "attribute vec3 a_pos;\n" /* x, y, w */
+    "attribute vec2 a_pc;\n"  /* tpage, clut (shorts) */
+    "attribute vec4 a_tex;\n" /* u, v, filter, 0 (bytes) */
+    "attribute vec4 a_col;\n"
+    "attribute vec4 a_box;\n" /* u0, v0, u1, v1: texels the filter may read */
+    "uniform vec4 u_xf;\n"
+    "varying vec2 v_uv;\n"
+    "varying vec4 v_col;\n"
+    "varying vec4 v_pc;\n"
+    "varying vec4 v_box;\n"
+    "varying float v_filt;\n"
+    GLSL_MD
+    "void main() {\n"
+    "  gl_Position = vec4(((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0) * a_pos.z, 0.0, a_pos.z);\n"
+    "  v_uv = a_tex.xy;\n"
+    "  v_filt = a_tex.z;\n"
+    "  v_box = a_box;\n"
+    "  v_col = a_col;\n"
+    "  float qpage = md(a_pc.x, 65536.0, 1.0 / 65536.0);\n"
+    "  float qclut = md(a_pc.y, 65536.0, 1.0 / 65536.0);\n"
     "  v_pc = vec4(md(qpage, 16.0, 0.0625) * 64.0, md(floor(qpage * 0.0625), 2.0, 0.5) * 256.0,\n"
     "              md(qclut, 64.0, 0.015625) * 16.0, md(floor(qclut * 0.015625), 512.0, 1.0 / 512.0));\n"
     "}\n";
@@ -231,6 +280,72 @@ static const char k_fs_tex_body[] =
     "  float qstp = step(128.0, qc.y);\n"
     "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
     "  vec3 qrgb = rgb15(qc) * v_col.xyz * (255.0 / 128.0);\n"
+    "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
+    "}\n";
+
+/* tex_filter= (D36): the palette lookup first, then the filter (FILTER 1:
+ * N64-style 3-point, 2: bilinear), over texels clamped to the triangle's UV
+ * box, so the neighbouring textures in a page never bleed in. Transparent
+ * texels (0x0000) get no weight and the colour is renormalised over the
+ * rest, so cut-out edges don't darken; a pixel is drawn where at least half
+ * the weight is opaque. STP is the weighted majority, the same in both
+ * subtract passes. v_filt = 0 (sprites, tiles) samples the nearest texel,
+ * as k_fs_tex_body does. */
+static const char k_fs_filt_body[] =
+    "varying vec4 v_box;\n"
+    "varying float v_filt;\n"
+    "vec2 qfetch(vec2 quv, vec4 qpc) {\n"
+    "#if FMT == 0\n"
+    "  vec2 qword = vram(qpc.x + floor(quv.x * 0.25), qpc.y + quv.y);\n"
+    "  float qn = md(quv.x, 4.0, 0.25);\n"
+    "  float qbyte = mix(qword.x, qword.y, step(2.0, qn));\n"
+    "  float qhi = floor(qbyte * 0.0625);\n"
+    "  float qidx = mix(qbyte - qhi * 16.0, qhi, md(qn, 2.0, 0.5));\n"
+    "  return vram(qpc.z + qidx, qpc.w);\n"
+    "#elif FMT == 1\n"
+    "  vec2 qword = vram(qpc.x + floor(quv.x * 0.5), qpc.y + quv.y);\n"
+    "  return vram(qpc.z + mix(qword.x, qword.y, md(quv.x, 2.0, 0.5)), qpc.w);\n"
+    "#else\n"
+    "  return vram(qpc.x + quv.x, qpc.y + quv.y);\n"
+    "#endif\n"
+    "}\n"
+    /* rgb; w: 0 transparent, 1 opaque, 2 opaque with STP */
+    "vec4 qtap(vec2 quv, vec4 qpc) {\n"
+    "  vec2 qc = qfetch(quv, qpc);\n"
+    "  return vec4(rgb15(qc), step(0.5, qc.x + qc.y) * (1.0 + step(128.0, qc.y)));\n"
+    "}\n"
+    "void main() {\n"
+    "  vec4 qpc = floor(v_pc + 0.5);\n"
+    "  vec4 qbox = floor(v_box + 0.5);\n"
+    "  float qfilt = step(0.5, v_filt);\n"
+    "  vec2 qf = v_uv + mix(vec2(0.002), vec2(-0.5), qfilt);\n"
+    "  vec2 qb = floor(qf);\n"
+    "  vec2 qfr = (qf - qb) * qfilt;\n"
+    "  vec2 q0 = clamp(qb, qbox.xy, qbox.zw);\n"
+    "  vec2 q1 = clamp(qb + 1.0, qbox.xy, qbox.zw);\n"
+    "  vec4 qt10 = qtap(vec2(q1.x, q0.y), qpc);\n"
+    "  vec4 qt01 = qtap(vec2(q0.x, q1.y), qpc);\n"
+    "#if FILTER == 1\n"
+    "  float qlo = step(qfr.x + qfr.y, 1.0);\n"
+    "  vec4 qta = qtap(mix(q1, q0, qlo), qpc);\n"
+    "  vec3 qw = mix(vec3(qfr.x + qfr.y - 1.0, 1.0 - qfr.y, 1.0 - qfr.x),\n"
+    "                vec3(1.0 - qfr.x - qfr.y, qfr.x, qfr.y), qlo);\n"
+    "  vec4 qtb = vec4(0.0);\n"
+    "  float qwb = 0.0;\n"
+    "#else\n"
+    "  vec4 qta = qtap(q0, qpc);\n"
+    "  vec4 qtb = qtap(q1, qpc);\n"
+    "  vec3 qw = vec3((1.0 - qfr.x) * (1.0 - qfr.y), qfr.x * (1.0 - qfr.y), (1.0 - qfr.x) * qfr.y);\n"
+    "  float qwb = qfr.x * qfr.y;\n"
+    "#endif\n"
+    "  vec4 qcode = vec4(qta.w, qt10.w, qt01.w, qtb.w);\n"
+    "  vec4 qa = vec4(qw, qwb) * min(qcode, 1.0);\n"
+    "  float qsum = qa.x + qa.y + qa.z + qa.w;\n"
+    "  if (qsum < 0.5) discard;\n"
+    "  vec3 qrgb = (qta.xyz * qa.x + qt10.xyz * qa.y + qt01.xyz * qa.z + qtb.xyz * qa.w) / qsum;\n"
+    "  float qstp = step(0.5 * qsum, dot(qa, step(1.5, qcode)));\n"
+    "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
+    "  qrgb = qrgb * v_col.xyz * (255.0 / 128.0);\n"
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
     "}\n";
 
@@ -305,6 +420,10 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
     glBindAttribLocation(p->prog, 0, "a_pos");
     glBindAttribLocation(p->prog, 1, "a_tex");
     glBindAttribLocation(p->prog, 2, "a_col");
+    if (s_xmode) {
+      glBindAttribLocation(p->prog, 3, "a_pc");
+      glBindAttribLocation(p->prog, 4, "a_box");
+    }
   }
   glLinkProgram(p->prog);
   glGetProgramiv(p->prog, GL_LINK_STATUS, &ok);
@@ -330,8 +449,9 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
  * picture: if only the others fail, *present_only is set. */
 static int build_programs(int *present_only) {
   static const char *const fmt_def[3] = {"#define FMT 0\n", "#define FMT 1\n", "#define FMT 2\n"};
-  const char *vs[1] = {k_vs_prim}, *qvs[1] = {k_vs_quad};
-  const char *fs[3];
+  static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
+  const char *vs[1] = {s_xmode ? k_vs_prim_x : k_vs_prim}, *qvs[1] = {k_vs_quad};
+  const char *fs[4];
   int i;
   fs[0] = k_fs_tex;
   if (link(&s_prog[P_TEX], qvs, 1, fs, 1, 1, "blit"))
@@ -348,7 +468,12 @@ static int build_programs(int *present_only) {
     fs[0] = fmt_def[i];
     fs[1] = k_fs_prim_head;
     fs[2] = k_fs_tex_body;
-    if (link(&s_prog[P_T4 + i], vs, 1, fs, 3, 0, i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
+    if (s_filter) {
+      fs[2] = filt_def[s_filter];
+      fs[3] = k_fs_filt_body;
+    }
+    if (link(&s_prog[P_T4 + i], vs, 1, fs, s_filter ? 4 : 3, 0,
+             i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
       return 0;
   }
   *present_only = 0;
@@ -412,6 +537,10 @@ static void quad(const float ndc[4], const float src[4]) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glDisableVertexAttribArray(2);
+  if (s_xmode) {
+    glDisableVertexAttribArray(3);
+    glDisableVertexAttribArray(4);
+  }
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, p);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, s);
   glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -764,6 +893,63 @@ void gl_GR_PopDebugLabel(void) {}
 void gl_GR_UpdateVRAM(void) {}
 void gl_GR_ReadFramebufferDataToVRAM(void) {}
 
+/* s_vbuf -> s_xbuf (D36). A polygon's vertices carry the vertex cache's
+ * answer (psx_vcache.h): its exact position (subpixel=1), and its depth as w
+ * when every vertex of the polygon was found (persp=1). Polygons are
+ * filtered (tex_filter=), clamped to each triangle's UV box: the texels
+ * from its lowest u, v to one below its highest, the last texel a PS1 quad
+ * with u1 = u0 + width samples. Sprites and tiles keep the nearest texel. */
+static void expand(int count) {
+  uint64_t t0 = now_us();
+  int i, k;
+  for (i = 0; i < count; i += 3) {
+    const GrVertex *v = s_vbuf + i;
+    int n = count - i < 3 ? count - i : 3;
+    int u0 = 255, v0 = 255, u1 = 0, v1 = 0;
+    for (k = 0; k < n; k++) {
+      u0 = v[k].u < u0 ? v[k].u : u0;
+      v0 = v[k].v < v0 ? v[k].v : v0;
+      u1 = v[k].u > u1 ? v[k].u : u1;
+      v1 = v[k].v > v1 ? v[k].v : v1;
+    }
+    u1 = u1 > u0 ? u1 - 1 : u0;
+    v1 = v1 > v0 ? v1 - 1 : v0;
+    for (k = 0; k < n; k++) {
+      XVertex *x = s_xbuf + i + k;
+      const VCacheVert *c;
+      uint32_t ref;
+      memcpy(&ref, &v[k].tcx, sizeof ref);
+      c = psx_vcache_get(ref);
+      x->x = v[k].x;
+      x->y = v[k].y;
+      x->w = 1;
+      if (c && s_subpixel) {
+        x->x += c->dx;
+        x->y += c->dy;
+      }
+      if (c && s_persp && (ref & VREF_PERSP))
+        x->w = c->w;
+      x->page = v[k].page;
+      x->clut = v[k].clut;
+      x->u = v[k].u;
+      x->v = v[k].v;
+      x->filt = s_filter && (ref & VREF_POLY);
+      x->pad = 0;
+      x->r = v[k].r;
+      x->g = v[k].g;
+      x->b = v[k].b;
+      x->a = v[k].a;
+      if (ref & VREF_POLY) {
+        x->box[0] = u0, x->box[1] = v0, x->box[2] = u1, x->box[3] = v1;
+      } else {
+        x->box[0] = x->box[1] = 0;
+        x->box[2] = x->box[3] = 255;
+      }
+    }
+  }
+  s_st.expand_us += now_us() - t0;
+}
+
 /* The vertices into the VBO (vitaGL gives a fresh buffer per glBufferData).
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
  * skips them (gpu_soft.c's rule). */
@@ -785,6 +971,11 @@ void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   }
   s_nverts = count;
   glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+  if (s_xmode) {
+    expand(count);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
+    return;
+  }
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *vertices, s_vbuf, GL_STREAM_DRAW);
 }
 
@@ -871,9 +1062,19 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, x));
-  glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, u));
-  glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GrVertex), (void *)offsetof(GrVertex, r));
+  if (s_xmode) {
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, x));
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, u));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(XVertex), (void *)offsetof(XVertex, r));
+    glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, page));
+    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
+  } else {
+    glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, x));
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, u));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GrVertex), (void *)offsetof(GrVertex, r));
+  }
 
   switch (s_blend) {
   case BM_NONE:
@@ -1112,8 +1313,23 @@ int vita_gpu_init(void) {
            (unsigned)(vglMemTotal(VGL_MEM_RAM) >> 10), (unsigned)(vglMemTotal(VGL_MEM_VRAM) >> 10),
            (unsigned)(vglMemTotal(VGL_MEM_PHYCONT) >> 10));
   shark_install_log_cb(shark_log);
+  s_filter = g_vita_opts.tex_filter < 0 ? 0 : g_vita_opts.tex_filter > 2 ? 2 : g_vita_opts.tex_filter;
+  s_persp = g_vita_opts.persp != 0;
+  s_subpixel = g_vita_opts.subpixel != 0;
+  s_xmode = s_filter || s_persp || s_subpixel;
   if (build_programs(&present_only) != 0)
     return -1;
+  if (s_xmode && present_only) {
+    vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
+    s_xmode = s_filter = s_persp = s_subpixel = 0;
+    if (build_programs(&present_only) != 0)
+      return -1;
+  }
+  if (s_xmode) {
+    /* polygons are marked for the filter; projections only for persp/subpixel */
+    psx_vcache_enable(s_persp || s_subpixel ? 2 : 1);
+    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d (D36)", s_filter, s_persp, s_subpixel);
+  }
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);
   glGenBuffers(1, &s_vbo);
@@ -1283,5 +1499,17 @@ void vita_gpu_report(int vblank) {
            (unsigned)(s_st.upload_us / 1000), (unsigned)(s_st.upload_us % 1000 / 10),
            s_st.copies, s_st.readbacks, s_st.replays, (unsigned)(s_st.readback_us / 1000),
            (unsigned)(s_st.readback_us % 1000 / 10), s_ntargets);
+  if (s_xmode) {
+    const VCacheStats *c = &g_vcache_stats;
+    unsigned f = c->frames ? c->frames : 1;
+    vita_log("vcache %d: %u frames; per frame %u projected (peak %u), %u invalid, %u ambiguous, "
+             "%u unrecorded; %u polygons, %u%% with every vertex found, %u%% of vertices found; "
+             "expand %u.%02u ms",
+             vblank, c->frames, c->records / f, c->peak, c->invalid / f, c->ambiguous / f,
+             c->full / f, c->polys / f, c->polys ? (unsigned)(100ull * c->persp / c->polys) : 0,
+             c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
+             (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
+    psx_vcache_stats_reset();
+  }
   memset(&s_st, 0, sizeof s_st);
 }

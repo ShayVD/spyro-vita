@@ -8,7 +8,7 @@
  *         [--pad-after FILE] [--peek ADDR:N]...
  *         [--widescreen | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
- *         [--out960] [--present-stats | --present-dirty]
+ *         [--out960] [--present-stats | --present-dirty] [--vcache]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -31,11 +31,16 @@
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
+ * --vcache: record the GTE's projections in the vertex cache the Vita's
+ *   persp=/subpixel= use (decisions D36) and log its counters at exit. The
+ *   pictures don't use it here; it is for checking that the game runs the
+ *   same with it on, and for its hit rates.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
 #include "present.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
+#include "psx_vcache.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,6 +65,7 @@ static void usage(void) {
           "             [--peek ADDR:N]...\n"
           "             [--widescreen | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--out960] [--present-stats]\n"
+          "             [--vcache]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -102,6 +108,23 @@ static void present_report(void) {
     log_pages("dirty", s->dirty_union);
     log_pages("MISSED", s->missed_union);
   }
+  host_log_flush();
+}
+
+static int s_vcache;
+
+static void vcache_report(void) {
+  const VCacheStats *s = &g_vcache_stats;
+  unsigned f = s->frames ? s->frames : 1;
+  if (!s_vcache)
+    return;
+  host_log("vcache: %u frames; per frame: %u vertices projected (peak %u entries), "
+           "%u invalid, %u ambiguous, %u not recorded; polygons %u, all vertices found %u (%.1f%%); "
+           "vertices found %.1f%% (not found: no entry %u, invalid %u, ambiguous %u per frame)",
+           s->frames, s->records / f, s->peak, s->invalid / f, s->ambiguous / f, s->full / f,
+           s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
+           s->verts ? 100.0 * s->hits / s->verts : 0.0, s->miss_none / f, s->miss_invalid / f,
+           s->miss_ambiguous / f);
   host_log_flush();
 }
 
@@ -223,6 +246,9 @@ int main(int argc, char **argv) {
       g_present.stats = 1;
     } else if (strcmp(a, "--present-dirty") == 0) {
       g_present.stats = 2;
+    } else if (strcmp(a, "--vcache") == 0) {
+      psx_vcache_enable(2);
+      s_vcache = 1;
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
     } else if (strcmp(a, "--pad") == 0) {
@@ -264,6 +290,7 @@ int main(int argc, char **argv) {
   if (port_present_active())
     g_host_opts.out960 = 1;
   atexit(present_report);
+  atexit(vcache_report);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)

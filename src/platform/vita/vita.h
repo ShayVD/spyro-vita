@@ -27,6 +27,9 @@ typedef struct {
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
+  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D36) */
+  int persp;          /* persp=1: perspective-correct textures (gpu=1, D36) */
+  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D36) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

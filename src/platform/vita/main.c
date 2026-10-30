@@ -31,6 +31,13 @@
  *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
  *                       (glReadPixels) instead of replaying the draws in the
  *                       software rasterizer (default 1)
+ *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
+ *                       1 3-point (N64 style), 2 bilinear (default 0: off;
+ *                       decisions D36)
+ *       persp=1         with gpu=1, perspective-correct textures on polygons
+ *                       the GTE projected (D36)
+ *       subpixel=1      with gpu=1, those polygons' vertices at their exact
+ *                       sub-pixel positions (D36)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -134,6 +141,12 @@ static void read_config(void) {
       g_vita_opts.gpu_readback = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
+    else if (!strcmp(line, "tex_filter"))
+      g_vita_opts.tex_filter = atoi(v);
+    else if (!strcmp(line, "persp"))
+      g_vita_opts.persp = atoi(v);
+    else if (!strcmp(line, "subpixel"))
+      g_vita_opts.subpixel = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
