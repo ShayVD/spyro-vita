@@ -41,8 +41,10 @@ void vita_present_report(int vblank) {
   static PresentStats last;
   const PresentStats *s = &g_present_stats;
   long long ticks = s->ticks - last.ticks;
-  if (!port_present_active() || ticks <= 0)
+  if (!port_present_active() || ticks <= 0) {
+    last = *s; /* windows with both off aren't reported, nor carried over */
     return;
+  }
   vita_log("present %d: %lld ticks; per tick us: logic draw %lld, passes %lld, snapshot %lld, "
            "blend %lld; %lld in-between frames, %lld skipped for the budget, %lld otherwise; "
            "%lld pictures from the 4:3 display",
