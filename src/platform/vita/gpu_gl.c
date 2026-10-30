@@ -1308,7 +1308,7 @@ static void expand(int count) {
       x->x = v[k].x;
       x->y = v[k].y;
       x->w = 1;
-      if (c && s_subpixel) {
+      if (c && s_subpixel && !(ref & VREF_NOPOS)) {
         x->x += c->dx;
         x->y += c->dy;
       }

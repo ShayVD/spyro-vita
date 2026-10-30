@@ -95,6 +95,7 @@ Files the app writes:
 | `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D39) |
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
+| `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
 **Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen, 60 fps and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
 
@@ -292,7 +293,19 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
    and `mixer=0` and say which ones are.
 
-**Testing texture filtering and perspective** (decisions D39, all off by default), with the GPU build:
+**Measuring the picture options: `bench=1`** (decisions D41), with the GPU build:
+
+1. `config.txt`: just `bench=1` (keep `gpu=1`, the default). Start the game, don't touch the controller, and
+   leave it about 4 minutes: it plays the title intro, the title and both attract demos while
+   the option sets take turns. It forces 4:3 at 30 fps; `bench=2` keeps your widescreen/60 fps.
+2. Send `spyro.log` back. The `bench final:` lines (at vblank 12600, about 3.5 minutes in) give
+   each option set's pictures per second and its GPU-timed frame and tail; `bench round N:` lines
+   come every 5 rounds in case the run stops early.
+3. After the bench the configured options are back: you can then play a minute with
+   `tex_filter=1 persp=1 subpixel=1` (no `bench=`) and note any glitches (what, where, which
+   option), ideally with a photo.
+
+**Testing texture filtering and perspective** (decisions D39, D41, all off by default), with the GPU build:
 
 1. Play a minute of Artisans as usual, then again with `tex_filter=1`, `persp=1` and `subpixel=1`
    in `config.txt` (then `tex_filter=2` once, if there is time).

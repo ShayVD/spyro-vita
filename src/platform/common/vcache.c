@@ -32,8 +32,10 @@
  * Sub-pixel positions are decided per key, not per polygon: a key that
  * is found gives every polygon using it the same point, and one that isn't
  * leaves it at the integer position everywhere, so polygons sharing a
- * vertex never crack apart. (A key with different points and no depth to
- * choose by stays integer.)
+ * vertex never crack apart. A key holding different points (more than a
+ * pixel apart) keeps the integer position too, whichever candidate's depth
+ * a polygon takes: two neighbours could pick different points, and the
+ * waterfall's layered sheets showed a dashed crack when they did.
  *
  * DrawOTag: each polygon's vertices are looked up (poly_hook) while the OT
  * is parsed, which happens inside DrawOTag, before the table moves on to the
@@ -286,12 +288,9 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
   if (persp)
     g_vcache_stats.persp++;
   for (i = 0; i < n; i++) {
-    uint32_t r = ref[i];
-    /* different points under one key and no depth to choose by: its
-     * position stays the integer one, in every polygon that uses it */
-    if (!persp && e[i] && e[i]->multi)
-      r &= ~VREF_SLOT;
-    r |= persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
+    uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
+    if (e[i] && e[i]->multi)
+      r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
 }

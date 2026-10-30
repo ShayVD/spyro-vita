@@ -368,3 +368,38 @@ Record each decision with its date, what was chosen, and why.
 - **MoveImage between targets at the targets' resolution:** the game-over freeze (`draw.c:1671-1677`) and the credits (`func_credits_8007BFD0`) `MoveImage` the frame just drawn into the other buffer, then draw over it with `isbg=0`. Before, the destination target got the move from the 1× `s_vram` (a PS1-resolution frame for the whole game-over fade). Now, when the source rect lies inside one target and the destination in another, the destination is drawn from the source target's texture at full resolution. `s_vram` gets the same move from the replay, and the destination's log records it, so a later readback is still exact.
 - **Pending copies flushed before a target is dropped:** `drop_target()` now sends out the queued VRAM→target copies first. Their `Target` pointers would otherwise outlive the target (or the slot the last target moves into), and the next flush would draw into a deleted FBO. The options menu's widescreen toggle (`vita_gpu_rescale()`, #14) drops every target mid-game, which made this reachable. It's a candidate for the red/green textures seen once on hardware (main `3b4126a`, after three toggles): drawing into a deleted FBO can write over GPU memory reused since, the VRAM texture included. Not reproduced in Vita3K (three toggles in Artisans, `logs/run119`; with the fix `run120`, pictures unchanged).
 - **Not done here:** sub-pixel vertex positions (D39's `subpixel=1` adds them from a GTE side channel; without it vertices are the PS1's integer screen coordinates, scaled); a high-resolution pause background.
+
+## 2026-10-30: making the D39 options affordable
+
+### D41. A decoded-texture atlas for the filter, vcache candidates per key, and bench=1
+- **Hardware result that started this** (user, main `14380ab`, `tex_filter=1 persp=1 subpixel=1 res=native`, `logs/hw-14380ab-user/spyro.log`):
+  - GPU-bound: 49–68 pictures per 300 vblanks in Artisans (10–12 fps).
+  - The GPU-timed frame was 100–170 ms, with a "GPU tail" of 60–134 ms, while the CPU was 33–52% busy.
+  - `3b4126a` (native resolution, none of the D39 options) did 100–150 pictures.
+  - So the cost was the filter shader. Each of its 3–4 taps repeated the whole palette decode: two dependent VRAM reads plus ~25 ALU ops of nibble, byte and 15-bit unpacking.
+  - The user also saw "graphical glitches".
+- **Atlas** (`gpu_gl.c`, "decoded-texture atlas"):
+  - **What's cached:** each block a filtered polygon uses (format, page, CLUT, and the 32×32 texel blocks its UV box covers) is decoded once by a GPU pass into a 1024×1024 RGBA8 atlas. RGB is the colour; alpha is the texel's kind (0 transparent, 1 opaque, 0.5 opaque with STP).
+  - **The filter shader:** it now taps the atlas with plain fetches, with the same weights, box clamp, tile wrap, transparency renormalisation and STP majority as D39.
+  - **When it's filled:** `expand()` does the lookups for a whole vertex buffer before any draw, and decodes what's new in one FBO pass.
+  - **Invalidation:** any change to `s_vram` outside the targets starts over, in the other of two atlases, so draws already queued keep theirs. That covers `LoadImage`/`ClearImage`/`MoveImage` writes, readbacks, and a new target over a cached rect; CLUT rows count too. In gameplay `s_vram` doesn't change for minutes.
+  - **Exclusions:** blocks over a target (a page or CLUT the game draws into) are never cached.
+  - **Polygons the atlas doesn't hold, and sprites:** they are drawn with the persp/subpixel-only programs, which sample the nearest texel from VRAM. `draw()` splits a draw into runs of each kind, in order.
+  - **No branch:** a single shader with both paths behind a dynamic branch drew no textured polygon at all in Vita3K (texture reads in a branch), so there is none.
+  - **vitaGL findings on the way:** the decode pass's client arrays rebind array buffer 0, so the VBO is bound after `expand()` (glBufferData into buffer 0 crashed vitaGL's allocator). Interleaved client arrays (a stride) and a third texture unit were changed to packed arrays and unit 1 while debugging. `s_tex`'s unit is free during primitive draws.
+- **vcache candidates** (`vcache.c`): ambiguous keys were the main reason vertices were missed.
+  - Each key now keeps up to four candidates, each a position and a depth. Every distinct projection under the key counts: the same point at another scale (the ×4/×16 of D39), or a different point on the same pixel.
+  - Each polygon picks the candidates with the smallest depth spread, as before.
+  - Attract demos (host): polygons with every vertex found 87% → **97.7%**, vertices 95% → 99.1%, ambiguous keys 0. Artisans (Vita3K): 79–85% → **95–96%**. The remaining ~30 per frame have no entry: coordinates the game didn't take from RTPS.
+  - Both attract demos still match the oracle tick for tick (`logs/run40-host-vcache4`), and so does the logic trace with `--widescreen --interp` (`logs/run46-host-ws-vcache4`). `ctest` 5/5.
+- **Sub-pixel stays per key, not per polygon** (asked: "never mix precise and integer vertices in a polygon"):
+  - A found key gives every polygon that uses it the same exact point, and a key not found leaves the vertex at its integer position in every polygon. So polygons sharing a vertex never crack.
+  - All-or-nothing per polygon would put a shared vertex at its exact point in one polygon and its integer one in the neighbour, which is a crack of up to a pixel.
+  - A polygon with one integer vertex has that vertex where the PS1 draws it; that's a wobble, not a crack.
+  - A key holding different points with no depth to choose by stays integer everywhere.
+- **`bench=1`** (`src/platform/vita/bench.c`):
+  - **What it does:** leave the game alone. From vblank 600 it cycles 10 option sets (native: off, `tex_filter=1`, `=2`, `persp`, `subpixel`, all with filter 1, all with filter 2; ps1: off, `tex_filter=1`, all). Each set gets 60 vblanks per round for 20 rounds, through the intro flyover, the title and both attract demos, so every set sees the same mix of scenes.
+  - **What's measured:** each set's pictures per second and GPU-timed frames (every second picture; frame and tail as in D40's "timed frame"). The first 12 vblanks after a switch don't count, since a resolution change redraws the targets.
+  - **What's logged:** `bench round N:` lines every 5 rounds, then `bench final:` at vblank 12600, after which the configured options come back.
+  - **Modes:** bench=1 forces 4:3 at 30 fps; bench=2 keeps `widescreen=`/`interp=`.
+  - **Cost:** all option programs are compiled at start-up, so the shader compile takes longer.
