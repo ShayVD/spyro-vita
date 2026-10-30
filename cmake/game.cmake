@@ -1,6 +1,6 @@
 # The decomp's C (main executable part), built from the patched copy.
 # Overlays: cmake/overlays.cmake. Generated data and translated asm: gen/.
-set(SPYRO_HOST_FLAGS -m32 -O1 -g -fno-pic -fno-stack-protector -fno-builtin
+set(SPYRO_HOST_FLAGS ${SPYRO_ARCH_FLAGS} ${SPYRO_OPT_FLAGS} -fno-pic -fno-stack-protector -fno-builtin
     ${SPYRO_GUARD_FLAGS})
 
 file(GLOB S1_MAIN_SRCS "${S1_DIR}/src/*.c" "${S1_DIR}/src/gamestates/*.c")
@@ -53,8 +53,12 @@ add_custom_command(OUTPUT "${GEN_DIR}/s1_data.S"
   DEPENDS ${S1_DATA_DEPS} "${CMAKE_SOURCE_DIR}/tools/data2s.py"
           "${CMAKE_SOURCE_DIR}/tools/data2s_allow.txt" ${S1_DATA_LAYOUT_DEPS}
   COMMENT "data2s: decomp asm/data -> host assembly")
-add_library(spyro_game_data OBJECT "${GEN_DIR}/s1_data.S")
-target_compile_options(spyro_game_data PRIVATE -m32)
+set(S1_DATA_SRC "${GEN_DIR}/s1_data.S")
+if(SPYRO_HOST STREQUAL "vita")
+  include(cmake/vita_arena.cmake) # the arena is not at 0x80000000 (D25)
+endif()
+add_library(spyro_game_data OBJECT "${S1_DATA_SRC}")
+target_compile_options(spyro_game_data PRIVATE ${SPYRO_ARCH_FLAGS})
 
 include(cmake/overlays.cmake)
 include(cmake/mips2c.cmake)

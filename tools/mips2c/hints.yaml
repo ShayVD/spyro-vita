@@ -1,4 +1,11 @@
 # tools/mips2c hints, per unit (path relative to the decomp root).
 #   asm/x.s:
 #     dispatch: [0x8001xxxx, ...]   extra computed-jump targets
-{}
+#     arena_tags: true               0x8N000000 constants are OT tags XORed with
+#                                    arena pointers: MIPS_ARENA_TAG (decisions D25)
+asm/renderers/r_cyclorama.s:
+  arena_tags: true
+asm/renderers/r_shadows.s:
+  arena_tags: true
+asm/renderers/r_particles.s:
+  arena_tags: true
