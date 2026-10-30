@@ -286,6 +286,8 @@ Three layers, from cheapest to most complete:
 
 Each translated or replaced function gets a `docs/translation-log.md` row: method (mips2c vX, or hand), tests (snapshot count, demo or trace coverage) and known differences.
 
+**As built (M2, 2026-10-30):** layers 1–3 run (`tools/oracle/`, `docs/host-build.md` "Oracle"). Layer 1 needed no symbol-by-symbol loading: with the PS1 layout (D23) the emulator's RAM loads into the arena with one `memcpy`. What differs by construction is handled explicitly in `spyro --replay`: scratchpad pointers (0x1F80xxxx) compare in the port's form, packed pointers that mips2c rebases on the arena count as equal, v0/v1 count only when the function set them, saved caller registers are told apart, and interrupt-written RAM is listed with its writer in `tools/oracle/ignore_ranges.txt`. Results: `docs/translation-log.md`.
+
 Optional later: a "PS1-exact layout" host build (each global in its own section via `-fdata-sections`, placed at its `psx.map` address by a generated linker script). Snapshots would then load with a single `memcpy`. Only worth it if pointer remapping in layer 1 turns out to be painful.
 
 ---

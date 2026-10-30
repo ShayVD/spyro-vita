@@ -5,8 +5,8 @@
 -- shifted by $ORACLE_PAD_SHIFT vblanks: the emulator reaches the title
 -- 1520 vblanks after the host, as its BIOS boots first), warps
 -- from Artisans to Wizard Peak (level 33) through the game's unused level
--- warp cheat (pause, set g_LevelCheatActive, then TRIANGLE TRIANGLE: world
--- 3, level 3; cheats.c CheatProcessLevelWarp), then logs every 4-argument call from the overlay: return address and
+-- warp cheat (open the inventory, set g_LevelCheatActive, then TRIANGLE
+-- TRIANGLE: world 3, level 3; cheats.c CheatProcessLevelWarp), then logs every 4-argument call from the overlay: return address and
 -- the word at 16($sp). Output: $ORACLE_OUT/wizard.txt. Quits at $ORACLE_TO.
 local ffi = require('ffi')
 local mem = PCSX.getMemPtr()
@@ -29,7 +29,8 @@ local names = { start = B.START, cross = B.CROSS, circle = B.CIRCLE, square = B.
   triangle = B.TRIANGLE, up = B.UP, down = B.DOWN, left = B.LEFT, right = B.RIGHT }
 local script, si, held = {}, 1, {}
 local shift = tonumber(os.getenv('ORACLE_PAD_SHIFT') or '1520')
-for line in io.lines(assert(os.getenv('ORACLE_PAD'), 'ORACLE_PAD not set')) do
+local padpath = assert(os.getenv('ORACLE_PAD'), 'ORACLE_PAD not set')
+for line in io.lines(padpath) do
   local v, rest = line:match('^%s*(%d+)%s+(.*)$')
   if v then script[#script + 1] = { tonumber(v) + shift, rest } end
 end
@@ -68,18 +69,23 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
   elseif not warped then
     -- Pause, unlock the warp cheat, pick world 3 then level 3.
     local t = vblank - arrived
+    -- Pause, Down, Down, Cross opens the inventory (gamestate 3), where
+    -- func_8002EB2C runs CheatProcessLevelWarp while g_LevelCheatActive.
     local steps = { [120] = { B.START, true }, [126] = { B.START, false },
-      [200] = 'cheat', [210] = { B.TRIANGLE, true }, [216] = { B.TRIANGLE, false },
-      [240] = { B.TRIANGLE, true }, [246] = { B.TRIANGLE, false } }
+      [180] = { B.DOWN, true }, [186] = { B.DOWN, false },
+      [220] = { B.DOWN, true }, [226] = { B.DOWN, false },
+      [260] = { B.CROSS, true }, [266] = { B.CROSS, false },
+      [320] = 'cheat', [340] = { B.TRIANGLE, true }, [346] = { B.TRIANGLE, false },
+      [380] = { B.TRIANGLE, true }, [386] = { B.TRIANGLE, false } }
     local st = steps[t]
     if st == 'cheat' then
-      say('vblank %d: paused (gamestate %d), g_LevelCheatActive = 1', vblank, gs)
+      say('vblank %d: gamestate %d (3 is the inventory), g_LevelCheatActive = 1', vblank, gs)
       w32(0x80075880, 1) -- g_LevelCheatActive
       w32(0x800758EC, 0) -- cheat_HomeworldSelected
     elseif st then
       if st[2] then pad1.setOverride(st[1]) else pad1.clearOverride(st[1]) end
     end
-    if t == 260 then
+    if t == 400 then
       warped = true
       say('vblank %d: gamestate %d, next level %d', vblank, gs, r32(NEXT_LEVEL))
     end
