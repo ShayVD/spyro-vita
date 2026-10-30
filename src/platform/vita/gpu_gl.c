@@ -824,7 +824,11 @@ static void sync_rect(int x, int y, int w, int h) {
   }
 }
 
+/* Pending copies hold Target pointers: they go out before any target is
+ * dropped or moved (the last one moves into slot i). Left behind, they would
+ * draw into a deleted FBO, which on the GPU can be memory reused since. */
 static void drop_target(int i) {
+  flush_pending();
   readback(&s_targets[i]);
   if (s_targets[i].tex_stale)
     s_vram_dirty = 1;
@@ -1636,6 +1640,7 @@ void vita_gpu_force_redraw(void) {
 void vita_gpu_rescale(void) {
   while (s_ntargets > 0)
     drop_target(0);
+  s_cur = NULL; /* the next split finds its target again */
   s_sx = s_sy = 0;
   s_last.valid = 0;
 }

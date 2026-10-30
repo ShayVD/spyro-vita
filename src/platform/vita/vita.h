@@ -36,8 +36,9 @@ typedef struct {
   int widescreen;     /* widescreen=1 (default): 16:9 (docs/presentation.md) */
   int interp;         /* interp=1 (default): 60 fps; 2: no animation blending; 3: camera only; 0: off */
   int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
-  int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
-                         sequence (tests without a controller: menu.c) */
+  int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
+                         play a fixed sequence (tests without a controller: menu.c) */
+  int nmenu_test;
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
   int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D39) */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
