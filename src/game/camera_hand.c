@@ -276,12 +276,16 @@ extern short D_8006C754[6], D_8006C760[6], D_8006C76C[6], D_8006C778[6], D_8006C
 extern short D_8006C79C[6], D_8006C7A8[6], D_8006C7B4[6], D_8006C7C0[6], D_8006C7CC[6], D_8006C7D8[6];
 extern short D_8006C7E4[6], D_8006C7F0[6], D_8006C7FC[6], D_8006C808[6], D_8006C814[6], D_8006C820[6];
 
-static short *const s_SpringPull[6] = {D_8006C754, D_8006C760, D_8006C76C,
-                                       D_8006C778, D_8006C784, D_8006C790};
-static short *const s_SpringDamping[6] = {D_8006C79C, D_8006C7A8, D_8006C7B4,
-                                          D_8006C7C0, D_8006C7CC, D_8006C7D8};
-static short *const s_SpringRest[6] = {D_8006C7E4, D_8006C7F0, D_8006C7FC,
-                                       D_8006C808, D_8006C814, D_8006C820};
+/* Built per call: on the Vita these labels are pointers into the arena
+ * (decisions D25), not link-time constants, so no static initialiser. */
+enum { SPRING_PULL, SPRING_DAMPING, SPRING_REST };
+static int Spring(int pTable, int pComp, int pRow) {
+  short *const tables[3][6] = {
+      {D_8006C754, D_8006C760, D_8006C76C, D_8006C778, D_8006C784, D_8006C790},
+      {D_8006C79C, D_8006C7A8, D_8006C7B4, D_8006C7C0, D_8006C7CC, D_8006C7D8},
+      {D_8006C7E4, D_8006C7F0, D_8006C7FC, D_8006C808, D_8006C814, D_8006C820}};
+  return tables[pTable][pComp][pRow];
+}
 
 /* The six components of a SphericalCoordsOffset, in memory order. */
 enum { SPH_AZIMUTH, SPH_ELEVATION, SPH_RADIUS, SPH_OFF_AZIMUTH, SPH_OFF_ELEVATION, SPH_OFF_RADIUS };
@@ -302,10 +306,10 @@ static int SphereError(int pComp) {
  * creeping at 0x100 towards the target. */
 static void SpringStep(int pComp, int pRow, int pPull, int pError) {
   int *speed = &Components(&g_Cam.m_SphereSpeed)[pComp];
-  u_int force = (u_int)pPull * (u_int)pError - (u_int)s_SpringDamping[pComp][pRow] * (u_int)*speed;
+  u_int force = (u_int)pPull * (u_int)pError - (u_int)Spring(SPRING_DAMPING, pComp, pRow) * (u_int)*speed;
 
   *speed = (int)((u_int)*speed + (u_int)((int)force >> 8));
-  if (Abs(*speed) < s_SpringRest[pComp][pRow]) {
+  if (Abs(*speed) < Spring(SPRING_REST, pComp, pRow)) {
     *speed = 0;
     if (g_Cam.m_AtDestination) {
       if (pError > 0)
@@ -345,7 +349,7 @@ void func_80034CE8(int pRow) {
 
   /* Azimuth: L2/R2 turn it directly; the passive camera lets a slow Spyro
    * jump or fall without swinging round. */
-  pull = s_SpringPull[SPH_AZIMUTH][pRow];
+  pull = Spring(SPRING_PULL, SPH_AZIMUTH, pRow);
   if (g_Cam.m_State == CAM_STATE_3 && pull < 0x400)
     pull = 0x400;
   if (D_80075924 != 0) {
@@ -385,7 +389,7 @@ void func_80034CE8(int pRow) {
   } else {
     error = SphereError(SPH_ELEVATION);
   }
-  SpringStep(SPH_ELEVATION, pRow, s_SpringPull[SPH_ELEVATION][pRow], error);
+  SpringStep(SPH_ELEVATION, pRow, Spring(SPRING_PULL, SPH_ELEVATION, pRow), error);
   if (CAMERA_PASSIVE_40() && g_Cam.m_State == CAM_LOOK && !g_Cam.m_NudgeTicks)
     ClampSpeed(SPH_ELEVATION, 0x2000);
   SphereMove(SPH_ELEVATION);
@@ -393,7 +397,7 @@ void func_80034CE8(int pRow) {
   /* Radius and the offset angles. */
   for (comp = SPH_RADIUS; comp <= SPH_OFF_RADIUS; comp++) {
     error = IsSphereHeld() ? 0 : SphereError(comp);
-    SpringStep(comp, pRow, s_SpringPull[comp][pRow], error);
+    SpringStep(comp, pRow, Spring(SPRING_PULL, comp, pRow), error);
     SphereMove(comp);
   }
 }
