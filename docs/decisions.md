@@ -110,7 +110,7 @@ Record each decision with its date, what was chosen, and why.
 ### D21. Decomp compile mode for the port
 - `MODERN_COMPILER` is defined. Its branches only replace type puns with field copies and fix an implicit return. The one behavioural change is `MobyRotateToAngle`'s 5th argument (`upstream-notes.md`), still to check with the oracle.
 - `-fcommon`, because the decomp's uninitialised C globals are also defined in `asm/data` (GCC 2.7.2 merged them as common symbols).
-- **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. The bit-exactness test against PCSX-Redux is pending the oracle (step 8 and step 13).
+- **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. Settled on 2026-10-30: `tests/gte` matches PCSX-Redux bit for bit on 9,314 vectors over the 11 ops the main executable uses, so we keep it and won't write our own (D22).
 
 ### D22. Behaviour oracle: PCSX-Redux a5d621af, native macOS, interpreter + debugger
 - **Build:** the pinned dev build `a5d621af` (2026-10-30) from distrib.app, the download location PCSX-Redux's README points to (the old `distrib.app.pcsx-redux.consoledev.net` no longer resolves). `tools/oracle/fetch_redux.sh` checks the published SHA-1 and unpacks it into the gitignored `.tools/`. It runs out of process only and is never linked (GPL).

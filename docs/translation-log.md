@@ -2,7 +2,7 @@
 
 One entry per function translated from asm to C: function, method, how it was verified, known differences.
 
-**mips2c v0** (`tools/mips2c/mips2c.py`, M1): one C function per `.s` file, every glabel an entry; registers as locals, `$sp` on the emulated stack in the arena; every load and store maps the KUSEG RAM mirror (0x00000000-0x001FFFFF) onto the arena; computed jumps dispatch on PS1 code addresses. "Ran without fault" means no crash, no `mips2c_bad_jump` and no PsyCross parse error in `logs/run1-final3` (title and menu, 2600 vblanks) and `logs/run1-demo4` (12000 vblanks, two attract demos). It is not proof of equivalence: the differential tests against PCSX-Redux (porting-plan §7.3) are still to come.
+**mips2c v0** (`tools/mips2c/mips2c.py`, M1): one C function per `.s` file, every glabel an entry; registers as locals, `$sp` on the emulated stack in the arena; every load and store maps the KUSEG RAM mirror (0x00000000-0x001FFFFF) onto the arena; computed jumps dispatch on PS1 code addresses. "Ran without fault" means no crash, no `mips2c_bad_jump` and no PsyCross parse error in `logs/run1-final3` (title and menu, 2600 vblanks) and `logs/run1-demo4` (12000 vblanks, two attract demos). It is not proof of equivalence. "Differential test" means `tests/m2c_diff` replayed calls captured in PCSX-Redux (porting-plan §7.3, decision D22) against the translation and compared registers, GTE, scratchpad and memory.
 
 | Function | Method | Verified by | Notes |
 |---|---|---|---|
@@ -14,51 +14,51 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `func_800168DC` | hand (`asm/order_table.s`), src/game/order_table.c | Read against the asm. Called in run1 (no fault). |  |
 | `rand`, `srand` | hand (`asm/psyq.s`, PsyQ libc), src/game/rand_psyq.c | Read against the asm. Called in run1 (no fault). | PsyQ LCG; seed 0 at boot, as its BSS word. |
 | `func_80017FD4` | hand (`asm/system_time.s`), src/game/system_time.c | Read against the asm. Called in run1 (no fault). | Root counter 2 derived from the vblank count (4,233,600 Hz / 59.94), deterministic; only seeds the title fairy. |
-| `Atan2Fast` | mips2c v0, unit `asm/math.s` (1322 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | GTE via PsyCross |
-| `Atan2` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `Sin` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `Cos` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80016D08` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `RotVec8ToMatrix` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80016FD0` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecRotateByMatrix` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecRotateByLastMatrix` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecRotateByCam` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017188` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecMagnitude` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecRefineMagnitude` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017330` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017428` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017548` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecScaleToLength` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017614` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecShiftLeft` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecShiftRight` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecNull` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecCopy` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8001771C` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecAdd` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecSub` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecMult` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800177F8` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017854` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017894` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017908` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017928` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017948` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_8001796C` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `OctDistance` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_800179F0` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017A38` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017AA4` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017B48` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017BFC` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017C24` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017C4C` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `VecToShortVec` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017C84` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `ColTriUnpack` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
-| `func_80017D7C` | mips2c v0, unit `asm/math.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
+| `Atan2Fast` | mips2c v0, unit `asm/math.s` (1322 insns) | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | GTE via PsyCross |
+| `Atan2` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `Sin` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `Cos` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80016D08` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `RotVec8ToMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80016FD0` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `VecRotateByMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRotateByLastMatrix` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRotateByCam` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017188` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `VecMagnitude` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecRefineMagnitude` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017330` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017428` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 10/10 cases match PCSX-Redux. | see first row of unit |
+| `func_80017548` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `VecScaleToLength` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017614` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `VecShiftLeft` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecShiftRight` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecNull` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecCopy` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_8001771C` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `VecAdd` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecSub` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecMult` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_800177F8` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 4/4 cases match PCSX-Redux. | see first row of unit |
+| `func_80017854` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `func_80017894` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `func_80017908` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017928` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017948` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `func_8001796C` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `OctDistance` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_800179F0` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017A38` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017AA4` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017B48` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `func_80017BFC` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017C24` | mips2c v0, unit `asm/math.s` | Not called in the 9000-vblank oracle run (no differential cases). Ran without fault in run1. | see first row of unit |
+| `func_80017C4C` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `VecToShortVec` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `func_80017C84` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20/20 cases match PCSX-Redux. | see first row of unit |
+| `ColTriUnpack` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 20 cases incomplete, it reads level data through `g_Environment` outside the captured pages. Ran without fault in run1. | see first row of unit |
+| `func_80017D7C` | mips2c v0, unit `asm/math.s` | Differential test (tests/m2c_diff, `logs/m2c-math1`): 1/1 cases match PCSX-Redux. | see first row of unit |
 | `MobyAlloc` | mips2c v0, unit `asm/42CC4.s` (1067 insns) | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | 4 packed-pointer rebase(s); scratchpad (2 bases); GTE via PsyCross |
 | `MobyFree` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |
 | `MobyUpdateCollision` | mips2c v0, unit `asm/42CC4.s` | No differential test yet. Ran without fault in run1 (title, menu, two attract demos). | see first row of unit |

@@ -339,8 +339,8 @@ Order matters: each step runs before the next starts.
    - [x] Self-check: unknown instructions or operands stop the build.
    - [x] First targets: `math.s`, `42CC4.s`, `moby_lists.s`, `particle_alloc.s`, plus everything else (below).
 8. **GTE model**
-   - [ ] Decide between wrapping PsyCross's `PsyX_GTE.cpp` and writing our own (decision D2). **Interim:** PsyCross's GTE is used (D21); decide after the unit test.
-   - [ ] A unit test with ~1,000 vectors per op captured from PCSX-Redux. **Blocked:** needs PCSX-Redux (download not yet approved).
+   - [x] Decided (D2): keep PsyCross's `PsyX_GTE.cpp` (`gteRegs`, `GTE_operator`). It matches PCSX-Redux bit for bit on every op the main executable uses.
+   - [x] `tests/gte`: 9,314 vectors from the game's own GTE commands (`tools/oracle/gte_sites.py`, `oracle.lua` `ORACLE_GTE`). RTPS, RTPT, NCLIP, OP, DPCS, INTPL, MVMVA, CC, SQR, GPF, GPL, up to 1,000 each: 0 mismatched (`logs/gte3`). Not covered: NCT (its one site never ran) and the GTE commands in level overlays.
 9. **mips2c v1: the renderers for the title screen**
    - [x] No hints needed: unit-wide gotos and address dispatch cover `jr $t4`, `$sp` as data and `j`-tables. `order_table` is hand-written.
    - [x] Translated and linked.
@@ -354,12 +354,15 @@ Order matters: each step runs before the next starts.
     - [x] Fixed: CD busy-wait (D17), KUSEG pointers (D16), scratchpad tables, memory cards (D19), OT packets (PsyCross 0003), `DRAWENV` layout (0004). The `isrgb24` logos work in the soft renderer.
     - [x] `--frames N --shot/--shot-every --pad --save`: `logs/run1-final3` (title and menu), `logs/run1-demo4` (attract demos).
 13. **Oracle bring-up (can run in parallel from step 7)**
-    - [ ] Install PCSX-Redux (ask before downloading). **Not started:** waiting for approval to download. Then write `tools/oracle/oracle.lua`.
-    - [ ] The first differential test: `math.s` translated vs the original. Blocked on the oracle.
+    - [x] PCSX-Redux `a5d621af`, native macOS, headless (D22): `tools/oracle/redux OUTDIR ORACLE_*=…` runs `tools/oracle/oracle.lua`. That gives a pad script, VRAM dumps, GTE capture and function snapshots.
+    - [x] The first differential test is `tests/m2c_diff`: `math.s` snapshots replayed against the translation. 33 of 45 entry points were called in a 9,000-vblank run: 615 cases, 0 mismatched. The 20 incomplete cases are all `ColTriUnpack`, which reads level data outside the captured pages. The 12 entry points the run never called aren't tested (`logs/m2c-math1`).
+    - [ ] Frame traces (§7.3 item 2) and aligning the oracle's vblank count with the host's. Not done. The oracle counts from reset, including about 900 BIOS vblanks.
 
 **M1 is not:** playable levels, audio output, the Vita, widescreen or 60 fps.
 
-**M1 status (2026-10-29):** the definition of done is met on the host (`logs/run1-final3`). The boot logos, intro, Spyro logo with PRESS START, then Start → "Create save file?" → New Game / Load Game with three slots, and the cursor follows the pad script. The idle attract demos also play two levels and return to the title (`logs/run1-demo4`). Still open: step 8's GTE test and step 13's oracle (both need PCSX-Redux), and hiding the Crash demo entry.
+**M1 status (2026-10-29):** the definition of done is met on the host (`logs/run1-final3`). The boot logos, intro, Spyro logo with PRESS START, then Start → "Create save file?" → New Game / Load Game with three slots, and the cursor follows the pad script. The idle attract demos also play two levels and return to the title (`logs/run1-demo4`).
+
+**2026-10-30:** steps 8 and 13 are done (the GTE and `math.s` results above). The oracle shows that the host intro's Spyro flight is missing world geometry. Host frames ~1140–1320 show a flat sand fill and holes, where the real game draws terrain, rivers and grass (`logs/intro-compare1/contact.png`: host on top, oracle below). That's the first oracle-found bug, open for M2. Also still open: hiding the Crash demo entry.
 
 ---
 

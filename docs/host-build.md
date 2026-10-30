@@ -39,3 +39,24 @@ python3 tools/contact_sheet.py logs/runN-x
 
 - `logs/run1-final3`: boot → title → Start → create save → New Game / Load Game, cursor moved by the pad script.
 - `logs/run1-demo4`: no input for 12000 vblanks. The attract demos play two levels.
+
+## Oracle (PCSX-Redux, native macOS)
+
+`tools/oracle/redux OUTDIR [ORACLE_VAR=value …]` runs the original game headless and writes into OUTDIR. On first use it fetches the pinned build into `.tools/` and checks its SHA-1 (decision D22). The variables are documented at the top of `tools/oracle/oracle.lua`.
+
+- **VRAM dumps:**
+  ```bash
+  tools/oracle/redux logs/oracle-x ORACLE_END=2800 ORACLE_SHOTS=2400,2700
+  ```
+  Then convert them with `tools/oracle/raw2png.py logs/oracle-x --rect 0,0,512,240`.
+- **GTE vectors for `tests/gte`:**
+  ```bash
+  tools/oracle/gte_sites.py disc/files/SCUS_942.28 logs/gte/sites.txt
+  ```
+  Then run `tools/oracle/redux logs/gte ORACLE_END=9000 ORACLE_GTE=$PWD/logs/gte/sites.txt` (about 4 min).
+- **Function snapshots for `tests/m2c_diff`:**
+  ```bash
+  tools/oracle/redux logs/m2c-math ORACLE_END=9000 ORACLE_TRACE_MAX=20 ORACLE_TRACE=$(tools/oracle/asm_entries.py third_party/spyro-1/asm/math.s --trace) ORACLE_GLOBALS=80076DD0:110,800785A8:30
+  ```
+- **Vblank numbering:** the oracle counts from reset, and the game's main loop starts about 1,400 vblanks in. The host's vblank 0 is the game's `main`, so the host is about 1,380 vblanks ahead (the Insomniac sign is at host ~420, oracle ~1800).
+- **Without vectors:** `tests/gte` and `tests/m2c_diff` read their vectors from `logs/gte` and `logs/m2c-math`. They are skipped when those are missing, because the vectors hold game RAM and stay out of git.
