@@ -373,7 +373,7 @@ Record each decision with its date, what was chosen, and why.
 
 ## 2026-10-30: the game's stray stores through small integers
 
-### D41. Original-game stores through small integers go where the PS1 sends them
+### D42. Original-game stores through small integers go where the PS1 sends them
 - **Found:** the Vita crashed on hardware (main `d67e6fc`, `logs/hw-d67e6fc-user/crash.md`) when the life basket in Artisans (moby 94, class 421) was destroyed. Its update calls `PlaySound(..., (u_char *)(int)moby->m_SoundChannel)`, a bug the decomp keeps and comments: the channel's value instead of its address. `PlaySound` stores the voice slot through that pointer (`spu.c:258`) and keeps it as `m_SoundRefPtr`, which three other functions store 0x7F through when the sound stops. On the PS1 the pointer is 1 or 2, a KUSEG address in the kernel's RAM. On the Vita and the host it's unmapped. It only fires when the channel isn't 0, i.e. when another sound already holds voice 0. That's why the host tours, with Spyro idle, never hit it.
 - **Chosen:** reproduce the PS1's effect, not skip the store. `PSX_KUSEG()` (`src/compat/port_prefix.h`) maps KUSEG addresses the way the PS1 does, and the six stores in `spu.c` go through it (`patches/spyro-1-port/0007`). The pointer keeps its PS1 value in RAM (`g_Spu.m_ActiveSounds[].m_SoundRefPtr` is `0x00000002`, as on the PS1), and NULL still means no store.
 - **Why not skip it:** skipping would have to prove nothing ever reads those bytes. Mapping needs no such proof and keeps the same RAM state as the PS1 everywhere the oracle compares.

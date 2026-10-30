@@ -197,7 +197,7 @@ python3 tools/oracle/route_pairs.py logs/run18-host-routeA-merged logs/run13-ora
 
 ## Stray accesses: stores and loads through small integers (2026-10-30)
 
-A Vita hardware crash (main `d67e6fc`) turned out to be the second original-game bug of this kind, after Icy Flight's. Destroying Artisans' life basket passes a sound channel's value as a pointer. Fix and reasoning: decisions D41, `patches/spyro-1-port/0007`. The host tours never hit it because Spyro stands idle: the store only fires while another sound holds voice 0. Repro on the host: `logs/run27-basket/repro2` (Spyro poked next to the basket, flame, damage flag poked). Fixed: `logs/run32-verify/basket`.
+A Vita hardware crash (main `d67e6fc`) turned out to be the second original-game bug of this kind, after Icy Flight's. Destroying Artisans' life basket passes a sound channel's value as a pointer. Fix and reasoning: decisions D42, `patches/spyro-1-port/0007`. The host tours never hit it because Spyro stands idle: the store only fires while another sound holds voice 0. Repro on the host: `logs/run27-basket/repro2` (Spyro poked next to the basket, flame, damage flag poked). Fixed: `logs/run32-verify/basket`.
 
 The sweep for more of the same kind:
 - **Source:** `(T *)(int)` casts and "Bug:" comments in the decomp's C. The basket's is the only int-to-pointer cast; the other two "bug" comments are about vectors, not pointers.

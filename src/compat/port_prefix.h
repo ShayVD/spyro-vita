@@ -20,7 +20,7 @@ extern uintptr_t g_psx_arena_base;
 /* A pointer the game may hold as a KUSEG RAM alias (0x00000000-0x001FFFFF,
  * the same RAM as 0x80000000): on the PS1 an access through it lands in
  * RAM, here it goes to the same place. For original-game bugs that store
- * through small integers (patches/spyro-1-port/0006, 0007; decisions D41).
+ * through small integers (patches/spyro-1-port/0006, 0007; decisions D42).
  * Below 0x10000 is the PS1 kernel's RAM, which the game never uses; the port
  * keeps the scratchpad at the arena's base, so those addresses go to
  * g_psx_kernel_ram (src/platform/common/arena.c) instead. NULL stays NULL. */
