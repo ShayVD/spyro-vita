@@ -399,11 +399,19 @@ Record each decision with its date, what was chosen, and why.
   - All-or-nothing per polygon would put a shared vertex at its exact point in one polygon and its integer one in the neighbour, which is a crack of up to a pixel.
   - A polygon with one integer vertex has that vertex where the PS1 draws it; that's a wobble, not a crack.
   - So the position is always the key's first candidate's, for every polygon. A key whose candidates are more than 1/8 pixel apart stays integer in every polygon, whichever candidate's depth each polygon takes for perspective. With each polygon taking its own pick's position, the waterfall showed a dashed crack: neighbours had taken points up to a pixel apart for a shared vertex (`logs/run60-vita-all-atlas`, `run64`, `run65` win-7000, also without the filter; not without `subpixel`, `logs/run61`).
+- **`tex_cache=1` (default): the atlas for the default picture too.** The parent's hardware baseline (main `d67e6fc`, no texture options, native 960×508, `logs/hw-d67e6fc-user/spyro.log`) was already GPU-bound in Artisans: 100–125 pictures per 300 vblanks, GPU-timed frame 45–60 ms, tail 30–40 ms. The base shader's palette decode per pixel (two dependent VRAM reads and ~25 ALU ops) is most of it.
+  - With `tex_cache=1`, unfiltered textured prims (and, with `tex_filter`, the sprites) take the nearest texel from the atlas: one fetch, the same pixels. The atlas stores the decoded 15-bit colour exactly (k·8 in 8 bits), and the alpha says transparent, opaque or STP.
+  - It needs the expanded vertex (atlas coordinates), which costs the CPU ~0.3–0.5 ms per vblank on hardware (D39's `expand` line). Blocks the atlas can't hold fall back to the VRAM decode, in runs, as with the filter.
+  - `tex_cache=0` is the old path, unchanged.
 - **`bench=1`** (`src/platform/vita/bench.c`):
-  - **What it does:** leave the game alone. From vblank 600 it cycles 10 option sets (native: off, `tex_filter=1`, `=2`, `persp`, `subpixel`, all with filter 1, all with filter 2; ps1: off, `tex_filter=1`, all). Each set gets 60 vblanks per round for 20 rounds, through the intro flyover, the title and both attract demos, so every set sees the same mix of scenes.
-  - **What's measured:** each set's pictures per second and GPU-timed frames (every second picture; frame and tail as in D40's "timed frame"). The first 12 vblanks after a switch don't count, since a resolution change redraws the targets.
-  - **What's logged:** `bench round N:` lines every 5 rounds, then `bench final:` at vblank 12600, after which the configured options come back.
-  - **Modes:** bench=1 forces 4:3 at 30 fps; bench=2 keeps `widescreen=`/`interp=`.
+  - **What it does:** leave the game alone. From vblank 600 it cycles 16 option sets, through the intro flyover, the title and both attract demos, so every set sees the same mix of scenes. Each set gets 60 vblanks per round for 12 rounds; the run ends at vblank 12120, about 3.5 minutes.
+    - 4:3 native: all off with `tex_cache=0` (the old default) and `=1`; `tex_filter=1`; `=2`; `persp`; `subpixel`; all three with filter 1; with filter 2.
+    - 4:3 ps1: off with cache 0 and 1; all three.
+    - 16:9 native: off with cache 0 and 1; all three.
+    - 16:9 ps1: off with cache 0 and 1.
+  - **What's measured:** each set's pictures per second and GPU-timed frames (every second picture; frame and tail as in D40's "timed frame"). The first 12 vblanks after a switch don't count, since a resolution or widescreen change redraws the targets.
+  - **What's logged:** `bench round N:` lines every 4 rounds, then `bench final:`, after which the configured options come back. Each `tex_cache=0`/`=1` pair is the before/after of the atlas on the default picture.
+  - **Modes:** bench=1 runs at 30 fps (`interp=0`); bench=2 keeps `interp=`. The sets choose widescreen.
   - **Cost:** all option programs are compiled at start-up, so the shader compile takes longer.
 - **Checked in Vita3K** (`realtime=0`, gems script plus the pause and inventory screens, window captures at the same 8 vblanks):
   - **Off unchanged:** with all options off, the captures are pixel-identical to main's `gpu_gl.c` and `vblank.c` (0 of 2,088,960 pixels differ in each; `logs/run42-vita-mainref`, `logs/run43-vita-off-t1`).

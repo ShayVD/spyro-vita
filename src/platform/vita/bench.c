@@ -6,9 +6,10 @@
  * GPU-timed frames (one picture in two, timed with glFinish: see gpu_gl.c's
  * "timed frame") are summed, and "bench" lines in the log give the averages
  * every few rounds and at the end. The first vblanks after a switch don't
- * count: a resolution change redraws every target. bench=1 runs at 4:3 and
- * 30 fps (widescreen=0 interp=0); bench=2 keeps the configured ones. The
- * game itself runs as always: only the picture changes. */
+ * count: a resolution or widescreen change redraws every target. bench=1
+ * runs at 30 fps (interp=0); bench=2 keeps interp=. The sets choose
+ * widescreen themselves. The game itself runs as always: only the picture
+ * changes. */
 #include "vita.h"
 
 #include <stdio.h>
@@ -16,24 +17,32 @@
 #define BENCH_START 600
 #define BENCH_SLOT 60
 #define BENCH_SETTLE 12
-#define BENCH_CYCLES 20
+#define BENCH_CYCLES 12
 
 typedef struct {
   const char *name;
-  int res, filter, persp, subpixel;
+  int ws, res, filter, persp, subpixel, cache;
 } BenchSet;
 
+/* grouped by widescreen and resolution, so those (which redraw every
+ * target) change four times a round */
 static const BenchSet k_sets[] = {
-    {"native, all off", 0, 0, 0, 0},
-    {"native, tex_filter=1", 0, 1, 0, 0},
-    {"native, tex_filter=2", 0, 2, 0, 0},
-    {"native, persp=1", 0, 0, 1, 0},
-    {"native, subpixel=1", 0, 0, 0, 1},
-    {"native, tex_filter=1 persp=1 subpixel=1", 0, 1, 1, 1},
-    {"native, tex_filter=2 persp=1 subpixel=1", 0, 2, 1, 1},
-    {"ps1, all off", 1, 0, 0, 0},
-    {"ps1, tex_filter=1", 1, 1, 0, 0},
-    {"ps1, tex_filter=1 persp=1 subpixel=1", 1, 1, 1, 1},
+    {"4:3 native, all off, tex_cache=0", 0, 0, 0, 0, 0, 0},
+    {"4:3 native, all off (tex_cache=1)", 0, 0, 0, 0, 0, 1},
+    {"4:3 native, tex_filter=1", 0, 0, 1, 0, 0, 1},
+    {"4:3 native, tex_filter=2", 0, 0, 2, 0, 0, 1},
+    {"4:3 native, persp=1", 0, 0, 0, 1, 0, 1},
+    {"4:3 native, subpixel=1", 0, 0, 0, 0, 1, 1},
+    {"4:3 native, tex_filter=1 persp subpixel", 0, 0, 1, 1, 1, 1},
+    {"4:3 native, tex_filter=2 persp subpixel", 0, 0, 2, 1, 1, 1},
+    {"4:3 ps1, all off, tex_cache=0", 0, 1, 0, 0, 0, 0},
+    {"4:3 ps1, all off (tex_cache=1)", 0, 1, 0, 0, 0, 1},
+    {"4:3 ps1, tex_filter=1 persp subpixel", 0, 1, 1, 1, 1, 1},
+    {"16:9 native, all off, tex_cache=0", 1, 0, 0, 0, 0, 0},
+    {"16:9 native, all off (tex_cache=1)", 1, 0, 0, 0, 0, 1},
+    {"16:9 native, tex_filter=1 persp subpixel", 1, 0, 1, 1, 1, 1},
+    {"16:9 ps1, all off, tex_cache=0", 1, 1, 0, 0, 0, 0},
+    {"16:9 ps1, all off (tex_cache=1)", 1, 1, 0, 0, 0, 1},
 };
 #define NSETS ((int)(sizeof k_sets / sizeof k_sets[0]))
 #define BENCH_END (BENCH_START + NSETS * BENCH_SLOT * BENCH_CYCLES)
@@ -51,7 +60,7 @@ static void report(const char *when) {
   for (i = 0; i < NSETS; i++) {
     unsigned v = s_acc[i].vblanks ? s_acc[i].vblanks : 1, n = s_acc[i].samples ? s_acc[i].samples : 1;
     unsigned fps10 = s_acc[i].pictures * 600u / v;
-    vita_log("bench %s: %-40s %2u.%u pictures/s; timed frame %3u.%u ms, GPU tail %3u.%u ms "
+    vita_log("bench %s: %-42s %2u.%u pictures/s; timed frame %3u.%u ms, GPU tail %3u.%u ms "
              "(worst %u ms), %u frames timed",
              when, k_sets[i].name, fps10 / 10, fps10 % 10,
              (unsigned)(s_acc[i].frame_us / n / 1000), (unsigned)(s_acc[i].frame_us / n % 1000 / 100),
@@ -60,7 +69,14 @@ static void report(const char *when) {
   }
 }
 
-static void apply(const BenchSet *b) { vita_gpu_set_options(b->res, b->filter, b->persp, b->subpixel); }
+static void apply(const BenchSet *b) {
+  if (b->ws != g_vita_opts.widescreen) {
+    g_vita_opts.widescreen = b->ws;
+    vita_present_apply();
+    vita_gpu_rescale(); /* targets at the new width */
+  }
+  vita_gpu_set_options(b->res, b->filter, b->persp, b->subpixel, b->cache);
+}
 
 void vita_bench_vblank(int v) {
   int slot, set;
@@ -80,13 +96,15 @@ void vita_bench_vblank(int v) {
   set = slot % NSETS;
   if (set != s_cur) {
     if (s_cur < 0) {
+      s_orig.ws = g_vita_opts.widescreen;
       s_orig.res = g_vita_opts.gpu_res;
       s_orig.filter = g_vita_opts.tex_filter;
       s_orig.persp = g_vita_opts.persp;
       s_orig.subpixel = g_vita_opts.subpixel;
+      s_orig.cache = g_vita_opts.tex_cache;
       vita_log("bench: %d option sets, %d vblanks each, %d rounds, vblanks %d-%d", NSETS,
                BENCH_SLOT, BENCH_CYCLES, BENCH_START, BENCH_END);
-    } else if (set == 0 && slot % (NSETS * 5) == 0) {
+    } else if (set == 0 && slot % (NSETS * 4) == 0) {
       char when[24];
       snprintf(when, sizeof when, "round %d", slot / NSETS);
       report(when);

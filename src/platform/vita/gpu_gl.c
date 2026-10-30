@@ -136,9 +136,10 @@ typedef struct {
 static Prog s_prog[P_COUNT];
 
 /* The primitive programs (P_UNTEX..P_T16) of each picture option set: off;
- * persp/subpixel only; tex_filter=1; tex_filter=2. Only the configured one
- * is built, or all of them for bench= (D41), which switches between them. */
-enum { V_PLAIN, V_X0, V_X1, V_X2, V_COUNT };
+ * expanded vertex, nearest texel from VRAM; nearest texel from the atlas
+ * (tex_cache); tex_filter=1; tex_filter=2. Only the configured one (and
+ * what it falls back to) is built, or all of them for bench= (D41). */
+enum { V_PLAIN, V_X0, V_A0, V_X1, V_X2, V_COUNT };
 static Prog s_vprog[V_COUNT][P_T16 + 1];
 static Prog s_dprog[3]; /* the atlas's decode pass, per texture format */
 
@@ -169,18 +170,22 @@ static int s_nverts;
 typedef struct {
   float x, y, w;
   int16_t page, clut;
-  int16_t u, v;  /* texel in the page, or in the atlas when filt */
+  int16_t u, v;  /* texel in the page */
   uint8_t filt, wrap, pad[2]; /* filt: filtered from the atlas (D41) */
   uint8_t r, g, b, a;
-  int16_t box[4]; /* u0, v0, u1, v1: atlas texels the filter may read */
+  int16_t box[4]; /* u0, v0, u1, v1: page texels the filter may read */
+  int16_t off[2]; /* atlas texel minus page texel, for the triangle (D41) */
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
-static uint8_t s_tfilt[MAX_VERTEX_BUFFER_SIZE / 3 + 1]; /* triangle filtered from the atlas */
+/* per triangle: 0 nearest texel from VRAM, 1 nearest from the atlas,
+ * 2 filtered from the atlas */
+static uint8_t s_tkind[MAX_VERTEX_BUFFER_SIZE / 3 + 1];
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
 static int s_xattr;    /* attribute arrays 3-5 are enabled */
 static int s_filter;   /* tex_filter=: 0 off, 1 3-point, 2 bilinear */
 static int s_persp;    /* persp=1 */
 static int s_subpixel; /* subpixel=1 */
+static int s_cache;    /* tex_cache=1: unfiltered textures from the atlas too (D41) */
 
 /* per 300-vblank report */
 static struct {
@@ -275,19 +280,22 @@ static const char k_vs_prim_x[] =
     "attribute vec2 a_tex;\n"   /* u, v */
     "attribute vec4 a_flags;\n" /* filtered from the atlas, wrap (bytes) */
     "attribute vec4 a_col;\n"
-    "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: atlas texels the filter may read */
+    "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: page texels the filter may read */
+    "attribute vec2 a_off;\n"   /* atlas texel minus page texel (constant) */
     "uniform vec4 u_xf;\n"
     "varying vec2 v_uv;\n"
     "varying vec4 v_col;\n"
     "varying vec4 v_pc;\n"
     "varying vec4 v_box;\n"
     "varying vec2 v_filt;\n"
+    "varying vec2 v_off;\n"
     GLSL_MD
     "void main() {\n"
     "  gl_Position = vec4(((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0) * a_pos.z, 0.0, a_pos.z);\n"
     "  v_uv = a_tex;\n"
     "  v_filt = a_flags.xy;\n"
     "  v_box = a_box;\n"
+    "  v_off = a_off;\n"
     "  v_col = a_col;\n"
     "  float qpage = md(a_pc.x, 65536.0, 1.0 / 65536.0);\n"
     "  float qclut = md(a_pc.y, 65536.0, 1.0 / 65536.0);\n"
@@ -386,10 +394,11 @@ static const char k_fs_tex_body[] =
 static const char k_fs_filt_body[] =
     "varying vec4 v_box;\n"
     "varying vec2 v_filt;\n"
+    "varying vec2 v_off;\n"
     "uniform sampler2D s_atlas;\n"
-    /* rgb; w: 0 transparent, 1 opaque, 2 opaque with STP */
+    /* rgb; w: 0 transparent, 1 opaque, 2 opaque with STP; q in the page */
     "vec4 qtap(vec2 q) {\n"
-    "  vec4 qt = texture2D(s_atlas, (q + 0.5) * (1.0 / 1024.0));\n"
+    "  vec4 qt = texture2D(s_atlas, (q + floor(v_off + 0.5) + 0.5) * (1.0 / 1024.0));\n"
     "  return vec4(qt.xyz, step(0.25, qt.w) * (1.0 + step(qt.w, 0.75)));\n"
     "}\n"
     "void main() {\n"
@@ -428,6 +437,26 @@ static const char k_fs_filt_body[] =
     "  }\n"
     "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
     "  qrgb = qrgb * v_col.xyz * (255.0 / 128.0);\n"
+    "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
+    "}\n";
+
+/* tex_cache= (D41): the nearest texel, from the decoded atlas: one fetch
+ * instead of k_fs_tex_body's index and CLUT reads, the same pixels. The
+ * page coordinates are interpolated as k_fs_tex_body's are and the atlas
+ * offset added after: atlas coordinates (up to 1023) interpolated lost
+ * enough precision to pick the neighbouring texel at a few pixels. */
+static const char k_fs_atlas_body[] =
+    "varying vec4 v_box;\n"
+    "varying vec2 v_off;\n"
+    "uniform sampler2D s_atlas;\n"
+    "void main() {\n"
+    "  vec4 qbox = floor(v_box + 0.5);\n"
+    "  vec2 q = clamp(floor(v_uv + 0.002), qbox.xy, qbox.zw) + floor(v_off + 0.5);\n"
+    "  vec4 qt = texture2D(s_atlas, (q + 0.5) * (1.0 / 1024.0));\n"
+    "  if (qt.w < 0.25) discard;\n"
+    "  float qstp = step(qt.w, 0.75);\n"
+    "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
+    "  vec3 qrgb = qt.xyz * v_col.xyz * (255.0 / 128.0);\n"
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
     "}\n";
 
@@ -536,6 +565,7 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
       glBindAttribLocation(p->prog, 3, "a_pc");
       glBindAttribLocation(p->prog, 4, "a_box");
       glBindAttribLocation(p->prog, 5, "a_flags");
+      glBindAttribLocation(p->prog, 6, "a_off");
     }
   }
   glLinkProgram(p->prog);
@@ -561,7 +591,9 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
   return 0;
 }
 
-static int variant_of(int filter, int xmode) { return filter ? V_X0 + filter : xmode ? V_X0 : V_PLAIN; }
+static int variant_of(int filter, int cache, int xmode) {
+  return filter == 1 ? V_X1 : filter == 2 ? V_X2 : cache ? V_A0 : xmode ? V_X0 : V_PLAIN;
+}
 
 /* The primitive programs of option set v; 0 = ok. */
 static int build_variant(int v) {
@@ -569,10 +601,11 @@ static int build_variant(int v) {
   static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
   const char *vs[1] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x};
   const char *fs[4];
-  int i, filter = v >= V_X1 ? v - V_X0 : 0;
+  int i, filter = v == V_X1 ? 1 : v == V_X2 ? 2 : 0, atlas = filter || v == V_A0;
   if (s_vprog[v][P_UNTEX].prog)
     return 0;
-  if (filter && build_variant(V_X0)) /* draws what the atlas doesn't hold */
+  /* draw what the atlas doesn't hold, and (filtered) the sprites */
+  if (atlas && (build_variant(V_X0) || (filter && build_variant(V_A0))))
     return -1;
   fs[0] = k_fs_prim_head;
   fs[1] = k_fs_untex;
@@ -585,12 +618,14 @@ static int build_variant(int v) {
     if (filter) {
       fs[2] = filt_def[filter];
       fs[3] = k_fs_filt_body;
+    } else if (atlas) {
+      fs[2] = k_fs_atlas_body;
     }
     if (link(&s_vprog[v][P_T4 + i], vs, 1, fs, filter ? 4 : 3, 0,
              i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
       return -1;
   }
-  if (filter && !s_dprog[0].prog) {
+  if (atlas && !s_dprog[0].prog) {
     const char *dvs[1] = {k_vs_decode};
     for (i = 0; i < 3; i++) {
       fs[0] = fmt_def[i];
@@ -616,9 +651,9 @@ static int build_programs(int *present_only) {
   if (!s_prog[P_VRAM15].prog && link(&s_prog[P_VRAM15], qvs, 1, fs, 1, 1, "vram15"))
     return 0;
   for (v = 0; v < V_COUNT; v++)
-    if ((g_vita_opts.bench || v == variant_of(s_filter, s_xmode)) && build_variant(v))
+    if ((g_vita_opts.bench || v == variant_of(s_filter, s_cache, s_xmode)) && build_variant(v))
       return 0;
-  memcpy(s_prog, s_vprog[variant_of(s_filter, s_xmode)], sizeof s_vprog[0]);
+  memcpy(s_prog, s_vprog[variant_of(s_filter, s_cache, s_xmode)], sizeof s_vprog[0]);
   *present_only = 0;
   return 0;
 }
@@ -684,6 +719,7 @@ static void quad(const float ndc[4], const float src[4]) {
     glDisableVertexAttribArray(3);
     glDisableVertexAttribArray(4);
     glDisableVertexAttribArray(5);
+    glDisableVertexAttribArray(6);
     s_xattr = 0;
   }
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, p);
@@ -917,6 +953,7 @@ static void atlas_decode(void) {
   glEnableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
   glDisableVertexAttribArray(5);
+  glDisableVertexAttribArray(6);
   for (fmt = 0; fmt < 3; fmt++) {
     if (!s_aqn[fmt])
       continue;
@@ -1254,18 +1291,17 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
  * textured triangles map one whole aligned 32x32 tile, repeated from polygon
  * to polygon, and subdivided near terrain maps its quarters: those wrap
  * within the tile, so the filter blends across polygon edges as the texture
- * was drawn to. A filtered polygon's u, v and box are in the decoded atlas
- * (D41); sprites, tiles and polygons the atlas can't hold keep the nearest
- * texel, in page coordinates. */
+ * was drawn to. u, v and box stay in page coordinates; off is where the
+ * triangle's blocks are in the decoded atlas (D41). */
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
-  if (s_filter && (s_aflush || s_afull))
+  if ((s_filter || s_cache) && (s_aflush || s_afull))
     atlas_reset();
   for (i = 0; i < count; i += 3) {
     const GrVertex *v = s_vbuf + i;
     int n = count - i < 3 ? count - i : 3;
-    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0, filt = 0, du = 0, dv = 0;
+    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0, filt = 0, kind = 0, du = 0, dv = 0;
     uint32_t ref0;
     for (k = 0; k < n; k++) {
       u0 = v[k].u < u0 ? v[k].u : u0;
@@ -1283,21 +1319,24 @@ static void expand(int count) {
       u1 = u0 + 31;
       v1 = v0 + 31;
     }
-    /* a textured polygon: filtered from its blocks in the atlas */
+    /* a textured prim: from its blocks in the atlas, filtered if it is a
+     * polygon and tex_filter is on, else the nearest texel (tex_cache, and
+     * sprites when filtering) */
     memcpy(&ref0, &v[0].tcx, sizeof ref0);
-    if (s_filter && (ref0 & VREF_POLY) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
+    if ((s_filter || s_cache) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
       int ax, ay;
       s_ast.blocks++;
       if (!atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
                       v1 >> 5, &ax, &ay)) {
-        filt = 1;
+        filt = s_filter && (ref0 & VREF_POLY);
+        kind = filt ? 2 : 1;
         du = ax - (u0 & ~31);
         dv = ay - (v0 & ~31);
       } else {
         s_ast.misses++;
       }
     }
-    s_tfilt[i / 3] = (uint8_t)filt;
+    s_tkind[i / 3] = (uint8_t)kind;
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
       VCacheVert cv;
@@ -1316,21 +1355,23 @@ static void expand(int count) {
         x->w = c->w;
       x->page = v[k].page;
       x->clut = v[k].clut;
-      x->u = (int16_t)(v[k].u + du);
-      x->v = (int16_t)(v[k].v + dv);
+      x->u = v[k].u;
+      x->v = v[k].v;
       x->filt = (uint8_t)filt;
       x->wrap = (uint8_t)(wrap && filt);
       x->r = v[k].r;
       x->g = v[k].g;
       x->b = v[k].b;
       x->a = v[k].a;
-      x->box[0] = (int16_t)(u0 + du);
-      x->box[1] = (int16_t)(v0 + dv);
-      x->box[2] = (int16_t)(u1 + du);
-      x->box[3] = (int16_t)(v1 + dv);
+      x->box[0] = (int16_t)u0;
+      x->box[1] = (int16_t)v0;
+      x->box[2] = (int16_t)u1;
+      x->box[3] = (int16_t)v1;
+      x->off[0] = (int16_t)du;
+      x->off[1] = (int16_t)dv;
     }
   }
-  if (s_filter)
+  if (s_filter || s_cache)
     atlas_decode();
   s_st.expand_us += now_us() - t0;
 }
@@ -1397,18 +1438,18 @@ static float s_xf[4]; /* this split's u_xf */
 static void draw(int start, int n, float scale, float alpha, float sel) {
   const Prog *p = &s_prog[s_texmode];
   int t, end;
-  if (!s_filter || s_texmode == P_UNTEX) {
+  if (!(s_filter || s_cache) || s_texmode == P_UNTEX) {
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, start, n);
     return;
   }
-  /* runs of atlas-filtered triangles and of the rest, each with its own
-   * program, in draw order */
+  /* runs of each kind of triangle (s_tkind), each with its own program, in
+   * draw order */
   for (t = start / 3, end = (start + n) / 3; t < end;) {
-    int f = s_tfilt[t], e = t + 1;
-    while (e < end && s_tfilt[e] == f)
+    int f = s_tkind[t], e = t + 1;
+    while (e < end && s_tkind[e] == f)
       e++;
-    p = f ? &s_prog[s_texmode] : &s_vprog[V_X0][s_texmode];
+    p = f == 2 ? &s_prog[s_texmode] : &s_vprog[f ? V_A0 : V_X0][s_texmode];
     glUseProgram(p->prog);
     glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
     glUniform3f(p->semi, scale, alpha, sel);
@@ -1477,6 +1518,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glEnableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
     s_xattr = 1;
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, x));
     /* GL_SHORT: vitaGL took GL_UNSIGNED_SHORT attributes as all but zero */
@@ -1485,7 +1527,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, page));
     glVertexAttribPointer(4, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
     glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, filt));
-    if (s_filter && s_texmode != P_UNTEX) {
+    glVertexAttribPointer(6, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, off));
+    if ((s_filter || s_cache) && s_texmode != P_UNTEX) {
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
       glActiveTexture(GL_TEXTURE0);
@@ -1495,6 +1538,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
       glDisableVertexAttribArray(3);
       glDisableVertexAttribArray(4);
       glDisableVertexAttribArray(5);
+      glDisableVertexAttribArray(6);
       s_xattr = 0;
     }
     glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, x));
@@ -1764,12 +1808,13 @@ int vita_gpu_init(void) {
   s_filter = g_vita_opts.tex_filter < 0 ? 0 : g_vita_opts.tex_filter > 2 ? 2 : g_vita_opts.tex_filter;
   s_persp = g_vita_opts.persp != 0;
   s_subpixel = g_vita_opts.subpixel != 0;
-  s_xmode = s_filter || s_persp || s_subpixel;
+  s_cache = g_vita_opts.tex_cache != 0;
+  s_xmode = s_filter || s_persp || s_subpixel || s_cache;
   if (build_programs(&present_only) != 0)
     return -1;
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
-    s_xmode = s_filter = s_persp = s_subpixel = 0;
+    s_xmode = s_filter = s_persp = s_subpixel = s_cache = 0;
     g_vita_opts.bench = 0;
     if (build_programs(&present_only) != 0)
       return -1;
@@ -1777,7 +1822,8 @@ int vita_gpu_init(void) {
   if (s_xmode) {
     /* polygons are marked for the filter; projections only for persp/subpixel */
     psx_vcache_enable(s_persp || s_subpixel ? 2 : 1);
-    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d (D39)", s_filter, s_persp, s_subpixel);
+    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d tex_cache=%d (D39, D41)", s_filter, s_persp,
+             s_subpixel, s_cache);
   }
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);
@@ -2181,14 +2227,15 @@ void vita_gpu_fill(float r, float g, float b) {
 
 /* bench= (D41): other picture options from the next frame on. res as
  * gpu_res (0 native, 1 the PS1's); a change redraws every target. */
-void vita_gpu_set_options(int res, int filter, int persp, int subpixel) {
-  int v = variant_of(filter, filter || persp || subpixel);
+void vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache) {
+  int v = variant_of(filter, cache, filter || persp || subpixel || cache);
   if (!s_vprog[v][P_UNTEX].prog)
     return;
   s_filter = filter;
   s_persp = persp;
   s_subpixel = subpixel;
-  s_xmode = filter || persp || subpixel;
+  s_cache = cache;
+  s_xmode = filter || persp || subpixel || cache;
   memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
   psx_vcache_enable(!s_xmode ? 0 : persp || subpixel ? 2 : 1);
   if (res != g_vita_opts.gpu_res) {
@@ -2225,8 +2272,8 @@ void vita_gpu_report(int vblank) {
              (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
     psx_vcache_stats_reset();
   }
-  if (s_filter) {
-    vita_log("atlas %d: %u textured polygons looked up, %u not in the atlas (sprite-sharp), "
+  if (s_filter || s_cache) {
+    vita_log("atlas %d: %u textured triangles looked up, %u not in the atlas (from VRAM), "
              "%u blocks decoded; %u of %u blocks in use",
              vblank, s_ast.blocks, s_ast.misses, s_ast.decoded, s_ast.used, AGRID * AGRID);
     s_ast.blocks = s_ast.misses = s_ast.decoded = 0;

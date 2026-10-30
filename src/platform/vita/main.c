@@ -57,11 +57,14 @@
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
+ *       tex_cache=0     with gpu=1, sample textures from VRAM with the
+ *                       palette lookup per pixel instead of the decoded
+ *                       atlas (default 1; the same pixels; D41)
  *       bench=1         with gpu=1, leave the game alone (no input): from
  *                       vblank 600 it cycles res, tex_filter, persp and
  *                       subpixel through the intro, title and attract demos
  *                       and logs each set's speed ("bench" lines; D41), at
- *                       4:3 30 fps; bench=2 keeps widescreen= and interp=
+ *                       30 fps, 4:3 and 16:9; bench=2 keeps interp=
  *       shot_hold=MS    after each shot, hold the game (its picture on
  *                       screen) until hold.ack appears, at most MS ms
  *                       (tools/vita/vita3k_run.sh CAPTURE=1)
@@ -89,7 +92,7 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 1,
-                        .interp_budget = 26, .mixer = 1};
+                        .interp_budget = 26, .mixer = 1, .tex_cache = 1};
 
 extern void spyro_main(void);
 
@@ -217,6 +220,8 @@ static void read_config(void) {
       g_vita_opts.subpixel = atoi(v);
     else if (!strcmp(line, "bench"))
       g_vita_opts.bench = atoi(v);
+    else if (!strcmp(line, "tex_cache"))
+      g_vita_opts.tex_cache = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
@@ -249,10 +254,8 @@ int main(int argc, char **argv) {
   vita_log_open();
   vita_log("Spyro Vita (" __DATE__ " " __TIME__ ")");
   read_config();
-  if (g_vita_opts.bench == 1) { /* the GPU options measured at 4:3, 30 fps */
-    g_vita_opts.widescreen = 0;
+  if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
-  }
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
