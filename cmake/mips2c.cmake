@@ -18,8 +18,43 @@ list(APPEND M2C_UNITS ${m2c_nonmatching})
 # oracle replay finds them through src/game/hand_index.c.
 set(M2C_HAND
   asm/nonmatchings/camera/func_80033F08.s
+  asm/nonmatchings/camera/func_80034480.s
+  asm/nonmatchings/camera/func_800357A4.s
+  asm/nonmatchings/pete/func_80048D10.s
   asm/nonmatchings/pete/func_80049FAC.s)
-list(REMOVE_ITEM M2C_UNITS ${M2C_HAND})
+# A/B tests: functions listed here (or "all") build from the mips2c unit
+# instead, and their hand C compiles out (M2C_<name>=1).
+set(SPYRO_M2C_FUNCS "" CACHE STRING
+  "Hand-written functions to take from mips2c instead (names, or all)")
+set(M2C_HAND_DEFS)
+foreach(u ${M2C_HAND})
+  get_filename_component(f "${u}" NAME_WE)
+  if(SPYRO_M2C_FUNCS STREQUAL "all" OR f IN_LIST SPYRO_M2C_FUNCS)
+    list(APPEND M2C_HAND_DEFS M2C_${f}=1)
+  else()
+    list(APPEND M2C_HAND_DEFS M2C_${f}=0)
+    list(REMOVE_ITEM M2C_UNITS ${u})
+  endif()
+endforeach()
+
+# Partly hand-written: the hand C handles what it covers and calls the mips2c
+# unit, renamed <name>_gen, for the rest (docs/translation-log.md).
+set(M2C_PARTIAL
+  asm/nonmatchings/pete/func_80043FE4.s)
+set(M2C_PARTIAL_DEFS)
+foreach(u ${M2C_PARTIAL})
+  get_filename_component(f "${u}" NAME_WE)
+  if(SPYRO_M2C_FUNCS STREQUAL "all" OR f IN_LIST SPYRO_M2C_FUNCS)
+    list(APPEND M2C_HAND_DEFS M2C_${f}=1)
+  else()
+    list(APPEND M2C_HAND_DEFS M2C_${f}=0)
+    string(REGEX REPLACE "^asm/" "" n "${u}")
+    string(REGEX REPLACE "\\.s$" "" n "${n}")
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
+    list(APPEND M2C_PARTIAL_DEFS "${GEN_DIR}/mips2c/m2c_${n}.c"
+      "${f}=${f}_gen|${f}__m2c=${f}_gen__m2c")
+  endif()
+endforeach()
 
 set(M2C_OUTS)
 set(M2C_DEPS "${M2C_TOOL}" "${M2C_HINTS}")
@@ -39,6 +74,12 @@ add_custom_command(OUTPUT ${M2C_OUTS}
   COMMENT "mips2c: translating decomp asm to C")
 
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS})
+while(M2C_PARTIAL_DEFS)
+  list(POP_FRONT M2C_PARTIAL_DEFS src defs)
+  string(REPLACE "|" ";" defs "${defs}")
+  set_source_files_properties("${src}" TARGET_DIRECTORY spyro_game_m2c
+    PROPERTIES COMPILE_DEFINITIONS "${defs}")
+endwhile()
 # Register seeding for the oracle replay (spyro --replay): host debug build only.
 if(SPYRO_HOST STREQUAL "linux32")
   set(M2C_REPLAY_DEF MIPS2C_REPLAY=1)
@@ -51,7 +92,7 @@ target_compile_options(spyro_game_m2c PRIVATE ${SPYRO_HOST_FLAGS} -w)
 
 file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")
 add_library(spyro_game_port OBJECT ${PORT_SRCS})
-target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF})
+target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF} ${M2C_HAND_DEFS})
 target_include_directories(spyro_game_port PRIVATE
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
 # trace.c reads game state through the decomp's headers.

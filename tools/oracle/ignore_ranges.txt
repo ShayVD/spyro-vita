@@ -60,3 +60,15 @@ v1 func_80033F08
 # balloonist.c 189, 455, 714; the one asm call (func_8002F3E4 800303C0)
 # jumps to 800313F8, which loads v0 and calls g_UpdateParticle first.
 ret func_80049FAC
+# More void functions with hand-written C (src/game/*_hand.c returns
+# nothing, so the host's v0/v1 are whatever the C left):
+# func_80048D10 (pete.c 1887): C callers pete.c 1941, balloonist.c 190; the
+# asm call (func_800314B4 80031B7C) loads v0 and calls g_UpdateParticle next.
+ret func_80048D10
+# func_80034480: the one asm call (func_80035FB4 8003730C) calls the C
+# function func_800342F8 (camera.c 167) next, which takes no arguments.
+ret func_80034480
+# func_800357A4 (camera.c 244): called only from C (camera.c 554).
+ret func_800357A4
+# func_80043FE4 (pete.c 1373): called only from C (pete.c 1547, 2091, 2190).
+ret func_80043FE4

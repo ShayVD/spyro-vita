@@ -1,7 +1,10 @@
 -- Function-level oracle capture (docs/porting-plan.md §7.3, layer 1).
--- For each function in $ORACLE_FUNCS ("ADDR NAME" lines), take up to
--- $ORACLE_SAMPLES calls, at least $ORACLE_GAP vblanks apart, from vblank
--- $ORACLE_FROM on: the machine state on entry (NAME_K.in) and when the call
+-- For each function in $ORACLE_FUNCS ("ADDR NAME [OPTION...]" lines), take
+-- up to $ORACLE_SAMPLES calls, at least $ORACLE_GAP vblanks apart, from vblank
+-- $ORACLE_FROM on (options, to reach a function's other paths: n=N and gap=G
+-- override those two; key=ADDR:SIZE gives each value of that RAM word its own
+-- budget of N, such as one per Spyro state; if=ADDR:SIZE!=V or =V samples only
+-- calls where it holds; SIZE is 1, 2 or 4 bytes, signed): the machine state on entry (NAME_K.in) and when the call
 -- returns to its caller with the same $sp (NAME_K.out). The host replays each
 -- .in through its translated C and compares with .out (spyro --replay,
 -- tools/oracle/replay.sh). Quits at vblank $ORACLE_TO. With $ORACLE_TRACE,
@@ -138,23 +141,42 @@ end
 local per_level = os.getenv('ORACLE_PER_LEVEL') == '1'
 local function level_now() return ffi.cast('int32_t*', mem + 0x7596C)[0] end
 
+-- RAM word for key= and if= ("ADDR:SIZE", PS1 address in hex).
+local function ramword(spec)
+  local a, size = spec:match('^(%x+):([124])$')
+  assert(a, 'bad RAM word ' .. spec)
+  local off, ty = bit.band(tonumber(a, 16), 0x1fffff), ({ ['1'] = 'int8_t*', ['2'] = 'int16_t*', ['4'] = 'int32_t*' })[size]
+  return function() return ffi.cast(ty, mem + off)[0] end
+end
+
 local state = {}
 -- Global: PCSX-Redux removes a breakpoint when its handle is garbage collected.
 oracleBreakpoints = {}
 local bps = oracleBreakpoints
 for line in (funcs and io.lines(funcs) or function() end) do
-  local a, name = line:match('^%s*(%x+)%s+(%S+)')
+  local a, name, opts = line:match('^%s*(%x+)%s+(%S+)%s*(.*)$')
   if a then
     local addr = tonumber(a, 16)
-    local st = { name = name, n = 0, next = from, busy = false, lev = {} }
+    local st = { name = name, n = 0, next = from, busy = false, lev = {}, max = samples, gap = gap }
+    for k, v in opts:gmatch('(%w+)=(%S+)') do
+      if k == 'n' then st.max = tonumber(v)
+      elseif k == 'gap' then st.gap = tonumber(v)
+      elseif k == 'key' then st.key = ramword(v)
+      elseif k == 'if' then
+        local w, op, val = v:match('^(%x+:[124])(!?=)(%-?%d+)$')
+        local get, want = ramword(w), tonumber(val)
+        st.cond = op == '=' and function() return get() == want end or function() return get() ~= want end
+      end
+    end
     state[#state + 1] = st
     bps[#bps + 1] = PCSX.addBreakpoint(addr, 'Exec', 4, 'oracle ' .. name, function()
       if st.busy or vblank < st.next then return true end
-      local lvl = per_level and level_now() or 0
-      if (st.lev[lvl] or 0) >= samples then return true end
+      if st.cond and not st.cond() then return true end
+      local lvl = st.key and st.key() or (per_level and level_now() or 0)
+      if (st.lev[lvl] or 0) >= st.max then return true end
       local regs = PCSX.getRegisters()
       local sp, ra, k = regs.GPR.n.sp, regs.GPR.n.ra, st.n
-      st.busy, st.n, st.next = true, st.n + 1, vblank + gap
+      st.busy, st.n, st.next = true, st.n + 1, vblank + st.gap
       st.lev[lvl] = (st.lev[lvl] or 0) + 1
       local copy = dump_in(string.format('%s/%s_%d.in', out, name, k), addr, k)
       local done = false
@@ -179,6 +201,19 @@ end
 local tour = {}
 for v in (os.getenv('ORACLE_TOUR') or ''):gmatch('%d+') do tour[#tour + 1] = tonumber(v) end
 local tour_stay = tonumber(os.getenv('ORACLE_TOUR_STAY') or '300')
+-- While staying in a level, $ORACLE_TOUR_PAD ("OFFSET buttons" lines, then
+-- "PERIOD loop") plays a pad pattern on repeat, and $ORACLE_TOUR_POKE
+-- ("ADDR=VALUE,...", 32-bit words) is written once, 60 vblanks in.
+local tour_pad, tour_period = {}, 0
+for line in (os.getenv('ORACLE_TOUR_PAD') and io.lines(os.getenv('ORACLE_TOUR_PAD')) or function() end) do
+  local off, rest = line:match('^%s*(%d+)%s+(.*)$')
+  if off and rest:match('^loop') then tour_period = tonumber(off)
+  elseif off then tour_pad[tonumber(off)] = rest end
+end
+local tour_poke = {}
+for a, v in (os.getenv('ORACLE_TOUR_POKE') or ''):gmatch('(%x+)=(%-?%w+)') do
+  tour_poke[#tour_poke + 1] = { bit.band(tonumber(a, 16), 0x1fffff), tonumber(v) }
+end
 local digit = { [0] = 'circle', 'cross', 'square', 'triangle', 'right', 'down' }
 local tour_i, tour_t0, tour_seq, tour_at = 1, nil, nil, nil
 local function tour_step(gs, level)
@@ -195,9 +230,21 @@ local function tour_step(gs, level)
     if t > 400 then tour_seq = nil end
     return
   end
-  if gs ~= 0 then tour_t0 = nil return end
+  if gs ~= 0 then
+    if tour_t0 and tour_period > 0 then setpad('none') end
+    tour_t0 = nil
+    return
+  end
   tour_t0 = tour_t0 or vblank
-  if vblank - tour_t0 < tour_stay then return end
+  local t = vblank - tour_t0
+  if t == 60 then
+    for _, p in ipairs(tour_poke) do ffi.cast('int32_t*', mem + p[1])[0] = p[2] end
+  end
+  if t < tour_stay then
+    if tour_period > 0 and tour_pad[t % tour_period] then setpad(tour_pad[t % tour_period]) end
+    return
+  end
+  if tour_period > 0 then setpad('none') end
   local L = tour[tour_i]
   print(string.format('oracle: tour leaving level %d for %d at vblank %d', level, L, vblank))
   tour_i, tour_t0, tour_at = tour_i + 1, nil, vblank + 1 -- [0] runs next vblank
