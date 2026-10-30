@@ -1410,20 +1410,20 @@ static void expand(int count) {
         x->w = 1;
       }
     }
-    if (s_vc) { /* persp, subpixel: the vcache's answer (psx_vcache.h) */
+    if (s_vc) { /* persp, subpixel: the vcache's answer, in vertex order */
       for (k = 0; k < n; k++) {
         XVertex *x = s_xbuf + i + k;
-        VCacheVert c;
+        const VCacheVert *c = &g_vcache_side[i + k];
         uint32_t ref;
         memcpy(&ref, &v[k].tcx, sizeof ref);
-        if (!psx_vcache_get(ref, &c))
+        if (!(ref & VREF_POLY))
           continue;
-        if (s_subpixel && !(ref & VREF_NOPOS)) {
-          x->dxy[0] = c.dx;
-          x->dxy[1] = c.dy;
+        if (s_subpixel) {
+          x->dxy[0] = c->dx;
+          x->dxy[1] = c->dy;
         }
-        if (s_persp && (ref & VREF_PERSP))
-          x->w = c.w;
+        if (s_persp)
+          x->w = c->w;
       }
     }
   }
@@ -1441,12 +1441,17 @@ void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
     count = MAX_VERTEX_BUFFER_SIZE;
   memcpy(s_vbuf, vertices, (size_t)count * sizeof *vertices);
   s_vorig = vertices;
+  if (s_vc)
+    psx_vcache_set_base(vertices);
   for (i = 0; i + 2 < count; i += 3) {
     GrVertex *v = s_vbuf + i;
     for (k = 0; k < 3; k++) {
       int dx = v[k].x - v[(k + 1) % 3].x, dy = v[k].y - v[(k + 1) % 3].y;
       if (dx >= 1024 || dx <= -1024 || dy >= 512 || dy <= -512) {
         v[1] = v[2] = v[0];
+        memset(&v[0].tcx, 0, 4); /* no vcache offsets: it stays a point */
+        memset(&v[1].tcx, 0, 4);
+        memset(&v[2].tcx, 0, 4);
         break;
       }
     }

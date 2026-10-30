@@ -37,6 +37,15 @@ void psx_vcache_enable(int mode);
  * DrawOTag returns. */
 int psx_vcache_get(uint32_t ref, VCacheVert *out);
 
+/* PsyX's vertex buffer (the renderer's GR_UpdateVertexBuffer gets it). Once
+ * known, each polygon's answer is also written to g_vcache_side at the
+ * same index as its vertices, after PsyX's quad split: dx, dy (0 where the
+ * position stays integer) and w (1 unless the whole polygon was found), so
+ * the renderer reads them in order instead of looking each one up (D43).
+ * Valid for the vertices whose reference has VREF_POLY. */
+void psx_vcache_set_base(const void *vertex_buffer);
+extern VCacheVert g_vcache_side[];
+
 /* Counters since the last psx_vcache_stats_reset(). */
 typedef struct {
   unsigned frames;    /* DrawOTag calls */

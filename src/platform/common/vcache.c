@@ -81,6 +81,10 @@ typedef struct {
 } Entry;
 
 static Entry s_tab[VC_SIZE];
+static const GrVertex *s_base;
+VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
+
+void psx_vcache_set_base(const void *vertex_buffer) { s_base = (const GrVertex *)vertex_buffer; }
 static uint32_t s_gen = 1;
 static unsigned s_count; /* entries this frame */
 
@@ -291,6 +295,26 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
     if (e[i] && e[i]->multi)
       r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
+  }
+  if (s_base && vertex >= s_base && vertex - s_base <= MAX_VERTEX_BUFFER_SIZE - 6) {
+    /* PsyX splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
+    static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
+    const int *order = n == 4 ? k_quad : k_tri;
+    VCacheVert c[4], *side = g_vcache_side + (vertex - s_base);
+    for (i = 0; i < n; i++) {
+      c[i].dx = c[i].dy = 0;
+      c[i].w = 1;
+      if (e[i]) {
+        if (!e[i]->multi) {
+          c[i].dx = e[i]->c[0].dx;
+          c[i].dy = e[i]->c[0].dy;
+        }
+        if (persp)
+          c[i].w = e[i]->c[pick[i]].w;
+      }
+    }
+    for (i = 0; i < (n == 4 ? 6 : 3); i++)
+      side[i] = c[order[i]];
   }
 }
 
