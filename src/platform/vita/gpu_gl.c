@@ -175,6 +175,7 @@ typedef struct {
   int16_t box[4]; /* u0, v0, u1, v1: atlas texels the filter may read */
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
+static uint8_t s_tfilt[MAX_VERTEX_BUFFER_SIZE / 3 + 1]; /* triangle filtered from the atlas */
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
 static int s_xattr;    /* attribute arrays 3-5 are enabled */
 static int s_filter;   /* tex_filter=: 0 off, 1 3-point, 2 bilinear */
@@ -377,9 +378,11 @@ static const char k_fs_tex_body[] =
  * weight and the colour is renormalised over the rest, so cut-out edges
  * don't darken; a pixel is drawn where at least half the weight is opaque.
  * STP is the weighted majority, the same in both subtract passes.
- * Everything else (sprites, tiles, anything not in the atlas) samples the
- * nearest texel from VRAM, as k_fs_tex_body does. Each triangle takes one
- * branch for all its pixels. */
+ * Everything else (sprites, tiles, anything not in the atlas) is drawn by
+ * the persp/subpixel-only programs, which sample the nearest texel from
+ * VRAM: draw() splits a draw into runs of each. One shader with both paths
+ * behind a branch drew nothing in Vita3K (texture reads in a dynamic
+ * branch), so there is no branch. */
 static const char k_fs_filt_body[] =
     "varying vec4 v_box;\n"
     "varying vec2 v_filt;\n"
@@ -392,7 +395,7 @@ static const char k_fs_filt_body[] =
     "void main() {\n"
     "  vec3 qrgb;\n"
     "  float qstp;\n"
-    "  if (v_filt.x > 0.5) {\n"
+    "  {\n"
     "    vec4 qbox = floor(v_box + 0.5);\n"
     "    float qwrap = step(0.5, v_filt.y);\n"
     "    vec2 qf = v_uv - 0.5;\n"
@@ -422,14 +425,6 @@ static const char k_fs_filt_body[] =
     "    if (qsum < 0.5) discard;\n"
     "    qrgb = (qta.xyz * qa.x + qt10.xyz * qa.y + qt01.xyz * qa.z + qtb.xyz * qa.w) / qsum;\n"
     "    qstp = step(0.5 * qsum, dot(qa, step(1.5, qcode)));\n"
-    "  } else {\n"
-    "    vec2 quv = floor(v_uv + 0.002);\n"
-    "    quv = quv - 256.0 * floor(quv * (1.0 / 256.0));\n"
-    "    vec4 qpc = floor(v_pc + 0.5);\n"
-    TEX_DECODE
-    "    if (qc.x + qc.y == 0.0) discard;\n"
-    "    qstp = step(128.0, qc.y);\n"
-    "    qrgb = rgb15(qc);\n"
     "  }\n"
     "  if ((u_semi.z == 1.0 && qstp > 0.5) || (u_semi.z == 2.0 && qstp < 0.5)) discard;\n"
     "  qrgb = qrgb * v_col.xyz * (255.0 / 128.0);\n"
@@ -561,8 +556,8 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
     glUniform1i(p->vram, 0);
   if (p->tex >= 0)
     glUniform1i(p->tex, 1);
-  if (p->atlas >= 0)
-    glUniform1i(p->atlas, 2);
+  if (p->atlas >= 0) /* unit 1, s_tex's: vitaGL ignored a third unit (D41) */
+    glUniform1i(p->atlas, 1);
   return 0;
 }
 
@@ -577,6 +572,8 @@ static int build_variant(int v) {
   int i, filter = v >= V_X1 ? v - V_X0 : 0;
   if (s_vprog[v][P_UNTEX].prog)
     return 0;
+  if (filter && build_variant(V_X0)) /* draws what the atlas doesn't hold */
+    return -1;
   fs[0] = k_fs_prim_head;
   fs[1] = k_fs_untex;
   if (link(&s_vprog[v][P_UNTEX], vs, 1, fs, 2, 0, "untextured"))
@@ -790,7 +787,8 @@ static GLuint s_atex[2], s_afbo[2];
 static int s_acur;
 static int s_ax, s_ay, s_ah; /* shelf allocator, in blocks */
 static int s_afull;
-static float s_aq[3][AMAXNEW * 6 * 6]; /* decode quads per format: ndc, src, pc */
+/* decode quads per format, as packed client arrays (like quad()'s) */
+static float s_aq_ndc[3][AMAXNEW * 12], s_aq_src[3][AMAXNEW * 12], s_aq_pc[3][AMAXNEW * 12];
 static int s_aqn[3];
 static struct {
   unsigned blocks, decoded, misses, used;
@@ -870,7 +868,9 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
   {
     /* the decode quad: atlas rect <- page texels (centres at +0.5) */
     static const int ix[6] = {0, 2, 0, 2, 2, 0}, iy[6] = {1, 1, 3, 1, 3, 3};
-    float r[4], t[4], *q = s_aq[fmt] + s_aqn[fmt]++ * 36;
+    float r[4], t[4];
+    float *qn = s_aq_ndc[fmt] + s_aqn[fmt] * 12, *qs = s_aq_src[fmt] + s_aqn[fmt] * 12;
+    float *qp = s_aq_pc[fmt] + s_aqn[fmt] * 12;
     r[0] = (float)e->ax / ATLAS * 2 - 1;
     r[2] = (float)(e->ax + bw * ACELL) / ATLAS * 2 - 1;
     r[1] = (float)e->ay / ATLAS * 2 - 1;
@@ -880,13 +880,14 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
     t[1] = (float)(by0 * ACELL);
     t[3] = (float)((by1 + 1) * ACELL);
     for (i = 0; i < 6; i++) {
-      q[i * 6 + 0] = r[ix[i]];
-      q[i * 6 + 1] = r[iy[i]];
-      q[i * 6 + 2] = t[ix[i]];
-      q[i * 6 + 3] = t[iy[i]];
-      q[i * 6 + 4] = (float)(uint16_t)page;
-      q[i * 6 + 5] = (float)(uint16_t)clut;
+      qn[i * 2] = r[ix[i]];
+      qn[i * 2 + 1] = r[iy[i]];
+      qs[i * 2] = t[ix[i]];
+      qs[i * 2 + 1] = t[iy[i]];
+      qp[i * 2] = (float)(uint16_t)page;
+      qp[i * 2 + 1] = (float)(uint16_t)clut;
     }
+    s_aqn[fmt]++;
   }
   s_ax += bw;
   if (bh > s_ah)
@@ -920,9 +921,9 @@ static void atlas_decode(void) {
     if (!s_aqn[fmt])
       continue;
     glUseProgram(s_dprog[fmt].prog);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt]);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt] + 2);
-    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 24, s_aq[fmt] + 4);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, s_aq_ndc[fmt]);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, s_aq_src[fmt]);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 0, s_aq_pc[fmt]);
     glDrawArrays(GL_TRIANGLES, 0, s_aqn[fmt] * 6);
     s_aqn[fmt] = 0;
   }
@@ -1296,6 +1297,7 @@ static void expand(int count) {
         s_ast.misses++;
       }
     }
+    s_tfilt[i / 3] = (uint8_t)filt;
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
       VCacheVert cv;
@@ -1390,10 +1392,29 @@ static int any_stale(void) {
   return 0;
 }
 
+static float s_xf[4]; /* this split's u_xf */
+
 static void draw(int start, int n, float scale, float alpha, float sel) {
   const Prog *p = &s_prog[s_texmode];
-  glUniform3f(p->semi, scale, alpha, sel);
-  glDrawArrays(GL_TRIANGLES, start, n);
+  int t, end;
+  if (!s_filter || s_texmode == P_UNTEX) {
+    glUniform3f(p->semi, scale, alpha, sel);
+    glDrawArrays(GL_TRIANGLES, start, n);
+    return;
+  }
+  /* runs of atlas-filtered triangles and of the rest, each with its own
+   * program, in draw order */
+  for (t = start / 3, end = (start + n) / 3; t < end;) {
+    int f = s_tfilt[t], e = t + 1;
+    while (e < end && s_tfilt[e] == f)
+      e++;
+    p = f ? &s_prog[s_texmode] : &s_vprog[V_X0][s_texmode];
+    glUseProgram(p->prog);
+    glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
+    glUniform3f(p->semi, scale, alpha, sel);
+    glDrawArrays(GL_TRIANGLES, t * 3, (e - t) * 3);
+    t = e;
+  }
 }
 
 void gl_GR_DrawTriangles(int start_vertex, int triangles) {
@@ -1439,8 +1460,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
    * pixel's corner, GL at its centre. (Half a PS1 pixel would shift what is
    * drawn against what LoadImage put there, and leave the target's first
    * rows and columns uncovered, once targets have more pixels than VRAM.) */
-  glUniform4f(p->xf, (float)(s_org_x - t->x) + 0.5f / s_sx, (float)(s_org_y - t->y) + 0.5f / s_sy,
-              2.0f / t->w, 2.0f / t->h);
+  s_xf[0] = (float)(s_org_x - t->x) + 0.5f / s_sx;
+  s_xf[1] = (float)(s_org_y - t->y) + 0.5f / s_sy;
+  s_xf[2] = 2.0f / t->w;
+  s_xf[3] = 2.0f / t->h;
+  glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
   if (s_texmode != P_UNTEX) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_vram_tex);
@@ -1462,7 +1486,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     glVertexAttribPointer(4, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
     glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, filt));
     if (s_filter && s_texmode != P_UNTEX) {
-      glActiveTexture(GL_TEXTURE2);
+      glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
       glActiveTexture(GL_TEXTURE0);
     }
