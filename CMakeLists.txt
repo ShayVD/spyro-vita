@@ -35,7 +35,10 @@ if(SPYRO_HOST STREQUAL "vita")
   # the i686 GCC of the linux32 build take them as warnings.
   set(SPYRO_OPT_FLAGS -O2 -g -Wno-error=int-conversion
       -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration
-      -Wno-error=implicit-int -Wno-error=return-mismatch)
+      -Wno-error=implicit-int -Wno-error=return-mismatch
+      # save_file.c's SaveCreate writes past m_CollectedEggs as the original
+      # does; at -O2 GCC would otherwise rewrite the loop around that UB.
+      -fno-aggressive-loop-optimizations)
 else()
   set(SPYRO_ARCH_FLAGS -m32)
   set(SPYRO_OPT_FLAGS -O1 -g)

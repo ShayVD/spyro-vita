@@ -18,6 +18,10 @@ typedef struct {
   int shot_every;     /* shot_every=N */
   int stats;          /* stats=0 drops the line every 5 s of vblanks */
   int filter;         /* filter=0 nearest-neighbour scaling, 1 (default) linear */
+  char pad[256];      /* pad= a pad script (linux32 --pad format), ORed with the controller */
+  int wav;            /* wav=1 also writes the audio to audio.wav */
+  int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
+  int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -31,14 +35,26 @@ int vita_vblank_count(void);
 
 /* video.c: the PS1 display rect, scaled 4:3 into 960x544 */
 int vita_video_init(void); /* 0 = ok */
-void vita_video_present(void);
+int vita_video_present(void); /* 1 = a new picture */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);
 void vita_pad_vblank(void);
 void vita_pad_poll(void); /* SDL events (controller hot-plug) */
 
-/* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio */
+/* pad.c: pad= script */
+int vita_pad_load(const char *path); /* 0 = ok */
+
+/* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
 void vita_audio_init(void);
+void vita_audio_close(void); /* finish audio.wav */
+
+/* prof.c: per-vblank CPU time by part ("time" lines in the log) */
+enum { PROF_GAME, PROF_OT, PROF_RASTER, PROF_SPU, PROF_PRESENT, PROF_WAIT, PROF_COUNT };
+void prof_enter(int part);
+void prof_leave(void);
+void prof_vblank(void);
+void prof_report(int vblank);
+unsigned prof_vram_gen(void); /* changes whenever the rasterizer writes VRAM */
 
 #endif

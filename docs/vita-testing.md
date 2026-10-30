@@ -73,23 +73,39 @@ Files the app writes:
 | `shot_every=N` | and every N vblanks |
 | `stats=N` | 0: no timing lines; 1 (default): one line every 300 vblanks; 2: also each pad change |
 | `filter=N` | 0: nearest-neighbour scaling; 1 (default): linear |
+| `reartouch=1` | the rear touch pad's left/right half is L2/R2 (the right stick always is) |
+| `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
+| `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
+| `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
+
+The log has two kinds of line every 300 vblanks (5 seconds at full speed):
+
+- `vblank N: 300 vblanks in T ms (R per second), P pictures, L vblanks late`. R should be about
+  60: the game keeps real time and catches up after slow frames. P is how many new pictures were
+  shown, so P/5 is the frame rate (the PS1 game draws at most 30 a second). L counts vblanks the
+  game was late for.
+- `time N: per vblank ms game … ot … raster … spu … present … wait …; busy B%, worst vblank W ms`
+  is where the CPU time went, per vblank (16.7 ms at 60 Hz): game logic, PsyCross's OT walk, the
+  software rasterizer, the SPU/CD models, the picture upload, and waiting for the display.
 
 ## Controls
 
 The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The left stick also works
-as the d-pad (the PS1 game is digital). L2/R2/L3/R3 only exist on a PS TV with a DualShock; on a
-handheld Vita they're not mapped yet.
+as the d-pad (the pad is reported as digital). **L2/R2 turn the camera: push the right stick left
+(L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's left/right half does
+the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D26).
 
 ## What to expect (be direct)
 
 - **The picture is drawn on the CPU** (the linux32 host's software rasterizer), at the PS1's own
   resolution, then scaled 4:3 into the middle of the 960×544 screen. It should look like the PS1,
   not better. The vitaGL GPU renderer, widescreen and 60 fps come later (M4).
-- **Speed is unknown on hardware.** The game is paced by the Vita's vblank. If a frame takes
-  longer than it should, the game runs slower (it never skips). The log's `vblank N: ... per
-  second` lines show the rate: 60 is full speed.
-- **Audio**: the software SPU and XA music go through SDL2. If the game runs slow, the audio
-  will have gaps.
+- **Speed on hardware (first test, 2026-10-30, build `a60dd0b`): too slow.** 14–20 vblanks per
+  second in 3D scenes (60 is full speed): about 120 ms of CPU per game frame against 33 ms. Builds
+  from `D27` on keep real time instead (the game catches up, the audio stays whole), but they still
+  show fewer pictures than the PS1 until the GPU renderer lands (decisions D28).
+- **Audio**: the software SPU and XA music go through SDL2. In Vita3K the WAV the build writes
+  (`wav=1`, the same samples SDL2 gets) is byte-identical to the linux32 host's.
 - What the linux32 host can do (M2: Artisans, saving and loading) is what this build can do at
   best. Anything the host hasn't reached hasn't been tried.
 
@@ -121,6 +137,25 @@ Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
 | `run3-vita-input` | START and ✕ pressed in the Vita3K window | `pad: buttons 0008` then `4000` in the log: START opens "create save file?", ✕ creates it (`save/card0`) and shows New Game / Load Game. Window captures `vita3k-window-*.jpg` show the 4:3 picture pillarboxed in 960×544. The run ended before New Game reached a level. |
 | `run4-vita-demo` | no input, 12000 vblanks (title, attract demos in two levels) | **All 40 shots (every 300 vblanks) byte-identical** to the linux32 host's `logs/run4-demo`. No PsyCross error. 59.9 vblanks/s throughout. |
 
-Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); a level played by hand on
-the Vita build; loading a save; anything on real hardware. Speed in Vita3K says nothing about
-the Vita's own speed.
+### On the M2 base (`b9492d7`), scripted with the host's pad scripts
+
+Each run was replayed on the linux32 host from the same commit with the same script
+(`logs/run6-host-base`, `logs/run7-host-*`), and compared file by file:
+
+| Run | What | Result |
+|---|---|---|
+| `run5-vita-base` | no input, 12000 vblanks, shot every 120, `wav=1` | 100/100 shots and the 35 MB WAV byte-identical to the host. |
+| `run6-vita-gems` | M2's gems script: New Game → intro → Artisans, walk to the waterfall pool, four gems | 36/36 shots and the memory card byte-identical. |
+| `run7-vita-fairy` | M2's fairy script: free Nestor, save at the fairy ("GAME SAVED") | 37/37 shots and `save/card0/BASCUS-94228SPYRO` byte-identical. |
+| `run8-vita-load` | M2's load script, starting from `run7-vita-fairy`'s card | 14/14 shots byte-identical: Load Game → Artisans with Nestor freed. |
+| `run9`–`run11` | after each speed change (D28) | still byte-identical (shots, WAV). |
+| `run12-vita-realtime` | `REALTIME=1`, no input, 7200 vblanks | ~60 vblanks/s kept, audio continuous (120 s for 7200 vblanks), no errors. |
+
+Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
+for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
+
+## On hardware
+
+| Build | Who | Result |
+|---|---|---|
+| `a60dd0b` | user, 2026-10-30 | Boots, runs about 9 minutes with no errors (arena at 0x82000000). Too slow: 14–20 vblanks/s in 3D, 19–24 on the title (decisions D27, D28). |

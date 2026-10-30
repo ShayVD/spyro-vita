@@ -1,12 +1,16 @@
 /* Vita controls through SDL2's game controller API, as a PS1 digital pad on
  * port 1 (status 0, id 0x41, buttons active-low; the same buffer layout as
  * src/platform/linux32/pad.c). The Vita's buttons map one to one and the left
- * stick also drives the d-pad (Spyro on the PS1 is a digital-pad game).
- * L2/R2/L3/R3 only exist on a PS TV with a DualShock; a handheld Vita has
- * none yet (rear-touch quarters are a follow-up). */
+ * stick also drives the d-pad (the pad is reported as digital). L2/R2 turn
+ * Spyro's camera (camera.c func_80035F58): a handheld Vita has neither, so
+ * the right stick's X axis is L2 (left) / R2 (right), and with reartouch=1
+ * the rear touch pad's left / right half too (decisions D26). A PS TV's
+ * DualShock L2/R2/L3/R3 work as themselves. */
 #include "vita.h"
 
 #include <SDL2/SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern int g_padCommEnable; /* LIBPAD.C: PadStartCom/PadStopCom */
@@ -43,6 +47,78 @@ static const struct {
 static SDL_GameController *s_ctl;
 static unsigned char *s_pad[2];
 static uint16_t s_last;
+
+/* pad= script, the linux32 host's --pad format (src/platform/linux32/pad.c):
+ *   <vblank> <button>[+<button>...] | none     # comment
+ * A line's buttons hold from its vblank until the next line. */
+typedef struct {
+  int vblank;
+  uint16_t mask;
+} PadEvent;
+
+static const struct {
+  const char *name;
+  uint16_t bit;
+} k_names[] = {
+    {"select", PSX_SELECT}, {"l3", PSX_L3}, {"r3", PSX_R3}, {"start", PSX_START},
+    {"up", PSX_UP}, {"right", PSX_RIGHT}, {"down", PSX_DOWN}, {"left", PSX_LEFT},
+    {"l2", PSX_L2}, {"r2", PSX_R2}, {"l1", PSX_L1}, {"r1", PSX_R1},
+    {"triangle", PSX_TRIANGLE}, {"circle", PSX_CIRCLE}, {"cross", PSX_CROSS},
+    {"square", PSX_SQUARE},
+};
+
+static PadEvent *s_events;
+static int s_nevents, s_next;
+static uint16_t s_script;
+
+static int parse_buttons(char *text, uint16_t *mask) {
+  char *tok;
+  *mask = 0;
+  if (!strcmp(text, "none"))
+    return 0;
+  for (tok = strtok(text, "+"); tok; tok = strtok(NULL, "+")) {
+    size_t i;
+    for (i = 0; i < sizeof k_names / sizeof k_names[0]; i++)
+      if (!strcmp(tok, k_names[i].name))
+        break;
+    if (i == sizeof k_names / sizeof k_names[0])
+      return -1;
+    *mask |= k_names[i].bit;
+  }
+  return 0;
+}
+
+int vita_pad_load(const char *path) {
+  char line[256], name[200];
+  int v, cap = 0;
+  FILE *f = fopen(path, "r");
+  if (!f) {
+    vita_log("pad: cannot open %s", path);
+    return -1;
+  }
+  while (fgets(line, sizeof line, f)) {
+    char *hash = strchr(line, '#');
+    uint16_t mask;
+    if (hash)
+      *hash = 0;
+    if (sscanf(line, "%d %199s", &v, name) != 2)
+      continue;
+    if (parse_buttons(name, &mask) != 0) {
+      vita_log("pad: bad buttons in %s: %s", path, line);
+      fclose(f);
+      return -1;
+    }
+    if (s_nevents == cap) {
+      cap = cap ? cap * 2 : 64;
+      s_events = realloc(s_events, cap * sizeof *s_events);
+    }
+    s_events[s_nevents].vblank = v;
+    s_events[s_nevents++].mask = mask;
+  }
+  fclose(f);
+  vita_log("pad: %d events from %s", s_nevents, path);
+  return 0;
+}
 
 static void fill(unsigned char *p, int connected, uint16_t mask) {
   if (!p)
@@ -106,13 +182,28 @@ static uint16_t read_mask(void) {
   if (x > STICK_DEAD) m |= PSX_RIGHT;
   if (y < -STICK_DEAD) m |= PSX_UP;
   if (y > STICK_DEAD) m |= PSX_DOWN;
+  x = SDL_GameControllerGetAxis(s_ctl, SDL_CONTROLLER_AXIS_RIGHTX);
+  if (x < -STICK_DEAD) m |= PSX_L2;
+  if (x > STICK_DEAD) m |= PSX_R2;
+  if (g_vita_opts.reartouch && SDL_GetNumTouchDevices() > 1) {
+    SDL_TouchID rear = SDL_GetTouchDevice(1);
+    int i, n = SDL_GetNumTouchFingers(rear);
+    for (i = 0; i < n; i++) {
+      SDL_Finger *f = SDL_GetTouchFinger(rear, i);
+      if (f)
+        m |= f->x < 0.5f ? PSX_L2 : PSX_R2;
+    }
+  }
   return m;
 }
 
 void vita_pad_vblank(void) {
   uint16_t m;
+  int v = vita_vblank_count();
+  while (s_next < s_nevents && s_events[s_next].vblank <= v)
+    s_script = s_events[s_next++].mask;
   SDL_GameControllerUpdate();
-  m = read_mask();
+  m = read_mask() | s_script;
   if (m != s_last && g_vita_opts.stats > 1)
     vita_log("pad: buttons %04x", m);
   s_last = m;

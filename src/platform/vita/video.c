@@ -8,8 +8,11 @@
 #include "vita.h"
 
 #include <SDL2/SDL.h>
+#include <assert.h> /* PsyCross headers use static_assert */
 #include <stdlib.h>
 #include <string.h>
+
+#include "gpu/PsyX_GPU.h" /* currentDispEnv, g_GPUDisabledState */
 
 uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 
@@ -51,14 +54,37 @@ int vita_video_init(void) {
   return 0;
 }
 
-/* One frame: the display rect as the TV would show it, 4:3 in the middle. */
-void vita_video_present(void) {
+/* What the last upload showed: nothing to convert again while the
+ * rasterizer hasn't written VRAM and the display is the same (the game draws
+ * at 30 Hz, the screen runs at 60). */
+static struct {
+  unsigned gen;
+  DISPENV disp;
+  int disabled, w, h, valid;
+} s_last;
+
+/* One frame: the display rect as the TV would show it, 4:3 in the middle.
+ * Returns 1 if it was a new picture. */
+int vita_video_present(void) {
   int w, h, x, y, pitch;
   void *pixels;
   uint8_t *rgb;
   SDL_Rect src, dst;
+  int fresh = 1;
   if (!s_ren)
-    return;
+    return 0;
+  prof_enter(PROF_PRESENT);
+  if (s_last.valid && s_last.gen == prof_vram_gen() && s_last.disabled == g_GPUDisabledState &&
+      !memcmp(&s_last.disp, &currentDispEnv, sizeof s_last.disp)) {
+    w = s_last.w;
+    h = s_last.h;
+    fresh = 0;
+    goto show;
+  }
+  s_last.valid = 1;
+  s_last.gen = prof_vram_gen();
+  s_last.disabled = g_GPUDisabledState;
+  s_last.disp = currentDispEnv;
   rgb = host_display_rgb(&w, &h);
   if (w > TEX_W)
     w = TEX_W;
@@ -81,11 +107,21 @@ void vita_video_present(void) {
     SDL_UnlockTexture(s_tex);
   }
   free(rgb);
+  s_last.w = w;
+  s_last.h = h;
+show:
+  src.x = src.y = 0;
+  src.w = w;
+  src.h = h;
   dst.h = SCREEN_H;
   dst.w = SCREEN_H * 4 / 3;
   dst.x = (SCREEN_W - dst.w) / 2;
   dst.y = 0;
   SDL_RenderClear(s_ren);
   SDL_RenderCopy(s_ren, s_tex, &src, &dst);
-  SDL_RenderPresent(s_ren); /* waits for the Vita's vblank (PRESENTVSYNC) */
+  prof_leave();
+  prof_enter(PROF_WAIT);
+  SDL_RenderPresent(s_ren); /* flips at the Vita's vblank (PRESENTVSYNC) */
+  prof_leave();
+  return fresh;
 }

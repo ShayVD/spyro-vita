@@ -13,6 +13,15 @@
  *       stats=N         0: no timing line; 1 (default): one every 300 vblanks;
  *                       2: also a line per pad change
  *       filter=N        0: nearest-neighbour scaling; 1 (default): linear
+ *       pad=PATH        a pad script in the linux32 host's --pad format
+ *                       ("<vblank> <button>[+<button>...] | none"), played on
+ *                       top of the controller (tests, docs/vita-testing.md)
+ *       wav=1           also write the audio to ux0:data/spyro/audio.wav
+ *       reartouch=1     the rear touch pad's left/right half is L2/R2
+ *                       (the right stick always is, decisions D26)
+ *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
+ *                       on the linux32 host, however long a frame takes (for
+ *                       scripted runs compared with the host; D27)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -33,7 +42,7 @@
 int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
-VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1};
+VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1};
 
 extern void spyro_main(void);
 
@@ -92,6 +101,14 @@ static void read_config(void) {
       g_vita_opts.stats = atoi(v);
     else if (!strcmp(line, "filter"))
       g_vita_opts.filter = atoi(v);
+    else if (!strcmp(line, "pad"))
+      snprintf(g_vita_opts.pad, sizeof g_vita_opts.pad, "%s", v);
+    else if (!strcmp(line, "wav"))
+      g_vita_opts.wav = atoi(v);
+    else if (!strcmp(line, "reartouch"))
+      g_vita_opts.reartouch = atoi(v);
+    else if (!strcmp(line, "realtime"))
+      g_vita_opts.realtime = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
@@ -141,6 +158,8 @@ int main(int argc, char **argv) {
   if (vita_video_init() != 0)
     sceKernelExitProcess(1);
   vita_pad_init();
+  if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
+    sceKernelExitProcess(1);
   vita_audio_init();
 
   psx_arena_init();

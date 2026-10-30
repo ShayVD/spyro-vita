@@ -20,6 +20,10 @@ set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12" CACHE STRING "vita-mksfoex flags")
 # PsyX_render.h only types TextureID for its GL renderers; the software
 # rasterizer (D25) uses the same handle type.
 target_compile_definitions(psycross PUBLIC RENDERER_OGL)
+# cmake/psycross.cmake gives PsyCross no -O (the linux32 debug build runs it
+# at -O0, and its pictures are the reference); on the Vita its GTE and OT
+# walk are hot, so optimise it (no x87 excess precision on ARM).
+target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
 
 # The game's C reads its data labels through arena pointers (D24).
 foreach(t spyro_game_main spyro_game_ovl spyro_game_m2c spyro_game_port)
@@ -44,7 +48,10 @@ target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common psycro
   SceGxm_stub SceCommonDialog_stub SceAppMgr_stub SceAppUtil_stub SceTouch_stub
   SceHid_stub SceMotion_stub ScePower_stub SceProcessmgr_stub SceIme_stub
   SceKernelDmacMgr_stub SceIofilemgr_stub SceLibKernel_stub stdc++ pthread m)
-target_link_options(spyro_vita PRIVATE -Wl,-q)
+target_link_options(spyro_vita PRIVATE -Wl,-q
+  # prof.c times these (the "time" lines in spyro.log)
+  -Wl,--wrap=DrawOTag,--wrap=DrawPrim,--wrap=GR_DrawTriangles
+  -Wl,--wrap=GR_CopyVRAM,--wrap=GR_ClearVRAM,--wrap=GR_ReadVRAM)
 
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon0.png"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_icon.py"

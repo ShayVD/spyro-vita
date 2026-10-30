@@ -55,10 +55,16 @@ extern uintptr_t g_psx_arena_base;
 /* Vita (decisions D24): the arena is at some 16 MB-aligned 0x8Y000000, not
  * 0x80000000, so two more aliases of PS1 RAM reach it: 0x80000000 | offset
  * (the game's tag ORs onto 21/24-bit offsets) and the arena's own address
- * with bit 31 cleared (`sll 1; srl 1`). No Vita user memory is at either. */
-static inline u32 mips2c_kuseg(u32 a) {
-  if ((a & 0x7FE00000u) == 0 || ((a ^ (u32)g_psx_arena_base) & 0x7FE00000u) == 0)
-    return (u32)g_psx_arena_base | (a & 0x1FFFFFu);
+ * with bit 31 cleared (`sll 1; srl 1`). No Vita user memory is at either.
+ * The base is read through a const alias of the same symbol (set once,
+ * before any game code) so GCC keeps it in a register instead of reloading
+ * it after every store; always_inline because GCC stops inlining in the
+ * largest translated units. */
+extern const uintptr_t g_psx_arena_base_ro __asm__("g_psx_arena_base");
+static inline __attribute__((always_inline)) u32 mips2c_kuseg(u32 a) {
+  const u32 base = (u32)g_psx_arena_base_ro;
+  if ((a & 0x7FE00000u) == 0 || ((a ^ base) & 0x7FE00000u) == 0)
+    return base | (a & 0x1FFFFFu);
   return a;
 }
 #define MIPS_KUSEG(a) mips2c_kuseg((u32)(a))
