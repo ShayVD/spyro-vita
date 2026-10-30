@@ -257,5 +257,5 @@ Record each decision with its date, what was chosen, and why.
 - **Uploads only when the GPU needs them** (after that run): the only VRAM write in a normal frame is the game's automatic background clear (`isbg`) of the buffer it's about to draw, which lies inside a target. The target is cleared with `glClear` anyway, so a clear that falls inside a target now only marks it `tex_stale`, and doesn't make the GPU's VRAM texture out of date. A textured prim whose page or CLUT lies in such a target, a copy from it, or a target merge uploads first, as `cpu_stale` targets read back first.
   - In Vita3K, uploads fell from about 150 to 1–2 per 300 vblanks (screenshots' readbacks, level loads), and raster time halved (0.90 → 0.46 ms per vblank on the gems script).
   - Pictures were unchanged: demo 100/100 and gems 36/36 byte-identical to the host, and the pause and inventory screens right.
-  - Expected on hardware: about 2 ms per vblank less.
+  - Expected on hardware: about 2 ms per vblank less. **Confirmed** (user, build `c40c9cf`): uploads 0 in nearly every 300-vblank window, raster 5–6 → 2.7–4 ms per vblank, busy CPU 60–93% → 43–78%, and 143–150 pictures per 300 vblanks in every gameplay window.
 - **Not done here:** widescreen and 60 fps (M4); fewer draw calls; the SPU mix on another core.
