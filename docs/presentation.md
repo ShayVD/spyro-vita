@@ -8,10 +8,11 @@ Prototype on the linux32 host (2026-10-30). Both features are optional, and off 
 |---|---|
 | `--widescreen` | 16:9 picture. The logic still sees the original 4:3 frustum (faithful). |
 | `--widescreen-logic` | 16:9 in one pass: cheaper, but the wider frustum reaches gameplay (see [Why a logic pass](#why-a-logic-pass)). Diagnostic only. |
-| `--interp` | 60 fps: one extra frame between ticks, with the camera, Spyro and mobys blended. |
+| `--interp` | 60 fps: one extra frame between ticks, with the camera, Spyro, mobys, their animation frames and the particles blended. |
+| `--interp-no-anim` | 60 fps, transforms only (no animation frames or particles); for comparisons. |
 | `--interp-camera` | 60 fps, camera only. |
 | `--out960` | Pictures (shots, `--serve`) at 960×544: full width for widescreen frames, 4:3 pillarboxed otherwise. Turned on by any of the above. |
-| `--present-stats` | Times update, draw and passes; logs a summary at exit. `--present-dirty` also maps the arena pages each pass writes. |
+| `--present-stats` | Times update, draw, passes, snapshot and blending; logs a summary at exit. `--present-dirty` also checks the region snapshot against a full copy of the arena and lists any page it would have missed. |
 
 `PresentConfig g_present` (`src/game/present.h`) holds the same switches for other platforms.
 
@@ -70,7 +71,7 @@ A visible side effect of faithful mode: a moby that's only visible in the extra 
 ### What the render path reads
 
 `GamestateDraw` (`draw.c:2651`) for gameplay is: `CameraUpdateMatrices`, then
-- `func_800521C0` (moby render queue and animation frame advance),
+- `func_800521C0` (sorts mobys into the render lists),
 - the collectable HUD,
 - `func_80019698`,
 - `func_8002B9CC` (environment),
@@ -86,12 +87,14 @@ It reads:
 | State | Where | Interpolated |
 |---|---|---|
 | Camera position `g_Camera+0x28`, rotation `+0x4C` | `CameraUpdateMatrices`; every renderer loads the position and the matrices | yes (both builds) |
-| Spyro position, body rotation | `r_pete` | yes (`--interp`) |
+| Spyro position, body/head/tail rotation `+0x0C/+0x10/+0x14` | `r_pete` | yes (`--interp`) |
 | Moby position `+0x0C`, rotation `+0x44` | `r_moby` builds each matrix from the rotation bytes | yes (`--interp`) |
-| Animation frame, next frame, progress (`+0x3C`) | `func_800521C0`, `r_moby` keyframe blend | no: they advance inside the draw (see below) |
-| Particles, shadows, flame, HUD counters, texture animation | `r_particles`, `r_shadows`, `r_flame`, `draw.c`, `r_environment` | no (30 Hz) |
+| Moby animation: animation, next animation, frame, next frame, progress (`+0x3C`–`+0x40`) | advanced by `func_800522C0` in the update (64 progress units per frame); `r_moby` blends frame to next frame by progress | yes (`--interp`): halfway along the track, across at most one frame step |
+| Spyro's body, head and tail tracks (`+0x18`–`+0x26`) | advanced in `pete.c` (`func_8003CB24` and kin, 16 units per frame); read by `r_pete` | yes (`--interp`), as for mobys |
+| Particle positions (`Particle.m_Data.m_Position`) | `particle_update.c` moves them; `r_particles` draws | yes (`--interp`): by slot, when class, render type and a forward-moving timer match |
+| Line-particle end points, shadows, flame, HUD counters, texture animation | `r_particles`, `r_shadows`, `r_flame`, `draw.c`, `r_environment` | no (30 Hz). Shadows follow their moby's blended position. |
 
-Snapshotted per tick for blending (`PortPresentBeforeUpdate`, before `GamestateUpdate`): the camera position and rotation, Spyro's position and body rotation, and every moby's class, state, position and rotation (≤1024 slots, ~24 KB). The blend is halfway, measured from the current tick, so values stay in the game's own ranges. The 12-bit camera and 8-bit moby angles take the short way round. There is no blend when:
+Saved per tick for blending (`PortPresentBeforeUpdate`, before `GamestateUpdate`): the camera position and rotation; Spyro's position, three rotations and three animation tracks; every moby's class, state, position, rotation and animation track (≤1024 slots); and the 8 KB particle space. The blend is halfway, measured from the current tick, so values stay in the game's own ranges. The 12-bit camera and 8-bit moby angles take the short way round. An animation track that started a new animation (anything but "same frames" or "one frame on") keeps this tick's pose. There is no blend when:
 
 - the gamestate or level changed (pause entry, level load: the frame is skipped);
 - the camera moved more than 0x2000 in one axis (a cut: the frame is skipped);
@@ -101,7 +104,7 @@ Snapshotted per tick for blending (`PortPresentBeforeUpdate`, before `GamestateU
 
 | Effect of re-running `GamestateDraw` | Handled by |
 |---|---|
-| Writes to RAM: render lists in `g_SonyImage`, `D_800757B0`, `g_CurDB` flip, `m_WasDrawn`, animation advance, border and transition counters, `D_80075950` | full snapshot of the 2 MB arena (scratchpad included) plus `g_psx_scratch`, restored after each pass |
+| Writes to RAM: render lists in `g_SonyImage`, `D_800757B0`, `g_CurDB` flip, `m_WasDrawn`, the sector cache, border and transition counters, `D_80075950` | region snapshot (below), restored after each pass |
 | GTE registers (renderers keep data in control registers) | `gteRegs` saved and restored |
 | PsyCross draw and display env (`PutDrawEnv`/`PutDispEnv`) | saved and restored |
 | `$v1` across translated calls | `g_mips_v1` saved and restored |
@@ -109,7 +112,17 @@ Snapshotted per tick for blending (`PortPresentBeforeUpdate`, before `GamestateU
 | Sound (`func_800522C0` plays animation sounds; title menus play sounds) | `libspu` drops writes while `g_psx_spu_frozen` is set (0 dropped in the runs below) |
 | VRAM: the pass draws into the back buffer | the logic pass redraws the same buffer (or, under widescreen, the presentation frame stays there, which is what the pause screen copies) |
 
-`--present-dirty` (`logs/run5-dirty`) maps what a pass really changes. Over 11,334 passes: 22 pages of 4 KB on average, 40 at most. They are the scratchpad page, the emulated stack, `g_SonyImage`, the game globals at 0x80075000–0x80078FFF, two level-data pages (the moby array), and the primitive buffers and OTs at the top of RAM. So a release build can snapshot ~100–160 KB instead of 2 MB (below).
+**Region snapshot.** The first version copied the whole 2 MB arena in and out. `--present-dirty` showed a pass writes 22–40 pages of 4 KB (`logs/run5-dirty`). The snapshot now saves and restores only what the game reads again:
+
+| Region | Why | Size |
+|---|---|---|
+| Scratchpad (first KB of the arena) and `g_psx_scratch` | renderers keep matrices and lists there | 2 KB |
+| Game data, sdata, sbss, bss, 0x8006BBE0–0x8007AA38 (`psx.map`) | camera, Spyro, globals, `g_SonyImage`, `D_80075950`, the `g_CurDB` flip | 60 KB |
+| The level's moby array (`g_LevelMobys`, up to the 0xFF state) | `m_WasDrawn`, the blended transforms and animation | ~10–30 KB |
+| Particle space (`g_Buffers.m_ParticleSpaceStart`, 8 KB) | the blended particles | 8 KB |
+| Bytes +0x18–0x1B of every sector header (`g_Environment.m_SectorPointer`) | a cache `func_800258F0` reads (`lw $gp, 0x18($s1)`) and rewrites (`sb $sp, 0x18..0x1B($s1)`) | 4 B × sectors |
+
+What a pass writes beyond that is scratch the next real draw rewrites before anything reads it: the two primitive buffers and both OTs (linking clears every bucket), and the emulated stack below the caller's `$sp`. `--present-dirty` keeps a full copy as well and, after the region restore, reports every page that still differs outside those areas, byte for byte. Result: **0** over both attract demos, pause/inventory and the Artisans gem script (`logs/run11-check-*`, `logs/run14-check`). Its first run found two things that shaped the list: the sector cache, and the primitive buffer starting mid-page. With the region snapshot only, all traces stay identical, and 110 widescreen+interp shots are byte-identical to the full-snapshot build (`logs/run12-*`).
 
 ### Results
 
@@ -118,13 +131,19 @@ Snapshotted per tick for blending (`PortPresentBeforeUpdate`, before `GamestateU
   - **60 fps:** 32 in 32.
   - **Real frames:** byte-identical to the 30 fps frame on the same vblank (all odd vblanks, by md5). So there's no added latency.
   - **In-between frames:** each is closer to each of its neighbours than they are to each other (mean absolute difference 6.6 and 7.1 vs 8.9). Crops around Spyro step once per vblank instead of every other one (`logs/run7-compare`).
-- Not interpolated yet (visible as 30 Hz motion inside a 60 fps picture): animation keyframes, particles, the flame and the HUD counters. Animations advance in `func_800521C0`, so blending them needs that function's frame-progress logic run with a half step; that's the next piece of readable C to write.
+- **Animation and particles** (`logs/run15-gems-*`, Artisans; `logs/run7-compare/anim-zoom-7010.png`):
+  - With `--interp`, Spyro's wings and legs and Sparx take an intermediate pose in the in-between frame. With `--interp-no-anim`, the in-between frame shows the next tick's pose at a halfway position.
+  - Over 31 in-between frames, a pixel-distance score (each in-between frame against the average of its neighbours) separates camera-only from object blending more than it separates the animation modes. The difference animation blending makes is a few limb pixels per frame.
+  - Counts over the demos: 342,494 animation tracks blended, 95 kept as they were (a new animation started); 64,530 particle blends.
+- Still at 30 Hz: the flame, line-particle end points and the HUD counters' spin.
 
 ## CPU cost
 
 Measured with `--present-stats` on the linux32 host: CPU time (`clock()`) per 30 Hz tick, under qemu-i386 on the Mac, with no screenshots. These are the title, intro and the Stone Hill attract demo (`logs/run6-cost/*.log`, 5,600 vblanks, one mode at a time). "Logic draw" leaves out the time inside `VSync(0)`, where the host mixes audio.
 
 Round 2 is the quieter run (`logs/run6-cost/round2`). Round 1 (`logs/run6-cost`) ran beside other sessions' containers and reads 5–30% higher, which is the noise level of these numbers. The vs-off ratios are the useful part.
+
+These numbers predate the region snapshot (the Snapshot column is the full 2 MB copy); the passes themselves are unchanged.
 
 | Mode | Update | Logic draw | Presentation passes | Snapshot | Total per tick | vs off |
 |---|---|---|---|---|---|---|
@@ -135,7 +154,7 @@ Round 2 is the quieter run (`logs/run6-cost/round2`). Round 1 (`logs/run6-cost`)
 | `--interp` | 0.37 | 15.8 | 15.6 (1 pass) | 0.42 | 32.2 | 2.12 |
 | `--widescreen --interp` | 0.36 | 5.6 (no raster) | 35.6 (2 passes) | 0.68 | 42.3 | 2.78 |
 
-Blending itself is cheap: camera-only and full interpolation differ by the moby loop (~1024 slots) and run-to-run noise. A pass costs about what the original draw costs. The logic pass without rasterisation shows the split: the render path R is ~5.5 ms here and the soft rasteriser ~9.5 ms.
+Blending itself is cheap: 6 µs per tick for the camera only, 15 µs with object transforms, 26 µs with animation frames and particles (`logs/run16-cost`). The region snapshot costs 34–130 µs per tick against 0.42–0.68 ms for the full copy, and moves 171 KB per tick (`--widescreen` or `--interp`) or 257 KB (both) instead of 4–6 MB (`logs/run13-cost`, `logs/run16-cost`; the machine load differed between rounds, so compare within a round). A pass costs about what the original draw costs. The logic pass without rasterisation shows the split: the render path R is ~5.5 ms here and the soft rasteriser ~9.5 ms.
 
 How to read it for the Vita:
 
@@ -144,7 +163,7 @@ How to read it for the Vita:
   - `--interp`: R + raster, plus R + raster for the in-between frame.
   - Both: R + 2 × (R + raster).
   - With a GPU backend (vitaGL), rasterisation leaves the CPU, and the cost is roughly 2R or 3R per tick.
-- **Snapshot.** 2 MB copied in and out per pass (0.5–0.8 ms here; the Vita's memcpy is much slower than the Mac's). Next step: copy only the regions the dirty map found (game globals, `g_SonyImage`, the moby array, stack and scratchpad, ~100 KB), and treat the primitive buffers and OTs as scratch that the next real draw overwrites. Keep `--present-dirty` as the check that nothing outside the list changes.
+- **Snapshot.** Now ~170–260 KB per tick (region snapshot, above), down from 4–6 MB. On the Vita that's a fraction of a millisecond even at a few hundred MB/s.
 - **Hardware.** 60 fps needs two renders per 33 ms tick, so R must stay well under ~12 ms on the Vita's A9 at 444 MHz. M3 runs at ~60 vblanks/s in Vita3K, which says nothing about hardware. The first hardware measurement (M3/M4) decides whether the in-between frame is affordable in all levels, or should drop to camera-only (`--interp-camera`, same cost, less state) or turn itself off when a tick runs long.
 
 ## Verification
@@ -160,7 +179,10 @@ How to read it for the Vita:
 | Artisans: walking and four red gems (`logs/pads/gems.txt`, from M2's run9) | trace with `--widescreen --interp` identical to off; 4 gems at the end | `logs/run8-gems-*` |
 | Real frames under `--interp` vs 30 fps | byte-identical on the same vblanks (4400–4431) | `logs/run3-interp`, `logs/run3-off960` |
 | ctest | 4/4: cd, gte (9,314 vectors), m2c_diff_math, platform | |
-| Final build | off: trace and 110 shots byte-identical to the baseline; `--widescreen --interp` and `--interp`: trace identical | `logs/run9-final-*` |
+| Final build (PR #5) | off: trace and 110 shots byte-identical to the baseline; `--widescreen --interp` and `--interp`: trace identical | `logs/run9-final-*` |
+| Region snapshot | `--present-dirty`: 0 pages missed (demos, pause/inventory, gems); region-only runs: all traces identical, 110 wide+interp shots byte-identical to the full-snapshot build | `logs/run11-check-*`, `logs/run12-*`, `logs/run14-check` |
+| Animation and particle blending | traces identical (demos, gems); real frames unchanged, only in-between frames differ | `logs/run14-*`, `logs/run15-gems-*` |
+| Final build (region snapshot + animation) | off: trace and 110 shots byte-identical to the baseline; `--interp`, `--widescreen --interp`, pause/inventory and gems: traces identical | `logs/run17-final-*` |
 
 Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half is 4:3 at 960×544, the right half the same vblank in 16:9):
 - `ws-vs-43-*.png`: intro (2000), level transition (3800), Stone Hill demo (4500), Doctor Shemp demo with HUD (9000–10000).
@@ -191,7 +213,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 ## Follow-ups
 
-1. Region snapshot instead of 2 MB (above), checked by `--present-dirty`.
-2. Interpolate animation keyframes (half-step frame progress through `func_800521C0`), particles and the flame.
+1. Wire the presenter into the Vita platform (the Vita GPU renderer session has the notes) and measure on hardware.
+2. Flame, line-particle end points and the HUD counters' spin at 60 fps.
 3. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
-4. Wire the presenter into the Vita platform (owned by the M3 session) and measure on hardware.
+4. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.
