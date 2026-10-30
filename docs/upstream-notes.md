@@ -20,7 +20,12 @@ Problems found in the submodules that we work around locally instead of reportin
 - **Found:** 2026-10-30, whole-game host tour (`docs/whole-game-host.md`): the host crashed in `UpdateMoby_LEVEL_55` (`src/overlays/moby_update.c:26526`, flight-level objective moby, class 358) once Spyro drowned in Icy Flight and the flight results came up.
 - **What the code does:** in `GS_FlightResults` it clears `m_RenderRadius` (+0x50) of every non-null `props->m_0x64.m_ResultMobys[i]`, i < 8. That array is a union with `fields`, whose `m_ObjectiveClasses[4]` hold class IDs, so `m_ResultMobys[4..7]` are small integers (0x1EB, 0x185, ...). The original stores a zero byte at `0x1EB + 0x50`: a KUSEG address, which on the PS1 is RAM (the kernel area).
 - **Oracle proof:** `logs/run17-oracle-icy` (`capture.lua ORACLE_WATCH=80000100:300`): in gamestate 7 at Icy Flight, PC `0x800811A8` (the LEVEL_55 overlay) stores single bytes to `0x23B`, `0x1D5`, `0x23A` and `0x1DA`, every time the results come up. `0x23B` is the address the host faulted on.
-- **Our fix:** `patches/spyro-1-port/0006-flight-results-kuseg-store.patch` sends that one store through `PSX_KUSEG()` (`src/compat/port_prefix.h`), which maps a KUSEG alias onto the arena as the PS1 does. Not reported: it is the original game's behaviour, decompiled faithfully.
+- **Our fix:** `patches/spyro-1-port/0006-flight-results-kuseg-store.patch` sends that one store through `PSX_KUSEG()` (`src/compat/port_prefix.h`). That maps a KUSEG address where the PS1 sends it: below 0x10000, PS1 kernel RAM, which is `g_psx_kernel_ram` on the port (decisions D41). Not reported: it is the original game's behaviour, decompiled faithfully.
+
+### Game bug kept by the decomp: the life basket passes its sound channel's value as a pointer
+- **Found:** 2026-10-30, a Vita hardware crash (`logs/hw-d67e6fc-user/crash.md`), reproduced on the host (`logs/run27-basket/repro2`): destroying Artisans' life basket (class 421, `src/overlays/moby_update.c:29008`) calls `PlaySound(..., (u_char *)(int)moby->m_SoundChannel)`. The decomp comments it as a bug.
+- **Effect:** `PlaySound` stores the voice slot through that "pointer" and keeps it in `g_Spu.m_ActiveSounds[].m_SoundRefPtr`; when the sound stops, 0x7F is stored through it again. On the PS1 both land in kernel RAM at 0x1 or 0x2 (`logs/run28-oracle-basket`: PCs `0x80056184` and `0x800565BC`). The store is skipped when the channel is 0, which is why it only crashes when another sound holds voice 0.
+- **Our fix:** `patches/spyro-1-port/0007-sound-ref-kuseg-store.patch`: the six stores in `src/spu.c` go through `PSX_KUSEG()` (decisions D41).
 
 ### Makefile has no `pipefail`
 - **Where:** `Makefile`, the `build/src/%.o` and `OVERLAY_SOURCE` recipes.
