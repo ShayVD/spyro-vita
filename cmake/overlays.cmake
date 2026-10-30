@@ -12,7 +12,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${S1_DIR}/overlays/overlays.yaml" "${S1_DIR}/overlays/mobys.yaml"
   "${S1_DIR}/overlays/particles.yaml" "${OVL_TOOL}")
 
-set(OVL_CPP_FLAGS -m32 -E ${SPYRO_GUARD_FLAGS}
+set(OVL_CPP_FLAGS ${SPYRO_ARCH_FLAGS} -E -std=gnu11 ${SPYRO_GUARD_FLAGS}
   -DMODERN_COMPILER -DNDEBUG -DNNOCD -DSPYRO_PORT
   -DUSE_EXTENDED_PRIM_POINTERS=0 -DUSE_PGXP=0
   -I${CMAKE_SOURCE_DIR}/src/compat -I${S1_DIR}/include
