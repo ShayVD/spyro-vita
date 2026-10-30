@@ -22,6 +22,15 @@
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
  *                       scripted runs compared with the host; D28)
+ *       gpu=0           the software rasterizer instead of the GPU renderer
+ *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
+ *                       and falls back to gpu=0 without it; D35)
+ *       gpu_res=N       GPU targets at N times the PS1's pixels (default 0:
+ *                       the screen's own resolution)
+ *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
+ *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
+ *                       (glReadPixels) instead of replaying the draws in the
+ *                       software rasterizer (default 1)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -42,7 +51,8 @@
 int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
-VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1};
+VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
+                        .gpu = 1, .gpu_readback = 1};
 
 extern void spyro_main(void);
 
@@ -67,6 +77,11 @@ static void arena_symbols(void) {
     **f += delta;
   vita_log("arena at 0x%08x: %d data labels, %d address words moved",
            (unsigned)g_psx_arena_base, n, k);
+}
+
+static int file_exists(const char *path) {
+  SceIoStat st;
+  return sceIoGetstat(path, &st) >= 0;
 }
 
 static void parse_list(const char *v, int *out, int *n, int max) {
@@ -109,6 +124,16 @@ static void read_config(void) {
       g_vita_opts.reartouch = atoi(v);
     else if (!strcmp(line, "realtime"))
       g_vita_opts.realtime = atoi(v);
+    else if (!strcmp(line, "gpu"))
+      g_vita_opts.gpu = atoi(v);
+    else if (!strcmp(line, "gpu_res"))
+      g_vita_opts.gpu_res = atoi(v);
+    else if (!strcmp(line, "gpu_dump"))
+      g_vita_opts.gpu_dump = atoi(v);
+    else if (!strcmp(line, "gpu_readback"))
+      g_vita_opts.gpu_readback = atoi(v);
+    else if (!strcmp(line, "shot_hd"))
+      g_vita_opts.shot_hd = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
@@ -121,14 +146,9 @@ static void no_disc(void) {
   vita_log("no %s/manifest.json: copy the files from your own disc there "
            "(docs/vita-testing.md)", g_vita_opts.disc_dir);
   for (;;) {
-    SDL_Renderer *r = SDL_GetRenderer(SDL_GetWindowFromID(1));
     SDL_GameController *c = SDL_NumJoysticks() > 0 ? SDL_GameControllerOpen(0) : NULL;
     SDL_PumpEvents();
-    if (r) {
-      SDL_SetRenderDrawColor(r, 160, 0, 0, 255);
-      SDL_RenderClear(r);
-      SDL_RenderPresent(r);
-    }
+    vita_video_fill_red();
     if (c && SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START))
       sceKernelExitProcess(0);
   }
@@ -150,13 +170,27 @@ int main(int argc, char **argv) {
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
 
+  /* gpu=1 needs vitaGL's runtime shader compiler; without it, gpu=0 */
+  if (g_vita_opts.gpu && !file_exists("ur0:data/libshacccg.suprx") &&
+      !file_exists("ur0:data/external/libshacccg.suprx")) {
+    vita_log("gpu: no ur0:data/libshacccg.suprx, so no shader compiler: "
+             "using the software renderer (gpu=0)");
+    g_vita_opts.gpu = 0;
+  }
+  g_vita_gpu = g_vita_opts.gpu != 0;
+  vita_log("renderer: %s", g_vita_gpu ? "GPU (vitaGL, gpu=1)" : "software (gpu=0)");
+
   SDL_SetMainReady();
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+  /* with gpu=1 vitaGL owns the GXM display; SDL is only the pad and audio */
+  if (SDL_Init((g_vita_gpu ? 0 : SDL_INIT_VIDEO) | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
     sceKernelExitProcess(1);
   }
-  if (vita_video_init() != 0)
+  if (vita_video_init() != 0) {
+    /* once vitaGL has the display, SDL's renderer can't take it */
+    vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
     sceKernelExitProcess(1);
+  }
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     sceKernelExitProcess(1);

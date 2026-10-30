@@ -1,7 +1,7 @@
 # Testing Spyro Vita on a PS Vita (and in Vita3K)
 
-This is the first Vita build (the start of M3). It aims to boot to the title screen and play
-what the linux32 host plays. Read "What to expect" before you test.
+This is the M3 Vita build. It aims to boot to the title screen and play what the linux32 host
+plays, drawn by the Vita's GPU. Read "What to expect" before you test.
 
 ## What you need
 
@@ -9,10 +9,12 @@ what the linux32 host plays. Read "What to expect" before you test.
 - Your own copy of *Spyro the Dragon* (USA, SCUS-94228), dumped to a `.bin`/`.cue`
   (MODE2/2352, one data track). The VPK contains no game data at all.
 - A computer with Python 3, to extract the files from the dump.
-- **`libshacccg.suprx` is not needed** for this build. The picture is drawn on the CPU and shown
-  through SDL2's own GXM renderer, which uses precompiled shaders (decisions D26). The vitaGL
-  GPU renderer that comes later compiles shaders on the device, and will then need
-  `ur0:data/libshacccg.suprx` (the usual file for vitaGL ports, extracted with ShaRKBR33D).
+- **`ur0:data/libshacccg.suprx`, for the GPU renderer.** The GPU renderer (`gpu=1`, the default,
+  decisions D35) compiles its shaders on the device with vitaGL, which needs Sony's shader compiler
+  module. It's the usual file for vitaGL ports, extracted from your own Vita with ShaRKBR33D.
+  `ur0:data/external/libshacccg.suprx` works too. Without it the app logs
+  `gpu: no ur0:data/libshacccg.suprx ...` and draws on the CPU instead (`gpu=0`, decisions D26):
+  correct, but too slow on hardware.
 
 ## 1. Build the VPK (or use one you were given)
 
@@ -77,6 +79,11 @@ Files the app writes:
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
+| `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
+| `gpu_res=N` | GPU: draw at N times the PS1's resolution (1 = the PS1's own pixels, cheapest); 0, the default, draws at the screen's own resolution |
+| `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
+| `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
+| `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -86,7 +93,16 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   game was late for.
 - `time N: per vblank ms game … ot … raster … spu … present … wait …; busy B%, worst vblank W ms`
   is where the CPU time went, per vblank (16.7 ms at 60 Hz): game logic, PsyCross's OT walk, the
-  software rasterizer, the SPU/CD models, the picture upload, and waiting for the display.
+  rasterizer (with the GPU: handing the triangles to vitaGL, VRAM uploads, readbacks), the SPU/CD
+  models, the picture upload, and waiting for the display (with the GPU this includes waiting for
+  the GPU to finish).
+- With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
+  into targets, R readbacks (… replayed; Y ms), K targets`, counted over the same 300 vblanks.
+  The upload and readback times are CPU time.
+
+At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
+`gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,
+`does not compile`, `using the software renderer`) is what to send back.
 
 ## Controls
 
@@ -97,13 +113,18 @@ the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 
 ## What to expect (be direct)
 
-- **The picture is drawn on the CPU** (the linux32 host's software rasterizer), at the PS1's own
-  resolution, then scaled 4:3 into the middle of the 960×544 screen. It should look like the PS1,
-  not better. The vitaGL GPU renderer, widescreen and 60 fps come later (M4).
+- **The picture is drawn by the GPU** (decisions D35), 4:3 in the middle of the 960×544 screen, at
+  the screen's resolution: sharper than the PS1, with the PS1's own textures, colours and
+  semi-transparency. There is no dithering. The pause and inventory screens show the game frame
+  at the PS1's resolution, as the game itself copies it. Widescreen and 60 fps come later (M4).
+  It hasn't run on hardware yet. Shader compilation adds a few seconds before the first picture.
+  `gpu=0` gives the CPU picture of the earlier builds.
 - **Speed on hardware (first test, 2026-10-30, build `a60dd0b`): too slow.** 14–20 vblanks per
   second in 3D scenes (60 is full speed): about 120 ms of CPU per game frame against 33 ms. Builds
-  from `D28` on keep real time instead (the game catches up, the audio stays whole), but they still
-  show fewer pictures than the PS1 until the GPU renderer lands (decisions D29).
+  from `D28` on keep real time instead (the game catches up, the audio stays whole). The GPU
+  renderer takes the rasterizer, about 60% of the CPU time, off the CPU (decisions D29, D35). Game
+  logic is still on the CPU, so how close the GPU build gets to 30 pictures a second is what the
+  next hardware log will tell.
 - **Audio**: the software SPU and XA music go through SDL2. In Vita3K the WAV the build writes
   (`wav=1`, the same samples SDL2 gets) is byte-identical to the linux32 host's.
 - What the linux32 host can do (M2: Artisans, saving and loading) is what this build can do at
@@ -117,14 +138,26 @@ stack size, timing, the real GPU).
 1. Copy the extracted files into Vita3K's `ux0`:
    `~/Library/Application Support/Vita3K/Vita3K/fs/ux0/data/spyro/` on macOS.
 2. `tools/vita/vita3k_run.sh OUT_DIR [TIMEOUT_S] [config line]...` writes `config.txt`, installs
-   and runs the VPK (`Vita3K --frontend sdl -l 4 build/vita/spyro-vita.vpk`), waits for
+   and runs the VPK (`Vita3K --frontend sdl -c OUT_DIR/vita3k-config.yml -w
+   build/vita/spyro-vita.vpk`, with a copy of Vita3K's config at log level ERROR), waits for
    `frames=` or the timeout, and copies `spyro.log` and the shots to `OUT_DIR`:
 
 ```bash
 tools/vita/vita3k_run.sh logs/run2-vita-title 150 shot_every=120 frames=2400
 ```
 
-Keep Vita3K's log level at ERROR (`-l 4`): its TRACE default fills the disk.
+Keep Vita3K's log level at ERROR (the default; `VITA3K_LOG=N` changes it): TRACE fills the disk.
+
+**With the GPU (`gpu=1`) in Vita3K:**
+
+- `libshacccg.suprx` has to be in Vita3K's `fs/ur0/data/`.
+- Vita3K returns zeros for anything read back from what the GPU drew (`glReadPixels`, so
+  `shot_hd=1` and `gpu_readback=0`). The normal shots still work. They come from the readback
+  replay, the PS1-exact picture the game sees through `StoreImage`, so they compare byte for byte
+  with `gpu=0` and the host. They don't show the GPU's own output.
+- To see the GPU's picture, capture the Vita3K window while it runs:
+  `screencapture -x -o -l<window id>`, with the window id from `CGWindowListCopyWindowInfo`
+  (owner "Vita3K").
 
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
@@ -151,6 +184,24 @@ Each run was replayed on the linux32 host from the same commit with the same scr
 | `run9`–`run11` | after each speed change (D29) | still byte-identical (shots, WAV). |
 | `run12-vita-realtime` | `REALTIME=1`, no input, 7200 vblanks | ~60 vblanks/s kept, audio continuous (120 s for 7200 vblanks), no errors. |
 
+### The GPU renderer (D35, on main `8662485`)
+
+Compared with the same host runs (`run6-host-base`, `run7-host-gems` from the M3 session; this
+change touches nothing the linux32 host builds), and with window captures of the GPU's own picture
+(`logs/runN-*-win*.png`):
+
+| Run | What | Result |
+|---|---|---|
+| `run44-vita-gpu-title`, `run45-vita-soft-title` | title, 2400 vblanks, shot every 120, `gpu=1` and `gpu=0` | 20/20 shots identical between the two. Window: the title and its intro at 725×544. |
+| `run46-vita-gpu-gems` | gems script, `gpu=1` | 36/36 shots and the card byte-identical to the host. Window: Artisans textured, Spyro, Sparx, gems, semi-transparent waterfalls. |
+| `run47-vita-gpu-pause` | gems script, then START, down, down, ✕ (inventory), `gpu=1` | The pause and inventory screens show the game frame in the game's green tint behind the menu (the `StoreImage` readback, replayed). |
+| `run48-vita-gpu-demo` | no input, 12000 vblanks (attract demos), `gpu=1` | 100/100 shots byte-identical to the host. No PsyCross error. |
+| `run49-vita-soft-demo` | no input, 12000 vblanks, `wav=1`, `gpu=0` | 100/100 shots and the 35 MB WAV byte-identical to the host. |
+| `run50-vita-soft-gems` | gems script, `gpu=0` | 36/36 shots and the card byte-identical to the host. |
+| `run51-vita-gpu-realtime`, `run52-vita-soft-realtime` | gems script, `REALTIME=1` | 60 vblanks/s in both. Busy CPU per vblank (`tools/vita/time_summary.py`): 2.79 ms with `gpu=1`, 6.82 ms with `gpu=0`. Raster 0.90 vs 4.85 ms, present 0.05 vs 0.55 ms. Vita3K's times, not the Vita's. |
+
+`run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
+
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
 
@@ -159,3 +210,13 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 | Build | Who | Result |
 |---|---|---|
 | `a60dd0b` | user, 2026-10-30 | Boots, runs about 9 minutes with no errors (arena at 0x82000000). Too slow: 14–20 vblanks/s in 3D, 19–24 on the title (decisions D28, D29). |
+
+**Testing the GPU build:** put `libshacccg.suprx` in `ur0:data/` first. In `spyro.log`, check:
+
+1. `renderer: GPU (vitaGL, gpu=1)` and `gpu: GPU renderer ready (gpu=1)`. Any `gpu: shader
+   compiler error` or `does not compile` line means the shaders failed on the device.
+2. `vblank N: ... P pictures`: P/5 is the frame rate (30 is the PS1's).
+3. `time N:` lines, in particular `busy` and `worst vblank`. Compare them with the CPU build by
+   running once with `gpu=0` in `config.txt`.
+4. `gpu N:` lines: the `VRAM uploads (X ms)` cost per 300 vblanks (Spyro writes VRAM every frame).
+5. Open the pause menu and the inventory: the background should be the game's frame in green.

@@ -1,10 +1,11 @@
-/* Vita picture (decisions D26): the PS1 VRAM is drawn by the same software
+/* Vita picture with gpu=0 (decisions D26, D35): the PS1 VRAM is drawn by the same software
  * rasterizer as the linux32 host (src/platform/linux32/gpu_soft.c, behind
  * PsyCross's GR_* layer); each vblank the displayed VRAM rect (15-bit, or
  * 24-bit for the boot logos; png.c's host_display_rgb) goes to an SDL2
  * streaming texture and SDL2's own GXM renderer scales it 4:3 into the
  * 960x544 screen. SDL2's renderer uses precompiled shaders, so nothing needs
- * libshacccg.suprx. */
+ * libshacccg.suprx. With gpu=1 the GPU renderer (gpu_gl.c) owns the screen
+ * through vitaGL instead, and no SDL window exists. */
 #include "vita.h"
 
 #include <SDL2/SDL.h>
@@ -26,6 +27,15 @@ static SDL_Renderer *s_ren;
 static SDL_Texture *s_tex;
 
 int vita_video_init(void) {
+  if (g_vita_gpu) {
+    int r = vita_gpu_init();
+    if (r < 0)
+      return -1;
+    g_vita_gl = 1;
+    if (r == 1)
+      g_vita_gpu = 0; /* the software rasterizer, presented by gpu_gl.c */
+    return 0;
+  }
   SDL_SetHint(SDL_HINT_RENDER_DRIVER, "VITA gxm");
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_vita_opts.filter ? "1" : "0");
   s_win = SDL_CreateWindow("Spyro Vita", 0, 0, SCREEN_W, SCREEN_H, 0);
@@ -71,6 +81,8 @@ int vita_video_present(void) {
   uint8_t *rgb;
   SDL_Rect src, dst;
   int fresh = 1;
+  if (g_vita_gl)
+    return vita_gpu_present();
   if (!s_ren)
     return 0;
   prof_enter(PROF_PRESENT);
@@ -124,4 +136,14 @@ show:
   SDL_RenderPresent(s_ren); /* flips at the Vita's vblank (PRESENTVSYNC) */
   prof_leave();
   return fresh;
+}
+
+void vita_video_fill_red(void) {
+  if (g_vita_gl) {
+    vita_gpu_fill(160 / 255.0f, 0, 0);
+  } else if (s_ren) {
+    SDL_SetRenderDrawColor(s_ren, 160, 0, 0, 255);
+    SDL_RenderClear(s_ren);
+    SDL_RenderPresent(s_ren);
+  }
 }
