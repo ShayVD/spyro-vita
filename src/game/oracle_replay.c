@@ -23,7 +23,10 @@
  * as above. Lines end in "sweep=VALUE"; CRASH-REF means the reference
  * crashed and nothing was compared. SPYRO_REPLAY_POKE="ADDR=VALUE,..." sets
  * more words first, fixed (VALUE "@SRC" copies the word at SRC, such as a
- * moby pointer from g_LevelMobys).
+ * moby pointer from g_LevelMobys). SPYRO_REPLAY_SWEEP_REG="REG=LIST" sweeps
+ * an entry register instead of a RAM word (REG by name: a0-a3, v0, v1,
+ * s0-s7, t0-t9 ...; LIST as above), for arguments such as func_8003EA68's
+ * new state; not together with SPYRO_REPLAY_SWEEP.
  * "rebased": the emulator stored a KUSEG address (below 2 MB) and the host
  * the same address on the arena, as mips2c rebases packed 21-bit pointers
  * (`sll 11; srl 10/11`, porting-plan §4.4).
@@ -606,9 +609,28 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
   const char *sweep = getenv("SPYRO_REPLAY_SWEEP");
   u32 sweep_addr = 0;
   static s32 sweep_vals[256];
+  const char *sweep_reg = getenv("SPYRO_REPLAY_SWEEP_REG");
+  int sweep_r = -1; /* SPYRO_REPLAY_SWEEP_REG's register, else -1 */
   if (sweep && (nsweep = parse_sweep(sweep, &sweep_addr, sweep_vals)) == 0) {
     fprintf(stderr, "replay: bad SPYRO_REPLAY_SWEEP %s\n", sweep);
     return -1;
+  }
+  if (sweep_reg) {
+    static const char *const regs[32] = {"zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2",
+                                         "t3",   "t4", "t5", "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5",
+                                         "s6",   "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"};
+    const char *eq = strchr(sweep_reg, '=');
+    char spec[1024];
+    for (sweep_r = 1; eq && sweep_r < 32; sweep_r++)
+      if (strlen(regs[sweep_r]) == (size_t)(eq - sweep_reg) && !strncmp(regs[sweep_r], sweep_reg, eq - sweep_reg))
+        break;
+    snprintf(spec, sizeof spec, "0%s", eq ? eq : "");
+    if (sweep || !eq || sweep_r >= 32 || (nsweep = parse_sweep(spec, &sweep_addr, sweep_vals)) == 0) {
+      fprintf(stderr, "replay: bad SPYRO_REPLAY_SWEEP_REG %s (or with SPYRO_REPLAY_SWEEP)\n", sweep_reg);
+      return -1;
+    }
+    sweep = sweep_reg;
+    sweep_addr = 0x80000000u; /* unused: the register is swept */
   }
   if (ignore)
     load_ignore(ignore);
@@ -673,11 +695,14 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
       int v;
       if (!gen || off >= RAM_SIZE)
         continue;
-      keep = *(u32 *)(in->ram + off);
+      keep = sweep_r >= 0 ? in->gpr[sweep_r] : *(u32 *)(in->ram + off);
       for (v = 0; v < nsweep; v++) {
         char tag[32];
         snprintf(tag, sizeof tag, " sweep=%d", sweep_vals[v]);
-        *(s32 *)(in->ram + off) = sweep_vals[v];
+        if (sweep_r >= 0)
+          in->gpr[sweep_r] = (u32)sweep_vals[v];
+        else
+          *(s32 *)(in->ram + off) = sweep_vals[v];
         total++;
         /* A reference that crashes on this input compares nothing. */
         {
@@ -697,7 +722,10 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
         s_tag = tag;
         bad += run_forked(name, k, in, out, gen, tag);
       }
-      *(u32 *)(in->ram + off) = keep;
+      if (sweep_r >= 0)
+        in->gpr[sweep_r] = keep;
+      else
+        *(u32 *)(in->ram + off) = keep;
       continue;
     }
     total++;
