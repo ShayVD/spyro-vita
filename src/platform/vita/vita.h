@@ -25,7 +25,7 @@ typedef struct {
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
   int gpu_res;        /* res= (gpu_res=): GPU targets at N x the PS1's pixels; 0 (default,
-                         res=native): the screen's; 1: res=ps1 (D39) */
+                         res=native): the screen's; 1: res=ps1 (D40) */
   int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */
   int shot_hold;      /* shot_hold=MS: hold each shot's picture for a window capture */
   struct { int vblank; uint32_t addr, value; } pokes[VITA_MAX_POKES]; /* poke=V:ADDR=VALUE */
@@ -39,6 +39,9 @@ typedef struct {
   int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
                          sequence (tests without a controller: menu.c) */
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
+  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D39) */
+  int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
+  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

@@ -29,7 +29,7 @@
  *                       the 4:3 picture is 726x544 screen pixels, 16:9 is
  *                       960x544); res=ps1 (or 1): at the PS1's own 512x240,
  *                       scaled up when shown (filter=); res=N, 2..4: N times
- *                       the PS1's, scaled down when shown (D39). gpu_res=
+ *                       the PS1's, scaled down when shown (D40). gpu_res=
  *                       is the old name.
  *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
@@ -50,6 +50,13 @@
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
+ *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
+ *                       1 3-point (N64 style), 2 bilinear (default 0: off;
+ *                       decisions D39)
+ *       persp=1         with gpu=1, perspective-correct textures on polygons
+ *                       the GTE projected (D39)
+ *       subpixel=1      with gpu=1, those polygons' vertices at their exact
+ *                       sub-pixel positions (D39)
  *       shot_hold=MS    after each shot, hold the game (its picture on
  *                       screen) until hold.ack appears, at most MS ms
  *                       (tools/vita/vita3k_run.sh CAPTURE=1)
@@ -195,6 +202,12 @@ static void read_config(void) {
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "menu_test"))
       g_vita_opts.menu_test = atoi(v);
+    else if (!strcmp(line, "tex_filter"))
+      g_vita_opts.tex_filter = atoi(v);
+    else if (!strcmp(line, "persp"))
+      g_vita_opts.persp = atoi(v);
+    else if (!strcmp(line, "subpixel"))
+      g_vita_opts.subpixel = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
