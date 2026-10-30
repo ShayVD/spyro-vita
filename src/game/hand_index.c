@@ -32,3 +32,13 @@ const M2cEntry m2c_hand_index[] = {
 #endif
     {0, 0, 0},
 };
+
+u32 func_80043FE4__m2c(); /* pete_hand.c, partly hand-written */
+u32 func_80043FE4_gen__m2c(); /* its mips2c unit, renamed */
+
+const M2cEntry m2c_gen_index[] = {
+#if !M2C_func_80043FE4
+    {0x80043FE4u, "func_80043FE4", (u32(*)(u32, u32, u32, u32))func_80043FE4_gen__m2c},
+#endif
+    {0, 0, 0},
+};

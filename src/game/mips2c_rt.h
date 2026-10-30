@@ -26,6 +26,10 @@ typedef struct {
 } M2cEntry;
 extern const M2cEntry m2c_index[];
 extern const M2cEntry m2c_hand_index[]; /* hand_index.c */
+/* mips2c units still linked next to partly hand-written C (renamed
+ * <name>_gen, cmake M2C_PARTIAL), by the original's address: the reference
+ * for the replay's SPYRO_REPLAY_SWEEP differential mode. */
+extern const M2cEntry m2c_gen_index[]; /* hand_index.c */
 
 #if MIPS2C_REPLAY
 /* Registers r0..ra, lo, hi for the next translated call to start with, then
