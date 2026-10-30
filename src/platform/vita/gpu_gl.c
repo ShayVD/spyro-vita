@@ -1353,12 +1353,13 @@ void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
     }
   }
   s_nverts = count;
-  glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
   if (s_xmode) {
-    expand(count);
+    expand(count); /* may draw into the atlas, with other buffers bound */
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
     return;
   }
+  glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *vertices, s_vbuf, GL_STREAM_DRAW);
 }
 
