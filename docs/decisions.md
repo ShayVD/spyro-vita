@@ -196,6 +196,17 @@ Record each decision with its date, what was chosen, and why.
 - **Why a logic pass instead of one widescreen pass:** `r_moby` sets `m_WasDrawn` from its frustum test, and `func_80051FEC` uses that flag to pick which mobys update. With the wider frustum in the logic (`--widescreen-logic`), the Stone Hill attract demo desyncs: rand diverges at tick 123, Spyro's position at tick 541 (`logs/run5-wslogic`). The cost is the render path once more per tick, without rasterisation.
 - **Why snapshot everything rather than list what the draw writes:** the draw path writes game state in many places (render lists, the double-buffer flip, animation advance, border and transition counters, `m_WasDrawn`). A full snapshot can't miss a writer. `--present-dirty` measured 22–40 dirty 4 KB pages per pass, so a region snapshot is the planned optimisation, checked against that map.
 
+## 2026-10-30: whole game on the host (groundwork for M4)
+
+*Numbering:* D25–D29 are M3's and D30 the presentation's (above), so this section is D31.
+
+### D31. The whole-game check: a level tour by the game's own cheats, on both sides
+- **Chosen:** the host's `--tour` (`src/platform/linux32/tour.c`) and the oracle's `ORACLE_TOUR` (`tools/oracle/capture.lua`) play the same script. After a new game, each entry is a level reached with the game's level-warp cheat from the inventory (`CheatProcessLevelWarp`, cheats.c; world 6 needs LEFT for the digit 6), or the credits, LEVELS OPEN or 99 LIVES cheat typed in the inventory, or an ending. `--pad-after` / `ORACLE_PAD_AFTER` then frees Nestor and saves at the fairy.
+- **Endings by poke:** `end2` and `end3` write what the game's own moby code writes when Gnasty Gnorc is beaten (moby_update.c, Gnasty state 9: cutscene 2, then `InitCreditsSequence(0)`) and when Spyro enters Gnasty's Loot's vortex with 14000 gems (moby 217: cutscene 3, then the full credits). Beating Gnasty or collecting every gem with a pad script isn't practical; from the cutscene on, the code that runs is the game's own.
+- **Flight levels:** the tour stays at most 60 vblanks in x5 levels. Left alone, Spyro flies into the water there and drowns about 240 vblanks after arriving, and the flight results keep interrupting the warp.
+- **What compares, and what can't:** function samples replay exactly (as in M2). The per-vblank game-state traces can't be matched tick for tick outside the attract demos: the PS1 drops frames (`g_DeltaTime` 3 or 4), the host never does, so Spyro's glide into each level integrates differently (positions apart by up to ~60 units after 300 vblanks). PCSX-Redux `a5d621af` has no CPU overclock setting that would remove the drops. So each level is compared by function replay, by a screenshot from each side taken when the tour leaves it (`tools/oracle/tour_pairs.py`), and by the visit and sequence lengths in the traces (`tools/oracle/tour_report.py`).
+- **Evidence:** `docs/whole-game-host.md`.
+
 ## 2026-10-30: hand-written C for pete and camera
 
 ### D33. Hand-written C replaces mips2c units one function at a time, with the generated version a build switch away

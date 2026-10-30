@@ -639,7 +639,12 @@ class Translator:
                '#include "mips2c_rt.h"', ""]
         own = {g for g, _ in u.glabels}
         for s in sorted(self.data_refs - own - set(u.jtbls) - set(u.rostrs) - self.ext_funcs):
-            out.append(f"extern char {s}[];")
+            if s.startswith("Terminator_"):
+                # D20: the port's Terminator_<ovl> is a pointer set to the
+                # overlay's end in the arena, so the asm's address is its value
+                out.append(f"extern void *{s};")
+            else:
+                out.append(f"extern char {s}[];")
         for f in sorted(self.ext_funcs - own):
             out.append(f"extern u32 {f}();")
         for f in sorted(self.ext_m2c - own):

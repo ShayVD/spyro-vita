@@ -17,6 +17,15 @@
 extern uintptr_t g_psx_arena_base;
 #define PSX_ADDR(a) (g_psx_arena_base + ((uint32_t)(a) - 0x80000000u))
 
+/* A pointer the game may hold as a KUSEG RAM alias (0x00000000-0x001FFFFF,
+ * the same RAM as 0x80000000): on the PS1 a store through it lands in RAM,
+ * so here it goes to the arena. For game bugs that store through small
+ * integers (patches/spyro-1-port/0006). */
+#define PSX_KUSEG(p)                                                           \
+  ((__typeof__(p))((uint32_t)(uintptr_t)(p) < 0x200000u                        \
+                       ? g_psx_arena_base + (uint32_t)(uintptr_t)(p)           \
+                       : (uintptr_t)(p)))
+
 /* Log and abort on a path the port doesn't support (src/game/port.c). */
 void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 

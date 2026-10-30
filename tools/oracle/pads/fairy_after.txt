@@ -1,0 +1,14 @@
+# Free Nestor and save at the fairy, from wherever Artisans' gameplay next
+# starts at its entrance (the gameplay part of artisans_fairy.txt). Used as
+# the host's --pad-after / ORACLE_PAD_AFTER: the late-game save at the end of
+# the whole-game tour (docs/whole-game-host.md).
+@gs=0,level=10 +59 none
+@gs=0,level=10 +71 up
+@gs=0,level=10 +251 none
+@gs=8 +0 none
+@gs=0 +7 up
+@gs=0 +57 none
+@gs=11 +183 cross
+@gs=11 +189 none
+@gs=11 +433 cross
+@gs=11 +439 none

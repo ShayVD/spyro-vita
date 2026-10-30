@@ -7,7 +7,10 @@ addresses from `nm` of the host binary (run inside tools/tc).
 
 Output lines: PSX_ADDR HOST_ADDR NAME. Overlay variants share addresses;
 their names end in the variant (UpdateMoby_LEVEL_10), and the replay keeps
-the one for the snapshot's level.
+the one for the snapshot's level. Also "TERM PSX_ADDR NAME" for each
+overlay's end (Terminator_*) and main_BSS_END: what lies above the loaded
+overlay is the level's data from disc, where the replay leaves words that
+merely look like pointers alone.
 
     fnmap.py psx.map NM_OUTPUT > fnmap.txt"""
 import re
@@ -23,6 +26,9 @@ for line in open(nmfile):
 text = False
 seen = set()
 for line in open(mapfile):
+    m = re.match(r"^\s+0x(80[0-9a-f]{6})\s+(Terminator_\w+|main_BSS_END)\b", line)
+    if m:
+        print(f"TERM {m.group(1).upper()} {m.group(2)}")
     m = re.match(r"^ (\.\w+)\s", line)
     if m:
         text = m.group(1) == ".text"
