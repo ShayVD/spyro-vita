@@ -198,6 +198,7 @@ Record each decision with its date, what was chosen, and why.
 - **On the Vita:**
   - **Capture:** with `gpu=1`, presentation frames are captured on the GPU, from the renderer's targets into a ring of textures. They're never read back: on the GPU renderer, `StoreImage` means a CPU replay of the frame (D35).
   - **Budget:** the in-between frame is skipped when the last tick's game CPU time plus its cost would pass `interp_budget` (default 26 ms). A late tick would raise `g_DeltaTime` and change how the game runs (D28); a skipped in-between frame only drops the picture to 30 fps for that tick.
+  - **Defaults and menu (revised 2026-10-30):** both on by default on the Vita (the host keeps them off for its oracle checks). The port's own options menu (hold SELECT, press START) switches them at run time and saves them to `config.txt`. It's a platform overlay, not an entry in the game's own Options, so the decomp's menu code stays untouched and the game never sees the menu's buttons.
 
 ## 2026-10-30: whole game on the host (groundwork for M4)
 

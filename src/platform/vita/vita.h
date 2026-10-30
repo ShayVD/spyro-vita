@@ -27,9 +27,11 @@ typedef struct {
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
-  int widescreen;     /* widescreen=1: 16:9 (docs/presentation.md) */
-  int interp;         /* interp=1: 60 fps; 2: no animation blending; 3: camera only */
+  int widescreen;     /* widescreen=1 (default): 16:9 (docs/presentation.md) */
+  int interp;         /* interp=1 (default): 60 fps; 2: no animation blending; 3: camera only; 0: off */
   int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
+  int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
+                         sequence (tests without a controller: menu.c) */
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
 } VitaOpts;
 
@@ -61,7 +63,20 @@ void vita_gpu_report(int vblank); /* "gpu" line in the log */
 
 /* present_vita.c: widescreen and 60 fps (D30) */
 void vita_present_init(void); /* after vita_video_init */
+void vita_present_apply(void); /* g_vita_opts' switches -> the game's presenter */
 void vita_present_report(int vblank);
+
+/* menu.c: the port's options menu (hold SELECT, press START) */
+uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */
+int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused) */
+
+/* video.c: an RGB panel over the picture (NULL: none), drawn 1:1 in the
+ * middle; and a redraw even when the picture didn't change (the menu) */
+void vita_video_overlay(const uint8_t *rgb, int w, int h);
+void vita_video_force_redraw(void);
+void vita_gpu_overlay(const uint8_t *rgb, int w, int h); /* gpu_gl.c */
+void vita_gpu_force_redraw(void);
+void vita_gpu_rescale(void); /* targets again at the current widescreen width */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
@@ -73,6 +88,7 @@ void vita_pad_poll(void); /* SDL events (controller hot-plug) */
 
 /* pad.c: pad= script */
 int vita_pad_load(const char *path); /* 0 = ok */
+uint16_t vita_pad_read(void); /* the controller's buttons now (PS1 bits) */
 
 /* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
 void vita_audio_init(void);

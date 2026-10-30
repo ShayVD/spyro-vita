@@ -297,8 +297,11 @@ static void push_capture(int wide) {
 }
 
 int port_present_frame_slot(void) {
-  if (!port_present_active())
+  if (!port_present_active()) {
+    s_qcount = 0; /* switched off (a menu): drop what was queued */
+    s_shown = -1;
     return -1;
+  }
   s_popped = s_qcount > 0;
   if (s_qcount > 0) {
     s_shown = s_qhead;
@@ -717,8 +720,10 @@ void PortPresentBeforeUpdate(void) {
   int i;
   if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
-  if (!g_present.interp)
+  if (!g_present.interp) {
+    s_prev.valid = 0; /* switched on later: no blending with an old tick */
     return;
+  }
   t = now_us();
   s_prev.valid = 1;
   s_prev.gamestate = g_Gamestate;

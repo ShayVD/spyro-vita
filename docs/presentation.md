@@ -211,7 +211,17 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 ## On the Vita
 
-Wired in on 2026-10-30. `config.txt` keys: `widescreen=1`, `interp=1` (`2` without animation, `3` camera only) and `interp_budget=MS` (default 26). The user's guide is `docs/vita-testing.md`.
+Wired in on 2026-10-30, **on by default** on the Vita (the linux32 host keeps both off, so its oracle checks stay exact). `config.txt` keys: `widescreen=0/1`, `interp=0/1` (`2` without animation, `3` camera only) and `interp_budget=MS` (default 26). The user's guide is `docs/vita-testing.md`. Scripted Vita3K runs (`tools/vita/vita3k_run.sh`) write `widescreen=0` and `interp=0` first, so they still compare with the host unless a run turns them on.
+
+**Options menu** (`src/platform/vita/menu.c`, panel drawn by `src/platform/common/menu_panel.c`): hold SELECT and press START.
+- **Pausing:** the menu runs inside the game's VSync wait (`vblank.c`), so the game is paused. Afterwards the real-time count starts again, with no catch-up, so `g_DeltaTime` doesn't jump.
+- **Buttons:** `pad.c` hides the opening combo, and whatever closed the menu, from the game until they're released.
+- **Changes:**
+  - they apply at once (`vita_present_apply`; `present.c` takes them at its next tick, drops its queue when switched off, and starts blending afresh when switched on);
+  - widescreen re-scales the GPU targets (`vita_gpu_rescale`);
+  - closing writes the three keys back to `config.txt` and keeps its other lines.
+- **Drawing:** the panel is drawn on the CPU, uploaded once, and drawn 1:1 over the last picture by either renderer.
+- **Tests:** `tests/menu_panel` renders the panel on the host; `menu_test=V` drives the menu in scripted runs.
 
 - **gpu=1 (vitaGL):** a presentation pass draws into the renderer's targets as usual. Then `present.c`'s capture interface (`g_present_capture`) has `gpu_gl.c` copy those targets on the GPU into one of 7 textures (6 slots plus staging; filing a frame swaps handles). There's no readback and no replay, and the present draws the slot texture full width or 4:3. With widescreen on, the targets render 960 wide (`set_scale`), so frames are captured at 960×544.
 - **gpu=0 (software rasteriser):** the capture is `StoreImage`, as on the host. `video.c` uploads the 512×240 frame and SDL scales it.
@@ -231,7 +241,6 @@ Checked in Vita3K (not hardware):
 ## Follow-ups
 
 1. Hardware test of the Vita build (`docs/vita-testing.md`): picture under `gpu=1`, the in-between frame rate per scene, and a tuned `interp_budget` default.
-2. An in-game option for both switches (now `config.txt` only).
 3. Flame, line-particle end points and the HUD counters' spin at 60 fps.
 4. Optional: anchor HUD items to the 16:9 edges instead of the 4:3 safe area.
 5. If a tick takes 3–4 vblanks (`g_DeltaTime` 3–4), blend at ⅓ and ⅔ instead of ½.

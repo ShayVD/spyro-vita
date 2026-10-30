@@ -11,22 +11,28 @@
 
 static long long vita_clock_us(void) { return (long long)sceKernelGetProcessTimeWide(); }
 
-void vita_present_init(void) {
+/* Also from the menu, between ticks or inside the game's VSync wait:
+ * present.c takes new switches at its next tick. */
+void vita_present_apply(void) {
   g_present.widescreen = g_vita_opts.widescreen != 0;
   g_present.interp = g_vita_opts.interp != 0;
   g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
   g_present.interp_anim = g_vita_opts.interp == 1;
   g_present.interp_budget_us = g_vita_opts.interp_budget * 1000;
+}
+
+void vita_present_init(void) {
+  vita_present_apply();
   g_present.stats = g_vita_opts.stats ? 1 : 0;
   g_present_clock_us = vita_clock_us;
   if (g_vita_gpu)
     g_present_capture = vita_gpu_present_capture();
-  else if (port_present_active())
+  else
     g_host_opts.out960 = 2; /* shots: the presentation frame on screen, 512x240 */
-  if (port_present_active())
-    vita_log("present: widescreen %d, interp %d (budget %d ms), %s capture",
-             g_vita_opts.widescreen, g_vita_opts.interp, g_vita_opts.interp_budget,
-             g_present_capture ? "GPU" : "CPU");
+  vita_log("present: widescreen %d, interp %d (budget %d ms), %s capture; "
+           "hold SELECT and press START for the options menu",
+           g_vita_opts.widescreen, g_vita_opts.interp, g_vita_opts.interp_budget,
+           g_present_capture ? "GPU" : "CPU");
 }
 
 /* One line per stats report, totals since the last one. */

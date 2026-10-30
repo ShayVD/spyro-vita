@@ -74,6 +74,53 @@ static struct {
   int disabled, w, h, valid;
 } s_last;
 
+/* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
+static const uint8_t *s_ovl;
+static int s_ovl_w, s_ovl_h, s_ovl_dirty, s_ovl_tw, s_ovl_th;
+static SDL_Texture *s_ovl_tex;
+
+void vita_video_overlay(const uint8_t *rgb, int w, int h) {
+  if (g_vita_gl) {
+    vita_gpu_overlay(rgb, w, h);
+    return;
+  }
+  s_ovl = rgb;
+  s_ovl_w = w;
+  s_ovl_h = h;
+  s_ovl_dirty = 1;
+}
+
+void vita_video_force_redraw(void) {
+  if (g_vita_gl)
+    vita_gpu_force_redraw(); /* SDL's path draws every time anyway */
+}
+
+static void draw_overlay(void) {
+  SDL_Rect dst;
+  if (!s_ovl)
+    return;
+  if (!s_ovl_tex || s_ovl_tw != s_ovl_w || s_ovl_th != s_ovl_h) {
+    if (s_ovl_tex)
+      SDL_DestroyTexture(s_ovl_tex);
+    s_ovl_tex = SDL_CreateTexture(s_ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
+                                  s_ovl_w, s_ovl_h);
+    s_ovl_tw = s_ovl_w;
+    s_ovl_th = s_ovl_h;
+    s_ovl_dirty = 1;
+  }
+  if (!s_ovl_tex)
+    return;
+  if (s_ovl_dirty) {
+    SDL_UpdateTexture(s_ovl_tex, NULL, s_ovl, s_ovl_w * 3);
+    s_ovl_dirty = 0;
+  }
+  dst.x = (SCREEN_W - s_ovl_w) / 2;
+  dst.y = (SCREEN_H - s_ovl_h) / 2;
+  dst.w = s_ovl_w;
+  dst.h = s_ovl_h;
+  SDL_RenderCopy(s_ren, s_ovl_tex, NULL, &dst);
+}
+
 /* A presentation frame (src/game/present.c: widescreen, 60 fps): 512x240
  * PS1 15-bit, full screen when widescreen, else 4:3 in the middle. */
 static int s_tex_slot = -1; /* the presentation slot in s_tex, -1: none */
@@ -106,6 +153,7 @@ static int present_frame(int slot) {
   dst.x = (SCREEN_W - dst.w) / 2;
   SDL_RenderClear(s_ren);
   SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  draw_overlay();
   prof_leave();
   prof_enter(PROF_WAIT);
   SDL_RenderPresent(s_ren);
@@ -177,6 +225,7 @@ show:
   dst.y = 0;
   SDL_RenderClear(s_ren);
   SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  draw_overlay();
   prof_leave();
   prof_enter(PROF_WAIT);
   SDL_RenderPresent(s_ren); /* flips at the Vita's vblank (PRESENTVSYNC) */
