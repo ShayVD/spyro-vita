@@ -9,7 +9,7 @@
  *     texel 0 transparent, STP), as PsyX_render.cpp's shaders do.
  *   - Each draw area the game draws into (Spyro: its two 512x224 buffers) is
  *     a "target": an FBO covering that VRAM rect at a higher resolution
- *     (config.txt res=: the screen's pixels by default, decisions D37).
+ *     (config.txt res=: the screen's pixels by default, decisions D38).
  *     Inside its rect a target is newer than s_vram; LoadImage/MoveImage into
  *     it are drawn into it too (a MoveImage from another target at the
  *     targets' resolution), ClearImage clears both.
@@ -432,30 +432,6 @@ static void upload_vram(void) {
     s_targets[i].tex_stale = 0;
   s_st.uploads++;
   s_st.upload_us += now_us() - t0;
-}
-
-/* An RGB picture into s_rgb_tex (bound on unit 1), as RGBA: Vita3K draws a
- * 24-bit (GL_RGB) texture as near-black (the boot logos were missing in
- * window captures, decisions D37). */
-static void upload_rgb(const uint8_t *rgb, int w, int h) {
-  static uint8_t *rgba;
-  static int cap;
-  int i;
-  if (w * h > cap) {
-    free(rgba);
-    rgba = malloc((size_t)w * h * 4);
-    cap = rgba ? w * h : 0;
-    if (!rgba)
-      return;
-  }
-  for (i = 0; i < w * h; i++) {
-    rgba[i * 4] = rgb[i * 3];
-    rgba[i * 4 + 1] = rgb[i * 3 + 1];
-    rgba[i * 4 + 2] = rgb[i * 3 + 2];
-    rgba[i * 4 + 3] = 255;
-  }
-  glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 }
 
 static void quad(const float ndc[4], const float src[4]) {
@@ -1401,6 +1377,59 @@ static const PresentCapture s_pres_capture = {pres_capture, pres_commit};
 
 const struct PresentCapture *vita_gpu_present_capture(void) { return &s_pres_capture; }
 
+/* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
+static const uint8_t *s_ovl;
+static int s_ovl_w, s_ovl_h, s_ovl_dirty;
+static GLuint s_ovl_tex;
+
+void vita_gpu_overlay(const uint8_t *rgb, int w, int h) {
+  s_ovl = rgb;
+  s_ovl_w = w;
+  s_ovl_h = h;
+  s_ovl_dirty = 1;
+}
+
+void vita_gpu_force_redraw(void) {
+  s_last.valid = 0;
+  s_pres_on_screen = -1;
+}
+
+/* Widescreen switched (menu.c): every target drawn again at the new width.
+ * Dropping a target first gives VRAM its pixels (drop_target). */
+void vita_gpu_rescale(void) {
+  while (s_ntargets > 0)
+    drop_target(0);
+  s_sx = s_sy = 0;
+  s_last.valid = 0;
+}
+
+static void draw_overlay(void) {
+  float ndc[4], src[4] = {0, 0, 1, 1};
+  int x0 = (SCREEN_W - s_ovl_w) / 2, y0 = (SCREEN_H - s_ovl_h) / 2;
+  if (!s_ovl)
+    return;
+  if (!s_ovl_tex)
+    s_ovl_tex = new_tex(4, 4, NULL);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, s_ovl_tex);
+  if (s_ovl_dirty) {
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, s_ovl_w, s_ovl_h, 0, GL_RGB, GL_UNSIGNED_BYTE, s_ovl);
+    s_ovl_dirty = 0;
+  }
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glActiveTexture(GL_TEXTURE0);
+  bind_fbo(0);
+  glViewport(0, 0, SCREEN_W, SCREEN_H);
+  no_blend();
+  glUseProgram(s_prog[P_TEX].prog);
+  ndc[0] = (float)x0 / SCREEN_W * 2 - 1;
+  ndc[2] = (float)(x0 + s_ovl_w) / SCREEN_W * 2 - 1;
+  ndc[1] = 1 - (float)y0 / SCREEN_H * 2;
+  ndc[3] = 1 - (float)(y0 + s_ovl_h) / SCREEN_H * 2;
+  quad(ndc, src);
+}
+
 /* Presentation frame `slot` on the screen: full width when widescreen, else
  * 4:3 in the middle. GPU slots (gpu=1) or present.c's pixels (the software
  * rasterizer shown through vitaGL). */
@@ -1431,7 +1460,8 @@ static int present_slot(int slot) {
       rgb[i * 3 + 1] = (uint8_t)(g << 3 | g >> 2);
       rgb[i * 3 + 2] = (uint8_t)(b << 3 | b >> 2);
     }
-    upload_rgb(rgb, PRESENT_W, PRESENT_H);
+    glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
@@ -1442,6 +1472,7 @@ static int present_slot(int slot) {
   ndc[1] = 1;
   ndc[3] = -1;
   quad(ndc, src);
+  draw_overlay();
   if (s_hd_shot)
     write_hd_shot();
   s_st.presents++;
@@ -1494,7 +1525,8 @@ int vita_gpu_present(void) {
       vita_gpu_sync_display();
       rgb = host_display_rgb(&w, &h);
       glActiveTexture(GL_TEXTURE1);
-      upload_rgb(rgb, w, h);
+      glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
       glActiveTexture(GL_TEXTURE0);
@@ -1533,6 +1565,7 @@ int vita_gpu_present(void) {
       }
     }
   }
+  draw_overlay();
   if (s_hd_shot)
     write_hd_shot();
   s_st.presents++;

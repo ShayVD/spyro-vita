@@ -80,16 +80,20 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `res=native` | GPU: the resolution it draws at (decisions D37). `native`, the default: the screen's own pixels (the 4:3 picture is 725×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `res=native` | GPU: the resolution it draws at (decisions D38). `native`, the default: the screen's own pixels (the 4:3 picture is 725×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
 | `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
+| `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
+| `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
+| `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
-| `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
-| `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
+| `menu_test=V` | tests without a controller: open the options menu at vblank V and press down, left, up, right, circle |
+
+**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen, 60 fps and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -115,6 +119,12 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 - With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
+- `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
+  mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
+  vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
+  and SPU models). W/K are the game thread waiting for it: at loads (SPU RAM writes), otherwise 0.
+  E (counted from start-up) must be 0. D counts mixes that found the audio queue empty (a gap you can hear), C the times
+  it was cut back to 150 ms (the game ran ahead).
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
 `gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,
@@ -220,6 +230,21 @@ change touches nothing the linux32 host builds), and with window captures of the
 | `run50-vita-soft-gems` | gems script, `gpu=0` | 36/36 shots and the card byte-identical to the host. |
 | `run51-vita-gpu-realtime`, `run52-vita-soft-realtime` | gems script, `REALTIME=1` | 60 vblanks/s in both. Busy CPU per vblank (`tools/vita/time_summary.py`): 2.79 ms with `gpu=1`, 6.82 ms with `gpu=0`. Raster 0.90 vs 4.85 ms, present 0.05 vs 0.55 ms. Vita3K's times, not the Vita's. |
 
+### The mixer on its own core (D37)
+
+Same host references (`run6-host-base`, `run7-host-gems`; this tree's linux32 build reproduces
+`run6-host-base`'s WAV byte for byte, `logs/run63-host-base`):
+
+| Run | What | Result |
+|---|---|---|
+| `run62-vita-gpu-base`, `run64`–`run66` | first try | WAV wrong from vblank 438 and a hang at 5640: the mixer's XA reset went through `--wrap` back into the queue (D37). Kept as the record. |
+| `run67-vita-mixer1-short` | fixed, 1500 vblanks, `wav=1` | WAV byte-identical. |
+| `run68-vita-gpu-base`, `run69-vita-soft-base` | no input, 12000 vblanks, shot every 120, `wav=1`, `gpu=1` / `gpu=0` | 100/100 shots and the 35 MB WAV byte-identical to the host, both. 0 position mismatches. |
+| `run72-vita-gpu-gems`, `run71-vita-soft-gems` | gems script, `gpu=1` / `gpu=0` | 36/36 shots and the card byte-identical to the host, both. |
+| `run73-vita-gpu-realtime`, `run74-vita-gpu-realtime-before` | gems script, `REALTIME=1`, `wav=1`, with and without this change | Both ~60 vblanks/s, WAV 8768 vblanks long. Game-thread `spu` 0.47 → 0.09 ms per vblank, busy 3.16 → 2.73 ms; mixer thread 0.4–0.6 ms per vblank. |
+| `run75`–`run78` | the four runs above again after merging main (Vita widescreen and 60 fps) | all byte-identical again (shots, WAV, card); 0 position mismatches |
+| `run79-vita-merged-realtime-ws` | gems script, `REALTIME=1`, `wav=1 widescreen=1 interp=1` | 58.6 vblanks/s, WAV 8768 vblanks long; `spu` 0.15 ms per vblank, mixer 0.5–0.7 ms; audio queue dry 0–11 times per 300 vblanks |
+
 `run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
@@ -243,10 +268,14 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 4. `gpu N:` lines: `VRAM uploads` should be a handful per 300 vblanks (level loads, menus), not
    one per picture.
 5. Open the pause menu and the inventory: the background should be the game's frame in green.
+6. `mixer: thread on core 1` at start-up, then `mixer N:` lines: `position mismatches` 0,
+   `audio queue dry` near 0 in gameplay, and the mixer's ms per vblank (the time `spu` had before).
+   `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
+   and `mixer=0` and say which ones are.
 
-**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30), with the GPU build:
+**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default), with the GPU build:
 
-1. `config.txt`: `widescreen=1`, `interp=1`, `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
+1. `config.txt`: `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
    (title, and the first attract demo), `stats=1`. Leave it at the title until the demo plays
    (about 75 s).
 2. In the log: `present: widescreen 1, interp 1 (budget 26 ms), GPU capture`;
@@ -256,10 +285,12 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 3. The `shot-V-hd.png` files: the picture fills the 16:9 screen, upright, the HUD and the
    "DEMO MODE" letters keep their shape, and consecutive vblanks show different pictures.
 4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
-   right? Then `interp=1` alone (4:3) and `widescreen=1` alone, to see each one's cost in the
-   `time` and `present` lines.
+   right? Open the options menu (hold SELECT, press START): the panel is readable, the game is
+   paused behind it, and switching widescreen or 60 fps takes effect when it closes. Then try
+   60 fps alone (4:3) and widescreen alone, to see each one's cost in the `time` and `present`
+   lines.
 
-**Testing the render resolution** (`res=`, decisions D37), with the GPU build:
+**Testing the render resolution** (`res=`, decisions D38), with the GPU build:
 
 1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 725x508` (4:3)
    or `960x508` (with `widescreen=1`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
@@ -269,13 +300,13 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    and no light line along the left or top edge of the 4:3 picture during fades.
 3. Lose all lives once (or skip it): the frozen frame that darkens before GAME OVER should be as
    sharp as the game was, not blocky.
-4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D37 with
+4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D38 with
    `gpu_res=1` (softer, PS1 pixels scaled up). Compare `busy`, `P pictures` and the `timed frame`
    line with the default.
 5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
    and how big G gets.
 
-### The render resolution (D37, branch `claude/recursing-wilbur-baad6f`)
+### The render resolution (D38, branch `claude/recursing-wilbur-baad6f`)
 
 Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "old" = main
 `4ced09a` (with PR #12) and "new" = this branch, `realtime=0` unless noted. Logs in `logs/`:

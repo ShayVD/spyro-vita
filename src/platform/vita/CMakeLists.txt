@@ -61,6 +61,8 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   # prof.c times these (the "time" lines in spyro.log)
   -Wl,--wrap=DrawOTag,--wrap=DrawPrim,--wrap=GR_DrawTriangles
   -Wl,--wrap=GR_CopyVRAM,--wrap=GR_ClearVRAM,--wrap=GR_ReadVRAM
+  # mixer.c: XA events go to the mixer thread, SPU RAM writes wait for it (D37)
+  -Wl,--wrap=psx_xa_sector,--wrap=psx_xa_reset,--wrap=SpuWrite,--wrap=SpuInit
   # vitaGL must set GXM up as for a game, in Vita3K too (gpu_gl.c)
   -Wl,--wrap=sceAppMgrGetBudgetInfo)
 

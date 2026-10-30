@@ -29,20 +29,27 @@
  *                       the 4:3 picture is 725x544 screen pixels, 16:9 is
  *                       960x544); res=ps1 (or 1): at the PS1's own 512x240,
  *                       scaled up when shown (filter=); res=N, 2..4: N times
- *                       the PS1's, scaled down when shown (D37). gpu_res=
+ *                       the PS1's, scaled down when shown (D38). gpu_res=
  *                       is the old name.
  *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
  *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
  *                       (glReadPixels) instead of replaying the draws in the
  *                       software rasterizer (default 1)
- *       widescreen=1    16:9: a wider view; the game logic is unchanged
- *                       (docs/presentation.md, D30)
- *       interp=1        60 fps: an in-between frame per tick (camera,
- *                       Spyro, mobys, animation, particles); 2: no animation
- *                       blending; 3: camera only
+ *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
+ *                       game logic is unchanged; docs/presentation.md, D30)
+ *       interp=0        30 fps instead of the default 60: interp=1 adds an
+ *                       in-between frame per tick (camera, Spyro, mobys,
+ *                       animation, particles); 2: no animation blending;
+ *                       3: camera only
+ *                       (widescreen, interp and interp_budget can also be
+ *                       set in the game: hold SELECT and press START; the
+ *                       menu writes them back here)
  *       interp_budget=MS  skip the in-between frame while the game's CPU
  *                       time per tick would pass MS (default 26; 0: never)
+ *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
+ *                       their own thread; 2 that thread, but each vblank waits
+ *                       for its mix; 0 the game thread, as before
  *       shot_hold=MS    after each shot, hold the game (its picture on
  *                       screen) until hold.ack appears, at most MS ms
  *                       (tools/vita/vita3k_run.sh CAPTURE=1)
@@ -69,7 +76,8 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .interp_budget = 26};
+                        .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 1,
+                        .interp_budget = 26, .mixer = 1};
 
 extern void spyro_main(void);
 
@@ -175,6 +183,8 @@ static void read_config(void) {
       g_vita_opts.gpu_dump = atoi(v);
     else if (!strcmp(line, "gpu_readback"))
       g_vita_opts.gpu_readback = atoi(v);
+    else if (!strcmp(line, "mixer"))
+      g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen"))
@@ -183,6 +193,8 @@ static void read_config(void) {
       g_vita_opts.interp = atoi(v);
     else if (!strcmp(line, "interp_budget"))
       g_vita_opts.interp_budget = atoi(v);
+    else if (!strcmp(line, "menu_test"))
+      g_vita_opts.menu_test = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
