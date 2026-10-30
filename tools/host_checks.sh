@@ -2,7 +2,7 @@
 # Host determinism checks for the hand-C merge: attract demos, the whole-game
 # tour (PR #7, logs/run21-host-whole's command) and routes A/B (PR #11).
 # Usage: [BIN=path/to/spyro] tools/host_checks.sh PREFIX -> logs/PREFIX-{demo,whole,routeA,routeB}
-# Compare two prefixes with cmp: the host is deterministic (decisions D37).
+# Compare two prefixes with cmp: the host is deterministic (decisions D38).
 cd "$(dirname "$0")/.."
 P=$1; B=${BIN:-build/linux32/src/platform/linux32/spyro}
 run() { D=logs/$P-$1; shift; mkdir -p $D; tools/tc $B --disc disc/files --log $D/spyro.log --trace $D/trace.tsv --shot-dir $D "$@" > $D/stdout.txt 2>&1; echo "exit $?" >> $D/spyro.log; }

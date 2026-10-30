@@ -1,5 +1,5 @@
 #!/bin/sh
-# Every sweep suite (decisions D33, D37) on the REF build (-DSPYRO_M2C_REF=ON,
+# Every sweep suite (decisions D33, D38) on the REF build (-DSPYRO_M2C_REF=ON,
 # build/linux32-ref). Usage: tools/oracle/sweep_all.sh [OUTDIR], default logs/run8-sweeps.
 # Inputs (gitignored, docs/host-build.md): logs/caps/ captures, and the small
 # sample sets the round-2 branches picked (logs/hc2-*: 11 camera samples,

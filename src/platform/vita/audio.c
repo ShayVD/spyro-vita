@@ -1,6 +1,6 @@
-/* Vita audio: the software SPU mixer (src/platform/common/libspu.c) pushes
- * 44.1 kHz s16 stereo once per vblank (psx_spu_vblank -> psx_audio_out); it
- * is queued to an SDL2 audio device. If the game runs slower than real time
+/* Vita audio: the software SPU mixer (src/platform/common/libspu.c, run on
+ * the mixer thread by mixer.c) pushes 44.1 kHz s16 stereo once per vblank
+ * (psx_spu_mix -> psx_audio_out, on that thread); it is queued to an SDL2 audio device. If the game runs slower than real time
  * the queue runs dry (gaps); if it gets ahead, the oldest audio is dropped
  * past ~150 ms so latency stays bounded. With wav=1 the same samples also go
  * to ux0:data/spyro/audio.wav, in the linux32 host's --wav format, so the two
@@ -18,6 +18,7 @@
 static SDL_AudioDeviceID s_dev;
 static FILE *s_wav;
 static unsigned s_wav_frames;
+unsigned g_vita_audio_dry, g_vita_audio_cleared; /* queue ran dry / was cut (mixer line) */
 
 static void put_le(uint8_t *p, uint32_t v, int n) {
   while (n--)
@@ -44,6 +45,7 @@ static void wav_header(FILE *f, unsigned frames) {
 }
 
 void vita_audio_close(void) {
+  vita_mixer_drain();
   if (s_wav) {
     wav_header(s_wav, s_wav_frames);
     fclose(s_wav);
@@ -54,6 +56,7 @@ void vita_audio_close(void) {
 
 void vita_audio_init(void) {
   SDL_AudioSpec want, have;
+  vita_mixer_init();
   if (g_vita_opts.wav) {
     s_wav = fopen(VITA_DATA_DIR "/audio.wav", "wb");
     if (s_wav)
@@ -82,7 +85,14 @@ void psx_audio_out(const short *pcm, int frames) {
   }
   if (!s_dev)
     return;
-  if (SDL_GetQueuedAudioSize(s_dev) > MAX_QUEUED)
-    SDL_ClearQueuedAudio(s_dev);
+  {
+    Uint32 queued = SDL_GetQueuedAudioSize(s_dev);
+    if (queued > MAX_QUEUED) {
+      SDL_ClearQueuedAudio(s_dev);
+      g_vita_audio_cleared++;
+    } else if (queued == 0) {
+      g_vita_audio_dry++;
+    }
+  }
   SDL_QueueAudio(s_dev, pcm, (Uint32)frames * 4);
 }

@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "gpu/PsyX_GPU.h" /* currentDispEnv, g_GPUDisabledState */
+#include "../../game/present.h"
 
 uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 
@@ -73,6 +74,93 @@ static struct {
   int disabled, w, h, valid;
 } s_last;
 
+/* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
+static const uint8_t *s_ovl;
+static int s_ovl_w, s_ovl_h, s_ovl_dirty, s_ovl_tw, s_ovl_th;
+static SDL_Texture *s_ovl_tex;
+
+void vita_video_overlay(const uint8_t *rgb, int w, int h) {
+  if (g_vita_gl) {
+    vita_gpu_overlay(rgb, w, h);
+    return;
+  }
+  s_ovl = rgb;
+  s_ovl_w = w;
+  s_ovl_h = h;
+  s_ovl_dirty = 1;
+}
+
+void vita_video_force_redraw(void) {
+  if (g_vita_gl)
+    vita_gpu_force_redraw(); /* SDL's path draws every time anyway */
+}
+
+static void draw_overlay(void) {
+  SDL_Rect dst;
+  if (!s_ovl)
+    return;
+  if (!s_ovl_tex || s_ovl_tw != s_ovl_w || s_ovl_th != s_ovl_h) {
+    if (s_ovl_tex)
+      SDL_DestroyTexture(s_ovl_tex);
+    s_ovl_tex = SDL_CreateTexture(s_ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
+                                  s_ovl_w, s_ovl_h);
+    s_ovl_tw = s_ovl_w;
+    s_ovl_th = s_ovl_h;
+    s_ovl_dirty = 1;
+  }
+  if (!s_ovl_tex)
+    return;
+  if (s_ovl_dirty) {
+    SDL_UpdateTexture(s_ovl_tex, NULL, s_ovl, s_ovl_w * 3);
+    s_ovl_dirty = 0;
+  }
+  dst.x = (SCREEN_W - s_ovl_w) / 2;
+  dst.y = (SCREEN_H - s_ovl_h) / 2;
+  dst.w = s_ovl_w;
+  dst.h = s_ovl_h;
+  SDL_RenderCopy(s_ren, s_ovl_tex, NULL, &dst);
+}
+
+/* A presentation frame (src/game/present.c: widescreen, 60 fps): 512x240
+ * PS1 15-bit, full screen when widescreen, else 4:3 in the middle. */
+static int s_tex_slot = -1; /* the presentation slot in s_tex, -1: none */
+
+static int present_frame(int slot) {
+  const uint16_t *px = port_present_slot_pixels(slot);
+  int fresh = port_present_frame_new() || s_tex_slot != slot, x, y, pitch;
+  void *pixels;
+  SDL_Rect src = {0, 0, PRESENT_W, PRESENT_H}, dst;
+  prof_enter(PROF_PRESENT);
+  if (fresh && px && SDL_LockTexture(s_tex, &src, &pixels, &pitch) == 0) {
+    for (y = 0; y < PRESENT_H; y++) {
+      const uint16_t *s = px + y * PRESENT_W;
+      uint8_t *d = (uint8_t *)pixels + (size_t)y * pitch;
+      for (x = 0; x < PRESENT_W; x++, d += 4) {
+        int r = s[x] & 31, g = (s[x] >> 5) & 31, b = (s[x] >> 10) & 31;
+        d[0] = (uint8_t)(r << 3 | r >> 2);
+        d[1] = (uint8_t)(g << 3 | g >> 2);
+        d[2] = (uint8_t)(b << 3 | b >> 2);
+        d[3] = 255;
+      }
+    }
+    SDL_UnlockTexture(s_tex);
+    s_tex_slot = slot;
+  }
+  s_last.valid = 0; /* the texture no longer holds the display rect */
+  dst.y = 0;
+  dst.h = SCREEN_H;
+  dst.w = port_present_frame_is_wide() ? SCREEN_W : SCREEN_H * 4 / 3;
+  dst.x = (SCREEN_W - dst.w) / 2;
+  SDL_RenderClear(s_ren);
+  SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  draw_overlay();
+  prof_leave();
+  prof_enter(PROF_WAIT);
+  SDL_RenderPresent(s_ren);
+  prof_leave();
+  return fresh;
+}
+
 /* One frame: the display rect as the TV would show it, 4:3 in the middle.
  * Returns 1 if it was a new picture. */
 int vita_video_present(void) {
@@ -85,6 +173,11 @@ int vita_video_present(void) {
     return vita_gpu_present();
   if (!s_ren)
     return 0;
+  {
+    int slot = port_present_frame_slot();
+    if (slot >= 0)
+      return present_frame(slot);
+  }
   prof_enter(PROF_PRESENT);
   if (s_last.valid && s_last.gen == prof_vram_gen() && s_last.disabled == g_GPUDisabledState &&
       !memcmp(&s_last.disp, &currentDispEnv, sizeof s_last.disp)) {
@@ -94,6 +187,7 @@ int vita_video_present(void) {
     goto show;
   }
   s_last.valid = 1;
+  s_tex_slot = -1;
   s_last.gen = prof_vram_gen();
   s_last.disabled = g_GPUDisabledState;
   s_last.disp = currentDispEnv;
@@ -131,6 +225,7 @@ show:
   dst.y = 0;
   SDL_RenderClear(s_ren);
   SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  draw_overlay();
   prof_leave();
   prof_enter(PROF_WAIT);
   SDL_RenderPresent(s_ren); /* flips at the Vita's vblank (PRESENTVSYNC) */

@@ -195,6 +195,10 @@ Record each decision with its date, what was chosen, and why.
 - **Widescreen goes in the camera's projection matrix, not RTPS/RTPT** (revises D2's plan). `CameraUpdateMatrices` already scales the Y row by 320/512 for the 4:3 TV. Scaling the X row by 3/4 there squeezes the picture *and* widens the frustum tests that `r_moby` does in that space. A GTE-level squeeze would leave those culls at 4:3, and it would reach gameplay: the camera logic projects Spyro through RTPS (`func_80017AA4`). HUD models (`func_80022A2C`) and C-built 2D primitives (the HUD OT) are narrowed separately.
 - **Why a logic pass instead of one widescreen pass:** `r_moby` sets `m_WasDrawn` from its frustum test, and `func_80051FEC` uses that flag to pick which mobys update. With the wider frustum in the logic (`--widescreen-logic`), the Stone Hill attract demo desyncs: rand diverges at tick 123, Spyro's position at tick 541 (`logs/run5-wslogic`). The cost is the render path once more per tick, without rasterisation.
 - **Snapshot (revised the same day):** the first version copied the whole 2 MB arena, which can't miss a writer. `--present-dirty` then measured 22–40 dirty 4 KB pages per pass, so the snapshot now covers only what the game reads again: the scratchpad, the game's data and bss, the moby array, the particle space and a 4-byte cache in each sector header. The primitive buffers, OTs and emulated stack are scratch. `--present-dirty` keeps a full copy and checks, byte for byte, that nothing else changed: 0 misses over the demos and two Artisans scripts. That's 4–6 MB per tick down to 170–260 KB.
+- **On the Vita:**
+  - **Capture:** with `gpu=1`, presentation frames are captured on the GPU, from the renderer's targets into a ring of textures. They're never read back: on the GPU renderer, `StoreImage` means a CPU replay of the frame (D35).
+  - **Budget:** the in-between frame is skipped when the last tick's game CPU time plus its cost would pass `interp_budget` (default 26 ms). A late tick would raise `g_DeltaTime` and change how the game runs (D28); a skipped in-between frame only drops the picture to 30 fps for that tick.
+  - **Defaults and menu (revised 2026-10-30):** both on by default on the Vita (the host keeps them off for its oracle checks). The port's own options menu (hold SELECT, press START) switches them at run time and saves them to `config.txt`. It's a platform overlay, not an entry in the game's own Options, so the decomp's menu code stays untouched and the game never sees the menu's buttons.
 
 ## 2026-10-30: whole game on the host (groundwork for M4)
 
@@ -258,7 +262,7 @@ Record each decision with its date, what was chosen, and why.
   - In Vita3K, uploads fell from about 150 to 1–2 per 300 vblanks (screenshots' readbacks, level loads), and raster time halved (0.90 → 0.46 ms per vblank on the gems script).
   - Pictures were unchanged: demo 100/100 and gems 36/36 byte-identical to the host, and the pause and inventory screens right.
   - Expected on hardware: about 2 ms per vblank less. **Confirmed** (user, build `c40c9cf`): uploads 0 in nearly every 300-vblank window, raster 5–6 → 2.7–4 ms per vblank, busy CPU 60–93% → 43–78%, and 143–150 pictures per 300 vblanks in every gameplay window.
-- **Not done here:** widescreen and 60 fps (M4); fewer draw calls; the SPU mix on another core.
+- **Not done here:** widescreen and 60 fps (M4); fewer draw calls; the SPU mix on another core (done in D37).
 
 ### D36. Portals, exits and the balloonist: short walks from poked positions, sampled per gamestate
 - **Chosen:** two pad scripts (`tools/oracle/pads/route_portal_exit.txt`, `route_vortex_balloon.txt`) run as the pad-after script of a new game and the LEVELS OPEN cheat on both sides. The walks start from a `poke:` of Spyro's position next to the portal, the vortex ledge and the balloonist's dock. From there the game's own code runs: portal surface, vortex moby, balloonist moby, gamestates 1, 9, 10 and 12. The routes were steered on the host (`--step`, `tools/steer.py`) and made state-anchored by `tools/anchor_pad.py`. `capture.lua` samples per level and gamestate (`ORACLE_PER_STATE=1`), so the transition gamestates get their own samples.
@@ -266,9 +270,36 @@ Record each decision with its date, what was chosen, and why.
 - **Also:** `$ORACLE_FUNCS` option `anysp`, because `func_8004F7E8` uses `$sp` as data (`docs/whole-game-host.md`).
 - **Evidence:** `docs/whole-game-host.md` "Portals, exits and the balloonist".
 
+### D37. Vita: the SPU mix and XA decode on their own core, replayed from per-vblank packets
+- **Chosen:** `src/platform/vita/mixer.c` runs the software SPU mix and the XA decode on a thread pinned to user core 1 (`sceKernelCreateThread`, `SCE_KERNEL_CPU_MASK_USER_1`, priority 0x70, ahead of the game thread's 0xA0 if they ever share a core). The game thread doesn't mix any more. Once per vblank, where it called `psx_spu_vblank()`, it now:
+  1. copies the 24 voices and the mix registers (master and CD volumes, `CdMix` matrix, mute) into a packet;
+  2. runs `psx_spu_step()` on the live SPU state;
+  3. posts the packet to a ring of 8, and waits only when all 8 are in flight.
+- **What the mixer thread does:** it replays the packets in order. It keeps its own copies of the voices, with the ADPCM decoder state (history, decoded block, previous sample), and takes everything else from each packet: registers, envelope (key off), loop address and position. A voice whose `keyon_seq` changed since the last packet is taken whole, because key on resets the decoder. Then `psx_spu_mix` → `psx_audio_out` (the SDL2 queue, and `audio.wav` with `wav=1`).
+- **Exactness:** the game reads back SPU state that the mix changes. `SpuGetKeyStatus` and `SpuGetAllKeysStatus` (`spu.c`) see a voice go to "envelope off" when its sample hits an end flag without repeat. Nothing in that depends on the samples. `psx_spu_step()` walks the same 4.12 counter steps and block flags as the mix, block by block instead of sample by sample, and leaves the decoder alone. So everything the game reads comes from the game thread, as the synchronous mix would have left it. The mixer checks that its own positions match the step's when a voice wasn't keyed on, and counts any mismatch in the log. The count was 0 in every run.
+- **The XA music** moves with the mix. libcd's `psx_xa_sector` and `psx_xa_reset` are wrapped (`-Wl,--wrap`). The game thread still reads each sector and applies the stream's file/channel filter (`psx_xa_accept`, file I/O stays on one thread). It queues the raw 2336 bytes, and the resets, in order in the next packet. The mixer decodes them (`psx_xa_decode`) before that packet's mix, so the XA FIFO in `xa.c` is only touched on the mixer thread.
+- **SPU RAM** is the only state the two threads share. `SpuWrite` and `SpuInit` are wrapped to wait until every posted packet has been mixed first ("drain"). The mixer reads RAM only. RAM is written at loads, so the waits cluster there: about 25 ms in total during boot in Vita3K, then none.
+- **Shared code:** `src/platform/common` changes only by refactoring:
+  - `libspu.c` splits `psx_spu_vblank()` into `psx_spu_mix_regs` + `psx_spu_mix` (over a voice array) + `psx_audio_out`, and adds `psx_spu_step()`.
+  - `voice_next_block` is split into position and decoder halves.
+  - `xa.c` splits `psx_xa_sector` into `psx_xa_accept` + `psx_xa_decode`.
+  - The linux32 host still calls `psx_spu_vblank()`. Its 12000-vblank WAV from this tree is byte-identical to `run6-host-base`'s.
+- **`config.txt mixer=`:** 1 (default) is the thread; 2 is the same thread with each vblank waiting for its mix (lockstep, for debugging); 0 mixes on the game thread as before. If the thread can't be created, the game thread mixes and the log says so.
+- **Pitfall found on the way:** `--wrap=psx_xa_reset` also redirects the call inside `mixer.c`. The mixer's own reset was being re-queued from the mixer thread, so the XA FIFO was never reset. The WAV diverged at vblank 438, where the intro's XA starts, and the game later hung on a slot that thread had taken. The mixer calls `__real_psx_xa_reset`.
+- **Checked in Vita3K** (`logs/run62`–`run74`, before merging main's PR #12):
+  - With `realtime=0`, the 12000-vblank demo with `wav=1` is byte-identical to the host: 100/100 shots and the 35 MB WAV, with both `gpu=1` and `gpu=0`.
+  - The gems script is also byte-identical: 36/36 shots and the memory card, in both modes.
+  - With `REALTIME=1` on the gems script, `gpu=1`: ~60 vblanks/s, and `audio.wav` holds all 8768 vblanks.
+  - Game-thread "spu" time fell from 0.47 to 0.09 ms per vblank, and busy time from 3.16 to 2.73 ms (`run74` is the branch before this change). The mixer thread took 0.4–0.6 ms per vblank (Vita3K's times).
+  - What remains on the game thread is the CD model, the XA sector reads, the step and the 2.6 KB voice copy.
+- **After merging main (PR #12, Vita widescreen and 60 fps)**, `logs/run75`–`run79`:
+  - The demo is still byte-identical in both GPU modes (shots and WAV), and so are the gems runs (shots and card).
+  - `REALTIME=1` with `widescreen=1 interp=1` on the gems script: 58.6 vblanks/s in Vita3K, the WAV holds all 8768 vblanks, game-thread `spu` is 0.15 ms per vblank and the mixer takes 0.5–0.7 ms. The audio queue ran dry 0–11 times per 300 vblanks.
+- **Expected on hardware:** most of the ~2.5 ms "spu" per vblank (D35's `c40c9cf` run) moves to core 1, and the `mixer N:` line shows it there. Not yet run on hardware.
+
 ## 2026-10-30: hand-written C, round 2
 
-### D37. Every pete and camera function hand-written, each checked on its own branch and again on the merged tree
+### D38. Every pete and camera function hand-written, each checked on its own branch and again on the merged tree
 - **Chosen:** the seven remaining functions were done in parallel, one branch per function group: camera, state change, transitions, and dispatch plus the flying-ability phases. Each branch replayed every capture, swept against the mips2c unit and checked both demos. The merged tree was then checked again as a whole, because a function's callees changed from mips2c to hand C between its branch and the merge.
 - **Reference build switch:** `-DSPYRO_M2C_REF=ON` links every hand-written function's mips2c unit as `<name>_gen`, so differential sweeps work for fully hand-written functions too. It replaces the one-off `M2C_PARTIAL` link of `func_80043FE4`. Each reference unit is translated on its own. In one batch, mips2c calls the batch's own units through their register entries, which the rename leaves undefined. `SPYRO_REPLAY_SWEEP_REG` sweeps an entry register (`func_8003EA68`'s new state, a0).
 - **Proof of identical behaviour beyond the samples:** the host is deterministic, so a build of main and the final build ran the same scripts: attract demos, the whole-game tour, routes A and B. Traces, screenshots and saves came out byte-identical. A difference anywhere in the game's logic would show there, not only at sampled calls.

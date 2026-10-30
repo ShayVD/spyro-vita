@@ -19,7 +19,8 @@ typedef struct {
   int dither;          /* PS1 4x4 dither on shaded/modulated prims */
   int moby_dump;       /* --moby-dump: mobys-V.tsv with every shot and step */
   int tri_dump;        /* log every triangle of the frame shown at this vblank */
-  int out960;          /* pictures at 960x544 (presentation frames, present.c) */
+  int out960;          /* pictures at 960x544 (presentation frames, present.c);
+                          2: the presentation frame as drawn, 512x240 */
   int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
   struct { int vblank; uint32_t addr, value; } pokes[16];
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
