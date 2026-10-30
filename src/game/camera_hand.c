@@ -10,7 +10,10 @@
 #include "common.h"
 
 #include "camera.h"
+#include "collision.h"
 #include "math.h"
+#include "spyro.h"
+#include "variables.h"
 #include "vector.h"
 
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
@@ -72,5 +75,157 @@ int func_80033F08(Vector3D *pVec) {
   g_Camera.m_Simulation.m_Offset.radius = AngleDelta(0x800 - sim->azimuth - g_Camera.m_Rotation.z);
 
   return flipped;
+}
+#endif
+
+#if !M2C_func_80034480
+extern int D_800756B8;                  // Spyro visible from the camera (camera.c)
+extern SphericalCoordsOffset D_8006CAB4[5]; // Presets tried when Spyro stays hidden
+extern SphericalCoordsOffset D_8006C82C[5]; // Sphere nudges tried when Spyro is hidden
+
+/* Spyro's sight point for the line-of-sight tests, 0x134 below his origin. */
+#define SPYRO_SIGHT_DROP 0x134
+
+/* Two rays, both ways (func_80033E40 is false when the ray hits). */
+static int CanSee(Vector3D *pA, Vector3D *pB) {
+  return func_80033E40(pA, pB) && func_80033E40(pB, pA);
+}
+
+/* A free camera spot at pPos that sees pTarget. */
+static int IsGoodSpot(Vector3D *pPos, Vector3D *pTarget) {
+  return ColSphere(pPos, 0x100, 0x100) == 0 && CanSee(pPos, pTarget);
+}
+
+/// @brief Moves the camera towards its destination in steps of at most 0x100,
+/// pushed out of geometry; then, if Spyro is out of sight, looks for a
+/// sphere position near the current one that sees him (nudged by
+/// D_8006C82C at 1x, 2x and 4x), and after 30 hidden ticks resets to the
+/// first preset that does.
+/// @note asm/nonmatchings/camera/func_80034480.s, by hand.
+void func_80034480(void) {
+  Vector3D step, original, target;
+  SphericalCoordsOffset savedSim;
+  int isFar, steps, i, pushes = 0, pushed = 0, scale, freeNudges;
+
+  VecSub(&step, &g_Camera.m_DestinationPosition, &g_Spyro.m_Position);
+  isFar = VecMagnitude(&step, 1) > 0x2000;
+  VecCopy(&original, &g_Camera.m_DestinationPosition);
+
+  VecSub(&step, &g_Camera.m_DestinationPosition, &g_Camera.m_Position);
+  steps = VecMagnitude(&step, 1) / 256 + 1;
+  if (steps >= 2) {
+    step.x /= steps;
+    step.y /= steps;
+    step.z /= steps;
+  }
+
+  /* March m_DestinationPosition from the camera to the destination, pushing
+   * it out of anything it runs into; six pushes in a row give up. */
+  VecCopy(&g_Camera.m_DestinationPosition, &g_Camera.m_Position);
+  for (i = 0; i < steps; i++) {
+    VecAdd(&g_Camera.m_DestinationPosition, &g_Camera.m_DestinationPosition, &step);
+    for (pushes = 0; pushes < 6; pushes++) {
+      if (!ColSphere(&g_Camera.m_DestinationPosition, 0x100, 0x100))
+        break;
+      VecCopy(&g_Camera.m_DestinationPosition, &g_CollisionPoint);
+      pushed = 1;
+    }
+    if (pushes == 6) {
+      VecCopy(&g_Camera.m_DestinationPosition, &original);
+      break;
+    }
+  }
+
+  g_Camera.unk_0xCC = 0;
+  if (pushes < 6) {
+    if (pushed) {
+      /* Move by what's left, ignoring jitter under 0x20 on any axis. */
+      VecSub(&original, &g_Camera.m_DestinationPosition, &g_Camera.m_Position);
+      if (Abs(original.x) < 0x20)
+        original.x = 0;
+      if (Abs(original.y) < 0x20)
+        original.y = 0;
+      if (Abs(original.z) < 0x20)
+        original.z = 0;
+      VecAdd(&g_Camera.m_Position, &g_Camera.m_Position, &original);
+    } else {
+      VecCopy(&g_Camera.m_Position, &g_Camera.m_DestinationPosition);
+      g_Camera.unk_0xCC = 1;
+    }
+  }
+
+  g_Camera.unk_0xE8 = func_80033F08(&g_Camera.m_Position);
+
+  VecCopy(&target, &g_Spyro.m_Position);
+  target.z -= SPYRO_SIGHT_DROP;
+  if (CanSee(&g_Camera.m_Position, &target)) {
+    D_800756B8 = 1;
+    if (g_Camera.unk_0xC4 != 0) {
+      if (g_Camera.m_State == 0 || g_Camera.m_State == 0x80000009) {
+        if (g_Camera.unk_0xE8 != 0)
+          g_Camera.unk_0xC4--;
+      } else {
+        g_Camera.unk_0xC4--;
+      }
+    }
+
+    /* Count the ticks Spyro is off the middle of the screen or far away. */
+    if ((int)g_Camera.m_State >= 0) {
+      func_80017AA4(&target, &g_Spyro.m_Position);
+      if ((u_int)(target.x - 0x21) >= 0x1BF || (u_int)(target.y - 0x19) >= 0xBF || isFar) {
+        g_Camera.m_SpyroOffCenterFrames++;
+        return;
+      }
+    }
+    g_Camera.m_SpyroOffCenterFrames = 0;
+    return;
+  }
+
+  /* Spyro is hidden: draw him over the scenery, no shadow. */
+  D_800756B8 = 0;
+  if (g_Spyro.m_sortingDepth < 0x7F)
+    g_Spyro.m_sortingDepth = 2;
+  D_8007AA10.unk_1c = 0;
+
+  if (++g_Camera.m_SpyroOffCenterFrames > 30) {
+    for (i = 0; i < 5; i++) {
+      g_Camera.m_SphericalPreset = &D_8006CAB4[i];
+      func_80034358();
+      if (IsGoodSpot(&g_Camera.m_DestinationPosition, &target))
+        return;
+    }
+  }
+
+  /* Try the nudges around the simulated sphere, wider each round, only
+   * those whose spot was free in the first round. */
+  savedSim = g_Camera.m_Simulation;
+  freeNudges = 0;
+  for (scale = 1; scale <= 4; scale *= 2) {
+    for (i = 0; i < 5; i++) {
+      if (scale > 1 && !((freeNudges >> i) & 1))
+        continue;
+      g_Camera.m_Sphere.m_Coords.azimuth =
+          (g_Camera.m_Simulation.m_Coords.azimuth + D_8006C82C[i].m_Coords.azimuth * scale) & 0xFFF;
+      g_Camera.m_Sphere.m_Coords.elevation =
+          (g_Camera.m_Simulation.m_Coords.elevation + D_8006C82C[i].m_Coords.elevation * scale) & 0xFFF;
+      g_Camera.m_Sphere.m_Coords.radius =
+          g_Camera.m_Simulation.m_Coords.radius + D_8006C82C[i].m_Coords.radius * scale;
+      func_80034204(&g_Camera.m_DestinationPosition);
+      VecAdd(&g_Camera.m_DestinationPosition, &g_Camera.m_DestinationPosition, g_Camera.m_Focus);
+      if (ColSphere(&g_Camera.m_DestinationPosition, 0x100, 0x100))
+        continue;
+      if (scale == 1)
+        freeNudges |= 1 << i;
+      if (CanSee(&g_Camera.m_DestinationPosition, &target)) {
+        g_Camera.unk_0xC4 = 5;
+        func_80033F08(&g_Camera.m_DestinationPosition);
+        g_Camera.m_LastSimulation.m_Coords = g_Camera.m_Simulation.m_Coords;
+        g_Camera.m_Simulation = savedSim;
+        return;
+      }
+    }
+    if (freeNudges == 0)
+      return;
+  }
 }
 #endif

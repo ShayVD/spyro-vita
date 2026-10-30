@@ -65,3 +65,6 @@ ret func_80049FAC
 # func_80048D10 (pete.c 1887): C callers pete.c 1941, balloonist.c 190; the
 # asm call (func_800314B4 80031B7C) loads v0 and calls g_UpdateParticle next.
 ret func_80048D10
+# func_80034480: the one asm call (func_80035FB4 8003730C) calls the C
+# function func_800342F8 (camera.c 167) next, which takes no arguments.
+ret func_80034480
