@@ -80,7 +80,8 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `gpu_res=N` | GPU: draw at N times the PS1's resolution (1 = the PS1's own pixels, cheapest); 0, the default, draws at the screen's own resolution |
+| `res=native` | GPU: the resolution it draws at (decisions D40). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
@@ -88,8 +89,13 @@ Files the app writes:
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
 | `interp=0` | 30 fps instead of the default 60 (`interp=1`: an extra in-between picture each tick: camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
 | `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
+| `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
+| `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
-| `menu_test=V` | tests without a controller: open the options menu at vblank V and press down, left, up, right, circle |
+| `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, left, up, right, circle |
+| `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D39) |
+| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
+| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 
 **Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen, 60 fps and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
 
@@ -105,11 +111,22 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   models, the picture upload, and waiting for the display (with the GPU this includes waiting for
   the GPU to finish).
 - With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
-  into targets, R readbacks (… replayed; Y ms), K targets`, counted over the same 300 vblanks.
+  into targets (M moves between them), R readbacks (… replayed; Y ms), K targets at W×H`, counted
+  over the same 300 vblanks. W×H is the size the GPU draws a 512×224 game buffer at (`res=`).
+  The upload and readback times are CPU time.
+- With the GPU, also `gpu N: timed frame F ms, GPU tail after the CPU G ms`: one frame in the
+  window is timed with `glFinish` before its first draw and before its swap. F is that frame from
+  its first draw to the GPU being done (CPU and GPU work overlapped); G is how long the GPU still
+  worked after the CPU had sent the whole frame. A G near 0 means the GPU keeps up at this
+  resolution; the frame is ~G ms late on screen at most, once per 5 seconds (`gpu_time=0` turns it
+  off).
 - With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
-  The upload and readback times are CPU time.
+- With `tex_filter`, `persp` or `subpixel`, also `vcache N: … per frame P projected …, Q polygons,
+  A% with every vertex found, B% of vertices found; expand E ms`. A is the share of 3D polygons
+  drawn perspective-correct (the rest are drawn as on the PS1); E is the CPU time spent preparing
+  the vertices over the 300 vblanks.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
   mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
   vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
@@ -172,9 +189,13 @@ Keep Vita3K's log level at ERROR (the default; `VITA3K_LOG=N` changes it): TRACE
   `shot_hd=1` and `gpu_readback=0`). The normal shots still work. They come from the readback
   replay, the PS1-exact picture the game sees through `StoreImage`, so they compare byte for byte
   with `gpu=0` and the host. They don't show the GPU's own output.
-- To see the GPU's picture, capture the Vita3K window while it runs:
-  `screencapture -x -o -l<window id>`, with the window id from `CGWindowListCopyWindowInfo`
-  (owner "Vita3K").
+- To see the GPU's picture, capture the Vita3K window: `CAPTURE=1 tools/vita/vita3k_run.sh …`
+  writes `win-V.png` for every shot V, the same frame as the shot. After each shot the game
+  holds (`shot_hold=`), writes `hold.req`, and waits for the `hold.ack` the script writes once
+  `tools/vita/vita3k_window.swift` has grabbed the window. (Not the log: Vita3K writes it to the
+  host in 4 KB blocks, so a log line can show up long after the game wrote it.) A failed grab
+  brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
+  count as game time, so don't take timings from capture runs.
 
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
@@ -234,6 +255,18 @@ Same host references (`run6-host-base`, `run7-host-gems`; this tree's linux32 bu
 
 `run14`–`run43` were the bring-up (decisions D35's vitaGL findings) and are kept only as records.
 
+### Texture filtering and perspective (D39, on main `3b4126a`)
+
+Gems script plus the pause and inventory screens, window captures at the same 8 vblanks in every run
+(`win-V.png`; the app holds each picture until it is captured):
+
+| Run | What | Result |
+|---|---|---|
+| `run15-vita-mbase`, `run16-vita-moff` | main's `gpu_gl.c`, and this build with all three switches off | 8/8 captures pixel-identical (0 of 2,196,480 pixels differ). Replay shots byte-identical. |
+| `run28-vita-mall2` | `tex_filter=1 persp=1 subpixel=1` | Textures smooth and straight; cut-outs keep clean edges; the waterfalls, sky, HUD, 3D font and menus are right. Replay shots byte-identical to off: the game sees the same pictures. 79–85% of Artisans' polygons perspective-correct. |
+| `run18-vita-mfilt2`, `run19-vita-mpersp`, `run20-vita-mws-all` | bilinear only; perspective and sub-pixel only; all on with widescreen and 60 fps | as expected; with the presentation passes the cache follows each pass. |
+| `run29`–`run33` | `REALTIME=1`, CPU cost | about +0.6 ms busy per vblank at 4:3 with all on, +0.2 with widescreen and 60 fps; `tex_filter` alone ~0 (D39). |
+
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
 
@@ -262,6 +295,18 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 
 **First hardware test (main `3b4126a`, user):** red and green textures after the pause menu, the picture snapping between 16:9 and 4:3, scenery popping at the edges, 20–26 fps with widescreen. Causes and fixes: `docs/presentation.md` "Fixes from the first hardware test".
 
+**Testing texture filtering and perspective** (decisions D39, all off by default), with the GPU build:
+
+1. Play a minute of Artisans as usual, then again with `tex_filter=1`, `persp=1` and `subpixel=1`
+   in `config.txt` (then `tex_filter=2` once, if there is time).
+2. In the log: `gpu: tex_filter=1 persp=1 subpixel=1 (D39)`, no shader errors, and `vcache N:`
+   lines (the share of polygons with every vertex found should be about 80%).
+3. Compare the runs' `time N:` lines (game and ot columns: the cost of persp and subpixel) and
+   pictures per 300 vblanks (the GPU cost of the filter shows as fewer pictures and more wait).
+4. Look for textures swimming or warping on the ground near Spyro (gone with `persp=1`), for
+   flickering or stretched polygons (a wrong depth would show as one), and for dark or pink
+   edges on plants and fences (there should be none).
+
 **Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30; both on by default), with the GPU build:
 
 1. `config.txt`: `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
@@ -278,3 +323,37 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    paused behind it, and switching widescreen or 60 fps takes effect when it closes. Then try
    60 fps alone (4:3) and widescreen alone, to see each one's cost in the `time` and `present`
    lines.
+
+**Testing the render resolution** (`res=`, decisions D40), with the GPU build:
+
+1. No `res=` line (the default, `res=native`): in the log, `gpu N: … 2 targets at 960x508` (16:9,
+   the default) or `726x508` (`widescreen=0`), and a `gpu N: timed frame F ms, GPU tail after the CPU G
+   ms` line every 300 vblanks. G is the GPU's cost beyond the CPU's; near 0 means the GPU keeps up.
+2. Look at the boot logos (Sony, Universal: are they there, sharp and centred?), the title's
+   PRESS START and the HUD in Artisans: letters should have hard edges, no soft or doubled rows,
+   and no light line along the left or top edge of the 4:3 picture during fades.
+3. Lose all lives once (or skip it): the frozen frame that darkens before GAME OVER should be as
+   sharp as the game was, not blocky.
+4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D40 with
+   `gpu_res=1` (softer, PS1 pixels scaled up). Compare `busy`, `P pictures` and the `timed frame`
+   line with the default.
+5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
+   and how big G gets.
+
+### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
+
+Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "old" = main
+`4ced09a` (with PR #12) and "new" = this branch, `realtime=0` unless noted. Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `run90`, `run91` | title, old vs new at `res=native` | Same frames (Spyro's pose matches); replay shots byte-identical. New: PRESS START's letters have hard row edges where old had in-between shaded rows (the 18.13-line offset), and the picture sits ~1 px differently (half a target pixel). |
+| `run92`, `run93` | title, new `res=ps1` vs old `gpu_res=1` | Window captures pixel-identical (0 of 2,088,960 differ); replay shots byte-identical. |
+| `run94`, `run95` | Artisans, pause, inventory (M2 pause script) | Replay shots and memory card byte-identical; pause and inventory backgrounds right in both (green frozen frame, sharp menu). |
+| `run96`, `run97` | game over (`poke=` lives 0, Spyro under the floor) | Replay shots byte-identical; the log shows `1 moves between them`. The frozen frame is blocky (PS1 pixels) in old and at full resolution in new. |
+| `run98`, `run99` | widescreen pause script, `res=native` vs `res=ps1` | `targets at 960x508`; the 16:9 picture fills the screen at native resolution; `res=ps1` softer as expected. |
+| `run100`–`run103` | `REALTIME=1`, 6000 vblanks of title and attract demo: native, ps1, 2, widescreen+interp | 60 vblanks/s and 134–150 pictures per 300 vblanks at every resolution. Vita3K's GPU timings are not the Vita's: hardware decides the cost. |
+| `run104` | `REALTIME=1`, boot logos, old and new | The 24-bit logos are black in the window in both builds (the replay shots show them): not caused by D37. |
+| `run106`–`run110` | after merging main #13/#14: title native and `res=ps1`, game over, title with `widescreen=1 interp=1` | Replay shots byte-identical to `run91`/`run97`; title windows pixel-identical to `run91`/`run92`; ws+60 fps: `targets at 960x508`, `presentation frames 960x544`. One capture of the game-over freeze frame (`run108`, 6504) had a 1-px light column at the picture's right edge that `run97` (same frame, same path) didn't; reruns at that moment caught Vita3K's own "compiling shaders" overlay instead (`run110`). Settled in `run111`–`run117`, below. |
+| `run111`–`run117` | captures now present the held frame again 3 times first (Vita3K could show an older swap buffer); 4:3 area 726 wide | Captures repeatable (two game-over runs pixel-identical). The light column was real: a 725-wide target never drew its last column (black at native in every capture, main's build too) and the game-over move left a stray colour there. 726 and 728 both fill it; with 726 every capture is lit to the last column, which matches the PS1 replay's column 511 at the freeze frame. Replay shots unchanged. |
+| `run119`, `run120` | gems step script, `widescreen=1 interp=1`, `menu_test=6420,6520,6620` (three widescreen toggles in Artisans), before and after flushing pending copies in `drop_target()` | No red/green textures in either (the hardware report on `3b4126a` is not reproduced); shots and windows identical between the two. |

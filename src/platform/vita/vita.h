@@ -9,6 +9,7 @@
 
 #define VITA_DATA_DIR "ux0:data/spyro"
 #define VITA_MAX_SHOTS 32
+#define VITA_MAX_POKES 16
 
 typedef struct {
   char disc_dir[256]; /* disc=  (default ux0:data/spyro) */
@@ -23,7 +24,12 @@ typedef struct {
   int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
-  int gpu_res;        /* gpu_res=N: GPU targets at N x the PS1's pixels; 0 (default): the screen's */
+  int gpu_res;        /* res= (gpu_res=): GPU targets at N x the PS1's pixels; 0 (default,
+                         res=native): the screen's; 1: res=ps1 (D40) */
+  int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */
+  int shot_hold;      /* shot_hold=MS: hold each shot's picture for a window capture */
+  struct { int vblank; uint32_t addr, value; } pokes[VITA_MAX_POKES]; /* poke=V:ADDR=VALUE */
+  int npokes;
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
@@ -32,9 +38,13 @@ typedef struct {
   int widescreen_exact; /* widescreen_exact=1: keep the original 4:3 logic in play too (a hidden
                            4:3 draw: costs CPU); attract demos always do */
   int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
-  int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
-                         sequence (tests without a controller: menu.c) */
+  int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
+                         play a fixed sequence (tests without a controller: menu.c) */
+  int nmenu_test;
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
+  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D39) */
+  int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
+  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -78,6 +88,7 @@ void vita_video_overlay(const uint8_t *rgb, int w, int h);
 void vita_video_force_redraw(void);
 void vita_gpu_overlay(const uint8_t *rgb, int w, int h); /* gpu_gl.c */
 void vita_gpu_force_redraw(void);
+void vita_gpu_repeat(void); /* the picture on screen again (shot_hold) */
 void vita_gpu_rescale(void); /* targets again at the current widescreen width */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
