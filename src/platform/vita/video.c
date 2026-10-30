@@ -1,4 +1,4 @@
-/* Vita picture (decisions D25): the PS1 VRAM is drawn by the same software
+/* Vita picture (decisions D26): the PS1 VRAM is drawn by the same software
  * rasterizer as the linux32 host (src/platform/linux32/gpu_soft.c, behind
  * PsyCross's GR_* layer); each vblank the displayed VRAM rect (15-bit, or
  * 24-bit for the boot logos; png.c's host_display_rgb) goes to an SDL2

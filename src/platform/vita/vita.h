@@ -1,4 +1,4 @@
-/* PS Vita platform layer (docs/vita-testing.md, decisions D24-D25): the calls
+/* PS Vita platform layer (docs/vita-testing.md, decisions D25-D26): the calls
  * between its parts. The game data comes from ux0:data/spyro/ (the files
  * tools/extract_disc.py writes, with manifest.json), saves go to
  * ux0:data/spyro/save/. */

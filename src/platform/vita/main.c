@@ -1,4 +1,4 @@
-/* PS Vita entry point (docs/vita-testing.md, decisions D24-D25).
+/* PS Vita entry point (docs/vita-testing.md, decisions D25-D26).
  *
  *   ux0:data/spyro/            the files tools/extract_disc.py writes from the
  *                              user's own disc (manifest.json, WAD.WAD,
@@ -18,10 +18,10 @@
  *                       top of the controller (tests, docs/vita-testing.md)
  *       wav=1           also write the audio to ux0:data/spyro/audio.wav
  *       reartouch=1     the rear touch pad's left/right half is L2/R2
- *                       (the right stick always is, decisions D26)
+ *                       (the right stick always is, decisions D27)
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
- *                       scripted runs compared with the host; D27)
+ *                       scripted runs compared with the host; D28)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -36,7 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D24) and a
+/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D25) and a
  * small main stack: the game's MIPS stack lives in the arena, and kh1's
  * 52 MiB stack failed on hardware while Vita3K took it (D7). */
 int _newlib_heap_size_user = 128 * 1024 * 1024;
@@ -46,7 +46,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 
 extern void spyro_main(void);
 
-/* tools/vita/arena_syms.py (D24): the data labels' pointers, and the data
+/* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
  * words that hold a label's PS1 address. */
 typedef struct {
   void **ptr;

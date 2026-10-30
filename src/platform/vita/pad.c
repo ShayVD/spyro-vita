@@ -4,7 +4,7 @@
  * stick also drives the d-pad (the pad is reported as digital). L2/R2 turn
  * Spyro's camera (camera.c func_80035F58): a handheld Vita has neither, so
  * the right stick's X axis is L2 (left) / R2 (right), and with reartouch=1
- * the rear touch pad's left / right half too (decisions D26). A PS TV's
+ * the rear touch pad's left / right half too (decisions D27). A PS TV's
  * DualShock L2/R2/L3/R3 work as themselves. */
 #include "vita.h"
 

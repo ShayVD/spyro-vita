@@ -52,7 +52,7 @@ extern uintptr_t g_psx_arena_base;
 /* PS1 KUSEG RAM mirror: addresses below 2 MB are the arena (every memory
  * access in translated code goes through it, tools/mips2c). */
 #ifdef __vita__
-/* Vita (decisions D24): the arena is at some 16 MB-aligned 0x8Y000000, not
+/* Vita (decisions D25): the arena is at some 16 MB-aligned 0x8Y000000, not
  * 0x80000000, so two more aliases of PS1 RAM reach it: 0x80000000 | offset
  * (the game's tag ORs onto 21/24-bit offsets) and the arena's own address
  * with bit 31 cleared (`sll 1; srl 1`). No Vita user memory is at either.
@@ -74,7 +74,7 @@ static inline __attribute__((always_inline)) u32 mips2c_kuseg(u32 a) {
 
 /* An OT tag (len << 24 | 0x80000000) that the code XORs with an arena
  * pointer to clear its top byte: XOR with the arena's top byte instead
- * (tools/mips2c hints `arena_tags`, decisions D24). 0x80 on linux32. */
+ * (tools/mips2c hints `arena_tags`, decisions D25). 0x80 on linux32. */
 #define MIPS_ARENA_TAG(k) ((u32)(k) ^ 0x80000000u ^ ((u32)g_psx_arena_base & 0xFF000000u))
 
 #define MIPS_HI(x) ((((u32)(x)) + 0x8000u) & 0xFFFF0000u)

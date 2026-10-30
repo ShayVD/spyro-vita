@@ -10,7 +10,7 @@ what the linux32 host plays. Read "What to expect" before you test.
   (MODE2/2352, one data track). The VPK contains no game data at all.
 - A computer with Python 3, to extract the files from the dump.
 - **`libshacccg.suprx` is not needed** for this build. The picture is drawn on the CPU and shown
-  through SDL2's own GXM renderer, which uses precompiled shaders (decisions D25). The vitaGL
+  through SDL2's own GXM renderer, which uses precompiled shaders (decisions D26). The vitaGL
   GPU renderer that comes later compiles shaders on the device, and will then need
   `ur0:data/libshacccg.suprx` (the usual file for vitaGL ports, extracted with ShaRKBR33D).
 
@@ -93,7 +93,7 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The left stick also works
 as the d-pad (the pad is reported as digital). **L2/R2 turn the camera: push the right stick left
 (L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's left/right half does
-the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D26).
+the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 
 ## What to expect (be direct)
 
@@ -102,8 +102,8 @@ the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D26).
   not better. The vitaGL GPU renderer, widescreen and 60 fps come later (M4).
 - **Speed on hardware (first test, 2026-10-30, build `a60dd0b`): too slow.** 14–20 vblanks per
   second in 3D scenes (60 is full speed): about 120 ms of CPU per game frame against 33 ms. Builds
-  from `D27` on keep real time instead (the game catches up, the audio stays whole), but they still
-  show fewer pictures than the PS1 until the GPU renderer lands (decisions D28).
+  from `D28` on keep real time instead (the game catches up, the audio stays whole), but they still
+  show fewer pictures than the PS1 until the GPU renderer lands (decisions D29).
 - **Audio**: the software SPU and XA music go through SDL2. In Vita3K the WAV the build writes
   (`wav=1`, the same samples SDL2 gets) is byte-identical to the linux32 host's.
 - What the linux32 host can do (M2: Artisans, saving and loading) is what this build can do at
@@ -132,7 +132,7 @@ Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
 
 | Run | What | Result |
 |---|---|---|
-| `run1-vita-title` | boot to 2400 vblanks, before the tag fix | Title reached; picture right, but 352k PsyCross "bad GP0 command" errors from the sky renderer on (decisions D24, OT tags XORed with pointers). Kept as the record of the bug. |
+| `run1-vita-title` | boot to 2400 vblanks, before the tag fix | Title reached; picture right, but 352k PsyCross "bad GP0 command" errors from the sky renderer on (decisions D25, OT tags XORed with pointers). Kept as the record of the bug. |
 | `run2-vita-title` | boot to the title, a shot every 120 vblanks | Title at ~1700 vblanks. **All 15 shots up to 1800 byte-identical** to the linux32 host's (`logs/run4-layout` on the M2 branch). No PsyCross error. ~60 vblanks/s. |
 | `run3-vita-input` | START and ✕ pressed in the Vita3K window | `pad: buttons 0008` then `4000` in the log: START opens "create save file?", ✕ creates it (`save/card0`) and shows New Game / Load Game. Window captures `vita3k-window-*.jpg` show the 4:3 picture pillarboxed in 960×544. The run ended before New Game reached a level. |
 | `run4-vita-demo` | no input, 12000 vblanks (title, attract demos in two levels) | **All 40 shots (every 300 vblanks) byte-identical** to the linux32 host's `logs/run4-demo`. No PsyCross error. 59.9 vblanks/s throughout. |
@@ -148,7 +148,7 @@ Each run was replayed on the linux32 host from the same commit with the same scr
 | `run6-vita-gems` | M2's gems script: New Game → intro → Artisans, walk to the waterfall pool, four gems | 36/36 shots and the memory card byte-identical. |
 | `run7-vita-fairy` | M2's fairy script: free Nestor, save at the fairy ("GAME SAVED") | 37/37 shots and `save/card0/BASCUS-94228SPYRO` byte-identical. |
 | `run8-vita-load` | M2's load script, starting from `run7-vita-fairy`'s card | 14/14 shots byte-identical: Load Game → Artisans with Nestor freed. |
-| `run9`–`run11` | after each speed change (D28) | still byte-identical (shots, WAV). |
+| `run9`–`run11` | after each speed change (D29) | still byte-identical (shots, WAV). |
 | `run12-vita-realtime` | `REALTIME=1`, no input, 7200 vblanks | ~60 vblanks/s kept, audio continuous (120 s for 7200 vblanks), no errors. |
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
@@ -158,4 +158,4 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 
 | Build | Who | Result |
 |---|---|---|
-| `a60dd0b` | user, 2026-10-30 | Boots, runs about 9 minutes with no errors (arena at 0x82000000). Too slow: 14–20 vblanks/s in 3D, 19–24 on the title (decisions D27, D28). |
+| `a60dd0b` | user, 2026-10-30 | Boots, runs about 9 minutes with no errors (arena at 0x82000000). Too slow: 14–20 vblanks/s in 3D, 19–24 on the title (decisions D28, D29). |

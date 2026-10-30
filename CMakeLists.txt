@@ -28,7 +28,7 @@ file(MAKE_DIRECTORY "${GEN_DIR}")
 # Flags that guard behaviour on every target (decisions D6).
 set(SPYRO_GUARD_FLAGS -funsigned-char -fno-strict-aliasing -ffp-contract=off)
 # Code generation per host: the linux32 debug build is -m32 -O1; the Vita's
-# toolchain file picks the CPU (decisions D24).
+# toolchain file picks the CPU (decisions D25).
 if(SPYRO_HOST STREQUAL "vita")
   set(SPYRO_ARCH_FLAGS)
   # GCC 15 makes these errors; the decomp's C (written for GCC 2.7.2) and

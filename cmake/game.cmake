@@ -55,7 +55,7 @@ add_custom_command(OUTPUT "${GEN_DIR}/s1_data.S"
   COMMENT "data2s: decomp asm/data -> host assembly")
 set(S1_DATA_SRC "${GEN_DIR}/s1_data.S")
 if(SPYRO_HOST STREQUAL "vita")
-  include(cmake/vita_arena.cmake) # the arena is not at 0x80000000 (D24)
+  include(cmake/vita_arena.cmake) # the arena is not at 0x80000000 (D25)
 endif()
 add_library(spyro_game_data OBJECT "${S1_DATA_SRC}")
 target_compile_options(spyro_game_data PRIVATE ${SPYRO_ARCH_FLAGS})

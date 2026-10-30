@@ -1,4 +1,4 @@
-# PS Vita build (decisions D4, D7, D24, D25): the same game, PsyCross and
+# PS Vita build (decisions D4, D7, D25, D26): the same game, PsyCross and
 # src/platform/common as linux32, plus the Vita platform layer here; packed
 # as a VPK.
 #   cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita \
@@ -18,21 +18,21 @@ set(VITA_VERSION "00.10")
 set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12" CACHE STRING "vita-mksfoex flags")
 
 # PsyX_render.h only types TextureID for its GL renderers; the software
-# rasterizer (D25) uses the same handle type.
+# rasterizer (D26) uses the same handle type.
 target_compile_definitions(psycross PUBLIC RENDERER_OGL)
 # cmake/psycross.cmake gives PsyCross no -O (the linux32 debug build runs it
 # at -O0, and its pictures are the reference); on the Vita its GTE and OT
 # walk are hot, so optimise it (no x87 excess precision on ARM).
 target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
 
-# The game's C reads its data labels through arena pointers (D24).
+# The game's C reads its data labels through arena pointers (D25).
 foreach(t spyro_game_main spyro_game_ovl spyro_game_m2c spyro_game_port)
   target_compile_options(${t} PRIVATE "SHELL:-include ${VITA_ARENA_SYMS_H}")
   add_dependencies(${t} spyro_vita_arena_syms)
 endforeach()
 
 file(GLOB VITA_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
-# The software rasterizer and display-rect reader are linux32's (D25).
+# The software rasterizer and display-rect reader are linux32's (D26).
 set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 add_executable(spyro_vita ${VITA_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c")

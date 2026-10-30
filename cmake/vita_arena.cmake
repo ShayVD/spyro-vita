@@ -1,9 +1,9 @@
 # Vita: the arena's address is only known at run time, so the game's data
 # labels become pointers set at start-up (tools/vita/arena_syms.py, decisions
-# D24). Swaps S1_DATA_SRC for the rewritten data; src/platform/vita
+# D25). Swaps S1_DATA_SRC for the rewritten data; src/platform/vita
 # force-includes the header into the game's C.
 if(NOT SPYRO_PSX_LAYOUT)
-  message(FATAL_ERROR "the Vita build needs SPYRO_PSX_LAYOUT (decisions D24)")
+  message(FATAL_ERROR "the Vita build needs SPYRO_PSX_LAYOUT (decisions D25)")
 endif()
 set(VITA_ARENA_SYMS_H "${GEN_DIR}/vita/arena_syms.h")
 add_custom_command(OUTPUT "${GEN_DIR}/vita/s1_data_vita.S" "${VITA_ARENA_SYMS_H}"

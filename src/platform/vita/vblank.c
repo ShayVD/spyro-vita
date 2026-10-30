@@ -1,4 +1,4 @@
-/* Vita time (decisions D27). By default the game's vblanks follow the
+/* Vita time (decisions D28). By default the game's vblanks follow the
  * display's own counter (sceDisplayGetVcount): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
