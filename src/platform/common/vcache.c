@@ -158,7 +158,7 @@ static void rtp_hook(int idx, int sf) {
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16);
   const int sz = (unsigned short)C2_SZ3, h = (unsigned short)C2_H;
   int64_t mx, my, mz;
-  float x, y, z, ox, oy, ex, ey, w_alt = 0;
+  float x, y, z, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
   g_vcache_stats.records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
@@ -180,8 +180,9 @@ static void rtp_hook(int idx, int sf) {
   oy = (float)C2_OFY * (1.0f / 65536);
   /* Check against the GTE's own model (truncated x, y and SZ3): off by more
    * than its rounding means SX/SY saturated. */
-  ex = ox + (float)(int32_t)(mx >> 12) * h / sz - sx;
-  ey = oy + (float)(int32_t)(my >> 12) * h / sz - sy;
+  isz = (float)h / sz;
+  ex = ox + (float)(int32_t)(mx >> 12) * isz - sx;
+  ey = oy + (float)(int32_t)(my >> 12) * isz - sy;
   if (z <= 0 || ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
     record(key, E_INVALID, 0, 0, 0, 0);
     return;
@@ -191,7 +192,8 @@ static void rtp_hook(int idx, int sf) {
     w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
-  record(key, E_VALID, ox + x * h / z - sx - 0.5f, oy + y * h / z - sy - 0.5f, z, w_alt);
+  iz = (float)h / z;
+  record(key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
 }
 
 static void poly_hook(GrVertex *vertex, short *const *xy, int n) {

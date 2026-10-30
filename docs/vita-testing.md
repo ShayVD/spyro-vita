@@ -84,6 +84,9 @@ Files the app writes:
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
+| `tex_filter=N` | GPU: smooth textures; 1: 3-point (N64 style), 2: bilinear; 0, the default, keeps the PS1's sharp texels (decisions D38) |
+| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D38) |
+| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D38) |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -98,6 +101,10 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   the GPU to finish).
 - With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
   into targets, R readbacks (… replayed; Y ms), K targets`, counted over the same 300 vblanks.
+- With `tex_filter`, `persp` or `subpixel`, also `vcache N: … per frame P projected …, Q polygons,
+  A% with every vertex found, B% of vertices found; expand E ms`. A is the share of 3D polygons
+  drawn perspective-correct (the rest are drawn as on the PS1); E is the CPU time spent preparing
+  the vertices over the 300 vblanks.
   The upload and readback times are CPU time.
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
