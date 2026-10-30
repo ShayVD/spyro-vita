@@ -88,27 +88,25 @@ add_custom_command(OUTPUT ${M2C_OUTS}
   COMMENT "mips2c: translating decomp asm to C")
 
 # The reference units go to their own directory, with an index nothing
-# compiles: m2c_index.c must not name their entry points.
+# compiles: m2c_index.c must not name their entry points. One mips2c run per
+# unit, so their calls to other hand-written functions take the C entry (a
+# batch would call its own units' register entries, <name>__m2c).
 set(M2C_REF_OUTS)
-set(M2C_REF_DEPS "${M2C_TOOL}" "${M2C_HINTS}")
 foreach(u ${M2C_REF_UNITS})
   get_filename_component(f "${u}" NAME_WE)
   string(REGEX REPLACE "^asm/" "" n "${u}")
   string(REGEX REPLACE "\\.s$" "" n "${n}")
   string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
-  list(APPEND M2C_REF_OUTS "${GEN_DIR}/mips2c-ref/m2c_${n}.c")
-  list(APPEND M2C_REF_DEPS "${S1_DIR}/${u}")
-  list(APPEND M2C_PARTIAL_DEFS "${GEN_DIR}/mips2c-ref/m2c_${n}.c"
-    "${f}=${f}_gen|${f}__m2c=${f}_gen__m2c")
-endforeach()
-if(M2C_REF_UNITS)
-  add_custom_command(OUTPUT ${M2C_REF_OUTS}
+  set(o "${GEN_DIR}/mips2c-ref/m2c_${n}.c")
+  list(APPEND M2C_REF_OUTS "${o}")
+  list(APPEND M2C_PARTIAL_DEFS "${o}" "${f}=${f}_gen|${f}__m2c=${f}_gen__m2c")
+  add_custom_command(OUTPUT "${o}"
     COMMAND "${Python3_EXECUTABLE}" "${M2C_TOOL}" --root "${S1_DIR}"
       --out-dir "${GEN_DIR}/mips2c-ref" --hints "${M2C_HINTS}"
-      --index "${GEN_DIR}/mips2c-ref/unused_index.c" ${M2C_REF_UNITS}
-    DEPENDS ${M2C_REF_DEPS}
-    COMMENT "mips2c: reference units for differential sweeps")
-endif()
+      --index "${GEN_DIR}/mips2c-ref/${f}_index.c" ${u}
+    DEPENDS "${M2C_TOOL}" "${M2C_HINTS}" "${S1_DIR}/${u}"
+    COMMENT "mips2c: ${f} as a reference for differential sweeps")
+endforeach()
 
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS} ${M2C_REF_OUTS})
 while(M2C_PARTIAL_DEFS)
