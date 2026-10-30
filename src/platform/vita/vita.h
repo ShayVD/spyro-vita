@@ -32,6 +32,7 @@ typedef struct {
   int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
   int menu_test;      /* menu_test=V: open the options menu at vblank V and play a fixed
                          sequence (tests without a controller: menu.c) */
+  int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -92,6 +93,13 @@ uint16_t vita_pad_read(void); /* the controller's buttons now (PS1 bits) */
 /* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
 void vita_audio_init(void);
 void vita_audio_close(void); /* finish audio.wav */
+extern unsigned g_vita_audio_dry, g_vita_audio_cleared; /* SDL queue empty / cut, since the last report */
+
+/* mixer.c: the SPU mix and XA decode on their own thread (D37) */
+void vita_mixer_init(void);
+void vita_mixer_vblank(void); /* once per vblank, in place of psx_spu_vblank */
+void vita_mixer_drain(void);  /* wait until everything posted is mixed */
+void vita_mixer_report(int vblank); /* "mixer" line in the log */
 
 /* prof.c: per-vblank CPU time by part ("time" lines in the log) */
 enum { PROF_GAME, PROF_OT, PROF_RASTER, PROF_SPU, PROF_PRESENT, PROF_WAIT, PROF_COUNT };

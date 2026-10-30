@@ -85,22 +85,29 @@ static void decode_sector(const unsigned char *data, int stereo) {
   }
 }
 
-void psx_xa_sector(int lba) {
+int psx_xa_accept(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   const PsxCdStream *st = psx_cd_stream();
-  unsigned char raw[PSX_CD_RAW_SECTOR];
-  int submode, coding;
   if (!(st->mode & CdlModeRT) || psx_cd_read_raw(lba, raw) != 0)
-    return;
-  submode = raw[2];
-  coding = raw[3];
-  if (!(submode & 0x04) || !(submode & 0x20)) /* audio, Form 2 */
-    return;
+    return 0;
+  if (!(raw[2] & 0x04) || !(raw[2] & 0x20)) /* audio, Form 2 */
+    return 0;
   if ((st->mode & CdlModeSF) && (raw[0] != st->file || raw[1] != st->chan))
-    return;
-  if (coding & 0x10) /* 8-bit samples */
-    return;
+    return 0;
+  if (raw[3] & 0x10) /* 8-bit samples */
+    return 0;
+  return 1;
+}
+
+void psx_xa_decode(const unsigned char raw[PSX_CD_RAW_SECTOR]) {
+  int coding = raw[3];
   s_rate = (coding & 0x04) ? 18900 : 37800;
   decode_sector(raw + 8, coding & 1);
+}
+
+void psx_xa_sector(int lba) {
+  unsigned char raw[PSX_CD_RAW_SECTOR];
+  if (psx_xa_accept(lba, raw))
+    psx_xa_decode(raw);
 }
 
 /* One 44.1 kHz stereo frame of CD input (linear interpolation). */

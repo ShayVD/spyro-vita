@@ -13,6 +13,7 @@ extern "C" {
 #define PSX_SPU_VOICES 24
 #define PSX_SPU_RATE 44100
 #define PSX_SPU_VBLANK_HZ 60 /* virtual vblank: 735 samples each */
+#define PSX_SPU_VBLANK_SAMPLES (PSX_SPU_RATE / PSX_SPU_VBLANK_HZ)
 
 enum { PSX_ENV_OFF, PSX_ENV_ATTACK, PSX_ENV_DECAY, PSX_ENV_SUSTAIN, PSX_ENV_RELEASE };
 
@@ -58,6 +59,24 @@ extern long long g_psx_spu_dropped;
 /* Moves a keyed voice on by `samples` output samples at 44100 Hz, following
  * the ADPCM block flags (loop start, loop end, repeat). */
 void psx_spu_voice_advance(PsxSpuVoice *v, unsigned int samples);
+
+/* The registers the mixer reads besides the voices'. */
+typedef struct {
+  short mvol_l, mvol_r, cd_vol_l, cd_vol_r;
+  int cd_on;                  /* SPU CD mix on and the drive not muted */
+  unsigned char cd_matrix[4]; /* CdMix val0..3 (PsxCdStream.mix) */
+} PsxSpuMixRegs;
+
+/* psx_spu_vblank() is these three: the registers now, one vblank's mix of
+ * `voice` (which it advances, decoder state too; CD input from
+ * psx_xa_next), and psx_audio_out. A platform that mixes on another thread
+ * (src/platform/vita/mixer.c) mixes copies of the voices there, and runs
+ * psx_spu_step() on g_psx_spu instead so what the game reads back (key
+ * status, envelopes) is what the mix leaves. */
+void psx_spu_mix_regs(PsxSpuMixRegs *r);
+void psx_spu_mix(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
+                 short out[PSX_SPU_VBLANK_SAMPLES * 2]);
+void psx_spu_step(void);
 
 /* Provided by the platform: the mixer's output, 44.1 kHz s16 interleaved
  * stereo, pushed once per vblank from psx_spu_vblank(). */

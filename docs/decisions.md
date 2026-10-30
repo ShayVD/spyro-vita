@@ -262,10 +262,37 @@ Record each decision with its date, what was chosen, and why.
   - In Vita3K, uploads fell from about 150 to 1–2 per 300 vblanks (screenshots' readbacks, level loads), and raster time halved (0.90 → 0.46 ms per vblank on the gems script).
   - Pictures were unchanged: demo 100/100 and gems 36/36 byte-identical to the host, and the pause and inventory screens right.
   - Expected on hardware: about 2 ms per vblank less. **Confirmed** (user, build `c40c9cf`): uploads 0 in nearly every 300-vblank window, raster 5–6 → 2.7–4 ms per vblank, busy CPU 60–93% → 43–78%, and 143–150 pictures per 300 vblanks in every gameplay window.
-- **Not done here:** widescreen and 60 fps (M4); fewer draw calls; the SPU mix on another core.
+- **Not done here:** widescreen and 60 fps (M4); fewer draw calls; the SPU mix on another core (done in D37).
 
 ### D36. Portals, exits and the balloonist: short walks from poked positions, sampled per gamestate
 - **Chosen:** two pad scripts (`tools/oracle/pads/route_portal_exit.txt`, `route_vortex_balloon.txt`) run as the pad-after script of a new game and the LEVELS OPEN cheat on both sides. The walks start from a `poke:` of Spyro's position next to the portal, the vortex ledge and the balloonist's dock. From there the game's own code runs: portal surface, vortex moby, balloonist moby, gamestates 1, 9, 10 and 12. The routes were steered on the host (`--step`, `tools/steer.py`) and made state-anchored by `tools/anchor_pad.py`. `capture.lua` samples per level and gamestate (`ORACLE_PER_STATE=1`), so the transition gamestates get their own samples.
 - **Why the pokes:** pad lines are timed in vblanks. The PS1 runs homeworlds at a variable frame time (`g_DeltaTime` 2 or 3), the host at a fixed 2, so a walk of a minute ends somewhere else in the emulator. Route A from Artisans' start missed the portal there (`logs/run7-oracle-routeA-long`). A walk of a few seconds lands the same on both sides. Steering in the emulator itself (a Lua closed loop) would remove the pokes, but this needed only one portal, one vortex and one ride.
 - **Also:** `$ORACLE_FUNCS` option `anysp`, because `func_8004F7E8` uses `$sp` as data (`docs/whole-game-host.md`).
 - **Evidence:** `docs/whole-game-host.md` "Portals, exits and the balloonist".
+
+### D37. Vita: the SPU mix and XA decode on their own core, replayed from per-vblank packets
+- **Chosen:** `src/platform/vita/mixer.c` runs the software SPU mix and the XA decode on a thread pinned to user core 1 (`sceKernelCreateThread`, `SCE_KERNEL_CPU_MASK_USER_1`, priority 0x70, ahead of the game thread's 0xA0 if they ever share a core). The game thread doesn't mix any more. Once per vblank, where it called `psx_spu_vblank()`, it now:
+  1. copies the 24 voices and the mix registers (master and CD volumes, `CdMix` matrix, mute) into a packet;
+  2. runs `psx_spu_step()` on the live SPU state;
+  3. posts the packet to a ring of 8, and waits only when all 8 are in flight.
+- **What the mixer thread does:** it replays the packets in order. It keeps its own copies of the voices, with the ADPCM decoder state (history, decoded block, previous sample), and takes everything else from each packet: registers, envelope (key off), loop address and position. A voice whose `keyon_seq` changed since the last packet is taken whole, because key on resets the decoder. Then `psx_spu_mix` → `psx_audio_out` (the SDL2 queue, and `audio.wav` with `wav=1`).
+- **Exactness:** the game reads back SPU state that the mix changes. `SpuGetKeyStatus` and `SpuGetAllKeysStatus` (`spu.c`) see a voice go to "envelope off" when its sample hits an end flag without repeat. Nothing in that depends on the samples. `psx_spu_step()` walks the same 4.12 counter steps and block flags as the mix, block by block instead of sample by sample, and leaves the decoder alone. So everything the game reads comes from the game thread, as the synchronous mix would have left it. The mixer checks that its own positions match the step's when a voice wasn't keyed on, and counts any mismatch in the log. The count was 0 in every run.
+- **The XA music** moves with the mix. libcd's `psx_xa_sector` and `psx_xa_reset` are wrapped (`-Wl,--wrap`). The game thread still reads each sector and applies the stream's file/channel filter (`psx_xa_accept`, file I/O stays on one thread). It queues the raw 2336 bytes, and the resets, in order in the next packet. The mixer decodes them (`psx_xa_decode`) before that packet's mix, so the XA FIFO in `xa.c` is only touched on the mixer thread.
+- **SPU RAM** is the only state the two threads share. `SpuWrite` and `SpuInit` are wrapped to wait until every posted packet has been mixed first ("drain"). The mixer reads RAM only. RAM is written at loads, so the waits cluster there: about 25 ms in total during boot in Vita3K, then none.
+- **Shared code:** `src/platform/common` changes only by refactoring:
+  - `libspu.c` splits `psx_spu_vblank()` into `psx_spu_mix_regs` + `psx_spu_mix` (over a voice array) + `psx_audio_out`, and adds `psx_spu_step()`.
+  - `voice_next_block` is split into position and decoder halves.
+  - `xa.c` splits `psx_xa_sector` into `psx_xa_accept` + `psx_xa_decode`.
+  - The linux32 host still calls `psx_spu_vblank()`. Its 12000-vblank WAV from this tree is byte-identical to `run6-host-base`'s.
+- **`config.txt mixer=`:** 1 (default) is the thread; 2 is the same thread with each vblank waiting for its mix (lockstep, for debugging); 0 mixes on the game thread as before. If the thread can't be created, the game thread mixes and the log says so.
+- **Pitfall found on the way:** `--wrap=psx_xa_reset` also redirects the call inside `mixer.c`. The mixer's own reset was being re-queued from the mixer thread, so the XA FIFO was never reset. The WAV diverged at vblank 438, where the intro's XA starts, and the game later hung on a slot that thread had taken. The mixer calls `__real_psx_xa_reset`.
+- **Checked in Vita3K** (`logs/run62`–`run74`, before merging main's PR #12):
+  - With `realtime=0`, the 12000-vblank demo with `wav=1` is byte-identical to the host: 100/100 shots and the 35 MB WAV, with both `gpu=1` and `gpu=0`.
+  - The gems script is also byte-identical: 36/36 shots and the memory card, in both modes.
+  - With `REALTIME=1` on the gems script, `gpu=1`: ~60 vblanks/s, and `audio.wav` holds all 8768 vblanks.
+  - Game-thread "spu" time fell from 0.47 to 0.09 ms per vblank, and busy time from 3.16 to 2.73 ms (`run74` is the branch before this change). The mixer thread took 0.4–0.6 ms per vblank (Vita3K's times).
+  - What remains on the game thread is the CD model, the XA sector reads, the step and the 2.6 KB voice copy.
+- **After merging main (PR #12, Vita widescreen and 60 fps)**, `logs/run75`–`run79`:
+  - The demo is still byte-identical in both GPU modes (shots and WAV), and so are the gems runs (shots and card).
+  - `REALTIME=1` with `widescreen=1 interp=1` on the gems script: 58.6 vblanks/s in Vita3K, the WAV holds all 8768 vblanks, game-thread `spu` is 0.15 ms per vblank and the mixer takes 0.5–0.7 ms. The audio queue ran dry 0–11 times per 300 vblanks.
+- **Expected on hardware:** most of the ~2.5 ms "spu" per vblank (D35's `c40c9cf` run) moves to core 1, and the `mixer N:` line shows it there. Not yet run on hardware.
