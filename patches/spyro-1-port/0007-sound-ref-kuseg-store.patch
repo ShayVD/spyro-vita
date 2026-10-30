@@ -1,0 +1,61 @@
+--- a/src/spu.c
++++ b/src/spu.c
+@@ -100,7 +100,7 @@
+     // Reject sound if source is out of range
+     if (maxDist < length) {
+       if (pSoundRefOut != 0)
+-        *pSoundRefOut = 0x7f;
++        *PSX_KUSEG(pSoundRefOut) = 0x7f; // [port] see the store below
+       return 0x7f;
+     }
+     break;
+@@ -255,7 +255,12 @@
+ 
+   if (pSoundRefOut != 0) {
+ 
+-    *pSoundRefOut = voice_slot;
++    // [port] Callers pass a pointer to a byte to update, and one passes the
++    // byte's value instead (the life basket, moby_update.c, "Bug:"). On the
++    // PS1 that small integer is a KUSEG address, so the stores here and
++    // through m_SoundRefPtr land in low RAM; PSX_KUSEG sends them to the same
++    // bytes of the arena and leaves the pointer value as it is.
++    *PSX_KUSEG(pSoundRefOut) = voice_slot;
+ 
+     // If the sound loops, flag it (But only if we have a reference out? Lol)
+     if (g_Spu.m_SoundDefinitions[pSoundId].m_LoopAddr != 0)
+@@ -276,7 +281,7 @@
+       // couldn't get it to match
+ 
+       if (g_Spu.m_ActiveSounds[pVoice].m_SoundRefPtr != nullptr) {
+-        *g_Spu.m_ActiveSounds[pVoice].m_SoundRefPtr = 127;
++        *PSX_KUSEG(g_Spu.m_ActiveSounds[pVoice].m_SoundRefPtr) = 127;
+       }
+ 
+       g_Spu.m_ActiveSounds[pVoice].m_Flags = 0x40;
+@@ -301,7 +306,7 @@
+       toStop |= 1 << i;
+ 
+       if (g_Spu.m_ActiveSounds[i].m_SoundRefPtr != nullptr) {
+-        *g_Spu.m_ActiveSounds[i].m_SoundRefPtr = 127;
++        *PSX_KUSEG(g_Spu.m_ActiveSounds[i].m_SoundRefPtr) = 127;
+       }
+ 
+       g_Spu.m_ActiveSounds[i].m_SoundRefPtr = nullptr;
+@@ -356,7 +361,7 @@
+ 
+         // Sound finished playing
+         if (g_Spu.m_ActiveSounds[i].m_SoundRefPtr != nullptr) {
+-          *g_Spu.m_ActiveSounds[i].m_SoundRefPtr = 0x7F;
++          *PSX_KUSEG(g_Spu.m_ActiveSounds[i].m_SoundRefPtr) = 0x7F;
+         }
+ 
+         // Mark sound slot as free
+@@ -420,7 +425,7 @@
+ 
+           // Sound finished playing
+           if (g_Spu.m_ActiveSounds[i].m_SoundRefPtr != nullptr) {
+-            *g_Spu.m_ActiveSounds[i].m_SoundRefPtr = 0x7F;
++            *PSX_KUSEG(g_Spu.m_ActiveSounds[i].m_SoundRefPtr) = 0x7F;
+           }
+ 
+           // Mark sound slot as free

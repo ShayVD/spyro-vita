@@ -194,3 +194,21 @@ python3 tools/oracle/route_pairs.py logs/run18-host-routeA-merged logs/run13-ora
 - **Traces can't be compared tick for tick here**, as they are for the attract demos. The PS1 drops frames while Spyro glides into a level and the host doesn't (D31); PCSX-Redux `a5d621af` has no CPU overclock setting that would stop it. `tools/oracle/level_diff.py` lines visits up by tick and shows where they part, typically on the first ticks.
 - **The late-game save was only checked on the host.** The emulator's fresh memory card is unformatted, and the scripted presses don't leave it a save slot. So its fairy scene is short (185 vblanks against the host's 434, as in M2's `cap5-fairy`) and nothing is written. Comparing a save across both sides needs a formatted card image for the oracle.
 - **Not covered by the tour:** gameplay beyond standing at each level's entrance. Portal entries, EXIT LEVEL, vortex exits and the balloonist are covered by the routes above, once each: one portal, one vortex, one ride, with pokes before the walks.
+
+## Stray accesses: stores and loads through small integers (2026-10-30)
+
+A Vita hardware crash (main `d67e6fc`) turned out to be the second original-game bug of this kind, after Icy Flight's. Destroying Artisans' life basket passes a sound channel's value as a pointer. Fix and reasoning: decisions D42, `patches/spyro-1-port/0007`. The host tours never hit it because Spyro stands idle: the store only fires while another sound holds voice 0. Repro on the host: `logs/run27-basket/repro2` (Spyro poked next to the basket, flame, damage flag poked). Fixed: `logs/run32-verify/basket`.
+
+The sweep for more of the same kind:
+- **Source:** `(T *)(int)` casts and "Bug:" comments in the decomp's C. The basket's is the only int-to-pointer cast; the other two "bug" comments are about vectors, not pointers.
+- **Emulator:** `capture.lua ORACLE_WATCH=80000000:10000:rw` logs every load and store by game code below PS1 address 0x10000 (`watch.txt`). Runs: the whole-game tour (`logs/run29-oracle-watch-tour`), the title and both attract demos (`logs/run30-oracle-watch-demo`), the basket (`logs/run28-oracle-basket`). Entries before vblank ~1400 come from the BIOS shell and PsyQ's start-up, before the game's `main`.
+- **Stores** by game code after start-up: only the basket's two, `PlaySound` at `0x80056184` and the stop at `0x800565BC`, both to address 1.
+- **Loads** by game code after start-up: 14 sites, all in hand-written asm:
+  - r_moby `8001F1F4`, `80022B20`, `800209A0`;
+  - r_cyclorama `8004ED50`, `800503A0`;
+  - collision `8004DB28`, `8004E520`, `8004CB68`, `8004B7C8`, `8004E558`;
+  - moby_lists `800522EC`; r_particles `800581A4`; r_environment `8002B3C4`, `8002B478`.
+
+  Each is the load in the delay slot of the `beqz`/`beq` that ends a list walk. When the pointer is NULL the branch is taken and the loaded value is dead. On the port they go through `MIPS_KUSEG` and read the scratchpad rather than PS1 kernel RAM; every replay sample still matches, though these exits run on every call. No C code loads below 0x10000.
+- **Not covered:** paths none of these runs took (anything Spyro must do to an object, beyond the basket). The tour stands Spyro still in each level.
+

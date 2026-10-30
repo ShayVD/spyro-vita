@@ -265,23 +265,45 @@ for line in (os.getenv('ORACLE_LABELS') and io.lines(os.getenv('ORACLE_LABELS'))
     end)
   end
 end
--- $ORACLE_WATCH="ADDR:LEN" (hex): log stores into that RAM range made by
--- game code (PC in 0x80010000-0x801FFFFF, not the BIOS), with the PC and vblank.
--- For game bugs that store through small integers (KUSEG addresses).
+-- $ORACLE_WATCH="ADDR:LEN[:MODE]" (hex; MODE w, the default, r or rw): log
+-- stores (and with r, loads) in that RAM range made by game code (PC in
+-- 0x80010000-0x801FFFFF, not the BIOS), with the PC and vblank. For game
+-- bugs that go through small integers or NULL (KUSEG addresses: low RAM on
+-- the PS1, unmapped on the host and the Vita). watch.txt lists each
+-- (access, PC, address) once, with its count and where it first happened.
 local watch = os.getenv('ORACLE_WATCH')
+local watched, watch_order = {}, {}
 if watch then
-  local wa, wl = watch:match('^(%x+):(%x+)$')
-  wa, wl = tonumber(wa, 16), tonumber(wl, 16)
+  local wa, wl, mode = watch:match('^(%x+):(%x+):?(%a*)$')
+  wa, wl, mode = tonumber(wa, 16), tonumber(wl, 16), mode ~= '' and mode or 'w'
   local nlog = 0
-  bps[#bps + 1] = PCSX.addBreakpoint(wa, 'Write', wl, 'oracle watch', function(address, width)
-    local pc = PCSX.getRegisters().pc
-    if pc >= 0x80010000 and pc < 0x80200000 and nlog < 200 then
-      nlog = nlog + 1
-      print(string.format('oracle: watch store %08x width %d pc %08x vblank %d gamestate %d level %d',
-        address, width, pc, vblank, ffi.cast('int32_t*', mem + 0x757D8)[0], level_now()))
+  local function hook(kind)
+    return function(address, width)
+      local pc = PCSX.getRegisters().pc
+      if pc < 0x80010000 or pc >= 0x80200000 then return true end
+      local key = string.format('%s %08x %08x', kind, pc, address)
+      local w = watched[key]
+      if w then w.n = w.n + 1 return true end
+      watched[key] = { n = 1, first = string.format('width %d vblank %d gamestate %d level %d', width, vblank,
+        ffi.cast('int32_t*', mem + 0x757D8)[0], level_now()) }
+      watch_order[#watch_order + 1] = key
+      if nlog < 200 then
+        nlog = nlog + 1
+        print(string.format('oracle: watch %s %s', key, watched[key].first))
+      end
+      return true
     end
-    return true
-  end)
+  end
+  if mode:find('w') then bps[#bps + 1] = PCSX.addBreakpoint(wa, 'Write', wl, 'oracle watch w', hook('store')) end
+  if mode:find('r') then bps[#bps + 1] = PCSX.addBreakpoint(wa, 'Read', wl, 'oracle watch r', hook('load')) end
+end
+local function write_watch()
+  if not watch then return end
+  local f = assert(io.open(out .. '/watch.txt', 'w'))
+  for _, key in ipairs(watch_order) do
+    f:write(string.format('%s count %d first %s\n', key, watched[key].n, watched[key].first))
+  end
+  f:close()
 end
 
 local function write_labels()
@@ -474,6 +496,7 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
   if vblank >= to then
     if trace then trace:close() end
     write_labels()
+    write_watch()
     if not funcs then PCSX.quit(0) return end
     local f = assert(io.open(out .. '/summary.txt', 'w'))
     for _, st in ipairs(state) do f:write(string.format('%s %d\n', st.name, st.n)) end
