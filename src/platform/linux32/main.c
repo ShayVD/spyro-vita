@@ -8,7 +8,8 @@
  *         [--pad-after FILE] [--peek ADDR:N]...
  *         [--widescreen | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
- *         [--out960] [--present-stats | --present-dirty] [--vcache]
+ *         [--interp-budget US] [--out960 | --present-native]
+ *         [--present-stats | --present-dirty] [--vcache]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -28,11 +29,15 @@
  *   too (gameplay can differ). --interp: 60 fps, an extra frame between ticks
  *   with camera, Spyro, mobys, their animation frames and the particles
  *   blended; --interp-no-anim: transforms only; --interp-camera: camera only.
+ *   --interp-budget US: skip the in-between frame while the last tick's game
+ *   CPU time plus one would pass US (on the host, qemu CPU time).
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
+ *   --present-native: the presentation frames as drawn, 512x240 (to compare
+ *   with the Vita's shots).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
  * --vcache: record the GTE's projections in the vertex cache the Vita's
- *   persp=/subpixel= use (decisions D36) and log its counters at exit. The
+ *   persp=/subpixel= use (decisions D38) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
@@ -64,8 +69,8 @@ static void usage(void) {
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]...\n"
           "             [--widescreen | --widescreen-logic] "
-          "[--interp | --interp-no-anim | --interp-camera] [--out960] [--present-stats]\n"
-          "             [--vcache]\n"
+          "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
+          "             [--out960] [--present-stats] [--vcache]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -93,9 +98,9 @@ static void present_report(void) {
            "(+%lld in VSync waits), passes %lld (%lld passes), snapshot %lld",
            s->ticks, s->us_update / t, (s->us_logic - s->us_vsync) / t,
            s->us_vsync / t, s->us_pass / t, s->passes, s->us_snapshot / t);
-  host_log("present: interp frames %lld, skipped %lld, 2D narrowed %lld, "
-           "SPU writes dropped %lld",
-           s->interp_frames, s->skipped_interp, s->squeezed_2d, s->spu_dropped);
+  host_log("present: interp frames %lld, skipped %lld (%lld for the budget), "
+           "2D narrowed %lld, SPU writes dropped %lld", s->interp_frames,
+           s->skipped_interp, s->budget_skips, s->squeezed_2d, s->spu_dropped);
   host_log("present: snapshot %lld bytes copied per tick (in and out)",
            s->snapshot_bytes / t);
   host_log("present: animation tracks blended %lld, kept %lld; particles "
@@ -240,8 +245,13 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--interp-camera") == 0) {
       g_present.interp = 1;
       g_present.interp_mobys = g_present.interp_anim = 0;
+    } else if (strcmp(a, "--interp-budget") == 0) {
+      TAKE();
+      g_present.interp_budget_us = to_int(val);
     } else if (strcmp(a, "--out960") == 0) {
       g_host_opts.out960 = 1;
+    } else if (strcmp(a, "--present-native") == 0) {
+      g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
     } else if (strcmp(a, "--present-dirty") == 0) {
@@ -287,7 +297,7 @@ int main(int argc, char **argv) {
   }
   if (!g_host_opts.disc_dir)
     usage();
-  if (port_present_active())
+  if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
   atexit(present_report);
   atexit(vcache_report);

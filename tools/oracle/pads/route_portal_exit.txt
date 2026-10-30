@@ -1,0 +1,71 @@
+# Route A, Artisans: walk into Stone Hill's portal (gamestate 1 with its
+# transition, g_HasLevelTransition = 1), then pause and take EXIT LEVEL
+# (gamestate 10, GS_ExitLevel, and the transition back home). The pad-after
+# script of a new game and `--tour levels` / ORACLE_TOUR=levels (LEVELS OPEN).
+# A poke puts Spyro on the lawn 6,000 units before the portal (Spyro's x, y,
+# z at 0x80078A58; the PS1 runs Artisans at a variable frame time, so a long
+# walk from the start doesn't replay the same in the emulator); from there
+# on he walks and jumps in, and everything is the game's own code.
+# Steered on the host in logs/run9-step-portal, made state-anchored by
+# tools/anchor_pad.py; docs/whole-game-host.md.
+@gs=0,level=10 +53 poke:80078a58=00016f3d
+@gs=0,level=10 +53 poke:80078a5c=0000c829
+@gs=0,level=10 +53 poke:80078a60=00001c20
+@gs=0,level=10 +83 up
+@gs=0,level=10 +87 up+right
+@gs=0,level=10 +95 up
+@gs=0,level=10 +107 up+right
+@gs=0,level=10 +119 up
+@gs=0,level=10 +131 up+right
+@gs=0,level=10 +139 up
+@gs=0,level=10 +147 up+right
+@gs=0,level=10 +159 up
+@gs=0,level=10 +171 up+right
+@gs=0,level=10 +179 up+left
+@gs=0,level=10 +191 up
+@gs=0,level=10 +195 up+right
+@gs=0,level=10 +203 up+left
+@gs=0,level=10 +211 up
+@gs=0,level=10 +259 up+left
+@gs=0,level=10 +263 up
+@gs=0,level=10 +271 up+left
+@gs=0,level=10 +275 up
+@gs=0,level=10 +299 up+left
+@gs=0,level=10 +303 up
+@gs=0,level=10 +311 up+left
+@gs=0,level=10 +315 up
+@gs=0,level=10 +339 up+left
+@gs=0,level=10 +343 up
+@gs=0,level=10 +351 up+left
+@gs=0,level=10 +355 up
+@gs=0,level=10 +379 up+left
+@gs=0,level=10 +383 up
+@gs=0,level=10 +391 up+left
+@gs=0,level=10 +395 up
+@gs=0,level=10 +433 none
+@gs=0,level=10 +1033 right
+@gs=0,level=10 +1041 up
+@gs=0,level=10 +1081 none
+@gs=0,level=10 +1681 up+cross
+@gs=0,level=10 +1693 up
+@gs=0,level=10 +1733 none
+@gs=1,level=10 +0 none
+@gs=1,level=11 +0 none
+@gs=9,level=11 +0 none
+@gs=0,level=11 +0 none
+@gs=0,level=11 +311 start
+@gs=2,level=11 +0 start
+@gs=2,level=11 +5 none
+@gs=2,level=11 +65 down
+@gs=2,level=11 +71 none
+@gs=2,level=11 +85 down
+@gs=2,level=11 +91 none
+@gs=2,level=11 +105 down
+@gs=2,level=11 +111 none
+@gs=2,level=11 +125 cross
+@gs=10,level=11 +0 cross
+@gs=10,level=11 +5 none
+@gs=1,level=11 +0 none
+@gs=1,level=10 +0 none
+@gs=0,level=10 +0 none
+@gs=0,level=10 +343 none

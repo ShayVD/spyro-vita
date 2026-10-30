@@ -31,13 +31,27 @@
  *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
  *                       (glReadPixels) instead of replaying the draws in the
  *                       software rasterizer (default 1)
+ *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
+ *                       game logic is unchanged; docs/presentation.md, D30)
+ *       interp=0        30 fps instead of the default 60: interp=1 adds an
+ *                       in-between frame per tick (camera, Spyro, mobys,
+ *                       animation, particles); 2: no animation blending;
+ *                       3: camera only
+ *                       (widescreen, interp and interp_budget can also be
+ *                       set in the game: hold SELECT and press START; the
+ *                       menu writes them back here)
+ *       interp_budget=MS  skip the in-between frame while the game's CPU
+ *                       time per tick would pass MS (default 26; 0: never)
+ *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
+ *                       their own thread; 2 that thread, but each vblank waits
+ *                       for its mix; 0 the game thread, as before
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 3-point (N64 style), 2 bilinear (default 0: off;
- *                       decisions D36)
+ *                       decisions D38)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
- *                       the GTE projected (D36)
+ *                       the GTE projected (D38)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
- *                       sub-pixel positions (D36)
+ *                       sub-pixel positions (D38)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -59,7 +73,8 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1};
+                        .gpu = 1, .gpu_readback = 1, .widescreen = 1, .interp = 1,
+                        .interp_budget = 26, .mixer = 1};
 
 extern void spyro_main(void);
 
@@ -139,8 +154,18 @@ static void read_config(void) {
       g_vita_opts.gpu_dump = atoi(v);
     else if (!strcmp(line, "gpu_readback"))
       g_vita_opts.gpu_readback = atoi(v);
+    else if (!strcmp(line, "mixer"))
+      g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
+    else if (!strcmp(line, "widescreen"))
+      g_vita_opts.widescreen = atoi(v);
+    else if (!strcmp(line, "interp"))
+      g_vita_opts.interp = atoi(v);
+    else if (!strcmp(line, "interp_budget"))
+      g_vita_opts.interp_budget = atoi(v);
+    else if (!strcmp(line, "menu_test"))
+      g_vita_opts.menu_test = atoi(v);
     else if (!strcmp(line, "tex_filter"))
       g_vita_opts.tex_filter = atoi(v);
     else if (!strcmp(line, "persp"))
@@ -204,6 +229,7 @@ int main(int argc, char **argv) {
     vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
     sceKernelExitProcess(1);
   }
+  vita_present_init();
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     sceKernelExitProcess(1);

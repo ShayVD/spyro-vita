@@ -7,8 +7,11 @@
  * line fires that many vblanks after g_Gamestate and g_LevelId first match
  * (either may be left out), counting from when the line before it was
  * applied; consecutive lines with the same condition share one anchor. Same
- * syntax and meaning as capture.lua's ORACLE_PAD. --pad-after FILE runs once
- * the --tour is done. Port 2 is empty. */
+ * syntax and meaning as capture.lua's ORACLE_PAD. In place of the buttons a
+ * line may say poke:ADDR=VALUE (hex): it writes that word of PS1 RAM when it
+ * fires and leaves the buttons as they were (test set-ups such as putting
+ * Spyro somewhere, docs/whole-game-host.md). --pad-after FILE runs once the
+ * --tour is done. Port 2 is empty. */
 #include "host.h"
 #include "psx_arena.h"
 
@@ -24,6 +27,8 @@ typedef struct {
   int anchored;  /* an "@gs=G,level=L +N" line */
   int gs, level; /* its condition, -1 = any */
   uint16_t mask; /* pressed buttons, active-high */
+  int poke;      /* a poke:ADDR=VALUE line: no button change */
+  uint32_t addr, value;
 } PadEvent;
 
 typedef struct {
@@ -109,7 +114,14 @@ static int load(PadScript *ps, const char *path) {
       return -1;
     }
     e.vblank = v;
-    if (host_pad_parse(btn, &e.mask) != 0) {
+    if (strncmp(btn, "poke:", 5) == 0) {
+      if (sscanf(btn + 5, "%x=%x", &e.addr, &e.value) != 2) {
+        host_log("pad: %s:%d: expected poke:ADDR=VALUE in '%s'", path, lineno, btn);
+        fclose(f);
+        return -1;
+      }
+      e.poke = 1;
+    } else if (host_pad_parse(btn, &e.mask) != 0) {
       host_log("pad: %s:%d: unknown button in '%s'", path, lineno, btn);
       fclose(f);
       return -1;
@@ -152,6 +164,12 @@ static int run(PadScript *ps, int vblank) {
       if (vblank < ps->anchor + e->vblank)
         return 0;
     }
+    if (e->poke) {
+      *(uint32_t *)PSX_ARENA(e->addr) = e->value;
+      host_log("pad: poke %08x = %08x at vblank %d", e->addr, e->value, vblank);
+      ps->next++;
+      continue;
+    }
     if (e->mask != s_mask)
       host_log("pad: buttons %04x", e->mask);
     s_mask = e->mask;
@@ -179,8 +197,14 @@ void host_pad_vblank(int vblank) {
   int tour = host_tour_vblank(vblank, done);
   if (tour >= 0)
     s_mask = (uint16_t)tour;
-  else if (done && host_tour_done())
+  else if (done && host_tour_done()) {
+    static int s_after_logged;
+    if (!s_after_logged && s_after.n) {
+      s_after_logged = 1;
+      host_log("pad: after-script starts at vblank %d", vblank);
+    }
     run(&s_after, vblank);
+  }
   if (!g_padCommEnable)
     return;
   fill(s_pad[0], 1, s_mask | s_live);

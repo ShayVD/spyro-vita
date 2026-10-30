@@ -65,6 +65,10 @@ mkdir -p "$out"
 # host; REALTIME=1 keeps the device default (vblanks follow the display).
 : > "$data/config.txt"
 [ "${REALTIME:-0}" = 1 ] || echo "realtime=0" >> "$data/config.txt"
+# Scripted runs compare with the host: the original 4:3, 30 fps picture
+# unless a config line given here turns widescreen or interp on (later
+# lines win).
+printf 'widescreen=0\ninterp=0\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
 rm -rf "$data/shots" "$data/spyro.log" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"

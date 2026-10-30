@@ -62,11 +62,10 @@ static void voice_decode(PsxSpuVoice *v) {
 }
 
 /* Past the end of cur_addr's block: follow its flags (loop end jumps to the
- * loop address; without repeat the voice goes silent). Returns 0 if it did. */
-static int voice_next_block(PsxSpuVoice *v) {
+ * loop address; without repeat the voice goes silent). Returns 0 if it did.
+ * Position only: the decoder state is voice_next_block's. */
+static int voice_next_pos(PsxSpuVoice *v) {
   unsigned char flags = g_psx_spu.ram[v->cur_addr + 1];
-  if (v->dec_valid)
-    v->prev = v->dec[BLOCK_SAMPLES - 1];
   if (flags & 1) {
     v->cur_addr = v->loop_addr & ~15u;
     if (!(flags & 2)) {
@@ -79,6 +78,14 @@ static int voice_next_block(PsxSpuVoice *v) {
     v->cur_addr = ram_addr(v->cur_addr + 16);
   }
   voice_block_start(v);
+  return 1;
+}
+
+static int voice_next_block(PsxSpuVoice *v) {
+  if (v->dec_valid)
+    v->prev = v->dec[BLOCK_SAMPLES - 1];
+  if (!voice_next_pos(v))
+    return 0;
   v->dec_valid = 0;
   return 1;
 }
@@ -130,16 +137,25 @@ static int voice_sample(PsxSpuVoice *v) {
   return out * v->envx >> 15;
 }
 
-#define VBLANK_SAMPLES (PSX_SPU_RATE / PSX_SPU_VBLANK_HZ)
+#define VBLANK_SAMPLES PSX_SPU_VBLANK_SAMPLES
 
-void psx_spu_vblank(void) {
-  static short out[VBLANK_SAMPLES * 2];
+void psx_spu_mix_regs(PsxSpuMixRegs *r) {
   const PsxCdStream *cd = psx_cd_stream();
+  r->mvol_l = g_psx_spu.mvol_l;
+  r->mvol_r = g_psx_spu.mvol_r;
+  r->cd_vol_l = g_psx_spu.cd_vol_l;
+  r->cd_vol_r = g_psx_spu.cd_vol_r;
+  r->cd_on = g_psx_spu.cd_mix && !cd->muted;
+  memcpy(r->cd_matrix, cd->mix, sizeof r->cd_matrix);
+}
+
+void psx_spu_mix(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
+                 short out[PSX_SPU_VBLANK_SAMPLES * 2]) {
   int n, i;
   for (n = 0; n < VBLANK_SAMPLES; n++) {
     int l = 0, r = 0, cl, cr;
     for (i = 0; i < PSX_SPU_VOICES; i++) {
-      PsxSpuVoice *v = &g_psx_spu.voice[i];
+      PsxSpuVoice *v = &voice[i];
       int s;
       if (v->env_phase == PSX_ENV_OFF || v->env_phase == PSX_ENV_RELEASE)
         continue;
@@ -147,22 +163,52 @@ void psx_spu_vblank(void) {
       l += s * vol_q15(v->vol_l) >> 15;
       r += s * vol_q15(v->vol_r) >> 15;
     }
-    l = l * vol_q15(g_psx_spu.mvol_l) >> 15;
-    r = r * vol_q15(g_psx_spu.mvol_r) >> 15;
+    l = l * vol_q15(reg->mvol_l) >> 15;
+    r = r * vol_q15(reg->mvol_r) >> 15;
     psx_xa_next(&cl, &cr);
-    if (g_psx_spu.cd_mix && !cd->muted) {
+    if (reg->cd_on) {
       /* CdMix routes the drive's channels (0x80 = 1.0): PsyQ's CdMix writes
        * val0..3 to the L->L, L->R, R->R, R->L registers (asm/psyq.s
        * func_80065108; psx-spx CDROM "Audio Volume"), not in the order its
        * header comments say. Then the SPU's CD input volume (0x7FFF = 1.0). */
-      int ml = (cl * cd->mix[0] + cr * cd->mix[3]) >> 7;
-      int mr = (cl * cd->mix[1] + cr * cd->mix[2]) >> 7;
-      l += ml * g_psx_spu.cd_vol_l >> 15;
-      r += mr * g_psx_spu.cd_vol_r >> 15;
+      int ml = (cl * reg->cd_matrix[0] + cr * reg->cd_matrix[3]) >> 7;
+      int mr = (cl * reg->cd_matrix[1] + cr * reg->cd_matrix[2]) >> 7;
+      l += ml * reg->cd_vol_l >> 15;
+      r += mr * reg->cd_vol_r >> 15;
     }
     out[n * 2] = (short)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
     out[n * 2 + 1] = (short)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
   }
+}
+
+/* What psx_spu_mix does to g_psx_spu's voices, without the samples: the
+ * same 4.12 counter steps and block flags, so key status and envelopes come
+ * out as a mix would leave them. The decoder fields (hist, dec, prev,
+ * dec_valid) are left alone. */
+void psx_spu_step(void) {
+  int i;
+  for (i = 0; i < PSX_SPU_VOICES; i++) {
+    PsxSpuVoice *v = &g_psx_spu.voice[i];
+    unsigned int step = v->pitch > 0x4000 ? 0x4000 : v->pitch;
+    unsigned int total;
+    if (v->env_phase == PSX_ENV_OFF || v->env_phase == PSX_ENV_RELEASE)
+      continue;
+    total = v->counter + step * VBLANK_SAMPLES;
+    while (total >= BLOCK_SAMPLES << 12) {
+      total -= BLOCK_SAMPLES << 12;
+      if (!voice_next_pos(v))
+        break;
+    }
+    if (v->env_phase != PSX_ENV_OFF)
+      v->counter = total;
+  }
+}
+
+void psx_spu_vblank(void) {
+  static short out[VBLANK_SAMPLES * 2];
+  PsxSpuMixRegs r;
+  psx_spu_mix_regs(&r);
+  psx_spu_mix(g_psx_spu.voice, &r, out);
   psx_audio_out(out, VBLANK_SAMPLES);
 }
 

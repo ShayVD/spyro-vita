@@ -62,7 +62,7 @@ static void vblank(void) {
   vita_pad_vblank();
   prof_enter(PROF_SPU);
   psx_cd_vblank();
-  psx_spu_vblank();
+  vita_mixer_vblank(); /* psx_spu_vblank on the mixer thread (mixer.c) */
   prof_leave();
   if (vsync_callback)
     vsync_callback();
@@ -91,8 +91,10 @@ static void vblank(void) {
     s_stat_v0 = v;
     s_stat_shown = s_stat_late = 0;
     prof_report(v);
+    vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);
+    vita_present_report(v);
   }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
@@ -107,6 +109,8 @@ static int real_vblanks(void) {
 
 void PsyX_WaitForTimestep(int count) {
   int target, n;
+  if (vita_menu_service())
+    s_vcount_base = -1; /* the game was paused: start counting again, no catch-up */
   if (!g_vita_opts.realtime) {
     while (count-- > 0)
       vblank();
