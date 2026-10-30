@@ -20,18 +20,21 @@ extern "C" {
 #define VREF_POLY 0x80000000u  /* built by MakeVertexTriangle/Quad */
 #define VREF_PERSP 0x40000000u /* every vertex of its polygon was found */
 #define VREF_SLOT 0x00FFFFFFu  /* entry + 1, or 0: not found or ambiguous */
+/* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
 typedef struct {
   float dx, dy; /* exact screen position - (integer SX/SY + 0.5) */
-  float w;      /* view-space depth (> 0) */
+  float w;      /* view-space depth (> 0), at the scale the polygon's other
+                   vertices use: only ratios within a polygon mean anything */
 } VCacheVert;
 
 /* 0: no hooks. 1: polygons are marked VREF_POLY (nothing is found).
  * 2: projections are recorded and looked up too. */
 void psx_vcache_enable(int mode);
 
-/* The entry a reference names; valid until the next DrawOTag returns. */
-const VCacheVert *psx_vcache_get(uint32_t ref);
+/* The vertex a reference names (1), or 0 if none; valid until the next
+ * DrawOTag returns. */
+int psx_vcache_get(uint32_t ref, VCacheVert *out);
 
 /* Counters since the last psx_vcache_stats_reset(). */
 typedef struct {

@@ -9,10 +9,26 @@
  * Spyro projects every vertex it draws through RTPS, including the midpoints
  * of subdivided near terrain (r_environment.s averages them in 3D, then
  * projects), and stores SXY2 into its prims unchanged, so the prim's
- * coordinates find the entry. Two different vertices can land on the same
- * integer pixel in one frame; that key is then ambiguous and never used.
- * Vertices whose projection the GTE clamped (IR or SX/SY saturated, divide
- * overflow) are recorded as invalid, so a polygon using them falls back too.
+ * coordinates find the entry.
+ *
+ * Depth comes with a scale. The world renderer (r_environment.s) zeroes the
+ * GTE's translation and projects camera-relative vertices, in units that
+ * differ between its passes by powers of two: the same screen point comes
+ * back with depths 4 or 16 times apart, and its near "precision" path
+ * (all three coordinates within +-256) projects single vertices with their
+ * coordinates times 16, so one polygon can mix scales. Perspective needs
+ * only the ratios of a polygon's depths, so each entry keeps up to three
+ * depths for its point that differ by a power of two, plus depth / 16 for a
+ * vertex that may be a precision one (no translation, every coordinate a
+ * multiple of 16 below 4096). poly_hook then picks, for each polygon, the
+ * depths with the smallest spread: a real polygon's depths are much closer
+ * than a factor of 4.
+ *
+ * Two different vertices at the same integer pixel in one frame (positions
+ * more than a pixel apart, or depths not a power of two apart) make that
+ * key ambiguous; it is never used. Vertices whose projection the GTE
+ * clamped (IR or SX/SY saturated, divide overflow) are recorded as invalid,
+ * so a polygon using them falls back too.
  *
  * DrawOTag: each polygon's vertices are looked up (poly_hook) while the OT
  * is parsed, which happens inside DrawOTag, before the table moves on to the
@@ -33,14 +49,17 @@
 #define VC_SIZE (1u << VC_BITS)
 #define VC_PROBE 32
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
+#define VC_DEPTHS 3
+#define VREF_DEPTH_SHIFT 24 /* which of the entry's depths (VREF bits 24-25) */
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
 
 typedef struct {
-  uint32_t key;  /* SXY2: (SY << 16) | (SX & 0xFFFF) */
-  uint32_t gen;  /* frame; an entry from another frame is empty */
-  uint32_t state;
-  VCacheVert v;
+  uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
+  uint32_t gen; /* frame; an entry from another frame is empty */
+  uint8_t state, n;
+  float dx, dy;
+  float w[VC_DEPTHS];
 } Entry;
 
 static Entry s_tab[VC_SIZE];
@@ -74,7 +93,27 @@ static Entry *find(uint32_t key, int add) {
   return NULL;
 }
 
-static void record(uint32_t key, int state, float dx, float dy, float w) {
+static inline float ratio(float a, float b) { return a > b ? a / b : b / a; }
+
+/* w as one more depth of e's point: 0 = kept (or already there), -1 = it
+ * isn't the same point at another scale. */
+static int add_depth(Entry *e, float w) {
+  float r;
+  int j, k;
+  for (j = 0; j < e->n; j++)
+    if (ratio(w, e->w[j]) <= 1.02f)
+      return 0;
+  r = ratio(w, e->w[0]);
+  for (k = 2; k <= 16; k *= 2)
+    if (fabsf(r / k - 1) <= 0.02f) {
+      if (e->n < VC_DEPTHS)
+        e->w[e->n++] = w;
+      return 0; /* a fourth scale: the polygon can still use the others */
+    }
+  return -1;
+}
+
+static void record(uint32_t key, int state, float dx, float dy, float w, float w_alt) {
   Entry *e = find(key, 1);
   if (!e) {
     g_vcache_stats.full++;
@@ -82,19 +121,27 @@ static void record(uint32_t key, int state, float dx, float dy, float w) {
   }
   if (e->state == 0) {
     e->state = state;
-    e->v.dx = dx;
-    e->v.dy = dy;
-    e->v.w = w;
+    e->dx = dx;
+    e->dy = dy;
+    e->w[0] = w;
+    e->n = 1;
+    if (state == E_VALID && w_alt > 0)
+      add_depth(e, w_alt);
     if (state == E_INVALID)
       g_vcache_stats.invalid++;
     return;
   }
-  /* The same key again: the same vertex (shared by several polygons, or a
-   * coincident one at the same depth) keeps the entry; anything else makes
-   * it unusable. */
-  if (e->state == E_VALID && state == E_VALID && fabsf(e->v.dx - dx) <= 0.25f &&
-      fabsf(e->v.dy - dy) <= 0.25f && fabsf(e->v.w - w) <= 0.01f * w)
+  if (e->state == E_INVALID && state == E_INVALID)
     return;
+  /* The same key again: the same point (shared by several polygons, or
+   * projected by another pass at another scale) keeps the entry; anything
+   * else makes it unusable. */
+  if (e->state == E_VALID && state == E_VALID && fabsf(e->dx - dx) <= 1.0f &&
+      fabsf(e->dy - dy) <= 1.0f && add_depth(e, w) == 0) {
+    if (w_alt > 0)
+      add_depth(e, w_alt);
+    return;
+  }
   if (e->state != E_AMBIGUOUS)
     g_vcache_stats.ambiguous++;
   e->state = E_AMBIGUOUS;
@@ -111,7 +158,7 @@ static void rtp_hook(int idx, int sf) {
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16);
   const int sz = (unsigned short)C2_SZ3, h = (unsigned short)C2_H;
   int64_t mx, my, mz;
-  float x, y, z, ox, oy, ex, ey;
+  float x, y, z, ox, oy, ex, ey, w_alt = 0;
 
   g_vcache_stats.records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
@@ -123,7 +170,7 @@ static void rtp_hook(int idx, int sf) {
    * projection of this vertex. */
   if (!sf || sz <= 0 || h >= 2 * sz || (mx >> 12) > 0x7FFF || (mx >> 12) < -0x8000 ||
       (my >> 12) > 0x7FFF || (my >> 12) < -0x8000) {
-    record(key, E_INVALID, 0, 0, 0);
+    record(key, E_INVALID, 0, 0, 0, 0);
     return;
   }
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
@@ -136,40 +183,71 @@ static void rtp_hook(int idx, int sf) {
   ex = ox + (float)(int32_t)(mx >> 12) * h / sz - sx;
   ey = oy + (float)(int32_t)(my >> 12) * h / sz - sy;
   if (z <= 0 || ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
-    record(key, E_INVALID, 0, 0, 0);
+    record(key, E_INVALID, 0, 0, 0, 0);
     return;
   }
+  if (!C2_TRX && !C2_TRY && !C2_TRZ && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
+      vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
+    w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
-  record(key, E_VALID, ox + x * h / z - sx - 0.5f, oy + y * h / z - sy - 0.5f, z);
+  record(key, E_VALID, ox + x * h / z - sx - 0.5f, oy + y * h / z - sy - 0.5f, z, w_alt);
 }
 
 static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
-  uint32_t ref[4], all = VREF_PERSP;
-  int i;
+  const Entry *e[4];
+  uint32_t ref[4], persp = VREF_PERSP;
+  int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
+  float best = 4.0f; /* a polygon's depths are never 4x apart */
+
   g_vcache_stats.polys++;
+  g_vcache_stats.verts += n;
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
-    Entry *e = find(key, 0);
+    const Entry *f = find(key, 0);
+    e[i] = f && f->state == E_VALID ? f : NULL;
     ref[i] = VREF_POLY;
-    if (e && e->state == E_VALID) {
-      ref[i] |= (uint32_t)(e - s_tab) + 1;
+    if (e[i]) {
+      ref[i] |= (uint32_t)(f - s_tab) + 1;
       g_vcache_stats.hits++;
     } else {
-      all = 0;
-      if (!e)
+      persp = 0;
+      if (!f)
         g_vcache_stats.miss_none++;
-      else if (e->state == E_INVALID)
+      else if (f->state == E_INVALID)
         g_vcache_stats.miss_invalid++;
       else
         g_vcache_stats.miss_ambiguous++;
     }
   }
-  g_vcache_stats.verts += n;
-  if (all)
+  /* each depth of the first vertex against the closest of every other's;
+   * the choice whose worst ratio is smallest */
+  for (c = 0; persp && c < e[0]->n; c++) {
+    float worst = 1;
+    try_pick[0] = c;
+    for (i = 1; i < n; i++) {
+      float r_best = 1e30f;
+      for (j = 0; j < e[i]->n; j++) {
+        float r = ratio(e[i]->w[j], e[0]->w[c]);
+        if (r < r_best) {
+          r_best = r;
+          try_pick[i] = j;
+        }
+      }
+      worst = r_best > worst ? r_best : worst;
+    }
+    if (worst < best) {
+      best = worst;
+      best_c = c;
+      memcpy(pick, try_pick, sizeof pick);
+    }
+  }
+  if (best_c < 0)
+    persp = 0;
+  if (persp)
     g_vcache_stats.persp++;
   for (i = 0; i < n; i++) {
-    uint32_t r = ref[i] | all;
+    uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_DEPTH_SHIFT;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
 }
@@ -185,9 +263,16 @@ static void done_hook(void) {
   }
 }
 
-const VCacheVert *psx_vcache_get(uint32_t ref) {
-  uint32_t slot = ref & VREF_SLOT;
-  return slot && slot <= VC_SIZE ? &s_tab[slot - 1].v : NULL;
+int psx_vcache_get(uint32_t ref, VCacheVert *out) {
+  uint32_t slot = ref & VREF_SLOT, d = (ref >> VREF_DEPTH_SHIFT) & 3;
+  const Entry *e;
+  if (!slot || slot > VC_SIZE)
+    return 0;
+  e = &s_tab[slot - 1];
+  out->dx = e->dx;
+  out->dy = e->dy;
+  out->w = e->w[d < e->n ? d : 0];
+  return 1;
 }
 
 void psx_vcache_enable(int mode) {

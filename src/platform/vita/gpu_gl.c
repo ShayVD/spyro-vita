@@ -916,10 +916,11 @@ static void expand(int count) {
     v1 = v1 > v0 ? v1 - 1 : v0;
     for (k = 0; k < n; k++) {
       XVertex *x = s_xbuf + i + k;
+      VCacheVert cv;
       const VCacheVert *c;
       uint32_t ref;
       memcpy(&ref, &v[k].tcx, sizeof ref);
-      c = psx_vcache_get(ref);
+      c = psx_vcache_get(ref, &cv) ? &cv : NULL;
       x->x = v[k].x;
       x->y = v[k].y;
       x->w = 1;
