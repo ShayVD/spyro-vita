@@ -396,7 +396,7 @@ Record each decision with its date, what was chosen, and why.
   - A found key gives every polygon that uses it the same exact point, and a key not found leaves the vertex at its integer position in every polygon. So polygons sharing a vertex never crack.
   - All-or-nothing per polygon would put a shared vertex at its exact point in one polygon and its integer one in the neighbour, which is a crack of up to a pixel.
   - A polygon with one integer vertex has that vertex where the PS1 draws it; that's a wobble, not a crack.
-  - A key holding different points with no depth to choose by stays integer everywhere.
+  - So the position is always the key's first candidate's, for every polygon. A key whose candidates are more than 1/8 pixel apart stays integer in every polygon, whichever candidate's depth each polygon takes for perspective. With each polygon taking its own pick's position, the waterfall showed a dashed crack: neighbours had taken points up to a pixel apart for a shared vertex (`logs/run60-vita-all-atlas`, `run64`, `run65` win-7000, also without the filter; not without `subpixel`, `logs/run61`).
 - **`bench=1`** (`src/platform/vita/bench.c`):
   - **What it does:** leave the game alone. From vblank 600 it cycles 10 option sets (native: off, `tex_filter=1`, `=2`, `persp`, `subpixel`, all with filter 1, all with filter 2; ps1: off, `tex_filter=1`, all). Each set gets 60 vblanks per round for 20 rounds, through the intro flyover, the title and both attract demos, so every set sees the same mix of scenes.
   - **What's measured:** each set's pictures per second and GPU-timed frames (every second picture; frame and tail as in D40's "timed frame"). The first 12 vblanks after a switch don't count, since a resolution change redraws the targets.

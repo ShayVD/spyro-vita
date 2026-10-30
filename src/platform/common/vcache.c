@@ -32,10 +32,11 @@
  * Sub-pixel positions are decided per key, not per polygon: a key that
  * is found gives every polygon using it the same point, and one that isn't
  * leaves it at the integer position everywhere, so polygons sharing a
- * vertex never crack apart. A key holding different points (more than a
- * pixel apart) keeps the integer position too, whichever candidate's depth
- * a polygon takes: two neighbours could pick different points, and the
- * waterfall's layered sheets showed a dashed crack when they did.
+ * vertex never crack apart. So the position is always candidate 0's, and
+ * a key whose candidates are more than 1/8 pixel apart keeps the integer
+ * position, whichever candidate's depth a polygon takes: with each
+ * polygon's own pick, neighbours took points up to a pixel apart and the
+ * waterfall showed a dashed crack.
  *
  * DrawOTag: each polygon's vertices are looked up (poly_hook) while the OT
  * is parsed, which happens inside DrawOTag, before the table moves on to the
@@ -125,12 +126,10 @@ static int add_cand(Entry *e, int16_t dx, int16_t dy, float w) {
   int j;
   for (j = 0; j < e->n; j++) {
     int ddx = e->c[j].dx - dx, ddy = e->c[j].dy - dy;
-    if (ddx <= 256 && ddx >= -256 && ddy <= 256 && ddy >= -256) {
-      if (ratio(w, e->c[j].w) <= 1.02f)
-        return 0;
-    } else {
-      e->multi = 1;
-    }
+    if (ddx > 32 || ddx < -32 || ddy > 32 || ddy < -32)
+      e->multi = 1; /* more than 1/8 pixel apart: not one point */
+    else if (ratio(w, e->c[j].w) <= 1.02f)
+      return 0;
   }
   if (e->n == VC_CANDS)
     return -1;
@@ -314,8 +313,8 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
   e = &s_tab[slot - 1];
   if (d >= e->n)
     d = 0;
-  out->dx = e->c[d].dx * (1.0f / 256);
-  out->dy = e->c[d].dy * (1.0f / 256);
+  out->dx = e->c[0].dx * (1.0f / 256); /* the same for every polygon */
+  out->dy = e->c[0].dy * (1.0f / 256);
   out->w = e->c[d].w;
   return 1;
 }
