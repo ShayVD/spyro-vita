@@ -124,3 +124,5 @@ ret func_80034480
 ret func_800357A4
 # func_80043FE4 (pete.c 1373): called only from C (pete.c 1547, 2091, 2190).
 ret func_80043FE4
+# func_80041670 (pete.c 1368): called only from C (pete.c 1920).
+ret func_80041670
