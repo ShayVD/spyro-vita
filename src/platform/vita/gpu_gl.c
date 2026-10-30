@@ -1286,7 +1286,7 @@ static void write_hd_shot(void) {
 /* Where the part of target t inside VRAM rect (x, y, w, h) goes in a
  * picture of pw x ph pixels that shows that rect: pos = pixels (x0, y0, x1,
  * y1, top row first), uv = the target's texture rect. When the picture has
- * the targets' own scale (res=native, presentation frames) the part starts on
+ * the target's own scale (res=native, presentation frames) the part starts on
  * a whole pixel and gets one pixel per target pixel, so nothing is resampled
  * (Spyro's buffers start 8 lines into the 240-line display: 18.13 of the
  * screen's 544). 0: t isn't inside the rect. */
@@ -1296,19 +1296,20 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
   int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
   int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
   float kx = (float)pw / w, ky = (float)ph / h;
-  float tx0 = (x0 - t->x) * s_sx, tx1 = (x1 - t->x) * s_sx;
-  float ty0 = (y0 - t->y) * s_sy, ty1 = (y1 - t->y) * s_sy;
+  float sx = (float)t->pw / t->w, sy = (float)t->ph / t->h; /* as drawn */
+  float tx0 = (x0 - t->x) * sx, tx1 = (x1 - t->x) * sx;
+  float ty0 = (y0 - t->y) * sy, ty1 = (y1 - t->y) * sy;
   if (x0 >= x1 || y0 >= y1)
     return 0;
   pos[0] = (x0 - x) * kx, pos[2] = (x1 - x) * kx;
   pos[1] = (y0 - y) * ky, pos[3] = (y1 - y) * ky;
-  if (kx - s_sx < 0.01f && s_sx - kx < 0.01f) {
+  if (kx - sx < 0.01f && sx - kx < 0.01f) {
     tx0 = floorf(tx0 + 0.5f);
     tx1 = x1 == t->x + t->w ? t->pw : floorf(tx1 + 0.5f);
     pos[0] = floorf(pos[0] + 0.5f);
     pos[2] = pos[0] + (tx1 - tx0);
   }
-  if (ky - s_sy < 0.01f && s_sy - ky < 0.01f) {
+  if (ky - sy < 0.01f && sy - ky < 0.01f) {
     ty0 = floorf(ty0 + 0.5f);
     ty1 = y1 == t->y + t->h ? t->ph : floorf(ty1 + 0.5f);
     pos[1] = floorf(pos[1] + 0.5f);
