@@ -89,6 +89,7 @@ typedef struct {
   int pw, ph;      /* texture size */
   GLuint tex, fbo;
   int cpu_stale;   /* drawn since s_vram last got its pixels */
+  int tex_stale;   /* s_vram changed in its rect (a clear) without an upload */
   unsigned used;   /* last use, for eviction */
   TargetLog log;
 } Target;
@@ -382,6 +383,7 @@ static void bind_fbo(GLuint fbo) {
  * first block was ever sampled.) */
 static void upload_vram(void) {
   uint64_t t0;
+  int i;
   if (!s_vram_dirty)
     return;
   t0 = now_us();
@@ -389,6 +391,8 @@ static void upload_vram(void) {
   glBindTexture(GL_TEXTURE_2D, s_vram_tex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, VW / 2, VH, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_vram);
   s_vram_dirty = 0;
+  for (i = 0; i < s_ntargets; i++)
+    s_targets[i].tex_stale = 0;
   s_st.uploads++;
   s_st.upload_us += now_us() - t0;
 }
@@ -611,13 +615,19 @@ static void sync_rect(int x, int y, int w, int h) {
   int i;
   for (i = 0; i < s_ntargets; i++) {
     Target *t = &s_targets[i];
-    if (t->cpu_stale && overlap(x, y, w, h, t->x, t->y, t->w, t->h))
+    if (!overlap(x, y, w, h, t->x, t->y, t->w, t->h))
+      continue;
+    if (t->cpu_stale)
       readback(t);
+    if (t->tex_stale) /* the GPU's VRAM texture is behind there */
+      s_vram_dirty = 1;
   }
 }
 
 static void drop_target(int i) {
   readback(&s_targets[i]);
+  if (s_targets[i].tex_stale)
+    s_vram_dirty = 1;
   glDeleteFramebuffers(1, &s_targets[i].fbo);
   glDeleteTextures(1, &s_targets[i].tex);
   log_free(&s_targets[i]);
@@ -800,7 +810,7 @@ static void sync_pages(int start, int n) {
 static int any_stale(void) {
   int i;
   for (i = 0; i < s_ntargets; i++)
-    if (s_targets[i].cpu_stale)
+    if (s_targets[i].cpu_stale || s_targets[i].tex_stale)
       return 1;
   return 0;
 }
@@ -960,6 +970,22 @@ static void pieces(int x, int y, int w, int h, void (*fn)(int, int, int, int)) {
 
 static uint16_t s_clear15; /* gl_GR_ClearVRAM's colour, for clear_targets */
 
+/* A clear inside a target (the game's per-frame background clear) needn't
+ * reach the GPU's VRAM texture: the target is cleared itself, and whatever
+ * later samples or copies from there uploads first (sync_rect). Only clears
+ * outside every target make the texture out of date. */
+static void clear_dirty(int x, int y, int w, int h) {
+  int k;
+  for (k = 0; k < s_ntargets; k++) {
+    Target *t = &s_targets[k];
+    if (x >= t->x && y >= t->y && x + w <= t->x + t->w && y + h <= t->y + t->h) {
+      t->tex_stale = 1;
+      return;
+    }
+  }
+  s_vram_dirty = 1;
+}
+
 static void clear_targets(int x, int y, int w, int h) {
   int k;
   for (k = 0; k < s_ntargets; k++) {
@@ -1001,7 +1027,7 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
     for (j = 0; j < w; j++)
       row[(x + j) & (VW - 1)] = c;
   }
-  s_vram_dirty = 1;
+  pieces(x, y, w, h, clear_dirty);
   s_gen++;
   flush_pending();
   s_clear15 = c;
