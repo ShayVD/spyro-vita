@@ -29,8 +29,8 @@ typedef struct {
 static const BenchSet k_sets[] = {
     {"4:3 native, all off, tex_cache=0", 0, 0, 0, 0, 0, 0},
     {"4:3 native, all off (tex_cache=1)", 0, 0, 0, 0, 0, 1},
-    {"4:3 native, tex_filter=1", 0, 0, 1, 0, 0, 1},
-    {"4:3 native, tex_filter=2", 0, 0, 2, 0, 0, 1},
+    {"4:3 native, tex_filter=1 (bilinear)", 0, 0, 1, 0, 0, 1},
+    {"4:3 native, tex_filter=2 (3-point)", 0, 0, 2, 0, 0, 1},
     {"4:3 native, persp=1", 0, 0, 0, 1, 0, 1},
     {"4:3 native, subpixel=1", 0, 0, 0, 0, 1, 1},
     {"4:3 native, tex_filter=1 persp subpixel", 0, 0, 1, 1, 1, 1},

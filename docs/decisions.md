@@ -420,7 +420,32 @@ Record each decision with its date, what was chosen, and why.
   - **Game unchanged:** the replay shots (what the game reads back) are byte-identical to options off.
   - **Atlas:** in Artisans, every textured triangle (~1,400 a frame) is filtered from it; 41–464 blocks are decoded per 300 vblanks; at most 464 of 1,024 blocks are in use.
   - **`bench=1`** (`logs/run66-vita-bench`): runs the 10 sets through 20 rounds and logs per-set lines at rounds 5, 10, 15 and at the end, then restores the options. Vita3K's GPU timings say nothing about the Vita's GPU.
-- **Not measured on hardware yet.** `bench=1` is for that. The target is everything on at native resolution holding 30 pictures per second in Artisans; if it doesn't, the defaults stay off and the bench lines give each option's cost.
+- **Hardware bench** (user, main `be37191`, `bench=1`, `logs/hw-be37191-bench/spyro.log` lines 498–513; pictures/s, GPU-timed frame, GPU tail):
+
+  | Set | pictures/s | frame ms | tail ms |
+  |---|---|---|---|
+  | 4:3 native, all off, `tex_cache=0` (the old default) | 22.9 | 40.6 | 27.0 |
+  | 4:3 native, all off, `tex_cache=1` | **29.7** | 25.1 | 14.5 |
+  | 4:3 native, `tex_filter=1` | 21.5 | 43.7 | 27.5 |
+  | 4:3 native, `tex_filter=2` | 20.9 | 42.1 | 29.6 |
+  | 4:3 native, `persp=1` | 25.4 | 31.0 | 16.6 |
+  | 4:3 native, `subpixel=1` | 25.9 | 30.5 | 16.1 |
+  | 4:3 native, filter 1 + persp + subpixel | 16.5 | 53.7 | 37.0 |
+  | 4:3 native, filter 2 + persp + subpixel | 15.4 | 56.5 | 38.8 |
+  | 4:3 ps1, all off, `tex_cache=0` | 29.6 | 24.4 | 13.2 |
+  | 4:3 ps1, all off, `tex_cache=1` | 29.4 | 17.9 | 6.9 |
+  | 4:3 ps1, filter 1 + persp + subpixel | 27.0 | 29.1 | 14.8 |
+  | 16:9 native, all off, `tex_cache=0` | 18.5 | 48.5 | 31.9 |
+  | 16:9 native, all off, `tex_cache=1` | **28.5** | 25.7 | 13.9 |
+  | 16:9 native, filter 1 + persp + subpixel | 21.0 | 39.7 | 23.6 |
+  | 16:9 ps1, all off, `tex_cache=0` | 34.3 | 15.1 | 3.3 |
+  | 16:9 ps1, all off, `tex_cache=1` | 33.2 | 12.5 | 1.5 |
+
+  - **`tex_cache=1` works:** at native resolution the GPU tail halves (27 → 14.5 ms at 4:3, 32 → 14 ms at 16:9), and both reach ~29–30 pictures/s. Free play at 16:9 native afterwards held 148–150 pictures per 300 vblanks, with 0–20 atlas misses per 300 vblanks.
+  - **The filter barely gained:** `tex_filter=1` at 4:3 native costs about 13 ms of GPU over the cached default (tail 27.5 vs 14.5 ms). Its 3–4 manual atlas taps a pixel, each a dependent read with its own address maths, cost about what the old decode did. D43 replaces them.
+  - **`persp`/`subpixel` alone** cost ~6 ms per timed frame, only ~2 ms of it GPU: CPU (D43).
+  - **`expand` ran with both off:** with only `tex_cache`, the vertex expansion took 210–316 ms per 300 vblanks (~1 ms per vblank), and the vcache found nothing (D43).
+  - **The atlas was near full:** 824–900 of 1,024 blocks in use at 16:9.
 
 ## 2026-10-30: the game's stray stores through small integers
 

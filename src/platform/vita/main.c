@@ -51,7 +51,8 @@
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
- *                       1 3-point (N64 style), 2 bilinear (default 0: off;
+ *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
+ *                       style, by hand, slower) (default 0: off; D43;
  *                       decisions D39)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)

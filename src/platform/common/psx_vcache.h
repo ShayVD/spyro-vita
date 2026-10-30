@@ -24,7 +24,7 @@ extern "C" {
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
 typedef struct {
-  float dx, dy; /* exact screen position - (integer SX/SY + 0.5) */
+  int16_t dx, dy; /* exact screen position - (integer SX/SY + 0.5), 1/256 pixel */
   float w;      /* view-space depth (> 0), at the scale the polygon's other
                    vertices use: only ratios within a polygon mean anything */
 } VCacheVert;

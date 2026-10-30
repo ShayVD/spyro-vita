@@ -313,8 +313,8 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
   e = &s_tab[slot - 1];
   if (d >= e->n)
     d = 0;
-  out->dx = e->c[0].dx * (1.0f / 256); /* the same for every polygon */
-  out->dy = e->c[0].dy * (1.0f / 256);
+  out->dx = e->c[0].dx; /* the same for every polygon */
+  out->dy = e->c[0].dy;
   out->w = e->c[d].w;
   return 1;
 }

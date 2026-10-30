@@ -42,7 +42,7 @@ typedef struct {
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
-  int tex_filter;     /* tex_filter=1: 3-point, 2: bilinear texture filtering (gpu=1, D39) */
+  int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43) */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
