@@ -145,7 +145,7 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `func_80059A48` | mips2c v0, unit `asm/renderers/r_shadows.s` (650 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | 3 packed-pointer rebase(s); scratchpad (12 bases); GTE via PsyCross |
 | `func_80059F8C` | mips2c v0, unit `asm/renderers/r_shadows.s` | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). | see first row of unit |
 | `func_80058D64` | mips2c v0, unit `asm/renderers/r_flame.s` (452 insns) | Oracle replay: 4/4 samples match PCSX-Redux (run8-oracle/cap3). | GTE via PsyCross |
-| `func_80033F08` | mips2c v0, unit `asm/nonmatchings/camera/func_80033F08.s` (164 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
+| `func_80033F08` | hand (M2) from `asm/nonmatchings/camera/func_80033F08.s`, src/game/camera_hand.c; replaces the mips2c v0 unit | Oracle replay of the hand C: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy), and so do all samples of its callers (func_80034480, func_800357A4, func_80035FB4); both attract demos match tick for tick. | Returns its result in v0 only (the asm leaves an angle in v1, dead at all 22 call sites: `tools/oracle/v1_live.py`). |
 | `func_80034480` | mips2c v0, unit `asm/nonmatchings/camera/func_80034480.s` (513 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
 | `func_80034CE8` | mips2c v0, unit `asm/nonmatchings/camera/func_80034CE8.s` (687 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
 | `func_800357A4` | mips2c v0, unit `asm/nonmatchings/camera/func_800357A4.s` (493 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
@@ -162,7 +162,7 @@ One entry per function translated from asm to C: function, method, how it was ve
 | `func_80043FE4` | mips2c v0, unit `asm/nonmatchings/pete/func_80043FE4.s` (3865 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
 | `func_80047B60` | mips2c v0, unit `asm/nonmatchings/pete/func_80047B60.s` (889 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
 | `func_80048D10` | mips2c v0, unit `asm/nonmatchings/pete/func_80048D10.s` (562 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
-| `func_80049FAC` | mips2c v0, unit `asm/nonmatchings/pete/func_80049FAC.s` (149 insns) | Oracle replay: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy). |  |
+| `func_80049FAC` | hand (M2) from `asm/nonmatchings/pete/func_80049FAC.s`, src/game/pete_hand.c; replaces the mips2c v0 unit | Oracle replay of the hand C: 7/7 samples match PCSX-Redux (run8-oracle/cap3, run8-oracle/cap5-fairy); both attract demos match tick for tick. | Void; v0/v1 at return are dead at every call site. |
 
 ## M2 additions
 

@@ -293,6 +293,9 @@ static const M2cEntry *find(u32 addr) {
   for (e = m2c_index; e->fn; e++)
     if (e->psx_addr == addr)
       return e;
+  for (e = m2c_hand_index; e->fn; e++) /* hand-written C replacing a unit */
+    if (e->psx_addr == addr)
+      return e;
   return NULL;
 }
 

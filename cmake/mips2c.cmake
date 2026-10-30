@@ -14,6 +14,12 @@ file(GLOB_RECURSE m2c_nonmatching RELATIVE "${S1_DIR}" CONFIGURE_DEPENDS
   "${S1_DIR}/asm/nonmatchings/*.s")
 list(SORT m2c_nonmatching)
 list(APPEND M2C_UNITS ${m2c_nonmatching})
+# Replaced by hand-written C in src/game (docs/translation-log.md); the
+# oracle replay finds them through src/game/hand_index.c.
+set(M2C_HAND
+  asm/nonmatchings/camera/func_80033F08.s
+  asm/nonmatchings/pete/func_80049FAC.s)
+list(REMOVE_ITEM M2C_UNITS ${M2C_HAND})
 
 set(M2C_OUTS)
 set(M2C_DEPS "${M2C_TOOL}" "${M2C_HINTS}")

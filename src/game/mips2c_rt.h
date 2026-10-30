@@ -25,6 +25,7 @@ typedef struct {
   u32 (*fn)(u32, u32, u32, u32); /* NAME__m2c: stack arguments already in place */
 } M2cEntry;
 extern const M2cEntry m2c_index[];
+extern const M2cEntry m2c_hand_index[]; /* hand_index.c */
 
 #if MIPS2C_REPLAY
 /* Registers r0..ra, lo, hi for the next translated call to start with, then
