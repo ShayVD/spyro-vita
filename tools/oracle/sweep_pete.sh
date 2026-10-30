@@ -1,6 +1,6 @@
 #!/bin/sh
 # Differential sweeps of func_80043FE4's hand C against its mips2c unit
-# (decisions D30; src/game/oracle_replay.c SPYRO_REPLAY_SWEEP/POKE): the
+# (decisions D33; src/game/oracle_replay.c SPYRO_REPLAY_SWEEP/POKE): the
 # samples of a capture with Spyro's state, and the words its branches depend
 # on, set to each value. Usage: tools/oracle/sweep_pete.sh CAPTURE OUTDIR
 # g_Spyro 80078A58: +78 m_State, +7C m_walkingState, +224 m_mobyInUseBySpyro,

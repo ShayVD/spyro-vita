@@ -19,6 +19,18 @@
 
 PsxSpu g_psx_spu;
 
+/* Presentation passes (src/game/present.c) re-run the game's draw for an
+ * extra picture; any sound it starts belongs to the real draw only. */
+int g_psx_spu_frozen;
+long long g_psx_spu_dropped;
+#define PASS_GUARD(...)                                                        \
+  do {                                                                         \
+    if (g_psx_spu_frozen) {                                                    \
+      g_psx_spu_dropped++;                                                     \
+      return __VA_ARGS__;                                                      \
+    }                                                                          \
+  } while (0)
+
 static unsigned int ram_addr(unsigned int a) { return a & (PSX_SPU_RAM_SIZE - 1); }
 
 static void voice_block_start(PsxSpuVoice *v) {
@@ -198,6 +210,7 @@ static void voice_set(PsxSpuVoice *v, const SpuVoiceAttr *a) {
 }
 
 void SpuSetVoiceAttr(SpuVoiceAttr *arg) {
+  PASS_GUARD();
   for (int i = 0; i < PSX_SPU_VOICES; i++)
     if (arg->voice & (1u << i))
       voice_set(&g_psx_spu.voice[i], arg);
@@ -223,6 +236,7 @@ static void voice_key_off(PsxSpuVoice *v) {
 }
 
 void SpuSetKey(int on_off, unsigned int voice_bit) {
+  PASS_GUARD();
   for (int i = 0; i < PSX_SPU_VOICES; i++) {
     if (!(voice_bit & (1u << i)))
       continue;
@@ -253,6 +267,7 @@ void SpuGetAllKeysStatus(char *status) {
 }
 
 void SpuSetVoiceVolume(int vNum, short volL, short volR) {
+  PASS_GUARD();
   if (vNum < 0 || vNum >= PSX_SPU_VOICES)
     return;
   g_psx_spu.voice[vNum].vol_l = volL;
@@ -267,6 +282,7 @@ void SpuGetVoiceVolume(int vNum, short *volL, short *volR) {
 }
 
 void SpuSetVoicePitch(int vNum, unsigned short pitch) {
+  PASS_GUARD();
   if (vNum >= 0 && vNum < PSX_SPU_VOICES)
     g_psx_spu.voice[vNum].pitch = pitch;
 }
@@ -282,6 +298,7 @@ void SpuGetVoiceEnvelope(int vNum, short *envx) {
 }
 
 void SpuSetCommonAttr(SpuCommonAttr *attr) {
+  PASS_GUARD();
   unsigned int m = attr->mask;
   if (m == 0)
     m = 0xFFFFFFFFu;
@@ -362,6 +379,7 @@ static void spu_copy(unsigned char *buf, unsigned int size, int write) {
 }
 
 unsigned int SpuWrite(unsigned char *addr, unsigned int size) {
+  PASS_GUARD(size);
   if (size > 0x7EFF0)
     size = 0x7EFF0;
   spu_copy(addr, size, 1);

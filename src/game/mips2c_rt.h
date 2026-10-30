@@ -42,6 +42,14 @@ extern u32 g_mips_sp;          /* emulated $sp between translated calls */
 extern u32 g_mips_v1;          /* $v1 of the last translated function's return */
 extern uintptr_t g_psx_arena_base;
 
+/* Widescreen presentation (src/game/present.c): r_moby's HUD models narrow
+ * their screen offset and X row too (tools/mips2c/hints.yaml `before`). */
+extern int g_present_narrow;
+u32 port_ws_hud_ofx(u32 ofx);
+u32 port_ws_hud_r11(u32 r11r12);
+#define PORT_WS_HUD_OFX(x) (g_present_narrow ? port_ws_hud_ofx(x) : (x))
+#define PORT_WS_HUD_R11(x) (g_present_narrow ? port_ws_hud_r11(x) : (x))
+
 /* $ra while no local call is active: `jr` to it returns to C. */
 #define MIPS_RA_SENTINEL 0xFFFFFFF0u
 /* lui 0x1F80: the scratchpad lives at the arena base (64 KB aligned). */

@@ -51,6 +51,9 @@ typedef struct {
 } PsxSpu;
 
 extern PsxSpu g_psx_spu;
+/* Nonzero: libspu drops every write (presentation passes, src/game/present.c). */
+extern int g_psx_spu_frozen;
+extern long long g_psx_spu_dropped;
 
 /* Moves a keyed voice on by `samples` output samples at 44100 Hz, following
  * the ADPCM block flags (loop start, loop end, repeat). */
