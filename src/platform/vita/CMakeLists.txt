@@ -58,6 +58,12 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   # there (vitasdk's linker script reads __sce_headroom), or a build whose
   # text ends just below a boundary fails "segment 1 overlaps" (D32).
   -Wl,--defsym=__sce_headroom=0x4000
+  # prof_draw.c times the update and the renderers (the "draw" lines)
+  -Wl,--wrap=GamestateUpdate,--wrap=func_800258F0,--wrap=func_8001F158
+  -Wl,--wrap=func_8001F798,--wrap=func_800208FC,--wrap=func_80020F34
+  -Wl,--wrap=func_80022A2C,--wrap=func_80023AC4,--wrap=func_80059F8C
+  -Wl,--wrap=func_80059A48,--wrap=func_80058D64,--wrap=func_80058BA8
+  -Wl,--wrap=func_800573C8,--wrap=func_80050BD0
   # prof.c times these (the "time" lines in spyro.log)
   -Wl,--wrap=DrawOTag,--wrap=DrawPrim,--wrap=GR_DrawTriangles
   -Wl,--wrap=GR_CopyVRAM,--wrap=GR_ClearVRAM,--wrap=GR_ReadVRAM

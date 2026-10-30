@@ -128,7 +128,8 @@ else()
   set(M2C_REPLAY_DEF MIPS2C_REPLAY=0)
 endif()
 target_compile_definitions(spyro_game_m2c PRIVATE ${M2C_REPLAY_DEF})
-target_include_directories(spyro_game_m2c PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
+target_include_directories(spyro_game_m2c PRIVATE "${CMAKE_SOURCE_DIR}/src/game"
+  "${PSYCROSS_DIR}/include/psx") # gtereg.h: mips2c_rt.h's inline GTE moves
 target_compile_options(spyro_game_m2c PRIVATE ${SPYRO_HOST_FLAGS} -w)
 
 file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")

@@ -137,4 +137,61 @@ unsigned int CFC2(int reg);
 }
 #endif
 
+/* The translated code moves GTE registers tens of millions of times a run,
+ * always with a constant register number. These do what PsyCross's
+ * INLINE_C.C does, register for register, but inline: for a plain register
+ * the switch folds away and the move is one load or store. The registers
+ * with more to them (IRGB/ORGB 28-29, LZCS 30, LZCR 31 on writes; FLAG 31 on
+ * control writes) still go to PsyCross. Bit-exact by construction; checked
+ * by the oracle traces and screenshots (docs/presentation.md, 60 fps cost). */
+#include <gtereg.h>
+
+static inline __attribute__((always_inline)) unsigned int m2c_mfc2(int reg) {
+  switch (reg) {
+  case 1: case 3: case 5: case 8: case 9: case 10: case 11:
+    gteRegs.CP2D.p[reg].d = (int)gteRegs.CP2D.p[reg].sw.l;
+    break;
+  case 7: case 16: case 17: case 18: case 19:
+    gteRegs.CP2D.p[reg].d = (unsigned int)gteRegs.CP2D.p[reg].w.l;
+    break;
+  case 15:
+    gteRegs.CP2D.p[reg].d = C2_SXY2;
+    break;
+  case 28: case 29:
+    return (MFC2)(reg);
+  }
+  return gteRegs.CP2D.p[reg].d;
+}
+
+static inline __attribute__((always_inline)) void m2c_mtc2(unsigned int value, int reg) {
+  switch (reg) {
+  case 15:
+    C2_SXY0 = C2_SXY1;
+    C2_SXY1 = C2_SXY2;
+    C2_SXY2 = value;
+    break;
+  case 28: case 30: case 31:
+    (MTC2)(value, reg);
+    return;
+  }
+  gteRegs.CP2D.p[reg].d = value;
+}
+
+static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, int reg) {
+  switch (reg) {
+  case 4: case 12: case 20: case 26: case 27: case 29: case 30:
+    value = (int)(short)value;
+    break;
+  case 31:
+    (CTC2)(value, reg);
+    return;
+  }
+  gteRegs.CP2C.p[reg].d = value;
+}
+
+#define MTC2(v, r) m2c_mtc2((v), (r))
+#define MFC2(r) m2c_mfc2(r)
+#define CTC2(v, r) m2c_ctc2((v), (r))
+#define CFC2(r) (gteRegs.CP2C.p[(r)].d)
+
 #endif
