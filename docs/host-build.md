@@ -62,7 +62,7 @@ tools/oracle/replay.sh $D
 python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --where gamestate=0,level=11
 ```
 
-- `capture.lua` (environment variables): `ORACLE_FUNCS`/`ORACLE_SAMPLES`/`ORACLE_GAP`/`ORACLE_FROM` sample function calls; `ORACLE_TRACE` writes the same TSV as the host's `--trace`; `ORACLE_SHOTS`/`ORACLE_SHOT_EVERY` save the display (`tools/oracle/shot2png.py`) and VRAM; `ORACLE_PAD` drives pad 1, with absolute lines shifted by `ORACLE_PAD_SHIFT` and gameplay lines anchored to the game state (`@gs=0,level=10 +71 up`). Scripts are in `tools/oracle/pads/`.
+- `capture.lua` (environment variables): `ORACLE_FUNCS`/`ORACLE_SAMPLES`/`ORACLE_GAP`/`ORACLE_FROM` sample function calls; `ORACLE_TRACE` writes the same TSV as the host's `--trace`; `ORACLE_SHOTS`/`ORACLE_SHOT_EVERY` save the display (`tools/oracle/shot2png.py`) and VRAM; `ORACLE_PAD` drives pad 1, with absolute lines shifted by `ORACLE_PAD_SHIFT` and gameplay lines anchored to the game state (`@gs=0,level=10 +71 up`). Scripts are in `tools/oracle/pads/`. `ORACLE_TOUR=11,12,...` (with `ORACLE_TOUR_STAY`) then warps from level to level with the game's level-warp cheat, and `ORACLE_PER_LEVEL=1` makes `ORACLE_SAMPLES` a per-level budget.
 - `spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]` loads each sample's entry state into the arena, the GTE and (host build only) all the registers of the call, calls the function's translated C and compares v0/v1, RAM, scratchpad and GTE registers. `--fnmap` (`tools/oracle/fnmap.py`, built by `replay.sh`) turns PS1 function pointers in the emulator's RAM into the host's functions. `SPYRO_REPLAY_NOFORK=1` runs samples in process, for gdb. `tools/oracle/ignore_ranges.txt` lists, with reasons, the RAM that isn't a function output (the asm spill area, state written by interrupt handlers, libcd's DMA'd sectors) and the functions whose return registers are dead.
 - Each run gets fresh memory cards (`$ORACLE_OUT/home`): what's on the card changes the title menu.
 - Breakpoint handles must stay referenced from a global: PCSX-Redux removes a breakpoint when Lua collects its handle.
@@ -96,3 +96,4 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
   - `cap3/trace.tsv` vs `demo-host/trace.tsv`: both attract demos identical tick for tick.
   - `intro`, `intro-host`: title intro screenshots, emulator and host.
   - `wizard6`: Wizard Peak via the level-warp cheat; MobyRotateToAngle's 5th argument (`docs/upstream-notes.md`).
+  - `cap6-tour`: level tour (`ORACLE_TOUR`, the level-warp cheat) through 30 levels, pete and camera functions; `replay.txt` 358/358 match.

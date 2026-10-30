@@ -133,6 +133,11 @@ local function pad_step(gs, level)
   end
 end
 
+-- Level ID, for per-level sample budgets ($ORACLE_PER_LEVEL=1: up to
+-- $ORACLE_SAMPLES per function in each level, not overall).
+local per_level = os.getenv('ORACLE_PER_LEVEL') == '1'
+local function level_now() return ffi.cast('int32_t*', mem + 0x7596C)[0] end
+
 local state = {}
 -- Global: PCSX-Redux removes a breakpoint when its handle is garbage collected.
 oracleBreakpoints = {}
@@ -141,13 +146,16 @@ for line in (funcs and io.lines(funcs) or function() end) do
   local a, name = line:match('^%s*(%x+)%s+(%S+)')
   if a then
     local addr = tonumber(a, 16)
-    local st = { name = name, n = 0, next = from, busy = false }
+    local st = { name = name, n = 0, next = from, busy = false, lev = {} }
     state[#state + 1] = st
     bps[#bps + 1] = PCSX.addBreakpoint(addr, 'Exec', 4, 'oracle ' .. name, function()
-      if st.busy or st.n >= samples or vblank < st.next then return true end
+      if st.busy or vblank < st.next then return true end
+      local lvl = per_level and level_now() or 0
+      if (st.lev[lvl] or 0) >= samples then return true end
       local regs = PCSX.getRegisters()
       local sp, ra, k = regs.GPR.n.sp, regs.GPR.n.ra, st.n
       st.busy, st.n, st.next = true, st.n + 1, vblank + gap
+      st.lev[lvl] = (st.lev[lvl] or 0) + 1
       local copy = dump_in(string.format('%s/%s_%d.in', out, name, k), addr, k)
       local done = false
       st.exit = PCSX.addBreakpoint(ra, 'Exec', 4, 'oracle ret ' .. name, function()
@@ -160,6 +168,42 @@ for line in (funcs and io.lines(funcs) or function() end) do
       return true
     end)
   end
+end
+
+-- Level tour ($ORACLE_TOUR="11,12,..."): once the pad script is done and
+-- Spyro is playing, stay $ORACLE_TOUR_STAY vblanks (default 300), then warp
+-- to the next level with the game's level-warp cheat: Pause, Down, Down,
+-- Cross opens the inventory, where CheatProcessLevelWarp (cheats.c) runs
+-- while g_LevelCheatActive; it takes the world digit, then the level digit
+-- (CIRCLE 0, CROSS 1, SQUARE 2, TRIANGLE 3, RIGHT 4, DOWN 5).
+local tour = {}
+for v in (os.getenv('ORACLE_TOUR') or ''):gmatch('%d+') do tour[#tour + 1] = tonumber(v) end
+local tour_stay = tonumber(os.getenv('ORACLE_TOUR_STAY') or '300')
+local digit = { [0] = 'circle', 'cross', 'square', 'triangle', 'right', 'down' }
+local tour_i, tour_t0, tour_seq, tour_at = 1, nil, nil, nil
+local function tour_step(gs, level)
+  if tour_i > #tour or padi <= #pad then return end
+  if tour_seq then
+    local t = vblank - tour_at
+    local e = tour_seq[t]
+    if e == 'cheat' then
+      ffi.cast('int32_t*', mem + 0x75880)[0] = 1 -- g_LevelCheatActive
+      ffi.cast('int32_t*', mem + 0x758EC)[0] = 0 -- cheat_HomeworldSelected
+    elseif e then
+      setpad(e)
+    end
+    if t > 400 then tour_seq = nil end
+    return
+  end
+  if gs ~= 0 then tour_t0 = nil return end
+  tour_t0 = tour_t0 or vblank
+  if vblank - tour_t0 < tour_stay then return end
+  local L = tour[tour_i]
+  print(string.format('oracle: tour leaving level %d for %d at vblank %d', level, L, vblank))
+  tour_i, tour_t0, tour_at = tour_i + 1, nil, vblank + 1 -- [0] runs next vblank
+  tour_seq = { [0] = 'start', [6] = 'none', [60] = 'down', [66] = 'none', [100] = 'down',
+    [106] = 'none', [140] = 'cross', [146] = 'none', [200] = 'cheat',
+    [220] = digit[math.floor(L / 10)], [226] = 'none', [260] = digit[L % 10], [266] = 'none' }
 end
 
 -- psx.map addresses; the rand seed is PsyQ rand()'s D_80075AC0.
@@ -190,6 +234,7 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
     f:close()
   end
   pad_step(r32(0x800757D8), r32(0x8007596C))
+  tour_step(r32(0x800757D8), r32(0x8007596C))
   if vblank % 600 == 0 then
     local taken = 0
     for _, st in ipairs(state) do taken = taken + st.n end

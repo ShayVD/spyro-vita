@@ -375,11 +375,11 @@ Order matters: each step runs before the next starts.
 - [x] **Audio:** software SPU mixer and XA decoder (`libspu.c`, `xa.c`), WAV output; `CdMix` order from the hardware registers.
 - [x] Crash demo combo disabled (D11, patch 0004). `MobyRotateToAngle`'s missing argument analysed (`upstream-notes.md`, deferred to the oracle in M4).
 - [x] Tooling: `--trace`, `--step`/`tools/step.sh`, `--poke`, `--tri-dump`, raw VRAM dumps, `tools/oracle/trace_diff.py`.
-- [x] **Oracle (PCSX-Redux, D8):** function replay 590/590 samples of 98 translated entry points match (`logs/run8-oracle/cap3`, `cap5-fairy`), covering all 11 GTE ops the asm uses; both attract demos match tick for tick; the intro geometry matches; MobyRotateToAngle's 5th argument checked at Wizard Peak. Still without a sample: 47 translation-log rows, mostly jump-only labels, functions these runs don't call, and the credits overlay.
+- [x] **Oracle (PCSX-Redux, D8):** function replay 948/948 samples of 98 translated entry points match (`logs/run8-oracle/cap3`, `cap5-fairy`, `cap6-tour` 30 levels), covering all 11 GTE ops the asm uses; both attract demos match tick for tick; the intro geometry matches; MobyRotateToAngle's 5th argument checked at Wizard Peak. Still without a sample: 47 translation-log rows, mostly jump-only labels, functions these runs don't call, and the credits overlay.
 - [x] Loading the save from the title (`logs/run7-load`: Artisans, 1 dragon).
 - [x] Collecting gems in Artisans itself: four red gems on the stone platform by the waterfall pool (`logs/run9-gems`). Supercharge isn't in Artisans (no type-4 surface).
 - [ ] Not shown by a run yet: a human playing through the whole homeworld.
-- [ ] Readable hand-written C for pete and camera (for M4's interpolation): not started.
+- [x] Readable hand-written C for pete and camera started (for M4's interpolation): `func_80033F08` (camera) and `func_80049FAC` (pete) replace their mips2c units and match the oracle. The rest continue in M3/M4.
 
 ## 10. Open questions: answered 2026-10-29
 1. **Bounty:** a decomp-based native port counts. There are no extra rules. Aim for high FPS: 60 if possible (§5).
