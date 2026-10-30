@@ -403,6 +403,7 @@ Record each decision with its date, what was chosen, and why.
   - With `tex_cache=1`, unfiltered textured prims (and, with `tex_filter`, the sprites) take the nearest texel from the atlas: one fetch, the same pixels. The atlas stores the decoded 15-bit colour exactly (k·8 in 8 bits), and the alpha says transparent, opaque or STP.
   - It needs the expanded vertex (atlas coordinates), which costs the CPU ~0.3–0.5 ms per vblank on hardware (D39's `expand` line). Blocks the atlas can't hold fall back to the VRAM decode, in runs, as with the filter.
   - `tex_cache=0` is the old path, unchanged.
+  - **Same picture** (Vita3K window captures, gems script, `logs/run78-vita-cache1` against `logs/run74-vita-cache0`): 0 differing pixels in the menus; in gameplay 4–24 of 2,088,960 pixels per frame, each off by 1–2 in one channel (float rounding of the stored colour). The first version interpolated atlas coordinates (up to 1023) and picked a neighbouring texel at 12–36 pixels a frame. Page coordinates are now interpolated as before, with the atlas offset added per triangle.
 - **`bench=1`** (`src/platform/vita/bench.c`):
   - **What it does:** leave the game alone. From vblank 600 it cycles 16 option sets, through the intro flyover, the title and both attract demos, so every set sees the same mix of scenes. Each set gets 60 vblanks per round for 12 rounds; the run ends at vblank 12120, about 3.5 minutes.
     - 4:3 native: all off with `tex_cache=0` (the old default) and `=1`; `tex_filter=1`; `=2`; `persp`; `subpixel`; all three with filter 1; with filter 2.
