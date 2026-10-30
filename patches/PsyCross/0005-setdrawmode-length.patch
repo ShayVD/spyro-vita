@@ -1,0 +1,14 @@
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -287,8 +287,10 @@
+ 		((p)->code[0] = 0xe6000000|(pbw?0x01:0)),	\
+ 		((p)->code[1] = 0)
+ 
++/* Spyro port: DR_MODE is a tag and two words (E1h, E2h), length 2 as in
++ * PsyQ; 3 made the OT walker read the next packet's tag as a GP0 command. */
+ #define setDrawMode(p, dfe, dtd, tpage, tw) 		\
+-		setlen(p, 3),					\
++		setlen(p, 2),					\
+ 		((p)->code[0] = _get_mode(dfe, dtd, tpage)),	\
+ 		((p)->code[1] = _get_tw((RECT16 *)tw))
+ 

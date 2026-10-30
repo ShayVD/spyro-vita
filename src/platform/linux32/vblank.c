@@ -69,6 +69,14 @@ void host_vblank(void) {
       snprintf(path, sizeof path, "%s/mobys-%d.tsv", g_host_opts.shot_dir, v);
       spyro_moby_dump(path);
     }
+    for (int i = 0; i < g_host_opts.npeeks; i++) {
+      char line[600];
+      int len = snprintf(line, sizeof line, "peek %08x:", g_host_opts.peeks[i].addr);
+      for (int k = 0; k < g_host_opts.peeks[i].n && len < (int)sizeof line - 10; k++)
+        len += snprintf(line + len, sizeof line - len, " %08x",
+                        *(uint32_t *)PSX_ARENA(g_host_opts.peeks[i].addr + 4 * k));
+      host_log("%s", line);
+    }
   }
   spyro_trace_vblank(v);
   host_serve_vblank(v);

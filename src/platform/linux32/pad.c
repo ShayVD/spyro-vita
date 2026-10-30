@@ -2,8 +2,15 @@
  * PadInitDirect hands us the game's buffers; each vblank we fill port 1 as a
  * digital pad (status 0, id 0x41, buttons active-low) from --pad FILE:
  *   <vblank> <button>[+<button>...] | none     # comment
- * A line's buttons hold from its vblank until the next line. Port 2 is empty. */
+ *   @gs=G,level=L +<vblanks> <buttons>         # state-anchored
+ * A line's buttons hold from its vblank until the next line. An anchored
+ * line fires that many vblanks after g_Gamestate and g_LevelId first match
+ * (either may be left out), counting from when the line before it was
+ * applied; consecutive lines with the same condition share one anchor. Same
+ * syntax and meaning as capture.lua's ORACLE_PAD. --pad-after FILE runs once
+ * the --tour is done. Port 2 is empty. */
 #include "host.h"
+#include "psx_arena.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -13,9 +20,17 @@
 extern int g_padCommEnable; /* LIBPAD.C: PadStartCom/PadStopCom */
 
 typedef struct {
-  int vblank;
+  int vblank;    /* absolute, or the offset of an anchored line */
+  int anchored;  /* an "@gs=G,level=L +N" line */
+  int gs, level; /* its condition, -1 = any */
   uint16_t mask; /* pressed buttons, active-high */
 } PadEvent;
+
+typedef struct {
+  PadEvent *ev;
+  int n, next;
+  int anchor, anchor_gs, anchor_level, anchor_set;
+} PadScript;
 
 static const struct {
   const char *name;
@@ -29,9 +44,7 @@ static const struct {
     {"square", 0x8000},
 };
 
-static PadEvent *s_events;
-static int s_nevents;
-static int s_next;
+static PadScript s_main, s_after;
 static uint16_t s_mask;
 static volatile uint16_t s_live; /* set by serve.c's thread */
 static unsigned char *s_pad[2];
@@ -60,47 +73,91 @@ int host_pad_parse(const char *text, uint16_t *mask) {
   return 0;
 }
 
-int host_pad_load(const char *path) {
+static int load(PadScript *ps, const char *path) {
   FILE *f = fopen(path, "r");
   char line[512];
-  int lineno = 0, cap = 0;
+  int lineno = 0, cap = 0, anchored = 0;
   if (!f) {
     host_log("pad: cannot open %s", path);
     return -1;
   }
   while (fgets(line, sizeof line, f)) {
-    char btn[256];
+    char btn[256], cond[128];
     int v;
-    char *hash = strchr(line, '#');
+    PadEvent e = {0, 0, -1, -1, 0};
+    char *hash = strchr(line, '#'), *p = line;
     lineno++;
     if (hash)
       *hash = 0;
-    if (sscanf(line, "%d %255s", &v, btn) != 2) {
-      char *p = line;
-      while (isspace((unsigned char)*p))
-        p++;
-      if (*p == 0)
-        continue;
+    while (isspace((unsigned char)*p))
+      p++;
+    if (*p == 0)
+      continue;
+    if (sscanf(p, "@%127s +%d %255s", cond, &v, btn) == 3) {
+      char *tok;
+      e.anchored = anchored = 1;
+      for (tok = strtok(cond, ","); tok; tok = strtok(NULL, ",")) {
+        if (sscanf(tok, "gs=%d", &e.gs) != 1 && sscanf(tok, "level=%d", &e.level) != 1) {
+          host_log("pad: %s:%d: unknown condition '%s'", path, lineno, tok);
+          fclose(f);
+          return -1;
+        }
+      }
+    } else if (sscanf(p, "%d %255s", &v, btn) != 2) {
       host_log("pad: %s:%d: expected '<vblank> <buttons>'", path, lineno);
       fclose(f);
       return -1;
     }
-    if (s_nevents == cap) {
-      cap = cap ? cap * 2 : 64;
-      s_events = realloc(s_events, cap * sizeof *s_events);
-    }
-    s_events[s_nevents].vblank = v;
-    if (host_pad_parse(btn, &s_events[s_nevents].mask) != 0) {
+    e.vblank = v;
+    if (host_pad_parse(btn, &e.mask) != 0) {
       host_log("pad: %s:%d: unknown button in '%s'", path, lineno, btn);
       fclose(f);
       return -1;
     }
-    s_nevents++;
+    if (ps->n == cap) {
+      cap = cap ? cap * 2 : 64;
+      ps->ev = realloc(ps->ev, cap * sizeof *ps->ev);
+    }
+    ps->ev[ps->n++] = e;
   }
   fclose(f);
-  qsort(s_events, s_nevents, sizeof *s_events, cmp_event);
-  host_log("pad: %d events from %s", s_nevents, path);
+  if (!anchored) /* absolute-only scripts may be in any order */
+    qsort(ps->ev, ps->n, sizeof *ps->ev, cmp_event);
+  host_log("pad: %d events from %s", ps->n, path);
   return 0;
+}
+
+int host_pad_load(const char *path) { return load(&s_main, path); }
+int host_pad_load_after(const char *path) { return load(&s_after, path); }
+
+/* Apply the script's lines that are due; 1 once all are applied. */
+static int run(PadScript *ps, int vblank) {
+  int gs = (int)*(uint32_t *)PSX_ARENA(0x800757D8u);    /* g_Gamestate */
+  int level = (int)*(uint32_t *)PSX_ARENA(0x8007596Cu); /* g_LevelId */
+  while (ps->next < ps->n) {
+    PadEvent *e = &ps->ev[ps->next];
+    if (!e->anchored) {
+      if (e->vblank > vblank)
+        return 0;
+    } else {
+      if (!ps->anchor_set || e->gs != ps->anchor_gs || e->level != ps->anchor_level) {
+        if ((e->gs >= 0 && e->gs != gs) || (e->level >= 0 && e->level != level))
+          return 0;
+        ps->anchor_set = 1;
+        ps->anchor_gs = e->gs;
+        ps->anchor_level = e->level;
+        ps->anchor = vblank;
+        host_log("pad: anchor gs=%d level=%d at vblank %d", e->gs, e->level, vblank);
+      }
+      if (vblank < ps->anchor + e->vblank)
+        return 0;
+    }
+    if (e->mask != s_mask)
+      host_log("pad: buttons %04x", e->mask);
+    s_mask = e->mask;
+    ps->next++;
+  }
+  return 1;
 }
 
 static void fill(unsigned char *p, int connected, uint16_t mask) {
@@ -118,12 +175,12 @@ static void fill(unsigned char *p, int connected, uint16_t mask) {
 }
 
 void host_pad_vblank(int vblank) {
-  while (s_next < s_nevents && s_events[s_next].vblank <= vblank) {
-    if (s_events[s_next].mask != s_mask)
-      host_log("pad: buttons %04x", s_events[s_next].mask);
-    s_mask = s_events[s_next].mask;
-    s_next++;
-  }
+  int done = run(&s_main, vblank);
+  int tour = host_tour_vblank(vblank, done);
+  if (tour >= 0)
+    s_mask = (uint16_t)tour;
+  else if (done && host_tour_done())
+    run(&s_after, vblank);
   if (!g_padCommEnable)
     return;
   fill(s_pad[0], 1, s_mask | s_live);

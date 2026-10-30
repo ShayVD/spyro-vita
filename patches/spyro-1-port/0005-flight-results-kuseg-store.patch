@@ -1,0 +1,14 @@
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -26523,7 +26523,9 @@
+             props->m_0x04[i]->m_RenderRadius = 0;
+           }
+           if (props->m_0x64.m_ResultMobys[i] != 0) {
+-            props->m_0x64.m_ResultMobys[i]->m_RenderRadius = 0;
++            // [port] m_ResultMobys[4..7] alias fields.m_ObjectiveClasses
++            // (class IDs): the PS1 stores this byte through the KUSEG mirror
++            PSX_KUSEG(props->m_0x64.m_ResultMobys[i])->m_RenderRadius = 0;
+           }
+         }
+       }
+\ No newline at end of file

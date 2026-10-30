@@ -384,6 +384,17 @@ Order matters: each step runs before the next starts.
 - [ ] Not shown by a run yet: a human playing through the whole homeworld.
 - [x] Readable hand-written C for pete and camera started (for M4's interpolation): `func_80033F08` (camera) and `func_80049FAC` (pete) replace their mips2c units and match the oracle. The rest continue in M3/M4.
 
+## 9c. Whole game on the host (2026-10-30, groundwork for M4)
+
+Details, per-level table and log paths: `docs/whole-game-host.md`.
+
+- [x] Every level overlay (10-64) loaded, played and drawn on the linux32 host in one run, by the game's level-warp cheat, then both endings (cutscenes 2 and 3) with their credits and the credits cheat (`logs/run21-host-whole`). The same tour in PCSX-Redux (`logs/run14-oracle-tour`, decisions D30): a screenshot pair per level, no missing geometry.
+- [x] Function replay over the whole game: 3,707 of 3,707 completed samples match (two captures, every level, both endings, the credits overlay). The 47 rows without a sample after M2 are sampled or explained in `docs/translation-log.md`.
+- [x] Fixed: Icy Flight's results crash (game bug kept by the decomp: a store through class IDs, patch `spyro-1-port/0005`, proven against the emulator's own store); the credits overlay's buffer base (mips2c `Terminator_*` declarations); PsyCross's `setDrawMode` length (patch `PsyCross/0005`).
+- [x] A save made after both endings (every level visited, every homeworld open, 99 lives) loads (`logs/run21-host-whole`, `logs/run23-host-load`).
+- [ ] Not shown: finishing the game by playing it. The endings are entered the way the game's own moby code enters them (D30); beating Gnasty Gnorc and collecting every gem with pad scripts is M4 work. Traces can't be compared tick for tick outside the attract demos, because the PS1 drops frames and the host doesn't (D30).
+- [ ] Not reached by the tour: the level-exit and balloonist gamestates (10, 12) and the functions only they call (`docs/translation-log.md`).
+
 ## 10. Open questions: answered 2026-10-29
 1. **Bounty:** a decomp-based native port counts. There are no extra rules. Aim for high FPS: 60 if possible (§5).
 2. **m2c:** allowed, as an offline tool (§7.2).

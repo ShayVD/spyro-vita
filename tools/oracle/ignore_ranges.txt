@@ -32,6 +32,21 @@
 # PadVSync (src/gamepad.c) also writes the whole of g_Pad (0xA4 bytes:
 # held/down/released, sticks, buffered inputs) when not in demo mode.
 80077378 8007741C g_Pad
+# The pads' receive buffers, filled by libpad's interrupt-driven transfer:
+# g_PadBuffer (PadInitDirect's first buffer, initialization.c:82; a 32-byte
+# PadBuffer) and libpad's own per-port buffer D_80075C88 (set up in
+# asm/psyq.s 8006B0E0, 0x48 bytes up to D_80075CD0). Seen changing during
+# func_80017E98's long greyscale loop (logs/run14-oracle-tour).
+800786A0 800786C0 g_PadBuffer
+80075C88 80075CD0 D_80075C88
+# The memory-card library (PsyQ libcard: it builds "bu00:" names from
+# D_800121C0): event flags D_80075B2C-D_80075B3C, set to 1 by its event
+# handlers (asm/psyq.s 80067E0C-80067E24), and per-port state D_80075C08
+# that its dispatcher (80068FC8) hands to the callbacks in D_80075C48. Seen
+# changing during func_800258F0 while the title checks the cards
+# (logs/run14-oracle-tour, vblank 4524).
+80075B2C 80075B40 D_80075B2C
+80075C08 80075C48 D_80075C08
 #
 # Functions whose v1 at return is dead at every call site ("v1 NAME"):
 # ColMoby returns int in v0; its callers (func_8003FE40 80040810, 8004085C,
@@ -45,12 +60,49 @@ v1 func_800522C0
 # (1438, 1444).
 ret func_8002F3E4
 ret func_800314B4
+# The credits overlay's update and draw functions are void, declared and
+# called as such from C (src/gamestates/update.c:1405/1459, draw.c:2648/2707).
+ret func_credits_8007AA50
+ret func_credits_8007BFD0
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that
 # pointer and its counters (D_80075148..D_8007516C).
 80075148 80075170 libcd read state
 dma 80075150
+# A read the emulator still has in flight when the call returns (the credits
+# overlay's CDLoadAsync): g_CdState, g_CDReadTime, g_CDMaxReadTime. The host
+# finishes reads inside CdRead (D17), so the destination and the flags that
+# CDReadDone clears differ until the emulator's read ends
+# (src/game/oracle_replay.c, "cdread").
+cdread 80076B90 8007588C 800756E0
+#
+# libgpu's packet caches inside the game's DB pair (g_DB, 2 x 0x84 bytes):
+# each DRAWENV's dr_env (+0x1C, 64 bytes), which PsyQ's PutDrawEnv rebuilds
+# from the DRAWENV fields and PsyCross's doesn't keep in RAM (it draws from
+# the fields, which are compared). Seen as the GP0(02h) clear colour in the
+# credits draw (func_credits_8007BFD0).
+80076EFC 80076F3C g_DB[0].draw.dr_env
+80076F80 80076FC0 g_DB[1].draw.dr_env
+# VSync(-1) timestamps the draw code keeps for frame pacing
+# (D_80075950.pre/.post, src/gamestates/draw.c:856-863): they record when the
+# emulator's vblanks came, not what the call computed.
+80075950 80075958 D_80075950 (VSync times)
+#
+# PsyQ's own data (psx.map: psyq.data 800730BC-80075264, psyq.sbss
+# 80075640-80075668, psyq.bss 80075978-80075EF8): the port replaces the PsyQ
+# libraries with C (PsyCross, src/platform/common/libcd.c, libspu.c), whose
+# state isn't in this RAM, so these words change in the emulator when a
+# sampled call goes into a library (CdRead, DrawSync) or an interrupt runs,
+# and never on the host. No translated asm writes them: its only reference
+# into PsyQ data is the read-only sqrt table D_80074B84 (math.s and others),
+# compared. Also compared: PsyQ rand()'s seed D_80075AC0, which the host
+# keeps there (rand_psyq.c).
+800730BC 80074B84 psyq.data
+80074D04 80075264 psyq.data
+80075640 80075668 psyq.sbss
+80075978 80075AC0 psyq.bss
+80075AC4 80075EF8 psyq.bss
 # Hand-written C (src/game/*_hand.c) returns only v0. func_80033F08's v1
 # is dead at all 22 asm call sites (tools/oracle/v1_live.py: 20 write v1
 # first; at 80036FD0 and 80034728 another call comes first), and C callers

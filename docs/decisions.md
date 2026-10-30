@@ -143,3 +143,14 @@ Record each decision with its date, what was chosen, and why.
   - `PCSX.GPU.takeScreenShot()` throws under `-no-ui` on 24-bit frames. Dump VRAM with `getVRAM()` instead.
   - Redux commits `mtc2`/`ctc2`/`lwc2` and GPR loads after the next instruction. So at a breakpoint, the move or load in the slot just before it is still pending. `oracle.lua` replays those into its "before" snapshots.
 - **Vblank numbering** counts from reset, so it includes the BIOS boot (~900 vblanks before the game's main loop). It is not aligned with the host's count yet.
+
+## 2026-10-30: whole game on the host (groundwork for M4)
+
+*Numbering:* D25–D29 are taken by the M3 (Vita) branch, so this section starts at D30.
+
+### D30. The whole-game check: a level tour by the game's own cheats, on both sides
+- **Chosen:** the host's `--tour` (`src/platform/linux32/tour.c`) and the oracle's `ORACLE_TOUR` (`tools/oracle/capture.lua`) play the same script. After a new game, each entry is a level reached with the game's level-warp cheat from the inventory (`CheatProcessLevelWarp`, cheats.c; world 6 needs LEFT for the digit 6), or the credits, LEVELS OPEN or 99 LIVES cheat typed in the inventory, or an ending. `--pad-after` / `ORACLE_PAD_AFTER` then frees Nestor and saves at the fairy.
+- **Endings by poke:** `end2` and `end3` write what the game's own moby code writes when Gnasty Gnorc is beaten (moby_update.c, Gnasty state 9: cutscene 2, then `InitCreditsSequence(0)`) and when Spyro enters Gnasty's Loot's vortex with 14000 gems (moby 217: cutscene 3, then the full credits). Beating Gnasty or collecting every gem with a pad script isn't practical; from the cutscene on, the code that runs is the game's own.
+- **Flight levels:** the tour stays at most 60 vblanks in x5 levels. Left alone, Spyro flies into the water there and drowns about 240 vblanks after arriving, and the flight results keep interrupting the warp.
+- **What compares, and what can't:** function samples replay exactly (as in M2). The per-vblank game-state traces can't be matched tick for tick outside the attract demos: the PS1 drops frames (`g_DeltaTime` 3 or 4), the host never does, so Spyro's glide into each level integrates differently (positions apart by up to ~60 units after 300 vblanks). PCSX-Redux `a5d621af` has no CPU overclock setting that would remove the drops. So each level is compared by function replay, by a screenshot from each side taken when the tour leaves it (`tools/oracle/tour_pairs.py`), and by the visit and sequence lengths in the traces (`tools/oracle/tour_report.py`).
+- **Evidence:** `docs/whole-game-host.md`.

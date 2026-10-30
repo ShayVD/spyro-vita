@@ -4,12 +4,17 @@
  *         [--log FILE] [--cd-latency TICKS] [--save DIR] [--wav FILE]
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
- *         [--poke V:ADDR=VALUE]...
- *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]
+ *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
+ *         [--pad-after FILE] [--peek ADDR:N]...
+ *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
- *   translated C and compare (src/game/oracle_replay.c); no disc needed.
+ *   translated C and compare (src/game/oracle_replay.c); --disc only for
+ *   samples that read the CD.
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
+ * --peek: log N words of PS1 RAM from hex ADDR with every shot.
+ * --tour: after the pad script, visit levels with the level-warp cheat, run
+ *   the credits or an ending (src/platform/linux32/tour.c).
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
  * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
  *   every shot, and DIR/now.tsv at every --step stop.
@@ -25,6 +30,10 @@
 #include <string.h>
 
 extern void spyro_main(void);
+/* libcd (PsyQ signatures) and the game's read callback (cd.c) */
+typedef void (*CdlCB)(unsigned char, unsigned char *);
+CdlCB CdReadCallback(CdlCB func);
+void CDReadDone(unsigned char intr, unsigned char *result);
 
 static void usage(void) {
   fprintf(stderr,
@@ -35,7 +44,9 @@ static void usage(void) {
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
-          "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]\n");
+          "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
+          "             [--peek ADDR:N]...\n"
+          "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
 
@@ -48,7 +59,7 @@ static int to_int(const char *s) {
 }
 
 int main(int argc, char **argv) {
-  const char *pad = NULL, *replay = NULL, *only = NULL, *ignore = NULL, *fnmap = NULL;
+  const char *pad = NULL, *pad_after = NULL, *replay = NULL, *only = NULL, *ignore = NULL, *fnmap = NULL;
   int i, cd_latency = 0, serve_port = 0;
   for (i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -120,6 +131,22 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--peek") == 0) {
+      unsigned addr;
+      int n;
+      TAKE();
+      if (g_host_opts.npeeks == 8 || sscanf(val, "%x:%d", &addr, &n) != 2 || n < 1 ||
+          n > 64 || addr < 0x80000000u || addr + 4u * n > 0x80200000u)
+        usage();
+      g_host_opts.peeks[g_host_opts.npeeks].addr = addr;
+      g_host_opts.peeks[g_host_opts.npeeks++].n = n;
+    } else if (strcmp(a, "--tour") == 0) {
+      TAKE();
+      if (host_tour_set(val) != 0)
+        usage();
+    } else if (strcmp(a, "--tour-stay") == 0) {
+      TAKE();
+      host_tour_set_stay(to_int(val));
     } else if (strcmp(a, "--tri-dump") == 0) {
       TAKE();
       g_host_opts.tri_dump = to_int(val);
@@ -128,6 +155,9 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;
+    } else if (strcmp(a, "--pad-after") == 0) {
+      TAKE();
+      pad_after = val;
     } else if (strcmp(a, "--save") == 0) {
       TAKE();
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
@@ -144,11 +174,23 @@ int main(int argc, char **argv) {
   }
   if (replay) {
     psx_arena_init();
+    /* With --disc, CD reads made inside a sampled call (the credits overlay's
+     * CDLoadSync) read the disc; without, they never complete. The game's
+     * read callback (cd.c, set at start-up) is libcd state on the host, not
+     * RAM, so the replay sets it as the game does. */
+    if (g_host_opts.disc_dir) {
+      if (psx_cd_open(g_host_opts.disc_dir) != 0)
+        return 1;
+      psx_cd_set_read_latency(0); /* no vblanks here: reads end inside CdRead */
+      CdReadCallback(CDReadDone);
+    }
     return spyro_replay(replay, only, ignore, fnmap) == 0 ? 0 : 1;
   }
   if (!g_host_opts.disc_dir)
     usage();
   if (pad && host_pad_load(pad) != 0)
+    return 1;
+  if (pad_after && host_pad_load_after(pad_after) != 0)
     return 1;
 
   if (serve_port && host_serve_start(serve_port) != 0)

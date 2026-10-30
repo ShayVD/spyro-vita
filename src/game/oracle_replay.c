@@ -7,7 +7,10 @@
  * stack below the entry $sp, which is the callee's scratch), the scratchpad
  * and the GTE registers. Each sample runs in a child process, so one that
  * crashes is reported and the rest still run (SPYRO_REPLAY_NOFORK=1 runs
- * them in process instead, for gdb).
+ * them in process instead, for gdb; SPYRO_REPLAY_DUMP=FILE writes the host's
+ * RAM after each call to FILE, for offline diffs with --only). A sample
+ * still running after SPYRO_REPLAY_TIMEOUT seconds (default 60) is stopped
+ * by SIGALRM and reported as a crash with signal 14.
  *
  * Output: one line per sample, then the differing words of failures:
  *   NAME K vblank PASS|FAIL|CRASH v0 emu/host v1 emu/host ram N ignored N
@@ -80,8 +83,23 @@ static u32 s_dma[8];
 static int s_ndma;
 static struct {
   u32 lo, hi;
-} s_dyn[8];
+} s_dyn[16];
 static int s_ndyn;
+
+/* "cdread STATE READTIME MAXTIME": the game's CdState (cd.h) and read
+ * timers. When the emulator has a read in flight as the call returns
+ * (CDLoadAsync; m_IsReading at +40 still set), its destination (m_OutBuf at
+ * +12, m_Size sectors at +4) isn't loaded yet there, while the host's libcd
+ * finishes reads inside CdRead (D17). When one is in flight at entry, the
+ * emulator's CD interrupt finishes it during the call (CDReadDone), the
+ * replay's never. Either way that range, m_IsReading and the timers that
+ * CDReadDone clears are not compared. */
+static u32 s_cdread[3];
+
+static void dyn(u32 lo, u32 hi) {
+  if (s_ndyn < (int)(sizeof s_dyn / sizeof *s_dyn))
+    s_dyn[s_ndyn].lo = lo, s_dyn[s_ndyn++].hi = hi;
+}
 
 static int ignored(u32 a) {
   int i;
@@ -100,8 +118,21 @@ static void dma_ranges(const Snap *in, const Snap *out) {
   for (i = 0; i < s_ndma; i++) {
     u32 off = s_dma[i] - 0x80000000u;
     u32 lo = *(const u32 *)(in->ram + off), hi = *(const u32 *)(out->ram + off);
-    if (hi > lo && hi - lo <= 0x10000u)
-      s_dyn[s_ndyn].lo = lo, s_dyn[s_ndyn++].hi = hi;
+    if (hi > lo && hi - lo <= 0x80000u) /* the credits load 0x60000 bytes at once */
+      dyn(lo, hi);
+  }
+  if (s_cdread[0]) {
+    const u8 *st = out->ram + (s_cdread[0] - 0x80000000u);
+    const u8 *st_in = in->ram + (s_cdread[0] - 0x80000000u);
+    if (*(const u32 *)(st_in + 40)) /* in flight at entry: the emulator's ends during the call */
+      st = st_in;
+    if (*(const u32 *)(st + 40)) {
+      u32 buf = *(const u32 *)(st + 12), size = *(const u32 *)(st + 4) * 2048u;
+      dyn(buf, buf + size);
+      dyn(s_cdread[0] + 40, s_cdread[0] + 44);
+      dyn(s_cdread[1], s_cdread[1] + 4);
+      dyn(s_cdread[2], s_cdread[2] + 4);
+    }
   }
 }
 
@@ -122,6 +153,8 @@ static void load_ignore(const char *path) {
       s_dead[s_ndead].v0 = 1, sscanf(line + 4, "%63s", s_dead[s_ndead++].name);
     else if (strncmp(line, "dma ", 4) == 0 && s_ndma < 8)
       sscanf(line + 4, "%x", &s_dma[s_ndma++]);
+    else if (strncmp(line, "cdread ", 7) == 0)
+      sscanf(line + 7, "%x %x %x", &s_cdread[0], &s_cdread[1], &s_cdread[2]);
     else if (sscanf(line, "%x %x", &lo, &hi) == 2)
       s_ignore[s_nignore].lo = lo, s_ignore[s_nignore++].hi = hi;
   }
@@ -158,6 +191,10 @@ typedef struct {
 static FnMap *s_fn, *s_fn_level; /* all entries; those for the sample's level */
 static int s_nfn, s_nfn_level;
 
+#define MAX_TERM 64
+static FnMap s_term[MAX_TERM]; /* overlay ends ("TERM" lines); host unused */
+static int s_nterm;
+
 static void load_fnmap(const char *path) {
   FILE *f = fopen(path, "r");
   char line[256];
@@ -168,6 +205,11 @@ static void load_fnmap(const char *path) {
   }
   while (fgets(line, sizeof line, f)) {
     FnMap e;
+    if (sscanf(line, "TERM %x %63s", &e.psx, e.name) == 2) {
+      if (s_nterm < MAX_TERM)
+        s_term[s_nterm++] = e;
+      continue;
+    }
     if (sscanf(line, "%x %x %63s", &e.psx, &e.host, e.name) != 3)
       continue;
     if (s_nfn == cap)
@@ -199,11 +241,43 @@ static void fnmap_for_level(int level) {
   qsort(s_fn_level, s_nfn_level, sizeof *s_fn_level, by_psx);
 }
 
+/* Where the loaded overlay ends ("TERM" lines of the fnmap): above it is the
+ * level's data from disc (models, collision, sounds), where a word can equal
+ * a function address or a scratchpad address by chance. Rewriting those
+ * changed what a renderer read (func_8001F798 at Stone Hill,
+ * logs/run14-oracle-tour), so pointer rewriting stops there. */
+static u32 s_ptr_top = RAM_SIZE;
+
+static u32 term(const char *name) {
+  int i;
+  for (i = 0; i < s_nterm; i++)
+    if (strcmp(s_term[i].name, name) == 0)
+      return s_term[i].psx - 0x80000000u;
+  return 0;
+}
+
+static void ptr_top_for(int gamestate, int level) {
+  char name[40];
+  u32 t;
+  if (gamestate == 13) /* GS_TitleScreen */
+    snprintf(name, sizeof name, "Terminator_titlescreen_code");
+  else if (gamestate == 15) /* GS_Credits */
+    snprintf(name, sizeof name, "Terminator_credits");
+  else
+    snprintf(name, sizeof name, "Terminator_LEVEL_%d", level);
+  t = term(name);
+  if (!t)
+    t = term("main_BSS_END");
+  s_ptr_top = t ? t : RAM_SIZE;
+}
+
+static u32 ptr_words(u32 size) { return (size == RAM_SIZE ? s_ptr_top : size) / 4; }
+
 static void fn_ptrs(u8 *p, u32 size) {
-  u32 *w = (u32 *)p, i;
+  u32 *w = (u32 *)p, i, n = ptr_words(size);
   if (!s_nfn_level)
     return;
-  for (i = 0; i < size / 4; i++) {
+  for (i = 0; i < n; i++) {
     FnMap key, *e;
     if (w[i] < 0x80010000u || w[i] >= 0x80200000u)
       continue;
@@ -243,8 +317,8 @@ static int load(const char *path, Snap *s, const Snap *base) {
 /* Words holding scratchpad addresses: the port's scratchpad is the first KB
  * of the arena (port.c scratch_relocs, MIPS_SCRATCH_HI). */
 static void scratch_ptrs(u8 *p, u32 size) {
-  u32 *w = (u32 *)p, i;
-  for (i = 0; i < size / 4; i++)
+  u32 *w = (u32 *)p, i, n = ptr_words(size);
+  for (i = 0; i < n; i++)
     if (w[i] - 0x1F800000u < SCRATCH_SIZE)
       w[i] = (u32)g_psx_arena_base + (w[i] - 0x1F800000u);
 }
@@ -326,6 +400,8 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
   }
   memcpy(arena, in->ram, RAM_SIZE);
   memcpy(arena, in->scratch, SCRATCH_SIZE);
+  ptr_top_for(*(s32 *)(in->ram + (0x800757D8u - 0x80000000u)),   /* g_Gamestate */
+              *(s32 *)(in->ram + (0x8007596Cu - 0x80000000u))); /* g_LevelId */
   scratch_ptrs(arena, RAM_SIZE);
   fnmap_for_level(*(s32 *)(in->ram + (0x8007596Cu - 0x80000000u))); /* g_LevelId */
   fn_ptrs(arena, RAM_SIZE);
@@ -334,6 +410,13 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
   g_m2c_seed = in->gpr; /* the whole entry register file, not just a0-a3 */
   v0 = e->fn(in->gpr[R_A0], in->gpr[R_A0 + 1], in->gpr[R_A0 + 2], in->gpr[R_A0 + 3]);
   v1 = g_mips_v1;
+  if (getenv("SPYRO_REPLAY_DUMP")) { /* the host's RAM after the call, for offline diffs */
+    FILE *df = fopen(getenv("SPYRO_REPLAY_DUMP"), "wb");
+    if (df) {
+      fwrite(arena, 1, RAM_SIZE, df);
+      fclose(df);
+    }
+  }
 
   /* Expected state, in the host's terms. */
   dma_ranges(in, out);
@@ -419,7 +502,13 @@ static int by_name(const void *a, const void *b) {
 /* Replay every NAME_K.in in dir that has a .out (only: a name filter or
  * NULL; ignore: the ignore file or NULL; fnmap: the PS1-to-host function
  * map or NULL). Returns the number of samples that didn't pass. */
+void psx_overlays_init(void); /* gen/ovl_table.c */
+
 int spyro_replay(const char *dir, const char *only, const char *ignore, const char *fnmap) {
+  unsigned timeout = getenv("SPYRO_REPLAY_TIMEOUT") ? (unsigned)atoi(getenv("SPYRO_REPLAY_TIMEOUT")) : 60;
+  /* Host globals the game's start-up sets and the samples don't carry: the
+   * overlay Terminator pointers (D20), the credits overlay's buffer base. */
+  psx_overlays_init();
   DIR *dp = opendir(dir);
   struct dirent *de;
   char **names = NULL, path[4096];
@@ -472,12 +561,19 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
     total++;
     fflush(stdout);
     if (getenv("SPYRO_REPLAY_NOFORK")) { /* debugging under gdb: one sample, in process */
+      alarm(timeout); /* gdb stops at the SIGALRM of a call that never returns */
       bad += run_one(name, k, in, out);
+      alarm(0);
       continue;
     }
     pid = fork();
-    if (pid == 0)
-      { int r_ = run_one(name, k, in, out); fflush(stdout); _exit(r_); }
+    if (pid == 0) {
+      int r_;
+      alarm(timeout); /* a call that never returns is reported, not waited for */
+      r_ = run_one(name, k, in, out);
+      fflush(stdout);
+      _exit(r_);
+    }
     waitpid(pid, &st, 0);
     if (!WIFEXITED(st)) {
       printf("%s %d %u CRASH signal %d\n", name, k, in->hdr[4], WIFSIGNALED(st) ? WTERMSIG(st) : -1);
