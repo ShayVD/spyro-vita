@@ -375,7 +375,7 @@ Order matters: each step runs before the next starts.
 - [x] **Audio:** software SPU mixer and XA decoder (`libspu.c`, `xa.c`), WAV output; `CdMix` order from the hardware registers.
 - [x] Crash demo combo disabled (D11, patch 0004). `MobyRotateToAngle`'s missing argument analysed (`upstream-notes.md`, deferred to the oracle in M4).
 - [x] Tooling: `--trace`, `--step`/`tools/step.sh`, `--poke`, `--tri-dump`, raw VRAM dumps, `tools/oracle/trace_diff.py`.
-- [ ] **Oracle (PCSX-Redux): not started, waiting for download approval.** So no GTE unit vectors, no function-level differential tests, no emulator frame traces. Nothing in `translation-log.md` is "verified against the emulator" yet.
+- [x] **Oracle (PCSX-Redux, D8):** function replay 590/590 samples of 98 translated entry points match (`logs/run8-oracle/cap3`, `cap5-fairy`), covering all 11 GTE ops the asm uses; both attract demos match tick for tick; the intro geometry matches; MobyRotateToAngle's 5th argument checked at Wizard Peak. Still without a sample: 47 translation-log rows, mostly jump-only labels, functions these runs don't call, and the credits overlay.
 - [x] Loading the save from the title (`logs/run7-load`: Artisans, 1 dragon).
 - [x] Collecting gems in Artisans itself: four red gems on the stone platform by the waterfall pool (`logs/run9-gems`). Supercharge isn't in Artisans (no type-4 surface).
 - [ ] Not shown by a run yet: a human playing through the whole homeworld.
