@@ -28,6 +28,7 @@
 #include "environment.h"
 #include "graphics.h"
 #include "moby.h"
+#include "renderers.h"
 #include "spyro.h"
 
 #include <gtereg.h>
@@ -547,11 +548,19 @@ static void snap_restore(void) {
 /* ---------- interpolation: transforms of the previous tick ---------- */
 
 #define MAX_MOBYS 1024
+#define MAX_PARTICLES (PARTICLE_SPACE / 32) /* loaders.c: 256 slots, 0xFF ends */
+/* An animation track: animation, next animation, frame, next frame and
+ * progress toward the next frame (a new frame every `len` units). */
+typedef struct {
+  unsigned char anim, next, frame, nframe, prog;
+} Track;
+
 typedef struct {
   short cls;
   signed char state;
   Vector3D pos;
   Vector3D8 rot;
+  Track track;
 } MobyXf;
 
 static struct {
@@ -559,10 +568,94 @@ static struct {
   Vector3D cam_pos;
   Vector3D16 cam_rot;
   Vector3D spyro_pos;
-  Vector3D8 spyro_rot;
+  Vector3D8 spyro_rot[3]; /* body, head, tail */
+  Track spyro_track[3];
   int nmobys;
   MobyXf mobys[MAX_MOBYS];
+  int have_particles;
+  Particle particles[MAX_PARTICLES];
 } s_prev;
+
+/* Moby animation (AnimationState, func_800522C0): 64 progress units per
+ * frame. Spyro's body, head and tail (pete.c func_8003CB24 and kin): 16. */
+#define MOBY_FRAME 64
+#define SPYRO_FRAME 16
+
+static Track moby_track(const Moby *m) {
+  Track t;
+  t.anim = m->m_AnimationState.m_Animation;
+  t.next = m->m_AnimationState.m_NextAnimation;
+  t.frame = m->m_AnimationState.m_Frame;
+  t.nframe = m->m_AnimationState.m_NextFrame;
+  t.prog = m->m_AnimationState.m_FrameProgress;
+  return t;
+}
+
+static void set_moby_track(Moby *m, const Track *t) {
+  m->m_AnimationState.m_Animation = t->anim;
+  m->m_AnimationState.m_NextAnimation = t->next;
+  m->m_AnimationState.m_Frame = t->frame;
+  m->m_AnimationState.m_NextFrame = t->nframe;
+  m->m_AnimationState.m_FrameProgress = t->prog;
+}
+
+/* Spyro's tracks k = 0 body, 1 head, 2 tail (r_pete reads these bytes). */
+static Track spyro_track(int k) {
+  const unsigned char *anims = &g_Spyro.m_bodyAnimation;
+  const unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
+  const unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+  Track t;
+  t.anim = anims[2 * k];
+  t.next = anims[2 * k + 1];
+  t.frame = frames[2 * k];
+  t.nframe = frames[2 * k + 1];
+  t.prog = progs[k];
+  return t;
+}
+
+static void set_spyro_track(int k, const Track *t) {
+  unsigned char *anims = &g_Spyro.m_bodyAnimation;
+  unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
+  unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+  anims[2 * k] = t->anim;
+  anims[2 * k + 1] = t->next;
+  frames[2 * k] = t->frame;
+  frames[2 * k + 1] = t->nframe;
+  progs[k] = t->prog;
+}
+
+static Vector3D8 *spyro_rot(int k) {
+  return k == 0 ? &g_Spyro.m_bodyRotation
+                : k == 1 ? &g_Spyro.m_headRotation : &g_Spyro.m_tailRotation;
+}
+
+/* Halfway along a track. A tick advances progress and crosses at most one
+ * frame (then frame = the old next frame, anim = the old next anim), so the
+ * midpoint is either between the same two frames or on one side of the
+ * crossing. Anything else (a new animation started, a loop restarted) keeps
+ * this tick's pose. Returns 1 if the track was blended. */
+static int mid_track(Track *cur, const Track *prev, int len) {
+  int mid;
+  if (cur->anim == prev->anim && cur->next == prev->next &&
+      cur->frame == prev->frame && cur->nframe == prev->nframe) {
+    if (cur->prog < prev->prog)
+      return 0;
+    cur->prog = (unsigned char)((prev->prog + cur->prog) / 2);
+    return 1;
+  }
+  if (cur->anim == prev->next && cur->frame == prev->nframe &&
+      prev->prog < len && cur->prog < len) {
+    mid = (prev->prog + cur->prog + len) / 2;
+    if (mid >= len) {
+      cur->prog = (unsigned char)(mid - len);
+    } else {
+      *cur = *prev;
+      cur->prog = (unsigned char)mid;
+    }
+    return 1;
+  }
+  return 0;
+}
 
 static int count_mobys(void) {
   int n = 0;
@@ -576,18 +669,23 @@ static int count_mobys(void) {
 static long long s_t_update;
 
 void PortPresentBeforeUpdate(void) {
+  long long t;
   int i;
   if (g_present.stats)
     s_t_update = now_us();
   if (!g_present.interp)
     return;
+  t = now_us();
   s_prev.valid = 1;
   s_prev.gamestate = g_Gamestate;
   s_prev.level = g_LevelId;
   s_prev.cam_pos = g_Camera.m_Position;
   s_prev.cam_rot = g_Camera.m_Rotation;
   s_prev.spyro_pos = g_Spyro.m_Position;
-  s_prev.spyro_rot = g_Spyro.m_bodyRotation;
+  for (i = 0; i < 3; i++) {
+    s_prev.spyro_rot[i] = *spyro_rot(i);
+    s_prev.spyro_track[i] = spyro_track(i);
+  }
   s_prev.nmobys = g_present.interp_mobys ? count_mobys() : 0;
   for (i = 0; i < s_prev.nmobys; i++) {
     Moby *m = &g_LevelMobys[i];
@@ -595,7 +693,13 @@ void PortPresentBeforeUpdate(void) {
     s_prev.mobys[i].state = (signed char)m->m_State;
     s_prev.mobys[i].pos = m->m_Position;
     s_prev.mobys[i].rot = m->m_Rotation;
+    s_prev.mobys[i].track = moby_track(m);
   }
+  s_prev.have_particles = g_present.interp_anim &&
+                          in_arena(g_Particles, sizeof s_prev.particles);
+  if (s_prev.have_particles)
+    memcpy(s_prev.particles, g_Particles, sizeof s_prev.particles);
+  g_present_stats.us_blend += now_us() - t;
 }
 
 /* Halfway between the previous tick and this one, measured from this one
@@ -636,6 +740,41 @@ static void mid_rot8(Vector3D8 *cur, const Vector3D8 *prev) {
   cur->z = mid_angle8(prev->z, cur->z);
 }
 
+/* Particles keep their slot for life (particle_alloc.s); a slot whose class
+ * and render type match and whose timer moved on a little is the same
+ * particle one tick later. A reused slot starts its timer again. */
+#define PARTICLE_JUMP 0x800
+static void blend_particles(void) {
+  int i, k;
+  for (i = 0; i < MAX_PARTICLES && g_Particles[i].m_RenderType != 0xFF; i++) {
+    Particle *c = &g_Particles[i];
+    const Particle *p = &s_prev.particles[i];
+    short *cp = &c->m_Data.m_Position.x;
+    const short *pp = &p->m_Data.m_Position.x;
+    int d[3];
+    if (c->m_Class != p->m_Class || c->m_RenderType != p->m_RenderType ||
+        c->m_Timer < p->m_Timer || c->m_Timer - p->m_Timer > 16)
+      continue;
+    for (k = 0; k < 3; k++) {
+      d[k] = cp[k] - pp[k];
+      if (d[k] > PARTICLE_JUMP || d[k] < -PARTICLE_JUMP)
+        break;
+    }
+    if (k < 3)
+      continue;
+    for (k = 0; k < 3; k++)
+      cp[k] = (short)(cp[k] - d[k] / 2);
+    g_present_stats.particles_blended++;
+  }
+}
+
+static void count_track(int blended) {
+  if (blended)
+    g_present_stats.anim_blended++;
+  else
+    g_present_stats.anim_kept++;
+}
+
 static int can_interp(void) {
   return s_prev.valid && s_prev.gamestate == g_Gamestate &&
          s_prev.level == g_LevelId;
@@ -655,8 +794,16 @@ static int blend_state(void) {
   g_Camera.m_Rotation.z = mid_angle12(s_prev.cam_rot.z, g_Camera.m_Rotation.z);
   if (!g_present.interp_mobys)
     return 1;
-  if (mid_vec(&g_Spyro.m_Position, &s_prev.spyro_pos, &g_Spyro.m_Position))
-    mid_rot8(&g_Spyro.m_bodyRotation, &s_prev.spyro_rot);
+  if (mid_vec(&g_Spyro.m_Position, &s_prev.spyro_pos, &g_Spyro.m_Position)) {
+    for (i = 0; i < 3; i++) {
+      Track t = spyro_track(i);
+      mid_rot8(spyro_rot(i), &s_prev.spyro_rot[i]);
+      if (g_present.interp_anim) {
+        count_track(mid_track(&t, &s_prev.spyro_track[i], SPYRO_FRAME));
+        set_spyro_track(i, &t);
+      }
+    }
+  }
   n = count_mobys();
   if (n > s_prev.nmobys)
     n = s_prev.nmobys;
@@ -665,9 +812,17 @@ static int blend_state(void) {
     const MobyXf *p = &s_prev.mobys[i];
     if (m->m_Class != p->cls || (signed char)m->m_State < 0 || p->state < 0)
       continue;
-    if (mid_vec(&m->m_Position, &p->pos, &m->m_Position))
+    if (mid_vec(&m->m_Position, &p->pos, &m->m_Position)) {
+      Track t = moby_track(m);
       mid_rot8(&m->m_Rotation, &p->rot);
+      if (g_present.interp_anim) {
+        count_track(mid_track(&t, &p->track, MOBY_FRAME));
+        set_moby_track(m, &t);
+      }
+    }
   }
+  if (s_prev.have_particles && in_arena(g_Particles, sizeof s_prev.particles))
+    blend_particles();
   return 1;
 }
 
@@ -726,7 +881,10 @@ void PortPresentDraw(void) {
   if (interp || wide_pass) {
     snap_take();
     if (interp) {
-      if (blend_state()) {
+      long long tb = now_us();
+      int blended = blend_state();
+      g_present_stats.us_blend += now_us() - tb;
+      if (blended) {
         presentation_pass(g_present.widescreen);
         push_capture(g_present.widescreen); /* shown before this tick's frame */
         g_present_stats.interp_frames++;

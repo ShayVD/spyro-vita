@@ -5,7 +5,8 @@
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]...
- *         [--widescreen | --widescreen-logic] [--interp | --interp-camera]
+ *         [--widescreen | --widescreen-logic]
+ *         [--interp | --interp-no-anim | --interp-camera]
  *         [--out960] [--present-stats | --present-dirty]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]
  * --replay: replay the oracle's function samples in DIR through the
@@ -20,7 +21,8 @@
  * --widescreen: 16:9 picture from a presentation pass; the logic still sees
  *   the 4:3 frustum. --widescreen-logic: one pass, wider frustum in the logic
  *   too (gameplay can differ). --interp: 60 fps, an extra frame between ticks
- *   with camera, Spyro and mobys blended; --interp-camera: camera only.
+ *   with camera, Spyro, mobys, their animation frames and the particles
+ *   blended; --interp-no-anim: transforms only; --interp-camera: camera only.
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
@@ -46,7 +48,7 @@ static void usage(void) {
           "[--serve PORT] [--trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--widescreen | --widescreen-logic] "
-          "[--interp | --interp-camera] [--out960] [--present-stats]\n"
+          "[--interp | --interp-no-anim | --interp-camera] [--out960] [--present-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE]\n");
   exit(2);
 }
@@ -79,6 +81,9 @@ static void present_report(void) {
            s->interp_frames, s->skipped_interp, s->squeezed_2d, s->spu_dropped);
   host_log("present: snapshot %lld bytes copied per tick (in and out)",
            s->snapshot_bytes / t);
+  host_log("present: animation tracks blended %lld, kept %lld; particles "
+           "blended %lld; blending %lld us per tick", s->anim_blended,
+           s->anim_kept, s->particles_blended, s->us_blend / t);
   if (g_present.stats > 1 && s->passes) {
     host_log("present: pages still changed after the region restore, per pass: avg %lld, max %lld (4 KB); "
              "outside the snapshot and scratch: %lld",
@@ -178,10 +183,13 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--widescreen-logic") == 0) {
       g_present.widescreen = g_present.ws_logic = 1;
     } else if (strcmp(a, "--interp") == 0) {
+      g_present.interp = g_present.interp_mobys = g_present.interp_anim = 1;
+    } else if (strcmp(a, "--interp-no-anim") == 0) {
       g_present.interp = g_present.interp_mobys = 1;
+      g_present.interp_anim = 0;
     } else if (strcmp(a, "--interp-camera") == 0) {
       g_present.interp = 1;
-      g_present.interp_mobys = 0;
+      g_present.interp_mobys = g_present.interp_anim = 0;
     } else if (strcmp(a, "--out960") == 0) {
       g_host_opts.out960 = 1;
     } else if (strcmp(a, "--present-stats") == 0) {
