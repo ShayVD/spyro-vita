@@ -173,3 +173,15 @@ One entry per function translated from asm to C: function, method, how it was ve
 | libspu mixer (`psx_spu_vblank`) | hand, `src/platform/common/libspu.c` | WAV of title, intro cutscene and Artisans (`logs/run5-audio/audio.wav`): music and effects present, stereo. Not compared with the emulator. | Linear interpolation, not the SPU's 4-tap Gaussian; envelope is the gate Spyro's fixed ADSR produces; no reverb (Spyro uses none); sweep volumes play at their base level. |
 | XA ADPCM decoder | hand, `src/platform/common/xa.c` | PETEXA sectors decode and play in the WAV above; filter by Setfilter file/channel. | 8-bit XA not handled (Spyro's tracks are 4-bit stereo 37.8 kHz). |
 | `CdMix` routing | hand, `libspu.c` | Read against PsyQ's `CdMix` (`asm/psyq.s` `func_80065108`) and the register docs. | val0 L→L, val1 L→R, val2 R→R, val3 R→L. |
+
+## Presentation hooks (2026-10-30, optional, off by default)
+
+Widescreen and 60 fps (`docs/presentation.md`, decisions D30) add hooks to a few functions. Each one is the identity, or isn't called, while both features are off. The check: with the features off, both attract demos still match the oracle on every traced field, and 110 screenshots over 11,000 vblanks are byte-identical to a build without the hooks (`logs/run4-off-stats` vs `logs/run1-baseline`).
+
+| Function | Change | Verified by | Notes |
+|---|---|---|---|
+| `main` (decomp `main.c`) | `PortPresentBeforeUpdate()` before `GamestateUpdate`; `PortPresentDraw()` instead of `GamestateDraw()` (`patches/spyro-1-port/0005`) | trace identical with all modes on and off (`logs/run5-*`) | `PortPresentDraw` is `GamestateDraw` when off |
+| `CameraUpdateMatrices` | `PortProjectionHook(mtx.m)` before the projection matrix is stored | as above | widescreen: X row × 3/4, only inside presentation passes |
+| `func_8001A050` | the same hook on its spin projection matrix `B` | level-transition shots (`logs/run7-compare/ws-vs-43-3800.png`) | |
+| `func_80022A2C` (mips2c, `r_moby.s`) | `before` hints at `0x80022D2C` (OFX) and `0x80022D78` (R11) of the HUD path | HUD shots in widescreen | `PORT_WS_HUD_*` is the identity while `g_present_narrow` is 0 |
+| `func_800168DC` (`order_table.c`) | records the primitive for the widescreen 2D squeeze | as above | records nothing outside widescreen passes |

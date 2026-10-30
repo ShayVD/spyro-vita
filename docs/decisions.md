@@ -180,3 +180,18 @@ Record each decision with its date, what was chosen, and why.
   - The present skips the VRAM conversion and upload when nothing was drawn and the display didn't change.
   - Clocks were already at the maximum (444/222/222/166).
 - **Decision:** the CPU fixes can't close a 4× gap, so the GPU renderer starts in M3, not M4. The first attempt is PsyCross's own GL renderer (`src/render/PsyX_render.cpp`, VRAM as a texture with CLUT in a shader) on vitaGL, whose GLSL translator is in the installed library (`glsl_utils.o`). It needs `ur0:data/libshacccg.suprx` on the device. The software path stays as the fallback (`gpu=0`, and automatically when shaders can't be built).
+
+## 2026-10-30: presentation (widescreen, 60 fps)
+
+### D30. Widescreen and 60 fps as presentation passes over the unchanged game
+- **Chosen:** both features run the game's own `GamestateDraw` again in a *presentation pass*:
+  1. snapshot the 2 MB arena, scratchpad, GTE registers and PsyCross's envs;
+  2. adjust the state (projection X row at 3/4; camera, Spyro and mobys halfway between ticks);
+  3. render with VSync frozen and SPU writes dropped;
+  4. capture the picture;
+  5. restore.
+
+  The original `GamestateDraw` still runs once per tick as the logic pass. Under widescreen its `DrawOTag` is skipped, so its side effects keep the 4:3 frustum. Off is the default, and then nothing runs: the demos match the oracle and the screenshots are byte-identical. Design, costs and logs: `docs/presentation.md`.
+- **Widescreen goes in the camera's projection matrix, not RTPS/RTPT** (revises D2's plan). `CameraUpdateMatrices` already scales the Y row by 320/512 for the 4:3 TV. Scaling the X row by 3/4 there squeezes the picture *and* widens the frustum tests that `r_moby` does in that space. A GTE-level squeeze would leave those culls at 4:3, and it would reach gameplay: the camera logic projects Spyro through RTPS (`func_80017AA4`). HUD models (`func_80022A2C`) and C-built 2D primitives (the HUD OT) are narrowed separately.
+- **Why a logic pass instead of one widescreen pass:** `r_moby` sets `m_WasDrawn` from its frustum test, and `func_80051FEC` uses that flag to pick which mobys update. With the wider frustum in the logic (`--widescreen-logic`), the Stone Hill attract demo desyncs: rand diverges at tick 123, Spyro's position at tick 541 (`logs/run5-wslogic`). The cost is the render path once more per tick, without rasterisation.
+- **Why snapshot everything rather than list what the draw writes:** the draw path writes game state in many places (render lists, the double-buffer flip, animation advance, border and transition counters, `m_WasDrawn`). A full snapshot can't miss a writer. `--present-dirty` measured 22–40 dirty 4 KB pages per pass, so a region snapshot is the planned optimisation, checked against that map.

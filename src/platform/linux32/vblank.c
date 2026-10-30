@@ -55,6 +55,8 @@ void host_vblank(void) {
   psx_spu_vblank();
   if (vsync_callback)
     vsync_callback();
+  if (g_host_opts.out960)
+    host_present_vblank();
 
   if (shot_due(v)) {
     char path[1024];
