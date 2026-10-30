@@ -94,6 +94,7 @@ static void vblank(void) {
     vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);
+    vita_present_report(v);
   }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();

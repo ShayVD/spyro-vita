@@ -6,8 +6,10 @@
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
  *         [--pad-after FILE] [--peek ADDR:N]...
- *         [--widescreen | --widescreen-logic] [--interp | --interp-camera]
- *         [--out960] [--present-stats | --present-dirty]
+ *         [--widescreen | --widescreen-logic]
+ *         [--interp | --interp-no-anim | --interp-camera]
+ *         [--interp-budget US] [--out960 | --present-native]
+ *         [--present-stats | --present-dirty]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -25,8 +27,13 @@
  * --widescreen: 16:9 picture from a presentation pass; the logic still sees
  *   the 4:3 frustum. --widescreen-logic: one pass, wider frustum in the logic
  *   too (gameplay can differ). --interp: 60 fps, an extra frame between ticks
- *   with camera, Spyro and mobys blended; --interp-camera: camera only.
+ *   with camera, Spyro, mobys, their animation frames and the particles
+ *   blended; --interp-no-anim: transforms only; --interp-camera: camera only.
+ *   --interp-budget US: skip the in-between frame while the last tick's game
+ *   CPU time plus one would pass US (on the host, qemu CPU time).
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
+ *   --present-native: the presentation frames as drawn, 512x240 (to compare
+ *   with the Vita's shots).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
@@ -57,9 +64,24 @@ static void usage(void) {
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]...\n"
           "             [--widescreen | --widescreen-logic] "
-          "[--interp | --interp-camera] [--out960] [--present-stats]\n"
+          "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
+          "             [--out960] [--present-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
+}
+
+static void log_pages(const char *what, const uint32_t *bits) {
+  int i, start = -1;
+  for (i = 0; i <= PRESENT_PAGES; i++) {
+    int d = i < PRESENT_PAGES && (bits[i / 32] >> (i % 32) & 1);
+    if (d && start < 0)
+      start = i;
+    if (!d && start >= 0) {
+      host_log("present: %s %08x-%08x", what, 0x80000000u + start * 4096,
+               0x80000000u + i * 4096 - 1);
+      start = -1;
+    }
+  }
 }
 
 static void present_report(void) {
@@ -71,23 +93,20 @@ static void present_report(void) {
            "(+%lld in VSync waits), passes %lld (%lld passes), snapshot %lld",
            s->ticks, s->us_update / t, (s->us_logic - s->us_vsync) / t,
            s->us_vsync / t, s->us_pass / t, s->passes, s->us_snapshot / t);
-  host_log("present: interp frames %lld, skipped %lld, 2D narrowed %lld, "
-           "SPU writes dropped %lld",
-           s->interp_frames, s->skipped_interp, s->squeezed_2d, s->spu_dropped);
+  host_log("present: interp frames %lld, skipped %lld (%lld for the budget), "
+           "2D narrowed %lld, SPU writes dropped %lld", s->interp_frames,
+           s->skipped_interp, s->budget_skips, s->squeezed_2d, s->spu_dropped);
+  host_log("present: snapshot %lld bytes copied per tick (in and out)",
+           s->snapshot_bytes / t);
+  host_log("present: animation tracks blended %lld, kept %lld; particles "
+           "blended %lld; blending %lld us per tick", s->anim_blended,
+           s->anim_kept, s->particles_blended, s->us_blend / t);
   if (g_present.stats > 1 && s->passes) {
-    int i, start = -1;
-    host_log("present: pages dirtied per pass: avg %lld, max %lld (4 KB)",
-             s->dirty_pages / s->passes, s->dirty_max);
-    for (i = 0; i <= PRESENT_PAGES; i++) {
-      int d = i < PRESENT_PAGES && (s->dirty_union[i / 32] >> (i % 32) & 1);
-      if (d && start < 0)
-        start = i;
-      if (!d && start >= 0) {
-        host_log("present: dirty %08x-%08x", 0x80000000u + start * 4096,
-                 0x80000000u + i * 4096 - 1);
-        start = -1;
-      }
-    }
+    host_log("present: pages still changed after the region restore, per pass: avg %lld, max %lld (4 KB); "
+             "outside the snapshot and scratch: %lld",
+             s->dirty_pages / s->passes, s->dirty_max, s->missed_pages);
+    log_pages("dirty", s->dirty_union);
+    log_pages("MISSED", s->missed_union);
   }
   host_log_flush();
 }
@@ -197,12 +216,20 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--widescreen-logic") == 0) {
       g_present.widescreen = g_present.ws_logic = 1;
     } else if (strcmp(a, "--interp") == 0) {
+      g_present.interp = g_present.interp_mobys = g_present.interp_anim = 1;
+    } else if (strcmp(a, "--interp-no-anim") == 0) {
       g_present.interp = g_present.interp_mobys = 1;
+      g_present.interp_anim = 0;
     } else if (strcmp(a, "--interp-camera") == 0) {
       g_present.interp = 1;
-      g_present.interp_mobys = 0;
+      g_present.interp_mobys = g_present.interp_anim = 0;
+    } else if (strcmp(a, "--interp-budget") == 0) {
+      TAKE();
+      g_present.interp_budget_us = to_int(val);
     } else if (strcmp(a, "--out960") == 0) {
       g_host_opts.out960 = 1;
+    } else if (strcmp(a, "--present-native") == 0) {
+      g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
     } else if (strcmp(a, "--present-dirty") == 0) {
@@ -245,7 +272,7 @@ int main(int argc, char **argv) {
   }
   if (!g_host_opts.disc_dir)
     usage();
-  if (port_present_active())
+  if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
   atexit(present_report);
   if (pad && host_pad_load(pad) != 0)

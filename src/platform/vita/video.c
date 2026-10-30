@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "gpu/PsyX_GPU.h" /* currentDispEnv, g_GPUDisabledState */
+#include "../../game/present.h"
 
 uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 
@@ -73,6 +74,45 @@ static struct {
   int disabled, w, h, valid;
 } s_last;
 
+/* A presentation frame (src/game/present.c: widescreen, 60 fps): 512x240
+ * PS1 15-bit, full screen when widescreen, else 4:3 in the middle. */
+static int s_tex_slot = -1; /* the presentation slot in s_tex, -1: none */
+
+static int present_frame(int slot) {
+  const uint16_t *px = port_present_slot_pixels(slot);
+  int fresh = port_present_frame_new() || s_tex_slot != slot, x, y, pitch;
+  void *pixels;
+  SDL_Rect src = {0, 0, PRESENT_W, PRESENT_H}, dst;
+  prof_enter(PROF_PRESENT);
+  if (fresh && px && SDL_LockTexture(s_tex, &src, &pixels, &pitch) == 0) {
+    for (y = 0; y < PRESENT_H; y++) {
+      const uint16_t *s = px + y * PRESENT_W;
+      uint8_t *d = (uint8_t *)pixels + (size_t)y * pitch;
+      for (x = 0; x < PRESENT_W; x++, d += 4) {
+        int r = s[x] & 31, g = (s[x] >> 5) & 31, b = (s[x] >> 10) & 31;
+        d[0] = (uint8_t)(r << 3 | r >> 2);
+        d[1] = (uint8_t)(g << 3 | g >> 2);
+        d[2] = (uint8_t)(b << 3 | b >> 2);
+        d[3] = 255;
+      }
+    }
+    SDL_UnlockTexture(s_tex);
+    s_tex_slot = slot;
+  }
+  s_last.valid = 0; /* the texture no longer holds the display rect */
+  dst.y = 0;
+  dst.h = SCREEN_H;
+  dst.w = port_present_frame_is_wide() ? SCREEN_W : SCREEN_H * 4 / 3;
+  dst.x = (SCREEN_W - dst.w) / 2;
+  SDL_RenderClear(s_ren);
+  SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  prof_leave();
+  prof_enter(PROF_WAIT);
+  SDL_RenderPresent(s_ren);
+  prof_leave();
+  return fresh;
+}
+
 /* One frame: the display rect as the TV would show it, 4:3 in the middle.
  * Returns 1 if it was a new picture. */
 int vita_video_present(void) {
@@ -85,6 +125,11 @@ int vita_video_present(void) {
     return vita_gpu_present();
   if (!s_ren)
     return 0;
+  {
+    int slot = port_present_frame_slot();
+    if (slot >= 0)
+      return present_frame(slot);
+  }
   prof_enter(PROF_PRESENT);
   if (s_last.valid && s_last.gen == prof_vram_gen() && s_last.disabled == g_GPUDisabledState &&
       !memcmp(&s_last.disp, &currentDispEnv, sizeof s_last.disp)) {
@@ -94,6 +139,7 @@ int vita_video_present(void) {
     goto show;
   }
   s_last.valid = 1;
+  s_tex_slot = -1;
   s_last.gen = prof_vram_gen();
   s_last.disabled = g_GPUDisabledState;
   s_last.disp = currentDispEnv;

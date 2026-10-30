@@ -22,10 +22,13 @@
 #include <string.h>
 #include <time.h>
 
+#include "buffers.h"
 #include "common.h"
 #include "camera.h"
+#include "environment.h"
 #include "graphics.h"
 #include "moby.h"
+#include "renderers.h"
 #include "spyro.h"
 
 #include <gtereg.h>
@@ -50,9 +53,13 @@ int g_present_narrow; /* projection narrowed to 3/4 (camera matrix, HUD) */
 
 int port_present_active(void) { return g_present.widescreen || g_present.interp; }
 
-static long long now_us(void) {
+static long long clock_cpu_us(void) {
   return (long long)clock() * 1000000 / CLOCKS_PER_SEC;
 }
+
+long long (*g_present_clock_us)(void) = clock_cpu_us;
+
+static long long now_us(void) { return g_present_clock_us(); }
 
 /* ---------- projection (camera.c, draw.c and r_moby's HUD path) ---------- */
 
@@ -237,13 +244,20 @@ static void unsqueeze_2d(void) {
 
 /* ---------- presenter: captured frames, shown one per vblank ---------- */
 
+/* A ring of PRESENT_SLOTS frames: up to QUEUE waiting and the one on
+ * screen. Without a
+ * platform capture (g_present_capture NULL) a slot holds the pixels
+ * (StoreImage of the drawn area); with one (the Vita's GPU renderer) the
+ * platform keeps the picture in its own slot and we only number them. */
 #define QUEUE 4
-static uint16_t s_frames[QUEUE][PRESENT_W * PRESENT_H];
-static uint8_t s_frame_wide[QUEUE];
-static int s_qhead, s_qcount; /* oldest queued frame, number queued */
-static uint16_t s_shown[PRESENT_W * PRESENT_H];
-static int s_shown_wide, s_have_shown;
+static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H];
+static uint8_t s_frame_wide[PRESENT_SLOTS];
+static int s_qhead, s_qcount; /* oldest queued slot, number queued */
+static int s_shown = -1;      /* slot on screen */
+static int s_popped;          /* the last port_present_frame_slot() took a new one */
 static int s_last_push_vblank = -1000;
+
+const PresentCapture *g_present_capture;
 
 static uint16_t s_capture[PRESENT_W * PRESENT_H];
 static int s_captured, s_capture_on;
@@ -254,7 +268,10 @@ static void capture_now(void) {
   r.y = activeDrawEnv.ofs[1];
   r.w = PRESENT_W;
   r.h = PRESENT_H;
-  StoreImage(&r, (u_long *)s_capture);
+  if (g_present_capture)
+    g_present_capture->capture(r.x, r.y, r.w, r.h);
+  else
+    StoreImage(&r, (u_long *)s_capture);
   s_captured = 1;
 }
 
@@ -264,34 +281,58 @@ static void push_capture(int wide) {
     return;
   s_captured = 0;
   if (s_qcount == QUEUE) { /* drop the oldest */
-    s_qhead = (s_qhead + 1) % QUEUE;
+    s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
   }
-  slot = (s_qhead + s_qcount) % QUEUE;
-  memcpy(s_frames[slot], s_capture, sizeof s_capture);
+  /* This may be the slot on screen (after a run of drops); harmless: the
+   * queue isn't empty now, so the next vblank shows a newer slot. */
+  slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
+  if (g_present_capture)
+    g_present_capture->commit(slot);
+  else
+    memcpy(s_frames[slot], s_capture, sizeof s_capture);
   s_frame_wide[slot] = (uint8_t)wide;
   s_qcount++;
   s_last_push_vblank = PsyX_Sys_GetVBlankCount();
 }
 
-const uint16_t *port_present_frame(void) {
+int port_present_frame_slot(void) {
   if (!port_present_active())
-    return NULL;
+    return -1;
+  s_popped = s_qcount > 0;
   if (s_qcount > 0) {
-    memcpy(s_shown, s_frames[s_qhead], sizeof s_shown);
-    s_shown_wide = s_frame_wide[s_qhead];
-    s_qhead = (s_qhead + 1) % QUEUE;
+    s_shown = s_qhead;
+    s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
-    s_have_shown = 1;
   }
   /* Nothing presented lately (boot logos, loading, code that draws from
    * GamestateUpdate): show the PS1 display. */
-  if (!s_have_shown || PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
-    return NULL;
+  if (s_shown < 0 || PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+    return -1;
   return s_shown;
 }
 
-int port_present_frame_is_wide(void) { return s_shown_wide; }
+const uint16_t *port_present_slot_pixels(int slot) {
+  return slot < 0 || slot >= PRESENT_SLOTS || g_present_capture ? NULL : s_frames[slot];
+}
+
+const uint16_t *port_present_shown_pixels(void) {
+  if (s_shown < 0 || g_present_capture ||
+      PsyX_Sys_GetVBlankCount() - s_last_push_vblank > 4)
+    return NULL;
+  return s_frames[s_shown];
+}
+
+const uint16_t *port_present_frame(void) {
+  int slot = port_present_frame_slot();
+  return slot < 0 || g_present_capture ? NULL : s_frames[slot];
+}
+
+int port_present_frame_new(void) { return s_popped; }
+
+int port_present_frame_is_wide(void) {
+  return s_shown >= 0 && s_frame_wide[s_shown];
+}
 
 /* ---------- PsyCross hooks ---------- */
 
@@ -323,13 +364,19 @@ static int pass_vsync(int mode) {
   return PsyX_Sys_GetVBlankCount() + 1000;
 }
 
-/* --present-stats: LIBETC's VSync, timing the waits (the host mixes audio
- * and writes screenshots there) so the draw cost can leave them out. */
-static int stats_vsync(int mode) {
+/* LIBETC's VSync, timing the waits (the host mixes audio and writes
+ * screenshots there; the Vita mixes, presents and waits for the display) so
+ * the game's own CPU time can leave them out: --present-stats and
+ * interp_budget_us. */
+static long long s_tick_vsync_us;
+
+static int timed_vsync(int mode) {
   if (mode == 0) {
-    long long t = now_us();
+    long long t = now_us(), d;
     PsyX_WaitForTimestep(1);
-    g_present_stats.us_vsync += now_us() - t;
+    d = now_us() - t;
+    g_present_stats.us_vsync += d;
+    s_tick_vsync_us += d;
   }
   return PsyX_Sys_GetVBlankCount();
 }
@@ -345,18 +392,124 @@ static void hooks_init(void) {
 
 /* ---------- snapshot of the game-visible state ---------- */
 
-static unsigned char *s_arena_snap;
+/* A pass may write anywhere the draw path writes, but the game only reads
+ * some of it again (docs/presentation.md, --present-dirty):
+ *  - the scratchpad (first KB of the arena) and g_psx_scratch;
+ *  - the game's data, sdata, sbss and bss, 0x8006BBE0-0x8007AA38 (psx.map
+ *    main_DATA_START..main_BSS_END): camera, Spyro, g_SonyImage, the globals;
+ *  - the level's moby array (m_WasDrawn, animation state, blended transforms);
+ *  - the particle space under m_SharedAnimations (AllocateBuffers, 4BEF8.c);
+ *  - bytes 0x18-0x1B of every sector header, a cache func_800258F0 reads
+ *    (`lw $gp, 0x18($s1)`) and rewrites (`sb $sp, 0x18..0x1B($s1)`).
+ * Those are saved and restored. Everything else a pass writes is scratch the
+ * next real draw rewrites before anyone reads it: the two primitive buffers
+ * and the OTs (linking clears every bucket) and the emulated stack below
+ * the caller's $sp. --present-dirty keeps a full copy as well and reports
+ * any other page left changed. */
+#define DATA_LO 0x8006BBE0u
+#define DATA_HI 0x8007AA38u
+#define STACK_LO 0x80010000u /* mips2c's emulated stack, top 0x80020000 */
+#define STACK_HI 0x80020000u
+#define PARTICLE_SPACE 0x2000
+#define OT_BYTES 0x4000
+#define MAX_REGIONS 4
+
+typedef struct {
+  unsigned char *at;
+  uint32_t len;
+} Region;
+
+static Region s_regions[MAX_REGIONS];
+static int s_nregions;
+static unsigned char *s_region_snap;
+static size_t s_region_cap;
+static unsigned char *s_arena_full; /* --present-dirty only */
 static unsigned char s_scratch_snap[sizeof g_psx_scratch];
 static GTERegisters s_gte_snap;
 static DRAWENV s_drawenv_snap;
 static DISPENV s_dispenv_snap;
 static unsigned int s_v1_snap;
 
+#define SECTOR_CACHE 0x18
+#define MAX_SECTORS 4096
+static uint32_t s_sector_snap[MAX_SECTORS];
+static int s_nsectors;
+
+static int count_mobys(void);
+
+static int in_arena(const void *p, uint32_t len) {
+  uintptr_t a = (uintptr_t)p;
+  return a >= g_psx_arena_base && len <= PSX_RAM_SIZE &&
+         a - g_psx_arena_base <= PSX_RAM_SIZE - len;
+}
+
+static void add_region(void *at, uint32_t len) {
+  if (s_nregions < MAX_REGIONS && len && in_arena(at, len)) {
+    s_regions[s_nregions].at = at;
+    s_regions[s_nregions].len = len;
+    s_nregions++;
+  }
+}
+
+static void collect_regions(void) {
+  s_nregions = 0;
+  add_region(PSX_ARENA(0x80000000u), sizeof g_psx_scratch);
+  add_region(PSX_ARENA(DATA_LO), DATA_HI - DATA_LO);
+  add_region(g_LevelMobys, (uint32_t)(count_mobys() + 1) * sizeof(Moby));
+  add_region(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
+}
+
+static unsigned char *sector_cache(int i) {
+  unsigned char *sec =
+      (unsigned char *)(uintptr_t)((uint32_t *)g_Environment.m_SectorPointer)[i];
+  return in_arena(sec + SECTOR_CACHE, 4) ? sec + SECTOR_CACHE : NULL;
+}
+
+static void sectors_take(void) {
+  int i;
+  s_nsectors = 0;
+  if (!in_arena(g_Environment.m_SectorPointer, 4) ||
+      g_Environment.m_SectorCount <= 0 || g_Environment.m_SectorCount > MAX_SECTORS)
+    return;
+  s_nsectors = g_Environment.m_SectorCount;
+  for (i = 0; i < s_nsectors; i++) {
+    unsigned char *c = sector_cache(i);
+    if (c)
+      memcpy(&s_sector_snap[i], c, 4);
+  }
+}
+
+static void sectors_restore(void) {
+  int i;
+  for (i = 0; i < s_nsectors; i++) {
+    unsigned char *c = sector_cache(i);
+    if (c)
+      memcpy(c, &s_sector_snap[i], 4);
+  }
+}
+
 static void snap_take(void) {
   long long t = now_us();
-  if (!s_arena_snap)
-    s_arena_snap = malloc(PSX_RAM_SIZE);
-  memcpy(s_arena_snap, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  size_t need = 0;
+  unsigned char *o;
+  int i;
+  collect_regions();
+  for (i = 0; i < s_nregions; i++)
+    need += s_regions[i].len;
+  if (need > s_region_cap) {
+    free(s_region_snap);
+    s_region_snap = malloc(need);
+    s_region_cap = need;
+  }
+  for (o = s_region_snap, i = 0; i < s_nregions; o += s_regions[i].len, i++)
+    memcpy(o, s_regions[i].at, s_regions[i].len);
+  sectors_take();
+  g_present_stats.snapshot_bytes += (long long)need + s_nsectors * 4;
+  if (g_present.stats > 1) {
+    if (!s_arena_full)
+      s_arena_full = malloc(PSX_RAM_SIZE);
+    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  }
   memcpy(s_scratch_snap, g_psx_scratch, sizeof s_scratch_snap);
   s_gte_snap = gteRegs;
   s_drawenv_snap = activeDrawEnv;
@@ -365,43 +518,93 @@ static void snap_take(void) {
   g_present_stats.us_snapshot += now_us() - t;
 }
 
-/* --present-stats 2: which pages did the pass change? (sizes a cheaper
- * snapshot, docs/presentation.md) */
-static void dirty_scan(void) {
+/* PS1 address range [lo, hi) the next real draw rewrites: the primitive
+ * buffers and both OTs (AllocateBuffers: lower, higher, HUD OT, world OT). */
+static int scratch_range(uint32_t *lo, uint32_t *hi) {
+  if (!in_arena(g_Buffers.m_LowerPolyBuffer, 1) ||
+      !in_arena(g_Buffers.m_WorldOTStart, OT_BYTES))
+    return 0;
+  *lo = 0x80000000u +
+        (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
+  *hi = 0x80000000u +
+        (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart - g_psx_arena_base) +
+        OT_BYTES;
+  return 1;
+}
+
+/* Does page `page` differ from the full copy outside the scratch areas? */
+static int page_missed(int page) {
+  const unsigned char *a = (const unsigned char *)g_psx_arena_base;
+  uint32_t lo = 0x80000000u + (uint32_t)page * 4096, hi = lo + 4096;
+  uint32_t s_lo, s_hi, k;
+  if (lo >= STACK_LO && hi <= STACK_HI)
+    return 0;
+  if (!scratch_range(&s_lo, &s_hi) || hi <= s_lo || lo >= s_hi)
+    return 1;
+  for (k = lo; k < hi; k++)
+    if ((k < s_lo || k >= s_hi) &&
+        a[k - 0x80000000u] != s_arena_full[k - 0x80000000u])
+      return 1;
+  return 0;
+}
+
+/* --present-dirty: which pages did the pass change, and did the regions
+ * cover every one the game can read? Runs after the region restore, against
+ * the full copy; then restores the full copy so the run stays exact. */
+static void dirty_check(void) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
   long long n = 0;
   int i;
-  for (i = 0; i < PRESENT_PAGES; i++)
-    if (memcmp(a + i * 4096, s_arena_snap + i * 4096, 4096) != 0) {
-      g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
-      n++;
+  for (i = 0; i < PRESENT_PAGES; i++) {
+    if (memcmp(a + i * 4096, s_arena_full + i * 4096, 4096) == 0)
+      continue;
+    g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
+    n++;
+    if (page_missed(i)) {
+      g_present_stats.missed_union[i / 32] |= 1u << (i % 32);
+      g_present_stats.missed_pages++;
     }
+  }
   g_present_stats.dirty_pages += n;
   if (n > g_present_stats.dirty_max)
     g_present_stats.dirty_max = n;
+  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_RAM_SIZE);
 }
 
 static void snap_restore(void) {
-  if (g_present.stats > 1)
-    dirty_scan();
   long long t = now_us();
-  memcpy((void *)g_psx_arena_base, s_arena_snap, PSX_RAM_SIZE);
+  const unsigned char *o;
+  int i;
+  for (o = s_region_snap, i = 0; i < s_nregions; o += s_regions[i].len, i++)
+    memcpy(s_regions[i].at, o, s_regions[i].len);
+  sectors_restore();
+  g_present_stats.snapshot_bytes += (long long)(o - s_region_snap) + s_nsectors * 4;
   memcpy(g_psx_scratch, s_scratch_snap, sizeof s_scratch_snap);
   gteRegs = s_gte_snap;
   activeDrawEnv = s_drawenv_snap;
   activeDispEnv = s_dispenv_snap;
   g_mips_v1 = s_v1_snap;
   g_present_stats.us_snapshot += now_us() - t;
+  if (g_present.stats > 1)
+    dirty_check(); /* after the timing: it isn't part of the cost */
 }
 
 /* ---------- interpolation: transforms of the previous tick ---------- */
 
 #define MAX_MOBYS 1024
+#define MAX_PARTICLES (PARTICLE_SPACE / 32) /* loaders.c: 256 slots, 0xFF ends */
+/* An animation track: animation, next animation, frame, next frame and
+ * progress toward the next frame (a new frame every `len` units). */
+typedef struct {
+  unsigned char anim, next, frame, nframe, prog;
+} Track;
+
 typedef struct {
   short cls;
   signed char state;
   Vector3D pos;
   Vector3D8 rot;
+  Track track;
 } MobyXf;
 
 static struct {
@@ -409,10 +612,94 @@ static struct {
   Vector3D cam_pos;
   Vector3D16 cam_rot;
   Vector3D spyro_pos;
-  Vector3D8 spyro_rot;
+  Vector3D8 spyro_rot[3]; /* body, head, tail */
+  Track spyro_track[3];
   int nmobys;
   MobyXf mobys[MAX_MOBYS];
+  int have_particles;
+  Particle particles[MAX_PARTICLES];
 } s_prev;
+
+/* Moby animation (AnimationState, func_800522C0): 64 progress units per
+ * frame. Spyro's body, head and tail (pete.c func_8003CB24 and kin): 16. */
+#define MOBY_FRAME 64
+#define SPYRO_FRAME 16
+
+static Track moby_track(const Moby *m) {
+  Track t;
+  t.anim = m->m_AnimationState.m_Animation;
+  t.next = m->m_AnimationState.m_NextAnimation;
+  t.frame = m->m_AnimationState.m_Frame;
+  t.nframe = m->m_AnimationState.m_NextFrame;
+  t.prog = m->m_AnimationState.m_FrameProgress;
+  return t;
+}
+
+static void set_moby_track(Moby *m, const Track *t) {
+  m->m_AnimationState.m_Animation = t->anim;
+  m->m_AnimationState.m_NextAnimation = t->next;
+  m->m_AnimationState.m_Frame = t->frame;
+  m->m_AnimationState.m_NextFrame = t->nframe;
+  m->m_AnimationState.m_FrameProgress = t->prog;
+}
+
+/* Spyro's tracks k = 0 body, 1 head, 2 tail (r_pete reads these bytes). */
+static Track spyro_track(int k) {
+  const unsigned char *anims = &g_Spyro.m_bodyAnimation;
+  const unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
+  const unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+  Track t;
+  t.anim = anims[2 * k];
+  t.next = anims[2 * k + 1];
+  t.frame = frames[2 * k];
+  t.nframe = frames[2 * k + 1];
+  t.prog = progs[k];
+  return t;
+}
+
+static void set_spyro_track(int k, const Track *t) {
+  unsigned char *anims = &g_Spyro.m_bodyAnimation;
+  unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
+  unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+  anims[2 * k] = t->anim;
+  anims[2 * k + 1] = t->next;
+  frames[2 * k] = t->frame;
+  frames[2 * k + 1] = t->nframe;
+  progs[k] = t->prog;
+}
+
+static Vector3D8 *spyro_rot(int k) {
+  return k == 0 ? &g_Spyro.m_bodyRotation
+                : k == 1 ? &g_Spyro.m_headRotation : &g_Spyro.m_tailRotation;
+}
+
+/* Halfway along a track. A tick advances progress and crosses at most one
+ * frame (then frame = the old next frame, anim = the old next anim), so the
+ * midpoint is either between the same two frames or on one side of the
+ * crossing. Anything else (a new animation started, a loop restarted) keeps
+ * this tick's pose. Returns 1 if the track was blended. */
+static int mid_track(Track *cur, const Track *prev, int len) {
+  int mid;
+  if (cur->anim == prev->anim && cur->next == prev->next &&
+      cur->frame == prev->frame && cur->nframe == prev->nframe) {
+    if (cur->prog < prev->prog)
+      return 0;
+    cur->prog = (unsigned char)((prev->prog + cur->prog) / 2);
+    return 1;
+  }
+  if (cur->anim == prev->next && cur->frame == prev->nframe &&
+      prev->prog < len && cur->prog < len) {
+    mid = (prev->prog + cur->prog + len) / 2;
+    if (mid >= len) {
+      cur->prog = (unsigned char)(mid - len);
+    } else {
+      *cur = *prev;
+      cur->prog = (unsigned char)mid;
+    }
+    return 1;
+  }
+  return 0;
+}
 
 static int count_mobys(void) {
   int n = 0;
@@ -426,18 +713,23 @@ static int count_mobys(void) {
 static long long s_t_update;
 
 void PortPresentBeforeUpdate(void) {
+  long long t;
   int i;
-  if (g_present.stats)
+  if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
   if (!g_present.interp)
     return;
+  t = now_us();
   s_prev.valid = 1;
   s_prev.gamestate = g_Gamestate;
   s_prev.level = g_LevelId;
   s_prev.cam_pos = g_Camera.m_Position;
   s_prev.cam_rot = g_Camera.m_Rotation;
   s_prev.spyro_pos = g_Spyro.m_Position;
-  s_prev.spyro_rot = g_Spyro.m_bodyRotation;
+  for (i = 0; i < 3; i++) {
+    s_prev.spyro_rot[i] = *spyro_rot(i);
+    s_prev.spyro_track[i] = spyro_track(i);
+  }
   s_prev.nmobys = g_present.interp_mobys ? count_mobys() : 0;
   for (i = 0; i < s_prev.nmobys; i++) {
     Moby *m = &g_LevelMobys[i];
@@ -445,7 +737,13 @@ void PortPresentBeforeUpdate(void) {
     s_prev.mobys[i].state = (signed char)m->m_State;
     s_prev.mobys[i].pos = m->m_Position;
     s_prev.mobys[i].rot = m->m_Rotation;
+    s_prev.mobys[i].track = moby_track(m);
   }
+  s_prev.have_particles = g_present.interp_anim &&
+                          in_arena(g_Particles, sizeof s_prev.particles);
+  if (s_prev.have_particles)
+    memcpy(s_prev.particles, g_Particles, sizeof s_prev.particles);
+  g_present_stats.us_blend += now_us() - t;
 }
 
 /* Halfway between the previous tick and this one, measured from this one
@@ -486,6 +784,41 @@ static void mid_rot8(Vector3D8 *cur, const Vector3D8 *prev) {
   cur->z = mid_angle8(prev->z, cur->z);
 }
 
+/* Particles keep their slot for life (particle_alloc.s); a slot whose class
+ * and render type match and whose timer moved on a little is the same
+ * particle one tick later. A reused slot starts its timer again. */
+#define PARTICLE_JUMP 0x800
+static void blend_particles(void) {
+  int i, k;
+  for (i = 0; i < MAX_PARTICLES && g_Particles[i].m_RenderType != 0xFF; i++) {
+    Particle *c = &g_Particles[i];
+    const Particle *p = &s_prev.particles[i];
+    short *cp = &c->m_Data.m_Position.x;
+    const short *pp = &p->m_Data.m_Position.x;
+    int d[3];
+    if (c->m_Class != p->m_Class || c->m_RenderType != p->m_RenderType ||
+        c->m_Timer < p->m_Timer || c->m_Timer - p->m_Timer > 16)
+      continue;
+    for (k = 0; k < 3; k++) {
+      d[k] = cp[k] - pp[k];
+      if (d[k] > PARTICLE_JUMP || d[k] < -PARTICLE_JUMP)
+        break;
+    }
+    if (k < 3)
+      continue;
+    for (k = 0; k < 3; k++)
+      cp[k] = (short)(cp[k] - d[k] / 2);
+    g_present_stats.particles_blended++;
+  }
+}
+
+static void count_track(int blended) {
+  if (blended)
+    g_present_stats.anim_blended++;
+  else
+    g_present_stats.anim_kept++;
+}
+
 static int can_interp(void) {
   return s_prev.valid && s_prev.gamestate == g_Gamestate &&
          s_prev.level == g_LevelId;
@@ -505,8 +838,16 @@ static int blend_state(void) {
   g_Camera.m_Rotation.z = mid_angle12(s_prev.cam_rot.z, g_Camera.m_Rotation.z);
   if (!g_present.interp_mobys)
     return 1;
-  if (mid_vec(&g_Spyro.m_Position, &s_prev.spyro_pos, &g_Spyro.m_Position))
-    mid_rot8(&g_Spyro.m_bodyRotation, &s_prev.spyro_rot);
+  if (mid_vec(&g_Spyro.m_Position, &s_prev.spyro_pos, &g_Spyro.m_Position)) {
+    for (i = 0; i < 3; i++) {
+      Track t = spyro_track(i);
+      mid_rot8(spyro_rot(i), &s_prev.spyro_rot[i]);
+      if (g_present.interp_anim) {
+        count_track(mid_track(&t, &s_prev.spyro_track[i], SPYRO_FRAME));
+        set_spyro_track(i, &t);
+      }
+    }
+  }
   n = count_mobys();
   if (n > s_prev.nmobys)
     n = s_prev.nmobys;
@@ -515,13 +856,24 @@ static int blend_state(void) {
     const MobyXf *p = &s_prev.mobys[i];
     if (m->m_Class != p->cls || (signed char)m->m_State < 0 || p->state < 0)
       continue;
-    if (mid_vec(&m->m_Position, &p->pos, &m->m_Position))
+    if (mid_vec(&m->m_Position, &p->pos, &m->m_Position)) {
+      Track t = moby_track(m);
       mid_rot8(&m->m_Rotation, &p->rot);
+      if (g_present.interp_anim) {
+        count_track(mid_track(&t, &p->track, MOBY_FRAME));
+        set_moby_track(m, &t);
+      }
+    }
   }
+  if (s_prev.have_particles && in_arena(g_Particles, sizeof s_prev.particles))
+    blend_particles();
   return 1;
 }
 
 /* ---------- passes ---------- */
+
+/* interp_budget_us bookkeeping (PortPresentDraw) */
+static long long s_busy_wo_interp, s_interp_cost;
 
 /* Runs one pass and leaves its picture in s_capture; the caller queues it. */
 static void presentation_pass(int wide) {
@@ -546,16 +898,17 @@ static void presentation_pass(int wide) {
 
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp;
-  long long t;
+  int wide_pass, logic_wide, interp, timed;
+  long long t, t_interp = 0;
   if (g_present.stats) {
     g_present_stats.us_update += now_us() - s_t_update;
     g_present_stats.ticks++;
   }
+  timed = g_present.stats || g_present.interp_budget_us;
   if (!port_present_active()) {
     if (g_present.stats) {
       t = now_us();
-      g_psyxVSyncHook = stats_vsync;
+      g_psyxVSyncHook = timed_vsync;
       GamestateDraw();
       g_psyxVSyncHook = NULL;
       g_present_stats.logic_passes++;
@@ -573,10 +926,23 @@ void PortPresentDraw(void) {
   interp = g_present.interp && can_interp();
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
+  /* interp_budget_us: the last tick's game CPU time without the in-between
+   * frame, plus what that frame cost when it last ran, must fit. Otherwise
+   * this tick shows its real frame for both vblanks (30 fps for a moment)
+   * instead of running late, which would slow the game itself (D28). */
+  if (interp && g_present.interp_budget_us &&
+      s_busy_wo_interp + s_interp_cost > g_present.interp_budget_us) {
+    interp = 0;
+    g_present_stats.budget_skips++;
+  }
   if (interp || wide_pass) {
     snap_take();
     if (interp) {
-      if (blend_state()) {
+      t_interp = now_us();
+      long long tb = now_us();
+      int blended = blend_state();
+      g_present_stats.us_blend += now_us() - tb;
+      if (blended) {
         presentation_pass(g_present.widescreen);
         push_capture(g_present.widescreen); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
@@ -584,6 +950,8 @@ void PortPresentDraw(void) {
         g_present_stats.skipped_interp++;
       }
       snap_restore();
+      t_interp = now_us() - t_interp;
+      s_interp_cost = t_interp;
     }
     if (wide_pass) {
       presentation_pass(1); /* queued after the logic pass, below */
@@ -593,8 +961,9 @@ void PortPresentDraw(void) {
 
   /* The logic pass: the game's own draw, side effects and all. */
   t = now_us();
-  if (g_present.stats)
-    g_psyxVSyncHook = stats_vsync;
+  s_tick_vsync_us = 0;
+  if (timed)
+    g_psyxVSyncHook = timed_vsync;
   s_suppress_ot = wide_pass;
   g_present_narrow = logic_wide;
   s_record_2d = logic_wide;
@@ -610,4 +979,6 @@ void PortPresentDraw(void) {
   push_capture(wide_pass || logic_wide);
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t;
+  if (g_present.interp_budget_us)
+    s_busy_wo_interp = now_us() - s_t_update - s_tick_vsync_us - t_interp;
 }

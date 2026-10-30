@@ -3,9 +3,12 @@
  *   <buttons|none> <vblanks>     e.g. "up+cross 30"
  * holds those buttons for that many vblanks, then stops again. Every step is
  * appended to DIR/pad.txt in --pad syntax, so the session replays exactly as
- * a scripted run. Files, not FIFOs, because Docker Desktop's bind mounts
- * don't carry FIFOs. "quit" ends the run. tools/step.sh is the client. */
+ * a scripted run. "poke:ADDR=VALUE" (hex) writes a word of PS1 RAM now and
+ * is logged to pad.txt the same way. Files, not FIFOs, because Docker
+ * Desktop's bind mounts don't carry FIFOs. "quit" ends the run.
+ * tools/step.sh is the client. */
 #include "host.h"
+#include "psx_arena.h"
 #include "psx_hooks.h"
 
 #include <stdio.h>
@@ -56,6 +59,24 @@ void host_step_vblank(int vblank) {
         host_log_flush();
         remove(path);
         exit(0);
+      }
+      if (strncmp(line, "poke:", 5) == 0) {
+        unsigned addr, value;
+        if (sscanf(line + 5, "%x=%x", &addr, &value) == 2) {
+          *(uint32_t *)PSX_ARENA(addr) = value;
+          host_log("step: poke %08x = %08x at %d", addr, value, vblank);
+          snprintf(path, sizeof path, "%s/pad.txt", s_dir);
+          if ((f = fopen(path, "a"))) {
+            fprintf(f, "%d poke:%08x=%08x\n", vblank + 1, addr, value);
+            fclose(f);
+          }
+          snprintf(path, sizeof path, "%s/ready", s_dir);
+          if ((f = fopen(path, "w"))) {
+            fprintf(f, "%d\n", vblank);
+            fclose(f);
+          }
+          continue;
+        }
       }
       if (sscanf(line, "%199s %d", btn, &n) == 2 && n > 0 &&
           host_pad_parse(btn, &mask) == 0)

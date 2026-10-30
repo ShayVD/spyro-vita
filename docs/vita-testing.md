@@ -85,6 +85,9 @@ Files the app writes:
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
 | `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
+| `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
+| `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
+| `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -99,6 +102,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   the GPU to finish).
 - With the GPU, also `gpu N: D draws, T triangles, P presents, U VRAM uploads (X ms), C copies
   into targets, R readbacks (… replayed; Y ms), K targets`, counted over the same 300 vblanks.
+- With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
+  …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
+  how often the 60 fps picture made it; S counts ticks the budget turned it off.
   The upload and readback times are CPU time.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
   mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
@@ -247,3 +253,18 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    `audio queue dry` near 0 in gameplay, and the mixer's ms per vblank (the time `spu` had before).
    `spu` in the `time` lines should be well under 1 ms. If the sound is wrong, try `mixer=2`
    and `mixer=0` and say which ones are.
+
+**Testing widescreen and 60 fps** (`docs/presentation.md`, decisions D30), with the GPU build:
+
+1. `config.txt`: `widescreen=1`, `interp=1`, `shot_hd=1`, `shot=1800,1801,4400,4401,4402`
+   (title, and the first attract demo), `stats=1`. Leave it at the title until the demo plays
+   (about 75 s).
+2. In the log: `present: widescreen 1, interp 1 (budget 26 ms), GPU capture`;
+   `gpu: presentation frames 960x544`; `present N:` lines (in-between frames per tick, skips);
+   `vblank N: ... P pictures` (P/5 near 60 when every in-between frame makes it); `busy` in the
+   `time` lines.
+3. The `shot-V-hd.png` files: the picture fills the 16:9 screen, upright, the HUD and the
+   "DEMO MODE" letters keep their shape, and consecutive vblanks show different pictures.
+4. Play a little (Artisans): does it feel smooth, and do the pause and inventory screens look
+   right? Then `interp=1` alone (4:3) and `widescreen=1` alone, to see each one's cost in the
+   `time` and `present` lines.
