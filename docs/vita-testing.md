@@ -210,6 +210,8 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 | Build | Who | Result |
 |---|---|---|
 | `a60dd0b` | user, 2026-10-30 | Boots, runs about 9 minutes with no errors (arena at 0x82000000). Too slow: 14–20 vblanks/s in 3D, 19–24 on the title (decisions D28, D29). |
+| `2661415` | user, 2026-10-30 | GPU renderer (D35). Works well: about 3.5 minutes from boot through Artisans and the pause menu. 60 vblanks/s throughout, mostly 29–30 pictures/s (22–26 in the heaviest stretch). Busy CPU 60–93% of each vblank: game 2–5 ms, raster 5–6 ms (2.2 of it the per-frame VRAM upload), SPU 0.8–2.7 ms. About 8 s of shader compilation at start-up. Uploads cut afterwards (D35). |
+| `c40c9cf` | user, 2026-10-30 | GPU renderer with uploads cut (D35). About 2.5 minutes through the title, Artisans and the pause menu. VRAM uploads 0 in nearly every 300-vblank window (4, 2, 1 at loads and the pause menu); raster 2.7–4 ms per vblank (was 5–6); busy CPU 43–78%; 143–150 pictures per 300 vblanks in every gameplay window, late vblanks mostly 0–15, worst vblank usually 24–29 ms. Per vblank in levels: game 3–5 ms, raster 3–4, SPU ~2.5, OT walk 1–1.5. Still ~8 s of shader compilation at start-up. |
 
 **Testing the GPU build:** put `libshacccg.suprx` in `ur0:data/` first. In `spyro.log`, check:
 
@@ -218,5 +220,6 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 2. `vblank N: ... P pictures`: P/5 is the frame rate (30 is the PS1's).
 3. `time N:` lines, in particular `busy` and `worst vblank`. Compare them with the CPU build by
    running once with `gpu=0` in `config.txt`.
-4. `gpu N:` lines: the `VRAM uploads (X ms)` cost per 300 vblanks (Spyro writes VRAM every frame).
+4. `gpu N:` lines: `VRAM uploads` should be a handful per 300 vblanks (level loads, menus), not
+   one per picture.
 5. Open the pause menu and the inventory: the background should be the game's frame in green.
