@@ -85,6 +85,7 @@ Files the app writes:
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
+| `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `widescreen=1` | 16:9: a wider view filling the screen; the game itself plays exactly as in 4:3 (`docs/presentation.md`) |
 | `interp=1` | 60 fps: an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `interp=2`: without animation blending; `interp=3`: camera only |
@@ -171,11 +172,12 @@ Keep Vita3K's log level at ERROR (the default; `VITA3K_LOG=N` changes it): TRACE
   replay, the PS1-exact picture the game sees through `StoreImage`, so they compare byte for byte
   with `gpu=0` and the host. They don't show the GPU's own output.
 - To see the GPU's picture, capture the Vita3K window: `CAPTURE=1 tools/vita/vita3k_run.sh …`
-  grabs it (`tools/vita/vita3k_window.swift`) as each shot is logged, as `win-V.png`. The grab
-  lands a few frames after the shot, so compare still scenes. A failed grab (the window covered:
-  Vita3K then has no picture for it) brings that Vita3K to the front and tries once more; failures
-  go to `capture.log`. Holding the game still for the grab doesn't work: while the game waits,
-  Vita3K's window has no picture at all, even when the frame is presented again.
+  writes `win-V.png` for every shot V, the same frame as the shot. After each shot the game
+  holds (`shot_hold=`), writes `hold.req`, and waits for the `hold.ack` the script writes once
+  `tools/vita/vita3k_window.swift` has grabbed the window. (Not the log: Vita3K writes it to the
+  host in 4 KB blocks, so a log line can show up long after the game wrote it.) A failed grab
+  brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
+  count as game time, so don't take timings from capture runs.
 
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 

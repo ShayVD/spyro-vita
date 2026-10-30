@@ -43,6 +43,9 @@
  *                       blending; 3: camera only
  *       interp_budget=MS  skip the in-between frame while the game's CPU
  *                       time per tick would pass MS (default 26; 0: never)
+ *       shot_hold=MS    after each shot, hold the game (its picture on
+ *                       screen) until hold.ack appears, at most MS ms
+ *                       (tools/vita/vita3k_run.sh CAPTURE=1)
  *       poke=V:ADDR=VALUE  at vblank V, write a 32-bit word to PS1 RAM (hex
  *                       ADDR and VALUE; tests, as the linux32 host's --poke)
  */
@@ -164,6 +167,8 @@ static void read_config(void) {
       g_vita_opts.gpu_res = parse_res(v);
     else if (!strcmp(line, "gpu_time"))
       g_vita_opts.gpu_time = atoi(v);
+    else if (!strcmp(line, "shot_hold"))
+      g_vita_opts.shot_hold = atoi(v);
     else if (!strcmp(line, "poke"))
       parse_poke(v);
     else if (!strcmp(line, "gpu_dump"))

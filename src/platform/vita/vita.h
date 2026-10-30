@@ -27,6 +27,7 @@ typedef struct {
   int gpu_res;        /* res= (gpu_res=): GPU targets at N x the PS1's pixels; 0 (default,
                          res=native): the screen's; 1: res=ps1 (D37) */
   int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */
+  int shot_hold;      /* shot_hold=MS: hold each shot's picture for a window capture */
   struct { int vblank; uint32_t addr, value; } pokes[VITA_MAX_POKES]; /* poke=V:ADDR=VALUE */
   int npokes;
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
