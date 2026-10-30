@@ -21,3 +21,4 @@ core
 *.core
 __pycache__/
 /save/
+/.tools/

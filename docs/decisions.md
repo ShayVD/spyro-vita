@@ -111,3 +111,14 @@ Record each decision with its date, what was chosen, and why.
 - `MODERN_COMPILER` is defined. Its branches only replace type puns with field copies and fix an implicit return. The one behavioural change is `MobyRotateToAngle`'s 5th argument (`upstream-notes.md`), still to check with the oracle.
 - `-fcommon`, because the decomp's uninitialised C globals are also defined in `asm/data` (GCC 2.7.2 merged them as common symbols).
 - **D2 status:** M1 uses PsyCross's GTE (`MTC2`/`CTC2`/`GTE_operator`) for translated code too. The bit-exactness test against PCSX-Redux is pending the oracle (step 8 and step 13).
+
+### D22. Behaviour oracle: PCSX-Redux a5d621af, native macOS, interpreter + debugger
+- **Build:** the pinned dev build `a5d621af` (2026-10-30) from distrib.app, the download location PCSX-Redux's README points to (the old `distrib.app.pcsx-redux.consoledev.net` no longer resolves). `tools/oracle/fetch_redux.sh` checks the published SHA-1 and unpacks it into the gitignored `.tools/`. It runs out of process only and is never linked (GPL).
+- **Native macOS arm64, not Docker.** The Linux arm64 AppImage needs glibc 2.38 plus X11 libraries. Its dynarec crashed during the BIOS boot, and under the interpreter it seemed to hang in the game's CD retry. That hang turned out to be our own Lua bug (below), but the native build is faster and needs no image, so it stays the runner.
+- **Flags:** `-no-ui -debugger -interpreter -softgpu`. Breakpoints only fire with the debugger on. The interpreter keeps them exact. The cost is about 40 vblanks/s with breakpoints and about 250/s without.
+- **`pcsx.json` in the run directory:** `UseNullSync` (the SPU paces the CPU from the audio callback otherwise), `Mute`, `Speed 8`. The file also makes Redux portable, so settings and memory cards stay in the run directory. Emulated timing is cycle-counted and doesn't depend on host speed.
+- **Lua gotchas:**
+  - Event listeners and breakpoints held only by chunk locals are garbage-collected after the first large allocation. The vsync listener silently stopped, which looked like an emulator hang. Keep them in globals.
+  - `PCSX.GPU.takeScreenShot()` throws under `-no-ui` on 24-bit frames. Dump VRAM with `getVRAM()` instead.
+  - Redux commits `mtc2`/`ctc2`/`lwc2` and GPR loads after the next instruction. So at a breakpoint, the move or load in the slot just before it is still pending. `oracle.lua` replays those into its "before" snapshots.
+- **Vblank numbering** counts from reset, so it includes the BIOS boot (~900 vblanks before the game's main loop). It is not aligned with the host's count yet.
