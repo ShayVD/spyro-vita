@@ -6,6 +6,7 @@
  * MemCardSync, which reports them once and then returns -1 (idle).
  * Replaces PsyCross's LIBMCRD.C, which has no files behind it. */
 #include "psx_hooks.h"
+#include "psx_state.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -31,7 +32,16 @@ typedef void (*MemCB)(int, int);
 static char s_root[512] = "save";
 static int s_pending_cmd, s_pending_rslt, s_have_pending;
 
+/* Save states (D51): the async result not yet reported. The cards' files
+ * are the player's and stay as they are. */
+void psx_mcrd_state(PsxStateIO *io) {
+  psx_state_io(io, &s_pending_cmd, sizeof s_pending_cmd);
+  psx_state_io(io, &s_pending_rslt, sizeof s_pending_rslt);
+  psx_state_io(io, &s_have_pending, sizeof s_have_pending);
+}
+
 void psx_mcrd_set_root(const char *dir) { snprintf(s_root, sizeof s_root, "%s", dir); }
+const char *psx_mcrd_root(void) { return s_root; } /* save states go there too (D51) */
 
 static int card_index(int chan) { return (chan >> 4) & 1; }
 

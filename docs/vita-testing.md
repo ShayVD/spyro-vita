@@ -61,6 +61,7 @@ Files the app writes:
 |---|---|
 | `ux0:data/spyro/spyro.log` | the log. **Please send it back after a test**, whatever happened |
 | `ux0:data/spyro/save/card0` | memory card 1 (created when the game first saves) |
+| `ux0:data/spyro/save/state1.bin` … `state3.bin` | quick-save states from the menu (3.8 MB each; decisions D51) |
 | `ux0:data/spyro/shots/` | PNGs, only if `config.txt` asks for them |
 
 ## 4. Optional `ux0:data/spyro/config.txt`
@@ -105,9 +106,13 @@ Files the app writes:
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
+| `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
+| `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
 **Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+
+**Quick save (the menu's SAVE section, decisions D51):** `STATE SLOT` picks slot 1, 2 or 3; `SAVE STATE` saves the whole game there, `LOAD STATE` (its value names the level the slot holds, or `EMPTY`) puts it back exactly as it was. Choosing either closes the menu; the save or load happens a moment later, at the start of the game's next tick, and a panel says what happened for about 2 seconds (`STATE 1 SAVED`, `STATE 2 LOADED`, `NO STATE IN SLOT 3`). States are separate from the game's own memory-card saves, which work as before; loading a state doesn't change the memory card. A state only loads in the build that made it: after installing a new VPK, old states show `OTHER BUILD` and are refused. There is no automatic save when the app is suspended or closed.
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -386,6 +391,16 @@ Again after merging the controls (#28, D46/D47; the Vita now reports an analog D
 7. Send back `spyro.log`, the shots, and anything that looked wrong (when, and what you did
    just before).
 
+**Testing quick save** (decisions D51; the menu's SAVE section):
+
+1. Play into Artisans, open the menu (SELECT+START), go to SAVE (the last section: ↑ twice from the top lands on it), `SAVE STATE` (✕). The menu closes and `STATE 1 SAVED` shows for about 2 seconds. In the log: `savestate: save took N ms` and `savestate: STATE 1 SAVED`. `ux0:data/spyro/save/state1.bin` is 3,806,132 bytes.
+2. Move somewhere else (collect a gem, lose some health), then `LOAD STATE`. Spyro, the camera, the gem count, enemies and the music must be exactly as they were at the save, and the game must go on normally. Note how long the picture stops (the log's `load took N ms`).
+3. Save in one level, go through a portal to another one, load: back in the first level as it was.
+4. Save while the music plays and while flying (Sunny Flight), load later: the music goes on from where it was. Also save while running with the left stick and turning the camera with the right one (`FREE CAMERA` on): after the load the camera is where it was, and the sticks work at once.
+5. **Quit the app (PS button, close) and start it again**, then `LOAD STATE` straight from the title screen. This is the important one: it works only if the Vita puts the game's memory at the same addresses every launch (the log's `arena at 0x...` line must be the same in both launches). If the menu shows `OTHER LAYOUT` instead of the level name, send the logs of both launches.
+6. Check the game's own saving still works: save at a fairy, quit, Load Game from the title.
+7. Send back `spyro.log` and anything that looked or sounded wrong after a load.
+
 **Measuring what 60 fps costs** (`docs/presentation.md` "60 fps on the Vita"):
 
 1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS (EXPERIMENTAL)`: ON; widescreen stays on by default).
@@ -407,6 +422,35 @@ Again after merging the controls (#28, D46/D47; the Vita now reports an analog D
    line with the default.
 5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
    and how big G gets.
+
+### Quick save (D51, branch `claude/vita-quicksave-a54846`)
+
+The gems script (M2's `run9-gems/replay_pad.txt`), with a state saved at vblank 7000 (Artisans, music playing) and loaded later; host references from the same tree (`--state-hash`: a hash of every chunk at every main loop top; `tools/savestate_compare.py`). Logs in `logs/`:
+
+| Run | What | Result |
+|---|---|---|
+| `run1-state-A`, `run1-state-B` | host: save at 7000; B also loads it at 7602 | B after the load against A: 899 loop tops identical in every chunk (arena, VRAM, SPU, XA, CD, …), 30.0 s of audio byte-identical, 88/88 shots identical, same final trace row (4 gems). |
+| `run1-state-C` | host: a new process loads A's `state1.bin` at its first loop top (vblank 437, during the boot logos) | 899 loop tops identical to A, 30.0 s of audio identical, all shots identical. |
+| `run4-state-G` | host: save at 4003, in the New Game intro cutscene; load at 4603 | The replayed stretch (4003–4601) identical to the first pass: 300 loop tops, 10.0 s of audio. |
+| `run12-state-F3` | host: Sunny Flight (`--tour 15`), save at 7602 while flying, load at 8002 | Replayed stretch identical: 200 loop tops, 6.7 s of audio. |
+| `run12-state-E2` | host: save on the title screen (1503), play New Game → intro → Artisans, load at 7703 | Back on the title; the replayed stretch (title, New Game, intro cutscene, loading Artisans, the walk to the gems) identical to the first pass: 3,102 loop tops, 103 s of audio. Started with `run1-state-A`'s memory card, so the card was the same in both passes (see below). |
+| `run9-ws-ref`, `run9-ws-load` | host, `--widescreen --interp`: save on the title, load from inside Artisans (after its loading screen) | The 960×544 pictures after the load (1600–1800) identical to the run without the load, in 16:9 (before `port_present_reset()`, the presenter would have stayed on the 4:3 display until the counter passed the loading screen's vblank). |
+| `run2-vita-state` | Vita3K, `gpu=1`, mixer thread: save at 7000, load at 7602 | 88/88 shots byte-identical to host A; the WAV identical to A's before the load and for the 30 s after it. Save 45 ms, load 39 ms (Vita3K's times). |
+| `run6-vita-relaunch` | Vita3K: a new launch loads `run2-vita-state`'s `state1.bin` at vblank 437 | Accepted (arena at 0x89000000 in both launches, same layout); 22/22 shots identical to host A, 30 s of audio identical; the memory card unchanged. |
+| `run8-vita-soft-state` | Vita3K, `gpu=0`: save at 7000, load at 7602, to 8000 | 80/80 shots identical to host A, 16.6 s of audio after the load identical. Save 6 ms, load 5 ms. |
+| `run14-state-*` | host, after merging the controls (#28) and cheats (#29): A, B, C, G, F3 and E2 again (as `run1`, `run4`, `run12`) | All identical again: B 899 loop tops, 30 s of audio, 88/88 shots; C (new process) 900 loop tops, 30 s; G 300, 10 s; F3 200, 6.7 s; E2 3,102 loop tops, 103 s. `state1.bin` is now 3,806,132 bytes (the cheat queue in `GLOB`). |
+| `run14-state-H`, `run14-state-H2` | host, `--analog --free-camera`, `logs/pads/analog_cam.txt` (the gems script to 7000, then both sticks: running, jumping, charging, the camera turned and tilted): save at 7120 with both sticks held, load at 7700; H2, a new process, loads H's state at its first loop top | H: the replayed stretch identical, 290 loop tops, 9.7 s of audio. H2: 640 loop tops identical to H, 34/34 shots, the audio identical to both H's first pass and its replay (`savestate_compare.py` flags H2's audio only because H's own WAV restarts at its load). The free camera was turning at the save: `--peek 80075924` (`D_80075924`, the turn) reads 0x1F8, −0x3F8, 0x3F0 around it, and 0 throughout `run14-state-H0` (the same sticks without the free camera). |
+| `run15-vita-state` | Vita3K, `gpu=1`, as `run2` | 80/80 shots and 16.6 s of audio after the load identical to `run14-state-A`. Save 23 ms, load 21 ms. |
+| `run16-vita-analog` | Vita3K, `analog=1 free_camera=1`, `analog_cam.txt`, save at 7120, load at 7700 | 168/168 shots and the whole WAV (150 s, both sides of the load) identical to `run14-state-H`. |
+| `run17-vita-menu-save`, `run18-vita-menu-load` | Vita3K, the real menu rows: `menu_test=7000 menu_keys=up,up,cross` (`SAVE STATE`); then a new launch from run17's save folder, `menu_test=7600 menu_keys=up,cross` (`LOAD STATE`) | run17: 77/77 shots identical to `run14-state-A`, the state saved at 7002 as with `state_test`. run18: started with run17's memory card, so from 2000 it went its own way (the title skipped "create save file?", below); after the load, shots 7100–8000 and 16.6 s of audio identical to `run14-state-A`. Arena at 0x89000000 in both launches. |
+| `run7-vita-ws-notice` | Vita3K, `widescreen=1 interp=1`, window captures | Save and load work with the presenter on; the notice panel shows over the 16:9 picture (`win-7010.png`); textures right after the load. |
+
+Two things the runs showed, neither a fault of the states:
+
+- **The memory card isn't part of a state.** `run3-state-E` (the same as `run12-state-E2` but starting with no card) diverged at 1979 after the load: the first pass had created the card's save file at the title, so after loading the title-screen state the game found it and skipped its "create save file?" prompt, and the pad script went out of step. That is the intended behaviour (D51): loading never undoes or redoes card saves.
+- **The mips2c stack holds host values.** Two separate processes can differ in a few bytes of the arena's emulated stack (0x80010000–0x8001FFFF) at the loop top, where it is dead: translated code leaves host values there (`0x407ffb18`, a qemu stack address, next to the one byte that differed in `run10-diag-E`). The game never reads them (host and Vita runs are byte-identical everywhere it matters). `--state-hash` hashes that range as `STAK`, apart from the rest of the arena, and `tools/savestate_compare.py` reports it but doesn't fail on it.
+
+Not checked: on hardware (above). The menu rows are driven in Vita3K through `menu_keys=` (`run17`, `run18`), not by hand.
 
 ### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
 

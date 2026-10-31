@@ -42,6 +42,11 @@ int port_warp_level(int index);
 /* "ARTISANS: STONE HILL", from the game's own name tables (strings.c). */
 const char *port_level_name(int level, char *buf, size_t len);
 
+/* Save states (savestate.c, D51): the queued cheat and the first title's
+ * flythrough skip. */
+struct PsxStateIO;
+void port_cheats_state(struct PsxStateIO *io);
+
 #ifdef __cplusplus
 }
 #endif

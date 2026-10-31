@@ -2096,6 +2096,20 @@ void vita_gpu_rescale(void) {
   s_last.valid = 0;
 }
 
+/* Save states (D51): VRAM as the PS1 has it. Every target dropped first:
+ * drop_target() replays its log into s_vram (no GPU readback). Load: the
+ * caller overwrites s_vram, then it's newer than the GPU's copy and the
+ * decoded atlas starts over; targets are made again as the game draws. */
+uint16_t *vita_gpu_vram_take(void) {
+  vita_gpu_rescale();
+  return s_vram;
+}
+
+void vita_gpu_vram_loaded(void) {
+  s_vram_dirty = 1;
+  s_aflush = 1;
+}
+
 static void draw_overlay(void) {
   float ndc[4], src[4] = {0, 0, 1, 1};
   int x0 = (SCREEN_W - s_ovl_w) / 2, y0 = (SCREEN_H - s_ovl_h) / 2;

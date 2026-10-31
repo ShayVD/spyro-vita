@@ -13,6 +13,7 @@
  * only its side effects remain (m_WasDrawn, the sector flags, the animation
  * queues), computed with the original 4:3 frustum. */
 #include "present.h"
+#include "savestate.h"
 
 #include "psx_arena.h"
 #include "psx_spu.h"
@@ -307,6 +308,16 @@ static void push_capture(int wide) {
   s_frame_wide[slot] = (uint8_t)wide;
   s_qcount++;
   s_last_push_vblank = PsyX_Sys_GetVBlankCount();
+}
+
+/* A save state was loaded (D51): the queued frames are from before it, and
+ * the vblank counts the fallback compares were the old timeline's. */
+void port_present_reset(void) {
+  s_qcount = 0;
+  s_shown = -1;
+  s_captured = 0;
+  s_foreign_vblank = -1;
+  s_last_push_vblank = -1000;
 }
 
 int port_present_frame_slot(void) {
@@ -736,6 +747,7 @@ static long long s_t_update;
 void PortPresentBeforeUpdate(void) {
   long long t;
   int i;
+  savestate_point(); /* the main loop top: save states happen here (D51) */
   if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
   if (!g_present.interp) {

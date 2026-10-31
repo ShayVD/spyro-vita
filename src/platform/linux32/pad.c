@@ -249,6 +249,29 @@ void host_pad_vblank(int vblank) {
   fill(s_pad[1], 0, 0);
 }
 
+/* A save state was loaded and the vblank counter set back (D51): absolute
+ * lines play again from there, with the buttons and sticks held at that
+ * vblank. */
+void host_pad_rewind(int vblank) {
+  PadScript *ps = &s_main;
+  int i;
+  s_mask = 0;
+  memset(s_sticks, 0x80, 4);
+  for (i = 0; i < ps->n; i++) {
+    if (ps->ev[i].anchored) {
+      host_log("pad: anchored lines don't rewind after a state load");
+      return;
+    }
+    if (ps->ev[i].vblank > vblank)
+      break;
+    if (!ps->ev[i].poke) {
+      s_mask = ps->ev[i].mask;
+      memcpy(s_sticks, ps->ev[i].sticks, 4);
+    }
+  }
+  ps->next = i;
+}
+
 void host_pad_set_live(uint16_t mask) { s_live = mask; }
 
 /* The PsyX_Pad_* calls LIBPAD.C makes. */

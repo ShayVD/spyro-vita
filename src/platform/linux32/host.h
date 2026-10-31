@@ -39,11 +39,13 @@ void host_log_flush(void);
 /* vblank.c */
 int host_vblank_count(void);
 void host_vblank(void); /* advance exactly one virtual vblank */
+void host_set_vblank(int vblank); /* a save state's counter (D51) */
 
 /* pad.c */
 int host_pad_load(const char *path); /* 0 = ok */
 int host_pad_load_after(const char *path); /* --pad-after: once the tour is done */
 void host_pad_vblank(int vblank);
+void host_pad_rewind(int vblank); /* a save state loaded: replay from vblank (D51) */
 
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
@@ -68,6 +70,10 @@ void host_serve_vblank(int vblank);
 int host_audio_wav_open(const char *path); /* 0 = ok */
 void host_audio_close(void);
 long long host_audio_take(long long after, int16_t **pcm, size_t *frames);
+
+/* savestate_host.c: --state V:save|load:N, --state-hash FILE (D51) */
+int host_state_option(const char *val); /* 0 = ok */
+int host_state_hash_open(const char *path); /* 0 = ok */
 
 /* gpu_soft.c: 1024x512 PS1 VRAM, 1-5-5-5 (bit 15 = mask/STP, R in low bits). */
 uint16_t *host_vram(void);

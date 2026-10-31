@@ -12,6 +12,7 @@
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats | --present-dirty] [--vcache]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
+ *         [--state V:save|load:N]... [--state-hash FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -51,6 +52,10 @@
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
+ * --state: at vblank V, ask for a save state of slot N (or a load), done at
+ *   the next main loop top, in the --save DIR (src/game/savestate.c, D51);
+ *   several are taken in the order given.
+ *   --state-hash: per main loop top, a hash of each save-state chunk.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "cheats_port.h"
 #include "host.h"
@@ -86,6 +91,7 @@ static void usage(void) {
           "             [--out960] [--present-stats] [--vcache]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
+          "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -317,6 +323,14 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--cd-latency") == 0) {
       TAKE();
       cd_latency = to_int(val);
+    } else if (strcmp(a, "--state") == 0) {
+      TAKE();
+      if (host_state_option(val) != 0)
+        usage();
+    } else if (strcmp(a, "--state-hash") == 0) {
+      TAKE();
+      if (host_state_hash_open(val) != 0)
+        return 1;
     } else if (strcmp(a, "--log") == 0) {
       TAKE();
       host_log_open(val);

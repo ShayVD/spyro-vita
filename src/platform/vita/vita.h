@@ -62,6 +62,7 @@ void vita_log(const char *fmt, ...);  /* one line, no trailing \n needed */
 
 /* vblank.c */
 int vita_vblank_count(void);
+void vita_set_vblank(int vblank); /* a save state's count (D51) */
 
 /* video.c: the PS1 display rect, scaled 4:3 into 960x544 (either renderer) */
 int vita_video_init(void); /* 0 = ok */
@@ -106,6 +107,8 @@ void vita_gpu_overlay(const uint8_t *rgb, int w, int h); /* gpu_gl.c */
 void vita_gpu_force_redraw(void);
 void vita_gpu_repeat(void); /* the picture on screen again (shot_hold) */
 void vita_gpu_rescale(void); /* targets again at the current widescreen width */
+uint16_t *vita_gpu_vram_take(void); /* save states: targets dropped, s_vram complete (D51) */
+void vita_gpu_vram_loaded(void);    /* s_vram was overwritten */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
@@ -118,10 +121,12 @@ void vita_pad_poll(void); /* SDL events (controller hot-plug) */
 /* pad.c: pad= script */
 int vita_pad_load(const char *path); /* 0 = ok */
 uint16_t vita_pad_read(void); /* the controller's buttons now (PS1 bits) */
+void vita_pad_rewind(int vblank); /* a save state loaded: the script from vblank (D51) */
 
 /* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
 void vita_audio_init(void);
 void vita_audio_close(void); /* finish audio.wav */
+void vita_audio_clear(void); /* drop what is queued (a save state loaded) */
 extern unsigned g_vita_audio_dry, g_vita_audio_cleared; /* SDL queue empty / cut, since the last report */
 
 /* mixer.c: the SPU mix and XA decode on their own thread (D37) */
@@ -129,6 +134,11 @@ void vita_mixer_init(void);
 void vita_mixer_vblank(void); /* once per vblank, in place of psx_spu_vblank */
 void vita_mixer_drain(void);  /* wait until everything posted is mixed */
 void vita_mixer_report(int vblank); /* "mixer" line in the log */
+void vita_mixer_state(int load); /* save states: decoder state in or out of g_psx_spu (D51) */
+
+/* savestate_vita.c: save states (D51) */
+void vita_savestate_init(void);
+void vita_savestate_config(const char *v); /* config.txt state_test= */
 
 /* prof.c: per-vblank CPU time by part ("time" lines in the log) */
 enum { PROF_GAME, PROF_OT, PROF_RASTER, PROF_SPU, PROF_PRESENT, PROF_WAIT, PROF_COUNT };
@@ -138,5 +148,6 @@ void prof_vblank(void);
 void prof_report(int vblank);
 void prof_draw_report(int vblank, int vblanks); /* prof_draw.c: "draw" lines */
 unsigned prof_vram_gen(void); /* changes whenever the rasterizer writes VRAM */
+void prof_vram_touch(void);   /* VRAM was written some other way (a save state loaded) */
 
 #endif

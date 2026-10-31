@@ -22,6 +22,7 @@ static int s_frames;
 static unsigned s_vram_gen; /* bumped by every VRAM write */
 
 unsigned prof_vram_gen(void) { return s_vram_gen; }
+void prof_vram_touch(void) { s_vram_gen++; } /* VRAM written behind the GR_* calls (D51) */
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 

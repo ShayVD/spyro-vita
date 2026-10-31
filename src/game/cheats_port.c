@@ -14,6 +14,7 @@
  * pending is dropped when the game leaves play, pause and inventory (death,
  * a level load, a demo) or after 10 seconds. */
 #include "cheats_port.h"
+#include "psx_state.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdio.h>
@@ -32,6 +33,7 @@ int g_port_skip_logos;
 #define PENDING_TICKS 300 /* game ticks (30 per second) */
 
 static int s_pending, s_level, s_age;
+static int s_title_done; /* PortSkipTitleIntro: the first title only */
 static void (*s_log)(const char *fmt, ...);
 
 void port_cheats_set_log(void (*log)(const char *fmt, ...)) { s_log = log; }
@@ -93,10 +95,18 @@ int port_cheat_pending(void) { return s_pending; }
 /* TitlescreenUpdate (0009-skip-intro-logos.patch): with the logos skipped,
  * the first title after boot also skips its flythrough, once. */
 int PortSkipTitleIntro(void) {
-  static int s_done; /* the first title only, whatever the menu says later */
-  int skip = g_port_skip_logos && !s_done;
-  s_done = 1;
+  int skip = g_port_skip_logos && !s_title_done; /* whatever the menu says later */
+  s_title_done = 1;
   return skip;
+}
+
+/* A save state holds the cheat queue and whether the first title has been
+ * (D51); g_port_skip_logos is the player's setting and stays. */
+void port_cheats_state(struct PsxStateIO *io) {
+  psx_state_io(io, &s_pending, sizeof s_pending);
+  psx_state_io(io, &s_level, sizeof s_level);
+  psx_state_io(io, &s_age, sizeof s_age);
+  psx_state_io(io, &s_title_done, sizeof s_title_done);
 }
 
 /* --- hooks in the game's code (0008-cheats-from-options-menu.patch) --- */

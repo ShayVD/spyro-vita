@@ -294,6 +294,19 @@ int vita_pad_load(const char *path) {
   return 0;
 }
 
+/* A save state was loaded and the vblank counter set back (D51): the script
+ * plays again from there, with the buttons and sticks held at that vblank.
+ * Touch gestures already played are not queued again: they only drive the
+ * port's menu. */
+void vita_pad_rewind(int vblank) {
+  s_script = 0;
+  memset(s_script_sticks, 0x80, 4);
+  for (s_next = 0; s_next < s_nevents && s_events[s_next].vblank <= vblank; s_next++) {
+    s_script = s_events[s_next].mask;
+    memcpy(s_script_sticks, s_events[s_next].sticks, 4);
+  }
+}
+
 /* sticks: right X, right Y, left X, left Y (0..255, 0x80 centred), the
  * PS1's byte order (gamepad.h GamepadSticks). */
 static void fill(unsigned char *p, int connected, uint16_t mask, const unsigned char *sticks) {
