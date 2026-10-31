@@ -304,6 +304,17 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 | `run421-vita3k-menu-warp` | the same, WARP TO → TOWN SQUARE, ✕ ✕ on LEVEL WARP | applied at 6311, Spyro glides into Town Square. 120/120 shots byte-identical to the host (`run419`). |
 | `run422-vita3k-default-boot` | no `skip_logos`, 1200 vblanks | the Sony and Universal logos as before: 10/10 shots identical to the host. |
 
+Again after merging the controls (#28, D46/D47; the Vita now reports an analog DualShock and CONTROLS has seven rows, so GAME's rows are 7 further down: 99 LIVES is 11 downs from the top, WARP TO 14):
+
+| Run | What | Result |
+|---|---|---|
+| `run444-m28-vita3k-skip-title` | as `run413`, `menu_keys` 11 downs | 40/40 shots byte-identical to the host (`run433`); both ✕ refused (`cheats only in a level`). |
+| `run445-m28-vita3k-menu-lives` | as `run420` | queued at 6300, applied at 6311; 120/120 shots byte-identical to the host (`run436`). |
+| `run446-m28-vita3k-menu-warp` | as `run421` | applied at 6311; 120/120 shots byte-identical to the host (`run437`). |
+| `run443-m28-vita3k-default-boot` | as `run422` | 10/10 shots identical to the host (`run438`). |
+
+(`run440`–`run442` used the old key sequences, which now land on CONTROLS rows; not results.)
+
 ## On hardware
 
 | Build | Who | Result |
