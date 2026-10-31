@@ -8,10 +8,22 @@ or statically linked. Their licences apply to their parts. Full licence texts ar
 ## The game itself is not included
 
 *Spyro the Dragon* (1998) is © its respective owners. This repository and the VPK contain none of
-its data: no executable, levels, models, textures, sounds, music or logos. Players supply their own
-disc and extract its files themselves (`tools/extract_disc.py`). The LiveArea icon and art are
-original work, drawn by `tools/vita/make_livearea.py`. Nothing in them is taken or traced from the
-game, its logos or its packaging.
+its data: no executable, levels, models, textures, sounds or music. Players supply their own disc
+and extract its files themselves (`tools/extract_disc.py`).
+
+## LiveArea artwork (not under the MIT licence)
+
+The bubble icon, the LiveArea background and the start gate (`assets/livearea/`, packed into the
+VPK's `sce_sys/`) are not our work, and the MIT licence doesn't cover them:
+
+- **Icon and gate:** the *Spyro the Dragon* logo. Spyro and Spyro the Dragon are trademarks of
+  Activision Publishing, Inc.
+- **Background:** concept art by Simon Kopp (2017/18) for *Spyro Reignited Trilogy*, Airborn
+  Studios. It's shown whole, with the artist's signature and the studio marks.
+
+No licence has been obtained for these images. They're included at the project owner's decision
+and will be replaced on request from the rights holders. Without `assets/livearea/`, the build
+draws original art instead (`tools/vita/make_livearea.py`, decisions D55 and D59).
 
 ## What is in the VPK
 

@@ -9,6 +9,15 @@ so the build needs nothing new. The output is the same on every run.
                                OUTDIR/bg.png (840x500), OUTDIR/startup.png (280x158)
   make_livearea.py --check PNG WxH ...
                                fail unless each PNG is WxH, 8-bit indexed
+  make_livearea.py --from DIR OUTDIR
+                               the player's own art instead: DIR/icon0.png,
+                               DIR/bg.png and DIR/startup.png (8-bit RGB or
+                               RGBA or palette, already at the sizes below),
+                               converted to 8-bit indexed. The build passes
+                               disc/livearea (gitignored, made by
+                               tools/vita/livearea_local.sh) if it's there,
+                               else assets/livearea (the committed official
+                               art, D59)
 
 The Vita wants sce_sys PNGs 8-bit indexed (palette) at these sizes: the
 bubble icon 128x128, the LiveArea background 840x500, the gate 280x158.
@@ -370,6 +379,8 @@ def quantize(cv, n=256):
     return pal, out
 
 
+SIZES = (("icon0.png", (128, 128)), ("bg.png", (840, 500)), ("startup.png", (280, 158)))
+
 BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
 
@@ -388,6 +399,55 @@ def write_png(cv, path):
     png += chunk(b"IEND", b"")
     with open(path, "wb") as f:
         f.write(png)
+
+
+def read_png(path):
+    """A Canvas from an 8-bit, non-interlaced RGB, RGBA (what sips writes) or
+    palette PNG (what this script writes); alpha is dropped onto black."""
+    d = open(path, "rb").read()
+    if d[:8] != b"\x89PNG\r\n\x1a\n":
+        sys.exit(f"{path}: not a PNG")
+    pos, idat, w, pal = 8, b"", 0, None
+    while pos < len(d):
+        n, t = struct.unpack(">I4s", d[pos:pos + 8])
+        body = d[pos + 8:pos + 8 + n]
+        if t == b"IHDR":
+            w, h, depth, ctype, _, _, lace = struct.unpack(">IIBBBBB", body)
+            if depth != 8 or ctype not in (2, 3, 6) or lace:
+                sys.exit(f"{path}: wants 8-bit RGB, RGBA or palette, not interlaced "
+                         f"(depth {depth}, colour type {ctype}, interlace {lace})")
+            bpp = {2: 3, 3: 1, 6: 4}[ctype]
+        elif t == b"PLTE":
+            pal = [tuple(body[i:i + 3]) for i in range(0, len(body), 3)]
+        elif t == b"IDAT":
+            idat += body
+        pos += 12 + n
+    raw = zlib.decompress(idat)
+    stride = w * bpp
+    cv = Canvas(w, h)
+    prev = bytearray(stride)
+    for y in range(h):
+        f = raw[y * (stride + 1)]
+        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + ((a + b) >> 1)) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        for x in range(w):
+            p = pal[line[x]] if bpp == 1 else line[x * bpp:x * bpp + bpp]
+            k = p[3] / 255 if bpp == 4 else 1.0
+            cv.px[y * w + x] = [p[0] * k, p[1] * k, p[2] * k]
+        prev = line
+    return cv
 
 
 def check_png(path, size):
@@ -413,6 +473,14 @@ def main(argv):
         for e in errs:
             print(e, file=sys.stderr)
         return 1 if errs else 0
+    if len(argv) == 4 and argv[1] == "--from":
+        os.makedirs(argv[3], exist_ok=True)
+        for name, size in SIZES:
+            cv = read_png(os.path.join(argv[2], name))
+            if (cv.w, cv.h) != size:
+                sys.exit(f"{argv[2]}/{name}: {cv.w}x{cv.h}, wants {size[0]}x{size[1]}")
+            write_png(cv, os.path.join(argv[3], name))
+        return 0
     if len(argv) != 2:
         sys.exit(__doc__)
     os.makedirs(argv[1], exist_ok=True)

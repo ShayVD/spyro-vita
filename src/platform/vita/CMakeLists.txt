@@ -75,13 +75,39 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules
 # (8-bit indexed, these sizes) before it's packed.
+# The art in SPYRO_LIVEAREA_DIR is converted (D59): disc/livearea (gitignored,
+# tools/vita/livearea_local.sh) when it's there, else assets/livearea, the
+# official art committed at the owner's decision (not under MIT; see its
+# README). With neither, make_livearea.py draws D55's original art.
+if(EXISTS "${CMAKE_SOURCE_DIR}/disc/livearea/bg.png")
+  set(la_default "${CMAKE_SOURCE_DIR}/disc/livearea")
+else()
+  set(la_default "${CMAKE_SOURCE_DIR}/assets/livearea")
+endif()
+set(SPYRO_LIVEAREA_DIR "${la_default}" CACHE PATH
+  "LiveArea art (icon0.png, bg.png, startup.png)")
 set(LA_DIR "${CMAKE_CURRENT_BINARY_DIR}/livearea")
 set(LA_PNGS "${LA_DIR}/icon0.png" "${LA_DIR}/bg.png" "${LA_DIR}/startup.png")
+set(LA_LOCAL "${SPYRO_LIVEAREA_DIR}/icon0.png" "${SPYRO_LIVEAREA_DIR}/bg.png"
+  "${SPYRO_LIVEAREA_DIR}/startup.png")
+set(LA_ARGS "${LA_DIR}")
+set(LA_DEPS "")
+set(la_have_local ON)
+foreach(f ${LA_LOCAL})
+  if(NOT EXISTS "${f}")
+    set(la_have_local OFF)
+  endif()
+endforeach()
+if(la_have_local)
+  message(STATUS "LiveArea: art from ${SPYRO_LIVEAREA_DIR}")
+  set(LA_ARGS --from "${SPYRO_LIVEAREA_DIR}" "${LA_DIR}")
+  set(LA_DEPS ${LA_LOCAL})
+endif()
 add_custom_command(OUTPUT ${LA_PNGS}
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" "${LA_DIR}"
+  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_ARGS}
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" --check
     "${LA_DIR}/icon0.png" 128x128 "${LA_DIR}/bg.png" 840x500 "${LA_DIR}/startup.png" 280x158
-  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py"
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_DEPS}
   COMMENT "LiveArea art")
 add_custom_target(spyro_vita_livearea DEPENDS ${LA_PNGS})
 set(LA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents")

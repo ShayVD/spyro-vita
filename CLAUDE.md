@@ -8,6 +8,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **Reference only:** `../psxrecomp-ref` (PolyForm Noncommercial 1.0.0, see its `LICENSE`). Read it to learn techniques. Don't copy its code into this repo.
 - **Off-limits:** OpenPete (closed source, PolyForm Noncommercial). Don't copy or reverse its code or assets.
 - **Never commit copyrighted game data:** no disc images, PSX.EXE, WAD.WAD, extracted assets or BIOS. All of it lives in the gitignored `disc/` folder. The BIOS for the emulator oracle is `disc/bios/SCPH1001.BIN`.
+  - **One exception, the owner's decision (2026-10-31, D59):** the three LiveArea images in `assets/livearea/` (the Spyro the Dragon logo and Simon Kopp's Reignited Trilogy concept art). They aren't under MIT; see `assets/livearea/README.md`. Add nothing else there without asking.
 - **Never depend on Sony's PsyQ headers** (`third_party/spyro-1/psyq/include`, user-supplied) outside the matching build. The port compiles against PsyCross's `include/psx` headers.
 
 ## Known state of the decomp (Oct 2026)

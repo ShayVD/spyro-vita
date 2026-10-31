@@ -185,7 +185,7 @@ cmake -S spyro-vita -B spyro-vita/build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_
 cmake --build spyro-vita/build/vita
 ```
 
-The result is `build/vita/spyro-vita.vpk`. GitHub Actions builds the same VPK for every pull request and push to `main`
+The result is `build/vita/spyro-vita.vpk`. Its bubble icon and LiveArea come from `assets/livearea/`. To use other images, run `tools/vita/livearea_local.sh LOGO TITLE` (macOS), which writes them into the gitignored `disc/livearea/`, then configure again (decisions D59). GitHub Actions builds the same VPK for every pull request and push to `main`
 (`.github/workflows/build.yml`).
 
 The other builds are for development:
@@ -217,4 +217,4 @@ keep their own licences, listed with their full texts in
 - [SDL2](https://www.libsdl.org) (zlib), and the [VitaSDK](https://vitasdk.org) toolchain,
   headers and libraries.
 
-The LiveArea icon and art are original, drawn by `tools/vita/make_livearea.py`.
+The LiveArea icon and gate are the *Spyro the Dragon* logo (a trademark of Activision Publishing, Inc.). The background is concept art by Simon Kopp for *Spyro Reignited Trilogy* (Airborn Studios). Neither is our work, and neither is under the MIT licence: see [`assets/livearea/README.md`](assets/livearea/README.md).
