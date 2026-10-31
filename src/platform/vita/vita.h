@@ -52,6 +52,7 @@ typedef struct {
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
+  int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -80,7 +81,7 @@ void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the displ
 void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
 void vita_gpu_fill(float r, float g, float b);
 void vita_gpu_report(int vblank); /* "gpu" line in the log */
-void vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41) */
+int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41), menu (D48) */
 void vita_gpu_arm_sample(void);   /* GPU-time the next picture too */
 int vita_gpu_take_sample(unsigned *frame_us, unsigned *tail_us); /* 1 = a new one */
 
@@ -92,6 +93,11 @@ void vita_bench_present(int shown);
 void vita_present_init(void); /* after vita_video_init */
 void vita_present_apply(void); /* g_vita_opts' switches -> the game's presenter */
 void vita_present_report(int vblank);
+
+/* picture.c: the menu's picture rows and the draw distance (D48, D49) */
+void vita_picture_init(void); /* after vita_video_init */
+void vita_picture_apply(void);
+void vita_picture_report(int vblank);
 
 /* menu.c: the port's options menu (hold SELECT, press START) */
 uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */

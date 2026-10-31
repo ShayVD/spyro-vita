@@ -36,8 +36,11 @@ static void write_ppm(const char *dir, const char *name, const uint8_t *rgb, int
 }
 
 /* Sample rows, as present_vita.c's and a second file's. */
-static int s_ws = 1, s_interp, s_budget = 26, s_speed = 100, s_changes, s_actions;
+static int s_ws = 1, s_interp, s_budget = 26, s_speed = 100, s_changes, s_actions, s_res,
+           s_gpu = 1;
 static void changed(void) { s_changes++; }
+static int gpu_on(void) { return s_gpu; }
+static const char *const k_res[] = {"NATIVE", "PS1", "2X"};
 static int act(void) { return ++s_actions, 1; }
 static const char *const k_interp[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
 static const int k_budgets[] = {0, 20, 23, 26, 30};
@@ -56,6 +59,8 @@ static const MenuOption k_b[] = {
     {.section = MENU_SAVE, .label = "SAVE STATE", .names = k_save_names, .action = act},
     {.section = MENU_CONTROLS, .label = "CAMERA SPEED", .key = "cam_speed", .value = &s_speed,
      .min = 50, .max = 200, .step = 25, .fmt = "%d%%"},
+    {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &s_res,
+     .names = k_res, .count = 3, .visible = gpu_on},
 };
 static MENU_OPTION_LIST(s_list_a, k_a);
 static MENU_OPTION_LIST(s_list_b, k_b);
@@ -67,12 +72,17 @@ static void test_table(const char *dir) {
   char buf[32], path[512], line[128], text[1024] = "";
   int n = menu_opts_layout(lists, 3, rows, opts, 16);
   FILE *f;
-  /* PICTURE header, 3 rows, CONTROLS header, speed, SAVE header, action */
-  CHECK(n == 8, "layout gave %d lines", n);
+  /* PICTURE header, 4 rows, CONTROLS header, speed, SAVE header, action */
+  CHECK(n == 9, "layout gave %d lines", n);
   CHECK(!opts[0] && !strcmp(rows[0].label, "PICTURE") && !rows[0].value, "PICTURE header");
-  CHECK(opts[1] == &k_a[0] && opts[3] == &k_a[2], "PICTURE rows in list order");
-  CHECK(!opts[4] && !strcmp(rows[4].label, "CONTROLS"), "CONTROLS header after PICTURE");
-  CHECK(opts[5] == &k_b[1] && !opts[6] && opts[7] == &k_b[0], "CONTROLS then SAVE");
+  CHECK(opts[1] == &k_a[0] && opts[3] == &k_a[2] && opts[4] == &k_b[2],
+        "PICTURE rows in list order");
+  CHECK(!opts[5] && !strcmp(rows[5].label, "CONTROLS"), "CONTROLS header after PICTURE");
+  CHECK(opts[6] == &k_b[1] && !opts[7] && opts[8] == &k_b[0], "CONTROLS then SAVE");
+  s_gpu = 0;
+  n = menu_opts_layout(lists, 3, rows, opts, 16);
+  CHECK(n == 8 && opts[4] == NULL, "a hidden row isn't laid out (%d lines)", n);
+  s_gpu = 1;
 
   CHECK(!strcmp(menu_opt_text(&k_a[0], buf, sizeof buf), "ON"), "widescreen ON");
   CHECK(menu_opt_change(&k_a[0], 1) == 1 && s_ws == 0 && s_changes == 1, "widescreen toggled");
@@ -103,6 +113,10 @@ static void test_table(const char *dir) {
   CHECK(menu_opts_load(lists, 3, "interp", "2") == 1 && s_interp == 2, "load interp");
   CHECK(menu_opts_load(lists, 3, "stats", "2") == 0, "stats isn't a row");
   CHECK(menu_opts_load(lists, 3, "cam_speed", "75") == 1 && s_speed == 75, "load speed");
+  CHECK(menu_opts_load(lists, 3, "res", "ps1") == 1 && s_res == 1, "load res by name");
+  CHECK(menu_opts_load(lists, 3, "interp_budget", "never skip") == 1 && s_budget == 0,
+        "load a name with values");
+  CHECK(menu_opts_load(lists, 3, "interp_budget", "26") == 1 && s_budget == 26, "load a number");
   {
     static const char *const drop[] = {"config_version", NULL};
     CHECK(menu_opts_save(lists, 3, path, drop, "config_version=2\n") == 0, "save");
@@ -113,7 +127,7 @@ static void test_table(const char *dir) {
   if (f)
     fclose(f);
   CHECK(!strcmp(text, "disc=ux0:data/x\n# a comment\nstats=2\nconfig_version=2\nwidescreen=1\n"
-                      "interp=2\ninterp_budget=26\ncam_speed=75\n"),
+                      "interp=2\ninterp_budget=26\ncam_speed=75\nres=1\n"),
         "saved config.txt:\n%s", text);
 }
 

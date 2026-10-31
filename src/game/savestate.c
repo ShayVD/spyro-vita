@@ -11,6 +11,7 @@
 #include "savestate.h"
 #include "cheats_port.h"
 #include "present.h"
+#include "lod.h"
 
 #include "psx_arena.h"
 #include "psx_spu.h"
@@ -326,6 +327,7 @@ static int load(int slot) {
   }
   savestate_plat_audio_done(PSX_STATE_LOAD);
   port_present_reset();
+  port_lod_reset();
   free(p);
   return 0;
 }

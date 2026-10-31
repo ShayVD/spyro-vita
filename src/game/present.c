@@ -13,6 +13,7 @@
  * only its side effects remain (m_WasDrawn, the sector flags, the animation
  * queues), computed with the original 4:3 frustum. */
 #include "present.h"
+#include "lod.h"
 #include "savestate.h"
 
 #include "psx_arena.h"
@@ -411,6 +412,13 @@ static int timed_vsync(int mode) {
     s_tick_vsync_us += d;
   }
   return PsyX_Sys_GetVBlankCount();
+}
+
+/* Every GamestateDraw: shown = its picture is shown (lod.c, D49). */
+static void game_draw(int shown) {
+  port_lod_draw_begin(shown);
+  GamestateDraw();
+  port_lod_draw_end(shown);
 }
 
 static void hooks_init(void) {
@@ -967,7 +975,7 @@ static void presentation_pass(int wide, int own_state) {
   if (own_state)
     wide_state_in();
   s_in_game_draw = 1;
-  GamestateDraw();
+  game_draw(1);
   s_in_game_draw = 0;
   if (own_state)
     wide_state_out();
@@ -996,12 +1004,12 @@ void PortPresentDraw(void) {
       t = now_us();
       s_tick_vsync_us = 0;
       g_psyxVSyncHook = timed_vsync;
-      GamestateDraw();
+      game_draw(1);
       g_psyxVSyncHook = NULL;
       g_present_stats.logic_passes++;
       g_present_stats.us_logic += now_us() - t - s_tick_vsync_us;
     } else {
-      GamestateDraw();
+      game_draw(1);
     }
     return;
   }
@@ -1062,7 +1070,7 @@ void PortPresentDraw(void) {
   s_record_2d = logic_wide;
   s_capture_on = !wide_pass;
   s_in_game_draw = 1;
-  GamestateDraw();
+  game_draw(!wide_pass);
   s_in_game_draw = 0;
   s_capture_on = 0;
   s_record_2d = 0;

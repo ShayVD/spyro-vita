@@ -555,6 +555,61 @@ Record each decision with its date, what was chosen, and why.
 - **Rear touch:** `reartouch=` (D27) is now a menu row too (`REAR TOUCH L2/R2`).
 - **Menu (D45):** CONTROLS: `ANALOG STICK`, `FREE CAMERA`, `INVERT CAMERA X`, `INVERT CAMERA Y`, `CAMERA SPEED` (50–200% in 25s), `REAR TOUCH L2/R2`, `TOUCH TO OPEN MENU` (D46) (`pad.c` `g_menu_controls`).
 
+### D48. The GPU picture options are menu rows that change live; 3-point filtering stays, labelled slow
+- **Why:** `tex_filter`, `persp`, `subpixel` and `res` (D39–D43) were `config.txt` only, so trying them meant editing a file on the memory card.
+- **Chosen:** `src/platform/vita/picture.c` defines `g_menu_picture` (D45's reserved name), in the PICTURE section after widescreen and 60 fps:
+  - `TEX FILTER`: OFF, BILINEAR, `3-POINT (SLOW)` (`tex_filter=0/1/2`);
+  - `PERSPECTIVE TEXTURES` (`persp`);
+  - `SUB-PIXEL VERTICES` (`subpixel`);
+  - `RESOLUTION`: NATIVE, PS1, 2X, 3X, 4X (`res=`);
+  - `DRAW DISTANCE (EXP.)` (D49).
+- **Live:**
+  - The filter, perspective and sub-pixel rows call `vita_gpu_set_options` (bench's hook, D41). It now compiles a shader set that wasn't built at start-up the first time it's needed: 2.9 s in Vita3K for the bilinear set, logged as `gpu: programs for … compiled in N ms`. If a set doesn't compile, the options stay as they were and the menu shows the old value.
+  - `RESOLUTION` re-scales the targets (`vita_gpu_rescale`), as widescreen does.
+- **Hidden with `gpu=0`:** `MenuOption` gains `visible` (`menu_opts.h`). The GPU rows show only while the GPU renderer draws (`g_vita_gpu`); their keys are still read and saved. `DRAW DISTANCE` works with both renderers.
+- **Loading names:** `menu_opts_load` also takes a value's name in any case. That keeps `res=ps1` and `res=native` working now that `res` is a row key (it used to be `atoi`, which reads `ps1` as 0). `gpu_res=` stays as `main.c`'s alias.
+- **Why keep 3-point:** it works and some players want the N64 look. On hardware it costs a third of the frame rate at native resolution: 16.2 pictures/s against 26.3 off and 24.5 bilinear (`logs/hw-26f3138-bench`). So the value names the cost.
+- **Labels fit the panel:** 18 pixels a letter; label plus `< value >` stays within 31 letters (hence `TEX FILTER`, `DRAW DISTANCE (EXP.)`).
+- **Tests without a controller:** D50's `menu_keys=` (button names) drives `menu_test` to any row; PICTURE is the first section, so these rows come right after `g_menu_present`'s three and push CONTROLS, GAME and SAVE down by five rows (one with `gpu=0`).
+- **Checked:** `tests/menu_panel` (hidden rows, loading by name). Vita3K: `logs/run5-vita3k-menu` turns on bilinear, perspective and sub-pixel, sets PS1 resolution and 2× draw distance from the menu in the Stone Hill demo. `logs/run6-vita3k-boot` has the same options in `config.txt` from boot: replay shots byte-identical, and the window capture at 5300 byte-identical (at 4700 the draw-distance limiter was still growing after the menu). Not checked on hardware.
+
+### D49. A longer draw distance, picture only, experimental and off by default
+- **Why:** with widescreen on, players see scenery and objects appear in the distance and at the sides.
+- **What decides it** (`docs/presentation.md` "Draw distance" has the detail and the addresses):
+  - **World:** `g_Environment.m_LodDistance` (`0x8000`, `initialization.c`). `func_800258F0` puts each sector in the textured near list or the low-poly far list by it. Only that renderer reads it.
+  - **Moby detail:** `(m_Renderer & 0x3F) << 8`. It only goes into the draw record.
+  - **Moby draw distance:** a camera box of `m_RenderRadius << 10` in `r_moby`'s three culling loops. Those loops also set `m_WasDrawn`, which `func_80051FEC` uses to update mobys. So that box is game logic.
+  - The 16:9 frustum was already right (`PORT_WS_VIEW_ROW0`, PR #21); the distances are the same at both aspect ratios.
+- **Chosen** (`src/game/lod.c`, `tools/mips2c/hints.yaml`): `draw_distance=150|200` (the menu's `DRAW DISTANCE (EXP.)`: OFF, 1.5X, 2X; host `--draw-distance`).
+  - The world's and the mobys' detail distances are scaled as the renderers read them.
+  - Moby draw distance is never widened in place. Each culling loop runs as on the PS1, then a second pass over the same list draws the mobys only the longer box takes in. Pass 2 restores `m_WasDrawn` for the mobys pass 1 drew, leaves it 0 for the rest, adds no shadows and stops where the record space ends.
+  - Only shown pictures use it: the hidden 4:3 logic draw of attract demos keeps the original distances.
+- **Not changed:** the far geometry's cull distance (`m_CullingDistance`), the moby update distance (`m_UpdateDistance`), collision.
+- **The primitive buffer:** the renderers check no bounds, and the original game already fills the buffer to 85–91% in places.
+  - The first whole-game run at 2× had only a limiter (back off after a full frame). It crashed entering level 40: one frame's world draw ran past the second buffer into the world OT (`logs/run4-whole-dd2`, core read with gdb).
+  - Now, with the option on:
+    - the world's six sector-list loops end early once the pointer is within 45,056 bytes of the buffer's end (the measured after-world draws plus one near sector, with 7.5 KB to spare);
+    - pass 2's mobys are drawn only while the buffer is under 60%;
+    - the near-sector list stops one entry short of the next list;
+    - the limiter watches both the buffer and the world's bound;
+    - each new level or gamestate starts at 1×.
+  - The bounds only end loops early, so the worst case is a frame missing some scenery, never a write past the buffer.
+  - Tour at 2× with only the bounds (no limiter): 100,000 vblanks, no crash, peak 95 KB of 110.5. With the limiter the bound never fired; the scale averaged ×1.23 (×1.5 or more in 30 of 132 five-second windows).
+- **Logic stays the original's.** By construction (the logic's inputs are untouched), and checked:
+  - Oracle replay of the six affected renderers with the hooks built in (option off): 213/213 emulator samples match.
+  - Host gems script (8,600 vblanks): traces at 1.5× and 2× byte-identical to 1×, which is byte-identical to the pre-change build.
+  - Host whole-game tour (every level 10–64, both endings): traces at 2× byte-identical to 1× and to main's binary for all 40,129 vblanks to ending 3's credits (where all three crash, see below).
+  - Vita3K: the same gems run at 200% gives the host's `lod` statistics line for line and the same memory card.
+- **Cost (honest):**
+  - It's CPU on the Vita: more polygons for PsyCross's OT walk and for GPU submission, about 8 ms per vblank of the 16:9 frame already (D44, 93% busy).
+  - Host, title flyby, where 2× holds: primitives +35% at 1.5×, +49% at 2×. Renderer CPU per tick (qemu, noisy) 22.7 → 26.6 / 26.0 ms.
+  - Whole gems script: +0.5% (the limiter holds 1× in the heavy parts).
+  - Expect fewer than 30 pictures a second in open areas at 2×. `bench=1` now measures `16:9 native, draw_distance=150/200` on hardware.
+  - Hence OFF by default and "EXP." in the menu.
+- **Save states (D51):** the scale is the player's setting (`g_lod`), so a load keeps it, as it keeps `g_port_controls`. What `lod.c` holds between draws (the limiter's scale and hold, the level it last saw, the bitmap of mobys pass 2 drew) is picture state outside the arena, not saved. Loading a state calls `port_lod_reset()` next to `port_present_reset()`: the next draw is at the chosen scale at once (a first version restarted at 1× as at a new level, a 3-second ramp back after every load), and the limiter backs off after it if the spot is heavy. The rest is set at each draw's start. `tools/savestate_globals.py` counts `lod.c` with the presenter (not game state).
+  - **Checked (host, gems script at 2×, `--state-hash`):** a load in a light spot (`logs/run27-state-C`/`D`, save 8100, load 8250) stays at 2× and is identical to the run without it: 249 loop tops in every chunk, 8.3 s of audio, 28 shots. In a heavy spot (`run27-state-A`/`B`, save 7000, load 7602; the limiter holds 1× there with or without a load) the first draw after the load is at 2× before the limiter backs off: GPU and VRAM are identical again two loop tops later, the trace (1,598 rows), the audio (26.6 s) and the 28 shots identical, and the arena differs only in about 1.5 KB of stale primitives past the end of what later 1× frames write in both primitive buffers (`run29-state-A`/`B`, `tools/savestate_diff.py` at 8500: 0x8019A148 and 0x801B605C, in `g_Buffers`' 0x80187BB0–0x801BFBB0). Vita3K (`logs/run28-vita3k-state-dd2`, save 8100, load 8250): the window across the load at ×2.00, lowest ×2.00.
+- **Found on the way, not caused here:** the host's whole-game tour with `--widescreen` crashes in ending 3's credits draw (`func_8001E9C8` → `func_80016784`, `link24` on a bad OT bucket tail `0x30183`). It does the same with main's binary (`logs/run18-whole-main-ws`). The documented whole-game run (D31) had widescreen off.
+
 ## 2026-10-31: the game's cheats and skipping the logos (options menu)
 
 ### D50. Cheats are applied in the inventory by the game's own code; skipping the logos keeps every load

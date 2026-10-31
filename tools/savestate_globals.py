@@ -33,8 +33,10 @@ SETTINGS = {
 }
 CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle
-# replay and trace (tests), save states themselves.
-NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.")
+# replay and trace (tests), save states themselves, and the draw distance
+# (lod.c, D49: picture only; per draw, or reset on load by port_lod_reset;
+# g_lod is the player's setting, kept).
+NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

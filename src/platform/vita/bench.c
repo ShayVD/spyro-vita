@@ -8,8 +8,8 @@
  * every few rounds and at the end. The first vblanks after a switch don't
  * count: a resolution or widescreen change redraws every target. bench=1
  * runs at 30 fps (interp=0); bench=2 keeps interp=. The sets choose
- * widescreen themselves. The game itself runs as always: only the picture
- * changes. */
+ * widescreen themselves, and two the longer draw distance (D49). The game
+ * itself runs as always: only the picture changes. */
 #include "vita.h"
 
 #include <stdio.h>
@@ -22,6 +22,7 @@
 typedef struct {
   const char *name;
   int ws, res, filter, persp, subpixel, cache;
+  int dd; /* draw_distance= percent (D49); 0 counts as 100 */
 } BenchSet;
 
 /* grouped by widescreen and resolution, so those (which redraw every
@@ -41,6 +42,8 @@ static const BenchSet k_sets[] = {
     {"16:9 native, all off, tex_cache=0", 1, 0, 0, 0, 0, 0},
     {"16:9 native, all off (tex_cache=1)", 1, 0, 0, 0, 0, 1},
     {"16:9 native, tex_filter=1 persp subpixel", 1, 0, 1, 1, 1, 1},
+    {"16:9 native, draw_distance=150", 1, 0, 0, 0, 0, 1, 150},
+    {"16:9 native, draw_distance=200", 1, 0, 0, 0, 0, 1, 200},
     {"16:9 ps1, all off, tex_cache=0", 1, 1, 0, 0, 0, 0},
     {"16:9 ps1, all off (tex_cache=1)", 1, 1, 0, 0, 0, 1},
 };
@@ -76,6 +79,8 @@ static void apply(const BenchSet *b) {
     vita_gpu_rescale(); /* targets at the new width */
   }
   vita_gpu_set_options(b->res, b->filter, b->persp, b->subpixel, b->cache);
+  g_vita_opts.draw_distance = b->dd ? b->dd : 100;
+  vita_picture_apply();
 }
 
 void vita_bench_vblank(int v) {
@@ -102,6 +107,7 @@ void vita_bench_vblank(int v) {
       s_orig.persp = g_vita_opts.persp;
       s_orig.subpixel = g_vita_opts.subpixel;
       s_orig.cache = g_vita_opts.tex_cache;
+      s_orig.dd = g_vita_opts.draw_distance;
       vita_log("bench: %d option sets, %d vblanks each, %d rounds, vblanks %d-%d", NSETS,
                BENCH_SLOT, BENCH_CYCLES, BENCH_START, BENCH_END);
     } else if (set == 0 && slot % (NSETS * 4) == 0) {
