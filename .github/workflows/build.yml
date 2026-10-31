@@ -1,4 +1,4 @@
-# Build the VPK on every push and pull request (decisions D57). CI has no
+# Build the VPK on pushes to main, tags and pull requests (decisions D57). CI has no
 # disc data and no matching build (that needs the user's PsyQ headers), so it
 # builds only: the game's layout comes from tools/layout/psx.map. The host
 # tests that need disc data or oracle captures skip themselves.
@@ -9,8 +9,10 @@
 name: build
 
 on:
+  # main and tags on push, other branches through their pull request (one run
+  # per commit, not two)
   push:
-    branches: ["**"]
+    branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

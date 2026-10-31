@@ -29,7 +29,7 @@ cmake --build build/vita
 The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`, version
 01.00). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
 time by `tools/vita/make_livearea.py`, decisions D55), `README.md` and `licenses/`. CI builds the
-same VPK on every push (`.github/workflows/build.yml`; locally:
+same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
 `docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
 - The game's PS1 layout comes from the matching build's `psx.map` when there is one

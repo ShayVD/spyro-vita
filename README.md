@@ -185,7 +185,7 @@ cmake -S spyro-vita -B spyro-vita/build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_
 cmake --build spyro-vita/build/vita
 ```
 
-The result is `build/vita/spyro-vita.vpk`. GitHub Actions builds the same VPK on every push
+The result is `build/vita/spyro-vita.vpk`. GitHub Actions builds the same VPK for every pull request and push to `main`
 (`.github/workflows/build.yml`).
 
 The other builds are for development:
