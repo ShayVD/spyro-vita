@@ -388,11 +388,21 @@ The gems script (M2's `run9-gems/replay_pad.txt`), with a state saved at vblank 
 |---|---|---|
 | `run1-state-A`, `run1-state-B` | host: save at 7000; B also loads it at 7602 | B after the load against A: 899 loop tops identical in every chunk (arena, VRAM, SPU, XA, CD, …), 30.0 s of audio byte-identical, 88/88 shots identical, same final trace row (4 gems). |
 | `run1-state-C` | host: a new process loads A's `state1.bin` at its first loop top (vblank 437, during the boot logos) | 899 loop tops identical to A, 30.0 s of audio identical, all shots identical. |
+| `run4-state-G` | host: save at 4003, in the New Game intro cutscene; load at 4603 | The replayed stretch (4003–4601) identical to the first pass: 300 loop tops, 10.0 s of audio. |
+| `run12-state-F3` | host: Sunny Flight (`--tour 15`), save at 7602 while flying, load at 8002 | Replayed stretch identical: 200 loop tops, 6.7 s of audio. |
+| `run12-state-E2` | host: save on the title screen (1503), play New Game → intro → Artisans, load at 7703 | Back on the title; the replayed stretch (title, New Game, intro cutscene, loading Artisans, the walk to the gems) identical to the first pass: 3,102 loop tops, 103 s of audio. Started with `run1-state-A`'s memory card, so the card was the same in both passes (see below). |
+| `run9-ws-ref`, `run9-ws-load` | host, `--widescreen --interp`: save on the title, load from inside Artisans (after its loading screen) | The 960×544 pictures after the load (1600–1800) identical to the run without the load, in 16:9 (before `port_present_reset()`, the presenter would have stayed on the 4:3 display until the counter passed the loading screen's vblank). |
 | `run2-vita-state` | Vita3K, `gpu=1`, mixer thread: save at 7000, load at 7602 | 88/88 shots byte-identical to host A; the WAV identical to A's before the load and for the 30 s after it. Save 45 ms, load 39 ms (Vita3K's times). |
 | `run6-vita-relaunch` | Vita3K: a new launch loads `run2-vita-state`'s `state1.bin` at vblank 437 | Accepted (arena at 0x89000000 in both launches, same layout); 22/22 shots identical to host A, 30 s of audio identical; the memory card unchanged. |
+| `run8-vita-soft-state` | Vita3K, `gpu=0`: save at 7000, load at 7602, to 8000 | 80/80 shots identical to host A, 16.6 s of audio after the load identical. Save 6 ms, load 5 ms. |
 | `run7-vita-ws-notice` | Vita3K, `widescreen=1 interp=1`, window captures | Save and load work with the presenter on; the notice panel shows over the 16:9 picture (`win-7010.png`); textures right after the load. |
 
-Not checked: on hardware (above); the menu rows by hand (`menu_test=` can't reach them; the rows use D45's table, which `tests/menu_panel` covers); `gpu=0` in Vita3K.
+Two things the runs showed, neither a fault of the states:
+
+- **The memory card isn't part of a state.** `run3-state-E` (the same as `run12-state-E2` but starting with no card) diverged at 1979 after the load: the first pass had created the card's save file at the title, so after loading the title-screen state the game found it and skipped its "create save file?" prompt, and the pad script went out of step. That is the intended behaviour (D51): loading never undoes or redoes card saves.
+- **The mips2c stack holds host values.** Two separate processes can differ in a few bytes of the arena's emulated stack (0x80010000–0x8001FFFF) at the loop top, where it is dead: translated code leaves host values there (`0x407ffb18`, a qemu stack address, next to the one byte that differed in `run10-diag-E`). The game never reads them (host and Vita runs are byte-identical everywhere it matters). `--state-hash` hashes that range as `STAK`, apart from the rest of the arena, and `tools/savestate_compare.py` reports it but doesn't fail on it.
+
+Not checked: on hardware (above); the menu rows by hand (`menu_test=` can't reach them; the rows use D45's table, which `tests/menu_panel` covers).
 
 ### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
 

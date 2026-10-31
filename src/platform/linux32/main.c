@@ -44,7 +44,8 @@
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
  * --state: at vblank V, ask for a save state of slot N (or a load), done at
- *   the next main loop top, in the --save DIR (src/game/savestate.c, D51).
+ *   the next main loop top, in the --save DIR (src/game/savestate.c, D51);
+ *   several are taken in the order given.
  *   --state-hash: per main loop top, a hash of each save-state chunk.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"

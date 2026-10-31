@@ -142,5 +142,6 @@ void prof_vblank(void);
 void prof_report(int vblank);
 void prof_draw_report(int vblank, int vblanks); /* prof_draw.c: "draw" lines */
 unsigned prof_vram_gen(void); /* changes whenever the rasterizer writes VRAM */
+void prof_vram_touch(void);   /* VRAM was written some other way (a save state loaded) */
 
 #endif

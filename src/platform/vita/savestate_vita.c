@@ -51,8 +51,11 @@ uint16_t *savestate_plat_vram(int mode) {
 }
 
 void savestate_plat_vram_done(int mode) {
-  if (mode == PSX_STATE_LOAD && g_vita_gpu)
+  if (mode != PSX_STATE_LOAD)
+    return;
+  if (g_vita_gpu)
     vita_gpu_vram_loaded();
+  prof_vram_touch(); /* gpu=0: the picture is converted again */
 }
 
 /* ---- the menu's SAVE section (menu_opts.h, D45) ---- */

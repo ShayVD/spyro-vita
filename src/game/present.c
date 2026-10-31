@@ -310,6 +310,16 @@ static void push_capture(int wide) {
   s_last_push_vblank = PsyX_Sys_GetVBlankCount();
 }
 
+/* A save state was loaded (D51): the queued frames are from before it, and
+ * the vblank counts the fallback compares were the old timeline's. */
+void port_present_reset(void) {
+  s_qcount = 0;
+  s_shown = -1;
+  s_captured = 0;
+  s_foreign_vblank = -1;
+  s_last_push_vblank = -1000;
+}
+
 int port_present_frame_slot(void) {
   if (!port_present_active()) {
     s_qcount = 0; /* switched off (a menu): drop what was queued */

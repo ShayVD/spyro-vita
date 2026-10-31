@@ -9,6 +9,7 @@
  * counter. A state is refused, never loaded, if it comes from another build
  * or an executable/arena at other addresses (its pointers would be wrong). */
 #include "savestate.h"
+#include "present.h"
 
 #include "psx_arena.h"
 #include "psx_spu.h"
@@ -197,7 +198,7 @@ static unsigned char *buffer(size_t n) {
 }
 
 static int save(int slot) {
-  char tmp[600], path[600];
+  char tmp[600], path[600], old[600];
   Header h;
   FILE *f;
   int i, ok = 1;
@@ -223,17 +224,31 @@ static int save(int slot) {
     ok = fwrite(&c, sizeof c, 1, f) == 1 && fwrite(io.p, 1, c.len, f) == c.len;
   }
   savestate_plat_audio_done(PSX_STATE_SAVE);
+  free(s_buf); /* 2 MB not kept between saves */
+  s_buf = NULL;
+  s_cap = 0;
   if (fclose(f) != 0)
     ok = 0;
   if (!ok) {
     remove(tmp);
     return -1;
   }
-  remove(path); /* the Vita's rename doesn't replace */
-  return rename(tmp, path) == 0 ? 0 : -1;
+  /* The Vita's rename doesn't replace: the old state steps aside first and
+   * comes back if the new one can't take its place. */
+  slot_path(slot, "old", old, sizeof old);
+  remove(old);
+  rename(path, old);
+  if (rename(tmp, path) != 0) {
+    rename(old, path);
+    remove(tmp);
+    return -1;
+  }
+  remove(old);
+  return 0;
 }
 
-/* The whole file, checked; NULL with *err set if it can't be used. */
+/* The whole file, checked; NULL with *err set if it can't be used: -1 no
+ * file, -2 another build, -3 another layout, -4 damaged, -5 no memory. */
 static unsigned char *read_state(int slot, size_t *len, int *err) {
   char path[600];
   FILE *f;
@@ -248,7 +263,12 @@ static unsigned char *read_state(int slot, size_t *len, int *err) {
   n = ftell(f);
   fseek(f, 0, SEEK_SET);
   *err = -4;
-  if (n < (long)sizeof(Header) || !(p = malloc((size_t)n))) {
+  if (n < (long)sizeof(Header)) {
+    fclose(f);
+    return NULL;
+  }
+  if (!(p = malloc((size_t)n))) {
+    *err = -5;
     fclose(f);
     return NULL;
   }
@@ -303,6 +323,7 @@ static int load(int slot) {
     k_chunks[i].fn(&io);
   }
   savestate_plat_audio_done(PSX_STATE_LOAD);
+  port_present_reset();
   free(p);
   return 0;
 }
@@ -375,6 +396,8 @@ static void service(void) {
       message("STATE %d IS FROM ANOTHER BUILD", slot);
     else if (err == -3)
       message("STATE %d IS FROM ANOTHER LAYOUT", slot);
+    else if (err == -5)
+      message("NO MEMORY TO LOAD STATE %d", slot);
     else
       message("STATE %d IS DAMAGED", slot);
     return;
@@ -413,11 +436,18 @@ static uint32_t hash32(const unsigned char *p, size_t n, uint32_t h) {
   return h;
 }
 
+/* The arena's mips2c stack (0x80010000-0x8001FFFF, port.c's EMU_STACK_TOP)
+ * is hashed on its own as "STAK": at the loop top it is dead, and translated
+ * code leaves host values there (host stack addresses) that differ between
+ * processes without the game ever reading them. */
+#define STACK_LO 0x10000u
+#define STACK_HI 0x20000u
+
 int savestate_hash(char tags[][5], uint32_t *hashes, int max) {
   int i, n = 0;
   uint32_t all = 0x811C9DC5u;
   savestate_plat_audio(PSX_STATE_SAVE);
-  for (i = 0; i < NCHUNKS && n < max - 1; i++) {
+  for (i = 0; i < NCHUNKS && n < max - 2; i++) {
     PsxStateIO io = {PSX_STATE_SAVE, NULL, 0};
     size_t len = chunk_size(i);
     io.p = buffer(len);
@@ -425,10 +455,19 @@ int savestate_hash(char tags[][5], uint32_t *hashes, int max) {
       break;
     k_chunks[i].fn(&io);
     memcpy(tags[n], k_chunks[i].tag, 5);
-    hashes[n] = hash32(io.p, len, 0x811C9DC5u);
-    all = hash32((const unsigned char *)&hashes[n], 4, all);
+    if (k_chunks[i].fn == chunk_arena) {
+      hashes[n] = hash32(io.p + STACK_HI, len - STACK_HI, hash32(io.p, STACK_LO, 0x811C9DC5u));
+      memcpy(tags[n + 1], "STAK", 5);
+      hashes[n + 1] = hash32(io.p + STACK_LO, STACK_HI - STACK_LO, 0x811C9DC5u);
+      n++;
+    } else {
+      hashes[n] = hash32(io.p, len, 0x811C9DC5u);
+    }
     n++;
   }
+  for (i = 0; i < n; i++)
+    if (strcmp(tags[i], "STAK"))
+      all = hash32((const unsigned char *)&hashes[i], 4, all);
   savestate_plat_audio_done(PSX_STATE_SAVE);
   memcpy(tags[n], "ALL ", 5);
   hashes[n++] = all;

@@ -6,7 +6,10 @@
   savestate_compare.py REF_DIR RUN_DIR [WAS:TO]
 
 WAS:TO (the vblank counter before and after the load) overrides the log's
-"savestate: vblank counter WAS -> TO" line.
+"savestate: vblank counter WAS -> TO" line. With REF_DIR the same as
+RUN_DIR, the run's own rows and audio from before the load are the
+reference (the stretch it played twice). Compare runs of the same binary
+only: the arena holds pointers into the executable (SetOverlayPointers).
 
 - hashes: every main-loop-top row RUN_DIR wrote after its last load is
   compared, chunk by chunk, with REF_DIR's row at the same vblank;
@@ -29,6 +32,17 @@ def hashes(path):
             parts = line.rstrip("\n").split("\t")
             rows.append((int(parts[0]), dict(p.split("=", 1) for p in parts[1:])))
     return rows
+
+
+def keyed(rows):
+    """(vblank, n): the n-th loop top at that vblank (the main loop can run
+    twice in one vblank when a tick doesn't draw, e.g. during loads)."""
+    seen, out = {}, []
+    for v, h in rows:
+        n = seen.get(v, 0)
+        seen[v] = n + 1
+        out.append(((v, n), h))
+    return out
 
 
 def loads(log):
@@ -60,33 +74,42 @@ def main():
     print(f"load: vblank {was} -> {to}")
     ok = True
 
-    rref = {v: h for v, h in hashes(os.path.join(ref, "hash.tsv"))}
     rows = hashes(os.path.join(run, "hash.tsv"))
     # rows after the last load: from the last time the vblank went back
     start = max(i for i in range(len(rows)) if i == 0 or rows[i][0] < rows[i - 1][0])
-    after = rows[start:]
-    same = diff = missing = 0
+    after = keyed(rows[start:])
+    self_ref = os.path.realpath(ref) == os.path.realpath(run)
+    rref = dict(keyed(rows[:start] if self_ref else hashes(os.path.join(ref, "hash.tsv"))))
+    same = diff = missing = stak = 0
     first = None
     for v, h in after:
         r = rref.get(v)
         if r is None:
             missing += 1
             continue
-        bad = [k for k in h if r.get(k) != h[k]]
+        # STAK: the dead mips2c stack (savestate_hash), reported, not a failure
+        bad = [k for k in h if r.get(k) != h[k] and k != "STAK"]
+        stak += r.get("STAK") != h.get("STAK")
         if bad:
             diff += 1
             if first is None:
                 first = (v, bad)
         else:
             same += 1
+    if self_ref:
+        missing = 0  # past the stretch played twice: nothing to compare with
     print(f"hashes: {same} loop tops identical, {diff} differ, {missing} not in the reference "
-          f"(vblanks {after[0][0]}-{after[-1][0]})")
+          f"(vblanks {after[0][0][0]}-{after[-1][0][0]})")
+    if stak:
+        print(f"  the dead mips2c stack differs at {stak} of them (not game state)")
     if first:
-        print(f"  first difference at vblank {first[0]}: {' '.join(first[1])}")
+        print(f"  first difference at vblank {first[0][0]}: {' '.join(first[1])}")
         ok = False
 
     a, b = wav_data(os.path.join(ref, "audio.wav")), wav_data(os.path.join(run, "audio.wav"))
     ra, rb = a[to * PER_VBLANK * FRAME:], b[was * PER_VBLANK * FRAME:]
+    if self_ref:
+        ra = a[to * PER_VBLANK * FRAME:was * PER_VBLANK * FRAME]
     n = min(len(ra), len(rb))
     if n == 0:
         print("audio: nothing to compare")
@@ -97,7 +120,7 @@ def main():
         print(f"audio: differs {k // FRAME} frames after the load (of {n // FRAME})")
         ok = False
 
-    shots = sorted(f for f in os.listdir(run) if re.fullmatch(r"shot-\d+\.png", f))
+    shots = [] if self_ref else sorted(f for f in os.listdir(run) if re.fullmatch(r"shot-\d+\.png", f))
     s_same = s_diff = 0
     for f in shots:
         p = os.path.join(ref, f)

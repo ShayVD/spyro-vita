@@ -1,7 +1,7 @@
 /* Save states on the linux32 host (src/game/savestate.c, decisions D51): the
  * platform hooks, and the test options. --state V:save:N or V:load:N asks
  * for a save or load of slot N at vblank V (it happens at the next main loop
- * top); --state-hash FILE writes each chunk's hash at every loop top, so two
+ * top), the requests in the order given; --state-hash FILE writes each chunk's hash at every loop top, so two
  * runs can be compared tick by tick. A load sets the vblank counter back, and
  * the pad script (absolute lines) rewinds with it: the same buttons as the
  * first time from there on. */
@@ -59,16 +59,17 @@ static void tick(void) {
     fputc('\n', s_hash);
     fflush(s_hash);
   }
-  /* requests due: the first one not done whose vblank has come (loads set
-   * the counter back, so each fires once) */
-  for (i = 0; i < s_nreq; i++)
-    if (!s_req[i].done && v >= s_req[i].vblank) {
-      s_req[i].done = 1;
-      host_log("savestate: %s slot %d asked at vblank %d", s_req[i].load ? "load" : "save",
-               s_req[i].slot, v);
-      savestate_request(s_req[i].load, s_req[i].slot);
-      break;
-    }
+  /* requests in the order given: the next one, once its vblank has come
+   * (after a load the counter is back, so a later entry can name an earlier
+   * vblank of the replayed stretch) */
+  for (i = 0; i < s_nreq && s_req[i].done; i++)
+    ;
+  if (i < s_nreq && v >= s_req[i].vblank) {
+    s_req[i].done = 1;
+    host_log("savestate: %s slot %d asked at vblank %d", s_req[i].load ? "load" : "save",
+             s_req[i].slot, v);
+    savestate_request(s_req[i].load, s_req[i].slot);
+  }
 }
 
 static void hook(void) {
