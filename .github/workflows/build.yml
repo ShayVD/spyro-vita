@@ -1,0 +1,105 @@
+# Build the VPK on every push and pull request (decisions D57). CI has no
+# disc data and no matching build (that needs the user's PsyQ headers), so it
+# builds only: the game's layout comes from tools/layout/psx.map. The host
+# tests that need disc data or oracle captures skip themselves.
+#
+# Release: push a tag v* (or run this workflow by hand with draft_release)
+# and the VPK is attached to a DRAFT GitHub release. Nothing is published:
+# a person reviews the draft and publishes it.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      draft_release:
+        description: "Attach the VPK to a draft release (tag below)"
+        type: boolean
+        default: false
+      tag:
+        description: "Tag for the draft release (e.g. v1.00)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-game-data:
+    name: No game data in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: tools/check_no_assets.sh
+
+  vita:
+    name: Vita VPK
+    runs-on: ubuntu-latest
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0 # git describe names the build (save states, D51)
+      - name: Trust the checkout (git describe runs as root in the container)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Build the VPK
+        run: tools/ci/build_vpk.sh build/vita
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spyro-vita-vpk
+          path: build/vita/spyro-vita.vpk
+          if-no-files-found: error
+
+  host-tests:
+    name: Host build and unit tests (linux32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Build the host image
+        run: docker build -t spyro-host -f tools/docker/host.Dockerfile tools/docker
+      - name: Build and test
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work spyro-host sh -ec '
+            cmake -S . -B build/linux32 -G Ninja -DSPYRO_HOST=linux32 \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake
+            cmake --build build/linux32
+            ctest --test-dir build/linux32 --output-on-failure'
+
+  draft-release:
+    name: Draft release
+    needs: [no-game-data, vita, host-tests]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.draft_release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: spyro-vita-vpk
+          path: dist
+      - name: Attach the VPK to a draft release (never published here)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.tag }}
+        run: |
+          [ -n "$TAG" ] || { echo "no tag: push a v* tag or give one" >&2; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true ] \
+              || { echo "$TAG is already published; not touching it" >&2; exit 1; }
+            gh release upload "$TAG" dist/spyro-vita.vpk --clobber
+          else
+            gh release create "$TAG" dist/spyro-vita.vpk --draft --target "$GITHUB_SHA" \
+              --title "Spyro Vita $TAG" \
+              --notes "Draft. Built by CI from $GITHUB_SHA. Needs your own disc: see README.md."
+          fi

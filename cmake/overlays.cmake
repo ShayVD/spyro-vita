@@ -43,8 +43,8 @@ endforeach()
 
 add_custom_command(OUTPUT "${GEN_DIR}/ovl_table.c"
   COMMAND "${Python3_EXECUTABLE}" "${OVL_TOOL}" table "${S1_DIR}"
-    "${SPYRO_MATCHING_DIR}/build/psx.map" "${GEN_DIR}/ovl_table.c"
-  DEPENDS "${OVL_TOOL}" "${SPYRO_MATCHING_DIR}/build/psx.map"
+    "${SPYRO_PSX_MAP}" "${GEN_DIR}/ovl_table.c"
+  DEPENDS "${OVL_TOOL}" "${SPYRO_PSX_MAP}"
   COMMENT "overlay table from psx.map")
 
 add_library(spyro_game_ovl OBJECT ${OVL_SRCS} "${GEN_DIR}/ovl_table.c")
