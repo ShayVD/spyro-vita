@@ -99,13 +99,15 @@ Files the app writes:
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 | `pad=` touch | in a pad script, `tap=X,Y`, `hold=X,Y` and `swipe=X,Y` (percent of the screen) play a gesture on the front touch screen (tests of the tap that opens the menu) |
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, right, up, right, circle (60 fps one step on, widescreen toggled, close) |
+| `menu_keys=B1,B2,...` | with `menu_test`: press these instead (`up down left right cross circle triangle start`, one per 4 pictures; end with `circle` unless an action closes the menu), to test any row (D50) |
+| `skip_logos=1` | start at the title: no Sony or Universal logo and no title flythrough (the menu's `SKIP INTRO LOGOS`; everything they load still loads; D50) |
 | `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43) |
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -292,6 +294,26 @@ Gems script plus the pause and inventory screens, window captures at the same 8 
 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
+
+### Cheats and skipping the logos (D50, 2026-10-31)
+
+| Run | What | Result |
+|---|---|---|
+| `run413-vita3k-skip-title` | `skip_logos=1 widescreen=0`, 4800 vblanks, shot every 120; the menu opened on the title (`menu_test=600`) and ✕ ✕ on 99 LIVES | 40/40 shots byte-identical to the host's `--skip-logos` run (`run410`): PRESS START at once, then the first attract demo. The log refuses the cheat (`cheats only in a level`) and saves `skip_logos=1`. |
+| `run420-vita3k-menu-lives` | new game (skip on), menu at 6300 in Artisans, ✕ ✕ on 99 LIVES | `99 LIVES queued` at 6300, `applied in the inventory` at 6311. 120/120 shots byte-identical to the host queuing it at the same vblank (`run418`, lives 4 → 99). |
+| `run421-vita3k-menu-warp` | the same, WARP TO → TOWN SQUARE, ✕ ✕ on LEVEL WARP | applied at 6311, Spyro glides into Town Square. 120/120 shots byte-identical to the host (`run419`). |
+| `run422-vita3k-default-boot` | no `skip_logos`, 1200 vblanks | the Sony and Universal logos as before: 10/10 shots identical to the host. |
+
+Again after merging the controls (#28, D46/D47; the Vita now reports an analog DualShock and CONTROLS has seven rows, so GAME's rows are 7 further down: 99 LIVES is 11 downs from the top, WARP TO 14):
+
+| Run | What | Result |
+|---|---|---|
+| `run444-m28-vita3k-skip-title` | as `run413`, `menu_keys` 11 downs | 40/40 shots byte-identical to the host (`run433`); both ✕ refused (`cheats only in a level`). |
+| `run445-m28-vita3k-menu-lives` | as `run420` | queued at 6300, applied at 6311; 120/120 shots byte-identical to the host (`run436`). |
+| `run446-m28-vita3k-menu-warp` | as `run421` | applied at 6311; 120/120 shots byte-identical to the host (`run437`). |
+| `run443-m28-vita3k-default-boot` | as `run422` | 10/10 shots identical to the host (`run438`). |
+
+(`run440`–`run442` used the old key sequences, which now land on CONTROLS rows; not results.)
 
 ## On hardware
 

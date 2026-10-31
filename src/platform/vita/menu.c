@@ -101,6 +101,33 @@ static int step_row(const MenuOption *const *opts, int n, int sel, int dir) {
 static const uint16_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_RIGHT, B_CIRCLE};
 #define NTEST (int)(sizeof k_test / sizeof k_test[0])
 
+/* menu_keys=down,down,cross,...: menu_test presses these instead (the
+ * buttons by their pad-script names: up down left right cross circle
+ * triangle start), for tests of other rows. */
+static uint16_t s_keys[48];
+static int s_nkeys;
+
+int vita_menu_test_keys(const char *list) {
+  static const struct { const char *name; uint16_t bit; } k_names[] = {
+      {"up", B_UP},       {"down", B_DOWN},     {"left", B_LEFT},         {"right", B_RIGHT},
+      {"cross", B_CROSS}, {"circle", B_CIRCLE}, {"triangle", B_TRIANGLE}, {"start", B_START},
+  };
+  char buf[512], *tok, *save = NULL;
+  size_t k;
+  snprintf(buf, sizeof buf, "%s", list);
+  s_keys[0] = 0; /* let go of the combo first, as k_test does */
+  s_nkeys = 1;
+  for (tok = strtok_r(buf, ",", &save); tok && s_nkeys < (int)(sizeof s_keys / sizeof s_keys[0]);
+       tok = strtok_r(NULL, ",", &save)) {
+    for (k = 0; k < sizeof k_names / sizeof k_names[0] && strcmp(tok, k_names[k].name); k++)
+      ;
+    if (k == sizeof k_names / sizeof k_names[0])
+      return -1;
+    s_keys[s_nkeys++] = k_names[k].bit;
+  }
+  return 0;
+}
+
 /* vblank.c, at each VSync: runs the menu if it was asked for. Returns 1 if
  * it ran (the game was paused). */
 int vita_menu_service(void) {
@@ -120,6 +147,9 @@ int vita_menu_service(void) {
   if (!s_requested)
     return 0;
   s_requested = 0;
+  for (i = 0; i < NLISTS; i++)
+    if (k_lists[i] && k_lists[i]->on_open)
+      k_lists[i]->on_open();
   n = menu_opts_layout(k_lists, NLISTS, rows, opts, MAX_LINES);
   if (n == 0)
     return 0;
@@ -136,7 +166,9 @@ int vita_menu_service(void) {
     vita_pad_poll();
     m = vita_pad_read();
     if (test) {
-      m = step / 4 < NTEST && step % 4 < 2 ? k_test[step / 4] : 0;
+      const uint16_t *keys = s_nkeys ? s_keys : k_test;
+      int nkeys = s_nkeys ? s_nkeys : NTEST;
+      m = step / 4 < nkeys && step % 4 < 2 ? keys[step / 4] : 0;
       step++;
     }
     pressed = m & ~prev;
