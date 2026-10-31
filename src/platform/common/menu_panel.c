@@ -60,6 +60,9 @@ static const struct {
     {'\'', {0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00}},
     {'?', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04}},
     {'=', {0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00}},
+    {'_', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}},
+    {'!', {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04}},
+    {'"', {0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00}},
 };
 
 #define TEXT_SCALE 3  /* rows: 15x21 pixel glyphs */
@@ -179,4 +182,40 @@ void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n
   y = y0 + lines * ROW_H;
   text(rgb, h, (MENU_PANEL_W - text_width(footer, SMALL_SCALE)) / 2,
        y + (FOOTER_H - 7 * SMALL_SCALE) / 2 + 4, footer, SMALL_SCALE, k_dim);
+}
+
+/* Text word-wrapped to the rows' width: a line per row, plain (an empty
+ * value, so not a header). */
+#define MSG_COLS ((MENU_PANEL_W - 2 * PAD + TEXT_SCALE) / (6 * TEXT_SCALE))
+
+int menu_panel_message(uint8_t *rgb, const char *title, const char *text, const char *footer) {
+  static char lines[MENU_PANEL_LINES][MSG_COLS + 1];
+  MenuRow rows[MENU_PANEL_LINES];
+  const char *p = text;
+  int n = 0, i;
+  while (*p && n < MENU_PANEL_LINES) {
+    int len = 0, cut = -1;
+    while (p[len] && p[len] != '\n' && len < MSG_COLS) {
+      if (p[len] == ' ')
+        cut = len;
+      len++;
+    }
+    if (p[len] && p[len] != '\n' && p[len] != ' ' && cut > 0)
+      len = cut; /* break at the last space; a longer word is cut */
+    memcpy(lines[n], p, (size_t)len);
+    lines[n][len] = 0;
+    n++;
+    p += len;
+    if (*p == '\n')
+      p++;
+    else
+      while (*p == ' ')
+        p++;
+  }
+  for (i = 0; i < n; i++) {
+    rows[i].label = lines[i];
+    rows[i].value = "";
+  }
+  menu_panel_draw(rgb, title, rows, n, -1, 0, n, footer);
+  return menu_panel_height(n);
 }

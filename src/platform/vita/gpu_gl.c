@@ -2307,6 +2307,7 @@ void vita_gpu_fill(float r, float g, float b) {
   no_blend();
   glClearColor(r, g, b, 1);
   glClear(GL_COLOR_BUFFER_BIT);
+  draw_overlay(); /* the disc screens' panel (D60) */
   vglSwapBuffers(GL_FALSE);
 }
 

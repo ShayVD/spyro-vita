@@ -1,7 +1,12 @@
-/* libcd over files and the minimal libspu (docs/porting-plan.md §6).
- * usage: test_cd <disc/files>. SPU cases always run; CD cases need the
- * extracted disc and the test exits 77 (skipped) without it. */
+/* libcd over files and the minimal libspu (docs/porting-plan.md §6), and
+ * over a disc image (cdimage.c, decisions D60).
+ * usage: test_cd <disc/files> [<disc/image> [<marker file>]]. SPU cases
+ * always run; CD cases need the extracted disc and the test exits 77
+ * (skipped) without it. With a folder holding the user's disc image, the
+ * image's file table must render as the same manifest.json, and the same
+ * read cases pass with the image open instead of the files. */
 #include "psx_cd.h"
+#include "psx_cdimage.h"
 #include "psx_hooks.h"
 #include "psx_spu.h"
 
@@ -11,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int failures;
 
@@ -299,6 +305,144 @@ static void test_cd_xa(const char *dir) {
   CdControl(CdlPause, 0, 0);
 }
 
+/* ---- the disc image (D60) ---- */
+
+/* extract_disc.py's KNOWN: data files hashed as their bytes, XA files as
+ * 2336-byte sectors. */
+static const struct {
+  const char *path, *sha1;
+  int xa;
+} k_known[] = {
+    {"SYSTEM.CNF", "913fe0d270ad295117e6a91eb667284845df8918", 0},
+    {"WAD.WAD", "ab68001377ea93fb309a5c2a35e772c9d1f57e0b", 0},
+    {"SCUS_942.28", "84e3728ab94720d0873e2514adf4aade4935e0c5", 0},
+    {"PETEXA0.STR", "045a1fedd5d4a224c95a65f3802488bf9c952c60", 1},
+    {"PETEXA1.STR", "4fad48fbc15616998efb9379e976f5891d7c97e4", 1},
+    {"PETEXA2.STR", "19ed8ddac4a83182d1744139b23a5bd284e5cba1", 1},
+    {"PETEXA3.STR", "e51baa4cefc3f85e454943d964a3690b9f34be52", 1},
+    {"PETEXA4.STR", "6c6b387bcd7b61226281d2adf48adbab547fa089", 1},
+    {"PETEXA5.STR", "aa4a2c6b2eac867751d30a761ca9ab97877c3ce4", 1},
+    {"S0/CRASH.EXE", "82d1047a5bf6b6563ea0107706e02b9e01dbcc2a", 0},
+    {"S0/S000000D.NSD", "fb9788f83e39c71b61064ace91e41c2c5d79b58b", 0},
+    {"S0/S000000D.NSF", "4203d38457b960452ba99e7f23955d40f3ba04e9", 0},
+    {"S0/S000003C.NSD", "aa2d89c6e8b630df93120a332af2132858b604d8", 0},
+    {"S0/S000003C.NSF", "c5105ab984dbcee6a787eb2a178f2764c37c36c1", 0},
+    {"S0/WARP.BIN", "b5895f4fe129f9afdba70cfd1fdef794032be99f", 0},
+    {"SOURCE/SOURCE.TRD", "498601c3f0b08dd66b53b16c2be9ac10d171721f", 0},
+};
+
+static double now_s(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec + t.tv_nsec / 1e9;
+}
+
+/* Every sector of every file through psx_cd_read_raw, whichever backend is
+ * open, against a good dump. */
+static void test_known_hashes(const char *what) {
+  static unsigned char raw[PSX_CD_RAW_SECTOR];
+  double t0 = now_s();
+  int ok = 0;
+  for (size_t k = 0; k < sizeof k_known / sizeof *k_known; k++) {
+    char name[64], hex[41];
+    CdlFILE fp;
+    PsxSha1 s;
+    int lba, left;
+    snprintf(name, sizeof name, "\\%s;1", k_known[k].path);
+    for (char *c = name; *c; c++)
+      if (*c == '/')
+        *c = '\\';
+    if (!CdSearchFile(&fp, name)) {
+      fprintf(stderr, "FAIL %s: %s not found\n", what, k_known[k].path);
+      failures++;
+      continue;
+    }
+    psx_sha1_init(&s);
+    lba = CdPosToInt(&fp.pos);
+    for (left = (int)fp.size; left > 0; left -= 2048, lba++) {
+      CHECK(psx_cd_read_raw(lba, raw) == 0);
+      if (k_known[k].xa)
+        psx_sha1_update(&s, raw, PSX_CD_RAW_SECTOR);
+      else
+        psx_sha1_update(&s, raw + 8, left < 2048 ? (unsigned)left : 2048);
+    }
+    psx_sha1_hex(&s, hex);
+    if (strcmp(hex, k_known[k].sha1) != 0) {
+      fprintf(stderr, "FAIL %s: %s SHA-1 %s, want %s\n", what, k_known[k].path, hex,
+              k_known[k].sha1);
+      failures++;
+    } else {
+      ok++;
+    }
+  }
+  printf("%s: %d/%d files match a good dump through psx_cd_read_raw (%.1f s)\n", what, ok,
+         (int)(sizeof k_known / sizeof *k_known), now_s() - t0);
+}
+
+/* The image's table, written as extract_disc.py's json.dump(indent=2), is
+ * byte for byte the manifest.json it wrote from the same dump. */
+static void test_image_manifest(const char *files_dir, const char *image_dir) {
+  PsxCdImageFile *v = NULL;
+  PsxCdError err = {0};
+  char path[512], *have, *want;
+  int n = 0, len = 0, got;
+  FILE *f;
+  CHECK(psx_cdimage_open(image_dir, &v, &n, &err) == 0);
+  if (err.code)
+    fprintf(stderr, "image: %s: %s\n", err.title, err.text);
+  have = malloc(256 * (size_t)(n + 1));
+  want = malloc(1 << 16);
+  len += sprintf(have + len, "[");
+  for (int i = 0; i < n; i++)
+    len += sprintf(have + len,
+                   "%s\n  {\n    \"path\": \"%s\",\n    \"lba\": %d,\n    \"size\": %d,\n"
+                   "    \"type\": \"%s\"\n  }",
+                   i ? "," : "", v[i].path, v[i].lba, v[i].size, v[i].xa ? "xa" : "data");
+  len += sprintf(have + len, "\n]");
+  snprintf(path, sizeof path, "%s/manifest.json", files_dir);
+  f = fopen(path, "rb");
+  got = f ? (int)fread(want, 1, (1 << 16) - 1, f) : -1;
+  if (f)
+    fclose(f);
+  CHECK(got == len && memcmp(have, want, (size_t)len) == 0);
+  printf("image: %d files; table %s %s\n", n, got == len && !memcmp(have, want, (size_t)len)
+                                                   ? "identical to" : "DIFFERS from", path);
+  free(have);
+  free(want);
+  free(v);
+  psx_cdimage_close();
+}
+
+static int s_progress_calls, s_progress_last;
+static void on_progress(int pct) {
+  s_progress_calls++;
+  s_progress_last = pct;
+}
+
+/* WAD.WAD is hashed on the first open with a marker, then skipped. */
+static void test_marker(const char *image_dir, const char *marker) {
+  double t0, t1, t2;
+  FILE *f;
+  remove(marker);
+  psx_cd_set_verify(marker, on_progress);
+  t0 = now_s();
+  CHECK(psx_cd_open(image_dir) == 0);
+  t1 = now_s();
+  CHECK(s_progress_calls > 0 && s_progress_last == 99);
+  f = fopen(marker, "rb");
+  CHECK(f != NULL);
+  if (f)
+    fclose(f);
+  s_progress_calls = 0;
+  CHECK(psx_cd_open(image_dir) == 0);
+  t2 = now_s();
+  CHECK(s_progress_calls == 0);
+  printf("image: open with the WAD.WAD check %.2f s, again with the marker %.2f s\n", t1 - t0,
+         t2 - t1);
+  psx_cd_set_verify(NULL, NULL);
+  remove(marker);
+}
+
 /* The platform's audio sink; this test only needs SPU state. */
 void psx_audio_out(const short *pcm, int frames) { (void)pcm; (void)frames; }
 
@@ -320,8 +464,27 @@ int main(int argc, char **argv) {
   }
   fclose(f);
   CHECK(psx_cd_open(dir) == 0);
+  CHECK(strcmp(psx_cd_source(), "files") == 0);
   test_cd_read(dir);
   test_cd_xa(dir);
+  test_known_hashes("files");
+
+  /* the same cases with the disc image open, against the extracted files */
+  if (argc > 2) {
+    const char *image = argv[2];
+    if (psx_cd_open(image) != 0) {
+      printf("SKIP image cases: %s: %s\n", image, psx_cd_error()->title);
+    } else {
+      CHECK(strcmp(psx_cd_source(), "files") != 0);
+      test_image_manifest(dir, image);
+      CHECK(psx_cd_open(image) == 0);
+      test_cd_read(dir);
+      test_cd_xa(dir);
+      test_known_hashes("image");
+      if (argc > 3)
+        test_marker(image, argv[3]);
+    }
+  }
 
   printf(failures ? "%d failure(s)\n" : "all passed\n", failures);
   return failures ? 1 : 0;

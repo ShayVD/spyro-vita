@@ -153,6 +153,19 @@ int main(int argc, char **argv) {
   CHECK(rgb[0] == 200 && rgb[1] == 160 && rgb[2] == 40, "border");
   write_ppm(dir, "menu_panel.ppm", rgb, menu_panel_height(lines));
 
+  /* a disc screen's message (D60): wrapped at spaces, '\n' kept, 32 columns */
+  h = menu_panel_message(rgb, "AN ISO HAS NO MUSIC",
+                         "Spyro the Dragon (USA).iso is a 2048-byte .iso, which has lost the "
+                         "game's music.\n\nDump the disc again.",
+                         "PRESS X TO EXIT");
+  /* "SPYRO THE DRAGON (USA).ISO IS A" / "2048-BYTE .ISO, WHICH HAS LOST" /
+   * "THE GAME'S MUSIC." / "" / "DUMP THE DISC AGAIN." */
+  CHECK(h == menu_panel_height(5), "message: %d pixels high, want 5 lines", h);
+  write_ppm(dir, "menu_panel_message.ppm", rgb, h);
+  h = menu_panel_message(rgb, "T", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", "");
+  CHECK(h == menu_panel_height(2), "message: a long word is cut, %d", h);
+  h = menu_panel_height(MENU_PANEL_LINES);
+
   /* 24 lines (4 sections of 5 rows), 13 shown: scrolled to row 20 */
   for (i = 0; i < 24; i++) {
     if (i % 6 == 0) {

@@ -233,12 +233,13 @@ show:
   return fresh;
 }
 
-void vita_video_fill_red(void) {
+void vita_video_fill(int r, int g, int b) {
   if (g_vita_gl) {
-    vita_gpu_fill(160 / 255.0f, 0, 0);
+    vita_gpu_fill(r / 255.0f, g / 255.0f, b / 255.0f);
   } else if (s_ren) {
-    SDL_SetRenderDrawColor(s_ren, 160, 0, 0, 255);
+    SDL_SetRenderDrawColor(s_ren, (Uint8)r, (Uint8)g, (Uint8)b, 255);
     SDL_RenderClear(s_ren);
+    draw_overlay();
     SDL_RenderPresent(s_ren);
   }
 }

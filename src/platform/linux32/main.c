@@ -13,8 +13,11 @@
  *         [--present-stats | --present-dirty] [--vcache]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
- *         [--draw-distance X] [--lod-stats N]
+ *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
+ * --disc: the extracted files (with manifest.json), or a folder holding a
+ *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
+ *   WAD.WAD the first time and remember it in FILE, as the Vita does.
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
  *   samples that read the CD.
@@ -67,7 +70,9 @@
 #include "port_controls.h"
 #include "lod.h"
 #include "present.h"
+#include "menu_panel.h"
 #include "psx_arena.h"
+#include "psx_cdimage.h"
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 
@@ -98,9 +103,28 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
+}
+
+/* The Vita's disc screen (D60) as text, and with --shot-dir as the panel the
+ * Vita shows (disc-error.png). */
+static void disc_refused(void) {
+  const PsxCdError *e = psx_cd_error();
+  uint8_t *rgb;
+  char path[512];
+  int h;
+  if (!e->code)
+    return;
+  fprintf(stderr, "\n%s\n%s\n\n", e->title, e->text);
+  if (!g_host_opts.shot_dir ||
+      !(rgb = malloc((size_t)MENU_PANEL_W * menu_panel_height(MENU_PANEL_LINES) * 3)))
+    return;
+  h = menu_panel_message(rgb, e->title, e->text, "PRESS X TO EXIT");
+  snprintf(path, sizeof path, "%s/disc-error.png", g_host_opts.shot_dir);
+  host_png_write(path, rgb, MENU_PANEL_W, h);
+  free(rgb);
 }
 
 static void log_pages(const char *what, const uint32_t *bits) {
@@ -184,6 +208,9 @@ int main(int argc, char **argv) {
     if (strcmp(a, "--disc") == 0) {
       TAKE();
       g_host_opts.disc_dir = val;
+    } else if (strcmp(a, "--disc-marker") == 0) {
+      TAKE();
+      psx_cd_set_verify(val, NULL);
     } else if (strcmp(a, "--replay") == 0) {
       TAKE();
       replay = val;
@@ -362,8 +389,10 @@ int main(int argc, char **argv) {
      * read callback (cd.c, set at start-up) is libcd state on the host, not
      * RAM, so the replay sets it as the game does. */
     if (g_host_opts.disc_dir) {
-      if (psx_cd_open(g_host_opts.disc_dir) != 0)
+      if (psx_cd_open(g_host_opts.disc_dir) != 0) {
+        disc_refused();
         return 1;
+      }
       psx_cd_set_read_latency(0); /* no vblanks here: reads end inside CdRead */
       CdReadCallback(CDReadDone);
     }
@@ -386,6 +415,7 @@ int main(int argc, char **argv) {
   if (psx_cd_open(g_host_opts.disc_dir) != 0) {
     host_log("psx_cd_open(%s) failed", g_host_opts.disc_dir);
     host_log_flush();
+    disc_refused();
     return 1;
   }
   /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1

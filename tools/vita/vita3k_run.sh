@@ -14,6 +14,14 @@
 # picture, which the shots (the readback replay) don't show. It adds
 # shot_hold=: the game holds after each shot, writes hold.req and waits for
 # the hold.ack written here once the window is grabbed (docs/vita-testing.md).
+# DISC=DIR runs from a disc image instead of the extracted files (D60): the
+# files directly in DIR (.cue, .bin, .img, or an .iso/.chd/... to see its
+# refusal) are hard-linked into ux0:data/spyro for the run and manifest.json
+# is moved aside, so the app finds no extracted files; an empty DIR shows the
+# no-disc screen. Both are put back when the script ends, however it ends
+# (a SIGKILLed run's manifest is put back by the next run). GRAB=S grabs the
+# Vita3K window S seconds after the start, as OUT_DIR/win-grab.png (the disc
+# screens, which come before any shot).
 # One run at a time: every run shares Vita3K's ux0:data/spyro and title
 # SPYV00001, so a lock (ux0:data/spyro.lock, holding the run's PID) makes a
 # second run wait (up to VITA3K_LOCK_WAIT seconds, default 1800). Vita3K is
@@ -32,7 +40,6 @@ vita3k=${VITA3K:-/Applications/Vita3K.app/Contents/MacOS/Vita3K}
 data="$HOME/Library/Application Support/Vita3K/Vita3K/fs/ux0/data/spyro"
 vpk=${VPK:-$root/build/vita/spyro-vita.vpk}
 
-[ -f "$data/manifest.json" ] || { echo "no $data/manifest.json"; exit 1; }
 
 pid=
 cap=
@@ -48,8 +55,13 @@ stop_vita3k() {
   [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
   pid=
 }
+linked=()
 cleanup() {
   stop_vita3k
+  for f in ${linked[@]+"${linked[@]}"}; do rm -f "$data/$f"; done
+  linked=()
+  [ -f "$data/manifest.json.aside" ] && [ ! -f "$data/manifest.json" ] &&
+    mv "$data/manifest.json.aside" "$data/manifest.json"
   [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] && rm -rf "$lock"
   return 0
 }
@@ -68,7 +80,21 @@ until mkdir "$lock" 2>/dev/null; do
   sleep 5; waited=$((waited + 5))
 done
 echo $$ > "$lock/pid"
+[ -f "$data/manifest.json.aside" ] && [ ! -f "$data/manifest.json" ] &&
+  mv "$data/manifest.json.aside" "$data/manifest.json"
+[ -f "$data/manifest.json" ] || { echo "no $data/manifest.json"; exit 1; }
 mkdir -p "$out"
+if [ -n "${DISC:-}" ]; then
+  mv "$data/manifest.json" "$data/manifest.json.aside"
+  for f in "$DISC"/*; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    [ -e "$data/$name" ] && { echo "vita3k_run: $data/$name is in the way"; exit 1; }
+    ln "$f" "$data/$name" 2>/dev/null || cp "$f" "$data/$name"
+    linked+=("$name")
+  done
+  echo "vita3k_run: disc image run, ${#linked[@]} files from $DISC: ${linked[*]-}"
+fi
 # Virtual vblanks (realtime=0) so runs replay exactly and compare with the
 # host; REALTIME=1 keeps the device default (vblanks follow the display).
 : > "$data/config.txt"
@@ -86,12 +112,12 @@ if [ -n "${PAD:-}" ]; then
   echo "pad=ux0:data/spyro/pad.txt" >> "$data/config.txt"
 fi
 [ -n "${SAVE:-}" ] && cp -R "$SAVE/." "$data/save/"
-if [ "${CAPTURE:-0}" = 1 ]; then
-  echo "shot_hold=20000" >> "$data/config.txt"
-  winid="$root/build/vita3k_window"
+winid="$root/build/vita3k_window"
+if [ "${CAPTURE:-0}" = 1 ] || [ -n "${GRAB:-}" ]; then
   [ "$winid" -nt "$root/tools/vita/vita3k_window.swift" ] ||
     swiftc -O -o "$winid" "$root/tools/vita/vita3k_window.swift"
 fi
+[ "${CAPTURE:-0}" = 1 ] && echo "shot_hold=20000" >> "$data/config.txt"
 
 cfg="$HOME/Library/Application Support/Vita3K/Vita3K/config.yml"
 sed "s/^log-level: .*/log-level: ${VITA3K_LOG:-4}/" "$cfg" > "$out/vita3k-config.yml"
@@ -123,6 +149,11 @@ fi
 t=0
 while [ $t -lt "$timeout" ] && kill -0 $pid 2>/dev/null; do
   grep -q 'reached, exiting' "$data/spyro.log" 2>/dev/null && break
+  if [ -n "${GRAB:-}" ] && [ $t -ge "$GRAB" ] && [ ! -f "$out/win-grab.png" ]; then
+    osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
+      >/dev/null 2>> "$out/capture.log" || true
+    sleep 1; "$winid" "$out/win-grab.png" 2>> "$out/capture.log" || echo "no grab" >> "$out/capture.log"
+  fi
   sleep 2; t=$((t + 2))
 done
 sleep 1

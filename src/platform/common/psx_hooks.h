@@ -7,8 +7,10 @@
 extern "C" {
 #endif
 
-/* libcd over files (src/platform/common/libcd.c). */
-int psx_cd_open(const char *disc_dir); /* reads <disc_dir>/manifest.json; 0 = ok */
+/* libcd over the disc (src/platform/common/libcd.c): <disc_dir>/manifest.json
+ * and the extracted files, or without one a disc image in disc_dir (D60).
+ * 0 = ok; else psx_cd_error() (psx_cdimage.h) says why. */
+int psx_cd_open(const char *disc_dir);
 void psx_cd_vblank(void);              /* once per virtual vblank, before the VSync callback */
 /* CD ticks a CdRead waits before it completes (default 1). A tick is each
  * psx_cd_vblank() and each CdSync(1, ...) poll while a read is pending; 0

@@ -1,7 +1,7 @@
 /* PS Vita platform layer (docs/vita-testing.md, decisions D25-D26): the calls
- * between its parts. The game data comes from ux0:data/spyro/ (the files
- * tools/extract_disc.py writes, with manifest.json), saves go to
- * ux0:data/spyro/save/. */
+ * between its parts. The game data comes from ux0:data/spyro/ (the user's
+ * disc image, or the files tools/extract_disc.py writes, with manifest.json;
+ * D60), saves go to ux0:data/spyro/save/. */
 #ifndef SPYRO_VITA_H
 #define SPYRO_VITA_H
 
@@ -68,7 +68,8 @@ void vita_set_vblank(int vblank); /* a save state's count (D51) */
 /* video.c: the PS1 display rect, scaled 4:3 into 960x544 (either renderer) */
 int vita_video_init(void); /* 0 = ok */
 int vita_video_present(void); /* 1 = a new picture */
-void vita_video_fill_red(void); /* the no-disc screen */
+void vita_video_fill(int r, int g, int b); /* the screen in one colour, and the overlay
+                                              (the disc screens before the game, D60) */
 
 /* gpu.c: which renderer the GR_* calls reach, and who presents (D35) */
 extern int g_vita_gpu;
@@ -79,7 +80,7 @@ int vita_gpu_init(void); /* 0 = ok, 1 = only presenting works (use gpu=0), <0 = 
 int vita_gpu_present(void);
 void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the display */
 void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
-void vita_gpu_fill(float r, float g, float b);
+void vita_gpu_fill(float r, float g, float b); /* and the overlay */
 void vita_gpu_report(int vblank); /* "gpu" line in the log */
 int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41), menu (D48) */
 void vita_gpu_arm_sample(void);   /* GPU-time the next picture too */

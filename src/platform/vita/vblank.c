@@ -9,6 +9,7 @@
  * the same as linux32's. */
 #include "vita.h"
 #include "psx_arena.h"
+#include "psx_cdimage.h"
 #include "psx_hooks.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -66,6 +67,19 @@ static int shot_due(int v) {
   return 0;
 }
 
+/* Disc reads since the start (both disc layouts, D60): file-system calls,
+ * data and the time they took. Only when there were new ones. */
+static void cd_report(void) {
+  static unsigned last;
+  PsxCdIo io;
+  psx_cd_io(&io);
+  if (io.reads == last)
+    return;
+  last = io.reads;
+  vita_log("cd: %u reads, %u KB, %u ms in the file system since the start", io.reads, io.kbytes,
+           (unsigned)(io.us / 1000));
+}
+
 static void vblank(void) {
   int v = ++s_vblank, i;
   SceUInt64 now;
@@ -118,6 +132,7 @@ static void vblank(void) {
       vita_gpu_report(v);
     vita_present_report(v);
     vita_picture_report(v);
+    cd_report();
   }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
