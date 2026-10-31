@@ -1,0 +1,24 @@
+diff --git a/src/gamestates/draw.c b/src/gamestates/draw.c
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -2653,6 +2653,9 @@
+ }
+ 
+ void func_credits_8007BFD0(void); // Overlay functions
++#ifdef SPYRO_PORT
++void PortPolySpace(void); /* src/game/present.c */
++#endif
+ 
+ /// @brief Gamestate draw function
+ void GamestateDraw(void) {
+@@ -2672,6 +2675,10 @@
+   D_80075780 = (void *)((char *)D_800757B0 + 0x1C000);
+   D_800756FC = (void *)((char *)D_800757B0 + 0x1C000);
+   g_HudMobys = (void *)((char *)D_800757B0 + 0x1C000);
++#ifdef SPYRO_PORT
++  // Widescreen, 60 fps and draw distance draw into both buffers (present.c)
++  PortPolySpace();
++#endif
+ 
+   CameraUpdateMatrices();
+ 

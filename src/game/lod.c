@@ -36,12 +36,15 @@
  *    scale backs off before the buffer gets close to full;
  *  - a new level or gamestate starts again at 1x, then grows.
  * (The first whole-game run had only the limiter and crashed entering
- * level 40 at 2x: one frame went past the buffer into the world OT.) Only
+ * level 40 at 2x: one frame went past the buffer into the world OT.) Since
+ * D54 a draw with the option on starts at the lower buffer and spans both
+ * (present.c PortPolySpace); the bounds still keep to one buffer's size. Only
  * drawn pictures use the longer distances: the hidden 4:3 logic draw of
  * attract demos keeps the original ones. */
 #include "lod.h"
 
 #include "mips2c_rt.h"
+#include "present.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdio.h>
@@ -252,7 +255,7 @@ void port_lod_env_lists(u32 t7) {
 
 void port_lod_draw_begin(int shown) {
   const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
-  u32 lo = (u32)(uintptr_t)db->m_PolyBuf;
+  u32 lo = (u32)(uintptr_t)port_poly_start(db->m_PolyBuf); /* D54 */
   int cap = buffer_cap();
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
@@ -317,7 +320,7 @@ void port_lod_draw_end(int shown) {
   if (!shown || !g_CurDB || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
-  used = (int)((char *)D_800757B0 - (char *)g_CurDB->m_PolyBuf);
+  used = (int)((u32)(uintptr_t)D_800757B0 - s_poly_lo);
   cap = buffer_cap();
   if (used < 0 || used > 0x100000)
     return;

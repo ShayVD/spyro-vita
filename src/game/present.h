@@ -88,6 +88,12 @@ const uint16_t *port_present_shown_pixels(void);
 /* order_table.c: a C-built 2D primitive went into the HUD OT. */
 void port_present_note_2d(void *prim);
 
+/* Where a draw into db_buf (a DB's m_PolyBuf) starts writing primitives: the
+ * lower buffer while any option is on (D54), PortPolySpace() in
+ * GamestateDraw (patches/spyro-1-port/0010). */
+void *port_poly_start(void *db_buf);
+void PortPolySpace(void);
+
 #ifdef __cplusplus
 }
 #endif

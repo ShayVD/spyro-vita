@@ -414,6 +414,37 @@ static int timed_vsync(int mode) {
   return PsyX_Sys_GetVBlankCount();
 }
 
+/* ---------- the primitive space (D54) ---------- */
+
+/* GamestateDraw points each draw at its DB's primitive buffer (AllocateBuffers:
+ * lower, upper, then the HUD OT and the world OT), 0x1C000 bytes or 0x13000
+ * in reduced-space levels, with the HUD's mobys and the sky and particle
+ * renderers' limit (D_80075780 - 0x400, r_cyclorama.s, r_particles.s) at
+ * +0x1C000. The world and moby renderers check no bound. The original 4:3
+ * view fits: the ending of level 64 (reduced space) reaches 73 KB of 76. The
+ * wider frustum of a 16:9 draw went past the upper buffer into the OTs.
+ * DrawOTag takes the primitives at once here, so with any presentation
+ * option or draw distance on, every draw starts at the lower buffer and spans
+ * both, as the pause screens' draws already start there (draw.c
+ * func_8001A40C). The HUD's mobys and that limit go to the top, 0x200 under
+ * the HUD OT: at the HUD OT itself func_8001D718 would move the mobys down to
+ * +0x1BA00. With everything off nothing changes. */
+static int poly_space_on(void) { return port_present_active() || g_lod.scale > LOD_ONE; }
+
+void *port_poly_start(void *db_buf) {
+  return poly_space_on() ? g_Buffers.m_LowerPolyBuffer : db_buf;
+}
+
+void PortPolySpace(void) {
+  void *top = (char *)g_Buffers.m_HudOTStart - 0x200;
+  if (!poly_space_on())
+    return;
+  D_800757B0 = g_Buffers.m_LowerPolyBuffer;
+  D_80075780 = top;
+  D_800756FC = top;
+  g_HudMobys = top;
+}
+
 /* Every GamestateDraw: shown = its picture is shown (lod.c, D49). */
 static void game_draw(int shown) {
   port_lod_draw_begin(shown);
