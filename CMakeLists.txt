@@ -16,6 +16,22 @@ set(SPYRO_MATCHING_DIR "${CMAKE_SOURCE_DIR}/build/s1-matching" CACHE PATH
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# The game's PS1 layout comes from the matching build's psx.map. Without a
+# matching build (CI: it needs the user's own PsyQ headers) the build reads
+# the reduced copy in tools/layout instead (tools/reduce_map.py, decisions D57).
+set(SPYRO_PSX_MAP "${SPYRO_MATCHING_DIR}/build/psx.map")
+set(SPYRO_PSX_MAP_REDUCED "${CMAKE_SOURCE_DIR}/tools/layout/psx.map")
+if(NOT EXISTS "${SPYRO_PSX_MAP}")
+  set(SPYRO_PSX_MAP "${SPYRO_PSX_MAP_REDUCED}")
+  message(STATUS "No matching build: PS1 layout from ${SPYRO_PSX_MAP}")
+else()
+  execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/reduce_map.py"
+    --check "${SPYRO_PSX_MAP}" "${SPYRO_PSX_MAP_REDUCED}" RESULT_VARIABLE stale)
+  if(stale)
+    message(WARNING "tools/layout/psx.map differs from the matching build's: CI builds a different layout")
+  endif()
+endif()
+
 include(cmake/prepare.cmake)
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
               "${CMAKE_SOURCE_DIR}/patches/spyro-1-port" S1_DIR)
