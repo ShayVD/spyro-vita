@@ -677,6 +677,12 @@ Record each decision with its date, what was chosen, and why.
   - That's 0x37E00 bytes, or 0x25E00 in a reduced-space level, about twice what the game has. The game itself already starts the pause and exit-level draws at the lower buffer (`func_8001A40C`, `func_8001C694`).
   - `lod.c` measures from the same start. Its bounds and limiter keep one buffer's size, so draw distance behaves as before (D49).
   - With everything off, nothing changes: the PS1's layout, byte for byte.
+- **Nothing reads a frame's primitives after its `DrawOTag`.** On the PS1 the other buffer was the frame the GPU was still drawing. In the port nothing keeps a pointer into PS1 RAM past the parse:
+  - **PsyCross:** `DrawOTag` and `DrawPrim` parse primitives into split vertex data straight away (`LIBGPU.C` `ParsePrimitivesLinkedList`). A pending split holds those vertices, not the primitives. The 2D squeeze (D30) changes and restores primitive words around that same call.
+  - **The GPU renderer's VRAM readback replay** (`gpu_readback=1`): each target's log copies the `GrVertex` data as it's drawn (`gpu_gl.c`, `log_add`), and the software rasterizer replays those copies. The atlas decode (`expand()`) also reads vertex buffers only.
+  - **The options menu's redraw** (`vita_video_force_redraw`), **the presenter's frame queue and its 4:3-display fallback**, **shots and `bench=`**: all of them show or read pixels, from presentation slots, targets or `s_vram`, never primitives.
+  - **In-between frames (`interp`) and the exact two-draw widescreen:** a pass and the logic draw that follows it already wrote the same buffer (the snapshot puts `g_CurDB` back), so they already relied on this.
+  - **Save states (D51):** a state is taken at a loop top, with no split pending (`g_splitIndex == 0`, checked). The primitive buffers are arena bytes like any other, saved and restored whole. Nothing reads them before the next draw rewrites them, except the pause screens' VRAM copy, which is saved with the arena.
 - **Rejected:**
   - A guard in `link24`: it would hide the corruption, not stop it.
   - D49's world bound for widescreen: its 45 KB margin would leave 31 KB of world in a reduced-space level, so normal 16:9 play would lose scenery.
@@ -688,6 +694,8 @@ Record each decision with its date, what was chosen, and why.
   - Attract demos with features off, `--widescreen` and `--widescreen --interp`: Stone Hill (866 ticks) and Doctor Shemp (768) match the oracle's `cap3` trace tick for tick (`run10-demo-*`). Oracle replay on the fixed binary: `cap3` 329 PASS (and its 9 NOEXIT capture-side samples, as before), `cap6-tour` 358/358 (`run11-oracle`).
   - A short route to the same frames (new game, the level-warp cheat to 64, the tour's ending-3 writes as pokes at vblank 7410; `logs/run_end3.sh`): the build before the fix crashes at 7872 with the same backtrace (`run15-end3-base-ws`). The fix runs on to 9500, with draws of up to 78 KB, 103% of the old 76 KB buffer (`run14-end3-fix-ws`), and the same with `--interp` (`run20-end3-fix-wsi`, trace identical).
   - Vita3K, the same route with `widescreen=1`: main's `4f26bc7` VPK breaks at 7876 ("invalid tag length", 700,000 primitive-parse errors, then Vita3K dies on a bad access; `run18-vita3k-end3-4f26bc7-ws`). The fixed VPK runs to 9500 with no parse errors, showing the host's frames (`run16-vita3k-end3-fix-ws`). So players on the Vita's widescreen default would have hit this at the end of the game.
+  - Pause readback with the new layout: new game to Artisans' entrance in widescreen (86 KB of 110), then pause, resume and the inventory (`logs/pads/pause_route.txt`). On the host the trace and all 7 shots are byte-identical to the build before the fix (`run21-pause-fix-ws`, `run22-pause-base-ws`). In Vita3K with `widescreen=1`, all 7 shots are byte-identical between the fixed VPK and `4f26bc7`, with 6 + 2 readbacks replayed and no parse errors (`run23`, `run24`). In the whole widescreen tour, ending 3's cutscene is the only stretch above 95% of one buffer, and the game allows no pause there.
+  - Save state in ending 3, where draws span both buffers (save at 7700, load at 7900): 349 loop tops identical in every chunk, 11.6 s of audio and 33 shots identical to the run that saved it (`run26-state-ref`, `run27-state-load`).
 
 ## 2026-10-31: M5 release packaging
 
