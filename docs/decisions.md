@@ -527,6 +527,21 @@ Record each decision with its date, what was chosen, and why.
   - **Vita3K, the same script plus right-stick lines** (`pad=` stick tokens, `free_camera=1`): all 22 shots and the card are byte-identical to the host's `--analog --free-camera` run (`logs/run309-vita3k-freecam` against `logs/run304-host-freecam`). The analog report, the stick bytes and the camera hook behave the same on both.
   - **Not checked:** a physical Vita's sticks. Vita3K's controller input here came from the script; its own sticks sat at centre.
 
+- **Touch to open the menu (added for the user, 2026-10-31):** a tap in the middle of the **front** touch screen opens the options menu, the same as SELECT+START (`pad.c` `touch_sample`; on by default, `touch_menu=`, menu row `TOUCH TO OPEN MENU`).
+  - **Touch comes from `sceTouch`, not SDL.** SDL's Vita touch devices exist only with its video subsystem, which `main.c` doesn't start with `gpu=1` (vitaGL owns the display). In Vita3K, SDL reported 0 touch devices. So **`reartouch=1` (D27) had done nothing since the GPU renderer became the default (D35).** `pad.c` now reads both panels with `sceTouchPeek` (`touch_read`, positions across each panel's active area), which fixes rear touch too.
+  - **What counts as a tap:** one finger, down and up within 300 ms of process time, moving less than 4% of the screen, and starting and ending in the middle third both ways. It's sampled once a poll, so once a vblank in play and once a frame in the menu. A swipe, a held finger, a second finger or a touch near the edges isn't a tap.
+  - **How it opens:** through the same path as the button combo. `vita_menu_request` sets the request that `vita_menu_service` takes at the next VSync, so the game pauses the same way.
+  - **While the menu is up:** another tap closes it, and the tap that opened it is dropped when the menu opens, so one tap can't open and close it. The game never sees the front touch screen. The rear panel stays rear touch (`reartouch=`, D27).
+  - **Scripted tests:** `pad=` lines may queue `tap=X,Y`, `hold=X,Y` and `swipe=X,Y` (percent). They stand in for the front panel's fingers, so the same test judges them, and they keep playing while the menu is open.
+  - **Checked in Vita3K** (`logs/run316-vita3k-touch-short`):
+    - taps at the left edge and at the bottom, a 90-poll hold and a swipe don't open the menu;
+    - a tap opens it at the next VSync, and a second tap, queued just after and played inside the menu, closes it;
+    - the menu saves `touch_menu=1`;
+    - with the gems script plus the same gestures in Artisans (`logs/run317-vita3k-touch`), only the middle tap opens the menu and the next tap closes it;
+    - with `touch_menu=0` (`logs/run318-vita3k-touch-off`) nothing opens;
+    - all 39 shots are byte-identical between the two runs, and the 36 up to vblank 8640 are byte-identical to the host's gems run (`logs/run303-host-gems-analog`): the game never sees the touches, and the menu's pause costs it nothing.
+  - **Not checked:** the host (it has no touch screen); real fingers on a Vita; rear touch on hardware.
+
 ### D47. Free camera on the right stick, invert X/Y and camera speed, by biasing the follow camera's springs
 - **Where:** `camera_hand.c` `func_80035FB4` (hand C of `asm/nonmatchings/camera/func_80035FB4.s`) runs the state's update, then L2/R2 (`func_80035F58`, which sets `D_80075924` to ±0x400 while either is held), then the springs (`func_80034CE8`). The springs pull `m_Sphere` (azimuth, elevation, radius, offsets) towards `m_LastSimulation`, which the follow states set from a preset behind Spyro (`ApplySphericalPreset`; follow elevation 0xA0). A non-zero `D_80075924` replaces the azimuth spring's error, so the camera swings round while it's held. Let go, the spring pulls the camera back behind Spyro.
 - **Chosen (`free_camera=1`, off by default; `port_controls.h` `g_port_controls`, set by the Vita's `pad.c`):**
@@ -538,4 +553,4 @@ Record each decision with its date, what was chosen, and why.
   - **The stick isn't also L2/R2 with the free camera on:** `pad.c` maps the right stick's X to L2/R2 only when the free camera is off or the pad is digital (D27).
 - **Why the springs and not the camera's position:** the hook reuses the game's own L2/R2 path. Collision (`func_80034480`), the nudge search and the passive camera behave as they do for L2/R2. With the option off, `D_80075924` and the elevation error are exactly the original's, so the oracle replays and both attract demos are unaffected.
 - **Rear touch:** `reartouch=` (D27) is now a menu row too (`REAR TOUCH L2/R2`).
-- **Menu (D45):** CONTROLS: `ANALOG STICK`, `FREE CAMERA`, `INVERT CAMERA X`, `INVERT CAMERA Y`, `CAMERA SPEED` (50–200% in 25s), `REAR TOUCH L2/R2` (`pad.c` `g_menu_controls`).
+- **Menu (D45):** CONTROLS: `ANALOG STICK`, `FREE CAMERA`, `INVERT CAMERA X`, `INVERT CAMERA Y`, `CAMERA SPEED` (50–200% in 25s), `REAR TOUCH L2/R2`, `TOUCH TO OPEN MENU` (D46) (`pad.c` `g_menu_controls`).

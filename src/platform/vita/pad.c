@@ -11,13 +11,19 @@
  * neither, so the right stick's X axis is L2 (left) / R2 (right), unless
  * free_camera=1 (D47: the game's camera reads the right stick itself, in
  * analog mode), and with reartouch=1 the rear touch pad's left / right half
- * too (D27). A PS TV's DualShock L2/R2/L3/R3 work as themselves. The
- * controls are rows of the options menu (menu.c, CONTROLS). */
+ * too (D27). A PS TV's DualShock L2/R2/L3/R3 work as themselves. A short
+ * tap in the middle of the front touch screen opens the options menu, as
+ * SELECT+START does (touch_menu=1, the default; D46). The controls are rows
+ * of the options menu (menu.c, CONTROLS). Both touch panels are read with
+ * sceTouch (touch_read). */
 #include "vita.h"
 #include "../../game/port_controls.h"
 #include "menu_opts.h"
 
 #include <SDL2/SDL.h>
+#include <math.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/touch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,16 +64,146 @@ static unsigned char *s_pad[2];
 static uint16_t s_last;
 static int s_settle; /* vblanks left reporting centred sticks (read_sticks) */
 
+void vita_menu_request(void); /* menu.c: open the menu at the next VSync */
+
+/* Touch, read with sceTouch for both panels: SDL's Vita touch exists only
+ * with its video subsystem, which gpu=1 (vitaGL) doesn't start (main.c).
+ * Positions are 0..1 across a panel's active area. */
+static SceTouchPanelInfo s_panel[2];
+
+static void touch_init(void) {
+  int p;
+  for (p = 0; p < 2; p++) {
+    sceTouchSetSamplingState(p, SCE_TOUCH_SAMPLING_STATE_START);
+    if (sceTouchGetPanelInfo(p, &s_panel[p]) < 0 || s_panel[p].maxAaX <= s_panel[p].minAaX ||
+        s_panel[p].maxAaY <= s_panel[p].minAaY) {
+      s_panel[p].minAaX = s_panel[p].minAaY = 0; /* the front panel's range */
+      s_panel[p].maxAaX = 1919, s_panel[p].maxAaY = 1087;
+    }
+  }
+}
+
+/* A panel's fingers now: up to max (x, y) pairs and ids; returns how many. */
+static int touch_read(int port, float *xy, int *ids, int max) {
+  const SceTouchPanelInfo *pi = &s_panel[port];
+  SceTouchData d;
+  int i, n;
+  if (sceTouchPeek(port, &d, 1) < 1)
+    return 0;
+  n = (int)d.reportNum < max ? (int)d.reportNum : max;
+  for (i = 0; i < n; i++) {
+    xy[2 * i] = (float)(d.report[i].x - pi->minAaX) / (pi->maxAaX - pi->minAaX);
+    xy[2 * i + 1] = (float)(d.report[i].y - pi->minAaY) / (pi->maxAaY - pi->minAaY);
+    ids[i] = d.report[i].id;
+  }
+  return n;
+}
+
+/* Front touch taps (touch_menu=, D46), judged once a poll: one finger, down
+ * and up within TAP_US, moving less than TAP_MOVE, starting and ending in
+ * the middle third of the screen. Anything else (a swipe, a hold, a second
+ * finger, the edges) is no tap. The game never sees the front panel. */
+#define TAP_US 300000
+#define TAP_MOVE 0.04f
+static int s_touch_menu = 1; /* a menu row's value (k_rows): config.txt touch_menu= */
+static struct {
+  int down, multi, id;
+  SceUInt64 t0;
+  float x0, y0, x, y, moved;
+} s_touch;
+static int s_tap; /* a tap seen, not yet taken */
+
+static int in_middle(float x, float y) {
+  return x >= 1.0f / 3 && x <= 2.0f / 3 && y >= 1.0f / 3 && y <= 2.0f / 3;
+}
+
+static void touch_sample(int n, const float *xy, const int *ids) {
+  SceUInt64 now = sceKernelGetProcessTimeWide();
+  float d;
+  if (n == 0) {
+    if (s_touch.down && !s_touch.multi && now - s_touch.t0 <= TAP_US &&
+        s_touch.moved < TAP_MOVE && in_middle(s_touch.x0, s_touch.y0) &&
+        in_middle(s_touch.x, s_touch.y)) {
+      s_tap = 1;
+      vita_log("pad: tap at %.2f,%.2f (%u ms)", s_touch.x, s_touch.y,
+               (unsigned)((now - s_touch.t0) / 1000));
+    }
+    s_touch.down = 0;
+    return;
+  }
+  if (!s_touch.down) {
+    s_touch.down = 1, s_touch.multi = n > 1, s_touch.id = ids[0], s_touch.t0 = now;
+    s_touch.x0 = s_touch.x = xy[0], s_touch.y0 = s_touch.y = xy[1], s_touch.moved = 0;
+    return;
+  }
+  if (n > 1 || ids[0] != s_touch.id)
+    s_touch.multi = 1;
+  s_touch.x = xy[0], s_touch.y = xy[1];
+  d = fmaxf(fabsf(s_touch.x - s_touch.x0), fabsf(s_touch.y - s_touch.y0));
+  if (d > s_touch.moved)
+    s_touch.moved = d;
+}
+
+/* pad= gestures (tests): played one after another, a poll per step, in
+ * place of the front panel's own fingers, so touch_sample judges them as it
+ * judges a finger. A tap lasts 4 polls, a hold 90 (well over TAP_US), a
+ * swipe 4 polls moving 20% right; 30 polls between gestures. Polls go on
+ * while the menu is open, so a second tap queued just after the first
+ * closes it. Returns 1 while a gesture is playing (*n, xy: its finger). */
+static struct {
+  char kind;
+  float x, y;
+} s_gest[8];
+static int s_ngest, s_gpoll;
+
+static int synth_touch(int *n, float *xy) {
+  int len;
+  if (!s_ngest)
+    return 0;
+  len = s_gest[0].kind == 'h' ? 90 : 4;
+  *n = s_gpoll < len;
+  xy[0] = s_gest[0].x + (s_gest[0].kind == 's' && s_gpoll >= 2 ? 0.2f : 0);
+  xy[1] = s_gest[0].y;
+  if (++s_gpoll > len + 30) {
+    memmove(s_gest, s_gest + 1, --s_ngest * sizeof s_gest[0]);
+    s_gpoll = 0;
+  }
+  return 1;
+}
+
+/* Once a poll: the front panel (or a pad= gesture) through the tap test. */
+static void touch_poll(void) {
+  float xy[8];
+  int ids[4] = {0}, n;
+  if (!synth_touch(&n, xy))
+    n = touch_read(SCE_TOUCH_PORT_FRONT, xy, ids, 4);
+  if (s_touch_menu)
+    touch_sample(n, xy, ids);
+  else
+    s_touch.down = 0;
+}
+
+/* menu.c: 1 once per tap (the menu closes on it, and drops one from before
+ * it opened). */
+int vita_pad_take_tap(void) {
+  int t = s_tap;
+  s_tap = 0;
+  return t;
+}
+
 /* pad= script, the linux32 host's --pad format (src/platform/linux32/pad.c):
  *   <vblank> <button>[+<button>...] | none     # comment
  * A line's buttons hold from its vblank until the next line. With analog=1
  * a line may also set the sticks, as the host's with --analog: lx=N ly=N
  * rx=N ry=N (0..255, 128 centred); a stick the script moves off centre
- * replaces the controller's. */
+ * replaces the controller's. tap=X,Y, hold=X,Y and swipe=X,Y (percent of
+ * the screen) queue a gesture on the front touch screen (synth_touch). */
 typedef struct {
   int vblank;
   uint16_t mask;
   unsigned char sticks[4]; /* right X, right Y, left X, left Y */
+  char gesture;            /* 't'ap, 'h'old, 's'wipe or 0 */
+  float gx, gy;
 } PadEvent;
 
 static const struct {
@@ -86,15 +222,23 @@ static int s_nevents, s_next;
 static uint16_t s_script;
 static unsigned char s_script_sticks[4] = {0x80, 0x80, 0x80, 0x80};
 
-static int parse_buttons(char *text, uint16_t *mask, unsigned char sticks[4]) {
+static int parse_buttons(char *text, uint16_t *mask, unsigned char sticks[4], PadEvent *ev) {
   static const char *const stick_names[4] = {"rx=", "ry=", "lx=", "ly="};
   char *tok;
   *mask = 0;
   memset(sticks, 0x80, 4);
+  ev->gesture = 0;
   if (!strcmp(text, "none"))
     return 0;
   for (tok = strtok(text, "+"); tok; tok = strtok(NULL, "+")) {
     size_t i;
+    int gx, gy;
+    if ((!strncmp(tok, "tap=", 4) || !strncmp(tok, "hold=", 5) || !strncmp(tok, "swipe=", 6)) &&
+        sscanf(strchr(tok, '=') + 1, "%d,%d", &gx, &gy) == 2) {
+      ev->gesture = tok[0];
+      ev->gx = gx / 100.0f, ev->gy = gy / 100.0f;
+      continue;
+    }
     for (i = 0; i < 4 && strncmp(tok, stick_names[i], 3) != 0; i++)
       ;
     if (i < 4) {
@@ -126,11 +270,12 @@ int vita_pad_load(const char *path) {
     char *hash = strchr(line, '#');
     uint16_t mask;
     unsigned char sticks[4];
+    PadEvent ev;
     if (hash)
       *hash = 0;
     if (sscanf(line, "%d %199s", &v, name) != 2)
       continue;
-    if (parse_buttons(name, &mask, sticks) != 0) {
+    if (parse_buttons(name, &mask, sticks, &ev) != 0) {
       vita_log("pad: bad buttons in %s: %s", path, line);
       fclose(f);
       return -1;
@@ -139,6 +284,7 @@ int vita_pad_load(const char *path) {
       cap = cap ? cap * 2 : 64;
       s_events = realloc(s_events, cap * sizeof *s_events);
     }
+    s_events[s_nevents] = ev;
     s_events[s_nevents].vblank = v;
     memcpy(s_events[s_nevents].sticks, sticks, 4);
     s_events[s_nevents++].mask = mask;
@@ -200,6 +346,7 @@ void vita_pad_init(void) {
   if (!s_ctl)
     vita_log("pad: no game controller");
   controls_apply();
+  touch_init();
   vita_log("pad: %s; free camera %d (invert x %d, y %d, speed %d%%), rear touch %d",
            g_vita_opts.analog ? "analog (DualShock)" : "digital", g_vita_opts.free_camera,
            g_vita_opts.cam_invert_x, g_vita_opts.cam_invert_y, g_vita_opts.cam_speed,
@@ -225,11 +372,14 @@ static const MenuOption k_rows[] = {
      .on_change = controls_apply},
     {.section = MENU_CONTROLS, .label = "REAR TOUCH L2/R2", .key = "reartouch",
      .value = &g_vita_opts.reartouch, .names = g_menu_off_on, .count = 2},
+    {.section = MENU_CONTROLS, .label = "TOUCH TO OPEN MENU", .key = "touch_menu",
+     .value = &s_touch_menu, .names = g_menu_off_on, .count = 2},
 };
 MENU_OPTION_LIST(g_menu_controls, k_rows);
 
 void vita_pad_poll(void) {
   SDL_Event e;
+  touch_poll();
   while (SDL_PollEvent(&e)) {
     if (e.type == SDL_CONTROLLERDEVICEADDED && !s_ctl)
       open_first();
@@ -270,14 +420,11 @@ static uint16_t read_mask(int game) {
     if (x < -STICK_DEAD) m |= PSX_L2;
     if (x > STICK_DEAD) m |= PSX_R2;
   }
-  if (g_vita_opts.reartouch && SDL_GetNumTouchDevices() > 1) {
-    SDL_TouchID rear = SDL_GetTouchDevice(1);
-    int i, n = SDL_GetNumTouchFingers(rear);
-    for (i = 0; i < n; i++) {
-      SDL_Finger *f = SDL_GetTouchFinger(rear, i);
-      if (f)
-        m |= f->x < 0.5f ? PSX_L2 : PSX_R2;
-    }
+  if (g_vita_opts.reartouch) { /* sceTouch: SDL has no touch with gpu=1 */
+    float xy[8];
+    int ids[4], j, n = touch_read(SCE_TOUCH_PORT_BACK, xy, ids, 4);
+    for (j = 0; j < n; j++)
+      m |= xy[2 * j] < 0.5f ? PSX_L2 : PSX_R2;
   }
   return m;
 }
@@ -310,9 +457,15 @@ void vita_pad_vblank(void) {
   uint16_t m;
   int v = vita_vblank_count();
   while (s_next < s_nevents && s_events[s_next].vblank <= v) {
+    if (s_events[s_next].gesture && s_ngest < 8) {
+      s_gest[s_ngest].kind = s_events[s_next].gesture;
+      s_gest[s_ngest].x = s_events[s_next].gx, s_gest[s_ngest++].y = s_events[s_next].gy;
+    }
     memcpy(s_script_sticks, s_events[s_next].sticks, 4);
     s_script = s_events[s_next++].mask;
   }
+  if (vita_pad_take_tap())
+    vita_menu_request(); /* a tap: the menu, as SELECT+START */
   SDL_GameControllerUpdate();
   m = vita_menu_filter(read_mask(1)) | s_script; /* SELECT+START: the port's menu */
   if (m != s_last && g_vita_opts.stats > 1)
