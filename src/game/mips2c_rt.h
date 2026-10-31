@@ -72,6 +72,10 @@ int port_lod_moby_skip(u32 a0, u32 moby);
 int port_lod_moby_pass2(int room, u32 records_end);
 int port_lod_near_full(u32 t7);
 void port_lod_env_lists(u32 t7);
+int port_lod_env_full(u32 fp);
+void port_lod_env_end(u32 fp);
+int port_lod_records_full(u32 record, u32 prim);
+int port_lod_lit_full(void);
 #define PORT_LOD_ON (g_lod_k > 256)
 #define PORT_LOD_ENV(d) (PORT_LOD_ON ? port_lod_env(d) : (d))
 #define PORT_LOD_MOBY_DETAIL(d) (PORT_LOD_ON ? port_lod_moby_detail(d) : (d))
@@ -85,6 +89,14 @@ void port_lod_env_lists(u32 t7);
 #define PORT_LOD_MOBY_PASS2(room, fp)                                          \
   ((PORT_LOD_ON || g_lod_pass || g_lod_stats) && port_lod_moby_pass2(room, fp))
 #define PORT_LOD_NEAR_FULL(t7) (PORT_LOD_ON && port_lod_near_full(t7))
+/* hard bounds on the primitive buffer while the option is on (lod.c) */
+#define PORT_LOD_ENV_FULL(fp) ((PORT_LOD_ON || g_lod_stats) && port_lod_env_full(fp))
+#define PORT_LOD_ENV_END(fp)                                                   \
+  do {                                                                         \
+    if (PORT_LOD_ON || g_lod_stats)                                            \
+      port_lod_env_end(fp);                                                    \
+  } while (0)
+#define PORT_LOD_RECORDS_FULL(rec, prim) (PORT_LOD_ON && port_lod_records_full(rec, prim))
 #define PORT_LOD_ENV_LISTS(t7)                                                 \
   do {                                                                         \
     if (g_lod_stats)                                                           \

@@ -2,6 +2,7 @@
  * loading and saving rows, whoever defines them. */
 #include "menu_opts.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,7 @@ int menu_opts_layout(const MenuOptionList *const *lists, int nlists, MenuRow *ro
     for (l = 0; l < nlists; l++)
       for (i = 0; lists[l] && i < lists[l]->n; i++) {
         const MenuOption *o = &lists[l]->opts[i];
-        if ((int)o->section != s || n + 2 > max)
+        if ((int)o->section != s || n + 2 > max || (o->visible && !o->visible()))
           continue;
         if (!header) {
           rows[n].label = g_menu_section_names[s];
@@ -83,6 +84,14 @@ int menu_opts_layout(const MenuOptionList *const *lists, int nlists, MenuRow *ro
       }
   }
   return n;
+}
+
+/* config.txt values are lower case, row names upper case */
+static int same_name(const char *a, const char *b) {
+  for (; *a && *b; a++, b++)
+    if (toupper((unsigned char)*a) != toupper((unsigned char)*b))
+      return 0;
+  return *a == *b;
 }
 
 static const MenuOption *find(const MenuOptionList *const *lists, int nlists, const char *key,
@@ -100,9 +109,13 @@ static const MenuOption *find(const MenuOptionList *const *lists, int nlists, co
 int menu_opts_load(const MenuOptionList *const *lists, int nlists, const char *key,
                    const char *v) {
   const MenuOption *o = find(lists, nlists, key, strlen(key));
+  int i;
   if (!o)
     return 0;
   *o->value = atoi(v);
+  for (i = 0; o->names && i < o->count; i++)
+    if (same_name(o->names[i], v))
+      *o->value = o->values ? o->values[i] : i;
   return 1;
 }
 

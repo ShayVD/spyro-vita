@@ -15,6 +15,8 @@ extern "C" {
 typedef struct {
   int scale; /* LOD_ONE: off (the original distances); 384: 1.5x, 512: 2x */
   int stats; /* collect the numbers port_lod_report() logs */
+  int guards_only; /* tests: no limiter and no reset at a new level, only the
+                      hard bounds keep the buffer (host --lod-guards-only) */
 } LodConfig;
 
 extern LodConfig g_lod;

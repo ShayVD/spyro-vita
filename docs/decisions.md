@@ -513,3 +513,21 @@ Record each decision with its date, what was chosen, and why.
   - **Panel:** section headers (small gold text on a rule, not selectable) and a window of at most 13 lines (`MENU_PANEL_LINES`, 500 pixels high) that scrolls with the selection, with arrows when more lines are above or below. Rows are 30 pixels instead of 36. Up/down skips headers and wraps.
 - **Behaviour kept:** the same three rows, labels and values. One difference: a value written by hand that isn't in a row's list (`interp_budget=25`) now steps to the nearest listed value (26) instead of always to 26 MS.
 - **Checked:** `tests/menu_panel` (layout, stepping, wrap and clamp, actions, load, save keeping other lines, scrolling; writes `menu_panel.ppm` and `menu_panel_scroll.ppm`). Vita3K: `menu_test=300,450` (`logs/run301-vita3k-menu-table`) saves `widescreen=1 interp=1` then `widescreen=0 interp=2`, with the reserved lists absent (null weak references skipped). Not checked on hardware.
+
+### D48. The GPU picture options are menu rows that change live; 3-point filtering stays, labelled slow
+- **Why:** `tex_filter`, `persp`, `subpixel` and `res` (D39–D43) were `config.txt` only, so trying them meant editing a file on the memory card.
+- **Chosen:** `src/platform/vita/picture.c` defines `g_menu_picture` (D45's reserved name), in the PICTURE section after widescreen and 60 fps:
+  - `TEX FILTER`: OFF, BILINEAR, `3-POINT (SLOW)` (`tex_filter=0/1/2`);
+  - `PERSPECTIVE TEXTURES` (`persp`);
+  - `SUB-PIXEL VERTICES` (`subpixel`);
+  - `RESOLUTION`: NATIVE, PS1, 2X, 3X, 4X (`res=`);
+  - `DRAW DISTANCE (EXP.)` (D49).
+- **Live:**
+  - The filter, perspective and sub-pixel rows call `vita_gpu_set_options` (bench's hook, D41). It now compiles a shader set that wasn't built at start-up the first time it's needed: 2.9 s in Vita3K for the bilinear set, logged as `gpu: programs for … compiled in N ms`. If a set doesn't compile, the options stay as they were and the menu shows the old value.
+  - `RESOLUTION` re-scales the targets (`vita_gpu_rescale`), as widescreen does.
+- **Hidden with `gpu=0`:** `MenuOption` gains `visible` (`menu_opts.h`). The GPU rows show only while the GPU renderer draws (`g_vita_gpu`); their keys are still read and saved. `DRAW DISTANCE` works with both renderers.
+- **Loading names:** `menu_opts_load` also takes a value's name in any case. That keeps `res=ps1` and `res=native` working now that `res` is a row key (it used to be `atoi`, which reads `ps1` as 0). `gpu_res=` stays as `main.c`'s alias.
+- **Why keep 3-point:** it works and some players want the N64 look. On hardware it costs a third of the frame rate at native resolution: 16.2 pictures/s against 26.3 off and 24.5 bilinear (`logs/hw-26f3138-bench`). So the value names the cost.
+- **Labels fit the panel:** 18 pixels a letter; label plus `< value >` stays within 31 letters (hence `TEX FILTER`, `DRAW DISTANCE (EXP.)`).
+- **Tests without a controller:** `menu_keys=` (u d l r x o) replaces `menu_test`'s fixed sequence, so scripted runs reach any row.
+- **Checked:** `tests/menu_panel` (hidden rows, loading by name). Vita3K: `logs/run5-vita3k-menu` turns on bilinear, perspective and sub-pixel, sets PS1 resolution and 2× draw distance from the menu in the Stone Hill demo. `logs/run6-vita3k-boot` has the same options in `config.txt` from boot: replay shots byte-identical, and the window capture at 5300 byte-identical (at 4700 the draw-distance limiter was still growing after the menu). Not checked on hardware.

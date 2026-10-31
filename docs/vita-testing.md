@@ -80,7 +80,7 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `res=native` | GPU: the resolution it draws at (decisions D40). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
 | `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
@@ -93,13 +93,15 @@ Files the app writes:
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, right, up, right, circle (60 fps one step on, widescreen toggled, close) |
-| `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43) |
-| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
-| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
+| `menu_keys=LETTERS` | with `menu_test=`: press these instead, one letter per button (`u d l r`, `x` cross, `o` circle), then circle (D48) |
+| `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43; the menu's `TEX FILTER`) |
+| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39; the menu's `PERSPECTIVE TEXTURES`) |
+| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39; the menu's `SUB-PIXEL VERTICES`) |
+| `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default), the 60 fps budget, then (D48) `TEX FILTER` (OFF, BILINEAR, `3-POINT (SLOW)`), `PERSPECTIVE TEXTURES`, `SUB-PIXEL VERTICES`, `RESOLUTION` (NATIVE, PS1, 2X–4X) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). The four GPU rows are hidden with `gpu=0`. The first time a filter, perspective or sub-pixel setting is chosen, its shaders compile: the menu pauses a few seconds (the log says how long). The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -299,9 +301,9 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 
 1. `config.txt`: just `bench=1` (keep `gpu=1`, the default). Start the game, don't touch the controller, and
    leave it about 4 minutes: it plays the title intro, the title and both attract demos while
-   16 option sets take turns, at 4:3 and 16:9, native and PS1 resolution, at 30 fps
-   (`bench=2` keeps your 60 fps setting).
-2. Send `spyro.log` back. The `bench final:` lines (at vblank 12120, about 3.5 minutes in) give
+   18 option sets take turns, at 4:3 and 16:9, native and PS1 resolution, and the draw distance
+   at 1.5× and 2× (D49), at 30 fps (`bench=2` keeps your 60 fps setting).
+2. Send `spyro.log` back. The `bench final:` lines (at vblank 13560, about 3.8 minutes in) give
    each option set's pictures per second and its GPU-timed frame and tail; `bench round N:` lines
    come every 4 rounds in case the run stops early. The `tex_cache=0` / `tex_cache=1` pairs are
    the default picture before and after the decoded-texture atlas.
@@ -320,6 +322,29 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 4. Look for textures swimming or warping on the ground near Spyro (gone with `persp=1`), for
    flickering or stretched polygons (a wrong depth would show as one), and for dark or pink
    edges on plants and fences (there should be none).
+
+**Testing the picture rows and the draw distance** (decisions D48, D49), with the GPU build:
+
+1. `config.txt`: only `stats=1`. Start a game and go to Artisans.
+2. **Picture rows:** open the menu (hold SELECT, press START). Under PICTURE, step `TEX FILTER` to BILINEAR,
+   then `3-POINT (SLOW)`, then OFF; switch `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` on and off;
+   step `RESOLUTION` through PS1, 2X and back to NATIVE. Each change should show behind the menu at once.
+   The first filter, perspective or sub-pixel change pauses a few seconds while its shaders compile; the
+   log says `gpu: programs for ... compiled in N ms`. Any `don't compile` line is what to send back.
+   Close the menu: the log's `menu: saved ...` line lists the values, and they come back after a restart.
+3. **Draw distance:** set `DRAW DISTANCE (EXP.)` to 2X and close the menu. Walk and glide around Artisans
+   and one open level (Stone Hill or Town Square). Look at what appears in the distance and at the left and
+   right edges: textured hills and walls should reach further, and gems and objects should appear sooner. A
+   frame with a missing patch of scenery can happen (a hard bound stopped the world draw before the
+   buffer ran out); note where.
+4. In the log, `lod N:` lines every 5 seconds:
+   - `x2.00 average` means the full distance held. Lower means the limiter backed off; it starts again
+     at 1x at each new level.
+   - `primitives ... peak ... of 110 KB`: how full the game's primitive buffer got.
+   - `stopped early: world W, mobys M`: how often a hard bound stopped a loop.
+   - Compare the `vblank N: ... P pictures` and `time N:` lines with the same walk at OFF. The cost is
+     CPU (more polygons to walk and submit) at a moment when 16:9 is already about 93% busy.
+5. `bench=1` now also measures `16:9 native, draw_distance=150` and `=200` (the `bench final:` lines).
 
 **First hardware test (main `3b4126a`, user):** red and green textures after the pause menu, the picture snapping between 16:9 and 4:3, scenery popping at the edges, 20–26 fps with widescreen. Causes and fixes: `docs/presentation.md` "Fixes from the first hardware test".
 

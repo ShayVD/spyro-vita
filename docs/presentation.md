@@ -302,6 +302,53 @@ Checked in Vita3K (not hardware):
 
 **Not yet seen:** the GPU-path picture itself. Vita3K returns zeros for anything read back from the GPU, and `shot_hd=1` only works on hardware. So orientation, edges and the HUD under `gpu=1` wait for the hardware test in `docs/vita-testing.md`. The software path's frames are the host's, byte for byte.
 
+## Draw distance (D49, experimental, off by default)
+
+With widescreen on, players see scenery and objects appear at a distance, most visibly at the sides. This option draws them further out. It changes only what is drawn: the game logic sees exactly what it sees with the option off.
+
+### How Spyro decides what to draw at a distance
+
+- **The world** (`asm/renderers/r_environment.s`, `func_800258F0`):
+  - Each sector goes through a frustum test on its bounding sphere. A visible sector marks `D_800771C8[sector]` (which `func_800521C0` uses to keep mobys in visible sectors). That mark doesn't depend on distance.
+  - Then the sector loop sorts sectors by `g_Environment.m_LodDistance` (`+0x24`, set once to `0x8000` in `initialization.c`):
+    - a sector that starts within it goes into the **near list** (`D_8006FCF4+0x1C00`), drawn textured and high-poly;
+    - a sector that reaches past it goes into the **far list** (`+0x2000`), drawn low-poly and Gouraud-shaded.
+  - The far draw (from `0x80026200`) drops polygons beyond `m_CullingDistance` (`0x14000`, `0x28000` with an occlusion group, `environment.c` `func_8002B9CC`). It also fades out low-poly polygons inside `m_LodDistance` (`s3 = (LOD >> 7) - 0x20`). The near draw (from `0x800267B0`) fades high-poly vertices toward it (`s5`).
+  - `m_LodDistance` is read in those three places only (`grep` of `asm/` and `src/`). Nothing in the logic reads it.
+  - **"Scenery popping in"** is the near list's textured geometry replacing the low-poly version at `0x8000` units. The far-geometry cull distance is a separate, larger distance; this option leaves it alone.
+- **Mobys** (`asm/renderers/r_moby.s`):
+  - Three culling loops: `func_8001F158` (normal), `func_800208FC` (specular, gems among them) and `func_80022A2C` (lit; also the HUD's models).
+  - Each loop tests a camera-centred **box** of half-size `m_RenderRadius << 10` world units (`+0x50`), with grace of `0x800` for a moby drawn last frame, and the view depth against the same size. Then come the frustum planes.
+  - A moby that passes gets `m_WasDrawn` (`+0x51`) set to 1 and a draw record. Its **detail distance**, `(m_Renderer & 0x3F) << 8` (`+0x4B`), goes into the record (`+0x2E`). `func_8001F798` reads it as `ZSF4` to choose the model's detail and whether to blend animation frames.
+  - `m_WasDrawn` feeds the logic: `func_80051FEC` (`asm/moby_lists.s`) updates every moby drawn last frame, whatever its update distance, and enemy code checks it. So the draw box **is** logic, and widening it in place would change the game (as the 16:9 frustum does in one-draw widescreen, D30).
+  - Normal mobys have a record bound (53 records, `D_8006FCF4+0x1600..+0x2200`). Specular ones have none of their own.
+- **Widescreen**: the sector frustum and the moby frustum already use the 16:9 view (`PORT_WS_VIEW_ROW0`, the narrowed projection; "Fixes from the first hardware test"). The distances above are the same at 4:3 and 16:9; at 16:9 more of the distant edge is on screen.
+
+### What the option changes (`src/game/lod.c`, `tools/mips2c/hints.yaml`)
+
+`draw_distance=150|200` (Vita, and the menu's `DRAW DISTANCE (EXP.)`) or `--draw-distance 1.5|2` (host) scales three things:
+
+- **World detail:** the three reads of `m_LodDistance` (`PORT_LOD_ENV`). It's capped at `m_CullingDistance`, so near geometry is never deeper than the game already draws.
+- **Moby detail:** `(m_Renderer & 0x3F) << 8` as it goes into the record, capped to fit the record's 16 bits.
+- **Moby draw distance**, without touching the logic: each culling loop first runs exactly as on the PS1. At its end, a hint runs the same list once more ("pass 2") with the longer box:
+  - mobys pass 1 drew are skipped, and their `m_WasDrawn` (which the loop clears at each moby) is put back to 1;
+  - the others get draw records but keep `m_WasDrawn` 0 and add no shadow;
+  - pass 2 stops where the record space ends;
+  - a port-side bit per moby gives pass-2 mobys the same grace the game gives its own.
+
+**Safety.** The renderers have no bounds checks, and more geometry can overrun the primitive buffer (`0x1C000` bytes, `0x13000` in reduced-space levels, with the HUD's mobys at the top; `draw.c` `GamestateDraw`). The original game already fills it to 85–91% in places (Artisans' entrance, the intro cutscene). With the option on:
+
+- **Hard bounds.** These only ever end a loop early, so a frame can lack some scenery but never writes past the buffer:
+  - the six sector-list loops of `func_800258F0` take "end of list" once the primitive pointer is within `0x6000` bytes of the buffer's end;
+  - the record-draw loops (`func_8001F798`, `func_80020F34`) and the lit loop's pass 2 stop at pass 2's mobys once the buffer is 60% full;
+  - the near list stops taking sectors one entry before the next list.
+- **A limiter.** After each shown draw it measures the bytes used. Over 80% it halves the extra distance, over 90% it drops to 1×, and under 65% it grows back by 1/32 per draw.
+- **Each new level or gamestate starts at 1×.**
+
+The first whole-game run had only the limiter, and it crashed entering level 40 at 2×: one frame wrote past the second buffer into the world OT (`logs/run4-whole-dd2`, core read with gdb: `fp = 0x801BFDA4`, past `0x801BFBB0`).
+
+Only drawn pictures use the longer distances. The hidden 4:3 logic draw of attract demos (D30) keeps the original ones.
+
 ## Follow-ups
 
 1. Second hardware test after the fixes above (`docs/vita-testing.md`): no snapping, no red/green after pausing, 30 fps held with widescreen, how often the in-between frame fits, and a tuned `interp_budget` default.

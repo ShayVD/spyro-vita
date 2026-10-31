@@ -12,6 +12,9 @@
  * - an action (`value` NULL): X or RIGHT calls `action`; it returns 1 to
  *   close the menu. `names[0]`, if set, is shown as its value.
  * `on_change` runs after a value changed in the menu (not on config load).
+ * `visible`, if set, hides the row while it returns 0 (its key is still
+ * loaded and saved). A value in config.txt may be a value's name (any case,
+ * "ps1" for "PS1") or a number.
  * `key` NULL: not saved or loaded. Rows are designated initialisers, so new
  * fields can be added without touching other files. */
 #ifndef MENU_OPTS_H
@@ -45,6 +48,7 @@ typedef struct MenuOption {
   const char *fmt;            /* a number (or a value not in `values`) */
   void (*on_change)(void);
   int (*action)(void);        /* an action row: 1 closes the menu */
+  int (*visible)(void);       /* NULL: always shown */
 } MenuOption;
 
 typedef struct {

@@ -96,6 +96,23 @@ static int step_row(const MenuOption *const *opts, int n, int sel, int dir) {
 static const uint16_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_RIGHT, B_CIRCLE};
 #define NTEST (int)(sizeof k_test / sizeof k_test[0])
 
+/* menu_keys=: that sequence instead, one letter per button (u d l r, x for
+ * cross, o for circle), then circle (D48: the picture rows' tests). */
+static uint16_t test_key(int i) {
+  static const char k_letters[] = "udlrxo";
+  static const uint16_t k_buttons[] = {B_UP, B_DOWN, B_LEFT, B_RIGHT, B_CROSS, B_CIRCLE};
+  const char *keys = g_vita_opts.menu_keys, *c;
+  int n = 0;
+  if (!keys[0])
+    return i < NTEST ? k_test[i] : 0;
+  if (i-- == 0)
+    return 0; /* the combo let go */
+  for (; *keys; keys++)
+    if ((c = strchr(k_letters, *keys)) && *c && n++ == i)
+      return k_buttons[c - k_letters];
+  return n == i ? B_CIRCLE : 0;
+}
+
 /* vblank.c, at each VSync: runs the menu if it was asked for. Returns 1 if
  * it ran (the game was paused). */
 int vita_menu_service(void) {
@@ -130,7 +147,7 @@ int vita_menu_service(void) {
     vita_pad_poll();
     m = vita_pad_read();
     if (test) {
-      m = step / 4 < NTEST && step % 4 < 2 ? k_test[step / 4] : 0;
+      m = step % 4 < 2 ? test_key(step / 4) : 0;
       step++;
     }
     pressed = m & ~prev;

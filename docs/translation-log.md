@@ -193,6 +193,14 @@ Widescreen and 60 fps (`docs/presentation.md`, decisions D30) add hooks to a few
 | `func_800168DC` (`order_table.c`) | records the primitive for the widescreen 2D squeeze | as above | records nothing outside widescreen passes |
 | `func_800258F0` (mips2c, `r_environment.s`) | `before` hint at `0x8002594C`: `PORT_WS_VIEW_ROW0` narrows the view matrix's X row (R11, R12, R13) for the per-sector frustum tests | features off: trace and 110 shots byte-identical (`logs/run40-off`); demos match the oracle with widescreen on (`logs/run40-wsi`) | identity while `g_present_narrow` is 0 |
 
+## Draw distance hooks (2026-10-31, optional, off by default; decisions D49)
+
+| Function | Change | Verified by | Off |
+|---|---|---|---|
+| `func_800258F0` (mips2c, `r_environment.s`) | `before` hints: `m_LodDistance` scaled at its three reads (`0x800259CC`, `0x80026220`, `0x800267BC`); near list bound (`0x80025BA4`); "end of list" in the six sector-list loops when the primitive buffer is nearly full (`0x80026230`, `0x800267EC`, `0x800276BC`, `0x80028598`, `0x80029508`, `0x8002A0B0`); statistics (`0x800261A0`, `0x8002A6B0`) | Oracle replay with the hints built in (option off): 36/36 samples match (`logs/run10-oracle-renderers`). Host traces with the option on, see D49 | every macro is the identity while `g_lod_k` is 1x and statistics are off |
+| `func_8001F158`, `func_800208FC`, `func_80022A2C` (mips2c, `r_moby.s`) | moby detail distance (`0x8001F418`, `0x80020BC4`); pass 2 at each loop's end (`0x8001F744`, `0x80020EE0`, `0x80023A78`) with skip-and-restore, longer box, no shadow, `m_WasDrawn` kept 0 | Oracle replay, option off: 36/36, 35/35, 35/35 (`logs/run10-oracle-renderers`) | identity at 1x |
+| `func_8001F798`, `func_80020F34` (mips2c, `r_moby.s`) | record loops stop at pass 2's records when the buffer is 60% full (`0x8001F7FC`, `0x80020F98`) | Oracle replay, option off: 36/36, 35/35 (`logs/run10-oracle-renderers`); host runs with the option on (D49) | identity at 1x |
+
 ## Whole-game additions
 
 | Change | Method | Verified by | Notes |

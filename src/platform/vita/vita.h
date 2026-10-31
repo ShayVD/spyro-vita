@@ -41,12 +41,14 @@ typedef struct {
   int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;
+  char menu_keys[64];  /* menu_keys=ddrxo: menu_test's buttons instead of its fixed sequence */
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
   int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43) */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
+  int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -86,6 +88,11 @@ void vita_bench_present(int shown);
 void vita_present_init(void); /* after vita_video_init */
 void vita_present_apply(void); /* g_vita_opts' switches -> the game's presenter */
 void vita_present_report(int vblank);
+
+/* picture.c: the menu's picture rows and the draw distance (D48, D49) */
+void vita_picture_init(void); /* after vita_video_init */
+void vita_picture_apply(void);
+void vita_picture_report(int vblank);
 
 /* menu.c: the port's options menu (hold SELECT, press START) */
 uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */

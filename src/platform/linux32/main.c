@@ -46,6 +46,7 @@
  * --draw-distance X: longer draw distance, X times the original (1.5, 2;
  *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
+ *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
 #include "lod.h"
@@ -269,6 +270,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
+    } else if (strcmp(a, "--lod-guards-only") == 0) {
+      g_lod.guards_only = 1; /* tests: only the hard bounds (lod.c) */
     } else if (strcmp(a, "--lod-stats") == 0) {
       TAKE();
       g_lod.stats = 1;

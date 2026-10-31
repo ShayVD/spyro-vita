@@ -61,6 +61,11 @@
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
+ *                       (tex_filter, persp, subpixel, res, draw_distance are
+ *                       also options menu rows: picture.c, D48)
+ *       draw_distance=N longer draw distance, percent: 150 or 200 (default
+ *                       100: the original; experimental, D49): the world's
+ *                       detail and the mobys, picture only (src/game/lod.c)
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
@@ -96,7 +101,8 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 0,
-                        .interp_budget = 26, .mixer = 1, .tex_cache = 1};
+                        .interp_budget = 26, .mixer = 1, .tex_cache = 1,
+                        .draw_distance = 100};
 
 extern void spyro_main(void);
 
@@ -195,7 +201,7 @@ static void read_config(void) {
       g_vita_opts.realtime = atoi(v);
     else if (!strcmp(line, "gpu"))
       g_vita_opts.gpu = atoi(v);
-    else if (!strcmp(line, "res") || !strcmp(line, "gpu_res"))
+    else if (!strcmp(line, "gpu_res")) /* res='s old name; res= is a menu row */
       g_vita_opts.gpu_res = parse_res(v);
     else if (!strcmp(line, "gpu_time"))
       g_vita_opts.gpu_time = atoi(v);
@@ -215,12 +221,8 @@ static void read_config(void) {
       g_vita_opts.widescreen_exact = atoi(v);
     else if (!strcmp(line, "menu_test"))
       parse_list(v, g_vita_opts.menu_test, &g_vita_opts.nmenu_test, 4);
-    else if (!strcmp(line, "tex_filter"))
-      g_vita_opts.tex_filter = atoi(v);
-    else if (!strcmp(line, "persp"))
-      g_vita_opts.persp = atoi(v);
-    else if (!strcmp(line, "subpixel"))
-      g_vita_opts.subpixel = atoi(v);
+    else if (!strcmp(line, "menu_keys"))
+      snprintf(g_vita_opts.menu_keys, sizeof g_vita_opts.menu_keys, "%s", v);
     else if (!strcmp(line, "bench"))
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
@@ -294,6 +296,7 @@ int main(int argc, char **argv) {
     sceKernelExitProcess(1);
   }
   vita_present_init();
+  vita_picture_init();
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     sceKernelExitProcess(1);

@@ -37,6 +37,13 @@ python3 tools/contact_sheet.py logs/runN-x
 - Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`). In place of the buttons, `poke:ADDR=VALUE` (hex) writes a word of PS1 RAM when the line fires and leaves the buttons alone; `capture.lua` reads it the same way.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
 
+## Draw distance (D49)
+
+Optional, off by default (`docs/presentation.md` "Draw distance"):
+- `--draw-distance X`: the world's detail and the mobys drawn X times further (1.5, 2), picture only.
+- `--lod-stats N`: a `lod N:` line every N vblanks: the scale reached, primitive-buffer use (average, peak, of what size), back-offs, extra mobys per draw, the near-sector list's peak, the moby record peak, the largest single sector and what is drawn after the world (the hard bound's margin), and how often a bound stopped a loop. Also with the option off (baseline numbers).
+- `--lod-guards-only` (tests): no limiter and no reset at a new level, so only the hard bounds keep the buffer.
+
 ## Widescreen and 60 fps (D30)
 
 Optional, off by default (`docs/presentation.md`):

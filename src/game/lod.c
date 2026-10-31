@@ -25,11 +25,20 @@
  * The renderers check no buffer bounds, so more geometry could overrun the
  * primitive buffer (0x1C000 bytes, with the HUD's mobys at its top,
  * draw.c GamestateDraw) or the near-sector list (128 entries before the
- * next list, D_8006FCF4+0x1C00). After every shown draw the bytes used are
- * measured and the scale backs off before the buffer gets close to full, and
- * the near list stops taking sectors one short of its end (only with the
- * option on). Only drawn pictures use the longer distances: the hidden 4:3
- * logic draw of attract demos keeps the original ones. */
+ * next list, D_8006FCF4+0x1C00). Three guards, all only with the option on:
+ *  - hard bounds: r_environment's six sector-list loops end their list early
+ *    once the primitive pointer is within ENV_MARGIN of the buffer's end
+ *    (a frame may then lack some scenery, never write past the buffer), and
+ *    r_moby's draw loops stop at the first record pass 2 added once the
+ *    buffer is MOBY_SHARE% full; the near list stops taking sectors one short
+ *    of its end;
+ *  - a limiter: after every shown draw the bytes used are measured and the
+ *    scale backs off before the buffer gets close to full;
+ *  - a new level or gamestate starts again at 1x, then grows.
+ * (The first whole-game run had only the limiter and crashed entering
+ * level 40 at 2x: one frame went past the buffer into the world OT.) Only
+ * drawn pictures use the longer distances: the hidden 4:3 logic draw of
+ * attract demos keeps the original ones. */
 #include "lod.h"
 
 #include "mips2c_rt.h"
@@ -46,7 +55,7 @@
 
 extern char D_8006FCF4[];
 
-LodConfig g_lod = {LOD_ONE, 0};
+LodConfig g_lod = {LOD_ONE, 0, 0};
 int g_lod_k = LOD_ONE; /* this draw's scale */
 int g_lod_pass;        /* r_moby's pass 2 is running */
 int g_lod_stats;       /* this draw collects statistics */
@@ -56,17 +65,36 @@ int g_lod_stats;       /* this draw collects statistics */
 #define POLY_TOP 0x1BA00 /* the HUD's mobys above (draw.c func_8001A40C...) */
 #define NEAR_LIST 0x1C00
 #define NEAR_END 0x1E00
+/* Room left at the end of the buffer when r_environment stops: one sector's
+ * primitives (5,076 bytes at most) plus everything drawn after the world
+ * (the sky, particles, HUD: 25,816 at most), both measured over the
+ * whole-game tour (port_lod_report "largest sector", "after the world";
+ * D49), and some 9 KB to spare. */
+#define ENV_MARGIN 0xA000
+#define MOBY_SHARE 60 /* pass 2's mobys are drawn while the buffer is under this % */
 
 static int s_k = LOD_ONE; /* the limiter's scale for the next draw */
 static int s_hold;        /* draws before it may grow again */
 static uint32_t s_ext[2][MAX_EXT / 32]; /* level mobys drawn by pass 2 */
 static int s_ext_cur;
+static int s_level = -1, s_gamestate = -1;
+
+/* this draw's primitive buffer (draw_begin) */
+static u32 s_poly_lo, s_env_limit, s_moby_limit, s_env_last, s_env_end;
+static u32 s_rec2 = ~0u; /* the first draw record pass 2 wrote */
 
 static struct {
-  unsigned draws, cuts, near_full;
+  unsigned draws, cuts, near_full, env_cuts, moby_cuts;
   unsigned long long used, k, extra;
-  unsigned used_max, cap, k_min, near_max, records_max;
+  unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
+
+/* The game's primitive buffer: 0x1C000 bytes (0x13000 in reduced-space
+ * levels), up to where the HUD's mobys start. */
+static int buffer_cap(void) {
+  int cap = (int)((char *)g_Buffers.m_HigherPolyBuffer - (char *)g_Buffers.m_LowerPolyBuffer);
+  return cap <= 0 || cap > POLY_TOP ? POLY_TOP : cap;
+}
 
 static int cull_distance(void) {
   int c = g_Environment.m_CullingDistance;
@@ -142,11 +170,56 @@ int port_lod_moby_pass2(int room, u32 records_end) {
     g_lod_pass = 0;
     return 0;
   }
+  if (records_end) /* the lit loop has no records */
+    s_rec2 = g_lod_k > LOD_ONE && room ? records_end : ~0u;
   if (g_lod_k > LOD_ONE && room) {
     g_lod_pass = 1;
     return 1;
   }
   return 0;
+}
+
+/* r_moby's two record-draw loops (func_8001F798, func_80020F34), at each
+ * record (hi: the primitive pointer): 1 = stop, at a pass-2 record once the
+ * buffer is MOBY_SHARE% full. The lit loop draws as it culls: its pass 2
+ * stops the same way. */
+int port_lod_records_full(u32 record, u32 prim) {
+  if (record < s_rec2 || prim <= s_moby_limit)
+    return 0;
+  s_st.moby_cuts++;
+  return 1;
+}
+
+int port_lod_lit_full(void) {
+  if ((u32)(uintptr_t)D_800757B0 <= s_moby_limit)
+    return 0;
+  s_st.moby_cuts++;
+  return 1;
+}
+
+/* r_environment's sector-list loops, before each next sector (fp: the
+ * primitive pointer): 1 = end the list here. */
+static void sector_size(u32 fp) {
+  if (s_env_last && fp >= s_env_last && fp - s_env_last > s_st.sector_max)
+    s_st.sector_max = fp - s_env_last;
+  s_env_last = fp;
+}
+
+int port_lod_env_full(u32 fp) {
+  if (g_lod_stats)
+    sector_size(fp);
+  if (g_lod_k <= LOD_ONE || fp <= s_env_limit)
+    return 0;
+  s_st.env_cuts++;
+  s_k = LOD_ONE; /* and back to the original distances */
+  s_hold = 300;
+  return 1;
+}
+
+/* r_environment done: what follows is the HUD */
+void port_lod_env_end(u32 fp) {
+  sector_size(fp);
+  s_env_end = fp;
 }
 
 /* func_800258F0, before a sector goes into the near list: 1 = the list is
@@ -170,20 +243,38 @@ void port_lod_env_lists(u32 t7) {
 /* ---- around each draw (present.c) ---- */
 
 void port_lod_draw_begin(int shown) {
+  const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
+  u32 lo = (u32)(uintptr_t)db->m_PolyBuf;
+  int cap = buffer_cap();
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
   g_lod_stats = shown && g_lod.stats;
+  s_poly_lo = lo;
+  s_env_limit = lo + (u32)cap - ENV_MARGIN;
+  s_moby_limit = lo + (u32)(cap / 100 * MOBY_SHARE);
+  s_env_last = 0; /* the world's first loop head starts the measure */
+  s_env_end = 0;
+  s_rec2 = ~0u;
   if (g_lod.scale <= LOD_ONE || !shown)
     return;
+  if (g_lod.guards_only) {
+    s_k = g_lod.scale;
+  } else if (g_LevelId != s_level || g_Gamestate != s_gamestate) {
+    s_level = g_LevelId;
+    s_gamestate = g_Gamestate;
+    s_k = LOD_ONE;
+    s_hold = 60;
+  }
   if (s_k > g_lod.scale || s_k < LOD_ONE)
     s_k = s_k < LOD_ONE ? LOD_ONE : g_lod.scale;
   g_lod_k = s_k;
   memset(s_ext[s_ext_cur], 0, sizeof s_ext[0]);
 }
 
-/* The bytes of primitives a draw wrote, against what the buffer holds:
+/* The bytes of primitives a draw wrote, against what the buffer holds, or
+ * the world's against where its bound would stop it, whichever is fuller:
  * above 80% the extra distance halves, above 90% it goes; under 65% it
- * grows back by 1/32 of 1x per draw. */
+ * grows back by 1/32 of 1x per draw. So the bound stays a backstop. */
 static void limit(int used, int cap) {
   if (used > cap / 10 * 9) {
     s_k = LOD_ONE;
@@ -210,13 +301,18 @@ void port_lod_draw_end(int shown) {
     return;
   s_ext_cur ^= 1;
   used = (int)((char *)D_800757B0 - (char *)g_CurDB->m_PolyBuf);
-  cap = (int)((char *)g_Buffers.m_HigherPolyBuffer - (char *)g_Buffers.m_LowerPolyBuffer);
-  if (cap <= 0 || cap > POLY_TOP)
-    cap = POLY_TOP;
+  cap = buffer_cap();
   if (used < 0 || used > 0x100000)
     return;
-  if (on)
-    limit(used, cap);
+  if (on) {
+    /* the world's share of where its bound is, as a share of the buffer */
+    int world = s_env_end > s_poly_lo ? (int)(s_env_end - s_poly_lo) : 0, room = cap - ENV_MARGIN;
+    int world_eff = room > 0 ? (int)((long long)world * cap / room) : cap;
+    limit(world_eff > used ? world_eff : used, cap);
+  }
+  if (s_env_end && (u32)(uintptr_t)D_800757B0 >= s_env_end &&
+      (u32)(uintptr_t)D_800757B0 - s_env_end > s_st.after_env_max)
+    s_st.after_env_max = (u32)(uintptr_t)D_800757B0 - s_env_end;
   s_st.draws++;
   s_st.used += (unsigned)used;
   s_st.k += (unsigned)k;
@@ -236,12 +332,15 @@ void port_lod_report(char *out, unsigned len) {
     snprintf(out, len,
              "%u draws at x%u.%02u average (lowest x%u.%02u); primitives %u KB average, "
              "%u KB peak of %u KB (%u%%); %u back-offs; %u.%u extra mobys per draw; "
-             "near sectors peak %u of 127 (%u times full); moby records peak %u of 53",
+             "near sectors peak %u of 127 (%u times full); moby records peak %u of 53; "
+             "largest sector %u bytes, after the world %u bytes; stopped early: world %u, "
+             "mobys %u",
              s_st.draws, (unsigned)(s_st.k / d / 256),
              (unsigned)(s_st.k / d % 256 * 100 / 256), s_st.k_min / 256,
              s_st.k_min % 256 * 100 / 256, (unsigned)(s_st.used / d / 1024),
              s_st.used_max / 1024, cap / 1024, s_st.used_max * 100 / cap, s_st.cuts,
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
-             s_st.near_full, s_st.records_max);
+             s_st.near_full, s_st.records_max, s_st.sector_max, s_st.after_env_max,
+             s_st.env_cuts, s_st.moby_cuts);
   memset(&s_st, 0, sizeof s_st);
 }
