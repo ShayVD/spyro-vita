@@ -2296,12 +2296,27 @@ void vita_gpu_fill(float r, float g, float b) {
   vglSwapBuffers(GL_FALSE);
 }
 
-/* bench= (D41): other picture options from the next frame on. res as
- * gpu_res (0 native, 1 the PS1's); a change redraws every target. */
-void vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache) {
+/* bench= (D41) and the options menu (picture.c, D48): other picture
+ * options from the next frame on. res as gpu_res (0 native, 1 the PS1's,
+ * 2-4 N times it); a change redraws every target. An option set whose
+ * programs weren't built at start-up is compiled now, once (the Vita's
+ * shader compiler takes a moment). Returns 0, or -1 if they don't compile:
+ * the options stay as they were. */
+int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache) {
+  static int failed[V_COUNT];
   int v = variant_of(filter, cache, filter || persp || subpixel || cache);
-  if (!s_vprog[v][P_UNTEX].prog)
-    return;
+  if (!s_vprog[v][P_UNTEX].prog || failed[v]) {
+    uint64_t t0 = now_us();
+    if (failed[v] || build_variant(v)) {
+      failed[v] = 1;
+      vita_log("gpu: the programs for tex_filter=%d persp=%d subpixel=%d don't compile: "
+               "options unchanged", filter, persp, subpixel);
+      return -1;
+    }
+    vita_log("gpu: programs for tex_filter=%d persp=%d subpixel=%d tex_cache=%d compiled in %u ms",
+             filter, persp, subpixel, cache,
+             (unsigned)((now_us() - t0) / 1000));
+  }
   s_filter = filter;
   s_persp = persp;
   s_subpixel = subpixel;
@@ -2314,6 +2329,7 @@ void vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cach
     g_vita_opts.gpu_res = res;
     vita_gpu_rescale();
   }
+  return 0;
 }
 
 void vita_gpu_report(int vblank) {

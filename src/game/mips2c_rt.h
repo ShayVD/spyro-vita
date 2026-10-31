@@ -61,6 +61,36 @@ u32 port_ws_r1112(u32 r11r12);
 #define PORT_WS_HUD_OFX(x) (g_present_narrow ? port_ws_hud_ofx(x) : (x))
 #define PORT_WS_HUD_R11(x) (g_present_narrow ? port_ws_hud_r11(x) : (x))
 
+/* Longer draw distance (src/game/lod.c, D49): r_environment's and r_moby's
+ * render-side distances, and r_moby's pass 2. Identity while it is off. */
+extern int g_lod_k, g_lod_pass, g_lod_stats;
+u32 port_lod_env(u32 d);
+u32 port_lod_moby_detail(u32 d);
+u32 port_lod_moby_box(u32 t4, u32 moby);
+u32 port_lod_moby_drawn(u32 moby);
+int port_lod_moby_skip(u32 a0, u32 moby);
+int port_lod_moby_pass2(int room, u32 records_end);
+int port_lod_near_full(u32 t7);
+void port_lod_env_lists(u32 t7);
+#define PORT_LOD_ON (g_lod_k > 256)
+#define PORT_LOD_ENV(d) (PORT_LOD_ON ? port_lod_env(d) : (d))
+#define PORT_LOD_MOBY_DETAIL(d) (PORT_LOD_ON ? port_lod_moby_detail(d) : (d))
+#define PORT_LOD_MOBY_BOX(t4, m) (g_lod_pass ? port_lod_moby_box(t4, m) : (t4))
+#define PORT_LOD_MOBY_SKIP(a0, m) (g_lod_pass && port_lod_moby_skip(a0, m))
+#define PORT_LOD_MOBY_DRAWN(r, m)                                              \
+  do {                                                                         \
+    if (g_lod_pass)                                                            \
+      (r) = port_lod_moby_drawn(m);                                            \
+  } while (0)
+#define PORT_LOD_MOBY_PASS2(room, fp)                                          \
+  ((PORT_LOD_ON || g_lod_pass || g_lod_stats) && port_lod_moby_pass2(room, fp))
+#define PORT_LOD_NEAR_FULL(t7) (PORT_LOD_ON && port_lod_near_full(t7))
+#define PORT_LOD_ENV_LISTS(t7)                                                 \
+  do {                                                                         \
+    if (g_lod_stats)                                                           \
+      port_lod_env_lists(t7);                                                  \
+  } while (0)
+
 /* $ra while no local call is active: `jr` to it returns to C. */
 #define MIPS_RA_SENTINEL 0xFFFFFFF0u
 /* lui 0x1F80: the scratchpad lives at the arena base (64 KB aligned). */

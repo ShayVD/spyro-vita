@@ -10,6 +10,7 @@
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats | --present-dirty] [--vcache]
+ *         [--draw-distance X] [--lod-stats N]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -42,8 +43,12 @@
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
+ * --draw-distance X: longer draw distance, X times the original (1.5, 2;
+ *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
+ *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "host.h"
+#include "lod.h"
 #include "present.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
@@ -73,6 +78,7 @@ static void usage(void) {
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache]\n"
+          "             [--draw-distance X] [--lod-stats N]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -260,6 +266,13 @@ int main(int argc, char **argv) {
       g_present.stats = 1;
     } else if (strcmp(a, "--present-dirty") == 0) {
       g_present.stats = 2;
+    } else if (strcmp(a, "--draw-distance") == 0) {
+      TAKE();
+      g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
+    } else if (strcmp(a, "--lod-stats") == 0) {
+      TAKE();
+      g_lod.stats = 1;
+      g_host_opts.lod_stats = to_int(val);
     } else if (strcmp(a, "--vcache") == 0) {
       psx_vcache_enable(2);
       s_vcache = 1;

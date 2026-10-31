@@ -2,6 +2,7 @@
  * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
  * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
 #include "host.h"
+#include "lod.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
 
@@ -79,6 +80,12 @@ void host_vblank(void) {
                         *(uint32_t *)PSX_ARENA(g_host_opts.peeks[i].addr + 4 * k));
       host_log("%s", line);
     }
+  }
+  if (g_host_opts.lod_stats && v % g_host_opts.lod_stats == 0) {
+    char line[400];
+    port_lod_report(line, sizeof line);
+    if (line[0])
+      host_log("lod %d: %s", v, line);
   }
   spyro_trace_vblank(v);
   host_serve_vblank(v);

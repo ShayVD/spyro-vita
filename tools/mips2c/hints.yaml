@@ -19,11 +19,44 @@ asm/renderers/r_particles.s:
 # VIEW matrix, not the projection matrix widescreen narrows: narrow its X row
 # too as it goes into the GTE, or sectors in the 16:9 strips stay culled to the
 # 4:3 view (their textured near geometry appeared only once they reached it).
+#
+# Longer draw distance (src/game/lod.c, decisions D49): the three reads of
+# g_Environment.m_LodDistance (sector lists, far fade, near fade) before their
+# shifts; a guard on the near-sector list; and in r_moby's three culling loops
+# (normal func_8001F158, specular func_800208FC, lit func_80022A2C) the moby
+# detail distance plus "pass 2": at the loop's end the list runs again with a
+# longer box, skipping (and restoring) the mobys pass 1 drew, adding no
+# shadows and leaving m_WasDrawn 0. Identity while the option is off.
 asm/renderers/r_environment.s:
   before:
     0x8002594C: "PORT_WS_VIEW_ROW0(t2, t3);"  # ctc2 $t3, C2_R13R21 (after R11R12)
+    0x800259CC: "s6 = PORT_LOD_ENV(s6);"      # srl $s6, 4: sector near/far lists
+    0x80025BA4: "if (PORT_LOD_NEAR_FULL(t7)) goto L_80025BAC;"  # sw $a1, ($t7): near list
+    0x800261A0: "PORT_LOD_ENV_LISTS(t7);"     # sector loop done
+    0x80026220: "s3 = PORT_LOD_ENV(s3);"      # srl $s3, 7: far draw's fade
+    0x800267BC: "s5 = PORT_LOD_ENV(s5);"      # near draw's fade
 
 asm/renderers/r_moby.s:
   before:
     0x80022D2C: "at = PORT_WS_HUD_OFX(at);"   # ctc2 $at, C2_OFX
     0x80022D78: "a3 = PORT_WS_HUD_R11(a3);"   # ctc2 $a3, C2_R11R12
+    # func_8001F158 (normal mobys; records at D_8006FCF4+0x1600, 0x38 each, up to +0x2200)
+    0x8001F200: "if (PORT_LOD_MOBY_SKIP(a0, sp)) goto L_8001F1E8;"
+    0x8001F214: "t4 = PORT_LOD_MOBY_BOX(t4, sp);"
+    0x8001F344: "if (g_lod_pass) t3 = 0;"     # no shadow
+    0x8001F418: "t2 = PORT_LOD_MOBY_DETAIL(t2);"
+    0x8001F4CC: "PORT_LOD_MOBY_DRAWN(a3, sp);"  # sb $a3, 0x51($sp)
+    0x8001F744: "if (PORT_LOD_MOBY_PASS2(fp + 0x38u <= (u32)(uintptr_t)D_8006FCF4 + 0x2200u, fp)) { ra = (u32)(uintptr_t)D_8006FCF4; goto L_8001F1E8; }"
+    # func_800208FC (specular mobys: no record bound of its own, pass 2 gets one)
+    0x800209AC: "if (g_lod_pass) { if (port_lod_moby_skip(a0, sp)) goto L_80020994; if (fp + 0x38u > (u32)(uintptr_t)D_8006FCF4 + 0x2200u) goto L_80020EE0; }"
+    0x800209C0: "t4 = PORT_LOD_MOBY_BOX(t4, sp);"
+    0x80020AF0: "if (g_lod_pass) t3 = 0;"     # no shadow
+    0x80020BC4: "t2 = PORT_LOD_MOBY_DETAIL(t2);"
+    0x80020C7C: "PORT_LOD_MOBY_DRAWN(t0, sp);"  # sb $t0, 0x51($sp)
+    0x80020EE0: "if (PORT_LOD_MOBY_PASS2(fp + 0x38u <= (u32)(uintptr_t)D_8006FCF4 + 0x2200u, fp)) { ra = (u32)(uintptr_t)D_8006FCF4 + 0x2200u; goto L_80020994; }"
+    # func_80022A2C (lit mobys, drawn as they are culled)
+    0x80022B2C: "if (PORT_LOD_MOBY_SKIP(a0, fp)) goto L_80022B08;"
+    0x80022B44: "a0 = PORT_LOD_MOBY_BOX(a0, fp);"
+    0x80022C28: "if (g_lod_pass) a0 = 0;"     # no shadow
+    0x80022D98: "PORT_LOD_MOBY_DRAWN(a0, fp);"  # sb $a0, 0x51($fp)
+    0x80023A78: "if (PORT_LOD_MOBY_PASS2(1, 0)) { ra = (u32)(uintptr_t)D_8006FCF4 + 0x2400u; goto L_80022B08; }"

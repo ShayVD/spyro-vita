@@ -74,7 +74,7 @@ void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the displ
 void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
 void vita_gpu_fill(float r, float g, float b);
 void vita_gpu_report(int vblank); /* "gpu" line in the log */
-void vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41) */
+int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41), menu (D48) */
 void vita_gpu_arm_sample(void);   /* GPU-time the next picture too */
 int vita_gpu_take_sample(unsigned *frame_us, unsigned *tail_us); /* 1 = a new one */
 

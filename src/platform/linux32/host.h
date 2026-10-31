@@ -25,6 +25,7 @@ typedef struct {
   struct { int vblank; uint32_t addr, value; } pokes[16];
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
   struct { uint32_t addr; int n; } peeks[8];
+  int lod_stats;       /* --lod-stats N: a draw-distance line every N vblanks */
 } HostOpts;
 
 extern HostOpts g_host_opts;
