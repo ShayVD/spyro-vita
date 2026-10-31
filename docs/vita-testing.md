@@ -99,7 +99,7 @@ Files the app writes:
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. Up/down chooses a line, left/right (or ✕) changes it, ○ (or START, △) closes. Widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget change at once and are written back to `config.txt` when the menu closes; other lines in the file stay as they were. The game never sees the buttons that open or close the menu.
+**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 

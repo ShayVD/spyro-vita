@@ -282,7 +282,7 @@ Wired in on 2026-10-30. On the Vita, **widescreen is on by default; 60 fps is ex
 - **Changes:**
   - they apply at once (`vita_present_apply`; `present.c` takes them at its next tick, drops its queue when switched off, and starts blending afresh when switched on);
   - widescreen re-scales the GPU targets (`vita_gpu_rescale`);
-  - closing writes the three keys back to `config.txt`, with `config_version=2`, and keeps its other lines.
+  - closing writes every row's key back to `config.txt`, with `config_version=2`, and keeps its other lines (the rows are a table, D45).
 - **Labels:** `WIDESCREEN`, `60 FPS (EXPERIMENTAL)` (OFF by default; ON, `NO ANIM`, `CAMERA`) and `60 FPS BUDGET`.
 - **Drawing:** the panel is drawn on the CPU, uploaded once, and drawn 1:1 over the last picture by either renderer.
 - **Tests:** `tests/menu_panel` renders the panel on the host; `menu_test=V` drives the menu in scripted runs.
