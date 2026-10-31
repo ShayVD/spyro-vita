@@ -259,6 +259,7 @@ void spyro_moby_dump(const char *path) { (void)path; }
 const uint16_t *port_present_frame(void) { return 0; }
 const uint16_t *port_present_shown_pixels(void) { return 0; }
 int port_present_frame_is_wide(void) { return 0; }
+int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
 
 int main(int argc, char **argv) {
   const char *outdir = argc > 1 ? argv[1] : ".";

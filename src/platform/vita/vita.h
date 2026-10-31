@@ -22,6 +22,11 @@ typedef struct {
   char pad[256];      /* pad= a pad script (linux32 --pad format), ORed with the controller */
   int wav;            /* wav=1 also writes the audio to audio.wav */
   int reartouch;      /* reartouch=1: rear touch left/right half = L2/R2 */
+  int analog;         /* analog=1 (default): a DualShock with real sticks; 0: digital (D46) */
+  int free_camera;    /* free_camera=1: the right stick turns and tilts the camera (D47) */
+  int cam_invert_x;   /* cam_invert_x=1, cam_invert_y=1: the free camera's axes flipped; */
+  int cam_invert_y;   /*   Y also flips Triangle look mode's up/down (D47) */
+  int cam_speed;      /* cam_speed=50..200: the free camera's turn speed in % (default 100) */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
   int gpu_res;        /* res= (gpu_res=): GPU targets at N x the PS1's pixels; 0 (default,
@@ -92,6 +97,7 @@ void vita_present_report(int vblank);
 uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */
 int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused) */
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
+int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
 
 /* video.c: an RGB panel over the picture (NULL: none), drawn 1:1 in the
  * middle; and a redraw even when the picture didn't change (the menu) */

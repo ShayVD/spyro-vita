@@ -14,7 +14,7 @@ extern "C" {
 
 enum { PSX_STATE_SIZE, PSX_STATE_SAVE, PSX_STATE_LOAD };
 
-typedef struct {
+typedef struct PsxStateIO {
   int mode;         /* PSX_STATE_*: count the bytes, write them to p, or read them from p */
   unsigned char *p; /* the chunk's bytes (SAVE, LOAD) */
   size_t n;         /* bytes so far */

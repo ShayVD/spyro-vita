@@ -11,8 +11,11 @@ import argparse
 import subprocess
 import sys
 
-# chunk_globals() in src/game/savestate.c
-SAVED = {"g_mips_sp", "g_mips_v1"}
+# A file's static is named "file.c:name".
+# chunk_globals() in src/game/savestate.c, with port_cheats_state()
+SAVED = {"g_mips_sp", "g_mips_v1",
+         "cheats_port.c:s_pending", "cheats_port.c:s_level", "cheats_port.c:s_age",
+         "cheats_port.c:s_title_done"}  # the queued cheat (D50)
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only
@@ -20,6 +23,13 @@ CONSTANT = {
     "g_DragonNames", "g_HomeworldNames", "g_HomeworldNamesLength", "g_LevelNames",
     "g_BalloonistNames", "g_BalloonistDialogueIndices", "g_BalloonistDialogue",  # strings.c
     "g_m2c_seed",               # oracle_replay.c (tests only)
+    "cheats_port.c:s_log",      # the log function, set at start-up
+    "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
+}
+# The player's settings, which a load keeps, as it keeps the memory card.
+SETTINGS = {
+    "g_port_controls",          # camera_hand.c: free camera, invert, speed (D47)
+    "g_port_skip_logos",        # cheats_port.c (D50)
 }
 CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle
@@ -51,7 +61,9 @@ def main():
             if t not in DATA_TYPES or name.startswith(".L"):
                 continue
             n += 1
-            if name in SAVED or name in CONSTANT or name.startswith(CONSTANT_PREFIXES):
+            src = obj.rsplit("/", 1)[-1].split(".c.", 1)[0] + ".c"
+            known = SAVED | CONSTANT | SETTINGS
+            if name in known or f"{src}:{name}" in known or name.startswith(CONSTANT_PREFIXES):
                 continue
             if t.isupper() and linked.get(name) == "A":
                 continue  # a data label in the arena

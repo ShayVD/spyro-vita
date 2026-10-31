@@ -5,16 +5,21 @@
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
+ *         [--cheat V:NAME]... [--skip-logos]
  *         [--pad-after FILE] [--peek ADDR:N]...
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats | --present-dirty] [--vcache]
+ *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
  *   samples that read the CD.
+ * --cheat: at vblank V, what the Vita's options menu does for a cheat (NAME
+ *   lives, levels, credits or warp:LEVEL; src/game/cheats_port.c, D50).
+ * --skip-logos: no Sony and Universal logos at boot (D50).
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
  * --peek: log N words of PS1 RAM from hex ADDR with every shot.
@@ -39,6 +44,10 @@
  *   with the Vita's shots).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
+ * --analog: the pad is a DualShock in analog mode; pad script lines may set
+ *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
+ *   --free-camera: the right stick turns and tilts the camera
+ *   (--cam-invert-x, --cam-invert-y, --cam-speed PERCENT; D47).
  * --vcache: record the GTE's projections in the vertex cache the Vita's
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
@@ -48,7 +57,9 @@
  *   several are taken in the order given.
  *   --state-hash: per main loop top, a hash of each save-state chunk.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
+#include "cheats_port.h"
 #include "host.h"
+#include "port_controls.h"
 #include "present.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
@@ -74,10 +85,12 @@ static void usage(void) {
           "[--serve PORT] [--trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
-          "             [--peek ADDR:N]...\n"
+          "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache]\n"
+          "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
+          "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -222,6 +235,22 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--cheat") == 0) {
+      static const char *const names[] = {"", "lives", "levels", "credits", "warp"};
+      char name[16];
+      int v, c, level = 0;
+      TAKE();
+      if (g_host_opts.ncheats == 8 || sscanf(val, "%d:%15[a-z]:%d", &v, name, &level) < 2)
+        usage();
+      for (c = 1; c <= PORT_CHEAT_WARP && strcmp(name, names[c]) != 0; c++)
+        ;
+      if (c > PORT_CHEAT_WARP)
+        usage();
+      g_host_opts.cheats[g_host_opts.ncheats].vblank = v;
+      g_host_opts.cheats[g_host_opts.ncheats].cheat = c;
+      g_host_opts.cheats[g_host_opts.ncheats++].level = level;
+    } else if (strcmp(a, "--skip-logos") == 0) {
+      g_port_skip_logos = 1;
     } else if (strcmp(a, "--peek") == 0) {
       unsigned addr;
       int n;
@@ -271,6 +300,17 @@ int main(int argc, char **argv) {
       s_vcache = 1;
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
+    } else if (strcmp(a, "--analog") == 0) {
+      g_host_pad_analog = 1;
+    } else if (strcmp(a, "--free-camera") == 0) {
+      g_port_controls.free_camera = 1;
+    } else if (strcmp(a, "--cam-invert-x") == 0) {
+      g_port_controls.invert_x = 1;
+    } else if (strcmp(a, "--cam-invert-y") == 0) {
+      g_port_controls.invert_y = 1;
+    } else if (strcmp(a, "--cam-speed") == 0) {
+      TAKE();
+      g_port_controls.speed = atoi(val);
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;
@@ -338,6 +378,7 @@ int main(int argc, char **argv) {
   psx_cd_set_read_latency(cd_latency);
   host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
            g_host_opts.frames, cd_latency);
+  port_cheats_set_log(host_log);
   spyro_main(); /* never returns */
   return 0;
 }

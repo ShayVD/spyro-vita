@@ -9,6 +9,7 @@
  * counter. A state is refused, never loaded, if it comes from another build
  * or an executable/arena at other addresses (its pointers would be wrong). */
 #include "savestate.h"
+#include "cheats_port.h"
 #include "present.h"
 
 #include "psx_arena.h"
@@ -78,6 +79,7 @@ static void chunk_kram(PsxStateIO *io) {
 static void chunk_globals(PsxStateIO *io) {
   psx_state_io(io, &g_mips_sp, sizeof g_mips_sp);
   psx_state_io(io, &g_mips_v1, sizeof g_mips_v1);
+  port_cheats_state(io);
 }
 
 static void chunk_gpu(PsxStateIO *io) {

@@ -25,6 +25,8 @@ typedef struct {
   struct { int vblank; uint32_t addr, value; } pokes[16];
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
   struct { uint32_t addr; int n; } peeks[8];
+  int ncheats;         /* --cheat V:NAME[:LEVEL]: the options menu's cheats */
+  struct { int vblank, cheat, level; } cheats[8];
 } HostOpts;
 
 extern HostOpts g_host_opts;
@@ -48,6 +50,7 @@ void host_pad_rewind(int vblank); /* a save state loaded: replay from vblank (D5
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
 int host_pad_parse(const char *text, uint16_t *mask); /* "up+cross", "none" */
+extern int g_host_pad_analog; /* --analog: a DualShock, sticks from the pad script (D46) */
 
 /* tour.c: --tour LIST, --tour-stay N (level warps, credits, endings) */
 int host_tour_set(const char *list); /* 0 = ok */
