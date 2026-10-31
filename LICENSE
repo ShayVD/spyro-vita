@@ -21,5 +21,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 This licence covers the code written for this port (everything outside
-third_party/). It does not cover Spyro the Dragon, which is not included,
-nor the third-party code listed in THIRD_PARTY_NOTICES.md.
+third_party/ and assets/livearea/). It does not cover Spyro the Dragon, which
+is not included, the LiveArea images in assets/livearea/ (see the README
+there), nor the third-party code listed in THIRD_PARTY_NOTICES.md.

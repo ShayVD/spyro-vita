@@ -28,7 +28,7 @@ cmake --build build/vita
 
 The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`, version
 01.00). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
-time by `tools/vita/make_livearea.py`, decisions D55, or converted from your own art in the gitignored `disc/livearea/` when it holds `icon0.png`, `bg.png` and `startup.png`: `tools/vita/livearea_local.sh LOGO TITLE [GATE]` makes them, then re-run cmake; D59), `README.md` and `licenses/`. CI builds the
+time by `tools/vita/make_livearea.py`, decisions D55, or, as now, converted from `assets/livearea/` (the committed official art), or from your own art in the gitignored `disc/livearea/` when that holds `icon0.png`, `bg.png` and `startup.png`: `tools/vita/livearea_local.sh LOGO TITLE [GATE]` makes them, then re-run cmake; D59), `README.md` and `licenses/`. CI builds the
 same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
 `docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
