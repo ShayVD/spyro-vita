@@ -500,6 +500,19 @@ Record each decision with its date, what was chosen, and why.
   - *Why not keep old `interp=1`:* the user who ran `26f3138` chose it in the menu for the test, but on every other Vita that ran an older build with the menu, the line is just the old default. Keeping it would leave those players on the setting this decision turns off.
 - **What would bring it back on by default:** OT walk plus submission under ~8 ms per frame at 16:9 (e.g. a leaner PsyCross parse, fewer GL calls per split), so a full tick's two draws fit in 33 ms with room to spare. The `draw N:` and `time N:` lines measure it.
 
+## 2026-10-31: Vita extras in the options menu
+
+### D45. The options menu is a table of rows that feature files define
+- **Why:** four sessions (controls, picture, cheats, quick save) add rows to the Vita menu at once. `menu.c` had three hand-written rows (`rows_for`, `change`, `save` each listing them), so every new row touched the same lines.
+- **Chosen:** `src/platform/common/menu_opts.h/.c` (plain C, tested on the host by `tests/menu_panel`).
+  - **A row (`MenuOption`)** names its section (`PICTURE`, `CONTROLS`, `GAME`, `SAVE`), label, `config.txt` key, the `int` it edits (usually a `g_vita_opts` field) and an optional `on_change` hook. Its values are names (`names[]`, for 0..count-1 or for an explicit `values[]` list), a number range (`min`..`max` by `step`, shown with `fmt`, clamped), or an action (`value` NULL: ✕ or RIGHT calls `action`, which returns 1 to close the menu). Rows use designated initialisers, so a new field doesn't touch existing rows.
+  - **A feature file defines its own list:** `static const MenuOption k_rows[] = {...}; MENU_OPTION_LIST(g_menu_xxx, k_rows);`. `menu.c` lists `g_menu_present` (`present_vita.c`: widescreen, 60 fps, budget) and four reserved names as weak references: `g_menu_picture` (picture options, draw distance), `g_menu_controls` (`pad.c`), `g_menu_game` (cheats, logos) and `g_menu_save` (quick save). A list that isn't linked in is null and skipped, so a session adds its rows by defining its name in its own file, without editing `menu.c`. The Vita's CMake globs `src/platform/vita/*.c`, so a new file needs no CMake change either.
+  - **Order:** by section, then list order, then row order. `g_menu_present` comes first, since `menu_test=`'s fixed sequence (down, right, up, right, close) starts on its two rows.
+  - **Loading:** `read_config` (`main.c`) offers every key to the table first (`vita_menu_load`), so a row's key needs no line there. The D44 migration is unchanged: `main.c` still notes an `interp=` line and reads `interp=1` without `config_version=2` as 0.
+  - **Saving:** `menu_opts_save` drops every row's key and `config_version`, keeps the other lines in order, then writes `config_version=2` and every row's `key=value`. The log line lists them all (`menu: saved widescreen=1 interp=0 ...`).
+  - **Panel:** section headers (small gold text on a rule, not selectable) and a window of at most 13 lines (`MENU_PANEL_LINES`, 500 pixels high) that scrolls with the selection, with arrows when more lines are above or below. Rows are 30 pixels instead of 36. Up/down skips headers and wraps.
+- **Behaviour kept:** the same three rows, labels and values. One difference: a value written by hand that isn't in a row's list (`interp_budget=25`) now steps to the nearest listed value (26) instead of always to 26 MS.
+- **Checked:** `tests/menu_panel` (layout, stepping, wrap and clamp, actions, load, save keeping other lines, scrolling; writes `menu_panel.ppm` and `menu_panel_scroll.ppm`). Vita3K: `menu_test=300,450` (`logs/run301-vita3k-menu-table`) saves `widescreen=1 interp=1` then `widescreen=0 interp=2`, with the reserved lists absent (null weak references skipped). Not checked on hardware.
 
 ## 2026-10-31: quick save and resume
 
