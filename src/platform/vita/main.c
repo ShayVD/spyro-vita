@@ -226,6 +226,8 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
+    else if (!strcmp(line, "state_test"))
+      vita_savestate_config(v);
     else if (!strcmp(line, "config_version"))
       version = atoi(v);
     else
@@ -264,6 +266,10 @@ int main(int argc, char **argv) {
   scePowerSetGpuClockFrequency(222);
   scePowerSetGpuXbarClockFrequency(166);
 
+  /* the arena first, before anything else uses the heap: save states hold
+   * pointers into it, so it should land at the same address every launch,
+   * whatever config.txt turns on (D51) */
+  psx_arena_init();
   vita_log_open();
   vita_log("Spyro Vita (" __DATE__ " " __TIME__ ")");
   read_config();
@@ -300,7 +306,6 @@ int main(int argc, char **argv) {
     sceKernelExitProcess(1);
   vita_audio_init();
 
-  psx_arena_init();
   arena_symbols();
   psx_mcrd_set_root(VITA_DATA_DIR "/save");
   snprintf(path, sizeof path, "%s/manifest.json", g_vita_opts.disc_dir);
@@ -317,6 +322,7 @@ int main(int argc, char **argv) {
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);
+  vita_savestate_init();
   spyro_main(); /* never returns */
   return 0;
 }

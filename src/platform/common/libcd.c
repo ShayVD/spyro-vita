@@ -6,6 +6,7 @@
  * real rate (75 or 150 sectors/s) per virtual vblank; no audio yet. */
 #include "psx_cd.h"
 #include "psx_hooks.h"
+#include "psx_state.h"
 #include "psx_xa.h"
 
 #include <libcd.h>
@@ -156,6 +157,16 @@ int psx_cd_open(const char *disc_dir) {
 void psx_cd_set_read_latency(int ticks) { cd.latency = ticks < 0 ? 0 : ticks; }
 void psx_cd_set_log(int on) { cd.log = on; }
 const PsxCdStream *psx_cd_stream(void) { return &s_stream; }
+
+/* Save states (D51): the drive, a read in flight (its buffer is in the arena,
+ * its callback in the executable) and the stream; not the configuration. */
+void psx_cd_state(PsxStateIO *io) {
+  int latency = cd.latency, log = cd.log;
+  psx_state_io(io, &cd, sizeof cd);
+  psx_state_io(io, &s_stream, sizeof s_stream);
+  cd.latency = latency;
+  cd.log = log;
+}
 
 static CdFile *cd_find(int lba) {
   int lo = 0, hi = s_nfiles - 1;

@@ -220,6 +220,27 @@ void vita_mixer_drain(void) {
   }
 }
 
+/* Save states (D51), after vita_mixer_drain(). Save: the decoder state lives
+ * in the mixer's voices, so it goes into g_psx_spu's (which the game thread
+ * never decodes with), except for voices keyed on since the last packet
+ * (key on reset theirs). Load: the mixer goes on from g_psx_spu's voices. */
+void vita_mixer_state(int load) {
+  int i;
+  if (!s_running)
+    return;
+  for (i = 0; i < PSX_SPU_VOICES; i++) {
+    PsxSpuVoice *m = &s_voice[i], *g = &g_psx_spu.voice[i];
+    if (load) {
+      *m = *g;
+    } else if (g->keyon_seq == m->keyon_seq) {
+      memcpy(g->hist, m->hist, sizeof g->hist);
+      memcpy(g->dec, m->dec, sizeof g->dec);
+      g->prev = m->prev;
+      g->dec_valid = m->dec_valid;
+    }
+  }
+}
+
 /* Once per vblank, after psx_cd_vblank (instead of psx_spu_vblank). */
 void vita_mixer_vblank(void) {
   Packet *p;

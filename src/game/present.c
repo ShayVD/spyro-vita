@@ -13,6 +13,7 @@
  * only its side effects remain (m_WasDrawn, the sector flags, the animation
  * queues), computed with the original 4:3 frustum. */
 #include "present.h"
+#include "savestate.h"
 
 #include "psx_arena.h"
 #include "psx_spu.h"
@@ -736,6 +737,7 @@ static long long s_t_update;
 void PortPresentBeforeUpdate(void) {
   long long t;
   int i;
+  savestate_point(); /* the main loop top: save states happen here (D51) */
   if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
   if (!g_present.interp) {

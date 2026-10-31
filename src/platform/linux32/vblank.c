@@ -22,6 +22,7 @@ int g_vmode = MODE_NTSC;
 static int s_vblank;
 
 int host_vblank_count(void) { return s_vblank; }
+void host_set_vblank(int vblank) { s_vblank = vblank; }
 
 int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }
 
