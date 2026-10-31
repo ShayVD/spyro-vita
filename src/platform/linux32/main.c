@@ -5,6 +5,7 @@
  *         [--serve PORT] [--trace FILE]
  *         [--step DIR]
  *         [--poke V:ADDR=VALUE]... [--tour LIST] [--tour-stay N]
+ *         [--cheat V:NAME]... [--skip-logos]
  *         [--pad-after FILE] [--peek ADDR:N]...
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
@@ -14,6 +15,9 @@
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
  *   samples that read the CD.
+ * --cheat: at vblank V, what the Vita's options menu does for a cheat (NAME
+ *   lives, levels, credits or warp:LEVEL; src/game/cheats_port.c, D50).
+ * --skip-logos: no Sony and Universal logos at boot (D50).
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
  * --peek: log N words of PS1 RAM from hex ADDR with every shot.
@@ -43,6 +47,7 @@
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
+#include "cheats_port.h"
 #include "host.h"
 #include "present.h"
 #include "psx_arena.h"
@@ -69,7 +74,7 @@ static void usage(void) {
           "[--serve PORT] [--trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
-          "             [--peek ADDR:N]...\n"
+          "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache]\n"
@@ -216,6 +221,22 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--cheat") == 0) {
+      static const char *const names[] = {"", "lives", "levels", "credits", "warp"};
+      char name[16];
+      int v, c, level = 0;
+      TAKE();
+      if (g_host_opts.ncheats == 8 || sscanf(val, "%d:%15[a-z]:%d", &v, name, &level) < 2)
+        usage();
+      for (c = 1; c <= PORT_CHEAT_WARP && strcmp(name, names[c]) != 0; c++)
+        ;
+      if (c > PORT_CHEAT_WARP)
+        usage();
+      g_host_opts.cheats[g_host_opts.ncheats].vblank = v;
+      g_host_opts.cheats[g_host_opts.ncheats].cheat = c;
+      g_host_opts.cheats[g_host_opts.ncheats++].level = level;
+    } else if (strcmp(a, "--skip-logos") == 0) {
+      g_port_skip_logos = 1;
     } else if (strcmp(a, "--peek") == 0) {
       unsigned addr;
       int n;
@@ -324,6 +345,7 @@ int main(int argc, char **argv) {
   psx_cd_set_read_latency(cd_latency);
   host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
            g_host_opts.frames, cd_latency);
+  port_cheats_set_log(host_log);
   spyro_main(); /* never returns */
   return 0;
 }
