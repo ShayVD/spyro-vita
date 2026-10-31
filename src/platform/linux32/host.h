@@ -48,6 +48,7 @@ void host_pad_vblank(int vblank);
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
 int host_pad_parse(const char *text, uint16_t *mask); /* "up+cross", "none" */
+extern int g_host_pad_analog; /* --analog: a DualShock, sticks from the pad script (D46) */
 
 /* tour.c: --tour LIST, --tour-stay N (level warps, credits, endings) */
 int host_tour_set(const char *list); /* 0 = ok */

@@ -75,7 +75,12 @@ Files the app writes:
 | `shot_every=N` | and every N vblanks |
 | `stats=N` | 0: no timing lines; 1 (default): one line every 300 vblanks; 2: also each pad change |
 | `filter=N` | 0: nearest-neighbour scaling; 1 (default): linear |
-| `reartouch=1` | the rear touch pad's left/right half is L2/R2 (the right stick always is) |
+| `reartouch=1` | the rear touch pad's left/right half is L2/R2 (so is the right stick's X, unless `free_camera=1`) |
+| `analog=0` | a digital pad: the left stick works as the d-pad, 8 directions. The default, 1, is a DualShock in analog mode, so Spyro moves in any direction and at any speed (decisions D46) |
+| `free_camera=1` | the right stick turns the camera (the further you push it, the faster it turns) and tilts it up and down. Let go and the game's own camera takes over again. Needs `analog=1`; off by default (D47) |
+| `cam_invert_x=1`, `cam_invert_y=1` | flip the free camera's left/right and up/down. Invert Y also flips Triangle look mode's up/down. Off, up looks down, as in the game's look mode; on, up looks up in both |
+| `touch_menu=0` | a tap in the middle of the front touch screen no longer opens the options menu (default 1: it does, as SELECT+START; D46) |
+| `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
@@ -92,6 +97,7 @@ Files the app writes:
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
+| `pad=` touch | in a pad script, `tap=X,Y`, `hold=X,Y` and `swipe=X,Y` (percent of the screen) play a gesture on the front touch screen (tests of the tap that opens the menu) |
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, right, up, right, circle (60 fps one step on, widescreen toggled, close) |
 | `menu_keys=B1,B2,...` | with `menu_test`: press these instead (`up down left right cross circle triangle start`, one per 4 pictures; end with `circle` unless an action closes the menu), to test any row (D50) |
 | `skip_logos=1` | start at the title: no Sony or Universal logo and no title flythrough (the menu's `SKIP INTRO LOGOS`; everything they load still loads; D50) |
@@ -101,7 +107,7 @@ Files the app writes:
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -144,10 +150,25 @@ At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` th
 
 ## Controls
 
-The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The left stick also works
-as the d-pad (the pad is reported as digital). **L2/R2 turn the camera: push the right stick left
-(L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's left/right half does
-the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
+The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The pad is reported as
+a DualShock in analog mode (decisions D46), so the left stick moves Spyro in any direction, as on a
+PS1 with a DualShock; the d-pad still works and wins while pressed. **L2/R2 turn the camera: push
+the right stick left (L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's
+left/right half does the same (read with `sceTouch` since D46; before, it did nothing with the
+GPU renderer). A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
+
+In the options menu (SELECT+START), CONTROLS:
+- `ANALOG STICK` OFF goes back to the digital pad (the left stick is the d-pad, 8 directions).
+- `FREE CAMERA` ON makes the right stick turn the camera in proportion and tilt it up and down.
+  Let go, and the game's camera swings back behind Spyro as after L2/R2. Look mode, cutscenes and
+  scripted cameras are unchanged (D47).
+- `INVERT CAMERA X` flips the turn. `INVERT CAMERA Y` flips the tilt and Triangle look mode
+  together. OFF: up looks down, the game's own way in look mode and flight. ON: up looks up in both.
+  Flight itself is unchanged.
+- `CAMERA SPEED` sets the turn speed, 50–200%.
+- `REAR TOUCH L2/R2` is `reartouch=`.
+- `TOUCH TO OPEN MENU` (on by default): a short tap in the middle of the front touch screen opens
+  the menu, and another tap closes it. Swipes, held fingers and touches near the edges don't count.
 
 ## What to expect (be direct)
 

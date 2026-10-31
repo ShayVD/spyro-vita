@@ -11,6 +11,7 @@
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats | --present-dirty] [--vcache]
+ *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
@@ -42,6 +43,10 @@
  *   with the Vita's shots).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
+ * --analog: the pad is a DualShock in analog mode; pad script lines may set
+ *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
+ *   --free-camera: the right stick turns and tilts the camera
+ *   (--cam-invert-x, --cam-invert-y, --cam-speed PERCENT; D47).
  * --vcache: record the GTE's projections in the vertex cache the Vita's
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
@@ -49,6 +54,7 @@
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "cheats_port.h"
 #include "host.h"
+#include "port_controls.h"
 #include "present.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
@@ -78,6 +84,8 @@ static void usage(void) {
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache]\n"
+          "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
+          "[--cam-speed PERCENT]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -286,6 +294,17 @@ int main(int argc, char **argv) {
       s_vcache = 1;
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
+    } else if (strcmp(a, "--analog") == 0) {
+      g_host_pad_analog = 1;
+    } else if (strcmp(a, "--free-camera") == 0) {
+      g_port_controls.free_camera = 1;
+    } else if (strcmp(a, "--cam-invert-x") == 0) {
+      g_port_controls.invert_x = 1;
+    } else if (strcmp(a, "--cam-invert-y") == 0) {
+      g_port_controls.invert_y = 1;
+    } else if (strcmp(a, "--cam-speed") == 0) {
+      TAKE();
+      g_port_controls.speed = atoi(val);
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;

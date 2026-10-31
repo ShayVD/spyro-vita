@@ -24,6 +24,11 @@ static int s_requested;
 static uint16_t s_swallow; /* buttons hidden from the game until released */
 static uint16_t s_prev;
 
+int vita_pad_take_tap(void); /* pad.c: a tap on the front touch screen */
+
+/* pad.c: a tap in the middle of the front touch screen (D46). */
+void vita_menu_request(void) { s_requested = 1; }
+
 /* pad.c, every vblank: the controller's buttons -> what the game sees. */
 uint16_t vita_menu_filter(uint16_t m) {
   uint16_t pressed = m & ~s_prev;
@@ -154,6 +159,7 @@ int vita_menu_service(void) {
   if (!panel)
     panel = malloc((size_t)MENU_PANEL_W * menu_panel_height(MENU_PANEL_LINES) * 3);
   SceUInt64 t0 = sceKernelGetProcessTimeWide();
+  vita_pad_take_tap(); /* the tap that opened it, if one did */
   vita_log("menu: open%s", test ? " (menu_test)" : "");
   while (open) {
     uint16_t m, pressed;
@@ -175,8 +181,8 @@ int vita_menu_service(void) {
       open = menu_opt_change(opts[sel], 1) != 2, dirty = 1;
     if (opts[sel] && (pressed & B_LEFT))
       menu_opt_change(opts[sel], -1), dirty = 1;
-    if (pressed & (B_CIRCLE | B_START | B_TRIANGLE))
-      open = 0;
+    if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || vita_pad_take_tap())
+      open = 0; /* or a tap again */
     if (dirty && open) {
       for (i = 0; i < n; i++)
         if (opts[i])
