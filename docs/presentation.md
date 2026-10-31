@@ -343,7 +343,7 @@ With widescreen on, players see scenery and objects appear at a distance, most v
   - the record-draw loops (`func_8001F798`, `func_80020F34`) and the lit loop's pass 2 stop at pass 2's mobys once the buffer is 60% full;
   - the near list stops taking sectors one entry before the next list.
 - **A limiter.** After each shown draw it measures the bytes used, and how close the world came to its bound, and takes the fuller of the two. Over 80% it halves the extra distance, over 90% it drops to 1×, and under 65% it grows back by 1/32 per draw. So the bound stays a backstop rather than a regular cut.
-- **Each new level or gamestate starts at 1×.**
+- **Each new level or gamestate starts at 1×.** A loaded save state (D51, `port_lod_reset()`) instead goes straight to the chosen scale, with the limiter backing off after one draw if the spot is heavy.
 
 The first whole-game run had only the limiter, and it crashed entering level 40 at 2×: one frame wrote past the second buffer into the world OT (`logs/run4-whole-dd2`, core read with gdb: `fp = 0x801BFDA4`, past `0x801BFBB0`).
 

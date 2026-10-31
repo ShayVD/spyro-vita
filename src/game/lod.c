@@ -81,6 +81,7 @@ static int s_hold;        /* draws before it may grow again */
 static uint32_t s_ext[2][MAX_EXT / 32]; /* level mobys drawn by pass 2 */
 static int s_ext_cur;
 static int s_level = -1, s_gamestate = -1;
+static int s_loaded; /* a save state was loaded: the next draw at full scale */
 
 /* this draw's primitive buffer (draw_begin) */
 static u32 s_poly_lo, s_env_limit, s_moby_limit, s_env_last, s_env_end;
@@ -264,8 +265,12 @@ void port_lod_draw_begin(int shown) {
   s_rec2 = ~0u;
   if (g_lod.scale <= LOD_ONE || !shown)
     return;
-  if (g_lod.guards_only) {
+  if (g_lod.guards_only || s_loaded) {
     s_k = g_lod.scale;
+    s_hold = 0;
+    s_level = g_LevelId;
+    s_gamestate = g_Gamestate;
+    s_loaded = 0;
   } else if (g_LevelId != s_level || g_Gamestate != s_gamestate) {
     s_level = g_LevelId;
     s_gamestate = g_Gamestate;
@@ -276,6 +281,11 @@ void port_lod_draw_begin(int shown) {
     s_k = s_k < LOD_ONE ? LOD_ONE : g_lod.scale;
   g_lod_k = s_k;
   memset(s_ext[s_ext_cur], 0, sizeof s_ext[0]);
+}
+
+void port_lod_reset(void) {
+  s_loaded = 1;
+  memset(s_ext, 0, sizeof s_ext);
 }
 
 /* The bytes of primitives a draw wrote, against what the buffer holds, or

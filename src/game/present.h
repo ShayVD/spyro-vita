@@ -69,6 +69,7 @@ extern const PresentCapture *g_present_capture;
 extern long long (*g_present_clock_us)(void);
 
 int port_present_active(void); /* any feature on */
+void port_present_reset(void);  /* a save state was loaded: nothing queued */
 /* Call once per vblank. Returns the frame to show now (PS1 15-bit,
  * PRESENT_W x PRESENT_H), or NULL to show the PS1 display as usual (no
  * presentation frame was made, e.g. boot logos or loading). */

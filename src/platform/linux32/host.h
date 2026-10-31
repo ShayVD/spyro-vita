@@ -26,6 +26,8 @@ typedef struct {
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
   struct { uint32_t addr; int n; } peeks[8];
   int lod_stats;       /* --lod-stats N: a draw-distance line every N vblanks */
+  int ncheats;         /* --cheat V:NAME[:LEVEL]: the options menu's cheats */
+  struct { int vblank, cheat, level; } cheats[8];
 } HostOpts;
 
 extern HostOpts g_host_opts;
@@ -38,15 +40,18 @@ void host_log_flush(void);
 /* vblank.c */
 int host_vblank_count(void);
 void host_vblank(void); /* advance exactly one virtual vblank */
+void host_set_vblank(int vblank); /* a save state's counter (D51) */
 
 /* pad.c */
 int host_pad_load(const char *path); /* 0 = ok */
 int host_pad_load_after(const char *path); /* --pad-after: once the tour is done */
 void host_pad_vblank(int vblank);
+void host_pad_rewind(int vblank); /* a save state loaded: replay from vblank (D51) */
 
 /* pad.c: buttons from the browser (--serve), ORed with the script's */
 void host_pad_set_live(uint16_t mask);
 int host_pad_parse(const char *text, uint16_t *mask); /* "up+cross", "none" */
+extern int g_host_pad_analog; /* --analog: a DualShock, sticks from the pad script (D46) */
 
 /* tour.c: --tour LIST, --tour-stay N (level warps, credits, endings) */
 int host_tour_set(const char *list); /* 0 = ok */
@@ -66,6 +71,10 @@ void host_serve_vblank(int vblank);
 int host_audio_wav_open(const char *path); /* 0 = ok */
 void host_audio_close(void);
 long long host_audio_take(long long after, int16_t **pcm, size_t *frames);
+
+/* savestate_host.c: --state V:save|load:N, --state-hash FILE (D51) */
+int host_state_option(const char *val); /* 0 = ok */
+int host_state_hash_open(const char *path); /* 0 = ok */
 
 /* gpu_soft.c: 1024x512 PS1 VRAM, 1-5-5-5 (bit 15 = mask/STP, R in low bits). */
 uint16_t *host_vram(void);

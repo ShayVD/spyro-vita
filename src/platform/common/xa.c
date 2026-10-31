@@ -6,6 +6,7 @@
  * of 37.8 or 18.9 kHz stereo frames, which the SPU mixer resamples to 44.1 kHz
  * as its CD input. */
 #include "psx_cd.h"
+#include "psx_state.h"
 #include "psx_xa.h"
 
 #include <libcd.h>
@@ -29,6 +30,18 @@ void psx_xa_reset(void) {
   memset(s_hist, 0, sizeof s_hist);
   memset(s_prev, 0, sizeof s_prev);
   memset(s_cur, 0, sizeof s_cur);
+}
+
+/* Save states (D51). */
+void psx_xa_state(PsxStateIO *io) {
+  psx_state_io(io, s_fifo, sizeof s_fifo);
+  psx_state_io(io, &s_head, sizeof s_head);
+  psx_state_io(io, &s_tail, sizeof s_tail);
+  psx_state_io(io, &s_rate, sizeof s_rate);
+  psx_state_io(io, s_hist, sizeof s_hist);
+  psx_state_io(io, &s_frac, sizeof s_frac);
+  psx_state_io(io, s_prev, sizeof s_prev);
+  psx_state_io(io, s_cur, sizeof s_cur);
 }
 
 static void push(short l, short r) {

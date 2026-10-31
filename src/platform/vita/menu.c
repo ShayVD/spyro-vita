@@ -24,6 +24,11 @@ static int s_requested;
 static uint16_t s_swallow; /* buttons hidden from the game until released */
 static uint16_t s_prev;
 
+int vita_pad_take_tap(void); /* pad.c: a tap on the front touch screen */
+
+/* pad.c: a tap in the middle of the front touch screen (D46). */
+void vita_menu_request(void) { s_requested = 1; }
+
 /* pad.c, every vblank: the controller's buttons -> what the game sees. */
 uint16_t vita_menu_filter(uint16_t m) {
   uint16_t pressed = m & ~s_prev;
@@ -96,21 +101,31 @@ static int step_row(const MenuOption *const *opts, int n, int sel, int dir) {
 static const uint16_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_RIGHT, B_CIRCLE};
 #define NTEST (int)(sizeof k_test / sizeof k_test[0])
 
-/* menu_keys=: that sequence instead, one letter per button (u d l r, x for
- * cross, o for circle), then circle (D48: the picture rows' tests). */
-static uint16_t test_key(int i) {
-  static const char k_letters[] = "udlrxo";
-  static const uint16_t k_buttons[] = {B_UP, B_DOWN, B_LEFT, B_RIGHT, B_CROSS, B_CIRCLE};
-  const char *keys = g_vita_opts.menu_keys, *c;
-  int n = 0;
-  if (!keys[0])
-    return i < NTEST ? k_test[i] : 0;
-  if (i-- == 0)
-    return 0; /* the combo let go */
-  for (; *keys; keys++)
-    if ((c = strchr(k_letters, *keys)) && *c && n++ == i)
-      return k_buttons[c - k_letters];
-  return n == i ? B_CIRCLE : 0;
+/* menu_keys=down,down,cross,...: menu_test presses these instead (the
+ * buttons by their pad-script names: up down left right cross circle
+ * triangle start), for tests of other rows. */
+static uint16_t s_keys[48];
+static int s_nkeys;
+
+int vita_menu_test_keys(const char *list) {
+  static const struct { const char *name; uint16_t bit; } k_names[] = {
+      {"up", B_UP},       {"down", B_DOWN},     {"left", B_LEFT},         {"right", B_RIGHT},
+      {"cross", B_CROSS}, {"circle", B_CIRCLE}, {"triangle", B_TRIANGLE}, {"start", B_START},
+  };
+  char buf[512], *tok, *save = NULL;
+  size_t k;
+  snprintf(buf, sizeof buf, "%s", list);
+  s_keys[0] = 0; /* let go of the combo first, as k_test does */
+  s_nkeys = 1;
+  for (tok = strtok_r(buf, ",", &save); tok && s_nkeys < (int)(sizeof s_keys / sizeof s_keys[0]);
+       tok = strtok_r(NULL, ",", &save)) {
+    for (k = 0; k < sizeof k_names / sizeof k_names[0] && strcmp(tok, k_names[k].name); k++)
+      ;
+    if (k == sizeof k_names / sizeof k_names[0])
+      return -1;
+    s_keys[s_nkeys++] = k_names[k].bit;
+  }
+  return 0;
 }
 
 /* vblank.c, at each VSync: runs the menu if it was asked for. Returns 1 if
@@ -132,6 +147,9 @@ int vita_menu_service(void) {
   if (!s_requested)
     return 0;
   s_requested = 0;
+  for (i = 0; i < NLISTS; i++)
+    if (k_lists[i] && k_lists[i]->on_open)
+      k_lists[i]->on_open();
   n = menu_opts_layout(k_lists, NLISTS, rows, opts, MAX_LINES);
   if (n == 0)
     return 0;
@@ -141,13 +159,16 @@ int vita_menu_service(void) {
   if (!panel)
     panel = malloc((size_t)MENU_PANEL_W * menu_panel_height(MENU_PANEL_LINES) * 3);
   SceUInt64 t0 = sceKernelGetProcessTimeWide();
+  vita_pad_take_tap(); /* the tap that opened it, if one did */
   vita_log("menu: open%s", test ? " (menu_test)" : "");
   while (open) {
     uint16_t m, pressed;
     vita_pad_poll();
     m = vita_pad_read();
     if (test) {
-      m = step % 4 < 2 ? test_key(step / 4) : 0;
+      const uint16_t *keys = s_nkeys ? s_keys : k_test;
+      int nkeys = s_nkeys ? s_nkeys : NTEST;
+      m = step / 4 < nkeys && step % 4 < 2 ? keys[step / 4] : 0;
       step++;
     }
     pressed = m & ~prev;
@@ -160,8 +181,8 @@ int vita_menu_service(void) {
       open = menu_opt_change(opts[sel], 1) != 2, dirty = 1;
     if (opts[sel] && (pressed & B_LEFT))
       menu_opt_change(opts[sel], -1), dirty = 1;
-    if (pressed & (B_CIRCLE | B_START | B_TRIANGLE))
-      open = 0;
+    if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || vita_pad_take_tap())
+      open = 0; /* or a tap again */
     if (dirty && open) {
       for (i = 0; i < n; i++)
         if (opts[i])

@@ -142,3 +142,12 @@ target_include_directories(spyro_game_port AFTER PRIVATE
   "${CMAKE_SOURCE_DIR}/src/compat" "${S1_DIR}/include")
 target_link_libraries(spyro_game_port PRIVATE psycross)
 target_compile_options(spyro_game_port PRIVATE ${SPYRO_HOST_FLAGS})
+# Save states refuse states from another build (src/game/savestate.c, D51).
+execute_process(COMMAND git describe --always --dirty
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE SPYRO_GIT_DESCRIBE
+  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT SPYRO_GIT_DESCRIBE)
+  set(SPYRO_GIT_DESCRIBE unknown)
+endif()
+set_source_files_properties("${CMAKE_SOURCE_DIR}/src/game/savestate.c" TARGET_DIRECTORY
+  spyro_game_port PROPERTIES COMPILE_DEFINITIONS "SPYRO_BUILD_ID=\"${SPYRO_GIT_DESCRIBE}\"")

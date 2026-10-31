@@ -78,6 +78,12 @@ void vita_audio_init(void) {
   SDL_PauseAudioDevice(s_dev, 0);
 }
 
+/* A save state was loaded (D51): what is queued is from before it. */
+void vita_audio_clear(void) {
+  if (s_dev)
+    SDL_ClearQueuedAudio(s_dev);
+}
+
 void psx_audio_out(const short *pcm, int frames) {
   if (s_wav) {
     fwrite(pcm, 4, (size_t)frames, s_wav);

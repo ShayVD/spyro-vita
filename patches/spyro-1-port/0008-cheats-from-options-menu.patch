@@ -1,0 +1,62 @@
+--- a/src/gamestates/update.c	2026-10-31 09:27:37
++++ b/src/gamestates/update.c	2026-10-31 09:27:49
+@@ -33,6 +33,13 @@
+ 
+ extern int _stacksize;
+ 
++#ifdef SPYRO_PORT
++/* The options menu's cheats (src/game/cheats_port.c, decisions D50) */
++void PortCheatsTick(void);
++int PortCheatPending(void);
++int PortCheatsInventory(void);
++#endif
++
+ /// @brief Updates level transition gems and text
+ void func_8002DA74(void) {
+   int i;
+@@ -198,7 +205,11 @@
+     return;
+   }
+ 
++#ifdef SPYRO_PORT
++  if ((g_Pad.m_Down & PAD_SELECT) || PortCheatPending()) {
++#else
+   if ((g_Pad.m_Down & PAD_SELECT)) {
++#endif
+     // Open the inventory screen
+     func_8002C714(0);
+     return;
+@@ -458,6 +469,11 @@
+     return;
+   }
+ 
++#ifdef SPYRO_PORT
++  if (PortCheatsInventory())
++    return;
++#endif
++
+   // Warp code handling takes priority
+   if (g_LevelCheatActive) {
+     CheatProcessLevelWarp();
+@@ -1413,6 +1429,9 @@
+  */
+ void GamestateUpdate(void) {
+   g_StateSwitch = 0;
++#ifdef SPYRO_PORT
++  PortCheatsTick();
++#endif
+ 
+   // Update active SPU voices (3D audio, volume fades, pitch ramping)
+   SoundsUpdate();
+@@ -1523,7 +1542,11 @@
+       func_8002C420(1); // No controller - force pause
+     } else if (g_Pad.m_Down & PAD_START) {
+       func_8002C420(1); // START - open pause menu
++#ifdef SPYRO_PORT
++    } else if ((g_Pad.m_Down & PAD_SELECT) || PortCheatPending()) {
++#else
+     } else if (g_Pad.m_Down & PAD_SELECT) {
++#endif
+       func_8002C714(1); // SELECT - open inventory
+     }
+   }

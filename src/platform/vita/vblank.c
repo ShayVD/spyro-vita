@@ -37,6 +37,15 @@ static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 #define MAX_CATCH_UP 8 /* vblanks run at once after a slow frame; more are dropped */
 
 int vita_vblank_count(void) { return s_vblank; }
+
+/* A save state was loaded (D51): its vblank count from now on, counted
+ * against the display afresh, and a new stats window. */
+void vita_set_vblank(int vblank) {
+  s_vblank = s_stat_v0 = vblank;
+  s_vcount_base = -1;
+  s_stat_shown = s_stat_late = 0;
+  s_stat_t0 = 0;
+}
 int host_vblank_count(void) { return s_vblank; } /* linux32/gpu_soft.c */
 
 int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }

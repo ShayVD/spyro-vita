@@ -263,6 +263,7 @@ void port_lod_report(char *out, unsigned len) {
   if (len)
     out[0] = 0;
 }
+int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
 
 int main(int argc, char **argv) {
   const char *outdir = argc > 1 ? argv[1] : ".";

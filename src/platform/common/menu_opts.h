@@ -54,6 +54,8 @@ typedef struct MenuOption {
 typedef struct {
   const MenuOption *opts;
   int n;
+  void (*on_open)(void); /* optional: each time the menu opens, before it is
+                            drawn (rows whose value text depends on the game) */
 } MenuOptionList;
 
 /* A feature file's rows: MENU_OPTION_LIST(g_menu_controls, k_rows); */

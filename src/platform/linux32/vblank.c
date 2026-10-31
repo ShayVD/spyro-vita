@@ -1,6 +1,7 @@
 /* Deterministic virtual time for the headless linux32 host
  * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
  * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
+#include "cheats_port.h"
 #include "host.h"
 #include "lod.h"
 #include "psx_arena.h"
@@ -23,6 +24,7 @@ int g_vmode = MODE_NTSC;
 static int s_vblank;
 
 int host_vblank_count(void) { return s_vblank; }
+void host_set_vblank(int vblank) { s_vblank = vblank; }
 
 int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }
 
@@ -51,6 +53,10 @@ void host_vblank(void) {
       host_log("poke %08x = %08x", g_host_opts.pokes[i].addr,
                g_host_opts.pokes[i].value);
     }
+  for (int i = 0; i < g_host_opts.ncheats; i++)
+    if (g_host_opts.cheats[i].vblank == v &&
+        !port_cheat_request(g_host_opts.cheats[i].cheat, g_host_opts.cheats[i].level))
+      host_log("cheat %d refused at vblank %d (not available now)", g_host_opts.cheats[i].cheat, v);
   host_pad_vblank(v);
   psx_cd_vblank();
   psx_spu_vblank();

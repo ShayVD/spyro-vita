@@ -1,0 +1,97 @@
+--- a/src/initialization.c	2026-10-31 09:27:37
++++ b/src/initialization.c	2026-10-31 09:28:26
+@@ -229,6 +229,16 @@
+ 
+ OVERLAY_TERMINATOR_DECL(Terminator_titlescreen_code); // Titlescreen terminator
+ 
++#ifdef SPYRO_PORT
++/* The options menu's "skip intro logos" (src/game/cheats_port.c, decisions
++ * D50): no Sony or Universal logo, their fades or their 3.5 s holds. Every
++ * load and initialisation below still runs, in the same order. */
++extern int g_port_skip_logos;
++#define LOGOS (!g_port_skip_logos)
++#else
++#define LOGOS 1
++#endif
++
+ // Init function
+ void Initialize(void) {
+   RECT frameRect;
+@@ -278,7 +288,7 @@
+   // to be decompressed into
+   Memset(g_Buffers.m_CopyBuf, 0, image_size);
+ 
+-  for (i = 0; i < 8; ++i) {
++  for (i = 0; LOGOS && i < 8; ++i) {
+     // Decompress the image
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf,
+                   i * blend_step - blend_start);
+@@ -321,14 +331,14 @@
+              g_WadHeader.m_UniversalLogo.m_Offset, 600);
+ 
+   // Wait for 210 frames, / 60 = 3.5 seconds
+-  while (VSync(-1) - frameCountStart < 210)
++  while (LOGOS && VSync(-1) - frameCountStart < 210)
+     VSync(0);
+ 
+   // Clear the copy buffer for the images
+   // to be decompressed into again
+   Memset(g_Buffers.m_CopyBuf, 0, image_size);
+ 
+-  for (j = 0; j < 8; ++j) {
++  for (j = 0; LOGOS && j < 8; ++j) {
+     // Decompress the image
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
+     setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
+@@ -342,7 +352,7 @@
+   Memset(universalImage - image_size, 0, image_size);
+ 
+   // Fade in the Universal logo
+-  for (k = 0; k < 8; ++k) { // blend2 = -blend_start; k < blend_step_count;
++  for (k = 0; LOGOS && k < 8; ++k) { // blend2 = -blend_start; k < blend_step_count;
+                             // blend2 += blend_step
+     // Decompress the image
+     func_80017F24(universalImage, universalImage - image_size,
+@@ -364,11 +374,11 @@
+   } while (g_LoadStage < 10);
+ 
+   // Wait for 210 frames, / 60 = 3.5 seconds
+-  while (VSync(-1) - frameCountStart < 210)
++  while (LOGOS && VSync(-1) - frameCountStart < 210)
+     VSync(0);
+ 
+   // Fade out the Universal logo
+-  for (l = 0; l < 8; ++l) {
++  for (l = 0; LOGOS && l < 8; ++l) {
+     // Decompress the image
+     func_80017F24(universalImage, universalImage - image_size,
+                   -(l + 1) * blend_step);
+--- a/src/overlays/titlescreen.c	2026-10-31 09:53:10
++++ b/src/overlays/titlescreen.c	2026-10-31 09:53:20
+@@ -93,6 +93,10 @@
+ // Returns system time
+ int func_80017FD4(void);
+ 
++#ifdef SPYRO_PORT
++int PortSkipTitleIntro(void); /* src/game/cheats_port.c, decisions D50 */
++#endif
++
+ void TitlescreenUpdate(void) {
+   int old_state = g_TitlescreenState.m_Mode < 2 ? g_TitlescreenState.m_SubState
+                                                 : g_TitlescreenState.m_State;
+@@ -107,6 +111,15 @@
+       StopSound(g_DragonCutscene.m_SoundVoice, 4);
+       g_CutsceneLayout->m_CurrentTick = 1170;
+     }
++#ifdef SPYRO_PORT
++    // "Skip intro logos": the first title after boot skips its flythrough
++    // (the Insomniac sign) at once, by the branch START takes above
++    else if (g_TitlescreenState.m_Mode == TSM_Init &&
++             g_TitlescreenState.m_SubState == 2 && PortSkipTitleIntro()) {
++      StopSound(g_DragonCutscene.m_SoundVoice, 4);
++      g_CutsceneLayout->m_CurrentTick = 1170;
++    }
++#endif
+   } else {
+     if (g_CutsceneLayout->m_CurrentTick == 1344 && (rand() & 3) != 0) {
+       g_CutsceneLayout->m_CurrentTick = 1172;

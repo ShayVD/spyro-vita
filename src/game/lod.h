@@ -26,6 +26,12 @@ extern LodConfig g_lod;
 void port_lod_draw_begin(int shown);
 void port_lod_draw_end(int shown);
 
+/* A save state was loaded (src/game/savestate.c, D51): the next draw is at
+ * the chosen scale at once (the limiter backs off after it if that spot is
+ * heavy; the hard bounds hold the buffer either way), with no moby kept from
+ * before. g_lod, the player's setting, stays. */
+void port_lod_reset(void);
+
 /* One line of statistics since the last call (empty when nothing was drawn
  * with the option on); resets them. */
 void port_lod_report(char *out, unsigned len);
