@@ -78,8 +78,8 @@ Files the app writes:
 | `filter=N` | 0: nearest-neighbour scaling; 1 (default): linear |
 | `reartouch=1` | the rear touch pad's left/right half is L2/R2 (so is the right stick's X, unless `free_camera=1`) |
 | `analog=0` | a digital pad: the left stick works as the d-pad, 8 directions. The default, 1, is a DualShock in analog mode, so Spyro moves in any direction and at any speed (decisions D46) |
-| `free_camera=1` | the right stick turns the camera (the further you push it, the faster it turns) and tilts it up and down. Let go and the game's own camera takes over again. Needs `analog=1`; off by default (D47) |
-| `cam_invert_x=1`, `cam_invert_y=1` | flip the free camera's left/right and up/down. Invert Y also flips Triangle look mode's up/down. Off, up looks down, as in the game's look mode; on, up looks up in both |
+| `free_camera=0` | the right stick is L2/R2 again. The default, 1, is the free camera: the right stick turns the camera (the further you push it, the faster it turns) and tilts it up and down. Let go and the game's own camera takes over again. Needs `analog=1` (D47, D53) |
+| `cam_invert_x=0`, `cam_invert_y=0` | flip the free camera's left/right and up/down back. Both default to 1 (D53). Invert Y also flips Triangle look mode's up/down: on (the default), up looks up in both; off, up looks down, as in the original's look mode. `tools/vita/vita3k_run.sh` writes all three as 0 so scripted runs match the host |
 | `touch_menu=0` | a tap in the middle of the front touch screen no longer opens the options menu (default 1: it does, as SELECT+START; D46) |
 | `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
