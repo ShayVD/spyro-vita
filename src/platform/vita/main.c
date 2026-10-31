@@ -1,12 +1,16 @@
 /* PS Vita entry point (docs/vita-testing.md, decisions D25-D26).
  *
- *   ux0:data/spyro/            the files tools/extract_disc.py writes from the
- *                              user's own disc (manifest.json, WAD.WAD,
- *                              PETEXA*.STR, ...); never in the VPK
+ *   ux0:data/spyro/            the user's own disc: its image (.bin + .cue,
+ *                              or .img; read directly, D60), or the files
+ *                              tools/extract_disc.py writes from it
+ *                              (manifest.json, WAD.WAD, PETEXA*.STR, ...);
+ *                              never in the VPK
+ *   ux0:data/spyro/save/disc-verified.txt  the image whose WAD.WAD was
+ *                              checked (D60)
  *   ux0:data/spyro/save/       memory cards: card0 (port A), card1 (port B)
  *   ux0:data/spyro/spyro.log   the log (send it back after a test)
  *   ux0:data/spyro/config.txt  optional key=value lines:
- *       disc=PATH       the extracted files somewhere else
+ *       disc=PATH       the disc image or extracted files somewhere else
  *       frames=N        exit after N vblanks (default 0: never)
  *       shot=V1,V2,...  PNGs of the picture at these vblanks, in shots/
  *       shot_every=N    and every N vblanks
@@ -98,10 +102,12 @@
 #define SDL_MAIN_HANDLED
 #include "vita.h"
 #include "psx_arena.h"
+#include "psx_cdimage.h"
 #include "psx_hooks.h"
 #include "../../game/cheats_port.h"
 
 #include <SDL2/SDL.h>
+#include <psp2/display.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
@@ -261,22 +267,50 @@ static void read_config(void) {
   }
 }
 
-/* Without the disc files there is nothing to run: say so on screen (a red
- * picture) and in the log, and wait for START to quit. */
+/* Without a disc there is nothing to run: say why on screen (bootscreen.c)
+ * and in the log (psx_cd_error: no image, an .iso, a wrong disc, ...) and
+ * wait for a button to quit. frames= quits after that many vblanks (Vita3K
+ * tests). */
 static void no_disc(void) {
-  vita_log("no %s/manifest.json: copy the files from your own disc there "
-           "(docs/vita-testing.md)", g_vita_opts.disc_dir);
-  for (;;) {
-    SDL_GameController *c = SDL_NumJoysticks() > 0 ? SDL_GameControllerOpen(0) : NULL;
+  const PsxCdError *e = psx_cd_error();
+  int buttons[] = {SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START};
+  int held = 1, frame = 0, i;
+  SDL_GameController *c = NULL;
+  vita_log("disc: %s: %s", e->title, e->text);
+  vita_boot_panel(e->title, e->text, "PRESS X TO EXIT");
+  for (;; frame++) {
+    int down = 0;
     SDL_PumpEvents();
-    vita_video_fill_red();
-    if (c && SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START))
+    if (!c && SDL_NumJoysticks() > 0)
+      c = SDL_GameControllerOpen(0);
+    for (i = 0; c && i < (int)(sizeof buttons / sizeof *buttons); i++)
+      down |= SDL_GameControllerGetButton(c, buttons[i]);
+    if (down && !held) /* a press, not a button held since the bubble */
       sceKernelExitProcess(0);
+    held = down;
+    sceDisplayWaitVblankStart(); /* the buttons once a vblank, not a spinning core */
+    if (g_vita_opts.frames > 0 && frame >= g_vita_opts.frames) {
+      vita_log("frames=%d reached, exiting", g_vita_opts.frames);
+      sceKernelExitProcess(0);
+    }
   }
 }
 
+/* The first start with a disc image hashes WAD.WAD (D60): a few seconds. */
+static void disc_progress(int percent) {
+  char text[200];
+  if (percent % 4)
+    return;
+  snprintf(text, sizeof text,
+           "First start: checking that your disc image is a good dump of SCUS-94228. This is "
+           "done once.\n\n%d%%",
+           percent);
+  vita_boot_panel("CHECKING THE DISC IMAGE", text, "");
+}
+
+static unsigned long long now_us(void) { return sceKernelGetProcessTimeWide(); }
+
 int main(int argc, char **argv) {
-  char path[300];
   (void)argc;
   (void)argv;
   scePowerSetArmClockFrequency(444);
@@ -313,6 +347,21 @@ int main(int argc, char **argv) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
     sceKernelExitProcess(1);
   }
+  /* the disc before the renderer: its screens (a first-start check, or why
+   * the game can't start) go straight to the display (bootscreen.c, D60) */
+  psx_cd_set_verify(VITA_DATA_DIR "/save/disc-verified.txt", disc_progress);
+  psx_cd_set_clock(now_us);
+  {
+    unsigned long long t0 = now_us();
+    PsxCdIo io;
+    if (psx_cd_open(g_vita_opts.disc_dir) != 0) {
+      vita_log("psx_cd_open(%s) failed", g_vita_opts.disc_dir);
+      no_disc();
+    }
+    psx_cd_io(&io); /* the check's reads, which the "cd:" lines include */
+    vita_log("disc: %s, opened in %u ms (%u reads, %u KB)", psx_cd_source(),
+             (unsigned)((now_us() - t0) / 1000), io.reads, io.kbytes);
+  }
   if (vita_video_init() != 0) {
     /* once vitaGL has the display, SDL's renderer can't take it */
     vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
@@ -327,17 +376,6 @@ int main(int argc, char **argv) {
 
   arena_symbols();
   psx_mcrd_set_root(VITA_DATA_DIR "/save");
-  snprintf(path, sizeof path, "%s/manifest.json", g_vita_opts.disc_dir);
-  {
-    FILE *f = fopen(path, "rb");
-    if (!f)
-      no_disc();
-    fclose(f);
-  }
-  if (psx_cd_open(g_vita_opts.disc_dir) != 0) {
-    vita_log("psx_cd_open(%s) failed", g_vita_opts.disc_dir);
-    no_disc();
-  }
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);

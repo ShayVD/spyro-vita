@@ -27,7 +27,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **CPU:** ARMv7 Cortex-A9, 4 cores at 333 MHz (444 MHz overclocked), **32-bit**. The game's 32-bit pointers fit as-is. Never assume `sizeof(void*)==8`, and never write code that only works where it's 4: keep the host debug build honest.
 - **GPU:** SGX543MP4+ via vitaGL. Keep draw calls batched. Don't do per-primitive state changes.
 - **Rendering:** PS1 primitives, in the **PS1-native layout** (PsyCross built with `USE_EXTENDED_PRIM_POINTERS=0`, `USE_PGXP=0`), go through PsyCross's OT walker into vitaGL. The game's dynamic RAM is one 2 MB arena at a 16 MB-aligned address (24-bit OT links; see `docs/porting-plan.md` §4). Depth-buffer or perspective-correct improvements come later and must be optional.
-- **Files:** `ux0:data/spyro/` (files extracted from the user's disc). Saves go to `ux0:data/spyro/save/`.
+- **Files:** `ux0:data/spyro/`: the user's disc image (`.bin` + `.cue`), read directly (D60), or the files `tools/extract_disc.py` extracts from it (with `manifest.json`, which wins). Saves go to `ux0:data/spyro/save/`.
 - **Disc data on the host** (gitignored):
   - `disc/image/` holds the original bin/cue.
   - `disc/files/` holds the extracted files, written by `tools/extract_disc.py`, with a `manifest.json` of each file's LBA, size and type.

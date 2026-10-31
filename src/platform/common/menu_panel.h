@@ -36,6 +36,13 @@ int menu_panel_top(int n, int sel, int top, int lines);
 void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n,
                      int sel, int top, int lines, const char *footer);
 
+/* A message (the disc screens before the game, D60): title, then text
+ * word-wrapped to the panel's width, one line per row ('\n' starts a new
+ * line; past MENU_PANEL_LINES lines it is cut), then the footer. rgb holds
+ * MENU_PANEL_W x menu_panel_height(MENU_PANEL_LINES) pixels; returns the
+ * height drawn. */
+int menu_panel_message(uint8_t *rgb, const char *title, const char *text, const char *footer);
+
 #ifdef __cplusplus
 }
 #endif

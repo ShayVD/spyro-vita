@@ -23,6 +23,7 @@ tools/tc build/linux32/src/platform/linux32/spyro --disc disc/files --frames 260
 python3 tools/contact_sheet.py logs/runN-x
 ```
 
+- `--disc DIR`: the extracted files (`disc/files`, with `manifest.json`) or a folder holding the disc image (`disc/image`: a `.cue` and its `.bin`, or a `.bin`/`.img` alone; decisions D60). Both give identical runs. A refused image exits 1 with the Vita's panel text on stderr, and with `--shot-dir` writes the panel as `disc-error.png`. `--disc-marker FILE` also hashes `WAD.WAD` the first time and remembers the image in FILE, as the Vita does (without it only `SCUS_942.28` is checked). `tests/cd/image_variants.py` checks the dumps players have and every refusal (see its docstring); `ctest -R '^cd$'` checks the image's file table against `disc/files/manifest.json` and every file's SHA-1 through both layouts. `DISC=disc/image tools/host_checks.sh PREFIX` and `DISC=disc/image tools/oracle/replay.sh DIR` run from the image.
 - Time is virtual: `--frames N` counts vblanks (60 per second; the game ticks every 2). Runs are deterministic.
 - Pad script lines are `<vblank> <button>[+<button>...]` or `none`. Buttons: `select l3 r3 start up right down left l2 r2 l1 r1 triangle circle cross square`. Each state holds until the next line.
 - `--save DIR`: memory cards live in `DIR/card0` (port A) and `DIR/card1` (port B, present only if that directory exists).

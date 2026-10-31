@@ -8,7 +8,7 @@ plays, drawn by the Vita's GPU. Read "What to expect" before you test.
 - A PS Vita or PS TV with HENkaku/Ensō (any firmware that runs homebrew), and VitaShell.
 - Your own copy of *Spyro the Dragon* (USA, SCUS-94228), dumped to a `.bin`/`.cue`
   (MODE2/2352, one data track). The VPK contains no game data at all.
-- A computer with Python 3, to extract the files from the dump.
+- Optionally a computer with Python 3, to extract the files from the dump instead (step 2).
 - **`ur0:data/libshacccg.suprx`, for the GPU renderer.** The GPU renderer (`gpu=1`, the default,
   decisions D35) compiles its shaders on the device with vitaGL, which needs Sony's shader compiler
   module. It's the usual file for vitaGL ports, extracted from your own Vita with ShaRKBR33D.
@@ -42,30 +42,37 @@ same VPK for every pull request and push to `main` (`.github/workflows/build.yml
   why `-DPython3_EXECUTABLE=/usr/bin/python3` is passed.
 - VitaSDK lives at `/usr/local/vitasdk`, with vitasdk's SDL2 and vitaGL packages.
 
-## 2. Extract the game files from your disc dump
-
-```bash
-python3 -I tools/extract_disc.py "Spyro the Dragon (USA).cue" spyro-files
-```
-
-The `.cue` or the `.bin` both work, as do 2448-byte-sector images and CloneCD `.img` files. It
-refuses `.iso`, `.chd`, `.pbp` and `.ecm` with a note on converting them (decisions D58). This
-writes `SCUS_942.28`, `WAD.WAD`, `PETEXA0.STR` … `PETEXA5.STR`, `SYSTEM.CNF`, the `S0/` and
-`SOURCE/` folders and `manifest.json` (about 590 MB). The port finds every file through
-`manifest.json`, so copy the whole folder, manifest included. The `.STR` music streams are stored
-as 2336-byte sectors: copy them as they are. Then every file is checked against a good dump's
-SHA-1: a wrong `SCUS_942.28` or `WAD.WAD` is an error (another version of the game, or a bad
-dump), anything else a warning.
-
-## 3. Install
+## 2. Install
 
 1. Copy `spyro-vita.vpk` to the Vita (VitaShell: SELECT starts the FTP server, or use USB) and
    install it from VitaShell (press X on the file). A bubble called "Spyro Vita" appears.
-2. Copy the *contents* of `spyro-files/` to `ux0:data/spyro/`, so that the Vita has
-   `ux0:data/spyro/manifest.json`, `ux0:data/spyro/WAD.WAD` and so on.
-3. Start "Spyro Vita".
+2. Copy the dump's `.bin` and `.cue` (or a CloneCD `.img`, or the `.bin` alone) to
+   `ux0:data/spyro/`. The game reads the image directly (decisions D60): 2352- or 2448-byte
+   sectors, any pregap. With several images it takes the first `.cue` by name, then the first
+   `.bin`/`.img`; `spyro.log` names the one it used (`libcd: disc image ...`).
+3. Start "Spyro Vita". The first start with an image hashes its `WAD.WAD` once (a panel shows the
+   progress) and writes `ux0:data/spyro/save/disc-verified.txt`; `SCUS_942.28` is hashed on every
+   start. The log has `disc: <image>, opened in N ms (R reads, K KB)`.
 
-Without `ux0:data/spyro/manifest.json` the screen turns red; START quits.
+**Or the extracted files:** `python3 -I tools/extract_disc.py "Spyro the Dragon (USA).cue"
+spyro-files` (decisions D58) and copy the *contents* of `spyro-files/` to `ux0:data/spyro/`
+(`manifest.json` included, the `.STR` files as they are). When `manifest.json` is there it wins over
+any image (`libcd: extracted files ...` in the log).
+
+When the game can't start it shows a panel saying why, and X, O or START quits (the same text is in
+`spyro.log`, after `disc:`):
+
+| Panel title | When |
+|---|---|
+| `NO DISC IMAGE FOUND` | no `manifest.json` and no image in the folder |
+| `AN ISO HAS NO MUSIC` | a 2048-byte `.iso` |
+| `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE USED` | `.chd`, `.ecm`, PSP `EBOOT.PBP` |
+| `WRONG DISC` | no `SCUS_942.28` (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
+| `WRONG VERSION OF THE GAME` | `SCUS_942.28`'s SHA-1 isn't `84e3728a…` |
+| `BAD DUMP` | `WAD.WAD`'s SHA-1 isn't `ab680013…` (first start only) |
+| `THE IMAGE IS CUT SHORT`, `THE IMAGE IS DAMAGED`, `CAN'T READ THE IMAGE` | a truncated image, an unreadable file list, an unknown format |
+| `THE .BIN IS MISSING`, `CAN'T READ THE CUE FILE` | a `.cue` naming a file that isn't there, or whose track 1 isn't MODE2 |
+| `MANIFEST.JSON IS DAMAGED` | the extracted files' manifest can't be read |
 
 Files the app writes:
 
@@ -76,13 +83,13 @@ Files the app writes:
 | `ux0:data/spyro/save/state1.bin` … `state3.bin` | quick-save states from the menu (3.8 MB each; decisions D51) |
 | `ux0:data/spyro/shots/` | PNGs, only if `config.txt` asks for them |
 
-## 4. Optional `ux0:data/spyro/config.txt`
+## 3. Optional `ux0:data/spyro/config.txt`
 
 `key=value` lines, `#` starts a comment:
 
 | Key | Meaning |
 |---|---|
-| `disc=PATH` | the extracted files are somewhere other than `ux0:data/spyro` |
+| `disc=PATH` | the disc image or the extracted files are somewhere other than `ux0:data/spyro` |
 | `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits |
 | `shot=V1,V2,...` | save a PNG of the picture at these vblanks, in `ux0:data/spyro/shots/` |
 | `shot_every=N` | and every N vblanks |
@@ -213,7 +220,8 @@ Vita3K is not a Vita: something that runs there may still fail on hardware (memo
 stack size, timing, the real GPU).
 
 1. Copy the extracted files into Vita3K's `ux0`:
-   `~/Library/Application Support/Vita3K/Vita3K/fs/ux0/data/spyro/` on macOS.
+   `~/Library/Application Support/Vita3K/Vita3K/fs/ux0/data/spyro/` on macOS. Runs from a disc
+   image need them too: `DISC=DIR` (below) moves `manifest.json` aside for the run.
 2. `tools/vita/vita3k_run.sh OUT_DIR [TIMEOUT_S] [config line]...` writes `config.txt`, installs
    and runs the VPK (`Vita3K --frontend sdl -c OUT_DIR/vita3k-config.yml -w
    build/vita/spyro-vita.vpk`, with a copy of Vita3K's config at log level ERROR), waits for
@@ -224,6 +232,16 @@ tools/vita/vita3k_run.sh logs/run2-vita-title 150 shot_every=120 frames=2400
 ```
 
 Keep Vita3K's log level at ERROR (the default; `VITA3K_LOG=N` changes it): TRACE fills the disk.
+
+`DISC=DIR` runs from a disc image (D60): the files directly in `DIR` are hard-linked into
+`ux0:data/spyro` and `manifest.json` is moved aside, both undone when the script ends (and by the
+next run if this one was SIGKILLed). `DIR` may hold a refused format, or nothing, to see a disc
+screen; `frames=N` also ends the disc screen after N vblanks, and `GRAB=S` grabs the window S
+seconds in as `win-grab.png`:
+
+```bash
+DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600 frames=4200 wav=1
+```
 
 **With the GPU (`gpu=1`) in Vita3K:**
 

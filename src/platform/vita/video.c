@@ -232,13 +232,3 @@ show:
   prof_leave();
   return fresh;
 }
-
-void vita_video_fill_red(void) {
-  if (g_vita_gl) {
-    vita_gpu_fill(160 / 255.0f, 0, 0);
-  } else if (s_ren) {
-    SDL_SetRenderDrawColor(s_ren, 160, 0, 0, 255);
-    SDL_RenderClear(s_ren);
-    SDL_RenderPresent(s_ren);
-  }
-}

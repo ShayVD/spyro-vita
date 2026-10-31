@@ -1,6 +1,8 @@
 #!/bin/sh
 # Replay a capture directory (tools/oracle/capture.lua) through the host's
-# translated C and summarise. Usage: tools/oracle/replay.sh DIR [--only NAME]
+# translated C and summarise. Usage: [DISC=disc/image] tools/oracle/replay.sh DIR [--only NAME]
+# DISC: what CD reads in samples read (default the extracted files; a disc
+# image's folder works too, D60).
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DIR=$1; shift
@@ -12,7 +14,7 @@ if [ ! -f "$MAP" ] || [ "$BIN" -nt "$MAP" ]; then  # PS1 -> host function map
   tools/tc sh -c "i686-linux-gnu-nm $BIN > build/linux32/oracle/nm.txt"
   python3 tools/oracle/fnmap.py build/s1-matching/build/psx.map build/linux32/oracle/nm.txt > "$MAP"
 fi
-tools/tc "$BIN" --replay "$DIR" --ignore tools/oracle/ignore_ranges.txt --fnmap "$MAP" --disc disc/files "$@" \
+tools/tc "$BIN" --replay "$DIR" --ignore tools/oracle/ignore_ranges.txt --fnmap "$MAP" --disc "${DISC:-disc/files}" "$@" \
   > "$DIR/replay.txt" || true
 python3 tools/oracle/replay_summary.py "$DIR/replay.txt" > "$DIR/summary_replay.txt"
 tail -3 "$DIR/summary_replay.txt"

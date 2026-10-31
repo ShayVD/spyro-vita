@@ -1,10 +1,14 @@
-/* PsyQ libcd over the files extracted from the user's disc
- * (docs/porting-plan.md §6). manifest.json maps LBAs to files; data files hold
- * 2048 bytes per sector, XA files 2336 (subheader + data). CdRead completes on
+/* PsyQ libcd over the user's disc (docs/porting-plan.md §6): the files
+ * extracted by tools/extract_disc.py, where manifest.json maps LBAs to files
+ * (data files hold 2048 bytes per sector, XA files 2336: subheader + data),
+ * or without a manifest.json a raw disc image in the same folder, read
+ * directly (cdimage.c, decisions D60). Both give psx_cd_read_raw the same
+ * bytes for every LBA in a file. CdRead completes on
  * a deterministic CD tick (psx_cd_vblank or a CdSync(1) poll), then fires the
  * read callback like the PS1 interrupt. ReadS streams move the head at the
  * real rate (75 or 150 sectors/s) per virtual vblank; no audio yet. */
 #include "psx_cd.h"
+#include "psx_cdimage.h"
 #include "psx_hooks.h"
 #include "psx_state.h"
 #include "psx_xa.h"
@@ -27,6 +31,10 @@ typedef struct {
 static CdFile *s_files;
 static int s_nfiles;
 static char s_dir[256];
+static int s_image; /* the files are in a disc image (cdimage.c), not extracted */
+static PsxCdError s_err;
+static PsxCdIo s_io;
+static unsigned long long (*s_clock)(void);
 
 static struct {
   unsigned char stat, last_com, mode;
@@ -44,12 +52,29 @@ static struct {
 
 static PsxCdStream s_stream = {.mix = {0x80, 0, 0, 0x80}};
 
+const PsxCdError *psx_cd_error(void) { return &s_err; }
+const char *psx_cd_source(void) { return s_image ? psx_cdimage_path() : "files"; }
+void psx_cd_set_clock(unsigned long long (*now_us)(void)) { s_clock = now_us; }
+void psx_cd_io(PsxCdIo *out) { *out = s_io; }
+unsigned long long psx_cd_now(void) { return s_clock ? s_clock() : 0; }
+
+void psx_cd_io_add(unsigned bytes, unsigned long long t0) {
+  s_io.reads++;
+  s_io.kbytes += bytes / 1024; /* whole windows or sectors: rounding is small */
+  if (s_clock)
+    s_io.us += s_clock() - t0;
+}
+
 /* File access (stdio works on both hosts and on the Vita's newlib). */
 static FILE *cdio_open(const char *path) { return fopen(path, "rb"); }
 static int cdio_read_at(FILE *f, long off, void *buf, int n) {
+  unsigned long long t0 = psx_cd_now();
+  int got;
   if (fseek(f, off, SEEK_SET) != 0)
     return 0;
-  return (int)fread(buf, 1, (size_t)n, f);
+  got = (int)fread(buf, 1, (size_t)n, f);
+  psx_cd_io_add(got > 0 ? (unsigned)got : 0, t0);
+  return got;
 }
 
 /* manifest.json: [{"path": "...", "lba": N, "size": N, "type": "data"|"xa"}, ...] */
@@ -88,6 +113,47 @@ static void cd_close_files(void) {
   free(s_files);
   s_files = NULL;
   s_nfiles = 0;
+  s_image = 0;
+  psx_cdimage_close();
+}
+
+static int manifest_error(const char *path, const char *why) {
+  fprintf(stderr, "libcd: %s %s\n", path, why);
+  s_err.code = PSX_CD_ERR_MANIFEST;
+  snprintf(s_err.title, sizeof s_err.title, "MANIFEST.JSON IS DAMAGED");
+  snprintf(s_err.text, sizeof s_err.text,
+           "%s %s. Run tools/extract_disc.py again, or delete manifest.json and copy the disc "
+           "image (.bin + .cue) here instead.",
+           path, why);
+  return -1;
+}
+
+/* No manifest.json: a disc image in the folder, its file table from the
+ * image's own directory. */
+static int open_image(const char *disc_dir) {
+  PsxCdImageFile *img;
+  int n;
+  if (psx_cdimage_open(disc_dir, &img, &n, &s_err) != 0) {
+    fprintf(stderr, "libcd: %s: %s\n", s_err.title, s_err.text);
+    return -1;
+  }
+  s_files = calloc((size_t)n, sizeof *s_files);
+  if (!s_files) {
+    free(img);
+    return -1;
+  }
+  for (int i = 0; i < n; i++) {
+    CdFile *cf = &s_files[i];
+    snprintf(cf->path, sizeof cf->path, "%s", img[i].path);
+    cf->lba = img[i].lba;
+    cf->size = img[i].size;
+    cf->nsect = (cf->size + 2047) / 2048;
+    cf->xa = img[i].xa;
+  }
+  free(img);
+  s_nfiles = n;
+  s_image = 1;
+  return 0;
 }
 
 int psx_cd_open(const char *disc_dir) {
@@ -101,20 +167,20 @@ int psx_cd_open(const char *disc_dir) {
   if (e && *e && *e != '0')
     cd.log = 1;
   cd_close_files();
+  memset(&s_err, 0, sizeof s_err);
   snprintf(s_dir, sizeof s_dir, "%s", disc_dir);
   snprintf(path, sizeof path, "%s/manifest.json", disc_dir);
   f = cdio_open(path);
-  if (!f) {
-    fprintf(stderr, "libcd: cannot open %s\n", path);
-    return -1;
-  }
+  if (!f) /* no extracted files: a disc image (D60) */
+    return open_image(disc_dir);
+  fprintf(stderr, "libcd: extracted files (%s)\n", path);
   fseek(f, 0, SEEK_END);
   len = ftell(f);
   json = malloc((size_t)len + 1);
   if (!json || cdio_read_at(f, 0, json, (int)len) != len) {
     fclose(f);
     free(json);
-    return -1;
+    return manifest_error(path, "can't be read");
   }
   fclose(f);
   json[len] = 0;
@@ -133,10 +199,12 @@ int psx_cd_open(const char *disc_dir) {
     if (json_str(json_key(p, end, "path"), end, cf->path, sizeof cf->path) ||
         json_str(json_key(p, end, "type"), end, type, sizeof type) ||
         !(v = json_key(p, end, "lba"))) {
-      fprintf(stderr, "libcd: bad manifest entry near byte %d\n", (int)(p - json));
+      int at = (int)(p - json);
+      char why[64];
       free(json);
       cd_close_files();
-      return -1;
+      snprintf(why, sizeof why, "has a bad entry near byte %d", at);
+      return manifest_error(path, why);
     }
     cf->lba = atoi(v);
     v = json_key(p, end, "size");
@@ -147,10 +215,8 @@ int psx_cd_open(const char *disc_dir) {
     p = end + 1;
   }
   free(json);
-  if (s_nfiles == 0) {
-    fprintf(stderr, "libcd: %s lists no files\n", path);
-    return -1;
-  }
+  if (s_nfiles == 0)
+    return manifest_error(path, "lists no files");
   return 0;
 }
 
@@ -197,10 +263,24 @@ static FILE *cd_fp(CdFile *f) {
   return f->fp;
 }
 
+/* From the image: XA sectors as they are on the disc; data sectors as
+ * extract_disc.py writes them (the same made-up data subheader as below, and
+ * zeros past the file's end), so both backends serve the same bytes. */
+static int image_read_raw(CdFile *f, int lba, unsigned char *raw) {
+  int n;
+  if (f->xa)
+    return psx_cdimage_read(lba, 16, raw, PSX_CD_RAW_SECTOR) < 0 ? -1 : 0;
+  raw[2] = raw[6] = 0x08;
+  n = f->size - (lba - f->lba) * 2048;
+  return psx_cdimage_read(lba, 24, raw + 8, n < 2048 ? n : 2048) < 0 ? -1 : 0;
+}
+
 int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   CdFile *f = cd_find(lba);
   FILE *fp;
   memset(raw, 0, PSX_CD_RAW_SECTOR);
+  if (f && s_image)
+    return image_read_raw(f, lba, raw);
   if (!f || !(fp = cd_fp(f)))
     return -1;
   if (f->xa) {
