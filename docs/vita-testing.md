@@ -26,10 +26,18 @@ cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_TOOLCHAIN_FILE=/usr/
 cmake --build build/vita
 ```
 
-The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`). Notes:
+The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`, version
+01.00). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
+time by `tools/vita/make_livearea.py`, decisions D55), `README.md` and `licenses/`. CI builds the
+same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
+`docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
-- The build needs the matching build's `psx.map` (`tools/build_matching.sh`, or point
-  `-DSPYRO_MATCHING_DIR=` at another checkout's `build/s1-matching`).
+- The game's PS1 layout comes from the matching build's `psx.map` when there is one
+  (`tools/build_matching.sh`, or point `-DSPYRO_MATCHING_DIR=` at another checkout's
+  `build/s1-matching`), else from the reduced copy `tools/layout/psx.map` (D57). After a change
+  to the decomp or its patches, refresh the copy with
+  `tools/reduce_map.py build/s1-matching/build/psx.map tools/layout/psx.map`. CMake warns when it
+  is stale.
 - The code generators need a Python 3 with PyYAML. On macOS `/usr/bin/python3` has it, which is
   why `-DPython3_EXECUTABLE=/usr/bin/python3` is passed.
 - VitaSDK lives at `/usr/local/vitasdk`, with vitasdk's SDL2 and vitaGL packages.
@@ -37,13 +45,17 @@ The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV000
 ## 2. Extract the game files from your disc dump
 
 ```bash
-python3 -I tools/extract_disc.py "Spyro the Dragon (USA).bin" spyro-files
+python3 -I tools/extract_disc.py "Spyro the Dragon (USA).cue" spyro-files
 ```
 
-This writes `SCUS_942.28`, `WAD.WAD`, `PETEXA0.STR` … `PETEXA5.STR`, `SYSTEM.CNF`, the `S0/` and
+The `.cue` or the `.bin` both work, as do 2448-byte-sector images and CloneCD `.img` files. It
+refuses `.iso`, `.chd`, `.pbp` and `.ecm` with a note on converting them (decisions D58). This
+writes `SCUS_942.28`, `WAD.WAD`, `PETEXA0.STR` … `PETEXA5.STR`, `SYSTEM.CNF`, the `S0/` and
 `SOURCE/` folders and `manifest.json` (about 590 MB). The port finds every file through
 `manifest.json`, so copy the whole folder, manifest included. The `.STR` music streams are stored
-as 2336-byte sectors: copy them as they are.
+as 2336-byte sectors: copy them as they are. Then every file is checked against a good dump's
+SHA-1: a wrong `SCUS_942.28` or `WAD.WAD` is an error (another version of the game, or a bad
+dump), anything else a warning.
 
 ## 3. Install
 

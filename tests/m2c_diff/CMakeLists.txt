@@ -8,10 +8,10 @@
 set(M2C_DIFF_ENTRIES "${GEN_DIR}/m2c_diff_math_entries.h")
 add_custom_command(OUTPUT "${M2C_DIFF_ENTRIES}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/oracle/asm_entries.py"
-    "${S1_DIR}/asm/math.s" --header "${SPYRO_MATCHING_DIR}/build/psx.map"
+    "${S1_DIR}/asm/math.s" --header "${SPYRO_PSX_MAP}"
     > "${M2C_DIFF_ENTRIES}"
   DEPENDS "${S1_DIR}/asm/math.s" "${CMAKE_SOURCE_DIR}/tools/oracle/asm_entries.py"
-    "${SPYRO_MATCHING_DIR}/build/psx.map")
+    "${SPYRO_PSX_MAP}")
 add_executable(test_m2c_diff test_m2c_diff.c "${M2C_DIFF_ENTRIES}")
 target_include_directories(test_m2c_diff PRIVATE "${GEN_DIR}"
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")

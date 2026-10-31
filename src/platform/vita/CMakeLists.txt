@@ -13,7 +13,7 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
-set(VITA_VERSION "00.10")
+set(VITA_VERSION "01.00")
 # Extended memory for the app (D7), set as the cache value vita_create_vpk reads.
 set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12" CACHE STRING "vita-mksfoex flags")
 
@@ -72,15 +72,39 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   # vitaGL must set GXM up as for a game, in Vita3K too (gpu_gl.c)
   -Wl,--wrap=sceAppMgrGetBudgetInfo)
 
-add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon0.png"
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_icon.py"
-    "${CMAKE_CURRENT_BINARY_DIR}/icon0.png"
-  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_icon.py")
+# Bubble icon and LiveArea (decisions D55): original art drawn by
+# tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules
+# (8-bit indexed, these sizes) before it's packed.
+set(LA_DIR "${CMAKE_CURRENT_BINARY_DIR}/livearea")
+set(LA_PNGS "${LA_DIR}/icon0.png" "${LA_DIR}/bg.png" "${LA_DIR}/startup.png")
+add_custom_command(OUTPUT ${LA_PNGS}
+  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" "${LA_DIR}"
+  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" --check
+    "${LA_DIR}/icon0.png" 128x128 "${LA_DIR}/bg.png" 840x500 "${LA_DIR}/startup.png" 280x158
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py"
+  COMMENT "LiveArea art")
+add_custom_target(spyro_vita_livearea DEPENDS ${LA_PNGS})
+set(LA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents")
+# The licences travel with the binary (MIT, BSD, Apache and the LGPL ask for
+# it; THIRD_PARTY_NOTICES.md, decisions D56).
+set(VPK_LICENSES "${CMAKE_SOURCE_DIR}/LICENSE" licenses/LICENSE
+  "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" licenses/THIRD_PARTY_NOTICES.md)
+file(GLOB license_texts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/licenses/*.txt")
+foreach(f ${license_texts})
+  get_filename_component(n "${f}" NAME)
+  list(APPEND VPK_LICENSES "${f}" "licenses/${n}")
+endforeach()
 
 vita_create_self(eboot.bin spyro_vita)
 vita_create_vpk(spyro-vita.vpk ${VITA_TITLEID} eboot.bin
   VERSION ${VITA_VERSION} NAME "${VITA_APP_NAME}"
-  FILE "${CMAKE_CURRENT_BINARY_DIR}/icon0.png" sce_sys/icon0.png)
+  FILE "${LA_DIR}/icon0.png" sce_sys/icon0.png
+       "${LA_DIR}/bg.png" sce_sys/livearea/contents/bg.png
+       "${LA_DIR}/startup.png" sce_sys/livearea/contents/startup.png
+       "${LA_SRC}/template.xml" sce_sys/livearea/contents/template.xml
+       "${CMAKE_SOURCE_DIR}/README.md" README.md
+       ${VPK_LICENSES})
+add_dependencies(spyro-vita.vpk-vpk spyro_vita_livearea)
 # The VPK at the top of the build tree too: build/vita/spyro-vita.vpk.
 add_custom_command(TARGET spyro-vita.vpk-vpk POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/spyro-vita.vpk.out"
