@@ -44,9 +44,10 @@
  *                       3: camera only. interp=1 needs config_version=2 in
  *                       the file too: without it the line is taken as the
  *                       old default the menu used to write, and read as 0
- *                       (widescreen, interp and interp_budget can also be
- *                       set in the game: hold SELECT and press START; the
- *                       menu writes them back here, with config_version=2)
+ *                       (widescreen, interp, interp_budget and the other
+ *                       menu rows can also be set in the game: hold SELECT
+ *                       and press START; the menu writes them back here,
+ *                       with config_version=2; D45)
  *       interp_budget=MS  skip the in-between frame while the game's CPU
  *                       time per tick would pass MS (default 26; 0: never)
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
@@ -168,7 +169,11 @@ static void read_config(void) {
     v = eq + 1;
     for (e = v + strlen(v); e > v && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' '); )
       *--e = 0;
-    if (!strcmp(line, "disc"))
+    if (!strcmp(line, "interp"))
+      interp_line = 1; /* D44, below */
+    if (vita_menu_load(line, v))
+      ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
+    else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
     else if (!strcmp(line, "frames"))
       g_vita_opts.frames = atoi(v);
@@ -206,12 +211,6 @@ static void read_config(void) {
       g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
-    else if (!strcmp(line, "widescreen"))
-      g_vita_opts.widescreen = atoi(v);
-    else if (!strcmp(line, "interp"))
-      g_vita_opts.interp = atoi(v), interp_line = 1;
-    else if (!strcmp(line, "interp_budget"))
-      g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
       g_vita_opts.widescreen_exact = atoi(v);
     else if (!strcmp(line, "menu_test"))
