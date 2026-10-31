@@ -68,8 +68,10 @@ void vita_set_vblank(int vblank); /* a save state's count (D51) */
 /* video.c: the PS1 display rect, scaled 4:3 into 960x544 (either renderer) */
 int vita_video_init(void); /* 0 = ok */
 int vita_video_present(void); /* 1 = a new picture */
-void vita_video_fill(int r, int g, int b); /* the screen in one colour, and the overlay
-                                              (the disc screens before the game, D60) */
+
+/* bootscreen.c: the disc screens before any renderer (D60) */
+int vita_boot_panel(const char *title, const char *text, const char *footer); /* 0 = shown */
+void vita_boot_close(void); /* frees it; at the renderer's first picture */
 
 /* gpu.c: which renderer the GR_* calls reach, and who presents (D35) */
 extern int g_vita_gpu;
@@ -80,7 +82,6 @@ int vita_gpu_init(void); /* 0 = ok, 1 = only presenting works (use gpu=0), <0 = 
 int vita_gpu_present(void);
 void vita_gpu_sync_display(void); /* VRAM gets what the GPU drew under the display */
 void vita_gpu_shot_hd(int vblank); /* a 960x544 PNG at the next present */
-void vita_gpu_fill(float r, float g, float b); /* and the overlay */
 void vita_gpu_report(int vblank); /* "gpu" line in the log */
 int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache); /* bench (D41), menu (D48) */
 void vita_gpu_arm_sample(void);   /* GPU-time the next picture too */

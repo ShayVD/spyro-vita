@@ -2300,17 +2300,6 @@ void vita_gpu_repeat(void) {
     present_display();
 }
 
-/* the no-disc screen: red until START */
-void vita_gpu_fill(float r, float g, float b) {
-  bind_fbo(0);
-  glViewport(0, 0, SCREEN_W, SCREEN_H);
-  no_blend();
-  glClearColor(r, g, b, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
-  draw_overlay(); /* the disc screens' panel (D60) */
-  vglSwapBuffers(GL_FALSE);
-}
-
 /* bench= (D41) and the options menu (picture.c, D48): other picture
  * options from the next frame on. res as gpu_res (0 native, 1 the PS1's,
  * 2-4 N times it); a change redraws every target. An option set whose

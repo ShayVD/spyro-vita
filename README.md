@@ -11,7 +11,7 @@ runs at its original ~30 Hz, so it plays exactly as on a PS1, and the picture fi
 
 **You need your own copy of the game.** The VPK contains no game data at all: no code, levels,
 textures, music or logos from the disc. You dump your own *Spyro the Dragon* (USA) disc and copy
-the files to your Vita.
+the disc image to your Vita.
 
 *Spyro the Dragon* and its characters are trademarks and copyrights of their respective owners.
 None of the game is included here. This project is not affiliated with, endorsed by or connected
@@ -22,9 +22,9 @@ to Sony Interactive Entertainment, Insomniac Games, Activision or Universal.
 - A PS Vita or PS TV that runs homebrew (HENkaku / Ensō), with
   [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
 - Your own **Spyro the Dragon, USA, SCUS-94228** disc. The PAL and Japanese releases and the demo
-  discs are different builds and won't run (the extractor checks which one you have).
-- A computer with a CD/DVD drive and **Python 3.6 or newer** (nothing else to install).
-- `ur0:data/libshacccg.suprx` on the Vita (Sony's shader compiler module; see step 4).
+  discs are different builds and won't run (the game checks which one you have).
+- A computer with a CD/DVD drive, to dump the disc.
+- `ur0:data/libshacccg.suprx` on the Vita (Sony's shader compiler module; see step 3).
 
 ## 1. Dump your disc to bin/cue
 
@@ -47,38 +47,45 @@ The game's music is stored as XA audio, which only a raw dump keeps. You want a 
 **Already have a dump of your own disc in another format?** A `.chd` converts back with
 `chdman extractcd -i spyro.chd -o spyro.cue` (from MAME's tools). An `.ecm` unpacks with `unecm`.
 A CloneCD `.img` (2352-byte sectors) works as it is, and so do images with 2448-byte sectors
-(subchannel data) or a pregap. PSP `EBOOT.PBP` files and 2048-byte `.iso` files can't be used: they
-have lost the music.
+(subchannel data) or a pregap.
 
-## 2. Extract the game files
+**These don't work** (the game says so on screen and tells you what to do):
 
-From this repository (or the `tools/extract_disc.py` file alone):
+| Format | Why |
+|---|---|
+| `.iso` (2048-byte sectors) | it has lost the XA music; dump the disc as `.bin` + `.cue` instead |
+| `.chd` | compressed; convert it with `chdman` (above) |
+| `.ecm` | compressed; unpack it with `unecm` |
+| PSP `EBOOT.PBP` | converted for the PSP; it has lost the music, so dump the disc instead |
+
+## 2. Install
+
+1. Copy `spyro-vita.vpk` to the Vita (in VitaShell, SELECT starts the FTP server; USB works too)
+   and press ✕ on it in VitaShell to install. A bubble called **Spyro Vita** appears.
+2. Make the folder `ux0:data/spyro/` and copy your **`.bin` and `.cue`** into it (or your `.img`,
+   or a `.bin` alone). Nothing else is needed: no extracting, no renaming. For example:
+   `ux0:data/spyro/Spyro the Dragon (USA).bin` and `ux0:data/spyro/Spyro the Dragon (USA).cue`.
+
+The game reads the image directly (decisions D60). If the folder holds more than one image, it
+takes the first `.cue` by name, then the first `.bin` or `.img`, and `spyro.log` says which.
+
+### Or: extract the files first
+
+The older way still works, and wins if both are there: when `ux0:data/spyro/manifest.json` exists,
+the game reads the extracted files instead of an image. From this repository (or the
+`tools/extract_disc.py` file alone), with Python 3.6 or newer:
 
 ```bash
 python3 -I tools/extract_disc.py "Spyro the Dragon (USA).cue" spyro-files
 ```
 
-You can give it the `.cue` or the `.bin`. It reads the disc's file system and writes every file
-into `spyro-files/` (about 590 MB): `SCUS_942.28`, `WAD.WAD`, `PETEXA0.STR` … `PETEXA5.STR`,
-`SYSTEM.CNF`, the `S0/` and `SOURCE/` folders, and `manifest.json` (where each file was on the
-disc; the port finds every file through it). The music streams (`.STR`) are written as 2336-byte
-XA sectors, which is what the port reads.
+It takes the `.cue` or the `.bin`, writes every file into `spyro-files/` (about 590 MB; the music
+streams as 2336-byte XA sectors) with a `manifest.json`, and checks every file against the SHA-1 of
+a good dump: `SCUS_942.28` must be `84e3728ab94720d0873e2514adf4aade4935e0c5` and `WAD.WAD` must
+match too. Copy the **contents** of `spyro-files/` to `ux0:data/spyro/` (`manifest.json`
+included, the `.STR` files as they are).
 
-Then it **checks every file against the SHA-1 of a good dump**. The executable `SCUS_942.28` must
-be `84e3728ab94720d0873e2514adf4aade4935e0c5` (the same file the decomp rebuilds byte for byte)
-and `WAD.WAD` must match too. If either differs, the script says so and exits with an error: the
-disc is another version, or the dump is bad. Other files that differ only give a warning. When
-everything matches it ends with `All 16 known files match a good dump of SCUS-94228.`
-
-## 3. Install the VPK
-
-1. Copy `spyro-vita.vpk` to the Vita (in VitaShell, SELECT starts the FTP server; USB works too)
-   and press ✕ on it in VitaShell to install. A bubble called **Spyro Vita** appears.
-2. Copy the **contents** of `spyro-files/` to `ux0:data/spyro/`, so that the Vita has
-   `ux0:data/spyro/manifest.json`, `ux0:data/spyro/WAD.WAD`, `ux0:data/spyro/PETEXA0.STR` and so
-   on. Copy the `.STR` files as they are.
-
-## 4. Get `libshacccg.suprx`
+## 3. Get `libshacccg.suprx`
 
 The port draws with the Vita's GPU through vitaGL, which compiles its shaders on the device with
 Sony's shader compiler, `libshacccg.suprx`. It's part of Sony's PlayStation Mobile runtime, so it
@@ -94,10 +101,17 @@ The port also looks in `ur0:data/external/libshacccg.suprx`. Without the module 
 draws on the CPU, which is too slow on a Vita (`spyro.log` says
 `gpu: no ur0:data/libshacccg.suprx ...`).
 
-## 5. Play
+## 4. Play
 
-Start **Spyro Vita**. The first start takes about 8 seconds longer while the shaders compile. If
-the screen turns red, the game files aren't in `ux0:data/spyro/` (START quits).
+Start **Spyro Vita**. The first start takes longer: the shaders compile (about 8 seconds), and the
+game checks once that your image is a good dump of SCUS-94228 (it hashes the level data, with a
+progress panel; it remembers the image in `ux0:data/spyro/save/disc-verified.txt`, so later starts
+skip this). The executable is checked on every start, which takes no time.
+
+If the game can't start, a panel says why and what to do, and ✕ quits: no disc image found (it
+names the folder), an `.iso`, `.chd`, `.pbp` or `.ecm`, the wrong disc (another region or release:
+it shows the disc's serial, or the executable's SHA-1), a bad dump, or an image that is cut short
+or can't be read.
 
 ### Controls
 

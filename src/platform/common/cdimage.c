@@ -7,6 +7,7 @@
 #include "psx_cdimage.h"
 
 #include <dirent.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,8 +125,6 @@ void psx_sha1_hex(PsxSha1 *s, char out[41]) {
 
 static int fail(PsxCdError *err, int code, const char *title, const char *fmt, ...)
     __attribute__((format(printf, 4, 5)));
-
-#include <stdarg.h>
 static int fail(PsxCdError *err, int code, const char *title, const char *fmt, ...) {
   va_list ap;
   err->code = code;
@@ -288,6 +287,13 @@ static int open_image(const char *path, const char *name, int sector, int base,
 
 static void say(const char *what) { fprintf(stderr, "libcd: %s\n", what); }
 
+static int not_found(PsxCdError *err, const char *dir) {
+  return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
+              "Copy your Spyro the Dragon (USA) disc image to %s/: the .bin and .cue of a raw "
+              "dump (a CloneCD .img works too). See the README.",
+              dir);
+}
+
 /* The first usable image in dir: .cue files first, then .bin/.img (and any
  * other candidate whose data is a raw image), each in name order ignoring
  * case. With none, the first candidate's reason. */
@@ -299,10 +305,7 @@ static int find_image(const char *dir, PsxCdError *err) {
   DIR *d = opendir(dir);
   struct dirent *e;
   if (!d)
-    return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
-                "Copy your Spyro the Dragon (USA) disc image to %s/: the .bin and .cue of a "
-                "raw dump (a CloneCD .img works too). See the README.",
-                dir);
+    return not_found(err, dir);
   while ((e = readdir(d)) && nnames < MAX_NAMES)
     for (i = 0; i < (int)(sizeof exts / sizeof *exts); i++)
       if (has_ext(e->d_name, exts[i])) {
@@ -327,10 +330,9 @@ static int find_image(const char *dir, PsxCdError *err) {
             snprintf(msg, sizeof msg, "disc image %s (from %s), %d-byte sectors, first LBA %d",
                      path, name, sector, base);
             say(msg);
-            if (open_image(path, bin, sector, base, err) == 0)
-              found = i;
-            else
-              return -1;
+            if (open_image(path, bin, sector, base, err) != 0)
+              goto out;
+            found = i;
             continue;
           }
           fail(&why, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE IMAGE",
@@ -347,7 +349,7 @@ static int find_image(const char *dir, PsxCdError *err) {
                    base);
           say(msg);
           if (open_image(path, name, sector, base, err) != 0)
-            return -1;
+            goto out;
           found = i;
           continue;
         case K_ISO:
@@ -389,18 +391,14 @@ static int find_image(const char *dir, PsxCdError *err) {
       if (!first.code)
         first = why;
     }
+  if (found < 0 && first.code)
+    *err = first;
+  else if (found < 0)
+    not_found(err, dir);
+out:
   for (i = 0; i < nnames; i++)
     free(names[i]);
-  if (found >= 0)
-    return 0;
-  if (first.code) {
-    *err = first;
-    return -1;
-  }
-  return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
-              "Copy your Spyro the Dragon (USA) disc image to %s/: the .bin and .cue of a raw "
-              "dump (a CloneCD .img works too). See the README.",
-              dir);
+  return found >= 0 ? 0 : -1;
 }
 
 /* ---- reading ---- */
@@ -594,6 +592,7 @@ static int verified_before(char *key, size_t cap) {
   struct stat st;
   char line[700] = "";
   FILE *f;
+  key[0] = 0;
   if (stat(s_img.path, &st) != 0)
     return 0;
   snprintf(key, cap, "%ld %lld %s", s_img.size, (long long)st.st_mtime, s_img.path);

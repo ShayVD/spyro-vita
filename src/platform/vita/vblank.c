@@ -146,6 +146,8 @@ static void vblank(void) {
  * Vita3K writes the log to the host in 4 KB blocks. */
 static void present(void) {
   int shown = vita_video_present();
+  if (shown)
+    vita_boot_close(); /* the disc screen's framebuffer isn't shown any more (D60) */
   s_stat_shown += shown;
   vita_bench_present(shown);
   if (s_hold && g_vita_opts.shot_hold > 0) {
