@@ -18,7 +18,20 @@
  *                       top of the controller (tests, docs/vita-testing.md)
  *       wav=1           also write the audio to ux0:data/spyro/audio.wav
  *       reartouch=1     the rear touch pad's left/right half is L2/R2
- *                       (the right stick always is, decisions D27)
+ *                       (the right stick's X is too, unless free_camera=1;
+ *                       decisions D27)
+ *       analog=0        a digital pad: the left stick is the d-pad, 8
+ *                       directions (default 1: a DualShock in analog mode,
+ *                       the game reads the sticks; D46)
+ *       free_camera=1   the right stick turns the camera (in proportion)
+ *                       and tilts it up and down; let go, the game's own
+ *                       camera takes over again (needs analog=1; D47)
+ *       cam_invert_x=1  the free camera turns the other way
+ *       cam_invert_y=1  the free camera tilts the other way, and so does
+ *                       Triangle look mode
+ *       cam_speed=N     the free camera's turn speed, 50..200 percent
+ *                       (default 100, L2/R2's)
+ *                       (the controls are also in the menu, CONTROLS)
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
  *                       scripted runs compared with the host; D28)
@@ -96,7 +109,8 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 0,
-                        .interp_budget = 26, .mixer = 1, .tex_cache = 1};
+                        .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
+                        .cam_speed = 100};
 
 extern void spyro_main(void);
 
@@ -189,8 +203,6 @@ static void read_config(void) {
       snprintf(g_vita_opts.pad, sizeof g_vita_opts.pad, "%s", v);
     else if (!strcmp(line, "wav"))
       g_vita_opts.wav = atoi(v);
-    else if (!strcmp(line, "reartouch"))
-      g_vita_opts.reartouch = atoi(v);
     else if (!strcmp(line, "realtime"))
       g_vita_opts.realtime = atoi(v);
     else if (!strcmp(line, "gpu"))

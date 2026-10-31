@@ -75,7 +75,11 @@ Files the app writes:
 | `shot_every=N` | and every N vblanks |
 | `stats=N` | 0: no timing lines; 1 (default): one line every 300 vblanks; 2: also each pad change |
 | `filter=N` | 0: nearest-neighbour scaling; 1 (default): linear |
-| `reartouch=1` | the rear touch pad's left/right half is L2/R2 (the right stick always is) |
+| `reartouch=1` | the rear touch pad's left/right half is L2/R2 (so is the right stick's X, unless `free_camera=1`) |
+| `analog=0` | a digital pad: the left stick works as the d-pad, 8 directions. The default, 1, is a DualShock in analog mode, so Spyro moves in any direction and at any speed (decisions D46) |
+| `free_camera=1` | the right stick turns the camera (the further you push it, the faster it turns) and tilts it up and down. Let go and the game's own camera takes over again. Needs `analog=1`; off by default (D47) |
+| `cam_invert_x=1`, `cam_invert_y=1` | flip the free camera's left/right and up/down. Invert Y also flips Triangle look mode's up/down. Off, up looks down, as in the game's look mode; on, up looks up in both |
+| `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
@@ -142,10 +146,22 @@ At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` th
 
 ## Controls
 
-The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The left stick also works
-as the d-pad (the pad is reported as digital). **L2/R2 turn the camera: push the right stick left
-(L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's left/right half does
-the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
+The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The pad is reported as
+a DualShock in analog mode (decisions D46), so the left stick moves Spyro in any direction, as on a
+PS1 with a DualShock; the d-pad still works and wins while pressed. **L2/R2 turn the camera: push
+the right stick left (L2) or right (R2).** With `reartouch=1` in `config.txt` the rear touch pad's
+left/right half does the same. A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
+
+In the options menu (SELECT+START), CONTROLS:
+- `ANALOG STICK` OFF goes back to the digital pad (the left stick is the d-pad, 8 directions).
+- `FREE CAMERA` ON makes the right stick turn the camera in proportion and tilt it up and down.
+  Let go, and the game's camera swings back behind Spyro as after L2/R2. Look mode, cutscenes and
+  scripted cameras are unchanged (D47).
+- `INVERT CAMERA X` flips the turn. `INVERT CAMERA Y` flips the tilt and Triangle look mode
+  together. OFF: up looks down, the game's own way in look mode and flight. ON: up looks up in both.
+  Flight itself is unchanged.
+- `CAMERA SPEED` sets the turn speed, 50–200%.
+- `REAR TOUCH L2/R2` is `reartouch=`.
 
 ## What to expect (be direct)
 

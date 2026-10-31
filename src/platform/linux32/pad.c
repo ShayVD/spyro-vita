@@ -11,7 +11,11 @@
  * line may say poke:ADDR=VALUE (hex): it writes that word of PS1 RAM when it
  * fires and leaves the buttons as they were (test set-ups such as putting
  * Spyro somewhere, docs/whole-game-host.md). --pad-after FILE runs once the
- * --tour is done. Port 2 is empty. */
+ * --tour is done. Port 2 is empty.
+ * --analog reports a DualShock in analog mode (id 0x73) instead (decisions
+ * D46); a line may then also set the sticks, lx=N ly=N rx=N ry=N (0..255,
+ * 128 centred) among its buttons ("up+rx=255"); sticks it doesn't name are
+ * centred. With the sticks centred the game plays as with the digital pad. */
 #include "host.h"
 #include "psx_arena.h"
 
@@ -27,6 +31,7 @@ typedef struct {
   int anchored;  /* an "@gs=G,level=L +N" line */
   int gs, level; /* its condition, -1 = any */
   uint16_t mask; /* pressed buttons, active-high */
+  unsigned char sticks[4]; /* right X, right Y, left X, left Y (--analog) */
   int poke;      /* a poke:ADDR=VALUE line: no button change */
   uint32_t addr, value;
 } PadEvent;
@@ -51,12 +56,39 @@ static const struct {
 
 static PadScript s_main, s_after;
 static uint16_t s_mask;
+static unsigned char s_sticks[4] = {0x80, 0x80, 0x80, 0x80};
+int g_host_pad_analog; /* --analog */
 static volatile uint16_t s_live; /* set by serve.c's thread */
 static unsigned char *s_pad[2];
 
 static int cmp_event(const void *a, const void *b) {
   const PadEvent *x = a, *y = b;
   return (x->vblank > y->vblank) - (x->vblank < y->vblank);
+}
+
+/* Takes the stick tokens (rx=N ...) out of text into sticks (centred if
+ * not named); "none" if nothing else is left. Returns -1 on a bad one. */
+static int parse_sticks(char *text, unsigned char sticks[4]) {
+  static const char *const names[4] = {"rx=", "ry=", "lx=", "ly="};
+  char out[256] = "", *tok;
+  int i;
+  memset(sticks, 0x80, 4);
+  for (tok = strtok(text, "+"); tok; tok = strtok(NULL, "+")) {
+    for (i = 0; i < 4 && strncmp(tok, names[i], 3) != 0; i++)
+      ;
+    if (i == 4) {
+      if (out[0])
+        strncat(out, "+", sizeof out - strlen(out) - 1);
+      strncat(out, tok, sizeof out - strlen(out) - 1);
+    } else {
+      int v = atoi(tok + 3);
+      if (v < 0 || v > 255)
+        return -1;
+      sticks[i] = (unsigned char)v;
+    }
+  }
+  strcpy(text, out[0] ? out : "none");
+  return 0;
 }
 
 int host_pad_parse(const char *text, uint16_t *mask) {
@@ -121,7 +153,7 @@ static int load(PadScript *ps, const char *path) {
         return -1;
       }
       e.poke = 1;
-    } else if (host_pad_parse(btn, &e.mask) != 0) {
+    } else if (parse_sticks(btn, e.sticks) != 0 || host_pad_parse(btn, &e.mask) != 0) {
       host_log("pad: %s:%d: unknown button in '%s'", path, lineno, btn);
       fclose(f);
       return -1;
@@ -172,7 +204,11 @@ static int run(PadScript *ps, int vblank) {
     }
     if (e->mask != s_mask)
       host_log("pad: buttons %04x", e->mask);
+    if (memcmp(e->sticks, s_sticks, 4) != 0)
+      host_log("pad: sticks rx %d ry %d lx %d ly %d%s", e->sticks[0], e->sticks[1], e->sticks[2],
+               e->sticks[3], g_host_pad_analog ? "" : " (ignored without --analog)");
     s_mask = e->mask;
+    memcpy(s_sticks, e->sticks, 4);
     ps->next++;
   }
   return 1;
@@ -186,10 +222,12 @@ static void fill(unsigned char *p, int connected, uint16_t mask) {
     return;
   }
   p[0] = 0x00; /* ok */
-  p[1] = 0x41; /* type 4 (digital), 1 data halfword */
+  p[1] = g_host_pad_analog ? 0x73 : 0x41; /* type 7 (analog), 3 halfwords; 4 (digital), 1 */
   p[2] = (unsigned char)~mask;
   p[3] = (unsigned char)(~mask >> 8);
   p[4] = p[5] = p[6] = p[7] = 0x80;
+  if (g_host_pad_analog)
+    memcpy(p + 4, s_sticks, 4);
 }
 
 void host_pad_vblank(int vblank) {

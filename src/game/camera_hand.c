@@ -15,6 +15,7 @@
 #include "hand_structs.h"
 #include "math.h"
 #include "moby.h"
+#include "port_controls.h"
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
@@ -34,6 +35,18 @@ extern int D_800756B8; // Spyro visible from the camera (camera.c)
 extern int D_80075894; // Passive camera's hold timer (camera.c)
 extern int D_80075924; // L2/R2 turn speed (camera.c, func_80035F58)
 extern int D_80075938; // Ticks before an auto-centre may end
+
+/* The port's control options (port_controls.h, decisions D47): all off
+ * unless the platform turns them on, so the camera is the original's. */
+PortControls g_port_controls = {0, 0, 0, 100};
+
+/* The free camera's elevation bias for this tick's springs (func_80034CE8),
+ * set by func_80035FB4 around them; 0 everywhere else. */
+static int s_tilt;
+
+/* The free camera's elevation limits: the follow preset is 0xA0. */
+#define TILT_ELEVATION_MIN (-0x60)
+#define TILT_ELEVATION_MAX 0x2A0
 
 /* D_80075914 is the camera mode: 2 active, 0x52 passive. Both of its bits
  * 0x10 and 0x40 are set only in passive mode; the asm tests them
@@ -386,6 +399,14 @@ void func_80034CE8(int pRow) {
     error = 0;
   } else if (g_Cam.m_State == CAM_STATE_6) {
     error = 0;
+  } else if (s_tilt) {
+    /* the free camera (port, D47): the target tilted, within limits */
+    int target = AngleDelta(g_Cam.m_LastSimulation.m_Coords.elevation) + s_tilt;
+    if (target < TILT_ELEVATION_MIN)
+      target = TILT_ELEVATION_MIN;
+    if (target > TILT_ELEVATION_MAX)
+      target = TILT_ELEVATION_MAX;
+    error = AngleDelta(target - g_Cam.m_Sphere.m_Coords.elevation);
   } else {
     error = SphereError(SPH_ELEVATION);
   }
@@ -817,6 +838,15 @@ static void UpdateState15(void) {
     ApplySphericalPreset();
 }
 
+/* The port's options apply to the player's own play, never to attract
+ * demos (D47). */
+static int PortControlsLive(void) { return g_DemoMode == DEMO_MODE_NONE; }
+
+/* Look mode's up/down, flipped by the port's invert Y (D47). */
+static int LookInvert(int pPitch) {
+  return g_port_controls.invert_y && PortControlsLive() ? -pPitch : pPitch;
+}
+
 /* Look mode (triangle): the stick or the d-pad moves the target around the
  * look preset, and Spyro's head looks the opposite way. */
 static void UpdateLook(void) {
@@ -833,16 +863,16 @@ static void UpdateLook(void) {
   if (pad->m_Type == CONTROLLER_TYPE_STICK &&
       !(pad->m_Sticks.m_LeftX == 0x7F && pad->m_Sticks.m_LeftY == 0x7F)) {
     g_Cam.m_LookYaw += (pad->m_Sticks.m_LeftX - 0x7F) >> 1;
-    g_Cam.m_LookPitch += (0x7F - pad->m_Sticks.m_LeftY) >> 1;
+    g_Cam.m_LookPitch += LookInvert((0x7F - pad->m_Sticks.m_LeftY) >> 1);
   } else {
     if (g_Pad.m_Held & PAD_LEFT)
       g_Cam.m_LookYaw -= 0x30;
     else if (g_Pad.m_Held & PAD_RIGHT)
       g_Cam.m_LookYaw += 0x30;
     if (g_Pad.m_Held & PAD_UP)
-      g_Cam.m_LookPitch += 0x30;
+      g_Cam.m_LookPitch += LookInvert(0x30);
     else if (g_Pad.m_Held & PAD_DOWN)
-      g_Cam.m_LookPitch -= 0x30;
+      g_Cam.m_LookPitch -= LookInvert(0x30);
   }
   g_Cam.m_LookYaw = Clamp(g_Cam.m_LookYaw, -0x400, 0x400);
   g_Cam.m_LookPitch = Clamp(g_Cam.m_LookPitch, -0x3D0, 0x500);
@@ -903,6 +933,57 @@ static void UpdateScripted0200(void) {
 static int IsTurnLocked(u_int pState) {
   return pState == CAM_LOOK || pState == CAM_SCRIPT_8000 || pState == CAM_LEVEL_TRANSITION ||
          pState == CAM_PATH || pState == CAM_FLY_IN || pState == CAM_STATE_3;
+}
+
+/* The free camera (port, D47): a DualShock's right stick, calibrated by
+ * the game (gamepad.c, 0x7F centred, with its dead zone). Never in attract
+ * demos (PadDemoUpdate centres the right stick anyway). */
+static int FreeCameraOn(void) {
+  return g_port_controls.free_camera && PortControlsLive() &&
+         g_Pad.m_Type == CONTROLLER_TYPE_STICK;
+}
+
+/* Turning: where L2/R2 would (after func_80035F58, which wins when either
+ * is held), the stick's X sets the same azimuth push, in proportion: full
+ * right is R2 (-0x400) at speed 100%. */
+static void FreeCameraTurn(void) {
+  int x;
+
+  if (!FreeCameraOn() || D_80075924 != 0)
+    return;
+  if (g_Spyro.m_ControlFlags & CTRL_SKIP_CAMERA_CENTER || g_Cam.m_SpyroOffCenterFrames)
+    return; /* as func_80035F58 */
+  x = g_Pad.m_Sticks.m_RightX - 0x7F;
+  if (g_port_controls.invert_x)
+    x = -x;
+  D_80075924 = -x * 8 * g_port_controls.speed / 100;
+}
+
+/* Tilting, in the follow states only: the elevation target moves with the
+ * stick's Y, up to 0x200 up and 0x100 down, and comes back when the stick
+ * is let go. Up raises the camera (looks down), as up does in the game's own
+ * look mode (UpdateLook) and flight; invert Y makes both look up. */
+static int FreeCameraTilt(u_int pState) {
+  int y;
+
+  if (!FreeCameraOn())
+    return 0;
+  switch (pState) {
+  case CAM_FOLLOW:
+  case CAM_SPEED_CHECK:
+  case CAM_RECENTRE:
+  case CAM_STATE_1:
+  case CAM_STATE_2:
+  case CAM_STATE_4:
+  case CAM_STATE_5:
+    break;
+  default:
+    return 0;
+  }
+  y = 0x7F - g_Pad.m_Sticks.m_RightY; /* up > 0 */
+  if (g_port_controls.invert_y)
+    y = -y;
+  return y > 0 ? y * 0x200 / 0x80 : y * 0x100 / 0x80;
 }
 
 /// @brief Camera update for every state but the path (0x8000000B), the
@@ -972,13 +1053,17 @@ void func_80035FB4(void) {
     break;
   }
 
-  if (IsTurnLocked(g_Cam.m_State))
+  if (IsTurnLocked(g_Cam.m_State)) {
     D_80075924 = 0;
-  else
+  } else {
     func_80035F58(); /* L2/R2 */
+    FreeCameraTurn();
+  }
+  s_tilt = FreeCameraTilt(g_Cam.m_State);
 
   if (CAMERA_AUTO() && D_800756B8 && D_80075894 != 0 && !g_Cam.m_OnMovingPlatform &&
-      D_80075924 == 0 && (g_Cam.m_State == CAM_FOLLOW || g_Cam.m_State == CAM_SPEED_CHECK)) {
+      D_80075924 == 0 && !s_tilt &&
+      (g_Cam.m_State == CAM_FOLLOW || g_Cam.m_State == CAM_SPEED_CHECK)) {
     /* The passive camera holds still. */
     VecCopy(&g_Cam.m_DestinationPosition, &g_Cam.m_Position);
     StopSphere();
@@ -990,6 +1075,7 @@ void func_80035FB4(void) {
     func_80034480();
     func_800342F8();
   }
+  s_tilt = 0;
 
   /* The sphere becomes what the camera's position gives, except the
    * passive camera's azimuth while a slow Spyro jumps. */
