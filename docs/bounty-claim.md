@@ -11,7 +11,7 @@ for the user to fill in or check before submitting. The user submits.
 
 ## Before submitting: checklist
 
-- [ ] `[[Licence confirmed: MIT for the port's own code (decisions D56)]]`
+- [x] Licence: MIT for the port's own code, confirmed by the user on 2026-10-31 (decisions D56).
 - [ ] The repository is public, or the source of the release is otherwise published. The VPK
       statically links LGPL libraries (vitaGL, vitaShaRK, SceShaccCgExt), and users must be able
       to rebuild it (`THIRD_PARTY_NOTICES.md`). The repository is private as of 2026-10-31.
