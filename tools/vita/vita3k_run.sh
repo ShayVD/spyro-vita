@@ -75,8 +75,8 @@ mkdir -p "$out"
 [ "${REALTIME:-0}" = 1 ] || echo "realtime=0" >> "$data/config.txt"
 # Scripted runs compare with the host: the original 4:3, 30 fps picture
 # unless a config line given here turns widescreen or interp on (later
-# lines win).
-printf 'widescreen=0\ninterp=0\n' >> "$data/config.txt"
+# lines win; config_version=2 so a given interp=1 counts, main.c).
+printf 'config_version=2\nwidescreen=0\ninterp=0\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
 rm -rf "$data/shots" "$data/spyro.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"

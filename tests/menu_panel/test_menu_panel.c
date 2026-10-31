@@ -15,7 +15,7 @@ static int count(const uint8_t *rgb, int n, int r, int g, int b) {
 
 int main(int argc, char **argv) {
   static const MenuRow rows[] = {
-      {"WIDESCREEN", "ON"}, {"60 FPS", "ON"}, {"60 FPS BUDGET", "26 MS"}};
+      {"WIDESCREEN", "ON"}, {"60 FPS (EXPERIMENTAL)", "NO ANIM"}, {"60 FPS BUDGET", "26 MS"}};
   int h = menu_panel_height(3), fails = 0;
   uint8_t *rgb = calloc((size_t)MENU_PANEL_W * h, 3);
   FILE *f;
