@@ -79,6 +79,7 @@
 #include "vita.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
+#include "../../game/cheats_port.h"
 
 #include <SDL2/SDL.h>
 #include <psp2/io/stat.h>
@@ -215,6 +216,10 @@ static void read_config(void) {
       g_vita_opts.widescreen_exact = atoi(v);
     else if (!strcmp(line, "menu_test"))
       parse_list(v, g_vita_opts.menu_test, &g_vita_opts.nmenu_test, 4);
+    else if (!strcmp(line, "menu_keys")) {
+      if (vita_menu_test_keys(v) != 0)
+        vita_log("config: menu_keys: unknown button in %s", v);
+    }
     else if (!strcmp(line, "tex_filter"))
       g_vita_opts.tex_filter = atoi(v);
     else if (!strcmp(line, "persp"))
@@ -316,6 +321,7 @@ int main(int argc, char **argv) {
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);
+  port_cheats_set_log(vita_log); /* menu_game.c's cheats (D50) */
   spyro_main(); /* never returns */
   return 0;
 }

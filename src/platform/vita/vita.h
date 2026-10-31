@@ -91,6 +91,7 @@ void vita_present_report(int vblank);
 uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */
 int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused) */
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
+int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
 
 /* video.c: an RGB panel over the picture (NULL: none), drawn 1:1 in the
  * middle; and a redraw even when the picture didn't change (the menu) */
