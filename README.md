@@ -185,7 +185,7 @@ cmake -S spyro-vita -B spyro-vita/build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_
 cmake --build spyro-vita/build/vita
 ```
 
-The result is `build/vita/spyro-vita.vpk`. GitHub Actions builds the same VPK for every pull request and push to `main`
+The result is `build/vita/spyro-vita.vpk`. Its bubble icon and LiveArea are original art drawn at build time. To use your own images instead, run `tools/vita/livearea_local.sh LOGO TITLE` (macOS), which writes them into the gitignored `disc/livearea/`, then configure again (decisions D59). GitHub Actions builds the same VPK for every pull request and push to `main`
 (`.github/workflows/build.yml`).
 
 The other builds are for development:
