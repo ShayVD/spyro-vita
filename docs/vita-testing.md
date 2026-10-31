@@ -274,6 +274,18 @@ Gems script plus the pause and inventory screens, window captures at the same 8 
 Not checked here: audio by ear (the SDL2 device opens, 44.1 kHz stereo); real-time play by hand
 for long. Speed in Vita3K says little about the Vita's own speed (about 11× slower on hardware).
 
+### Picture rows and draw distance (D48, D49, branch `claude/vita-picture-lod-423bd2`)
+
+Vita3K, `realtime=0` unless noted. Logs in `logs/`:
+
+| Run | What | Result |
+|---|---|---|
+| `run5`, `run12`, `run16`, `run21-vita3k-menu` | Stone Hill demo, `menu_test=4500 menu_keys=dddrdrdrdrdrro`: bilinear, perspective, sub-pixel on, resolution PS1, draw distance 1.5X then 2X, from the menu | Bilinear shaders compiled on demand (2.7–3.2 s); `menu: saved ... tex_filter=1 persp=1 subpixel=1 res=1 draw_distance=200`; window captures show the filtered PS1-resolution picture at once. Shots at 4300 and 4700 byte-identical across the four builds; at 5300 they differ because the later builds' limiter (watching the world's bound too) holds a lower scale in that heavy Stone Hill stretch (`lod 5400`: x1.46, x1.03, x1.00). |
+| `run6-vita3k-boot` | the same options in `config.txt` from boot | replay shots byte-identical to the menu run; window capture at 5300 byte-identical (at 4700 the draw distance was still growing after the menu) |
+| `run13-vita3k-bench` | `bench=1` to vblank 13800 | 18 sets, `bench final` at 13560, configured options back. Vita3K's timings are not the Vita's. |
+| `run17`, `run20-vita3k-gems-dd2` | gems script, 16:9, `draw_distance=200` | all 27 `lod` lines identical to the linux32 host's (`logs/run19-gems-dd2`: scale, buffer use, back-offs, extra mobys); memory card byte-identical to the host's at 1x |
+| `run7-vita3k-rt-dd100/200` | `REALTIME=1`, title and demos | no usable cost difference: Vita3K's CPU is not the Vita's |
+
 ## On hardware
 
 | Build | Who | Result |

@@ -38,12 +38,12 @@ asm/renderers/r_environment.s:
     0x800261A0: "PORT_LOD_ENV_LISTS(t7);"     # sector loop done
     0x80026220: "s3 = PORT_LOD_ENV(s3);"      # srl $s3, 7: far draw's fade
     0x800267BC: "s5 = PORT_LOD_ENV(s5);"      # near draw's fade
-    0x80026230: "if (PORT_LOD_ENV_FULL(fp)) t7 = 0;"  # beqz $t7: far list
-    0x800267EC: "if (PORT_LOD_ENV_FULL(fp)) t9 = 0;"  # beqz $t9: near list
-    0x800276BC: "if (PORT_LOD_ENV_FULL(fp)) s3 = 0;"  # beqz $s3: textured passes
-    0x80028598: "if (PORT_LOD_ENV_FULL(fp)) s3 = 0;"
-    0x80029508: "if (PORT_LOD_ENV_FULL(fp)) s3 = 0;"
-    0x8002A0B0: "if (PORT_LOD_ENV_FULL(fp)) sp = ra;" # beq $ra, $sp: last list
+    0x80026230: "if (PORT_LOD_ENV_FULL(fp, 0)) t7 = 0;"  # beqz $t7: far list
+    0x800267EC: "if (PORT_LOD_ENV_FULL(fp, 1)) t9 = 0;"  # beqz $t9: near list
+    0x800276BC: "if (PORT_LOD_ENV_FULL(fp, 1)) s3 = 0;"  # beqz $s3: textured passes
+    0x80028598: "if (PORT_LOD_ENV_FULL(fp, 1)) s3 = 0;"
+    0x80029508: "if (PORT_LOD_ENV_FULL(fp, 1)) s3 = 0;"
+    0x8002A0B0: "if (PORT_LOD_ENV_FULL(fp, 1)) sp = ra;" # beq $ra, $sp: last list
     0x8002A6B0: "PORT_LOD_ENV_END(fp);"       # sw $fp, D_800757B0
 
 asm/renderers/r_moby.s:

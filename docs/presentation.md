@@ -339,15 +339,29 @@ With widescreen on, players see scenery and objects appear at a distance, most v
 **Safety.** The renderers have no bounds checks, and more geometry can overrun the primitive buffer (`0x1C000` bytes, `0x13000` in reduced-space levels, with the HUD's mobys at the top; `draw.c` `GamestateDraw`). The original game already fills it to 85–91% in places (Artisans' entrance, the intro cutscene). With the option on:
 
 - **Hard bounds.** These only ever end a loop early, so a frame can lack some scenery but never writes past the buffer:
-  - the six sector-list loops of `func_800258F0` take "end of list" once the primitive pointer is within `0x6000` bytes of the buffer's end;
+  - the six sector-list loops of `func_800258F0` take "end of list" once the primitive pointer is within `0xB000` (45,056) bytes of the buffer's end. That room is what the game draws after the world (sky, particles, fade, HUD: at most 31,604 bytes) plus one near sector (at most 5,868 bytes), both measured over the whole-game tour at 2×, with about 7.5 KB to spare. The far loop's sectors can be much bigger (57 KB for a background sector at 1×), but with the option on that loop writes only less than at 1×: polygons inside the longer distance are skipped, and sectors wholly inside it aren't listed;
   - the record-draw loops (`func_8001F798`, `func_80020F34`) and the lit loop's pass 2 stop at pass 2's mobys once the buffer is 60% full;
   - the near list stops taking sectors one entry before the next list.
-- **A limiter.** After each shown draw it measures the bytes used. Over 80% it halves the extra distance, over 90% it drops to 1×, and under 65% it grows back by 1/32 per draw.
+- **A limiter.** After each shown draw it measures the bytes used, and how close the world came to its bound, and takes the fuller of the two. Over 80% it halves the extra distance, over 90% it drops to 1×, and under 65% it grows back by 1/32 per draw. So the bound stays a backstop rather than a regular cut.
 - **Each new level or gamestate starts at 1×.**
 
 The first whole-game run had only the limiter, and it crashed entering level 40 at 2×: one frame wrote past the second buffer into the world OT (`logs/run4-whole-dd2`, core read with gdb: `fp = 0x801BFDA4`, past `0x801BFBB0`).
 
 Only drawn pictures use the longer distances. The hidden 4:3 logic draw of attract demos (D30) keeps the original ones.
+
+### Measured (host and Vita3K; hardware not yet)
+
+- **Logic:**
+  - Gems script (8,600 vblanks, 16:9): traces at 1.5× and 2× byte-identical to 1×, which is byte-identical to the build before this change (`logs/run19-gems-*`, `logs/run1-base`).
+  - Whole-game tour (`--tour`, every level 10–64, both endings): at 2× byte-identical to 1× and to main's binary for the 40,129 vblanks up to ending 3's credits. Main's binary crashes there with `--widescreen` too, so this isn't caused by the change (D49).
+  - Oracle replay of the six hooked renderers, option off: 213/213 samples match.
+- **Pictures:** at 2× the title flyby keeps the cave textured where 1× shows flat low-poly walls. In Artisans the far hills and walls keep their textures (`logs/run3-dd2/cmp-*.png`).
+- **Buffer:**
+  - Gems script at 2×: the limiter held 2× in Artisans' open parts (up to 12 extra mobys per draw) and backed off to 1× where the original already fills 85–91% (the intro cutscene, Artisans' entrance).
+  - Stone Hill's attract demo mostly stays at 1×: its world alone comes close to the bound.
+  - Whole tour at 2× with only the hard bounds (`--lod-guards-only`, no limiter; `logs/run19-whole-guards`): no crash in 100,000 vblanks. The world bound stopped a loop 125,760 times and the near list filled 55 times; the peak stayed at 95 KB of 110.5.
+  - With the limiter (`logs/run19-whole-dd2`), the bound never fired. The scale averaged ×1.23 over the tour and was at least ×1.5 in 30 of 132 five-second windows: the limiter is cautious, by choice.
+- **Cost:** see D49. More primitives (+35% at 1.5×, +49% at 2× where it holds) mean more OT walk and GPU submission on the Vita's CPU. Expect fewer than 30 pictures a second in open areas at 2×; `bench=1` measures it.
 
 ## Follow-ups
 

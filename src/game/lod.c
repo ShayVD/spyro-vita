@@ -65,12 +65,15 @@ int g_lod_stats;       /* this draw collects statistics */
 #define POLY_TOP 0x1BA00 /* the HUD's mobys above (draw.c func_8001A40C...) */
 #define NEAR_LIST 0x1C00
 #define NEAR_END 0x1E00
-/* Room left at the end of the buffer when r_environment stops: one sector's
- * primitives (5,076 bytes at most) plus everything drawn after the world
- * (the sky, particles, HUD: 25,816 at most), both measured over the
- * whole-game tour (port_lod_report "largest sector", "after the world";
- * D49), and some 9 KB to spare. */
-#define ENV_MARGIN 0xA000
+/* Room left at the end of the buffer when r_environment stops: one near
+ * sector's primitives (5,868 bytes at most) plus everything drawn
+ * after the world (the sky, particles, HUD: 31,604 at most), both measured
+ * over the whole-game tour at 2x (port_lod_report "largest sector", "after
+ * the world"; D49), and about 7.5 KB to spare. The far (low-poly) loop's
+ * sectors can be far bigger (57 KB for a background sector at 1x), but
+ * with the option on it writes only less than at 1x: polygons inside the
+ * longer distance are skipped, and sectors wholly inside it aren't listed. */
+#define ENV_MARGIN 0xB000
 #define MOBY_SHARE 60 /* pass 2's mobys are drawn while the buffer is under this % */
 
 static int s_k = LOD_ONE; /* the limiter's scale for the next draw */
@@ -198,16 +201,20 @@ int port_lod_lit_full(void) {
 }
 
 /* r_environment's sector-list loops, before each next sector (fp: the
- * primitive pointer): 1 = end the list here. */
+ * primitive pointer; textured: 0 for the far, low-poly loop): 1 = end the
+ * list here. */
 static void sector_size(u32 fp) {
   if (s_env_last && fp >= s_env_last && fp - s_env_last > s_st.sector_max)
     s_st.sector_max = fp - s_env_last;
   s_env_last = fp;
 }
 
-int port_lod_env_full(u32 fp) {
-  if (g_lod_stats)
+int port_lod_env_full(u32 fp, int textured) {
+  if (g_lod_stats) {
+    if (!textured)
+      s_env_last = 0; /* the far loop isn't measured */
     sector_size(fp);
+  }
   if (g_lod_k <= LOD_ONE || fp <= s_env_limit)
     return 0;
   s_st.env_cuts++;
