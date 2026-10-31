@@ -120,6 +120,14 @@ int vita_pad_load(const char *path) {
   return 0;
 }
 
+/* A save state was loaded and the vblank counter set back (D51): the script
+ * plays again from there, with the buttons held at that vblank. */
+void vita_pad_rewind(int vblank) {
+  s_script = 0;
+  for (s_next = 0; s_next < s_nevents && s_events[s_next].vblank <= vblank; s_next++)
+    s_script = s_events[s_next].mask;
+}
+
 static void fill(unsigned char *p, int connected, uint16_t mask) {
   if (!p)
     return;

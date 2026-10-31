@@ -115,6 +115,7 @@ void vita_pad_poll(void); /* SDL events (controller hot-plug) */
 /* pad.c: pad= script */
 int vita_pad_load(const char *path); /* 0 = ok */
 uint16_t vita_pad_read(void); /* the controller's buttons now (PS1 bits) */
+void vita_pad_rewind(int vblank); /* a save state loaded: the script from vblank (D51) */
 
 /* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
 void vita_audio_init(void);

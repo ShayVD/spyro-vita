@@ -3,7 +3,10 @@
 (decisions D51). Both ran the linux32 host with --state-hash, --wav and a
 --log; the reference saved the state the other one loaded.
 
-  savestate_compare.py REF_DIR RUN_DIR
+  savestate_compare.py REF_DIR RUN_DIR [WAS:TO]
+
+WAS:TO (the vblank counter before and after the load) overrides the log's
+"savestate: vblank counter WAS -> TO" line.
 
 - hashes: every main-loop-top row RUN_DIR wrote after its last load is
   compared, chunk by chunk, with REF_DIR's row at the same vblank;
@@ -48,6 +51,8 @@ def wav_data(path):
 def main():
     ref, run = sys.argv[1], sys.argv[2]
     ld = loads(os.path.join(run, "spyro.log"))
+    if len(sys.argv) > 3:
+        ld = [tuple(int(x) for x in sys.argv[3].split(":"))]
     if not ld:
         print("no load in", run)
         return 1

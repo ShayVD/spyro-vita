@@ -61,6 +61,7 @@ Files the app writes:
 |---|---|
 | `ux0:data/spyro/spyro.log` | the log. **Please send it back after a test**, whatever happened |
 | `ux0:data/spyro/save/card0` | memory card 1 (created when the game first saves) |
+| `ux0:data/spyro/save/state1.bin` … `state3.bin` | quick-save states from the menu (3.8 MB each; decisions D51) |
 | `ux0:data/spyro/shots/` | PNGs, only if `config.txt` asks for them |
 
 ## 4. Optional `ux0:data/spyro/config.txt`
@@ -97,9 +98,13 @@ Files the app writes:
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39) |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
+| `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
+| `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
 **Options menu:** hold SELECT and press START, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) and the 60 fps budget. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+
+**Quick save (the menu's SAVE section, decisions D51):** `STATE SLOT` picks slot 1, 2 or 3; `SAVE STATE` saves the whole game there, `LOAD STATE` (its value names the level the slot holds, or `EMPTY`) puts it back exactly as it was. Choosing either closes the menu; the save or load happens a moment later, at the start of the game's next tick, and a panel says what happened for about 2 seconds (`STATE 1 SAVED`, `STATE 2 LOADED`, `NO STATE IN SLOT 3`). States are separate from the game's own memory-card saves, which work as before; loading a state doesn't change the memory card. A state only loads in the build that made it: after installing a new VPK, old states show `OTHER BUILD` and are refused. There is no automatic save when the app is suspended or closed.
 
 The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 
@@ -343,6 +348,16 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
 7. Send back `spyro.log`, the shots, and anything that looked wrong (when, and what you did
    just before).
 
+**Testing quick save** (decisions D51; the menu's SAVE section):
+
+1. Play into Artisans, open the menu (SELECT+START), go down to SAVE, `SAVE STATE` (✕). The menu closes and `STATE 1 SAVED` shows for about 2 seconds. In the log: `savestate: save took N ms` and `savestate: STATE 1 SAVED`. `ux0:data/spyro/save/state1.bin` is 3,806,116 bytes.
+2. Move somewhere else (collect a gem, lose some health), then `LOAD STATE`. Spyro, the camera, the gem count, enemies and the music must be exactly as they were at the save, and the game must go on normally. Note how long the picture stops (the log's `load took N ms`).
+3. Save in one level, go through a portal to another one, load: back in the first level as it was.
+4. Save while the music plays and while flying (Sunny Flight), load later: the music goes on from where it was.
+5. **Quit the app (PS button, close) and start it again**, then `LOAD STATE` straight from the title screen. This is the important one: it works only if the Vita puts the game's memory at the same addresses every launch (the log's `arena at 0x...` line must be the same in both launches). If the menu shows `OTHER LAYOUT` instead of the level name, send the logs of both launches.
+6. Check the game's own saving still works: save at a fairy, quit, Load Game from the title.
+7. Send back `spyro.log` and anything that looked or sounded wrong after a load.
+
 **Measuring what 60 fps costs** (`docs/presentation.md` "60 fps on the Vita"):
 
 1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS (EXPERIMENTAL)`: ON; widescreen stays on by default).
@@ -364,6 +379,20 @@ for long. Speed in Vita3K says little about the Vita's own speed (about 11× slo
    line with the default.
 5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
    and how big G gets.
+
+### Quick save (D51, branch `claude/vita-quicksave-a54846`)
+
+The gems script (M2's `run9-gems/replay_pad.txt`), with a state saved at vblank 7000 (Artisans, music playing) and loaded later; host references from the same tree (`--state-hash`: a hash of every chunk at every main loop top; `tools/savestate_compare.py`). Logs in `logs/`:
+
+| Run | What | Result |
+|---|---|---|
+| `run1-state-A`, `run1-state-B` | host: save at 7000; B also loads it at 7602 | B after the load against A: 899 loop tops identical in every chunk (arena, VRAM, SPU, XA, CD, …), 30.0 s of audio byte-identical, 88/88 shots identical, same final trace row (4 gems). |
+| `run1-state-C` | host: a new process loads A's `state1.bin` at its first loop top (vblank 437, during the boot logos) | 899 loop tops identical to A, 30.0 s of audio identical, all shots identical. |
+| `run2-vita-state` | Vita3K, `gpu=1`, mixer thread: save at 7000, load at 7602 | 88/88 shots byte-identical to host A; the WAV identical to A's before the load and for the 30 s after it. Save 45 ms, load 39 ms (Vita3K's times). |
+| `run6-vita-relaunch` | Vita3K: a new launch loads `run2-vita-state`'s `state1.bin` at vblank 437 | Accepted (arena at 0x89000000 in both launches, same layout); 22/22 shots identical to host A, 30 s of audio identical; the memory card unchanged. |
+| `run7-vita-ws-notice` | Vita3K, `widescreen=1 interp=1`, window captures | Save and load work with the presenter on; the notice panel shows over the 16:9 picture (`win-7010.png`); textures right after the load. |
+
+Not checked: on hardware (above); the menu rows by hand (`menu_test=` can't reach them; the rows use D45's table, which `tests/menu_panel` covers); `gpu=0` in Vita3K.
 
 ### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
 
