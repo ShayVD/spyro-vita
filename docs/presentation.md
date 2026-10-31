@@ -53,6 +53,12 @@ D2 planned to scale X in RTPS/RTPT. The prototype found a better place: the proj
   - the grayscale screen copy behind the pause, inventory and flight-results menus (POLY_FT4 with the CLUT at VRAM (512,224)). It is already a widescreen frame.
 - **C primitives in the world OT** (`func_800168A0`): the tracers are projected through the camera matrix already, and the 0x3FF grayscale strips are the screen copy. Neither is touched.
 
+### Primitive space (D54)
+
+A 16:9 draw writes more primitives than the original 4:3 one: more sectors and mobys pass the wider frustum. The game's primitive buffers are fixed (`AllocateBuffers`: lower, upper, then the HUD OT and the world OT), 0x1C000 bytes each, or 0x13000 in reduced-space levels. Only the sky and particle renderers stop at a limit (`D_80075780 - 0x400`, buffer + 0x1BC00). The world and moby renderers check none. The original 4:3 view fits, but only just: in ending 3 (level 64, reduced space) it reaches 73 KB of 76 (`logs/run6-state-43` in the fix's worktree). With one-draw widescreen the upper buffer overran by 124 bytes into the HUD OT and the first world-OT buckets, and linking the OT crashed (`func_80016784`, core in `logs/run1-ws`).
+
+The port's `DrawOTag` uses up the primitives before it returns (D51), so neither buffer holds anything once a draw is done. With any presentation option or draw distance on, `PortPolySpace()` (from `GamestateDraw`, `patches/spyro-1-port/0010`) starts every draw at the lower buffer and lets it span both. The HUD's mobys and the sky and particle limit go to the top, 0x200 below the HUD OT. That gives 0x37E00 bytes, or 0x25E00 in a reduced-space level, about twice the original's room. The game's own limits move with it. The pause and exit-level screens already draw from the lower buffer (`func_8001A40C`, `func_8001C694`). The top isn't the HUD OT itself because `func_8001D718` (the fairy) would then move the HUD mobys down to +0x1BA00. `lod.c` measures from the same start and keeps its own bounds and limiter as they were (D49). With everything off, nothing changes.
+
 ### Output
 
 The capture is the drawn 512×240 area. The host scales it bilinearly to 960×544, full width for widescreen frames. 960×544 is 30:17, 0.7% wider than 16:9, which is close enough not to correct.
@@ -267,6 +273,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 | `patches/spyro-1-port/0005-presentation-hooks.patch` | `main.c`: `PortPresentBeforeUpdate()` before `GamestateUpdate`, `PortPresentDraw()` instead of `GamestateDraw()`. `camera.c` `CameraUpdateMatrices` and `draw.c` `func_8001A050`: `PortProjectionHook` on the projection matrix. | `PortPresentDraw` calls `GamestateDraw`; the hook returns at once |
 | `patches/PsyCross/0005-presentation-hooks.patch` | `g_psyxVSyncHook` (LIBETC `VSync`); `g_psyxDrawOTagPre/Post` (LIBGPU `DrawOTag`) | NULL |
 | `tools/mips2c/hints.yaml`, `mips2c.py` | `before` hints: `func_80022A2C` HUD path at `0x80022D2C` (OFX) and `0x80022D78` (R11) | `PORT_WS_HUD_*` is the identity |
+| `patches/spyro-1-port/0010-primitive-space-hook.patch` | `GamestateDraw`: `PortPolySpace()` after it points the draw at its buffer (D54) | returns at once |
 | `src/game/order_table.c` `func_800168DC` | records HUD-OT primitives for the 2D squeeze | records nothing |
 | `src/platform/common/libspu.c` | drops writes while `g_psx_spu_frozen` | never set |
 | `src/game/present.c/.h` | everything else | |
@@ -353,7 +360,7 @@ Only drawn pictures use the longer distances. The hidden 4:3 logic draw of attra
 
 - **Logic:**
   - Gems script (8,600 vblanks, 16:9): traces at 1.5× and 2× byte-identical to 1×, which is byte-identical to the build before this change (`logs/run19-gems-*`, `logs/run1-base`).
-  - Whole-game tour (`--tour`, every level 10–64, both endings): at 2× byte-identical to 1× and to main's binary for the 40,129 vblanks up to ending 3's credits. Main's binary crashes there with `--widescreen` too, so this isn't caused by the change (D49).
+  - Whole-game tour (`--tour`, every level 10–64, both endings): at 2× byte-identical to 1× and to main's binary for the 40,129 vblanks up to ending 3's credits. Main's binary crashes there with `--widescreen` too, so this isn't caused by the change (D49). Since fixed: the 16:9 draw overran the primitive buffer ([Primitive space](#primitive-space-d54), D54).
   - Oracle replay of the six hooked renderers, option off: 213/213 samples match.
 - **Pictures:** at 2× the title flyby keeps the cave textured where 1× shows flat low-poly walls. In Artisans the far hills and walls keep their textures (`logs/run3-dd2/cmp-*.png`).
 - **Buffer:**
