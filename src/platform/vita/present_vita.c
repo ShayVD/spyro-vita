@@ -6,6 +6,7 @@
 #include "vita.h"
 #include "../../game/present.h"
 #include "host.h" /* linux32's, for png.c's shots */
+#include "menu_opts.h"
 
 #include <psp2/kernel/processmgr.h>
 
@@ -21,6 +22,32 @@ void vita_present_apply(void) {
   g_present.interp_anim = g_vita_opts.interp == 1;
   g_present.interp_budget_us = g_vita_opts.interp_budget * 1000;
 }
+
+/* Widescreen from the menu: the GPU's targets again at the new width. */
+static void widescreen_changed(void) {
+  vita_present_apply();
+  if (g_vita_gpu)
+    vita_gpu_rescale();
+}
+
+/* The menu's rows (menu.c, D45). The 60 fps values are short enough to fit
+ * beside the label when selected ("< NO ANIM >"); 60 fps is off by default
+ * (D44). */
+static const char *const k_interp_names[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
+static const int k_budgets[] = {0, 20, 23, 26, 30}; /* ms; 0: never skip */
+static const char *const k_budget_names[] = {"NEVER SKIP", "20 MS", "23 MS", "26 MS", "30 MS"};
+static const MenuOption k_rows[] = {
+    {.section = MENU_PICTURE, .label = "WIDESCREEN", .key = "widescreen",
+     .value = &g_vita_opts.widescreen, .names = g_menu_off_on, .count = 2,
+     .on_change = widescreen_changed},
+    {.section = MENU_PICTURE, .label = "60 FPS (EXPERIMENTAL)", .key = "interp",
+     .value = &g_vita_opts.interp, .names = k_interp_names, .count = 4,
+     .on_change = vita_present_apply},
+    {.section = MENU_PICTURE, .label = "60 FPS BUDGET", .key = "interp_budget",
+     .value = &g_vita_opts.interp_budget, .names = k_budget_names, .values = k_budgets,
+     .count = 5, .fmt = "%d MS", .on_change = vita_present_apply},
+};
+MENU_OPTION_LIST(g_menu_present, k_rows);
 
 void vita_present_init(void) {
   vita_present_apply();
