@@ -102,6 +102,11 @@ int psx_xa_accept(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   const PsxCdStream *st = psx_cd_stream();
   if (!(st->mode & CdlModeRT) || psx_cd_read_raw(lba, raw) != 0)
     return 0;
+  return psx_xa_check(raw);
+}
+
+int psx_xa_check(const unsigned char raw[PSX_CD_RAW_SECTOR]) {
+  const PsxCdStream *st = psx_cd_stream();
   if (!(raw[2] & 0x04) || !(raw[2] & 0x20)) /* audio, Form 2 */
     return 0;
   if ((st->mode & CdlModeSF) && (raw[0] != st->file || raw[1] != st->chan))

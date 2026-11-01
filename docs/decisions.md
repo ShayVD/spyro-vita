@@ -772,6 +772,114 @@ Record each decision with its date, what was chosen, and why.
 - **When the original says it:** dialogue page 4 comes from `func_800314B4` when `MemCardAccept` reports an unformatted card (4), when the header read finds no file (5), or when the header's ID differs from the one the game was loaded or created with, for example after swapping in another card that holds a Spyro save. A PS1 with the right card never shows it. The M2 oracle capture of a fairy save (`cap5-fairy`) said GAME SAVED.
 - **Hardware:** not tested.
 
+## 2026-11-01: above 30 fps
+
+### D62. Measure the GPU, then a render thread and cheaper pixels: the plan to 60 fps
+- **Why:** 30 fps holds on hardware, but in the heaviest logged scene (16:9 native, `logs/hw-26f3138-bench`, vblanks 12600–18300) the game thread is 93–94% busy, and 60 fps fitted in 0–41% of ticks (D44). The plan, with the measured costs, the candidates and the reasoning, is `docs/fps-plan.md`.
+- **Found:**
+  - **Clocks:** they've been at the maximum since M3 (ARM 444, bus 222, GPU 222, crossbar 166, `main.c`), so overclocking has nothing left to give.
+  - **Where the game thread's time goes:** everything but the SPU mix runs on it, logic and renderers and all of the GL. Core 2 is unused and core 1 holds only the mixer (~5%).
+    - Per tick: render path 9.7 ms, OT walk 6.8 (2.0 of it the atlas lookups in `expand()`), GL submission 9.6, CD/SPU 3.3 (likely file I/O for the XA sectors).
+  - **The GPU is close to full too.** D44 had concluded otherwise. From the frame's timeline, the target scene's pixels start at the capture, and the timed frame ends 33–36 ms later. That puts the GPU work at roughly 25–33 ms per frame at 16:9 native in that scene (*estimate*), where 60 fps allows ~13.
+- **Chosen:**
+  1. Measure first. This PR adds a `clocks` line at start and `gpu_time=2`, which times the scene's GPU work on its own and counts GL draw calls and vertex uploads. Both are measurement only, and `gpu_time=2` is off by default. `docs/fps-plan.md` has three short hardware runs: Run A, `gpu_time=2`; Run B, `bench=2` with 60 fps forced; Run C, 60 fps in play.
+  2. Quick wins:
+     - XA reads off the game thread;
+     - GL state caching and batching;
+     - a leaner `expand()`;
+     - `gpu_time=0` for release;
+     - the game thread pinned to core 0;
+     - hysteresis instead of per-tick skipping for 60 fps.
+  3. A render thread: our `GR_*` interface becomes commands for a GL thread on core 2. `DrawOTag` still parses on the game thread, so the game's memory has no new hazard, and `StoreImage` and shots sync. That's ~12 ms per frame off the game thread.
+  4. GPU work sized by Run A: an opaque path without `discard`, shader trims, one fewer full-screen pass. Then, for 60 fps everywhere, a parse thread (walking a copy of the frame's primitives and OTs, D54) and a specialised GTE dispatch.
+- **Rejected for now:**
+  - more clocks (none left);
+  - `-ffast-math` and PGO (little to gain, determinism or tooling cost);
+  - building the in-between frame on its own core: the translated renderers share one arena base, `gteRegs` and the emulated stack, so a second concurrent render needs a second copy of all of it. The render and parse threads get most of the overlap for much less.
+- **Open, for the user:**
+  - a lower render scale in 60 fps mode, if the GPU is the limit;
+  - one more 60 Hz frame of latency, if pipelining the parse needs it;
+  - when 60 fps becomes the default (proposed: ≥ 95% of ticks over 10 minutes);
+  - a battery-saver option once 30 fps fits at 333 MHz.
+
+## 2026-11-01: the render thread and the other cores
+
+### D63. A render thread: every GL call on core 2, fed by commands copied out of the game
+- **Why:** D62. In the heaviest scene the game thread spends ~12 ms of each frame in GL work: submission 9.6 ms, plus `expand()` and the vertex upload (~2.6 ms). Core 2 was idle.
+- **Chosen:** `config.txt render_thread=1` (`src/platform/vita/gpu_thread.c`). A thread pinned to user core 2 (priority 0x80) runs every vitaGL call, `vglInit` and the shader compiles included. The game thread is pinned to core 0.
+  - **Where the cut is:** PsyCross's `GR_*` calls (`gpu.c` dispatches them). With the thread on, each call is recorded as a command in a 1 MB ring of bytes, and the render thread runs the same `gl_GR_*` functions in the same order. `gpu_gl.c`'s drawing code is unchanged; its public calls became `gl_*` functions (`gpu_rt.h`) that `gpu_thread.c` runs either directly (`render_thread=0`, as before) or as commands.
+  - **What a command holds, copied when it's recorded (never a pointer into PS1 RAM):**
+    - a split's `DRAWENV` and `DISPENV` (the bytes `gl_GR_SetupClipMode` reads), its texture, format, blend mode, first vertex and count;
+    - `GR_UpdateVertexBuffer`'s vertices (PsyCross's buffer after its parse), in one of four vertex slabs, with the vertex cache's answers when `persp` or `subpixel` are on. A slab is written again only after the render thread has started two later vertex buffers. The target logs (`log_add`, the readback replay) and `gpu_dump` keep pointing at the slab, as they pointed at PsyCross's buffer before;
+    - `LoadImage`'s pixels. One over 192 KB (level textures) instead waits until the render thread has run everything and is then run with the game's own pointer;
+    - what the GL side reads of the game's display state (`currentDispEnv`, `g_GPUDisabledState`, widescreen) as `g_gl_env`. It's sent before a split's clip, a capture, a present and every synchronous call, whenever it changed. `set_scale()`, `gl_sync_display()` and the present read it instead of the live globals, in both modes.
+  - **Synchronous calls** wait until every earlier command has run: `StoreImage` (`GR_ReadVRAM`: the pause and inventory backgrounds), shots (`vita_gpu_sync_display`, then `png.c` reads `s_vram`), save states (`vita_gpu_vram_take`), rescales, `vita_gpu_set_options` (it returns whether the shaders compiled), the options panel, start-up, and `vita_gpu_repeat` (`shot_hold`). After one returns the render thread has nothing to run, so the game thread may read and write what it owns.
+  - **Presents:** whether a vblank shows a new picture is decided on the game thread, from the state `gpu_gl.c` used to keep (`s_last`, the slot on screen), so the picture count, `bench=` and the boot screen's close don't depend on timing. One difference: a rescale now always forces the next picture to be drawn, where before only a change of size did. The render thread only draws and swaps. Pacing: a present is posted once the previous one has run, so frame N is still shown at the VSync after tick N+1's render path. When the GL thread or the GPU is late, the game waits there ("previous frame not shown yet", charged to `wait`) instead of queuing frames. Presents with the options panel up, 24-bit displays (the boot logos), `shot_hd`, the software rasterizer's picture (`gpu=0` behind vitaGL) and the first picture also wait until they're shown.
+  - **Counters on the other thread:** `prof.c`'s parts are the game thread's, so `gpu_gl.c` skips them on the render thread. `bench=`'s sample is read through a sequence counter.
+  - **60 fps budget:** `interp_budget` only saw game-thread time. With the GL work gone from it, the budget would admit in-between frames the render thread or the GPU couldn't keep up with. A new hook, `g_present_render_us` (`present.h`, NULL on the host), gives the render thread's time per picture: GL calls and waits for the GPU, averaged over ~8 pictures, with `gpu_time`'s `glFinish` waits left out. The in-between frame is also skipped while two pictures a tick wouldn't fit the budget there.
+- **The log:** a `render N:` line every 300 vblanks: the render thread's busy time per vblank and per picture, the commands run, in flight and unknown (the queue's mismatch counter: 0 unknown), and how long the game thread waited for it, by reason (ring full, previous frame not shown yet, sync calls, vertex slabs).
+- **Rejected:**
+  - **Recording vitaGL itself** (wrapping the gl* calls): the game thread would still run `expand()`, the atlas and the target bookkeeping.
+  - **Cutting lower than `GR_*`** (sending PsyCross's parse to the thread too): that's D62's T2, which needs the primitives copied (D54).
+  - **A queue of frames:** latency and memory, for no extra throughput.
+- **Checked** (logs in this branch's worktree; Vita3K is not hardware, and its timings say nothing about the Vita's; `realtime=0` throughout):
+  - **Vita3K against the unchanged build** (`logs/vbase-*`, the VPK built from this branch's base): the gems script with widescreen (44 shots, the WAV and the memory card), the pause route (StoreImage replay for the pause and inventory backgrounds, 70 shots and the card), the 12,000-vblank attract demo (24 shots and the 35 MB WAV), the gems script with 60 fps forced (`interp=1 interp_budget=0`: 44 shots, the WAV and the same in-between frame count in every window), from the disc image (44 shots and the WAV) and with a save at 8100 and a load at 8250 (85 shots and the card). All byte-identical with `render_thread=1` (`logs/vrt1-*`), with `render_thread=0` (`logs/vrt0-*`), and with all three switches of D63–D65 on (`logs/vall-*`, `logs/vfin-*`, the final VPK).
+  - **The GPU's own picture:** window captures (`CAPTURE=1`) at six points of the gems script, byte-identical with the render thread on and off, and with all three switches on, twice (`logs/vfin-gems-cap`, `vfin-gems-cap2`). Two base runs are byte-identical to each other as well (`vbase-gems-cap`, `vbase-gems-cap2`).
+  - **Save states:** with the same VPK, the states saved with the render thread on and off differ in 3 bytes only, at 0x8001FFFC–FFFF. That's the top of the mips2c emulated stack, which holds dead host values at the loop top (`docs/vita-testing.md`, "The mips2c stack holds host values"). Every other chunk is identical, and so are the 85 shots before and after the load.
+  - **Options and menus:** `bench=1` ran its 18 option sets, each set's shaders compiled through a sync call, and put the options back (`logs/vall-bench`). `menu_test` toggled widescreen and 60 fps through the rescale sync, and the captures after it match the base run's (`logs/vall-menu`; the base run's capture at 4400 caught Vita3K's own shader-compile overlay).
+  - **The queue:** 0 unknown commands in every run.
+  - **Relative numbers, Vita3K:** the game thread's `raster` fell from 0.6 to 0.0 ms per vblank (gems script, demo). The render thread was 96–99% busy at Vita3K's slow GL. The rest moved both ways between runs (Vita3K's emulated cores compete on the Mac), so the gain on a Vita is still D62's estimate until the hardware runs.
+  - **Vita3K's GPU emulation failed in 3 of ~45 runs** ("Unimplemented command opcode" and "Attempt to start recording while already recording" in its log): `vall-gems-cap` and `vfin-gems-ws` with the render thread, `vfin-gems-cap-off` without it. Without the thread Vita3K died. With it the render thread stayed blocked in a GL call and the game thread logged `render: still waiting` every 5 s. Two reruns of `vfin-gems-ws` passed byte-identical. Nothing in the logs points at the port, but whether a Vita's GPU stack has a similar problem with GL on a second thread is for the hardware runs to show.
+  - **Host:** the host doesn't build the render thread. The shared-code changes (D63's `present.c` hook, D64's split of `psx_xa_accept` and `psx_cd_xa_locate`) leave it unchanged:
+    - `tools/host_checks.sh`, the base binary against this branch's: 287/287 files identical (demo 28, whole-game tour with its fairy save 143, routes A and B 58 each; `logs/hbase-*`, `logs/hnew-*`);
+    - the attract demos with `--widescreen` and with `--widescreen --interp`: 28/28 each (`logs/hws*demo-*`);
+    - oracle replays: `cap3` 329 PASS (plus its 9 NOEXIT capture-side samples, as before), `cap5-fairy` 261 PASS, `cap6-tour` 358/358 (`logs/oracle`);
+    - `ctest`: all pass (`gte` and `m2c_diff_math` skipped, as before).
+  - **Not checked:** hardware.
+- **Default:** off (`render_thread=0`) until the hardware runs (D66).
+
+### D64. The XA music read ahead of the CD head, on core 1
+- **Why:** D62 (C1). The CD model runs on the game thread every vblank (`psx_cd_vblank`). At double speed the head passes 2.5 sectors a vblank, and each sector the stream might play was a file-system read there: an `fseek` and `fread` of 2,336 bytes from the extracted files, or, from a disc image (D60), a refill of a 32-sector window now and then. The `spu` part on hardware was 1.65 ms per vblank in the heavy scene, most of it likely this (*estimate*; the `cd:` line of D60 gives the file-system time).
+- **Chosen:** `config.txt xa_ahead=1` (`src/platform/vita/xa_ahead.c`). A reader thread on core 1 (priority 0x90, behind the mixer's 0x70) reads windows of 32 sectors ahead of the head, each with one `sceIoPread` on its own file handle. The game thread takes the sectors from there. Where a window holds the sector, the file system isn't touched on the game thread.
+  - **The same bytes, decided the same way:** the CD model, the stream's position, its file and channel filter and the mode bits stay on the game thread. `psx_xa_accept` is split into the read and `psx_xa_check` (`xa.c`), and the Vita calls the check on the sector it got. A sector not read ahead yet (the stream just started or jumped, or the reader is behind) is read on the game thread through `psx_cd_read_raw` as before. So which way a sector comes changes only how long the game thread waits. The files are the disc's and never written, so a window can't go stale.
+  - **Where to read:** `psx_cd_xa_locate()` (`libcd.c`) gives the file, offset, stride and skip of an XA sector, for both layouts, from tables that don't change once the disc is open. It's the only shared-code addition, and the host doesn't call it.
+  - **Windows:** four. The game thread asks for the next window when fewer than 32 sectors ahead of the head are covered, and reuses a window only when it is free or wholly behind the head. The reader only fills windows it was asked for. So each window has one writer at a time, and states change through atomics.
+- **The log:** `xa N:` every 300 vblanks: sectors from the read-ahead, sectors read on the game thread, and the reader's windows, KB and file-system time.
+- **Not moved:** data reads (`CdRead`: level loads, cutscenes) stay on the game thread. They happen during loads, when nothing else is waiting, and the game reads its data back at once.
+- **Checked** (Vita3K, `realtime=0`): the gems script with music from the extracted files (`logs/vall-gems-ws`, `vfin-gems-ws2`, `vfin-gems-ws3`) and from the disc image (`logs/vall-gems-img`): the WAV and all shots byte-identical to the base build's. Per 300 vblanks of play, 750 music sectors came from the read-ahead and none from the game thread. At the stream's first start 5 were read on the game thread. The game thread's file-system reads (the `cd:` line) stop after the level's load: 3,079 by vblank 6600 and none after, against 14,454 by vblank 8700 without it. Host: unchanged (D63's host checks).
+- **Default:** off (`xa_ahead=0`) until the hardware runs (D66).
+
+### D65. Cheaper GPU work: an opaque path without `discard`; the rest waits for numbers
+- **Why:** D62 estimates 25–33 ms of GPU work per frame at 16:9 native in heavy scenes, against ~13 ms for 60 fps. Vita3K can't time the GPU (it runs the Mac's), so each change here has to be measured on the Vita. Each one gets a switch, and the picture is checked here.
+- **Chosen: `gpu_opaque=1`** (G1). With `tex_cache=1` (the default), when a texture block is decoded into the atlas (D41) the CPU also checks its texels in `s_vram`. A block with no texel of 0 (transparent) and none with bit 15 (STP) is "plain" (`texels_plain`, `atlas_find`). A triangle all in plain blocks is drawn by `k_fs_atlas_plain_body`: `k_fs_atlas_body` without its two `discard`s and the STP mix. For such a texel `k_fs_atlas_body` would draw `vec4(rgb, 1)` too, in every blend mode but subtract's second pass, which draws only STP texels. That pass keeps the old program (it draws none of a plain triangle). So the pixels are the same by construction. The check costs ~1,000 texel reads per block, and blocks are decoded only when VRAM changes (level loads).
+  - **What it may buy:** the SGX runs a shader without `discard` with fewer instructions and can treat the triangle as opaque. With the depth test off (as here) it can't drop hidden pixels, so the gain is the shorter shader (*estimate*: 0–20% of the scene's GPU time). Run A3 against A2 (D66) answers it: the `gpu_time=2` scene time with it on and off.
+  - **The log:** `atlas N: gpu_opaque=1: K of those triangles drawn without discard`.
+- **Not done, and why:**
+  - **Shader trims beyond that** (per-triangle floors in the vertex shader, `mediump`): they change the arithmetic, so the pixels can differ by a rounding. They wait until Run A shows the GPU is the limit, and then need a pixel comparison on the device (Vita3K recompiles shaders itself).
+  - **GL state caching and batching** (C2): with D63 the GL calls are off the game thread. On the render thread they cost ~10 ms a frame (*estimate*, D62's raster), against 33 ms a tick at 30 fps and ~16 ms a frame at 60. Batching has little to merge: PsyCross starts a new split exactly when what our draw depends on changes (texture format, blend, draw environment). Caching attribute pointers relies on what vitaGL does with them after `glBufferData`, and vitaGL's source isn't in vitasdk (D35).
+  - **Vertex buffer reuse:** there's one `glBufferData` per `DrawAllSplits`, and `gpu_time=2` times it (~1 per frame; Run A gives the cost).
+  - **vitaGL settings:** the shader compiler's optimisation level (`vglSetupRuntimeShaderCompiler`) may change float results. It stays at the default, exact one (D35).
+- **Checked** (Vita3K): in Artisans it applies to 98% of the textured triangles (202,724 of 207,087 per 300 vblanks, `logs/vall-gems-ws`). The window captures of the GPU's picture at six points are byte-identical to the base build's, twice (`logs/vfin-gems-cap`, `vfin-gems-cap2`). Vita3K recompiles the shaders itself, so the device's own compiler still has to show the same pixels (Run A3).
+- **Default:** off (`gpu_opaque=0`) until Run A3 shows it helps (D66).
+
+### D66. The cores, the defaults, and the hardware runs that decide them
+- **The layout with everything on** (`render_thread=1`, `xa_ahead=1`; each thread logs its core and priority at start):
+
+  | Thread | Core | Priority | Runs |
+  |---|---|---|---|
+  | Game (main) | 0, pinned once the render thread starts (else any of 0–2, as before) | 0xA0 | logic, the translated renderers, PsyCross's OT walk and parse, recording the GL commands, the present decision, the CD model, data reads, save states |
+  | Render (`spyro_render`, D63) | 2 | 0x80 | every vitaGL call: start-up and shader compiles, `expand()` and the atlas, VRAM uploads, the draws, captures, presents and swaps, the readback replay for `StoreImage` |
+  | Mixer (`spyro_mixer`, D37) | 1 | 0x70 | SPU mix and XA decode, ~0.8 ms a vblank |
+  | XA reader (`spyro_xa_ahead`, D64) | 1 | 0x90 | XA sector reads, a window per ~13 vblanks; mostly waiting on the file system, behind the mixer |
+  | SDL2's audio thread | not pinned | SDL2's | the mixed audio to `SceAudio` |
+
+  Core 1 keeps the light, deadline-bound work. The game thread has core 0 to itself, and the GL work has core 2. With `render_thread=0` nothing is pinned that wasn't before.
+- **Considered and not done:** building the in-between frame's draw while the next tick's logic runs (D62's B2). With D63 its GL work already runs on core 2, overlapping the next tick like any other frame. What's left, its render path (~9.7 ms), would need tick N's state kept intact while tick N+1 changes the same arena (a second arena and a second set of the translated renderers' globals). D62's reasons stand.
+- **Defaults:** all three switches stay off in this build: `render_thread=0`, `xa_ahead=0`, `gpu_opaque=0`. Each one is exact in every check that can run here (Vita3K, host). What Vita3K can't show is how vitaGL and the Vita's scheduler behave with GL on a second thread. The hardware runs below decide. Turning one on by default is then a one-line change in `g_vita_opts` (`main.c`). 60 fps stays experimental and off (D44) until Run C says otherwise.
+- **The hardware runs** (`tools/vita/fps-runs/`, one `config.txt` each, with a README saying what each line shows): A1/A2/A3 at 30 fps with `gpu_time=2` (main as it was, then the threads, then the threads and the opaque path); B1/B2 the bench with 60 fps forced, off and on; C1/C2 60 fps in play with everything on, with and without the budget. They replace D62's Phase 0.
+- **Proposed after them:** `render_thread=1` and `xa_ahead=1` on by default if A2 shows no regression, `gpu_opaque=1` only if A3's scene time is lower.
+- **Superseded by D68:** after the first hardware run (C1) all three are on by default.
+
 ## 2026-11-01: black bars above and below the widescreen picture
 
 ### D67. The screen shows the 224 lines the game draws; widescreen narrows by 17/21
@@ -795,3 +903,82 @@ Record each decision with its date, what was chosen, and why.
     - Widescreen: they differ from before, as they should with the new X row. After the fix they are identical across `res=native` and `res=ps1`. `gpu=0` differs from `gpu=1` at vblank 5000 only (1035 pixels). v1.0.1 does the same (`run12` vs `run6`: 1134 pixels at 5000), so that difference predates this change.
   - **Host:** `--widescreen` with the same pad fills all 544 rows in its 960×544 shots (`logs/run9-host-ws`). ctest 6/6 (cd, gte, m2c_diff_math, menu_panel, platform_linux32, savestate_globals).
   - **Not run:** the credits, the fairy's card and a hardware test. The credits and the fairy draw into the same 224-line areas, and this change only moves where the screen samples them.
+
+## 2026-11-01: the first hardware run of the render thread (C1)
+
+### D68. 60 fps holds a steady 30 where it doesn't fit; the three switches on by default
+- **The run:** `c1-all.txt` (60 fps, default budget, `gpu_time=2`, all three switches on), with the PR #40 VPK merged with D67. Artisans, then a heavier level from about vblank 6000 (`logs/hw-pr40-c1/spyro.log` in this worktree, gitignored). The user saw a few stutters and "graphics glitches", and later said the glitches were likely the stuttering: there was no corruption they could point to.
+- **What the log shows:**
+  - **The game thread** is 23–53% busy per window, down from 93–94% at 30 fps (D44), with `raster` at 0.0–0.1 ms. The render thread is 44–72% busy, 7.4–12.2 ms per vblank, and 99% in one window (vblank 2400, a load: 296 of 297 ticks skipped).
+  - **Artisans holds 60 in most ticks:** 134–147 in-between frames per 149 ticks, `gpu_time=2` scene times of 5.5–13.1 ms.
+  - **The heavier level is GPU-bound:** the scene takes the GPU 18.9–31.1 ms in the windows at 6300–6900, 7500–8100 and 10200 (9.7 ms at 7200). The budget skipped 82–149 of ~149 ticks in those windows and let the rest through, so the picture flipped between 60 and 30 tick by tick: windows of 0, 20, 24, 30, 54 and 67 in-between frames. That's D44's flicker, and the likeliest stutter.
+  - **"previous frame not shown yet":** 1–10 waits per window, 15–111 ms in total.
+  - **`gpu_time=2`** does three `glFinish` calls in one frame every 300 vblanks: a hitch every 5 s. The default `gpu_time=1` does two. Plan item C4.
+  - **Two `render: still waiting (sync calls)` lines at vblank 0:** the start-up's shader compile. They come between vitaGL's line and the `tex_filter=` line, which `gl_gpu_init` logs before and after `build_programs`. That makes the compile at least 10 s on hardware (5 s per line). It was the same call before D63, just not logged.
+  - **No `unknown` commands, and no `still waiting` during play.**
+- **Chosen:**
+  - **Hysteresis for the budget** (plan item P1; `present.c` `budget_allows`). A miss holds 30 fps until the costs have fitted with an eighth to spare for a whole hold. The hold starts at 30 ticks (1 s) and doubles, up to 240 ticks (8 s), when a miss comes within 300 ticks (10 s) of returning to 60. After 10 s at 60 it's back to 1 s.
+    - **A miss** is any of: the game thread's CPU time plus the in-between frame's over the budget, as before; two pictures on the render thread over the budget (D63's hook); or late pictures while the in-between frame runs. Late means the game thread waited for the previous present (`g_present_late`, the render thread's `W_FRAME` waits); each adds 30 to a score, each tick takes 1 off, and a score above 60 is a miss (3 late pictures within about half a second). The late pictures are what a GPU-bound scene shows that the CPU costs don't. The GPU's own time S needs a `glFinish`, so it can't feed the budget.
+    - **While held,** the in-between frame's cost is taken as the current logic pass's CPU time. On hardware the in-between pass takes 0.85–1.0 of the logic draw (C1's `present` lines). Using the last measured cost instead could keep the hold forever after one expensive frame. The old per-tick test had the same flaw.
+    - A save-state load resets the hold (`port_present_reset`). `budget_holds` counts the falls, shown in the `present N:` line as "falls to a held 30 fps".
+    - In a simulation with costs from C1 (`budget_allows`'s logic, Gaussian noise per tick), light play stays at 60 and the heavy level holds 30. A marginal place flips 1–3 times a minute instead of 891 times.
+    - **Changed after the D1 run** (below): the render thread is judged against the tick on its own core, the game thread's cost is averaged, and a tick between the two lines pauses the hold instead of restarting it.
+  - **Defaults:** `render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`, and `gpu_time=0` (C4). The threads help at 30 fps too: the game thread's busy time fell by roughly half in C1. The opaque path covered 97–99% of textured triangles in C1's `atlas` lines. Nothing found here ties it to the glitches (below). `config.txt` can still turn each one off.
+  - **`config_version=3`:** the menu now writes 3. A `render_thread=0`, `xa_ahead=0` or `gpu_opaque=0` in a file without it was the old default or one of `tools/vita/fps-runs`' test files, so it's ignored with a log line. The menu's next save drops those lines (`g_vita_config_stale`), so they can't come back once the file says 3. A `0` with `config_version=3` counts. `vita3k_run.sh` and the fps-runs files now write 3. A `gpu_time=2` line stays honoured: it's a diagnostic someone wrote on purpose. A player who copied `c1-all.txt` as their config should delete that line.
+  - **Start-up:** the compile's wait has its own reason. It logs `render: GPU start-up still running after N s (vitaGL and the shaders)` instead of `still waiting`, and `gl_gpu_init` logs `gpu: shaders compiled in N ms` in both modes.
+- **Ruling out real corruption** (checked before the user said the glitches were the stutter):
+  - **The opaque path** (`gpu_opaque`). `plain` is decided per atlas entry from `s_vram` when the entry is made, with the same rules as the shaders (texel 0 or bit 15). An entry lives as long as its atlas generation. Every change to `s_vram` (uploads, copies, the readback replay) sets `s_aflush`, and the next vertex buffer's `expand()` starts a new generation; blocks over a target are never cached. That's the same rule the decode itself depends on. On the render thread `s_vram` is updated in command order, so the check reads the VRAM the decode will read. The plain program is never used for subtract's second pass. So by construction it can only differ if the decoded atlas itself is wrong, which would show without it too.
+  - **The 60 fps frames with D67's 224-line crop,** and the render thread's ordering of uploads, readbacks and display state against presents. The crop reads `g_gl_env` and the slot's own size, both snapshotted in command order. The render thread reads no game globals other than `g_present_capture`, a constant. Vita3K runs below.
+- **Checked** (logs in this worktree; Vita3K is not hardware, and nothing here has run on a Vita yet):
+  - **Vita3K, the new defaults against all three switches off in the same VPK** (`render_thread=0 xa_ahead=0 gpu_opaque=0 config_version=3`), after the D67 merge, with 60 fps forced (`interp=1 interp_budget=0`, widescreen):
+    - Gems script, 44 replay shots, the WAV and the memory card byte-identical (`logs/v68-gems-i0-on`, `-off`).
+    - Pause route (`StoreImage` replay for the pause and inventory backgrounds), 70 shots and the card byte-identical (`logs/v68-pause-i0-*`).
+    - Window captures of the GPU's own picture at six points (`logs/v68-cap-i0-*`):
+      - 7000, 7600, 8000 and 8400 are byte-identical.
+      - At 5000, 732 pixels differ, all within 16 pixels of the window's edge (the macOS window border and corners); the picture inside is identical.
+      - At 1800 the "off" run's grab caught Vita3K's own "compiling shaders" overlay instead of the game, as `vbase-menu` did before (D63).
+    - So there's no sign of corruption from the switches, the in-between frames or the crop. That fits the user's word that the glitches were the stutter.
+  - **0 unknown commands and no `still waiting`** in every run with the render thread.
+  - **The start-up line** in Vita3K: `render: GPU start-up still running after 5 s`, then `gpu: shaders compiled in 5133 ms` (`logs/v68-gems-budget`).
+  - **The hold, Vita3K, default budget** (`logs/v68-gems-budget`): Vita3K's GL makes the render thread's time per picture 15–35 ms, so 60 never fits there. The log shows 1 fall to a held 30 at the start and none after it, 0 in-between frames all run. That's a steady 30, not a flip. The return to 60 is covered only by the simulation above and the hardware run.
+  - **The migration** (`logs/v68-migrate`, final VPK, a config ending in `config_version=2 render_thread=0 gpu_opaque=0`):
+    - Both `0`s were ignored with their log lines, and the render thread, the read-ahead and the opaque path started.
+    - The menu's save (`menu_test=700`) wrote `config_version=3`, dropped the two stale lines and kept the rest.
+  - **Host:** the base is `a6f55b2`, this branch's merge of D67, built from the same tree with `present.c`/`present.h` taken from it (`build/hostbase-src`).
+    - `tools/host_checks.sh`: 279/279 files identical, the logs left out: demo 26, whole-game tour with its fairy save 141, routes A and B 56 each (`logs/h68base-*`, `logs/h68new-*`).
+    - The attract demos with `--widescreen` (25/25) and with `--widescreen --interp` (25/25).
+    - After the last change (the logic-pass estimate while held), the plain demo 26/26 and `--widescreen --interp` 25/25 again, and 26/26 with `--trace` against the base also traced (`logs/h68fin-*`, `logs/h68base-wsi-trace`). The host has no budget by default, so `budget_allows` doesn't run there.
+    - `ctest`: all pass (`gte` and `m2c_diff_math` skipped, as before).
+    - The oracle replays weren't rerun: the only shared-code change is in `present.c`'s budget path, which the host never takes.
+  - **Not checked:** hardware. The next run is `tools/vita/fps-runs/d1-60fps.txt`, which is what the menu's 60 FPS gives now.
+- **The D1 hardware run: the hold never let go** (`d1-60fps.txt`, VPK from `131dde2`; `logs/hw-pr40-d68/spyro.log`, gitignored):
+  - **Boot:** `gpu: shaders compiled in 10244 ms`, after two `GPU start-up still running` lines.
+  - **Artisans at 60:** 146 of 148 ticks had their in-between frame at vblank 1200. Then 2 falls around the level change at 1500, and from 1800 to 4200, until the user changed `interp` in the menu, every tick was skipped for the budget with 0 falls per window. The hold never ended, though the game thread was only 25–43% busy and there were almost no late pictures.
+  - **Why: the release test was a trap.**
+    - **The render thread** was held to the game thread's budget with an eighth to spare (22.75 ms at 26). While held, the render thread measures only full pictures, 9.9–15.9 ms each (per-window averages), so its two-picture estimate was 20–32 ms. At 60 in C1, the same kind of place took it 8.4–11.4 ms per picture, both kinds together: 17–23 ms per tick, on a core that has the whole 33.4 ms tick to itself.
+    - **The game thread's estimate** (CPU time per tick plus the logic pass, 20–23 ms in those windows) was close to 22.75 ms. The hold started over on any single tick above it, and with per-tick noise one comes along well within the 30 ticks the hold needs.
+  - **Fixed** (`budget_allows`):
+    - **The render thread is judged against the tick on its own core:** a miss when two pictures take more than 15/16 of the tick (31.3 ms), released with an eighth to spare (29.2 ms). While held, two pictures are still estimated as twice the full one. That's about what both cost at 60: 0.9 of it in C1 against D68 at the same kind of place.
+    - **The game thread's cost is averaged over about 4 ticks** (`s_cpu_avg`). It's a miss when the average is over the budget, or when two ticks in a row are over (a jump the average hasn't caught up with). One tick over on its own is noise: in C1's windows where 60 mostly fitted, the per-tick test skipped 2–34 of ~149 ticks, and before D68 each of those only lost its own in-between frame.
+    - **While held:** a tick over the miss line starts the hold again. A tick that fits but without the eighth to spare only pauses the countdown. The hysteresis stays: 1 s of ticks with room to spare before 60 comes back, doubling to 8 s after a miss within 10 s.
+    - The late-picture miss is unchanged.
+  - **The simulation** (`budget_allows`'s logic in Python, fed each D68 window's averages: game thread busy, logic draw, render time per picture; 12% Gaussian noise per tick, 5% of ticks 6 ms heavier; at 60, 0.9 of the per-picture time and a late picture when one passes 16.7 ms). Share of ticks at 60 per simulated minute:
+
+    | Window | Busy, logic, per picture | `131dde2` | Fixed |
+    |---|---|---|---|
+    | 1800, after the level change | 42%, 8.7 ms, 15.9 ms | 0.00 | 0.00 |
+    | 2400 | 37%, 10.6, 11.6 | 0.00 | 0.56 (3 holds a minute) |
+    | 2700 | 25%, 6.4, 10.1 | 0.98 | 0.98 |
+    | 3000 | 34%, 9.3, 9.9 | 0.01 | 0.97 |
+    | 3300 and 3600 | 34%, 9.6, 11.3 | 0.00 | 0.95 |
+    | 3900 | 37%, 10.4, 14.7 | 0.00 | 0.10 |
+    | 4200 | 43%, 12.4, 14.4 | 0.00 | 0.00 |
+    | Artisans (D68 at 1200), starting held | 51% at 60, 7.8, 9.4 at 60 | 0.92 | 0.98 |
+    | C1's heavy level, 16–17 ms per picture at 60 | 40%, 8.3, 17.6 | 0.00 | 0.00 |
+    | A GPU scene of 19, 22 or 26 ms | | | 0.00 |
+
+    The old logic run through the same simulation stays held from 2400 on, as the hardware did. 2700's average released in the simulation but not in the run: its average hides the window's spread.
+  - **Checked:**
+    - **Vita3K, default budget** (gems script, `logs/v68c-gems-budget`, VPK `logs/vpk-d68c`): the render thread takes 16.5–37 ms per picture there, over the new line, so as before there's 1 fall at the start, then a steady 30 with 0 in-between frames. 0 unknown commands and no `still waiting`; `gpu: shaders compiled in 4319 ms`. Vita3K can't show the return to 60: only the simulation and the next hardware run cover it.
+    - **Host:** builds; `ctest` all pass. The host has no budget by default (`interp_budget_us` is 0 unless set), so `budget_allows` doesn't run in its replays.
+    - **Not checked:** hardware. Rerun `d1-60fps.txt` with a VPK built from this change.

@@ -47,6 +47,7 @@
 #include "gpu/PsyX_GPU.h"
 #include "../../game/present.h"
 #include "psx_vcache.h"
+#include "gpu_rt.h"
 
 #define VW 1024
 #define VH 512
@@ -142,7 +143,7 @@ static Prog s_prog[P_COUNT];
  * STP per texel); 3-point (tex_filter=2); the GPU's bilinear (tex_filter=1's
  * opaque draws, D43). Only the configured set (and what it falls back to)
  * is built, or all of them for bench= (D41). */
-enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_COUNT };
+enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_AO, V_COUNT };
 static Prog s_vprog[V_COUNT][P_T16 + 1];
 static Prog s_dprog[3]; /* the atlas's decode pass, per texture format */
 
@@ -164,7 +165,9 @@ static TextureID s_texid;
 static TexFormat s_texfmt;
 
 static GrVertex s_vbuf[MAX_VERTEX_BUFFER_SIZE];
-static const GrVertex *s_vorig; /* PsyX's own buffer, as it was given */
+static const GrVertex *s_vorig; /* PsyX's own buffer as it was given, or the
+                                   render thread's copy of it (D63) */
+static const VCacheVert *s_side; /* g_vcache_side, or the render thread's copy */
 static int s_nverts;
 
 /* The expanded vertex (D39, D43): PsyX's own vertex, copied whole, then
@@ -181,7 +184,8 @@ typedef struct {
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
 /* per triangle: 0 nearest texel from VRAM, 1 nearest from the atlas,
- * 2 filtered from the atlas */
+ * 2 filtered from the atlas, 3 as 1 with no transparent or STP texel
+ * (gpu_opaque, D65) */
 static uint8_t s_tkind[MAX_VERTEX_BUFFER_SIZE / 3 + 1];
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
 static int s_xattr;    /* attribute arrays 3-6 are enabled */
@@ -195,41 +199,85 @@ static int s_vc;       /* persp or subpixel: the vcache records and is read (D43
 static struct {
   unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
   uint64_t upload_us, readback_us, expand_us;
+  unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
+  uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+
+/* prof.c's parts are the game thread's: on the render thread (D63) its
+ * own report in gpu_thread.c counts this time instead */
+static void gprof_enter(int part) {
+  if (!g_rt_active)
+    prof_enter(part);
+}
+
+static void gprof_leave(void) {
+  if (!g_rt_active)
+    prof_leave();
+}
 
 /* One frame per report is timed on the GPU: glFinish before its first draw
  * (the GPU is idle from there) and again before its swap. "frame" is from
  * that first draw to the GPU being done, CPU work included; "tail" is how
  * long the GPU still worked after the CPU had sent everything. A small tail
- * means the GPU keeps up with the CPU at this resolution. */
+ * means the GPU keeps up with the CPU at this resolution.
+ * gpu_time=2 (measurement only, docs/fps-plan.md) also does a glFinish at
+ * that frame's capture, right after its last draw: the GPU only starts a
+ * scene's pixels once the scene ends, so "scene" is about the GPU's own time
+ * for the game's picture, apart from the CPU's. The tail then holds the
+ * capture and present passes. */
 static struct {
   int state; /* 0 idle, 1 armed, 2 timing */
   uint64_t t0;
   unsigned frame_us, tail_us, n, seq, taken;
+  int scene_wait;    /* gpu_time=2: the next capture times the scene */
+  unsigned scene_us; /* -1u: the timed frame had no capture */
 } s_sample;
 
 /* bench= (D41): time the next picture too, and read the last one timed */
-void vita_gpu_arm_sample(void) {
+void gl_arm_sample(void) {
   if (!s_sample.state)
     s_sample.state = 1;
 }
 
-int vita_gpu_take_sample(unsigned *frame_us, unsigned *tail_us) {
-  if (s_sample.seq == s_sample.taken)
+/* From the game thread while the render thread may be timing the next one
+ * (D63): seq is odd while frame_us and tail_us are written. */
+int gl_take_sample(unsigned *frame_us, unsigned *tail_us) {
+  unsigned seq = __atomic_load_n(&s_sample.seq, __ATOMIC_ACQUIRE);
+  if ((seq & 1) || seq == s_sample.taken)
     return 0;
-  s_sample.taken = s_sample.seq;
   *frame_us = s_sample.frame_us;
   *tail_us = s_sample.tail_us;
+  __atomic_thread_fence(__ATOMIC_ACQUIRE);
+  if (__atomic_load_n(&s_sample.seq, __ATOMIC_RELAXED) != seq)
+    return 0;
+  s_sample.taken = seq;
   return 1;
 }
 
+uint32_t g_gl_finish_us; /* in the timed frame's glFinish calls (gpu_thread.c leaves it out) */
+
 static void sample_begin(void) {
   if (s_sample.state == 1) {
+    uint64_t t = now_us();
     glFinish();
     s_sample.t0 = now_us();
+    g_gl_finish_us += (uint32_t)(s_sample.t0 - t);
     s_sample.state = 2;
+    s_sample.scene_wait = g_vita_opts.gpu_time == 2;
+    s_sample.scene_us = -1u;
+  }
+}
+
+/* gpu_time=2: the timed frame's scene, from its last draw to the GPU done */
+static void sample_scene(void) {
+  if (s_sample.state == 2 && s_sample.scene_wait) {
+    uint64_t t = now_us();
+    glFinish();
+    s_sample.scene_us = (unsigned)(now_us() - t);
+    g_gl_finish_us += s_sample.scene_us;
+    s_sample.scene_wait = 0;
   }
 }
 
@@ -239,10 +287,13 @@ static void swap(void) {
     uint64_t t1 = now_us(), t2;
     glFinish();
     t2 = now_us();
+    g_gl_finish_us += (uint32_t)(t2 - t1);
+    __atomic_store_n(&s_sample.seq, s_sample.seq + 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_RELEASE);
     s_sample.frame_us = (unsigned)(t2 - s_sample.t0);
     s_sample.tail_us = (unsigned)(t2 - t1);
     s_sample.n++;
-    s_sample.seq++;
+    __atomic_store_n(&s_sample.seq, s_sample.seq + 1, __ATOMIC_RELEASE);
     s_sample.state = 0;
   }
   vglSwapBuffers(GL_FALSE);
@@ -465,6 +516,21 @@ static const char k_fs_atlas_body[] =
     "  gl_FragColor = mix(vec4(qrgb, 1.0), vec4(qrgb * u_semi.x, u_semi.y), qstp);\n"
     "}\n";
 
+/* gpu_opaque=1 (D65): k_fs_atlas_body for a triangle whose atlas blocks
+ * hold no transparent texel and none with STP (known when the block is
+ * decoded, atlas_find): nothing is discarded and nothing blends by texel, so
+ * the same pixels come out of fewer instructions, with no discard. */
+static const char k_fs_atlas_plain_body[] =
+    "varying vec4 v_box;\n"
+    "varying vec2 v_off;\n"
+    "uniform sampler2D s_atlas;\n"
+    "void main() {\n"
+    "  vec4 qbox = floor(v_box + 0.5);\n"
+    "  vec2 q = clamp(floor(v_uv + 0.002), qbox.xy, qbox.zw) + floor(v_off + 0.5);\n"
+    "  vec4 qt = texture2D(s_atlas, (q + 0.5) * (1.0 / 2048.0));\n"
+    "  gl_FragColor = vec4(qt.xyz * v_col.xyz * (255.0 / 128.0), 1.0);\n"
+    "}\n";
+
 /* tex_filter=1 on opaque draws (D43): the atlas sampled with the GPU's own
  * bilinear filter, one fetch. The manual taps above cost the hardware about
  * as much as the old palette decode (13 ms of GPU a frame at native
@@ -641,12 +707,14 @@ static int build_variant(int v) {
   const char *vs[1] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x};
   const char *fs[4];
   /* FILTER 1 in k_fs_filt_body is 3-point, 2 bilinear */
-  int i, filter = v == V_F3 ? 1 : v == V_FB ? 2 : 0, atlas = filter || v == V_A0 || v == V_HB;
+  int i, filter = v == V_F3 ? 1 : v == V_FB ? 2 : 0;
+  int atlas = filter || v == V_A0 || v == V_HB || v == V_AO;
   if (s_vprog[v][P_UNTEX].prog)
     return 0;
   /* what the atlas doesn't hold, the sprites, and tex_filter=1's opaque draws */
-  if (atlas && (build_variant(V_X0) || (v != V_A0 && build_variant(V_A0)) ||
-                (v == V_FB && build_variant(V_HB))))
+  if (atlas && (build_variant(V_X0) || (v != V_A0 && v != V_AO && build_variant(V_A0)) ||
+                (v == V_FB && build_variant(V_HB)) ||
+                (v != V_AO && g_vita_opts.gpu_opaque && build_variant(V_AO))))
     return -1;
   fs[0] = k_fs_prim_head;
   fs[1] = k_fs_untex;
@@ -661,6 +729,8 @@ static int build_variant(int v) {
       fs[3] = k_fs_filt_body;
     } else if (v == V_HB) {
       fs[2] = k_fs_hw_body;
+    } else if (v == V_AO) {
+      fs[2] = k_fs_atlas_plain_body;
     } else if (atlas) {
       fs[2] = k_fs_atlas_body;
     }
@@ -862,6 +932,7 @@ static int overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int b
 typedef struct {
   uint32_t k0, k1, gen;
   uint16_t ax, ay; /* atlas texel of the entry's first block */
+  uint8_t plain;   /* no transparent texel, none with STP (gpu_opaque, D65) */
 } AEntry;
 static AEntry s_amap[AMAP];
 static uint32_t s_agen = 1;
@@ -875,7 +946,7 @@ static float s_aq_org[3][AMAXNEW * 24];
 static int s_alin[2]; /* the atlas's GL filter is GL_LINEAR now */
 static int s_aqn[3];
 static struct {
-  unsigned blocks, decoded, misses, used;
+  unsigned blocks, decoded, misses, used, plain;
 } s_ast;
 
 static void atlas_reset(void) {
@@ -903,8 +974,32 @@ static void atlas_reset(void) {
 /* The atlas texel of page texel (bx0 * 32, by0 * 32) of texture (fmt,
  * page, clut), with blocks up to (bx1, by1) decoded around it (or, wrap,
  * the one tile with its margin), or -1. */
+/* gpu_opaque (D65): 1 if page texels (u0..u1, v0..v1) of texture (fmt,
+ * page, clut) are all opaque without STP: none is 0, none has bit 15 (the
+ * shaders' and the decode pass's rules). s_vram is what the atlas decodes. */
+static int texels_plain(int fmt, int page, int clut, int u0, int v0, int u1, int v1) {
+  int px = (page & 15) * 64, py = (page >> 4 & 1) * 256;
+  const uint16_t *cl = s_vram + (clut >> 6 & 511) * VW;
+  int cx = (clut & 63) * 16, u, v;
+  for (v = v0; v <= v1; v++) {
+    const uint16_t *row = s_vram + ((py + v) & (VH - 1)) * VW;
+    for (u = u0; u <= u1; u++) {
+      uint16_t c;
+      if (fmt == 0)
+        c = cl[(cx + (row[(px + (u >> 2)) & (VW - 1)] >> ((u & 3) * 4) & 15)) & (VW - 1)];
+      else if (fmt == 1)
+        c = cl[(cx + (row[(px + (u >> 1)) & (VW - 1)] >> ((u & 1) * 8) & 255)) & (VW - 1)];
+      else
+        c = row[(px + u) & (VW - 1)];
+      if (c == 0 || (c & 0x8000))
+        return 0;
+    }
+  }
+  return 1;
+}
+
 static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, int by1, int wrap,
-                      int *ax, int *ay) {
+                      int *ax, int *ay, int *plain) {
   uint32_t k0 = (uint32_t)fmt | (uint32_t)(page & 31) << 2 | (uint32_t)(uint16_t)clut << 7;
   uint32_t k1 = (uint32_t)(bx0 | by0 << 3 | bx1 << 6 | by1 << 9 | wrap << 12);
   uint32_t h = ((k0 * 0x9E3779B1u) ^ (k1 * 0x85EBCA6Bu)) >> 20, n;
@@ -921,6 +1016,7 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
     if (f->k0 == k0 && f->k1 == k1) {
       *ax = f->ax + mg;
       *ay = f->ay + mg;
+      *plain = f->plain;
       return 0;
     }
   }
@@ -952,6 +1048,10 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
   e->k1 = k1;
   e->ax = (uint16_t)(s_ax * ACELL);
   e->ay = (uint16_t)(s_ay * ACELL);
+  e->plain = (uint8_t)(g_vita_opts.gpu_opaque &&
+                       texels_plain(fmt, page, clut, bx0 * ACELL, by0 * ACELL, bx1 * ACELL + ACELL - 1,
+                                    by1 * ACELL + ACELL - 1));
+  *plain = e->plain;
   {
     /* the decode quad: atlas rect <- texels from the block origin (centres
      * at +0.5), the margin wrapping within the tile */
@@ -1216,12 +1316,12 @@ static int shown_top(int dh) { return dh == 240 ? 8 : 0; }
 static void set_scale(void) {
   /* the screen's pixels: the display rect fills a 4:3 area 544 lines high,
    * or the whole width with widescreen (presentation frames, D30) */
-  int dw = currentDispEnv.disp.w > 0 ? currentDispEnv.disp.w : 512;
-  int dh = currentDispEnv.disp.h > 0 ? currentDispEnv.disp.h : 240;
+  int dw = g_gl_env.disp.disp.w > 0 ? g_gl_env.disp.disp.w : 512;
+  int dh = g_gl_env.disp.disp.h > 0 ? g_gl_env.disp.disp.h : 240;
   if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
   } else { /* res=native */
-    s_sx = (float)(g_present.widescreen ? SCREEN_W : AREA43_W) / dw;
+    s_sx = (float)(g_gl_env.wide ? SCREEN_W : AREA43_W) / dw;
     s_sy = (float)SCREEN_H / (dh - 2 * shown_top(dh));
   }
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
@@ -1388,12 +1488,13 @@ static void expand(int count) {
     memcpy(&ref0, &v[0].tcx, sizeof ref0);
     wrap = wrap && s_filter; /* the margin is only for the filter */
     if ((s_filter || s_cache) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
-      int ax, ay;
+      int ax, ay, plain;
       s_ast.blocks++;
       if (!atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
-                      v1 >> 5, wrap, &ax, &ay)) {
+                      v1 >> 5, wrap, &ax, &ay, &plain)) {
         filt = s_filter && (ref0 & VREF_POLY);
-        kind = filt ? 2 : 1;
+        kind = filt ? 2 : plain ? 3 : 1;
+        s_ast.plain += kind == 3;
         du = ax - (u0 & ~31);
         dv = ay - (v0 & ~31);
       } else {
@@ -1419,7 +1520,7 @@ static void expand(int count) {
     if (s_vc) { /* persp, subpixel: the vcache's answer, in vertex order */
       for (k = 0; k < n; k++) {
         XVertex *x = s_xbuf + i + k;
-        const VCacheVert *c = &g_vcache_side[i + k];
+        const VCacheVert *c = &s_side[i + k];
         uint32_t ref;
         memcpy(&ref, &v[k].tcx, sizeof ref);
         if (!(ref & VREF_POLY))
@@ -1438,17 +1539,25 @@ static void expand(int count) {
   s_st.expand_us += now_us() - t0;
 }
 
+/* gpu_time=2: what the vertex upload cost (t0 0: not measured) */
+static void vbo_count(uint64_t t0, size_t bytes) {
+  if (!t0)
+    return;
+  s_st.vbo_us += now_us() - t0;
+  s_st.vbo_bytes += bytes;
+}
+
 /* The vertices into the VBO (vitaGL gives a fresh buffer per glBufferData).
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
- * skips them (gpu_soft.c's rule). */
-void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
+ * skips them (gpu_soft.c's rule). side: the vcache's answers for them (D39). */
+void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
+  uint64_t t0;
   int i, k;
   if (count > MAX_VERTEX_BUFFER_SIZE)
     count = MAX_VERTEX_BUFFER_SIZE;
   memcpy(s_vbuf, vertices, (size_t)count * sizeof *vertices);
   s_vorig = vertices;
-  if (s_vc)
-    psx_vcache_set_base(vertices);
+  s_side = side;
   for (i = 0; i + 2 < count; i += 3) {
     GrVertex *v = s_vbuf + i;
     for (k = 0; k < 3; k++) {
@@ -1465,13 +1574,26 @@ void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   s_nverts = count;
   if (s_xmode) {
     expand(count); /* may draw into the atlas, with other buffers bound */
+    t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
+    vbo_count(t0, (size_t)count * sizeof *s_xbuf);
     return;
   }
+  t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
   glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *vertices, s_vbuf, GL_STREAM_DRAW);
+  vbo_count(t0, (size_t)count * sizeof *vertices);
 }
+
+void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
+  if (s_vc)
+    psx_vcache_set_base(vertices);
+  gl_vertices(vertices, g_vcache_side, count);
+}
+
+/* persp or subpixel: the render thread needs the vcache's answers too */
+int gl_vcache_side_used(void) { return s_vc; }
 
 /* A textured prim samples VRAM: targets drawn over its pages (or CLUT rows)
  * since the last readback have to come back to s_vram first. */
@@ -1508,6 +1630,7 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
   if (!(s_filter || s_cache) || s_texmode == P_UNTEX) {
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, start, n);
+    s_st.gl_draws++;
     return;
   }
   /* runs of each kind of triangle (s_tkind), each with its own program, in
@@ -1517,8 +1640,11 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
     while (e < end && s_tkind[e] == f)
       e++;
     int hw = f == 2 && s_filter == 1 && s_blend == BM_NONE;
+    /* a plain triangle has no STP texel: subtract's second pass (sel 2)
+     * draws none of it, which the plain program would draw whole */
+    int plain = f == 3 && sel != 2 && s_vprog[V_AO][s_texmode].prog;
     p = hw ? &s_vprog[V_HB][s_texmode] : f == 2 ? &s_prog[s_texmode]
-                                                 : &s_vprog[f ? V_A0 : V_X0][s_texmode];
+        : plain ? &s_vprog[V_AO][s_texmode] : &s_vprog[f ? V_A0 : V_X0][s_texmode];
     if (f && s_alin[s_acur] != hw) { /* the GPU's bilinear, or exact texels */
       glActiveTexture(GL_TEXTURE1);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, hw ? GL_LINEAR : GL_NEAREST);
@@ -1530,6 +1656,7 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
     glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, t * 3, (e - t) * 3);
+    s_st.gl_draws++;
     t = e;
   }
 }
@@ -1859,9 +1986,10 @@ int __wrap_sceAppMgrGetBudgetInfo(void *info) {
   return (int)0x80800001; /* any error: "not a system app" */
 }
 
-int vita_gpu_init(void) {
+int gl_gpu_init(void) {
   SceKernelFreeMemorySizeInfo mem = {.size = sizeof mem};
   int present_only = 0;
+  uint64_t t0;
   sceKernelGetFreeMemorySize(&mem);
   vita_log("gpu: free memory: user %u KB, CDRAM %u KB, phycont %u KB",
            (unsigned)(mem.size_user / 1024), (unsigned)(mem.size_cdram / 1024),
@@ -1886,8 +2014,11 @@ int vita_gpu_init(void) {
   s_cache = g_vita_opts.tex_cache != 0;
   s_vc = s_persp || s_subpixel;
   s_xmode = s_filter || s_vc || s_cache;
+  t0 = now_us();
   if (build_programs(&present_only) != 0)
     return -1;
+  /* seconds on hardware: libshacccg compiles every program here */
+  vita_log("gpu: shaders compiled in %u ms", (unsigned)((now_us() - t0) / 1000));
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
     s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = 0;
@@ -1923,22 +2054,15 @@ int vita_gpu_init(void) {
 }
 
 /* targets over the display rect -> s_vram (screenshots, 24-bit display) */
-void vita_gpu_sync_display(void) {
-  const DISPENV *d = &currentDispEnv;
+void gl_sync_display(void) {
+  const DISPENV *d = &g_gl_env.disp;
   int w = d->disp.w > 0 ? d->disp.w : 320, h = d->disp.h > 0 ? d->disp.h : 240;
   if (d->isrgb24)
     w = w * 3 / 2;
   pieces(d->disp.x, d->disp.y, w, h, sync_rect);
 }
 
-static struct {
-  unsigned gen, vgen;
-  DISPENV disp;
-  int disabled, valid;
-} s_last;
 static int s_hd_shot; /* vblank of a pending 960x544 shot, 0 = none */
-
-void vita_gpu_shot_hd(int vblank) { s_hd_shot = vblank; }
 
 static void write_hd_shot(void) {
   char path[256];
@@ -2003,7 +2127,6 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
 #define STAGING PRESENT_SLOTS
 static GLuint s_ptex[PRESENT_SLOTS + 1], s_pfbo[PRESENT_SLOTS + 1];
 static int s_pw, s_ph;
-static int s_pres_on_screen = -1; /* slot the screen shows, -1: the display rect */
 
 static void pres_alloc(int w, int h) {
   int i;
@@ -2024,14 +2147,13 @@ static void pres_alloc(int w, int h) {
   }
   s_pw = w;
   s_ph = h;
-  s_pres_on_screen = -1;
   vita_log("gpu: presentation frames %dx%d", w, h);
 }
 
 /* The VRAM rect a presentation pass just drew -> staging: every target over
  * it, at the targets' resolution; black elsewhere (Spyro's border lines).
  * Inside an FBO the image's top is NDC -1, as in copy_into(). */
-static void pres_capture(int x, int y, int w, int h) {
+void gl_pres_capture(int x, int y, int w, int h) {
   float ndc[4], src[4];
   int i, top = shown_top(h);
   y += top; /* the drawn lines only: the slots fill the screen */
@@ -2039,6 +2161,7 @@ static void pres_capture(int x, int y, int w, int h) {
   if (!s_sx)
     set_scale();
   flush_pending();
+  sample_scene();
   pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
   bind_fbo(s_pfbo[STAGING]);
   glViewport(0, 0, s_pw, s_ph);
@@ -2064,57 +2187,40 @@ static void pres_capture(int x, int y, int w, int h) {
   }
 }
 
-static void pres_commit(int slot) {
+void gl_pres_commit(int slot) {
   GLuint t = s_ptex[slot], f = s_pfbo[slot];
   s_ptex[slot] = s_ptex[STAGING];
   s_pfbo[slot] = s_pfbo[STAGING];
   s_ptex[STAGING] = t;
   s_pfbo[STAGING] = f;
-  if (slot == s_pres_on_screen)
-    s_pres_on_screen = -1; /* new content: draw it again */
 }
-
-static const PresentCapture s_pres_capture = {pres_capture, pres_commit};
-
-const struct PresentCapture *vita_gpu_present_capture(void) { return &s_pres_capture; }
 
 /* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
 static const uint8_t *s_ovl;
 static int s_ovl_w, s_ovl_h, s_ovl_dirty;
 static GLuint s_ovl_tex;
 
-void vita_gpu_overlay(const uint8_t *rgb, int w, int h) {
+void gl_overlay(const uint8_t *rgb, int w, int h) {
   s_ovl = rgb;
   s_ovl_w = w;
   s_ovl_h = h;
   s_ovl_dirty = 1;
 }
 
-void vita_gpu_force_redraw(void) {
-  s_last.valid = 0;
-  s_pres_on_screen = -1;
-}
-
 /* Widescreen switched (menu.c): every target drawn again at the new width.
- * Dropping a target first gives VRAM its pixels (drop_target). */
-void vita_gpu_rescale(void) {
+ * Dropping a target first gives VRAM its pixels (drop_target). Save states
+ * (D51) do this too, for VRAM as the PS1 has it (gpu_thread.c). */
+void gl_rescale(void) {
   while (s_ntargets > 0)
     drop_target(0);
   s_cur = NULL; /* the next split finds its target again */
   s_sx = s_sy = 0;
-  s_last.valid = 0;
 }
 
-/* Save states (D51): VRAM as the PS1 has it. Every target dropped first:
- * drop_target() replays its log into s_vram (no GPU readback). Load: the
- * caller overwrites s_vram, then it's newer than the GPU's copy and the
- * decoded atlas starts over; targets are made again as the game draws. */
-uint16_t *vita_gpu_vram_take(void) {
-  vita_gpu_rescale();
-  return s_vram;
-}
-
-void vita_gpu_vram_loaded(void) {
+/* A save state was loaded: the caller overwrote s_vram, so it's newer than
+ * the GPU's copy and the decoded atlas starts over; targets are made again
+ * as the game draws. */
+void gl_vram_loaded(void) {
   s_vram_dirty = 1;
   s_aflush = 1;
 }
@@ -2148,16 +2254,12 @@ static void draw_overlay(void) {
 
 /* Presentation frame `slot` on the screen: full width when widescreen, else
  * 4:3 in the middle. GPU slots (gpu=1) or present.c's pixels (the software
- * rasterizer shown through vitaGL). */
-static int present_slot(int slot) {
-  int wide = port_present_frame_is_wide(), area_w = wide ? SCREEN_W : AREA43_W;
+ * rasterizer shown through vitaGL). Whether it's needed was decided on the
+ * game thread (gpu_thread.c). */
+static void present_slot(int slot, int wide) {
+  int area_w = wide ? SCREEN_W : AREA43_W;
   int area_x = (SCREEN_W - area_w) / 2;
   float ndc[4], src[4] = {0, 0, 1, 1};
-  if (!port_present_frame_new() && s_pres_on_screen == slot && !s_hd_shot)
-    return 0; /* the display keeps showing it */
-  prof_enter(PROF_PRESENT);
-  s_pres_on_screen = slot;
-  s_last.valid = 0; /* the display rect must be drawn again when it's back */
   bind_fbo(0);
   glViewport(0, 0, SCREEN_W, SCREEN_H);
   no_blend();
@@ -2190,37 +2292,15 @@ static int present_slot(int slot) {
   ndc[1] = 1;
   ndc[3] = -1;
   quad(ndc, src);
-  draw_overlay();
-  if (s_hd_shot)
-    write_hd_shot();
-  s_st.presents++;
-  prof_leave();
-  prof_enter(PROF_WAIT);
-  swap();
-  prof_leave();
-  return 1;
 }
 
-/* The display rect 4:3 in the middle of the screen. Returns 1 if it was a
- * new picture. */
-static int present_display(void) {
-  const DISPENV *d = &currentDispEnv;
+/* The display rect 4:3 in the middle of the screen (g_gl_env's display). */
+static void present_display(void) {
+  const DISPENV *d = &g_gl_env.disp;
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
   int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i;
   int top = shown_top(dh), sy = d->disp.y + top, sh = dh - 2 * top; /* lines shown */
   float ndc[4], src[4];
-  prof_enter(PROF_PRESENT);
-  if (s_last.valid && s_last.gen == s_gen && s_last.vgen == prof_vram_gen() &&
-      s_last.disabled == g_GPUDisabledState && !memcmp(&s_last.disp, d, sizeof s_last.disp) &&
-      !s_hd_shot) {
-    prof_leave();
-    return 0; /* the display keeps showing the last picture */
-  }
-  s_last.valid = 1;
-  s_last.gen = s_gen;
-  s_last.vgen = prof_vram_gen();
-  s_last.disabled = g_GPUDisabledState;
-  s_last.disp = *d;
   flush_pending();
   bind_fbo(0);
   glViewport(0, 0, SCREEN_W, SCREEN_H);
@@ -2231,13 +2311,14 @@ static int present_display(void) {
   ndc[2] = (float)(area_x + area_w) / SCREEN_W * 2 - 1;
   ndc[1] = 1;
   ndc[3] = -1;
-  if (d->disp.w > 0 && !g_GPUDisabledState) {
+  if (d->disp.w > 0 && !g_gl_env.disabled) {
     /* the boot logos (24-bit), and everything when the software
-     * rasterizer draws: converted on the CPU */
+     * rasterizer draws: converted on the CPU (the game thread waits for
+     * these, gpu_thread.c: host_display_rgb reads the live display) */
     if (d->isrgb24 || !g_vita_gpu) {
       int w, h;
       uint8_t *rgb;
-      vita_gpu_sync_display();
+      gl_sync_display();
       rgb = host_display_rgb(&w, &h);
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
@@ -2282,36 +2363,26 @@ static int present_display(void) {
       }
     }
   }
+}
+
+/* One picture on the screen and swapped: presentation frame `slot`
+ * (widescreen, 60 fps; wide: drawn 16:9), or with slot -1 the display rect.
+ * hd_shot: also a 960x544 PNG for that vblank (shot_hd=1). */
+void gl_present(int slot, int wide, int hd_shot) {
+  gprof_enter(PROF_PRESENT);
+  if (slot >= 0)
+    present_slot(slot, wide);
+  else
+    present_display();
   draw_overlay();
+  s_hd_shot = hd_shot;
   if (s_hd_shot)
     write_hd_shot();
   s_st.presents++;
-  prof_leave();
-  prof_enter(PROF_WAIT);
+  gprof_leave();
+  gprof_enter(PROF_WAIT);
   swap();
-  prof_leave();
-  return 1;
-}
-
-/* One frame: a presentation frame (widescreen, 60 fps), or the display
- * rect. Returns 1 if it was a new picture. */
-int vita_gpu_present(void) {
-  int slot = port_present_frame_slot();
-  if (slot >= 0)
-    return present_slot(slot);
-  s_pres_on_screen = -1;
-  return present_display();
-}
-
-/* The picture on screen drawn and swapped again, without taking a new
- * presentation frame (shot_hold: Vita3K can show an older swap buffer). */
-void vita_gpu_repeat(void) {
-  int slot = s_pres_on_screen;
-  vita_gpu_force_redraw();
-  if (slot >= 0)
-    present_slot(slot);
-  else
-    present_display();
+  gprof_leave();
 }
 
 /* bench= (D41) and the options menu (picture.c, D48): other picture
@@ -2320,7 +2391,7 @@ void vita_gpu_repeat(void) {
  * programs weren't built at start-up is compiled now, once (the Vita's
  * shader compiler takes a moment). Returns 0, or -1 if they don't compile:
  * the options stay as they were. */
-int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache) {
+int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   static int failed[V_COUNT];
   int v = variant_of(filter, cache, filter || persp || subpixel || cache);
   if (!s_vprog[v][P_UNTEX].prog || failed[v]) {
@@ -2345,12 +2416,12 @@ int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache
   psx_vcache_enable(s_vc ? 2 : filter ? 1 : 0);
   if (res != g_vita_opts.gpu_res) {
     g_vita_opts.gpu_res = res;
-    vita_gpu_rescale();
+    gl_rescale();
   }
   return 0;
 }
 
-void vita_gpu_report(int vblank) {
+void gl_report(int vblank) {
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
            "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
            "%u.%02u ms), %d targets at %dx%d",
@@ -2363,6 +2434,16 @@ void vita_gpu_report(int vblank) {
     vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
              s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,
              s_sample.tail_us % 1000 / 10);
+  if (g_vita_opts.gpu_time == 2) { /* measurement only (docs/fps-plan.md) */
+    if (s_sample.n && s_sample.scene_us != -1u)
+      vita_log("gpu %d: gpu_time=2: the timed frame's scene took the GPU %u.%02u ms after its "
+               "last draw; capture and present are the tail above",
+               vblank, s_sample.scene_us / 1000, s_sample.scene_us % 1000 / 10);
+    vita_log("gpu %d: gpu_time=2: %u GL draw calls for %u game draws; vertex uploads %u KB in "
+             "%u.%02u ms",
+             vblank, s_st.gl_draws, s_st.draws, (unsigned)(s_st.vbo_bytes / 1024),
+             (unsigned)(s_st.vbo_us / 1000), (unsigned)(s_st.vbo_us % 1000 / 10));
+  }
   s_sample.n = 0;
   if (g_vita_opts.gpu_time)
     s_sample.state = 1;
@@ -2383,7 +2464,10 @@ void vita_gpu_report(int vblank) {
              "%u blocks decoded; %u of %u blocks in use; expand %u.%02u ms",
              vblank, s_ast.blocks, s_ast.misses, s_ast.decoded, s_ast.used, AGRID * AGRID,
              (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
-    s_ast.blocks = s_ast.misses = s_ast.decoded = 0;
+    if (g_vita_opts.gpu_opaque)
+      vita_log("atlas %d: gpu_opaque=1: %u of those triangles drawn without discard", vblank,
+               s_ast.plain);
+    s_ast.blocks = s_ast.misses = s_ast.decoded = s_ast.plain = 0;
   }
   memset(&s_st, 0, sizeof s_st);
 }

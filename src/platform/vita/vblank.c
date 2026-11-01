@@ -133,6 +133,7 @@ static void vblank(void) {
     vita_present_report(v);
     vita_picture_report(v);
     cd_report();
+    vita_xa_ahead_report(v);
   }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();

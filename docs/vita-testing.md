@@ -106,17 +106,20 @@ Files the app writes:
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
 | `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
-| `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
+| `gpu_time=1` | GPU: one GPU-timed frame per 300 vblanks in the log (see below). Default 0 since D68: its two `glFinish` calls are a hitch every 5 s at 60 fps. `gpu_time=2` also times that frame's scene on its own and counts GL draw calls and vertex uploads: measurement only, for `docs/fps-plan.md`'s Run A; don't combine it with `bench=` |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
 | `mixer=N` | where the sound is mixed (decisions D37): 1 (default) on its own CPU core; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before |
+| `render_thread=0` | GPU: every GL call on the game thread, as before D63. Default 1 since D68: a render thread of its own on core 2 and the game on core 0; the same pictures, the game thread 23–53% busy at 60 fps on hardware instead of 93% at 30 (C1 run). A `render N:` line every 300 vblanks says how busy that thread was and how long the game waited for it. A `0` here needs `config_version=3` too, as for the next two (D68) |
+| `xa_ahead=0` | the XA music's sectors read one at a time on the game thread. Default 1 since D68: read ahead of the CD head on core 1 (D64), the same sectors. An `xa N:` line every 300 vblanks |
+| `gpu_opaque=0` | GPU: every atlas triangle drawn with the `discard` shader. Default 1 since D68: with `tex_cache=1`, triangles whose texture has no transparent or semi-transparent texel are drawn by a shader without `discard`, the same pixels (D65). The `atlas N:` lines count them |
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
 | `interp=1` | experimental 60 fps (default 0: 30 fps; decisions D44): an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). It doesn't fit the Vita's CPU at 16:9 yet, so most ticks fall back to 30 fps. `interp=2`: without animation blending; `interp=3`: camera only. Written by hand, `interp=1` needs a `config_version=2` line too; without one it's taken as the old default an older build's menu wrote, and read as 0 (the menu writes both) |
 | `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
-| `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick, plus one, would pass MS (default 26; `0` never skips). Skipped ticks show 30 fps instead of slowing the game down |
+| `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick plus one, averaged over a few ticks, would pass MS (default 26; `0` never skips). Two pictures taking the render thread more than 15/16 of a tick, or late pictures, skip it too. Skipped ticks show 30 fps instead of slowing the game down. After a miss 30 fps is held until the costs have fitted with room to spare for at least a second, and longer after repeated misses (D68) |
 | `pad=` touch | in a pad script, `tap=X,Y`, `hold=X,Y` and `swipe=X,Y` (percent of the screen) play a gesture on the front touch screen (tests of the tap that opens the menu) |
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, right, up, right, circle (60 fps one step on, widescreen toggled, close) |
 | `menu_keys=B1,B2,...` | with `menu_test`: press these instead (`up down left right cross circle triangle start`, one per 4 pictures; end with `circle` unless an action closes the menu), to test any row (D50) |
@@ -153,8 +156,14 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   window is timed with `glFinish` before its first draw and before its swap. F is that frame from
   its first draw to the GPU being done (CPU and GPU work overlapped); G is how long the GPU still
   worked after the CPU had sent the whole frame. A G near 0 means the GPU keeps up at this
-  resolution; the frame is ~G ms late on screen at most, once per 5 seconds (`gpu_time=0` turns it
-  off).
+  resolution; the frame is ~G ms late on screen at most, once per 5 seconds. Only with
+  `gpu_time=1` or `2` (default 0 since D68).
+- With `gpu_time=2`, also `gpu N: gpu_time=2: the timed frame's scene took the GPU S ms after its
+  last draw` (S: the GPU's own time for the game's picture, timed with a `glFinish` at the capture;
+  the timed frame's tail is then only the capture and present passes) and `gpu N: gpu_time=2: G GL
+  draw calls for D game draws; vertex uploads K KB in T ms`. See `docs/fps-plan.md`.
+- At start, `clocks: ARM … MHz, bus …, GPU …, GPU crossbar …` gives the clocks the Vita actually set
+  (`main.c` asks for 444, 222, 222 and 166).
 - With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
@@ -521,6 +530,36 @@ Two things the runs showed, neither a fault of the states:
 - **The mips2c stack holds host values.** Two separate processes can differ in a few bytes of the arena's emulated stack (0x80010000–0x8001FFFF) at the loop top, where it is dead: translated code leaves host values there (`0x407ffb18`, a qemu stack address, next to the one byte that differed in `run10-diag-E`). The game never reads them (host and Vita runs are byte-identical everywhere it matters). `--state-hash` hashes that range as `STAK`, apart from the rest of the arena, and `tools/savestate_compare.py` reports it but doesn't fail on it.
 
 Not checked: on hardware (above). The menu rows are driven in Vita3K through `menu_keys=` (`run17`, `run18`), not by hand.
+
+### The render thread, the XA read-ahead and the opaque path (D63–D66, branch `claude/fps-render-thread-dbf563`)
+
+`realtime=0`, `widescreen=1` unless noted. "base" is the VPK built from the branch's base (`logs/vpk-base`). The switches are `render_thread=1`, `xa_ahead=1` and `gpu_opaque=1`; "all" is all three. Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `vbase-gems-ws`, `vrt1-`, `vrt0-`, `vall-`, `vfin-gems-ws2`/`ws3` | gems script, shot every 200, `wav=1`: base, render thread, the same VPK with it off, all (two VPKs) | 44 shots, the WAV and the card byte-identical in every run |
+| `*-gems-wsi0` | as above with `interp=1 interp_budget=0` (60 fps forced) | byte-identical; the same in-between frames in every window |
+| `*-pause-ws` | the pause route (StoreImage readback for the pause and inventory backgrounds) | 70 shots and the card byte-identical |
+| `*-demo` | 12,000 vblanks, the attract demos, `wav=1` | 24 shots and the 35 MB WAV byte-identical |
+| `*-gems-state`, `vfin-gems-state-off` | save at 8100, load at 8250 | 85 shots identical; the state files with the thread on and off (same VPK) differ only in 3 dead bytes at the top of the emulated stack (0x8001FFFC) |
+| `*-gems-cap`, `vfin-gems-cap2`, `vbase-gems-cap2` | `CAPTURE=1`, six window captures | byte-identical in all of them (all on, twice; base twice) |
+| `*-gems-img` | from the disc image (`DISC=disc/image`) | byte-identical to the extracted files' run; with all on, 750 of 750 music sectors per window from the read-ahead |
+| `vall-bench`, `vbase-bench` | `bench=1` to 14000 | 18 sets, shaders compiled through the sync call, options put back |
+| `vall-menu`, `vbase-menu` | `menu_test=4500`: 60 fps on, widescreen off, close | captures after the menu identical (the base capture at 4400 shows Vita3K's own shader-compile overlay) |
+
+Vita3K's GPU emulation failed in three runs ("Unimplemented command opcode", "already recording"): `vall-gems-cap` and `vfin-gems-ws` with the render thread, `vfin-gems-cap-off` with everything off. With the thread the game then waited for it (`render: still waiting`) instead of Vita3K exiting. Reruns passed. Vita3K's timings are not the Vita's.
+
+### The new defaults and the 60 fps hold (D68, the same branch, after the D67 merge)
+
+The defaults (`render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`) against all three off in the same VPK, `realtime=0`, widescreen, 60 fps forced (`interp=1 interp_budget=0`). Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `v68-gems-i0-on`, `-off` | gems script, shot every 200, `wav=1` | 44 shots, the WAV and the card byte-identical |
+| `v68-pause-i0-on`, `-off` | the pause route | 70 shots and the card byte-identical |
+| `v68-cap-i0-on`, `-off` | `CAPTURE=1`, six window captures | 4 byte-identical; at 5000, 732 pixels differ, all in the window's 16-pixel edge; at 1800 the "off" grab caught Vita3K's shader-compile overlay |
+| `v68-gems-budget` | the default budget (26 ms) | Vita3K's render thread takes 15–35 ms a picture: one fall to a held 30 at the start, none after, no flipping |
+| `v68-migrate` | `config_version=2 render_thread=0 gpu_opaque=0`, then the menu's save | both `0`s ignored with a log line; the save writes `config_version=3` without them |
 
 ### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
 

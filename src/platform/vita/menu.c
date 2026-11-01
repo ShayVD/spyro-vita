@@ -65,12 +65,16 @@ int vita_menu_load(const char *key, const char *v) {
 
 /* config.txt with the rows' keys replaced (other lines kept). */
 static void save(void) {
-  static const char *const drop[] = {"config_version", NULL};
+  const char *drop[5] = {"config_version"};
   char line[512] = "";
   size_t n = 0;
-  int l, i;
-  /* config_version=2: this interp= is the player's (main.c, read_config; D44) */
-  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=2\n") != 0) {
+  int l, i, nd = 1;
+  /* config_version=3: this interp= is the player's (main.c, read_config;
+   * D44), and so is a 0 for the D68 switches: the stale ones go */
+  for (i = 0; i < 3; i++)
+    if (g_vita_config_stale[i])
+      drop[nd++] = g_vita_config_stale[i];
+  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=3\n") != 0) {
     vita_log("menu: cannot write %s", CONFIG);
     return;
   }
