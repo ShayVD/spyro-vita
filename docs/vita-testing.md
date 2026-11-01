@@ -531,6 +531,24 @@ Two things the runs showed, neither a fault of the states:
 
 Not checked: on hardware (above). The menu rows are driven in Vita3K through `menu_keys=` (`run17`, `run18`), not by hand.
 
+### The render thread, the XA read-ahead and the opaque path (D63–D66, branch `claude/fps-render-thread-dbf563`)
+
+`realtime=0`, `widescreen=1` unless noted. "base" is the VPK built from the branch's base (`logs/vpk-base`). The switches are `render_thread=1`, `xa_ahead=1` and `gpu_opaque=1`; "all" is all three. Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `vbase-gems-ws`, `vrt1-`, `vrt0-`, `vall-`, `vfin-gems-ws2`/`ws3` | gems script, shot every 200, `wav=1`: base, render thread, the same VPK with it off, all (two VPKs) | 44 shots, the WAV and the card byte-identical in every run |
+| `*-gems-wsi0` | as above with `interp=1 interp_budget=0` (60 fps forced) | byte-identical; the same in-between frames in every window |
+| `*-pause-ws` | the pause route (StoreImage readback for the pause and inventory backgrounds) | 70 shots and the card byte-identical |
+| `*-demo` | 12,000 vblanks, the attract demos, `wav=1` | 24 shots and the 35 MB WAV byte-identical |
+| `*-gems-state`, `vfin-gems-state-off` | save at 8100, load at 8250 | 85 shots identical; the state files with the thread on and off (same VPK) differ only in 3 dead bytes at the top of the emulated stack (0x8001FFFC) |
+| `*-gems-cap`, `vfin-gems-cap2`, `vbase-gems-cap2` | `CAPTURE=1`, six window captures | byte-identical in all of them (all on, twice; base twice) |
+| `*-gems-img` | from the disc image (`DISC=disc/image`) | byte-identical to the extracted files' run; with all on, 750 of 750 music sectors per window from the read-ahead |
+| `vall-bench`, `vbase-bench` | `bench=1` to 14000 | 18 sets, shaders compiled through the sync call, options put back |
+| `vall-menu`, `vbase-menu` | `menu_test=4500`: 60 fps on, widescreen off, close | captures after the menu identical (the base capture at 4400 shows Vita3K's own shader-compile overlay) |
+
+Vita3K's GPU emulation failed in three runs ("Unimplemented command opcode", "already recording"): `vall-gems-cap` and `vfin-gems-ws` with the render thread, `vfin-gems-cap-off` with everything off. With the thread the game then waited for it (`render: still waiting`) instead of Vita3K exiting. Reruns passed. Vita3K's timings are not the Vita's.
+
 ### The render resolution (D40, branch `claude/recursing-wilbur-baad6f`)
 
 Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "old" = main

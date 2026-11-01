@@ -29,7 +29,11 @@ Implemented on 2026-11-01, all three behind `config.txt` switches that are off b
 
 **Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2), the GTE dispatch (C5).
 
-**Checked** (Vita3K is not hardware; host checks; results with log paths in D63–D65): RESULTS
+**Checked** (Vita3K is not hardware; results with log paths in D63–D65):
+- Vita3K: every scripted run is byte-identical to the unchanged build with the switches on (shots, WAV, memory card): gems, pause and inventory, attract demo, 60 fps forced, disc image, save and load. So are the window captures of the GPU's own picture.
+- Host: the host checks, widescreen demos and oracle replays are unchanged.
+- Vita3K's own GPU emulation failed in 3 of ~45 runs, with and without the thread. With the thread it left the render thread blocked (D63).
+- Vita3K's timings aren't the Vita's. The only firm relative number is the game thread's `raster`, which went from 0.6 to 0.0 ms per vblank.
 
 The threads and cores with everything on are in D66's table.
 

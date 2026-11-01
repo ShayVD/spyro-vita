@@ -822,6 +822,20 @@ Record each decision with its date, what was chosen, and why.
   - **Recording vitaGL itself** (wrapping the gl* calls): the game thread would still run `expand()`, the atlas and the target bookkeeping.
   - **Cutting lower than `GR_*`** (sending PsyCross's parse to the thread too): that's D62's T2, which needs the primitives copied (D54).
   - **A queue of frames:** latency and memory, for no extra throughput.
+- **Checked** (logs in this branch's worktree; Vita3K is not hardware, and its timings say nothing about the Vita's; `realtime=0` throughout):
+  - **Vita3K against the unchanged build** (`logs/vbase-*`, the VPK built from this branch's base): the gems script with widescreen (44 shots, the WAV and the memory card), the pause route (StoreImage replay for the pause and inventory backgrounds, 70 shots and the card), the 12,000-vblank attract demo (24 shots and the 35 MB WAV), the gems script with 60 fps forced (`interp=1 interp_budget=0`: 44 shots, the WAV and the same in-between frame count in every window), from the disc image (44 shots and the WAV) and with a save at 8100 and a load at 8250 (85 shots and the card). All byte-identical with `render_thread=1` (`logs/vrt1-*`), with `render_thread=0` (`logs/vrt0-*`), and with all three switches of D63–D65 on (`logs/vall-*`, `logs/vfin-*`, the final VPK).
+  - **The GPU's own picture:** window captures (`CAPTURE=1`) at six points of the gems script, byte-identical with the render thread on and off, and with all three switches on, twice (`logs/vfin-gems-cap`, `vfin-gems-cap2`). Two base runs are byte-identical to each other as well (`vbase-gems-cap`, `vbase-gems-cap2`).
+  - **Save states:** with the same VPK, the states saved with the render thread on and off differ in 3 bytes only, at 0x8001FFFC–FFFF. That's the top of the mips2c emulated stack, which holds dead host values at the loop top (`docs/vita-testing.md`, "The mips2c stack holds host values"). Every other chunk is identical, and so are the 85 shots before and after the load.
+  - **Options and menus:** `bench=1` ran its 18 option sets, each set's shaders compiled through a sync call, and put the options back (`logs/vall-bench`). `menu_test` toggled widescreen and 60 fps through the rescale sync, and the captures after it match the base run's (`logs/vall-menu`; the base run's capture at 4400 caught Vita3K's own shader-compile overlay).
+  - **The queue:** 0 unknown commands in every run.
+  - **Relative numbers, Vita3K:** the game thread's `raster` fell from 0.6 to 0.0 ms per vblank (gems script, demo). The render thread was 96–99% busy at Vita3K's slow GL. The rest moved both ways between runs (Vita3K's emulated cores compete on the Mac), so the gain on a Vita is still D62's estimate until the hardware runs.
+  - **Vita3K's GPU emulation failed in 3 of ~45 runs** ("Unimplemented command opcode" and "Attempt to start recording while already recording" in its log): `vall-gems-cap` and `vfin-gems-ws` with the render thread, `vfin-gems-cap-off` without it. Without the thread Vita3K died. With it the render thread stayed blocked in a GL call and the game thread logged `render: still waiting` every 5 s. Two reruns of `vfin-gems-ws` passed byte-identical. Nothing in the logs points at the port, but whether a Vita's GPU stack has a similar problem with GL on a second thread is for the hardware runs to show.
+  - **Host:** the host doesn't build the render thread. The shared-code changes (D63's `present.c` hook, D64's split of `psx_xa_accept` and `psx_cd_xa_locate`) leave it unchanged:
+    - `tools/host_checks.sh`, the base binary against this branch's: 287/287 files identical (demo 28, whole-game tour with its fairy save 143, routes A and B 58 each; `logs/hbase-*`, `logs/hnew-*`);
+    - the attract demos with `--widescreen` and with `--widescreen --interp`: 28/28 each (`logs/hws*demo-*`);
+    - oracle replays: `cap3` 329 PASS (plus its 9 NOEXIT capture-side samples, as before), `cap5-fairy` 261 PASS, `cap6-tour` 358/358 (`logs/oracle`);
+    - `ctest`: all pass (`gte` and `m2c_diff_math` skipped, as before).
+  - **Not checked:** hardware.
 - **Default:** off (`render_thread=0`) until the hardware runs (D66).
 
 ### D64. The XA music read ahead of the CD head, on core 1
@@ -832,6 +846,7 @@ Record each decision with its date, what was chosen, and why.
   - **Windows:** four. The game thread asks for the next window when fewer than 32 sectors ahead of the head are covered, and reuses a window only when it is free or wholly behind the head. The reader only fills windows it was asked for. So each window has one writer at a time, and states change through atomics.
 - **The log:** `xa N:` every 300 vblanks: sectors from the read-ahead, sectors read on the game thread, and the reader's windows, KB and file-system time.
 - **Not moved:** data reads (`CdRead`: level loads, cutscenes) stay on the game thread. They happen during loads, when nothing else is waiting, and the game reads its data back at once.
+- **Checked** (Vita3K, `realtime=0`): the gems script with music from the extracted files (`logs/vall-gems-ws`, `vfin-gems-ws2`, `vfin-gems-ws3`) and from the disc image (`logs/vall-gems-img`): the WAV and all shots byte-identical to the base build's. Per 300 vblanks of play, 750 music sectors came from the read-ahead and none from the game thread. At the stream's first start 5 were read on the game thread. The game thread's file-system reads (the `cd:` line) stop after the level's load: 3,079 by vblank 6600 and none after, against 14,454 by vblank 8700 without it. Host: unchanged (D63's host checks).
 - **Default:** off (`xa_ahead=0`) until the hardware runs (D66).
 
 ### D65. Cheaper GPU work: an opaque path without `discard`; the rest waits for numbers
@@ -844,6 +859,7 @@ Record each decision with its date, what was chosen, and why.
   - **GL state caching and batching** (C2): with D63 the GL calls are off the game thread. On the render thread they cost ~10 ms a frame (*estimate*, D62's raster), against 33 ms a tick at 30 fps and ~16 ms a frame at 60. Batching has little to merge: PsyCross starts a new split exactly when what our draw depends on changes (texture format, blend, draw environment). Caching attribute pointers relies on what vitaGL does with them after `glBufferData`, and vitaGL's source isn't in vitasdk (D35).
   - **Vertex buffer reuse:** there's one `glBufferData` per `DrawAllSplits`, and `gpu_time=2` times it (~1 per frame; Run A gives the cost).
   - **vitaGL settings:** the shader compiler's optimisation level (`vglSetupRuntimeShaderCompiler`) may change float results. It stays at the default, exact one (D35).
+- **Checked** (Vita3K): in Artisans it applies to 98% of the textured triangles (202,724 of 207,087 per 300 vblanks, `logs/vall-gems-ws`). The window captures of the GPU's picture at six points are byte-identical to the base build's, twice (`logs/vfin-gems-cap`, `vfin-gems-cap2`). Vita3K recompiles the shaders itself, so the device's own compiler still has to show the same pixels (Run A3).
 - **Default:** off (`gpu_opaque=0`) until Run A3 shows it helps (D66).
 
 ### D66. The cores, the defaults, and the hardware runs that decide them
