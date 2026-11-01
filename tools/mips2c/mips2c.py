@@ -187,6 +187,7 @@ class Translator:
     def __init__(self, units, hints):
         self.units = units
         self.hints = hints
+        self.profile = False
         self.global_funcs = {}  # glabel -> unit
         for u in units:
             for name, _ in u.glabels:
@@ -585,13 +586,13 @@ class Translator:
                 self.kuseg = u.hand and (d.op in LOADS or d.op == "lwc2")
                 dstmt = self.simple(d)
                 self.kuseg = False
-                body.append(f"  {self.control(ins, dstmt)}")
+                body.append(f"  {self.prof(ins, d)}{self.control(ins, dstmt)}")
                 d_is_target = d.addr in branch_targets or d.addr in dispatch
                 if d_is_target:
                     after = insns[k + 2].addr if k + 2 < n else None
                     body.append(f"  goto {self.lab(after) if after else 'end_'};")
                     body.append(f"{self.lab(d.addr)}:;")
-                    body.append(f"  {dstmt}")
+                    body.append(f"  {self.prof(d)}{dstmt}")
                     if after is not None:
                         branch_targets.add(after)
                 k += 2
@@ -616,21 +617,29 @@ class Translator:
                         self.hazards.append(f"load-delay into branch at {nx.where()}")
                     elif r in self.writes(nx):
                         body.append(f"  /* load delay: {ins.op} result discarded by next insn */")
-                        body.append(f"  {self.simple(nx)}")
+                        body.append(f"  {self.prof(ins, nx)}{self.simple(nx)}")
                         k += 2
                         continue
                     else:
                         tmp = stmt.replace(f"{r} = ", "ld_ = ", 1).replace(f"{r} = MFC2", "ld_ = MFC2")
-                        body.append(f"  {{ u32 ld_; {tmp} {self.simple(nx)} {r} = ld_; }} /* load delay */")
+                        body.append(f"  {self.prof(ins, nx)}{{ u32 ld_; {tmp} {self.simple(nx)} {r} = ld_; }} /* load delay */")
                         k += 2
                         continue
             if stmt:
-                body.append(f"  {stmt}")
+                body.append(f"  {self.prof(ins)}{stmt}")
+            elif self.profile:
+                body.append(f"  {self.prof(ins)}")
             k += 1
         if self.hazards:
             raise Fail(f"{u.rel}: unhandled load-delay hazards:\n  " + "\n  ".join(self.hazards))
         dispatch |= self.ret_points
         return self.emit(u, body, dispatch, branch_targets)
+
+    def prof(self, *ins):
+        """--prof: count each instruction's executions (M2C_PROF, mips2c_rt.h)."""
+        if not self.profile:
+            return ""
+        return "".join(f"M2C_PROF(0x{i.addr:08X}u); " for i in ins)
 
     def emit(self, u, body, dispatch, branch_targets):
         lo = min(i.addr for i in u.insns)
@@ -746,11 +755,14 @@ def main():
     ap.add_argument("--hints")
     ap.add_argument("--list", help="write the generated file names here")
     ap.add_argument("--index", help="write a table of every entry point here (oracle replay)")
+    ap.add_argument("--prof", action="store_true",
+                    help="count every instruction's executions (profiling builds, M2C_PROF)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
     try:
         units = [Unit(os.path.join(a.root, f), f) for f in a.files]
         tr = Translator(units, load_hints(a.hints))
+        tr.profile = a.prof
         os.makedirs(a.out_dir, exist_ok=True)
         names, entries = [], []
         for u in units:

@@ -64,6 +64,15 @@ ret func_800314B4
 # called as such from C (src/gamestates/update.c:1405/1459, draw.c:2648/2707).
 ret func_credits_8007AA50
 ret func_credits_8007BFD0
+# The sky renderer and the cyclorama set-up are void at every caller: the C
+# calls are statements (src/gamestates/draw.c 845, 847, 912, 1661, 1750,
+# 1812, 1856; overlays/flight.c 237; overlays/titlescreen.c 1429), and the
+# translated callers are func_80050BD0 (returns straight to C after it) and
+# the credits overlay's func_credits_8007BFD0 (void, above). The asm leaves
+# whatever its loops last held in v0/v1; the hand C (src/game/sky_hand.c,
+# D69) returns 0.
+ret func_8004EBA8
+ret func_80050BD0
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that

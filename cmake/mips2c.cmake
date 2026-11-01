@@ -76,6 +76,16 @@ foreach(u ${M2C_PARTIAL})
   endif()
 endforeach()
 
+# Profiling builds: every translated instruction counts its executions
+# (mips2c --prof, M2C_PROF in mips2c_rt.h; tools/mips2c/prof_report.py).
+option(SPYRO_M2C_PROF "Count executions of every translated instruction" OFF)
+set(M2C_PROF_ARG)
+set(M2C_PROF_DEF M2C_PROFILE=0)
+if(SPYRO_M2C_PROF)
+  set(M2C_PROF_ARG --prof)
+  set(M2C_PROF_DEF M2C_PROFILE=1)
+endif()
+
 set(M2C_OUTS)
 set(M2C_DEPS "${M2C_TOOL}" "${M2C_HINTS}")
 foreach(u ${M2C_UNITS})
@@ -88,7 +98,7 @@ endforeach()
 list(APPEND M2C_OUTS "${GEN_DIR}/mips2c/m2c_index.c")
 add_custom_command(OUTPUT ${M2C_OUTS}
   COMMAND "${Python3_EXECUTABLE}" "${M2C_TOOL}" --root "${S1_DIR}"
-    --out-dir "${GEN_DIR}/mips2c" --hints "${M2C_HINTS}"
+    --out-dir "${GEN_DIR}/mips2c" --hints "${M2C_HINTS}" ${M2C_PROF_ARG}
     --index "${GEN_DIR}/mips2c/m2c_index.c" ${M2C_UNITS}
   DEPENDS ${M2C_DEPS}
   COMMENT "mips2c: translating decomp asm to C")
@@ -114,7 +124,33 @@ foreach(u ${M2C_REF_UNITS})
     COMMENT "mips2c: ${f} as a reference for differential sweeps")
 endforeach()
 
+# Hand-written renderers (src/game/render_hand.h HAND_RENDERER, decisions
+# D69): the mips2c unit stays linked with the function's two entries renamed
+# NAME_gen and NAME_gen__m2c, and fast_render (config.txt, host
+# --fast-render) picks the hand C or the unit at each call.
+set(M2C_RENDER_HAND
+  asm/renderers/r_cyclorama.s:func_8004EBA8)
+set(M2C_RENDER_FILES)
+foreach(e ${M2C_RENDER_HAND})
+  string(REPLACE ":" ";" e "${e}")
+  list(GET e 0 u)
+  list(GET e 1 f)
+  string(REGEX REPLACE "^asm/" "" n "${u}")
+  string(REGEX REPLACE "\\.s$" "" n "${n}")
+  string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
+  set(src "${GEN_DIR}/mips2c/m2c_${n}.c")
+  list(APPEND M2C_RENDER_FILES "${src}")
+  list(APPEND M2C_RENDER_DEFS_${n} "${f}=${f}_gen" "${f}__m2c=${f}_gen__m2c")
+endforeach()
+list(REMOVE_DUPLICATES M2C_RENDER_FILES)
+
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS} ${M2C_REF_OUTS})
+foreach(src ${M2C_RENDER_FILES})
+  get_filename_component(n "${src}" NAME_WE)
+  string(REGEX REPLACE "^m2c_" "" n "${n}")
+  set_source_files_properties("${src}" TARGET_DIRECTORY spyro_game_m2c
+    PROPERTIES COMPILE_DEFINITIONS "${M2C_RENDER_DEFS_${n}}")
+endforeach()
 while(M2C_PARTIAL_DEFS)
   list(POP_FRONT M2C_PARTIAL_DEFS src defs)
   string(REPLACE "|" ";" defs "${defs}")
@@ -127,14 +163,14 @@ if(SPYRO_HOST STREQUAL "linux32")
 else()
   set(M2C_REPLAY_DEF MIPS2C_REPLAY=0)
 endif()
-target_compile_definitions(spyro_game_m2c PRIVATE ${M2C_REPLAY_DEF})
+target_compile_definitions(spyro_game_m2c PRIVATE ${M2C_REPLAY_DEF} ${M2C_PROF_DEF})
 target_include_directories(spyro_game_m2c PRIVATE "${CMAKE_SOURCE_DIR}/src/game"
   "${PSYCROSS_DIR}/include/psx") # gtereg.h: mips2c_rt.h's inline GTE moves
 target_compile_options(spyro_game_m2c PRIVATE ${SPYRO_HOST_FLAGS} -w)
 
 file(GLOB PORT_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/game/*.c")
 add_library(spyro_game_port OBJECT ${PORT_SRCS})
-target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF} ${M2C_HAND_DEFS})
+target_compile_definitions(spyro_game_port PRIVATE ${M2C_REPLAY_DEF} ${M2C_HAND_DEFS} ${M2C_PROF_DEF})
 target_include_directories(spyro_game_port PRIVATE
   "${CMAKE_SOURCE_DIR}/src/game" "${CMAKE_SOURCE_DIR}/src/platform/common")
 # trace.c reads game state through the decomp's headers.

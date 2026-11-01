@@ -19,3 +19,10 @@ target_link_libraries(spyro PRIVATE spyro_game spyro_platform_linux32
 target_include_directories(spyro PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS})
 target_link_options(spyro PRIVATE -m32 -no-pie)
+# --prof-draw (prof_draw.c): the renderers GamestateDraw calls, timed
+target_link_options(spyro PRIVATE
+  -Wl,--wrap=GamestateUpdate,--wrap=func_800258F0,--wrap=func_8001F158
+  -Wl,--wrap=func_8001F798,--wrap=func_800208FC,--wrap=func_80020F34
+  -Wl,--wrap=func_80022A2C,--wrap=func_80023AC4,--wrap=func_80059F8C
+  -Wl,--wrap=func_80059A48,--wrap=func_80058D64,--wrap=func_80058BA8
+  -Wl,--wrap=func_800573C8,--wrap=func_80050BD0,--wrap=func_8004EBA8)
