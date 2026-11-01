@@ -1,0 +1,7 @@
+# D70: 60 fps as the menu gives it (default budget and hold, no GPU timing), with the 28-byte vertex
+interp=1
+config_version=3
+render_thread=1
+xa_ahead=1
+gpu_opaque=1
+gpu_lean=1

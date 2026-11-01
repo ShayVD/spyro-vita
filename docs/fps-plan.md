@@ -42,6 +42,20 @@ The threads and cores with everything on are in D66's table.
 - `render_thread`, `xa_ahead` and `gpu_opaque` are on by default (`config_version=3` makes old files' `0`s give way), and `gpu_time` is 0 (C4).
 - What's left for a locked 60 in the heavy levels is GPU work (G2, G3, or a lower render scale at 60 fps), now measured by S in C1's windows.
 
+## The in-between frame: why it stays a full draw (D70)
+
+The four parallel sessions after D68 (cheaper in-between frames, fewer full-screen GPU passes, the spare cores, hand C for the hot renderers) took the next items. For the in-between frame, the idea was to reuse the real frame's geometry and apply only the new camera. It doesn't fit the PS1's data flow, and it wouldn't touch the GPU's share:
+
+| Per in-between frame (C1, Artisans) | Cost | Reusable? |
+|---|---|---|
+| Game thread: mobys, environment, OT walk, snapshot | 3.3 + 2.1 + 2.6 + 0.5 ms | Mobys and Spyro move and animate. The environment reaches PsyCross already projected to 2D, depth-sorted and culled at the screen's edges, so it can't be reprojected without gaps at the edges and silhouettes |
+| Render thread | ~10 ms a picture (expand 0.75, upload 0.43) | the vertices are new in every frame |
+| GPU | the scene again: 5–13 ms (Artisans), 19–31 ms (heavier levels) | the same triangles whatever reuses them |
+
+What D70 adds instead, behind `gpu_lean=1` (off by default until `tools/vita/fps-runs/e1`–`e3` run on a Vita): a 28-byte vertex instead of 40 for every picture (upload −30%), and one atlas lookup per quad instead of two. The same pictures. Skipping the in-between frame where nothing moved was tried and dropped: the game draws after waiting for the vblank, so a skip holds the previous frame one vblank longer instead of showing the same picture (D70).
+
+It doesn't make the in-between frame "much cheaper". The big CPU wins for it are the other sessions' (hand C for `r_moby`/`r_environment`, the OT walk on core 3). Where the GPU is the limit, only fewer pixels (G4, dynamic resolution, deferred) or fewer full-screen passes help.
+
 ## Where a frame's time goes (measured)
 
 ### Threads and cores

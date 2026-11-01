@@ -144,7 +144,9 @@ static Prog s_prog[P_COUNT];
  * opaque draws, D43). Only the configured set (and what it falls back to)
  * is built, or all of them for bench= (D41). */
 enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_AO, V_COUNT };
-static Prog s_vprog[V_COUNT][P_T16 + 1];
+static Prog s_vprog_x[V_COUNT][P_T16 + 1], s_vprog_l[V_COUNT][P_T16 + 1];
+/* the set for the vertex in use: s_vprog_l with the lean vertex (D70) */
+static Prog (*s_vprog)[P_T16 + 1] = s_vprog_x;
 static Prog s_dprog[3]; /* the atlas's decode pass, per texture format */
 
 static GLuint s_vram_tex, s_vbo, s_rgb_tex, s_down_tex, s_down_fbo;
@@ -183,6 +185,15 @@ typedef struct {
   float w;
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
+/* gpu_lean=1 (D70): XVertex without what only persp and subpixel use (dxy,
+ * w) and with the box in bytes (texels 0..255): 28 bytes, not 40. Drawn by
+ * the same programs compiled with LEAN; the same values reach the shaders. */
+typedef struct {
+  GrVertex g;
+  uint8_t box[4];
+  int16_t off[2];
+} LVertex;
+static LVertex s_lbuf[MAX_VERTEX_BUFFER_SIZE];
 /* per triangle: 0 nearest texel from VRAM, 1 nearest from the atlas,
  * 2 filtered from the atlas, 3 as 1 with no transparent or STP texel
  * (gpu_opaque, D65) */
@@ -194,6 +205,9 @@ static int s_persp;    /* persp=1 */
 static int s_subpixel; /* subpixel=1 */
 static int s_cache;    /* tex_cache=1: unfiltered textures from the atlas too (D41) */
 static int s_vc;       /* persp or subpixel: the vcache records and is read (D43) */
+static int s_lean;     /* gpu_lean and s_xmode without s_vc: draws use s_lbuf (D70) */
+
+static int lean_for(int xmode, int vc) { return g_vita_opts.gpu_lean && xmode && !vc; }
 
 /* per 300-vblank report */
 static struct {
@@ -329,13 +343,21 @@ static const char k_vs_prim[] =
 
 /* k_vs_prim for the expanded vertex (D39). Clip coordinates times w: the
  * same picture for w = 1, perspective-correct varyings otherwise. */
+/* gpu_lean=1 (D70) compiles it with LEAN: without persp and subpixel the
+ * vertex has no sub-pixel offset and no w (the expansion wrote 0 and 1:
+ * the same position), so it drops them, and the box comes as bytes. */
+static const char k_vs_lean_def[] = "#define LEAN 1\n";
 static const char k_vs_prim_x[] =
     "attribute vec4 a_pos;\n"   /* x, y, tpage, clut (shorts), as k_vs_prim */
     "attribute vec4 a_tex;\n"   /* u, v, bright, dither (bytes) */
     "attribute vec4 a_col;\n"
     "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: page texels the filter may read */
+    "#ifdef LEAN\n"
+    "attribute vec2 a_offd;\n"  /* atlas minus page texel */
+    "#else\n"
     "attribute vec4 a_offd;\n"  /* atlas minus page texel; sub-pixel offset (1/256) */
     "attribute float a_w;\n"
+    "#endif\n"
     "attribute vec2 a_flags;\n" /* filtered from the atlas, wraps (bytes) */
     "uniform vec4 u_xf;\n"
     "varying vec2 v_uv;\n"
@@ -346,8 +368,12 @@ static const char k_vs_prim_x[] =
     "varying vec2 v_off;\n"
     GLSL_MD
     "void main() {\n"
+    "#ifdef LEAN\n"
+    "  gl_Position = vec4((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0, 0.0, 1.0);\n"
+    "#else\n"
     "  vec2 qxy = a_pos.xy + a_offd.zw * (1.0 / 256.0);\n"
     "  gl_Position = vec4(((qxy + u_xf.xy) * u_xf.zw - 1.0) * a_w, 0.0, a_w);\n"
+    "#endif\n"
     "  v_uv = a_tex.xy;\n"
     "  v_filt = a_flags;\n"
     "  v_box = a_box;\n"
@@ -666,10 +692,11 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
     glBindAttribLocation(p->prog, 0, "a_pos");
     glBindAttribLocation(p->prog, 1, "a_tex");
     glBindAttribLocation(p->prog, 2, "a_col");
-    if (vs[0] == k_vs_prim_x) {
+    if (vs[nvs - 1] == k_vs_prim_x) {
       glBindAttribLocation(p->prog, 3, "a_box");
       glBindAttribLocation(p->prog, 4, "a_offd");
-      glBindAttribLocation(p->prog, 5, "a_w");
+      if (nvs == 1)
+        glBindAttribLocation(p->prog, 5, "a_w");
       glBindAttribLocation(p->prog, 6, "a_flags");
     }
   }
@@ -704,7 +731,8 @@ static int variant_of(int filter, int cache, int xmode) {
 static int build_variant(int v) {
   static const char *const fmt_def[3] = {"#define FMT 0\n", "#define FMT 1\n", "#define FMT 2\n"};
   static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
-  const char *vs[1] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x};
+  const char *vs[2] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x, k_vs_prim_x};
+  int nvs = v != V_PLAIN && s_vprog == s_vprog_l ? 2 : 1;
   const char *fs[4];
   /* FILTER 1 in k_fs_filt_body is 3-point, 2 bilinear */
   int i, filter = v == V_F3 ? 1 : v == V_FB ? 2 : 0;
@@ -716,9 +744,11 @@ static int build_variant(int v) {
                 (v == V_FB && build_variant(V_HB)) ||
                 (v != V_AO && g_vita_opts.gpu_opaque && build_variant(V_AO))))
     return -1;
+  if (nvs == 2)
+    vs[0] = k_vs_lean_def;
   fs[0] = k_fs_prim_head;
   fs[1] = k_fs_untex;
-  if (link(&s_vprog[v][P_UNTEX], vs, 1, fs, 2, 0, "untextured"))
+  if (link(&s_vprog[v][P_UNTEX], vs, nvs, fs, 2, 0, "untextured"))
     return -1;
   for (i = 0; i < 3; i++) {
     fs[0] = fmt_def[i];
@@ -734,7 +764,7 @@ static int build_variant(int v) {
     } else if (atlas) {
       fs[2] = k_fs_atlas_body;
     }
-    if (link(&s_vprog[v][P_T4 + i], vs, 1, fs, filter ? 4 : 3, 0,
+    if (link(&s_vprog[v][P_T4 + i], vs, nvs, fs, filter ? 4 : 3, 0,
              i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
       return -1;
   }
@@ -1459,6 +1489,10 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
+  /* gpu_lean (D70): the last block found, which the next triangle (a quad's
+   * other half, the same box) usually asks for again */
+  int m_ok = 0, m_ax = 0, m_ay = 0, m_plain = 0;
+  uint32_t m_k0 = 0, m_k1 = 0, m_gen = 0;
   if ((s_filter || s_cache) && (s_aflush || s_afull))
     atlas_reset();
   for (i = 0; i < count; i += 3) {
@@ -1488,10 +1522,20 @@ static void expand(int count) {
     memcpy(&ref0, &v[0].tcx, sizeof ref0);
     wrap = wrap && s_filter; /* the margin is only for the filter */
     if ((s_filter || s_cache) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
-      int ax, ay, plain;
+      int ax, ay, plain, miss;
+      uint32_t k0 = (uint32_t)(uint16_t)v[0].page | (uint32_t)(uint16_t)v[0].clut << 16;
+      uint32_t k1 = (uint32_t)(u0 >> 5 | (v0 >> 5) << 3 | (u1 >> 5) << 6 | (v1 >> 5) << 9 | wrap << 12);
       s_ast.blocks++;
-      if (!atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
-                      v1 >> 5, wrap, &ax, &ay, &plain)) {
+      if (s_lean && m_ok && k0 == m_k0 && k1 == m_k1 && m_gen == s_agen) {
+        ax = m_ax, ay = m_ay, plain = m_plain, miss = 0;
+      } else {
+        miss = atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
+                          v1 >> 5, wrap, &ax, &ay, &plain);
+        m_ok = !miss;
+        m_k0 = k0, m_k1 = k1, m_gen = s_agen;
+        m_ax = ax, m_ay = ay, m_plain = plain;
+      }
+      if (!miss) {
         filt = s_filter && (ref0 & VREF_POLY);
         kind = filt ? 2 : plain ? 3 : 1;
         s_ast.plain += kind == 3;
@@ -1507,7 +1551,19 @@ static void expand(int count) {
        * vertex: PsyX's vertex whole, its vcache bytes replaced */
       const int16_t tail[6] = {(int16_t)u0, (int16_t)v0, (int16_t)u1, (int16_t)v1,
                                (int16_t)du, (int16_t)dv};
-      for (k = 0; k < n; k++) {
+      for (k = 0; s_lean && k < n; k++) {
+        LVertex *l = s_lbuf + i + k;
+        l->g = v[k];
+        l->g.tcx = (char)filt;
+        l->g.tcy = (char)(wrap && filt);
+        l->box[0] = (uint8_t)u0;
+        l->box[1] = (uint8_t)v0;
+        l->box[2] = (uint8_t)u1;
+        l->box[3] = (uint8_t)v1;
+        l->off[0] = (int16_t)du;
+        l->off[1] = (int16_t)dv;
+      }
+      for (k = 0; !s_lean && k < n; k++) {
         XVertex *x = s_xbuf + i + k;
         x->g = v[k];
         x->g.tcx = (char)filt;
@@ -1576,6 +1632,11 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
     expand(count); /* may draw into the atlas, with other buffers bound */
     t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    if (s_lean) {
+      glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_lbuf, s_lbuf, GL_STREAM_DRAW);
+      vbo_count(t0, (size_t)count * sizeof *s_lbuf);
+      return;
+    }
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
     vbo_count(t0, (size_t)count * sizeof *s_xbuf);
     return;
@@ -1717,7 +1778,24 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glEnableVertexAttribArray(2);
-  if (s_xmode) {
+  if (s_lean) {
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    glDisableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
+    s_xattr = 1;
+    glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.x));
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.u));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(LVertex), (void *)offsetof(LVertex, g.r));
+    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, box));
+    glVertexAttribPointer(4, 2, GL_SHORT, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, off));
+    glVertexAttribPointer(6, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.tcx));
+    if ((s_filter || s_cache) && s_texmode != P_UNTEX) {
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
+      glActiveTexture(GL_TEXTURE0);
+    }
+  } else if (s_xmode) {
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glEnableVertexAttribArray(5);
@@ -2014,6 +2092,8 @@ int gl_gpu_init(void) {
   s_cache = g_vita_opts.tex_cache != 0;
   s_vc = s_persp || s_subpixel;
   s_xmode = s_filter || s_vc || s_cache;
+  s_lean = lean_for(s_xmode, s_vc);
+  s_vprog = s_lean ? s_vprog_l : s_vprog_x;
   t0 = now_us();
   if (build_programs(&present_only) != 0)
     return -1;
@@ -2021,7 +2101,8 @@ int gl_gpu_init(void) {
   vita_log("gpu: shaders compiled in %u ms", (unsigned)((now_us() - t0) / 1000));
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
-    s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = 0;
+    s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = s_lean = 0;
+    s_vprog = s_vprog_x;
     g_vita_opts.bench = 0;
     if (build_programs(&present_only) != 0)
       return -1;
@@ -2030,8 +2111,8 @@ int gl_gpu_init(void) {
     /* projections recorded only for persp/subpixel; polygons marked for the
      * filter; nothing for tex_cache alone (D43) */
     psx_vcache_enable(s_vc ? 2 : s_filter ? 1 : 0);
-    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d tex_cache=%d (D39, D41)", s_filter, s_persp,
-             s_subpixel, s_cache);
+    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d tex_cache=%d (D39, D41)%s", s_filter, s_persp,
+             s_subpixel, s_cache, s_lean ? "; 28-byte vertex (gpu_lean=1, D70)" : "");
   }
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);
@@ -2393,11 +2474,16 @@ void gl_present(int slot, int wide, int hd_shot) {
  * the options stay as they were. */
 int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   static int failed[V_COUNT];
-  int v = variant_of(filter, cache, filter || persp || subpixel || cache);
-  if (!s_vprog[v][P_UNTEX].prog || failed[v]) {
+  static int failed_l[V_COUNT];
+  int xmode = filter || persp || subpixel || cache, lean = lean_for(xmode, persp || subpixel);
+  int v = variant_of(filter, cache, xmode), *fail = lean ? &failed_l[v] : &failed[v];
+  Prog(*was)[P_T16 + 1] = s_vprog;
+  s_vprog = lean ? s_vprog_l : s_vprog_x; /* the set build_variant fills */
+  if (!s_vprog[v][P_UNTEX].prog || *fail) {
     uint64_t t0 = now_us();
-    if (failed[v] || build_variant(v)) {
-      failed[v] = 1;
+    if (*fail || build_variant(v)) {
+      *fail = 1;
+      s_vprog = was;
       vita_log("gpu: the programs for tex_filter=%d persp=%d subpixel=%d don't compile: "
                "options unchanged", filter, persp, subpixel);
       return -1;
@@ -2411,7 +2497,8 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   s_subpixel = subpixel;
   s_cache = cache;
   s_vc = persp || subpixel;
-  s_xmode = filter || persp || subpixel || cache;
+  s_xmode = xmode;
+  s_lean = lean;
   memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
   psx_vcache_enable(s_vc ? 2 : filter ? 1 : 0);
   if (res != g_vita_opts.gpu_res) {

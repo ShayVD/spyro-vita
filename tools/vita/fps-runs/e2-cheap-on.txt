@@ -1,0 +1,9 @@
+# D70: as E1 with the 28-byte vertex
+interp=1
+config_version=3
+interp_budget=0
+gpu_time=2
+render_thread=1
+xa_ahead=1
+gpu_opaque=1
+gpu_lean=1

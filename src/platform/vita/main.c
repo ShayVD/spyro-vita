@@ -92,6 +92,8 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
+ *       gpu_lean=1      with gpu=1 and neither persp nor subpixel, a 28-byte
+ *                       vertex instead of 40 (the same pixels; D70)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -273,6 +275,8 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
+    else if (!strcmp(line, "gpu_lean"))
+      g_vita_opts.gpu_lean = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))

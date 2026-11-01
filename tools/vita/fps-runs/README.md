@@ -21,6 +21,9 @@ taken as an old file's and ignored (D68).
 | `c1-all.txt` | 60 fps with the default budget, `gpu_time=2`, all three on | 2 minutes of play in Artisans |
 | `c2-all-nobudget.txt` | as C1 with `interp_budget=0`: every tick gets its in-between frame | the same |
 | `d1-60fps.txt` | 60 fps as the menu gives it since D68: the defaults, the budget's hold, no GPU timing | the C1 route: Artisans, then the heavier level |
+| `e1-cheap-off.txt` | D70 baseline: as C2 (every tick gets its in-between frame), `gpu_lean=0` | 2 minutes in Artisans, the same route as C1 |
+| `e2-cheap-on.txt` | as E1 with `gpu_lean=1` | the same route |
+| `e3-cheap-60fps.txt` | 60 fps as the menu gives it (D1), with `gpu_lean=1` | the D1 route: Artisans, then the heavier level |
 
 ## What each run shows
 
@@ -51,6 +54,14 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 - No hitch every 5 seconds: `gpu_time` is 0, so there's no `timed frame` line and no `glFinish`.
 - The start-up's `gpu: shaders compiled in N ms` line says how long the boot's shader compile takes (C1's two "still waiting (sync calls)" lines at vblank 0 were that compile, more than 10 s).
 - The first D1 run (VPK from `131dde2`) never came back from its hold after the first level change: the release test held the render thread to the game thread's budget. Fixed in D68's follow-up, so rerun D1 with a VPK built after it.
+
+**E1 against E2: the 28-byte vertex (D70).**
+- `gpu N: gpu_time=2: ... vertex uploads K KB in T ms`: K should fall to 70% (28 bytes a vertex instead of 40), and T with it.
+- `atlas N: ... expand E ms`: E should fall a little (the second triangle of a quad reuses the first one's lookup).
+- `render N:` per picture: the render thread's time, which the two above are part of (*estimate*: −0.2 to −0.5 ms a picture), and the `gpu_time=2` scene time S (the GPU reads less vertex data; any change is likely within the noise).
+- The picture must look the same in E2 as in E1.
+
+**E3: 60 fps as shipped, with D70.** Against D1: the `present N:` lines' in-between frames and falls to a held 30 in the same places.
 
 ## What to look for that would mean a bug
 
