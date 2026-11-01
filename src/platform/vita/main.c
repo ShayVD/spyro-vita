@@ -45,8 +45,9 @@
  *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
  *                       and falls back to gpu=0 without it; D35)
  *       res=native      gpu=1 draws at the screen's resolution (the default:
- *                       the 4:3 picture is 726x544 screen pixels, 16:9 is
- *                       960x544); res=ps1 (or 1): at the PS1's own 512x240,
+ *                       the 4:3 picture is 778x544 screen pixels, 16:9 is
+ *                       960x544, from the 512x224 the game draws; D67);
+ *                       res=ps1 (or 1): at the PS1's own 512x240,
  *                       scaled up when shown (filter=); res=N, 2..4: N times
  *                       the PS1's, scaled down when shown (D40). gpu_res=
  *                       is the old name.

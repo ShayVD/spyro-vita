@@ -3,8 +3,9 @@
  * picture a TV would show: the VRAM rect of the last PutDispEnv, 15-bit or
  * 24-bit (isrgb24, the boot logos), black while SetDispMask(0). With
  * --out960 (on by itself with --widescreen or --interp) the picture is the
- * presentation frame (src/game/present.c) scaled to 960x544: full width when
- * widescreen, pillarboxed 4:3 otherwise. */
+ * presentation frame (src/game/present.c) scaled to 960x544: the 224 lines
+ * the game draws (8 into its 240-line display) fill the height, full width
+ * when widescreen, pillarboxed 4:3 otherwise (D67). */
 #include "host.h"
 #include "../../game/present.h" /* also built by the Vita target */
 
@@ -190,10 +191,11 @@ uint8_t *host_display_rgb(int *pw, int *ph) {
     src = ps1_display_rgb(&sw, &sh);
   }
   out = calloc((size_t)OUT_W * OUT_H, 3);
+  i = sh == 240 ? 8 : 0; /* the black lines above and below the drawn 224 */
   if (wide)
-    scale_into(out, 0, OUT_W, src, sw, sh);
-  else /* 4:3 at 544 lines is 725 wide */
-    scale_into(out, (OUT_W - 725) / 2, 725, src, sw, sh);
+    scale_into(out, 0, OUT_W, src + (size_t)i * sw * 3, sw, sh - 2 * i);
+  else /* 4:3 with 224 of 240 lines at 544 is 777 wide */
+    scale_into(out, (OUT_W - 777) / 2, 777, src + (size_t)i * sw * 3, sw, sh - 2 * i);
   free(src);
   *pw = OUT_W;
   *ph = OUT_H;

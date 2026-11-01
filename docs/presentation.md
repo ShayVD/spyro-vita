@@ -40,14 +40,14 @@ The presenter queue shows one captured frame per vblank. Real frames land on the
 
 D2 planned to scale X in RTPS/RTPT. The prototype found a better place: the projection matrix.
 
-- `CameraUpdateMatrices` (`camera.c`) builds `g_Camera.m_ProjectionMatrix` from the view matrix, scaling the Y row by 320/512 for the 4:3 TV. Widescreen scales the X row by 3/4 the same way (`PortProjectionHook`). That squeezes the 16:9 view into the 512 PS1 columns, which the display then stretches to 16:9.
-- Projecting in that space also widens every frustum test done in it. `r_moby` culls mobys with `MVMVA` against the projection matrix and tests `4|X| < 3Z` (`r_moby.s` around `0x8001F2E0`, and `func_80022A2C`). With the X row at 3/4, the same test accepts `|X| < Z`, the 16:9 frustum. Screen-space culls (after RTPS) need nothing: everything visible still lands in 0–511.
+- `CameraUpdateMatrices` (`camera.c`) builds `g_Camera.m_ProjectionMatrix` from the view matrix, scaling the Y row by 320/512 for the 4:3 TV. Widescreen scales the X row by 17/21 the same way (`PortProjectionHook`; 3/4 before D67). That squeezes the wide view into the 512 PS1 columns, which the display then stretches to the screen's 960×544 (see [Output](#output)).
+- Projecting in that space also widens every frustum test done in it. `r_moby` culls mobys with `MVMVA` against the projection matrix and tests `4|X| < 3Z` (`r_moby.s` around `0x8001F2E0`, and `func_80022A2C`). With the X row at 17/21, the same test accepts `|X| < 63Z/68`, the frustum of the 960×544 picture (at 3/4 it was `|X| < Z`, 16:9 over 240 lines). Screen-space culls (after RTPS) need nothing: everything visible still lands in 0–511.
 - A GTE-level squeeze would also hit gameplay. RTPS projects Spyro for the camera logic (`func_80017AA4`, called by `camera.c:433`, `func_80034480`, `func_800357A4`; `moby_update.c:25866`) through the same matrix, and the culls would still need widening one by one.
 - The level-transition spin (`draw.c` `func_8001A050`) builds its own projection matrix; it goes through the same hook.
 
 ### HUD and 2D
 
-- **HUD models.** The 3D letters, counters and icons are mobys drawn in screen space: `func_80022A2C`'s HUD path (render radius sign bit) sets `OFX` to the moby's screen x and loads a fixed diag(1, 0.625, 1) matrix. Two `before` hints in `tools/mips2c/hints.yaml` narrow both (`port_ws_hud_ofx`, `port_ws_hud_r11`, identity when off). HUD items keep their shape and move toward the centre by 3/4, so the HUD stays inside the 4:3 safe area.
+- **HUD models.** The 3D letters, counters and icons are mobys drawn in screen space: `func_80022A2C`'s HUD path (render radius sign bit) sets `OFX` to the moby's screen x and loads a fixed diag(1, 0.625, 1) matrix. Two `before` hints in `tools/mips2c/hints.yaml` narrow both (`port_ws_hud_ofx`, `port_ws_hud_r11`, identity when off). HUD items keep their shape and move toward the centre by 17/21, so the HUD stays inside the 4:3 safe area.
 - **C-built 2D primitives.** The pause and inventory boxes, the dialog lines, title sprites and the like go into the HUD OT through `func_800168DC` (`order_table.c`). Only C code calls it. In widescreen passes, `present.c` records them. Just before `DrawOTag`, it narrows their x about the centre, then restores the words afterwards, so RAM stays as the game wrote it. Two kinds are left alone:
   - full-width primitives (span ≥ 511: fades, letterbox bars, separator lines);
   - the grayscale screen copy behind the pause, inventory and flight-results menus (POLY_FT4 with the CLUT at VRAM (512,224)). It is already a widescreen frame.
@@ -61,7 +61,7 @@ The port's `DrawOTag` uses up the primitives before it returns (D51), so neither
 
 ### Output
 
-The capture is the drawn 512×240 area. The host scales it bilinearly to 960×544, full width for widescreen frames. 960×544 is 30:17, 0.7% wider than 16:9, which is close enough not to correct.
+The capture is the 512×240 display area. Spyro draws only 224 of its lines (`initialization.c`: draw areas 512×224, 8 lines into each 240-line display); the other 16 are black, in a TV's overscan. The screen shows those 224 lines over its full 544 (D67): the host scales them bilinearly to 960×544, full width for widescreen frames, 777 wide for 4:3; the Vita does the same (778 wide). The X row's 17/21 is what keeps that picture unstretched: a 4:3 TV gives a PS1 pixel 0.625 of its height in width, 960×544 from 512×224 gives 1.875/2.4286 = 0.772, and 0.625/0.772 = 17/21. Before D67 the whole 240 lines were shown (3/4: 16:9 over 240 lines, 960×544 being 0.7% wider), and the 16 black lines were 18-pixel bars at the top and bottom.
 
 ### One draw or two
 

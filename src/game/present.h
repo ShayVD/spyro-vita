@@ -17,7 +17,7 @@ extern "C" {
 #define PRESENT_SLOTS 6   /* captured frames: queued and on screen */
 
 typedef struct {
-  int widescreen; /* narrow the projection to 3/4 and show at 16:9 */
+  int widescreen; /* narrow the projection to 17/21 and fill the screen */
   int ws_logic;   /* one 16:9 draw always, attract demos too (diagnostic:
                      the demos desync) */
   int ws_exact;   /* the original 4:3 logic always: a hidden 4:3 draw plus a
