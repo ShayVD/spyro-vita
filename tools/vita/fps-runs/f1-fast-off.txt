@@ -1,0 +1,4 @@
+# Run E1, the renderers as translated from the asm and PsyCross's GTE decoder (fast_render=0, D70), 30 fps
+config_version=3
+fast_render=0
+interp=0

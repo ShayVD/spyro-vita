@@ -1,4 +1,4 @@
-/* src/game/gte_inline.h (fps plan C5, decisions D69) against PsyCross's
+/* src/game/gte_inline.h (fps plan C5, decisions D70) against PsyCross's
  * GTE_operator, which test_gte checks against PCSX-Redux.
  * usage: test_gte_inline [gte.bin]
  * 1. Every PCSX-Redux vector (gte.bin, if given and present) through the

@@ -1,5 +1,5 @@
 /* Shared pieces of the hand-written renderers (sky_hand.c, ...; decisions
- * D69). The renderers were hand-written MIPS asm; mips2c translated them
+ * D70). The renderers were hand-written MIPS asm; mips2c translated them
  * instruction by instruction, with every memory access through MIPS_KUSEG
  * and every GTE command through PsyCross's decoder. The hand C does the same
  * work with pointers into the arena, registers as locals and the inline GTE

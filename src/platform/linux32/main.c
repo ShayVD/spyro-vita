@@ -66,7 +66,7 @@
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
  * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
  *   instead of the hand-written renderers and the inline GTE commands
- *   (default 1; src/game/mips2c_rt.h, decisions D69). --prof-draw: log
+ *   (default 1; src/game/mips2c_rt.h, decisions D70). --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
@@ -81,7 +81,7 @@
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 
-extern int g_fast_render; /* src/game/mips2c_rt.h, D69 */
+extern int g_fast_render; /* src/game/mips2c_rt.h, D70 */
 extern int g_host_prof_draw; /* prof_draw.c */
 void host_prof_draw_report(void);
 

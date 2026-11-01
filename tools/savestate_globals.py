@@ -25,7 +25,7 @@ CONSTANT = {
     "g_m2c_seed",               # oracle_replay.c (tests only)
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
-    "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D69)
+    "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D70)
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {

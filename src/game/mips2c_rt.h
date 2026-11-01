@@ -246,7 +246,7 @@ static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, i
 #define CTC2(v, r) m2c_ctc2((v), (r))
 #define CFC2(r) (gteRegs.CP2C.p[(r)].d)
 
-/* fast_render (config.txt, host --fast-render; default 1, decisions D69):
+/* fast_render (config.txt, host --fast-render; default 1, decisions D70):
  * the hand-written renderers and the inline GTE commands below; 0 runs the
  * mips2c units and PsyCross's GTE_operator as before. Set once at start,
  * before any game code, so it's read through a const alias like the arena

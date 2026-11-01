@@ -2,7 +2,7 @@
  * Vita's "draw" lines (src/platform/vita/prof_draw.c) but in total over the
  * run, logged at exit. Under qemu-i386 these are only relative numbers: for
  * comparing two builds or fast_render=0 against 1 on the same script
- * (decisions D69). The functions are wrapped at link time (CMakeLists.txt). */
+ * (decisions D70). The functions are wrapped at link time (CMakeLists.txt). */
 #include "host.h"
 
 #include <stdint.h>

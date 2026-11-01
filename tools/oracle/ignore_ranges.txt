@@ -70,7 +70,7 @@ ret func_credits_8007BFD0
 # translated callers are func_80050BD0 (returns straight to C after it) and
 # the credits overlay's func_credits_8007BFD0 (void, above). The asm leaves
 # whatever its loops last held in v0/v1; the hand C (src/game/sky_hand.c,
-# D69) returns 0.
+# D70) returns 0.
 ret func_8004EBA8
 ret func_80050BD0
 # The environment renderer (renderers.h: void func_800258F0(int)) is void at
@@ -78,19 +78,19 @@ ret func_80050BD0
 # src/gamestates/draw.c 2568, overlays/titlescreen.c 1426), and the one asm
 # call (func_credits_8007BFD0 8007C244) sets a0-a2 and calls func_8004EBA8
 # next, which reads neither. The asm leaves whatever its last loop held in
-# v0/v1; the hand C (src/game/env_hand.c, D69) returns 0.
+# v0/v1; the hand C (src/game/env_hand.c, D70) returns 0.
 ret func_800258F0
 # Spyro's renderer is void (include/renderers.h:184) and only called from C,
 # as statements (src/gamestates/draw.c 613, 813, 1632, 1744, 1853, 1945,
 # 1964, 1996, 2404, 2536); no asm calls it. The asm leaves whatever its last
-# block held in v0/v1; the hand C (src/game/pete_render_hand.c, D69)
+# block held in v0/v1; the hand C (src/game/pete_render_hand.c, D70)
 # returns 0.
 ret func_80023AC4
 # The regular mobys' draw loop is void (include/renderers.h 170) and called
 # only as a statement from C (src/gamestates/draw.c 606, 1850, 1894, 1943;
 # overlays/titlescreen.c 1421). The asm returns the primitive pointer in v0
 # and whatever its last moby's loops left in v1; the hand C
-# (src/game/moby_hand.c, D69) returns the same v0.
+# (src/game/moby_hand.c, D70) returns the same v0.
 ret func_8001F798
 # The lit mobys' and HUD models' renderer is void (include/renderers.h 179),
 # called as a statement from C (src/gamestates/draw.c 609, 795, 1527, 1742,

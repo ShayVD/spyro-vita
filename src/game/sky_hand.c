@@ -1,6 +1,6 @@
 /* The sky (cyclorama) renderer, func_8004EBA8 (asm/renderers/r_cyclorama.s,
  * hand-written asm in the original), written by hand from the asm as C
- * (decisions D69, the D33 method). It replaces the mips2c translation when
+ * (decisions D70, the D33 method). It replaces the mips2c translation when
  * fast_render=1 (render_hand.h HAND_RENDERER); fast_render=0 runs the
  * translation, which stays linked as func_8004EBA8_gen. Checked against
  * PCSX-Redux by the oracle replay and against the translation by host runs

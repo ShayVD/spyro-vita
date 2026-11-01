@@ -1,5 +1,5 @@
 /* The moby (object) renderers of asm/renderers/r_moby.s (hand-written asm in
- * the original), written by hand from the asm as C (decisions D69, the D33
+ * the original), written by hand from the asm as C (decisions D70, the D33
  * method). Each replaces its mips2c translation when fast_render=1
  * (render_hand.h HAND_RENDERER); fast_render=0 runs the translation, which
  * stays linked as <name>_gen. Checked against PCSX-Redux by the oracle
