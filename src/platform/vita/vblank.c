@@ -130,6 +130,7 @@ static void vblank(void) {
     vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);
+    vita_parse_report(v);
     vita_present_report(v);
     vita_picture_report(v);
     cd_report();

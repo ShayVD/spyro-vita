@@ -99,6 +99,13 @@
  *                       the game clears it; the same pixels)
  *       gpu_lean=1      with gpu=1 and neither persp nor subpixel, a 28-byte
  *                       vertex instead of 40 (the same pixels; D70)
+ *       parse_thread=1  with gpu=1 and render_thread=1, PsyCross's OT walk on
+ *                       a thread of its own (core 1), walking a copy of the
+ *                       frame's primitives while the game goes on (default
+ *                       0, experimental: D71)
+ *       parse_core=3    that thread on core 3, the system's, if the start-up
+ *                       check ("cores" line) found a thread of ours may run
+ *                       there; else core 1 (default 1; D71)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -153,6 +160,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
+                        .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
 
@@ -285,6 +293,10 @@ static void read_config(void) {
       g_vita_opts.gpu_direct = atoi(v);
     else if (!strcmp(line, "gpu_lean"))
       g_vita_opts.gpu_lean = atoi(v);
+    else if (!strcmp(line, "parse_thread"))
+      g_vita_opts.parse_thread = atoi(v);
+    else if (!strcmp(line, "parse_core"))
+      g_vita_opts.parse_core = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -388,6 +400,7 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   read_config();
+  vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
@@ -430,6 +443,7 @@ int main(int argc, char **argv) {
     vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
     sceKernelExitProcess(1);
   }
+  vita_parse_init(); /* after the render thread (D71) */
   vita_present_init();
   vita_picture_init();
   vita_pad_init();

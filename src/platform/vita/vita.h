@@ -58,6 +58,8 @@ typedef struct {
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
   int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
+  int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
+  int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -156,6 +158,14 @@ void vita_mixer_state(int load); /* save states: decoder state in or out of g_ps
 void vita_xa_ahead_init(void);
 int vita_xa_accept(int lba, unsigned char *raw); /* psx_xa_accept, from the read-ahead */
 void vita_xa_ahead_report(int vblank);
+
+/* parse.c: the OT walk on its own thread (D71), and the start-up check of
+ * core 3 */
+void vita_cores_probe(void); /* logs whether a user thread runs on core 3 */
+void vita_parse_init(void);  /* after vita_video_init (the render thread) */
+int vita_parse_on_walker(void); /* 1 on the parse thread */
+void vita_parse_report(int vblank);
+void vita_gpu_walk_submitted(void); /* gpu_thread.c: the display state for that walk */
 
 /* savestate_vita.c: save states (D51) */
 void vita_savestate_init(void);

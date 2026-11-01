@@ -56,6 +56,11 @@
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
+ * --walk-lazy: hand each DrawOTag's list over to the OT walk from a copy
+ *   (src/platform/common/walk.c, decisions D71), walked at the game
+ *   thread's next gate instead of at once: the latest the Vita's parse
+ *   thread could walk it. Logs the walks and any packet outside the copy at
+ *   exit. The run must be identical to one without it.
  * --state: at vblank V, ask for a save state of slot N (or a load), done at
  *   the next main loop top, in the --save DIR (src/game/savestate.c, D51);
  *   several are taken in the order given.
@@ -75,6 +80,7 @@
 #include "psx_cdimage.h"
 #include "psx_hooks.h"
 #include "psx_vcache.h"
+#include "psx_walk.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,7 +105,7 @@ static void usage(void) {
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--vcache]\n"
+          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
@@ -182,6 +188,19 @@ static void vcache_report(void) {
            s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
            s->verts ? 100.0 * s->hits / s->verts : 0.0, s->miss_none / f, s->miss_invalid / f,
            s->miss_ambiguous / f);
+  host_log_flush();
+}
+
+static int s_walk;
+
+static void walk_report(void) {
+  PsxWalkStats w;
+  if (!s_walk)
+    return;
+  psx_walk_stats_take(&w);
+  host_log("walk: %u lists walked from the copy, %u in place; %llu KB copied; "
+           "%u packets outside the copy (last at %08x); %u calls deferred",
+           w.walks, w.in_place, w.copied / 1024, w.foreign, (unsigned)w.foreign_at, w.deferred);
   host_log_flush();
 }
 
@@ -341,6 +360,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--vcache") == 0) {
       psx_vcache_enable(2);
       s_vcache = 1;
+    } else if (strcmp(a, "--walk-lazy") == 0) {
+      s_walk = 1;
     } else if (strcmp(a, "--dither") == 0) {
       g_host_opts.dither = 1;
     } else if (strcmp(a, "--analog") == 0) {
@@ -404,6 +425,7 @@ int main(int argc, char **argv) {
     g_host_opts.out960 = 1;
   atexit(present_report);
   atexit(vcache_report);
+  atexit(walk_report);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)
@@ -412,6 +434,10 @@ int main(int argc, char **argv) {
   if (serve_port && host_serve_start(serve_port) != 0)
     return 1;
   psx_arena_init();
+  if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
+    host_log("walk: no 16 MB-aligned memory for the copy");
+    return 1;
+  }
   if (psx_cd_open(g_host_opts.disc_dir) != 0) {
     host_log("psx_cd_open(%s) failed", g_host_opts.disc_dir);
     host_log_flush();

@@ -27,7 +27,7 @@ Implemented on 2026-11-01, all three behind `config.txt` switches that are off b
 | C1, XA reads | `xa_ahead=1` | the XA sectors read ahead in 32-sector windows on core 1 | D64 |
 | G1, the opaque path | `gpu_opaque=1` | triangles whose atlas blocks have no transparent or STP texel drawn without `discard` | D65 |
 
-**Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2), the GTE dispatch (C5).
+**Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2, since done: D71), the GTE dispatch (C5).
 
 **Checked** (Vita3K is not hardware; results with log paths in D63–D65):
 - Vita3K: every scripted run is byte-identical to the unchanged build with the switches on (shots, WAV, memory card): gems, pause and inventory, attract demo, 60 fps forced, disc image, save and load. So are the window captures of the GPU's own picture.
@@ -57,6 +57,25 @@ The four parallel sessions after D68 (cheaper in-between frames, fewer full-scre
 What D70 adds instead, behind `gpu_lean=1` (off by default until `tools/vita/fps-runs/f1`–`f3` run on a Vita): a 28-byte vertex instead of 40 for every picture (upload −30%), and one atlas lookup per quad instead of two. The same pictures. Skipping the in-between frame where nothing moved was tried and dropped: the game draws after waiting for the vblank, so a skip holds the previous frame one vblank longer instead of showing the same picture (D70).
 
 It doesn't make the in-between frame "much cheaper". The big CPU wins for it are the other sessions' (hand C for `r_moby`/`r_environment`, the OT walk on core 3). Where the GPU is the limit, only fewer pixels (G4, dynamic resolution, deferred) or fewer full-screen passes help.
+
+## Done since: the parse thread, and core 3 (D71)
+
+T2 is in, behind `parse_thread=1` (off until the hardware runs H1–H3 in `tools/vita/fps-runs/`):
+- **What moved:** PsyCross's OT walk, the splits and the vertex copy into the render thread's slabs. In C1's busy 60 fps windows that was 1.8–2.6 ms per vblank of the game thread's 7.0–9.7 (21–27%). At 30 fps in D68's run it was 0.5–1.7 of 3.4–7.7.
+- **Where:** a thread on core 1, beside the mixer and the XA reader, walking a copy of the frame's primitives and the OT terminator in a second 16 MB-aligned arena. That's 45 KB per list on the host with widescreen and 60 fps, 98 KB at 4:3.
+- **Overlap:** the game thread joins at its next PsyCross call or `VSync`: GamestateDraw's `DrawSync(0)`, after the next pass's render path. `present.c`'s capture, commit and snapshot of the draw environment are deferred to the join, not joined for.
+- **What it should buy** (*estimate*): `ot` falls to the copy (~0.1–0.2 ms per list) plus any wait at the join. In C1's busy windows that's −1.5 to −2.3 ms per vblank of game-thread time. It doesn't touch the GPU's limit in the heavy levels (C1, D68).
+- **Core 3:** VitaSDK's `SCE_KERNEL_CPU_MASK_SYSTEM` is the system's core. Homebrew reports say apps don't get it without a kernel plugin. Every start now logs a `cores:` line from a 50 ms probe there. `parse_core=3` uses it only if that probe ran on CPU 3 with at least half the time.
+
+Updated threads and cores, with everything on (D66's table plus D71):
+
+| Thread | Core | Priority | Runs |
+|---|---|---|---|
+| Game (main) | 0 | 0xA0 | logic, the translated renderers, the copy of the primitives, recording the GL commands outside the walk, the present decision, the CD model |
+| Render (`spyro_render`, D63) | 2 | 0x80 | every vitaGL call |
+| Parse (`spyro_parse`, D71, `parse_thread=1`) | 1 (3 with `parse_core=3`, if usable) | 0x98 | PsyCross's OT walk from the copy, and the walk's GL commands |
+| Mixer (`spyro_mixer`, D37) | 1 | 0x70 | SPU mix and XA decode |
+| XA reader (`spyro_xa_ahead`, D64) | 1 | 0x90 | XA sector reads |
 
 ## Where a frame's time goes (measured)
 
