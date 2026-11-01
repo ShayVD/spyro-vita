@@ -922,6 +922,7 @@ Record each decision with its date, what was chosen, and why.
     - **While held,** the in-between frame's cost is taken as the current logic pass's CPU time. On hardware the in-between pass takes 0.85–1.0 of the logic draw (C1's `present` lines). Using the last measured cost instead could keep the hold forever after one expensive frame. The old per-tick test had the same flaw.
     - A save-state load resets the hold (`port_present_reset`). `budget_holds` counts the falls, shown in the `present N:` line as "falls to a held 30 fps".
     - In a simulation with costs from C1 (`budget_allows`'s logic, Gaussian noise per tick), light play stays at 60 and the heavy level holds 30. A marginal place flips 1–3 times a minute instead of 891 times.
+    - **Changed after the D1 run** (below): the render thread is judged against the tick on its own core, the game thread's cost is averaged, and a tick between the two lines pauses the hold instead of restarting it.
   - **Defaults:** `render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`, and `gpu_time=0` (C4). The threads help at 30 fps too: the game thread's busy time fell by roughly half in C1. The opaque path covered 97–99% of textured triangles in C1's `atlas` lines. Nothing found here ties it to the glitches (below). `config.txt` can still turn each one off.
   - **`config_version=3`:** the menu now writes 3. A `render_thread=0`, `xa_ahead=0` or `gpu_opaque=0` in a file without it was the old default or one of `tools/vita/fps-runs`' test files, so it's ignored with a log line. The menu's next save drops those lines (`g_vita_config_stale`), so they can't come back once the file says 3. A `0` with `config_version=3` counts. `vita3k_run.sh` and the fps-runs files now write 3. A `gpu_time=2` line stays honoured: it's a diagnostic someone wrote on purpose. A player who copied `c1-all.txt` as their config should delete that line.
   - **Start-up:** the compile's wait has its own reason. It logs `render: GPU start-up still running after N s (vitaGL and the shaders)` instead of `still waiting`, and `gl_gpu_init` logs `gpu: shaders compiled in N ms` in both modes.
@@ -950,3 +951,34 @@ Record each decision with its date, what was chosen, and why.
     - `ctest`: all pass (`gte` and `m2c_diff_math` skipped, as before).
     - The oracle replays weren't rerun: the only shared-code change is in `present.c`'s budget path, which the host never takes.
   - **Not checked:** hardware. The next run is `tools/vita/fps-runs/d1-60fps.txt`, which is what the menu's 60 FPS gives now.
+- **The D1 hardware run: the hold never let go** (`d1-60fps.txt`, VPK from `131dde2`; `logs/hw-pr40-d68/spyro.log`, gitignored):
+  - **Boot:** `gpu: shaders compiled in 10244 ms`, after two `GPU start-up still running` lines.
+  - **Artisans at 60:** 146 of 148 ticks had their in-between frame at vblank 1200. Then 2 falls around the level change at 1500, and from 1800 to 4200, until the user changed `interp` in the menu, every tick was skipped for the budget with 0 falls per window. The hold never ended, though the game thread was only 25–43% busy and there were almost no late pictures.
+  - **Why: the release test was a trap.**
+    - **The render thread** was held to the game thread's budget with an eighth to spare (22.75 ms at 26). While held, the render thread measures only full pictures, 9.9–15.9 ms each (per-window averages), so its two-picture estimate was 20–32 ms. At 60 in C1, the same kind of place took it 8.4–11.4 ms per picture, both kinds together: 17–23 ms per tick, on a core that has the whole 33.4 ms tick to itself.
+    - **The game thread's estimate** (CPU time per tick plus the logic pass, 20–23 ms in those windows) was close to 22.75 ms. The hold started over on any single tick above it, and with per-tick noise one comes along well within the 30 ticks the hold needs.
+  - **Fixed** (`budget_allows`):
+    - **The render thread is judged against the tick on its own core:** a miss when two pictures take more than 15/16 of the tick (31.3 ms), released with an eighth to spare (29.2 ms). While held, two pictures are still estimated as twice the full one. That's about what both cost at 60: 0.9 of it in C1 against D68 at the same kind of place.
+    - **The game thread's cost is averaged over about 4 ticks** (`s_cpu_avg`). It's a miss when the average is over the budget, or when two ticks in a row are over (a jump the average hasn't caught up with). One tick over on its own is noise: in C1's windows where 60 mostly fitted, the per-tick test skipped 2–34 of ~149 ticks, and before D68 each of those only lost its own in-between frame.
+    - **While held:** a tick over the miss line starts the hold again. A tick that fits but without the eighth to spare only pauses the countdown. The hysteresis stays: 1 s of ticks with room to spare before 60 comes back, doubling to 8 s after a miss within 10 s.
+    - The late-picture miss is unchanged.
+  - **The simulation** (`budget_allows`'s logic in Python, fed each D68 window's averages: game thread busy, logic draw, render time per picture; 12% Gaussian noise per tick, 5% of ticks 6 ms heavier; at 60, 0.9 of the per-picture time and a late picture when one passes 16.7 ms). Share of ticks at 60 per simulated minute:
+
+    | Window | Busy, logic, per picture | `131dde2` | Fixed |
+    |---|---|---|---|
+    | 1800, after the level change | 42%, 8.7 ms, 15.9 ms | 0.00 | 0.00 |
+    | 2400 | 37%, 10.6, 11.6 | 0.00 | 0.56 (3 holds a minute) |
+    | 2700 | 25%, 6.4, 10.1 | 0.98 | 0.98 |
+    | 3000 | 34%, 9.3, 9.9 | 0.01 | 0.97 |
+    | 3300 and 3600 | 34%, 9.6, 11.3 | 0.00 | 0.95 |
+    | 3900 | 37%, 10.4, 14.7 | 0.00 | 0.10 |
+    | 4200 | 43%, 12.4, 14.4 | 0.00 | 0.00 |
+    | Artisans (D68 at 1200), starting held | 51% at 60, 7.8, 9.4 at 60 | 0.92 | 0.98 |
+    | C1's heavy level, 16–17 ms per picture at 60 | 40%, 8.3, 17.6 | 0.00 | 0.00 |
+    | A GPU scene of 19, 22 or 26 ms | | | 0.00 |
+
+    The old logic run through the same simulation stays held from 2400 on, as the hardware did. 2700's average released in the simulation but not in the run: its average hides the window's spread.
+  - **Checked:**
+    - **Vita3K, default budget** (gems script, `logs/v68c-gems-budget`, VPK `logs/vpk-d68c`): the render thread takes 16.5–37 ms per picture there, over the new line, so as before there's 1 fall at the start, then a steady 30 with 0 in-between frames. 0 unknown commands and no `still waiting`; `gpu: shaders compiled in 4319 ms`. Vita3K can't show the return to 60: only the simulation and the next hardware run cover it.
+    - **Host:** builds; `ctest` all pass. The host has no budget by default (`interp_budget_us` is 0 unless set), so `budget_allows` doesn't run in its replays.
+    - **Not checked:** hardware. Rerun `d1-60fps.txt` with a VPK built from this change.

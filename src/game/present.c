@@ -967,21 +967,34 @@ static long long s_busy_wo_interp, s_interp_cost, s_logic_cost;
 
 /* interp_budget_us with hysteresis (D68). Deciding each tick alone flipped
  * between 60 and 30 fps where the in-between frame only sometimes fitted,
- * which looks worse than a steady 30 (D44). A miss now holds 30 fps until
- * the costs have fitted with an eighth to spare for a whole hold (1 s); a
- * miss within 10 s of coming back doubles the hold, up to 8 s. While held,
- * the in-between frame's cost is taken as this tick's logic pass (it draws
- * the same scene: 0.85-1.0 of it on hardware), not the last one measured,
- * which may be from a heavier spot and would never let go. A miss: the
- * game thread's CPU time plus the in-between frame's, or two pictures on
- * the platform's render thread, over the budget; or 3 late pictures within
- * about half a second while the in-between frame ran (the GPU behind). */
+ * which looks worse than a steady 30 (D44). A miss holds 30 fps until the
+ * costs have fitted with an eighth to spare for a whole hold (1 s); a miss
+ * within 10 s of coming back doubles the hold, up to 8 s.
+ * A miss is any of:
+ * - the game thread: its CPU time per tick plus the in-between frame's,
+ *   averaged over a few ticks, over the budget; or over it on two ticks in
+ *   a row (a jump the average hasn't caught up with). One tick over alone
+ *   is noise (5% of ticks where 60 fits on hardware) and changes nothing;
+ * - the render thread (the platform's, on its own core): two pictures over
+ *   15/16 of the tick. It has the whole tick, not the game thread's budget;
+ * - 3 late pictures within about half a second while the in-between frame
+ *   ran (the GPU behind).
+ * While held, the in-between frame's cost is taken as this tick's logic pass
+ * (it draws the same scene: 0.85-1.0 of it on hardware), not the last one
+ * measured, which may be from a heavier spot and would never let go; and the
+ * render thread's two pictures as twice the full one, about what both cost
+ * at 60 (C1 against D68's log). A tick over the miss line starts the hold
+ * again, one between it and the eighth to spare only pauses it: in D68's
+ * run the hold restarted on every single tick over and never let go. */
 #define HOLD_MIN 30  /* ticks: 1 s at 30 fps */
 #define HOLD_MAX 240 /* 8 s */
 #define STEADY 300   /* ticks at 60 fps after which a hold is HOLD_MIN again */
 #define LATE_WEIGHT 30 /* a late picture's score; a tick takes 1 off */
 #define LATE_MISS 60   /* score above which late pictures count as a miss */
+#define RT_TICK 33367  /* us: a tick, two NTSC vblanks */
 static int s_hold, s_hold_len = HOLD_MIN, s_since_back = STEADY, s_late_score, s_prev_interp;
+static int s_cpu_over; /* the last tick's CPU time was over the budget */
+static long long s_cpu_avg; /* CPU time per tick with the in-between frame, over ~4 ticks */
 static unsigned s_late_seen;
 
 static void budget_reset(void) {
@@ -990,15 +1003,19 @@ static void budget_reset(void) {
   s_since_back = STEADY;
   s_late_score = 0;
   s_prev_interp = 0;
+  s_cpu_over = 0;
+  s_cpu_avg = 0;
   if (g_present_late)
     s_late_seen = g_present_late();
 }
 
 /* 1 if this tick may have its in-between frame */
 static int budget_allows(void) {
-  long long b = g_present.interp_budget_us, cpu = s_busy_wo_interp + s_interp_cost;
+  long long b = g_present.interp_budget_us;
+  long long cpu = s_busy_wo_interp + (s_prev_interp ? s_interp_cost : s_logic_cost);
   long long gl = g_present_render_us ? 2 * g_present_render_us() : 0;
-  int over = cpu > b || gl > b;
+  int over, late = 0;
+  s_cpu_avg = s_cpu_avg ? (s_cpu_avg * 3 + cpu) / 4 : cpu;
   if (g_present_late) {
     unsigned n = g_present_late();
     if (s_prev_interp)
@@ -1006,13 +1023,15 @@ static int budget_allows(void) {
     s_late_seen = n;
   }
   if (s_late_score > LATE_MISS) {
-    over = 1;
+    late = 1;
     s_late_score = 0;
   } else if (s_late_score > 0) {
     s_late_score--;
   }
+  over = s_cpu_avg > b || (cpu > b && s_cpu_over) || gl * 16 > RT_TICK * 15;
+  s_cpu_over = cpu > b;
   if (!s_hold) {
-    if (!over) {
+    if (!over && !late) {
       if (s_since_back < STEADY && ++s_since_back == STEADY)
         s_hold_len = HOLD_MIN;
       return 1;
@@ -1025,9 +1044,10 @@ static int budget_allows(void) {
     g_present_stats.budget_holds++;
     return 0;
   }
-  cpu = s_busy_wo_interp + s_logic_cost;
-  if (cpu * 8 > b * 7 || gl * 8 > b * 7)
+  if (over)
     s_hold = s_hold_len; /* not yet: the whole hold again */
+  else if (s_cpu_avg * 8 > b * 7 || gl * 8 > RT_TICK * 7)
+    ; /* fits, but without the eighth to spare: wait */
   else if (--s_hold == 0)
     return 1;
   return 0;
