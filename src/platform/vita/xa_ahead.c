@@ -59,7 +59,7 @@ static int reader_main(SceSize args, void *argp) {
   (void)argp;
   for (;;) {
     int i;
-    g_wd.xa = 0; /* breadcrumbs (watchdog.c, D71) */
+    g_wd.xa = 0; /* breadcrumbs (watchdog.c, D73) */
     sceKernelWaitSema(s_sema, 1, NULL);
     g_wd.xa = 1;
     for (i = 0; i < NWIN; i++) {

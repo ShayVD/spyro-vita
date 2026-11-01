@@ -60,7 +60,7 @@ jobs:
           path: build/vita/spyro-vita.vpk
           if-no-files-found: error
       # The same build's ELF before vita-elf-create, symbols and -g line
-      # tables kept: a crash dump (.psp2dmp, e.g. the hang watchdog's, D71)
+      # tables kept: a crash dump (.psp2dmp, e.g. the hang watchdog's, D73)
       # from this run's VPK is read against it (docs/vita-testing.md). The
       # same code and data as eboot.bin, so no game data. CI only: never
       # attached to a release here.

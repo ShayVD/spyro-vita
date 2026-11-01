@@ -33,15 +33,21 @@ static void charge(void) {
   s_mark = t;
 }
 
+/* The parts are the game thread's: the parse thread (D71) runs the wrapped
+ * GR_* calls too, and its own report counts its time. */
 void prof_enter(int part) {
+  if (vita_parse_on_walker())
+    return;
   charge();
   if (s_depth < (int)(sizeof s_stack / sizeof s_stack[0]))
     s_stack[s_depth] = part;
   s_depth++;
-  g_wd.game_part = part; /* the hang line's breadcrumb (watchdog.c, D71) */
+  g_wd.game_part = part; /* the hang line's breadcrumb (watchdog.c, D73) */
 }
 
 void prof_leave(void) {
+  if (vita_parse_on_walker())
+    return;
   charge();
   if (s_depth > 0)
     s_depth--;

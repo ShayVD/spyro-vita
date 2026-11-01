@@ -31,7 +31,7 @@ static SceUInt64 s_t0; /* when the save or load began, for the log */
 
 void savestate_plat_audio(int mode) {
   s_t0 = sceKernelGetProcessTimeWide();
-  g_wd.game_ctx = WD_CTX_STATE; /* the hang line's breadcrumb (D71) */
+  g_wd.game_ctx = WD_CTX_STATE; /* the hang line's breadcrumb (D73) */
   vita_mixer_drain(); /* nothing in flight; the XA FIFO is this thread's */
   if (mode == PSX_STATE_SAVE)
     vita_mixer_state(0);

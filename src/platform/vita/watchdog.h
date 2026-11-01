@@ -1,4 +1,4 @@
-/* The hang watchdog (watchdog.c, decisions D71): breadcrumbs the threads
+/* The hang watchdog (watchdog.c, decisions D73): breadcrumbs the threads
  * leave as they go (plain stores, read by the watchdog only when the game
  * thread has stopped), and the calls that feed it. */
 #ifndef SPYRO_VITA_WATCHDOG_H

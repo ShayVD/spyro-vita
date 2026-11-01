@@ -208,7 +208,7 @@ void vita_mixer_init(void) {
            (unsigned)sceKernelGetThreadCpuAffinityMask(sceKernelGetThreadId()));
 }
 
-/* The hang line (watchdog.c, D71). */
+/* The hang line (watchdog.c, D73). */
 int vita_mixer_where(unsigned *posted, unsigned *done) {
   *posted = s_head;
   *done = s_tail;

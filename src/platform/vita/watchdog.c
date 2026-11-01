@@ -1,4 +1,4 @@
-/* The hang watchdog (decisions D71). A freeze used to leave nothing in
+/* The hang watchdog (decisions D73). A freeze used to leave nothing in
  * spyro.log: the lines just stopped. Now:
  *
  *   - Breadcrumbs (g_wd, plain stores): the game thread's part of the frame
@@ -253,7 +253,7 @@ void vita_watchdog_start(void) {
   s_tid[WD_T_GAME] = sceKernelGetThreadId();
   g_wd.game_ctx = WD_CTX_BOOT;
   /* cores 1 and 2: never the game thread's core 0, and one busy thread
-   * can't keep it off both (D71) */
+   * can't keep it off both (D73) */
   th = sceKernelCreateThread("spyro_watchdog", wd_main, PRIORITY, 0x4000, 0,
                              SCE_KERNEL_CPU_MASK_USER_1 | SCE_KERNEL_CPU_MASK_USER_2, NULL);
   if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {

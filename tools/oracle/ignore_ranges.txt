@@ -64,6 +64,44 @@ ret func_800314B4
 # called as such from C (src/gamestates/update.c:1405/1459, draw.c:2648/2707).
 ret func_credits_8007AA50
 ret func_credits_8007BFD0
+# The sky renderer and the cyclorama set-up are void at every caller: the C
+# calls are statements (src/gamestates/draw.c 845, 847, 912, 1661, 1750,
+# 1812, 1856; overlays/flight.c 237; overlays/titlescreen.c 1429), and the
+# translated callers are func_80050BD0 (returns straight to C after it) and
+# the credits overlay's func_credits_8007BFD0 (void, above). The asm leaves
+# whatever its loops last held in v0/v1; the hand C (src/game/sky_hand.c,
+# D72) returns 0.
+ret func_8004EBA8
+ret func_80050BD0
+# The environment renderer (renderers.h: void func_800258F0(int)) is void at
+# every caller: the C calls are statements (src/environment.c 29,
+# src/gamestates/draw.c 2568, overlays/titlescreen.c 1426), and the one asm
+# call (func_credits_8007BFD0 8007C244) sets a0-a2 and calls func_8004EBA8
+# next, which reads neither. The asm leaves whatever its last loop held in
+# v0/v1; the hand C (src/game/env_hand.c, D72) returns 0.
+ret func_800258F0
+# Spyro's renderer is void (include/renderers.h:184) and only called from C,
+# as statements (src/gamestates/draw.c 613, 813, 1632, 1744, 1853, 1945,
+# 1964, 1996, 2404, 2536); no asm calls it. The asm leaves whatever its last
+# block held in v0/v1; the hand C (src/game/pete_render_hand.c, D72)
+# returns 0.
+ret func_80023AC4
+# The regular mobys' draw loop is void (include/renderers.h 170) and called
+# only as a statement from C (src/gamestates/draw.c 606, 1850, 1894, 1943;
+# overlays/titlescreen.c 1421). The asm returns the primitive pointer in v0
+# and whatever its last moby's loops left in v1; the hand C
+# (src/game/moby_hand.c, D72) returns the same v0.
+ret func_8001F798
+# The lit mobys' and HUD models' renderer is void (include/renderers.h 179),
+# called as a statement from C (src/gamestates/draw.c 609, 795, 1527, 1742,
+# 1851, 1895, 1944, 1963, 1984; overlays/flight.c 593) and from the credits
+# overlay's func_credits_8007BFD0 (void, above), whose next instruction
+# after the jal sets up a call to Memset16. The hand C returns 0.
+ret func_80022A2C
+# The specular mobys' draw loop is void (include/renderers.h 176) and called
+# only as a statement from C (src/gamestates/draw.c 608, 1992). The asm returns the
+# primitive pointer in v0, as the hand C does, and loop values in v1.
+ret func_80020F34
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that

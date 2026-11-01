@@ -6,6 +6,7 @@
 
 u32 g_mips_sp;
 u32 g_mips_v1;
+int g_fast_render = 1; /* mips2c_rt.h, D72 */
 
 /* R3000 division: no trap; x/0 gives hi = x, lo = -1 (x >= 0) or 1. */
 void mips2c_div(u32 a, u32 b, u32 *hi, u32 *lo) {
@@ -67,3 +68,18 @@ void mips2c_fell_off(const char *unit) {
   fprintf(stderr, "mips2c: %s: fell off the end of the unit\n", unit);
   abort();
 }
+
+#if M2C_PROFILE
+u32 g_m2c_prof[M2C_PROF_WORDS];
+
+/* One u32 per instruction word from M2C_PROF_LO, to $SPYRO_M2C_PROF_OUT
+ * (default m2c_prof.bin in the working directory). */
+__attribute__((destructor)) static void m2c_prof_write(void) {
+  const char *path = getenv("SPYRO_M2C_PROF_OUT");
+  FILE *f = fopen(path ? path : "m2c_prof.bin", "wb");
+  if (!f)
+    return;
+  fwrite(g_m2c_prof, sizeof g_m2c_prof, 1, f);
+  fclose(f);
+}
+#endif

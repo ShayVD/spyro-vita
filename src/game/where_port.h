@@ -1,5 +1,5 @@
 /* Where the player is, from the game's own globals, for the platform's log
- * (src/game/where_port.c, decisions D71). Platform-facing: no decomp
+ * (src/game/where_port.c, decisions D73). Platform-facing: no decomp
  * headers. */
 #ifndef SPYRO_WHERE_PORT_H
 #define SPYRO_WHERE_PORT_H

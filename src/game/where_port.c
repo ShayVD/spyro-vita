@@ -1,4 +1,4 @@
-/* Where the player is (decisions D71): the level and gamestate the Vita's
+/* Where the player is (decisions D73): the level and gamestate the Vita's
  * log names at every change and in a hang line, read from the game's own
  * globals (common.h, loaders.h, gamepad.h). */
 #include "where_port.h"

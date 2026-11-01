@@ -53,6 +53,7 @@
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
 #include "../../game/present.h"
+#include "psx_walk.h"
 
 GlEnv g_gl_env;
 int g_rt_active;
@@ -209,7 +210,7 @@ static int rt_main(SceSize args, void *argp) {
       /* nothing to run: sleep until the game thread posts (it signals only
        * when it sees s_rt_sleeping, so nothing is lost either way) */
       __atomic_store_n(&s_rt_sleeping, 1, __ATOMIC_SEQ_CST);
-      g_wd.rt = 0; /* breadcrumbs (watchdog.c, D71) */
+      g_wd.rt = 0; /* breadcrumbs (watchdog.c, D73) */
       if (__atomic_load_n(&s_wpub, __ATOMIC_SEQ_CST) != r) {
         if (!__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
           sceKernelWaitSema(s_rt_sema, 1, NULL); /* its signal is on the way */
@@ -275,10 +276,16 @@ static void game_wait(int why, int k, uint32_t target) {
   s_late_total += why == W_FRAME;
 }
 
-/* Room for a command of `size` bytes (a multiple of 8) at s_w. */
+/* Room for a command of `size` bytes (a multiple of 8) at s_w. With the
+ * parse thread (D71) the ring has one writer at a time: that thread from a
+ * DrawOTag's handover to the join, the game thread otherwise, so the game
+ * thread joins first. */
 static Cmd *reserve(int type, uint32_t size) {
-  uint32_t off = s_w & (RING - 1);
+  uint32_t off;
   Cmd *c;
+  if (!vita_parse_on_walker())
+    psx_walk_join();
+  off = s_w & (RING - 1);
   if (off + size > RING) { /* the rest of the ring is skipped */
     game_wait(W_RING, K_BYTES, s_w + (RING - off) - RING);
     c = (Cmd *)(s_ring + off);
@@ -311,15 +318,30 @@ static void post(const Cmd *c) {
 static int s_sync_why = W_SYNC;
 static void finish(void) { game_wait(s_sync_why, K_CMDS, s_nposted); }
 
+static void env_now(GlEnv *e) {
+  memset(e, 0, sizeof *e);
+  memcpy(&e->disp, &currentDispEnv, sizeof e->disp);
+  e->disabled = g_GPUDisabledState;
+  e->wide = g_present.widescreen;
+}
+
+/* The display state when a DrawOTag handed its list to the parse thread
+ * (D71): what the walk's draws see, as they would have in the DrawOTag. */
+static GlEnv s_walk_env;
+
+void vita_gpu_walk_submitted(void) { env_now(&s_walk_env); }
+
 /* The game's display state as the GL side should see it from here on. */
 static void env_sync(void) {
   static GlEnv sent;
   static int sent_valid;
   GlEnv e;
-  memset(&e, 0, sizeof e);
-  memcpy(&e.disp, &currentDispEnv, sizeof e.disp);
-  e.disabled = g_GPUDisabledState;
-  e.wide = g_present.widescreen;
+  if (vita_parse_on_walker()) {
+    e = s_walk_env;
+  } else {
+    psx_walk_join(); /* the walk's commands go first */
+    env_now(&e);
+  }
   if (!g_rt_active) {
     g_gl_env = e;
     return;

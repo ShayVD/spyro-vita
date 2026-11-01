@@ -85,7 +85,7 @@ static void vblank(void) {
   int v = ++s_vblank, i;
   SceUInt64 now;
 
-  vita_watchdog_vblank(v); /* "where" lines, hang_test= (D71) */
+  vita_watchdog_vblank(v); /* "where" lines, hang_test= (D73) */
   vita_pad_poll();
   vita_pad_vblank();
   prof_enter(PROF_SPU);
@@ -132,6 +132,7 @@ static void vblank(void) {
     vita_mixer_report(v);
     if (g_vita_gpu)
       vita_gpu_report(v);
+    vita_parse_report(v);
     vita_present_report(v);
     vita_picture_report(v);
     cd_report();

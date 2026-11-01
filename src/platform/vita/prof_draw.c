@@ -46,6 +46,8 @@ WRAP_M2C(D_FX, func_80058D64)     /* r_flame */
 WRAP_M2C(D_FX, func_80058BA8)     /* r_particles: glows and sparkles */
 WRAP_M2C(D_PARTICLES, func_800573C8) /* r_particles */
 WRAP_M2C(D_SKY, func_80050BD0)    /* cyclorama set-up and r_cyclorama */
+WRAP_M2C(D_SKY, func_8004EBA8)    /* r_cyclorama: the sky, from draw.c (func_80050BD0
+                                     calls its register entry, not this) */
 
 void __real_GamestateUpdate(void);
 void __wrap_GamestateUpdate(void) {

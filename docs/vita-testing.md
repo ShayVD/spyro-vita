@@ -115,11 +115,12 @@ Files the app writes:
 | `xa_ahead=0` | the XA music's sectors read one at a time on the game thread. Default 1 since D68: read ahead of the CD head on core 1 (D64), the same sectors. An `xa N:` line every 300 vblanks |
 | `gpu_opaque=0` | GPU: every atlas triangle drawn with the `discard` shader. Default 1 since D68: with `tex_cache=1`, triangles whose texture has no transparent or semi-transparent texel are drawn by a shader without `discard`, the same pixels (D65). The `atlas N:` lines count them |
 | `gpu_direct=0` | GPU: each widescreen or 60 fps picture copied into its own slot, and the screen cleared under it, as before D69. Default 1: a picture that is one of the game's draw areas whole is shown straight from it, and when the game clears that area for a later frame the slot takes its texture instead of a copy (one full-screen GPU pass fewer per picture, the same pixels). The `gpu N: ... presentation pictures` line every 300 vblanks counts them |
+| `gpu_lean=1` | GPU: with `tex_cache=1` or `tex_filter` and neither `persp` nor `subpixel`, a 28-byte vertex instead of 40 (the same pixels), and one atlas lookup for a quad's two triangles (D70). Default 0 until the hardware runs. The `gpu_time=2` line's vertex upload KB shows it |
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
 | `interp=1` | experimental 60 fps (default 0: 30 fps; decisions D44): an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). It doesn't fit the Vita's CPU at 16:9 yet, so most ticks fall back to 30 fps. `interp=2`: without animation blending; `interp=3`: camera only. Written by hand, `interp=1` needs a `config_version=2` line too; without one it's taken as the old default an older build's menu wrote, and read as 0 (the menu writes both) |
 | `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
-| `hang_dump=0` | no crash dump when the game freezes. Default 1: 20 s after a `hang:` line, if the game is still stuck, the app stops itself so the Vita writes a crash dump (see "If the game freezes", D71) |
+| `hang_dump=0` | no crash dump when the game freezes. Default 1: 20 s after a `hang:` line, if the game is still stuck, the app stops itself so the Vita writes a crash dump (see "If the game freezes", D73) |
 | `hang_test=V` | tests: the game thread spins from vblank V, so the watchdog's `hang:` line (and with `hang_dump=1` the crash dump) can be seen. `hang_test=V,wait` blocks it on a semaphore instead |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick plus one, averaged over a few ticks, would pass MS (default 26; `0` never skips). Two pictures taking the render thread more than 15/16 of a tick, or late pictures, skip it too. Skipped ticks show 30 fps instead of slowing the game down. After a miss 30 fps is held until the costs have fitted with room to spare for at least a second, and longer after repeated misses (D68) |
@@ -379,7 +380,7 @@ Again after merging the controls (#28, D46/D47; the Vita now reports an analog D
 
 (`run440`–`run442` used the old key sequences, which now land on CONTROLS rows; not results.)
 
-## If the game freezes (D71)
+## If the game freezes (D73)
 
 A watchdog thread looks once a second at whether the game is still moving. From vblank 600 (10 s
 of game, after the start-up's shader compile), if no vblank has passed for 10 s (60 s while the
@@ -636,3 +637,15 @@ Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "ol
 | `run106`–`run110` | after merging main #13/#14: title native and `res=ps1`, game over, title with `widescreen=1 interp=1` | Replay shots byte-identical to `run91`/`run97`; title windows pixel-identical to `run91`/`run92`; ws+60 fps: `targets at 960x508`, `presentation frames 960x544`. One capture of the game-over freeze frame (`run108`, 6504) had a 1-px light column at the picture's right edge that `run97` (same frame, same path) didn't; reruns at that moment caught Vita3K's own "compiling shaders" overlay instead (`run110`). Settled in `run111`–`run117`, below. |
 | `run111`–`run117` | captures now present the held frame again 3 times first (Vita3K could show an older swap buffer); 4:3 area 726 wide | Captures repeatable (two game-over runs pixel-identical). The light column was real: a 725-wide target never drew its last column (black at native in every capture, main's build too) and the game-over move left a stray colour there. 726 and 728 both fill it; with 726 every capture is lit to the last column, which matches the PS1 replay's column 511 at the freeze frame. Replay shots unchanged. |
 | `run119`, `run120` | gems step script, `widescreen=1 interp=1`, `menu_test=6420,6520,6620` (three widescreen toggles in Artisans), before and after flushing pending copies in `drop_target()` | No red/green textures in either (the hardware report on `3b4126a` is not reproduced); shots and windows identical between the two. |
+
+### The 28-byte vertex (D70, branch `claude/fps-cheap-interp-52b4c3`)
+
+`gpu_lean=0` against `gpu_lean=1` in the same VPK, `realtime=0`, widescreen, 60 fps forced (`interp=1 interp_budget=0`). Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `v69-gems-off`, `-on` | gems script, shot every 200, `wav=1` | 44 shots, the WAV and the card byte-identical; the same in-between frames in every window |
+| `v69-pause-off`, `-on` | the pause route | 70 shots and the card byte-identical |
+| `v69-cap-off`, `-on` | `CAPTURE=1`, six window captures | all six byte-identical |
+| `v69-menu-persp-on`, `-off` | `menu_test=6000` turns `persp` on (28-byte → 40-byte vertex), or off | the other program set compiled in ~3 s; after the switch back, the captures byte-identical to `v69-cap-on` |
+| `v69-rt-off`, `-on` | `REALTIME=1`, `gpu_time=2` | 40.0 → 28.0 bytes a vertex (1,389 → 967 MB); Vita3K's upload and `expand()` times unchanged (its own GL keeps the render thread 99% busy) |

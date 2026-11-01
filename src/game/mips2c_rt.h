@@ -103,6 +103,16 @@ int port_lod_lit_full(void);
       port_lod_env_lists(t7);                                                  \
   } while (0)
 
+/* Profiling builds (cmake -DSPYRO_M2C_PROF=ON, mips2c --prof): every
+ * translated instruction counts its executions, by PS1 address; mips2c_rt.c
+ * writes the table out at exit (tools/mips2c/prof_report.py reads it). */
+#if M2C_PROFILE
+#define M2C_PROF_LO 0x80010000u
+#define M2C_PROF_WORDS 0x20000u
+extern u32 g_m2c_prof[M2C_PROF_WORDS];
+#define M2C_PROF(a) (g_m2c_prof[((a) - M2C_PROF_LO) >> 2]++)
+#endif
+
 /* $ra while no local call is active: `jr` to it returns to C. */
 #define MIPS_RA_SENTINEL 0xFFFFFFF0u
 /* lui 0x1F80: the scratchpad lives at the arena base (64 KB aligned). */
@@ -235,5 +245,20 @@ static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, i
 #define MFC2(r) m2c_mfc2(r)
 #define CTC2(v, r) m2c_ctc2((v), (r))
 #define CFC2(r) (gteRegs.CP2C.p[(r)].d)
+
+/* fast_render (config.txt, host --fast-render; default 1, decisions D72):
+ * the hand-written renderers and the inline GTE commands below; 0 runs the
+ * mips2c units and PsyCross's GTE_operator as before. Set once at start,
+ * before any game code, so it's read through a const alias like the arena
+ * base. */
+extern int g_fast_render;
+extern const int g_fast_render_ro __asm__("g_fast_render");
+
+/* GTE commands (fps plan C5): every translated call has a literal opcode,
+ * and gte_inline.h has a function for each, straight-line code with the
+ * same results (m2c_gte_0x180001 for RTPS, ...). */
+#include "gte_inline.h"
+#define GTE_operator(op)                                                       \
+  (__builtin_expect(g_fast_render_ro, 1) ? m2c_gte_##op() : (void)(GTE_operator)(op))
 
 #endif
