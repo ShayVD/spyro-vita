@@ -16,6 +16,7 @@
 #include "psx_arena.h"
 #include "psx_spu.h"
 #include "psx_state.h"
+#include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdio.h>
@@ -420,6 +421,10 @@ static void service(void) {
 }
 
 void savestate_point(void) {
+  /* a state holds PsyCross's GPU state: an OT walk still running finishes
+   * first (D69) */
+  if (s_req_slot || g_savestate_tick_hook)
+    psx_walk_join();
   service();
   if (g_savestate_tick_hook)
     g_savestate_tick_hook();

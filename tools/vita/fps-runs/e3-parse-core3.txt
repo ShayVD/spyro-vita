@@ -1,0 +1,5 @@
+# Run E3, the parse thread (D69) on core 3, the system's core, at 60 fps: only if the start-up "cores" line says core 3 is usable (else it runs on core 1, as E2)
+interp=1
+parse_thread=1
+parse_core=3
+config_version=3

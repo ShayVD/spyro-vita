@@ -18,6 +18,7 @@
 
 #include "psx_arena.h"
 #include "psx_spu.h"
+#include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdlib.h>
@@ -279,20 +280,39 @@ const PresentCapture *g_present_capture;
 static uint16_t s_capture[PRESENT_W * PRESENT_H];
 static int s_captured, s_capture_on;
 
-static void capture_now(void) {
+/* The capture of the area just drawn, into the platform's slot or (without
+ * a platform capture) s_capture by StoreImage. With the OT walked later or
+ * on another thread (D69) it waits for the walk (psx_walk_after): the
+ * area's y is the walk's draw environment, and the pixels are the walk's. */
+static void capture_area(void *arg) {
   RECT16 r;
+  int frozen;
+  (void)arg;
   r.x = 0;
   r.y = activeDrawEnv.ofs[1];
   r.w = PRESENT_W;
   r.h = PRESENT_H;
   if (g_present_capture) {
     g_present_capture->capture(r.x, r.y, r.w, r.h);
-  } else {
-    int frozen = g_psyxVramFrozen;
-    g_psyxVramFrozen = 0; /* our own read, not the game's */
-    StoreImage(&r, (u_long *)s_capture);
-    g_psyxVramFrozen = frozen;
+    return;
   }
+  frozen = g_psyxVramFrozen;
+  g_psyxVramFrozen = 0; /* our own read, not the game's */
+  StoreImage(&r, (u_long *)s_capture);
+  g_psyxVramFrozen = frozen;
+}
+
+/* The capture into a presentation slot, after the capture itself (D69) */
+static void commit_slot(void *arg) {
+  int slot = *(const int *)arg;
+  if (g_present_capture)
+    g_present_capture->commit(slot);
+  else
+    memcpy(s_frames[slot], s_capture, sizeof s_capture);
+}
+
+static void capture_now(void) {
+  psx_walk_after(capture_area, NULL, 0);
   s_captured = 1;
 }
 
@@ -308,10 +328,7 @@ static void push_capture(int wide) {
   /* This may be the slot on screen (after a run of drops); harmless: the
    * queue isn't empty now, so the next vblank shows a newer slot. */
   slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
-  if (g_present_capture)
-    g_present_capture->commit(slot);
-  else
-    memcpy(s_frames[slot], s_capture, sizeof s_capture);
+  psx_walk_after(commit_slot, &slot, sizeof slot);
   s_frame_wide[slot] = (uint8_t)wide;
   s_qcount++;
   s_last_push_vblank = PsyX_Sys_GetVBlankCount();
@@ -460,6 +477,37 @@ void PortPolySpace(void) {
   g_HudMobys = top;
 }
 
+/* The OT walked from a copy (walk.c, D69): the PS1 RAM a DrawOTag list can
+ * reach. The game links its OT buckets from primitive to primitive and ends
+ * the chain at the terminator (order_table.c), so that's the primitives
+ * written since the draw began, from the lower buffer (where a spanning draw
+ * starts, and below the upper one) up to the draw's pointer D_800757B0, and
+ * the terminator. Before the buffers exist only the terminator. */
+#define OT_TERMINATOR_AT 0x0006BBE0u /* 0x8006BBE0 (order_table.c) */
+#define OT_TERMINATOR_LEN 0x14       /* its tag and 4 NOP words (port.c) */
+
+static int in_arena(const void *p, uint32_t len);
+
+int port_present_prim_ranges(PsxWalkRange *r, int max) {
+  uint32_t lo, hi;
+  int n = 0;
+  if (max < 2)
+    return 0;
+  r[n].lo = OT_TERMINATOR_AT;
+  r[n].hi = OT_TERMINATOR_AT + OT_TERMINATOR_LEN;
+  n++;
+  if (in_arena(g_Buffers.m_LowerPolyBuffer, 1) && in_arena(D_800757B0, 1)) {
+    lo = (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
+    hi = (uint32_t)((uintptr_t)D_800757B0 - g_psx_arena_base);
+    if (hi > lo) {
+      r[n].lo = lo;
+      r[n].hi = hi;
+      n++;
+    }
+  }
+  return n;
+}
+
 /* Every GamestateDraw: shown = its picture is shown (lod.c, D49). */
 static void game_draw(int shown) {
   port_lod_draw_begin(shown);
@@ -574,6 +622,20 @@ static void sectors_restore(void) {
   }
 }
 
+/* PsyCross's draw and display environments, once a walk still running has
+ * finished with them (D69) */
+static void envs_take(void *arg) {
+  (void)arg;
+  s_drawenv_snap = activeDrawEnv;
+  s_dispenv_snap = activeDispEnv;
+}
+
+static void envs_restore(void *arg) {
+  (void)arg;
+  activeDrawEnv = s_drawenv_snap;
+  activeDispEnv = s_dispenv_snap;
+}
+
 static void snap_take(void) {
   long long t = now_us();
   size_t need = 0;
@@ -598,8 +660,7 @@ static void snap_take(void) {
   }
   memcpy(s_scratch_snap, g_psx_scratch, sizeof s_scratch_snap);
   s_gte_snap = gteRegs;
-  s_drawenv_snap = activeDrawEnv;
-  s_dispenv_snap = activeDispEnv;
+  psx_walk_after(envs_take, NULL, 0);
   s_v1_snap = g_mips_v1;
   g_present_stats.us_snapshot += now_us() - t;
 }
@@ -667,8 +728,7 @@ static void snap_restore(void) {
   g_present_stats.snapshot_bytes += (long long)(o - s_region_snap) + s_nsectors * 4;
   memcpy(g_psx_scratch, s_scratch_snap, sizeof s_scratch_snap);
   gteRegs = s_gte_snap;
-  activeDrawEnv = s_drawenv_snap;
-  activeDispEnv = s_dispenv_snap;
+  psx_walk_after(envs_restore, NULL, 0);
   g_mips_v1 = s_v1_snap;
   g_present_stats.us_snapshot += now_us() - t;
   if (g_present.stats > 1)

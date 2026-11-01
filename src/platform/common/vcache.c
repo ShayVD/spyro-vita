@@ -42,11 +42,16 @@
  * is parsed, which happens inside DrawOTag, before the table moves on to the
  * next frame (done_hook). A frame is everything projected between two
  * DrawOTag calls; Spyro builds and draws its OT in the same frame
- * (gamestates/draw.c), and the presentation passes (D30) do too. */
+ * (gamestates/draw.c), and the presentation passes (D30) do too.
+ *
+ * When the OT is walked later or elsewhere (walk.c, D69), the frame's table
+ * goes with the list (psx_vcache_frame_take) and the next frame records
+ * into a second one: the two tables take turns. */
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "PsyX/PsyX_render.h"
@@ -80,7 +85,10 @@ typedef struct {
   Cand c[VC_CANDS];
 } Entry;
 
-static Entry s_tab[VC_SIZE];
+static Entry s_tab0[VC_SIZE];
+static Entry *s_tab = s_tab0, *s_tab1; /* the table recording; the other one (D69) */
+static const Entry *s_rtab;            /* the walk's table and frame, NULL: this one */
+static uint32_t s_rgen;
 static const GrVertex *s_base;
 VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
 
@@ -111,6 +119,21 @@ static Entry *find(uint32_t key, int add) {
       s_count++;
       return e;
     }
+    if (e->key == key)
+      return e;
+  }
+  return NULL;
+}
+
+/* poly_hook's lookup: the entry for key in the frame being walked */
+static const Entry *look(uint32_t key) {
+  uint32_t i = hash(key), n;
+  if (!s_rtab)
+    return find(key, 0);
+  for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
+    const Entry *e = &s_rtab[i];
+    if (e->gen != s_rgen)
+      return NULL;
     if (e->key == key)
       return e;
   }
@@ -246,11 +269,11 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
   }
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
-    const Entry *f = find(key, 0);
+    const Entry *f = look(key);
     e[i] = f && f->state == E_VALID && f->n ? f : NULL;
     ref[i] = VREF_POLY;
     if (e[i]) {
-      ref[i] |= (uint32_t)(f - s_tab) + 1;
+      ref[i] |= (uint32_t)(f - (s_rtab ? s_rtab : s_tab)) + 1;
       g_vcache_stats.hits++;
     } else {
       persp = 0;
@@ -323,10 +346,30 @@ static void done_hook(void) {
   if (s_count > g_vcache_stats.peak)
     g_vcache_stats.peak = s_count;
   s_count = 0;
+  if (s_tab1) /* the other table records the next frame (D69) */
+    s_tab = s_tab == s_tab0 ? s_tab1 : s_tab0;
   if (++s_gen == 0) { /* wrapped: no old entry may look current */
-    memset(s_tab, 0, sizeof s_tab);
+    memset(s_tab0, 0, sizeof s_tab0);
+    if (s_tab1)
+      memset(s_tab1, 0, sizeof s_tab0);
     s_gen = 1;
   }
+}
+
+int psx_vcache_double(void) {
+  if (!s_tab1)
+    s_tab1 = calloc(VC_SIZE, sizeof(Entry));
+  return s_tab1 ? 0 : -1;
+}
+
+void psx_vcache_frame_take(PsxVcacheFrame *f) {
+  f->tab = s_tab;
+  f->gen = s_gen;
+}
+
+void psx_vcache_frame_use(const PsxVcacheFrame *f) {
+  s_rtab = f ? (const Entry *)f->tab : NULL;
+  s_rgen = f ? f->gen : 0;
 }
 
 int psx_vcache_get(uint32_t ref, VCacheVert *out) {

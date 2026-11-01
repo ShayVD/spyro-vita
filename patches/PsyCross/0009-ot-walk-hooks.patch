@@ -1,0 +1,216 @@
+diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -869,6 +869,21 @@ extern void (*g_psyxDrawOTagDone)(void);
+  * game's draw; VRAM bookkeeping there (the pause screen saves the texture
+  * pages and overwrites them) must happen once, in the real draw. */
+ extern int g_psyxVramFrozen;
++/* Spyro port (decisions D69): the OT walk on another thread.
++ * - g_psyxGpuGate: called first by every call here that reads or writes the
++ *   GPU state an OT walk uses (the draw and display environments, the
++ *   splits, VRAM) and by VSync, so a walk still running elsewhere finishes
++ *   first.
++ * - g_psyxDrawOTagWalk: called by DrawOTag in place of the walk, after the
++ *   pre hook; nonzero means it has taken the list (the post and done hooks
++ *   still run here, when it returns).
++ * - g_psyxNextPacket: when set, the walk's next packet (in place of
++ *   nextPrim), for a list walked from a copy.
++ * - g_psyxVramFrozenGet: when set, read in place of g_psyxVramFrozen. */
++extern void (*g_psyxGpuGate)(void);
++extern int (*g_psyxDrawOTagWalk)(u_long *p);
++extern uintptr_t (*g_psyxNextPacket)(uintptr_t packet);
++extern int (*g_psyxVramFrozenGet)(void);
+ extern void DrawOTagIO(u_long *p);
+ extern void DrawOTagEnv(u_long *p, DRAWENV *env);
+ extern void DrawPrim(void *p);
+diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
+--- a/src/gpu/PsyX_GPU.cpp
++++ b/src/gpu/PsyX_GPU.cpp
+@@ -813,6 +813,8 @@ int ParsePrimitive(P_TAG* polyTag);
+ static int Gp0CommandWords(const u_int* cmd, const u_int* end);
+ #endif
+ 
++uintptr_t (*g_psyxNextPacket)(uintptr_t packet) = NULL;
++
+ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ {
+ 	if (!p)
+@@ -836,7 +838,7 @@ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ 	else
+ 	{
+ 		// walk OT_TAG linked list
+-		for (uintptr_t basePacket = reinterpret_cast<uintptr_t>(p);; basePacket = reinterpret_cast<uintptr_t>(nextPrim(basePacket)))
++		for (uintptr_t basePacket = reinterpret_cast<uintptr_t>(p);; basePacket = g_psyxNextPacket ? g_psyxNextPacket(basePacket) : reinterpret_cast<uintptr_t>(nextPrim(basePacket)))
+ 		{
+ 			const int tagLength = getlen(basePacket);
+ 			if (tagLength > 0)
+diff --git a/src/psx/LIBETC.C b/src/psx/LIBETC.C
+--- a/src/psx/LIBETC.C
++++ b/src/psx/LIBETC.C
+@@ -32,8 +32,13 @@ int ResetCallback(void)
+ 
+ int (*g_psyxVSyncHook)(int mode) = NULL;
+ 
++extern void (*g_psyxGpuGate)(void);
++
+ int VSync(int mode)
+ {
++	if (g_psyxGpuGate)
++		g_psyxGpuGate();
++
+ 	if (g_psyxVSyncHook)
+ 		return g_psyxVSyncHook(mode);
+ 
+diff --git a/src/psx/LIBGPU.C b/src/psx/LIBGPU.C
+--- a/src/psx/LIBGPU.C
++++ b/src/psx/LIBGPU.C
+@@ -25,9 +25,18 @@ void(*drawsync_callback)(void) = NULL;
+ 
+ int g_psyxVramFrozen = 0;
+ 
++/* Spyro port (decisions D69): see libgpu.h. */
++void (*g_psyxGpuGate)(void) = NULL;
++int (*g_psyxVramFrozenGet)(void) = NULL;
++int (*g_psyxDrawOTagWalk)(u_long* p) = NULL;
++
++#define GPU_GATE() do { if (g_psyxGpuGate) g_psyxGpuGate(); } while (0)
++#define VRAM_FROZEN() (g_psyxVramFrozenGet ? g_psyxVramFrozenGet() : g_psyxVramFrozen)
++
+ int ClearImage(RECT16* rect, u_char r, u_char g, u_char b)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
+@@ -39,7 +48,8 @@ int ClearImage(RECT16* rect, u_char r, u_char g, u_char b)
+ 
+ int ClearImage2(RECT16* rect, u_char r, u_char g, u_char b)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
+@@ -51,6 +61,7 @@ int ClearImage2(RECT16* rect, u_char r, u_char g, u_char b)
+ 
+ int DrawSync(int mode)
+ {
++	GPU_GATE();
+ 	// Update VRAM seems needed to be here
+ 	GR_UpdateVRAM();
+ 	GR_ReadFramebufferDataToVRAM();
+@@ -71,7 +82,8 @@ int DrawSync(int mode)
+ 
+ int LoadImage(RECT16* rect, u_long* p)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_CopyVRAM((unsigned short*)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
+@@ -80,7 +92,8 @@ int LoadImage(RECT16* rect, u_long* p)
+ 
+ int LoadImage2(RECT16* rect, u_long* p)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_CopyVRAM((unsigned short*)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
+@@ -144,7 +157,8 @@ int MargePrim(void* p0, void* p1)
+ 
+ int MoveImage(RECT16* rect, int x, int y)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_CopyVRAM(NULL, rect->x, rect->y, rect->w, rect->h, x, y);
+@@ -153,6 +167,7 @@ int MoveImage(RECT16* rect, int x, int y)
+ 
+ int ResetGraph(int mode)
+ {
++	GPU_GATE();
+ 	if (mode == 0)
+ 	{
+ 		// reset GPU state
+@@ -184,7 +199,8 @@ int SetGraphDebug(int level)
+ 
+ int StoreImage(RECT16* rect, u_long* p)
+ {
+-	if (g_psyxVramFrozen)
++	GPU_GATE();
++	if (VRAM_FROZEN())
+ 		return 0;
+ 
+ 	GR_ReadVRAM((unsigned short*)p, rect->x, rect->y, rect->w, rect->h);
+@@ -246,6 +262,7 @@ u_long* ClearOTagR(u_long* ot, int n)
+ 
+ void SetDispMask(int mask)
+ {
++	GPU_GATE();
+ 	g_GPUDisabledState = (mask == 0);
+ }
+ 
+@@ -280,12 +297,14 @@ int GetODE(void)
+ 
+ DISPENV* GetDispEnv(DISPENV* env)//(F)
+ {
++	GPU_GATE();
+ 	*env = activeDispEnv;
+ 	return env;
+ }
+ 
+ DISPENV* PutDispEnv(DISPENV* env)//To Finish
+ {
++	GPU_GATE();
+ 	if (env->isinter != currentDispEnv.isinter ||
+ 		env->disp.y == currentDispEnv.disp.y)
+ 	{
+@@ -324,12 +343,14 @@ DISPENV* SetDefDispEnv(DISPENV* env, int x, int y, int w, int h)//(F)
+ 
+ DRAWENV* GetDrawEnv(DRAWENV* env)
+ {
++	GPU_GATE();
+ 	PSYX_UNIMPLEMENTED();
+ 	return NULL;
+ }
+ 
+ DRAWENV* PutDrawEnv(DRAWENV* env)//Guessed
+ {
++	GPU_GATE();
+ 	memcpy((char*)&activeDrawEnv, env, sizeof(DRAWENV));
+ 	return 0;
+ }
+@@ -442,6 +463,7 @@ void (*g_psyxDrawOTagDone)(void) = NULL;
+ 
+ void DrawOTag(u_long* p)
+ {
++	GPU_GATE();
+ 	if (g_psyxDrawOTagPre && g_psyxDrawOTagPre(p))
+ 	{
+ 		if (g_psyxDrawOTagDone)
+@@ -457,6 +479,9 @@ void DrawOTag(u_long* p)
+ 			return;
+ 		}
+ 
++		if (g_psyxDrawOTagWalk && g_psyxDrawOTagWalk(p))
++			break;
++
+ 		if (PsyX_BeginScene())
+ 		{
+ 			ClearSplits();
+@@ -479,6 +504,7 @@ void DrawOTag(u_long* p)
+  
+ void DrawPrim(void* p)
+ {
++	GPU_GATE();
+ 	if (g_GPUDisabledState)
+ 	{
+ 		ClearSplits();
