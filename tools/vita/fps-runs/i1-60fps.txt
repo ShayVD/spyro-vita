@@ -1,0 +1,3 @@
+# Run I1, the budget's hold lets go (D74): 60 fps as the menu's 60 FPS gives it, the default budget (26 ms)
+interp=1
+config_version=3

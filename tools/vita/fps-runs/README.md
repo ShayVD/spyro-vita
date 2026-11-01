@@ -122,3 +122,29 @@ The same VPK for all three. `fast_render=1` is the default since D72; G1 turns i
 **G2 against G3.** At 60 fps the in-between frame runs the renderers again, so the gain counts twice. `present N:`: more in-between frames per window, and fewer falls to a held 30 in the places where G3 before this change held 30.
 
 **A bug would look like:** anything on screen that differs between G1 and G2 at the same place (a missing or torn polygon, a wrong colour, a flickering sky, Spyro or a moby drawn wrong), or a crash in a level G1 runs.
+
+## Runs I1–I3: the budget's hold lets go (D74)
+
+The main `2a0691c` log (`logs/hw-main-2a0691c`, Toasty) fell to a held 30 and never came back, even where 60 fitted. One VPK, built from the D74 branch, for all three. It logs a new `budget N:` line under each `present N:` line.
+
+| File | Switches | Do |
+|---|---|---|
+| `i1-60fps.txt` | the menu's 60 FPS: the defaults, budget 26 ms | 2 minutes in Artisans (the castle and the hedges), then 2–3 minutes in a heavier level: Toasty (WARP TO in the menu's GAME section, or walk), or Stone Hill. Don't open the menu |
+| `i2-parse-60fps.txt` | as I1, plus `gpu_lean=1 parse_thread=1`: the setup of the log that never came back | the same route, Toasty for the heavier level. Don't open the menu |
+| `i3-menu-budget.txt` | as I2 | in Toasty: play a minute, then in the options menu set `60 FPS BUDGET` to 30 MS, play a minute, NEVER SKIP, a minute, 26 MS, a minute. Each change is one menu visit |
+
+**What each run shows.**
+- `budget N: B ms; H ticks held, hold L of T at the last; ...`:
+  - H is how many of the window's ticks were held at 30. L is how many of the hold's T ticks are left to run (0: it can end once the costs fit).
+  - `held again by` counts held ticks over the miss line: cpu avg (the game thread's average over ~4 ticks over B), cpu twice (two ticks in a row over B), render (two pictures over 15/16 of a tick on that tick).
+  - `paused by` counts held ticks that fit without the eighth to spare. `counted down` counts ticks that fit with it.
+  - Since D74 none of these restarts the hold. The hold ends once it has run T ticks, its ticks' average fits with an eighth to spare, and the tick isn't over the line itself.
+  - `falls by` gives the tests that were over at each fall to 30.
+  - `held ticks' us` are the held ticks' average costs: cpu (the game thread's time plus the logic pass, standing in for the in-between frame), its parts busy and logic, and render x2 (twice the render thread's time per picture). `most` is the window's largest cpu and render x2. A `most` far above the average is the kind of tick that held main's budget at 30.
+- `present N:`: where 60 fits (Artisans; the Toasty places where main's log ran a clean 60 at budget 0), almost every tick has its in-between frame. After a fall, 60 is back within a few seconds, at most two holds of 8 s. Where it doesn't fit, the in-between frames stay near 0. A fall about every 8 s is expected only where the GPU is the limit, which shows only at 60 (`falls by ... late`).
+- I3: each budget change starts again (the next `budget` line's T is 30, unless a fall came after the change). NEVER SKIP gives no `budget` line, only `present` lines.
+
+**A bug would look like:**
+- a held stretch of more than ~20 s (4 windows) whose `held ticks' us` fit, meaning cpu under 7/8 of B and render x2 under 29.2 ms;
+- in-between frames that come and go every window in one place (flicker);
+- falls in Artisans.

@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include "budget.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,7 +44,7 @@ typedef struct {
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
-  long long budget_holds; /* times 60 fps fell back to a held 30 (D68) */
+  BudgetStats budget; /* interp_budget_us's falls and holds (D68, D74) */
   long long display_fallbacks; /* pictures that showed the PS1 display instead */
   long long particles_blended;
   long long snapshot_bytes; /* copied in and out by the region snapshot */

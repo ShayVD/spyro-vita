@@ -82,8 +82,31 @@ void vita_present_report(int vblank) {
            vblank, ticks, (s->us_logic - last.us_logic) / ticks,
            (s->us_pass - last.us_pass) / ticks, (s->us_snapshot - last.us_snapshot) / ticks,
            (s->us_blend - last.us_blend) / ticks, s->interp_frames - last.interp_frames,
-           s->budget_skips - last.budget_skips, s->budget_holds - last.budget_holds,
+           s->budget_skips - last.budget_skips, s->budget.holds - last.budget.holds,
            s->skipped_interp - last.skipped_interp,
            s->display_fallbacks - last.display_fallbacks);
+  if (g_present.interp_budget_us || s->budget.held != last.budget.held ||
+      s->budget.holds != last.budget.holds) {
+    const BudgetStats *u = &s->budget, *l = &last.budget;
+    long long held = u->held - l->held, n = held > 0 ? held : 1;
+    vita_log("budget %d: %d ms; %lld ticks held, hold %d of %d at the last; held again by cpu avg "
+             "%lld, cpu twice %lld, render %lld; paused by cpu %lld, render %lld; counted down "
+             "%lld; falls by cpu avg %lld, cpu twice %lld, render %lld, late %lld; held ticks' us: "
+             "cpu %lld (most %lld), cpu avg %lld, busy %lld, logic %lld, render x2 %lld (most %lld)",
+             vblank, g_present.interp_budget_us / 1000, held, u->hold, u->hold_len,
+             u->why[BUDGET_AGAIN_CPU_AVG] - l->why[BUDGET_AGAIN_CPU_AVG],
+             u->why[BUDGET_AGAIN_CPU_TWICE] - l->why[BUDGET_AGAIN_CPU_TWICE],
+             u->why[BUDGET_AGAIN_RENDER] - l->why[BUDGET_AGAIN_RENDER],
+             u->why[BUDGET_PAUSE_CPU] - l->why[BUDGET_PAUSE_CPU],
+             u->why[BUDGET_PAUSE_RENDER] - l->why[BUDGET_PAUSE_RENDER],
+             u->why[BUDGET_COUNTED] - l->why[BUDGET_COUNTED],
+             u->why[BUDGET_FALL_CPU_AVG] - l->why[BUDGET_FALL_CPU_AVG],
+             u->why[BUDGET_FALL_CPU_TWICE] - l->why[BUDGET_FALL_CPU_TWICE],
+             u->why[BUDGET_FALL_RENDER] - l->why[BUDGET_FALL_RENDER],
+             u->why[BUDGET_FALL_LATE] - l->why[BUDGET_FALL_LATE], (u->cpu - l->cpu) / n,
+             u->cpu_max, (u->cpu_avg - l->cpu_avg) / n, (u->busy - l->busy) / n,
+             (u->logic - l->logic) / n, (u->gl - l->gl) / n, u->gl_max);
+    g_present_stats.budget.cpu_max = g_present_stats.budget.gl_max = 0;
+  }
   last = *s;
 }

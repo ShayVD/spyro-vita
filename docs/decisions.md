@@ -1227,3 +1227,84 @@ Record each decision with its date, what was chosen, and why.
   - **Frame time:** not measured. The game thread's added work is one store per `prof_enter`/`prof_leave` (a few hundred per tick), and once per vblank `port_where`'s four loads and a compare.
   - **Host** (the change isn't in the host binary: `port_where` isn't linked there, the rest is `src/platform/vita/`): `ctest` 6/6 pass (`m2c_diff_math` skipped, as before). `tools/host_checks.sh h71` against the D69 session's `h69-*` (main's shared code): demo 26/26, whole-game tour 141/141, routes A and B 56/56 each, all identical. Oracle replays: `cap3` 329/329, `cap5-fairy` 261/261 PASS, the same as before.
   - **After merging main** (D70–D72, `2b7cdce`; this entry became D73): the VPK builds clean. Vita3K: the forced spin gives the same hang line (`logs/run5-vita3k-merged-hang-spin`). The normal run's script, menu and save states give no hang line (`logs/run6-vita3k-merged-normal`). Host `ctest` 7/7 pass (`m2c_diff_math` skipped), and `port_where` still isn't in the host binary. The breadcrumb in `prof_enter`/`prof_leave` sits inside D71's guard, so the parse thread never writes it. The parse thread (off by default) has no breadcrumb or kernel-state entry of its own. A game thread stuck joining it shows as waiting on a semaphore, by name.
+
+### D74. The budget's hold judges its average: one slow tick no longer restarts it, and a new budget starts again
+- **Date:** 2026-11-01.
+- **Why:** a hardware log from main `2a0691c` (`logs/hw-main-2a0691c/spyro.log`, gitignored): Toasty, widescreen, `interp=1 gpu_lean=1 parse_thread=1`, the player changing `interp_budget` in the menu.
+  - Budget 26 had in-between frames at vblanks 300 and 600, with 2 falls at 300 and 2 more at 900.
+  - From then on, every window with a budget skipped every in-between frame for the budget, with 0 new falls. That covers 1200–1500 at 26 and 9600–10200 at 30, to the end of the log, so the hold never ended.
+  - The same places at budget 0 ran a clean 60 (4200–4500: 148 of 148 in-between frames, 8.2 ms a picture).
+- **What held it.** The held windows' averages were well inside the release lines:
+  - **The game thread:** busy 24–29%. Its CPU time with the logic pass came to about 15–16 ms a tick against 26 or 30.
+  - **The render thread:** 10.4–11.9 ms a picture, so 21–24 ms for two against 29.2.
+  - A test failing on most ticks would contradict those averages. So it had to be ticks far over the rest, at least one per hold.
+  - In `2a0691c`'s `budget_allows` (D68 and its follow-up) a single held tick over the miss line restarted the whole hold: `s_hold = s_hold_len`.
+  - Two falls within 10 s doubled the hold to its 8 s cap (240 ticks). A slow tick or picture every few seconds then restarted it before it ever ended.
+  - **The same ticks caused the falls at 60:**
+    - The game thread's 4-tick average let one tick about 3.5 times the rest take it over the budget.
+    - The render thread's per-picture average (over ~8 pictures, `gpu_thread.c`) jumps past 15/16 of the tick after one picture of about 50 ms or more.
+  - **The menu:** a budget changed there didn't reset the hold (`port_present_reset` runs only for save states), so 9396's budget 30 took over 1529's 8 s hold.
+- **Measured** (the new `budget N:` line):
+  - **Vita3K** (`logs/run1-vita3k-toasty-before`: the D74 diagnostics on `2a0691c`'s rule, real-time vblanks, render and parse threads, new game, WARP TO Toasty at 6300 from the menu, budget 26 → 30 at 11000 → 26 at 15000):
+    - It doesn't reproduce the stuck hold. Vita3K's costs are far below a Vita's (in Toasty the game thread 1–4 ms a tick, render x2 1–9 ms), and every hold counted down and ended.
+    - It confirmed the menu: the hold's length carried over both budget changes (`of 30` at 11100, then 60 → 120 after 15000).
+    - Single slow ticks and pictures are real there too: `cpu ... most 124839`, `render x2 ... most 56846` at 14100.
+  - **Hardware:** not yet. Which ticks they are on a Vita (the game thread or the render thread, and how slow) is what runs I1–I3 measure (`tools/vita/fps-runs/README.md`).
+- **Changed:**
+  - **The decision moved to `src/game/budget.c`** with its state in a struct (`Budget`, no globals), so a test can drive it. `present.c` feeds it each tick's costs as before.
+  - **While held, the hold judges its average.**
+    - Every held tick counts. The hold ends once it has run its length, the average over its last hold-length ticks fits with an eighth to spare, and the tick itself isn't over the miss line.
+    - A slow tick weighs as 1 of up to 240 instead of starting 240 again.
+    - Where 60 doesn't fit, the average stays over and 30 stays steady. Where it fits, 60 comes back after one hold: 1 s, or up to 8 s after repeated misses.
+  - **One tick's share is capped at 11/8 of the line** in the game thread's 4-tick average and in the hold's averages. So one tick can't take an average with an eighth to spare over the line. The two-ticks-in-a-row test still uses the raw times.
+  - **The render thread is a miss only on 3 ticks in a row** over 15/16 of the tick (at 60, 6 pictures). Its time is already an 8-picture average. While held, only that tick's own value keeps the hold from ending.
+  - **A new budget starts again** (`Budget.b`): at 60, with the shortest hold. While 60 fps or the budget is off, `present.c` marks the state stale, so turning either back on starts fresh too.
+  - **Unchanged:**
+    - The misses' lines.
+    - The eighth to spare.
+    - The doubling within 10 s, capped at 8 s.
+    - The late-picture miss.
+    - The held estimates: the logic pass for the in-between frame, twice the full picture for the render thread.
+- **The `budget N:` line** (Vita, under each `present N:` line while a budget is set):
+  - The held ticks, and the hold's ticks left and its length.
+  - The held ticks that were over the miss line (cpu avg, cpu twice, render), without the eighth to spare (cpu, render), or with it.
+  - Each fall's tests.
+  - The held ticks' average costs, with their parts (busy, logic), and the window's largest cpu and render x2.
+- **`menu_keys`:** a `;` starts the next `menu_test`'s keys, so one scripted run can warp and later change the budget.
+- **The test** (`tests/budget`, ctest `budget`): one simulated minute per case.
+  - **The costs:** the hardware log's Toasty numbers (the game thread 11.8 ms a tick, logic 4 ms, 11 ms a picture), the GPU (seen only at 60, as late pictures), 12% noise, and a slow picture or tick (+60 ms) every 5 s.
+  - **That spike is a model, not a measurement.** It is the size that does it, by the arithmetic above.
+  - **The lead-in:** heavy stretches 2 s apart, ending in an 8 s hold, as in the log.
+  - `2a0691c`'s rule, the same file built against the old decision (`logs/run2-host-budget-before/test_budget.txt`):
+
+    | Case | `2a0691c` | D74 |
+    |---|---|---|
+    | Artisans, slow picture every 5 s | 17.4% at 60, 4 falls | 100%, 0 falls |
+    | Held 8 s, then Toasty, no spikes | 93.1%, back after 125 ticks | 99.8%, after 3 |
+    | Held 8 s, then Toasty, slow picture every 5 s | 1.4%: stuck | 96.2%, back after 69 ticks |
+    | Held 8 s, then Toasty, slow tick every 5 s | 1.6%: stuck | 89.8%, back after 183 ticks |
+    | Held 8 s, then budget 30 (the menu) | 1.4%: stuck | 98.3%, 60 at once |
+    | Render thread over (16.5 ms a picture) | 0.4%, 1 fall | 0.5%, 1 fall |
+    | GPU over (seen only at 60), the second minute | 0%, 0 falls | 1.2%, 7 falls |
+    | Game thread over | 0%, 1 fall | 0%, 1 fall |
+    | Marginal game thread (~22 of 26 ms) | 97.8%, 1 fall | 98.3%, 1 fall |
+
+  - **Where the GPU is the limit,** the hold can't see it at 30. So 60 is tried again after each 8 s hold, for about 3 ticks, until the late pictures end it. That is D68's design: the hold doubles to 8 s at most. `2a0691c` never tried again after its first 8 s hold (0 falls, 0%).
+  - **Not done: a hook for D75** (the GPU session: a cheaper picture before 30). If it's wanted, a fall in `budget_tick` is where a platform callback ("can the picture get cheaper?") would be asked first. Nothing asked for one yet.
+- **Checked** (Vita3K is not a Vita; nothing here has run on hardware):
+  - **Host:**
+    - `ctest` 8/8 pass, `budget` among them (`gte` and `m2c_diff_math` skipped, as before).
+    - `tools/host_checks.sh h74b` against the D73 session's `h71-*` (main's shared code), the logs left out: demo 26/26, the whole-game tour 141/141 with its fairy card, routes A and B 56/56 each. All identical.
+    - The host never sets a budget in those runs. Its only change on them is `present.c` marking the budget's state stale each tick.
+    - The last change to `budget.c` (the stats' hold length after a fall-free tick) came after `h74b`. It is inside `budget_tick`, which the host checks never call.
+    - Oracle replays: `cap3` 329 PASS and 9 NOEXIT, `cap5-fairy` 261 PASS and 7 NOEXIT, `cap6-tour` 358 PASS. The same as before.
+  - **Vita3K, the same route with the fix** (`logs/run6-vita3k-toasty-final`): the final VPK, the same script as the Vita3K run above.
+    - **Artisans:** before the warp it held a steady 30. Vita3K's render thread there takes 68–85 ms for two pictures, which really is over.
+    - **Toasty:** the 8 s hold from Artisans ended in the first window, and 60 came back (vblank 6900).
+    - **The one fall soon after it** (late pictures, at 7200) came within 10 s of the last, so the hold was 240 ticks again. That hold ended at 7800, and 60 held from there to the end of the run (19,000).
+    - **Single falls at 11700, 18000 and 18600** each ended after 30–60 ticks.
+    - **The menu's change to 30 at 11000** started again: `budget 11100: 30 ms; ... hold 0 of 30` (it was 240). The change back at 15000 gave `of 30` too.
+    - Vita3K's costs are far below a Vita's, so this shows the release and the reset, not hardware timing.
+- **Not checked:** hardware. Runs I1–I3 (`tools/vita/fps-runs/README.md`) cover two things:
+  - the `budget` line's slow ticks (which thread, how slow);
+  - whether 60 comes back in Toasty's lighter places while the heavy ones keep a steady 30.
