@@ -22,6 +22,11 @@ uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 #define SCREEN_H 544
 #define TEX_W 1024
 #define TEX_H 512
+/* The picture is the 224 lines Spyro draws, 8 into its 240-line display, so
+ * it fills the screen's height (D67, gpu_gl.c's shown_top): 4:3 at 544 lines
+ * is then 778 wide. */
+#define AREA43_W 778
+#define SHOWN_TOP(h) ((h) == 240 ? 8 : 0)
 
 static SDL_Window *s_win;
 static SDL_Renderer *s_ren;
@@ -122,14 +127,15 @@ static void draw_overlay(void) {
 }
 
 /* A presentation frame (src/game/present.c: widescreen, 60 fps): 512x240
- * PS1 15-bit, full screen when widescreen, else 4:3 in the middle. */
+ * PS1 15-bit, its drawn lines full screen when widescreen, else 4:3 in the
+ * middle. */
 static int s_tex_slot = -1; /* the presentation slot in s_tex, -1: none */
 
 static int present_frame(int slot) {
   const uint16_t *px = port_present_slot_pixels(slot);
   int fresh = port_present_frame_new() || s_tex_slot != slot, x, y, pitch;
   void *pixels;
-  SDL_Rect src = {0, 0, PRESENT_W, PRESENT_H}, dst;
+  SDL_Rect src = {0, 0, PRESENT_W, PRESENT_H}, shown, dst;
   prof_enter(PROF_PRESENT);
   if (fresh && px && SDL_LockTexture(s_tex, &src, &pixels, &pitch) == 0) {
     for (y = 0; y < PRESENT_H; y++) {
@@ -147,12 +153,15 @@ static int present_frame(int slot) {
     s_tex_slot = slot;
   }
   s_last.valid = 0; /* the texture no longer holds the display rect */
+  shown = src;
+  shown.y = SHOWN_TOP(PRESENT_H);
+  shown.h = PRESENT_H - 2 * shown.y;
   dst.y = 0;
   dst.h = SCREEN_H;
-  dst.w = port_present_frame_is_wide() ? SCREEN_W : SCREEN_H * 4 / 3;
+  dst.w = port_present_frame_is_wide() ? SCREEN_W : AREA43_W;
   dst.x = (SCREEN_W - dst.w) / 2;
   SDL_RenderClear(s_ren);
-  SDL_RenderCopy(s_ren, s_tex, &src, &dst);
+  SDL_RenderCopy(s_ren, s_tex, &shown, &dst);
   draw_overlay();
   prof_leave();
   prof_enter(PROF_WAIT);
@@ -161,8 +170,8 @@ static int present_frame(int slot) {
   return fresh;
 }
 
-/* One frame: the display rect as the TV would show it, 4:3 in the middle.
- * Returns 1 if it was a new picture. */
+/* One frame: the display rect's drawn lines, 4:3 in the middle. Returns 1
+ * if it was a new picture. */
 int vita_video_present(void) {
   int w, h, x, y, pitch;
   void *pixels;
@@ -216,11 +225,12 @@ int vita_video_present(void) {
   s_last.w = w;
   s_last.h = h;
 show:
-  src.x = src.y = 0;
+  src.x = 0;
+  src.y = SHOWN_TOP(h);
   src.w = w;
-  src.h = h;
+  src.h = h - 2 * src.y;
   dst.h = SCREEN_H;
-  dst.w = SCREEN_H * 4 / 3;
+  dst.w = AREA43_W;
   dst.x = (SCREEN_W - dst.w) / 2;
   dst.y = 0;
   SDL_RenderClear(s_ren);

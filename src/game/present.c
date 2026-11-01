@@ -47,11 +47,15 @@ extern unsigned int g_mips_v1; /* mips2c_rt.c */
 
 PresentConfig g_present;
 PresentStats g_present_stats;
-int g_present_narrow; /* projection narrowed to 3/4 (camera matrix, HUD) */
+int g_present_narrow; /* projection narrowed to 17/21 (camera matrix, HUD) */
 
-/* Widescreen: 4:3 -> 16:9 narrows x by 3/4 about the screen centre. */
-#define WS_NUM 3
-#define WS_DEN 4
+/* Widescreen narrows x about the screen centre by 17/21 (D67). The picture
+ * shown is the 512x224 the game draws (draw areas 8 lines into the 240-line
+ * display, initialization.c), filling the 960x544 screen: 4:3 at 240 lines
+ * is 0.625 x per y, at 960x544 from 512x224 x gets 1.875/2.4286 of y, so x
+ * narrows by 0.625 / 0.772 = 17/21 (3/4 was 16:9 over all 240 lines). */
+#define WS_NUM 17
+#define WS_DEN 21
 #define SCREEN_CX 256
 
 int port_present_active(void) { return g_present.widescreen || g_present.interp; }
