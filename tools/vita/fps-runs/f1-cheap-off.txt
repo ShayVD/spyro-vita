@@ -1,0 +1,9 @@
+# D70 baseline: 60 fps forced (every tick gets its in-between frame), the 40-byte vertex
+interp=1
+config_version=3
+interp_budget=0
+gpu_time=2
+render_thread=1
+xa_ahead=1
+gpu_opaque=1
+gpu_lean=0

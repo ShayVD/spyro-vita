@@ -25,6 +25,9 @@ taken as an old file's and ignored (D68).
 | `e2-passes-on.txt` | as E1 with D69 on (`gpu_direct=1`, the default) | the same route |
 | `e3-30fps-off.txt` | D69 off, 30 fps, `gpu_time=2` | the same route |
 | `e4-30fps-on.txt` | D69 on, 30 fps, `gpu_time=2` | the same route |
+| `f1-cheap-off.txt` | D70 baseline: as C2 (every tick gets its in-between frame), `gpu_lean=0` | 2 minutes in Artisans, the same route as C1 |
+| `f2-cheap-on.txt` | as F1 with `gpu_lean=1` | the same route |
+| `f3-cheap-60fps.txt` | 60 fps as the menu gives it (D1), with `gpu_lean=1` | the D1 route: Artisans, then the heavier level |
 
 ## What each run shows
 
@@ -71,6 +74,14 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 | The heavier level | C1: 18.9–25.8 → | C1: 2.7–2.8 → | | |
 
 (The C1 numbers are main's before D69, `logs/hw-pr40-c1`: Artisans the windows 600–1800, the heavier level 6300–7800. The rest is filled in from E1–E4.)
+
+**F1 against F2: the 28-byte vertex (D70).**
+- `gpu N: gpu_time=2: ... vertex uploads K KB in T ms`: K should fall to 70% (28 bytes a vertex instead of 40), and T with it.
+- `atlas N: ... expand E ms`: E should fall a little (the second triangle of a quad reuses the first one's lookup).
+- `render N:` per picture: the render thread's time, which the two above are part of (*estimate*: −0.2 to −0.5 ms a picture), and the `gpu_time=2` scene time S (the GPU reads less vertex data; any change is likely within the noise).
+- The picture must look the same in F2 as in F1.
+
+**F3: 60 fps as shipped, with D70.** Against D1: the `present N:` lines' in-between frames and falls to a held 30 in the same places.
 
 ## What to look for that would mean a bug
 

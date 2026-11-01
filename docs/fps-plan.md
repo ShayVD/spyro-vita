@@ -44,6 +44,20 @@ The threads and cores with everything on are in D66's table.
 
 **Since D69 (G3):** the presentation passes are down to one full-screen scene per picture (the present), from two. The capture no longer copies when the picture is one target whole (always, in Spyro's play), and the back buffer isn't cleared under a 16:9 picture. That's about half of C1's 2.5–3.7 ms GPU tail per picture (*estimate*), so ~1.3–1.8 ms per tick at 30 fps and twice that at 60. S, the game's own scene (18.9–25.8 ms in C1's heavy windows), is untouched. D69 also found that a target remade after a save state or an option change can land in main RAM on main (vitaGL frees CDRAM late), and repairs that at the target's next clear. Hardware runs E1–E4 in `tools/vita/fps-runs/` measure it.
 
+## The in-between frame: why it stays a full draw (D70)
+
+The four parallel sessions after D68 (cheaper in-between frames, fewer full-screen GPU passes, the spare cores, hand C for the hot renderers) took the next items. For the in-between frame, the idea was to reuse the real frame's geometry and apply only the new camera. It doesn't fit the PS1's data flow, and it wouldn't touch the GPU's share:
+
+| Per in-between frame (C1, Artisans) | Cost | Reusable? |
+|---|---|---|
+| Game thread: mobys, environment, OT walk, snapshot | 3.3 + 2.1 + 2.6 + 0.5 ms | Mobys and Spyro move and animate. The environment reaches PsyCross already projected to 2D, depth-sorted and culled at the screen's edges, so it can't be reprojected without gaps at the edges and silhouettes |
+| Render thread | ~10 ms a picture (expand 0.75, upload 0.43) | the vertices are new in every frame |
+| GPU | the scene again: 5–13 ms (Artisans), 19–31 ms (heavier levels) | the same triangles whatever reuses them |
+
+What D70 adds instead, behind `gpu_lean=1` (off by default until `tools/vita/fps-runs/f1`–`f3` run on a Vita): a 28-byte vertex instead of 40 for every picture (upload −30%), and one atlas lookup per quad instead of two. The same pictures. Skipping the in-between frame where nothing moved was tried and dropped: the game draws after waiting for the vblank, so a skip holds the previous frame one vblank longer instead of showing the same picture (D70).
+
+It doesn't make the in-between frame "much cheaper". The big CPU wins for it are the other sessions' (hand C for `r_moby`/`r_environment`, the OT walk on core 3). Where the GPU is the limit, only fewer pixels (G4, dynamic resolution, deferred) or fewer full-screen passes help.
+
 ## Where a frame's time goes (measured)
 
 ### Threads and cores

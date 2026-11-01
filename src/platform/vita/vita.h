@@ -57,6 +57,7 @@ typedef struct {
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
   int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
+  int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
