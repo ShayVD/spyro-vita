@@ -579,3 +579,15 @@ Window captures (`CAPTURE=1`, the same frame as each shot) and replay shots, "ol
 | `run106`–`run110` | after merging main #13/#14: title native and `res=ps1`, game over, title with `widescreen=1 interp=1` | Replay shots byte-identical to `run91`/`run97`; title windows pixel-identical to `run91`/`run92`; ws+60 fps: `targets at 960x508`, `presentation frames 960x544`. One capture of the game-over freeze frame (`run108`, 6504) had a 1-px light column at the picture's right edge that `run97` (same frame, same path) didn't; reruns at that moment caught Vita3K's own "compiling shaders" overlay instead (`run110`). Settled in `run111`–`run117`, below. |
 | `run111`–`run117` | captures now present the held frame again 3 times first (Vita3K could show an older swap buffer); 4:3 area 726 wide | Captures repeatable (two game-over runs pixel-identical). The light column was real: a 725-wide target never drew its last column (black at native in every capture, main's build too) and the game-over move left a stray colour there. 726 and 728 both fill it; with 726 every capture is lit to the last column, which matches the PS1 replay's column 511 at the freeze frame. Replay shots unchanged. |
 | `run119`, `run120` | gems step script, `widescreen=1 interp=1`, `menu_test=6420,6520,6620` (three widescreen toggles in Artisans), before and after flushing pending copies in `drop_target()` | No red/green textures in either (the hardware report on `3b4126a` is not reproduced); shots and windows identical between the two. |
+
+### The 28-byte vertex (D70, branch `claude/fps-cheap-interp-52b4c3`)
+
+`gpu_lean=0` against `gpu_lean=1` in the same VPK, `realtime=0`, widescreen, 60 fps forced (`interp=1 interp_budget=0`). Logs in `logs/`:
+
+| Runs | What | Result |
+|---|---|---|
+| `v69-gems-off`, `-on` | gems script, shot every 200, `wav=1` | 44 shots, the WAV and the card byte-identical; the same in-between frames in every window |
+| `v69-pause-off`, `-on` | the pause route | 70 shots and the card byte-identical |
+| `v69-cap-off`, `-on` | `CAPTURE=1`, six window captures | all six byte-identical |
+| `v69-menu-persp-on`, `-off` | `menu_test=6000` turns `persp` on (28-byte → 40-byte vertex), or off | the other program set compiled in ~3 s; after the switch back, the captures byte-identical to `v69-cap-on` |
+| `v69-rt-off`, `-on` | `REALTIME=1`, `gpu_time=2` | 40.0 → 28.0 bytes a vertex (1,389 → 967 MB); Vita3K's upload and `expand()` times unchanged (its own GL keeps the render thread 99% busy) |
