@@ -92,6 +92,10 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
+ *       fast_render=0   the renderers as translated from the asm and
+ *                       PsyCross's GTE_operator (default 1: the hand-written
+ *                       renderers and the inline GTE commands, the same
+ *                       results; D72)
  *       gpu_direct=0    with gpu=1, each widescreen or 60 fps picture copied
  *                       into its slot and the screen cleared before it, as
  *                       before D69 (default 1: a picture that is one target
@@ -165,6 +169,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .cam_speed = 100, .draw_distance = 100};
 
 extern void spyro_main(void);
+extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 
 /* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
  * words that hold a label's PS1 address. */
@@ -289,6 +294,8 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
+    else if (!strcmp(line, "fast_render"))
+      g_fast_render = atoi(v);
     else if (!strcmp(line, "gpu_direct"))
       g_vita_opts.gpu_direct = atoi(v);
     else if (!strcmp(line, "gpu_lean"))
@@ -400,6 +407,9 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   read_config();
+  vita_log("fast_render=%d: %s", g_fast_render,
+           g_fast_render ? "hand-written renderers, inline GTE commands (D72)"
+                         : "translated renderers, PsyCross's GTE_operator");
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;

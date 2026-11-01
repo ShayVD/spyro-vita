@@ -1,0 +1,4 @@
+# Run E3, as E2 at 60 fps (the menu's 60 FPS with the D68 budget)
+config_version=3
+fast_render=1
+interp=1

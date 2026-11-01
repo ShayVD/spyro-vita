@@ -69,6 +69,11 @@
  *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
+ * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
+ *   instead of the hand-written renderers and the inline GTE commands
+ *   (default 1; src/game/mips2c_rt.h, decisions D72). --prof-draw: log
+ *   each renderer's CPU time over the run at exit (prof_draw.c; relative
+ *   numbers only, under qemu).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "cheats_port.h"
 #include "host.h"
@@ -81,6 +86,10 @@
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
+
+extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
+extern int g_host_prof_draw; /* prof_draw.c */
+void host_prof_draw_report(void);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,7 +118,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1] [--prof-draw]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -357,6 +366,11 @@ int main(int argc, char **argv) {
       TAKE();
       g_lod.stats = 1;
       g_host_opts.lod_stats = to_int(val);
+    } else if (strcmp(a, "--prof-draw") == 0) {
+      g_host_prof_draw = 1;
+    } else if (strcmp(a, "--fast-render") == 0) {
+      TAKE();
+      g_fast_render = to_int(val);
     } else if (strcmp(a, "--vcache") == 0) {
       psx_vcache_enable(2);
       s_vcache = 1;
@@ -425,6 +439,7 @@ int main(int argc, char **argv) {
     g_host_opts.out960 = 1;
   atexit(present_report);
   atexit(vcache_report);
+  atexit(host_prof_draw_report);
   atexit(walk_report);
   if (pad && host_pad_load(pad) != 0)
     return 1;

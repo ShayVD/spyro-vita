@@ -103,3 +103,22 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 - A crash or hang at start (the shaders now compile on the render thread), at a level load or when the pause menu opens.
 - With `parse_thread=1`: a `parse: still waiting` line, `packets outside the copy` above 0, a picture that's a frame behind or shows the wrong frame's HUD, or a pause or inventory background that's wrong.
 - With `render_thread=1`, a save state saved and loaded (the options menu's SAVE section) not putting you back where you were.
+
+## Runs G1–G3: the hand-written renderers and the inline GTE commands (D72)
+
+The same VPK for all three. `fast_render=1` is the default since D72; G1 turns it off, which puts back the renderers as translated from the asm and PsyCross's GTE decoder. The pictures and the game must be the same in all three: every host and Vita3K check was byte-identical.
+
+| File | Switches | Do |
+|---|---|---|
+| `g1-fast-off.txt` | `fast_render=0`, 30 fps | 3–5 minutes: Artisans (the castle and the hedges), then one busy level (Stone Hill, or Town Square in Peace Keepers). The same route in G2 and G3 |
+| `g2-fast-on.txt` | `fast_render=1`, 30 fps | the same route |
+| `g3-fast-60.txt` | `fast_render=1`, the menu's 60 fps | the same route |
+
+**G1 against G2.** The log's start says which: `fast_render=0: translated renderers, ...` or `fast_render=1: hand-written renderers, ...`.
+- `draw N:` (per vblank). `env`, `mobys`, `spyro` and `sky` should fall. Today in the heavy scene, per tick (twice the per-vblank numbers): env 4.96, mobys 3.06, sky 0.90, spyro 0.60 ms, 9.7 ms with fx and particles (`docs/fps-plan.md`). `sky` now also counts the sky's direct calls (Artisans'), so G1's `sky` is higher than the older runs'.
+- `update` should fall a little: collision's GTE commands are inline too.
+- `time N:`: `game` falls by what `draw` lost, and `busy %` with it.
+
+**G2 against G3.** At 60 fps the in-between frame runs the renderers again, so the gain counts twice. `present N:`: more in-between frames per window, and fewer falls to a held 30 in the places where G3 before this change held 30.
+
+**A bug would look like:** anything on screen that differs between G1 and G2 at the same place (a missing or torn polygon, a wrong colour, a flickering sky, Spyro or a moby drawn wrong), or a crash in a level G1 runs.

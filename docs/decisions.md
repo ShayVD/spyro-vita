@@ -1129,3 +1129,71 @@ Record each decision with its date, what was chosen, and why.
   - **In every Vita3K run:** 0 packets outside the copy, no `still waiting`, 0 unknown commands. Copies were ~47 KB per list.
   - **Vita3K timings** (not a Vita's; the Mac was loaded with other sessions' containers): the game thread's `ot` went from 0.84–1.35 to 0.46–0.94 ms per vblank with 60 fps forced (gems, 6000–8400). The walk took the parse thread 1.5–1.8 ms per list, and the game thread still waited 0.5–0.9 ms per join. The hardware runs decide whether the walk fits inside the render path there.
 - **Default:** off (`parse_thread=0`) until hardware runs H1–H3 (`tools/vita/fps-runs/`). They should show the `ot` drop, 0 packets outside the copy, and no audio regression with the walk beside the mixer.
+
+## 2026-11-01: hand-written C for the hot renderers
+
+### D72. The hottest renderers as hand-written C, every GTE command inline, behind `fast_render`
+- **Why:**
+  - On hardware the render path took 9.7 ms per tick in a heavy scene (`docs/fps-plan.md`). The in-between frame at 60 fps runs it again.
+  - It was translated asm: every memory access went through `MIPS_KUSEG`, and every GTE command through PsyCross's decoder and its out-of-line helpers.
+  - The fps plan estimated −30 to −50% for B1 (hand C) and −1.5 to −2.5 ms per tick for C5 (GTE fast path).
+- **Profile first** (`-DSPYRO_M2C_PROF=ON`: `mips2c --prof` counts every translated instruction's executions; `tools/mips2c/prof_report.py` ranks the results). The same ranking in the attract demos and the Artisans gem script (`logs/prof1-demo`, `logs/prof1-gems`, 16:9):
+
+  | Function | Share of the translated cost |
+  |---|---|
+  | env `func_800258F0` | 45–47% |
+  | regular mobys `func_8001F798` | 15–22% |
+  | sky `func_8004EBA8` | 14–15% |
+  | lit mobys and HUD `func_80022A2C` | 5–9.5% |
+  | Spyro `func_80023AC4` | 6% |
+  | specular mobys `func_80020F34` | 0.4–5.6% |
+  | collision, math, particles, everything else | under 3% together |
+
+  The hottest blocks are the vertex loops around RTPS (env alone issues 7–15 million RTPS per run), then NCLIP and the DPCS fades.
+- **What changed:**
+  - **C5, the GTE commands** (`src/game/gte_inline.h`, `gte_ops.c`):
+    - PsyCross's `GTE_operator` arithmetic is copied expression for expression into static inline C.
+    - Each of the 18 constant opcodes the translated code issues gets a straight-line function, `m2c_gte_0x180001` and so on, which `mips2c_rt.h`'s `GTE_operator(op)` calls by token pasting. NCLIP is inlined.
+    - That covers every mips2c unit, collision included.
+    - Inlining every command at every site was tried first. GCC ran out of memory on r_moby in the 2 GB Docker VM, and the code would be large; one call per command costs little next to the command.
+  - **B1, hand C** for the six functions above (`src/game/sky_hand.c`, `env_hand.c`, `moby_hand.c`, `pete_render_hand.c`; method D33). The env, moby and Spyro functions were each written by a sub-agent in its own worktree from a common brief, and merged here.
+    - Direct arena pointers: one `MIPS_KUSEG` per pointer read from RAM (`HPTR`), none for addresses the code computes itself.
+    - Registers become locals, the inline GTE commands are used, and the computed-jump subroutines become C functions.
+    - They leave RAM, the scratchpad and the GTE registers as the asm does: the vertex past the end that the pipelined loads leave in V0, MFC2 reads with storage side effects, stray stores before culling, the spill area, the C entry's stack arguments.
+    - The port's hooks (widescreen `PORT_WS_*`, draw distance `PORT_LOD_*`, `tools/mips2c/hints.yaml`) run at the same points with the same values.
+    - Their return registers aren't reproduced. Each is void at every caller, which `ret` entries in `tools/oracle/ignore_ranges.txt` record with the call sites.
+  - **`fast_render` switch:** `config.txt fast_render=0` (host `--fast-render 0`) puts back the mips2c units and PsyCross's `GTE_operator`. The units stay linked, renamed `<name>_gen` (cmake `M2C_RENDER_HAND`, `render_hand.h` `HAND_RENDERER`). The switch is read once at start, like the arena base (a const alias).
+  - **The default is 1.** Every check below is byte-identical, and `fast_render=0` stays one config line away until hardware confirms it (`tools/vita/fps-runs/e1`–`e3`).
+- **Measurement added:**
+  - host `--prof-draw` logs each renderer's CPU time at exit (`src/platform/linux32/prof_draw.c`; relative only under qemu);
+  - the Vita's `draw` lines now also count the sky's direct calls from `draw.c` (`func_8004EBA8`; Artisans' sky was missing from `sky`).
+- **Checked:**
+  - **GTE:** `tests/gte/test_gte_inline`: 9,314 PCSX-Redux vectors with 0 mismatched; 4.9M random register states against `GTE_operator`, raw storage equal; a deliberate one-off mutation fails it.
+  - **Oracle replay** on the final binary of the six functions and the cyclorama set-up `func_80050BD0`, which calls the sky: **661/661 samples pass** over cap3, cap5-fairy, run14-oracle-tour, run19-oracle-labels and routes A and B (`logs/ab4-replay.txt`).
+  - **Differential sweeps** by the agents against the mips2c units, for paths no capture reaches: Spyro's head and tail rotations, the colour filter, blends and the floor clip, 2,404 runs (a mutation in the clip code fails them).
+  - **Host** (`tools/fast_render_ab.sh`, `--fast-render 0` then `1` of one binary, `logs/ab4-*`): **198 of 198 files byte-identical**:
+
+    | Scenario | Files |
+    |---|---|
+    | gems, 16:9 | 18 |
+    | attract demos, 4:3, with audio | 26 |
+    | attract demos, 16:9 with 60 fps in-between frames at 960×544 | 25 |
+    | gems at 2× draw distance, with the `lod` lines | 18 |
+    | route A, with its memory card | 55 |
+    | route B, with its memory card | 56 |
+
+    The 100,000-vblank whole tour wasn't run (time on a shared 2-CPU Docker VM); the oracle tour samples every level.
+  - **ctest:** 7/7, `m2c_diff_math` skipped as before. `savestate_globals` lists `g_fast_render` as set at start-up.
+  - **Vita:** the VPK builds (`logs/vpk-hand-c-final.vpk`, SHA-1 `79ab85ba…`). In Vita3K, `fast_render` 0 and 1 give identical shots and memory card for the attract demo (12 shots, `logs/v3k-ab1-*`) and the gems script (17 shots, `logs/v3k-ab2-gems-*`).
+  - **Speed, host** (`--prof-draw`, CPU ms over the run, qemu: relative only):
+
+    | Run | env | mobys | Spyro | sky | all renderers |
+    |---|---|---|---|---|---|
+    | gems, 0 → 1 | 17,134 → 1,558 | 3,402 → 411 | 84 → 13 | 3,942 → 364 | 24,561 → 2,345 (10.5×) |
+    | demos, 0 → 1 | 11,206 → 1,696 | 6,597 → 1,227 | 1,109 → 203 | 3,101 → 507 | 22,338 → 3,771 (5.9×) |
+    | demos at 60 fps, 0 → 1 | 31,495 → 5,231 | 19,453 → 4,064 | 3,052 → 599 | 8,127 → 1,527 | 63,021 → 11,871 (5.3×) |
+
+    qemu makes PsyCross's GTE calls far dearer than the Vita does, so these overstate the gain.
+  - **Speed, Vita3K** (gems script, `draw` lines averaged over 29 windows; Vita3K's JIT isn't a Cortex-A9 and its timings vary): renderers 0.644 → 0.417 ms per vblank (−35%): env −40%, mobys −34%, Spyro −42%, sky −21%. On that basis the estimate for hardware is −30 to −45% of the 9.7 ms render path, about 3–4 ms per tick at 30 fps and twice that at 60. Only G1–G3 will tell.
+- **Not checked:** hardware. Runs G1–G3 in `tools/vita/fps-runs/` compare the `draw` lines with the switch off and on.
+- **Not done:** the cull functions (`func_8001F158`, `func_800208FC`), particles, shadows, collision and the cyclorama set-up stay translated: together they're under 3% of the cost, and they get C5. B2 (the in-between frame on its own core) is unchanged by this: the hand C still uses the global `gteRegs` and the arena.

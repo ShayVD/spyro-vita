@@ -27,7 +27,7 @@ Implemented on 2026-11-01, all three behind `config.txt` switches that are off b
 | C1, XA reads | `xa_ahead=1` | the XA sectors read ahead in 32-sector windows on core 1 | D64 |
 | G1, the opaque path | `gpu_opaque=1` | triangles whose atlas blocks have no transparent or STP texel drawn without `discard` | D65 |
 
-**Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2, since done: D71), the GTE dispatch (C5).
+**Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2, since done: D71), the GTE dispatch (C5, since done: D72).
 
 **Checked** (Vita3K is not hardware; results with log paths in D63–D65):
 - Vita3K: every scripted run is byte-identical to the unchanged build with the switches on (shots, WAV, memory card): gems, pause and inventory, attract demo, 60 fps forced, disc image, save and load. So are the window captures of the GPU's own picture.
@@ -41,6 +41,14 @@ The threads and cores with everything on are in D66's table.
 - P1's hysteresis is in: after a miss, 30 fps is held until the costs fit with an eighth to spare for a whole second, longer after repeated misses. Late pictures while the in-between frame runs count as a miss too.
 - `render_thread`, `xa_ahead` and `gpu_opaque` are on by default (`config_version=3` makes old files' `0`s give way), and `gpu_time` is 0 (C4).
 - What's left for a locked 60 in the heavy levels is GPU work (G2, G3, or a lower render scale at 60 fps), now measured by S in C1's windows.
+
+## Done since: hand C for the hot renderers and the GTE fast path (D72)
+
+B1 and C5 are in, behind `fast_render` (`config.txt`; default 1, `fast_render=0` puts the translation back):
+- **C5:** every GTE command in the translated code runs as one straight-line function per constant opcode, PsyCross's arithmetic copied expression for expression (`src/game/gte_inline.h`; `tests/gte/test_gte_inline`).
+- **B1:** the six hottest translated renderers are hand-written C: env, regular, lit and specular mobys, Spyro, the sky. The ranking came from a block-count profile (`tools/mips2c/prof_report.py`).
+- Byte-identical to `fast_render=0` on every host and Vita3K check, and oracle-checked (D72).
+- The host's renderers took 6–7 times less CPU time (qemu, relative only). On the Vita the gain is smaller, since PsyCross's GTE weighs less there than under qemu; hardware runs G1–G3 in `tools/vita/fps-runs/` measure it.
 
 **Since D69 (G3):** the presentation passes are down to one full-screen scene per picture (the present), from two. The capture no longer copies when the picture is one target whole (always, in Spyro's play), and the back buffer isn't cleared under a 16:9 picture. That's about half of C1's 2.5–3.7 ms GPU tail per picture (*estimate*), so ~1.3–1.8 ms per tick at 30 fps and twice that at 60. S, the game's own scene (18.9–25.8 ms in C1's heavy windows), is untouched. D69 also found that a target remade after a save state or an option change can land in main RAM on main (vitaGL frees CDRAM late), and repairs that at the target's next clear. Hardware runs E1–E4 in `tools/vita/fps-runs/` measure it.
 
@@ -172,10 +180,10 @@ Gains are for the heavy scene above, per frame unless it says per tick (a tick a
 | G3 | One fewer full-screen pass: render the 30 fps frame without the staging copy (the capture is needed only for queued frames), or present from the targets. **Done in D69** (`gpu_direct=1`, default): pictures shown from their target, the in-between one taking the target's texture at the next whole clear, no clear under a 16:9 picture; at 30 and 60 fps. Measured by runs E1–E4 | −1 to −2 ms of GPU | medium–low | small–medium | none | both |
 | P1 | Pacing: hysteresis instead of per-tick skipping (60 fps for at least ~1 s once it fits, back to a steady 30 after a few misses); a GPU-aware budget (from S or the swap wait); triple buffering at 60 fps | no ms; removes the 60/30 flicker D44 saw | high | small | none (presentation only) | 60 |
 | T2 | **Parse thread**: PsyCross's OT walk on core 1, pipelined with the next tick's render path. With any presentation option on, a draw spans both primitive buffers (D54), so the walk reads a copy: the frame's used primitive span and its OTs copied (~80–110 KB) into a second 16 MB-aligned arena at the same offsets, walked with a per-walk base (`nextPrim`, PsyCross patch 0001) | −4 to −5 ms per frame off the game thread; adds the copy, ~0.1–0.2 ms | medium | large | the 2D squeeze (D30) and the vcache table (D39) must be per frame; logic none | 60 mostly |
-| C5 | GTE: an inline dispatcher for constant opcodes (`GTE_operator(0x…)` from the translated renderers: 73 call sites in `r_moby`, 44 in `r_environment`, 66 in `collision`) calling functions specialised for `sf`/`lm`, with no runtime switch | −1.5 to −2.5 ms per tick | medium–low | medium | none if bit-exact: `tests/gte`'s 9,314 PCSX-Redux vectors, the oracle traces, byte-identical shots | both |
+| C5 | **Done (D72):** GTE: an inline dispatcher for constant opcodes (`GTE_operator(0x…)` from the translated renderers: 73 call sites in `r_moby`, 44 in `r_environment`, 66 in `collision`) calling functions specialised for `sf`/`lm`, with no runtime switch | −1.5 to −2.5 ms per tick | medium–low | medium | none if bit-exact: `tests/gte`'s 9,314 PCSX-Redux vectors, the oracle traces, byte-identical shots | both |
 | C6 | Compiler: `-O3` and `-marm` tried per hot library (`psycross`, `spyro_game_m2c`, `gpu_gl.c`), LTO for PsyCross + the platform layer | 0–10% of their time | low | trivial to try | UB in the decomp's C exposed (already seen at `-O2`: `-fno-aggressive-loop-optimizations`); verified by Vita3K replays being byte-identical | both |
 | G4 | 60 fps at a lower render scale (e.g. ~0.75×, 720×408, or `res=ps1`) when the GPU can't keep up | up to ~50% of F | high | small–medium | **changes the picture** in 60 fps mode (the user's call) | 60 |
-| B1 | Hand C for the hot renderers (`r_environment`, `r_moby`, translated asm today, every access through `mips2c_kuseg`) | −30 to −50% of the 9.7 ms render path (*estimate*) | low | large | each function oracle-checked (D33 method) | both |
+| B1 | **Done (D72):** hand C for the hot renderers (`r_environment`, `r_moby`, translated asm today, every access through `mips2c_kuseg`) | −30 to −50% of the 9.7 ms render path (*estimate*) | low | large | each function oracle-checked (D33 method) | both |
 | B2 | The in-between frame on its own core, in parallel with the next logic tick | up to −10 to −26 ms per tick | — | very large | not recommended: see below | 60 |
 
 **Not recommended:**
