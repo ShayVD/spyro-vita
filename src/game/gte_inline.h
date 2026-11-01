@@ -1,4 +1,4 @@
-/* GTE commands with a constant opcode, inline (fps plan C5, decisions D70).
+/* GTE commands with a constant opcode, inline (fps plan C5, decisions D72).
  *
  * The translated renderers and collision code issue every GTE command as
  * GTE_operator(0x...) with a constant instruction word. PsyCross's

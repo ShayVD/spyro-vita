@@ -1,6 +1,6 @@
 #!/bin/sh
 # The hand-written renderers and inline GTE commands against the translation
-# they replace (decisions D70): each scenario runs with --fast-render 0, then
+# they replace (decisions D72): each scenario runs with --fast-render 0, then
 # 1, from the same binary, and every trace, shot, WAV and save file of the
 # pair must be byte-identical. The host is deterministic (D38).
 # Usage: [BIN=path/to/spyro] [DISC=disc/files] tools/fast_render_ab.sh PREFIX [SCENARIO...]

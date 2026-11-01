@@ -46,7 +46,7 @@ python3 tools/contact_sheet.py logs/runN-x
 
 Optional, off by default (`docs/presentation.md` "Draw distance"):
 - `--draw-distance X`: the world's detail and the mobys drawn X times further (1.5, 2), picture only.
-- `--fast-render 0`: the renderers as translated from the asm and PsyCross's GTE decoder, instead of the hand-written renderers and inline GTE commands (default 1, decisions D70). `tools/fast_render_ab.sh PREFIX` runs scenarios both ways and compares every file. `--prof-draw` logs each renderer's CPU time at exit (relative only under qemu). A `-DSPYRO_M2C_PROF=ON` build counts every translated instruction's executions; `tools/mips2c/prof_report.py` ranks them.
+- `--fast-render 0`: the renderers as translated from the asm and PsyCross's GTE decoder, instead of the hand-written renderers and inline GTE commands (default 1, decisions D72). `tools/fast_render_ab.sh PREFIX` runs scenarios both ways and compares every file. `--prof-draw` logs each renderer's CPU time at exit (relative only under qemu). A `-DSPYRO_M2C_PROF=ON` build counts every translated instruction's executions; `tools/mips2c/prof_report.py` ranks them.
 - `--lod-stats N`: a `lod N:` line every N vblanks: the scale reached, primitive-buffer use (average, peak, of what size), back-offs, extra mobys per draw, the near-sector list's peak, the moby record peak, the largest single sector and what is drawn after the world (the hard bound's margin), and how often a bound stopped a loop. Also with the option off (baseline numbers).
 - `--lod-guards-only` (tests): no limiter and no reset at a new level, so only the hard bounds keep the buffer.
 

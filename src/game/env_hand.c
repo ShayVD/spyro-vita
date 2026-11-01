@@ -1,6 +1,6 @@
 /* The environment renderer, func_800258F0 (asm/renderers/r_environment.s,
  * hand-written asm in the original), written by hand from the asm as C
- * (decisions D70, the D33 method; sky_hand.c is the worked example). It
+ * (decisions D72, the D33 method; sky_hand.c is the worked example). It
  * replaces the mips2c translation when fast_render=1 (render_hand.h
  * HAND_RENDERER); fast_render=0 runs the translation, linked as
  * func_800258F0_gen. Checked against PCSX-Redux by the oracle replay and

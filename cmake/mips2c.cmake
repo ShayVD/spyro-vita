@@ -125,7 +125,7 @@ foreach(u ${M2C_REF_UNITS})
 endforeach()
 
 # Hand-written renderers (src/game/render_hand.h HAND_RENDERER, decisions
-# D70): the mips2c unit stays linked with the function's two entries renamed
+# D72): the mips2c unit stays linked with the function's two entries renamed
 # NAME_gen and NAME_gen__m2c, and fast_render (config.txt, host
 # --fast-render) picks the hand C or the unit at each call.
 set(M2C_RENDER_HAND

@@ -1,5 +1,5 @@
 /* Spyro's renderer, func_80023AC4 (asm/renderers/r_pete.s, hand-written
- * asm in the original), written by hand from the asm as C (decisions D70,
+ * asm in the original), written by hand from the asm as C (decisions D72,
  * the D33 method). It replaces the mips2c translation when fast_render=1
  * (render_hand.h HAND_RENDERER); fast_render=0 runs the translation, which
  * stays linked as func_80023AC4_gen. Checked against PCSX-Redux by the
