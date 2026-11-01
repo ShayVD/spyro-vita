@@ -426,17 +426,23 @@ static int timed_vsync(int mode) {
  * DrawOTag takes the primitives at once here, so with any presentation
  * option or draw distance on, every draw starts at the lower buffer and spans
  * both, as the pause screens' draws already start there (draw.c
- * func_8001A40C). The HUD's mobys and that limit go to the top, 0x200 under
- * the HUD OT: at the HUD OT itself func_8001D718 would move the mobys down to
- * +0x1BA00. With everything off nothing changes. */
+ * func_8001A40C). The HUD's mobys and that limit go to the top, 0x600 under
+ * the HUD OT. Those 0x600 bytes are the save fairy's card buffer
+ * (func_800314B4 reads the save's header there and builds the save there);
+ * the original's fairy draw keeps them free by moving the mobys down to
+ * +0x1BA00 (draw.c func_8001D718), which it does only when the top is the
+ * HUD OT itself, so the port keeps them free in every draw (D61). With
+ * everything off nothing changes. */
 static int poly_space_on(void) { return port_present_active() || g_lod.scale > LOD_ONE; }
 
 void *port_poly_start(void *db_buf) {
   return poly_space_on() ? g_Buffers.m_LowerPolyBuffer : db_buf;
 }
 
+#define FAIRY_CARD_BUF 0x600 /* g_Buffers.m_HudOTStart - 0x600, func_800314B4 */
+
 void PortPolySpace(void) {
-  void *top = (char *)g_Buffers.m_HudOTStart - 0x200;
+  void *top = (char *)g_Buffers.m_HudOTStart - FAIRY_CARD_BUF;
   if (!poly_space_on())
     return;
   D_800757B0 = g_Buffers.m_LowerPolyBuffer;
