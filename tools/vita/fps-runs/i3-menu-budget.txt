@@ -1,0 +1,5 @@
+# Run I3, the budget's hold lets go (D74): as I2, and the 60 FPS BUDGET row is changed in the menu during the run
+interp=1
+gpu_lean=1
+parse_thread=1
+config_version=3

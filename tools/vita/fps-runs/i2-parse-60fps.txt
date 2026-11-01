@@ -1,0 +1,5 @@
+# Run I2, the budget's hold lets go (D74): the setup of the log that never came back (main 2a0691c, Toasty): 60 fps, the default budget, the 28-byte vertex and the parse thread
+interp=1
+gpu_lean=1
+parse_thread=1
+config_version=3

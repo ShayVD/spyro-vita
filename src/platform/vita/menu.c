@@ -108,27 +108,35 @@ static const uint16_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_RIGHT, B_CIRCLE};
 
 /* menu_keys=down,down,cross,...: menu_test presses these instead (the
  * buttons by their pad-script names: up down left right cross circle
- * triangle start), for tests of other rows. */
-static uint16_t s_keys[48];
-static int s_nkeys;
+ * triangle start), for tests of other rows. A ';' starts the keys of the
+ * next menu_test (the last list serves any after it). */
+#define KEY_LISTS 4
+static uint16_t s_keys[KEY_LISTS][48];
+static int s_nkeys[KEY_LISTS], s_nlists;
 
 int vita_menu_test_keys(const char *list) {
   static const struct { const char *name; uint16_t bit; } k_names[] = {
       {"up", B_UP},       {"down", B_DOWN},     {"left", B_LEFT},         {"right", B_RIGHT},
       {"cross", B_CROSS}, {"circle", B_CIRCLE}, {"triangle", B_TRIANGLE}, {"start", B_START},
   };
-  char buf[512], *tok, *save = NULL;
+  char buf[512], *seq, *tok, *save = NULL, *save2 = NULL;
   size_t k;
   snprintf(buf, sizeof buf, "%s", list);
-  s_keys[0] = 0; /* let go of the combo first, as k_test does */
-  s_nkeys = 1;
-  for (tok = strtok_r(buf, ",", &save); tok && s_nkeys < (int)(sizeof s_keys / sizeof s_keys[0]);
-       tok = strtok_r(NULL, ",", &save)) {
-    for (k = 0; k < sizeof k_names / sizeof k_names[0] && strcmp(tok, k_names[k].name); k++)
-      ;
-    if (k == sizeof k_names / sizeof k_names[0])
-      return -1;
-    s_keys[s_nkeys++] = k_names[k].bit;
+  s_nlists = 0;
+  for (seq = strtok_r(buf, ";", &save2); seq && s_nlists < KEY_LISTS;
+       seq = strtok_r(NULL, ";", &save2)) {
+    uint16_t *keys = s_keys[s_nlists];
+    int n = 1;
+    keys[0] = 0; /* let go of the combo first, as k_test does */
+    for (tok = strtok_r(seq, ",", &save); tok && n < (int)(sizeof s_keys[0] / sizeof keys[0]);
+         tok = strtok_r(NULL, ",", &save)) {
+      for (k = 0; k < sizeof k_names / sizeof k_names[0] && strcmp(tok, k_names[k].name); k++)
+        ;
+      if (k == sizeof k_names / sizeof k_names[0])
+        return -1;
+      keys[n++] = k_names[k].bit;
+    }
+    s_nkeys[s_nlists++] = n;
   }
   return 0;
 }
@@ -142,11 +150,12 @@ int vita_menu_service(void) {
   static char texts[MAX_LINES][32];
   int n, lines, h, sel, top = 0, dirty = 1, open = 1;
   uint16_t prev = 0xFFFF; /* what opened the menu is already held */
-  int test = 0, step = 0, i;
+  int test = 0, step = 0, i, list = 0;
   for (i = 0; i < g_vita_opts.nmenu_test; i++)
     if (g_vita_opts.menu_test[i] > 0 && vita_vblank_count() >= g_vita_opts.menu_test[i]) {
       g_vita_opts.menu_test[i] = 0;
       s_requested = test = 1;
+      list = i < s_nlists ? i : s_nlists - 1;
       break;
     }
   if (!s_requested)
@@ -173,8 +182,8 @@ int vita_menu_service(void) {
     vita_pad_poll();
     m = vita_pad_read();
     if (test) {
-      const uint16_t *keys = s_nkeys ? s_keys : k_test;
-      int nkeys = s_nkeys ? s_nkeys : NTEST;
+      const uint16_t *keys = s_nlists ? s_keys[list] : k_test;
+      int nkeys = s_nlists ? s_nkeys[list] : NTEST;
       m = step / 4 < nkeys && step % 4 < 2 ? keys[step / 4] : 0;
       step++;
     }
