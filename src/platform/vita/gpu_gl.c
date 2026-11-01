@@ -21,7 +21,7 @@
  *     it: the PS1's exact pixels, no GPU sync (gpu_readback=0, or a log that
  *     grew too long: drawn down to 1x and read with glReadPixels).
  *   - The present draws the displayed VRAM rect from s_vram, then the targets
- *     on top, 4:3 into the 960x544 screen.
+ *     on top, 4:3 into the 960x544 screen: its 224 drawn lines (shown_top).
  * Semi-transparency follows the PS1: only texels with STP set blend (one
  * premultiplied pass for average/add/quarter, two passes for subtract).
  * Not modelled (as in gpu_soft.c): mask bit, texture window, dithering.
@@ -53,10 +53,11 @@
 #define VH 512
 #define SCREEN_W 960
 #define SCREEN_H 544
-/* The 4:3 picture's width on the screen (and at res=native the targets').
- * 544 * 4 / 3 is 725, but a 725-wide render target lost its last column
- * (black in every Vita3K capture, main's renderer too); 726 fills it. */
-#define AREA43_W 726
+/* The 4:3 picture's width on the screen (and at res=native the targets'):
+ * 224 lines shown as 544 (shown_top), so 544 * 4 / 3 * 240 / 224 = 777.1.
+ * Even, as a 725-wide render target lost its last column (black in every
+ * Vita3K capture) and 726 filled it. */
+#define AREA43_W 778
 #define MAX_TARGETS 8
 #define MAX_PENDING 64
 
@@ -1307,6 +1308,11 @@ static void drop_target(int i) {
   s_targets[i] = s_targets[--s_ntargets];
 }
 
+/* Spyro draws 224 of the display's 240 lines (initialization.c: draw areas
+ * 512x224, 8 lines into each 240-line display); the other 16 stay black, in
+ * a TV's overscan. The screen shows only the 224 (D67). */
+static int shown_top(int dh) { return dh == 240 ? 8 : 0; }
+
 static void set_scale(void) {
   /* the screen's pixels: the display rect fills a 4:3 area 544 lines high,
    * or the whole width with widescreen (presentation frames, D30) */
@@ -1316,7 +1322,7 @@ static void set_scale(void) {
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
   } else { /* res=native */
     s_sx = (float)(g_gl_env.wide ? SCREEN_W : AREA43_W) / dw;
-    s_sy = (float)SCREEN_H / dh;
+    s_sy = (float)SCREEN_H / (dh - 2 * shown_top(dh));
   }
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
 }
@@ -2076,8 +2082,9 @@ static void write_hd_shot(void) {
  * y1, top row first), uv = the target's texture rect. When the picture has
  * the target's own scale (res=native, presentation frames) the part starts on
  * a whole pixel and gets one pixel per target pixel, so nothing is resampled
- * (Spyro's buffers start 8 lines into the 240-line display: 18.13 of the
- * screen's 544). 0: t isn't inside the rect. */
+ * (when a rect starts above the drawn lines, as the 240-line display did
+ * before D67: 8 lines down is 18.13 of the screen's 544). 0: t isn't inside
+ * the rect. */
 static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, float pos[4],
                  float uv[4]) {
   int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
@@ -2144,7 +2151,9 @@ static void pres_alloc(int w, int h) {
  * Inside an FBO the image's top is NDC -1, as in copy_into(). */
 void gl_pres_capture(int x, int y, int w, int h) {
   float ndc[4], src[4];
-  int i;
+  int i, top = shown_top(h);
+  y += top; /* the drawn lines only: the slots fill the screen */
+  h -= 2 * top;
   if (!s_sx)
     set_scale();
   flush_pending();
@@ -2267,6 +2276,8 @@ static void present_slot(int slot, int wide) {
     }
     glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    src[1] = (float)shown_top(PRESENT_H) / PRESENT_H;
+    src[3] = 1 - src[1];
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
@@ -2284,6 +2295,7 @@ static void present_display(void) {
   const DISPENV *d = &g_gl_env.disp;
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
   int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i;
+  int top = shown_top(dh), sy = d->disp.y + top, sh = dh - 2 * top; /* lines shown */
   float ndc[4], src[4];
   flush_pending();
   bind_fbo(0);
@@ -2312,8 +2324,10 @@ static void present_display(void) {
       glActiveTexture(GL_TEXTURE0);
       free(rgb);
       glUseProgram(s_prog[P_TEX].prog);
-      src[0] = src[1] = 0;
-      src[2] = src[3] = 1;
+      src[0] = 0;
+      src[1] = (float)shown_top(h) / h;
+      src[2] = 1;
+      src[3] = 1 - src[1];
       quad(ndc, src);
     } else {
       upload_vram();
@@ -2321,16 +2335,16 @@ static void present_display(void) {
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, s_vram_tex);
       src[0] = (float)d->disp.x;
-      src[1] = (float)d->disp.y;
+      src[1] = (float)sy;
       src[2] = (float)(d->disp.x + dw);
-      src[3] = (float)(d->disp.y + dh);
+      src[3] = (float)(sy + sh);
       quad(ndc, src);
       /* then each target over the display, at its place */
       glUseProgram(s_prog[P_TEX].prog);
       for (i = 0; i < s_ntargets; i++) {
         const Target *t = &s_targets[i];
         float pos[4];
-        if (!place(t, d->disp.x, d->disp.y, dw, dh, area_w, SCREEN_H, pos, src))
+        if (!place(t, d->disp.x, sy, dw, sh, area_w, SCREEN_H, pos, src))
           continue;
         ndc[0] = (area_x + pos[0]) / SCREEN_W * 2 - 1;
         ndc[2] = (area_x + pos[2]) / SCREEN_W * 2 - 1;
