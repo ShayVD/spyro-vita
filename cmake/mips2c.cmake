@@ -131,7 +131,8 @@ endforeach()
 set(M2C_RENDER_HAND
   asm/renderers/r_cyclorama.s:func_8004EBA8
   asm/renderers/r_moby.s:func_8001F798
-  asm/renderers/r_moby.s:func_80022A2C)
+  asm/renderers/r_moby.s:func_80022A2C
+  asm/renderers/r_moby.s:func_80020F34)
 set(M2C_RENDER_FILES)
 foreach(e ${M2C_RENDER_HAND})
   string(REPLACE ":" ";" e "${e}")

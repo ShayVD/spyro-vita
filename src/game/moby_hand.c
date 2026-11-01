@@ -96,6 +96,7 @@ enum {
   FACE_TWO_SIDED = 0x1,
   FACE_TEXTURED = 0x2,
   FACE_SPRITE = 0x4, /* a quad: a screen-facing square at its first vertex */
+  FACE_SPECULAR = 0x4, /* a triangle in func_80020F34: lit or metal */
   FACE_HIDDEN = 0x8,
   FACE_QUAD = 0x80000000,
 };
@@ -1607,3 +1608,563 @@ static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
 }
 
 HAND_RENDERER(func_80022A2C, LitDraw)
+
+/* ---- func_80020F34: the specular (shiny and metal) mobys ----
+ *
+ * The same records and set-up as func_8001F798 (from func_800208FC's cull,
+ * which also copies the moby's specular word into m_Specular), but each
+ * vertex keeps its camera-space position next to its depth (TBL_BIG_DEPTHS,
+ * 8 bytes: depth, x, y, z), and the triangles flagged bit 2 are lit from
+ * their normal (type 0: a highlight, func_80020F34's OP/SQR/CC block) or
+ * environment-mapped (types 1 and 2, metal: each vertex's UV from its
+ * direction, D_80022110/D_80022148/D_80022180 caching it in the entry). */
+
+extern char D_80074B84[]; /* 1/sqrt by normalised mantissa (s16) */
+extern char D_8006D908[]; /* atan by ratio x 64 (u8) */
+extern char D_8006D808[]; /* the vertical angle by z/len (s8) */
+extern char D_800756F0[]; /* the environment map's texture words (clut, tpage) */
+
+#define gte_op0() m2c_gte_0x170000C()         /* OP, sf 0 */
+#define gte_sqr0() m2c_gte_0xA00428()         /* SQR, sf 0 */
+#define gte_mvmva_ll_ir0() m2c_gte_0x43E012() /* MVMVA sf 0, LLM x IR */
+
+/* A specular vertex entry: depth (SZ3), then the camera-space position
+ * (MAC1-3 after RTPS); x 0x4000 once a metal UV is cached in y/z. */
+#define SPEC_CACHED 0x4000
+
+/* Transform as Transform, each entry getting the vertex's position. */
+static inline int SpecTransform(VtxStream cur, u32 n, u32 shift, u32 *xy, u16 *ent, int clip) {
+  u32 all_out = ~0u, raw = *cur.word++, delta = raw & 1, i = 0;
+  Vtx v;
+  VtxLoad(&v, raw);
+  MTC2(v.z, 1);
+  MTC2(v.x + (v.y << 16), 0);
+  do {
+    u32 sz, sxy;
+    raw = StreamNext(&cur, delta);
+    gte_rtps();
+    VtxNext(&v, raw, delta, shift);
+    MTC2(v.x + (v.y << 16), 0);
+    MTC2(v.z, 1);
+    ent[1] = (u16)MFC2(25);
+    ent[2] = (u16)MFC2(26);
+    ent[3] = (u16)MFC2(27);
+    sz = MFC2(19);
+    sxy = MFC2(14);
+    ent[0] = (u16)sz;
+    ent += 4;
+    delta = raw & 1;
+    if (clip) {
+      u32 flags = ClipFlags(sxy);
+      all_out &= flags;
+      xy[i] = flags;
+    } else {
+      xy[i] = sxy;
+    }
+  } while (++i != n);
+  return !clip || (s32)(all_out & 0x1F) <= 0;
+}
+
+static inline int SpecTransformBlend(VtxStream cur, VtxStream next, u32 n, u32 progress, u32 shift,
+                                     u32 *xy, u16 *ent, int clip) {
+  u32 all_out = ~0u, i = 0;
+  u32 raw = *cur.word++, delta = raw & 1;
+  u32 nraw = *next.word++, ndelta = nraw & 1;
+  Vtx v, nv;
+  VtxLoad(&v, raw);
+  VtxLoad(&nv, nraw);
+  MTC2(progress, 8);
+  MTC2(v.z, 9);
+  MTC2(v.x, 10);
+  MTC2(v.y, 11);
+  CTC2(nv.z, 21);
+  CTC2(nv.x, 22);
+  CTC2(nv.y, 23);
+  gte_intpl();
+  raw = StreamNext(&cur, delta);
+  BlendToV0();
+  do {
+    u32 sz, sxy;
+    gte_rtps();
+    nraw = StreamNext(&next, ndelta);
+    VtxNext(&v, raw, delta, shift);
+    delta = raw & 1;
+    VtxNext(&nv, nraw, ndelta, shift);
+    MTC2(progress, 8);
+    MTC2(v.z, 9);
+    MTC2(v.x, 10);
+    MTC2(v.y, 11);
+    CTC2(nv.z, 21);
+    CTC2(nv.x, 22);
+    CTC2(nv.y, 23);
+    ent[1] = (u16)MFC2(25);
+    ent[2] = (u16)MFC2(26);
+    ent[3] = (u16)MFC2(27);
+    sxy = MFC2(14);
+    sz = MFC2(19);
+    gte_intpl();
+    raw = StreamNext(&cur, delta);
+    ndelta = nraw & 1;
+    BlendToV0();
+    ent[0] = (u16)sz;
+    ent += 4;
+    if (clip) {
+      u32 flags = ClipFlags(sxy);
+      all_out &= flags;
+      xy[i] = flags;
+    } else {
+      xy[i] = sxy;
+    }
+  } while (++i != n);
+  return !clip || (s32)(all_out & 0x1F) <= 0;
+}
+
+/* MIPS div's quotient (division by zero as the R3000A gives it). */
+static inline u32 DivLo(u32 a, u32 b) {
+  u32 hi, lo;
+  mips2c_div(a, b, &hi, &lo);
+  return lo;
+}
+
+/* 1/sqrt(len2) (scaled), from LZCS/LZCR and the table D_80074B84; 0 for
+ * 0 (LZCS still written). */
+static inline u32 InvSqrt(u32 len2) {
+  u32 lz, k, half, t, r;
+  MTC2(len2, 30);
+  if (!len2)
+    return 0;
+  lz = MFC2(31);
+  k = lz & ~1u;
+  half = (u32)((s32)(0x1F - k) >> 1);
+  k -= 0x18;
+  t = (s32)k >= 0 ? len2 << (k & 31) : (u32)((s32)len2 >> ((0u - k) & 31));
+  t = (t - 0x40) << 1;
+  r = (u32)(s32)(s16)AT16(PSX_ADDR(D_80074B84) + t);
+  return (r << (half & 31)) >> 12;
+}
+
+/* The angle of (a, b) in 256ths of a turn's quadrant-relative form, as the
+ * asm builds it: a quadrant base and whether the table's angle (by the
+ * smaller over the larger) is subtracted. */
+static inline void Octant(u32 a, u32 b, u32 *neg, u32 *base) {
+  if ((s32)a < 0) {
+    a = 0u - a;
+    if ((s32)b < 0) {
+      b = 0u - b;
+      if ((s32)(a - b) < 0) { *neg = 1; *base = 0xC0; } else { *neg = 0; *base = 0x80; }
+    } else {
+      if ((s32)(a - b) < 0) { *neg = 0; *base = 0x40; } else { *neg = 1; *base = 0x80; }
+    }
+  } else if ((s32)b < 0) {
+    b = 0u - b;
+    if ((s32)(a - b) < 0) { *neg = 0; *base = 0xC0; } else { *neg = 1; *base = 0x100; }
+  } else {
+    if ((s32)(a - b) < 0) { *neg = 1; *base = 0x40; } else { *neg = 0; *base = 0; }
+  }
+}
+
+/* min(|a|,|b|) x 64 / max(|a|,|b|) (max at least 1). */
+static inline u32 SlopeRatio(u32 a, u32 b) {
+  u32 p = Abs32(a), q = Abs32(b);
+  if ((s32)(p - q) > 0) {
+    u32 t = p;
+    p = q;
+    q = t;
+  }
+  if (!q)
+    q = 1;
+  return DivLo(p << 6, q);
+}
+
+/* A metal vertex's UV (subroutine L_800222C0, returning through D_80022110,
+ * D_80022148, D_80022180): its direction from the moby's centre turned by
+ * the light matrix, the horizontal angle (with the moby's own turn in the
+ * specular word's low 9 bits) and the vertical one; type 2 (spec negative)
+ * maps them through a circle instead. */
+static u32 MetalUV(u32 x, u32 y, u32 z, u32 spec) {
+  const u32 tx = CFC2(5), ty = CFC2(6), tz = CFC2(7);
+  u32 m1, m2, m3, ratio, len, q, neg, base, ang, v, u, e, sc, idx;
+  x -= tx;
+  y -= ty;
+  z -= tz;
+  MTC2(x, 9);
+  MTC2(y, 10);
+  MTC2(z, 11);
+  gte_mvmva_ll_ir0();
+  MTC2(x, 9);
+  MTC2(y, 10);
+  MTC2(z, 11);
+  m1 = MFC2(25);
+  m2 = MFC2(26);
+  m3 = MFC2(27);
+  gte_sqr0();
+  ratio = SlopeRatio(m1, m2);
+  len = MFC2(25) + MFC2(26) + MFC2(27);
+  /* the asm reads the ratio inside the 1/sqrt block only: for a zero
+   * length the table index is TRX, left in its register */
+  idx = len ? ratio : tx;
+  len = InvSqrt(len);
+  q = DivLo(m3, len);
+  Octant(m1, m2, &neg, &base);
+  ang = AT8(PSX_ADDR(D_8006D908) + idx);
+  ang = neg ? base - ang : base + ang;
+  v = (u32)((s32)q >> 5) + 0x80;
+  {
+    const u32 over = v - 0x100;
+    if ((s32)v < 0)
+      v = 0;
+    if ((s32)over >= 0)
+      v = 0xFF;
+  }
+  sc = (CFC2(13) >> 8) & 31;
+  e = (u32)(s32)(s8)AT8(PSX_ADDR(D_8006D808) + v);
+  u = (((CFC2(7) << sc) >> 6) + (spec & 0x1FF) + ang) & 0xFF;
+  if ((s32)spec >= 0)
+    return (e << 8) | (u >> 1);
+  if ((s32)(e - 0x3F) > 0)
+    e = 0x3F;
+  u <<= 1;
+  MTC2(e, 8);
+  MTC2((u32)(s32)(s16)AT16(PSX_ADDR(D_8006CBF8) + u + 0x80), 9);
+  MTC2((u32)(s32)(s16)AT16(PSX_ADDR(D_8006CBF8) + u), 10);
+  gte_gpf0();
+  return ((((u32)((s32)MFC2(26) >> 12) + 0x40) << 8) | ((u32)((s32)MFC2(25) >> 12) + 0x40));
+}
+
+/* A specular (type 0) triangle's colour: its normal (the cross product of
+ * two edges, OP, through the rotation matrix's diagonal), its length (SQR),
+ * the highlight's strength (spec bits 18-31 over the length) and the light
+ * (D_800770C8 words 3-5 as the colour matrix) through CC on the specular
+ * colour (spec's three 6-bit fields as the back colour). The asm leaves the
+ * matrix's diagonal and the colour matrix that way. e0-e2: the vertices'
+ * entries. */
+static u32 SpecularLight(const u8 *e0, const u8 *e1, const u8 *e2, u32 spec) {
+  const u32 *light = (const u32 *)D_800770C8;
+  const u32 x0 = (u32)(s32)(s16)AT16(e0 + 2), w0 = AT32(e0 + 4);
+  const u32 x1 = (u32)(s32)(s16)AT16(e1 + 2), w1 = AT32(e1 + 4);
+  const u32 x2 = (u32)(s32)(s16)AT16(e2 + 2), w2 = AT32(e2 + 4);
+  const u32 rbk = CFC2(13), gbk = CFC2(14);
+  u32 nx, ny, nz, len, l1, l2, l3, rgb;
+  MTC2(x1 - x0, 9);
+  MTC2((u32)((s32)((w1 << 16) - (w0 << 16)) >> 16), 10);
+  MTC2((u32)((s32)w1 >> 16) - (u32)((s32)w0 >> 16), 11);
+  CTC2(x2 - x0, 0);
+  CTC2((u32)((s32)((w2 << 16) - (w0 << 16)) >> 16), 2);
+  CTC2((u32)((s32)w2 >> 16) - (u32)((s32)w0 >> 16), 4);
+  gte_op0();
+  nx = (u32)((s32)MFC2(25) >> 4);
+  ny = (u32)((s32)MFC2(27) >> 4);
+  nz = (u32)((s32)MFC2(26) >> 4);
+  MTC2(nx, 9);
+  MTC2(ny, 10);
+  MTC2(nz, 11);
+  gte_sqr0();
+  CTC2((spec >> 6) & 0xFF0, 13);
+  CTC2(spec & 0xFF0, 14);
+  CTC2((spec << 6) & 0xFF0, 15);
+  MTC2(nx, 9);
+  MTC2(ny, 10);
+  MTC2(nz, 11);
+  len = InvSqrt(MFC2(25) + MFC2(26) + MFC2(27));
+  len = DivLo((spec >> 18) << 14, len);
+  l1 = light[3] & 0xFFFF;
+  l2 = light[4] & 0xFFFF;
+  l3 = light[5] & 0xFFFF;
+  CTC2((l2 << 16) + l1, 16);
+  CTC2((l1 << 16) + l3, 17);
+  CTC2((l3 << 16) + l2, 18);
+  CTC2((l2 << 16) + l1, 19);
+  CTC2(l3, 20);
+  MTC2(0xFFFFFFu, 6);
+  MTC2(len, 8);
+  gte_gpf0();
+  {
+    const u32 a = (u32)((s32)MFC2(25) >> 8), b = (u32)((s32)MFC2(26) >> 8), d = (u32)((s32)MFC2(27) >> 8);
+    MTC2(a, 9);
+    MTC2(b, 10);
+    MTC2(d, 11);
+  }
+  gte_cc();
+  rgb = MFC2(22);
+  CTC2(rbk, 13);
+  CTC2(gbk, 14);
+  return rgb;
+}
+
+/* A metal triangle (types 1, 2): POLY_GT3 on the environment map
+ * (D_800756F0's texture words), each vertex's UV from MetalUV, cached in its
+ * entry; with spec bits 16-23 set, the colours shifted towards red by that.
+ * Type 1 moves the u of the vertices below 0x40 up by 0x80 when the three
+ * straddle the map's seam. */
+static void MetalTriangle(FaceCtx *c, u32 i0, u32 i1, u32 i2, u32 col0, u32 col1, u32 col2,
+                          u32 cw, u32 spec) {
+  const u32 p = c->prim;
+  const u32 bright = (spec >> 16) & 0xFF;
+  u8 *const e[3] = {(u8 *)c->depth + i0 * 2, (u8 *)c->depth + i1 * 2, (u8 *)c->depth + i2 * 2};
+  const u32 *tex = (const u32 *)D_800756F0;
+  u32 k, sum, key, bucket, u0, u1, u2;
+  if (bright) {
+    static const u8 off[3] = {0x4, 0x10, 0x1C};
+    const u32 col[3] = {col0, col1, col2};
+    for (k = 0; k < 3; k++) { /* red up, saturating */
+      u32 v = (col[k] & 0xFF) + bright;
+      if ((s32)(v - 0x100) >= 0)
+        v = 0xFF;
+      AT8(p + off[k]) = (u8)v;
+    }
+    for (k = 0; k < 6; k++) { /* green, then blue, down, not below 0 */
+      const u32 v = ((col[k % 3] >> (k < 3 ? 8 : 16)) & 0xFF) - bright;
+      const u32 at = p + off[k % 3] + (k < 3 ? 1 : 2);
+      AT8(at) = (u8)v;
+      if ((s32)v < 0)
+        AT8(at) = 0;
+    }
+    AT8(p + 0x7) = 0x34;
+  } else {
+    AT32(p + 0x10) = col1;
+    AT32(p + 0x1C) = col2;
+    AT32(p + 0x4) = col0 + 0x34000000u;
+  }
+  for (k = 0; k < 3; k++) {
+    u32 uv;
+    if ((s32)(s16)AT16(e[k] + 2) == SPEC_CACHED) {
+      uv = AT32(e[k] + 4);
+    } else {
+      const u32 w = AT32(e[k] + 4);
+      uv = MetalUV((u32)(s32)(s16)AT16(e[k] + 2), (u32)((s32)(w << 16) >> 16), (u32)((s32)w >> 16),
+                   spec);
+      AT16(e[k] + 2) = SPEC_CACHED;
+      AT32(e[k] + 4) = uv;
+    }
+    CTC2(uv, 21 + k); /* RFC-BFC hold them */
+  }
+  {
+    const u32 z0 = AT16(e[0]), z1 = AT16(e[1]), z2 = AT16(e[2]);
+    sum = z0 + (z0 >> 1) - c->bias + z1 + (z1 >> 1) + z2;
+  }
+  if ((s32)sum < 0)
+    return;
+  key = (u32)((s32)sum >> c->zshift) + FACE_ZOFF(cw);
+  if ((s32)key < 0)
+    return;
+  bucket = (key << 3) + c->buckets;
+  u0 = CFC2(21);
+  u1 = CFC2(22);
+  u2 = CFC2(23);
+  if ((s32)spec >= 0) {
+    const u32 t0 = (u0 & 0xFF) - 0x40, t1 = (u1 & 0xFF) - 0x40, t2 = (u2 & 0xFF) - 0x40;
+    if ((s32)(t0 | t1 | t2) < 0 && (s32)(t0 & t1 & t2) >= 0) {
+      const u32 d01 = t0 - t1, d02 = t0 - t2, d12 = t1 - t2;
+      if ((s32)(d01 - 0x40) >= 0 || (s32)(d01 + 0x40) <= 0 || (s32)(d02 - 0x40) >= 0 ||
+          (s32)(d02 + 0x40) <= 0 || (s32)(d12 - 0x40) >= 0 || (s32)(d12 + 0x40) <= 0) {
+        u0 += (t0 >> 31) << 7;
+        u1 += (t1 >> 31) << 7;
+        u2 += (t2 >> 31) << 7;
+      }
+    }
+  }
+  AT32(p) = 0x09000000u;
+  AT32(p + 0xC) = tex[0] + c->tex_bias;
+  AT32(p + 0x18) = tex[1];
+  AT16(p + 0xC) = (u16)u0;
+  AT16(p + 0x18) = (u16)u1;
+  AT16(p + 0x24) = (u16)u2;
+  Link(c, bucket, 0x28);
+}
+
+/* A triangle: as DrawTriangle, and with bit 2 lit (type 0) or metal. */
+HAND_INLINE const u32 *SpecTriangle(FaceCtx *c, const u32 *f, u32 spec) {
+  const u32 fw = f[0], cw = f[1], textured = fw & FACE_TEXTURED;
+  const u32 i0 = (fw >> 20) & 0x7FC, i1 = (fw >> 11) & 0x7FC, i2 = (fw >> 2) & 0x7FC;
+  const u32 *next = f + (textured ? 5 : 2);
+  const u32 p = c->prim;
+  u32 xy0 = WORD_AT(c->xy, i0), xy1 = WORD_AT(c->xy, i1), xy2 = WORD_AT(c->xy, i2), m;
+  u32 col0, col1, col2;
+  if (c->clip) {
+    if (CLIP_OUT(xy0 & xy1 & xy2))
+      return next;
+    xy0 = CLIP_XY(xy0);
+    xy1 = CLIP_XY(xy1);
+    xy2 = CLIP_XY(xy2);
+  }
+  MTC2(xy0, 12);
+  MTC2(xy1, 13);
+  MTC2(xy2, 14);
+  gte_nclip();
+  AT32(p + 0x8) = xy0;
+  if (textured) {
+    AT32(p + 0x14) = xy1;
+    AT32(p + 0x20) = xy2;
+  } else {
+    AT32(p + 0x10) = xy1;
+    AT32(p + 0x18) = xy2;
+  }
+  if (fw & FACE_HIDDEN)
+    return next;
+  m = MFC2(24);
+  if (fw & FACE_TWO_SIDED ? m == 0 : (s32)m <= 0)
+    return next;
+  col0 = (COLOUR(c, (cw >> 17) & 0x7FC) << 8) >> 8;
+  col1 = COLOUR(c, (cw >> 8) & 0x7FC);
+  col2 = COLOUR(c, (cw << 1) & 0x7FC);
+  if (fw & FACE_SPECULAR) {
+    if ((s32)spec >> 24) {
+      MetalTriangle(c, i0, i1, i2, col0, col1, col2, cw, spec);
+      return next;
+    }
+    col0 = col1 = col2 = SpecularLight(c->depth + i0 * 2, c->depth + i1 * 2, c->depth + i2 * 2, spec);
+  }
+  EmitTriangle(c, next, i0, i1, i2, col0, col1, col2, cw, textured, 0, 1);
+  return next;
+}
+
+/* A quad: as DrawQuad, but a two-sided one is drawn whole without the
+ * second test. */
+HAND_INLINE const u32 *SpecQuad(FaceCtx *c, const u32 *f) {
+  const u32 fw = f[0], cw = f[1], w2 = f[2], textured = fw & FACE_TEXTURED;
+  const u32 i0 = (fw >> 20) & 0x7FC, i1 = (fw >> 11) & 0x7FC, i2 = (fw >> 2) & 0x7FC;
+  const u32 i3 = w2 & 0x7FC;
+  const u32 *next = f + (textured ? 6 : 3);
+  const u32 p = c->prim;
+  const u32 c0 = (cw >> 17) & 0x7FC, c1 = (cw >> 8) & 0x7FC, c3 = (w2 >> 9) & 0x7FC;
+  u32 xy0 = WORD_AT(c->xy, i0), xy1 = WORD_AT(c->xy, i1), xy2 = WORD_AT(c->xy, i2);
+  u32 xy3 = WORD_AT(c->xy, i3), m, m2;
+  if (c->clip) {
+    if (CLIP_OUT(xy0 & xy1 & xy2 & xy3))
+      return next;
+    xy0 = CLIP_XY(xy0);
+    xy1 = CLIP_XY(xy1);
+    xy2 = CLIP_XY(xy2);
+    xy3 = CLIP_XY(xy3);
+  }
+  MTC2(xy0, 12);
+  MTC2(xy1, 13);
+  MTC2(xy2, 14);
+  if (fw & FACE_HIDDEN)
+    return next;
+  gte_nclip();
+  AT32(p + 0x8) = xy0;
+  if (textured) {
+    AT32(p + 0x14) = xy1;
+    AT32(p + 0x20) = xy2;
+    AT32(p + 0x2C) = xy3;
+  } else {
+    AT32(p + 0x10) = xy1;
+    AT32(p + 0x18) = xy2;
+    AT32(p + 0x20) = xy3;
+  }
+  if (fw & FACE_TWO_SIDED) {
+    EmitQuad(c, next, i0, i1, i2, i3, c0, c1, c3, cw, textured, 1);
+    return next;
+  }
+  m = MFC2(24);
+  MTC2(xy3, 12);
+  gte_nclip();
+  m2 = MFC2(24);
+  if ((s32)m < 0) {
+    if ((s32)m2 > 0)
+      EmitQuad(c, next, i0, i1, i2, i3, c0, c1, c3, cw, textured, 1);
+    else
+      EmitTriangle(c, next, i0, i1, i2, (COLOUR(c, c0) << 8) >> 8, COLOUR(c, c1),
+                   COLOUR(c, (cw << 1) & 0x7FC), cw, textured, 0, 1);
+  } else if ((s32)m2 > 0) {
+    AT32(p + 0x8) = xy3;
+    EmitTriangle(c, next, i3, i1, i2, (COLOUR(c, c3) << 8) >> 8, COLOUR(c, c1),
+                 COLOUR(c, (cw << 1) & 0x7FC), cw, textured, 1, 1);
+  }
+  return next;
+}
+
+/* A metal moby's set-up (asm L_800226F8): the light matrix from
+ * D_800770C8 words 6-10, and the specular word's low 9 bits turned by the
+ * angle between the camera's heading (g_Camera word 0x14) and the moby's
+ * direction (TRX, TRZ); type 2 and up get the top byte 0xFF (the sign
+ * MetalUV reads). */
+static u32 MetalBegin(u32 spec) {
+  const u32 *light = (const u32 *)D_800770C8;
+  const u32 tz = CFC2(7), tx = CFC2(5);
+  u32 ratio, neg, base, ang;
+  if ((spec >> 24) - 1 != 0)
+    spec |= 0xFF000000u;
+  CTC2(light[6], 8);
+  CTC2(light[7], 9);
+  CTC2(light[8], 10);
+  CTC2(light[9], 11);
+  CTC2(light[10], 12);
+  ratio = SlopeRatio(tz, tx);
+  Octant(tz, tx, &neg, &base);
+  ang = AT8(PSX_ADDR(D_8006D908) + ratio);
+  ang = neg ? base - ang : base + ang;
+  return spec + ((((u32)((s32)((const u32 *)g_Camera)[0x14] >> 3)) - (ang << 1)) & 0x1FF);
+}
+
+/* Draw one specular moby; returns the primitive pointer after it. */
+static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
+  u16 *const ent = (u16 *)(D_8006FCF4 + TBL_BIG_DEPTHS);
+  RecState s;
+  FaceCtx c;
+  const u32 *faces, *end;
+  u32 n, spec;
+
+  if (!RecordBegin(rec, &s))
+    return prim;
+  ReplaceFaces(&s);
+  n = s.anim->m_VertCount[s.detail < 0];
+  if (!n)
+    goto restore;
+  if (s.progress) {
+    if (!SpecTransformBlend(FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
+                            n, s.progress, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip))
+      goto restore;
+  } else if (!SpecTransform(FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip)) {
+    goto restore;
+  }
+
+  faces = PickFaces(&s, &c);
+  spec = rec->m_Specular;
+  if (spec >> 24)
+    spec = MetalBegin(spec);
+  FaceCtxBegin(&c, &s, prim);
+  c.depth = (const u8 *)ent;
+  c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
+  end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
+  for (faces++; faces != end;) {
+    const u32 fw = faces[0];
+    if (!(fw & FACE_QUAD))
+      faces = SpecTriangle(&c, faces, spec);
+    else if (fw & FACE_SPRITE)
+      faces = DrawSprite(&c, faces, 1);
+    else
+      faces = SpecQuad(&c, faces);
+  }
+  if ((s32)(c.highest - c.lowest) >= 0)
+    LinkBuckets(&c, s.zone, s.rbk);
+  prim = c.prim;
+
+restore:
+  RestoreFaces();
+  return prim;
+}
+
+static u32 SpecDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
+  u32 prim = *(u32 *)D_800757B0;
+  u32 rec = PSX_ADDR(D_8006FCF4 + TBL_RECORDS);
+  (void)a0;
+  (void)a1;
+  (void)a2;
+  (void)a3;
+  hand_spill_regs();
+  CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
+  for (;; rec += sizeof(MobyRecord)) {
+    const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
+    if (PORT_LOD_RECORDS_FULL(rec, prim))
+      break;
+    if (!r->m_Flags)
+      break;
+    prim = SpecDrawRecord(r, prim);
+  }
+  *(u32 *)D_800757B0 = prim;
+  return prim; /* v0 and v1 are dead at every caller (tools/oracle/ignore_ranges.txt) */
+}
+
+HAND_RENDERER(func_80020F34, SpecDraw)

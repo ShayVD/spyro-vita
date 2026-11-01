@@ -85,6 +85,10 @@ ret func_8001F798
 # overlay's func_credits_8007BFD0 (void, above), whose next instruction
 # after the jal sets up a call to Memset16. The hand C returns 0.
 ret func_80022A2C
+# The specular mobys' draw loop is void (include/renderers.h 176) and called
+# only as a statement from C (src/gamestates/draw.c 608, 1992). The asm returns the
+# primitive pointer in v0, as the hand C does, and loop values in v1.
+ret func_80020F34
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that
