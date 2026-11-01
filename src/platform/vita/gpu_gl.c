@@ -108,6 +108,7 @@ typedef struct {
   int cpu_stale;   /* drawn since s_vram last got its pixels */
   int tex_stale;   /* s_vram changed in its rect (a clear) without an upload */
   unsigned used;   /* last use, for eviction */
+  int cdram;       /* tex is in CDRAM (tex_cdram) */
   TargetLog log;
 } Target;
 
@@ -122,6 +123,12 @@ void soft_GR_DrawTriangles(int start_vertex, int triangles);
 static Target s_targets[MAX_TARGETS];
 static int s_ntargets;
 static float s_sx, s_sy; /* target pixels per VRAM pixel */
+
+/* Every write into a target's pixels calls this first (gpu_direct, D69):
+ * presentation pictures still shown from that target get their own copy,
+ * or, whole: the target is about to be cleared whole, its texture. */
+static int s_npsrc; /* presentation slots waiting on a target */
+static void pres_touch(Target *t, int whole);
 
 typedef struct {
   Target *t;
@@ -215,6 +222,8 @@ static struct {
   uint64_t upload_us, readback_us, expand_us;
   unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
   uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
+  unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
+  unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
@@ -815,6 +824,20 @@ static GLuint new_tex(int w, int h, const void *rgba) {
   return t;
 }
 
+/* 1 if texture tex (bound here, on the active unit) is in CDRAM, 0 if in
+ * main RAM, -1 unknown: vitaGL takes CDRAM while its pool lasts (and frees
+ * a deleted texture only once the GPU is done with it), and the GPU's loads
+ * and stores of a target are slower in main RAM (D69) */
+static int tex_cdram(GLuint tex) {
+  SceKernelMemBlockInfo info = {.size = sizeof info};
+  void *p;
+  glBindTexture(GL_TEXTURE_2D, tex);
+  p = vglGetTexDataPointer(GL_TEXTURE_2D);
+  if (!p || sceKernelGetMemBlockInfoByAddr(p, &info) < 0)
+    return -1;
+  return info.type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
+}
+
 static void bind_fbo(GLuint fbo) {
   if (s_bound_fbo != fbo) {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -878,6 +901,8 @@ static void no_blend(void) {
 /* Draw VRAM rect (x, y, w, h) from s_vram into target t. */
 static void copy_into(Target *t, int x, int y, int w, int h) {
   float ndc[4], src[4];
+  if (s_npsrc)
+    pres_touch(t, 0);
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
   no_blend();
@@ -901,6 +926,8 @@ static void copy_into(Target *t, int x, int y, int w, int h) {
  * frames) keeps the targets' resolution. s_vram got the same move. */
 static void move_into(Target *t, const Target *src, int x, int y, int w, int h, int dx, int dy) {
   float ndc[4], uv[4];
+  if (s_npsrc)
+    pres_touch(t, 0);
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
   no_blend();
@@ -1151,6 +1178,7 @@ static void atlas_decode(void) {
     glDrawArrays(GL_TRIANGLES, 0, s_aqn[fmt] * 6);
     s_aqn[fmt] = 0;
   }
+  s_st.decodes++;
   glDisableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
   s_xattr = 0;
@@ -1323,16 +1351,36 @@ static void sync_rect(int x, int y, int w, int h) {
   }
 }
 
+/* gpu_direct (D69): a dropped target's texture and FBO, kept for the next
+ * target of its size. vitaGL frees a deleted texture's memory only once
+ * the GPU is done with it, so targets made again at once (all of them, at a
+ * save state) got main RAM, with CDRAM full until then. */
+static struct {
+  GLuint tex, fbo;
+  int pw, ph, cdram;
+} s_spare[MAX_TARGETS];
+static int s_nspare;
+
 /* Pending copies hold Target pointers: they go out before any target is
  * dropped or moved (the last one moves into slot i). Left behind, they would
  * draw into a deleted FBO, which on the GPU can be memory reused since. */
 static void drop_target(int i) {
   flush_pending();
+  if (s_npsrc)
+    pres_touch(&s_targets[i], 0);
   readback(&s_targets[i]);
   if (s_targets[i].tex_stale)
     s_vram_dirty = 1;
-  glDeleteFramebuffers(1, &s_targets[i].fbo);
-  glDeleteTextures(1, &s_targets[i].tex);
+  if (g_vita_opts.gpu_direct && s_nspare < MAX_TARGETS) {
+    s_spare[s_nspare].tex = s_targets[i].tex;
+    s_spare[s_nspare].fbo = s_targets[i].fbo;
+    s_spare[s_nspare].pw = s_targets[i].pw;
+    s_spare[s_nspare].ph = s_targets[i].ph;
+    s_spare[s_nspare++].cdram = s_targets[i].cdram;
+  } else {
+    glDeleteFramebuffers(1, &s_targets[i].fbo);
+    glDeleteTextures(1, &s_targets[i].tex);
+  }
   log_free(&s_targets[i]);
   s_bound_fbo = (GLuint)-1;
   s_targets[i] = s_targets[--s_ntargets];
@@ -1411,16 +1459,35 @@ static Target *target_for(int x, int y, int w, int h) {
   t->h = y1 - y;
   t->pw = (int)(t->w * s_sx + 0.999f);
   t->ph = (int)(t->h * s_sy + 0.999f);
-  t->tex = new_tex(t->pw, t->ph, NULL);
-  glGenFramebuffers(1, &t->fbo);
+  /* a spare of this size (D69), the others deleted; or a new texture */
+  for (i = 0; i < s_nspare;) {
+    if (!t->tex && s_spare[i].pw == t->pw && s_spare[i].ph == t->ph) {
+      t->tex = s_spare[i].tex;
+      t->fbo = s_spare[i].fbo;
+      t->cdram = s_spare[i].cdram;
+    } else if (s_spare[i].pw == t->pw && s_spare[i].ph == t->ph) {
+      i++;
+      continue;
+    } else {
+      glDeleteFramebuffers(1, &s_spare[i].fbo);
+      glDeleteTextures(1, &s_spare[i].tex);
+    }
+    s_spare[i] = s_spare[--s_nspare];
+  }
+  if (!t->tex) {
+    t->tex = new_tex(t->pw, t->ph, NULL);
+    t->cdram = tex_cdram(t->tex);
+    glGenFramebuffers(1, &t->fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      vita_log("gpu: target FBO %dx%d incomplete", t->pw, t->ph);
+  }
   glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);
   s_bound_fbo = t->fbo;
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-    vita_log("gpu: target FBO %dx%d incomplete", t->pw, t->ph);
   t->used = ++s_use;
-  vita_log("gpu: target %d: VRAM %d,%d %dx%d -> %dx%d", s_ntargets - 1, t->x, t->y, t->w,
-           t->h, t->pw, t->ph);
+  vita_log("gpu: target %d: VRAM %d,%d %dx%d -> %dx%d (%s)", s_ntargets - 1, t->x, t->y, t->w,
+           t->h, t->pw, t->ph, t->cdram > 0 ? "CDRAM" : t->cdram ? "memory unknown" : "main RAM");
   upload_vram();
   copy_into(t, t->x, t->y, t->w, t->h); /* starts as what VRAM holds */
   log_begin(t, 1, 0);
@@ -1749,6 +1816,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   flush_pending();
   if (s_texmode != P_UNTEX)
     upload_vram();
+  if (s_npsrc)
+    pres_touch(t, 0);
 
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
@@ -1947,6 +2016,8 @@ static void clear_dirty(int x, int y, int w, int h) {
   s_vram_dirty = s_aflush = 1;
 }
 
+static float s_clear_rgb[3]; /* and as GL's clear colour */
+
 static void clear_targets(int x, int y, int w, int h) {
   int k;
   for (k = 0; k < s_ntargets; k++) {
@@ -1954,14 +2025,15 @@ static void clear_targets(int x, int y, int w, int h) {
     int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
     int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
     int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
-    int sx0, sy0, sx1, sy1;
+    int sx0, sy0, sx1, sy1, whole;
     if (x0 >= x1 || y0 >= y1)
       continue;
     sx0 = (int)((x0 - t->x) * s_sx + 0.5f);
     sy0 = (int)((y0 - t->y) * s_sy + 0.5f);
     sx1 = x1 == t->x + t->w ? t->pw : (int)((x1 - t->x) * s_sx + 0.5f);
     sy1 = y1 == t->y + t->h ? t->ph : (int)((y1 - t->y) * s_sy + 0.5f);
-    if (x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h) {
+    whole = x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h;
+    if (whole) {
       log_begin(t, 0, s_clear15); /* cleared whole: the log starts again */
     } else {
       LogEntry *e = log_add(t, LOG_CLEAR, 0);
@@ -1970,7 +2042,10 @@ static void clear_targets(int x, int y, int w, int h) {
         e->color = s_clear15;
       }
     }
+    if (s_npsrc)
+      pres_touch(t, whole);
     bind_fbo(t->fbo);
+    glClearColor(s_clear_rgb[0], s_clear_rgb[1], s_clear_rgb[2], 1.0f);
     glEnable(GL_SCISSOR_TEST);
     glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -1992,7 +2067,9 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
   s_gen++;
   flush_pending();
   s_clear15 = c;
-  glClearColor((r >> 3) * 8 / 255.0f, (g >> 3) * 8 / 255.0f, (b >> 3) * 8 / 255.0f, 1.0f);
+  s_clear_rgb[0] = (r >> 3) * 8 / 255.0f;
+  s_clear_rgb[1] = (g >> 3) * 8 / 255.0f;
+  s_clear_rgb[2] = (b >> 3) * 8 / 255.0f;
   pieces(x, y, w, h, clear_targets);
   glDisable(GL_SCISSOR_TEST);
 }
@@ -2204,21 +2281,40 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
 
 /* PRESENT_SLOTS textures for present.c's queue, plus a staging one: a
  * presentation pass's picture is copied from the targets on the GPU (no
- * readback, no replay) and filed by swapping handles. */
+ * readback, no replay) and filed by swapping handles.
+ * gpu_direct=1 (D69): a picture that is one target whole (Spyro's: the draw
+ * area's 224 lines) isn't copied. Its slot only notes the target's texture
+ * (s_psrc), and the present draws from that, while nothing has drawn into
+ * the target since (pres_touch). The game draws into the other draw area
+ * next, so at 30 fps the picture is shown from its target. When the game
+ * clears that target whole for a later frame (the in-between frame's
+ * target, cleared by the same tick's logic pass at 60 fps), the slot takes
+ * the target's texture and the target the slot's, with no copy: the clear
+ * covers all of it. Any other write copies the picture into the slot first,
+ * as the capture did. */
 #define STAGING PRESENT_SLOTS
 static GLuint s_ptex[PRESENT_SLOTS + 1], s_pfbo[PRESENT_SLOTS + 1];
+static int s_pcdram[PRESENT_SLOTS + 1]; /* tex_cdram of s_ptex */
 static int s_pw, s_ph;
+static struct {
+  GLuint tex;     /* the target texture this slot's picture still is, 0: s_ptex holds it */
+  int x, y, w, h; /* the VRAM rect captured */
+} s_psrc[PRESENT_SLOTS + 1];
 
 static void pres_alloc(int w, int h) {
-  int i;
+  int i, n = 0;
   if (s_pw == w && s_ph == h)
     return;
+  memset(s_psrc, 0, sizeof s_psrc); /* the slots start over, as their textures do */
+  s_npsrc = 0;
   for (i = 0; i <= PRESENT_SLOTS; i++) {
     if (s_ptex[i]) {
       glDeleteFramebuffers(1, &s_pfbo[i]);
       glDeleteTextures(1, &s_ptex[i]);
     }
     s_ptex[i] = new_tex(w, h, NULL);
+    s_pcdram[i] = tex_cdram(s_ptex[i]);
+    n += s_pcdram[i] > 0;
     glGenFramebuffers(1, &s_pfbo[i]);
     glBindFramebuffer(GL_FRAMEBUFFER, s_pfbo[i]);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_ptex[i], 0);
@@ -2228,27 +2324,35 @@ static void pres_alloc(int w, int h) {
   }
   s_pw = w;
   s_ph = h;
-  vita_log("gpu: presentation frames %dx%d", w, h);
+  vita_log("gpu: presentation frames %dx%d (%d of %d in CDRAM)", w, h, n, PRESENT_SLOTS + 1);
 }
 
-/* The VRAM rect a presentation pass just drew -> staging: every target over
- * it, at the targets' resolution; black elsewhere (Spyro's border lines).
- * Inside an FBO the image's top is NDC -1, as in copy_into(). */
-void gl_pres_capture(int x, int y, int w, int h) {
+/* The target that is VRAM rect (x, y, w, h) exactly, at the slots' size, or
+ * NULL. Its quad then covers every pixel of a slot. */
+static Target *whole_target(int x, int y, int w, int h) {
+  int i;
+  for (i = 0; i < s_ntargets; i++) {
+    Target *t = &s_targets[i];
+    if (t->x == x && t->y == y && t->w == w && t->h == h && t->pw == s_pw && t->ph == s_ph)
+      return t;
+  }
+  return NULL;
+}
+
+/* VRAM rect (x, y, w, h) -> slot i: every target over it, at the targets'
+ * resolution; black elsewhere (Spyro's border lines; no clear when one
+ * target covers it all, D69). Inside an FBO the image's top is NDC -1, as in
+ * copy_into(). */
+static void pres_draw(int slot, int x, int y, int w, int h) {
   float ndc[4], src[4];
-  int i, top = shown_top(h);
-  y += top; /* the drawn lines only: the slots fill the screen */
-  h -= 2 * top;
-  if (!s_sx)
-    set_scale();
-  flush_pending();
-  sample_scene();
-  pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
-  bind_fbo(s_pfbo[STAGING]);
+  int i;
+  bind_fbo(s_pfbo[slot]);
   glViewport(0, 0, s_pw, s_ph);
   no_blend();
-  glClearColor(0, 0, 0, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (!g_vita_opts.gpu_direct || !whole_target(x, y, w, h)) {
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
   glUseProgram(s_prog[P_TEX].prog);
   for (i = 0; i < s_ntargets; i++) {
     const Target *t = &s_targets[i];
@@ -2266,14 +2370,89 @@ void gl_pres_capture(int x, int y, int w, int h) {
     glActiveTexture(GL_TEXTURE0);
     quad(ndc, src);
   }
+  s_st.pres_copies++;
+}
+
+/* The VRAM rect a presentation pass just drew -> staging (gpu_direct: only
+ * noted, when it's one target whole). */
+void gl_pres_capture(int x, int y, int w, int h) {
+  Target *t;
+  int top = shown_top(h);
+  y += top; /* the drawn lines only: the slots fill the screen */
+  h -= 2 * top;
+  if (!s_sx)
+    set_scale();
+  flush_pending();
+  sample_scene();
+  pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
+  s_st.captures++;
+  if (s_psrc[STAGING].tex) { /* staging is drawn or noted again */
+    s_psrc[STAGING].tex = 0;
+    s_npsrc--;
+  }
+  if (g_vita_opts.gpu_direct && (t = whole_target(x, y, w, h)) != NULL) {
+    s_psrc[STAGING].tex = t->tex;
+    s_psrc[STAGING].x = x, s_psrc[STAGING].y = y, s_psrc[STAGING].w = w, s_psrc[STAGING].h = h;
+    s_npsrc++;
+    return;
+  }
+  pres_draw(STAGING, x, y, w, h);
 }
 
 void gl_pres_commit(int slot) {
   GLuint t = s_ptex[slot], f = s_pfbo[slot];
+  int c = s_pcdram[slot];
   s_ptex[slot] = s_ptex[STAGING];
   s_pfbo[slot] = s_pfbo[STAGING];
+  s_pcdram[slot] = s_pcdram[STAGING];
   s_ptex[STAGING] = t;
   s_pfbo[STAGING] = f;
+  s_pcdram[STAGING] = c;
+  {
+    __typeof__(s_psrc[0]) s = s_psrc[slot];
+    s_psrc[slot] = s_psrc[STAGING];
+    s_psrc[STAGING] = s;
+  }
+}
+
+/* Target t is about to be drawn into (whole: cleared whole): the slots
+ * whose picture is still t get it (D69). The target is unchanged since
+ * each was noted, so the copy is what the capture would have drawn. */
+static void pres_touch(Target *t, int whole) {
+  int i, last = -1;
+  for (i = 0; i <= STAGING; i++) {
+    if (s_psrc[i].tex != t->tex)
+      continue;
+    if (last >= 0) { /* two slots on one picture: all but one copied */
+      s_psrc[last].tex = 0;
+      s_npsrc--;
+      pres_draw(last, s_psrc[last].x, s_psrc[last].y, s_psrc[last].w, s_psrc[last].h);
+      s_st.pres_late++;
+    }
+    last = i;
+  }
+  if (last < 0)
+    return;
+  s_psrc[last].tex = 0;
+  s_npsrc--;
+  /* A target never gets a texture from slower memory than its own. One
+   * remade while vitaGL still held the old textures (a save state, a
+   * widescreen or resolution change) can be in main RAM: it gets CDRAM back
+   * here, and the slots, sampled once a picture, keep the main RAM one. */
+  if (whole && t->pw == s_pw && t->ph == s_ph && s_pcdram[last] >= t->cdram) {
+    GLuint tex = t->tex, fbo = t->fbo;
+    int c = t->cdram;
+    t->tex = s_ptex[last];
+    t->fbo = s_pfbo[last];
+    t->cdram = s_pcdram[last];
+    s_ptex[last] = tex;
+    s_pfbo[last] = fbo;
+    s_pcdram[last] = c;
+    s_st.pres_handed++;
+  } else {
+    pres_draw(last, s_psrc[last].x, s_psrc[last].y, s_psrc[last].w, s_psrc[last].h);
+    s_st.pres_late++;
+  }
 }
 
 /* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
@@ -2344,11 +2523,16 @@ static void present_slot(int slot, int wide) {
   bind_fbo(0);
   glViewport(0, 0, SCREEN_W, SCREEN_H);
   no_blend();
-  glClearColor(0, 0, 0, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (!g_vita_opts.gpu_direct || area_w < SCREEN_W) { /* else the quad covers it all (D69) */
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
   glActiveTexture(GL_TEXTURE1);
   if (g_present_capture) {
-    glBindTexture(GL_TEXTURE_2D, s_ptex[slot]);
+    /* the picture's own texture, or the target it still is (D69) */
+    glBindTexture(GL_TEXTURE_2D, s_psrc[slot].tex ? s_psrc[slot].tex : s_ptex[slot]);
+    if (s_psrc[slot].tex)
+      s_st.pres_direct++;
   } else {
     const uint16_t *px = port_present_slot_pixels(slot);
     static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
@@ -2517,6 +2701,18 @@ void gl_report(int vblank) {
            s_st.copies, s_st.moves, s_st.readbacks, s_st.replays,
            (unsigned)(s_st.readback_us / 1000), (unsigned)(s_st.readback_us % 1000 / 10),
            s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0);
+  if (s_st.captures) {
+    int i, ram = 0;
+    for (i = 0; i < s_ntargets; i++)
+      ram += s_targets[i].cdram == 0;
+    vita_log("gpu %d: %u presentation pictures; %u copies (%u before a later write), %u handed "
+             "their target's texture, %u presents from a target; %u atlas decode passes; "
+             "%d of %d targets in main RAM; vitaGL free KB: CDRAM %u, RAM %u (gpu_direct=%d, D69)",
+             vblank, s_st.captures, s_st.pres_copies, s_st.pres_late, s_st.pres_handed,
+             s_st.pres_direct, s_st.decodes, ram, s_ntargets,
+             (unsigned)(vglMemFree(VGL_MEM_VRAM) >> 10), (unsigned)(vglMemFree(VGL_MEM_RAM) >> 10),
+             g_vita_opts.gpu_direct);
+  }
   if (s_sample.n)
     vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
              s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,

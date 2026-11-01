@@ -1,4 +1,4 @@
-# D70: as E1 with the 28-byte vertex
+# D70: as F1 with the 28-byte vertex
 interp=1
 config_version=3
 interp_budget=0
