@@ -16,6 +16,7 @@
  * reach us through -Wl,--wrap (CMakeLists.txt), so src/platform/common and
  * the linux32 host don't change. */
 #include "vita.h"
+#include "watchdog.h"
 #include "psx_cd.h"
 #include "psx_hooks.h"
 #include "psx_spu.h"
@@ -200,10 +201,18 @@ void vita_mixer_init(void) {
     return;
   }
   s_running = 1;
+  vita_watchdog_thread(WD_T_MIXER, th);
   vita_log("mixer: thread on core 1%s, priority 0x%x; game thread priority 0x%x, affinity %08x",
            g_vita_opts.mixer == 2 ? " (lockstep)" : "", PRIORITY,
            (unsigned)sceKernelGetThreadCurrentPriority(),
            (unsigned)sceKernelGetThreadCpuAffinityMask(sceKernelGetThreadId()));
+}
+
+/* The hang line (watchdog.c, D71). */
+int vita_mixer_where(unsigned *posted, unsigned *done) {
+  *posted = s_head;
+  *done = s_tail;
+  return s_phase;
 }
 
 /* Every posted packet done. */

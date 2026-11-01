@@ -4,6 +4,7 @@
  * Vita3K runs. The states go to ux0:data/spyro/save/state<N>.bin, next to
  * the memory card. */
 #include "vita.h"
+#include "watchdog.h"
 #include "../../game/savestate.h"
 #include "menu_opts.h"
 #include "menu_panel.h"
@@ -30,12 +31,14 @@ static SceUInt64 s_t0; /* when the save or load began, for the log */
 
 void savestate_plat_audio(int mode) {
   s_t0 = sceKernelGetProcessTimeWide();
+  g_wd.game_ctx = WD_CTX_STATE; /* the hang line's breadcrumb (D71) */
   vita_mixer_drain(); /* nothing in flight; the XA FIFO is this thread's */
   if (mode == PSX_STATE_SAVE)
     vita_mixer_state(0);
 }
 
 void savestate_plat_audio_done(int mode) {
+  g_wd.game_ctx = WD_CTX_PLAY;
   if (mode == PSX_STATE_LOAD) {
     vita_mixer_state(1);
     vita_audio_clear();

@@ -13,6 +13,7 @@
  * changes. Files are the disc's and never written, so a window never goes
  * stale. */
 #include "vita.h"
+#include "watchdog.h"
 #include "psx_cd.h"
 #include "psx_xa.h"
 
@@ -58,7 +59,9 @@ static int reader_main(SceSize args, void *argp) {
   (void)argp;
   for (;;) {
     int i;
+    g_wd.xa = 0; /* breadcrumbs (watchdog.c, D71) */
     sceKernelWaitSema(s_sema, 1, NULL);
+    g_wd.xa = 1;
     for (i = 0; i < NWIN; i++) {
       Window *w = &s_win[i];
       PsxCdXaLoc loc;
@@ -114,6 +117,7 @@ void vita_xa_ahead_init(void) {
     return;
   }
   s_on = 1;
+  vita_watchdog_thread(WD_T_XA, th);
   vita_log("xa: music read ahead in %d-sector windows on core 1, priority 0x%x (xa_ahead=1, D64)",
            WIN, PRIORITY);
 }

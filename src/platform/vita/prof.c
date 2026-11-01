@@ -5,6 +5,7 @@
  * points are wrapped at link time (-Wl,--wrap=..., src/platform/vita/
  * CMakeLists.txt), so neither PsyCross nor gpu_soft.c changes. */
 #include "vita.h"
+#include "watchdog.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
@@ -37,12 +38,14 @@ void prof_enter(int part) {
   if (s_depth < (int)(sizeof s_stack / sizeof s_stack[0]))
     s_stack[s_depth] = part;
   s_depth++;
+  g_wd.game_part = part; /* the hang line's breadcrumb (watchdog.c, D71) */
 }
 
 void prof_leave(void) {
   charge();
   if (s_depth > 0)
     s_depth--;
+  g_wd.game_part = s_depth ? s_stack[s_depth - 1] : PROF_GAME;
 }
 
 /* Once per vblank, after the wait: the slowest vblank's busy time. */

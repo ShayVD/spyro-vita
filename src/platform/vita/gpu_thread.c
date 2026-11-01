@@ -39,6 +39,7 @@
  * the render thread except through the sync calls above. */
 #include "vita.h"
 #include "gpu_rt.h"
+#include "watchdog.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <psp2/kernel/cpu.h>
@@ -208,6 +209,7 @@ static int rt_main(SceSize args, void *argp) {
       /* nothing to run: sleep until the game thread posts (it signals only
        * when it sees s_rt_sleeping, so nothing is lost either way) */
       __atomic_store_n(&s_rt_sleeping, 1, __ATOMIC_SEQ_CST);
+      g_wd.rt = 0; /* breadcrumbs (watchdog.c, D71) */
       if (__atomic_load_n(&s_wpub, __ATOMIC_SEQ_CST) != r) {
         if (!__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
           sceKernelWaitSema(s_rt_sema, 1, NULL); /* its signal is on the way */
@@ -218,6 +220,7 @@ static int rt_main(SceSize args, void *argp) {
     }
     c = (const Cmd *)(s_ring + (r & (RING - 1)));
     t0 = now_us();
+    g_wd.rt = c->type + 1, g_wd.rt_runs++;
     run(c);
     s_rt_busy_us += (uint32_t)(now_us() - t0);
     if (c->type == C_PRESENT) { /* what the picture since the last one took */
@@ -245,6 +248,7 @@ static void game_wait(int why, int k, uint32_t target) {
     return;
   t0 = now_us();
   prof_enter(PROF_WAIT);
+  g_wd.rt_wait = why + 1;
   while (!reached(k, target)) {
     SceUInt tmo = 5000000; /* start-up's shader compile takes seconds */
     s_game_target = target;
@@ -264,6 +268,7 @@ static void game_wait(int why, int k, uint32_t target) {
                  (unsigned)s_nposted, (unsigned)s_done[K_CMDS]);
     }
   }
+  g_wd.rt_wait = 0;
   prof_leave();
   s_wait_us[why] += now_us() - t0;
   s_waits[why]++;
@@ -368,6 +373,7 @@ static int start(void) {
     return -1;
   }
   g_rt_active = 1;
+  vita_watchdog_thread(WD_T_RENDER, th);
   /* the game thread on core 0: the mixer has core 1 (D37), this core 2 */
   sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
   vita_log("render: thread on core 2, priority 0x%x; game thread on core 0 (affinity %08x), "
