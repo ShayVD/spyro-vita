@@ -130,7 +130,8 @@ endforeach()
 # --fast-render) picks the hand C or the unit at each call.
 set(M2C_RENDER_HAND
   asm/renderers/r_cyclorama.s:func_8004EBA8
-  asm/renderers/r_moby.s:func_8001F798)
+  asm/renderers/r_moby.s:func_8001F798
+  asm/renderers/r_moby.s:func_80022A2C)
 set(M2C_RENDER_FILES)
 foreach(e ${M2C_RENDER_HAND})
   string(REPLACE ":" ";" e "${e}")

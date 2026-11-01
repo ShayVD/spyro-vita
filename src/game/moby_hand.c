@@ -12,7 +12,10 @@
  * vertices into the scratchpad, picks the high- or low-detail faces and
  * colours (fading between them, or into the fog colour), then sorts each
  * visible face into a small bucket table by depth and links the buckets into
- * the world OT. */
+ * the world OT.
+ *
+ * func_80022A2C draws the lit mobys and the HUD's models (further down);
+ * func_80020F34 the specular ones, on func_8001F798's set-up. */
 #include "render_hand.h"
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
@@ -850,3 +853,757 @@ static u32 MobyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
 }
 
 HAND_RENDERER(func_8001F798, MobyDraw)
+
+/* ---- func_80022A2C: the lit mobys and the HUD's models ----
+ *
+ * Each moby in the list at D_8006FCF4+0x2400 (NULL-ended) is culled and
+ * drawn in one go: a box test against the view, its rotation from its angles
+ * (or, for a HUD model, a fixed matrix and its position as the screen
+ * offset), its vertices transformed into the scratchpad, its vertex colours
+ * lit from its normals (to D_8006FCF4+0x2A00), and its faces sorted into the
+ * buckets and linked into the world OT's (or the HUD OT's) slot for its
+ * depth, after a draw-mode primitive when it has semi-transparent faces. */
+
+extern char g_Camera[];
+extern char g_Models[];
+extern char g_MobyShadows[]; /* word 2: the shadow list's next entry */
+extern char g_HudOT[];
+extern char D_8006CBF8[];    /* sines, 256 half words (cosines from +0x80) */
+extern char D_800770C8[];    /* the light's colour, 3 words */
+extern char D_8006E3D8[];    /* base colours by specular type */
+extern char D_8006E44C[];    /* shiny faces' two colours by specular type */
+
+#define gte_mvmva_rt_v0() m2c_gte_0x486012()  /* MVMVA sf 1, R x V0 */
+#define gte_mvmva_rt_ir() m2c_gte_0x49E012()  /* MVMVA sf 1, R x IR */
+#define gte_mvmva_lc_ir0() m2c_gte_0x45E012() /* MVMVA sf 0, LCM x IR */
+#define gte_cc() m2c_gte_0x138041C()          /* CC, sf 1 */
+
+enum {
+  TBL_LIT = 0x2400,         /* the lit mobys to draw, NULL-ended */
+  TBL_LIT_COLOURS = 0x2A00, /* their lit vertex colours */
+};
+/* The scratchpad from 0x3E0: the camera's position and matrix. */
+#define SCRATCH_CAMERA 0x3E0u
+
+/* A Moby's fields this uses (include/moby.h). */
+enum {
+  MOBY_POS = 0xC,       /* x, y, z words */
+  MOBY_SHADOW_DIST = 0x1C,
+  MOBY_CLASS = 0x36,
+  MOBY_ANGLES = 0x44,   /* m_Rotation x, y, z bytes, m_DepthOffset */
+  MOBY_SPECULAR = 0x4C, /* m_SpecularMetalColor[3], m_SpecularMetalType */
+  MOBY_RADIUS = 0x50,   /* m_RenderRadius (bit 7: a HUD model) */
+  MOBY_WAS_DRAWN = 0x51,
+  MOBY_SCALE = 0x57,    /* m_ScaleOverride */
+};
+
+/* A lit model (g_Models[class]): vertex count (signed byte), face count,
+ * a shadow byte, then its vertices (3 bytes each), colours (when unlit) and
+ * faces; from 0x10, a normal (3 signed bytes) per vertex. */
+typedef struct {
+  s8 m_NumVerts;
+  u8 m_NumFaces;
+  s8 m_Shadow;
+  u8 m_Pad;
+  u32 m_Verts;   /* bit 31 clear: (never on the PS1) */
+  u32 m_Colors;
+  u32 m_Faces;   /* 8 bytes each */
+} LitModel;
+
+/* The GTE's rotation matrix, as the asm keeps it in five registers. */
+typedef struct {
+  u32 r11r12, r13r21, r22r23, r31r32, r33;
+} Mat;
+
+static inline void MatToGte(const Mat *m) {
+  CTC2(m->r11r12, 0);
+  CTC2(m->r13r21, 1);
+  CTC2(m->r22r23, 2);
+  CTC2(m->r31r32, 3);
+  CTC2(m->r33, 4);
+}
+
+/* The matrix turned by an angle (a byte, doubled: the sine table's index),
+ * two of its columns from the matrix times a unit vector each (MVMVA). The
+ * three are the asm's, the same in func_8001F158 and func_800208FC. */
+static inline void MatTurnZ(Mat *m, u32 a) {
+  u32 c, s, x0, y0, z0, x1, y1, z1;
+  if (!a)
+    return;
+  c = AT16(D_8006CBF8 + 0x80 + a);
+  s = AT16(D_8006CBF8 + a);
+  MTC2(c & 0xFFFF, 0);
+  MTC2(s, 1);
+  gte_mvmva_rt_v0();
+  x0 = MFC2(9);
+  y0 = MFC2(10);
+  z0 = MFC2(11);
+  MTC2((0u - s) & 0xFFFF, 0);
+  MTC2(c, 1);
+  gte_mvmva_rt_v0();
+  m->r11r12 = (m->r11r12 & 0xFFFF0000) + (x0 & 0xFFFF);
+  m->r31r32 = (m->r31r32 & 0xFFFF0000) + (z0 & 0xFFFF);
+  x1 = MFC2(9);
+  y1 = MFC2(10);
+  z1 = MFC2(11);
+  m->r13r21 = (x1 & 0xFFFF) + (y0 << 16);
+  m->r22r23 = (m->r22r23 & 0xFFFF) + (y1 << 16);
+  m->r33 = z1 & 0xFFFF;
+  MatToGte(m);
+}
+
+static inline void MatTurnY(Mat *m, u32 a) {
+  u32 c, s, x0, y0, z0, x1, y1, z1;
+  if (!a)
+    return;
+  c = AT16(D_8006CBF8 + 0x80 + a);
+  s = AT16(D_8006CBF8 + a);
+  MTC2(c << 16, 0);
+  MTC2(s, 1);
+  gte_mvmva_rt_v0();
+  x0 = MFC2(9);
+  y0 = MFC2(10);
+  z0 = MFC2(11);
+  MTC2(0u - (s << 16), 0);
+  MTC2(c, 1);
+  gte_mvmva_rt_v0();
+  m->r11r12 = (m->r11r12 & 0xFFFF) + (x0 << 16);
+  m->r31r32 = (m->r31r32 & 0xFFFF) + (z0 << 16);
+  x1 = MFC2(9);
+  y1 = MFC2(10);
+  z1 = MFC2(11);
+  m->r13r21 = (m->r13r21 & 0xFFFF0000) + (x1 & 0xFFFF);
+  m->r22r23 = (y1 << 16) + (y0 & 0xFFFF);
+  m->r33 = z1 & 0xFFFF;
+  MatToGte(m);
+}
+
+static inline void MatTurnX(Mat *m, u32 a) {
+  u32 c, s, x0, y0, z0, x1, y1, z1;
+  if (!a)
+    return;
+  c = AT16(D_8006CBF8 + 0x80 + a);
+  s = AT16(D_8006CBF8 + a);
+  MTC2(0u, 1);
+  MTC2((s << 16) + c, 0);
+  gte_mvmva_rt_v0();
+  x0 = MFC2(9);
+  y0 = MFC2(10);
+  z0 = MFC2(11);
+  MTC2(((0u - s) & 0xFFFF) + (c << 16), 0);
+  MTC2(0u, 1);
+  gte_mvmva_rt_v0();
+  m->r13r21 = (m->r13r21 & 0xFFFF) + (y0 << 16);
+  x1 = MFC2(9);
+  y1 = MFC2(10);
+  z1 = MFC2(11);
+  m->r11r12 = (x1 << 16) + (x0 & 0xFFFF);
+  m->r31r32 = (z1 << 16) + (z0 & 0xFFFF);
+  m->r22r23 = (m->r22r23 & 0xFFFF0000) + (y1 & 0xFFFF);
+  MatToGte(m);
+}
+
+/* A lit model's vertex: 3 bytes, z 8 bits, x 9 and y 9 overlapping it by one
+ * (signed, z doubled). */
+static inline void LitVertexToV0(u32 w) {
+  u32 z = (u32)((s32)(w << 24) >> 23);
+  u32 x = (u32)((s32)(w << 16) >> 23);
+  u32 y = (u32)((s32)(w << 8) >> 23);
+  MTC2(x + (y << 16), 0);
+  MTC2(z, 1);
+}
+
+static inline u32 Load24(const u8 *p) {
+  return p[0] | (u32)p[1] << 8 | (u32)p[2] << 16;
+}
+
+/* A colour component (x16) as a byte, saturating at 0x1000. */
+static inline u32 Sat8(u32 v) {
+  return (s32)(v - 0x1000) < 0 ? v >> 4 : 0xFF;
+}
+
+/* The highlight: on a colour whose top nibble is set, IR (the light) above
+ * that nibble and the back colour's red brightens all three components. */
+static inline u32 Highlight(u32 col, u32 base, u32 rbk) {
+  u32 k = base >> 28, d;
+  if (!k)
+    return col;
+  d = MFC2(9) - (k << 7) - rbk;
+  if ((s32)d <= 0)
+    return col;
+  d <<= 1;
+  {
+    u32 r = MFC2(9) + d, g = MFC2(10) + d, b = MFC2(11) + d;
+    return Sat8(r) + (Sat8(g) << 8) + (Sat8(b) << 16);
+  }
+}
+
+/* The base colour into the GTE for CC: back colour, IR0 its scale, RGB
+ * white. The normal must be in IR (GPF scales it by IR0). */
+static inline void LightNormal(u32 base) {
+  const u32 rbk = (base << 4) & 0xFF0, gbk = (base >> 4) & 0xFF0, bbk = (base >> 12) & 0xFF0;
+  MTC2((base >> 23) & 0x1E, 8);
+  gte_gpf0();
+  MTC2(0xFFFFFFu, 6);
+  CTC2(rbk, 13);
+  CTC2(gbk, 14);
+  CTC2(bbk, 15);
+  gte_cc();
+}
+
+/* What the lit face loop works with. */
+typedef struct {
+  u32 prim;          /* t9 */
+  u32 lowest;        /* s2 */
+  u32 highest;       /* s3 */
+  u32 zbias;         /* t8 */
+  u32 flags;         /* s7: clip (bit 31), semi-transparent (1), shiny (2) */
+  u32 spec;          /* lo: the moby's specular word */
+  const u8 *colours; /* s4 */
+} LitCtx;
+
+static inline void LitLink(LitCtx *c, u32 bucket, u32 size) {
+  u32 *b = (u32 *)(uintptr_t)bucket;
+  u32 last = b[0];
+  b[0] = c->prim;
+  if (last) {
+    u32 t = MIPS_KUSEG(last);
+    AT16(t) = (u16)c->prim;
+    AT8(t + 2) = (u8)(c->prim >> 16);
+  } else {
+    if ((s32)(c->lowest - bucket) > 0)
+      c->lowest = bucket;
+    b[1] = c->prim;
+    if ((s32)(c->highest - bucket) < 0)
+      c->highest = bucket;
+  }
+  c->prim += size;
+}
+
+#define LIT_DEPTH(i) WORD_AT(SCRATCH_BASE + SCRATCH_DEPTHS, (i))
+#define LIT_BUCKET(sum) (((u32)((s32)(sum) >> 5) << 3) + PSX_ADDR(D_8006FCF4 + TBL_BUCKETS))
+
+/* A Gouraud face (bit 0 clear): a quad, or a triangle when its last two
+ * vertices are the same. xy: the screen positions; NCLIP has (0 1 2). */
+static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
+  const u32 p = c->prim;
+  u32 col0, col1, col2, sum;
+  if (i[2] == i[3]) {
+    if ((s32)MFC2(24) <= 0)
+      return;
+    col0 = WORD_AT(c->colours, (cw >> 21) & 0x1FC);
+    col1 = WORD_AT(c->colours, (cw >> 14) & 0x1FC);
+    col2 = WORD_AT(c->colours, (cw >> 7) & 0x1FC);
+    AT32(p + 0x8) = xy[0];
+    AT32(p + 0x10) = xy[1];
+    AT32(p + 0x18) = xy[2];
+    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[2]) - c->zbias;
+    AT32(p + 0x4) = col0 + 0x30000000u;
+    if ((s32)sum <= 0)
+      return;
+    AT32(p + 0xC) = col1;
+    AT32(p + 0x14) = col2;
+    AT32(p) = 0x06000000u;
+    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C);
+  } else {
+    u32 m = MFC2(24), col3;
+    MTC2(xy[3], 12);
+    if ((s32)m <= 0) {
+      gte_nclip();
+      if ((s32)MFC2(24) >= 0)
+        return;
+    }
+    col0 = WORD_AT(c->colours, (cw >> 21) & 0x1FC) + 0x38000000u;
+    col1 = WORD_AT(c->colours, (cw >> 14) & 0x1FC);
+    col2 = WORD_AT(c->colours, (cw >> 7) & 0x1FC);
+    col3 = WORD_AT(c->colours, cw & 0x1FC);
+    AT32(p + 0x8) = xy[0];
+    AT32(p + 0x10) = xy[1];
+    AT32(p + 0x18) = xy[2];
+    AT32(p + 0x20) = xy[3];
+    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+    if ((s32)sum <= 0)
+      return;
+    AT32(p + 0x4) = col0;
+    AT32(p + 0xC) = col1;
+    AT32(p + 0x14) = col2;
+    AT32(p + 0x1C) = col3;
+    AT32(p) = 0x08000000u;
+    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24);
+  }
+}
+
+/* The face's normal, cw's three high bytes (signed), into IR. */
+static inline void FaceNormalToIr(u32 cw) {
+  MTC2((u32)((s32)cw >> 24), 11);
+  MTC2((u32)((s32)(cw << 8) >> 24), 9);
+  MTC2((u32)((s32)(cw << 16) >> 24), 10);
+}
+
+/* Not facing the camera: the first half's NCLIP, then (for a quad) the
+ * second's, (3 1 2), which faces it when negative. */
+static inline int LitBackFacing(const u32 *i, const u32 *xy) {
+  MTC2(xy[3], 12);
+  if (i[2] == i[3])
+    return 1;
+  gte_nclip();
+  return (s32)MFC2(24) >= 0;
+}
+
+/* A flat face (bit 0, not bit 1): one colour, lit from the face's normal
+ * (POLY_F3/F4), semi-transparent for specular type 0. */
+static inline void LitFlat(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
+  const u32 p = c->prim;
+  const u32 type = (u32)((s32)c->spec >> 22);
+  u32 base, sum, bucket, tag, code, size, col;
+  if ((s32)MFC2(24) <= 0 && LitBackFacing(i, xy))
+    return;
+  base = AT32(PSX_ADDR(D_8006E3D8) + type);
+  FaceNormalToIr(cw);
+  AT32(p + 0x8) = xy[0];
+  AT32(p + 0xC) = xy[1];
+  gte_mvmva_rt_ir();
+  AT32(p + 0x10) = xy[2];
+  AT32(p + 0x14) = xy[3];
+  LightNormal(base);
+  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+  if ((s32)sum <= 0)
+    return;
+  bucket = LIT_BUCKET(sum);
+  if (i[2] == i[3]) {
+    tag = 0x04000000u;
+    code = 0x20000000u;
+    size = 0x14;
+  } else {
+    tag = 0x05000000u;
+    code = 0x28000000u;
+    size = 0x18;
+  }
+  if (!type) {
+    code += 0x02000000u;
+    c->flags |= 1;
+  }
+  col = MFC2(22);
+  AT32(p) = tag;
+  AT32(p + 0x4) = Highlight(col, base, (base << 4) & 0xFF0) | code;
+  LitLink(c, bucket, size);
+}
+
+/* A shiny colour component: 0 below 0, 0xFF from 0xFFF. */
+static inline u32 Clamp8(u32 v) {
+  const u32 over = v - 0xFFF;
+  if ((s32)v < 0)
+    v = 0;
+  v >>= 4;
+  return (s32)over >= 0 ? 0xFF : v;
+}
+
+/* A shiny face (bits 0 and 1): flat, its colour from the face normal's
+ * light (the light colour matrix) between two colours by specular type.
+ * Near the camera it's drawn from both sides, a back face opaque and darker;
+ * further away, front faces only, semi-transparent. */
+static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
+  const u32 p = c->prim;
+  const u32 colours = PSX_ADDR(D_8006E44C) + (u32)((s32)c->spec >> 21);
+  u32 m = MFC2(24), opaque, c1, c2, sum, k, r, g, b, tag, code, size;
+  if ((s32)(CFC2(7) - 0x800) < 0) {
+    opaque = (m >> 31) << 25;
+  } else {
+    opaque = 0x02000000u;
+    if ((s32)m <= 0) {
+      if (LitBackFacing(i, xy))
+        return;
+      m = MFC2(24);
+    }
+  }
+  AT32(p + 0x8) = xy[0];
+  AT32(p + 0xC) = xy[1];
+  AT32(p + 0x10) = xy[2];
+  AT32(p + 0x14) = xy[3];
+  FaceNormalToIr(cw);
+  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]);
+  gte_mvmva_rt_ir();
+  c1 = AT32(colours);
+  c2 = AT32(colours + 4);
+  sum -= c->zbias;
+  gte_mvmva_lc_ir0();
+  c->flags |= 2;
+  k = MFC2(25);
+  MTC2((c2 << 4) & 0xFF0, 9);
+  MTC2((c2 >> 4) & 0xFF0, 10);
+  MTC2((c2 >> 12) & 0xFF0, 11);
+  k = (u32)((s32)k >> 8);
+  if ((s32)m < 0) {
+    k = (u32)((s32)k >> 2);
+    c1 >>= 1;
+    sum += 0x200;
+  }
+  MTC2(k, 8);
+  gte_gpf0();
+  r = ((c1 << 4) & 0xFF0) + (u32)((s32)MFC2(25) >> 12);
+  g = ((c1 >> 4) & 0xFF0) + (u32)((s32)MFC2(26) >> 12);
+  b = ((c1 >> 12) & 0xFF0) + (u32)((s32)MFC2(27) >> 12);
+  k -= 0x5C0;
+  if ((s32)k > 0) {
+    k <<= 3;
+    r += k;
+    g += k;
+    b += k;
+  }
+  r = Clamp8(r);
+  g = Clamp8(g);
+  b = Clamp8(b);
+  if (i[2] == i[3]) {
+    tag = 0x04000000u;
+    code = 0x22000000u;
+    size = 0x14;
+  } else {
+    tag = 0x05000000u;
+    code = 0x2A000000u;
+    size = 0x18;
+  }
+  AT32(p) = tag;
+  AT32(p + 0x4) = code - opaque + r + (g << 8) + (b << 16);
+  sum += LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]);
+  if ((s32)sum <= 0)
+    return;
+  LitLink(c, LIT_BUCKET(sum), size);
+}
+
+/* abs, as the asm's `neg` when negative. */
+static inline u32 Abs32(u32 v) {
+  return (s32)v < 0 ? 0u - v : v;
+}
+
+/* Cull and draw one lit moby. 0: next moby; -1: the draw distance hook
+ * ended the list. */
+static int LitMoby(u32 moby, u32 *shadow) {
+  u8 *const m = HPTR(u8, moby);
+  u32 *const scr = (u32 *)SCRATCH_BASE;
+  const u32 half = AT16(m + MOBY_RADIUS); /* radius | was drawn << 8 */
+  const LitModel *model;
+  u32 x, y, z, zone, angles, clip, dqa, drawn, zbias, n, i, all_out = ~0u, verts, model_addr;
+  const u8 *vp;
+  const u32 *f, *f_end;
+  Mat r;
+  LitCtx c;
+
+  x = AT32(m + MOBY_POS);
+  m[MOBY_WAS_DRAWN] = 0;
+  if (g_lod_pass && (port_lod_moby_skip(half, moby) || port_lod_lit_full()))
+    return (half & 0x100) ? 0 : -1;
+  if (!(half & 0x80)) {
+    /* In view: a box of the radius (wider when it was drawn last frame),
+     * then the view frustum after the camera's matrix. */
+    const u32 *cam = scr + SCRATCH_CAMERA / 4;
+    u32 box = (u32)((s32)(half << 24) >> 16) + ((half & 0x100) << 1), so, shadow_dist;
+    box = PORT_LOD_MOBY_BOX(box, moby);
+    x = (u32)((s32)(x - cam[0]) >> 2);
+    if ((s32)(x + box) <= 0 || (s32)(x - box) >= 0)
+      return 0;
+    y = (u32)((s32)(cam[1] - AT32(m + MOBY_POS + 4)) >> 2);
+    if ((s32)(y + box) <= 0 || (s32)(y - box) >= 0)
+      return 0;
+    z = (u32)((s32)(cam[2] - AT32(m + MOBY_POS + 8)) >> 2);
+    if ((s32)(z + box) <= 0 || (s32)(z - box) >= 0)
+      return 0;
+    r.r11r12 = cam[3];
+    r.r13r21 = cam[4];
+    r.r22r23 = cam[5];
+    r.r31r32 = cam[6];
+    r.r33 = cam[7];
+    MatToGte(&r);
+    MTC2(x, 11);
+    MTC2(y, 9);
+    MTC2(z, 10);
+    gte_mvmva_rt_ir();
+    z = MFC2(27);
+    y = MFC2(26);
+    x = MFC2(25);
+    if ((s32)(z - box) >= 0 || (s32)(z + 0x80) <= 0)
+      return 0;
+    if ((s32)(((Abs32(x) - 0x66) << 2) - (z + 0x4D) - ((z + 0x4D) << 1)) >= 0)
+      return 0;
+    shadow_dist = AT32(m + MOBY_SHADOW_DIST);
+    if (g_lod_pass)
+      shadow_dist = 0;
+    model_addr = AT32(g_Models + AT16(m + MOBY_CLASS) * 4);
+    model = HPTR(const LitModel, model_addr);
+    if ((s32)shadow_dist < 0) {
+      AT32(*shadow) = moby; /* the shadow list: moby, shadow byte */
+      if ((s32)(z - 0x1100) < 0) {
+        *shadow += 8;
+        AT32(*shadow - 4) = (u32)(s32)model->m_Shadow;
+      }
+    }
+    {
+      const u32 ay = Abs32(y) - 0x79;
+      if ((s32)((z + 0x28) - ay - (ay << 1)) <= 0)
+        return 0;
+    }
+    /* Clip unless it's well inside the view. */
+    clip = 0x80000000u;
+    angles = AT32(m + MOBY_ANGLES);
+    {
+      const u32 ax = Abs32(x) + 0x66, zx = z - 0x4D;
+      so = m[MOBY_SCALE];
+      if ((s32)((ax << 2) - zx - (zx << 1)) < 0) {
+        const u32 ay = Abs32(y) + 0x79, zy = z - 0x28;
+        if ((s32)(zy - ay - (ay << 1)) > 0)
+          clip = 0;
+      }
+    }
+    x <<= 1;
+    y <<= 1;
+    z <<= 1;
+    zone = (u32)((s32)z >> 6);
+    dqa = 0;
+    if (so) {
+      MTC2(so, 8);
+      MTC2(x, 9);
+      MTC2(y, 10);
+      MTC2(z, 11);
+      gte_gpf0();
+      z = (u32)((s32)MFC2(27) >> 5);
+      y = (u32)((s32)MFC2(26) >> 5);
+      x = (u32)((s32)MFC2(25) >> 5);
+    }
+  } else {
+    /* A HUD model: at its screen position (x, y), z its depth; a fixed
+     * matrix (the widescreen hooks narrow it and the offset, present.c). */
+    u32 ofx = x << 16;
+    const u32 ofy = AT32(m + MOBY_POS + 4) << 16;
+    ofx = PORT_WS_HUD_OFX(ofx);
+    CTC2(ofx, 24);
+    CTC2(ofy, 25);
+    x = 0;
+    y = 0;
+    z = (u32)((s32)AT32(m + MOBY_POS + 8) >> 1);
+    zone = (u32)((s32)z >> 6);
+    clip = 0;
+    angles = AT32(m + MOBY_ANGLES);
+    model_addr = AT32(g_Models + AT16(m + MOBY_CLASS) * 4);
+    model = HPTR(const LitModel, model_addr);
+    r.r11r12 = 0x1000;
+    r.r13r21 = 0;
+    r.r22r23 = 0xA00;
+    r.r31r32 = 0;
+    r.r33 = 0x1000;
+    r.r11r12 = PORT_WS_HUD_R11(r.r11r12);
+    MatToGte(&r);
+    dqa = 1;
+  }
+  CTC2(dqa, 27); /* DQA: 1 for a HUD model */
+  drawn = 1;
+  PORT_LOD_MOBY_DRAWN(drawn, moby);
+  m[MOBY_WAS_DRAWN] = (u8)drawn;
+  zone -= (u32)((s32)angles >> 24); /* the depth offset */
+  if ((s32)zone < 0)
+    zone = 0;
+  zbias = z - 0x100;
+  zbias = (s32)zbias >= 0 ? zbias << 2 : 0;
+  CTC2(x, 5);
+  CTC2(y, 6);
+  CTC2(z, 7);
+  MatTurnZ(&r, (angles >> 15) & 0x1FE);
+  MatTurnY(&r, (angles & 0xFF00) >> 7);
+  MatTurnX(&r, (angles & 0xFF) << 1);
+
+  /* The vertices, into the scratchpad: screen positions (or clip words),
+   * depths from 0x200. */
+  verts = model->m_Verts;
+  vp = HPTR(const u8, verts);
+  n = (u32)(s32)model->m_NumVerts;
+  LitVertexToV0(AT32(vp));
+  i = 0;
+  do {
+    u32 sxy, sz;
+    gte_rtps();
+    vp += 3;
+    LitVertexToV0(Load24(vp));
+    sxy = MFC2(14);
+    sz = MFC2(19);
+    if (clip) {
+      const u32 flags = ClipFlags(sxy);
+      scr[SCRATCH_DEPTHS / 4 + i] = sz;
+      all_out &= flags;
+      scr[i] = flags;
+    } else {
+      scr[i] = sxy;
+      scr[SCRATCH_DEPTHS / 4 + i] = sz;
+    }
+  } while (++i != n);
+  if (clip && (s32)(all_out & 0xF) > 0)
+    return 0; /* every vertex off the same side */
+
+  /* The vertex colours: each normal turned by the matrix, lit (CC) from the
+   * moby's base colour, never darker than it. */
+  c.colours = HPTR(const u8, model->m_Colors);
+  if (model_addr + 0x10 != (verts & 0x7FFFFFFF)) {
+    const u32 spec = AT32(m + MOBY_SPECULAR);
+    const u32 base = AT32(PSX_ADDR(D_8006E3D8) + (u32)((s32)spec >> 22));
+    const u32 floor = (base << 8) >> 8;
+    const s8 *nrm = (const s8 *)model + 0x10;
+    u32 *out = (u32 *)(D_8006FCF4 + TBL_LIT_COLOURS);
+    const u32 count = (u32)(s32)model->m_NumVerts;
+    i = 0;
+    do {
+      u32 col;
+      MTC2((u32)(s32)nrm[0], 11);
+      MTC2((u32)(s32)nrm[1], 9);
+      MTC2((u32)(s32)nrm[2], 10);
+      gte_mvmva_rt_ir();
+      nrm += 3;
+      LightNormal(base);
+      col = MFC2(22);
+      if ((s32)(col - floor) < 0)
+        col = floor;
+      else
+        col = Highlight(col, base, (base << 4) & 0xFF0);
+      out[i] = col;
+    } while (++i != count);
+    c.colours = (const u8 *)(D_8006FCF4 + TBL_LIT_COLOURS);
+  }
+
+  /* The faces, into the buckets by depth (a sum, less the bias, over 32). */
+  c.spec = AT32(m + MOBY_SPECULAR);
+  f = HPTR(const u32, model->m_Faces);
+  f_end = f + model->m_NumFaces * 2;
+  CTC2(zone, 28); /* DQB keeps the zone */
+  c.prim = *(u32 *)D_800757B0;
+  c.lowest = PSX_ADDR(D_8006FCF4 + TBL_BUCKETS) + 0x900;
+  c.highest = PSX_ADDR(D_8006FCF4 + TBL_BUCKETS);
+  c.zbias = zbias;
+  c.flags = clip;
+  for (; f != f_end; f += 2) {
+    const u32 fw = f[0], cw = f[1];
+    u32 idx[4], xy[4];
+    idx[0] = (fw >> 21) & 0x1FC;
+    idx[1] = (fw >> 14) & 0x1FC;
+    idx[2] = (fw >> 7) & 0x1FC;
+    idx[3] = fw & 0x1FC;
+    xy[0] = WORD_AT(scr, idx[0]);
+    xy[1] = WORD_AT(scr, idx[1]);
+    xy[2] = WORD_AT(scr, idx[2]);
+    xy[3] = WORD_AT(scr, idx[3]);
+    if (c.flags & 0x80000000u) {
+      if ((s32)(xy[0] & xy[1] & xy[2] & xy[3] & 0xF) > 0)
+        continue;
+      xy[0] = CLIP_XY(xy[0]);
+      xy[1] = CLIP_XY(xy[1]);
+      xy[2] = CLIP_XY(xy[2]);
+      xy[3] = CLIP_XY(xy[3]);
+    }
+    MTC2(xy[0], 12);
+    MTC2(xy[1], 13);
+    MTC2(xy[2], 14);
+    gte_nclip();
+    if (!(fw & 1))
+      LitGouraud(&c, cw, idx, xy);
+    else if (!(fw & 2))
+      LitFlat(&c, cw, idx, xy);
+    else
+      LitShiny(&c, cw, idx, xy);
+  }
+
+  /* The screen offset back; the buckets, highest first, into one chain
+   * for the OT slot of its zone (the HUD OT's first for a HUD model at
+   * zone 0), after a draw-mode primitive (the blend mode for its
+   * semi-transparent faces) when it has any. */
+  CTC2(0x1000000u, 24);
+  CTC2(0x780000u, 25);
+  *(u32 *)D_800757B0 = c.prim;
+  if ((s32)(c.highest - c.lowest) >= 0) {
+    u32 b = c.highest, tail = AT32(b), head = AT32(b + 4), ot, slot, last, mode;
+    AT32(b) = 0;
+    AT32(b + 4) = 0;
+    while (b != c.lowest) {
+      const u32 h = AT32(b - 4);
+      u32 t;
+      b -= 8;
+      if (!h)
+        continue;
+      t = MIPS_KUSEG(tail);
+      AT16(t) = (u16)h;
+      AT8(t + 2) = (u8)(h >> 16);
+      tail = AT32(b);
+      AT32(b) = 0;
+      AT32(b + 4) = 0;
+    }
+    ot = *(u32 *)g_WorldOT;
+    slot = CFC2(28); /* the zone */
+    if (!slot && CFC2(27))
+      ot = *(u32 *)g_HudOT;
+    slot <<= 3;
+    slot = MIPS_KUSEG(ot + slot);
+    last = AT32(slot);
+    mode = c.flags & 0xF;
+    if (mode) {
+      const u32 dr = c.prim;
+      AT32(dr) = 0x02000000u;
+      AT32(dr + 4) = 0xE1000000u | 0x600 | ((mode - 1) << 5);
+      AT32(dr + 8) = 0;
+      *(u32 *)D_800757B0 = dr + 0xC;
+      AT32(slot) = dr;
+      if (last) {
+        const u32 t = MIPS_KUSEG(last);
+        AT16(t) = (u16)dr;
+        AT8(t + 2) = (u8)(dr >> 16);
+      } else {
+        AT32(slot + 4) = dr;
+      }
+      last = dr;
+    }
+    AT32(slot) = tail;
+    if (last) {
+      const u32 t = MIPS_KUSEG(last);
+      AT16(t) = (u16)head;
+      AT8(t + 2) = (u8)(head >> 16);
+    } else {
+      AT32(slot + 4) = head;
+    }
+  }
+  return 0;
+}
+
+static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
+  u32 *const scr = (u32 *)SCRATCH_BASE;
+  const u32 *cam = (const u32 *)g_Camera;
+  const u32 *light = (const u32 *)D_800770C8;
+  u32 list = PSX_ADDR(D_8006FCF4 + TBL_LIT);
+  u32 shadow = ((u32 *)g_MobyShadows)[2];
+  (void)a0;
+  (void)a1;
+  (void)a2;
+  (void)a3;
+  hand_spill_regs();
+  scr[SCRATCH_CAMERA / 4 + 0] = cam[10]; /* position */
+  scr[SCRATCH_CAMERA / 4 + 1] = cam[11];
+  scr[SCRATCH_CAMERA / 4 + 2] = cam[12];
+  scr[SCRATCH_CAMERA / 4 + 3] = cam[0]; /* matrix */
+  scr[SCRATCH_CAMERA / 4 + 4] = cam[1];
+  scr[SCRATCH_CAMERA / 4 + 5] = cam[2];
+  scr[SCRATCH_CAMERA / 4 + 6] = cam[3];
+  scr[SCRATCH_CAMERA / 4 + 7] = cam[4];
+  /* the light colour matrix: the light's colour in each column */
+  CTC2((light[1] << 16) + light[0], 16);
+  CTC2((light[1] << 16) + light[0], 19);
+  CTC2((light[0] << 16) + light[2], 17);
+  CTC2((light[2] << 16) + light[1], 18);
+  CTC2(light[2], 20);
+  for (;;) {
+    const u32 moby = AT32(list);
+    list += 4;
+    if (moby && LitMoby(moby, &shadow) == 0)
+      continue;
+    if (PORT_LOD_MOBY_PASS2(1, 0)) {
+      list = PSX_ADDR(D_8006FCF4 + TBL_LIT);
+      continue;
+    }
+    break;
+  }
+  ((u32 *)g_MobyShadows)[2] = shadow;
+  return 0; /* v0 and v1 are dead at every caller (tools/oracle/ignore_ranges.txt) */
+}
+
+HAND_RENDERER(func_80022A2C, LitDraw)

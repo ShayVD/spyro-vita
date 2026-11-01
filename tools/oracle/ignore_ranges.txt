@@ -79,6 +79,12 @@ ret func_80050BD0
 # and whatever its last moby's loops left in v1; the hand C
 # (src/game/moby_hand.c, D69) returns the same v0.
 ret func_8001F798
+# The lit mobys' and HUD models' renderer is void (include/renderers.h 179),
+# called as a statement from C (src/gamestates/draw.c 609, 795, 1527, 1742,
+# 1851, 1895, 1944, 1963, 1984; overlays/flight.c 593) and from the credits
+# overlay's func_credits_8007BFD0 (void, above), whose next instruction
+# after the jal sets up a call to Memset16. The hand C returns 0.
+ret func_80022A2C
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that

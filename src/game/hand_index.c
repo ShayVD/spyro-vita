@@ -80,6 +80,7 @@ u32 func_80049FAC_gen__m2c();
 /* The hand-written renderers' units are always linked (render_hand.h). */
 u32 func_8004EBA8_gen__m2c();
 u32 func_8001F798_gen__m2c();
+u32 func_80022A2C_gen__m2c();
 
 const M2cEntry m2c_gen_index[] = {
 #if M2C_REF && !M2C_func_80033F08
@@ -120,5 +121,6 @@ const M2cEntry m2c_gen_index[] = {
 #endif
     GEN(0x8004EBA8u, func_8004EBA8),
     GEN(0x8001F798u, func_8001F798),
+    GEN(0x80022A2Cu, func_80022A2C),
     {0, 0, 0},
 };
