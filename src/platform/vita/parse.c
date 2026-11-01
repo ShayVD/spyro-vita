@@ -1,4 +1,4 @@
-/* The parse thread (config.txt parse_thread=1, decisions D69): PsyCross's
+/* The parse thread (config.txt parse_thread=1, decisions D71): PsyCross's
  * OT walk (ParsePrimitivesLinkedList and DrawAllSplits, which record the
  * render thread's commands) on a thread of its own, walking a copy of the
  * frame's primitives (src/platform/common/walk.c) while the game thread goes
@@ -58,21 +58,21 @@ void vita_cores_probe(void) {
                                     SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
   if (th < 0) {
     vita_log("cores: no thread of ours on core 3 (SCE_KERNEL_CPU_MASK_SYSTEM): "
-             "sceKernelCreateThread %08x (D69)", (unsigned)th);
+             "sceKernelCreateThread %08x (D71)", (unsigned)th);
     return;
   }
   mask = sceKernelGetThreadCpuAffinityMask(th);
   r = sceKernelStartThread(th, 0, NULL);
   if (r < 0) {
     vita_log("cores: a thread with core 3's mask was made (affinity %08x) but not started: %08x "
-             "(D69)", (unsigned)mask, (unsigned)r);
+             "(D71)", (unsigned)mask, (unsigned)r);
     sceKernelDeleteThread(th);
     return;
   }
   r = sceKernelWaitThreadEnd(th, &status, &tmo);
   if (r < 0) {
     vita_log("cores: a thread with core 3's mask (affinity %08x) didn't finish a %u ms spin in "
-             "1 s: %08x (D69)", (unsigned)mask, PROBE_US / 1000, (unsigned)r);
+             "1 s: %08x (D71)", (unsigned)mask, PROBE_US / 1000, (unsigned)r);
     sceKernelDeleteThread(th); /* fails if it is still running; it ends on its own */
     return;
   }
@@ -81,7 +81,7 @@ void vita_cores_probe(void) {
     unsigned share = s_probe_wall_us ? s_probe_ran_us * 100u / s_probe_wall_us : 0;
     s_core3_ok = s_probe_cpu0 == 3 && s_probe_cpu1 == 3 && share >= 50;
     vita_log("cores: a thread with core 3's mask (SCE_KERNEL_CPU_MASK_SYSTEM, affinity %08x) ran "
-             "on CPU %d to %d and had %u%% of a %u ms spin: core 3 %s (D69)",
+             "on CPU %d to %d and had %u%% of a %u ms spin: core 3 %s (D71)",
              (unsigned)mask, s_probe_cpu0, s_probe_cpu1, share, s_probe_wall_us / 1000,
              s_core3_ok ? "usable (parse_core=3 may use it)" : "not usable");
   }
@@ -178,7 +178,7 @@ void vita_parse_init(void) {
     return;
   }
   vita_log("parse: OT walk on its own thread, core %d, priority 0x%x, from a copy of the "
-           "primitives (parse_thread=1, D69)",
+           "primitives (parse_thread=1, D71)",
            s_core, PRIORITY);
 }
 

@@ -44,7 +44,7 @@
  * DrawOTag calls; Spyro builds and draws its OT in the same frame
  * (gamestates/draw.c), and the presentation passes (D30) do too.
  *
- * When the OT is walked later or elsewhere (walk.c, D69), the frame's table
+ * When the OT is walked later or elsewhere (walk.c, D71), the frame's table
  * goes with the list (psx_vcache_frame_take) and the next frame records
  * into a second one: the two tables take turns. */
 #include "psx_vcache.h"
@@ -86,7 +86,7 @@ typedef struct {
 } Entry;
 
 static Entry s_tab0[VC_SIZE];
-static Entry *s_tab = s_tab0, *s_tab1; /* the table recording; the other one (D69) */
+static Entry *s_tab = s_tab0, *s_tab1; /* the table recording; the other one (D71) */
 static const Entry *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
 static const GrVertex *s_base;
@@ -346,7 +346,7 @@ static void done_hook(void) {
   if (s_count > g_vcache_stats.peak)
     g_vcache_stats.peak = s_count;
   s_count = 0;
-  if (s_tab1) /* the other table records the next frame (D69) */
+  if (s_tab1) /* the other table records the next frame (D71) */
     s_tab = s_tab == s_tab0 ? s_tab1 : s_tab0;
   if (++s_gen == 0) { /* wrapped: no old entry may look current */
     memset(s_tab0, 0, sizeof s_tab0);

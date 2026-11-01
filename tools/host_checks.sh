@@ -4,7 +4,7 @@
 # Usage: [BIN=path/to/spyro] [DISC=disc/image] tools/host_checks.sh PREFIX -> logs/PREFIX-{demo,whole,routeA,routeB}
 # Compare two prefixes with cmp: the host is deterministic (decisions D38).
 # DISC: the extracted files (default disc/files) or a folder with the disc image (D60).
-# EXTRA: more options for every run (EXTRA=--walk-lazy: the OT walk from a copy, D69).
+# EXTRA: more options for every run (EXTRA=--walk-lazy: the OT walk from a copy, D71).
 cd "$(dirname "$0")/.."
 P=$1; B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
 run() { D=logs/$P-$1; shift; mkdir -p $D; tools/tc $B --disc $DISC --log $D/spyro.log --trace $D/trace.tsv --shot-dir $D $EXTRA "$@" > $D/stdout.txt 2>&1; echo "exit $?" >> $D/spyro.log; }

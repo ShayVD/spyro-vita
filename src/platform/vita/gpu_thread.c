@@ -272,7 +272,7 @@ static void game_wait(int why, int k, uint32_t target) {
 }
 
 /* Room for a command of `size` bytes (a multiple of 8) at s_w. With the
- * parse thread (D69) the ring has one writer at a time: that thread from a
+ * parse thread (D71) the ring has one writer at a time: that thread from a
  * DrawOTag's handover to the join, the game thread otherwise, so the game
  * thread joins first. */
 static Cmd *reserve(int type, uint32_t size) {
@@ -321,7 +321,7 @@ static void env_now(GlEnv *e) {
 }
 
 /* The display state when a DrawOTag handed its list to the parse thread
- * (D69): what the walk's draws see, as they would have in the DrawOTag. */
+ * (D71): what the walk's draws see, as they would have in the DrawOTag. */
 static GlEnv s_walk_env;
 
 void vita_gpu_walk_submitted(void) { env_now(&s_walk_env); }

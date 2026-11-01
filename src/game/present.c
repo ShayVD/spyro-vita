@@ -282,7 +282,7 @@ static int s_captured, s_capture_on;
 
 /* The capture of the area just drawn, into the platform's slot or (without
  * a platform capture) s_capture by StoreImage. With the OT walked later or
- * on another thread (D69) it waits for the walk (psx_walk_after): the
+ * on another thread (D71) it waits for the walk (psx_walk_after): the
  * area's y is the walk's draw environment, and the pixels are the walk's. */
 static void capture_area(void *arg) {
   RECT16 r;
@@ -302,7 +302,7 @@ static void capture_area(void *arg) {
   g_psyxVramFrozen = frozen;
 }
 
-/* The capture into a presentation slot, after the capture itself (D69) */
+/* The capture into a presentation slot, after the capture itself (D71) */
 static void commit_slot(void *arg) {
   int slot = *(const int *)arg;
   if (g_present_capture)
@@ -477,7 +477,7 @@ void PortPolySpace(void) {
   g_HudMobys = top;
 }
 
-/* The OT walked from a copy (walk.c, D69): the PS1 RAM a DrawOTag list can
+/* The OT walked from a copy (walk.c, D71): the PS1 RAM a DrawOTag list can
  * reach. The game links its OT buckets from primitive to primitive and ends
  * the chain at the terminator (order_table.c), so that's the primitives
  * written since the draw began, from the lower buffer (where a spanning draw
@@ -623,7 +623,7 @@ static void sectors_restore(void) {
 }
 
 /* PsyCross's draw and display environments, once a walk still running has
- * finished with them (D69) */
+ * finished with them (D71) */
 static void envs_take(void *arg) {
   (void)arg;
   s_drawenv_snap = activeDrawEnv;

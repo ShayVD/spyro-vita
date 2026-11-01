@@ -1,4 +1,4 @@
-/* The OT walk from a copy of the frame's primitives (walk.c, decisions D69):
+/* The OT walk from a copy of the frame's primitives (walk.c, decisions D71):
  * PsyCross's parse of a DrawOTag list, done later or on another thread while
  * the game writes its next frame. */
 #ifndef PSX_WALK_H

@@ -32,7 +32,7 @@ static void charge(void) {
   s_mark = t;
 }
 
-/* The parts are the game thread's: the parse thread (D69) runs the wrapped
+/* The parts are the game thread's: the parse thread (D71) runs the wrapped
  * GR_* calls too, and its own report counts its time. */
 void prof_enter(int part) {
   if (vita_parse_on_walker())

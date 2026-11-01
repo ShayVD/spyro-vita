@@ -107,7 +107,7 @@ void *port_poly_start(void *db_buf);
 void PortPolySpace(void);
 
 /* The PS1 RAM a DrawOTag list can reach, for the OT walk from a copy
- * (src/platform/common/walk.c, D69): a psx_walk.h PsxWalkRangesFn. */
+ * (src/platform/common/walk.c, D71): a psx_walk.h PsxWalkRangesFn. */
 struct PsxWalkRange;
 int port_present_prim_ranges(struct PsxWalkRange *r, int max);
 

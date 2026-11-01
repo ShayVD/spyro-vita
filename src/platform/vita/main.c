@@ -95,10 +95,10 @@
  *       parse_thread=1  with gpu=1 and render_thread=1, PsyCross's OT walk on
  *                       a thread of its own (core 1), walking a copy of the
  *                       frame's primitives while the game goes on (default
- *                       0, experimental: D69)
+ *                       0, experimental: D71)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
- *                       there; else core 1 (default 1; D69)
+ *                       there; else core 1 (default 1; D71)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -388,7 +388,7 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   read_config();
-  vita_cores_probe(); /* may a thread of ours run on core 3? (D69) */
+  vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
@@ -431,7 +431,7 @@ int main(int argc, char **argv) {
     vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
     sceKernelExitProcess(1);
   }
-  vita_parse_init(); /* after the render thread (D69) */
+  vita_parse_init(); /* after the render thread (D71) */
   vita_present_init();
   vita_picture_init();
   vita_pad_init();

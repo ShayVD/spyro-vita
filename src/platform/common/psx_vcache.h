@@ -46,7 +46,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out);
 void psx_vcache_set_base(const void *vertex_buffer);
 extern VCacheVert g_vcache_side[];
 
-/* The OT walked later or on another thread (walk.c, D69): the frame's
+/* The OT walked later or on another thread (walk.c, D71): the frame's
  * table, taken as its list is handed over (before DrawOTag's done hook
  * moves on), and used while it's walked (NULL afterwards: the current
  * one). psx_vcache_double() makes the frames take turns between two

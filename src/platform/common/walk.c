@@ -1,5 +1,5 @@
 /* The OT walk from a copy of the frame's primitives (psx_walk.h, decisions
- * D69).
+ * D71).
  *
  * DrawOTag hands its list over (g_psyxDrawOTagWalk) instead of walking it.
  * What the list can reach is copied first into a second 16 MB-aligned arena

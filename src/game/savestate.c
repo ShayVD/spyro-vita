@@ -422,7 +422,7 @@ static void service(void) {
 
 void savestate_point(void) {
   /* a state holds PsyCross's GPU state: an OT walk still running finishes
-   * first (D69) */
+   * first (D71) */
   if (s_req_slot || g_savestate_tick_hook)
     psx_walk_join();
   service();

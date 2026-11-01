@@ -5,7 +5,7 @@ diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
   * game's draw; VRAM bookkeeping there (the pause screen saves the texture
   * pages and overwrites them) must happen once, in the real draw. */
  extern int g_psyxVramFrozen;
-+/* Spyro port (decisions D69): the OT walk on another thread.
++/* Spyro port (decisions D71): the OT walk on another thread.
 + * - g_psyxGpuGate: called first by every call here that reads or writes the
 + *   GPU state an OT walk uses (the draw and display environments, the
 + *   splits, VRAM) and by VSync, so a walk still running elsewhere finishes
@@ -68,7 +68,7 @@ diff --git a/src/psx/LIBGPU.C b/src/psx/LIBGPU.C
  
  int g_psyxVramFrozen = 0;
  
-+/* Spyro port (decisions D69): see libgpu.h. */
++/* Spyro port (decisions D71): see libgpu.h. */
 +void (*g_psyxGpuGate)(void) = NULL;
 +int (*g_psyxVramFrozenGet)(void) = NULL;
 +int (*g_psyxDrawOTagWalk)(u_long* p) = NULL;

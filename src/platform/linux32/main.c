@@ -57,7 +57,7 @@
  *   pictures don't use it here; it is for checking that the game runs the
  *   same with it on, and for its hit rates.
  * --walk-lazy: hand each DrawOTag's list over to the OT walk from a copy
- *   (src/platform/common/walk.c, decisions D69), walked at the game
+ *   (src/platform/common/walk.c, decisions D71), walked at the game
  *   thread's next gate instead of at once: the latest the Vita's parse
  *   thread could walk it. Logs the walks and any packet outside the copy at
  *   exit. The run must be identical to one without it.

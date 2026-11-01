@@ -1,4 +1,0 @@
-# Run E2, the parse thread (D69) at 60 fps: as D1 (the menu's 60 FPS), plus PsyCross's OT walk on core 1 from a copy of the primitives
-interp=1
-parse_thread=1
-config_version=3
