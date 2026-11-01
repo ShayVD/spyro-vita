@@ -21,6 +21,13 @@ taken as an old file's and ignored (D68).
 | `c1-all.txt` | 60 fps with the default budget, `gpu_time=2`, all three on | 2 minutes of play in Artisans |
 | `c2-all-nobudget.txt` | as C1 with `interp_budget=0`: every tick gets its in-between frame | the same |
 | `d1-60fps.txt` | 60 fps as the menu gives it since D68: the defaults, the budget's hold, no GPU timing | the C1 route: Artisans, then the heavier level |
+| `e1-passes-off.txt` | D69 off (`gpu_direct=0`, the passes as before), 60 fps forced (`interp_budget=0`), `gpu_time=2` | the C1 route: Artisans, then the heavier level, 2–3 minutes each. The same route in E2–E4 |
+| `e2-passes-on.txt` | as E1 with D69 on (`gpu_direct=1`, the default) | the same route |
+| `e3-30fps-off.txt` | D69 off, 30 fps, `gpu_time=2` | the same route |
+| `e4-30fps-on.txt` | D69 on, 30 fps, `gpu_time=2` | the same route |
+| `f1-cheap-off.txt` | D70 baseline: as C2 (every tick gets its in-between frame), `gpu_lean=0` | 2 minutes in Artisans, the same route as C1 |
+| `f2-cheap-on.txt` | as F1 with `gpu_lean=1` | the same route |
+| `f3-cheap-60fps.txt` | 60 fps as the menu gives it (D1), with `gpu_lean=1` | the D1 route: Artisans, then the heavier level |
 | `h1-parse-30.txt` | the defaults at 30 fps, plus `parse_thread=1` (D71) | the D1 route: Artisans, then the heavier level. Run D1 again first if you have no D1 log from this VPK |
 | `h2-parse-60.txt` | D1 (the menu's 60 FPS), plus `parse_thread=1` | the D1 route |
 | `h3-parse-core3.txt` | H2 with `parse_core=3`: the parse thread on core 3, if the start-up check allows it | the D1 route; only worth it if the `cores:` line says core 3 is usable |
@@ -55,10 +62,34 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 - The start-up's `gpu: shaders compiled in N ms` line says how long the boot's shader compile takes (C1's two "still waiting (sync calls)" lines at vblank 0 were that compile, more than 10 s).
 - The first D1 run (VPK from `131dde2`) never came back from its hold after the first level change: the release test held the render thread to the game thread's budget. Fixed in D68's follow-up, so rerun D1 with a VPK built after it.
 
+**E1 against E2, E3 against E4: fewer full-screen passes (D69).**
+- E1–E4 use the VPK built from the D69 branch (`claude/fps-gpu-passes-d958f0`); `gpu_direct=0` gives main's passes in that same VPK.
+- `gpu N: ... presentation pictures; C copies (L before a later write), H handed their target's texture, P presents from a target; A atlas decode passes; vitaGL free KB ...` (new in D69). With D69 on, C and L should be near 0 in play: every picture is either shown from its target (P) or takes the target's texture when the game clears it (H). With it off, C equals the pictures.
+- `gpu N: gpu_time=2: the timed frame's scene took the GPU S ms`: the game's own target scene. D69 doesn't touch that scene, so S should be the same in both runs at the same place (it is measured before the passes D69 removes). What D69 removes is in the `timed frame`'s `GPU tail after the CPU` (the capture and present passes; 2.6–3.7 ms per picture in C1): it should fall by roughly half (*estimate*: one 960×544 scene of the two).
+- At 60 fps (E1, E2): with an in-between frame every tick, each tick had two staging copies and two cleared presents. E2 should show fewer `render N:` "previous frame not shown yet" waits and fewer late vblanks than E1 at the same place, and a lower `render thread busy` per picture.
+- The `gpu: target N: ... (CDRAM)` and `gpu: presentation frames ... (K of 7 in CDRAM)` lines at start say where vitaGL put the textures. If some slots are in main RAM, D69 copies into them instead of handing them to a target, so the targets stay in CDRAM; the counts above show how often.
+- **At the end of E1 and E2, save a state once** (options menu, SAVE section, `SAVE STATE`), then play 20 more seconds. A save remakes the targets, and in Vita3K they came back in main RAM (`gpu: target N: ... (main RAM)`, D69). The `T of N targets in main RAM` count should stay above 0 in E1 (main's behaviour) and return to 0 within a window in E2. If E1's S rises after the save, main RAM targets cost real GPU time.
+- The picture must look the same in all four: the screen, the pause and inventory backgrounds, the menu panel, the save card, the game-over freeze frame.
+
+| Place | S, E1 → E2 (ms) | Tail, E1 → E2 (ms) | Tail, E3 → E4 (ms) | 60 fps late vblanks, E1 → E2 |
+|---|---|---|---|---|
+| Artisans | C1: 5.5–8.4 → | C1: 2.5–3.6 → | | |
+| The heavier level | C1: 18.9–25.8 → | C1: 2.7–2.8 → | | |
+
+(The C1 numbers are main's before D69, `logs/hw-pr40-c1`: Artisans the windows 600–1800, the heavier level 6300–7800. The rest is filled in from E1–E4.)
+
+**F1 against F2: the 28-byte vertex (D70).**
+- `gpu N: gpu_time=2: ... vertex uploads K KB in T ms`: K should fall to 70% (28 bytes a vertex instead of 40), and T with it.
+- `atlas N: ... expand E ms`: E should fall a little (the second triangle of a quad reuses the first one's lookup).
+- `render N:` per picture: the render thread's time, which the two above are part of (*estimate*: −0.2 to −0.5 ms a picture), and the `gpu_time=2` scene time S (the GPU reads less vertex data; any change is likely within the noise).
+- The picture must look the same in F2 as in F1.
+
+**F3: 60 fps as shipped, with D70.** Against D1: the `present N:` lines' in-between frames and falls to a held 30 in the same places.
+
 **H1, H2 and H3: the parse thread (D71), against D1 (and a 30 fps run without it).**
-- `cores:` at start (every run, not just E): whether a thread of ours may run on core 3 (`SCE_KERNEL_CPU_MASK_SYSTEM`), on which CPU it ran, and what share of a 50 ms spin it had. Expected: refused, or not usable (the system keeps that core).
+- `cores:` at start (every run, not just H): whether a thread of ours may run on core 3 (`SCE_KERNEL_CPU_MASK_SYSTEM`), on which CPU it ran, and what share of a 50 ms spin it had. Expected: refused, or not usable (the system keeps that core).
 - `parse:` at start: the thread's core and priority, or why it's off.
-- `parse N:` (E only): lists walked on the parse thread, its busy ms per vblank, the copy (KB, and ms per vblank on the game thread), how long the game thread waited for the walk at its joins, and packets outside the copy. **Packets outside the copy must be 0.**
+- `parse N:` (H only): lists walked on the parse thread, its busy ms per vblank, the copy (KB, and ms per vblank on the game thread), how long the game thread waited for the walk at its joins, and packets outside the copy. **Packets outside the copy must be 0.**
 - `time N:` against D1 at the same place: `ot` is now the copy plus the waits for the walk (it was the walk itself: 1.5–2.6 ms per vblank in C1's busy windows). `busy %` should fall by about that much less the copy.
 - `present N:` (H2, H3): in-between frames. The parse thread only helps the game thread; where the GPU is the limit (C1's heavier level) 60 fps still won't hold.
 - `mixer N:` and `xa N:`: with the walk on core 1 beside the mixer and the read-ahead, the mixer's worst ms and `audio queue dry` mustn't rise, and the read-ahead should still cover every music sector.

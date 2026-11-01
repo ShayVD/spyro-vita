@@ -108,6 +108,7 @@ typedef struct {
   int cpu_stale;   /* drawn since s_vram last got its pixels */
   int tex_stale;   /* s_vram changed in its rect (a clear) without an upload */
   unsigned used;   /* last use, for eviction */
+  int cdram;       /* tex is in CDRAM (tex_cdram) */
   TargetLog log;
 } Target;
 
@@ -122,6 +123,12 @@ void soft_GR_DrawTriangles(int start_vertex, int triangles);
 static Target s_targets[MAX_TARGETS];
 static int s_ntargets;
 static float s_sx, s_sy; /* target pixels per VRAM pixel */
+
+/* Every write into a target's pixels calls this first (gpu_direct, D69):
+ * presentation pictures still shown from that target get their own copy,
+ * or, whole: the target is about to be cleared whole, its texture. */
+static int s_npsrc; /* presentation slots waiting on a target */
+static void pres_touch(Target *t, int whole);
 
 typedef struct {
   Target *t;
@@ -144,7 +151,9 @@ static Prog s_prog[P_COUNT];
  * opaque draws, D43). Only the configured set (and what it falls back to)
  * is built, or all of them for bench= (D41). */
 enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_AO, V_COUNT };
-static Prog s_vprog[V_COUNT][P_T16 + 1];
+static Prog s_vprog_x[V_COUNT][P_T16 + 1], s_vprog_l[V_COUNT][P_T16 + 1];
+/* the set for the vertex in use: s_vprog_l with the lean vertex (D70) */
+static Prog (*s_vprog)[P_T16 + 1] = s_vprog_x;
 static Prog s_dprog[3]; /* the atlas's decode pass, per texture format */
 
 static GLuint s_vram_tex, s_vbo, s_rgb_tex, s_down_tex, s_down_fbo;
@@ -183,6 +192,15 @@ typedef struct {
   float w;
 } XVertex;
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
+/* gpu_lean=1 (D70): XVertex without what only persp and subpixel use (dxy,
+ * w) and with the box in bytes (texels 0..255): 28 bytes, not 40. Drawn by
+ * the same programs compiled with LEAN; the same values reach the shaders. */
+typedef struct {
+  GrVertex g;
+  uint8_t box[4];
+  int16_t off[2];
+} LVertex;
+static LVertex s_lbuf[MAX_VERTEX_BUFFER_SIZE];
 /* per triangle: 0 nearest texel from VRAM, 1 nearest from the atlas,
  * 2 filtered from the atlas, 3 as 1 with no transparent or STP texel
  * (gpu_opaque, D65) */
@@ -194,6 +212,9 @@ static int s_persp;    /* persp=1 */
 static int s_subpixel; /* subpixel=1 */
 static int s_cache;    /* tex_cache=1: unfiltered textures from the atlas too (D41) */
 static int s_vc;       /* persp or subpixel: the vcache records and is read (D43) */
+static int s_lean;     /* gpu_lean and s_xmode without s_vc: draws use s_lbuf (D70) */
+
+static int lean_for(int xmode, int vc) { return g_vita_opts.gpu_lean && xmode && !vc; }
 
 /* per 300-vblank report */
 static struct {
@@ -201,6 +222,8 @@ static struct {
   uint64_t upload_us, readback_us, expand_us;
   unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
   uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
+  unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
+  unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
@@ -329,13 +352,21 @@ static const char k_vs_prim[] =
 
 /* k_vs_prim for the expanded vertex (D39). Clip coordinates times w: the
  * same picture for w = 1, perspective-correct varyings otherwise. */
+/* gpu_lean=1 (D70) compiles it with LEAN: without persp and subpixel the
+ * vertex has no sub-pixel offset and no w (the expansion wrote 0 and 1:
+ * the same position), so it drops them, and the box comes as bytes. */
+static const char k_vs_lean_def[] = "#define LEAN 1\n";
 static const char k_vs_prim_x[] =
     "attribute vec4 a_pos;\n"   /* x, y, tpage, clut (shorts), as k_vs_prim */
     "attribute vec4 a_tex;\n"   /* u, v, bright, dither (bytes) */
     "attribute vec4 a_col;\n"
     "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: page texels the filter may read */
+    "#ifdef LEAN\n"
+    "attribute vec2 a_offd;\n"  /* atlas minus page texel */
+    "#else\n"
     "attribute vec4 a_offd;\n"  /* atlas minus page texel; sub-pixel offset (1/256) */
     "attribute float a_w;\n"
+    "#endif\n"
     "attribute vec2 a_flags;\n" /* filtered from the atlas, wraps (bytes) */
     "uniform vec4 u_xf;\n"
     "varying vec2 v_uv;\n"
@@ -346,8 +377,12 @@ static const char k_vs_prim_x[] =
     "varying vec2 v_off;\n"
     GLSL_MD
     "void main() {\n"
+    "#ifdef LEAN\n"
+    "  gl_Position = vec4((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0, 0.0, 1.0);\n"
+    "#else\n"
     "  vec2 qxy = a_pos.xy + a_offd.zw * (1.0 / 256.0);\n"
     "  gl_Position = vec4(((qxy + u_xf.xy) * u_xf.zw - 1.0) * a_w, 0.0, a_w);\n"
+    "#endif\n"
     "  v_uv = a_tex.xy;\n"
     "  v_filt = a_flags;\n"
     "  v_box = a_box;\n"
@@ -666,10 +701,11 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
     glBindAttribLocation(p->prog, 0, "a_pos");
     glBindAttribLocation(p->prog, 1, "a_tex");
     glBindAttribLocation(p->prog, 2, "a_col");
-    if (vs[0] == k_vs_prim_x) {
+    if (vs[nvs - 1] == k_vs_prim_x) {
       glBindAttribLocation(p->prog, 3, "a_box");
       glBindAttribLocation(p->prog, 4, "a_offd");
-      glBindAttribLocation(p->prog, 5, "a_w");
+      if (nvs == 1)
+        glBindAttribLocation(p->prog, 5, "a_w");
       glBindAttribLocation(p->prog, 6, "a_flags");
     }
   }
@@ -704,7 +740,8 @@ static int variant_of(int filter, int cache, int xmode) {
 static int build_variant(int v) {
   static const char *const fmt_def[3] = {"#define FMT 0\n", "#define FMT 1\n", "#define FMT 2\n"};
   static const char *const filt_def[3] = {"", "#define FILTER 1\n", "#define FILTER 2\n"};
-  const char *vs[1] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x};
+  const char *vs[2] = {v == V_PLAIN ? k_vs_prim : k_vs_prim_x, k_vs_prim_x};
+  int nvs = v != V_PLAIN && s_vprog == s_vprog_l ? 2 : 1;
   const char *fs[4];
   /* FILTER 1 in k_fs_filt_body is 3-point, 2 bilinear */
   int i, filter = v == V_F3 ? 1 : v == V_FB ? 2 : 0;
@@ -716,9 +753,11 @@ static int build_variant(int v) {
                 (v == V_FB && build_variant(V_HB)) ||
                 (v != V_AO && g_vita_opts.gpu_opaque && build_variant(V_AO))))
     return -1;
+  if (nvs == 2)
+    vs[0] = k_vs_lean_def;
   fs[0] = k_fs_prim_head;
   fs[1] = k_fs_untex;
-  if (link(&s_vprog[v][P_UNTEX], vs, 1, fs, 2, 0, "untextured"))
+  if (link(&s_vprog[v][P_UNTEX], vs, nvs, fs, 2, 0, "untextured"))
     return -1;
   for (i = 0; i < 3; i++) {
     fs[0] = fmt_def[i];
@@ -734,7 +773,7 @@ static int build_variant(int v) {
     } else if (atlas) {
       fs[2] = k_fs_atlas_body;
     }
-    if (link(&s_vprog[v][P_T4 + i], vs, 1, fs, filter ? 4 : 3, 0,
+    if (link(&s_vprog[v][P_T4 + i], vs, nvs, fs, filter ? 4 : 3, 0,
              i == 0 ? "4-bit" : i == 1 ? "8-bit" : "15-bit"))
       return -1;
   }
@@ -783,6 +822,20 @@ static GLuint new_tex(int w, int h, const void *rgba) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
   return t;
+}
+
+/* 1 if texture tex (bound here, on the active unit) is in CDRAM, 0 if in
+ * main RAM, -1 unknown: vitaGL takes CDRAM while its pool lasts (and frees
+ * a deleted texture only once the GPU is done with it), and the GPU's loads
+ * and stores of a target are slower in main RAM (D69) */
+static int tex_cdram(GLuint tex) {
+  SceKernelMemBlockInfo info = {.size = sizeof info};
+  void *p;
+  glBindTexture(GL_TEXTURE_2D, tex);
+  p = vglGetTexDataPointer(GL_TEXTURE_2D);
+  if (!p || sceKernelGetMemBlockInfoByAddr(p, &info) < 0)
+    return -1;
+  return info.type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
 }
 
 static void bind_fbo(GLuint fbo) {
@@ -848,6 +901,8 @@ static void no_blend(void) {
 /* Draw VRAM rect (x, y, w, h) from s_vram into target t. */
 static void copy_into(Target *t, int x, int y, int w, int h) {
   float ndc[4], src[4];
+  if (s_npsrc)
+    pres_touch(t, 0);
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
   no_blend();
@@ -871,6 +926,8 @@ static void copy_into(Target *t, int x, int y, int w, int h) {
  * frames) keeps the targets' resolution. s_vram got the same move. */
 static void move_into(Target *t, const Target *src, int x, int y, int w, int h, int dx, int dy) {
   float ndc[4], uv[4];
+  if (s_npsrc)
+    pres_touch(t, 0);
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
   no_blend();
@@ -1121,6 +1178,7 @@ static void atlas_decode(void) {
     glDrawArrays(GL_TRIANGLES, 0, s_aqn[fmt] * 6);
     s_aqn[fmt] = 0;
   }
+  s_st.decodes++;
   glDisableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
   s_xattr = 0;
@@ -1293,16 +1351,36 @@ static void sync_rect(int x, int y, int w, int h) {
   }
 }
 
+/* gpu_direct (D69): a dropped target's texture and FBO, kept for the next
+ * target of its size. vitaGL frees a deleted texture's memory only once
+ * the GPU is done with it, so targets made again at once (all of them, at a
+ * save state) got main RAM, with CDRAM full until then. */
+static struct {
+  GLuint tex, fbo;
+  int pw, ph, cdram;
+} s_spare[MAX_TARGETS];
+static int s_nspare;
+
 /* Pending copies hold Target pointers: they go out before any target is
  * dropped or moved (the last one moves into slot i). Left behind, they would
  * draw into a deleted FBO, which on the GPU can be memory reused since. */
 static void drop_target(int i) {
   flush_pending();
+  if (s_npsrc)
+    pres_touch(&s_targets[i], 0);
   readback(&s_targets[i]);
   if (s_targets[i].tex_stale)
     s_vram_dirty = 1;
-  glDeleteFramebuffers(1, &s_targets[i].fbo);
-  glDeleteTextures(1, &s_targets[i].tex);
+  if (g_vita_opts.gpu_direct && s_nspare < MAX_TARGETS) {
+    s_spare[s_nspare].tex = s_targets[i].tex;
+    s_spare[s_nspare].fbo = s_targets[i].fbo;
+    s_spare[s_nspare].pw = s_targets[i].pw;
+    s_spare[s_nspare].ph = s_targets[i].ph;
+    s_spare[s_nspare++].cdram = s_targets[i].cdram;
+  } else {
+    glDeleteFramebuffers(1, &s_targets[i].fbo);
+    glDeleteTextures(1, &s_targets[i].tex);
+  }
   log_free(&s_targets[i]);
   s_bound_fbo = (GLuint)-1;
   s_targets[i] = s_targets[--s_ntargets];
@@ -1381,16 +1459,35 @@ static Target *target_for(int x, int y, int w, int h) {
   t->h = y1 - y;
   t->pw = (int)(t->w * s_sx + 0.999f);
   t->ph = (int)(t->h * s_sy + 0.999f);
-  t->tex = new_tex(t->pw, t->ph, NULL);
-  glGenFramebuffers(1, &t->fbo);
+  /* a spare of this size (D69), the others deleted; or a new texture */
+  for (i = 0; i < s_nspare;) {
+    if (!t->tex && s_spare[i].pw == t->pw && s_spare[i].ph == t->ph) {
+      t->tex = s_spare[i].tex;
+      t->fbo = s_spare[i].fbo;
+      t->cdram = s_spare[i].cdram;
+    } else if (s_spare[i].pw == t->pw && s_spare[i].ph == t->ph) {
+      i++;
+      continue;
+    } else {
+      glDeleteFramebuffers(1, &s_spare[i].fbo);
+      glDeleteTextures(1, &s_spare[i].tex);
+    }
+    s_spare[i] = s_spare[--s_nspare];
+  }
+  if (!t->tex) {
+    t->tex = new_tex(t->pw, t->ph, NULL);
+    t->cdram = tex_cdram(t->tex);
+    glGenFramebuffers(1, &t->fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      vita_log("gpu: target FBO %dx%d incomplete", t->pw, t->ph);
+  }
   glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);
   s_bound_fbo = t->fbo;
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-    vita_log("gpu: target FBO %dx%d incomplete", t->pw, t->ph);
   t->used = ++s_use;
-  vita_log("gpu: target %d: VRAM %d,%d %dx%d -> %dx%d", s_ntargets - 1, t->x, t->y, t->w,
-           t->h, t->pw, t->ph);
+  vita_log("gpu: target %d: VRAM %d,%d %dx%d -> %dx%d (%s)", s_ntargets - 1, t->x, t->y, t->w,
+           t->h, t->pw, t->ph, t->cdram > 0 ? "CDRAM" : t->cdram ? "memory unknown" : "main RAM");
   upload_vram();
   copy_into(t, t->x, t->y, t->w, t->h); /* starts as what VRAM holds */
   log_begin(t, 1, 0);
@@ -1459,6 +1556,10 @@ void gl_GR_ReadFramebufferDataToVRAM(void) {}
 static void expand(int count) {
   uint64_t t0 = now_us();
   int i, k;
+  /* gpu_lean (D70): the last block found, which the next triangle (a quad's
+   * other half, the same box) usually asks for again */
+  int m_ok = 0, m_ax = 0, m_ay = 0, m_plain = 0;
+  uint32_t m_k0 = 0, m_k1 = 0, m_gen = 0;
   if ((s_filter || s_cache) && (s_aflush || s_afull))
     atlas_reset();
   for (i = 0; i < count; i += 3) {
@@ -1488,10 +1589,20 @@ static void expand(int count) {
     memcpy(&ref0, &v[0].tcx, sizeof ref0);
     wrap = wrap && s_filter; /* the margin is only for the filter */
     if ((s_filter || s_cache) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
-      int ax, ay, plain;
+      int ax, ay, plain, miss;
+      uint32_t k0 = (uint32_t)(uint16_t)v[0].page | (uint32_t)(uint16_t)v[0].clut << 16;
+      uint32_t k1 = (uint32_t)(u0 >> 5 | (v0 >> 5) << 3 | (u1 >> 5) << 6 | (v1 >> 5) << 9 | wrap << 12);
       s_ast.blocks++;
-      if (!atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
-                      v1 >> 5, wrap, &ax, &ay, &plain)) {
+      if (s_lean && m_ok && k0 == m_k0 && k1 == m_k1 && m_gen == s_agen) {
+        ax = m_ax, ay = m_ay, plain = m_plain, miss = 0;
+      } else {
+        miss = atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
+                          v1 >> 5, wrap, &ax, &ay, &plain);
+        m_ok = !miss;
+        m_k0 = k0, m_k1 = k1, m_gen = s_agen;
+        m_ax = ax, m_ay = ay, m_plain = plain;
+      }
+      if (!miss) {
         filt = s_filter && (ref0 & VREF_POLY);
         kind = filt ? 2 : plain ? 3 : 1;
         s_ast.plain += kind == 3;
@@ -1507,7 +1618,19 @@ static void expand(int count) {
        * vertex: PsyX's vertex whole, its vcache bytes replaced */
       const int16_t tail[6] = {(int16_t)u0, (int16_t)v0, (int16_t)u1, (int16_t)v1,
                                (int16_t)du, (int16_t)dv};
-      for (k = 0; k < n; k++) {
+      for (k = 0; s_lean && k < n; k++) {
+        LVertex *l = s_lbuf + i + k;
+        l->g = v[k];
+        l->g.tcx = (char)filt;
+        l->g.tcy = (char)(wrap && filt);
+        l->box[0] = (uint8_t)u0;
+        l->box[1] = (uint8_t)v0;
+        l->box[2] = (uint8_t)u1;
+        l->box[3] = (uint8_t)v1;
+        l->off[0] = (int16_t)du;
+        l->off[1] = (int16_t)dv;
+      }
+      for (k = 0; !s_lean && k < n; k++) {
         XVertex *x = s_xbuf + i + k;
         x->g = v[k];
         x->g.tcx = (char)filt;
@@ -1576,6 +1699,11 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
     expand(count); /* may draw into the atlas, with other buffers bound */
     t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    if (s_lean) {
+      glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_lbuf, s_lbuf, GL_STREAM_DRAW);
+      vbo_count(t0, (size_t)count * sizeof *s_lbuf);
+      return;
+    }
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
     vbo_count(t0, (size_t)count * sizeof *s_xbuf);
     return;
@@ -1688,6 +1816,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   flush_pending();
   if (s_texmode != P_UNTEX)
     upload_vram();
+  if (s_npsrc)
+    pres_touch(t, 0);
 
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
@@ -1717,7 +1847,24 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glEnableVertexAttribArray(2);
-  if (s_xmode) {
+  if (s_lean) {
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    glDisableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
+    s_xattr = 1;
+    glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.x));
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.u));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(LVertex), (void *)offsetof(LVertex, g.r));
+    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, box));
+    glVertexAttribPointer(4, 2, GL_SHORT, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, off));
+    glVertexAttribPointer(6, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(LVertex), (void *)offsetof(LVertex, g.tcx));
+    if ((s_filter || s_cache) && s_texmode != P_UNTEX) {
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
+      glActiveTexture(GL_TEXTURE0);
+    }
+  } else if (s_xmode) {
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glEnableVertexAttribArray(5);
@@ -1869,6 +2016,8 @@ static void clear_dirty(int x, int y, int w, int h) {
   s_vram_dirty = s_aflush = 1;
 }
 
+static float s_clear_rgb[3]; /* and as GL's clear colour */
+
 static void clear_targets(int x, int y, int w, int h) {
   int k;
   for (k = 0; k < s_ntargets; k++) {
@@ -1876,14 +2025,15 @@ static void clear_targets(int x, int y, int w, int h) {
     int x0 = x > t->x ? x : t->x, y0 = y > t->y ? y : t->y;
     int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
     int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
-    int sx0, sy0, sx1, sy1;
+    int sx0, sy0, sx1, sy1, whole;
     if (x0 >= x1 || y0 >= y1)
       continue;
     sx0 = (int)((x0 - t->x) * s_sx + 0.5f);
     sy0 = (int)((y0 - t->y) * s_sy + 0.5f);
     sx1 = x1 == t->x + t->w ? t->pw : (int)((x1 - t->x) * s_sx + 0.5f);
     sy1 = y1 == t->y + t->h ? t->ph : (int)((y1 - t->y) * s_sy + 0.5f);
-    if (x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h) {
+    whole = x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h;
+    if (whole) {
       log_begin(t, 0, s_clear15); /* cleared whole: the log starts again */
     } else {
       LogEntry *e = log_add(t, LOG_CLEAR, 0);
@@ -1892,7 +2042,10 @@ static void clear_targets(int x, int y, int w, int h) {
         e->color = s_clear15;
       }
     }
+    if (s_npsrc)
+      pres_touch(t, whole);
     bind_fbo(t->fbo);
+    glClearColor(s_clear_rgb[0], s_clear_rgb[1], s_clear_rgb[2], 1.0f);
     glEnable(GL_SCISSOR_TEST);
     glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -1914,7 +2067,9 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
   s_gen++;
   flush_pending();
   s_clear15 = c;
-  glClearColor((r >> 3) * 8 / 255.0f, (g >> 3) * 8 / 255.0f, (b >> 3) * 8 / 255.0f, 1.0f);
+  s_clear_rgb[0] = (r >> 3) * 8 / 255.0f;
+  s_clear_rgb[1] = (g >> 3) * 8 / 255.0f;
+  s_clear_rgb[2] = (b >> 3) * 8 / 255.0f;
   pieces(x, y, w, h, clear_targets);
   glDisable(GL_SCISSOR_TEST);
 }
@@ -2014,6 +2169,8 @@ int gl_gpu_init(void) {
   s_cache = g_vita_opts.tex_cache != 0;
   s_vc = s_persp || s_subpixel;
   s_xmode = s_filter || s_vc || s_cache;
+  s_lean = lean_for(s_xmode, s_vc);
+  s_vprog = s_lean ? s_vprog_l : s_vprog_x;
   t0 = now_us();
   if (build_programs(&present_only) != 0)
     return -1;
@@ -2021,7 +2178,8 @@ int gl_gpu_init(void) {
   vita_log("gpu: shaders compiled in %u ms", (unsigned)((now_us() - t0) / 1000));
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
-    s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = 0;
+    s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = s_lean = 0;
+    s_vprog = s_vprog_x;
     g_vita_opts.bench = 0;
     if (build_programs(&present_only) != 0)
       return -1;
@@ -2030,8 +2188,8 @@ int gl_gpu_init(void) {
     /* projections recorded only for persp/subpixel; polygons marked for the
      * filter; nothing for tex_cache alone (D43) */
     psx_vcache_enable(s_vc ? 2 : s_filter ? 1 : 0);
-    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d tex_cache=%d (D39, D41)", s_filter, s_persp,
-             s_subpixel, s_cache);
+    vita_log("gpu: tex_filter=%d persp=%d subpixel=%d tex_cache=%d (D39, D41)%s", s_filter, s_persp,
+             s_subpixel, s_cache, s_lean ? "; 28-byte vertex (gpu_lean=1, D70)" : "");
   }
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);
@@ -2123,21 +2281,40 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
 
 /* PRESENT_SLOTS textures for present.c's queue, plus a staging one: a
  * presentation pass's picture is copied from the targets on the GPU (no
- * readback, no replay) and filed by swapping handles. */
+ * readback, no replay) and filed by swapping handles.
+ * gpu_direct=1 (D69): a picture that is one target whole (Spyro's: the draw
+ * area's 224 lines) isn't copied. Its slot only notes the target's texture
+ * (s_psrc), and the present draws from that, while nothing has drawn into
+ * the target since (pres_touch). The game draws into the other draw area
+ * next, so at 30 fps the picture is shown from its target. When the game
+ * clears that target whole for a later frame (the in-between frame's
+ * target, cleared by the same tick's logic pass at 60 fps), the slot takes
+ * the target's texture and the target the slot's, with no copy: the clear
+ * covers all of it. Any other write copies the picture into the slot first,
+ * as the capture did. */
 #define STAGING PRESENT_SLOTS
 static GLuint s_ptex[PRESENT_SLOTS + 1], s_pfbo[PRESENT_SLOTS + 1];
+static int s_pcdram[PRESENT_SLOTS + 1]; /* tex_cdram of s_ptex */
 static int s_pw, s_ph;
+static struct {
+  GLuint tex;     /* the target texture this slot's picture still is, 0: s_ptex holds it */
+  int x, y, w, h; /* the VRAM rect captured */
+} s_psrc[PRESENT_SLOTS + 1];
 
 static void pres_alloc(int w, int h) {
-  int i;
+  int i, n = 0;
   if (s_pw == w && s_ph == h)
     return;
+  memset(s_psrc, 0, sizeof s_psrc); /* the slots start over, as their textures do */
+  s_npsrc = 0;
   for (i = 0; i <= PRESENT_SLOTS; i++) {
     if (s_ptex[i]) {
       glDeleteFramebuffers(1, &s_pfbo[i]);
       glDeleteTextures(1, &s_ptex[i]);
     }
     s_ptex[i] = new_tex(w, h, NULL);
+    s_pcdram[i] = tex_cdram(s_ptex[i]);
+    n += s_pcdram[i] > 0;
     glGenFramebuffers(1, &s_pfbo[i]);
     glBindFramebuffer(GL_FRAMEBUFFER, s_pfbo[i]);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_ptex[i], 0);
@@ -2147,27 +2324,35 @@ static void pres_alloc(int w, int h) {
   }
   s_pw = w;
   s_ph = h;
-  vita_log("gpu: presentation frames %dx%d", w, h);
+  vita_log("gpu: presentation frames %dx%d (%d of %d in CDRAM)", w, h, n, PRESENT_SLOTS + 1);
 }
 
-/* The VRAM rect a presentation pass just drew -> staging: every target over
- * it, at the targets' resolution; black elsewhere (Spyro's border lines).
- * Inside an FBO the image's top is NDC -1, as in copy_into(). */
-void gl_pres_capture(int x, int y, int w, int h) {
+/* The target that is VRAM rect (x, y, w, h) exactly, at the slots' size, or
+ * NULL. Its quad then covers every pixel of a slot. */
+static Target *whole_target(int x, int y, int w, int h) {
+  int i;
+  for (i = 0; i < s_ntargets; i++) {
+    Target *t = &s_targets[i];
+    if (t->x == x && t->y == y && t->w == w && t->h == h && t->pw == s_pw && t->ph == s_ph)
+      return t;
+  }
+  return NULL;
+}
+
+/* VRAM rect (x, y, w, h) -> slot i: every target over it, at the targets'
+ * resolution; black elsewhere (Spyro's border lines; no clear when one
+ * target covers it all, D69). Inside an FBO the image's top is NDC -1, as in
+ * copy_into(). */
+static void pres_draw(int slot, int x, int y, int w, int h) {
   float ndc[4], src[4];
-  int i, top = shown_top(h);
-  y += top; /* the drawn lines only: the slots fill the screen */
-  h -= 2 * top;
-  if (!s_sx)
-    set_scale();
-  flush_pending();
-  sample_scene();
-  pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
-  bind_fbo(s_pfbo[STAGING]);
+  int i;
+  bind_fbo(s_pfbo[slot]);
   glViewport(0, 0, s_pw, s_ph);
   no_blend();
-  glClearColor(0, 0, 0, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (!g_vita_opts.gpu_direct || !whole_target(x, y, w, h)) {
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
   glUseProgram(s_prog[P_TEX].prog);
   for (i = 0; i < s_ntargets; i++) {
     const Target *t = &s_targets[i];
@@ -2185,14 +2370,89 @@ void gl_pres_capture(int x, int y, int w, int h) {
     glActiveTexture(GL_TEXTURE0);
     quad(ndc, src);
   }
+  s_st.pres_copies++;
+}
+
+/* The VRAM rect a presentation pass just drew -> staging (gpu_direct: only
+ * noted, when it's one target whole). */
+void gl_pres_capture(int x, int y, int w, int h) {
+  Target *t;
+  int top = shown_top(h);
+  y += top; /* the drawn lines only: the slots fill the screen */
+  h -= 2 * top;
+  if (!s_sx)
+    set_scale();
+  flush_pending();
+  sample_scene();
+  pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
+  s_st.captures++;
+  if (s_psrc[STAGING].tex) { /* staging is drawn or noted again */
+    s_psrc[STAGING].tex = 0;
+    s_npsrc--;
+  }
+  if (g_vita_opts.gpu_direct && (t = whole_target(x, y, w, h)) != NULL) {
+    s_psrc[STAGING].tex = t->tex;
+    s_psrc[STAGING].x = x, s_psrc[STAGING].y = y, s_psrc[STAGING].w = w, s_psrc[STAGING].h = h;
+    s_npsrc++;
+    return;
+  }
+  pres_draw(STAGING, x, y, w, h);
 }
 
 void gl_pres_commit(int slot) {
   GLuint t = s_ptex[slot], f = s_pfbo[slot];
+  int c = s_pcdram[slot];
   s_ptex[slot] = s_ptex[STAGING];
   s_pfbo[slot] = s_pfbo[STAGING];
+  s_pcdram[slot] = s_pcdram[STAGING];
   s_ptex[STAGING] = t;
   s_pfbo[STAGING] = f;
+  s_pcdram[STAGING] = c;
+  {
+    __typeof__(s_psrc[0]) s = s_psrc[slot];
+    s_psrc[slot] = s_psrc[STAGING];
+    s_psrc[STAGING] = s;
+  }
+}
+
+/* Target t is about to be drawn into (whole: cleared whole): the slots
+ * whose picture is still t get it (D69). The target is unchanged since
+ * each was noted, so the copy is what the capture would have drawn. */
+static void pres_touch(Target *t, int whole) {
+  int i, last = -1;
+  for (i = 0; i <= STAGING; i++) {
+    if (s_psrc[i].tex != t->tex)
+      continue;
+    if (last >= 0) { /* two slots on one picture: all but one copied */
+      s_psrc[last].tex = 0;
+      s_npsrc--;
+      pres_draw(last, s_psrc[last].x, s_psrc[last].y, s_psrc[last].w, s_psrc[last].h);
+      s_st.pres_late++;
+    }
+    last = i;
+  }
+  if (last < 0)
+    return;
+  s_psrc[last].tex = 0;
+  s_npsrc--;
+  /* A target never gets a texture from slower memory than its own. One
+   * remade while vitaGL still held the old textures (a save state, a
+   * widescreen or resolution change) can be in main RAM: it gets CDRAM back
+   * here, and the slots, sampled once a picture, keep the main RAM one. */
+  if (whole && t->pw == s_pw && t->ph == s_ph && s_pcdram[last] >= t->cdram) {
+    GLuint tex = t->tex, fbo = t->fbo;
+    int c = t->cdram;
+    t->tex = s_ptex[last];
+    t->fbo = s_pfbo[last];
+    t->cdram = s_pcdram[last];
+    s_ptex[last] = tex;
+    s_pfbo[last] = fbo;
+    s_pcdram[last] = c;
+    s_st.pres_handed++;
+  } else {
+    pres_draw(last, s_psrc[last].x, s_psrc[last].y, s_psrc[last].w, s_psrc[last].h);
+    s_st.pres_late++;
+  }
 }
 
 /* The options panel (menu.c), drawn 1:1 in the middle over the picture. */
@@ -2263,11 +2523,16 @@ static void present_slot(int slot, int wide) {
   bind_fbo(0);
   glViewport(0, 0, SCREEN_W, SCREEN_H);
   no_blend();
-  glClearColor(0, 0, 0, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (!g_vita_opts.gpu_direct || area_w < SCREEN_W) { /* else the quad covers it all (D69) */
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
   glActiveTexture(GL_TEXTURE1);
   if (g_present_capture) {
-    glBindTexture(GL_TEXTURE_2D, s_ptex[slot]);
+    /* the picture's own texture, or the target it still is (D69) */
+    glBindTexture(GL_TEXTURE_2D, s_psrc[slot].tex ? s_psrc[slot].tex : s_ptex[slot]);
+    if (s_psrc[slot].tex)
+      s_st.pres_direct++;
   } else {
     const uint16_t *px = port_present_slot_pixels(slot);
     static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
@@ -2393,11 +2658,16 @@ void gl_present(int slot, int wide, int hd_shot) {
  * the options stay as they were. */
 int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   static int failed[V_COUNT];
-  int v = variant_of(filter, cache, filter || persp || subpixel || cache);
-  if (!s_vprog[v][P_UNTEX].prog || failed[v]) {
+  static int failed_l[V_COUNT];
+  int xmode = filter || persp || subpixel || cache, lean = lean_for(xmode, persp || subpixel);
+  int v = variant_of(filter, cache, xmode), *fail = lean ? &failed_l[v] : &failed[v];
+  Prog(*was)[P_T16 + 1] = s_vprog;
+  s_vprog = lean ? s_vprog_l : s_vprog_x; /* the set build_variant fills */
+  if (!s_vprog[v][P_UNTEX].prog || *fail) {
     uint64_t t0 = now_us();
-    if (failed[v] || build_variant(v)) {
-      failed[v] = 1;
+    if (*fail || build_variant(v)) {
+      *fail = 1;
+      s_vprog = was;
       vita_log("gpu: the programs for tex_filter=%d persp=%d subpixel=%d don't compile: "
                "options unchanged", filter, persp, subpixel);
       return -1;
@@ -2411,7 +2681,8 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   s_subpixel = subpixel;
   s_cache = cache;
   s_vc = persp || subpixel;
-  s_xmode = filter || persp || subpixel || cache;
+  s_xmode = xmode;
+  s_lean = lean;
   memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
   psx_vcache_enable(s_vc ? 2 : filter ? 1 : 0);
   if (res != g_vita_opts.gpu_res) {
@@ -2430,6 +2701,18 @@ void gl_report(int vblank) {
            s_st.copies, s_st.moves, s_st.readbacks, s_st.replays,
            (unsigned)(s_st.readback_us / 1000), (unsigned)(s_st.readback_us % 1000 / 10),
            s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0);
+  if (s_st.captures) {
+    int i, ram = 0;
+    for (i = 0; i < s_ntargets; i++)
+      ram += s_targets[i].cdram == 0;
+    vita_log("gpu %d: %u presentation pictures; %u copies (%u before a later write), %u handed "
+             "their target's texture, %u presents from a target; %u atlas decode passes; "
+             "%d of %d targets in main RAM; vitaGL free KB: CDRAM %u, RAM %u (gpu_direct=%d, D69)",
+             vblank, s_st.captures, s_st.pres_copies, s_st.pres_late, s_st.pres_handed,
+             s_st.pres_direct, s_st.decodes, ram, s_ntargets,
+             (unsigned)(vglMemFree(VGL_MEM_VRAM) >> 10), (unsigned)(vglMemFree(VGL_MEM_RAM) >> 10),
+             g_vita_opts.gpu_direct);
+  }
   if (s_sample.n)
     vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
              s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,

@@ -56,6 +56,8 @@ typedef struct {
   int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
+  int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
+  int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
 } VitaOpts;

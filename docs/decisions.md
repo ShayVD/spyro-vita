@@ -983,6 +983,105 @@ Record each decision with its date, what was chosen, and why.
     - **Host:** builds; `ctest` all pass. The host has no budget by default (`interp_budget_us` is 0 unless set), so `budget_allows` doesn't run in its replays.
     - **Not checked:** hardware. Rerun `d1-60fps.txt` with a VPK built from this change.
 
+## 2026-11-01: fewer full-screen GPU passes
+
+### D69. Presentation pictures shown from the targets: no staging copy, no clear under a full-screen picture
+- **The question:** in heavy levels the GPU takes 19–26 ms per picture (C1), against the ~13 ms that 60 fps allows. Which of a frame's full-screen GPU passes aren't needed, and can they go with the picture unchanged? (Plan item G3.)
+- **How vitaGL runs a frame** (vitaGL `2bdbe89`, the commit vdpm's package builds with `make NO_DEBUG=1`; read from its source, `gxm.c`, `misc.c`, `framebuffers.c`):
+  - **A scene per framebuffer switch.** Every draw or clear into another framebuffer ends the open GXM scene (`scene_reset`), so each pass below is a scene of its own. The colour surface is kept across scenes (the targets and the atlas rely on that), so each scene stores its surface and, as far as the source shows (*inferred*: GXM's background load isn't in vitaGL's code), loads it too.
+  - **`glClear` is a quad** with vitaGL's clear shader, the size of the viewport, clipped by the scissor.
+  - **No depth or stencil traffic:** vitaGL gives the display a D32+S8 surface and every FBO a D32 one, but without `STORE_DEPTH_STENCIL` (not set in that build) they are never loaded or stored. No MSAA (`vglInitExtended(..., SCE_GXM_MULTISAMPLE_NONE)`). The swap queues the back buffer for display with no copy.
+  - **`glFinish` ends the open scene and waits for the GPU.** So `gpu_time=2`'s S (the `glFinish` at the capture) is the game's target scene alone. The capture and present passes after it are in the timed frame's tail, which C1 logs as a steady 2.5–3.7 ms per picture in every window, light or heavy.
+- **The passes of one picture** (16:9 native, 960×544, the defaults since D68):
+
+  | Pass | Size | What for | Needed when | D69 |
+  |---|---|---|---|---|
+  | The game's clear of its draw area (`GR_ClearVRAM` into the target) | 960×544 | the PS1's background clear | always: it's the game's (where nothing is drawn the PS1 shows its colour) | kept; it's where the in-between picture now changes hands |
+  | The game's triangles into the target | 960×544 | the picture (S) | always | unchanged (other sessions: cheaper in-between frames, hand-written renderers) |
+  | Atlas decode (`atlas_decode`) | a 2048×2048 FBO | new texture blocks into the decoded atlas | only for vertex buffers with new blocks: 0–150 passes per 300 vblanks in the Vita3K runs below (0–81 in the gems script at 30 fps), up to 224 around a save state | unchanged; now counted in the log |
+  | Capture: clear staging, copy the target into it | 960×544 | keep the picture for the queue, since the game redraws the target before it's shown | only when the target is written before the picture is shown | **removed** where the picture is one target whole (Spyro's: always) |
+  | Present: clear the back buffer | 960×544 | the black side bars | only for 4:3 (778 wide) | **skipped** when the picture fills the screen |
+  | Present: the slot onto the back buffer | 960×544 | the screen | always | now from the target itself while it's unchanged |
+  | The menu panel | the panel | the options menu | with the menu | unchanged |
+  | The display-rect present (no presentation frame: 4:3 PS1 display, loads, logos) | 778×544 | | when there's no presentation frame | unchanged |
+
+  At 60 fps a tick had two of each: the in-between pass and the logic pass both draw into the same target, so each picture was copied out before the next pass cleared it.
+- **Chosen** (`gpu_gl.c`, behind `gpu_direct=1`, on by default; `gpu_direct=0` is main's behaviour exactly):
+  - **The capture only notes the target** when the captured rect is one target whole, at the slots' size (`whole_target`; Spyro's 512×224 draw area at 8 or 248, so always in play). The slot keeps the target's texture name (`s_psrc`), and the commit files it as before.
+  - **The present draws from that target** while nothing has been drawn into it since. Every write into a target first calls `pres_touch`: draws, clears, `LoadImage`/`MoveImage` copies, and a dropped target (rescale, save state, eviction).
+  - **When the game clears that target whole** (its next frame there), the slot takes the target's texture and the target the slot's, with no copy, since the clear covers all of it. At 30 fps the picture is shown from its target, and the hand-over comes two ticks later. At 60 fps the in-between picture changes hands at the same tick's logic-pass clear, and the logic picture is shown from its target. Any other write copies the picture into the slot first, exactly as the capture drew it (counted as "before a later write").
+  - **A target never gets a texture from slower memory:** `tex_cdram` asks the kernel which memory each texture is in. See the finding below.
+  - **No clear where a quad covers every pixel:** the staging copy of a whole target, and the back buffer under a 16:9 picture.
+  - **Counted every 300 vblanks:** pictures, copies (and those forced by a later write), hand-overs, presents from a target, atlas decode passes, targets in main RAM, vitaGL's free pools (`vglMemFree`; 0 in Vita3K, which doesn't report its mspaces).
+- **Why the picture can't change:** the target's texels are the ones the staging copy held (a 1:1 `GL_NEAREST` copy at texel centres, the same size and clamp), and the present samples them the same way. The copy, when one is still needed, is drawn from the unchanged target, so it's what the capture would have drawn. The skipped clears were fully covered by opaque quads with blending off.
+- **Found on the way, already on main:** a target made again right after its old textures were deleted (a save state, a widescreen or resolution change, the options that redraw) can land in **main RAM**, because vitaGL frees deleted textures only once the GPU is done with them, and its CDRAM pool (96 MB on hardware) is nearly full. In Vita3K, after `state_test`'s save, both targets were in main RAM (`logs/v69n-state/spyro.log`, `gpu: target 0: ... (main RAM)`) until the load remade them. On main they stay there until the next remake, so every scene stores to the slower memory. With D69 (`gpu_direct=1`):
+  - **A dropped target's texture and FBO are kept** (`s_spare`) and given to the next target of the same size, so a save state's targets keep their CDRAM. Spares of another size are deleted when a target is made.
+  - **A target that is in main RAM anyway** (a size change, where nothing can be reused) swaps for a CDRAM slot texture at its first whole clear. The slot keeps the slower one: it's sampled once per picture, but each picture landing in it is copied, since a CDRAM target never takes it.
+  - In Vita3K, with the hand-over alone (`vpk-new2`), the state run's targets came back in CDRAM at their first clear, and the two main RAM textures then cost 129 copies in 452 pictures until the load. Where the CDRAM goes: the two 2048×2048 atlases are 16 MB each, plus 16 MB each for the D32 depth buffer vitaGL gives every FBO and we never use. Not changed here.
+- **Expected effect** (*estimate*, from C1's tail): one 960×544 scene less per picture, about half of the 2.5–3.7 ms tail, so ~1.3–1.8 ms of GPU per picture: ~1.3–1.8 ms per tick at 30 fps, ~2.6–3.6 ms per tick at 60. S, the game's own scene, doesn't change: it was 18.9–25.8 ms in C1's heavy windows, so this alone doesn't make 60 fit there. Runs E1–E4 (`tools/vita/fps-runs/`) measure it.
+- **Checked** (Vita3K is not hardware). "base" is main `67d07dd` built from a clean checkout (`logs/vpk-base`, SHA-1 `35cf1b98…`); "new" is this branch (`logs/vpk-new3`, `5bfde701…`). `realtime=0`, widescreen, window captures of the GPU's own picture (`CAPTURE=1`); script `logs/vd69.sh`, logs `logs/v69b-*` and `logs/v69n3-*` (gitignored):
+
+  | Run | What | Result |
+  |---|---|---|
+  | `ws` | gems script, 30 fps, 6 captures (title to the gems) | 13/13 files byte-identical (captures, replay shots, card) against base's second run `v69b-ws2` |
+  | `wsi0` | gems script, 60 fps forced | every capture identical inside the window. The window's outer 16 px differ at 5000–8400 by 732–1293 pixels (±1 on the top row, the corners). Base's own two `ws` runs differ the same way (732, 1245 and 1286 pixels at 5000, 7000 and 8400), and D68 saw it too, so it's Vita3K's or the compositor's state, not the picture. Base's 1800 caught Vita3K's shader-compile overlay; new's 1800 is identical to D68's main-tree capture `v68-cap-i0-on` |
+  | `pause` | pause and inventory (the `StoreImage` backgrounds), 60 fps forced | 47/47 identical |
+  | `demo` | attract demos (the 4:3 logic draw hidden, a 16:9 presentation pass), 60 fps forced | 16/16 identical |
+  | `end3`, `cred` | the third ending and the credits (pokes from the credits-crash session), 60 fps forced | 38/38 and 13/13 identical |
+  | `fairy` | save at the fairy, 30 fps | 30/30 identical, the memory card included |
+  | `43` | 4:3, 60 fps forced (778×544 slots, the screen still cleared) | 7/7 identical |
+  | `state` | save state at 8100, load at 8250 | captures and shots identical. `state1.bin` differs only in the build stamp and the overlays' native function pointers (`g_UpdateMoby`, `g_SpawnMoby`, ...), as between any two builds |
+
+  - **The counts** (new, all runs): 0 copies in any run but `state`, where the save's and the load's target remakes cost 4. Every picture was handed its target's texture or shown from it. 0 targets in main RAM. 0 `still waiting` or unknown commands.
+  - **The first two builds:** `vpk-new` (no memory check) gave the same captures. `vpk-new2` (hand-over only, no reuse) showed the main RAM finding above.
+  - **`gpu_time=2` in Vita3K** (relative only; Vita3K doesn't model the SGX), gems script, the median over 26 windows: the timed frame's tail went from 6.19 to 4.39 ms at 60 fps forced and from 0.35 to 0.14 ms at 30 fps (`v69b-gt`, `v69n3-gt`, `-gt30`).
+  - **Host:** this change is in `src/platform/vita/` only, which the host doesn't build. `ctest` 6/6 (`gte` and `m2c_diff_math` skipped, as before). `tools/host_checks.sh h69` against the render-thread session's `h68new-*` (main's shared code): demo 26/26, whole-game tour 139/139 shots with its trace and fairy card, routes A and B 56/56 each, all identical.
+  - **Not checked:** hardware. Runs E1–E4 in `tools/vita/fps-runs/` measure the GPU time saved, and E1 and E2 end with a save state for the main RAM finding.
+
+### D70. The in-between frame stays a full draw; a 28-byte vertex is the exact saving left
+- **The question** (the cheaper-in-between-frame session, from the ranked list after D68): most of a level doesn't move between ticks, only the camera and the blended mobys. Could the 60 fps in-between frame reuse the real frame's geometry (kept on the GPU, the camera applied in a vertex shader, or the recorded GL stream re-submitted with a new view matrix) instead of running the renderers, PsyCross's OT walk and the vertex upload again?
+- **Where an in-between frame's time goes** (hardware, C1 `logs/hw-pr40-c1/spyro.log`, vblank 3300 in Artisans: 139 in-between frames in 149 ticks; D1 `logs/hw-pr40-d68/spyro.log`; both gitignored):
+  - **Game thread, 8.6 ms** (`present` line, `passes`): mobys ~3.3, the OT walk ~2.6, the environment ~2.1, the snapshot and restore 0.47, blending 0.03. The rest (sky, HUD, particles) is ~0.1 ms. The `draw` line is per vblank, and a tick holds two draws: env 2.03, mobys 3.16; `time` ot 2.56.
+  - **Render thread, ~10 ms a picture** (`render` line). Of that, `expand()` is ~0.75 ms (`atlas`: 216 ms per 287 pictures) and `glBufferData` ~0.43 ms (75 MB per 287 pictures, ~260 KB a picture at 40 bytes a vertex). The rest is ~160 GL draws, the capture, the present and the swap; vitaGL's waits on the GPU are inside "busy" and the logs can't separate them.
+  - **GPU:** the same scene again, 5–13 ms in Artisans, 19–31 ms in the heavier level (C1, 6300–8100 and 10200). There, all three are near their limit at 60 fps (logic draw ~11 ms, render thread 13–15 ms a picture), the GPU worst.
+- **Why geometry can't be reused faithfully:**
+  - **Nothing 3D reaches PsyCross.** The renderers hand it primitives already projected to 16-bit screen x,y, sorted by depth into the OT (painter's order, no depth buffer), culled at the screen's edges and back-face culled (`NCLIP`). The GL stream holds 2D positions: there is no view matrix in it to change.
+  - **The depth isn't recoverable per vertex.** The GTE side channel (D39) finds 87–95% of vertices: its key is the integer screen position, and two vertices at one pixel make it ambiguous. `r_environment.s` keeps its projected vertices in a scratchpad table (`SXY << 5 | clip flags`, `SZ`) and builds primitives from it with `lw`/`sra`/`sw`, never `swc2`, so an address-keyed side channel can't follow a vertex into a primitive. Only instrumenting every primitive-building path of the hand-written renderer (or the hand-C session's rewrite) could.
+  - **Even exact 3D positions would show gaps.** Reprojecting the real frame's environment draws only what that frame kept. Whatever it culled at the screen's edge is missing from the in-between frame: every edge when moving forward, the trailing edge when turning (~5% of the width at 180°/s). Polygons back-face culled in one frame and not in the other leave holes at silhouettes, and near-plane culls do the same.
+  - **Mobys and Spyro are redrawn anyway** (they move and animate), and in Artisans they cost more than the environment (3.3 against 2.1 ms).
+  - **"Re-run only what moves":** in play the camera moves in nearly every tick, which moves every vertex on screen.
+  - **The GPU's cost wouldn't change:** the same triangles are drawn. In the heavier levels that is the limit.
+  - The user chose (via the coordinator) to keep the exact in-between frame and take the exact savings below.
+- **Chosen: `gpu_lean=1`, a 28-byte vertex** (`gpu_gl.c`, `LVertex`; `config.txt`, off by default until the hardware runs).
+  - With `tex_cache` (the default) or `tex_filter`, and neither `persp` nor `subpixel`, the expanded vertex's sub-pixel offset and `w` are always 0 and 1, and its UV box is texels 0..255. `LVertex` drops the first two and holds the box in bytes: 28 bytes instead of 40, written by `expand()`, uploaded, and read by the GPU for every picture, real and in-between.
+  - The primitive programs are compiled a second time with `#define LEAN` (`k_vs_prim_x`): the box comes as unsigned bytes, the offset as two shorts, and `gl_Position` is the same expression without the `* 1.0` and `+ 0.0`. The same values reach the fragment shaders.
+  - The set of programs follows the vertex (`s_vprog_l` or `s_vprog_x`). Switching `persp`/`subpixel` in the menu compiles the other set once, as other option sets already do (`gl_set_options`).
+  - **`expand()` remembers the last atlas block it found** (with `gpu_lean=1`). A quad's two triangles have the same UV box (D39), so the second one skips `atlas_find`'s hash probe. A found block doesn't move within an atlas generation, so the result is the same.
+  - It's self-contained in `expand()`, `gl_vertices()`, the attribute set-up in `gl_GR_DrawTriangles()` and the program sets; the present and capture path isn't touched.
+- **Tried and dropped: no in-between frame when nothing moved** (`interp_still`, built and checked on this branch, then removed). When `blend_state` changes nothing, the pass draws this tick's own state. The host's check mode compared that picture with the logic pass's: identical in all 504 such ticks (pause menu, title). But skipping the pass isn't the same as showing that picture:
+  - the game draws its frame after waiting for the vblank (`draw.c`: `VSync(0)`, `PutDispEnv`, then `DrawOTag`);
+  - so at the vblank where the in-between frame would show, the real frame doesn't exist yet. The skip holds the previous frame one vblank longer, as a budget skip does.
+  - In Vita3K's pause route, the spinning HUD icons were a tick behind in 5 of 70 shots (`logs/v69-interim/v69-pause-*`, the pause menu, where 202 ticks were skipped), and every move between skipping and not skipping shows one picture for 1 or 3 vblanks.
+  - It paid only in the pause menus and truly still scenes (an idle animation counts as movement), where the passes are cheap anyway.
+- **Not done:**
+  - **The passes skip the software-VRAM clear and the replay log:** both already are. The clear is `ClearImage`, frozen in passes since D30 (`g_psyxVramFrozen`; Spyro's play draw clears with the sky, not `ClearImage`). The replay log is complete only until 8 MB after a target's last whole clear, which in play no draw does, so `log_add` returns at once.
+  - **The snapshot:** 0.47 ms, and it copies only what the game reads again (D30).
+  - **A 24-byte vertex:** the atlas shaders clamp to the triangle's UV box (`k_fs_atlas_body`, `k_fs_atlas_plain_body`), so the box stays: 20 bytes of `GrVertex`, 4 of box and 4 of atlas offset.
+  - **Reprojection,** for the reasons above.
+- **Checked** (logs in this branch's worktree, gitignored; Vita3K is not hardware, and nothing here has run on a Vita):
+  - **Vita3K, `gpu_lean=0` against `gpu_lean=1` in the same VPK** (`logs/vpk-v69.vpk`, the final code but for this decision's number in one log line), `realtime=0`, widescreen, 60 fps forced (`interp=1 interp_budget=0`):
+    - Gems script: 44 replay shots, the WAV and the memory card byte-identical, and the same in-between frames in every window (`logs/v69-gems-off`, `-on`).
+    - Pause route (the `StoreImage` replay behind the pause and inventory menus): 70 shots and the card byte-identical (`logs/v69-pause-*`).
+    - Window captures of the GPU's own picture at six points (`CAPTURE=1`, `logs/v69-cap-*`): all six byte-identical, the window's edge included.
+    - **The vertex switched live:** `menu_test` turned `persp` on at 6000 (the 28-byte set to the 40-byte one) and, in a second run, off (back). Each compiled the other program set once (3.1 s and 3.0 s) and went on. After the switch back, the four captures are byte-identical to the 28-byte run's (`logs/v69-menu-persp-off`); with `persp` on, the picture is the perspective one, drawn whole (`logs/v69-menu-persp-on`).
+    - 0 unknown commands and no `still waiting` in any run.
+  - **Relative numbers, Vita3K, `REALTIME=1`** (gems script, `gpu_time=2`, `logs/v69-rt-*`): 1,389 MB of vertices for 12.1 million triangles with the 40-byte vertex, 967 MB for 12.1 million with the 28-byte one: 40.0 and 28.0 bytes a vertex, −30%. Vita3K's `glBufferData` (82.8 against 81.2 ms in all) and `expand()` (0.228 against 0.235 µs a textured triangle) show no difference: its render thread is 99% busy on its own GL, and its timings aren't the Vita's.
+  - **Hardware estimate** (C1's 3300 window): `glBufferData` 0.43 ms a picture at 40 bytes, so ~0.3 at 28, and a little less `expand()`: about −0.2 to −0.4 ms of the render thread's ~10 ms a picture, for every picture. The GPU reads 30% fewer vertex bytes; whether that shows in the scene time is for `e1`/`e2` to say.
+  - **Host:** the host doesn't build `gpu_gl.c`, and with `interp_still` gone this branch changes no shared code: the host compiles main's sources. Run while `interp_still` was still in (off), against main's binary (`build/hostbase`): `tools/host_checks.sh` 279/279 files identical (demo 26, whole-game tour with its fairy save 141, routes A and B 56 each; `logs/h69base-*`, `logs/h69new-*`); `ctest` all pass (`gte` and `m2c_diff_math` skipped, as before); the oracle replays as before (`cap3` 329 PASS and 9 NOEXIT, `cap5-fairy` 261 PASS and 7 NOEXIT, `cap6-tour` 358 PASS; `logs/oracle`).
+  - **A host oddity, not from this change:** in the first batch of host runs (three at once, 60 fps, a shot every 50 vblanks, `logs/h69-*`), two runs with the same binary and switches diverged from each other at the title menu (vblank 2106 against 2120: the new-game press was taken in one and not the other). It didn't come back in nine later runs to vblank 2300, with and without shots, with main's binary and this one (`logs/h69b-*`, `h69bs-*`, `h69r-*`, `h69ns-*`: all identical). Worth a look if host 60 fps runs ever disagree again.
+  - **Not checked:** hardware. `tools/vita/fps-runs/f1-cheap-off.txt` against `f2-cheap-on.txt` measures it; `f3-cheap-60fps.txt` is 60 fps as shipped with it on.
+- **Default:** off (`gpu_lean=0`) until F1/F2 have run on a Vita.
+
 ## 2026-11-01: the OT walk on a core of its own, and core 3
 
 ### D71. A parse thread walks a copy of each frame's primitives; core 3 is checked at start-up, not counted on

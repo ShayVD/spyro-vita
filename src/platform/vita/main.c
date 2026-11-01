@@ -92,6 +92,13 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
+ *       gpu_direct=0    with gpu=1, each widescreen or 60 fps picture copied
+ *                       into its slot and the screen cleared before it, as
+ *                       before D69 (default 1: a picture that is one target
+ *                       whole is shown from it, or takes its texture when
+ *                       the game clears it; the same pixels)
+ *       gpu_lean=1      with gpu=1 and neither persp nor subpixel, a 28-byte
+ *                       vertex instead of 40 (the same pixels; D70)
  *       parse_thread=1  with gpu=1 and render_thread=1, PsyCross's OT walk on
  *                       a thread of its own (core 1), walking a copy of the
  *                       frame's primitives while the game goes on (default
@@ -152,6 +159,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
+                        .gpu_direct = 1, /* D69 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -281,6 +289,10 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
+    else if (!strcmp(line, "gpu_direct"))
+      g_vita_opts.gpu_direct = atoi(v);
+    else if (!strcmp(line, "gpu_lean"))
+      g_vita_opts.gpu_lean = atoi(v);
     else if (!strcmp(line, "parse_thread"))
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "parse_core"))
