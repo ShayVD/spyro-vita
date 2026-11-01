@@ -1,0 +1,8 @@
+# Run B, the bench with 60 fps forced, everything on
+bench=2
+interp=1
+config_version=2
+interp_budget=0
+render_thread=1
+xa_ahead=1
+gpu_opaque=1

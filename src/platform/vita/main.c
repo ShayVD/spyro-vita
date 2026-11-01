@@ -75,6 +75,15 @@
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
+ *       render_thread=1 with gpu=1, every GL call on a render thread of its
+ *                       own (core 2), the game thread on core 0 (D63);
+ *                       0 (default): GL on the game thread, as before
+ *       xa_ahead=1      read the XA music's sectors ahead of the CD head on
+ *                       core 1 (D64); 0 (default): on the game thread
+ *       gpu_opaque=1    with gpu=1 and tex_cache=1, triangles whose texture
+ *                       blocks have no transparent or semi-transparent
+ *                       texel drawn by a shader without discard: the same
+ *                       pixels (D65); 0 (default): as before
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -239,6 +248,12 @@ static void read_config(void) {
       g_vita_opts.gpu_readback = atoi(v);
     else if (!strcmp(line, "mixer"))
       g_vita_opts.mixer = atoi(v);
+    else if (!strcmp(line, "render_thread"))
+      g_vita_opts.render_thread = atoi(v);
+    else if (!strcmp(line, "xa_ahead"))
+      g_vita_opts.xa_ahead = atoi(v);
+    else if (!strcmp(line, "gpu_opaque"))
+      g_vita_opts.gpu_opaque = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -380,6 +395,7 @@ int main(int argc, char **argv) {
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     sceKernelExitProcess(1);
   vita_audio_init();
+  vita_xa_ahead_init();
 
   arena_symbols();
   psx_mcrd_set_root(VITA_DATA_DIR "/save");

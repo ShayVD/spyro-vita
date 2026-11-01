@@ -16,6 +16,23 @@ Written 2026-11-01 from the hardware logs and the code on main `987c435`. Nothin
   2. **A render thread** (T1): vitaGL submission, vertex expansion and uploads on core 2, with `DrawOTag` handing the frame over the way the PS1's GPU took it (the game already joins at `DrawSync(0)`). That's about 12 ms a frame off the game thread, the biggest single CPU win. It has no data hazard with the game's memory, because PsyCross still parses the primitives before `DrawOTag` returns.
   3. **Cheaper pixels and calls:** an opaque draw path without `discard` where a triangle's texels have no transparent ones (G1), shader trims (G2), and on the CPU side XA reads off the game thread (C1) and GL state caching and batching (C2).
 
+## Done since: the render thread, the XA read-ahead, the opaque path (D63–D66)
+
+Implemented on 2026-11-01, all three behind `config.txt` switches that are off by default until the hardware runs in `tools/vita/fps-runs/` (they replace Phase 0 below):
+
+| Item | Switch | What moved or changed | Decision |
+|---|---|---|---|
+| T1, the render thread | `render_thread=1` | every vitaGL call (start-up, shaders, `expand()` and the atlas, uploads, draws, captures, presents, swaps, the readback replay) on core 2; the game thread records commands and is pinned to core 0 (C7) | D63 |
+| P1, in part | with `render_thread=1` | `interp_budget` also counts the render thread's time per picture, so 60 fps isn't tried where that thread or the GPU can't keep up | D63 |
+| C1, XA reads | `xa_ahead=1` | the XA sectors read ahead in 32-sector windows on core 1 | D64 |
+| G1, the opaque path | `gpu_opaque=1` | triangles whose atlas blocks have no transparent or STP texel drawn without `discard` | D65 |
+
+**Not done, and why** (D65, D66): shader trims that change arithmetic, GL state caching and batching (C2: off the game thread now, and PsyCross's splits leave little to merge), vertex buffer reuse, vitaGL compiler settings, the in-between frame on its own core (B2), the parse thread (T2), the GTE dispatch (C5).
+
+**Checked** (Vita3K is not hardware; host checks; results with log paths in D63–D65): RESULTS
+
+The threads and cores with everything on are in D66's table.
+
 ## Where a frame's time goes (measured)
 
 ### Threads and cores
@@ -151,6 +168,8 @@ At 30 fps after T1, the heavy scene's game thread is ≈ 16 ms of 33 (≈ 50% bu
 ## Roadmap
 
 ### Phase 0: measure (this PR, then three hardware runs)
+
+**Superseded:** the render thread, the XA read-ahead and the opaque path are in (D63–D65), so the runs now compare them on and off: `tools/vita/fps-runs/` (A1–A3, B1–B2, C1–C2, with a README of what each line shows). Runs A, B and C below are those runs' A1, B1 and C2.
 
 Build: the VPK from this PR (CI artifact `spyro-vita-vpk`), or `logs/vpk-fps-plan-measure/spyro-vita.vpk` in the main checkout (built from this branch, SHA-1 `79b1946b…`; not yet run in Vita3K or on hardware). Send back `ux0:data/spyro/spyro.log` from each run, renamed.
 

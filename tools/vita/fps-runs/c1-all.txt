@@ -1,0 +1,7 @@
+# Run C, 60 fps in play with the default budget, everything on
+interp=1
+config_version=2
+gpu_time=2
+render_thread=1
+xa_ahead=1
+gpu_opaque=1

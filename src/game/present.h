@@ -68,6 +68,12 @@ extern const PresentCapture *g_present_capture;
  * time). The Vita sets sceKernelGetProcessTimeWide. */
 extern long long (*g_present_clock_us)(void);
 
+/* interp_budget_us: microseconds a picture costs on another thread of the
+ * platform's (the Vita's render thread, decisions D63), or NULL (default):
+ * an in-between frame is also skipped while two pictures a tick wouldn't fit
+ * the budget there. */
+extern long long (*g_present_render_us)(void);
+
 int port_present_active(void); /* any feature on */
 void port_present_reset(void);  /* a save state was loaded: nothing queued */
 /* Call once per vblank. Returns the frame to show now (PS1 15-bit,

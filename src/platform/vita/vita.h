@@ -53,6 +53,9 @@ typedef struct {
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
   int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
+  int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
+  int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
+  int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -120,6 +123,7 @@ void vita_gpu_vram_loaded(void);    /* s_vram was overwritten */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
+long long (*vita_gpu_render_cost(void))(void); /* present.c's g_present_render_us, or NULL */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);
@@ -143,6 +147,11 @@ void vita_mixer_vblank(void); /* once per vblank, in place of psx_spu_vblank */
 void vita_mixer_drain(void);  /* wait until everything posted is mixed */
 void vita_mixer_report(int vblank); /* "mixer" line in the log */
 void vita_mixer_state(int load); /* save states: decoder state in or out of g_psx_spu (D51) */
+
+/* xa_ahead.c: the XA music read ahead of the CD head (D64) */
+void vita_xa_ahead_init(void);
+int vita_xa_accept(int lba, unsigned char *raw); /* psx_xa_accept, from the read-ahead */
+void vita_xa_ahead_report(int vblank);
 
 /* savestate_vita.c: save states (D51) */
 void vita_savestate_init(void);

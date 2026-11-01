@@ -291,7 +291,7 @@ void __wrap_psx_xa_reset(void) {
 
 void __wrap_psx_xa_sector(int lba) {
   unsigned char raw[PSX_CD_RAW_SECTOR];
-  if (!psx_xa_accept(lba, raw))
+  if (!vita_xa_accept(lba, raw)) /* the read-ahead's sectors, or read here (D64) */
     return;
   if (s_running)
     add_event(EV_SECTOR, raw);

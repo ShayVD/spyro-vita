@@ -1,0 +1,5 @@
+# Run A with the render thread and the XA read-ahead (D63, D64)
+gpu_time=2
+render_thread=1
+xa_ahead=1
+gpu_opaque=0

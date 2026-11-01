@@ -11,6 +11,7 @@
 #include "PsyX/PsyX_render.h"
 
 int g_vita_gpu; /* 1: gpu_gl.c is drawing */
+extern int g_rt_active; /* gpu_thread.c */
 int g_vita_gl;  /* 1: vitaGL owns the display (gpu_gl.c presents) */
 
 /* split tags PsyX_GPU.cpp puts on textured/untextured splits */
@@ -18,15 +19,20 @@ TextureID g_whiteTexture = 1;
 TextureID g_vramTexture = 2;
 int g_cfg_bilinearFiltering = 0;
 
+/* With render_thread=1 the GPU renderer's calls are recorded for the render
+ * thread (gpu_thread.c, D63) instead of run here. */
 #define BACKENDS(name, params)                                                 \
   void soft_##name params;                                                     \
-  void gl_##name params;
+  void gl_##name params;                                                       \
+  void rt_##name params;
 #define CALL(name, args)                                                       \
   do {                                                                         \
-    if (g_vita_gpu)                                                            \
-      gl_##name args;                                                          \
-    else                                                                       \
+    if (!g_vita_gpu)                                                           \
       soft_##name args;                                                        \
+    else if (g_rt_active)                                                      \
+      rt_##name args;                                                          \
+    else                                                                       \
+      gl_##name args;                                                          \
   } while (0)
 #define DISPATCH(name, params, args)                                           \
   BACKENDS(name, params)                                                       \

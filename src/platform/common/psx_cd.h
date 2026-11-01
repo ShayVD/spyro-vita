@@ -26,6 +26,19 @@ const PsxCdStream *psx_cd_stream(void);
  * file covers (filled with zeros). */
 int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]);
 
+/* Where the XA sector at lba lies in the files, for a reader of its own (the
+ * Vita's read-ahead thread, D64): psx_cd_read_raw's bytes are `left`
+ * consecutive sectors, the first at byte `offset` of `path`, one every
+ * `stride` bytes, PSX_CD_RAW_SECTOR of them at `skip` into each. Only
+ * reads tables that don't change once the disc is open, so any thread may
+ * call it. 0, or -1 if lba isn't in an XA file. */
+typedef struct {
+  char path[512];
+  long offset;
+  int stride, skip, left;
+} PsxCdXaLoc;
+int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc);
+
 #ifdef __cplusplus
 }
 #endif

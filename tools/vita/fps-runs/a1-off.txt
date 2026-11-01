@@ -1,0 +1,5 @@
+# Run A, as main: GL, XA reads and discard all on the game thread (D63-D66)
+gpu_time=2
+render_thread=0
+xa_ahead=0
+gpu_opaque=0

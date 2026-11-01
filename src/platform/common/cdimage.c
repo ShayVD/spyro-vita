@@ -58,6 +58,11 @@ void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent)) {
 
 const char *psx_cdimage_path(void) { return s_img.fp ? s_img.path : NULL; }
 
+void psx_cdimage_layout(int *sector, int *base) {
+  *sector = s_img.sector;
+  *base = s_img.base;
+}
+
 /* ---- SHA-1 (FIPS 180-4) ---- */
 
 #define ROL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))

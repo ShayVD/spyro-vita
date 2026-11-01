@@ -61,6 +61,7 @@ static long long clock_cpu_us(void) {
 }
 
 long long (*g_present_clock_us)(void) = clock_cpu_us;
+long long (*g_present_render_us)(void);
 
 static long long now_us(void) { return g_present_clock_us(); }
 
@@ -1069,7 +1070,8 @@ void PortPresentDraw(void) {
    * this tick shows its real frame for both vblanks (30 fps for a moment)
    * instead of running late, which would slow the game itself (D28). */
   if (interp && g_present.interp_budget_us &&
-      s_busy_wo_interp + s_interp_cost > g_present.interp_budget_us) {
+      (s_busy_wo_interp + s_interp_cost > g_present.interp_budget_us ||
+       (g_present_render_us && 2 * g_present_render_us() > g_present.interp_budget_us))) {
     interp = 0;
     g_present_stats.budget_skips++;
   }

@@ -65,6 +65,8 @@ typedef struct {
 int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCdError *err);
 void psx_cdimage_close(void);
 const char *psx_cdimage_path(void);
+/* The open image's sector size (2352 or 2448) and first LBA */
+void psx_cdimage_layout(int *sector, int *base);
 
 /* n bytes from offset off of the 2352-byte raw sector at lba (off 16: the
  * subheader, 24: Form 1 data). Returns n, or -1 past the end of the image. */

@@ -292,6 +292,27 @@ int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   return 0;
 }
 
+int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc) {
+  CdFile *f = cd_find(lba);
+  if (!f || !f->xa)
+    return -1;
+  loc->left = f->lba + f->nsect - lba;
+  if (s_image) {
+    int sector, base;
+    psx_cdimage_layout(&sector, &base);
+    snprintf(loc->path, sizeof loc->path, "%s", psx_cdimage_path());
+    loc->offset = (long)(lba - base) * sector;
+    loc->stride = sector;
+    loc->skip = 16; /* sync and header, as image_read_raw */
+  } else {
+    snprintf(loc->path, sizeof loc->path, "%s/%s", s_dir, f->path);
+    loc->offset = (long)(lba - f->lba) * PSX_CD_RAW_SECTOR;
+    loc->stride = PSX_CD_RAW_SECTOR;
+    loc->skip = 0;
+  }
+  return 0;
+}
+
 static unsigned char bcd(int v) { return (unsigned char)(((v / 10) << 4) | (v % 10)); }
 static int unbcd(unsigned char v) { return (v >> 4) * 10 + (v & 15); }
 

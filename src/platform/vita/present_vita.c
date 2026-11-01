@@ -53,8 +53,10 @@ void vita_present_init(void) {
   vita_present_apply();
   g_present.stats = g_vita_opts.stats ? 1 : 0;
   g_present_clock_us = vita_clock_us;
-  if (g_vita_gpu)
+  if (g_vita_gpu) {
     g_present_capture = vita_gpu_present_capture();
+    g_present_render_us = vita_gpu_render_cost(); /* the render thread's share (D63) */
+  }
   else
     g_host_opts.out960 = 2; /* shots: the presentation frame on screen, 512x240 */
   vita_log("present: widescreen %d, interp %d (budget %d ms), %s capture; "
