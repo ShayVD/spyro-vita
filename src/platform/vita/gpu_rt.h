@@ -54,4 +54,12 @@ void gl_pres_capture(int x, int y, int w, int h);
 void gl_pres_commit(int slot);
 uint16_t *gl_host_vram(void);
 
+/* dynres.c: dynamic resolution (D75), on the vitaGL thread but for
+ * dynres_room */
+void dynres_picture(int menu); /* every picture; menu: the options panel is up */
+int dynres_scale(void);        /* per mille: the scale targets take at their next whole clear */
+int dynres_room(void);         /* any thread: 1 while dynres=auto may still go down */
+void dynres_report(int vblank);
+void vita_gpu_meter_display(int on); /* gpu_meter.c: around vglSwapBuffers */
+
 #endif

@@ -169,6 +169,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
+                        .dynres = 1, /* D75 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -309,6 +310,8 @@ static void read_config(void) {
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "parse_core"))
       g_vita_opts.parse_core = atoi(v);
+    else if (!strcmp(line, "gpu_meter"))
+      g_vita_opts.gpu_meter = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))

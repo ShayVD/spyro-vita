@@ -109,6 +109,13 @@ typedef struct {
   int tex_stale;   /* s_vram changed in its rect (a clear) without an upload */
   unsigned used;   /* last use, for eviction */
   int cdram;       /* tex is in CDRAM (tex_cdram) */
+  /* dynres (D75): drawn into the dpw x dph texels at the texture's origin
+   * (the VRAM rect's top-left corner, as copy_into maps it), at
+   * sx x sy target pixels per VRAM pixel; pm is that scale per mille, set
+   * at the target's whole clear. pm 1000: dpw, dph = pw, ph and sx, sy =
+   * s_sx, s_sy, exactly as without dynres. */
+  int pm, dpw, dph;
+  float sx, sy;
   TargetLog log;
 } Target;
 
@@ -319,7 +326,9 @@ static void swap(void) {
     __atomic_store_n(&s_sample.seq, s_sample.seq + 1, __ATOMIC_RELEASE);
     s_sample.state = 0;
   }
+  vita_gpu_meter_display(1); /* this scene's time isn't the GPU's work (gpu_meter.c, D75) */
   vglSwapBuffers(GL_FALSE);
+  vita_gpu_meter_display(0);
 }
 
 /* ---- shaders (GLSL ES 1.00, run through vitaGL's translator) ---- */
@@ -904,7 +913,7 @@ static void copy_into(Target *t, int x, int y, int w, int h) {
   if (s_npsrc)
     pres_touch(t, 0);
   bind_fbo(t->fbo);
-  glViewport(0, 0, t->pw, t->ph);
+  glViewport(0, 0, t->dpw, t->dph);
   no_blend();
   glUseProgram(s_prog[P_VRAM15].prog);
   glActiveTexture(GL_TEXTURE0);
@@ -929,7 +938,7 @@ static void move_into(Target *t, const Target *src, int x, int y, int w, int h, 
   if (s_npsrc)
     pres_touch(t, 0);
   bind_fbo(t->fbo);
-  glViewport(0, 0, t->pw, t->ph);
+  glViewport(0, 0, t->dpw, t->dph);
   no_blend();
   glUseProgram(s_prog[P_TEX].prog);
   glActiveTexture(GL_TEXTURE1);
@@ -945,6 +954,10 @@ static void move_into(Target *t, const Target *src, int x, int y, int w, int h, 
   uv[1] = (float)(y + dy - src->y) / src->h;
   uv[2] = (float)(x + w + dx - src->x) / src->w;
   uv[3] = (float)(y + h + dy - src->y) / src->h;
+  if (src->pm < 1000) { /* the part of its texture it's drawn in (D75) */
+    uv[0] *= (float)src->dpw / src->pw, uv[2] *= (float)src->dpw / src->pw;
+    uv[1] *= (float)src->dph / src->ph, uv[3] *= (float)src->dph / src->ph;
+  }
   quad(ndc, uv);
   s_st.copies++;
   s_st.moves++;
@@ -1295,6 +1308,10 @@ static void readback(Target *t) {
   int i, j;
   if (!t->cpu_stale)
     return;
+  if (t->pm < 1000) { /* D75 */
+    src[2] = (float)t->dpw / t->pw;
+    src[3] = (float)t->dph / t->ph;
+  }
   t0 = now_us();
   flush_pending();
   if (replay(t) == 0)
@@ -1405,6 +1422,27 @@ static void set_scale(void) {
   vita_log("gpu: targets at %.3f x %.3f the PS1's pixels (display %dx%d)", s_sx, s_sy, dw, dh);
 }
 
+/* Target t drawn from now on at dynres's scale (D75), per mille of its
+ * texture. Only where nothing drawn before is kept: when it's made, and at
+ * a whole clear (the presentation pictures still on it have had theirs,
+ * pres_touch). At 1000, every size and scale is what it was without
+ * dynres, so the GL calls are the same. */
+static void set_tscale(Target *t, int pm) {
+  if (g_vita_opts.gpu_res != 0 || pm >= 1000) {
+    t->pm = 1000;
+    t->dpw = t->pw;
+    t->dph = t->ph;
+    t->sx = s_sx;
+    t->sy = s_sy;
+    return;
+  }
+  t->pm = pm;
+  t->dpw = (t->pw * pm + 999) / 1000;
+  t->dph = (t->ph * pm + 999) / 1000;
+  t->sx = (float)t->dpw / t->w;
+  t->sy = (float)t->dph / t->h;
+}
+
 /* The target for draw area (x, y, w, h): one that contains it, or a new one
  * (absorbing any it overlaps). */
 static Target *target_for(int x, int y, int w, int h) {
@@ -1486,6 +1524,7 @@ static Target *target_for(int x, int y, int w, int h) {
   glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
   s_bound_fbo = t->fbo;
   t->used = ++s_use;
+  set_tscale(t, dynres_scale());
   vita_log("gpu: target %d: VRAM %d,%d %dx%d -> %dx%d (%s)", s_ntargets - 1, t->x, t->y, t->w,
            t->h, t->pw, t->ph, t->cdram > 0 ? "CDRAM" : t->cdram ? "memory unknown" : "main RAM");
   upload_vram();
@@ -1820,11 +1859,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     pres_touch(t, 0);
 
   bind_fbo(t->fbo);
-  glViewport(0, 0, t->pw, t->ph);
-  x0 = (int)((s_clip_x0 - t->x) * s_sx + 0.5f);
-  y0 = (int)((s_clip_y0 - t->y) * s_sy + 0.5f);
-  x1 = (int)((s_clip_x1 - t->x) * s_sx + 0.5f);
-  y1 = (int)((s_clip_y1 - t->y) * s_sy + 0.5f);
+  glViewport(0, 0, t->dpw, t->dph);
+  x0 = (int)((s_clip_x0 - t->x) * t->sx + 0.5f);
+  y0 = (int)((s_clip_y0 - t->y) * t->sy + 0.5f);
+  x1 = (int)((s_clip_x1 - t->x) * t->sx + 0.5f);
+  y1 = (int)((s_clip_y1 - t->y) * t->sy + 0.5f);
   glEnable(GL_SCISSOR_TEST);
   glScissor(x0, y0, x1 - x0, y1 - y0);
 
@@ -1834,8 +1873,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
    * pixel's corner, GL at its centre. (Half a PS1 pixel would shift what is
    * drawn against what LoadImage put there, and leave the target's first
    * rows and columns uncovered, once targets have more pixels than VRAM.) */
-  s_xf[0] = (float)(s_org_x - t->x) + 0.5f / s_sx;
-  s_xf[1] = (float)(s_org_y - t->y) + 0.5f / s_sy;
+  s_xf[0] = (float)(s_org_x - t->x) + 0.5f / t->sx;
+  s_xf[1] = (float)(s_org_y - t->y) + 0.5f / t->sy;
   s_xf[2] = 2.0f / t->w;
   s_xf[3] = 2.0f / t->h;
   glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
@@ -2028,10 +2067,6 @@ static void clear_targets(int x, int y, int w, int h) {
     int sx0, sy0, sx1, sy1, whole;
     if (x0 >= x1 || y0 >= y1)
       continue;
-    sx0 = (int)((x0 - t->x) * s_sx + 0.5f);
-    sy0 = (int)((y0 - t->y) * s_sy + 0.5f);
-    sx1 = x1 == t->x + t->w ? t->pw : (int)((x1 - t->x) * s_sx + 0.5f);
-    sy1 = y1 == t->y + t->h ? t->ph : (int)((y1 - t->y) * s_sy + 0.5f);
     whole = x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h;
     if (whole) {
       log_begin(t, 0, s_clear15); /* cleared whole: the log starts again */
@@ -2044,6 +2079,12 @@ static void clear_targets(int x, int y, int w, int h) {
     }
     if (s_npsrc)
       pres_touch(t, whole);
+    if (whole) /* nothing drawn before is kept: dynres's scale from here (D75) */
+      set_tscale(t, dynres_scale());
+    sx0 = (int)((x0 - t->x) * t->sx + 0.5f);
+    sy0 = (int)((y0 - t->y) * t->sy + 0.5f);
+    sx1 = x1 == t->x + t->w ? t->dpw : (int)((x1 - t->x) * t->sx + 0.5f);
+    sy1 = y1 == t->y + t->h ? t->dph : (int)((y1 - t->y) * t->sy + 0.5f);
     bind_fbo(t->fbo);
     glClearColor(s_clear_rgb[0], s_clear_rgb[1], s_clear_rgb[2], 1.0f);
     glEnable(GL_SCISSOR_TEST);
@@ -2253,7 +2294,7 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
   int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
   int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
   float kx = (float)pw / w, ky = (float)ph / h;
-  float sx = (float)t->pw / t->w, sy = (float)t->ph / t->h; /* as drawn */
+  float sx = (float)t->dpw / t->w, sy = (float)t->dph / t->h; /* as drawn (D75) */
   float tx0 = (x0 - t->x) * sx, tx1 = (x1 - t->x) * sx;
   float ty0 = (y0 - t->y) * sy, ty1 = (y1 - t->y) * sy;
   if (x0 >= x1 || y0 >= y1)
@@ -2262,13 +2303,13 @@ static int place(const Target *t, int x, int y, int w, int h, int pw, int ph, fl
   pos[1] = (y0 - y) * ky, pos[3] = (y1 - y) * ky;
   if (kx - sx < 0.01f && sx - kx < 0.01f) {
     tx0 = floorf(tx0 + 0.5f);
-    tx1 = x1 == t->x + t->w ? t->pw : floorf(tx1 + 0.5f);
+    tx1 = x1 == t->x + t->w ? t->dpw : floorf(tx1 + 0.5f);
     pos[0] = floorf(pos[0] + 0.5f);
     pos[2] = pos[0] + (tx1 - tx0);
   }
   if (ky - sy < 0.01f && sy - ky < 0.01f) {
     ty0 = floorf(ty0 + 0.5f);
-    ty1 = y1 == t->y + t->h ? t->ph : floorf(ty1 + 0.5f);
+    ty1 = y1 == t->y + t->h ? t->dph : floorf(ty1 + 0.5f);
     pos[1] = floorf(pos[1] + 0.5f);
     pos[3] = pos[1] + (ty1 - ty0);
   }
@@ -2299,6 +2340,8 @@ static int s_pw, s_ph;
 static struct {
   GLuint tex;     /* the target texture this slot's picture still is, 0: s_ptex holds it */
   int x, y, w, h; /* the VRAM rect captured */
+  int dw, dh;     /* dynres (D75): the picture is the dw x dh texels at its
+                     texture's origin; 0: all of it */
 } s_psrc[PRESENT_SLOTS + 1];
 
 static void pres_alloc(int w, int h) {
@@ -2345,11 +2388,18 @@ static Target *whole_target(int x, int y, int w, int h) {
  * copy_into(). */
 static void pres_draw(int slot, int x, int y, int w, int h) {
   float ndc[4], src[4];
-  int i;
+  const Target *wt = whole_target(x, y, w, h);
+  int i, vw = s_pw, vh = s_ph;
+  if (wt && wt->pm < 1000) { /* one target at a dynres scale: copied 1:1 at it (D75) */
+    vw = wt->dpw;
+    vh = wt->dph;
+  }
+  s_psrc[slot].dw = vw < s_pw || vh < s_ph ? vw : 0;
+  s_psrc[slot].dh = vw < s_pw || vh < s_ph ? vh : 0;
   bind_fbo(s_pfbo[slot]);
-  glViewport(0, 0, s_pw, s_ph);
+  glViewport(0, 0, vw, vh);
   no_blend();
-  if (!g_vita_opts.gpu_direct || !whole_target(x, y, w, h)) {
+  if (!g_vita_opts.gpu_direct || !wt) {
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
   }
@@ -2357,12 +2407,12 @@ static void pres_draw(int slot, int x, int y, int w, int h) {
   for (i = 0; i < s_ntargets; i++) {
     const Target *t = &s_targets[i];
     float pos[4];
-    if (!place(t, x, y, w, h, s_pw, s_ph, pos, src))
+    if (!place(t, x, y, w, h, vw, vh, pos, src))
       continue;
-    ndc[0] = pos[0] / s_pw * 2 - 1;
-    ndc[2] = pos[2] / s_pw * 2 - 1;
-    ndc[1] = pos[1] / s_ph * 2 - 1;
-    ndc[3] = pos[3] / s_ph * 2 - 1;
+    ndc[0] = pos[0] / vw * 2 - 1;
+    ndc[2] = pos[2] / vw * 2 - 1;
+    ndc[1] = pos[1] / vh * 2 - 1;
+    ndc[3] = pos[3] / vh * 2 - 1;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, t->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -2393,6 +2443,8 @@ void gl_pres_capture(int x, int y, int w, int h) {
   if (g_vita_opts.gpu_direct && (t = whole_target(x, y, w, h)) != NULL) {
     s_psrc[STAGING].tex = t->tex;
     s_psrc[STAGING].x = x, s_psrc[STAGING].y = y, s_psrc[STAGING].w = w, s_psrc[STAGING].h = h;
+    s_psrc[STAGING].dw = t->pm < 1000 ? t->dpw : 0; /* D75 */
+    s_psrc[STAGING].dh = t->pm < 1000 ? t->dph : 0;
     s_npsrc++;
     return;
   }
@@ -2517,7 +2569,7 @@ static void draw_overlay(void) {
  * rasterizer shown through vitaGL). Whether it's needed was decided on the
  * game thread (gpu_thread.c). */
 static void present_slot(int slot, int wide) {
-  int area_w = wide ? SCREEN_W : AREA43_W;
+  int area_w = wide ? SCREEN_W : AREA43_W, lin = g_vita_opts.filter;
   int area_x = (SCREEN_W - area_w) / 2;
   float ndc[4], src[4] = {0, 0, 1, 1};
   bind_fbo(0);
@@ -2533,6 +2585,16 @@ static void present_slot(int slot, int wide) {
     glBindTexture(GL_TEXTURE_2D, s_psrc[slot].tex ? s_psrc[slot].tex : s_ptex[slot]);
     if (s_psrc[slot].tex)
       s_st.pres_direct++;
+    if (s_psrc[slot].dw) {
+      /* drawn at a dynres scale (D75): its part of the texture, scaled up
+       * with the GPU's bilinear filter, half a texel in from the part's
+       * edges (the texels past them are older pictures') */
+      src[0] = 0.5f / s_pw;
+      src[1] = 0.5f / s_ph;
+      src[2] = (s_psrc[slot].dw - 0.5f) / s_pw;
+      src[3] = (s_psrc[slot].dh - 0.5f) / s_ph;
+      lin = 1;
+    }
   } else {
     const uint16_t *px = port_present_slot_pixels(slot);
     static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
@@ -2548,8 +2610,8 @@ static void present_slot(int slot, int wide) {
     src[1] = (float)shown_top(PRESENT_H) / PRESENT_H;
     src[3] = 1 - src[1];
   }
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lin ? GL_LINEAR : GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lin ? GL_LINEAR : GL_NEAREST);
   glActiveTexture(GL_TEXTURE0);
   glUseProgram(s_prog[P_TEX].prog);
   ndc[0] = (float)area_x / SCREEN_W * 2 - 1;
@@ -2563,7 +2625,7 @@ static void present_slot(int slot, int wide) {
 static void present_display(void) {
   const DISPENV *d = &g_gl_env.disp;
   int dw = d->disp.w > 0 ? d->disp.w : 320, dh = d->disp.h > 0 ? d->disp.h : 240;
-  int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i;
+  int area_w = AREA43_W, area_x = (SCREEN_W - area_w) / 2, i, lin;
   int top = shown_top(dh), sy = d->disp.y + top, sh = dh - 2 * top; /* lines shown */
   float ndc[4], src[4];
   flush_pending();
@@ -2621,8 +2683,13 @@ static void present_display(void) {
         ndc[3] = 1 - pos[3] / SCREEN_H * 2;
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, t->tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_vita_opts.filter ? GL_LINEAR : GL_NEAREST);
+        lin = g_vita_opts.filter || t->pm < 1000; /* a dynres scale: bilinear (D75) */
+        if (t->pm < 1000) { /* half a texel inside its part, as present_slot */
+          src[0] = fmaxf(src[0], 0.5f / t->pw), src[2] = fminf(src[2], (t->dpw - 0.5f) / t->pw);
+          src[1] = fmaxf(src[1], 0.5f / t->ph), src[3] = fminf(src[3], (t->dph - 0.5f) / t->ph);
+        }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lin ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lin ? GL_LINEAR : GL_NEAREST);
         glActiveTexture(GL_TEXTURE0);
         quad(ndc, src);
       }
@@ -2635,6 +2702,7 @@ static void present_display(void) {
  * hd_shot: also a 960x544 PNG for that vblank (shot_hd=1). */
 void gl_present(int slot, int wide, int hd_shot) {
   gprof_enter(PROF_PRESENT);
+  dynres_picture(s_ovl != NULL); /* the scale the next frames' targets take (D75) */
   if (slot >= 0)
     present_slot(slot, wide);
   else
@@ -2752,5 +2820,6 @@ void gl_report(int vblank) {
                s_ast.plain);
     s_ast.blocks = s_ast.misses = s_ast.decoded = s_ast.plain = 0;
   }
+  dynres_report(vblank);
   memset(&s_st, 0, sizeof s_st);
 }

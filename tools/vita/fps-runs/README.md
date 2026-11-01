@@ -122,3 +122,28 @@ The same VPK for all three. `fast_render=1` is the default since D72; G1 turns i
 **G2 against G3.** At 60 fps the in-between frame runs the renderers again, so the gain counts twice. `present N:`: more in-between frames per window, and fewer falls to a held 30 in the places where G3 before this change held 30.
 
 **A bug would look like:** anything on screen that differs between G1 and G2 at the same place (a missing or torn polygon, a wrong colour, a flickering sky, Spyro or a moby drawn wrong), or a crash in a level G1 runs.
+
+## Runs J1–J5: dynamic resolution (D75)
+
+The same VPK for all five (built from the D75 branch). `dynres=1` (auto) is the default from D75 on; `dynres=0` puts back native resolution always, drawn exactly as main draws it. The route is the one in `logs/hw-main-2a0691c`: a minute in Artisans, then **Toasty** (level 14) for 3–5 minutes, the same paths each time, ending with the heavy views that ran late there (vblanks ~2100–3600 and 7500–9300 of that log: the open areas with the most on screen). Don't open the options menu during J1–J3 (the menu's windows are paused and their timings mean nothing).
+
+| File | Switches | Do |
+|---|---|---|
+| `j1-dynres-off.txt` | 60 fps forced (`interp=1 interp_budget=0`), `dynres=0`, `gpu_meter=1` (the meter on with dynres off), `gpu_lean=1 parse_thread=1` as in `hw-main-2a0691c` | the route |
+| `j2-dynres-auto.txt` | as J1 with `dynres=1`: the scale is the only thing that reacts to the GPU | the same route |
+| `j3-dynres-75.txt` | as J1 with `dynres=75`: always 720×408 | the same route |
+| `j4-menu-60fps.txt` | the menu's defaults with 60 FPS on: `dynres=1` and the budget's hold | the same route, then open the menu once and look at the DYNAMIC RES row |
+| `j5-menu-30fps.txt` | the menu's defaults (30 fps), `dynres=1` | the same route |
+
+**What each log line should show:**
+- At start: `gpu: GPU time from vitaGL's scene fences, polled every 200 us on core 1 (D75)` in J1–J5. Then, at the first picture, `dynres: off, scale 100%` (J1), `auto, scale 100%` (J2, J4, J5) or `fixed, scale 75%` (J3). **If `gpu: no scene-done notifications from the GPU` appears, the meter doesn't work on hardware: J2 and J4 stay at 100% and the rest of these runs measure nothing.**
+- `dynres N: GPU time per picture 100%: P pictures, X ms; ...; D down, U up, now S%`: every 300 vblanks. X is the GPU's busy time per picture at each scale in that window, measured from the scene fences with no `glFinish`.
+  - **J1** gives the GPU's cost at 960×544 in every window. In `hw-main-2a0691c`'s late windows the render thread took 16–24 ms a picture (busy × 300 / pictures), so X there should be about 16–24 ms, and 7–9 ms in the windows that held 60 (4200–4500). If X is far below the render thread's per-picture time where pictures were late, the GPU isn't the wall there and dynres can't help.
+  - **J3** against J1 at the same place: X at 75% should be about 0.56 of J1's plus a fixed part (*estimate*: 1–2 ms). Those two numbers per window give the model behind the steps (D75's table): send both logs.
+  - **J2**: in the light windows `now 100%` and 0 down; in the heavy ones `now 88%` or `75%`, rarely `67%`, with `vblanks late` near 3 per window (J1 had 40–100 there) and `render N:` per picture under 16.7 ms. `D down, U up` should be a handful per minute at most: more than one down and one up in most windows is pumping (say where).
+  - `dynres: GPU ... ms a picture at A%, over 94% of 16.68 ms: B%` and `... predicted to fit: B%` lines: each change, with the cost that caused it.
+- `vblank N: ... pictures, ... vblanks late` and `render N: ... per picture`: J2 against J1 at the same place. That's the gain.
+- **J4**: as J2, but the budget may still fall to 30 (`present N: ... falls to a held 30 fps`). With dynres on, late pictures don't count towards the budget's falls until dynres is at 67% (D75), so there should be fewer falls than in a D1/H2 run at the same place. The menu shows `DYNAMIC RES < AUTO >`.
+- **J5**: a picture may take two vblanks at 30 fps, so dynres should stay at `now 100%` with 0 down in every window (Toasty's heaviest views took 16–24 ms, under 94% of 33.4).
+
+**The picture:** with dynres on, the heavy views turn a little softer (bilinear upscaling from 840×476, 720×408 or 641×363) and sharpen again within a few seconds of the view getting lighter. A bug would look like: a picture shifted, stretched or with a band of an older picture at its right or bottom edge, the in-between frames jumping against the real ones, a flash at the moment of a change, the pause or inventory background looking wrong, or the scale changing back and forth every second or so in one place.

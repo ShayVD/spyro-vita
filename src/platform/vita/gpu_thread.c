@@ -273,7 +273,9 @@ static void game_wait(int why, int k, uint32_t target) {
   prof_leave();
   s_wait_us[why] += now_us() - t0;
   s_waits[why]++;
-  s_late_total += why == W_FRAME;
+  /* a late picture that dynres=auto can still fix by going down isn't the
+   * 60 fps budget's (D75): it falls to 30 only once dynres is at its floor */
+  s_late_total += why == W_FRAME && !dynres_room();
 }
 
 /* Room for a command of `size` bytes (a multiple of 8) at s_w. With the

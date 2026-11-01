@@ -60,6 +60,9 @@ typedef struct {
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
+  int dynres;         /* dynres=1 (default): auto, a lower render scale only when the GPU can't
+                         keep up; 0: off; 88, 75, 67: that scale, always (D75) */
+  int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

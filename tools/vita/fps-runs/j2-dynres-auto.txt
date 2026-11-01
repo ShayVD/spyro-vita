@@ -1,0 +1,7 @@
+# Run J2, dynamic resolution (D75) on its own: as J1 with dynres=1 (auto). 60 fps forced, so the scale is the only thing that reacts to the GPU
+interp=1
+interp_budget=0
+dynres=1
+gpu_lean=1
+parse_thread=1
+config_version=3

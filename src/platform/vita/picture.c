@@ -73,6 +73,9 @@ void vita_picture_report(int vblank) {
 static const char *const k_filter_names[] = {"OFF", "BILINEAR", "3-POINT (SLOW)"};
 static const char *const k_res_names[] = {"NATIVE", "PS1", "2X", "3X", "4X"};
 static const char *const k_dd_names[] = {"OFF", "1.5X", "2X"};
+/* dynres= (D75): off, auto, or a fixed scale in percent */
+static const char *const k_dynres_names[] = {"OFF", "AUTO", "88%", "75%", "67%"};
+static const int k_dynres_values[] = {0, 1, 88, 75, 67};
 static const int k_dd_values[] = {100, 150, 200};
 /* Labels and values fit the 640-pixel panel with "< >" round the value
  * (18 pixels a letter: at most 31 letters together). */
@@ -88,6 +91,9 @@ static const MenuOption k_rows[] = {
      .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
      .names = k_res_names, .count = 5, .on_change = res_changed, .visible = gpu_shown},
+    {.section = MENU_PICTURE, .label = "DYNAMIC RES", .key = "dynres", .value = &g_vita_opts.dynres,
+     .names = k_dynres_names, .values = k_dynres_values, .count = 5, .fmt = "%d%%",
+     .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "DRAW DISTANCE (EXP.)", .key = "draw_distance",
      .value = &g_vita_opts.draw_distance, .names = k_dd_names, .values = k_dd_values,
      .count = 3, .fmt = "%d%%", .on_change = draw_distance_changed},

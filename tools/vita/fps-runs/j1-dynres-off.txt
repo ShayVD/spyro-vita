@@ -1,0 +1,8 @@
+# Run J1, the baseline for dynamic resolution (D75): 60 fps forced (every tick its in-between frame), native resolution always (dynres=0), with the GPU time meter on (gpu_meter=1): the GPU's ms per picture at 960x544 in each place
+interp=1
+interp_budget=0
+dynres=0
+gpu_meter=1
+gpu_lean=1
+parse_thread=1
+config_version=3
