@@ -136,9 +136,14 @@
  *                       (tools/vita/vita3k_run.sh CAPTURE=1)
  *       poke=V:ADDR=VALUE  at vblank V, write a 32-bit word to PS1 RAM (hex
  *                       ADDR and VALUE; tests, as the linux32 host's --poke)
+ *       hang_dump=0     no crash dump when the watchdog finds the game stuck
+ *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
+ *       hang_test=V     tests: the game thread spins from vblank V
+ *                       (hang_test=V,wait: blocks on a semaphore)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
+#include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
 #include "psx_hooks.h"
@@ -320,6 +325,8 @@ static void read_config(void) {
       g_vita_opts.tex_cache = atoi(v);
     else if (!strcmp(line, "state_test"))
       vita_savestate_config(v);
+    else if (vita_watchdog_config(line, v))
+      ; /* hang_dump=, hang_test= (watchdog.c, D73) */
     else if (!strcmp(line, "config_version"))
       version = atoi(v);
     else
@@ -469,6 +476,7 @@ int main(int argc, char **argv) {
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);
   port_cheats_set_log(vita_log); /* menu_game.c's cheats (D50) */
   vita_savestate_init();
+  vita_watchdog_start(); /* D73 */
   spyro_main(); /* never returns */
   return 0;
 }

@@ -7,6 +7,7 @@
  * is untouched: it never sees the menu's buttons. */
 #include "vita.h"
 #include "menu_opts.h"
+#include "watchdog.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
@@ -165,8 +166,10 @@ int vita_menu_service(void) {
   SceUInt64 t0 = sceKernelGetProcessTimeWide();
   vita_pad_take_tap(); /* the tap that opened it, if one did */
   vita_log("menu: open%s", test ? " (menu_test)" : "");
+  g_wd.game_ctx = WD_CTX_MENU; /* the vblanks stop: the watchdog counts frames (D73) */
   while (open) {
     uint16_t m, pressed;
+    g_wd.menu_frames++;
     vita_pad_poll();
     m = vita_pad_read();
     if (test) {
@@ -205,6 +208,7 @@ int vita_menu_service(void) {
   vita_video_overlay(NULL, 0, 0);
   vita_video_force_redraw();
   vita_video_present();
+  g_wd.game_ctx = WD_CTX_PLAY;
   s_swallow = prev; /* what closed it stays away from the game until released */
   s_prev = prev;
   save();

@@ -8,6 +8,7 @@
  * scripted test runs replay exactly. Also PsyX's scene hooks (isbg clears),
  * the same as linux32's. */
 #include "vita.h"
+#include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
 #include "psx_hooks.h"
@@ -84,6 +85,7 @@ static void vblank(void) {
   int v = ++s_vblank, i;
   SceUInt64 now;
 
+  vita_watchdog_vblank(v); /* "where" lines, hang_test= (D73) */
   vita_pad_poll();
   vita_pad_vblank();
   prof_enter(PROF_SPU);

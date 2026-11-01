@@ -120,6 +120,8 @@ Files the app writes:
 | `interp=1` | experimental 60 fps (default 0: 30 fps; decisions D44): an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). It doesn't fit the Vita's CPU at 16:9 yet, so most ticks fall back to 30 fps. `interp=2`: without animation blending; `interp=3`: camera only. Written by hand, `interp=1` needs a `config_version=2` line too; without one it's taken as the old default an older build's menu wrote, and read as 0 (the menu writes both) |
 | `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
+| `hang_dump=0` | no crash dump when the game freezes. Default 1: 20 s after a `hang:` line, if the game is still stuck, the app stops itself so the Vita writes a crash dump (see "If the game freezes", D73) |
+| `hang_test=V` | tests: the game thread spins from vblank V, so the watchdog's `hang:` line (and with `hang_dump=1` the crash dump) can be seen. `hang_test=V,wait` blocks it on a semaphore instead |
 | `poke=V:ADDR=VALUE` | at vblank V, write a 32-bit word into PS1 RAM (hex; tests, like the linux32 host's `--poke`; up to 16) |
 | `interp_budget=MS` | skip the in-between picture while the game's CPU time per tick plus one, averaged over a few ticks, would pass MS (default 26; `0` never skips). Two pictures taking the render thread more than 15/16 of a tick, or late pictures, skip it too. Skipped ticks show 30 fps instead of slowing the game down. After a miss 30 fps is held until the costs have fitted with room to spare for at least a second, and longer after repeated misses (D68) |
 | `pad=` touch | in a pad script, `tap=X,Y`, `hold=X,Y` and `swipe=X,Y` (percent of the screen) play a gesture on the front touch screen (tests of the tap that opens the menu) |
@@ -377,6 +379,61 @@ Again after merging the controls (#28, D46/D47; the Vita now reports an analog D
 | `run443-m28-vita3k-default-boot` | as `run422` | 10/10 shots identical to the host (`run438`). |
 
 (`run440`–`run442` used the old key sequences, which now land on CONTROLS rows; not results.)
+
+## If the game freezes (D73)
+
+A watchdog thread looks once a second at whether the game is still moving. From vblank 600 (10 s
+of game, after the start-up's shader compile), if no vblank has passed for 10 s (60 s while the
+options menu is open: turning on a texture filter or perspective compiles shaders, 4–10 s each),
+`spyro.log` gets one line that starts with `hang:`. This one is from Vita3K with `hang_test=1500`
+(the game thread made to spin at the title screen; Vita3K reports 0 ms CPU for every thread,
+hardware shouldn't):
+
+```
+[  1500] vita hang: no vblank for 10 s (limit 10 s) at vblank 1500; in level 0, gamestate 13 title screen, load stage 10. game thread: play, game logic; running on core 0, 0 ms CPU in the last second. render thread: asleep, nothing posted (74783 started); waiting on semaphore spyro_render_run (count 0, wait type 0x20), 0 ms CPU in the last second; game thread doesn't wait for it. mixer: idle, 1499 packets posted, 1499 done; waiting on semaphore spyro_mix_ready (count 0, wait type 0x20), 0 ms CPU in the last second. xa read-ahead: waiting for work; waiting on semaphore spyro_xa_ahead (count 0, wait type 0x20), 0 ms CPU in the last second. cd: 792 reads
+```
+
+What it says:
+
+- **Where:** the level (its name and id) and the game's gamestate (`playing`, `pause menu`,
+  `level transition`, ...). Every change of level or gamestate also has its own `where:` line,
+  so even a log without a `hang:` line says where the game was.
+- **The game thread:** its context (`play`, `options menu`, `save state`), the part of the frame
+  it was in (`game logic`, `OT walk`, `raster`, `SPU/CD`, `present`, `wait` for the display or
+  the render thread), and its state from the kernel: `running` with ~1000 ms of CPU in the last
+  second is a loop that never ends; `waiting on semaphore X` is a wait for another thread (or a
+  lock) that never came.
+- **The render thread** (GPU): the command it last started and whether the game thread waits for
+  it, and why (`previous frame not shown yet`, `sync call`, ...). A render thread stuck in
+  `present` while the game waits for it points at the GPU.
+- **The mixer and the XA read-ahead** (sound and music), the same way.
+- `hang: over` follows if the game moves again (then it was a long stall, not a freeze).
+
+**The crash dump.** With `hang_dump=1` (the default), if the game is still stuck 20 s after the
+`hang:` line, the log says `hang: stopping the app for a crash dump` and the app stops with an
+error message (the usual one for a crashed app, e.g. `C2-12828-1`). The Vita then writes a crash
+dump to `ux0:data/`, a file whose name starts with `psp2core-` and ends in `.psp2dmp`. It holds
+every thread's registers and stack.
+`hang_dump=0` in `config.txt` turns it off (the game then just stays frozen, as before).
+
+**What to send back:** `ux0:data/spyro/spyro.log`, the `.psp2dmp` from `ux0:data/` (the newest
+one), and which VPK it was (the release's version, or the CI run or commit it came from).
+
+**Reading a dump** (developers): a dump is read against the unstripped ELF of the *same* build.
+CI uploads it next to the VPK as the `spyro-vita-elf` artifact of the same run (it isn't attached
+to releases); a local build leaves it at `build/vita/src/platform/vita/spyro_vita`. The tool is
+[vita-parse-core](https://github.com/xyzz/vita-parse-core) (Python 2 per its README, with
+`pyelftools`, and VitaSDK's `arm-vita-eabi-addr2line`/`objdump` on the `PATH`, which the
+`vitasdk/vitasdk` Docker image has):
+
+```
+python2 main.py psp2core-...psp2dmp spyro_vita
+```
+
+It prints each thread (`spyro_render`, `spyro_mixer`, `spyro_xa_ahead`, `spyro_watchdog` and the
+main thread, which is the game thread) with its registers, the function and source line of its PC
+and LR, and a stack dump. The watchdog's own thread is the one that "crashed" (an undefined
+instruction in `wd_main`, on purpose); the game thread's PC is where it was stuck.
 
 ## On hardware
 
