@@ -80,6 +80,12 @@ ret func_80050BD0
 # next, which reads neither. The asm leaves whatever its last loop held in
 # v0/v1; the hand C (src/game/env_hand.c, D69) returns 0.
 ret func_800258F0
+# Spyro's renderer is void (include/renderers.h:184) and only called from C,
+# as statements (src/gamestates/draw.c 613, 813, 1632, 1744, 1853, 1945,
+# 1964, 1996, 2404, 2536); no asm calls it. The asm leaves whatever its last
+# block held in v0/v1; the hand C (src/game/pete_render_hand.c, D69)
+# returns 0.
+ret func_80023AC4
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that
