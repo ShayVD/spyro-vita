@@ -51,8 +51,10 @@
  *                       scaled up when shown (filter=); res=N, 2..4: N times
  *                       the PS1's, scaled down when shown (D40). gpu_res=
  *                       is the old name.
- *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1);
- *                       gpu_time=2 also times that frame's scene on its own
+ *       gpu_time=1      a GPU-timed frame in the "gpu" log lines every 300
+ *                       vblanks (two glFinish: a hitch at 60 fps, so the
+ *                       default is 0; D68); gpu_time=2 also times that
+ *                       frame's scene on its own
  *                       and counts GL draw calls and vertex uploads
  *                       (measurement only, docs/fps-plan.md)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
@@ -64,7 +66,7 @@
  *       interp=1        60 fps, experimental (default 0: 30 fps; D44):
  *                       an in-between frame per tick (camera, Spyro, mobys,
  *                       animation, particles); 2: no animation blending;
- *                       3: camera only. interp=1 needs config_version=2 in
+ *                       3: camera only. interp=1 needs config_version=2 (or 3) in
  *                       the file too: without it the line is taken as the
  *                       old default the menu used to write, and read as 0
  *                       (widescreen, interp, interp_budget and the other
@@ -76,15 +78,20 @@
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
- *       render_thread=1 with gpu=1, every GL call on a render thread of its
- *                       own (core 2), the game thread on core 0 (D63);
- *                       0 (default): GL on the game thread, as before
- *       xa_ahead=1      read the XA music's sectors ahead of the CD head on
- *                       core 1 (D64); 0 (default): on the game thread
- *       gpu_opaque=1    with gpu=1 and tex_cache=1, triangles whose texture
- *                       blocks have no transparent or semi-transparent
- *                       texel drawn by a shader without discard: the same
- *                       pixels (D65); 0 (default): as before
+ *       render_thread=0 GL on the game thread, as before D63 (default 1:
+ *                       with gpu=1, every GL call on a render thread of its
+ *                       own on core 2, the game thread on core 0; D68)
+ *       xa_ahead=0      the XA music's sectors read on the game thread
+ *                       (default 1: read ahead of the CD head on core 1;
+ *                       D64, D68)
+ *       gpu_opaque=0    every atlas triangle drawn with the discard shader
+ *                       (default 1: with gpu=1 and tex_cache=1, triangles
+ *                       whose texture blocks have no transparent or
+ *                       semi-transparent texel drawn by a shader without
+ *                       discard, the same pixels; D65, D68). A 0 for any of
+ *                       these three needs config_version=3 in the file too:
+ *                       without it, it is taken as written before they were
+ *                       on by default, and ignored
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -135,8 +142,9 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1, .gpu_time = 1, .widescreen = 1, .interp = 0,
+                        .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
+                        .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
 
@@ -197,9 +205,19 @@ static void parse_poke(const char *v) {
   }
 }
 
+/* render_thread=0, xa_ahead=0 and gpu_opaque=0 lines in a file older than
+ * config_version=3, not taken (D68): the menu's save drops them (menu.c) */
+const char *g_vita_config_stale[4];
+
 static void read_config(void) {
   char line[512];
-  int version = 1, interp_line = 0;
+  int version = 1, interp_line = 0, i;
+  /* D68: the three switches' lines; a 0 before config_version=3 was the
+   * old default or a test file's (tools/vita/fps-runs) */
+  static const char *const k_switch_keys[3] = {"render_thread", "xa_ahead", "gpu_opaque"};
+  int *const switches[3] = {&g_vita_opts.render_thread, &g_vita_opts.xa_ahead,
+                            &g_vita_opts.gpu_opaque};
+  int switch_line[3] = {0, 0, 0};
   FILE *f = fopen(VITA_DATA_DIR "/config.txt", "r");
   if (!f)
     return;
@@ -250,11 +268,11 @@ static void read_config(void) {
     else if (!strcmp(line, "mixer"))
       g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "render_thread"))
-      g_vita_opts.render_thread = atoi(v);
+      g_vita_opts.render_thread = atoi(v), switch_line[0] = 1;
     else if (!strcmp(line, "xa_ahead"))
-      g_vita_opts.xa_ahead = atoi(v);
+      g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "gpu_opaque"))
-      g_vita_opts.gpu_opaque = atoi(v);
+      g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -284,6 +302,16 @@ static void read_config(void) {
     vita_log("config: interp=1 without config_version=2 is the old default: 60 fps stays off "
              "(turn it on in the menu, SELECT+START)");
   }
+  /* The render thread, the XA read-ahead and the opaque path were off by
+   * default until their hardware run (D63-D66); a 0 written before that
+   * isn't the player's choice (D68). */
+  for (i = 0; i < 3; i++)
+    if (switch_line[i] && *switches[i] == 0 && version < 3) {
+      *switches[i] = 1;
+      g_vita_config_stale[i] = k_switch_keys[i]; /* NULL-ended: [3] stays NULL */
+      vita_log("config: %s=0 without config_version=3 is from before the switch was on by "
+               "default: on (D68)", k_switch_keys[i]);
+    }
 }
 
 /* Without a disc there is nothing to run: say why on screen (bootscreen.c)

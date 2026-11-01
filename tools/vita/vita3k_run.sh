@@ -102,8 +102,9 @@ fi
 # Scripted runs compare with the host: the original 4:3, 30 fps picture
 # and the host's camera controls (D53: the Vita defaults to the free camera
 # and both inverts) unless a config line given here turns them on (later
-# lines win; config_version=2 so a given interp=1 counts, main.c).
-printf 'config_version=2\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n' >> "$data/config.txt"
+# lines win; config_version=3 so a given interp=1, or a 0 for the D68
+# switches, counts: main.c).
+printf 'config_version=3\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
 rm -rf "$data/shots" "$data/spyro.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"

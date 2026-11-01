@@ -37,6 +37,11 @@ Implemented on 2026-11-01, all three behind `config.txt` switches that are off b
 
 The threads and cores with everything on are in D66's table.
 
+**After the first hardware run (C1, D68):** the game thread fell from 93% busy to 23–53% at 60 fps, and Artisans held 60 in most ticks. A heavier level's GPU scene took 19–31 ms, so 60 doesn't fit there, and the budget flipped between 60 and 30 tick by tick (the stutter). Since D68:
+- P1's hysteresis is in: after a miss, 30 fps is held until the costs fit with an eighth to spare for a whole second, longer after repeated misses. Late pictures while the in-between frame runs count as a miss too.
+- `render_thread`, `xa_ahead` and `gpu_opaque` are on by default (`config_version=3` makes old files' `0`s give way), and `gpu_time` is 0 (C4).
+- What's left for a locked 60 in the heavy levels is GPU work (G2, G3, or a lower render scale at 60 fps), now measured by S in C1's windows.
+
 ## Where a frame's time goes (measured)
 
 ### Threads and cores

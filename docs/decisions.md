@@ -878,6 +878,7 @@ Record each decision with its date, what was chosen, and why.
 - **Defaults:** all three switches stay off in this build: `render_thread=0`, `xa_ahead=0`, `gpu_opaque=0`. Each one is exact in every check that can run here (Vita3K, host). What Vita3K can't show is how vitaGL and the Vita's scheduler behave with GL on a second thread. The hardware runs below decide. Turning one on by default is then a one-line change in `g_vita_opts` (`main.c`). 60 fps stays experimental and off (D44) until Run C says otherwise.
 - **The hardware runs** (`tools/vita/fps-runs/`, one `config.txt` each, with a README saying what each line shows): A1/A2/A3 at 30 fps with `gpu_time=2` (main as it was, then the threads, then the threads and the opaque path); B1/B2 the bench with 60 fps forced, off and on; C1/C2 60 fps in play with everything on, with and without the budget. They replace D62's Phase 0.
 - **Proposed after them:** `render_thread=1` and `xa_ahead=1` on by default if A2 shows no regression, `gpu_opaque=1` only if A3's scene time is lower.
+- **Superseded by D68:** after the first hardware run (C1) all three are on by default.
 
 ## 2026-11-01: black bars above and below the widescreen picture
 
@@ -902,3 +903,50 @@ Record each decision with its date, what was chosen, and why.
     - Widescreen: they differ from before, as they should with the new X row. After the fix they are identical across `res=native` and `res=ps1`. `gpu=0` differs from `gpu=1` at vblank 5000 only (1035 pixels). v1.0.1 does the same (`run12` vs `run6`: 1134 pixels at 5000), so that difference predates this change.
   - **Host:** `--widescreen` with the same pad fills all 544 rows in its 960×544 shots (`logs/run9-host-ws`). ctest 6/6 (cd, gte, m2c_diff_math, menu_panel, platform_linux32, savestate_globals).
   - **Not run:** the credits, the fairy's card and a hardware test. The credits and the fairy draw into the same 224-line areas, and this change only moves where the screen samples them.
+
+## 2026-11-01: the first hardware run of the render thread (C1)
+
+### D68. 60 fps holds a steady 30 where it doesn't fit; the three switches on by default
+- **The run:** `c1-all.txt` (60 fps, default budget, `gpu_time=2`, all three switches on), with the PR #40 VPK merged with D67. Artisans, then a heavier level from about vblank 6000 (`logs/hw-pr40-c1/spyro.log` in this worktree, gitignored). The user saw a few stutters and "graphics glitches", and later said the glitches were likely the stuttering: there was no corruption they could point to.
+- **What the log shows:**
+  - **The game thread** is 23–53% busy per window, down from 93–94% at 30 fps (D44), with `raster` at 0.0–0.1 ms. The render thread is 44–72% busy, 7.4–12.2 ms per vblank, and 99% in one window (vblank 2400, a load: 296 of 297 ticks skipped).
+  - **Artisans holds 60 in most ticks:** 134–147 in-between frames per 149 ticks, `gpu_time=2` scene times of 5.5–13.1 ms.
+  - **The heavier level is GPU-bound:** the scene takes the GPU 18.9–31.1 ms in the windows at 6300–6900, 7500–8100 and 10200 (9.7 ms at 7200). The budget skipped 82–149 of ~149 ticks in those windows and let the rest through, so the picture flipped between 60 and 30 tick by tick: windows of 0, 20, 24, 30, 54 and 67 in-between frames. That's D44's flicker, and the likeliest stutter.
+  - **"previous frame not shown yet":** 1–10 waits per window, 15–111 ms in total.
+  - **`gpu_time=2`** does three `glFinish` calls in one frame every 300 vblanks: a hitch every 5 s. The default `gpu_time=1` does two. Plan item C4.
+  - **Two `render: still waiting (sync calls)` lines at vblank 0:** the start-up's shader compile. They come between vitaGL's line and the `tex_filter=` line, which `gl_gpu_init` logs before and after `build_programs`. That makes the compile at least 10 s on hardware (5 s per line). It was the same call before D63, just not logged.
+  - **No `unknown` commands, and no `still waiting` during play.**
+- **Chosen:**
+  - **Hysteresis for the budget** (plan item P1; `present.c` `budget_allows`). A miss holds 30 fps until the costs have fitted with an eighth to spare for a whole hold. The hold starts at 30 ticks (1 s) and doubles, up to 240 ticks (8 s), when a miss comes within 300 ticks (10 s) of returning to 60. After 10 s at 60 it's back to 1 s.
+    - **A miss** is any of: the game thread's CPU time plus the in-between frame's over the budget, as before; two pictures on the render thread over the budget (D63's hook); or late pictures while the in-between frame runs. Late means the game thread waited for the previous present (`g_present_late`, the render thread's `W_FRAME` waits); each adds 30 to a score, each tick takes 1 off, and a score above 60 is a miss (3 late pictures within about half a second). The late pictures are what a GPU-bound scene shows that the CPU costs don't. The GPU's own time S needs a `glFinish`, so it can't feed the budget.
+    - **While held,** the in-between frame's cost is taken as the current logic pass's CPU time. On hardware the in-between pass takes 0.85–1.0 of the logic draw (C1's `present` lines). Using the last measured cost instead could keep the hold forever after one expensive frame. The old per-tick test had the same flaw.
+    - A save-state load resets the hold (`port_present_reset`). `budget_holds` counts the falls, shown in the `present N:` line as "falls to a held 30 fps".
+    - In a simulation with costs from C1 (`budget_allows`'s logic, Gaussian noise per tick), light play stays at 60 and the heavy level holds 30. A marginal place flips 1–3 times a minute instead of 891 times.
+  - **Defaults:** `render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`, and `gpu_time=0` (C4). The threads help at 30 fps too: the game thread's busy time fell by roughly half in C1. The opaque path covered 97–99% of textured triangles in C1's `atlas` lines. Nothing found here ties it to the glitches (below). `config.txt` can still turn each one off.
+  - **`config_version=3`:** the menu now writes 3. A `render_thread=0`, `xa_ahead=0` or `gpu_opaque=0` in a file without it was the old default or one of `tools/vita/fps-runs`' test files, so it's ignored with a log line. The menu's next save drops those lines (`g_vita_config_stale`), so they can't come back once the file says 3. A `0` with `config_version=3` counts. `vita3k_run.sh` and the fps-runs files now write 3. A `gpu_time=2` line stays honoured: it's a diagnostic someone wrote on purpose. A player who copied `c1-all.txt` as their config should delete that line.
+  - **Start-up:** the compile's wait has its own reason. It logs `render: GPU start-up still running after N s (vitaGL and the shaders)` instead of `still waiting`, and `gl_gpu_init` logs `gpu: shaders compiled in N ms` in both modes.
+- **Ruling out real corruption** (checked before the user said the glitches were the stutter):
+  - **The opaque path** (`gpu_opaque`). `plain` is decided per atlas entry from `s_vram` when the entry is made, with the same rules as the shaders (texel 0 or bit 15). An entry lives as long as its atlas generation. Every change to `s_vram` (uploads, copies, the readback replay) sets `s_aflush`, and the next vertex buffer's `expand()` starts a new generation; blocks over a target are never cached. That's the same rule the decode itself depends on. On the render thread `s_vram` is updated in command order, so the check reads the VRAM the decode will read. The plain program is never used for subtract's second pass. So by construction it can only differ if the decoded atlas itself is wrong, which would show without it too.
+  - **The 60 fps frames with D67's 224-line crop,** and the render thread's ordering of uploads, readbacks and display state against presents. The crop reads `g_gl_env` and the slot's own size, both snapshotted in command order. The render thread reads no game globals other than `g_present_capture`, a constant. Vita3K runs below.
+- **Checked** (logs in this worktree; Vita3K is not hardware, and nothing here has run on a Vita yet):
+  - **Vita3K, the new defaults against all three switches off in the same VPK** (`render_thread=0 xa_ahead=0 gpu_opaque=0 config_version=3`), after the D67 merge, with 60 fps forced (`interp=1 interp_budget=0`, widescreen):
+    - Gems script, 44 replay shots, the WAV and the memory card byte-identical (`logs/v68-gems-i0-on`, `-off`).
+    - Pause route (`StoreImage` replay for the pause and inventory backgrounds), 70 shots and the card byte-identical (`logs/v68-pause-i0-*`).
+    - Window captures of the GPU's own picture at six points (`logs/v68-cap-i0-*`):
+      - 7000, 7600, 8000 and 8400 are byte-identical.
+      - At 5000, 732 pixels differ, all within 16 pixels of the window's edge (the macOS window border and corners); the picture inside is identical.
+      - At 1800 the "off" run's grab caught Vita3K's own "compiling shaders" overlay instead of the game, as `vbase-menu` did before (D63).
+    - So there's no sign of corruption from the switches, the in-between frames or the crop. That fits the user's word that the glitches were the stutter.
+  - **0 unknown commands and no `still waiting`** in every run with the render thread.
+  - **The start-up line** in Vita3K: `render: GPU start-up still running after 5 s`, then `gpu: shaders compiled in 5133 ms` (`logs/v68-gems-budget`).
+  - **The hold, Vita3K, default budget** (`logs/v68-gems-budget`): Vita3K's GL makes the render thread's time per picture 15–35 ms, so 60 never fits there. The log shows 1 fall to a held 30 at the start and none after it, 0 in-between frames all run. That's a steady 30, not a flip. The return to 60 is covered only by the simulation above and the hardware run.
+  - **The migration** (`logs/v68-migrate`, final VPK, a config ending in `config_version=2 render_thread=0 gpu_opaque=0`):
+    - Both `0`s were ignored with their log lines, and the render thread, the read-ahead and the opaque path started.
+    - The menu's save (`menu_test=700`) wrote `config_version=3`, dropped the two stale lines and kept the rest.
+  - **Host:** the base is `a6f55b2`, this branch's merge of D67, built from the same tree with `present.c`/`present.h` taken from it (`build/hostbase-src`).
+    - `tools/host_checks.sh`: 279/279 files identical, the logs left out: demo 26, whole-game tour with its fairy save 141, routes A and B 56 each (`logs/h68base-*`, `logs/h68new-*`).
+    - The attract demos with `--widescreen` (25/25) and with `--widescreen --interp` (25/25).
+    - After the last change (the logic-pass estimate while held), the plain demo 26/26 and `--widescreen --interp` 25/25 again, and 26/26 with `--trace` against the base also traced (`logs/h68fin-*`, `logs/h68base-wsi-trace`). The host has no budget by default, so `budget_allows` doesn't run there.
+    - `ctest`: all pass (`gte` and `m2c_diff_math` skipped, as before).
+    - The oracle replays weren't rerun: the only shared-code change is in `present.c`'s budget path, which the host never takes.
+  - **Not checked:** hardware. The next run is `tools/vita/fps-runs/d1-60fps.txt`, which is what the menu's 60 FPS gives now.

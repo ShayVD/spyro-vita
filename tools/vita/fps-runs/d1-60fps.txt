@@ -1,0 +1,3 @@
+# Run D, 60 fps as the menu's 60 FPS gives it now (D68): the render thread, the XA read-ahead and the opaque path on by default, the budget held at 30 after a miss, no GPU timing
+interp=1
+config_version=3

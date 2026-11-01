@@ -1,4 +1,5 @@
 # Run A with the threads and the opaque path without discard (D63-D65)
+config_version=3
 gpu_time=2
 render_thread=1
 xa_ahead=1

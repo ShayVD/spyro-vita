@@ -1,6 +1,6 @@
 # Run C again with the budget off: every tick gets its in-between frame, so the overrun shows
 interp=1
-config_version=2
+config_version=3
 interp_budget=0
 gpu_time=2
 render_thread=1

@@ -1989,6 +1989,7 @@ int __wrap_sceAppMgrGetBudgetInfo(void *info) {
 int gl_gpu_init(void) {
   SceKernelFreeMemorySizeInfo mem = {.size = sizeof mem};
   int present_only = 0;
+  uint64_t t0;
   sceKernelGetFreeMemorySize(&mem);
   vita_log("gpu: free memory: user %u KB, CDRAM %u KB, phycont %u KB",
            (unsigned)(mem.size_user / 1024), (unsigned)(mem.size_cdram / 1024),
@@ -2013,8 +2014,11 @@ int gl_gpu_init(void) {
   s_cache = g_vita_opts.tex_cache != 0;
   s_vc = s_persp || s_subpixel;
   s_xmode = s_filter || s_vc || s_cache;
+  t0 = now_us();
   if (build_programs(&present_only) != 0)
     return -1;
+  /* seconds on hardware: libshacccg compiles every program here */
+  vita_log("gpu: shaders compiled in %u ms", (unsigned)((now_us() - t0) / 1000));
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
     s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = 0;

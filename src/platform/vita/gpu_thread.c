@@ -110,11 +110,13 @@ static uint32_t s_verts_posted, s_presents_posted;
 static volatile uint32_t s_rt_busy_us, s_rt_cmds, s_rt_bad; /* bad: unknown commands */
 static volatile uint32_t s_rt_picture_us; /* busy per picture, averaged over ~8 */
 static uint64_t s_bytes_posted;
-enum { W_RING, W_FRAME, W_SYNC, W_SLAB, W_COUNT };
+enum { W_RING, W_FRAME, W_SYNC, W_SLAB, W_START, W_COUNT };
 static const char *const k_wait_names[W_COUNT] = {"ring full", "previous frame not shown yet",
-                                                  "sync calls", "vertex slabs"};
+                                                  "sync calls", "vertex slabs",
+                                                  "GPU start-up and shader compiles"};
 static uint64_t s_wait_us[W_COUNT];
 static unsigned s_waits[W_COUNT];
+static unsigned s_late_total; /* W_FRAME waits since the start (D68) */
 
 static int reached(int k, uint32_t target) { return (int32_t)(s_done[k] - target) >= 0; }
 
@@ -252,14 +254,20 @@ static void game_wait(int why, int k, uint32_t target) {
         sceKernelWaitSema(s_game_sema, 1, NULL); /* its signal is on the way */
       break;
     }
-    if (sceKernelWaitSema(s_game_sema, 1, &tmo) < 0)
-      vita_log("render: still waiting (%s): count %d at %u of %u; %u commands posted, %u run",
-               k_wait_names[why], k, (unsigned)s_done[k], (unsigned)target, (unsigned)s_nposted,
-               (unsigned)s_done[K_CMDS]);
+    if (sceKernelWaitSema(s_game_sema, 1, &tmo) < 0) {
+      if (why == W_START) /* expected: seconds on hardware */
+        vita_log("render: GPU start-up still running after %u s (vitaGL and the shaders)",
+                 (unsigned)((now_us() - t0) / 1000000));
+      else
+        vita_log("render: still waiting (%s): count %d at %u of %u; %u commands posted, %u run",
+                 k_wait_names[why], k, (unsigned)s_done[k], (unsigned)target,
+                 (unsigned)s_nposted, (unsigned)s_done[K_CMDS]);
+    }
   }
   prof_leave();
   s_wait_us[why] += now_us() - t0;
   s_waits[why]++;
+  s_late_total += why == W_FRAME;
 }
 
 /* Room for a command of `size` bytes (a multiple of 8) at s_w. */
@@ -295,7 +303,8 @@ static void post(const Cmd *c) {
 }
 
 /* Everything posted has run. */
-static void finish(void) { game_wait(W_SYNC, K_CMDS, s_nposted); }
+static int s_sync_why = W_SYNC;
+static void finish(void) { game_wait(s_sync_why, K_CMDS, s_nposted); }
 
 /* The game's display state as the GL side should see it from here on. */
 static void env_sync(void) {
@@ -630,6 +639,12 @@ static long long picture_us(void) { return s_rt_picture_us; }
 
 long long (*vita_gpu_render_cost(void))(void) { return g_rt_active ? picture_us : NULL; }
 
+/* present.c's late pictures (D68): the game thread's waits for the previous
+ * one (a present is posted every vblank, so a wait is a late picture) */
+static unsigned late_pictures(void) { return s_late_total; }
+
+unsigned (*vita_gpu_late_pictures(void))(void) { return g_rt_active ? late_pictures : NULL; }
+
 /* ---- the rest of vita.h's gpu calls ---- */
 
 static void k_init(void *a) { *(int *)a = gl_gpu_init(); }
@@ -640,7 +655,9 @@ int vita_gpu_init(void) {
     start();
   else
     vita_log("render: GL calls on the game thread (render_thread=0)");
+  s_sync_why = W_START;
   call(k_init, &r, 0, 1);
+  s_sync_why = W_SYNC;
   return r;
 }
 
@@ -727,7 +744,7 @@ void vita_gpu_report(int vblank) {
     unsigned wall = (unsigned)(t - t0), n = (unsigned)(vblank - v0);
     char waits[256];
     int i, len = 0;
-    for (i = 0; i < W_COUNT; i++)
+    for (i = 0; i < W_START; i++) /* the start-up's has its own line (gl_gpu_init) */
       len += snprintf(waits + len, sizeof waits - len, "%s%s %u.%02u ms in %u", i ? ", " : "",
                       k_wait_names[i], (unsigned)(s_wait_us[i] / 1000),
                       (unsigned)(s_wait_us[i] % 1000 / 10), s_waits[i]);

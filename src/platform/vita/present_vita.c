@@ -56,6 +56,7 @@ void vita_present_init(void) {
   if (g_vita_gpu) {
     g_present_capture = vita_gpu_present_capture();
     g_present_render_us = vita_gpu_render_cost(); /* the render thread's share (D63) */
+    g_present_late = vita_gpu_late_pictures();     /* and its late pictures (D68) */
   }
   else
     g_host_opts.out960 = 2; /* shots: the presentation frame on screen, 512x240 */
@@ -75,12 +76,14 @@ void vita_present_report(int vblank) {
     return;
   }
   vita_log("present %d: %lld ticks; per tick us: logic draw %lld, passes %lld, snapshot %lld, "
-           "blend %lld; %lld in-between frames, %lld skipped for the budget, %lld otherwise; "
+           "blend %lld; %lld in-between frames, %lld skipped for the budget (%lld falls to a held "
+           "30 fps), %lld otherwise; "
            "%lld pictures from the 4:3 display",
            vblank, ticks, (s->us_logic - last.us_logic) / ticks,
            (s->us_pass - last.us_pass) / ticks, (s->us_snapshot - last.us_snapshot) / ticks,
            (s->us_blend - last.us_blend) / ticks, s->interp_frames - last.interp_frames,
-           s->budget_skips - last.budget_skips, s->skipped_interp - last.skipped_interp,
+           s->budget_skips - last.budget_skips, s->budget_holds - last.budget_holds,
+           s->skipped_interp - last.skipped_interp,
            s->display_fallbacks - last.display_fallbacks);
   last = *s;
 }

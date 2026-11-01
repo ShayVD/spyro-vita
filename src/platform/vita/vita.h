@@ -108,6 +108,7 @@ void vita_picture_report(int vblank);
 uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons */
 int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused) */
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
+extern const char *g_vita_config_stale[4]; /* main.c: stale switch lines (D68), NULL-ended */
 int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
 
 /* video.c: an RGB panel over the picture (NULL: none), drawn 1:1 in the
@@ -124,6 +125,7 @@ void vita_gpu_vram_loaded(void);    /* s_vram was overwritten */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
 long long (*vita_gpu_render_cost(void))(void); /* present.c's g_present_render_us, or NULL */
+unsigned (*vita_gpu_late_pictures(void))(void); /* present.c's g_present_late, or NULL */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);

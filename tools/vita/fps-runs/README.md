@@ -6,8 +6,10 @@ what the run says, quit, and send back `ux0:data/spyro/spyro.log` renamed after 
 (`a1-off.log`, ...). Don't open the options menu during a run: it rewrites `config.txt` with its
 rows (the lines here stay, but the run's picture settings would be the menu's).
 
-All runs use the same VPK, the one from this PR. Every switch is off by default. The files only
-turn on what each run compares.
+All runs use the same VPK, the one from this PR. Since D68 the three switches are on by default
+(`render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`) and `gpu_time` is 0. The files set each switch
+the run needs, and they carry `config_version=3`: without it a `=0` for one of the switches is
+taken as an old file's and ignored (D68).
 
 | File | Switches | Do |
 |---|---|---|
@@ -18,6 +20,7 @@ turn on what each run compares.
 | `b2-all.txt` | as B1, with all three on | the same |
 | `c1-all.txt` | 60 fps with the default budget, `gpu_time=2`, all three on | 2 minutes of play in Artisans |
 | `c2-all-nobudget.txt` | as C1 with `interp_budget=0`: every tick gets its in-between frame | the same |
+| `d1-60fps.txt` | 60 fps as the menu gives it since D68: the defaults, the budget's hold, no GPU timing | the C1 route: Artisans, then the heavier level |
 
 ## What each run shows
 
@@ -43,10 +46,16 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 - `present N:`: in-between frames per window, and how many the budget skipped. With the render thread, the budget also counts the render thread's time per picture (D63). C1 shows how often 60 fps fits.
 - C2: with every in-between frame forced, `render N:`'s "previous frame not shown yet" and the late vblanks give the real overrun. That's whether the GPU or the render thread is the limit at 60 fps.
 
+**D1: 60 fps as shipped (D68).**
+- `present N:`: "falls to a held 30 fps" counts the misses. In a place where 60 fits (Artisans in C1) there should be few or none, and almost every tick has its in-between frame. Where it doesn't fit (C1's heavier level, GPU scene 19–31 ms) the picture should stay at a steady 30: the in-between frames near 0 and a fall or two per window, not C1's mix of 20–120 in-between frames per window.
+- No hitch every 5 seconds: `gpu_time` is 0, so there's no `timed frame` line and no `glFinish`.
+- The start-up's `gpu: shaders compiled in N ms` line says how long the boot's shader compile takes (C1's two "still waiting (sync calls)" lines at vblank 0 were that compile, more than 10 s).
+
 ## What to look for that would mean a bug
 
 - Anything on screen that differs between the runs at the same place: a missing or late picture, flicker, a wrong pause or inventory background, a menu panel that doesn't show.
-- A `render: still waiting` line: the game thread waited 5 s for the render thread.
+- A `render: still waiting` line: the game thread waited 5 s for the render thread. (At start-up the
+  shader compile logs `render: GPU start-up still running after N s` instead: expected.)
 - `render N: ... unknown` above 0.
 - A crash or hang at start (the shaders now compile on the render thread), at a level load or when the pause menu opens.
 - With `render_thread=1`, a save state saved and loaded (the options menu's SAVE section) not putting you back where you were.

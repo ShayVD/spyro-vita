@@ -42,6 +42,7 @@ typedef struct {
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
+  long long budget_holds; /* times 60 fps fell back to a held 30 (D68) */
   long long display_fallbacks; /* pictures that showed the PS1 display instead */
   long long particles_blended;
   long long snapshot_bytes; /* copied in and out by the region snapshot */
@@ -73,6 +74,11 @@ extern long long (*g_present_clock_us)(void);
  * an in-between frame is also skipped while two pictures a tick wouldn't fit
  * the budget there. */
 extern long long (*g_present_render_us)(void);
+
+/* interp_budget_us: pictures the platform showed late so far (counted up;
+ * the Vita's: the game thread waited for the previous one), or NULL. Late
+ * pictures while the in-between frame runs count as a miss (D68). */
+extern unsigned (*g_present_late)(void);
 
 int port_present_active(void); /* any feature on */
 void port_present_reset(void);  /* a save state was loaded: nothing queued */

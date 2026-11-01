@@ -66,6 +66,7 @@ static long long clock_cpu_us(void) {
 
 long long (*g_present_clock_us)(void) = clock_cpu_us;
 long long (*g_present_render_us)(void);
+unsigned (*g_present_late)(void);
 
 static long long now_us(void) { return g_present_clock_us(); }
 
@@ -318,7 +319,10 @@ static void push_capture(int wide) {
 
 /* A save state was loaded (D51): the queued frames are from before it, and
  * the vblank counts the fallback compares were the old timeline's. */
+static void budget_reset(void);
+
 void port_present_reset(void) {
+  budget_reset();
   s_qcount = 0;
   s_shown = -1;
   s_captured = 0;
@@ -957,8 +961,77 @@ static int blend_state(void) {
 
 /* ---------- passes ---------- */
 
-/* interp_budget_us bookkeeping (PortPresentDraw) */
-static long long s_busy_wo_interp, s_interp_cost;
+/* interp_budget_us bookkeeping (PortPresentDraw); s_logic_cost: the last
+ * logic pass's CPU time */
+static long long s_busy_wo_interp, s_interp_cost, s_logic_cost;
+
+/* interp_budget_us with hysteresis (D68). Deciding each tick alone flipped
+ * between 60 and 30 fps where the in-between frame only sometimes fitted,
+ * which looks worse than a steady 30 (D44). A miss now holds 30 fps until
+ * the costs have fitted with an eighth to spare for a whole hold (1 s); a
+ * miss within 10 s of coming back doubles the hold, up to 8 s. While held,
+ * the in-between frame's cost is taken as this tick's logic pass (it draws
+ * the same scene: 0.85-1.0 of it on hardware), not the last one measured,
+ * which may be from a heavier spot and would never let go. A miss: the
+ * game thread's CPU time plus the in-between frame's, or two pictures on
+ * the platform's render thread, over the budget; or 3 late pictures within
+ * about half a second while the in-between frame ran (the GPU behind). */
+#define HOLD_MIN 30  /* ticks: 1 s at 30 fps */
+#define HOLD_MAX 240 /* 8 s */
+#define STEADY 300   /* ticks at 60 fps after which a hold is HOLD_MIN again */
+#define LATE_WEIGHT 30 /* a late picture's score; a tick takes 1 off */
+#define LATE_MISS 60   /* score above which late pictures count as a miss */
+static int s_hold, s_hold_len = HOLD_MIN, s_since_back = STEADY, s_late_score, s_prev_interp;
+static unsigned s_late_seen;
+
+static void budget_reset(void) {
+  s_hold = 0;
+  s_hold_len = HOLD_MIN;
+  s_since_back = STEADY;
+  s_late_score = 0;
+  s_prev_interp = 0;
+  if (g_present_late)
+    s_late_seen = g_present_late();
+}
+
+/* 1 if this tick may have its in-between frame */
+static int budget_allows(void) {
+  long long b = g_present.interp_budget_us, cpu = s_busy_wo_interp + s_interp_cost;
+  long long gl = g_present_render_us ? 2 * g_present_render_us() : 0;
+  int over = cpu > b || gl > b;
+  if (g_present_late) {
+    unsigned n = g_present_late();
+    if (s_prev_interp)
+      s_late_score += (int)(n - s_late_seen) * LATE_WEIGHT;
+    s_late_seen = n;
+  }
+  if (s_late_score > LATE_MISS) {
+    over = 1;
+    s_late_score = 0;
+  } else if (s_late_score > 0) {
+    s_late_score--;
+  }
+  if (!s_hold) {
+    if (!over) {
+      if (s_since_back < STEADY && ++s_since_back == STEADY)
+        s_hold_len = HOLD_MIN;
+      return 1;
+    }
+    if (s_since_back < STEADY)
+      s_hold_len = s_hold_len * 2 > HOLD_MAX ? HOLD_MAX : s_hold_len * 2;
+    s_hold = s_hold_len;
+    s_since_back = 0;
+    s_late_score = 0;
+    g_present_stats.budget_holds++;
+    return 0;
+  }
+  cpu = s_busy_wo_interp + s_logic_cost;
+  if (cpu * 8 > b * 7 || gl * 8 > b * 7)
+    s_hold = s_hold_len; /* not yet: the whole hold again */
+  else if (--s_hold == 0)
+    return 1;
+  return 0;
+}
 
 /* While the logic draws 4:3 (attract demos, ws_exact), the 16:9 passes keep
  * their own copy of the renderer's visibility state: D_800771C8, one byte
@@ -1071,14 +1144,14 @@ void PortPresentDraw(void) {
     g_present_stats.skipped_interp++;
   /* interp_budget_us: the last tick's game CPU time without the in-between
    * frame, plus what that frame cost when it last ran, must fit. Otherwise
-   * this tick shows its real frame for both vblanks (30 fps for a moment)
-   * instead of running late, which would slow the game itself (D28). */
-  if (interp && g_present.interp_budget_us &&
-      (s_busy_wo_interp + s_interp_cost > g_present.interp_budget_us ||
-       (g_present_render_us && 2 * g_present_render_us() > g_present.interp_budget_us))) {
+   * this tick shows its real frame for both vblanks (30 fps) instead of
+   * running late, which would slow the game itself (D28); budget_allows
+   * holds 30 fps for a while after a miss (D68). */
+  if (interp && g_present.interp_budget_us && !budget_allows()) {
     interp = 0;
     g_present_stats.budget_skips++;
   }
+  s_prev_interp = interp;
   if (interp || wide_pass) {
     snap_take();
     if (interp) {
@@ -1125,6 +1198,8 @@ void PortPresentDraw(void) {
   push_capture(wide_pass || logic_wide);
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t - (timed ? s_tick_vsync_us : 0);
-  if (g_present.interp_budget_us)
+  if (g_present.interp_budget_us) {
+    s_logic_cost = now_us() - t - s_tick_vsync_us;
     s_busy_wo_interp = now_us() - s_t_update - s_tick_vsync_us - t_interp;
+  }
 }
