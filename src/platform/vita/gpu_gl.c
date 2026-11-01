@@ -194,6 +194,8 @@ static int s_vc;       /* persp or subpixel: the vcache records and is read (D43
 static struct {
   unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
   uint64_t upload_us, readback_us, expand_us;
+  unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
+  uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
@@ -202,11 +204,18 @@ static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
  * (the GPU is idle from there) and again before its swap. "frame" is from
  * that first draw to the GPU being done, CPU work included; "tail" is how
  * long the GPU still worked after the CPU had sent everything. A small tail
- * means the GPU keeps up with the CPU at this resolution. */
+ * means the GPU keeps up with the CPU at this resolution.
+ * gpu_time=2 (measurement only, docs/fps-plan.md) also does a glFinish at
+ * that frame's capture, right after its last draw: the GPU only starts a
+ * scene's pixels once the scene ends, so "scene" is about the GPU's own time
+ * for the game's picture, apart from the CPU's. The tail then holds the
+ * capture and present passes. */
 static struct {
   int state; /* 0 idle, 1 armed, 2 timing */
   uint64_t t0;
   unsigned frame_us, tail_us, n, seq, taken;
+  int scene_wait;    /* gpu_time=2: the next capture times the scene */
+  unsigned scene_us; /* -1u: the timed frame had no capture */
 } s_sample;
 
 /* bench= (D41): time the next picture too, and read the last one timed */
@@ -229,6 +238,18 @@ static void sample_begin(void) {
     glFinish();
     s_sample.t0 = now_us();
     s_sample.state = 2;
+    s_sample.scene_wait = g_vita_opts.gpu_time == 2;
+    s_sample.scene_us = -1u;
+  }
+}
+
+/* gpu_time=2: the timed frame's scene, from its last draw to the GPU done */
+static void sample_scene(void) {
+  if (s_sample.state == 2 && s_sample.scene_wait) {
+    uint64_t t = now_us();
+    glFinish();
+    s_sample.scene_us = (unsigned)(now_us() - t);
+    s_sample.scene_wait = 0;
   }
 }
 
@@ -1432,10 +1453,19 @@ static void expand(int count) {
   s_st.expand_us += now_us() - t0;
 }
 
+/* gpu_time=2: what the vertex upload cost (t0 0: not measured) */
+static void vbo_count(uint64_t t0, size_t bytes) {
+  if (!t0)
+    return;
+  s_st.vbo_us += now_us() - t0;
+  s_st.vbo_bytes += bytes;
+}
+
 /* The vertices into the VBO (vitaGL gives a fresh buffer per glBufferData).
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
  * skips them (gpu_soft.c's rule). */
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
+  uint64_t t0;
   int i, k;
   if (count > MAX_VERTEX_BUFFER_SIZE)
     count = MAX_VERTEX_BUFFER_SIZE;
@@ -1459,12 +1489,16 @@ void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   s_nverts = count;
   if (s_xmode) {
     expand(count); /* may draw into the atlas, with other buffers bound */
+    t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_xbuf, s_xbuf, GL_STREAM_DRAW);
+    vbo_count(t0, (size_t)count * sizeof *s_xbuf);
     return;
   }
+  t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
   glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *vertices, s_vbuf, GL_STREAM_DRAW);
+  vbo_count(t0, (size_t)count * sizeof *vertices);
 }
 
 /* A textured prim samples VRAM: targets drawn over its pages (or CLUT rows)
@@ -1502,6 +1536,7 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
   if (!(s_filter || s_cache) || s_texmode == P_UNTEX) {
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, start, n);
+    s_st.gl_draws++;
     return;
   }
   /* runs of each kind of triangle (s_tkind), each with its own program, in
@@ -1524,6 +1559,7 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
     glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, t * 3, (e - t) * 3);
+    s_st.gl_draws++;
     t = e;
   }
 }
@@ -2030,6 +2066,7 @@ static void pres_capture(int x, int y, int w, int h) {
   if (!s_sx)
     set_scale();
   flush_pending();
+  sample_scene();
   pres_alloc((int)(w * s_sx + 0.999f), (int)(h * s_sy + 0.999f));
   bind_fbo(s_pfbo[STAGING]);
   glViewport(0, 0, s_pw, s_ph);
@@ -2349,6 +2386,16 @@ void vita_gpu_report(int vblank) {
     vita_log("gpu %d: timed frame %u.%02u ms, GPU tail after the CPU %u.%02u ms", vblank,
              s_sample.frame_us / 1000, s_sample.frame_us % 1000 / 10, s_sample.tail_us / 1000,
              s_sample.tail_us % 1000 / 10);
+  if (g_vita_opts.gpu_time == 2) { /* measurement only (docs/fps-plan.md) */
+    if (s_sample.n && s_sample.scene_us != -1u)
+      vita_log("gpu %d: gpu_time=2: the timed frame's scene took the GPU %u.%02u ms after its "
+               "last draw; capture and present are the tail above",
+               vblank, s_sample.scene_us / 1000, s_sample.scene_us % 1000 / 10);
+    vita_log("gpu %d: gpu_time=2: %u GL draw calls for %u game draws; vertex uploads %u KB in "
+             "%u.%02u ms",
+             vblank, s_st.gl_draws, s_st.draws, (unsigned)(s_st.vbo_bytes / 1024),
+             (unsigned)(s_st.vbo_us / 1000), (unsigned)(s_st.vbo_us % 1000 / 10));
+  }
   s_sample.n = 0;
   if (g_vita_opts.gpu_time)
     s_sample.state = 1;

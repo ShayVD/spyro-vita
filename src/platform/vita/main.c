@@ -50,7 +50,10 @@
  *                       scaled up when shown (filter=); res=N, 2..4: N times
  *                       the PS1's, scaled down when shown (D40). gpu_res=
  *                       is the old name.
- *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1)
+ *       gpu_time=0      no GPU-timed frame in the "gpu" log lines (default 1);
+ *                       gpu_time=2 also times that frame's scene on its own
+ *                       and counts GL draw calls and vertex uploads
+ *                       (measurement only, docs/fps-plan.md)
  *       shot_hd=1       with gpu=1, each shot also as a 960x544 PNG
  *       gpu_readback=0  with gpu=1, read drawn pixels back from the GPU
  *                       (glReadPixels) instead of replaying the draws in the
@@ -324,6 +327,10 @@ int main(int argc, char **argv) {
   psx_arena_init();
   vita_log_open();
   vita_log("Spyro Vita (" __DATE__ " " __TIME__ ")");
+  /* what the clocks above came to (docs/fps-plan.md) */
+  vita_log("clocks: ARM %d MHz, bus %d, GPU %d, GPU crossbar %d", scePowerGetArmClockFrequency(),
+           scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
+           scePowerGetGpuXbarClockFrequency());
   read_config();
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;

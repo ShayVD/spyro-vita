@@ -754,3 +754,33 @@ Record each decision with its date, what was chosen, and why.
   - `tests/cd/image_variants.py` (variants made outside git, under `build/`; full copies one at a time, the refusals that need a whole-length image as sparse files holding only the sectors the check reads): `.cue`, bare `.bin`, CloneCD `.img`, a `.cue` naming the `.bin` in another case and folder, several images (a broken `a.cue` and an `a.iso` beside a good `b.cue`: `b.cue` wins), a MODE1 `.cue` beside a good `.bin` (the `.bin` is used), 2448-byte sectors, a 150-sector pregap (first LBA −150), a dump starting at LBA 10. Each passes `test_cd` and gives the extracted files' picture at vblank 1199. Every refusal above exits 1 with its title: 23/23.
   - Vita3K (`logs/run30`–`run33`, the default `gpu=1`): from `disc/image` placed in `ux0:data/spyro/` with `manifest.json` moved aside (`DISC=disc/image tools/vita/vita3k_run.sh`), the first start checked the image (`opened in 1401 ms (1697 reads, 123881 KB)`, marker written). New Game into Artisans with music then gave 22/22 shots and the whole WAV byte-identical to the same run from the extracted files and to the host from the image. Earlier, boot to the attract demos (4,200 vblanks): 7/7 shots and the WAV identical between the layouts. Each disc screen was grabbed from the Vita3K window: no image, `.iso`, `.chd`, `.pbp`, `.ecm`, wrong region, bad `WAD.WAD`, cut short, `.cue` without its `.bin`. The progress panel wasn't caught: the check took 1.4 s in Vita3K, and the 3 s grab found vitaGL's splash.
 - **Limits:** an image over 2 GB isn't read (`long` offsets; Spyro's is 661 MB). Only the first track's file is read: a PS1 data track, and Spyro's disc has one track. A CD-DA file is skipped (there are none on this disc). Hardware: not tested yet.
+
+## 2026-11-01: above 30 fps
+
+### D62. Measure the GPU, then a render thread and cheaper pixels: the plan to 60 fps
+- **Why:** 30 fps holds on hardware, but in the heaviest logged scene (16:9 native, `logs/hw-26f3138-bench`, vblanks 12600–18300) the game thread is 93–94% busy, and 60 fps fitted in 0–41% of ticks (D44). The plan, with the measured costs, the candidates and the reasoning, is `docs/fps-plan.md`.
+- **Found:**
+  - **Clocks:** they've been at the maximum since M3 (ARM 444, bus 222, GPU 222, crossbar 166, `main.c`), so overclocking has nothing left to give.
+  - **Where the game thread's time goes:** everything but the SPU mix runs on it, logic and renderers and all of the GL. Core 2 is unused and core 1 holds only the mixer (~5%).
+    - Per tick: render path 9.7 ms, OT walk 6.8 (2.0 of it the atlas lookups in `expand()`), GL submission 9.6, CD/SPU 3.3 (likely file I/O for the XA sectors).
+  - **The GPU is close to full too.** D44 had concluded otherwise. From the frame's timeline, the target scene's pixels start at the capture, and the timed frame ends 33–36 ms later. That puts the GPU work at roughly 25–33 ms per frame at 16:9 native in that scene (*estimate*), where 60 fps allows ~13.
+- **Chosen:**
+  1. Measure first. This PR adds a `clocks` line at start and `gpu_time=2`, which times the scene's GPU work on its own and counts GL draw calls and vertex uploads. Both are measurement only, and `gpu_time=2` is off by default. `docs/fps-plan.md` has three short hardware runs: Run A, `gpu_time=2`; Run B, `bench=2` with 60 fps forced; Run C, 60 fps in play.
+  2. Quick wins:
+     - XA reads off the game thread;
+     - GL state caching and batching;
+     - a leaner `expand()`;
+     - `gpu_time=0` for release;
+     - the game thread pinned to core 0;
+     - hysteresis instead of per-tick skipping for 60 fps.
+  3. A render thread: our `GR_*` interface becomes commands for a GL thread on core 2. `DrawOTag` still parses on the game thread, so the game's memory has no new hazard, and `StoreImage` and shots sync. That's ~12 ms per frame off the game thread.
+  4. GPU work sized by Run A: an opaque path without `discard`, shader trims, one fewer full-screen pass. Then, for 60 fps everywhere, a parse thread (walking a copy of the frame's primitives and OTs, D54) and a specialised GTE dispatch.
+- **Rejected for now:**
+  - more clocks (none left);
+  - `-ffast-math` and PGO (little to gain, determinism or tooling cost);
+  - building the in-between frame on its own core: the translated renderers share one arena base, `gteRegs` and the emulated stack, so a second concurrent render needs a second copy of all of it. The render and parse threads get most of the overlap for much less.
+- **Open, for the user:**
+  - a lower render scale in 60 fps mode, if the GPU is the limit;
+  - one more 60 Hz frame of latency, if pipelining the parse needs it;
+  - when 60 fps becomes the default (proposed: ≥ 95% of ticks over 10 minutes);
+  - a battery-saver option once 30 fps fits at 333 MHz.

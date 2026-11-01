@@ -106,7 +106,7 @@ Files the app writes:
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
 | `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
-| `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below) |
+| `gpu_time=0` | GPU: no GPU-timed frame in the log (default 1: one frame per 300 vblanks, see below). `gpu_time=2` also times that frame's scene on its own and counts GL draw calls and vertex uploads: measurement only, for `docs/fps-plan.md`'s Run A; don't combine it with `bench=` |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
@@ -155,6 +155,12 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   worked after the CPU had sent the whole frame. A G near 0 means the GPU keeps up at this
   resolution; the frame is ~G ms late on screen at most, once per 5 seconds (`gpu_time=0` turns it
   off).
+- With `gpu_time=2`, also `gpu N: gpu_time=2: the timed frame's scene took the GPU S ms after its
+  last draw` (S: the GPU's own time for the game's picture, timed with a `glFinish` at the capture;
+  the timed frame's tail is then only the capture and present passes) and `gpu N: gpu_time=2: G GL
+  draw calls for D game draws; vertex uploads K KB in T ms`. See `docs/fps-plan.md`.
+- At start, `clocks: ARM … MHz, bus …, GPU …, GPU crossbar …` gives the clocks the Vita actually set
+  (`main.c` asks for 444, 222, 222 and 166).
 - With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
