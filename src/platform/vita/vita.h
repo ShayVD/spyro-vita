@@ -56,6 +56,7 @@ typedef struct {
   int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
+  int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

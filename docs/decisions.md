@@ -982,3 +982,58 @@ Record each decision with its date, what was chosen, and why.
     - **Vita3K, default budget** (gems script, `logs/v68c-gems-budget`, VPK `logs/vpk-d68c`): the render thread takes 16.5–37 ms per picture there, over the new line, so as before there's 1 fall at the start, then a steady 30 with 0 in-between frames. 0 unknown commands and no `still waiting`; `gpu: shaders compiled in 4319 ms`. Vita3K can't show the return to 60: only the simulation and the next hardware run cover it.
     - **Host:** builds; `ctest` all pass. The host has no budget by default (`interp_budget_us` is 0 unless set), so `budget_allows` doesn't run in its replays.
     - **Not checked:** hardware. Rerun `d1-60fps.txt` with a VPK built from this change.
+
+## 2026-11-01: fewer full-screen GPU passes
+
+### D69. Presentation pictures shown from the targets: no staging copy, no clear under a full-screen picture
+- **The question:** in heavy levels the GPU takes 19–26 ms per picture (C1), against the ~13 ms that 60 fps allows. Which of a frame's full-screen GPU passes aren't needed, and can they go with the picture unchanged? (Plan item G3.)
+- **How vitaGL runs a frame** (vitaGL `2bdbe89`, the commit vdpm's package builds with `make NO_DEBUG=1`; read from its source, `gxm.c`, `misc.c`, `framebuffers.c`):
+  - **A scene per framebuffer switch.** Every draw or clear into another framebuffer ends the open GXM scene (`scene_reset`), so each pass below is a scene of its own. The colour surface is kept across scenes (the targets and the atlas rely on that), so each scene stores its surface and, as far as the source shows (*inferred*: GXM's background load isn't in vitaGL's code), loads it too.
+  - **`glClear` is a quad** with vitaGL's clear shader, the size of the viewport, clipped by the scissor.
+  - **No depth or stencil traffic:** vitaGL gives the display a D32+S8 surface and every FBO a D32 one, but without `STORE_DEPTH_STENCIL` (not set in that build) they are never loaded or stored. No MSAA (`vglInitExtended(..., SCE_GXM_MULTISAMPLE_NONE)`). The swap queues the back buffer for display with no copy.
+  - **`glFinish` ends the open scene and waits for the GPU.** So `gpu_time=2`'s S (the `glFinish` at the capture) is the game's target scene alone. The capture and present passes after it are in the timed frame's tail, which C1 logs as a steady 2.5–3.7 ms per picture in every window, light or heavy.
+- **The passes of one picture** (16:9 native, 960×544, the defaults since D68):
+
+  | Pass | Size | What for | Needed when | D69 |
+  |---|---|---|---|---|
+  | The game's clear of its draw area (`GR_ClearVRAM` into the target) | 960×544 | the PS1's background clear | always: it's the game's (where nothing is drawn the PS1 shows its colour) | kept; it's where the in-between picture now changes hands |
+  | The game's triangles into the target | 960×544 | the picture (S) | always | unchanged (other sessions: cheaper in-between frames, hand-written renderers) |
+  | Atlas decode (`atlas_decode`) | a 2048×2048 FBO | new texture blocks into the decoded atlas | only for vertex buffers with new blocks: 0–150 passes per 300 vblanks in the Vita3K runs below (0–81 in the gems script at 30 fps), up to 224 around a save state | unchanged; now counted in the log |
+  | Capture: clear staging, copy the target into it | 960×544 | keep the picture for the queue, since the game redraws the target before it's shown | only when the target is written before the picture is shown | **removed** where the picture is one target whole (Spyro's: always) |
+  | Present: clear the back buffer | 960×544 | the black side bars | only for 4:3 (778 wide) | **skipped** when the picture fills the screen |
+  | Present: the slot onto the back buffer | 960×544 | the screen | always | now from the target itself while it's unchanged |
+  | The menu panel | the panel | the options menu | with the menu | unchanged |
+  | The display-rect present (no presentation frame: 4:3 PS1 display, loads, logos) | 778×544 | | when there's no presentation frame | unchanged |
+
+  At 60 fps a tick had two of each: the in-between pass and the logic pass both draw into the same target, so each picture was copied out before the next pass cleared it.
+- **Chosen** (`gpu_gl.c`, behind `gpu_direct=1`, on by default; `gpu_direct=0` is main's behaviour exactly):
+  - **The capture only notes the target** when the captured rect is one target whole, at the slots' size (`whole_target`; Spyro's 512×224 draw area at 8 or 248, so always in play). The slot keeps the target's texture name (`s_psrc`), and the commit files it as before.
+  - **The present draws from that target** while nothing has been drawn into it since. Every write into a target first calls `pres_touch`: draws, clears, `LoadImage`/`MoveImage` copies, and a dropped target (rescale, save state, eviction).
+  - **When the game clears that target whole** (its next frame there), the slot takes the target's texture and the target the slot's, with no copy, since the clear covers all of it. At 30 fps the picture is shown from its target, and the hand-over comes two ticks later. At 60 fps the in-between picture changes hands at the same tick's logic-pass clear, and the logic picture is shown from its target. Any other write copies the picture into the slot first, exactly as the capture drew it (counted as "before a later write").
+  - **A target never gets a texture from slower memory:** `tex_cdram` asks the kernel which memory each texture is in. See the finding below.
+  - **No clear where a quad covers every pixel:** the staging copy of a whole target, and the back buffer under a 16:9 picture.
+  - **Counted every 300 vblanks:** pictures, copies (and those forced by a later write), hand-overs, presents from a target, atlas decode passes, targets in main RAM, vitaGL's free pools (`vglMemFree`; 0 in Vita3K, which doesn't report its mspaces).
+- **Why the picture can't change:** the target's texels are the ones the staging copy held (a 1:1 `GL_NEAREST` copy at texel centres, the same size and clamp), and the present samples them the same way. The copy, when one is still needed, is drawn from the unchanged target, so it's what the capture would have drawn. The skipped clears were fully covered by opaque quads with blending off.
+- **Found on the way, already on main:** a target made again right after its old textures were deleted (a save state, a widescreen or resolution change, the options that redraw) can land in **main RAM**, because vitaGL frees deleted textures only once the GPU is done with them, and its CDRAM pool (96 MB on hardware) is nearly full. In Vita3K, after `state_test`'s save, both targets were in main RAM (`logs/v69n-state/spyro.log`, `gpu: target 0: ... (main RAM)`) until the load remade them. On main they stay there until the next remake, so every scene stores to the slower memory. With D69 (`gpu_direct=1`):
+  - **A dropped target's texture and FBO are kept** (`s_spare`) and given to the next target of the same size, so a save state's targets keep their CDRAM. Spares of another size are deleted when a target is made.
+  - **A target that is in main RAM anyway** (a size change, where nothing can be reused) swaps for a CDRAM slot texture at its first whole clear. The slot keeps the slower one: it's sampled once per picture, but each picture landing in it is copied, since a CDRAM target never takes it.
+  - In Vita3K, with the hand-over alone (`vpk-new2`), the state run's targets came back in CDRAM at their first clear, and the two main RAM textures then cost 129 copies in 452 pictures until the load. Where the CDRAM goes: the two 2048×2048 atlases are 16 MB each, plus 16 MB each for the D32 depth buffer vitaGL gives every FBO and we never use. Not changed here.
+- **Expected effect** (*estimate*, from C1's tail): one 960×544 scene less per picture, about half of the 2.5–3.7 ms tail, so ~1.3–1.8 ms of GPU per picture: ~1.3–1.8 ms per tick at 30 fps, ~2.6–3.6 ms per tick at 60. S, the game's own scene, doesn't change: it was 18.9–25.8 ms in C1's heavy windows, so this alone doesn't make 60 fit there. Runs E1–E4 (`tools/vita/fps-runs/`) measure it.
+- **Checked** (Vita3K is not hardware). "base" is main `67d07dd` built from a clean checkout (`logs/vpk-base`, SHA-1 `35cf1b98…`); "new" is this branch (`logs/vpk-new3`, `5bfde701…`). `realtime=0`, widescreen, window captures of the GPU's own picture (`CAPTURE=1`); script `logs/vd69.sh`, logs `logs/v69b-*` and `logs/v69n3-*` (gitignored):
+
+  | Run | What | Result |
+  |---|---|---|
+  | `ws` | gems script, 30 fps, 6 captures (title to the gems) | 13/13 files byte-identical (captures, replay shots, card) against base's second run `v69b-ws2` |
+  | `wsi0` | gems script, 60 fps forced | every capture identical inside the window. The window's outer 16 px differ at 5000–8400 by 732–1293 pixels (±1 on the top row, the corners). Base's own two `ws` runs differ the same way (732, 1245 and 1286 pixels at 5000, 7000 and 8400), and D68 saw it too, so it's Vita3K's or the compositor's state, not the picture. Base's 1800 caught Vita3K's shader-compile overlay; new's 1800 is identical to D68's main-tree capture `v68-cap-i0-on` |
+  | `pause` | pause and inventory (the `StoreImage` backgrounds), 60 fps forced | 47/47 identical |
+  | `demo` | attract demos (the 4:3 logic draw hidden, a 16:9 presentation pass), 60 fps forced | 16/16 identical |
+  | `end3`, `cred` | the third ending and the credits (pokes from the credits-crash session), 60 fps forced | 38/38 and 13/13 identical |
+  | `fairy` | save at the fairy, 30 fps | 30/30 identical, the memory card included |
+  | `43` | 4:3, 60 fps forced (778×544 slots, the screen still cleared) | 7/7 identical |
+  | `state` | save state at 8100, load at 8250 | captures and shots identical. `state1.bin` differs only in the build stamp and the overlays' native function pointers (`g_UpdateMoby`, `g_SpawnMoby`, ...), as between any two builds |
+
+  - **The counts** (new, all runs): 0 copies in any run but `state`, where the save's and the load's target remakes cost 4. Every picture was handed its target's texture or shown from it. 0 targets in main RAM. 0 `still waiting` or unknown commands.
+  - **The first two builds:** `vpk-new` (no memory check) gave the same captures. `vpk-new2` (hand-over only, no reuse) showed the main RAM finding above.
+  - **`gpu_time=2` in Vita3K** (relative only; Vita3K doesn't model the SGX), gems script, the median over 26 windows: the timed frame's tail went from 6.19 to 4.39 ms at 60 fps forced and from 0.35 to 0.14 ms at 30 fps (`v69b-gt`, `v69n3-gt`, `-gt30`).
+  - **Host:** this change is in `src/platform/vita/` only, which the host doesn't build. `ctest` 6/6 (`gte` and `m2c_diff_math` skipped, as before). `tools/host_checks.sh h69` against the render-thread session's `h68new-*` (main's shared code): demo 26/26, whole-game tour 139/139 shots with its trace and fairy card, routes A and B 56/56 each, all identical.
+  - **Not checked:** hardware. Runs E1–E4 in `tools/vita/fps-runs/` measure the GPU time saved, and E1 and E2 end with a save state for the main RAM finding.

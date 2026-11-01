@@ -1,0 +1,6 @@
+# Run E1, the presentation passes as before D69 (gpu_direct=0): 60 fps forced (an in-between frame every tick), GPU timing on
+interp=1
+interp_budget=0
+config_version=3
+gpu_time=2
+gpu_direct=0

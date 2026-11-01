@@ -1,0 +1,6 @@
+# Run E2, as E1 with D69's fewer full-screen passes (gpu_direct=1, the default): pictures shown from the targets, no staging copy, no clear under a full-screen picture
+interp=1
+interp_budget=0
+config_version=3
+gpu_time=2
+gpu_direct=1
