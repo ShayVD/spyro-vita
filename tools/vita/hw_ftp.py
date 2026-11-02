@@ -6,7 +6,7 @@ FTP server (port 1337) and its command port (1338). Standard library only.
     hw_ftp.py ls ux0:data/spyro          one "d|f SIZE NAME" line each; exit 2: no such folder
     hw_ftp.py size ux0:data/spyro/x      the size; exit 2: not there
     hw_ftp.py get REMOTE LOCAL           a file
-    hw_ftp.py getdir REMOTE LOCALDIR     a folder, recursively
+    hw_ftp.py getdir REMOTE LOCALDIR [MAX]  a folder, recursively (files under MAX bytes)
     hw_ftp.py put LOCAL REMOTE           a file (its folder must exist)
     hw_ftp.py putdir LOCALDIR REMOTE     a folder's contents, recursively
     hw_ftp.py mkdir REMOTE               (no error if it is there)
@@ -125,13 +125,13 @@ class Vita:
                 raise Missing("%s: %s" % (p, e))
         os.replace(tmp, local)
 
-    def getdir(self, p, local):
+    def getdir(self, p, local, max_size=None):
         os.makedirs(local, exist_ok=True)
         full = ftp_path(p)
-        for is_dir, _, name in self.ls(full):
+        for is_dir, size, name in self.ls(full):
             if is_dir:
-                self.getdir(full + "/" + name, os.path.join(local, name))
-            else:
+                self.getdir(full + "/" + name, os.path.join(local, name), max_size)
+            elif max_size is None or size < max_size:
                 self.get(full + "/" + name, os.path.join(local, name))
 
     def put(self, local, p):
@@ -228,7 +228,7 @@ def main(argv):
         elif op == "get":
             v.get(args[0], args[1])
         elif op == "getdir":
-            v.getdir(args[0], args[1])
+            v.getdir(args[0], args[1], int(args[2]) if len(args) > 2 else None)
         elif op == "put":
             v.put(args[0], args[1])
         elif op == "putdir":

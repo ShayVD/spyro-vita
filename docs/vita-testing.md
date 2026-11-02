@@ -570,6 +570,21 @@ asks. A run killed before it could put your files back (SIGKILL, the Wi-Fi gone)
 `NAME.hw-backup`. The next run, or `tools/vita/hw_run.sh --restore`, renames them back first, and
 keeps whatever is in the way as `NAME.hw-left-TIME`, for you to look at and delete.
 
+**Results on hardware (2026-11-02, the owner's Vita, vitacompanion 1.05, the disc image, branch
+`claude/upbeat-kowalevski-b81129`; logs gitignored):**
+
+| Run | What happened |
+|---|---|
+| `logs/hw-run0-check/` | `hw_check.sh` with 1.08: the port refused (wrong `*KERNEL` line), then the boot hang (above). With 1.05 under `*main` last and both VitaDB daemons off, `hw_check-4.txt`: ready (FTP, command port, `nosleep` on, the app, the image, `libshacccg.suprx`; 29 older crash dumps in `ux0:data`, left alone) |
+| `logs/hw-run1-title/` | The sample route: the whole app uploaded over FTP (no LiveArea hash stored yet), launched, `frames=2700 reached` after 42 s, 10 shots fetched (5 readback shots, 5 `shot-V-hd.png` from the GPU: the flythrough, then the title with PRESS START at 2640). 100–145 vblanks a second with virtual vblanks, 150 pictures per 300, no late vblanks. Exit 0. The owner's `config.txt`, `save/` and `spyro.log` were back afterwards; `config.txt` byte-identical to the copy taken before |
+| `logs/hw-run2-short/` | `frames=900 shot=600`: only `eboot.bin` uploaded, 21 s, exit 0. The copy on the Mac now has the memory card too (`save/card0/` is a folder; run 1's copy had missed it, the rename on the Vita kept it safe) |
+
+With 1.05 in `*main` the boot hung while the two VitaDB daemons (`ux0:data/NeoVitaDB/vdb_daemon.suprx`
+and `ux0:data/vitadb/vdb_daemon.suprx`) were loaded too. With both commented out and vitacompanion
+last in `*main`, it boots. Why isn't known: 1.05 takes 1 MB of SceShell's memory for its FTP server
+(`taipool_init`), and two daemons loaded at once may leave too little. Whether one daemon can stay
+hasn't been tried.
+
 **Without a Vita:** `tools/vita/hw_mock.py ROOT` is a pretend Vita (1.08's commands, or 1.05's with
 `MOCK_VERSION=1.05`): an FTP server that spells
 paths as vitacompanion does, over a folder, a command port, and a fake game that reads

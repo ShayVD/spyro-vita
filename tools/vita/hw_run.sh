@@ -246,13 +246,10 @@ say "app: eboot.bin ($(wc -c < "$tmp/vpk/eboot.bin" | tr -d ' ') bytes, $(basena
 # The owner's files aside: a copy of the small ones here, then renamed.
 relist
 backup=$state/backup-$VITA_IP
-rm -rf "$backup"; mkdir -p "$backup/save"
+rm -rf "$backup"; mkdir -p "$backup"
 [ "$(kind config.txt)" = f ] && v get "$data/config.txt" "$backup/config.txt"
-if [ "$(kind save)" = d ]; then
-  v ls "$data/save" | while read -r t size name; do
-    if [ "$t" = f ] && [ "$size" -lt 1048576 ]; then v get "$data/save/$name" "$backup/save/$name"; fi
-  done
-fi
+# (the memory card is save/card0/, a folder; the 3.8 MB states stay on the Vita)
+[ "$(kind save)" = d ] && v getdir "$data/save" "$backup/save" 1048576
 for n in "${names[@]}"; do
   if [ -n "$(kind "$n")" ]; then
     v mv "$data/$n" "$data/$n.hw-backup"; moved+=("$n")
