@@ -75,7 +75,7 @@ static int s_nignore;
 static struct {
   char name[64];
   int v0;
-} s_dead[64];
+} s_dead[128];
 static int s_ndead;
 
 static int ret_dead(const char *name, int v0) {
@@ -159,9 +159,9 @@ static void load_ignore(const char *path) {
     unsigned lo, hi;
     if (line[0] == '#')
       continue;
-    if (strncmp(line, "v1 ", 3) == 0 && s_ndead < 64)
+    if (strncmp(line, "v1 ", 3) == 0 && s_ndead < 128)
       s_dead[s_ndead].v0 = 0, sscanf(line + 3, "%63s", s_dead[s_ndead++].name);
-    else if (strncmp(line, "ret ", 4) == 0 && s_ndead < 64)
+    else if (strncmp(line, "ret ", 4) == 0 && s_ndead < 128)
       s_dead[s_ndead].v0 = 1, sscanf(line + 4, "%63s", s_dead[s_ndead++].name);
     else if (strncmp(line, "dma ", 4) == 0 && s_ndma < 8)
       sscanf(line + 4, "%x", &s_dma[s_ndma++]);
@@ -430,7 +430,36 @@ static u32 call_entry(const M2cEntry *e, Snap *in) {
  * result, and leaves the unit's scratchpad and GTE state. On by default
  * with the units linked; SPYRO_REPLAY_COLSHADOW=0 turns it off. */
 extern int g_col_shadow, g_col_shadow_fail;
-#define COL_SHADOW_FAILS() (g_col_shadow_fail)
+/* The same for math.s (math_hand.c, decisions D87): the result, the output
+ * and the GTE's rotation and translation compared; SPYRO_REPLAY_MATHSHADOW=0
+ * turns it off. */
+extern int g_math_shadow, g_math_shadow_fail;
+/* And 42CC4.s (42CC4_hand.c): RAM, the result and the GTE's control
+ * registers; SPYRO_REPLAY_MOBYSHADOW=0 turns it off. */
+extern int g_mobys_shadow, g_mobys_shadow_fail;
+/* The gamestates' (gamestates_hand.c) runs in a child; host runs only. */
+extern int g_gs_shadow, g_gs_shadow_fail;
+#define COL_SHADOW_FAILS() (g_col_shadow_fail + g_math_shadow_fail + g_mobys_shadow_fail)
+
+/* Outside the replay, SPYRO_SHADOW=LIST runs the named shadows (col, math,
+ * mobys, gs) over a whole host run (a demo, a route, the tour), every call,
+ * and prints the mismatch counts at exit. The unit leaves its scratchpad
+ * and GTE behind, as in the replay, so the run follows the unit's state. */
+static void shadow_report(void) {
+  fprintf(stderr, "shadow: col %d, math %d, mobys %d, gs %d mismatches\n", g_col_shadow_fail, g_math_shadow_fail,
+          g_mobys_shadow_fail, g_gs_shadow_fail);
+}
+
+__attribute__((constructor)) static void shadow_from_env(void) {
+  const char *l = getenv("SPYRO_SHADOW");
+  if (!l)
+    return;
+  g_col_shadow = strstr(l, "col") != NULL;
+  g_math_shadow = strstr(l, "math") != NULL;
+  g_mobys_shadow = strstr(l, "mobys") != NULL;
+  g_gs_shadow = strstr(l, "gs") != NULL;
+  atexit(shadow_report);
+}
 #else
 #define COL_SHADOW_FAILS() 0
 #endif
@@ -525,7 +554,7 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
     int v1_ok = v1 == ev1 || out->gpr[R_V1] == in->gpr[R_V1] || v1_dead(name);
     int pass = v0_ok && v1_ok && !nram && !nscr && !ngte && !ncol;
     if (ncol)
-      snprintf(col, sizeof col, " colshadow %u", ncol);
+      snprintf(col, sizeof col, " shadow %u", ncol);
     printf("%s %d %u %s v0 %08x/%08x%s v1 %08x/%08x%s ram %u ignored %u regsave %u rebased %u scratch %u "
            "gte %u%s%s\n%.*s",
            name, k, in->hdr[4], pass ? "PASS" : "FAIL", out->gpr[R_V0], v0,
@@ -648,6 +677,8 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
   }
 #if M2C_REF
   g_col_shadow = !getenv("SPYRO_REPLAY_COLSHADOW") || atoi(getenv("SPYRO_REPLAY_COLSHADOW"));
+  g_math_shadow = !getenv("SPYRO_REPLAY_MATHSHADOW") || atoi(getenv("SPYRO_REPLAY_MATHSHADOW"));
+  g_mobys_shadow = !getenv("SPYRO_REPLAY_MOBYSHADOW") || atoi(getenv("SPYRO_REPLAY_MOBYSHADOW"));
 #endif
   if (ignore)
     load_ignore(ignore);

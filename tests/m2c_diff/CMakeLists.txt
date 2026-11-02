@@ -4,11 +4,16 @@
 #   tools/oracle/redux logs/m2c-math ORACLE_END=9000 ORACLE_TRACE_MAX=20 \
 #     ORACLE_TRACE=$(tools/oracle/asm_entries.py third_party/spyro-1/asm/math.s --trace) \
 #     ORACLE_GLOBALS=80076DD0:110,800785A8:30
-# Without logs/m2c-math the test is skipped.
+# Without logs/m2c-math the test is skipped. math.s is hand-written C now
+# (src/game/math_hand.c, decisions D87): its mips2c unit, which this test
+# checks, is linked as <name>_gen only with -DSPYRO_M2C_REF=ON.
+if(NOT SPYRO_M2C_REF)
+  return()
+endif()
 set(M2C_DIFF_ENTRIES "${GEN_DIR}/m2c_diff_math_entries.h")
 add_custom_command(OUTPUT "${M2C_DIFF_ENTRIES}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/oracle/asm_entries.py"
-    "${S1_DIR}/asm/math.s" --header "${SPYRO_PSX_MAP}"
+    "${S1_DIR}/asm/math.s" --header "${SPYRO_PSX_MAP}" _gen
     > "${M2C_DIFF_ENTRIES}"
   DEPENDS "${S1_DIR}/asm/math.s" "${CMAKE_SOURCE_DIR}/tools/oracle/asm_entries.py"
     "${SPYRO_PSX_MAP}")
