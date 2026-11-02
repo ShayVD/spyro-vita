@@ -1271,3 +1271,23 @@ Record each decision with its date, what was chosen, and why.
   - **`vglSwapResolution`:** it changes the display buffers, not our targets.
   - **Steering by late pictures alone:** a late picture says the GPU is over, never how far under it is, so there'd be no way back up without trying (pumping).
   - **`picture_us`:** it includes the vblank waits (above).
+- **Checked** (logs in this branch's worktree, gitignored; Vita3K is not hardware, and nothing here has run on a Vita). "main" is main `2a0691c`'s own VPK (`logs/main-2a0691c-test/spyro-vita-main-2a0691c.vpk` in the main checkout, the one behind `hw-main-2a0691c`). `realtime=0`, widescreen; script `logs/v75.sh`, compare `logs/cmp.sh` (and `logs/layout.py`: both captures shrunk to 240 wide, the best of ±3 pixel shifts):
+  - **`dynres=0` against main** (`b0-*` against `n2off-*`, `n3off-*`, `n4off-*`):
+    - gems at 30 fps: 44 shots, the WAV and the card byte-identical;
+    - gems at 60 fps forced: the same, with the same in-between frames in every window;
+    - the pause route at 60 fps forced: 70 shots and the card byte-identical;
+    - window captures at 1800, 5000, 7000, 7600, 8000 and 8400: byte-identical (0 pixels);
+    - 4:3 captures (`cap43`) and a save at 8100 with a load at 8250 (`state-cap`): identical inside the window. 506–1336 pixels differ in the window's outer 16 pixels (its top row and corners), as between any two of main's own runs (D68, D69). `state1.bin` differs in 63 bytes, the build's code addresses (D69, D71).
+  - **Fixed scales** (`n2f75-*`, `n3f75-cap43`, `n3f67-state-cap`):
+    - the PS1-exact pictures don't see the scale: at 75%, the gems shots at 60 fps forced and the pause route (`StoreImage`'s backgrounds) are byte-identical to main.
+    - Window captures at 75% (16:9 and 4:3) and at 67% across the save and the load: layout at shift 0,0 against main's in every one, mean difference 1.1–2.0 of 255 (the softer picture).
+    - The bottom-right corner at 75% is clean: no band from an older picture at the part's edges.
+  - **Auto** (`n1auto-*`, `n2auto-*`, `n3auto-*`, `n4auto-*`):
+    - **The meter works in Vita3K** (fragment notifications come). The first version counted the swap's scene and read 16.7 ms a picture at any load, which held the scale at 67% (`n1auto-gems-cap`). With it left out, the measured scenes were 2–10 ms a picture where Vita3K kept up, and 12–21 ms where its own GPU emulation slowed the game to 23–40 vblanks a second.
+    - dynres went down within 0.2–0.3 s of the cost passing its line and came back up after its hold, the hold doubling to 40 and 80 windows after falls soon after rises. Vita3K's times aren't the SGX's: the steps it chose say nothing about hardware.
+    - Captures at 100%, 75% and 67% all match main's layout at 0,0.
+    - At 30 fps (`n3auto-gems-ws`, 33.4 ms a picture): 100% throughout but one window after a 33 ms Vita3K hitch, back up after its 2 s hold.
+  - **The menu row** (`n3menu-menu-cap`, `menu_keys` 7 downs, right, right): AUTO, 88%, 75%. The log said `fixed, scale 87%` (now printed as the menu names it, 88%), then `75%`, and saved `dynres=75`; captures after it are at 75% with layout 0,0.
+  - 0 unknown commands and no `still waiting` in any run; `0 scenes not measured` in every `dynres` line.
+  - **Host:** no file the host builds changed (`src/platform/vita/` only). `ctest` 7/7 pass (`gte` and `m2c_diff_math` skipped, as before). `tools/host_checks.sh h75` against D73's `h71-*`: demo 25, whole-game tour 140, routes A and B 55 each (shots, WAV, cards), and their traces, all identical. Oracle replays: `cap3` 329 PASS (and 9 NOEXIT), `cap5-fairy` 261 PASS (and 7 NOEXIT), as D73.
+  - **Not checked:** hardware, which decides it all: the meter on the SGX, the real cost per step, whether the steps pump. Runs J1–J5 (`tools/vita/fps-runs/`).

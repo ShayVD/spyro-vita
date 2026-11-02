@@ -35,6 +35,7 @@
  * quarter fewer pixels each (960x544, 840x476, 720x408, 641x363). */
 static const int k_steps[] = {1000, 875, 750, 667};
 #define NSTEPS (int)(sizeof k_steps / sizeof k_steps[0])
+#define PCT(i) ((k_steps[i] + 5) / 10) /* as the menu names it: 88, 75, 67 */
 #define WINDOW 12         /* pictures per measure: 0.2 s at 60 fps */
 #define SETTLE 3          /* pictures after a change still in flight at the old scale */
 #define VBLANK_US 16683   /* NTSC */
@@ -115,9 +116,9 @@ static void window(unsigned cost) {
       if ((predict(cost, s_step, i, FIXED_US) + PRESENT_US) * 100 <= frame * FIT)
         break;
     vita_log("dynres: GPU %u.%02u ms a picture at %d%% (with the present's %d.%d ms), over %d%% "
-             "of %u.%02u ms: %d%%", total / 1000, total % 1000 / 10, k_steps[s_step] / 10,
+             "of %u.%02u ms: %d%%", total / 1000, total % 1000 / 10, PCT(s_step),
              PRESENT_US / 1000, PRESENT_US % 1000 / 100, HI, frame / 1000, frame % 1000 / 10,
-             k_steps[i] / 10);
+             PCT(i));
     if (s_since_up < STEADY) /* fell soon after a rise: wait longer next time */
       s_hold = s_hold * 2 > HOLD_MAX ? HOLD_MAX : s_hold * 2;
     s_fit_windows = 0;
@@ -128,8 +129,8 @@ static void window(unsigned cost) {
   if (s_step > 0 && (predict(cost, s_step, s_step - 1, 0) + PRESENT_US) * 100 <= frame * UP) {
     if (++s_fit_windows >= s_hold) {
       vita_log("dynres: GPU %u.%02u ms a picture at %d%% for %d windows, %d%% predicted to fit: "
-               "%d%%", total / 1000, total % 1000 / 10, k_steps[s_step] / 10, s_hold, UP,
-               k_steps[s_step - 1] / 10);
+               "%d%%", total / 1000, total % 1000 / 10, PCT(s_step), s_hold, UP,
+               PCT(s_step - 1));
       s_fit_windows = 0;
       s_since_up = 0;
       s_st.ups++;
@@ -155,7 +156,7 @@ void dynres_picture(int menu) {
     s_fit_windows = 0;
     set_step(mode == 1 ? 0 : mode ? fixed_step(mode) : 0);
     vita_log("dynres: %s, scale %d%% (D75)", mode == 1 ? "auto" : mode ? "fixed" : "off",
-             k_steps[s_step] / 10);
+             PCT(s_step));
   }
   if (!vita_gpu_meter(&busy, &scenes))
     return;
@@ -195,12 +196,12 @@ void dynres_report(int vblank) {
     any |= s_st.pics[i] != 0;
     if (s_st.pics[i])
       len += snprintf(line + len, sizeof line - len, "%s%d%%: %u pictures, %u.%02u ms", len ? "; " : "",
-                      k_steps[i] / 10, s_st.pics[i], avg / 1000, avg % 1000 / 10);
+                      PCT(i), s_st.pics[i], avg / 1000, avg % 1000 / 10);
   }
   if (any || s_st.downs || s_st.ups)
     vita_log("dynres %d: GPU time per picture (the measured scenes, without the present's quad) "
              "%s; %u down, %u up, now %d%% (hold %d windows; %u scenes not measured)",
-             vblank, any ? line : "(none measured)", s_st.downs, s_st.ups, k_steps[s_step] / 10,
+             vblank, any ? line : "(none measured)", s_st.downs, s_st.ups, PCT(s_step),
              s_hold, vita_gpu_meter_dropped());
   memset(&s_st, 0, sizeof s_st);
 }
