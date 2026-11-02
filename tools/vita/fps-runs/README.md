@@ -225,3 +225,15 @@ K1–K3 (`docs/native-plan.md` §3.4) showed the read-ahead (D64) serving no mus
 - `xa N: A music sectors from the read-ahead, B read on the game thread; read-ahead W windows, ...; C asks found no window` every 300 vblanks. After every level change (the `where:` lines), A should be back near 750 and B near 0 within one window; K1–K3 had A = 0 and W = 0 from the first load on. B is a handful (2–10) in the window where a new track starts. C should stay 0: a non-zero C for several windows in a row is the old stall.
 - `mixer N: ... 0 position mismatches` throughout.
 - The `time` lines' `spu` part in play back to ~0.05 ms per vblank (K1–K3 had 0.54–0.58 after the first load).
+
+## Run Q: collision as hand-written C (D83)
+
+Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with readable C (`src/game/collision_hand.c`). Its results feed gameplay, so the check is the same route played on main's VPK and on this one: every picture and the memory card must come out identical.
+
+| File | Switches | Do |
+|---|---|---|
+| `q1-collision.txt` | N2's: 30 fps (`interp=0`), `render_thread=0`, `parse_thread=0`, `fast_render=2`, `dynres=0` | unattended, the K route, once with main's VPK (Q1) and once with this branch's (Q2) |
+
+**Unattended:** `VPK=MAIN.vpk DEVICE_DEFAULTS=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-q1 1500 @tools/vita/fps-runs/q1-collision.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with this branch's VPK into `logs/hw-q2`. The pictures (`shot-*`, and `gpu-*` with `shot_hd=1`) and `save/` are compared with `cmp`.
+
+**Ran** on 2026-11-02 (D83): Q1 with main's VPK (`6128154`), Q2 with this branch's; all 18 pictures and the memory card identical, and the `update` lines 0.278 → 0.230 ms per vblank.

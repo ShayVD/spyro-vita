@@ -571,6 +571,8 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 
 **Optional:** a build option per function (`SPYRO_M2C_FUNCS`), as now. No run-time switch is needed: equivalence is proven on the host.
 
+**Status (D83, 2026-11-02): collision done.** `asm/collision.s` (3,866 instructions, six entry points) is readable C in `src/game/collision_hand.c`. It keeps nothing in the scratchpad or the GTE's registers: what the asm leaves there nothing reads (D83 says how that was shown), and a shadow in the host's oracle replay runs the mips2c unit beside every call so the replay stays exact. `tools/native_audit.py` on this branch's VPK (`logs/native-audit.txt`): readable C (A + B1) is **54.8% of the executable** (50.6% before), **92.4% of the whole game** with the overlays (91.7%); the original's instructions that run as mips2c fall from 19,272 to 15,406 (executable 17,678 → 13,812), and the ELF's live mips2c code from 310,611 to 262,127 bytes (B1 29,636 → 38,820). Next: `math.s` (its rotation matrix is state other calls read, so it stays in the GTE), `42CC4.s`, the gamestates 8 and 11 update. The renderers' remaining helpers wait for stage 2.
+
 ### Stage 4: native memory (large, high risk, after stages 2 and 3)
 
 **Replaces** (E):
