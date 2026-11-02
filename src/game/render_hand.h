@@ -92,9 +92,13 @@ typedef struct {
   u32 rd;        /* NGTE_RD_* of any of them */
   u32 v0xy, v0z; /* what the code last moved into V0 after them */
   u8 v0;
-  /* DPCS: the last three inputs (RGBC, IR0, RFC-BFC as moved there) */
-  u32 rgbc[3], ir0[3], rfc[3], gfc[3], bfc[3];
+  /* DPCS or INTPL: the last three, their inputs as moved there (RGBC or
+   * IR1-3, IR0, RFC-BFC) */
+  u32 rgbc[3], ir1[3], ir2[3], ir3[3], ir0[3], rfc[3], gfc[3], bfc[3];
+  u8 intpl[3];
   u32 nc;
+  u32 rgbc_post; /* what the code moved into RGBC after them */
+  u8 rgbc_set;
   /* SXY0-2 as last moved there, and the last NCLIP's MAC0 */
   u32 sxy0, sxy1, sxy2;
   s32 mac0;
@@ -127,7 +131,28 @@ static inline void ngte_dpcs_rec(NgteSync *s, u32 rgbc, u32 ir0, u32 rfc, u32 gf
   s->rfc[k] = rfc;
   s->gfc[k] = gfc;
   s->bfc[k] = bfc;
+  s->intpl[k] = 0;
+  s->rgbc_set = 0;
   s->last_c = ++s->seq;
+}
+/* INTPL's inputs, as moved into IR1-3, IR0 and RFC-BFC */
+static inline void ngte_intpl_rec(NgteSync *s, u32 ir1, u32 ir2, u32 ir3, u32 ir0, u32 rfc, u32 gfc,
+                                  u32 bfc) {
+  const u32 k = s->nc++ % 3;
+  s->ir1[k] = ir1;
+  s->ir2[k] = ir2;
+  s->ir3[k] = ir3;
+  s->ir0[k] = ir0;
+  s->rfc[k] = rfc;
+  s->gfc[k] = gfc;
+  s->bfc[k] = bfc;
+  s->intpl[k] = 1;
+  s->last_c = ++s->seq;
+}
+/* MTC2 to RGBC after the last DPCS (a pipelined load of the next colour) */
+static inline void ngte_rgbc(NgteSync *s, u32 rgbc) {
+  s->rgbc_post = rgbc;
+  s->rgbc_set = 1;
 }
 /* MTC2 to SXY0-2 (whole words) */
 static inline void ngte_sxy(NgteSync *s, u32 xy0, u32 xy1, u32 xy2) {
@@ -166,14 +191,25 @@ static inline void ngte_flush_r(NgteSync *s) {
 static inline void ngte_flush_c(NgteSync *s) {
   u32 k = s->nc > 3 ? s->nc - 3 : 0;
   for (; k < s->nc; k++) {
-    CTC2(s->rfc[k % 3], 21);
-    CTC2(s->gfc[k % 3], 22);
-    CTC2(s->bfc[k % 3], 23);
-    MTC2(s->rgbc[k % 3], 6);
-    MTC2(s->ir0[k % 3], 8);
-    m2c_gte_0x780010(); /* DPCS */
+    const u32 j = k % 3;
+    CTC2(s->rfc[j], 21);
+    CTC2(s->gfc[j], 22);
+    CTC2(s->bfc[j], 23);
+    MTC2(s->ir0[j], 8);
+    if (s->intpl[j]) {
+      MTC2(s->ir1[j], 9);
+      MTC2(s->ir2[j], 10);
+      MTC2(s->ir3[j], 11);
+      m2c_gte_0x980011(); /* INTPL */
+    } else {
+      MTC2(s->rgbc[j], 6);
+      m2c_gte_0x780010(); /* DPCS */
+    }
   }
+  if (s->rgbc_set)
+    MTC2(s->rgbc_post, 6);
   s->nc = 0;
+  s->rgbc_set = 0;
 }
 static inline void ngte_flush_s(NgteSync *s) {
   if (s->sxy_set) {

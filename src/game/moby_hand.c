@@ -15,7 +15,13 @@
  * the world OT.
  *
  * func_80022A2C draws the lit mobys and the HUD's models (further down);
- * func_80020F34 the specular ones, on func_8001F798's set-up. */
+ * func_80020F34 the specular ones, on func_8001F798's set-up.
+ *
+ * fast_render=2 (NGTE, render_hand.h, decisions D79): func_8001F798's
+ * vertex transform, colour fades and back-face NCLIPs are native maths
+ * (gte_native.h); a frame blend runs native but for its last four vertices.
+ * What the native commands would have left in the GTE goes back into it at
+ * the end of each moby, and before a sprite face's register-file code. */
 #include "render_hand.h"
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
@@ -200,6 +206,37 @@ static inline int Transform(VtxStream cur, u32 n, u32 shift, u32 *xy, u32 *depth
   return !clip || (s32)(all_out & 0x1F) <= 0;
 }
 
+#if NGTE
+/* Transform, native: the projection read after the record's set-up; the
+ * last four RTPS and the vertex left in V0 go to the sync. */
+static inline int TransformN(const NgteProj *P, NgteSync *sync, VtxStream cur, u32 n, u32 shift,
+                             u32 *xy, u32 *depth, int clip) {
+  u32 all_out = ~0u, raw = *cur.word++, delta = raw & 1, i = 0;
+  Vtx v;
+  VtxLoad(&v, raw);
+  ngte_rtps_run(sync, n);
+  do {
+    const u32 vxy = v.x + (v.y << 16), vz = v.z;
+    const NgteRtp t = ngte_rtps_w(P, vxy, vz);
+    if (i + 4 >= n)
+      ngte_rtps_rec(sync, vxy, vz, NGTE_RD_SZ3);
+    raw = StreamNext(&cur, delta);
+    VtxNext(&v, raw, delta, shift);
+    depth[i] = t.sz3;
+    delta = raw & 1;
+    if (clip) {
+      u32 flags = ClipFlags(t.sxy);
+      all_out &= flags;
+      xy[i] = flags;
+    } else {
+      xy[i] = t.sxy;
+    }
+  } while (++i != n);
+  ngte_v0(sync, v.x + (v.y << 16), v.z);
+  return !clip || (s32)(all_out & 0x1F) <= 0;
+}
+#endif
+
 /* The same between two frames: each vertex is the current frame's blended
  * towards the next frame's by progress (INTPL), the next one blended while
  * the current one is transformed. */
@@ -211,16 +248,53 @@ static inline int TransformBlend(VtxStream cur, VtxStream next, u32 n, u32 progr
   Vtx v, nv;
   VtxLoad(&v, raw);
   VtxLoad(&nv, nraw);
-  MTC2(progress, 8);
-  MTC2(v.z, 9);
-  MTC2(v.x, 10);
-  MTC2(v.y, 11);
-  CTC2(nv.z, 21);
-  CTC2(nv.x, 22);
-  CTC2(nv.y, 23);
-  gte_intpl();
-  raw = StreamNext(&cur, delta);
-  BlendToV0();
+#if NGTE
+  if (n > NGTE_TAIL) {
+    /* native but for the last four vertices (four RTPS and four INTPL
+     * rewrite every register both write); then V0 gets the blended vertex
+     * the last native step left there */
+    const NgteProj P = ngte_proj_get();
+    const int ir0 = (s16)progress;
+    const u32 code = C2_CODE;
+    NgteCol b = ngte_intpl((s16)v.z, (s16)v.x, (s16)v.y, ir0, (s32)nv.z, (s32)nv.x, (s32)nv.y, code);
+    u32 vz = (u32)b.mac1, vxy = (u32)b.mac2 + ((u32)b.mac3 << 16);
+    raw = StreamNext(&cur, delta);
+    for (; n - i > NGTE_TAIL; i++) {
+      const NgteRtp t = ngte_rtps_w(&P, vxy, vz);
+      nraw = StreamNext(&next, ndelta);
+      VtxNext(&v, raw, delta, shift);
+      delta = raw & 1;
+      VtxNext(&nv, nraw, ndelta, shift);
+      b = ngte_intpl((s16)v.z, (s16)v.x, (s16)v.y, ir0, (s32)nv.z, (s32)nv.x, (s32)nv.y, code);
+      vz = (u32)b.mac1;
+      vxy = (u32)b.mac2 + ((u32)b.mac3 << 16);
+      raw = StreamNext(&cur, delta);
+      ndelta = nraw & 1;
+      depth[i] = t.sz3;
+      if (clip) {
+        u32 flags = ClipFlags(t.sxy);
+        all_out &= flags;
+        xy[i] = flags;
+      } else {
+        xy[i] = t.sxy;
+      }
+    }
+    MTC2(vz, 1);
+    MTC2(vxy, 0);
+  } else
+#endif
+  {
+    MTC2(progress, 8);
+    MTC2(v.z, 9);
+    MTC2(v.x, 10);
+    MTC2(v.y, 11);
+    CTC2(nv.z, 21);
+    CTC2(nv.x, 22);
+    CTC2(nv.y, 23);
+    gte_intpl();
+    raw = StreamNext(&cur, delta);
+    BlendToV0();
+  }
   do {
     u32 sz, sxy;
     gte_rtps();
@@ -266,6 +340,9 @@ typedef struct {
   const u8 *depth;   /* gp: the vertex depths */
   const u8 *xy;      /* sp: the screen positions or clip words */
   int clip;          /* s7's sign */
+#if NGTE
+  NgteSync *sync;    /* native GTE commands pending, or 0: the register file */
+#endif
 } FaceCtx;
 
 /* Put the next primitive (size bytes) at the end of a bucket's chain. */
@@ -402,10 +479,15 @@ HAND_INLINE const u32 *DrawTriangle(FaceCtx *c, const u32 *f) {
     xy1 = CLIP_XY(xy1);
     xy2 = CLIP_XY(xy2);
   }
+#if NGTE
+  ngte_sxy(c->sync, xy0, xy1, xy2);
+  m = (u32)ngte_nclip_s(c->sync);
+#else
   MTC2(xy0, 12);
   MTC2(xy1, 13);
   MTC2(xy2, 14);
   gte_nclip();
+#endif
   AT32(p + 0x8) = xy0;
   if (textured) {
     AT32(p + 0x14) = xy1;
@@ -416,7 +498,9 @@ HAND_INLINE const u32 *DrawTriangle(FaceCtx *c, const u32 *f) {
   }
   if (fw & FACE_HIDDEN)
     return next;
+#if !NGTE
   m = MFC2(24);
+#endif
   if (fw & FACE_TWO_SIDED ? m == 0 : (s32)m <= 0)
     return next; /* edge-on, or facing away */
   EmitTriangle(c, next, i0, i1, i2, (COLOUR(c, (cw >> 17) & 0x7FC) << 8) >> 8,
@@ -443,12 +527,19 @@ HAND_INLINE const u32 *DrawQuad(FaceCtx *c, const u32 *f) {
     xy2 = CLIP_XY(xy2);
     xy3 = CLIP_XY(xy3);
   }
+#if NGTE
+  ngte_sxy(c->sync, xy0, xy1, xy2);
+  if (fw & FACE_HIDDEN)
+    return next;
+  m = (u32)ngte_nclip_s(c->sync);
+#else
   MTC2(xy0, 12);
   MTC2(xy1, 13);
   MTC2(xy2, 14);
   if (fw & FACE_HIDDEN)
     return next;
   gte_nclip();
+#endif
   AT32(p + 0x8) = xy0;
   if (textured) {
     AT32(p + 0x14) = xy1;
@@ -459,12 +550,19 @@ HAND_INLINE const u32 *DrawQuad(FaceCtx *c, const u32 *f) {
     AT32(p + 0x18) = xy2;
     AT32(p + 0x20) = xy3;
   }
+#if NGTE
+  ngte_sxy0(c->sync, xy3);
+  if ((fw & FACE_TWO_SIDED) && (s32)m > 0)
+    m = 0u - m;
+  m2 = (u32)ngte_nclip_s(c->sync);
+#else
   m = MFC2(24);
   MTC2(xy3, 12);
   if ((fw & FACE_TWO_SIDED) && (s32)m > 0)
     m = 0u - m;
   gte_nclip();
   m2 = MFC2(24);
+#endif
   if ((fw & FACE_TWO_SIDED) && (s32)m2 < 0)
     m2 = 0u - m2;
   c0 = (cw >> 17) & 0x7FC;
@@ -502,6 +600,10 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
     xy = CLIP_XY(xy);
   }
   z = VERT_DEPTH(c, i0, wide);
+#if NGTE
+  if (c->sync)
+    ngte_flush(c->sync); /* the sprite runs on the register file */
+#endif
   CTC2(0x100u, 27); /* DQA */
   CTC2(0u, 28);     /* DQB */
   CTC2(0u, 3);      /* R31R32 */
@@ -734,6 +836,20 @@ static inline const u32 *PickFaces(const RecState *s, FaceCtx *c) {
       const u32 *hp = HPTR(const u32, anim->m_Colors);
       const u32 *lp = HPTR(const u32, anim->m_LpColors);
       u32 *out = (u32 *)(tbl + TBL_COLOURS), i = 0, nc = anim->m_NumColors;
+#if NGTE
+      if (c->sync) {
+        /* native; the last three DPCS and IR0 go to the sync */
+        c->tex_bias = (k >> 9) << 22;
+        do {
+          const u32 l = lp[i], rfc = (l << 4) & 0xFF0, gfc = (l >> 4) & 0xFF0, bfc = (l >> 12) & 0xFF0;
+          if (i + 3 >= nc)
+            ngte_dpcs_rec(c->sync, hp[i], k, rfc, gfc, bfc);
+          out[i] = ngte_dpcs(hp[i], (s16)k, (s32)rfc, (s32)gfc, (s32)bfc).rgb2;
+        } while (++i != nc);
+        c->colours = tbl + TBL_COLOURS;
+        return faces;
+      }
+#endif
       MTC2(k, 8);
       c->tex_bias = (k >> 9) << 22;
       do {
@@ -753,6 +869,23 @@ static inline const u32 *PickFaces(const RecState *s, FaceCtx *c) {
       u32 *out = (u32 *)(tbl + TBL_COLOURS), i = 0, nc = anim->m_NumColors;
       fog = fog + 0x800 > 0 ? -fog : 0x7FF;
       c->tex_bias = (u32)fog << 1;
+#if NGTE
+      if (c->sync) {
+        /* native; the last three DPCS, IR0 and the colour left in RGBC go
+         * to the sync */
+        const u32 f = ((const u32 *)g_Cyclorama)[4];
+        const u32 rfc = (f << 4) & 0xFF0, gfc = (f >> 4) & 0xFF0, bfc = (f >> 12) & 0xFF0;
+        const int ir0 = (s16)c->tex_bias;
+        do {
+          if (i + 3 >= nc)
+            ngte_dpcs_rec(c->sync, lp[i], c->tex_bias, rfc, gfc, bfc);
+          out[i] = ngte_dpcs(lp[i], ir0, (s32)rfc, (s32)gfc, (s32)bfc).rgb2;
+        } while (++i != nc);
+        ngte_rgbc(c->sync, lp[nc]);
+        c->colours = tbl + TBL_COLOURS;
+        return faces;
+      }
+#endif
       MTC2(c->tex_bias, 8);
       SetFarColour(((const u32 *)g_Cyclorama)[4]);
       MTC2(lp[0], 6);
@@ -789,9 +922,18 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
   FaceCtx c;
   const u32 *faces, *end;
   u32 n, *depth;
+#if NGTE
+  NgteSync sync;
+  NgteProj P;
+#endif
 
   if (!RecordBegin(rec, &s))
     return prim;
+#if NGTE
+  P = ngte_proj_get();
+  ngte_sync_init(&sync);
+  c.sync = &sync;
+#endif
   ReplaceFaces(&s);
 
   /* The vertices: screen positions (or clip words) to the scratchpad,
@@ -804,7 +946,13 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
     if (!TransformBlend(FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
                         n, s.progress, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip))
       goto restore;
-  } else if (!Transform(FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip)) {
+  } else if (
+#if NGTE
+      !TransformN(&P, &sync, FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip)
+#else
+      !Transform(FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip)
+#endif
+  ) {
     goto restore;
   }
 
@@ -828,6 +976,9 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
   }
 
 restore:
+#if NGTE
+  ngte_flush(&sync);
+#endif
   RestoreFaces();
   return prim;
 }
@@ -2105,6 +2256,9 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
   FaceCtx c;
   const u32 *faces, *end;
   u32 n, spec;
+#if NGTE
+  c.sync = 0; /* the specular mobys stay on the register file */
+#endif
 
   if (!RecordBegin(rec, &s))
     return prim;
