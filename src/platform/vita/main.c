@@ -103,6 +103,18 @@
  *                       the game clears it; the same pixels)
  *       gpu_lean=1      with gpu=1 and neither persp nor subpixel, a 28-byte
  *                       vertex instead of 40 (the same pixels; D70)
+ *       gpu_join=0      with gpu=1, each of PsyCross's draws its own GL draw
+ *                       (default 1: consecutive draws with the same target,
+ *                       clip, offset and blend joined into one, split only
+ *                       where the program changes; the same pixels; D74)
+ *       gpu_uber=1      with gpu=1 and the atlas, the opaque textured and
+ *                       untextured triangles of a draw in one program, not a
+ *                       switch at each change (the same pixels; D74)
+ *       gpu_fill=1      with gpu=1, log per picture the pixels each kind of
+ *                       draw covers and what the GPU shades (diagnostic, D74)
+ *       gpu_bench=1     with gpu=1, each 300-vblank window draws with one of
+ *                       D74's variants in turn (two of them change the
+ *                       picture) and logs the GPU's time for the scene
  *       parse_thread=1  with gpu=1 and render_thread=1, PsyCross's OT walk on
  *                       a thread of its own (core 1), walking a copy of the
  *                       frame's primitives while the game goes on (default
@@ -169,6 +181,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
+                        .gpu_join = 1, /* D74 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -289,6 +302,14 @@ static void read_config(void) {
       parse_poke(v);
     else if (!strcmp(line, "gpu_dump"))
       g_vita_opts.gpu_dump = atoi(v);
+    else if (!strcmp(line, "gpu_fill"))
+      g_vita_opts.gpu_fill = atoi(v);
+    else if (!strcmp(line, "gpu_join"))
+      g_vita_opts.gpu_join = atoi(v);
+    else if (!strcmp(line, "gpu_uber"))
+      g_vita_opts.gpu_uber = atoi(v);
+    else if (!strcmp(line, "gpu_bench"))
+      g_vita_opts.gpu_bench = atoi(v);
     else if (!strcmp(line, "gpu_readback"))
       g_vita_opts.gpu_readback = atoi(v);
     else if (!strcmp(line, "mixer"))

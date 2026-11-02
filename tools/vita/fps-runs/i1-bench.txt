@@ -1,0 +1,7 @@
+# Run I1, what the GPU's picture costs (D74): gpu_bench=1 cycles five ways of drawing, one per 5-s window (two change the picture: measurements only), at 60 fps forced, the setup of main's Toasty log
+interp=1
+interp_budget=0
+gpu_lean=1
+parse_thread=1
+gpu_bench=1
+config_version=3

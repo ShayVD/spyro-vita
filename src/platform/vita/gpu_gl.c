@@ -150,7 +150,7 @@ static Prog s_prog[P_COUNT];
  * STP per texel); 3-point (tex_filter=2); the GPU's bilinear (tex_filter=1's
  * opaque draws, D43). Only the configured set (and what it falls back to)
  * is built, or all of them for bench= (D41). */
-enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_AO, V_COUNT };
+enum { V_PLAIN, V_X0, V_A0, V_FB, V_F3, V_HB, V_AO, V_AU, V_COUNT };
 static Prog s_vprog_x[V_COUNT][P_T16 + 1], s_vprog_l[V_COUNT][P_T16 + 1];
 /* the set for the vertex in use: s_vprog_l with the lean vertex (D70) */
 static Prog (*s_vprog)[P_T16 + 1] = s_vprog_x;
@@ -205,6 +205,7 @@ static LVertex s_lbuf[MAX_VERTEX_BUFFER_SIZE];
  * 2 filtered from the atlas, 3 as 1 with no transparent or STP texel
  * (gpu_opaque, D65) */
 static uint8_t s_tkind[MAX_VERTEX_BUFFER_SIZE / 3 + 1];
+static uint8_t s_tfmt[MAX_VERTEX_BUFFER_SIZE / 3 + 1]; /* per triangle: its draw's P_T* (D74) */
 static int s_xmode;    /* any of the three below: draws use s_xbuf */
 static int s_xattr;    /* attribute arrays 3-6 are enabled */
 static int s_filter;   /* tex_filter=: 0 off, 1 bilinear, 2 3-point (D43) */
@@ -281,17 +282,23 @@ int gl_take_sample(unsigned *frame_us, unsigned *tail_us) {
 
 uint32_t g_gl_finish_us; /* in the timed frame's glFinish calls (gpu_thread.c leaves it out) */
 
+static void batch_flush(void); /* gpu_join's held draws, to the GPU (D74) */
+
 static void sample_begin(void) {
   if (s_sample.state == 1) {
-    uint64_t t = now_us();
+    uint64_t t;
+    batch_flush();
+    t = now_us();
     glFinish();
     s_sample.t0 = now_us();
     g_gl_finish_us += (uint32_t)(s_sample.t0 - t);
     s_sample.state = 2;
-    s_sample.scene_wait = g_vita_opts.gpu_time == 2;
+    s_sample.scene_wait = g_vita_opts.gpu_time == 2 || g_vita_opts.gpu_bench;
     s_sample.scene_us = -1u;
   }
 }
+
+static void bench_sample(unsigned us);
 
 /* gpu_time=2: the timed frame's scene, from its last draw to the GPU done */
 static void sample_scene(void) {
@@ -301,6 +308,8 @@ static void sample_scene(void) {
     s_sample.scene_us = (unsigned)(now_us() - t);
     g_gl_finish_us += s_sample.scene_us;
     s_sample.scene_wait = 0;
+    if (g_vita_opts.gpu_bench)
+      bench_sample(s_sample.scene_us);
   }
 }
 
@@ -566,6 +575,25 @@ static const char k_fs_atlas_plain_body[] =
     "  gl_FragColor = vec4(qt.xyz * v_col.xyz * (255.0 / 128.0), 1.0);\n"
     "}\n";
 
+/* gpu_uber=1 (D74): k_fs_atlas_plain_body that also draws the untextured
+ * triangles of an opaque draw (expand() marks them with flags.x = 2), so a
+ * draw where textured and untextured triangles alternate is one program
+ * instead of a switch at each change. An untextured pixel's colour is
+ * selected, not computed: v_col exactly, as k_fs_untex's v_col * 1.0. It
+ * reads a texel it doesn't use. */
+static const char k_fs_atlas_uber_body[] =
+    "varying vec4 v_box;\n"
+    "varying vec2 v_filt;\n"
+    "varying vec2 v_off;\n"
+    "uniform sampler2D s_atlas;\n"
+    "void main() {\n"
+    "  vec4 qbox = floor(v_box + 0.5);\n"
+    "  vec2 q = clamp(floor(v_uv + 0.002), qbox.xy, qbox.zw) + floor(v_off + 0.5);\n"
+    "  vec4 qt = texture2D(s_atlas, (q + 0.5) * (1.0 / 2048.0));\n"
+    "  vec3 qrgb = qt.xyz * v_col.xyz * (255.0 / 128.0);\n"
+    "  gl_FragColor = vec4(v_filt.x > 1.5 ? v_col.xyz : qrgb, 1.0);\n"
+    "}\n";
+
 /* tex_filter=1 on opaque draws (D43): the atlas sampled with the GPU's own
  * bilinear filter, one fetch. The manual taps above cost the hardware about
  * as much as the old palette decode (13 ms of GPU a frame at native
@@ -746,12 +774,24 @@ static int build_variant(int v) {
   /* FILTER 1 in k_fs_filt_body is 3-point, 2 bilinear */
   int i, filter = v == V_F3 ? 1 : v == V_FB ? 2 : 0;
   int atlas = filter || v == V_A0 || v == V_HB || v == V_AO;
+  if (v == V_AU) { /* one program (D74) */
+    if (s_vprog[v][P_T16].prog)
+      return 0;
+    if (nvs == 2)
+      vs[0] = k_vs_lean_def;
+    fs[0] = fmt_def[2];
+    fs[1] = k_fs_prim_head;
+    fs[2] = k_fs_atlas_uber_body;
+    return link(&s_vprog[v][P_T16], vs, nvs, fs, 3, 0, "plain and untextured");
+  }
   if (s_vprog[v][P_UNTEX].prog)
     return 0;
   /* what the atlas doesn't hold, the sprites, and tex_filter=1's opaque draws */
   if (atlas && (build_variant(V_X0) || (v != V_A0 && v != V_AO && build_variant(V_A0)) ||
                 (v == V_FB && build_variant(V_HB)) ||
-                (v != V_AO && g_vita_opts.gpu_opaque && build_variant(V_AO))))
+                (v != V_AO && g_vita_opts.gpu_opaque && build_variant(V_AO)) ||
+                (v != V_AO && (g_vita_opts.gpu_uber || g_vita_opts.gpu_bench) &&
+                 build_variant(V_AU))))
     return -1;
   if (nvs == 2)
     vs[0] = k_vs_lean_def;
@@ -803,7 +843,8 @@ static int build_programs(int *present_only) {
   if (!s_prog[P_VRAM15].prog && link(&s_prog[P_VRAM15], qvs, 1, fs, 1, 1, "vram15"))
     return 0;
   for (v = 0; v < V_COUNT; v++)
-    if ((g_vita_opts.bench || v == variant_of(s_filter, s_cache, s_xmode)) && build_variant(v))
+    if (v != V_AU && (g_vita_opts.bench || v == variant_of(s_filter, s_cache, s_xmode)) &&
+        build_variant(v))
       return 0;
   memcpy(s_prog, s_vprog[variant_of(s_filter, s_cache, s_xmode)], sizeof s_vprog[0]);
   *present_only = 0;
@@ -838,8 +879,13 @@ static int tex_cdram(GLuint tex) {
   return info.type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
 }
 
+static void fill_end(void);
+static void fill_buffer(void);
+
 static void bind_fbo(GLuint fbo) {
   if (s_bound_fbo != fbo) {
+    if (g_vita_opts.gpu_fill)
+      fill_end();
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     s_bound_fbo = fbo;
   }
@@ -855,6 +901,7 @@ static void upload_vram(void) {
   int i;
   if (!s_vram_dirty)
     return;
+  batch_flush();
   t0 = now_us();
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, s_vram_tex);
@@ -954,6 +1001,7 @@ static void flush_pending(void) {
   int i;
   if (!s_npending)
     return;
+  batch_flush();
   upload_vram();
   for (i = 0; i < s_npending; i++)
     copy_into(s_pending[i].t, s_pending[i].x, s_pending[i].y, s_pending[i].w, s_pending[i].h);
@@ -1295,6 +1343,7 @@ static void readback(Target *t) {
   int i, j;
   if (!t->cpu_stale)
     return;
+  batch_flush();
   t0 = now_us();
   flush_pending();
   if (replay(t) == 0)
@@ -1427,6 +1476,7 @@ static Target *target_for(int x, int y, int w, int h) {
       return t;
     }
   }
+  batch_flush(); /* targets may go, and a new one is drawn into */
   if (!s_sx)
     set_scale();
   flush_pending();
@@ -1621,7 +1671,7 @@ static void expand(int count) {
       for (k = 0; s_lean && k < n; k++) {
         LVertex *l = s_lbuf + i + k;
         l->g = v[k];
-        l->g.tcx = (char)filt;
+        l->g.tcx = (char)(v[0].bright == 2 ? filt : 2); /* 2: untextured (gpu_uber) */
         l->g.tcy = (char)(wrap && filt);
         l->box[0] = (uint8_t)u0;
         l->box[1] = (uint8_t)v0;
@@ -1633,7 +1683,7 @@ static void expand(int count) {
       for (k = 0; !s_lean && k < n; k++) {
         XVertex *x = s_xbuf + i + k;
         x->g = v[k];
-        x->g.tcx = (char)filt;
+        x->g.tcx = (char)(v[0].bright == 2 ? filt : 2);
         x->g.tcy = (char)(wrap && filt);
         memcpy(x->box, tail, sizeof tail);
         x->dxy[0] = x->dxy[1] = 0;
@@ -1674,6 +1724,7 @@ static void vbo_count(uint64_t t0, size_t bytes) {
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
  * skips them (gpu_soft.c's rule). side: the vcache's answers for them (D39). */
 void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
+  batch_flush();
   uint64_t t0;
   int i, k;
   if (count > MAX_VERTEX_BUFFER_SIZE)
@@ -1695,6 +1746,7 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
     }
   }
   s_nverts = count;
+  fill_buffer();
   if (s_xmode) {
     expand(count); /* may draw into the atlas, with other buffers bound */
     t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
@@ -1750,29 +1802,245 @@ static int any_stale(void) {
   return 0;
 }
 
+/* gpu_bench=1 (D74): each 300-vblank stats window draws with one of these,
+ * in turn, and the GPU's time for the game's scene is sampled every 16th
+ * picture (gpu_time=2's measure), so one hardware run standing in one place
+ * compares them. The last two change the picture: measurements only. */
+enum { GB_MAIN, GB_JOIN, GB_UBER, GB_HALF, GB_ONE, GB_COUNT };
+static const char *const k_bench_names[GB_COUNT] = {
+    "main's draws (gpu_join=0)", "gpu_join=1", "gpu_join=1 gpu_uber=1",
+    "gpu_join=1, half the pixels (diagnostic)",
+    "gpu_join=1 gpu_uber=1, one program for every opaque triangle (diagnostic)"};
+static struct {
+  int cur, half, one;
+  unsigned presents;
+  uint64_t scene_us[GB_COUNT];
+  unsigned n[GB_COUNT];
+} s_bench;
+
+static void bench_sample(unsigned us) {
+  s_bench.scene_us[s_bench.cur] += us;
+  s_bench.n[s_bench.cur]++;
+}
+
+static void bench_tick(void) {
+  int v = (int)(vita_vblank_count() / 300 % GB_COUNT);
+  s_bench.cur = v;
+  g_vita_opts.gpu_join = v != GB_MAIN;
+  g_vita_opts.gpu_uber = v == GB_UBER || v == GB_ONE;
+  s_bench.half = v == GB_HALF;
+  s_bench.one = v == GB_ONE;
+  if (++s_bench.presents % 16 == 0 && !s_sample.state)
+    s_sample.state = 1;
+}
+
+/* gpu_fill=1 (D74, diagnostic): what the GPU shades per picture. The SGX
+ * defers an opaque fragment until the tile is shaded, and a later opaque
+ * fragment at the same pixel replaces it unshaded (hidden surface removal);
+ * a triangle that discards or blends makes the tile shade what it holds
+ * first, then itself. Counted on 960x544 targets at half resolution (each
+ * sample stands for 4 pixels), tiles of 32x32 pixels, per kind of run:
+ * plain (the opaque atlas program), discard (any other textured program),
+ * blend, untextured. "per tile" flushes the whole tile at a discard or
+ * blend triangle; "per pixel" only its pixels (a bound); "ideal" shades
+ * each pixel's last opaque fragment once, plus every discard and blend
+ * fragment (all opaque drawn first, by depth). */
+#define FW (SCREEN_W / 2)
+#define FH (SCREEN_H / 2)
+#define FT 16 /* tile side in samples */
+enum { FK_PLAIN, FK_DISCARD, FK_BLEND, FK_UNTEX, FK_COUNT };
+static uint8_t s_fpend[FH][FW]; /* 1: an opaque fragment waits to be shaded */
+static uint8_t s_fseen[FH][FW]; /* 1: some opaque fragment landed here this scene */
+static struct {
+  uint64_t area[FK_COUNT], runs[FK_COUNT], tris[FK_COUNT];
+  uint64_t tile, pixel, ideal, naive, scenes, switches;
+  uint64_t draws, join_fmt, join_tex; /* game draws; could join the last one: if only the
+                                         format differs, if untextured joined too */
+} s_fill;
+static struct {
+  const Target *t;
+  int x0, y0, x1, y1, ox, oy, blend, mode, end;
+} s_fprev; /* the last game draw, for join_* (end -1: a new vertex buffer) */
+
+static void fill_buffer(void) { s_fprev.end = -1; }
+static int s_fill_on, s_fill_last = -1; /* this scene is counted; the last run's kind */
+
+static uint64_t fill_flush_tile(int tx, int ty) {
+  uint64_t n = 0;
+  int x, y;
+  for (y = ty * FT; y < ty * FT + FT && y < FH; y++)
+    for (x = tx * FT; x < tx * FT + FT && x < FW; x++)
+      if (s_fpend[y][x])
+        n++, s_fpend[y][x] = 0;
+  return n;
+}
+
+/* the pixel-flush bound keeps its own pending set */
+static uint8_t s_fpend2[FH][FW];
+
+/* the scene ends: what is still pending gets shaded */
+static void fill_end(void) {
+  int x, y;
+  uint64_t n = 0, n2 = 0, seen = 0;
+  if (!s_fill_on)
+    return;
+  for (y = 0; y < FH; y++)
+    for (x = 0; x < FW; x++) {
+      n += s_fpend[y][x];
+      n2 += s_fpend2[y][x];
+      seen += s_fseen[y][x];
+    }
+  s_fill.tile += n;
+  s_fill.pixel += n2;
+  s_fill.ideal += seen;
+  s_fill.scenes++;
+  memset(s_fpend, 0, sizeof s_fpend);
+  memset(s_fpend2, 0, sizeof s_fpend2);
+  memset(s_fseen, 0, sizeof s_fseen);
+  s_fill_on = 0;
+  s_fill_last = -1;
+}
+
+static void fill_tri(int kind, const float *x, const float *y) {
+  int minx, maxx, miny, maxy, px, py, ty, tx;
+  float a = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+  uint64_t cov = 0;
+  uint8_t touched[(FH + FT - 1) / FT][(FW + FT - 1) / FT];
+  if (a == 0)
+    return;
+  minx = (int)floorf(fminf(x[0], fminf(x[1], x[2])));
+  maxx = (int)ceilf(fmaxf(x[0], fmaxf(x[1], x[2])));
+  miny = (int)floorf(fminf(y[0], fminf(y[1], y[2])));
+  maxy = (int)ceilf(fmaxf(y[0], fmaxf(y[1], y[2])));
+  if (minx < 0) minx = 0;
+  if (miny < 0) miny = 0;
+  if (maxx > FW) maxx = FW;
+  if (maxy > FH) maxy = FH;
+  memset(touched, 0, sizeof touched);
+  for (py = miny; py < maxy; py++)
+    for (px = minx; px < maxx; px++) {
+      float cx = px + 0.5f, cy = py + 0.5f;
+      float w0 = (x[1] - x[0]) * (cy - y[0]) - (y[1] - y[0]) * (cx - x[0]);
+      float w1 = (x[2] - x[1]) * (cy - y[1]) - (y[2] - y[1]) * (cx - x[1]);
+      float w2 = (x[0] - x[2]) * (cy - y[2]) - (y[0] - y[2]) * (cx - x[2]);
+      if (a < 0)
+        w0 = -w0, w1 = -w1, w2 = -w2;
+      if (w0 < 0 || w1 < 0 || w2 < 0)
+        continue;
+      cov++;
+      if (kind == FK_PLAIN || kind == FK_UNTEX) {
+        s_fpend[py][px] = 1;
+        s_fpend2[py][px] = 1;
+        s_fseen[py][px] = 1;
+      } else {
+        touched[py / FT][px / FT] = 1;
+        s_fill.pixel += s_fpend2[py][px];
+        s_fpend2[py][px] = 0;
+      }
+    }
+  s_fill.area[kind] += cov;
+  s_fill.naive += cov;
+  if (kind == FK_DISCARD || kind == FK_BLEND) {
+    for (ty = 0; ty < (FH + FT - 1) / FT; ty++)
+      for (tx = 0; tx < (FW + FT - 1) / FT; tx++)
+        if (touched[ty][tx])
+          s_fill.tile += fill_flush_tile(tx, ty);
+    s_fill.tile += cov; /* shaded at once */
+    s_fill.pixel += cov;
+    s_fill.ideal += cov;
+  }
+}
+
+/* triangles t0..t1-1 of the vertex buffer, as one run of a kind */
+static void fill_run(int kind, int t0, int t1) {
+  const Target *t = s_cur;
+  int i, k;
+  if (!t || t->pw < SCREEN_W)
+    return;
+  s_fill_on = 1;
+  if (s_fill_last != kind && s_fill_last != -1 && (kind == FK_DISCARD || kind == FK_BLEND))
+    s_fill.switches++;
+  s_fill_last = kind;
+  s_fill.runs[kind]++;
+  s_fill.tris[kind] += (uint64_t)(t1 - t0);
+  for (i = t0; i < t1; i++) {
+    float x[3], y[3];
+    for (k = 0; k < 3; k++) {
+      const GrVertex *v = &s_vorig[i * 3 + k];
+      x[k] = ((float)(v->x + s_org_x - t->x) * s_sx) * 0.5f;
+      y[k] = ((float)(v->y + s_org_y - t->y) * s_sy) * 0.5f;
+    }
+    fill_tri(kind, x, y);
+  }
+}
+
+static void fill_report(int vblank) {
+  unsigned p = s_st.presents ? s_st.presents : 1;
+  const uint64_t *a = s_fill.area;
+#define FK(v) (unsigned)((v) * 4 / p / 1000)
+  vita_log("gpu %d: gpu_fill=1: per picture, %u game draws; %u could join the last if the format "
+           "didn't split them, %u if untextured didn't either",
+           vblank, (unsigned)(s_fill.draws / p), (unsigned)(s_fill.join_fmt / p),
+           (unsigned)(s_fill.join_tex / p));
+  vita_log("gpu %d: gpu_fill=1: per picture, kilopixels covered: plain %u in %u runs, discard %u "
+           "in %u, blend %u in %u, untextured %u in %u; %u discard or blend runs after another "
+           "kind; shaded, kilopixels: all %u, as the GPU defers (per tile) %u, (per pixel) %u, "
+           "opaque first %u; %u scenes; the screen is %u",
+           vblank, FK(a[FK_PLAIN]), (unsigned)(s_fill.runs[FK_PLAIN] / p), FK(a[FK_DISCARD]),
+           (unsigned)(s_fill.runs[FK_DISCARD] / p), FK(a[FK_BLEND]),
+           (unsigned)(s_fill.runs[FK_BLEND] / p), FK(a[FK_UNTEX]),
+           (unsigned)(s_fill.runs[FK_UNTEX] / p), (unsigned)(s_fill.switches / p),
+           FK(s_fill.naive), FK(s_fill.tile), FK(s_fill.pixel), FK(s_fill.ideal),
+           (unsigned)(s_fill.scenes / p), SCREEN_W * SCREEN_H / 1000);
+#undef FK
+  memset(&s_fill, 0, sizeof s_fill);
+}
+
 static float s_xf[4]; /* this split's u_xf */
+
+/* the program for triangle t of the vertex buffer (its kind, s_tkind, and
+ * its draw's texture format, s_tfmt). The atlas programs read no format:
+ * one is used for all three, so draws joined across formats (gpu_join)
+ * stay one run. */
+static const Prog *prog_of(int t, float sel) {
+  int f = s_tkind[t], fmt = s_tfmt[t];
+  int hw = f == 2 && s_filter == 1 && s_blend == BM_NONE, plain;
+  /* gpu_uber: plain and untextured triangles of an opaque draw, one program */
+  int uber = g_vita_opts.gpu_uber && s_blend == BM_NONE && sel == 0 && s_vprog[V_AU][P_T16].prog;
+  if (fmt == P_UNTEX)
+    return uber ? &s_vprog[V_AU][P_T16] : &s_prog[P_UNTEX];
+  if (s_bench.one && s_vprog[V_AU][P_T16].prog)
+    return &s_vprog[V_AU][P_T16]; /* gpu_bench's diagnostic: wrong pixels */
+  /* a plain triangle has no STP texel: subtract's second pass (sel 2)
+   * draws none of it, which the plain program would draw whole */
+  plain = f == 3 && sel != 2 && s_vprog[V_AO][fmt].prog;
+  if (f == 1 || f == 3 || hw)
+    fmt = P_T16;
+  if (plain && uber)
+    return &s_vprog[V_AU][P_T16];
+  return hw ? &s_vprog[V_HB][fmt] : f == 2 ? &s_prog[fmt]
+         : plain ? &s_vprog[V_AO][fmt] : &s_vprog[f ? V_A0 : V_X0][fmt];
+}
 
 static void draw(int start, int n, float scale, float alpha, float sel) {
   const Prog *p = &s_prog[s_texmode];
   int t, end;
   if (!(s_filter || s_cache) || s_texmode == P_UNTEX) {
+    if (g_vita_opts.gpu_fill)
+      fill_run(s_blend != BM_NONE && sel != 1 ? FK_BLEND
+               : s_texmode == P_UNTEX ? FK_UNTEX : FK_DISCARD, start / 3, (start + n) / 3);
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, start, n);
     s_st.gl_draws++;
     return;
   }
-  /* runs of each kind of triangle (s_tkind), each with its own program, in
-   * draw order */
+  /* runs of triangles with the same program, in draw order */
   for (t = start / 3, end = (start + n) / 3; t < end;) {
     int f = s_tkind[t], e = t + 1;
-    while (e < end && s_tkind[e] == f)
-      e++;
     int hw = f == 2 && s_filter == 1 && s_blend == BM_NONE;
-    /* a plain triangle has no STP texel: subtract's second pass (sel 2)
-     * draws none of it, which the plain program would draw whole */
-    int plain = f == 3 && sel != 2 && s_vprog[V_AO][s_texmode].prog;
-    p = hw ? &s_vprog[V_HB][s_texmode] : f == 2 ? &s_prog[s_texmode]
-        : plain ? &s_vprog[V_AO][s_texmode] : &s_vprog[f ? V_A0 : V_X0][s_texmode];
+    p = prog_of(t, sel);
+    while (e < end && prog_of(e, sel) == p)
+      e++;
     if (f && s_alin[s_acur] != hw) { /* the GPU's bilinear, or exact texels */
       glActiveTexture(GL_TEXTURE1);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, hw ? GL_LINEAR : GL_NEAREST);
@@ -1780,6 +2048,12 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
       glActiveTexture(GL_TEXTURE0);
       s_alin[s_acur] = hw;
     }
+    if (g_vita_opts.gpu_fill)
+      fill_run(s_blend != BM_NONE && sel != 1 ? FK_BLEND
+               : p == &s_prog[P_UNTEX] ? FK_UNTEX
+               : p == &s_vprog[V_AO][P_T16] || p == &s_vprog[V_AU][P_T16] ? FK_PLAIN
+                                                                             : FK_DISCARD,
+               t, e);
     glUseProgram(p->prog);
     glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
     glUniform3f(p->semi, scale, alpha, sel);
@@ -1789,55 +2063,42 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
   }
 }
 
-void gl_GR_DrawTriangles(int start_vertex, int triangles) {
+/* gpu_join=1 (D74): consecutive game draws with the same target, scissor,
+ * drawing offset and blend, whose vertices follow on, go to the GPU as one
+ * draw, split only where the program changes (draw()). PsyCross starts a
+ * new draw wherever the texture format changes or textured meets
+ * untextured; the atlas programs read no format. The same triangles in the
+ * same order with the same state: the same pixels. Subtract blending draws
+ * in two passes, so its draws aren't joined (the passes would interleave
+ * differently). Anything else that reaches the GPU sends the batch first
+ * (batch_flush). */
+typedef struct {
+  Target *t;
+  int x0, y0, x1, y1; /* scissor, target pixels */
+  int ox, oy;         /* drawing offset */
+  float xf[4];
+  BlendMode blend;
+  int texmode;        /* a textured draw's, or P_UNTEX: all untextured */
+  int start, n;       /* vertices */
+} Batch;
+static Batch s_batch;
+
+static void batch_issue(const Batch *b) {
   const Prog *p;
-  Target *t = s_cur;
-  int n = triangles * 3, x0, y0, x1, y1;
-  if (!t || triangles <= 0 || start_vertex < 0 || start_vertex + n > s_nverts)
-    return;
-  if (s_texmode < 0) {
-    static int warned;
-    if (!warned++)
-      vita_log("gpu: PsyX custom textures (DR_PSYX_TEX) are not drawn");
-    return;
-  }
-  if (g_vita_opts.gpu_dump && (unsigned)(vita_vblank_count() - g_vita_opts.gpu_dump) < 2) {
-    const GrVertex *v = s_vorig + start_vertex;
-    vita_log("gpu_dump: target %d mode %d blend %d tris %d org %d,%d clip %d,%d-%d,%d | "
-             "xy %d,%d %d,%d %d,%d page %04x clut %04x uv %d,%d rgb %d,%d,%d",
-             (int)(t - s_targets), s_texmode, (int)s_blend, triangles, s_org_x, s_org_y,
-             s_clip_x0, s_clip_y0, s_clip_x1, s_clip_y1, v[0].x, v[0].y, v[1].x, v[1].y, v[2].x,
-             v[2].y, (uint16_t)v[0].page, (uint16_t)v[0].clut, v[0].u, v[0].v, v[0].r, v[0].g,
-             v[0].b);
-  }
-  sample_begin();
-  if (s_texmode != P_UNTEX && any_stale())
-    sync_pages(start_vertex, n);
-  flush_pending();
-  if (s_texmode != P_UNTEX)
-    upload_vram();
-  if (s_npsrc)
-    pres_touch(t, 0);
+  Target *t = b->t, *cur = s_cur;
+  int texmode = s_texmode, ox = s_org_x, oy = s_org_y;
+  BlendMode blend = s_blend;
+  float xf[4];
+  memcpy(xf, s_xf, sizeof xf);
+  s_cur = t, s_texmode = b->texmode, s_blend = b->blend, s_org_x = b->ox, s_org_y = b->oy;
+  memcpy(s_xf, b->xf, sizeof s_xf);
 
   bind_fbo(t->fbo);
   glViewport(0, 0, t->pw, t->ph);
-  x0 = (int)((s_clip_x0 - t->x) * s_sx + 0.5f);
-  y0 = (int)((s_clip_y0 - t->y) * s_sy + 0.5f);
-  x1 = (int)((s_clip_x1 - t->x) * s_sx + 0.5f);
-  y1 = (int)((s_clip_y1 - t->y) * s_sy + 0.5f);
   glEnable(GL_SCISSOR_TEST);
-  glScissor(x0, y0, x1 - x0, y1 - y0);
-
+  glScissor(b->x0, b->y0, s_bench.half ? (b->x1 - b->x0) / 2 : b->x1 - b->x0, b->y1 - b->y0);
   p = &s_prog[s_texmode];
   glUseProgram(p->prog);
-  /* VRAM x = vertex x + org; + half a target pixel: the PS1 samples at the
-   * pixel's corner, GL at its centre. (Half a PS1 pixel would shift what is
-   * drawn against what LoadImage put there, and leave the target's first
-   * rows and columns uncovered, once targets have more pixels than VRAM.) */
-  s_xf[0] = (float)(s_org_x - t->x) + 0.5f / s_sx;
-  s_xf[1] = (float)(s_org_y - t->y) + 0.5f / s_sy;
-  s_xf[2] = 2.0f / t->w;
-  s_xf[3] = 2.0f / t->h;
   glUniform4f(p->xf, s_xf[0], s_xf[1], s_xf[2], s_xf[3]);
   if (s_texmode != P_UNTEX) {
     glActiveTexture(GL_TEXTURE0);
@@ -1898,17 +2159,17 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   switch (s_blend) {
   case BM_NONE:
     glDisable(GL_BLEND);
-    draw(start_vertex, n, 1, 1, 0);
+    draw(b->start, b->n, 1, 1, 0);
     break;
   case BM_SUBTRACT:
     if (s_texmode != P_UNTEX) { /* STP=0 texels opaque, then STP=1 subtract */
       glDisable(GL_BLEND);
-      draw(start_vertex, n, 1, 1, 1);
+      draw(b->start, b->n, 1, 1, 1);
     }
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
     glBlendFunc(GL_ONE, GL_ONE);
-    draw(start_vertex, n, 1, 1, s_texmode != P_UNTEX ? 2 : 0);
+    draw(b->start, b->n, 1, 1, s_texmode != P_UNTEX ? 2 : 0);
     glBlendEquation(GL_FUNC_ADD);
     break;
   default: /* B/2 + F/2, B + F, B + F/4: premultiplied, ONE, 1 - alpha */
@@ -1916,12 +2177,106 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     glBlendEquation(GL_FUNC_ADD);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     if (s_blend == BM_AVERAGE)
-      draw(start_vertex, n, 0.5f, 0.5f, 0);
+      draw(b->start, b->n, 0.5f, 0.5f, 0);
     else if (s_blend == BM_ADD)
-      draw(start_vertex, n, 1, 0, 0);
+      draw(b->start, b->n, 1, 0, 0);
     else
-      draw(start_vertex, n, 0.25f, 0, 0);
+      draw(b->start, b->n, 0.25f, 0, 0);
     break;
+  }
+  s_cur = cur, s_texmode = texmode, s_blend = blend, s_org_x = ox, s_org_y = oy;
+  memcpy(s_xf, xf, sizeof s_xf);
+}
+
+static void batch_flush(void) {
+  Batch b = s_batch;
+  if (!b.n)
+    return;
+  s_batch.n = 0;
+  batch_issue(&b);
+}
+
+void gl_flush_draws(void) { batch_flush(); }
+
+void gl_GR_DrawTriangles(int start_vertex, int triangles) {
+  Target *t = s_cur;
+  int n = triangles * 3, x0, y0, x1, y1;
+  if (!t || triangles <= 0 || start_vertex < 0 || start_vertex + n > s_nverts)
+    return;
+  if (s_texmode < 0) {
+    static int warned;
+    if (!warned++)
+      vita_log("gpu: PsyX custom textures (DR_PSYX_TEX) are not drawn");
+    return;
+  }
+  if (g_vita_opts.gpu_dump && (unsigned)(vita_vblank_count() - g_vita_opts.gpu_dump) < 2) {
+    const GrVertex *v = s_vorig + start_vertex;
+    vita_log("gpu_dump: target %d mode %d blend %d tris %d org %d,%d clip %d,%d-%d,%d | "
+             "xy %d,%d %d,%d %d,%d page %04x clut %04x uv %d,%d rgb %d,%d,%d",
+             (int)(t - s_targets), s_texmode, (int)s_blend, triangles, s_org_x, s_org_y,
+             s_clip_x0, s_clip_y0, s_clip_x1, s_clip_y1, v[0].x, v[0].y, v[1].x, v[1].y, v[2].x,
+             v[2].y, (uint16_t)v[0].page, (uint16_t)v[0].clut, v[0].u, v[0].v, v[0].r, v[0].g,
+             v[0].b);
+  }
+  /* what follows sends the batch first wherever it reaches the GPU */
+  sample_begin();
+  if (s_texmode != P_UNTEX && any_stale())
+    sync_pages(start_vertex, n);
+  flush_pending();
+  if (s_texmode != P_UNTEX)
+    upload_vram();
+  if (s_npsrc)
+    pres_touch(t, 0);
+
+  x0 = (int)((s_clip_x0 - t->x) * s_sx + 0.5f);
+  y0 = (int)((s_clip_y0 - t->y) * s_sy + 0.5f);
+  x1 = (int)((s_clip_x1 - t->x) * s_sx + 0.5f);
+  y1 = (int)((s_clip_y1 - t->y) * s_sy + 0.5f);
+  if (g_vita_opts.gpu_fill && t->pw >= SCREEN_W) {
+    int same = s_fprev.t == t && s_fprev.end == start_vertex && s_fprev.x0 == x0 &&
+               s_fprev.y0 == y0 && s_fprev.x1 == x1 && s_fprev.y1 == y1 &&
+               s_fprev.ox == s_org_x && s_fprev.oy == s_org_y && s_fprev.blend == (int)s_blend;
+    int textured = s_texmode != P_UNTEX, was = s_fprev.mode != P_UNTEX;
+    s_fill.draws++;
+    s_fill.join_fmt += same && textured == was;
+    s_fill.join_tex += same;
+    s_fprev.t = t, s_fprev.x0 = x0, s_fprev.y0 = y0, s_fprev.x1 = x1, s_fprev.y1 = y1;
+    s_fprev.ox = s_org_x, s_fprev.oy = s_org_y, s_fprev.blend = (int)s_blend;
+    s_fprev.mode = s_texmode, s_fprev.end = start_vertex + n;
+  }
+
+  {
+    int i, join;
+    float xf[4];
+    /* VRAM x = vertex x + org; + half a target pixel: the PS1 samples at
+     * the pixel's corner, GL at its centre. (Half a PS1 pixel would shift
+     * what is drawn against what LoadImage put there, and leave the
+     * target's first rows and columns uncovered, once targets have more
+     * pixels than VRAM.) */
+    xf[0] = (float)(s_org_x - t->x) + 0.5f / s_sx;
+    xf[1] = (float)(s_org_y - t->y) + 0.5f / s_sy;
+    xf[2] = 2.0f / t->w;
+    xf[3] = 2.0f / t->h;
+    for (i = start_vertex / 3; i < (start_vertex + n) / 3; i++)
+      s_tfmt[i] = (uint8_t)s_texmode;
+    join = g_vita_opts.gpu_join && s_batch.n && s_batch.t == t &&
+           s_batch.start + s_batch.n == start_vertex && s_batch.x0 == x0 && s_batch.y0 == y0 &&
+           s_batch.x1 == x1 && s_batch.y1 == y1 && s_batch.ox == s_org_x &&
+           s_batch.oy == s_org_y && s_batch.blend == s_blend && s_blend != BM_SUBTRACT &&
+           (s_batch.texmode == s_texmode || s_filter || s_cache);
+    if (join) {
+      s_batch.n += n;
+      if (s_batch.texmode == P_UNTEX)
+        s_batch.texmode = s_texmode;
+    } else {
+      batch_flush();
+      s_batch.t = t, s_batch.x0 = x0, s_batch.y0 = y0, s_batch.x1 = x1, s_batch.y1 = y1;
+      s_batch.ox = s_org_x, s_batch.oy = s_org_y, s_batch.blend = s_blend;
+      s_batch.texmode = s_texmode, s_batch.start = start_vertex, s_batch.n = n;
+      memcpy(s_batch.xf, xf, sizeof xf);
+    }
+    if (!g_vita_opts.gpu_join)
+      batch_flush();
   }
   {
     LogEntry *e = log_add(t, LOG_DRAW, (size_t)n * sizeof(GrVertex));
@@ -2054,6 +2409,7 @@ static void clear_targets(int x, int y, int w, int h) {
 
 void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g,
                      unsigned char b) {
+  batch_flush();
   uint16_t c = (uint16_t)((r >> 3) | (g >> 3) << 5 | (b >> 3) << 10);
   int i, j;
   if (w <= 0 || h <= 0)
@@ -2077,12 +2433,14 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
 /* PsyX's GL backend clears the window here; GR_ClearVRAM did the targets. */
 void gl_GR_Clear(int x, int y, int w, int h, unsigned char r, unsigned char g,
                  unsigned char b) {
+  batch_flush();
   (void)x, (void)y, (void)w, (void)h, (void)r, (void)g, (void)b;
 }
 
 /* LoadImage (src = host data, stride w) or MoveImage (src = NULL, VRAM). */
 void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
                     int dst_y) {
+  batch_flush();
   int i, j;
   if (w <= 0 || h <= 0)
     return;
@@ -2117,6 +2475,7 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
 }
 
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
+  batch_flush();
   int i, j;
   pieces(x, y, dst_w, dst_h, sync_rect);
   for (i = 0; i < dst_h; i++) {
@@ -2213,6 +2572,7 @@ int gl_gpu_init(void) {
 
 /* targets over the display rect -> s_vram (screenshots, 24-bit display) */
 void gl_sync_display(void) {
+  batch_flush();
   const DISPENV *d = &g_gl_env.disp;
   int w = d->disp.w > 0 ? d->disp.w : 320, h = d->disp.h > 0 ? d->disp.h : 240;
   if (d->isrgb24)
@@ -2376,6 +2736,7 @@ static void pres_draw(int slot, int x, int y, int w, int h) {
 /* The VRAM rect a presentation pass just drew -> staging (gpu_direct: only
  * noted, when it's one target whole). */
 void gl_pres_capture(int x, int y, int w, int h) {
+  batch_flush();
   Target *t;
   int top = shown_top(h);
   y += top; /* the drawn lines only: the slots fill the screen */
@@ -2400,6 +2761,7 @@ void gl_pres_capture(int x, int y, int w, int h) {
 }
 
 void gl_pres_commit(int slot) {
+  batch_flush();
   GLuint t = s_ptex[slot], f = s_pfbo[slot];
   int c = s_pcdram[slot];
   s_ptex[slot] = s_ptex[STAGING];
@@ -2420,6 +2782,11 @@ void gl_pres_commit(int slot) {
  * each was noted, so the copy is what the capture would have drawn. */
 static void pres_touch(Target *t, int whole) {
   int i, last = -1;
+  for (i = 0; i <= STAGING && s_psrc[i].tex != t->tex; i++)
+    ;
+  if (i > STAGING)
+    return;
+  batch_flush(); /* a slot shows this target: copied or handed over below */
   for (i = 0; i <= STAGING; i++) {
     if (s_psrc[i].tex != t->tex)
       continue;
@@ -2461,6 +2828,7 @@ static int s_ovl_w, s_ovl_h, s_ovl_dirty;
 static GLuint s_ovl_tex;
 
 void gl_overlay(const uint8_t *rgb, int w, int h) {
+  batch_flush();
   s_ovl = rgb;
   s_ovl_w = w;
   s_ovl_h = h;
@@ -2471,6 +2839,7 @@ void gl_overlay(const uint8_t *rgb, int w, int h) {
  * Dropping a target first gives VRAM its pixels (drop_target). Save states
  * (D51) do this too, for VRAM as the PS1 has it (gpu_thread.c). */
 void gl_rescale(void) {
+  batch_flush();
   while (s_ntargets > 0)
     drop_target(0);
   s_cur = NULL; /* the next split finds its target again */
@@ -2481,6 +2850,7 @@ void gl_rescale(void) {
  * the GPU's copy and the decoded atlas starts over; targets are made again
  * as the game draws. */
 void gl_vram_loaded(void) {
+  batch_flush();
   s_vram_dirty = 1;
   s_aflush = 1;
 }
@@ -2634,6 +3004,7 @@ static void present_display(void) {
  * (widescreen, 60 fps; wide: drawn 16:9), or with slot -1 the display rect.
  * hd_shot: also a 960x544 PNG for that vblank (shot_hd=1). */
 void gl_present(int slot, int wide, int hd_shot) {
+  batch_flush();
   gprof_enter(PROF_PRESENT);
   if (slot >= 0)
     present_slot(slot, wide);
@@ -2643,6 +3014,10 @@ void gl_present(int slot, int wide, int hd_shot) {
   s_hd_shot = hd_shot;
   if (s_hd_shot)
     write_hd_shot();
+  if (g_vita_opts.gpu_fill)
+    fill_end();
+  if (g_vita_opts.gpu_bench)
+    bench_tick();
   s_st.presents++;
   gprof_leave();
   gprof_enter(PROF_WAIT);
@@ -2657,6 +3032,7 @@ void gl_present(int slot, int wide, int hd_shot) {
  * shader compiler takes a moment). Returns 0, or -1 if they don't compile:
  * the options stay as they were. */
 int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
+  batch_flush();
   static int failed[V_COUNT];
   static int failed_l[V_COUNT];
   int xmode = filter || persp || subpixel || cache, lean = lean_for(xmode, persp || subpixel);
@@ -2726,6 +3102,20 @@ void gl_report(int vblank) {
              "%u.%02u ms",
              vblank, s_st.gl_draws, s_st.draws, (unsigned)(s_st.vbo_bytes / 1024),
              (unsigned)(s_st.vbo_us / 1000), (unsigned)(s_st.vbo_us % 1000 / 10));
+  }
+  if (g_vita_opts.gpu_fill)
+    fill_report(vblank);
+  if (g_vita_opts.gpu_bench) {
+    int i;
+    for (i = 0; i < GB_COUNT; i++)
+      if (s_bench.n[i]) {
+        unsigned us = (unsigned)(s_bench.scene_us[i] / s_bench.n[i]);
+        vita_log("gpu %d: gpu_bench=1: %s: the GPU's scene %u.%02u ms a picture, %u pictures "
+                 "timed",
+                 vblank, k_bench_names[i], us / 1000, us % 1000 / 10, s_bench.n[i]);
+      }
+    memset(s_bench.scene_us, 0, sizeof s_bench.scene_us);
+    memset(s_bench.n, 0, sizeof s_bench.n);
   }
   s_sample.n = 0;
   if (g_vita_opts.gpu_time)
