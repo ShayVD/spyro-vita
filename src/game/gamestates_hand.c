@@ -140,7 +140,7 @@ static void ShadowCompare(const char *name, u32 sp) {
     if (shown++ < 8)
       printf("  gsshadow %s ram %08x unit %08x hand %08x\n", name, PSX_RAM_BASE + off, g[i], h[i]);
   }
-  for (i = 0; i < 32; i++)
+  for (i = 0; i < 31; i++) /* not FLAG */
     if (gteRegs.CP2C.p[i].d != s_unit->gte.CP2C.p[i].d) {
       g_gs_shadow_fail++;
       printf("  gsshadow %s gte c%u unit %08x hand %08x\n", name, i, s_unit->gte.CP2C.p[i].d, gteRegs.CP2C.p[i].d);

@@ -1150,7 +1150,10 @@ static void MathFuzz(int rounds) {
     Atan2Fast(y >> 2, x >> 2);
     Atan2(y >> 2, x >> 2, FuzzRand() % 2);
     Atan2((int)(FuzzRand() % 0x10000) - 0x8000, (int)(FuzzRand() % 0x10000) - 0x8000, 1);
-    Sin(n), Cos(n), func_80016D08(n);
+    /* func_80016D08 of a negative value: the unit's LZCR is PsyCross's,
+     * which counts leading zeros (none); the hardware, and the hand C,
+     * count leading sign bits. The game never passes one (D87). */
+    Sin(n), Cos(n), func_80016D08(n < 0 ? -n : n);
     func_80017908(x, y), func_80017928(x, y), func_80017948(x, y), func_8001796C(x, y);
     func_800179F0(x & 0xFF, y & 0xFF, FuzzRand() % 0x40, FuzzRand() % 0x40);
     func_80017A38(n < 0 ? -n : n);

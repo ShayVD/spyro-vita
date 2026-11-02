@@ -9,7 +9,7 @@
  * The GTE: the asm sets its control registers (the rotation, the
  * translation, and RBK, which func_800530C0 borrows as a spare register)
  * and leaves them; the hand C sets them the same, as state other calls may
- * read. Its data registers (V0, IR, MAC, the FIFOs) it uses as a
+ * read. Its data registers (V0, IR, MAC, the FIFOs) and FLAG it uses as a
  * calculator, and nothing reads what it leaves there: the hand C computes
  * in locals instead (D87, as D83 for collision). So does func_800530C0's
  * vertex list, which the asm keeps in the scratchpad.
@@ -53,7 +53,8 @@ u_int MobyGetAnimatedVertex_gen(), func_80052F38_gen(), func_800530C0_gen(), Mob
 /* Oracle replays and differential sweeps (host builds with the mips2c
  * unit linked, cmake SPYRO_M2C_REF): with g_mobys_shadow set, each call
  * also runs the unit from the same state first, then the hand C. RAM (but
- * the scratchpad), the result and the GTE's control registers must match
+ * the scratchpad), the result and the GTE's control registers (but FLAG)
+ * must match
  * (mismatches are printed and counted in g_mobys_shadow_fail), and the call
  * leaves the scratchpad and the GTE as the unit left them, so a sample's
  * whole state still compares with the emulator's (as collision_hand.c's,
@@ -110,7 +111,7 @@ static int ShadowEnd(const char *name, int gen, int hand) {
     g_mobys_shadow_fail++;
     printf("  mobyshadow %s result unit %08x hand %08x\n", name, gen, hand);
   }
-  for (i = 0; i < 32; i++)
+  for (i = 0; i < 31; i++) /* not FLAG (31): a command's result, like the data registers */
     if (gteRegs.CP2C.p[i].d != s_gte_gen.CP2C.p[i].d) {
       g_mobys_shadow_fail++;
       printf("  mobyshadow %s gte c%u unit %08x hand %08x\n", name, i, s_gte_gen.CP2C.p[i].d, gteRegs.CP2C.p[i].d);
@@ -143,7 +144,7 @@ static int ShadowEnd(const char *name, int gen, int hand) {
 /* Differential fuzzing (SPYRO_MOBY_FUZZ=N with the shadow on): before a
  * shadowed call of MobyUpdateShadow, func_800529E4, MobyGetAnimatedVertex
  * or func_80052F38, N variants of it (the collision normal and point, the
- * flags and a moved position, the vertex and the frame progress, the
+ * flags (subsets of the call's) and a moved position, the vertex and the frame progress, the
  * vertex count), each from the same state through the unit and the hand C
  * and compared, then the state put back. Seeded from the arguments. */
 #include <stdlib.h>
@@ -421,7 +422,9 @@ void func_800529E4(Moby *pMoby, int pFlags) {
     int i, n = FuzzBegin((u_int)pMoby->m_Position.x ^ (u_int)pFlags);
     for (i = 0; i < n; i++) {
       static const int ranges[3] = {0x100, 0x2000, 0x8000};
-      int f = FuzzRand() % 8, r = ranges[FuzzRand() % 3];
+      /* Subsets of the call's own flags (the moby's state is valid for
+       * those), with the rotation always allowed. */
+      int f = FuzzRand() % 8 & (pFlags | UPDATE_PROP_ROTMATRIX), r = ranges[FuzzRand() % 3];
       pMoby->m_Position.x += (int)(FuzzRand() % (2 * r + 1)) - r;
       pMoby->m_Position.y += (int)(FuzzRand() % (2 * r + 1)) - r;
       pMoby->m_Rotation.x = FuzzRand(), pMoby->m_Rotation.y = FuzzRand(), pMoby->m_Rotation.z = FuzzRand();
