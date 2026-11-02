@@ -281,4 +281,4 @@ Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with r
 
 **Unattended:** `VPK=MAIN.vpk DEVICE_DEFAULTS=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-q1 1500 @tools/vita/fps-runs/q1-collision.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with this branch's VPK into `logs/hw-q2`. The pictures (`shot-*`, and `gpu-*` with `shot_hd=1`) and `save/` are compared with `cmp`.
 
-**Ran** on 2026-11-02 (D83): Q1 with main's VPK (`6128154`), Q2 with this branch's; all 18 pictures and the memory card identical, and the `update` lines 0.278 → 0.230 ms per vblank.
+**Ran** on 2026-11-02 (D83): Q1 with main's VPK (`6128154`), Q2 with this branch's; all 18 pictures and the memory card identical, and the `update` lines 0.278 → 0.230 ms per vblank. Again after merging main (D81, D82) into the branch: Q3 with main's CI VPK (`5403b03`), Q4 with the merge's (`6855c41`): all 18 pictures and the memory card identical, `update` 0.279 → 0.228 ms per vblank.
