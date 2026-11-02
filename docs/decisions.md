@@ -1730,9 +1730,15 @@ Record each decision with its date, what was chosen, and why.
     - the parse thread's busy time 0.53 → 0.19 ms per vblank, and the game thread's wait for the walk 0.58 → 0.24;
     - the renderers +0.09 ms, from building the vertices;
     - the update, which this doesn't touch, moved 13% between the two runs, so these are a direction, not a measure.
-- **Hardware: not run.** The owner's rule (2026-11-02) is that every Vita run needs their approval first. Runs P1–P6 are ready (`tools/vita/fps-runs/p*.txt`, `hw-routes/o-toasty.*`, the commands in `tools/vita/fps-runs/README.md`):
-  - K1-style and K3-style on the K route, each with `native_draw` 0 and 1;
-  - 60 fps on the Toasty route, with `native_draw` 0 and 1.
-
-  They settle the gain on the game thread (`ot` in P1/P2), on the parse thread and in the waits for it (P3/P4), and at 60 fps (P5/P6), and whether the renderers' extra work costs what it saves.
-- **Default:** `native_draw=0` until those runs.
+- **Hardware: P5 and P6 run (2026-11-02, with the owner's approval; the CI VPK of `65ab8c9`, SHA-1 `20edb627…`).** 60 fps on the Toasty route, `REALTIME=1`, `fast_render=2`, `native_draw` 0 then 1 (`logs/hw-p5`, `logs/hw-p6`). Both ran to `frames=21000` (321 s and 318 s), with no hang or crash line, and the memory card is byte-identical.
+  - **P5 is main's default:** against D81's `hw-o2-t` (the same switches on main), late vblanks per level, busy % and the `time` lines are within noise (game thread busy 5.83 against 5.82 ms per vblank).
+  - **P6:** from vblank 600 every list had records, 0 primitives left as primitives (the pool never full), the most in a list 71–114 KB. About 280,000 primitives per 300 vblanks became 61,000 markers.
+  - **The trade on hardware:**
+    - The parse thread's walk: 1.70 → 1.24 ms per vblank.
+    - The game thread's wait for it: 1.26 → 0.80.
+    - The renderers: +0.52 (env 1.61 → 1.78, mobys 0.84 → 0.96, Spyro 0.23 → 0.29, sky 0.38 → 0.55).
+    - So the game thread is no faster: busy 5.83 → 6.12 ms per vblank.
+    - 60 fps: Toasty 0.1 → 0.2 vblanks late per 300. Stone Hill (7 windows, only crossed on the way) 6.0 → 9.9; one run each.
+  - **Pictures:** not compared on hardware (`DEVICE_DEFAULTS=1` takes no shots). The host check and the Vita3K captures cover them.
+  - P1–P4 (the K route at 30 fps) are not run.
+- **Default:** `native_draw=0`. On hardware it moves work from the parse thread to the renderers without making the game thread faster. It pays only when the renderers stop building the PS1 primitives as well (the follow-up in `docs/native-plan.md` stage 2).

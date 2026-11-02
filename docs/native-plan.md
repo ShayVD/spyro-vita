@@ -543,7 +543,7 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 
 **Optional:** yes, `native_draw=0/1`, then per renderer. It touches `gpu_gl.c`, so it starts only after #48 and #49 are merged.
 
-**Done in part (D82, 2026-11-02), behind `native_draw=1` (default 0), waiting for hardware.** What it is and how it was checked: `docs/decisions.md` D82 and `docs/translation-log.md`.
+**Done in part (D82, 2026-11-02), behind `native_draw=1` (default 0).** On hardware (P5/P6) the walk's thread gets 0.46 ms per vblank faster and the renderers 0.52 ms slower, so the default stays 0 until the renderers stop building the PS1 primitives too. What it is and how it was checked: `docs/decisions.md` D82 and `docs/translation-log.md`.
 - **Converted:** all six hand renderers' primitives: env, the sky, the regular, lit and specular mobys, Spyro. Each primitive is turned into the vertices PsyCross's parse would make of it where the code links it, and a marker goes into the bucket in its place, or the primitive joins the marker already at the bucket's tail. The walk copies the records (PsyCross patch 0010's packet hook).
   - The primitives are still built where they were, so the buffer's pointer and its bounds don't change.
   - The order is the OT's.
