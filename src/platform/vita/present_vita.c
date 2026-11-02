@@ -1,6 +1,7 @@
 /* Widescreen and 60 fps on the Vita (docs/presentation.md, decisions D30):
  * config.txt keys into src/game/present.c's switches, the platform clock for
- * interp_budget, and a log line with every stats report. The pictures are
+ * the game thread's safety net (interp_budget), and a log line with every
+ * stats report. The pictures are
  * shown by video.c (gpu=0) and gpu_gl.c (gpu=1, which also captures them on
  * the GPU). */
 #include "vita.h"
@@ -12,6 +13,12 @@
 
 static long long vita_clock_us(void) { return (long long)sceKernelGetProcessTimeWide(); }
 
+/* interp_budget (D75): the safety net that skips the in-between frame only
+ * if the game thread itself would run late: 15/16 of a tick (two NTSC
+ * vblanks, 33.37 ms), whatever the value, or 0 to turn it off. The GPU never
+ * makes 60 fps fall to 30: dynres lowers the resolution instead. */
+#define NET_US 31281
+
 /* Also from the menu, between ticks or inside the game's VSync wait:
  * present.c takes new switches at its next tick. */
 void vita_present_apply(void) {
@@ -20,7 +27,7 @@ void vita_present_apply(void) {
   g_present.interp = g_vita_opts.interp != 0;
   g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
   g_present.interp_anim = g_vita_opts.interp == 1;
-  g_present.interp_budget_us = g_vita_opts.interp_budget * 1000;
+  g_present.interp_budget_us = g_vita_opts.interp_budget ? NET_US : 0;
 }
 
 /* Widescreen from the menu: the GPU's targets again at the new width. */
@@ -32,10 +39,9 @@ static void widescreen_changed(void) {
 
 /* The menu's rows (menu.c, D45). The 60 fps values are short enough to fit
  * beside the label when selected ("< NO ANIM >"); 60 fps is off by default
- * (D44). */
+ * (D44). The 60 FPS BUDGET row went with D75: with 60 fps on, the
+ * in-between frame always runs (interp_budget is config.txt's only). */
 static const char *const k_interp_names[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
-static const int k_budgets[] = {0, 20, 23, 26, 30}; /* ms; 0: never skip */
-static const char *const k_budget_names[] = {"NEVER SKIP", "20 MS", "23 MS", "26 MS", "30 MS"};
 static const MenuOption k_rows[] = {
     {.section = MENU_PICTURE, .label = "WIDESCREEN", .key = "widescreen",
      .value = &g_vita_opts.widescreen, .names = g_menu_off_on, .count = 2,
@@ -43,9 +49,6 @@ static const MenuOption k_rows[] = {
     {.section = MENU_PICTURE, .label = "60 FPS (EXPERIMENTAL)", .key = "interp",
      .value = &g_vita_opts.interp, .names = k_interp_names, .count = 4,
      .on_change = vita_present_apply},
-    {.section = MENU_PICTURE, .label = "60 FPS BUDGET", .key = "interp_budget",
-     .value = &g_vita_opts.interp_budget, .names = k_budget_names, .values = k_budgets,
-     .count = 5, .fmt = "%d MS", .on_change = vita_present_apply},
 };
 MENU_OPTION_LIST(g_menu_present, k_rows);
 
@@ -55,14 +58,13 @@ void vita_present_init(void) {
   g_present_clock_us = vita_clock_us;
   if (g_vita_gpu) {
     g_present_capture = vita_gpu_present_capture();
-    g_present_render_us = vita_gpu_render_cost(); /* the render thread's share (D63) */
-    g_present_late = vita_gpu_late_pictures();     /* and its late pictures (D68) */
   }
   else
     g_host_opts.out960 = 2; /* shots: the presentation frame on screen, 512x240 */
-  vita_log("present: widescreen %d, interp %d (budget %d ms), %s capture; "
+  vita_log("present: widescreen %d, interp %d (the game thread's safety net %s), %s capture; "
            "hold SELECT and press START for the options menu",
-           g_vita_opts.widescreen, g_vita_opts.interp, g_vita_opts.interp_budget,
+           g_vita_opts.widescreen, g_vita_opts.interp,
+           g_vita_opts.interp_budget ? "at 31.3 ms a tick" : "off",
            g_present_capture ? "GPU" : "CPU");
 }
 

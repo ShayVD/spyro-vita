@@ -66,8 +66,6 @@ static long long clock_cpu_us(void) {
 }
 
 long long (*g_present_clock_us)(void) = clock_cpu_us;
-long long (*g_present_render_us)(void);
-unsigned (*g_present_late)(void);
 
 static long long now_us(void) { return g_present_clock_us(); }
 
@@ -1025,73 +1023,48 @@ static int blend_state(void) {
  * logic pass's CPU time */
 static long long s_busy_wo_interp, s_interp_cost, s_logic_cost;
 
-/* interp_budget_us with hysteresis (D68). Deciding each tick alone flipped
- * between 60 and 30 fps where the in-between frame only sometimes fitted,
- * which looks worse than a steady 30 (D44). A miss holds 30 fps until the
- * costs have fitted with an eighth to spare for a whole hold (1 s); a miss
- * within 10 s of coming back doubles the hold, up to 8 s.
- * A miss is any of:
- * - the game thread: its CPU time per tick plus the in-between frame's,
- *   averaged over a few ticks, over the budget; or over it on two ticks in
- *   a row (a jump the average hasn't caught up with). One tick over alone
- *   is noise (5% of ticks where 60 fits on hardware) and changes nothing;
- * - the render thread (the platform's, on its own core): two pictures over
- *   15/16 of the tick. It has the whole tick, not the game thread's budget;
- * - 3 late pictures within about half a second while the in-between frame
- *   ran (the GPU behind).
+/* interp_budget_us: the game thread's safety net (D75). 60 fps never falls
+ * to 30 for the GPU or the render thread: where the GPU can't keep up the
+ * platform lowers the resolution instead (the Vita's dynres). What's left is
+ * D28's case: the game thread itself running late, which would slow the
+ * game. Its CPU time per tick plus the in-between frame's, averaged over a
+ * few ticks, over interp_budget_us (or over it on two ticks in a row: a
+ * jump the average hasn't caught up with) is a miss. One tick over alone is
+ * noise and changes nothing.
+ * A miss holds 30 fps until the cost has fitted with an eighth to spare for
+ * a whole hold (1 s); a miss within 10 s of coming back doubles the hold,
+ * up to 8 s (D68), rather than flip between 60 and 30 tick by tick (D44).
  * While held, the in-between frame's cost is taken as this tick's logic pass
  * (it draws the same scene: 0.85-1.0 of it on hardware), not the last one
- * measured, which may be from a heavier spot and would never let go; and the
- * render thread's two pictures as twice the full one, about what both cost
- * at 60 (C1 against D68's log). A tick over the miss line starts the hold
- * again, one between it and the eighth to spare only pauses it: in D68's
- * run the hold restarted on every single tick over and never let go. */
+ * measured, which may be from a heavier spot and would never let go. A tick
+ * over the miss line starts the hold again, one between it and the eighth
+ * to spare only pauses it. */
 #define HOLD_MIN 30  /* ticks: 1 s at 30 fps */
 #define HOLD_MAX 240 /* 8 s */
 #define STEADY 300   /* ticks at 60 fps after which a hold is HOLD_MIN again */
-#define LATE_WEIGHT 30 /* a late picture's score; a tick takes 1 off */
-#define LATE_MISS 60   /* score above which late pictures count as a miss */
-#define RT_TICK 33367  /* us: a tick, two NTSC vblanks */
-static int s_hold, s_hold_len = HOLD_MIN, s_since_back = STEADY, s_late_score, s_prev_interp;
+static int s_hold, s_hold_len = HOLD_MIN, s_since_back = STEADY, s_prev_interp;
 static int s_cpu_over; /* the last tick's CPU time was over the budget */
 static long long s_cpu_avg; /* CPU time per tick with the in-between frame, over ~4 ticks */
-static unsigned s_late_seen;
 
 static void budget_reset(void) {
   s_hold = 0;
   s_hold_len = HOLD_MIN;
   s_since_back = STEADY;
-  s_late_score = 0;
   s_prev_interp = 0;
   s_cpu_over = 0;
   s_cpu_avg = 0;
-  if (g_present_late)
-    s_late_seen = g_present_late();
 }
 
 /* 1 if this tick may have its in-between frame */
 static int budget_allows(void) {
   long long b = g_present.interp_budget_us;
   long long cpu = s_busy_wo_interp + (s_prev_interp ? s_interp_cost : s_logic_cost);
-  long long gl = g_present_render_us ? 2 * g_present_render_us() : 0;
-  int over, late = 0;
+  int over;
   s_cpu_avg = s_cpu_avg ? (s_cpu_avg * 3 + cpu) / 4 : cpu;
-  if (g_present_late) {
-    unsigned n = g_present_late();
-    if (s_prev_interp)
-      s_late_score += (int)(n - s_late_seen) * LATE_WEIGHT;
-    s_late_seen = n;
-  }
-  if (s_late_score > LATE_MISS) {
-    late = 1;
-    s_late_score = 0;
-  } else if (s_late_score > 0) {
-    s_late_score--;
-  }
-  over = s_cpu_avg > b || (cpu > b && s_cpu_over) || gl * 16 > RT_TICK * 15;
+  over = s_cpu_avg > b || (cpu > b && s_cpu_over);
   s_cpu_over = cpu > b;
   if (!s_hold) {
-    if (!over && !late) {
+    if (!over) {
       if (s_since_back < STEADY && ++s_since_back == STEADY)
         s_hold_len = HOLD_MIN;
       return 1;
@@ -1100,13 +1073,12 @@ static int budget_allows(void) {
       s_hold_len = s_hold_len * 2 > HOLD_MAX ? HOLD_MAX : s_hold_len * 2;
     s_hold = s_hold_len;
     s_since_back = 0;
-    s_late_score = 0;
     g_present_stats.budget_holds++;
     return 0;
   }
   if (over)
     s_hold = s_hold_len; /* not yet: the whole hold again */
-  else if (s_cpu_avg * 8 > b * 7 || gl * 8 > RT_TICK * 7)
+  else if (s_cpu_avg * 8 > b * 7)
     ; /* fits, but without the eighth to spare: wait */
   else if (--s_hold == 0)
     return 1;
@@ -1226,7 +1198,8 @@ void PortPresentDraw(void) {
    * frame, plus what that frame cost when it last ran, must fit. Otherwise
    * this tick shows its real frame for both vblanks (30 fps) instead of
    * running late, which would slow the game itself (D28); budget_allows
-   * holds 30 fps for a while after a miss (D68). */
+   * holds 30 fps for a while after a miss (D68). Only the game thread's
+   * own time counts: the GPU is the platform's to fix (D75). */
   if (interp && g_present.interp_budget_us && !budget_allows()) {
     interp = 0;
     g_present_stats.budget_skips++;

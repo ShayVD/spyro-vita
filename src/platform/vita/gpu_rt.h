@@ -39,6 +39,7 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x, 
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h);
 /* GR_UpdateVertexBuffer with the vcache's answers from `side` */
 void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count);
+void gl_flush_draws(void); /* the draws gpu_join holds, to the GPU (D74) */
 int gl_vcache_side_used(void); /* persp or subpixel: draws read the vcache's answers */
 int gl_gpu_init(void);
 void gl_present(int slot, int wide, int hd_shot); /* slot -1: the display rect */
@@ -53,5 +54,15 @@ void gl_overlay(const uint8_t *rgb, int w, int h);
 void gl_pres_capture(int x, int y, int w, int h);
 void gl_pres_commit(int slot);
 uint16_t *gl_host_vram(void);
+
+/* dynres.c: dynamic resolution (D75), on the vitaGL thread */
+void dynres_picture(int menu); /* every picture; menu: the options panel is up */
+int dynres_scale(void);        /* per mille: the scale targets take at their next whole clear */
+void dynres_report(int vblank);
+void vita_gpu_meter_display(int on); /* gpu_meter.c: around vglSwapBuffers */
+/* gpu_meter.c: what a GPU scene draws into (D75) */
+enum { GPU_K_TARGET, GPU_K_ATLAS, GPU_K_OTHER, GPU_K_PRESENT, GPU_K_COUNT };
+void vita_gpu_meter_surface(const void *data, int kind);
+int vita_gpu_meter_kinds(uint32_t busy_us[GPU_K_COUNT], uint32_t scenes[GPU_K_COUNT]);
 
 #endif

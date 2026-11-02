@@ -9,7 +9,8 @@ rows (the lines here stay, but the run's picture settings would be the menu's).
 All runs use the same VPK, the one from this PR. Since D68 the three switches are on by default
 (`render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`) and `gpu_time` is 0. The files set each switch
 the run needs, and they carry `config_version=3`: without it a `=0` for one of the switches is
-taken as an old file's and ignored (D68).
+taken as an old file's and ignored (D68). Since D74 `gpu_lean=1` (D70) and `parse_thread=1` (D71)
+are on by default too: the files no longer set them, and a file that wants one off says `=0`.
 
 | File | Switches | Do |
 |---|---|---|
@@ -26,10 +27,10 @@ taken as an old file's and ignored (D68).
 | `e3-30fps-off.txt` | D69 off, 30 fps, `gpu_time=2` | the same route |
 | `e4-30fps-on.txt` | D69 on, 30 fps, `gpu_time=2` | the same route |
 | `f1-cheap-off.txt` | D70 baseline: as C2 (every tick gets its in-between frame), `gpu_lean=0` | 2 minutes in Artisans, the same route as C1 |
-| `f2-cheap-on.txt` | as F1 with `gpu_lean=1` | the same route |
-| `f3-cheap-60fps.txt` | 60 fps as the menu gives it (D1), with `gpu_lean=1` | the D1 route: Artisans, then the heavier level |
-| `h1-parse-30.txt` | the defaults at 30 fps, plus `parse_thread=1` (D71) | the D1 route: Artisans, then the heavier level. Run D1 again first if you have no D1 log from this VPK |
-| `h2-parse-60.txt` | D1 (the menu's 60 FPS), plus `parse_thread=1` | the D1 route |
+| `f2-cheap-on.txt` | as F1 with `gpu_lean=1` (the default since D74) | the same route |
+| `f3-cheap-60fps.txt` | 60 fps as the menu gives it (D1), with `gpu_lean=1` (the default since D74) | the D1 route: Artisans, then the heavier level |
+| `h1-parse-30.txt` | the defaults at 30 fps, with `parse_thread=1` (D71; the default since D74) | the D1 route: Artisans, then the heavier level. Run D1 again first if you have no D1 log from this VPK |
+| `h2-parse-60.txt` | D1 (the menu's 60 FPS), with `parse_thread=1` (the default since D74) | the D1 route |
 | `h3-parse-core3.txt` | H2 with `parse_core=3`: the parse thread on core 3, if the start-up check allows it | the D1 route; only worth it if the `cores:` line says core 3 is usable |
 
 ## What each run shows
@@ -122,3 +123,90 @@ The same VPK for all three. `fast_render=1` is the default since D72; G1 turns i
 **G2 against G3.** At 60 fps the in-between frame runs the renderers again, so the gain counts twice. `present N:`: more in-between frames per window, and fewer falls to a held 30 in the places where G3 before this change held 30.
 
 **A bug would look like:** anything on screen that differs between G1 and G2 at the same place (a missing or torn polygon, a wrong colour, a flickering sky, Spyro or a moby drawn wrong), or a crash in a level G1 runs.
+
+## Runs I1–I3: a cheaper GPU picture (D74)
+
+One VPK, built from the D74 branch, for all three. Main's Toasty log (`logs/hw-main-2a0691c`) had the render thread at 16–23 ms a picture in the heavy views, and C1's `gpu_time=2` timed the GPU's scene at 19–31 ms there. D74 found that the pixels the GPU shades don't separate Toasty from Artisans. What does is the number of draws and program changes: 150–230 shader runs a picture in Toasty, against about 80 in Artisans. Textured and untextured triangles alternate in the game's draw order, and PsyCross starts a new draw at each change.
+
+| File | Switches | Do |
+|---|---|---|
+| `i1-bench.txt` | 60 fps forced, `gpu_bench=1` (main's setup otherwise) | Go to Toasty: WARP TO in the options menu's GAME section, or walk. Find the heaviest view you can (the one with the most of the level in sight), then **stand still** and leave the pad alone for 2 minutes. Then do the same for 1 minute in Artisans. Don't open the menu while standing |
+| `i2-join.txt` | 60 fps as the menu gives it, the default budget, the defaults (`gpu_join=1`, and since I1 `gpu_lean=1` and `parse_thread=1`) | the route of main's log: Artisans, then Toasty, 2–3 minutes each |
+| `i3-uber.txt` | as I2, plus `gpu_uber=1` | the same route |
+
+**I1.**
+- **The variant lines:** each 5-s window draws one of five ways and logs `gpu N: gpu_bench=1: VARIANT: the GPU's scene X ms a picture, K pictures timed`. X is the GPU's time for the game's picture after its last draw (gpu_time=2's measure), averaged over every 16th picture. The five, in turn:
+  1. `main's draws (gpu_join=0)`: as main.
+  2. `gpu_join=1`: consecutive draws joined.
+  3. `gpu_join=1 gpu_uber=1`: plain and untextured triangles in one program.
+  4. `gpu_join=1, half the pixels (diagnostic)`: the scissor cut to the left half. **The picture changes**: half the screen isn't redrawn.
+  5. `gpu_join=1 gpu_uber=1, one program for every opaque triangle (diagnostic)`: no discard, no program changes. **The picture changes**: transparent texels show black.
+- **What the numbers tell, at the same place:**
+  - 1 against 2 is what joining saves.
+  - 2 against 3 is what one program saves, net of the untextured pixels now sampling a texture.
+  - 4 against 2 is the share that scales with pixels: if X falls by nearly half, the GPU is fill-bound; if it hardly moves, it's bound by the draws and their state.
+  - 5 is the floor that fewer program changes could reach.
+  - The `render N:` line's "busy ... per picture" and the `vblank N:` line's late vblanks, window by window, give the same comparison from the render thread's side.
+
+**I1's result** (`hw-pr49-i1`, PR #49 at `8b59312`; Toasty from vblank 2509, 48 s standing; no Artisans windows). The GPU's scene a picture, two windows of each variant:
+
+| Variant | Scene ms | Render thread ms a picture | Late vblanks in 300 |
+|---|---|---|---|
+| 1. main's draws | 14.65, 20.77 | 13.93, 18.04 | 65, 116 |
+| 2. joined (the default) | 7.30, 6.10 | 8.60, 11.33 | 30, 11 |
+| 3. joined, one program | 7.79, 8.84 | 11.13, 17.42 | 12, 20 |
+| 4. half the pixels | 3.28, 4.46 | 15.43, 9.71 | 16, 6 |
+| 5. one program for all | 7.92, 7.11 | 15.78, 16.31 | 29, 12 |
+
+- Joining halves to thirds the GPU's scene in Toasty: the change that holds 60 better.
+- One program (`gpu_uber`) saves nothing once draws are joined (3 is no faster than 2, and 5, the floor, isn't either): it stays off.
+- Half the pixels takes off 40–50%: what's left of the GPU's time now scales with pixels more than with draws.
+- The run stutters by design: every 5 s it switches to another variant (main's draws among them), and every 16th picture it waits for the GPU to time it. Variant 4 leaves the right half of the screen unredrawn (it showed orange), and 5 shows transparent texels black.
+
+**I2 and I3, against main's log.**
+- `render N:`: the render thread's time per picture in Toasty (16–23 ms in main's 60-fps windows) and its busy %.
+- `vblank N:`: late vblanks.
+- `present N:`: in-between frames and falls to a held 30.
+- The picture must look the same as main's everywhere: Toasty's distant ground, the sky, Spyro, gems, the HUD, the pause and inventory screens.
+
+**A bug would look like:** a triangle missing or drawn in the wrong place, a wrong colour on the ground, or a menu or pause background that differs from main. Variants 4 and 5 of I1 are meant to look wrong.
+
+## Runs J1–J5: dynamic resolution (D75)
+
+The same VPK for all five (built from the D75 branch). `dynres=1` (auto) was the default until J6 (now `0`, off; the J files set what they need); `dynres=0` puts back native resolution always, drawn exactly as main draws it. The route is the one in `logs/hw-main-2a0691c`: a minute in Artisans, then **Toasty** (level 14) for 3–5 minutes, the same paths each time, ending with the heavy views that ran late there (vblanks ~2100–3600 and 7500–9300 of that log: the open areas with the most on screen). Don't open the options menu during J1–J3 (the menu's windows are paused and their timings mean nothing).
+
+| File | Switches | Do |
+|---|---|---|
+| `j1-dynres-off.txt` | 60 fps forced (`interp=1 interp_budget=0`), `dynres=0`, `gpu_meter=1` (the meter on with dynres off), `gpu_lean=1 parse_thread=1` as in `hw-main-2a0691c` | the route |
+| `j2-dynres-auto.txt` | as J1 with `dynres=1`: the scale is the only thing that reacts to the GPU | the same route |
+| `j3-dynres-75.txt` | as J1 with `dynres=75`: always 720×408 | the same route |
+| `j4-menu-60fps.txt` | the menu's defaults with 60 FPS on: `dynres=1`, and the game thread's safety net (`interp_budget` on) | the same route, then open the menu once and look at the DYNAMIC RES row |
+| `j5-menu-30fps.txt` | the menu's defaults (30 fps), `dynres=1` | the same route |
+| `j6-one-run.txt` | if only one run: J4 with `gpu_lean=1 parse_thread=1` as in `hw-main-2a0691c` (the meter measures at whatever scale auto picks; `dynres_sim.py` scales it to 960×544) | the same route, then open the menu once |
+
+**What each log line should show:**
+- At start: `gpu: GPU time from vitaGL's scene fences, polled every 200 us on core 1 (D75)` in J1–J5. Then, at the first picture, `dynres: off, scale 100%` (J1), `auto, scale 100%` (J2, J4, J5) or `fixed, scale 75%` (J3). **If `gpu: no scene-done notifications from the GPU` appears, the meter doesn't work on hardware: J2 and J4 stay at 100% and the rest of these runs measure nothing.**
+- `dynres N: GPU time per picture 100%: P pictures, X ms; ...; D down, U up, now S%`: every 300 vblanks. X is the GPU's busy time per picture at each scale in that window, measured from the scene fences with no `glFinish`.
+  - **J1** gives the GPU's cost at 960×544 in every window. In `hw-main-2a0691c`'s late windows the render thread took 16–24 ms a picture (busy × 300 / pictures), so X there should be about 16–24 ms, and 7–9 ms in the windows that held 60 (4200–4500). If X is far below the render thread's per-picture time where pictures were late, the GPU isn't the wall there and dynres can't help.
+  - **J3** against J1 at the same place: X at 75% should be about 0.56 of J1's plus a fixed part (*estimate*: 1–2 ms). Those two numbers per window give the model behind the steps (D75's table): send both logs.
+  - **J2**: the scale is a last resort (D75): native wherever J1's X plus 1.5 ms fits in 16.7 ms, even with no room to spare. In the heavy ones `now 88%` or `75%`, rarely `67%`, with `vblanks late` near 3 per window (J1 had 40–100 there) and `render N:` per picture under 16.7 ms. `tools/vita/dynres_sim.py j1.log` says which windows should drop and how far: J2 should drop no more than that. `D down, U up` should be a handful per minute at most: more than one down and one up in most windows is pumping (say where).
+  - `dynres: GPU ... ms a picture at A% (with the present's 1.5 ms), over 16.68 ms for 2 windows: B%` and `... predicted to fit: B%` lines: each change, with the cost that caused it.
+- `vblank N: ... pictures, ... vblanks late` and `render N: ... per picture`: J2 against J1 at the same place. That's the gain.
+- **J4**: as J2, with the game thread's safety net on. **60 fps should never fall to 30 now** (D75): `present N: ... 0 skipped for the budget (0 falls to a held 30 fps)` in every window, where D1 and H2 held 30 in the heavy views. A fall would mean the game thread itself took more than 31.3 ms a tick (`time N:` busy over ~94%): say where. The menu shows `DYNAMIC RES < AUTO >` and has no `60 FPS BUDGET` row any more.
+- **J5**: a picture may take two vblanks at 30 fps, so dynres should stay at `now 100%` with 0 down in every window (Toasty's heaviest views took 16–24 ms, under 94% of 33.4).
+
+**The picture:** with dynres on, the heavy views turn a little softer (bilinear upscaling from 840×476, 720×408 or 641×363) and sharpen again within a few seconds of the view getting lighter. A bug would look like: a picture shifted, stretched or with a band of an older picture at its right or bottom edge, the in-between frames jumping against the real ones, a flash at the moment of a change, the pause or inventory background looking wrong, or the scale changing back and forth every second or so in one place.
+
+## Run J7: where the GPU's time goes (after J6)
+
+J6 (`j6-one-run.txt`, the logs in `logs/hw-j6/` of the main checkout) showed that at 67% the GPU still took 11–17 ms a picture in Toasty's heavy views, and a 60–150 ms hitch in nearly every 5 s window. J7 runs the build after it: dynres off (the new default), the log written by its own thread, and the meter splitting the GPU's time by kind of scene.
+
+| File | Switches | Do |
+|---|---|---|
+| `j7-gpu-split.txt` | 60 fps on (`interp=1`, the safety net on), `dynres=0`, `gpu_meter=1`, `gpu_lean=1 parse_thread=1` | J6's route: a minute in Artisans, then Toasty 3–5 minutes ending in the heavy views. Don't open the menu |
+
+**What the log should show:**
+- `log: written by a thread on cores 1-2` near the start.
+- `time N: ... worst vblank X ms`: X under ~40 ms in most windows if the log's writes were J6's hitch. Still 60+ in every window means they weren't: say so, and whether you still feel a hitch every few seconds.
+- `gpu meter N: GPU time per picture over P pictures: the game's frames A ms in a scenes; texture decodes B ms in b; other C ms in c; the present D ms in d (with its wait for the display); the most finished between two pictures M ms`. In the heavy views A + B + C over ~15 ms is the GPU over its vblank. Which of A and B is big says where the next saving is: B large, the atlas's decode passes; A large with few scenes, the targets' own scenes.
+- The picture is native throughout (dynres off).

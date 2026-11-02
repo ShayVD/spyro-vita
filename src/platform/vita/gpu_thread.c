@@ -118,7 +118,6 @@ static const char *const k_wait_names[W_COUNT] = {"ring full", "previous frame n
                                                   "GPU start-up and shader compiles"};
 static uint64_t s_wait_us[W_COUNT];
 static unsigned s_waits[W_COUNT];
-static unsigned s_late_total; /* W_FRAME waits since the start (D68) */
 
 static int reached(int k, uint32_t target) { return (int32_t)(s_done[k] - target) >= 0; }
 
@@ -176,6 +175,7 @@ static void run(const Cmd *c) {
   }
   case C_CALL: {
     const CCall *k = (const CCall *)c;
+    gl_flush_draws(); /* the call may reach the GPU */
     k->fn(k->ptr ? k->ptr : (void *)k->arg);
     break;
   }
@@ -273,7 +273,6 @@ static void game_wait(int why, int k, uint32_t target) {
   prof_leave();
   s_wait_us[why] += now_us() - t0;
   s_waits[why]++;
-  s_late_total += why == W_FRAME;
 }
 
 /* Room for a command of `size` bytes (a multiple of 8) at s_w. With the
@@ -363,6 +362,7 @@ static void call(void (*fn)(void *), void *arg, int size, int sync) {
   CCall *c;
   env_sync();
   if (!g_rt_active) {
+    gl_flush_draws(); /* the call may reach the GPU */
     fn(arg);
     return;
   }
@@ -660,18 +660,6 @@ static void commit(int slot) {
 static const PresentCapture s_capture = {capture, commit};
 
 const struct PresentCapture *vita_gpu_present_capture(void) { return &s_capture; }
-
-/* present.c's interp_budget (D63): the render thread's time per picture,
- * GL calls and waits for the GPU included */
-static long long picture_us(void) { return s_rt_picture_us; }
-
-long long (*vita_gpu_render_cost(void))(void) { return g_rt_active ? picture_us : NULL; }
-
-/* present.c's late pictures (D68): the game thread's waits for the previous
- * one (a present is posted every vblank, so a wait is a late picture) */
-static unsigned late_pictures(void) { return s_late_total; }
-
-unsigned (*vita_gpu_late_pictures(void))(void) { return g_rt_active ? late_pictures : NULL; }
 
 /* ---- the rest of vita.h's gpu calls ---- */
 
