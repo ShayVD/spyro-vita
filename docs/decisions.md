@@ -1664,3 +1664,81 @@ Record each decision with its date, what was chosen, and why.
     - The NEON-off run matches N2's numbers from D80 (env 1.041, mobys 0.610).
   - **Why:** one vertex at a time, each RTPS moves the vertex into NEON and three results back to the core registers. On the Cortex-A9 a move from NEON to a core register stalls until the NEON pipeline has the value, and that costs more than the scalar multiplies it replaces. NEON would pay only on several vertices at once: four lanes of four vertices, the plan's original idea. That means batching in the renderers' vertex loops, which belongs to stage 2's native draw lists, where those loops are rewritten anyway.
   - **So `gte_native.h` stays scalar,** and the NEON code isn't in the tree.
+
+## 2026-11-02: native draw lists (stage 2)
+
+### D82. The hand renderers' primitives reach the OT walk as the vertices PsyCross would make of them, behind `native_draw`; markers in the primitives' own space keep the OT's order
+- **Why:** stage 2 of `docs/native-plan.md` (D76). K1 (§3.4) put PsyCross's OT walk at 2.0–2.6 ms per vblank on the game thread at 30 fps, more than the renderers themselves. With the parse thread (D71) the game thread still waits 1.2–1.6 ms a vblank for it (D74). Most of what it walks is the six hand renderers' primitives: in the attract demos, 7.4 million of them over 12,000 vblanks.
+- **Decided:**
+  - **What stays:** every renderer still builds each PS1 primitive where it always did, with the same stores. So these don't change:
+    - the primitive buffer's pointer (`D_800757B0`) and the addresses of everything built after;
+    - every bound check on it (env's `PORT_LOD_ENV_FULL`, the sky's limit and `D_800758B0`);
+    - the code that reads primitives back (env's last list, `SplitLast`).
+
+    Only the link into the OT changes.
+  - **The record:** where the code links a primitive (env's `OtAppend`, the mobys' `Link`/`LitLink`, Spyro's `LinkPrim`, the sky's chain), `src/game/native_draw.h` turns it into what PsyCross's `Process*Poly` would make of it and appends that to the list's record pool:
+    - the `GrVertex`s: x/y, page, CLUT, u/v, brightness, dither, colour;
+    - a quad's vertices in `MakeVertexQuad`'s order;
+    - the kind is a constant at each call (`ND_K_*`: F3, F4, G3, G4, FT3, FT4, GT3, GT4, the draw mode command), so each converter folds to one case.
+
+    The walk adds what depends on its own state: the draw offset, the environment's dither flag, the vertex cache's hook (D39), the quad's split into two triangles, and the splits (`PsyX_AddSplit` with the same flags under the same draw state; skipped while nothing it compares has changed within a marker).
+  - **The marker:** into the bucket goes a 3-word packet in the primitive's own space: a tag of length 2, `ND_MAGIC | pool | the list's serial`, and its first record's offset.
+    - Both words have a zero top byte, GP0 NOPs to anything that doesn't know them.
+    - PsyCross patch 0010's packet hook (`g_psyxPacketHook`, called by the walk for each packet before it parses it) emits a marker's records.
+    - So the order is the OT's own: buckets, FIFO within a bucket, the HUD chain last.
+  - **Joining:** a primitive appended to a bucket whose tail is a marker of this list joins that marker: the records are linked, and the first one keeps the last one's offset. A marker stands for everything the converted renderers put into one bucket in a row, and the joined primitive's space stays unlinked.
+    - In the demos, 7.4 M primitives became 2.0 M markers. The sky's whole chain is one marker.
+    - With a marker per primitive (the first version), env joined only 4%: neighbouring polygons rarely share a depth bucket.
+  - **Lists and pools:**
+    - Everything appended between two OT links is one list's: `func_80016784` links the OT, and every `DrawOTag` in the game is given its result.
+    - Two pools of 1 MB take turns per list, so the parse thread walks a list's pool while the game writes the next list's. The most one list used was 167 KB (host demos).
+    - The serial keeps a marker of an earlier list from being joined.
+    - A full pool leaves a primitive linked as it is.
+  - **Not converted:**
+    - the decomp C's own primitives: `draw.c`, particles, shadows, the flame, the HUD's 2D primitives (which widescreen squeezes in the OT);
+    - env's 4x4 pieces queued on the last list, which `SplitLast` reads back.
+
+    They stay PS1 primitives in the same OT. `SplitLast`'s own pieces that aren't queued again become markers in the chain it builds.
+  - **The render thread is unchanged:** it gets the same vertices and splits. Resolving the atlas once per page and CLUT, and the program and blend per segment (the plan's next steps, with the subtract-blend rule for shadows), need the render thread's atlas state. They are a follow-up.
+  - **`native_draw=1` needs `fast_render=2`** (the default since D81): it's in the native-GTE build of each renderer (`#if NGTE`). With `fast_render` 0 or 1, or `native_draw=0`, the code is as it was.
+  - **Save states:** a state is taken at the loop top, where no list is pending (the walk is joined), so the pools aren't state (`tools/savestate_globals.py`).
+- **Checked** (host: `build/nd-bin/spyro-d`, logs `logs/nd5-*` in this branch's worktree, gitignored; `tools/native_draw_ab.sh` runs the same pairs):
+  - **Every call, both ways** (host `--native-draw-check`, `src/game/native_draw_check.c`): each converted renderer's call runs with `native_draw` 0 and then 1 from the same state.
+    - The packets each run appended, bucket by bucket in the OT link's order, go through PsyCross's own walk (`PsyX_ParseList`) from the same draw state. That includes the records joined to a marker an earlier call left at a bucket's tail. The vertices, the splits and the draw state they leave must be the same bytes.
+    - The arena outside the primitives written and the OTs, the scratchpad buffer and every GTE register must be the same. The one word allowed to differ is the tag of a marker another call left at a bucket's tail, which one run links from and the other joins.
+
+    | Scenario | Triangles compared | Calls that differ |
+    |---|---:|---:|
+    | attract demos (12,000 vblanks) | 10.0 M | 0 |
+    | gems script, 16:9 | 7.4 M | 0 |
+    | 16:9 with 60 fps in-between frames (`wsi`) | 26.5 M | 0 |
+    | gems with the vertex cache (`--vcache`, D39's hook) | 7.4 M | 0 |
+    | route A | 10.0 M | 0 |
+    | route B | 11.1 M | 0 |
+    | gems at 2x draw distance (`lod`) | 7.4 M | 0 |
+    | whole-game tour (100,000 vblanks) | 104.8 M | 0 |
+
+    Every renderer is covered in every scenario where the game calls it: env, sky, mobys, lit mobys and HUD models, Spyro, specular mobys.
+  - **Every file** of each check run (which goes on with the records) against the same binary without `native_draw`: demos 26/26, gems 18/18, wsi 25/25, vcache 18/18, lod 18/18, routes A 55/55 and B 56/56. Against main's own `host_checks.sh` runs (stage 3's `base-*`, main `6128154`, default switches): demos 26/26, route A 55/55 (its WAV not recorded here), route B 56/56. The whole tour (every level, both endings, the credits, the fairy's save; the most one list used, 235 KB): 141/141 files against D74's run of the same tour (`h74g-whole`) and 140/140 against D80's (`ngte8-check-whole`), whose host outputs main has kept since.
+  - **ctest:** 7 of 9 pass, `gte` and `m2c_diff_math` skipped as before.
+  - **Vita3K** (VPK `logs/nd-vpk-1.vpk`, SHA-1 `b083eea4…`; `realtime=0`, the shipped threads, so the parse thread walks the copy; `fast_render=2`):
+    - the gems script with window captures (`CAPTURE=1`), `native_draw` 0 against 1: 17 shots, 17 captures of the GPU's own picture and the card identical (`logs/ndv3k-gems-n0`, `-n1`);
+    - the pause route (D74's: 16:9, 60 fps forced, the `StoreImage` replay behind the pause and inventory menus): 70 shots and the card identical (`logs/ndv3k-pause-n0`, `-n1`);
+    - the attract demos with window captures: 12 shots and 11 captures identical (`logs/ndv3k-demo-n0`, `-n1`);
+    - in every run: 0 packets outside the copy, 0 unknown commands, no `still waiting`, the pool never full.
+  - **Vita3K timings** (its JIT, not a Cortex-A9; the gems script, windows 6000–8768):
+    - the parse thread's busy time 0.53 → 0.19 ms per vblank, and the game thread's wait for the walk 0.58 → 0.24;
+    - the renderers +0.09 ms, from building the vertices;
+    - the update, which this doesn't touch, moved 13% between the two runs, so these are a direction, not a measure.
+- **Hardware: P5 and P6 run (2026-11-02, with the owner's approval; the CI VPK of `65ab8c9`, SHA-1 `20edb627…`).** 60 fps on the Toasty route, `REALTIME=1`, `fast_render=2`, `native_draw` 0 then 1 (`logs/hw-p5`, `logs/hw-p6`). Both ran to `frames=21000` (321 s and 318 s), with no hang or crash line, and the memory card is byte-identical.
+  - **P5 is main's default:** against D81's `hw-o2-t` (the same switches on main), late vblanks per level, busy % and the `time` lines are within noise (game thread busy 5.83 against 5.82 ms per vblank).
+  - **P6:** from vblank 600 every list had records, 0 primitives left as primitives (the pool never full), the most in a list 71–114 KB. About 280,000 primitives per 300 vblanks became 61,000 markers.
+  - **The trade on hardware:**
+    - The parse thread's walk: 1.70 → 1.24 ms per vblank.
+    - The game thread's wait for it: 1.26 → 0.80.
+    - The renderers: +0.52 (env 1.61 → 1.78, mobys 0.84 → 0.96, Spyro 0.23 → 0.29, sky 0.38 → 0.55).
+    - So the game thread is no faster: busy 5.83 → 6.12 ms per vblank.
+    - 60 fps: Toasty 0.1 → 0.2 vblanks late per 300. Stone Hill (7 windows, only crossed on the way) 6.0 → 9.9; one run each.
+  - **Pictures:** not compared on hardware (`DEVICE_DEFAULTS=1` takes no shots). The host check and the Vita3K captures cover them.
+  - P1–P4 (the K route at 30 fps) are not run.
+- **Default:** `native_draw=0`. On hardware it moves work from the parse thread to the renderers without making the game thread faster. It pays only when the renderers stop building the PS1 primitives as well (the follow-up in `docs/native-plan.md` stage 2).

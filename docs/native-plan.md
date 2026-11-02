@@ -543,6 +543,21 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 
 **Optional:** yes, `native_draw=0/1`, then per renderer. It touches `gpu_gl.c`, so it starts only after #48 and #49 are merged.
 
+**Done in part (D82, 2026-11-02), behind `native_draw=1` (default 0).** On hardware (P5/P6) the walk's thread gets 0.46 ms per vblank faster and the renderers 0.52 ms slower, so the default stays 0 until the renderers stop building the PS1 primitives too. What it is and how it was checked: `docs/decisions.md` D82 and `docs/translation-log.md`.
+- **Converted:** all six hand renderers' primitives: env, the sky, the regular, lit and specular mobys, Spyro. Each primitive is turned into the vertices PsyCross's parse would make of it where the code links it, and a marker goes into the bucket in its place, or the primitive joins the marker already at the bucket's tail. The walk copies the records (PsyCross patch 0010's packet hook).
+  - The primitives are still built where they were, so the buffer's pointer and its bounds don't change.
+  - The order is the OT's.
+  - In the demos 7.4 M primitives become 2.0 M markers.
+- **Checked:**
+  - **Every call** of every converted renderer, both ways, through PsyCross's own walk (host `--native-draw-check`), on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole-game tour: 184 M triangles, 0 differences.
+  - **Every file** of those runs identical with `native_draw` off and with main's runs.
+  - **Vita3K:** the gems script's and the demos' shots and window captures, and the pause route's shots, identical.
+- **Not yet:**
+  - **Hardware:** runs P1–P6 (`tools/vita/fps-runs/p*.txt`), which need the owner's approval.
+  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD.
+  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment.
+  - **Building the records without the PS1 stores** in the hottest sites (env's high-poly pass, the moby faces), if hardware shows the renderers' extra work matters.
+
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
 **Replaces** (C): 19,272 original instructions, 32,563 generated lines and 453 KB of ARM code:
