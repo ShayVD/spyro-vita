@@ -183,3 +183,15 @@ ret func_8003FE40
 ret func_80047B60
 # func_80041670 (pete.c 1368): called only from C (pete.c 1920).
 ret func_80041670
+# collision.s is hand-written C (src/game/collision_hand.c, decisions D83),
+# which returns only v0; the asm leaves a working value in v1. v1 is dead
+# at every caller: C callers can't read it, every asm caller but two is
+# hand C now (pete, camera), and the two mips2c ones call another function
+# next (func_800314B4 80031710 MobyUpdateShadow after ColFindFloor;
+# func_8002F3E4 after func_8004DF24 stores v0 and calls func_80049FAC).
+# tools/oracle/v1_live.py lists the sites.
+v1 ColTraceRay
+v1 ColSphere
+v1 ColFindFloor
+v1 func_8004DF24
+v1 ColSpyroInHitbox

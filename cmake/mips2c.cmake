@@ -57,6 +57,35 @@ else()
   list(APPEND M2C_HAND_DEFS M2C_REF=0)
 endif()
 
+# Units whose entry points are written by hand together, in one C file
+# (src/game/collision_hand.c, decisions D83). SPYRO_M2C_FUNCS takes their
+# entry names one by one (or the unit's name for all of them). The unit
+# never goes back into the batch: when an entry is taken from it, or with
+# SPYRO_M2C_REF, it is translated on its own with every entry renamed
+# <name>_gen, and the hand C's M2C_<name>=1 branch calls that.
+set(M2C_HAND_MULTI asm/collision.s)
+set(M2C_ENTRIES_collision ColTraceRay ColSphere ColFindFloor func_8004DF24 ColSpyroInHitbox ColMoby)
+set(M2C_MULTI_GEN)
+foreach(u ${M2C_HAND_MULTI})
+  get_filename_component(f "${u}" NAME_WE)
+  list(REMOVE_ITEM M2C_UNITS ${u})
+  set(gen ${SPYRO_M2C_REF})
+  set(renames)
+  foreach(e ${M2C_ENTRIES_${f}})
+    if(SPYRO_M2C_FUNCS STREQUAL "all" OR e IN_LIST SPYRO_M2C_FUNCS OR f IN_LIST SPYRO_M2C_FUNCS)
+      list(APPEND M2C_HAND_DEFS M2C_${e}=1)
+      set(gen ON)
+    else()
+      list(APPEND M2C_HAND_DEFS M2C_${e}=0)
+    endif()
+    list(APPEND renames "${e}=${e}_gen" "${e}__m2c=${e}_gen__m2c")
+  endforeach()
+  if(gen)
+    string(REPLACE ";" "|" renames "${renames}")
+    list(APPEND M2C_MULTI_GEN "${u}" "${renames}")
+  endif()
+endforeach()
+
 # Partly hand-written: the hand C handles what it covers and calls the mips2c
 # unit, renamed <name>_gen, for the rest (docs/translation-log.md). None at
 # the moment (func_80043FE4 was, until its flying-ability phases).
@@ -148,6 +177,23 @@ foreach(e ${M2C_RENDER_HAND})
   list(APPEND M2C_RENDER_DEFS_${n} "${f}=${f}_gen" "${f}__m2c=${f}_gen__m2c")
 endforeach()
 list(REMOVE_DUPLICATES M2C_RENDER_FILES)
+
+while(M2C_MULTI_GEN)
+  list(POP_FRONT M2C_MULTI_GEN u renames)
+  get_filename_component(f "${u}" NAME_WE)
+  string(REGEX REPLACE "^asm/" "" n "${u}")
+  string(REGEX REPLACE "\\.s$" "" n "${n}")
+  string(REGEX REPLACE "[^A-Za-z0-9_]" "_" n "${n}")
+  set(o "${GEN_DIR}/mips2c-ref/m2c_${n}.c")
+  list(APPEND M2C_REF_OUTS "${o}")
+  list(APPEND M2C_PARTIAL_DEFS "${o}" "${renames}")
+  add_custom_command(OUTPUT "${o}"
+    COMMAND "${Python3_EXECUTABLE}" "${M2C_TOOL}" --root "${S1_DIR}"
+      --out-dir "${GEN_DIR}/mips2c-ref" --hints "${M2C_HINTS}"
+      --index "${GEN_DIR}/mips2c-ref/${f}_index.c" ${u}
+    DEPENDS "${M2C_TOOL}" "${M2C_HINTS}" "${S1_DIR}/${u}"
+    COMMENT "mips2c: ${f}'s entries as <name>_gen (A/B tests, differential sweeps)")
+endwhile()
 
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS} ${M2C_REF_OUTS})
 foreach(src ${M2C_RENDER_FILES})

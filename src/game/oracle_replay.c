@@ -424,13 +424,24 @@ static u32 call_entry(const M2cEntry *e, Snap *in) {
   return e->fn(in->gpr[R_A0], in->gpr[R_A0 + 1], in->gpr[R_A0 + 2], in->gpr[R_A0 + 3]);
 }
 
+#if M2C_REF
+/* The hand-written collision's shadow (collision_hand.c, decisions D83):
+ * each call also runs its mips2c unit, which must agree on RAM and the
+ * result, and leaves the unit's scratchpad and GTE state. On by default
+ * with the units linked; SPYRO_REPLAY_COLSHADOW=0 turns it off. */
+extern int g_col_shadow, g_col_shadow_fail;
+#define COL_SHADOW_FAILS() (g_col_shadow_fail)
+#else
+#define COL_SHADOW_FAILS() 0
+#endif
+
 /* Child: run one sample, print its line, exit 0 (pass) or 1 (fail). */
 static int run_one(const char *name, int k, Snap *in, Snap *out) {
   u8 *arena = (u8 *)g_psx_arena_base;
   const M2cEntry *e = find(in->hdr[2]);
   u32 v0, v1, sp = in->gpr[R_SP], d[32], c[32], ed[32], ec[32];
-  u32 i, nram = 0, nirq = 0, nscr = 0, ngte = 0, nsave = 0, nrebased = 0, shown = 0;
-  char diffs[MAX_SHOW * 64];
+  u32 i, nram = 0, nirq = 0, nscr = 0, ngte = 0, nsave = 0, nrebased = 0, shown = 0, ncol;
+  char diffs[MAX_SHOW * 64], col[32] = "";
   int len = 0;
   if (!e) {
     printf("%s %d %u SKIP no translated entry at %08x\n", name, k, in->hdr[4], in->hdr[2]);
@@ -438,6 +449,7 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
   }
   v0 = call_entry(e, in);
   v1 = g_mips_v1;
+  ncol = COL_SHADOW_FAILS();
   if (getenv("SPYRO_REPLAY_DUMP")) { /* the host's RAM after the call, for offline diffs */
     FILE *df = fopen(getenv("SPYRO_REPLAY_DUMP"), "wb");
     if (df) {
@@ -511,13 +523,15 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
      * host's translated C doesn't have. */
     int v0_ok = v0 == ev0 || out->gpr[R_V0] == in->gpr[R_V0] || ret_dead(name, 1);
     int v1_ok = v1 == ev1 || out->gpr[R_V1] == in->gpr[R_V1] || v1_dead(name);
-    int pass = v0_ok && v1_ok && !nram && !nscr && !ngte;
+    int pass = v0_ok && v1_ok && !nram && !nscr && !ngte && !ncol;
+    if (ncol)
+      snprintf(col, sizeof col, " colshadow %u", ncol);
     printf("%s %d %u %s v0 %08x/%08x%s v1 %08x/%08x%s ram %u ignored %u regsave %u rebased %u scratch %u "
-           "gte %u%s\n%.*s",
+           "gte %u%s%s\n%.*s",
            name, k, in->hdr[4], pass ? "PASS" : "FAIL", out->gpr[R_V0], v0,
            out->gpr[R_V0] == in->gpr[R_V0] ? "(unset)" : ret_dead(name, 1) ? "(dead)" : "", out->gpr[R_V1], v1,
            out->gpr[R_V1] == in->gpr[R_V1] ? "(unset)" : v1_dead(name) ? "(dead)" : "", nram, nirq, nsave,
-           nrebased, nscr, ngte, s_tag,
+           nrebased, nscr, ngte, col, s_tag,
            pass ? 0 : len, diffs);
     return !pass;
   }
@@ -632,6 +646,9 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
     sweep = sweep_reg;
     sweep_addr = 0x80000000u; /* unused: the register is swept */
   }
+#if M2C_REF
+  g_col_shadow = !getenv("SPYRO_REPLAY_COLSHADOW") || atoi(getenv("SPYRO_REPLAY_COLSHADOW"));
+#endif
   if (ignore)
     load_ignore(ignore);
   if (fnmap)
