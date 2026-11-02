@@ -16,10 +16,11 @@
 # (4:3, 30 fps, the host's camera), so the device's own defaults apply: for
 # timing runs. HW_REBOOT=1 allows a reboot when the app won't stop.
 # The Vita: VITA_IP, or tools/vita/hw.env (gitignored; VITA_IP=192.168.1.23),
-# with vitacompanion running (FTP on 1337, commands on 1338) and Spyro Vita
-# installed once from its VPK with VitaShell. Each run uploads the VPK's
-# eboot.bin to ux0:app/SPYV00001/, and the whole app when its sce_sys/ (the
-# LiveArea, param.sfo) changed since the last run to this Vita.
+# with vitacompanion 1.08 or later running (FTP on 1337, commands on 1338).
+# Each run uploads the VPK's eboot.bin to ux0:app/SPYV00001/. When the app
+# isn't installed, or the VPK's sce_sys/ (LiveArea, param.sfo) changed since
+# the last run to this Vita, it installs the whole app instead with
+# vitacompanion's promote (the extracted VPK, staged in ux0:data/spyro/hw-promote).
 # The owner's own files in ux0:data/spyro (config.txt, save/, shots/,
 # spyro.log, audio.wav, pad.txt) are renamed to NAME.hw-backup on the Vita
 # for the run and renamed back when the script ends, however it ends; only
@@ -27,8 +28,8 @@
 # could put them back (SIGKILL, Wi-Fi gone) leaves the .hw-backup files: the
 # next run, or --restore, puts them back first, keeping what is in the way
 # as NAME.hw-left-TIME. The disc files and anything else are never touched.
-# The app is stopped with vitacompanion's destroy (which closes whatever app
-# is open), never a reboot unless HW_REBOOT=1 and the app won't stop.
+# The app is stopped with "quit SPYV00001" (only this app; never "quit all"),
+# and the Vita rebooted only if HW_REBOOT=1 and the app won't stop.
 # One run at a time, across worktrees: a lock in $HW_STATE (default
 # ~/.cache/spyro-vita) holding the run's PID makes a second run wait (up to
 # HW_LOCK_WAIT seconds, default 1800). Run the script in the foreground.
@@ -36,7 +37,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 # shellcheck source=/dev/null
-[ -f "$root/tools/vita/hw.env" ] && . "$root/tools/vita/hw.env"
+[ -z "${VITA_IP:-}" ] && [ -f "$root/tools/vita/hw.env" ] && . "$root/tools/vita/hw.env" # VITA_IP given wins
 : "${VITA_IP:?set VITA_IP or write it in tools/vita/hw.env}"
 export VITA_IP VITA_FTP_PORT VITA_CMD_PORT
 restore_only=0
@@ -114,10 +115,10 @@ stopped=0
 stop_app() {
   [ "$stopped" = 1 ] && return 0
   stopped=1
-  v cmd destroy > /dev/null 2>&1 || true
+  v cmd quit SPYV00001 > /dev/null 2>&1 || true
   sleep 2
   [ "$launched" = 1 ] || return 0
-  log_grows && { say "the app still writes its log after destroy; again"; v cmd destroy > /dev/null 2>&1 || true; sleep 3; } || return 0
+  log_grows && { say "the app still writes its log after quit; again"; v cmd quit SPYV00001 > /dev/null 2>&1 || true; sleep 3; } || return 0
   log_grows || return 0
   if [ "${HW_REBOOT:-0}" = 1 ]; then
     say "the app won't stop: rebooting the Vita (HW_REBOOT=1)"
@@ -189,27 +190,41 @@ trap 'exit 143' TERM HUP
 
 pid_lock
 : > "$out/hw-run.txt"
-v cmd destroy > /dev/null || { say "no reply on $VITA_IP:${VITA_CMD_PORT:-1338}: is vitacompanion running? (tools/vita/hw_check.sh)"; exit 1; }
+ver=$(v cmd version) || { say "no reply on $VITA_IP:${VITA_CMD_PORT:-1338}: is the Vita awake, with vitacompanion loaded? (tools/vita/hw_check.sh)"; exit 1; }
+case $ver in Error*|"(no reply)") say "vitacompanion answers \"$ver\" to version: hw_run.sh needs 1.08 or later"; exit 1 ;; esac
+say "vitacompanion: $ver"
+v cmd quit SPYV00001 > /dev/null # "Error: cannot quit" when it isn't running
 sleep 2
 recover
 [ $restore_only = 1 ] && exit 0
 
-# The app: its eboot.bin every run, everything when sce_sys/ changed.
+# The app: its eboot.bin every run; installed whole (promote) when it isn't
+# there or sce_sys/ changed.
 [ -f "$vpk" ] || { say "no $vpk"; exit 1; }
-v size "$app/eboot.bin" > /dev/null ||
-  { say "Spyro Vita isn't installed on the Vita: install $vpk once with VitaShell"; exit 1; }
 mkdir -p "$tmp/vpk"
 (cd "$tmp/vpk" && unzip -q "$vpk")
 sys=$(cd "$tmp/vpk" && find sce_sys -type f | LC_ALL=C sort | xargs shasum | shasum | cut -c1-40)
-if [ "$(cat "$state/sce_sys-$VITA_IP" 2>/dev/null)" != "$sys" ]; then
-  say "sce_sys/ changed since the last run to $VITA_IP (or there was none): uploading the whole app"
-  v putdir "$tmp/vpk" "$app"
+stage=$data/hw-promote
+if ! v size "$app/eboot.bin" > /dev/null || [ "$(cat "$state/sce_sys-$VITA_IP" 2>/dev/null)" != "$sys" ]; then
+  say "not installed, or sce_sys/ changed since the last run to $VITA_IP: installing the whole app (promote)"
+  relist
+  [ -z "$(kind hw-promote)" ] || v rmtree "$stage" # a run's own, left by a failed promote
+  v putdir "$tmp/vpk" "$stage"
+  reply=$(VITA_CMD_WAIT=180 v cmd promote "$stage")
+  say "promote: $reply"
+  relist
+  [ -z "$(kind hw-promote)" ] || v rmtree "$stage"
+  [ "$reply" = Promoted. ] || exit 1
+  t=0
+  until [ "$(v size "$app/eboot.bin" 2>/dev/null)" = "$(wc -c < "$tmp/vpk/eboot.bin" | tr -d ' ')" ]; do
+    [ $t -ge 60 ] && { say "promoted, but $app/eboot.bin isn't the VPK's after 60 s"; exit 1; }
+    sleep 3; t=$((t + 3))
+  done
   echo "$sys" > "$state/sce_sys-$VITA_IP"
-  say "a changed bubble or LiveArea shows after VitaShell's \"Refresh LiveArea\" (or a reinstall)"
 else
   v put "$tmp/vpk/eboot.bin" "$app/eboot.bin"
 fi
-say "eboot.bin uploaded ($(wc -c < "$tmp/vpk/eboot.bin" | tr -d ' ') bytes, $(basename "$vpk"), $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?'))"
+say "app: eboot.bin ($(wc -c < "$tmp/vpk/eboot.bin" | tr -d ' ') bytes, $(basename "$vpk"), $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # The owner's files aside: a copy of the small ones here, then renamed.
 relist
@@ -239,7 +254,7 @@ cfg=$out/config.txt
 # unless DEVICE_DEFAULTS=1 (later lines win; config_version=3: main.c).
 [ "${DEVICE_DEFAULTS:-0}" = 1 ] ||
   printf 'config_version=3\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n' >> "$cfg"
-echo "awake=1" >> "$cfg" # no auto-sleep or screen off while it runs (main.c)
+echo "keep_awake=1" >> "$cfg" # no standby, dimming or screen off while it runs (vblank.c)
 for line in "$@"; do
   case $line in
     @*) grep -vE '^[[:space:]]*(#|$)' "${line#@}" >> "$cfg" ;;

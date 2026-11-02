@@ -14,7 +14,7 @@
 typedef struct {
   char disc_dir[256]; /* disc=  (default ux0:data/spyro) */
   int frames;         /* frames= exit after this many vblanks; 0 = never */
-  int awake;          /* awake=1: no auto-sleep or screen off (unattended runs, D77) */
+  int keep_awake;     /* keep_awake=1: no standby, dimming or screen off (unattended runs, D77) */
   int shots[VITA_MAX_SHOTS]; /* shot=V1,V2,... PNGs of the picture in shots/ */
   int nshots;
   int shot_every;     /* shot_every=N */

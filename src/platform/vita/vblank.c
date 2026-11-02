@@ -140,8 +140,11 @@ static void vblank(void) {
   }
   /* nothing presses a button in a scripted run: keep the Vita from
    * dimming and sleeping, which drops the Wi-Fi hw_run.sh polls over */
-  if (g_vita_opts.awake && v % 60 == 0)
-    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+  if (g_vita_opts.keep_awake && v % 60 == 0) {
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_OLED_OFF);
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_OLED_DIMMING);
+  }
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
     vita_log("frames=%d reached, exiting", g_vita_opts.frames);

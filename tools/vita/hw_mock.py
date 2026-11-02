@@ -10,6 +10,7 @@ and writes a log, shots and (hang_test=) a crash dump. Standard library only.
 ROOT/ux0, ROOT/ur0 are the devices. The fake game runs 600 vblanks a second.
 """
 import os
+import shutil
 import socket
 import socketserver
 import sys
@@ -77,22 +78,38 @@ class Cmd(socketserver.BaseRequestHandler):
     def handle(self):
         global game
         words = self.request.recv(1024).decode().split()
-        reply = "Unknown command"
-        if words[:1] == ["destroy"]:
-            if game:
+        reply = "Error: Unknown command."  # vitacompanion 1.08's replies (src/cmd_definitions.c)
+        if words == ["version"]:
+            reply = "Vita Companion 1.08 (mock)"
+        elif words == ["nosleep", "status"]:
+            reply = "No-sleep enabled."
+        elif words[:1] == ["quit"] and len(words) == 2:
+            if game and words[1] in ("SPYV00001", "all"):
                 game.stop.set()
                 game.join()
                 game = None
-            reply = "Apps destroyed."
+                reply = "Quit." if words[1] != "all" else "Apps quit."
+            else:
+                reply = "Error: cannot quit the app. Is the TITLEID correct?"
+        elif words[:1] == ["promote"] and len(words) == 2:
+            src = local("/" + words[1].replace(":", ":/", 1))
+            if not os.path.isfile(os.path.join(src, "sce_sys/param.sfo")):
+                reply = "Error: Directory does not contain a promotable Vita application."
+            else:
+                dst = local("/ux0:/app/SPYV00001")
+                if os.path.isdir(dst):
+                    shutil.rmtree(dst)
+                os.rename(src, dst)
+                reply = "Promoted."
         elif words[:1] == ["launch"] and len(words) == 2:
             if words[1] == "SPYV00001" and os.path.isfile(local("/ux0:/app/SPYV00001/eboot.bin")):
                 game = Game()
                 game.start()
                 reply = "Launched."
             else:
-                reply = "Error"
+                reply = "Error: cannot launch the app. Is the TITLEID correct?"
         elif words[:1] in (["screen"], ["reboot"]):
-            reply = "OK"
+            reply = "Turning display on..." if words[:1] == ["screen"] else "Rebooting..."
         self.request.sendall(reply.encode() + b"\n")
 
 

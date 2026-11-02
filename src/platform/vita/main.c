@@ -12,7 +12,7 @@
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
  *       frames=N        exit after N vblanks (default 0: never)
- *       awake=1         no auto-sleep or screen off while it runs
+ *       keep_awake=1    no standby, dimming or screen off while it runs
  *                       (tools/vita/hw_run.sh writes it; D77)
  *       shot=V1,V2,...  PNGs of the picture at these vblanks, in shots/
  *       shot_every=N    and every N vblanks
@@ -285,8 +285,8 @@ static void read_config(void) {
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
     else if (!strcmp(line, "frames"))
       g_vita_opts.frames = atoi(v);
-    else if (!strcmp(line, "awake"))
-      g_vita_opts.awake = atoi(v);
+    else if (!strcmp(line, "keep_awake"))
+      g_vita_opts.keep_awake = atoi(v);
     else if (!strcmp(line, "shot"))
       parse_list(v, g_vita_opts.shots, &g_vita_opts.nshots, VITA_MAX_SHOTS);
     else if (!strcmp(line, "shot_every"))

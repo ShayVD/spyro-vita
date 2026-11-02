@@ -2,7 +2,7 @@
 """The Vita side of tools/vita/hw_run.sh and hw_check.sh: vitacompanion's
 FTP server (port 1337) and its command port (1338). Standard library only.
 
-    hw_ftp.py cmd destroy|reboot|"launch SPYV00001"|"screen on"
+    hw_ftp.py cmd version|"quit SPYV00001"|"launch SPYV00001"|"promote DIR"|"screen on"
     hw_ftp.py ls ux0:data/spyro          one "d|f SIZE NAME" line each; exit 2: no such folder
     hw_ftp.py size ux0:data/spyro/x      the size; exit 2: not there
     hw_ftp.py get REMOTE LOCAL           a file
