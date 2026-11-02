@@ -21,7 +21,10 @@
  * vertex transform, colour fades and back-face NCLIPs are native maths
  * (gte_native.h); a frame blend runs native but for its last four vertices.
  * What the native commands would have left in the GTE goes back into it at
- * the end of each moby, and before a sprite face's register-file code. */
+ * the end of each moby, and before a sprite face's register-file code.
+ * func_80022A2C's vertex transform runs native but for its last four
+ * vertices, and its Gouraud faces' NCLIP is native; its lighting stays on
+ * the register file. func_80020F34 is unchanged. */
 #include "render_hand.h"
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
@@ -1164,6 +1167,12 @@ static inline void LitVertexToV0(u32 w) {
   MTC2(x + (y << 16), 0);
   MTC2(z, 1);
 }
+#if NGTE
+static inline u32 LitVZ(u32 w) { return (u32)((s32)(w << 24) >> 23); }
+static inline u32 LitVXY(u32 w) {
+  return (u32)((s32)(w << 16) >> 23) + ((u32)((s32)(w << 8) >> 23) << 16);
+}
+#endif
 
 static inline u32 Load24(const u8 *p) {
   return p[0] | (u32)p[1] << 8 | (u32)p[2] << 16;
@@ -1236,12 +1245,19 @@ static inline void LitLink(LitCtx *c, u32 bucket, u32 size) {
 #define LIT_BUCKET(sum) (((u32)((s32)(sum) >> 5) << 3) + PSX_ADDR(D_8006FCF4 + TBL_BUCKETS))
 
 /* A Gouraud face (bit 0 clear): a quad, or a triangle when its last two
- * vertices are the same. xy: the screen positions; NCLIP has (0 1 2). */
+ * vertices are the same. xy: the screen positions; NCLIP has (0 1 2) (in
+ * the NGTE build, in SYNC, with M its result). */
+#if NGTE
+static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, NgteSync *sync, u32 m0) {
+#define MFC2_MAC0_FIRST() m0
+#else
 static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
+#define MFC2_MAC0_FIRST() MFC2(24)
+#endif
   const u32 p = c->prim;
   u32 col0, col1, col2, sum;
   if (i[2] == i[3]) {
-    if ((s32)MFC2(24) <= 0)
+    if ((s32)MFC2_MAC0_FIRST() <= 0)
       return;
     col0 = WORD_AT(c->colours, (cw >> 21) & 0x1FC);
     col1 = WORD_AT(c->colours, (cw >> 14) & 0x1FC);
@@ -1258,13 +1274,19 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     AT32(p) = 0x06000000u;
     LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C);
   } else {
-    u32 m = MFC2(24), col3;
+    u32 m = MFC2_MAC0_FIRST(), col3;
+#if NGTE
+    ngte_sxy0(sync, xy[3]);
+    if ((s32)m <= 0 && ngte_nclip_s(sync) >= 0)
+      return;
+#else
     MTC2(xy[3], 12);
     if ((s32)m <= 0) {
       gte_nclip();
       if ((s32)MFC2(24) >= 0)
         return;
     }
+#endif
     col0 = WORD_AT(c->colours, (cw >> 21) & 0x1FC) + 0x38000000u;
     col1 = WORD_AT(c->colours, (cw >> 14) & 0x1FC);
     col2 = WORD_AT(c->colours, (cw >> 7) & 0x1FC);
@@ -1284,6 +1306,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24);
   }
 }
+#undef MFC2_MAC0_FIRST
 
 /* The face's normal, cw's three high bytes (signed), into IR. */
 static inline void FaceNormalToIr(u32 cw) {
@@ -1439,6 +1462,9 @@ static int LitMoby(u32 moby, u32 *shadow) {
   const u32 *f, *f_end;
   Mat r;
   LitCtx c;
+#if NGTE
+  NgteSync sync;
+#endif
 
   x = AT32(m + MOBY_POS);
   m[MOBY_WAS_DRAWN] = 0;
@@ -1566,8 +1592,32 @@ static int LitMoby(u32 moby, u32 *shadow) {
   verts = model->m_Verts;
   vp = HPTR(const u8, verts);
   n = (u32)(s32)model->m_NumVerts;
-  LitVertexToV0(AT32(vp));
   i = 0;
+#if NGTE
+  {
+    /* native but for the last four vertices; V0 then gets the vertex the
+     * last native step left there */
+    const NgteProj P = ngte_proj_get();
+    u32 w = AT32(vp);
+    for (; n - i > NGTE_TAIL; i++) {
+      const NgteRtp t = ngte_rtps_w(&P, LitVXY(w), LitVZ(w));
+      vp += 3;
+      w = Load24(vp);
+      if (clip) {
+        const u32 flags = ClipFlags(t.sxy);
+        scr[SCRATCH_DEPTHS / 4 + i] = t.sz3;
+        all_out &= flags;
+        scr[i] = flags;
+      } else {
+        scr[i] = t.sxy;
+        scr[SCRATCH_DEPTHS / 4 + i] = t.sz3;
+      }
+    }
+    LitVertexToV0(w);
+  }
+#else
+  LitVertexToV0(AT32(vp));
+#endif
   do {
     u32 sxy, sz;
     gte_rtps();
@@ -1627,6 +1677,9 @@ static int LitMoby(u32 moby, u32 *shadow) {
   c.highest = PSX_ADDR(D_8006FCF4 + TBL_BUCKETS);
   c.zbias = zbias;
   c.flags = clip;
+#if NGTE
+  ngte_sync_init(&sync);
+#endif
   for (; f != f_end; f += 2) {
     const u32 fw = f[0], cw = f[1];
     u32 idx[4], xy[4];
@@ -1646,17 +1699,34 @@ static int LitMoby(u32 moby, u32 *shadow) {
       xy[2] = CLIP_XY(xy[2]);
       xy[3] = CLIP_XY(xy[3]);
     }
+#if NGTE
+    {
+      u32 m0;
+      ngte_sxy(&sync, xy[0], xy[1], xy[2]);
+      m0 = (u32)ngte_nclip_s(&sync);
+      if (!(fw & 1)) {
+        LitGouraud(&c, cw, idx, xy, &sync, m0);
+        continue;
+      }
+      ngte_flush(&sync); /* the lit faces run on the register file */
+    }
+#else
     MTC2(xy[0], 12);
     MTC2(xy[1], 13);
     MTC2(xy[2], 14);
     gte_nclip();
     if (!(fw & 1))
       LitGouraud(&c, cw, idx, xy);
-    else if (!(fw & 2))
+    else
+#endif
+    if (!(fw & 2))
       LitFlat(&c, cw, idx, xy);
     else
       LitShiny(&c, cw, idx, xy);
   }
+#if NGTE
+  ngte_flush(&sync);
+#endif
 
   /* The screen offset back; the buckets, highest first, into one chain
    * for the OT slot of its zone (the HUD OT's first for a HUD model at
