@@ -1299,5 +1299,6 @@ Record each decision with its date, what was chosen, and why.
   - `gpu_uber=0`: off, as above.
   - The fps-runs files no longer set what is now the default (`tools/vita/fps-runs/README.md`). A file that wants one off says `=0`.
   - **Checked in Vita3K** (`realtime=0`, widescreen, 60 fps forced, no other option set, so `gpu_lean=1 parse_thread=1` from the defaults; `logs/v74-gems-def`, `logs/v74-pause-def`): against the earlier joined runs (`gpu_lean=1`, `parse_thread=0`), the gems script's 44 shots, WAV and card and the pause route's 70 shots and card are identical. The log lines show both on.
+  - **And at 30 fps** (the same VPK, `realtime=0`, widescreen, no `interp`): `gpu_join=0 gpu_lean=0 parse_thread=0` (main's drawing) against the defaults, the gems script's 44 shots, WAV and card identical (`logs/v74-gems30-old`, `logs/v74-gems30-def`).
 - **Not checked:** a hardware run with the defaults and no bench (I2's route), so no clean measure of stutter on hardware yet.
 - **For D75 (dynamic resolution):** this changes nothing in the targets' viewport or the present. Fewer draws and a lower resolution add up: I1's "half the pixels" line shows how much a resolution drop would buy at the same place.
