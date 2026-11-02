@@ -19,6 +19,10 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
   - CD reads.
 
   On the GPU, D74's I1 run shows that PsyCross's way of splitting draws cost **half of Toasty's scene time** (15–21 ms down to 6–7 ms once the draws were joined).
+- **Stage 0 confirmed it on hardware** (runs K1–K3 on main `f534fb1`, §3.4). With every layer on the game thread (K1), the emulation layers take **78–84%** of the CPU per vblank. That includes the GTE's share, which is still an estimate: without it, 58–72% is measured outright. The render thread's real CPU is **two-thirds** of its busy time, so the earlier 35–51% range resolves to its low end.
+- **Stage 0 also found two things to fix before the stages:**
+  - **On the GPU, texture decoding:** decoding PS1 textures into the atlas takes **7–9 ms of GPU time per picture** while new textures come into view in play. That's more than the game's own scene. Each decode pass is a render pass over the whole 2048×2048 atlas.
+  - **The XA read-ahead (D64) stops working after the first level load,** which puts the music reads back on the game thread.
 - **"Fully native"** means the game's own code (the decomp's logic, fixed-point maths and tick) is unchanged and runs on the Vita with nothing PS1-shaped in between:
   - no MIPS register model;
   - no GTE register file;
@@ -29,8 +33,8 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
   - no vblank emulation driving the logic.
 
   Faithfulness to the original's behaviour stays the hard constraint at every stage.
-- **The first three stages I recommend:**
-  1. **Stage 0, measure** (config only). Runs K1–K3 on hardware, after #48 and #49 are merged. The render thread's "busy" time includes its waits for the GPU and the vblank, so the biggest share in the run-time table is an upper bound until K1 runs.
+- **What I recommend next:**
+  1. **Stage 0b, the two fixes stage 0 found** (§5): decode atlas blocks on the CPU straight into the texture's memory, with no render pass; and let the XA read-ahead recycle its windows after a jump back in the stream. Both are small, and both are checked pixel- and sample-identical.
   2. **Stage 1, native GTE maths** in the hand-written renderers. Low risk, testable exhaustively, optional per switch. It's also a prerequisite for stage 2: projected vertices have to be C values, not GTE registers.
   3. **Stage 2, native draw lists:** the renderers emit GPU vertices straight into per-bucket batches, in exact OT order, instead of PS1 primitives that PsyCross walks and re-parses. This is the biggest payoff (the OT walk, most of the render thread, the remaining draw splits). Environment first.
 
@@ -250,6 +254,87 @@ To read them: `python3 tools/vita/native_share.py k1.log --fps 30 --all`.
 
 **One thing a config can't settle:** the render thread's own CPU with the threads on. The watchdog already samples every thread's `runClocks` each second (`watchdog.c`, D73), but logs them only in a hang line. A one-line periodic log of those samples would settle it. That's an engine change, so it isn't made here; it's the first item of stage 0's follow-up.
 
+### 3.4 Stage 0 results: K1–K3 on hardware
+
+**The runs:** the owner ran K1–K3 on the VPK from main `f534fb1` (`logs/hw-f534fb1-k1`–`k3`, gitignored). Each run went: the title, the Stone Hill attract demo, then play in Artisans and Stone Hill. K3 started from a Toasty save, and the owner left Toasty at once.
+
+**How to compare them:**
+- The title and attract-demo windows have the same input in every run, so they compare exactly.
+- The play windows are the same places, but with different input.
+- `tools/vita/native_share.py` and the `time`, `draw`, `render`, `parse`, `mixer`, `xa` and `gpu meter` lines give the figures below, as ms per vblank (means of the windows in brackets).
+
+**K1, every layer on the game thread (CPU only, no waits):**
+
+| Layer | Title (900–3300) | Attract demo (4500–5700) | Artisans play (8100–9000) | Stone Hill play |
+|---|---:|---:|---:|---:|
+| game logic | 0.01 | 0.56 | 0.44 | 0.44 |
+| renderers (hand C + inline GTE) | 1.53 | 4.46 | 2.48 | 1.99 |
+| other game-thread work | 0.26 | 0.67 | 0.31 | 0.31 |
+| PsyCross OT walk | 1.99 | 2.63 | 2.51 | 2.24 |
+| PS1 GPU → vitaGL (`raster`) | 2.86 | 3.85 | 3.81 | 3.60 |
+| SPU model + XA reads on the game thread | 0.05 | 0.07 | 0.58 | 0.54 |
+| mixer thread (core 1) | 0.82 | 0.99 | 1.03 | 0.99 |
+| XA read-ahead (core 1) | 0.56 | 0.61 | 0.00 | 0.00 |
+| present | 0.09 | 0.09 | 0.09 | 0.09 |
+| **sum** | **8.17** | **13.93** | **11.25** | **10.20** |
+| emulation, measured (OT + raster + SPU/XA + mixer + read-ahead) | 77% | 58% | 70% | 72% |
+| plus the GTE at 60% of the renderers (*estimate*, §3.2) | 88% | 78% | 84% | 84% |
+
+- **The game thread is 55–74% busy in play** at 30 fps: 9.2–12.3 ms of a 16.7 ms vblank. Of that, the OT walk and `raster` alone are 5.8–6.5 ms.
+- **`raster` is nearly flat:** 2.9 ms per vblank on the title screen, 3.6–3.9 in play. Most of the PS1 GPU → vitaGL cost is per draw and per frame, not per triangle. That's stage 2's target.
+
+**K3 against K1: how much of the render thread is waiting.** The render thread's busy time against K1's `raster`, the same work on the game thread:
+
+| | Title | Demo | Artisans | Stone Hill |
+|---|---:|---:|---:|---:|
+| render thread busy (K3) | 4.33 | 5.84 | 5.48 | 5.31 |
+| `raster` (K1) | 2.86 | 3.85 | 3.81 | 3.60 |
+| CPU share of busy | 66% | 66% | 70% | 68% |
+
+So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWaitVblankStart`. Section 3.1's 35–51% for main's Toasty log is about 35%.
+
+**The OT walk:** 1.0–1.5 ms per vblank on the parse thread (K3), against 2.0–2.6 ms on the game thread (K1) for the same frames. Walking the copy is cheaper than the in-place walk; why isn't measured.
+
+**K2 against K1: what D72's hand C bought, on hardware.** This is the first hardware measurement of D72: G1–G3 never ran. The renderers' ms per vblank, `fast_render=0` against `1`, on identical input:
+
+| | Title | Attract demo |
+|---|---:|---:|
+| all renderers | 2.40 → 1.53 (−36%) | 7.00 → 4.46 (−36%) |
+| env | 1.64 → 1.05 | 3.24 → 2.09 (−35%) |
+| mobys | 0.34 → 0.20 | 2.20 → 1.31 (−40%) |
+| sky | 0.42 → 0.28 | 0.76 → 0.52 (−32%) |
+| Spyro | — | 0.58 → 0.35 (−40%) |
+
+- D72 estimated −30 to −45%; it's −36%.
+- **What's left for stage 1:** 1.5–4.5 ms per vblank of renderer CPU. The GTE's part of it isn't separable on hardware: K2 swaps the register-model code and the GTE together. Stage 1's estimate stays −0.5 to −1.3 ms per vblank at 30 fps, twice that at 60.
+
+**The GPU (K3, D75's meter, ms of GPU per picture):**
+
+| | Title (2100–3300) | Attract demo | Artisans play (8700–9300) | Stone Hill play (10200–10500) |
+|---|---:|---:|---:|---:|
+| the game's scene ("game's frames" + "other") | 5.4 | 7.2–10.3 | 5.1–7.2 | 5.8–6.3 |
+| texture decodes (atlas passes) | 0.0 | 0.3–4.1 | 1.4–9.1 | 2.1–6.6 |
+| the present | 0.85 | 0.84 | 0.85 | 0.85 |
+| longest gap between two pictures | 5.7 | 17–29 | 18–29 | 27–28 |
+
+- **The meter's split between "game's frames" and "other" looks off:** it counts 0.2 game-frame scenes a picture where there's one. So the two are added up here.
+- **Texture decodes are tagged by their surface, the atlas, so that row is solid:**
+  - In play, 20–129 decode passes per 300 vblanks (`gpu N: ... atlas decode passes`; 104 and 129 in Artisans), with **no VRAM upload at all.** The atlas is filling in as new texture/CLUT pairs come into view (489–561 blocks a window in Artisans).
+  - **Each pass costs about 10.5 ms of GPU** (the decode row × pictures ÷ passes: 10.4–10.6 in all four play windows): `atlas_decode()` (`gpu_gl.c:1220`) binds the FBO of the 2048 × 2048 RGBA8 atlas and sets a full viewport. On the SGX's tiles that is a scene over the whole 16 MB surface, loaded and stored, to write a few 32 × 32 blocks.
+  - The windows with decodes are the ones with 17–29 ms gaps between pictures; the title's, with none, stay at 5.7 ms.
+
+  This is the biggest single GPU cost in play, and it isn't the game's own work.
+- **The fix is the native way:**
+  - Decode the blocks on the CPU into the atlas texture's memory (CLUT lookup, STP alpha, the same rules as the decode shader). That's about 100 blocks a second, a few hundred microseconds on core 0 or 1, *estimate*.
+  - The draws already queued don't read the new blocks, so there's no hazard.
+  - Check it with Vita3K window captures, pixel-identical.
+
+**The XA read-ahead stops after the first level load.**
+- **What the logs show:** in all three runs, the read-ahead (D64) serves every music sector until the first level load: Artisans after the intro in K1 and K2, Toasty → Artisans in K3. From then on it serves none (`xa N: 0 music sectors from the read-ahead, 605–750 read on the game thread; read-ahead 0 windows`). That costs the game thread 0.5–0.6 ms per vblank (the `spu` part).
+- **Likely cause, from reading `xa_ahead.c`'s `want()`:** a window is reused only when it is free, or ready and wholly *behind* the stream's head. When the music jumps back to a lower LBA (a new track earlier on the disc), all four ready windows are ahead of the head, so `want()` never finds a slot, and no window is asked for again.
+- main's Toasty log (`hw-main-2a0691c`) never changed level, so it never showed this.
+- **The fix:** also reuse a ready window that is ahead of the stream by more than the read-ahead's reach. Check it with the host-identical WAV and the `xa` lines.
+
 ---
 
 ## 4. What "fully native" means for Spyro
@@ -295,6 +380,22 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 - **Verify:** none needed. The runs only read.
 - **Optional:** not applicable.
 
+### Stage 0b: the two fixes stage 0 found (small, low risk, next)
+
+**Atlas decodes on the CPU** (category E → native):
+- **Replaces:** `atlas_decode()`'s render pass over the whole 2048 × 2048 atlas (`gpu_gl.c`).
+- **Method:** decode each new 32 × 32 block on the CPU (CLUT lookup, the STP and transparency rules of the decode shader) and write it into the atlas texture's memory. vitaGL keeps the texture in memory the CPU can write. NEON for the 4- and 8-bit lookups.
+- **Gains:** 1.4–9.1 ms of GPU per picture in play (§3.4), and the 17–29 ms gaps between pictures in new areas. At 60 fps that is the difference between holding and falling to 30 when exploring.
+- **Verify:** Vita3K window captures pixel-identical on D74's routes, and the `atlas` lines' block counts unchanged. On hardware, K3 again: the meter's "texture decodes" row should read 0.
+- **Size:** ~200–400 lines in `gpu_gl.c`.
+- **Optional:** yes, a switch, until hardware has run it.
+
+**The XA read-ahead after a jump back:**
+- **Replaces:** `want()`'s slot choice in `xa_ahead.c`.
+- **Gains:** 0.5–0.6 ms per vblank back off the game thread, in every level after the first.
+- **Verify:** host WAV byte-identical; on hardware, the `xa` lines serve from the read-ahead after level changes.
+- **Size:** ~10 lines.
+
 ### Stage 1: GTE calls into native maths (medium, low risk)
 
 **Replaces** (category E): `gte_inline.h`'s register-file commands in the four B2 files (`env_hand.c`, `moby_hand.c`, `pete_render_hand.c`, `sky_hand.c`):
@@ -307,7 +408,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 3. **Use NEON where a loop projects many vertices.** The environment's vertex loop issues 7–15 million RTPS per host run (D72). That's 4 × s32 lanes with `vmull`/`vqshrn` for the 16 × 16 → 32 products and saturating narrows; the division (`H/SZ`) stays scalar, with the GTE's own reciprocal (its UNR table), so the results don't change.
 
 **Gains:**
-- **CPU:** *estimate* −0.5 to −1.0 ms per vblank on the game thread at 30 fps, twice that at 60. That's 60% of the renderers' 1.6–3.0 ms, minus what the native maths still costs. K2 against K1 bounds it.
+- **CPU:** *estimate* −0.5 to −1.3 ms per vblank on the game thread at 30 fps, twice that at 60: 60% of the renderers' 1.5–4.5 ms (K1, §3.4), minus what the native maths still costs.
 - **Maintainability:** it removes the hidden register-file coupling between renderers. Stage 2 needs that: its vertices must be C values.
 
 **Verify:**
@@ -516,7 +617,8 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 | Stage | Depends on | Payoff (measured share it targets) | Risk |
 |---|---|---|---|
-| 0 measure | — | settles the 35–51% render-thread figure | none |
+| 0 measure | — | done (§3.4): the render thread is ~35%, D72 bought −36% | none |
+| 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms GPU per picture in play; 0.5–0.6 ms CPU per vblank | low |
 | 1 native GTE | — | ~9% of CPU per vblank (60% of the renderers' 15%) | low |
 | 2 native draw lists | 1, #48 and #49 merged | the OT walk's 11% and most of the render thread's 35–51%; GPU draw count | medium–high |
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium |

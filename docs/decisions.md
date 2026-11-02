@@ -1466,3 +1466,10 @@ Record each decision with its date, what was chosen, and why.
   - **K2:** K1 with `fast_render=0`, the hardware cost of the register model and the software GTE in the renderers.
   - **K3:** the shipped threads with D75's GPU meter (`gpu_meter=1`).
 - **Not done:** no engine change. The periodic per-thread CPU line (the watchdog's `runClocks`, D73) is stage 0's follow-up, in a PR of its own.
+- **Stage 0 results** (K1–K3 on hardware, the VPK from main `f534fb1`; `logs/hw-f534fb1-k1`–`k3`, gitignored; `docs/native-plan.md` §3.4):
+  - **K1, everything on the game thread:** the emulation layers take 78–84% of the CPU per vblank in play and in the attract demo (58–72% measured outright, plus the GTE's estimated share). The OT walk and the PS1 GPU → vitaGL work alone are 5.8–6.5 ms per vblank.
+  - **K3 against K1:** the render thread's real CPU is 66–70% of its busy time, so §3.1's 35–51% is about 35%.
+  - **K2 against K1, identical input:** D72's hand-written renderers and inline GTE take 36% less CPU than the translated ones on hardware (D72 estimated 30–45%). This is the first hardware measurement of D72.
+  - **Found, and added as stage 0b before stage 1:**
+    - **The atlas's decode pass** (`gpu_gl.c` `atlas_decode()`) is a render pass over the whole 2048×2048 atlas. It takes ~10.5 ms of GPU each, which is 1.4–9.1 ms per picture in play with no VRAM change. Decoding the blocks on the CPU into the texture's memory removes it.
+    - **The XA read-ahead (D64) stops serving after the first level load** in every run, which puts 0.5–0.6 ms per vblank back on the game thread. The likely cause: `want()` reuses only windows behind the stream's head, so a jump back to a lower LBA leaves no slot.
