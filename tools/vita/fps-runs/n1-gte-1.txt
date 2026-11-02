@@ -1,5 +1,5 @@
 # Run N1 (docs/native-plan.md stage 1, D80): K1's switches on a VPK with fast_render=2 in it, the
-# renderers on the GTE register file (fast_render=1, today's default). Every layer on the game thread
+# renderers on the GTE register file (fast_render=1, the default until D81). Every layer on the game thread
 # (render_thread=0, parse_thread=0), 30 fps, fixed resolution (dynres=0). Route: K1's: leave the
 # game alone from boot for 3 minutes (title, flythrough, both attract demos), then 2 minutes in
 # Artisans and 2 in Toasty. Send spyro.log as n1.log.

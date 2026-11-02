@@ -186,6 +186,7 @@ void vita_cores_probe(void); /* logs whether a user thread runs on core 3 */
 void vita_parse_init(void);  /* after vita_video_init (the render thread) */
 int vita_parse_on_walker(void); /* 1 on the parse thread */
 void vita_parse_report(int vblank);
+void nd_report(int vblank); /* src/game/native_draw.c, D82 */
 void vita_gpu_walk_submitted(void); /* gpu_thread.c: the display state for that walk */
 
 /* savestate_vita.c: save states (D51) */

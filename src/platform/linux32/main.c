@@ -70,14 +70,20 @@
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
  * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
- *   instead of the hand-written renderers and the inline GTE commands
- *   (default 1; src/game/mips2c_rt.h, decisions D72). --fast-render 2: the
- *   hand-written renderers with native GTE maths (decisions D80); with
+ *   instead of the hand-written renderers; 1: the hand-written renderers
+ *   with the inline GTE commands on the register file (decisions D72).
+ *   --fast-render 2 (the default, D81): the hand-written renderers with
+ *   native GTE maths (decisions D80); with
  *   --fast-render-check each renderer call also runs the fast_render=1
  *   code from the same state and must leave the same RAM and GTE
  *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
  *   lists the GTE registers each renderer reads from before the call, from
- *   every Nth call ("gte audit" lines). --prof-draw: log
+ *   every Nth call ("gte audit" lines). --native-draw (with
+ *   --fast-render 2): the converted renderers' primitives go to the OT walk
+ *   as native draw lists (src/game/native_draw.h, decisions D82);
+ *   --native-draw-check runs each of their calls both ways and compares the
+ *   triangles PsyCross's walk makes of them ("native draw check" lines).
+ *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
  *   --mixer 3: the native SPU mix (spu_native.c, D84; default 1: libspu.c's
@@ -102,6 +108,14 @@ void host_prof_draw_report(void);
 extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
 void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
+extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
+void nd_init(void (*log)(const char *fmt, ...));
+void nd_report(int vblank);
+void nd_check_report(void);
+static void nd_atexit(void) {
+  nd_report((int)host_vblank_count());
+  nd_check_report();
+}
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -138,7 +152,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--prof-draw]\n"
           "             [--mixer 1|3]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -395,6 +409,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render-check") == 0) {
       g_hand_check = 1;
       hand_check_set_log(host_log);
+    } else if (strcmp(a, "--native-draw") == 0) {
+      g_native_draw = 1;
+    } else if (strcmp(a, "--native-draw-check") == 0) {
+      g_native_draw = 1;
+      g_nd_check = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {
       TAKE();
       g_gte_audit = to_int(val);
@@ -475,6 +494,7 @@ int main(int argc, char **argv) {
   atexit(hand_check_report);
   atexit(walk_report);
   atexit(mixer_report);
+  atexit(nd_atexit);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)
@@ -483,6 +503,7 @@ int main(int argc, char **argv) {
   if (serve_port && host_serve_start(serve_port) != 0)
     return 1;
   psx_arena_init();
+  nd_init(host_log);
   if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
     host_log("walk: no 16 MB-aligned memory for the copy");
     return 1;

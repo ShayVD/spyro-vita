@@ -1,0 +1,45 @@
+# The Toasty route (D81): the K route's boot, title, attract demo and New Game (k-route.pad), the menu's
+# LEVEL WARP to Toasty at 11400 (o-toasty.cfg), then a walk from the start with the camera turned all the
+# way round, both ways, so the heavy views of the castle and the fields come into the picture.
+2 none
+6002 start
+6008 none
+6202 cross
+6208 none
+6502 cross
+6508 none
+6702 cross
+6708 none
+6902 cross
+6908 none
+12600 r1
+13000 none
+13100 up
+13400 none
+13500 l1
+13900 none
+14000 up+right
+14150 up
+14600 none
+14700 r1
+15100 none
+15200 up+left
+15350 up
+15800 none
+15900 l1
+16300 none
+16400 up+right
+16600 up
+17100 none
+17200 r1
+17600 none
+17700 up+left
+17900 up
+18400 none
+18500 l1
+18900 none
+19000 up+right
+19200 up
+19700 none
+19800 r1
+20200 none

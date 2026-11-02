@@ -432,7 +432,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 
 **Optional:** yes, as `fast_render=2`. `fast_render=1` (today's register-file C) and `0` (mips2c) stay linked.
 
-**Done (D80, 2026-11-02),** apart from NEON. N1 and N2 ran on hardware: identical pictures and memory card, and the renderers −15% (2.28 → 1.92 ms per vblank). What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu), −16 to −35% in Vita3K and −15% on hardware.
+**Done (D80 and D81, 2026-11-02).** `fast_render=2` is the default since D81. NEON one vertex at a time was tried and is 5% slower on hardware (D81). It would pay only with four vertices per batch, in stage 2's vertex loops. N1 and N2 ran on hardware: identical pictures and memory card, and the renderers −15% (2.28 → 1.92 ms per vblank). What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu), −16 to −35% in Vita3K and −15% on hardware.
 
 #### The GTE audit
 
@@ -505,6 +505,13 @@ The log's start says which build ran: `fast_render=2: hand-written renderers, na
 
 To read them: `python3 tools/vita/native_share.py n1.log --fps 30 --all`, then the same for `n2.log`. Compare the `draw` lines' env, mobys, spyro and sky ms window by window: the attract windows have the same input in both runs.
 
+#### 60 fps with everything merged (D81)
+
+Runs O1 and O2 (`tools/vita/fps-runs/o1-60-fr1.txt`, `o2-60-fr2.txt`; main `6128154`, the menu's 60 FPS, real vblanks) on the K route and a new Toasty route (`tools/vita/hw-routes/o-toasty.*`). Read them with `tools/vita/fps60_summary.py`.
+- **60 fps holds in play** in Artisans, Stone Hill, Dark Hollow and Toasty: 300 pictures and 0–1 late vblanks in every steady window, and no fall to 30 outside loads.
+- **The exception is the Stone Hill attract demo's flight:** 36–44 late per 300 in three of its seven windows, bound by the render thread (81–89% busy, 15–16 ms a picture, 150,000–194,000 PS1 GPU commands a window). The GPU there takes 7–10 ms, and the game thread is 48–65% busy. That's stage 2's target.
+- **At 60 fps `fast_render=2` takes 15–20% off the renderers,** 1.0–1.9 ms per tick of the game thread.
+
 ### Stage 2: native draw lists instead of PS1 primitives and the OT walk (large, medium–high risk, biggest payoff)
 
 **Replaces** (D and E):
@@ -535,6 +542,21 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 **Size:** ~3–5k lines across the renderers, a new `src/platform/vita` batch path, and a small PsyCross patch.
 
 **Optional:** yes, `native_draw=0/1`, then per renderer. It touches `gpu_gl.c`, so it starts only after #48 and #49 are merged.
+
+**Done in part (D82, 2026-11-02), behind `native_draw=1` (default 0).** On hardware (P5/P6) the walk's thread gets 0.46 ms per vblank faster and the renderers 0.52 ms slower, so the default stays 0 until the renderers stop building the PS1 primitives too. What it is and how it was checked: `docs/decisions.md` D82 and `docs/translation-log.md`.
+- **Converted:** all six hand renderers' primitives: env, the sky, the regular, lit and specular mobys, Spyro. Each primitive is turned into the vertices PsyCross's parse would make of it where the code links it, and a marker goes into the bucket in its place, or the primitive joins the marker already at the bucket's tail. The walk copies the records (PsyCross patch 0010's packet hook).
+  - The primitives are still built where they were, so the buffer's pointer and its bounds don't change.
+  - The order is the OT's.
+  - In the demos 7.4 M primitives become 2.0 M markers.
+- **Checked:**
+  - **Every call** of every converted renderer, both ways, through PsyCross's own walk (host `--native-draw-check`), on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole-game tour: 184 M triangles, 0 differences.
+  - **Every file** of those runs identical with `native_draw` off and with main's runs.
+  - **Vita3K:** the gems script's and the demos' shots and window captures, and the pause route's shots, identical.
+- **Not yet:**
+  - **Hardware:** runs P1–P6 (`tools/vita/fps-runs/p*.txt`), which need the owner's approval.
+  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD.
+  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment.
+  - **Building the records without the PS1 stores** in the hottest sites (env's high-poly pass, the moby faces), if hardware shows the renderers' extra work matters.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
@@ -734,7 +756,7 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 |---|---|---|---|
 | 0 measure | — | done (§3.4): the render thread is ~35%, D72 bought −36% | none |
 | 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms GPU per picture in play; 0.5–0.6 ms CPU per vblank | low |
-| 1 native GTE | — | ~9% of CPU per vblank (60% of the renderers' 15%) | low |
+| 1 native GTE | — | done (D80, D81): the renderers −15 to −20% on hardware, 1.0–1.9 ms per tick at 60 fps; the default | low |
 | 2 native draw lists | 1, #48 and #49 merged | the OT walk's 11% and most of the render thread's 35–51%; GPU draw count | medium–high |
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium |
 | 5 native audio | — | 9% (core 1) | low–medium |
