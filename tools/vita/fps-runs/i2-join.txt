@@ -1,0 +1,3 @@
+# Run I2 (D74): 60 fps as the menu gives it, the default budget, everything else the defaults (joined draws, the 28-byte vertex, the parse thread), the setup of main's Toasty log
+interp=1
+config_version=3

@@ -39,6 +39,7 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x, 
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h);
 /* GR_UpdateVertexBuffer with the vcache's answers from `side` */
 void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count);
+void gl_flush_draws(void); /* the draws gpu_join holds, to the GPU (D74) */
 int gl_vcache_side_used(void); /* persp or subpixel: draws read the vcache's answers */
 int gl_gpu_init(void);
 void gl_present(int slot, int wide, int hd_shot); /* slot -1: the display rect */
