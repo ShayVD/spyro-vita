@@ -138,6 +138,10 @@ static void vblank(void) {
     cd_report();
     vita_xa_ahead_report(v);
   }
+  /* nothing presses a button in a scripted run: keep the Vita from
+   * dimming and sleeping, which drops the Wi-Fi hw_run.sh polls over */
+  if (g_vita_opts.awake && v % 60 == 0)
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
     vita_log("frames=%d reached, exiting", g_vita_opts.frames);
