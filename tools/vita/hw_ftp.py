@@ -194,11 +194,15 @@ def command(text):
         s.settimeout(float(os.environ.get("VITA_CMD_WAIT", "5")))
         reply = b""
         try:
-            while not reply.endswith(b"\n"):
+            # until the connection closes, or a quiet moment after a whole
+            # line (help's reply is several lines)
+            while True:
                 chunk = s.recv(4096)
                 if not chunk:
                     break
                 reply += chunk
+                if reply.endswith(b"\n"):
+                    s.settimeout(0.5)
         except socket.timeout:
             pass
     return reply.decode(errors="replace").strip()

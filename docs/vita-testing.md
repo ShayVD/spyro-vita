@@ -449,46 +449,53 @@ instruction in `wd_main`, on purpose); the game thread's PC is where it was stuc
 `tools/vita/hw_run.sh` is `tools/vita/vita3k_run.sh` for a real Vita: Claude (or you) can run a
 test on the Vita from the Mac, over Wi-Fi, and get `spyro.log`, the shots and any crash dump back,
 with nobody touching the Vita. It talks to [vitacompanion](https://github.com/devnoname120/vitacompanion):
-its FTP server (port 1337) for the files and its command port (1338) to install (`promote`), stop
-(`quit SPYV00001`) and start (`launch SPYV00001`) the app. It needs vitacompanion **1.08** or later.
-It works over Wi-Fi only: VitaShell's USB mode can't run the game at the same time.
+its FTP server (port 1337) for the files and its command port (1338) to stop (`kill` or `quit
+SPYV00001`) and start (`launch SPYV00001`) the app. It reads vitacompanion's `help` and uses the
+commands that version has. It works over Wi-Fi only: VitaShell's USB mode can't run the game at the
+same time.
 
 **Once, on the Vita** (the owner does this; the scripts never install anything on it but Spyro
 Vita itself):
 
-1. vitacompanion 1.08 from its releases page: both files, `vitacompanion.suprx` and
-   `vitacompanion_kernel.skprx`, from the same release (1.08 uses kernel ABI v3: don't mix
-   releases), copied to `ur0:tai/`. Then, in the taiHEN config the Vita really reads, add:
+1. **vitacompanion 1.05**, the last release with only the user module: `vitacompanion.suprx`
+   from its 1.05 release, copied to `ur0:tai/`, and one line under `*main` in the taiHEN config:
 
    ```
-   *KERNEL
-   ur0:tai/vitacompanion_kernel.skprx
    *main
    ur0:tai/vitacompanion.suprx
    ```
 
-   Each line goes under the existing section header, not a second copy of it. The kernel module
-   goes only under `*KERNEL`, the `.suprx` only under `*main`. Mind the extensions: the kernel
-   module is `.skprx`. The user module links against the kernel module's exports (its
-   `CMakeLists.txt`), so if the `*KERNEL` line names a file that isn't there (say
-   `vitacompanion_kernel.suprx`), neither module loads. The Vita then answers ping but refuses
-   1337 and 1338, which is what `hw_check.sh` reports. **Which config:** taiHEN reads
-   `ux0:tai/config.txt` when it exists, and `ur0:tai/config.txt` only when it doesn't. If your
-   Vita has both, edit the `ux0:` one. Reboot fully (hold power → Restart) after changing either
-   module. Don't start VitaShell's own FTP server (SELECT) while you use it: it wants port 1337
-   too.
+   Add the line under the existing `*main` header, not a second copy of it. taiHEN reads
+   `ux0:tai/config.txt` when it exists and `ur0:tai/config.txt` only when it doesn't, so edit
+   the one your Vita has. Reboot fully (hold power → Restart). Don't start VitaShell's own FTP
+   server (SELECT) while you use it: it wants port 1337 too.
+
+   **Not 1.06–1.08 here, for now.** Those add a kernel module (`vitacompanion_kernel.skprx` under
+   `*KERNEL`). With it, they have `promote` (the runner then installs the app itself) and `quit`.
+   On the owner's Vita (Settings showing 3.74, with `psvshell`, `nopowerlimits`, `kubridge`,
+   `repatch`, `itls`, `yamt_helper`, `fd_fix` and others under `*KERNEL`), 1.08's kernel module
+   hung the boot at the loading bubbles on the first boot it loaded (2026-11-02). Which plugin it
+   clashes with, if any, isn't known. The 1.08 user module can't load without the kernel module
+   (its `CMakeLists.txt` links the kernel module's stubs). So with a wrong `*KERNEL` line, neither
+   loads, and the Vita answers ping but refuses 1337 and 1338.
+
+   **If a plugin hangs the boot:** hold the Vita's power button ~30 s until it's off, then hold
+   **L** while you power on, until the home screen. That skips the taiHEN plugins for that boot
+   ([vita.hacks.guide, Troubleshooting](https://vita.hacks.guide/troubleshooting); it worked on
+   the owner's Vita). Then remove the plugin's lines from the config in VitaShell and restart
+   normally.
 2. The Vita on the same Wi-Fi as the Mac. Its address is under Settings → Network → Wi-Fi Settings
    → the network you're on. A fixed address (a DHCP reservation in the router) saves editing
    `hw.env` again.
-3. Power. vitacompanion holds off standby while it runs (`nosleep`, on from boot), so an idle Vita
-   at LiveArea stays reachable. Check it with `tools/vita/hw_check.sh`. If it's off, send
+3. Power. vitacompanion (1.05 and later) holds off standby while it runs (`nosleep`, on from
+   boot), so an idle Vita at LiveArea stays reachable. Check it with `tools/vita/hw_check.sh`. If it's off, send
    `nosleep on`, or reboot. Keep the Vita on its charger, and set Settings → Power Save Settings →
    Enter Standby Mode Automatically to its longest time, in case `nosleep` is ever off. In standby
    the Wi-Fi is off and nothing can reach the Vita: press PS to wake it. During a run the game
    also keeps the screen from dimming or turning off (`keep_awake=1`, which `hw_run.sh` writes).
 4. The disc image or extracted files in `ux0:data/spyro/` and `ur0:data/libshacccg.suprx` (see
-   "What you need"). Spyro Vita itself doesn't need installing by hand: the first run installs it
-   with `promote`.
+   "What you need"), and Spyro Vita installed once from its VPK with VitaShell. (With 1.06 or later,
+   the first run installs it with `promote` instead.)
 
 **Once, on the Mac:** `tools/vita/hw.env` (gitignored) with the Vita's address (a `VITA_IP` in the
 environment wins over it), then the check:
@@ -501,7 +508,8 @@ echo VITA_IP=192.168.1.23 > tools/vita/hw.env
 tools/vita/hw_check.sh
 ```
 
-It lists `ux0:` over FTP and asks the command port for `version` and `nosleep status`. It checks
+It lists `ux0:` over FTP and asks the command port for `help` (and `version` where there is one)
+and `nosleep status`. It checks
 that the app, the disc files and `libshacccg.suprx` are there, names any crash dumps already in
 `ux0:data`, and names any `.hw-backup` files a killed run left. It only reads. When it can't
 connect it says which case it is: no answer to ping (the Vita asleep or off: press PS), or ping
@@ -518,13 +526,15 @@ tools/vita/hw_run.sh logs/hw-run1-title 150 @tools/vita/hw-routes/title.cfg
 What it does, in order:
 
 1. Takes a lock on the Mac (`~/.cache/spyro-vita/hw.lock`, one run at a time across worktrees),
-   asks vitacompanion for `version`, and sends `quit SPYV00001` (only this app; other apps are
-   left open).
+   reads vitacompanion's `help`, and sends `kill SPYV00001` (1.05) or `quit SPYV00001` (1.06 and
+   later). Only this app is stopped; other apps are left open, never `destroy` or `quit all`.
 2. Puts back anything a killed run left (below).
-3. Uploads the VPK's `eboot.bin` to `ux0:app/SPYV00001/`. When the app isn't installed, or the
-   VPK's `sce_sys/` (LiveArea, bubble, `param.sfo`) differs from the last run to this Vita, it
-   installs the whole app instead. It uploads the extracted VPK to `ux0:data/spyro/hw-promote`
-   and sends `promote` there, which installs it as VitaShell would.
+3. Uploads the VPK's `eboot.bin` to `ux0:app/SPYV00001/`. When the VPK's `sce_sys/` (LiveArea,
+   bubble, `param.sfo`) differs from the last run to this Vita, it uploads the whole app instead.
+   With 1.05 that goes over FTP, and a changed bubble or LiveArea then shows after VitaShell's
+   "Refresh LiveArea". With `promote` (1.06 and later), the extracted VPK goes to
+   `ux0:data/spyro/hw-promote` and is installed as VitaShell would, which also covers a first
+   install.
 4. Sets your files aside: `config.txt`, `save/`, `shots/`, `spyro.log`, `audio.wav` and
    `pad.txt` in `ux0:data/spyro` are renamed to `NAME.hw-backup` on the Vita (instant: nothing is
    copied off it). A copy of `config.txt` and the small save files (the memory card, not the
@@ -537,9 +547,10 @@ What it does, in order:
 6. Sends `screen on` and `launch SPYV00001`, then fetches `spyro.log` every 3 s until it has
    `frames=N reached, exiting`, a `hang: stopping the app for a crash dump` line (it then waits
    until the dump is written), a new crash dump appears, or the timeout.
-7. Sends `quit SPYV00001` (harmless if the app has quit already). If the log still grows after
-   that, it sends it again, and reboots the Vita only with `HW_REBOOT=1`. vitacompanion's
-   `reboot` turns into a hard power cycle if the Vita hasn't restarted after ~6 s.
+7. Sends `kill`/`quit SPYV00001` (harmless if the app has quit already). If the log still grows
+   after that, it sends it again, and reboots the Vita only with `HW_REBOOT=1`. In 1.08,
+   vitacompanion's `reboot` turns into a hard power cycle if the Vita hasn't restarted after
+   ~6 s.
 8. Copies `spyro.log`, the shots (`shot-V.png`, `shot-V-hd.png`), `save/`, `audio.wav` and any new
    `psp2core-*.psp2dmp` from `ux0:data/` to `OUT_DIR`. `OUT_DIR/hw-run.txt` is the script's own
    account. Crash dumps are left on the Vita.
@@ -559,7 +570,8 @@ asks. A run killed before it could put your files back (SIGKILL, the Wi-Fi gone)
 `NAME.hw-backup`. The next run, or `tools/vita/hw_run.sh --restore`, renames them back first, and
 keeps whatever is in the way as `NAME.hw-left-TIME`, for you to look at and delete.
 
-**Without a Vita:** `tools/vita/hw_mock.py ROOT` is a pretend Vita: an FTP server that spells
+**Without a Vita:** `tools/vita/hw_mock.py ROOT` is a pretend Vita (1.08's commands, or 1.05's with
+`MOCK_VERSION=1.05`): an FTP server that spells
 paths as vitacompanion does, over a folder, a command port, and a fake game that reads
 `config.txt` and writes a log, shots and (with `hang_test=`) a crash dump. It's for testing the
 scripts:

@@ -16,11 +16,14 @@
 # (4:3, 30 fps, the host's camera), so the device's own defaults apply: for
 # timing runs. HW_REBOOT=1 allows a reboot when the app won't stop.
 # The Vita: VITA_IP, or tools/vita/hw.env (gitignored; VITA_IP=192.168.1.23),
-# with vitacompanion 1.08 or later running (FTP on 1337, commands on 1338).
-# Each run uploads the VPK's eboot.bin to ux0:app/SPYV00001/. When the app
-# isn't installed, or the VPK's sce_sys/ (LiveArea, param.sfo) changed since
-# the last run to this Vita, it installs the whole app instead with
-# vitacompanion's promote (the extracted VPK, staged in ux0:data/spyro/hw-promote).
+# with vitacompanion running (FTP on 1337, commands on 1338): 1.05 (user
+# module only) or 1.06 and later; which commands it has is read from its help.
+# Each run uploads the VPK's eboot.bin to ux0:app/SPYV00001/. When the VPK's
+# sce_sys/ (LiveArea, param.sfo) changed since the last run to this Vita, or
+# the app isn't installed, it installs the whole app with vitacompanion's
+# promote where there is one (the extracted VPK, staged in
+# ux0:data/spyro/hw-promote); without promote (1.05) the whole app goes over
+# FTP, and a first install needs VitaShell.
 # The owner's own files in ux0:data/spyro (config.txt, save/, shots/,
 # spyro.log, audio.wav, pad.txt) are renamed to NAME.hw-backup on the Vita
 # for the run and renamed back when the script ends, however it ends; only
@@ -28,8 +31,9 @@
 # could put them back (SIGKILL, Wi-Fi gone) leaves the .hw-backup files: the
 # next run, or --restore, puts them back first, keeping what is in the way
 # as NAME.hw-left-TIME. The disc files and anything else are never touched.
-# The app is stopped with "quit SPYV00001" (only this app; never "quit all"),
-# and the Vita rebooted only if HW_REBOOT=1 and the app won't stop.
+# The app is stopped with "quit SPYV00001" ("kill SPYV00001" on 1.05; only
+# this app, never "quit all" or "destroy"), and the Vita rebooted only if
+# HW_REBOOT=1 and the app won't stop.
 # One run at a time, across worktrees: a lock in $HW_STATE (default
 # ~/.cache/spyro-vita) holding the run's PID makes a second run wait (up to
 # HW_LOCK_WAIT seconds, default 1800). Run the script in the foreground.
@@ -112,13 +116,14 @@ log_grows() {
 }
 
 stopped=0
+quit=quit
 stop_app() {
   [ "$stopped" = 1 ] && return 0
   stopped=1
-  v cmd quit SPYV00001 > /dev/null 2>&1 || true
+  v cmd "$quit" SPYV00001 > /dev/null 2>&1 || true
   sleep 2
   [ "$launched" = 1 ] || return 0
-  log_grows && { say "the app still writes its log after quit; again"; v cmd quit SPYV00001 > /dev/null 2>&1 || true; sleep 3; } || return 0
+  log_grows && { say "the app still writes its log after $quit; again"; v cmd "$quit" SPYV00001 > /dev/null 2>&1 || true; sleep 3; } || return 0
   log_grows || return 0
   if [ "${HW_REBOOT:-0}" = 1 ]; then
     say "the app won't stop: rebooting the Vita (HW_REBOOT=1)"
@@ -190,22 +195,34 @@ trap 'exit 143' TERM HUP
 
 pid_lock
 : > "$out/hw-run.txt"
-ver=$(v cmd version) || { say "no reply on $VITA_IP:${VITA_CMD_PORT:-1338}: is the Vita awake, with vitacompanion loaded? (tools/vita/hw_check.sh)"; exit 1; }
-case $ver in Error*|"(no reply)") say "vitacompanion answers \"$ver\" to version: hw_run.sh needs 1.08 or later"; exit 1 ;; esac
-say "vitacompanion: $ver"
-v cmd quit SPYV00001 > /dev/null # "Error: cannot quit" when it isn't running
+help=$(v cmd help) || { say "no reply on $VITA_IP:${VITA_CMD_PORT:-1338}: is the Vita awake, with vitacompanion loaded? (tools/vita/hw_check.sh)"; exit 1; }
+has() { awk -v c="$1" '$1 == c { f = 1 } END { exit !f }' <<< "$help"; }
+if has quit; then quit="quit"; elif has kill; then quit="kill"; else
+  say "vitacompanion's help has neither quit nor kill: it needs 1.05 or later"; say "$help"; exit 1
+fi
+promote=0; has promote && promote=1
+say "vitacompanion: $(has version && v cmd version || echo "1.05-style, no version command"); stops the app with $quit"
+v cmd "$quit" SPYV00001 > /dev/null # an error reply when it isn't running
 sleep 2
 recover
 [ $restore_only = 1 ] && exit 0
 
 # The app: its eboot.bin every run; installed whole (promote) when it isn't
-# there or sce_sys/ changed.
+# there or sce_sys/ changed, or without promote, copied whole over FTP.
 [ -f "$vpk" ] || { say "no $vpk"; exit 1; }
 mkdir -p "$tmp/vpk"
 (cd "$tmp/vpk" && unzip -q "$vpk")
 sys=$(cd "$tmp/vpk" && find sce_sys -type f | LC_ALL=C sort | xargs shasum | shasum | cut -c1-40)
 stage=$data/hw-promote
-if ! v size "$app/eboot.bin" > /dev/null || [ "$(cat "$state/sce_sys-$VITA_IP" 2>/dev/null)" != "$sys" ]; then
+installed=1; v size "$app/eboot.bin" > /dev/null || installed=0
+if [ $promote = 0 ] && [ $installed = 0 ]; then
+  say "Spyro Vita isn't installed, and this vitacompanion has no promote: install $vpk once with VitaShell"; exit 1
+elif [ $promote = 0 ] && [ "$(cat "$state/sce_sys-$VITA_IP" 2>/dev/null)" != "$sys" ]; then
+  say "sce_sys/ changed since the last run to $VITA_IP (or there was none): uploading the whole app over FTP"
+  v putdir "$tmp/vpk" "$app"
+  echo "$sys" > "$state/sce_sys-$VITA_IP"
+  say "a changed bubble or LiveArea shows after VitaShell's \"Refresh LiveArea\" (or a reinstall)"
+elif [ $installed = 0 ] || [ "$(cat "$state/sce_sys-$VITA_IP" 2>/dev/null)" != "$sys" ]; then
   say "not installed, or sce_sys/ changed since the last run to $VITA_IP: installing the whole app (promote)"
   relist
   [ -z "$(kind hw-promote)" ] || v rmtree "$stage" # a run's own, left by a failed promote

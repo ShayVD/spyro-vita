@@ -31,20 +31,23 @@ else
   fi
   exit 1
 fi
-if r=$(v cmd version 2>&1) && [ "${r#Error}" = "$r" ] && [ "$r" != "(no reply)" ]; then
-  ok "command port ${VITA_CMD_PORT:-1338}: vitacompanion $r"
+help=$(v cmd help 2>&1)
+has() { awk -v c="$1" '$1 == c { f = 1 } END { exit !f }' <<< "$help"; }
+if has quit || has kill; then
+  if has version; then r=$(v cmd version 2>&1); else r="1.05-style (no version command)"; fi
+  ok "command port ${VITA_CMD_PORT:-1338}: vitacompanion $r; stops the app with $(has quit && echo quit || echo kill); $(has promote && echo "installs it with promote" || echo "no promote: install the VPK once with VitaShell")"
   r=$(v cmd nosleep status 2>&1)
   case $r in
     "No-sleep enabled.") ok "no standby while vitacompanion runs (nosleep on)" ;;
     *) note "\"nosleep status\" -> $r: the Vita can go to standby between runs (send \"nosleep on\" or reboot)" ;;
   esac
 else
-  no "command port ${VITA_CMD_PORT:-1338}: \"version\" -> $r (hw_run.sh needs vitacompanion 1.08 or later)"
+  no "command port ${VITA_CMD_PORT:-1338}: \"help\" -> $help (hw_run.sh needs vitacompanion 1.05 or later)"
 fi
 if s=$(v size ux0:app/SPYV00001/eboot.bin 2>/dev/null); then
   ok "Spyro Vita installed (ux0:app/SPYV00001/eboot.bin, $s bytes)"
 else
-  note "Spyro Vita isn't installed: hw_run.sh installs it (promote)"
+  if has promote; then note "Spyro Vita isn't installed: hw_run.sh installs it (promote)"; else no "Spyro Vita isn't installed: install build/vita/spyro-vita.vpk once with VitaShell"; fi
 fi
 if d=$(v ls ux0:data/spyro 2>/dev/null); then
   if grep -q ' manifest.json$' <<< "$d"; then

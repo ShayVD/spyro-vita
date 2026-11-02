@@ -8,6 +8,8 @@ and writes a log, shots and (hang_test=) a crash dump. Standard library only.
     VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 tools/vita/hw_check.sh
 
 ROOT/ux0, ROOT/ur0 are the devices. The fake game runs 600 vblanks a second.
+MOCK_VERSION=1.05 answers with 1.05's commands (kill, no version, quit or
+promote) instead of 1.08's.
 """
 import os
 import shutil
@@ -21,6 +23,10 @@ ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "hw-mock")
 FTP_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 2337
 CMD_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 2338
 game = None
+LEGACY = os.environ.get("MOCK_VERSION") == "1.05"
+COMMANDS = (["help", "destroy", "launch", "kill", "nosleep", "reboot", "screen"] if LEGACY else
+            ["help", "launch", "nosleep", "press", "promote", "quit", "reboot", "release", "screen",
+             "version", "wait"])
 
 
 def local(path):
@@ -78,19 +84,23 @@ class Cmd(socketserver.BaseRequestHandler):
     def handle(self):
         global game
         words = self.request.recv(1024).decode().split()
-        reply = "Error: Unknown command."  # vitacompanion 1.08's replies (src/cmd_definitions.c)
-        if words == ["version"]:
+        reply = "Error: Unknown command."  # vitacompanion's replies (src/cmd_definitions.c)
+        if not words or words[0] not in COMMANDS:
+            pass
+        elif words == ["help"]:
+            reply = "Command\t\tDescription\n" + "\n".join("%-8s\t\t..." % c for c in COMMANDS)
+        elif words == ["version"]:
             reply = "Vita Companion 1.08 (mock)"
         elif words == ["nosleep", "status"]:
             reply = "No-sleep enabled."
-        elif words[:1] == ["quit"] and len(words) == 2:
+        elif words[:1] in (["quit"], ["kill"]) and len(words) == 2:
             if game and words[1] in ("SPYV00001", "all"):
                 game.stop.set()
                 game.join()
                 game = None
-                reply = "Quit." if words[1] != "all" else "Apps quit."
+                reply = {"quit": "Quit.", "kill": "Killed."}[words[0]] if words[1] != "all" else "Apps quit."
             else:
-                reply = "Error: cannot quit the app. Is the TITLEID correct?"
+                reply = "Error: cannot %s the app. Is the TITLEID correct?" % words[0]
         elif words[:1] == ["promote"] and len(words) == 2:
             src = local("/" + words[1].replace(":", ":/", 1))
             if not os.path.isfile(os.path.join(src, "sce_sys/param.sfo")):
