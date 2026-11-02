@@ -1,5 +1,5 @@
-# The Toasty route (D81's, for D82's runs P5 and P6): the K route's boot, title, attract demo and New Game (k-route.pad), the menu's
-# LEVEL WARP to Toasty at 11400 (p-toasty.cfg), then a walk from the start with the camera turned all the
+# The Toasty route (D81): the K route's boot, title, attract demo and New Game (k-route.pad), the menu's
+# LEVEL WARP to Toasty at 11400 (o-toasty.cfg), then a walk from the start with the camera turned all the
 # way round, both ways, so the heavy views of the castle and the fields come into the picture.
 2 none
 6002 start

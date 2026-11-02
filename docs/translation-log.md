@@ -250,7 +250,7 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 
 ## Native GTE maths in the hand renderers (2026-11-02, decisions D80)
 
-`fast_render=2` (`config.txt`, host `--fast-render 2`) runs each hand renderer's native-GTE build: the same source compiled a second time with `NGTE 1` (`src/game/*_hand_ngte.c`), whose `#if NGTE` blocks replace register-file GTE commands with the pure functions of `src/game/gte_native.h` on C values. `fast_render=1` compiles to the code it was. The register file is left exact, raw storage included, before any register-file code and at return (`render_hand.h`: register-file tails, and `NgteSync` replays). Default still 1.
+`fast_render=2` (`config.txt`, host `--fast-render 2`) runs each hand renderer's native-GTE build: the same source compiled a second time with `NGTE 1` (`src/game/*_hand_ngte.c`), whose `#if NGTE` blocks replace register-file GTE commands with the pure functions of `src/game/gte_native.h` on C values. `fast_render=1` compiles to the code it was. The register file is left exact, raw storage included, before any register-file code and at return (`render_hand.h`: register-file tails, and `NgteSync` replays). The default since D81 (1 before).
 
 **Checks on the final binary (`build/spyro-ngte`):**
 - `--fast-render-check` (`src/game/hand_check.c`): every renderer call runs the fast_render=1 code and then the native build from the same state, and compares the arena, the scratchpad buffer and every GTE register's raw storage. 0 differences in the gems script, the demos, wsi, lod, routes A and B and the 100,000-vblank whole-game tour (`logs/ngte3-*`, `ngte6-*`, `ngte7-*`, `ngte8-checks.txt`, `ngte11-*`).

@@ -107,7 +107,7 @@ The lines are every 300 vblanks (5 s). Compare windows of the same place on the 
 
 ## Runs G1–G3: the hand-written renderers and the inline GTE commands (D72)
 
-The same VPK for all three. `fast_render=1` is the default since D72; G1 turns it off, which puts back the renderers as translated from the asm and PsyCross's GTE decoder. The pictures and the game must be the same in all three: every host and Vita3K check was byte-identical.
+The same VPK for all three. `fast_render=1` was the default from D72 to D81 (2 since); G1 turns it off, which puts back the renderers as translated from the asm and PsyCross's GTE decoder. The pictures and the game must be the same in all three: every host and Vita3K check was byte-identical.
 
 | File | Switches | Do |
 |---|---|---|
@@ -226,6 +226,28 @@ K1–K3 (`docs/native-plan.md` §3.4) showed the read-ahead (D64) serving no mus
 - `mixer N: ... 0 position mismatches` throughout.
 - The `time` lines' `spu` part in play back to ~0.05 ms per vblank (K1–K3 had 0.54–0.58 after the first load).
 
+## Runs O1 and O2: does 60 fps hold, with everything merged? (D81)
+
+Main's defaults with the menu's 60 FPS on (`interp=1`, nothing else changed), D75's GPU meter on (`gpu_meter=1`), and `fast_render` 1 and 2 (stage 1 of `docs/native-plan.md`, D80). Unattended only (D77's runner); each run needs the owner's yes first.
+
+| File | Switches | Route |
+|---|---|---|
+| `o1-60-fr1.txt` | `interp=1 gpu_meter=1 fast_render=1` | the K route (`hw-routes/k-route.pad`, `m1-xa-k.cfg`: title, attract demo, New Game, Artisans, Stone Hill, Dark Hollow; 18,000 vblanks), then the Toasty route (`hw-routes/o-toasty.pad`, `o-toasty.cfg`: the same start, LEVEL WARP to Toasty, a walk with the camera turned all the way round both ways; 21,000 vblanks) |
+| `o2-60-fr2.txt` | O1 with `fast_render=2` | the same two routes |
+
+**The timing runs** (`REALTIME=1`, real vblanks, no shots):
+```
+REALTIME=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-o1-k 900 @tools/vita/fps-runs/o1-60-fr1.txt @tools/vita/hw-routes/m1-xa-k.cfg
+REALTIME=1 PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-o1-t 900 @tools/vita/fps-runs/o1-60-fr1.txt @tools/vita/hw-routes/o-toasty.cfg
+```
+and the same two with `o2-60-fr2.txt` (`logs/hw-o2-k`, `logs/hw-o2-t`).
+
+**The same-pictures runs** (virtual vblanks, the K route's shots and GPU pictures): `PAD=... DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-o1-shots 1500 @tools/vita/fps-runs/o1-60-fr1.txt @tools/vita/hw-routes/n-gte-k.cfg`, then O2. The 18 pictures and the memory card should be identical, as N1/N2's were at 30 fps.
+
+**To read them:** `python3 tools/vita/fps60_summary.py logs/hw-o1-k/spyro.log` gives per level the late vblanks per 300, the falls to 30, the render thread's ms per picture, the GPU meter's ms per picture and the game thread's busy %; `--all` lists every window. Compare with `logs/hw-main-2a0691c` (Toasty, before D74) and `logs/hw-j6` in the main checkout.
+
+**Ran on 2026-11-02** (D81; the logs `logs/hw-o*` of the `stage1-finish` worktree): 60 fps held in play on both routes. The attract demo's flight through Stone Hill is the one place it slips, bound by the render thread. The same-pictures pairs were identical. The NEON experiment used N2's set-up (`n2-gte-2.txt`, the K route with `n-gte-k.cfg`), with two VPKs built from the same tree, without and with D81's NEON variant of `gte_native.h` (not kept): the pictures identical, the renderers 5% slower with NEON, so NEON isn't kept.
+
 ## Runs P1–P6: native draw lists (D82)
 
 Stage 2 of `docs/native-plan.md`: the hand renderers' primitives reach PsyCross's OT walk as the vertices it would make of them (`native_draw=1`), so the walk copies records instead of parsing primitives. All six run `fast_render=2` (D80) on the same VPK; the pictures and the memory card must be the same with `native_draw` 0 and 1.
@@ -236,10 +258,10 @@ Stage 2 of `docs/native-plan.md`: the hand renderers' primitives reach PsyCross'
 | `p2-nd-on-cpu.txt` | P1 with `native_draw=1` | the same |
 | `p3-nd-off-threads.txt` | K3's: the shipped threads at 30 fps, `gpu_meter=1`, `native_draw=0` | the same |
 | `p4-nd-on-threads.txt` | P3 with `native_draw=1` | the same |
-| `p5-nd-off-60.txt` | the menu's 60 fps (`interp=1`), `gpu_meter=1`, `native_draw=0` | the Toasty route (`hw-routes/p-toasty.pad`, `p-toasty.cfg`), `REALTIME=1` |
+| `p5-nd-off-60.txt` | the menu's 60 fps (`interp=1`), `gpu_meter=1`, `native_draw=0` | the Toasty route (`hw-routes/o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1` |
 | `p6-nd-on-60.txt` | P5 with `native_draw=1` | the same |
 
-**Unattended** (D77): `VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p1 1500 @tools/vita/fps-runs/p1-nd-off-cpu.txt @tools/vita/hw-routes/n-gte-k.cfg` (P2–P4 the same with their file), and `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/p-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p5 1500 @tools/vita/fps-runs/p5-nd-off-60.txt @tools/vita/hw-routes/p-toasty.cfg` (P6 the same).
+**Unattended** (D77): `VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p1 1500 @tools/vita/fps-runs/p1-nd-off-cpu.txt @tools/vita/hw-routes/n-gte-k.cfg` (P2–P4 the same with their file), and `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p5 1500 @tools/vita/fps-runs/p5-nd-off-60.txt @tools/vita/hw-routes/o-toasty.cfg` (P6 the same).
 
 **What the logs should show:**
 - The log's start: `native_draw=1: the hand renderers' primitives as native draw lists (D82)` in P2, P4 and P6.
