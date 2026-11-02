@@ -73,8 +73,10 @@
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
  *                       with config_version=2; D45)
- *       interp_budget=MS  skip the in-between frame while the game's CPU
- *                       time per tick would pass MS (default 26; 0: never)
+ *       interp_budget=0 no safety net: the in-between frame always runs.
+ *                       Any other value (default 1): skip it only while the
+ *                       game thread's own CPU time per tick would pass 15/16
+ *                       of the tick (D75; the GPU never makes it skip)
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
  *                       for its mix; 0 the game thread, as before
@@ -154,6 +156,8 @@
  *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
+ *       log_sync=1      each log line written by the thread that logs it
+ *                       (default 0: a writer thread on cores 1-2; log.c, D75)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -180,10 +184,11 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
-                        .interp_budget = 26, .mixer = 1, .tex_cache = 1, .analog = 1,
+                        .interp_budget = 1, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
                         .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */
+                        .dynres = 0, /* D75: off by default after hardware run J6 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -332,6 +337,12 @@ static void read_config(void) {
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "parse_core"))
       g_vita_opts.parse_core = atoi(v);
+    else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
+      g_vita_opts.interp_budget = atoi(v);
+    else if (!strcmp(line, "gpu_meter"))
+      g_vita_opts.gpu_meter = atoi(v);
+    else if (!strcmp(line, "log_sync"))
+      g_vita_opts.log_sync = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -437,6 +448,7 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   read_config();
+  vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
            g_fast_render ? "hand-written renderers, inline GTE commands (D72)"
                          : "translated renderers, PsyCross's GTE_operator");

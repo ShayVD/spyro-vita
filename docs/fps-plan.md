@@ -52,6 +52,14 @@ B1 and C5 are in, behind `fast_render` (`config.txt`; default 1, `fast_render=0`
 
 **Since D69 (G3):** the presentation passes are down to one full-screen scene per picture (the present), from two. The capture no longer copies when the picture is one target whole (always, in Spyro's play), and the back buffer isn't cleared under a 16:9 picture. That's about half of C1's 2.5–3.7 ms GPU tail per picture (*estimate*), so ~1.3–1.8 ms per tick at 30 fps and twice that at 60. S, the game's own scene (18.9–25.8 ms in C1's heavy windows), is untouched. D69 also found that a target remade after a save state or an option change can land in main RAM on main (vitaGL frees CDRAM late), and repairs that at the target's next clear. Hardware runs E1–E4 in `tools/vita/fps-runs/` measure it.
 
+## Done since: G4, dynamic resolution (D75)
+
+The GPU was the wall left after D69–D72: in `logs/hw-main-2a0691c` (Toasty, 60 fps forced) the heavy views took the render thread 16–24 ms a picture with 40–100 late vblanks per 300, while the game thread was 25–48% busy. G4 is in, as `dynres=` (`config.txt` and the menu's `DYNAMIC RES` row), **default `OFF` after hardware run J6**: on a Vita, 67% still took 11–17 ms of GPU time a picture in Toasty, so about half the GPU's picture doesn't go with the pixels (D75). What's in:
+- **A sub-rect, not new targets:** each target draws into a part of its own texture (`glViewport`) at 88%, 75% or 67% of the screen's pixels in each direction, and the present scales that part up with the GPU's bilinear filter. The scale changes only at a target's whole clear. `dynres=0` is main's drawing exactly.
+- **Steered by the GPU's own time,** from vitaGL's scene fences (`gpu_meter.c`, a wrapped `sceGxmEndScene` and a poller on core 1): no `glFinish`. Down only after 0.4 s over a vblank, by the smallest step predicted to fit; up after 1–8 s.
+- The meter now splits the GPU's time by scene (the game's frames, the atlas's decode passes, the present): `gpu_meter=1`, run J7. The next GPU saving should come from whichever of those holds the fixed half.
+- 60 fps never falls to 30 for the GPU or the render thread; only the game thread's own CPU time can hold 30 (D75's safety net).
+
 ## The in-between frame: why it stays a full draw (D70)
 
 The four parallel sessions after D68 (cheaper in-between frames, fewer full-screen GPU passes, the spare cores, hand C for the hot renderers) took the next items. For the in-between frame, the idea was to reuse the real frame's geometry and apply only the new camera. It doesn't fit the PS1's data flow, and it wouldn't touch the GPU's share:

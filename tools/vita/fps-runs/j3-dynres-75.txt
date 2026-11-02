@@ -1,0 +1,7 @@
+# Run J3, a fixed 75% scale (720x408, D75): as J1 with dynres=75, for the GPU's cost per picture at that scale in the same places (the model behind dynres's steps)
+interp=1
+interp_budget=0
+dynres=75
+gpu_lean=1
+parse_thread=1
+config_version=3

@@ -1302,3 +1302,123 @@ Record each decision with its date, what was chosen, and why.
   - **And at 30 fps** (the same VPK, `realtime=0`, widescreen, no `interp`): `gpu_join=0 gpu_lean=0 parse_thread=0` (main's drawing) against the defaults, the gems script's 44 shots, WAV and card identical (`logs/v74-gems30-old`, `logs/v74-gems30-def`).
 - **Not checked:** a hardware run with the defaults and no bench (I2's route), so no clean measure of stutter on hardware yet.
 - **For D75 (dynamic resolution):** this changes nothing in the targets' viewport or the present. Fewer draws and a lower resolution add up: I1's "half the pixels" line shows how much a resolution drop would buy at the same place.
+
+## 2026-11-01: a lower render scale only when the GPU can't keep up
+
+### D75. Dynamic resolution: a sub-rect of each target, steered by vitaGL's own scene fences
+- **Why:** the hardware log from main `2a0691c` (`logs/hw-main-2a0691c/spyro.log`, gitignored; Toasty, widescreen, `interp=1 interp_budget=0 gpu_lean=1 parse_thread=1`). In the heavy views (the windows ending 2100–3600, 4800, 5700, 6300 and 7500–9300) the render thread took 16–24 ms a picture (busy × 300 / pictures) at 95–97% busy. There were 40–100 late vblanks per 300, and 200–253 pictures instead of ~300. The game thread was only 25–48% busy. In the light windows (4500, 6900) the render thread took 8.2 ms a picture. Earlier `gpu_time=2` runs put the GPU's scene at 19–31 ms in heavier levels (D68). So the extra time is the GPU's. G4 (`docs/fps-plan.md`) was deferred until the picture-neutral options had paid off. They have (D65, D69, D70), and the GPU is still the wall.
+- **What a target does** (`gpu_gl.c`; all of it behind `pm < 1000`, with `pm == 1000` the exact old values):
+  - **Each target keeps its texture and FBO** and gets a scale (`pm`, per mille). It draws into the `dpw × dph` texels at the texture's origin: `glViewport(0, 0, dpw, dph)` with the same NDC mapping, and scissors, clears and the half-pixel offset at `sx = dpw / w`. No target is made again, so none can land in main RAM (D69's finding: vitaGL's CDRAM is ~3 MB from full in play, the `vitaGL free KB` lines).
+  - **The scale changes only at a target's whole clear** (the start of the game's next frame there), after `pres_touch` has settled every presentation picture still on it, and when a target is made. Nothing drawn at one scale is ever read at another.
+  - **Readers of a target** take its part: `place()` (presentation copies and the 4:3 display present, `sx = dpw / w` and the uv over the texture's size), `move_into` (MoveImage between targets), the `glReadPixels` readback. The readback replay is the CPU's and doesn't see the scale: the PS1-exact pictures (`StoreImage`, shots, save states) are unchanged at any scale.
+  - **Presentation slots** remember the part their picture is in (`s_psrc[].dw, dh`). That's set at the capture (the target's part), kept through D69's hand-over of the target's texture, and set by `pres_draw`'s copy, which copies a whole target 1:1 at its scale. The present samples that part half a texel in from its edges (the texels past them hold older pictures) with `GL_LINEAR`, whatever `filter=` says. Nearest from 720 to 960 columns would double every third one.
+  - **The 60 fps in-between frame** is drawn into the same target as the tick's logic frame, with the same NDC mapping. A scale change between them moves no geometry: the two pictures match in layout, with one a little softer.
+- **The steps:** 100%, 88% (840×476), 75% (720×408), 67% (641×363); in 4:3, 778, 681, 584 and 519 columns. Each is about a quarter fewer pixels than the one before (0.77, 0.56, 0.45 of native). The floor comes from the worst cost seen. With a picture's GPU time as a fixed part (~1.5 ms: the present's full-screen quad) plus a part that goes with the pixels:
+
+  | Picture at 100% | 88% | 75% | 67% |
+  |---|---|---|---|
+  | 16 ms (the lightest late windows) | 12.6 | 9.7 | 7.8 |
+  | 19 ms (typical heavy, `hw-main-2a0691c`) | 14.9 | 11.3 | 9.3 |
+  | 24 ms (8100, 8700, 9000: the worst there) | 18.7 | 14.2 | 11.5 |
+  | 31 ms (C1's worst `gpu_time=2` scene, D68) | 24.1 | 18.1 | 14.6 |
+
+  (*estimates* from that model; J1 and J3 measure it.) 60 fps needs ≤ 16.7 ms, ~15.7 with margin. 75% covers what `hw-main-2a0691c` saw. 67% covers C1's worst, so it's the floor. Below it the picture gets soft for little gain: the fixed part grows as a share.
+- **How often and how far it would drop, against main as it is, and once D74's savings land** (`tools/vita/dynres_sim.py`; *estimates*: the GPU's time per picture in each 5 s window of `hw-main-2a0691c`, the picture interval where pictures were late, put through the rules below). Only the 21 windows that ran at 60 fps; menu visits and windows the old budget held at 30 are left out. "−N%" is the GPU's picture N% cheaper at full resolution (the measured part, not the present's quad):
+
+  | Window | Pictures, late | GPU at 100% (ms) | Source | −0% | −10% | −20% | −30% |
+  |---|---|---|---|---|---|---|---|
+  | 600 | 275, 10 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 2100 | 253, 47 | 19.8 | interval (late) | 88% | 88% | 100% | 100% |
+  | 2400 | 281, 19 | 17.8 | interval (late) | 88% | 100% | 100% | 100% |
+  | 2700 | 223, 77 | 22.5 | interval (late) | 75% | 75% | 88% | 100% |
+  | 3000 | 247, 53 | 20.2 | interval (late) | 75% | 88% | 100% | 100% |
+  | 3300 | 282, 18 | 17.7 | interval (late) | 88% | 100% | 100% | 100% |
+  | 3600 | 259, 41 | 19.4 | interval (late) | 88% | 88% | 100% | 100% |
+  | 3900 | 294, 6 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 4200 | 296, 4 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 4500 | 297, 3 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 4800 | 280, 21 | 18.0 | interval (late) | 88% | 100% | 100% | 100% |
+  | 5700 | 253, 47 | 19.8 | interval (late) | 88% | 88% | 100% | 100% |
+  | 6000 | 297, 3 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 6300 | 237, 63 | 21.2 | interval (late) | 75% | 88% | 88% | 100% |
+  | 7500 | 261, 39 | 19.2 | interval (late) | 88% | 88% | 100% | 100% |
+  | 7800 | 290, 10 | ≤ 16.7 | fits | 100% | 100% | 100% | 100% |
+  | 8100 | 203, 97 | 24.7 | interval (late) | 75% | 75% | 75% | 88% |
+  | 8400 | 233, 67 | 21.5 | interval (late) | 75% | 88% | 88% | 100% |
+  | 8700 | 200, 100 | 25.0 | interval (late) | 75% | 75% | 75% | 88% |
+  | 9000 | 203, 98 | 24.7 | interval (late) | 75% | 75% | 75% | 88% |
+  | 9300 | 227, 72 | 21.9 | interval (late) | 75% | 88% | 88% | 100% |
+
+  - **Today:** native in 6 of the 21 windows, 88% in 7, 75% in 8, never 67%. The Toasty route was chosen for its heavy views. The interval errs high (vsync rounds a late picture up to two vblanks), so the real drops should be smaller.
+  - **With D74:** 10% cheaper leaves 12 windows dropped, 20% leaves 7 (4 at 88%), 30% leaves 3, all at 88% (8100, 8700, 9000, the heaviest at ~25 ms a picture). For near zero, the full-resolution picture has to come down to ~16.7 ms in those views, about a third cheaper. J1 against the same route measures the GPU's real time per picture there, so this table can be redone from it (`dynres_sim.py` reads the `dynres N:` lines).
+
+- **The measure: vitaGL's scene fences** (`gpu_meter.c`). `gpu_time=2`'s `glFinish` stalls the pipeline, so it can't stay on. The render thread's time per picture (`picture_us`) includes its waits for the vblank as well as for the GPU. In `hw-main-2a0691c`'s clean 60 windows (3900, 4200) it was 16.06–16.19 ms with 4–6 late vblanks, the same as in windows that were late. So it can't tell a GPU at its limit from one with room.
+  - **vitaGL already ends every GXM scene with a fragment notification** (from its object code in the installed `libvitaGL.a`: `gxm.o`'s `scene_reset` and `vglSwapBuffers` count `query_fence`'s value up and pass it to `sceGxmEndScene`; `buffers.o`'s `reset_queries` points it at the notification region). The GPU writes the value when the scene's pixels are done.
+  - **`-Wl,--wrap=sceGxmEndScene`** (as `sceAppMgrGetBudgetInfo` already is) notes each scene's fence value and submit time in a ring. The wrapper passes every argument through.
+  - **A thread on core 1** (priority 0x78, between the mixer and the XA reader) polls the fence word every 200 µs while scenes are outstanding and sleeps on a semaphore otherwise. A scene's GPU time is its finish minus the later of its submit and the previous scene's finish, less half a poll if it didn't queue.
+  - **The swap's scene is left out** (`swap()` marks it). It can't start until the display has let go of its buffer, so its time is mostly the vblank's: in Vita3K the first version's sum sat at 16.7 ms a picture at any load (`logs/n1auto-gems-cap`). Its own work, one full-screen quad, is the same at every scale; the controller adds 1.5 ms for it (D69's estimate of one 960×544 pass).
+  - If no notification comes for 2 s, the meter logs it and turns itself off; dynres then stays where it is.
+  - **Cost:** one clock read per scene on the render thread; on core 1 a wake-up per 200 µs while the GPU has work, a few µs each (*estimate*: 1–3% of core 1 under load). It runs only with `dynres=1` or `gpu_meter=1`.
+- **The owner's priority** (via the coordinator, after the first version of this PR): 60 fps must not drop to 30. Ideally there's no resolution drop either, but if a fallback is needed, a lower resolution is preferred over a lower frame rate. So the scale is a **last resort**: native whenever the GPU fits, a drop only on a real sustained miss, by the smallest step that fixes it, and back to native promptly. The other half is D74, which makes the GPU's picture cheaper at full resolution with the pixels unchanged.
+- **The controller** (`dynres.c`, on the vitaGL thread, once per picture; not while the options panel is up):
+  - The GPU time per picture over 12 pictures (0.2 s at 60 fps), 3 pictures after a change left out (in flight at the old scale), plus the present's 1.5 ms. That's set against a picture's time: a vblank with 60 fps on (`interp` ≠ 0), two without.
+  - **Down** only on a real miss: over a whole picture's time (pictures late) for 2 windows in a row (0.4 s). A picture that fits, even with no room to spare, stays native. Then down by the smallest step predicted to fit in 95% (more than one step only if one isn't predicted to be enough).
+  - **Up** one step once the next is predicted to fit in 90% for a whole hold: 1 s, doubled by a fall within 30 s of a rise, up to 8 s. That's the 60 fps budget's hysteresis (D68) applied to the scale.
+  - **The prediction errs low both ways.** Going down, the measured part's fixed share is taken as 1 ms (less saving than all-pixels); going up, as 0 (more cost). Leaving 88% for native needs native predicted at ≤ 90% of the vblank, after a drop that came from over 100%. That gap, the pessimistic model and the hold are the hysteresis: no visible pumping where the cost sits near the line.
+  - **Log:** a `dynres:` line at every change with the cost behind it. A `dynres N:` line every 300 vblanks with pictures and GPU ms at each scale, downs and ups, the scale and the hold.
+- **The 60 fps budget becomes the game thread's safety net** (`present.c` `budget_allows`; the coordinator handed it to this decision, and D74's session agreed by message):
+  - **With `interp=1` the in-between frame always runs,** whatever the GPU or the render thread take. D68's two GPU-side misses are gone, and with them `g_present_render_us` and `g_present_late` (`present.h`, `gpu_thread.c`'s two getters):
+    - the render thread's two pictures over 15/16 of a tick;
+    - 3 late pictures in ~0.5 s. In `hw-main-2a0691c` that count also fired at a clean 60 (window 3900: 291 waits for "previous frame not shown yet" and 6 late vblanks), since every vblank-paced present waits.
+  - **What's left is D28's case: the game thread itself running late,** which would slow the game's own clock (`g_DeltaTime`). The test is its CPU time per tick with the in-between frame (VSync waits not counted), averaged over ~4 ticks, or over the line on two ticks in a row. The line is fixed at 15/16 of a tick (31.3 ms): only a tick that couldn't finish in time.
+  - It keeps D68's hold: 30 fps for 1 s, until the cost has fitted with an eighth to spare, doubling to 8 s after repeated misses.
+  - **When it triggers:** on hardware it shouldn't. The game thread is 25–48% busy per vblank at 60 fps in `hw-main-2a0691c` (8–16 ms a tick, half the line). Only a much slower spot or a future CPU cost would reach it. Its falls still show in the `present N:` line ("falls to a held 30 fps").
+  - **The host** has no budget unless `--interp-budget` is given (its replays don't), so nothing there changes.
+- **`interp_budget` and the menu's `60 FPS BUDGET` row:** the row is **removed** (its values were budgets in ms for the old test, and none of them now changes what a player sees). The `config.txt` key stays, repurposed as the safety net's switch:
+  - `interp_budget=0` turns the net off (the in-between frame always runs, as the old `NEVER SKIP`; the fps-runs files use it);
+  - any other value, the default, turns it on at the fixed line. A file the old menu wrote (`interp_budget=26`, ...) keeps the net on, and a `0` (`NEVER SKIP`) keeps it off.
+  - `main.c` reads the key now that no row does.
+  - Proposed instead of removing it outright: the net is the only part of the old budget left, and test runs need a way to force every in-between frame.
+- **Options:** `config.txt dynres=` and the menu's `DYNAMIC RES` row (PICTURE section, after RESOLUTION; hidden with `gpu=0`): `OFF` (0), `AUTO` (1), `88%`, `75%`, `67%` (88, 75, 67: that scale, always). Only at `res=native`: with `res=ps1` or `2`–`4` it does nothing. `gpu_meter=1`: the meter and its `dynres N:` lines with dynres off (run J1).
+  - With `60 FPS BUDGET` gone, CONTROLS, GAME and SAVE stay where they were for `menu_keys=` sequences; the PICTURE rows from TEX FILTER to RESOLUTION move up by one.
+- **Default: `dynres=0` (off), after hardware run J6.** It was `1` (auto) until J6 showed that on a Vita a lower scale saves little (below). `dynres=1` and the fixed scales stay as options.
+- **Hardware run J6** (`logs/hw-j6/spyro.log` in the main checkout, gitignored; this branch at `6a26bf3`, `interp=1 gpu_lean=1 parse_thread=1`, Artisans then Toasty, the menu opened three times):
+  - 60 fps held: in the windows of play, every in-between frame ran, with 0 falls to 30. The safety net held 30 twice, both during loads (the title's start-up at vblank 600 and Toasty's at 2100), never in play.
+  - The meter works on hardware: 0 scenes unmeasured, and the GPU's time per picture tracked the late vblanks.
+  - **The scale saved little.** A 0.4 s spike as Toasty started (31.7 ms a picture at vblank 2398, 308 blocks decoded into the atlas that window) dropped it straight to 67%. It stayed there for nearly all of Toasty: at 67% the GPU still took 11–17 ms a picture in the heavy views (windows 3000–4500), with 11–67 late vblanks per 300. Main at 100% in the same level had 18–100 (`hw-main-2a0691c`). With 44% of the pixels, an all-pixels cost would have been 0.44 of main's 16–24 ms, 7–11 ms. So roughly half the GPU's picture (an *estimate*: 8–10 ms) doesn't go with the targets' pixels, and the controller's model (all of it does, less `FIXED_US`) was wrong both ways: it dropped too far and never predicted that 75% would fit.
+  - **What the fixed half was** (from D74, merged after J6): J6 ran without D74's joined draws. D74's run I1 timed Toasty's GPU scene at 15–21 ms with main's draws and 6–7 ms joined, and found what's left scaling with the pixels (half of them took off 40–50%). So the part J6 saw not shrink with the scale was mostly the draws and their program changes, which `gpu_join=1` (now the default) removes. With it, the GPU should fit 60 fps in Toasty at native, which leaves dynres even less to do: off stays the default. Run J7 measures it with the meter's split.
+  - **The other stutter:** a 60–150 ms "worst vblank" in nearly every window, in Artisans too (main had 62–88 ms). It's game-thread busy time, so not the GPU. A likely cause: each report's ~15 lines written to the memory card with `sceIoWrite` on the game thread every 300 vblanks. So the log now has a writer thread (below).
+- **After J6:**
+  - `log.c`: from `vita_log_start` (after `config.txt`) lines go into a 128 KB ring that a thread on cores 1–2 (priority 0xb8) writes out. A full ring makes the caller wait, so no line is lost or reordered. `sceKernelExitProcess` (wrapped) and the watchdog's crash dump flush it first. `log_sync=1` writes on the calling thread, as before.
+  - `gpu_meter.c`: `sceGxmBeginScene` is wrapped too. Each scene is counted by its colour surface: the targets and the atlas (registered by `gpu_gl.c` when made), the swap's scene (the present), anything else. A `gpu meter N:` line per report gives each kind's GPU time and scenes per picture, and the most GPU time finished between two pictures. That's what the next hardware run is for: whether the fixed half is the atlas's decode passes (each a scene over the whole 2048×2048 atlas, splitting the target's scene in two), the targets' scenes themselves (the store of the whole surface at any scale), or the present.
+- **Cheaper GPU work that keeps the picture:** none found that fits here. The obvious next one is GXM's valid region (`sceGxmBeginScene`'s `validRegion`, NULL in vitaGL): a scaled target's scene could skip the tiles outside its part, the clear and store of up to 44% of the surface at 67%. That needs a wrapped `sceGxmBeginScene` that maps the colour surface to a target, and Vita3K likely ignores the region, so only hardware could show it's right. Left for after the J runs show how big the fixed part is.
+- **Rejected:**
+  - **Smaller targets per scale** (reallocating): each change would remake textures with CDRAM ~3 MB from full, where they land in main RAM (D69). A change also costs a frame of copies.
+  - **`vglSwapResolution`:** it changes the display buffers, not our targets.
+  - **Steering by late pictures alone:** a late picture says the GPU is over, never how far under it is, so there'd be no way back up without trying (pumping).
+  - **`picture_us`:** it includes the vblank waits (above).
+- **Checked** (logs in this branch's worktree, gitignored; Vita3K is not hardware, and nothing here has run on a Vita). "main" is main `2a0691c`'s own VPK (`logs/main-2a0691c-test/spyro-vita-main-2a0691c.vpk` in the main checkout, the one behind `hw-main-2a0691c`). `realtime=0`, widescreen; script `logs/v75.sh`, compare `logs/cmp.sh` (and `logs/layout.py`: both captures shrunk to 240 wide, the best of ±3 pixel shifts):
+  - **`dynres=0` against main** (`b0-*` against `n2off-*`, `n3off-*`, `n4off-*`):
+    - gems at 30 fps: 44 shots, the WAV and the card byte-identical;
+    - gems at 60 fps forced: the same, with the same in-between frames in every window;
+    - the pause route at 60 fps forced: 70 shots and the card byte-identical;
+    - window captures at 1800, 5000, 7000, 7600, 8000 and 8400: byte-identical (0 pixels);
+    - 4:3 captures (`cap43`) and a save at 8100 with a load at 8250 (`state-cap`): identical inside the window. 506–1336 pixels differ in the window's outer 16 pixels (its top row and corners), as between any two of main's own runs (D68, D69). `state1.bin` differs in 63 bytes, the build's code addresses (D69, D71).
+  - **Fixed scales** (`n2f75-*`, `n3f75-cap43`, `n3f67-state-cap`):
+    - the PS1-exact pictures don't see the scale: at 75%, the gems shots at 60 fps forced and the pause route (`StoreImage`'s backgrounds) are byte-identical to main.
+    - Window captures at 75% (16:9 and 4:3) and at 67% across the save and the load: layout at shift 0,0 against main's in every one, mean difference 1.1–2.0 of 255 (the softer picture).
+    - The bottom-right corner at 75% is clean: no band from an older picture at the part's edges.
+  - **Auto** (`n1auto-*`, `n2auto-*`, `n3auto-*`, `n4auto-*`):
+    - **The meter works in Vita3K** (fragment notifications come). The first version counted the swap's scene and read 16.7 ms a picture at any load, which held the scale at 67% (`n1auto-gems-cap`). With it left out, the measured scenes were 2–10 ms a picture where Vita3K kept up, and 12–21 ms where its own GPU emulation slowed the game to 23–40 vblanks a second.
+    - With the first rules (down over 94%, 2–16 s holds), dynres went down within 0.2–0.3 s of the cost passing its line and came back up after its hold, the hold doubling to 40 and 80 windows after falls soon after rises. Vita3K's times aren't the SGX's: the steps it chose say nothing about hardware.
+    - Captures at 100%, 75% and 67% all match main's layout at 0,0.
+    - At 30 fps (`n3auto-gems-ws`, 33.4 ms a picture): 100% throughout but one window after a 33 ms Vita3K hitch, back up after its 2 s hold.
+  - **The menu row** (`n3menu-menu-cap`, `menu_keys` 7 downs, right, right): AUTO, 88%, 75%. The log said `fixed, scale 87%` (now printed as the menu names it, 88%), then `75%`, and saved `dynres=75`; captures after it are at 75% with layout 0,0.
+  - 0 unknown commands and no `still waiting` in any run; `0 scenes not measured` in every `dynres` line.
+  - **Host, after the budget change** (`src/game/present.c` is shared): `ctest` 7/7 pass. `tools/host_checks.sh h76` against D73's `h71-*`: demo, tour, routes A and B, their traces, all identical. Oracle `cap3` 329 PASS (9 NOEXIT) and `cap5-fairy` 261 PASS (7 NOEXIT), as before. The host runs no budget unless `--interp-budget` is given.
+  - **Host, first version:** no file the host builds changed (`src/platform/vita/` only). `ctest` 7/7 pass (`gte` and `m2c_diff_math` skipped, as before). `tools/host_checks.sh h75` against D73's `h71-*`: demo 25, whole-game tour 140, routes A and B 55 each (shots, WAV, cards), and their traces, all identical. Oracle replays: `cap3` 329 PASS (and 9 NOEXIT), `cap5-fairy` 261 PASS (and 7 NOEXIT), as D73.
+  - **After the owner's change** (no fall to 30; dynres as the last resort), VPK `logs/vpk-final2`:
+    - `dynres=0` with `interp_budget=0` against main: gems at 60 fps forced, the pause route and the six window captures byte-identical (`n5off-*`). So the budget change leaves the never-skip path as it was.
+    - **The menu's 60 fps with the safety net on** (`n5auto-gems-def`: `interp=1`, default `interp_budget`, `dynres=1`): 0 skipped for the budget and 0 falls to a held 30 fps in all 28 windows, and every tick had its in-between frame, bar the 1–3 per window that `can_interp` declines, as before.
+    - **Auto under the new rules:** native for most of the run. It went down only in the two stretches where Vita3K's own GPU slowed (vblanks ~2650–3210 and ~5990–7530), one step per 2 windows. Vita3K's cost doesn't fall with the pixels, so it went on to 67% there. It came back one step a second once the next step was predicted to fit. Nothing changed in the ~45 s between them. The captures match main's layout at 0,0. **Those taken at native (5000, 8000, 8400) are byte-identical to main's**: when it fits, the picture is main's.
+  - **Not checked:** hardware, which decides it all: the meter on the SGX, the real cost per step, whether the steps pump. Runs J1–J5 (`tools/vita/fps-runs/`).

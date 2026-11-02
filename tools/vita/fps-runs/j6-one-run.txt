@@ -1,0 +1,5 @@
+# Run J6, one run for D75 (PR #48): the menu's defaults with 60 FPS on (dynres=1 auto, the game thread's safety net on), plus gpu_lean and parse_thread as in hw-main-2a0691c
+interp=1
+gpu_lean=1
+parse_thread=1
+config_version=3
