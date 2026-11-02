@@ -84,7 +84,8 @@ def cmake_list(text, name):
 def build_lists():
     text = open(os.path.join(ROOT, "cmake/mips2c.cmake")).read()
     units = cmake_list(text, "M2C_UNITS")
-    hand = cmake_list(text, "M2C_HAND")
+    # M2C_HAND_MULTI: units whose entries are all hand C (collision.s, D83)
+    hand = cmake_list(text, "M2C_HAND") + cmake_list(text, "M2C_HAND_MULTI")
     render = [e.split(":") for e in cmake_list(text, "M2C_RENDER_HAND")]
     nonmatch = sorted(os.path.relpath(p, S1) for p in
                       glob.glob(os.path.join(S1, "asm/nonmatchings/**/*.s"), recursive=True))
@@ -167,7 +168,7 @@ def original_code():
         elif obj.startswith("build/asm/"):
             src = "asm/" + obj[len("build/asm/"):-2] + ".s"
             for f, n in asm_functions(os.path.join(S1, src)):
-                if src in HAND_ASM_UNITS:
+                if src in HAND_ASM_UNITS or src in hand:
                     cat = "B1"
                 elif f in render_funcs:
                     cat = "B2"
@@ -212,7 +213,7 @@ def code_lines(path):
 
 # src/game: the rest is G (port features).
 GAME_FILES = {
-    "B1": ["camera_hand.c", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
+    "B1": ["camera_hand.c", "collision_hand.c", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
            "pete_transition_hand.c", "memory.c", "order_table.c", "rand_psyq.c",
            "system_time.c", "hand_structs.h"],
     "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h"],

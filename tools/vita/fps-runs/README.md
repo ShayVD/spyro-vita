@@ -270,3 +270,15 @@ Stage 2 of `docs/native-plan.md`: the hand renderers' primitives reach PsyCross'
 - P3 against P4: the `parse` lines' busy ms per vblank and the game thread's waits for the walk fall.
 - P5 against P6: late vblanks, in-between frames and the threads' ms per vblank.
 - K1/K3 runs' shots at the same vblanks: identical pictures and card between each pair.
+
+## Run Q: collision as hand-written C (D83)
+
+Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with readable C (`src/game/collision_hand.c`). Its results feed gameplay, so the check is the same route played on main's VPK and on this one: every picture and the memory card must come out identical.
+
+| File | Switches | Do |
+|---|---|---|
+| `q1-collision.txt` | N2's: 30 fps (`interp=0`), `render_thread=0`, `parse_thread=0`, `fast_render=2`, `dynres=0` | unattended, the K route, once with main's VPK (Q1) and once with this branch's (Q2) |
+
+**Unattended:** `VPK=MAIN.vpk DEVICE_DEFAULTS=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-q1 1500 @tools/vita/fps-runs/q1-collision.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with this branch's VPK into `logs/hw-q2`. The pictures (`shot-*`, and `gpu-*` with `shot_hd=1`) and `save/` are compared with `cmp`.
+
+**Ran** on 2026-11-02 (D83): Q1 with main's VPK (`6128154`), Q2 with this branch's; all 18 pictures and the memory card identical, and the `update` lines 0.278 → 0.230 ms per vblank. Again after merging main (D81, D82) into the branch: Q3 with main's CI VPK (`5403b03`), Q4 with the merge's (`6855c41`): all 18 pictures and the memory card identical, `update` 0.279 → 0.228 ms per vblank.

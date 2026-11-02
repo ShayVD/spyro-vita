@@ -20,6 +20,29 @@ u32 func_80047B60(); /* pete_dispatch_hand.c */
 u32 func_80041670(); /* pete_transition_hand.c */
 u32 func_80048D10(); /* pete_hand.c */
 u32 func_80049FAC(); /* pete_hand.c */
+u32 ColTraceRay();      /* collision_hand.c */
+u32 ColSphere();        /* collision_hand.c */
+u32 ColFindFloor();     /* collision_hand.c */
+u32 func_8004DF24();    /* collision_hand.c */
+u32 ColSpyroInHitbox(); /* collision_hand.c */
+u32 ColMoby();          /* collision_hand.c */
+
+/* ColMoby's fifth and sixth arguments are on the stack, as the asm reads
+ * them (0x10 and 0x14 above $sp). */
+static u32 ColMoby_regs(u32 a0, u32 a1, u32 a2, u32 a3) {
+  return ColMoby(a0, a1, a2, a3, M_U32(MIPS_KUSEG(g_mips_sp + 0x10u)), M_U32(MIPS_KUSEG(g_mips_sp + 0x14u)));
+}
+
+/* collision.s's entries taken from mips2c (M2C_<name>=1, cmake
+ * M2C_HAND_MULTI): the unit is linked with each renamed <name>_gen. */
+u32 ColTraceRay_gen__m2c();
+u32 ColSphere_gen__m2c();
+u32 ColFindFloor_gen__m2c();
+u32 func_8004DF24_gen__m2c();
+u32 ColSpyroInHitbox_gen__m2c();
+u32 ColMoby_gen__m2c();
+#define GEN_AS(addr, name)                                                     \
+  { addr, #name, (u32(*)(u32, u32, u32, u32))name##_gen__m2c }
 
 const M2cEntry m2c_hand_index[] = {
 #if !M2C_func_80033F08
@@ -57,6 +80,36 @@ const M2cEntry m2c_hand_index[] = {
 #endif
 #if !M2C_func_80049FAC
     HAND(0x80049FACu, func_80049FAC),
+#endif
+#if M2C_ColTraceRay
+    GEN_AS(0x8004AE38u, ColTraceRay),
+#else
+    HAND(0x8004AE38u, ColTraceRay),
+#endif
+#if M2C_ColSphere
+    GEN_AS(0x8004BE4Cu, ColSphere),
+#else
+    HAND(0x8004BE4Cu, ColSphere),
+#endif
+#if M2C_ColFindFloor
+    GEN_AS(0x8004D5ECu, ColFindFloor),
+#else
+    HAND(0x8004D5ECu, ColFindFloor),
+#endif
+#if M2C_func_8004DF24
+    GEN_AS(0x8004DF24u, func_8004DF24),
+#else
+    HAND(0x8004DF24u, func_8004DF24),
+#endif
+#if M2C_ColSpyroInHitbox
+    GEN_AS(0x8004E2E8u, ColSpyroInHitbox),
+#else
+    HAND(0x8004E2E8u, ColSpyroInHitbox),
+#endif
+#if M2C_ColMoby
+    GEN_AS(0x8004E3C8u, ColMoby),
+#else
+    {0x8004E3C8u, "ColMoby", (u32(*)(u32, u32, u32, u32))ColMoby_regs},
 #endif
     {0, 0, 0},
 };
@@ -121,6 +174,14 @@ const M2cEntry m2c_gen_index[] = {
 #endif
 #if M2C_REF && !M2C_func_80049FAC
     GEN(0x80049FACu, func_80049FAC),
+#endif
+#if M2C_REF
+    GEN(0x8004AE38u, ColTraceRay),
+    GEN(0x8004BE4Cu, ColSphere),
+    GEN(0x8004D5ECu, ColFindFloor),
+    GEN(0x8004DF24u, func_8004DF24),
+    GEN(0x8004E2E8u, ColSpyroInHitbox),
+    GEN(0x8004E3C8u, ColMoby),
 #endif
     GEN(0x8004EBA8u, func_8004EBA8),
     GEN(0x800258F0u, func_800258F0),
