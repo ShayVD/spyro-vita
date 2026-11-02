@@ -72,7 +72,7 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   # vitaGL must set GXM up as for a game, in Vita3K too (gpu_gl.c)
   -Wl,--wrap=sceAppMgrGetBudgetInfo
   # gpu_meter.c: each GXM scene's fence and submit time (D75)
-  -Wl,--wrap=sceGxmEndScene)
+  -Wl,--wrap=sceGxmEndScene,--wrap=sceGxmBeginScene,--wrap=sceKernelExitProcess)
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules

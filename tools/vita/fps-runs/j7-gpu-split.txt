@@ -1,0 +1,7 @@
+# Run J7, where the GPU's time goes (after J6): 60 fps on (the safety net on), dynres off (the default since J6), the meter's per-kind lines, gpu_lean and parse_thread as in J6
+interp=1
+dynres=0
+gpu_meter=1
+gpu_lean=1
+parse_thread=1
+config_version=3

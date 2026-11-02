@@ -54,11 +54,11 @@ B1 and C5 are in, behind `fast_render` (`config.txt`; default 1, `fast_render=0`
 
 ## Done since: G4, dynamic resolution (D75)
 
-The GPU was the wall left after D69–D72: in `logs/hw-main-2a0691c` (Toasty, 60 fps forced) the heavy views took the render thread 16–24 ms a picture with 40–100 late vblanks per 300, while the game thread was 25–48% busy. G4 is in, as `dynres=` (`config.txt` and the menu's `DYNAMIC RES` row, default `AUTO`):
+The GPU was the wall left after D69–D72: in `logs/hw-main-2a0691c` (Toasty, 60 fps forced) the heavy views took the render thread 16–24 ms a picture with 40–100 late vblanks per 300, while the game thread was 25–48% busy. G4 is in, as `dynres=` (`config.txt` and the menu's `DYNAMIC RES` row), **default `OFF` after hardware run J6**: on a Vita, 67% still took 11–17 ms of GPU time a picture in Toasty, so about half the GPU's picture doesn't go with the pixels (D75). What's in:
 - **A sub-rect, not new targets:** each target draws into a part of its own texture (`glViewport`) at 88%, 75% or 67% of the screen's pixels in each direction, and the present scales that part up with the GPU's bilinear filter. The scale changes only at a target's whole clear. `dynres=0` is main's drawing exactly.
-- **Steered by the GPU's own time,** from vitaGL's scene fences (`gpu_meter.c`, a wrapped `sceGxmEndScene` and a poller on core 1): no `glFinish`. Down at once when a picture's GPU time passes 94% of its vblank; up one step after 2–16 s of the next step predicted to fit in 80%.
-- *Estimated* per picture (fixed ~1.5 ms + pixels): a 19 ms heavy picture becomes 14.9 ms at 88%, 11.3 at 75%, 9.3 at 67%; the worst seen (24 ms) 14.2 at 75%. Runs J1–J5 in `tools/vita/fps-runs/` measure it.
-- While dynres can still go down, the render thread's late pictures don't make the 60 fps budget fall to 30 (D75, D74).
+- **Steered by the GPU's own time,** from vitaGL's scene fences (`gpu_meter.c`, a wrapped `sceGxmEndScene` and a poller on core 1): no `glFinish`. Down only after 0.4 s over a vblank, by the smallest step predicted to fit; up after 1–8 s.
+- The meter now splits the GPU's time by scene (the game's frames, the atlas's decode passes, the present): `gpu_meter=1`, run J7. The next GPU saving should come from whichever of those holds the fixed half.
+- 60 fps never falls to 30 for the GPU or the render thread; only the game thread's own CPU time can hold 30 (D75's safety net).
 
 ## The in-between frame: why it stays a full draw (D70)
 

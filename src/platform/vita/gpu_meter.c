@@ -23,7 +23,12 @@
  * picture at any load). It's left out; it still ends the GPU's wait for the
  * scenes behind it. Its own work, one full-screen quad, is the same at
  * every scale: dynres.c adds an estimate for it.
- * Nothing here changes what vitaGL or the GPU does: the wrapper passes every
+ * Each scene is also counted by what it draws into (J6: at 67% the GPU
+ * still took 11-17 ms a picture in Toasty, so most of its time doesn't go
+ * with the targets' pixels): sceGxmBeginScene is wrapped too, and its
+ * colour surface's address is looked up among those gpu_gl.c registered
+ * (the targets, the atlas); the swap's scene is the present.
+ * Nothing here changes what vitaGL or the GPU does: the wrappers pass every
  * argument through, and the thread only reads. */
 #include "vita.h"
 #include "gpu_rt.h"
@@ -45,7 +50,7 @@ typedef struct {
   volatile unsigned int *addr;
   unsigned int value;
   uint32_t t;  /* submitted, us (low 32 bits) */
-  int display; /* the swap's scene: not counted */
+  int kind;    /* GPU_K_*; GPU_K_PRESENT (the swap's scene) isn't in s_busy_us */
 } Scene;
 
 static Scene s_ring[RINGN];
@@ -57,9 +62,64 @@ static volatile int s_dead;      /* 1: notifications never came (the meter is of
 static volatile uint32_t s_busy_us; /* GPU busy time, counted up (wraps; differences) */
 static volatile uint32_t s_dropped; /* scenes the ring had no room for */
 static int s_display;               /* the vitaGL thread is in vglSwapBuffers */
+static volatile uint32_t s_kbusy[GPU_K_COUNT], s_kscenes[GPU_K_COUNT]; /* per kind, counted up */
+
+/* colour surfaces gpu_gl.c named (the vitaGL thread only) */
+#define NSURF 16
+static struct {
+  const void *data;
+  int kind;
+} s_surf[NSURF];
+static int s_cur_kind = GPU_K_OTHER; /* the scene begun last */
 
 /* gpu_gl.c's swap(), around vglSwapBuffers (the vitaGL thread) */
 void vita_gpu_meter_display(int on) { s_display = on; }
+
+/* gpu_gl.c: scenes drawing into this texture data are of this kind (the
+ * vitaGL thread). A new address replaces the oldest when full. */
+void vita_gpu_meter_surface(const void *data, int kind) {
+  static int next;
+  int i;
+  if (!data)
+    return;
+  for (i = 0; i < NSURF; i++)
+    if (s_surf[i].data == data) {
+      s_surf[i].kind = kind;
+      return;
+    }
+  s_surf[next].data = data;
+  s_surf[next].kind = kind;
+  next = (next + 1) % NSURF;
+}
+
+int __real_sceGxmBeginScene(SceGxmContext *context, unsigned int flags,
+                            const SceGxmRenderTarget *renderTarget,
+                            const SceGxmValidRegion *validRegion,
+                            SceGxmSyncObject *vertexSyncObject,
+                            SceGxmSyncObject *fragmentSyncObject,
+                            const SceGxmColorSurface *colorSurface,
+                            const SceGxmDepthStencilSurface *depthStencil);
+
+int __wrap_sceGxmBeginScene(SceGxmContext *context, unsigned int flags,
+                            const SceGxmRenderTarget *renderTarget,
+                            const SceGxmValidRegion *validRegion,
+                            SceGxmSyncObject *vertexSyncObject,
+                            SceGxmSyncObject *fragmentSyncObject,
+                            const SceGxmColorSurface *colorSurface,
+                            const SceGxmDepthStencilSurface *depthStencil) {
+  if (s_on) {
+    const void *data = colorSurface ? sceGxmColorSurfaceGetData(colorSurface) : NULL;
+    int i;
+    s_cur_kind = GPU_K_OTHER;
+    for (i = 0; data && i < NSURF; i++)
+      if (s_surf[i].data == data) {
+        s_cur_kind = s_surf[i].kind;
+        break;
+      }
+  }
+  return __real_sceGxmBeginScene(context, flags, renderTarget, validRegion, vertexSyncObject,
+                                 fragmentSyncObject, colorSurface, depthStencil);
+}
 
 int __real_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vertexNotification,
                           const SceGxmNotification *fragmentNotification);
@@ -77,7 +137,7 @@ int __wrap_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vert
   s_ring[w % RINGN].addr = fragmentNotification->address;
   s_ring[w % RINGN].value = fragmentNotification->value;
   s_ring[w % RINGN].t = (uint32_t)now_us();
-  s_ring[w % RINGN].display = s_display;
+  s_ring[w % RINGN].kind = s_display ? GPU_K_PRESENT : s_cur_kind;
   __atomic_store_n(&s_w, w + 1, __ATOMIC_RELEASE);
   if (__atomic_load_n(&s_sleeping, __ATOMIC_SEQ_CST) &&
       __atomic_exchange_n(&s_sleeping, 0, __ATOMIC_SEQ_CST))
@@ -111,8 +171,10 @@ static int meter_main(SceSize args, void *argp) {
       uint32_t d = t - start;
       if (start == s->t) /* didn't queue: the poll's lateness, on average */
         d = d > POLL_US / 2 ? d - POLL_US / 2 : 0;
-      if (!s->display)
+      if (s->kind != GPU_K_PRESENT)
         __atomic_store_n(&s_busy_us, s_busy_us + d, __ATOMIC_RELEASE);
+      s_kbusy[s->kind] += d;
+      s_kscenes[s->kind]++;
       last_done = t;
       __atomic_store_n(&s_r, ++r, __ATOMIC_RELEASE);
       continue;
@@ -157,3 +219,16 @@ int vita_gpu_meter(uint32_t *busy_us, uint32_t *scenes) {
 }
 
 unsigned vita_gpu_meter_dropped(void) { return s_dropped; }
+
+/* Per kind (GPU_K_*), the busy time and the scenes so far (counted up:
+ * take differences); 0 if there's no measure. Any thread. */
+int vita_gpu_meter_kinds(uint32_t busy_us[GPU_K_COUNT], uint32_t scenes[GPU_K_COUNT]) {
+  int k;
+  if (!s_on || s_dead)
+    return 0;
+  for (k = 0; k < GPU_K_COUNT; k++) {
+    busy_us[k] = __atomic_load_n(&s_kbusy[k], __ATOMIC_ACQUIRE);
+    scenes[k] = __atomic_load_n(&s_kscenes[k], __ATOMIC_ACQUIRE);
+  }
+  return 1;
+}

@@ -241,6 +241,7 @@ static int wd_main(SceSize args, void *argp) {
     if (logged && s_dump && stuck >= limit + DUMP_AFTER_S) {
       vita_log("hang: stopping the app for a crash dump (a .psp2dmp in ux0:data; hang_dump=0 "
                "turns this off)");
+      vita_log_flush();
       sceKernelDelayThread(200000);
       __builtin_trap();
     }

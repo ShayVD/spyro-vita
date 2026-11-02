@@ -142,6 +142,8 @@
  *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
+ *       log_sync=1      each log line written by the thread that logs it
+ *                       (default 0: a writer thread on cores 1-2; log.c, D75)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -171,7 +173,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .interp_budget = 1, .mixer = 1, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
-                        .dynres = 1, /* D75 */
+                        .dynres = 0, /* D75: off by default after hardware run J6 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -316,6 +318,8 @@ static void read_config(void) {
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
       g_vita_opts.gpu_meter = atoi(v);
+    else if (!strcmp(line, "log_sync"))
+      g_vita_opts.log_sync = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
@@ -421,6 +425,7 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   read_config();
+  vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
            g_fast_render ? "hand-written renderers, inline GTE commands (D72)"
                          : "translated renderers, PsyCross's GTE_operator");

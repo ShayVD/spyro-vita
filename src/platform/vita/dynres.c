@@ -67,6 +67,16 @@ static struct {
   unsigned last_cost; /* us per picture, the last window */
 } s_st;
 
+/* per report, every picture outside the menu: the GPU's time by kind of
+ * scene (gpu_meter.c) and the most finished between two pictures (J6) */
+static struct {
+  unsigned pics;
+  uint32_t busy[GPU_K_COUNT], scenes[GPU_K_COUNT];
+  uint32_t worst;
+} s_kd;
+static uint32_t s_kbusy0[GPU_K_COUNT], s_kscenes0[GPU_K_COUNT], s_pbusy0;
+static int s_khave;
+
 int vita_gpu_meter(uint32_t *busy_us, uint32_t *scenes); /* gpu_meter.c */
 void vita_gpu_meter_start(void);
 unsigned vita_gpu_meter_dropped(void);
@@ -157,6 +167,26 @@ void dynres_picture(int menu) {
   }
   if (!vita_gpu_meter(&busy, &scenes))
     return;
+  {
+    uint32_t kb[GPU_K_COUNT], ks[GPU_K_COUNT];
+    int k;
+    vita_gpu_meter_kinds(kb, ks);
+    if (s_khave && !menu) {
+      uint32_t all = 0;
+      for (k = 0; k < GPU_K_COUNT; k++) {
+        s_kd.busy[k] += kb[k] - s_kbusy0[k];
+        s_kd.scenes[k] += ks[k] - s_kscenes0[k];
+      }
+      all = busy - s_pbusy0;
+      if (all > s_kd.worst)
+        s_kd.worst = all;
+      s_kd.pics++;
+    }
+    memcpy(s_kbusy0, kb, sizeof kb);
+    memcpy(s_kscenes0, ks, sizeof ks);
+    s_pbusy0 = busy;
+    s_khave = 1;
+  }
   if (menu) {
     s_have0 = 0; /* the window starts again after the menu */
     return;
@@ -201,4 +231,20 @@ void dynres_report(int vblank) {
              vblank, any ? line : "(none measured)", s_st.downs, s_st.ups, PCT(s_step),
              s_hold, vita_gpu_meter_dropped());
   memset(&s_st, 0, sizeof s_st);
+  if (s_kd.pics) {
+    static const char *const names[GPU_K_COUNT] = {"the game's frames", "texture decodes",
+                                                   "other", "the present"};
+    int k;
+    len = 0;
+    for (k = 0; k < GPU_K_COUNT; k++) {
+      unsigned us = s_kd.busy[k] / s_kd.pics;
+      len += snprintf(line + len, sizeof line - len, "%s%s %u.%02u ms in %u.%u scenes",
+                      k ? "; " : "", names[k], us / 1000, us % 1000 / 10,
+                      s_kd.scenes[k] / s_kd.pics, s_kd.scenes[k] * 10 / s_kd.pics % 10);
+    }
+    vita_log("gpu meter %d: GPU time per picture over %u pictures: %s (with its wait for the "
+             "display); the most finished between two pictures %u.%02u ms (without the present)",
+             vblank, s_kd.pics, line, s_kd.worst / 1000, s_kd.worst % 1000 / 10);
+  }
+  memset(&s_kd, 0, sizeof s_kd);
 }

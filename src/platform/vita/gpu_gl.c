@@ -847,6 +847,12 @@ static int tex_cdram(GLuint tex) {
   return info.type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW;
 }
 
+/* the GPU meter's kind for scenes drawing into tex (D75) */
+static void tex_meter(GLuint tex, int kind) {
+  glBindTexture(GL_TEXTURE_2D, tex);
+  vita_gpu_meter_surface(vglGetTexDataPointer(GL_TEXTURE_2D), kind);
+}
+
 static void bind_fbo(GLuint fbo) {
   if (s_bound_fbo != fbo) {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -1027,6 +1033,7 @@ static void atlas_reset(void) {
       glGenFramebuffers(1, &s_afbo[i]);
       glBindFramebuffer(GL_FRAMEBUFFER, s_afbo[i]);
       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_atex[i], 0);
+      tex_meter(s_atex[i], GPU_K_ATLAS);
     }
     s_bound_fbo = (GLuint)-1;
   }
@@ -1515,6 +1522,7 @@ static Target *target_for(int x, int y, int w, int h) {
   if (!t->tex) {
     t->tex = new_tex(t->pw, t->ph, NULL);
     t->cdram = tex_cdram(t->tex);
+    tex_meter(t->tex, GPU_K_TARGET);
     glGenFramebuffers(1, &t->fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);

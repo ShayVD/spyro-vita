@@ -59,5 +59,9 @@ void dynres_picture(int menu); /* every picture; menu: the options panel is up *
 int dynres_scale(void);        /* per mille: the scale targets take at their next whole clear */
 void dynres_report(int vblank);
 void vita_gpu_meter_display(int on); /* gpu_meter.c: around vglSwapBuffers */
+/* gpu_meter.c: what a GPU scene draws into (D75) */
+enum { GPU_K_TARGET, GPU_K_ATLAS, GPU_K_OTHER, GPU_K_PRESENT, GPU_K_COUNT };
+void vita_gpu_meter_surface(const void *data, int kind);
+int vita_gpu_meter_kinds(uint32_t busy_us[GPU_K_COUNT], uint32_t scenes[GPU_K_COUNT]);
 
 #endif

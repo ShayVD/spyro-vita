@@ -125,7 +125,7 @@ The same VPK for all three. `fast_render=1` is the default since D72; G1 turns i
 
 ## Runs J1–J5: dynamic resolution (D75)
 
-The same VPK for all five (built from the D75 branch). `dynres=1` (auto) is the default from D75 on; `dynres=0` puts back native resolution always, drawn exactly as main draws it. The route is the one in `logs/hw-main-2a0691c`: a minute in Artisans, then **Toasty** (level 14) for 3–5 minutes, the same paths each time, ending with the heavy views that ran late there (vblanks ~2100–3600 and 7500–9300 of that log: the open areas with the most on screen). Don't open the options menu during J1–J3 (the menu's windows are paused and their timings mean nothing).
+The same VPK for all five (built from the D75 branch). `dynres=1` (auto) was the default until J6 (now `0`, off; the J files set what they need); `dynres=0` puts back native resolution always, drawn exactly as main draws it. The route is the one in `logs/hw-main-2a0691c`: a minute in Artisans, then **Toasty** (level 14) for 3–5 minutes, the same paths each time, ending with the heavy views that ran late there (vblanks ~2100–3600 and 7500–9300 of that log: the open areas with the most on screen). Don't open the options menu during J1–J3 (the menu's windows are paused and their timings mean nothing).
 
 | File | Switches | Do |
 |---|---|---|
@@ -148,3 +148,17 @@ The same VPK for all five (built from the D75 branch). `dynres=1` (auto) is the 
 - **J5**: a picture may take two vblanks at 30 fps, so dynres should stay at `now 100%` with 0 down in every window (Toasty's heaviest views took 16–24 ms, under 94% of 33.4).
 
 **The picture:** with dynres on, the heavy views turn a little softer (bilinear upscaling from 840×476, 720×408 or 641×363) and sharpen again within a few seconds of the view getting lighter. A bug would look like: a picture shifted, stretched or with a band of an older picture at its right or bottom edge, the in-between frames jumping against the real ones, a flash at the moment of a change, the pause or inventory background looking wrong, or the scale changing back and forth every second or so in one place.
+
+## Run J7: where the GPU's time goes (after J6)
+
+J6 (`j6-one-run.txt`, the logs in `logs/hw-j6/` of the main checkout) showed that at 67% the GPU still took 11–17 ms a picture in Toasty's heavy views, and a 60–150 ms hitch in nearly every 5 s window. J7 runs the build after it: dynres off (the new default), the log written by its own thread, and the meter splitting the GPU's time by kind of scene.
+
+| File | Switches | Do |
+|---|---|---|
+| `j7-gpu-split.txt` | 60 fps on (`interp=1`, the safety net on), `dynres=0`, `gpu_meter=1`, `gpu_lean=1 parse_thread=1` | J6's route: a minute in Artisans, then Toasty 3–5 minutes ending in the heavy views. Don't open the menu |
+
+**What the log should show:**
+- `log: written by a thread on cores 1-2` near the start.
+- `time N: ... worst vblank X ms`: X under ~40 ms in most windows if the log's writes were J6's hitch. Still 60+ in every window means they weren't: say so, and whether you still feel a hitch every few seconds.
+- `gpu meter N: GPU time per picture over P pictures: the game's frames A ms in a scenes; texture decodes B ms in b; other C ms in c; the present D ms in d (with its wait for the display); the most finished between two pictures M ms`. In the heavy views A + B + C over ~15 ms is the GPU over its vblank. Which of A and B is big says where the next saving is: B large, the atlas's decode passes; A large with few scenes, the targets' own scenes.
+- The picture is native throughout (dynres off).

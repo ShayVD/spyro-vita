@@ -61,15 +61,18 @@ typedef struct {
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
-  int dynres;         /* dynres=1 (default): auto, a lower render scale only when the GPU can't
-                         keep up; 0: off; 88, 75, 67: that scale, always (D75) */
+  int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU
+                         can't keep up; 88, 75, 67: that scale, always (D75) */
   int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
+  int log_sync;       /* log_sync=1: each log line written on its own thread, not by the log's (D75) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
 
 /* log.c: ux0:data/spyro/spyro.log through sceIoWrite (D7) */
 void vita_log_open(void);
+void vita_log_start(int sync); /* the writer thread (D75), after config.txt */
+void vita_log_flush(void);
 void vita_log(const char *fmt, ...);  /* one line, no trailing \n needed */
 
 /* vblank.c */
