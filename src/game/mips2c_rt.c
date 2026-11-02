@@ -6,7 +6,7 @@
 
 u32 g_mips_sp;
 u32 g_mips_v1;
-int g_fast_render = 1; /* mips2c_rt.h, D72 */
+int g_fast_render = 2; /* mips2c_rt.h, D72, D80; 2 by default since D81 */
 
 /* R3000 division: no trap; x/0 gives hi = x, lo = -1 (x >= 0) or 1. */
 void mips2c_div(u32 a, u32 b, u32 *hi, u32 *lo) {
