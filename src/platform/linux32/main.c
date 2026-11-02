@@ -125,7 +125,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check] [--prof-draw]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }

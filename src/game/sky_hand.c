@@ -82,7 +82,7 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
   const u8 *index = 0;
   u32 i = 0;
 #if NGTE
-  NgteRing ring = NGTE_RING_INIT;
+  NgteSync sync;
   NgteProj P;
 #endif
 
@@ -96,6 +96,7 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
   CTC2(0u, 7);
 #if NGTE
   P = ngte_proj_get();
+  ngte_sync_init(&sync);
 #endif
   if (group >= 0)
     index = HPTR(const u8, HPTR(const u32, cyc[3])[group]);
@@ -117,7 +118,7 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
     {
       const u32 vxy = sector[SEC_CENTER_XY], vz = (u32)((s32)sector[SEC_CENTER_Z] >> 16);
       radius = (s16)sector[SEC_CENTER_Z];
-      ngte_ring_push(&ring, vxy, vz);
+      ngte_rtps_rec(&sync, vxy, vz, NGTE_RD_SZ3);
       if ((s32)((u32)ngte_rtps_w(&P, vxy, vz).mac3 - (u32)radius) > 0)
         *out++ = sector_addr;
     }
@@ -132,7 +133,7 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
 #endif
   }
 #if NGTE
-  ngte_ring_replay(&ring, 1);
+  ngte_flush(&sync);
 #endif
   *out = 0;
 }
@@ -145,7 +146,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   const u32 limit = *(u32 *)D_80075780 - 0x400;
   u32 prim, first, prev_tag, tag = 0;
 #if NGTE
-  NgteRing ring = NGTE_RING_INIT;
+  NgteSync sync;
   NgteProj P;
 #endif
   (void)a3;
@@ -160,6 +161,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   CTC2(proj[4], 4);
 #if NGTE
   P = ngte_proj_get();
+  ngte_sync_init(&sync);
 #endif
   prim = *(u32 *)D_800757B0 + 4; /* the first primitive's tag follows a word */
   first = prim;
@@ -197,9 +199,9 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
       for (i = n > 4 ? n - 4 : 0; i <= n; i++) {
         VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
         if (i < n)
-          ngte_ring_push(&ring, vxy, vz);
+          ngte_rtps_rec(&sync, vxy, vz, 0);
         else
-          ngte_ring_v0(&ring, vxy, vz);
+          ngte_v0(&sync, vxy, vz);
       }
     }
 #else
@@ -263,7 +265,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
 
 done:
 #if NGTE
-  ngte_ring_replay(&ring, 0);
+  ngte_flush(&sync);
 #endif
   *(u32 *)D_800757B0 = prim;
   if (prim != first) {

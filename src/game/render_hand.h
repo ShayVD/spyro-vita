@@ -11,6 +11,8 @@
 
 #include "mips2c_rt.h"
 
+#include <string.h>
+
 /* A PS1 address the game keeps in RAM (a pointer field, a list entry) as a
  * host pointer. The game's own pointers are arena addresses already; this
  * maps the KUSEG mirror (and on the Vita its other aliases) as MIPS_KUSEG
@@ -56,51 +58,124 @@ static inline void hand_spill_regs(void) {
  * renderer is compiled twice. NAME_hand.c itself, with NGTE 0, is today's
  * hand C on the GTE register file (fast_render=1); NAME_hand_ngte.c
  * includes it with NGTE 1, which turns on the native GTE maths of
- * gte_native.h at the sites marked `if (NGTE ...)`. With NGTE 0 those
- * branches compile away and the code is the fast_render=1 code as it was.
+ * gte_native.h in the `#if NGTE` blocks. With NGTE 0 the code is the
+ * fast_render=1 code as it was.
  *
- * How the native code keeps the register file exact: the GTE's state
- * between functions stays in gteRegs (the mips2c units, PsyCross and the
- * decomp C read and write it there). A vertex loop runs native for all but
- * its last NGTE_TAIL vertices and the register-file code for those, so the
- * FIFOs, MAC, IR and FLAG end as the register-file loop leaves them. A
- * polygon loop keeps what its last native commands would have left (the
- * SXY words it set, NCLIP's MAC0, ...) in an NgteSync and writes it to the
- * register file (ngte_flush) before any register-file code runs and before
- * the renderer returns. */
+ * The register file stays exact. The GTE's state between functions lives in
+ * gteRegs (the mips2c units, PsyCross and the decomp C read and write it
+ * there, and the oracle replay compares all of it), so the native code
+ * leaves gteRegs as the register-file code would have, before any
+ * register-file code runs and before the renderer returns:
+ *  - a loop whose commands interleave (INTPL with RTPS, two DPCS per step)
+ *    runs native for all but its last few steps and the register-file code
+ *    for those: after NGTE_TAIL RTPS or three colour commands, every
+ *    register a command writes, FIFOs included, holds what the whole loop
+ *    leaves;
+ *  - other native commands go into an NgteSync, which keeps only what can
+ *    still show in the register file (the inputs of the last four RTPS, of
+ *    the last three DPCS, the SXY words set and NCLIP's MAC0) and replays or
+ *    stores them (ngte_flush). */
 #ifndef NGTE
 #define NGTE 0
 #endif
 #include "gte_native.h"
-/* The last vertices of a vertex loop that run on the register file: SZ0-3
- * is the deepest FIFO, so after four RTPS every register an RTPS writes
- * holds what the register-file loop leaves. */
 #define NGTE_TAIL 4
 
-/* What native NCLIPs have left pending for the register file. */
+/* An RTPS whose SZ3 the code read (MFC2 19 zeroes the register's high
+ * half, which no RTPS writes: one read since the flush is enough). */
+#define NGTE_RD_SZ3 1
+
 typedef struct {
-  u32 sxy0, sxy1, sxy2; /* the screen positions the code put in SXY0-2 */
-  s32 mac0;             /* the last NCLIP's result */
-  u8 sxy_set, nclip;    /* SXY0-2 written, and an NCLIP run, since the flush */
+  /* RTPS: the last four inputs (V0's words) and their reads */
+  u32 vxy[4], vz[4];
+  u32 nr;        /* RTPS since the last flush */
+  u32 rd;        /* NGTE_RD_* of any of them */
+  u32 v0xy, v0z; /* what the code last moved into V0 after them */
+  u8 v0;
+  /* DPCS: the last three inputs (RGBC, IR0, RFC-BFC as moved there) */
+  u32 rgbc[3], ir0[3], rfc[3], gfc[3], bfc[3];
+  u32 nc;
+  /* SXY0-2 as last moved there, and the last NCLIP's MAC0 */
+  u32 sxy0, sxy1, sxy2;
+  s32 mac0;
+  u8 sxy_set, nclip;
+  /* each group's last command, by a running count: the flush replays the
+   * groups in that order (they write the same MAC, IR and FLAG; the last
+   * one wins, and no group reads what another writes) */
+  u32 seq, last_r, last_c, last_s;
 } NgteSync;
 
-#define NGTE_SYNC_INIT {0, 0, 0, 0, 0, 0}
+static inline void ngte_sync_init(NgteSync *s) { memset(s, 0, sizeof *s); }
 
-/* MTC2 to SXY0-2, as the register-file code would: whole words */
-static inline void ngte_set_sxy(NgteSync *s, u32 xy0, u32 xy1, u32 xy2) {
+static inline void ngte_rtps_rec(NgteSync *s, u32 vxy, u32 vz, u32 rd) {
+  const u32 k = s->nr++ & 3;
+  s->vxy[k] = vxy;
+  s->vz[k] = vz;
+  s->rd |= rd;
+  s->v0 = 0; /* a move into V0 before this RTPS doesn't outlast it */
+  s->last_r = ++s->seq;
+}
+static inline void ngte_v0(NgteSync *s, u32 vxy, u32 vz) {
+  s->v0xy = vxy;
+  s->v0z = vz;
+  s->v0 = 1;
+}
+static inline void ngte_dpcs_rec(NgteSync *s, u32 rgbc, u32 ir0, u32 rfc, u32 gfc, u32 bfc) {
+  const u32 k = s->nc++ % 3;
+  s->rgbc[k] = rgbc;
+  s->ir0[k] = ir0;
+  s->rfc[k] = rfc;
+  s->gfc[k] = gfc;
+  s->bfc[k] = bfc;
+  s->last_c = ++s->seq;
+}
+/* MTC2 to SXY0-2 (whole words) */
+static inline void ngte_sxy(NgteSync *s, u32 xy0, u32 xy1, u32 xy2) {
   s->sxy0 = xy0;
   s->sxy1 = xy1;
   s->sxy2 = xy2;
   s->sxy_set = 1;
+  s->last_s = ++s->seq;
 }
-/* NCLIP on what's pending: MAC0, FLAG 0 */
+/* MTC2 to SXY0 alone */
+static inline void ngte_sxy0(NgteSync *s, u32 xy) {
+  s->sxy0 = xy;
+  s->sxy_set = 1;
+  s->last_s = ++s->seq;
+}
+/* NCLIP on SXY0-2 as set: MAC0, FLAG 0 */
 static inline s32 ngte_nclip_s(NgteSync *s) {
   s->mac0 = ngte_nclip(s->sxy0, s->sxy1, s->sxy2);
   s->nclip = 1;
+  s->last_s = ++s->seq;
   return s->mac0;
 }
-/* The register file as the pending moves and NCLIPs would have left it. */
-static inline void ngte_flush(NgteSync *s) {
+
+static inline void ngte_flush_r(NgteSync *s) {
+  u32 k = s->nr > 4 ? s->nr - 4 : 0;
+  for (; k < s->nr; k++) {
+    MTC2(s->vz[k & 3], 1);
+    MTC2(s->vxy[k & 3], 0);
+    gte_rtps();
+  }
+  if (s->rd & NGTE_RD_SZ3)
+    (void)MFC2(19);
+  s->nr = 0;
+  s->rd = 0;
+}
+static inline void ngte_flush_c(NgteSync *s) {
+  u32 k = s->nc > 3 ? s->nc - 3 : 0;
+  for (; k < s->nc; k++) {
+    CTC2(s->rfc[k % 3], 21);
+    CTC2(s->gfc[k % 3], 22);
+    CTC2(s->bfc[k % 3], 23);
+    MTC2(s->rgbc[k % 3], 6);
+    MTC2(s->ir0[k % 3], 8);
+    m2c_gte_0x780010(); /* DPCS */
+  }
+  s->nc = 0;
+}
+static inline void ngte_flush_s(NgteSync *s) {
   if (s->sxy_set) {
     C2_SXY0 = s->sxy0;
     C2_SXY1 = s->sxy1;
@@ -113,47 +188,40 @@ static inline void ngte_flush(NgteSync *s) {
   s->sxy_set = s->nclip = 0;
 }
 
-/* The last RTPS of a native vertex loop whose only GTE work is RTPS on V0
- * (and plain reads of what it leaves). Replaying the last four on the
- * register file, with the same projection, leaves every register as the
- * whole loop would have: SZ0-3, SXY0-2, MAC, IR, FLAG. Then V0 gets what
- * the code last moved there (the pipelined load of the vertex after). */
-typedef struct {
-  u32 vxy[4], vz[4];
-  u32 n;          /* RTPS since the last replay */
-  u32 v0xy, v0z;  /* V0 after them, when v0 is set */
-  int v0;
-} NgteRing;
-
-#define NGTE_RING_INIT {{0, 0, 0, 0}, {0, 0, 0, 0}, 0, 0, 0, 0}
-
-static inline void ngte_ring_push(NgteRing *r, u32 vxy, u32 vz) {
-  r->vxy[r->n & 3] = vxy;
-  r->vz[r->n & 3] = vz;
-  r->n++;
-}
-static inline void ngte_ring_v0(NgteRing *r, u32 vxy, u32 vz) {
-  r->v0xy = vxy;
-  r->v0z = vz;
-  r->v0 = 1;
-}
-/* READ_SZ3: the loop read SZ3 after each RTPS (MFC2 19 zeroes its high
- * half; the replay does the same). */
-static inline void ngte_ring_replay(NgteRing *r, int read_sz3) {
-  u32 k = r->n > 4 ? r->n - 4 : 0;
-  for (; k < r->n; k++) {
-    MTC2(r->vz[k & 3], 1);
-    MTC2(r->vxy[k & 3], 0);
-    gte_rtps();
-    if (read_sz3)
-      (void)MFC2(19);
+/* Before a run of N native RTPS: SXY0-2, MAC0 and FLAG as set by moves
+ * and NCLIPs since the last RTPS can't show after four more RTPS, which
+ * write all three; with fewer, everything pending goes to the register file
+ * first so the FIFO shifts what it should. */
+static inline void ngte_rtps_run(NgteSync *s, u32 n);
+/* The register file as the native commands would have left it. */
+static inline void ngte_flush(NgteSync *s) {
+  int g;
+  for (g = 0; g < 3; g++) {
+    /* the group whose last command is the oldest of those pending */
+    u32 r = s->nr ? s->last_r : ~0u, c = s->nc ? s->last_c : ~0u;
+    u32 x = (s->sxy_set || s->nclip) ? s->last_s : ~0u;
+    if (r == ~0u && c == ~0u && x == ~0u)
+      break;
+    if (r <= c && r <= x)
+      ngte_flush_r(s);
+    else if (c <= x)
+      ngte_flush_c(s);
+    else
+      ngte_flush_s(s);
   }
-  if (r->v0) {
-    MTC2(r->v0z, 1);
-    MTC2(r->v0xy, 0);
+  if (s->v0) {
+    MTC2(s->v0z, 1);
+    MTC2(s->v0xy, 0);
+    s->v0 = 0;
   }
-  r->n = 0;
-  r->v0 = 0;
+}
+static inline void ngte_rtps_run(NgteSync *s, u32 n) {
+  if (!(s->sxy_set || s->nclip))
+    return;
+  if (n >= 4)
+    s->sxy_set = s->nclip = 0;
+  else
+    ngte_flush(s);
 }
 
 /* Run both hand renderers from the same state and compare RAM, the
