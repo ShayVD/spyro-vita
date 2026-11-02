@@ -29,7 +29,14 @@
  * Everything the asm leaves in RAM, the scratchpad and the GTE is the same:
  * the same GTE moves and commands in the same order, the vertex past the end
  * that the pipelined loads leave in V0, and the stores the asm makes before
- * it rejects a polygon (they land in the next primitive's space). */
+ * it rejects a polygon (they land in the next primitive's space).
+ *
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): the sector culling's
+ * MVMVA, the vertex loops' RTPS, the polygons' NCLIP and the depth fades'
+ * DPCS are native maths (gte_native.h); the animation blends and the
+ * subdivision grids run native but for their last steps. What the native
+ * commands would have left in the GTE goes back into it at the end of each
+ * pass, or before the register-file code that follows. */
 #include "render_hand.h"
 
 extern char g_Camera[];
@@ -77,6 +84,11 @@ enum { C_RBK = 13, C_GBK = 14, C_BBK = 15, C_RFC = 21, C_GFC = 22, C_BFC = 23, C
 #define gte_intpl() m2c_gte_0x980011()
 #define gte_dpcs() m2c_gte_0x780010()
 #define gte_gpf0() m2c_gte_0x190003D()
+
+#if NGTE
+/* The drawing passes' projection (EnvDraw), read once from the GTE. */
+static NgteProj s_proj;
+#endif
 
 /* A sector (byte offsets). */
 enum {
@@ -162,6 +174,24 @@ static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
   a += 4;
   wb = AT32(b);
   b += 4;
+#if NGTE
+  {
+    /* native but for the last three steps (three INTPL refill the colour
+     * FIFO); IR1-3 then get the vertex the last native step moved there */
+    const int ir0 = (s16)(f->blend << 4);
+    const u32 code = C2_CODE;
+    while ((s32)(end - a) > 12) {
+      NgteCol o = ngte_intpl(wa >> 21, (wa >> 10) & 0x7FF, wa & 0x3FF, ir0, wb >> 21,
+                             (wb >> 10) & 0x7FF, wb & 0x3FF, code);
+      wa = AT32(a);
+      wb = AT32(b);
+      dst += 4;
+      a += 4;
+      b += 4;
+      AT32(dst - 4) = ((u32)o.mac1 << 21) + ((u32)o.mac2 << 10) + (u32)o.mac3;
+    }
+  }
+#endif
   MTC2(wa >> 21, IR1);
   MTC2((wa >> 10) & 0x7FF, IR2);
   MTC2(wa & 0x3FF, IR3);
@@ -208,6 +238,22 @@ static void AnimBlendColours(const AnimFrames *f, u32 dst) {
   MTC2(f->blend << 4, IR0);
   wa = AT32(a);
   wb = AT32(b);
+#if NGTE
+  {
+    /* native but for the last three DPCS */
+    const int ir0 = (s16)(f->blend << 4);
+    while ((s32)(end - a) > 12) {
+      const u32 step = (wa >> 22) & 0x3FC;
+      const u32 rgb = ngte_dpcs(wa & 0xFFFFFF, ir0, (wb << 4) & 0xFF0, (wb >> 4) & 0xFF0, (wb >> 12) & 0xFF0).rgb2;
+      wa = AT32(a + 4);
+      wb = AT32(b + 4);
+      a += 4;
+      b += 4;
+      dst += step;
+      AT32(dst) = rgb;
+    }
+  }
+#endif
   do {
     u32 step;
     MTC2(wa & 0xFFFFFF, RGBC);
@@ -249,6 +295,27 @@ static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
   near += (counts << 2) & 0x3FC;
   w1 = AT32(b);
   far = near + ((counts >> 6) & 0x3FC);
+#if NGTE
+  {
+    /* native but for the last two steps (four DPCS) */
+    const int ir0 = (s16)(f->blend << 4);
+    while ((s32)(end - a) > 16) {
+      const u32 step = (w0 >> 22) & 0x3FC;
+      u32 rgb = ngte_dpcs(w0 & 0xFFFFFF, ir0, (w1 << 4) & 0xFF0, (w1 >> 4) & 0xFF0, (w1 >> 12) & 0xFF0).rgb2;
+      w0 = AT32(a + 4);
+      w1 = AT32(b + 4);
+      near += step;
+      AT32(near) = rgb;
+      rgb = ngte_dpcs(w0, ir0, (w1 << 4) & 0xFF0, (w1 >> 4) & 0xFF0, (w1 >> 12) & 0xFF0).rgb2;
+      a += 8;
+      b += 8;
+      w0 = AT32(a);
+      w1 = AT32(b);
+      far += step;
+      AT32(far) = rgb;
+    }
+  }
+#endif
   do {
     u32 step;
     MTC2(w0 & 0xFFFFFF, RGBC);
@@ -319,6 +386,30 @@ typedef struct {
   s32 x, y, z; /* g_Camera's position >> 4 */
 } CamPos;
 
+#if NGTE
+/* The last culling MVMVA, until it goes to the register file: its inputs as
+ * moved into IR3, IR1, IR2, and whether the code read IR2 after it (MFC2 of
+ * an IR register rewrites its high half). */
+typedef struct {
+  u32 ir3, ir1, ir2;
+  int read_ir2, pending;
+} CullMvmva;
+
+static void CullFlush(CullMvmva *m) {
+  if (!m->pending)
+    return;
+  MTC2(m->ir3, IR3);
+  MTC2(m->ir1, IR1);
+  MTC2(m->ir2, IR2);
+  gte_mvmva_rt_ir();
+  (void)MFC2(IR3);
+  (void)MFC2(IR1);
+  if (m->read_ir2)
+    (void)MFC2(IR2);
+  m->pending = 0;
+}
+#endif
+
 static void SectorLists(s32 group, const CamPos *cam) {
   const u32 env = ADDR(g_Environment);
   const u32 lod = PORT_LOD_ENV(AT32(env + 0x24)) >> 4; /* m_LodDistance */
@@ -327,6 +418,10 @@ static void SectorLists(s32 group, const CamPos *cam) {
   u32 i = 0, n4 = AT32(env + 0x4) << 2; /* m_SectorCount */
   const u8 *group_list = 0;
   int s;
+#if NGTE
+  const NgteMat view = ngte_rot_get(); /* EnvDraw's view matrix, no translation */
+  CullMvmva mv = {0, 0, 0, 0, 0};
+#endif
 
   for (s = 0; s < 0x100; s += 4)
     AT32(ADDR(D_800771C8) + s) = 0;
@@ -352,6 +447,24 @@ static void SectorLists(s32 group, const CamPos *cam) {
     w0 = AT32(sec + SEC_SPHERE);
     w1 = AT32(sec + SEC_SPHERE_Z);
     entry = raw | 1; /* "clip against the screen" */
+#if NGTE
+    {
+      NgteVec o;
+      mv.ir3 = (w0 >> 16) - (u32)cam->x;
+      mv.ir1 = (u32)cam->y - (w0 & 0xFFFF);
+      mv.ir2 = (u32)cam->z - (w1 >> 16);
+      mv.read_ir2 = 0;
+      mv.pending = 1;
+      o = ngte_mvmva(&view, 0, 0, 0, (s16)mv.ir1, (s16)mv.ir2, (s16)mv.ir3);
+      depth = (u32)o.ir3;
+      sx = (u32)o.ir1;
+      sy = (u32)o.ir2;
+    }
+    kind = w1 & 0xE000;
+    r = w1 & 0x1FFF;
+    ra = (r >> 1) + (r >> 2) + (r >> 5);
+    rb = (r >> 1) + (r >> 4) + (r >> 5);
+#else
     MTC2((w0 >> 16) - (u32)cam->x, IR3);
     MTC2((u32)cam->y - (w0 & 0xFFFF), IR1);
     MTC2((u32)cam->z - (w1 >> 16), IR2);
@@ -363,6 +476,7 @@ static void SectorLists(s32 group, const CamPos *cam) {
     rb = (r >> 1) + (r >> 4) + (r >> 5);
     depth = MFC2(IR3);
     sx = MFC2(IR1);
+#endif
     if ((s32)(depth + r) <= 0)
       continue; /* behind the camera */
     if ((s32)sx < 0)
@@ -372,7 +486,11 @@ static void SectorLists(s32 group, const CamPos *cam) {
       continue; /* off the side */
     rc = r - (r >> 3);
     rd = (r >> 1) - (r >> 4);
+#if NGTE
+    mv.read_ir2 = 1;
+#else
     sy = MFC2(IR2);
+#endif
     v = depth + rd;
     if ((s32)sy < 0)
       sy = -sy;
@@ -411,9 +529,16 @@ static void SectorLists(s32 group, const CamPos *cam) {
       }
     }
     anims |= mask;
-    if (anims != 0xFFFFFFFFu)
+    if (anims != 0xFFFFFFFFu) {
+#if NGTE
+      CullFlush(&mv);
+#endif
       SectorAnimate(sec, anims);
+    }
   }
+#if NGTE
+  CullFlush(&mv);
+#endif
   PORT_LOD_ENV_LISTS(high);
   AT32(low) = 0;
   AT32(high) = 0;
@@ -432,6 +557,12 @@ static inline void LoadLowVertex(u32 w, u32 oz, u32 ox, u32 oy) {
   MTC2(z, VZ0);
   MTC2(x + (y << 16), VXY0);
 }
+#if NGTE
+static inline u32 LowVZ(u32 w, u32 oz) { return (w >> 21) + oz; }
+static inline u32 LowVXY(u32 w, u32 ox, u32 oy) {
+  return ox - ((w >> 10) & 0x7FF) + ((oy - (w & 0x3FF)) << 16);
+}
+#endif
 
 /* The 3-word primitive that sets a semi-transparent polygon's blend mode
  * (the tpage bits from the polygon's colour word), before the polygon. */
@@ -453,6 +584,11 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
   const u32 cull = AT32(env + 0x28) >> 7; /* m_CullingDistance */
   const u32 lod = (PORT_LOD_ENV(AT32(env + 0x24)) >> 7) - 0x20;
   u32 list = LIST_LOW;
+#if NGTE
+  const NgteProj P = s_proj;
+  NgteSync sync;
+  ngte_sync_init(&sync);
+#endif
 
   for (;;) {
     u32 entry, clip, sec, w, oz, ox, oy, counts, vp, vend, next, scr, all, cols, poly, pend;
@@ -476,6 +612,35 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
     vp = sec + SEC_DATA;
     scr = SCRATCH_BASE;
     all = ~0u;
+#if NGTE
+    {
+      /* vertex k is the word at SEC_DATA + 4k; counts & 0xFF of them, and
+       * V0 is left holding the next word */
+      const u32 nv = counts & 0xFF, v0 = sec + SEC_DATA;
+      u32 k;
+      ngte_rtps_run(&sync, nv);
+      for (k = 0; k < nv; k++) {
+        const u32 wk = AT32(v0 + k * 4), vz = LowVZ(wk, oz), vxy = LowVXY(wk, ox, oy);
+        const NgteRtp t = ngte_rtps_w(&P, vxy, vz);
+        if (k + 4 >= nv)
+          ngte_rtps_rec(&sync, vxy, vz, NGTE_RD_SZ3);
+        AT32(scr + 4) = t.sz3;
+        if (!clip) {
+          AT32(scr) = t.sxy;
+        } else {
+          const u32 f = ClipLowFlags(t.sxy, 4);
+          all &= f;
+          AT32(scr) = f;
+        }
+        scr += 8;
+      }
+      w = AT32(v0 + nv * 4);
+      ngte_v0(&sync, LowVXY(w, ox, oy), LowVZ(w, oz));
+      vend = v0 + nv * 4 + 8;
+      if (clip && (all & 0xF))
+        continue;
+    }
+#else
     w = AT32(vp);
     vp += 4;
     vend = vp + (counts & 0xFF) * 4 + 4;
@@ -515,6 +680,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
       if (all & 0xF)
         continue; /* every vertex off the same side */
     }
+#endif
 
     cols = vend - 8;
     poly = cols + ((counts >> 6) & 0x3FC);
@@ -539,6 +705,28 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
           xy2 = (u32)((s32)xy2 >> 5);
           xy3 = (u32)((s32)xy3 >> 5);
         }
+#if NGTE
+        {
+          s32 a2 = 0;
+          ngte_sxy(&sync, xy0, xy1, xy2);
+          area = (u32)ngte_nclip_s(&sync);
+          ngte_sxy0(&sync, xy3);
+          if ((s32)area <= 0) {
+            a2 = ngte_nclip_s(&sync);
+            back = !two_sided;
+          }
+          z0 = AT32(p0 + 4);
+          z1 = AT32(p1 + 4);
+          z2 = AT32(SC(i2) + 4);
+          z3 = AT32(SC(i3) + 4);
+          zsum = z0 + z1 + z2 + z3;
+          depth = zsum >> 5;
+          if ((s32)(depth - cull) >= 0)
+            continue;
+          if (back && a2 >= 0)
+            continue;
+        }
+#else
         MTC2(xy0, SXY0);
         MTC2(xy1, SXY1);
         MTC2(xy2, SXY2);
@@ -560,6 +748,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
           continue;
         if (back && (s32)MFC2(MAC0) >= 0)
           continue;
+#endif
         fade = bias8 + depth - lod;
         if ((s32)fade < 0) {
           u32 d;
@@ -602,11 +791,16 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
           xy1 = (u32)((s32)xy1 >> 5);
           xy2 = (u32)((s32)xy2 >> 5);
         }
+#if NGTE
+        ngte_sxy(&sync, xy0, xy1, xy2);
+        area = (u32)ngte_nclip_s(&sync) + (two_sided << 23);
+#else
         MTC2(xy0, SXY0);
         MTC2(xy1, SXY1);
         MTC2(xy2, SXY2);
         gte_nclip();
         area = MFC2(MAC0) + (two_sided << 23);
+#endif
         z0 = AT32(p0 + 4);
         z1 = AT32(p1 + 4);
         if ((s32)area <= 0)
@@ -647,6 +841,9 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
       }
     }
   }
+#if NGTE
+  ngte_flush(&sync);
+#endif
   return fp;
 }
 
@@ -680,6 +877,22 @@ static inline u32 FadeColour(u32 near_addr, u32 far_addr, u32 f) {
   gte_dpcs();
   return MFC2(RGB2);
 }
+#if NGTE
+static inline u32 FadeColourN(NgteSync *s, u32 near_addr, u32 far_addr, u32 f) {
+  u32 near = AT32(near_addr), far, rfc, gfc, bfc;
+  if ((s32)(f - 0x1000) >= 0)
+    return near;
+  far = AT32(far_addr);
+  if ((s32)f <= 0)
+    return far;
+  rfc = (near << 4) & 0xFF0;
+  gfc = (near >> 4) & 0xFF0;
+  bfc = near >> 12;
+  ngte_dpcs_rec(s, far, f, rfc, gfc, bfc);
+  return ngte_dpcs(far, (s16)f, (s32)rfc, (s32)gfc, (s32)bfc).rgb2;
+}
+#define FadeColour(n, f, z) FadeColourN(&sync, n, f, z)
+#endif
 
 /* The two subdivision lists the high-poly pass fills: a sector's address
  * >> 2 (positive), then its polygons' addresses | 1 (a vertex's projection
@@ -699,6 +912,11 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
   const u32 lod = PORT_LOD_ENV(AT32(env + 0x24));
   const u32 lqtex = AT32(env + 0x18); /* m_LQTexturePointer */
   u32 list = LIST_HIGH, l2x2 = LIST_LOW, l4x4 = LIST_4X4;
+#if NGTE
+  const NgteProj P = s_proj;
+  NgteSync sync;
+  ngte_sync_init(&sync);
+#endif
   {
     const u32 cam = ADDR(g_Camera);
     CTC2(AT32(cam + 0x28) >> 2, C_RBK);
@@ -733,6 +951,73 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
     scr = SCRATCH_BASE;
     sz16 = SC(0x2A8);
     all = ~0u;
+#if NGTE
+    {
+      /* counts & 0xFF vertices from vbase; V0 is left holding the next word.
+       * Close sectors project a vertex near the view axis again at 16x. */
+      const u32 nv = counts & 0xFF, vbase = sec + SEC_DATA + ((counts >> 22) & 0x3FC);
+      u32 k;
+      ngte_rtps_run(&sync, nv);
+      for (k = 0; k < nv; k++) {
+        const u32 wk = AT32(vbase + k * 4), cz = HighVertexZ(wk, ox), cxy = HighVertexXY(wk, oy, oz);
+        const NgteRtp t = ngte_rtps_w(&P, cxy, cz);
+        u32 sxy = t.sxy, sz = t.sz3, f;
+        ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
+        if (mode & 2) {
+          if ((s32)(sz - 0x600) >= 0) {
+            f = ClipLowFlags(sxy, 0xC);
+          } else {
+            u32 flag = t.flag;
+            if ((s32)(sz - 0x100) < 0) {
+              const u32 m1 = (u32)t.mac1, m2 = (u32)t.mac2;
+              if ((s32)(m1 + 0x100) > 0 && (s32)(m1 - 0x100) < 0 && (s32)(m2 + 0x100) > 0 &&
+                  (s32)(m2 - 0x100) < 0) {
+                /* MFC2 VZ0 gives the low half sign-extended, VXY0 the word */
+                const u32 pz = (u32)(s32)(s16)cz << 4, pxy = (cxy << 4) & 0xFFF0FFF0u;
+                const NgteRtp t2 = ngte_rtps_w(&P, pxy, pz);
+                ngte_rtps_rec(&sync, pxy, pz, 0);
+                sxy = t2.sxy;
+                flag = t2.flag;
+              }
+            }
+            f = sxy << 5;
+            if ((s32)flag < 0)
+              f += 0x10;
+            if ((s32)(sxy - 0x10000u) <= 0)
+              f += 1;
+            if ((s32)(sxy - 0x1000000u) >= 0)
+              f += 2;
+            if ((s32)(sxy << 16) <= 0)
+              f += 4;
+            if ((s32)((sxy << 16) - 0x2000000u) >= 0)
+              f += 8;
+          }
+          AT16(sz16) = (u16)sz;
+          all &= f;
+          AT32(scr) = f;
+        } else if (mode & 1) {
+          f = ClipLowFlags(sxy, 0xC);
+          AT16(sz16) = (u16)sz;
+          all &= f;
+          AT32(scr) = f;
+        } else {
+          AT32(scr) = sxy;
+          AT16(sz16) = (u16)sz;
+        }
+        scr += 4;
+        sz16 += 2;
+      }
+      w = AT32(vbase + nv * 4);
+      ngte_v0(&sync, HighVertexXY(w, oy, oz), HighVertexZ(w, ox));
+      vend = vbase + nv * 4 + 8;
+      if (mode & 3) {
+        if (all & 0xF)
+          continue;
+      } else {
+        clip_tests = 0;
+      }
+    }
+#else
     vp = sec + SEC_DATA + ((counts >> 22) & 0x3FC);
     w = AT32(vp);
     vp += 4;
@@ -840,6 +1125,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
        * tests read as "no clipping" (the pointer has bit 31 set otherwise) */
       clip_tests = 0;
     }
+#endif
 
     near_t = vend - 8;
     far_t = near_t + ((counts >> 6) & 0x3FC);
@@ -865,6 +1151,19 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
           xy2 = (u32)((s32)xy2 >> 5);
           xy3 = (u32)((s32)xy3 >> 5);
         }
+#if NGTE
+        ngte_sxy(&sync, xy0, xy1, xy3);
+        {
+          const s32 m = ngte_nclip_s(&sync);
+          if (!err && ((w3p & 2) ? -m : m) < 0) {
+            s32 b;
+            ngte_sxy0(&sync, xy2);
+            b = ngte_nclip_s(&sync);
+            if (!(w3p & 4) && ((w3p & 2) ? b < 0 : b > 0))
+              continue; /* back-facing */
+          }
+        }
+#else
         MTC2(xy0, SXY0);
         MTC2(xy1, SXY1);
         MTC2(xy3, SXY2);
@@ -883,6 +1182,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
             }
           }
         }
+#endif
         z0 = AT16(sz16 + (i0 >> 1));
         z1 = AT16(sz16 + (i1 >> 1));
         z2 = AT16(sz16 + (i2 >> 1));
@@ -979,6 +1279,14 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
         xy1 = (u32)((s32)xy1 >> 5);
         xy2 = (u32)((s32)xy2 >> 5);
       }
+#if NGTE
+      ngte_sxy(&sync, xy0, xy1, xy2);
+      {
+        const s32 m = ngte_nclip_s(&sync);
+        if (!(w3p & 4) && !err && ((w3p & 2) ? -m : m) < 0)
+          continue;
+      }
+#else
       MTC2(xy0, SXY0);
       MTC2(xy1, SXY1);
       MTC2(xy2, SXY2);
@@ -990,6 +1298,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
         if (a < 0)
           continue;
       }
+#endif
       z0 = AT16(sz16 + (i0 >> 1));
       z1 = AT16(sz16 + (i1 >> 1));
       z2 = AT16(sz16 + (i2 >> 1));
@@ -1097,6 +1406,9 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
       continue;
     }
   }
+#if NGTE
+  ngte_flush(&sync);
+#endif
   lists->l2x2 = l2x2;
   lists->l4x4 = l4x4;
   return fp;
@@ -1269,6 +1581,34 @@ static void GridTransform(u32 n, int behind_flag) {
   int small, was;
   AT32(end - 0x10) = 0;
   small = GridVertex(GRID(0), &vz, &vxy);
+#if NGTE
+  {
+    /* native but for the last NGTE_TAIL points (n is 6 or more) */
+    const NgteProj P = s_proj;
+    while ((s32)(end - p) > NGTE_TAIL * 0x10) {
+      const NgteRtp t = ngte_rtps_w(&P, vxy, vz);
+      const u32 sxy = t.sxy;
+      u32 f = t.sz3;
+      was = small;
+      small = GridVertex(p, &vz, &vxy);
+      p += 0x10;
+      if (was)
+        f >>= 4;
+      if (behind_flag && (s32)f <= 0)
+        f |= 0xF000;
+      if ((s32)(sxy - 0x10000u) <= 0)
+        f |= 0x1000;
+      if ((s32)(sxy - 0x1000000u) >= 0)
+        f |= 0x2000;
+      if ((s32)(sxy << 16) <= 0)
+        f |= 0x4000;
+      AT32(p - 0x20) = sxy;
+      if ((s32)((sxy << 16) - 0x2000000u) >= 0)
+        f |= 0x8000;
+      AT32(p - 0x1C) = f;
+    }
+  }
+#endif
   MTC2(vz, VZ0);
   MTC2(vxy, VXY0);
   do {
@@ -2087,6 +2427,9 @@ static u32 EnvDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   CTC2(AT32(cam + 0x8), 2);
   CTC2(AT32(cam + 0xC), 3);
   CTC2(AT32(cam + 0x10), 4);
+#if NGTE
+  s_proj = ngte_proj_get();
+#endif
   fp = AT32(ADDR(D_800757B0));
   ot = MIPS_KUSEG(AT32(ADDR(g_WorldOT)));
   if (!AT32(ADDR(g_SkipLowPolyWorld)))

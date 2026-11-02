@@ -432,6 +432,79 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 
 **Optional:** yes, as `fast_render=2`. `fast_render=1` (today's register-file C) and `0` (mips2c) stay linked.
 
+**Done (D80, 2026-11-02),** apart from NEON. N1 and N2 ran on hardware: identical pictures and memory card, and the renderers −15% (2.28 → 1.92 ms per vblank). What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu), −16 to −35% in Vita3K and −15% on hardware.
+
+#### The GTE audit
+
+**Measured, on the host** (`--fast-render-check --gte-audit N`, `src/game/hand_check.c`). Before every Nth call of each renderer, each of the 64 GTE registers in turn gets its raw storage changed, with two patterns. The register-file hand C then runs again from the same state, and the result is sorted:
+
+| Class | Meaning |
+|---|---|
+| in | the change shows in RAM |
+| gte | the change shows only in other registers the call leaves |
+| kept | the register is left exactly as changed |
+| dead | the register is written before it's read |
+
+Classes are unions over the sampled calls. The attract demos (every 100th call, `logs/ngte9-audit-demo`) and routes A and B (every 25th, `logs/ngte13-audit-route*`) give:
+
+| Renderer | in | gte |
+|---|---|---|
+| env `func_800258F0` | OFX OFY H | RGBC IR0 SZ0-2 RGB2 DQA DQB |
+| sky `func_8004EBA8` | OFX OFY H | IR0-3 SZ0-2 DQA DQB |
+| mobys `func_8001F798` | OFX OFY H | RGBC IR0-3 SZ0-2 DQA DQB |
+| lit mobys `func_80022A2C` | OFX OFY H | RGBC IR0 SZ0-2 DQB |
+| Spyro `func_80023AC4` | OFX OFY H | RGBC IR0 SZ0-2 DQA DQB |
+| specular `func_80020F34` | OFX OFY H | IR0-3 SZ0-2 DQA DQB |
+
+Audited calls: 238 in the demos, 1,036 on route A and 1,043 on route B (2,317 in all, 128 runs each); every audited call also passed the 1-against-2 check.
+
+**What reaches the renderers from outside:** only the screen offset and H. They come from `SetGeomOffset(256, 120)` and `SetGeomScreen(341)` (`third_party/spyro-1/src/initialization.c:260-261`).
+
+The other libgte calls in the decomp C only set the rotation and translation (and leave MAC/IR): `camera.c:37` `SetTransMatrix`, `camera.c:61`, `:76` `MulMatrix`, `pete.c:1938`, `:2135`, `:2234` `MulMatrix0`, `gamestates/draw.c:821` `SetTransMatrix`, `:833`, `:840` `MulMatrix`. Every renderer moves its own matrix in before it uses one, so these are "dead" for all six.
+
+**The "gte" class:**
+- DQA/DQB change only RTPS's MAC0/IR0, which no renderer reads.
+- RGBC's code byte is INTPL's colour push (env's animation blends `env_hand.c:182`, mobys' frame blends `moby_hand.c:261`, Spyro's `pete_render_hand.c:374`).
+- SZ0-2 (and RGB2, IR0-3) survive into the FIFO's other slots or the call's last results when a call projects fewer than four vertices or runs fewer than three colour commands; IR0's high half survives RTPS, which writes only the low half.
+
+**State a renderer keeps in the GTE within a call:**
+- **env:** the camera position in RBK/GBK/BBK (`env_hand.c:922`), read back per sector (`:943-944`, `:1444-1445`).
+- **mobys:** ZSF3 = `g_SkipLowPolyWorld` (`moby_hand.c:997`, read at `:870`; the specular entry `:2381`), and the detail in ZSF4 (`:787`).
+- **lit mobys:** the zone in DQB and the HUD flag in DQA (`:1574`, `:1674`, read at `:1756-1757`).
+- **Spyro:** the depth parameters in RBK/GBK/BBK (`pete_render_hand.c:1144`, read at `:970`, `:978`, `:1239`), and V0 from the joints' RTPS (`:1177-1183`), which the first vertex step transforms (`PartVertices`, `:1225`).
+
+**State that outlives a call:**
+- **OFX/OFY:** rewritten for each HUD model (`moby_hand.c:1555`) and put back to 256/120 at its end (`:1735`).
+- **DQA/DQB:** left as moby sprites (`:610-611`) and lit mobys (`:1574`, `:1674`) set them; they reach later RTPS's MAC0/IR0 only.
+- **The whole register file:** the oracle replay compares it, save states store it (D51), and the in-between frames snapshot and restore it (D30). So D80 keeps it exact rather than keeping only what's read.
+- **Reads with side effects:** MFC2 of SZ3, IR1-3 and VZ0 rewrite the register's high half, so the native code replays them too.
+
+**For stage 2:** a renderer's projected vertices depend on its own inputs plus OFX/OFY/H, three values per call. Native draw lists can take them as C values from `ngte_proj_get()`.
+
+#### Hardware runs N1 and N2
+
+Two config files in `tools/vita/fps-runs/`, K1's switches with `fast_render` 1 and 2:
+
+| Run | Switches | What it settles |
+|---|---|---|
+| `n1-gte-1.txt` | 30 fps, `render_thread=0`, `parse_thread=0`, `dynres=0`, `fast_render=1` | K1 on the stage 1 VPK: the register-file renderers |
+| `n2-gte-2.txt` | N1 with `fast_render=2` | the native GTE maths; its `draw` lines against N1's are stage 1's gain on hardware |
+
+**For the owner:**
+1. Use the VPK from this PR's branch (`claude/native-gte-9218f1`), or main once it's merged.
+2. Keep a copy of your own `ux0:data/spyro/config.txt`.
+3. Copy `n1-gte-1.txt` over it.
+4. Start the game and leave it alone for 3 minutes: the title, the flythrough and both attract demos.
+5. Then start or load a game: 2 minutes in Artisans, then 2 minutes in Toasty.
+6. Don't open the options menu, because it rewrites `config.txt`.
+7. Quit, and send back `ux0:data/spyro/spyro.log` renamed `n1.log`.
+8. Do the same with `n2-gte-2.txt`, and send `n2.log`.
+9. Put your own `config.txt` back.
+
+The log's start says which build ran: `fast_render=2: hand-written renderers, native GTE maths (D80)`.
+
+To read them: `python3 tools/vita/native_share.py n1.log --fps 30 --all`, then the same for `n2.log`. Compare the `draw` lines' env, mobys, spyro and sky ms window by window: the attract windows have the same input in both runs.
+
 ### Stage 2: native draw lists instead of PS1 primitives and the OT walk (large, medium–high risk, biggest payoff)
 
 **Replaces** (D and E):

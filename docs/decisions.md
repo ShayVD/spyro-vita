@@ -1541,3 +1541,57 @@ Record each decision with its date, what was chosen, and why.
   - **The CPU:** **27–49 µs per 32×32 block** (mostly 29–36; a wrapped tile counts as 4 blocks), on the render thread. The busiest window was 690 blocks in 20 ms per 300 vblanks: 0.07 ms per vblank, against the 4.3 ms per picture of GPU the pass took in that window. The cost is the table lookups and the copy into uncached CDRAM; NEON could roughly halve it, but at this size it isn't worth it now.
   - **Waits for the GPU** (`glFinish` on switching into an atlas in use): one per VRAM change at most, 1.2–1.3 ms each.
   - **No hang line and no crash dump** in any of the five runs.
+
+## 2026-11-02: native GTE maths in the hand renderers (stage 1)
+
+### D80. The renderers' GTE commands as native maths on C values, behind `fast_render=2`; the register file stays exact
+- **Why:** stage 1 of `docs/native-plan.md` (D76). The host profile put the software GTE at ~60% of the renderers' CPU (§3.2), K1 shows the renderers at 1.5–4.5 ms per vblank at 30 fps, and stage 2 needs projected vertices as C values rather than GTE registers.
+- **The audit first** (details and file:line references in `docs/native-plan.md` stage 1, "The GTE audit"):
+  - **Measured:** `--gte-audit N` (host, with `--fast-render-check`) changes each of the 64 registers in turn before every Nth renderer call and runs the register-file hand C again. Over the attract demos (every 100th call) and routes A and B (every 25th), **only OFX, OFY and H reach RAM from outside a call**, in all six renderers. They come from `SetGeomOffset`/`SetGeomScreen` (`initialization.c:260-261`). Every other register is written before it's read, passes through untouched, or feeds only GTE results nothing in the call reads: DQA/DQB (RTPS's MAC0/IR0), RGBC's code byte (INTPL's colour push), SZ0-2 (a call that projects fewer than four vertices).
+  - **State kept in the GTE within a call:** the camera position in RBK/GBK/BBK (env), the depth parameters there (Spyro), ZSF3 = `g_SkipLowPolyWorld` (mobys), the zone in DQB and the HUD flag in DQA (lit mobys), V0 from the joints' RTPS (Spyro).
+  - **State that outlives a call:** OFX/OFY, rewritten for HUD models and put back to 256/120 by the lit mobys; DQA/DQB as moby sprites and lit mobys leave them; and the whole register file, which the oracle replay compares, save states store (D51) and the in-between frames snapshot (D30).
+- **Decided:**
+  - **`src/game/gte_native.h`:** RTPS, NCLIP, DPCS, INTPL, GPF and MVMVA (sf 1, rotation, any vector) as pure, always-inlined functions on values that return a struct of every result. The arithmetic is `gte_inline.h`'s, expression for expression, with the flags in a local, so the compiler drops whatever the caller doesn't read. NCLIP's 64-bit sum becomes wrapping 32-bit arithmetic (the low 32 bits are the same).
+  - **The register file stays the record of the GTE's state between functions; no named globals.** The decomp C, PsyCross and the mips2c units still read and write it, so a copy would need sync hooks in all three, outside the four renderer files. The audit shows only OFX/OFY/H crossing into RAM: each renderer reads them once per call (`ngte_proj_get`). Stage 8 (retiring PsyCross) can make them globals.
+  - **The register file is exact, raw storage included, before any register-file code runs and when a renderer returns** (`render_hand.h`):
+    - a loop whose commands interleave (frame blends: INTPL with RTPS; two DPCS per step; the subdivision grids, the lit vertices) runs native but for its last steps, which run the register-file code: after four RTPS or three colour commands, every register they write holds what the whole loop leaves;
+    - other native commands go into an `NgteSync`: the last four RTPS inputs, the last three DPCS/INTPL inputs, the SXY words moved in and NCLIP's MAC0. `ngte_flush` replays or stores them, group by group, in the order of each group's last command. No group reads what another writes, and within a group the last command rewrites everything the earlier ones wrote, so the order of the last commands is enough. A run of four RTPS drops the pending SXY/MAC0 instead, since it rewrites them.
+  - **Each renderer file is compiled twice** (`NAME_hand_ngte.c` includes it with `NGTE 1`). The native code sits in `#if NGTE` blocks beside the register-file code it replaces, and `fast_render=1` compiles to the code it was. `HAND_RENDERER` picks `NAME_ngte` for 2.
+  - **Native:** env (culling MVMVA, every vertex loop, every NCLIP, the depth fades' DPCS, the animation blends; the grids native but for their last four points); sky (both passes); regular mobys (vertex transform, blends but for the last four vertices, fades, NCLIP); Spyro (every part's RTPS and INTPL, the faces' NCLIP); lit mobys (vertices but for the last four, the Gouraud faces' NCLIP).
+  - **Still on the register file:** per-object and per-sector set-up (the matrix moves, `RotateMatrix`), sprite faces, the subdivision's `GridCorrect` and `PieceBack`, the lit faces' lighting (MVMVA/GPF/CC), Spyro's floor heights, floor clipping and colour filter, and the specular renderer `func_80020F34`. They are cold or rare, or (the lighting) need native CC and a matrix-colour chain for little gain. Each flushes the sync first.
+  - **No NEON yet.** In the RTPS the UNR division (`gtei_divide`: clz, table, a 64-bit multiply) stays scalar either way, and NEON's gain on the three dot products can't be measured off hardware. N1/N2 come first.
+  - **`fast_render` stays 1 by default** until hardware has run N2.
+- **Checked:**
+  - **Unit:** `tests/gte/test_gte_native` (ctest `gte_native`): the 5,549 PCSX-Redux vectors of these opcodes and 8M random register states against `gte_inline.h`, every returned field (58M compared), 0 mismatched. ctest `gte_native_mutant` builds it with RTPS's screen offset one pixel off and must fail; it does (960 fields on the vectors).
+  - **Every call, both ways:** `--fast-render-check` runs the register-file hand C and then the native build from the same state, on every call, and compares the whole 2 MB arena, the scratchpad buffer and all 64 GTE registers' raw storage. 0 differences over the gems script, the attract demos, the in-between frames at 60 fps, 2x draw distance, routes A and B and the 100,000-vblank whole-game tour (216,427 calls in the tour alone; `logs/ngte8-checks.txt`).
+  - **Host A/B** (`FAST="1 2" tools/fast_render_ab.sh ngab`, one binary): **198 of 198 files byte-identical** (gems 18, demos 26, wsi 25, lod 18, route A 55, route B 56; `logs/ngab-summary.txt`).
+  - **Oracle replay** with `--fast-render 2` of the six renderers and the cyclorama set-up `func_80050BD0`: **661/661 samples pass** over cap3, cap5-fairy, run14-oracle-tour, run19-oracle-labels and routes A and B (`logs/ngab-replay.txt`), as D72's.
+  - **ctest:** 8/9 pass, `m2c_diff_math` skipped as before (`logs/ngab-ctest.txt`). `savestate_globals` lists the check's state (`hand_check.c`, a test tool) and env's per-call `s_proj` (read from the GTE at the start of every `EnvDraw`) as not game state.
+  - **Vita3K** (VPK `logs/ngte-vpk.vpk`): the gems script with `fast_render` 1 and 2: 17 shots, 17 window captures (`CAPTURE=1`) and the memory card identical (`logs/ngv3k-gems-f1`, `-f2`). The final VPK after merging main (`a8f71a33…`) with `fast_render=2`: the same 17 shots and card (`logs/ngv3k-final-f2`).
+  - Removing the sky's replay at the end of pass 2, as a test of the check, made every sky call differ.
+- **Speed:**
+  - **Host,** `--prof-draw`, CPU ms over the run, two `fast_render` 1/2 pairs on an idle Docker VM, mean (qemu-i386: relative only; `logs/ngte14-time.txt`):
+
+    | Run | env | mobys | Spyro | sky | all renderers |
+    |---|---|---|---|---|---|
+    | gems | 1,102 → 998 | 269 → 211 | 12.7 → 10.5 | 261 → 179 | 1,646 → 1,398 (−15%) |
+    | demos | 1,211 → 1,078 | 758 → 629 | 124 → 100 | 354 → 242 | 2,508 → 2,108 (−16%) |
+    | route A | 1,542 → 1,389 | 406 → 302 | (not counted) | 401 → 270 | 2,349 → 1,961 (−17%) |
+
+  - **Host gprof** of the demos (`logs/ngte12-gprof-f1`, `-f2`): the renderers and their GTE calls fall from ~4.2 s to ~3.45 s, and `m2c_gte_0x180001` (RTPS) calls from 29.1M to 3.2M (the tails, the replays, the specular renderer and the mips2c units). qemu-i386 has no 64-bit registers, so the 64-bit sums the native RTPS keeps for exactness cost it more than they will on ARM (a 32-bit multiply and an add with carry each).
+  - **ARM code,** VitaSDK's GCC 15 at `-O2` (`logs/armchk`): a native RTPS in a vertex loop is ~130 inline instructions, against a call into the 325-instruction register-file command plus its loads and stores to `gteRegs`.
+  - **Vita3K,** the gems script, `draw` lines over 29 windows, two pairs: renderers 0.239 → 0.155 and 0.250 → 0.209 ms per vblank (−35%, −16%; `logs/ngv3k-time*-f*`). Vita3K's JIT isn't a Cortex-A9 and its timings vary from run to run.
+  - **Estimate for hardware:** −15 to −35% of the renderers' 1.5–4.5 ms per vblank (K1), about 0.3–1.2 ms per vblank at 30 fps. That's at or below the plan's −0.5 to −1.3 ms. Only N1/N2 will tell.
+- **On hardware (2026-11-02, the owner's Vita over `hw_run.sh`, D77; branch merged with main's D78 and D79, VPK SHA-1 `a1038c1b…`):** runs N1 and N2 unattended, the K route (`k-route.pad`: the title, the Stone Hill attract demo, New Game and the intro, Artisans, then warps to Stone Hill and Dark Hollow, 18,000 vblanks), shipped 16:9 picture at 30 fps, `render_thread=0`, `parse_thread=0` (`tools/vita/hw-routes/n-gte-k.cfg`; `logs/hw-ngte-n1`, `-n2`, gitignored).
+  - **Same results:** all 18 pictures identical (9 shots and the GPU's own 960×544 frame at each), the memory card identical, no crash dump.
+  - **The renderers' CPU** (`draw` lines, ms per vblank, 60 windows; `logs/hw-ngte-compare.txt`): **2.28 → 1.92 (−15%, −0.35 ms per vblank, −0.7 ms per tick)**. The update stays 0.28 in both.
+
+    | Part of the route | env | mobys | Spyro | sky | renderers |
+    |---|---|---|---|---|---|
+    | title and attract demo | 1.23 → 1.10 | 0.56 → 0.45 | 0.13 → 0.10 | 0.31 → 0.22 | 2.22 → 1.87 (−16%) |
+    | New Game, intro | 0.57 → 0.53 | 0.50 → 0.39 | 0.05 → 0.04 | 0.25 → 0.18 | 1.37 → 1.13 (−18%) |
+    | Artisans | 1.33 → 1.19 | 0.95 → 0.76 | 0.22 → 0.18 | 0.28 → 0.22 | 2.78 → 2.35 (−16%) |
+    | Stone Hill | 1.70 → 1.51 | 0.70 → 0.60 | 0.19 → 0.16 | 0.25 → 0.19 | 2.84 → 2.45 (−14%) |
+    | Dark Hollow | 1.18 → 1.04 | 1.20 → 1.02 | 0.20 → 0.16 | 0.32 → 0.24 | 2.90 → 2.46 (−15%) |
+
+  - That's below the plan's estimate (−0.5 to −1.3 ms per vblank). env, the largest renderer, gains least (−8 to −12%): its per-sector and per-polygon work around the GTE stays. Stage 2 takes that work on.

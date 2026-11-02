@@ -32,7 +32,14 @@
  * The GTE sees the same moves and commands as in the asm, in an order that
  * gives the same registers (moves to different registers commute), so the
  * pipelined V0 (the vertex after the last one) and the MFC2 read-backs
- * (VZ0, SZ3, IR1-3) leave the GTE as the asm does. */
+ * (VZ0, SZ3, IR1-3) leave the GTE as the asm does.
+ *
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): the vertices' RTPS
+ * and INTPL and the faces' NCLIP are native maths (gte_native.h). What they
+ * would have left in the GTE goes back into it at the end of each part (the
+ * next part moves its own matrix in) and after the faces; the set-up, the
+ * floor heights and clipping and the colour filter stay on the register
+ * file. */
 #include "render_hand.h"
 
 extern char g_Spyro[];
@@ -312,6 +319,106 @@ static inline void DecodeB(Stream *st) {
  * step of the first run transforms whatever V0 held; the run ends at FP ==
  * STOP, and the asm then runs again from the same slot to the end
  * (`mflo`, the end kept in LO), so the first slot is written twice. */
+#if NGTE
+/* PartVertices, native: the same steps and stores; V0 is a pair of locals,
+ * starting from what the GTE held, and each part's last RTPS and INTPL go
+ * back to the register file before the next part's matrix does. */
+static void PartVertices(u32 floor) {
+  u32 *rec = (u32 *)(WORK + W_PARTS);
+  u32 info = rec[PR_INFO];
+  u32 fp = SCRATCH_BASE, sp = WORK + W_VERTS;
+  u32 cxy = gteRegs.CP2D.p[0].d, cz = gteRegs.CP2D.p[1].d; /* V0 */
+  NgteSync sync;
+  ngte_sync_init(&sync);
+
+  do {
+    Stream a, b;
+    u32 blend, last, stop;
+    NgteProj P;
+    NgteRtp t;
+    CTC2(rec[PR_TR], 5);
+    CTC2(rec[PR_TR + 1], 6);
+    CTC2(rec[PR_TR + 2], 7);
+    if ((s32)info < 0)
+      SetMatrix(rec + PR_MATRIX);
+    P = ngte_proj_get();
+    last = SCRATCH_BASE + ((info >> 14) & 0x3FF) - 4;
+    stop = fp + 4;
+    StreamInit(&a, rec, PR_A, info & 0x1000);
+    blend = info & 0xFFF;
+    if (!blend) {
+      for (;;) {
+        do {
+          t = ngte_rtps_w(&P, cxy, cz);
+          ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
+          DecodeA(&a);
+          sp += 0x10;
+          fp += 4;
+          AT32(sp - 0x10) = t.sz3;
+          if (floor) {
+            AT32(sp - 0xC) = cxy;
+            AT32(sp - 0x8) = (u32)(s32)(s16)cz; /* MFC2 VZ0 */
+          }
+          cxy = (a.y << 16) + a.x;
+          cz = a.z;
+          AT32(fp - 4) = t.sxy;
+        } while (fp != stop);
+        if (last == stop)
+          break;
+        stop = last;
+        sp -= 0x10;
+        fp -= 4;
+      }
+    } else {
+      const int ir0 = (s16)blend;
+      const u32 code = C2_CODE;
+      StreamInit(&b, rec, PR_B, info & 0x2000);
+      for (;;) {
+        do {
+          NgteCol o;
+          t = ngte_rtps_w(&P, cxy, cz);
+          ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
+          DecodeA(&a);
+          sp += 0x10;
+          fp += 4;
+          DecodeB(&b);
+          ngte_intpl_rec(&sync, a.z, a.x, a.y, blend, b.z, b.x, b.y);
+          o = ngte_intpl((s16)a.z, (s16)a.x, (s16)a.y, ir0, (s32)b.z, (s32)b.x, (s32)b.y, code);
+          AT32(fp - 4) = t.sxy;
+          AT32(sp - 0x10) = t.sz3;
+          if (floor) {
+            AT32(sp - 0xC) = cxy;
+            AT32(sp - 0x8) = (u32)(s32)(s16)cz;
+          }
+          cz = (u32)o.mac1;
+          cxy = (u32)o.mac2 + ((u32)o.mac3 << 16);
+        } while (fp != stop);
+        if (last == stop)
+          break;
+        stop = last;
+        sp -= 0x10;
+        fp -= 4;
+      }
+    }
+    /* asm 80024A14: the part's last vertex */
+    t = ngte_rtps_w(&P, cxy, cz);
+    ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
+    sp += 0x10;
+    fp += 4;
+    rec += PR_WORDS;
+    info = rec[PR_INFO];
+    AT32(fp - 4) = t.sxy;
+    AT32(sp - 0x10) = t.sz3;
+    if (floor) {
+      AT32(sp - 0xC) = cxy;
+      AT32(sp - 0x8) = (u32)(s32)(s16)cz;
+    }
+    ngte_flush(&sync);
+    if (floor)
+      (void)MFC2(1); /* the asm read VZ0 after the last RTPS */
+  } while (info != 0);
+}
+#else
 static void PartVertices(u32 floor) {
   u32 *rec = (u32 *)(WORK + W_PARTS);
   u32 info = rec[PR_INFO];
@@ -404,6 +511,7 @@ static void PartVertices(u32 floor) {
     }
   } while (info != 0);
 }
+#endif
 
 /* asm 80024A5C-80024B5C: each vertex's height above the floor, in place of
  * its VXY0: Spyro's z less the floor distance, less the vertex's y in
@@ -566,6 +674,10 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
  * does (stray stores past the last primitive). */
 static void DrawFaces(Faces *f, u32 face, u32 end) {
   const u32 *scr = (const u32 *)SCRATCH_BASE;
+#if NGTE
+  NgteSync sync;
+  ngte_sync_init(&sync);
+#endif
 
   while (face != end) {
     const u32 w0 = AT32(face), w1 = AT32(face + 4);
@@ -576,16 +688,29 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
 
     if ((s32)w0 >= 0) {
       /* asm 80024EA8: a triangle */
+#if NGTE
+      s32 n;
+      ngte_sxy(&sync, xy0, xy1, xy2);
+      n = ngte_nclip_s(&sync);
+#else
       MTC2(xy0, 12);
       MTC2(xy1, 13);
       MTC2(xy2, 14);
+#endif
       AT32(prim + 0x8) = xy0;
       AT32(prim + 0x14) = xy1;
+#if !NGTE
       gte_nclip();
+#endif
       AT32(prim + 0x20) = xy2;
       face += 0x14;
+#if NGTE
+      if (!(w0 & 1) && n <= 0)
+        continue;
+#else
       if (!(w0 & 1) && (s32)MFC2(24) <= 0)
         continue;
+#endif
       EmitGT3(f, face, w1, i0, i1, i2, c0, c1, 0);
     } else {
       /* asm 80024C9C: a quad, drawn whole or as the half facing the camera */
@@ -593,20 +718,32 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       const u32 i3 = w2 & 0x7FC, c3 = (w2 >> 9) & 0x7FC;
       const u32 xy3 = WORD_AT(scr, i3);
       u32 col0, sum, bucket, tail, uv2;
+#if NGTE
+      s32 m012;
+      ngte_sxy(&sync, xy0, xy1, xy2);
+      m012 = ngte_nclip_s(&sync);
+#else
       MTC2(xy0, 12);
       MTC2(xy1, 13);
       MTC2(xy2, 14);
       gte_nclip();
+#endif
       AT32(prim + 0x8) = xy0;
       AT32(prim + 0x14) = xy1;
       AT32(prim + 0x20) = xy2;
       AT32(prim + 0x2C) = xy3;
       face += 0x18;
       if (!(w0 & 1)) {
+#if NGTE
+        s32 n012 = m012, n312;
+        ngte_sxy0(&sync, xy3);
+        n312 = ngte_nclip_s(&sync);
+#else
         s32 n012 = (s32)MFC2(24), n312;
         MTC2(xy3, 12);
         gte_nclip();
         n312 = (s32)MFC2(24);
+#endif
         if (n012 >= 0) {
           if (n312 <= 0)
             continue;
@@ -639,6 +776,9 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       LinkPrim(f, bucket, tail, 0x34);
     }
   }
+#if NGTE
+  ngte_flush(&sync);
+#endif
 }
 
 /* asm 80025310..80025430 (and its two copies): the point where edge P-Q

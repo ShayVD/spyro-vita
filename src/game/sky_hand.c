@@ -13,7 +13,11 @@
  * vertices, drops a sector whose vertices are all off one side of the
  * screen, and emits a flat or a Gouraud triangle (POLY_F3/POLY_G3) for each
  * of its triangles not wholly off one side, linked into the world OT's
- * last slot. */
+ * last slot.
+ *
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): both passes project
+ * natively (gte_native.h) and replay their last four RTPS on the register
+ * file at the end of the pass, before the next CTC2s. */
 #include "render_hand.h"
 
 extern char g_Cyclorama[];  /* Cyclorama: count, sectors, groups count, groups */
@@ -56,12 +60,18 @@ static inline u32 ClipFlags(u32 sxy) {
 /* A packed vertex (z 11 bits, x 11 bits, y 10 bits) relative to the
  * sector's origin, into the GTE's V0. The asm adds x and y << 16 as one
  * word, so a negative x borrows from y's half; so does this. */
-static inline void LoadVertex(u32 w, s32 ox, s32 oy, s32 oz) {
+static inline void VertexWords(u32 w, s32 ox, s32 oy, s32 oz, u32 *vxy, u32 *vz) {
   u32 z = (w >> 21) + (u32)oz;
   u32 x = (u32)ox - ((w >> 10) & 0x7FF);
   u32 y = (u32)oy - (w & 0x3FF);
-  MTC2(z, 1);           /* VZ0 */
-  MTC2(x + (y << 16), 0); /* VXY0 */
+  *vz = z;
+  *vxy = x + (y << 16);
+}
+static inline void LoadVertex(u32 w, s32 ox, s32 oy, s32 oz) {
+  u32 vxy, vz;
+  VertexWords(w, ox, oy, oz, &vxy, &vz);
+  MTC2(vz, 1);  /* VZ0 */
+  MTC2(vxy, 0); /* VXY0 */
 }
 
 /* Pass 1: the sectors whose sphere is in front of the camera. */
@@ -71,6 +81,10 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
   u32 *out = (u32 *)D_8006FCF4;
   const u8 *index = 0;
   u32 i = 0;
+#if NGTE
+  NgteSync sync;
+  NgteProj P;
+#endif
 
   CTC2(view[0], 0);
   CTC2(view[1], 1);
@@ -80,6 +94,10 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
   CTC2(0u, 5);
   CTC2(0u, 6);
   CTC2(0u, 7);
+#if NGTE
+  P = ngte_proj_get();
+  ngte_sync_init(&sync);
+#endif
   if (group >= 0)
     index = HPTR(const u8, HPTR(const u32, cyc[3])[group]);
   for (;;) {
@@ -96,6 +114,15 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
       sector_addr = sectors[i++];
     }
     sector = HPTR(const u32, sector_addr);
+#if NGTE
+    {
+      const u32 vxy = sector[SEC_CENTER_XY], vz = (u32)((s32)sector[SEC_CENTER_Z] >> 16);
+      radius = (s16)sector[SEC_CENTER_Z];
+      ngte_rtps_rec(&sync, vxy, vz, NGTE_RD_SZ3);
+      if ((s32)((u32)ngte_rtps_w(&P, vxy, vz).mac3 - (u32)radius) > 0)
+        *out++ = sector_addr;
+    }
+#else
     MTC2(sector[SEC_CENTER_XY], 0);
     MTC2((u32)((s32)sector[SEC_CENTER_Z] >> 16), 1);
     radius = (s16)sector[SEC_CENTER_Z];
@@ -103,7 +130,11 @@ static void SkyVisibleSectors(s32 group, const u32 *view) {
     (void)MFC2(19); /* the asm reads SZ3 first (a read that normalises it) */
     if ((s32)(MFC2(27) - (u32)radius) > 0)
       *out++ = sector_addr;
+#endif
   }
+#if NGTE
+  ngte_flush(&sync);
+#endif
   *out = 0;
 }
 
@@ -114,6 +145,10 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   u32 *const scratch = (u32 *)SCRATCH_BASE; /* each vertex's clip word */
   const u32 limit = *(u32 *)D_80075780 - 0x400;
   u32 prim, first, prev_tag, tag = 0;
+#if NGTE
+  NgteSync sync;
+  NgteProj P;
+#endif
   (void)a3;
 
   hand_spill_regs();
@@ -124,6 +159,10 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   CTC2(proj[2], 2);
   CTC2(proj[3], 3);
   CTC2(proj[4], 4);
+#if NGTE
+  P = ngte_proj_get();
+  ngte_sync_init(&sync);
+#endif
   prim = *(u32 *)D_800757B0 + 4; /* the first primitive's tag follows a word */
   first = prim;
   prev_tag = prim - 4;
@@ -146,6 +185,26 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     /* Transform the vertices. The asm overlaps each RTPS with loading the
      * next vertex, so the GTE's V0 ends up holding the vertex after the
      * last (vert[n]); this does the same. A sector has at least one. */
+#if NGTE
+    {
+      u32 vxy, vz;
+      i = 0;
+      do {
+        u32 flags;
+        VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
+        flags = ClipFlags(ngte_rtps_w(&P, vxy, vz).sxy);
+        all_out &= flags;
+        scratch[i] = flags;
+      } while (++i != n);
+      for (i = n > 4 ? n - 4 : 0; i <= n; i++) {
+        VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
+        if (i < n)
+          ngte_rtps_rec(&sync, vxy, vz, 0);
+        else
+          ngte_v0(&sync, vxy, vz);
+      }
+    }
+#else
     LoadVertex(vert[0], ox, oy, oz);
     i = 0;
     do {
@@ -156,6 +215,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
       all_out &= flags;
       scratch[i] = flags;
     } while (++i != n);
+#endif
     if (all_out & 0xF)
       continue; /* every vertex off the same side */
 
@@ -204,6 +264,9 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   }
 
 done:
+#if NGTE
+  ngte_flush(&sync);
+#endif
   *(u32 *)D_800757B0 = prim;
   if (prim != first) {
     /* end the chain and put it in the OT's last slot, after what's there */

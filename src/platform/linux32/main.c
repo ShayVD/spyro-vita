@@ -71,7 +71,13 @@
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
  * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
  *   instead of the hand-written renderers and the inline GTE commands
- *   (default 1; src/game/mips2c_rt.h, decisions D72). --prof-draw: log
+ *   (default 1; src/game/mips2c_rt.h, decisions D72). --fast-render 2: the
+ *   hand-written renderers with native GTE maths (decisions D80); with
+ *   --fast-render-check each renderer call also runs the fast_render=1
+ *   code from the same state and must leave the same RAM and GTE
+ *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
+ *   lists the GTE registers each renderer reads from before the call, from
+ *   every Nth call ("gte audit" lines). --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
@@ -90,6 +96,9 @@
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
 void host_prof_draw_report(void);
+extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
+void hand_check_set_log(void (*log)(const char *fmt, ...));
+void hand_check_report(void);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -118,7 +127,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--prof-draw]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -371,6 +380,12 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+    } else if (strcmp(a, "--fast-render-check") == 0) {
+      g_hand_check = 1;
+      hand_check_set_log(host_log);
+    } else if (strcmp(a, "--gte-audit") == 0) {
+      TAKE();
+      g_gte_audit = to_int(val);
     } else if (strcmp(a, "--vcache") == 0) {
       psx_vcache_enable(2);
       s_vcache = 1;
@@ -440,6 +455,7 @@ int main(int argc, char **argv) {
   atexit(present_report);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
+  atexit(hand_check_report);
   atexit(walk_report);
   if (pad && host_pad_load(pad) != 0)
     return 1;
