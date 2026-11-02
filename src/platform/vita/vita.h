@@ -70,6 +70,8 @@ typedef struct {
                          can't keep up; 88, 75, 67: that scale, always (D75) */
   int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
   int log_sync;       /* log_sync=1: each log line written on its own thread, not by the log's (D75) */
+  int atlas_cpu;      /* atlas_cpu=1: atlas blocks decoded on the CPU into the texture; 0 the GPU
+                         pass; 2 the GPU pass, checked against the CPU's decode (D79) */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;

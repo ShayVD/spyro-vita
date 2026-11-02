@@ -162,6 +162,12 @@
  *                       (hang_test=V,wait: blocks on a semaphore)
  *       log_sync=1      each log line written by the thread that logs it
  *                       (default 0: a writer thread on cores 1-2; log.c, D75)
+ *       atlas_cpu=0     with gpu=1 and the atlas, new texture blocks decoded
+ *                       by a GPU pass into the atlas, as before D79 (default
+ *                       1: decoded on the CPU straight into the atlas
+ *                       texture's memory, the same texels, no GPU scene);
+ *                       2: the GPU pass, then each block compared with the
+ *                       CPU's decode and the differences logged (hardware)
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
@@ -193,6 +199,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu_direct = 1, /* D69 */
                         .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */
                         .dynres = 0, /* D75: off by default after hardware run J6 */
+                        .atlas_cpu = 1, /* D79 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -349,6 +356,8 @@ static void read_config(void) {
       g_vita_opts.gpu_meter = atoi(v);
     else if (!strcmp(line, "log_sync"))
       g_vita_opts.log_sync = atoi(v);
+    else if (!strcmp(line, "atlas_cpu"))
+      g_vita_opts.atlas_cpu = atoi(v);
     else if (!strcmp(line, "shot_hd"))
       g_vita_opts.shot_hd = atoi(v);
     else if (!strcmp(line, "widescreen_exact"))
