@@ -1582,4 +1582,16 @@ Record each decision with its date, what was chosen, and why.
   - **ARM code,** VitaSDK's GCC 15 at `-O2` (`logs/armchk`): a native RTPS in a vertex loop is ~130 inline instructions, against a call into the 325-instruction register-file command plus its loads and stores to `gteRegs`.
   - **Vita3K,** the gems script, `draw` lines over 29 windows, two pairs: renderers 0.239 → 0.155 and 0.250 → 0.209 ms per vblank (−35%, −16%; `logs/ngv3k-time*-f*`). Vita3K's JIT isn't a Cortex-A9 and its timings vary from run to run.
   - **Estimate for hardware:** −15 to −35% of the renderers' 1.5–4.5 ms per vblank (K1), about 0.3–1.2 ms per vblank at 30 fps. That's at or below the plan's −0.5 to −1.3 ms. Only N1/N2 will tell.
-- **Not checked:** hardware. Runs N1 and N2 (`tools/vita/fps-runs/n1-gte-1.txt`, `n2-gte-2.txt`; owner's steps in `docs/native-plan.md` stage 1).
+- **On hardware (2026-11-02, the owner's Vita over `hw_run.sh`, D77; branch merged with main's D78 and D79, VPK SHA-1 `a1038c1b…`):** runs N1 and N2 unattended, the K route (`k-route.pad`: the title, the Stone Hill attract demo, New Game and the intro, Artisans, then warps to Stone Hill and Dark Hollow, 18,000 vblanks), shipped 16:9 picture at 30 fps, `render_thread=0`, `parse_thread=0` (`tools/vita/hw-routes/n-gte-k.cfg`; `logs/hw-ngte-n1`, `-n2`, gitignored).
+  - **Same results:** all 18 pictures identical (9 shots and the GPU's own 960×544 frame at each), the memory card identical, no crash dump.
+  - **The renderers' CPU** (`draw` lines, ms per vblank, 60 windows; `logs/hw-ngte-compare.txt`): **2.28 → 1.92 (−15%, −0.35 ms per vblank, −0.7 ms per tick)**. The update stays 0.28 in both.
+
+    | Part of the route | env | mobys | Spyro | sky | renderers |
+    |---|---|---|---|---|---|
+    | title and attract demo | 1.23 → 1.10 | 0.56 → 0.45 | 0.13 → 0.10 | 0.31 → 0.22 | 2.22 → 1.87 (−16%) |
+    | New Game, intro | 0.57 → 0.53 | 0.50 → 0.39 | 0.05 → 0.04 | 0.25 → 0.18 | 1.37 → 1.13 (−18%) |
+    | Artisans | 1.33 → 1.19 | 0.95 → 0.76 | 0.22 → 0.18 | 0.28 → 0.22 | 2.78 → 2.35 (−16%) |
+    | Stone Hill | 1.70 → 1.51 | 0.70 → 0.60 | 0.19 → 0.16 | 0.25 → 0.19 | 2.84 → 2.45 (−14%) |
+    | Dark Hollow | 1.18 → 1.04 | 1.20 → 1.02 | 0.20 → 0.16 | 0.32 → 0.24 | 2.90 → 2.46 (−15%) |
+
+  - That's below the plan's estimate (−0.5 to −1.3 ms per vblank). env, the largest renderer, gains least (−9 to −12%): its per-sector and per-polygon work around the GTE stays. Stage 2 takes that work on.

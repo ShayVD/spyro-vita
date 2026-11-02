@@ -432,7 +432,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 
 **Optional:** yes, as `fast_render=2`. `fast_render=1` (today's register-file C) and `0` (mips2c) stay linked.
 
-**Done (D80, 2026-11-02),** apart from NEON and the hardware runs. What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu) and −16 to −35% in Vita3K.
+**Done (D80, 2026-11-02),** apart from NEON. N1 and N2 ran on hardware: identical pictures and memory card, and the renderers −15% (2.28 → 1.92 ms per vblank). What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu), −16 to −35% in Vita3K and −15% on hardware.
 
 #### The GTE audit
 
