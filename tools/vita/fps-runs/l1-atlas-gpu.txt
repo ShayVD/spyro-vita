@@ -1,0 +1,14 @@
+# Run L1 (D79): K3's route and switches with the atlas's GPU decode pass (atlas_cpu=0), the way
+# main decoded texture blocks before D79. 30 fps, the shipped threads, D75's GPU meter (gpu_meter=1,
+# no glFinish), resolution fixed (dynres=0). Route: leave the game alone from boot for 3 minutes
+# (title, flythrough, the Stone Hill attract demo), then 2 minutes in Artisans and 2 in Stone Hill.
+# Send spyro.log as l1.log. Against L2 (the same route) the meter's "texture decodes" row is the
+# pass's GPU time, and the "atlas N:" lines' block counts must match.
+config_version=3
+interp=0
+render_thread=1
+parse_thread=1
+fast_render=1
+gpu_meter=1
+dynres=0
+atlas_cpu=0

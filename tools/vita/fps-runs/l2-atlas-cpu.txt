@@ -1,0 +1,14 @@
+# Run L2 (D79): L1 with the atlas's new blocks decoded on the CPU straight into the atlas texture
+# (atlas_cpu=1, the default since D79): no GPU scene for them. The same route as L1: leave the game
+# alone from boot for 3 minutes (title, flythrough, the Stone Hill attract demo), then 2 minutes in
+# Artisans and 2 in Stone Hill. Send spyro.log as l2.log. The meter's "texture decodes" row should
+# read 0; the "atlas N: atlas_cpu=1:" lines give the CPU's time per 32x32 block and any waits for
+# the GPU; the "atlas N:" block counts should be L1's.
+config_version=3
+interp=0
+render_thread=1
+parse_thread=1
+fast_render=1
+gpu_meter=1
+dynres=0
+atlas_cpu=1

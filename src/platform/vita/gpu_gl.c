@@ -40,6 +40,7 @@
 #include <string.h>
 #include <vitaGL.h>
 #include <vitashark.h>
+#include <psp2/gxm.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 
@@ -1069,9 +1070,162 @@ static float s_aq_ndc[3][AMAXNEW * 12], s_aq_src[3][AMAXNEW * 12], s_aq_pc[3][AM
 static float s_aq_org[3][AMAXNEW * 24];
 static int s_alin[2]; /* the atlas's GL filter is GL_LINEAR now */
 static int s_aqn[3];
+/* atlas_cpu (D79): the same blocks as records, decoded on the CPU straight
+ * into the atlas texture's memory instead of by the pass. vitaGL keeps a
+ * texture where the CPU can write it: linear RGBA8 rows (checked when the
+ * atlases are made; anything else keeps the pass). */
+typedef struct {
+  uint16_t px, py, clut; /* page origin in VRAM words; the CLUT as the GPU has it */
+  uint16_t ax, ay;       /* atlas texel of the entry (its margin included) */
+  uint8_t bx0, by0, tw, th, wrap;
+} ABlock;
+static ABlock s_ab[3][AMAXNEW];
+static int s_amode;           /* 0 the pass; 1 the CPU; 2 the pass, checked against the CPU */
+static uint32_t *s_adata[2];  /* the atlases' texels */
+static int s_astride;         /* texels per row */
+static SceUID s_awb[2];       /* in cached memory: its block, written back after each row */
+static int s_ainuse[2];       /* sampled by a draw since the last glFinish here */
+static int s_await;           /* the current atlas may still be read by draws in flight */
 static struct {
   unsigned blocks, decoded, misses, used, plain;
+  unsigned cpu_cells, waits, bad_blocks, bad_texels, checked; /* atlas_cpu (D79) */
+  uint64_t cpu_us, wait_us;
 } s_ast;
+
+/* atlas_cpu (D79): where the CPU writes the atlases' texels, or the pass
+ * if vitaGL's textures aren't the linear RGBA8 rows that needs */
+static void atlas_memory(void) {
+  int i, ok = g_vita_opts.atlas_cpu != 0;
+  unsigned type = 0, stride = 0;
+  for (i = 0; i < 2 && ok; i++) {
+    SceKernelMemBlockInfo info = {.size = sizeof info};
+    const SceGxmTexture *gt;
+    glBindTexture(GL_TEXTURE_2D, s_atex[i]);
+    gt = vglGetGxmTexture(GL_TEXTURE_2D);
+    s_adata[i] = vglGetTexDataPointer(GL_TEXTURE_2D);
+    if (!gt || !s_adata[i] || sceGxmTextureGetFormat(gt) != SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR ||
+        sceGxmTextureGetWidth(gt) != ATLAS) {
+      ok = 0;
+      break;
+    }
+    type = sceGxmTextureGetType(gt);
+    if (type == SCE_GXM_TEXTURE_LINEAR)
+      stride = (ATLAS + 7) & ~7u; /* rows of the width rounded to 8 texels */
+    else if (type == SCE_GXM_TEXTURE_LINEAR_STRIDED)
+      stride = sceGxmTextureGetStride(gt) / 4;
+    else
+      ok = 0;
+    s_astride = (int)stride;
+    /* write-back memory needs its cache lines cleaned for the GPU; CDRAM
+     * and vitaGL's uncached RAM don't (the 0x8000 nibble is uncached) */
+    s_awb[i] = sceKernelGetMemBlockInfoByAddr(s_adata[i], &info) < 0 ||
+                       (info.type & 0xF000) != 0x8000
+                   ? sceKernelFindMemBlockByAddr(s_adata[i], 0)
+                   : 0;
+    if (s_awb[i] < 0)
+      ok = 0;
+  }
+  s_amode = ok ? (g_vita_opts.atlas_cpu == 2 ? 2 : 1) : 0;
+  if (!g_vita_opts.atlas_cpu) {
+    vita_log("gpu: atlas blocks decoded by the GPU pass (atlas_cpu=0, D79)");
+    return;
+  }
+  vita_log("gpu: atlas blocks decoded %s (atlas_cpu=%d, D79)%s; texture type %08x, %d texels a "
+           "row, %s",
+           s_amode == 1 ? "on the CPU into the texture" : s_amode == 2 ? "by the GPU pass, each "
+           "checked against the CPU's decode" : "by the GPU pass",
+           g_vita_opts.atlas_cpu, ok ? "" : ": not a linear RGBA8 texture",
+           type, s_astride, s_awb[0] || s_awb[1] ? "cached (written back)" : "uncached");
+}
+
+/* atlas_cpu: colour c as the decode pass writes it (k_fs_decode): RGB as
+ * 5-bit k * 8, alpha 0 for 0 (transparent black), 254 with STP, else 255;
+ * the bytes R, G, B, A of the RGBA8 texel */
+static inline uint32_t atexel(uint32_t c) {
+  if (!c)
+    return 0;
+  return (c & 31) << 3 | (c >> 5 & 31) << 11 | (c >> 10 & 31) << 19 |
+         (c & 0x8000 ? 254u : 255u) << 24;
+}
+
+/* texels u0..u0+n-1 (u0 a multiple of 32) of page row v, decoded with the
+ * CLUT's colours lut: the decode pass's (and texels_plain's) addressing */
+static void arow(int fmt, const ABlock *b, const uint32_t *lut, int u0, int v, uint32_t *out,
+                 int n) {
+  const uint16_t *row = s_vram + ((b->py + v) & (VH - 1)) * VW;
+  int i;
+  if (fmt == 0) {
+    const int w0 = b->px + (u0 >> 2);
+    for (i = 0; i < n; i += 4) {
+      uint32_t w = row[(w0 + (i >> 2)) & (VW - 1)];
+      out[i] = lut[w & 15];
+      out[i + 1] = lut[w >> 4 & 15];
+      out[i + 2] = lut[w >> 8 & 15];
+      out[i + 3] = lut[w >> 12];
+    }
+  } else if (fmt == 1) {
+    const int w0 = b->px + (u0 >> 1);
+    for (i = 0; i < n; i += 2) {
+      uint32_t w = row[(w0 + (i >> 1)) & (VW - 1)];
+      out[i] = lut[w & 255];
+      out[i + 1] = lut[w >> 8];
+    }
+  } else {
+    for (i = 0; i < n; i++)
+      out[i] = atexel(row[(b->px + u0 + i) & (VW - 1)]);
+  }
+}
+
+/* One row of an entry into the atlas at dst, or (check) compared with it:
+ * the texels that differ */
+static unsigned aput(uint32_t *dst, const uint32_t *src, int n, int check, SceUID wb) {
+  unsigned bad = 0;
+  int i;
+  if (!check) {
+    memcpy(dst, src, (size_t)n * 4);
+    if (wb)
+      sceKernelSyncVMDomain(wb, dst, (SceSize)n * 4);
+    return 0;
+  }
+  for (i = 0; i < n; i++)
+    bad += dst[i] != src[i];
+  return bad;
+}
+
+/* Entry b of format fmt decoded into atlas a, as the pass draws its quad:
+ * blocks tw x th of texels from (bx0, by0) * 32, or a repeating tile with
+ * its 16-texel margin (atlas texel (x, y) of the 64x64 entry is tile texel
+ * ((x - 16) & 31, (y - 16) & 31)). check: compared instead, the differing
+ * texels returned (atlas_cpu=2). */
+static unsigned ablock(int fmt, const ABlock *b, int a, int check) {
+  uint32_t lut[256], line[8 * ACELL], wide[2 * ACELL];
+  uint32_t *dst = s_adata[a] + (size_t)b->ay * s_astride + b->ax;
+  int n = b->wrap ? ACELL : b->tw * ACELL, rows = b->wrap ? ACELL : b->th * ACELL, r, i;
+  SceUID wb = check ? 0 : s_awb[a];
+  unsigned bad = 0;
+  if (fmt < 2) {
+    const uint16_t *cl = s_vram + (b->clut >> 6 & 511) * VW;
+    int cx = (b->clut & 63) * 16;
+    for (i = 0; i < (fmt ? 256 : 16); i++)
+      lut[i] = atexel(cl[(cx + i) & (VW - 1)]);
+  }
+  for (r = 0; r < rows; r++) {
+    arow(fmt, b, lut, b->bx0 * ACELL, b->by0 * ACELL + r, line, n);
+    if (!b->wrap) {
+      bad += aput(dst + (size_t)r * s_astride, line, n, check, wb);
+      continue;
+    }
+    memcpy(wide, line + ACELL / 2, ACELL / 2 * 4);
+    memcpy(wide + ACELL / 2, line, ACELL * 4);
+    memcpy(wide + ACELL * 3 / 2, line, ACELL / 2 * 4);
+    bad += aput(dst + (size_t)(r + ACELL / 2) * s_astride, wide, 2 * ACELL, check, wb);
+    if (r >= ACELL / 2)
+      bad += aput(dst + (size_t)(r - ACELL / 2) * s_astride, wide, 2 * ACELL, check, wb);
+    else
+      bad += aput(dst + (size_t)(r + ACELL * 3 / 2) * s_astride, wide, 2 * ACELL, check, wb);
+  }
+  return bad;
+}
 
 static void atlas_reset(void) {
   int i;
@@ -1084,8 +1238,12 @@ static void atlas_reset(void) {
       tex_meter(s_atex[i], GPU_K_ATLAS);
     }
     s_bound_fbo = (GLuint)-1;
+    atlas_memory();
   }
   s_acur ^= 1;
+  /* the CPU writes into what draws of two resets ago may still read: they
+   * have to be done first (the pass was ordered behind them by the GPU) */
+  s_await = s_amode == 1 && s_ainuse[s_acur];
   s_ax = s_ay = s_ah = 0;
   s_ast.used = 0;
   s_afull = 0;
@@ -1178,6 +1336,21 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
                                     by1 * ACELL + ACELL - 1));
   *plain = e->plain;
   {
+    ABlock *b = &s_ab[fmt][s_aqn[fmt]];
+    b->px = (uint16_t)px;
+    b->py = (uint16_t)py;
+    b->clut = (uint16_t)clut;
+    b->ax = e->ax;
+    b->ay = e->ay;
+    b->bx0 = (uint8_t)bx0;
+    b->by0 = (uint8_t)by0;
+    b->tw = (uint8_t)tw;
+    b->th = (uint8_t)th;
+    b->wrap = (uint8_t)wrap;
+  }
+  if (s_amode == 1) {
+    s_aqn[fmt]++;
+  } else {
     /* the decode quad: atlas rect <- texels from the block origin (centres
      * at +0.5), the margin wrapping within the tile */
     static const int ix[6] = {0, 2, 0, 2, 2, 0}, iy[6] = {1, 1, 3, 1, 3, 3};
@@ -1216,11 +1389,66 @@ static int atlas_find(int fmt, int page, int clut, int bx0, int by0, int bx1, in
   return 0;
 }
 
+/* atlas_cpu=1 (D79): the new blocks decoded on the CPU into the atlas
+ * texture, here in command order (the render thread's, D63), as the pass
+ * was. They are entries no draw has read in this atlas's generation, so
+ * draws already queued can't see them change; what draws of the atlas's
+ * previous generation may still read is waited for first (s_await). */
+static void atlas_decode_cpu(void) {
+  uint64_t t0 = now_us();
+  int fmt, i;
+  if (s_await) {
+    glFinish(); /* ends the scene: the draws in it are done too */
+    s_ainuse[0] = s_ainuse[1] = 0;
+    s_await = 0;
+    s_ast.waits++;
+    s_ast.wait_us += now_us() - t0;
+    t0 = now_us();
+  }
+  for (fmt = 0; fmt < 3; fmt++) {
+    for (i = 0; i < s_aqn[fmt]; i++) {
+      const ABlock *b = &s_ab[fmt][i];
+      ablock(fmt, b, s_acur, 0);
+      s_ast.cpu_cells += b->wrap ? 4u : (unsigned)(b->tw * b->th);
+    }
+    s_aqn[fmt] = 0;
+  }
+  s_ast.cpu_us += now_us() - t0;
+}
+
+/* atlas_cpu=2: after the pass, every block it drew compared with the CPU's
+ * decode, from the same s_vram (a glFinish each time: hardware checks only) */
+static void atlas_check(int nq[3]) {
+  static unsigned s_acheck_logged;
+  int fmt, i;
+  glFinish();
+  for (fmt = 0; fmt < 3; fmt++)
+    for (i = 0; i < nq[fmt]; i++) {
+      const ABlock *b = &s_ab[fmt][i];
+      unsigned bad = ablock(fmt, b, s_acur, 1);
+      s_ast.checked++;
+      if (!bad)
+        continue;
+      s_ast.bad_blocks++;
+      if (s_acheck_logged++ < 8)
+        vita_log("atlas: atlas_cpu=2: %u texels differ in format %d page (%u,%u) clut %04x "
+                 "blocks (%u,%u) %ux%u%s at atlas (%u,%u)",
+                 bad, fmt, b->px, b->py, b->clut, b->bx0, b->by0, b->tw, b->th,
+                 b->wrap ? " wrapped" : "", b->ax, b->ay);
+      s_ast.bad_texels += bad;
+    }
+}
+
 /* The blocks found new since the last call, decoded into the atlas. */
 static void atlas_decode(void) {
-  int fmt;
+  int fmt, nq[3];
   if (!s_aqn[0] && !s_aqn[1] && !s_aqn[2])
     return;
+  if (s_amode == 1) {
+    atlas_decode_cpu();
+    return;
+  }
+  memcpy(nq, s_aqn, sizeof nq);
   upload_vram();
   bind_fbo(s_afbo[s_acur]);
   glViewport(0, 0, ATLAS, ATLAS);
@@ -1250,6 +1478,8 @@ static void atlas_decode(void) {
   glDisableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
   s_xattr = 0;
+  if (s_amode == 2)
+    atlas_check(nq);
 }
 
 /* ---- target logs ---- */
@@ -2171,6 +2401,7 @@ static void batch_issue(const Batch *b) {
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
       glActiveTexture(GL_TEXTURE0);
+      s_ainuse[s_acur] = 1;
     }
   } else if (s_xmode) {
     glEnableVertexAttribArray(3);
@@ -2189,6 +2420,7 @@ static void batch_issue(const Batch *b) {
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
       glActiveTexture(GL_TEXTURE0);
+      s_ainuse[s_acur] = 1;
     }
   } else {
     if (s_xattr) { /* bench= switched the options off */
@@ -3219,7 +3451,21 @@ void gl_report(int vblank) {
     if (g_vita_opts.gpu_opaque)
       vita_log("atlas %d: gpu_opaque=1: %u of those triangles drawn without discard", vblank,
                s_ast.plain);
+    if (s_amode == 1 && (s_ast.cpu_cells || s_ast.waits)) {
+      unsigned per = s_ast.cpu_cells ? (unsigned)(s_ast.cpu_us * 100 / s_ast.cpu_cells) : 0;
+      vita_log("atlas %d: atlas_cpu=1: %u blocks decoded on the CPU in %u.%02u ms (%u.%02u us a "
+               "block); %u waits for the GPU (%u.%02u ms)",
+               vblank, s_ast.cpu_cells, (unsigned)(s_ast.cpu_us / 1000),
+               (unsigned)(s_ast.cpu_us % 1000 / 10), per / 100, per % 100, s_ast.waits,
+               (unsigned)(s_ast.wait_us / 1000), (unsigned)(s_ast.wait_us % 1000 / 10));
+    }
+    if (s_amode == 2 && s_ast.checked)
+      vita_log("atlas %d: atlas_cpu=2: %u entries checked against the CPU's decode, %u differ "
+               "(%u texels)",
+               vblank, s_ast.checked, s_ast.bad_blocks, s_ast.bad_texels);
     s_ast.blocks = s_ast.misses = s_ast.decoded = s_ast.plain = 0;
+    s_ast.cpu_cells = s_ast.waits = s_ast.checked = s_ast.bad_blocks = s_ast.bad_texels = 0;
+    s_ast.cpu_us = s_ast.wait_us = 0;
   }
   dynres_report(vblank);
   memset(&s_st, 0, sizeof s_st);

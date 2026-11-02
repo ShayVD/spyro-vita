@@ -1,0 +1,14 @@
+# Run L3 (D79, optional): the GPU pass (as L1), then every block it drew read back from the atlas
+# texture and compared with the CPU's decode (atlas_cpu=2). A glFinish after each pass, so its
+# timings mean nothing; it checks the pixels on hardware, which Vita3K can't (it keeps what the GPU
+# draws on the Mac's GPU). The same route as L1, 3 minutes alone from boot, then Artisans and
+# Stone Hill. Send spyro.log as l3.log: "atlas N: atlas_cpu=2:" lines should say 0 differ, and
+# there should be no "atlas: atlas_cpu=2: ... texels differ" line.
+config_version=3
+interp=0
+render_thread=1
+parse_thread=1
+fast_render=1
+gpu_meter=1
+dynres=0
+atlas_cpu=2

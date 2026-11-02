@@ -389,6 +389,14 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 - **Verify:** Vita3K window captures pixel-identical on D74's routes, and the `atlas` lines' block counts unchanged. On hardware, K3 again: the meter's "texture decodes" row should read 0.
 - **Size:** ~200–400 lines in `gpu_gl.c`.
 - **Optional:** yes, a switch, until hardware has run it.
+- **Done (D79):** `atlas_cpu=1`, the default. In Vita3K the window captures of the gems script, the pause route and the attract demo show 0 differing pixels inside the picture against the pass (`atlas_cpu=0`), and the `atlas` lines' counts are identical. No NEON yet: it waits for the hardware's per-block time.
+- **Hardware runs L1–L3** (`tools/vita/fps-runs/`, each a whole `config.txt`): K3's switches and route with the pass (`l1-atlas-gpu.txt`), with the CPU decode (`l2-atlas-cpu.txt`), and with the pass checked texel by texel against the CPU (`l3-atlas-check.txt`, optional; its timings mean nothing). For the owner:
+  1. Use a VPK built from this PR's branch, or from main once it's merged.
+  2. Keep a copy of your own `ux0:data/spyro/config.txt`, and copy one L file over it.
+  3. Start the game and leave it alone for 3 minutes: the title, the flythrough and the Stone Hill attract demo.
+  4. Then load a game: 2 minutes in Artisans, then 2 minutes in Stone Hill. Don't open the options menu (it rewrites `config.txt`).
+  5. Quit, and send back `ux0:data/spyro/spyro.log` renamed `l1.log` (then `l2.log`, `l3.log`). Put your own `config.txt` back.
+  - **What they settle:** L2's `gpu meter` lines should have no "texture decodes" time, and its `atlas N: atlas_cpu=1:` lines give the CPU's time per block. Against L1, the play windows' GPU time per picture and the gaps between pictures. L3's `atlas N: atlas_cpu=2:` lines should all say 0 differ.
 
 **The XA read-ahead after a jump back:**
 - **Replaces:** `want()`'s slot choice in `xa_ahead.c`.
