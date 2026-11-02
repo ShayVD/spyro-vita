@@ -122,3 +122,35 @@ The same VPK for all three. `fast_render=1` is the default since D72; G1 turns i
 **G2 against G3.** At 60 fps the in-between frame runs the renderers again, so the gain counts twice. `present N:`: more in-between frames per window, and fewer falls to a held 30 in the places where G3 before this change held 30.
 
 **A bug would look like:** anything on screen that differs between G1 and G2 at the same place (a missing or torn polygon, a wrong colour, a flickering sky, Spyro or a moby drawn wrong), or a crash in a level G1 runs.
+
+## Runs I1–I3: a cheaper GPU picture (D74)
+
+One VPK, built from the D74 branch, for all three. Main's Toasty log (`logs/hw-main-2a0691c`) had the render thread at 16–23 ms a picture in the heavy views, and C1's `gpu_time=2` timed the GPU's scene at 19–31 ms there. D74 found that the pixels the GPU shades don't separate Toasty from Artisans. What does is the number of draws and program changes: 150–230 shader runs a picture in Toasty, against about 80 in Artisans. Textured and untextured triangles alternate in the game's draw order, and PsyCross starts a new draw at each change.
+
+| File | Switches | Do |
+|---|---|---|
+| `i1-bench.txt` | 60 fps forced, `gpu_bench=1` (main's setup otherwise) | Go to Toasty: WARP TO in the options menu's GAME section, or walk. Find the heaviest view you can (the one with the most of the level in sight), then **stand still** and leave the pad alone for 2 minutes. Then do the same for 1 minute in Artisans. Don't open the menu while standing |
+| `i2-join.txt` | 60 fps as the menu gives it, the default budget, `gpu_join=1` (D74's default) | the route of main's log: Artisans, then Toasty, 2–3 minutes each |
+| `i3-uber.txt` | as I2, plus `gpu_uber=1` | the same route |
+
+**I1.**
+- **The variant lines:** each 5-s window draws one of five ways and logs `gpu N: gpu_bench=1: VARIANT: the GPU's scene X ms a picture, K pictures timed`. X is the GPU's time for the game's picture after its last draw (gpu_time=2's measure), averaged over every 16th picture. The five, in turn:
+  1. `main's draws (gpu_join=0)`: as main.
+  2. `gpu_join=1`: consecutive draws joined.
+  3. `gpu_join=1 gpu_uber=1`: plain and untextured triangles in one program.
+  4. `gpu_join=1, half the pixels (diagnostic)`: the scissor cut to the left half. **The picture changes**: half the screen isn't redrawn.
+  5. `gpu_join=1 gpu_uber=1, one program for every opaque triangle (diagnostic)`: no discard, no program changes. **The picture changes**: transparent texels show black.
+- **What the numbers tell, at the same place:**
+  - 1 against 2 is what joining saves.
+  - 2 against 3 is what one program saves, net of the untextured pixels now sampling a texture.
+  - 4 against 2 is the share that scales with pixels: if X falls by nearly half, the GPU is fill-bound; if it hardly moves, it's bound by the draws and their state.
+  - 5 is the floor that fewer program changes could reach.
+  - The `render N:` line's "busy ... per picture" and the `vblank N:` line's late vblanks, window by window, give the same comparison from the render thread's side.
+
+**I2 and I3, against main's log.**
+- `render N:`: the render thread's time per picture in Toasty (16–23 ms in main's 60-fps windows) and its busy %.
+- `vblank N:`: late vblanks.
+- `present N:`: in-between frames and falls to a held 30.
+- The picture must look the same as main's everywhere: Toasty's distant ground, the sky, Spyro, gems, the HUD, the pause and inventory screens.
+
+**A bug would look like:** a triangle missing or drawn in the wrong place, a wrong colour on the ground, or a menu or pause background that differs from main. Variants 4 and 5 of I1 are meant to look wrong.

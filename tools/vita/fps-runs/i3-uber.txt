@@ -1,0 +1,6 @@
+# Run I3, joined draws and one program for plain and untextured triangles (D74): as I2 plus gpu_uber=1
+interp=1
+gpu_lean=1
+parse_thread=1
+gpu_uber=1
+config_version=3

@@ -37,6 +37,10 @@ typedef struct {
   int npokes;
   int shot_hd;        /* shot_hd=1: with gpu=1, also a 960x544 PNG of the screen per shot */
   int gpu_dump;       /* gpu_dump=V: log every split drawn at vblanks V, V+1 (gpu=1) */
+  int gpu_fill;       /* gpu_fill=1: count the pixels each kind of draw covers (D74, diagnostic) */
+  int gpu_join;       /* gpu_join=0: each game draw its own GL draw (default 1: joined, D74) */
+  int gpu_uber;       /* gpu_uber=1: plain and untextured triangles in one program (D74) */
+  int gpu_bench;      /* gpu_bench=1: cycle the D74 draw variants by stats window, timing the GPU */
   int gpu_readback;   /* gpu_readback=0: read the GPU back with glReadPixels, not by replay */
   int widescreen;     /* widescreen=1 (default): 16:9 (docs/presentation.md) */
   int interp;         /* interp=1 (default): 60 fps; 2: no animation blending; 3: camera only; 0: off */
