@@ -1,0 +1,11 @@
+# Run R1 (docs/native-plan.md stage 5, D84): today's mixer (mixer=1: libspu.c's mix on the mixer
+# thread, SDL2's audio queue), at 30 fps with the shipped threads, as M1. With R2 (the same with
+# mixer=3) it gives the mixer's CPU per vblank before and after. Unattended: the K route,
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 [REALTIME=1] \
+#     tools/vita/hw_run.sh logs/hw-r1 1500 @tools/vita/fps-runs/r1-mixer-old.txt @tools/vita/hw-routes/r-audio-k.cfg
+# By hand: leave it alone from boot through the title and the Stone Hill attract demo, then start or
+# load a game, 2 minutes in Artisans, then Stone Hill for 2 minutes. Send it as r1.log.
+config_version=3
+interp=0
+dynres=0
+mixer=1

@@ -64,7 +64,7 @@ static void voice_decode(PsxSpuVoice *v) {
 /* Past the end of cur_addr's block: follow its flags (loop end jumps to the
  * loop address; without repeat the voice goes silent). Returns 0 if it did.
  * Position only: the decoder state is voice_next_block's. */
-static int voice_next_pos(PsxSpuVoice *v) {
+int psx_spu_voice_next_pos(PsxSpuVoice *v) {
   unsigned char flags = g_psx_spu.ram[v->cur_addr + 1];
   if (flags & 1) {
     v->cur_addr = v->loop_addr & ~15u;
@@ -84,7 +84,7 @@ static int voice_next_pos(PsxSpuVoice *v) {
 static int voice_next_block(PsxSpuVoice *v) {
   if (v->dec_valid)
     v->prev = v->dec[BLOCK_SAMPLES - 1];
-  if (!voice_next_pos(v))
+  if (!psx_spu_voice_next_pos(v))
     return 0;
   v->dec_valid = 0;
   return 1;
@@ -196,7 +196,7 @@ void psx_spu_step(void) {
     total = v->counter + step * VBLANK_SAMPLES;
     while (total >= BLOCK_SAMPLES << 12) {
       total -= BLOCK_SAMPLES << 12;
-      if (!voice_next_pos(v))
+      if (!psx_spu_voice_next_pos(v))
         break;
     }
     if (v->env_phase != PSX_ENV_OFF)
@@ -208,13 +208,17 @@ void psx_spu_vblank(void) {
   static short out[VBLANK_SAMPLES * 2];
   PsxSpuMixRegs r;
   psx_spu_mix_regs(&r);
-  psx_spu_mix(g_psx_spu.voice, &r, out);
+  if (g_psx_spu_native)
+    psx_spu_mix_native(g_psx_spu.voice, &r, out);
+  else
+    psx_spu_mix(g_psx_spu.voice, &r, out);
   psx_audio_out(out, VBLANK_SAMPLES);
 }
 
 void SpuInit(void) {
   memset(&g_psx_spu, 0, sizeof g_psx_spu);
   g_psx_spu.cd_mix = 1;
+  psx_spu_pcm_reset();
 }
 
 void SpuQuit(void) {}
@@ -429,6 +433,7 @@ unsigned int SpuWrite(unsigned char *addr, unsigned int size) {
   if (size > 0x7EFF0)
     size = 0x7EFF0;
   spu_copy(addr, size, 1);
+  psx_spu_pcm_write(g_psx_spu.transfer_addr, size);
   return size;
 }
 

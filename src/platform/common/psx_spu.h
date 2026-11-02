@@ -78,6 +78,24 @@ void psx_spu_mix(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
                  short out[PSX_SPU_VBLANK_SAMPLES * 2]);
 void psx_spu_step(void);
 
+/* libspu.c's step past the end of cur_addr's block (the block flags: loop
+ * start, loop end, repeat); 0 if the voice went silent. Position only. */
+int psx_spu_voice_next_pos(PsxSpuVoice *v);
+
+/* The native mix (spu_native.c, D84): psx_spu_mix's output from SPU RAM
+ * decoded to PCM once, voice by voice over the vblank. g_psx_spu_native
+ * picks it in psx_spu_vblank (and keeps the PCM cache up to date in
+ * SpuWrite); g_psx_spu_simd 0 takes the C path on ARM too (tests). */
+extern int g_psx_spu_native, g_psx_spu_simd;
+void psx_spu_mix_native(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
+                        short out[PSX_SPU_VBLANK_SAMPLES * 2]);
+void psx_spu_pcm_write(unsigned addr, unsigned size); /* SPU RAM written: decode it again */
+void psx_spu_pcm_reset(void);                         /* forget every block (SpuInit, a state load) */
+typedef struct {
+  unsigned long long hits[2], misses, predecoded; /* blocks: from each way, decoded in the mix, at SpuWrite */
+} PsxSpuNativeStats;
+extern PsxSpuNativeStats g_psx_spu_native_stats;
+
 /* Provided by the platform: the mixer's output, 44.1 kHz s16 interleaved
  * stereo, pushed once per vblank from psx_spu_vblank(). */
 void psx_audio_out(const short *pcm, int frames);

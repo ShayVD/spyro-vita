@@ -14,7 +14,14 @@
  * every posted packet first. So the output is the synchronous
  * psx_spu_vblank()'s, byte for byte, whatever the threads' timing. Calls
  * reach us through -Wl,--wrap (CMakeLists.txt), so src/platform/common and
- * the linux32 host don't change. */
+ * the linux32 host don't change.
+ *
+ * mixer=3 (4: lockstep) is the native mix (D84): the same packets, mixed by
+ * psx_spu_mix_native from SPU RAM decoded to PCM at SpuWrite, with each XA
+ * sector's PCM decoded on the read-ahead thread where it has it (the packet
+ * holds the window's PCM, pinned until the mix has pushed it, and the raw
+ * sector in case its history isn't the stream's), and out through
+ * sceAudioOut (audio.c). The same samples as mixer=1. */
 #include "vita.h"
 #include "watchdog.h"
 #include "psx_cd.h"
@@ -41,6 +48,7 @@ typedef struct {
   int nev, nsect;
   unsigned char ev[MAX_EVENTS];
   unsigned char raw[MAX_SECTORS][PSX_CD_RAW_SECTOR];
+  const PsxXaPcm *pcm[MAX_SECTORS]; /* mixer=3: the read-ahead's PCM of raw, pinned; or NULL */
 } Packet;
 
 static Packet s_ring[RING];
@@ -48,6 +56,8 @@ static unsigned s_head; /* game thread: packets posted */
 static unsigned s_tail; /* mixer thread: packets done */
 static SceUID s_free, s_ready; /* semaphores: free slots, posted packets */
 static int s_running;
+static int s_native; /* mixer=3 or 4 (D84) */
+static SceUID s_thread;
 static volatile int s_phase; /* mixer thread: 0 idle, 1 XA, 2 voices, 3 mix, 4 out (debug) */
 
 /* Mixer-thread state. */
@@ -57,6 +67,9 @@ static short s_out[PSX_SPU_VBLANK_SAMPLES * 2];
 /* Stats for vita_mixer_report (read across threads; only approximate). */
 static volatile uint64_t s_mix_us, s_mix_worst;
 static volatile unsigned s_mixes, s_mismatch;
+static volatile unsigned s_xa_pcm, s_xa_raw; /* mixer=3: XA sectors pushed from the read-ahead's PCM, decoded here */
+static uint64_t s_write_us; /* game thread: in SpuWrite (mixer=3: its PCM decode) */
+static unsigned s_writes;
 static uint64_t s_wait_us; /* game thread waiting for a free slot or a drain */
 static unsigned s_waits;
 
@@ -100,15 +113,31 @@ static void post(void) {
   sceKernelSignalSema(s_ready, 1);
 }
 
-static void add_event(int type, const unsigned char *raw) {
+static void add_event(int type, const unsigned char *raw, const PsxXaPcm *pcm) {
   Packet *p = open_packet();
   if (p->nev == MAX_EVENTS || (raw && p->nsect == MAX_SECTORS)) {
     post(); /* no mix: the rest goes in the next packet, in order */
     p = open_packet();
   }
-  if (raw)
+  if (raw) {
+    p->pcm[p->nsect] = pcm;
     memcpy(p->raw[p->nsect++], raw, PSX_CD_RAW_SECTOR);
+  }
   p->ev[p->nev++] = (unsigned char)type;
+}
+
+/* One sector into the XA FIFO: the read-ahead's PCM if its history is the
+ * stream's (then it's the same frames), else decoded here. */
+static void xa_sector(const unsigned char *raw, const PsxXaPcm *pcm) {
+  if (pcm && psx_xa_decoded(pcm)) {
+    s_xa_pcm++;
+  } else {
+    psx_xa_decode(raw);
+    if (s_native)
+      s_xa_raw++;
+  }
+  if (pcm)
+    vita_xa_release(pcm);
 }
 
 /* ---- mixer thread ---- */
@@ -148,16 +177,21 @@ static void run_packet(Packet *p) {
   int i, s = 0;
   s_phase = 1;
   for (i = 0; i < p->nev; i++) {
-    if (p->ev[i] == EV_RESET)
+    if (p->ev[i] == EV_RESET) {
       __real_psx_xa_reset();
-    else
-      psx_xa_decode(p->raw[s++]);
+    } else {
+      xa_sector(p->raw[s], p->pcm[s]);
+      s++;
+    }
   }
   if (p->mix) {
     s_phase = 2;
     adopt_voices(p->voice);
     s_phase = 3;
-    psx_spu_mix(s_voice, &p->reg, s_out);
+    if (s_native)
+      psx_spu_mix_native(s_voice, &p->reg, s_out);
+    else
+      psx_spu_mix(s_voice, &p->reg, s_out);
     s_phase = 4;
     psx_audio_out(s_out, PSX_SPU_VBLANK_SAMPLES);
   }
@@ -187,6 +221,8 @@ static int mixer_main(SceSize args, void *argp) {
 
 void vita_mixer_init(void) {
   SceUID th;
+  s_native = g_vita_opts.mixer >= 3;
+  g_psx_spu_native = s_native; /* before the game's first SpuWrite */
   if (!g_vita_opts.mixer) {
     vita_log("mixer: on the game thread (mixer=0)");
     return;
@@ -201,9 +237,11 @@ void vita_mixer_init(void) {
     return;
   }
   s_running = 1;
+  s_thread = th;
   vita_watchdog_thread(WD_T_MIXER, th);
-  vita_log("mixer: thread on core 1%s, priority 0x%x; game thread priority 0x%x, affinity %08x",
-           g_vita_opts.mixer == 2 ? " (lockstep)" : "", PRIORITY,
+  vita_log("mixer: thread on core 1%s%s, priority 0x%x; game thread priority 0x%x, affinity %08x",
+           s_native ? ", native mix (D84)" : "",
+           g_vita_opts.mixer == 2 || g_vita_opts.mixer == 4 ? " (lockstep)" : "", PRIORITY,
            (unsigned)sceKernelGetThreadCurrentPriority(),
            (unsigned)sceKernelGetThreadCpuAffinityMask(sceKernelGetThreadId()));
 }
@@ -235,6 +273,8 @@ void vita_mixer_drain(void) {
  * (key on reset theirs). Load: the mixer goes on from g_psx_spu's voices. */
 void vita_mixer_state(int load) {
   int i;
+  if (load)
+    psx_spu_pcm_reset(); /* SPU RAM is the state's: decoded again as it plays (D84) */
   if (!s_running)
     return;
   for (i = 0; i < PSX_SPU_VOICES; i++) {
@@ -263,13 +303,48 @@ void vita_mixer_vblank(void) {
   p->mix = 1;
   post();
   psx_spu_step();
-  if (g_vita_opts.mixer == 2)
+  if (g_vita_opts.mixer == 2 || g_vita_opts.mixer == 4)
     vita_mixer_drain();
+}
+
+/* A thread's CPU time so far (the kernel's runClocks, microseconds), 0 if none. */
+static uint64_t run_us(SceUID th) {
+  SceKernelThreadInfo info;
+  if (th <= 0)
+    return 0;
+  memset(&info, 0, sizeof info);
+  info.size = sizeof info;
+  return sceKernelGetThreadInfo(th, &info) < 0 ? 0 : info.runClocks;
+}
+
+/* "mixer N: core 1 CPU": the audio threads' own CPU per vblank over the
+ * window, which the mix's wall time above includes preemption in. */
+static void cpu_report(int vblank) {
+  static int v0;
+  static uint64_t t0[3];
+  SceUID th[3] = {s_thread, vita_xa_ahead_thread(), vita_audio_out_thread()};
+  uint64_t t[3];
+  int i, n = vblank - v0;
+  for (i = 0; i < 3; i++)
+    t[i] = run_us(th[i]);
+  if (v0 && n > 0) {
+    unsigned d[3];
+    for (i = 0; i < 3; i++)
+      d[i] = (unsigned)((t[i] - t0[i]) * 100 / (unsigned)n); /* hundredths of a microsecond */
+    vita_log("mixer %d: core 1 CPU per vblank (runClocks): mixer %u.%03u ms, xa read-ahead "
+             "%u.%03u ms, audio out %u.%03u ms%s",
+             vblank, d[0] / 100000, d[0] / 100 % 1000, d[1] / 100000, d[1] / 100 % 1000,
+             d[2] / 100000, d[2] / 100 % 1000, th[2] > 0 ? "" : " (SDL2's audio thread isn't counted)");
+  }
+  v0 = vblank;
+  memcpy(t0, t, sizeof t0);
 }
 
 void vita_mixer_report(int vblank) {
   unsigned n = s_mixes;
   uint64_t us = s_mix_us;
+  if (s_running)
+    cpu_report(vblank);
   if (!n)
     return;
   vita_log("mixer %d: %u vblanks mixed, %u.%02u ms each, worst %u.%02u ms; game thread "
@@ -278,6 +353,20 @@ void vita_mixer_report(int vblank) {
            (unsigned)(s_mix_worst / 1000), (unsigned)(s_mix_worst % 1000 / 10),
            (unsigned)(s_wait_us / 1000), (unsigned)(s_wait_us % 1000 / 10), s_waits,
            s_mismatch, g_vita_audio_dry, g_vita_audio_cleared);
+  if (s_native) {
+    PsxSpuNativeStats *st = &g_psx_spu_native_stats; /* the mixer's (approximate) */
+    vita_log("mixer %d: native: PCM blocks %llu from SpuWrite's decode, %llu from the second way, "
+             "%llu decoded in the mix; XA sectors %u from the read-ahead's PCM, %u decoded here; "
+             "SpuWrite %u calls, %u.%02u ms (%llu blocks decoded); %u output grains short",
+             vblank, st->hits[0], st->hits[1], st->misses, s_xa_pcm, s_xa_raw, s_writes,
+             (unsigned)(s_write_us / 1000), (unsigned)(s_write_us % 1000 / 10), st->predecoded,
+             g_vita_audio_short);
+    g_vita_audio_short = 0;
+    memset(st, 0, sizeof *st);
+    s_xa_pcm = s_xa_raw = 0;
+  }
+  s_writes = 0;
+  s_write_us = 0;
   g_vita_audio_dry = g_vita_audio_cleared = 0;
   s_mix_us = 0;
   s_mix_worst = 0;
@@ -293,19 +382,21 @@ unsigned int __real_SpuWrite(unsigned char *addr, unsigned int size);
 
 void __wrap_psx_xa_reset(void) {
   if (s_running)
-    add_event(EV_RESET, NULL);
+    add_event(EV_RESET, NULL, NULL);
   else
     __real_psx_xa_reset();
 }
 
 void __wrap_psx_xa_sector(int lba) {
   unsigned char raw[PSX_CD_RAW_SECTOR];
-  if (!vita_xa_accept(lba, raw)) /* the read-ahead's sectors, or read here (D64) */
+  const PsxXaPcm *pcm = NULL;
+  /* the read-ahead's sectors, or read here (D64); with mixer=3 their PCM too */
+  if (!vita_xa_accept(lba, raw, s_native ? &pcm : NULL))
     return;
   if (s_running)
-    add_event(EV_SECTOR, raw);
+    add_event(EV_SECTOR, raw, pcm);
   else
-    psx_xa_decode(raw);
+    xa_sector(raw, pcm);
 }
 
 /* The mixer reads SPU RAM: let it finish what is posted first. */
@@ -316,6 +407,12 @@ void __wrap_SpuInit(void) {
 }
 
 unsigned int __wrap_SpuWrite(unsigned char *addr, unsigned int size) {
+  SceUInt64 t0;
+  unsigned int r;
   vita_mixer_drain();
-  return __real_SpuWrite(addr, size);
+  t0 = sceKernelGetProcessTimeWide();
+  r = __real_SpuWrite(addr, size);
+  s_write_us += sceKernelGetProcessTimeWide() - t0;
+  s_writes++;
+  return r;
 }

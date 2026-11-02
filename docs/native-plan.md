@@ -627,6 +627,39 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 
 **Optional:** yes (a `mixer=` value).
 
+**Status (D84, 2026-11-02): done in Vita3K, waiting for hardware.** `mixer=3` (4: lockstep) is the native mix:
+- SPU RAM decoded at `SpuWrite`, each block keyed by the history it was decoded from;
+- the mix voice by voice, NEON on the Vita;
+- the music decoded on the read-ahead thread;
+- `sceAudioOut` out.
+
+The default stays `mixer=1` until R1 and R2 have run on hardware.
+- **The same samples:** byte-identical to `mixer=1` on the host over the demos, gems, routes A/B and a save-state run (`tools/mixer_ab.sh`), and to main's binary. In Vita3K the demo's WAV is the host's with both mixers. ctest `spu_native` checks 20,000 random vblanks, and the NEON path is checked on an arm64 Mac.
+- **The time** (Vita3K only, so *estimate* for hardware): the mix's wall time per vblank fell 0.43 → 0.17 ms (−61%). The plan's estimate was "roughly halves" the 0.8–1.0 ms. The XA decode moved from the mixer to the read-ahead thread, which is on core 1 too, so it moves off the mixer's deadline but saves core 1 nothing. Decoding each sound bank once at `SpuWrite` costs the game thread 6–21 ms per load in Vita3K.
+- **Not done:** the Gaussian interpolation. The oracle has no audio capture, so nothing could show it to be more faithful (D84).
+- **Hardware runs R1 and R2** (`tools/vita/fps-runs/r1-mixer-old.txt`, `r2-mixer-native.txt`; route `tools/vita/hw-routes/r-audio-k.cfg`), each only with the owner's approval:
+  1. The samples, `realtime=0`: `audio.wav` must be byte-identical between the two.
+
+     ```bash
+     VPK=build/vita/spyro-vita.vpk PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-r1-wav 1500 @tools/vita/fps-runs/r1-mixer-old.txt @tools/vita/hw-routes/r-audio-k.cfg
+     ```
+
+     ```bash
+     VPK=build/vita/spyro-vita.vpk PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-r2-wav 1500 @tools/vita/fps-runs/r2-mixer-native.txt @tools/vita/hw-routes/r-audio-k.cfg
+     ```
+
+  2. The time, in real time and without the WAV: the `mixer N: core 1 CPU per vblank` lines before and after, `position mismatches` 0, and the dry, cut and short-grain counts.
+
+     ```bash
+     VPK=build/vita/spyro-vita.vpk PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 REALTIME=1 tools/vita/hw_run.sh logs/hw-r1-time 1500 @tools/vita/fps-runs/r1-mixer-old.txt @tools/vita/hw-routes/r-audio-k.cfg wav=0
+     ```
+
+     ```bash
+     VPK=build/vita/spyro-vita.vpk PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 REALTIME=1 tools/vita/hw_run.sh logs/hw-r2-time 1500 @tools/vita/fps-runs/r2-mixer-native.txt @tools/vita/hw-routes/r-audio-k.cfg wav=0
+     ```
+
+  3. Listening on the device with `mixer=3`, by hand, in a level with music and effects.
+
 ### Stage 6: native file I/O (small–medium, low–medium risk)
 
 **Replaces** (E): `libcd.c` and `cdimage.c`'s sector-addressed model (LBAs, seeks, `CdControl`, 2352- and 2336-byte sectors), and the XA read-ahead's sector windows.

@@ -52,7 +52,8 @@ typedef struct {
   int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;
-  int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37) */
+  int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37);
+                         3: the native mix on that thread, 4: lockstep (D84) */
   int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43) */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
@@ -153,11 +154,14 @@ int vita_pad_load(const char *path); /* 0 = ok */
 uint16_t vita_pad_read(void); /* the controller's buttons now (PS1 bits) */
 void vita_pad_rewind(int vblank); /* a save state loaded: the script from vblank (D51) */
 
-/* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio, and wav=1 */
+/* audio.c: the SPU mix (psx_audio_out) -> SDL2 audio (mixer=0-2) or
+ * sceAudioOut (mixer=3, 4; D84), and wav=1 */
 void vita_audio_init(void);
 void vita_audio_close(void); /* finish audio.wav */
 void vita_audio_clear(void); /* drop what is queued (a save state loaded) */
-extern unsigned g_vita_audio_dry, g_vita_audio_cleared; /* SDL queue empty / cut, since the last report */
+extern unsigned g_vita_audio_dry, g_vita_audio_cleared; /* audio queue empty / cut, since the last report */
+extern unsigned g_vita_audio_short; /* mixer=3: sceAudioOut grains padded with silence */
+int vita_audio_out_thread(void); /* mixer=3: the sceAudioOut thread's id, else 0 */
 
 /* mixer.c: the SPU mix and XA decode on their own thread (D37) */
 void vita_mixer_init(void);
@@ -168,7 +172,12 @@ void vita_mixer_state(int load); /* save states: decoder state in or out of g_ps
 
 /* xa_ahead.c: the XA music read ahead of the CD head (D64) */
 void vita_xa_ahead_init(void);
-int vita_xa_accept(int lba, unsigned char *raw); /* psx_xa_accept, from the read-ahead */
+/* psx_xa_accept, from the read-ahead; with pcm, also the sector's PCM if
+ * the read-ahead decoded it (D84), pinned until vita_xa_release, else NULL */
+struct PsxXaPcm;
+int vita_xa_accept(int lba, unsigned char *raw, const struct PsxXaPcm **pcm);
+void vita_xa_release(const struct PsxXaPcm *pcm); /* any thread */
+int vita_xa_ahead_thread(void); /* its thread id, 0 if none (the mixer's CPU line) */
 void vita_xa_ahead_report(int vblank);
 
 /* parse.c: the OT walk on its own thread (D71), and the start-up check of

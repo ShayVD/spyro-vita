@@ -80,6 +80,8 @@
  *   every Nth call ("gte audit" lines). --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
+ *   --mixer 3: the native SPU mix (spu_native.c, D84; default 1: libspu.c's
+ *   psx_spu_mix, the same samples), its PCM cache counts logged at exit.
  * Time is virtual: N counts vblanks (60 per second, the game ticks every 2). */
 #include "cheats_port.h"
 #include "host.h"
@@ -92,6 +94,7 @@
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
+#include "psx_spu.h"
 
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
@@ -109,6 +112,14 @@ extern void spyro_main(void);
 typedef void (*CdlCB)(unsigned char, unsigned char *);
 CdlCB CdReadCallback(CdlCB func);
 void CDReadDone(unsigned char intr, unsigned char *result);
+
+static void mixer_report(void) {
+  const PsxSpuNativeStats *st = &g_psx_spu_native_stats;
+  if (g_psx_spu_native)
+    host_log("mixer: native (D84): PCM blocks %llu from SpuWrite's decode, %llu from the second way, "
+             "%llu decoded in the mix; %llu decoded at SpuWrite",
+             st->hits[0], st->hits[1], st->misses, st->predecoded);
+}
 
 static void usage(void) {
   fprintf(stderr,
@@ -128,6 +139,7 @@ static void usage(void) {
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--prof-draw]\n"
+          "             [--mixer 1|3]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -427,6 +439,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--log") == 0) {
       TAKE();
       host_log_open(val);
+    } else if (strcmp(a, "--mixer") == 0) {
+      TAKE();
+      if (to_int(val) != 1 && to_int(val) != 3)
+        usage();
+      g_psx_spu_native = to_int(val) == 3;
     } else {
       usage();
     }
@@ -457,6 +474,7 @@ int main(int argc, char **argv) {
   atexit(host_prof_draw_report);
   atexit(hand_check_report);
   atexit(walk_report);
+  atexit(mixer_report);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)

@@ -6,6 +6,7 @@
  * the pad script (absolute lines) rewinds with it: the same buttons as the
  * first time from there on. */
 #include "host.h"
+#include "psx_spu.h"
 #include "psx_state.h"
 #include "savestate.h"
 
@@ -30,9 +31,13 @@ void savestate_plat_set_vblank(int vblank) {
   host_log("savestate: vblank counter %d -> %d", was, vblank);
 }
 
-/* The host mixes on the game thread: g_psx_spu is complete. */
+/* The host mixes on the game thread: g_psx_spu is complete. A load
+ * replaced SPU RAM: the native mix's PCM is decoded again as it plays. */
 void savestate_plat_audio(int mode) { (void)mode; }
-void savestate_plat_audio_done(int mode) { (void)mode; }
+void savestate_plat_audio_done(int mode) {
+  if (mode == PSX_STATE_LOAD)
+    psx_spu_pcm_reset();
+}
 
 uint16_t *savestate_plat_vram(int mode) {
   (void)mode;
