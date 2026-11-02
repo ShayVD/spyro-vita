@@ -1,5 +1,3 @@
-# Run I2, joined draws (D74): 60 fps as the menu gives it, the default budget, gpu_join=1 (the new default), the setup of main's Toasty log
+# Run I2 (D74): 60 fps as the menu gives it, the default budget, everything else the defaults (joined draws, the 28-byte vertex, the parse thread), the setup of main's Toasty log
 interp=1
-gpu_lean=1
-parse_thread=1
 config_version=3

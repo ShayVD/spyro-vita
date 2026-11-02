@@ -1,3 +1,2 @@
-# Run H1, the parse thread (D71) at 30 fps: PsyCross's OT walk on core 1 from a copy of the primitives; everything else the defaults
-parse_thread=1
+# Run H1, the parse thread (D71), the default since D74, at 30 fps: PsyCross's OT walk on core 1 from a copy of the primitives; everything else the defaults
 config_version=3
