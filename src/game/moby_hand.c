@@ -348,10 +348,21 @@ typedef struct {
 #endif
 } FaceCtx;
 
-/* Put the next primitive (size bytes) at the end of a bucket's chain. */
-HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size) {
+/* Put the next primitive (size bytes, an ND_K_* kind) at the end of a
+ * bucket's chain. With native_draw=1 (decisions D82, native_draw.h) it goes
+ * as the vertices PsyCross would make of it: into the marker at the
+ * bucket's tail, or as a marker linked in its place. */
+HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
   u32 *b = (u32 *)(uintptr_t)bucket;
   u32 last = b[0];
+#if NGTE
+  if (g_nd_on && nd_take(kind, last, c->prim)) {
+    c->prim += size;
+    return;
+  }
+#else
+  (void)kind;
+#endif
   b[0] = c->prim;
   if (last) {
     u32 t = MIPS_KUSEG(last);
@@ -397,7 +408,7 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
     if ((s32)key < 0)
       return;
     AT32(p) = 0x06000000u;
-    Link(c, (key << 3) + c->buckets, 0x1C);
+    Link(c, (key << 3) + c->buckets, 0x1C, ND_K_G3);
   } else {
     u32 tex2;
     if ((s32)sum < 0)
@@ -415,7 +426,7 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
     AT32(p) = 0x09000000u;
     AT32(p + 0x18) = tex[-2];
     AT32(p + 0x24) = tex2;
-    Link(c, (key << 3) + c->buckets, 0x28);
+    Link(c, (key << 3) + c->buckets, 0x28, ND_K_GT3);
   }
 }
 
@@ -441,7 +452,7 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
     sum += zoff;
     if ((s32)sum < 0)
       return;
-    Link(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24);
+    Link(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24, ND_K_G4);
   } else {
     u32 tex2;
     if ((s32)sum < 0)
@@ -459,7 +470,7 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
     AT32(p + 0x18) = tex[-2];
     AT32(p + 0x24) = tex2;
     AT32(p + 0x30) = tex2 >> 16;
-    Link(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x34);
+    Link(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x34, ND_K_GT4);
   }
 }
 
@@ -644,7 +655,7 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
   AT16(p + 0x20) = (u16)xr;
   AT16(p + 0x22) = (u16)yb;
   AT32(p) = 0x09000000u;
-  Link(c, bucket, 0x28);
+  Link(c, bucket, 0x28, ND_K_FT4);
   return next;
 }
 
@@ -994,6 +1005,9 @@ static u32 MobyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)a2;
   (void)a3;
   hand_spill_regs();
+#if NGTE
+  nd_begin();
+#endif
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
     const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
@@ -1004,6 +1018,9 @@ static u32 MobyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     prim = MobyDrawRecord(r, prim);
   }
   *(u32 *)D_800757B0 = prim;
+#if NGTE
+  nd_end();
+#endif
   return prim; /* v0 and v1 are dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 
@@ -1223,9 +1240,18 @@ typedef struct {
   const u8 *colours; /* s4 */
 } LitCtx;
 
-static inline void LitLink(LitCtx *c, u32 bucket, u32 size) {
+static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
+                                                          int kind) {
   u32 *b = (u32 *)(uintptr_t)bucket;
   u32 last = b[0];
+#if NGTE
+  if (g_nd_on && nd_take(kind, last, c->prim)) { /* as Link's */
+    c->prim += size;
+    return;
+  }
+#else
+  (void)kind;
+#endif
   b[0] = c->prim;
   if (last) {
     u32 t = MIPS_KUSEG(last);
@@ -1272,7 +1298,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     AT32(p + 0xC) = col1;
     AT32(p + 0x14) = col2;
     AT32(p) = 0x06000000u;
-    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C);
+    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C, ND_K_G3);
   } else {
     u32 m = MFC2_MAC0_FIRST(), col3;
 #if NGTE
@@ -1303,7 +1329,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     AT32(p + 0x14) = col2;
     AT32(p + 0x1C) = col3;
     AT32(p) = 0x08000000u;
-    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24);
+    LitLink(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24, ND_K_G4);
   }
 }
 #undef MFC2_MAC0_FIRST
@@ -1361,7 +1387,7 @@ static inline void LitFlat(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
   col = MFC2(22);
   AT32(p) = tag;
   AT32(p + 0x4) = Highlight(col, base, (base << 4) & 0xFF0) | code;
-  LitLink(c, bucket, size);
+  LitLink(c, bucket, size, size == 0x14 ? ND_K_F3 : ND_K_F4);
 }
 
 /* A shiny colour component: 0 below 0, 0xFF from 0xFFF. */
@@ -1442,7 +1468,7 @@ static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
   sum += LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]);
   if ((s32)sum <= 0)
     return;
-  LitLink(c, LIT_BUCKET(sum), size);
+  LitLink(c, LIT_BUCKET(sum), size, size == 0x14 ? ND_K_F3 : ND_K_F4);
 }
 
 /* abs, as the asm's `neg` when negative. */
@@ -1799,6 +1825,9 @@ static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)a2;
   (void)a3;
   hand_spill_regs();
+#if NGTE
+  nd_begin();
+#endif
   scr[SCRATCH_CAMERA / 4 + 0] = cam[10]; /* position */
   scr[SCRATCH_CAMERA / 4 + 1] = cam[11];
   scr[SCRATCH_CAMERA / 4 + 2] = cam[12];
@@ -1825,6 +1854,9 @@ static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     break;
   }
   ((u32 *)g_MobyShadows)[2] = shadow;
+#if NGTE
+  nd_end();
+#endif
   return 0; /* v0 and v1 are dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 
@@ -2190,7 +2222,7 @@ static void MetalTriangle(FaceCtx *c, u32 i0, u32 i1, u32 i2, u32 col0, u32 col1
   AT16(p + 0xC) = (u16)u0;
   AT16(p + 0x18) = (u16)u1;
   AT16(p + 0x24) = (u16)u2;
-  Link(c, bucket, 0x28);
+  Link(c, bucket, 0x28, ND_K_GT3);
 }
 
 /* A triangle: as DrawTriangle, and with bit 2 lit (type 0) or metal. */
@@ -2378,6 +2410,9 @@ static u32 SpecDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)a2;
   (void)a3;
   hand_spill_regs();
+#if NGTE
+  nd_begin();
+#endif
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
     const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
@@ -2388,6 +2423,9 @@ static u32 SpecDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     prim = SpecDrawRecord(r, prim);
   }
   *(u32 *)D_800757B0 = prim;
+#if NGTE
+  nd_end();
+#endif
   return prim; /* v0 and v1 are dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 

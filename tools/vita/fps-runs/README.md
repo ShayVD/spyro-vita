@@ -225,3 +225,26 @@ K1–K3 (`docs/native-plan.md` §3.4) showed the read-ahead (D64) serving no mus
 - `xa N: A music sectors from the read-ahead, B read on the game thread; read-ahead W windows, ...; C asks found no window` every 300 vblanks. After every level change (the `where:` lines), A should be back near 750 and B near 0 within one window; K1–K3 had A = 0 and W = 0 from the first load on. B is a handful (2–10) in the window where a new track starts. C should stay 0: a non-zero C for several windows in a row is the old stall.
 - `mixer N: ... 0 position mismatches` throughout.
 - The `time` lines' `spu` part in play back to ~0.05 ms per vblank (K1–K3 had 0.54–0.58 after the first load).
+
+## Runs P1–P6: native draw lists (D82)
+
+Stage 2 of `docs/native-plan.md`: the hand renderers' primitives reach PsyCross's OT walk as the vertices it would make of them (`native_draw=1`), so the walk copies records instead of parsing primitives. All six run `fast_render=2` (D80) on the same VPK; the pictures and the memory card must be the same with `native_draw` 0 and 1.
+
+| File | Switches | Route |
+|---|---|---|
+| `p1-nd-off-cpu.txt` | K1's: 30 fps, every layer on the game thread (`render_thread=0`, `parse_thread=0`), `native_draw=0` | the K route (`hw-routes/k-route.pad`, `n-gte-k.cfg`) |
+| `p2-nd-on-cpu.txt` | P1 with `native_draw=1` | the same |
+| `p3-nd-off-threads.txt` | K3's: the shipped threads at 30 fps, `gpu_meter=1`, `native_draw=0` | the same |
+| `p4-nd-on-threads.txt` | P3 with `native_draw=1` | the same |
+| `p5-nd-off-60.txt` | the menu's 60 fps (`interp=1`), `gpu_meter=1`, `native_draw=0` | the Toasty route (`hw-routes/p-toasty.pad`, `p-toasty.cfg`), `REALTIME=1` |
+| `p6-nd-on-60.txt` | P5 with `native_draw=1` | the same |
+
+**Unattended** (D77): `VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p1 1500 @tools/vita/fps-runs/p1-nd-off-cpu.txt @tools/vita/hw-routes/n-gte-k.cfg` (P2–P4 the same with their file), and `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/p-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p5 1500 @tools/vita/fps-runs/p5-nd-off-60.txt @tools/vita/hw-routes/p-toasty.cfg` (P6 the same).
+
+**What the logs should show:**
+- The log's start: `native_draw=1: the hand renderers' primitives as native draw lists (D82)` in P2, P4 and P6.
+- `native draw N:` every 300 vblanks (P2, P4, P6): primitives as markers, how many joined a marker, and 0 left as primitives (a full pool).
+- P1 against P2: the `time` lines' `ot` (the walk, on the game thread) falls; the `draw` lines' renderers may rise a little (they now build the vertices).
+- P3 against P4: the `parse` lines' busy ms per vblank and the game thread's waits for the walk fall.
+- P5 against P6: late vblanks, in-between frames and the threads' ms per vblank.
+- K1/K3 runs' shots at the same vblanks: identical pictures and card between each pair.

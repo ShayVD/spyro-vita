@@ -16,6 +16,8 @@ extern u32 *g_HudOT;
 
 #define OT_TERMINATOR ((u32 *)PSX_ARENA(0x8006BBE0))
 
+void nd_list_linked(void); /* native_draw.c: the records so far are this list's */
+
 /* sh to, 0(from); sb to >> 16, 2(from): the PS1 link, leaving the length byte. */
 static void link24(u32 *from, void *to) {
   unsigned char *p = (unsigned char *)from;
@@ -31,6 +33,7 @@ void *func_80016784(int size) {
   u32 *base = g_WorldOT, *at = base + size * 2, *hud = g_HudOT;
   u32 *tail, *head, *next;
 
+  nd_list_linked();
   for (;;) {
     if (at == base) {
       /* World OT empty: draw the HUD OT alone. */

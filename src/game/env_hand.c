@@ -38,6 +38,9 @@
  * commands would have left in the GTE goes back into it at the end of each
  * pass, or before the register-file code that follows. */
 #include "render_hand.h"
+#if NGTE
+#include "native_draw.h"
+#endif
 
 extern char g_Camera[];
 extern char g_Environment[];
@@ -119,6 +122,14 @@ static inline void OtAppend(u32 slot, u32 prim) {
     AT32(slot + 4) = prim;
   }
 }
+
+/* native_draw=1 (decisions D82, native_draw.h): the primitive just built at
+ * fp goes into the slot as the vertices PsyCross would have made of it. */
+#if NGTE
+#define ND_OT(kind, slot, fp) (g_nd_on ? nd_##kind(slot, fp) : OtAppend(slot, fp))
+#else
+#define ND_OT(kind, slot, fp) OtAppend(slot, fp)
+#endif
 
 /* The asm's screen clip flags, below a vertex's SXY shifted left 5. */
 static inline u32 ClipLowFlags(u32 sxy, u32 right) {
@@ -571,7 +582,7 @@ static inline u32 EmitBlendMode(u32 fp, u32 slot, u32 w1) {
   AT32(fp + 8) = 0;
   AT16(fp + 4) = (u16)(((w1 << 5) & 0x7F) | 0x600);
   AT16(fp + 6) = 0xE100;
-  OtAppend(slot, fp);
+  ND_OT(e1, slot, fp);
   return fp + 0xC;
 }
 
@@ -778,7 +789,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
           AT32(fp + 0x18) = xy2;
           AT32(fp + 0x1C) = c3;
           AT32(fp + 0x20) = xy3;
-          OtAppend(slot, fp);
+          ND_OT(g4, slot, fp);
           fp += 0x24;
         }
       } else {
@@ -835,7 +846,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
           AT32(fp + 0x10) = xy1;
           AT32(fp + 0x14) = c2;
           AT32(fp + 0x18) = xy2;
-          OtAppend(slot, fp);
+          ND_OT(g3, slot, fp);
           fp += 0x1C;
         }
       }
@@ -1249,7 +1260,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
               AT32(fp + 0x1C) = f;
               AT8(fp + 7) = 0x38;
               AT32(fp) = 0x8000000;
-              OtAppend(ot + slot, fp);
+              ND_OT(g4, ot + slot, fp);
               fp += 0x24;
               continue;
             }
@@ -1262,7 +1273,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
             AT32(fp + 0x24) = uv0 + 0x1F00;
             AT32(fp + 0x30) = uv0 + 0x1F00 + 0x1F;
             AT32(fp) = 0xC000000;
-            OtAppend(ot + slot, fp);
+            ND_OT(gt4, ot + slot, fp);
             fp += 0x34;
           }
         }
@@ -1356,7 +1367,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
             AT32(fp + 0x14) = d;
             AT8(fp + 7) = 0x30;
             AT32(fp) = 0x6000000;
-            OtAppend(ot + slot, fp);
+            ND_OT(g3, ot + slot, fp);
             fp += 0x1C;
             continue;
           }
@@ -1383,7 +1394,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
           AT32(fp + 0x24) = uv0 + 0x1F1F;
         }
         AT32(fp) = 0x9000000;
-        OtAppend(ot + slot, fp);
+        ND_OT(gt3, ot + slot, fp);
         fp += 0x28;
       }
       continue;
@@ -1728,7 +1739,7 @@ static u32 EdgeTriangle(u32 fp, u32 ot, u32 e, u32 tex, u32 w3, u32 code_sub) {
   AT32(fp + 0x18) = (u32)((s32)e2 >> 16) + x;
   AT32(fp + 0x24) = (e2 & 0xFFFF) + uvb;
   AT32(fp) = 0x9000000;
-  OtAppend(ot + slot, fp);
+  ND_OT(gt3, ot + slot, fp);
   return fp + 0x28;
 }
 
@@ -1873,7 +1884,7 @@ static u32 Subdiv2x2Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
     AT32(fp + 0x28) = AT32(g + 0x48);
     PieceQuadUVs(fp, uvw0, uvw1, 0x1F00, 0x1F1F);
     AT32(fp) = 0xC000000;
-    OtAppend(ot + PieceSlot(zs, w3), fp);
+    ND_OT(gt4, ot + PieceSlot(zs, w3), fp);
     fp += 0x34;
   }
   return fp;
@@ -1961,7 +1972,7 @@ static u32 Subdiv2x2Tri(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h
     AT32(fp + 0x10) = AT32(pb + 8);
     AT32(fp + 0x1C) = AT32(pc + 8);
     AT32(fp) = 0x9000000;
-    OtAppend(ot + PieceSlot(zs, w3), fp);
+    ND_OT(gt3, ot + PieceSlot(zs, w3), fp);
     fp += 0x28;
   }
   return fp;
@@ -2083,6 +2094,7 @@ static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
     const u32 g = AT32(ADDR(D_8006CF58) + k * 4), uvp = tex + 0x28 + k * 8;
     u32 f0 = AT32(g + 0x4), f1 = AT32(g + 0x14), f2 = AT32(g + 0x54), f3 = AT32(g + 0x64);
     u32 uvw0 = AT32(uvp), uvw1, zs, xy0, xy1, xy2, xy3;
+    int small;
     if (f0 & f1 & f2 & f3 & 0xF000)
       continue;
     uvw1 = AT32(uvp + 4);
@@ -2107,15 +2119,19 @@ static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
     {
       const u32 ya = GridY(g), yb = GridY(g + 0x10), yc = GridY(g + 0x50), yd = GridY(g + 0x60);
       const u32 xa = GridX(g), xb = GridX(g + 0x10), xc = GridX(g + 0x50), xd = GridX(g + 0x60);
-      int small = Within(ya, yb, 0x200) && Within(ya, yc, 0x200) && Within(yb, yc, 0x200) &&
-                  Within(yb, yd, 0x200) && Within(yc, yd, 0x200) && Within(xa, xb, 0x400) &&
-                  Within(xa, xc, 0x400) && Within(xb, xc, 0x400) && Within(xb, xd, 0x400) &&
-                  Within(xc, xd, 0x400);
+      small = Within(ya, yb, 0x200) && Within(ya, yc, 0x200) && Within(yb, yc, 0x200) &&
+              Within(yb, yd, 0x200) && Within(yc, yd, 0x200) && Within(xa, xb, 0x400) &&
+              Within(xa, xc, 0x400) && Within(xb, xc, 0x400) && Within(xb, xd, 0x400) &&
+              Within(xc, xd, 0x400);
       if (small ? !zs : !QueueLast(fp, zs))
         continue;
     }
     AT32(fp) = 0xC000000;
-    OtAppend(ot + PieceSlot(zs, w3), fp);
+    /* a piece on the last list stays a primitive: SplitLast reads it back */
+    if (small)
+      ND_OT(gt4, ot + PieceSlot(zs, w3), fp);
+    else
+      OtAppend(ot + PieceSlot(zs, w3), fp);
     fp += 0x34;
   }
   return fp;
@@ -2185,6 +2201,7 @@ static u32 Subdiv4x4Tri(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h
     const u32 w = AT32(ADDR(D_8006D0F8) + k);
     const u32 pa = SC((w >> 20) & 0xFF0), pb = SC((w >> 12) & 0xFF0), pc = SC((w >> 4) & 0xFF0);
     u32 fa, fb, fc, zs, xya, xyb, xyc;
+    int small;
     PieceTriUVs(fp, w, rot, ADDR(D_8006D388), 0x3C, uvp);
     fa = AT32(pa + 4);
     fb = AT32(pb + 4);
@@ -2208,13 +2225,16 @@ static u32 Subdiv4x4Tri(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h
     {
       const u32 ya = GridY(pa), yb = GridY(pb), yc = GridY(pc);
       const u32 xa = GridX(pa), xb = GridX(pb), xc = GridX(pc);
-      int small = Within(ya, yb, 0x200) && Within(ya, yc, 0x200) && Within(yb, yc, 0x200) &&
-                  Within(xa, xb, 0x400) && Within(xa, xc, 0x400) && Within(xb, xc, 0x400);
+      small = Within(ya, yb, 0x200) && Within(ya, yc, 0x200) && Within(yb, yc, 0x200) &&
+              Within(xa, xb, 0x400) && Within(xa, xc, 0x400) && Within(xb, xc, 0x400);
       if (small ? !zs : !QueueLast(fp, zs))
         continue;
     }
     AT32(fp) = 0x9000000;
-    OtAppend(ot + PieceSlot(zs, w3), fp);
+    if (small)
+      ND_OT(gt3, ot + PieceSlot(zs, w3), fp);
+    else
+      OtAppend(ot + PieceSlot(zs, w3), fp);
     fp += 0x28;
   }
   return fp;
@@ -2349,7 +2369,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
     for (; tbl != tend; tbl += 4) {
       const u32 t2 = AT32(tbl);
       const u32 a = SC(t2 >> 24), b = SC((t2 >> 16) & 0xFF), c = SC((t2 >> 8) & 0xFF);
-      u32 t3;
+      u32 t3, queued = 0;
       if (((s32)(s8)AT8(a + 0xF) & (s32)(s8)AT8(b + 0xF) & (s32)(s8)AT8(c + 0xF)) > 0)
         continue;
       AT32(fp + 0x4) = AT32(a + 4);
@@ -2365,12 +2385,19 @@ static u32 SplitLast(u32 fp, u32 ot) {
         if (!small) {
           AT32(MIPS_KUSEG(end)) = fp;
           end += 4;
+          queued = 1;
         }
       }
       AT32(fp + 0x8) = AT32(a);
       AT32(fp + 0x14) = AT32(b);
       AT32(fp + 0x20) = AT32(c);
-      AT32(fp) = 0x9000000;
+#if NGTE
+      if (!(g_nd_on && !queued && nd_gt3_chained(fp)))
+#endif
+        AT32(fp) = 0x9000000;
+#if !NGTE
+      (void)queued;
+#endif
       t3 = MIPS_KUSEG(t3raw);
       AT16(t3) = (u16)fp;
       AT8(t3 + 2) = (u8)(fp >> 16);
@@ -2406,6 +2433,9 @@ static u32 EnvDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)a3;
 
   hand_spill_regs();
+#if NGTE
+  nd_begin();
+#endif
   /* the view matrix, no translation: for the sector culling */
   CTC2(r1112, 0);
   PORT_WS_VIEW_ROW0(r1112, r1321);
@@ -2444,6 +2474,9 @@ static u32 EnvDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   fp = SplitLast(fp, ot);
   PORT_LOD_ENV_END(fp);
   AT32(ADDR(D_800757B0)) = fp;
+#if NGTE
+  nd_end();
+#endif
   return 0; /* v0 is dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 

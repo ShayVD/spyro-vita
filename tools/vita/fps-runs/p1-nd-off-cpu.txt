@@ -1,0 +1,12 @@
+# Run P1 (docs/native-plan.md stage 2, D82): K1's switches with fast_render=2 (D80) and native_draw=0,
+# the renderers' primitives parsed by PsyCross's OT walk as before. Every layer on the game thread
+# (render_thread=0, parse_thread=0), 30 fps, fixed resolution (dynres=0), so the "time" lines' ot is
+# the walk's CPU. Route: the K route (hw-routes/k-route.pad, n-gte-k.cfg). Send spyro.log as p1.log.
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+native_draw=0
+gpu_time=0
+dynres=0
