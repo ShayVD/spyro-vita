@@ -81,7 +81,11 @@
  *                       of the tick (D75; the GPU never makes it skip)
  *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
  *                       their own thread; 2 that thread, but each vblank waits
- *                       for its mix; 0 the game thread, as before
+ *                       for its mix; 0 the game thread, as before. 3: the
+ *                       native mix on that thread (D84: SPU RAM decoded to
+ *                       PCM once, NEON, XA decoded on the read-ahead thread,
+ *                       sceAudioOut instead of SDL2's audio; the same
+ *                       samples); 4: 3 in lockstep
  *       render_thread=0 GL on the game thread, as before D63 (default 1:
  *                       with gpu=1, every GL call on a render thread of its
  *                       own on core 2, the game thread on core 0; D68)
@@ -495,7 +499,9 @@ int main(int argc, char **argv) {
 
   SDL_SetMainReady();
   /* with gpu=1 vitaGL owns the GXM display; SDL is only the pad and audio */
-  if (SDL_Init((g_vita_gpu ? 0 : SDL_INIT_VIDEO) | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+  /* mixer=3, 4 send the audio to sceAudioOut themselves (audio.c, D84) */
+  if (SDL_Init((g_vita_gpu ? 0 : SDL_INIT_VIDEO) | (g_vita_opts.mixer >= 3 ? 0 : SDL_INIT_AUDIO) |
+               SDL_INIT_GAMECONTROLLER) != 0) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
     sceKernelExitProcess(1);
   }

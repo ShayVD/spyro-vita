@@ -11,10 +11,21 @@
  * whichever way it came, and psx_xa_check decides what plays exactly as
  * psx_xa_accept did. Only the time the game thread spends in the file system
  * changes. Files are the disc's and never written, so a window never goes
- * stale. */
+ * stale.
+ *
+ * With the native mix (mixer=3, D84) the thread also decodes the sectors
+ * the stream will play to PCM (psx_xa_predecode), each from the history the
+ * one before it in the stream leaves: the stream's filter as it was when the
+ * window was asked for, and the history chained on from the window before
+ * when this one follows it. The mixer uses that PCM only if the history it
+ * was decoded from is the stream's then (psx_xa_decoded), so a wrong guess
+ * costs a decode on the mixer, not a different sample. A sector handed over
+ * with its PCM pins its window until the mixer is done with it
+ * (vita_xa_release): want() doesn't reuse a pinned window. */
 #include "vita.h"
 #include "watchdog.h"
 #include "psx_cd.h"
+#include "psx_spu.h"
 #include "psx_xa.h"
 
 #include <psp2/io/fcntl.h>
@@ -32,6 +43,7 @@
 #define NWIN 4
 #define MAX_STRIDE 2448
 #define PRIORITY 0x90 /* behind the mixer on core 1: reads mostly wait */
+#define MAX_PCM 8     /* sectors decoded per window: Spyro's music interleaves 8 channels, 4 of 32 play */
 
 enum { W_FREE, W_WANTED, W_READY };
 
@@ -40,11 +52,18 @@ typedef struct {
   int lba;            /* first sector */
   int n;              /* READY: sectors held (0: none could be read) */
   unsigned char data[WIN][PSX_CD_RAW_SECTOR];
+  /* mixer=3 (D84): the stream's filter when asked for; the PCM of the
+   * sectors it plays (pcm_of: index into pcm, or -1); packets holding one */
+  int predecode, mode, file, chan;
+  signed char pcm_of[WIN];
+  int npcm;
+  volatile int pins;
+  PsxXaPcm pcm[MAX_PCM];
 } Window;
 
 static Window *s_win;
 static unsigned char *s_scratch; /* the reader's: WIN sectors as they are in the file */
-static SceUID s_sema;
+static SceUID s_sema, s_thread;
 static int s_on;
 
 /* the reader's file handle: the last path it read */
@@ -52,8 +71,38 @@ static SceUID s_fd = -1;
 static char s_fd_path[512];
 
 /* stats since the last report (the reader's are counted up, read across threads) */
-static unsigned s_hits, s_misses, s_noslot;
-static volatile uint32_t s_rd_windows, s_rd_kb, s_rd_us;
+static unsigned s_hits, s_misses, s_noslot, s_pinned;
+static volatile uint32_t s_rd_windows, s_rd_kb, s_rd_us, s_dec_sectors, s_dec_us;
+
+/* the reader's: where its last decoded window ended, and the history there */
+static int s_chain_lba = -1, s_chain_file, s_chain_chan;
+static int s_chain_hist[2][2];
+
+/* The sectors of w the stream plays, to PCM (the reader, w WANTED). */
+static void predecode(Window *w) {
+  int k, hist[2][2];
+  SceUInt64 t0 = sceKernelGetProcessTimeWide();
+  w->npcm = 0;
+  memset(w->pcm_of, -1, sizeof w->pcm_of);
+  if (w->lba == s_chain_lba && w->file == s_chain_file && w->chan == s_chain_chan)
+    memcpy(hist, s_chain_hist, sizeof hist);
+  else
+    memset(hist, 0, sizeof hist); /* a stream starting (psx_xa_reset) */
+  for (k = 0; k < w->n && w->npcm < MAX_PCM; k++) {
+    PsxXaPcm *o = &w->pcm[w->npcm];
+    if (!psx_xa_check_filter(w->data[k], w->mode, w->file, w->chan))
+      continue;
+    psx_xa_predecode(w->data[k], (const int(*)[2])hist, o);
+    memcpy(hist, o->exit, sizeof hist);
+    w->pcm_of[k] = (signed char)w->npcm++;
+  }
+  s_chain_lba = k == w->n ? w->lba + w->n : -1;
+  s_chain_file = w->file;
+  s_chain_chan = w->chan;
+  memcpy(s_chain_hist, hist, sizeof hist);
+  s_dec_sectors += (uint32_t)w->npcm;
+  s_dec_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+}
 
 static int reader_main(SceSize args, void *argp) {
   (void)args;
@@ -95,6 +144,12 @@ static int reader_main(SceSize args, void *argp) {
       w->n = n;
       s_rd_windows++;
       s_rd_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+      if (w->predecode) {
+        predecode(w);
+      } else {
+        w->npcm = 0;
+        memset(w->pcm_of, -1, sizeof w->pcm_of);
+      }
       __atomic_store_n(&w->state, W_READY, __ATOMIC_RELEASE);
     }
   }
@@ -118,6 +173,7 @@ void vita_xa_ahead_init(void) {
     return;
   }
   s_on = 1;
+  s_thread = th;
   vita_watchdog_thread(WD_T_XA, th);
   vita_log("xa: music read ahead in %d-sector windows on core 1, priority 0x%x (xa_ahead=1, D64)",
            WIN, PRIORITY);
@@ -159,6 +215,10 @@ static void want(int lba, int head) {
       score = INT_MAX;
     else if (st != W_READY)
       continue;
+    else if (__atomic_load_n(&w->pins, __ATOMIC_ACQUIRE) > 0) {
+      s_pinned++; /* a packet still holds its PCM (D84) */
+      continue;
+    }
     else if (w->lba + w->n <= head)
       score = INT_MAX / 2 + (head - w->lba);
     else if (w->lba >= head + REACH)
@@ -173,14 +233,23 @@ static void want(int lba, int head) {
     return; /* all near ahead or being read: the next sector asks again */
   }
   pick->lba = lba;
+  {
+    const PsxCdStream *st = psx_cd_stream();
+    pick->predecode = g_psx_spu_native;
+    pick->mode = st->mode;
+    pick->file = st->file;
+    pick->chan = st->chan;
+  }
   __atomic_store_n(&pick->state, W_WANTED, __ATOMIC_RELEASE);
   sceKernelSignalSema(s_sema, 1);
 }
 
 /* psx_xa_accept for the mixer's psx_xa_sector (mixer.c): 1 if the stream
  * plays the sector at lba, which is then in raw. */
-int vita_xa_accept(int lba, unsigned char *raw) {
+int vita_xa_accept(int lba, unsigned char *raw, const PsxXaPcm **pcm) {
   int i, next, end, got = 0;
+  if (pcm)
+    *pcm = NULL;
   if (!s_on)
     return psx_xa_accept(lba, raw);
   if (!(psx_cd_stream()->mode & CdlModeRT))
@@ -191,6 +260,10 @@ int vita_xa_accept(int lba, unsigned char *raw) {
         lba < w->lba + w->n) {
       memcpy(raw, w->data[lba - w->lba], PSX_CD_RAW_SECTOR);
       got = 1;
+      if (pcm && w->pcm_of[lba - w->lba] >= 0 && psx_xa_check(raw)) {
+        __atomic_add_fetch(&w->pins, 1, __ATOMIC_ACQ_REL);
+        *pcm = &w->pcm[(int)w->pcm_of[lba - w->lba]];
+      }
     }
   }
   if (got) {
@@ -208,16 +281,37 @@ int vita_xa_accept(int lba, unsigned char *raw) {
   return psx_xa_check(raw);
 }
 
+void vita_xa_release(const PsxXaPcm *pcm) {
+  int i;
+  for (i = 0; i < NWIN; i++) {
+    Window *w = &s_win[i];
+    if (pcm >= w->pcm && pcm < w->pcm + MAX_PCM) {
+      __atomic_sub_fetch(&w->pins, 1, __ATOMIC_ACQ_REL);
+      return;
+    }
+  }
+}
+
+SceUID vita_xa_ahead_thread(void) { return s_on ? s_thread : 0; }
+
 void vita_xa_ahead_report(int vblank) {
   static uint32_t w0, kb0, us0;
-  uint32_t w = s_rd_windows, kb = s_rd_kb, us = s_rd_us;
+  static uint32_t ds0, dus0;
+  uint32_t w = s_rd_windows, kb = s_rd_kb, us = s_rd_us, ds = s_dec_sectors, dus = s_dec_us;
   if (!s_on || (!s_hits && !s_misses && w == w0))
     return;
   vita_log("xa %d: %u music sectors from the read-ahead, %u read on the game thread; "
            "read-ahead %u windows, %u KB in %u.%02u ms (core 1); %u asks found no window",
            vblank, s_hits, s_misses, (unsigned)(w - w0), (unsigned)(kb - kb0),
            (unsigned)((us - us0) / 1000), (unsigned)((us - us0) % 1000 / 10), s_noslot);
-  s_hits = s_misses = s_noslot = 0;
+  if (g_psx_spu_native)
+    vita_log("xa %d: native mix: read-ahead decoded %u sectors to PCM in %u.%02u ms (core 1); "
+             "%u windows passed over as pinned",
+             vblank, (unsigned)(ds - ds0), (unsigned)((dus - dus0) / 1000),
+             (unsigned)((dus - dus0) % 1000 / 10), s_pinned);
+  ds0 = ds;
+  dus0 = dus;
+  s_hits = s_misses = s_noslot = s_pinned = 0;
   w0 = w;
   kb0 = kb;
   us0 = us;
