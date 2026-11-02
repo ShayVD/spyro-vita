@@ -15,7 +15,7 @@
  * of its triangles not wholly off one side, linked into the world OT's
  * last slot.
  *
- * fast_render=2 (NGTE, render_hand.h, decisions D79): both passes project
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): both passes project
  * natively (gte_native.h) and replay their last four RTPS on the register
  * file at the end of the pass, before the next CTC2s. */
 #include "render_hand.h"

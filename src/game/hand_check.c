@@ -1,4 +1,4 @@
-/* fast_render=2's per-call check (decisions D79; host --fast-render-check).
+/* fast_render=2's per-call check (decisions D80; host --fast-render-check).
  *
  * Each call of a hand renderer runs twice from the same state: first the
  * register-file hand C (fast_render=1), whose results are kept aside, then

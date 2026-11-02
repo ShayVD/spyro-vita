@@ -1,5 +1,5 @@
 /* GTE commands as native maths on C values (docs/native-plan.md stage 1,
- * decisions D79), for the hand-written renderers at fast_render=2.
+ * decisions D80), for the hand-written renderers at fast_render=2.
  *
  * gte_inline.h runs each command on the global register file: it reads its
  * inputs from gteRegs, writes every result back (MAC, IR, the SZ/SXY/RGB

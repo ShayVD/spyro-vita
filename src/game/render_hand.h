@@ -54,7 +54,7 @@ static inline void hand_spill_regs(void) {
   spill[11] = MIPS_RA_SENTINEL;
 }
 
-/* fast_render=2 (decisions D79, docs/native-plan.md stage 1): each hand
+/* fast_render=2 (decisions D80, docs/native-plan.md stage 1): each hand
  * renderer is compiled twice. NAME_hand.c itself, with NGTE 0, is today's
  * hand C on the GTE register file (fast_render=1); NAME_hand_ngte.c
  * includes it with NGTE 1, which turns on the native GTE maths of

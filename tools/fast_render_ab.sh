@@ -3,7 +3,7 @@
 # they replace (decisions D72): each scenario runs with --fast-render 0, then
 # 1, from the same binary, and every trace, shot, WAV and save file of the
 # pair must be byte-identical. The host is deterministic (D38). FAST="1 2"
-# compares the register-file hand C with its native-GTE build instead (D79).
+# compares the register-file hand C with its native-GTE build instead (D80).
 # Usage: [BIN=path/to/spyro] [DISC=disc/files] [FAST="A B"] tools/fast_render_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-fA, logs/PREFIX-SCENARIO-fB, and a summary line per scenario.
 # Scenarios (default: gems demo wsi lod routeA routeB): gems (Artisans gem

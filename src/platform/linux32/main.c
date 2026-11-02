@@ -72,7 +72,7 @@
  * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
  *   instead of the hand-written renderers and the inline GTE commands
  *   (default 1; src/game/mips2c_rt.h, decisions D72). --fast-render 2: the
- *   hand-written renderers with native GTE maths (decisions D79); with
+ *   hand-written renderers with native GTE maths (decisions D80); with
  *   --fast-render-check each renderer call also runs the fast_render=1
  *   code from the same state and must leave the same RAM and GTE
  *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
@@ -96,7 +96,7 @@
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
 void host_prof_draw_report(void);
-extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D79 */
+extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
 void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 

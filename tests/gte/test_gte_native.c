@@ -1,4 +1,4 @@
-/* src/game/gte_native.h (fast_render=2, decisions D79) against
+/* src/game/gte_native.h (fast_render=2, decisions D80) against
  * src/game/gte_inline.h's register-file commands, which test_gte_inline
  * checks against PsyCross and PCSX-Redux.
  * usage: test_gte_native [gte.bin]

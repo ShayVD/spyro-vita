@@ -26,6 +26,8 @@ CONSTANT = {
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
+    "env_hand_ngte.c:s_proj",   # read from the GTE at the start of every EnvDraw, before
+                                # use; a state is never taken inside a draw (D80)
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {
@@ -34,10 +36,12 @@ SETTINGS = {
 }
 CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle
-# replay and trace (tests), save states themselves, and the draw distance
+# replay and trace (tests), save states themselves, the draw distance
 # (lod.c, D49: picture only; per draw, or reset on load by port_lod_reset;
-# g_lod is the player's setting, kept).
-NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.")
+# g_lod is the player's setting, kept), and fast_render=2's per-call check
+# (hand_check.c, host tests, D80).
+NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
+            "/hand_check.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

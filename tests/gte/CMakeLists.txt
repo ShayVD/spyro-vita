@@ -19,7 +19,7 @@ target_compile_options(test_gte_inline PRIVATE ${SPYRO_HOST_FLAGS})
 target_link_options(test_gte_inline PRIVATE -m32 -no-pie)
 add_test(NAME gte_inline COMMAND test_gte_inline "${CMAKE_SOURCE_DIR}/logs/gte/gte.bin")
 
-# The native GTE maths (src/game/gte_native.h, fast_render=2, D79) against
+# The native GTE maths (src/game/gte_native.h, fast_render=2, D80) against
 # gte_inline.h on random states and against the same vectors; the mutant
 # build (one deliberate error) must fail.
 add_executable(test_gte_native test_gte_native.c "${CMAKE_SOURCE_DIR}/src/game/gte_ops.c")

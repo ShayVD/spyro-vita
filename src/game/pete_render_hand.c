@@ -34,7 +34,7 @@
  * pipelined V0 (the vertex after the last one) and the MFC2 read-backs
  * (VZ0, SZ3, IR1-3) leave the GTE as the asm does.
  *
- * fast_render=2 (NGTE, render_hand.h, decisions D79): the vertices' RTPS
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): the vertices' RTPS
  * and INTPL and the faces' NCLIP are native maths (gte_native.h). What they
  * would have left in the GTE goes back into it at the end of each part (the
  * next part moves its own matrix in) and after the faces; the set-up, the

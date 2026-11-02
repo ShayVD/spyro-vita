@@ -17,7 +17,7 @@
  * func_80022A2C draws the lit mobys and the HUD's models (further down);
  * func_80020F34 the specular ones, on func_8001F798's set-up.
  *
- * fast_render=2 (NGTE, render_hand.h, decisions D79): func_8001F798's
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): func_8001F798's
  * vertex transform, colour fades and back-face NCLIPs are native maths
  * (gte_native.h); a frame blend runs native but for its last four vertices.
  * What the native commands would have left in the GTE goes back into it at

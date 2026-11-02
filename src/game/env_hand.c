@@ -31,7 +31,7 @@
  * that the pipelined loads leave in V0, and the stores the asm makes before
  * it rejects a polygon (they land in the next primitive's space).
  *
- * fast_render=2 (NGTE, render_hand.h, decisions D79): the sector culling's
+ * fast_render=2 (NGTE, render_hand.h, decisions D80): the sector culling's
  * MVMVA, the vertex loops' RTPS, the polygons' NCLIP and the depth fades'
  * DPCS are native maths (gte_native.h); the animation blends and the
  * subdivision grids run native but for their last steps. What the native
