@@ -70,9 +70,10 @@
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
  * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
- *   instead of the hand-written renderers and the inline GTE commands
- *   (default 1; src/game/mips2c_rt.h, decisions D72). --fast-render 2: the
- *   hand-written renderers with native GTE maths (decisions D80); with
+ *   instead of the hand-written renderers; 1: the hand-written renderers
+ *   with the inline GTE commands on the register file (decisions D72).
+ *   --fast-render 2 (the default, D81): the hand-written renderers with
+ *   native GTE maths (decisions D80); with
  *   --fast-render-check each renderer call also runs the fast_render=1
  *   code from the same state and must leave the same RAM and GTE
  *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
