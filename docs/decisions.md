@@ -1794,4 +1794,18 @@ Record each decision with its date, what was chosen, and why.
   - **`REALTIME=1`, 4,200 vblanks** (`logs/v3k-rt-m1`, `-m3`): ~60 vblanks/s in both. Mix wall time 0.16–0.27 ms with `mixer=1`, 0.03–0.10 ms with `mixer=3`. With `mixer=3`, 0 cuts and 0 short grains in every window but the first (start-up: 25 short grains, 3 dry), a level load and the last window (6 dry, 1 cut, 15 short grains), the windows where `mixer=1` shows its dries too.
   - **The cost moved to `SpuWrite`:** a whole sound bank (32,511 blocks) takes 6.4–21 ms on the game thread at a load in Vita3K. Hardware will say what it is there.
   - Vita3K reports 0 for `runClocks`, so its core-1 CPU line reads 0.
-- **Waiting for hardware** (the owner's approval per run; nothing was run on the Vita): runs R1 and R2, the K route, `tools/vita/fps-runs/r1-mixer-old.txt` and `r2-mixer-native.txt` with `tools/vita/hw-routes/r-audio-k.cfg`. In `realtime=0`, R1's and R2's `audio.wav` must be byte-identical. With `REALTIME=1 … wav=0`, they give the `core 1 CPU per vblank` lines before and after, `position mismatches` 0, and the dry, cut and short-grain counts. If they pass, `mixer=3` becomes the default, and `mixer=1` stays one setting away.
+- **On hardware** (2026-11-02, the owner's Vita over `hw_run.sh`, each run approved by the owner; VPK `f4c3d626…`, branch at `b711c7f`; the K route, `tools/vita/fps-runs/r1-mixer-old.txt` and `r2-mixer-native.txt` with `tools/vita/hw-routes/r-audio-k.cfg`, 18,000 vblanks; logs `logs/hw-r1-wav`, `hw-r2-wav`, `hw-r1-time`, `hw-r2-time`, gitignored):
+  - **The samples** (`realtime=0`, `wav=1`): R1's and R2's `audio.wav` are byte-identical (`a4b03472…`, 13,230,000 frames). 0 position mismatches in both.
+  - **Core 1's CPU per vblank** (`REALTIME=1 … wav=0`, the kernel's `runClocks`, mean of the windows from vblank 600):
+
+    | thread | R1 `mixer=1` | R2 `mixer=3` |
+    |---|---|---|
+    | mixer | 0.888 ms | 0.242 ms (−73%) |
+    | XA read-ahead | 0.162 ms | 0.228 ms (now decodes the music too) |
+    | audio out | SDL2's thread, not counted | 0.205 ms (`sceAudioOut`) |
+    | sum | 1.050 ms + SDL2's thread | 0.674 ms |
+
+    The mix's wall time per vblank: 0.855 → 0.210 ms. 60 vblanks/s and 0 late in both; the game thread never waited for the mixer.
+  - **`SpuWrite`'s decode:** 56–57 ms on the game thread for each whole sound bank (32,511 blocks), 7 times on the route, at level loads. Not a frame drop in play, but a load's stall grows by that.
+  - **Gaps:** 0 cuts in both. Dry (the mixer found the queue empty): R1 32, R2 48 over the run. Both are dry at start-up and at the same loads (vblanks 3600, 5700, 10500, 11700, 14700). The difference is the route's last 15 s (Dark Hollow, Spyro standing, no load): R1 0 + 5 + 9 in the last three windows, R2 6 + 15 + 13. R2's output thread padded 179 grains with silence over the run: 16 at start-up, 127 in the load windows, 36 in the last three. R1 has no such counter (SDL2 pads in its own thread).
+- **Default:** stays `mixer=1`. The samples and the CPU pass. The extra dry periods in play are a gap a player could hear, so `mixer=3` waits for that to be understood (the output ring's level against the port's clock, likely) and the time pair run again.
