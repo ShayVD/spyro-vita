@@ -1227,3 +1227,47 @@ Record each decision with its date, what was chosen, and why.
   - **Frame time:** not measured. The game thread's added work is one store per `prof_enter`/`prof_leave` (a few hundred per tick), and once per vblank `port_where`'s four loads and a compare.
   - **Host** (the change isn't in the host binary: `port_where` isn't linked there, the rest is `src/platform/vita/`): `ctest` 6/6 pass (`m2c_diff_math` skipped, as before). `tools/host_checks.sh h71` against the D69 session's `h69-*` (main's shared code): demo 26/26, whole-game tour 141/141, routes A and B 56/56 each, all identical. Oracle replays: `cap3` 329/329, `cap5-fairy` 261/261 PASS, the same as before.
   - **After merging main** (D70–D72, `2b7cdce`; this entry became D73): the VPK builds clean. Vita3K: the forced spin gives the same hang line (`logs/run5-vita3k-merged-hang-spin`). The normal run's script, menu and save states give no hang line (`logs/run6-vita3k-merged-normal`). Host `ctest` 7/7 pass (`m2c_diff_math` skipped), and `port_where` still isn't in the host binary. The breadcrumb in `prof_enter`/`prof_leave` sits inside D71's guard, so the parse thread never writes it. The parse thread (off by default) has no breadcrumb or kernel-state entry of its own. A game thread stuck joining it shows as waiting on a semaphore, by name.
+
+## 2026-11-02: how native the port is
+
+### D76. Measure the emulation layers, then remove them in stages: native GTE maths, then native draw lists
+- **Why:** the owner wants the game to run as natively as possible on the Vita. Several layers still behave like an emulator. This decision measures them and orders the work (`docs/native-plan.md`). It changes no engine code, and it's meant for after #48 (D75) and #49 (D74) are merged.
+- **Categories** (`docs/native-plan.md` §1):
+  - A: decomp C;
+  - B1: readable hand C;
+  - B2: hand C over the PS1 machine model (D72's renderers: the GTE register file, the scratchpad, KUSEG pointers);
+  - C: mips2c, and Cf, its fallback-only units;
+  - D: PsyCross;
+  - E: PS1 hardware and libraries emulated in our own code (`gpu_gl.c` among them: it interprets the PS1 GPU's commands, even though it draws with vitaGL);
+  - F: native Vita;
+  - G: port features;
+  - X: third-party libraries.
+- **Static, measured** (`tools/native_audit.py`, from `tools/layout/psx.map`, the decomp's `asm/`, and the link map of a VPK built on this branch by `tools/native_audit_map.sh`):
+  - **The original executable's 91,415 MIPS instructions:** A 35.6%, B1 15.0%, B2 12.0%, C 19.3%, D 9.7%, E 8.4%. **Readable C: 50.6%.**
+  - **With all 37 overlays as on the disc** (567,086): **readable C 91.7%**.
+  - **Vita ELF code without third-party libraries** (2.17 MB): A + B1 70.0%, B2 1.9%, C + Cf 20.9%, D 2.0%, E 2.9%, F + G 2.3%.
+  - **SDL2 is 857 KB** of the ELF's 3.58 MB of code.
+- **Run time, measured** (`tools/vita/native_share.py` on `logs/hw-main-2a0691c`, Toasty, 30 fps; host gprof of the attract demos for the GTE share):
+  - **Game-own work** (the logic, the renderer bodies, primitive building): 15–17% of the CPU per vblank over all threads.
+  - **The emulation layers:** 83–85%. The render thread's PS1 GPU → vitaGL is 35–51% of that, and its busy time includes its vblank and swap waits, so it's an upper bound. The OT walk is 11%, the software GTE ~9% (*estimate*: 60% of the renderers' CPU on the host), SPU and XA 9%, CD reads 5%.
+  - **On the GPU,** D74's I1 run already showed PsyCross's split draws cost half of Toasty's scene.
+- **Decided:**
+  - **"Fully native"** keeps the game's logic, fixed-point maths, 30 Hz tick and draw order bit for bit, and removes every PS1-shaped layer between them and the Vita (§4).
+  - **The stages, in this order** (§5):
+    0. Measure: K1–K3, and a per-thread CPU line.
+    1. Native GTE maths in the hand renderers (`fast_render=2`).
+    2. Native draw lists in exact OT order (`native_draw`), environment first. It starts after #48 and #49 are merged, since it touches `gpu_gl.c`.
+    3. Readable C for the rest of mips2c, in parallel with stage 2.
+    4. Native memory: no arena, no 24-bit links.
+    5. Native audio.
+    6. Native file I/O.
+    7. Logic decoupled from vblank timing.
+    8. Retire PsyCross.
+  - **Each stage keeps the old path** one switch or build option away until hardware has run it, and is checked by the oracle, the host's byte-identical runs, Vita3K and then hardware.
+  - **Stage 2's check is new:** triangle-stream equivalence. A host build emits both the PS1 primitives and the native batch and compares PsyCross's triangles with the batch's, byte for byte.
+  - **Depth buffer and perspective-correct textures** stay optional extras, off by default.
+- **Hardware runs prepared** (`tools/vita/fps-runs/k1`–`k3`). How to run them is in `docs/native-plan.md` §3.3, not in `fps-runs/README.md`, which #48 and #49 both edit.
+  - **K1:** 30 fps with every layer on the game thread (`render_thread=0`, `parse_thread=0`), so `raster` and `ot` are CPU without waits.
+  - **K2:** K1 with `fast_render=0`, the hardware cost of the register model and the software GTE in the renderers.
+  - **K3:** the shipped threads with `gpu_time=2`.
+- **Not done:** no engine change. The periodic per-thread CPU line (the watchdog's `runClocks`, D73) is stage 0's follow-up, in a PR of its own.
