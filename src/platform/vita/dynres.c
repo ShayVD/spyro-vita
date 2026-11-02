@@ -9,12 +9,15 @@
  * calls vitaGL, once per picture:
  *   - dynres=0 (off): always 1, every draw exactly as before;
  *   - dynres=88, 75 or 67: that scale, always;
- *   - dynres=1 (auto): the GPU's busy time per picture (gpu_meter.c),
- *     averaged over WINDOW pictures, against what a picture may take: a
- *     vblank with 60 fps on, two without. Over HI of it, down to the
- *     largest step predicted to fit in FIT; up one step once the next is
- *     predicted to fit in UP for a whole hold (2 s, doubled to 16 s by a
- *     fall soon after a rise, as the 60 fps budget's hold, D68).
+ *   - dynres=1 (auto): native whenever it fits; a lower scale is the last
+ *     resort, preferred only to 60 fps falling to 30 (the owner's call,
+ *     D75). The GPU's busy time per picture (gpu_meter.c), averaged over
+ *     WINDOW pictures, against what a picture may take: a vblank with 60 fps
+ *     on, two without. Over all of it (a real miss: pictures late) for
+ *     SUSTAIN windows in a row, down by the smallest step predicted to fit
+ *     in FIT; up one step once the next is predicted to fit in UP for a
+ *     whole hold (1 s, doubled to 8 s by a fall soon after a rise, as the
+ *     60 fps budget's hold, D68).
  * A picture's GPU time is the scenes gpu_meter.c measures (the targets,
  * atlas decodes) plus the present's full-screen quad, which it can't
  * (PRESENT_US, an estimate; the same at every scale).
@@ -39,19 +42,20 @@ static const int k_steps[] = {1000, 875, 750, 667};
 #define WINDOW 12         /* pictures per measure: 0.2 s at 60 fps */
 #define SETTLE 3          /* pictures after a change still in flight at the old scale */
 #define VBLANK_US 16683   /* NTSC */
-#define HI 94             /* % of a picture's time: over it, down */
-#define FIT 85            /* % a step down is chosen to fit in */
-#define UP 80             /* % the next step up must be predicted to fit in */
+#define HI 100            /* % of a picture's time: over it (pictures late), a miss */
+#define SUSTAIN 2         /* windows in a row of misses before going down (0.4 s) */
+#define FIT 95            /* % the step down is chosen to fit in: the smallest drop */
+#define UP 90             /* % the next step up must be predicted to fit in */
 #define FIXED_US 1000
 #define PRESENT_US 1500   /* one 960x544 pass: 1.3-1.8 ms on hardware (D69's estimate) */
-#define HOLD_MIN 10       /* windows (2 s) the next step must fit before going up */
-#define HOLD_MAX 80       /* 16 s */
+#define HOLD_MIN 5        /* windows (1 s) the next step must fit before going up */
+#define HOLD_MAX 40       /* 8 s */
 #define STEADY 150        /* windows (30 s) after a rise with no fall: the hold is HOLD_MIN */
 
 static int s_step;            /* the scale in use (index into k_steps) */
 static volatile int s_pm = 1000; /* k_steps[s_step], for gpu_gl.c and the game thread */
 static int s_mode = -1;       /* the dynres= it was set up for */
-static int s_settle, s_n, s_fit_windows, s_hold = HOLD_MIN, s_since_up = STEADY;
+static int s_settle, s_n, s_fit_windows, s_misses, s_hold = HOLD_MIN, s_since_up = STEADY;
 static uint32_t s_busy0;
 static int s_have0;
 
@@ -82,20 +86,12 @@ static void set_step(int i) {
   s_settle = SETTLE;
   s_n = 0;
   s_have0 = 0;
+  s_misses = 0;
 }
 
 /* The scale a target takes at its next whole clear, per mille: 1000 when
  * off (gpu_gl.c then draws exactly as without dynres). */
 int dynres_scale(void) { return __atomic_load_n(&s_pm, __ATOMIC_ACQUIRE); }
-
-/* 1 while dynres=auto could still go down (gpu_thread.c: late pictures are
- * then dynres's to fix before the 60 fps budget's, D75). Any thread. */
-int dynres_room(void) {
-  uint32_t busy, scenes;
-  return g_vita_opts.dynres == 1 && g_vita_opts.gpu_res == 0 &&
-         __atomic_load_n(&s_pm, __ATOMIC_ACQUIRE) > k_steps[NSTEPS - 1] &&
-         vita_gpu_meter(&busy, &scenes);
-}
 
 static int predict(unsigned cost, int from, int to, int fixed) {
   long long f = fixed < (int)cost ? fixed : (int)cost;
@@ -111,14 +107,15 @@ static void window(unsigned cost) {
   s_st.last_cost = cost;
   if (s_since_up < STEADY && ++s_since_up == STEADY)
     s_hold = HOLD_MIN;
-  if (total * 100 > frame * HI && s_step < NSTEPS - 1) {
+  s_misses = total * 100 > frame * HI ? s_misses + 1 : 0;
+  if (s_misses >= SUSTAIN && s_step < NSTEPS - 1) {
     for (i = s_step + 1; i < NSTEPS - 1; i++)
       if ((predict(cost, s_step, i, FIXED_US) + PRESENT_US) * 100 <= frame * FIT)
         break;
-    vita_log("dynres: GPU %u.%02u ms a picture at %d%% (with the present's %d.%d ms), over %d%% "
-             "of %u.%02u ms: %d%%", total / 1000, total % 1000 / 10, PCT(s_step),
-             PRESENT_US / 1000, PRESENT_US % 1000 / 100, HI, frame / 1000, frame % 1000 / 10,
-             PCT(i));
+    vita_log("dynres: GPU %u.%02u ms a picture at %d%% (with the present's %d.%d ms), over "
+             "%u.%02u ms for %d windows: %d%%", total / 1000, total % 1000 / 10, PCT(s_step),
+             PRESENT_US / 1000, PRESENT_US % 1000 / 100, frame / 1000, frame % 1000 / 10,
+             SUSTAIN, PCT(i));
     if (s_since_up < STEADY) /* fell soon after a rise: wait longer next time */
       s_hold = s_hold * 2 > HOLD_MAX ? HOLD_MAX : s_hold * 2;
     s_fit_windows = 0;

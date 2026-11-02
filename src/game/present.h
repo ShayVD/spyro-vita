@@ -26,8 +26,9 @@ typedef struct {
   int interp;     /* an extra frame between ticks, blended state */
   int interp_mobys; /* blend mobys and Spyro too, not only the camera */
   int interp_anim;  /* with interp_mobys: animation frames and particles too */
-  int interp_budget_us; /* >0: skip the in-between frame while the last tick's
-                           game CPU time plus a pass would exceed this */
+  int interp_budget_us; /* >0: skip the in-between frame while the game
+                           thread's CPU time per tick with it would exceed
+                           this (the safety net against running late, D75) */
   int stats;        /* time update and draw (also with both features off);
                      2 also maps the arena pages each pass dirties */
 } PresentConfig;
@@ -68,17 +69,6 @@ extern const PresentCapture *g_present_capture;
 /* Microseconds for interp_budget_us and the stats; default clock() (CPU
  * time). The Vita sets sceKernelGetProcessTimeWide. */
 extern long long (*g_present_clock_us)(void);
-
-/* interp_budget_us: microseconds a picture costs on another thread of the
- * platform's (the Vita's render thread, decisions D63), or NULL (default):
- * an in-between frame is also skipped while two pictures a tick wouldn't fit
- * the budget there. */
-extern long long (*g_present_render_us)(void);
-
-/* interp_budget_us: pictures the platform showed late so far (counted up;
- * the Vita's: the game thread waited for the previous one), or NULL. Late
- * pictures while the in-between frame runs count as a miss (D68). */
-extern unsigned (*g_present_late)(void);
 
 int port_present_active(void); /* any feature on */
 void port_present_reset(void);  /* a save state was loaded: nothing queued */
