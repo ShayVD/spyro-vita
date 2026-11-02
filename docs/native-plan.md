@@ -1,6 +1,6 @@
 # How native the port is, and a staged plan to make it fully native (D76)
 
-Written 2026-11-02 on main `2a0691c`, before PRs #48 (D75, dynamic resolution) and #49 (D74, joined draws) are merged. This document changes no engine code. It adds three measuring tools and three hardware run configurations:
+Written 2026-11-02 on main `2a0691c`, before PRs #48 (D75, dynamic resolution) and #49 (D74, joined draws) were merged; the measurements are from that code. The K runs are for main after both (`f534fb1`). This document changes no engine code. It adds three measuring tools and three hardware run configurations:
 - `tools/native_audit.py`: the static tables;
 - `tools/native_audit_map.sh`: a relink with a link map, which the static tables need;
 - `tools/vita/native_share.py`: the run-time split from `spyro.log`;
@@ -232,10 +232,10 @@ Three config files in `tools/vita/fps-runs/`. Each one is a whole `ux0:data/spyr
 |---|---|---|
 | `k1-native-cpu.txt` | 30 fps, `render_thread=0`, `parse_thread=0`, `fast_render=1`, `dynres=0` | Every layer on the game thread, CPU only. The `time` lines then give the OT walk (`ot`) and the PS1 GPU → vitaGL translation (`raster`) without the render thread's waits, on today's code. That's the real size of stage 2's target. |
 | `k2-native-cpu-m2c.txt` | K1 with `fast_render=0` | The register-model renderers with PsyCross's GTE, against K1's hand C. The `draw` lines' renderer ms show, on hardware, what removing the machine model has bought so far, and they bound what stage 1 can buy. (G1 and G2 were planned for this and never run.) |
-| `k3-native-threads.txt` | the shipped threads at 30 fps, `gpu_time=2`, `dynres=0` | The same route with the threads on. Against K1 it shows how much of the render thread's busy time is waiting. Against main's log it shows what #49 changed. |
+| `k3-native-threads.txt` | the shipped threads at 30 fps, `gpu_meter=1` (D75's meter, no `glFinish`), `dynres=0` | The same route with the threads on. Against K1 it shows how much of the render thread's busy time is waiting. Against main's log it shows what #49 changed, and the meter splits the GPU's time by what each scene draws into. |
 
 **For the owner:**
-1. Use a VPK built after #48 and #49 are merged. `dynres` is D75's key; an older build logs "unknown key" and ignores it.
+1. Use a VPK built from main after #48 and #49 (`f534fb1` or later). `dynres` is off by default there since J6; the K files say so anyway.
 2. Keep a copy of your own `ux0:data/spyro/config.txt`.
 3. Copy one K file over it.
 4. Start the game and leave it alone for 3 minutes: the title, the flythrough and both attract demos. Those windows have the same input in every run, so K1–K3 compare window by window.
