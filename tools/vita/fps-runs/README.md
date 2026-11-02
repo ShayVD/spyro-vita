@@ -210,3 +210,16 @@ J6 (`j6-one-run.txt`, the logs in `logs/hw-j6/` of the main checkout) showed tha
 - `time N: ... worst vblank X ms`: X under ~40 ms in most windows if the log's writes were J6's hitch. Still 60+ in every window means they weren't: say so, and whether you still feel a hitch every few seconds.
 - `gpu meter N: GPU time per picture over P pictures: the game's frames A ms in a scenes; texture decodes B ms in b; other C ms in c; the present D ms in d (with its wait for the display); the most finished between two pictures M ms`. In the heavy views A + B + C over ~15 ms is the GPU over its vblank. Which of A and B is big says where the next saving is: B large, the atlas's decode passes; A large with few scenes, the targets' own scenes.
 - The picture is native throughout (dynres off).
+
+## Run M1: the XA read-ahead after level changes (D78)
+
+K1–K3 (`docs/native-plan.md` §3.4) showed the read-ahead (D64) serving no music sector after the first level load: the music's sectors went back to the game thread for the rest of the run. D78 lets it reuse its windows after the stream jumps back on the disc.
+
+| File | Switches | Do |
+|---|---|---|
+| `m1-xa-ahead.txt` | 30 fps (`interp=0`), the shipped threads, `xa_ahead=1`, `dynres=0` | the K route: leave it alone from boot through the title, the flythrough and the Stone Hill attract demo (about 1.5 minutes), then start or load a game: 2 minutes in Artisans, then into Stone Hill for 2 minutes. More level changes (back to Artisans, another level) are welcome. Don't open the menu. Send it as `m1.log` |
+
+**What the log should show:**
+- `xa N: A music sectors from the read-ahead, B read on the game thread; read-ahead W windows, ...; C asks found no window` every 300 vblanks. After every level change (the `where:` lines), A should be back near 750 and B near 0 within one window; K1–K3 had A = 0 and W = 0 from the first load on. B is a handful (2–10) in the window where a new track starts. C should stay 0: a non-zero C for several windows in a row is the old stall.
+- `mixer N: ... 0 position mismatches` throughout.
+- The `time` lines' `spu` part in play back to ~0.05 ms per vblank (K1–K3 had 0.54–0.58 after the first load).

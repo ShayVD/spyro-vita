@@ -21,6 +21,7 @@
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +52,7 @@ static SceUID s_fd = -1;
 static char s_fd_path[512];
 
 /* stats since the last report (the reader's are counted up, read across threads) */
-static unsigned s_hits, s_misses;
+static unsigned s_hits, s_misses, s_noslot;
 static volatile uint32_t s_rd_windows, s_rd_kb, s_rd_us;
 
 static int reader_main(SceSize args, void *argp) {
@@ -139,22 +140,38 @@ static Window *covering(int lba, int *end) {
 }
 
 /* Ask for the window from lba, in a slot the reader isn't filling: one
- * that's free, or else a ready one wholly behind the head. */
+ * that's free, or else a ready one out of the read-ahead's reach. That is
+ * one wholly behind the head (the lowest first), or else one that starts
+ * REACH or more sectors ahead of it (the farthest first): after the stream
+ * jumps back (a new track earlier on the disc, a track's loop) the windows
+ * it filled are all ahead, and the head may never get there (D78). One
+ * nearer stays: the head reaches it before the windows asked for now. */
+#define REACH (NWIN * WIN)
 static void want(int lba, int head) {
   Window *pick = NULL;
-  int i;
+  int i, best = -1;
   for (i = 0; i < NWIN; i++) {
     Window *w = &s_win[i];
-    int st = __atomic_load_n(&w->state, __ATOMIC_ACQUIRE);
+    int st = __atomic_load_n(&w->state, __ATOMIC_ACQUIRE), score;
     if (st != W_FREE && w->lba == lba)
       return; /* asked already (a window that couldn't be read stays asked) */
-    if (st == W_FREE && !pick)
-      pick = w;
-    else if (st == W_READY && w->lba + w->n <= head && (!pick || (pick->state == W_READY && w->lba < pick->lba)))
-      pick = w;
+    if (st == W_FREE)
+      score = INT_MAX;
+    else if (st != W_READY)
+      continue;
+    else if (w->lba + w->n <= head)
+      score = INT_MAX / 2 + (head - w->lba);
+    else if (w->lba >= head + REACH)
+      score = w->lba - head;
+    else
+      continue;
+    if (score > best)
+      best = score, pick = w;
   }
-  if (!pick)
-    return; /* all ahead or being read: the next sector asks again */
+  if (!pick) {
+    s_noslot++;
+    return; /* all near ahead or being read: the next sector asks again */
+  }
   pick->lba = lba;
   __atomic_store_n(&pick->state, W_WANTED, __ATOMIC_RELEASE);
   sceKernelSignalSema(s_sema, 1);
@@ -197,10 +214,10 @@ void vita_xa_ahead_report(int vblank) {
   if (!s_on || (!s_hits && !s_misses && w == w0))
     return;
   vita_log("xa %d: %u music sectors from the read-ahead, %u read on the game thread; "
-           "read-ahead %u windows, %u KB in %u.%02u ms (core 1)",
+           "read-ahead %u windows, %u KB in %u.%02u ms (core 1); %u asks found no window",
            vblank, s_hits, s_misses, (unsigned)(w - w0), (unsigned)(kb - kb0),
-           (unsigned)((us - us0) / 1000), (unsigned)((us - us0) % 1000 / 10));
-  s_hits = s_misses = 0;
+           (unsigned)((us - us0) / 1000), (unsigned)((us - us0) % 1000 / 10), s_noslot);
+  s_hits = s_misses = s_noslot = 0;
   w0 = w;
   kb0 = kb;
   us0 = us;

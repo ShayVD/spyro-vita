@@ -395,6 +395,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 - **Gains:** 0.5–0.6 ms per vblank back off the game thread, in every level after the first.
 - **Verify:** host WAV byte-identical; on hardware, the `xa` lines serve from the read-ahead after level changes.
 - **Size:** ~10 lines.
+- **Done in D78** (Vita3K: WAVs byte-identical, read-ahead hits after every level change). Hardware: run M1 (`tools/vita/fps-runs/m1-xa-ahead.txt`).
 
 ### Stage 1: GTE calls into native maths (medium, low risk)
 
