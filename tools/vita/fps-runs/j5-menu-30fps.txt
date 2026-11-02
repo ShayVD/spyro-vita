@@ -1,0 +1,2 @@
+# Run J5, the menu's defaults at 30 fps (D75): dynres=1 (auto) against a picture every two vblanks; it should stay at 100%
+config_version=3

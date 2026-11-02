@@ -70,7 +70,9 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   # mixer.c: XA events go to the mixer thread, SPU RAM writes wait for it (D37)
   -Wl,--wrap=psx_xa_sector,--wrap=psx_xa_reset,--wrap=SpuWrite,--wrap=SpuInit
   # vitaGL must set GXM up as for a game, in Vita3K too (gpu_gl.c)
-  -Wl,--wrap=sceAppMgrGetBudgetInfo)
+  -Wl,--wrap=sceAppMgrGetBudgetInfo
+  # gpu_meter.c: each GXM scene's fence and submit time (D75)
+  -Wl,--wrap=sceGxmEndScene)
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules

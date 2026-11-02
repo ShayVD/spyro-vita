@@ -42,7 +42,8 @@ typedef struct {
   int interp;         /* interp=1 (default): 60 fps; 2: no animation blending; 3: camera only; 0: off */
   int widescreen_exact; /* widescreen_exact=1: keep the original 4:3 logic in play too (a hidden
                            4:3 draw: costs CPU); attract demos always do */
-  int interp_budget;  /* interp_budget=MS: skip the in-between frame over this (default 26; 0 never) */
+  int interp_budget;  /* interp_budget=0: no safety net; else (default) the in-between frame is
+                         skipped only if the game thread would run late (D75) */
   int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;
@@ -60,6 +61,9 @@ typedef struct {
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
+  int dynres;         /* dynres=1 (default): auto, a lower render scale only when the GPU can't
+                         keep up; 0: off; 88, 75, 67: that scale, always (D75) */
+  int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
 } VitaOpts;
 
 extern VitaOpts g_vita_opts;
@@ -128,8 +132,6 @@ void vita_gpu_vram_loaded(void);    /* s_vram was overwritten */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
-long long (*vita_gpu_render_cost(void))(void); /* present.c's g_present_render_us, or NULL */
-unsigned (*vita_gpu_late_pictures(void))(void); /* present.c's g_present_late, or NULL */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);
