@@ -1512,7 +1512,21 @@ Record each decision with its date, what was chosen, and why.
   - **Unit:** `tests/gte/test_gte_native` (ctest `gte_native`): the 5,549 PCSX-Redux vectors of these opcodes and 8M random register states against `gte_inline.h`, every returned field (58M compared), 0 mismatched. ctest `gte_native_mutant` builds it with RTPS's screen offset one pixel off and must fail; it does (960 fields on the vectors).
   - **Every call, both ways:** `--fast-render-check` runs the register-file hand C and then the native build from the same state, on every call, and compares the whole 2 MB arena, the scratchpad buffer and all 64 GTE registers' raw storage. 0 differences over the gems script, the attract demos, the in-between frames at 60 fps, 2x draw distance, routes A and B and the 100,000-vblank whole-game tour (216,427 calls in the tour alone; `logs/ngte8-checks.txt`). Removing one flush makes every sky call differ.
   - **Host A/B** (`FAST="1 2" tools/fast_render_ab.sh ngab`, one binary): **198 of 198 files byte-identical** (gems 18, demos 26, wsi 25, lod 18, route A 55, route B 56; `logs/ngab-summary.txt`).
-  - **Oracle replay** with `--fast-render 2`: see `logs/ngab-replay.txt` (filled in below).
-  - **Vita3K** (VPK `logs/ngte-vpk.vpk`): the gems script with `fast_render` 1 and 2: 17 shots, 17 window captures (`CAPTURE=1`) and the memory card identical (`logs/ngv3k-gems-f1`, `-f2`).
-- **Speed:** see below.
+  - **Oracle replay** with `--fast-render 2` of the six renderers and the cyclorama set-up `func_80050BD0`: **661/661 samples pass** over cap3, cap5-fairy, run14-oracle-tour, run19-oracle-labels and routes A and B (`logs/ngab-replay.txt`), as D72's.
+  - **ctest:** 8/9 pass, `m2c_diff_math` skipped as before (`logs/ngab-ctest.txt`). `savestate_globals` lists the check's state (`hand_check.c`, a test tool) and env's per-call `s_proj` (read from the GTE at the start of every `EnvDraw`) as not game state.
+  - **Vita3K** (VPK `logs/ngte-vpk.vpk`): the gems script with `fast_render` 1 and 2: 17 shots, 17 window captures (`CAPTURE=1`) and the memory card identical (`logs/ngv3k-gems-f1`, `-f2`). The final VPK after merging main (`a8f71a33…`) with `fast_render=2`: the same 17 shots and card (`logs/ngv3k-final-f2`).
+  - Removing the sky's replay at the end of pass 2, as a test of the check, made every sky call differ.
+- **Speed:**
+  - **Host,** `--prof-draw`, CPU ms over the run, two `fast_render` 1/2 pairs on an idle Docker VM, mean (qemu-i386: relative only; `logs/ngte14-time.txt`):
+
+    | Run | env | mobys | Spyro | sky | all renderers |
+    |---|---|---|---|---|---|
+    | gems | 1,102 → 998 | 269 → 211 | 12.7 → 10.5 | 261 → 179 | 1,646 → 1,398 (−15%) |
+    | demos | 1,211 → 1,078 | 758 → 629 | 124 → 100 | 354 → 242 | 2,508 → 2,108 (−16%) |
+    | route A | 1,542 → 1,389 | 406 → 302 | (not counted) | 401 → 270 | 2,349 → 1,961 (−17%) |
+
+  - **Host gprof** of the demos (`logs/ngte12-gprof-f1`, `-f2`): the renderers and their GTE calls fall from ~4.2 s to ~3.45 s, and `m2c_gte_0x180001` (RTPS) calls from 29.1M to 3.2M (the tails, the replays, the specular renderer and the mips2c units). qemu-i386 has no 64-bit registers, so the 64-bit sums the native RTPS keeps for exactness cost it more than they will an ARM with `smull`/`adc`.
+  - **ARM code,** VitaSDK's GCC 15 at `-O2` (`logs/armchk`): a native RTPS in a vertex loop is ~130 inline instructions, against a call into the 325-instruction register-file command plus its loads and stores to `gteRegs`.
+  - **Vita3K,** the gems script, `draw` lines over 29 windows, two pairs: renderers 0.239 → 0.155 and 0.250 → 0.209 ms per vblank (−35%, −16%; `logs/ngv3k-time*-f*`). Vita3K's JIT isn't a Cortex-A9 and its timings vary from run to run.
+  - **Estimate for hardware:** −15 to −35% of the renderers' 1.5–4.5 ms per vblank (K1), about 0.3–1.2 ms per vblank at 30 fps. That's at or below the plan's −0.5 to −1.3 ms. Only N1/N2 will tell.
 - **Not checked:** hardware. Runs N1 and N2 (`tools/vita/fps-runs/n1-gte-1.txt`, `n2-gte-2.txt`; owner's steps in `docs/native-plan.md` stage 1).

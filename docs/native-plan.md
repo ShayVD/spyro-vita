@@ -423,7 +423,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 
 **Optional:** yes, as `fast_render=2`. `fast_render=1` (today's register-file C) and `0` (mips2c) stay linked.
 
-**Done (D80, 2026-11-02),** apart from NEON and the hardware runs. What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`.
+**Done (D80, 2026-11-02),** apart from NEON and the hardware runs. What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu) and −16 to −35% in Vita3K.
 
 #### The GTE audit
 
@@ -440,12 +440,14 @@ Classes are unions over the sampled calls. The attract demos (every 100th call, 
 
 | Renderer | in | gte |
 |---|---|---|
-| env `func_800258F0` | OFX OFY H | RGBC SZ0-2 RGB2 DQA DQB |
+| env `func_800258F0` | OFX OFY H | RGBC IR0 SZ0-2 RGB2 DQA DQB |
 | sky `func_8004EBA8` | OFX OFY H | IR0-3 SZ0-2 DQA DQB |
 | mobys `func_8001F798` | OFX OFY H | RGBC IR0-3 SZ0-2 DQA DQB |
-| lit mobys `func_80022A2C` | OFX OFY H | SZ0-2 |
+| lit mobys `func_80022A2C` | OFX OFY H | RGBC IR0 SZ0-2 DQB |
 | Spyro `func_80023AC4` | OFX OFY H | RGBC IR0 SZ0-2 DQA DQB |
-| specular `func_80020F34` | OFX OFY H | RGBC IR0-3 SZ0-2 DQA DQB |
+| specular `func_80020F34` | OFX OFY H | IR0-3 SZ0-2 DQA DQB |
+
+Audited calls: 238 in the demos, 1,036 on route A and 1,043 on route B (2,317 in all, 128 runs each); every audited call also passed the 1-against-2 check.
 
 **What reaches the renderers from outside:** only the screen offset and H. They come from `SetGeomOffset(256, 120)` and `SetGeomScreen(341)` (`third_party/spyro-1/src/initialization.c:260-261`).
 
@@ -454,7 +456,7 @@ The other libgte calls in the decomp C only set the rotation and translation (an
 **The "gte" class:**
 - DQA/DQB change only RTPS's MAC0/IR0, which no renderer reads.
 - RGBC's code byte is INTPL's colour push (env's animation blends `env_hand.c:182`, mobys' frame blends `moby_hand.c:261`, Spyro's `pete_render_hand.c:374`).
-- SZ0-2 survive into SZ0-3 in a call that projects fewer than four vertices.
+- SZ0-2 (and RGB2, IR0-3) survive into the FIFO's other slots or the call's last results when a call projects fewer than four vertices or runs fewer than three colour commands; IR0's high half survives RTPS, which writes only the low half.
 
 **State a renderer keeps in the GTE within a call:**
 - **env:** the camera position in RBK/GBK/BBK (`env_hand.c:922`), read back per sector (`:943-944`, `:1444-1445`).
