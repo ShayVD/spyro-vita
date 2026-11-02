@@ -175,6 +175,7 @@ static void run(const Cmd *c) {
   }
   case C_CALL: {
     const CCall *k = (const CCall *)c;
+    gl_flush_draws(); /* the call may reach the GPU */
     k->fn(k->ptr ? k->ptr : (void *)k->arg);
     break;
   }
@@ -361,6 +362,7 @@ static void call(void (*fn)(void *), void *arg, int size, int sync) {
   CCall *c;
   env_sync();
   if (!g_rt_active) {
+    gl_flush_draws(); /* the call may reach the GPU */
     fn(arg);
     return;
   }

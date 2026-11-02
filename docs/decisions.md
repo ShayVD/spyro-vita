@@ -1081,6 +1081,7 @@ Record each decision with its date, what was chosen, and why.
   - **A host oddity, not from this change:** in the first batch of host runs (three at once, 60 fps, a shot every 50 vblanks, `logs/h69-*`), two runs with the same binary and switches diverged from each other at the title menu (vblank 2106 against 2120: the new-game press was taken in one and not the other). It didn't come back in nine later runs to vblank 2300, with and without shots, with main's binary and this one (`logs/h69b-*`, `h69bs-*`, `h69r-*`, `h69ns-*`: all identical). Worth a look if host 60 fps runs ever disagree again.
   - **Not checked:** hardware. `tools/vita/fps-runs/f1-cheap-off.txt` against `f2-cheap-on.txt` measures it; `f3-cheap-60fps.txt` is 60 fps as shipped with it on.
 - **Default:** off (`gpu_lean=0`) until F1/F2 have run on a Vita.
+  - **On since D74** (`gpu_lean=1`): two hardware logs ran with it, no fault.
 
 ## 2026-11-01: the OT walk on a core of its own, and core 3
 
@@ -1129,6 +1130,7 @@ Record each decision with its date, what was chosen, and why.
   - **In every Vita3K run:** 0 packets outside the copy, no `still waiting`, 0 unknown commands. Copies were ~47 KB per list.
   - **Vita3K timings** (not a Vita's; the Mac was loaded with other sessions' containers): the game thread's `ot` went from 0.84–1.35 to 0.46–0.94 ms per vblank with 60 fps forced (gems, 6000–8400). The walk took the parse thread 1.5–1.8 ms per list, and the game thread still waited 0.5–0.9 ms per join. The hardware runs decide whether the walk fits inside the render path there.
 - **Default:** off (`parse_thread=0`) until hardware runs H1–H3 (`tools/vita/fps-runs/`). They should show the `ot` drop, 0 packets outside the copy, and no audio regression with the walk beside the mixer.
+  - **On since D74** (`parse_thread=1`): two hardware logs ran with it, 0 packets outside the copy, no audio cut.
 
 ## 2026-11-01: hand-written C for the hot renderers
 
@@ -1228,6 +1230,79 @@ Record each decision with its date, what was chosen, and why.
   - **Host** (the change isn't in the host binary: `port_where` isn't linked there, the rest is `src/platform/vita/`): `ctest` 6/6 pass (`m2c_diff_math` skipped, as before). `tools/host_checks.sh h71` against the D69 session's `h69-*` (main's shared code): demo 26/26, whole-game tour 141/141, routes A and B 56/56 each, all identical. Oracle replays: `cap3` 329/329, `cap5-fairy` 261/261 PASS, the same as before.
   - **After merging main** (D70–D72, `2b7cdce`; this entry became D73): the VPK builds clean. Vita3K: the forced spin gives the same hang line (`logs/run5-vita3k-merged-hang-spin`). The normal run's script, menu and save states give no hang line (`logs/run6-vita3k-merged-normal`). Host `ctest` 7/7 pass (`m2c_diff_math` skipped), and `port_where` still isn't in the host binary. The breadcrumb in `prof_enter`/`prof_leave` sits inside D71's guard, so the parse thread never writes it. The parse thread (off by default) has no breadcrumb or kernel-state entry of its own. A game thread stuck joining it shows as waiting on a semaphore, by name.
 
+### D74. A cheaper GPU picture: joined draws, one program for plain and untextured triangles, and a bench to tell what pays
+- **Date:** 2026-11-02.
+- **Why:** 60 fps at full 960×544 with every pixel unchanged.
+  - **The render thread:** main's Toasty log (`logs/hw-main-2a0691c`, gitignored) had it at 16–23 ms a picture in the heavy views against 8.2 ms in the light ones, with a 16.7 ms target.
+  - **The GPU:** C1's `gpu_time=2` (`logs/hw-pr40-c1`) timed the scene at 19–31 ms in the heavier level, against 5.5–8.4 in Artisans.
+  - **The owner's preference:** no resolution drop. D75's lower resolution is the fallback.
+- **Measured first** (Vita3K: counts, not time; Vita3K doesn't model the SGX's speed):
+  - **Not the clocks:** the log's `clocks:` line says GPU 222 MHz, the maximum.
+  - **Not the parameter buffer:** a picture has only 1–3k triangles (the gpu lines' ~400k is per 5-s window), far below what would force partial renders.
+  - **Not depth memory:** vitaGL gives every FBO a depth buffer, but its default build has no `STORE_DEPTH_STENCIL`, so it is never loaded or stored (its `gxm.c`, read for reference).
+  - **Not the shader length:** the compiled atlas program, which draws 95–98% of textured triangles (`gpu_opaque`), is 14 instructions before its texture read and 4 after (Vita3K's shader log: the GXP from the Vita's own compiler, with its USSE disassembly). The untextured program is 3.
+  - **Not overdraw:** `gpu_fill=1` models what the SGX shades: a tile defers opaque fragments, a later one at the same pixel replaces the earlier unshaded, and a discard or blend triangle makes the tile shade what it holds.
+    - Toasty: 0.9–1.2 M pixels covered a picture, about 540k shaded. Artisans: about 650k shaded.
+    - In both, about what "all opaque first, by depth" would shade (under 2% more), so reordering draws would gain nothing.
+    - Toasty's GPU time can't come from shading more pixels than Artisans.
+  - **What separates Toasty is the number of draws and program changes:**
+    - Toasty: 150–230 runs of one program a picture, 25–43 of them discard or blend runs breaking the opaque stream. Artisans: about 80 runs and 13–15 breaks.
+    - In C1, GPU time follows draws per picture far more than triangles: 3 draws a picture, 2.2 ms; about 140, 24–31 ms.
+    - The game's distant ground is untextured, and in OT order textured and untextured triangles alternate. PsyCross starts a new draw at every such change, and at every texture-format change.
+    - Of Toasty's 200 game draws a picture (`logs/run12-vita3k-joins`), 39 could join the previous one if the format didn't split them, and 161 if untextured didn't either.
+- **Changed** (`src/platform/vita/gpu_gl.c`):
+  - **`gpu_join=1`, the new default.**
+    - Consecutive game draws with the same target, scissor, drawing offset and blend, whose vertices follow on, go to the GPU as one draw. It is split only where the program changes (`prog_of`, per triangle).
+    - The atlas programs read no texture format, so one serves all three.
+    - Subtract blending is never joined, because its two passes would interleave differently.
+    - Every other way to the GPU sends the held draws first: a new vertex buffer, a clear, copy, upload, readback, capture, present, a new target, a timing sample, and the render thread's call commands.
+    - The same triangles in the same order with the same state, so the same pixels.
+    - Toasty's runs a picture: 232 → 192 in the heaviest window, 81 → 49 and 66 → 40 elsewhere. GL state set-ups fall from about 200 a picture to a few dozen.
+  - **`gpu_uber=1`, default off until hardware.**
+    - `k_fs_atlas_plain_body`, plus an untextured case: `expand()` marks untextured vertices (flags.x = 2), and the program *selects* `v_col` for them, which `k_fs_untex` computes as `v_col * 1.0`. Bit for bit the same.
+    - A draw where textured and untextured triangles alternate is then one program. Toasty's runs a picture: 232 → 74, 81 → 39, 66 → 22, which leaves about the discard and blend breaks.
+    - The cost: untextured pixels (250–340k covered a picture in Toasty) now run the atlas program's 18 instructions and a texture read, instead of 3.
+    - Whether that pays is the hardware's to say (run I1), hence off.
+  - **`gpu_fill=1`** (the model above) and **`gpu_bench=1`** (run I1: five variants by stats window, with the GPU's scene timed every 16th picture as `gpu_time=2` does) are measurements, not options.
+- **Checked** (Vita3K is not a Vita: it shows pixels and counts, not speed):
+  - **Pixels, the same VPK, `realtime=0`, widescreen, 60 fps forced, `gpu_join=0` (main's draws) against `gpu_join=1` and against `gpu_join=1 gpu_uber=1`:**
+    - **Toasty** (new game, WARP TO from the menu, play; `logs/v74-toasty-*`): 8 window captures of the GPU's own picture, 8 shots and the memory card identical.
+    - **The gems script** (`logs/v74-gems-*`): 44 shots, the WAV and the card identical.
+    - **The pause route** (`logs/v74-pause-*`): 70 shots and the card identical.
+    - **Six window captures on the gems script** (`logs/v74-cap-*`): identical.
+  - **Host:** this change is all in `src/platform/vita/`, which the host doesn't build.
+    - `ctest` 7/7 pass (`gte` and `m2c_diff_math` skipped, as before).
+    - `tools/host_checks.sh h74g` against the D73 session's `h71-*`, all identical: demo 26/26, the whole-game tour 141/141 with its fairy card, routes A and B 56/56 each.
+  - **The bench in Vita3K** (`logs/v74-bench`): every variant ran and logged its line. Vita3K's times are its own (its GPU is the Mac's, through Vulkan), not a Vita's. Even there, main's draws took 1.9–7.2 ms a scene against 0.5–1.2 ms joined: per-draw cost is real on that host too. The other variants were within its noise.
+- **Hardware, run I1** (`logs/hw-pr49-i1`, gitignored; PR #49 at `8b59312`, 60 fps forced, `gpu_lean=1 parse_thread=1`). The owner stood in Toasty for about 48 s (vblanks 2509–5400). There are no Artisans windows. The GPU's scene a picture, two 5-s windows of each variant, with the render thread's time a picture and the late vblanks in 300:
+
+  | Variant | Scene ms | Render thread ms | Late vblanks |
+  |---|---|---|---|
+  | 1. main's draws (`gpu_join=0`) | 14.65, 20.77 | 13.93, 18.04 | 65, 116 |
+  | 2. joined (`gpu_join=1`, the default) | 7.30, 6.10 | 8.60, 11.33 | 30, 11 |
+  | 3. joined, `gpu_uber=1` | 7.79, 8.84 | 11.13, 17.42 | 12, 20 |
+  | 4. joined, half the pixels | 3.28, 4.46 | 15.43, 9.71 | 16, 6 |
+  | 5. one program for every opaque triangle | 7.92, 7.11 | 15.78, 16.31 | 29, 12 |
+
+  - **Joining is the saving:** the GPU's scene in Toasty falls from 15–21 ms to 6–7 ms, and the render thread's picture from 14–18 ms to 9–11 ms. Main's log had 16–22 ms a picture and 18–77 late vblanks a window in the same level (`hw-main-2a0691c`).
+  - **`gpu_uber` saves nothing once draws are joined.** Variant 3 is no faster than 2, and variant 5, the floor of no program changes at all, isn't either. The untextured pixels' extra work cancels what fewer program changes save. It stays off.
+  - **Half the pixels takes off 40–50%** of the joined scene: what's left of the GPU's time scales with pixels more than with draws. That's D75's lever.
+  - **The owner saw stutter, and the right half of the screen orange at times.** Both come from the bench itself:
+    - every 5 s it switches variant, main's draws among them (65 and 116 late vblanks);
+    - every 16th picture it waits for the GPU to time it;
+    - variant 4 doesn't redraw the right half (what's left there showed orange), and 5 shows transparent texels black.
+    
+    The joined windows alone still had 11 and 30 late vblanks in 300. Whether players see stutter with the defaults isn't measured by this run.
+- **Defaults after I1** (the owner approved "whichever measures faster, on for everyone"; one tested code path, not tied to the menu's 60 FPS row):
+  - `gpu_join=1`: on (this PR).
+  - `gpu_lean=1` (D70) and `parse_thread=1` (D71): on. `hw-main-2a0691c` and I1 both ran with them, with no fault: 0 packets outside the copy, no audio cut, the parse thread 10–16% of core 1. Neither run had them off, so their own saving on hardware isn't measured. D70's estimate is 0.2–0.4 ms of the render thread a picture; D71 takes the OT walk off the game thread, though it still waits 1.2–1.6 ms a vblank for the walk to finish.
+  - `gpu_uber=0`: off, as above.
+  - The fps-runs files no longer set what is now the default (`tools/vita/fps-runs/README.md`). A file that wants one off says `=0`.
+  - **Checked in Vita3K** (`realtime=0`, widescreen, 60 fps forced, no other option set, so `gpu_lean=1 parse_thread=1` from the defaults; `logs/v74-gems-def`, `logs/v74-pause-def`): against the earlier joined runs (`gpu_lean=1`, `parse_thread=0`), the gems script's 44 shots, WAV and card and the pause route's 70 shots and card are identical. The log lines show both on.
+  - **And at 30 fps** (the same VPK, `realtime=0`, widescreen, no `interp`): `gpu_join=0 gpu_lean=0 parse_thread=0` (main's drawing) against the defaults, the gems script's 44 shots, WAV and card identical (`logs/v74-gems30-old`, `logs/v74-gems30-def`).
+- **Not checked:** a hardware run with the defaults and no bench (I2's route), so no clean measure of stutter on hardware yet.
+- **For D75 (dynamic resolution):** this changes nothing in the targets' viewport or the present. Fewer draws and a lower resolution add up: I1's "half the pixels" line shows how much a resolution drop would buy at the same place.
+
 ## 2026-11-01: a lower render scale only when the GPU can't keep up
 
 ### D75. Dynamic resolution: a sub-rect of each target, steered by vitaGL's own scene fences
@@ -1311,6 +1386,7 @@ Record each decision with its date, what was chosen, and why.
   - 60 fps held: in the windows of play, every in-between frame ran, with 0 falls to 30. The safety net held 30 twice, both during loads (the title's start-up at vblank 600 and Toasty's at 2100), never in play.
   - The meter works on hardware: 0 scenes unmeasured, and the GPU's time per picture tracked the late vblanks.
   - **The scale saved little.** A 0.4 s spike as Toasty started (31.7 ms a picture at vblank 2398, 308 blocks decoded into the atlas that window) dropped it straight to 67%. It stayed there for nearly all of Toasty: at 67% the GPU still took 11–17 ms a picture in the heavy views (windows 3000–4500), with 11–67 late vblanks per 300. Main at 100% in the same level had 18–100 (`hw-main-2a0691c`). With 44% of the pixels, an all-pixels cost would have been 0.44 of main's 16–24 ms, 7–11 ms. So roughly half the GPU's picture (an *estimate*: 8–10 ms) doesn't go with the targets' pixels, and the controller's model (all of it does, less `FIXED_US`) was wrong both ways: it dropped too far and never predicted that 75% would fit.
+  - **What the fixed half was** (from D74, merged after J6): J6 ran without D74's joined draws. D74's run I1 timed Toasty's GPU scene at 15–21 ms with main's draws and 6–7 ms joined, and found what's left scaling with the pixels (half of them took off 40–50%). So the part J6 saw not shrink with the scale was mostly the draws and their program changes, which `gpu_join=1` (now the default) removes. With it, the GPU should fit 60 fps in Toasty at native, which leaves dynres even less to do: off stays the default. Run J7 measures it with the meter's split.
   - **The other stutter:** a 60–150 ms "worst vblank" in nearly every window, in Artisans too (main had 62–88 ms). It's game-thread busy time, so not the GPU. A likely cause: each report's ~15 lines written to the memory card with `sceIoWrite` on the game thread every 300 vblanks. So the log now has a writer thread (below).
 - **After J6:**
   - `log.c`: from `vita_log_start` (after `config.txt`) lines go into a 128 KB ring that a thread on cores 1–2 (priority 0xb8) writes out. A full ring makes the caller wait, so no line is lost or reordered. `sceKernelExitProcess` (wrapped) and the watchdog's crash dump flush it first. `log_sync=1` writes on the calling thread, as before.
