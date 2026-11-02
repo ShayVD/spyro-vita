@@ -1,0 +1,13 @@
+# Run K1 (docs/native-plan.md, D76): where the CPU goes at 30 fps, every layer on the game thread.
+# GL on the game thread (render_thread=0), so the "time" lines' raster is the CPU of turning PS1
+# primitives into vitaGL draws without the render thread's swap and vblank waits; the OT walk on
+# the game thread (parse_thread=0); the hand-written renderers (fast_render=1). dynres=0 keeps the
+# resolution fixed on builds with D75. Route: leave the game alone from boot for 3 minutes (title,
+# flythrough, both attract demos), then 2 minutes in Artisans and 2 in Toasty. Send spyro.log as k1.log.
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=1
+gpu_time=0
+dynres=0

@@ -1,0 +1,11 @@
+# Run K3 (docs/native-plan.md, D76): the shipped threads at 30 fps (render thread, parse thread,
+# mixer, XA read-ahead), the GPU's time from D75's meter with its per-kind lines (gpu_meter=1, no
+# glFinish), resolution fixed (dynres=0, the default). Against K1 it shows how much of the render
+# thread's busy time is waiting. The same route as K1. Send it as k3.log.
+config_version=3
+interp=0
+render_thread=1
+parse_thread=1
+fast_render=1
+gpu_meter=1
+dynres=0
