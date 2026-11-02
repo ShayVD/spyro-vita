@@ -1,0 +1,9 @@
+# Run M1 (D78): the XA read-ahead after level changes, at 30 fps with the shipped threads. K1-K3
+# showed it serving no music sector after the first level load; with D78 it should serve them all
+# again. The K route: leave it alone from boot through the title, the flythrough and the Stone Hill
+# attract demo, then start or load a game, 2 minutes in Artisans, then into Stone Hill for 2
+# minutes (more level changes are welcome). Send it as m1.log.
+config_version=3
+interp=0
+xa_ahead=1
+dynres=0

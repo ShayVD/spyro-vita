@@ -395,6 +395,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 - **Gains:** 0.5–0.6 ms per vblank back off the game thread, in every level after the first.
 - **Verify:** host WAV byte-identical; on hardware, the `xa` lines serve from the read-ahead after level changes.
 - **Size:** ~10 lines.
+- **Done in D78.** In Vita3K and on hardware the WAVs are byte-identical, and the read-ahead serves the music after every level change. On hardware the `spu` part in play went from 0.58–0.66 ms per vblank back to 0.07 (run M1, unattended).
 
 ### Stage 1: GTE calls into native maths (medium, low risk)
 
