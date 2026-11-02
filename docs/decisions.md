@@ -1809,3 +1809,18 @@ Record each decision with its date, what was chosen, and why.
   - **`SpuWrite`'s decode:** 56–57 ms on the game thread for each whole sound bank (32,511 blocks), 7 times on the route, at level loads. Not a frame drop in play, but a load's stall grows by that.
   - **Gaps:** 0 cuts in both. Dry (the mixer found the queue empty): R1 32, R2 48 over the run. Both are dry at start-up and at the same loads (vblanks 3600, 5700, 10500, 11700, 14700). The difference is the route's last 15 s (Dark Hollow, Spyro standing, no load): R1 0 + 5 + 9 in the last three windows, R2 6 + 15 + 13. R2's output thread padded 179 grains with silence over the run: 16 at start-up, 127 in the load windows, 36 in the last three. R1 has no such counter (SDL2 pads in its own thread).
 - **Default:** stays `mixer=1`. The samples and the CPU pass. The extra dry periods in play are a gap a player could hear, so `mixer=3` waits for that to be understood (the output ring's level against the port's clock, likely) and the time pair run again.
+
+## 2026-11-02: resolution options
+
+### D85. `RESOLUTION` offers only NATIVE and PS1; `res=2`–`4` removed
+- **Asked:** the owner found some RESOLUTION settings choppy on hardware (main `bdd67e0`) and asked to remove the ones that don't work.
+- **What they were** (D40, `set_scale()` in `gpu_gl.c`): 2X, 3X and 4X drew each 512×224 game buffer at N times the PS1's pixels and scaled the picture down to the screen (supersampled edges).
+  - 2X: 1024×448. About 0.9 times native's 960×544 pixels, but only 448 lines, so the picture is stretched up vertically: softer than native, not sharper.
+  - 3X: 1536×672, about 2 times native's pixels. 4X: 2048×896, about 3.5 times.
+  - The GPU cost scales with pixels (D41's bench, `docs/fps-plan.md`), and native at 60 fps already uses most of the GPU, so 3X and 4X can't hold the frame rate. Dynamic resolution (D75) works only at native, so it can't help them. None had a hardware measurement.
+- **Chosen:**
+  - The menu's row is NATIVE and PS1 (`picture.c`).
+  - A `res=` (or `gpu_res=`) value other than native or ps1 in `config.txt` gives native, with a log line (`read_config()` in `main.c`). The menu's next save writes `res=0`.
+  - `set_scale()` and `gl_set_options()` are unchanged: they still take any scale, so bench sets and later work could use one. Only the options are gone.
+- **Not changed:** NATIVE stays the default, PS1 stays the cheap option.
+

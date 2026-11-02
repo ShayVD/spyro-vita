@@ -106,7 +106,7 @@ Files the app writes:
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4`: N times the PS1's, scaled down when shown (smoother edges, more GPU work). `gpu_res=` is the old name |
+| `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4` (supersampled) were removed and now give native (D85). `gpu_res=` is the old name |
 | `gpu_time=1` | GPU: one GPU-timed frame per 300 vblanks in the log (see below). Default 0 since D68: its two `glFinish` calls are a hitch every 5 s at 60 fps. `gpu_time=2` also times that frame's scene on its own and counts GL draw calls and vertex uploads: measurement only, for `docs/fps-plan.md`'s Run A; don't combine it with `bench=` |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
@@ -665,7 +665,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 1. `config.txt`: only `stats=1`. Start a game and go to Artisans.
 2. **Picture rows:** open the menu (hold SELECT, press START). Under PICTURE, step `TEX FILTER` to BILINEAR,
    then `3-POINT (SLOW)`, then OFF; switch `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` on and off;
-   step `RESOLUTION` through PS1, 2X and back to NATIVE. Each change should show behind the menu at once.
+   step `RESOLUTION` to PS1 and back to NATIVE. Each change should show behind the menu at once.
    The first filter, perspective or sub-pixel change pauses a few seconds while its shaders compile; the
    log says `gpu: programs for ... compiled in N ms`. Any `don't compile` line is what to send back.
    Close the menu: the log's `menu: saved ...` line lists the values, and they come back after a restart.
@@ -734,8 +734,8 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 4. `res=ps1` in `config.txt`: the picture should look exactly like builds before D40 with
    `gpu_res=1` (softer, PS1 pixels scaled up). Compare `busy`, `P pictures` and the `timed frame`
    line with the default.
-5. `res=2`: smoother edges; check that `P pictures` stays near 150 per 300 vblanks in Artisans
-   and how big G gets.
+5. `res=2` (removed, D85): the log says `config: res=2 is no longer offered (D85): native`, and
+   the picture is the default's.
 
 ### Quick save (D51, branch `claude/vita-quicksave-a54846`)
 

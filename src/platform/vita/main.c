@@ -50,9 +50,9 @@
  *                       the 4:3 picture is 778x544 screen pixels, 16:9 is
  *                       960x544, from the 512x224 the game draws; D67);
  *                       res=ps1 (or 1): at the PS1's own 512x240,
- *                       scaled up when shown (filter=); res=N, 2..4: N times
- *                       the PS1's, scaled down when shown (D40). gpu_res=
- *                       is the old name.
+ *                       scaled up when shown (filter=) (D40). res=2..4
+ *                       (N times the PS1's) were removed and give native
+ *                       (D85). gpu_res= is the old name.
  *       gpu_time=1      a GPU-timed frame in the "gpu" log lines every 300
  *                       vblanks (two glFinish: a hitch at 60 fps, so the
  *                       default is 0; D68); gpu_time=2 also times that
@@ -252,7 +252,7 @@ static void parse_list(const char *v, int *out, int *n, int max) {
     out[(*n)++] = atoi(tok);
 }
 
-/* res=native | ps1 | N */
+/* res=native | ps1 (or 1); anything else is native once the file is read (D85) */
 static int parse_res(const char *v) {
   if (!strcmp(v, "native"))
     return 0;
@@ -411,6 +411,11 @@ static void read_config(void) {
       vita_log("config: %s=0 without config_version=3 is from before the switch was on by "
                "default: on (D68)", k_switch_keys[i]);
     }
+  /* res=2..4 (supersampled) were removed (D85): too slow on the Vita's GPU */
+  if (g_vita_opts.gpu_res < 0 || g_vita_opts.gpu_res > 1) {
+    vita_log("config: res=%d is no longer offered (D85): native", g_vita_opts.gpu_res);
+    g_vita_opts.gpu_res = 0;
+  }
 }
 
 /* Without a disc there is nothing to run: say why on screen (bootscreen.c)

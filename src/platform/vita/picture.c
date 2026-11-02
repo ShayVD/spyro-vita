@@ -71,7 +71,8 @@ void vita_picture_report(int vblank) {
 /* 3-point filtering stays, labelled: on hardware it costs about a third of
  * the frame rate at native resolution (D43, bench on 26f3138). */
 static const char *const k_filter_names[] = {"OFF", "BILINEAR", "3-POINT (SLOW)"};
-static const char *const k_res_names[] = {"NATIVE", "PS1", "2X", "3X", "4X"};
+/* 2X-4X (supersampled) were removed: too slow on the Vita's GPU (D85) */
+static const char *const k_res_names[] = {"NATIVE", "PS1"};
 static const char *const k_dd_names[] = {"OFF", "1.5X", "2X"};
 /* dynres= (D75): off, auto, or a fixed scale in percent */
 static const char *const k_dynres_names[] = {"OFF", "AUTO", "88%", "75%", "67%"};
@@ -90,7 +91,7 @@ static const MenuOption k_rows[] = {
      .value = &g_vita_opts.subpixel, .names = g_menu_off_on, .count = 2,
      .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
-     .names = k_res_names, .count = 5, .on_change = res_changed, .visible = gpu_shown},
+     .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "DYNAMIC RES", .key = "dynres", .value = &g_vita_opts.dynres,
      .names = k_dynres_names, .values = k_dynres_values, .count = 5, .fmt = "%d%%",
      .visible = gpu_shown},

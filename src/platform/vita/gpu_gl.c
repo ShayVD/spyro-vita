@@ -1719,7 +1719,7 @@ static void set_scale(void) {
    * or the whole width with widescreen (presentation frames, D30) */
   int dw = g_gl_env.disp.disp.w > 0 ? g_gl_env.disp.disp.w : 512;
   int dh = g_gl_env.disp.disp.h > 0 ? g_gl_env.disp.disp.h : 240;
-  if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1) or res=N: N x the PS1's */
+  if (g_vita_opts.gpu_res > 0) { /* res=ps1 (1): the PS1's own pixels */
     s_sx = s_sy = (float)g_vita_opts.gpu_res;
   } else { /* res=native */
     s_sx = (float)(g_gl_env.wide ? SCREEN_W : AREA43_W) / dw;
@@ -3357,8 +3357,8 @@ void gl_present(int slot, int wide, int hd_shot) {
 }
 
 /* bench= (D41) and the options menu (picture.c, D48): other picture
- * options from the next frame on. res as gpu_res (0 native, 1 the PS1's,
- * 2-4 N times it); a change redraws every target. An option set whose
+ * options from the next frame on. res as gpu_res (0 native, 1 the PS1's;
+ * D85 removed 2-4); a change redraws every target. An option set whose
  * programs weren't built at start-up is compiled now, once (the Vita's
  * shader compiler takes a moment). Returns 0, or -1 if they don't compile:
  * the options stay as they were. */
