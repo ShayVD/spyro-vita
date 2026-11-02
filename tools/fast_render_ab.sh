@@ -2,9 +2,10 @@
 # The hand-written renderers and inline GTE commands against the translation
 # they replace (decisions D72): each scenario runs with --fast-render 0, then
 # 1, from the same binary, and every trace, shot, WAV and save file of the
-# pair must be byte-identical. The host is deterministic (D38).
-# Usage: [BIN=path/to/spyro] [DISC=disc/files] tools/fast_render_ab.sh PREFIX [SCENARIO...]
-#   -> logs/PREFIX-SCENARIO-f0, logs/PREFIX-SCENARIO-f1, and a summary line per scenario.
+# pair must be byte-identical. The host is deterministic (D38). FAST="1 2"
+# compares the register-file hand C with its native-GTE build instead (D79).
+# Usage: [BIN=path/to/spyro] [DISC=disc/files] [FAST="A B"] tools/fast_render_ab.sh PREFIX [SCENARIO...]
+#   -> logs/PREFIX-SCENARIO-fA, logs/PREFIX-SCENARIO-fB, and a summary line per scenario.
 # Scenarios (default: gems demo wsi lod routeA routeB): gems (Artisans gem
 # script, 16:9), demo (attract demos, 4:3, with audio), wsi (attract demos,
 # 16:9 with 60 fps in-between frames at 960x544), lod (gems at 2x draw
@@ -16,6 +17,7 @@ cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- gems demo wsi lod routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
+set -f; FAST=${FAST:-0 1}; FA=${FAST% *}; FB=${FAST#* }; set +f
 run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D
@@ -27,8 +29,8 @@ run() { # NAME FAST args...
 }
 scenario() { # NAME args...
   n=$1; shift
-  for f in 0 1; do run $n $f "$@"; done
-  a=logs/$P-$n-f0; b=logs/$P-$n-f1; same=0; diff=0
+  for f in $FA $FB; do run $n $f "$@"; done
+  a=logs/$P-$n-f$FA; b=logs/$P-$n-f$FB; same=0; diff=0
   for x in $(cd $a && find . -type f ! -name spyro.log ! -name stdout.txt | sort); do
     if cmp -s "$a/$x" "$b/$x"; then same=$((same + 1)); else diff=$((diff + 1)); echo "  DIFF $n $x"; fi
   done
