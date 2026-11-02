@@ -389,7 +389,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 - **Verify:** Vita3K window captures pixel-identical on D74's routes, and the `atlas` lines' block counts unchanged. On hardware, K3 again: the meter's "texture decodes" row should read 0.
 - **Size:** ~200–400 lines in `gpu_gl.c`.
 - **Optional:** yes, a switch, until hardware has run it.
-- **Done (D79):** `atlas_cpu=1`, the default. In Vita3K the window captures of the gems script, the pause route and the attract demo show 0 differing pixels inside the picture against the pass (`atlas_cpu=0`), and the `atlas` lines' counts are identical. No NEON yet: it waits for the hardware's per-block time.
+- **Done (D79):** `atlas_cpu=1`, the default. In Vita3K the window captures of the gems script, the pause route and the attract demo show 0 differing pixels inside the picture against the pass (`atlas_cpu=0`), and the `atlas` lines' counts are identical. On hardware (D79): `atlas_cpu=2` found 0 differing texels in 1,754 entries; the meter's "texture decodes" is 0; the CPU takes 27–49 µs per block (at most 0.07 ms per vblank). No NEON: not worth it at that size.
 - **Hardware runs L1–L3** (`tools/vita/fps-runs/`, each a whole `config.txt`): K3's switches and route with the pass (`l1-atlas-gpu.txt`), with the CPU decode (`l2-atlas-cpu.txt`), and with the pass checked texel by texel against the CPU (`l3-atlas-check.txt`, optional; its timings mean nothing). For the owner:
   1. Use a VPK built from this PR's branch, or from main once it's merged.
   2. Keep a copy of your own `ux0:data/spyro/config.txt`, and copy one L file over it.
