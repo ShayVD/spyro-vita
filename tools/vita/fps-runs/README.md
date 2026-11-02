@@ -219,6 +219,8 @@ K1–K3 (`docs/native-plan.md` §3.4) showed the read-ahead (D64) serving no mus
 |---|---|---|
 | `m1-xa-ahead.txt` | 30 fps (`interp=0`), the shipped threads, `xa_ahead=1`, `dynres=0` | the K route: leave it alone from boot through the title, the flythrough and the Stone Hill attract demo (about 1.5 minutes), then start or load a game: 2 minutes in Artisans, then into Stone Hill for 2 minutes. More level changes (back to Artisans, another level) are welcome. Don't open the menu. Send it as `m1.log` |
 
+**Unattended** (D77's runner, no one at the Vita): `DEVICE_DEFAULTS=1 PAD=tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-m1 1500 @tools/vita/fps-runs/m1-xa-ahead.txt @tools/vita/hw-routes/m1-xa-k.cfg`. It plays the same route, with New Game from a pad script and the menu's LEVEL WARP to Stone Hill and then Dark Hollow, and quits at vblank 18000. It ran on 2026-11-02 (D78, `logs/d78-xa/hw-m1-*` in the main checkout).
+
 **What the log should show:**
 - `xa N: A music sectors from the read-ahead, B read on the game thread; read-ahead W windows, ...; C asks found no window` every 300 vblanks. After every level change (the `where:` lines), A should be back near 750 and B near 0 within one window; K1–K3 had A = 0 and W = 0 from the first load on. B is a handful (2–10) in the window where a new track starts. C should stay 0: a non-zero C for several windows in a row is the old stall.
 - `mixer N: ... 0 position mismatches` throughout.

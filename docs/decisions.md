@@ -1505,4 +1505,15 @@ Record each decision with its date, what was chosen, and why.
   - **Idle from boot, 15,000 vblanks** (title; Stone Hill, Doctor Shemp and Icy Flight attract demos): six level changes. With the fix (`run3-xa-fix-idle`), 33,500 music sectors came from the read-ahead and 26 were read on the game thread: 2–10 at each new track's first sectors. There were no failed asks. The WAV is byte-identical to `xa_ahead=0` (`run4-xa-off-idle`). The base build's WAV (`run1-xa-base-idle`, 12,000 vblanks, stuck from 8439 on) matches its first 12,000 vblanks.
   - **The K route, 18,000 vblanks:** a pad script presses START after the Stone Hill demo and ✕ through New Game (START at vblank 6002, ✕ at 6202, 6502, 6702 and 6902, each held 6 vblanks), then the intro and Artisans. The menu's LEVEL WARP (`menu_test=11400,14500`) then goes to Stone Hill and then Dark Hollow. Fixed (`run6-xa-fix-k`): 33,513 from the read-ahead, 21 on the game thread, read-ahead hits in the first window after every change, no failed asks. Base (`run8-xa-base-k`): stuck from Artisans (10648) through Stone Hill. It recovered only at Dark Hollow, whose track lies past the windows. The WAVs of the fix, of `xa_ahead=0` (`run7-xa-off-k`) and of the base build are byte-identical (`fd0e671b…`).
   - **The mixer reported 0 position mismatches** in every run.
-- **Hardware:** run M1 (`tools/vita/fps-runs/m1-xa-ahead.txt`, `fps-runs/README.md`) on the K route. The `xa` lines should serve from the read-ahead after every level change, with no failed asks, and the `time` lines' `spu` part in play should fall back to K's attract-demo level (~0.05 ms per vblank).
+- **Checked on hardware** (the owner's Vita, unattended over vitacompanion with `tools/vita/hw_run.sh`, D77). The build is this branch merged with main `39a1f18`, commit `e74f169`. The route is the K route above, with the device's own defaults (16:9) and `m1-xa-ahead.txt`: `DEVICE_DEFAULTS=1 PAD=tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh OUT 1500 @tools/vita/fps-runs/m1-xa-ahead.txt @tools/vita/hw-routes/m1-xa-k.cfg`. The logs are in the main checkout's `logs/d78-xa/hw-m1-*`.
+  - **The audio:** with `wav=1`, the fix (`hw-m1-fix-k`) and `xa_ahead=0` (`hw-m1-off-k`) wrote byte-identical WAVs (`a4b03472…`, 18,000 vblanks). In the fixed run, the read-ahead served music in the first window after each of the five level changes. The game thread read 5–15 sectors as each new track started. There were 0 failed asks and 0 mixer position mismatches.
+  - **The time, without `wav=1`:** the fix (`hw-m1-fix-time`) against main before it (`hw-m1-base-time`, `acde9b2`), with identical input. The `spu` part is ms per vblank, the means of the 300-vblank windows:
+
+    | Part of the route | Fixed: `spu` | Fixed: sectors (read-ahead / game thread) | Base: `spu` | Base: sectors (read-ahead / game thread) |
+    |---|---|---|---|---|
+    | Title and Stone Hill demo | 0.08 | 12,175 / 22 | 0.08 | 12,175 / 22 |
+    | Artisans, playing | 0.07 | 1,877 / 5 | **0.58** | 0 / 1,882 |
+    | Stone Hill, playing | 0.07 | 7,425 / 5 | **0.66** | 0 / 7,430 |
+    | Dark Hollow, playing | 0.07 | 8,925 / 5 | 0.09 | 8,647 / 283 |
+
+    The base build got stuck from Artisans until the Dark Hollow warp, as K1 did on hardware. The fix took 0.5–0.6 ms per vblank off the game thread there. The `game` part matched to within 0.02 ms.
