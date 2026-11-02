@@ -246,6 +246,8 @@ Three config files in `tools/vita/fps-runs/`. Each one is a whole `ux0:data/spyr
 
 To read them: `python3 tools/vita/native_share.py k1.log --fps 30 --all`.
 
+**Checked in Vita3K** (the VPK from main `f534fb1`, SHA-1 `a97bb2ae…`; virtual vblanks, 5,400 of them): each K file's switches start as asked (`render: GL calls on the game thread`, `parse: OT walk on the game thread`, `fast_render=0: translated renderers`), each run reaches the Stone Hill attract demo, and the six shots of K1, K2 and K3 are identical (`logs/stage0/v3k-k1`–`k3`, gitignored). Vita3K's timings aren't the Vita's, so the numbers come from hardware only.
+
 **One thing a config can't settle:** the render thread's own CPU with the threads on. The watchdog already samples every thread's `runClocks` each second (`watchdog.c`, D73), but logs them only in a hang line. A one-line periodic log of those samples would settle it. That's an engine change, so it isn't made here; it's the first item of stage 0's follow-up.
 
 ---
