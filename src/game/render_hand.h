@@ -10,6 +10,7 @@
 #define RENDER_HAND_H
 
 #include "mips2c_rt.h"
+#include "native_draw.h" /* D82: native_draw's check in HAND_PICK */
 
 #include <string.h>
 
@@ -272,6 +273,7 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
 #define HAND_PICK(name, hand, a0, a1, a2, a3)                                  \
   (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
    : g_hand_check        ? hand_check(#name, hand, name##_ngte, a0, a1, a2, a3) \
+   : g_nd_check          ? nd_check(#name, name##_ngte, a0, a1, a2, a3)         \
                          : name##_ngte(a0, a1, a2, a3))
 
 /* fast_render switch for a hand-written entry point (mips2c.cmake

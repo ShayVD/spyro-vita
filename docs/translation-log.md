@@ -233,7 +233,7 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 
 ## Native GTE maths in the hand renderers (2026-11-02, decisions D80)
 
-`fast_render=2` (`config.txt`, host `--fast-render 2`) runs each hand renderer's native-GTE build: the same source compiled a second time with `NGTE 1` (`src/game/*_hand_ngte.c`), whose `#if NGTE` blocks replace register-file GTE commands with the pure functions of `src/game/gte_native.h` on C values. `fast_render=1` compiles to the code it was. The register file is left exact, raw storage included, before any register-file code and at return (`render_hand.h`: register-file tails, and `NgteSync` replays). Default still 1.
+`fast_render=2` (`config.txt`, host `--fast-render 2`) runs each hand renderer's native-GTE build: the same source compiled a second time with `NGTE 1` (`src/game/*_hand_ngte.c`), whose `#if NGTE` blocks replace register-file GTE commands with the pure functions of `src/game/gte_native.h` on C values. `fast_render=1` compiles to the code it was. The register file is left exact, raw storage included, before any register-file code and at return (`render_hand.h`: register-file tails, and `NgteSync` replays). The default since D81 (1 before).
 
 **Checks on the final binary (`build/spyro-ngte`):**
 - `--fast-render-check` (`src/game/hand_check.c`): every renderer call runs the fast_render=1 code and then the native build from the same state, and compares the arena, the scratchpad buffer and every GTE register's raw storage. 0 differences in the gems script, the demos, wsi, lod, routes A and B and the 100,000-vblank whole-game tour (`logs/ngte3-*`, `ngte6-*`, `ngte7-*`, `ngte8-checks.txt`, `ngte11-*`).
@@ -251,6 +251,23 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 | `func_80022A2C` (lit mobys and HUD models) | the vertex loop native but for its last four vertices; the Gouraud faces' NCLIP native, flushed before a flat or shiny face (their lighting stays on the register file) and after the faces | as above | none |
 | `func_80023AC4` (Spyro, `pete_render_hand.c`) | `PartVertices`: each part's RTPS and INTPL native, V0 carried as locals from what the GTE held, the last four RTPS and three INTPL replayed before the next part's matrix; `DrawFaces`' NCLIP native. Set-up, floor heights and clipping, colour filter stay on the register file | as above | none |
 | `func_80020F34` (specular mobys) | unchanged: the register-file hand C in both builds (`c.sync = 0`) | as above | none |
+
+## Native draw lists from the hand renderers (2026-11-02, decisions D82)
+
+`native_draw=1` (`config.txt`, host `--native-draw`; needs `fast_render=2`) is in the native-GTE build of each hand renderer (`#if NGTE`): where the code links a primitive it has built, `src/game/native_draw.h` turns it into the vertices PsyCross's parse would make of it and links a marker in its place, or joins it to the marker at the bucket's tail. The primitives are still built with the same stores at the same addresses. With `native_draw=0`, or `fast_render` 0 or 1, nothing changes. Default 0.
+
+**Checks** (`build/nd-bin/spyro-d`, logs in this branch's worktree, gitignored):
+- `--native-draw-check` (`src/game/native_draw_check.c`): each call runs with `native_draw` 0 and 1 from the same state. Both packet streams go through PsyCross's walk, and the vertices, splits and draw state must be the same bytes; the arena (but the primitives written and the OTs), the scratchpad buffer and the GTE must be the same. Results per scenario in D82.
+- Every file of each check run (shots, traces, WAV, cards) against the run without `native_draw`: D82.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_800258F0` (environment, `env_hand.c`) | every `OtAppend` through `ND_OT(kind, …)`: the draw mode command (`EmitBlendMode`), low-poly G3/G4, high-poly G3/G4/GT3/GT4, the subdivision passes' GT3/GT4 and edge triangles; a 4x4 piece queued on the last list stays a primitive (`SplitLast` reads it back), and `SplitLast`'s own pieces not queued again become markers of their own in the chain it builds (`nd_gt3_chained`) | per-call check and file A/B as above | the primitive buffer holds markers where linked primitives' first 12 bytes were |
+| `func_8004EBA8` (sky, `sky_hand.c`) | the triangles (F3, G3) go on one chain of records (`nd_chain`) in the last OT slot, in the same order; the chain's tags aren't written (the asm's first tag store, into the word before, is) | as above | the primitives' tags |
+| `func_8001F798`, `func_80020F34` (mobys, specular mobys, `moby_hand.c`) | `Link` takes the primitive's kind (G3, GT3, G4, GT4, the sprites' FT4) and joins or marks it in the moby's depth bucket; `LinkBuckets` moves the chains as before | as above | as env's |
+| `func_80022A2C` (lit mobys and HUD models) | `LitLink` the same, with G3, G4, F3 and F4 | as above | as env's |
+| `func_80023AC4` (Spyro, `pete_render_hand.c`) | `LinkPrim` the same, with GT3 and GT4; `nd_begin` after the two early returns | as above | as env's |
+| PsyCross (patch 0010) | `g_psyxPacketHook` in the OT walk's loop, before a packet's GP0 commands are parsed; `PsyX_AddSplit`, `PsyX_VertexBuffer`, `PsyX_ParseList` and the split accessors for the check | as above | none: without the hook the walk is as before |
 
 ## Stage 3: readable C (2026-11-02, decisions D83)
 

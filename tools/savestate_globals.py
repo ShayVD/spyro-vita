@@ -38,10 +38,12 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle
 # replay and trace (tests), save states themselves, the draw distance
 # (lod.c, D49: picture only; per draw, or reset on load by port_lod_reset;
-# g_lod is the player's setting, kept), and fast_render=2's per-call check
-# (hand_check.c, host tests, D80).
+# g_lod is the player's setting, kept), fast_render=2's per-call check
+# (hand_check.c, host tests, D80), and the native draw lists (native_draw.c,
+# D82: the switch, and records that live from a renderer call to its list's
+# walk, which a state taken at the loop top never holds; its check, tests).
 NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
-            "/hand_check.c.")
+            "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

@@ -20,6 +20,11 @@
  * file at the end of the pass, before the next CTC2s. */
 #include "render_hand.h"
 
+/* fast_render=2 with native_draw=1 (decisions D82, native_draw.h): the
+ * triangles go to the walk as one chain of native records in the same
+ * bucket, in the same order; the primitives are still built where they were
+ * (the buffer's pointer and its bound check don't change), but not linked. */
+
 extern char g_Cyclorama[];  /* Cyclorama: count, sectors, groups count, groups */
 extern char D_8006FCF4[];   /* the sectors in front of the camera, NULL-ended */
 extern char D_800757B0[];   /* the primitive buffer's next free byte */
@@ -148,10 +153,16 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
 #if NGTE
   NgteSync sync;
   NgteProj P;
+  NdChain ch = {0, 0};
+  int nd;
 #endif
   (void)a3;
 
   hand_spill_regs();
+#if NGTE
+  nd_begin();
+  nd = g_nd_on;
+#endif
   SkyVisibleSectors(group, HPTR(const u32, a1));
 
   CTC2(proj[0], 0);
@@ -233,8 +244,16 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
       f2 = WORD_AT(scratch, tri[0] & 0x3FC);
       if ((s32)(f0 & f1 & f2 & 0x1F) > 0)
         continue; /* all three off the same side */
-      AT32(prev_tag) = tag ^ prim;
-      prev_tag = prim;
+#if NGTE
+      if (nd) {
+        if (!ch.head && !ch.tail)
+          AT32(prev_tag) = prim; /* the asm's first tag store, into the word before */
+      } else
+#endif
+      {
+        AT32(prev_tag) = tag ^ prim;
+        prev_tag = prim;
+      }
       xy0 = (u32)((s32)f0 >> 5);
       xy1 = (u32)((s32)f1 >> 5);
       xy2 = (u32)((s32)f2 >> 5);
@@ -252,12 +271,20 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
         AT32(prim + 0x8) = xy0;
         AT32(prim + 0xC) = xy1;
         AT32(prim + 0x10) = xy2;
+#if NGTE
+        if (nd)
+          nd_chain(&ch, ND_K_F3, prim, 4);
+#endif
         prim += 0x14;
       } else {
         tag = TAG_G3;
         AT32(prim + 0x4) = WORD_AT(colours, c0);
         AT32(prim + 0xC) = WORD_AT(colours, c1);
         AT32(prim + 0x14) = WORD_AT(colours, c2);
+#if NGTE
+        if (nd)
+          nd_chain(&ch, ND_K_G3, prim, 6);
+#endif
         prim += 0x1C;
       }
     }
@@ -268,6 +295,25 @@ done:
   ngte_flush(&sync);
 #endif
   *(u32 *)D_800757B0 = prim;
+#if NGTE
+  nd_end();
+  if (nd) {
+    /* the chain into the OT's last slot, after what's there */
+    if (ch.head) {
+      u32 ot = MIPS_KUSEG(*(u32 *)g_WorldOT);
+      u32 tail = AT32(ot + 0x3FF8);
+      AT32(ot + 0x3FF8) = ch.tail;
+      if (tail) {
+        u32 t = MIPS_KUSEG(tail);
+        AT16(t) = (u16)ch.head;
+        AT8(t + 2) = (u8)(ch.head >> 16);
+      } else {
+        AT32(ot + 0x3FFC) = ch.head;
+      }
+    }
+    return 0;
+  }
+#endif
   if (prim != first) {
     /* end the chain and put it in the OT's last slot, after what's there */
     u32 ot = MIPS_KUSEG(*(u32 *)g_WorldOT);

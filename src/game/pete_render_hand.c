@@ -615,7 +615,19 @@ static inline u32 Bucket(const Faces *f, u32 sum, u32 w1) {
 /* A new primitive at the end of its bucket's chain: the first in a bucket
  * also widens the range of buckets in use. TAIL is the bucket's last word,
  * read before the primitive was written (as the asm does). */
-static inline void LinkPrim(Faces *f, u32 bucket, u32 tail, u32 size) {
+static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket, u32 tail,
+                                                           u32 size, int kind) {
+#if NGTE
+  /* native_draw=1 (decisions D82, native_draw.h): the primitive as the
+   * vertices PsyCross would make of it, into the marker at the bucket's
+   * tail or as a marker linked in its place */
+  if (g_nd_on && nd_take(kind, tail, f->prim)) {
+    f->prim += size;
+    return;
+  }
+#else
+  (void)kind;
+#endif
   AT32(bucket) = f->prim;
   if (tail) {
     u32 t = MIPS_KUSEG(tail);
@@ -663,7 +675,7 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
   AT32(prim) = TAG_GT3;
   AT32(prim + 0x18) = AT32(face - 0x8);
   AT32(prim + 0x24) = uv2;
-  LinkPrim(f, bucket, tail, 0x28);
+  LinkPrim(f, bucket, tail, 0x28, ND_K_GT3);
 }
 
 /* asm 80024C70-80025044: the faces, when Spyro is clear of the floor.
@@ -773,7 +785,7 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       AT32(prim + 0x18) = AT32(face - 0x8);
       AT32(prim + 0x24) = uv2;
       AT32(prim + 0x30) = uv2 >> 16;
-      LinkPrim(f, bucket, tail, 0x34);
+      LinkPrim(f, bucket, tail, 0x34, ND_K_GT4);
     }
   }
 #if NGTE
@@ -876,7 +888,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(prim + 0x18) = uv1;
     AT32(prim + 0x24) = uv2;
     AT32(prim) = TAG_GT3;
-    LinkPrim(f, bucket, tail, 0x28);
+    LinkPrim(f, bucket, tail, 0x28, ND_K_GT3);
     return;
   }
 
@@ -916,7 +928,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     /* three points: POLY_GT3 */
     AT8(prim + 7) = 0x34;
     AT32(prim) = TAG_GT3;
-    LinkPrim(f, bucket, tail, 0x28);
+    LinkPrim(f, bucket, tail, 0x28, ND_K_GT3);
   } else {
     /* four: POLY_GT4, the last two points swapped into strip order */
     u32 a = AT32(prim + 0x1C), b = AT32(prim + 0x20), c = AT32(prim + 0x24);
@@ -929,7 +941,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(prim + 0x30) = c;
     AT8(prim + 7) = 0x3C;
     AT32(prim) = TAG_GT4;
-    LinkPrim(f, bucket, tail, 0x34);
+    LinkPrim(f, bucket, tail, 0x34, ND_K_GT4);
   }
 }
 
@@ -1129,6 +1141,9 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   if ((s32)(far - x) <= 0 || (s32)(far + x) <= 0 || (s32)(far - y) <= 0 ||
       (s32)(far + y) <= 0)
     return 0;
+#if NGTE
+  nd_begin(); /* past the two returns above */
+#endif
 
   /* asm 80023F8C: the depth parameters, kept in the GTE's back colour:
    * RBK the larger depth shift, GBK Spyro's OT slot, BBK his depth less
@@ -1251,6 +1266,9 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       DrawFacesClipped(&f, start, end);
   }
   LinkBuckets(&f);
+#if NGTE
+  nd_end();
+#endif
   return 0; /* v0 is dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 
