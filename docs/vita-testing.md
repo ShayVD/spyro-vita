@@ -468,7 +468,11 @@ Vita itself):
    ```
 
    Each line goes under the existing section header, not a second copy of it. The kernel module
-   goes only under `*KERNEL`, the `.suprx` only under `*main`. **Which config:** taiHEN reads
+   goes only under `*KERNEL`, the `.suprx` only under `*main`. Mind the extensions: the kernel
+   module is `.skprx`. The user module links against the kernel module's exports (its
+   `CMakeLists.txt`), so if the `*KERNEL` line names a file that isn't there (say
+   `vitacompanion_kernel.suprx`), neither module loads. The Vita then answers ping but refuses
+   1337 and 1338, which is what `hw_check.sh` reports. **Which config:** taiHEN reads
    `ux0:tai/config.txt` when it exists, and `ur0:tai/config.txt` only when it doesn't. If your
    Vita has both, edit the `ux0:` one. Reboot fully (hold power → Restart) after changing either
    module. Don't start VitaShell's own FTP server (SELECT) while you use it: it wants port 1337
