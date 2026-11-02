@@ -134,6 +134,7 @@ The same VPK for all five (built from the D75 branch). `dynres=1` (auto) is the 
 | `j3-dynres-75.txt` | as J1 with `dynres=75`: always 720×408 | the same route |
 | `j4-menu-60fps.txt` | the menu's defaults with 60 FPS on: `dynres=1`, and the game thread's safety net (`interp_budget` on) | the same route, then open the menu once and look at the DYNAMIC RES row |
 | `j5-menu-30fps.txt` | the menu's defaults (30 fps), `dynres=1` | the same route |
+| `j6-one-run.txt` | if only one run: J4 with `gpu_lean=1 parse_thread=1` as in `hw-main-2a0691c` (the meter measures at whatever scale auto picks; `dynres_sim.py` scales it to 960×544) | the same route, then open the menu once |
 
 **What each log line should show:**
 - At start: `gpu: GPU time from vitaGL's scene fences, polled every 200 us on core 1 (D75)` in J1–J5. Then, at the first picture, `dynres: off, scale 100%` (J1), `auto, scale 100%` (J2, J4, J5) or `fixed, scale 75%` (J3). **If `gpu: no scene-done notifications from the GPU` appears, the meter doesn't work on hardware: J2 and J4 stay at 100% and the rest of these runs measure nothing.**
