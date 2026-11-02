@@ -1176,6 +1176,13 @@ static void arow(int fmt, const ABlock *b, const uint32_t *lut, int u0, int v, u
   }
 }
 
+/* atlas_cpu=2: an entry's first differing texel: atlas position, the
+ * GPU's texel, the CPU's */
+static struct {
+  int x, y;
+  uint32_t gpu, cpu;
+} s_afirst;
+
 /* One row of an entry into the atlas at dst, or (check) compared with it:
  * the texels that differ */
 static unsigned aput(uint32_t *dst, const uint32_t *src, int n, int check, SceUID wb) {
@@ -1187,8 +1194,18 @@ static unsigned aput(uint32_t *dst, const uint32_t *src, int n, int check, SceUI
       sceKernelSyncVMDomain(wb, dst, (SceSize)n * 4);
     return 0;
   }
-  for (i = 0; i < n; i++)
-    bad += dst[i] != src[i];
+  for (i = 0; i < n; i++) {
+    if (dst[i] == src[i])
+      continue;
+    if (s_afirst.x < 0) {
+      size_t at = (size_t)(dst + i - s_adata[s_acur]);
+      s_afirst.x = (int)(at % (size_t)s_astride);
+      s_afirst.y = (int)(at / (size_t)s_astride);
+      s_afirst.gpu = dst[i];
+      s_afirst.cpu = src[i];
+    }
+    bad++;
+  }
   return bad;
 }
 
@@ -1425,16 +1442,19 @@ static void atlas_check(int nq[3]) {
   for (fmt = 0; fmt < 3; fmt++)
     for (i = 0; i < nq[fmt]; i++) {
       const ABlock *b = &s_ab[fmt][i];
-      unsigned bad = ablock(fmt, b, s_acur, 1);
+      unsigned bad;
+      s_afirst.x = -1;
+      bad = ablock(fmt, b, s_acur, 1);
       s_ast.checked++;
       if (!bad)
         continue;
       s_ast.bad_blocks++;
       if (s_acheck_logged++ < 8)
         vita_log("atlas: atlas_cpu=2: %u texels differ in format %d page (%u,%u) clut %04x "
-                 "blocks (%u,%u) %ux%u%s at atlas (%u,%u)",
+                 "blocks (%u,%u) %ux%u%s at atlas (%u,%u); first at (%d,%d): GPU %08x, CPU %08x",
                  bad, fmt, b->px, b->py, b->clut, b->bx0, b->by0, b->tw, b->th,
-                 b->wrap ? " wrapped" : "", b->ax, b->ay);
+                 b->wrap ? " wrapped" : "", b->ax, b->ay, s_afirst.x, s_afirst.y,
+                 (unsigned)s_afirst.gpu, (unsigned)s_afirst.cpu);
       s_ast.bad_texels += bad;
     }
 }
