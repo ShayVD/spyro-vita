@@ -1227,3 +1227,60 @@ Record each decision with its date, what was chosen, and why.
   - **Frame time:** not measured. The game thread's added work is one store per `prof_enter`/`prof_leave` (a few hundred per tick), and once per vblank `port_where`'s four loads and a compare.
   - **Host** (the change isn't in the host binary: `port_where` isn't linked there, the rest is `src/platform/vita/`): `ctest` 6/6 pass (`m2c_diff_math` skipped, as before). `tools/host_checks.sh h71` against the D69 session's `h69-*` (main's shared code): demo 26/26, whole-game tour 141/141, routes A and B 56/56 each, all identical. Oracle replays: `cap3` 329/329, `cap5-fairy` 261/261 PASS, the same as before.
   - **After merging main** (D70–D72, `2b7cdce`; this entry became D73): the VPK builds clean. Vita3K: the forced spin gives the same hang line (`logs/run5-vita3k-merged-hang-spin`). The normal run's script, menu and save states give no hang line (`logs/run6-vita3k-merged-normal`). Host `ctest` 7/7 pass (`m2c_diff_math` skipped), and `port_where` still isn't in the host binary. The breadcrumb in `prof_enter`/`prof_leave` sits inside D71's guard, so the parse thread never writes it. The parse thread (off by default) has no breadcrumb or kernel-state entry of its own. A game thread stuck joining it shows as waiting on a semaphore, by name.
+
+### D74. A cheaper GPU picture: joined draws, one program for plain and untextured triangles, and a bench to tell what pays
+- **Date:** 2026-11-02.
+- **Why:** 60 fps at full 960×544 with every pixel unchanged.
+  - **The render thread:** main's Toasty log (`logs/hw-main-2a0691c`, gitignored) had it at 16–23 ms a picture in the heavy views against 8.2 ms in the light ones, with a 16.7 ms target.
+  - **The GPU:** C1's `gpu_time=2` (`logs/hw-pr40-c1`) timed the scene at 19–31 ms in the heavier level, against 5.5–8.4 in Artisans.
+  - **The owner's preference:** no resolution drop. D75's lower resolution is the fallback.
+- **Measured first** (Vita3K: counts, not time; Vita3K doesn't model the SGX's speed):
+  - **Not the clocks:** the log's `clocks:` line says GPU 222 MHz, the maximum.
+  - **Not the parameter buffer:** a picture has only 1–3k triangles (the gpu lines' ~400k is per 5-s window), far below what would force partial renders.
+  - **Not depth memory:** vitaGL gives every FBO a depth buffer, but its default build has no `STORE_DEPTH_STENCIL`, so it is never loaded or stored (its `gxm.c`, read for reference).
+  - **Not the shader length:** the compiled atlas program, which draws 95–98% of textured triangles (`gpu_opaque`), is 14 instructions before its texture read and 4 after (Vita3K's shader log: the GXP from the Vita's own compiler, with its USSE disassembly). The untextured program is 3.
+  - **Not overdraw:** `gpu_fill=1` models what the SGX shades: a tile defers opaque fragments, a later one at the same pixel replaces the earlier unshaded, and a discard or blend triangle makes the tile shade what it holds.
+    - Toasty: 0.9–1.2 M pixels covered a picture, about 540k shaded. Artisans: about 650k shaded.
+    - In both, about what "all opaque first, by depth" would shade (under 2% more), so reordering draws would gain nothing.
+    - Toasty's GPU time can't come from shading more pixels than Artisans.
+  - **What separates Toasty is the number of draws and program changes:**
+    - Toasty: 150–230 runs of one program a picture, 25–43 of them discard or blend runs breaking the opaque stream. Artisans: about 80 runs and 13–15 breaks.
+    - In C1, GPU time follows draws per picture far more than triangles: 3 draws a picture, 2.2 ms; about 140, 24–31 ms.
+    - The game's distant ground is untextured, and in OT order textured and untextured triangles alternate. PsyCross starts a new draw at every such change, and at every texture-format change.
+    - Of Toasty's 200 game draws a picture (`logs/run12-vita3k-joins`), 39 could join the previous one if the format didn't split them, and 161 if untextured didn't either.
+- **Changed** (`src/platform/vita/gpu_gl.c`):
+  - **`gpu_join=1`, the new default.**
+    - Consecutive game draws with the same target, scissor, drawing offset and blend, whose vertices follow on, go to the GPU as one draw. It is split only where the program changes (`prog_of`, per triangle).
+    - The atlas programs read no texture format, so one serves all three.
+    - Subtract blending is never joined, because its two passes would interleave differently.
+    - Every other way to the GPU sends the held draws first: a new vertex buffer, a clear, copy, upload, readback, capture, present, a new target, a timing sample, and the render thread's call commands.
+    - The same triangles in the same order with the same state, so the same pixels.
+    - Toasty's runs a picture: 232 → 192 in the heaviest window, 81 → 49 and 66 → 40 elsewhere. GL state set-ups fall from about 200 a picture to a few dozen.
+  - **`gpu_uber=1`, default off until hardware.**
+    - `k_fs_atlas_plain_body`, plus an untextured case: `expand()` marks untextured vertices (flags.x = 2), and the program *selects* `v_col` for them, which `k_fs_untex` computes as `v_col * 1.0`. Bit for bit the same.
+    - A draw where textured and untextured triangles alternate is then one program. Toasty's runs a picture: 232 → 74, 81 → 39, 66 → 22, which leaves about the discard and blend breaks.
+    - The cost: untextured pixels (250–340k covered a picture in Toasty) now run the atlas program's 18 instructions and a texture read, instead of 3.
+    - Whether that pays is the hardware's to say (run I1), hence off.
+  - **`gpu_fill=1`** (the model above) and **`gpu_bench=1`** (run I1: five variants by stats window, with the GPU's scene timed every 16th picture as `gpu_time=2` does) are measurements, not options.
+- **Checked** (Vita3K is not a Vita: it shows pixels and counts, not speed):
+  - **Pixels, the same VPK, `realtime=0`, widescreen, 60 fps forced, `gpu_join=0` (main's draws) against `gpu_join=1` and against `gpu_join=1 gpu_uber=1`:**
+    - **Toasty** (new game, WARP TO from the menu, play; `logs/v74-toasty-*`): 8 window captures of the GPU's own picture, 8 shots and the memory card identical.
+    - **The gems script** (`logs/v74-gems-*`): 44 shots, the WAV and the card identical.
+    - **The pause route** (`logs/v74-pause-*`): 70 shots and the card identical.
+    - **Six window captures on the gems script** (`logs/v74-cap-*`): identical.
+  - **Host:** this change is all in `src/platform/vita/`, which the host doesn't build.
+    - `ctest` 7/7 pass (`gte` and `m2c_diff_math` skipped, as before).
+    - `tools/host_checks.sh h74g` against the D73 session's `h71-*`, all identical: demo 26/26, the whole-game tour 141/141 with its fairy card, routes A and B 56/56 each.
+  - **The bench in Vita3K** (`logs/v74-bench`): every variant ran and logged its line. Vita3K's times are its own (its GPU is the Mac's, through Vulkan), not a Vita's. Even there, main's draws took 1.9–7.2 ms a scene against 0.5–1.2 ms joined: per-draw cost is real on that host too. The other variants were within its noise.
+- **Not checked: hardware, so none of the speed is measured yet.**
+  - **The estimate:**
+    - `gpu_join` takes GL work off the render thread for certain: fewer state set-ups and draws a picture.
+    - On the GPU it removes 15–40% of program changes.
+    - `gpu_uber` removes about two thirds of them, at the cost of the untextured pixels' extra work.
+    - If the GPU's time follows its draws as C1 suggests, Toasty's heavy views would come down toward Artisans' 6–8 ms. That is the hope, not a measurement.
+  - **Run I1** (`gpu_bench=1`, standing still in Toasty's heaviest view) times all five variants in one place:
+    - main's draws, joined, joined with one program;
+    - half the pixels, which says whether the GPU is fill-bound;
+    - one program for every opaque triangle, the floor fewer program changes could reach.
+  - Runs I2 and I3 compare the route with main's log, without and with `gpu_uber`.
+- **For D75 (dynamic resolution):** this changes nothing in the targets' viewport or the present. Fewer draws and a lower resolution add up: I1's "half the pixels" line shows how much a resolution drop would buy at the same place.
