@@ -9,9 +9,13 @@
  * With the native mix (mixer=3 or 4, D84) the queue is our own ring instead,
  * and a thread on core 1 feeds sceAudioOut's BGM port from it, GRAIN frames
  * at a time (sceAudioOutOutput returns when the port wants the next ones).
- * The same rules: dry when the mixer finds it empty, cut back to nothing
- * when it holds more than ~150 ms. */
+ * The ring (psx_audio_ring.h, D88) holds a level against the two clocks'
+ * difference (the game's vblanks follow the display's 59.94 Hz, the port
+ * plays 44,100 frames a second), so it runs dry only when the game stops:
+ * "dry" is then the times it ran out, "cut" the times it dropped back to
+ * its level. */
 #include "vita.h"
+#include "psx_audio_ring.h"
 #include "psx_spu.h"
 
 #include <SDL2/SDL.h>
@@ -24,14 +28,10 @@
 #define RATE 44100
 #define MAX_QUEUED (RATE * 4 * 15 / 100) /* bytes: ~150 ms */
 
-/* mixer=3: the ring (frames, free-running counts) and sceAudioOut */
+/* mixer=3: the ring and sceAudioOut */
 #define GRAIN 512                 /* frames per sceAudioOutOutput: 11.6 ms */
-#define RING_FRAMES 16384         /* a power of two, > MAX_QUEUED / 4 + a vblank */
 #define OUT_PRIORITY 0x68         /* ahead of the mixer (0x70): it only copies and waits */
-#define NO_CUT 0xFFFFFFFFu
-static short s_ring[RING_FRAMES][2];
-static volatile unsigned s_wr, s_rd; /* the mixer thread's, the output thread's */
-static volatile unsigned s_cut = NO_CUT; /* the mixer's: drop what's before this */
+static PsxAudioRing s_ring;       /* pushed by the mixer thread, pulled by the output thread */
 static int s_port = -1;
 static SceUID s_out_thread;
 unsigned g_vita_audio_short; /* mixer=3: grains the output thread padded with silence */
@@ -76,27 +76,46 @@ void vita_audio_close(void) {
 }
 
 static int out_main(SceSize args, void *argp) {
-  static short buf[GRAIN][2];
+  static short buf[2][GRAIN][2]; /* the port plays one while we fill the other */
+  int k = 0;
   (void)args;
   (void)argp;
-  for (;;) {
-    unsigned cut = __atomic_exchange_n(&s_cut, NO_CUT, __ATOMIC_ACQ_REL);
-    unsigned rd = s_rd, wr = __atomic_load_n(&s_wr, __ATOMIC_ACQUIRE), n, i;
-    if (cut != NO_CUT && wr - cut <= wr - rd)
-      rd = cut;
-    n = wr - rd < GRAIN ? wr - rd : GRAIN;
-    for (i = 0; i < n; i++, rd++) {
-      buf[i][0] = s_ring[rd % RING_FRAMES][0];
-      buf[i][1] = s_ring[rd % RING_FRAMES][1];
-    }
-    if (n < GRAIN) {
-      memset(buf[n], 0, (GRAIN - n) * sizeof buf[0]);
-      g_vita_audio_short++;
-    }
-    __atomic_store_n(&s_rd, rd, __ATOMIC_RELEASE);
-    sceAudioOutOutput(s_port, buf);
+  for (;; k ^= 1) {
+    psx_audio_ring_pull(&s_ring, buf[k], GRAIN);
+    sceAudioOutOutput(s_port, buf[k]);
   }
   return 0;
+}
+
+/* mixer=3: the ring's counts since the last call into the mixer line's
+ * (dry: ran out; cut: dropped back to its level; short: grains with
+ * silence), and its own line. The output thread's counts, read here
+ * without a lock: only approximate within a window. */
+static unsigned s_rep_underruns, s_rep_trims, s_rep_trimmed, s_rep_silent, s_rep_grains;
+static unsigned long long s_rep_level;
+
+void vita_audio_report(int vblank) {
+  const PsxAudioRing *r = &s_ring;
+  unsigned underruns = r->underruns, trims = r->trims, trimmed = r->trimmed, silent = r->silent,
+           grains = r->grains;
+  unsigned long long level = r->level_sum;
+  unsigned n = grains - s_rep_grains;
+  if (s_port < 0)
+    return;
+  g_vita_audio_dry = underruns - s_rep_underruns;
+  g_vita_audio_cleared = trims - s_rep_trims;
+  g_vita_audio_short = silent - s_rep_silent;
+  vita_log("audio %d: ring level %u frames on average (low point %d), playing %+d ppm, clocks "
+           "%+d ppm; %u frames dropped back to the level; %u of %u grains with silence (D88)",
+           vblank, n ? (unsigned)((level - s_rep_level) / n) : 0, (int)r->low,
+           (int)(r->rate * 1e6f), psx_audio_ring_ppm(r), trimmed - s_rep_trimmed,
+           g_vita_audio_short, n);
+  s_rep_underruns = underruns;
+  s_rep_trims = trims;
+  s_rep_trimmed = trimmed;
+  s_rep_silent = silent;
+  s_rep_grains = grains;
+  s_rep_level = level;
 }
 
 static void out_init(void) {
@@ -107,6 +126,7 @@ static void out_init(void) {
     vita_log("audio: sceAudioOutOpenPort failed: %08x", (unsigned)s_port);
     return;
   }
+  psx_audio_ring_init(&s_ring);
   sceAudioOutSetVolume(s_port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
   th = sceKernelCreateThread("spyro_audio_out", out_main, OUT_PRIORITY, 0x4000, 0,
                              SCE_KERNEL_CPU_MASK_USER_1, NULL);
@@ -118,8 +138,9 @@ static void out_init(void) {
   }
   s_out_thread = th;
   vita_log("audio: sceAudioOut BGM port, %d Hz, 2 channels, %d frames a grain; output thread on "
-           "core 1, priority 0x%x (mixer=%d, D84)",
-           RATE, GRAIN, OUT_PRIORITY, g_vita_opts.mixer);
+           "core 1, priority 0x%x (mixer=%d, D84); ring held at a low point of %d frames, "
+           "%d after running out (D88)",
+           RATE, GRAIN, OUT_PRIORITY, g_vita_opts.mixer, PSX_AUDIO_RING_LOW, PSX_AUDIO_RING_PRIME);
 }
 
 SceUID vita_audio_out_thread(void) { return s_port >= 0 ? s_out_thread : 0; }
@@ -157,25 +178,9 @@ void vita_audio_init(void) {
 /* A save state was loaded (D51): what is queued is from before it. */
 void vita_audio_clear(void) {
   if (s_port >= 0)
-    __atomic_store_n(&s_cut, __atomic_load_n(&s_wr, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+    psx_audio_ring_clear(&s_ring);
   if (s_dev)
     SDL_ClearQueuedAudio(s_dev);
-}
-
-/* mixer=3: one vblank into the ring (the mixer thread). */
-static void ring_out(const short *pcm, int frames) {
-  unsigned wr = s_wr, queued = wr - __atomic_load_n(&s_rd, __ATOMIC_ACQUIRE), i;
-  if (queued * 4 > MAX_QUEUED) {
-    __atomic_store_n(&s_cut, wr, __ATOMIC_RELEASE); /* SDL_ClearQueuedAudio */
-    g_vita_audio_cleared++;
-  } else if (queued == 0) {
-    g_vita_audio_dry++;
-  }
-  for (i = 0; i < (unsigned)frames; i++, wr++) {
-    s_ring[wr % RING_FRAMES][0] = pcm[i * 2];
-    s_ring[wr % RING_FRAMES][1] = pcm[i * 2 + 1];
-  }
-  __atomic_store_n(&s_wr, wr, __ATOMIC_RELEASE);
 }
 
 void psx_audio_out(const short *pcm, int frames) {
@@ -184,7 +189,7 @@ void psx_audio_out(const short *pcm, int frames) {
     s_wav_frames += (unsigned)frames;
   }
   if (s_port >= 0) {
-    ring_out(pcm, frames);
+    psx_audio_ring_push(&s_ring, pcm, frames);
     return;
   }
   if (!s_dev)

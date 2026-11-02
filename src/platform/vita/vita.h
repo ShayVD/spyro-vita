@@ -161,6 +161,7 @@ void vita_audio_close(void); /* finish audio.wav */
 void vita_audio_clear(void); /* drop what is queued (a save state loaded) */
 extern unsigned g_vita_audio_dry, g_vita_audio_cleared; /* audio queue empty / cut, since the last report */
 extern unsigned g_vita_audio_short; /* mixer=3: sceAudioOut grains padded with silence */
+void vita_audio_report(int vblank); /* mixer=3: the output ring's line (D88); sets the three counts above */
 int vita_audio_out_thread(void); /* mixer=3: the sceAudioOut thread's id, else 0 */
 
 /* mixer.c: the SPU mix and XA decode on their own thread (D37) */

@@ -89,10 +89,10 @@ int psx_spu_voice_next_pos(PsxSpuVoice *v);
 extern int g_psx_spu_native, g_psx_spu_simd;
 void psx_spu_mix_native(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
                         short out[PSX_SPU_VBLANK_SAMPLES * 2]);
-void psx_spu_pcm_write(unsigned addr, unsigned size); /* SPU RAM written: decode it again */
+void psx_spu_pcm_write(unsigned addr, unsigned size); /* SPU RAM written: forget its PCM */
 void psx_spu_pcm_reset(void);                         /* forget every block (SpuInit, a state load) */
 typedef struct {
-  unsigned long long hits[2], misses, predecoded; /* blocks: from each way, decoded in the mix, at SpuWrite */
+  unsigned long long hits[2], misses, written; /* blocks: from each way, decoded in the mix, forgotten at SpuWrite */
 } PsxSpuNativeStats;
 extern PsxSpuNativeStats g_psx_spu_native_stats;
 

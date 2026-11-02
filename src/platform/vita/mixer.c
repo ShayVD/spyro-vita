@@ -17,7 +17,7 @@
  * the linux32 host don't change.
  *
  * mixer=3 (4: lockstep) is the native mix (D84): the same packets, mixed by
- * psx_spu_mix_native from SPU RAM decoded to PCM at SpuWrite, with each XA
+ * psx_spu_mix_native from SPU RAM decoded to PCM where first played, with each XA
  * sector's PCM decoded on the read-ahead thread where it has it (the packet
  * holds the window's PCM, pinned until the mix has pushed it, and the raw
  * sector in case its history isn't the stream's), and out through
@@ -68,7 +68,7 @@ static short s_out[PSX_SPU_VBLANK_SAMPLES * 2];
 static volatile uint64_t s_mix_us, s_mix_worst;
 static volatile unsigned s_mixes, s_mismatch;
 static volatile unsigned s_xa_pcm, s_xa_raw; /* mixer=3: XA sectors pushed from the read-ahead's PCM, decoded here */
-static uint64_t s_write_us; /* game thread: in SpuWrite (mixer=3: its PCM decode) */
+static uint64_t s_write_us; /* game thread: in SpuWrite */
 static unsigned s_writes;
 static uint64_t s_wait_us; /* game thread waiting for a free slot or a drain */
 static unsigned s_waits;
@@ -345,6 +345,8 @@ void vita_mixer_report(int vblank) {
   uint64_t us = s_mix_us;
   if (s_running)
     cpu_report(vblank);
+  if (s_native)
+    vita_audio_report(vblank); /* also the ring's dry, cut and short counts below */
   if (!n)
     return;
   vita_log("mixer %d: %u vblanks mixed, %u.%02u ms each, worst %u.%02u ms; game thread "
@@ -355,11 +357,11 @@ void vita_mixer_report(int vblank) {
            s_mismatch, g_vita_audio_dry, g_vita_audio_cleared);
   if (s_native) {
     PsxSpuNativeStats *st = &g_psx_spu_native_stats; /* the mixer's (approximate) */
-    vita_log("mixer %d: native: PCM blocks %llu from SpuWrite's decode, %llu from the second way, "
+    vita_log("mixer %d: native: PCM blocks %llu from the cache, %llu from its second way, "
              "%llu decoded in the mix; XA sectors %u from the read-ahead's PCM, %u decoded here; "
-             "SpuWrite %u calls, %u.%02u ms (%llu blocks decoded); %u output grains short",
+             "SpuWrite %u calls, %u.%02u ms (%llu blocks to decode again); %u output grains short",
              vblank, st->hits[0], st->hits[1], st->misses, s_xa_pcm, s_xa_raw, s_writes,
-             (unsigned)(s_write_us / 1000), (unsigned)(s_write_us % 1000 / 10), st->predecoded,
+             (unsigned)(s_write_us / 1000), (unsigned)(s_write_us % 1000 / 10), st->written,
              g_vita_audio_short);
     g_vita_audio_short = 0;
     memset(st, 0, sizeof *st);
