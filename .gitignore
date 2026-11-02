@@ -25,3 +25,6 @@ __pycache__/
 
 # PCSX-Redux oracle binary (D8), downloaded, never committed
 tools/oracle/bin/
+
+# the Vita's address for tools/vita/hw_run.sh (D77)
+tools/vita/hw.env
