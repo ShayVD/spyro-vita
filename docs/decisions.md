@@ -1594,4 +1594,4 @@ Record each decision with its date, what was chosen, and why.
     | Stone Hill | 1.70 → 1.51 | 0.70 → 0.60 | 0.19 → 0.16 | 0.25 → 0.19 | 2.84 → 2.45 (−14%) |
     | Dark Hollow | 1.18 → 1.04 | 1.20 → 1.02 | 0.20 → 0.16 | 0.32 → 0.24 | 2.90 → 2.46 (−15%) |
 
-  - That's below the plan's estimate (−0.5 to −1.3 ms per vblank). env, the largest renderer, gains least (−9 to −12%): its per-sector and per-polygon work around the GTE stays. Stage 2 takes that work on.
+  - That's below the plan's estimate (−0.5 to −1.3 ms per vblank). env, the largest renderer, gains least (−8 to −12%): its per-sector and per-polygon work around the GTE stays. Stage 2 takes that work on.
