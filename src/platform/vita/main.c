@@ -97,7 +97,9 @@
  *       fast_render=0   the renderers as translated from the asm and
  *                       PsyCross's GTE_operator (default 1: the hand-written
  *                       renderers and the inline GTE commands, the same
- *                       results; D72)
+ *                       results; D72); fast_render=2: the hand-written
+ *                       renderers with native GTE maths, the same results
+ *                       again (D79)
  *       gpu_direct=0    with gpu=1, each widescreen or 60 fps picture copied
  *                       into its slot and the screen cleared before it, as
  *                       before D69 (default 1: a picture that is one target
@@ -450,8 +452,9 @@ int main(int argc, char **argv) {
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
-           g_fast_render ? "hand-written renderers, inline GTE commands (D72)"
-                         : "translated renderers, PsyCross's GTE_operator");
+           g_fast_render == 2 ? "hand-written renderers, native GTE maths (D79)"
+           : g_fast_render    ? "hand-written renderers, inline GTE commands (D72)"
+                              : "translated renderers, PsyCross's GTE_operator");
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
