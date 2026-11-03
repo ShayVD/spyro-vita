@@ -271,6 +271,24 @@ Stage 2 of `docs/native-plan.md`: the hand renderers' primitives reach PsyCross'
 - P5 against P6: late vblanks, in-between frames and the threads' ms per vblank.
 - K1/K3 runs' shots at the same vblanks: identical pictures and card between each pair.
 
+## Runs P7 and P8: native draw lists without the PS1 stores (D86)
+
+D82's P6 showed the walk's thread 0.46 ms per vblank faster and the renderers 0.52 ms slower: they built every PS1 primitive and then its record. D86 builds the records from the values in the hottest sites and skips the primitives' stores, with a smaller record. P7 and P8 are P5 and P6 again on D86's VPK.
+
+| File | Switches | Route |
+|---|---|---|
+| `p7-nd2-off-60.txt` | P5's: the menu's 60 fps, `gpu_meter=1`, `native_draw=0` | the Toasty route, `REALTIME=1` |
+| `p8-nd2-on-60.txt` | P7 with `native_draw=1` | the same |
+
+**Unattended** (D77): `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-p7 1500 @tools/vita/fps-runs/p7-nd2-off-60.txt @tools/vita/hw-routes/o-toasty.cfg` (P8 the same with its file and `logs/hw-p8`).
+
+**What the logs should show:**
+- `native draw N:` every 300 vblanks in P8: 0 left as primitives (a full pool); the most in a list about 30% under P6's 71–114 KB.
+- P7 against P8: the `draw` lines' renderers no slower (P6 had them +0.52 ms), the `parse` line's busy time and the game thread's wait for the walk lower, the `time` line's game thread busy time lower; late vblanks no worse.
+- The memory card identical.
+
+**Ran 2026-11-03** (`logs/hw-p7`, `logs/hw-p8`; D86): both reached `frames=21000`. P7 matches P5. P8's renderers are +0.53 ms per vblank over P7 (as P6 over P5), the game thread 4.39 → 4.97 ms, late vblanks 2.6 → 3.4 per 300. From vblank 16,912 P8 took another course (more late vblanks, so different steps under `realtime=1`) and ended at game over, so the cards differ.
+
 ## Run Q: collision as hand-written C (D83)
 
 Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with readable C (`src/game/collision_hand.c`). Its results feed gameplay, so the check is the same route played on main's VPK and on this one: every picture and the memory card must come out identical.
