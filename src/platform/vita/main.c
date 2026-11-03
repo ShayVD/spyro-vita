@@ -79,13 +79,13 @@
  *                       Any other value (default 1): skip it only while the
  *                       game thread's own CPU time per tick would pass 15/16
  *                       of the tick (D75; the GPU never makes it skip)
- *       mixer=N         where the SPU mix and XA decode run (D37): 1 (default)
- *                       their own thread; 2 that thread, but each vblank waits
- *                       for its mix; 0 the game thread, as before. 3: the
- *                       native mix on that thread (D84: SPU RAM decoded to
- *                       PCM once, NEON, XA decoded on the read-ahead thread,
- *                       sceAudioOut instead of SDL2's audio; the same
- *                       samples); 4: 3 in lockstep
+ *       mixer=N         where the SPU mix and XA decode run (D37): 1 their
+ *                       own thread; 2 that thread, but each vblank waits
+ *                       for its mix; 0 the game thread, as before. 3
+ *                       (default, D88): the native mix on that thread (D84:
+ *                       SPU RAM decoded to PCM once, NEON, XA decoded on the
+ *                       read-ahead thread, sceAudioOut instead of SDL2's
+ *                       audio; the same samples); 4: 3 in lockstep
  *       render_thread=0 GL on the game thread, as before D63 (default 1:
  *                       with gpu=1, every GL call on a render thread of its
  *                       own on core 2, the game thread on core 0; D68)
@@ -208,7 +208,7 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
-                        .interp_budget = 1, .mixer = 1, .tex_cache = 1, .analog = 1,
+                        .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
                         .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */

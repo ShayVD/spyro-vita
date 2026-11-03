@@ -667,7 +667,7 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 
 **Optional:** yes (a `mixer=` value).
 
-**Status (D84, 2026-11-02): done, run on hardware; the default stays `mixer=1`.** `mixer=3` (4: lockstep) is the native mix:
+**Status (D84, 2026-11-02; D88, 2026-11-03): done, run on hardware; `mixer=3` is the default since D88.** `mixer=3` (4: lockstep) is the native mix:
 - SPU RAM decoded at `SpuWrite`, each block keyed by the history it was decoded from;
 - the mix voice by voice, NEON on the Vita;
 - the music decoded on the read-ahead thread;
@@ -677,7 +677,7 @@ On hardware (R1/R2, D84): the WAVs are byte-identical, and the mixer's CPU on co
 - **The same samples:** byte-identical to `mixer=1` on the host over the demos, gems, routes A/B and a save-state run (`tools/mixer_ab.sh`), and to main's binary. In Vita3K the demo's WAV is the host's with both mixers. ctest `spu_native` checks 20,000 random vblanks, and the NEON path is checked on an arm64 Mac.
 - **The time** (Vita3K only, so *estimate* for hardware): the mix's wall time per vblank fell 0.43 → 0.17 ms (−61%). The plan's estimate was "roughly halves" the 0.8–1.0 ms. The XA decode moved from the mixer to the read-ahead thread, which is on core 1 too, so it moves off the mixer's deadline but saves core 1 nothing. Decoding each sound bank once at `SpuWrite` costs the game thread 6–21 ms per load in Vita3K.
 - **Not done:** the Gaussian interpolation. The oracle has no audio capture, so nothing could show it to be more faithful (D84).
-- **The dry periods (D88, 2026-11-03): understood and fixed, hardware to run.** The game's vblanks follow the display (59.94 Hz), so the mixer makes ~44,056 frames a second against the port's 44,100: both mixers' queues run low by ~1 ms a second once a load's catch-up backlog is gone (R1 and R2 both went dry ~45 s after the route's last load). `mixer=3`'s output ring now holds its low point at 2304 frames by playing within 0.5% of rate 1 (a PI controller; `src/platform/common/audio_ring.c`), refills to 87 ms after running out and drops the excess, so the sound stays in step with the game. `audio.wav` is unchanged (all five `mixer_ab.sh` scenarios byte-identical). A model of the Vita's clocks (`tests/audio`) shows D84's ring padding 150 grains in 10 minutes and D88's none outside loads; Vita3K gives `mixer=3` 5 dry against `mixer=1`'s 5, all at loads.
+- **The dry periods (D88, 2026-11-03): understood and fixed, run on hardware; `mixer=3` is the default.** On the device, `mixer=3` ran dry 11 times on the K route (every one where the game stopped: start-up and loads) against `mixer=1`'s 78, with `audio.wav` still D84's R1 (`a4b03472…`), and `SpuWrite` took 1.6–2.0 ms a sound bank instead of 56–57 ms. The game's vblanks follow the display (59.94 Hz), so the mixer makes ~44,056 frames a second against the port's 44,100: both mixers' queues run low by ~1 ms a second once a load's catch-up backlog is gone (R1 and R2 both went dry ~45 s after the route's last load). `mixer=3`'s output ring now holds its low point at 2304 frames by playing within 0.5% of rate 1 (a PI controller; `src/platform/common/audio_ring.c`), refills to 87 ms after running out and drops the excess, so the sound stays in step with the game. `audio.wav` is unchanged (all five `mixer_ab.sh` scenarios byte-identical). A model of the Vita's clocks (`tests/audio`) shows D84's ring padding 150 grains in 10 minutes and D88's none outside loads; Vita3K gives `mixer=3` 5 dry against `mixer=1`'s 5, all at loads.
 - **`SpuWrite` no longer decodes (D88).** It only forgets the blocks it wrote; voices decode each block the first time they play it, on the mixer's core. In Vita3K a sound bank's `SpuWrite` fell from 6.4–21 ms to 0.2–0.7 ms on the game thread; the hardware runs below will say what is left of the 56–57 ms.
 - **Hardware runs R1 and R2** (`tools/vita/fps-runs/r1-mixer-old.txt`, `r2-mixer-native.txt`; route `tools/vita/hw-routes/r-audio-k.cfg`), each only with the owner's approval (run once, 2026-11-02; results above and in D84). `VPK=` takes an absolute path:
   1. The samples, `realtime=0`: `audio.wav` must be byte-identical between the two.
@@ -701,7 +701,7 @@ On hardware (R1/R2, D84): the WAVs are byte-identical, and the mixer's CPU on co
      ```
 
   3. Listening on the device with `mixer=3`, by hand, in a level with music and effects.
-- **Hardware runs for D88** (the same route and configs as R1/R2, on the D88 VPK; each only with the owner's approval). If the time pair passes (R2's dry count at or under R1's, 0 position mismatches, the WAV identical), `mixer=3` becomes the default:
+- **Hardware runs for D88** (the same route and configs as R1/R2, on the D88 VPK; each only with the owner's approval; run once, 2026-11-03, results in D88: they passed, so `mixer=3` became the default):
   1. R2's samples on the new VPK, `realtime=0`: `audio.wav` must be R1's from D84 (`a4b03472…`; `mixer=1`'s code is unchanged).
 
      ```bash
