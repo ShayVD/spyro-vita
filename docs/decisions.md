@@ -1966,7 +1966,12 @@ Record each decision with its date, what was chosen, and why.
   - With the cache off (the default) nothing changes: the intro's frames 7400–7460 with widescreen and 60 fps are byte-identical to main's (`logs/run21-fix-intro` against `run2-intro-states`).
   - Vita3K, the fixed VPK, intro cutscene: with `subpixel=1`, 3,452 projections a frame and 98–99% of vertices found (`logs/run19-v3k-fix-sub1`), and the window captures differ from `subpixel=0`. With `subpixel=0`, shots and window captures are byte-identical to main's. Vita3K's window captures don't follow the presented frames one per vblank (two pairs repeat in a row), so they can't measure the smoothness itself.
   - `tools/vita/vita3k_window.swift` takes the run's PID: another project's Vita3K was open, and the grab takes the largest Vita3K window.
-- **Not done:** hardware (it needs the owner's yes). What to look at there: the intro cutscene with SUB-PIXEL VERTICES on, and whether 60 fps still holds with it. D42 measured `persp`/`subpixel` at about 6 ms a timed frame, mostly CPU, with `fast_render=0`. The default stays off until a hardware run says what it costs now.
+- **Hardware, run T1** (approved by the owner; `tools/vita/fps-runs/t1-subpixel-60.txt`, P7's lines plus `subpixel=1`, Toasty route, `REALTIME=1`, VPK of this branch at `7d2be5d`; `logs/hw-t1-subpixel` in this worktree, against `logs/hw-p7` in `stage2-finish-97a801`):
+  - The cache is fed on hardware: 98–99% of vertices found in the cutscene, 96–97% in Toasty.
+  - The intro cutscene keeps 60 fps: 0 late vblanks and 300 pictures in every window from 7800 to 10200. Its game thread costs 6.2–8.0 ms a vblank against 2.7–3.6 ms without (busy 51–66% against 25–32%), and the OT walk 2.3–3.0 ms against 1.5–1.7 ms.
+  - Toasty's heavy views don't keep 60 fps. At vblank 13200 there are 148 late vblanks and 152 pictures of 300 (game 11.1 ms, busy 92%), against 4 late without (6.05 ms, 49%). At 15000 there are 52 late (11.4 ms) against 0. Over the level, `fps60_summary.py` counts 42.8 late vblanks per 300 (worst 161) against 0.1.
+  - So the cache costs the game thread about 4.5 ms a vblank and the OT walk about 1–1.5 ms. In Toasty that is more than the frame has spare.
+- **Chosen:** SUB-PIXEL VERTICES stays off by default. With it on, the cutscenes and light levels keep 60 fps and heavy views fall to about 30. Making the cache cheaper is separate work: the per-vertex float projection in `rtp_point`, and the lookups in the walk. Turning it on for cutscenes only is another option. Both are open, not done.
 
 ## 2026-11-03: the freeze going into Cliff Town
 
