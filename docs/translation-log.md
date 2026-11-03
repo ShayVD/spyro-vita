@@ -273,6 +273,20 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 | `func_80023AC4` (Spyro, `pete_render_hand.c`) | `LinkPrim` the same, with GT3 and GT4; `nd_begin` after the two early returns | as above | as env's |
 | PsyCross (patch 0010) | `g_psyxPacketHook` in the OT walk's loop, before a packet's GP0 commands are parsed; `PsyX_AddSplit`, `PsyX_VertexBuffer`, `PsyX_ParseList` and the split accessors for the check | as above | none: without the hook the walk is as before |
 
+## Native draw records without the PS1 stores (2026-11-03, decisions D86)
+
+Still behind `native_draw=1` (default 0). The hottest sites of the native-GTE build (`#if NGTE`) build their record from the values they would have stored (`nd_open`, `nd_mk_*`, then `nd_put`, `nd_chain_rec`, `LinkRec` or `LitLinkRec`) and skip the primitive's stores; the record is smaller (3 words a textured vertex, 2 an untextured one, the page/CLUT once). `nd_rec`, D82's path for primitives that are still built, uses the same builders. With `native_draw=0` the code is main's.
+
+**Checks:** D82's per-call check (`--native-draw-check`) and the file A/B (`tools/native_draw_ab.sh`) over the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole tour: 0 calls differ, every file identical; `tools/host_checks.sh` byte-identical with main; Vita3K shots and captures identical. Numbers in D86.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_800258F0` (environment) | the high-poly pass's GT4/G4 and GT3/G3 (`HighQuadRecord`, `HighTriRecord`, the fades in the same order), the low-poly G4/G3, the 2x2 pieces' GT4 (`PieceQuadUVsTo`) and the edge triangles' GT3 from values; a G4 or G3 still stores what its GT layout leaves past its end. The 4x4 pieces, `SplitLast`'s and the draw mode command as D82 | per-call check and file A/B | the skipped primitives' bytes (but a marker's 12) are what the buffer held before |
+| `func_8001F798`, `func_80020F34` (mobys, specular mobys) | `EmitTriangle`/`EmitQuad`'s stores after the last check replaced by the record (`LinkRec`); the stores before it stay; the sprites' FT4 as D82 | as above | as env's |
+| `func_80022A2C` (lit mobys and HUD models) | the Gouraud faces' G3/G4 from values (`LitLinkRec`); the flat faces as D82 | as above | as env's |
+| `func_80023AC4` (Spyro) | `EmitGT3` and the whole quad's GT4 from values (`LinkRec`); the floor-clipped triangles as D82 | as above | as env's |
+| `func_8004EBA8` (sky) | F3 and G3 from values (`nd_chain_rec`); an F3 still stores the Gouraud layout's last position past its end | as above | as env's |
+
 ## Stage 3: readable C (2026-11-02, decisions D83)
 
 `docs/native-plan.md` stage 3: mips2c units replaced by readable C (category B1: locals and the decomp's structs, no register model, no KUSEG masking, no GTE register file). `asm/collision.s` first: all six entry points in `src/game/collision_hand.c` (the rows above). What it keeps and doesn't keep of the asm, and why: D83.

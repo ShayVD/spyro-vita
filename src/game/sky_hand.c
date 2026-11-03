@@ -155,6 +155,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   NgteProj P;
   NdChain ch = {0, 0};
   int nd;
+  u32 *r;
 #endif
   (void)a3;
 
@@ -257,13 +258,31 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
       xy0 = (u32)((s32)f0 >> 5);
       xy1 = (u32)((s32)f1 >> 5);
       xy2 = (u32)((s32)f2 >> 5);
+      c0 = tri[1] >> 20;
+      c1 = (tri[1] >> 10) & 0x3FC;
+      c2 = tri[1] & 0x3FC;
+#if NGTE
+      if (nd && (r = nd_open(3)) != NULL) {
+        /* D86: the record from the values, the primitive's stores skipped
+         * but the Gouraud layout's last position past a POLY_F3 */
+        if (c0 == c1 && c0 == c2) {
+          nd_mk_f(r, 0, WORD_AT(colours, c0) - 0x10000000u, xy0, xy1, xy2, 0);
+          AT32(prim + 0x18) = xy2;
+          nd_chain_rec(&ch, r, 3, prim);
+          prim += 0x14;
+        } else {
+          nd_mk_g3(r, WORD_AT(colours, c0), xy0, WORD_AT(colours, c1), xy1, WORD_AT(colours, c2),
+                   xy2);
+          nd_chain_rec(&ch, r, 3, prim);
+          prim += 0x1C;
+        }
+        continue;
+      }
+#endif
       /* the Gouraud layout's positions first; the flat one moves them */
       AT32(prim + 0x8) = xy0;
       AT32(prim + 0x10) = xy1;
       AT32(prim + 0x18) = xy2;
-      c0 = tri[1] >> 20;
-      c1 = (tri[1] >> 10) & 0x3FC;
-      c2 = tri[1] & 0x3FC;
       if (c0 == c1 && c0 == c2) {
         /* one colour: POLY_F3, the colour's code 0x30 made 0x20 */
         tag = TAG_F3;
