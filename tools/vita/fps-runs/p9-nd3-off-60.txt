@@ -1,0 +1,6 @@
+# Run P9 (D87): P7 on the lean records' VPK, native_draw=0. The Toasty route, REALTIME=1.
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+native_draw=0
