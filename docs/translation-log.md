@@ -287,6 +287,16 @@ Still behind `native_draw=1` (default 0). The hottest sites of the native-GTE bu
 | `func_80023AC4` (Spyro) | `EmitGT3` and the whole quad's GT4 from values (`LinkRec`); the floor-clipped triangles as D82 | as above | as env's |
 | `func_8004EBA8` (sky) | F3 and G3 from values (`nd_chain_rec`); an F3 still stores the Gouraud layout's last position past its end | as above | as env's |
 
+## Native draw lean records (2026-11-03, decisions D91)
+
+`native_draw=1` is the Vita's default since D91 (the host's stays 0). A record is now the primitive's own words (after the tag, in its order) with the next record's offset and the kind; `nd_mk_*` store them as the PS1 path would, `nd_rec` copies them from a built primitive, and the walk (`emit`, `src/game/native_draw.c`) makes the vertices PsyCross's `Process*Poly` would, which D86's builders did on the game thread. Joins come from a side table keyed by the marker's address and the list's serial (`ND_SIDE_AT`, `nd_commit`), not from the tail packet and the marker's first record. The sites' code is D86's but for the signatures (`nd_put`, `nd_chain_rec`, `LinkRec`, `LitLinkRec` no longer take the vertex count) and `g_nd.on`.
+
+**Checks:** D82's per-call check (`--native-draw-check`) and the file A/B (`tools/native_draw_ab.sh`, each run with its own card folder) on gems, the demos, wsi, the vertex cache, lod, routes A and B and the whole tour: 0 calls differ, every file identical; gems with `--nd-ab` (records on and off by turns) identical; Vita3K gems shots, captures and card identical with `native_draw` 0, 1 and `nd_ab=1`. Numbers and the hardware runs in D91.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_800258F0`, `func_8001F798`, `func_80020F34`, `func_80022A2C`, `func_80023AC4`, `func_8004EBA8` (the six hand renderers' record sites) | D86's sites; the record holds the primitive's words, the walk converts them; side-table joins | per-call check, file A/B, Vita3K captures | a marker whose side-table entry another marker took starts a new marker (the same triangles, 2% more markers in gems) |
+
 ## Stage 3: readable C (2026-11-02, decisions D83)
 
 `docs/native-plan.md` stage 3: mips2c units replaced by readable C (category B1: locals and the decomp's structs, no register model, no KUSEG masking, no GTE register file). `asm/collision.s` first: all six entry points in `src/game/collision_hand.c` (the rows above). What it keeps and doesn't keep of the asm, and why: D83.

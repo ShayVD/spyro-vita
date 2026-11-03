@@ -18,6 +18,20 @@ static const char *const k_names[D_COUNT] = {"update", "env", "mobys",    "spyro
                                              "fx",     "particles", "sky"};
 static uint64_t s_acc[D_COUNT];
 static unsigned s_calls[D_COUNT];
+/* nd_ab=1 (D91): the same, by the way (native_draw 0 or 1) the list being
+ * built is counted under */
+enum { AB_N = 2 }; /* ND_AB_VARIANTS */
+int nd_ab_slot(void);
+void nd_ab_take(unsigned lists[AB_N]);
+static uint64_t s_ab_acc[AB_N][D_COUNT];
+
+static void charge(int part, uint64_t us) {
+  const int v = nd_ab_slot();
+  s_acc[part] += us;
+  s_calls[part]++;
+  if ((unsigned)v < AB_N)
+    s_ab_acc[v][part] += us;
+}
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 
@@ -28,8 +42,7 @@ static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
                          uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7) { \
     uint64_t t = now_us();                                                     \
     uint32_t r = __real_##name(a0, a1, a2, a3, a4, a5, a6, a7);                \
-    s_acc[part] += now_us() - t;                                               \
-    s_calls[part]++;                                                           \
+    charge(part, now_us() - t);                                                \
     return r;                                                                  \
   }
 
@@ -53,8 +66,7 @@ void __real_GamestateUpdate(void);
 void __wrap_GamestateUpdate(void) {
   uint64_t t = now_us();
   __real_GamestateUpdate();
-  s_acc[D_UPDATE] += now_us() - t;
-  s_calls[D_UPDATE]++;
+  charge(D_UPDATE, now_us() - t);
 }
 
 /* vblank.c, with the other reports. */
@@ -72,4 +84,26 @@ void prof_draw_report(int vblank, int vblanks) {
   vita_log("%s", buf);
   memset(s_acc, 0, sizeof s_acc);
   memset(s_calls, 0, sizeof s_calls);
+  {
+    /* "draw ab": per variant, the lists counted and each part's whole us
+     * (sums, so windows add up; tools/vita/nd_ab_summary.py) */
+    char ab[512];
+    unsigned lists[AB_N];
+    int v;
+    nd_ab_take(lists);
+    for (v = 0; v < AB_N; v++)
+      if (lists[v])
+        break;
+    if (v == AB_N)
+      return;
+    n = snprintf(ab, sizeof ab, "draw ab %d:", vblank);
+    for (v = 0; v < AB_N; v++) {
+      n += snprintf(ab + n, sizeof ab - n, " v%d %u", v, lists[v]);
+      for (i = D_ENV; i < D_COUNT; i++)
+        n += snprintf(ab + n, sizeof ab - n, "/%u", (unsigned)s_ab_acc[v][i]);
+      n += snprintf(ab + n, sizeof ab - n, ";");
+    }
+    vita_log("%s", ab);
+    memset(s_ab_acc, 0, sizeof s_ab_acc);
+  }
 }

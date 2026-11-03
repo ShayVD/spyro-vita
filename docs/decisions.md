@@ -1999,3 +1999,62 @@ Record each decision with its date, what was chosen, and why.
     - There is no `hang:` line, and the run exits at `frames=3000 reached`.
     - Not run: a negative control on Vita3K (the old code with the knob). The host mutant is that check.
   - **Hardware: not run yet** (it needs the owner's approval). One run from this worktree checks it: `REALTIME=1 DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-vcount 240 vcount_test=1500 frames=3000`. Pass: `frames=3000 reached`, no `hang:` line.
+
+## 2026-11-03: native draw lists by default (stage 2)
+
+### D91. Where the records' renderer cost went on hardware, a leaner record, and `native_draw=1` by default on the Vita
+- **Why:** D86's P7/P8 left the renderers +0.53 ms per vblank slower with records, and the game thread slower too (4.39 → 4.97 ms). Neither D82's nor D86's record path had been measured part by part on hardware. The owner wants the game on native draw lists, so this was the timing work to make the default flip possible.
+- **The instrument: `nd_ab=1`** (`config.txt`, host `--nd-ab`; `src/game/native_draw.c`). Variants of the record path take turns by blocks of 8 lists; the first 2 of each block aren't counted (the pools take turns per list, so they only warm the caches). So every 300-vblank window times all of them in nearly the same scenes.
+  - `draw ab N:` (`src/platform/vita/prof_draw.c`): each variant's counted lists and each renderer's microseconds.
+  - `parse ab N:` (`parse.c`): its walks, the walk's microseconds and the game thread's wait. A list carries its variant to the walk as `g_psx_walk_tag` (`src/platform/common/walk.c`).
+  - `tools/vita/nd_ab_summary.py` sums them and gives each variant against `native_draw=0` as the mean of the windows' per-list differences with its standard error.
+  - Variants switching per list leave every picture the same: host gems with the rotation 19/19 files identical; Vita3K gems with captures 35/35.
+- **T1 and T2** (2026-11-03, the owner's go-ahead for each; `logs/hw-t1`, `logs/hw-t2`; VPKs `logs/s87-vpk-1.vpk` SHA-1 `aa83755e…` and `-2` `de76de05…`). The Toasty route at 60 fps, `REALTIME=1`, as P7/P8. About 2,560 counted lists per variant over 68 windows. Per list, against `native_draw=0`:
+
+  | variant | renderers, ms | walk | wait |
+  |---|---:|---:|---:|
+  | T1: D86's path | +0.325 ±0.021 | −1.04 | −0.44 |
+  | T1: joins from a side table | +0.297 ±0.023 | −1.03 | −0.43 |
+  | T1: the pool prefetched (`pldw`, two lines ahead) | +0.279 ±0.028 | −1.05 | −0.44 |
+  | T1: both | +0.229 ±0.027 | −1.05 | −0.45 |
+  | T1: probe, 12 words a primitive written to the pool, no records | +0.193 ±0.025 | +0.01 | −0.02 |
+  | T1: probe with `pldw` | +0.212 ±0.021 | +0.01 | −0.01 |
+  | T2: D86's path | +0.276 ±0.021 | −1.10 | −0.45 |
+  | T2: side table and `pldw` | +0.271 ±0.022 | −1.08 | −0.44 |
+  | T2: side table, uncached pools (`USER_MAIN_NC_RW`), the walk copies them | +0.263 ±0.020 | −0.59 | −0.28 |
+  | T2: the same, walked in place | +0.251 ±0.030 | +0.74 | +0.37 |
+  | T2: probe | +0.178 ±0.026 | −0.01 | −0.02 |
+  | T2: probe into uncached pools | +0.104 ±0.018 | −0.01 | −0.01 |
+
+  - **What it showed:** the pools' memory isn't the cost; both pools and the arena are plain cached newlib heap. Writing a second stream at all costs most of it: the probe alone is +0.18–0.19 ms. `pldw` doesn't help the probe, so it isn't the line fills' latency but the 40 KB a list of new dirty lines through the 32 KB L1. Uncached memory makes the probe cheaper, not the records, and the walk's copy then costs 0.5 ms. The rest is the record path's own instructions. Compiled, D86's GT4 site was ~100 instructions against ~30 for the PS1 path: every global reloaded with `movw`/`movt` after each store (`-fno-strict-aliasing`), the per-vertex conversions, the variant tests, the per-primitive counters, two reads (the tail packet, the marker's first record) for each join.
+  - **The noise between runs** is about ±0.05 ms: the side table with `pldw` was 0.1 ms under D86 in T1 and level with it in T2. Within a run the paired windows' standard error is 0.01–0.03 ms.
+  - The two VPKs' variants (the side table's switch, `pldw`, the probe, the uncached pools) were taken out again; only the side table stays (below).
+- **Decided: a leaner record** (`src/game/native_draw.{h,c}`):
+  - **A record is the primitive's own words:** the next record's offset, the kind (`ND_K_*`, from the builder, not the code byte), then the words after the tag as the PS1 primitive holds them. A GT4 is 14 words (D86: 16). The renderers store what the PS1 path stores, into the pool. The walk, on the parse thread, turns them into PsyCross's `GrVertex` (`emit`: `MakeVertex*`'s order, the page/CLUT from uv0/uv1, u/v, brightness, dither, an unshaded flat colour raw, the null FT3), which D86 did on the game thread.
+  - **Joins always from the side table:** 1,024 entries, each a marker's 21-bit arena offset and the list's serial as the key, and its last record. A join reads neither the arena nor the pool, and the game thread never reads a pool back. A marker whose entry another took is only not joined again: a new marker, the same triangles. Gems: 1.44 M markers against D86's 1.41 M (+2%). The table is cleared when the serial comes round (every 2,048 lists).
+  - **One cursor struct** (`g_nd`: the write pointer, the limit, the pool's base, the key, the markers' word, on), so one base address serves every field the sites reload. The builders take their own room (no read of the header back), the limit leaves room for the longest record (one compare), and the per-primitive counters went: the walk counts markers, records and draw modes.
+  - The test function of a GT4 site from values (`nd_open`, `nd_mk_gt4`, `nd_put`) compiles to 141 instructions against 294.
+- **Checked** (host `build/linux32`, this branch; logs `logs/s87l-*`, gitignored; `tools/native_draw_ab.sh`, whose runs now each get their own card folder: without `--save` both runs of a pair shared `./save`, and the second found the card the first wrote):
+  - **Every call, both ways** (`--native-draw-check`): 0 calls differ in every converted renderer, every file identical with `native_draw` off: gems 19/19, demos 26/26, wsi 25/25, vc 19/19, lod 19/19, route A 55/55, route B 56/56, and the whole tour (100,000 vblanks, every level, both endings, the credits) 141/141, the most in a list 102 KB (D86: 132).
+  - **Vita3K** (VPK `logs/s87-vpk-3.vpk`, SHA-1 `4543cab3…`; `realtime=0`, `fast_render=2`): the gems script with captures, `native_draw=1` and `nd_ab=1` each against `native_draw=0`: 17 shots, 17 captures and the card identical; 0 unknown commands, 0 packets outside the copy. The records of the window to 6000 are 6.0 MB (D86: 7.3).
+- **Hardware: T3, P9 and P10** (2026-11-03, the owner's go-ahead; VPK 3; the Toasty route at 60 fps, `REALTIME=1`; `logs/hw-t3`, `logs/hw-p9`, `logs/hw-p10`). All reached `frames=21000` with no hang line.
+  - **T3** (`nd_ab=1`, `native_draw` 0 against the lean records, about 9,150 lists each): the renderers **+0.164 ±0.009 ms** per list (env +0.056, mobys +0.035, Spyro +0.043, sky +0.030), the walk −0.86, the wait −0.35. D86's +0.28–0.33 is halved; the walk saves less than D86's −1.04, since it now does the conversion.
+  - **P9 (`native_draw=0`) and P10 (`=1`),** means over the windows from vblank 900 (`tools/vita/hw_cmp.py`), with P7/P8 (D86's VPK) beside them:
+
+    | per vblank, ms | P9 (`=0`) | P10 (`=1`) | P7 (`=0`) | P8 (`=1`, D86) |
+    |---|---:|---:|---:|---:|
+    | game thread (`time`'s `game`) | 4.25 | 4.45 | 4.39 | 4.97 |
+    | and its `ot` (the walk's wait, the copy) | 1.54 | 1.29 | 1.54 | 1.27 |
+    | game thread, both | 5.79 | 5.73 | 5.93 | 6.24 |
+    | renderers (env, mobys, Spyro, sky) | 3.16 | 3.33 | 3.27 | 3.80 |
+    | the parse thread's walk | 2.48 | 1.76 | 2.47 | 1.66 |
+    | late vblanks per 300 | 2.53 | 2.78 | 2.59 | 3.43 |
+
+    - The game thread is 0.06 ms per vblank faster with records (P7/P8: 0.31 slower), and the parse thread 0.72 faster.
+    - The late vblanks' rise is the attract demos': 135 against 115 over the windows 3600–6000 (P7 123, P8 160). In the Toasty play from vblank 11,400: 23 against 24 (P7 21, P8 42).
+    - **The same course:** the 18 `where` lines (level, game state) in the same order, within a vblank. The cards differ in 2 bytes (offsets 127–128). P9's card is P7's byte for byte.
+  - **P9's first attempt** lost the Vita 51 s in (its log ends at vblank 300). The script couldn't put the owner's files back until the owner had the Vita back. It was the `native_draw=0` run. VPK 3 predates D90's vcount fix, whose freeze comes at any point of the Vita's uptime; that may be what happened, but nothing in the log shows it. The rerun went through. Before it, T2's first attempt had stopped at the eboot's upload (a timeout); nothing ran.
+- **Default:** `native_draw=1` on the Vita (`src/platform/vita/main.c` sets it before `config.txt` is read; `native_draw=0` turns it off). The owner's decision on these numbers. The game thread is no slower in play, the parse thread is 0.7 ms per vblank freer, the attract demos have ~15% more late vblanks, and the renderers alone are still 0.16 ms slower. The host's default stays 0, so its scripts, the oracle and `host_checks.sh` run as before, and `--native-draw` is the Vita's way.
+- **Not done:**
+  - **The renderers' last +0.16 ms:** what's left is mostly the second stream of writes (T1's probe: +0.18–0.19 on its own). Writing each record into its primitive's own space would avoid it, but then every primitive is a packet the walk follows again (no joins), and a GT4's record no longer fits its space with a marker's words. The stores made before a face's last check (D86) still go to the primitive's space as well.
+  - **The render thread's side and the decomp C's primitives,** as in D86.

@@ -372,7 +372,7 @@ HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
 
 HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
 #if NGTE
-  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
     c->prim += size;
     return;
   }
@@ -383,10 +383,10 @@ HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
 }
 
 #if NGTE
-/* Link for a record built from values (D86, nd_open's r, nv vertices): the
- * primitive's stores after the face's last check are skipped. */
-HAND_INLINE void LinkRec(FaceCtx *c, u32 bucket, u32 size, u32 *r, u32 nv) {
-  if (nd_commit(r, nv, *(u32 *)(uintptr_t)bucket, c->prim)) {
+/* Link for a record built from values (D86, nd_open's r): the primitive's
+ * stores after the face's last check are skipped. */
+HAND_INLINE void LinkRec(FaceCtx *c, u32 bucket, u32 size, u32 *r) {
+  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
     c->prim += size;
     return;
   }
@@ -429,7 +429,7 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
 #if NGTE
     if ((r = nd_open(3)) != NULL) {
       nd_mk_g3(r, col0 + 0x30000000u, AT32(p + 0x8), col1, AT32(p + 0x10), col2, AT32(p + 0x18));
-      LinkRec(c, (key << 3) + c->buckets, 0x1C, r, 3);
+      LinkRec(c, (key << 3) + c->buckets, 0x1C, r);
       return;
     }
 #endif
@@ -451,7 +451,7 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
         uv0 = (uv0 & 0xFFFF0000u) | (tex2 >> 16);
       nd_mk_gt3(r, col0 + 0x34000000u + ((cw & 1) << 25), AT32(p + 0x8), uv0, col1, AT32(p + 0x14),
                 tex[-2], col2, AT32(p + 0x20), tex2);
-      LinkRec(c, (key << 3) + c->buckets, 0x28, r, 3);
+      LinkRec(c, (key << 3) + c->buckets, 0x28, r);
       return;
     }
 #endif
@@ -497,7 +497,7 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
     if ((r = nd_open(4)) != NULL) {
       nd_mk_g4(r, col0 + 0x38000000u, AT32(p + 0x8), col1, AT32(p + 0x10), col2, AT32(p + 0x18),
                col3, AT32(p + 0x20));
-      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24, r, 4);
+      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24, r);
       return;
     }
 #endif
@@ -515,7 +515,7 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
       nd_mk_gt4(r, col0 + 0x3C000000u + ((cw & 1) << 25), AT32(p + 0x8), tex[-3] + c->tex_bias, col1,
                 AT32(p + 0x14), tex[-2], col2, AT32(p + 0x20), tex2, col3, AT32(p + 0x2C),
                 tex2 >> 16);
-      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x34, r, 4);
+      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x34, r);
       return;
     }
 #endif
@@ -1319,7 +1319,7 @@ static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucke
 static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
                                                           int kind) {
 #if NGTE
-  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
+  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
     c->prim += size;
     return;
   }
@@ -1332,8 +1332,8 @@ static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket,
 #if NGTE
 /* LinkRec's (D86) */
 static inline __attribute__((always_inline)) void LitLinkRec(LitCtx *c, u32 bucket, u32 size,
-                                                             u32 *r, u32 nv) {
-  if (nd_commit(r, nv, *(u32 *)(uintptr_t)bucket, c->prim)) {
+                                                             u32 *r) {
+  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
     c->prim += size;
     return;
   }
@@ -1375,7 +1375,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
 #if NGTE
     if ((r = nd_open(3)) != NULL) { /* D86: the record from the values */
       nd_mk_g3(r, col0 + 0x30000000u, xy[0], col1, xy[1], col2, xy[2]);
-      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C, r, 3);
+      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C, r);
       return;
     }
 #endif
@@ -1411,7 +1411,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
 #if NGTE
     if ((r = nd_open(4)) != NULL) {
       nd_mk_g4(r, col0, xy[0], col1, xy[1], col2, xy[2], col3, xy[3]);
-      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24, r, 4);
+      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24, r);
       return;
     }
 #endif

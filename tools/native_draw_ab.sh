@@ -12,6 +12,7 @@
 # vc (gems with the vertex cache, D39's hook; its "host vcache" line must find
 # vertices, D89) and whole (the 100,000-vblank tour).
 # MODE=n1 runs --native-draw in place of the check (timing, --prof-draw).
+# ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
@@ -20,8 +21,11 @@ run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
   extra=
-  case $n in demo) extra="--wav $D/audio.wav";; routeA|routeB|whole) extra="--save $D/save";; esac
-  case $m in n1) extra="$extra --native-draw";; chk) extra="$extra --native-draw-check";; esac
+  # every run its own card folder: without --save both runs of a pair share ./save,
+  # and the second finds the card the first wrote (D91)
+  extra="--save $D/save"
+  case $n in demo) extra="$extra --wav $D/audio.wav";; esac
+  case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;

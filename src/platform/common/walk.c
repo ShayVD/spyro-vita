@@ -63,6 +63,7 @@ static struct {
   PsxWalkRange r[MAX_RANGES];
   int n;
   uintptr_t head; /* the list's first packet, in the copy */
+  int tag;        /* g_psx_walk_tag at the handover */
   int frozen;     /* g_psyxVramFrozen at the handover */
   PsxVcacheFrame vc;
 } s_job;
@@ -72,6 +73,7 @@ static volatile int s_in_job;  /* psx_walk_run is running */
 static unsigned char s_defer[DEFER_BYTES];
 static int s_defer_len;
 static PsxWalkStats s_stats;
+int g_psx_walk_tag = -1;
 
 typedef struct {
   void (*fn)(void *);
@@ -147,6 +149,7 @@ static int walk_hook(u_long *p) {
     }
   }
   s_job.frozen = g_psyxVramFrozen;
+  s_job.tag = g_psx_walk_tag;
   psx_vcache_frame_take(&s_job.vc);
   s_pending = 1;
   s_stats.walks++;
@@ -171,7 +174,12 @@ void psx_walk_run(void) {
   psx_vcache_frame_use(NULL);
   g_psyxNextPacket = NULL;
   s_in_job = 0;
-  s_stats.walk_us += now() - t0;
+  t0 = now() - t0;
+  s_stats.walk_us += t0;
+  if ((unsigned)s_job.tag < PSX_WALK_TAGS) {
+    s_stats.walks_tag[s_job.tag]++;
+    s_stats.walk_us_tag[s_job.tag] += t0;
+  }
 }
 
 static void run_deferred(void) {
@@ -194,7 +202,10 @@ void psx_walk_join(void) {
     psx_walk_run();
   } else {
     s_thr.wait();
-    s_stats.wait_us += now() - t0;
+    t0 = now() - t0;
+    s_stats.wait_us += t0;
+    if ((unsigned)s_job.tag < PSX_WALK_TAGS)
+      s_stats.wait_us_tag[s_job.tag] += t0;
   }
   s_stats.joins++;
   run_deferred();
