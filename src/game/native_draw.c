@@ -18,12 +18,16 @@ int g_nd_check;
 int g_nd_on;
 NdPool g_nd_pool[ND_POOLS];
 u32 g_nd_cur;
+u32 *g_nd_base, *g_nd_wp, *g_nd_lim;
 u32 g_nd_id = ND_MAGIC;
 NdStats g_nd_stats;
 
 static void (*s_log)(const char *fmt, ...);
 static u32 s_peak;     /* the most words one list used */
+static unsigned long long s_words;
 static unsigned s_lists, s_lists_native, s_emitted;
+/* packets the walk parsed itself, by GP0 class: polygons, lines, rectangles, other */
+static unsigned s_other[4];
 
 /* 1 MB a pool: a frame of the heaviest levels writes ~300 KB (D82) */
 #define POOL_WORDS (256u * 1024u)
@@ -45,6 +49,8 @@ void nd_init(void (*log)(const char *fmt, ...)) {
       s_log("native draw: no memory for the pools, off");
     return;
   }
+  g_nd_base = g_nd_wp = g_nd_pool[0].w;
+  g_nd_lim = g_nd_base + g_nd_pool[0].cap;
   g_psyxPacketHook = nd_packet;
 }
 
@@ -58,6 +64,8 @@ void nd_end(void) { g_nd_on = 0; }
 
 void nd_list_linked(void) {
   NdPool *p = &g_nd_pool[g_nd_cur];
+  p->n = g_nd_base ? (u32)(g_nd_wp - g_nd_base) : 0;
+  s_words += p->n;
   s_lists++;
   if (p->n) {
     s_lists_native++;
@@ -66,6 +74,8 @@ void nd_list_linked(void) {
   }
   g_nd_cur ^= 1;
   g_nd_pool[g_nd_cur].n = 0;
+  g_nd_base = g_nd_wp = g_nd_pool[g_nd_cur].w;
+  g_nd_lim = g_nd_base ? g_nd_base + g_nd_pool[g_nd_cur].cap : NULL;
   /* a marker of an earlier list can't be taken for this one's */
   g_nd_id = ND_MAGIC | g_nd_cur << 11 | (((g_nd_id & ND_SERIAL) + 1) & ND_SERIAL);
 }
@@ -100,7 +110,7 @@ static void emit(const u32 *w, u32 at, u32 cap) {
   for (; at < cap; at = w[at + 1]) {
     const u32 *r = w + at;
     const u32 h = r[0];
-    u32 n, k, key, dm;
+    u32 n, k, key, vs;
     u32 *o;
     if (h & ND_E1) {
       /* ProcessDrawEnv's DR_TPAGE */
@@ -123,26 +133,39 @@ static void emit(const u32 *w, u32 at, u32 cap) {
     n = (h & ND_QUAD) ? 4 : 3;
     if (*fill + 6 > MAX_VERTEX_BUFFER_SIZE)
       continue;
-    r += ND_HEAD;
     o = (u32 *)(vb + *fill);
-    dm = (h & ND_TEX) ? dmask : 0;
-    if (!(ox | oy)) {
-      for (k = 0; k < n * 5; k += 5) {
-        o[k] = r[k];
-        o[k + 1] = r[k + 1];
-        o[k + 2] = r[k + 2] | dm;
-        o[k + 3] = r[k + 3];
-        o[k + 4] = r[k + 4];
+    if (h & ND_TEX) {
+      const u32 pc = r[3];
+      vs = ND_VW;
+      r += ND_HEAD;
+      for (k = 0; k < n; k++, o += 5) {
+        const u32 *s = r + k * ND_VW;
+        o[0] = s[0];
+        o[1] = pc;
+        o[2] = s[1] | dmask;
+        o[3] = s[2] | 0xFF000000u;
+        o[4] = 0;
       }
     } else {
-      for (k = 0; k < n * 5; k += 5) {
-        const u32 xy = r[k];
-        const u32 x = (u32)((s32)(s16)xy + ox), y = (u32)(((s32)xy >> 16) + oy);
-        o[k] = (x & 0xFFFFu) | y << 16;
-        o[k + 1] = r[k + 1];
-        o[k + 2] = r[k + 2] | dm;
-        o[k + 3] = r[k + 3];
-        o[k + 4] = r[k + 4];
+      const u32 bd = (h & ND_GOUR) ? 0x1010000u : 0x10000u;
+      vs = 2;
+      r += ND_HEAD;
+      for (k = 0; k < n; k++, o += 5) {
+        const u32 *s = r + k * 2;
+        o[0] = s[0];
+        o[1] = 0;
+        o[2] = bd;
+        o[3] = s[1] | 0xFF000000u;
+        o[4] = 0;
+      }
+    }
+    if (ox | oy) {
+      /* the draw offset (PsyCross's DrawEnvOffset) */
+      u32 *x = (u32 *)(vb + *fill);
+      for (k = 0; k < n; k++, x += 5) {
+        const u32 xy = x[0];
+        const u32 ax = (u32)((s32)(s16)xy + ox), ay = (u32)(((s32)xy >> 16) + oy);
+        x[0] = (ax & 0xFFFFu) | ay << 16;
       }
     }
     {
@@ -151,7 +174,7 @@ static void emit(const u32 *w, u32 at, u32 cap) {
         /* the primitive's own x/y, as MakeVertex* passes them */
         short *xy[4];
         for (k = 0; k < n; k++)
-          xy[k] = (short *)(uintptr_t)(r + k * 5);
+          xy[k] = (short *)(uintptr_t)(r + k * vs);
         g_psyxPolyHook(v, xy, (int)n);
       }
       if (n == 4) {
@@ -172,11 +195,12 @@ static void emit(const u32 *w, u32 at, u32 cap) {
 int nd_packet(uintptr_t packet) {
   const u32 *m = (const u32 *)packet;
   u32 w1, pool;
-  if ((m[0] >> 24) != 2)
-    return 0;
   w1 = m[1];
-  if ((w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24))
+  if ((m[0] >> 24) != 2 || (w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24)) {
+    const u32 cls = w1 >> 29;
+    s_other[cls == 1 ? 0 : cls == 2 ? 1 : cls == 3 ? 2 : 3]++;
     return 0;
+  }
   pool = w1 >> 11 & 1;
   emit(g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
   return 1;
@@ -184,14 +208,19 @@ int nd_packet(uintptr_t packet) {
 
 void nd_report(int vblank) {
   NdStats st = g_nd_stats;
+  const unsigned prims = st.markers + st.joined;
   if (!s_log || (!g_native_draw && !g_nd_check))
     return;
   s_log("native draw %d: %u lists (%u with records), %u primitives as %u markers (%u joined), "
         "%u draw modes, %u left as primitives (pool full); %u polygons walked; "
-        "%u KB of records, the most in a list %u KB",
-        vblank, s_lists, s_lists_native, st.prims, st.markers, st.joined, st.e1, st.fallback,
-        s_emitted, (unsigned)(st.words * 4 / 1024), (unsigned)(s_peak * 4 / 1024));
+        "%u KB of records, the most in a list %u KB; the walk parsed %u polygons, %u lines, "
+        "%u rectangles and %u other packets itself",
+        vblank, s_lists, s_lists_native, prims, st.markers, st.joined, st.e1, st.fallback,
+        s_emitted, (unsigned)(s_words * 4 / 1024), (unsigned)(s_peak * 4 / 1024), s_other[0],
+        s_other[1], s_other[2], s_other[3]);
   memset(&g_nd_stats, 0, sizeof g_nd_stats);
   s_lists = s_lists_native = s_emitted = 0;
+  memset(s_other, 0, sizeof s_other);
   s_peak = 0;
+  s_words = 0;
 }

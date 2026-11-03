@@ -780,6 +780,17 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
             code += 0x2000000;
             fp = EmitBlendMode(fp, slot, w1);
           }
+#if NGTE
+          {
+            u32 *r = nd_open(4);
+            if (r) { /* D86: the record from the values, the stores skipped */
+              nd_mk_g4(r, c0 + code, xy0, c1, xy1, c2, xy2, c3, xy3);
+              nd_put(r, 4, slot, fp);
+              fp += 0x24;
+              continue;
+            }
+          }
+#endif
           AT32(fp) = 0x8000000;
           AT32(fp + 0x4) = c0 + code;
           AT32(fp + 0x8) = xy0;
@@ -839,6 +850,17 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
             code += 0x2000000;
             fp = EmitBlendMode(fp, slot, w1);
           }
+#if NGTE
+          {
+            u32 *r = nd_open(3);
+            if (r) {
+              nd_mk_g3(r, c0 + code, xy0, c1, xy1, c2, xy2);
+              nd_put(r, 3, slot, fp);
+              fp += 0x1C;
+              continue;
+            }
+          }
+#endif
           AT32(fp) = 0x6000000;
           AT32(fp + 0x4) = c0 + code;
           AT32(fp + 0x8) = xy0;
@@ -918,6 +940,108 @@ typedef struct {
  * and two neighbours (12-bit signed polygon-flag offsets), word 3 no fade
  * (1), reversed winding (2), double-sided (4), an OT bias (0x38), "2x2 at
  * most" (0x40), never subdivided (0x80) and two more neighbours. */
+#if NGTE
+/* native_draw=1 (decisions D86): what the high-poly pass's quad would store
+ * from "draw it" on (POLY_GT4, or POLY_G4 without a texture), as a record at
+ * r (nd_open's), in the same order of fades. The primitive's space is still
+ * taken; only a marker may be written into it. Returns the next primitive. */
+static inline u32 HighQuadRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 poly, u32 pf, u32 w1,
+                                 u32 w3p, u32 lod, u32 zavg, u32 lqtex, u32 near_t, u32 far_t,
+                                 u32 xy0, u32 xy1, u32 xy2, u32 xy3, u32 z0, u32 z1, u32 z2,
+                                 u32 z3) {
+  u32 fbase = lod >> 2, ci, c0, c1, c2, c3, b, t0, texbase, tex, uv0;
+  if (w3p & 1)
+    fbase += 0x2000;
+  ci = (w1 >> 22) & 0x3FC;
+  c0 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z0) | 0x3C000000;
+  ci = (w1 >> 14) & 0x3FC;
+  c1 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z1);
+  ci = (w1 >> 6) & 0x3FC;
+  c2 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z2);
+  ci = (w1 << 2) & 0x3FC;
+  c3 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z3);
+  b = (u32)(s32)(s8)AT8(poly + 8);
+  t0 = (zavg << 5) - fbase + 0x1000;
+  texbase = lqtex;
+  if ((s32)t0 > 0) {
+    t0 >>= 8;
+  } else {
+    t0 = 0;
+    texbase += 8;
+  }
+  AT8(pf) = 1;
+  if ((s32)b < 0) {
+    if (b == 0xFFFFFFFFu) {
+      nd_mk_g4(r, (c0 & 0xFFFFFFu) | 0x38000000u, xy0, c1, xy1, c3, xy3, c2, xy2);
+      nd_put(r, 4, slot, fp);
+      /* the GT4 layout's stores past the shorter POLY_G4 stay */
+      AT32(fp + 0x28) = c2;
+      AT32(fp + 0x2C) = xy2;
+      return fp + 0x24;
+    }
+    c0 = (c0 & 0xFFFFFFu) | 0x3E000000u;
+  }
+  tex = MIPS_KUSEG(texbase + ((b & 0x7F) << 4));
+  uv0 = AT32(tex) + (t0 << 22);
+  nd_mk_gt4(r, c0, xy0, uv0, c1, xy1, AT32(tex + 4), c3, xy3, uv0 + 0x1F00, c2, xy2,
+            uv0 + 0x1F00 + 0x1F);
+  nd_put(r, 4, slot, fp);
+  return fp + 0x34;
+}
+
+/* The same for the triangle (POLY_GT3, or POLY_G3) */
+static inline u32 HighTriRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 poly, u32 pf, u32 w1,
+                                u32 w3p, u32 lod, u32 zavg, u32 lqtex, u32 near_t, u32 far_t,
+                                u32 xy0, u32 xy1, u32 xy2, u32 z0, u32 z1, u32 z2) {
+  u32 fbase = lod >> 2, ci, c0, c1, c2, w2, t0, texbase, tex, uv0, uv1, rot, ua, ub, uc;
+  if (w3p & 1)
+    fbase += 0x2000;
+  ci = (w1 >> 22) & 0x3FC;
+  c0 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z0) | 0x34000000;
+  ci = (w1 >> 14) & 0x3FC;
+  c1 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z1);
+  ci = (w1 >> 6) & 0x3FC;
+  c2 = FadeColourN(sp, near_t + ci, far_t + ci, fbase - z2);
+  w2 = AT32(poly + 8);
+  t0 = (zavg << 5) - fbase + 0x1000;
+  texbase = lqtex;
+  if ((s32)t0 > 0) {
+    t0 >>= 8;
+  } else {
+    t0 = 0;
+    texbase += 8;
+  }
+  AT8(pf) = 1;
+  if ((s32)(w2 << 24) < 0) {
+    if ((w2 & 0xFF) == 0xFF) {
+      nd_mk_g3(r, (c0 & 0xFFFFFFu) | 0x30000000u, xy0, c1, xy1, c2, xy2);
+      nd_put(r, 3, slot, fp);
+      /* the GT3 layout's stores past the shorter POLY_G3 stay */
+      AT32(fp + 0x1C) = c2;
+      AT32(fp + 0x20) = xy2;
+      return fp + 0x1C;
+    }
+    c0 = (c0 & 0xFFFFFFu) | 0x36000000u;
+  }
+  tex = MIPS_KUSEG(texbase + ((w2 & 0x7F) << 4));
+  uv0 = AT32(tex) + (t0 << 22);
+  uv1 = AT32(tex + 4);
+  rot = w2 & 0x300;
+  if (rot == 0) {
+    ua = uv0, ub = uv1, uc = uv0 + 0x1F00;
+  } else if (rot == 0x100) {
+    ua = uv0 + 0x1F, ub = uv1 + 0x1F00, uc = uv0;
+  } else if (rot == 0x200) {
+    ua = uv0 + 0x1F1F, ub = uv1 + 0x1EE1, uc = uv1;
+  } else {
+    ua = uv0 + 0x1F00, ub = uv1 - 0x1F, uc = uv0 + 0x1F1F;
+  }
+  nd_mk_gt3(r, c0, xy0, ua, c1, xy1, ub, c2, xy2, uc);
+  nd_put(r, 3, slot, fp);
+  return fp + 0x28;
+}
+#endif
+
 static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
   const u32 env = ADDR(g_Environment);
   const u32 lod = PORT_LOD_ENV(AT32(env + 0x24));
@@ -939,6 +1063,9 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
     u32 entry, mode, sraw, sec, kdelta, w, w3, ox, oy, oz, pf, counts, vp, vend, next, all, vz, vxy;
     u32 scr, sz16, near_t, far_t, poly, pend;
     int clip_tests = 1;
+#if NGTE
+    u32 *r;
+#endif
     entry = AT32(list);
     list += 4;
     if (PORT_LOD_ENV_FULL(fp, 1))
@@ -1218,6 +1345,15 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
         w1 = AT32(poly + 4);
         zavg = zsum >> 7;
         slot = ((zavg + ((w3p & 0x38) >> 1)) << 3);
+#if NGTE
+        if ((r = nd_open(4)) != NULL) {
+          /* native_draw (D86): the record from the values below, in the
+           * primitive's vertex order (0, 1, 3, 2); its stores skipped */
+          fp = HighQuadRecord(&sync, r, fp, ot + slot, poly, pf, w1, w3p, lod, zavg, lqtex, near_t,
+                              far_t, xy0, xy1, xy2, xy3, z0, z1, z2, z3);
+          continue;
+        }
+#endif
         AT32(fp + 0x8) = xy0;
         AT32(fp + 0x14) = xy1;
         AT32(fp + 0x20) = xy3;
@@ -1331,6 +1467,13 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
       w1 = AT32(poly + 4);
       zavg = zsum >> 7;
       slot = ((zavg + ((w3p & 0x38) >> 1)) << 3);
+#if NGTE
+      if ((r = nd_open(3)) != NULL) {
+        fp = HighTriRecord(&sync, r, fp, ot + slot, poly, pf, w1, w3p, lod, zavg, lqtex, near_t,
+                           far_t, xy0, xy1, xy2, z0, z1, z2);
+        continue;
+      }
+#endif
       AT32(fp + 0x8) = xy0;
       AT32(fp + 0x14) = xy1;
       AT32(fp + 0x20) = xy2;
@@ -1727,6 +1870,17 @@ static u32 EdgeTriangle(u32 fp, u32 ot, u32 e, u32 tex, u32 w3, u32 code_sub) {
     return fp;
   uvb = AT32(tex);
   zs = (fa & 0xFFF) + (fb & 0xFFF) + (fc & 0xFFF) + (fc & 0xFFF);
+#if NGTE
+  {
+    u32 *r = nd_open(3);
+    if (r) { /* D86: the record from the values, the triangle's stores skipped */
+      nd_mk_gt3(r, AT32(pa + 8) - code_sub, AT32(pa), (e1 & 0xFFFF) + uvb, AT32(pb + 8), AT32(pb),
+                (u32)((s32)e2 >> 16) + AT32(tex + 4), AT32(pc + 8), AT32(pc), (e2 & 0xFFFF) + uvb);
+      nd_put(r, 3, ot + (((zs >> 7) + ((w3 & 0x38) >> 1)) << 3), fp);
+      return fp + 0x28;
+    }
+  }
+#endif
   AT32(fp + 0x8) = AT32(pa);
   AT32(fp + 0x14) = AT32(pb);
   AT32(fp + 0x20) = AT32(pc);
@@ -1776,19 +1930,24 @@ static inline int PieceQuadBack(u32 w3, u32 xy0, u32 xy1, u32 xy2, u32 xy3) {
 
 /* A quad piece's UVs: the texture's (u, v) pair, its far corners at +31 (or
  * +15), optionally adjusted (D_8006D058, by the second word's top bits). */
-static inline void PieceQuadUVs(u32 fp, u32 uvw0, u32 uvw1, u32 far2, u32 far3) {
-  u32 uv0 = uvw0, uv1 = uvw1, uv2 = uvw0 + far2, uv3 = uvw0 + far3, r = uvw1 >> 25;
+static inline void PieceQuadUVsTo(u32 uv[4], u32 uvw0, u32 uvw1, u32 far2, u32 far3) {
+  u32 r = uvw1 >> 25;
+  uv[0] = uvw0, uv[1] = uvw1, uv[2] = uvw0 + far2, uv[3] = uvw0 + far3;
   if (r) {
     u32 adj = ADDR(D_8006D058) + r, a1 = AT32(adj + 4), a0 = AT32(adj);
-    uv2 = uvw0 + (a1 & 0xFFFF);
-    uv3 = uvw0 + (a1 >> 16);
-    uv0 = uvw0 + (a0 & 0xFFFF);
-    uv1 = uvw1 + (u32)((s32)a0 >> 16);
+    uv[2] = uvw0 + (a1 & 0xFFFF);
+    uv[3] = uvw0 + (a1 >> 16);
+    uv[0] = uvw0 + (a0 & 0xFFFF);
+    uv[1] = uvw1 + (u32)((s32)a0 >> 16);
   }
-  AT32(fp + 0xC) = uv0;
-  AT32(fp + 0x18) = uv1;
-  AT32(fp + 0x24) = uv2;
-  AT32(fp + 0x30) = uv3;
+}
+static inline void PieceQuadUVs(u32 fp, u32 uvw0, u32 uvw1, u32 far2, u32 far3) {
+  u32 uv[4];
+  PieceQuadUVsTo(uv, uvw0, uvw1, far2, far3);
+  AT32(fp + 0xC) = uv[0];
+  AT32(fp + 0x18) = uv[1];
+  AT32(fp + 0x24) = uv[2];
+  AT32(fp + 0x30) = uv[3];
 }
 
 static inline u32 PieceSlot(u32 zs, u32 w3) { return ((zs >> 7) + ((w3 & 0x38) >> 1)) << 3; }
@@ -1874,6 +2033,19 @@ static u32 Subdiv2x2Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
       AT32(fp + 0x8) = xy0; /* the asm's store in the branch's delay slot */
       continue;
     }
+#if NGTE
+    {
+      u32 *r = nd_open(4), uv[4];
+      if (r) { /* D86: the record from the values, the piece's stores skipped */
+        PieceQuadUVsTo(uv, uvw0, uvw1, 0x1F00, 0x1F1F);
+        nd_mk_gt4(r, AT32(g + 0x8), xy0, uv[0], AT32(g + 0x18), xy1, uv[1], AT32(g + 0x38), xy2,
+                  uv[2], AT32(g + 0x48), xy3, uv[3]);
+        nd_put(r, 4, ot + PieceSlot(zs, w3), fp);
+        fp += 0x34;
+        continue;
+      }
+    }
+#endif
     AT32(fp + 0x8) = xy0;
     AT32(fp + 0x14) = xy1;
     AT32(fp + 0x20) = xy2;

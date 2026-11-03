@@ -23,11 +23,18 @@
  * the OT's own order: buckets, FIFO within a bucket, the HUD chain last.
  *
  * A record: a header word, the next record's offset (ND_END: none), the
- * marker's last record's offset (its first record only), then 3 or 4
- * GrVertex (5 words each) in the order PsyCross's MakeVertex* builds them
- * (a quad's 0, 1, 3, 2) with the x/y the primitive had. The walk adds the
- * draw offset, the draw environment's dither flag, the vertex cache's hook
- * and a quad's split into two triangles, which depend on the state then.
+ * marker's last record's offset (its first record only), the page and CLUT
+ * every vertex has, then 3 or 4 vertices of 3 words (x/y as the primitive
+ * had them; u, v, brightness, dither; colour) in the order PsyCross's
+ * MakeVertex* builds them (a quad's 0, 1, 3, 2). The walk makes each a
+ * GrVertex and adds the draw offset, the draw environment's dither flag,
+ * the vertex cache's hook and a quad's split into two triangles, which
+ * depend on the state then.
+ *
+ * The hottest sites (D86) write the record straight from the values they
+ * would have stored (nd_open, nd_mk_*, nd_commit), and skip the PS1
+ * primitive's stores; the space it would have taken is still taken, so the
+ * buffer's pointer and every bound check are the same.
  *
  * The records of everything appended between two OT links (func_80016784,
  * order_table.c, which every DrawOTag in the game is given) are one list's;
@@ -55,26 +62,30 @@ enum {
   ND_MAGIC = 0x4E4000u, /* bits 12-23 */
   ND_POOLS = 2,
   ND_SERIAL = 0x7FFu,  /* word 1's serial bits */
-  ND_HEAD = 3u,        /* a record's words before its vertices */
+  ND_HEAD = 4u,        /* a record's words before its vertices */
+  ND_VW = 3u,          /* words per vertex */
 };
 #define ND_END 0xFFFFFFFFu /* a record's next: none */
 
 /* header bits */
 enum {
-  ND_TEX = 1,   /* textured: sets the draw state's tpage */
+  ND_TEX = 1,   /* textured: sets the draw state's tpage; 3 words a vertex, else 2 */
   ND_SEMI = 2,  /* semi-transparent */
   ND_QUAD = 4,  /* 4 vertices, two triangles */
   ND_E1 = 8,    /* a draw mode command: tpage, dither and draw-to-display from bits 16-26 */
   ND_NULL = 16, /* an FT3 with every vertex at -1 (SCE's tpage-only hack): tpage only */
+  ND_GOUR = 32, /* untextured Gouraud: dither 1 (flat: 0) */
 };
 
 typedef struct {
   u32 *w;
-  u32 n, cap; /* words */
+  u32 n, cap; /* words (n: what its last list used) */
 } NdPool;
 
 extern NdPool g_nd_pool[ND_POOLS];
 extern u32 g_nd_cur;  /* the pool being written */
+/* the pool being written: its start, the next free word and its end */
+extern u32 *g_nd_base, *g_nd_wp, *g_nd_lim;
 extern u32 g_nd_id;   /* word 1 of this list's markers: ND_MAGIC, pool, serial */
 
 /* At a converted renderer's start and end. */
@@ -95,10 +106,9 @@ void nd_check_began(void); /* nd_begin, for the check */
 void nd_check_set_log(void (*log)(const char *fmt, ...));
 void nd_check_report(void);
 
-/* counters (nd_report) */
+/* counters (nd_report); the primitives are the markers and the joined */
 typedef struct {
-  unsigned prims, markers, joined, fallback, e1;
-  unsigned long long words;
+  unsigned markers, joined, fallback, e1;
 } NdStats;
 extern NdStats g_nd_stats;
 
@@ -117,22 +127,25 @@ static inline void nd_ot_append(u32 slot, u32 prim) {
 
 /* Room for one record of nv vertices in the current pool, or NULL. */
 static inline u32 *nd_reserve(u32 nv) {
-  NdPool *p = &g_nd_pool[g_nd_cur];
-  const u32 need = ND_HEAD + nv * 5;
-  if (p->n + need > p->cap)
-    return NULL;
-  return p->w + p->n;
+  u32 *const r = g_nd_wp;
+  return (u32)(g_nd_lim - r) >= ND_HEAD + nv * ND_VW ? r : NULL;
 }
 
-/* One vertex: xy as the primitive holds it, then page/CLUT, u/v/brightness/
- * dither, colour, and the four bytes the vertex cache's hook may fill. */
-static inline u32 *nd_vtx(u32 *o, u32 xy, u32 pc, u32 uvbd, u32 rgb) {
+/* One textured vertex: xy as the primitive holds it, u/v/brightness/
+ * dither, colour (its low 24 bits; the walk adds alpha 0xFF and the vertex
+ * cache's four bytes, and takes page/CLUT from the record's word 3). */
+static inline u32 *nd_vtx(u32 *o, u32 xy, u32 uvbd, u32 rgb) {
   o[0] = xy;
-  o[1] = pc;
-  o[2] = uvbd;
-  o[3] = (rgb & 0xFFFFFFu) | 0xFF000000u;
-  o[4] = 0;
-  return o + 5;
+  o[1] = uvbd;
+  o[2] = rgb;
+  return o + ND_VW;
+}
+
+/* An untextured one: xy and colour (the walk adds the rest, ND_GOUR) */
+static inline u32 *nd_vtx2(u32 *o, u32 xy, u32 rgb) {
+  o[0] = xy;
+  o[1] = rgb;
+  return o + 2;
 }
 
 /* The primitive kinds the renderers build, by their GP0 layout */
@@ -141,108 +154,172 @@ enum { ND_K_F3, ND_K_F4, ND_K_G3, ND_K_G4, ND_K_FT3, ND_K_FT4, ND_K_GT3, ND_K_GT
   ((kind) == ND_K_E1 ? 0u                                                      \
    : ((kind) == ND_K_F4 || (kind) == ND_K_G4 || (kind) == ND_K_FT4 || (kind) == ND_K_GT4) ? 4u \
                                                                                 : 3u)
-#define ND_WORDS(nv) (ND_HEAD + (nv) * 5u)
 
-#define ND_RAW 0xFF808080u /* an unshaded texture's colour (MakeColourNoShade) */
+#define ND_RAW 0x808080u /* an unshaded texture's colour (MakeColourNoShade) */
 #define ND_W(o) AT32_ND(prim + (o))
 #define ND_SEMI_OF(c) (((c) >> 24 & 2) ? ND_SEMI : 0)
 /* u/v from a UV word, brightness 2, dither the tpage's */
 #define ND_UV(w, tp) (((w) & 0xFFFFu) | 0x20000u | ((tp) >> 9 & 1) << 24)
+#define ND_FLAT 0x10000u      /* an untextured flat vertex: brightness 1, dither 0 */
+#define ND_GOURAUD 0x1010000u /* Gouraud: brightness 1, dither 1 */
+
+/* The records PsyCross's Process*Poly would make of a primitive, from the
+ * words it holds (c0: the colour word with the code byte; uvN: texture
+ * words, uv0's high half the CLUT, uv1's the tpage), vertices given in the
+ * primitive's order and written in MakeVertex*'s (a quad's 0, 1, 3, 2).
+ * Untextured (xy and colour only, ND_GOUR): page/CLUT/u/v 0, brightness 1,
+ * dither 0 flat and 1 Gouraud;
+ * textured: brightness 2, dither the tpage's (the walk adds the draw
+ * environment's); flat ones with code bit 0 unshaded. r: nd_reserve's. */
+static inline void nd_mk_f(u32 *r, int quad, u32 c0, u32 xy0, u32 xy1, u32 xy2, u32 xy3) {
+  const u32 c = (c0 >> 24 & 1) ? ND_RAW : c0;
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | (quad ? ND_QUAD : 0);
+  r[1] = ND_END;
+  o = nd_vtx2(o, xy0, c);
+  o = nd_vtx2(o, xy1, c);
+  if (quad) {
+    o = nd_vtx2(o, xy3, c);
+    nd_vtx2(o, xy2, c);
+  } else {
+    nd_vtx2(o, xy2, c);
+  }
+}
+
+static inline void nd_mk_g3(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u32 xy2) {
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | ND_GOUR;
+  r[1] = ND_END;
+  o = nd_vtx2(o, xy0, c0);
+  o = nd_vtx2(o, xy1, c1);
+  nd_vtx2(o, xy2, c2);
+}
+
+static inline void nd_mk_g4(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u32 xy2, u32 c3,
+                            u32 xy3) {
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | ND_QUAD | ND_GOUR;
+  r[1] = ND_END;
+  o = nd_vtx2(o, xy0, c0);
+  o = nd_vtx2(o, xy1, c1);
+  o = nd_vtx2(o, xy3, c3);
+  nd_vtx2(o, xy2, c2);
+}
+
+/* FT3/FT4. 0 for an FT3 with every vertex at -1 (IsNull, SCE's tpage-only
+ * hack): a tpage-only record, no vertices (still nd_reserve(3)'s room). */
+static inline void nd_mk_ft(u32 *r, int quad, u32 c0, u32 xy0, u32 uv0, u32 xy1, u32 uv1,
+                            u32 xy2, u32 uv2, u32 xy3, u32 uv3) {
+  const u32 tp = uv1 >> 16, c = (c0 >> 24 & 1) ? ND_RAW : c0;
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16 | (quad ? ND_QUAD : 0);
+  r[1] = ND_END;
+  r[3] = tp | (uv0 & 0xFFFF0000u);
+  if (!quad && (xy0 & xy1 & xy2) == 0xFFFFFFFFu) {
+    r[0] |= ND_NULL;
+    return;
+  }
+  o = nd_vtx(o, xy0, ND_UV(uv0, tp), c);
+  o = nd_vtx(o, xy1, ND_UV(uv1, tp), c);
+  if (quad) {
+    o = nd_vtx(o, xy3, ND_UV(uv3, tp), c);
+    nd_vtx(o, xy2, ND_UV(uv2, tp), c);
+  } else {
+    nd_vtx(o, xy2, ND_UV(uv2, tp), c);
+  }
+}
+
+static inline void nd_mk_gt3(u32 *r, u32 c0, u32 xy0, u32 uv0, u32 c1, u32 xy1, u32 uv1, u32 c2,
+                             u32 xy2, u32 uv2) {
+  const u32 tp = uv1 >> 16;
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16;
+  r[1] = ND_END;
+  r[3] = tp | (uv0 & 0xFFFF0000u);
+  o = nd_vtx(o, xy0, ND_UV(uv0, tp), c0);
+  o = nd_vtx(o, xy1, ND_UV(uv1, tp), c1);
+  nd_vtx(o, xy2, ND_UV(uv2, tp), c2);
+}
+
+static inline void nd_mk_gt4(u32 *r, u32 c0, u32 xy0, u32 uv0, u32 c1, u32 xy1, u32 uv1, u32 c2,
+                             u32 xy2, u32 uv2, u32 c3, u32 xy3, u32 uv3) {
+  const u32 tp = uv1 >> 16;
+  u32 *o = r + ND_HEAD;
+  r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16 | ND_QUAD;
+  r[1] = ND_END;
+  r[3] = tp | (uv0 & 0xFFFF0000u);
+  o = nd_vtx(o, xy0, ND_UV(uv0, tp), c0);
+  o = nd_vtx(o, xy1, ND_UV(uv1, tp), c1);
+  o = nd_vtx(o, xy3, ND_UV(uv3, tp), c3);
+  nd_vtx(o, xy2, ND_UV(uv2, tp), c2);
+}
+
+/* A draw mode command (tag, E1 word, a NOP word: env's EmitBlendMode) */
+static inline void nd_mk_e1(u32 *r, u32 w1) {
+  r[0] = ND_E1 | (w1 & 0x7FFu) << 16;
+  r[1] = ND_END;
+  g_nd_stats.e1++;
+}
 
 /* The primitive at prim (as PsyCross's Process*Poly reads it) as a record in
- * the current pool, or NULL if it's full. Vertices in MakeVertex*'s order (a
- * quad's 0, 1, 3, 2). Untextured: page/CLUT/u/v 0, brightness 1, dither 0
- * flat and 1 Gouraud; textured: brightness 2, dither the tpage's (the walk
- * adds the draw environment's); flat ones with code bit 0, unshaded. KIND is
- * a constant at every call, so this folds to one case. */
+ * the current pool, or NULL if it's full. KIND is a constant at every call,
+ * so this folds to one case. */
 static inline __attribute__((always_inline)) u32 *nd_rec(int kind, u32 prim) {
-  u32 *r = nd_reserve(ND_NV(kind)), *o;
-  const u32 c0 = ND_W(4);
+  u32 *r = nd_reserve(ND_NV(kind));
   if (!r)
     return NULL;
-  r[1] = ND_END;
-  o = r + ND_HEAD;
   switch (kind) {
-  case ND_K_E1: /* tag, E1 word, a NOP word (env's EmitBlendMode) */
-    r[0] = ND_E1 | (c0 & 0x7FFu) << 16;
-    g_nd_stats.e1++;
+  case ND_K_E1:
+    nd_mk_e1(r, ND_W(4));
     break;
   case ND_K_F3:
-  case ND_K_F4: {
-    const u32 c = (c0 >> 24 & 1) ? ND_RAW : c0;
-    r[0] = ND_SEMI_OF(c0) | (kind == ND_K_F4 ? ND_QUAD : 0);
-    o = nd_vtx(o, ND_W(0x8), 0, 0x10000u, c);
-    o = nd_vtx(o, ND_W(0xC), 0, 0x10000u, c);
-    if (kind == ND_K_F4) {
-      o = nd_vtx(o, ND_W(0x14), 0, 0x10000u, c);
-      nd_vtx(o, ND_W(0x10), 0, 0x10000u, c);
-    } else {
-      nd_vtx(o, ND_W(0x10), 0, 0x10000u, c);
-    }
+    nd_mk_f(r, 0, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), 0);
     break;
-  }
+  case ND_K_F4:
+    nd_mk_f(r, 1, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14));
+    break;
   case ND_K_G3:
-    r[0] = ND_SEMI_OF(c0);
-    o = nd_vtx(o, ND_W(0x8), 0, 0x1010000u, c0);
-    o = nd_vtx(o, ND_W(0x10), 0, 0x1010000u, ND_W(0xC));
-    nd_vtx(o, ND_W(0x18), 0, 0x1010000u, ND_W(0x14));
+    nd_mk_g3(r, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18));
     break;
   case ND_K_G4:
-    r[0] = ND_SEMI_OF(c0) | ND_QUAD;
-    o = nd_vtx(o, ND_W(0x8), 0, 0x1010000u, c0);
-    o = nd_vtx(o, ND_W(0x10), 0, 0x1010000u, ND_W(0xC));
-    o = nd_vtx(o, ND_W(0x20), 0, 0x1010000u, ND_W(0x1C));
-    nd_vtx(o, ND_W(0x18), 0, 0x1010000u, ND_W(0x14));
+    nd_mk_g4(r, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18), ND_W(0x1C),
+             ND_W(0x20));
     break;
   case ND_K_FT3:
-  case ND_K_FT4: {
-    const u32 uv0 = ND_W(0xC), uv1 = ND_W(0x14), tp = uv1 >> 16, pc = tp | (uv0 & 0xFFFF0000u);
-    const u32 c = (c0 >> 24 & 1) ? ND_RAW : c0;
-    r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16 | (kind == ND_K_FT4 ? ND_QUAD : 0);
-    if (kind == ND_K_FT3 && (ND_W(0x8) & ND_W(0x10) & ND_W(0x18)) == 0xFFFFFFFFu) {
-      r[0] |= ND_NULL; /* IsNull: the tpage, no triangle; its 3 vertices unused */
-      return r;
-    }
-    o = nd_vtx(o, ND_W(0x8), pc, ND_UV(uv0, tp), c);
-    o = nd_vtx(o, ND_W(0x10), pc, ND_UV(uv1, tp), c);
-    if (kind == ND_K_FT4) {
-      o = nd_vtx(o, ND_W(0x20), pc, ND_UV(ND_W(0x24), tp), c);
-      nd_vtx(o, ND_W(0x18), pc, ND_UV(ND_W(0x1C), tp), c);
-    } else {
-      nd_vtx(o, ND_W(0x18), pc, ND_UV(ND_W(0x1C), tp), c);
-    }
+    nd_mk_ft(r, 0, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18), ND_W(0x1C),
+             0, 0);
     break;
-  }
+  case ND_K_FT4:
+    nd_mk_ft(r, 1, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18), ND_W(0x1C),
+             ND_W(0x20), ND_W(0x24));
+    break;
   case ND_K_GT3:
-  case ND_K_GT4: {
-    const u32 uv0 = ND_W(0xC), uv1 = ND_W(0x18), tp = uv1 >> 16, pc = tp | (uv0 & 0xFFFF0000u);
-    r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16 | (kind == ND_K_GT4 ? ND_QUAD : 0);
-    o = nd_vtx(o, ND_W(0x8), pc, ND_UV(uv0, tp), c0);
-    o = nd_vtx(o, ND_W(0x14), pc, ND_UV(uv1, tp), ND_W(0x10));
-    if (kind == ND_K_GT4) {
-      o = nd_vtx(o, ND_W(0x2C), pc, ND_UV(ND_W(0x30), tp), ND_W(0x28));
-      nd_vtx(o, ND_W(0x20), pc, ND_UV(ND_W(0x24), tp), ND_W(0x1C));
-    } else {
-      nd_vtx(o, ND_W(0x20), pc, ND_UV(ND_W(0x24), tp), ND_W(0x1C));
-    }
+    nd_mk_gt3(r, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18), ND_W(0x1C),
+              ND_W(0x20), ND_W(0x24));
     break;
-  }
+  case ND_K_GT4:
+    nd_mk_gt4(r, ND_W(4), ND_W(0x8), ND_W(0xC), ND_W(0x10), ND_W(0x14), ND_W(0x18), ND_W(0x1C),
+              ND_W(0x20), ND_W(0x24), ND_W(0x28), ND_W(0x2C), ND_W(0x30));
+    break;
   }
   return r;
 }
 
-/* The record just written at r (need words) is the current pool's. */
-static inline u32 nd_used(const u32 *r, u32 need) {
-  NdPool *p = &g_nd_pool[g_nd_cur];
-  p->n += need;
-  g_nd_stats.prims++;
-  g_nd_stats.words += need;
-  return (u32)(r - p->w);
+/* The record just written at r (words long) is the current pool's: its
+ * word offset. */
+static inline u32 nd_used(u32 *r, u32 words) {
+  g_nd_wp = r + words;
+  return (u32)(r - g_nd_base);
+}
+
+/* A record's words: its head, then nv vertices of 3 words textured, else 2 */
+static inline u32 nd_words(const u32 *r, u32 nv) {
+  return ND_HEAD + nv * ((r[0] & ND_TEX) ? ND_VW : 2u);
 }
 
 /* A marker at prim for the record at word `at`, its first and last */
 static inline void nd_mark(u32 prim, u32 at) {
-  g_nd_pool[g_nd_cur].w[at + 2] = at;
+  g_nd_base[at + 2] = at;
   AT32_ND(prim) = 0x2000000u;
   AT32_ND(prim + 4) = g_nd_id;
   AT32_ND(prim + 8) = at;
@@ -257,31 +334,50 @@ static inline int nd_is_mark(u32 p) {
 
 /* The record at word `at` after the marker at p's last one */
 static inline void nd_join(u32 p, u32 at) {
-  u32 *const w = g_nd_pool[g_nd_cur].w;
+  u32 *const w = g_nd_base;
   u32 *const first = w + AT32_ND(MIPS_KUSEG(p) + 8);
   w[first[2] + 1] = at;
   first[2] = at;
   g_nd_stats.joined++;
 }
 
-/* The primitive just built at prim, about to go on the end of a bucket
- * whose tail is `tail`: 1 if its record joined the marker at that tail (no
- * link to make); 0 if the caller links prim as usual, now a marker of its
- * own, or the primitive itself when the pool is full. */
-static inline __attribute__((always_inline)) int nd_take(int kind, u32 tail, u32 prim) {
-  u32 *r = nd_rec(kind, prim);
-  u32 at;
-  if (!r) {
-    g_nd_stats.fallback++;
-    return 0;
-  }
-  at = nd_used(r, ND_WORDS(ND_NV(kind)));
+/* The record just built at r (nv vertices), for the primitive whose space
+ * is prim, about to go on the end of a bucket whose tail is `tail`: 1 if it
+ * joined the marker at that tail (no link to make); 0 if prim is now a
+ * marker of its own, which the caller links as it would the primitive. */
+static inline __attribute__((always_inline)) int nd_commit(u32 *r, u32 nv, u32 tail, u32 prim) {
+  const u32 at = nd_used(r, nd_words(r, nv));
   if (tail && nd_is_mark(tail)) {
     nd_join(tail, at);
     return 1;
   }
   nd_mark(prim, at);
   return 0;
+}
+
+/* The primitive just built at prim, about to go on the end of a bucket
+ * whose tail is `tail`: nd_commit's answer, or 0 with the primitive left as
+ * it is when the pool is full. */
+static inline __attribute__((always_inline)) int nd_take(int kind, u32 tail, u32 prim) {
+  u32 *r = nd_rec(kind, prim);
+  if (!r) {
+    g_nd_stats.fallback++;
+    return 0;
+  }
+  return nd_commit(r, ND_NV(kind), tail, prim);
+}
+
+/* A site that builds its record from values (D86): room for nv vertices
+ * when native_draw is on, else NULL, and the caller builds the primitive
+ * as it always did (whose link then counts a full pool's fallback). */
+static inline __attribute__((always_inline)) u32 *nd_open(u32 nv) {
+  return g_nd_on ? nd_reserve(nv) : NULL;
+}
+
+/* nd_commit into an OT slot (OtAppend's: tail +0, head +4) */
+static inline __attribute__((always_inline)) void nd_put(u32 *r, u32 nv, u32 slot, u32 prim) {
+  if (!nd_commit(r, nv, AT32_ND(slot), prim))
+    nd_ot_append(slot, prim);
 }
 
 /* OtAppend with the primitive as a record (env's slots) */
@@ -323,6 +419,12 @@ static inline __attribute__((always_inline)) void nd_chain(NdChain *c, int kind,
   nd_chain_link(c, prim);
 }
 
+/* nd_chain for a record built from values (r: nd_open's) */
+static inline __attribute__((always_inline)) void nd_chain_rec(NdChain *c, u32 *r, u32 nv, u32 prim) {
+  if (!nd_commit(r, nv, c->tail, prim))
+    nd_chain_link(c, prim);
+}
+
 /* A GT3 the code chains by hand (env's last list): its record, and a marker
  * of its own in its place, tag len 2 and link 0 as `AT32(prim) = 0x9000000`
  * would leave it. 0 if the pool is full (the primitive stays as it is). */
@@ -332,7 +434,7 @@ static inline int nd_gt3_chained(u32 prim) {
     g_nd_stats.fallback++;
     return 0;
   }
-  nd_mark(prim, nd_used(r, ND_WORDS(3)));
+  nd_mark(prim, nd_used(r, nd_words(r, 3)));
   return 1;
 }
 

@@ -552,11 +552,17 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - **Every call** of every converted renderer, both ways, through PsyCross's own walk (host `--native-draw-check`), on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole-game tour: 184 M triangles, 0 differences.
   - **Every file** of those runs identical with `native_draw` off and with main's runs.
   - **Vita3K:** the gems script's and the demos' shots and window captures, and the pause route's shots, identical.
+- **Hardware (P5, P6):** the walk's thread 0.46 ms per vblank faster, the renderers 0.52 ms slower (they built every primitive and then its record), so the game thread was no faster.
+
+**Then (D86, 2026-11-03): the records without the PS1 stores, still behind `native_draw=1` (default 0); on hardware no cheaper.**
+- **The hot sites build their records from the values they would store** and skip the primitive's stores: env's high- and low-poly passes, its 2x2 pieces and edge triangles, the moby and specular faces, the lit Gouraud faces, Spyro's faces, the sky. The space is still taken, so the buffer's pointer and every bound are the same. The stores made before a face's last check, and those a G4/G3 leaves past its end, stay: the check showed the game reads them.
+- **A smaller record:** 3 words a textured vertex and 2 an untextured one (5 before), the page/CLUT once per record. The records of the gems script fall from 429 to 266 MB, the largest list from 130 to 75 KB.
+- **Checked:** the per-call check both ways on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole tour (0 calls differ, every file identical); `tools/host_checks.sh` byte-identical with main; Vita3K's gems and demo shots and captures and the pause route identical.
+- **Hardware (P7, P8): no cheaper.** The renderers still cost +0.53 ms per vblank with records (D82: +0.51), though Vita3K showed that halved. The game thread was busy 4.39 → 4.97 ms per vblank, and late vblanks rose 2.6 → 3.4 per 300. So the PS1 stores weren't the cost: what's left is the record path itself (a second stream of writes per primitive, the markers and joins). `native_draw` stays 0.
 - **Not yet:**
-  - **Hardware:** runs P1–P6 (`tools/vita/fps-runs/p*.txt`), which need the owner's approval.
-  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD.
-  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment.
-  - **Building the records without the PS1 stores** in the hottest sites (env's high-poly pass, the moby faces), if hardware shows the renderers' extra work matters.
+  - **Measuring the record path on hardware** (the CPU's counters, or timing env's sites one by one) before any more work goes into it.
+  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment. On P6 `expand` took 0.78 ms per vblank of the render thread, which isn't shown to be the limit at 60 fps.
+  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD. They're 0.5–2.6% of the packets the walk sees (D86). Particles, shadows and the flame are mips2c units and need hand C first; the HUD's are the ones widescreen squeezes in the OT.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
@@ -594,6 +600,8 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 **Optional:** a build option per function (`SPYRO_M2C_FUNCS`), as now. No run-time switch is needed: equivalence is proven on the host.
 
 **Status (D83, 2026-11-02): collision done.** `asm/collision.s` (3,866 instructions, six entry points) is readable C in `src/game/collision_hand.c`. It keeps nothing in the scratchpad or the GTE's registers: what the asm leaves there nothing reads (D83 says how that was shown), and a shadow in the host's oracle replay runs the mips2c unit beside every call so the replay stays exact. `tools/native_audit.py` on this branch's VPK (`logs/native-audit.txt`): readable C (A + B1) is **54.8% of the executable** (50.6% before), **92.4% of the whole game** with the overlays (91.7%); the original's instructions that run as mips2c fall from 19,272 to 15,406 (executable 17,678 → 13,812), and the ELF's live mips2c code from 310,611 to 262,127 bytes (B1 29,636 → 38,820). Next: `math.s` (its rotation matrix is state other calls read, so it stays in the GTE), `42CC4.s`, the gamestates 8 and 11 update. The renderers' remaining helpers wait for stage 2.
+
+**Status (D87, 2026-11-03): `math.s`, `42CC4.s` and the gamestates 8 and 11 update done.** All 45 entries of `asm/math.s` in `src/game/math_hand.c`, all nine of `asm/42CC4.s` in `src/game/42CC4_hand.c`, and the dragon rescue (`func_8002F3E4`) and the fairy (`func_800314B4`) in `src/game/gamestates_hand.c`. The GTE's control registers the asm sets (the rotation and translation that `VecRotateByLastMatrix` and the projections read, and RBK) are set the same; the working registers it leaves (V0, IR, MAC, the FIFOs, LZCR, FLAG) nothing reads, and go (D87 says how that was shown). Shadows in the host build with the units linked compare each call with its mips2c unit (math: result, output, rotation and translation; 42CC4: RAM and the GTE's control registers; the gamestates: RAM, with the unit in a forked child), in the oracle replay and, with `SPYRO_SHADOW`, over whole host runs. `tools/native_audit.py` on this branch's VPK (`logs/native-audit.txt`): readable C (A + B1) is **60.8% of the executable** (54.8% before), **93.4% of the whole game** (92.4%); the original's instructions that run as mips2c fall from 15,406 to 9,927 (executable 13,812 → 8,333), and the ELF's live mips2c code from 262,127 to 164,795 bytes (B1 38,820 → 52,676). Left as mips2c: the renderers' helpers (6,335, after stage 2), the cyclorama set-up `func_80050BD0` (1,287), moby lists, `moby_helpers`' one, images and particle allocation (711), and the credits overlay's two functions (1,594).
 
 ### Stage 4: native memory (large, high risk, after stages 2 and 3)
 

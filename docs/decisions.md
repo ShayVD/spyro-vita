@@ -1825,7 +1825,154 @@ Record each decision with its date, what was chosen, and why.
 - **Not changed:** NATIVE stays the default, PS1 stays the cheap option.
 
 
-## 2026-11-02: native audio's output ring (stage 5)
+## 2026-11-03: native draw lists without the PS1 stores (stage 2)
+
+### D86. The hot sites build their records from the values they would store and skip the PS1 primitive; a smaller record; on hardware the renderers are no cheaper, so `native_draw` stays 0
+- **Why:** D82's P6 on hardware. The walk's thread was 0.46 ms per vblank faster, but the renderers were 0.52 ms slower. Every converted site stored the PS1 primitive, read it back to build the record, and wrote a record of 5 words a vertex. The game thread was no faster (busy 5.83 → 6.12 ms per vblank). Stage 2's first step (`docs/native-plan.md`) was to build the records without the PS1 stores in the hottest sites.
+- **Decided:**
+  - **A smaller record** (`src/game/native_draw.h`):
+    - Head of 4 words: the header, the next record, the marker's last record, and the page/CLUT word every vertex shares.
+    - A textured vertex is 3 words: x/y; u, v, brightness, dither; colour.
+    - An untextured one is 2 words: x/y and colour. The header's `ND_GOUR` gives the dither (1 Gouraud, 0 flat).
+    - The walk (`emit`, `native_draw.c`) makes each a `GrVertex`. It adds alpha 0xFF, the 4 vertex-cache bytes, the draw offset and the draw environment's dither flag, as before.
+    - A GT4 is 16 words (23 in D82), a GT3 13 (18), a G3 or F3 10 (18), a G4 12 (23).
+  - **One builder per kind** (`nd_mk_f`, `_g3`, `_g4`, `_ft`, `_gt3`, `_gt4`, `_e1`). Each takes the primitive's words as values, in the primitive's vertex order, and writes them in `MakeVertex*`'s order. `nd_rec`, which reads back a primitive that was built (D82's path, still used where the stores stay), calls the same builders. So both paths make the same record by construction.
+  - **The sites that build from values.** They call `nd_open` (room in the pool, or NULL with `native_draw` off or the pool full: then the code is as it was), an `nd_mk_*`, then `nd_put` (an OT slot), `nd_chain_rec` (the sky's chain), or `LinkRec`/`LitLinkRec` (the face loops' buckets):
+    - env: the high-poly pass's GT4, G4, GT3 and G3 (`HighQuadRecord`, `HighTriRecord`), the low-poly pass's G4 and G3, the 2x2 pieces' GT4 and the edge triangles' GT3;
+    - mobys and specular mobys: `EmitTriangle` and `EmitQuad` (G3, GT3, G4, GT4);
+    - lit mobys: the Gouraud faces (G3, G4);
+    - Spyro: `EmitGT3` and the whole quad's GT4;
+    - the sky: F3 and G3.
+
+    The primitive's space is still taken: the buffer's pointer (`D_800757B0`), every bound check and every address after are the same. Only a marker (3 words) may be written into it.
+  - **The stores that stay:**
+    - What the code stores before its last check: the moby face loop's positions, the moby and lit G3/G4 colours and tags, and Spyro's positions before the cull. When a face is dropped, they sit past the buffer pointer, where the next primitive would go, and the arena must stay the same.
+    - What a G4 or G3 leaves past its own end. env's untextured high-poly faces are laid out as GT4/GT3 first: a G4 leaves the GT4's last colour and position at +0x28 and +0x2C, a G3 leaves its +0x1C and +0x20. The sky's F3 leaves the Gouraud layout's last position at +0x18.
+
+      The check found these. The first version left them out: 15 env calls in the gems script (vblanks 436–473) differed in RAM 4 bytes past the buffer pointer. And the game then took another course: 3,783 env calls instead of 4,040, because something reads those stale bytes. `--native-draw-check` now reports the first differing arena offset and the primitives' range.
+  - **Still built and read back** (`nd_take`, as D82): env's 4x4 pieces (their stores come before their tests, and a queued piece is read back by `SplitLast`), `SplitLast`'s own pieces, the draw mode command, the moby sprites' FT4, the lit flat faces' F3/F4, and Spyro's floor-clipped triangles. They're a small share.
+  - **The pool's write cursor:** `g_nd_wp`, `g_nd_lim` and `g_nd_base`, in place of a pool index and its count. The only per-primitive counters are the markers and the joined ones; the primitives are their sum, and the words come from the cursor at each list's end. The game builds with `-fno-strict-aliasing`, so every store into the arena or the record makes the compiler reload these globals: the fewer of them a primitive touches, the better.
+  - **The log:** `native draw N:` also counts the packets the walk still parses itself, by GP0 class: polygons, lines, rectangles, other. (In a `--native-draw-check` run these include the check's own walks.)
+- **Checked** (host `build/s2-bin-3`; its sources are this commit's; logs `logs/s2i-*`, `logs/s2j-*`, `logs/s2b-*`, `logs/s2m-*` in this branch's worktree, gitignored; `tools/native_draw_ab.sh`):
+  - **Every call, both ways** (`--native-draw-check`, D82's check). Every converted renderer, 0 calls differ:
+
+    | Scenario | Triangles compared | Calls that differ | Files identical with `native_draw` off |
+    |---|---:|---:|---:|
+    | attract demos (12,000 vblanks) | 10.0 M | 0 | 26/26 |
+    | gems script, 16:9 | 7.4 M | 0 | 18/18 |
+    | 16:9 with 60 fps in-between frames (`wsi`) | 26.5 M | 0 | 25/25 |
+    | gems at 2x draw distance (`lod`) | 7.4 M | 0 | 18/18 |
+    | gems with the vertex cache (`vc`) | 7.4 M | 0 | 18/18 |
+    | route A | 10.7 M | 0 | 55/55 |
+    | route B | 11.1 M | 0 | 56/56 |
+    | whole-game tour (100,000 vblanks) | 104.8 M | 0 | 141/141 |
+  - **`tools/host_checks.sh` against main** (`9431583`, built in the same tree): demos 26/26, route A 56/56, route B 56/56, the whole tour 141/141 files identical (`logs/s2m-*` against `logs/s2b-*`). With `native_draw=0` the code is main's.
+  - **ctest:** 11 tests, 0 failed (`gte` and `m2c_diff_math` skipped as before).
+  - **Vita3K** (VPK `logs/s2-vpk-2.vpk`, SHA-1 `b02f9406…`; `realtime=0`, the shipped threads, `fast_render=2`), `native_draw` 0 against 1:
+    - the gems script with window captures: 17 shots, 17 captures and the card identical (`logs/s2w-gems-n0`, `-n1`);
+    - the attract demos with captures: 12 shots, 11 captures and the card identical (`logs/s2w-demo-*`);
+    - the pause route (D74's): 70 shots and the card identical (`logs/s2w-pause-n0b`, `-n1`);
+    - in the `native_draw=1` runs: 0 unknown commands, 0 packets outside the copy, the pool never full.
+    - Vita3K itself stopped (`EXC_BAD_ACCESS` in its own code, about vblank 3,300) in 2 of 3 runs of the pause route with `native_draw=0`, main's path: `logs/s2v-pause-n0` (VPK 1) and `logs/s2w-pause-n0`. The third run went through. No `native_draw=1` run stopped.
+  - **Sizes** (host, the gems script, `--native-draw`): 266 MB of records over the run, against 429 MB with D82 (−38%); the largest list 75 KB (D82: 130 KB); in the whole tour 132 KB (D82: 235 KB). Vita3K, the 300 vblanks to 8700: 9.7 MB, the largest list 72 KB (D82: 15.5 MB and 115 KB).
+  - **What's left for the walk:** the walk still parses 0.5% of the polygons itself in the gems script (26,769 against 5.6 M from records) and 2.6% of the packets in the attract demos (95,000 polygons, 57,000 lines and 43,000 other packets, against 7.4 M polygons from records).
+- **Timings, which only hardware can settle:**
+  - **Host (qemu):** with the Mac shared by several sessions, the renderers' time moves ±20% between runs of the same binary. Pairs run at the same moment put `native_draw=1` within a few % of `0`, either way; D82's binary is 2–7% above this branch's in each pair (`logs/t3-*`, `logs/t4-*`).
+  - **Vita3K** (its JIT on a loaded Mac; the gems script, windows 6000–8700, `logs/v3k_avg.py`; D82's columns are its own runs, `logs/ndv3k-gems-*` in its worktree, on a quieter day):
+
+    | per vblank, ms | `native_draw=0` | `=1` | D82 `=0` | D82 `=1` |
+    |---|---:|---:|---:|---:|
+    | renderers (env, mobys, Spyro, sky) | 0.523 | 0.579 (+11%) | 0.379 | 0.469 (+24%) |
+    | the parse thread's walk | 0.650 | 0.215 | 0.533 | 0.189 |
+    | the game thread's wait for it | 1.162 | 0.853 | 0.578 | 0.244 |
+
+    The renderers' extra cost is halved. The game thread's totals moved less than the noise between runs (the update, which this doesn't touch, moved 1–13%).
+  - **Hardware: P7 and P8** (2026-11-03, with the owner's go-ahead; VPK `logs/s2-vpk-2.vpk`). These are P5 and P6 again: 60 fps on the Toasty route, `REALTIME=1`, `native_draw` 0 then 1 (`logs/hw-p7`, `logs/hw-p8`). Both reached `frames=21000` in 318 s, with no hang or crash line. P8: 0 primitives left as primitives, the largest list 49 KB (P6: 71–114). Means over the windows from vblank 900 (`logs/hw_cmp.py`):
+
+    | per vblank, ms | P7 (`=0`) | P8 (`=1`) | D82 P5 (`=0`) | D82 P6 (`=1`) |
+    |---|---:|---:|---:|---:|
+    | game thread busy (`time`'s `game`) | 4.39 | 4.97 | 4.30 | 4.87 |
+    | renderers (env, mobys, Spyro, sky) | 3.27 | 3.80 | 3.14 | 3.66 |
+    | env / mobys / Spyro / sky | 1.71 / 0.89 / 0.27 / 0.41 | 1.80 / 1.12 / 0.37 / 0.52 | 1.65 / 0.87 / 0.24 / 0.39 | 1.82 / 0.99 / 0.30 / 0.56 |
+    | the parse thread's walk | 2.47 | 1.66 | 2.46 | 1.77 |
+    | the game thread's wait for it | 1.40 | 1.09 | 1.38 | 1.09 |
+    | late vblanks per 300 | 2.6 | 3.4 | 2.6 | 3.5 |
+
+    - **P7 matches P5:** `native_draw=0` is main's path, as the host check said.
+    - **The renderers' extra cost with records is the same as D82's:** +0.53 ms per vblank (D82: +0.51). Building the records from values instead of from the stored primitive saved nothing on the Cortex-A9, though Vita3K's JIT showed the extra cost halved. So the PS1 stores and their read-back were not where the time went. What's left is the record path itself: writing a second stream of memory (the pool) per primitive, and the marker and join logic. Finding which needs the CPU's counters on hardware.
+    - **The game thread is slower with records** (4.39 → 4.97 ms per vblank), and late vblanks rise (2.6 → 3.4 per 300). The walk's saving (0.81 ms on core 1, 0.31 ms of the game thread's wait) doesn't make up for it.
+    - **The two runs went different ways from vblank 16,912.** In P8, Spyro was respawned 19 vblanks earlier than in P5, P6 and P7, died twice more and reached game over at 19,363. So the cards differ. With `realtime=1` a late vblank makes the game run the missed vblanks and take a longer step (D28), so timing changes the course. In the windows before, P8 had 8 and 4 late vblanks where P7 had 4 and 2. D82's P6, with as many late vblanks, happened to stay on P5's course. The host runs, which are deterministic, keep the same course with records on in every scenario above, so this is the timing, not the pictures or the logic.
+- **Not done, and why:**
+  - **The render thread's side** (the plan's step 2: resolve the atlas once per page and CLUT, set the program and blend per segment). On P6 the render thread's `expand` took 0.78 ms per vblank (233 ms per 300). Its busy time (98%) includes waiting for the display, and 60 fps held with 0.2 late vblanks per 300, so it isn't shown to be the limit. The change is in `gpu_gl.c`, needs a side channel next to the vertex slabs (as the vertex cache's), and can only be timed on hardware. It waits for P7 and P8: if the game thread is faster there and 60 fps holds, there's no need.
+  - **The decomp C's own primitives** (step 3: particles, shadows, the flame, the HUD). They're 0.5–2.6% of what the walk sees. Particles, shadows and the flame are mips2c units (`docs/native-plan.md` §2.1: 1,512, 636 and 444 instructions): their links are emulated stores with no point to hook, so they need hand C first. The HUD's 2D primitives are the ones widescreen squeezes in the OT (D67), which would have to learn the records. The gain is a sliver of the walk's time; the cost is hand C for about 2,600 instructions.
+- **Default:** `native_draw=0`. On hardware it still costs the game thread more than the walk saves. The code stays behind the switch: the same pictures (host, Vita3K), the smaller record and the check's diagnostics are where a next attempt starts. That attempt should begin by measuring the record path on hardware, not by moving more work into it.
+
+
+## 2026-11-03: readable C, round 2 (stage 3)
+
+### D87. Stage 3: `math.s`, `42CC4.s` and the gamestates 8 and 11 update as readable C; the GTE's control registers stay as the asm leaves them, its data registers go
+- **Why:** stage 3 of `docs/native-plan.md` (D76), after collision (D83). The plan's next three: `math.s` (1,296 instructions), `42CC4.s` (1,050) and the gamestates 8 and 11 update (3,133). The renderers' remaining helpers wait for stage 2, which another session is changing.
+- **What it is:**
+  - **`src/game/math_hand.c`**, all 45 entries of `asm/math.s` (four have no caller: `func_80017188`, `func_80017548`, `func_8001771C`, `func_80017854`; written anyway, so the unit can leave mips2c whole). Angles (`Octant`, the two arctangent tables), the sine tables, PsyQ's table square root, vectors, the matrix builder, rotations and the camera projection (`ngte_rtps`, D80's native RTPS). `RotateByAngles8` (RotVec8ToMatrix's body) is shared with `42CC4_hand.c` through `math_hand.h`.
+  - **`src/game/42CC4_hand.c`**, all nine entries of `asm/42CC4.s`: the moby and props slots (`MobyAlloc`, `MobyFree`: the state bytes as `SLOT_END`, `SLOT_HOLE`, `SLOT_DEAD`), the moby collision grid (`MobyCell`, `ChainLink`, `ChainUnlink`), `MobyUpdateCollision`, `MobySetShaded`, `func_800529E4` by its three flags, `MobyGetAnimatedVertex`, Spyro's compressed vertices (`func_80052F38`), the death sparks (`func_800530C0`) and the shadow (`MobyUpdateShadow`).
+  - **`src/game/gamestates_hand.c`**: the dragon rescue (gamestate 8, `func_8002F3E4`, eight states: `DragonFree`, `DragonWalkUp`, `DragonWait`, `DragonAppear`, `DragonCutscene`, `DragonVanish`, `DragonCount`, `DragonEnd`) and the fairy (gamestate 11, `func_800314B4`: `FairyFlyIn`, `FairyMenu`, `FairySave`), with the decomp's `g_DragonCutscene` and `g_FairyCutscene`. Compiled C in the original, so this is decompiling: the asm's struct offsets are checked by `static_assert`s.
+  - `src/game/gte_int.h`: collision's integer GTE helpers, now shared (plus `RotClamp`, a row of MVMVA/RTPS with sf 1 read as IR).
+- **The GTE's state: the control registers the asm sets are kept, its working registers dropped.** The plan said math's rotation matrix is state other calls read (`VecRotateByLastMatrix`), so it stays in the GTE. The rule generalises to the rest: what `CTC2` sets (the rotation, the translation, and the RBK that `func_800530C0` borrows as a spare register) the hand C sets the same, through `gteRegs`; what the asm leaves in the data registers (V0, IR, MAC, the SXY/SZ FIFOs, LZCS/LZCR, FLAG) and FLAG are a calculator's leftovers, and the hand C keeps its working values in locals.
+  - **Static:** nothing reads those leftovers. No hand-written asm calls a math or 42CC4 entry (`grep` of every `jal` in `asm/`, `nonmatchings/` aside); every caller is C: the decomp's, our hand C (B1 and B2) and compiled C left as mips2c. C reaches the GTE's data registers only through an explicit load-command-store sequence.
+  - **Measured:** the host runs below are byte-identical with these units as mips2c (which leaves the data registers as the asm does) and as hand C (which doesn't touch them).
+  - The control registers cost nothing to keep (a store each), and they are state: R and TR are read across calls by `VecRotateByLastMatrix` and the projections.
+- **v0 and v1:** the hand C returns only what the C signature says. `tools/oracle/v1_live.py` (now following the caller's branches, with `--reg v0`, and with its store check fixed: `sra`/`sll`/`subu` were read as stores) shows every hand-written asm call site writes v0 and v1 before reading them; the compiled-C callers read v0 only after the entries that return it. `tools/oracle/ignore_ranges.txt` gains the `ret`/`v1` lines (the replay's table of them grew from 64 to 128 entries).
+- **The oracle replay's shadows** (host build with the units linked, `-DSPYRO_M2C_REF=ON`):
+  - **math** (`g_math_shadow`): each call runs the unit from the same state first, then the hand C; the result, the output (up to 36 bytes) and the GTE's rotation and translation must match, and the call leaves the unit's GTE. Light, because math runs thousands of times a sample: it's leaf code that writes only its output and the GTE. `SPYRO_MATH_FUZZ=N` runs N rounds of every entry with random arguments (random GTE rotation and translation, a random camera half the time) at each sample's first math call.
+  - **42CC4** (`g_mobys_shadow`): as collision's (D83), all of RAM but the scratchpad, plus the GTE's control registers but FLAG (a command's result, like the data registers). `SPYRO_MOBY_FUZZ=N`: N variants of each shadowed `MobyUpdateShadow` (random collision normals and points, both shadow states), `func_800529E4` (random flags, positions moved by up to 0x8000, random angles), `MobyGetAnimatedVertex` (vertex, frame progress, matrix) and `func_80052F38` (vertex count).
+  - `SPYRO_SHADOW=col,math,mobys` runs the same shadows over a whole host run, not just replay samples.
+  - **No shadow for the gamestates:** running them twice would repeat what they do outside RAM (sounds, the memory card, SPU transfers, the CD loader). They're checked by the replay's samples and the tour (below).
+- **A/B:** `SPYRO_M2C_FUNCS` takes the entry names, or `math`, `42CC4`, `func_8002F3E4`, `func_800314B4`. `tests/m2c_diff` (math's unit against PCSX-Redux snapshots) now builds only with `SPYRO_M2C_REF` and calls the unit's `_gen` entries.
+- **Known differences** (none reachable in the game):
+  - `func_80016D08` of a negative value: the hand C counts leading sign bits as the GTE's LZCR does; the mips2c unit's LZCR is PsyCross's, which counts leading zeros (none for a negative). Its two callers (the cyclorama set-up) pass a sum of absolute values and a magnitude. The fuzz gives it non-negative values.
+  - A moby missing from its cell's list (`MobyFree`, `func_800529E4`): the asm walks on through address 4, the hand C dereferences NULL.
+  - `func_800530C0` keeps its vertex list in a local array of 128 (the asm's scratchpad holds as many).
+  - Overflows the asm's `add` would trap on are assumed absent, as in D83.
+- **Checked** (details and logs in `docs/translation-log.md`, "Stage 3, round 2"):
+  - **Oracle replay with the shadows:** all 21 capture sets, **7,155 PASS, 0 FAIL** (82 NOEXIT as before), no shadow mismatch.
+  - **The shadows bite:** the math draft's `Atan2` (its 16-bit step indexed by twice the entry) failed cap3 with 44 `mathshadow` lines before the fix.
+  - **Fuzzing:** 978 samples (cap3, cap5-fairy, route A) with 20 rounds of all 45 math entries each (9,520 rounds) and 20 variants of each shadowed 42CC4 call: 0 mismatches.
+  - **Shadows over whole host runs:** the attract demos and route A with the math, 42CC4 and gamestate shadows, and the whole-game tour (1,390 vblanks of gamestate 8, 434 of 11) with the math and gamestate ones: 0 mismatches, every call.
+  - **Host:** `tools/host_checks.sh` against a build of main (`9431583`): the attract demos, routes A and B and the 100,000-vblank tour, **all 279 files byte-identical** (traces, shots, audio, memory cards).
+  - **Both attract demos tick for tick against the emulator** (866 and 768 ticks).
+  - **ctest:** no failures (`gte` skipped, as on main; `m2c_diff_math` now builds only with `SPYRO_M2C_REF`).
+  - **Vita3K:** the gems script, main's VPK against this one: 17 of 17 shots and the memory card identical. **Hardware** (2026-11-03, the owner's Vita over `hw_run.sh`, approved by the owner; after merging main `fdd40d6`): runs S1 (main's VPK) and S2 (this branch's), the K route, 18,000 vblanks, `tools/vita/fps-runs/s1-stage3-round2.txt`: all 18 pictures and the memory card identical, no crash dump. The game logic's time (`update` in the `draw` lines) fell from 0.237 to 0.203 ms per vblank over the route (-14%; -15% from vblank 3600, in play: 0.282 to 0.240).
+- **Where it leaves stage 3** (`tools/native_audit.py`, `logs/native-audit.txt`): readable C (A + B1) is **60.8% of the executable's instructions** (54.8% before) and **93.4% of the whole game's** (92.4%); mips2c runs 9,927 of the game's instructions (15,406 before) and its live code in the ELF is 164,795 bytes (262,127); B1's is 52,676 (38,820). Left as mips2c: the renderers' helpers (6,335, after stage 2), the cyclorama set-up (1,287), moby lists, `moby_helpers`' one, images and particle allocation (711), and the credits overlay's two functions (1,594).
+
+
+## 2026-11-03: the freeze going into Cliff Town
+
+### D90. The display's vblank counter is 16 bits on hardware; `vblank.c` widens it, so VSync's wait ends after 18 minutes too
+- **Seen:** the owner played on hardware (VPK 2 of PR #62, the same `src/` as `afbd294`), going from Peace Keepers home into Cliff Town. The game froze in the level transition. The watchdog (D73) logged `hang: no vblank for 10 s ... at vblank 62996`, game thread in `wait`, `waiting (wait type 0x10000, on 0x105d5)`. The render, mixer and XA read-ahead threads were idle on their semaphores. 20 s later it stopped the app for a crash dump (both kept in the gitignored `logs/crash-20261103-cliff-town/`).
+- **The dump** (read with a stdlib reader of the `.psp2dmp`'s notes, against `build/vita/src/platform/vita/spyro_vita` of that VPK; the dump's `spyro_vita` text is 0x3cb010 bytes, VPK 2's, and that build's `eboot.bin` is byte-identical to the VPK's):
+  - The game thread's PC is in `sceDisplayWaitVblankStart`'s import stub. LR is `PsyX_WaitForTimestep` (`vblank.c:204`), in `while (real_vblanks() < target) sceDisplayWaitVblankStart();`. Wait type 0x10000 is that vblank wait. The thread wakes every vblank, so its CPU time rounds to 0 ms.
+  - Registers, against the disassembly: `r6` = target = 62997 (`s_vblank` 62996 + 1), `r3` = `s_vcount_base` = 2539, `r0` = `sceDisplayGetVcount() - s_vcount_base` = -696.
+  - 2539 + 62996 = 65535 = 0xffff. At the next vblank `sceDisplayGetVcount()` returned 0, not 0x10000, so `real_vblanks()` fell to -2539 and could never reach 62997. 1843 vblanks later (-2539 + 1843 = -696), about 30.7 s, the watchdog's 10 s + 20 s took the dump.
+- **Cause:** `sceDisplayGetVcount` counts in 16 bits on hardware. Since M3 (`f1e0c2d`, D28) `vblank.c` has compared it with a 32-bit target. So any session freezes 65536 display vblanks after the count's origin, 18 min 13 s at 59.94 Hz, wherever the game is. Cliff Town and load stage 11 were where the owner happened to be. Every release so far has this. No hardware log on the Mac ran that long before: the longest was 29,400 vblanks (`logs/hw-26f3138-bench`).
+- **Fix:**
+  - `src/platform/vita/vcount.h` (plain C) widens the counter: each read adds the step since the last one, modulo 0x10000. `vblank.c` reads it every frame, far more often than once a wrap. It only uses each step's low 16 bits, so it is right for a wider counter too.
+  - `vblank.c`'s two reads go through it.
+  - **Also fixed:** the "not counted yet" mark was `s_vcount_base < 0`. A base can be negative after a save state sets a larger vblank count (D51), so the base was taken afresh every frame and a late frame's vblanks were never run. Now a flag (`s_vcount_synced`) marks it.
+- **Test knob:** `vcount_test=N` moves the counter so its 16 bits wrap N vblanks after the first read. That lets Vita3K or a hardware run see the wrap without 18 minutes of play.
+- **Checks:**
+  - **`tests/vcount` (ctest `vcount`, host i686):**
+    - The widener's cases: 0xffff → 0 is one step, and a wider counter gives the same steps.
+    - `PsyX_WaitForTimestep`'s realtime arithmetic, run against a simulated 16-bit counter. 200,000 frames of 0–3 vblanks, VSync(1) or (2), options-menu pauses and save-state jumps, 6–7 wraps per run. The runs start from the dump's 2539, from 65530 (a wrap in the first frames) and from 0.
+    - Each wait must end within a few vblanks, and our count must keep up with the display's.
+    - **The mutant** (`vcount_mutant`: the raw counter, as before) must fail, and it does. Started from 2539, it hangs at display vblank 63004 (count 0x0007).
+    - `logs/run1-host-vcount/ctest.txt`.
+  - **Vita3K, `REALTIME=1 vcount_test=1500 frames=3000`** (`logs/run2-vita3k-vcount`, this branch's VPK):
+    - The log has `vcount_test: the display's 16-bit vcount wraps in 1500 vblanks`. Every 300-vblank line through the wrap reads 59.9–60.0 per second, with 0–1 vblanks late.
+    - There is no `hang:` line, and the run exits at `frames=3000 reached`.
+    - Not run: a negative control on Vita3K (the old code with the knob). The host mutant is that check.
+  - **Hardware: not run yet** (it needs the owner's approval). One run from this worktree checks it: `REALTIME=1 DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-vcount 240 vcount_test=1500 frames=3000`. Pass: `frames=3000 reached`, no `hang:` line.
+
+## 2026-11-03: native audio's output ring (stage 5)
 
 ### D88. `mixer=3`'s output ring holds a level against the two clocks; `SpuWrite` only forgets the PCM it overwrites
 - **Why:** D84 kept `mixer=1` the default because `mixer=3` ran dry more often near the end of the hardware time run (R2 6 + 15 + 13 in the last three windows, R1 0 + 5 + 9).

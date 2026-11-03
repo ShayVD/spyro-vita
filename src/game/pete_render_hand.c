@@ -643,6 +643,31 @@ static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket,
   f->prim += size;
 }
 
+#if NGTE
+/* LinkPrim for a record built from values (D86, nd_open's r, nv vertices):
+ * the primitive's stores after the face's last check are skipped. */
+static inline __attribute__((always_inline)) void LinkRec(Faces *f, u32 bucket, u32 tail,
+                                                          u32 size, u32 *r, u32 nv) {
+  if (nd_commit(r, nv, tail, f->prim)) {
+    f->prim += size;
+    return;
+  }
+  AT32(bucket) = f->prim;
+  if (tail) {
+    u32 t = MIPS_KUSEG(tail);
+    AT16(t) = (u16)f->prim;
+    AT8(t + 2) = (u8)(f->prim >> 16);
+  } else {
+    if ((s32)(f->lo - bucket) > 0)
+      f->lo = bucket;
+    AT32(bucket + 4) = f->prim;
+    if ((s32)(f->hi - bucket) < 0)
+      f->hi = bucket;
+  }
+  f->prim += size;
+}
+#endif
+
 /* SZ of a vertex: the vertex records by byte offset index*4 (path A). */
 #define SZ_A(i4) ((u32)AT16(WORK + W_VERTS + ((i4) << 2)))
 
@@ -666,6 +691,20 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
     return;
   tail = AT32(bucket);
   uv2 = AT32(face - 4);
+#if NGTE
+  {
+    u32 *r = nd_open(3);
+    if (r) { /* D86: the record from the values; the xy the face loop stored */
+      u32 uv0 = AT32(face - 0xC);
+      if (from_quad)
+        uv0 = (uv0 & 0xFFFF0000u) | (uv2 >> 16);
+      nd_mk_gt3(r, col0 + ((w1 & 1) << 25), AT32(prim + 0x8), uv0, col1, AT32(prim + 0x14),
+                AT32(face - 0x8), col2, AT32(prim + 0x20), uv2);
+      LinkRec(f, bucket, tail, 0x28, r, 3);
+      return;
+    }
+  }
+#endif
   AT32(prim + 0x10) = col1;
   AT32(prim + 0x1C) = col2;
   AT32(prim + 0x4) = col0 + ((w1 & 1) << 25);
@@ -776,6 +815,19 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
         continue;
       tail = AT32(bucket);
       uv2 = AT32(face - 4);
+#if NGTE
+      {
+        u32 *r = nd_open(4);
+        if (r) {
+          nd_mk_gt4(r, (col0 & 0xFFFFFF) + 0x3C000000u + ((w1 & 1) << 25), xy0, AT32(face - 0xC),
+                    WORD_AT(f->colours, c1), xy1, AT32(face - 0x8),
+                    WORD_AT(f->colours, (w1 << 1) & 0x7FC), xy2, uv2, WORD_AT(f->colours, c3),
+                    xy3, uv2 >> 16);
+          LinkRec(f, bucket, tail, 0x34, r, 4);
+          continue;
+        }
+      }
+#endif
       AT32(prim + 0x10) = WORD_AT(f->colours, c1);
       AT32(prim + 0x1C) = WORD_AT(f->colours, (w1 << 1) & 0x7FC);
       AT32(prim + 0x28) = WORD_AT(f->colours, c3);

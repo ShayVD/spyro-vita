@@ -22,6 +22,8 @@ set(M2C_HAND
   asm/nonmatchings/camera/func_80034CE8.s
   asm/nonmatchings/camera/func_800357A4.s
   asm/nonmatchings/camera/func_80035FB4.s
+  asm/nonmatchings/gamestates/update/func_8002F3E4.s
+  asm/nonmatchings/gamestates/update/func_800314B4.s
   asm/nonmatchings/pete/func_8003EA68.s
   asm/nonmatchings/pete/func_8003FE40.s
   asm/nonmatchings/pete/func_80041670.s
@@ -58,13 +60,29 @@ else()
 endif()
 
 # Units whose entry points are written by hand together, in one C file
-# (src/game/collision_hand.c, decisions D83). SPYRO_M2C_FUNCS takes their
+# (src/game/collision_hand.c, decisions D83; math_hand.c and 42CC4_hand.c,
+# D87). SPYRO_M2C_FUNCS takes their
 # entry names one by one (or the unit's name for all of them). The unit
 # never goes back into the batch: when an entry is taken from it, or with
 # SPYRO_M2C_REF, it is translated on its own with every entry renamed
 # <name>_gen, and the hand C's M2C_<name>=1 branch calls that.
-set(M2C_HAND_MULTI asm/collision.s)
+set(M2C_HAND_MULTI asm/collision.s asm/math.s asm/42CC4.s)
 set(M2C_ENTRIES_collision ColTraceRay ColSphere ColFindFloor func_8004DF24 ColSpyroInHitbox ColMoby)
+set(M2C_ENTRIES_math
+  Atan2Fast Atan2 Sin Cos
+  func_80016D08 RotVec8ToMatrix func_80016FD0 VecRotateByMatrix
+  VecRotateByLastMatrix VecRotateByCam func_80017188 VecMagnitude
+  VecRefineMagnitude func_80017330 func_80017428 func_80017548
+  VecScaleToLength func_80017614 VecShiftLeft VecShiftRight
+  VecNull VecCopy func_8001771C VecAdd
+  VecSub VecMult func_800177F8 func_80017854
+  func_80017894 func_80017908 func_80017928 func_80017948
+  func_8001796C OctDistance func_800179F0 func_80017A38
+  func_80017AA4 func_80017B48 func_80017BFC func_80017C24
+  func_80017C4C VecToShortVec func_80017C84 ColTriUnpack
+  func_80017D7C)
+set(M2C_ENTRIES_42CC4 MobyAlloc MobyFree MobyUpdateCollision MobySetShaded func_800529E4
+  MobyGetAnimatedVertex func_80052F38 func_800530C0 MobyUpdateShadow)
 set(M2C_MULTI_GEN)
 foreach(u ${M2C_HAND_MULTI})
   get_filename_component(f "${u}" NAME_WE)

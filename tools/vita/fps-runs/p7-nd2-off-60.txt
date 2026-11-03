@@ -1,0 +1,8 @@
+# Run P7 (D86): P5 again on D86's VPK: 60 fps as the menu gives it (interp=1), D75's GPU meter,
+# fast_render=2 and native_draw=0, on the Toasty route (hw-routes/o-toasty.cfg and .pad), with
+# REALTIME=1. Against P8: late vblanks, the threads' ms per vblank, the renderers.
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+native_draw=0
