@@ -1,0 +1,12 @@
+# Runs T1 and T2 (D91): P8's switches with nd_ab=1, on VPKs 1 and 2 of D91's branch: seven variants
+# of the record path take turns by blocks of 8 lists, so each is timed in the same scenes. T1:
+# native_draw 0, D86's path, the side table's joins, the pool prefetched, both, a pool-write probe
+# with and without the prefetch. T2: native_draw 0, side+prefetch, uncached pools (copied, walked in
+# place), the probe cached and uncached, D86's path. The Toasty route, REALTIME=1. Read with
+# tools/vita/nd_ab_summary.py --t1/--t2. Today's VPK has only native_draw 0 and 1 (T3's file).
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+native_draw=1
+nd_ab=1

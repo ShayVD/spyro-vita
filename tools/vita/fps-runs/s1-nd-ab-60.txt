@@ -1,9 +1,0 @@
-# Run S1 (D87): P8's switches with nd_ab=1: native_draw 0, D86's record path and its variants
-# (the side table's joins, the pool prefetched, both) take turns by blocks of 8 lists, so each is
-# timed in the same scenes. The Toasty route, REALTIME=1. Read with tools/vita/nd_ab_summary.py.
-config_version=3
-interp=1
-gpu_meter=1
-fast_render=2
-native_draw=1
-nd_ab=1

@@ -73,7 +73,7 @@ typedef struct {
   unsigned long long walk_us_tag[PSX_WALK_TAGS], wait_us_tag[PSX_WALK_TAGS];
 } PsxWalkStats;
 /* The tag of the list DrawOTag is given next (-1: none): native_draw.c's
- * A/B variant (D87), so the walk's and the wait's times are counted by it. */
+ * A/B variant (D91), so the walk's and the wait's times are counted by it. */
 extern int g_psx_walk_tag;
 void psx_walk_stats_take(PsxWalkStats *out);
 /* The clock the stats use, microseconds (NULL: none, times stay 0). */

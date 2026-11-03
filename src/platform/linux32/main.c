@@ -84,7 +84,7 @@
  *   --native-draw-check runs each of their calls both ways and compares the
  *   triangles PsyCross's walk makes of them ("native draw check" lines).
  *   --nd-ab: native_draw 0 and 1 in turn by blocks of lists (nd_ab, the
- *   Vita's timing run, D87).
+ *   Vita's timing run, D91).
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
@@ -111,7 +111,7 @@ extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
 void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
-extern int g_nd_ab;                    /* D87 */
+extern int g_nd_ab;                    /* D91 */
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);

@@ -1,4 +1,4 @@
-/* Native draw lists (decisions D82, D86, D87): the record pools, the list
+/* Native draw lists (decisions D82, D86, D91): the record pools, the list
  * turn-over and the OT walk's side, which emits a marker's records as
  * PsyCross's parse would have emitted the primitives they came from.
  * native_draw.h has the format and the renderers' side. */
@@ -73,7 +73,7 @@ void nd_begin(void) {
 
 void nd_end(void) { g_nd.on = 0; }
 
-/* nd_ab=1 (D87): native_draw 0 and 1 in turn, a block of lists each. A
+/* nd_ab=1 (D91): native_draw 0 and 1 in turn, a block of lists each. A
  * block's first lists aren't counted: the pools take turns per list, so
  * they only bring this way's pool into the caches. */
 enum { AB_BLOCK = 8, AB_WARM = 2 };

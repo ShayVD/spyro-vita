@@ -289,6 +289,21 @@ D82's P6 showed the walk's thread 0.46 ms per vblank faster and the renderers 0.
 
 **Ran 2026-11-03** (`logs/hw-p7`, `logs/hw-p8`; D86): both reached `frames=21000`. P7 matches P5. P8's renderers are +0.53 ms per vblank over P7 (as P6 over P5), the game thread 4.39 → 4.97 ms, late vblanks 2.6 → 3.4 per 300. From vblank 16,912 P8 took another course (more late vblanks, so different steps under `realtime=1`) and ended at game over, so the cards differ.
 
+## Runs T1–T3, P9 and P10: where the records' renderer cost goes, and the lean records (D91)
+
+`nd_ab=1` makes variants of the record path take turns by blocks of 8 lists (the first 2 not counted), so one run times them all in the same scenes. Its `draw ab N:` and `parse ab N:` lines are summed by `tools/vita/nd_ab_summary.py`.
+
+| File | Switches | Route |
+|---|---|---|
+| `t1-nd-ab-60.txt` | P8's with `nd_ab=1` | T1 on D91's VPK 1 (seven variants: off, D86, the side table, `pldw`, both, a pool-write probe with and without `pldw`), T2 on VPK 2 (off, side + `pldw`, uncached pools copied or walked in place, the probe cached and uncached, D86); the Toasty route, `REALTIME=1` |
+| `t3-nd-lean-ab-60.txt` | the same, on the lean records' VPK: `native_draw` 0 and 1 in turn | the same |
+| `p9-nd3-off-60.txt` | P7's: the menu's 60 fps, `gpu_meter=1`, `native_draw=0` | the same |
+| `p10-nd3-on-60.txt` | P9 with `native_draw=1` | the same |
+
+**Unattended:** `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-t3 1500 @tools/vita/fps-runs/t3-nd-lean-ab-60.txt @tools/vita/hw-routes/o-toasty.cfg` (the others the same with their file and log folder).
+
+**Ran 2026-11-03** (`logs/hw-t1` … `hw-t3`, `hw-p9`, `hw-p10`; D91): all reached `frames=21000`. T1/T2: a second write stream is most of D86's extra renderer cost; uncached pools and `pldw` don't help the records. T3: the lean records cost the renderers +0.16 ms per list (D86 +0.28–0.33). P9 → P10: the game thread 5.79 → 5.73 ms per vblank, the parse thread 2.48 → 1.76, late vblanks 2.53 → 2.78 per 300 (the attract demos'; Toasty play 24 → 23), the same course. `native_draw=1` is the Vita's default since.
+
 ## Run Q: collision as hand-written C (D83)
 
 Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with readable C (`src/game/collision_hand.c`). Its results feed gameplay, so the check is the same route played on main's VPK and on this one: every picture and the memory card must come out identical.

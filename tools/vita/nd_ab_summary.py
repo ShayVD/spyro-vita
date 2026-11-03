@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Sum an nd_ab=1 run's "draw ab" and "parse ab" lines (decisions D87).
+"""Sum an nd_ab=1 run's "draw ab" and "parse ab" lines (decisions D91).
 
-Usage: tools/vita/nd_ab_summary.py [--s1|--s2] spyro.log [FROM_VBLANK]
+Usage: tools/vita/nd_ab_summary.py [--t1|--t2] spyro.log [FROM_VBLANK]
 
 nd_ab=1 makes native_draw 0 and 1 take turns by blocks of 8 lists
-(native_draw.c; runs S1 and S2 rotated seven variants of the record path),
+(native_draw.c; runs T1 and T2 rotated seven variants of the record path),
 so every 300-vblank window has all of them in nearly the same scenes. Per variant: the counted lists, then per list the renderers'
 ms (env, mobys, Spyro, sky and their sum), the parse thread's walk and the
 game thread's wait for it. Then each variant against v0 (native_draw=0)
@@ -15,11 +15,11 @@ import math
 import re
 import sys
 
-# native_draw 0 and 1 (D87's lean records); --s1 and --s2 name the variants of those runs
+# native_draw 0 and 1 (D91's lean records); --t1 and --t2 name the variants of those runs
 NAMES = ["v0 off", "v1 on"]
-for flag, names in (("--s1", ["v0 off", "v1 D86", "v2 side", "v3 pf", "v4 side+pf", "v5 probe",
+for flag, names in (("--t1", ["v0 off", "v1 D86", "v2 side", "v3 pf", "v4 side+pf", "v5 probe",
                               "v6 probe+pf"]),
-                    ("--s2", ["v0 off", "v1 side+pf", "v2 side+nc", "v3 side+ncw", "v4 probe",
+                    ("--t2", ["v0 off", "v1 side+pf", "v2 side+nc", "v3 side+ncw", "v4 probe",
                               "v5 probe+nc", "v6 D86"])):
     if flag in sys.argv:
         sys.argv.remove(flag)

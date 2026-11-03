@@ -131,13 +131,13 @@
  *                       with gpu=1 and render_thread=1, the walk on a thread
  *                       of its own, core 1, walking a copy of the frame's
  *                       primitives while the game goes on; D71, D74)
- *       native_draw=1   with fast_render=2, the hand renderers'
- *                       primitives reach the OT walk as the vertices
- *                       PsyCross would make of them, not as primitives to
- *                       parse (native draw lists, the same triangles; D82)
+ *       native_draw=0   the hand renderers' primitives parsed by
+ *                       PsyCross's OT walk (default 1 since D91: with
+ *                       fast_render=2 they reach the walk as native draw
+ *                       lists, the same triangles; D82, D86, D91)
  *       nd_ab=1         with native_draw=1, timing: native_draw 0 and 1
  *                       take turns, 8 lists each, and the "draw ab" and
- *                       "parse ab" lines time each (diagnostic, D87)
+ *                       "parse ab" lines time each (diagnostic, D91)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -221,7 +221,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
-extern int g_nd_ab; /* D87 */
+extern int g_nd_ab; /* D91 */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
@@ -490,6 +490,7 @@ int main(int argc, char **argv) {
   vita_log("clocks: ARM %d MHz, bus %d, GPU %d, GPU crossbar %d", scePowerGetArmClockFrequency(),
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
+  g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,

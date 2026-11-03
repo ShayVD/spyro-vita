@@ -205,7 +205,7 @@ void vita_parse_report(int vblank) {
              w.foreign, (unsigned)w.foreign_at, w.deferred);
   }
   {
-    /* nd_ab=1 (D87): walks, walk us and the game thread's wait us by way */
+    /* nd_ab=1 (D91): walks, walk us and the game thread's wait us by way */
     char buf[320];
     int i, n = 0, any = 0;
     for (i = 0; i < 2; i++) { /* ND_AB_VARIANTS */

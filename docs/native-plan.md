@@ -564,6 +564,14 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment. On P6 `expand` took 0.78 ms per vblank of the render thread, which isn't shown to be the limit at 60 fps.
   - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD. They're 0.5–2.6% of the packets the walk sees (D86). Particles, shadows and the flame are mips2c units and need hand C first; the HUD's are the ones widescreen squeezes in the OT.
 
+**Then (D91, 2026-11-03): measured on hardware, a leaner record, and `native_draw=1` by default on the Vita.**
+- **Measured:** `nd_ab=1` times variants of the record path in turn, 8 lists each, in the same scenes (runs T1 and T2). About 60% of D86's extra renderer cost was the second write stream itself (a probe that writes 12 words a primitive and builds no record costs +0.18–0.19 ms per list); the rest was the record path's instructions. Uncached pools and prefetching didn't help the records.
+- **The lean record:** the primitive's own words in the pool, plus a link and the kind. The parse thread turns them into vertices. Joins come from a side table, so the game thread never reads a pool. The hot state is one struct, and there are no per-primitive counters.
+- **Checked:** the per-call check both ways and the file A/B on gems, the demos, wsi, the vertex cache, lod and routes A and B (0 calls differ, every file identical); Vita3K's gems shots and captures identical.
+- **Hardware:** T3 put the renderers at +0.16 ms per list with records (D86: +0.28–0.33). P9/P10: the game thread 5.79 → 5.73 ms per vblank, the parse thread 2.48 → 1.76; late vblanks 2.53 → 2.78 per 300, the rise all in the attract demos (Toasty play 24 → 23).
+- **Default `native_draw=1` on the Vita** (the owner's decision); the host keeps 0.
+- **Not yet:** the renderers' last 0.16 ms (mostly the second stream), the render thread's side, the decomp C's own primitives (as above).
+
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
 **Replaces** (C): 19,272 original instructions, 32,563 generated lines and 453 KB of ARM code:

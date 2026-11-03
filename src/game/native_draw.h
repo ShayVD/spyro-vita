@@ -1,4 +1,4 @@
-/* Native draw lists (decisions D82, D86, D87; docs/native-plan.md stage 2).
+/* Native draw lists (decisions D82, D86, D91; docs/native-plan.md stage 2).
  *
  * A hand renderer still takes each PS1 primitive's space where it always
  * did (so the primitive buffer's pointer and every bound check are
@@ -21,7 +21,7 @@
  * flags under the same draw state) and the same vertices, in the OT's own
  * order: buckets, FIFO within a bucket, the HUD chain last.
  *
- * A record (D87): the next record's offset (ND_END: none), the kind
+ * A record (D91): the next record's offset (ND_END: none), the kind
  * (ND_K_*), then the primitive's words after its tag as the PS1 primitive
  * holds them (the colour word with the code byte, then each vertex's
  * colour, x/y and texture word as the kind has them). The renderers store
@@ -34,7 +34,7 @@
  * would have stored (nd_open, nd_mk_*, then nd_put, nd_chain_rec or the
  * face loops' LinkRec), and skip the PS1 primitive's stores.
  *
- * Joins are found in a side table (D87), not by reading the tail packet and
+ * Joins are found in a side table (D91), not by reading the tail packet and
  * the marker's first record back: nothing on the game thread reads a pool.
  * The records of everything appended between two OT links (func_80016784,
  * order_table.c, which every DrawOTag in the game is given) are one list's;
@@ -55,7 +55,7 @@
 extern int g_native_draw;
 /* host --native-draw-check: each converted renderer's call runs both ways */
 extern int g_nd_check;
-/* config nd_ab=1 (D87, diagnostic): native_draw 0 and 1 take turns by
+/* config nd_ab=1 (D91, diagnostic): native_draw 0 and 1 take turns by
  * blocks of lists, each timed on its own (nd_ab_slot) */
 extern int g_nd_ab;
 
@@ -89,7 +89,7 @@ typedef struct {
 extern NdPool g_nd_pool[ND_POOLS];
 extern u32 g_nd_cur; /* the pool being written */
 
-/* What a record site touches, in one place (D87: under -fno-strict-aliasing
+/* What a record site touches, in one place (D91: under -fno-strict-aliasing
  * every store makes the compiler reload these; one base address serves
  * them all) */
 typedef struct {
@@ -119,7 +119,7 @@ void nd_check_began(void); /* nd_begin, for the check */
 void nd_check_set_log(void (*log)(const char *fmt, ...));
 void nd_check_report(void);
 
-/* The side table (D87): this list's markers by their address, each with
+/* The side table (D91): this list's markers by their address, each with
  * its last record, so a join reads neither the tail packet (in the arena)
  * nor the marker's records (in the pool). The key is the marker's 21-bit
  * arena offset and the list's serial; a marker whose entry another took is

@@ -72,7 +72,7 @@ static void slots_save(void) {
     s_head0[i] = slot_at(i)[1];
     s_last0[i] = ND_END;
     if (s_tail0[i] && nd_is_mark(s_tail0[i])) {
-      /* its last record: from the first, as the walk goes (D87: the side
+      /* its last record: from the first, as the walk goes (D91: the side
        * table has it, the records don't) */
       const u32 *w = g_nd_pool[g_nd_cur].w;
       u32 at = AT32_ND(MIPS_KUSEG(s_tail0[i]) + 8);
