@@ -84,7 +84,8 @@ def cmake_list(text, name):
 def build_lists():
     text = open(os.path.join(ROOT, "cmake/mips2c.cmake")).read()
     units = cmake_list(text, "M2C_UNITS")
-    # M2C_HAND_MULTI: units whose entries are all hand C (collision.s, D83)
+    # M2C_HAND_MULTI: units whose entries are all hand C (collision.s, D83;
+    # math.s and 42CC4.s, D87)
     hand = cmake_list(text, "M2C_HAND") + cmake_list(text, "M2C_HAND_MULTI")
     render = [e.split(":") for e in cmake_list(text, "M2C_RENDER_HAND")]
     nonmatch = sorted(os.path.relpath(p, S1) for p in
@@ -213,7 +214,8 @@ def code_lines(path):
 
 # src/game: the rest is G (port features).
 GAME_FILES = {
-    "B1": ["camera_hand.c", "collision_hand.c", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
+    "B1": ["camera_hand.c", "collision_hand.c", "math_hand.c", "42CC4_hand.c", "gamestates_hand.c",
+           "gte_int.h", "math_hand.h", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
            "pete_transition_hand.c", "memory.c", "order_table.c", "rand_psyq.c",
            "system_time.c", "hand_structs.h"],
     "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h"],

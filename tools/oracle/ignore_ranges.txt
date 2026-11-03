@@ -195,3 +195,68 @@ v1 ColSphere
 v1 ColFindFloor
 v1 func_8004DF24
 v1 ColSpyroInHitbox
+# math.s is hand-written C too (src/game/math_hand.c, decisions D87). Its
+# void entries return nothing; the asm leaves working values in v0 and v1.
+# Its int entries return only v0; the asm may leave one in v1. Both are dead
+# at every caller: C callers can't read them, and every jal in the
+# hand-written asm (renderers, 42CC4.s, moby_lists.s and the rest) writes
+# them before reading; the compiled-C callers left as mips2c (gamestates,
+# moby_helpers, the cyclorama set-up) read v0 only after the int entries.
+# tools/oracle/v1_live.py NAME [--reg v0] lists the sites.
+v1 Atan2Fast
+v1 Atan2
+v1 Sin
+v1 Cos
+v1 func_80016D08
+ret RotVec8ToMatrix
+ret func_80016FD0
+ret VecRotateByMatrix
+ret VecRotateByLastMatrix
+ret VecRotateByCam
+ret func_80017188
+v1 VecMagnitude
+v1 VecRefineMagnitude
+ret func_80017330
+v1 func_80017428
+ret func_80017548
+ret VecScaleToLength
+ret func_80017614
+ret VecShiftLeft
+ret VecShiftRight
+ret VecNull
+ret VecCopy
+v1 func_8001771C
+ret VecAdd
+ret VecSub
+ret VecMult
+ret func_800177F8
+ret func_80017854
+ret func_80017894
+v1 func_80017908
+v1 func_80017928
+v1 func_80017948
+v1 func_8001796C
+v1 OctDistance
+v1 func_800179F0
+v1 func_80017A38
+ret func_80017AA4
+ret func_80017B48
+ret func_80017BFC
+ret func_80017C24
+ret func_80017C4C
+ret VecToShortVec
+ret func_80017C84
+ret ColTriUnpack
+v1 func_80017D7C
+# 42CC4.s is hand-written C too (src/game/42CC4_hand.c, D87): v0 and v1 of
+# its void entries and v1 of MobyAlloc are dead at every caller (all of
+# them C, or compiled C left as mips2c; tools/oracle/v1_live.py).
+v1 MobyAlloc
+ret MobyFree
+ret MobyUpdateCollision
+ret MobySetShaded
+ret func_800529E4
+ret MobyGetAnimatedVertex
+ret func_80052F38
+ret func_800530C0
+ret MobyUpdateShadow
