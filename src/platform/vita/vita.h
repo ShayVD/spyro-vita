@@ -29,6 +29,7 @@ typedef struct {
   int cam_invert_y;   /*   flipped; Y also flips Triangle look mode's up/down (D47, D53) */
   int cam_speed;      /* cam_speed=50..200: the free camera's turn speed in % (default 100) */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
+  int vcount_test;    /* vcount_test=N: the display's vcount wraps N vblanks in (D89) */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
   int gpu_res;        /* res= (gpu_res=): GPU targets at 0 (default, res=native) the
                          screen's pixels; 1 (res=ps1) the PS1's (D40; 2-4 removed, D85) */

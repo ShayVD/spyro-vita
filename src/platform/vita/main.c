@@ -168,6 +168,9 @@
  *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
+ *       vcount_test=N   tests: the display's 16-bit vblank counter wraps N
+ *                       vblanks after start-up, not after up to 18 minutes
+ *                       (vblank.c widens it; before D89 the game froze there)
  *       log_sync=1      each log line written by the thread that logs it
  *                       (default 0: a writer thread on cores 1-2; log.c, D75)
  *       atlas_cpu=0     with gpu=1 and the atlas, new texture blocks decoded
@@ -320,6 +323,8 @@ static void read_config(void) {
       g_vita_opts.wav = atoi(v);
     else if (!strcmp(line, "realtime"))
       g_vita_opts.realtime = atoi(v);
+    else if (!strcmp(line, "vcount_test"))
+      g_vita_opts.vcount_test = atoi(v);
     else if (!strcmp(line, "gpu"))
       g_vita_opts.gpu = atoi(v);
     else if (!strcmp(line, "gpu_res")) /* res='s old name; res= is a menu row */
