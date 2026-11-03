@@ -352,17 +352,9 @@ typedef struct {
  * bucket's chain. With native_draw=1 (decisions D82, native_draw.h) it goes
  * as the vertices PsyCross would make of it: into the marker at the
  * bucket's tail, or as a marker linked in its place. */
-HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
+HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
   u32 *b = (u32 *)(uintptr_t)bucket;
   u32 last = b[0];
-#if NGTE
-  if (g_nd_on && nd_take(kind, last, c->prim)) {
-    c->prim += size;
-    return;
-  }
-#else
-  (void)kind;
-#endif
   b[0] = c->prim;
   if (last) {
     u32 t = MIPS_KUSEG(last);
@@ -377,6 +369,30 @@ HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
   }
   c->prim += size;
 }
+
+HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
+#if NGTE
+  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
+    c->prim += size;
+    return;
+  }
+#else
+  (void)kind;
+#endif
+  LinkTo(c, bucket, size);
+}
+
+#if NGTE
+/* Link for a record built from values (D86, nd_open's r, nv vertices): the
+ * primitive's stores after the face's last check are skipped. */
+HAND_INLINE void LinkRec(FaceCtx *c, u32 bucket, u32 size, u32 *r, u32 nv) {
+  if (nd_commit(r, nv, *(u32 *)(uintptr_t)bucket, c->prim)) {
+    c->prim += size;
+    return;
+  }
+  LinkTo(c, bucket, size);
+}
+#endif
 
 /* A face's depth bias, bits 28-31 of its colour word, doubled. */
 #define FACE_ZOFF(cw) ((u32)((s32)(cw) >> 28) << 1)
@@ -398,6 +414,9 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
   const u32 p = c->prim;
   u32 z0 = VERT_DEPTH(c, i0, wide), z1 = VERT_DEPTH(c, i1, wide), z2 = VERT_DEPTH(c, i2, wide);
   u32 sum = z0 + (z0 >> 1) - c->bias + z1 + (z1 >> 1) + z2, key;
+#if NGTE
+  u32 *r;
+#endif
   if (!textured) {
     AT32(p + 0x4) = col0 + 0x30000000u;
     AT32(p + 0xC) = col1;
@@ -407,6 +426,13 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
     key = (u32)((s32)sum >> c->zshift) + FACE_ZOFF(cw);
     if ((s32)key < 0)
       return;
+#if NGTE
+    if ((r = nd_open(3)) != NULL) {
+      nd_mk_g3(r, col0 + 0x30000000u, AT32(p + 0x8), col1, AT32(p + 0x10), col2, AT32(p + 0x18));
+      LinkRec(c, (key << 3) + c->buckets, 0x1C, r, 3);
+      return;
+    }
+#endif
     AT32(p) = 0x06000000u;
     Link(c, (key << 3) + c->buckets, 0x1C, ND_K_G3);
   } else {
@@ -417,6 +443,18 @@ HAND_INLINE void EmitTriangle(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2
     if ((s32)key < 0)
       return;
     tex2 = tex[-1];
+#if NGTE
+    if ((r = nd_open(3)) != NULL) {
+      /* the record from the values (D86); the xy the face loop stored */
+      u32 uv0 = tex[-3] + c->tex_bias;
+      if (uv3)
+        uv0 = (uv0 & 0xFFFF0000u) | (tex2 >> 16);
+      nd_mk_gt3(r, col0 + 0x34000000u + ((cw & 1) << 25), AT32(p + 0x8), uv0, col1, AT32(p + 0x14),
+                tex[-2], col2, AT32(p + 0x20), tex2);
+      LinkRec(c, (key << 3) + c->buckets, 0x28, r, 3);
+      return;
+    }
+#endif
     AT32(p + 0x1C) = col2;
     AT32(p + 0x10) = col1;
     AT32(p + 0x4) = col0 + 0x34000000u + ((cw & 1) << 25);
@@ -441,6 +479,9 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
   u32 sum = VERT_DEPTH(c, i0, wide) - c->bias + VERT_DEPTH(c, i1, wide) + VERT_DEPTH(c, i2, wide) +
             VERT_DEPTH(c, i3, wide);
   u32 zoff = FACE_ZOFF(cw) << c->zshift;
+#if NGTE
+  u32 *r;
+#endif
   if (!textured) {
     AT32(p + 0x4) = col0 + 0x38000000u;
     AT32(p + 0xC) = col1;
@@ -452,6 +493,14 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
     sum += zoff;
     if ((s32)sum < 0)
       return;
+#if NGTE
+    if ((r = nd_open(4)) != NULL) {
+      nd_mk_g4(r, col0 + 0x38000000u, AT32(p + 0x8), col1, AT32(p + 0x10), col2, AT32(p + 0x18),
+               col3, AT32(p + 0x20));
+      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24, r, 4);
+      return;
+    }
+#endif
     Link(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x24, ND_K_G4);
   } else {
     u32 tex2;
@@ -461,6 +510,15 @@ HAND_INLINE void EmitQuad(FaceCtx *c, const u32 *tex, u32 i0, u32 i1, u32 i2, u3
     if ((s32)sum < 0)
       return;
     tex2 = tex[-1];
+#if NGTE
+    if ((r = nd_open(4)) != NULL) {
+      nd_mk_gt4(r, col0 + 0x3C000000u + ((cw & 1) << 25), AT32(p + 0x8), tex[-3] + c->tex_bias, col1,
+                AT32(p + 0x14), tex[-2], col2, AT32(p + 0x20), tex2, col3, AT32(p + 0x2C),
+                tex2 >> 16);
+      LinkRec(c, ((u32)((s32)sum >> c->zshift) << 3) + c->buckets, 0x34, r, 4);
+      return;
+    }
+#endif
     AT32(p + 0x28) = col3;
     AT32(p + 0x1C) = col2;
     AT32(p + 0x10) = col1;
@@ -1240,18 +1298,9 @@ typedef struct {
   const u8 *colours; /* s4 */
 } LitCtx;
 
-static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
-                                                          int kind) {
+static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucket, u32 size) {
   u32 *b = (u32 *)(uintptr_t)bucket;
   u32 last = b[0];
-#if NGTE
-  if (g_nd_on && nd_take(kind, last, c->prim)) { /* as Link's */
-    c->prim += size;
-    return;
-  }
-#else
-  (void)kind;
-#endif
   b[0] = c->prim;
   if (last) {
     u32 t = MIPS_KUSEG(last);
@@ -1266,6 +1315,31 @@ static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket,
   }
   c->prim += size;
 }
+
+static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
+                                                          int kind) {
+#if NGTE
+  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
+    c->prim += size;
+    return;
+  }
+#else
+  (void)kind;
+#endif
+  LitLinkTo(c, bucket, size);
+}
+
+#if NGTE
+/* LinkRec's (D86) */
+static inline __attribute__((always_inline)) void LitLinkRec(LitCtx *c, u32 bucket, u32 size,
+                                                             u32 *r, u32 nv) {
+  if (nd_commit(r, nv, *(u32 *)(uintptr_t)bucket, c->prim)) {
+    c->prim += size;
+    return;
+  }
+  LitLinkTo(c, bucket, size);
+}
+#endif
 
 #define LIT_DEPTH(i) WORD_AT(SCRATCH_BASE + SCRATCH_DEPTHS, (i))
 #define LIT_BUCKET(sum) (((u32)((s32)(sum) >> 5) << 3) + PSX_ADDR(D_8006FCF4 + TBL_BUCKETS))
@@ -1282,6 +1356,9 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
 #endif
   const u32 p = c->prim;
   u32 col0, col1, col2, sum;
+#if NGTE
+  u32 *r;
+#endif
   if (i[2] == i[3]) {
     if ((s32)MFC2_MAC0_FIRST() <= 0)
       return;
@@ -1295,6 +1372,13 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     AT32(p + 0x4) = col0 + 0x30000000u;
     if ((s32)sum <= 0)
       return;
+#if NGTE
+    if ((r = nd_open(3)) != NULL) { /* D86: the record from the values */
+      nd_mk_g3(r, col0 + 0x30000000u, xy[0], col1, xy[1], col2, xy[2]);
+      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x1C, r, 3);
+      return;
+    }
+#endif
     AT32(p + 0xC) = col1;
     AT32(p + 0x14) = col2;
     AT32(p) = 0x06000000u;
@@ -1324,6 +1408,13 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy) {
     sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
     if ((s32)sum <= 0)
       return;
+#if NGTE
+    if ((r = nd_open(4)) != NULL) {
+      nd_mk_g4(r, col0, xy[0], col1, xy[1], col2, xy[2], col3, xy[3]);
+      LitLinkRec(c, LIT_BUCKET(sum) + ((cw & 3) << 3), 0x24, r, 4);
+      return;
+    }
+#endif
     AT32(p + 0x4) = col0;
     AT32(p + 0xC) = col1;
     AT32(p + 0x14) = col2;

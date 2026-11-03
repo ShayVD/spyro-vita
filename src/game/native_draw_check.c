@@ -191,13 +191,20 @@ static int walked_differ(const Walked *a, const Walked *b) {
   return 0;
 }
 
+static u32 s_ram_at, s_ram_lo, s_ram_hi; /* ram_differ's first difference, the primitives */
+
 static void report(int k, int what, const Walked *a, const Walked *b) {
   int i;
   if (!s_log)
     return;
+  if (what == 4) {
+    s_log("native draw check: %s call %lu: RAM differs from arena offset %06x (primitives "
+          "%06x-%06x)", s_stats[k].name, s_stats[k].calls, s_ram_at, s_ram_lo, s_ram_hi);
+    return;
+  }
   s_log("native draw check: %s call %lu: %s differ (vertices %d/%d, splits %d/%d, tpage %04x/%04x)",
         s_stats[k].name, s_stats[k].calls,
-        what == 4 ? "RAM" : what == 1 ? "counts" : what == 2 ? "vertices" : "splits", a->nv, b->nv,
+        what == 1 ? "counts" : what == 2 ? "vertices" : "splits", a->nv, b->nv,
         a->nsplit, b->nsplit, a->tpage, b->tpage);
   if (what == 2)
     for (i = 0; i < a->nv; i++)
@@ -215,6 +222,8 @@ static int ram_differ(const unsigned char *a, const unsigned char *b, u32 lo, u3
   const u32 wot = MIPS_KUSEG(AT32_ND(ADDR_ND(g_WorldOT))) - base;
   const u32 hot = MIPS_KUSEG(AT32_ND(ADDR_ND(g_HudOT))) - base;
   u32 cut[3][2] = {{lo - base, hi - base}, {wot, wot + OT_SLOTS * 8}, {hot, hot + 8}};
+  s_ram_lo = lo - base;
+  s_ram_hi = hi - base;
   u32 at = 0;
   for (;;) {
     u32 next = PSX_RAM_SIZE, skip = PSX_RAM_SIZE;
@@ -224,8 +233,13 @@ static int ram_differ(const unsigned char *a, const unsigned char *b, u32 lo, u3
         next = cut[i][0] > at ? cut[i][0] : at;
         skip = cut[i][1];
       }
-    if (next > at && memcmp(a + at, b + at, next - at))
+    if (next > at && memcmp(a + at, b + at, next - at)) {
+      u32 k = at;
+      while (a[k] == b[k])
+        k++;
+      s_ram_at = k;
       return 1;
+    }
     if (next >= PSX_RAM_SIZE)
       return 0;
     at = skip;
@@ -289,8 +303,15 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
       memcmp(s_scr_ps1, g_psx_scratch, sizeof s_scr_ps1) ||
       memcmp(&s_gte_ps1, &gteRegs, sizeof gteRegs)) {
     bad = 4;
-    if (s_stats[k].bad++ < 20)
+    if (s_stats[k].bad++ < 20) {
       report(k, 4, &s_walked[0], &s_walked[0]);
+      if (getenv("ND_DEBUG")) {
+        const u32 *x = (const u32 *)(s_ps1 + (s_ram_at & ~3u) - 16);
+        const u32 *y = (const u32 *)((const unsigned char *)g_psx_arena_base + (s_ram_at & ~3u) - 16);
+        for (i = 0; i < 16; i++)
+          s_log("  %06x: %08x %08x", (s_ram_at & ~3u) - 16 + i * 4, x[i], y[i]);
+      }
+    }
   }
 
   (void)PsyX_VertexBuffer(&fill);

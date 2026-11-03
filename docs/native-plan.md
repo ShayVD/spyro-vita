@@ -552,11 +552,17 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - **Every call** of every converted renderer, both ways, through PsyCross's own walk (host `--native-draw-check`), on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole-game tour: 184 M triangles, 0 differences.
   - **Every file** of those runs identical with `native_draw` off and with main's runs.
   - **Vita3K:** the gems script's and the demos' shots and window captures, and the pause route's shots, identical.
+- **Hardware (P5, P6):** the walk's thread 0.46 ms per vblank faster, the renderers 0.52 ms slower (they built every primitive and then its record), so the game thread was no faster.
+
+**Then (D86, 2026-11-03): the records without the PS1 stores, still behind `native_draw=1` (default 0).**
+- **The hot sites build their records from the values they would store** and skip the primitive's stores: env's high- and low-poly passes, its 2x2 pieces and edge triangles, the moby and specular faces, the lit Gouraud faces, Spyro's faces, the sky. The space is still taken, so the buffer's pointer and every bound are the same. The stores made before a face's last check, and those a G4/G3 leaves past its end, stay: the check showed the game reads them.
+- **A smaller record:** 3 words a textured vertex and 2 an untextured one (5 before), the page/CLUT once per record. The records of the gems script fall from 429 to 266 MB, the largest list from 130 to 75 KB.
+- **Checked:** the per-call check both ways on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole tour (0 calls differ, every file identical); `tools/host_checks.sh` byte-identical with main; Vita3K's gems and demo shots and captures and the pause route identical.
+- **Timings:** in Vita3K (a direction only) the renderers' extra cost is +11% (D82: +24%), with the walk's thread 0.65 → 0.22 ms per vblank. Hardware runs P7 and P8 (`tools/vita/fps-runs/`) decide the default; they need the owner's approval.
 - **Not yet:**
-  - **Hardware:** runs P1–P6 (`tools/vita/fps-runs/p*.txt`), which need the owner's approval.
-  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD.
-  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment.
-  - **Building the records without the PS1 stores** in the hottest sites (env's high-poly pass, the moby faces), if hardware shows the renderers' extra work matters.
+  - **Hardware:** P7 and P8. `native_draw=1` becomes the default if P8 shows the renderers no slower than P7 and the game thread faster, with the same card.
+  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment. On P6 `expand` took 0.78 ms per vblank of the render thread, which isn't shown to be the limit at 60 fps; it waits for P7/P8.
+  - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD. They're 0.5–2.6% of the packets the walk sees (D86). Particles, shadows and the flame are mips2c units and need hand C first; the HUD's are the ones widescreen squeezes in the OT.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
