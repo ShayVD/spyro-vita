@@ -572,6 +572,17 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 - **Default `native_draw=1` on the Vita** (the owner's decision); the host keeps 0.
 - **Not yet:** the renderers' last 0.16 ms (mostly the second stream), the render thread's side, the decomp C's own primitives (as above).
 
+**Then (D92, 2026-11-03): the rest of stage 2 that doesn't need hand C.**
+- **The walk parses every polygon packet with the records' converter** (`nd_fast`, on with `native_draw` 1 and 2): so with `native_draw=1` the particles', shadows', flame's, HUD's and `flight.c`'s polygons reach the GPU through the same code as the records. Their lines, `DR_MODE` packets and fills stay with PsyCross.
+- **`native_draw=2`:** the renderers on their PS1 path, no records and so no second stream of writes; the walk parses their packets with the same converter, without joins. `nd_ab=1` times 0, 1 and 2 in turn, to settle on hardware whether the records' +0.16 ms per list buys more on the walk than it costs.
+- **The render thread** (`gpu_fused=1`): the slab's vertices go to the lean vertex in one pass with one copy each; `atlas_find`'s answers are kept by page, CLUT and blocks; a draw's program is chosen per run of like triangles; untextured subtract draws join (the shadows' rule; it seldom fires: Spyro's shadow is already one split, the mobys' are textured). `gpu_fused=2` times the two ways in turn.
+- **Checked:** see D92 (host per-call check with a third walk for `native_draw=2`, a per-packet parse check, file A/B; Vita3K shots and captures with `native_draw` 0, 1, 2 and `gpu_fused` 0, 1, 2).
+- **Hardware:** run U1 (`tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`) waits for the owner's go-ahead.
+- **Still not done, and why:**
+  - **Records built by the particles, shadows and flame themselves:** they are mips2c units (`r_particles.s`, `r_shadows.s`, `r_flame.s`, 2,642 instructions); records need hand C, stage 3's renderer helpers. With `nd_fast` the walk already gets what records would give it for these few packets.
+  - **The HUD's `draw.c` sites as records:** possible through `patches/spyro-1-port`, but it would add the second stream of writes for packets the walk now parses natively.
+  - **The renderers' last 0.16 ms:** with records it is the second stream (D91). `native_draw=2` removes it by having no records; whether that is the better trade is U1's question.
+
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
 **Replaces** (C): 19,272 original instructions, 32,563 generated lines and 453 KB of ARM code:

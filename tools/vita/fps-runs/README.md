@@ -304,6 +304,18 @@ D82's P6 showed the walk's thread 0.46 ms per vblank faster and the renderers 0.
 
 **Ran 2026-11-03** (`logs/hw-t1` … `hw-t3`, `hw-p9`, `hw-p10`; D91): all reached `frames=21000`. T1/T2: a second write stream is most of D86's extra renderer cost; uncached pools and `pldw` don't help the records. T3: the lean records cost the renderers +0.16 ms per list (D86 +0.28–0.33). P9 → P10: the game thread 5.79 → 5.73 ms per vblank, the parse thread 2.48 → 1.76, late vblanks 2.53 → 2.78 per 300 (the attract demos'; Toasty play 24 → 23), the same course. `native_draw=1` is the Vita's default since.
 
+## Run U1: native_draw 0, 1 and 2, and the render thread's two ways (D92)
+
+One run, two A/Bs in the same scenes. `nd_ab=1` now takes `native_draw` 0, 1 (the records) and 2 (the renderers' PS1 primitives, parsed by the walk with the records' converter) in turn by blocks of 8 lists; `gpu_fused=2` takes the render thread's way before D92 (f0) and `gpu_fused=1`'s (f1) in turn, a vertex buffer each.
+
+| File | Switches | Route |
+|---|---|---|
+| `u1-nd-parse-fused-ab-60.txt` | T3's with `gpu_fused=2` | the Toasty route, `REALTIME=1` |
+
+**Unattended:** `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-u1 1500 @tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt @tools/vita/hw-routes/o-toasty.cfg`
+
+**What the logs should show:** `tools/vita/nd_ab_summary.py logs/hw-u1/spyro.log`: v2's renderers against v0 within noise (it builds no records), its walk and wait against v1's, and the "game" column (renderers plus wait) of v1 against v2. `tools/vita/fused_ab_summary.py logs/hw-u1/spyro.log`: f1's per-buffer render-thread time (vertices and issue) against f0's. `frames=21000` with no hang line.
+
 ## Run Q: collision as hand-written C (D83)
 
 Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with readable C (`src/game/collision_hand.c`). Its results feed gameplay, so the check is the same route played on main's VPK and on this one: every picture and the memory card must come out identical.

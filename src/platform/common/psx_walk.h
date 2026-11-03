@@ -75,6 +75,12 @@ typedef struct {
 /* The tag of the list DrawOTag is given next (-1: none): native_draw.c's
  * A/B variant (D91), so the walk's and the wait's times are counted by it. */
 extern int g_psx_walk_tag;
+/* The native draw mode of the list DrawOTag is given next (native_draw.c,
+ * D92): set when the list is linked, taken at the handover like the tag.
+ * psx_walk_nd(): the list being walked's (the walker's own copy), or
+ * g_psx_walk_nd outside a walk. */
+extern int g_psx_walk_nd;
+int psx_walk_nd(void);
 void psx_walk_stats_take(PsxWalkStats *out);
 /* The clock the stats use, microseconds (NULL: none, times stay 0). */
 void psx_walk_set_clock(unsigned long long (*now_us)(void));
