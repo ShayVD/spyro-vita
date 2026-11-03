@@ -621,7 +621,7 @@ static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket,
   /* native_draw=1 (decisions D82, native_draw.h): the primitive as the
    * vertices PsyCross would make of it, into the marker at the bucket's
    * tail or as a marker linked in its place */
-  if (g_nd_on && nd_take(kind, tail, f->prim)) {
+  if (g_nd.on && nd_take(kind, tail, f->prim)) {
     f->prim += size;
     return;
   }

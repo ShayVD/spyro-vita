@@ -162,7 +162,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   hand_spill_regs();
 #if NGTE
   nd_begin();
-  nd = g_nd_on;
+  nd = g_nd.on;
 #endif
   SkyVisibleSectors(group, HPTR(const u32, a1));
 

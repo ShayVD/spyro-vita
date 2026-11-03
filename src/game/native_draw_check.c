@@ -72,12 +72,12 @@ static void slots_save(void) {
     s_head0[i] = slot_at(i)[1];
     s_last0[i] = ND_END;
     if (s_tail0[i] && nd_is_mark(s_tail0[i])) {
-      /* its last record: from the first, as the walk goes (with nd_var's
-       * side table, D87, the first record's word 2 isn't kept) */
+      /* its last record: from the first, as the walk goes (D87: the side
+       * table has it, the records don't) */
       const u32 *w = g_nd_pool[g_nd_cur].w;
       u32 at = AT32_ND(MIPS_KUSEG(s_tail0[i]) + 8);
-      while (w[at + 1] != ND_END)
-        at = w[at + 1];
+      while (w[at] != ND_END)
+        at = w[at];
       s_last0[i] = at;
     }
   }
@@ -111,13 +111,13 @@ static int collect(Seq *q) {
       /* records this call joined to the marker an earlier one left at the
        * tail: as a marker of their own, first */
       const u32 *w = g_nd_pool[g_nd_cur].w;
-      const u32 next = w[s_last0[slot] + 1];
+      const u32 next = w[s_last0[slot]];
       if (next != ND_END) {
         if (q->count == MAX_PACKETS || q->n + 3 > q->cap)
           return -1;
         q->at[q->count++] = q->words + q->n;
         q->words[q->n] = 0x2000000u;
-        q->words[q->n + 1] = g_nd_id;
+        q->words[q->n + 1] = g_nd.id;
         q->words[q->n + 2] = next;
         q->n += 3;
       }

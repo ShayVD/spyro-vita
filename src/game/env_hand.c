@@ -126,7 +126,7 @@ static inline void OtAppend(u32 slot, u32 prim) {
 /* native_draw=1 (decisions D82, native_draw.h): the primitive just built at
  * fp goes into the slot as the vertices PsyCross would have made of it. */
 #if NGTE
-#define ND_OT(kind, slot, fp) (g_nd_on ? nd_##kind(slot, fp) : OtAppend(slot, fp))
+#define ND_OT(kind, slot, fp) (g_nd.on ? nd_##kind(slot, fp) : OtAppend(slot, fp))
 #else
 #define ND_OT(kind, slot, fp) OtAppend(slot, fp)
 #endif
@@ -2564,7 +2564,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
       AT32(fp + 0x14) = AT32(b);
       AT32(fp + 0x20) = AT32(c);
 #if NGTE
-      if (!(g_nd_on && !queued && nd_gt3_chained(fp)))
+      if (!(g_nd.on && !queued && nd_gt3_chained(fp)))
 #endif
         AT32(fp) = 0x9000000;
 #if !NGTE

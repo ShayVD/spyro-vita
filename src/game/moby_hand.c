@@ -372,7 +372,7 @@ HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
 
 HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
 #if NGTE
-  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
     c->prim += size;
     return;
   }
@@ -1319,7 +1319,7 @@ static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucke
 static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
                                                           int kind) {
 #if NGTE
-  if (g_nd_on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
+  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
     c->prim += size;
     return;
   }

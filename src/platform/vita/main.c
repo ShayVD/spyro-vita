@@ -135,14 +135,9 @@
  *                       primitives reach the OT walk as the vertices
  *                       PsyCross would make of them, not as primitives to
  *                       parse (native draw lists, the same triangles; D82)
- *       nd_var=N        native_draw=1's record path, bits (D87): 2 joins
- *                       found in a side table, 4 the pool prefetched, 16
- *                       the pools in uncached memory (the walk copies
- *                       them), 32 uncached and walked in place
- *       nd_ab=1         with native_draw=1, timing: native_draw 0, D86's
- *                       path and the nd_var variants take turns, 8 lists
- *                       each, and the "draw ab" and "parse ab" lines time
- *                       each one (diagnostic, D87)
+ *       nd_ab=1         with native_draw=1, timing: native_draw 0 and 1
+ *                       take turns, 8 lists each, and the "draw ab" and
+ *                       "parse ab" lines time each (diagnostic, D87)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -197,7 +192,6 @@
 #include <psp2/display.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
-#include <psp2/kernel/sysmem.h>
 #include <psp2/power.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -224,18 +218,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
-extern int g_nd_var, g_nd_ab; /* D87 */
-extern void *(*g_nd_nc_alloc)(unsigned bytes);
-
-/* native_draw's uncached pools (ND_ON_NC, D87): main RAM, not cached */
-static void *nd_nc_alloc(unsigned bytes) {
-  void *p = NULL;
-  SceUID b = sceKernelAllocMemBlock("native draw pool", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_NC_RW,
-                                    (bytes + 0xFFFFFu) & ~0xFFFFFu, NULL);
-  if (b < 0 || sceKernelGetMemBlockBase(b, &p) < 0)
-    return NULL;
-  return p;
-}
+extern int g_nd_ab; /* D87 */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
@@ -381,8 +364,6 @@ static void read_config(void) {
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "native_draw"))
       g_native_draw = atoi(v);
-    else if (!strcmp(line, "nd_var"))
-      g_nd_var = atoi(v);
     else if (!strcmp(line, "nd_ab"))
       g_nd_ab = atoi(v);
     else if (!strcmp(line, "parse_core"))
@@ -556,9 +537,8 @@ int main(int argc, char **argv) {
     sceKernelExitProcess(1);
   }
   vita_parse_init(); /* after the render thread (D71) */
-  g_nd_nc_alloc = nd_nc_alloc;
   nd_init(vita_log);
-  vita_log("native_draw=%d nd_var=%d nd_ab=%d: %s", g_native_draw, g_nd_var, g_nd_ab,
+  vita_log("native_draw=%d nd_ab=%d: %s", g_native_draw, g_nd_ab,
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
            : g_fast_render == 2   ? "the hand renderers' primitives as native draw lists (D82)"
                                   : "needs fast_render=2: off");
