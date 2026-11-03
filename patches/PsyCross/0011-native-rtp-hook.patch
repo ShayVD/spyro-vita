@@ -1,0 +1,28 @@
+diff --git a/include/psx/gtereg.h b/include/psx/gtereg.h
+--- a/include/psx/gtereg.h
++++ b/include/psx/gtereg.h
+@@ -114,6 +114,13 @@
+  * shift flag. */
+ extern void (*g_psyxRtpHook)(int idx, int sf);
+ 
++/* Spyro port (docs/decisions.md D89): the same for a projection made
++ * without the register file (the hand renderers' native GTE maths,
++ * fast_render=2, D80): proj holds R11-R33, TRX-TRZ, OFX, OFY and H as RTPS
++ * read them, (vx, vy, vz) is the vertex, sxy and sz3 what it got (SXY2,
++ * SZ3), with sf set. NULL unless the vertex cache records. */
++extern void (*g_psyxRtpValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3);
++
+ #if defined(_LANGUAGE_C_PLUS_PLUS)||defined(__cplusplus)||defined(c_plusplus)
+ }
+ #endif
+diff --git a/src/gte/PsyX_GTE.cpp b/src/gte/PsyX_GTE.cpp
+--- a/src/gte/PsyX_GTE.cpp
++++ b/src/gte/PsyX_GTE.cpp
+@@ -11,6 +11,7 @@
+ 
+ GTERegisters gteRegs;
+ void (*g_psyxRtpHook)(int idx, int sf) = NULL;
++void (*g_psyxRtpValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) = NULL;
+ 
+ #define GTE_SF(op)			((op >> 19) & 1)
+ #define GTE_MX(op)			((op >> 17) & 3)

@@ -1,0 +1,7 @@
+# Run P10 (D91): P9 with native_draw=1 (the lean records: the primitive's words, side-table
+# joins, the walk converts). Same route, REALTIME=1. Against P9, and P7/P8 (logs/hw-p7, hw-p8).
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+native_draw=1

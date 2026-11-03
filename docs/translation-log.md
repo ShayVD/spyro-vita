@@ -215,6 +215,7 @@ The hottest translated renderers are hand-written C, and every translated GTE co
 - **Host:** `tools/fast_render_ab.sh` (each scenario with `--fast-render 0`, then `1`, from one binary; every trace, PNG, WAV and memory card compared). Results are in decisions D72.
 - **Oracle replay** of every function below on the six capture sets: `logs/ab4-replay.txt`.
 - **Vita3K:** the gems script with `fast_render` 0 and 1, shots and card compared.
+- **Missed until D89:** the inline commands didn't call PsyCross's vertex-cache hook (`g_psyxRtpHook`), so with `fast_render` 1 or 2 `subpixel` and `persp` found no vertices. None of the checks above uses the cache: the host's pictures don't, and the Vita3K runs had it off. RTPS and RTPT in `gte_inline.h` now call the hook as `GTE_RotTransPers` does.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
@@ -243,6 +244,7 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 - Oracle replay with `--fast-render 2` of the six renderers and `func_80050BD0` on the six capture sets: 661 of 661 samples pass (`logs/ngab-replay.txt`).
 - Vita3K, the gems script, `fast_render` 1 against 2: 17 shots, 17 window captures and the card identical (`logs/ngv3k-gems-f1`, `-f2`).
 - `tests/gte/test_gte_native` (ctest `gte_native`, and `gte_native_mutant`, which must fail).
+- **Vertex cache (D89):** the native RTPS (`ngte_rtps_w`) hands each projection to the cache as values while it records (`ngte_vcache`, PsyCross patch 0011's `g_psyxRtpValueHook`), so `subpixel` and `persp` work at `fast_render=2`. Host `--vcache` at 0 and 2: the same counters (2 records 25 more projections a frame, the replayed tails) and a checksum of every found vertex identical over 31 M lookups; `tools/native_draw_ab.sh` `vc` now fails a run that finds no vertices.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
@@ -284,6 +286,16 @@ Still behind `native_draw=1` (default 0). The hottest sites of the native-GTE bu
 | `func_80022A2C` (lit mobys and HUD models) | the Gouraud faces' G3/G4 from values (`LitLinkRec`); the flat faces as D82 | as above | as env's |
 | `func_80023AC4` (Spyro) | `EmitGT3` and the whole quad's GT4 from values (`LinkRec`); the floor-clipped triangles as D82 | as above | as env's |
 | `func_8004EBA8` (sky) | F3 and G3 from values (`nd_chain_rec`); an F3 still stores the Gouraud layout's last position past its end | as above | as env's |
+
+## Native draw lean records (2026-11-03, decisions D91)
+
+`native_draw=1` is the Vita's default since D91 (the host's stays 0). A record is now the primitive's own words (after the tag, in its order) with the next record's offset and the kind; `nd_mk_*` store them as the PS1 path would, `nd_rec` copies them from a built primitive, and the walk (`emit`, `src/game/native_draw.c`) makes the vertices PsyCross's `Process*Poly` would, which D86's builders did on the game thread. Joins come from a side table keyed by the marker's address and the list's serial (`ND_SIDE_AT`, `nd_commit`), not from the tail packet and the marker's first record. The sites' code is D86's but for the signatures (`nd_put`, `nd_chain_rec`, `LinkRec`, `LitLinkRec` no longer take the vertex count) and `g_nd.on`.
+
+**Checks:** D82's per-call check (`--native-draw-check`) and the file A/B (`tools/native_draw_ab.sh`, each run with its own card folder) on gems, the demos, wsi, the vertex cache, lod, routes A and B and the whole tour: 0 calls differ, every file identical; gems with `--nd-ab` (records on and off by turns) identical; Vita3K gems shots, captures and card identical with `native_draw` 0, 1 and `nd_ab=1`. Numbers and the hardware runs in D91.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_800258F0`, `func_8001F798`, `func_80020F34`, `func_80022A2C`, `func_80023AC4`, `func_8004EBA8` (the six hand renderers' record sites) | D86's sites; the record holds the primitive's words, the walk converts them; side-table joins | per-call check, file A/B, Vita3K captures | a marker whose side-table entry another marker took starts a new marker (the same triangles, 2% more markers in gems) |
 
 ## Stage 3: readable C (2026-11-02, decisions D83)
 

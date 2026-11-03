@@ -211,6 +211,9 @@ GTEI_INL int gtei_rtp(int idx, int sf, int lm, long long *mac0) {
   C2_SXY1 = C2_SXY2;
   C2_SX2 = gtei_g1(gtei_f((long long)C2_OFX + ((long long)C2_IR1 * h_over_sz3), mac0) >> 16);
   C2_SY2 = gtei_g2(gtei_f((long long)C2_OFY + ((long long)C2_IR2 * h_over_sz3), mac0) >> 16);
+  /* the vertex cache (D39), as PsyCross's GTE_RotTransPers calls it (D89) */
+  if (g_psyxRtpHook)
+    g_psyxRtpHook(idx, sf);
   return h_over_sz3;
 }
 

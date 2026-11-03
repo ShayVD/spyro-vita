@@ -9,8 +9,10 @@
 # Usage: [BIN=path/to/spyro] [DISC=disc/files] tools/native_draw_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-n0, logs/PREFIX-SCENARIO-chk, and a summary line per scenario.
 # Scenarios (default: demo gems wsi vc lod routeA routeB): fast_render_ab.sh's, and
-# vc (gems with the vertex cache, D39's hook) and whole (the 100,000-vblank tour).
+# vc (gems with the vertex cache, D39's hook; its "host vcache" line must find
+# vertices, D89) and whole (the 100,000-vblank tour).
 # MODE=n1 runs --native-draw in place of the check (timing, --prof-draw).
+# ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
@@ -19,8 +21,11 @@ run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
   extra=
-  case $n in demo) extra="--wav $D/audio.wav";; routeA|routeB|whole) extra="--save $D/save";; esac
-  case $m in n1) extra="$extra --native-draw";; chk) extra="$extra --native-draw-check";; esac
+  # every run its own card folder: without --save both runs of a pair share ./save,
+  # and the second finds the card the first wrote (D91)
+  extra="--save $D/save"
+  case $n in demo) extra="$extra --wav $D/audio.wav";; esac
+  case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
@@ -45,5 +50,11 @@ for n in "$@"; do
   done
   [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   grep -h "native draw check: func" $b/spyro.log | sed 's/^/  /'
+  # vc: the host's pictures don't use the cache, so the files can't show it
+  # missing; the hand renderers must feed it (D89)
+  if [ $n = vc ]; then
+    grep -h "host vcache:" $a/stdout.txt $b/stdout.txt | sed 's/^/  /'
+    grep -q "vertices found 0.0%" $a/stdout.txt $b/stdout.txt && echo "  vc: NO VERTICES FOUND (the cache isn't fed)"
+  fi
   echo "$n: $same identical, $diff different ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 done
