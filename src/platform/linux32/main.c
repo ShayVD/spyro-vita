@@ -133,9 +133,9 @@ void CDReadDone(unsigned char intr, unsigned char *result);
 static void mixer_report(void) {
   const PsxSpuNativeStats *st = &g_psx_spu_native_stats;
   if (g_psx_spu_native)
-    host_log("mixer: native (D84): PCM blocks %llu from SpuWrite's decode, %llu from the second way, "
-             "%llu decoded in the mix; %llu decoded at SpuWrite",
-             st->hits[0], st->hits[1], st->misses, st->predecoded);
+    host_log("mixer: native (D84): PCM blocks %llu from the cache, %llu from its second way, "
+             "%llu decoded in the mix; %llu forgotten at SpuWrite (D88)",
+             st->hits[0], st->hits[1], st->misses, st->written);
 }
 
 static void usage(void) {

@@ -1,9 +1,10 @@
 /* The native SPU mix (docs/native-plan.md stage 5, decisions D84): the same
  * output as psx_spu_mix (libspu.c), sample for sample, by a cheaper route.
  *
- * - SPU RAM is decoded to PCM once, block by block, when the game writes it
- *   (SpuWrite) or the first time a voice plays a block, into a cache of
- *   28-sample blocks. A block's samples depend on the ADPCM history it is
+ * - SPU RAM is decoded to PCM once, block by block, the first time a voice
+ *   plays a block, into a cache of 28-sample blocks; SpuWrite only forgets
+ *   the blocks it wrote (D88: decoding them there cost the game thread
+ *   56 ms a sound bank on hardware). A block's samples depend on the ADPCM history it is
  *   entered with (unless its filter is 0), and that history depends on the
  *   path a voice took (key on resets it, a loop end jumps). So each cached
  *   block keeps the history it was decoded from, and a voice uses it only
@@ -78,35 +79,23 @@ void psx_spu_pcm_reset(void) {
   memset(s_state, 0, sizeof s_state);
 }
 
-/* SPU RAM [addr, addr + size) was written: decode it again, in address
- * order, each block from the history the one before it leaves (a sample
- * played from its start sees the same, after the silent block every PS1
- * sample starts with). Blocks after it keep their PCM: their keys still say
- * what history it is right for. */
+/* SPU RAM [addr, addr + size) was written: forget the PCM of every block
+ * it touched, in both ways. A voice decodes each again the first time it
+ * plays it, from its own history (pcm_block). */
 void psx_spu_pcm_write(unsigned addr, unsigned size) {
-  unsigned first, n, i;
-  int h0 = 0, h1 = 0;
+  unsigned first, n, w;
   if (!g_psx_spu_native || !size)
     return;
   first = (addr & (PSX_SPU_RAM_SIZE - 1)) >> 4;
   n = (((addr & 15) + size + 15) >> 4);
   if (n > NBLK)
     n = NBLK;
-  {
-    unsigned before = (first + NBLK - 1) % NBLK;
-    if (s_state[0][before] != PCM_NONE) {
-      h0 = s_pcm[0][before][BLOCK_SAMPLES - 2];
-      h1 = s_pcm[0][before][BLOCK_SAMPLES - 1];
-    }
+  for (w = 0; w < WAYS; w++) {
+    unsigned head = first + n <= NBLK ? n : NBLK - first; /* the rest wraps to block 0 */
+    memset(&s_state[w][first], PCM_NONE, head);
+    memset(&s_state[w][0], PCM_NONE, n - head);
   }
-  for (i = 0; i < n; i++) {
-    unsigned blk = (first + i) % NBLK;
-    fill(0, blk, h0, h1);
-    s_state[1][blk] = PCM_NONE;
-    h0 = s_pcm[0][blk][BLOCK_SAMPLES - 2];
-    h1 = s_pcm[0][blk][BLOCK_SAMPLES - 1];
-  }
-  g_psx_spu_native_stats.predecoded += n;
+  g_psx_spu_native_stats.written += n;
 }
 
 /* The 28 samples of the block at addr as voice_decode makes them from

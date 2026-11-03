@@ -111,7 +111,7 @@ Files the app writes:
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
 | `gpu_readback=0` | GPU: read drawn pixels back with `glReadPixels` instead of replaying the draws on the CPU (decisions D35; for testing) |
 | `gpu_dump=V` | GPU: log every batch of triangles drawn at vblanks V and V+1 (debugging) |
-| `mixer=N` | where and how the sound is mixed: 1 (default) on its own CPU core (D37); 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before; 3 the native mix on that core (D84: the sound samples decoded once, NEON, the music decoded on the read-ahead thread, out through `sceAudioOut` instead of SDL2; the same samples as 1); 4 the native mix in lockstep |
+| `mixer=N` | where and how the sound is mixed: 1 on its own CPU core (D37), through SDL2; 2 the same, but each vblank waits for its mix (debugging); 0 on the game thread, as before; 3 (the default since D88) the native mix on that core (D84: the sound samples decoded once, NEON, the music decoded on the read-ahead thread, out through `sceAudioOut` instead of SDL2; the same samples as 1; D88: the output held at a level against the clocks' difference); 4 the native mix in lockstep |
 | `render_thread=0` | GPU: every GL call on the game thread, as before D63. Default 1 since D68: a render thread of its own on core 2 and the game on core 0; the same pictures, the game thread 23–53% busy at 60 fps on hardware instead of 93% at 30 (C1 run). A `render N:` line every 300 vblanks says how busy that thread was and how long the game waited for it. A `0` here needs `config_version=3` too, as for the next two (D68) |
 | `xa_ahead=0` | the XA music's sectors read one at a time on the game thread. Default 1 since D68: read ahead of the CD head on core 1 (D64), the same sectors, after level changes too (D78). An `xa N:` line every 300 vblanks; its last field counts the asks for a window that found none to reuse (0, or a few when the reader falls behind; hundreds in a row is a stuck read-ahead) |
 | `gpu_opaque=0` | GPU: every atlas triangle drawn with the `discard` shader. Default 1 since D68: with `tex_cache=1`, triangles whose texture has no transparent or semi-transparent texel are drawn by a shader without `discard`, the same pixels (D65). The `atlas N:` lines count them |
@@ -194,17 +194,26 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
   and SPU models). W/K are the game thread waiting for it: at loads (SPU RAM writes), otherwise 0.
   E (counted from start-up) must be 0. D counts mixes that found the audio queue empty (a gap you can hear), C the times
-  it was cut back to 150 ms (the game ran ahead).
+  it was cut back to 150 ms (the game ran ahead). With `mixer=3` (D88) D is the times the output
+  ring ran out (the game stopped: a load), C the times it dropped back to its level.
 - `mixer N: core 1 CPU per vblank (runClocks): mixer A ms, xa read-ahead B ms, audio out C ms` (D84)
   is each audio thread's own CPU time from the kernel, per vblank over the window: the mixer, the
   XA read-ahead (with `mixer=3` its PCM decode too) and, with `mixer=3`, the `sceAudioOut` thread.
   With `mixer=1` SDL2's own audio thread isn't counted.
-- `mixer N: native: PCM blocks H0 from SpuWrite's decode, H1 from the second way, M decoded in the
+- `mixer N: native: PCM blocks H0 from the cache, H1 from its second way, M decoded in the
   mix; XA sectors P from the read-ahead's PCM, R decoded here; SpuWrite K calls, T ms (B blocks
-  decoded); S output grains short` (`mixer=3`, D84). H0 + H1 against M is how often a voice found
-  its block already decoded for its history; P against R the same for the music. T is the game
-  thread's time in `SpuWrite` (the decode happens there, at loads). S counts 11.6 ms grains the
-  output thread had to pad with silence (the ring ran dry: a gap you can hear).
+  to decode again); S output grains short` (`mixer=3`, D84, D88). H0 + H1 against M is how often a
+  voice found its block already decoded for its history (M is each block's first play after a
+  load); P against R the same for the music. T is the game thread's time in `SpuWrite` (since
+  D88 it only forgets the blocks written; the decode happens in the mix). S counts 11.6 ms
+  grains with any silence (the ring ran out, or is filling again after it did).
+- `audio N: ring level L frames on average (low point W), playing R ppm, clocks C ppm; F frames
+  dropped back to the level; S of G grains with silence` (`mixer=3`, D88): the output ring
+  between the mixer and `sceAudioOut`. W is held near 2304 frames; R is the rate it plays at
+  (frames read per frame played, from 1), C the controller's estimate of the two clocks'
+  difference (the game's 735 frames a vblank at the display's rate against the port's 44,100 a
+  second: about −1000 ppm on a Vita). F is what it dropped after running out or when it got more
+  than 150 ms ahead.
 
 At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` then
 `gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,

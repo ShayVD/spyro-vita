@@ -20,7 +20,9 @@ run() { # NAME MIXER args...
   D=logs/$P-$1-m$2; n=$1; m=$2; shift 2
   rm -rf $D; mkdir -p $D
   extra=
-  case $n in routeA|routeB|whole|state) extra="--save $D/save";; esac
+  # each run its own memory cards: the pair runs at once, and two runs sharing
+  # the default card folder diverge at the title's card check (D88)
+  case $n in routeA|routeB|whole|state|gems) extra="--save $D/save";; esac
   tools/tc $B --disc $DISC --mixer $m --log $D/spyro.log --trace $D/trace.tsv --wav $D/audio.wav \
     --shot-dir $D $extra "$@" > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
