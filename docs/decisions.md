@@ -1958,7 +1958,7 @@ Record each decision with its date, what was chosen, and why.
   - Nothing compared caught it: the host's pictures don't use the cache, and the Vita3K checks ran with it off.
 - **Fix:**
   - `gte_inline.h`: RTPS and RTPT call `g_psyxRtpHook` after each vertex, as `GTE_RotTransPers` does. That covers `fast_render=1` and the mips2c units at 1 and 2.
-  - `gte_native.h`: the native RTPS (`ngte_rtps_w`) calls `ngte_vcache()` (`gte_ops.c`) while the cache records. That passes the registers the projection read (R, TR, OFX, OFY, H), the vertex and its SXY2 and SZ3, as values, to a second hook, `g_psyxRtpValueHook` (PsyCross patch 0011). Nothing goes through the register file, which stays exact (D80).
+  - `gte_native.h`: the native RTPS (`ngte_rtps_w`) calls `ngte_vcache()` (`gte_ops.c`) while the cache records. That passes the registers the projection read (R, TR, OFX, OFY, H), the vertex and its SXY2 and SZ3, as values, to a second hook, `g_psyxRtpValueHook` (PsyCross patch 0011). Nothing goes through the register file, which stays exact (D80). D87's `Project()` (`math_hand.c`, `func_80017AA4`/`func_80017B48`) called `ngte_rtps` directly; it goes through `ngte_rtps_w` too.
   - `vcache.c`: both hooks run the old `rtp_hook`'s body (`rtp_point`). `psx_vcache_enable` sets both.
 - **Checks:**
   - Host `--vcache`, the intro to 7600 (`logs/run16-vcache-fix-fr*`): `fast_render` 0 and 1 give identical counters. `2` records 25 more projections a frame (the last vertices of native loops are replayed on the register file, and the cache keeps them once); every other counter is identical. A temporary checksum of every found vertex's candidates (offsets, depths, flags; 31 M lookups, `logs/run17-vcsum-fr*`) was identical for 0 and 2 at all 30 checkpoints.

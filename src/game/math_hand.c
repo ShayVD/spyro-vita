@@ -978,8 +978,11 @@ static void Project(Vector3D *pOut, Vector3D *pIn, int pShift) {
   p.r21 = r.m[1][0], p.r22 = r.m[1][1], p.r23 = r.m[1][2];
   p.r31 = r.m[2][0], p.r32 = r.m[2][1], p.r33 = r.m[2][2];
   p.trx = p.try_ = p.trz = 0;
-  o = ngte_rtps(&p, S16(Sar(g_Camera.m_Position.y - pIn->y, pShift)), S16(Sar(g_Camera.m_Position.z - pIn->z, pShift)),
-                S16(Sar(pIn->x - g_Camera.m_Position.x, pShift)));
+  /* through ngte_rtps_w, so the vertex cache sees it as on the GTE (D89) */
+  o = ngte_rtps_w(&p,
+                  (unsigned short)S16(Sar(g_Camera.m_Position.y - pIn->y, pShift)) |
+                      (unsigned int)S16(Sar(g_Camera.m_Position.z - pIn->z, pShift)) << 16,
+                  (unsigned short)S16(Sar(pIn->x - g_Camera.m_Position.x, pShift)));
   pOut->x = (short)o.sxy;
   pOut->y = (int)o.sxy >> 16;
   pOut->z = Shl(o.mac3, pShift);
