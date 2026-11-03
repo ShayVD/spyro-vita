@@ -134,11 +134,11 @@ if [ "${CAPTURE:-0}" = 1 ]; then
         rm -f "$data/hold.req"
         # no grab, or a blank one: the window wasn't drawn (covered by
         # another); bring this Vita3K forward and try once more
-        r=0; "$winid" "$out/win-$v.png" 2>> "$out/capture.log" || r=$?
+        r=0; "$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log" || r=$?
         if [ $r != 0 ]; then
           osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
             >/dev/null 2>> "$out/capture.log" || true
-          sleep 1; r=0; "$winid" "$out/win-$v.png" 2>> "$out/capture.log" || r=$?
+          sleep 1; r=0; "$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log" || r=$?
         fi
         [ $r = 0 ] || echo "shot $v: no capture ($r)" >> "$out/capture.log"
         : > "$data/hold.ack"
@@ -153,7 +153,7 @@ while [ $t -lt "$timeout" ] && kill -0 $pid 2>/dev/null; do
   if [ -n "${GRAB:-}" ] && [ $t -ge "$GRAB" ] && [ ! -f "$out/win-grab.png" ]; then
     osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
       >/dev/null 2>> "$out/capture.log" || true
-    sleep 1; "$winid" "$out/win-grab.png" 2>> "$out/capture.log" || echo "no grab" >> "$out/capture.log"
+    sleep 1; "$winid" "$out/win-grab.png" "$pid" 2>> "$out/capture.log" || echo "no grab" >> "$out/capture.log"
   fi
   sleep 2; t=$((t + 2))
 done

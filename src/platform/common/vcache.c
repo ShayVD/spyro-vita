@@ -1,10 +1,12 @@
 /* Vertex cache (psx_vcache.h, decisions D39).
  *
- * RTPS/RTPT: PsyCross's GTE calls rtp_hook after the integer projection.
- * The hook recomputes the same transform from the input registers without
+ * RTPS/RTPT: PsyCross's GTE, and gte_inline.h's commands, call rtp_hook
+ * after the integer projection; the hand renderers' native RTPS
+ * (fast_render=2) call rtp_value_hook with the same values (D89). The hook
+ * recomputes the same transform from the input registers without
  * the truncations (MAC >> 12, h/SZ3 by UNR division) and records the exact
- * screen position and depth under the SXY2 the game got. It reads gteRegs
- * and writes only this file's table.
+ * screen position and depth under the SXY2 the game got. It only reads
+ * (gteRegs, or the values it is given) and writes only this file's table.
  *
  * Spyro projects every vertex it draws through RTPS, including the midpoints
  * of subdivided near terrain (r_environment.s averages them in 3D, then
@@ -203,19 +205,21 @@ static void record(uint32_t key, int state, float dx, float dy, float w, float w
 #define V_Y(n) (gteRegs.CP2D.p[(n) << 1].sw.h)
 #define V_Z(n) (gteRegs.CP2D.p[((n) << 1) + 1].sw.l)
 
-static void rtp_hook(int idx, int sf) {
-  const int vx = V_X(idx), vy = V_Y(idx), vz = V_Z(idx);
-  const uint32_t key = C2_SXY2;
-  const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16);
-  const int sz = (unsigned short)C2_SZ3, h = (unsigned short)C2_H;
+/* One projection: the vertex, what the GTE gave (key = SXY2, sz = SZ3) and
+ * the registers it read, proj = R11-R33, TRX-TRZ, OFX, OFY, H (PROJ_*). */
+enum { PROJ_TR = 9, PROJ_OFX = 12, PROJ_OFY = 13, PROJ_H = 14, PROJ_N = 15 };
+
+static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int sz, int sf) {
+  const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = proj[PROJ_H];
+  const int *rm = proj, *tr = proj + PROJ_TR;
   int64_t mx, my, mz;
   float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
   g_vcache_stats.records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
-  mx = ((int64_t)C2_TRX << 12) + (int64_t)(C2_R11 * vx) + (C2_R12 * vy) + (C2_R13 * vz);
-  my = ((int64_t)C2_TRY << 12) + (int64_t)(C2_R21 * vx) + (C2_R22 * vy) + (C2_R23 * vz);
-  mz = ((int64_t)C2_TRZ << 12) + (int64_t)(C2_R31 * vx) + (C2_R32 * vy) + (C2_R33 * vz);
+  mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
+  my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
+  mz = ((int64_t)tr[2] << 12) + (int64_t)(rm[6] * vx) + (rm[7] * vy) + (rm[8] * vz);
   /* Spyro's renderers always set sf; IR1/IR2 saturated (|MAC| > 0x7FFF)
    * or a divide overflow (H >= 2 SZ3) means the GTE's answer isn't the
    * projection of this vertex. */
@@ -227,8 +231,8 @@ static void rtp_hook(int idx, int sf) {
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
   y = (float)(int32_t)(my >> 12) + (float)(my & 0xFFF) * (1.0f / 4096);
   z = (float)(int32_t)(mz >> 12) + (float)(mz & 0xFFF) * (1.0f / 4096);
-  ox = (float)C2_OFX * (1.0f / 65536);
-  oy = (float)C2_OFY * (1.0f / 65536);
+  ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
+  oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
   if (z <= 0) {
     record(key, E_INVALID, 0, 0, 0, 0);
     return;
@@ -244,12 +248,27 @@ static void rtp_hook(int idx, int sf) {
     record(key, E_INVALID, 0, 0, 0, 0);
     return;
   }
-  if (!C2_TRX && !C2_TRY && !C2_TRZ && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
+  if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
       vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
     w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
   record(key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
+}
+
+/* RTPS/RTPT on the register file: PsyCross's GTE_operator (fast_render=0)
+ * and gte_inline.h's commands (the mips2c units and the hand renderers'
+ * register-file code at fast_render 1 and 2, D89). */
+static void rtp_hook(int idx, int sf) {
+  const int proj[PROJ_N] = {C2_R11, C2_R12, C2_R13, C2_R21, C2_R22, C2_R23, C2_R31, C2_R32, C2_R33,
+                            C2_TRX, C2_TRY, C2_TRZ, C2_OFX, C2_OFY, (unsigned short)C2_H};
+  rtp_point(proj, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2, (unsigned short)C2_SZ3, sf);
+}
+
+/* The hand renderers' native RTPS (gte_native.h, fast_render=2, D80, D89):
+ * the same projection, given as values. */
+static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
+  rtp_point(proj, vx, vy, vz, sxy, sz3, 1);
 }
 
 static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
@@ -388,6 +407,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
 
 void psx_vcache_enable(int mode) {
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
+  g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
   g_psyxPolyHook = mode ? poly_hook : NULL;
   g_psyxDrawOTagDone = mode ? done_hook : NULL;
 }

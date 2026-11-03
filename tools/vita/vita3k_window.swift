@@ -1,6 +1,7 @@
 // Captures Vita3K's game window (the largest window Vita3K owns) for
 // tools/vita/vita3k_run.sh CAPTURE=1:
-//   vita3k_window OUT.png   the window's content, title bar cut off
+//   vita3k_window OUT.png [PID]   the window's content, title bar cut off;
+//   with PID, only that Vita3K's windows (another project's Vita3K may be open)
 // Exit 0: written; 1: no Vita3K window; 2: the grab was blank (one colour:
 // the window wasn't being drawn, e.g. covered or on another Space).
 import CoreGraphics
@@ -9,9 +10,11 @@ import ImageIO
 import UniformTypeIdentifiers
 
 let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+let pid = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) : nil
 var best: CGWindowID = 0, bestArea = 0.0
 for w in list {
   guard (w["kCGWindowOwnerName"] as? String ?? "").contains("Vita3K"),
+        pid == nil || (w["kCGWindowOwnerPID"] as? Int) == pid,
         (w["kCGWindowLayer"] as? Int ?? 1) == 0,
         let num = w["kCGWindowNumber"] as? Int,
         let b = w["kCGWindowBounds"] as? [String: Double] else { continue }

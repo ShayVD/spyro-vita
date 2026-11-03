@@ -185,7 +185,8 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 - With `tex_filter`, `persp` or `subpixel`, also `vcache N: … per frame P projected …, Q polygons,
   A% with every vertex found, B% of vertices found; expand E ms`. A is the share of 3D polygons
   drawn perspective-correct (the rest are drawn as on the PS1); E is the CPU time spent preparing
-  the vertices over the 300 vblanks.
+  the vertices over the 300 vblanks. `0 projected` means the renderers aren't feeding the cache
+  and the options draw as off (main from D72 until D89).
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
   mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
   vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD

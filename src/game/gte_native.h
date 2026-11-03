@@ -172,9 +172,17 @@ NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
   return o;
 }
 
+/* The vertex cache (D39) while it records (subpixel, persp): every native
+ * RTPS gives it the projection as values, as the register file's RTPS
+ * gives it the registers (gte_ops.c, D89). */
+void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o);
+
 /* RTPS on V0 as the words MTC2 puts there (VXY0, VZ0). */
 NGTE_INL NgteRtp ngte_rtps_w(const NgteProj *p, unsigned int vxy, unsigned int vz) {
-  return ngte_rtps(p, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz));
+  const NgteRtp o = ngte_rtps(p, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz));
+  if (__builtin_expect(g_psyxRtpValueHook != 0, 0))
+    ngte_vcache(p, vxy, vz, &o);
+  return o;
 }
 
 /* ===================================================================== */
