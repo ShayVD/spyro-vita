@@ -1,5 +1,6 @@
 /* Vita time (decisions D28). By default the game's vblanks follow the
- * display's own counter (sceDisplayGetVcount): VSync(0) waits for the next
+ * display's own counter (sceDisplayGetVcount, widened from its 16 bits by
+ * vcount.h, D90): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
  * would have, so the game's delta time keeps its speed and the audio stays
@@ -8,6 +9,7 @@
  * scripted test runs replay exactly. Also PsyX's scene hooks (isbg clears),
  * the same as linux32's. */
 #include "vita.h"
+#include "vcount.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
@@ -33,7 +35,9 @@ int g_vmode = MODE_NTSC;
 static int s_vblank;
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
-static int s_vcount_base = -1; /* display vcount at our vblank 0 */
+static int s_vcount_base; /* display vcount at our vblank 0 */
+static int s_vcount_synced; /* 0: s_vcount_base is taken afresh at the next VSync */
+static VitaVcount s_vc;
 static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 
 #define MAX_CATCH_UP 8 /* vblanks run at once after a slow frame; more are dropped */
@@ -44,7 +48,7 @@ int vita_vblank_count(void) { return s_vblank; }
  * against the display afresh, and a new stats window. */
 void vita_set_vblank(int vblank) {
   s_vblank = s_stat_v0 = vblank;
-  s_vcount_base = -1;
+  s_vcount_synced = 0;
   s_stat_shown = s_stat_late = 0;
   s_stat_t0 = 0;
 }
@@ -183,22 +187,37 @@ static void present(void) {
   s_hold = 0;
 }
 
+/* The display's vcount, widened (D90). vcount_test=N (tests) moves its 16
+ * bits so they wrap N vblanks after the first read, not up to 18 minutes on. */
+static int vcount(void) {
+  static unsigned offset;
+  unsigned raw = (unsigned)sceDisplayGetVcount();
+  if (!s_vc.valid && g_vita_opts.vcount_test > 0) {
+    offset = 0x10000u - (unsigned)g_vita_opts.vcount_test - raw;
+    vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D90)",
+             g_vita_opts.vcount_test);
+  }
+  return vita_vcount_widen(&s_vc, (raw + offset) & 0xffffu); /* 16 bits, as on hardware */
+}
+
 static int real_vblanks(void) {
-  return sceDisplayGetVcount() - s_vcount_base;
+  return vcount() - s_vcount_base;
 }
 
 void PsyX_WaitForTimestep(int count) {
   int target, n;
   if (vita_menu_service())
-    s_vcount_base = -1; /* the game was paused: start counting again, no catch-up */
+    s_vcount_synced = 0; /* the game was paused: start counting again, no catch-up */
   if (!g_vita_opts.realtime) {
     while (count-- > 0)
       vblank();
     present();
     return;
   }
-  if (s_vcount_base < 0)
-    s_vcount_base = sceDisplayGetVcount() - s_vblank;
+  if (!s_vcount_synced) {
+    s_vcount_base = vcount() - s_vblank;
+    s_vcount_synced = 1;
+  }
   target = s_vblank + count;
   prof_enter(PROF_WAIT);
   while (real_vblanks() < target)

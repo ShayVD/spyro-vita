@@ -1906,6 +1906,8 @@ Record each decision with its date, what was chosen, and why.
   - **The render thread's side** (the plan's step 2: resolve the atlas once per page and CLUT, set the program and blend per segment). On P6 the render thread's `expand` took 0.78 ms per vblank (233 ms per 300). Its busy time (98%) includes waiting for the display, and 60 fps held with 0.2 late vblanks per 300, so it isn't shown to be the limit. The change is in `gpu_gl.c`, needs a side channel next to the vertex slabs (as the vertex cache's), and can only be timed on hardware. It waits for P7 and P8: if the game thread is faster there and 60 fps holds, there's no need.
   - **The decomp C's own primitives** (step 3: particles, shadows, the flame, the HUD). They're 0.5–2.6% of what the walk sees. Particles, shadows and the flame are mips2c units (`docs/native-plan.md` §2.1: 1,512, 636 and 444 instructions): their links are emulated stores with no point to hook, so they need hand C first. The HUD's 2D primitives are the ones widescreen squeezes in the OT (D67), which would have to learn the records. The gain is a sliver of the walk's time; the cost is hand C for about 2,600 instructions.
 - **Default:** `native_draw=0`. On hardware it still costs the game thread more than the walk saves. The code stays behind the switch: the same pictures (host, Vita3K), the smaller record and the check's diagnostics are where a next attempt starts. That attempt should begin by measuring the record path on hardware, not by moving more work into it.
+
+
 ## 2026-11-03: readable C, round 2 (stage 3)
 
 ### D87. Stage 3: `math.s`, `42CC4.s` and the gamestates 8 and 11 update as readable C; the GTE's control registers stay as the asm leaves them, its data registers go
@@ -1941,3 +1943,31 @@ Record each decision with its date, what was chosen, and why.
   - **ctest:** no failures (`gte` skipped, as on main; `m2c_diff_math` now builds only with `SPYRO_M2C_REF`).
   - **Vita3K:** the gems script, main's VPK against this one: 17 of 17 shots and the memory card identical. **Hardware** (2026-11-03, the owner's Vita over `hw_run.sh`, approved by the owner; after merging main `fdd40d6`): runs S1 (main's VPK) and S2 (this branch's), the K route, 18,000 vblanks, `tools/vita/fps-runs/s1-stage3-round2.txt`: all 18 pictures and the memory card identical, no crash dump. The game logic's time (`update` in the `draw` lines) fell from 0.237 to 0.203 ms per vblank over the route (-14%; -15% from vblank 3600, in play: 0.282 to 0.240).
 - **Where it leaves stage 3** (`tools/native_audit.py`, `logs/native-audit.txt`): readable C (A + B1) is **60.8% of the executable's instructions** (54.8% before) and **93.4% of the whole game's** (92.4%); mips2c runs 9,927 of the game's instructions (15,406 before) and its live code in the ELF is 164,795 bytes (262,127); B1's is 52,676 (38,820). Left as mips2c: the renderers' helpers (6,335, after stage 2), the cyclorama set-up (1,287), moby lists, `moby_helpers`' one, images and particle allocation (711), and the credits overlay's two functions (1,594).
+
+
+## 2026-11-03: the freeze going into Cliff Town
+
+### D90. The display's vblank counter is 16 bits on hardware; `vblank.c` widens it, so VSync's wait ends after 18 minutes too
+- **Seen:** the owner played on hardware (VPK 2 of PR #62, the same `src/` as `afbd294`), going from Peace Keepers home into Cliff Town. The game froze in the level transition. The watchdog (D73) logged `hang: no vblank for 10 s ... at vblank 62996`, game thread in `wait`, `waiting (wait type 0x10000, on 0x105d5)`. The render, mixer and XA read-ahead threads were idle on their semaphores. 20 s later it stopped the app for a crash dump (both kept in the gitignored `logs/crash-20261103-cliff-town/`).
+- **The dump** (read with a stdlib reader of the `.psp2dmp`'s notes, against `build/vita/src/platform/vita/spyro_vita` of that VPK; the dump's `spyro_vita` text is 0x3cb010 bytes, VPK 2's, and that build's `eboot.bin` is byte-identical to the VPK's):
+  - The game thread's PC is in `sceDisplayWaitVblankStart`'s import stub. LR is `PsyX_WaitForTimestep` (`vblank.c:204`), in `while (real_vblanks() < target) sceDisplayWaitVblankStart();`. Wait type 0x10000 is that vblank wait. The thread wakes every vblank, so its CPU time rounds to 0 ms.
+  - Registers, against the disassembly: `r6` = target = 62997 (`s_vblank` 62996 + 1), `r3` = `s_vcount_base` = 2539, `r0` = `sceDisplayGetVcount() - s_vcount_base` = -696.
+  - 2539 + 62996 = 65535 = 0xffff. At the next vblank `sceDisplayGetVcount()` returned 0, not 0x10000, so `real_vblanks()` fell to -2539 and could never reach 62997. 1843 vblanks later (-2539 + 1843 = -696), about 30.7 s, the watchdog's 10 s + 20 s took the dump.
+- **Cause:** `sceDisplayGetVcount` counts in 16 bits on hardware. Since M3 (`f1e0c2d`, D28) `vblank.c` has compared it with a 32-bit target. So any session freezes 65536 display vblanks after the count's origin, 18 min 13 s at 59.94 Hz, wherever the game is. Cliff Town and load stage 11 were where the owner happened to be. Every release so far has this. No hardware log on the Mac ran that long before: the longest was 29,400 vblanks (`logs/hw-26f3138-bench`).
+- **Fix:**
+  - `src/platform/vita/vcount.h` (plain C) widens the counter: each read adds the step since the last one, modulo 0x10000. `vblank.c` reads it every frame, far more often than once a wrap. It only uses each step's low 16 bits, so it is right for a wider counter too.
+  - `vblank.c`'s two reads go through it.
+  - **Also fixed:** the "not counted yet" mark was `s_vcount_base < 0`. A base can be negative after a save state sets a larger vblank count (D51), so the base was taken afresh every frame and a late frame's vblanks were never run. Now a flag (`s_vcount_synced`) marks it.
+- **Test knob:** `vcount_test=N` moves the counter so its 16 bits wrap N vblanks after the first read. That lets Vita3K or a hardware run see the wrap without 18 minutes of play.
+- **Checks:**
+  - **`tests/vcount` (ctest `vcount`, host i686):**
+    - The widener's cases: 0xffff → 0 is one step, and a wider counter gives the same steps.
+    - `PsyX_WaitForTimestep`'s realtime arithmetic, run against a simulated 16-bit counter. 200,000 frames of 0–3 vblanks, VSync(1) or (2), options-menu pauses and save-state jumps, 6–7 wraps per run. The runs start from the dump's 2539, from 65530 (a wrap in the first frames) and from 0.
+    - Each wait must end within a few vblanks, and our count must keep up with the display's.
+    - **The mutant** (`vcount_mutant`: the raw counter, as before) must fail, and it does. Started from 2539, it hangs at display vblank 63004 (count 0x0007).
+    - `logs/run1-host-vcount/ctest.txt`.
+  - **Vita3K, `REALTIME=1 vcount_test=1500 frames=3000`** (`logs/run2-vita3k-vcount`, this branch's VPK):
+    - The log has `vcount_test: the display's 16-bit vcount wraps in 1500 vblanks`. Every 300-vblank line through the wrap reads 59.9–60.0 per second, with 0–1 vblanks late.
+    - There is no `hang:` line, and the run exits at `frames=3000 reached`.
+    - Not run: a negative control on Vita3K (the old code with the knob). The host mutant is that check.
+  - **Hardware: not run yet** (it needs the owner's approval). One run from this worktree checks it: `REALTIME=1 DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-vcount 240 vcount_test=1500 frames=3000`. Pass: `frames=3000 reached`, no `hang:` line.
