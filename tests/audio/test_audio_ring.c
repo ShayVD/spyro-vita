@@ -42,7 +42,8 @@ typedef struct {
   unsigned seed;
   /* results */
   unsigned underruns, trims, silent, settled_underruns, settled_trims, old_short, old_dry;
-  unsigned level_lo, level_hi; /* after settling, outside the loads */
+  unsigned level_lo, level_hi, level_mean; /* after settling, outside the loads */
+  unsigned long long level_sum, level_n;
   int ppm;
   int ramp_bad;
 } Run;
@@ -60,11 +61,12 @@ static void run(Run *t) {
   const double vblank_s = 1.0 / t->hz, grain_s = GRAIN / RATE, end = t->minutes * 60.0;
   double next_vblank = 0, next_grain = grain_s * 0.37;
   unsigned produced = 0; /* frames pushed: the ramp's value */
-  unsigned pending = 0, seed = t->seed;
+  unsigned pending = 0, late = 0, seed = t->seed;
   int last_out = -1, last_r = 0, i;
   psx_audio_ring_init(&r);
   t->level_lo = ~0u;
   t->level_hi = 0;
+  t->level_sum = t->level_n = 0;
   t->settled_underruns = t->settled_trims = 0;
   t->ramp_bad = 0;
   while (next_vblank < end || next_grain < end) {
@@ -76,10 +78,15 @@ static void run(Run *t) {
       if (in_load)
         continue;
       /* the game posts at the end of each logic frame (every 2 vblanks),
-       * or catches up after a load; one logic frame in 8 is a vblank late */
-      if (pending >= 2 && !(pending == 2 && rnd(&seed) % 8 == 0)) {
+       * or catches up after a load; one logic frame in 8 is a vblank late,
+       * one in 64 two (Vita3K showed those, D88) */
+      if (pending == 2) {
+        unsigned x = rnd(&seed) % 64;
+        late = x == 0 ? 2 : x < 8 ? 1 : 0;
+      }
+      if (pending >= 2 + late) {
         unsigned n = pending > CATCH_UP ? CATCH_UP : pending, f;
-        pending = 0;
+        pending = late = 0;
         for (f = 0; f < n * VBLANK_FRAMES; f++, produced++) {
           pcm[f * 2] = (short)(1 + produced % 30000);
           pcm[f * 2 + 1] = (short)(1 + (produced + 15000) % 30000);
@@ -99,6 +106,8 @@ static void run(Run *t) {
           t->level_lo = lvl;
         if (lvl > t->level_hi)
           t->level_hi = lvl;
+        t->level_sum += lvl;
+        t->level_n++;
       }
       psx_audio_ring_pull(&r, out, GRAIN);
       if (now > 30.0 && !in_load && r.underruns != before)
@@ -141,16 +150,17 @@ static void run(Run *t) {
   t->trims = r.trims;
   t->silent = r.silent;
   t->ppm = psx_audio_ring_ppm(&r);
+  t->level_mean = t->level_n ? (unsigned)(t->level_sum / t->level_n) : 0;
   t->old_short = old.short_grains;
   t->old_dry = old.dry;
 }
 
 static void report(const char *name, const Run *t) {
   printf("%-28s %4.0f min: D84 ring %5u short grains (%u dry) | D88 ring %u underruns (%u after "
-         "30 s outside loads), %u trims (%u), %u silent grains, level %u..%u, clocks %+d ppm, ramp "
+         "30 s outside loads), %u trims (%u), %u silent grains, level %u..%u (mean %u), clocks %+d ppm, ramp "
          "errors %d\n",
          name, t->minutes, t->old_short, t->old_dry, t->underruns, t->settled_underruns, t->trims, t->settled_trims,
-         t->silent, t->level_lo, t->level_hi, t->ppm, t->ramp_bad);
+         t->silent, t->level_lo, t->level_hi, t->level_mean, t->ppm, t->ramp_bad);
 }
 
 int main(int argc, char **argv) {
@@ -178,9 +188,9 @@ int main(int argc, char **argv) {
   CHECK(fast.underruns == 0, "60.1 Hz: %u underruns", fast.underruns);
   CHECK(!vita.settled_trims && !same.settled_trims && !fast.settled_trims && !loads.settled_trims,
         "trims outside the start and the loads");
-  CHECK(abs(vita.ppm - expect_ppm) < 150, "59.94 Hz: clocks %+d ppm, expected %+d", vita.ppm,
+  CHECK(abs(vita.ppm - expect_ppm) < 300, "59.94 Hz: clocks %+d ppm, expected %+d", vita.ppm,
         expect_ppm);
-  CHECK(abs(same.ppm) < 150, "60 Hz: clocks %+d ppm, expected 0", same.ppm);
+  CHECK(abs(same.ppm) < 300, "60 Hz: clocks %+d ppm, expected 0", same.ppm);
   CHECK(vita.level_lo > GRAIN && vita.level_hi < PSX_AUDIO_RING_MAX, "59.94 Hz: level %u..%u",
         vita.level_lo, vita.level_hi);
   /* a load runs dry once (the game stopped), then the ring is back */

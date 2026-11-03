@@ -206,7 +206,7 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   grains with any silence (the ring ran out, or is filling again after it did).
 - `audio N: ring level L frames on average (low point W), playing R ppm, clocks C ppm; F frames
   dropped back to the level; S of G grains with silence` (`mixer=3`, D88): the output ring
-  between the mixer and `sceAudioOut`. W is held near 1536 frames; R is the rate it plays at
+  between the mixer and `sceAudioOut`. W is held near 2304 frames; R is the rate it plays at
   (frames read per frame played, from 1), C the controller's estimate of the two clocks'
   difference (the game's 735 frames a vblank at the display's rate against the port's 44,100 a
   second: about −1000 ppm on a Vita). F is what it dropped after running out or when it got more

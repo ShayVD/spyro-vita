@@ -19,8 +19,8 @@
 #define PSX_AUDIO_RING_H
 
 #define PSX_AUDIO_RING_FRAMES 16384 /* a power of two */
-#define PSX_AUDIO_RING_LOW 1536     /* frames: the low point held (a 512-frame grain, a late vblank and some) */
-#define PSX_AUDIO_RING_PRIME 3072   /* frames: ~70 ms, where play starts again after running out */
+#define PSX_AUDIO_RING_LOW 2304     /* frames: the low point held (a 512-frame grain, two late vblanks and some) */
+#define PSX_AUDIO_RING_PRIME 3840   /* frames: ~87 ms, where play starts again after running out */
 #define PSX_AUDIO_RING_MAX 6615     /* frames: ~150 ms; above it, back to PRIME */
 #define PSX_AUDIO_RING_WINDOW 16384 /* frames played between the controller's steps: ~0.37 s */
 #define PSX_AUDIO_RING_RISE 2.0f    /* frames a grain: a dip of a vblank is forgotten in ~4 s */
