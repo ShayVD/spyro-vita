@@ -289,7 +289,7 @@ Still behind `native_draw=1` (default 0). The hottest sites of the native-GTE bu
 
 `native_draw=1` is the Vita's default since D91 (the host's stays 0). A record is now the primitive's own words (after the tag, in its order) with the next record's offset and the kind; `nd_mk_*` store them as the PS1 path would, `nd_rec` copies them from a built primitive, and the walk (`emit`, `src/game/native_draw.c`) makes the vertices PsyCross's `Process*Poly` would, which D86's builders did on the game thread. Joins come from a side table keyed by the marker's address and the list's serial (`ND_SIDE_AT`, `nd_commit`), not from the tail packet and the marker's first record. The sites' code is D86's but for the signatures (`nd_put`, `nd_chain_rec`, `LinkRec`, `LitLinkRec` no longer take the vertex count) and `g_nd.on`.
 
-**Checks:** D82's per-call check (`--native-draw-check`) and the file A/B (`tools/native_draw_ab.sh`, each run with its own card folder) on gems, the demos, wsi, the vertex cache, lod and routes A and B: 0 calls differ, every file identical; gems with `--nd-ab` (records on and off by turns) identical; Vita3K gems shots, captures and card identical with `native_draw` 0, 1 and `nd_ab=1`. Numbers and the hardware runs in D91.
+**Checks:** D82's per-call check (`--native-draw-check`) and the file A/B (`tools/native_draw_ab.sh`, each run with its own card folder) on gems, the demos, wsi, the vertex cache, lod, routes A and B and the whole tour: 0 calls differ, every file identical; gems with `--nd-ab` (records on and off by turns) identical; Vita3K gems shots, captures and card identical with `native_draw` 0, 1 and `nd_ab=1`. Numbers and the hardware runs in D91.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
