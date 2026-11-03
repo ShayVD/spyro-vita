@@ -215,6 +215,7 @@ The hottest translated renderers are hand-written C, and every translated GTE co
 - **Host:** `tools/fast_render_ab.sh` (each scenario with `--fast-render 0`, then `1`, from one binary; every trace, PNG, WAV and memory card compared). Results are in decisions D72.
 - **Oracle replay** of every function below on the six capture sets: `logs/ab4-replay.txt`.
 - **Vita3K:** the gems script with `fast_render` 0 and 1, shots and card compared.
+- **Missed until D89:** the inline commands didn't call PsyCross's vertex-cache hook (`g_psyxRtpHook`), so with `fast_render` 1 or 2 `subpixel` and `persp` found no vertices. None of the checks above uses the cache: the host's pictures don't, and the Vita3K runs had it off. RTPS and RTPT in `gte_inline.h` now call the hook as `GTE_RotTransPers` does.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
@@ -243,6 +244,7 @@ The moby draw loops of `asm/renderers/r_moby.s`, hand-written C in `src/game/mob
 - Oracle replay with `--fast-render 2` of the six renderers and `func_80050BD0` on the six capture sets: 661 of 661 samples pass (`logs/ngab-replay.txt`).
 - Vita3K, the gems script, `fast_render` 1 against 2: 17 shots, 17 window captures and the card identical (`logs/ngv3k-gems-f1`, `-f2`).
 - `tests/gte/test_gte_native` (ctest `gte_native`, and `gte_native_mutant`, which must fail).
+- **Vertex cache (D89):** the native RTPS (`ngte_rtps_w`) hands each projection to the cache as values while it records (`ngte_vcache`, PsyCross patch 0011's `g_psyxRtpValueHook`), so `subpixel` and `persp` work at `fast_render=2`. Host `--vcache` at 0 and 2: the same counters (2 records 25 more projections a frame, the replayed tails) and a checksum of every found vertex identical over 31 M lookups; `tools/native_draw_ab.sh` `vc` now fails a run that finds no vertices.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|

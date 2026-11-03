@@ -9,7 +9,8 @@
 # Usage: [BIN=path/to/spyro] [DISC=disc/files] tools/native_draw_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-n0, logs/PREFIX-SCENARIO-chk, and a summary line per scenario.
 # Scenarios (default: demo gems wsi vc lod routeA routeB): fast_render_ab.sh's, and
-# vc (gems with the vertex cache, D39's hook) and whole (the 100,000-vblank tour).
+# vc (gems with the vertex cache, D39's hook; its "host vcache" line must find
+# vertices, D89) and whole (the 100,000-vblank tour).
 # MODE=n1 runs --native-draw in place of the check (timing, --prof-draw).
 cd "$(dirname "$0")/.."
 P=$1; shift
@@ -45,5 +46,11 @@ for n in "$@"; do
   done
   [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   grep -h "native draw check: func" $b/spyro.log | sed 's/^/  /'
+  # vc: the host's pictures don't use the cache, so the files can't show it
+  # missing; the hand renderers must feed it (D89)
+  if [ $n = vc ]; then
+    grep -h "host vcache:" $a/stdout.txt $b/stdout.txt | sed 's/^/  /'
+    grep -q "vertices found 0.0%" $a/stdout.txt $b/stdout.txt && echo "  vc: NO VERTICES FOUND (the cache isn't fed)"
+  fi
   echo "$n: $same identical, $diff different ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 done
