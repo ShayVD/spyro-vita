@@ -20,7 +20,10 @@ run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
   extra=
-  case $n in demo) extra="--wav $D/audio.wav";; routeA|routeB|whole) extra="--save $D/save";; esac
+  # every run its own card folder: without --save both runs of a pair share ./save,
+  # and the second finds the card the first wrote (D87)
+  extra="--save $D/save"
+  case $n in demo) extra="$extra --wav $D/audio.wav";; esac
   case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in

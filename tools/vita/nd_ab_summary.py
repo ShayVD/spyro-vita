@@ -71,6 +71,7 @@ def main():
     for base in (0, 1):
         print("\nagainst %s: mean of the windows' per-list differences, ms (+- standard error)"
               % NAMES[base])
+        print("%-11s " % "" + " ".join("%14s" % c for c in cols))
         for v in range(len(NAMES)):
             if v == base:
                 continue
@@ -87,9 +88,7 @@ def main():
                 mean = sum(xs) / len(xs)
                 sd = math.sqrt(sum((x - mean) ** 2 for x in xs) / (len(xs) - 1))
                 out.append("%+.3f+-%.3f" % (mean, sd / math.sqrt(len(xs))))
-            print("%-11s " % NAMES[v] + " ".join("%14s" % o for o in out[:1]) + " " +
-                  " ".join("%14s" % o for o in out[1:]))
-        print("%-11s " % "" + " ".join("%14s" % c for c in cols))
+            print("%-11s " % NAMES[v] + " ".join("%14s" % o for o in out))
 
 
 if __name__ == "__main__":
