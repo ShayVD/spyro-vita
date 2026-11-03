@@ -204,6 +204,18 @@ void vita_parse_report(int vblank) {
              (unsigned)(w.wait_us / n / 1000), (unsigned)(w.wait_us / n % 1000 / 10), w.joins,
              w.foreign, (unsigned)w.foreign_at, w.deferred);
   }
+  {
+    /* nd_ab=1 (D87): walks, walk us and the game thread's wait us by variant */
+    char buf[320];
+    int i, n = 0, any = 0;
+    for (i = 0; i < 7; i++) { /* ND_AB_VARIANTS */
+      any |= w.walks_tag[i] != 0;
+      n += snprintf(buf + n, sizeof buf - n, " v%d %u/%u/%u;", i, w.walks_tag[i],
+                    (unsigned)w.walk_us_tag[i], (unsigned)w.wait_us_tag[i]);
+    }
+    if (any)
+      vita_log("parse ab %d:%s", vblank, buf);
+  }
   t0 = t;
   v0 = vblank;
 }

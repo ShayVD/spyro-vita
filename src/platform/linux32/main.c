@@ -83,6 +83,9 @@
  *   as native draw lists (src/game/native_draw.h, decisions D82);
  *   --native-draw-check runs each of their calls both ways and compares the
  *   triangles PsyCross's walk makes of them ("native draw check" lines).
+ *   --nd-var N: the record path's variant (native_draw.h's ND_ON_* bits:
+ *   2 the side table's joins, 4 the pool's prefetch; D87); --nd-ab: the
+ *   variants in turn by blocks of lists (nd_ab, the Vita's timing run).
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
@@ -109,6 +112,7 @@ extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
 void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
+extern int g_nd_var, g_nd_ab;          /* D87 */
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
@@ -152,7 +156,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--nd-var N] [--nd-ab] [--prof-draw]\n"
           "             [--mixer 1|3]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -414,6 +418,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--native-draw-check") == 0) {
       g_native_draw = 1;
       g_nd_check = 1;
+    } else if (strcmp(a, "--nd-var") == 0) {
+      TAKE();
+      g_nd_var = to_int(val);
+    } else if (strcmp(a, "--nd-ab") == 0) {
+      g_nd_ab = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {
       TAKE();
       g_gte_audit = to_int(val);

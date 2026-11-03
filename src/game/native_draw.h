@@ -55,8 +55,23 @@
 extern int g_native_draw;
 /* host --native-draw-check: each converted renderer's call runs both ways */
 extern int g_nd_check;
-/* the renderer running now emits native records (nd_begin) */
+/* the renderer running now emits native records (nd_begin): ND_ON and the
+ * variant's bits (g_nd_var) */
 extern int g_nd_on;
+/* config nd_var (D87): the record path's variant, ND_ON_* bits */
+extern int g_nd_var;
+/* config nd_ab=1 (D87, diagnostic): the variants take turns by blocks of
+ * lists, each timed on its own (nd_ab_slot) */
+extern int g_nd_ab;
+enum {
+  ND_ON = 1,
+  ND_ON_SIDE = 2, /* joins found in the side table, not in the arena and the pool */
+  ND_ON_PF = 4,   /* the pool's next lines prefetched for writing */
+  /* nd_ab's probe: no records; each primitive a site could make one of
+   * writes 12 words into the pool and is then built and linked as a PS1
+   * primitive (a second write stream alone, timed against native_draw 0) */
+  ND_ON_PROBE = 8,
+};
 
 enum {
   ND_MAGIC = 0x4E4000u, /* bits 12-23 */
@@ -106,6 +121,27 @@ void nd_check_began(void); /* nd_begin, for the check */
 void nd_check_set_log(void (*log)(const char *fmt, ...));
 void nd_check_report(void);
 
+/* The side table (ND_ON_SIDE, D87): this list's markers by their address,
+ * each with its last record, so a join needs neither the tail packet (in
+ * the arena) nor its first record (in the pool). The key is the marker's
+ * 21-bit arena offset and the list's serial; a marker whose entry another
+ * took is only not joined again (a new marker, the same triangles). */
+enum { ND_SIDE_N = 1024 };
+typedef struct {
+  u32 key, last;
+} NdSide;
+extern NdSide g_nd_side[ND_SIDE_N];
+#define ND_SIDE_AT(p) (&g_nd_side[((p) >> 2) & (ND_SIDE_N - 1)])
+#define ND_SIDE_KEY(p) (((p) & 0x1FFFFFu) | g_nd_id << 21)
+
+/* nd_ab=1: the variants nd_ab takes in turn (native_draw 0, D86's path,
+ * ND_ON_SIDE, ND_ON_PF, both; ND_ON_PROBE, with ND_ON_PF) and the one the list being built now is
+ * counted under, or -1 (a block's first lists, or nd_ab off). */
+enum { ND_AB_VARIANTS = 7 };
+int nd_ab_slot(void);
+/* the lists counted under each variant since the last call */
+void nd_ab_take(unsigned lists[ND_AB_VARIANTS]);
+
 /* counters (nd_report); the primitives are the markers and the joined */
 typedef struct {
   unsigned markers, joined, fallback, e1;
@@ -128,7 +164,28 @@ static inline void nd_ot_append(u32 slot, u32 prim) {
 /* Room for one record of nv vertices in the current pool, or NULL. */
 static inline u32 *nd_reserve(u32 nv) {
   u32 *const r = g_nd_wp;
+  if (g_nd_on & ND_ON_PF) {
+    /* the next record's two lines, for writing (GCC's prefetch is a plain
+     * pld on ARMv7; the Cortex-A9 has the MP extensions' pldw) */
+#if defined(__arm__)
+    __asm__ volatile(".arch_extension mp\n\tpldw [%0, #64]\n\tpldw [%0, #96]" ::"r"(r));
+#else
+    __builtin_prefetch(r + 16, 1);
+    __builtin_prefetch(r + 24, 1);
+#endif
+  }
   return (u32)(g_nd_lim - r) >= ND_HEAD + nv * ND_VW ? r : NULL;
+}
+
+/* ND_ON_PROBE: 12 words written where the next record would go */
+static inline void nd_probe(void) {
+  volatile u32 *const v = nd_reserve(4); /* scalar stores, as a record's */
+  const u32 x = (u32)(uintptr_t)v;
+  if (!v)
+    return;
+  v[0] = x, v[1] = x + 1, v[2] = x + 2, v[3] = x + 3, v[4] = x + 4, v[5] = x + 5;
+  v[6] = x + 6, v[7] = x + 7, v[8] = x + 8, v[9] = x + 9, v[10] = x + 10, v[11] = x + 11;
+  g_nd_wp = (u32 *)v + 12;
 }
 
 /* One textured vertex: xy as the primitive holds it, u/v/brightness/
@@ -320,6 +377,11 @@ static inline u32 nd_words(const u32 *r, u32 nv) {
 /* A marker at prim for the record at word `at`, its first and last */
 static inline void nd_mark(u32 prim, u32 at) {
   g_nd_base[at + 2] = at;
+  if (g_nd_on & ND_ON_SIDE) {
+    NdSide *const e = ND_SIDE_AT(prim);
+    e->key = ND_SIDE_KEY(prim);
+    e->last = at;
+  }
   AT32_ND(prim) = 0x2000000u;
   AT32_ND(prim + 4) = g_nd_id;
   AT32_ND(prim + 8) = at;
@@ -347,7 +409,19 @@ static inline void nd_join(u32 p, u32 at) {
  * marker of its own, which the caller links as it would the primitive. */
 static inline __attribute__((always_inline)) int nd_commit(u32 *r, u32 nv, u32 tail, u32 prim) {
   const u32 at = nd_used(r, nd_words(r, nv));
-  if (tail && nd_is_mark(tail)) {
+  if (g_nd_on & ND_ON_SIDE) {
+    /* the marker's first record keeps its own offset as the last (word 2):
+     * only the walk reads a marker's records, from the first */
+    if (tail) {
+      NdSide *const e = ND_SIDE_AT(tail);
+      if (e->key == ND_SIDE_KEY(tail)) {
+        g_nd_base[e->last + 1] = at;
+        e->last = at;
+        g_nd_stats.joined++;
+        return 1;
+      }
+    }
+  } else if (tail && nd_is_mark(tail)) {
     nd_join(tail, at);
     return 1;
   }
@@ -359,7 +433,10 @@ static inline __attribute__((always_inline)) int nd_commit(u32 *r, u32 nv, u32 t
  * whose tail is `tail`: nd_commit's answer, or 0 with the primitive left as
  * it is when the pool is full. */
 static inline __attribute__((always_inline)) int nd_take(int kind, u32 tail, u32 prim) {
-  u32 *r = nd_rec(kind, prim);
+  u32 *r;
+  if (g_nd_on & ND_ON_PROBE)
+    return 0; /* linked as a primitive (nd_open wrote the probe's words) */
+  r = nd_rec(kind, prim);
   if (!r) {
     g_nd_stats.fallback++;
     return 0;
@@ -371,7 +448,12 @@ static inline __attribute__((always_inline)) int nd_take(int kind, u32 tail, u32
  * when native_draw is on, else NULL, and the caller builds the primitive
  * as it always did (whose link then counts a full pool's fallback). */
 static inline __attribute__((always_inline)) u32 *nd_open(u32 nv) {
-  return g_nd_on ? nd_reserve(nv) : NULL;
+  const int on = g_nd_on;
+  if (on & ND_ON_PROBE) {
+    nd_probe();
+    return NULL; /* the site builds and links the PS1 primitive */
+  }
+  return on ? nd_reserve(nv) : NULL;
 }
 
 /* nd_commit into an OT slot (OtAppend's: tail +0, head +4) */
@@ -429,7 +511,10 @@ static inline __attribute__((always_inline)) void nd_chain_rec(NdChain *c, u32 *
  * of its own in its place, tag len 2 and link 0 as `AT32(prim) = 0x9000000`
  * would leave it. 0 if the pool is full (the primitive stays as it is). */
 static inline int nd_gt3_chained(u32 prim) {
-  u32 *r = nd_rec(ND_K_GT3, prim);
+  u32 *r;
+  if (g_nd_on & ND_ON_PROBE)
+    return 0;
+  r = nd_rec(ND_K_GT3, prim);
   if (!r) {
     g_nd_stats.fallback++;
     return 0;

@@ -72,8 +72,13 @@ static void slots_save(void) {
     s_head0[i] = slot_at(i)[1];
     s_last0[i] = ND_END;
     if (s_tail0[i] && nd_is_mark(s_tail0[i])) {
+      /* its last record: from the first, as the walk goes (with nd_var's
+       * side table, D87, the first record's word 2 isn't kept) */
       const u32 *w = g_nd_pool[g_nd_cur].w;
-      s_last0[i] = w[AT32_ND(MIPS_KUSEG(s_tail0[i]) + 8) + 2];
+      u32 at = AT32_ND(MIPS_KUSEG(s_tail0[i]) + 8);
+      while (w[at + 1] != ND_END)
+        at = w[at + 1];
+      s_last0[i] = at;
     }
   }
 }

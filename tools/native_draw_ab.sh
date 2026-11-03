@@ -11,6 +11,7 @@
 # Scenarios (default: demo gems wsi vc lod routeA routeB): fast_render_ab.sh's, and
 # vc (gems with the vertex cache, D39's hook) and whole (the 100,000-vblank tour).
 # MODE=n1 runs --native-draw in place of the check (timing, --prof-draw).
+# ND_ARGS goes to the second run of each pair only (D87: "--nd-var 2", "--nd-ab").
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
@@ -20,7 +21,7 @@ run() { # NAME MODE
   rm -rf $D; mkdir -p $D
   extra=
   case $n in demo) extra="--wav $D/audio.wav";; routeA|routeB|whole) extra="--save $D/save";; esac
-  case $m in n1) extra="$extra --native-draw";; chk) extra="$extra --native-draw-check";; esac
+  case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;

@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "PsyX/PsyX_render.h"
+#include "psx_walk.h"
 
 extern DRAWENV activeDrawEnv; /* PsyX_GPU.cpp */
 extern DISPENV activeDispEnv;
@@ -16,6 +17,9 @@ extern DISPENV activeDispEnv;
 int g_native_draw;
 int g_nd_check;
 int g_nd_on;
+int g_nd_var;
+int g_nd_ab;
+NdSide g_nd_side[ND_SIDE_N];
 NdPool g_nd_pool[ND_POOLS];
 u32 g_nd_cur;
 u32 *g_nd_base, *g_nd_wp, *g_nd_lim;
@@ -36,15 +40,18 @@ void nd_init(void (*log)(const char *fmt, ...)) {
   int i;
   s_log = log;
   nd_check_set_log(log);
-  if (!g_native_draw && !g_nd_check)
+  g_nd_var &= ND_ON_SIDE | ND_ON_PF | ND_ON_PROBE;
+  if (!g_native_draw && !g_nd_check) {
+    g_nd_ab = 0;
     return;
+  }
   for (i = 0; i < ND_POOLS; i++) {
     g_nd_pool[i].w = malloc(POOL_WORDS * sizeof(u32));
     g_nd_pool[i].cap = g_nd_pool[i].w ? POOL_WORDS : 0;
     g_nd_pool[i].n = 0;
   }
   if (!g_nd_pool[0].cap || !g_nd_pool[1].cap) {
-    g_native_draw = g_nd_check = 0;
+    g_native_draw = g_nd_check = g_nd_ab = 0;
     if (s_log)
       s_log("native draw: no memory for the pools, off");
     return;
@@ -57,10 +64,40 @@ void nd_init(void (*log)(const char *fmt, ...)) {
 void nd_begin(void) {
   if (g_nd_check)
     nd_check_began();
-  g_nd_on = g_native_draw && g_fast_render_ro == 2;
+  g_nd_on = g_native_draw && g_fast_render_ro == 2 ? ND_ON | g_nd_var : 0;
 }
 
 void nd_end(void) { g_nd_on = 0; }
+
+/* nd_ab=1 (D87): the variants in turn, a block of lists each. A block's
+ * first lists aren't counted: the pools take turns per list, so they only
+ * bring this variant's pool into the caches. */
+enum { AB_BLOCK = 8, AB_WARM = 2, AB_OFF = -1 };
+static const int k_ab_var[ND_AB_VARIANTS] = {AB_OFF,      0,           ND_ON_SIDE,
+                                             ND_ON_PF,    ND_ON_SIDE | ND_ON_PF,
+                                             ND_ON_PROBE, ND_ON_PROBE | ND_ON_PF};
+static unsigned s_ab_list;
+static int s_ab_slot = -1;
+static unsigned s_ab_lists[ND_AB_VARIANTS];
+
+int nd_ab_slot(void) { return s_ab_slot; }
+
+void nd_ab_take(unsigned lists[ND_AB_VARIANTS]) {
+  memcpy(lists, s_ab_lists, sizeof s_ab_lists);
+  memset(s_ab_lists, 0, sizeof s_ab_lists);
+}
+
+static void ab_next(void) {
+  unsigned v;
+  g_psx_walk_tag = s_ab_slot; /* the list just linked, which DrawOTag gets now */
+  s_ab_list++;
+  v = s_ab_list / AB_BLOCK % ND_AB_VARIANTS;
+  g_native_draw = k_ab_var[v] != AB_OFF;
+  g_nd_var = g_native_draw ? k_ab_var[v] : 0;
+  s_ab_slot = s_ab_list % AB_BLOCK >= AB_WARM ? (int)v : -1;
+  if (s_ab_slot >= 0)
+    s_ab_lists[v]++;
+}
 
 void nd_list_linked(void) {
   NdPool *p = &g_nd_pool[g_nd_cur];
@@ -78,6 +115,12 @@ void nd_list_linked(void) {
   g_nd_lim = g_nd_base ? g_nd_base + g_nd_pool[g_nd_cur].cap : NULL;
   /* a marker of an earlier list can't be taken for this one's */
   g_nd_id = ND_MAGIC | g_nd_cur << 11 | (((g_nd_id & ND_SERIAL) + 1) & ND_SERIAL);
+  /* the side table's keys carry the serial: when it comes round, its
+   * entries from 2048 lists ago go */
+  if (!(g_nd_id & ND_SERIAL))
+    memset(g_nd_side, 0, sizeof g_nd_side);
+  if (g_nd_ab)
+    ab_next();
 }
 
 /* PsyCross's DrawEnvOffset, as integers (its float sums are exact here) */
@@ -209,8 +252,8 @@ int nd_packet(uintptr_t packet) {
 void nd_report(int vblank) {
   NdStats st = g_nd_stats;
   const unsigned prims = st.markers + st.joined;
-  if (!s_log || (!g_native_draw && !g_nd_check))
-    return;
+  if (!s_log || !g_nd_base)
+    return; /* no pools (nd_ab turns g_native_draw on and off) */
   s_log("native draw %d: %u lists (%u with records), %u primitives as %u markers (%u joined), "
         "%u draw modes, %u left as primitives (pool full); %u polygons walked; "
         "%u KB of records, the most in a list %u KB; the walk parsed %u polygons, %u lines, "

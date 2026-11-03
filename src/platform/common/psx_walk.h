@@ -56,6 +56,7 @@ int psx_walk_pending(void);
 void psx_walk_after(void (*fn)(void *), const void *arg, int size);
 
 /* Counters since the last psx_walk_stats_take(). */
+enum { PSX_WALK_TAGS = 8 };
 typedef struct {
   unsigned walks;      /* lists handed over */
   unsigned in_place;   /* lists DrawOTag walked in place (head outside the arena or the copy) */
@@ -67,7 +68,13 @@ typedef struct {
   unsigned long long wait_us; /* game thread: waiting for the walker */
   unsigned long long walk_us; /* the walker: walking */
   unsigned deferred;   /* psx_walk_after calls that waited for a walk */
+  /* by the tag a list was handed over with (g_psx_walk_tag, 0..PSX_WALK_TAGS-1) */
+  unsigned walks_tag[PSX_WALK_TAGS];
+  unsigned long long walk_us_tag[PSX_WALK_TAGS], wait_us_tag[PSX_WALK_TAGS];
 } PsxWalkStats;
+/* The tag of the list DrawOTag is given next (-1: none): native_draw.c's
+ * A/B variant (D87), so the walk's and the wait's times are counted by it. */
+extern int g_psx_walk_tag;
 void psx_walk_stats_take(PsxWalkStats *out);
 /* The clock the stats use, microseconds (NULL: none, times stay 0). */
 void psx_walk_set_clock(unsigned long long (*now_us)(void));
