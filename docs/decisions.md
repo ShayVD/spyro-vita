@@ -1929,3 +1929,8 @@ Record each decision with its date, what was chosen, and why.
     - Each wait must end within a few vblanks, and our count must keep up with the display's.
     - **The mutant** (`vcount_mutant`: the raw counter, as before) must fail, and it does. Started from 2539, it hangs at display vblank 63004 (count 0x0007).
     - `logs/run1-host-vcount/ctest.txt`.
+  - **Vita3K, `REALTIME=1 vcount_test=1500 frames=3000`** (`logs/run2-vita3k-vcount`, this branch's VPK):
+    - The log has `vcount_test: the display's 16-bit vcount wraps in 1500 vblanks`. Every 300-vblank line through the wrap reads 59.9–60.0 per second, with 0–1 vblanks late.
+    - There is no `hang:` line, and the run exits at `frames=3000 reached`.
+    - Not run: a negative control on Vita3K (the old code with the knob). The host mutant is that check.
+  - **Hardware: not run yet** (it needs the owner's approval). One run from this worktree checks it: `REALTIME=1 DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-vcount 240 vcount_test=1500 frames=3000`. Pass: `frames=3000 reached`, no `hang:` line.
