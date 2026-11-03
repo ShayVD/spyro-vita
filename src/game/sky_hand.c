@@ -268,12 +268,12 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
         if (c0 == c1 && c0 == c2) {
           nd_mk_f(r, 0, WORD_AT(colours, c0) - 0x10000000u, xy0, xy1, xy2, 0);
           AT32(prim + 0x18) = xy2;
-          nd_chain_rec(&ch, r, 3, prim);
+          nd_chain_rec(&ch, r, prim);
           prim += 0x14;
         } else {
           nd_mk_g3(r, WORD_AT(colours, c0), xy0, WORD_AT(colours, c1), xy1, WORD_AT(colours, c2),
                    xy2);
-          nd_chain_rec(&ch, r, 3, prim);
+          nd_chain_rec(&ch, r, prim);
           prim += 0x1C;
         }
         continue;

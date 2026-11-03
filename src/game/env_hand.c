@@ -785,7 +785,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
             u32 *r = nd_open(4);
             if (r) { /* D86: the record from the values, the stores skipped */
               nd_mk_g4(r, c0 + code, xy0, c1, xy1, c2, xy2, c3, xy3);
-              nd_put(r, 4, slot, fp);
+              nd_put(r, slot, fp);
               fp += 0x24;
               continue;
             }
@@ -855,7 +855,7 @@ static u32 DrawLowSectors(u32 fp, u32 ot, const CamPos *cam) {
             u32 *r = nd_open(3);
             if (r) {
               nd_mk_g3(r, c0 + code, xy0, c1, xy1, c2, xy2);
-              nd_put(r, 3, slot, fp);
+              nd_put(r, slot, fp);
               fp += 0x1C;
               continue;
             }
@@ -973,7 +973,7 @@ static inline u32 HighQuadRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 pol
   if ((s32)b < 0) {
     if (b == 0xFFFFFFFFu) {
       nd_mk_g4(r, (c0 & 0xFFFFFFu) | 0x38000000u, xy0, c1, xy1, c3, xy3, c2, xy2);
-      nd_put(r, 4, slot, fp);
+      nd_put(r, slot, fp);
       /* the GT4 layout's stores past the shorter POLY_G4 stay */
       AT32(fp + 0x28) = c2;
       AT32(fp + 0x2C) = xy2;
@@ -985,7 +985,7 @@ static inline u32 HighQuadRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 pol
   uv0 = AT32(tex) + (t0 << 22);
   nd_mk_gt4(r, c0, xy0, uv0, c1, xy1, AT32(tex + 4), c3, xy3, uv0 + 0x1F00, c2, xy2,
             uv0 + 0x1F00 + 0x1F);
-  nd_put(r, 4, slot, fp);
+  nd_put(r, slot, fp);
   return fp + 0x34;
 }
 
@@ -1015,7 +1015,7 @@ static inline u32 HighTriRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 poly
   if ((s32)(w2 << 24) < 0) {
     if ((w2 & 0xFF) == 0xFF) {
       nd_mk_g3(r, (c0 & 0xFFFFFFu) | 0x30000000u, xy0, c1, xy1, c2, xy2);
-      nd_put(r, 3, slot, fp);
+      nd_put(r, slot, fp);
       /* the GT3 layout's stores past the shorter POLY_G3 stay */
       AT32(fp + 0x1C) = c2;
       AT32(fp + 0x20) = xy2;
@@ -1037,7 +1037,7 @@ static inline u32 HighTriRecord(NgteSync *sp, u32 *r, u32 fp, u32 slot, u32 poly
     ua = uv0 + 0x1F00, ub = uv1 - 0x1F, uc = uv0 + 0x1F1F;
   }
   nd_mk_gt3(r, c0, xy0, ua, c1, xy1, ub, c2, xy2, uc);
-  nd_put(r, 3, slot, fp);
+  nd_put(r, slot, fp);
   return fp + 0x28;
 }
 #endif
@@ -1876,7 +1876,7 @@ static u32 EdgeTriangle(u32 fp, u32 ot, u32 e, u32 tex, u32 w3, u32 code_sub) {
     if (r) { /* D86: the record from the values, the triangle's stores skipped */
       nd_mk_gt3(r, AT32(pa + 8) - code_sub, AT32(pa), (e1 & 0xFFFF) + uvb, AT32(pb + 8), AT32(pb),
                 (u32)((s32)e2 >> 16) + AT32(tex + 4), AT32(pc + 8), AT32(pc), (e2 & 0xFFFF) + uvb);
-      nd_put(r, 3, ot + (((zs >> 7) + ((w3 & 0x38) >> 1)) << 3), fp);
+      nd_put(r, ot + (((zs >> 7) + ((w3 & 0x38) >> 1)) << 3), fp);
       return fp + 0x28;
     }
   }
@@ -2040,7 +2040,7 @@ static u32 Subdiv2x2Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
         PieceQuadUVsTo(uv, uvw0, uvw1, 0x1F00, 0x1F1F);
         nd_mk_gt4(r, AT32(g + 0x8), xy0, uv[0], AT32(g + 0x18), xy1, uv[1], AT32(g + 0x38), xy2,
                   uv[2], AT32(g + 0x48), xy3, uv[3]);
-        nd_put(r, 4, ot + PieceSlot(zs, w3), fp);
+        nd_put(r, ot + PieceSlot(zs, w3), fp);
         fp += 0x34;
         continue;
       }

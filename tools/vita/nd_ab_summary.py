@@ -15,7 +15,11 @@ import math
 import re
 import sys
 
-NAMES = ["v0 off", "v1 D86", "v2 side", "v3 pf", "v4 side+pf", "v5 probe", "v6 probe+pf"]
+# run S2's set (native_draw.c k_ab_var); S1's was off, D86, side, pf, side+pf, probe, probe+pf
+NAMES = ["v0 off", "v1 side+pf", "v2 side+nc", "v3 side+ncw", "v4 probe", "v5 probe+nc", "v6 D86"]
+if "--s1" in sys.argv:
+    sys.argv.remove("--s1")
+    NAMES = ["v0 off", "v1 D86", "v2 side", "v3 pf", "v4 side+pf", "v5 probe", "v6 probe+pf"]
 PARTS = ["env", "mobys", "spyro", "fx", "particles", "sky"]
 DRAW = re.compile(r"draw ab (\d+):(.*)")
 PARSE = re.compile(r"parse ab (\d+):(.*)")

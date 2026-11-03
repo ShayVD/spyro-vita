@@ -84,7 +84,8 @@
  *   --native-draw-check runs each of their calls both ways and compares the
  *   triangles PsyCross's walk makes of them ("native draw check" lines).
  *   --nd-var N: the record path's variant (native_draw.h's ND_ON_* bits:
- *   2 the side table's joins, 4 the pool's prefetch; D87); --nd-ab: the
+ *   2 the side table's joins, 4 the pool's prefetch, 16 and 32 the
+ *   "uncached" pools, here plain memory; D87); --nd-ab: the
  *   variants in turn by blocks of lists (nd_ab, the Vita's timing run).
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
@@ -113,6 +114,7 @@ void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
 extern int g_nd_var, g_nd_ab;          /* D87 */
+extern void *(*g_nd_nc_alloc)(unsigned bytes);
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
@@ -124,6 +126,10 @@ static void nd_atexit(void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ND_ON_NC's "uncached" pools: plain memory here, so the host runs the
+ * walk's copy of them (D87) */
+static void *nd_nc_alloc(unsigned bytes) { return malloc(bytes); }
 
 extern void spyro_main(void);
 /* libcd (PsyQ signatures) and the game's read callback (cd.c) */
@@ -512,6 +518,7 @@ int main(int argc, char **argv) {
   if (serve_port && host_serve_start(serve_port) != 0)
     return 1;
   psx_arena_init();
+  g_nd_nc_alloc = nd_nc_alloc;
   nd_init(host_log);
   if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
     host_log("walk: no 16 MB-aligned memory for the copy");

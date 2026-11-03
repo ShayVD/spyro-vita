@@ -20,6 +20,13 @@ int g_nd_on;
 int g_nd_var;
 int g_nd_ab;
 NdSide g_nd_side[ND_SIDE_N];
+void *(*g_nd_nc_alloc)(unsigned bytes);
+/* each pool's memory: cached, and uncached (ND_ON_NC; NULL without) */
+static u32 *s_mem[2][ND_POOLS];
+/* the walk's cached copy of an uncached pool, and the list it holds
+ * (NdPool.gen); the game thread's count of lists */
+static u32 *s_walk_buf;
+static u32 s_walk_gen = ~0u, s_gen;
 NdPool g_nd_pool[ND_POOLS];
 u32 g_nd_cur;
 u32 *g_nd_base, *g_nd_wp, *g_nd_lim;
@@ -40,15 +47,28 @@ void nd_init(void (*log)(const char *fmt, ...)) {
   int i;
   s_log = log;
   nd_check_set_log(log);
-  g_nd_var &= ND_ON_SIDE | ND_ON_PF | ND_ON_PROBE;
+  g_nd_var &= ND_ON_SIDE | ND_ON_PF | ND_ON_PROBE | ND_ON_NC | ND_ON_NCW;
+  if (g_nd_var & (ND_ON_NC | ND_ON_NCW))
+    g_nd_var |= ND_ON_SIDE;
   if (!g_native_draw && !g_nd_check) {
     g_nd_ab = 0;
     return;
   }
   for (i = 0; i < ND_POOLS; i++) {
-    g_nd_pool[i].w = malloc(POOL_WORDS * sizeof(u32));
+    g_nd_pool[i].w = s_mem[0][i] = malloc(POOL_WORDS * sizeof(u32));
     g_nd_pool[i].cap = g_nd_pool[i].w ? POOL_WORDS : 0;
     g_nd_pool[i].n = 0;
+    g_nd_pool[i].nc = 0;
+  }
+  if (g_nd_nc_alloc && (g_nd_ab || (g_nd_var & (ND_ON_NC | ND_ON_NCW)))) {
+    s_walk_buf = malloc(POOL_WORDS * sizeof(u32));
+    for (i = 0; i < ND_POOLS && s_walk_buf; i++)
+      s_mem[1][i] = g_nd_nc_alloc(POOL_WORDS * sizeof(u32));
+    if (!s_walk_buf || !s_mem[1][0] || !s_mem[1][1]) {
+      s_mem[1][0] = s_mem[1][1] = NULL; /* the cached pools for every variant */
+      if (s_log)
+        s_log("native draw: no uncached memory for the pools; ND_ON_NC uses the cached ones");
+    }
   }
   if (!g_nd_pool[0].cap || !g_nd_pool[1].cap) {
     g_native_draw = g_nd_check = g_nd_ab = 0;
@@ -73,9 +93,17 @@ void nd_end(void) { g_nd_on = 0; }
  * first lists aren't counted: the pools take turns per list, so they only
  * bring this variant's pool into the caches. */
 enum { AB_BLOCK = 8, AB_WARM = 2, AB_OFF = -1 };
-static const int k_ab_var[ND_AB_VARIANTS] = {AB_OFF,      0,           ND_ON_SIDE,
-                                             ND_ON_PF,    ND_ON_SIDE | ND_ON_PF,
-                                             ND_ON_PROBE, ND_ON_PROBE | ND_ON_PF};
+/* run S1 (D87) took native_draw 0, D86's path, ND_ON_SIDE, ND_ON_PF, both,
+ * ND_ON_PROBE and the probe with ND_ON_PF; this is run S2's set */
+static const int k_ab_var[ND_AB_VARIANTS] = {
+    AB_OFF,
+    ND_ON_SIDE | ND_ON_PF,
+    ND_ON_SIDE | ND_ON_NC,
+    ND_ON_SIDE | ND_ON_NCW,
+    ND_ON_PROBE,
+    ND_ON_PROBE | ND_ON_NC,
+    0,
+};
 static unsigned s_ab_list;
 static int s_ab_slot = -1;
 static unsigned s_ab_lists[ND_AB_VARIANTS];
@@ -87,6 +115,7 @@ void nd_ab_take(unsigned lists[ND_AB_VARIANTS]) {
   memset(s_ab_lists, 0, sizeof s_ab_lists);
 }
 
+/* nd_ab=1 */
 static void ab_next(void) {
   unsigned v;
   g_psx_walk_tag = s_ab_slot; /* the list just linked, which DrawOTag gets now */
@@ -109,8 +138,18 @@ void nd_list_linked(void) {
     if (p->n > s_peak)
       s_peak = p->n;
   }
+  if (g_nd_ab)
+    ab_next(); /* the next list's variant, which picks its pool's memory */
   g_nd_cur ^= 1;
-  g_nd_pool[g_nd_cur].n = 0;
+  {
+    NdPool *const q = &g_nd_pool[g_nd_cur];
+    const int nc = (g_nd_var & (ND_ON_NC | ND_ON_NCW)) != 0 && s_mem[1][g_nd_cur];
+    q->n = 0;
+    q->gen = ++s_gen;
+    if (q->w)
+      q->w = s_mem[nc][g_nd_cur];
+    q->nc = !nc ? 0 : (g_nd_var & ND_ON_NCW) ? 2 : 1;
+  }
   g_nd_base = g_nd_wp = g_nd_pool[g_nd_cur].w;
   g_nd_lim = g_nd_base ? g_nd_base + g_nd_pool[g_nd_cur].cap : NULL;
   /* a marker of an earlier list can't be taken for this one's */
@@ -119,8 +158,6 @@ void nd_list_linked(void) {
    * entries from 2048 lists ago go */
   if (!(g_nd_id & ND_SERIAL))
     memset(g_nd_side, 0, sizeof g_nd_side);
-  if (g_nd_ab)
-    ab_next();
 }
 
 /* PsyCross's DrawEnvOffset, as integers (its float sums are exact here) */
@@ -245,7 +282,19 @@ int nd_packet(uintptr_t packet) {
     return 0;
   }
   pool = w1 >> 11 & 1;
-  emit(g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
+  {
+    const NdPool *const p = &g_nd_pool[pool];
+    const u32 *w = p->w;
+    if (p->nc == 1) {
+      /* an uncached pool (D87): copied once a list, then read cached */
+      if (p->gen != s_walk_gen) {
+        memcpy(s_walk_buf, w, p->n * sizeof(u32));
+        s_walk_gen = p->gen;
+      }
+      w = s_walk_buf;
+    }
+    emit(w, m[2], p->cap);
+  }
   return 1;
 }
 

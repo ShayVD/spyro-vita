@@ -71,7 +71,15 @@ enum {
    * writes 12 words into the pool and is then built and linked as a PS1
    * primitive (a second write stream alone, timed against native_draw 0) */
   ND_ON_PROBE = 8,
+  /* the list's pool in uncached memory (g_nd_nc_alloc): records don't go
+   * through the game thread's caches; the walk copies the pool first (NC)
+   * or reads it in place (NCW). Both need ND_ON_SIDE (no pool reads). */
+  ND_ON_NC = 16,
+  ND_ON_NCW = 32,
 };
+/* The platform's uncached memory for ND_ON_NC (the Vita: USER_MAIN_NC_RW),
+ * set before nd_init; NULL: none, those variants use the cached pools. */
+extern void *(*g_nd_nc_alloc)(unsigned bytes);
 
 enum {
   ND_MAGIC = 0x4E4000u, /* bits 12-23 */
@@ -95,6 +103,8 @@ enum {
 typedef struct {
   u32 *w;
   u32 n, cap; /* words (n: what its last list used) */
+  int nc;     /* w is uncached: 1 the walk copies it, 2 it reads it in place */
+  u32 gen;    /* the list it holds (a count of lists) */
 } NdPool;
 
 extern NdPool g_nd_pool[ND_POOLS];
@@ -134,8 +144,7 @@ extern NdSide g_nd_side[ND_SIDE_N];
 #define ND_SIDE_AT(p) (&g_nd_side[((p) >> 2) & (ND_SIDE_N - 1)])
 #define ND_SIDE_KEY(p) (((p) & 0x1FFFFFu) | g_nd_id << 21)
 
-/* nd_ab=1: the variants nd_ab takes in turn (native_draw 0, D86's path,
- * ND_ON_SIDE, ND_ON_PF, both; ND_ON_PROBE, with ND_ON_PF) and the one the list being built now is
+/* nd_ab=1: the variants nd_ab takes in turn (native_draw.c's k_ab_var) and the one the list being built now is
  * counted under, or -1 (a block's first lists, or nd_ab off). */
 enum { ND_AB_VARIANTS = 7 };
 int nd_ab_slot(void);
@@ -241,6 +250,7 @@ static inline void nd_mk_f(u32 *r, int quad, u32 c0, u32 xy0, u32 xy1, u32 xy2, 
   } else {
     nd_vtx2(o, xy2, c);
   }
+  g_nd_wp = r + ND_HEAD + (quad ? 8 : 6);
 }
 
 static inline void nd_mk_g3(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u32 xy2) {
@@ -250,6 +260,7 @@ static inline void nd_mk_g3(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u3
   o = nd_vtx2(o, xy0, c0);
   o = nd_vtx2(o, xy1, c1);
   nd_vtx2(o, xy2, c2);
+  g_nd_wp = r + ND_HEAD + 6;
 }
 
 static inline void nd_mk_g4(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u32 xy2, u32 c3,
@@ -261,6 +272,7 @@ static inline void nd_mk_g4(u32 *r, u32 c0, u32 xy0, u32 c1, u32 xy1, u32 c2, u3
   o = nd_vtx2(o, xy1, c1);
   o = nd_vtx2(o, xy3, c3);
   nd_vtx2(o, xy2, c2);
+  g_nd_wp = r + ND_HEAD + 8;
 }
 
 /* FT3/FT4. 0 for an FT3 with every vertex at -1 (IsNull, SCE's tpage-only
@@ -272,6 +284,7 @@ static inline void nd_mk_ft(u32 *r, int quad, u32 c0, u32 xy0, u32 uv0, u32 xy1,
   r[0] = ND_SEMI_OF(c0) | ND_TEX | tp << 16 | (quad ? ND_QUAD : 0);
   r[1] = ND_END;
   r[3] = tp | (uv0 & 0xFFFF0000u);
+  g_nd_wp = r + ND_HEAD + (quad ? 12 : 9); /* a null one keeps an FT3's room */
   if (!quad && (xy0 & xy1 & xy2) == 0xFFFFFFFFu) {
     r[0] |= ND_NULL;
     return;
@@ -296,6 +309,7 @@ static inline void nd_mk_gt3(u32 *r, u32 c0, u32 xy0, u32 uv0, u32 c1, u32 xy1, 
   o = nd_vtx(o, xy0, ND_UV(uv0, tp), c0);
   o = nd_vtx(o, xy1, ND_UV(uv1, tp), c1);
   nd_vtx(o, xy2, ND_UV(uv2, tp), c2);
+  g_nd_wp = r + ND_HEAD + 9;
 }
 
 static inline void nd_mk_gt4(u32 *r, u32 c0, u32 xy0, u32 uv0, u32 c1, u32 xy1, u32 uv1, u32 c2,
@@ -309,12 +323,14 @@ static inline void nd_mk_gt4(u32 *r, u32 c0, u32 xy0, u32 uv0, u32 c1, u32 xy1, 
   o = nd_vtx(o, xy1, ND_UV(uv1, tp), c1);
   o = nd_vtx(o, xy3, ND_UV(uv3, tp), c3);
   nd_vtx(o, xy2, ND_UV(uv2, tp), c2);
+  g_nd_wp = r + ND_HEAD + 12;
 }
 
 /* A draw mode command (tag, E1 word, a NOP word: env's EmitBlendMode) */
 static inline void nd_mk_e1(u32 *r, u32 w1) {
   r[0] = ND_E1 | (w1 & 0x7FFu) << 16;
   r[1] = ND_END;
+  g_nd_wp = r + ND_HEAD;
   g_nd_stats.e1++;
 }
 
@@ -362,17 +378,10 @@ static inline __attribute__((always_inline)) u32 *nd_rec(int kind, u32 prim) {
   return r;
 }
 
-/* The record just written at r (words long) is the current pool's: its
- * word offset. */
-static inline u32 nd_used(u32 *r, u32 words) {
-  g_nd_wp = r + words;
-  return (u32)(r - g_nd_base);
-}
-
-/* A record's words: its head, then nv vertices of 3 words textured, else 2 */
-static inline u32 nd_words(const u32 *r, u32 nv) {
-  return ND_HEAD + nv * ((r[0] & ND_TEX) ? ND_VW : 2u);
-}
+/* The record just built at r (whose builder took its room, D87: nothing on
+ * the game thread reads a pool back, which may be uncached): its word
+ * offset in the current pool. */
+static inline u32 nd_at(const u32 *r) { return (u32)(r - g_nd_base); }
 
 /* A marker at prim for the record at word `at`, its first and last */
 static inline void nd_mark(u32 prim, u32 at) {
@@ -403,12 +412,12 @@ static inline void nd_join(u32 p, u32 at) {
   g_nd_stats.joined++;
 }
 
-/* The record just built at r (nv vertices), for the primitive whose space
- * is prim, about to go on the end of a bucket whose tail is `tail`: 1 if it
- * joined the marker at that tail (no link to make); 0 if prim is now a
- * marker of its own, which the caller links as it would the primitive. */
-static inline __attribute__((always_inline)) int nd_commit(u32 *r, u32 nv, u32 tail, u32 prim) {
-  const u32 at = nd_used(r, nd_words(r, nv));
+/* The record just built at r, for the primitive whose space is prim, about
+ * to go on the end of a bucket whose tail is `tail`: 1 if it joined the
+ * marker at that tail (no link to make); 0 if prim is now a marker of its
+ * own, which the caller links as it would the primitive. */
+static inline __attribute__((always_inline)) int nd_commit(u32 *r, u32 tail, u32 prim) {
+  const u32 at = nd_at(r);
   if (g_nd_on & ND_ON_SIDE) {
     /* the marker's first record keeps its own offset as the last (word 2):
      * only the walk reads a marker's records, from the first */
@@ -441,12 +450,14 @@ static inline __attribute__((always_inline)) int nd_take(int kind, u32 tail, u32
     g_nd_stats.fallback++;
     return 0;
   }
-  return nd_commit(r, ND_NV(kind), tail, prim);
+  return nd_commit(r, tail, prim);
 }
 
 /* A site that builds its record from values (D86): room for nv vertices
  * when native_draw is on, else NULL, and the caller builds the primitive
- * as it always did (whose link then counts a full pool's fallback). */
+ * as it always did (whose link then counts a full pool's fallback). Then
+ * an nd_mk_* (which takes the room) and nd_put, nd_chain_rec or the face
+ * loops' LinkRec. */
 static inline __attribute__((always_inline)) u32 *nd_open(u32 nv) {
   const int on = g_nd_on;
   if (on & ND_ON_PROBE) {
@@ -457,8 +468,8 @@ static inline __attribute__((always_inline)) u32 *nd_open(u32 nv) {
 }
 
 /* nd_commit into an OT slot (OtAppend's: tail +0, head +4) */
-static inline __attribute__((always_inline)) void nd_put(u32 *r, u32 nv, u32 slot, u32 prim) {
-  if (!nd_commit(r, nv, AT32_ND(slot), prim))
+static inline __attribute__((always_inline)) void nd_put(u32 *r, u32 slot, u32 prim) {
+  if (!nd_commit(r, AT32_ND(slot), prim))
     nd_ot_append(slot, prim);
 }
 
@@ -502,8 +513,8 @@ static inline __attribute__((always_inline)) void nd_chain(NdChain *c, int kind,
 }
 
 /* nd_chain for a record built from values (r: nd_open's) */
-static inline __attribute__((always_inline)) void nd_chain_rec(NdChain *c, u32 *r, u32 nv, u32 prim) {
-  if (!nd_commit(r, nv, c->tail, prim))
+static inline __attribute__((always_inline)) void nd_chain_rec(NdChain *c, u32 *r, u32 prim) {
+  if (!nd_commit(r, c->tail, prim))
     nd_chain_link(c, prim);
 }
 
@@ -519,7 +530,7 @@ static inline int nd_gt3_chained(u32 prim) {
     g_nd_stats.fallback++;
     return 0;
   }
-  nd_mark(prim, nd_used(r, nd_words(r, 3)));
+  nd_mark(prim, nd_at(r));
   return 1;
 }
 

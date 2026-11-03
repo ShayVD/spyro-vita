@@ -644,11 +644,11 @@ static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket,
 }
 
 #if NGTE
-/* LinkPrim for a record built from values (D86, nd_open's r, nv vertices):
- * the primitive's stores after the face's last check are skipped. */
+/* LinkPrim for a record built from values (D86, nd_open's r): the
+ * primitive's stores after the face's last check are skipped. */
 static inline __attribute__((always_inline)) void LinkRec(Faces *f, u32 bucket, u32 tail,
-                                                          u32 size, u32 *r, u32 nv) {
-  if (nd_commit(r, nv, tail, f->prim)) {
+                                                          u32 size, u32 *r) {
+  if (nd_commit(r, tail, f->prim)) {
     f->prim += size;
     return;
   }
@@ -700,7 +700,7 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
         uv0 = (uv0 & 0xFFFF0000u) | (uv2 >> 16);
       nd_mk_gt3(r, col0 + ((w1 & 1) << 25), AT32(prim + 0x8), uv0, col1, AT32(prim + 0x14),
                 AT32(face - 0x8), col2, AT32(prim + 0x20), uv2);
-      LinkRec(f, bucket, tail, 0x28, r, 3);
+      LinkRec(f, bucket, tail, 0x28, r);
       return;
     }
   }
@@ -823,7 +823,7 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
                     WORD_AT(f->colours, c1), xy1, AT32(face - 0x8),
                     WORD_AT(f->colours, (w1 << 1) & 0x7FC), xy2, uv2, WORD_AT(f->colours, c3),
                     xy3, uv2 >> 16);
-          LinkRec(f, bucket, tail, 0x34, r, 4);
+          LinkRec(f, bucket, tail, 0x34, r);
           continue;
         }
       }
