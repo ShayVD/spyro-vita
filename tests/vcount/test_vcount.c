@@ -1,7 +1,7 @@
-/* The Vita's widened vblank counter (src/platform/vita/vcount.h, D89).
+/* The Vita's widened vblank counter (src/platform/vita/vcount.h, D90).
  *
  * The display's sceDisplayGetVcount counts in 16 bits on hardware. Before
- * D89 vblank.c's PsyX_WaitForTimestep compared it with a 32-bit target, so
+ * D90 vblank.c's PsyX_WaitForTimestep compared it with a 32-bit target, so
  * 65536 display vblanks after start-up (18 min 13 s) VSync's wait never
  * ended: the owner's freeze going into Cliff Town (crash dump 2026-11-03:
  * target 62997, base 2539, 2539 + 62996 = 0xffff).
@@ -11,7 +11,7 @@
  * that start the count again, a save state's larger vblank count, across
  * several wraps, starting from the dump's count. Each wait must end within a
  * few vblanks and our count must keep up with the display's. The mutant
- * build (VCOUNT_MUTANT=1) uses the raw counter, as before D89, and must
+ * build (VCOUNT_MUTANT=1) uses the raw counter, as before D90, and must
  * fail. */
 #include "vcount.h"
 

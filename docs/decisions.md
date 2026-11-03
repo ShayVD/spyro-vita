@@ -1910,7 +1910,7 @@ Record each decision with its date, what was chosen, and why.
 
 ## 2026-11-03: the freeze going into Cliff Town
 
-### D89. The display's vblank counter is 16 bits on hardware; `vblank.c` widens it, so VSync's wait ends after 18 minutes too
+### D90. The display's vblank counter is 16 bits on hardware; `vblank.c` widens it, so VSync's wait ends after 18 minutes too
 - **Seen:** the owner played on hardware (VPK 2 of PR #62, the same `src/` as `afbd294`), going from Peace Keepers home into Cliff Town. The game froze in the level transition. The watchdog (D73) logged `hang: no vblank for 10 s ... at vblank 62996`, game thread in `wait`, `waiting (wait type 0x10000, on 0x105d5)`. The render, mixer and XA read-ahead threads were idle on their semaphores. 20 s later it stopped the app for a crash dump (both kept in the gitignored `logs/crash-20261103-cliff-town/`).
 - **The dump** (read with a stdlib reader of the `.psp2dmp`'s notes, against `build/vita/src/platform/vita/spyro_vita` of that VPK; the dump's `spyro_vita` text is 0x3cb010 bytes, VPK 2's, and that build's `eboot.bin` is byte-identical to the VPK's):
   - The game thread's PC is in `sceDisplayWaitVblankStart`'s import stub. LR is `PsyX_WaitForTimestep` (`vblank.c:204`), in `while (real_vblanks() < target) sceDisplayWaitVblankStart();`. Wait type 0x10000 is that vblank wait. The thread wakes every vblank, so its CPU time rounds to 0 ms.

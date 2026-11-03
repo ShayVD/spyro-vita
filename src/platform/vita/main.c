@@ -170,7 +170,7 @@
  *                       (hang_test=V,wait: blocks on a semaphore)
  *       vcount_test=N   tests: the display's 16-bit vblank counter wraps N
  *                       vblanks after start-up, not after up to 18 minutes
- *                       (vblank.c widens it; before D89 the game froze there)
+ *                       (vblank.c widens it; before D90 the game froze there)
  *       log_sync=1      each log line written by the thread that logs it
  *                       (default 0: a writer thread on cores 1-2; log.c, D75)
  *       atlas_cpu=0     with gpu=1 and the atlas, new texture blocks decoded

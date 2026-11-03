@@ -1,6 +1,6 @@
 /* Vita time (decisions D28). By default the game's vblanks follow the
  * display's own counter (sceDisplayGetVcount, widened from its 16 bits by
- * vcount.h, D89): VSync(0) waits for the next
+ * vcount.h, D90): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
  * would have, so the game's delta time keeps its speed and the audio stays
@@ -187,14 +187,14 @@ static void present(void) {
   s_hold = 0;
 }
 
-/* The display's vcount, widened (D89). vcount_test=N (tests) moves its 16
+/* The display's vcount, widened (D90). vcount_test=N (tests) moves its 16
  * bits so they wrap N vblanks after the first read, not up to 18 minutes on. */
 static int vcount(void) {
   static unsigned offset;
   unsigned raw = (unsigned)sceDisplayGetVcount();
   if (!s_vc.valid && g_vita_opts.vcount_test > 0) {
     offset = 0x10000u - (unsigned)g_vita_opts.vcount_test - raw;
-    vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D89)",
+    vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D90)",
              g_vita_opts.vcount_test);
   }
   return vita_vcount_widen(&s_vc, (raw + offset) & 0xffffu); /* 16 bits, as on hardware */

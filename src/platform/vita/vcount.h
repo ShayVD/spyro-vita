@@ -1,4 +1,4 @@
-/* The display's vblank counter, widened (decisions D89). On hardware
+/* The display's vblank counter, widened (decisions D90). On hardware
  * sceDisplayGetVcount counts in 16 bits: after 0xffff it is 0 again, 18 min
  * 13 s of display time. vblank.c compared it with a 32-bit target, so at the
  * wrap VSync's wait never ended (a freeze in the owner's play, crash dump
