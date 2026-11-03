@@ -554,14 +554,14 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - **Vita3K:** the gems script's and the demos' shots and window captures, and the pause route's shots, identical.
 - **Hardware (P5, P6):** the walk's thread 0.46 ms per vblank faster, the renderers 0.52 ms slower (they built every primitive and then its record), so the game thread was no faster.
 
-**Then (D86, 2026-11-03): the records without the PS1 stores, still behind `native_draw=1` (default 0).**
+**Then (D86, 2026-11-03): the records without the PS1 stores, still behind `native_draw=1` (default 0); on hardware no cheaper.**
 - **The hot sites build their records from the values they would store** and skip the primitive's stores: env's high- and low-poly passes, its 2x2 pieces and edge triangles, the moby and specular faces, the lit Gouraud faces, Spyro's faces, the sky. The space is still taken, so the buffer's pointer and every bound are the same. The stores made before a face's last check, and those a G4/G3 leaves past its end, stay: the check showed the game reads them.
 - **A smaller record:** 3 words a textured vertex and 2 an untextured one (5 before), the page/CLUT once per record. The records of the gems script fall from 429 to 266 MB, the largest list from 130 to 75 KB.
 - **Checked:** the per-call check both ways on the demos, gems, wsi, lod, the vertex cache, routes A and B and the whole tour (0 calls differ, every file identical); `tools/host_checks.sh` byte-identical with main; Vita3K's gems and demo shots and captures and the pause route identical.
-- **Timings:** in Vita3K (a direction only) the renderers' extra cost is +11% (D82: +24%), with the walk's thread 0.65 → 0.22 ms per vblank. Hardware runs P7 and P8 (`tools/vita/fps-runs/`) decide the default; they need the owner's approval.
+- **Hardware (P7, P8): no cheaper.** The renderers still cost +0.53 ms per vblank with records (D82: +0.51), though Vita3K showed that halved. The game thread was busy 4.39 → 4.97 ms per vblank, and late vblanks rose 2.6 → 3.4 per 300. So the PS1 stores weren't the cost: what's left is the record path itself (a second stream of writes per primitive, the markers and joins). `native_draw` stays 0.
 - **Not yet:**
-  - **Hardware:** P7 and P8. `native_draw=1` becomes the default if P8 shows the renderers no slower than P7 and the game thread faster, with the same card.
-  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment. On P6 `expand` took 0.78 ms per vblank of the render thread, which isn't shown to be the limit at 60 fps; it waits for P7/P8.
+  - **Measuring the record path on hardware** (the CPU's counters, or timing env's sites one by one) before any more work goes into it.
+  - **The render thread's side:** the atlas resolved once per page and CLUT, the program and blend per segment. On P6 `expand` took 0.78 ms per vblank of the render thread, which isn't shown to be the limit at 60 fps.
   - **The decomp C's own primitives:** particles, shadows (subtractive), the flame, the HUD. They're 0.5–2.6% of the packets the walk sees (D86). Particles, shadows and the flame are mips2c units and need hand C first; the HUD's are the ones widescreen squeezes in the OT.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)

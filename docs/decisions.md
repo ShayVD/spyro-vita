@@ -1827,7 +1827,7 @@ Record each decision with its date, what was chosen, and why.
 
 ## 2026-11-03: native draw lists without the PS1 stores (stage 2)
 
-### D86. The hot sites build their records from the values they would store and skip the PS1 primitive; a smaller record; `native_draw` stays 0 until hardware runs P7 and P8
+### D86. The hot sites build their records from the values they would store and skip the PS1 primitive; a smaller record; on hardware the renderers are no cheaper, so `native_draw` stays 0
 - **Why:** D82's P6 on hardware. The walk's thread was 0.46 ms per vblank faster, but the renderers were 0.52 ms slower. Every converted site stored the PS1 primitive, read it back to build the record, and wrote a record of 5 words a vertex. The game thread was no faster (busy 5.83 → 6.12 ms per vblank). Stage 2's first step (`docs/native-plan.md`) was to build the records without the PS1 stores in the hottest sites.
 - **Decided:**
   - **A smaller record** (`src/game/native_draw.h`):
@@ -1887,8 +1887,22 @@ Record each decision with its date, what was chosen, and why.
     | the game thread's wait for it | 1.162 | 0.853 | 0.578 | 0.244 |
 
     The renderers' extra cost is halved. The game thread's totals moved less than the noise between runs (the update, which this doesn't touch, moved 1–13%).
-  - **Hardware:** P7 (`native_draw=0`) and P8 (`=1`) in `tools/vita/fps-runs/`, P5 and P6 again on this VPK. They need the owner's approval and haven't run.
+  - **Hardware: P7 and P8** (2026-11-03, with the owner's go-ahead; VPK `logs/s2-vpk-2.vpk`). These are P5 and P6 again: 60 fps on the Toasty route, `REALTIME=1`, `native_draw` 0 then 1 (`logs/hw-p7`, `logs/hw-p8`). Both reached `frames=21000` in 318 s, with no hang or crash line. P8: 0 primitives left as primitives, the largest list 49 KB (P6: 71–114). Means over the windows from vblank 900 (`logs/hw_cmp.py`):
+
+    | per vblank, ms | P7 (`=0`) | P8 (`=1`) | D82 P5 (`=0`) | D82 P6 (`=1`) |
+    |---|---:|---:|---:|---:|
+    | game thread busy (`time`'s `game`) | 4.39 | 4.97 | 4.30 | 4.87 |
+    | renderers (env, mobys, Spyro, sky) | 3.27 | 3.80 | 3.14 | 3.66 |
+    | env / mobys / Spyro / sky | 1.71 / 0.89 / 0.27 / 0.41 | 1.80 / 1.12 / 0.37 / 0.52 | 1.65 / 0.87 / 0.24 / 0.39 | 1.82 / 0.99 / 0.30 / 0.56 |
+    | the parse thread's walk | 2.47 | 1.66 | 2.46 | 1.77 |
+    | the game thread's wait for it | 1.40 | 1.09 | 1.38 | 1.09 |
+    | late vblanks per 300 | 2.6 | 3.4 | 2.6 | 3.5 |
+
+    - **P7 matches P5:** `native_draw=0` is main's path, as the host check said.
+    - **The renderers' extra cost with records is the same as D82's:** +0.53 ms per vblank (D82: +0.51). Building the records from values instead of from the stored primitive saved nothing on the Cortex-A9, though Vita3K's JIT showed the extra cost halved. So the PS1 stores and their read-back were not where the time went. What's left is the record path itself: writing a second stream of memory (the pool) per primitive, and the marker and join logic. Finding which needs the CPU's counters on hardware.
+    - **The game thread is slower with records** (4.39 → 4.97 ms per vblank), and late vblanks rise (2.6 → 3.4 per 300). The walk's saving (0.81 ms on core 1, 0.31 ms of the game thread's wait) doesn't make up for it.
+    - **The two runs went different ways from vblank 16,912.** In P8, Spyro was respawned 19 vblanks earlier than in P5, P6 and P7, died twice more and reached game over at 19,363. So the cards differ. With `realtime=1` a late vblank makes the game run the missed vblanks and take a longer step (D28), so timing changes the course. In the windows before, P8 had 8 and 4 late vblanks where P7 had 4 and 2. D82's P6, with as many late vblanks, happened to stay on P5's course. The host runs, which are deterministic, keep the same course with records on in every scenario above, so this is the timing, not the pictures or the logic.
 - **Not done, and why:**
   - **The render thread's side** (the plan's step 2: resolve the atlas once per page and CLUT, set the program and blend per segment). On P6 the render thread's `expand` took 0.78 ms per vblank (233 ms per 300). Its busy time (98%) includes waiting for the display, and 60 fps held with 0.2 late vblanks per 300, so it isn't shown to be the limit. The change is in `gpu_gl.c`, needs a side channel next to the vertex slabs (as the vertex cache's), and can only be timed on hardware. It waits for P7 and P8: if the game thread is faster there and 60 fps holds, there's no need.
   - **The decomp C's own primitives** (step 3: particles, shadows, the flame, the HUD). They're 0.5–2.6% of what the walk sees. Particles, shadows and the flame are mips2c units (`docs/native-plan.md` §2.1: 1,512, 636 and 444 instructions): their links are emulated stores with no point to hook, so they need hand C first. The HUD's 2D primitives are the ones widescreen squeezes in the OT (D67), which would have to learn the records. The gain is a sliver of the walk's time; the cost is hand C for about 2,600 instructions.
-- **Default:** `native_draw=0`. It becomes 1 if P8 against P7 shows the renderers no slower and the game thread faster, with the same card.
+- **Default:** `native_draw=0`. On hardware it still costs the game thread more than the walk saves. The code stays behind the switch: the same pictures (host, Vita3K), the smaller record and the check's diagnostics are where a next attempt starts. That attempt should begin by measuring the record path on hardware, not by moving more work into it.
