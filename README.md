@@ -145,7 +145,8 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | | Texture filter (off / bilinear / 3-point) | off (the PS1's sharp texels) |
 | | Perspective-correct textures | off |
 | | Sub-pixel vertices (no PS1 wobble) | off |
-| | Resolution (native / PS1 / 2×–4×) | native (960×544) |
+| | Resolution (native / PS1) | native (960×544) |
+| | Dynamic resolution (off / auto / 88% / 75% / 67%) | off |
 | | Draw distance (experimental: off / 1.5× / 2×) | off |
 | CONTROLS | Analog stick | on |
 | | Free camera (right stick) | on |
@@ -173,8 +174,8 @@ Every option, and the extra ones `config.txt` takes, is described in
 
 ## Known issues
 
-- **60 fps is experimental** and off by default. It draws an in-between picture each tick, but the
-  Vita's CPU can't fit that at 16:9 in most scenes, so most of the time it falls back to 30 fps.
+- **60 fps is still marked experimental** and off by default. On hardware it now holds 60 fps in
+  play in every level measured; the attract demo's flight scenes can still slip below it.
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
 - **The first time you pick a texture filter, perspective or sub-pixel setting**, the menu pauses
   for a few seconds while its shaders compile. That happens once per start-up.
