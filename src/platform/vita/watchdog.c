@@ -30,6 +30,7 @@
 #include "vita.h"
 #include "watchdog.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "../../game/cheats_port.h"
 #include "../../game/where_port.h"
 
@@ -195,7 +196,8 @@ static void report(int vblank, int stuck, int limit) {
            rt ? NAME(k_cmds, rt - 1) : "asleep, nothing posted", g_wd.rt_runs, t[WD_T_RENDER],
            rt_wait ? "waits for it: " : "doesn't wait for it",
            rt_wait ? NAME(k_rt_waits, rt_wait - 1) : "", NAME(k_mixer, phase), posted, done,
-           t[WD_T_MIXER], g_wd.xa ? "reading" : "waiting for work", t[WD_T_XA], io.reads);
+           t[WD_T_MIXER], (g_psx_cd_native ? g_psx_cdn_busy : g_wd.xa) ? "reading" : "waiting for work",
+           t[WD_T_XA], io.reads);
   vita_log("%s", line);
 }
 

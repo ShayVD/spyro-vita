@@ -39,6 +39,22 @@ typedef struct {
 } PsxCdXaLoc;
 int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc);
 
+/* Where any sector at lba lies in the files, for the native reads (cd_native,
+ * cdnative.c, D93): `left` consecutive sectors, the first at byte `offset` of
+ * `path`, one every `stride` bytes. CdRead's 2048 bytes are at `data_skip`
+ * into each, and psx_cd_read_raw's PSX_CD_RAW_SECTOR at `raw_skip` (xa
+ * files; a data file's subheader is made up). `data_limit`: bytes of real
+ * data from lba on (an image's data file: past them CdRead gets zeros), or
+ * -1 (extracted files: the file's own length). Only reads tables that don't
+ * change once the disc is open, so any thread may call it. 0, or -1 if no
+ * file holds lba. */
+typedef struct {
+  char path[512];
+  long offset, data_limit;
+  int stride, data_skip, raw_skip, left, xa;
+} PsxCdLoc;
+int psx_cd_locate(int lba, PsxCdLoc *loc);
+
 #ifdef __cplusplus
 }
 #endif

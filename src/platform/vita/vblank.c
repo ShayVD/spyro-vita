@@ -13,6 +13,7 @@
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "psx_hooks.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -81,8 +82,15 @@ static void cd_report(void) {
   if (io.reads == last)
     return;
   last = io.reads;
-  vita_log("cd: %u reads, %u KB, %u ms in the file system since the start", io.reads, io.kbytes,
-           (unsigned)(io.us / 1000));
+  vita_log("cd: %u reads, %u KB, %u ms in the file system since the start; %u CdReads, the "
+           "game thread waited %u ms for them",
+           io.reads, io.kbytes, (unsigned)(io.us / 1000), io.loads, (unsigned)(io.wait_us / 1000));
+  if (g_psx_cd_native) {
+    PsxCdnStats st;
+    psx_cdn_stats(&st);
+    vita_log("cd: cd_native's worker: %u.%02u ms on the CdReads; %u of them after a stream chunk",
+             (unsigned)(st.job_us / 1000), (unsigned)(st.job_us % 1000 / 10), st.behind_chunk);
+  }
 }
 
 static void vblank(void) {

@@ -1,0 +1,10 @@
+# Run V1 (docs/native-plan.md stage 6, D93): the disc read as today, the sector model
+# (cd_native=0; xa_ahead=1, the default), at 30 fps with the shipped threads. With V2 (the
+# same with cd_native=1) it gives the load times before and after: the cd: line's last part,
+# the ms the game thread waited for its CdReads. Unattended, the K route with shots:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-v1 1500 @tools/vita/fps-runs/v1-cd-sector.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+dynres=0
+cd_native=0
