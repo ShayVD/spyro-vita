@@ -739,6 +739,8 @@ Each native step is checked by running `host_checks.sh` on the arena build and o
 
 **Order:** 4a now. 4b–4e follow D96 and D98, and are where the risk is, because they touch every renderer's reads. 4f and 4g are mostly tooling. 4h and 4i close it.
 
+**Status (D97, 2026-11-04): step 4a done.** `-DSPYRO_ARENA_AT=0x8F000000` runs the Vita's moved arena through the host's checks. The moved build gave main's 278 host-check files and memory cards byte for byte. It caught one host tool (`tour.c`) storing through a game pointer as if it were a PS1 address. The arena build is unchanged but for that fix, and Vita3K's 17 shots, window captures and card are identical. Details and logs: D97.
+
 ### Stage 5: native audio (medium, low–medium risk)
 
 **Replaces** (E):
