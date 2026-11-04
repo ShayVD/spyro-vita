@@ -14,6 +14,7 @@
 #include "lod.h"
 
 #include "psx_arena.h"
+#include "psx_cdnative.h"
 #include "psx_spu.h"
 #include "psx_state.h"
 #include "psx_walk.h"
@@ -214,6 +215,7 @@ static int save(int slot) {
   make_header(&h);
   ok = fwrite(&h, sizeof h, 1, f) == 1;
   savestate_plat_audio(PSX_STATE_SAVE);
+  psx_cdn_read_drain(); /* cd_native: a CdRead in flight lands before the arena is saved */
   for (i = 0; i < NCHUNKS && ok; i++) {
     ChunkHead c;
     PsxStateIO io = {PSX_STATE_SAVE, NULL, 0};
@@ -322,6 +324,7 @@ static int load(int slot) {
     return -4;
   }
   savestate_plat_audio(PSX_STATE_LOAD);
+  psx_cdn_read_drain(); /* nor into the loaded arena */
   for (i = 0; i < NCHUNKS; i++) {
     PsxStateIO io = {PSX_STATE_LOAD, (unsigned char *)at[i], 0};
     k_chunks[i].fn(&io);
@@ -456,6 +459,7 @@ int savestate_hash(char tags[][5], uint32_t *hashes, int max) {
   int i, n = 0;
   uint32_t all = 0x811C9DC5u;
   savestate_plat_audio(PSX_STATE_SAVE);
+  psx_cdn_read_drain(); /* cd_native: a CdRead in flight lands before the arena is saved */
   for (i = 0; i < NCHUNKS && n < max - 2; i++) {
     PsxStateIO io = {PSX_STATE_SAVE, NULL, 0};
     size_t len = chunk_size(i);

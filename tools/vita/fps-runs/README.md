@@ -349,3 +349,20 @@ Stage 3's third round, checked as Q and S were. The K route ran on main's VPK (U
 - `update` went from 0.204 to 0.189 ms per vblank.
 - The `sky` line counts the sky twice now: the hand set-up calls `func_8004EBA8` by name, and the profile wraps both functions.
 
+## Runs V1 and V2: native file I/O (D93)
+
+Stage 6 of `docs/native-plan.md`: `cd_native=1` reads each `CdRead` as one read of a file at an offset on a worker thread, and the XA stream ahead from its start, instead of the sector model's per-sector copies and `xa_ahead`'s windows. The same bytes at the same ticks, so the pictures and the memory card must come out as V1's; the load time is the `cd:` line's last part.
+
+| File | Switches | Do |
+|---|---|---|
+| `v1-cd-sector.txt` | 30 fps (`interp=0`), the shipped threads, `dynres=0`, `cd_native=0` | unattended, the K route with shots |
+| `v2-cd-native.txt` | V1 with `cd_native=1` | the same |
+
+**Unattended** (each run needs the owner's yes first): `VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-v1 1500 @tools/vita/fps-runs/v1-cd-sector.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with `v2-cd-native.txt` into `logs/hw-v2`.
+
+**What the log should show:**
+- `cd: N reads, K KB, T ms in the file system since the start; L CdReads, the game thread waited W ms for them` every 300 vblanks where there were new reads. L the same in both runs; W in V2 against V1 is the load-time change. V2's N should be far below V1's.
+- `xa N:` lines: in V2 the stream's chunks as windows, with music sectors from the read-ahead after every level change and a handful read on the game thread as each track starts.
+- `mixer N: ... 0 position mismatches` throughout, and no `hang:` line.
+
+**Ran** on 2026-11-04 (D93, `logs/hw-v1`, `logs/hw-v2`, copied to the main checkout's `logs/d93-cd/`): both reached `frames=18000`; all 18 pictures and the memory card identical; the game thread waited 1,466 ms (V1) and 1,329 ms (V2) for the route's 55 CdReads, in 232 and 98 file-system calls.

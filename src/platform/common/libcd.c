@@ -6,9 +6,13 @@
  * bytes for every LBA in a file. CdRead completes on
  * a deterministic CD tick (psx_cd_vblank or a CdSync(1) poll), then fires the
  * read callback like the PS1 interrupt. ReadS streams move the head at the
- * real rate (75 or 150 sectors/s) per virtual vblank; no audio yet. */
+ * real rate (75 or 150 sectors/s) per virtual vblank, and xa.c decodes the
+ * sectors they pass. With cd_native (cdnative.c, D93) the model stays the
+ * same and only the bytes come another way: a CdRead's range as file reads
+ * on a worker, the stream's sectors from its read-ahead. */
 #include "psx_cd.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "psx_hooks.h"
 #include "psx_state.h"
 #include "psx_xa.h"
@@ -55,7 +59,16 @@ static PsxCdStream s_stream = {.mix = {0x80, 0, 0, 0x80}};
 const PsxCdError *psx_cd_error(void) { return &s_err; }
 const char *psx_cd_source(void) { return s_image ? psx_cdimage_path() : "files"; }
 void psx_cd_set_clock(unsigned long long (*now_us)(void)) { s_clock = now_us; }
-void psx_cd_io(PsxCdIo *out) { *out = s_io; }
+void psx_cd_io(PsxCdIo *out) {
+  *out = s_io;
+  if (g_psx_cd_native) { /* the worker's CdReads (cdnative.c, D93) */
+    PsxCdnStats st;
+    psx_cdn_stats(&st);
+    out->reads += st.reads;
+    out->kbytes += st.kbytes;
+    out->us += st.us;
+  }
+}
 unsigned long long psx_cd_now(void) { return s_clock ? s_clock() : 0; }
 
 void psx_cd_io_add(unsigned bytes, unsigned long long t0) {
@@ -228,10 +241,13 @@ const PsxCdStream *psx_cd_stream(void) { return &s_stream; }
  * its callback in the executable) and the stream; not the configuration. */
 void psx_cd_state(PsxStateIO *io) {
   int latency = cd.latency, log = cd.log;
+  psx_cdn_read_drain(); /* savestate.c drained it before the arena too */
   psx_state_io(io, &cd, sizeof cd);
   psx_state_io(io, &s_stream, sizeof s_stream);
   cd.latency = latency;
   cd.log = log;
+  if (io->mode == PSX_STATE_LOAD && g_psx_cd_native && s_stream.active)
+    psx_cdn_stream_start(s_stream.lba);
 }
 
 static CdFile *cd_find(int lba) {
@@ -313,6 +329,35 @@ int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc) {
   return 0;
 }
 
+int psx_cd_locate(int lba, PsxCdLoc *loc) {
+  CdFile *f = cd_find(lba);
+  int rel;
+  if (!f)
+    return -1;
+  rel = lba - f->lba;
+  loc->left = f->nsect - rel;
+  loc->xa = f->xa;
+  loc->data_limit = -1;
+  if (s_image) {
+    int sector, base;
+    psx_cdimage_layout(&sector, &base);
+    snprintf(loc->path, sizeof loc->path, "%s", psx_cdimage_path());
+    loc->offset = (long)(lba - base) * sector;
+    loc->stride = sector;
+    loc->raw_skip = 16; /* sync and header, as image_read_raw */
+    loc->data_skip = 24;
+    if (!f->xa)
+      loc->data_limit = (long)f->size - (long)rel * 2048;
+  } else {
+    snprintf(loc->path, sizeof loc->path, "%s/%s", s_dir, f->path);
+    loc->stride = f->xa ? PSX_CD_RAW_SECTOR : 2048;
+    loc->offset = (long)rel * loc->stride;
+    loc->raw_skip = 0;
+    loc->data_skip = f->xa ? 8 : 0;
+  }
+  return 0;
+}
+
 static unsigned char bcd(int v) { return (unsigned char)(((v / 10) << 4) | (v % 10)); }
 static int unbcd(unsigned char v) { return (v >> 4) * 10 + (v & 15); }
 
@@ -340,11 +385,11 @@ static void cd_stream_stop(void) {
   s_stream.active = 0;
 }
 
-static void cd_complete_read(void) {
+/* The read's sectors into its buffer, one psx_cd_read_raw each. */
+static void cd_copy_sectors(void) {
   unsigned char raw[PSX_CD_RAW_SECTOR];
   unsigned char *dst = cd.rd_buf;
   int big = cd.rd_mode & CdlModeSize1;
-  CdlCB cb;
 
   for (int i = 0; i < cd.rd_count; i++) {
     int lba = cd.rd_lba + i;
@@ -364,6 +409,21 @@ static void cd_complete_read(void) {
       dst += 2048;
     }
   }
+}
+
+/* cd_native (D93) reads 2048-byte sectors; the 2340-byte mode stays here */
+static int cd_native_read(void) { return g_psx_cd_native && !(cd.rd_mode & CdlModeSize1); }
+
+static void cd_complete_read(void) {
+  unsigned long long t0 = psx_cd_now();
+  CdlCB cb;
+
+  if (cd_native_read())
+    psx_cdn_read_finish(cd.rd_lba, cd.rd_count, cd.rd_buf);
+  else
+    cd_copy_sectors();
+  s_io.loads++;
+  s_io.wait_us += psx_cd_now() - t0;
   cd.head = cd.rd_lba + cd.rd_count;
   cd.rd_pending = 0;
   cd_set_stat();
@@ -454,6 +514,8 @@ static int cd_command(u_char com, u_char *param, u_char *result) {
     cd.head_q = cd.setloc * 4;
     s_stream.lba = cd.setloc;
     psx_xa_reset(); /* a seek drops what the XA buffer held */
+    if (g_psx_cd_native)
+      psx_cdn_stream_start(cd.setloc);
     break;
   case CdlPlay:
   case CdlSeekL:
@@ -554,6 +616,8 @@ int CdRead(int sectors, u_long *buf, int mode) {
     fprintf(stderr, "libcd: CdRead lba %d sectors %d mode 0x%02x\n", cd.rd_lba, sectors, mode);
   if (cd.latency == 0)
     cd_complete_read();
+  else if (cd_native_read()) /* read while the ticks pass; complete at the same tick */
+    psx_cdn_read_post(cd.rd_lba, cd.rd_count, cd.rd_buf);
   return 1;
 }
 
@@ -568,6 +632,7 @@ int CdReadSync(int mode, u_char *result) {
 }
 
 void CdReadBreak(void) {
+  psx_cdn_read_drain(); /* the buffer may get the whole read: the drive's DMA would stop part way */
   cd.rd_pending = 0;
   cd.sync_status = CdlComplete;
   cd_set_stat();
@@ -592,6 +657,7 @@ CdlCB CdReadyCallback(CdlCB func) { /* no data sectors are streamed */
 }
 
 int CdInit(void) {
+  psx_cdn_read_drain();
   cd.rd_pending = 0;
   cd_stream_stop();
   cd.mode = s_stream.mode = 0;
