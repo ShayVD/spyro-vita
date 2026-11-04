@@ -1,0 +1,14 @@
+# Runs Z1 and Z2 (docs/native-plan.md stage 3, D96): the K route with the renderer units' last
+# mips2c functions (the culls, the environment animations, the sky's other entries, the glow and
+# sparkle slots) as hand-written C, against the same route on main's VPK (Z1 main, Z2 this branch,
+# the same lines): the pictures and the memory card must be identical, and the "update" and
+# "draw" lines show what they cost. W1's switches (w1-stage3-round3.txt).
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-zN 1500 \
+#     @tools/vita/fps-runs/z1-stage3-d96.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+gpu_time=0
+dynres=0
