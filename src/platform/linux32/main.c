@@ -81,7 +81,11 @@
  *   every Nth call ("gte audit" lines). --particle-sweep (with the
  *   check, D95): before each particle draw every live particle's type is
  *   set to 4..7 in turn, which no run reaches, both ways are compared, and
- *   the types are put back. --native-draw (with
+ *   the types are put back. The shadows, flame and particles (D95) are
+ *   checked against their mips2c units, fast_render=1 and 2 each.
+ *   --ngte-fx: fast_render=2's shadows, flame and particles with native
+ *   GTE maths (D98; else on the register file, as D95 wrote them).
+ *   --native-draw (with
  *   --fast-render 2): the converted renderers' primitives go to the OT walk
  *   as native draw lists (src/game/native_draw.h, decisions D82);
  *   --native-draw-check runs each of their calls both ways and compares the
@@ -197,7 +201,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -451,6 +455,9 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+    } else if (strcmp(a, "--ngte-fx") == 0) {
+      extern int g_ngte_fx; /* mips2c_rt.c, D98 */
+      g_ngte_fx = 1;
     } else if (strcmp(a, "--particle-sweep") == 0) {
       extern int g_particle_sweep; /* hand_check.c, D95 */
       g_particle_sweep = 1;

@@ -323,6 +323,21 @@ Hand C from the asm (D72's method, `HAND_RENDERER_UNIT`): the asm's control flow
 | `func_80058BA8` (glows, sparkles: `func_800580F4`, `func_800584C4`) | as above | oracle 77/77; against the unit 0 differ (25,634 calls on the tour); records 0 differ | none |
 | `func_80058864` (the dragon rescue's ring) | as above | oracle 4/4; against the unit 0 differ (54 calls on the tour) | none |
 
+## The shadows, the flame and the particles with native GTE maths (2026-11-04, decisions D98)
+
+`fast_render=2` with `ngte_fx=1` (`config.txt`; host `--ngte-fx`) runs each of D95's units' `NAME_hand_ngte.c` build: `NAME_hand.c` with NGTE 1 and its `#if NGTE_MATH` blocks, whose commands are `gte_native.h`'s pure functions on C values (RTPT, GPF sf 1 and GPL new there). With `ngte_fx=0`, the default until hardware runs X4 and X5, `fast_render=2` runs `NAME_hand_ndr.c` (NGTE 1, `NGTE_MATH` 0): D95's code with the records. `fast_render=1` compiles to the code it was. The register file is left exact, raw storage included, by running again at the end (or before a register-file path) only the commands whose results can still show: `MobyShadowsTail`, `FlameTail`, `PSync` and the dragon ring's `NgteSync`; Spyro's shadow runs its last four points on the register file. How and why: D98.
+
+**Checks:** `tests/gte/test_gte_native` with the new opcodes (and two more mutants, RTPT's and GPL's); `--fast-render-check` three ways (the mips2c unit as the reference, `fast_render=1` and `fast_render=2` each compared with it); four mutations of the replays, each caught; `tools/fast_render_ab.sh` 1 against 2 with the check on the second; the oracle replay; `--particle-sweep`; `--native-draw-check`; Vita3K shots and captures with `ngte_fx` 0 and 1. Numbers in D98.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_80059A48` (Spyro's shadow) | native GTE maths in `src/game/shadows_hand.c`'s `#if NGTE_MATH` blocks (D98) | every call against the unit and against `fast_render=1` (see D98); a mutation (the IR words not stored) fails 1,460 of 1,972 calls on the demos | none |
+| `func_80059F8C` (the mobys' shadows) | as above, `MobyShadowsTail` | as above; a mutation (three far mobys replayed, not four) fails 5 of 1,972 calls | none |
+| `func_80058D64` (Spyro's flame) | `src/game/flame_hand.c`, `FlameTail` | as above; a mutation (one projection replayed, not two) fails 225 of 240 calls | none |
+| `func_800573C8` (the particles) | `src/game/particles_hand.c`, `PSync`; types 2's turn and 4 on stay on the register file | as above; a mutation (three RTPS replayed, not four) fails 1,619 of 1,972 calls | none |
+| `func_80058BA8` (glows, sparkles) | as above; a live sparkle's cross stays on the register file | as above; the same mutation fails 1 call | none |
+| `func_80058864` (the dragon rescue's ring) | as above, `NgteSync` | as above | none |
+
 ## Stage 3: readable C (2026-11-02, decisions D83)
 
 `docs/native-plan.md` stage 3: mips2c units replaced by readable C (category B1: locals and the decomp's structs, no register model, no KUSEG masking, no GTE register file). `asm/collision.s` first: all six entry points in `src/game/collision_hand.c` (the rows above). What it keeps and doesn't keep of the asm, and why: D83.

@@ -8,20 +8,39 @@
  * 2. Random register states (half random words, half small or edge values):
  *    each native function against the inline command on the same state,
  *    every returned field against the register it stands for.
- * Built a second time with NGTE_MUTATE (one deliberate off-by-one in
- * gte_native.h's arithmetic), which must fail (ctest WILL_FAIL). */
-#ifdef NGTE_MUTATE
-/* The mutation: RTPS's screen offset one pixel off. Checked by building
- * this file with -DNGTE_MUTATE. */
+ * Built again with NGTE_MUTATE (one deliberate off-by-one in gte_native.h's
+ * results), which must fail (ctest WILL_FAIL): 1 RTPS's screen offset, 2
+ * RTPT's middle depth, 3 GPL's green (D98). */
+#if NGTE_MUTATE == 1
+/* The mutation: RTPS's screen offset one pixel off. */
 #define ngte_proj_get ngte_proj_get_real
+#elif NGTE_MUTATE == 2
+#define ngte_rtpt_w ngte_rtpt_w_real
+#elif NGTE_MUTATE == 3
+#define ngte_gpl0 ngte_gpl0_real
 #endif
 #include "gte_native.h"
-#ifdef NGTE_MUTATE
+#if NGTE_MUTATE == 1
 #undef ngte_proj_get
 static NgteProj ngte_proj_get(void) {
   NgteProj p = ngte_proj_get_real();
   p.ofx += 0x10000; /* one pixel */
   return p;
+}
+#elif NGTE_MUTATE == 2
+#undef ngte_rtpt_w
+static NgteRtpt ngte_rtpt_w(const NgteProj *p, unsigned int a, unsigned int b, unsigned int c,
+                            unsigned int d, unsigned int e, unsigned int f) {
+  NgteRtpt t = ngte_rtpt_w_real(p, a, b, c, d, e, f);
+  t.sz[1] += 1; /* SZ2 one unit deeper */
+  return t;
+}
+#elif NGTE_MUTATE == 3
+#undef ngte_gpl0
+static NgteCol ngte_gpl0(int m1, int m2, int m3, int i1, int i2, int i3, int i0, unsigned int code) {
+  NgteCol o = ngte_gpl0_real(m1, m2, m3, i1, i2, i3, i0, code);
+  o.mac2 += 1; /* MAC2 one more */
+  return o;
 }
 #endif
 
@@ -112,6 +131,26 @@ static void run(unsigned op, const uint32_t *s, const uint32_t *after) {
     check("RTPS", "FLAG", want[63], o.flag);
     break;
   }
+  case 0x280030: { /* RTPT (D98) */
+    NgteProj p = ngte_proj_get();
+    NgteRtpt o = ngte_rtpt_w(&p, d_reg(0), d_reg(1), d_reg(2), d_reg(3), d_reg(4), d_reg(5));
+    check("RTPT", "SXY0", want[12], o.sxy[0]);
+    check("RTPT", "SXY1", want[13], o.sxy[1]);
+    check("RTPT", "SXY2", want[14], o.sxy[2]);
+    check("RTPT", "SZ1", W_U16(17), o.sz[0]);
+    check("RTPT", "SZ2", W_U16(18), o.sz[1]);
+    check("RTPT", "SZ3", W_U16(19), o.sz[2]);
+    check("RTPT", "MAC1", want[25], (uint32_t)o.mac1);
+    check("RTPT", "MAC2", want[26], (uint32_t)o.mac2);
+    check("RTPT", "MAC3", want[27], (uint32_t)o.mac3);
+    check("RTPT", "IR1", W_IR(9), (uint32_t)o.ir1);
+    check("RTPT", "IR2", W_IR(10), (uint32_t)o.ir2);
+    check("RTPT", "IR3", W_IR(11), (uint32_t)o.ir3);
+    check("RTPT", "MAC0", want[24], (uint32_t)o.mac0);
+    check("RTPT", "IR0", W_IR(8), (uint32_t)o.ir0);
+    check("RTPT", "FLAG", want[63], o.flag);
+    break;
+  }
   case 0x1400006: /* NCLIP */
     check("NCLIP", "MAC0", want[24], (uint32_t)ngte_nclip(d_reg(12), d_reg(13), d_reg(14)));
     check("NCLIP", "FLAG", want[63], 0);
@@ -126,6 +165,14 @@ static void run(unsigned op, const uint32_t *s, const uint32_t *after) {
   case 0x190003D: /* GPF sf 0 */
     o = ngte_gpf0((int16_t)d_reg(9), (int16_t)d_reg(10), (int16_t)d_reg(11), (int16_t)d_reg(8),
                   d_reg(6) >> 24);
+    goto col;
+  case 0x198003D: /* GPF sf 1 (D98) */
+    o = ngte_gpf1((int16_t)d_reg(9), (int16_t)d_reg(10), (int16_t)d_reg(11), (int16_t)d_reg(8),
+                  d_reg(6) >> 24);
+    goto col;
+  case 0x1A0003E: /* GPL sf 0 (D98) */
+    o = ngte_gpl0((int32_t)d_reg(25), (int32_t)d_reg(26), (int32_t)d_reg(27), (int16_t)d_reg(9),
+                  (int16_t)d_reg(10), (int16_t)d_reg(11), (int16_t)d_reg(8), d_reg(6) >> 24);
   col:
     check("col", "MAC1", want[25], (uint32_t)o.mac1);
     check("col", "MAC2", want[26], (uint32_t)o.mac2);
@@ -161,7 +208,7 @@ static void run(unsigned op, const uint32_t *s, const uint32_t *after) {
 }
 
 static const unsigned k_ops[] = {0x180001, 0x1400006, 0x780010, 0x980011, 0x190003D,
-                                 0x49E012, 0x486012, 0x480012};
+                                 0x49E012, 0x486012, 0x480012, 0x280030, 0x198003D, 0x1A0003E};
 
 int main(int argc, char **argv) {
   uint32_t s[64];

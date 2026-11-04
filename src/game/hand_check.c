@@ -10,6 +10,11 @@
  * samples. The port's hooks inside the renderers (lod.c's counters) run
  * twice; nothing they count is compared.
  *
+ * The renderers written by hand after D80 (D95, D98) are checked three
+ * ways instead (hand_check_unit): the mips2c unit first, as the reference,
+ * then fast_render=1's build and fast_render=2's, each from the same state
+ * and each compared with the unit.
+ *
  * --gte-audit N (with the check) also finds, every Nth call of each
  * renderer, which GTE registers it reads from before the call: each of the
  * 64 registers in turn has its raw storage changed (two patterns) and the
@@ -88,7 +93,8 @@ static GTERegisters s_gte_before, s_gte_reg;
 enum { MAX_NAMES = 16 };
 static struct {
   const char *name;
-  unsigned long calls, bad, audited;
+  unsigned long calls, bad, bad1, audited;
+  int unit; /* checked against the mips2c unit (hand_check_unit) */
   unsigned long long in, gte, kept; /* bit i: register i (32 + control) */
 } s_stats[MAX_NAMES];
 
@@ -109,12 +115,12 @@ static int stat_index(const char *name) {
  * (GTERegisters starts with CP0's, which nothing here uses). */
 static u32 *gte_reg(GTERegisters *g, int i) { return i < 32 ? &g->CP2D.r[i] : &g->CP2C.r[i - 32]; }
 
-static void report_diff(const char *name, unsigned long call) {
+static void report_diff(const char *name, unsigned long call, const char *ref, const char *run) {
   const unsigned char *ram = (const unsigned char *)g_psx_arena_base;
   unsigned n = 0, i;
   if (!s_log)
     return;
-  s_log("hand check: %s call %lu: the reference (fast_render=1, or the mips2c unit) and fast_render=2 differ", name, call);
+  s_log("hand check: %s call %lu: %s and %s differ", name, call, ref, run);
   for (i = 0; i < PSX_RAM_SIZE && n < 8; i += 4) {
     u32 a, b;
     memcpy(&a, s_reg + i, 4);
@@ -130,6 +136,13 @@ static void report_diff(const char *name, unsigned long call) {
             *gte_reg(&gteRegs, (int)i));
   if (memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg))
     s_log("  scratchpad buffer differs");
+}
+
+/* The state now against the reference run's (s_reg...). */
+static int differs(void) {
+  return memcmp(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE) ||
+         memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg) ||
+         memcmp(&s_gte_reg, &gteRegs, sizeof gteRegs);
 }
 
 static void restore_before(u32 sp, u32 v1) {
@@ -189,12 +202,47 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   r = native(a0, a1, a2, a3);
 
   s_stats[k].calls++;
-  if (memcmp(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE) ||
-      memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg) ||
-      memcmp(&s_gte_reg, &gteRegs, sizeof gteRegs)) {
+  if (differs()) {
     if (s_stats[k].bad++ < 20)
-      report_diff(name, s_stats[k].calls);
+      report_diff(name, s_stats[k].calls, "fast_render=1", "fast_render=2");
   }
+  if (sweep)
+    sweep_end();
+  return r;
+}
+
+u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2,
+                    u32 a3) {
+  const int k = stat_index(name);
+  const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
+  u32 sp = g_mips_sp, v1 = g_mips_v1, r;
+  s_stats[k].unit = 1;
+  if (sweep)
+    sweep_begin();
+  if (!s_before) {
+    s_before = malloc(PSX_RAM_SIZE);
+    s_reg = malloc(PSX_RAM_SIZE);
+  }
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
+  s_gte_before = gteRegs;
+  unit(a0, a1, a2, a3);
+  memcpy(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
+  s_gte_reg = gteRegs;
+  if (g_gte_audit && s_stats[k].calls % (unsigned long)g_gte_audit == 0)
+    audit_call(k, unit, a0, a1, a2, a3, sp, v1);
+
+  s_stats[k].calls++;
+  restore_before(sp, v1);
+  reg(a0, a1, a2, a3);
+  if (differs() && s_stats[k].bad1++ < 20)
+    report_diff(name, s_stats[k].calls, "the mips2c unit", "fast_render=1");
+
+  restore_before(sp, v1);
+  r = native(a0, a1, a2, a3);
+  if (differs() && s_stats[k].bad++ < 20)
+    report_diff(name, s_stats[k].calls, "the mips2c unit", "fast_render=2");
   if (sweep)
     sweep_end();
   return r;
@@ -228,7 +276,12 @@ void hand_check_report(void) {
   if (!g_hand_check || !s_log)
     return;
   for (i = 0; i < MAX_NAMES && s_stats[i].name; i++) {
-    s_log("hand check: %s %lu calls, %lu differ", s_stats[i].name, s_stats[i].calls, s_stats[i].bad);
+    if (s_stats[i].unit)
+      s_log("hand check: %s %lu calls, %lu differ (fast_render=2 against the mips2c unit; "
+            "fast_render=1 against it: %lu differ)",
+            s_stats[i].name, s_stats[i].calls, s_stats[i].bad, s_stats[i].bad1);
+    else
+      s_log("hand check: %s %lu calls, %lu differ", s_stats[i].name, s_stats[i].calls, s_stats[i].bad);
     if (s_stats[i].audited) {
       s_log("gte audit: %s %lu calls audited", s_stats[i].name, s_stats[i].audited);
       log_regs(s_stats[i].name, "in", s_stats[i].in);

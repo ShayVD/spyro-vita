@@ -53,6 +53,18 @@ NGTE_INL NgteProj ngte_proj_get(void) {
   return p;
 }
 
+/* The rotation and translation as CTC2 0-4 and 5-7 set them, from the
+ * words moved there (R33's word is sign-extended; TR's are whole words). */
+NGTE_INL void ngte_proj_rot(NgteProj *p, unsigned int r0, unsigned int r1, unsigned int r2, unsigned int r3,
+                            unsigned int r4) {
+  p->r11 = (short)r0, p->r12 = (short)(r0 >> 16), p->r13 = (short)r1;
+  p->r21 = (short)(r1 >> 16), p->r22 = (short)r2, p->r23 = (short)(r2 >> 16);
+  p->r31 = (short)r3, p->r32 = (short)(r3 >> 16), p->r33 = (short)r4;
+}
+NGTE_INL void ngte_proj_tr(NgteProj *p, unsigned int x, unsigned int y, unsigned int z) {
+  p->trx = (int)x, p->try_ = (int)y, p->trz = (int)z;
+}
+
 /* A vertex as V0 holds it: VX0 and VY0 are the halves of VXY0, VZ0 the low
  * half of its word. */
 NGTE_INL int ngte_vx(unsigned int vxy) { return (short)vxy; }
@@ -130,9 +142,13 @@ typedef struct {
   unsigned int flag;
 } NgteRtp;
 
-NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
+/* One vertex of RTPS/RTPT (gte_inline.h's gtei_rtp): MAC1-3, IR1-3, SZ3,
+ * SXY2 and the flags it raises into *flag; H / SZ3 into *hs for the depth
+ * cue. mac0 and ir0 are left unset. */
+NGTE_INL NgteRtp ngte_rtp_v(const NgteProj *p, int vx, int vy, int vz, unsigned int *flagp,
+                            unsigned int *hsp) {
   NgteRtp o;
-  unsigned int flag = 0, hs;
+  unsigned int flag = *flagp, hs;
   long long s3, f;
   int v12, sx, sy;
   o.mac1 = NGTE_A1((long long)((long long)p->trx << 12) + (p->r11 * vx) + (p->r12 * vy) + (p->r13 * vz), &flag, 1);
@@ -161,13 +177,26 @@ NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
   f = ngte_f((long long)p->ofy + ((long long)o.ir2 * (int)hs), &flag);
   sy = ngte_g(f >> 16, NGTE_B31 | (1u << 13), &flag);
   o.sxy = (unsigned int)(unsigned short)sx | (unsigned int)sy << 16;
-  /* MAC0, IR0: the depth cue */
-  f = ngte_f((long long)p->dqb + ((long long)p->dqa * (int)hs), &flag);
-  o.mac0 = (int)f;
+  *flagp = flag;
+  *hsp = hs;
+  return o;
+}
+
+/* MAC0, IR0: the depth cue from the last vertex's H / SZ3 */
+NGTE_INL void ngte_rtp_cue(const NgteProj *p, unsigned int hs, int *mac0, int *ir0, unsigned int *flag) {
+  const long long f = ngte_f((long long)p->dqb + ((long long)p->dqa * (int)hs), flag);
+  int v12;
+  *mac0 = (int)f;
   if ((f >> 12) < 0 || (f >> 12) > 0x1000)
-    flag |= 1u << 12;
+    *flag |= 1u << 12;
   v12 = (int)(f >> 12);
-  o.ir0 = v12 > 0x1000 ? 0x1000 : v12 < 0 ? 0 : v12;
+  *ir0 = v12 > 0x1000 ? 0x1000 : v12 < 0 ? 0 : v12;
+}
+
+NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
+  unsigned int flag = 0, hs;
+  NgteRtp o = ngte_rtp_v(p, vx, vy, vz, &flag, &hs);
+  ngte_rtp_cue(p, hs, &o.mac0, &o.ir0, &flag);
   o.flag = flag;
   return o;
 }
@@ -183,6 +212,44 @@ NGTE_INL NgteRtp ngte_rtps_w(const NgteProj *p, unsigned int vxy, unsigned int v
   if (__builtin_expect(g_psyxRtpValueHook != 0, 0))
     ngte_vcache(p, vxy, vz, &o);
   return o;
+}
+
+/* ===================================================================== */
+/* RTPT (0x280030: sf 1, lm 0): V0, V1, V2, each as RTPS projects it; the  */
+/* FIFOs take all three, MAC1-3 and IR1-3 are the last one's, the flags   */
+/* are every vertex's, and the depth cue is the last one's                */
+/* ===================================================================== */
+
+typedef struct {
+  unsigned int sxy[3]; /* the new SXY0-2 */
+  unsigned int sz[3];  /* the new SZ1-3 */
+  int mac1, mac2, mac3;
+  int ir1, ir2, ir3;
+  int mac0, ir0;
+  unsigned int flag;
+} NgteRtpt;
+
+/* RTPT on V0-V2 as the words MTC2 puts there (VXYn, VZn). */
+NGTE_INL NgteRtpt ngte_rtpt_w(const NgteProj *p, unsigned int v0xy, unsigned int v0z, unsigned int v1xy,
+                              unsigned int v1z, unsigned int v2xy, unsigned int v2z) {
+  NgteRtpt t;
+  NgteRtp o[3];
+  unsigned int flag = 0, hs;
+  const unsigned int xy[3] = {v0xy, v1xy, v2xy}, z[3] = {v0z, v1z, v2z};
+  int i;
+  for (i = 0; i < 3; i++) {
+    o[i] = ngte_rtp_v(p, ngte_vx(xy[i]), ngte_vy(xy[i]), ngte_vz(z[i]), &flag, &hs);
+    t.sxy[i] = o[i].sxy;
+    t.sz[i] = o[i].sz3;
+  }
+  t.mac1 = o[2].mac1, t.mac2 = o[2].mac2, t.mac3 = o[2].mac3;
+  t.ir1 = o[2].ir1, t.ir2 = o[2].ir2, t.ir3 = o[2].ir3;
+  ngte_rtp_cue(p, hs, &t.mac0, &t.ir0, &flag);
+  t.flag = flag;
+  if (__builtin_expect(g_psyxRtpValueHook != 0, 0))
+    for (i = 0; i < 3; i++)
+      ngte_vcache(p, xy[i], z[i], &o[i]);
+  return t;
 }
 
 /* ===================================================================== */
@@ -258,6 +325,28 @@ NGTE_INL NgteCol ngte_gpf0(int ir1, int ir2, int ir3, int ir0, unsigned int code
   return o;
 }
 
+/* GPF (0x198003D: sf 1, lm 0): IR1-3 times IR0, >> 12. */
+NGTE_INL NgteCol ngte_gpf1(int ir1, int ir2, int ir3, int ir0, unsigned int code) {
+  NgteCol o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1(ir0 * ir1, &flag, 1);
+  o.mac2 = NGTE_A2(ir0 * ir2, &flag, 1);
+  o.mac3 = NGTE_A3(ir0 * ir3, &flag, 1);
+  ngte_col_finish(&o, code, &flag);
+  return o;
+}
+
+/* GPL (0x1A0003E: sf 0, lm 0): MAC1-3 plus IR1-3 times IR0. */
+NGTE_INL NgteCol ngte_gpl0(int mac1, int mac2, int mac3, int ir1, int ir2, int ir3, int ir0, unsigned int code) {
+  NgteCol o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1((long long)mac1 + (ir0 * ir1), &flag, 0);
+  o.mac2 = NGTE_A2((long long)mac2 + (ir0 * ir2), &flag, 0);
+  o.mac3 = NGTE_A3((long long)mac3 + (ir0 * ir3), &flag, 0);
+  ngte_col_finish(&o, code, &flag);
+  return o;
+}
+
 /* ===================================================================== */
 /* MVMVA with sf 1, lm 0: a matrix times a vector, plus a translation      */
 /* ===================================================================== */
@@ -278,6 +367,14 @@ NGTE_INL NgteMat ngte_rot_get(void) {
   m.m11 = C2_R11, m.m12 = C2_R12, m.m13 = C2_R13;
   m.m21 = C2_R21, m.m22 = C2_R22, m.m23 = C2_R23;
   m.m31 = C2_R31, m.m32 = C2_R32, m.m33 = C2_R33;
+  return m;
+}
+
+NGTE_INL NgteMat ngte_rot_of(const NgteProj *p) {
+  NgteMat m;
+  m.m11 = p->r11, m.m12 = p->r12, m.m13 = p->r13;
+  m.m21 = p->r21, m.m22 = p->r22, m.m23 = p->r23;
+  m.m31 = p->r31, m.m32 = p->r32, m.m33 = p->r33;
   return m;
 }
 

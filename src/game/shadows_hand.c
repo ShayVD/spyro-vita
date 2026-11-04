@@ -23,11 +23,23 @@
  * g_MobyShadows: its centre projected, tilted by the floor's slope, the
  * triangle's corners from RTPT on the shadow's size, faded with distance.
  *
- * fast_render=2 with native_draw=1 (shadows_hand_ngte.c, decisions D82,
- * D86): every primitive is still built where it was (the buffer's pointer
- * and the bytes the game leaves past it don't change), and where the asm
- * links it, it goes to the walk as a native record instead (nd_append),
- * joining the marker already at its bucket's tail. */
+ * fast_render=2 (shadows_hand_ngte.c, NGTE 1; decisions D98): the GTE
+ * commands as native maths on C values (gte_native.h), as D80 did for the
+ * six main renderers. The control registers are still moved where the asm
+ * moves them (other code reads them, and they are cheap stores). The data
+ * registers' results stay in locals, and before the renderer returns the
+ * register file is made what the asm leaves: Spyro's shadow runs its last
+ * four points on the register file after setting the IR and colour words
+ * the native commands left; the mobys' shadows replay, at the end, the last
+ * moby that reached its RTPT and the last four that stopped at the centre's
+ * RTPS (MobyShadowsTail), which together write every data register the
+ * call's commands write.
+ *
+ * With native_draw=1 too (decisions D82, D86): every primitive is still
+ * built where it was (the buffer's pointer and the bytes the game leaves
+ * past it don't change), and where the asm links it, it goes to the walk
+ * as a native record instead (nd_append), joining the marker already at
+ * its bucket's tail. */
 #include "render_hand.h"
 
 extern char g_Spyro[];      /* Spyro's moby */
@@ -75,6 +87,12 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   u32 r0, r1, r2, r3, r4, sxy, sz, tilted, src, p, end, prim, ot, bias;
   u32 rgb, ctr;
   s32 dx, dy, dz;
+#if NGTE_MATH
+  /* what the native commands leave in IR0-3 and RGB0-2, for the register
+   * file before the last four points */
+  u32 irw[3], ir0w = 0, rgbw[3] = {0, 0, 0}, blend = 0;
+  NgteProj P;
+#endif
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
   if ((s32)AT32(sh + 0x24) > 0)
     return 0;
@@ -98,6 +116,34 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   CTC2(0u, 5);
   CTC2(0u, 6);
   CTC2(0u, 7);
+#if NGTE_MATH
+  {
+    /* the same, native: the shadow's view position, then the heading's
+     * two MVMVA (rotation times V0, no translation) */
+    const u32 h = (u32)AT8(spyro + 0xE) << 1;
+    const u32 cosv = AT16(ADDR_ND(D_8006CC78) + h);
+    const u32 sinv = AT16(ADDR_ND(D_8006CBF8) + h);
+    const NgteProj P0 = ngte_proj_get();
+    const NgteRtp c = ngte_rtps_w(&P0, ((u32)dy & 0xFFFFu) + ((u32)dz << 16), (u32)dx);
+    const NgteMat m = ngte_rot_of(&P0);
+    const NgteVec u = ngte_mvmva(&m, 0, 0, 0, (s16)cosv, 0, (s16)sinv);
+    const NgteVec v = ngte_mvmva(&m, 0, 0, 0, (s16)(0u - sinv), 0, (s16)cosv);
+    sxy = c.sxy;
+    sz = c.sz3;
+    CTC2((u32)c.mac3, 7);
+    CTC2((u32)c.mac2, 6);
+    CTC2((u32)c.mac1, 5);
+    r0 = (r0 & 0xFFFF0000u) + ((u32)u.ir1 & 0xFFFFu);
+    r3 = (r3 & 0xFFFF0000u) + ((u32)u.ir3 & 0xFFFFu);
+    r1 = ((u32)v.ir1 & 0xFFFFu) + ((u32)u.ir2 << 16);
+    r2 = (r2 & 0xFFFFu) + ((u32)v.ir2 << 16);
+    r4 = (u32)v.ir3 & 0xFFFFu;
+    /* IR1-3 as the second MVMVA's reads leave them (sign-extended) */
+    irw[0] = (u32)v.ir1;
+    irw[1] = (u32)v.ir2;
+    irw[2] = (u32)v.ir3;
+  }
+#else
   MTC2((u32)dx, 1); /* VZ0 */
   MTC2(((u32)dy & 0xFFFFu) + ((u32)dz << 16), 0);
   RTPS();
@@ -135,6 +181,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       r4 = j3 & 0xFFFFu;
     }
   }
+#endif
   CTC2(r0, 0);
   CTC2(r1, 1);
   CTC2(r2, 2);
@@ -163,6 +210,30 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       /* GPF/GPL: (16 - step) * the first frame's bytes + step * the second's, / 16 */
       w = 0x10u - step;
       p = scr;
+#if NGTE_MATH
+      {
+        /* GPF then GPL (sf 0), native; the six colours pushed, the IR
+         * words the last GPL leaves */
+        const u32 code = gteRegs.CP2D.r[6] >> 24;
+        for (k = 3; (s32)k > 0; k--, p += 3) {
+          const u32 b0 = AT8(p + 0), b1 = AT8(p + 1), b2 = AT8(p + 2);
+          const u32 c0 = AT8(p + 8), c1 = AT8(p + 9), c2 = AT8(p + 10);
+          const NgteCol f = ngte_gpf0((s32)b0, (s32)b1, (s32)b2, (s32)w, code);
+          const NgteCol l = ngte_gpl0(f.mac1, f.mac2, f.mac3, (s32)c0, (s32)c1, (s32)c2, (s32)step, code);
+          rgbw[0] = rgbw[2];
+          rgbw[1] = f.rgb2;
+          rgbw[2] = l.rgb2;
+          AT8(p + 0) = (u8)((u32)l.mac1 >> 4);
+          AT8(p + 1) = (u8)((u32)l.mac2 >> 4);
+          AT8(p + 2) = (u8)((u32)l.mac3 >> 4);
+          irw[0] = (c0 & 0xFFFF0000u) | ((u32)l.ir1 & 0xFFFFu);
+          irw[1] = (c1 & 0xFFFF0000u) | ((u32)l.ir2 & 0xFFFFu);
+          irw[2] = (c2 & 0xFFFF0000u) | ((u32)l.ir3 & 0xFFFFu);
+        }
+        ir0w = step;
+        blend = 1;
+      }
+#else
       for (k = 3;;) {
         u32 b0 = AT8(p + 0), b1 = AT8(p + 1), b2 = AT8(p + 2), c0, c1, c2;
         MTC2(w, 8);
@@ -189,6 +260,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         if ((s32)k <= 0)
           break;
       }
+#endif
       src = scr;
       p = scr + 1;
     } else {
@@ -245,9 +317,50 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     s32 cx = (s32)d >> 16, cz = (s32)(d << 16) >> 16;
     rad++;
     dir += 4;
+#if NGTE_MATH
+    P = ngte_proj_get();
+#endif
     for (;;) {
       const u32 hy = S8(hgt);
       u32 vxy;
+#if NGTE_MATH
+      dz_ = (u32)((s32)(r * (u32)cz) >> 10);
+      dxz = (u32)((s32)(r * (u32)cx) >> 10);
+      vxy = (dxz & 0xFFFFu) + (hy << 18);
+      hgt++;
+      rad++;
+      if (o < scr + 0x60) {
+        /* the first twelve native; the last four on the register file,
+         * which then holds what all sixteen leave */
+        const NgteRtp q = ngte_rtps_w(&P, vxy, dz_);
+        AT32(o + 0x0) = q.sxy;
+        AT32(o + 0x4) = q.sz3;
+      } else {
+        if (o == scr + 0x60) {
+          /* what the native commands left that RTPS doesn't rewrite: the
+           * IR words' top halves (IR0's after the blend), the colours */
+          MTC2(irw[0], 9);
+          MTC2(irw[1], 10);
+          MTC2(irw[2], 11);
+          if (blend) {
+            MTC2(ir0w, 8);
+            MTC2(rgbw[0], 20);
+            MTC2(rgbw[1], 21);
+            MTC2(rgbw[2], 22);
+          }
+        }
+        MTC2(dz_, 1);
+        MTC2(vxy, 0);
+        RTPS();
+        AT32(o + 0x0) = MFC2(14);
+        AT32(o + 0x4) = MFC2(19);
+      }
+      d = AT32(dir);
+      r = AT8(rad - 1);
+      dir += 4;
+      cx = (s32)d >> 16;
+      cz = (s32)(d << 16) >> 16;
+#else
       dz_ = (u32)((s32)(r * (u32)cz) >> 10);
       MTC2(dz_, 1);
       dxz = (u32)((s32)(r * (u32)cx) >> 10);
@@ -263,6 +376,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       cz = (s32)(d << 16) >> 16;
       AT32(o + 0x0) = MFC2(14);
       AT32(o + 0x4) = MFC2(19);
+#endif
       if (o == scr + 0x78)
         break;
       o += 8;
@@ -339,9 +453,107 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
 /* func_80059F8C: the mobys' shadows                                      */
 /* ===================================================================== */
 
+#if NGTE_MATH
+/* fast_render=2: what the mobys' shadows' native commands must leave in
+ * the register file (D98). A moby whose centre is near enough goes on to
+ * an RTPT, which rewrites every data register the loop's commands write
+ * but IR1-3's top halves (set by the tilt's MFC2s, of this moby or an
+ * earlier one) and V0's (rewritten by the next moby's RTPS). So the last
+ * such moby, the "anchor", is replayed on the register file, then the last
+ * four mobys after it that stopped at the centre's RTPS (four RTPS rewrite
+ * both FIFOs), and the control registers are put back as the loop left
+ * them. */
+typedef struct {
+  u32 vxy, vz;   /* the centre's V0 */
+  u32 rot[5];    /* the rotation, tilted */
+  u32 irw[3];    /* IR1-3's words as the last tilt's reads left them */
+  u32 size;
+  u8 irw_set, facing, read_corner;
+} MsAnchor;
+
+static void MobyShadowsTail(u32 scr, const MsAnchor *a, int anchored, const u32 *nxy, const u32 *nz,
+                            u32 nnear) {
+  const u32 r0 = AT32(scr + 0xC), r1 = AT32(scr + 0x10), r2 = AT32(scr + 0x14);
+  const u32 r3 = AT32(scr + 0x18), r4 = AT32(scr + 0x1C);
+  u32 ctl[8], k;
+  memcpy(ctl, gteRegs.CP2C.r, sizeof ctl);
+  if (anchored) {
+    CTC2(r0, 0);
+    CTC2(r1, 1);
+    CTC2(r2, 2);
+    CTC2(r3, 3);
+    CTC2(r4, 4);
+    CTC2(0u, 5);
+    CTC2(0u, 6);
+    CTC2(0u, 7);
+    MTC2(a->vxy, 0);
+    MTC2(a->vz, 1);
+    RTPS();
+    {
+      const u32 m3 = MFC2(27), m2 = MFC2(26), m1 = MFC2(25);
+      CTC2(m3, 7);
+      CTC2(m2, 6);
+      CTC2(m1, 5);
+    }
+    /* the tilt's MVMVA results go under the RTPT's, but for IR1-3's top
+     * halves */
+    CTC2(a->rot[0], 0);
+    CTC2(a->rot[1], 1);
+    CTC2(a->rot[2], 2);
+    CTC2(a->rot[3], 3);
+    CTC2(a->rot[4], 4);
+    if (a->irw_set) {
+      MTC2(a->irw[0], 9);
+      MTC2(a->irw[1], 10);
+      MTC2(a->irw[2], 11);
+    }
+    (void)MFC2(19);
+    MTC2(0u, 0);
+    MTC2(a->size, 1);
+    MTC2(a->size, 2);
+    MTC2(0u, 3);
+    MTC2(0u, 4);
+    MTC2(0u - a->size, 5);
+    RTPT();
+    NCLIP();
+    (void)MFC2(17);
+    (void)MFC2(18);
+    (void)MFC2(19);
+    if (a->facing) {
+      MTC2((0u - a->size) & 0xFFFFu, 0);
+      MTC2(0u, 1);
+      RTPS();
+      if (a->read_corner)
+        (void)MFC2(19);
+    }
+  }
+  for (k = nnear > 4 ? nnear - 4 : 0; k < nnear; k++) {
+    CTC2(r0, 0);
+    CTC2(r1, 1);
+    CTC2(r2, 2);
+    CTC2(r3, 3);
+    CTC2(r4, 4);
+    CTC2(0u, 5);
+    CTC2(0u, 6);
+    CTC2(0u, 7);
+    MTC2(nxy[k & 3], 0);
+    MTC2(nz[k & 3], 1);
+    RTPS();
+  }
+  memcpy(gteRegs.CP2C.r, ctl, sizeof ctl);
+}
+#endif
+
 static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 scr = SCRATCH_BASE, cam = ADDR_ND(g_Camera);
   u32 ent, last;
+#if NGTE_MATH
+  NgteProj P = ngte_proj_get(); /* OFX, OFY, H, DQA, DQB; R and TR per moby */
+  MsAnchor anchor;
+  int anchored = 0;
+  u32 nxy[4], nz[4], nnear = 0; /* the mobys after the anchor that were too far */
+  u32 irw[3] = {0, 0, 0}, irw_set = 0;
+#endif
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
 #if NGTE
   nd_begin();
@@ -369,6 +581,9 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   AT32(scr + 0x2C) = AT32(ADDR_ND(g_WorldOT));
   for (;;) {
     u32 moby, r0, r1, r2, r3, r4, cx, cy, cz, floor, ts, tc, size;
+#if NGTE_MATH
+    u32 n_csxy, n_csz;
+#endif
     const u32 at = ent;
     ent += 8;
     if (at == last)
@@ -391,6 +606,42 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     cy = AT32(scr + 0x4);
     cz = AT32(scr + 0x8);
     floor = AT32(moby + 0x1C); /* the floor's height (low half), its slope (bits 16-27) */
+#if NGTE_MATH
+    {
+      /* the centre, native */
+      const u32 my = AT32(moby + 0x10), mx = AT32(moby + 0xC);
+      u32 h = floor & 0xFFFFu, vxy, vz;
+      NgteRtp c;
+      if (h == 0)
+        continue;
+      h = cz - h;
+      vxy = (h << 16) + (cy - (my >> 2));
+      vz = (mx >> 2) - cx;
+      tc = (floor >> 16) & 0x3Fu;
+      ts = (floor >> 22) & 0x3Fu;
+      ngte_proj_rot(&P, r0, r1, r2, r3, r4);
+      ngte_proj_tr(&P, 0, 0, 0);
+      c = ngte_rtps_w(&P, vxy, vz);
+      size = AT32(at + 0x4);
+      tc <<= 3;
+      ts <<= 3;
+      CTC2((u32)c.mac3, 7);
+      CTC2((u32)c.mac2, 6);
+      CTC2((u32)c.mac1, 5);
+      ngte_proj_tr(&P, (u32)c.mac1, (u32)c.mac2, (u32)c.mac3);
+      if ((s32)((u32)c.mac3 + 0xFFFFF000u) >= 0) {
+        /* too far */
+        nxy[nnear & 3] = vxy;
+        nz[nnear & 3] = vz;
+        nnear++;
+        continue;
+      }
+      anchor.vxy = vxy;
+      anchor.vz = vz;
+      n_csxy = c.sxy;
+      n_csz = c.sz3;
+    }
+#else
     {
       const u32 my = AT32(moby + 0x10), mx = AT32(moby + 0xC);
       u32 h = floor & 0xFFFFu;
@@ -414,10 +665,47 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       if ((s32)(m3 + 0xFFFFF000u) >= 0)
         continue; /* too far */
     }
+#endif
     /* the rotation tilted by the slope: about one axis, then the other */
     {
       const u32 sin_tab = ADDR_ND(D_8006CBF8);
       u32 t3 = r0, t4 = r1, t5 = r2, t6 = r3, t7 = r4;
+#if NGTE_MATH
+      /* native: each MVMVA turns V0 by the rotation as it is (the camera's,
+       * then the first tilt's) */
+      if (tc) {
+        const u32 cs = AT16(sin_tab + tc + 0x80), sn = AT16(sin_tab + tc);
+        const NgteMat m = ngte_rot_of(&P);
+        const NgteVec i = ngte_mvmva(&m, 0, 0, 0, 0, (s16)cs, (s16)sn);
+        const NgteVec j = ngte_mvmva(&m, 0, 0, 0, 0, (s16)(0u - sn), (s16)cs);
+        t3 = (t3 & 0xFFFFu) + ts; /* the asm's second angle, as above */
+        t6 = (t6 & 0xFFFFu) + ((u32)i.ir3 << 16);
+        t4 = (t4 & 0xFFFF0000u) + ((u32)j.ir1 & 0xFFFFu);
+        t5 = ((u32)j.ir2 << 16) + ((u32)i.ir2 & 0xFFFFu);
+        t7 = (u32)j.ir3 & 0xFFFFu;
+        CTC2(t3, 0);
+        CTC2(t4, 1);
+        CTC2(t5, 2);
+        CTC2(t6, 3);
+        CTC2(t7, 4);
+        ngte_proj_rot(&P, t3, t4, t5, t6, t7);
+        irw[0] = (u32)j.ir1, irw[1] = (u32)j.ir2, irw[2] = (u32)j.ir3;
+        irw_set = 1;
+      }
+      if (ts) {
+        const u32 cs = AT16(sin_tab + ts + 0x80), sn = AT16(sin_tab + ts);
+        const NgteMat m = ngte_rot_of(&P);
+        const NgteVec i = ngte_mvmva(&m, 0, 0, 0, (s16)cs, (s16)sn, 0);
+        const NgteVec j = ngte_mvmva(&m, 0, 0, 0, (s16)(0u - sn), (s16)cs, 0);
+        t4 = (t4 & 0xFFFFu) + ((u32)i.ir2 << 16);
+        t5 = (t5 & 0xFFFF0000u) + ((u32)j.ir2 & 0xFFFFu);
+        t3 = ((u32)j.ir1 << 16) + ((u32)i.ir1 & 0xFFFFu);
+        t6 = ((u32)j.ir3 << 16) + ((u32)i.ir3 & 0xFFFFu);
+        irw[0] = (u32)j.ir1, irw[1] = (u32)j.ir2, irw[2] = (u32)j.ir3;
+        irw_set = 1;
+      }
+      ngte_proj_rot(&P, t3, t4, t5, t6, t7);
+#else
       if (tc) {
         const u32 cs = AT16(sin_tab + tc + 0x80), sn = AT16(sin_tab + tc);
         u32 i1, i2, i3, j1, j2, j3;
@@ -468,6 +756,7 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         t6 = (j3 << 16) + (i3 & 0xFFFFu);
         t5 = t5 + (j2 & 0xFFFFu);
       }
+#endif
       CTC2(t3, 0);
       CTC2(t4, 1);
       CTC2(t5, 2);
@@ -477,11 +766,31 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     {
       /* the triangle's corners on the shadow's size: RTPT; the centre's
        * screen word and depth kept (SXY2, SZ3 of the RTPS above) */
+#if NGTE_MATH
+      const u32 csxy = n_csxy, csz = n_csz;
+      NgteRtpt t;
+#else
       const u32 csxy = MFC2(14), csz = MFC2(19);
+#endif
       const u32 scr2 = scr;
       u32 prim, ot, uvc, uvt, rgb, dist, x0, x1, x2, z0, z1, z2;
       s32 mac0;
+#if NGTE_MATH
+      NgteRtp corner;
+#endif
       const u32 depth_bias = S8(moby + 0x47) - 1u;
+#if NGTE_MATH
+      dist = CFC2(7);
+      t = ngte_rtpt_w(&P, 0u, size, size, 0u, 0u, 0u - size);
+      /* this moby is the anchor now */
+      memcpy(anchor.rot, gteRegs.CP2C.r, sizeof anchor.rot);
+      memcpy(anchor.irw, irw, sizeof irw);
+      anchor.irw_set = (u8)irw_set;
+      anchor.size = size;
+      anchor.facing = anchor.read_corner = 0;
+      anchored = 1;
+      nnear = 0;
+#else
       MTC2(0u, 0);
       MTC2(size, 1);
       MTC2(size, 2);
@@ -490,6 +799,7 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       MTC2(0u - size, 5);
       dist = CFC2(7);
       RTPT();
+#endif
       prim = AT32(scr2 + 0x28);
       ot = MIPS_KUSEG(AT32(scr2 + 0x2C));
       uvc = AT32(scr2 + 0x20);
@@ -504,6 +814,19 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       }
       {
         const u32 negsz = (0u - size) & 0xFFFFu;
+#if NGTE_MATH
+        x0 = t.sxy[0];
+        x1 = t.sxy[1];
+        x2 = t.sxy[2];
+        mac0 = ngte_nclip(x0, x1, x2);
+        AT32(scr2 + 0x30) = x0;
+        AT32(scr2 + 0x34) = x1;
+        AT32(scr2 + 0x38) = x2;
+        AT32(scr2 + 0x40) = x0;
+        z0 = t.sz[0];
+        z1 = t.sz[1];
+        z2 = t.sz[2];
+#else
         x0 = MFC2(12);
         x1 = MFC2(13);
         x2 = MFC2(14);
@@ -516,15 +839,21 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         z1 = MFC2(18);
         z2 = MFC2(19);
         mac0 = (s32)MFC2(24);
+#endif
         AT32(scr2 + 0x44) = z0;
         AT32(scr2 + 0x48) = z1;
         if (mac0 < 0)
           continue; /* facing away */
         AT32(scr2 + 0x4C) = z2;
         AT32(scr2 + 0x54) = z0;
+#if NGTE_MATH
+        corner = ngte_rtps_w(&P, negsz, 0u);
+        anchor.facing = 1;
+#else
         MTC2(negsz, 0);
         MTC2(0u, 1);
         RTPS();
+#endif
       }
       /* the centre on screen */
       if ((s32)csxy <= 0)
@@ -540,8 +869,14 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         /* the fourth corner: SXY2, SZ3 (+0x3C, +0x50), so the quad's four
          * corners are +0x30..+0x3C with depths +0x44..+0x50 */
         u32 v, w, q;
+#if NGTE_MATH
+        AT32(scr2 + 0x3C) = corner.sxy;
+        AT32(scr2 + 0x50) = corner.sz3;
+        anchor.read_corner = 1;
+#else
         AT32(scr2 + 0x3C) = MFC2(14);
         AT32(scr2 + 0x50) = MFC2(19);
+#endif
         v = scr2 + 0x30;
         w = v + 0x10;
         /* near the camera, nudge each corner a line up or down by its
@@ -615,6 +950,9 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
   }
   AT32(ADDR_ND(D_800757B0)) = AT32(scr + 0x28);
+#if NGTE_MATH
+  MobyShadowsTail(scr, &anchor, anchored, nxy, nz, nnear);
+#endif
 #if NGTE
   nd_end();
 #endif

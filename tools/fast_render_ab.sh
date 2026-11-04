@@ -4,7 +4,9 @@
 # 1, from the same binary, and every trace, shot, WAV and save file of the
 # pair must be byte-identical. The host is deterministic (D38). FAST="1 2"
 # compares the register-file hand C with its native-GTE build instead (D80).
-# Usage: [BIN=path/to/spyro] [DISC=disc/files] [FAST="A B"] tools/fast_render_ab.sh PREFIX [SCENARIO...]
+# EXTRA_B: more options for the second run of each pair only (EXTRA_B="--ngte-fx --fast-render-check":
+# the shadows, flame and particles' native GTE maths, each call checked too; D98).
+# Usage: [BIN=path/to/spyro] [DISC=disc/files] [FAST="A B"] [EXTRA_B=...] tools/fast_render_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-fA, logs/PREFIX-SCENARIO-fB, and a summary line per scenario.
 # Scenarios (default: gems demo wsi lod routeA routeB): gems (Artisans gem
 # script, 16:9), demo (attract demos, 4:3, with audio), wsi (attract demos,
@@ -22,7 +24,8 @@ run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D
   extra=
-  case $n in demo) extra="--wav $D/audio.wav";; routeA|routeB|whole) extra="--save $D/save";; esac
+  [ "$f" = "$FB" ] && extra=${EXTRA_B:-}
+  case $n in demo) extra="$extra --wav $D/audio.wav";; routeA|routeB|whole) extra="$extra --save $D/save";; esac
   tools/tc $B --disc $DISC --fast-render $f --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra "$@" > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
