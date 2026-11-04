@@ -379,6 +379,8 @@ Hand C from the asm (D72's method, `HAND_RENDERER_UNIT`): the asm's control flow
 - **ctest** (`build/linux32`): 13 of 13 passed, `gte` skipped as on main.
 - **Vita3K** (the gems script, `logs/pads/gems.txt`, 8,768 vblanks, `fast_render=2`): main's VPK (`3bfe4f7`, `logs/main-3bfe4f7.vpk`) and this branch's (`logs/stage3-d94.vpk`, SHA-1 `0271c68fad48…`): 17 of 17 shots and the memory card identical (`logs/v3k-gems-main`, `logs/v3k-gems-d94`). The VPK builds without a warning in the new files. **Hardware** (the owner's Vita, `hw_run.sh`, approved; runs U1 main `3bfe4f7` and U2 this branch, the K route, 18,000 vblanks; `logs/hw-u1`, `logs/hw-u2`): all 18 pictures and the memory card identical, no crash dump; `update` 0.204 → 0.189 ms per vblank (-7%), the game thread in play 3.510 → 3.478 ms. The `sky` line's rise (0.343 → 0.576 ms) is the profile counting the sky twice: both `func_80050BD0` and `func_8004EBA8` are wrapped, and the hand C calls the second by name where the unit used its register entry (D94).
 
+- **After merging main `1f0120e`** (D92, D95): `tools/host_checks.sh` against a build of it (`logs/base2-*` against `logs/d94m-*`), all 279 files byte-identical; both attract demos tick for tick; Vita3K gems against its VPK (`logs/v3k-gems-main-1f0120e`, `logs/v3k-gems-stage3-d94m`), 17 of 17 shots and the memory card identical.
+
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
 | `func_80050BD0` (`cyclorama_hand.c`) | hand C (D94), decompiled from GCC's output; offsets checked by `static_assert`; the same calls with the same values in the same order as the asm | as above | division by a portal's point count of 0 (the asm traps) |
