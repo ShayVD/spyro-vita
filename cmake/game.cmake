@@ -54,14 +54,23 @@ add_custom_command(OUTPUT "${GEN_DIR}/s1_data.S"
           "${CMAKE_SOURCE_DIR}/tools/data2s_allow.txt" ${S1_DATA_LAYOUT_DEPS}
   COMMENT "data2s: decomp asm/data -> host assembly")
 set(S1_DATA_SRC "${GEN_DIR}/s1_data.S")
-if(SPYRO_HOST STREQUAL "vita")
-  include(cmake/vita_arena.cmake) # the arena is not at 0x80000000 (D25)
+if(SPYRO_ARENA_MOVED)
+  include(cmake/arena_moved.cmake) # the arena is not at 0x80000000 (D25, D97)
 endif()
 add_library(spyro_game_data OBJECT "${S1_DATA_SRC}")
 target_compile_options(spyro_game_data PRIVATE ${SPYRO_ARCH_FLAGS})
 
 include(cmake/overlays.cmake)
 include(cmake/mips2c.cmake)
+
+# With a moved arena the game's C reads its data labels through arena
+# pointers (D25).
+if(SPYRO_ARENA_MOVED)
+  foreach(t spyro_game_main spyro_game_ovl spyro_game_m2c spyro_game_port)
+    target_compile_options(${t} PRIVATE "SHELL:-include ${VITA_ARENA_SYMS_H}")
+    add_dependencies(${t} spyro_vita_arena_syms)
+  endforeach()
+endif()
 
 add_library(spyro_game STATIC $<TARGET_OBJECTS:spyro_game_main>
   $<TARGET_OBJECTS:spyro_game_data> $<TARGET_OBJECTS:spyro_game_ovl>

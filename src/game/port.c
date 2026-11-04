@@ -43,6 +43,31 @@ static void psx_layout(void) {
 }
 #endif
 
+#if SPYRO_ARENA_MOVED
+/* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
+ * words that hold a label's PS1 address. */
+typedef struct {
+  void **ptr;
+  uint32_t psx_addr;
+} ArenaSym;
+extern const ArenaSym s1_vita_syms[];
+extern uint32_t *const s1_vita_fixups[];
+
+void port_arena_symbols(void (*log)(const char *fmt, ...)) {
+  const ArenaSym *s;
+  uint32_t *const *f;
+  uint32_t delta = (uint32_t)g_psx_arena_base - PSX_RAM_BASE;
+  int n = 0, k = 0;
+  for (s = s1_vita_syms; s->ptr; s++, n++)
+    *s->ptr = PSX_ARENA(s->psx_addr);
+  /* before spyro_main's psx_layout copies the images into the arena */
+  for (f = s1_vita_fixups; *f; f++, k++)
+    **f += delta;
+  log("arena at 0x%08x: %d data labels, %d address words moved",
+      (unsigned)g_psx_arena_base, n, k);
+}
+#endif
+
 void spyro_main(void) {
   psx_overlays_init();
 #if SPYRO_PSX_LAYOUT

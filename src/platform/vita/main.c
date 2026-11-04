@@ -254,28 +254,8 @@ extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
 void nd_init(void (*log)(const char *fmt, ...));
 
-/* tools/vita/arena_syms.py (D25): the data labels' pointers, and the data
- * words that hold a label's PS1 address. */
-typedef struct {
-  void **ptr;
-  uint32_t psx_addr;
-} VitaSym;
-extern const VitaSym s1_vita_syms[];
-extern uint32_t *const s1_vita_fixups[];
-
-static void arena_symbols(void) {
-  const VitaSym *s;
-  uint32_t *const *f;
-  uint32_t delta = (uint32_t)g_psx_arena_base - PSX_RAM_BASE;
-  int n = 0, k = 0;
-  for (s = s1_vita_syms; s->ptr; s++, n++)
-    *s->ptr = PSX_ARENA(s->psx_addr);
-  /* before port.c's psx_layout copies the images into the arena */
-  for (f = s1_vita_fixups; *f; f++, k++)
-    **f += delta;
-  vita_log("arena at 0x%08x: %d data labels, %d address words moved",
-           (unsigned)g_psx_arena_base, n, k);
-}
+/* src/game/port.c: the data labels' pointers into the arena (D25). */
+void port_arena_symbols(void (*log)(const char *fmt, ...));
 
 static int file_exists(const char *path) {
   SceIoStat st;
@@ -608,7 +588,7 @@ int main(int argc, char **argv) {
   vita_audio_init();
   vita_xa_ahead_init();
 
-  arena_symbols();
+  port_arena_symbols(vita_log);
   psx_mcrd_set_root(VITA_DATA_DIR "/save");
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);

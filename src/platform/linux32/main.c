@@ -143,6 +143,7 @@ static void nd_atexit(void) {
 #include <time.h>
 
 extern void spyro_main(void);
+void port_arena_symbols(void (*log)(const char *fmt, ...)); /* src/game/port.c */
 /* libcd (PsyQ signatures) and the game's read callback (cd.c) */
 typedef void (*CdlCB)(unsigned char, unsigned char *);
 CdlCB CdReadCallback(CdlCB func);
@@ -542,6 +543,10 @@ int main(int argc, char **argv) {
 #undef TAKE
   }
   if (replay) {
+#if SPYRO_ARENA_MOVED
+    fprintf(stderr, "spyro: --replay needs the arena at 0x80000000 (SPYRO_ARENA_AT, D97)\n");
+    return 1;
+#endif
     psx_arena_init();
     /* With --disc, CD reads made inside a sampled call (the credits overlay's
      * CDLoadSync) read the disc; without, they never complete. The game's
@@ -578,6 +583,9 @@ int main(int argc, char **argv) {
   if (serve_port && host_serve_start(serve_port) != 0)
     return 1;
   psx_arena_init();
+#if SPYRO_ARENA_MOVED
+  port_arena_symbols(host_log); /* the Vita's data labels (D25, D97) */
+#endif
   nd_init(host_log);
   if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
     host_log("walk: no 16 MB-aligned memory for the copy");
