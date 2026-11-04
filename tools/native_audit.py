@@ -85,7 +85,7 @@ def build_lists():
     text = open(os.path.join(ROOT, "cmake/mips2c.cmake")).read()
     units = cmake_list(text, "M2C_UNITS")
     # M2C_HAND_MULTI: units whose entries are all hand C (collision.s, D83;
-    # math.s and 42CC4.s, D87)
+    # math.s and 42CC4.s, D87; moby_lists.s, particle_alloc.s, images.s, D94)
     hand = cmake_list(text, "M2C_HAND") + cmake_list(text, "M2C_HAND_MULTI")
     render = [e.split(":") for e in cmake_list(text, "M2C_RENDER_HAND")]
     nonmatch = sorted(os.path.relpath(p, S1) for p in
@@ -217,11 +217,12 @@ GAME_FILES = {
     "B1": ["camera_hand.c", "collision_hand.c", "math_hand.c", "42CC4_hand.c", "gamestates_hand.c",
            "gte_int.h", "math_hand.h", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
            "pete_transition_hand.c", "memory.c", "order_table.c", "rand_psyq.c",
-           "system_time.c", "hand_structs.h"],
+           "system_time.c", "hand_structs.h", "cyclorama_hand.c", "moby_lists_hand.c",
+           "particle_alloc_hand.c", "images_hand.c", "moby_helpers_hand.c", "credits_hand.c"],
     "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h"],
     "C": ["mips2c_rt.c", "mips2c_rt.h"],
     "E": ["gte_inline.h", "gte_ops.c"],
-    "T": ["oracle_replay.c", "trace.c", "hand_index.c"],
+    "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h"],
 }
 # src/platform/common and src/platform/vita: the rest is F (native).
 PLATFORM_E = {

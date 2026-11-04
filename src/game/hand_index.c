@@ -22,6 +22,10 @@ u32 func_80048D10(); /* pete_hand.c */
 u32 func_80049FAC(); /* pete_hand.c */
 u32 func_8002F3E4(); /* gamestates_hand.c */
 u32 func_800314B4(); /* gamestates_hand.c */
+u32 func_80050BD0(); /* cyclorama_hand.c */
+u32 func_8003BFC0(); /* moby_helpers_hand.c */
+u32 func_credits_8007AA50(); /* credits_hand.c */
+u32 func_credits_8007BFD0(); /* credits_hand.c */
 u32 ColTraceRay();      /* collision_hand.c */
 u32 ColSphere();        /* collision_hand.c */
 u32 ColFindFloor();     /* collision_hand.c */
@@ -33,6 +37,12 @@ u32 ColMoby();          /* collision_hand.c */
  * them (0x10 and 0x14 above $sp). */
 static u32 ColMoby_regs(u32 a0, u32 a1, u32 a2, u32 a3) {
   return ColMoby(a0, a1, a2, a3, M_U32(MIPS_KUSEG(g_mips_sp + 0x10u)), M_U32(MIPS_KUSEG(g_mips_sp + 0x14u)));
+}
+
+/* func_8003BFC0's fifth and sixth arguments are on the stack, as for
+ * ColMoby. */
+static u32 func_8003BFC0_regs(u32 a0, u32 a1, u32 a2, u32 a3) {
+  return func_8003BFC0(a0, a1, a2, a3, M_U32(MIPS_KUSEG(g_mips_sp + 0x10u)), M_U32(MIPS_KUSEG(g_mips_sp + 0x14u)));
 }
 
 /* collision.s's entries taken from mips2c (M2C_<name>=1, cmake
@@ -160,6 +170,24 @@ u32 MobyGetAnimatedVertex_gen__m2c();
 u32 func_80052F38_gen__m2c();
 u32 func_800530C0_gen__m2c();
 u32 MobyUpdateShadow_gen__m2c();
+/* moby_lists.s, particle_alloc.s and images.s (moby_lists_hand.c,
+ * particle_alloc_hand.c, images_hand.c, decisions D94), as math.s. */
+u32 func_80051FEC();
+u32 func_800521C0();
+u32 func_800522C0();
+u32 func_80053570();
+u32 func_80053608();
+u32 ColorLerp();
+u32 func_80017E98();
+u32 func_80017F24();
+u32 func_80051FEC_gen__m2c();
+u32 func_800521C0_gen__m2c();
+u32 func_800522C0_gen__m2c();
+u32 func_80053570_gen__m2c();
+u32 func_80053608_gen__m2c();
+u32 ColorLerp_gen__m2c();
+u32 func_80017E98_gen__m2c();
+u32 func_80017F24_gen__m2c();
 
 const M2cEntry m2c_hand_index[] = {
 #if !M2C_func_80033F08
@@ -203,6 +231,18 @@ const M2cEntry m2c_hand_index[] = {
 #endif
 #if !M2C_func_800314B4
     HAND(0x800314B4u, func_800314B4),
+#endif
+#if !M2C_func_80050BD0
+    HAND(0x80050BD0u, func_80050BD0),
+#endif
+#if !M2C_func_8003BFC0
+    {0x8003BFC0u, "func_8003BFC0", (u32(*)(u32, u32, u32, u32))func_8003BFC0_regs},
+#endif
+#if !M2C_func_credits_8007AA50
+    HAND(0x8007AA50u, func_credits_8007AA50),
+#endif
+#if !M2C_func_credits_8007BFD0
+    HAND(0x8007BFD0u, func_credits_8007BFD0),
 #endif
 #if M2C_ColTraceRay
     GEN_AS(0x8004AE38u, ColTraceRay),
@@ -288,6 +328,14 @@ const M2cEntry m2c_hand_index[] = {
     MULTI(0x80052F38u, func_80052F38),
     MULTI(0x800530C0u, func_800530C0),
     MULTI(0x800533D0u, MobyUpdateShadow),
+    MULTI(0x80051FECu, func_80051FEC),
+    MULTI(0x800521C0u, func_800521C0),
+    MULTI(0x800522C0u, func_800522C0),
+    MULTI(0x80053570u, func_80053570),
+    MULTI(0x80053608u, func_80053608),
+    MULTI(0x80017E54u, ColorLerp),
+    MULTI(0x80017E98u, func_80017E98),
+    MULTI(0x80017F24u, func_80017F24),
     {0, 0, 0},
 };
 
@@ -309,6 +357,10 @@ u32 func_80048D10_gen__m2c();
 u32 func_80049FAC_gen__m2c();
 u32 func_8002F3E4_gen__m2c();
 u32 func_800314B4_gen__m2c();
+u32 func_80050BD0_gen__m2c();
+u32 func_8003BFC0_gen__m2c();
+u32 func_credits_8007AA50_gen__m2c();
+u32 func_credits_8007BFD0_gen__m2c();
 /* The hand-written renderers' units are always linked (render_hand.h). */
 u32 func_8004EBA8_gen__m2c();
 u32 func_800258F0_gen__m2c();
@@ -355,6 +407,18 @@ const M2cEntry m2c_gen_index[] = {
     GEN(0x80049FACu, func_80049FAC),
     GEN(0x8002F3E4u, func_8002F3E4),
     GEN(0x800314B4u, func_800314B4),
+#endif
+#if M2C_REF && !M2C_func_80050BD0
+    GEN(0x80050BD0u, func_80050BD0),
+#endif
+#if M2C_REF && !M2C_func_8003BFC0
+    GEN(0x8003BFC0u, func_8003BFC0),
+#endif
+#if M2C_REF && !M2C_func_credits_8007AA50
+    GEN(0x8007AA50u, func_credits_8007AA50),
+#endif
+#if M2C_REF && !M2C_func_credits_8007BFD0
+    GEN(0x8007BFD0u, func_credits_8007BFD0),
 #endif
 #if M2C_REF
     GEN(0x8004AE38u, ColTraceRay),
@@ -417,6 +481,14 @@ const M2cEntry m2c_gen_index[] = {
     GEN(0x80052F38u, func_80052F38),
     GEN(0x800530C0u, func_800530C0),
     GEN(0x800533D0u, MobyUpdateShadow),
+    GEN(0x80051FECu, func_80051FEC),
+    GEN(0x800521C0u, func_800521C0),
+    GEN(0x800522C0u, func_800522C0),
+    GEN(0x80053570u, func_80053570),
+    GEN(0x80053608u, func_80053608),
+    GEN(0x80017E54u, ColorLerp),
+    GEN(0x80017E98u, func_80017E98),
+    GEN(0x80017F24u, func_80017F24),
 #endif
     GEN(0x8004EBA8u, func_8004EBA8),
     GEN(0x800258F0u, func_800258F0),

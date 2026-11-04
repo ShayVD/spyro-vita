@@ -52,9 +52,6 @@
 # ColMoby returns int in v0; its callers (func_8003FE40 80040810, 8004085C,
 # 800408D8; func_80048D10 80049324) read only v0.
 v1 ColMoby
-# func_800522C0 is void (moby_lists.h); func_800314B4 reloads v1 right after
-# the call (80031514).
-v1 func_800522C0
 # "ret NAME": void functions, v0 and v1 at return are dead. Both are declared
 # void in src/gamestates/update.c (746, 750) and called only from C there
 # (1438, 1444).
@@ -260,3 +257,21 @@ ret MobyGetAnimatedVertex
 ret func_80052F38
 ret func_800530C0
 ret MobyUpdateShadow
+# moby_lists.s, particle_alloc.s and images.s are hand-written C too
+# (moby_lists_hand.c, particle_alloc_hand.c, images_hand.c, decisions D94),
+# and so are func_8003BFC0 (moby_helpers_hand.c), the cyclorama set-up and
+# the credits overlay (cyclorama_hand.c, credits_hand.c, "ret" above). Their
+# void entries return nothing and their int entries only v0; the asm leaves
+# working values in both. Every caller is C: the decomp's, or hand C where
+# the asm called them (the cyclorama set-up and the dragon rescue for
+# ColorLerp, 42CC4.s for func_80053570, the fairy for func_800522C0;
+# tools/oracle/v1_live.py lists those sites).
+v1 ColorLerp
+ret func_80017E98
+ret func_80017F24
+v1 func_80053570
+ret func_80053608
+ret func_80051FEC
+ret func_800521C0
+ret func_800522C0
+v1 func_8003BFC0
