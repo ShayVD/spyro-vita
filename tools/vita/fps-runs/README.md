@@ -394,3 +394,5 @@ Stage 0's K1–K3 (`docs/native-plan.md` §3.3, §3.4) on this branch's VPK, una
 - The `draw` lines' `fx` and `particles` ms per vblank, window by window (the same input in all four): X2 against X1 is D95, X4 against X5 is D98. On the K route they are small (0.03 and 0.016 ms per vblank in W1): read them as means over the route.
 - X3's `render` lines against X1's `raster` (the render thread's share of waiting), as §3.4 did for K3.
 - X6 and X7: `tools/vita/fps60_summary.py` per level, as O2 (D81).
+
+**Ran** on 2026-11-04 (D98, approved by the owner; `logs/hw-x1`…`x7` of the ngte-last-renderers worktree): all seven reached `frames=`, no crash dump. X1, X2, X4 and X5: all 18 pictures and the memory card identical. `fx` and `particles`, ms per vblank over the route: X2 0.032, 0.017; X1 0.017, 0.010; X4 0.021, 0.010; X5 0.027, 0.012 (D98's native maths slower, so `ngte_fx` stays 0). X4's split: 9.73 ms per vblank, the measured emulation layers 64%. Toasty at 60 fps (X7): 0.1 late vblanks per 300, as O2.

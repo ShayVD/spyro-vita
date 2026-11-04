@@ -20,7 +20,7 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
 
   On the GPU, D74's I1 run shows that PsyCross's way of splitting draws cost **half of Toasty's scene time** (15–21 ms down to 6–7 ms once the draws were joined).
 - **Stage 0 confirmed it on hardware** (runs K1–K3 on main `f534fb1`, §3.4). With every layer on the game thread (K1), the emulation layers take **78–84%** of the CPU per vblank. That includes the GTE's share, which is still an estimate: without it, 58–72% is measured outright. The render thread's real CPU is **two-thirds** of its busy time, so the earlier 35–51% range resolves to its low end.
-- **Since then (D98, §3.5):** on the K route with every layer on the game thread, the measured emulation layers fell from 69% of the CPU per vblank (N1, after stage 1's D80) to 64% (W1, main `3bfe4f7`, with the records of stage 2 and the native mix of stage 5), and the route's sum by 7%. Since D80 the main renderers' GTE is native maths, so stage 0's GTE *estimate* no longer adds much: 64% is close to the whole emulation share today (*estimate*, against stage 0's 78–84%). Runs X1–X7 measure this branch, with D92, D93 and D95; they are prepared and not run yet.
+- **Since then (D98, §3.5):** on the K route with every layer on the game thread, the measured emulation layers fell from 69% of the CPU per vblank (N1, after stage 1's D80) to 64% (W1, main `3bfe4f7`, with the records of stage 2 and the native mix of stage 5), and the route's sum by 7%. Since D80 the main renderers' GTE is native maths, so stage 0's GTE *estimate* no longer adds much: 64% is close to the whole emulation share today (*estimate*, against stage 0's 78–84%). Runs X1–X7 (D98) measured this branch with everything merged: **64%**, 9.73 ms per vblank, the PS1 GPU → vitaGL translation the largest layer (35%).
 - **Stage 0 also found two things to fix before the stages:**
   - **On the GPU, texture decoding:** decoding PS1 textures into the atlas takes **7–9 ms of GPU time per picture** while new textures come into view in play. That's more than the game's own scene. Each decode pass is a render pass over the whole 2048×2048 atlas.
   - **The XA read-ahead (D64) stops working after the first level load,** which puts the music reads back on the game thread.
@@ -363,7 +363,24 @@ So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWa
 - **The GTE:** stage 0 added an *estimate* of the software GTE at 60% of the renderers' time (§3.2), which gave its 78–84%. Since D80 the six main renderers' GTE commands are native maths on C values, part of the game's own renderer code. What stayed on the GTE register file is D95's shadows, flame and particles, the renderers' cold paths and the mips2c helpers. On the K route the shadows and flame (`fx`) take 0.03 ms per vblank and the particles 0.016 (W1's `draw` lines), 1.6% of the renderers. So the register-file GTE is now a few percent of the renderers at most (*estimate*), and the measured 64% is close to the whole emulation share on today's code, against stage 0's 78–84%.
 - XA reads stay at 0.5–0.6 ms: these runs predate D93's native disc reads (`cd_native=1` by default since D93), which move them to a worker thread's single reads.
 
-**Runs X1–X7 on this branch** (prepared, not run: each needs the owner's yes; `tools/vita/fps-runs/README.md`, "Runs X1–X7"): K1, K2 and K3 again on the K route (X1–X3), K1's switches with the shipped renderers (X4: `fast_render=2`, `ngte_fx=0`) and with D98's native maths for the last three (X5: `ngte_fx=1`), and the Toasty route at 30 and 60 fps (X6, X7). X1 against X2 times D95's hand C against its mips2c units on hardware, which never ran; X4 against X5 times D98; X1, X4 and X5 with `native_share.py` give the split on today's code, with D92, D93 and D95 in it. Until they run, the table above is the latest measured split.
+**Runs X1–X7 on this branch** (2026-11-04, D98; `tools/vita/fps-runs/README.md`, "Runs X1–X7"; VPK D98 merged with main `e3fbfd3`, D96 and D97). The K route with K1's switches, the same parts:
+
+| Part (windows) | Run | logic | renderers | draw/other | OT walk | PS1 GPU → vitaGL | SPU + mixer | XA reads | present | sum | emulation, measured |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| title (9) | X4 | 0.01 | 1.69 | 0.32 | 1.52 | 2.89 | 0.22 | 0.51 | 0.22 | 7.37 | 70% |
+| attract demo (5) | X4 | 0.30 | 5.39 | 0.05 | 2.07 | 3.82 | 0.30 | 0.55 | 0.10 | 12.57 | 54% |
+| Stone Hill (9) | X4 | 0.16 | 3.37 | 0.12 | 2.15 | 3.43 | 0.21 | 0.53 | 0.35 | 10.32 | 61% |
+| Dark Hollow (11) | X4 | 0.19 | 3.61 | 0.12 | 2.84 | 4.22 | 0.29 | 0.54 | 0.42 | 12.22 | 64% |
+| the route (51) | X4 (`fast_render=2`, the default) | 0.15 | 2.86 | 0.20 | 2.09 | 3.44 | 0.24 | 0.44 | 0.31 | 9.73 | 64% |
+| | X5 (`ngte_fx=1`) | 0.15 | 2.87 | 0.20 | 2.09 | 3.44 | 0.24 | 0.44 | 0.30 | 9.74 | 64% |
+| | X1 (`fast_render=1`) | 0.15 | 2.59 | 0.21 | 2.31 | 3.44 | 0.24 | 0.43 | 0.30 | 9.67 | 66% |
+| | X2 (`fast_render=0`) | 0.16 | 4.17 | 0.18 | 2.31 | 3.43 | 0.23 | 0.43 | 0.31 | 11.22 | 57% |
+
+- **Today's split** (X4): the measured emulation layers are **64%** of the CPU per vblank over the route, 54–70% by part, and the sum 9.73 ms (W1: 10.16; N1: 10.95). With the GTE now mostly native maths, that's close to the whole emulation share (*estimate*; stage 0: 78–84% with its GTE estimate, 58–77% measured on its own route).
+- **The largest layer is the PS1 GPU → vitaGL translation,** 3.44 ms per vblank, 35% of the sum, then the renderers (2.86, the game's own code and the records) and the OT walk (2.09). On the render thread (X3, threads on) its busy time is 4.13–6.51 ms per vblank, of which 65–70% is CPU (X1's game-thread figures for the same frames), as in stage 0.
+- **D95 and D98 on hardware** (D98): the shadows and flame (`fx`) and the particles take 0.032 and 0.017 ms per vblank as mips2c units (X2), 0.021 and 0.010 as D95's hand C with records (X4), 0.027 and 0.012 with D98's native maths (X5): D98 is slower for these short loops, so `ngte_fx` stays 0. All four runs give the same 18 pictures and memory card.
+- **Toasty** (X6, X7): at 30 fps no late vblanks in play; at 60 fps 0.1 late per 300 (worst 1), the GPU at 6.3 ms a picture (max 7.7), the render thread 10.6 ms a picture, as D81's O2.
+
 
 ---
 
@@ -464,7 +481,7 @@ Ordered by payoff over risk. Every stage keeps the old path one switch away unti
 
 **Done (D80 and D81, 2026-11-02).** `fast_render=2` is the default since D81. NEON one vertex at a time was tried and is 5% slower on hardware (D81). It would pay only with four vertices per batch, in stage 2's vertex loops. N1 and N2 ran on hardware: identical pictures and memory card, and the renderers −15% (2.28 → 1.92 ms per vblank). What it is and how it was checked: `docs/decisions.md` D80 and `docs/translation-log.md`. In short: every call checked against `fast_render=1` over every host script (0 differences), 198/198 host files and 661/661 oracle samples identical, Vita3K shots and window captures identical. The renderers are −15 to −17% on the host (qemu), −16 to −35% in Vita3K and −15% on hardware.
 
-**The last three (D98, 2026-11-04).** D95's shadows, flame and particles, hand C on the GTE register file, now have native GTE maths too, behind `ngte_fx=1` with `fast_render=2` (RTPT, GPF with sf 1 and GPL are new in `gte_native.h`). The register file is left exact by replaying, at the end, only the commands whose results can still show (`docs/decisions.md` D98). Checked call by call against both the mips2c unit and `fast_render=1`; the default stays `ngte_fx=0` until hardware runs X4 and X5 (§3.5) have timed it.
+**The last three (D98, 2026-11-04).** D95's shadows, flame and particles, hand C on the GTE register file, now have native GTE maths too, behind `ngte_fx=1` with `fast_render=2` (RTPT, GPF with sf 1 and GPL are new in `gte_native.h`). The register file is left exact by replaying, at the end, only the commands whose results can still show (`docs/decisions.md` D98). Checked call by call against both the mips2c unit and `fast_render=1`, and on hardware (X4, X5: the same pictures and card). It is a few microseconds per vblank slower than D95's register-file code for these short loops, so the default stays `ngte_fx=0`.
 
 #### The GTE audit
 
