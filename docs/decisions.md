@@ -2422,3 +2422,35 @@ Record each decision with its date, what was chosen, and why.
   - **The render thread** (X3, the shipped threads at 30 fps, real vblanks): busy 4.13, 5.47, 5.08 and 6.51 ms per vblank on the title, the attract demo, Stone Hill and Dark Hollow, against X1's game-thread translation of the same frames, 2.88, 3.81, 3.42 and 4.21: 65–70% of its busy time is CPU, as stage 0 found (66–70%). The parse thread's OT walk: 0.93–2.04 against 1.72–3.07 on the game thread.
   - **Toasty** (`fps60_summary.py`): at 30 fps (X6) 0 late vblanks in its 21 windows, render thread 9.66 ms a picture, GPU 6.44 (max 7.71), the game thread 21.5% busy; at 60 fps (X7) Toasty's 21 windows 0.1 late per 300 (worst 1), render thread 10.58 ms a picture, GPU 6.29 (max 7.72), the game thread 39.5% busy, against D81's O2 0.1 (worst 1), 11.9, 6.3 (7.7) and 38%. The Stone Hill attract demo at 60 fps: 5.4 late per 300 (worst 34) against O2's 6.4 (38), the render thread still the wall (15.38 ms a picture).
 - **Default: `ngte_fx=0` stays.** X4 and X5 give the same pictures and card, but the native maths are a few microseconds per vblank slower, so they don't earn the default. They stay as an option (`ngte_fx=1`), off: removing them (as D81 removed its NEON code) or keeping them for stage 2's batched vertex loops is the owner's call.
+
+## 2026-11-04: native memory (stage 4), steps 4b–4e
+
+### D100. Stage 4b–4e: every packed and tagged address decoded in one header (`psx_mem.h`); a native build with no mips2c units and no aliases of PS1 RAM, checked on the host at 0x80000000, at an unaligned base above 2 GB and below 2 GB
+- **Why:** steps 4b–4e of the stage 4 plan (`docs/native-plan.md`, D97). D96 and D98, which held decode sites, are merged. Two PRs: 4b+4c (this part), then 4d+4e on top.
+- **4b, every decode site named** (`src/game/psx_mem.h`). In the arena and moved builds each macro expands to the expression the site used:
+  - `MEM_OT_NEXT`, `MEM_OT_OFS`: an OT link's primitive and its offset (`native_draw_check.c`, `walk.c`; PsyCross's `nextPrim` in 4d);
+  - `MEM_ANIM21`: a frame word's 21-bit address (`42CC4_hand.c` `FrameVertices`, `collision_hand.c` `MobyFrameWords`, `moby_hand.c` `FrameStreams`);
+  - `MEM_ANIM_HALF`: Spyro's frames, the address halved into 21 bits (`42CC4_hand.c` `SpyroVertex`, `pete_hand.c`'s flame, `pete_render_hand.c` `PartStreams`, `shadows_hand.c` ×3);
+  - `MEM_ADDR24`: `moby_hand.c`'s face-save list (an address `<< 8`), which D97's table didn't list;
+  - `MEM_MODEL_PTR`, `MEM_MODEL_SIMPLE`, `MEM_SIMPLE_ADDR`: g_Models' SimpleModel tag (`moby_hand.c`'s lit and HUD models, ×2, and its vertices test; `loaders.c` in 4e);
+  - `MEM_COLL_PTR`, `MEM_COLL_TAGGED`: the collision tag (`collision_hand.c` `MobyCollisionModel`, `42CC4_hand.c`'s region test; `moby_update.c` in 4e).
+
+  `native_draw.h`'s `ND_SIDE_KEY` needs nothing: `p & 0x1FFFFF` of an address in the 2 MB arena is a unique key at any base.
+- **4c, the native build** (`-DSPYRO_NATIVE_MEM=ON`):
+  - It links no mips2c unit: `cmake/mips2c.cmake` translates none and refuses `SPYRO_M2C_FUNCS`, `SPYRO_M2C_REF` and `SPYRO_M2C_PROF`.
+  - `render_hand.h`'s entry macros call the hand C only and store no stack arguments, which only the units read.
+  - `--fast-render 0` is refused on the host. On the Vita, `fast_render=0` becomes 1.
+  - `--replay` is refused: the oracle stays on the arena build (D97). `oracle_replay.c` and `hand_index.c` compile to nothing.
+  - `MIPS_KUSEG`, and so `HPTR`, is a plain cast.
+  - The mips2c stack is no longer in the arena. The hand C still makes the asm's few stores below `$sp` (`hand_spill_regs`, `particles_hand.c`), which nothing reads back, so `g_mips_sp` points into a 256-byte array (`port.c`).
+  - The linux32 link pulls in the renderers' hand C explicitly. Only `prof_draw.c`'s wrappers reach it once the units are gone.
+- **The KUSEG audit** (`-DSPYRO_KUSEG_AUDIT=ON`, `mips2c_rt.h`): every `MIPS_KUSEG`/`HPTR` records the sites where the mapping changed the address, and lists them at exit. On the moved build, where all three aliases are live (KUSEG, `0x80000000 | offset`, bit 31 cleared), over all four host-check runs: **3 sites**, all of them named in 4b (`moby_hand.c`'s face-save list, 126,122 times in all, and the lit and HUD models' SimpleModel pointers, 86,812 and 993,061). No other hand C relies on an alias.
+- **`r_environment`'s other functions and `D_8006FCF4`** (D97's 4c question): every reference to `D_8006FCF4` in `r_environment.s` is inside `func_800258F0` (lines 12–5282). D96's five functions (`func_8002A6FC`, `EnvAnimSetFlags`, `EnvAnimGetState`, `EnvAnimSetFrame`, `func_8002B4AC`, from line 5283) never touch it, so none can use its bit 31 as a mode flag.
+- **Checked** (logs gitignored, in this worktree's `logs/`):
+  - **The arena build's binary:** `objdump -d` with addresses blanked against main's `82d05ce` (built from a clean checkout, `build/base-src`). It differs in two instruction pairs, in `func_80052F38` (`SpyroVertex`) and `func_80048D10` (the flame): `MEM_ANIM_HALF`'s `(w << 11) >> 10` there against the sites' former `(w & 0x1FFFFF) << 1`. Both compute the same value; GCC writes one as `shl; shr`, the other as `add; and`, and whichever spelling the macro uses, two sites change. The rest is alignment padding. `.data` is byte-identical. `.rodata` differs only in `savestate.c`'s `__TIME__` and in switch tables whose code addresses moved with that padding.
+  - **Host checks against main** (`tools/host_checks.sh`, main's binary `logs/s4b-base-*`): the attract demos, routes A and B, and the 100,000-vblank whole-game tour with both endings and the credits.
+    - The moved build with the audit compiled in (`-DSPYRO_ARENA_AT=0x8F000000`, `logs/s4b-audit-*`): **279 of 279 files identical**, every trace, shot and WAV and the memory cards.
+    - The native build at 0x80000000 (`logs/s4c-native-*`): **279 of 279 identical**.
+  - The native binary has no mips2c symbol (`nm`: no `_gen`, `__m2c` or `m2c_index`). It is 9.3 MB against the arena build's 10.6 MB.
+  - **Vita3K** (the gems script, `logs/pads/gems.txt`, 8,768 vblanks, `CAPTURE=1`): main's VPK (`82d05ce`, `logs/s4-main.vpk`) against the 4d–4e branch's (`logs/s4-d100.vpk`). That branch's Vita code is this part's: the moved build, whose macros it only adds there expand to the same expressions. Main twice (`logs/s4-v3k-gems-main`, `-main-b`) and the branch's second run (`-d100-b`): **17 of 17 shots, 17 of 17 window captures and the memory card identical**. The branch's first run (`-d100`) matched in every shot and the card, and in 16 of the 17 captures. Its last (`win-8704`) differed in a 30×60-pixel patch, and it differs the same way from the same VPK's second run, so it is the window grab's noise, not the code.
+- **Not run on hardware:** the Vita stays on the moved configuration, whose expansions are today's expressions.

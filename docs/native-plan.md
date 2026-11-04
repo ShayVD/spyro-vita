@@ -792,6 +792,8 @@ Each native step is checked by running `host_checks.sh` on the arena build and o
 
 **Status (D97, 2026-11-04): step 4a done.** `-DSPYRO_ARENA_AT=0x8F000000` runs the Vita's moved arena through the host's checks. The moved build gave main's 278 host-check files and memory cards byte for byte. It caught one host tool (`tour.c`) storing through a game pointer as if it were a PS1 address. The arena build is unchanged but for that fix, and Vita3K's 17 shots, window captures and card are identical. Details and logs: D97.
 
+**Status (D100, 2026-11-04): steps 4b and 4c done.** `src/game/psx_mem.h` names every decode site in §3 (and one the table missed, `moby_hand.c`'s face-save list). The arena build is unchanged but for two instruction pairs that compute the same value. `-DSPYRO_NATIVE_MEM=ON` builds linux32 with no mips2c unit, with `HPTR`/`MIPS_KUSEG` as plain casts and no mips2c stack in the arena. A KUSEG audit (`-DSPYRO_KUSEG_AUDIT=ON`) over the host checks found only the three sites 4b names relying on an alias. With the arena at 0x80000000 the native build gave main's 279 host-check files byte for byte, and so did the moved build. Details and logs: D100. 4d and 4e follow in a second PR.
+
 ### Stage 5: native audio (medium, low–medium risk)
 
 **Replaces** (E):
