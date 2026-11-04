@@ -1,6 +1,6 @@
-# Run U (docs/native-plan.md stage 3, D94): the K route with the cyclorama set-up, the moby lists,
+# Runs W1 and W2 (docs/native-plan.md stage 3, D94): the K route with the cyclorama set-up, the moby lists,
 # the particle slots, the images, func_8003BFC0 and the credits as hand-written C, against the same
-# route on main's VPK (U1 main, U2 this branch, the same lines): the pictures and the memory card
+# route on main's VPK (W1 main, W2 this branch, the same lines): the pictures and the memory card
 # must be identical, and the "update" lines show what the game logic costs. Q's switches
 # (q1-collision.txt).
 config_version=3
