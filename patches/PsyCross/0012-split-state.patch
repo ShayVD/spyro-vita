@@ -1,0 +1,58 @@
+diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
+--- a/include/PsyX/PsyX_render.h
++++ b/include/PsyX/PsyX_render.h
+@@ -236,6 +236,12 @@
+ extern void PsyX_SplitGet(int i, int out[8]);
+ extern void PsyX_ClearSplits(void);
+ extern void PsyX_ParseList(u_long* p);
++/* Spyro port (D92): the walk's split and vertex fill, kept and put back
++ * (the host's parse check runs a packet twice from the same state).
++ * PsyX_SplitStateSize: the bytes PsyX_SplitStateSave writes. */
++extern int PsyX_SplitStateSize(void);
++extern void PsyX_SplitStateSave(void* buf);
++extern void PsyX_SplitStateRestore(const void* buf);
+ 
+ extern void			GR_PushDebugLabel(const char* label);
+ extern void			GR_PopDebugLabel();
+diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
+--- a/src/gpu/PsyX_GPU.cpp
++++ b/src/gpu/PsyX_GPU.cpp
+@@ -858,6 +858,38 @@
+ 	ParsePrimitivesLinkedList(p, 0);
+ }
+ 
++// Spyro port (D92): see PsyX_render.h. The splits after the current one are
++// only written when a new one starts, so the current one is all to keep.
++struct PsyXSplitState
++{
++	int splitIndex, vertexIndex;
++	GPUDrawSplit cur;
++	const char* debugText;
++};
++
++int PsyX_SplitStateSize(void)
++{
++	return (int)sizeof(PsyXSplitState);
++}
++
++void PsyX_SplitStateSave(void* buf)
++{
++	PsyXSplitState* s = (PsyXSplitState*)buf;
++	s->splitIndex = g_splitIndex;
++	s->vertexIndex = g_vertexIndex;
++	s->cur = g_splits[g_splitIndex];
++	s->debugText = currentSplitDebugText;
++}
++
++void PsyX_SplitStateRestore(const void* buf)
++{
++	const PsyXSplitState* s = (const PsyXSplitState*)buf;
++	g_splitIndex = s->splitIndex;
++	g_vertexIndex = s->vertexIndex;
++	g_splits[g_splitIndex] = s->cur;
++	currentSplitDebugText = s->debugText;
++}
++
+ void ParsePrimitivesLinkedList(u_long* p, int singlePrimitive)
+ {
+ 	if (!p)

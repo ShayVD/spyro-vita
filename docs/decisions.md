@@ -2094,3 +2094,72 @@ Record each decision with its date, what was chosen, and why.
   - **`SpuWrite`:** 1.64–1.95 ms a sound bank on the game thread, 7 times on the route (D84: 56–57 ms). The mixer's time per vblank 0.13–0.40 ms (worst 1.13 ms), with the first-play decodes in it.
   - **Core 1's CPU per vblank** (`runClocks`, mean of the windows from vblank 600): mixer 0.888 → 0.251 ms, XA read-ahead 0.163 → 0.231 ms, audio out (SDL2's thread, not counted) → 0.253 ms; 1.051 ms plus SDL2's thread → 0.735 ms.
 - **Default:** `mixer=3` (`main.c`). The samples are the same, it runs dry less than `mixer=1` and only where the game stops, and costs core 1 less. `mixer=1` stays one line away in `config.txt`. SDL2 stays linked for the pad (D84).
+
+## 2026-11-03: the rest of stage 2 (native draw lists)
+
+### D92. The walk parses every polygon packet with the records' converter; `native_draw=2` to time the renderers without records; the render thread's vertex pass in one go, its atlas answers kept, a draw's program per run, untextured subtract draws joined
+- **Why:** D91's "not done": the render thread's side (the atlas resolved once per page and CLUT, the program and blend per segment), the decomp C's own primitives (particles, shadows with their subtract rule, the flame, `flight.c`, the HUD), and the renderers' last +0.16 ms per list (D91's T3), mostly a second stream of writes.
+- **Decided, the walk** (`src/game/native_draw.c`):
+  - **One converter for records and packets.** D91's `emit` is split into `em_prim`, which turns one primitive (its kind and its words after the tag, as the PS1 holds them) into PsyCross's `GrVertex`s, and the loop over a marker's records. `nd_packet` now also takes a packet that is not a marker when it holds only polygons, E1 draw modes and NOPs (GP0 00h–1Fh but 02h, as the walk's split skips them), and parses it with `em_prim` from its words where it lies (`fast_packet`). Anything else (lines, rectangles, fills, E2–E6, a command running past the packet) stays with PsyCross. `nd_fast=0` (host `--nd-fast 0`) turns it off.
+  - **With `native_draw=1`** (the Vita's default) that is every polygon the renderers don't make records of: the particles (`r_particles.s`'s mips2c unit, from what `particle_spawn.c` and `particle_update.c` set up), the shadows (`r_shadows.s`), the flame (`r_flame.s`), the HUD and the menus (`draw.c`), `flight.c`'s results. So the decomp C's and the mips2c units' polygons now reach the GPU through the same code as the records, at no cost to the game thread.
+  - **`native_draw=2`** (host `--native-draw-parse`): the renderers build their PS1 primitives as with `native_draw=0` (no records, so no second stream of writes), and the walk parses every polygon packet with `em_prim`. It has no joins, so the walk follows every packet. It exists to answer the third question on hardware: whether the renderers' +0.16 ms with records buys more on the walk than it costs. `nd_ab=1` now takes 0, 1 and 2 in turn (`tools/vita/nd_ab_summary.py`, which adds a "game" column: the renderers plus the wait for the walk, what the list costs the game thread).
+  - **The list's mode reaches the walk with the list** (`g_psx_walk_nd`, taken at the handover like D91's tag; `psx_walk_nd()` on the walker), since `nd_ab` changes `native_draw` for the next list before the walk of this one ends.
+- **Not done: records built by the decomp C and the mips2c units themselves.**
+  - The particles, the shadows and the flame build their primitives in mips2c units (`r_particles.s` 1,540 instructions, `r_shadows.s` 650, `r_flame.s` 452). Records there need them as hand C first: that is a PR of its own on top of this one (D95).
+  - The HUD's and `flight.c`'s sites are decomp C, and all link through our `func_800168DC` (`src/game/order_table.c`), so one hook there would cover them. But:
+    - with widescreen, `present.c` narrows these 2D primitives in place at `DrawOTag` and puts them back after the handover, so a record taken where the site links would keep the full-width x;
+    - `nd_fast` already parses their packets with the records' converter;
+    - records would add D91's second stream of writes on the game thread, for about 25 packets a vblank.
+
+    So they stay PS1 primitives.
+- **Decided, the render thread** (`src/platform/vita/gpu_gl.c`, `gpu_fused=1`, the default; `0` is the way before; `2` takes the two ways in turn, a vertex buffer each, and times them, `tools/vita/fused_ab_summary.py`):
+  - **One pass from the slab** (`expand_lean`, with `gpu_lean` and no vertex cache, which is the Vita's default): each vertex is copied once, from the render thread's vertex slab into the 28-byte vertex, and a triangle `gl_vertices`' rule collapses becomes three copies of its first vertex there. Before, the slab was copied whole into `s_vbuf`, a pass collapsed triangles there, and `expand()` read it again. `sync_pages` reads the lean vertices instead.
+  - **The atlas's answers kept** (`s_amemo`, 64 entries): `atlas_find`'s answer for a triangle's page, CLUT and blocks, valid for the atlas generation. Not "once per page and CLUT": the atlas keeps a page and CLUT's texels by the 32×32 blocks a triangle's UV box covers (D41), so one page and CLUT has many entries. D70's one-entry memo caught only a quad's second half. In the gems script the map is asked 25,156 times for 153,280 textured triangles (71,088 before).
+  - **A draw's program per run:** `draw()` asked `prog_of` for every triangle; it reads only the triangle's kind and format, so a triangle like the one before no longer asks. The blend was already per batch (#49).
+  - **The shadows' rule:** #49 never joins subtract draws, because a textured one is drawn in two passes that would interleave differently. An untextured one is one pass, so consecutive untextured subtract draws now join: the same GL triangles in the same order with the same state. It seldom has anything to join. Spyro's shadow is untextured G3s behind an E1 packet (`r_shadows.s`, `func_80059A48`: code `0x32`, tpage `0x640`, subtract), which PsyCross already keeps in one split. The mobys' shadows are textured FT3s (`func_80059F8C`: code `0x26`), two passes, so they still aren't joined. In the gems script it joined 0 draws (the `gpu` line's count).
+- **Checked (host, `build/linux32` on this branch; logs `logs/s92c-*`, `logs/s92d-*`, gitignored; `MODE=chkp tools/native_draw_ab.sh`, which runs each scenario with `--native-draw-check --native-draw-parse-check` against the same binary's plain run):**
+  - **Every call, three ways.** The per-call check (D82) now walks each converted renderer call's PS1 primitives a third time with `nd_fast` on, which is `native_draw=2`'s walk, and compares it with PsyCross's own walk as it does the records (the reference walk turns `nd_fast` off, `g_nd_fast_off`).
+  - **Every packet `nd_fast` takes, both ways** (`--native-draw-parse-check`, `nd_pcheck_packet`): PsyCross parses a copy of the packet alone from the same state first (the split state kept and put back, PsyCross patch 0012), then `fast_packet` parses it; the vertices, the splits and the draw environment must be the same bytes. With the per-call check on, this covers the check's own walks too.
+
+    | Scenario | Calls that differ (six renderers, three ways) | Packets parsed both ways | Differ | Files identical |
+    |---|---:|---:|---:|---:|
+    | attract demos (12,000 vblanks) | 0 | 7,543,521 | 0 | 26/26 |
+    | gems script, 16:9 | 0 | 5,978,921 | 0 | 19/19 |
+    | 16:9 with 60 fps in-between frames (`wsi`) | 0 | 19,739,609 | 0 | 25/25 |
+    | gems with the vertex cache (`vc`) | 0 | 5,978,921 | 0 | 19/19 |
+    | gems at 2x draw distance (`lod`) | 0 | 6,113,705 | 0 | 19/19 |
+    | route A | 0 | 8,147,715 | 0 | 55/55 |
+    | route B | 0 | 7,880,034 | 0 | 56/56 |
+    | whole-game tour (100,000 vblanks, every level, both endings, the credits) | 0 | 72,130,949 | 0 | 141/141 |
+
+    The vertex cache run's `host vcache` lines find 98.9% of the vertices (D89's check that the cache is fed). Every converted renderer is called in every scenario where the game calls it.
+  - **`native_draw=2` itself** (`MODE=p2`, `--native-draw-parse-check` against the plain run, `logs/s92p-*`): gems 19/19 and the demos 26/26 files identical, 5,962,897 and 7,533,990 packets parsed both ways, 0 differ.
+  - **`tools/host_checks.sh`** (default switches, so `native_draw=0`) on this branch (`logs/s92h-*`): byte-identical with main's runs by two other sessions (stage 3's `base-*` and stage 6's `s6-base-*`, main `3bfe4f7`, which agree with each other): demo 26/26, the whole tour 141/141, route A 56/56, route B 56/56.
+- **Checked in Vita3K** (VPK `logs/s92-vpk-2.vpk`, SHA-1 `983487fb…`, built natively with the Mac's VitaSDK; `realtime=0`, `fast_render=2`, the shipped threads; logs `logs/s92v-*`). Against `native_draw=0 gpu_fused=0` (main's paths):
+  - **gems script with window captures:** `native_draw=1 gpu_fused=1` (the new defaults), `native_draw=2`, and `nd_ab=1 gpu_fused=2` (both A/Bs rotating): 17 shots, 17 captures and the card identical in each.
+  - **attract demos with captures:** `native_draw` 1 and 2: 12 shots and 11 captures identical.
+  - **16:9 with 60 fps in-between frames, gems with captures** (`interp=1 interp_budget=0`, to 6600): 13 shots, 13 captures and the card identical with `gpu_time=2` in both runs. Without it, the capture at 6500 shows one of two pictures (the second with sky missing at the right edge), and which one depends on thread timing, not on the paths. Main's paths gave the first twice. `native_draw=1` alone, `gpu_fused=1` alone and both gave the second. With `gpu_time=2`'s extra GPU syncs, both runs gave the first. The shots (the CPU replay of the same lists) are identical in every run.
+  - **The pause route** (16:9, 60 fps forced, the `StoreImage` replay): `native_draw` 1 and 2, 70 shots and the card identical. Main's paths crashed inside Vita3K before the end in both tries (at shots 33 and 39; D86 saw the same with `native_draw=0`); their shots up to there are identical.
+  - **Vita3K's own failures** in 10 of 33 runs, all inside the emulator (the game's log just stops): an unimplemented GPU opcode (216), a lost Metal device, write-protect faults, null accesses. By configuration: main's paths 3 of 11 runs, the new defaults 5 of 11, `native_draw=2` 1 of 5, the others 1 of 6. Every configuration but the pause route on main's paths went through when repeated. Too few runs to tell the defaults apart from main's, and hardware is what counts (U1). The Mac was heavily loaded by other sessions throughout.
+  - Two captures (gems at 3500 and 16:9 at 3500, 48–280 pixels round the small Spyro at the right edge) differed once between two runs of the same configuration, so those frames' captures aren't a test.
+- **Timing in Vita3K:** none. The Mac was too loaded by other sessions to give even a direction (`gpu_fused=2`'s halves came within ±1 ms of each other per buffer, the A/B's noise).
+- **Hardware: run U1** (2026-11-04, the owner's go-ahead; VPK `logs/s92-vpk-2.vpk`, SHA-1 `983487fb…`; `tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`, the Toasty route at 60 fps, `REALTIME=1`; `logs/hw-u1`, gitignored). It reached `frames=21000` in 321 s with no hang line, and the owner's files were put back. Afterwards main's eboot (`38f1911b…`, CI run 41724811066) went back on the Vita, read back identical.
+  - **`nd_ab=1`** (`tools/vita/nd_ab_summary.py`, 68 windows, about 5,970 lists each). Per list, ms, the mean of the windows' differences and its standard error:
+
+    | | renderers | walk (parse thread) | wait for it | game thread (renderers + wait) |
+    |---|---:|---:|---:|---:|
+    | `native_draw=1` (records) against 0 | +0.188 ±0.012 | −0.949 ±0.031 | −0.376 ±0.018 | −0.188 ±0.021 |
+    | `native_draw=2` (parse) against 0 | +0.021 ±0.010 | −0.508 ±0.018 | −0.197 ±0.010 | −0.176 ±0.016 |
+    | records against parse | +0.167 ±0.011 | −0.441 ±0.017 | −0.179 ±0.012 | +0.012 ±0.018 |
+
+    - **The records' second stream costs the renderers what D91 measured** (+0.19; T3 +0.16). Their joins save the walk more than the in-place parse does, about as much more as the renderers lose. For the game thread the two ways are the same within noise (0.012 ± 0.018 ms).
+    - **The parse thread is 0.44 ms per list freer with records.** So `native_draw=1` stays the default. `native_draw=2` stays as the way without records, with the same game thread.
+  - **`gpu_fused=2`** (`tools/vita/fused_ab_summary.py`, about 11,500 vertex buffers each). Per vertex buffer, `gpu_fused=1` against the way before:
+    - `gl_vertices` −0.220 ±0.023 ms;
+    - issuing the draws −0.055 ±0.007 ms;
+    - together −0.275 ±0.030 ms of 3.04, 9% less;
+    - GL draws the same (−0.02 ±0.06), as the shadows' rule had nothing to join.
+
+    About 1.14 vertex buffers a vblank, so about 0.31 ms per vblank of the render thread (busy 12.2 ms per vblank in this run).
+  - **Late vblanks:** 244 in 70 windows. Not comparable with P10, since both A/Bs switched way every few lists.
+- **Defaults:** `native_draw=1` (as D91), `nd_fast=1`, `gpu_fused=1` on the Vita. The host's `native_draw` stays 0, so `host_checks.sh` and the oracle run as before.

@@ -66,6 +66,8 @@ typedef struct {
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
   int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
+  int gpu_fused;      /* gpu_fused=1: gpu_lean's vertices in one pass, programs per run, untextured
+                         subtract draws joined (D92) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU

@@ -12,7 +12,10 @@
  *    scratchpad buffer and every GTE register must be the same.
  * The walk is PsyCross's, so this checks the records against what PsyCross
  * makes of the primitives, not against a copy of its rules. A run of the
- * host's scripts checks every call they make. */
+ * host's scripts checks every call they make. With nd_fast (D92) the
+ * primitives are walked a third time as native_draw=2's walk parses them
+ * (nd_packet's own parse of each packet), which must give the same bytes
+ * too; the reference walk turns it off (g_nd_fast_off). */
 #include "native_draw.h"
 #include "render_hand.h"
 
@@ -156,7 +159,7 @@ typedef struct {
   u_short tpage;
   u_char dtd, dfe;
 } Walked;
-static Walked s_walked[2];
+static Walked s_walked[3];
 
 static void walk_seq(Seq *q, Walked *w, const DRAWENV *env0) {
   int *fill, i;
@@ -267,6 +270,7 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
       s_seq[i].words = malloc(s_seq[i].cap * 4);
       s_walked[i].v = malloc(MAX_VERTEX_BUFFER_SIZE * sizeof(GrVertex));
     }
+    s_walked[2].v = malloc(MAX_VERTEX_BUFFER_SIZE * sizeof(GrVertex));
   }
   memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
@@ -322,8 +326,13 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)PsyX_VertexBuffer(&fill);
   if (!bad && collect(&s_seq[1]) >= 0 && *fill == 0 && PsyX_SplitCount() == 0) {
     env0 = activeDrawEnv;
+    g_nd_fast_off = 1; /* the primitives as PsyCross parses them (D92) */
     walk_seq(&s_seq[0], &s_walked[0], &env0);
+    g_nd_fast_off = 0;
     walk_seq(&s_seq[1], &s_walked[1], &env0);
+    /* and as native_draw=2's walk parses them (D92), when nd_fast is on */
+    if (g_nd_fast)
+      walk_seq(&s_seq[0], &s_walked[2], &env0);
     activeDrawEnv = env0;
     s_stats[k].packets_ps1 += (unsigned)s_seq[0].count;
     s_stats[k].packets_nd += (unsigned)s_seq[1].count;
@@ -331,6 +340,15 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
     bad = walked_differ(&s_walked[0], &s_walked[1]);
     if (bad && s_stats[k].bad++ < 20)
       report(k, bad, &s_walked[0], &s_walked[1]);
+    if (!bad && g_nd_fast) {
+      bad = walked_differ(&s_walked[0], &s_walked[2]);
+      if (bad && s_stats[k].bad++ < 20) {
+        if (s_log)
+          s_log("native draw check: %s call %lu: native_draw=2's parse of the primitives:",
+                s_stats[k].name, s_stats[k].calls);
+        report(k, bad, &s_walked[0], &s_walked[2]);
+      }
+    }
   } else if (!bad) {
     s_stats[k].skipped++;
   }
@@ -347,4 +365,102 @@ void nd_check_report(void) {
           "%llu packets as primitives, %llu as markers",
           s_stats[i].name, s_stats[i].calls, s_stats[i].bad, s_stats[i].skipped, s_stats[i].tris,
           s_stats[i].packets_ps1, s_stats[i].packets_nd);
+}
+
+/* native_draw 1 and 2's parse of PS1 packets (D92; host
+ * --native-draw-parse-check): each packet nd_packet takes is parsed by
+ * PsyCross first, from the same state (a copy of the packet alone, the
+ * hook off), and then by fast (nd_packet's own), whose result the walk goes
+ * on with. The vertices and splits each adds and the draw environment each
+ * leaves must be the same bytes. */
+int g_nd_pcheck;
+static struct {
+  unsigned long long packets, bad, tris;
+} s_pc;
+static unsigned char s_pc_state[256];
+static GrVertex s_pc_v[2][64 * 6];
+
+typedef struct {
+  int nv, nsplit, split[64][8];
+  DRAWENV env;
+} PcOut;
+static PcOut s_pc_out[2];
+
+static void pc_take(PcOut *o, GrVertex *dst, int fill0, int split0) {
+  int *fill, i;
+  GrVertex *vb = PsyX_VertexBuffer(&fill);
+  o->nv = *fill - fill0;
+  if (o->nv > 64 * 6)
+    o->nv = 64 * 6;
+  memcpy(dst, vb + fill0, (size_t)o->nv * sizeof *vb);
+  o->nsplit = PsyX_SplitCount() - split0;
+  if (o->nsplit > 63)
+    o->nsplit = 63;
+  for (i = 0; i <= o->nsplit; i++)
+    PsyX_SplitGet(split0 + i, o->split[i]);
+  /* the last split's count: the walk sets it after each packet (the first
+   * run's PsyX_ParseList did); the vertices' count stands for it */
+  o->split[o->nsplit][5] = 0;
+  o->env = activeDrawEnv;
+}
+
+int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m)) {
+  static u32 one[1 + 256];
+  const u32 len = m[0] >> 24;
+  int *fill, fill0, split0, r, bad = 0, ns;
+  int (*hook)(uintptr_t) = g_psyxPacketHook;
+  DRAWENV env0 = activeDrawEnv;
+  (void)PsyX_VertexBuffer(&fill);
+  if (PsyX_SplitStateSize() > (int)sizeof s_pc_state || len > 256)
+    return fast(m);
+  fill0 = *fill;
+  split0 = PsyX_SplitCount();
+  PsyX_SplitStateSave(s_pc_state);
+  /* PsyCross's own: the packet alone, as the end of a list */
+  one[0] = len << 24 | 0xFFFFFFu;
+  memcpy(one + 1, m + 1, len * 4);
+  g_psyxPacketHook = NULL;
+  PsyX_ParseList((u_long *)one);
+  g_psyxPacketHook = hook;
+  pc_take(&s_pc_out[0], s_pc_v[0], fill0, split0);
+  PsyX_SplitStateRestore(s_pc_state);
+  activeDrawEnv = env0;
+  r = fast(m);
+  if (!r)
+    return 0; /* not taken: PsyCross parses it, as above */
+  pc_take(&s_pc_out[1], s_pc_v[1], fill0, split0);
+  s_pc.packets++;
+  s_pc.tris += (unsigned)(s_pc_out[1].nv / 3);
+  ns = s_pc_out[0].nsplit;
+  if (s_pc_out[0].nv != s_pc_out[1].nv || s_pc_out[0].nsplit != s_pc_out[1].nsplit)
+    bad = 1;
+  else if (memcmp(s_pc_v[0], s_pc_v[1], (size_t)s_pc_out[0].nv * sizeof(GrVertex)))
+    bad = 2;
+  else if (memcmp(s_pc_out[0].split, s_pc_out[1].split, (size_t)(ns + 1) * sizeof s_pc_out[0].split[0]))
+    bad = 3;
+  else if (memcmp(&s_pc_out[0].env, &s_pc_out[1].env, sizeof(DRAWENV)))
+    bad = 4;
+  if (bad && s_pc.bad++ < 20 && s_log) {
+    s_log("native draw parse check: packet %llu (len %u, first command %08x): %s differ "
+          "(vertices %d/%d, splits %d/%d)", s_pc.packets, len, m[1],
+          bad == 1 ? "counts" : bad == 2 ? "vertices" : bad == 3 ? "splits" : "draw environments",
+          s_pc_out[0].nv, s_pc_out[1].nv, s_pc_out[0].nsplit, s_pc_out[1].nsplit);
+    if (bad == 2) {
+      int i;
+      for (i = 0; i < s_pc_out[0].nv; i++)
+        if (memcmp(&s_pc_v[0][i], &s_pc_v[1][i], sizeof(GrVertex))) {
+          const u32 *x = (const u32 *)&s_pc_v[0][i], *y = (const u32 *)&s_pc_v[1][i];
+          s_log("  vertex %d: %08x %08x %08x %08x %08x / %08x %08x %08x %08x %08x", i, x[0], x[1],
+                x[2], x[3], x[4], y[0], y[1], y[2], y[3], y[4]);
+          break;
+        }
+    }
+  }
+  return 1;
+}
+
+void nd_pcheck_report(void) {
+  if (g_nd_pcheck && s_log)
+    s_log("native draw parse check: %llu packets parsed both ways, %llu differ; %llu triangles",
+          s_pc.packets, s_pc.bad, s_pc.tris);
 }
