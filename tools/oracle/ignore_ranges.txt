@@ -260,3 +260,15 @@ ret MobyGetAnimatedVertex
 ret func_80052F38
 ret func_800530C0
 ret MobyUpdateShadow
+# The shadows, the flame and the particle renderers (D95) are void
+# (include/renderers.h 110, 113, 126, 194, 199, 202) and called only from C,
+# as statements (src/gamestates/draw.c 610-621, 911, 1660, 1804-2000,
+# 2320, 2734); no asm calls them. The asm leaves whatever its last loop
+# held in v0/v1; the hand C (src/game/shadows_hand.c, flame_hand.c,
+# particles_hand.c) returns 0.
+ret func_80059A48
+ret func_80059F8C
+ret func_80058D64
+ret func_800573C8
+ret func_80058BA8
+ret func_80058864

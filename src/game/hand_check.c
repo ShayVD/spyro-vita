@@ -35,7 +35,7 @@ static unsigned char *s_before, *s_reg;
 static unsigned char s_scr_before[sizeof g_psx_scratch], s_scr_reg[sizeof g_psx_scratch];
 static GTERegisters s_gte_before, s_gte_reg;
 
-enum { MAX_NAMES = 8 };
+enum { MAX_NAMES = 16 };
 static struct {
   const char *name;
   unsigned long calls, bad, audited;
@@ -64,7 +64,7 @@ static void report_diff(const char *name, unsigned long call) {
   unsigned n = 0, i;
   if (!s_log)
     return;
-  s_log("hand check: %s call %lu: fast_render 1 and 2 differ", name, call);
+  s_log("hand check: %s call %lu: the reference (fast_render=1, or the mips2c unit) and fast_render=2 differ", name, call);
   for (i = 0; i < PSX_RAM_SIZE && n < 8; i += 4) {
     u32 a, b;
     memcpy(&a, s_reg + i, 4);
