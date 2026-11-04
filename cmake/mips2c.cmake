@@ -214,12 +214,15 @@ set(M2C_RENDER_HAND
   asm/renderers/r_particles.s:func_80058AE8
   asm/renderers/r_particles.s:func_80058B60
   asm/renderers/r_particles.s:func_80058B68)
-# Entry labels of the asm reached only from inside their unit, with their
-# own register conventions (the sky's clipping helpers, their jump tables):
-# the hand C has them inside the functions above, the unit keeps them under
-# their own names (only its fallback code and the oracle replay's samples
-# of them reach them). Counted with the hand C by tools/native_audit.py.
+# Entry labels of the asm reached only from inside their unit (the sky's
+# clipping helpers, with their own register conventions, and their jump
+# tables; the glows and sparkles, called only by func_80058BA8): the hand C
+# has them inside the functions above, the unit keeps them under their own
+# names (only its fallback code and the oracle replay's samples of them
+# reach them). Counted with the hand C by tools/native_audit.py.
 set(M2C_RENDER_INNER
+  asm/renderers/r_particles.s:func_800580F4
+  asm/renderers/r_particles.s:func_800584C4
   asm/renderers/r_cyclorama.s:func_8004F7E8
   asm/renderers/r_cyclorama.s:D_8004F890
   asm/renderers/r_cyclorama.s:func_8004FDAC
