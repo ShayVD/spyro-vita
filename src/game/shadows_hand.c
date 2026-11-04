@@ -414,7 +414,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     AT32(prim + 0x24) = xb;
     AT32(prim + 0x8) = 0u;
     AT32(prim + 0x4) = 0xE1000640u; /* draw mode: subtract, tpage 0x640 */
-    AT32(prim + 0x0) = (MIPS_ARENA_TAG(0x82000000u) ^ prim) + 0xCu;
+    AT32(prim + 0x0) = MEM_TAG_LINK_AT(MEM_TAG(0x82000000u), prim, 0xCu);
     AT32(prim + 0xC) = 0x6000000u;
     depth -= bias;
     if ((s32)depth < 0)

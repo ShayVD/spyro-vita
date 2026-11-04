@@ -929,7 +929,8 @@ static inline u32 FadeColourN(NgteSync *s, u32 near_addr, u32 far_addr, u32 f) {
 
 /* The two subdivision lists the high-poly pass fills: a sector's address
  * >> 2 (positive), then its polygons' addresses | 1 (a vertex's projection
- * overflowed) | 2 (a triangle). */
+ * overflowed) | 2 (a triangle). psx_mem.h MEM_SUBDIV_* (D100): the native
+ * build's arena may be below 2 GB, so its header is the sector's offset. */
 typedef struct {
   u32 l2x2, l4x4;
 } SubdivLists;
@@ -1544,7 +1545,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
 
     queue_2x2:
       if (!(sraw & 1))
-        AT32(l2x2) = sraw >> 2, l2x2 += 4;
+        AT32(l2x2) = MEM_SUBDIV_HDR(sraw), l2x2 += 4;
       sraw |= 1;
       AT32(l2x2) = ((poly - kdelta) + (err >> 4)) | tri;
       l2x2 += 4;
@@ -1552,7 +1553,7 @@ static u32 DrawHighSectors(u32 fp, u32 ot, SubdivLists *lists) {
       continue;
     queue_4x4:
       if (!(sraw & 2))
-        AT32(l4x4) = sraw >> 2, l4x4 += 4;
+        AT32(l4x4) = MEM_SUBDIV_HDR(sraw), l4x4 += 4;
       sraw |= 2;
       AT32(l4x4) = ((poly - kdelta) + (err >> 4)) | tri;
       l4x4 += 4;
@@ -1593,7 +1594,7 @@ typedef struct {
 } SubdivSector;
 
 static inline void SubdivHeader(u32 entry, SubdivSector *h) {
-  u32 sec = MIPS_KUSEG(entry << 2);
+  u32 sec = MEM_SUBDIV_SEC(entry);
   u32 w = AT32(sec + SEC_ORIGIN), w3 = AT32(sec + SEC_ORIGIN_Z), counts;
   h->oz = (w >> 14) - CFC2(C_RBK);
   h->ox = CFC2(C_GBK) - ((w & 0xFFFF) << 2);
@@ -1613,7 +1614,7 @@ static inline u32 SubdivNext(u32 *list, u32 fp, SubdivSector *h) {
     e = 0;
   if (!e)
     return 0;
-  if ((s32)e >= 0) {
+  if (MEM_SUBDIV_IS_HDR(e)) {
     SubdivHeader(e, h);
     e = AT32(*list);
     *list += 4;

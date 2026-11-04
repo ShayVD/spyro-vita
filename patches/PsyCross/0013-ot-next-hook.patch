@@ -1,0 +1,23 @@
+diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -198,7 +198,18 @@
+ extern uintptr_t g_psx_arena_base;
+ #endif
+ #define isendprim(p) 		((((P_TAG *)(p))->addr)==0xffffff)
+-#define nextPrim(p)  		(void *)(g_psx_arena_base | (((P_TAG *)(p))->addr))
++/* A link's primitive (decisions D100): SPYRO_OT_NEXT(addr) gives its host
++ * address. The arena build's: base | link. The native build's arena may sit
++ * anywhere, so its link is the address's low 24 bits, relative to the base
++ * (the port's src/game/psx_mem.h MEM_OT_NEXT). */
++#ifndef SPYRO_OT_NEXT
++#if SPYRO_NATIVE_MEM
++#define SPYRO_OT_NEXT(a)	(g_psx_arena_base + (((u_int)(a) - (u_int)g_psx_arena_base) & 0xffffff))
++#else
++#define SPYRO_OT_NEXT(a)	(g_psx_arena_base | (a))
++#endif
++#endif
++#define nextPrim(p)  		(void *)SPYRO_OT_NEXT(((P_TAG *)(p))->addr)
+ 
+ #define setaddr(p, _addr)	(((P_TAG *)(p))->addr = (u_int)((u_int*)_addr))
+ #define getaddr(p)   		(u_int)(((P_TAG *)(p))->addr)

@@ -68,15 +68,29 @@ endif()
 # of PS1 RAM in translated code (D25). SPYRO_ARENA_AT, another 16 MB-aligned
 # address above 2 GB, runs that moved model on linux32 too, where the host's
 # checks can test it (D97).
+# The native build (docs/native-plan.md stage 4, decisions D97, D100): no
+# mips2c unit linked, so no aliases of PS1 RAM (MIPS_KUSEG and HPTR are plain
+# casts); every packed or tagged address decodes in src/game/psx_mem.h,
+# relative to the arena's base, so SPYRO_ARENA_AT may be any page, below
+# 2 GB too. The oracle replay stays on the arena build.
+option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM, any base (D100)" OFF)
 set(SPYRO_ARENA_AT "0x80000000" CACHE STRING
     "linux32: the arena's host address; not 0x80000000 = the Vita's moved arena (D97)")
 if(SPYRO_HOST STREQUAL "vita")
   set(SPYRO_ARENA_MOVED ON)
 elseif(SPYRO_ARENA_AT MATCHES "^0x[0-9A-Fa-f]+$")
   math(EXPR arena_at "${SPYRO_ARENA_AT}" OUTPUT_FORMAT HEXADECIMAL)
-  math(EXPR arena_low "${SPYRO_ARENA_AT} & 0x80FFFFFF" OUTPUT_FORMAT HEXADECIMAL)
-  if(NOT arena_low STREQUAL "0x80000000")
-    message(FATAL_ERROR "SPYRO_ARENA_AT ${SPYRO_ARENA_AT}: needs 16 MB alignment and bit 31")
+  if(SPYRO_NATIVE_MEM)
+    # the native build (D100) needs no alignment and no bit 31: a page
+    math(EXPR arena_low "${SPYRO_ARENA_AT} & 0xFFF" OUTPUT_FORMAT HEXADECIMAL)
+    if(NOT arena_low STREQUAL "0x0")
+      message(FATAL_ERROR "SPYRO_ARENA_AT ${SPYRO_ARENA_AT}: needs page alignment")
+    endif()
+  else()
+    math(EXPR arena_low "${SPYRO_ARENA_AT} & 0x80FFFFFF" OUTPUT_FORMAT HEXADECIMAL)
+    if(NOT arena_low STREQUAL "0x80000000")
+      message(FATAL_ERROR "SPYRO_ARENA_AT ${SPYRO_ARENA_AT}: needs 16 MB alignment and bit 31")
+    endif()
   endif()
   if(arena_at STREQUAL "0x80000000")
     set(SPYRO_ARENA_MOVED OFF)
@@ -90,16 +104,7 @@ endif()
 if(SPYRO_ARENA_MOVED)
   add_compile_definitions(SPYRO_ARENA_MOVED=1)
 endif()
-# The native build (docs/native-plan.md stage 4, decisions D97, D100): no
-# mips2c unit linked, so no aliases of PS1 RAM (MIPS_KUSEG and HPTR are plain
-# casts); every packed or tagged address decodes in src/game/psx_mem.h. Step
-# 4c keeps the arena at 0x80000000; the oracle replay stays on the arena
-# build.
-option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM (D100)" OFF)
 if(SPYRO_NATIVE_MEM)
-  if(SPYRO_ARENA_MOVED)
-    message(FATAL_ERROR "SPYRO_NATIVE_MEM: the arena stays at 0x80000000 until step 4d (D100)")
-  endif()
   add_compile_definitions(SPYRO_NATIVE_MEM=1)
 endif()
 # Debug: list the translated and hand C's accesses through an alias of PS1
