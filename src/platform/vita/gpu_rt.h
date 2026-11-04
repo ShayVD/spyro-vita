@@ -37,8 +37,12 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
                      unsigned char b);
 void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x, int dst_y);
 void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h);
-/* GR_UpdateVertexBuffer with the vcache's answers from `side` */
-void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count);
+/* GR_UpdateVertexBuffer with the vcache's answers from `side`, and the walk's
+ * direct triangles (dr: ndr pairs of vertex indices, nd_direct, D99) */
+void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
+                 const uint32_t *dr, int ndr);
+/* gpu_meter.c: microseconds inside sceGxmBeginScene and sceGxmEndScene (D99) */
+extern uint64_t g_gxm_scene_us;
 void gl_flush_draws(void); /* the draws gpu_join holds, to the GPU (D74) */
 int gl_vcache_side_used(void); /* persp or subpixel: draws read the vcache's answers */
 int gl_gpu_init(void);

@@ -396,3 +396,25 @@ Stage 0's K1–K3 (`docs/native-plan.md` §3.3, §3.4) on this branch's VPK, una
 - X6 and X7: `tools/vita/fps60_summary.py` per level, as O2 (D81).
 
 **Ran** on 2026-11-04 (D98, approved by the owner; `logs/hw-x1`…`x7` of the ngte-last-renderers worktree): all seven reached `frames=`, no crash dump. X1, X2, X4 and X5: all 18 pictures and the memory card identical. `fx` and `particles`, ms per vblank over the route: X2 0.032, 0.017; X1 0.017, 0.010; X4 0.021, 0.010; X5 0.027, 0.012 (D98's native maths slower, so `ngte_fx` stays 0). X4's split: 9.73 ms per vblank, the measured emulation layers 64%. Toasty at 60 fps (X7): 0.1 late vblanks per 300, as O2.
+
+## Runs Y1–Y4: direct vertices (D99)
+
+D99's `nd_direct=1` (the walk leaves its triangles in the GL's lean form and the GL side draws them as they came) against `nd_direct=0` (main's path, `expand_lean`), from one VPK, so each pair differs by that switch alone.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| Y1 | `y1-k1-direct-off.txt` | X4's (every layer on the game thread, 30 fps), `nd_direct=0` | the K route with shots, virtual vblanks | 4–5 min |
+| Y2 | `y2-k1-direct-on.txt` | Y1 with `nd_direct=1` | as Y1 | 4–5 min |
+| Y3 | `y3-toasty60-direct-off.txt` | O2's (the shipped defaults at 60 fps, `gpu_meter=1`), `nd_direct=0` | the Toasty route, `REALTIME=1` | 7 min |
+| Y4 | `y4-toasty60-direct-on.txt` | Y3 with `nd_direct=1` | as Y3 | 7 min |
+
+**Unattended** (each run needs the owner's yes first; `hw_run.sh` leaves the run's eboot on the Vita, so put main's back afterwards). With `V` the absolute path of D99's VPK, `K=$PWD/tools/vita/hw-routes/k-route.pad`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`:
+- Y1: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y1 1500 @tools/vita/fps-runs/y1-k1-direct-off.txt @tools/vita/hw-routes/n-gte-k.cfg`
+- Y2: the same with `y2-k1-direct-on.txt` into `logs/hw-y2`
+- Y3: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y3 1500 @tools/vita/fps-runs/y3-toasty60-direct-off.txt @tools/vita/hw-routes/o-toasty.cfg`
+- Y4: the same with `y4-toasty60-direct-on.txt` into `logs/hw-y4`
+
+**What to read:**
+- Y1 and Y2 take their 18 pictures at the same vblanks: both sets and the memory cards must be identical.
+- `python3 tools/vita/native_share.py logs/hw-yN/spyro.log --fps 30 --all`, the part means as in `docs/native-plan.md` §3.5: Y1 against Y2 is the CPU per vblank before and after. The `gpu parts` lines split the GL side (vertex buffers, expand, the draws' work, the logs, the GL calls, the time in `sceGxmBeginScene`/`EndScene`).
+- Y3 and Y4: `tools/vita/fps60_summary.py` per level, and the `render` lines' busy time per picture.

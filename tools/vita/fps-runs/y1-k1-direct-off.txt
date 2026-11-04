@@ -1,0 +1,14 @@
+# Run Y1 (D99, docs/native-plan.md §3.5): X4 (x4-k1-fr2.txt) on D99's VPK with nd_direct=0: every
+# layer on the game thread at 30 fps, the walk's vertices re-made by the GL side (expand_lean) as on
+# main. Y2 is the same with nd_direct=1; the pair gives the CPU per vblank before and after. Unattended:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y1 1500 \
+#     @tools/vita/fps-runs/y1-k1-direct-off.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+ngte_fx=0
+gpu_time=0
+dynres=0
+nd_direct=0

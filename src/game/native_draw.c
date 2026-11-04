@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "PsyX/PsyX_render.h"
+#include "psx_lean.h"
 #include "psx_walk.h"
 
 extern DRAWENV activeDrawEnv; /* PsyX_GPU.cpp */
@@ -31,6 +32,39 @@ static unsigned s_lists, s_lists_native;
 static unsigned s_markers, s_records, s_e1, s_emitted;
 /* packets the walk parsed itself, by GP0 class: polygons, lines, rectangles, other */
 static unsigned s_other[4];
+
+/* Direct vertices (D99): the vertex buffer's direct ranges, and the walk's
+ * counts: direct triangles, those the GPU skips (left as they are), lists
+ * walked direct, triangles left for want of a range */
+int g_nd_direct;
+int g_nd_direct_ok;
+int g_nd_dcheck;
+static struct {
+  u32 n;
+  u32 r[ND_DR_MAX][2];
+} s_dr;
+static unsigned s_dr_tris, s_dr_skipped, s_dr_full;
+
+static void dr_clear(void) { s_dr.n = 0; }
+
+int nd_direct_ranges(const u32 **r) {
+  *r = &s_dr.r[0][0];
+  return (int)s_dr.n;
+}
+
+/* the triangle at vertex i into the ranges: 0 if there's no room */
+static inline int dr_add(u32 i) {
+  if (s_dr.n && s_dr.r[s_dr.n - 1][1] == i) {
+    s_dr.r[s_dr.n - 1][1] = i + 3;
+    return 1;
+  }
+  if (s_dr.n == ND_DR_MAX)
+    return 0;
+  s_dr.r[s_dr.n][0] = i;
+  s_dr.r[s_dr.n][1] = i + 3;
+  s_dr.n++;
+  return 1;
+}
 
 /* 1 MB a pool: a frame of the heaviest levels writes ~300 KB (D82) */
 #define POOL_WORDS (256u * 1024u)
@@ -63,6 +97,7 @@ void nd_init(void (*log)(const char *fmt, ...)) {
   cursor_at(&g_nd_pool[0]);
   g_nd.key = g_nd.id << 21;
   g_psyxPacketHook = nd_packet;
+  g_psyxClearSplitsHook = dr_clear;
 }
 
 void nd_begin(void) {
@@ -109,7 +144,11 @@ void nd_list_linked(void) {
     if (p->n > s_peak)
       s_peak = p->n;
   }
-  g_psx_walk_nd = g_native_draw; /* the walk's mode for the list just linked */
+  /* the walk's mode for the list just linked, and whether it is walked
+   * direct (D99): only when the renderer takes it now */
+  g_psx_walk_nd = g_native_draw;
+  if (g_native_draw && g_nd_direct && g_nd_direct_ok)
+    g_psx_walk_nd |= g_nd_direct == 2 ? ND_WALK_RANGES : ND_WALK_DIRECT;
   if (g_nd_ab)
     ab_next();
   g_nd_cur ^= 1;
@@ -156,13 +195,42 @@ typedef struct {
   int *fill;
   u32 prev, dmask;
   int ox, oy;
+  u32 direct; /* the list's ND_WALK_* bits (D99) */
 } Em;
+
+/* host --nd-direct-check: the bits a packet is parsed with, both ways (-1:
+ * the list's) */
+static int s_dc_force = -1;
 
 static void em_begin(Em *e) {
   e->vb = PsyX_VertexBuffer(&e->fill);
   e->prev = ~0u;
   draw_offset(&e->ox, &e->oy);
   e->dmask = activeDrawEnv.dtd ? 1u << 24 : 0;
+  e->direct = (u32)(s_dc_force >= 0 ? s_dc_force : psx_walk_nd()) & (ND_WALK_DIRECT | ND_WALK_RANGES);
+}
+
+/* D99: the triangles just made at vertex i (nt of them, at v), each one the
+ * GPU doesn't skip in the renderer's lean form (ND_WALK_DIRECT) and in the
+ * ranges, or only in the ranges (ND_WALK_RANGES, the Vita's check). A
+ * skipped one, or one with no range left, stays as it is: the renderer
+ * converts it, as it does PsyCross's. */
+static void em_direct(const Em *e, GrVertex *v, u32 i, u32 nt) {
+  u32 k;
+  for (k = 0; k < nt; k++, i += 3) {
+    u32 *const t = (u32 *)(v + 3 * k);
+    if (lean_skipped(t)) {
+      s_dr_skipped++;
+      continue;
+    }
+    if (!dr_add(i)) {
+      s_dr_full++;
+      continue;
+    }
+    if (e->direct & ND_WALK_DIRECT)
+      lean_direct_tri(t);
+    s_dr_tris++;
+  }
 }
 
 /* One primitive (kind; b: its words after the tag, as the PS1 primitive
@@ -292,10 +360,10 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
       v[5] = v[2];
       v[2] = v[3];
       v[3] = v[1];
-      *fill += 6;
-    } else {
-      *fill += 3;
     }
+    if (e->direct)
+      em_direct(e, v, (u32)*fill, n == 4 ? 2 : 1);
+    *fill += n == 4 ? 6 : 3;
   }
   s_emitted++;
 }
@@ -359,22 +427,144 @@ static int fast_packet(const u32 *m) {
   return 1;
 }
 
+/* a marker's records (m: the marker) */
+static int marker_packet(const u32 *m) {
+  const u32 pool = m[1] >> 11 & 1;
+  emit(g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
+  return 1;
+}
+
+/* host --nd-direct-check (D99): the packet parsed by fn twice from the same
+ * state, without and with direct vertices. The splits, the draw
+ * environment and the vertex count must be the same; each triangle in the
+ * ranges the second way added must be the first way's after
+ * lean_direct_tri, and each one not in them the first way's as it was, and
+ * one the GPU skips (or none left for want of a range). What stays is the
+ * direct way's with nd_direct on, else the reference's. */
+static struct {
+  unsigned long long packets, tris, direct, bad;
+} s_dc;
+static GrVertex *s_dc_ref;
+static u32 s_dc_state[64];
+
+static int dcheck_packet(const u32 *m, int (*fn)(const u32 *m)) {
+  int *fill, fill0, fill1, split0, nsplit, i, bad = 0;
+  int ref_split[64][8];
+  GrVertex *const vb = PsyX_VertexBuffer(&fill);
+  const DRAWENV env0 = activeDrawEnv;
+  DRAWENV env1;
+  const u32 n0 = s_dr.n, end0 = n0 ? s_dr.r[n0 - 1][1] : 0;
+  u32 r = n0 ? n0 - 1 : 0;
+  if (!s_dc_ref)
+    s_dc_ref = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE);
+  if (!s_dc_ref || PsyX_SplitStateSize() > (int)sizeof s_dc_state)
+    return fn(m);
+  fill0 = *fill;
+  split0 = PsyX_SplitCount();
+  PsyX_SplitStateSave(s_dc_state);
+  s_dc_force = 0;
+  i = fn(m);
+  s_dc_force = -1;
+  if (!i)
+    return 0; /* not taken (fast_packet decides before it emits) */
+  fill1 = *fill;
+  nsplit = PsyX_SplitCount() - split0;
+  if (nsplit > 63)
+    nsplit = 63;
+  for (i = 0; i <= nsplit; i++)
+    PsyX_SplitGet(split0 + i, ref_split[i]);
+  ref_split[nsplit][5] = 0; /* the open split's count: the walk sets it after the packet */
+  env1 = activeDrawEnv;
+  memcpy(s_dc_ref, vb + fill0, (size_t)(fill1 - fill0) * sizeof(GrVertex));
+  PsyX_SplitStateRestore(s_dc_state);
+  activeDrawEnv = env0;
+  s_dc_force = ND_WALK_DIRECT;
+  fn(m);
+  s_dc_force = -1;
+  s_dc.packets++;
+  if (*fill != fill1 || PsyX_SplitCount() - split0 != nsplit)
+    bad = 1;
+  for (i = 0; !bad && i <= nsplit; i++) {
+    int got[8];
+    PsyX_SplitGet(split0 + i, got);
+    if (i == nsplit)
+      got[5] = 0;
+    if (memcmp(got, ref_split[i], sizeof got))
+      bad = 2;
+  }
+  if (!bad && memcmp(&activeDrawEnv, &env1, sizeof env1))
+    bad = 3;
+  /* the triangles: each in a range the direct way added, or not */
+  for (i = fill0; !bad && i + 3 <= fill1; i += 3) {
+    u32 want[15];
+    int in;
+    while (r < s_dr.n && s_dr.r[r][1] <= (u32)i)
+      r++;
+    in = r < s_dr.n && s_dr.r[r][0] <= (u32)i && (r >= n0 || (u32)i >= end0);
+    memcpy(want, s_dc_ref + (i - fill0), sizeof want);
+    s_dc.tris++;
+    if (in) {
+      lean_direct_tri(want);
+      s_dc.direct++;
+    } else if (!lean_skipped(want) && s_dr.n < ND_DR_MAX) {
+      bad = 4; /* a triangle left as it was that should have been direct */
+    }
+    if (!bad && memcmp(vb + i, want, sizeof want))
+      bad = 5;
+  }
+  if (!bad && (fill1 - fill0) % 3)
+    bad = 6;
+  if (bad && s_dc.bad++ < 20 && s_log) {
+    s_log("native draw direct check: packet %llu (len %u, first command %08x): %s (vertices "
+          "%d/%d, splits %d)", s_dc.packets, m[0] >> 24, m[1],
+          bad == 1   ? "counts differ"
+          : bad == 2 ? "splits differ"
+          : bad == 3 ? "draw environments differ"
+          : bad == 4 ? "a triangle not made direct"
+          : bad == 5 ? "vertices differ"
+                     : "not whole triangles",
+          fill1 - fill0, *fill - fill0, nsplit);
+    if (bad == 5) {
+      const u32 *x = (const u32 *)(s_dc_ref + (i - 3 - fill0)), *y = (const u32 *)(vb + i - 3);
+      s_log("  triangle at %d, first vertex: %08x %08x %08x %08x %08x / %08x %08x %08x %08x %08x",
+            i - 3, x[0], x[1], x[2], x[3], x[4], y[0], y[1], y[2], y[3], y[4]);
+    }
+  }
+  if (!(psx_walk_nd() & ND_WALK_DIRECT)) {
+    /* the reference stays */
+    memcpy(vb + fill0, s_dc_ref, (size_t)(fill1 - fill0) * sizeof(GrVertex));
+    s_dr.n = n0;
+    if (n0)
+      s_dr.r[n0 - 1][1] = end0;
+  }
+  return 1;
+}
+
+void nd_dcheck_report(void) {
+  if (g_nd_dcheck && s_log)
+    s_log("native draw direct check: %llu packets parsed both ways, %llu differ; %llu "
+          "triangles, %llu of them direct (D99)",
+          s_dc.packets, s_dc.bad, s_dc.tris, s_dc.direct);
+}
+
 int nd_packet(uintptr_t packet) {
   const u32 *m = (const u32 *)packet;
-  u32 w1, pool;
+  u32 w1;
   w1 = m[1];
   if ((m[0] >> 24) != 2 || (w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24)) {
     const u32 cls = w1 >> 29;
     if (g_nd_fast && !g_nd_fast_off && psx_walk_nd() &&
-        (g_nd_pcheck ? nd_pcheck_packet(m, fast_packet) : fast_packet(m)))
+        (g_nd_pcheck   ? nd_pcheck_packet(m, fast_packet)
+         : g_nd_dcheck ? dcheck_packet(m, fast_packet)
+                       : fast_packet(m)))
       return 1;
     s_other[cls == 1 ? 0 : cls == 2 ? 1 : cls == 3 ? 2 : 3]++;
     return 0;
   }
-  pool = w1 >> 11 & 1;
   s_markers++;
-  emit(g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
-  return 1;
+  if (g_nd_dcheck)
+    return dcheck_packet(m, marker_packet);
+  return marker_packet(m);
 }
 
 void nd_report(int vblank) {
@@ -388,6 +578,12 @@ void nd_report(int vblank) {
         vblank, s_lists, s_lists_native, s_records, s_markers, s_records - s_markers, s_e1,
         g_nd_fallback, s_emitted, (unsigned)(s_words * 4 / 1024), (unsigned)(s_peak * 4 / 1024),
         s_other[0], s_other[1], s_other[2], s_other[3], s_fast_packets, s_fast_polys);
+  if (s_dr_tris || s_dr_skipped || s_dr_full)
+    s_log("native draw %d: %u triangles %s direct, %u the GPU skips and %u past the ranges' room "
+          "left to the renderer (nd_direct=%d, D99)",
+          vblank, s_dr_tris, g_nd_direct == 2 ? "listed (not made)" : "made", s_dr_skipped,
+          s_dr_full, g_nd_direct);
+  s_dr_tris = s_dr_skipped = s_dr_full = 0;
   g_nd_fallback = 0;
   s_fast_packets = s_fast_polys = 0;
   s_lists = s_lists_native = s_records = s_markers = s_e1 = s_emitted = 0;

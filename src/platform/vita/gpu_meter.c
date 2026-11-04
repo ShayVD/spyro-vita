@@ -46,6 +46,8 @@
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 
+uint64_t g_gxm_scene_us; /* gpu_rt.h (D99) */
+
 typedef struct {
   volatile unsigned int *addr;
   unsigned int value;
@@ -107,6 +109,8 @@ int __wrap_sceGxmBeginScene(SceGxmContext *context, unsigned int flags,
                             SceGxmSyncObject *fragmentSyncObject,
                             const SceGxmColorSurface *colorSurface,
                             const SceGxmDepthStencilSurface *depthStencil) {
+  uint64_t t0;
+  int r;
   if (s_on) {
     const void *data = colorSurface ? sceGxmColorSurfaceGetData(colorSurface) : NULL;
     int i;
@@ -117,8 +121,11 @@ int __wrap_sceGxmBeginScene(SceGxmContext *context, unsigned int flags,
         break;
       }
   }
-  return __real_sceGxmBeginScene(context, flags, renderTarget, validRegion, vertexSyncObject,
-                                 fragmentSyncObject, colorSurface, depthStencil);
+  t0 = now_us();
+  r = __real_sceGxmBeginScene(context, flags, renderTarget, validRegion, vertexSyncObject,
+                              fragmentSyncObject, colorSurface, depthStencil);
+  __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
+  return r;
 }
 
 int __real_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vertexNotification,
@@ -126,8 +133,10 @@ int __real_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vert
 
 int __wrap_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vertexNotification,
                           const SceGxmNotification *fragmentNotification) {
+  const uint64_t t0 = now_us();
   int r = __real_sceGxmEndScene(context, vertexNotification, fragmentNotification);
   uint32_t w = s_w;
+  __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
   if (!s_on || !fragmentNotification || r < 0 || s_dead)
     return r;
   if (w - __atomic_load_n(&s_r, __ATOMIC_ACQUIRE) >= RINGN) {

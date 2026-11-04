@@ -16,6 +16,9 @@
 # parses with the records' converter is parsed by PsyCross too, "native draw
 # parse check" lines); MODE=chkp the per-call check with native_draw=1 and the
 # parse check of the other producers' packets.
+# MODE=dir runs native_draw=1 with direct vertices and their check (D99: every
+# packet the walk parses itself both ways, "native draw direct check" lines);
+# MODE=dir2 the same with native_draw=2.
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 cd "$(dirname "$0")/.."
 P=$1; shift
@@ -31,7 +34,9 @@ run() { # NAME MODE
   case $n in demo) extra="$extra --wav $D/audio.wav";; esac
   case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";;
   p2) extra="$extra --native-draw-parse-check ${ND_ARGS:-}";;
-  chkp) extra="$extra --native-draw-check --native-draw-parse-check ${ND_ARGS:-}";; esac
+  chkp) extra="$extra --native-draw-check --native-draw-parse-check ${ND_ARGS:-}";;
+  dir) extra="$extra --native-draw --nd-direct --nd-direct-check ${ND_ARGS:-}";;
+  dir2) extra="$extra --native-draw-parse --nd-direct --nd-direct-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
@@ -57,6 +62,7 @@ for n in "$@"; do
   [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   grep -h "native draw check: func" $b/spyro.log | sed 's/^/  /'
   grep -h "native draw parse check: [0-9]" $b/spyro.log | sed 's/^/  /'
+  grep -h "native draw direct check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -c "differ (" $b/spyro.log | sed 's/^/  lines naming a difference: /'
   # vc: the host's pictures don't use the cache, so the files can't show it
   # missing; the hand renderers must feed it (D89)
