@@ -33,10 +33,10 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
   - stage 2 apart from its last piece: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita;
-  - stage 4's step 4a, the Vita's moved arena on the host (D97).
+  - stage 4's steps 4a–4c: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and the native build with no mips2c units (D100).
 - **In flight:**
   - **stage 2's last piece** (D99, session `stage2-direct-gl`): the records straight to vitaGL, without PsyCross's walk or `gpu_gl.c` interpreting PS1 GPU state. That's the 35% layer.
-  - **stage 4's steps 4b–4e** (D100, session `stage4-decode-sites`): every decode site named, the native build, any base address, the bit-31 tags in side fields.
+  - **stage 4's steps 4d–4e** (D100's second PR): any base address, and the bit-31 tags moved to bit 0 of the pointer.
 - **What I recommend next, after those:**
   1. **Measure D99 on hardware** (the owner's yes first): the K route with K1's switches, and X7's Toasty route at 60 fps. They say what's left of the translation and of the render thread, which decides how much stage 7 is worth.
   2. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
@@ -1136,7 +1136,7 @@ Status as of 2026-11-04 (D101). The payoff column gives the measured share each 
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
-| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a done (D97); 4b–4e in flight (D100); then 4f–4i |
+| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a–4c done (D97, D100); 4d–4e in review (D100); then 4f–4i |
 | 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | planned (D101); 7a and 7b next |
 | 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
 
