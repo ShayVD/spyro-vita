@@ -740,6 +740,8 @@ On hardware (R1/R2, D84): the WAVs are byte-identical, and the mixer's CPU on co
 
 **Optional:** yes.
 
+**Status (D93, 2026-11-04): built behind `cd_native=1` (`--cd-native` on the host), default off; hardware runs U1/U2 prepared, not run.** `src/platform/common/cdnative.c` (500 lines) with `psx_cd_locate()` in `libcd.c`: a CdRead is one read of a file at an offset per file it touches, on a worker thread (core 1 on the Vita, where `xa_ahead`'s reader was), completing at the same tick; the XA stream is read ahead from where it starts in a ring of four 32-sector chunks that keep the subheaders and the sectors the filter plays, with the PCM decode for `mixer=3`, in place of `xa_ahead.c`'s windows. Both layouts. The same bytes: `test_cd` compares every sector of the disc and the stream's answers; host checks 287/287 files and the gems route 22/22 identical to main, from the image too; both attract demos tick for tick against the emulator; Vita3K 17/17 shots, the WAV and the card identical from both layouts. File-system calls in Vita3K's gems run: 3,081 → 27 (extracted files), 102 → 38 (image); the game thread's wait for its CdReads 56 → 19 ms (files), 7–11 → 13–36 ms (image, noisy). Vita3K's times aren't a memory card's: U1/U2 give the hardware's. Left: the hardware runs, then the default, then removing `xa_ahead.c` and the sector paths.
+
 ### Stage 7: logic decoupled from PS1 vblank timing (large, high risk, last)
 
 **Replaces** (E):
