@@ -207,7 +207,7 @@ static void RotateMatrix(u32 m[5], u32 angles) {
 static u32 PartStreams(u32 *streams, u32 anim, u32 frame_no, int part, u32 *frame_out) {
   const u8 *hdr = HPTR(const u8, anim);
   u32 fw = ((const u32 *)(hdr + AN_FRAMES))[frame_no];
-  u32 frame = ((fw << 11) >> 10) + (u32)g_psx_arena_base;
+  u32 frame = MEM_ANIM_HALF(fw);
   u32 data = frame + 0x18;
   u32 w2 = AT32(frame + 0x8);
   u32 deltas = *(const u32 *)(hdr + AN_DELTAS);

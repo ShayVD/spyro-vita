@@ -88,3 +88,45 @@ __attribute__((destructor)) static void m2c_prof_write(void) {
   fclose(f);
 }
 #endif
+
+#if SPYRO_KUSEG_AUDIT
+/* mips2c_rt.h: the sites where MIPS_KUSEG changed an address (D100). */
+#include <string.h>
+typedef struct {
+  const char *file;
+  int line;
+  unsigned n;
+  u32 first;
+} KusegSite;
+static KusegSite s_kuseg[1024];
+static int s_kuseg_n;
+
+static void kuseg_report(void) {
+  int i;
+  for (i = 0; i < s_kuseg_n; i++)
+    fprintf(stderr, "kuseg-audit %s:%d n=%u first=%08x\n", s_kuseg[i].file, s_kuseg[i].line,
+            s_kuseg[i].n, (unsigned)s_kuseg[i].first);
+  fprintf(stderr, "kuseg-audit sites=%d\n", s_kuseg_n);
+}
+
+u32 mips2c_kuseg_audit(u32 a, u32 mapped, const char *file, int line) {
+  int i;
+  if (mapped == a)
+    return a;
+  for (i = 0; i < s_kuseg_n; i++)
+    if (s_kuseg[i].line == line && strcmp(s_kuseg[i].file, file) == 0) {
+      s_kuseg[i].n++;
+      return mapped;
+    }
+  if (s_kuseg_n == 0)
+    atexit(kuseg_report);
+  if (s_kuseg_n < 1024) {
+    s_kuseg[s_kuseg_n].file = file;
+    s_kuseg[s_kuseg_n].line = line;
+    s_kuseg[s_kuseg_n].n = 1;
+    s_kuseg[s_kuseg_n].first = a;
+    s_kuseg_n++;
+  }
+  return mapped;
+}
+#endif

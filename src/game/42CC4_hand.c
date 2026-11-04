@@ -27,6 +27,7 @@
 #include "math_hand.h"
 #include "moby.h"
 #include "psx_arena.h"
+#include "psx_mem.h"
 #include "rand.h"
 #include "renderers.h"
 #include "variables.h"
@@ -359,7 +360,7 @@ static void UpdateCollision(Moby *pMoby) {
   pMoby->m_CollisionGroup = FrameCollisionModel(model, a->m_Animation, a->m_Frame);
   pMoby->m_CollisionRegion = -1;
   if (first) {
-    int region = MobyCell(pMoby) + ((int)first < 0 ? 0 : 0x400);
+    int region = MobyCell(pMoby) + (MEM_COLL_TAGGED(first) ? 0 : 0x400);
     pMoby->m_CollisionRegion = region;
     ChainLink(pMoby, region);
   }
@@ -445,7 +446,7 @@ void func_800529E4(Moby *pMoby, int pFlags) { func_800529E4_gen(pMoby, pFlags); 
 
 /* A frame's vertex words: the frame word's 21-bit offset into RAM. */
 static const u_int *FrameVertices(const AnimationHeader *anim, int frame) {
-  return (const u_int *)PSX_ARENA(0x80000000u | (anim->m_Frames[frame].m.m_Data & 0x1FFFFF));
+  return (const u_int *)MEM_ANIM21(anim->m_Frames[frame].m.m_Data);
 }
 
 /* A vertex word: z in bits 21-31, x in 11-21, y in 0-11 doubled, each
@@ -533,7 +534,7 @@ static void SpyroVertex(int pVertex, Vector3D *pOut, int pAnimation, int pFrame)
   const AnimationHeader *anim = SPYRO_MODEL->m_Animations[pAnimation];
   u_int frame = ((const u_int *)anim->m_Frames)[pFrame];
   int wide = (frame >> 21) & 1, x = 0, y = 0, z = 0;
-  const u_char *data = PSX_ARENA(0x80000000u | ((frame & 0x1FFFFF) << 1));
+  const u_char *data = (const u_char *)MEM_ANIM_HALF(frame);
   const int *base = anim->m_AnimationVertices;
   const short *entries = (const short *)(data + 0x18);
   const u_char *bytes = data + 0x18 + (((const u_int *)data)[2] >> 20);

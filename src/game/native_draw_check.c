@@ -87,7 +87,7 @@ static void slots_save(void) {
 }
 
 static u32 *link_of(u32 packet) {
-  return (u32 *)(g_psx_arena_base | (AT32_ND(MIPS_KUSEG(packet)) & 0xFFFFFFu));
+  return (u32 *)MEM_OT_NEXT(AT32_ND(MIPS_KUSEG(packet)));
 }
 
 /* The packets this call appended, in the OT walk's order, copied (with

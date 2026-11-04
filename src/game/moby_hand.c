@@ -783,7 +783,7 @@ static void RestoreFaces(void) {
   u32 e;
   while ((e = *save++) != 0) {
     u32 n = e & 0xFF;
-    u32 *face = HPTR(u32, (e >> 8) | 0x80000000u);
+    u32 *face = (u32 *)(uintptr_t)MEM_ADDR24(e >> 8);
     while (n--)
       *face++ = *save++;
   }
@@ -884,7 +884,7 @@ static inline void ReplaceFaces(const RecState *s) {
 
 static inline VtxStream FrameStreams(const MobyFrame *f) {
   VtxStream v;
-  v.word = HPTR(const u32, f->m_Data & 0x1FFFFF);
+  v.word = (const u32 *)MEM_ANIM21(f->m_Data);
   v.half = (const s16 *)(v.word + f->m_ShortOffset);
   return v;
 }
@@ -1623,7 +1623,7 @@ static int LitMoby(u32 moby, u32 *shadow) {
     if (g_lod_pass)
       shadow_dist = 0;
     model_addr = AT32(g_Models + AT16(m + MOBY_CLASS) * 4);
-    model = HPTR(const LitModel, model_addr);
+    model = (const LitModel *)(uintptr_t)MEM_MODEL_PTR(model_addr);
     if ((s32)shadow_dist < 0) {
       AT32(*shadow) = moby; /* the shadow list: moby, shadow byte */
       if ((s32)(z - 0x1100) < 0) {
@@ -1678,7 +1678,7 @@ static int LitMoby(u32 moby, u32 *shadow) {
     clip = 0;
     angles = AT32(m + MOBY_ANGLES);
     model_addr = AT32(g_Models + AT16(m + MOBY_CLASS) * 4);
-    model = HPTR(const LitModel, model_addr);
+    model = (const LitModel *)(uintptr_t)MEM_MODEL_PTR(model_addr);
     r.r11r12 = 0x1000;
     r.r13r21 = 0;
     r.r22r23 = 0xA00;
@@ -1758,7 +1758,7 @@ static int LitMoby(u32 moby, u32 *shadow) {
   /* The vertex colours: each normal turned by the matrix, lit (CC) from the
    * moby's base colour, never darker than it. */
   c.colours = HPTR(const u8, model->m_Colors);
-  if (model_addr + 0x10 != (verts & 0x7FFFFFFF)) {
+  if (model_addr + 0x10 != MEM_SIMPLE_ADDR(verts)) {
     const u32 spec = AT32(m + MOBY_SPECULAR);
     const u32 base = AT32(PSX_ADDR(D_8006E3D8) + (u32)((s32)spec >> 22));
     const u32 floor = (base << 8) >> 8;
