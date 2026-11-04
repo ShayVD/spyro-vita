@@ -439,15 +439,22 @@ extern int g_math_shadow, g_math_shadow_fail;
 extern int g_mobys_shadow, g_mobys_shadow_fail;
 /* The gamestates' (gamestates_hand.c) runs in a child; host runs only. */
 extern int g_gs_shadow, g_gs_shadow_fail;
-#define COL_SHADOW_FAILS() (g_col_shadow_fail + g_math_shadow_fail + g_mobys_shadow_fail)
+/* And decisions D94's (cyclorama, moby lists, particle slots, images,
+ * func_8003BFC0, the credits: hand_shadow.h); SPYRO_REPLAY_HANDSHADOW=0
+ * turns it off. */
+extern int g_hand_shadow, g_hand_shadow_fail;
+void HandShadowReport(FILE *f);
+#define COL_SHADOW_FAILS() (g_col_shadow_fail + g_math_shadow_fail + g_mobys_shadow_fail + g_hand_shadow_fail)
 
 /* Outside the replay, SPYRO_SHADOW=LIST runs the named shadows (col, math,
- * mobys, gs) over a whole host run (a demo, a route, the tour), every call,
+ * mobys, gs, hand) over a whole host run (a demo, a route, the tour), every call,
  * and prints the mismatch counts at exit. The unit leaves its scratchpad
  * and GTE behind, as in the replay, so the run follows the unit's state. */
 static void shadow_report(void) {
-  fprintf(stderr, "shadow: col %d, math %d, mobys %d, gs %d mismatches\n", g_col_shadow_fail, g_math_shadow_fail,
-          g_mobys_shadow_fail, g_gs_shadow_fail);
+  fprintf(stderr, "shadow: col %d, math %d, mobys %d, gs %d, hand %d mismatches\n", g_col_shadow_fail,
+          g_math_shadow_fail, g_mobys_shadow_fail, g_gs_shadow_fail, g_hand_shadow_fail);
+  if (g_hand_shadow)
+    HandShadowReport(stderr);
 }
 
 __attribute__((constructor)) static void shadow_from_env(void) {
@@ -458,6 +465,7 @@ __attribute__((constructor)) static void shadow_from_env(void) {
   g_math_shadow = strstr(l, "math") != NULL;
   g_mobys_shadow = strstr(l, "mobys") != NULL;
   g_gs_shadow = strstr(l, "gs") != NULL;
+  g_hand_shadow = strstr(l, "hand") != NULL;
   atexit(shadow_report);
 }
 #else
@@ -679,6 +687,7 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
   g_col_shadow = !getenv("SPYRO_REPLAY_COLSHADOW") || atoi(getenv("SPYRO_REPLAY_COLSHADOW"));
   g_math_shadow = !getenv("SPYRO_REPLAY_MATHSHADOW") || atoi(getenv("SPYRO_REPLAY_MATHSHADOW"));
   g_mobys_shadow = !getenv("SPYRO_REPLAY_MOBYSHADOW") || atoi(getenv("SPYRO_REPLAY_MOBYSHADOW"));
+  g_hand_shadow = !getenv("SPYRO_REPLAY_HANDSHADOW") || atoi(getenv("SPYRO_REPLAY_HANDSHADOW"));
 #endif
   if (ignore)
     load_ignore(ignore);
