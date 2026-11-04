@@ -267,6 +267,8 @@ static inline void ngte_rtps_run(NgteSync *s, u32 n) {
 extern int g_hand_check;
 typedef u32 (*HandFn)(u32, u32, u32, u32);
 u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3);
+/* The same, also comparing the two results (functions returning a value). */
+u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3);
 
 /* The entry fast_render picks: 1 the hand C on the register file, 2 its
  * native-GTE build (NAME_ngte, from NAME_hand_ngte.c). */
@@ -351,5 +353,39 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
     return r_;                                                                 \
   }
 #endif
+
+/* The renderer units' other functions, written by hand after D95 (the
+ * culls, the sky's helpers, the environment's animations, the particle
+ * slots; decisions D96): one version, with no records, so no NGTE build.
+ * fast_render 0 runs the unit (NAME_gen), 1 and 2 the hand C;
+ * --fast-render-check compares each call with the unit (NAME_gen__m2c):
+ * RAM, the scratchpad and every GTE register. HAND takes the four argument
+ * registers. Otherwise as HAND_RENDERER_UNIT. */
+#define HAND_UNIT_FN(name, hand) HAND_UNIT_FN_(name, hand, hand_check)
+/* For a function whose callers read its result: the check compares it too. */
+#define HAND_UNIT_FN_V0(name, hand) HAND_UNIT_FN_(name, hand, hand_check_v0)
+#define HAND_UNIT_FN_(name, hand, check)                                       \
+  u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
+  u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
+  u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
+    if (!g_fast_render_ro)                                                     \
+      return name##_gen__m2c(a0, a1, a2, a3);                                  \
+    if (g_hand_check && g_fast_render_ro == 2)                                 \
+      return check(#name, name##_gen__m2c, hand, a0, a1, a2, a3);              \
+    return hand(a0, a1, a2, a3);                                               \
+  }                                                                            \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    u32 r_, sp_ = g_mips_sp;                                                   \
+    if (!g_fast_render_ro)                                                     \
+      return name##_gen(a0, a1, a2, a3, a4, a5, a6, a7);                       \
+    g_mips_sp = sp_ - 32u;                                                     \
+    M_U32(sp_ - 16u) = a4;                                                     \
+    M_U32(sp_ - 12u) = a5;                                                     \
+    M_U32(sp_ - 8u) = a6;                                                      \
+    M_U32(sp_ - 4u) = a7;                                                      \
+    r_ = name##__m2c(a0, a1, a2, a3);                                          \
+    g_mips_sp = sp_;                                                           \
+    return r_;                                                                 \
+  }
 
 #endif

@@ -197,7 +197,47 @@ set(M2C_RENDER_HAND
   asm/renderers/r_flame.s:func_80058D64
   asm/renderers/r_particles.s:func_800573C8
   asm/renderers/r_particles.s:func_80058BA8
-  asm/renderers/r_particles.s:func_80058864)
+  asm/renderers/r_particles.s:func_80058864
+  # D96: the units' other functions (render_hand.h HAND_UNIT_FN)
+  asm/renderers/r_moby.s:func_8001F158
+  asm/renderers/r_moby.s:func_800208FC
+  asm/renderers/r_environment.s:func_8002A6FC
+  asm/renderers/r_environment.s:EnvAnimSetFlags
+  asm/renderers/r_environment.s:EnvAnimGetState
+  asm/renderers/r_environment.s:EnvAnimSetFrame
+  asm/renderers/r_environment.s:func_8002B4AC
+  asm/renderers/r_cyclorama.s:func_8004F000
+  asm/renderers/r_cyclorama.s:func_8004F4BC
+  asm/renderers/r_cyclorama.s:func_8004FEA0
+  asm/renderers/r_cyclorama.s:func_80050240
+  asm/renderers/r_particles.s:func_8005882C
+  asm/renderers/r_particles.s:func_80058AE8
+  asm/renderers/r_particles.s:func_80058B60
+  asm/renderers/r_particles.s:func_80058B68)
+# Entry labels of the asm reached only from inside their unit, with their
+# own register conventions (the sky's clipping helpers, their jump tables):
+# the hand C has them inside the functions above, the unit keeps them under
+# their own names (only its fallback code and the oracle replay's samples
+# of them reach them). Counted with the hand C by tools/native_audit.py.
+set(M2C_RENDER_INNER
+  asm/renderers/r_cyclorama.s:func_8004F7E8
+  asm/renderers/r_cyclorama.s:D_8004F890
+  asm/renderers/r_cyclorama.s:func_8004FDAC
+  asm/renderers/r_cyclorama.s:func_8004FF90
+  asm/renderers/r_cyclorama.s:D_80050028
+  asm/renderers/r_cyclorama.s:func_8005060C
+  asm/renderers/r_cyclorama.s:D_800506B4)
+# Of M2C_RENDER_HAND, the hand C that is readable (no GTE, scratchpad or
+# register model: the asm uses none), for tools/native_audit.py's B1.
+set(M2C_RENDER_READABLE
+  asm/renderers/r_environment.s:EnvAnimSetFlags
+  asm/renderers/r_environment.s:EnvAnimGetState
+  asm/renderers/r_environment.s:EnvAnimSetFrame
+  asm/renderers/r_environment.s:func_8002B4AC
+  asm/renderers/r_particles.s:func_8005882C
+  asm/renderers/r_particles.s:func_80058AE8
+  asm/renderers/r_particles.s:func_80058B60
+  asm/renderers/r_particles.s:func_80058B68)
 set(M2C_RENDER_FILES)
 foreach(e ${M2C_RENDER_HAND})
   string(REPLACE ":" ";" e "${e}")
