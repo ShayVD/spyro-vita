@@ -79,6 +79,13 @@ static inline void hand_spill_regs(void) {
 #ifndef NGTE
 #define NGTE 0
 #endif
+/* The units written by hand after D80 (HAND_RENDERER_UNIT) have a third
+ * build, NAME_hand_ndr.c: NGTE 1 for native_draw's records with NGTE_MATH 0,
+ * the GTE register file as fast_render=1 has it (D95's fast_render=2). Their
+ * native GTE maths (D98) are in `#if NGTE_MATH` blocks, NAME_hand_ngte.c. */
+#ifndef NGTE_MATH
+#define NGTE_MATH NGTE
+#endif
 #include "gte_native.h"
 #define NGTE_TAIL 4
 
@@ -269,6 +276,11 @@ typedef u32 (*HandFn)(u32, u32, u32, u32);
 u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3);
 /* The same, also comparing the two results (functions returning a value). */
 u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3);
+/* The same for the units written by hand after D80 (D95, D98): the mips2c
+ * unit is the reference; fast_render=1's build and fast_render=2's each run
+ * from the same state and are compared with it. */
+u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2,
+                    u32 a3);
 
 /* The entry fast_render picks: 1 the hand C on the register file, 2 its
  * native-GTE build (NAME_ngte, from NAME_hand_ngte.c). */
@@ -315,25 +327,34 @@ u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u
 
 
 /* The renderers written by hand after D80 (the shadows, the flame, the
- * particles; decisions D95): one version, on the GTE register file, which
- * the NGTE build compiles again only to add native_draw's records. So
- * --fast-render-check compares each call with the mips2c unit itself
- * (NAME_gen__m2c) instead of fast_render=1's build: RAM, the scratchpad
- * and every GTE register must come out the same. Otherwise as
+ * particles; decisions D95): the register-file hand C, and since D98 its
+ * NGTE build with native GTE maths as well as native_draw's records. So
+ * --fast-render-check runs each call three ways from the same state, the
+ * mips2c unit itself (NAME_gen__m2c), fast_render=1's build and
+ * fast_render=2's, and compares both builds with the unit: RAM, the
+ * scratchpad and every GTE register must come out the same. Otherwise as
  * HAND_RENDERER. */
+/* fast_render=2's build of a unit: with ngte_fx (config.txt, host
+ * --ngte-fx; D98) the native GTE maths, else the register file */
+extern int g_ngte_fx;
+#define HAND_UNIT2(name) (g_ngte_fx ? name##_ngte : name##_ndr)
 #define HAND_PICK_UNIT(name, hand, a0, a1, a2, a3)                             \
   (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
-   : g_hand_check        ? hand_check(#name, name##_gen__m2c, name##_ngte, a0, a1, a2, a3) \
-   : g_nd_check          ? nd_check(#name, name##_ngte, a0, a1, a2, a3)         \
-                         : name##_ngte(a0, a1, a2, a3))
-#if NGTE
+   : g_hand_check        ? hand_check_unit(#name, name##_gen__m2c, hand, HAND_UNIT2(name), a0, a1, a2, a3) \
+   : g_nd_check          ? nd_check(#name, HAND_UNIT2(name), a0, a1, a2, a3)    \
+                         : HAND_UNIT2(name)(a0, a1, a2, a3))
+#if NGTE && NGTE_MATH
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif NGTE
+#define HAND_RENDERER_UNIT(name, hand)                                         \
+  u32 name##_ndr(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
 #else
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_ndr(u32, u32, u32, u32);                                          \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
       return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                       \

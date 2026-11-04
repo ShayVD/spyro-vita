@@ -366,3 +366,33 @@ Stage 3's third round, checked as Q and S were. The K route ran on main's VPK (W
 - All 18 pictures and the memory card identical; no crash dump.
 - `update` went from 0.204 to 0.189 ms per vblank.
 - The `sky` line counts the sky twice now: the hand set-up calls `func_8004EBA8` by name, and the profile wraps both functions.
+
+## Runs X1–X7: stage 0 again, and the last three renderers' native GTE maths (D98)
+
+Stage 0's K1–K3 (`docs/native-plan.md` §3.3, §3.4) on this branch's VPK, unattended on the K route instead of by hand, plus the shipped renderers on the game thread and the Toasty route at 30 and 60 fps. They answer two questions: what D95's hand C for the shadows, the flame and the particles bought against their mips2c units (X1 against X2, the `draw` lines' `fx` and `particles`), and D98's native GTE maths for them (X4 against X5); and how the CPU per vblank splits now between the game's own work and the emulation layers (`tools/vita/native_share.py` on X1, X4 and X5, against stage 0's K1 and the K route's N1, N2, W1 and W2).
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| X1 | `k1-native-cpu.txt` | 30 fps, `render_thread=0`, `parse_thread=0`, `fast_render=1`, `dynres=0` | the K route with shots, virtual vblanks | 4–5 min |
+| X2 | `k2-native-cpu-m2c.txt` | X1 with `fast_render=0` (the mips2c units and PsyCross's GTE) | the same | 5–6 min |
+| X3 | `k3-native-threads.txt` | the shipped threads at 30 fps, `fast_render=1`, `gpu_meter=1`, `dynres=0` | the K route without shots (`m1-xa-k.cfg`), `REALTIME=1` | 6–7 min |
+| X4 | `x4-k1-fr2.txt` | X1 with `fast_render=2`, `ngte_fx=0` (the shipped renderers) | as X1 | 4–5 min |
+| X5 | `x5-k1-fr2-fx.txt` | X4 with `ngte_fx=1` | as X1 | 4–5 min |
+| X6 | `x6-toasty-30.txt` | the shipped defaults at 30 fps, `gpu_meter=1` | the Toasty route, `REALTIME=1` | 7 min |
+| X7 | `o2-60-fr2.txt` | the shipped defaults at 60 fps (O2's), `gpu_meter=1` | the same | 7 min |
+
+**Unattended** (each run needs the owner's yes first; `hw_run.sh` leaves the run's eboot on the Vita, it doesn't put the previous one back). With `V=$PWD/logs/d98/d98-vpk-3.vpk` (an absolute path; SHA-1 `380897ae…`, D98 merged with main `e3fbfd3`) and `K=$PWD/tools/vita/hw-routes/k-route.pad`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`:
+- X1: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x1 1500 @tools/vita/fps-runs/k1-native-cpu.txt @tools/vita/hw-routes/n-gte-k.cfg`
+- X2, X4, X5: the same with `k2-native-cpu-m2c.txt`, `x4-k1-fr2.txt`, `x5-k1-fr2-fx.txt` into `logs/hw-x2`, `-x4`, `-x5`
+- X3: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x3 1500 @tools/vita/fps-runs/k3-native-threads.txt @tools/vita/hw-routes/m1-xa-k.cfg`
+- X6: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x6 1500 @tools/vita/fps-runs/x6-toasty-30.txt @tools/vita/hw-routes/o-toasty.cfg`
+- X7: the same with `o2-60-fr2.txt` into `logs/hw-x7`
+
+**What to read:**
+- X1, X2, X4 and X5 take their 18 pictures (9 shots and the GPU's own frame at each) at the same vblanks: all four sets and the memory cards must be identical, `fast_render` 0, 1 and 2 and `ngte_fx` 0 and 1 alike.
+- `python3 tools/vita/native_share.py logs/hw-xN/spyro.log --fps 30 --all`, and the part means as in `docs/native-plan.md` §3.5.
+- The `draw` lines' `fx` and `particles` ms per vblank, window by window (the same input in all four): X2 against X1 is D95, X4 against X5 is D98. On the K route they are small (0.03 and 0.016 ms per vblank in W1): read them as means over the route.
+- X3's `render` lines against X1's `raster` (the render thread's share of waiting), as §3.4 did for K3.
+- X6 and X7: `tools/vita/fps60_summary.py` per level, as O2 (D81).
+
+**Ran** on 2026-11-04 (D98, approved by the owner; `logs/hw-x1`…`x7` of the ngte-last-renderers worktree): all seven reached `frames=`, no crash dump. X1, X2, X4 and X5: all 18 pictures and the memory card identical. `fx` and `particles`, ms per vblank over the route: X2 0.032, 0.017; X1 0.017, 0.010; X4 0.021, 0.010; X5 0.027, 0.012 (D98's native maths slower, so `ngte_fx` stays 0). X4's split: 9.73 ms per vblank, the measured emulation layers 64%. Toasty at 60 fps (X7): 0.1 late vblanks per 300, as O2.

@@ -112,6 +112,10 @@
  *                       results; D72); fast_render=2: the hand-written
  *                       renderers with native GTE maths, the same results
  *                       again (D80)
+ *       ngte_fx=1       with fast_render=2, the shadows, the flame and the
+ *                       particles with native GTE maths too, the same
+ *                       results (D98; default 0: those three on the GTE
+ *                       register file, as D95 wrote them)
  *       gpu_direct=0    with gpu=1, each widescreen or 60 fps picture copied
  *                       into its slot and the screen cleared before it, as
  *                       before D69 (default 1: a picture that is one target
@@ -244,6 +248,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
+extern int g_ngte_fx;     /* src/game/mips2c_rt.c, D98 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
 extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
@@ -368,6 +373,8 @@ static void read_config(void) {
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
       g_fast_render = atoi(v);
+    else if (!strcmp(line, "ngte_fx"))
+      g_ngte_fx = atoi(v);
     else if (!strcmp(line, "gpu_direct"))
       g_vita_opts.gpu_direct = atoi(v);
     else if (!strcmp(line, "gpu_lean"))
@@ -508,6 +515,9 @@ int main(int argc, char **argv) {
            g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
            : g_fast_render    ? "hand-written renderers, inline GTE commands (D72)"
                               : "translated renderers, PsyCross's GTE_operator");
+  if (g_fast_render == 2)
+    vita_log("ngte_fx=%d: the shadows, flame and particles %s", g_ngte_fx,
+             g_ngte_fx ? "with native GTE maths (D98)" : "on the GTE register file (D95)");
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;

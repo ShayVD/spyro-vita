@@ -1,0 +1,14 @@
+# Run X4 (D98, docs/native-plan.md §3.5): K1 (k1-native-cpu.txt) with the shipped renderers,
+# fast_render=2: every layer on the game thread at 30 fps, so the "time", "draw" and "spu" lines
+# give today's split of the CPU per vblank between the game's own work and the emulation layers.
+# The shadows, flame and particles on the GTE register file (ngte_fx=0, the default). Unattended:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x4 1500 \
+#     @tools/vita/fps-runs/x4-k1-fr2.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+ngte_fx=0
+gpu_time=0
+dynres=0

@@ -1,0 +1,9 @@
+# Run X6 (D98): the shipped defaults at 30 fps (the threads on, fast_render=2), with D75's meter
+# (gpu_meter=1), on the Toasty route (tools/vita/hw-routes/o-toasty.cfg, D81). X7 is the same at
+# 60 fps (o2-60-fr2.txt). Real-time vblanks:
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-x6 1500 @tools/vita/fps-runs/x6-toasty-30.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=0
+gpu_meter=1
+fast_render=2
