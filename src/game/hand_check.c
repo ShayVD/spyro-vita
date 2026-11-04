@@ -90,7 +90,7 @@ static unsigned char *s_before, *s_reg;
 static unsigned char s_scr_before[sizeof g_psx_scratch], s_scr_reg[sizeof g_psx_scratch];
 static GTERegisters s_gte_before, s_gte_reg;
 
-enum { MAX_NAMES = 16 };
+enum { MAX_NAMES = 48 };
 static struct {
   const char *name;
   unsigned long calls, bad, bad1, audited;
@@ -178,10 +178,18 @@ static void audit_call(int k, HandFn reg, u32 a0, u32 a1, u32 a2, u32 a3, u32 sp
   s_stats[k].audited++;
 }
 
+static int s_in_check; /* a checked call inside another runs once (D96) */
+static int s_cmp_v0;    /* hand_check_v0: the results must match too */
+
 u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
   const int k = stat_index(name);
   const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
-  u32 sp = g_mips_sp, v1 = g_mips_v1, r;
+  const int cmp_v0 = s_cmp_v0;
+  u32 sp = g_mips_sp, v1 = g_mips_v1, r, rr;
+  s_cmp_v0 = 0;
+  if (s_in_check)
+    return native(a0, a1, a2, a3);
+  s_in_check = 1;
   if (sweep)
     sweep_begin();
   if (!s_before) {
@@ -191,7 +199,7 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
-  reg(a0, a1, a2, a3);
+  rr = reg(a0, a1, a2, a3);
   memcpy(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE);
   memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
   s_gte_reg = gteRegs;
@@ -205,9 +213,14 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   if (differs()) {
     if (s_stats[k].bad++ < 20)
       report_diff(name, s_stats[k].calls, "fast_render=1", "fast_render=2");
+  } else if (cmp_v0 && rr != r) {
+    if (s_stats[k].bad++ < 20 && s_log)
+      s_log("hand check: %s call %lu: v0 %08x (the mips2c unit) and %08x (the hand C) differ", name,
+            s_stats[k].calls, rr, r);
   }
   if (sweep)
     sweep_end();
+  s_in_check = 0;
   return r;
 }
 
@@ -216,6 +229,9 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
   const int k = stat_index(name);
   const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
   u32 sp = g_mips_sp, v1 = g_mips_v1, r;
+  if (s_in_check)
+    return native(a0, a1, a2, a3);
+  s_in_check = 1;
   s_stats[k].unit = 1;
   if (sweep)
     sweep_begin();
@@ -245,7 +261,14 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
     report_diff(name, s_stats[k].calls, "the mips2c unit", "fast_render=2");
   if (sweep)
     sweep_end();
+  s_in_check = 0;
   return r;
+}
+
+/* As hand_check, for a function whose result its callers read (D96). */
+u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
+  s_cmp_v0 = 1;
+  return hand_check(name, reg, native, a0, a1, a2, a3);
 }
 
 static const char *reg_name(int i) {

@@ -75,10 +75,11 @@ def asm_insns(path):
 
 
 def cmake_list(text, name):
-    m = re.search(r"set\(%s\b(.*?)\)" % re.escape(name), text, re.S)
+    # comments first: one with a ")" would end the list early (D96)
+    m = re.search(r"set\(%s\b(.*?)\)" % re.escape(name), re.sub(r"#.*", "", text), re.S)
     if not m:
         sys.exit(f"native_audit: no set({name} ...) in cmake/mips2c.cmake")
-    return [w for w in re.sub(r"#.*", "", m.group(1)).split() if not w.startswith("$")]
+    return [w for w in m.group(1).split() if not w.startswith("$")]
 
 
 def build_lists():
@@ -88,6 +89,11 @@ def build_lists():
     # math.s and 42CC4.s, D87; moby_lists.s, particle_alloc.s, images.s, D94)
     hand = cmake_list(text, "M2C_HAND") + cmake_list(text, "M2C_HAND_MULTI")
     render = [e.split(":") for e in cmake_list(text, "M2C_RENDER_HAND")]
+    # D96: the units' entry labels the hand C has inside other functions
+    # count with it; M2C_RENDER_READABLE's hand C is readable (B1)
+    render += [e.split(":") for e in cmake_list(text, "M2C_RENDER_INNER")]
+    readable = {e.split(":")[1] for e in cmake_list(text, "M2C_RENDER_READABLE")}
+    render = [(u, f, "B1" if f in readable else "B2") for u, f in render]
     nonmatch = sorted(os.path.relpath(p, S1) for p in
                       glob.glob(os.path.join(S1, "asm/nonmatchings/**/*.s"), recursive=True))
     return units, hand, render, nonmatch
@@ -142,7 +148,7 @@ def map_text(path):
 def original_code():
     """Rows (where, category, insns, functions) for the original game."""
     units, hand, render, nonmatch = build_lists()
-    render_funcs = {f for _, f in render}
+    render_funcs = {f: cat for _, f, cat in render}
     rows = []
     nm_by_obj = collections.defaultdict(list)
     for p in nonmatch:
@@ -172,7 +178,7 @@ def original_code():
                 if src in HAND_ASM_UNITS or src in hand:
                     cat = "B1"
                 elif f in render_funcs:
-                    cat = "B2"
+                    cat = render_funcs[f]
                 else:
                     cat = "C"
                 rows.append((where, cat, n, 1, f"{src}:{f}"))
@@ -218,8 +224,13 @@ GAME_FILES = {
            "gte_int.h", "math_hand.h", "pete_hand.c", "pete_dispatch_hand.c", "pete_state_hand.c",
            "pete_transition_hand.c", "memory.c", "order_table.c", "rand_psyq.c",
            "system_time.c", "hand_structs.h", "cyclorama_hand.c", "moby_lists_hand.c",
-           "particle_alloc_hand.c", "images_hand.c", "moby_helpers_hand.c", "credits_hand.c"],
-    "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h"],
+           "particle_alloc_hand.c", "images_hand.c", "moby_helpers_hand.c", "credits_hand.c",
+           "particle_slots_hand.c", "env_anim_hand.c", "env_anim_hand.h"],
+    "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h",
+           "env_hand_ngte.c", "moby_hand_ngte.c", "pete_render_hand_ngte.c", "sky_hand_ngte.c",
+           "shadows_hand.c", "shadows_hand_ngte.c", "flame_hand.c", "flame_hand_ngte.c",
+           "particles_hand.c", "particles_hand_ngte.c",
+           "moby_cull_hand.c", "env_update_hand.c", "sky_clip_hand.c"],
     "C": ["mips2c_rt.c", "mips2c_rt.h"],
     "E": ["gte_inline.h", "gte_ops.c"],
     "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h"],
@@ -330,7 +341,7 @@ def render_unit_split(orig):
     for where, cat, n, _, what in orig:
         if what.startswith("asm/renderers/"):
             unit = "m2c_" + re.sub(r"[^A-Za-z0-9_]", "_", what.split(":")[0][4:-2]) + ".c"
-            split[unit]["Cf" if cat == "B2" else "C"] += n
+            split[unit]["Cf" if cat in ("B1", "B2") else "C"] += n
     return split
 
 
