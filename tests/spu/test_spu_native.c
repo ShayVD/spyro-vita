@@ -26,6 +26,12 @@ int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   memset(raw, 0, PSX_CD_RAW_SECTOR);
   return -1;
 }
+/* and from cdnative.c (D93), off here */
+int g_psx_cd_native;
+int psx_cdn_xa_accept(int lba, unsigned char *raw, const struct PsxXaPcm **pcm) {
+  (void)lba, (void)raw, (void)pcm;
+  return 0;
+}
 void psx_audio_out(const short *pcm, int frames) {
   (void)pcm;
   (void)frames;

@@ -92,6 +92,11 @@
  *       xa_ahead=0      the XA music's sectors read on the game thread
  *                       (default 1: read ahead of the CD head on core 1;
  *                       D64, D68)
+ *       cd_native=1     the disc read natively (D93): a CdRead is a read of
+ *                       a file at an offset on a worker thread on core 1,
+ *                       and the XA stream is read ahead from its start there
+ *                       (instead of xa_ahead's windows); the same bytes, the
+ *                       same ticks. Default 0
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -188,6 +193,7 @@
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "psx_hooks.h"
 #include "../../game/cheats_port.h"
 
@@ -357,6 +363,8 @@ static void read_config(void) {
       g_vita_opts.render_thread = atoi(v), switch_line[0] = 1;
     else if (!strcmp(line, "xa_ahead"))
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
+    else if (!strcmp(line, "cd_native"))
+      g_vita_opts.cd_native = atoi(v);
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
@@ -536,6 +544,15 @@ int main(int argc, char **argv) {
     psx_cd_io(&io); /* the check's reads, which the "cd:" lines include */
     vita_log("disc: %s, opened in %u ms (%u reads, %u KB)", psx_cd_source(),
              (unsigned)((now_us() - t0) / 1000), io.reads, io.kbytes);
+  }
+  if (g_vita_opts.cd_native) {
+    if (psx_cdn_start() == 0) {
+      vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
+      vita_log("cd: native file reads and the XA stream on a worker on core 1, priority 0x90 "
+               "(cd_native=1, D93)");
+    } else {
+      vita_log("cd: no worker thread for cd_native=1: the sector reads as before");
+    }
   }
   if (vita_video_init() != 0) {
     /* once vitaGL has the display, SDL's renderer can't take it */

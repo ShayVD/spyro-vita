@@ -99,6 +99,7 @@
 #include "menu_panel.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
@@ -123,6 +124,7 @@ static void nd_atexit(void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 extern void spyro_main(void);
 /* libcd (PsyQ signatures) and the game's read callback (cd.c) */
@@ -136,6 +138,34 @@ static void mixer_report(void) {
     host_log("mixer: native (D84): PCM blocks %llu from the cache, %llu from its second way, "
              "%llu decoded in the mix; %llu forgotten at SpuWrite (D88)",
              st->hits[0], st->hits[1], st->misses, st->written);
+}
+
+static int s_cd_native; /* --cd-native (D93) */
+
+static unsigned long long now_us(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (unsigned long long)ts.tv_sec * 1000000u + (unsigned long long)ts.tv_nsec / 1000u;
+}
+
+/* --cd-stats: the Vita's "cd:" line (vblank.c) once, at exit; the times are
+ * the container's, so they stay out of the deterministic log otherwise. */
+static void cd_stats_report(void) {
+  PsxCdIo io;
+  psx_cd_io(&io);
+  host_log("cd: %u reads, %u KB, %u ms in the file system; %u CdReads, game thread waited %u ms",
+           io.reads, io.kbytes, (unsigned)(io.us / 1000), io.loads, (unsigned)(io.wait_us / 1000));
+  if (g_psx_cd_native) {
+    PsxCdnStats st;
+    psx_cdn_stats(&st);
+    host_log("cd: stream %u chunks (%u reads, %u KB, %u ms); %u sectors answered from them, %u "
+             "read on the game thread; %u asks found the slot busy, %u pinned",
+             st.chunks, st.chunk_reads, st.chunk_kb, (unsigned)(st.chunk_us / 1000), st.hits,
+             st.misses, st.busy, st.pinned);
+    host_log("cd: the worker %u ms on the CdReads; %u of them after a stream chunk",
+             (unsigned)(st.job_us / 1000), st.behind_chunk);
+  }
+  host_log_flush();
 }
 
 static void usage(void) {
@@ -156,7 +186,7 @@ static void usage(void) {
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--nd-ab] [--prof-draw]\n"
-          "             [--mixer 1|3]\n"
+          "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -449,6 +479,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--save") == 0) {
       TAKE();
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
+    } else if (strcmp(a, "--cd-native") == 0) {
+      s_cd_native = 1;
+    } else if (strcmp(a, "--cd-stats") == 0) {
+      psx_cd_set_clock(now_us);
+      atexit(cd_stats_report);
     } else if (strcmp(a, "--cd-latency") == 0) {
       TAKE();
       cd_latency = to_int(val);
@@ -485,6 +520,8 @@ int main(int argc, char **argv) {
         return 1;
       }
       psx_cd_set_read_latency(0); /* no vblanks here: reads end inside CdRead */
+      if (s_cd_native)
+        psx_cdn_start();
       CdReadCallback(CDReadDone);
     }
     return spyro_replay(replay, only, ignore, fnmap) == 0 ? 0 : 1;
@@ -525,6 +562,8 @@ int main(int argc, char **argv) {
   psx_cd_set_read_latency(cd_latency);
   host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
            g_host_opts.frames, cd_latency);
+  if (s_cd_native && psx_cdn_start() == 0)
+    host_log("cd: native file reads on a worker thread (--cd-native, D93)");
   port_cheats_set_log(host_log);
   spyro_main(); /* never returns */
   return 0;

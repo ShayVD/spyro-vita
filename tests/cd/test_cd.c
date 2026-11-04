@@ -4,10 +4,14 @@
  * always run; CD cases need the extracted disc and the test exits 77
  * (skipped) without it. With a folder holding the user's disc image, the
  * image's file table must render as the same manifest.json, and the same
- * read cases pass with the image open instead of the files. */
+ * read cases pass with the image open instead of the files. Each layout's
+ * cases run again with the native reads (cdnative.c, D93), which must give
+ * every CdRead's buffer and every XA answer the sector reads do. */
 #include "psx_cd.h"
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
 #include "psx_hooks.h"
+#include "psx_xa.h"
 #include "psx_spu.h"
 
 #include <libcd.h>
@@ -17,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static int failures;
 
@@ -443,6 +448,97 @@ static void test_marker(const char *image_dir, const char *marker) {
   remove(marker);
 }
 
+/* cd_native (D93) against the sector reads, in the open layout: every
+ * sector of the disc and some past it, in reads of 257 sectors (so they
+ * cross files and their ends), byte for byte with what was there before
+ * the buffer; then the XA stream's answers, sector by sector, for the
+ * music's filter and with no filter. */
+static void test_native(const char *what) {
+  enum { N = 257 };
+  static unsigned char a[N * 2048 + 64], b[N * 2048 + 64], ra[PSX_CD_RAW_SECTOR],
+      rb[PSX_CD_RAW_SECTOR];
+  u_char res[8];
+  int end, lba, bad = -1, reads = 0, f;
+  double t0 = now_s(), t2 = 0, t3 = 0;
+
+  CHECK(psx_cdn_start() == 0 && g_psx_cd_native);
+  g_psx_cd_native = 0;
+  CdInit();
+  CdControl(CdlGetTD, 0, res);
+  end = CdPosToInt(&(CdlLOC){res[1], res[2], 0, 0}) + 75; /* the minute and second of the end */
+  psx_cd_set_read_latency(0);
+  for (lba = 0; lba < end; lba += N, reads++) {
+    double u = now_s();
+    memset(a, 0x5A, sizeof a);
+    memset(b, 0x5A, sizeof b);
+    g_psx_cd_native = 0;
+    start_read(lba, N, a);
+    t2 += now_s() - u;
+    u = now_s();
+    g_psx_cd_native = 1;
+    start_read(lba, N, b);
+    t3 += now_s() - u;
+    if (bad < 0 && memcmp(a, b, sizeof a))
+      bad = lba;
+  }
+  CHECK(bad < 0);
+  printf("native %s: %d reads of %d sectors to LBA %d: %s; %.2f s sector reads, %.2f s native\n",
+         what, reads, N, end, bad < 0 ? "identical" : "DIFFER", t2, t3);
+  if (bad >= 0)
+    printf("native %s: first difference in the read from LBA %d\n", what, bad);
+
+  /* a latency of 2: read on the worker meanwhile, complete at the second tick */
+  psx_cd_set_read_latency(2);
+  CdReadCallback(read_done);
+  cb_count = 0;
+  g_psx_cd_native = 0;
+  start_read(37 + 300, 40, a);
+  CdSync(0, 0);
+  g_psx_cd_native = 1;
+  start_read(37 + 300, 40, b);
+  psx_cd_vblank();
+  CHECK(cb_count == 1 && is_reading);
+  psx_cd_vblank();
+  CHECK(cb_count == 2 && !is_reading && !memcmp(a, b, 40 * 2048));
+  psx_cd_set_read_latency(1);
+
+  /* the XA stream: PETEXA0.STR's first 4000 sectors and on into the next file */
+  for (f = 0; f < 2; f++) {
+    u_char mode = (f ? 0 : CdlModeSF) | CdlModeRT | CdlModeSpeed;
+    CdlFILTER filter = {1, 3, 0};
+    CdlLOC loc;
+    int start = 60000, diff = 0, plays = 0;
+    PsxCdnStats st0, st;
+    CdInit();
+    CdControlB(CdlSetmode, &mode, 0);
+    CdControlB(CdlSetfilter, (u_char *)&filter, 0);
+    CdIntToPos(start, &loc);
+    CdControlB(CdlReadS, (u_char *)&loc, 0);
+    psx_cdn_stats(&st0);
+    for (lba = start; lba < start + 4000; lba++) {
+      int x, y;
+      if (lba % 32 == 0)
+        usleep(2000); /* a vblank or so for the worker, as the head moves */
+      g_psx_cd_native = 0;
+      memset(ra, 0, sizeof ra);
+      x = psx_xa_accept(lba, ra);
+      g_psx_cd_native = 1;
+      memset(rb, 0, sizeof rb);
+      y = psx_xa_accept(lba, rb);
+      plays += x;
+      if (x != y || (x && memcmp(ra, rb, sizeof ra)))
+        diff++;
+    }
+    psx_cdn_stats(&st);
+    CHECK(diff == 0 && plays > 0 && st.hits > st0.hits);
+    printf("native %s: XA %s: 4000 sectors, %d play, %d differ; %u answered from the "
+           "read-ahead, %u read here\n", what, f ? "no filter" : "file 1 chan 3", plays, diff,
+           st.hits - st0.hits, st.misses - st0.misses);
+  }
+  CdControl(CdlPause, 0, 0);
+  printf("native %s: %.2f s\n", what, now_s() - t0);
+}
+
 /* The platform's audio sink; this test only needs SPU state. */
 void psx_audio_out(const short *pcm, int frames) { (void)pcm; (void)frames; }
 
@@ -468,6 +564,10 @@ int main(int argc, char **argv) {
   test_cd_read(dir);
   test_cd_xa(dir);
   test_known_hashes("files");
+  test_native("files");
+  test_cd_read(dir); /* with the native reads on */
+  test_cd_xa(dir);
+  g_psx_cd_native = 0;
 
   /* the same cases with the disc image open, against the extracted files */
   if (argc > 2) {
@@ -481,6 +581,10 @@ int main(int argc, char **argv) {
       test_cd_read(dir);
       test_cd_xa(dir);
       test_known_hashes("image");
+      test_native("image");
+      test_cd_read(dir);
+      test_cd_xa(dir);
+      g_psx_cd_native = 0;
       if (argc > 3)
         test_marker(image, argv[3]);
     }

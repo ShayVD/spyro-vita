@@ -43,10 +43,14 @@ const char *psx_cd_source(void);
 void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent));
 
 /* Disc reads so far (both backends): calls that went to the file system,
- * bytes they returned, and the time they took when a clock is set. */
+ * bytes they returned, and the time they took when a clock is set; and the
+ * CdReads completed, with the time the game thread spent completing them
+ * (waiting for cd_native's worker, D93). */
 typedef struct {
   unsigned reads, kbytes;
   unsigned long long us;
+  unsigned loads;
+  unsigned long long wait_us;
 } PsxCdIo;
 void psx_cd_set_clock(unsigned long long (*now_us)(void));
 void psx_cd_io(PsxCdIo *out);

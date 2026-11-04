@@ -6,6 +6,7 @@
  * of 37.8 or 18.9 kHz stereo frames, which the SPU mixer resamples to 44.1 kHz
  * as its CD input. */
 #include "psx_cd.h"
+#include "psx_cdnative.h"
 #include "psx_state.h"
 #include "psx_xa.h"
 
@@ -109,6 +110,8 @@ static void push_frames(const short (*frames)[2], int n) {
 
 int psx_xa_accept(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
   const PsxCdStream *st = psx_cd_stream();
+  if (g_psx_cd_native) /* the stream's read-ahead (cdnative.c, D93) */
+    return psx_cdn_xa_accept(lba, raw, NULL);
   if (!(st->mode & CdlModeRT) || psx_cd_read_raw(lba, raw) != 0)
     return 0;
   return psx_xa_check(raw);

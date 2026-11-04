@@ -21,10 +21,15 @@
  * was decoded from is the stream's then (psx_xa_decoded), so a wrong guess
  * costs a decode on the mixer, not a different sample. A sector handed over
  * with its PCM pins its window until the mixer is done with it
- * (vita_xa_release): want() doesn't reuse a pinned window. */
+ * (vita_xa_release): want() doesn't reuse a pinned window.
+ *
+ * With cd_native=1 (D93) none of this runs: the common worker
+ * (src/platform/common/cdnative.c) reads the stream ahead from where it
+ * starts, and the calls below pass through to it. */
 #include "vita.h"
 #include "watchdog.h"
 #include "psx_cd.h"
+#include "psx_cdnative.h"
 #include "psx_spu.h"
 #include "psx_xa.h"
 
@@ -158,6 +163,10 @@ static int reader_main(SceSize args, void *argp) {
 
 void vita_xa_ahead_init(void) {
   SceUID th;
+  if (g_psx_cd_native) {
+    vita_log("xa: the stream read ahead by cd_native's worker (D93), not xa_ahead");
+    return;
+  }
   if (!g_vita_opts.xa_ahead) {
     vita_log("xa: music sectors read on the game thread (xa_ahead=0)");
     return;
@@ -248,6 +257,8 @@ static void want(int lba, int head) {
  * plays the sector at lba, which is then in raw. */
 int vita_xa_accept(int lba, unsigned char *raw, const PsxXaPcm **pcm) {
   int i, next, end, got = 0;
+  if (g_psx_cd_native)
+    return psx_cdn_xa_accept(lba, raw, pcm);
   if (pcm)
     *pcm = NULL;
   if (!s_on)
@@ -283,6 +294,10 @@ int vita_xa_accept(int lba, unsigned char *raw, const PsxXaPcm **pcm) {
 
 void vita_xa_release(const PsxXaPcm *pcm) {
   int i;
+  if (g_psx_cd_native) {
+    psx_cdn_xa_release(pcm);
+    return;
+  }
   for (i = 0; i < NWIN; i++) {
     Window *w = &s_win[i];
     if (pcm >= w->pcm && pcm < w->pcm + MAX_PCM) {
@@ -292,12 +307,42 @@ void vita_xa_release(const PsxXaPcm *pcm) {
   }
 }
 
-SceUID vita_xa_ahead_thread(void) { return s_on ? s_thread : 0; }
+SceUID vita_xa_ahead_thread(void) {
+  return g_psx_cd_native ? (SceUID)psx_cdn_thread() : s_on ? s_thread : 0;
+}
+
+/* cd_native's stream, in the xa_ahead line's terms (the line's last field:
+ * asks that found their slot being read or pinned). */
+static void native_report(int vblank) {
+  static PsxCdnStats o;
+  PsxCdnStats n;
+  unsigned long long us, dus;
+  psx_cdn_stats(&n);
+  if (n.hits == o.hits && n.misses == o.misses && n.chunks == o.chunks)
+    return;
+  us = n.chunk_us - o.chunk_us;
+  dus = n.decode_us - o.decode_us;
+  vita_log("xa %d: %u music sectors from the read-ahead, %u read on the game thread; "
+           "read-ahead %u windows, %u KB in %u.%02u ms (core 1); %u asks found no window",
+           vblank, n.hits - o.hits, n.misses - o.misses, n.chunks - o.chunks,
+           n.chunk_kb - o.chunk_kb, (unsigned)(us / 1000), (unsigned)(us % 1000 / 10),
+           (n.busy - o.busy) + (n.pinned - o.pinned));
+  if (g_psx_spu_native)
+    vita_log("xa %d: native mix: read-ahead decoded %u sectors to PCM in %u.%02u ms (core 1); "
+             "%u windows passed over as pinned",
+             vblank, n.decoded - o.decoded, (unsigned)(dus / 1000), (unsigned)(dus % 1000 / 10),
+             n.pinned - o.pinned);
+  o = n;
+}
 
 void vita_xa_ahead_report(int vblank) {
   static uint32_t w0, kb0, us0;
   static uint32_t ds0, dus0;
   uint32_t w = s_rd_windows, kb = s_rd_kb, us = s_rd_us, ds = s_dec_sectors, dus = s_dec_us;
+  if (g_psx_cd_native) {
+    native_report(vblank);
+    return;
+  }
   if (!s_on || (!s_hits && !s_misses && w == w0))
     return;
   vita_log("xa %d: %u music sectors from the read-ahead, %u read on the game thread; "
