@@ -94,6 +94,23 @@ Effort (inferred): the dump and the key are small, inside `gpu_gl.c`. The HD atl
 - Level loads get longer: reading 2–8 MB from the memory card per level. Not measured.
 - Each step needs the `gpu_meter=1` and `dynres` numbers on hardware, with the owner's approval (D75, D77).
 
+### Does running the whole game natively make room? (the owner's question, 2026-11-04)
+
+Mostly no. The native stages (`docs/native-plan.md` §4–5) free **CPU time** and change how **main RAM** is used. HD textures are short of **GPU memory (CDRAM)** and, to a lesser degree, **GPU time**. None of the stages gives back CDRAM.
+
+- **Stage 4 (native memory)** replaces the 2 MB "PS1 RAM" arena with ordinary heap memory. That is main RAM, which isn't the limit: the Vita has plenty, and 2 MB is small next to the textures.
+- **Stages 1–3 (native maths, native draw lists, readable C)** free CPU on the game and render threads. That makes a pack's load-time work cheaper (reading and placing blocks). It doesn't shrink any texture.
+- **The textures stay PS1-format when fully native.** They are still 4- and 8-bit CLUT pages from the disc, decoded into the 2048×2048 atlas the same way. "Fully native" removes the emulation around them (the OT walk, PsyCross, the PS1 GPU state machine), not the atlas (§4's table keeps "the WAD data formats").
+- **GPU time:** moving the atlas decode to the CPU (D79) already removed the 7–9 ms of GPU per picture it used to take. Stages 2 and 7 trim the render thread further (fewer, larger draws; no re-run of the draw path for the in-between frame). That headroom helps 60 fps with an HD pack on.
+- **Where native work does help an HD feature:** stage 2's native draw lists resolve the atlas once per texture page and CLUT, not per triangle (`gpu_fused=1`, D92). That is the natural place to look up a replacement.
+
+**What would make room, independent of the native work:**
+- **The unused depth buffers.** vitaGL gives every FBO a D32 depth surface that the renderer never enables (`glDisable(GL_DEPTH_TEST)`; D74: never loaded or stored). They are still allocated: 16 MB for each 2048×2048 atlas, 32 MB for the two, plus one per render target (D69 noted this and left it). With `atlas_cpu=1` the default (D79), the atlases may not need an FBO at all: it served only the GPU decode pass (`atlas_cpu=0` and `2`).
+- **One atlas instead of two** while a pack is active, or the HD atlas in place of the 1× one.
+- **HD textures in main RAM** (the GPU can sample it, more slowly). Measure that before ruling it out.
+
+Freeing the depth buffers is worth doing for its own sake: when CDRAM is full, render targets made again after a delete land in slower main RAM (D69). It was proposed as a separate task ("Free CDRAM: drop unused FBO depth buffers"). The order this suggests is: reclaim CDRAM first, then the dump mode and the 1× round-trip proof, then 2× packs.
+
 ### Legality and redistribution
 
 - **We ship no textures.** Dumps are made from the user's own disc, on their device, like `tools/extract_disc.py`. The repo and VPK must never hold a dump, a pack, or a converted pack (CLAUDE.md). That includes test fixtures: tests should use synthetic blocks.
@@ -108,4 +125,4 @@ Effort (inferred): the dump and the key are small, inside `gpu_gl.c`. The HD atl
 - SwanStation: [libretro/swanstation](https://github.com/libretro/swanstation) (GPL-3.0), core option text in `src/libretro/libretro_core_options.h`.
 - OpenPete (existence only): [Time Extension, Aug 2026](https://www.timeextension.com/news/2026/08/ps1-classic-spyro-the-dragon-comes-to-pc-with-the-help-of-ai-assisted-tool-psxrecomp).
 - Tools: [Jonasz O.'s DuckStation upscaler](https://jonasz-o.itch.io/duckstation-upscaler).
-- Our code: `src/platform/vita/gpu_gl.c` (`atlas_find` :1315, `gl_GR_CopyVRAM` :2909); decomp `src/loaders.c` :830-851, :1425-1450, `src/initialization.c` :396-397; `docs/decisions.md` D39, D41, D60, D69, D75, D77, D79.
+- Our code: `src/platform/vita/gpu_gl.c` (`atlas_find` :1315, `gl_GR_CopyVRAM` :2909); decomp `src/loaders.c` :830-851, :1425-1450, `src/initialization.c` :396-397; `docs/decisions.md` D39, D41, D60, D69, D74, D75, D77, D79, D92; `docs/native-plan.md` §4–5.
