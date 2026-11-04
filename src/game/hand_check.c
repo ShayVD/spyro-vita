@@ -29,13 +29,63 @@
 
 int g_hand_check;
 int g_gte_audit; /* every Nth call, 0 off */
+/* --particle-sweep (D95): no run of the game reaches the particle types 4
+ * on, so before each func_800573C8 call every live particle's type is
+ * set to 4, 5, 6 or 7 in turn (its subtype and data as they are), both
+ * ways run from there and are compared, and the particles are put back
+ * after. A type-5 particle's depth (+0x8's low half) is made non-negative:
+ * read from another type's data it can put the bucket outside the OT,
+ * where the asm (and so the unit) writes as it would on the PS1; a type-4
+ * one gets a streak in front of the camera (below) */
+int g_particle_sweep;
+extern char g_Particles[];
+enum { SWEEP_MAX = 0x400 };
+static u32 s_sweep_at[SWEEP_MAX];
+static u8 s_sweep_save[SWEEP_MAX][16];
+static int s_sweep_n;
+static unsigned s_sweep_turn;
+
+static void sweep_begin(void) {
+  u32 p = MIPS_KUSEG(*(u32 *)g_Particles);
+  s_sweep_n = 0;
+  for (;;) {
+    const s16 t = *(s16 *)(uintptr_t)p;
+    if ((t >> 8) == -1 || s_sweep_n == SWEEP_MAX)
+      break;
+    if (t >= 0) {
+      const u8 type = (u8)(4 + s_sweep_turn++ % 4);
+      s_sweep_at[s_sweep_n] = p;
+      memcpy(s_sweep_save[s_sweep_n], (const void *)(uintptr_t)p, 16);
+      *(u8 *)(uintptr_t)(p + 1) = type;
+      if (type == 5)
+        *(u8 *)(uintptr_t)(p + 9) &= 0x7F;
+      if (type == 4) {
+        /* a 3D streak's two ends are view-space translations (+0x4, +0x8,
+         * +0xC): another type's data never puts them on screen, so these
+         * get a short streak in front of the camera, varied a little */
+        const u32 d = s_sweep_turn & 0x3F;
+        *(u32 *)(uintptr_t)(p + 0x4) = d | (d << 16);
+        *(u32 *)(uintptr_t)(p + 0x8) = 0x200u | ((0x20u + d) << 16);
+        *(u32 *)(uintptr_t)(p + 0xC) = (0x18u + d) | (0x220u << 16);
+      }
+      s_sweep_n++;
+    }
+    p += 0x20;
+  }
+}
+
+static void sweep_end(void) {
+  int i;
+  for (i = 0; i < s_sweep_n; i++)
+    memcpy((void *)(uintptr_t)s_sweep_at[i], s_sweep_save[i], 16);
+}
 
 static void (*s_log)(const char *fmt, ...);
 static unsigned char *s_before, *s_reg;
 static unsigned char s_scr_before[sizeof g_psx_scratch], s_scr_reg[sizeof g_psx_scratch];
 static GTERegisters s_gte_before, s_gte_reg;
 
-enum { MAX_NAMES = 8 };
+enum { MAX_NAMES = 16 };
 static struct {
   const char *name;
   unsigned long calls, bad, audited;
@@ -64,7 +114,7 @@ static void report_diff(const char *name, unsigned long call) {
   unsigned n = 0, i;
   if (!s_log)
     return;
-  s_log("hand check: %s call %lu: fast_render 1 and 2 differ", name, call);
+  s_log("hand check: %s call %lu: the reference (fast_render=1, or the mips2c unit) and fast_render=2 differ", name, call);
   for (i = 0; i < PSX_RAM_SIZE && n < 8; i += 4) {
     u32 a, b;
     memcpy(&a, s_reg + i, 4);
@@ -117,7 +167,10 @@ static void audit_call(int k, HandFn reg, u32 a0, u32 a1, u32 a2, u32 a3, u32 sp
 
 u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
   const int k = stat_index(name);
+  const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
   u32 sp = g_mips_sp, v1 = g_mips_v1, r;
+  if (sweep)
+    sweep_begin();
   if (!s_before) {
     s_before = malloc(PSX_RAM_SIZE);
     s_reg = malloc(PSX_RAM_SIZE);
@@ -142,6 +195,8 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
     if (s_stats[k].bad++ < 20)
       report_diff(name, s_stats[k].calls);
   }
+  if (sweep)
+    sweep_end();
   return r;
 }
 

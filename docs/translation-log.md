@@ -308,6 +308,21 @@ No game function changes. The walk's converter (`em_prim`, `src/game/native_draw
 | `func_800573C8`, `func_80058BA8` (particles), `func_80059A48`, `func_80059F8C` (shadows), `func_80058D64` (flame): their polygons | unchanged mips2c units; the walk parses their packets with the records' converter | parse check, file A/B, Vita3K captures | none; their lines, `DR_MODE` packets (E1 and E2) and fills stay with PsyCross |
 | the six hand renderers with `native_draw=2` | their PS1 path (`native_draw=0`'s code); the walk parses their packets with the records' converter | the per-call check's third walk, parse check, Vita3K captures | no joins: the walk follows every packet |
 
+## The shadows, the flame and the particles as hand C (2026-11-04, decisions D95)
+
+Hand C from the asm (D72's method, `HAND_RENDERER_UNIT`): the asm's control flow and arithmetic with named locals, its GTE commands on the register file, its scratchpad and register saves as it leaves them. fast_render 1 and 2 run it, 0 the mips2c unit (linked as `NAME_gen`). The NGTE build only adds native_draw's records. The rows for these functions in the mips2c table above describe the units, which stay linked.
+
+**Checks:** `--fast-render-check` compares every call with the mips2c unit (the whole arena, the scratchpad, every GTE register); the oracle replay against PCSX-Redux's samples (cap3, cap5-fairy, the tour, the labels run); `--native-draw-check` for the records; `tools/host_checks.sh` byte-identical with main; Vita3K shots and captures identical with D92's VPK. Numbers in D95.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_80059A48` (Spyro's shadow) | hand from `asm/renderers/r_shadows.s`, `src/game/shadows_hand.c` | oracle replay 77/77; every call against the unit on the demos, gems and the whole tour (26,306 calls), 0 differ; a one-word mutation fails every call; records check 0 differ | none |
+| `func_80059F8C` (the mobys' shadows) | as above | oracle 77/77; against the unit 0 differ (26,237 calls on the tour); records 0 differ | none; the asm's slip (the second angle's offset added where the first's product belongs, 0x8005A158) is kept |
+| `func_80058D64` (Spyro's flame) | hand from `asm/renderers/r_flame.s`, `src/game/flame_hand.c` | oracle 4/4; against the unit 0 differ (240 calls on the demos; the tour never flames); records 0 differ | none |
+| `func_800573C8` (the particles) | hand from `asm/renderers/r_particles.s`, `src/game/particles_hand.c` | oracle 77/77; against the unit 0 differ (26,306 calls on the tour); records 0 differ | none; types the runs reach: see D95 |
+| `func_80058BA8` (glows, sparkles: `func_800580F4`, `func_800584C4`) | as above | oracle 77/77; against the unit 0 differ (25,634 calls on the tour); records 0 differ | none |
+| `func_80058864` (the dragon rescue's ring) | as above | oracle 4/4; against the unit 0 differ (54 calls on the tour) | none |
+
 ## Stage 3: readable C (2026-11-02, decisions D83)
 
 `docs/native-plan.md` stage 3: mips2c units replaced by readable C (category B1: locals and the decomp's structs, no register model, no KUSEG masking, no GTE register file). `asm/collision.s` first: all six entry points in `src/game/collision_hand.c` (the rows above). What it keeps and doesn't keep of the asm, and why: D83.
