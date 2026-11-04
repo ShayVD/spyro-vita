@@ -78,7 +78,10 @@
  *   code from the same state and must leave the same RAM and GTE
  *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
  *   lists the GTE registers each renderer reads from before the call, from
- *   every Nth call ("gte audit" lines). --native-draw (with
+ *   every Nth call ("gte audit" lines). --particle-sweep (with the
+ *   check, D95): before each particle draw every live particle's type is
+ *   set to 4..7 in turn, which no run reaches, both ways are compared, and
+ *   the types are put back. --native-draw (with
  *   --fast-render 2): the converted renderers' primitives go to the OT walk
  *   as native draw lists (src/game/native_draw.h, decisions D82);
  *   --native-draw-check runs each of their calls both ways and compares the
@@ -418,6 +421,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+    } else if (strcmp(a, "--particle-sweep") == 0) {
+      extern int g_particle_sweep; /* hand_check.c, D95 */
+      g_particle_sweep = 1;
+      g_hand_check = 1;
+      hand_check_set_log(host_log);
     } else if (strcmp(a, "--fast-render-check") == 0) {
       g_hand_check = 1;
       hand_check_set_log(host_log);

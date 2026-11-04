@@ -583,6 +583,11 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - **The HUD's and `flight.c`'s sites as records:** they link through `func_800168DC`, but widescreen narrows these primitives in place at `DrawOTag`, so a record taken at the link would be wrong there; and the walk already parses them natively (`nd_fast`).
   - **The renderers' last 0.16 ms:** with records it is the second stream (D91). `native_draw=2` removes it by having no records; whether that is the better trade is U1's question.
 
+**Then (D95, 2026-11-04): the shadows, the flame and the particles as hand C with records.**
+- `r_shadows.s`, `r_flame.s` and `r_particles.s`'s seven drawing entries (2,642 instructions) are hand C on the GTE register file (`src/game/shadows_hand.c`, `flame_hand.c`, `particles_hand.c`; `HAND_RENDERER_UNIT`), checked call by call against their mips2c units and by the oracle replay. Their polygons are native records with `native_draw=1`; their lines stay PS1 primitives.
+- So every renderer's polygons now reach the walk as records. What stays PS1 primitives: lines, the HUD's and `flight.c`'s 2D primitives (parsed natively by `nd_fast`), and the draw environment packets.
+- Left as mips2c in the renderers: `r_cyclorama.s`'s helpers, `r_environment.s`'s other functions and `r_moby.s`'s culls (stage 3), and `r_particles.s`'s slot allocators.
+
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
 **Replaces** (C): 19,272 original instructions, 32,563 generated lines and 453 KB of ARM code:

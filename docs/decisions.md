@@ -2144,3 +2144,59 @@ Record each decision with its date, what was chosen, and why.
   - Two captures (gems at 3500 and 16:9 at 3500, 48–280 pixels round the small Spyro at the right edge) differed once between two runs of the same configuration, so those frames' captures aren't a test.
 - **Timing:** not measured. In Vita3K the Mac was too loaded by other sessions to give even a direction (`gpu_fused=2`'s halves were within ±1 ms of each other per buffer, the A/B's noise). Hardware run U1 (`tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`) waits for the owner's go-ahead; it times `native_draw` 0, 1 and 2 (`nd_ab=1`) and the render thread's two ways (`gpu_fused=2`) in one run.
 - **Defaults:** `native_draw=1` (as D91), `nd_fast=1`, `gpu_fused=1` on the Vita; the host's `native_draw` stays 0, so `host_checks.sh` and the oracle run as before.
+
+## 2026-11-04: the shadows, the flame and the particles as hand C with records (stage 2)
+
+### D95. The last three renderer units (`r_shadows.s`, `r_flame.s`, `r_particles.s`) as hand C on the GTE register file, checked call by call against the mips2c unit; their polygons as native records
+- **Why:** stage 2's step 3 (`docs/native-plan.md`): particles, shadows and the flame into the native draw lists. D92 left them because their primitives are built in mips2c units, so records needed hand C first. The coordinating session kept them in stage 2: the stage 3 session leaves the renderer units alone.
+- **Decided:**
+  - **Seven entries in hand C** (`src/game/shadows_hand.c`, `flame_hand.c`, `particles_hand.c`), 2,642 instructions of hand-written asm:
+    - Spyro's shadow (`func_80059A48`), the mobys' shadows (`func_80059F8C`);
+    - Spyro's flame (`func_80058D64`);
+    - the particles (`func_800573C8`), the glows and sparkles (`func_80058BA8` with `func_800580F4` and `func_800584C4`), the dragon rescue's ring (`func_80058864`).
+
+    The unit's slot allocators (`func_8005882C`, `func_80058AE8`, `func_80058B60`, `func_80058B68`) stay mips2c: they draw nothing.
+  - **D72's method**, as the six renderers before D80: the asm's control flow and arithmetic with named locals, its GTE commands on the register file (`gte_inline.h`), and the scratchpad, the register saves (D_80077DD8, the scratchpad, the MIPS stack) and the bytes it leaves in unlinked primitive space exactly as the asm leaves them. The asm's own quirks stay, for example:
+    - the mobys' shadow adds the second slope angle's table offset where the first angle's result belongs (`add $t3, $t3, $a0` at 0x8005A158);
+    - a turned particle quad pushed behind the OT leaves its swapped rotation in the GTE for the next particles.
+  - **`HAND_RENDERER_UNIT`** (`render_hand.h`): fast_render 0 runs the unit (linked as `NAME_gen`), 1 and 2 the hand C. The NGTE build (`*_ngte.c`) only adds the records, so `--fast-render-check` compares each call with the mips2c unit itself, not with fast_render=1: the whole arena, the scratchpad and every GTE register.
+  - **Records:** in the NGTE build each polygon goes to the walk as a native record where the asm links it (`nd_append`: the built primitive's words, joining the marker at its bucket's tail):
+    - the shadows' draw mode packets and G3s, and the mobys' FT3s;
+    - the flame's G3s and GT4s;
+    - the particles' FT4s, the glows' draw modes and G3s, the ring's draw mode and F3s.
+
+    The lines (particle points and streaks, the sparkles' crosses) stay PS1 primitives: records hold polygons only.
+  - **Not done:** native GTE maths (D80's fast_render=2) for these. The register file is exact by construction, and these units are a small share of the renderers' time.
+- **Checked** (host, the units' worktree; logs `logs/u*`, gitignored):
+  - **Every call against the mips2c unit** (`--fast-render-check`: the whole arena, the scratchpad, every GTE register), 0 differ:
+
+    | Run | Shadows (Spyro's, the mobys') | Flame | Particles | Glows and sparkles | Ring |
+    |---|---:|---:|---:|---:|---:|
+    | attract demos | 1,972, 1,972 | 240 | 1,972 | 1,972 | – |
+    | gems script | 1,211, 1,211 | – | 1,211 | 1,211 | – |
+    | whole-game tour | 26,306, 26,237 | – | 26,306 | 25,634 | 54 |
+
+    The six D72 renderers' calls in the same runs: 0 differ, as before.
+  - **The check bites:** a one-word change in Spyro's shadow's colour fails all 1,211 calls of the gems script.
+  - **Particle types:** the game reaches only types 0–3, in every run and sample: the whole tour draws 755,626, 12,049, 14,748 and 13,573 of them, and the 77 oracle samples hold no other. Types 4, 5 and 6 on come from a few spawners (`particle_spawn.c` 780, 1352; a key's or the egg's sparkle, 412) that no run reaches. So `--particle-sweep` (host, with the check) sets every live particle to type 4, 5, 6 or 7 in turn before each particle call, runs both ways from there, and puts the particles back after. Two adjustments keep the swept data drawable:
+    - a type-5 particle's depth word is made non-negative, since another type's data can put its bucket outside the OT, where the unit writes as the PS1 would;
+    - a type-4 particle (a 3D streak, whose two ends are view-space translations) gets a short streak in front of the camera, since another type's data never puts it on screen.
+
+    Results:
+    - Over the demos, 1,972 calls with every particle swept: 0 differ.
+    - One-word mutations each fail the sweep: in the type-4 line's colour, all 1,972 calls (the first difference that +1); in the type-5 quad's translation, the swept calls with a type-5 quad on screen (its corners 2 pixels lower); in the type-6 quad's colour, 1,908 of 1,972 calls (that +0x100).
+    - The sweep found one real difference first: the hand C read a texture table pointer directly where the unit maps it (`MIPS_KUSEG`), which matters only for a null table. The hand C now maps every pointer it loads from RAM.
+  - **Oracle replay against PCSX-Redux** (cap3, cap5-fairy, `run14-oracle-tour`, `run19-oracle-labels`): Spyro's shadow 77/77, the mobys' 77/77, the particles 77/77, the glows and sparkles 77/77, the flame 4/4, the ring 4/4. Their dead v0/v1 are ignored (`ret` lines in `tools/oracle/ignore_ranges.txt`; every caller is a C statement).
+  - **Records** (`--native-draw-check` with the parse check, `MODE=chkp`): 0 calls differ in all eleven converted renderers, and every file identical, on the demos (26/26), gems (19/19), routes A (55/55) and B (56/56), 16:9 with in-between frames (25/25) and the whole tour (141/141). In the whole tour the shadows' 823,916 and 351,428 packets went to the walk as 113,940 and 271,397 markers, the particles' 775,132 as 766,600.
+  - **`tools/host_checks.sh`** (the host's default `fast_render=2`, so the hand C): byte-identical with main `3bfe4f7`, demo 26, the whole tour 141, routes A 56 and B 56.
+  - **Vita3K**, against D92's VPK (these renderers are mips2c there), with `native_draw=1`:
+    - VPK `logs/s95-vpk-2.vpk` (SHA-1 `4dc3a578…`, the final game code):
+      - gems with captures: 17 shots, 17 captures and the card identical;
+      - the demos: 12 shots, 11 captures.
+    - VPK 1 (`e8ab2471…`, before the hand C mapped the texture table pointers, which no real data reaches):
+      - gems: the same 17, 17 and the card;
+      - 16:9 with in-between frames, timing pinned (`gpu_time=2`, D92): 13 shots, 13 captures and the card;
+      - the pause route: 70 shots and the card.
+
+    `fast_render=0` (the units) on the same VPK showed D92's timing-dependent capture once, at 6500.
+- **Hardware:** not run. The pictures are the host's and Vita3K's checks above; timing waits for an approved run.

@@ -312,7 +312,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       MTC2(v0, 0);
       at = (gp & 0xFFu) << 2;
       RTPS();
-      tex = AT32(at + tex_tab);
+      tex = PTR(AT32(at + tex_tab));
       v0 = (a0 >> 16) & 0xFFu;
       a0 = ((a0 >> 23) + 0x40u) & 0x1FEu;
       gp = S16(p + 0x20);
@@ -351,7 +351,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       AT8(p + 0x3) = 0;
       at = gp & 0xFFu;
       RTPS();
-      tex = AT32((at << 2) + tex_tab);
+      tex = PTR(AT32((at << 2) + tex_tab));
       MTC2((a0 >> 16) & 0xFFu, 9);
       MTC2(a0 >> 24, 10);
       gp = S16(p + 0x20);
@@ -436,7 +436,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       u32 tex, sn, cs, s_v0, s_v1, s_a0;
       a1 = AT32(p + 0x4);
       a2 = AT32(p + 0x8);
-      tex = AT32(((gp & 0xFFu) << 2) + tex_tab);
+      tex = PTR(AT32(((gp & 0xFFu) << 2) + tex_tab));
       v0 = (a2 >> 16) & 0xFFu;
       a0 = ((a2 >> 23) + 0x40u) & 0x1FEu;
       gp = S16(p + 0x20);
@@ -474,7 +474,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       MTC2(cs, 10);
       tex = ((gp & 0xFFu) << 2) + tex_tab;
       GPF0();
-      tex = AT32(tex);
+      tex = PTR(AT32(tex));
       a1 = SRA(MFC2(25), 12);
       a0 = SRA(MFC2(26), 12);
       gp = S16(p + 0x20);
