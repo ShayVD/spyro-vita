@@ -119,6 +119,15 @@
  *       gpu_lean=0      the 40-byte vertex everywhere (default 1: with gpu=1
  *                       and neither persp nor subpixel, a 28-byte vertex
  *                       instead of 40, the same pixels; D70, D74)
+ *       gpu_fused=0     the render thread's work as before D92 (default 1:
+ *                       with gpu_lean, the slab's vertices go to the lean
+ *                       vertex in one pass, the atlas blocks found are kept
+ *                       by page, CLUT and blocks, a draw's program is chosen
+ *                       once per run of like triangles, and consecutive
+ *                       untextured subtract draws are joined; the same GL
+ *                       triangles and state). gpu_fused=2: the two ways in
+ *                       turn, a vertex buffer each, timed ("gpu fused ab"
+ *                       lines, tools/vita/fused_ab_summary.py; diagnostic)
  *       gpu_join=0      with gpu=1, each of PsyCross's draws its own GL draw
  *                       (default 1: consecutive draws with the same target,
  *                       clip, offset and blend joined into one, split only
@@ -140,9 +149,15 @@
  *                       PsyCross's OT walk (default 1 since D91: with
  *                       fast_render=2 they reach the walk as native draw
  *                       lists, the same triangles; D82, D86, D91)
- *       nd_ab=1         with native_draw=1, timing: native_draw 0 and 1
+ *       native_draw=2   the renderers' PS1 primitives as with 0, parsed by
+ *                       the walk with the native draw lists' converter
+ *                       (D92). With 1 and 2 the walk also parses the other
+ *                       polygon packets (particles, shadows, flame, HUD) so
+ *       nd_fast=0       with native_draw 1 or 2, only the records go
+ *                       through that converter (D92)
+ *       nd_ab=1         with native_draw=1, timing: native_draw 0, 1 and 2
  *                       take turns, 8 lists each, and the "draw ab" and
- *                       "parse ab" lines time each (diagnostic, D91)
+ *                       "parse ab" lines time each (diagnostic, D91, D92)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -220,6 +235,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */
                         .dynres = 0, /* D75: off by default after hardware run J6 */
                         .atlas_cpu = 1, /* D79 */
+                        .gpu_fused = 1, /* D92 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -227,6 +243,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
+extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
 void nd_init(void (*log)(const char *fmt, ...));
 
@@ -373,10 +390,14 @@ static void read_config(void) {
       g_vita_opts.gpu_direct = atoi(v);
     else if (!strcmp(line, "gpu_lean"))
       g_vita_opts.gpu_lean = atoi(v);
+    else if (!strcmp(line, "gpu_fused"))
+      g_vita_opts.gpu_fused = atoi(v);
     else if (!strcmp(line, "parse_thread"))
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "native_draw"))
       g_native_draw = atoi(v);
+    else if (!strcmp(line, "nd_fast"))
+      g_nd_fast = atoi(v);
     else if (!strcmp(line, "nd_ab"))
       g_nd_ab = atoi(v);
     else if (!strcmp(line, "parse_core"))
@@ -561,8 +582,10 @@ int main(int argc, char **argv) {
   }
   vita_parse_init(); /* after the render thread (D71) */
   nd_init(vita_log);
-  vita_log("native_draw=%d nd_ab=%d: %s", g_native_draw, g_nd_ab,
+  vita_log("native_draw=%d nd_fast=%d nd_ab=%d: %s", g_native_draw, g_nd_fast, g_nd_ab,
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
+           : g_native_draw == 2   ? "the renderers' PS1 primitives parsed by the walk with the "
+                                    "native draw lists' converter (D92)"
            : g_fast_render == 2   ? "the hand renderers' primitives as native draw lists (D82)"
                                   : "needs fast_render=2: off");
   vita_present_init();

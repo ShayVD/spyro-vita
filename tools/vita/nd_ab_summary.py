@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Sum an nd_ab=1 run's "draw ab" and "parse ab" lines (decisions D91).
+"""Sum an nd_ab=1 run's "draw ab" and "parse ab" lines (decisions D91, D92).
 
 Usage: tools/vita/nd_ab_summary.py [--t1|--t2] spyro.log [FROM_VBLANK]
 
-nd_ab=1 makes native_draw 0 and 1 take turns by blocks of 8 lists
-(native_draw.c; runs T1 and T2 rotated seven variants of the record path),
+nd_ab=1 makes native_draw 0, 1 and 2 take turns by blocks of 8 lists
+(native_draw.c; runs T1 and T2 rotated seven variants of the record path,
+T3 two),
 so every 300-vblank window has all of them in nearly the same scenes. Per variant: the counted lists, then per list the renderers'
 ms (env, mobys, Spyro, sky and their sum), the parse thread's walk and the
-game thread's wait for it. Then each variant against v0 (native_draw=0)
+game thread's wait for it, and "game": the renderers and the wait, what the
+game thread spends on the list. Then each variant against v0 (native_draw=0)
 and v1: the mean of the windows' per-list differences and its
 standard error, so the noise is in the table.
 """
@@ -15,8 +17,9 @@ import math
 import re
 import sys
 
-# native_draw 0 and 1 (D91's lean records); --t1 and --t2 name the variants of those runs
-NAMES = ["v0 off", "v1 on"]
+# native_draw 0, 1 (D91's lean records) and 2 (D92: the walk parses the PS1
+# primitives with the records' converter); --t1 and --t2 name the variants of those runs
+NAMES = ["v0 off", "v1 records", "v2 parse"]
 for flag, names in (("--t1", ["v0 off", "v1 D86", "v2 side", "v3 pf", "v4 side+pf", "v5 probe",
                               "v6 probe+pf"]),
                     ("--t2", ["v0 off", "v1 side+pf", "v2 side+nc", "v3 side+ncw", "v4 probe",
@@ -48,15 +51,16 @@ def main():
         sys.exit("no windows with both lines from vblank %d" % first)
 
     def per_list(w, v):
-        """ms per list: env, mobys, spyro, sky, renderers, walk, wait"""
+        """ms per list: env, mobys, spyro, sky, renderers, walk, wait, game"""
         d, p = draw[w].get(v), parse[w].get(v)
         if not d or not d[0] or not p or not p[0]:
             return None
         n = d[0]
         e, mo, sp, sk = d[1] / n, d[2] / n, d[3] / n, d[6] / n
-        return [x / 1000 for x in (e, mo, sp, sk, e + mo + sp + sk, p[1] / p[0], p[2] / p[0])]
+        r, wt = e + mo + sp + sk, p[2] / p[0]
+        return [x / 1000 for x in (e, mo, sp, sk, r, p[1] / p[0], wt, r + wt)]
 
-    cols = ["env", "mobys", "spyro", "sky", "renderers", "walk", "wait"]
+    cols = ["env", "mobys", "spyro", "sky", "renderers", "walk", "wait", "game"]
     print("%d windows, vblanks %d-%d" % (len(wins), wins[0], wins[-1]))
     print("%-11s %6s " % ("variant", "lists") + " ".join("%9s" % c for c in cols))
     for v in range(len(NAMES)):
@@ -75,8 +79,9 @@ def main():
         tot[4] = sum(tot[:4])
         walks = sum(parse[w].get(v, [0])[0] for w in wins) or 1
         row = [t / lists / 1000 for t in tot[:5]] + [t / walks / 1000 for t in tot[5:]]
+        row.append(row[4] + row[6])
         print("%-11s %6d " % (NAMES[v], lists) + " ".join("%9.3f" % x for x in row))
-    for base in (0, 1):
+    for base in (0, 1, 2):
         print("\nagainst %s: mean of the windows' per-list differences, ms (+- standard error)"
               % NAMES[base])
         print("%-11s " % "" + " ".join("%14s" % c for c in cols))
@@ -91,7 +96,7 @@ def main():
             if len(diffs) < 2:
                 continue
             out = []
-            for i in range(7):
+            for i in range(8):
                 xs = [d[i] for d in diffs]
                 mean = sum(xs) / len(xs)
                 sd = math.sqrt(sum((x - mean) ** 2 for x in xs) / (len(xs) - 1))

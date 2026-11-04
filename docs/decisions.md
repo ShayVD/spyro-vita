@@ -2095,6 +2095,165 @@ Record each decision with its date, what was chosen, and why.
   - **Core 1's CPU per vblank** (`runClocks`, mean of the windows from vblank 600): mixer 0.888 → 0.251 ms, XA read-ahead 0.163 → 0.231 ms, audio out (SDL2's thread, not counted) → 0.253 ms; 1.051 ms plus SDL2's thread → 0.735 ms.
 - **Default:** `mixer=3` (`main.c`). The samples are the same, it runs dry less than `mixer=1` and only where the game stops, and costs core 1 less. `mixer=1` stays one line away in `config.txt`. SDL2 stays linked for the pad (D84).
 
+## 2026-11-03: the rest of stage 2 (native draw lists)
+
+### D92. The walk parses every polygon packet with the records' converter; `native_draw=2` to time the renderers without records; the render thread's vertex pass in one go, its atlas answers kept, a draw's program per run, untextured subtract draws joined
+- **Why:** D91's "not done": the render thread's side (the atlas resolved once per page and CLUT, the program and blend per segment), the decomp C's own primitives (particles, shadows with their subtract rule, the flame, `flight.c`, the HUD), and the renderers' last +0.16 ms per list (D91's T3), mostly a second stream of writes.
+- **Decided, the walk** (`src/game/native_draw.c`):
+  - **One converter for records and packets.** D91's `emit` is split into `em_prim`, which turns one primitive (its kind and its words after the tag, as the PS1 holds them) into PsyCross's `GrVertex`s, and the loop over a marker's records. `nd_packet` now also takes a packet that is not a marker when it holds only polygons, E1 draw modes and NOPs (GP0 00h–1Fh but 02h, as the walk's split skips them), and parses it with `em_prim` from its words where it lies (`fast_packet`). Anything else (lines, rectangles, fills, E2–E6, a command running past the packet) stays with PsyCross. `nd_fast=0` (host `--nd-fast 0`) turns it off.
+  - **With `native_draw=1`** (the Vita's default) that is every polygon the renderers don't make records of: the particles (`r_particles.s`'s mips2c unit, from what `particle_spawn.c` and `particle_update.c` set up), the shadows (`r_shadows.s`), the flame (`r_flame.s`), the HUD and the menus (`draw.c`), `flight.c`'s results. So the decomp C's and the mips2c units' polygons now reach the GPU through the same code as the records, at no cost to the game thread.
+  - **`native_draw=2`** (host `--native-draw-parse`): the renderers build their PS1 primitives as with `native_draw=0` (no records, so no second stream of writes), and the walk parses every polygon packet with `em_prim`. It has no joins, so the walk follows every packet. It exists to answer the third question on hardware: whether the renderers' +0.16 ms with records buys more on the walk than it costs. `nd_ab=1` now takes 0, 1 and 2 in turn (`tools/vita/nd_ab_summary.py`, which adds a "game" column: the renderers plus the wait for the walk, what the list costs the game thread).
+  - **The list's mode reaches the walk with the list** (`g_psx_walk_nd`, taken at the handover like D91's tag; `psx_walk_nd()` on the walker), since `nd_ab` changes `native_draw` for the next list before the walk of this one ends.
+- **Not done: records built by the decomp C and the mips2c units themselves.**
+  - The particles, the shadows and the flame build their primitives in mips2c units (`r_particles.s` 1,540 instructions, `r_shadows.s` 650, `r_flame.s` 452). Records there need them as hand C first: that is a PR of its own on top of this one (D95).
+  - The HUD's and `flight.c`'s sites are decomp C, and all link through our `func_800168DC` (`src/game/order_table.c`), so one hook there would cover them. But:
+    - with widescreen, `present.c` narrows these 2D primitives in place at `DrawOTag` and puts them back after the handover, so a record taken where the site links would keep the full-width x;
+    - `nd_fast` already parses their packets with the records' converter;
+    - records would add D91's second stream of writes on the game thread, for about 25 packets a vblank.
+
+    So they stay PS1 primitives.
+- **Decided, the render thread** (`src/platform/vita/gpu_gl.c`, `gpu_fused=1`, the default; `0` is the way before; `2` takes the two ways in turn, a vertex buffer each, and times them, `tools/vita/fused_ab_summary.py`):
+  - **One pass from the slab** (`expand_lean`, with `gpu_lean` and no vertex cache, which is the Vita's default): each vertex is copied once, from the render thread's vertex slab into the 28-byte vertex, and a triangle `gl_vertices`' rule collapses becomes three copies of its first vertex there. Before, the slab was copied whole into `s_vbuf`, a pass collapsed triangles there, and `expand()` read it again. `sync_pages` reads the lean vertices instead.
+  - **The atlas's answers kept** (`s_amemo`, 64 entries): `atlas_find`'s answer for a triangle's page, CLUT and blocks, valid for the atlas generation. Not "once per page and CLUT": the atlas keeps a page and CLUT's texels by the 32×32 blocks a triangle's UV box covers (D41), so one page and CLUT has many entries. D70's one-entry memo caught only a quad's second half. In the gems script the map is asked 25,156 times for 153,280 textured triangles (71,088 before).
+  - **A draw's program per run:** `draw()` asked `prog_of` for every triangle; it reads only the triangle's kind and format, so a triangle like the one before no longer asks. The blend was already per batch (#49).
+  - **The shadows' rule:** #49 never joins subtract draws, because a textured one is drawn in two passes that would interleave differently. An untextured one is one pass, so consecutive untextured subtract draws now join: the same GL triangles in the same order with the same state. It seldom has anything to join. Spyro's shadow is untextured G3s behind an E1 packet (`r_shadows.s`, `func_80059A48`: code `0x32`, tpage `0x640`, subtract), which PsyCross already keeps in one split. The mobys' shadows are textured FT3s (`func_80059F8C`: code `0x26`), two passes, so they still aren't joined. In the gems script it joined 0 draws (the `gpu` line's count).
+- **Checked (host, `build/linux32` on this branch; logs `logs/s92c-*`, `logs/s92d-*`, gitignored; `MODE=chkp tools/native_draw_ab.sh`, which runs each scenario with `--native-draw-check --native-draw-parse-check` against the same binary's plain run):**
+  - **Every call, three ways.** The per-call check (D82) now walks each converted renderer call's PS1 primitives a third time with `nd_fast` on, which is `native_draw=2`'s walk, and compares it with PsyCross's own walk as it does the records (the reference walk turns `nd_fast` off, `g_nd_fast_off`).
+  - **Every packet `nd_fast` takes, both ways** (`--native-draw-parse-check`, `nd_pcheck_packet`): PsyCross parses a copy of the packet alone from the same state first (the split state kept and put back, PsyCross patch 0012), then `fast_packet` parses it; the vertices, the splits and the draw environment must be the same bytes. With the per-call check on, this covers the check's own walks too.
+
+    | Scenario | Calls that differ (six renderers, three ways) | Packets parsed both ways | Differ | Files identical |
+    |---|---:|---:|---:|---:|
+    | attract demos (12,000 vblanks) | 0 | 7,543,521 | 0 | 26/26 |
+    | gems script, 16:9 | 0 | 5,978,921 | 0 | 19/19 |
+    | 16:9 with 60 fps in-between frames (`wsi`) | 0 | 19,739,609 | 0 | 25/25 |
+    | gems with the vertex cache (`vc`) | 0 | 5,978,921 | 0 | 19/19 |
+    | gems at 2x draw distance (`lod`) | 0 | 6,113,705 | 0 | 19/19 |
+    | route A | 0 | 8,147,715 | 0 | 55/55 |
+    | route B | 0 | 7,880,034 | 0 | 56/56 |
+    | whole-game tour (100,000 vblanks, every level, both endings, the credits) | 0 | 72,130,949 | 0 | 141/141 |
+
+    The vertex cache run's `host vcache` lines find 98.9% of the vertices (D89's check that the cache is fed). Every converted renderer is called in every scenario where the game calls it.
+  - **`native_draw=2` itself** (`MODE=p2`, `--native-draw-parse-check` against the plain run, `logs/s92p-*`): gems 19/19 and the demos 26/26 files identical, 5,962,897 and 7,533,990 packets parsed both ways, 0 differ.
+  - **`tools/host_checks.sh`** (default switches, so `native_draw=0`) on this branch (`logs/s92h-*`): byte-identical with main's runs by two other sessions (stage 3's `base-*` and stage 6's `s6-base-*`, main `3bfe4f7`, which agree with each other): demo 26/26, the whole tour 141/141, route A 56/56, route B 56/56.
+- **Checked in Vita3K** (VPK `logs/s92-vpk-2.vpk`, SHA-1 `983487fb…`, built natively with the Mac's VitaSDK; `realtime=0`, `fast_render=2`, the shipped threads; logs `logs/s92v-*`). Against `native_draw=0 gpu_fused=0` (main's paths):
+  - **gems script with window captures:** `native_draw=1 gpu_fused=1` (the new defaults), `native_draw=2`, and `nd_ab=1 gpu_fused=2` (both A/Bs rotating): 17 shots, 17 captures and the card identical in each.
+  - **attract demos with captures:** `native_draw` 1 and 2: 12 shots and 11 captures identical.
+  - **16:9 with 60 fps in-between frames, gems with captures** (`interp=1 interp_budget=0`, to 6600): 13 shots, 13 captures and the card identical with `gpu_time=2` in both runs. Without it, the capture at 6500 shows one of two pictures (the second with sky missing at the right edge), and which one depends on thread timing, not on the paths. Main's paths gave the first twice. `native_draw=1` alone, `gpu_fused=1` alone and both gave the second. With `gpu_time=2`'s extra GPU syncs, both runs gave the first. The shots (the CPU replay of the same lists) are identical in every run.
+  - **The pause route** (16:9, 60 fps forced, the `StoreImage` replay): `native_draw` 1 and 2, 70 shots and the card identical. Main's paths crashed inside Vita3K before the end in both tries (at shots 33 and 39; D86 saw the same with `native_draw=0`); their shots up to there are identical.
+  - **Vita3K's own failures** in 10 of 33 runs, all inside the emulator (the game's log just stops): an unimplemented GPU opcode (216), a lost Metal device, write-protect faults, null accesses. By configuration: main's paths 3 of 11 runs, the new defaults 5 of 11, `native_draw=2` 1 of 5, the others 1 of 6. Every configuration but the pause route on main's paths went through when repeated. Too few runs to tell the defaults apart from main's, and hardware is what counts (U1). The Mac was heavily loaded by other sessions throughout.
+  - Two captures (gems at 3500 and 16:9 at 3500, 48–280 pixels round the small Spyro at the right edge) differed once between two runs of the same configuration, so those frames' captures aren't a test.
+- **Timing in Vita3K:** none. The Mac was too loaded by other sessions to give even a direction (`gpu_fused=2`'s halves came within ±1 ms of each other per buffer, the A/B's noise).
+- **Hardware: run U1** (2026-11-04, the owner's go-ahead; VPK `logs/s92-vpk-2.vpk`, SHA-1 `983487fb…`; `tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`, the Toasty route at 60 fps, `REALTIME=1`; `logs/hw-u1`, gitignored). It reached `frames=21000` in 321 s with no hang line, and the owner's files were put back. Afterwards main's eboot (`38f1911b…`, CI run 41724811066) went back on the Vita, read back identical.
+  - **`nd_ab=1`** (`tools/vita/nd_ab_summary.py`, 68 windows, about 5,970 lists each). Per list, ms, the mean of the windows' differences and its standard error:
+
+    | | renderers | walk (parse thread) | wait for it | game thread (renderers + wait) |
+    |---|---:|---:|---:|---:|
+    | `native_draw=1` (records) against 0 | +0.188 ±0.012 | −0.949 ±0.031 | −0.376 ±0.018 | −0.188 ±0.021 |
+    | `native_draw=2` (parse) against 0 | +0.021 ±0.010 | −0.508 ±0.018 | −0.197 ±0.010 | −0.176 ±0.016 |
+    | records against parse | +0.167 ±0.011 | −0.441 ±0.017 | −0.179 ±0.012 | +0.012 ±0.018 |
+
+    - **The records' second stream costs the renderers what D91 measured** (+0.19; T3 +0.16). Their joins save the walk more than the in-place parse does, about as much more as the renderers lose. For the game thread the two ways are the same within noise (0.012 ± 0.018 ms).
+    - **The parse thread is 0.44 ms per list freer with records.** So `native_draw=1` stays the default. `native_draw=2` stays as the way without records, with the same game thread.
+  - **`gpu_fused=2`** (`tools/vita/fused_ab_summary.py`, about 11,500 vertex buffers each). Per vertex buffer, `gpu_fused=1` against the way before:
+    - `gl_vertices` −0.220 ±0.023 ms;
+    - issuing the draws −0.055 ±0.007 ms;
+    - together −0.275 ±0.030 ms of 3.04, 9% less;
+    - GL draws the same (−0.02 ±0.06), as the shadows' rule had nothing to join.
+
+    About 1.14 vertex buffers a vblank, so about 0.31 ms per vblank of the render thread (busy 12.2 ms per vblank in this run).
+  - **Late vblanks:** 244 in 70 windows. Not comparable with P10, since both A/Bs switched way every few lists.
+- **Defaults:** `native_draw=1` (as D91), `nd_fast=1`, `gpu_fused=1` on the Vita. The host's `native_draw` stays 0, so `host_checks.sh` and the oracle run as before.
+
+## 2026-11-04: the shadows, the flame and the particles as hand C with records (stage 2)
+
+### D95. The last three renderer units (`r_shadows.s`, `r_flame.s`, `r_particles.s`) as hand C on the GTE register file, checked call by call against the mips2c unit; their polygons as native records
+- **Why:** stage 2's step 3 (`docs/native-plan.md`): particles, shadows and the flame into the native draw lists. D92 left them because their primitives are built in mips2c units, so records needed hand C first. The coordinating session kept them in stage 2: the stage 3 session leaves the renderer units alone.
+- **Decided:**
+  - **Seven entries in hand C** (`src/game/shadows_hand.c`, `flame_hand.c`, `particles_hand.c`), 2,642 instructions of hand-written asm:
+    - Spyro's shadow (`func_80059A48`), the mobys' shadows (`func_80059F8C`);
+    - Spyro's flame (`func_80058D64`);
+    - the particles (`func_800573C8`), the glows and sparkles (`func_80058BA8` with `func_800580F4` and `func_800584C4`), the dragon rescue's ring (`func_80058864`).
+
+    The unit's slot allocators (`func_8005882C`, `func_80058AE8`, `func_80058B60`, `func_80058B68`) stay mips2c: they draw nothing.
+  - **D72's method**, as the six renderers before D80: the asm's control flow and arithmetic with named locals, its GTE commands on the register file (`gte_inline.h`), and the scratchpad, the register saves (D_80077DD8, the scratchpad, the MIPS stack) and the bytes it leaves in unlinked primitive space exactly as the asm leaves them. The asm's own quirks stay, for example:
+    - the mobys' shadow adds the second slope angle's table offset where the first angle's result belongs (`add $t3, $t3, $a0` at 0x8005A158);
+    - a turned particle quad pushed behind the OT leaves its swapped rotation in the GTE for the next particles.
+  - **`HAND_RENDERER_UNIT`** (`render_hand.h`): fast_render 0 runs the unit (linked as `NAME_gen`), 1 and 2 the hand C. The NGTE build (`*_ngte.c`) only adds the records, so `--fast-render-check` compares each call with the mips2c unit itself, not with fast_render=1: the whole arena, the scratchpad and every GTE register.
+  - **Records:** in the NGTE build each polygon goes to the walk as a native record where the asm links it (`nd_append`: the built primitive's words, joining the marker at its bucket's tail):
+    - the shadows' draw mode packets and G3s, and the mobys' FT3s;
+    - the flame's G3s and GT4s;
+    - the particles' FT4s, the glows' draw modes and G3s, the ring's draw mode and F3s.
+
+    The lines (particle points and streaks, the sparkles' crosses) stay PS1 primitives: records hold polygons only.
+  - **Not done:** native GTE maths (D80's fast_render=2) for these. The register file is exact by construction, and these units are a small share of the renderers' time.
+- **Checked** (host, the units' worktree; logs `logs/u*`, gitignored):
+  - **Every call against the mips2c unit** (`--fast-render-check`: the whole arena, the scratchpad, every GTE register), 0 differ:
+
+    | Run | Shadows (Spyro's, the mobys') | Flame | Particles | Glows and sparkles | Ring |
+    |---|---:|---:|---:|---:|---:|
+    | attract demos | 1,972, 1,972 | 240 | 1,972 | 1,972 | – |
+    | gems script | 1,211, 1,211 | – | 1,211 | 1,211 | – |
+    | whole-game tour | 26,306, 26,237 | – | 26,306 | 25,634 | 54 |
+
+    The six D72 renderers' calls in the same runs: 0 differ, as before.
+  - **The check bites:** a one-word change in Spyro's shadow's colour fails all 1,211 calls of the gems script.
+  - **Particle types:** the game reaches only types 0–3, in every run and sample: the whole tour draws 755,626, 12,049, 14,748 and 13,573 of them, and the 77 oracle samples hold no other. Types 4, 5 and 6 on come from a few spawners (`particle_spawn.c` 780, 1352; a key's or the egg's sparkle, 412) that no run reaches. So `--particle-sweep` (host, with the check) sets every live particle to type 4, 5, 6 or 7 in turn before each particle call, runs both ways from there, and puts the particles back after. Two adjustments keep the swept data drawable:
+    - a type-5 particle's depth word is made non-negative, since another type's data can put its bucket outside the OT, where the unit writes as the PS1 would;
+    - a type-4 particle (a 3D streak, whose two ends are view-space translations) gets a short streak in front of the camera, since another type's data never puts it on screen.
+
+    Results:
+    - Over the demos, 1,972 calls with every particle swept: 0 differ.
+    - One-word mutations each fail the sweep: in the type-4 line's colour, all 1,972 calls (the first difference that +1); in the type-5 quad's translation, the swept calls with a type-5 quad on screen (its corners 2 pixels lower); in the type-6 quad's colour, 1,908 of 1,972 calls (that +0x100).
+    - The sweep found one real difference first: the hand C read a texture table pointer directly where the unit maps it (`MIPS_KUSEG`), which matters only for a null table. The hand C now maps every pointer it loads from RAM.
+  - **Oracle replay against PCSX-Redux** (cap3, cap5-fairy, `run14-oracle-tour`, `run19-oracle-labels`): Spyro's shadow 77/77, the mobys' 77/77, the particles 77/77, the glows and sparkles 77/77, the flame 4/4, the ring 4/4. Their dead v0/v1 are ignored (`ret` lines in `tools/oracle/ignore_ranges.txt`; every caller is a C statement).
+  - **Records** (`--native-draw-check` with the parse check, `MODE=chkp`): 0 calls differ in all eleven converted renderers, and every file identical, on the demos (26/26), gems (19/19), routes A (55/55) and B (56/56), 16:9 with in-between frames (25/25) and the whole tour (141/141). In the whole tour the shadows' 823,916 and 351,428 packets went to the walk as 113,940 and 271,397 markers, the particles' 775,132 as 766,600.
+  - **`tools/host_checks.sh`** (the host's default `fast_render=2`, so the hand C): byte-identical with main `3bfe4f7`, demo 26, the whole tour 141, routes A 56 and B 56.
+  - **Vita3K**, against D92's VPK (these renderers are mips2c there), with `native_draw=1`:
+    - VPK `logs/s95-vpk-2.vpk` (SHA-1 `4dc3a578…`, the final game code):
+      - gems with captures: 17 shots, 17 captures and the card identical;
+      - the demos: 12 shots, 11 captures.
+    - VPK 1 (`e8ab2471…`, before the hand C mapped the texture table pointers, which no real data reaches):
+      - gems: the same 17, 17 and the card;
+      - 16:9 with in-between frames, timing pinned (`gpu_time=2`, D92): 13 shots, 13 captures and the card;
+      - the pause route: 70 shots and the card.
+
+    `fast_render=0` (the units) on the same VPK showed D92's timing-dependent capture once, at 6500.
+- **Hardware:** not run. The pictures are the host's and Vita3K's checks above; timing waits for an approved run.
+
+## 2026-11-04: readable C, round 3 (stage 3)
+
+### D94. Stage 3: the cyclorama set-up, the moby lists, the particle slots, the images, `func_8003BFC0` and the credits overlay as readable C; one shared shadow, run in a child where a function acts outside RAM
+- **Why:** stage 3 of `docs/native-plan.md` (D76), after collision (D83) and `math.s`, `42CC4.s` and the gamestates 8 and 11 update (D87). What D87 left as mips2c that doesn't wait for stage 2: the cyclorama set-up `func_80050BD0` (1,287 instructions), `asm/moby_lists.s`, `asm/particle_alloc.s`, `asm/images.s` and `moby_helpers`' `func_8003BFC0` (711), and the credits overlay's two functions (1,594). The renderers' helpers (6,335) stay for stage 2, which another session is changing.
+- **What it is:**
+  - **`src/game/cyclorama_hand.c`**, `func_80050BD0` (compiled C in the original, so decompiled; offsets checked by `static_assert`): the portals' sky view (`SkyMatrices`: the camera's angles and the sky's slow turn, the second matrix's middle row at 5/8), then per portal its colour (pulsing to white, faded into the level's sky far away), its points projected, which side the camera is on, and two passes over its outline on screen (`SetEdge`, `Seen`, `LooksAway`, `PublishBox`): the first draws its face (`func_8004FEA0`), the second, nearer than 0x4000, the sky behind it (`func_80050240` or `func_8004F4BC`); then the level's sky. It calls the same functions with the same values in the same order as the asm, since the matrix library and the projections share the GTE's rotation and translation.
+  - **`src/game/moby_lists_hand.c`**, all three entries of `asm/moby_lists.s`: the update list (`func_80051FEC`: drawn last frame or within the update distance, pods by their pod lists), the three draw lists by renderer (`func_800521C0`) and the animation step with its frame sounds (`func_800522C0`).
+  - **`src/game/particle_alloc_hand.c`**, both entries of `asm/particle_alloc.s`: the particle slots as a state byte per slot (`PARTICLE_END`, `PARTICLE_HOLE`).
+  - **`src/game/images_hand.c`**, all three entries of `asm/images.s`: `ColorLerp` (DPCS as integer C), the grey copy of the screen (`func_80017E98`) and the logos' brightness steps (`func_80017F24`).
+  - **`src/game/moby_helpers_hand.c`**, `func_8003BFC0`: a moby's step along its path, curved by the weight tables in a segment's first frames (decompiled).
+  - **`src/game/credits_hand.c`**, `func_credits_8007AA50` (the first part's load, the camera's path, the music's fade, the lines spelt by flying letters, the next part loaded in the background) and `func_credits_8007BFD0` (the letters as HUD mobys, the scene, the frame), decompiled, with the letters' and lines' records as structs (`CreditsLetter`, `CreditsLine`, `CreditsPath`).
+- **What the asm leaves elsewhere, the hand C doesn't** (as D83, D87): `func_800522C0` works on a moby's two animation words in the scratchpad (0x1F800000-7) and keeps its sound queue's ends in the spill area (`D_80077DD8`); `func_80051FEC` squares in the GTE (SQR); `ColorLerp` leaves its colour and result in the data registers. Nothing reads them: the scratchpad's first words are written before they're read by every other user (the renderers, collision and 42CC4 set their own), the spill area is the asm's, and C reaches the GTE's data registers only through a load-command-store sequence. Measured: the host runs below are byte-identical to main's, where the units leave all of it. `ColorLerp`'s far colour (RFC, GFC, BFC, control registers) is kept, as D87 keeps what `CTC2` sets. The lists' slots past their ends hold, in the asm, entries it wrote before deciding not to keep a moby; each is overwritten by a later entry or the list's 0, so the hand C doesn't write them. The sound queue's one such store stays: the moby is stored in the slot after the last entry whether or not its frame has a sound, and that word stays in RAM.
+- **The shadow: one, shared** (`src/game/hand_shadow.{h,c}`, host builds with the units linked, `-DSPYRO_M2C_REF=ON`), the checks of D83 and D87 in one place: each call runs its mips2c unit from the same state and the hand C, and RAM (but the scratchpad, the spill area and the emulated stack below the call), the result and the GTE's control registers (but FLAG) must match; the call leaves the unit's scratchpad and GTE, so a replay sample still compares whole with the emulator's.
+  - **In this process** for the functions that act only on RAM and the GTE (`HAND_SHADOW_CALL`); **in a forked child** (`HAND_SHADOW_FORK`, as D87's gamestates shadow) for those that also act outside it: `func_800522C0` (sounds), the cyclorama set-up (it draws) and the credits (the CD, SPU transfers, sounds, VSync, the GPU). In the child, the unit's calls to other hand C are shadowed too, so its GTE ends as the units' would, and every descriptor open for writing but stdout and stderr goes to `/dev/null`, so the child can't write the run's files.
+  - On by default in the oracle replay (`SPYRO_REPLAY_HANDSHADOW=0` turns it off); over whole host runs with `SPYRO_SHADOW=hand`, which prints the calls compared per function at exit. `SPYRO_HAND_ONLY=NAME,...` limits it to some functions; `SPYRO_SHADOW_SHOW=N` prints N differing words a call (8); `SPYRO_HAND_FUZZ=N` runs N random variants of each shadowed call first (`ColorLerp`'s colours and amounts over IR0's range; the particle slots' states; a path step's frame, length, flags, node and last direction; Spyro's place and the mobys' drawn flags and update distances; the sectors' visibility and the renderer bytes; the animation's speed shift, catch-up steps, progress, flags and frames).
+- **A/B:** `SPYRO_M2C_FUNCS` takes the entry names, or `moby_lists`, `particle_alloc`, `images` for a whole unit (cmake `M2C_HAND_MULTI`), and `func_80050BD0`, `func_8003BFC0`, `func_credits_8007AA50`, `func_credits_8007BFD0` (`M2C_HAND`).
+- **v0 and v1:** the void entries return nothing and the int ones only v0; every caller is C now (the asm callers were the cyclorama set-up and the dragon rescue for `ColorLerp`, `42CC4.s` for `func_80053570`, the fairy for `func_800522C0`, all hand C since D87 or here). `tools/oracle/ignore_ranges.txt` gains their `ret`/`v1` lines.
+- **Host link:** the host wraps `func_80050BD0` for `--prof-draw`; with the set-up in its own object, nothing but the wrapper (in a library linked after the game's) referred to it, so `src/platform/linux32/CMakeLists.txt` pulls it in with `--undefined`.
+- **Known differences** (none reachable in the game):
+  - `func_80017E98` with an odd size, and `func_80017F24` with a run of 0 words, never end, as in the asm; the asm also reads a word past the end of the image, which the hand C doesn't.
+  - The asm's `add` and `sub` trap on signed overflow, and its divisions by a portal's point count trap on 0; the hand C assumes neither happens, as the game never traps.
+- **Checked** (details and logs in `docs/translation-log.md`, "Stage 3, round 3"):
+  - **The shadow bites:** a real one. The first draft of the cyclorama set-up took the camera-to-portal vector the wrong way round (point minus camera), which walks the outline backwards: on routes A and B, every frame with a portal's outline on screen gave `handshadow` lines (8,945 and 12,993, from vblank 7302 on route A), and the plain build's route A and B screenshots differed from main's (10 and 4 files). The emulator's samples of it had all passed (they have no portal outline on screen). Fixed, both are clean (below).
+  - **Shadows over host runs** (`build/linux32-ref`, `SPYRO_SHADOW=hand`, every call): the attract demos (12,000 vblanks) and routes A and B (13,000 each): **0 mismatches**, over 72,000 calls on the demos and 37,000 or so on each route (counts per function in the translation log). The whole-game tour (100,000 vblanks, both endings and the credits) with the functions the routes don't reach (`SPYRO_HAND_ONLY`): 0 mismatches over 26,306 calls of the cyclorama set-up, 26,272 of the credits, 4,388 of `func_8003BFC0` and 1,675 of the images'. The tour's trace showed the forked child flushing copies of the parent's buffered rows (26,304 extra; without them, main's row for row): the child now sends every descriptor open for writing but stdout and stderr to `/dev/null`, and a credits run with them shadowed leaves a trace byte-identical to the plain build's.
+  - **Oracle replay:** all 21 capture sets, **7,155 PASS, 0 FAIL** (82 NOEXIT as before), no shadow mismatch: the samples of the new functions and every call of them inside the others (`logs/rp-all`). The cyclorama set-up's 88 samples and the credits' 72 (both functions, `run14-oracle-tour`, `run19-oracle-labels`) all match, no shadow line.
+  - **Fuzzing:** cap3, cap5-fairy and route A replayed with 10 random variants of every shadowed call inside every sample: 978 samples, 964 PASS, 0 FAIL, 14 NOEXIT (as on main), no shadow line; `func_8003BFC0`'s 24 samples with 50 variants each: all PASS.
+  - **Host:** `tools/host_checks.sh` against a build of main (`3bfe4f7`): the attract demos, routes A and B and the 100,000-vblank whole-game tour (both endings, the credits), **all 279 files byte-identical** (traces, shots, audio, memory cards).
+  - **Both attract demos tick for tick against the emulator** (866 and 768 ticks, all 11 columns).
+  - **ctest:** 13 of 13 passed (`gte` skipped, as on main).
+  - **Vita3K:** the gems script, main's VPK (`3bfe4f7`) against this one: 17 of 17 shots and the memory card identical. The VPK builds without a warning in the new files.
+  - **Hardware** (2026-11-04, the owner's Vita over `hw_run.sh`, approved by the owner): runs U1 (main's VPK, `3bfe4f7`) and U2 (this branch's, `logs/stage3-d94.vpk`), the K route, 18,000 vblanks, `tools/vita/fps-runs/u1-stage3-round3.txt` with `hw-routes/n-gte-k.cfg`: **all 18 pictures and the memory card identical**, no crash dump (`logs/hw-u1`, `logs/hw-u2`). The game logic's time (`update` in the `draw` lines) went from 0.204 to 0.189 ms per vblank over the route (-7%; -8% from vblank 3600, in play: 0.235 to 0.217); the game thread's whole time per vblank in play went from 3.510 to 3.478 ms.
+  - **The `sky` line rose** (0.343 to 0.576 ms in play), but that's the profile, not the game: the Vita's `prof_draw.c` wraps both `func_80050BD0` and `func_8004EBA8` with no nesting guard. The mips2c set-up called the sky through its register entry, which the wrapper doesn't see; the hand C calls `func_8004EBA8` by name, so the sky's time is counted twice. One real change comes with it: through the set-up, the sky is now drawn by the hand renderer (`sky_hand.c`, with its native records) where main used its mips2c unit. The pictures are the same (above).
+- **Where it leaves stage 3:** `tools/native_audit.py` on this branch's VPK (`logs/native-audit.txt`): readable C (A + B1) is **63.0% of the executable's instructions** (60.8% before) and **94.0% of the whole game's** (93.4%); mips2c runs 6,335 of the game's instructions (9,927 before; none in the overlays now) and its live code in the ELF is 94,951 bytes (164,795); B1's is 62,148 (52,676). Left as mips2c: only the renderers' helpers (6,335), after stage 2.
+
 ## 2026-11-03: native file I/O (stage 6)
 
 ### D93. The disc read natively behind `cd_native=1`: a CdRead is one read of a file at an offset on a worker thread, the XA stream is read ahead from its start; the same bytes at the same ticks

@@ -22,8 +22,12 @@ set(M2C_HAND
   asm/nonmatchings/camera/func_80034CE8.s
   asm/nonmatchings/camera/func_800357A4.s
   asm/nonmatchings/camera/func_80035FB4.s
+  asm/nonmatchings/cyclorama/func_80050BD0.s
   asm/nonmatchings/gamestates/update/func_8002F3E4.s
   asm/nonmatchings/gamestates/update/func_800314B4.s
+  asm/nonmatchings/moby_helpers/func_8003BFC0.s
+  asm/nonmatchings/overlays/credits/func_credits_8007AA50.s
+  asm/nonmatchings/overlays/credits/func_credits_8007BFD0.s
   asm/nonmatchings/pete/func_8003EA68.s
   asm/nonmatchings/pete/func_8003FE40.s
   asm/nonmatchings/pete/func_80041670.s
@@ -61,12 +65,14 @@ endif()
 
 # Units whose entry points are written by hand together, in one C file
 # (src/game/collision_hand.c, decisions D83; math_hand.c and 42CC4_hand.c,
-# D87). SPYRO_M2C_FUNCS takes their
+# D87; moby_lists_hand.c, particle_alloc_hand.c and images_hand.c, D94).
+# SPYRO_M2C_FUNCS takes their
 # entry names one by one (or the unit's name for all of them). The unit
 # never goes back into the batch: when an entry is taken from it, or with
 # SPYRO_M2C_REF, it is translated on its own with every entry renamed
 # <name>_gen, and the hand C's M2C_<name>=1 branch calls that.
-set(M2C_HAND_MULTI asm/collision.s asm/math.s asm/42CC4.s)
+set(M2C_HAND_MULTI asm/collision.s asm/math.s asm/42CC4.s asm/moby_lists.s asm/particle_alloc.s
+  asm/images.s)
 set(M2C_ENTRIES_collision ColTraceRay ColSphere ColFindFloor func_8004DF24 ColSpyroInHitbox ColMoby)
 set(M2C_ENTRIES_math
   Atan2Fast Atan2 Sin Cos
@@ -83,6 +89,9 @@ set(M2C_ENTRIES_math
   func_80017D7C)
 set(M2C_ENTRIES_42CC4 MobyAlloc MobyFree MobyUpdateCollision MobySetShaded func_800529E4
   MobyGetAnimatedVertex func_80052F38 func_800530C0 MobyUpdateShadow)
+set(M2C_ENTRIES_moby_lists func_80051FEC func_800521C0 func_800522C0)
+set(M2C_ENTRIES_particle_alloc func_80053570 func_80053608)
+set(M2C_ENTRIES_images ColorLerp func_80017E98 func_80017F24)
 set(M2C_MULTI_GEN)
 foreach(u ${M2C_HAND_MULTI})
   get_filename_component(f "${u}" NAME_WE)
@@ -181,7 +190,14 @@ set(M2C_RENDER_HAND
   asm/renderers/r_pete.s:func_80023AC4
   asm/renderers/r_moby.s:func_8001F798
   asm/renderers/r_moby.s:func_80022A2C
-  asm/renderers/r_moby.s:func_80020F34)
+  asm/renderers/r_moby.s:func_80020F34
+  # D95: written after D80, checked against the unit (HAND_RENDERER_UNIT)
+  asm/renderers/r_shadows.s:func_80059A48
+  asm/renderers/r_shadows.s:func_80059F8C
+  asm/renderers/r_flame.s:func_80058D64
+  asm/renderers/r_particles.s:func_800573C8
+  asm/renderers/r_particles.s:func_80058BA8
+  asm/renderers/r_particles.s:func_80058864)
 set(M2C_RENDER_FILES)
 foreach(e ${M2C_RENDER_HAND})
   string(REPLACE ":" ";" e "${e}")
