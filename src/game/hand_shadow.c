@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -157,6 +158,16 @@ int HandShadowFork(const char *name, unsigned int (*unit)(), unsigned int a0, un
   s_sp = g_mips_sp;
   pid = fork();
   if (pid == 0) {
+    /* The child mustn't write the run's files (the trace, shots, audio,
+     * cards): stdio would flush the parent's buffered rows a second time.
+     * Every descriptor open for writing but stdout and stderr goes to
+     * /dev/null; the ones open for reading (the disc) stay. */
+    int fd, null = open("/dev/null", O_WRONLY);
+    for (fd = 3; fd < 1024; fd++) {
+      int fl = fcntl(fd, F_GETFL);
+      if (fl != -1 && fd != null && (fl & O_ACCMODE) != O_RDONLY)
+        dup2(null, fd);
+    }
     /* The unit's calls to other hand C are shadowed in the child as here,
      * so its GTE ends as the units would leave it (D83). */
     s_in_shadow = 0;
