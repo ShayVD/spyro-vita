@@ -635,7 +635,7 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 ### Stage 4: native memory (large, high risk, after stages 2 and 3)
 
 **Replaces** (E):
-- the 2 MB arena at a 16 MB-aligned base (`arena.c`, `vita_arena.cmake`);
+- the 2 MB arena at a 16 MB-aligned base (`arena.c`, `arena_moved.cmake`, formerly `vita_arena.cmake`);
 - the game's data at PS1 addresses (`SPYRO_PSX_LAYOUT`, D23);
 - 24-bit OT links (`patches/PsyCross/0001-arena-ot.patch`);
 - bit-31 model tags and 21-bit packed animation pointers (`docs/porting-plan.md` §4.4);
@@ -659,6 +659,85 @@ Also the B2 renderers' remaining machine state: the scratchpad and spill area as
 **Size:** ~1–2k lines, spread thin over many files, and decomp patches (`patches/spyro-1-port`).
 
 **Optional:** as a build option (an arena build for the oracle, a native build for the Vita), not at run time.
+
+#### The stage 4 plan (D97, 2026-11-04)
+
+Written on main `e87aabc`, with stage 3's last round (D96, the renderers' mips2c helpers) and D98 (native GTE maths in the shadows, flame and particles) still in flight. What follows is every place the port leans on PS1 addresses or on the arena, the order to take them in, and how each step is checked.
+
+##### What depends on PS1 addresses or on the arena
+
+**1. Where memory is.**
+
+| Site | What it assumes |
+|---|---|
+| `src/platform/common/arena.c` | linux32: `mmap(0x80000000, 2 MB, MAP_FIXED_NOREPLACE)`. Vita: `memalign(16 MB, 2 MB)`. Both check 16 MB alignment and bit 31. |
+| `src/platform/common/psx_arena.h`, `src/compat/port_prefix.h` | `PSX_ARENA(a)` / `PSX_ADDR(a)` = `base + (a - 0x80000000)`; `PSX_KUSEG(p)` maps the game's stores through small integers onto the arena, below 0x10000 onto `g_psx_kernel_ram` (D42; `patches/spyro-1-port/0006`, `0007`). |
+| `patches/spyro-1-port/0002`, `0003` | `Terminator_<ovl>` = the overlay's end at a fixed arena address (D20); `PSX_ADDR(0x80200000)` for the top of RAM (`initialization.c`, `4BEF8.c`, `update.c`, `balloonist.c`); `g_OverlaySpacePointer` = `PSX_ADDR(main_BSS_END)`. |
+| `src/game/port.c` | the data labels' image copied to their PS1 addresses (`psx_layout`), the scratchpad's data words moved (`s1_scratch_relocs`), the mips2c stack at `PSX_ARENA(0x80020000)`. |
+| `src/game/order_table.c`, `src/game/rand_psyq.c` | `PSX_ARENA(0x8006BBE0)` (the OT terminator) and `PSX_ARENA(0x80075AC0)` (PsyQ's `rand` seed): labels named by address. |
+| `src/platform/linux32/{pad,vblank,step,tour,main}.c`, `src/platform/vita/vblank.c` | pad buffers, `--poke`, `--peek`, the tour's cheats: PS1 addresses through `PSX_ARENA`, range-checked against 0x80000000–0x80200000. |
+| `src/platform/common/walk.c` | the lazy walk's copy of the arena (D71) is a second 16 MB-aligned 2 MB block, because OT links rebuild as `copy | link`. |
+
+**2. The game's data at PS1 addresses (D23, D25).** `tools/data2s.py --map` makes each of the 516 `asm/data` labels an absolute symbol at its `psx.map` address. On linux32 that's inside the arena at 0x80000000. On the Vita, `tools/vita/arena_syms.py` turns every label into `(*NAME__p)`, force-included into all the game's C, and `arena_symbols()` sets the 516 pointers and moves 48 data words at start-up. Every global access in the decomp C on the Vita is therefore a load through a pointer.
+
+**3. Encodings in address bits.**
+
+| Encoding | Writers | Readers |
+|---|---|---|
+| **24-bit OT links**, `0x04FFFFFF` terminator | `order_table.c`; PsyCross's `setaddr`/`addPrim`; the decomp C's primitives (`draw.c`, the HUD, `flight.c`, `DR_*` packets); every renderer (mips2c and hand C); native draw markers (D82) | PsyCross `nextPrim` = `base \| addr` (`patches/PsyCross/0001`); `walk.c`; `native_draw_check.c:90` |
+| **Tags XORed with links**: `(len << 24 \| 0x80000000) ^ next` | mips2c `r_cyclorama.s`, `r_shadows.s`, `r_particles.s` (hint `arena_tags`); `sky_hand.c` (4), `particles_hand.c` (1), `shadows_hand.c` (1) | (the tag word itself) |
+| **21-bit packed animation pointers**, and the halved form (Spyro's frames: `(p >> 1) & 0x1FFFFF`) | `loaders.c:291–294, 349–363` | mips2c's rebase after `sll 11; srl 10/11` (`tools/mips2c/mips2c.py`: `r += g_psx_arena_base`); `moby_hand.c:786, 887`; `pete_render_hand.c:210`; `pete_hand.c:150`; `collision_hand.c:302`; `42CC4_hand.c:448, 536`; `native_draw.h:146` (`ND_SIDE_KEY`); `balloonist.c:597–605` (moves a model by a pointer difference) |
+| **Bit 31 cleared = SimpleModel** in `g_Models[]` | `loaders.c:315` | `loaders.c:701`; `moby_hand.c:1761`; the mips2c culls `func_8001F158`, `func_800208FC` (`r_moby.s`, D96's) |
+| **Bit 31 of a collision pointer** (`m_CollisionModels[i]`, `m_CollisionGroup`) | `loaders.c:324` (the tag comes from the WAD's offset) | `moby_update.c:5054, 17096` (sign tests); `collision_hand.c:260` (`\| 0x80000000` rebuilds the pointer) |
+| **Bit 31 as a mode flag on a data pointer** (`D_8006FCF4`, D23) | `r_environment.s` | the hand renderer (`env_hand.c`) no longer does this; whether r_environment's other functions (D96's) do is checked in step 4c |
+| **24-bit compares** | — | `loaders.c:1257, 1553` (`& 0xffffff` on `g_Models[i]` and `m_SharedAnimations`): right only while the arena doesn't cross a 16 MB boundary |
+
+**4. Aliases of PS1 RAM in translated code.** `MIPS_KUSEG(a)` (`src/game/mips2c_rt.h`) maps every translated load and store: addresses below 2 MB onto the arena (KUSEG, and the asm's speculative loads through null). On the Vita it also maps `0x80000000 | offset` and the arena's own address with bit 31 cleared (`sll 1; srl 1`), which is why the Vita's arena must sit where no user memory aliases it. The B2 hand renderers inherit it: `HPTR(type, a)` = `MIPS_KUSEG(a)` (`render_hand.h`; `moby_hand.c` 20 uses, `pete_render_hand.c` 12, `sky_hand.c` 6, `env_hand.c` 26 `MIPS_KUSEG`s, the particles, shadows and flame a few each). `MIPS_ARENA_TAG(k)` cancels the arena's top byte in the XORed tags. The scratchpad is the arena's first KB (`MIPS_SCRATCH_HI`, `SCRATCH_BASE`), which needs a 64 KB-aligned base (`lui` + `ori`).
+
+**5. The mips2c machine.** `g_mips_sp` runs an emulated stack inside the arena (`EMU_STACK_TOP` 0x80020000, in the PS1 executable's image, unused by the port), and computed jumps dispatch on PS1 code addresses. Both go with the last mips2c unit (D96).
+
+**6. Whole-arena consumers.**
+- **Save states** (`savestate.c`, D51): chunk `ARNA` is the 2 MB block as is; the header records the arena's base, and a state from another base is refused.
+- **The presenter's in-between frame** (`present.c`, D30/D70): it snapshots the arena (`s_arena_full`, dirty pages), re-runs the draw path and puts the arena back; `SECTOR_FLAGS` by address. Stage 7 removes the re-run.
+- **The oracle replay** (`oracle_replay.c`): emulator RAM images loaded at 0x80000000; RAM compared word by word from 0x80010000; scratchpad words rebased to the arena's first KB; KUSEG pointers counted as "rebased".
+- **The shadows and checks:** `hand_shadow.c`, `hand_check.c`, `native_draw_check.c`, and the collision, 42CC4 and gamestates shadows copy and compare the whole arena. These are debug-only, and stay arena-only.
+
+##### The build-time choice: confirmed, with a third configuration
+
+The original plan proposed an arena build for the oracle and a native build for the Vita, chosen at build time. That's right, and the reason is concrete: the replay loads the emulator's RAM, whose pointer words are PS1 addresses. An address map would have to tell which words are pointers, the same thing D51 found impossible for rebasing states.
+
+What the plan lacked is a way to check the native layout as thoroughly as the host checks the arena build. Vita3K captures cover a route of 17 pictures; `tools/host_checks.sh` covers 279 files over 138,000 vblanks. So there are three configurations, all chosen at build time:
+
+| Config | Where | What it is for |
+|---|---|---|
+| **arena** (linux32 default) | arena at 0x80000000, labels at their PS1 addresses | the oracle replay, mips2c A/B builds (`SPYRO_M2C_FUNCS`, `SPYRO_M2C_REF`), RAM-level comparisons, `--poke`/`--peek` by `psx.map` address |
+| **moved** (the Vita today; linux32 with `SPYRO_ARENA_AT`, step 4a) | arena at another 16 MB-aligned address above 2 GB, labels through pointers (D25) | runs the Vita's memory model through the host's checks |
+| **native** (`SPYRO_NATIVE_MEM=ON`, from step 4c) | labels as ordinary globals, the game's memory from the heap at any address, no encodings that need a particular base | the Vita's default once proven. **Built for linux32 too**, where pointers are below 2 GB and unaligned, which is a stricter test than the Vita: bit 31 can't hide a tag that was missed. |
+
+Each native step is checked by running `host_checks.sh` on the arena build and on the native build, and the traces, shots, audio and memory cards must be byte-identical. RAM itself isn't compared, because its layout differs. The arena build's own binary must not change in any step that doesn't mean to change it; the `spyro` binary's SHA-1 shows that.
+
+##### Two things the original plan said that this one changes
+
+- **Keep the 24-bit OT links, as offsets into the game's memory.** Don't switch PsyCross to `USE_EXTENDED_PRIM_POINTERS=1`. That adds a word to every primitive, so every writer would need changing: the decomp C through `libgpu.h`, the hand renderers at raw offsets, the records' converter and the presenter's widescreen squeeze. It would also change how much of the primitive buffer each frame fills, which the LOD budget and the hard bounds measure (D49, D82). That's a behaviour change the plan's §4 forbids. A link only has to name a primitive inside one ≤16 MB block, so the native build decodes it relative to the block (`base + ((link - base) & 0xFFFFFF)`) and nothing needs the block aligned. The OT itself goes when stages 2 and 8 replace the walk.
+- **Keep the 21-bit animation pointers too, as offsets.** They are the WAD's frame format: the upper 11 bits carry other fields. The native build decodes them relative to the block as well. Only the bit-31 tags really need a new home, because their bit belongs to the pointer.
+
+##### The steps
+
+| Step | What | Waits for | Check | Size |
+|---|---|---|---|---|
+| **4a** | **The moved arena on the host** (this PR). `SPYRO_ARENA_AT` builds linux32 with the arena at another 16 MB-aligned address, with the Vita's `arena_syms` labels, aliases and `MIPS_ARENA_TAG`. The aliases' regions are reserved, so nothing else can land there (the Vita's guarantee, made explicit). The label set-up moves from the Vita's `main.c` to `port.c`, shared. | — | the arena build's binary unchanged; `host_checks.sh` on the moved build identical to the arena build's; save-state round trips on the moved build; the oracle replay on the arena build; Vita3K shots and the window capture against main's VPK | ~150 lines |
+| **4b** | **Name every decode site.** One header (`src/game/psx_mem.h`) with `MEM_OT_NEXT`, `MEM_ANIM21`, `MEM_ANIM_HALF`, `MEM_MODEL_SIMPLE`, `MEM_MODEL_PTR`, `MEM_COLL_PTR`, used at every reader in §3. In the arena and moved builds they expand to today's expressions. | D96 and D98 merged (their files hold sites) | arena build binary unchanged; moved build as 4a | ~200 lines, about 40 sites |
+| **4c** | **The native build starts:** `SPYRO_NATIVE_MEM=ON` refuses mips2c units (`SPYRO_M2C_FUNCS`, `SPYRO_M2C_REF`) and links no `mips2c_rt` stack; `HPTR`/`MIPS_KUSEG` in the hand C become plain casts. An audit confirms no hand C relies on a KUSEG alias. | D96 (no mips2c left in the default build) | linux32 native with the arena still at 0x80000000: identical to the arena build | small |
+| **4d** | **Any base.** In native, the macros decode relative to the base. `arena.c` drops the 16 MB alignment (Vita: `malloc`), and so does `walk.c`'s copy. PsyCross's `nextPrim` goes through a hook (a new `patches/PsyCross` patch, arena expression kept). `loaders.c`'s `& 0xffffff` compares become pointer compares, in the native build only (a `patches/spyro-1-port` patch). | 4b, 4c | linux32 native with the arena at an unaligned address above 2 GB: identical | ~100 lines |
+| **4e** | **The bit-31 tags move to side fields.** SimpleModel: a bit array beside `g_Models` (set where `PatchMobyModelPointers` returns, read at `loaders.c:701`, `moby_hand.c`). The collision tag: a side bit kept with the moby and the model. `collision_hand.c` and `moby_hand.c` stop OR-ing 0x80000000. This is a decomp patch, native build only. New state means a new save-state chunk. | 4d | linux32 native with the arena **below 2 GB**: identical. That is the test that nothing still needs bit 31. | ~150 lines and a patch |
+| **4f** | **Data labels as ordinary globals** (native: no `--map`, no `arena_syms`). Primitives that live in labels and are linked into the OT get looked at (the OT terminator is one) and moved into the block. `order_table.c` and `rand_psyq.c` refer to their labels by name. The host's `--poke`, `--peek` and pad-script `poke:` take PS1 addresses through a generated table (PS1 address → label + offset). `tools/savestate_globals.py` checks the labels' section instead of the arena. The presenter snapshots the labels' section beside the block. | 4e | linux32 native: identical; the D51 `savestate_globals` ctest | ~400 lines, mostly tools |
+| **4g** | **The game's memory from the heap.** The block becomes what the PS1 has above the executable: overlay space to the top of RAM (`main_BSS_END` 0x8007AA38 to 0x80200000, 1,594,824 bytes), same size, so the loader's budget and contiguity checks keep their meaning. The scratchpad becomes its own static array. `PSX_ADDR(0x80200000)` becomes the block's end, and `Terminator_*` and `g_OverlaySpacePointer` come from the block's base. | 4f | linux32 native: identical | ~150 lines |
+| **4h** | **Save states v2** (native): chunks for the labels' section and the block, both bases recorded, the same "only this layout" rule as D51. Version-1 states are refused as "OTHER BUILD". | 4g | round trips on linux32 native (`--state`, `tools/savestate_compare.py`), in Vita3K, a fresh launch loading a state | ~100 lines |
+| **4i** | **The Vita on native**, default after Vita3K and a hardware run; the moved configuration stays one switch away until hardware has run native. The arena configuration stays the host's default for the oracle. | 4h | Vita3K shots, window captures and the card identical to the moved VPK; a hardware pair (the owner's yes first) | config |
+
+**Not in stage 4:** the presenter's arena snapshot becomes two regions in 4f and goes with stage 7. The debug shadows stay arena-only.
+
+**Order:** 4a now. 4b–4e follow D96 and D98, and are where the risk is, because they touch every renderer's reads. 4f and 4g are mostly tooling. 4h and 4i close it.
 
 ### Stage 5: native audio (medium, low–medium risk)
 

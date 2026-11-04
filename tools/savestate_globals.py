@@ -76,6 +76,8 @@ def main():
                 continue
             if t.isupper() and linked.get(name) == "A":
                 continue  # a data label in the arena
+            if name.endswith("__p") and linked.get(name[:-3]) == "A":
+                continue  # a moved arena's pointer to that label, set at start-up (D25, D97)
             bad.append(f"{obj}: {t} {name}")
     if bad:
         print("game globals outside the arena that save states don't save (add them to "

@@ -25,12 +25,6 @@ target_compile_definitions(psycross PUBLIC RENDERER_OGL)
 # walk are hot, so optimise it (no x87 excess precision on ARM).
 target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
 
-# The game's C reads its data labels through arena pointers (D25).
-foreach(t spyro_game_main spyro_game_ovl spyro_game_m2c spyro_game_port)
-  target_compile_options(${t} PRIVATE "SHELL:-include ${VITA_ARENA_SYMS_H}")
-  add_dependencies(${t} spyro_vita_arena_syms)
-endforeach()
-
 file(GLOB VITA_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 # The software rasterizer and display-rect reader are linux32's (D26). The
 # rasterizer's GR_* names get a soft_ prefix: gpu.c picks it or the GPU
