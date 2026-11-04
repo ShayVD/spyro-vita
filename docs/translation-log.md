@@ -331,12 +331,12 @@ Hand C from the asm (D72's method, `HAND_RENDERER_UNIT`): the asm's control flow
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
-| `func_80059A48` (Spyro's shadow) | native GTE maths in `src/game/shadows_hand.c`'s `#if NGTE_MATH` blocks (D98) | every call against the unit and against `fast_render=1` (see D98); a mutation (the IR words not stored) fails 1,460 of 1,972 calls on the demos | none |
-| `func_80059F8C` (the mobys' shadows) | as above, `MobyShadowsTail` | as above; a mutation (three far mobys replayed, not four) fails 5 of 1,972 calls | none |
-| `func_80058D64` (Spyro's flame) | `src/game/flame_hand.c`, `FlameTail` | as above; a mutation (one projection replayed, not two) fails 225 of 240 calls | none |
-| `func_800573C8` (the particles) | `src/game/particles_hand.c`, `PSync`; types 2's turn and 4 on stay on the register file | as above; a mutation (three RTPS replayed, not four) fails 1,619 of 1,972 calls | none |
-| `func_80058BA8` (glows, sparkles) | as above; a live sparkle's cross stays on the register file | as above; the same mutation fails 1 call | none |
-| `func_80058864` (the dragon rescue's ring) | as above, `NgteSync` | as above | none |
+| `func_80059A48` (Spyro's shadow) | native GTE maths in `src/game/shadows_hand.c`'s `#if NGTE_MATH` blocks (D98) | every call against the unit, for `fast_render` 1 and 2 with `--ngte-fx`: 0 differ on the demos, wsi, routes A and B and the whole tour (26,306 calls); oracle 77/77; a mutation (the IR words not stored) fails 1,460 of 1,972 calls on the demos | none |
+| `func_80059F8C` (the mobys' shadows) | as above, `MobyShadowsTail` | as above (26,237 calls on the tour); oracle 77/77; a mutation (three far mobys replayed, not four) fails 5 of 1,972 calls | none |
+| `func_80058D64` (Spyro's flame) | `src/game/flame_hand.c`, `FlameTail` | as above (240 calls on the demos, 720 on wsi); oracle 4/4; a mutation (one projection replayed, not two) fails 225 of 240 calls | none |
+| `func_800573C8` (the particles) | `src/game/particles_hand.c`, `PSync`; type 2's turn and types 4 on stay on the register file | as above (26,306 calls on the tour); `--particle-sweep` 0 differ; oracle 77/77; a mutation (three RTPS replayed, not four) fails 1,619 of 1,972 calls | none |
+| `func_80058BA8` (glows, sparkles) | as above; a live sparkle's cross stays on the register file | as above (25,634 calls on the tour); oracle 77/77; the same mutation fails 1 call | none |
+| `func_80058864` (the dragon rescue's ring) | as above, `NgteSync` | as above (54 calls on the tour); oracle 4/4 | none |
 
 ## Stage 3: readable C (2026-11-02, decisions D83)
 

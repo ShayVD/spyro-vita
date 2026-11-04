@@ -381,7 +381,7 @@ Stage 0's K1–K3 (`docs/native-plan.md` §3.3, §3.4) on this branch's VPK, una
 | X6 | `x6-toasty-30.txt` | the shipped defaults at 30 fps, `gpu_meter=1` | the Toasty route, `REALTIME=1` | 7 min |
 | X7 | `o2-60-fr2.txt` | the shipped defaults at 60 fps (O2's), `gpu_meter=1` | the same | 7 min |
 
-**Unattended** (each run needs the owner's yes first; `hw_run.sh` leaves the run's eboot on the Vita, it doesn't put the previous one back). With `V=$PWD/logs/d98/d98-vpk-1.vpk` (an absolute path) and `K=$PWD/tools/vita/hw-routes/k-route.pad`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`:
+**Unattended** (each run needs the owner's yes first; `hw_run.sh` leaves the run's eboot on the Vita, it doesn't put the previous one back). With `V=$PWD/logs/d98/d98-vpk-2.vpk` (an absolute path; SHA-1 `029b67ee…`, D98 merged with main `e995aba`) and `K=$PWD/tools/vita/hw-routes/k-route.pad`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`:
 - X1: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x1 1500 @tools/vita/fps-runs/k1-native-cpu.txt @tools/vita/hw-routes/n-gte-k.cfg`
 - X2, X4, X5: the same with `k2-native-cpu-m2c.txt`, `x4-k1-fr2.txt`, `x5-k1-fr2-fx.txt` into `logs/hw-x2`, `-x4`, `-x5`
 - X3: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x3 1500 @tools/vita/fps-runs/k3-native-threads.txt @tools/vita/hw-routes/m1-xa-k.cfg`
