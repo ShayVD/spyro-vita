@@ -579,8 +579,8 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 - **Checked:** see D92 (host per-call check with a third walk for `native_draw=2`, a per-packet parse check, file A/B; Vita3K shots and captures with `native_draw` 0, 1, 2 and `gpu_fused` 0, 1, 2).
 - **Hardware:** run U1 (`tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`) waits for the owner's go-ahead.
 - **Still not done, and why:**
-  - **Records built by the particles, shadows and flame themselves:** they are mips2c units (`r_particles.s`, `r_shadows.s`, `r_flame.s`, 2,642 instructions); records need hand C, stage 3's renderer helpers. With `nd_fast` the walk already gets what records would give it for these few packets.
-  - **The HUD's `draw.c` sites as records:** possible through `patches/spyro-1-port`, but it would add the second stream of writes for packets the walk now parses natively.
+  - **Records built by the particles, shadows and flame themselves:** they are mips2c units (`r_particles.s`, `r_shadows.s`, `r_flame.s`, 2,642 instructions); records need hand C, which is the next PR (D95).
+  - **The HUD's and `flight.c`'s sites as records:** they link through `func_800168DC`, but widescreen narrows these primitives in place at `DrawOTag`, so a record taken at the link would be wrong there; and the walk already parses them natively (`nd_fast`).
   - **The renderers' last 0.16 ms:** with records it is the second stream (D91). `native_draw=2` removes it by having no records; whether that is the better trade is U1's question.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
