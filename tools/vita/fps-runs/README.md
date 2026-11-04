@@ -334,21 +334,6 @@ Stage 3 of `docs/native-plan.md` replaces `asm/collision.s`'s mips2c unit with r
 
 **Ran** on 2026-11-02 (D83): Q1 with main's VPK (`6128154`), Q2 with this branch's; all 18 pictures and the memory card identical, and the `update` lines 0.278 → 0.230 ms per vblank. Again after merging main (D81, D82) into the branch: Q3 with main's CI VPK (`5403b03`), Q4 with the merge's (`6855c41`): all 18 pictures and the memory card identical, `update` 0.279 → 0.228 ms per vblank.
 
-## Run U: the cyclorama set-up, the moby lists, the particle slots, the images, `func_8003BFC0` and the credits as hand-written C (D94)
-
-Stage 3's third round, checked as Q and S were. The K route ran on main's VPK (U1) and then on this branch's (U2). Every picture and the memory card must come out identical.
-
-| File | Switches | Do |
-|---|---|---|
-| `u1-stage3-round3.txt` | Q's: 30 fps (`interp=0`), `render_thread=0`, `parse_thread=0`, `fast_render=2`, `dynres=0` | unattended, the K route, once with main's VPK (U1) and once with this branch's (U2) |
-
-**Unattended:** `VPK=$PWD/MAIN.vpk DEVICE_DEFAULTS=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-u1 1500 @tools/vita/fps-runs/u1-stage3-round3.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with this branch's VPK into `logs/hw-u2`. Give `VPK` as an absolute path: the script can't open a relative one.
-
-**Ran** on 2026-11-04 (D94): U1 with main's VPK (`3bfe4f7`), U2 with this branch's.
-- All 18 pictures and the memory card identical; no crash dump.
-- `update` went from 0.204 to 0.189 ms per vblank.
-- The `sky` line counts the sky twice now: the hand set-up calls `func_8004EBA8` by name, and the profile wraps both functions.
-
 ## Runs V1 and V2: native file I/O (D93)
 
 Stage 6 of `docs/native-plan.md`: `cd_native=1` reads each `CdRead` as one read of a file at an offset on a worker thread, and the XA stream ahead from its start, instead of the sector model's per-sector copies and `xa_ahead`'s windows. The same bytes at the same ticks, so the pictures and the memory card must come out as V1's; the load time is the `cd:` line's last part.
@@ -366,3 +351,18 @@ Stage 6 of `docs/native-plan.md`: `cd_native=1` reads each `CdRead` as one read 
 - `mixer N: ... 0 position mismatches` throughout, and no `hang:` line.
 
 **Ran** on 2026-11-04 (D93, `logs/hw-v1`, `logs/hw-v2`, copied to the main checkout's `logs/d93-cd/`): both reached `frames=18000`; all 18 pictures and the memory card identical; the game thread waited 1,466 ms (V1) and 1,329 ms (V2) for the route's 55 CdReads, in 232 and 98 file-system calls.
+
+## Runs W1 and W2: the cyclorama set-up, the moby lists, the particle slots, the images, `func_8003BFC0` and the credits as hand-written C (D94)
+
+Stage 3's third round, checked as Q and S were. The K route ran on main's VPK (W1) and then on this branch's (W2). Every picture and the memory card must come out identical.
+
+| File | Switches | Do |
+|---|---|---|
+| `w1-stage3-round3.txt` | Q's: 30 fps (`interp=0`), `render_thread=0`, `parse_thread=0`, `fast_render=2`, `dynres=0` | unattended, the K route, once with main's VPK (W1) and once with this branch's (W2) |
+
+**Unattended:** `VPK=$PWD/MAIN.vpk DEVICE_DEFAULTS=1 PAD=$PWD/tools/vita/hw-routes/k-route.pad tools/vita/hw_run.sh logs/hw-w1 1500 @tools/vita/fps-runs/w1-stage3-round3.txt @tools/vita/hw-routes/n-gte-k.cfg`, then the same with this branch's VPK into `logs/hw-w2`. Give `VPK` as an absolute path: the script can't open a relative one.
+
+**Ran** on 2026-11-04 (D94): W1 with main's VPK (`3bfe4f7`), W2 with this branch's.
+- All 18 pictures and the memory card identical; no crash dump.
+- `update` went from 0.204 to 0.189 ms per vblank.
+- The `sky` line counts the sky twice now: the hand set-up calls `func_8004EBA8` by name, and the profile wraps both functions.
