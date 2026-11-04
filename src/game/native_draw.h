@@ -51,12 +51,20 @@
 #define AT32_ND(a) (*(u32 *)(uintptr_t)(u32)(a))
 #define ADDR_ND(sym) ((u32)(uintptr_t)(sym))
 
-/* config: native_draw=1 (host --native-draw). Needs fast_render=2. */
+/* config: native_draw=1 (host --native-draw): the renderers' records, which
+ * need fast_render=2. native_draw=2 (host --native-draw 2, D92): the
+ * renderers build their PS1 primitives as with 0, and the walk parses them
+ * with the records' converter (nd_packet). With 1 and 2 the walk also parses
+ * the other producers' polygon packets so (the particles, shadows, flame,
+ * HUD), unless nd_fast=0. */
 extern int g_native_draw;
+extern int g_nd_fast;
+/* the check's reference walk: no packet parsed by nd_packet but markers */
+extern int g_nd_fast_off;
 /* host --native-draw-check: each converted renderer's call runs both ways */
 extern int g_nd_check;
-/* config nd_ab=1 (D91, diagnostic): native_draw 0 and 1 take turns by
- * blocks of lists, each timed on its own (nd_ab_slot) */
+/* config nd_ab=1 (D91, D92, diagnostic): native_draw 0, 1 and 2 take turns
+ * by blocks of lists, each timed on its own (nd_ab_slot) */
 extern int g_nd_ab;
 
 enum {
@@ -118,6 +126,11 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3);
 void nd_check_began(void); /* nd_begin, for the check */
 void nd_check_set_log(void (*log)(const char *fmt, ...));
 void nd_check_report(void);
+/* host --native-draw-parse-check (D92): a packet nd_packet parses, parsed
+ * by PsyCross too from the same state and compared; fast's answer */
+extern int g_nd_pcheck;
+int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m));
+void nd_pcheck_report(void);
 
 /* The side table (D91): this list's markers by their address, each with
  * its last record, so a join reads neither the tail packet (in the arena)
@@ -132,9 +145,9 @@ extern NdSide g_nd_side[ND_SIDE_N];
 #define ND_SIDE_AT(p) (&g_nd_side[((p) >> 2) & (ND_SIDE_N - 1)])
 #define ND_SIDE_KEY(p) (((p) & 0x1FFFFFu) | g_nd.key)
 
-/* nd_ab=1: native_draw 0 (0) or 1 (1), the one the list being built now is
+/* nd_ab=1: native_draw 0, 1 or 2, the one the list being built now is
  * counted under, or -1 (a block's first lists, or nd_ab off) */
-enum { ND_AB_VARIANTS = 2 };
+enum { ND_AB_VARIANTS = 3 };
 int nd_ab_slot(void);
 /* the lists counted under each since the last call */
 void nd_ab_take(unsigned lists[ND_AB_VARIANTS]);

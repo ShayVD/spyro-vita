@@ -230,6 +230,7 @@ static struct {
   unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
   uint64_t upload_us, readback_us, expand_us;
   unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
+  unsigned sub_joins; /* untextured subtract draws joined (gpu_fused, D92) */
   uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
   unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
   unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
@@ -1060,6 +1061,17 @@ typedef struct {
   uint8_t plain;   /* no transparent texel, none with STP (gpu_opaque, D65) */
 } AEntry;
 static AEntry s_amap[AMAP];
+/* expand_lean's memo (D92): atlas_find's answer for a triangle's page,
+ * CLUT and blocks (expand's k0, k1) in atlas generation gen, which can't
+ * change until atlas_reset starts a new one. A frame's textured triangles
+ * use a few dozen, so most look-ups are one compare. A miss isn't kept: it
+ * asks atlas_find again, as before. */
+enum { AMEMO = 64 };
+static struct {
+  uint32_t k0, k1, gen;
+  int16_t ax, ay;
+  uint8_t plain;
+} s_amemo[AMEMO];
 static uint32_t s_agen = 1;
 static GLuint s_atex[2], s_afbo[2];
 static int s_acur;
@@ -1088,6 +1100,7 @@ static int s_ainuse[2];       /* sampled by a draw since the last glFinish here 
 static int s_await;           /* the current atlas may still be read by draws in flight */
 static struct {
   unsigned blocks, decoded, misses, used, plain;
+  unsigned finds; /* atlas_find calls (the rest of blocks: a memo's answer) */
   unsigned cpu_cells, waits, bad_blocks, bad_texels, checked; /* atlas_cpu (D79) */
   uint64_t cpu_us, wait_us;
 } s_ast;
@@ -1267,6 +1280,7 @@ static void atlas_reset(void) {
   s_aflush = 0;
   if (++s_agen == 0) {
     memset(s_amap, 0, sizeof s_amap);
+    memset(s_amemo, 0, sizeof s_amemo); /* expand_lean's: its generations too */
     s_agen = 1;
   }
 }
@@ -1943,6 +1957,7 @@ static void expand(int count) {
       if (s_lean && m_ok && k0 == m_k0 && k1 == m_k1 && m_gen == s_agen) {
         ax = m_ax, ay = m_ay, plain = m_plain, miss = 0;
       } else {
+        s_ast.finds++;
         miss = atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
                           v1 >> 5, wrap, &ax, &ay, &plain);
         m_ok = !miss;
@@ -2009,6 +2024,113 @@ static void expand(int count) {
   s_st.expand_us += now_us() - t0;
 }
 
+static int s_fused; /* the vertex buffer went through expand_lean: s_vbuf is stale */
+/* this vertex buffer's draws take gpu_fused's way (D92); gpu_fused=2
+ * (diagnostic) takes each way in turn, a vertex buffer each, and times them */
+static int s_fmode;
+static struct {
+  unsigned bufs[2], gl[2];
+  uint64_t vert_us[2], issue_us[2];
+  unsigned turn;
+} s_fab;
+
+/* gpu_lean (D70) without the vertex cache, in one pass (D92): PsyX's
+ * vertices from src (the render thread's slab) straight into s_lbuf, each
+ * copied once; a triangle gl_vertices' rule collapses becomes three copies
+ * of its first vertex with its vcache bytes 0, as there; then its UV box,
+ * atlas blocks and kind as expand() makes them. The same s_lbuf, s_tkind
+ * and atlas as gl_vertices' copy, its collapse pass and expand(); s_vbuf is
+ * not written (sync_pages reads s_lbuf's vertices instead). */
+static void expand_lean(const GrVertex *src, int count) {
+  uint64_t t0 = now_us();
+  int i, k;
+  if ((s_filter || s_cache) && (s_aflush || s_afull))
+    atlas_reset();
+  for (i = 0; i < count; i += 3) {
+    const GrVertex *const v = src + i;
+    LVertex *const l = s_lbuf + i;
+    const int n = count - i < 3 ? count - i : 3;
+    int u0 = 255, v0 = 255, u1 = 0, v1 = 0, wrap = 0, filt = 0, kind = 0, du = 0, dv = 0;
+    int col = 0; /* collapsed: every vertex is v[0], its vcache bytes 0 */
+    uint32_t ref0 = 0;
+    if (n == 3) {
+      for (k = 0; k < 3; k++) {
+        int dx = v[k].x - v[(k + 1) % 3].x, dy = v[k].y - v[(k + 1) % 3].y;
+        if (dx >= 1024 || dx <= -1024 || dy >= 512 || dy <= -512) {
+          col = 1;
+          break;
+        }
+      }
+    }
+    if (col) {
+      u0 = u1 = v[0].u;
+      v0 = v1 = v[0].v;
+    } else {
+      for (k = 0; k < n; k++) {
+        u0 = v[k].u < u0 ? v[k].u : u0;
+        v0 = v[k].v < v0 ? v[k].v : v0;
+        u1 = v[k].u > u1 ? v[k].u : u1;
+        v1 = v[k].v > v1 ? v[k].v : v1;
+      }
+      memcpy(&ref0, &v[0].tcx, sizeof ref0);
+    }
+    if ((u0 >> 5) == (u1 >> 5) && (v0 >> 5) == (v1 >> 5) && u1 - u0 >= 15 && v1 - v0 >= 15) {
+      wrap = 1;
+      u0 &= ~31;
+      v0 &= ~31;
+      u1 = u0 + 31;
+      v1 = v0 + 31;
+    }
+    wrap = wrap && s_filter;
+    if ((s_filter || s_cache) && v[0].bright == 2 && (v[0].page >> 7 & 3) < 3) {
+      int ax, ay, plain, miss;
+      const uint32_t k0 = (uint32_t)(uint16_t)v[0].page | (uint32_t)(uint16_t)v[0].clut << 16;
+      const uint32_t k1 =
+          (uint32_t)(u0 >> 5 | (v0 >> 5) << 3 | (u1 >> 5) << 6 | (v1 >> 5) << 9 | wrap << 12);
+      const uint32_t h = ((k0 * 0x9E3779B1u) ^ (k1 * 0x85EBCA6Bu)) >> 26;
+      s_ast.blocks++;
+      if (s_amemo[h].gen == s_agen && s_amemo[h].k0 == k0 && s_amemo[h].k1 == k1) {
+        ax = s_amemo[h].ax, ay = s_amemo[h].ay, plain = s_amemo[h].plain, miss = 0;
+      } else {
+        s_ast.finds++;
+        miss = atlas_find(v[0].page >> 7 & 3, v[0].page, v[0].clut, u0 >> 5, v0 >> 5, u1 >> 5,
+                          v1 >> 5, wrap, &ax, &ay, &plain);
+        if (!miss) {
+          s_amemo[h].k0 = k0, s_amemo[h].k1 = k1, s_amemo[h].gen = s_agen;
+          s_amemo[h].ax = (int16_t)ax, s_amemo[h].ay = (int16_t)ay;
+          s_amemo[h].plain = (uint8_t)plain;
+        }
+      }
+      if (!miss) {
+        filt = s_filter && (ref0 & VREF_POLY);
+        kind = filt ? 2 : plain ? 3 : 1;
+        s_ast.plain += kind == 3;
+        du = ax - (u0 & ~31);
+        dv = ay - (v0 & ~31);
+      } else {
+        s_ast.misses++;
+      }
+    }
+    s_tkind[i / 3] = (uint8_t)kind;
+    for (k = 0; k < n; k++) {
+      l[k].g = v[col ? 0 : k];
+      if (col)
+        l[k].g._p0 = l[k].g._p1 = 0;
+      l[k].g.tcx = (char)(v[0].bright == 2 ? filt : 2); /* 2: untextured (gpu_uber) */
+      l[k].g.tcy = (char)(wrap && filt);
+      l[k].box[0] = (uint8_t)u0;
+      l[k].box[1] = (uint8_t)v0;
+      l[k].box[2] = (uint8_t)u1;
+      l[k].box[3] = (uint8_t)v1;
+      l[k].off[0] = (int16_t)du;
+      l[k].off[1] = (int16_t)dv;
+    }
+  }
+  if (s_filter || s_cache)
+    atlas_decode();
+  s_st.expand_us += now_us() - t0;
+}
+
 /* gpu_time=2: what the vertex upload cost (t0 0: not measured) */
 static void vbo_count(uint64_t t0, size_t bytes) {
   if (!t0)
@@ -2020,15 +2142,25 @@ static void vbo_count(uint64_t t0, size_t bytes) {
 /* The vertices into the VBO (vitaGL gives a fresh buffer per glBufferData).
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
  * skips them (gpu_soft.c's rule). side: the vcache's answers for them (D39). */
-void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
-  batch_flush();
+static void vertices_in(const GrVertex *vertices, const VCacheVert *side, int count) {
   uint64_t t0;
   int i, k;
   if (count > MAX_VERTEX_BUFFER_SIZE)
     count = MAX_VERTEX_BUFFER_SIZE;
-  memcpy(s_vbuf, vertices, (size_t)count * sizeof *vertices);
   s_vorig = vertices;
   s_side = side;
+  s_fused = s_xmode && s_lean && s_fmode;
+  if (s_fused) { /* D92: the copy, the collapse and expand() in one pass */
+    s_nverts = count;
+    fill_buffer();
+    expand_lean(vertices, count); /* may draw into the atlas, with other buffers bound */
+    t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_lbuf, s_lbuf, GL_STREAM_DRAW);
+    vbo_count(t0, (size_t)count * sizeof *s_lbuf);
+    return;
+  }
+  memcpy(s_vbuf, vertices, (size_t)count * sizeof *vertices);
   for (i = 0; i + 2 < count; i += 3) {
     GrVertex *v = s_vbuf + i;
     for (k = 0; k < 3; k++) {
@@ -2063,6 +2195,22 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
   vbo_count(t0, (size_t)count * sizeof *vertices);
 }
 
+void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
+  uint64_t t0 = 0;
+  batch_flush();
+  if (g_vita_opts.gpu_fused == 2) {
+    s_fmode = (int)(s_fab.turn++ & 1);
+    t0 = now_us();
+  } else {
+    s_fmode = g_vita_opts.gpu_fused != 0;
+  }
+  vertices_in(vertices, side, count);
+  if (t0) {
+    s_fab.bufs[s_fmode]++;
+    s_fab.vert_us[s_fmode] += now_us() - t0;
+  }
+}
+
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   if (s_vc)
     psx_vcache_set_base(vertices);
@@ -2077,7 +2225,7 @@ int gl_vcache_side_used(void) { return s_vc; }
 static void sync_pages(int start, int n) {
   int i, last_page = -1, last_clut = -1;
   for (i = 0; i < n; i += 3) {
-    const GrVertex *v = s_vbuf + start + i;
+    const GrVertex *v = s_fused ? &s_lbuf[start + i].g : s_vbuf + start + i;
     int page = (uint16_t)v->page, clut = (uint16_t)v->clut;
     if (page != last_page) {
       int pw = s_texmode == P_T4 ? 64 : s_texmode == P_T8 ? 128 : 256;
@@ -2329,14 +2477,19 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, start, n);
     s_st.gl_draws++;
+    s_fab.gl[s_fmode]++;
     return;
   }
-  /* runs of triangles with the same program, in draw order */
+  /* runs of triangles with the same program, in draw order. prog_of reads
+   * only a triangle's kind and format (and this draw's state), so with
+   * gpu_fused (D92) a triangle like the one before needn't ask it */
   for (t = start / 3, end = (start + n) / 3; t < end;) {
     int f = s_tkind[t], e = t + 1;
     int hw = f == 2 && s_filter == 1 && s_blend == BM_NONE;
+    const int same = s_fmode;
     p = prog_of(t, sel);
-    while (e < end && prog_of(e, sel) == p)
+    while (e < end && ((same && s_tkind[e] == s_tkind[e - 1] && s_tfmt[e] == s_tfmt[e - 1]) ||
+                       prog_of(e, sel) == p))
       e++;
     if (f && s_alin[s_acur] != hw) { /* the GPU's bilinear, or exact texels */
       glActiveTexture(GL_TEXTURE1);
@@ -2356,6 +2509,7 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
     glUniform3f(p->semi, scale, alpha, sel);
     glDrawArrays(GL_TRIANGLES, t * 3, (e - t) * 3);
     s_st.gl_draws++;
+    s_fab.gl[s_fmode]++;
     t = e;
   }
 }
@@ -2366,8 +2520,10 @@ static void draw(int start, int n, float scale, float alpha, float sel) {
  * new draw wherever the texture format changes or textured meets
  * untextured; the atlas programs read no format. The same triangles in the
  * same order with the same state: the same pixels. Subtract blending draws
- * in two passes, so its draws aren't joined (the passes would interleave
- * differently). Anything else that reaches the GPU sends the batch first
+ * a textured batch in two passes, so its draws aren't joined (the passes
+ * would interleave differently); an untextured one is one pass, so with
+ * gpu_fused (D92) untextured subtract draws (the shadows) join untextured
+ * ones. Anything else that reaches the GPU sends the batch first
  * (batch_flush). */
 typedef struct {
   Target *t;
@@ -2492,6 +2648,12 @@ static void batch_flush(void) {
   if (!b.n)
     return;
   s_batch.n = 0;
+  if (g_vita_opts.gpu_fused == 2) {
+    const uint64_t t0 = now_us();
+    batch_issue(&b);
+    s_fab.issue_us[s_fmode] += now_us() - t0;
+    return;
+  }
   batch_issue(&b);
 }
 
@@ -2564,8 +2726,11 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     join = g_vita_opts.gpu_join && s_batch.n && s_batch.t == t &&
            s_batch.start + s_batch.n == start_vertex && s_batch.x0 == x0 && s_batch.y0 == y0 &&
            s_batch.x1 == x1 && s_batch.y1 == y1 && s_batch.ox == s_org_x &&
-           s_batch.oy == s_org_y && s_batch.blend == s_blend && s_blend != BM_SUBTRACT &&
+           s_batch.oy == s_org_y && s_batch.blend == s_blend &&
+           (s_blend != BM_SUBTRACT || (s_fmode && s_batch.texmode == P_UNTEX &&
+                                       s_texmode == P_UNTEX)) &&
            (s_batch.texmode == s_texmode || s_filter || s_cache);
+    s_st.sub_joins += join && s_blend == BM_SUBTRACT;
     if (join) {
       s_batch.n += n;
       if (s_batch.texmode == P_UNTEX)
@@ -3402,12 +3567,13 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
 void gl_report(int vblank) {
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
            "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
-           "%u.%02u ms), %d targets at %dx%d",
+           "%u.%02u ms), %d targets at %dx%d; %u untextured subtract draws joined (D92)",
            vblank, s_st.draws, s_st.tris, s_st.presents, s_st.uploads,
            (unsigned)(s_st.upload_us / 1000), (unsigned)(s_st.upload_us % 1000 / 10),
            s_st.copies, s_st.moves, s_st.readbacks, s_st.replays,
            (unsigned)(s_st.readback_us / 1000), (unsigned)(s_st.readback_us % 1000 / 10),
-           s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0);
+           s_ntargets, s_ntargets ? s_targets[0].pw : 0, s_ntargets ? s_targets[0].ph : 0,
+           s_st.sub_joins);
   if (s_st.captures) {
     int i, ram = 0;
     for (i = 0; i < s_ntargets; i++)
@@ -3433,6 +3599,19 @@ void gl_report(int vblank) {
              "%u.%02u ms",
              vblank, s_st.gl_draws, s_st.draws, (unsigned)(s_st.vbo_bytes / 1024),
              (unsigned)(s_st.vbo_us / 1000), (unsigned)(s_st.vbo_us % 1000 / 10));
+  }
+  if (g_vita_opts.gpu_fused == 2) { /* sums, so windows add up (tools/vita/fused_ab_summary.py) */
+    int m;
+    char buf[256];
+    int n = snprintf(buf, sizeof buf, "gpu fused ab %d:", vblank);
+    for (m = 0; m < 2; m++)
+      n += snprintf(buf + n, sizeof buf - n, " f%d %u/%u/%u/%u;", m, s_fab.bufs[m],
+                    (unsigned)s_fab.vert_us[m], (unsigned)s_fab.issue_us[m], s_fab.gl[m]);
+    vita_log("%s", buf);
+    memset(s_fab.bufs, 0, sizeof s_fab.bufs);
+    memset(s_fab.gl, 0, sizeof s_fab.gl);
+    memset(s_fab.vert_us, 0, sizeof s_fab.vert_us);
+    memset(s_fab.issue_us, 0, sizeof s_fab.issue_us);
   }
   if (g_vita_opts.gpu_fill)
     fill_report(vblank);
@@ -3464,10 +3643,14 @@ void gl_report(int vblank) {
     psx_vcache_stats_reset();
   }
   if (s_filter || s_cache) {
-    vita_log("atlas %d: %u textured triangles looked up, %u not in the atlas (from VRAM), "
-             "%u blocks decoded; %u of %u blocks in use; expand %u.%02u ms",
-             vblank, s_ast.blocks, s_ast.misses, s_ast.decoded, s_ast.used, AGRID * AGRID,
-             (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
+    vita_log("atlas %d: %u textured triangles looked up (%u in the map, the rest remembered), "
+             "%u not in the atlas (from VRAM), %u blocks decoded; %u of %u blocks in use; "
+             "expand %u.%02u ms%s",
+             vblank, s_ast.blocks, s_ast.finds, s_ast.misses, s_ast.decoded, s_ast.used,
+             AGRID * AGRID, (unsigned)(s_st.expand_us / 1000),
+             (unsigned)(s_st.expand_us % 1000 / 10),
+             g_vita_opts.gpu_fused && s_lean ? " (with the copy and collapse, gpu_fused=1, D92)"
+                                             : "");
     if (g_vita_opts.gpu_opaque)
       vita_log("atlas %d: gpu_opaque=1: %u of those triangles drawn without discard", vblank,
                s_ast.plain);
@@ -3483,7 +3666,7 @@ void gl_report(int vblank) {
       vita_log("atlas %d: atlas_cpu=2: %u entries checked against the CPU's decode, %u differ "
                "(%u texels)",
                vblank, s_ast.checked, s_ast.bad_blocks, s_ast.bad_texels);
-    s_ast.blocks = s_ast.misses = s_ast.decoded = s_ast.plain = 0;
+    s_ast.blocks = s_ast.misses = s_ast.decoded = s_ast.plain = s_ast.finds = 0;
     s_ast.cpu_cells = s_ast.waits = s_ast.checked = s_ast.bad_blocks = s_ast.bad_texels = 0;
     s_ast.cpu_us = s_ast.wait_us = 0;
   }

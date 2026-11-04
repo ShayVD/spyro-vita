@@ -12,6 +12,10 @@
 # vc (gems with the vertex cache, D39's hook; its "host vcache" line must find
 # vertices, D89) and whole (the 100,000-vblank tour).
 # MODE=n1 runs --native-draw in place of the check (timing, --prof-draw).
+# MODE=p2 runs native_draw=2 with its parse check (D92: every packet the walk
+# parses with the records' converter is parsed by PsyCross too, "native draw
+# parse check" lines); MODE=chkp the per-call check with native_draw=1 and the
+# parse check of the other producers' packets.
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 cd "$(dirname "$0")/.."
 P=$1; shift
@@ -25,7 +29,9 @@ run() { # NAME MODE
   # and the second finds the card the first wrote (D91)
   extra="--save $D/save"
   case $n in demo) extra="$extra --wav $D/audio.wav";; esac
-  case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";; esac
+  case $m in n1) extra="$extra --native-draw ${ND_ARGS:-}";; chk) extra="$extra --native-draw-check ${ND_ARGS:-}";;
+  p2) extra="$extra --native-draw-parse-check ${ND_ARGS:-}";;
+  chkp) extra="$extra --native-draw-check --native-draw-parse-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
@@ -50,6 +56,8 @@ for n in "$@"; do
   done
   [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   grep -h "native draw check: func" $b/spyro.log | sed 's/^/  /'
+  grep -h "native draw parse check: [0-9]" $b/spyro.log | sed 's/^/  /'
+  grep -c "differ (" $b/spyro.log | sed 's/^/  lines naming a difference: /'
   # vc: the host's pictures don't use the cache, so the files can't show it
   # missing; the hand renderers must feed it (D89)
   if [ $n = vc ]; then

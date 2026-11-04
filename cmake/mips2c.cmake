@@ -190,7 +190,14 @@ set(M2C_RENDER_HAND
   asm/renderers/r_pete.s:func_80023AC4
   asm/renderers/r_moby.s:func_8001F798
   asm/renderers/r_moby.s:func_80022A2C
-  asm/renderers/r_moby.s:func_80020F34)
+  asm/renderers/r_moby.s:func_80020F34
+  # D95: written after D80, checked against the unit (HAND_RENDERER_UNIT)
+  asm/renderers/r_shadows.s:func_80059A48
+  asm/renderers/r_shadows.s:func_80059F8C
+  asm/renderers/r_flame.s:func_80058D64
+  asm/renderers/r_particles.s:func_800573C8
+  asm/renderers/r_particles.s:func_80058BA8
+  asm/renderers/r_particles.s:func_80058864)
 set(M2C_RENDER_FILES)
 foreach(e ${M2C_RENDER_HAND})
   string(REPLACE ":" ";" e "${e}")

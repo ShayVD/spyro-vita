@@ -311,4 +311,45 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   }
 #endif
 
+
+/* The renderers written by hand after D80 (the shadows, the flame, the
+ * particles; decisions D95): one version, on the GTE register file, which
+ * the NGTE build compiles again only to add native_draw's records. So
+ * --fast-render-check compares each call with the mips2c unit itself
+ * (NAME_gen__m2c) instead of fast_render=1's build: RAM, the scratchpad
+ * and every GTE register must come out the same. Otherwise as
+ * HAND_RENDERER. */
+#define HAND_PICK_UNIT(name, hand, a0, a1, a2, a3)                             \
+  (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
+   : g_hand_check        ? hand_check(#name, name##_gen__m2c, name##_ngte, a0, a1, a2, a3) \
+   : g_nd_check          ? nd_check(#name, name##_ngte, a0, a1, a2, a3)         \
+                         : name##_ngte(a0, a1, a2, a3))
+#if NGTE
+#define HAND_RENDERER_UNIT(name, hand)                                         \
+  u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#else
+#define HAND_RENDERER_UNIT(name, hand)                                         \
+  u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
+  u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
+  u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
+    if (g_fast_render_ro)                                                      \
+      return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                       \
+    return name##_gen__m2c(a0, a1, a2, a3);                                    \
+  }                                                                            \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    u32 r_, sp_ = g_mips_sp;                                                   \
+    if (!g_fast_render_ro)                                                     \
+      return name##_gen(a0, a1, a2, a3, a4, a5, a6, a7);                       \
+    g_mips_sp = sp_ - 32u;                                                     \
+    M_U32(sp_ - 16u) = a4;                                                     \
+    M_U32(sp_ - 12u) = a5;                                                     \
+    M_U32(sp_ - 8u) = a6;                                                      \
+    M_U32(sp_ - 4u) = a7;                                                      \
+    r_ = HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                           \
+    g_mips_sp = sp_;                                                           \
+    return r_;                                                                 \
+  }
+#endif
+
 #endif

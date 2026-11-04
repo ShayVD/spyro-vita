@@ -78,13 +78,22 @@
  *   code from the same state and must leave the same RAM and GTE
  *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
  *   lists the GTE registers each renderer reads from before the call, from
- *   every Nth call ("gte audit" lines). --native-draw (with
+ *   every Nth call ("gte audit" lines). --particle-sweep (with the
+ *   check, D95): before each particle draw every live particle's type is
+ *   set to 4..7 in turn, which no run reaches, both ways are compared, and
+ *   the types are put back. --native-draw (with
  *   --fast-render 2): the converted renderers' primitives go to the OT walk
  *   as native draw lists (src/game/native_draw.h, decisions D82);
  *   --native-draw-check runs each of their calls both ways and compares the
  *   triangles PsyCross's walk makes of them ("native draw check" lines).
- *   --nd-ab: native_draw 0 and 1 in turn by blocks of lists (nd_ab, the
- *   Vita's timing run, D91).
+ *   --native-draw-parse: native_draw=2 (D92): the renderers' PS1
+ *   primitives, parsed by the walk with the records' converter; with
+ *   --native-draw-parse-check (also with --native-draw, or with the
+ *   check) every packet that converter takes is parsed by PsyCross too
+ *   and compared ("native draw parse check" lines). --nd-fast 0: with 1
+ *   and 2, only the records go through the converter.
+ *   --nd-ab: native_draw 0, 1 and 2 in turn by blocks of lists (nd_ab, the
+ *   Vita's timing run, D91, D92).
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
@@ -112,12 +121,15 @@ void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
 extern int g_nd_ab;                    /* D91 */
+extern int g_nd_fast, g_nd_pcheck;     /* D92 */
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
+void nd_pcheck_report(void);
 static void nd_atexit(void) {
   nd_report((int)host_vblank_count());
   nd_check_report();
+  nd_pcheck_report();
 }
 
 #include <stdio.h>
@@ -155,7 +167,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--nd-ab] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--prof-draw]\n"
           "             [--mixer 1|3]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -409,6 +421,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+    } else if (strcmp(a, "--particle-sweep") == 0) {
+      extern int g_particle_sweep; /* hand_check.c, D95 */
+      g_particle_sweep = 1;
+      g_hand_check = 1;
+      hand_check_set_log(host_log);
     } else if (strcmp(a, "--fast-render-check") == 0) {
       g_hand_check = 1;
       hand_check_set_log(host_log);
@@ -417,6 +434,15 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--native-draw-check") == 0) {
       g_native_draw = 1;
       g_nd_check = 1;
+    } else if (strcmp(a, "--native-draw-parse") == 0) {
+      g_native_draw = 2;
+    } else if (strcmp(a, "--native-draw-parse-check") == 0) {
+      g_nd_pcheck = 1;
+      if (!g_native_draw)
+        g_native_draw = 2;
+    } else if (strcmp(a, "--nd-fast") == 0) {
+      TAKE();
+      g_nd_fast = to_int(val);
     } else if (strcmp(a, "--nd-ab") == 0) {
       g_nd_ab = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {

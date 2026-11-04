@@ -64,6 +64,7 @@ static struct {
   int n;
   uintptr_t head; /* the list's first packet, in the copy */
   int tag;        /* g_psx_walk_tag at the handover */
+  int nd;         /* g_psx_walk_nd at the handover */
   int frozen;     /* g_psyxVramFrozen at the handover */
   PsxVcacheFrame vc;
 } s_job;
@@ -74,6 +75,7 @@ static unsigned char s_defer[DEFER_BYTES];
 static int s_defer_len;
 static PsxWalkStats s_stats;
 int g_psx_walk_tag = -1;
+int g_psx_walk_nd;
 
 typedef struct {
   void (*fn)(void *);
@@ -117,6 +119,8 @@ static uintptr_t next_packet(uintptr_t packet) {
 
 static int vram_frozen(void) { return on_walker() ? s_job.frozen : g_psyxVramFrozen; }
 
+int psx_walk_nd(void) { return on_walker() ? s_job.nd : g_psx_walk_nd; }
+
 static int walk_hook(u_long *p) {
   uint32_t head = (uint32_t)((uintptr_t)p - g_psx_arena_base);
   unsigned long long t0;
@@ -150,6 +154,7 @@ static int walk_hook(u_long *p) {
   }
   s_job.frozen = g_psyxVramFrozen;
   s_job.tag = g_psx_walk_tag;
+  s_job.nd = g_psx_walk_nd;
   psx_vcache_frame_take(&s_job.vc);
   s_pending = 1;
   s_stats.walks++;

@@ -368,6 +368,12 @@ u32 func_80023AC4_gen__m2c();
 u32 func_8001F798_gen__m2c();
 u32 func_80022A2C_gen__m2c();
 u32 func_80020F34_gen__m2c();
+u32 func_80059A48_gen__m2c(); /* D95 */
+u32 func_80059F8C_gen__m2c();
+u32 func_80058D64_gen__m2c();
+u32 func_800573C8_gen__m2c();
+u32 func_80058BA8_gen__m2c();
+u32 func_80058864_gen__m2c();
 
 const M2cEntry m2c_gen_index[] = {
 #if M2C_REF && !M2C_func_80033F08
@@ -496,5 +502,11 @@ const M2cEntry m2c_gen_index[] = {
     GEN(0x8001F798u, func_8001F798),
     GEN(0x80022A2Cu, func_80022A2C),
     GEN(0x80020F34u, func_80020F34),
+    GEN(0x80059A48u, func_80059A48),
+    GEN(0x80059F8Cu, func_80059F8C),
+    GEN(0x80058D64u, func_80058D64),
+    GEN(0x800573C8u, func_800573C8),
+    GEN(0x80058BA8u, func_80058BA8),
+    GEN(0x80058864u, func_80058864),
     {0, 0, 0},
 };

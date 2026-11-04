@@ -18,9 +18,9 @@ static const char *const k_names[D_COUNT] = {"update", "env", "mobys",    "spyro
                                              "fx",     "particles", "sky"};
 static uint64_t s_acc[D_COUNT];
 static unsigned s_calls[D_COUNT];
-/* nd_ab=1 (D91): the same, by the way (native_draw 0 or 1) the list being
+/* nd_ab=1 (D91, D92): the same, by the way (native_draw 0, 1 or 2) the list being
  * built is counted under */
-enum { AB_N = 2 }; /* ND_AB_VARIANTS */
+enum { AB_N = 3 }; /* ND_AB_VARIANTS */
 int nd_ab_slot(void);
 void nd_ab_take(unsigned lists[AB_N]);
 static uint64_t s_ab_acc[AB_N][D_COUNT];
