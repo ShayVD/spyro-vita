@@ -331,3 +331,5 @@ Stage 6 of `docs/native-plan.md`: `cd_native=1` reads each `CdRead` as one read 
 - `cd: N reads, K KB, T ms in the file system since the start; L CdReads, the game thread waited W ms for them` every 300 vblanks where there were new reads. L the same in both runs; W in U2 against U1 is the load-time change. U2's N should be far below U1's.
 - `xa N:` lines: in U2 the stream's chunks as windows, with music sectors from the read-ahead after every level change and a handful read on the game thread as each track starts.
 - `mixer N: ... 0 position mismatches` throughout, and no `hang:` line.
+
+**Ran** on 2026-11-04 (D93, `logs/hw-u1`, `logs/hw-u2`, copied to the main checkout's `logs/d93-cd/`): both reached `frames=18000`; all 18 pictures and the memory card identical; the game thread waited 1,466 ms (U1) and 1,329 ms (U2) for the route's 55 CdReads, in 232 and 98 file-system calls.
