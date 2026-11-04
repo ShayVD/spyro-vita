@@ -640,6 +640,15 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 - So every renderer's polygons now reach the walk as records. What stays PS1 primitives: lines, the HUD's and `flight.c`'s 2D primitives (parsed natively by `nd_fast`), and the draw environment packets.
 - Left as mips2c in the renderers: `r_cyclorama.s`'s helpers, `r_environment.s`'s other functions and `r_moby.s`'s culls (stage 3), and `r_particles.s`'s slot allocators. D96 (stage 3) made them hand C too.
 
+**Then (D99, 2026-11-04): direct vertices, the last piece, behind `nd_direct=1` (default 0).**
+- **What was left:** each triangle was converted twice, by the walk (`em_prim`, into PsyCross's `GrVertex`) and again by the render thread (`expand_lean`: every vertex copied into the lean vertex with its UV box, atlas offset and flags). U1 timed that second pass at 1.9 ms of the render thread's 2.8 ms per vertex buffer (D92); X4 at 0.79–0.92 ms per vblank on the game thread.
+- **Now:** the walk writes each triangle's UV box into the vertex's spare bytes and lists the triangle. The render thread draws the slab's vertices as they came and adds only what depends on the atlas and the options, the atlas offset and two flags, in a side stream of 8 bytes a vertex. One rule for the box on both sides (`src/platform/common/psx_lean.h`). Everything `em_prim` makes is covered: the records and every polygon packet `nd_fast` parses (the HUD's polygons, particles, shadows, flame). PsyCross's own sprites, lines and rectangles are converted on the render thread by the same rule.
+- **The OT walk stays.** It orders the records with what is still a PS1 packet, and with the markers it visits a few hundred packets a list. Its cost was the conversions.
+- **Checked:**
+  - **host:** every packet both ways, 0 differ, every file identical on the demos, gems, 16:9 with 60 fps in-between frames, lod, routes A and B and the whole tour; `host_checks.sh` byte-identical with main; the oracle replay 0 FAIL.
+  - **Vita3K against main's VPK:** shots, window captures and card identical on gems, gems with every layer on the game thread, gems with `tex_filter=1`, the demos, 16:9 at 60 fps, and the pause route with a save state and load. `nd_direct=2` compares the render thread's own conversion with `expand_lean`'s, attribute by attribute: 0 of 21.9 M vertices differ.
+- **Hardware (Y1–Y4):** HARDWARE_PLAN.
+
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
 **Replaces** (C): 19,272 original instructions, 32,563 generated lines and 453 KB of ARM code:
