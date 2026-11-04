@@ -314,6 +314,12 @@ One run, two A/Bs in the same scenes. `nd_ab=1` now takes `native_draw` 0, 1 (th
 
 **Unattended:** `REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-u1 1500 @tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt @tools/vita/hw-routes/o-toasty.cfg`
 
+**Ran 2026-11-04** (`logs/hw-u1`; D92): it reached `frames=21000`. Per list, against `native_draw=0`:
+- records: game thread −0.19 ms, parse thread −0.95;
+- `native_draw=2`: −0.18 and −0.51.
+
+So records stay the default. `gpu_fused=1`: −0.275 ms of render thread per vertex buffer (9%). Main's eboot was put back after.
+
 **What the logs should show:** `tools/vita/nd_ab_summary.py logs/hw-u1/spyro.log`: v2's renderers against v0 within noise (it builds no records), its walk and wait against v1's, and the "game" column (renderers plus wait) of v1 against v2. `tools/vita/fused_ab_summary.py logs/hw-u1/spyro.log`: f1's per-buffer render-thread time (vertices and issue) against f0's. `frames=21000` with no hang line.
 
 ## Run Q: collision as hand-written C (D83)

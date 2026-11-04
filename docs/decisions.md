@@ -2142,5 +2142,24 @@ Record each decision with its date, what was chosen, and why.
   - **The pause route** (16:9, 60 fps forced, the `StoreImage` replay): `native_draw` 1 and 2, 70 shots and the card identical. Main's paths crashed inside Vita3K before the end in both tries (at shots 33 and 39; D86 saw the same with `native_draw=0`); their shots up to there are identical.
   - **Vita3K's own failures** in 10 of 33 runs, all inside the emulator (the game's log just stops): an unimplemented GPU opcode (216), a lost Metal device, write-protect faults, null accesses. By configuration: main's paths 3 of 11 runs, the new defaults 5 of 11, `native_draw=2` 1 of 5, the others 1 of 6. Every configuration but the pause route on main's paths went through when repeated. Too few runs to tell the defaults apart from main's, and hardware is what counts (U1). The Mac was heavily loaded by other sessions throughout.
   - Two captures (gems at 3500 and 16:9 at 3500, 48–280 pixels round the small Spyro at the right edge) differed once between two runs of the same configuration, so those frames' captures aren't a test.
-- **Timing:** not measured. In Vita3K the Mac was too loaded by other sessions to give even a direction (`gpu_fused=2`'s halves were within ±1 ms of each other per buffer, the A/B's noise). Hardware run U1 (`tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`) waits for the owner's go-ahead; it times `native_draw` 0, 1 and 2 (`nd_ab=1`) and the render thread's two ways (`gpu_fused=2`) in one run.
-- **Defaults:** `native_draw=1` (as D91), `nd_fast=1`, `gpu_fused=1` on the Vita; the host's `native_draw` stays 0, so `host_checks.sh` and the oracle run as before.
+- **Timing in Vita3K:** none. The Mac was too loaded by other sessions to give even a direction (`gpu_fused=2`'s halves came within ±1 ms of each other per buffer, the A/B's noise).
+- **Hardware: run U1** (2026-11-04, the owner's go-ahead; VPK `logs/s92-vpk-2.vpk`, SHA-1 `983487fb…`; `tools/vita/fps-runs/u1-nd-parse-fused-ab-60.txt`, the Toasty route at 60 fps, `REALTIME=1`; `logs/hw-u1`, gitignored). It reached `frames=21000` in 321 s with no hang line, and the owner's files were put back. Afterwards main's eboot (`38f1911b…`, CI run 41724811066) went back on the Vita, read back identical.
+  - **`nd_ab=1`** (`tools/vita/nd_ab_summary.py`, 68 windows, about 5,970 lists each). Per list, ms, the mean of the windows' differences and its standard error:
+
+    | | renderers | walk (parse thread) | wait for it | game thread (renderers + wait) |
+    |---|---:|---:|---:|---:|
+    | `native_draw=1` (records) against 0 | +0.188 ±0.012 | −0.949 ±0.031 | −0.376 ±0.018 | −0.188 ±0.021 |
+    | `native_draw=2` (parse) against 0 | +0.021 ±0.010 | −0.508 ±0.018 | −0.197 ±0.010 | −0.176 ±0.016 |
+    | records against parse | +0.167 ±0.011 | −0.441 ±0.017 | −0.179 ±0.012 | +0.012 ±0.018 |
+
+    - **The records' second stream costs the renderers what D91 measured** (+0.19; T3 +0.16). Their joins save the walk more than the in-place parse does, about as much more as the renderers lose. For the game thread the two ways are the same within noise (0.012 ± 0.018 ms).
+    - **The parse thread is 0.44 ms per list freer with records.** So `native_draw=1` stays the default. `native_draw=2` stays as the way without records, with the same game thread.
+  - **`gpu_fused=2`** (`tools/vita/fused_ab_summary.py`, about 11,500 vertex buffers each). Per vertex buffer, `gpu_fused=1` against the way before:
+    - `gl_vertices` −0.220 ±0.023 ms;
+    - issuing the draws −0.055 ±0.007 ms;
+    - together −0.275 ±0.030 ms of 3.04, 9% less;
+    - GL draws the same (−0.02 ±0.06), as the shadows' rule had nothing to join.
+
+    About 1.14 vertex buffers a vblank, so about 0.31 ms per vblank of the render thread (busy 12.2 ms per vblank in this run).
+  - **Late vblanks:** 244 in 70 windows. Not comparable with P10, since both A/Bs switched way every few lists.
+- **Defaults:** `native_draw=1` (as D91), `nd_fast=1`, `gpu_fused=1` on the Vita. The host's `native_draw` stays 0, so `host_checks.sh` and the oracle run as before.
