@@ -2454,3 +2454,36 @@ Record each decision with its date, what was chosen, and why.
   - The native binary has no mips2c symbol (`nm`: no `_gen`, `__m2c` or `m2c_index`). It is 9.3 MB against the arena build's 10.6 MB.
   - **Vita3K** (the gems script, `logs/pads/gems.txt`, 8,768 vblanks, `CAPTURE=1`): main's VPK (`82d05ce`, `logs/s4-main.vpk`) against the 4d–4e branch's (`logs/s4-d100.vpk`). That branch's Vita code is this part's: the moved build, whose macros it only adds there expand to the same expressions. Main twice (`logs/s4-v3k-gems-main`, `-main-b`) and the branch's second run (`-d100-b`): **17 of 17 shots, 17 of 17 window captures and the memory card identical**. The branch's first run (`-d100`) matched in every shot and the card, and in 16 of the 17 captures. Its last (`win-8704`) differed in a 30×60-pixel patch, and it differs the same way from the same VPK's second run, so it is the window grab's noise, not the code.
 - **Not run on hardware:** the Vita stays on the moved configuration, whose expansions are today's expressions.
+
+## 2026-11-04: decoupled timing (stage 7), planned
+
+### D101. Stage 7's plan: the vblank callbacks and their catch-up stay the game's clock; presentation leaves `VSync`; the in-between frame moves to a presenter that runs the game's own renderers, made re-entrant, from a snapshot, checked record for record against D30's pass; the plan's summary brought up to date
+- **Why:** stages 7 (decoupled timing) and 8 (retiring PsyCross) of `docs/native-plan.md` had no detailed plan, and its summary still recommended stages 0b, 1 and 2 and quoted D76's readable-C figures. Docs only: no engine change, no hardware run.
+- **The plan** (`docs/native-plan.md`, "The stage 7 plan (D101)") starts with an inventory of everything that ties the logic and the pictures to the vblank, with file and function for each:
+  - the tick and `g_DeltaTime`'s 2–4 clamp (`main.c`);
+  - `PadVSync`'s counts and its demo shortcut (`gamepad.c`);
+  - the 30 Hz pacer in every draw (`draw.c`, the title and flight overlays);
+  - the host's virtual `VSync` and the Vita's real one with its catch-up and the D90 widening (the two `vblank.c` files);
+  - the CD's ticks and latency 0 (`libcd.c`, D17, D93);
+  - the SPU's 735 samples a vblank, and the audio ring (D88);
+  - D30's in-between frame (`present.c`: snapshot, blend, a second `GamestateDraw`, restore);
+  - the render, parse, mixer and CD threads.
+
+  Then it gives steps 7a–7g, each with what it waits for, how it is checked and its size.
+- **Decided:**
+  - **The callbacks stay on the game thread, inside `VSync(0)`, with the catch-up after a late tick.** The original plan said the catch-up loop goes. It can't: it is the PS1 interrupt's count, which gives `g_DeltaTime` its 3 and 4. Running the callbacks asynchronously would make runs non-deterministic.
+  - **The Vita's clock stays the display's widened vcount** (D28, D90), not process time. The flips and the audio ring follow the display.
+  - **Not interpolating draw records, and not reprojection.**
+    - Records are screen-space primitives after culling, clipping, `NCLIP` and the OT's depth sort, the same output D70 found can't be reused for another tick. Interpolating them gives a picture that differs from today's in-between frame at every primitive that exists in only one tick, with no exact reference to check it against.
+    - Reprojecting with tick N's culls keeps D70's gaps.
+    - Reprojection stays the fallback to try, with the owner's decision, if the presenter doesn't fit its core.
+  - **The in-between frame gets a presenter on another core** (7d–7f). The game's own renderers take a context (GTE state as C values, their scratchpad, their side effects, their record pool), and hand C draws the play branch from a snapshot of two ticks. It must give D30's pass's records byte for byte, every tick, on the host. D30's pass stays linked as that reference and as the fallback for other gamestates.
+  - **Presentation leaves `VSync`** (7c, after D99). Frames carry their due vblank, and the render thread shows them. The game thread never waits for a present. The host and `realtime=0` present inline at virtual vblanks, so runs stay deterministic.
+  - **The order is 7a and 7b first** (host audits; the port's own `VSync`). Both are small and wait for nothing. 7d–7g are decided on 7a's numbers and on what D99 leaves of the render thread.
+- **The payoff, from existing logs:**
+  - **The pass's cost:** X7's `present` lines (`logs/hw-x7` of the ngte-last-renderers worktree, windows with 140 or more in-between frames) put the pass and its snapshot at 3.84 ms per tick in Artisans, 5.16 in Toasty and 12.40 in the Stone Hill attract demo (two passes there). In Toasty the game thread is 21.5% busy at 30 fps (X6) and 39.5% at 60 (X7).
+  - **But 60 fps already holds in play** (D81, X7). So moving the pass off the game thread buys headroom, not pictures (*estimate*).
+  - **Where 60 fps misses today:** the attract demo's flight, where the render thread is the wall (15.38 ms a picture), and the loads. Stage 2's direct path is what speeds up the render thread. After 7c the render thread's overload costs pictures, not ticks (*estimate*).
+  - **The GPU's work is unchanged.**
+- **Summary refreshed:** D96's 63.5% / 94.1% readable C (81.9% / 97.1% with B2); D98's 9.73 ms per vblank, with the measured emulation layers 64% of it; what's done and what's in flight (D99, D100); the next steps after those. The "Order and what can run at once" table gained a status column.
+- **Hardware:** none run. 7c and 7f each list a hardware pair that needs the owner's yes first.

@@ -10,20 +10,11 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
 
 ## Summary
 
-- **The game itself is mostly native already.** Of the original executable's 91,415 MIPS instructions, **50.6% now run as readable C** (matched decomp C plus hand-written C). Counting all 37 overlays as they are on the disc, that's **91.7%**. Of the code bytes we ship that aren't third-party libraries, **70.0%** are readable C.
-- **The time is spent in the emulation layers.** In main's heaviest logged level (Toasty, 30 fps, hardware), the game's own logic, renderer bodies and primitive building take **15–17%** of the CPU work per vblank, counted over all threads. The other **83–85%** goes to:
-  - the software GTE;
-  - PsyCross's OT walk;
-  - turning PS1 primitives into vitaGL draws;
-  - the SPU and XA models;
-  - CD reads.
+Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status lines in §5 and §3.5. The first version (D76) was written on main `2a0691c`.
 
-  On the GPU, D74's I1 run shows that PsyCross's way of splitting draws cost **half of Toasty's scene time** (15–21 ms down to 6–7 ms once the draws were joined).
-- **Stage 0 confirmed it on hardware** (runs K1–K3 on main `f534fb1`, §3.4). With every layer on the game thread (K1), the emulation layers take **78–84%** of the CPU per vblank. That includes the GTE's share, which is still an estimate: without it, 58–72% is measured outright. The render thread's real CPU is **two-thirds** of its busy time, so the earlier 35–51% range resolves to its low end.
-- **Since then (D98, §3.5):** on the K route with every layer on the game thread, the measured emulation layers fell from 69% of the CPU per vblank (N1, after stage 1's D80) to 64% (W1, main `3bfe4f7`, with the records of stage 2 and the native mix of stage 5), and the route's sum by 7%. Since D80 the main renderers' GTE is native maths, so stage 0's GTE *estimate* no longer adds much: 64% is close to the whole emulation share today (*estimate*, against stage 0's 78–84%). Runs X1–X7 (D98) measured this branch with everything merged: **64%**, 9.73 ms per vblank, the PS1 GPU → vitaGL translation the largest layer (35%).
-- **Stage 0 also found two things to fix before the stages:**
-  - **On the GPU, texture decoding:** decoding PS1 textures into the atlas takes **7–9 ms of GPU time per picture** while new textures come into view in play. That's more than the game's own scene. Each decode pass is a render pass over the whole 2048×2048 atlas.
-  - **The XA read-ahead (D64) stops working after the first level load,** which puts the music reads back on the game thread.
+- **The game itself is mostly native.** No instruction of the original game runs as mips2c any more (D96). Of the original executable's 91,415 MIPS instructions, **63.5% run as readable C** (matched decomp C plus hand C on the decomp's structs); counting all 37 overlays as they are on the disc, **94.1%**. With the hand C that still keeps the PS1 machine model (the GTE register file, the scratchpad, `HPTR`), it's 81.9% and 97.1% (D96, §5 stage 3). D76 measured 50.6% and 91.7%.
+- **Most of the time still goes to the emulation layers, but less of it.** On the K route with every layer on the game thread (run X4, D98, §3.5) a vblank takes **9.73 ms of CPU, and 64% of it is the measured emulation layers** (54–70% by part). Before: N1 (D80) 10.95 ms and 69%; stage 0 (K1, §3.4) 78–84% with its estimate of the software GTE. Since D80 the renderers' GTE is native maths, so 64% is close to the whole emulation share (*estimate*). The largest layer is the PS1 GPU → vitaGL translation (3.44 ms, 35%), then the renderers (2.86 ms: the game's own code, plus building the records) and the OT walk (2.09 ms).
+- **60 fps** (optional and experimental in v1.1.0) **holds in play on hardware** (D81; X7 in Toasty: 0.1 late vblanks per 300). It misses in the Stone Hill attract demo's flight, where the render thread is the wall (15.4 ms a picture), and at loads. The in-between frame still re-runs the game's draw path on the game thread: 3.8–5.2 ms per tick in play (X7, §5 stage 7).
 - **"Fully native"** means the game's own code (the decomp's logic, fixed-point maths and tick) is unchanged and runs on the Vita with nothing PS1-shaped in between:
   - no MIPS register model;
   - no GTE register file;
@@ -34,12 +25,23 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
   - no vblank emulation driving the logic.
 
   Faithfulness to the original's behaviour stays the hard constraint at every stage.
-- **What I recommend next:**
-  1. **Stage 0b, the two fixes stage 0 found** (§5): decode atlas blocks on the CPU straight into the texture's memory, with no render pass; and let the XA read-ahead recycle its windows after a jump back in the stream. Both are small, and both are checked pixel- and sample-identical.
-  2. **Stage 1, native GTE maths** in the hand-written renderers. Low risk, testable exhaustively, optional per switch. It's also a prerequisite for stage 2: projected vertices have to be C values, not GTE registers.
-  3. **Stage 2, native draw lists:** the renderers emit GPU vertices straight into per-bucket batches, in exact OT order, instead of PS1 primitives that PsyCross walks and re-parses. This is the biggest payoff (the OT walk, most of the render thread, the remaining draw splits). Environment first.
-
-  **Stage 3, readable C for the remaining mips2c code,** can run in parallel with stage 2, because the files don't overlap. It's the prerequisite for dropping the arena (stage 4).
+- **Done:**
+  - stage 0, measuring (§3.4);
+  - stage 0b, its two fixes: atlas decodes on the CPU (D79) and the XA read-ahead after a jump back (D78);
+  - stage 1, native GTE maths (D80, D81; the last three renderers D98);
+  - stage 3, readable C for all the mips2c code (D83, D87, D94, D96);
+  - stage 5, native audio (D84, D88);
+  - stage 6, native file I/O (D93);
+  - stage 2 apart from its last piece: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita;
+  - stage 4's step 4a, the Vita's moved arena on the host (D97).
+- **In flight:**
+  - **stage 2's last piece** (D99, session `stage2-direct-gl`): the records straight to vitaGL, without PsyCross's walk or `gpu_gl.c` interpreting PS1 GPU state. That's the 35% layer.
+  - **stage 4's steps 4b–4e** (D100, session `stage4-decode-sites`): every decode site named, the native build, any base address, the bit-31 tags in side fields.
+- **What I recommend next, after those:**
+  1. **Measure D99 on hardware** (the owner's yes first): the K route with K1's switches, and X7's Toasty route at 60 fps. They say what's left of the translation and of the render thread, which decides how much stage 7 is worth.
+  2. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
+  3. **Stage 7's steps 7a and 7b** (D101, §5): host audits and the port's own `VSync`. Both are small and wait for nothing. Then 7c after D99. Steps 7d–7g are decided on 7a's numbers and D99's measurement: since D81 and D98 the game thread isn't the wall at 60 fps, so stage 7's CPU gain is headroom rather than pictures.
+  4. **Stage 8,** retiring PsyCross, last.
 
 ---
 
@@ -925,6 +927,184 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 **Optional:** yes, the presentation modes (`interp=`), as today.
 
+#### The stage 7 plan (D101, 2026-11-04)
+
+Written on main `82d05ce`, while stage 2's last piece (D99, the records straight to vitaGL) and stage 4's steps 4b–4e (D100) are in flight. It changes no engine code. It covers four things:
+- everything that ties the game's logic and its pictures to the PS1's vblank today;
+- what stage 7 keeps and what it moves;
+- the steps;
+- how faithfulness stays testable.
+
+Measurements are cited; *estimates* are marked.
+
+##### What ties the game to the vblank today
+
+**1. The game's own clock** (the decomp; paths under `third_party/spyro-1/`).
+
+| Site | What it does |
+|---|---|
+| `src/main.c` `main` | One tick: `GamestateUpdate` with `g_PadMutex = 0`; then `g_DeltaTime = g_UnprocessedFrames`, clamped to 2–4, and `g_UnprocessedFrames = 0`; then `GamestateDraw` (`PortPresentDraw` in the port, `patches/spyro-1-port/0005`). |
+| `src/gamepad.c` `PadVSync`, installed by `VSyncCallback(PadVSync)` (`initialization.c:101`) | The vblank callback. It adds 1 to `g_LevelTicks`, and to `g_CDReadTime` while a load has a time limit. Then it reads the pad, buffers up to 4 vblanks of input (`m_BufferedInputs`) and adds 1 to `g_UnprocessedFrames`. In attract demos it returns before the pad, and `PadDemoUpdate` sets `g_UnprocessedFrames = 2` instead (`gamepad.c:214`: no lag frames in demo recordings). |
+| `src/gamestates/draw.c` `GamestateDraw` (play), the other draws (`func_8001A050`, `func_8001A40C`, `func_8001C694`, …), and the title (`titlescreen.c:1440`) and flight (`flight.c:603`) overlays | The 30 Hz pacer. After `DrawSync(0)` it calls `VSync(0)` until `VSync(-1)` is 2 past the last frame's (`D_80075950.pre - .post < 2`), then `PutDispEnv`, `PutDrawEnv` and `DrawOTag`. A tick that took longer doesn't wait. |
+| `initialization.c:268–377`, `flight.c:240–245` | Fixed waits in vblanks, such as the boot logos' 210. |
+| `src/cd.c` `CDLoadTime` | A load with a limit (`g_CDMaxReadTime`) restarts its read when `g_CDReadTime` passes the limit. |
+| `music.c:51`, `moby_update.c:26214`, `draw.c:275` | `g_LevelTicks` read: the music's 8-minute easter egg, a colour pulse, a rotation. |
+
+So the logic's time is the number of `PadVSync` calls between two loop tops, clamped to 2–4. A late tick moves the game 3 or 4 vblanks, as on the PS1.
+
+**2. The port's `VSync`.** PsyCross's `VSync` (`LIBETC.C`) is `PsyX_WaitForTimestep(1)` for `VSync(0)` and `PsyX_Sys_GetVBlankCount()` for `VSync(-1)`. `VSyncCallback` stores the callback.
+
+| | Host (`src/platform/linux32/vblank.c`) | Vita (`src/platform/vita/vblank.c`) |
+|---|---|---|
+| `VSync(0)` (`PsyX_WaitForTimestep`) | `host_vblank()` once: virtual time, nothing on a timer (D17) | `realtime=1` (the default): waits for the display's next vblank (`sceDisplayWaitVblankStart`) if early; if late, runs every vblank it missed, at most `MAX_CATCH_UP` (8; the rest are dropped, after loads); then `present()` once (D28). `realtime=0`: one vblank and a present, as on the host, for scripted runs. |
+| one vblank (`host_vblank`, `vblank`), in order | pokes, cheats, the pad script, `psx_cd_vblank`, `psx_spu_vblank`, the game's callback, the 960 presentation frame, shots and peeks, the trace | the watchdog, the pad, `psx_cd_vblank`, `vita_mixer_vblank`, the game's callback, profiling, pokes, shots, the stats lines |
+| the clock | the number of calls | `sceDisplayGetVcount`, 16 bits on hardware, widened by `vcount.h` `vita_vcount_widen` (D90). Counted afresh after the options menu and after a save-state load (`s_vcount_synced`). |
+
+So every callback runs on the game thread inside a `VSync(0)`, in a burst after a late tick, and never asynchronously. That keeps runs reproducible, and it makes the hand-off that `g_PadMutex` guards on the PS1 trivially safe.
+
+**3. What else counts vblanks.**
+- **The CD:**
+  - `libcd.c` `psx_cd_vblank` ticks a pending `CdRead` (its latency) and moves a ReadS stream's head at 150 or 75 sectors a second (`VBLANK_HZ` 60), handing the sectors it passes to `xa.c`.
+  - The latency is 0 on both builds (`vita/main.c:594`; the host's default), so reads complete inside `CdRead`. That's because `CDLoadSync` busy-waits without calling `VSync` (D17).
+  - `--cd-latency N` above 0 stops the host at the first `CDLoadSync`, with or without `cd_native` (D93); `test_cd` covers latency instead.
+  - `cd_native` (D93) changes only how the bytes arrive, at the same ticks.
+- **The SPU:** 735 samples a vblank (`psx_spu.h` `PSX_SPU_VBLANK_HZ` 60). The mixer thread replays one packet per game vblank (`mixer.c` `vita_mixer_vblank`, D37, D84). The Vita's vblanks are the display's 59.94 Hz, so `audio_ring.c` plays within 0.5% of rate to hold its level (D88).
+- **`g_LevelTicks` and `g_CDReadTime`** count only the vblanks the port runs: none during a host load, at most 8 after a Vita load. On the PS1 the interrupt counts every vblank of a load. Since loads complete inside `CdRead`, `CDLoadTime`'s limit never fires in the port. That is today's behaviour, and stage 7 doesn't change it.
+
+**4. How 60 fps works today (D30, D44, D68, D70, D75).**
+- **The last tick:** `PortPresentBeforeUpdate` (`present.c`, at the loop top) keeps the last tick's camera, Spyro, mobys (position, rotation, animation track) and particles (`s_prev`).
+- **`PortPresentDraw`,** in place of `GamestateDraw`, runs four steps:
+  1. `snap_take()` copies what the draw path writes that the game reads again: the scratchpad; the data and bss (0x8006BBE0–0x8007AA38); the moby array; the particle space; each sector's bytes 0x18–0x1B; the GTE registers; PsyCross's draw and display environments; and `g_mips_v1`.
+  2. `blend_state()` moves the camera, Spyro, the mobys and the particles halfway back to the last tick, in place.
+  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`), and captures its picture.
+  4. `snap_restore()`.
+
+  Then the logic pass runs: the game's own draw.
+- **Attract demos** (and `widescreen_exact`) get a second presentation pass, which draws the 16:9 picture while the logic draws a hidden 4:3 frame, so the recorded input replays (D30).
+- **The queue:**
+  - Each pass's picture goes into a ring at its `DrawOTag` (`push_capture`). `present()`, inside `VSync(0)`, shows one per call (`port_present_frame_slot`).
+  - Real frames show on the same vblanks as at 30 fps (byte-identical by md5, `docs/presentation.md`). The in-between frame shows one vblank before its real frame.
+- **The safety net** (`interp_budget`, D68, D75): if the game thread's CPU per tick, in-between frame included, would pass 31.3 ms, the tick shows its real frame on both vblanks. Overload on the GPU is dynres's to handle (D75).
+- **What it costs on hardware** (X7's `present` lines, `logs/hw-x7` of the ngte-last-renderers worktree, gitignored; windows with 140 or more in-between frames, sorted by the last `where` line):
+
+  | Part (windows) | Pass, ms per tick (max) | Snapshot and restore | Logic draw |
+  |---|---:|---:|---:|
+  | title (17) | 3.88 (12.97) | 0.44 | 3.43 |
+  | Stone Hill attract demo (5), two passes | 11.61 (13.82) | 0.79 | 5.20 |
+  | Artisans (19) | 3.41 (7.27) | 0.43 | 3.51 |
+  | Toasty (25) | 4.69 (6.38) | 0.47 | 4.64 |
+
+  In Toasty the game thread is 21.5% busy at 30 fps (X6) and 39.5% at 60 (X7).
+- **Why the pass re-runs the renderers** (D70): nothing 3D reaches PsyCross.
+  - The renderers hand on primitives already projected, culled at the screen's edges and by `NCLIP`, and depth-sorted into the OT.
+  - Re-using one tick's geometry for another leaves gaps where that tick culled: every edge when moving forward, the trailing edge when turning. It also leaves holes at silhouettes.
+
+**5. The threads around it.**
+- **The render thread** (`render_thread=1`, `gpu_thread.c`, D63) runs every GL call on core 2, fed by commands copied out of the game.
+  - Whether a vblank shows a new picture is decided on the game thread. It posts a present only once the previous one has run, so a slow render thread makes the game wait in `VSync`.
+  - In the Stone Hill attract demo's flight at 60 fps, the game waited "previous frame not shown yet" 81–121 times a window (D81). There the render thread is the wall: 15.38 ms a picture (X7).
+- **The parse thread** (`parse.c`, D71) walks a copy of the OT on core 1, or on core 3 when its start-up check passes.
+- **The mixer and the CD worker** run on core 1.
+
+##### What stage 7 keeps and what it moves
+
+**Kept, because it's the game's clock:**
+- **The callbacks per vblank:** on the game thread, inside `VSync(0)`, in today's order, with the catch-up after a late tick. That is the PS1 interrupt's count, and `g_DeltaTime`'s 3 and 4 come from it.
+- **Virtual time:** `realtime=0` and the host keep one virtual vblank per `VSync(0)` (D17).
+- **The Vita's clock:** the display's widened vcount (D28, D90).
+- **The CD and SPU models on game vblanks:** that keeps the WAV byte-identical, and every CD tick and the XA stream's position deterministic.
+- **`MAX_CATCH_UP` and the loads,** unchanged (point 3 above says what they count differently from the PS1).
+
+**Moved:**
+- **Presentation leaves `VSync`.** The render thread shows pictures at display vblanks. Each frame is tagged with the vblank it's due at, the same vblanks as today. The game thread never waits for a present.
+- **The in-between frame leaves the game thread.** A presenter draws it on another core from snapshots of ticks N−1 and N, with the game's own renderers made re-entrant, building stage 2's records. The game thread no longer snapshots, blends, re-runs `GamestateDraw` and restores.
+- **The real frame stays the logic pass's own picture,** as today.
+
+##### Three things the original plan said that this one changes
+
+- **The catch-up loop stays.** The original plan said it would go. But it is the PS1 interrupt's model: a tick late by a vblank must see `g_UnprocessedFrames` at 3, `g_LevelTicks` one higher, and the CD and the SPU a vblank further on. What goes is presenting inside it.
+- **The clock stays the display's vcount, not `sceKernelGetProcessTimeWide`.** The display flips on its own vblanks, and the audio ring already follows them (D88). A second clock would drift against the flips.
+- **Neither interpolating snapshots into every picture at the display's rate, nor interpolating draw records.**
+  - **The display's rate:** the Vita's display runs at 59.94 Hz, so 60 fps means one in-between frame a tick, as today.
+  - **Draw records:** a record (D91: the primitive's own words, a link and a kind) is D70's screen-space output. Interpolating records between ticks means matching primitives that exist in only one tick (culled, clipped, back-facing, another LOD), in an OT order that changes. And screen positions don't interpolate the way the 3D points they came from do. The result would be a different picture from today's in-between frame, with no exact reference to check it against.
+  - **Reprojection** would project tick N's vertices again and keep tick N's culls and order. It would cost less CPU (*estimate*: projection is only part of the renderers' cost), but it leaves D70's gaps at the trailing edge and at silhouettes.
+
+  Neither is planned. If 7f's presenter doesn't fit on its core, reprojection is the fallback to try, as an option and with the owner's decision, because it changes the in-between picture.
+
+##### What it needs from stages 1, 2 and 4
+
+**From stage 2's direct path (D99, session `stage2-direct-gl`):**
+- **A frame is a self-contained list:** its records, the leftover primitives (lines, fills, the HUD's 2D), its draw environment (clip, offset, background colour) and its texture uploads. It reaches the render thread as one unit, and drawing it reads no PsyCross state. Then two producers, the logic pass and the presenter, can submit frames independently, and the render thread can skip a frame's draws while still running its uploads (7c).
+- **At least three pools,** so the presenter can write one frame while the render thread reads another.
+- **Every primitive of a play frame reaches GL without PsyCross's walk.** Otherwise the presenter's frames would need PsyCross, which is one global state (its environments, its splits, `activeDrawEnv`) shared with the logic. The HUD is the case to settle (7a).
+- **Presents decided per frame, not per `VSync`.** The capture ring (`g_present_capture`, gpu=1) can go once the in-between frame is drawn straight to the back buffer.
+
+**From stage 4 (D100, session `stage4-decode-sites`, then 4f–4g):**
+- **4c's native build,** where `HPTR` and `MIPS_KUSEG` are plain casts. A KUSEG alias maps through the one arena, so a renderer that reads through it can't be pointed at a snapshot.
+- **4b's named decode sites,** so the re-entrant renderers decode the 21-bit animation pointers and the model tags in one place.
+- **4g's scratchpad as its own array,** or 7d gives each context its own. The B2 renderers keep working state in the scratchpad and the spill area (`render_hand.h`): that's what is left of stage 3's aim.
+- **4f's labels as ordinary globals.** The snapshot is then the named globals plus the moby array and the particle space, not arena regions. `present.c`'s region snapshot becomes two regions in 4f (D97) and goes, for play frames, in 7f.
+
+**From stage 1:** the main renderers' GTE is native maths on C values (D80). The presenter's path must not replay into the global register file (`gteRegs`), which belongs to the logic. D95's shadows, flame and particles need D98's native variants there (`ngte_fx=1`'s code). Those are a few µs per vblank slower (D98), which doesn't matter off the game thread.
+
+##### The steps
+
+| Step | What | Waits for | Check | Size |
+|---|---|---|---|---|
+| **7a** | **Host audits, debug only.** (1) **The read set:** which game memory the in-between pass reads that the next update writes, beyond `s_prev`'s transforms. Method: a page-protect read trace of the pass on linux32, against the pages each update dirties (as `--present-dirty` does for writes). Known already: the environment animations rewrite texture V coordinates and sector bytes 0x18–0x1B (`env_update_hand.c`). (2) **The HUD:** is the in-between frame's HUD list byte-identical to the real frame's of the same tick? It draws tick N's HUD both times (*to check*). If so, the presenter can reuse it. (3) **Coverage:** in-between frames per gamestate on the demos, routes A and B and the tour, and what each one's pass costs. | — | none (it measures); logs in `logs/` | ~200 lines, debug only |
+| **7b** | **The port owns `VSync`:** `VSync`, `VSyncCallback` and `ResetCallback` in our own C, over today's platform hooks, with today's semantics. One clock module, shared by linux32 and the Vita's `vblank.c`. `PsyX_WaitForTimestep` and `PsyX_Sys_GetVBlankCount` stop being called. | — | `host_checks.sh` byte-identical; Vita3K shots, captures and card identical; `tests/vcount` | ~150 lines |
+| **7c** | **Presentation leaves `VSync`.** Frames carry their due vblank. The render thread shows the one due at each display vblank. The host and `realtime=0` show it inline at each virtual vblank, so runs stay deterministic. The game thread never waits for a present. When the render thread falls behind, it skips in-between frames' draws, then real frames' draws once the pools are full, always keeping their uploads; the `present` line counts the skips. Shots come from the frame due at their vblank. | D99 | host byte-identical (shots by vblank, with and without `--interp`); Vita3K `realtime=0` shots and captures identical to main's VPK; on hardware (the owner's yes first): the K and Toasty routes at 60 fps, late vblanks and the game thread's waits against X7 | ~300–500 lines |
+| **7d** | **Re-entrant renderers.** The environment, the sky, the three moby renderers, Spyro, the shadows, the flame and the particles take a context. It holds the GTE state as C values (no register-file replay in a presenter's context), their scratchpad and spill area, their side-effect outputs (sector bytes 0x18–0x1B, the sector flags `D_800771C8`, `m_WasDrawn`, the animation queues) and their record pool. The logic's context is today's globals, so its calls compute the same. | 4b, 4c; 4g or a scratchpad per context | `--fast-render-check` and `--native-draw-check` with 0 differences on the demos, gems, wsi, lod, routes A and B and the tour; `host_checks.sh` byte-identical; Vita3K identical | *estimate* ~1.5–2.5k lines over 9 files |
+| **7e** | **The presenter's draw for play and the attract demos,** on the host first, still on the game thread. Hand C for `GamestateDraw`'s play branch, working from a snapshot: both ticks' transforms, blended as `blend_state` blends them; the camera matrices as `CameraUpdateMatrices` makes them, 16:9 narrowing included; the draw distance as `lod.c` sees a pass. It calls 7d's renderers with a private context; the HUD follows 7a's answer. It covers the attract demos' 16:9 pass too. Behind a switch (`interp_mode=2`); D30's pass stays as the reference, and as the fallback for other gamestates. | 7a, 7d, D99 | every tick, the host compares the presenter's frame with D30's pass's, record for record (a check mode like `--native-draw-check`), on the demos, gems, wsi, routes A and B and the tour; with it on, traces, WAVs and cards identical to `--interp` off, and shots identical to D30's | *estimate* ~1–2k lines |
+| **7f** | **The presenter on its own core.** The snapshot is published after each update. A worker draws the in-between frame on core 1 (or core 3, after D71's start-up check) while the game thread runs its logic pass. A frame that isn't ready by its due vblank isn't shown: the real frame stays up, as with a budget skip. In play the game thread no longer runs `snap_take`, `blend_state`, the pass or `snap_restore`, and `interp_budget` goes for play. | 7c, 7e | the host as for 7e (it runs the worker inline); Vita3K `realtime=0` shots and captures identical to D30's on the same VPK; on hardware (the owner's yes first): X6 and X7's Toasty route and the K route at 60 fps, for the game thread's busy %, late vblanks and the presenter's misses | ~300–500 lines |
+| **7g** | **The other gamestates, then D30's pass retires.** In the order of 7a's counts: the pause and inventory screens (`func_8001A40C`), the transitions, the fairy, the cutscenes, the title. Each gets the presenter, or keeps D30's pass where that is cheap (the pause screens, D70). Once no gamestate needs it, the arena snapshot, `pass_vsync`, `g_psx_spu_frozen` and `g_psyxVramFrozen` go. | 7f | as 7e, per gamestate; the pause route's shots in Vita3K (D70) | ~0.5–1k lines |
+
+All told *estimate* ~4–7k lines, more than the ~2–4k above: the re-entrant renderers and the presenter's draw weren't counted there.
+
+**Order:**
+- **7a and 7b now:** both are small, and neither waits for anything.
+- **7c after D99.**
+- **7d after 4c,** in parallel with 4f–4i.
+- **7e and 7f** are where the risk is, and the payoff.
+- **7g** closes the stage.
+
+##### How faithfulness stays testable
+
+- **The logic never sees the presenter.** It reads nothing the presenter writes: the presenter's context is private and its snapshot is a copy. The callbacks keep their order and their bursts. So the checks stay the existing ones, run with the presenter on and off:
+  - the oracle replay on the arena build (7,155 PASS, D97);
+  - both attract demos tick for tick against the emulator (`trace_diff.py`: 866 and 768 ticks);
+  - `tools/host_checks.sh` byte-identical: traces, shots, WAVs and memory cards (278–287 files);
+  - Vita3K's shots, window captures and card;
+  - save-state round trips.
+- **Real frames** are the logic pass's own pictures, on the same vblanks. Shots stay byte-identical to 30 fps on those vblanks, as `docs/presentation.md` checks today.
+- **In-between frames** must be byte-identical to D30's pass: record for record, every tick, on the host; picture for picture in Vita3K. D30's pass stays linked as the reference. That's a stronger check than D30 itself ever had (unchanged traces, and pictures looked at).
+- **Timing:** only hardware can show what stage 7 buys, and only with the owner's yes. The host and `realtime=0` show pictures at virtual vblanks, so nothing there depends on the threads.
+
+##### The payoff
+
+From existing measurements. What stage 7 would change is an *estimate*.
+- **The game thread at 60 fps:** the pass with its snapshot takes 3.8–5.2 ms per tick in play (X7: Artisans 3.84, Toasty 5.16) and 12.4 ms in the attract demo. 7f moves that off the game thread, so at 60 fps it would be about as busy as at 30 (Toasty: 39.5% → about 21.5%, *estimate*).
+- **But 60 fps already holds in play** (D81; X7: 0–1 late vblanks per 300, no fall to 30 outside loads). So that time is headroom, not pictures.
+  - What misses today is the Stone Hill attract demo's flight (X7 at 60 fps: 5.4 late vblanks per 300, worst 34) and the loads. In the flight the render thread is the wall (15.38 ms a picture). Stage 7 doesn't make the render thread faster; stage 2's direct path does.
+  - What 7c changes there is who pays. Today the game thread waits for the render thread; after 7c, the render thread's overload costs a picture rather than a tick (*estimate*).
+- **The GPU is unchanged:** it draws the same two pictures a tick (X7: 6.29 ms a picture in Toasty).
+- **The cores:** the in-between renderers' 3.4–4.7 ms per tick (11.6 in the attract demo) move to core 1 or core 3. That should fit once D99 has removed the parse thread's walk (*estimate*); the mixer takes 0.24 ms per vblank there (X4).
+- **The code:** the arena snapshot, three PsyCross hooks and the in-place blend go. Stages 4f and 8 need that.
+
+So the CPU payoff is smaller than when D76 wrote stage 7: the measurements since then (D81, D98) show the game thread isn't the wall. That's why the cheap, independent steps (7a–7c) come first. Whether 7d–7g are worth their size can be decided on 7a's numbers and on what D99 leaves of the render thread.
+
+##### What stage 8 needs from stage 7
+
+- **libetc:** `VSync`, `VSyncCallback` and `ResetCallback` are already ours (7b), and `PsyX_WaitForTimestep` and `PsyX_Sys_GetVBlankCount` are unused.
+- **The presentation hooks are gone:**
+  - `g_psyxVSyncHook` and `g_psyxVramFrozen` (7g);
+  - the `DrawOTag` pre and post hooks for captures (7c: frames go to the render thread whole).
+
+  What's left of those hooks is the 2D narrowing for widescreen, which stage 2's direct path or stage 8 takes over.
+- **No snapshot of PsyCross's `activeDrawEnv` or `activeDispEnv`:** a frame carries its own environment (D99, 7c).
+
+That leaves stage 8 with libgpu's environment and VRAM calls, the walk for the leftover primitives, libgte's 12 calls and libpad.
+
 ### Stage 8: retire PsyCross (small, after stages 1, 2 and 7)
 
 **Replaces** (D): what's left of PsyCross:
@@ -945,20 +1125,26 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 ### Order and what can run at once
 
-| Stage | Depends on | Payoff (measured share it targets) | Risk |
-|---|---|---|---|
-| 0 measure | — | done (§3.4): the render thread is ~35%, D72 bought −36% | none |
-| 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms GPU per picture in play; 0.5–0.6 ms CPU per vblank | low |
-| 1 native GTE | — | done (D80, D81): the renderers −15 to −20% on hardware, 1.0–1.9 ms per tick at 60 fps; the default | low |
-| 2 native draw lists | 1, #48 and #49 merged | the OT walk's 11% and most of the render thread's 35–51%; GPU draw count | medium–high |
-| 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium |
-| 5 native audio | — | 9% (core 1) | low–medium |
-| 6 native file I/O | — | 5% (core 1), load times | low–medium |
-| 4 native memory | 2, 3 | maintainability; prerequisite for 7 | high |
-| 7 decoupled timing | 1, 2, 4 | true 60 fps without a second draw pass | high |
-| 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low |
+Status as of 2026-11-04 (D101). The payoff column gives the measured share each stage targets; ms are per vblank on the K route with every layer on the game thread (X4, §3.5) unless it says otherwise.
 
-Stages 5 and 6 are independent of the rest and small. They can fill gaps, but their payoff is on core 1, not on the game thread or the GPU.
+| Stage | Depends on | Payoff (measured share it targets) | Risk | Status |
+|---|---|---|---|---|
+| 0 measure | — | the render thread ~35% waiting; D72 bought −36% (§3.4) | none | done (§3.4) |
+| 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms of GPU per picture in play; 0.5–0.6 ms of CPU per vblank | low | done (D78, D79) |
+| 1 native GTE | — | the renderers −15 to −20% on hardware, 1.0–1.9 ms per tick at 60 fps | low | done (D80, D81, D98); `fast_render=2` is the default |
+| 2 native draw lists | 1 | the OT walk (2.09 ms) and the PS1 GPU → vitaGL translation (3.44 ms, 35%); the render thread, the wall at 60 fps in the attract demo's flight | medium–high | records done (D82–D95), `native_draw=1` the Vita's default; the direct path to vitaGL in flight (D99) |
+| 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
+| 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
+| 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
+| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a done (D97); 4b–4e in flight (D100); then 4f–4i |
+| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | planned (D101); 7a and 7b next |
+| 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
+
+**What can run at once:**
+- **Now:** D99 and D100 touch different files. Stage 7's 7a (debug tooling in `present.c` and the host) and 7b (the two `vblank.c` files and the port's own `VSync`) can run beside them; check D99's diff for the vblank files before starting 7b.
+- **After D99:** its hardware measurement (the owner's yes first), then 7c.
+- **After D100:** 4f–4i, and 7d beside them (7d changes the renderers' interfaces; 4f–4i are mostly the labels, the loader and tooling).
+- **Then** 7e–7g, then stage 8.
 
 ## 6. Reproducing these numbers
 
