@@ -99,6 +99,35 @@ ret func_80022A2C
 # only as a statement from C (src/gamestates/draw.c 608, 1992). The asm returns the
 # primitive pointer in v0, as the hand C does, and loop values in v1.
 ret func_80020F34
+# The renderer units' other functions, hand C since D96 (moby_cull_hand.c,
+# env_update_hand.c, env_anim_hand.c, sky_clip_hand.c, particle_slots_hand.c).
+# Void, called only as statements from C: the culls (renderers.h 167, 173;
+# gamestates/draw.c 604, 607, 1848, 1892, 1922, 1987, 1991, 2397, 2561;
+# overlays/titlescreen.c 1419), the sky with depth cueing (draw.c 1627,
+# 2429), the portal's sky, depth-cued sky and face (cyclorama_hand.c, the
+# set-up's hand C; void in the original's C caller too), the animations'
+# update (update.c 1479) and set-up (loaders.c 622), EnvAnimSetFlags and
+# EnvAnimSetFrame (overlays/moby_update.c), and the glow slots' freeing
+# (moby_update.c 9087, 9389; loaders.c 769). The asm leaves loop values in
+# v0/v1; the hand C returns 0 (the culls: g_MobyShadows, as the asm).
+ret func_8001F158
+ret func_800208FC
+ret func_8004F000
+ret func_8004F4BC
+ret func_80050240
+ret func_8004FEA0
+ret func_8002A6FC
+ret func_8002B4AC
+ret EnvAnimSetFlags
+ret EnvAnimSetFrame
+ret func_80058B60
+ret func_80058B68
+# These return int or a pointer in v0 to C callers (EnvAnimGetState:
+# moby_update.c; func_8005882C: moby_helpers.c 1514; func_80058AE8:
+# moby_update.c 9067, 9358), which read only v0.
+v1 EnvAnimGetState
+v1 func_8005882C
+v1 func_80058AE8
 #
 # libcd's CdRead: the data-ready interrupt callback it installs (D_800659F0,
 # asm/psyq.s 80065F2C) DMAs each sector to *D_80075150, then advances that
