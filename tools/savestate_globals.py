@@ -26,6 +26,7 @@ CONSTANT = {
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
+    "g_ngte_fx",                # mips2c_rt.c: set at start-up, as g_fast_render (D98)
     "env_hand_ngte.c:s_proj",   # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80)
 }
