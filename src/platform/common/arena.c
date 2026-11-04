@@ -1,7 +1,8 @@
 /* The PS1 RAM arena (docs/porting-plan.md §4.3): one 2 MB block standing in
  * for PS1 addresses 0x80000000-0x801FFFFF, at a 16 MB-aligned host address
  * with bit 31 set so 24-bit OT links and 21-bit packed pointers rebuild as
- * base | low bits. On linux32 it sits at 0x80000000 itself. */
+ * base | low bits. On linux32 it sits at 0x80000000 itself, or with
+ * SPYRO_ARENA_AT at another such address, as on the Vita (decisions D97). */
 #include "psx_arena.h"
 
 #include <stdio.h>
@@ -17,19 +18,36 @@ unsigned char g_psx_kernel_ram[0x10000];
 
 #if defined(__linux__)
 #include <sys/mman.h>
+#ifndef PSX_ARENA_AT
+#define PSX_ARENA_AT PSX_RAM_BASE
+#endif
 #else
 #include <malloc.h>
+#endif
+
+#if defined(__linux__)
+static void *map_at(uint32_t at, int prot) {
+  void *p = mmap((void *)(uintptr_t)at, PSX_RAM_SIZE, prot,
+                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+  if (p == MAP_FAILED || (uintptr_t)p != at) {
+    fprintf(stderr, "psx_arena_init: mmap at 0x%08x failed\n", (unsigned)at);
+    exit(1);
+  }
+  return p;
+}
 #endif
 
 void psx_arena_init(void) {
   void *p;
 #if defined(__linux__)
-  p = mmap((void *)PSX_RAM_BASE, PSX_RAM_SIZE, PROT_READ | PROT_WRITE,
-           MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-  if (p == MAP_FAILED || (uintptr_t)p != PSX_RAM_BASE) {
-    fprintf(stderr, "psx_arena_init: mmap at 0x%08x failed\n", PSX_RAM_BASE);
-    exit(1);
-  }
+  p = map_at(PSX_ARENA_AT, PROT_READ | PROT_WRITE);
+#if SPYRO_ARENA_MOVED
+  /* The moved arena's aliases of PS1 RAM (mips2c_rt.h) must not reach other
+   * memory: the Vita has none there (D25); here nothing may be mapped there.
+   * Below 2 MB nothing can be (mmap_min_addr, and the binary is above). */
+  map_at(PSX_RAM_BASE, PROT_NONE);
+  map_at(PSX_ARENA_AT & 0x7FFFFFFFu, PROT_NONE);
+#endif
 #else
   p = memalign(0x1000000, PSX_RAM_SIZE);
 #endif

@@ -126,11 +126,13 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
 
 /* PS1 KUSEG RAM mirror: addresses below 2 MB are the arena (every memory
  * access in translated code goes through it, tools/mips2c). */
-#ifdef __vita__
-/* Vita (decisions D25): the arena is at some 16 MB-aligned 0x8Y000000, not
- * 0x80000000, so two more aliases of PS1 RAM reach it: 0x80000000 | offset
- * (the game's tag ORs onto 21/24-bit offsets) and the arena's own address
- * with bit 31 cleared (`sll 1; srl 1`). No Vita user memory is at either.
+#if SPYRO_ARENA_MOVED
+/* A moved arena (the Vita's, decisions D25; linux32's with SPYRO_ARENA_AT,
+ * D97) is at some 16 MB-aligned 0x8Y000000, not 0x80000000, so two more
+ * aliases of PS1 RAM reach it: 0x80000000 | offset (the game's tag ORs onto
+ * 21/24-bit offsets) and the arena's own address with bit 31 cleared
+ * (`sll 1; srl 1`). No Vita user memory is at either; linux32 reserves
+ * both (arena.c).
  * The base is read through a const alias of the same symbol (set once,
  * before any game code) so GCC keeps it in a register instead of reloading
  * it after every store; always_inline because GCC stops inlining in the

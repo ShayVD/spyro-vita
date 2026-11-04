@@ -60,6 +60,37 @@ else()
   set(SPYRO_OPT_FLAGS -O1 -g)
 endif()
 
+# Where the PS1 RAM arena sits (docs/porting-plan.md §4.3, decisions D25,
+# D97). linux32 maps it at 0x80000000 itself by default: the game's data
+# labels are then absolute symbols at their PS1 addresses (D23) and the
+# oracle replay compares RAM byte for byte. The Vita can't ask for that
+# address, so its arena moves: data labels through pointers, three aliases
+# of PS1 RAM in translated code (D25). SPYRO_ARENA_AT, another 16 MB-aligned
+# address above 2 GB, runs that moved model on linux32 too, where the host's
+# checks can test it (D97).
+set(SPYRO_ARENA_AT "0x80000000" CACHE STRING
+    "linux32: the arena's host address; not 0x80000000 = the Vita's moved arena (D97)")
+if(SPYRO_HOST STREQUAL "vita")
+  set(SPYRO_ARENA_MOVED ON)
+elseif(SPYRO_ARENA_AT MATCHES "^0x[0-9A-Fa-f]+$")
+  math(EXPR arena_at "${SPYRO_ARENA_AT}" OUTPUT_FORMAT HEXADECIMAL)
+  math(EXPR arena_low "${SPYRO_ARENA_AT} & 0x80FFFFFF" OUTPUT_FORMAT HEXADECIMAL)
+  if(NOT arena_low STREQUAL "0x80000000")
+    message(FATAL_ERROR "SPYRO_ARENA_AT ${SPYRO_ARENA_AT}: needs 16 MB alignment and bit 31")
+  endif()
+  if(arena_at STREQUAL "0x80000000")
+    set(SPYRO_ARENA_MOVED OFF)
+  else()
+    set(SPYRO_ARENA_MOVED ON)
+    add_compile_definitions(PSX_ARENA_AT=${SPYRO_ARENA_AT}u)
+  endif()
+else()
+  message(FATAL_ERROR "SPYRO_ARENA_AT ${SPYRO_ARENA_AT}: not a hex address")
+endif()
+if(SPYRO_ARENA_MOVED)
+  add_compile_definitions(SPYRO_ARENA_MOVED=1)
+endif()
+
 include(cmake/psycross.cmake)
 include(cmake/platform_common.cmake)
 include(cmake/game.cmake)

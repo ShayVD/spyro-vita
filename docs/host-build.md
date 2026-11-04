@@ -43,6 +43,18 @@ python3 tools/contact_sheet.py logs/runN-x
 - Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`). In place of the buttons, `poke:ADDR=VALUE` (hex) writes a word of PS1 RAM when the line fires and leaves the buttons alone; `capture.lua` reads it the same way.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
 
+## The Vita's memory model on the host (D97)
+
+`-DSPYRO_ARENA_AT=0x8F000000` (any 16 MB-aligned address above 2 GB other than 0x80000000) builds the host with the Vita's moved arena (D25): the data labels through pointers, the three aliases of PS1 RAM in translated code, and `MIPS_ARENA_TAG` with another top byte. Keep it in its own build folder:
+
+```bash
+tools/tc cmake -S . -B build/linux32-moved -G Ninja -DSPYRO_HOST=linux32 -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake -DSPYRO_ARENA_AT=0x8F000000
+tools/tc cmake --build build/linux32-moved
+BIN=build/linux32-moved/src/platform/linux32/spyro tools/host_checks.sh PREFIX
+```
+
+Its runs must give the default build's traces, shots, audio and memory cards byte for byte. Logs differ only by the `arena at 0x8f000000` line. The aliases' regions (0x80000000 and the arena's address with bit 31 cleared) are mapped `PROT_NONE`, so nothing else can be placed where the aliases point. `--replay` needs the default build, with RAM at 0x80000000. A state saved by one configuration is refused by the other: the default build said "STATE 1 IS FROM ANOTHER BUILD" to the moved build's state (`logs/s4-state-cross`). The build ID is checked before the arena base. This is the host side of stage 4's checks (`docs/native-plan.md`).
+
 ## Draw distance (D49)
 
 Optional, off by default (`docs/presentation.md` "Draw distance"):
