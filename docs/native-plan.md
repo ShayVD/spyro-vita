@@ -647,7 +647,7 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 - **Checked:**
   - **host:** every packet both ways, 0 differ, every file identical on the demos, gems, 16:9 with 60 fps in-between frames, lod, routes A and B and the whole tour; `host_checks.sh` byte-identical with main; the oracle replay 0 FAIL.
   - **Vita3K against main's VPK:** shots, window captures and card identical on gems, gems with every layer on the game thread, gems with `tex_filter=1`, the demos, 16:9 at 60 fps, and the pause route with a save state and load. `nd_direct=2` compares the render thread's own conversion with `expand_lean`'s, attribute by attribute: 0 of 21.9 M vertices differ.
-- **Hardware (Y1–Y4):** HARDWARE_PLAN.
+- **Hardware (Y1–Y4, `tools/vita/fps-runs/README.md`):** not run yet (they need the owner's go-ahead). Y1/Y2 are X4 with `nd_direct` 0 and 1, the CPU per vblank before and after for §3.5's table; Y3/Y4 Toasty at 60 fps. The default stays 0 until they show it no slower with the same pictures and card.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
