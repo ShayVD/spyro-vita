@@ -89,14 +89,15 @@
  *       render_thread=0 GL on the game thread, as before D63 (default 1:
  *                       with gpu=1, every GL call on a render thread of its
  *                       own on core 2, the game thread on core 0; D68)
- *       xa_ahead=0      the XA music's sectors read on the game thread
- *                       (default 1: read ahead of the CD head on core 1;
- *                       D64, D68)
- *       cd_native=1     the disc read natively (D93): a CdRead is a read of
- *                       a file at an offset on a worker thread on core 1,
- *                       and the XA stream is read ahead from its start there
- *                       (instead of xa_ahead's windows); the same bytes, the
- *                       same ticks. Default 0
+ *       xa_ahead=0      with cd_native=0: the XA music's sectors read on
+ *                       the game thread (default 1: read ahead of the CD
+ *                       head on core 1; D64, D68)
+ *       cd_native=0     the disc read through the CD model's sectors, as
+ *                       before D93 (xa_ahead then applies). Default 1: a
+ *                       CdRead is a read of a file at an offset on a worker
+ *                       thread on core 1, and the XA stream is read ahead
+ *                       from its start there (instead of xa_ahead's
+ *                       windows); the same bytes, the same ticks (D93)
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -236,6 +237,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .dynres = 0, /* D75: off by default after hardware run J6 */
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
+                        .cd_native = 1, /* D93: on after hardware runs V1/V2 */
                         .parse_core = 1,
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
