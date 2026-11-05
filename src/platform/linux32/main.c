@@ -10,7 +10,8 @@
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
- *         [--present-stats | --present-dirty] [--vcache]
+ *         [--present-stats | --present-dirty] [--present-audit]
+ *         [--present-reads FILE [--present-reads-every N]] [--vcache]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
@@ -48,6 +49,11 @@
  *   with the Vita's shots).
  * --present-stats: time update, draw and passes; logged at exit.
  *   --present-dirty also lists the arena pages the passes wrote.
+ * --present-audit (with --interp; stage 7a, D104): per gamestate, the
+ *   in-between frames, their cost and whether their HUD list is the real
+ *   frame's; logged at exit. --present-reads FILE: every Nth in-between pass
+ *   (--present-reads-every, 30) traces what it reads (readset.c; summed up
+ *   by tools/present_reads.py).
  * --analog: the pad is a DualShock in analog mode; pad script lines may set
  *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
  *   --free-camera: the right stick turns and tilts the camera
@@ -208,7 +214,8 @@ static void usage(void) {
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
+          "             [--out960] [--present-stats] [--present-audit] [--present-reads FILE]\n"
+          "             [--present-reads-every N] [--vcache] [--walk-lazy]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
@@ -251,9 +258,43 @@ static void log_pages(const char *what, const uint32_t *bits) {
   }
 }
 
+/* --present-audit (D104) */
+static void audit_report(void) {
+  const PresentStats *s = &g_present_stats;
+  int i;
+  if (!g_present.audit)
+    return;
+  for (i = 0; i < PRESENT_GAMESTATES; i++) {
+    const PresentGsStats *g = &s->gs[i];
+    long long n = g->interp ? g->interp : 1;
+    if (!g->ticks)
+      continue;
+    host_log("present audit: gamestate %d: %lld ticks, %lld in-between frames, %lld skipped; "
+             "per in-between frame %lld us, %lld OT packets; HUD list the real frame's %lld, differs %lld",
+             i, g->ticks, g->interp, g->skipped, g->us_pass / n, g->packets / n, g->hud_same,
+             g->hud_differ);
+  }
+  for (i = 0; i < s->nhud_diff; i++)
+    host_log("present audit: HUD differs at vblank %d (gamestate %d, level %d): %d packets "
+             "and %d, the first different %d",
+             s->hud_diff[i].vblank, s->hud_diff[i].gamestate, s->hud_diff[i].level,
+             s->hud_diff[i].packets[0], s->hud_diff[i].packets[1], s->hud_diff[i].first);
+  for (i = 0; i < s->nhud_diff; i++)
+    for (int k = 0; k < 2; k++) {
+      char line[200];
+      int len = 0;
+      for (int w = 0; w < PRESENT_HUD_WORDS; w++)
+        len += snprintf(line + len, sizeof line - len, " %08x", s->hud_diff[i].words[k][w]);
+      host_log("present audit: vblank %d, %s:%s", s->hud_diff[i].vblank,
+               k ? "real frame" : "in-between", line);
+    }
+  host_log_flush();
+}
+
 static void present_report(void) {
   const PresentStats *s = &g_present_stats;
   long long t = s->ticks ? s->ticks : 1;
+  audit_report();
   if (!g_present.stats)
     return;
   host_log("present: %lld ticks; per tick us: update %lld, logic draw %lld "
@@ -296,6 +337,8 @@ static void vcache_report(void) {
 }
 
 static int s_walk;
+static const char *s_reads; /* --present-reads FILE */
+static int s_reads_every;
 
 static void walk_report(void) {
   PsxWalkStats w;
@@ -452,6 +495,14 @@ int main(int argc, char **argv) {
       g_present.stats = 1;
     } else if (strcmp(a, "--present-dirty") == 0) {
       g_present.stats = 2;
+    } else if (strcmp(a, "--present-audit") == 0) {
+      g_present.audit = 1;
+    } else if (strcmp(a, "--present-reads") == 0) {
+      TAKE();
+      s_reads = val;
+    } else if (strcmp(a, "--present-reads-every") == 0) {
+      TAKE();
+      s_reads_every = to_int(val);
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
@@ -590,6 +641,10 @@ int main(int argc, char **argv) {
     usage();
   if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
+  if (s_reads && host_reads_open(s_reads, s_reads_every) != 0) {
+    fprintf(stderr, "spyro: can't write %s\n", s_reads);
+    return 1;
+  }
   atexit(present_report);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
