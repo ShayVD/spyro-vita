@@ -76,7 +76,7 @@ endif()
 option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM, any base (D100)" OFF)
 set(SPYRO_ARENA_AT "0x80000000" CACHE STRING
     "linux32: the arena's host address; not 0x80000000 = the Vita's moved arena (D97)")
-# The native build's data labels are ordinary globals (D103): no moved
+# The native build's data labels are ordinary globals (D106): no moved
 # arena's label pointers, whatever SPYRO_ARENA_AT says.
 if(SPYRO_HOST STREQUAL "vita")
   if(SPYRO_NATIVE_MEM)
@@ -119,7 +119,7 @@ endif()
 # Debug: list the translated and hand C's accesses through an alias of PS1
 # RAM (mips2c_rt.h MIPS_KUSEG; decisions D100).
 # Debug: list the decodes of packed addresses (OT links, frame pointers)
-# that land outside overlay space, the native build's block (D103).
+# that land outside overlay space, the native build's block (D106).
 option(SPYRO_MEM_AUDIT "Log every packed address decoded outside overlay space" OFF)
 if(SPYRO_MEM_AUDIT)
   add_compile_definitions(SPYRO_MEM_AUDIT=1)

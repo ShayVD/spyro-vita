@@ -23,7 +23,7 @@
 extern uintptr_t g_psx_arena_base;
 
 #if SPYRO_MEM_AUDIT
-/* cmake -DSPYRO_MEM_AUDIT=ON (decisions D103): every decode below records
+/* cmake -DSPYRO_MEM_AUDIT=ON (decisions D106): every decode below records
  * the sites whose address lies outside the game's overlay space
  * (main_BSS_END to the top of RAM), which the native build's block holds
  * (port.c mem_audit). */

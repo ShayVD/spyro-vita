@@ -16,7 +16,7 @@
  * Used by patches/spyro-1-port for the decomp's hard-coded RAM addresses. */
 extern uintptr_t g_psx_arena_base;
 #if SPYRO_NATIVE_MEM
-/* The native build (decisions D103): the game's memory is a block from the
+/* The native build (decisions D106): the game's memory is a block from the
  * heap starting at main_BSS_END's page, 0x8007A000 (psx_arena.h
  * PSX_MEM_PSX); the patches name only overlay space and its end. */
 #define PSX_ADDR(a) (g_psx_arena_base + ((uint32_t)(a) - 0x8007A000u))
@@ -33,7 +33,7 @@ extern uintptr_t g_psx_arena_base;
  * g_psx_kernel_ram (src/platform/common/arena.c) instead. NULL stays NULL. */
 extern unsigned char g_psx_kernel_ram[0x10000];
 #if SPYRO_NATIVE_MEM
-/* the rest of RAM by its PS1 address (src/game/port.c, D103) */
+/* the rest of RAM by its PS1 address (src/game/port.c, D106) */
 uintptr_t psx_kuseg_host(uint32_t a);
 #define PSX_KUSEG_RAM_(a) psx_kuseg_host(a)
 #else

@@ -5,7 +5,7 @@
  * SPYRO_ARENA_AT at another such address, as on the Vita (decisions D97).
  * The native build (SPYRO_NATIVE_MEM, D100) decodes them relative to the
  * base instead (src/game/psx_mem.h), so its arena may be anywhere; since
- * D103 it is only overlay space (psx_arena.h), from the heap, or on linux32
+ * D106 it is only overlay space (psx_arena.h), from the heap, or on linux32
  * with SPYRO_ARENA_AT at that page, for tests. */
 #include "psx_arena.h"
 
@@ -16,7 +16,7 @@
 uintptr_t g_psx_arena_base;
 #if SPYRO_NATIVE_MEM
 /* the game's scratchpad (the arena's first KB elsewhere), aligned as the
- * PS1's (D103) */
+ * PS1's (D106) */
 unsigned char g_psx_scratch[1024] __attribute__((aligned(1024)));
 #else
 unsigned char g_psx_scratch[1024];

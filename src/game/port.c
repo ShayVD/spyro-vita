@@ -19,7 +19,7 @@ extern uint32_t *s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xx
 
 /* Data words that hold scratchpad addresses point at the port's scratchpad,
  * the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h), or in the
- * native build g_psx_scratch (D103). */
+ * native build g_psx_scratch (D106). */
 static void scratch_relocs(void) {
   uint32_t **r;
   for (r = s1_scratch_relocs; *r; r++)
@@ -75,7 +75,7 @@ void port_arena_symbols(void (*log)(const char *fmt, ...)) {
 
 #if SPYRO_NATIVE_MEM
 /* psx_arena.h: the host's tools (--poke, --peek, pad scripts, the tour) and
- * start-up name PS1 addresses (decisions D103). */
+ * start-up name PS1 addresses (decisions D106). */
 void *psx_mem_host(uint32_t a) {
   if (a >= PSX_LABELS_PSX && a < PSX_BSS_END)
     return s1_labels + (a - PSX_LABELS_PSX);
@@ -102,7 +102,7 @@ void spyro_main(void) {
 #if SPYRO_PSX_LAYOUT
   psx_layout(); /* D_8006BBE0, the OT terminator, is already in place */
 #else
-  /* The OT's links reach only the game's memory block (decisions D103) */
+  /* The OT's links reach only the game's memory block (decisions D106) */
   memcpy(PSX_OT_TERMINATOR, D_8006BBE0, 0x14);
 #endif
   scratch_relocs();
@@ -121,7 +121,7 @@ void spyro_main(void) {
 }
 
 #if SPYRO_MEM_AUDIT
-/* psx_mem.h MEM_AUDIT_ (decisions D103): the sites that decoded an address
+/* psx_mem.h MEM_AUDIT_ (decisions D106): the sites that decoded an address
  * outside overlay space (main_BSS_END to the top of RAM), with the first
  * distinct PS1 addresses each; listed at exit. */
 typedef struct {

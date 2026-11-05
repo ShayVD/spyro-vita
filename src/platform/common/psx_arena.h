@@ -15,7 +15,7 @@ extern uintptr_t g_psx_arena_base;       /* host address of PS1 PSX_MEM_PSX */
 extern unsigned char g_psx_scratch[1024]; /* PS1 scratchpad 0x1F800000 */
 
 #if SPYRO_NATIVE_MEM
-/* The native build (docs/native-plan.md stage 4, decisions D103).
+/* The native build (docs/native-plan.md stage 4, decisions D106).
  * - The game's data labels are ordinary globals: tools/data2s.py --image
  *   puts them in one section, an image of PS1 RAM from the first label
  *   (0x8006BBE0) to main_BSS_END, so a PS1 address there is s1_labels +

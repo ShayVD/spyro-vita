@@ -21,7 +21,7 @@ void nd_list_linked(void); /* native_draw.c: the records so far are this list's 
 
 #if SPYRO_MEM_AUDIT
 #include "psx_mem.h"
-/* decisions D103: every primitive the linked list reaches, through the
+/* decisions D106: every primitive the linked list reaches, through the
  * walk's decode (psx_mem.h), so the audit sees each one outside overlay
  * space. */
 static void *audit_list(void *head) {

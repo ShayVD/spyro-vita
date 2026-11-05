@@ -55,7 +55,7 @@ BIN=build/linux32-moved/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 
 Its runs must give the default build's traces, shots, audio and memory cards byte for byte. Logs differ only by the `arena at 0x8f000000` line. The aliases' regions (0x80000000 and the arena's address with bit 31 cleared) are mapped `PROT_NONE`, so nothing else can be placed where the aliases point. `--replay` needs the default build, with RAM at 0x80000000. A state saved by one configuration is refused by the other: the default build said "STATE 1 IS FROM ANOTHER BUILD" to the moved build's state (`logs/s4-state-cross`). The build ID is checked before the arena base. This is the host side of stage 4's checks (`docs/native-plan.md`).
 
-## Native memory (D100, D103)
+## Native memory (D100, D106)
 
 `-DSPYRO_NATIVE_MEM=ON` builds the native configuration: no mips2c units, the data labels as ordinary globals (one section laid out as PS1 RAM from 0x8006BBE0 to main_BSS_END), the game's memory one block from the heap (overlay space, main_BSS_END to the top of RAM, behind the rest of main_BSS_END's page), and the scratchpad its own array:
 
@@ -65,9 +65,9 @@ tools/tc cmake --build build/linux32-native
 BIN=build/linux32-native/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 ```
 
-Its runs must give the default build's files byte for byte. `-DSPYRO_ARENA_AT=0x52F81000` (any page) puts the block at that address instead of the heap's. `--poke`, `--peek` and pad-script `poke:` still take PS1 addresses, in the labels or overlay space. `--replay` and `--fast-render 0` need the default build. Native save states are format 2 (D103).
+Its runs must give the default build's files byte for byte. `-DSPYRO_ARENA_AT=0x52F81000` (any page) puts the block at that address instead of the heap's. `--poke`, `--peek` and pad-script `poke:` still take PS1 addresses, in the labels or overlay space. `--replay` and `--fast-render 0` need the default build. Native save states are format 2 (D106).
 
-`-DSPYRO_MEM_AUDIT=ON` (on the default build) lists, at exit, every site that decoded a packed address (an OT link, a frame pointer, a subdivision header) outside overlay space, with the PS1 addresses it found: the things the native block would have to hold. Over the host checks it finds only the OT terminator, 0x8006BBE0 (D103).
+`-DSPYRO_MEM_AUDIT=ON` (on the default build) lists, at exit, every site that decoded a packed address (an OT link, a frame pointer, a subdivision header) outside overlay space, with the PS1 addresses it found: the things the native block would have to hold. Over the host checks it finds only the OT terminator, 0x8006BBE0 (D106).
 
 ## Draw distance (D49)
 

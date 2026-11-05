@@ -8,7 +8,7 @@
  * decoder, the CD drive, the memory card's pending result and the vblank
  * counter. A state is refused, never loaded, if it comes from another build
  * or an executable/arena at other addresses (its pointers would be wrong).
- * The native build's states are format 2 (D103): its game memory is a block
+ * The native build's states are format 2 (D106): its game memory is a block
  * from the heap and its data labels a section of their own, each a chunk,
  * and the header records both addresses. */
 #include "savestate.h"
@@ -52,7 +52,7 @@ extern char etext[], _edata[], _end[]; /* the linker's: end of text, data, bss *
 
 #define VRAM_BYTES (1024 * 512 * 2)
 #if SPYRO_NATIVE_MEM
-#define FORMAT 2 /* D103: format 1 is refused as another build */
+#define FORMAT 2 /* D106: format 1 is refused as another build */
 #else
 #define FORMAT 1
 #endif
@@ -76,13 +76,13 @@ typedef struct {
 
 /* ---------- the chunks ---------- */
 
-/* The arena, or in the native build the block (D103). */
+/* The arena, or in the native build the block (D106). */
 static void chunk_arena(PsxStateIO *io) {
   psx_state_io(io, (void *)g_psx_arena_base, PSX_MEM_SIZE);
 }
 
 #if SPYRO_NATIVE_MEM
-/* The data labels, their own section in the native build (D103). */
+/* The data labels, their own section in the native build (D106). */
 static void chunk_labels(PsxStateIO *io) {
   psx_state_io(io, s1_labels, (size_t)(s1_labels_end - s1_labels));
 }

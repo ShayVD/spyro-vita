@@ -1,10 +1,10 @@
 # Decisions (2)
 
-Decisions from D103 on; D1–D102 are in [`decisions.md`](decisions.md), which is close to `tools/check_no_assets.sh`'s 512 KiB limit.
+Decisions from D104 on; D1–D103 are in [`decisions.md`](decisions.md), which is close to `tools/check_no_assets.sh`'s 512 KiB limit.
 
 ## 2026-11-05: native memory, the rest of stage 4
 
-### D103. Stage 4f–4i: the data labels as ordinary globals in a section laid out as PS1 RAM; the game's memory one heap block from main_BSS_END's page to the top of RAM; native save states format 2; the Vita on native memory
+### D106. Stage 4f–4i: the data labels as ordinary globals in a section laid out as PS1 RAM; the game's memory one heap block from main_BSS_END's page to the top of RAM; native save states format 2; the Vita on native memory
 - **Why:** steps 4f–4i of the stage 4 plan (`docs/native-plan.md`, D97). 4a–4e are merged (D97, D100): the native build (`-DSPYRO_NATIVE_MEM=ON`) had no mips2c code and ran at any base, but its data labels were still in the 2 MB arena (absolute symbols, or `arena_syms` pointers), and the arena still stood for all of PS1 RAM. Two PRs, as D100 did: 4f–4h (the host's native build, complete with save states), then 4i (the Vita).
 - **4f, the data labels as ordinary globals** (native only):
   - `tools/data2s.py --image` (with `--map psx.map`) puts all 516 labels in **one writable section, `spyro_labels`, in PS1 address order, each at its PS1 offset** (`.org`), so the section is an exact image of PS1 RAM from the first label (0x8006BBE0) to main_BSS_END (0x8007AA38, 61,016 bytes), holes included. Its start is congruent to 0x8006BBE0 modulo a page. The labels stay relocatable: a data word naming a label is relocated by the linker, so the native build has no `--map` absolute symbols, no `s1_psx_image` copy and no `arena_syms` pointers.

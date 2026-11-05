@@ -1,0 +1,63 @@
+# spyro-vita's settings for vita-port-kit's hardware-run tools (third_party/vita-port-kit/vita/tools; the wrappers
+# tools/vita/hw_run.sh, hw_check.sh, hw_ftp.py and hw_mock.py set HW_GAME to this file). Sourced by bash; the plain
+# KEY=VALUE lines are also read by hw_ftp.py and hw_mock.py. Settings and hooks:
+# third_party/vita-port-kit/vita/tools/hw.game.example. The runner itself is decision D77's.
+HW_TITLE_ID=SPYV00001
+HW_NAME="Spyro Vita"
+HW_DATA=ux0:data/spyro
+HW_LOG=spyro.log
+HW_STOP_RE='reached, exiting'
+HW_HANG_RE='hang: stopping the app for a crash dump'
+HW_VPK=build/vita/spyro-vita.vpk
+HW_TIMEOUT=120
+HW_QUIET_S=0
+HW_POLL_S=3
+HW_PAD_NAME=pad.txt
+# what the app writes in ux0:data/spyro (src/platform/vita), set aside for the run (config.txt, spyro.log and
+# pad.txt always are)
+HW_NAMES=(save shots audio.wav hold.req hold.ack)
+HW_COLLECT=(shots audio.wav save)
+HW_SAVE_DIR=save
+
+# The run's first config.txt lines: the owner's disc= kept; virtual vblanks unless REALTIME=1; as vita3k_run.sh,
+# the host's picture and camera so runs compare with it, unless DEVICE_DEFAULTS=1 (later lines win;
+# config_version=3: main.c); no standby, dimming or screen off while it runs (vblank.c).
+hw_config_base() {
+  [ -n "$1" ] && grep -E '^disc=' "$1" || true
+  [ "${REALTIME:-0}" = 1 ] || echo "realtime=0"
+  [ "${DEVICE_DEFAULTS:-0}" = 1 ] ||
+    printf 'config_version=3\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n'
+  echo "keep_awake=1"
+}
+
+# the disc image's one-time check (D60) isn't done again for every run
+hw_after_setup() {
+  [ -f "$1/save/disc-verified.txt" ] && [ ! -f "${SAVE:-/nonexistent}/disc-verified.txt" ] &&
+    v put "$1/save/disc-verified.txt" "$HW_DATA/save/disc-verified.txt"
+  return 0
+}
+
+# the shots next to the log, as before (OUT_DIR/*.png)
+hw_after_collect() {
+  [ -d "$1/shots" ] || return 0
+  find "$1/shots" -name '*.png' -exec mv {} "$1/" \;
+  rm -rf "${1:?}/shots"
+}
+
+hw_check_game() {
+  local d
+  if d=$(v ls "$HW_DATA" 2>/dev/null); then
+    if grep -q ' manifest.json$' <<< "$d"; then
+      ok "disc: the extracted files ($HW_DATA/manifest.json)"
+    elif grep -qiE ' [^ ]*\.(cue|bin|img)$' <<< "$d"; then
+      ok "disc: an image in $HW_DATA ($(grep -iE '\.(cue|bin|img)$' <<< "$d" | sed 's/^[df] [0-9]* //' | tr '\n' ' '))"
+    else
+      no "disc: no manifest.json and no .cue/.bin/.img in $HW_DATA (a disc= line in config.txt may point elsewhere)"
+    fi
+  fi
+  if v size ur0:data/libshacccg.suprx > /dev/null 2>&1 || v size ur0:data/external/libshacccg.suprx > /dev/null 2>&1; then
+    ok "ur0:data/libshacccg.suprx (the GPU's shader compiler)"
+  else
+    no "no ur0:data/libshacccg.suprx: the app falls back to the slow CPU renderer"
+  fi
+}

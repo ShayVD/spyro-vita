@@ -5,7 +5,7 @@
 #   docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh [BUILD_DIR]
 # Leaves BUILD_DIR/spyro-vita.vpk (default build/vita). SPYRO_CMAKE_ARGS adds
 # CMake options (-e SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=ON: native memory,
-# decisions D103).
+# decisions D106).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 out="${1:-build/vita}"

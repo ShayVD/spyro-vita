@@ -20,7 +20,7 @@ image that start-up copies there (`s1_psx_image`: {PS1 address, image,
 bytes}, zero-terminated; .bss labels need no copy, the arena starts zeroed).
 Game code then sees the same addresses as on a PS1, bit 31 included.
 
-Native memory (--map psx.map --image, decisions D103): the labels stay
+Native memory (--map psx.map --image, decisions D106): the labels stay
 ordinary relocatable symbols, but all of them go into one writable section,
 `spyro_labels`, in PS1 address order, each at its PS1 offset from the first
 (`.org`), so the section is an exact image of PS1 RAM from the first label
@@ -200,7 +200,7 @@ def main():
     ap.add_argument("--allow", help="abscheck allowlist")
     ap.add_argument("--map", help="psx.map: place every label at its PS1 address (D23)")
     ap.add_argument("--image", action="store_true",
-                    help="with --map: the labels as one section, an image of PS1 RAM (D103)")
+                    help="with --map: the labels as one section, an image of PS1 RAM (D106)")
     ap.add_argument("--image-end", type=lambda v: int(v, 0), default=0x8007AA38,
                     help="--image: where the image ends (main_BSS_END)")
     ap.add_argument("--extra", action="append", default=[],

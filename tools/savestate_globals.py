@@ -4,7 +4,7 @@ short list of the game's host globals. This checks that the list is complete:
 every data or bss symbol the game's objects define must be in the arena (an
 absolute symbol in the linked binary, decisions D23), or in the native
 build in the data labels' section (s1_labels to s1_labels_end, saved whole;
-decisions D103), saved by savestate.c, or known not to change after
+decisions D106), saved by savestate.c, or known not to change after
 start-up.
 
   savestate_globals.py --nm NM --bin SPYRO OBJ...
@@ -32,7 +32,7 @@ CONSTANT = {
     "env_hand_ngte.c:s_proj",   # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80)
     "port.c:s_hand_stack.0",    # the native build's below-$sp stores, never read (D100)
-    "port.c:s_kuseg_sink",      # the native build's sink for stray stores, never read (D103)
+    "port.c:s_kuseg_sink",      # the native build's sink for stray stores, never read (D106)
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {
@@ -70,7 +70,7 @@ def main():
     syms = list(nm(a.nm, a.bin))
     linked = {name: t for t, name, _ in syms}
     where = {name: adr for _, name, adr in syms}
-    # the native build's labels' section (tools/data2s.py --image, D103)
+    # the native build's labels' section (tools/data2s.py --image, D106)
     lo, hi = where.get("s1_labels"), where.get("s1_labels_end")
 
     def in_labels(name):
@@ -91,7 +91,7 @@ def main():
             if t.isupper() and linked.get(name) == "A":
                 continue  # a data label in the arena
             if t.isupper() and in_labels(name):
-                continue  # a data label in the native build's labels' section (D103)
+                continue  # a data label in the native build's labels' section (D106)
             if name.endswith("__p") and linked.get(name[:-3]) == "A":
                 continue  # a moved arena's pointer to that label, set at start-up (D25, D97)
             bad.append(f"{obj}: {t} {name}")

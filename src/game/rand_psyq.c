@@ -4,7 +4,7 @@
  * layout (decisions D23) the seed lives at its PS1 address in the arena, so
  * the oracle replay (oracle_replay.c) and RAM comparisons see it there. */
 #if SPYRO_NATIVE_MEM
-/* The native build (decisions D103): its word in the data labels' image
+/* The native build (decisions D106): its word in the data labels' image
  * (tools/data2s.py --extra), in PsyQ's hole between them. */
 extern unsigned int D_80075AC0;
 #define s_seed D_80075AC0

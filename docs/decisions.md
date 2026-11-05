@@ -2492,7 +2492,7 @@ Record each decision with its date, what was chosen, and why.
   - **Vita3K:** as for 4b–4c. The VPK compared is this branch's.
   - **Oracle replay** on the arena build with the reference units (`build/linux32-ref`): the four capture sets this machine still has (`cap3`, `cap5-fairy`, `run14-oracle-tour`, `run19-oracle-labels`; D97 replayed 21), `logs/s4-rp-all`: **4,297 PASS, 0 FAIL, 19 NOEXIT** (cap3 329 + 9, cap5-fairy 261 + 7, the tour 1,857 + 1, the labels 1,850 + 2). They include the two functions whose instructions changed, `func_80052F38` (32 samples) and `func_80048D10` (81), all PASS.
 - **Not run on hardware:** the Vita stays on the moved configuration (step 4i switches it). Its pictures and card in Vita3K are main's.
-- **What 4f–4i inherit:** the native build runs at any page, below 2 GB included, with the data labels still through pointers (`arena_syms`) and the game's memory still one 2 MB block. Step 4f makes the labels ordinary globals, and 4g allocates the block from the heap. The bit-0 tags and the offset-form subdivision headers need nothing more from them.
+- **What 4f–4i inherit:** the native build at any page, its labels still through `arena_syms` and its memory one 2 MB block (both changed by D106).
 
 ## 2026-11-04: decoupled timing (stage 7), planned
 
@@ -2657,4 +2657,7 @@ Record each decision with its date, what was chosen, and why.
   - **The walk writing straight into the slab** (PsyCross's buffer as a pointer), saving the parse thread's copy of about 80 KB a list; and **the side stream in vitaGL's scratch memory** (`vglAllocFromScratch`, `vglBufferData`), saving a `glBufferData` copy.
   - **The rest of the translation** (`GR_DrawTriangles`: `sync_pages`' pass, the logs' copies, the batches' GL calls, vitaGL's own work and waits) is unchanged; the `gpu parts` line is there to measure it.
 
-Decisions from D103 on are in [`decisions-2.md`](decisions-2.md).
+### D103. Hardware runs use vita-port-kit's scripts; this game's details are in `tools/vita/hw.game`
+- **Why and what:** see `docs/vita-testing.md` "Hardware runs from the Mac". The scripts are vendored in `third_party/vita-port-kit`, and `tools/vita/hw_*` wrap them. The lock moved to `~/.cache/vita-port-kit` and is shared with kh1-decomp. Checked against the mock (2026-11-05); not run on hardware yet.
+
+Decisions from D104 on are in [`decisions-2.md`](decisions-2.md).

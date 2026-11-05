@@ -527,10 +527,10 @@ static void hooks_init(void) {
 /* A pass may write anywhere the draw path writes, but the game only reads
  * some of it again (docs/presentation.md, --present-dirty):
  *  - the scratchpad (first KB of the arena; in the native build
- *    g_psx_scratch itself, D103) and g_psx_scratch;
+ *    g_psx_scratch itself, D106) and g_psx_scratch;
  *  - the game's data, sdata, sbss and bss, 0x8006BBE0-0x8007AA38 (psx.map
  *    main_DATA_START..main_BSS_END): camera, Spyro, g_SonyImage, the globals
- *    (in the native build their own section, D103);
+ *    (in the native build their own section, D106);
  *  - the level's moby array (m_WasDrawn, animation state, blended transforms);
  *  - the particle space under m_SharedAnimations (AllocateBuffers, 4BEF8.c);
  *  - bytes 0x18-0x1B of every sector header, a cache func_800258F0 reads
@@ -577,7 +577,7 @@ static int in_arena(const void *p, uint32_t len) {
          a - g_psx_arena_base <= PSX_MEM_SIZE - len;
 }
 
-/* the native build's data labels are their own section (D103) */
+/* the native build's data labels are their own section (D106) */
 #if SPYRO_NATIVE_MEM
 #define LABELS_REGION(at, len) ((at) == PSX_ARENA(DATA_LO) && (len) == DATA_HI - DATA_LO)
 #else
@@ -594,7 +594,7 @@ static void add_region(void *at, uint32_t len) {
 
 static void collect_regions(void) {
   s_nregions = 0;
-#if !SPYRO_NATIVE_MEM /* the native build's is g_psx_scratch (D103) */
+#if !SPYRO_NATIVE_MEM /* the native build's is g_psx_scratch (D106) */
   add_region(PSX_ARENA(0x80000000u), sizeof g_psx_scratch);
 #endif
   add_region(PSX_ARENA(DATA_LO), DATA_HI - DATA_LO);

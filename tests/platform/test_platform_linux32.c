@@ -265,7 +265,7 @@ void port_lod_report(char *out, unsigned len) {
 }
 int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
 #if SPYRO_NATIVE_MEM
-/* src/game/port.c's: no data labels here, only the arena (D103). */
+/* src/game/port.c's: no data labels here, only the arena (D106). */
 void *psx_mem_host(uint32_t a) { return (void *)(g_psx_arena_base + (a - PSX_MEM_PSX)); }
 #endif
 

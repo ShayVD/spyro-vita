@@ -81,7 +81,7 @@ def cmd_table(s1, psx_map, out):
     if bss_end is None:
         raise SystemExit(f"main_BSS_END not in {psx_map}")
     lines += ["", "#if SPYRO_NATIVE_MEM && PSX_BSS_END != 0x%08Xu" % bss_end,
-              "#error psx_arena.h PSX_BSS_END is not psx.map's main_BSS_END (D103)", "#endif"]
+              "#error psx_arena.h PSX_BSS_END is not psx.map's main_BSS_END (D106)", "#endif"]
     lines += ["", "extern void *g_OverlaySpacePointer;", "",
               "void psx_overlays_init(void) {",
               f"  g_OverlaySpacePointer = PSX_ARENA(0x{bss_end:08X}); /* main_BSS_END */"]
