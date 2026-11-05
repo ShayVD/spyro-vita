@@ -1,7 +1,9 @@
-/* The port's options panel, drawn on the CPU (menu_panel.h): a 5x7 bitmap
- * font scaled up, a dark box, the selected row on a lighter bar, section
- * headers smaller in gold, and a window of lines that scrolls (D45). */
-#include "menu_panel.h"
+/* A port's options panel, drawn on the CPU (vpk_menu_panel.h): a 5x7 bitmap
+ * font scaled up (drawn for spyro-vita, no font file), a dark box, the
+ * selected row on a lighter bar, section headers smaller in gold, and a
+ * window of lines that scrolls.
+ * From spyro-vita src/platform/common/menu_panel.c @ 987363e (its D45). */
+#include "vpk_menu_panel.h"
 
 #include <string.h>
 
@@ -71,7 +73,7 @@ static const struct {
 #define TITLE_H 40
 #define ROW_H 30
 #define FOOTER_H 34
-#define ARROW_X (MENU_PANEL_W - PAD / 2 - 2) /* scroll arrows: centre x */
+#define ARROW_X (VPK_MENU_PANEL_W - PAD / 2 - 2) /* scroll arrows: centre x */
 
 static const uint8_t k_bg[3] = {18, 22, 38};
 static const uint8_t k_border[3] = {200, 160, 40};
@@ -81,11 +83,11 @@ static const uint8_t k_text[3] = {235, 235, 240};
 static const uint8_t k_value[3] = {140, 220, 255};
 static const uint8_t k_dim[3] = {150, 150, 165};
 
-int menu_panel_height(int lines) {
+int vpk_menu_panel_height(int lines) {
   return PAD + TITLE_H + lines * ROW_H + FOOTER_H + PAD / 2;
 }
 
-int menu_panel_top(int n, int sel, int top, int lines) {
+int vpk_menu_panel_top(int n, int sel, int top, int lines) {
   int want = sel > 0 ? sel - 1 : 0; /* the line above too: its header, if any */
   if (n <= lines)
     return 0;
@@ -116,8 +118,8 @@ static int text_width(const char *s, int scale) {
 static void fill(uint8_t *rgb, int h, int x0, int y0, int w, int hh, const uint8_t c[3]) {
   int x, y;
   for (y = y0; y < y0 + hh && y < h; y++)
-    for (x = x0; x < x0 + w && x < MENU_PANEL_W; x++) {
-      uint8_t *p = rgb + ((size_t)y * MENU_PANEL_W + x) * 3;
+    for (x = x0; x < x0 + w && x < VPK_MENU_PANEL_W; x++) {
+      uint8_t *p = rgb + ((size_t)y * VPK_MENU_PANEL_W + x) * 3;
       p[0] = c[0], p[1] = c[1], p[2] = c[2];
     }
 }
@@ -142,12 +144,12 @@ static void arrow(uint8_t *rgb, int h, int x, int y, int up, const uint8_t c[3])
     fill(rgb, h, x - r, up ? y - 5 + r : y + 5 - r, 2 * r + 1, 1, c);
 }
 
-void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n,
+void vpk_menu_panel_draw(uint8_t *rgb, const char *title, const VpkMenuRow *rows, int n,
                      int sel, int top, int lines, const char *footer) {
-  int h = menu_panel_height(lines), i, y, y0 = PAD + TITLE_H;
-  fill(rgb, h, 0, 0, MENU_PANEL_W, h, k_border);
-  fill(rgb, h, 3, 3, MENU_PANEL_W - 6, h - 6, k_bg);
-  text(rgb, h, (MENU_PANEL_W - text_width(title, TEXT_SCALE)) / 2, PAD, title, TEXT_SCALE,
+  int h = vpk_menu_panel_height(lines), i, y, y0 = PAD + TITLE_H;
+  fill(rgb, h, 0, 0, VPK_MENU_PANEL_W, h, k_border);
+  fill(rgb, h, 3, 3, VPK_MENU_PANEL_W - 6, h - 6, k_bg);
+  text(rgb, h, (VPK_MENU_PANEL_W - text_width(title, TEXT_SCALE)) / 2, PAD, title, TEXT_SCALE,
        k_title);
   y = y0;
   for (i = top; i < n && i < top + lines; i++, y += ROW_H) {
@@ -157,12 +159,12 @@ void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n
       int tw = text_width(rows[i].label, SMALL_SCALE);
       ty = y + ROW_H - 7 * SMALL_SCALE - 4;
       text(rgb, h, PAD, ty, rows[i].label, SMALL_SCALE, k_title);
-      fill(rgb, h, PAD + tw + 8, ty + 3 * SMALL_SCALE, MENU_PANEL_W - 2 * PAD - tw - 8, 2,
+      fill(rgb, h, PAD + tw + 8, ty + 3 * SMALL_SCALE, VPK_MENU_PANEL_W - 2 * PAD - tw - 8, 2,
            k_border);
       continue;
     }
     if (i == sel) {
-      fill(rgb, h, PAD / 2, y, MENU_PANEL_W - PAD, ROW_H, k_bar);
+      fill(rgb, h, PAD / 2, y, VPK_MENU_PANEL_W - PAD, ROW_H, k_bar);
       value[0] = '<', value[1] = ' ';
       strncpy(value + 2, rows[i].value, sizeof value - 5);
       value[sizeof value - 3] = 0;
@@ -172,7 +174,7 @@ void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n
       value[sizeof value - 1] = 0;
     }
     text(rgb, h, PAD, ty, rows[i].label, TEXT_SCALE, k_text);
-    text(rgb, h, MENU_PANEL_W - PAD - text_width(value, TEXT_SCALE), ty, value, TEXT_SCALE,
+    text(rgb, h, VPK_MENU_PANEL_W - PAD - text_width(value, TEXT_SCALE), ty, value, TEXT_SCALE,
          k_value);
   }
   if (top > 0)
@@ -180,20 +182,20 @@ void menu_panel_draw(uint8_t *rgb, const char *title, const MenuRow *rows, int n
   if (top + lines < n)
     arrow(rgb, h, ARROW_X, y0 + lines * ROW_H + 4, 0, k_title);
   y = y0 + lines * ROW_H;
-  text(rgb, h, (MENU_PANEL_W - text_width(footer, SMALL_SCALE)) / 2,
+  text(rgb, h, (VPK_MENU_PANEL_W - text_width(footer, SMALL_SCALE)) / 2,
        y + (FOOTER_H - 7 * SMALL_SCALE) / 2 + 4, footer, SMALL_SCALE, k_dim);
 }
 
 /* Text word-wrapped to the rows' width: a line per row, plain (an empty
  * value, so not a header). */
-#define MSG_COLS ((MENU_PANEL_W - 2 * PAD + TEXT_SCALE) / (6 * TEXT_SCALE))
+#define MSG_COLS ((VPK_MENU_PANEL_W - 2 * PAD + TEXT_SCALE) / (6 * TEXT_SCALE))
 
-int menu_panel_message(uint8_t *rgb, const char *title, const char *text, const char *footer) {
-  static char lines[MENU_PANEL_LINES][MSG_COLS + 1];
-  MenuRow rows[MENU_PANEL_LINES];
+int vpk_menu_panel_message(uint8_t *rgb, const char *title, const char *text, const char *footer) {
+  static char lines[VPK_MENU_PANEL_LINES][MSG_COLS + 1];
+  VpkMenuRow rows[VPK_MENU_PANEL_LINES];
   const char *p = text;
   int n = 0, i;
-  while (*p && n < MENU_PANEL_LINES) {
+  while (*p && n < VPK_MENU_PANEL_LINES) {
     int len = 0, cut = -1;
     while (p[len] && p[len] != '\n' && len < MSG_COLS) {
       if (p[len] == ' ')
@@ -216,6 +218,6 @@ int menu_panel_message(uint8_t *rgb, const char *title, const char *text, const 
     rows[i].label = lines[i];
     rows[i].value = "";
   }
-  menu_panel_draw(rgb, title, rows, n, -1, 0, n, footer);
-  return menu_panel_height(n);
+  vpk_menu_panel_draw(rgb, title, rows, n, -1, 0, n, footer);
+  return vpk_menu_panel_height(n);
 }
