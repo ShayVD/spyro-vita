@@ -499,6 +499,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--present-reads") == 0) {
       TAKE();
       s_reads = val;
+#if SPYRO_NATIVE_MEM
+      fprintf(stderr, "spyro: --present-reads traces the arena by PS1 address, which a native build "
+                      "doesn't have (the arena build's; D104, D106)\n");
+      return 1;
+#endif
     } else if (strcmp(a, "--present-reads-every") == 0) {
       TAKE();
       s_reads_every = to_int(val);

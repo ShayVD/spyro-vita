@@ -18,6 +18,7 @@
 
 #include "psx_arena.h"
 #include "psx_clock.h"
+#include "psx_mem.h"
 #include "psx_spu.h"
 #include "psx_walk.h"
 
@@ -1185,11 +1186,11 @@ static PresentGsStats *gs_stats(void) {
   return &g_present_stats.gs[(unsigned)g_Gamestate % PRESENT_GAMESTATES];
 }
 
-/* The packet a PS1 24-bit link points to, in the 16 MB-aligned arena; NULL
- * at the terminator's 0xFFFFFF. */
+/* The packet a PS1 24-bit link points to (psx_mem.h, D100; in the native
+ * build relative to the block, D106); NULL at the terminator's 0xFFFFFF. */
 static const uint32_t *next_packet(const uint32_t *p) {
   uint32_t a = *p & 0xFFFFFFu;
-  return a == 0xFFFFFFu ? NULL : (const uint32_t *)(((uintptr_t)p & ~(uintptr_t)0xFFFFFF) | a);
+  return a == 0xFFFFFFu ? NULL : (const uint32_t *)MEM_OT_NEXT(*p);
 }
 
 static long long count_packets(const uint32_t *p) {
