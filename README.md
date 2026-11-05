@@ -214,7 +214,7 @@ The other builds are for development:
 - **Vita build and testing in Vita3K:** [docs/vita-testing.md](docs/vita-testing.md).
 
 How it works: [docs/porting-plan.md](docs/porting-plan.md), decisions with their reasons in
-[docs/decisions.md](docs/decisions.md), and every translated function in
+[docs/decisions.md](docs/decisions.md) (D1–D102) and [docs/decisions-2.md](docs/decisions-2.md) (D103 on), and every translated function in
 [docs/translation-log.md](docs/translation-log.md).
 
 ## Licence and credits

@@ -1,8 +1,13 @@
-# Decisions (2)
+# Decisions, part 2
 
-Decisions from D104 on; D1–D103 are in [`decisions.md`](decisions.md), which is close to `tools/check_no_assets.sh`'s 512 KiB limit.
+Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record each decision with its date, what was chosen, and why.
 
-## 2026-11-05: native memory, the rest of stage 4
+## 2026-11-05 — hardware runs
+
+### D103. Hardware runs use vita-port-kit's scripts; this game's details are in `tools/vita/hw.game`
+- **Why and what:** see `docs/vita-testing.md` "Hardware runs from the Mac". The scripts are vendored in `third_party/vita-port-kit`, and `tools/vita/hw_*` wrap them. The lock moved to `~/.cache/vita-port-kit` and is shared with kh1-decomp. Checked against the mock (2026-11-05); not run on hardware yet.
+
+## 2026-11-05 — native memory, the rest of stage 4
 
 ### D106. Stage 4f–4i: the data labels as ordinary globals in a section laid out as PS1 RAM; the game's memory one heap block from main_BSS_END's page to the top of RAM; native save states format 2; the Vita on native memory
 - **Why:** steps 4f–4i of the stage 4 plan (`docs/native-plan.md`, D97). 4a–4e are merged (D97, D100): the native build (`-DSPYRO_NATIVE_MEM=ON`) had no mips2c code and ran at any base, but its data labels were still in the 2 MB arena (absolute symbols, or `arena_syms` pointers), and the arena still stood for all of PS1 RAM. The brief named this D103; main's D103 (vita-port-kit's hardware scripts, #81) came first, so this is D106 (D104 and D105 are the sibling sessions'). Two PRs: 4f–4h with the Vita's native build as an option checked in Vita3K, then 4i, the Vita's default, after a hardware pair.
