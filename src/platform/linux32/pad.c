@@ -147,8 +147,8 @@ static int load(PadScript *ps, const char *path) {
     }
     e.vblank = v;
     if (strncmp(btn, "poke:", 5) == 0) {
-      if (sscanf(btn + 5, "%x=%x", &e.addr, &e.value) != 2) {
-        host_log("pad: %s:%d: expected poke:ADDR=VALUE in '%s'", path, lineno, btn);
+      if (sscanf(btn + 5, "%x=%x", &e.addr, &e.value) != 2 || !PSX_MEM_OK(e.addr, 4u)) {
+        host_log("pad: %s:%d: expected poke:ADDR=VALUE (game RAM) in '%s'", path, lineno, btn);
         fclose(f);
         return -1;
       }

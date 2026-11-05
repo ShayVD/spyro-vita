@@ -32,6 +32,9 @@ time by `tools/vita/make_livearea.py`, decisions D55, or, as now, converted from
 same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
 `docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
+- The VPK uses native memory (decisions D106): the game's data labels are ordinary globals and its memory one block
+  from the heap. `-DSPYRO_NATIVE_MEM=OFF` (or `SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=OFF` for `tools/ci/build_vpk.sh`)
+  builds the moved arena of D25 instead, the default before D106.
 - The game's PS1 layout comes from the matching build's `psx.map` when there is one
   (`tools/build_matching.sh`, or point `-DSPYRO_MATCHING_DIR=` at another checkout's
   `build/s1-matching`), else from the reduced copy `tools/layout/psx.map` (D57). After a change
@@ -733,7 +736,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 2. Move somewhere else (collect a gem, lose some health), then `LOAD STATE`. Spyro, the camera, the gem count, enemies and the music must be exactly as they were at the save, and the game must go on normally. Note how long the picture stops (the log's `load took N ms`).
 3. Save in one level, go through a portal to another one, load: back in the first level as it was.
 4. Save while the music plays and while flying (Sunny Flight), load later: the music goes on from where it was. Also save while running with the left stick and turning the camera with the right one (`FREE CAMERA` on): after the load the camera is where it was, and the sticks work at once.
-5. **Quit the app (PS button, close) and start it again**, then `LOAD STATE` straight from the title screen. This is the important one: it works only if the Vita puts the game's memory at the same addresses every launch (the log's `arena at 0x...` line must be the same in both launches). If the menu shows `OTHER LAYOUT` instead of the level name, send the logs of both launches.
+5. **Quit the app (PS button, close) and start it again**, then `LOAD STATE` straight from the title screen. This is the important one: it works only if the Vita puts the game's memory at the same addresses every launch (the log's `game memory at 0x...` line, `arena at 0x...` in a moved-arena build, must be the same in both launches). If the menu shows `OTHER LAYOUT` instead of the level name, send the logs of both launches.
 6. Check the game's own saving still works: save at a fairy, quit, Load Game from the title.
 7. Send back `spyro.log` and anything that looked or sounded wrong after a load.
 

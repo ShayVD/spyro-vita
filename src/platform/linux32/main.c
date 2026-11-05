@@ -251,8 +251,8 @@ static void log_pages(const char *what, const uint32_t *bits) {
     if (d && start < 0)
       start = i;
     if (!d && start >= 0) {
-      host_log("present: %s %08x-%08x", what, 0x80000000u + start * 4096,
-               0x80000000u + i * 4096 - 1);
+      host_log("present: %s %08x-%08x", what, PSX_MEM_PSX + start * 4096,
+               PSX_MEM_PSX + i * 4096 - 1);
       start = -1;
     }
   }
@@ -429,8 +429,7 @@ int main(int argc, char **argv) {
       unsigned v, addr, value;
       TAKE();
       if (g_host_opts.npokes == 16 ||
-          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 ||
-          addr < 0x80000000u || addr > 0x801FFFFCu)
+          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 || !PSX_MEM_OK(addr, 4u))
         usage();
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
@@ -456,7 +455,7 @@ int main(int argc, char **argv) {
       int n;
       TAKE();
       if (g_host_opts.npeeks == 8 || sscanf(val, "%x:%d", &addr, &n) != 2 || n < 1 ||
-          n > 64 || addr < 0x80000000u || addr + 4u * n > 0x80200000u)
+          n > 64 || !PSX_MEM_OK(addr, 4u * (unsigned)n))
         usage();
       g_host_opts.peeks[g_host_opts.npeeks].addr = addr;
       g_host_opts.peeks[g_host_opts.npeeks++].n = n;
@@ -500,6 +499,11 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--present-reads") == 0) {
       TAKE();
       s_reads = val;
+#if SPYRO_NATIVE_MEM
+      fprintf(stderr, "spyro: --present-reads traces the arena by PS1 address, which a native build "
+                      "doesn't have (the arena build's; D104, D106)\n");
+      return 1;
+#endif
     } else if (strcmp(a, "--present-reads-every") == 0) {
       TAKE();
       s_reads_every = to_int(val);

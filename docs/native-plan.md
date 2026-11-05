@@ -33,12 +33,11 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
   - stage 2: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita, and its last piece, the direct path to vitaGL (D99, `nd_direct`, off by default; measured on hardware, runs Y1–Y4);
-  - stage 4's steps 4a–4e: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100);
+  - stage 4, native memory: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100); the data labels as ordinary globals, the game's memory one heap block (overlay space), the scratchpad its own array, save states format 2, and native memory the Vita's default since a hardware pair (D106);
   - stage 7's steps 7a and 7b: the host audits of the in-between frame, and the port's own `VSync` over one clock module (D104).
-- **What I recommend next** (updated by D104, 2026-11-05):
-  1. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
-  2. **Stage 7's step 7c** (§5): presentation leaves `VSync`, so a late render thread costs pictures, not ticks. 7a and 7b are done (D104). On 7a's numbers, 7d–7g wait for a need the CPU numbers don't give: the presenter's snapshot would be small, but 60 fps already holds in play, and stage 7's CPU gain is headroom rather than pictures.
-  3. **Stage 8,** retiring PsyCross, last.
+- **What I recommend next** (updated by D104 and D106, 2026-11-05):
+  1. **Stage 7's step 7c** (§5): presentation leaves `VSync`, so a late render thread costs pictures, not ticks. 7a and 7b are done (D104). On 7a's numbers, 7d–7g wait for a need the CPU numbers don't give: the presenter's snapshot would be small, but 60 fps already holds in play, and stage 7's CPU gain is headroom rather than pictures.
+  2. **Stage 8,** retiring PsyCross, last.
 
 ---
 
@@ -823,6 +822,10 @@ Each native step is checked by running `host_checks.sh` on the arena build and o
 
 **Status (D100, 2026-11-04): steps 4d and 4e done.** In the native build every packed address decodes relative to the arena's base, and `SPYRO_ARENA_AT` may be any page. PsyCross's `nextPrim` goes through `SPYRO_OT_NEXT` (`patches/PsyCross/0013`). The decomp's 24-bit compares and its 21-bit frame-pointer writers are fixed for any base (`patches/spyro-1-port/0011`). The two bit-31 tags moved to **bit 0** of the same pointer, not to the side fields planned above: the collision tag is copied onto mobys outside `g_LevelMobys`, and bit 0 travels with the pointer, so no new save-state chunk is needed. The check below 2 GB found a third tag the inventory missed, the environment renderer's subdivision lists (header against polygon by the sign), now `MEM_SUBDIV_*`. Native at 0x92F81000 (unaligned, crossing a 16 MB line) and at 0x52F81000 (below 2 GB): main's 279 host-check files byte for byte each; save states round-trip below 2 GB. Details and logs: D100.
 
+**Status (D106, 2026-11-05): steps 4f–4h done on the host.** In the native build the 516 data labels are ordinary globals in one section, `spyro_labels`, laid out as PS1 RAM from 0x8006BBE0 to main_BSS_END, so a PS1 address there is one offset (not the per-label table planned above); PsyQ's `rand` seed is named in its hole. A new audit (`-DSPYRO_MEM_AUDIT=ON`) showed that the OT terminator is the only label anything links to or decodes into. The game's memory is one heap block: overlay space at its PS1 size, behind the rest of main_BSS_END's page, which holds the terminator (0x8007A000–0x80200000, 1,597,440 bytes). The scratchpad is `g_psx_scratch`. Native save states are format 2 (`BLCK`, `LABL`, both addresses in the header), and format 1 is refused as another build. The native build with the labels as globals (block below 2 GB at 0x52F81000), and then with the block from the heap (0x3FBED000), each gave main's 279 host-check files byte for byte; save states round-trip, a fresh launch included. Details and logs: D106.
+
+**Status (D106, 2026-11-05): step 4i done; stage 4 done.** The native VPK gave main's 17 shots, 17 HD shots and memory card on the owner's Vita, and native memory is the Vita's default; `-DSPYRO_NATIVE_MEM=OFF` builds the moved arena. linux32's default stays the arena build, for the oracle.
+
 ### Stage 5: native audio (medium, low–medium risk)
 
 **Replaces** (E):
@@ -1197,14 +1200,13 @@ Status as of 2026-11-04 (D101). The payoff column gives the measured share each 
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
-| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a–4e done (D97, D100); then 4f–4i |
+| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
 | 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c next; 7d–7g wait for a reason other than CPU (D104) |
 | 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
 
 **What can run at once:**
-- **Now:** 7c (D99 is merged and measured), beside 4f–4i. 7c touches `present.c`, the two `vblank.c` files and the render thread; 4f–4i touch the labels, the loader and save states.
-- **Done:** 7a and 7b (D104).
-- **After D100:** 4f–4i, and 7d beside them (7d changes the renderers' interfaces; 4f–4i are mostly the labels, the loader and tooling).
+- **Now:** 7c (D99 is merged and measured), and 7d beside it if a reason for it comes (7d changes the renderers' interfaces; 7c touches `present.c`, the two `vblank.c` files and the render thread).
+- **Done:** 7a and 7b (D104); stage 4, 4f–4i included (D106).
 - **Then** 7e–7g, then stage 8.
 
 ## 6. Reproducing these numbers
