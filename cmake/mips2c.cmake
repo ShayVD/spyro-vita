@@ -43,6 +43,12 @@ set(SPYRO_M2C_FUNCS "" CACHE STRING
 # SPYRO_M2C_REF=ON also links each hand-written function's mips2c unit,
 # renamed <name>_gen, and lists it in hand_index.c's m2c_gen_index.
 option(SPYRO_M2C_REF "Link the mips2c units of hand-written functions as <name>_gen" OFF)
+if(SPYRO_NATIVE_MEM)
+  # D100: the native build has no mips2c units to take functions from.
+  if(SPYRO_M2C_FUNCS OR SPYRO_M2C_REF OR SPYRO_M2C_PROF)
+    message(FATAL_ERROR "SPYRO_NATIVE_MEM links no mips2c units: no SPYRO_M2C_FUNCS, SPYRO_M2C_REF or SPYRO_M2C_PROF")
+  endif()
+endif()
 set(M2C_HAND_DEFS)
 set(M2C_REF_UNITS)
 foreach(u ${M2C_HAND})
@@ -272,6 +278,14 @@ while(M2C_MULTI_GEN)
     COMMENT "mips2c: ${f}'s entries as <name>_gen (A/B tests, differential sweeps)")
 endwhile()
 
+if(SPYRO_NATIVE_MEM)
+  # no units: an empty library keeps the targets' shape (game.cmake)
+  file(WRITE "${GEN_DIR}/mips2c/m2c_none.c" "/* SPYRO_NATIVE_MEM: no mips2c units (D100) */\n")
+  set(M2C_OUTS "${GEN_DIR}/mips2c/m2c_none.c")
+  set(M2C_REF_OUTS)
+  set(M2C_RENDER_FILES)
+  set(M2C_PARTIAL_DEFS)
+endif()
 add_library(spyro_game_m2c OBJECT ${M2C_OUTS} ${M2C_REF_OUTS})
 foreach(src ${M2C_RENDER_FILES})
   get_filename_component(n "${src}" NAME_WE)

@@ -380,7 +380,11 @@ static void read_config(void) {
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
+#if SPYRO_NATIVE_MEM
+      g_fast_render = atoi(v) ? atoi(v) : 1; /* no mips2c units in a native build (D100) */
+#else
       g_fast_render = atoi(v);
+#endif
     else if (!strcmp(line, "ngte_fx"))
       g_ngte_fx = atoi(v);
     else if (!strcmp(line, "gpu_direct"))

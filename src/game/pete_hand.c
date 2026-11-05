@@ -16,6 +16,7 @@
 #include "moby.h"
 #include "overlay_pointers.h"
 #include "psx_arena.h"
+#include "psx_mem.h"
 #include "rand.h"
 #include "spu.h"
 #include "spyro.h"
@@ -147,7 +148,7 @@ static void UpdateFlameOrigin(void) {
   /* The frame's data holds the head's position, packed 11:11:10 (z in
    * units of 2), 0x10 bytes in. Frame data offsets are KUSEG addresses / 2. */
   frames = (SpyroAnimationFrame *)SPYRO_MODEL->m_Animations[g_Spyro.m_bodyAnimation]->m_Frames;
-  packed = *(u_int *)((u_char *)PSX_ARENA(PSX_RAM_BASE + ((frames[g_Spyro.m_bodyAnimationFrame].m_Data & 0x1FFFFF) << 1)) + 0x10);
+  packed = *(u_int *)((u_char *)MEM_ANIM_HALF(frames[g_Spyro.m_bodyAnimationFrame].m_Data) + 0x10);
   offset.x = (int)packed >> 21;
   offset.y = (int)(packed << 11) >> 21;
   offset.z = (int)(packed << 22) >> 21;

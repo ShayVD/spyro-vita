@@ -466,6 +466,12 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+#if SPYRO_NATIVE_MEM
+      if (g_fast_render == 0) {
+        fprintf(stderr, "spyro: --fast-render 0 runs the mips2c units, which a native build doesn't link (D100)\n");
+        return 1;
+      }
+#endif
     } else if (strcmp(a, "--ngte-fx") == 0) {
       extern int g_ngte_fx; /* mips2c_rt.c, D98 */
       g_ngte_fx = 1;
@@ -557,10 +563,11 @@ int main(int argc, char **argv) {
 #undef TAKE
   }
   if (replay) {
-#if SPYRO_ARENA_MOVED
-    fprintf(stderr, "spyro: --replay needs the arena at 0x80000000 (SPYRO_ARENA_AT, D97)\n");
+#if SPYRO_ARENA_MOVED || SPYRO_NATIVE_MEM
+    fprintf(stderr, "spyro: --replay needs the arena build (the arena at 0x80000000, no "
+                    "SPYRO_NATIVE_MEM; D97, D100)\n");
     return 1;
-#endif
+#else
     psx_arena_init();
     /* With --disc, CD reads made inside a sampled call (the credits overlay's
      * CDLoadSync) read the disc; without, they never complete. The game's
@@ -577,6 +584,7 @@ int main(int argc, char **argv) {
       CdReadCallback(CDReadDone);
     }
     return spyro_replay(replay, only, ignore, fnmap) == 0 ? 0 : 1;
+#endif
   }
   if (!g_host_opts.disc_dir)
     usage();

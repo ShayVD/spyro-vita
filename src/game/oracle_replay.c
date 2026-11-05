@@ -36,6 +36,8 @@
  * "START END NAME" in hex, END exclusive); differences there count as
  * "ignored", not as failures. Scratchpad addresses (0x1F80xxxx) are
  * compared in the port's form, the first KB of the arena. */
+
+#if !SPYRO_NATIVE_MEM /* the oracle replay runs on the arena build only (D97); D100 */
 #include "mips2c_rt.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
@@ -798,3 +800,5 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
   printf("replay: %d samples, %d passed, %d not\n", total, total - bad, bad);
   return bad;
 }
+
+#endif /* !SPYRO_NATIVE_MEM */

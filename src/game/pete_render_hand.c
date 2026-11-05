@@ -207,7 +207,7 @@ static void RotateMatrix(u32 m[5], u32 angles) {
 static u32 PartStreams(u32 *streams, u32 anim, u32 frame_no, int part, u32 *frame_out) {
   const u8 *hdr = HPTR(const u8, anim);
   u32 fw = ((const u32 *)(hdr + AN_FRAMES))[frame_no];
-  u32 frame = ((fw << 11) >> 10) + (u32)g_psx_arena_base;
+  u32 frame = MEM_ANIM_HALF(fw);
   u32 data = frame + 0x18;
   u32 w2 = AT32(frame + 0x8);
   u32 deltas = *(const u32 *)(hdr + AN_DELTAS);
@@ -1090,7 +1090,7 @@ static void LinkBuckets(const Faces *f) {
 
 static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u8 *spyro = (const u8 *)g_Spyro;
-  const u32 *models = HPTR(const u32, *(u32 *)g_Models) + 0x38 / 4;
+  const u32 *models = HPTR(const u32, MEM_MODEL_AT(*(u32 *)g_Models)) + 0x38 / 4;
   const u32 *cam = (const u32 *)g_Camera;
   u32 *const rec0 = (u32 *)(WORK + W_PARTS);
   u32 *rec = rec0;

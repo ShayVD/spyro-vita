@@ -1145,7 +1145,7 @@ static void Sparkles(u32 dt) {
       AT32(prim + 0x0) = 0x3000000u;
       if ((s32)(d - 0x100u) > 0)
         d += 0x46u;
-      AT32(prim + 0x10) = MIPS_ARENA_TAG(0x83000000u) ^ prim; /* the second line, then the first */
+      AT32(prim + 0x10) = MEM_TAG_LINK(MEM_TAG(0x83000000u), prim); /* the second line, then the first */
       slot = (d << 3) + ot;
     }
     AT32(prim + 0xC) = MFC2(14);

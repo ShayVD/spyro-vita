@@ -251,7 +251,7 @@ static inline __attribute__((always_inline)) int CullMoby(u32 moby, u32 rec, u32
     return CULL_NEXT;
 
   /* Into camera space (x, y, z: the camera's axes, z the depth). */
-  model = AT32(g_Models + AT16(m + MOBY_CLASS) * 4);
+  model = MEM_MODEL_AT(AT32(g_Models + AT16(m + MOBY_CLASS) * 4));
   anims = AT32(m + MOBY_ANIMS);
   anim = *HPTR(u32, model + ((anims & 0xFF) << 2) + MODEL_ANIMS);
   MatToGte(&cam->view);

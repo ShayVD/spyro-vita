@@ -27,6 +27,7 @@
 #include "gte_int.h"
 #include "moby.h"
 #include "psx_arena.h"
+#include "psx_mem.h"
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
@@ -257,7 +258,7 @@ typedef struct {
 } CollisionModel;
 
 static inline const CollisionModel *MobyCollisionModel(const Moby *m) {
-  return (const CollisionModel *)((uintptr_t)m->m_CollisionGroup | 0x80000000u);
+  return (const CollisionModel *)MEM_COLL_PTR(m->m_CollisionGroup);
 }
 
 #define TRI_VERTEX_A(w) (((w) >> 24) & 0x3F)
@@ -299,7 +300,7 @@ static Vector3D MobyVertex(const Moby *m, u_int word, int scale) {
 static const u_int *MobyFrameWords(const Moby *m, int *scale) {
   const AnimationHeader *anim = g_Models[(u_short)m->m_Class]->m_Animations[m->m_AnimationState.m_Animation];
   *scale = anim->m_Scale;
-  return (const u_int *)PSX_ARENA(0x80000000u | (anim->m_Frames[m->m_AnimationState.m_Frame].m.m_Data & 0x1FFFFF));
+  return (const u_int *)MEM_ANIM21(anim->m_Frames[m->m_AnimationState.m_Frame].m.m_Data);
 }
 
 /* All the vertices of a moby's collision model, as the asm's RTPS loop

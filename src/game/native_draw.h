@@ -162,7 +162,7 @@ extern int g_nd_direct_ok;
 enum { ND_WALK_DIRECT = 0x10, ND_WALK_RANGES = 0x20 };
 /* The direct triangles of the vertex buffer the walk is filling: n ranges
  * of vertex indices, [r[2i], r[2i + 1]), ascending, whole triangles. They
- * go when PsyCross empties the buffer (ClearSplits, patch 0013), so read
+ * go when PsyCross empties the buffer (ClearSplits, patch 0014), so read
  * them at GR_UpdateVertexBuffer. */
 enum { ND_DR_MAX = 2048 };
 int nd_direct_ranges(const u32 **r);

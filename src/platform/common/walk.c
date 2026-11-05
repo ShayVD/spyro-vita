@@ -28,6 +28,7 @@
  * PsxWalkThread.submitted). */
 #include "psx_walk.h"
 #include "psx_arena.h"
+#include "../../game/psx_mem.h"
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -114,7 +115,7 @@ static uintptr_t place(uint32_t a) {
 }
 
 static uintptr_t next_packet(uintptr_t packet) {
-  return place(*(const uint32_t *)packet & 0xFFFFFFu);
+  return place(MEM_OT_OFS(*(const uint32_t *)packet));
 }
 
 static int vram_frozen(void) { return on_walker() ? s_job.frozen : g_psyxVramFrozen; }
@@ -243,9 +244,16 @@ void psx_walk_stats_take(PsxWalkStats *out) {
 }
 
 /* The second arena: 16 MB-aligned like the first (24-bit links rebuild as
- * base | offset). Its contents outside the copied ranges are never read. */
+ * base | offset; the native build decodes them relative to the base, so any
+ * address will do, D100). Its contents outside the copied ranges are never
+ * read. */
 static uintptr_t copy_arena(void) {
   void *p = NULL;
+#if SPYRO_NATIVE_MEM
+  p = malloc(PSX_RAM_SIZE);
+  if (!p)
+    return 0;
+#else
 #if defined(__linux__)
   uintptr_t at;
   for (at = PSX_RAM_BASE + 0x1000000u; at != 0; at += 0x1000000u) {
@@ -262,6 +270,7 @@ static uintptr_t copy_arena(void) {
 #endif
   if (!p || ((uintptr_t)p & 0xFFFFFF) != 0)
     return 0;
+#endif
   memset(p, 0, PSX_RAM_SIZE);
   return (uintptr_t)p;
 }

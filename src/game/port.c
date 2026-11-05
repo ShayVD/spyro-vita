@@ -76,7 +76,17 @@ void spyro_main(void) {
   memcpy(PSX_ARENA(0x8006BBE0), D_8006BBE0, 0x14);
 #endif
   scratch_relocs();
+#if SPYRO_NATIVE_MEM
+  {
+    /* D100: no mips2c stack in the arena. The hand C still makes the asm's
+     * few stores below $sp (render_hand.h hand_spill_regs, particles_hand.c);
+     * nothing reads them back, so they land in a small array. */
+    static uint32_t s_hand_stack[64];
+    g_mips_sp = (uint32_t)(uintptr_t)&s_hand_stack[64];
+  }
+#else
   g_mips_sp = (uint32_t)(uintptr_t)PSX_ARENA(EMU_STACK_TOP);
+#endif
   spyro_decomp_main();
 }
 

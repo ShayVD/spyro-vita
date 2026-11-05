@@ -191,7 +191,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   /* the outline's 16 radii (scratch +0x00..+0x0F) and 16 heights (+0x0C
    * after the copy below) from Spyro's model frame */
   {
-    const u32 models = MIPS_KUSEG(AT32(ADDR_ND(g_Models)));
+    const u32 models = MIPS_KUSEG(MEM_MODEL_AT(AT32(ADDR_ND(g_Models))));
     const u32 step = AT8(spyro + 0x24);
     if (step) {
       /* blending two frames: the anim and frame of each (+0x18, +0x1E) */
@@ -201,8 +201,8 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       u32 fa, fb, k, w;
       ma = AT32(ma + ((af1 & 0xFF) << 2) + 0x24);
       mb = AT32(mb + ((af1 >> 8) << 2) + 0x24);
-      fa = ((ma << 11) >> 10) + (u32)g_psx_arena_base;
-      fb = ((mb << 11) >> 10) + (u32)g_psx_arena_base;
+      fa = MEM_ANIM_HALF(ma);
+      fb = MEM_ANIM_HALF(mb);
       AT32(scr + 0x0) = AT32(fa + 0x0);
       AT32(scr + 0x4) = AT32(fa + 0x4);
       AT32(scr + 0x8) = AT32(fb + 0x0);
@@ -267,7 +267,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       const u32 af = AT8(spyro + 0x18), fr = AT8(spyro + 0x1E);
       u32 m = MIPS_KUSEG(AT32(models + (af << 2) + 0x38));
       m = AT32(m + (fr << 2) + 0x24);
-      src = ((m << 11) >> 10) + (u32)g_psx_arena_base;
+      src = MEM_ANIM_HALF(m);
       p = scr + 1;
     }
     (void)p;
@@ -414,7 +414,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     AT32(prim + 0x24) = xb;
     AT32(prim + 0x8) = 0u;
     AT32(prim + 0x4) = 0xE1000640u; /* draw mode: subtract, tpage 0x640 */
-    AT32(prim + 0x0) = (MIPS_ARENA_TAG(0x82000000u) ^ prim) + 0xCu;
+    AT32(prim + 0x0) = MEM_TAG_LINK_AT(MEM_TAG(0x82000000u), prim, 0xCu);
     AT32(prim + 0xC) = 0x6000000u;
     depth -= bias;
     if ((s32)depth < 0)

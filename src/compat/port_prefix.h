@@ -33,6 +33,10 @@ extern unsigned char g_psx_kernel_ram[0x10000];
           ? g_psx_arena_base + (uint32_t)(uintptr_t)(p)                        \
           : (uintptr_t)(p)))
 
+/* Packed and tagged addresses (decisions D97, D100): the native build's
+ * patches decode them through these (patches/spyro-1-port/0011). */
+#include "../game/psx_mem.h"
+
 /* Log and abort on a path the port doesn't support (src/game/port.c). */
 void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 

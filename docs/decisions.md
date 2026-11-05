@@ -2423,6 +2423,77 @@ Record each decision with its date, what was chosen, and why.
   - **Toasty** (`fps60_summary.py`): at 30 fps (X6) 0 late vblanks in its 21 windows, render thread 9.66 ms a picture, GPU 6.44 (max 7.71), the game thread 21.5% busy; at 60 fps (X7) Toasty's 21 windows 0.1 late per 300 (worst 1), render thread 10.58 ms a picture, GPU 6.29 (max 7.72), the game thread 39.5% busy, against D81's O2 0.1 (worst 1), 11.9, 6.3 (7.7) and 38%. The Stone Hill attract demo at 60 fps: 5.4 late per 300 (worst 34) against O2's 6.4 (38), the render thread still the wall (15.38 ms a picture).
 - **Default: `ngte_fx=0` stays.** X4 and X5 give the same pictures and card, but the native maths are a few microseconds per vblank slower, so they don't earn the default. They stay as an option (`ngte_fx=1`), off: removing them (as D81 removed its NEON code) or keeping them for stage 2's batched vertex loops is the owner's call.
 
+## 2026-11-04: native memory (stage 4), steps 4b–4e
+
+### D100. Stage 4b–4e: every packed and tagged address decoded in one header (`psx_mem.h`); a native build with no mips2c units and no aliases of PS1 RAM, checked on the host at 0x80000000, at an unaligned base above 2 GB and below 2 GB
+- **Why:** steps 4b–4e of the stage 4 plan (`docs/native-plan.md`, D97). D96 and D98, which held decode sites, are merged. Two PRs: 4b+4c (this part), then 4d+4e on top.
+- **4b, every decode site named** (`src/game/psx_mem.h`). In the arena and moved builds each macro expands to the expression the site used:
+  - `MEM_OT_NEXT`, `MEM_OT_OFS`: an OT link's primitive and its offset (`native_draw_check.c`, `walk.c`; PsyCross's `nextPrim` in 4d);
+  - `MEM_ANIM21`: a frame word's 21-bit address (`42CC4_hand.c` `FrameVertices`, `collision_hand.c` `MobyFrameWords`, `moby_hand.c` `FrameStreams`);
+  - `MEM_ANIM_HALF`: Spyro's frames, the address halved into 21 bits (`42CC4_hand.c` `SpyroVertex`, `pete_hand.c`'s flame, `pete_render_hand.c` `PartStreams`, `shadows_hand.c` ×3);
+  - `MEM_ADDR24`: `moby_hand.c`'s face-save list (an address `<< 8`), which D97's table didn't list;
+  - `MEM_MODEL_PTR`, `MEM_MODEL_SIMPLE`, `MEM_SIMPLE_ADDR`: g_Models' SimpleModel tag (`moby_hand.c`'s lit and HUD models, ×2, and its vertices test; `loaders.c` in 4e);
+  - `MEM_COLL_PTR`, `MEM_COLL_TAGGED`: the collision tag (`collision_hand.c` `MobyCollisionModel`, `42CC4_hand.c`'s region test; `moby_update.c` in 4e).
+
+  `native_draw.h`'s `ND_SIDE_KEY` needs nothing: `p & 0x1FFFFF` of an address in the 2 MB arena is a unique key at any base.
+- **4c, the native build** (`-DSPYRO_NATIVE_MEM=ON`):
+  - It links no mips2c unit: `cmake/mips2c.cmake` translates none and refuses `SPYRO_M2C_FUNCS`, `SPYRO_M2C_REF` and `SPYRO_M2C_PROF`.
+  - `render_hand.h`'s entry macros call the hand C only and store no stack arguments, which only the units read.
+  - `--fast-render 0` is refused on the host. On the Vita, `fast_render=0` becomes 1.
+  - `--replay` is refused: the oracle stays on the arena build (D97). `oracle_replay.c` and `hand_index.c` compile to nothing.
+  - `MIPS_KUSEG`, and so `HPTR`, is a plain cast.
+  - The mips2c stack is no longer in the arena. The hand C still makes the asm's few stores below `$sp` (`hand_spill_regs`, `particles_hand.c`), which nothing reads back, so `g_mips_sp` points into a 256-byte array (`port.c`).
+  - The linux32 link pulls in the renderers' hand C explicitly. Only `prof_draw.c`'s wrappers reach it once the units are gone.
+- **The KUSEG audit** (`-DSPYRO_KUSEG_AUDIT=ON`, `mips2c_rt.h`): every `MIPS_KUSEG`/`HPTR` records the sites where the mapping changed the address, and lists them at exit. On the moved build, where all three aliases are live (KUSEG, `0x80000000 | offset`, bit 31 cleared), over all four host-check runs: **3 sites**, all of them named in 4b (`moby_hand.c`'s face-save list, 126,122 times in all, and the lit and HUD models' SimpleModel pointers, 86,812 and 993,061). No other hand C relies on an alias.
+- **`r_environment`'s other functions and `D_8006FCF4`** (D97's 4c question): every reference to `D_8006FCF4` in `r_environment.s` is inside `func_800258F0` (lines 12–5282). D96's five functions (`func_8002A6FC`, `EnvAnimSetFlags`, `EnvAnimGetState`, `EnvAnimSetFrame`, `func_8002B4AC`, from line 5283) never touch it, so none can use its bit 31 as a mode flag.
+- **Checked** (logs gitignored, in this worktree's `logs/`):
+  - **The arena build's binary:** `objdump -d` with addresses blanked against main's `82d05ce` (built from a clean checkout, `build/base-src`). It differs in two instruction pairs, in `func_80052F38` (`SpyroVertex`) and `func_80048D10` (the flame): `MEM_ANIM_HALF`'s `(w << 11) >> 10` there against the sites' former `(w & 0x1FFFFF) << 1`. Both compute the same value; GCC writes one as `shl; shr`, the other as `add; and`, and whichever spelling the macro uses, two sites change. The rest is alignment padding. `.data` is byte-identical. `.rodata` differs only in `savestate.c`'s `__TIME__` and in switch tables whose code addresses moved with that padding.
+  - **Host checks against main** (`tools/host_checks.sh`, main's binary `logs/s4b-base-*`): the attract demos, routes A and B, and the 100,000-vblank whole-game tour with both endings and the credits.
+    - The moved build with the audit compiled in (`-DSPYRO_ARENA_AT=0x8F000000`, `logs/s4b-audit-*`): **279 of 279 files identical**, every trace, shot and WAV and the memory cards.
+    - The native build at 0x80000000 (`logs/s4c-native-*`): **279 of 279 identical**.
+  - The native binary has no mips2c symbol (`nm`: no `_gen`, `__m2c` or `m2c_index`). It is 9.3 MB against the arena build's 10.6 MB.
+  - **Vita3K** (the gems script, `logs/pads/gems.txt`, 8,768 vblanks, `CAPTURE=1`): main's VPK (`82d05ce`, `logs/s4-main.vpk`) against the 4d–4e branch's (`logs/s4-d100.vpk`). That branch's Vita code is this part's: the moved build, whose macros it only adds there expand to the same expressions. Main twice (`logs/s4-v3k-gems-main`, `-main-b`) and the branch's second run (`-d100-b`): **17 of 17 shots, 17 of 17 window captures and the memory card identical**. The branch's first run (`-d100`) matched in every shot and the card, and in 16 of the 17 captures. Its last (`win-8704`) differed in a 30×60-pixel patch, and it differs the same way from the same VPK's second run, so it is the window grab's noise, not the code.
+- **Not run on hardware:** the Vita stays on the moved configuration, whose expansions are today's expressions.
+
+- **4d, any base** (second PR). In the native build:
+  - **The macros decode relative to the base.** N packed bits are the address's low N bits, and the 2 MB arena fits in 2^N bytes, so `base + ((bits - base) & mask)` finds it wherever the arena is: OT links (24 bits), frame words (21), Spyro's halved frames (22 after the shift), the face-save list (24).
+  - **`SPYRO_ARENA_AT` may be any page.** `arena.c` reserves no alias regions and checks no alignment (the Vita's native arena would come from `memalign(4 KB)`, step 4i). `walk.c`'s copy is a plain `malloc`: its walk already took offsets.
+  - **PsyCross's `nextPrim` goes through `SPYRO_OT_NEXT`** (`patches/PsyCross/0013-ot-next-hook.patch`). It keeps `base | link` outside the native build.
+  - **The renderers' XOR-built OT tags** (`sky_hand.c`, `sky_clip_hand.c`, `particles_hand.c`, `shadows_hand.c`): `MIPS_ARENA_TAG(k) ^ prim` assumes every primitive has the base's top byte, which an arena crossing a 16 MB line breaks. They are `MEM_TAG`, `MEM_TAG_LINK`, `MEM_TAG_LINK_AT` and `MEM_TAG_END`: length byte and the link's low 24 bits in the native build, today's XOR in the others. The sky's first link (tag 0) keeps the full address, as the XOR gives.
+  - **The decomp, native only** (`patches/spyro-1-port/0011-native-memory.patch`). `loaders.c`'s two `& 0xffffff` compares become address compares, with the tag cleared. Two writers of 21-bit frame pointers added into the frame word: `PatchMobyModelPointers` (`*p += m_Data & 0x1fffff`) and the balloonist's model move (`balloonist.c`, `m_Data += ptrDiff`). At an arena that isn't 2 MB-aligned that sum carries into the word's upper 11 bits (other fields), so they write the low 21 bits of the address instead. D97's table listed the balloonist as a reader. On the PS1 and in the arena build the two forms are the same, because the offset never wraps.
+- **4e, the bit-31 tags.** **Not D97's bit array:** the tags move to **bit 0** of the same pointer.
+  - **Why:** D97 planned a bit array beside `g_Models` for the SimpleModel tag and "a side bit kept with the moby" for the collision tag. But `m_CollisionGroup` is copied onto mobys that don't all live in `g_LevelMobys` (the balloonist's inside `g_SonyImage`, the cutscenes' elsewhere), so a per-moby bit has no stable index. The models and collision models are word-aligned (the loader checks, and stops with `PortFatal` if one isn't), so bit 0 is free at any base. The tag then travels with the pointer exactly as bit 31 did: through `FrameCollisionModel`'s copies, and a `g_Models` word copied anywhere. It is no new state, so **no new save-state chunk**: the state is still the arena's bytes.
+  - **Writers, in `loaders.c` (native only):** `PatchMobyModelPointers` returns `pModel | 1` for a SimpleModel, and stores a collision model as `(m + (off & 0x7FFFFFFF)) | off >> 31`.
+  - **Readers:**
+    - `MEM_MODEL_SIMPLE`: `loaders.c`'s shaded-moby test (a null word still counts as simple, as the sign test did);
+    - `MEM_MODEL_PTR`: the 24-bit compares, and `moby_hand.c`'s lit and HUD models;
+    - `MEM_SIMPLE_ADDR`: `moby_hand.c`'s vertices test;
+    - `MEM_COLL_TAGGED`: `moby_update.c`'s **four** sign tests (D97's table had two: lines 5054 and 17096, plus 18702 and 27801) and `42CC4_hand.c`'s region;
+    - `MEM_COLL_PTR`: `collision_hand.c`.
+  - **Every reader of the tags, swept** (the coordinator's conditions for bit 0). Patterns:
+    - in the decomp (`build/nlo/patched/spyro-1/src`, overlays included), every line naming `g_Models`, `m_CollisionGroup` or `m_CollisionModels` that also has `(int)`, `(u_int)`, `>> 31`, `0x80000000`, `0x7fffffff`, `0xffffff`, `< 0` or `>= 0`;
+    - in the hand C (`src/game/*.c`, `*.h`), the same, then every read of those fields followed to where its value goes;
+    - in the hand renderers, `(s32)X < 0`, `(s32)X >= 0`, `>> 31` and `& 0x80000000` on anything named like an address (`e`, `entry`, `p`, `next`, `list`, `tail`, `head`, `model`, `sec`, `poly`, `prim`, `tag`, `word`, `face`, `frame`, `slot`, `ot`).
+
+    What they found:
+    - **Sign tests:** the patched ones (`loaders.c:701`, `moby_update.c` ×4, `42CC4_hand.c`), and in the hand renderers the subdivision lists (above). The rest test face words and OT-slot offsets, which are data.
+    - **Arithmetic on a tag-carrying word:** `loaders.c`'s model space (`g_Models[250]` minus the model data) and the balloonist's model move (`g_Models[416]`). The native build masks both (patch 0011). Three hand renderers offset a `g_Models` word before the access whose `HPTR` maps the alias: the moby cull, the shadow's Spyro model and Spyro's renderer. They now go through `MEM_MODEL_AT` (the arena form is the word itself, so the arena binary doesn't change).
+    - **Every other read** (about 90 in the decomp, a dozen in the hand C) dereferences `g_Models[c]->m_Animations` or `->m_Sounds`, which only animated models have. A SimpleModel word through one of them already faults in the arena and moved builds (no KUSEG alias for that C), and every host check passes, so none is reached on the paths checked. In the native build such a read would be misaligned instead of faulting. On the PS1 it would read through the KUSEG mirror. That is the one place bit 0 is less loud than bit 31, and it is outside every checked path.
+  - **The loader's alignment checks stop the game** (`PortFatal`, which aborts) if a SimpleModel or a collision model isn't word-aligned. The tags are made only there. Every other holder copies a checked pointer: `FrameCollisionModel` into `m_CollisionGroup`, the balloonist's moby in `g_SonyImage`, the cutscenes' mobys. The balloonist's moved model 416 is an animated model, so it carries no tag.
+  - **The check below 2 GB found a tag no one had listed.** The environment renderer's subdivision lists (`env_hand.c`, the 2x2 and 4x4 passes) hold a sector header as the sector's address `>> 2`, followed by its polygons' addresses `| flags`. `SubdivNext` tells them apart by the sign: a header is positive, and a polygon's address is negative only because the arena is above 2 GB. With the arena at 0x52F81000 every polygon read as a header, and the title screen's first subdivided frame crashed (`SubdivHeader`, vblank ~500). Named `MEM_SUBDIV_HDR`, `MEM_SUBDIV_IS_HDR` and `MEM_SUBDIV_SEC`: the native build stores the header as the sector's offset `>> 2`, below 0x80000, under any arena address. The other builds keep the asm's form.
+- **Checked, 4d–4e** (logs in this worktree's `logs/`; main's binary as for 4b–4c, `logs/s4b-base-*`):
+  - **Host checks, native, with the arena at 0x92F81000** (above 2 GB, neither 2 MB- nor 64 KB-aligned, and crossing the 16 MB line at 0x93000000; `logs/s4d-nhi-*`): **279 of 279 files identical**.
+  - **Host checks, native, with the arena at 0x52F81000** (below 2 GB, the same offsets; `logs/s4e-nlo-*`): **279 of 279 identical**, after the subdivision lists' fix. The run before it crashed at vblank ~500 (the crash above).
+  - In both, the logs differ from main's only by the `arena at …` line.
+  - **Save states, native below 2 GB** (`logs/s4e-nlo-state-H`, `-H2`; D97's recipe: the gems script, save at 7,000, load at 7,600). In process: 300 loop tops and 10 s of audio after the load identical to the first pass. A new process loading that state at its first loop top: 800 loop tops and 51 shots identical. The 1,174,530 audio frames after its load are identical to H's after its load (`savestate_compare.py` flags the audio only because H's WAV also holds the replayed stretch, as in D97).
+  - **ctest on the native build below 2 GB** (`logs/ctest-nlo.txt`): 14 of 15 pass, `gte` skipped as on main. `savestate_globals` first flagged 4c's stack array, which now has its line in the script.
+  - **The arena build's binary:** the same 12 `objdump` lines against main as after 4b–4c. 4d–4e add nothing to it: the new macros' non-native forms are the old expressions, and PsyCross's hook expands to the old `nextPrim`.
+  - **The moved build's binary** (`-DSPYRO_ARENA_AT=0x8F000000`, main's and this branch's): besides the two pairs, its code differs where `moby_hand.c` inlines `FrameStreams` (`MobyDraw`, `MobyDrawRecord`, `SpecDraw`, `func_80020F34_ngte`). The KUSEG alias there gave `base | offset`, and `MEM_ANIM21` gives `base + offset`, the same at a 2 MB-aligned base, with registers allocated around it. Its host checks on this branch's final code (`logs/s4-moved-*`): **279 of 279 files identical**, and the logs differ only by the `arena at` line.
+  - **Vita3K:** as for 4b–4c. The VPK compared is this branch's.
+  - **Oracle replay** on the arena build with the reference units (`build/linux32-ref`): the four capture sets this machine still has (`cap3`, `cap5-fairy`, `run14-oracle-tour`, `run19-oracle-labels`; D97 replayed 21), `logs/s4-rp-all`: **4,297 PASS, 0 FAIL, 19 NOEXIT** (cap3 329 + 9, cap5-fairy 261 + 7, the tour 1,857 + 1, the labels 1,850 + 2). They include the two functions whose instructions changed, `func_80052F38` (32 samples) and `func_80048D10` (81), all PASS.
+- **Not run on hardware:** the Vita stays on the moved configuration (step 4i switches it). Its pictures and card in Vita3K are main's.
+- **What 4f–4i inherit:** the native build runs at any page, below 2 GB included, with the data labels still through pointers (`arena_syms`) and the game's memory still one 2 MB block. Step 4f makes the labels ordinary globals, and 4g allocates the block from the heap. The bit-0 tags and the offset-form subdivision headers need nothing more from them.
+
 ## 2026-11-04: decoupled timing (stage 7), planned
 
 ### D101. Stage 7's plan: the vblank callbacks and their catch-up stay the game's clock; presentation leaves `VSync`; the in-between frame moves to a presenter that runs the game's own renderers, made re-entrant, from a snapshot, checked record for record against D30's pass; the plan's summary brought up to date
@@ -2455,6 +2526,40 @@ Record each decision with its date, what was chosen, and why.
   - **The GPU's work is unchanged.**
 - **Summary refreshed:** D96's 63.5% / 94.1% readable C (81.9% / 97.1% with B2); D98's 9.73 ms per vblank, with the measured emulation layers 64% of it; what's done and what's in flight (D99, D100); the next steps after those. The "Order and what can run at once" table gained a status column.
 - **Hardware:** none run. 7c and 7f each list a hardware pair that needs the owner's yes first.
+
+## 2026-11-05: mods (proposal)
+
+### D102. Proposal: code mods are built in as C behind a MODS menu section, off by default; data-only mods are dropped in by the player and applied as a changed-sector overlay on the verified retail disc, refused if they touch code
+- **Status: proposal.** Nothing is built. The plan is in `docs/mods-research.md` §3, written after researching the existing Spyro 1 mods (§1 there). The owner chose this direction: build in the mods we can, and support drop-in for the others.
+- **Why not apply the mods as they are:**
+  - Almost every Spyro 1 mod is MIPS code spliced into `SCUS_942.28`, shipped as an xdelta or PPF patch.
+  - The port runs neither the executable's code nor the overlays' code. Overlays are read as data only (`docs/porting-plan.md` §4.1, step 3). The Vita allows no generated code.
+  - D60 refuses a non-retail executable or WAD.
+  - A patch that changes code and data would therefore half-apply if let through.
+- **Built-in mods:**
+  - Each mod is written as our own C from the decomp, in `src/game/mods/`, hooked by a numbered `patches/spyro-1-port/` patch.
+  - Each is a row in a MODS section (`g_menu_mods` in `src/platform/vita/menu_mods.c`), off by default, with a host `--mod` flag.
+  - Mods are written against named variables, so stage 4 doesn't break them. They are off in attract demos.
+  - Randomizers and other rows that change progress save to `save/mods/<mod>-<seed>/card0`, never the normal card. A save state records which mods were on.
+  - Rows based on mods without a licence ship only with their author's permission. Credits go in the README and on each row's help line.
+- **Drop-in mods:**
+  - The player puts the author's `.xdelta`/`.ppf`, or a whole patched image, in `ux0:data/spyro/mods/` and picks it with a DISC MOD row. It takes effect at the next start.
+  - On first use the port keeps only the sectors that differ from the retail image, as `changed.bin` plus an index, and serves them over the retail image, which is still verified as in D60 and never written.
+  - The mod is refused, with a panel, if any changed sector lies in `SCUS_942.28` or in a level overlay's code. The code ranges come from the WAD header and the matching build's overlay sizes and hashes.
+  - Saves and states go to `save/mods/<id>/`.
+- **Not chosen:**
+  - running the mods' MIPS code (no interpreter);
+  - a generic GameShark address engine (it breaks when stage 4 makes the data labels ordinary globals; wanted codes become named rows);
+  - plugin modules (deferred until stages 4 and 7 settle the game's internals);
+  - co-op (set aside: large, and the handheld has one controller).
+- **Checks each mod must pass when built:**
+  - with every mod off, `tools/host_checks.sh` byte-identical to main;
+  - a host script showing the mod's effect, and for randomizers, one seed giving one layout across reloads;
+  - Vita3K;
+  - hardware with the owner's yes.
+
+  The drop-in path is tested with synthetic sectors only. No game data or mod file goes into git.
+- **Open:** an in-tree VCDIFF decoder or the xdelta3 library (a new dependency); confirming that Grim Garden's patch changes data only.
 ## 2026-11-04: direct vertices, the last piece of stage 2
 
 ### D99. The walk leaves its triangles in the GL's lean form and the render thread draws them as they came, behind `nd_direct=1`; the OT walk stays, the second conversion goes
@@ -2468,7 +2573,7 @@ Record each decision with its date, what was chosen, and why.
   - `em_prim` makes the vertices as before (the poly hook included). Then, with `nd_direct=1`, each triangle the PS1 GPU doesn't skip gets its box (`lean_direct_tri`) and is listed: ranges of vertex indices (`nd_direct_ranges`, up to 2,048 a buffer, contiguous triangles merged). A skipped triangle stays as it is, so the render thread's conversion gives it `expand_lean`'s "no reference" (its filter flag 0).
   - This covers everything `em_prim` makes: the six renderers' records, D95's shadows, flame and particles, and every polygon packet `nd_fast` parses (the HUD's polygons, `draw.c`, `flight.c`). PsyCross's own primitives (sprites, lines, rectangles) are converted on the render thread as before.
   - **The mode goes with the list:** `nd_list_linked` adds `ND_WALK_DIRECT` (or `ND_WALK_RANGES`, the check) to `g_psx_walk_nd` only while the platform says its renderer takes direct vertices now (`g_nd_direct_ok`). `walk.c` is unchanged, so stage 4's edits there don't meet these.
-  - **PsyCross patch 0013:** `ClearSplits` calls `g_psyxClearSplitsHook`, so the ranges go with the vertex buffer they describe, also when a scene's start empties it without drawing.
+  - **PsyCross patch 0014:** `ClearSplits` calls `g_psyxClearSplitsHook`, so the ranges go with the vertex buffer they describe, also when a scene's start empties it without drawing.
 - **Decided, the render thread** (`src/platform/vita/gpu_gl.c`, `gpu_thread.c`):
   - `expand_direct` replaces `expand_lean` for the buffer. A listed triangle is used as it is; any other is converted in place (`lean_convert`). Then per triangle: the atlas look-up through D92's memo (`amemo_find`, `expand_lean`'s look-up as a function), the kind for the program runs, and an 8-byte side entry for each vertex (the atlas offset, then the filter and wrap flags `expand_lean` keeps in `tcx`, `tcy`).
   - The slab's vertices are the vertex buffer (20 bytes a vertex, the box as attribute 3) and the side entries a second one (attributes 4 and 6). The same values reach the same attributes as from `s_lbuf`, and the programs are the same. Nothing is copied but by `glBufferData`.

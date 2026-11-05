@@ -29,3 +29,12 @@ target_link_options(spyro PRIVATE
   # The cyclorama set-up's hand C (cyclorama_hand.c, D94) is reached only
   # through its wrapper, from a library linked after the game's: pull it in.
   -Wl,--undefined=func_80050BD0)
+if(SPYRO_NATIVE_MEM)
+  # Without the mips2c units (D100) the renderers' hand C is reached only
+  # through these wrappers too.
+  target_link_options(spyro PRIVATE
+    -Wl,--undefined=func_800258F0,--undefined=func_8001F158,--undefined=func_8001F798
+    -Wl,--undefined=func_800208FC,--undefined=func_80020F34,--undefined=func_80022A2C
+    -Wl,--undefined=func_80023AC4,--undefined=func_80059F8C,--undefined=func_80059A48
+    -Wl,--undefined=func_80058D64,--undefined=func_8004EBA8)
+endif()
