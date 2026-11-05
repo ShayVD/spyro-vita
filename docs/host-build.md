@@ -55,6 +55,20 @@ BIN=build/linux32-moved/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 
 Its runs must give the default build's traces, shots, audio and memory cards byte for byte. Logs differ only by the `arena at 0x8f000000` line. The aliases' regions (0x80000000 and the arena's address with bit 31 cleared) are mapped `PROT_NONE`, so nothing else can be placed where the aliases point. `--replay` needs the default build, with RAM at 0x80000000. A state saved by one configuration is refused by the other: the default build said "STATE 1 IS FROM ANOTHER BUILD" to the moved build's state (`logs/s4-state-cross`). The build ID is checked before the arena base. This is the host side of stage 4's checks (`docs/native-plan.md`).
 
+## Native memory (D100, D106)
+
+`-DSPYRO_NATIVE_MEM=ON` builds the native configuration: no mips2c units, the data labels as ordinary globals (one section laid out as PS1 RAM from 0x8006BBE0 to main_BSS_END), the game's memory one block from the heap (overlay space, main_BSS_END to the top of RAM, behind the rest of main_BSS_END's page), and the scratchpad its own array:
+
+```bash
+tools/tc cmake -S . -B build/linux32-native -G Ninja -DSPYRO_HOST=linux32 -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake -DSPYRO_NATIVE_MEM=ON
+tools/tc cmake --build build/linux32-native
+BIN=build/linux32-native/src/platform/linux32/spyro tools/host_checks.sh PREFIX
+```
+
+Its runs must give the default build's files byte for byte. `-DSPYRO_ARENA_AT=0x52F81000` (any page) puts the block at that address instead of the heap's. `--poke`, `--peek` and pad-script `poke:` still take PS1 addresses, in the labels or overlay space. `--replay` and `--fast-render 0` need the default build. Native save states are format 2 (D106).
+
+`-DSPYRO_MEM_AUDIT=ON` (on the default build) lists, at exit, every site that decoded a packed address (an OT link, a frame pointer, a subdivision header) outside overlay space, with the PS1 addresses it found: the things the native block would have to hold. Over the host checks it finds only the OT terminator, 0x8006BBE0 (D106).
+
 ## Draw distance (D49)
 
 Optional, off by default (`docs/presentation.md` "Draw distance"):
@@ -71,6 +85,10 @@ Optional, off by default (`docs/presentation.md`):
 - `--widescreen` draws once in 16:9 (the wider view reaches the logic) except in attract demos, which keep the exact 4:3 logic. `--widescreen-exact`: the exact two-draw form always. `--widescreen-logic`: one draw always (diagnostic: the demos desync).
 - Any of these turns on `--out960`, which writes 960×544 pictures (shots and `--serve`).
 - `--present-stats` logs per-tick costs at exit. `--present-dirty` also maps the arena pages a pass writes.
+- Stage 7a's audits (D104, with `--interp`; debug only):
+  - `--present-audit` logs per gamestate, at exit, the in-between frames, their cost and OT packets, and whether their HUD list is the real frame's; the first differing ticks get their packet's words.
+  - `--present-reads FILE` traces what every Nth in-between pass reads (`--present-reads-every N`, default 30) against what changes before the next draw: `src/platform/linux32/readset.c`, with the arena `mprotect`ed and the data pages stepped word by word. That is slow.
+  - `tools/present_reads.py FILE...` names the words from `tools/layout/psx.map` per gamestate. `tools/present_audit.sh PREFIX` runs D104's set.
 - `tools/side_by_side.py OUT.png A.png B.png … [--cols N] [--scale F] [--crop X,Y,W,H]` puts shots next to each other.
 
 ## Playing it yourself (D22)

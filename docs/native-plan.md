@@ -33,14 +33,12 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
   - stage 2: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` by default on the Vita since D105;
-  - stage 4's steps 4a–4e: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100).
-- **In flight:**
-  - **stage 2's last piece** (D99, D105): the records straight to vitaGL. Its next target is the clears, three quarters of the 35% layer (D105).
-- **What I recommend next, after those:**
-  1. **The clears** (D105): `GR_ClearVRAM` is three quarters of what is left of the translation, and 5.7 ms per vblank of the render thread at 60 fps. Split it (the software VRAM loop against the targets' `glClear`) and make the larger half cheaper. D99 and D105 measured the rest on hardware.
-  2. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
-  3. **Stage 7's steps 7a and 7b** (D101, §5): host audits and the port's own `VSync`. Both are small and wait for nothing. Then 7c after D99. Steps 7d–7g are decided on 7a's numbers and D99's measurement: since D81 and D98 the game thread isn't the wall at 60 fps, so stage 7's CPU gain is headroom rather than pictures.
-  4. **Stage 8,** retiring PsyCross, last.
+  - stage 4, native memory: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100); the data labels as ordinary globals, the game's memory one heap block (overlay space), the scratchpad its own array, save states format 2, and native memory the Vita's default since a hardware pair (D106);
+  - stage 7's steps 7a and 7b: the host audits of the in-between frame, and the port's own `VSync` over one clock module (D104).
+- **What I recommend next** (updated by D104, D105 and D106, 2026-11-05):
+  1. **The clears** (D105): `GR_ClearVRAM` is three quarters of what is left of the PS1 GPU → vitaGL translation, and 5.7 ms per vblank of the render thread at 60 fps. Split it (the software VRAM loop against the targets' `glClear`) and make the larger half cheaper.
+  2. **Stage 7's step 7c** (§5): presentation leaves `VSync`, so a late render thread costs pictures, not ticks. 7a and 7b are done (D104). On 7a's numbers, 7d–7g wait for a need the CPU numbers don't give: the presenter's snapshot would be small, but 60 fps already holds in play, and stage 7's CPU gain is headroom rather than pictures.
+  3. **Stage 8,** retiring PsyCross, last.
 
 ---
 
@@ -844,6 +842,10 @@ Each native step is checked by running `host_checks.sh` on the arena build and o
 
 **Status (D100, 2026-11-04): steps 4d and 4e done.** In the native build every packed address decodes relative to the arena's base, and `SPYRO_ARENA_AT` may be any page. PsyCross's `nextPrim` goes through `SPYRO_OT_NEXT` (`patches/PsyCross/0013`). The decomp's 24-bit compares and its 21-bit frame-pointer writers are fixed for any base (`patches/spyro-1-port/0011`). The two bit-31 tags moved to **bit 0** of the same pointer, not to the side fields planned above: the collision tag is copied onto mobys outside `g_LevelMobys`, and bit 0 travels with the pointer, so no new save-state chunk is needed. The check below 2 GB found a third tag the inventory missed, the environment renderer's subdivision lists (header against polygon by the sign), now `MEM_SUBDIV_*`. Native at 0x92F81000 (unaligned, crossing a 16 MB line) and at 0x52F81000 (below 2 GB): main's 279 host-check files byte for byte each; save states round-trip below 2 GB. Details and logs: D100.
 
+**Status (D106, 2026-11-05): steps 4f–4h done on the host.** In the native build the 516 data labels are ordinary globals in one section, `spyro_labels`, laid out as PS1 RAM from 0x8006BBE0 to main_BSS_END, so a PS1 address there is one offset (not the per-label table planned above); PsyQ's `rand` seed is named in its hole. A new audit (`-DSPYRO_MEM_AUDIT=ON`) showed that the OT terminator is the only label anything links to or decodes into. The game's memory is one heap block: overlay space at its PS1 size, behind the rest of main_BSS_END's page, which holds the terminator (0x8007A000–0x80200000, 1,597,440 bytes). The scratchpad is `g_psx_scratch`. Native save states are format 2 (`BLCK`, `LABL`, both addresses in the header), and format 1 is refused as another build. The native build with the labels as globals (block below 2 GB at 0x52F81000), and then with the block from the heap (0x3FBED000), each gave main's 279 host-check files byte for byte; save states round-trip, a fresh launch included. Details and logs: D106.
+
+**Status (D106, 2026-11-05): step 4i done; stage 4 done.** The native VPK gave main's 17 shots, 17 HD shots and memory card on the owner's Vita, and native memory is the Vita's default; `-DSPYRO_NATIVE_MEM=OFF` builds the moved arena. linux32's default stays the arena build, for the oracle.
+
 ### Stage 5: native audio (medium, low–medium risk)
 
 **Replaces** (E):
@@ -974,6 +976,10 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 **Size:** ~2–4k lines.
 
 **Optional:** yes, the presentation modes (`interp=`), as today.
+
+**Status (D104, 2026-11-05): 7a and 7b done; 7c next; 7d–7g wait for a reason other than CPU.**
+- **7b:** `src/platform/common/libetc.c` is the port's `VSync`, `VSyncCallback` and `ResetCallback`, in place of PsyCross's `LIBETC.C`. `clock.c` holds the vblank count and the Vita's catch-up arithmetic for both platforms, and `tests/vcount` tests that code itself. Host checks 287/287, both demos tick for tick, Vita3K 17/17 shots, 17/17 captures and the card identical to main's VPK.
+- **7a:** `--present-audit` and `--present-reads` on the host. The findings are below ("What 7a found (D104)").
 
 #### The stage 7 plan (D101, 2026-11-04)
 
@@ -1116,6 +1122,36 @@ All told *estimate* ~4–7k lines, more than the ~2–4k above: the re-entrant r
 - **7e and 7f** are where the risk is, and the payoff.
 - **7g** closes the stage.
 
+##### What 7a found (D104, 2026-11-05)
+
+From `host_checks.sh`'s four runs with `--interp --present-audit --present-reads` (`logs/s7a-*`, D104's table). The traces and cards are identical to the runs without the audits.
+- **Coverage:** 69,468 in-between frames. By share: play 45.8%, credits 18.9%, title 14.1%, cutscenes 8.9%, pause 4.2%, inventory 4.1%, level transitions 1.5%, dragon 1.0%, balloonist 1.0%, fairy 0.3%, exits and entrances 0.1%.
+  - The runs over-weight the title, the opening cutscene and the credits; a player's session is mostly play.
+  - Every gamestate's pass costs the same order as play's (qemu: 4–27 ms against 15.6). The pause screens cost 61% of play's, so keeping D30's pass there (7g) saves code, not CPU.
+- **The HUD:** byte-identical to the real frame's in every in-between frame except 22 of the dragon cutscene's 695.
+  - Those are the dragon rescue's ring (`func_80058864`): 3D triangles projected through the camera into the HUD OT, so the blended camera moves them a pixel.
+  - The presenter can take the HUD from the logic pass of the same tick. The dragon cutscene keeps D30's pass, or the presenter draws the ring itself.
+- **The read set in play:**
+  - 73 globals, about 380 words a tick (13 KB of symbols, against the 61 KB data region today's snapshot copies).
+  - 16 of them, about 3.9 KB, change before the next draw: `g_Spyro`, `g_CurDB`, `D_80075950` and `D_80075858` every tick; `g_Camera`, `g_LevelTicks`, `g_Hud`, `g_Sparkles`, `g_Glows`, `g_SpyroFlame`, the sector flags `D_800771C8` and five more on some ticks.
+  - Outside the globals: the moby array (about 160 bytes a tick change in the pages read), the particle space (about 760) and the animated level data (about 150 bytes in 3 pages: D101's texture V coordinates and sector bytes).
+  - The title, the cutscenes and the credits read 34–40 globals.
+  - Not seen by the trace: the scratchpad array, the GTE registers, PsyCross's state and C statics, which 7d's context holds.
+
+**What it changes:**
+- **7e's snapshot is a named list,** per gamestate from `tools/present_reads.py`, not a region copy.
+- **7g's order** is the coverage order above.
+- **Stage 8** needs less from stage 7. `g_psyxVSyncHook` is now our `libetc.c`'s, so only `g_psyxVramFrozen` and the `DrawOTag` hooks remain.
+
+**The call on 7d–7g:** they wait.
+- **For them:** the presenter needs much less than feared.
+- **Against them:** 60 fps holds in play (D81), the attract demo's misses are the render thread's, and 7d–7f is *estimate* ~3–5k lines in the renderers for game-thread headroom.
+- **What would start them:**
+  - stage 8 wanting `g_psyxVramFrozen` gone;
+  - a heavier mode running the game thread late at 60 fps;
+  - 7c's hardware pair showing game-thread waits that 7c doesn't remove.
+- **Then the first piece** is the snapshot from this list, checked against D30's pass, before the re-entrant renderers.
+
 ##### How faithfulness stays testable
 
 - **The logic never sees the presenter.** It reads nothing the presenter writes: the presenter's context is private and its snapshot is a copy. The callbacks keep their order and their bursts. So the checks stay the existing ones, run with the presenter on and off:
@@ -1143,9 +1179,9 @@ So the CPU payoff is smaller than when D76 wrote stage 7: the measurements since
 
 ##### What stage 8 needs from stage 7
 
-- **libetc:** `VSync`, `VSyncCallback` and `ResetCallback` are already ours (7b), and `PsyX_WaitForTimestep` and `PsyX_Sys_GetVBlankCount` are unused.
+- **libetc:** `VSync`, `VSyncCallback` and `ResetCallback` are ours (7b, D104: `src/platform/common/libetc.c`; `LIBETC.C` isn't built), and `PsyX_WaitForTimestep` and `PsyX_Sys_GetVBlankCount` are gone. Patches 0002, 0005 and 0009's hunks to `LIBETC.C` are dead and can go with stage 8.
 - **The presentation hooks are gone:**
-  - `g_psyxVSyncHook` and `g_psyxVramFrozen` (7g);
+  - `g_psyxVramFrozen` (7g); `g_psyxVSyncHook` is our own `libetc.c`'s since 7b, so it no longer ties stage 8 to stage 7;
   - the `DrawOTag` pre and post hooks for captures (7c: frames go to the render thread whole).
 
   What's left of those hooks is the 2D narrowing for widescreen, which stage 2's direct path or stage 8 takes over.
@@ -1180,18 +1216,17 @@ Status as of 2026-11-04 (D101). The payoff column gives the measured share each 
 | 0 measure | — | the render thread ~35% waiting; D72 bought −36% (§3.4) | none | done (§3.4) |
 | 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms of GPU per picture in play; 0.5–0.6 ms of CPU per vblank | low | done (D78, D79) |
 | 1 native GTE | — | the renderers −15 to −20% on hardware, 1.0–1.9 ms per tick at 60 fps | low | done (D80, D81, D98); `fast_render=2` is the default |
-| 2 native draw lists | 1 | the OT walk (2.09 ms) and the PS1 GPU → vitaGL translation (3.44 ms, 35%); the render thread, the wall at 60 fps in the attract demo's flight | medium–high | records done (D82–D95), `native_draw=1` the Vita's default; the direct path to vitaGL in flight (D99) |
+| 2 native draw lists | 1 | the OT walk (2.09 ms) and the PS1 GPU → vitaGL translation (3.44 ms, 35%); the render thread, the wall at 60 fps in the attract demo's flight | medium–high | records done (D82–D95), `native_draw=1` the Vita's default; direct vertices (D99, D105), `nd_direct=1` the Vita's default; next the clears, 2.70 of the translation's 3.66 ms (D105) |
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
-| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a–4e done (D97, D100); then 4f–4i |
-| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | planned (D101); 7a and 7b next |
+| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
+| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c next; 7d–7g wait for a reason other than CPU (D104) |
 | 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
 
 **What can run at once:**
-- **Now:** D99 and D100 touch different files. Stage 7's 7a (debug tooling in `present.c` and the host) and 7b (the two `vblank.c` files and the port's own `VSync`) can run beside them; check D99's diff for the vblank files before starting 7b.
-- **After D99:** its hardware measurement (the owner's yes first), then 7c.
-- **After D100:** 4f–4i, and 7d beside them (7d changes the renderers' interfaces; 4f–4i are mostly the labels, the loader and tooling).
+- **Now:** 7c (D99 is merged and measured), the clears (D105) beside it, and 7d if a reason for it comes (7d changes the renderers' interfaces; 7c touches `present.c`, the two `vblank.c` files and the render thread).
+- **Done:** 7a and 7b (D104); stage 2's direct vertices as the default (D105); stage 4, 4f–4i included (D106).
 - **Then** 7e–7g, then stage 8.
 
 ## 6. Reproducing these numbers

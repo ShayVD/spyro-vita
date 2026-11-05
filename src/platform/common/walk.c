@@ -110,7 +110,7 @@ static uintptr_t place(uint32_t a) {
     }
   }
   s_stats.foreign++;
-  s_stats.foreign_at = 0x80000000u + a;
+  s_stats.foreign_at = PSX_MEM_PSX + a;
   return g_psx_arena_base + a;
 }
 
@@ -126,7 +126,7 @@ static int walk_hook(u_long *p) {
   uint32_t head = (uint32_t)((uintptr_t)p - g_psx_arena_base);
   unsigned long long t0;
   int i;
-  if ((uintptr_t)p < g_psx_arena_base || head >= PSX_RAM_SIZE) {
+  if ((uintptr_t)p < g_psx_arena_base || head >= PSX_MEM_SIZE) {
     s_stats.in_place++;
     return 0; /* PsyCross walks it now */
   }
@@ -134,8 +134,8 @@ static int walk_hook(u_long *p) {
   s_job.n = s_ranges_fn(s_job.r, MAX_RANGES);
   for (i = 0; i < s_job.n; i++) {
     PsxWalkRange *r = &s_job.r[i];
-    if (r->hi > PSX_RAM_SIZE)
-      r->hi = PSX_RAM_SIZE;
+    if (r->hi > PSX_MEM_SIZE)
+      r->hi = PSX_MEM_SIZE;
     if (r->lo >= r->hi) {
       r->lo = r->hi = 0;
       continue;
@@ -250,7 +250,7 @@ void psx_walk_stats_take(PsxWalkStats *out) {
 static uintptr_t copy_arena(void) {
   void *p = NULL;
 #if SPYRO_NATIVE_MEM
-  p = malloc(PSX_RAM_SIZE);
+  p = malloc(PSX_MEM_SIZE);
   if (!p)
     return 0;
 #else
@@ -271,7 +271,7 @@ static uintptr_t copy_arena(void) {
   if (!p || ((uintptr_t)p & 0xFFFFFF) != 0)
     return 0;
 #endif
-  memset(p, 0, PSX_RAM_SIZE);
+  memset(p, 0, PSX_MEM_SIZE);
   return (uintptr_t)p;
 }
 

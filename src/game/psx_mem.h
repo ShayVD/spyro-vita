@@ -22,17 +22,28 @@
 
 extern uintptr_t g_psx_arena_base;
 
+#if SPYRO_MEM_AUDIT
+/* cmake -DSPYRO_MEM_AUDIT=ON (decisions D106): every decode below records
+ * the sites whose address lies outside the game's overlay space
+ * (main_BSS_END to the top of RAM), which the native build's block holds
+ * (port.c mem_audit). */
+uintptr_t mem_audit(uintptr_t a, const char *file, int line);
+#define MEM_AUDIT_(a) mem_audit((uintptr_t)(a), __FILE__, __LINE__)
+#else
+#define MEM_AUDIT_(a) (a)
+#endif
+
 #if SPYRO_NATIVE_MEM
 /* The arena at any base (D100): N packed bits are the address's low N bits,
  * and the arena (2 MB) fits in 2^N bytes, so they decode relative to the
  * base. */
 #define MEM_LOW_(bits, mask)                                                   \
   (g_psx_arena_base + (((uint32_t)(bits) - (uint32_t)g_psx_arena_base) & (mask)))
-#define MEM_OT_NEXT(tag) MEM_LOW_(tag, 0xFFFFFFu)
+#define MEM_OT_NEXT(tag) MEM_AUDIT_(MEM_LOW_(tag, 0xFFFFFFu))
 #define MEM_OT_OFS(tag) (((uint32_t)(tag) - (uint32_t)g_psx_arena_base) & 0xFFFFFFu)
-#define MEM_ANIM21(w) MEM_LOW_(w, 0x1FFFFFu)
-#define MEM_ANIM_HALF(w) MEM_LOW_(((uint32_t)(w) << 11) >> 10, 0x3FFFFFu)
-#define MEM_ADDR24(a) MEM_LOW_(a, 0xFFFFFFu)
+#define MEM_ANIM21(w) MEM_AUDIT_(MEM_LOW_(w, 0x1FFFFFu))
+#define MEM_ANIM_HALF(w) MEM_AUDIT_(MEM_LOW_(((uint32_t)(w) << 11) >> 10, 0x3FFFFFu))
+#define MEM_ADDR24(a) MEM_AUDIT_(MEM_LOW_(a, 0xFFFFFFu))
 /* The tags are bit 0 instead of bit 31 (the models and collision models
  * are word-aligned; loaders.c checks it), so they travel with the pointer
  * as before and nothing needs the arena above 2 GB. */
@@ -57,20 +68,20 @@ extern uintptr_t g_psx_arena_base;
  * address. */
 #define MEM_SUBDIV_HDR(sec) (((uint32_t)(sec) - (uint32_t)g_psx_arena_base) >> 2)
 #define MEM_SUBDIV_IS_HDR(e) ((uint32_t)(e) < 0x80000u)
-#define MEM_SUBDIV_SEC(e) ((uint32_t)g_psx_arena_base + ((uint32_t)(e) << 2))
+#define MEM_SUBDIV_SEC(e) MEM_AUDIT_((uint32_t)g_psx_arena_base + ((uint32_t)(e) << 2))
 #else
 /* An OT link (a tag's low 24 bits) -> the primitive's address. */
-#define MEM_OT_NEXT(tag) (g_psx_arena_base | ((uint32_t)(tag) & 0xFFFFFFu))
+#define MEM_OT_NEXT(tag) MEM_AUDIT_(g_psx_arena_base | ((uint32_t)(tag) & 0xFFFFFFu))
 /* ... and its offset in the arena (walk.c's copy of it). */
 #define MEM_OT_OFS(tag) ((uint32_t)(tag) & 0xFFFFFFu)
 /* A frame word's 21-bit packed address. */
-#define MEM_ANIM21(w) (g_psx_arena_base + ((uint32_t)(w) & 0x1FFFFFu))
+#define MEM_ANIM21(w) MEM_AUDIT_(g_psx_arena_base + ((uint32_t)(w) & 0x1FFFFFu))
 /* A frame word holding the address halved into its low 21 bits (Spyro's
  * frames). */
-#define MEM_ANIM_HALF(w) (g_psx_arena_base + (((uint32_t)(w) << 11) >> 10))
+#define MEM_ANIM_HALF(w) MEM_AUDIT_(g_psx_arena_base + (((uint32_t)(w) << 11) >> 10))
 /* An address the moby renderer kept shifted left by 8 (its face-save
  * list): the KUSEG alias puts the top byte back (mips2c_rt.h). */
-#define MEM_ADDR24(a) MIPS_KUSEG((uint32_t)(a) | 0x80000000u)
+#define MEM_ADDR24(a) MEM_AUDIT_(MIPS_KUSEG((uint32_t)(a) | 0x80000000u))
 /* A collision model pointer (Moby m_CollisionGroup, Model
  * m_CollisionModels[]) and its kind, the bit the WAD's offset carries. */
 #define MEM_COLL_PTR(p) ((uintptr_t)(p) | 0x80000000u)
@@ -98,7 +109,7 @@ extern uintptr_t g_psx_arena_base;
  * address has bit 31 (the arena is above 2 GB). */
 #define MEM_SUBDIV_HDR(sec) ((uint32_t)(sec) >> 2)
 #define MEM_SUBDIV_IS_HDR(e) ((int32_t)(e) >= 0)
-#define MEM_SUBDIV_SEC(e) MIPS_KUSEG((uint32_t)(e) << 2)
+#define MEM_SUBDIV_SEC(e) MEM_AUDIT_(MIPS_KUSEG((uint32_t)(e) << 2))
 #endif
 
 #endif

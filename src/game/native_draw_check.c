@@ -234,7 +234,7 @@ static int ram_differ(const unsigned char *a, const unsigned char *b, u32 lo, u3
   s_ram_hi = hi - base;
   u32 at = 0;
   for (;;) {
-    u32 next = PSX_RAM_SIZE, skip = PSX_RAM_SIZE;
+    u32 next = PSX_MEM_SIZE, skip = PSX_MEM_SIZE;
     int i;
     for (i = 0; i < 3; i++)
       if (cut[i][1] > at && cut[i][0] < next) {
@@ -248,7 +248,7 @@ static int ram_differ(const unsigned char *a, const unsigned char *b, u32 lo, u3
       s_ram_at = k;
       return 1;
     }
-    if (next >= PSX_RAM_SIZE)
+    if (next >= PSX_MEM_SIZE)
       return 0;
     at = skip;
   }
@@ -263,8 +263,8 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
   int *fill, bad = 0, i;
   DRAWENV env0;
   if (!s_before) {
-    s_before = malloc(PSX_RAM_SIZE);
-    s_ps1 = malloc(PSX_RAM_SIZE);
+    s_before = malloc(PSX_MEM_SIZE);
+    s_ps1 = malloc(PSX_MEM_SIZE);
     for (i = 0; i < 2; i++) {
       s_seq[i].cap = 0x100000;
       s_seq[i].words = malloc(s_seq[i].cap * 4);
@@ -272,7 +272,7 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
     }
     s_walked[2].v = malloc(MAX_VERTEX_BUFFER_SIZE * sizeof(GrVertex));
   }
-  memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
   fp0 = AT32_ND(ADDR_ND(D_800757B0));
@@ -286,11 +286,11 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
     return 0; /* not converted: once is enough (v0 is dead at every caller) */
   if (collect(&s_seq[0]) < 0)
     s_stats[k].skipped++;
-  memcpy(s_ps1, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_ps1, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_ps1, g_psx_scratch, sizeof s_scr_ps1);
   s_gte_ps1 = gteRegs;
 
-  memcpy((void *)g_psx_arena_base, s_before, PSX_RAM_SIZE);
+  memcpy((void *)g_psx_arena_base, s_before, PSX_MEM_SIZE);
   memcpy(g_psx_scratch, s_scr_before, sizeof s_scr_before);
   gteRegs = s_gte_before;
   g_mips_sp = sp;
