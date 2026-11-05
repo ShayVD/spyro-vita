@@ -4,18 +4,14 @@
 #   cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita \
 #       -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake
 #   cmake --build build/vita      -> build/vita/spyro-vita.vpk
-if(NOT DEFINED ENV{VITASDK} AND NOT VITASDK)
-  set(VITASDK /usr/local/vitasdk)
-elseif(NOT VITASDK)
-  set(VITASDK $ENV{VITASDK})
-endif()
-include("${VITASDK}/share/vita.cmake" REQUIRED)
+# Packed by vita-port-kit's vpk_add_app (third_party/vita-port-kit/vita/cmake/
+# VpkApp.cmake): the toolchain file above sets the vita-* tools it runs.
+include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.10")
-# Extended memory for the app (D7), set as the cache value vita_create_vpk reads.
-set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12" CACHE STRING "vita-mksfoex flags")
+# vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 
 # PsyX_render.h only types TextureID for its GL renderers; the software
 # rasterizer (D26) uses the same handle type.
@@ -118,17 +114,14 @@ foreach(f ${license_texts})
   list(APPEND VPK_LICENSES "${f}" "licenses/${n}")
 endforeach()
 
-vita_create_self(eboot.bin spyro_vita)
-vita_create_vpk(spyro-vita.vpk ${VITA_TITLEID} eboot.bin
-  VERSION ${VITA_VERSION} NAME "${VITA_APP_NAME}"
+# Also refuses a link without _newlib_heap_size_user / sceUserMainThreadStackSize
+# (main.c). The VPK lands at the top of the build tree: build/vita/spyro-vita.vpk.
+vpk_add_app(spyro_vita VPK "${CMAKE_BINARY_DIR}/spyro-vita.vpk"
+  TITLE_ID ${VITA_TITLEID} VERSION ${VITA_VERSION} NAME "${VITA_APP_NAME}"
   FILE "${LA_DIR}/icon0.png" sce_sys/icon0.png
        "${LA_DIR}/bg.png" sce_sys/livearea/contents/bg.png
        "${LA_DIR}/startup.png" sce_sys/livearea/contents/startup.png
        "${LA_SRC}/template.xml" sce_sys/livearea/contents/template.xml
        "${CMAKE_SOURCE_DIR}/README.md" README.md
-       ${VPK_LICENSES})
-add_dependencies(spyro-vita.vpk-vpk spyro_vita_livearea)
-# The VPK at the top of the build tree too: build/vita/spyro-vita.vpk.
-add_custom_command(TARGET spyro-vita.vpk-vpk POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/spyro-vita.vpk.out"
-    "${CMAKE_BINARY_DIR}/spyro-vita.vpk")
+       ${VPK_LICENSES}
+  DEPENDS spyro_vita_livearea)
