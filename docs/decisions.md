@@ -2656,3 +2656,6 @@ Record each decision with its date, what was chosen, and why.
   - **A cheaper box in the walk:** in a triangle every pair of vertices is an edge, so the skip test is the x and y spans; and the spans, like the box, are byte- and halfword-wise minima and maxima that ARMv6's SIMD (`usub8`/`ssub16` with `sel`) computes for three vertices in a few instructions, against about 50 cycles a triangle now. `nd_direct=2` in Vita3K checks the result against `expand_lean`'s.
   - **The walk writing straight into the slab** (PsyCross's buffer as a pointer), saving the parse thread's copy of about 80 KB a list; and **the side stream in vitaGL's scratch memory** (`vglAllocFromScratch`, `vglBufferData`), saving a `glBufferData` copy.
   - **The rest of the translation** (`GR_DrawTriangles`: `sync_pages`' pass, the logs' copies, the batches' GL calls, vitaGL's own work and waits) is unchanged; the `gpu parts` line is there to measure it.
+
+### D103. Hardware runs use vita-port-kit's scripts; this game's details are in `tools/vita/hw.game`
+- **Why and what:** see `docs/vita-testing.md` "Hardware runs from the Mac". The scripts are vendored in `third_party/vita-port-kit`, and `tools/vita/hw_*` wrap them. The lock moved to `~/.cache/vita-port-kit` and is shared with kh1-decomp. Checked against the mock (2026-11-05); not run on hardware yet.

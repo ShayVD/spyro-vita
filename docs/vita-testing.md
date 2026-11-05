@@ -473,6 +473,13 @@ instruction in `wd_main`, on purpose); the game thread's PC is where it was stuc
 
 ## Hardware runs from the Mac (D77)
 
+Since 2026-11-05 the scripts are vita-port-kit's (vendored in `third_party/vita-port-kit/vita/tools`, D103):
+`tools/vita/hw_run.sh`, `hw_check.sh`, `hw_ftp.py` and `hw_mock.py` are wrappers that point them at this game's
+settings in `tools/vita/hw.game` (title id, folders, log lines, the files set aside and fetched, and the hooks for the
+config lines, `disc-verified.txt` and the shots). Usage is unchanged. Two differences: the run lock and the install
+stamps live in `~/.cache/vita-port-kit` (one run at a time on the Vita across every game and checkout, kh1-decomp's
+included), and a run's first promote install after the switch happens once because the old stamps are not read.
+
 `tools/vita/hw_run.sh` is `tools/vita/vita3k_run.sh` for a real Vita: Claude (or you) can run a
 test on the Vita from the Mac, over Wi-Fi, and get `spyro.log`, the shots and any crash dump back,
 with nobody touching the Vita. It talks to [vitacompanion](https://github.com/devnoname120/vitacompanion):
