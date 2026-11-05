@@ -473,7 +473,7 @@ instruction in `wd_main`, on purpose); the game thread's PC is where it was stuc
 
 ## Hardware runs from the Mac (D77)
 
-Since 2026-11-05 the scripts are vita-port-kit's (vendored in `third_party/vita-port-kit/vita/tools`, D103):
+Since 2026-11-05 the scripts are vita-port-kit's (vendored in `third_party/vita-port-kit/vita/tools`, D103 in `docs/decisions-2.md`):
 `tools/vita/hw_run.sh`, `hw_check.sh`, `hw_ftp.py` and `hw_mock.py` are wrappers that point them at this game's
 settings in `tools/vita/hw.game` (title id, folders, log lines, the files set aside and fetched, and the hooks for the
 config lines, `disc-verified.txt` and the shots). Usage is unchanged. Two differences: the run lock and the install
