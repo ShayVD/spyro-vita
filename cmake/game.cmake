@@ -41,7 +41,13 @@ endforeach()
 option(SPYRO_PSX_LAYOUT "Game data at its PS1 addresses in the arena" ON)
 set(S1_DATA_LAYOUT)
 set(S1_DATA_LAYOUT_DEPS)
-if(SPYRO_PSX_LAYOUT)
+if(SPYRO_NATIVE_MEM)
+  # Native memory (D103): the labels as ordinary globals, in one section
+  # laid out as PS1 RAM from the first label to main_BSS_END; PsyQ's rand
+  # seed named in its hole (rand_psyq.c).
+  set(S1_DATA_LAYOUT --map "${SPYRO_PSX_MAP}" --image --extra D_80075AC0=0x80075AC0)
+  set(S1_DATA_LAYOUT_DEPS "${SPYRO_PSX_MAP}")
+elseif(SPYRO_PSX_LAYOUT)
   set(S1_DATA_LAYOUT --map "${SPYRO_PSX_MAP}")
   set(S1_DATA_LAYOUT_DEPS "${SPYRO_PSX_MAP}")
   add_compile_definitions(SPYRO_PSX_LAYOUT=1)

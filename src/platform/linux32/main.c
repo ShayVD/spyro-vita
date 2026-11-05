@@ -244,8 +244,8 @@ static void log_pages(const char *what, const uint32_t *bits) {
     if (d && start < 0)
       start = i;
     if (!d && start >= 0) {
-      host_log("present: %s %08x-%08x", what, 0x80000000u + start * 4096,
-               0x80000000u + i * 4096 - 1);
+      host_log("present: %s %08x-%08x", what, PSX_MEM_PSX + start * 4096,
+               PSX_MEM_PSX + i * 4096 - 1);
       start = -1;
     }
   }

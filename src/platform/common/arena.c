@@ -69,3 +69,4 @@ void psx_arena_init(void) {
   memset(p, 0, PSX_RAM_SIZE);
   g_psx_arena_base = (uintptr_t)p;
 }
+

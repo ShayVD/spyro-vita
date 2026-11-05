@@ -68,8 +68,15 @@ typedef struct {
 /* ---------- the chunks ---------- */
 
 static void chunk_arena(PsxStateIO *io) {
-  psx_state_io(io, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  psx_state_io(io, (void *)g_psx_arena_base, PSX_MEM_SIZE);
 }
+
+#if SPYRO_NATIVE_MEM
+/* The data labels, their own section in the native build (D103). */
+static void chunk_labels(PsxStateIO *io) {
+  psx_state_io(io, s1_labels, (size_t)(s1_labels_end - s1_labels));
+}
+#endif
 
 static void chunk_scratch(PsxStateIO *io) { psx_state_io(io, g_psx_scratch, sizeof g_psx_scratch); }
 
@@ -118,6 +125,9 @@ static const struct {
   void (*fn)(PsxStateIO *io);
 } k_chunks[] = {
     {"ARNA", chunk_arena}, {"SCRP", chunk_scratch},  {"KRAM", chunk_kram},
+#if SPYRO_NATIVE_MEM
+    {"LABL", chunk_labels},
+#endif
     {"GLOB", chunk_globals}, {"GPU ", chunk_gpu},    {"VRAM", chunk_vram},
     {"SPU ", chunk_spu},   {"XA  ", psx_xa_state},   {"CD  ", psx_cd_state},
     {"MCRD", psx_mcrd_state}, {"PLAT", chunk_plat},

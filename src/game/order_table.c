@@ -2,8 +2,9 @@
  * The world OT is 2048 buckets of {tail, head}; primitives are appended FIFO
  * per bucket and chained from the highest bucket down, with PS1 24-bit
  * links. The chain ends at D_8006BBE0, a NOP primitive whose tag is the
- * 0xFFFFFF terminator; OT links can only reach arena memory, so the port
- * keeps its copy at the same PS1 address in the arena (port.c). */
+ * 0xFFFFFF terminator; OT links can only reach the game's memory block, so
+ * the port keeps its copy there (port.c; psx_arena.h PSX_OT_TERMINATOR:
+ * at its PS1 address in the arena, in the native build's block). */
 #include "present.h"
 #include "psx_arena.h"
 
@@ -14,9 +15,24 @@ typedef uint32_t u32;
 extern u32 *g_WorldOT;
 extern u32 *g_HudOT;
 
-#define OT_TERMINATOR ((u32 *)PSX_ARENA(0x8006BBE0))
+#define OT_TERMINATOR ((u32 *)PSX_OT_TERMINATOR)
 
 void nd_list_linked(void); /* native_draw.c: the records so far are this list's */
+
+#if SPYRO_MEM_AUDIT
+#include "psx_mem.h"
+/* decisions D103: every primitive the linked list reaches, through the
+ * walk's decode (psx_mem.h), so the audit sees each one outside overlay
+ * space. */
+static void *audit_list(void *head) {
+  const u32 *p = head;
+  while ((*p & 0xFFFFFFu) != 0xFFFFFFu)
+    p = (const u32 *)MEM_OT_NEXT(*p);
+  return head;
+}
+#else
+#define audit_list(head) (head)
+#endif
 
 /* sh to, 0(from); sb to >> 16, 2(from): the PS1 link, leaving the length byte. */
 static void link24(u32 *from, void *to) {
@@ -44,7 +60,7 @@ void *func_80016784(int size) {
         return OT_TERMINATOR;
       hud[1] = 0;
       link24(tail, OT_TERMINATOR);
-      return head;
+      return audit_list(head);
     }
     tail = (u32 *)(uintptr_t)at[-2];
     at -= 2;
@@ -71,7 +87,7 @@ void *func_80016784(int size) {
     hud[0] = 0;
   }
   link24(tail, OT_TERMINATOR);
-  return head;
+  return audit_list(head);
 }
 
 /* func_800168A0: append a primitive to world OT bucket pOTIndex. */

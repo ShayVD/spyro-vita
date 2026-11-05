@@ -2,8 +2,10 @@
 """Save states (src/game/savestate.c, decisions D51) save the arena plus a
 short list of the game's host globals. This checks that the list is complete:
 every data or bss symbol the game's objects define must be in the arena (an
-absolute symbol in the linked binary, decisions D23), saved by savestate.c,
-or known not to change after start-up.
+absolute symbol in the linked binary, decisions D23), or in the native
+build in the data labels' section (s1_labels to s1_labels_end, saved whole;
+decisions D103), saved by savestate.c, or known not to change after
+start-up.
 
   savestate_globals.py --nm NM --bin SPYRO OBJ...
 """
@@ -50,11 +52,12 @@ DATA_TYPES = set("BbCDdGgSsVv")
 
 
 def nm(tool, path):
+    """(type, name, address or None) for each symbol."""
     out = subprocess.run([tool, "-S", path], check=True, capture_output=True, text=True).stdout
     for line in out.splitlines():
         parts = line.split()
         if len(parts) >= 3 and len(parts[-2]) == 1:
-            yield parts[-2], parts[-1]
+            yield parts[-2], parts[-1], int(parts[0], 16) if len(parts) >= 3 and len(parts[0]) == 8 else None
 
 
 def main():
@@ -63,12 +66,20 @@ def main():
     ap.add_argument("--bin", required=True)
     ap.add_argument("objs", nargs="+")
     a = ap.parse_args()
-    linked = {name: t for t, name in nm(a.nm, a.bin)}
+    syms = list(nm(a.nm, a.bin))
+    linked = {name: t for t, name, _ in syms}
+    where = {name: adr for _, name, adr in syms}
+    # the native build's labels' section (tools/data2s.py --image, D103)
+    lo, hi = where.get("s1_labels"), where.get("s1_labels_end")
+
+    def in_labels(name):
+        return lo is not None and hi is not None and where.get(name) is not None \
+            and lo <= where[name] < hi
     bad, n = [], 0
     for obj in a.objs:
         if any(x in obj for x in NOT_GAME):
             continue
-        for t, name in nm(a.nm, obj):
+        for t, name, _ in nm(a.nm, obj):
             if t not in DATA_TYPES or name.startswith(".L"):
                 continue
             n += 1
@@ -78,6 +89,8 @@ def main():
                 continue
             if t.isupper() and linked.get(name) == "A":
                 continue  # a data label in the arena
+            if t.isupper() and in_labels(name):
+                continue  # a data label in the native build's labels' section (D103)
             if name.endswith("__p") and linked.get(name[:-3]) == "A":
                 continue  # a moved arena's pointer to that label, set at start-up (D25, D97)
             bad.append(f"{obj}: {t} {name}")

@@ -481,7 +481,7 @@ void PortPolySpace(void) {
  * written since the draw began, from the lower buffer (where a spanning draw
  * starts, and below the upper one) up to the draw's pointer D_800757B0, and
  * the terminator. Before the buffers exist only the terminator. */
-#define OT_TERMINATOR_AT 0x0006BBE0u /* 0x8006BBE0 (order_table.c) */
+#define OT_TERMINATOR_AT PSX_OT_TERMINATOR_OFS /* order_table.c */
 #define OT_TERMINATOR_LEN 0x14       /* its tag and 4 NOP words (port.c) */
 
 static int in_arena(const void *p, uint32_t len);
@@ -571,12 +571,14 @@ static int count_mobys(void);
 
 static int in_arena(const void *p, uint32_t len) {
   uintptr_t a = (uintptr_t)p;
-  return a >= g_psx_arena_base && len <= PSX_RAM_SIZE &&
-         a - g_psx_arena_base <= PSX_RAM_SIZE - len;
+  return a >= g_psx_arena_base && len <= PSX_MEM_SIZE &&
+         a - g_psx_arena_base <= PSX_MEM_SIZE - len;
 }
 
 static void add_region(void *at, uint32_t len) {
-  if (s_nregions < MAX_REGIONS && len && in_arena(at, len)) {
+  /* the native build's data labels are their own section (D103) */
+  if (s_nregions < MAX_REGIONS && len &&
+      (in_arena(at, len) || (at == PSX_ARENA(DATA_LO) && len == DATA_HI - DATA_LO))) {
     s_regions[s_nregions].at = at;
     s_regions[s_nregions].len = len;
     s_nregions++;
@@ -653,8 +655,8 @@ static void snap_take(void) {
   g_present_stats.snapshot_bytes += (long long)need + s_nsectors * 4;
   if (g_present.stats > 1) {
     if (!s_arena_full)
-      s_arena_full = malloc(PSX_RAM_SIZE);
-    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+      s_arena_full = malloc(PSX_MEM_SIZE);
+    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   }
   memcpy(s_scratch_snap, g_psx_scratch, sizeof s_scratch_snap);
   s_gte_snap = gteRegs;
@@ -669,9 +671,9 @@ static int scratch_range(uint32_t *lo, uint32_t *hi) {
   if (!in_arena(g_Buffers.m_LowerPolyBuffer, 1) ||
       !in_arena(g_Buffers.m_WorldOTStart, OT_BYTES))
     return 0;
-  *lo = 0x80000000u +
+  *lo = PSX_MEM_PSX +
         (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
-  *hi = 0x80000000u +
+  *hi = PSX_MEM_PSX +
         (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart - g_psx_arena_base) +
         OT_BYTES;
   return 1;
@@ -680,7 +682,7 @@ static int scratch_range(uint32_t *lo, uint32_t *hi) {
 /* Does page `page` differ from the full copy outside the scratch areas? */
 static int page_missed(int page) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
-  uint32_t lo = 0x80000000u + (uint32_t)page * 4096, hi = lo + 4096;
+  uint32_t lo = PSX_MEM_PSX + (uint32_t)page * 4096, hi = lo + 4096;
   uint32_t s_lo, s_hi, k;
   if (lo >= STACK_LO && hi <= STACK_HI)
     return 0;
@@ -688,7 +690,7 @@ static int page_missed(int page) {
     return 1;
   for (k = lo; k < hi; k++)
     if ((k < s_lo || k >= s_hi) &&
-        a[k - 0x80000000u] != s_arena_full[k - 0x80000000u])
+        a[k - PSX_MEM_PSX] != s_arena_full[k - PSX_MEM_PSX])
       return 1;
   return 0;
 }
@@ -700,7 +702,7 @@ static void dirty_check(void) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
   long long n = 0;
   int i;
-  for (i = 0; i < PRESENT_PAGES; i++) {
+  for (i = 0; i < (int)(PSX_MEM_SIZE / 4096); i++) {
     if (memcmp(a + i * 4096, s_arena_full + i * 4096, 4096) == 0)
       continue;
     g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
@@ -713,7 +715,7 @@ static void dirty_check(void) {
   g_present_stats.dirty_pages += n;
   if (n > g_present_stats.dirty_max)
     g_present_stats.dirty_max = n;
-  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_RAM_SIZE);
+  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_MEM_SIZE);
 }
 
 static void snap_restore(void) {

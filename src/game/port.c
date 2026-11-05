@@ -68,12 +68,24 @@ void port_arena_symbols(void (*log)(const char *fmt, ...)) {
 }
 #endif
 
+#if SPYRO_NATIVE_MEM
+/* psx_arena.h: the host's tools (--poke, --peek, pad scripts, the tour) and
+ * start-up name PS1 addresses; the data labels are their own section
+ * (decisions D103). Here, in the game, beside the labels it names. */
+void *psx_mem_host(uint32_t a) {
+  if (a >= PSX_LABELS_PSX && a < PSX_BSS_END)
+    return s1_labels + (a - PSX_LABELS_PSX);
+  return (void *)(g_psx_arena_base + (a - PSX_RAM_BASE));
+}
+#endif
+
 void spyro_main(void) {
   psx_overlays_init();
 #if SPYRO_PSX_LAYOUT
   psx_layout(); /* D_8006BBE0, the OT terminator, is already in place */
 #else
-  memcpy(PSX_ARENA(0x8006BBE0), D_8006BBE0, 0x14);
+  /* The OT's links reach only the game's memory block (decisions D103) */
+  memcpy(PSX_OT_TERMINATOR, D_8006BBE0, 0x14);
 #endif
   scratch_relocs();
 #if SPYRO_NATIVE_MEM
@@ -89,6 +101,60 @@ void spyro_main(void) {
 #endif
   spyro_decomp_main();
 }
+
+#if SPYRO_MEM_AUDIT
+/* psx_mem.h MEM_AUDIT_ (decisions D103): the sites that decoded an address
+ * outside overlay space (main_BSS_END to the top of RAM), with the first
+ * distinct PS1 addresses each; listed at exit. */
+typedef struct {
+  const char *file;
+  int line;
+  unsigned n, nadr;
+  uint32_t adr[16];
+} MemSite;
+static MemSite s_mem[256];
+static int s_mem_n;
+
+static void mem_report(void) {
+  int i;
+  unsigned k;
+  for (i = 0; i < s_mem_n; i++) {
+    fprintf(stderr, "mem-audit %s:%d n=%u", s_mem[i].file, s_mem[i].line, s_mem[i].n);
+    for (k = 0; k < s_mem[i].nadr; k++)
+      fprintf(stderr, " %08x", (unsigned)s_mem[i].adr[k]);
+    fprintf(stderr, "\n");
+  }
+  fprintf(stderr, "mem-audit sites=%d\n", s_mem_n);
+}
+
+uintptr_t mem_audit(uintptr_t a, const char *file, int line) {
+  uint32_t psx = (uint32_t)(a - g_psx_arena_base) + PSX_MEM_PSX;
+  MemSite *s = NULL;
+  int i;
+  unsigned k;
+  if (psx >= 0x8007AA38u && psx < PSX_RAM_BASE + PSX_RAM_SIZE)
+    return a;
+  for (i = 0; i < s_mem_n && !s; i++)
+    if (s_mem[i].line == line && strcmp(s_mem[i].file, file) == 0)
+      s = &s_mem[i];
+  if (!s) {
+    if (s_mem_n == 0)
+      atexit(mem_report);
+    if (s_mem_n == 256)
+      return a;
+    s = &s_mem[s_mem_n++];
+    s->file = file;
+    s->line = line;
+  }
+  s->n++;
+  for (k = 0; k < s->nadr; k++)
+    if (s->adr[k] == psx)
+      return a;
+  if (s->nadr < 16)
+    s->adr[s->nadr++] = psx;
+  return a;
+}
+#endif
 
 void PortFatal(const char *fmt, ...) {
   va_list ap;
