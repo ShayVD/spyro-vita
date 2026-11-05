@@ -121,10 +121,11 @@ int __wrap_sceGxmBeginScene(SceGxmContext *context, unsigned int flags,
         break;
       }
   }
-  t0 = now_us();
+  t0 = g_vita_opts.gpu_parts ? now_us() : 0;
   r = __real_sceGxmBeginScene(context, flags, renderTarget, validRegion, vertexSyncObject,
                               fragmentSyncObject, colorSurface, depthStencil);
-  __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
+  if (t0)
+    __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
   return r;
 }
 
@@ -133,10 +134,11 @@ int __real_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vert
 
 int __wrap_sceGxmEndScene(SceGxmContext *context, const SceGxmNotification *vertexNotification,
                           const SceGxmNotification *fragmentNotification) {
-  const uint64_t t0 = now_us();
+  const uint64_t t0 = g_vita_opts.gpu_parts ? now_us() : 0;
   int r = __real_sceGxmEndScene(context, vertexNotification, fragmentNotification);
   uint32_t w = s_w;
-  __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
+  if (t0)
+    __atomic_fetch_add(&g_gxm_scene_us, now_us() - t0, __ATOMIC_RELAXED);
   if (!s_on || !fragmentNotification || r < 0 || s_dead)
     return r;
   if (w - __atomic_load_n(&s_r, __ATOMIC_ACQUIRE) >= RINGN) {

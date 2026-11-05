@@ -271,6 +271,9 @@ static struct {
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+/* gpu_parts=1 (D99): the clock for the "gpu parts" line's timers, else 0.
+ * Off, they cost nothing: on hardware they added 0.17 ms per vblank (Y1). */
+static inline uint64_t parts_us(void) { return g_vita_opts.gpu_parts ? now_us() : 0; }
 
 /* prof.c's parts are the game thread's: on the render thread (D63) its
  * own report in gpu_thread.c counts this time instead */
@@ -2389,10 +2392,10 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
                  const uint32_t *dr, int ndr) {
   uint64_t t0 = 0, t1;
   batch_flush();
-  t1 = now_us();
+  t1 = parts_us();
   if (g_vita_opts.gpu_fused == 2) {
     s_fmode = (int)(s_fab.turn++ & 1);
-    t0 = t1;
+    t0 = now_us();
   } else {
     s_fmode = g_vita_opts.gpu_fused != 0;
   }
@@ -2401,7 +2404,8 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
     s_fab.bufs[s_fmode]++;
     s_fab.vert_us[s_fmode] += now_us() - t0;
   }
-  s_st.verts_us += now_us() - t1;
+  if (t1)
+    s_st.verts_us += now_us() - t1;
 }
 
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
@@ -2866,8 +2870,10 @@ static void batch_flush(void) {
   if (!b.n)
     return;
   s_batch.n = 0;
-  t0 = now_us();
+  t0 = g_vita_opts.gpu_parts || g_vita_opts.gpu_fused == 2 ? now_us() : 0;
   batch_issue(&b);
+  if (!t0)
+    return;
   t0 = now_us() - t0;
   s_st.issue_us += t0;
   if (g_vita_opts.gpu_fused == 2)
@@ -2898,7 +2904,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
              v[0].b);
   }
   /* what follows sends the batch first wherever it reaches the GPU */
-  t0 = now_us();
+  t0 = parts_us();
   sample_begin();
   if (s_texmode != P_UNTEX && any_stale())
     sync_pages(start_vertex, n);
@@ -2907,7 +2913,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     upload_vram();
   if (s_npsrc)
     pres_touch(t, 0);
-  s_st.pre_us += now_us() - t0;
+  if (t0)
+    s_st.pre_us += now_us() - t0;
 
   /* the target's own scale: s_sx, s_sy unless dynres scaled it (D75); a
    * held batch never spans a change of it (set_tscale runs only after a
@@ -2965,7 +2972,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     if (!g_vita_opts.gpu_join)
       batch_flush();
   }
-  t0 = now_us();
+  t0 = parts_us();
   {
     LogEntry *e = log_add(t, LOG_DRAW, (size_t)n * sizeof(GrVertex));
     if (e) {
@@ -2978,7 +2985,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
       memcpy(t->log.data + e->off, s_vorig + start_vertex, (size_t)n * sizeof(GrVertex));
     }
   }
-  s_st.log_us += now_us() - t0;
+  if (t0)
+    s_st.log_us += now_us() - t0;
   t->cpu_stale = 1;
   s_gen++;
   s_st.draws++;
@@ -3791,7 +3799,7 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
 
 void gl_report(int vblank) {
   static int last;
-  if (vblank > last) {
+  if (g_vita_opts.gpu_parts && vblank > last) {
     const unsigned nv = (unsigned)(vblank - last);
     const unsigned gx = (unsigned)(__atomic_exchange_n(&g_gxm_scene_us, 0, __ATOMIC_RELAXED) / nv);
 #define MSV(x) (unsigned)((x) / nv / 1000), (unsigned)((x) / nv % 1000 / 10)

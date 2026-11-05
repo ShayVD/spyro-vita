@@ -12,3 +12,4 @@ ngte_fx=0
 gpu_time=0
 dynres=0
 nd_direct=0
+gpu_parts=1

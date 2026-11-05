@@ -389,6 +389,8 @@ static void read_config(void) {
       g_vita_opts.gpu_lean = atoi(v);
     else if (!strcmp(line, "gpu_fused"))
       g_vita_opts.gpu_fused = atoi(v);
+    else if (!strcmp(line, "gpu_parts"))
+      g_vita_opts.gpu_parts = atoi(v);
     else if (!strcmp(line, "parse_thread"))
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "native_draw"))
