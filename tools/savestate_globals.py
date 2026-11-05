@@ -32,6 +32,7 @@ CONSTANT = {
     "env_hand_ngte.c:s_proj",   # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80)
     "port.c:s_hand_stack.0",    # the native build's below-$sp stores, never read (D100)
+    "port.c:s_sink.0",          # the native build's sink for stray stores, never read (D103)
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {

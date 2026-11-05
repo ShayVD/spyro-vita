@@ -288,7 +288,8 @@ static int parse_res(const char *v) {
 
 static void parse_poke(const char *v) {
   unsigned vb, addr, value;
-  if (g_vita_opts.npokes < VITA_MAX_POKES && sscanf(v, "%u:%x=%x", &vb, &addr, &value) == 3) {
+  if (g_vita_opts.npokes < VITA_MAX_POKES && sscanf(v, "%u:%x=%x", &vb, &addr, &value) == 3 &&
+      PSX_MEM_OK(addr, 4u)) {
     g_vita_opts.pokes[g_vita_opts.npokes].vblank = (int)vb;
     g_vita_opts.pokes[g_vita_opts.npokes].addr = addr;
     g_vita_opts.pokes[g_vita_opts.npokes++].value = value;

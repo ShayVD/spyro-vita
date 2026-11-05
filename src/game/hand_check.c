@@ -121,7 +121,7 @@ static void report_diff(const char *name, unsigned long call, const char *ref, c
   if (!s_log)
     return;
   s_log("hand check: %s call %lu: %s and %s differ", name, call, ref, run);
-  for (i = 0; i < PSX_RAM_SIZE && n < 8; i += 4) {
+  for (i = 0; i < PSX_MEM_SIZE && n < 8; i += 4) {
     u32 a, b;
     memcpy(&a, s_reg + i, 4);
     memcpy(&b, ram + i, 4);
@@ -140,13 +140,13 @@ static void report_diff(const char *name, unsigned long call, const char *ref, c
 
 /* The state now against the reference run's (s_reg...). */
 static int differs(void) {
-  return memcmp(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE) ||
+  return memcmp(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE) ||
          memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg) ||
          memcmp(&s_gte_reg, &gteRegs, sizeof gteRegs);
 }
 
 static void restore_before(u32 sp, u32 v1) {
-  memcpy((void *)g_psx_arena_base, s_before, PSX_RAM_SIZE);
+  memcpy((void *)g_psx_arena_base, s_before, PSX_MEM_SIZE);
   memcpy(g_psx_scratch, s_scr_before, sizeof s_scr_before);
   gteRegs = s_gte_before;
   g_mips_sp = sp;
@@ -163,7 +163,7 @@ static void audit_call(int k, HandFn reg, u32 a0, u32 a1, u32 a2, u32 a3, u32 sp
       restore_before(sp, v1);
       *gte_reg(&gteRegs, i) ^= pat[j];
       reg(a0, a1, a2, a3);
-      if (memcmp(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE) ||
+      if (memcmp(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE) ||
           memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg)) {
         s_stats[k].in |= 1ull << i;
       } else if (memcmp(&s_gte_reg, &gteRegs, sizeof gteRegs)) {
@@ -193,14 +193,14 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   if (sweep)
     sweep_begin();
   if (!s_before) {
-    s_before = malloc(PSX_RAM_SIZE);
-    s_reg = malloc(PSX_RAM_SIZE);
+    s_before = malloc(PSX_MEM_SIZE);
+    s_reg = malloc(PSX_MEM_SIZE);
   }
-  memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
   rr = reg(a0, a1, a2, a3);
-  memcpy(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
   s_gte_reg = gteRegs;
   if (g_gte_audit && s_stats[k].calls % (unsigned long)g_gte_audit == 0)
@@ -236,14 +236,14 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
   if (sweep)
     sweep_begin();
   if (!s_before) {
-    s_before = malloc(PSX_RAM_SIZE);
-    s_reg = malloc(PSX_RAM_SIZE);
+    s_before = malloc(PSX_MEM_SIZE);
+    s_reg = malloc(PSX_MEM_SIZE);
   }
-  memcpy(s_before, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
   unit(a0, a1, a2, a3);
-  memcpy(s_reg, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+  memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
   s_gte_reg = gteRegs;
   if (g_gte_audit && s_stats[k].calls % (unsigned long)g_gte_audit == 0)

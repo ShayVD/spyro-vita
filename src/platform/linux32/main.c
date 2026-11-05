@@ -386,8 +386,7 @@ int main(int argc, char **argv) {
       unsigned v, addr, value;
       TAKE();
       if (g_host_opts.npokes == 16 ||
-          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 ||
-          addr < 0x80000000u || addr > 0x801FFFFCu)
+          sscanf(val, "%u:%x=%x", &v, &addr, &value) != 3 || !PSX_MEM_OK(addr, 4u))
         usage();
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
@@ -413,7 +412,7 @@ int main(int argc, char **argv) {
       int n;
       TAKE();
       if (g_host_opts.npeeks == 8 || sscanf(val, "%x:%d", &addr, &n) != 2 || n < 1 ||
-          n > 64 || addr < 0x80000000u || addr + 4u * n > 0x80200000u)
+          n > 64 || !PSX_MEM_OK(addr, 4u * (unsigned)n))
         usage();
       g_host_opts.peeks[g_host_opts.npeeks].addr = addr;
       g_host_opts.peeks[g_host_opts.npeeks++].n = n;

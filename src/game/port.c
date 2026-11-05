@@ -18,11 +18,16 @@ extern uint32_t *s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xx
 #define EMU_STACK_TOP 0x80020000u /* free on the host: part of the PS1 exe image */
 
 /* Data words that hold scratchpad addresses point at the port's scratchpad,
- * the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h). */
+ * the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h), or in the
+ * native build g_psx_scratch (D103). */
 static void scratch_relocs(void) {
   uint32_t **r;
   for (r = s1_scratch_relocs; *r; r++)
+#if SPYRO_NATIVE_MEM
+    **r = (uint32_t)(uintptr_t)(g_psx_scratch + (**r & 0x3FFu));
+#else
     **r = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (**r & 0x3FFu));
+#endif
 }
 
 #if SPYRO_PSX_LAYOUT
@@ -70,12 +75,24 @@ void port_arena_symbols(void (*log)(const char *fmt, ...)) {
 
 #if SPYRO_NATIVE_MEM
 /* psx_arena.h: the host's tools (--poke, --peek, pad scripts, the tour) and
- * start-up name PS1 addresses; the data labels are their own section
- * (decisions D103). Here, in the game, beside the labels it names. */
+ * start-up name PS1 addresses (decisions D103). */
 void *psx_mem_host(uint32_t a) {
   if (a >= PSX_LABELS_PSX && a < PSX_BSS_END)
     return s1_labels + (a - PSX_LABELS_PSX);
-  return (void *)(g_psx_arena_base + (a - PSX_RAM_BASE));
+  if (a >= PSX_BSS_END && a - PSX_MEM_PSX < PSX_MEM_SIZE)
+    return (void *)(g_psx_arena_base + (a - PSX_MEM_PSX));
+  return NULL;
+}
+
+/* port_prefix.h PSX_KUSEG (D42): a store through a small integer from
+ * 0x10000 up lands where the PS1 sends it, in a label or overlay space;
+ * one into the executable's image, which the arena build left in an unused
+ * part of the arena, lands in a sink nothing reads (none is known: the
+ * stores D42 found are all below 0x10000, kernel RAM). */
+uintptr_t psx_kuseg_host(uint32_t a) {
+  static unsigned char s_sink[256];
+  void *p = psx_mem_host(PSX_RAM_BASE | a);
+  return p ? (uintptr_t)p : (uintptr_t)s_sink;
 }
 #endif
 

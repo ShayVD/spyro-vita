@@ -115,7 +115,9 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
 
 /* $ra while no local call is active: `jr` to it returns to C. */
 #define MIPS_RA_SENTINEL 0xFFFFFFF0u
-/* lui 0x1F80: the scratchpad lives at the arena base (64 KB aligned). */
+/* lui 0x1F80: the scratchpad lives at the arena base (64 KB aligned); the
+ * native build links no translated code, and its scratchpad is
+ * g_psx_scratch (render_hand.h SCRATCH_BASE, D103). */
 #define MIPS_SCRATCH_HI ((u32)g_psx_arena_base)
 
 #define M_U8(a) (*(u8 *)(uintptr_t)(u32)(a))
