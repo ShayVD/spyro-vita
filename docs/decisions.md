@@ -2657,5 +2657,6 @@ Record each decision with its date, what was chosen, and why.
   - **The walk writing straight into the slab** (PsyCross's buffer as a pointer), saving the parse thread's copy of about 80 KB a list; and **the side stream in vitaGL's scratch memory** (`vglAllocFromScratch`, `vglBufferData`), saving a `glBufferData` copy.
   - **The rest of the translation** (`GR_DrawTriangles`: `sync_pages`' pass, the logs' copies, the batches' GL calls, vitaGL's own work and waits) is unchanged; the `gpu parts` line is there to measure it.
 
-### D103. Hardware runs use vita-port-kit's scripts; this game's details are in `tools/vita/hw.game`
-- **Why and what:** see `docs/vita-testing.md` "Hardware runs from the Mac". The scripts are vendored in `third_party/vita-port-kit`, and `tools/vita/hw_*` wrap them. The lock moved to `~/.cache/vita-port-kit` and is shared with kh1-decomp. Checked against the mock (2026-11-05); not run on hardware yet.
+---
+
+Decisions from D103 on are in [decisions-2.md](decisions-2.md); new decisions go there.
