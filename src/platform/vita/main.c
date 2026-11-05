@@ -167,9 +167,10 @@
  *                       (gpu_lean, gpu_fused=1, no persp or subpixel): the
  *                       walk leaves its triangles in the GL's form and the
  *                       render thread draws them as they are, adding only
- *                       the atlas's part (default 0; D99). 2: the walk
- *                       lists them only, and the GL side converts them as
- *                       well and compares (diagnostic)
+ *                       the atlas's part (D99; default 1 since D105). 0:
+ *                       the render thread converts them (expand_lean). 2:
+ *                       the walk lists them only, and the GL side converts
+ *                       them as well and compares (diagnostic)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -525,6 +526,7 @@ int main(int argc, char **argv) {
            scePowerGetBusClockFrequency(), scePowerGetGpuClockFrequency(),
            scePowerGetGpuXbarClockFrequency());
   g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
+  g_nd_direct = 1;   /* the Vita's default since D105; the host's stays 0 */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,

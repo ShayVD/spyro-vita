@@ -32,7 +32,7 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 3, readable C for all the mips2c code (D83, D87, D94, D96);
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
-  - stage 2 apart from its last piece's default: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` proposed as the default;
+  - stage 2: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` by default on the Vita since D105;
   - stage 4's steps 4a–4e: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100).
 - **In flight:**
   - **stage 2's last piece** (D99, D105): the records straight to vitaGL. Its next target is the clears, three quarters of the 35% layer (D105).
@@ -682,7 +682,7 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
     - late vblanks fell (the Stone Hill demo 9.9 → 2.9 per 300, Toasty 0.1 → 0.0, loads 169 → 97).
   - **The default stays 0 (the owner's decision).** A cheaper box in the walk (ARMv6 SIMD minima and maxima, the skip test from the spans) would make it a gain on every thread.
 
-**Then (D105, 2026-11-05): the walk's box as ARMv6 SIMD; `nd_direct=1` proposed as the Vita's default.**
+**Then (D105, 2026-11-05): the walk's box as ARMv6 SIMD; `nd_direct=1` the Vita's default (the owner's decision).**
 - **Now:** `em_direct` makes the skip test (`qsub16`, `uadd16`, `uqsub16` per edge) and the box (byte minima of each vertex's `u, v, 255 − u, 255 − v` word, `usub8` + `sel`) on whole words, a quad's shared edge and vertices once. About 100 instructions for a quad's two triangles, against about 260 for D99's rule. Off ARM the same lanes are C, so the host's per-packet check runs this form against D99's rule.
 - **Checked:** `tests/lean`, 8.4 M triangles on the host and 33.6 M with the Vita's compiler under qemu-arm, 0 differ, and mutants caught. Every packet both ways on six host scenarios, 0 differ, every file identical. `host_checks.sh` 279/279 identical with main. Vita3K `nd_direct` 0 against 1: shots, captures and card identical on the same six runs as D99's; `nd_direct=2` with the lane form, 0 of 21.9 M vertices differ.
 - **Hardware (Y5–Y8, 2026-11-05, D105):** the same 18 pictures and card. The K route on one thread 9.81 → 9.39 ms per vblank (−4%; D99 −1%): the walk now grows 0.14 ms where it grew 0.44. Toasty at 60 fps: the render thread −0.83 ms per vblank, the parse thread +0.22 (D99 +0.72), the game thread's wait +0.10 (D99 +0.33) with its busy share unchanged, late vblanks fewer (the Stone Hill demo 9.7 → 3.0 per 300, loads 195 → 108).
