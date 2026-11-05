@@ -577,10 +577,15 @@ static int in_arena(const void *p, uint32_t len) {
          a - g_psx_arena_base <= PSX_MEM_SIZE - len;
 }
 
+/* the native build's data labels are their own section (D103) */
+#if SPYRO_NATIVE_MEM
+#define LABELS_REGION(at, len) ((at) == PSX_ARENA(DATA_LO) && (len) == DATA_HI - DATA_LO)
+#else
+#define LABELS_REGION(at, len) 0
+#endif
+
 static void add_region(void *at, uint32_t len) {
-  /* the native build's data labels are their own section (D103) */
-  if (s_nregions < MAX_REGIONS && len &&
-      (in_arena(at, len) || (at == PSX_ARENA(DATA_LO) && len == DATA_HI - DATA_LO))) {
+  if (s_nregions < MAX_REGIONS && len && (in_arena(at, len) || LABELS_REGION(at, len))) {
     s_regions[s_nregions].at = at;
     s_regions[s_nregions].len = len;
     s_nregions++;

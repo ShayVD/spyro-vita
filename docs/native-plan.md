@@ -34,11 +34,12 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 6, native file I/O (D93);
   - stage 2 apart from its last piece: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita;
   - stage 4's steps 4a–4e: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100).
+  - stage 4's steps 4f–4h on the host (D103): in the native build the data labels are ordinary globals, the game's memory is one heap block (overlay space), the scratchpad its own array, and save states are format 2.
 - **In flight:**
   - **stage 2's last piece** (D99, session `stage2-direct-gl`): the records straight to vitaGL, without PsyCross's walk or `gpu_gl.c` interpreting PS1 GPU state. That's the 35% layer.
 - **What I recommend next, after those:**
   1. **Measure D99 on hardware** (the owner's yes first): the K route with K1's switches, and X7's Toasty route at 60 fps. They say what's left of the translation and of the render thread, which decides how much stage 7 is worth.
-  2. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
+  2. **Stage 4's step 4i** (D103): the Vita on native memory. The native VPK runs in Vita3K; it becomes the default after a hardware pair (the owner's yes first).
   3. **Stage 7's steps 7a and 7b** (D101, §5): host audits and the port's own `VSync`. Both are small and wait for nothing. Then 7c after D99. Steps 7d–7g are decided on 7a's numbers and D99's measurement: since D81 and D98 the game thread isn't the wall at 60 fps, so stage 7's CPU gain is headroom rather than pictures.
   4. **Stage 8,** retiring PsyCross, last.
 
@@ -825,6 +826,8 @@ Each native step is checked by running `host_checks.sh` on the arena build and o
 
 **Status (D100, 2026-11-04): steps 4d and 4e done.** In the native build every packed address decodes relative to the arena's base, and `SPYRO_ARENA_AT` may be any page. PsyCross's `nextPrim` goes through `SPYRO_OT_NEXT` (`patches/PsyCross/0013`). The decomp's 24-bit compares and its 21-bit frame-pointer writers are fixed for any base (`patches/spyro-1-port/0011`). The two bit-31 tags moved to **bit 0** of the same pointer, not to the side fields planned above: the collision tag is copied onto mobys outside `g_LevelMobys`, and bit 0 travels with the pointer, so no new save-state chunk is needed. The check below 2 GB found a third tag the inventory missed, the environment renderer's subdivision lists (header against polygon by the sign), now `MEM_SUBDIV_*`. Native at 0x92F81000 (unaligned, crossing a 16 MB line) and at 0x52F81000 (below 2 GB): main's 279 host-check files byte for byte each; save states round-trip below 2 GB. Details and logs: D100.
 
+**Status (D103, 2026-11-05): steps 4f–4h done on the host.** In the native build the 516 data labels are ordinary globals in one section, `spyro_labels`, laid out as PS1 RAM from 0x8006BBE0 to main_BSS_END, so a PS1 address there is one offset (not the per-label table planned above); PsyQ's `rand` seed is named in its hole. A new audit (`-DSPYRO_MEM_AUDIT=ON`) showed that the OT terminator is the only label anything links to or decodes into. The game's memory is one heap block: overlay space at its PS1 size, behind the rest of main_BSS_END's page, which holds the terminator (0x8007A000–0x80200000, 1,597,440 bytes). The scratchpad is `g_psx_scratch`. Native save states are format 2 (`BLCK`, `LABL`, both addresses in the header), and format 1 is refused as another build. The native build with the labels as globals (block below 2 GB at 0x52F81000), and then with the block from the heap (0x3FBED000), each gave main's 279 host-check files byte for byte; save states round-trip, a fresh launch included. Details and logs: D103. 4i (the Vita's default) follows a hardware run.
+
 ### Stage 5: native audio (medium, low–medium risk)
 
 **Replaces** (E):
@@ -1165,7 +1168,7 @@ Status as of 2026-11-04 (D101). The payoff column gives the measured share each 
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
-| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a–4e done (D97, D100); then 4f–4i |
+| 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | 4a–4h done (D97, D100, D103); 4i (the Vita's default) after a hardware run |
 | 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | planned (D101); 7a and 7b next |
 | 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
 
