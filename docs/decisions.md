@@ -2617,9 +2617,42 @@ Record each decision with its date, what was chosen, and why.
   - **`nd_direct=2`** on the gems script, plain and with `tex_filter=1`: each 4,516 vertex buffers, 21,949,809 vertices compared attribute by attribute with `expand_lean`'s, **0 differ**, 0 triangles of another kind; the pictures are main's (but two captures behind the same Vita3K notice).
   - **`nd_direct=0`** (this VPK's old path): main's but `win-3500`, 280 pixels round the small Spyro at the right edge, the capture D92 saw change between two runs of one build.
   - Vita3K's "pipelines compiled" notice comes in runs of either path; Vita3K itself crashed in the first try of 3 runs (main's VPK once, this one's twice, once before the game drew anything), each rerun went through.
-- **Hardware:** runs Y1–Y4 (`tools/vita/fps-runs/README.md`, "Runs Y1–Y4"; VPK `logs/d99-vpk-2.vpk`, SHA-1 `f60b62d2…`, built from `937d6e6`, the same code as VPK 1): not run yet; they need the owner's go-ahead. Y1 and Y2 (the K route with every layer on the game thread, X4's switches, `nd_direct` 0 and 1) give the CPU per vblank before and after; Y3 and Y4 (Toasty at 60 fps, the shipped defaults) the render thread's.
-- **Default:** `nd_direct=0` until the hardware pair shows it is no slower with the same pictures and card.
+- **Hardware** (2026-11-05, the owner's Vita over `hw_run.sh`, approved by the owner in this session's chat; VPK `logs/d99-vpk-2.vpk`, SHA-1 `f60b62d2…`, built from `937d6e6`, the same code as VPK 1; logs `logs/hw-y1`…`y4`, gitignored). All four reached `frames=`, no crash dump, the owner's files put back each time. Afterwards main's eboot (`32c498d`, CI run 41993260680, `2ce798da…`) went back on the Vita, read back identical. The VPK's `sce_sys` (LiveArea art from the gitignored `disc/livearea`, D59) stayed: the runner had already replaced the one before, so which art was there isn't known.
+  - **The same pictures:** Y1 (`nd_direct=0`) and Y2 (`=1`), all 18 pictures (9 shots and the GPU's own frame at each) and the memory card identical.
+  - **The K route, every layer on the game thread** (X4's switches; `native_share.py`, means of the route's 51 windows, ms per vblank):
+
+    | | OT walk | PS1 GPU → vitaGL | sum | emulation |
+    |---|---:|---:|---:|---:|
+    | X4 (D98, main's code) | 2.09 | 3.44 | 9.73 | 64% |
+    | Y1, `nd_direct=0` | 2.10 | 3.61 | 9.92 | 64% |
+    | Y2, `nd_direct=1` | 2.08 | 3.58 | 9.82 | 64% |
+
+    - **The GL side's vertex buffers** (the `gpu parts` lines; with `render_thread=0` they are part of the OT walk's layer): 1.11 → 0.65 ms per vblank, the expand in them 0.87 → 0.43.
+    - **The walk itself** grew by as much (0.91 → 1.35: the layer moved 0.02). The box costs about 0.15 µs a triangle wherever it is computed: the copy that went was the cheap part of `expand_lean`, and the box and the atlas look-up were the rest.
+    - So with every layer on one thread the sum is 0.10 ms (1%) lower, within the runs' noise.
+    - **Y1 against X4:** +0.17 ms in the GL layer, in every part. That is the `gpu parts` timers' clock reads (several per draw), on in this VPK. They are now behind `gpu_parts=1`, default 0.
+  - **Toasty at 60 fps, the shipped threads** (Y3 against Y4; `fps60_summary.py`, the `gpu parts`, `parse` and `time` lines, means from vblank 900):
+
+    | per vblank | Y3 (`nd_direct=0`) | Y4 (`=1`) |
+    |---|---:|---:|
+    | render thread: vertex buffers (their expand) | 2.01 ms (1.70) | 1.26 ms (0.84) |
+    | render thread: the draws' work, logs, GL calls, in `sceGxm*Scene` | 1.91 ms | 1.82 ms |
+    | parse thread busy | 1.85 ms | 2.57 ms |
+    | game thread's wait for the walk | 0.98 ms | 1.31 ms |
+    | game thread busy | 37.3% | 38.7% |
+    | late vblanks per 300: the Stone Hill demo, Artisans, Toasty | 9.9, 0.6, 0.1 | 2.9, 0.6, 0.0 |
+    | late vblanks in the 13 load windows; falls to 30 fps | 169; 5 | 97; 4 |
+
+    - **The render thread** (the wall at 60 fps, D81) does 0.75 ms per vblank less, 19% of its CPU work.
+    - **The parse thread does 0.72 ms more,** and the game thread waits 0.33 ms more for it at its join.
+    - **Late vblanks fell** wherever there were any. One run each, so read them as a direction.
+    - The render thread's "busy" time per picture is not a measure of work here. In Artisans' windows 7,500–9,300 Y4's is 16.4 ms a picture (98%) with 0 late vblanks: the present waits a whole display period (its GPU wait 1.2 → 4.8 ms) while the game thread waits for the picture to be shown. Y3 has such a phase in the Stone Hill demo. The parts above are the work.
+- **Default: `nd_direct=0` for now, the owner's decision.**
+  - For: the same pictures and card, less work on the render thread, fewer late vblanks.
+  - Against: the total CPU is about the same, and the game thread waits a third of a millisecond longer for the walk.
+  - Making the walk's box cheaper (below) would make it a gain on every thread.
 - **Not done:**
+  - **A cheaper box in the walk:** in a triangle every pair of vertices is an edge, so the skip test is the x and y spans; and the spans, like the box, are byte- and halfword-wise minima and maxima that ARMv6's SIMD (`usub8`/`ssub16` with `sel`) computes for three vertices in a few instructions, against about 50 cycles a triangle now. `nd_direct=2` in Vita3K checks the result against `expand_lean`'s.
   - **Writing the walk's vertices straight into the slab** (PsyCross's `g_vertexBuffer` as a pointer the render thread's slabs take turns as): it would save the parse thread's copy of each buffer (`rt_GR_UpdateVertexBuffer`'s `memcpy`, about 80 KB a list), at the cost of a PsyCross patch on every use of the buffer and an earlier wait for a free slab.
   - **GPU-visible memory without `glBufferData`'s copy** (vitaGL's `vglAllocFromScratch` and `vglBufferData`, memory kept 3 frames): the side stream could be written there directly. Not tried: lifetime against the render thread's slabs needs care, and the copy is the smaller part.
   - **The rest of the translation** (`GR_DrawTriangles`: `sync_pages`' pass, the logs' copies, the batches' GL calls, vitaGL's own work and waits) is unchanged; the `gpu parts` line is there to measure it.

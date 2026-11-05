@@ -418,3 +418,5 @@ D99's `nd_direct=1` (the walk leaves its triangles in the GL's lean form and the
 - Y1 and Y2 take their 18 pictures at the same vblanks: both sets and the memory cards must be identical.
 - `python3 tools/vita/native_share.py logs/hw-yN/spyro.log --fps 30 --all`, the part means as in `docs/native-plan.md` §3.5: Y1 against Y2 is the CPU per vblank before and after. The `gpu parts` lines split the GL side (vertex buffers, expand, the draws' work, the logs, the GL calls, the time in `sceGxmBeginScene`/`EndScene`).
 - Y3 and Y4: `tools/vita/fps60_summary.py` per level, and the `render` lines' busy time per picture.
+
+**Ran** on 2026-11-05 (D99, approved by the owner; VPK `logs/d99-vpk-2.vpk`, `937d6e6`; `logs/hw-y1`…`y4`): all four reached `frames=`, no crash dump. These runs had the `gpu parts` timers on without the `gpu_parts=1` line (it came after them; the files now carry it). Y1 and Y2: all 18 pictures and the memory card identical; the route 9.92 → 9.82 ms per vblank. Y3 and Y4: the render thread 0.75 ms per vblank lighter, the parse thread 0.72 heavier, late vblanks fewer. Main's eboot (`32c498d`) went back on the Vita afterwards.
