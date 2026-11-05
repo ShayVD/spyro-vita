@@ -111,3 +111,10 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **Save states in Vita3K** (native VPK, `state_test=`): save at 7,000 and load at 7,600 in one process (`logs/s4h-v3k-S1`): all 17 shots identical to the plain native run, the four after the load included; save 153 ms, load 83 ms. A fresh launch loading that state at its first loop top (`-S2`): its 4 shots after the load identical. The block was at 0x88005000 in every launch.
   - The VPK builds without a warning in `src/game` or `src/platform`.
 - **The hardware pair** (the owner's yes, 2026-11-05; the owner's Vita, vitacompanion 1.05, the disc image; `tools/vita/hw_run.sh`, the gems script, 8,768 vblanks, `shot_every=512 shot_hd=1`): main's VPK (`37a50f0`, `logs/hw-s4i-main`) and the native VPK (`logs/hw-s4i-native`), each to `frames=` in 90 s. **17 of 17 shots, 17 of 17 HD shots (the real GPU's picture) and the memory card identical**; the shots are also Vita3K's. No hang or crash. Main's current eboot (`ecdbce6`) was put back afterwards with the title route (`logs/hw-s4i-restore-main`).
+
+## 2026-11-05 — vita-port-kit runtime modules
+
+### D107. The audio output ring and its thread are vita-port-kit's `vita/runtime/audioout`
+- **What:** `src/platform/common/audio_ring.c` moved to vita-port-kit as `vpk_audio_ring` (vendored in `third_party/vita-port-kit/vita/runtime/audioout`), merged with kh1-decomp's simpler ring. D88's held level is the ring's `rate_control 1`; its constants stayed in `psx_audio_ring.h`, which now maps the `psx_audio_ring_*` names to the kit's and passes them as the ring's config. `audio.c`'s output thread (the BGM port, 512-frame grains, core 1, priority 0x68) is the kit's `vpk_audio_out` with those settings.
+- **Why:** kh1-decomp had a second copy of the same output thread and a ring without the level control; one copy in the kit, used by both games (vita-port-kit roadmap K4).
+- **Checked:** the clock model (`tests/audio`, 10 minutes) prints the same numbers as before, byte for byte; the VPK builds. Device behaviour: a hardware run before merging.

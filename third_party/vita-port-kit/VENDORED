@@ -2,3 +2,4 @@
 commit f5c448fd9b053440ffc48a7a6c478a87b4757e03
 path vita/tools
 path vita/cmake
+path vita/runtime/audioout
