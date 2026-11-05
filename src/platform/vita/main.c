@@ -233,7 +233,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D25) and a
+/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D25; the
+ * native build's block, D103) and a
  * small main stack: the game's MIPS stack lives in the arena, and kh1's
  * 52 MiB stack failed on hardware while Vita3K took it (D7). */
 int _newlib_heap_size_user = 128 * 1024 * 1024;
@@ -606,7 +607,12 @@ int main(int argc, char **argv) {
   vita_audio_init();
   vita_xa_ahead_init();
 
+#if SPYRO_ARENA_MOVED
   port_arena_symbols(vita_log);
+#else
+  vita_log("game memory at %p, data labels at %p (native, D103)", (void *)g_psx_arena_base,
+           (void *)s1_labels);
+#endif
   psx_mcrd_set_root(VITA_DATA_DIR "/save");
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);

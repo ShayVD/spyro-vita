@@ -89,10 +89,11 @@ void *psx_mem_host(uint32_t a) {
  * one into the executable's image, which the arena build left in an unused
  * part of the arena, lands in a sink nothing reads (none is known: the
  * stores D42 found are all below 0x10000, kernel RAM). */
+static unsigned char s_kuseg_sink[256];
+
 uintptr_t psx_kuseg_host(uint32_t a) {
-  static unsigned char s_sink[256];
   void *p = psx_mem_host(PSX_RAM_BASE | a);
-  return p ? (uintptr_t)p : (uintptr_t)s_sink;
+  return p ? (uintptr_t)p : (uintptr_t)s_kuseg_sink;
 }
 #endif
 

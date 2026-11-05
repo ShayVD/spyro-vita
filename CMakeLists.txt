@@ -79,7 +79,11 @@ set(SPYRO_ARENA_AT "0x80000000" CACHE STRING
 # The native build's data labels are ordinary globals (D103): no moved
 # arena's label pointers, whatever SPYRO_ARENA_AT says.
 if(SPYRO_HOST STREQUAL "vita")
-  set(SPYRO_ARENA_MOVED ON)
+  if(SPYRO_NATIVE_MEM)
+    set(SPYRO_ARENA_MOVED OFF)
+  else()
+    set(SPYRO_ARENA_MOVED ON)
+  endif()
 elseif(SPYRO_ARENA_AT MATCHES "^0x[0-9A-Fa-f]+$")
   math(EXPR arena_at "${SPYRO_ARENA_AT}" OUTPUT_FORMAT HEXADECIMAL)
   if(SPYRO_NATIVE_MEM)

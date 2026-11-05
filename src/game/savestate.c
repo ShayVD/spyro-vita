@@ -7,7 +7,10 @@
  * PsyCross's GPU environments and GTE registers, VRAM, the SPU, the XA
  * decoder, the CD drive, the memory card's pending result and the vblank
  * counter. A state is refused, never loaded, if it comes from another build
- * or an executable/arena at other addresses (its pointers would be wrong). */
+ * or an executable/arena at other addresses (its pointers would be wrong).
+ * The native build's states are format 2 (D103): its game memory is a block
+ * from the heap and its data labels a section of their own, each a chunk,
+ * and the header records both addresses. */
 #include "savestate.h"
 #include "cheats_port.h"
 #include "present.h"
@@ -48,14 +51,20 @@ extern void GamestateDraw(void);
 extern char etext[], _edata[], _end[]; /* the linker's: end of text, data, bss */
 
 #define VRAM_BYTES (1024 * 512 * 2)
+#if SPYRO_NATIVE_MEM
+#define FORMAT 2 /* D103: format 1 is refused as another build */
+#else
 #define FORMAT 1
+#endif
 #define SAVE_WAIT_TICKS 60 /* a save that can't be taken yet gives up after this */
 
 typedef struct {
   char magic[8]; /* "SPYVSTAT" */
   uint32_t format, header_size;
   char build[64];
-  uint32_t layout[6]; /* arena, text end, data end, bss end, two functions */
+  /* arena, text end, data end, bss end, two functions; format 2: the
+   * block, the labels' section, text end, bss end, two functions */
+  uint32_t layout[6];
   int32_t vblank, gamestate, level;
   uint32_t nchunks;
 } Header;
@@ -67,6 +76,7 @@ typedef struct {
 
 /* ---------- the chunks ---------- */
 
+/* The arena, or in the native build the block (D103). */
 static void chunk_arena(PsxStateIO *io) {
   psx_state_io(io, (void *)g_psx_arena_base, PSX_MEM_SIZE);
 }
@@ -124,10 +134,12 @@ static const struct {
   char tag[5];
   void (*fn)(PsxStateIO *io);
 } k_chunks[] = {
-    {"ARNA", chunk_arena}, {"SCRP", chunk_scratch},  {"KRAM", chunk_kram},
 #if SPYRO_NATIVE_MEM
-    {"LABL", chunk_labels},
+    {"BLCK", chunk_arena}, {"LABL", chunk_labels},
+#else
+    {"ARNA", chunk_arena},
 #endif
+    {"SCRP", chunk_scratch},  {"KRAM", chunk_kram},
     {"GLOB", chunk_globals}, {"GPU ", chunk_gpu},    {"VRAM", chunk_vram},
     {"SPU ", chunk_spu},   {"XA  ", psx_xa_state},   {"CD  ", psx_cd_state},
     {"MCRD", psx_mcrd_state}, {"PLAT", chunk_plat},
@@ -149,8 +161,13 @@ static void make_header(Header *h) {
   h->header_size = sizeof *h;
   snprintf(h->build, sizeof h->build, "%s %s %s", SPYRO_BUILD_ID, __DATE__, __TIME__);
   h->layout[0] = (uint32_t)g_psx_arena_base;
+#if SPYRO_NATIVE_MEM
+  h->layout[1] = (uint32_t)(uintptr_t)s1_labels;
+  h->layout[2] = (uint32_t)(uintptr_t)etext;
+#else
   h->layout[1] = (uint32_t)(uintptr_t)etext;
   h->layout[2] = (uint32_t)(uintptr_t)_edata;
+#endif
   h->layout[3] = (uint32_t)(uintptr_t)_end;
   h->layout[4] = (uint32_t)(uintptr_t)&savestate_point;
   h->layout[5] = (uint32_t)(uintptr_t)&GamestateDraw;
