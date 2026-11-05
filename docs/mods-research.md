@@ -1,15 +1,13 @@
-# Mods for Spyro the Dragon: what exists, and what could come to Spyro Vita
+# Mods for Spyro the Dragon: what exists, and how Spyro Vita takes them
 
-Research only, 2026-11-05. No engine code, no hardware runs, nothing downloaded. The owner asked which existing mods for Spyro the Dragon (PS1, 1998) could be added to Spyro Vita, and how. Anything added must be optional and off by default, with the default game unchanged (CLAUDE.md, D50).
+Research and plan, 2026-11-05. No engine code, no hardware runs, nothing downloaded. The owner asked which existing mods for Spyro the Dragon (PS1, 1998) could be added to Spyro Vita, and how. Anything added must be optional and off by default, with the default game unchanged (CLAUDE.md, D50).
 
-**Short answer:** about 25 Spyro 1 mods exist. Almost all of them are **code** mods: MIPS code injected into the PS1 executable and shipped as xdelta or PPF patches. **Spyro Vita can't run any of those as patches**, because it never runs the disc's code (§2). They can only come in as C written for the port, behind a menu row, the way the cheats did (D50). The few **data-only** mods (custom levels, the collectible shuffler, Spyro skins) could in principle be loaded from a player's own patched disc image. Today the port refuses such an image on purpose (D60's SHA-1 check), so that is the owner's call.
+**Short answer:** about 25 Spyro 1 mods exist. Almost all of them are **code** mods: MIPS code injected into the PS1 executable and shipped as xdelta or PPF patches. Spyro Vita never runs the disc's code (§2), so those can't be applied as patches. The plan (proposal D102) has two parts:
 
-The best candidates, ranked (detail in [§4](#4-shortlist)):
-1. **A few small gameplay toggles** (supercharge anywhere, Sparx-less hard mode, skip the dragon cutscenes, free flight): C rows in the GAME section.
-2. **Seeded randomizers** (gem values, balloonist requirements): C, with saves kept apart.
-3. **Data-only mods from the player's own patched image** (Grim Garden, the Collectible Shuffler, skins): a loader rule, not per-mod work.
-4. **Split-screen co-op**: MIT-licensed and built on our own decomp, but it needs a second controller, which the Vita handheld doesn't have.
-5. **Per-level timer and time trials** (Practice Rom, Speedway Mod ideas).
+- **Built-in mods** ([§3.1](#31-built-in-mods)): code mods are written again as C in the port and ship in the standard VPK. Each is a row in a new **MODS** section of the options menu, off by default, credited to its author in the README and on the row's help line.
+- **Drop-in mods** ([§3.2](#32-drop-in-mods)): mods that change only game data (custom levels, the collectible shuffler, skins) can't ship with the port, because they carry game data. The player drops the author's patch, or their own patched image, into `ux0:data/spyro/mods/`. The port applies it if it changes data only, and refuses it with a clear message if it changes code.
+
+[§3.3](#33-not-supported) lists what neither covers, and why. Co-op split-screen is set aside for now: it's a large feature, and the Vita handheld has only one controller.
 
 How sure each claim is: **verified** means read on the page, in the mod's repository or in our code by this session. **Inferred** means reasoned from what was read, not checked.
 
@@ -91,107 +89,125 @@ Most mods above are built with Redhot's [psx-modding-toolchain](https://github.c
 
 **So, for this port:**
 - **A code mod can't be applied as a patch.** Its MIPS would never run. Worse, if the D60 check were relaxed, an xdelta that changes code *and* data would half-apply: the data changes without the code that expects it. That's why the check must stay as it is for code mods.
-- **A code mod can only come in as C written for the port**, hooked where the decomp's C does the same thing. That is the D50 pattern: a numbered patch in `patches/spyro-1-port/`, port code in `src/game/`, a row in the GAME section (`src/platform/vita/menu_game.c`), and a host flag for checks.
-- **A data-only mod** (WAD data changed, executable and overlay code untouched) would load as it is. The decomp reads levels through the WAD header the same way the PS1 does. It would need the D60 check relaxed for the WAD only (§3, route C).
+- **A code mod can only come in as C written for the port**, hooked where the decomp's C does the same thing. That is the D50 pattern: a numbered patch in `patches/spyro-1-port/`, port code in `src/game/`, a menu row (the GAME section's cheats are in `src/platform/vita/menu_game.c`; mods get their own MODS section, §3.1), and a host flag for checks.
+- **A data-only mod** (WAD data changed, executable and overlay code untouched) would load as it is. The decomp reads levels through the WAD header the same way the PS1 does. Today D60's check refuses a changed WAD. §3.2 lets data changes through as an overlay on the verified retail image, and keeps refusing code changes.
 - **RAM-address cheats (GameShark)** work today only because the arena holds PS1 RAM at fixed offsets. Stage 4f–4i makes the data labels ordinary globals, with the game's memory from the heap (`docs/native-plan.md`, "Stage 4's steps 4f–4i"). So a generic "poke this PS1 address" engine would break when that stage lands. **Turn each wanted code into a named toggle on the named variable** instead (inferred).
 
-## 3. Integration routes
+## 3. The plan: built-in mods and drop-in mods (proposal D102)
 
-| Route | What it is | Works for | Effort | Default unchanged? | Saves | Host / oracle checks |
+### 3.1 Built-in mods
+
+The mod's behaviour is written as C in the port, from the decomp. The mod's own code targets the PS1 executable's addresses, so it can't be reused anyway. It ships in the standard VPK as one row in a new **MODS** section of the options menu (hold SELECT, press START), off by default.
+
+| Menu row (proposed) | What it does | Based on (author) | Licence | Kind | Effort (inferred) | Saves |
 |---|---|---|---|---|---|---|
-| **A. C toggle** (as D50) | The mod's behaviour written as C in `src/game/`, hooked by a `patches/spyro-1-port/00NN-*.patch`, behind a GAME-section row and a host `--flag` | Every code mod | Small to large, per mod | **Yes**: the hook is a branch on an option that defaults to 0. `tools/host_checks.sh` (attract demos, tour, routes A and B) must stay byte-identical with it off, as D50's runs did | Toggles that change progress (randomizers, requirements) write it to the card. Keep those saves apart: a per-mod card directory, `save/<mod>/card0` (D19's layout) | Unaffected with the option off. With it on there is no oracle: the PS1 doesn't have the feature. Check with host scripts, plus Redux running the author's patched image as a reference, if the owner allows us to apply a patch |
-| **B. Apply the player's patch at load** | Read an xdelta or PPF file next to the image and patch sectors as they are read | Nothing useful: code changes are ignored, data-only mods are better served by C | Medium (an in-tree VCDIFF decoder; xdelta's library would be a new dependency, so ask first) | Yes, if off | As C | As C |
-| **C. The player's own patched image, data-only** | Accept an image whose executable matches retail and whose WAD differs, **only if every overlay's code in the WAD matches retail** (hash each overlay against the matching build's `wad/*.ovl`; hashes aren't game data). Refuse anything else with a panel ("this mod changes the game's code, which Spyro Vita can't run"). Show "MODDED DISC" on the boot panel, and use a separate save directory per WAD hash | Custom levels (Grim Garden), the Collectible Shuffler, skins (SCALES), editor output that stays within the original layout | Medium: `cdimage.c` gains a second verdict, the per-overlay hash table and the save-directory switch. The one-time WAD hash (D60) already identifies the image | Yes: the retail image takes exactly today's path | Separate card directory per WAD hash, so a modded run never writes the retail card | The oracle can run the same patched image in Redux (Redux runs it natively), so data-only mods can be checked like retail: the oracle on the player's side, never committed |
-| **D. Cheats-style actions** | One-shot actions through the inventory, as 99 LIVES does | GameShark-style "give all eggs" or "max gems", if wanted | Small each | Yes | Permanent ones ask first (LEVELS OPEN's `PERMANENT? X`) | As D50 |
+| SUPERCHARGE ANYWHERE | □ twice in the air starts a supercharge anywhere; R1 and L1 change its speed | Supercharge Anywhere (C0mposer) | none | gameplay | small | normal card |
+| SHARP TURN | d-pad left or right turns sharply during a supercharge | Easy Supercharge Sharp Turning (OddKara) | none | gameplay | small | normal card |
+| NO SPARX | Sparx never comes back, so one hit costs a life | Sparxless (LuminescentSky) | none | difficulty | small | normal card (inferred) |
+| SKIP DRAGON CUTSCENES | a freed dragon counts at once, with no cutscene | Husbjörn's cheats menu (also in the Speedway Mod) | none stated | QoL | small to medium: it must set every flag the cutscene's end sets, checked against a full cutscene on the host. Earlier mods crashed here (shuffler README, spyrospeedruns article) | normal card |
+| FREE FLIGHT | fly anywhere, with no height cap | Husbjörn's cheats menu; a common cheat | none stated | cheat | small to medium | normal card |
+| SPEED | a multiplier on Spyro's speed while walking, gliding and flying | Husbjörn's cheats menu | none stated | cheat | small | normal card |
+| INFINITE HEALTH | Sparx never loses health | a GameShark code (`80078BBC 0003`), written as a toggle on the named variable | facts | cheat | small | normal card |
+| STAT GROWTH | jump height and charge speed grow with gems; Sparx's range grows with eggs and shrinks with his health | Stat Growth (AlDeezy) | none | difficulty | medium | normal card |
+| GEM SHUFFLE (seed) | gem values swapped among a level's gems, keeping its total; the same seed gives the same layout after a reload | Gem Redistributer (C0mposer) | none | randomizer | medium | own card |
+| REQUIREMENT SHUFFLE (seed) | balloonist requirements and homeworld order shuffled | Requirement Randomizer (OddKara) | none | randomizer | medium | own card |
+| REVERSE LEVELS | each level starts at its exit and ends at its start; balloonist requirements re-done; optionally start in Gnasty's Loot | ReverseMod (Husbjörn) | none stated | gameplay | large: the start and exit of every level read from its data at load, and every level played through | own card |
+| LEVEL TIMER | an on-screen timer per level, and a best time per level | Practice Rom timers (C0mposer); Speedway Mod time trials (LuminescentSky) | none | QoL | small to medium: drawn by the port's own panel (`menu_panel.c`), not the game's HUD | best times in a port file, not the card |
+| SPYRO COLOUR | tint dials for Spyro's scales | SCALES (Hwd405); the co-op mod's colour page (Tokatta007, MIT) | none; MIT | graphics | small to medium: the palette is changed at run time from the dials, so no art is shipped | `config.txt` only |
 
-Route C is the one place where something like a "mod framework" would be built. It isn't recommended here as a decision: whether to relax D60 at all is an open question for the owner (§6). No decision number is recorded.
+Already in the port, with nothing to add: SKIP INTRO LOGOS (D50; C0mposer's Skip Intro does the same on the PS1), save states (D51) and level warp (D50's WARP TO). The Practice Rom has those on the PS1.
 
-## 4. Shortlist
+**Suggested order:**
+1. The small rows that don't touch progress: SUPERCHARGE ANYWHERE, SHARP TURN, NO SPARX, FREE FLIGHT, SPEED, INFINITE HEALTH.
+2. SKIP DRAGON CUTSCENES, LEVEL TIMER and SPYRO COLOUR.
+3. The two randomizers and STAT GROWTH, with the per-mod card.
+4. REVERSE LEVELS.
 
-### 1. Small gameplay toggles (route A)
-- **What:** a few rows, each off by default:
-  - **SUPERCHARGE ANYWHERE** (C0mposer). The same core as Speedway's "every charge supercharges".
-  - **SPARX OFF**, a hard mode (LuminescentSky's Sparxless; the GameShark "infinite health" is the opposite toggle).
-  - **SKIP DRAGON CUTSCENES** (Husbjörn's cheats menu, Speedway; the Collectible Shuffler does it with data).
-  - **FREE FLIGHT** with no height cap (Husbjörn).
-  - optionally **SHARP TURN** during a supercharge (OddKara).
-- **Why first:**
-  - Each is a small change to Spyro's state machine, which the port already has as hand-written C (`src/game/pete_hand.c`, `pete_state_hand.c`, `pete_transition_hand.c`), so it doesn't touch the renderers or the disc.
-  - The menu table (D50) takes a row without touching `menu.c`.
-  - Saves are unaffected: no progress changes. One exception: skipping a dragon's cutscene must still free the dragon and set its save flag the way the cutscene's end does. The shuffler's README warns that crashes and despawns are possible here, so verify it against a full cutscene on the host.
-- **Effort:** small each (inferred: a hook in the player or dragon update, plus a row). Skip-dragon-cutscenes is the riskiest of these.
-- **Faithfulness:** default byte-identical if every hook is `if (opt) …`, checked by `tools/host_checks.sh`.
-- **Permission:** none of these authors licenses their code, so write the C from the decomp, not from their source, and **ask C0mposer, LuminescentSky, Husbjörn and OddKara** before shipping a feature that is recognisably theirs. Credit them in the README either way. Free flight and infinite health are generic cheats.
+**How each one is built (as D50's cheats were):**
+- Code in `src/game/mods/<name>.c`. The game's hooks go in a numbered `patches/spyro-1-port/00NN-mods-*.patch`, each a branch on an option that defaults to 0.
+- The rows go in `src/platform/vita/menu_mods.c`, which defines `g_menu_mods`. `menu.c` gains one weak name for it, as the other sections have. Keys are saved in `config.txt`, and the host gets `--mod NAME[=VALUE]`.
+- Mods are always off in attract demos, which must replay exactly. Oracle replays never see them.
+- Mods are written against named variables (`g_Spyro`, the moby lists), not PS1 addresses, so they keep working when stage 4 moves the game's memory (§2).
+- **Checks:**
+  - With every mod off, `tools/host_checks.sh` (attract demos, the whole-game tour, routes A and B) stays byte-identical to main.
+  - Each mod gets a host script that shows its effect. For the randomizers: one seed gives one layout, across reloads and a save and load.
+  - Then Vita3K, then hardware with the owner's yes.
+- **Saves:**
+  - Rows marked "own card" use `save/mods/<mod>-<seed>/card0`, so a shuffled run never writes the normal card (D19's layout).
+  - The rest use the normal card.
+  - Save states (D51) record which mods were on, and loading one turns the same mods on.
 
-### 2. Seeded randomizers (route A)
-- **What:**
-  - **GEM SHUFFLE** (C0mposer's Gem Redistributer): swaps gem values within a level, keeping its total.
-  - **REQUIREMENT SHUFFLE** (OddKara): balloonist requirements and homeworld order.
-  - Both take a seed shown in the menu and saved with the run.
-- **Why:** they change how the game plays without new assets. The data they need is already in the level's mobys (gem classes `MOBYCLASS_GEM_1`–`GEM_25`, `include/moby.h:326-330`) and in the balloonist code (`src/overlays/balloonist.c`; exactly where the requirements live wasn't checked).
-- **Effort:** medium (inferred). Gem shuffle: one pass over the level's mobys after load, deterministic from the seed and level ID, so a reload gives the same layout. The Redistributer's README lists exactly this bug: totals drift after enemies drop orbs on re-entry.
-- **Saves:** a randomized run must not write the retail card. Use route A's per-mod card directory, keyed by mod and seed.
-- **Permission:** ask C0mposer and OddKara (no licence).
+### 3.2 Drop-in mods
 
-### 3. The player's own data-only patched image (route C)
-- **What:** Grim Garden, Collectible Shuffler output, SCALES skins, and editor output that keeps the executable as retail. The player patches their own image with the author's patch or tool, then copies it to `ux0:data/spyro/`.
-- **Why:** it is the only way custom levels and the shuffler can come in at all. We ship nothing: no patch, no data, no link to one. That is the cleanest position for game data (CLAUDE.md) and for the authors' terms, since players use the author's own release as the author intended.
-- **Effort:** medium (§3). The risk is mods we can't predict: a WAD that's bigger than retail, or levels that use more memory. The arena is laid out as on the PS1 (D23, `docs/porting-plan.md` §4), so what fits on a PS1 should fit here (inferred). The overlay-code check refuses mods with code. Mixed mods like the Spyro 1 Editor's "New World" or sky relocation change the executable and would be refused (verified: its README says "executable relocation").
-- **Not checked:** whether Grim Garden's patch touches the executable or overlay code. That needs the patch inspected (§6).
-- **Permission:** none needed to *support* the format. Respect each author's stated terms on redistribution (none stated so far).
+These change only game data. They can't ship with the port, because each one carries or derives from the game's data. The player gets the mod from its author, and Spyro Vita applies it to their own disc.
 
-### 4. Split-screen co-op (route A, large)
-- **What:** two dragons, two cameras, one screen split.
-- **Why it is attractive:**
-  - It is **MIT**, so its design and code may be reused with its copyright notice kept. Ask anyway, as a courtesy.
-  - It targets our exact disc (same SHA-1).
-  - It was built against **TheMobyCollective's decomp**, the same base as ours.
-  - Its `CHANGES.md` lists every hook, allocation and swapped state. Its method maps directly onto the decomp's C: run Spyro's tick, the camera, the moby pass and the scene build twice per frame, with a second state swapped in.
-  - The PS1's limits that stopped it (11 KB of scratch RAM, half the frame rate at a 300% overclock) are not ours.
-- **Why it is fourth:**
-  - The **Vita handheld has one built-in controller.** A second player needs a PS TV, or Bluetooth controller plugins on the handheld (inferred, not checked).
-  - Drawing the scene twice doubles the render cost against our 60 fps budget (D75, D77).
-  - It touches the game loop, the camera, the moby update and the HUD: the same areas stages 4 and 7 are changing now (D97, D100, D101).
-  - The author's own `BUGS.md` lists open issues: a camera glitch on hits, and pitch in flight levels.
-- **Effort:** large (inferred: weeks, with hardware time).
-- **Saves:** shared lives, so normal card saves are plausible. Check how its pause-menu page and per-player colour are stored before deciding.
+| Mod | Author | What it changes | What the player drops in | Data only? |
+|---|---|---|---|---|
+| [Grim Garden](https://www.moddb.com/mods/grim-garden) | Cyreides, Ello Officer | a new level | the author's `.xdelta` | Expected (made with WadEdit "within the PS1's restrictions"), **not yet checked** |
+| [Collectible Shuffler](https://github.com/IikkaF/Spyro-Collectible-Shuffler) | IikkaF | gems, chests, keys, dragons and vortexes moved | the `.bin`/`.cue` the author's tool writes | **Yes** (verified: it rewrites only moby positions in each level's `sub4` data) |
+| [SCALES](https://github.com/Hwd405/SCALES) skins | Hwd405 | Spyro's colours | the `.bin`/`.cue` the tool writes | Expected (it edits palettes), not checked |
+| [Spyro 1 Editor](https://github.com/monty19933-hub/Spyro1Editor) output | monty19933-hub | edited levels, objects, skies and music | the `.bin`/`.cue` from Create BIN | Only some edits. New worlds, renamed levels and larger skies change the executable (verified, its README), and those are refused |
+| Levels from WadEdit, when it's released | Altro50, Hwd405 | new levels | as Grim Garden | Expected |
 
-### 5. Timer and time trials (route A)
-- **What:** an on-screen per-level timer and a saved best time per level (the Practice Rom's timers, the Speedway Mod's time trials).
-- **Why:** QoL that players ask for, and it doesn't change gameplay.
-- **Effort:** small to medium. A timer drawn by the port's overlay panel (`menu_panel.c`) avoids touching the game's HUD. Best times go in a port file, not the memory card.
-- **Permission:** the feature is generic. Ask C0mposer and LuminescentSky before copying how theirs look or behave.
-- The Practice Rom's save states and level select are already in the port (D51, D50 WARP TO). Ghost replays and hitbox views are larger and specific to speedrunners: not shortlisted.
+**How it works** (design, inferred; nothing built):
+- **The folder:** `ux0:data/spyro/mods/`. A **DISC MOD** row in the MODS section picks one entry, or none (the default: retail). The choice takes effect at the next start.
+- **What it accepts:** an `.xdelta` (VCDIFF) or `.ppf` made against the retail `.bin`, or a whole patched `.bin`/`.cue`. The retail image stays where it is and is verified exactly as today (D60).
+- **First use:** the port builds the patched result once, and keeps only the sectors that differ from the retail image: `mods/<name>/changed.bin` plus an index. It shows a progress panel, as D60's first-start check does. After that, reads take changed sectors from there and every other sector from the retail image. Nothing large is copied, and the retail image is never written.
+- **What it refuses:** any changed sector inside `SCUS_942.28`, or inside any level overlay's code in `WAD.WAD`. The panel says the mod changes the game's code, which Spyro Vita can't run. The overlays' code ranges come from the WAD header and the overlay sizes, checked against the matching build's overlay hashes. Sizes and hashes aren't game data.
+- **Saves:** `save/mods/<id>/card0`, with the id taken from the changed sectors' hash. Save states go there too. A modded run never writes the retail card.
+- **The log and boot panel** name the active mod. With no mod picked, the disc code path is today's, byte for byte.
+- Built-in mods and a drop-in mod can be on together. Saves are then keyed by both.
 
-**Not shortlisted:**
-- **ReverseMod:** closed source, and it would need spawn and exit swaps for every level re-made by hand.
-- **Stat Growth and "Fatty":** niche.
-- **The joke and parody mods:** no source, and some no download.
-- **Pete's Gauntlet:** dead link.
-- **Speedway Mod:** PAL only, but its features are covered by items 1 and 5.
-- **GameShark codes as an engine:** they break with stage 4 (§2). Individual codes become rows where wanted.
+### 3.3 Not supported
 
-## 5. Legal and permissions
+| Mod | Why |
+|---|---|
+| Spyro 1 Co-Op Mod (Tokatta007) | Set aside for now: a large feature, and the Vita handheld has only one controller. It stays the best-documented candidate if it's taken up later (MIT, the same decomp, every hook listed in its `CHANGES.md`) |
+| Practice Rom's ghost replays, hitbox views and skin presets (C0mposer) | Code that is specific to speedrunning, and large. Its timers are covered by LEVEL TIMER, and its states and level select already exist |
+| Speedway Mod (LuminescentSky) as a whole | PAL only. Its supercharge, sharp-turn, dragon-skip and time-trial parts are covered by built-in rows. Its Spyro 2-style flapping could be a later row |
+| Pete's Gauntlet (Husbjörn) | The download is gone and there's no description of the rules. It could become a row if the author describes it |
+| April Hack, Desert Bus, the "Chinese Localization Build" parody, "Fatty", SpeedMod, Christmas Stone Hill, the Cliff Town demo | Code mods with no source, or no download, or no known author. Christmas Stone Hill could be a drop-in if it turns out to be data only |
+| Running the original MIPS patches | The port has no MIPS code to patch, and the Vita can't generate code (§2). An interpreter for patch code is ruled out |
+| A generic GameShark engine | It breaks with stage 4 (§2). Wanted codes become named rows instead, like INFINITE HEALTH |
+| Plugin modules (compiled mods dropped in) | Possible later, but not before stages 4 and 7 settle the game's internals. It would need a stable hook API, and a check that HENkaku lets unsigned homebrew load its own modules from `ux0:` |
 
-- **We ship no game data and nothing derived from it.** That rules out committing or shipping any patch, patched WAD, level, skin, location table extracted from levels, or test fixture made from a mod (CLAUDE.md). Route C only reads what the player made on their own machine.
+## 4. Routes considered
+
+| Route | Verdict |
+|---|---|
+| C in the port behind a menu row | **Chosen** for code mods (§3.1) |
+| Apply the player's patch file to the disc as it's read | **Chosen** for data-only mods, as a changed-sector overlay (§3.2) |
+| The player's own patched image, data only | **Chosen**, the same path as the patch file (§3.2) |
+| Run the mods' MIPS code | Not possible (§2) |
+| A GameShark address engine | Not chosen: it breaks with stage 4 (§2) |
+| Plugin modules | Deferred (§3.3) |
+
+## 5. Legal and credits
+
+- **Nothing in the repo or VPK carries game data:**
+  - no patch, patched WAD or level;
+  - no skin;
+  - no location table made from levels;
+  - no test fixture made from a mod.
+
+  Drop-in mods are files the player gets from the author and keeps on their own card (CLAUDE.md). Tests use synthetic sectors.
 - **Licences as found:**
-  - **MIT:** the co-op mod and Spyro2x2. Reuse is allowed with the notice kept.
-  - **GPL-3.0:** psx-modding-toolchain, the C/C++ Game Modding Utility, Spyro-Scope and the BizHawk plugin. These are tools; don't copy their code into this MIT repo.
-  - **Everything else:** no licence, or not stated.
-- **Ask first:** C0mposer (Supercharge Anywhere, Gem Redistributer, Practice Rom features); OddKara (sharp turn, Requirement Randomizer); LuminescentSky (Sparxless, Speedway features); Husbjörn (free flight, dragon-skip, ReverseMod); IikkaF (if the shuffler's location tables are ever wanted in C). Each needs the owner's go-ahead to contact them. Most give a Discord handle as their contact.
-- **Ideas aren't code** (not legal advice). Writing a feature like "supercharge anywhere" from the decomp, without reading the mod's source, is our own code. The brief asks to treat a recognisable re-implementation as needing permission anyway, and this doc does.
-- **OpenPete stays off-limits.** Two mods here have OpenPete versions (Grim Garden; the co-op mod's successor, Tokatta007's `Spyro-1-Co-Op-OpenPete`, MIT). Only their existence is noted. Nothing from them was read beyond the co-op repository's README, which was used to find the PS1 mod. Use the PS1 co-op repository as the reference, not the OpenPete one.
-- `../psxrecomp-ref` wasn't used.
+  - **MIT:** the co-op mod and Spyro2x2.
+  - **GPL-3.0:** the modding tools (psx-modding-toolchain, the C/C++ Game Modding Utility, Spyro-Scope, the BizHawk plugin). None of their code goes into this MIT repo.
+  - **Everything else:** no licence, or not stated. A built-in row based on a mod with no licence ships only with its author's permission. The "Licence" column above shows which rows that is.
+- **Built-in rows are our own C,** written from the decomp, not from the mods' sources.
+- **Credits:**
+  - The README gets a "Mods" section. Each built-in row names the mod it's based on, its author and the author's project page. Each supported drop-in mod is listed by name, author and project page.
+  - Each row's help line in the menu names the author.
+  - Link to authors' pages, never to download files.
+- **OpenPete stays off-limits.** Grim Garden and the co-op mod have OpenPete versions. Only their existence is noted, and the PS1 versions are the reference. `../psxrecomp-ref` wasn't used.
 
 ## 6. Open questions for the owner
 
-1. **Do mods belong in Spyro Vita at all before stage 4 and stage 7 land?** Items 1 and 5 are small and independent. Items 2 and 4 touch the game loop that those stages are changing.
-2. **Route C:** relax D60 to accept a player's data-only patched image (executable and overlay code still checked), with a "MODDED DISC" panel and separate saves? Or keep the port strictly retail?
-3. **May we contact the authors?** C0mposer, OddKara, LuminescentSky, Husbjörn and IikkaF, and Tokatta007 for co-op as a courtesy (MIT doesn't require it).
-4. **May a session apply a mod's patch to the owner's own image, outside git**, to check what it changes (code or data) and to use Redux as a reference? Grim Garden's patch is the one route C depends on. The brief says to ask before inspecting any mod file.
-5. **Saves:** is a per-mod card directory (`save/<mod>/card0`) acceptable, or should modded runs share the retail card?
-6. **Co-op:** is a PS TV / two-controller feature worth large work on a handheld-first port?
-7. **Where do mod rows go:** in the GAME section beside the cheats, or in a new MODS section?
+1. **The xdelta decoder:** write a small VCDIFF decoder in-tree, as `cdimage.c` did for SHA-1 (D60)? Or add xdelta3 as a dependency? Its licence needs checking first. PPF is simple either way.
+2. **Inspecting Grim Garden's patch:** may a session apply it to your own image, outside git, to confirm it changes data only? The DISC MOD design depends on custom levels passing the code check.
+3. **The Spyro 1 Editor:** list it as a supported drop-in, with the warning that some edits are refused? Or leave it out until its output is checked?
+4. **The order of the built-in batches** in §3.1, and whether REVERSE LEVELS is wanted at all, given its size.
 
 ## Sources
 
@@ -210,4 +226,4 @@ Route C is the one place where something like a "mod framework" would be built. 
   - [speedrun.com resources](https://www.speedrun.com/spyro1/resources);
   - [Generation Amiga on the co-op mod](https://www.generationamiga.com/2026/09/03/the-original-spyro-the-dragon-now-has-two-player-split-screen/);
   - [Almar's Guides CodeBreaker codes](https://almarsguides.com/retro/walkthroughs/ps1/games/spyrothedragon/codebreaker/).
-- Our code and docs: `src/platform/common/cdimage.c` (:25-29, :614-634), `src/platform/vita/menu_game.c`, `patches/spyro-1-port/0008`, `0009`; `docs/porting-plan.md` §4.1; `docs/native-plan.md` (stage 4f–4i); `docs/decisions.md` D19, D50, D51, D60, D75, D77, D97, D100, D101.
+- Our code and docs: `src/platform/common/cdimage.c` (:25-29, :614-634), `src/platform/vita/menu_game.c`, `patches/spyro-1-port/0008`, `0009`; `docs/porting-plan.md` §4.1; `docs/native-plan.md` (stage 4f–4i); `docs/decisions.md` D19, D50, D51, D60, D97, D100, D101, D102 (this plan, a proposal).
