@@ -32,12 +32,12 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 3, readable C for all the mips2c code (D83, D87, D94, D96);
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
-  - stage 2 apart from its last piece: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita;
+  - stage 2 apart from its last piece's default: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` proposed as the default;
   - stage 4's steps 4a–4e: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100).
 - **In flight:**
-  - **stage 2's last piece** (D99, session `stage2-direct-gl`): the records straight to vitaGL, without PsyCross's walk or `gpu_gl.c` interpreting PS1 GPU state. That's the 35% layer.
+  - **stage 2's last piece** (D99, D105): the records straight to vitaGL. Its next target is the clears, three quarters of the 35% layer (D105).
 - **What I recommend next, after those:**
-  1. **Measure D99 on hardware** (the owner's yes first): the K route with K1's switches, and X7's Toasty route at 60 fps. They say what's left of the translation and of the render thread, which decides how much stage 7 is worth.
+  1. **The clears** (D105): `GR_ClearVRAM` is three quarters of what is left of the translation, and 5.7 ms per vblank of the render thread at 60 fps. Split it (the software VRAM loop against the targets' `glClear`) and make the larger half cheaper. D99 and D105 measured the rest on hardware.
   2. **Stage 4's steps 4f–4i:** the data labels as ordinary globals, the game's memory from the heap, save states v2, the Vita on native memory.
   3. **Stage 7's steps 7a and 7b** (D101, §5): host audits and the port's own `VSync`. Both are small and wait for nothing. Then 7c after D99. Steps 7d–7g are decided on 7a's numbers and D99's measurement: since D81 and D98 the game thread isn't the wall at 60 fps, so stage 7's CPU gain is headroom rather than pictures.
   4. **Stage 8,** retiring PsyCross, last.
@@ -394,6 +394,19 @@ So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWa
   - What stays in the PS1 GPU → vitaGL layer is `GR_DrawTriangles`: per vblank, the draws' work before their batch 0.15 ms, the target logs' copies 0.17, the batches' GL calls 0.49, and inside `sceGxmBeginScene`/`EndScene` 0.13 (Y2's `gpu parts`). That is 0.9 of its 3.6 ms; the rest of `GR_DrawTriangles`' time is in none of these parts, and the next thing to measure.
 - **At 60 fps** (Y3, Y4, the shipped threads): the render thread 0.75 ms per vblank lighter, the parse thread 0.72 heavier, late vblanks fewer (D99).
 
+**Runs Y5–Y8** (2026-11-05, D105; this PR's VPK): Y1–Y4 again with the walk's box as ARMv6 SIMD, and a second `gpu parts` line with each entry point's whole time. Means of the route's 50 windows without the last, where the app quits (D105 says why):
+
+| Part | Run | OT walk | PS1 GPU → vitaGL | sum | the walk itself |
+|---|---|---:|---:|---:|---:|
+| the route (50) | Y1 (`nd_direct=0`, D99) | 2.08 | 3.60 | 9.84 | 0.91 |
+| | Y2 (`=1`, D99's box) | 2.06 | 3.56 | 9.74 | 1.35 |
+| | Y5 (`=0`) | 2.11 | 3.54 | 9.81 | 0.93 |
+| | Y6 (`=1`, D105's box) | 1.77 | 3.50 | 9.39 | 1.07 |
+
+- **Before and after: 9.81 → 9.39 ms per vblank** with every layer on the game thread. The walk itself (the OT walk less the GL side's vertex buffers) grows 0.14 ms where D99's box grew it 0.44.
+- **What the PS1 GPU → vitaGL layer is** (Y5, prof.c's `raster` 3.66 ms per vblank from vblank 900): `GR_ClearVRAM` **2.70**, `GR_DrawTriangles` 0.85 (the batches' GL calls in it 0.36, the work before them 0.15, the logs 0.19), the VRAM reads and copies 0.01. The clears are the walk's fill packets turned into `ClearImage`: a per-pixel wrapped loop over the software VRAM and a `glClear` per target. On the render thread at 60 fps (Y7, Y8) they are 5.7 ms per vblank against the draws' 1.5. That is the layer's next target.
+- **At 60 fps** (Y7, Y8): the render thread 0.83 ms per vblank lighter, the parse thread 0.22 heavier, the game thread's wait for the walk 0.10 longer with its busy share unchanged, late vblanks fewer (D105).
+
 
 ---
 
@@ -668,6 +681,12 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
     - the parse thread does 0.72 more, and the game thread waits 0.33 more for it;
     - late vblanks fell (the Stone Hill demo 9.9 → 2.9 per 300, Toasty 0.1 → 0.0, loads 169 → 97).
   - **The default stays 0 (the owner's decision).** A cheaper box in the walk (ARMv6 SIMD minima and maxima, the skip test from the spans) would make it a gain on every thread.
+
+**Then (D105, 2026-11-05): the walk's box as ARMv6 SIMD; `nd_direct=1` proposed as the Vita's default.**
+- **Now:** `em_direct` makes the skip test (`qsub16`, `uadd16`, `uqsub16` per edge) and the box (byte minima of each vertex's `u, v, 255 − u, 255 − v` word, `usub8` + `sel`) on whole words, a quad's shared edge and vertices once. About 100 instructions for a quad's two triangles, against about 260 for D99's rule. Off ARM the same lanes are C, so the host's per-packet check runs this form against D99's rule.
+- **Checked:** `tests/lean`, 8.4 M triangles on the host and 33.6 M with the Vita's compiler under qemu-arm, 0 differ, and mutants caught. Every packet both ways on six host scenarios, 0 differ, every file identical. `host_checks.sh` 279/279 identical with main. Vita3K `nd_direct` 0 against 1: shots, captures and card identical on the same six runs as D99's; `nd_direct=2` with the lane form, 0 of 21.9 M vertices differ.
+- **Hardware (Y5–Y8, 2026-11-05, D105):** the same 18 pictures and card. The K route on one thread 9.81 → 9.39 ms per vblank (−4%; D99 −1%): the walk now grows 0.14 ms where it grew 0.44. Toasty at 60 fps: the render thread −0.83 ms per vblank, the parse thread +0.22 (D99 +0.72), the game thread's wait +0.10 (D99 +0.33) with its busy share unchanged, late vblanks fewer (the Stone Hill demo 9.7 → 3.0 per 300, loads 195 → 108).
+- **Next inside the layer: the clears.** `GR_ClearVRAM` is 2.70 of the "PS1 GPU → vitaGL" layer's 3.66 ms per vblank on the K route, and 5.7 ms per vblank on the render thread at 60 fps (§3.5).
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
