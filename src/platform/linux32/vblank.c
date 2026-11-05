@@ -1,10 +1,12 @@
 /* Deterministic virtual time for the headless linux32 host
  * (docs/porting-plan.md §5): VSync(0) is exactly one vblank, nothing runs on
- * a timer. Also PsyX's scene hooks, which here only handle isbg clears. */
+ * a timer (the clock and VSync itself: common/clock.c, libetc.c, D104). Also
+ * PsyX's scene hooks, which here only handle isbg clears. */
 #include "cheats_port.h"
 #include "host.h"
 #include "lod.h"
 #include "psx_arena.h"
+#include "psx_clock.h"
 #include "psx_hooks.h"
 
 #include <assert.h>
@@ -18,21 +20,8 @@
 
 HostOpts g_host_opts = {.shot_dir = "."};
 
-extern void (*vsync_callback)(void); /* LIBETC.C */
-
-int g_vmode = MODE_NTSC;
-static int s_vblank;
-
-int host_vblank_count(void) { return s_vblank; }
-void host_set_vblank(int vblank) { s_vblank = vblank; }
-
-int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }
-
-int PsyX_Sys_SetVMode(int mode) {
-  int old = g_vmode;
-  g_vmode = mode;
-  return old;
-}
+int host_vblank_count(void) { return psx_clock_count(); }
+void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 
 static int shot_due(int v) {
   int i;
@@ -45,7 +34,7 @@ static int shot_due(int v) {
 }
 
 void host_vblank(void) {
-  int v = ++s_vblank;
+  int v = psx_clock_tick();
 
   for (int i = 0; i < g_host_opts.npokes; i++)
     if (g_host_opts.pokes[i].vblank == v) {
@@ -60,8 +49,7 @@ void host_vblank(void) {
   host_pad_vblank(v);
   psx_cd_vblank();
   psx_spu_vblank();
-  if (vsync_callback)
-    vsync_callback();
+  psx_clock_callback();
   if (g_host_opts.out960)
     host_present_vblank();
 
@@ -106,10 +94,7 @@ void host_vblank(void) {
   }
 }
 
-void PsyX_WaitForTimestep(int count) {
-  while (count-- > 0)
-    host_vblank();
-}
+void psx_platform_vsync(void) { host_vblank(); }
 
 void PsyX_UpdateInput(void) {}
 

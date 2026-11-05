@@ -6,23 +6,23 @@
  * ended: the owner's freeze going into Cliff Town (crash dump 2026-11-03:
  * target 62997, base 2539, 2539 + 62996 = 0xffff).
  *
- * This replays that wait's arithmetic (vblank.c's realtime path, as it is)
- * against a simulated 16-bit counter: frames that take 0-3 vblanks, pauses
+ * This runs that wait's arithmetic (the realtime path's psx_clock_due, in
+ * src/platform/common/clock.c since D104, linked here as it is) against a
+ * simulated 16-bit counter: frames that take 0-3 vblanks, pauses
  * that start the count again, a save state's larger vblank count, across
  * several wraps, starting from the dump's count. Each wait must end within a
  * few vblanks and our count must keep up with the display's. The mutant
  * build (VCOUNT_MUTANT=1) uses the raw counter, as before D90, and must
  * fail. */
+#include "psx_clock.h"
 #include "vcount.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_CATCH_UP 8 /* vblank.c's */
-
 static unsigned s_disp; /* the display's vblanks since boot */
 static VitaVcount s_vc;
-static int s_vblank, s_vcount_base, s_vcount_synced;
+static int s_waits;
 static int s_fail;
 
 static int vcount(void) {
@@ -34,27 +34,29 @@ static int vcount(void) {
 #endif
 }
 
-static int real_vblanks(void) { return vcount() - s_vcount_base; }
+/* sceDisplayWaitVblankStart; a wait that doesn't end gives up (exit 1)
+ * rather than hang the test. */
+static void wait_display(void) {
+  s_disp++;
+  if (++s_waits > 1000) {
+    printf("FAIL: VSync's wait never ends: our vblank %d, display vcount 0x%04x\n",
+           psx_clock_count(), s_disp & 0xffffu);
+    printf("test_vcount: FAIL\n");
+    exit(1);
+  }
+}
 
-/* PsyX_WaitForTimestep's realtime path; -1 if its wait doesn't end. */
+/* The Vita's VSync(0) with realtime=1 (vblank.c psx_platform_vsync):
+ * psx_clock_due, then the vblanks due, each a psx_clock_tick; -1 if the
+ * wait took more vblanks than a frame can ask for. */
 static int wait_for_timestep(int count) {
-  int target, n, waits = 0;
-  if (!s_vcount_synced) {
-    s_vcount_base = vcount() - s_vblank;
-    s_vcount_synced = 1;
-  }
-  target = s_vblank + count;
-  while (real_vblanks() < target) {
-    s_disp++; /* sceDisplayWaitVblankStart */
-    if (++waits > 2 * count + 2)
-      return -1;
-  }
-  n = real_vblanks() - s_vblank;
-  if (n > MAX_CATCH_UP) {
-    s_vcount_base += n - MAX_CATCH_UP;
-    n = MAX_CATCH_UP;
-  }
-  s_vblank += n;
+  int late, n, i;
+  s_waits = 0;
+  n = psx_clock_due(count, vcount, wait_display, &late);
+  if (s_waits > 2 * count + 2)
+    return -1;
+  for (i = 0; i < n; i++)
+    psx_clock_tick();
   return n;
 }
 
@@ -84,7 +86,7 @@ static int play(unsigned start, int frames, unsigned seed) {
   unsigned disp0, paused = 0;
   s_disp = disp0 = start;
   s_vc.valid = 0;
-  s_vblank = s_vcount_synced = 0;
+  psx_clock_set(0);
   srand(seed);
   for (i = 0; i < frames; i++) {
     int r = rand();
@@ -92,30 +94,29 @@ static int play(unsigned start, int frames, unsigned seed) {
     if (r % 20000 == 7) {        /* the options menu: paused, counted afresh */
       s_disp += 3000;
       paused += 3000;
-      s_vcount_synced = 0;
+      psx_clock_resync();
       resyncs++;
     }
     if (r % 30011 == 11) { /* a save state's vblank count (vita_set_vblank) */
-      s_vblank += 200000;
+      psx_clock_set(psx_clock_count() + 200000);
       jumped += 200000;
-      s_vcount_synced = 0;
       resyncs++;
     }
     if (wait_for_timestep(1 + (r >> 8) % 2) < 0) {
       printf("FAIL: VSync's wait never ends at frame %d, vblank %d, display %u (vcount 0x%04x)\n",
-             i, s_vblank, s_disp - disp0, s_disp & 0xffffu);
+             i, psx_clock_count(), s_disp - disp0, s_disp & 0xffffu);
       return -1;
     }
   }
   /* every display vblank but the pauses' counted, less a frame's work at
    * each fresh count */
-  lost = (int)(s_disp - disp0 - paused) - (s_vblank - jumped);
+  lost = (int)(s_disp - disp0 - paused) - (psx_clock_count() - jumped);
   if (lost < 0 || lost > 3 * (resyncs + 1)) {
     printf("FAIL: start %u: our count %d behind the display's\n", start, lost);
     return -1;
   }
   printf("ok: start %u, %d frames, %u display vblanks (%u wraps), our vblank %d\n", start,
-         frames, s_disp - disp0, (s_disp >> 16) - (start >> 16), s_vblank);
+         frames, s_disp - disp0, (s_disp >> 16) - (start >> 16), psx_clock_count());
   return 0;
 }
 
