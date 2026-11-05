@@ -1,4 +1,4 @@
-# The output ring's level control (vita-port-kit's vpk_audio_ring with psx_audio_ring.h's settings, D88, D104)
+# The output ring's level control (vita-port-kit's vpk_audio_ring with psx_audio_ring.h's settings, D88, D107)
 # against a model of the Vita's clocks.
 add_executable(test_audio_ring test_audio_ring.c
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_ring.c")

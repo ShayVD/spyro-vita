@@ -14,7 +14,7 @@
  * plays 44,100 frames a second), so it runs dry only when the game stops:
  * "dry" is then the times it ran out, "cut" the times it dropped back to
  * its level. The port and its thread are vita-port-kit's vpk_audio_out
- * (third_party/vita-port-kit/vita/runtime/audioout, D104). */
+ * (third_party/vita-port-kit/vita/runtime/audioout, D107). */
 #include "vita.h"
 #include "psx_audio_ring.h"
 #include "psx_spu.h"

@@ -15,7 +15,7 @@
  *
  * One producer and one consumer thread, no locks. Portable C, so the host
  * tests it (tests/audio). The ring is vita-port-kit's vpk_audio_ring
- * (third_party/vita-port-kit/vita/runtime/audioout, D104) with this game's
+ * (third_party/vita-port-kit/vita/runtime/audioout, D107) with this game's
  * level settings below; these names map to it. */
 #ifndef PSX_AUDIO_RING_H
 #define PSX_AUDIO_RING_H

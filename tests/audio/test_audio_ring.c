@@ -1,4 +1,4 @@
-/* The output ring (psx_audio_ring.h: vita-port-kit's vpk_audio_ring, D88, D104) against a model of
+/* The output ring (psx_audio_ring.h: vita-port-kit's vpk_audio_ring, D88, D107) against a model of
  * the Vita's clocks: the game posts two vblanks of 735 frames every two
  * display vblanks (30 Hz logic, vblank.c), the display runs at 59.94 Hz,
  * the port takes 512-frame grains at 44,100 Hz. A load stops the game; it

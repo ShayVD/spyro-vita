@@ -2,7 +2,7 @@
 # files, software SPU, XA. No OS window/GPU headers here.
 file(GLOB PLATFORM_COMMON_SRCS CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/src/platform/common/*.c")
-# vita-port-kit's portable modules (third_party/vita-port-kit, vendored: D104)
+# vita-port-kit's portable modules (third_party/vita-port-kit, vendored: D107)
 list(APPEND PLATFORM_COMMON_SRCS
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_ring.c")
 add_library(spyro_platform_common STATIC ${PLATFORM_COMMON_SRCS})
