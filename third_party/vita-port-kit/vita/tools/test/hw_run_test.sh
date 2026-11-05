@@ -6,7 +6,7 @@
 set -euo pipefail
 tools=$(cd "$(dirname "$0")/.." && pwd)
 w=$(mktemp -d "${TMPDIR:-/tmp}/hw_run_test.XXXXXX")
-trap 'kill $(jobs -p) 2>/dev/null; [ "${KEEP:-0}" = 1 ] || rm -rf "$w"' EXIT
+trap 'rc=$?; kill $(jobs -p) 2> /dev/null || true; [ "${KEEP:-0}" = 1 ] || rm -rf "$w"; exit $rc' EXIT
 fails=0
 check() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fails=$((fails + 1)); fi; }
 
