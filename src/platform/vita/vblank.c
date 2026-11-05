@@ -6,14 +6,16 @@
  * would have, so the game's delta time keeps its speed and the audio stays
  * continuous; the picture is shown once per VSync call. realtime=0 keeps the
  * linux32 host's virtual time (D17: VSync(0) is exactly one vblank), so
- * scripted test runs replay exactly. Also PsyX's scene hooks (isbg clears),
- * the same as linux32's. */
+ * scripted test runs replay exactly. The clock, its catch-up arithmetic and
+ * VSync itself are shared with linux32 (common/clock.c, libetc.c, D104).
+ * Also PsyX's scene hooks (isbg clears), the same as linux32's. */
 #include "vita.h"
 #include "vcount.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
 #include "psx_cdnative.h"
+#include "psx_clock.h"
 #include "psx_hooks.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -29,39 +31,24 @@
 #include "PsyX/PsyX_public.h"
 #include "gpu/PsyX_GPU.h"
 
-extern void (*vsync_callback)(void); /* LIBETC.C */
 int host_shot_display(const char *path); /* linux32/png.c */
 
-int g_vmode = MODE_NTSC;
-static int s_vblank;
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
-static int s_vcount_base; /* display vcount at our vblank 0 */
-static int s_vcount_synced; /* 0: s_vcount_base is taken afresh at the next VSync */
 static VitaVcount s_vc;
 static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 
-#define MAX_CATCH_UP 8 /* vblanks run at once after a slow frame; more are dropped */
-
-int vita_vblank_count(void) { return s_vblank; }
+int vita_vblank_count(void) { return psx_clock_count(); }
 
 /* A save state was loaded (D51): its vblank count from now on, counted
  * against the display afresh, and a new stats window. */
 void vita_set_vblank(int vblank) {
-  s_vblank = s_stat_v0 = vblank;
-  s_vcount_synced = 0;
+  psx_clock_set(vblank);
+  s_stat_v0 = vblank;
   s_stat_shown = s_stat_late = 0;
   s_stat_t0 = 0;
 }
-int host_vblank_count(void) { return s_vblank; } /* linux32/gpu_soft.c */
-
-int PsyX_Sys_GetVBlankCount(void) { return s_vblank; }
-
-int PsyX_Sys_SetVMode(int mode) {
-  int old = g_vmode;
-  g_vmode = mode;
-  return old;
-}
+int host_vblank_count(void) { return psx_clock_count(); } /* linux32/gpu_soft.c */
 
 static int shot_due(int v) {
   int i;
@@ -94,7 +81,7 @@ static void cd_report(void) {
 }
 
 static void vblank(void) {
-  int v = ++s_vblank, i;
+  int v = psx_clock_tick(), i;
   SceUInt64 now;
 
   vita_watchdog_vblank(v); /* "where" lines, hang_test= (D73) */
@@ -104,8 +91,7 @@ static void vblank(void) {
   psx_cd_vblank();
   vita_mixer_vblank(); /* psx_spu_vblank on the mixer thread (mixer.c) */
   prof_leave();
-  if (vsync_callback)
-    vsync_callback();
+  psx_clock_callback();
   prof_vblank();
 
   for (i = 0; i < g_vita_opts.npokes; i++)
@@ -208,36 +194,23 @@ static int vcount(void) {
   return vita_vcount_widen(&s_vc, (raw + offset) & 0xffffu); /* 16 bits, as on hardware */
 }
 
-static int real_vblanks(void) {
-  return vcount() - s_vcount_base;
-}
+static void wait_display(void) { sceDisplayWaitVblankStart(); }
 
-void PsyX_WaitForTimestep(int count) {
-  int target, n;
+/* VSync(0) (libetc.c): one vblank with realtime=0; otherwise up to the
+ * display's, every one missed after a late tick (psx_clock_due). */
+void psx_platform_vsync(void) {
+  int n, late;
   if (vita_menu_service())
-    s_vcount_synced = 0; /* the game was paused: start counting again, no catch-up */
+    psx_clock_resync(); /* the game was paused: start counting again, no catch-up */
   if (!g_vita_opts.realtime) {
-    while (count-- > 0)
-      vblank();
+    vblank();
     present();
     return;
   }
-  if (!s_vcount_synced) {
-    s_vcount_base = vcount() - s_vblank;
-    s_vcount_synced = 1;
-  }
-  target = s_vblank + count;
   prof_enter(PROF_WAIT);
-  while (real_vblanks() < target)
-    sceDisplayWaitVblankStart();
+  n = psx_clock_due(1, vcount, wait_display, &late);
   prof_leave();
-  n = real_vblanks() - s_vblank;
-  if (n > count)
-    s_stat_late += n - count;
-  if (n > MAX_CATCH_UP) { /* a load or a stall: don't replay all of it */
-    s_vcount_base += n - MAX_CATCH_UP;
-    n = MAX_CATCH_UP;
-  }
+  s_stat_late += late;
   while (n-- > 0)
     vblank();
   present();

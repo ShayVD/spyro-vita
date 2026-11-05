@@ -76,6 +76,9 @@ long long host_audio_take(long long after, int16_t **pcm, size_t *frames);
 int host_state_option(const char *val); /* 0 = ok */
 int host_state_hash_open(const char *path); /* 0 = ok */
 
+/* readset.c: --present-reads FILE, stage 7a's read audit (D104) */
+int host_reads_open(const char *path, int every); /* 0 = ok */
+
 /* gpu_soft.c: 1024x512 PS1 VRAM, 1-5-5-5 (bit 15 = mask/STP, R in low bits). */
 uint16_t *host_vram(void);
 

@@ -4,7 +4,7 @@
  * file table is the manifest.json it would write. Reads go through two
  * windows of 32 raw sectors, one fread each, so a level load or the XA
  * stream costs one file-system call per 32 sectors. The reading, sniffing,
- * directory walk and SHA-1 are vita-port-kit's discimage (D105); what stays
+ * directory walk and SHA-1 are vita-port-kit's discimage (D108); what stays
  * here is the search of the data folder, the cue sheet, the messages and the
  * disc check. */
 #include "psx_cdimage.h"

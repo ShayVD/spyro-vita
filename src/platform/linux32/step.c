@@ -62,7 +62,7 @@ void host_step_vblank(int vblank) {
       }
       if (strncmp(line, "poke:", 5) == 0) {
         unsigned addr, value;
-        if (sscanf(line + 5, "%x=%x", &addr, &value) == 2) {
+        if (sscanf(line + 5, "%x=%x", &addr, &value) == 2 && PSX_MEM_OK(addr, 4u)) {
           *(uint32_t *)PSX_ARENA(addr) = value;
           host_log("step: poke %08x = %08x at %d", addr, value, vblank);
           snprintf(path, sizeof path, "%s/pad.txt", s_dir);

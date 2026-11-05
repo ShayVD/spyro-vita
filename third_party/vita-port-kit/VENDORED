@@ -1,4 +1,4 @@
 # vita-port-kit, vendored by tools/vendor.sh: do not edit these files here; change the kit and re-vendor.
-commit 03af374c5aa3b14805184c0efa464bba5af293e8
+commit 42069344f0e9743330adc51ead6e3b189cd3527c
 path vita/tools
 path vita/runtime/discimage
