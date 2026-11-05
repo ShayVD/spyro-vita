@@ -17,6 +17,8 @@
 #include "savestate.h"
 
 #include "psx_arena.h"
+#include "psx_clock.h"
+#include "psx_mem.h"
 #include "psx_spu.h"
 #include "psx_walk.h"
 
@@ -41,8 +43,6 @@
 
 extern DRAWENV activeDrawEnv; /* PsyCross LIBGPU.C */
 extern DISPENV activeDispEnv;
-extern int PsyX_Sys_GetVBlankCount(void); /* the platform's vblank counter */
-extern void PsyX_WaitForTimestep(int count); /* the platform's VSync(0) */
 extern void GamestateDraw(void);
 extern unsigned int g_mips_v1; /* mips2c_rt.c */
 
@@ -329,7 +329,7 @@ static void push_capture(int wide) {
   psx_walk_after(commit_slot, &slot, sizeof slot);
   s_frame_wide[slot] = (uint8_t)wide;
   s_qcount++;
-  s_last_push_vblank = PsyX_Sys_GetVBlankCount();
+  s_last_push_vblank = psx_clock_count();
 }
 
 /* A save state was loaded (D51): the queued frames are from before it, and
@@ -392,11 +392,15 @@ int port_present_frame_is_wide(void) {
 /* ---------- PsyCross hooks ---------- */
 
 static int s_suppress_ot; /* logic pass under faithful widescreen */
+static int s_audit_pass;  /* audit: 1 in the in-between pass, 2 in the logic pass */
+static long long s_audit_packets;
+static long long count_packets(const uint32_t *p);
 
 static int ot_pre(u_long *p) {
-  (void)p;
+  if (s_audit_pass == 1)
+    s_audit_packets += count_packets((const uint32_t *)p);
   if (!s_in_game_draw)
-    s_foreign_vblank = PsyX_Sys_GetVBlankCount();
+    s_foreign_vblank = psx_clock_count();
   if (s_suppress_ot) {
     s_n2d = 0;
     return 1;
@@ -418,10 +422,10 @@ static void ot_post(u_long *p) {
  * frame" loops end at once. The snapshot puts D_80075950 back. */
 static int pass_vsync(int mode) {
   (void)mode;
-  return PsyX_Sys_GetVBlankCount() + 1000;
+  return psx_clock_count() + 1000;
 }
 
-/* LIBETC's VSync, timing the waits (the host mixes audio and writes
+/* VSync (libetc.c), timing the waits (the host mixes audio and writes
  * screenshots there; the Vita mixes, presents and waits for the display) so
  * the game's own CPU time can leave them out: --present-stats and
  * interp_budget_us. */
@@ -430,12 +434,12 @@ static long long s_tick_vsync_us;
 static int timed_vsync(int mode) {
   if (mode == 0) {
     long long t = now_us(), d;
-    PsyX_WaitForTimestep(1);
+    psx_platform_vsync();
     d = now_us() - t;
     g_present_stats.us_vsync += d;
     s_tick_vsync_us += d;
   }
-  return PsyX_Sys_GetVBlankCount();
+  return psx_clock_count();
 }
 
 /* ---------- the primitive space (D54) ---------- */
@@ -481,7 +485,7 @@ void PortPolySpace(void) {
  * written since the draw began, from the lower buffer (where a spanning draw
  * starts, and below the upper one) up to the draw's pointer D_800757B0, and
  * the terminator. Before the buffers exist only the terminator. */
-#define OT_TERMINATOR_AT 0x0006BBE0u /* 0x8006BBE0 (order_table.c) */
+#define OT_TERMINATOR_AT PSX_OT_TERMINATOR_OFS /* order_table.c */
 #define OT_TERMINATOR_LEN 0x14       /* its tag and 4 NOP words (port.c) */
 
 static int in_arena(const void *p, uint32_t len);
@@ -526,9 +530,11 @@ static void hooks_init(void) {
 
 /* A pass may write anywhere the draw path writes, but the game only reads
  * some of it again (docs/presentation.md, --present-dirty):
- *  - the scratchpad (first KB of the arena) and g_psx_scratch;
+ *  - the scratchpad (first KB of the arena; in the native build
+ *    g_psx_scratch itself, D106) and g_psx_scratch;
  *  - the game's data, sdata, sbss and bss, 0x8006BBE0-0x8007AA38 (psx.map
- *    main_DATA_START..main_BSS_END): camera, Spyro, g_SonyImage, the globals;
+ *    main_DATA_START..main_BSS_END): camera, Spyro, g_SonyImage, the globals
+ *    (in the native build their own section, D106);
  *  - the level's moby array (m_WasDrawn, animation state, blended transforms);
  *  - the particle space under m_SharedAnimations (AllocateBuffers, 4BEF8.c);
  *  - bytes 0x18-0x1B of every sector header, a cache func_800258F0 reads
@@ -571,12 +577,19 @@ static int count_mobys(void);
 
 static int in_arena(const void *p, uint32_t len) {
   uintptr_t a = (uintptr_t)p;
-  return a >= g_psx_arena_base && len <= PSX_RAM_SIZE &&
-         a - g_psx_arena_base <= PSX_RAM_SIZE - len;
+  return a >= g_psx_arena_base && len <= PSX_MEM_SIZE &&
+         a - g_psx_arena_base <= PSX_MEM_SIZE - len;
 }
 
+/* the native build's data labels are their own section (D106) */
+#if SPYRO_NATIVE_MEM
+#define LABELS_REGION(at, len) ((at) == PSX_ARENA(DATA_LO) && (len) == DATA_HI - DATA_LO)
+#else
+#define LABELS_REGION(at, len) 0
+#endif
+
 static void add_region(void *at, uint32_t len) {
-  if (s_nregions < MAX_REGIONS && len && in_arena(at, len)) {
+  if (s_nregions < MAX_REGIONS && len && (in_arena(at, len) || LABELS_REGION(at, len))) {
     s_regions[s_nregions].at = at;
     s_regions[s_nregions].len = len;
     s_nregions++;
@@ -585,7 +598,9 @@ static void add_region(void *at, uint32_t len) {
 
 static void collect_regions(void) {
   s_nregions = 0;
+#if !SPYRO_NATIVE_MEM /* the native build's is g_psx_scratch (D106) */
   add_region(PSX_ARENA(0x80000000u), sizeof g_psx_scratch);
+#endif
   add_region(PSX_ARENA(DATA_LO), DATA_HI - DATA_LO);
   add_region(g_LevelMobys, (uint32_t)(count_mobys() + 1) * sizeof(Moby));
   add_region(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
@@ -653,8 +668,8 @@ static void snap_take(void) {
   g_present_stats.snapshot_bytes += (long long)need + s_nsectors * 4;
   if (g_present.stats > 1) {
     if (!s_arena_full)
-      s_arena_full = malloc(PSX_RAM_SIZE);
-    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_RAM_SIZE);
+      s_arena_full = malloc(PSX_MEM_SIZE);
+    memcpy(s_arena_full, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   }
   memcpy(s_scratch_snap, g_psx_scratch, sizeof s_scratch_snap);
   s_gte_snap = gteRegs;
@@ -669,9 +684,9 @@ static int scratch_range(uint32_t *lo, uint32_t *hi) {
   if (!in_arena(g_Buffers.m_LowerPolyBuffer, 1) ||
       !in_arena(g_Buffers.m_WorldOTStart, OT_BYTES))
     return 0;
-  *lo = 0x80000000u +
+  *lo = PSX_MEM_PSX +
         (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
-  *hi = 0x80000000u +
+  *hi = PSX_MEM_PSX +
         (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart - g_psx_arena_base) +
         OT_BYTES;
   return 1;
@@ -680,7 +695,7 @@ static int scratch_range(uint32_t *lo, uint32_t *hi) {
 /* Does page `page` differ from the full copy outside the scratch areas? */
 static int page_missed(int page) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
-  uint32_t lo = 0x80000000u + (uint32_t)page * 4096, hi = lo + 4096;
+  uint32_t lo = PSX_MEM_PSX + (uint32_t)page * 4096, hi = lo + 4096;
   uint32_t s_lo, s_hi, k;
   if (lo >= STACK_LO && hi <= STACK_HI)
     return 0;
@@ -688,7 +703,7 @@ static int page_missed(int page) {
     return 1;
   for (k = lo; k < hi; k++)
     if ((k < s_lo || k >= s_hi) &&
-        a[k - 0x80000000u] != s_arena_full[k - 0x80000000u])
+        a[k - PSX_MEM_PSX] != s_arena_full[k - PSX_MEM_PSX])
       return 1;
   return 0;
 }
@@ -700,7 +715,7 @@ static void dirty_check(void) {
   const unsigned char *a = (const unsigned char *)g_psx_arena_base;
   long long n = 0;
   int i;
-  for (i = 0; i < PRESENT_PAGES; i++) {
+  for (i = 0; i < (int)(PSX_MEM_SIZE / 4096); i++) {
     if (memcmp(a + i * 4096, s_arena_full + i * 4096, 4096) == 0)
       continue;
     g_present_stats.dirty_union[i / 32] |= 1u << (i % 32);
@@ -713,7 +728,7 @@ static void dirty_check(void) {
   g_present_stats.dirty_pages += n;
   if (n > g_present_stats.dirty_max)
     g_present_stats.dirty_max = n;
-  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_RAM_SIZE);
+  memcpy((void *)g_psx_arena_base, s_arena_full, PSX_MEM_SIZE);
 }
 
 static void snap_restore(void) {
@@ -1157,10 +1172,108 @@ static void presentation_pass(int wide, int own_state) {
   g_present_stats.us_pass += now_us() - t;
 }
 
+/* ---------- stage 7a's audits (D104, debug only) ---------- */
+
+const PresentReadAudit *g_present_reads;
+
+#define HUD_MAX 1024
+#define HUD_KEEP 64 /* packets whose words are kept, for the report */
+static uint32_t s_hud[2][HUD_MAX]; /* a hash per HUD packet: the in-between pass's, the real frame's */
+static uint32_t s_hud_words[2][HUD_KEEP][PRESENT_HUD_WORDS];
+static int s_nhud[2];
+
+static PresentGsStats *gs_stats(void) {
+  return &g_present_stats.gs[(unsigned)g_Gamestate % PRESENT_GAMESTATES];
+}
+
+/* The packet a PS1 24-bit link points to (psx_mem.h, D100; in the native
+ * build relative to the block, D106); NULL at the terminator's 0xFFFFFF. */
+static const uint32_t *next_packet(const uint32_t *p) {
+  uint32_t a = *p & 0xFFFFFFu;
+  return a == 0xFFFFFFu ? NULL : (const uint32_t *)MEM_OT_NEXT(*p);
+}
+
+static long long count_packets(const uint32_t *p) {
+  long long n = 0;
+  for (; p; p = next_packet(p))
+    n += (*p >> 24) != 0;
+  return n;
+}
+
+/* Each packet's length and words, not its link: the two lists' primitives
+ * sit at different addresses when the world before them differs. */
+void port_present_hud_list(const void *head, const void *tail) {
+  const uint32_t *p = head;
+  int k = s_audit_pass - 1;
+  if (k < 0)
+    return;
+  for (; p && s_nhud[k] < HUD_MAX; p = p == tail ? NULL : next_packet(p)) {
+    uint32_t h = 2166136261u, n = *p >> 24, i;
+    h = (h ^ n) * 16777619u;
+    for (i = 1; i <= n; i++)
+      h = (h ^ p[i]) * 16777619u;
+    if (s_nhud[k] < HUD_KEEP)
+      for (i = 0; i < PRESENT_HUD_WORDS; i++)
+        s_hud_words[k][s_nhud[k]][i] = i <= n ? (i ? p[i] : n << 24) : 0;
+    s_hud[k][s_nhud[k]++] = h;
+  }
+}
+
+static void audit_hud(PresentGsStats *gs) {
+  int i, n = s_nhud[0] < s_nhud[1] ? s_nhud[0] : s_nhud[1];
+  PresentHudDiff *d;
+  for (i = 0; i < n && s_hud[0][i] == s_hud[1][i]; i++)
+    ;
+  if (i == n && s_nhud[0] == s_nhud[1]) {
+    gs->hud_same++;
+    return;
+  }
+  gs->hud_differ++;
+  if (g_present_stats.nhud_diff == PRESENT_HUD_DIFFS)
+    return;
+  d = &g_present_stats.hud_diff[g_present_stats.nhud_diff++];
+  d->vblank = psx_clock_count();
+  d->gamestate = g_Gamestate;
+  d->level = g_LevelId;
+  d->packets[0] = s_nhud[0];
+  d->packets[1] = s_nhud[1];
+  d->first = i;
+  if (i < HUD_KEEP) {
+    memcpy(d->words[0], s_hud_words[0][i], sizeof d->words[0]);
+    memcpy(d->words[1], s_hud_words[1][i], sizeof d->words[1]);
+  }
+}
+
+const char *port_present_region(uint32_t a) {
+  uint32_t lo, hi, m;
+  if (a < STACK_LO)
+    return "low";
+  if (a < STACK_HI)
+    return "stack";
+  if (a >= DATA_LO && a < DATA_HI)
+    return "data";
+  if (scratch_range(&lo, &hi) && a >= lo && a < hi)
+    return "prims";
+  if (in_arena(g_LevelMobys, 1)) {
+    m = 0x80000000u + (uint32_t)((uintptr_t)g_LevelMobys - g_psx_arena_base);
+    if (a >= m && a < m + (uint32_t)(count_mobys() + 1) * sizeof(Moby))
+      return "mobys";
+  }
+  if (in_arena(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE)) {
+    m = 0x80000000u + (uint32_t)((uintptr_t)g_Buffers.m_ParticleSpaceStart - g_psx_arena_base);
+    if (a >= m && a < m + PARTICLE_SPACE)
+      return "particles";
+  }
+  return "level";
+}
+
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp, timed;
+  int wide_pass, logic_wide, interp, timed, shown = 0;
   long long t, t_interp = 0;
+  PresentGsStats *gs = gs_stats();
+  if (g_present_reads)
+    g_present_reads->tick();
   if (g_present.stats) {
     g_present_stats.us_update += now_us() - s_t_update;
     g_present_stats.ticks++;
@@ -1181,6 +1294,8 @@ void PortPresentDraw(void) {
     return;
   }
   hooks_init();
+  if (g_present.audit)
+    gs->ticks++;
   /* Widescreen: one 16:9 draw (the logic draw itself), except in attract
    * demos (or with ws_exact), where the logic must stay the original 4:3 one
    * for the recorded input to replay: there the logic draw stays 4:3 and
@@ -1213,9 +1328,20 @@ void PortPresentDraw(void) {
       int blended = blend_state();
       g_present_stats.us_blend += now_us() - tb;
       if (blended) {
+        long long tp = now_us();
+        s_audit_pass = g_present.audit;
+        s_audit_packets = s_nhud[0] = 0;
+        if (g_present_reads)
+          g_present_reads->pass(1);
         presentation_pass(g_present.widescreen, wide_pass);
+        if (g_present_reads)
+          g_present_reads->pass(0);
+        s_audit_pass = 0;
+        gs->us_pass += now_us() - tp;
+        gs->packets += s_audit_packets;
         push_capture(g_present.widescreen); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
+        shown = 1;
       } else {
         g_present_stats.skipped_interp++;
       }
@@ -1239,9 +1365,20 @@ void PortPresentDraw(void) {
   s_record_2d = logic_wide;
   s_capture_on = !wide_pass;
   s_in_game_draw = 1;
+  s_audit_pass = 2 * g_present.audit;
+  s_nhud[1] = 0;
   game_draw(!wide_pass);
+  s_audit_pass = 0;
   s_in_game_draw = 0;
   s_capture_on = 0;
+  if (g_present.audit && g_present.interp) {
+    if (shown) {
+      gs->interp++;
+      audit_hud(gs);
+    } else {
+      gs->skipped++;
+    }
+  }
   s_record_2d = 0;
   g_present_narrow = 0;
   s_suppress_ot = 0;

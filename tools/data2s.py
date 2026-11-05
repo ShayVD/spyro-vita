@@ -20,6 +20,16 @@ image that start-up copies there (`s1_psx_image`: {PS1 address, image,
 bytes}, zero-terminated; .bss labels need no copy, the arena starts zeroed).
 Game code then sees the same addresses as on a PS1, bit 31 included.
 
+Native memory (--map psx.map --image, decisions D106): the labels stay
+ordinary relocatable symbols, but all of them go into one writable section,
+`spyro_labels`, in PS1 address order, each at its PS1 offset from the first
+(`.org`), so the section is an exact image of PS1 RAM from the first label
+to main_BSS_END (--image-end), holes included (PsyQ's data, which PsyCross
+replaces). Its start is congruent to the PS1 address modulo a page. The
+host maps a PS1 address in that range to `s1_labels + (address - first)`;
+`--extra NAME=ADDR` names a word in a hole (PsyQ's rand seed). The image
+starts at s1_labels and ends at s1_labels_end.
+
 abscheck: a raw `.word` whose value lies in PS1 main RAM (0x80000000-0x801FFFFF)
 may be an unrelocated pointer. Each one must be listed in --allow (one
 `SYMBOL+0xOFFSET` per line, # comments) or the conversion fails.
@@ -41,11 +51,13 @@ scratch_relocs = []  # words holding scratchpad addresses (0x1F800000-0x1F8003FF
 psx_addr = {}    # --map: symbol -> PS1 address
 psx_images = []  # (PS1 address, image label, end label, PS1 span)
 psx_labels = itertools.count()
+image_chunks = []  # --image: (PS1 address, label, lines)
 
 
-def convert(path, root, allow, problems, only=None):
+def convert(path, root, allow, problems, only=None, image=False):
     """only: set of labels to keep (FILE.s:LABEL,LABEL); their data is
-    emitted in place, everything else in the file is dropped."""
+    emitted in place, everything else in the file is dropped.
+    image: each label's lines go to image_chunks instead (--image)."""
     out = [f"/* {os.path.relpath(path, root)} */"]
     label, offset = None, 0
     full = out
@@ -56,7 +68,7 @@ def convert(path, root, allow, problems, only=None):
         if open_img:
             full.append(f"{open_img.pop()}:")
 
-    if only:
+    if only or image:
         out = []
     for raw in open(path):
         line = re.sub(r"^/\*.*?\*/", "", raw.strip()).strip()
@@ -67,6 +79,15 @@ def convert(path, root, allow, problems, only=None):
         m = re.match(r"^(?:dlabel|glabel|jlabel)\s+(\S+)", line)
         if m:
             label, offset = m.group(1), 0
+            if image:
+                if only and label not in only:
+                    out = []
+                    continue
+                if label not in psx_addr:
+                    raise SystemExit(f"{path}: {label} is not in the map")
+                full = out = [f".globl {label}", f".type {label}, %object", f"{label}:"]
+                image_chunks.append((psx_addr[label], label, out))
+                continue
             close_image()
             if only:
                 out = full if label in only else []
@@ -94,13 +115,15 @@ def convert(path, root, allow, problems, only=None):
                 raise SystemExit(f"{path}: unknown section {name}")
             close_image()
             section = SECTIONS[name]
-            full.append(SECTIONS[name])
+            if not image:
+                full.append(SECTIONS[name])
         elif op in (".data", ".bss", ".rodata", ".sdata", ".sbss"):
             close_image()
             section = SECTIONS[op]
-            full.append(SECTIONS[op])
+            if not image:
+                full.append(SECTIONS[op])
         elif op == ".size":
-            if not psx_addr:  # absolute symbols have no size
+            if not psx_addr or image:  # absolute symbols have no size
                 out.append(f".size {args}")
         elif op == ".align":
             out.append(f".balign {1 << int(args, 0)}")
@@ -138,7 +161,26 @@ def convert(path, root, allow, problems, only=None):
         else:
             raise SystemExit(f"{path}: unhandled directive {op}")
     close_image()
-    return full
+    return [] if image else full
+
+
+def image_section(lo, hi, extra):
+    """--image: the labels in PS1 order at their offsets, in one section."""
+    page = lo & 0xFFF
+    lines = ['.section spyro_labels,"aw",%progbits', ".balign 4096",
+             f".space 0x{page:X}", ".globl s1_labels", "s1_labels:"]
+    end = lo
+    for addr, label, chunk in sorted(image_chunks, key=lambda c: c[0]):
+        if not lo <= addr < hi:
+            raise SystemExit(f"--image: {label} at 0x{addr:08X} is outside 0x{lo:08X}-0x{hi:08X}")
+        lines.append(f".org 0x{page + addr - lo:X}")
+        lines += chunk
+    lines += [f".org 0x{page + hi - lo:X}", ".globl s1_labels_end", "s1_labels_end:"]
+    for name, addr in extra:
+        if not lo <= addr < hi:
+            raise SystemExit(f"--extra {name}: 0x{addr:08X} is outside the image")
+        lines += [f".globl {name}", f".set {name}, s1_labels + 0x{addr - lo:X}"]
+    return lines
 
 
 def read_map(path):
@@ -157,6 +199,12 @@ def main():
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--allow", help="abscheck allowlist")
     ap.add_argument("--map", help="psx.map: place every label at its PS1 address (D23)")
+    ap.add_argument("--image", action="store_true",
+                    help="with --map: the labels as one section, an image of PS1 RAM (D106)")
+    ap.add_argument("--image-end", type=lambda v: int(v, 0), default=0x8007AA38,
+                    help="--image: where the image ends (main_BSS_END)")
+    ap.add_argument("--extra", action="append", default=[],
+                    help="--image: NAME=ADDR, a symbol at a PS1 address in a hole")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
     allow = set()
@@ -174,15 +222,20 @@ def main():
         if ":" in f:
             f, labels = f.split(":", 1)
             only = set(labels.split(","))
-        lines += convert(os.path.join(a.root, f), a.root, allow, problems, only)
+        lines += convert(os.path.join(a.root, f), a.root, allow, problems, only, a.image)
     if problems:
         sys.stderr.write("abscheck: raw words that look like PS1 RAM pointers:\n  "
                          + "\n  ".join(problems) + "\n")
         return 1
+    if a.image:
+        if not a.map:
+            raise SystemExit("--image needs --map")
+        extra = [(e.split("=")[0], int(e.split("=")[1], 0)) for e in a.extra]
+        lines += image_section(min(c[0] for c in image_chunks), a.image_end, extra)
     # Start-up code (src/game/port.c) rebases these onto the port's scratchpad.
     lines += [".data", ".balign 4", ".globl s1_scratch_relocs", "s1_scratch_relocs:"]
     lines += [f".long {r}" for r in scratch_relocs] + [".long 0"]
-    if a.map:
+    if a.map and not a.image:
         # Bytes to copy: the image's own span, but never past the next label's
         # PS1 address (host and PS1 alignment padding can differ).
         addrs = sorted(set(psx_addr[lbl] for lbl in psx_addr))

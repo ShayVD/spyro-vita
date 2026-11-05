@@ -15,7 +15,14 @@
 /* PS1 RAM address -> host address in the arena (src/platform/common/arena.c).
  * Used by patches/spyro-1-port for the decomp's hard-coded RAM addresses. */
 extern uintptr_t g_psx_arena_base;
+#if SPYRO_NATIVE_MEM
+/* The native build (decisions D106): the game's memory is a block from the
+ * heap starting at main_BSS_END's page, 0x8007A000 (psx_arena.h
+ * PSX_MEM_PSX); the patches name only overlay space and its end. */
+#define PSX_ADDR(a) (g_psx_arena_base + ((uint32_t)(a) - 0x8007A000u))
+#else
 #define PSX_ADDR(a) (g_psx_arena_base + ((uint32_t)(a) - 0x80000000u))
+#endif
 
 /* A pointer the game may hold as a KUSEG RAM alias (0x00000000-0x001FFFFF,
  * the same RAM as 0x80000000): on the PS1 an access through it lands in
@@ -25,12 +32,19 @@ extern uintptr_t g_psx_arena_base;
  * keeps the scratchpad at the arena's base, so those addresses go to
  * g_psx_kernel_ram (src/platform/common/arena.c) instead. NULL stays NULL. */
 extern unsigned char g_psx_kernel_ram[0x10000];
+#if SPYRO_NATIVE_MEM
+/* the rest of RAM by its PS1 address (src/game/port.c, D106) */
+uintptr_t psx_kuseg_host(uint32_t a);
+#define PSX_KUSEG_RAM_(a) psx_kuseg_host(a)
+#else
+#define PSX_KUSEG_RAM_(a) (g_psx_arena_base + (a))
+#endif
 #define PSX_KUSEG(p)                                                           \
   ((__typeof__(p))(                                                            \
       (uint32_t)(uintptr_t)(p) - 1u < 0xFFFFu                                  \
           ? (uintptr_t)g_psx_kernel_ram + (uint32_t)(uintptr_t)(p)             \
       : (uint32_t)(uintptr_t)(p) - 0x10000u < 0x1F0000u                        \
-          ? g_psx_arena_base + (uint32_t)(uintptr_t)(p)                        \
+          ? PSX_KUSEG_RAM_((uint32_t)(uintptr_t)(p))                           \
           : (uintptr_t)(p)))
 
 /* Packed and tagged addresses (decisions D97, D100): the native build's

@@ -32,8 +32,14 @@
  * tables: vertex, colour and clip-word indices come pre-multiplied by 4). */
 #define WORD_AT(base, bytes) (*(const u32 *)((const u8 *)(base) + (bytes)))
 
-/* The scratchpad (0x1F800000 on the PS1) is at the arena base. */
+/* The scratchpad (0x1F800000 on the PS1) is at the arena base; in the
+ * native build it is its own array (psx_arena.h, D106). */
+#if SPYRO_NATIVE_MEM
+extern unsigned char g_psx_scratch[1024];
+#define SCRATCH_BASE ((u32)(uintptr_t)g_psx_scratch)
+#else
 #define SCRATCH_BASE ((u32)g_psx_arena_base)
+#endif
 
 /* GTE commands, as the asm's opcodes (gte_inline.h). */
 #define gte_rtps() m2c_gte_0x180001()

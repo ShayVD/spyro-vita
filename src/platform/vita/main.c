@@ -233,7 +233,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D25) and a
+/* newlib's heap (the arena's 16 MB-aligned 2 MB comes out of it, D25; the
+ * native build's block, D106) and a
  * small main stack: the game's MIPS stack lives in the arena, and kh1's
  * 52 MiB stack failed on hardware while Vita3K took it (D7). */
 int _newlib_heap_size_user = 128 * 1024 * 1024;
@@ -288,7 +289,8 @@ static int parse_res(const char *v) {
 
 static void parse_poke(const char *v) {
   unsigned vb, addr, value;
-  if (g_vita_opts.npokes < VITA_MAX_POKES && sscanf(v, "%u:%x=%x", &vb, &addr, &value) == 3) {
+  if (g_vita_opts.npokes < VITA_MAX_POKES && sscanf(v, "%u:%x=%x", &vb, &addr, &value) == 3 &&
+      PSX_MEM_OK(addr, 4u)) {
     g_vita_opts.pokes[g_vita_opts.npokes].vblank = (int)vb;
     g_vita_opts.pokes[g_vita_opts.npokes].addr = addr;
     g_vita_opts.pokes[g_vita_opts.npokes++].value = value;
@@ -605,7 +607,12 @@ int main(int argc, char **argv) {
   vita_audio_init();
   vita_xa_ahead_init();
 
+#if SPYRO_ARENA_MOVED
   port_arena_symbols(vita_log);
+#else
+  vita_log("game memory at %p, data labels at %p (native, D106)", (void *)g_psx_arena_base,
+           (void *)s1_labels);
+#endif
   psx_mcrd_set_root(VITA_DATA_DIR "/save");
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);

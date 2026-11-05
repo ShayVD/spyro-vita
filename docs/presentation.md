@@ -271,7 +271,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 | Where | Change | Off |
 |---|---|---|
 | `patches/spyro-1-port/0005-presentation-hooks.patch` | `main.c`: `PortPresentBeforeUpdate()` before `GamestateUpdate`, `PortPresentDraw()` instead of `GamestateDraw()`. `camera.c` `CameraUpdateMatrices` and `draw.c` `func_8001A050`: `PortProjectionHook` on the projection matrix. | `PortPresentDraw` calls `GamestateDraw`; the hook returns at once |
-| `patches/PsyCross/0005-presentation-hooks.patch` | `g_psyxVSyncHook` (LIBETC `VSync`); `g_psyxDrawOTagPre/Post` (LIBGPU `DrawOTag`) | NULL |
+| `patches/PsyCross/0005-presentation-hooks.patch` | `g_psyxVSyncHook` (`VSync`, our own `src/platform/common/libetc.c` since D104; the patch still declares it in `libetc.h`); `g_psyxDrawOTagPre/Post` (LIBGPU `DrawOTag`) | NULL |
 | `tools/mips2c/hints.yaml`, `mips2c.py` | `before` hints: `func_80022A2C` HUD path at `0x80022D2C` (OFX) and `0x80022D78` (R11) | `PORT_WS_HUD_*` is the identity |
 | `patches/spyro-1-port/0010-primitive-space-hook.patch` | `GamestateDraw`: `PortPolySpace()` after it points the draw at its buffer (D54) | returns at once |
 | `src/game/order_table.c` `func_800168DC` | records HUD-OT primitives for the 2D squeeze | records nothing |

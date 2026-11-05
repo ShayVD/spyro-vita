@@ -4,7 +4,9 @@
  * base | low bits. On linux32 it sits at 0x80000000 itself, or with
  * SPYRO_ARENA_AT at another such address, as on the Vita (decisions D97).
  * The native build (SPYRO_NATIVE_MEM, D100) decodes them relative to the
- * base instead (src/game/psx_mem.h), so its arena may be anywhere. */
+ * base instead (src/game/psx_mem.h), so its arena may be anywhere; since
+ * D106 it is only overlay space (psx_arena.h), from the heap, or on linux32
+ * with SPYRO_ARENA_AT at that page, for tests. */
 #include "psx_arena.h"
 
 #include <stdio.h>
@@ -12,7 +14,13 @@
 #include <string.h>
 
 uintptr_t g_psx_arena_base;
+#if SPYRO_NATIVE_MEM
+/* the game's scratchpad (the arena's first KB elsewhere), aligned as the
+ * PS1's (D106) */
+unsigned char g_psx_scratch[1024] __attribute__((aligned(1024)));
+#else
 unsigned char g_psx_scratch[1024];
+#endif
 /* PS1 kernel RAM (0x00000000-0x0000FFFF) for the game's stray stores through
  * small integers (PSX_KUSEG, src/compat/port_prefix.h). The arena's own first
  * KB is the scratchpad, so they can't go there. */
@@ -20,16 +28,17 @@ unsigned char g_psx_kernel_ram[0x10000];
 
 #if defined(__linux__)
 #include <sys/mman.h>
-#ifndef PSX_ARENA_AT
+#if !defined(PSX_ARENA_AT) && !SPYRO_NATIVE_MEM
 #define PSX_ARENA_AT PSX_RAM_BASE
 #endif
-#else
+#endif
+#if !defined(__linux__) || SPYRO_NATIVE_MEM
 #include <malloc.h>
 #endif
 
 #if defined(__linux__)
 static void *map_at(uint32_t at, int prot) {
-  void *p = mmap((void *)(uintptr_t)at, PSX_RAM_SIZE, prot,
+  void *p = mmap((void *)(uintptr_t)at, PSX_MEM_SIZE, prot,
                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
   if (p == MAP_FAILED || (uintptr_t)p != at) {
     fprintf(stderr, "psx_arena_init: mmap at 0x%08x failed\n", (unsigned)at);
@@ -41,7 +50,9 @@ static void *map_at(uint32_t at, int prot) {
 
 void psx_arena_init(void) {
   void *p;
-#if defined(__linux__)
+#if SPYRO_NATIVE_MEM && !(defined(__linux__) && defined(PSX_ARENA_AT))
+  p = memalign(0x1000, PSX_MEM_SIZE);
+#elif defined(__linux__)
   p = map_at(PSX_ARENA_AT, PROT_READ | PROT_WRITE);
 #if SPYRO_ARENA_MOVED && !SPYRO_NATIVE_MEM
   /* The moved arena's aliases of PS1 RAM (mips2c_rt.h) must not reach other
@@ -50,8 +61,6 @@ void psx_arena_init(void) {
   map_at(PSX_RAM_BASE, PROT_NONE);
   map_at(PSX_ARENA_AT & 0x7FFFFFFFu, PROT_NONE);
 #endif
-#elif SPYRO_NATIVE_MEM
-  p = memalign(0x1000, PSX_RAM_SIZE);
 #else
   p = memalign(0x1000000, PSX_RAM_SIZE);
 #endif
@@ -66,6 +75,7 @@ void psx_arena_init(void) {
     exit(1);
   }
 #endif
-  memset(p, 0, PSX_RAM_SIZE);
+  memset(p, 0, PSX_MEM_SIZE);
   g_psx_arena_base = (uintptr_t)p;
 }
+

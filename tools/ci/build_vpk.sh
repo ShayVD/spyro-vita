@@ -3,7 +3,9 @@
 # (.github/workflows/build.yml, decisions D57). No disc data and no matching
 # build: the game's layout comes from tools/layout/psx.map.
 #   docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh [BUILD_DIR]
-# Leaves BUILD_DIR/spyro-vita.vpk (default build/vita).
+# Leaves BUILD_DIR/spyro-vita.vpk (default build/vita). SPYRO_CMAKE_ARGS adds
+# CMake options (-e SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=OFF: the moved arena
+# instead of native memory, decisions D106).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 out="${1:-build/vita}"
@@ -25,7 +27,7 @@ vdpm list vitaGL vitaShaRK libmathneon SceShaccCgExt sdl2 taihen
 
 cmake -S . -B "$out" -G Ninja -DSPYRO_HOST=vita \
   -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake" \
-  -DPython3_EXECUTABLE="$(command -v python3)"
+  -DPython3_EXECUTABLE="$(command -v python3)" ${SPYRO_CMAKE_ARGS:-}
 cmake --build "$out"
 
 # What went into the VPK, and the Vita's rules for its sce_sys art.
