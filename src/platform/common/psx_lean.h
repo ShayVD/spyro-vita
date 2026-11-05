@@ -70,8 +70,100 @@ static inline int lean_box_tile(uint32_t b) {
   return !(u0 & 31) && u1 == u0 + 31 && !(v0 & 31) && v1 == v0 + 31;
 }
 
+/* D105: the two rules above on whole words, for the walk. On the Vita
+ * ARMv6's SIMD instructions; elsewhere the same lane operations in C, so
+ * the host's checks run this form against the rules above (native_draw.c's
+ * --nd-direct-check, tests/lean). */
+#if defined(__ARM_FEATURE_SIMD32) && !defined(LEAN_SIMD_C)
+static inline uint32_t lean_qsub16(uint32_t a, uint32_t b) {
+  uint32_t r;
+  __asm__("qsub16 %0, %1, %2" : "=r"(r) : "r"(a), "r"(b));
+  return r;
+}
+static inline uint32_t lean_uadd16(uint32_t a, uint32_t b) {
+  uint32_t r;
+  __asm__("uadd16 %0, %1, %2" : "=r"(r) : "r"(a), "r"(b) : "cc");
+  return r;
+}
+static inline uint32_t lean_uqsub16(uint32_t a, uint32_t b) {
+  uint32_t r;
+  __asm__("uqsub16 %0, %1, %2" : "=r"(r) : "r"(a), "r"(b));
+  return r;
+}
+/* each byte the lower of a's and b's: usub8 sets GE where a >= b */
+static inline uint32_t lean_min8(uint32_t a, uint32_t b) {
+  uint32_t r;
+  __asm__("usub8 %0, %1, %2\n\tsel %0, %2, %1" : "=&r"(r) : "r"(a), "r"(b) : "cc");
+  return r;
+}
+#else
+static inline uint32_t lean_qsub16(uint32_t a, uint32_t b) {
+  uint32_t r = 0;
+  int k;
+  for (k = 0; k < 32; k += 16) {
+    int d = (int16_t)(a >> k) - (int16_t)(b >> k);
+#ifndef LEAN_MUTANT /* tests/lean's mutant: no saturation */
+    d = d > 32767 ? 32767 : d < -32768 ? -32768 : d;
+#endif
+    r |= ((uint32_t)d & 0xFFFF) << k;
+  }
+  return r;
+}
+static inline uint32_t lean_uadd16(uint32_t a, uint32_t b) {
+  return (((a & 0xFFFF) + (b & 0xFFFF)) & 0xFFFF) | ((a >> 16) + (b >> 16)) << 16;
+}
+static inline uint32_t lean_uqsub16(uint32_t a, uint32_t b) {
+  uint32_t r = 0;
+  int k;
+  for (k = 0; k < 32; k += 16) {
+    const uint32_t x = a >> k & 0xFFFF, y = b >> k & 0xFFFF;
+    r |= (x > y ? x - y : 0) << k;
+  }
+  return r;
+}
+static inline uint32_t lean_min8(uint32_t a, uint32_t b) {
+  uint32_t r = 0;
+  int k;
+  for (k = 0; k < 32; k += 8) {
+    const uint32_t x = a >> k & 0xFF, y = b >> k & 0xFF;
+    r |= (x < y ? x : y) << k;
+  }
+  return r;
+}
+#endif
+
+/* Nonzero if the edge between the x/y words a and b spans >= 1024 x or
+ * >= 512 y (lean_skipped's rule). qsub16 saturates, so a difference past
+ * 16 bits stays past the limit; +1023 and +511 put the allowed differences
+ * at 0..2046 and 0..1022, and uqsub16 leaves only what is above them. */
+static inline uint32_t lean_edge_far(uint32_t a, uint32_t b) {
+  return lean_uqsub16(lean_uadd16(lean_qsub16(a, b), 0x01FF03FFu), 0x03FE07FEu);
+}
+
+/* A vertex's u/v word (word 2) as the box's lanes: u, v, 255 - u, 255 - v.
+ * The lowest of three such words, byte by byte, is the box with its high
+ * half inverted (lean_box_of). */
+static inline uint32_t lean_uvw(uint32_t w) { return (w & 0xFFFF) | ~w << 16; }
+
+/* The box of those lowest bytes m, snapped as lean_box snaps it. The spans
+ * u1 - u0 and v1 - v0 have no borrow between them (u1 >= u0). */
+static inline uint32_t lean_box_of(uint32_t m) {
+  uint32_t b = (m & 0xFFFF) | (~m & 0xFFFF0000u);
+  const uint32_t d = (b >> 16) - (b & 0xFFFF);
+  if (!((b ^ b >> 16) & 0xE0E0) && (d & 0xFF) >= 15 && d >> 8 >= 15)
+    b = (b & 0xE0E0u) * 0x10001u + 0x1F1F0000u;
+  return b;
+}
+
+/* lean_box(t, 3) in the lane form (the walk's em_direct shares a quad's
+ * two vertices between its triangles; nd_direct=2's check runs this) */
+static inline uint32_t lean_box_lanes(const uint32_t *t) {
+  return lean_box_of(lean_min8(lean_min8(lean_uvw(t[2]), lean_uvw(t[LEAN_VW + 2])),
+                               lean_uvw(t[2 * LEAN_VW + 2])));
+}
+
 /* The walk's side: a triangle that isn't skipped, its box into each
- * vertex's spare bytes */
+ * vertex's spare bytes (the rule; the walk itself runs D105's form) */
 static inline void lean_direct_tri(uint32_t *t) {
   const uint32_t b = lean_box(t, 3);
   t[4] = t[LEAN_VW + 4] = t[2 * LEAN_VW + 4] = b;
