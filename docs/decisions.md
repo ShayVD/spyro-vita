@@ -2526,3 +2526,37 @@ Record each decision with its date, what was chosen, and why.
   - **The GPU's work is unchanged.**
 - **Summary refreshed:** D96's 63.5% / 94.1% readable C (81.9% / 97.1% with B2); D98's 9.73 ms per vblank, with the measured emulation layers 64% of it; what's done and what's in flight (D99, D100); the next steps after those. The "Order and what can run at once" table gained a status column.
 - **Hardware:** none run. 7c and 7f each list a hardware pair that needs the owner's yes first.
+
+## 2026-11-05: mods (proposal)
+
+### D102. Proposal: code mods are built in as C behind a MODS menu section, off by default; data-only mods are dropped in by the player and applied as a changed-sector overlay on the verified retail disc, refused if they touch code
+- **Status: proposal.** Nothing is built. The plan is in `docs/mods-research.md` §3, written after researching the existing Spyro 1 mods (§1 there). The owner chose this direction: build in the mods we can, and support drop-in for the others.
+- **Why not apply the mods as they are:**
+  - Almost every Spyro 1 mod is MIPS code spliced into `SCUS_942.28`, shipped as an xdelta or PPF patch.
+  - The port runs neither the executable's code nor the overlays' code. Overlays are read as data only (`docs/porting-plan.md` §4.1, step 3). The Vita allows no generated code.
+  - D60 refuses a non-retail executable or WAD.
+  - A patch that changes code and data would therefore half-apply if let through.
+- **Built-in mods:**
+  - Each mod is written as our own C from the decomp, in `src/game/mods/`, hooked by a numbered `patches/spyro-1-port/` patch.
+  - Each is a row in a MODS section (`g_menu_mods` in `src/platform/vita/menu_mods.c`), off by default, with a host `--mod` flag.
+  - Mods are written against named variables, so stage 4 doesn't break them. They are off in attract demos.
+  - Randomizers and other rows that change progress save to `save/mods/<mod>-<seed>/card0`, never the normal card. A save state records which mods were on.
+  - Rows based on mods without a licence ship only with their author's permission. Credits go in the README and on each row's help line.
+- **Drop-in mods:**
+  - The player puts the author's `.xdelta`/`.ppf`, or a whole patched image, in `ux0:data/spyro/mods/` and picks it with a DISC MOD row. It takes effect at the next start.
+  - On first use the port keeps only the sectors that differ from the retail image, as `changed.bin` plus an index, and serves them over the retail image, which is still verified as in D60 and never written.
+  - The mod is refused, with a panel, if any changed sector lies in `SCUS_942.28` or in a level overlay's code. The code ranges come from the WAD header and the matching build's overlay sizes and hashes.
+  - Saves and states go to `save/mods/<id>/`.
+- **Not chosen:**
+  - running the mods' MIPS code (no interpreter);
+  - a generic GameShark address engine (it breaks when stage 4 makes the data labels ordinary globals; wanted codes become named rows);
+  - plugin modules (deferred until stages 4 and 7 settle the game's internals);
+  - co-op (set aside: large, and the handheld has one controller).
+- **Checks each mod must pass when built:**
+  - with every mod off, `tools/host_checks.sh` byte-identical to main;
+  - a host script showing the mod's effect, and for randomizers, one seed giving one layout across reloads;
+  - Vita3K;
+  - hardware with the owner's yes.
+
+  The drop-in path is tested with synthetic sectors only. No game data or mod file goes into git.
+- **Open:** an in-tree VCDIFF decoder or the xdelta3 library (a new dependency); confirming that Grim Garden's patch changes data only.
