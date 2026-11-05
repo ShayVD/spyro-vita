@@ -13,10 +13,12 @@
  * difference (the game's vblanks follow the display's 59.94 Hz, the port
  * plays 44,100 frames a second), so it runs dry only when the game stops:
  * "dry" is then the times it ran out, "cut" the times it dropped back to
- * its level. */
+ * its level. The port and its thread are vita-port-kit's vpk_audio_out
+ * (third_party/vita-port-kit/vita/runtime/audioout, D104). */
 #include "vita.h"
 #include "psx_audio_ring.h"
 #include "psx_spu.h"
+#include "../../../third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.h"
 
 #include <SDL2/SDL.h>
 #include <psp2/audioout.h>
@@ -34,6 +36,7 @@
 static PsxAudioRing s_ring;       /* pushed by the mixer thread, pulled by the output thread */
 static int s_port = -1;
 static SceUID s_out_thread;
+static VpkAudioOut s_out;      /* the port and the output thread: a grain pulled, then played */
 unsigned g_vita_audio_short; /* mixer=3: grains the output thread padded with silence */
 
 static SDL_AudioDeviceID s_dev;
@@ -75,18 +78,6 @@ void vita_audio_close(void) {
   }
 }
 
-static int out_main(SceSize args, void *argp) {
-  static short buf[2][GRAIN][2]; /* the port plays one while we fill the other */
-  int k = 0;
-  (void)args;
-  (void)argp;
-  for (;; k ^= 1) {
-    psx_audio_ring_pull(&s_ring, buf[k], GRAIN);
-    sceAudioOutOutput(s_port, buf[k]);
-  }
-  return 0;
-}
-
 /* mixer=3: the ring's counts since the last call into the mixer line's
  * (dry: ran out; cut: dropped back to its level; short: grains with
  * silence), and its own line. The output thread's counts, read here
@@ -119,20 +110,19 @@ void vita_audio_report(int vblank) {
 }
 
 static void out_init(void) {
-  int vol[2] = {SCE_AUDIO_VOLUME_0DB, SCE_AUDIO_VOLUME_0DB};
+  static const VpkAudioOutConfig c = {SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN, RATE, 100, "spyro_audio_out",
+                                      OUT_PRIORITY, SCE_KERNEL_CPU_MASK_USER_1, 0x4000, NULL, NULL};
   SceUID th;
-  s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN, RATE, SCE_AUDIO_OUT_MODE_STEREO);
+  s_port = vpk_audio_out_open(&s_out, &s_ring, &c); /* 100% of 0 dB */
   if (s_port < 0) {
     vita_log("audio: sceAudioOutOpenPort failed: %08x", (unsigned)s_port);
     return;
   }
   psx_audio_ring_init(&s_ring);
-  sceAudioOutSetVolume(s_port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
-  th = sceKernelCreateThread("spyro_audio_out", out_main, OUT_PRIORITY, 0x4000, 0,
-                             SCE_KERNEL_CPU_MASK_USER_1, NULL);
-  if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {
+  th = vpk_audio_out_start(&s_out);
+  if (th < 0) {
     vita_log("audio: no output thread (%08x)", (unsigned)th);
-    sceAudioOutReleasePort(s_port);
+    vpk_audio_out_close(&s_out);
     s_port = -1;
     return;
   }

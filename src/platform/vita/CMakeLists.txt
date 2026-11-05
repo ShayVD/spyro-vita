@@ -33,7 +33,8 @@ set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/gpu_soft_names.h")
 add_executable(spyro_vita ${VITA_SRCS}
-  "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c")
+  "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c"
+  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c")
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}" "${PSYCROSS_DIR}/src")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}

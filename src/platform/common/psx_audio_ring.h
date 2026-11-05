@@ -14,9 +14,13 @@
  * made (audio.wav) don't change; only what the device plays is resampled.
  *
  * One producer and one consumer thread, no locks. Portable C, so the host
- * tests it (tests/audio). */
+ * tests it (tests/audio). The ring is vita-port-kit's vpk_audio_ring
+ * (third_party/vita-port-kit/vita/runtime/audioout, D104) with this game's
+ * level settings below; these names map to it. */
 #ifndef PSX_AUDIO_RING_H
 #define PSX_AUDIO_RING_H
+
+#include "../../../third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_ring.h"
 
 #define PSX_AUDIO_RING_FRAMES 16384 /* a power of two */
 #define PSX_AUDIO_RING_LOW 2304     /* frames: the low point held (a 512-frame grain, two late vblanks and some) */
@@ -24,39 +28,26 @@
 #define PSX_AUDIO_RING_MAX 6615     /* frames: ~150 ms; above it, back to PRIME */
 #define PSX_AUDIO_RING_WINDOW 16384 /* frames played between the controller's steps: ~0.37 s */
 #define PSX_AUDIO_RING_RISE 2.0f    /* frames a grain: a dip of a vblank is forgotten in ~4 s */
-#define PSX_AUDIO_RING_NO_CUT 0xFFFFFFFFu
+#define PSX_AUDIO_RING_NO_CUT VPK_AUDIO_RING_NO_CUT
 
-typedef struct {
-  short buf[PSX_AUDIO_RING_FRAMES][2];
-  unsigned wr;  /* frames pushed (producer) */
-  unsigned rd;  /* frames played (consumer) */
-  unsigned cut; /* producer -> consumer: drop what is before this */
-  /* the consumer's */
-  unsigned frac; /* between rd and rd + 1, of 65536 */
-  unsigned step; /* frames read per frame played, 16.16 */
-  int priming;   /* filling to PRIME: play silence */
-  float low;     /* the low point: the lowest level, rising PSX_AUDIO_RING_RISE a grain */
-  unsigned played; /* frames played in this window */
-  float rate;    /* the step - 1 */
-  float drift;   /* the controller's integral: the clocks' ratio - 1 */
-  /* counts since the caller last cleared them (the consumer's) */
-  unsigned underruns; /* times the ring ran out */
-  unsigned silent;    /* grains with any silence in them */
-  unsigned trimmed;   /* frames dropped to come back to PRIME */
-  unsigned trims;
-  unsigned grains;
-  unsigned long long level_sum;
-  unsigned level_min;
-} PsxAudioRing;
+typedef VpkAudioRing PsxAudioRing;
 
-void psx_audio_ring_init(PsxAudioRing *r);
+static inline void psx_audio_ring_init(PsxAudioRing *r) {
+  static const VpkAudioRingConfig c = {PSX_AUDIO_RING_FRAMES, 1, PSX_AUDIO_RING_LOW, PSX_AUDIO_RING_PRIME,
+                                       PSX_AUDIO_RING_MAX, PSX_AUDIO_RING_WINDOW, PSX_AUDIO_RING_RISE};
+  vpk_audio_ring_init(r, &c);
+}
 /* The producer: frames of s16 stereo in. */
-void psx_audio_ring_push(PsxAudioRing *r, const short *pcm, int frames);
+static inline void psx_audio_ring_push(PsxAudioRing *r, const short *pcm, int frames) {
+  (void)vpk_audio_ring_push(r, pcm, frames);
+}
 /* The producer: drop everything pushed so far (a save state was loaded). */
-void psx_audio_ring_clear(PsxAudioRing *r);
+#define psx_audio_ring_clear vpk_audio_ring_clear
 /* The consumer: the next frames to play. */
-void psx_audio_ring_pull(PsxAudioRing *r, short (*out)[2], int frames);
+static inline void psx_audio_ring_pull(PsxAudioRing *r, short (*out)[2], int frames) {
+  (void)vpk_audio_ring_pull(r, out, frames);
+}
 /* frames read per frame played, in parts per million from 1 */
-int psx_audio_ring_ppm(const PsxAudioRing *r);
+#define psx_audio_ring_ppm vpk_audio_ring_ppm
 
 #endif
