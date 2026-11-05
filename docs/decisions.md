@@ -2578,7 +2578,7 @@ Record each decision with its date, what was chosen, and why.
   - `expand_direct` replaces `expand_lean` for the buffer. A listed triangle is used as it is; any other is converted in place (`lean_convert`). Then per triangle: the atlas look-up through D92's memo (`amemo_find`, `expand_lean`'s look-up as a function), the kind for the program runs, and an 8-byte side entry for each vertex (the atlas offset, then the filter and wrap flags `expand_lean` keeps in `tcx`, `tcy`).
   - The slab's vertices are the vertex buffer (20 bytes a vertex, the box as attribute 3) and the side entries a second one (attributes 4 and 6). The same values reach the same attributes as from `s_lbuf`, and the programs are the same. Nothing is copied but by `glBufferData`.
   - The target logs copy the slab's vertices as before: the replay (D51's save states, `StoreImage`'s backgrounds, shots) reads neither the spare bytes nor a skipped triangle's corners (area 0, as the original's skipped).
-  - **The render thread's command** (`C_VERTS`) carries the buffer's ranges. With `render_thread=0` the GL side reads them where `GR_UpdateVertexBuffer` is called, and writes into PsyCross's own buffer, which nothing reads after the draws.
+  - **The render thread's command** (`C_VERTS`) carries the ranges. With `render_thread=0` the GL side reads them at `GR_UpdateVertexBuffer` and writes into PsyCross's own buffer, which nothing reads after the draws.
   - **Only in the lean path:** `g_nd_direct_ok` is `s_lean && gpu_fused == 1`, set where the options change (`gl_set_options`, at start-up), which the game thread waits for and which joins the walk first. A buffer walked direct and drawn another way can't happen; if it did, its spare bytes go back to the vertex cache's mark and it is counted.
   - **In-between frames at 60 fps** are lists of their own (present.c's passes run the renderers again), so they are walked direct like any other.
 - **Diagnostics:**
@@ -2598,8 +2598,8 @@ Record each decision with its date, what was chosen, and why.
     | route B | 2,289,935 | 0 | 11,292,268 (11,292,191) | 56/56 |
     | whole-game tour (100,000 vblanks, every level, both endings, the credits) | 23,655,787 | 0 | 106,138,614 (106,138,402) | 141/141 |
 
-    The triangles not made direct are the ones the PS1 GPU skips (32 in the demos). No range table filled.
-  - **The check bites:** a build whose walk listed a quad's second triangle without its box fails on the first frames (104,915 of 256,799 packets differ by vertex 2,200).
+    The triangles not made direct are the ones the PS1 GPU skips. No range table filled.
+  - **The check bites:** a walk that lists a quad's second triangle without its box: 104,915 of 256,799 packets differ by vertex 2,200.
   - **`native_draw=2` with direct** (`MODE=dir2`, `--native-draw-parse`: every polygon packet of the renderers parsed by `nd_fast`, all of them direct): the demos 7,533,990 packets, gems 5,962,897, route A 8,145,423, 0 differ; 26/26, 19/19 and 55/55 files identical.
   - **`tools/host_checks.sh`** (default switches, so the host's `native_draw=0`) against a build of main `82d05ce` (`build/base`): all 279 files byte-identical (demo 26, the whole tour 141, routes A and B 56 each; `logs/d99-hc-compare.txt`).
   - **Oracle replay** (`build/linux32-ref`, the four capture sets of D98: cap3, cap5-fairy, `run14-oracle-tour`, `run19-oracle-labels`; `logs/d99-replay`): cap3 329 PASS and 9 NOEXIT, cap5-fairy 261 PASS and 7 NOEXIT (the capture-side samples, as in D69), the tour 1,858 PASS, the labels run 1,852 PASS; **0 FAIL**. The credits overlay's `func_credits_8007BFD0` first ran out of time under the Mac's load (signal 14, the replay's alarm) and passes all 18 samples in each set with `SPYRO_REPLAY_TIMEOUT=600` (D97's note). No game function changed.
@@ -2616,7 +2616,8 @@ Record each decision with its date, what was chosen, and why.
 
   - **`nd_direct=2`** on the gems script, plain and with `tex_filter=1`: each 4,516 vertex buffers, 21,949,809 vertices compared attribute by attribute with `expand_lean`'s, **0 differ**, 0 triangles of another kind; the pictures are main's (but two captures behind the same Vita3K notice).
   - **`nd_direct=0`** (this VPK's old path): main's but `win-3500`, 280 pixels round the small Spyro at the right edge, the capture D92 saw change between two runs of one build.
-  - Vita3K's "pipelines compiled" notice comes in runs of either path; Vita3K itself crashed in the first try of 3 runs (main's VPK once, this one's twice, once before the game drew anything), each rerun went through.
+  - Vita3K's "pipelines compiled" notice shows in runs of either path. Vita3K itself crashed in 3 first tries (main's VPK once), each rerun went through.
+- **After merging main `32c498d`** (D100's decode sites, D101, D102; my PsyCross patch renumbered 0014 after D100's 0013, which touches only `libgpu.h`): the direct A/B with the per-packet check, 0 differ and every file identical, on the default build (demos 26/26, gems 19/19, route A 55/55) and on D100's native-memory build (`-DSPYRO_NATIVE_MEM=ON`: demos 26/26, route A 55/55); ctest 15 of 15 (`gte` skipped, as on main). Vita3K gems against main's CI VPK (run 41993260680) with this merge's VPK (`logs/d99-vpk-3.vpk`, SHA-1 `37d056cf…`): `nd_direct` 1 and 2 each 17/17 shots, 17/17 captures and the card identical; the check 21,949,809 vertices, 0 differ.
 - **Hardware** (2026-11-05, the owner's Vita over `hw_run.sh`, approved by the owner in this session's chat; VPK `logs/d99-vpk-2.vpk`, SHA-1 `f60b62d2…`, built from `937d6e6`, the same code as VPK 1; logs `logs/hw-y1`…`y4`, gitignored). All four reached `frames=`, no crash dump, the owner's files put back each time. Afterwards main's eboot (`32c498d`, CI run 41993260680, `2ce798da…`) went back on the Vita, read back identical. The VPK's `sce_sys` (LiveArea art from the gitignored `disc/livearea`, D59) stayed: the runner had already replaced the one before, so which art was there isn't known.
   - **The same pictures:** Y1 (`nd_direct=0`) and Y2 (`=1`), all 18 pictures (9 shots and the GPU's own frame at each) and the memory card identical.
   - **The K route, every layer on the game thread** (X4's switches; `native_share.py`, means of the route's 51 windows, ms per vblank):
@@ -2646,13 +2647,12 @@ Record each decision with its date, what was chosen, and why.
     - **The render thread** (the wall at 60 fps, D81) does 0.75 ms per vblank less, 19% of its CPU work.
     - **The parse thread does 0.72 ms more,** and the game thread waits 0.33 ms more for it at its join.
     - **Late vblanks fell** wherever there were any. One run each, so read them as a direction.
-    - The render thread's "busy" time per picture is not a measure of work here. In Artisans' windows 7,500–9,300 Y4's is 16.4 ms a picture (98%) with 0 late vblanks: the present waits a whole display period (its GPU wait 1.2 → 4.8 ms) while the game thread waits for the picture to be shown. Y3 has such a phase in the Stone Hill demo. The parts above are the work.
+    - The render thread's "busy" time is not work here: in Artisans' windows 7,500–9,300 Y4's is 16.4 ms a picture with 0 late vblanks, its present waiting a whole display period (Y3 has such a phase in the Stone Hill demo).
 - **Default: `nd_direct=0` for now, the owner's decision.**
   - For: the same pictures and card, less work on the render thread, fewer late vblanks.
   - Against: the total CPU is about the same, and the game thread waits a third of a millisecond longer for the walk.
   - Making the walk's box cheaper (below) would make it a gain on every thread.
 - **Not done:**
   - **A cheaper box in the walk:** in a triangle every pair of vertices is an edge, so the skip test is the x and y spans; and the spans, like the box, are byte- and halfword-wise minima and maxima that ARMv6's SIMD (`usub8`/`ssub16` with `sel`) computes for three vertices in a few instructions, against about 50 cycles a triangle now. `nd_direct=2` in Vita3K checks the result against `expand_lean`'s.
-  - **Writing the walk's vertices straight into the slab** (PsyCross's `g_vertexBuffer` as a pointer the render thread's slabs take turns as): it would save the parse thread's copy of each buffer (`rt_GR_UpdateVertexBuffer`'s `memcpy`, about 80 KB a list), at the cost of a PsyCross patch on every use of the buffer and an earlier wait for a free slab.
-  - **GPU-visible memory without `glBufferData`'s copy** (vitaGL's `vglAllocFromScratch` and `vglBufferData`, memory kept 3 frames): the side stream could be written there directly. Not tried: lifetime against the render thread's slabs needs care, and the copy is the smaller part.
+  - **The walk writing straight into the slab** (PsyCross's buffer as a pointer), saving the parse thread's copy of about 80 KB a list; and **the side stream in vitaGL's scratch memory** (`vglAllocFromScratch`, `vglBufferData`), saving a `glBufferData` copy.
   - **The rest of the translation** (`GR_DrawTriangles`: `sync_pages`' pass, the logs' copies, the batches' GL calls, vitaGL's own work and waits) is unchanged; the `gpu parts` line is there to measure it.
