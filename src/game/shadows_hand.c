@@ -201,8 +201,8 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       u32 fa, fb, k, w;
       ma = AT32(ma + ((af1 & 0xFF) << 2) + 0x24);
       mb = AT32(mb + ((af1 >> 8) << 2) + 0x24);
-      fa = ((ma << 11) >> 10) + (u32)g_psx_arena_base;
-      fb = ((mb << 11) >> 10) + (u32)g_psx_arena_base;
+      fa = MEM_ANIM_HALF(ma);
+      fb = MEM_ANIM_HALF(mb);
       AT32(scr + 0x0) = AT32(fa + 0x0);
       AT32(scr + 0x4) = AT32(fa + 0x4);
       AT32(scr + 0x8) = AT32(fb + 0x0);
@@ -267,7 +267,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       const u32 af = AT8(spyro + 0x18), fr = AT8(spyro + 0x1E);
       u32 m = MIPS_KUSEG(AT32(models + (af << 2) + 0x38));
       m = AT32(m + (fr << 2) + 0x24);
-      src = ((m << 11) >> 10) + (u32)g_psx_arena_base;
+      src = MEM_ANIM_HALF(m);
       p = scr + 1;
     }
     (void)p;

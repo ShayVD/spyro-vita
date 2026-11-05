@@ -1,6 +1,8 @@
 /* Hand-written replacements for mips2c units (cmake/mips2c.cmake M2C_HAND),
  * by PS1 address, so the oracle replay (oracle_replay.c) can call them as it
  * calls translated entry points. */
+
+#if !SPYRO_NATIVE_MEM /* the oracle replay's index: arena build only; D100 */
 #include "mips2c_rt.h"
 
 #define HAND(addr, name)                                                       \
@@ -510,3 +512,5 @@ const M2cEntry m2c_gen_index[] = {
     GEN(0x80058864u, func_80058864),
     {0, 0, 0},
 };
+
+#endif /* !SPYRO_NATIVE_MEM */

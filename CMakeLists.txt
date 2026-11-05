@@ -90,6 +90,24 @@ endif()
 if(SPYRO_ARENA_MOVED)
   add_compile_definitions(SPYRO_ARENA_MOVED=1)
 endif()
+# The native build (docs/native-plan.md stage 4, decisions D97, D100): no
+# mips2c unit linked, so no aliases of PS1 RAM (MIPS_KUSEG and HPTR are plain
+# casts); every packed or tagged address decodes in src/game/psx_mem.h. Step
+# 4c keeps the arena at 0x80000000; the oracle replay stays on the arena
+# build.
+option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM (D100)" OFF)
+if(SPYRO_NATIVE_MEM)
+  if(SPYRO_ARENA_MOVED)
+    message(FATAL_ERROR "SPYRO_NATIVE_MEM: the arena stays at 0x80000000 until step 4d (D100)")
+  endif()
+  add_compile_definitions(SPYRO_NATIVE_MEM=1)
+endif()
+# Debug: list the translated and hand C's accesses through an alias of PS1
+# RAM (mips2c_rt.h MIPS_KUSEG; decisions D100).
+option(SPYRO_KUSEG_AUDIT "Log every site where MIPS_KUSEG maps an alias" OFF)
+if(SPYRO_KUSEG_AUDIT)
+  add_compile_definitions(SPYRO_KUSEG_AUDIT=1)
+endif()
 
 include(cmake/psycross.cmake)
 include(cmake/platform_common.cmake)

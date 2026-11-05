@@ -11,6 +11,7 @@
 
 #include "mips2c_rt.h"
 #include "native_draw.h" /* D82: native_draw's check in HAND_PICK */
+#include "psx_mem.h"
 
 #include <string.h>
 
@@ -299,6 +300,15 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
 #if NGTE
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif SPYRO_NATIVE_MEM
+/* The native build (D100) links no mips2c unit: the hand C always, and no
+ * stack arguments (only the units read them). */
+#define HAND_RENDERER(name, hand)                                              \
+  u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    (void)a4, (void)a5, (void)a6, (void)a7;                                    \
+    return HAND_PICK(name, hand, a0, a1, a2, a3);                              \
+  }
 #else
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
@@ -338,9 +348,17 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
  * --ngte-fx; D98) the native GTE maths, else the register file */
 extern int g_ngte_fx;
 #define HAND_UNIT2(name) (g_ngte_fx ? name##_ngte : name##_ndr)
+#if SPYRO_NATIVE_MEM
+/* no unit to check against: fast_render=1's build against 2's */
+#define HAND_CHECK_UNIT(name, hand, a0, a1, a2, a3)                            \
+  hand_check(#name, hand, HAND_UNIT2(name), a0, a1, a2, a3)
+#else
+#define HAND_CHECK_UNIT(name, hand, a0, a1, a2, a3)                            \
+  hand_check_unit(#name, name##_gen__m2c, hand, HAND_UNIT2(name), a0, a1, a2, a3)
+#endif
 #define HAND_PICK_UNIT(name, hand, a0, a1, a2, a3)                             \
   (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
-   : g_hand_check        ? hand_check_unit(#name, name##_gen__m2c, hand, HAND_UNIT2(name), a0, a1, a2, a3) \
+   : g_hand_check        ? HAND_CHECK_UNIT(name, hand, a0, a1, a2, a3)          \
    : g_nd_check          ? nd_check(#name, HAND_UNIT2(name), a0, a1, a2, a3)    \
                          : HAND_UNIT2(name)(a0, a1, a2, a3))
 #if NGTE && NGTE_MATH
@@ -349,6 +367,14 @@ extern int g_ngte_fx;
 #elif NGTE
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ndr(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif SPYRO_NATIVE_MEM
+#define HAND_RENDERER_UNIT(name, hand)                                         \
+  u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_ndr(u32, u32, u32, u32);                                          \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    (void)a4, (void)a5, (void)a6, (void)a7;                                    \
+    return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                         \
+  }
 #else
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
@@ -385,6 +411,13 @@ extern int g_ngte_fx;
 #define HAND_UNIT_FN(name, hand) HAND_UNIT_FN_(name, hand, hand_check)
 /* For a function whose callers read its result: the check compares it too. */
 #define HAND_UNIT_FN_V0(name, hand) HAND_UNIT_FN_(name, hand, hand_check_v0)
+#if SPYRO_NATIVE_MEM
+#define HAND_UNIT_FN_(name, hand, check)                                       \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    (void)a4, (void)a5, (void)a6, (void)a7;                                    \
+    return hand(a0, a1, a2, a3);                                               \
+  }
+#else
 #define HAND_UNIT_FN_(name, hand, check)                                       \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
@@ -408,5 +441,6 @@ extern int g_ngte_fx;
     g_mips_sp = sp_;                                                           \
     return r_;                                                                 \
   }
+#endif
 
 #endif

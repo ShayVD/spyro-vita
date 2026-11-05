@@ -28,6 +28,7 @@
  * PsxWalkThread.submitted). */
 #include "psx_walk.h"
 #include "psx_arena.h"
+#include "../../game/psx_mem.h"
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -114,7 +115,7 @@ static uintptr_t place(uint32_t a) {
 }
 
 static uintptr_t next_packet(uintptr_t packet) {
-  return place(*(const uint32_t *)packet & 0xFFFFFFu);
+  return place(MEM_OT_OFS(*(const uint32_t *)packet));
 }
 
 static int vram_frozen(void) { return on_walker() ? s_job.frozen : g_psyxVramFrozen; }

@@ -126,7 +126,12 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
 
 /* PS1 KUSEG RAM mirror: addresses below 2 MB are the arena (every memory
  * access in translated code goes through it, tools/mips2c). */
-#if SPYRO_ARENA_MOVED
+#if SPYRO_NATIVE_MEM
+/* The native build (decisions D100) links no translated code and has no
+ * aliases of PS1 RAM: the hand C's HPTR is a cast, and the addresses the
+ * game packs or tags decode in psx_mem.h. */
+#define MIPS_KUSEG(a) ((u32)(a))
+#elif SPYRO_ARENA_MOVED
 /* A moved arena (the Vita's, decisions D25; linux32's with SPYRO_ARENA_AT,
  * D97) is at some 16 MB-aligned 0x8Y000000, not 0x80000000, so two more
  * aliases of PS1 RAM reach it: 0x80000000 | offset (the game's tag ORs onto
@@ -147,6 +152,20 @@ static inline __attribute__((always_inline)) u32 mips2c_kuseg(u32 a) {
 #define MIPS_KUSEG(a) mips2c_kuseg((u32)(a))
 #else
 #define MIPS_KUSEG(a) ((u32)(a) < 0x200000u ? (u32)g_psx_arena_base + (u32)(a) : (u32)(a))
+#endif
+#if SPYRO_KUSEG_AUDIT
+/* cmake -DSPYRO_KUSEG_AUDIT=ON (decisions D100): every MIPS_KUSEG (and so
+ * HPTR) records the call sites where the mapping changed the address, an
+ * alias of PS1 RAM the native build doesn't have; the list goes to stderr
+ * at exit. */
+u32 mips2c_kuseg_audit(u32 a, u32 mapped, const char *file, int line);
+#undef MIPS_KUSEG
+#define MIPS_KUSEG(a) mips2c_kuseg_audit((u32)(a), MIPS_KUSEG_AUDIT_MAP((u32)(a)), __FILE__, __LINE__)
+#if SPYRO_ARENA_MOVED
+#define MIPS_KUSEG_AUDIT_MAP(a) mips2c_kuseg(a)
+#else
+#define MIPS_KUSEG_AUDIT_MAP(a) ((a) < 0x200000u ? (u32)g_psx_arena_base + (a) : (a))
+#endif
 #endif
 
 /* An OT tag (len << 24 | 0x80000000) that the code XORs with an arena
