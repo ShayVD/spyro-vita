@@ -70,8 +70,8 @@ enum {
 enum { EDGE_SET, EDGE_XY0, EDGE_XY1, EDGE_A, EDGE_B, EDGE_C, EDGE_WORDS };
 #define EDGE_SIZE (EDGE_WORDS * 4u)
 
-#define TAG_F3 MIPS_ARENA_TAG(0x84000000u)
-#define TAG_G3 MIPS_ARENA_TAG(0x86000000u)
+#define TAG_F3 MEM_TAG(0x84000000u)
+#define TAG_G3 MEM_TAG(0x86000000u)
 /* A colour word's command byte: POLY_G3's 0x30 less this is POLY_F3's. */
 #define G3_TO_F3 0x10000000u
 
@@ -220,7 +220,7 @@ static void ChainBegin(Chain *ch) {
 /* Links the last primitive to this one (its tag word, made of the last one's
  * length and this one's address) and makes this one the last. */
 static void ChainLink(Chain *ch) {
-  AT32(MIPS_KUSEG(ch->prev)) = ch->tag ^ ch->prim;
+  AT32(MIPS_KUSEG(ch->prev)) = MEM_TAG_LINK(ch->tag, ch->prim);
   ch->prev = ch->prim;
 }
 
@@ -256,7 +256,7 @@ static void ChainEnd(Chain *ch, u32 slot) {
   if (ch->prim == ch->first)
     return;
   tail = AT32(slot);
-  AT32(MIPS_KUSEG(ch->prev)) = ch->tag ^ MIPS_ARENA_TAG(0x80000000u);
+  AT32(MIPS_KUSEG(ch->prev)) = MEM_TAG_END(ch->tag);
   AT32(slot) = ch->prev;
   if (tail) {
     const u32 t = MIPS_KUSEG(tail);

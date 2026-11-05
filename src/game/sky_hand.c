@@ -43,9 +43,9 @@ enum {
 };
 
 /* POLY_F3 and POLY_G3 tag lengths, as the asm's OT tag constants (an
- * arena-pointer XOR, MIPS_ARENA_TAG, decisions D25). */
-#define TAG_F3 MIPS_ARENA_TAG(0x84000000u)
-#define TAG_G3 MIPS_ARENA_TAG(0x86000000u)
+ * arena-pointer XOR, MIPS_ARENA_TAG, D25; psx_mem.h MEM_TAG, D100). */
+#define TAG_F3 MEM_TAG(0x84000000u)
+#define TAG_G3 MEM_TAG(0x86000000u)
 
 /* Clip flags, as the asm builds them below a vertex's screen x/y word
  * shifted left 5: above, below, left of and right of the screen. */
@@ -252,7 +252,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
       } else
 #endif
       {
-        AT32(prev_tag) = tag ^ prim;
+        AT32(prev_tag) = MEM_TAG_LINK(tag, prim);
         prev_tag = prim;
       }
       xy0 = (u32)((s32)f0 >> 5);
@@ -337,7 +337,7 @@ done:
     /* end the chain and put it in the OT's last slot, after what's there */
     u32 ot = MIPS_KUSEG(*(u32 *)g_WorldOT);
     u32 tail = AT32(ot + 0x3FF8);
-    AT32(prev_tag) = tag ^ MIPS_ARENA_TAG(0x80000000u);
+    AT32(prev_tag) = MEM_TAG_END(tag);
     AT32(ot + 0x3FF8) = prev_tag;
     if (tail) {
       u32 t = MIPS_KUSEG(tail);

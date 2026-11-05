@@ -1,0 +1,197 @@
+diff --git a/src/loaders.c b/src/loaders.c
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -312,8 +312,16 @@
+     PATCH_POINTER2(((SimpleModel *)m)->m_Verts, m);
+     PATCH_POINTER2(((SimpleModel *)m)->m_Colors, m);
+     PATCH_POINTER2(((SimpleModel *)m)->m_Faces, m);
++#if SPYRO_NATIVE_MEM
++    // Spyro port (D100): the tag is bit 0, which a model's address never
++    // has (psx_mem.h MEM_MODEL_SIMPLE), not bit 31
++    if ((u_int)pModel & 3)
++      PortFatal("SimpleModel %p not word-aligned", (void *)pModel);
++    return (Model *)((u_int)pModel | 1);
++#else
+     return (Model *)((u_int)pModel & 0x7FFFFFFF); // Unset the top bit to
+                                                   // indicate it's a SimpleModel
++#endif
+   }
+ 
+   for (i = 0; i < 8; ++i) {
+@@ -321,7 +329,19 @@
+       // The top bit is unset, because it's used to indicate mesh collision
+       // models So we want to take the top bit from m->m_CollisionModels[i]
+       // rather than pModel
++#if SPYRO_NATIVE_MEM
++      // Spyro port (D100): the offset's top bit becomes the pointer's bit 0
++      // (psx_mem.h MEM_COLL_TAGGED), so the arena may sit below 2 GB
++      {
++        u_int off = (u_int)m->m_CollisionModels[i];
++        u_int at = (u_int)m + (off & 0x7FFFFFFF);
++        if (at & 3)
++          PortFatal("collision model %08x not word-aligned", at);
++        m->m_CollisionModels[i] = (void *)(at | off >> 31);
++      }
++#else
+       PATCH_POINTER(m->m_CollisionModels[i], (u_int)m & 0x7FFFFFFF);
++#endif
+     }
+   }
+ 
+@@ -357,7 +377,13 @@
+         // TODO: This breaks 8MB, which sucks, consider fixing with a FIX_BUGS
+         // define. Which would mean changing the renderer to use an offset
+         // instead of a pointer.
++#if SPYRO_NATIVE_MEM
++        // Spyro port (D100): the address's low 21 bits (psx_mem.h
++        // MEM_ANIM21); with the arena not 2 MB-aligned the sum may carry
++        *p = (*p & 0xffe00000) | ((*p + (u_int)m->m_Data) & 0x1fffff);
++#else
+         *p += (u_int)m->m_Data & 0x1fffff;
++#endif
+         ++p;
+         if ((*p & 0xffff) != 0) {
+           *p += (((int)m->m_Data - (int)p + 4) >> 2) & 0xffff;
+@@ -702,7 +728,11 @@
+   for (i = 0; g_LevelMobys[i].m_State != 0xff; i++) {
+ 
+     // Check non-shaded marker
++#if SPYRO_NATIVE_MEM
++    if (!MEM_MODEL_SIMPLE(g_Models[g_LevelMobys[i].m_Class])) { // D100
++#else
+     if ((int)g_Models[g_LevelMobys[i].m_Class] < 0) {
++#endif
+       MobyUpdateCollision(&g_LevelMobys[i]); // Initialize normal Moby
+     } else {
+       MobySetShaded(&g_LevelMobys[i]); // Initialize shaded Moby
+@@ -1014,7 +1044,11 @@
+ 
+     // Compute space of the original model buffer
+     // (up to Moby class 250, the Crystal Dragon, which is always the last one)
++#if SPYRO_NATIVE_MEM
++    modelSpaceLeft = (int)MEM_MODEL_PTR(g_Models[250]) - (int)g_Buffers.m_ModelData; // D100
++#else
+     modelSpaceLeft = (int)g_Models[250] - (int)g_Buffers.m_ModelData;
++#endif
+ 
+     // Full read if it fits
+     if (g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length <=
+@@ -1258,8 +1292,14 @@
+         (g_LevelHeader.m_ModelOffsets[0] - g_LevelHeader.m_ModelDataOffset));
+ 
+     for (i = 0; i < 512; ++i) {
++#if SPYRO_NATIVE_MEM
++      // Spyro port (D100): the arena may cross a 16 MB line; compare the
++      // addresses, tag cleared
++      if (MEM_MODEL_PTR(g_Models[i]) < (uintptr_t)g_Buffers.m_SharedAnimations) {
++#else
+       if (((int)g_Models[i] & 0xffffff) <
+           ((int)g_Buffers.m_SharedAnimations & 0xffffff)) {
++#endif
+         g_Models[i] = nullptr;
+       }
+     }
+@@ -1554,8 +1594,14 @@
+ 
+     // Clear stale Moby model pointers
+     for (i = 0; i < MODEL_COUNT; ++i) {
++#if SPYRO_NATIVE_MEM
++      // Spyro port (D100): the arena may cross a 16 MB line; compare the
++      // addresses, tag cleared
++      if (MEM_MODEL_PTR(g_Models[i]) < (uintptr_t)g_Buffers.m_SharedAnimations) {
++#else
+       if (((int)g_Models[i] & 0xffffff) <
+           ((int)g_Buffers.m_SharedAnimations & 0xffffff)) {
++#endif
+         g_Models[i] = nullptr;
+       }
+     }
+diff --git a/src/overlays/moby_update.c b/src/overlays/moby_update.c
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -5051,7 +5051,11 @@
+           if (candidate->m_CollisionGroup == 0) {
+             continue;
+           }
++#if SPYRO_NATIVE_MEM
++          if (!MEM_COLL_TAGGED(candidate->m_CollisionGroup)) { // D100
++#else
+           if ((int)candidate->m_CollisionGroup >= 0) {
++#endif
+             continue;
+           }
+ 
+\ No newline at end of file
+@@ -17093,7 +17097,11 @@
+                iter2++, iter++) {
+             if (iter != moby && iter2->m_State < 0x80 &&
+                 iter2->m_CollisionGroup != 0 &&
++#if SPYRO_NATIVE_MEM
++                MEM_COLL_TAGGED(iter2->m_CollisionGroup)) { // D100
++#else
+                 (int)iter2->m_CollisionGroup < 0) {
++#endif
+               VecSub(&delta, &iter->m_Position, &moby->m_Position);
+               distance = ABS2(delta.x) + ABS2(delta.y);
+               if (distance < 0x6000) {
+\ No newline at end of file
+@@ -18699,7 +18707,11 @@
+           }
+ 
+           if (candidate2->m_CollisionGroup != 0) {
++#if SPYRO_NATIVE_MEM
++            if (!MEM_COLL_TAGGED(candidate2->m_CollisionGroup) && // D100
++#else
+             if ((int)candidate2->m_CollisionGroup >= 0 &&
++#endif
+                 candidate2->m_Class != 417) {
+               continue;
+             }
+\ No newline at end of file
+@@ -27798,7 +27810,11 @@
+ 
+         while (iter < g_DynMobys) {
+           if (iter != moby && iter->m_State < 0x80 &&
++#if SPYRO_NATIVE_MEM
++              iter->m_CollisionGroup != 0 && MEM_COLL_TAGGED(iter->m_CollisionGroup)) { // D100
++#else
+               iter->m_CollisionGroup != 0 && (int)iter->m_CollisionGroup < 0) {
++#endif
+             VecSub(&vec, &iter->m_Position, &moby->m_Position);
+             dist = ABS2(vec.x) + ABS2(vec.y);
+             if (dist < 0x6000) {
+\ No newline at end of file
+diff --git a/src/overlays/balloonist.c b/src/overlays/balloonist.c
+--- a/src/overlays/balloonist.c
++++ b/src/overlays/balloonist.c
+@@ -593,8 +593,14 @@
+       } else {
+         dataBuffer = (int *)0x801FE000;
+       }
++#if SPYRO_NATIVE_MEM
++      // Spyro port (D100): the model's address with the tag bit cleared
++      Memcpy(dataBuffer, (void *)MEM_MODEL_PTR(g_Models[416]), 0x4000);
++      ptrDiff = ((int)dataBuffer - (int)MEM_MODEL_PTR(g_Models[416]));
++#else
+       Memcpy(dataBuffer, g_Models[416], 0x4000);
+       ptrDiff = ((int)dataBuffer - (int)g_Models[416]);
++#endif
+       g_Models[416] = (Model *)dataBuffer;
+       g_Models[416]->m_Animations[0] =
+           (AnimationHeader *)((int)g_Models[416]->m_Animations[0] + ptrDiff);
+@@ -602,7 +608,15 @@
+           (void *)((int)g_Models[416]->m_Animations[0]->m_Faces + ptrDiff);
+       g_Models[416]->m_Animations[0]->m_Colors =
+           (void *)((int)g_Models[416]->m_Animations[0]->m_Colors + ptrDiff);
++#if SPYRO_NATIVE_MEM
++      // Spyro port (D100): the 21-bit frame pointer moves without carrying
++      // into the frame word's other fields (psx_mem.h MEM_ANIM21)
++      g_Models[416]->m_Animations[0]->m_Frames[0].m.m_Data =
++          (g_Models[416]->m_Animations[0]->m_Frames[0].m.m_Data & 0xffe00000) |
++          ((g_Models[416]->m_Animations[0]->m_Frames[0].m.m_Data + ptrDiff) & 0x1fffff);
++#else
+       g_Models[416]->m_Animations[0]->m_Frames[0].m.m_Data += ptrDiff;
++#endif
+     }
+     break;
+   }

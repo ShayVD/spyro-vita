@@ -1090,7 +1090,7 @@ static void LinkBuckets(const Faces *f) {
 
 static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u8 *spyro = (const u8 *)g_Spyro;
-  const u32 *models = HPTR(const u32, *(u32 *)g_Models) + 0x38 / 4;
+  const u32 *models = HPTR(const u32, MEM_MODEL_AT(*(u32 *)g_Models)) + 0x38 / 4;
   const u32 *cam = (const u32 *)g_Camera;
   u32 *const rec0 = (u32 *)(WORK + W_PARTS);
   u32 *rec = rec0;
