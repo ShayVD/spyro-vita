@@ -72,8 +72,17 @@ endif()
 # mips2c unit linked, so no aliases of PS1 RAM (MIPS_KUSEG and HPTR are plain
 # casts); every packed or tagged address decodes in src/game/psx_mem.h,
 # relative to the arena's base, so SPYRO_ARENA_AT may be any page, below
-# 2 GB too. The oracle replay stays on the arena build.
-option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM, any base (D100)" OFF)
+# 2 GB too; its data labels are ordinary globals and the game's memory one
+# block from the heap (D106). The Vita's default since D106's hardware run
+# (-DSPYRO_NATIVE_MEM=OFF: the moved arena); linux32's stays the arena build,
+# the oracle replay's.
+if(SPYRO_HOST STREQUAL "vita")
+  set(native_mem_default ON)
+else()
+  set(native_mem_default OFF)
+endif()
+option(SPYRO_NATIVE_MEM "Native memory: no mips2c units, no aliases of PS1 RAM, any base (D100, D106)"
+       ${native_mem_default})
 set(SPYRO_ARENA_AT "0x80000000" CACHE STRING
     "linux32: the arena's host address; not 0x80000000 = the Vita's moved arena (D97)")
 # The native build's data labels are ordinary globals (D106): no moved
