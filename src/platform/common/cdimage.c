@@ -3,7 +3,10 @@
  * ISO9660 walk and the XA test are tools/extract_disc.py's (D58), so the
  * file table is the manifest.json it would write. Reads go through two
  * windows of 32 raw sectors, one fread each, so a level load or the XA
- * stream costs one file-system call per 32 sectors. */
+ * stream costs one file-system call per 32 sectors. The reading, sniffing,
+ * directory walk and SHA-1 are vita-port-kit's discimage (D105); what stays
+ * here is the search of the data folder, the cue sheet, the messages and the
+ * disc check. */
 #include "psx_cdimage.h"
 
 #include <dirent.h>
@@ -13,10 +16,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#define RAW 2352
-#define WIN_SECTORS 32
 #define MAX_NAMES 256
-#define SCAN_BYTES (2448 * 300) /* the extractor's: a pregap of up to ~4 s */
 
 #define XA_FORM2 0x1000
 #define XA_INTERLEAVED 0x2000
@@ -28,25 +28,12 @@
 #define WAD_NAME "WAD.WAD"
 #define WAD_SHA1 "ab68001377ea93fb309a5c2a35e772c9d1f57e0b"
 
-static const unsigned char k_sync[12] = {0, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                         0xff, 0xff, 0xff, 0xff, 0xff, 0};
-
+static VpkDisc s_disc; /* the image, read through two 32-sector windows */
 static struct {
-  FILE *fp;
   char path[512];
   char name[128]; /* for messages: the file name alone */
-  int sector;     /* 2352 or 2448 */
-  int base;       /* LBA of the image's first sector */
-  int nsect;      /* whole sectors in the file */
   long size;
 } s_img;
-
-static struct {
-  int lba, n;
-  unsigned stamp;
-  unsigned char *buf;
-} s_win[2];
-static unsigned s_stamp;
 
 static char s_marker[512];
 static void (*s_progress)(int percent);
@@ -56,74 +43,11 @@ void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent)) {
   s_progress = progress;
 }
 
-const char *psx_cdimage_path(void) { return s_img.fp ? s_img.path : NULL; }
+const char *psx_cdimage_path(void) { return vpk_disc_is_open(&s_disc) ? s_img.path : NULL; }
 
 void psx_cdimage_layout(int *sector, int *base) {
-  *sector = s_img.sector;
-  *base = s_img.base;
-}
-
-/* ---- SHA-1 (FIPS 180-4) ---- */
-
-#define ROL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
-
-static void sha1_block(PsxSha1 *s, const unsigned char *p) {
-  unsigned int w[80], a, b, c, d, e, t;
-  int i;
-  for (i = 0; i < 16; i++)
-    w[i] = (unsigned int)p[i * 4] << 24 | (unsigned int)p[i * 4 + 1] << 16 |
-           (unsigned int)p[i * 4 + 2] << 8 | p[i * 4 + 3];
-  for (; i < 80; i++)
-    w[i] = ROL(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
-  a = s->h[0], b = s->h[1], c = s->h[2], d = s->h[3], e = s->h[4];
-  for (i = 0; i < 80; i++) {
-    if (i < 20)
-      t = ((b & c) | (~b & d)) + 0x5a827999;
-    else if (i < 40)
-      t = (b ^ c ^ d) + 0x6ed9eba1;
-    else if (i < 60)
-      t = ((b & c) | (b & d) | (c & d)) + 0x8f1bbcdc;
-    else
-      t = (b ^ c ^ d) + 0xca62c1d6;
-    t += ROL(a, 5) + e + w[i];
-    e = d, d = c, c = ROL(b, 30), b = a, a = t;
-  }
-  s->h[0] += a, s->h[1] += b, s->h[2] += c, s->h[3] += d, s->h[4] += e;
-}
-
-void psx_sha1_init(PsxSha1 *s) {
-  static const unsigned int h0[5] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476,
-                                     0xc3d2e1f0};
-  memcpy(s->h, h0, sizeof h0);
-  s->len = 0;
-}
-
-void psx_sha1_update(PsxSha1 *s, const void *data, unsigned n) {
-  const unsigned char *p = data;
-  unsigned have = (unsigned)(s->len & 63);
-  s->len += n;
-  if (have) {
-    unsigned k = 64 - have < n ? 64 - have : n;
-    memcpy(s->buf + have, p, k);
-    p += k, n -= k, have += k;
-    if (have < 64)
-      return;
-    sha1_block(s, s->buf);
-  }
-  for (; n >= 64; p += 64, n -= 64)
-    sha1_block(s, p);
-  memcpy(s->buf, p, n);
-}
-
-void psx_sha1_hex(PsxSha1 *s, char out[41]) {
-  unsigned long long bits = s->len * 8;
-  unsigned char pad[72] = {0x80};
-  unsigned have = (unsigned)(s->len & 63), k = have < 56 ? 56 - have : 120 - have, i;
-  for (i = 0; i < 8; i++)
-    pad[k + i] = (unsigned char)(bits >> (56 - 8 * i));
-  psx_sha1_update(s, pad, k + 8);
-  for (i = 0; i < 20; i++)
-    sprintf(out + i * 2, "%02x", (s->h[i / 4] >> (24 - 8 * (i % 4))) & 0xff);
+  *sector = s_disc.l.sector;
+  *base = s_disc.l.base;
 }
 
 /* ---- messages ---- */
@@ -156,41 +80,26 @@ static int has_ext(const char *name, const char *ext) {
   return n > e && name_cmp(&(const char *){name + n - e}, &ext) == 0;
 }
 
-static int bcd(int b) { return (b >> 4) * 10 + (b & 15); }
-
 enum { K_RAW, K_ISO, K_CHD, K_PBP, K_ECM, K_UNKNOWN, K_UNREADABLE };
 
 /* What the file is; for K_RAW also its sector size and first LBA (the first
  * sector with a sync pattern whose next sector has one too, as D58). */
-static int sniff(const char *path, int *sector, int *base) {
-  FILE *f = fopen(path, "rb");
-  unsigned char *head;
-  int n, kind = K_UNKNOWN;
-  if (!f)
+static int sniff(const char *path, VpkDiscLayout *l) {
+  switch (vpk_disc_sniff(path, l)) {
+  case VPK_DISC_RAW:
+    return K_RAW;
+  case VPK_DISC_ISO:
+    return K_ISO;
+  case VPK_DISC_CHD:
+    return K_CHD;
+  case VPK_DISC_PBP:
+    return K_PBP;
+  case VPK_DISC_ECM:
+    return K_ECM;
+  case VPK_DISC_UNREADABLE:
     return K_UNREADABLE;
-  head = malloc(SCAN_BYTES);
-  n = head ? (int)fread(head, 1, SCAN_BYTES, f) : 0;
-  if (n >= 8 && memcmp(head, "MComprHD", 8) == 0)
-    kind = K_CHD;
-  else if (n >= 4 && memcmp(head, "\0PBP", 4) == 0)
-    kind = K_PBP;
-  else if (n >= 4 && memcmp(head, "ECM\0", 4) == 0)
-    kind = K_ECM;
-  for (int size = RAW; kind == K_UNKNOWN && size <= 2448; size += 2448 - RAW)
-    for (int k = 0; (k + 2) * size <= n; k++) {
-      const unsigned char *at = head + k * size;
-      if (memcmp(at, k_sync, 12) == 0 && memcmp(at + size, k_sync, 12) == 0) {
-        kind = K_RAW;
-        *sector = size;
-        *base = (bcd(at[12]) * 60 + bcd(at[13])) * 75 + bcd(at[14]) - 150 - k;
-        break;
-      }
-    }
-  if (kind == K_UNKNOWN && n >= 16 * 2048 + 6 && memcmp(head + 16 * 2048 + 1, "CD001", 5) == 0)
-    kind = K_ISO;
-  free(head);
-  fclose(f);
-  return kind;
+  }
+  return K_UNKNOWN;
 }
 
 /* A word at the start of p, ignoring case. */
@@ -262,31 +171,21 @@ static int resolve_cue(const char *dir, const char *cue, char **names, int nname
               "%s names %s, which isn't in %s/. Copy both files.", cue, base, dir);
 }
 
-static int open_image(const char *path, const char *name, int sector, int base,
+static int open_image(const char *path, const char *name, const VpkDiscLayout *l,
                       PsxCdError *err) {
-  FILE *f = fopen(path, "rb");
-  long size;
-  if (!f)
+  int r;
+  s_disc.now = psx_cd_now;
+  s_disc.io = psx_cd_io_add;
+  r = vpk_disc_open(&s_disc, path, l, 1);
+  if (r == -1)
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE IMAGE", "%s can't be opened.", name);
-  if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) <= 0) {
-    fclose(f);
+  if (r != 0)
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE IMAGE",
                 "%s can't be read (or is over 2 GB).", name);
-  }
-  setvbuf(f, NULL, _IONBF, 0); /* the windows are the buffer */
   memset(&s_img, 0, sizeof s_img);
-  s_img.fp = f;
   snprintf(s_img.path, sizeof s_img.path, "%s", path);
   snprintf(s_img.name, sizeof s_img.name, "%s", name);
-  s_img.sector = sector;
-  s_img.base = base;
-  s_img.size = size;
-  s_img.nsect = (int)(size / sector);
-  for (int i = 0; i < 2; i++) {
-    if (!s_win[i].buf)
-      s_win[i].buf = malloc((size_t)WIN_SECTORS * 2448);
-    s_win[i].n = 0;
-  }
+  s_img.size = (long)s_disc.size;
   return 0;
 }
 
@@ -305,7 +204,8 @@ static int not_found(PsxCdError *err, const char *dir) {
 static int find_image(const char *dir, PsxCdError *err) {
   static const char *const exts[] = {".cue", ".bin", ".img", ".iso", ".chd", ".pbp", ".ecm"};
   char *names[MAX_NAMES], path[512], msg[700];
-  int nnames = 0, i, pass, found = -1, sector = 0, base = 0;
+  int nnames = 0, i, pass, found = -1;
+  VpkDiscLayout lay = {0, 0, 0};
   PsxCdError first = {0};
   DIR *d = opendir(dir);
   struct dirent *e;
@@ -329,13 +229,13 @@ static int find_image(const char *dir, PsxCdError *err) {
         continue;
       if (pass == 0) {
         if (resolve_cue(dir, name, names, nnames, path, sizeof path, &why) == 0) {
-          kind = sniff(path, &sector, &base);
+          kind = sniff(path, &lay);
           if (kind == K_RAW) {
             const char *bin = strrchr(path, '/') + 1;
             snprintf(msg, sizeof msg, "disc image %s (from %s), %d-byte sectors, first LBA %d",
-                     path, name, sector, base);
+                     path, name, lay.sector, lay.base);
             say(msg);
-            if (open_image(path, bin, sector, base, err) != 0)
+            if (open_image(path, bin, &lay, err) != 0)
               goto out;
             found = i;
             continue;
@@ -347,13 +247,13 @@ static int find_image(const char *dir, PsxCdError *err) {
         }
       } else {
         snprintf(path, sizeof path, "%s/%s", dir, name);
-        kind = sniff(path, &sector, &base);
+        kind = sniff(path, &lay);
         switch (kind) {
         case K_RAW:
-          snprintf(msg, sizeof msg, "disc image %s, %d-byte sectors, first LBA %d", path, sector,
-                   base);
+          snprintf(msg, sizeof msg, "disc image %s, %d-byte sectors, first LBA %d", path, lay.sector,
+                   lay.base);
           say(msg);
-          if (open_image(path, name, sector, base, err) != 0)
+          if (open_image(path, name, &lay, err) != 0)
             goto out;
           found = i;
           continue;
@@ -409,44 +309,16 @@ out:
 /* ---- reading ---- */
 
 int psx_cdimage_read(int lba, int off, void *buf, int n) {
-  int rel = lba - s_img.base, w;
-  unsigned long long t0;
-  if (!s_img.fp || rel < 0 || rel >= s_img.nsect || off < 0 || off + n > RAW)
-    return -1;
-  for (w = 0; w < 2; w++)
-    if (s_win[w].n && lba >= s_win[w].lba && lba < s_win[w].lba + s_win[w].n)
-      break;
-  if (w == 2) { /* refill the one used longest ago */
-    int count = s_img.nsect - rel < WIN_SECTORS ? s_img.nsect - rel : WIN_SECTORS, got;
-    w = s_win[0].stamp <= s_win[1].stamp ? 0 : 1;
-    t0 = psx_cd_now();
-    s_win[w].n = 0;
-    if (fseek(s_img.fp, (long)rel * s_img.sector, SEEK_SET) != 0)
-      return -1;
-    got = (int)fread(s_win[w].buf, 1, (size_t)count * s_img.sector, s_img.fp);
-    psx_cd_io_add(got > 0 ? (unsigned)got : 0, t0);
-    s_win[w].lba = lba;
-    s_win[w].n = got > 0 ? got / s_img.sector : 0;
-    if (!s_win[w].n)
-      return -1;
-  }
-  s_win[w].stamp = ++s_stamp;
-  memcpy(buf, s_win[w].buf + (size_t)(lba - s_win[w].lba) * s_img.sector + off, (size_t)n);
-  return n;
+  return vpk_disc_read_raw(&s_disc, lba, off, buf, n);
 }
 
 void psx_cdimage_close(void) {
-  if (s_img.fp)
-    fclose(s_img.fp);
+  vpk_disc_close(&s_disc);
   memset(&s_img, 0, sizeof s_img);
-  s_win[0].n = s_win[1].n = 0;
 }
 
 static int read_form1(int lba, int count, unsigned char *out) {
-  for (int i = 0; i < count; i++)
-    if (psx_cdimage_read(lba + i, 24, out + i * 2048, 2048) != 2048)
-      return -1;
-  return 0;
+  return vpk_disc_read(&s_disc, lba, count, out);
 }
 
 /* ---- the ISO9660 directory, as extract_disc.py walks it ---- */
@@ -467,67 +339,23 @@ static int add(Table *t, const PsxCdImageFile *f) {
   return 0;
 }
 
-static int walk(Table *t, const char *rel, int lba, int size, int depth) {
-  int nsect = (size + 2047) / 2048, pos = 0;
-  unsigned char *data;
-  if (depth > 8 || nsect <= 0 || nsect > 64)
-    return -1;
-  data = malloc((size_t)nsect * 2048);
-  if (!data || read_form1(lba, nsect, data) != 0) {
-    t->bad_lba = lba;
-    free(data);
-    return -1;
+/* One file of the kit's walk (vpk_disc_walk: depth first, directory order). */
+static int add_file(void *user, const VpkDiscEntry *e) {
+  Table *t = user;
+  PsxCdImageFile f;
+  if (e->xa_attr & XA_CDDA)
+    return 0; /* none on this disc; the extractor refuses them */
+  memset(&f, 0, sizeof f);
+  snprintf(f.path, sizeof f.path, "%s", e->path);
+  f.lba = e->lba;
+  f.size = e->size;
+  f.xa = (e->xa_attr & (XA_FORM2 | XA_INTERLEAVED)) != 0;
+  if (!f.xa && f.size > 0) { /* the first sector's submode says Form 2 */
+    unsigned char sub[8];
+    if (psx_cdimage_read(f.lba, 16, sub, 8) == 8 && (sub[2] & 0x20))
+      f.xa = 1;
   }
-  while (pos < size) {
-    const unsigned char *rec = data + pos;
-    int len = rec[0], name_len, xa_attr = 0, su;
-    PsxCdImageFile f;
-    char name[64];
-    if (len == 0) {
-      pos = (pos / 2048 + 1) * 2048;
-      continue;
-    }
-    if (len < 34 || pos + len > nsect * 2048)
-      break;
-    name_len = rec[32];
-    su = 33 + name_len + (1 - name_len % 2);
-    if (len - su >= 14 && rec[su + 6] == 'X' && rec[su + 7] == 'A')
-      xa_attr = rec[su + 4] << 8 | rec[su + 5];
-    pos += len;
-    if (name_len == 1 && rec[33] <= 1) /* . and .. */
-      continue;
-    if (name_len >= (int)sizeof name)
-      continue;
-    memcpy(name, rec + 33, (size_t)name_len);
-    name[name_len] = 0;
-    if (strchr(name, ';'))
-      *strchr(name, ';') = 0;
-    memset(&f, 0, sizeof f);
-    snprintf(f.path, sizeof f.path, "%s%s%s", rel, *rel ? "/" : "", name);
-    f.lba = rec[2] | rec[3] << 8 | rec[4] << 16 | rec[5] << 24;
-    f.size = rec[10] | rec[11] << 8 | rec[12] << 16 | rec[13] << 24;
-    if (rec[25] & 2) {
-      if (walk(t, f.path, f.lba, f.size, depth + 1) != 0) {
-        free(data);
-        return -1;
-      }
-      continue;
-    }
-    if (xa_attr & XA_CDDA)
-      continue; /* none on this disc; the extractor refuses them */
-    f.xa = (xa_attr & (XA_FORM2 | XA_INTERLEAVED)) != 0;
-    if (!f.xa && f.size > 0) { /* the first sector's submode says Form 2 */
-      unsigned char sub[8];
-      if (psx_cdimage_read(f.lba, 16, sub, 8) == 8 && (sub[2] & 0x20))
-        f.xa = 1;
-    }
-    if (add(t, &f) != 0) {
-      free(data);
-      return -1;
-    }
-  }
-  free(data);
-  return 0;
+  return add(t, &f);
 }
 
 static int by_lba(const void *a, const void *b) {
@@ -669,7 +497,7 @@ static int cut_short(PsxCdError *err, int need) {
               "%s is cut short: %ld MB of the %ld MB or more the game needs. Copy it again, or "
               "dump the disc again.",
               s_img.name, s_img.size >> 20,
-              (long)((long long)(need - s_img.base) * s_img.sector >> 20));
+              (long)((long long)(need - s_disc.l.base) * s_disc.l.sector >> 20));
 }
 
 int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCdError *err) {
@@ -687,12 +515,10 @@ int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCd
     goto bad;
   }
   {
-    const unsigned char *root = pvd + 156;
-    int lba = root[2] | root[3] << 8 | root[4] << 16 | root[5] << 24;
-    int size = root[10] | root[11] << 8 | root[12] << 16 | root[13] << 24;
-    t.bad_lba = lba;
-    if (walk(&t, "", lba, size, 0) != 0 || t.n == 0) {
-      if (t.bad_lba - s_img.base >= s_img.nsect) {
+    int r = vpk_disc_walk(&s_disc, add_file, &t);
+    t.bad_lba = s_disc.bad_lba;
+    if (r != 0 || t.n == 0) {
+      if (t.bad_lba - s_disc.l.base >= s_disc.nsect) {
         cut_short(err, t.bad_lba + 1);
         goto bad;
       }
@@ -709,7 +535,7 @@ int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCd
     if (end > need)
       need = end;
   }
-  if (need - s_img.base > s_img.nsect) {
+  if (need - s_disc.l.base > s_disc.nsect) {
     cut_short(err, need);
     goto bad;
   }
