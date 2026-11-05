@@ -1,0 +1,34 @@
+# A game's settings for vita-port-kit's hw_run.sh / hw_check.sh / hw_ftp.py / hw_mock.py, kept in the game repo
+# (tools/vita/hw.game) and named by HW_GAME (the game's wrappers set it). Sourced by bash; hw_ftp.py and
+# hw_mock.py read its plain KEY=VALUE lines, so keep those simple (no expansions).
+HW_TITLE_ID=GAME00001
+HW_NAME="My Game Vita"
+HW_DATA=ux0:data/mygame
+HW_LOG=mygame.log
+# the line in HW_LOG the app writes when config.txt's frames= is reached (an extended regex)
+HW_STOP_RE='frames=[0-9]+ reached'
+# optional: a line meaning the app hung and stops itself for a crash dump
+HW_HANG_RE=
+# the VPK, relative to the game repo's root (VPK= overrides)
+HW_VPK=build/vita/mygame.vpk
+# the default timeout (s); no FTP for HW_QUIET_S after the launch, then a look every HW_POLL_S
+HW_TIMEOUT=600
+HW_QUIET_S=0
+HW_POLL_S=3
+# where PAD=FILE goes in HW_DATA (config.txt gets pad=HW_DATA/HW_PAD_NAME)
+HW_PAD_NAME=pad.txt
+# what the app writes in HW_DATA, set aside for the run and put back after (config.txt, the log and the pad
+# script are always included)
+HW_NAMES=(save)
+# fetched into OUT_DIR after the run (files or folders in HW_DATA)
+HW_COLLECT=(save)
+# a folder in HW_DATA the run starts empty, or from SAVE=DIR (none: leave it empty)
+HW_SAVE_DIR=save
+
+# Optional hooks (bash functions):
+#   hw_config_base OWNER_CFG  print the run's first config.txt lines (OWNER_CFG: a copy of the owner's
+#                             config.txt, or empty when there is none). Default: the owner's lines but pad=.
+#   hw_after_setup BACKUP_DIR after the owner's files are set aside and the run's are up (BACKUP_DIR holds a
+#                             copy of the owner's config.txt and small save files)
+#   hw_after_collect OUT_DIR  after the run's files are fetched
+#   hw_check_game             extra hw_check.sh lines: call ok / no / note with what this game needs on the Vita

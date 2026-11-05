@@ -47,7 +47,7 @@ The layout this produces:
 ```
 spyro-vita/
   CLAUDE.md            ← project instructions (this folder's CLAUDE.md)
-  docs/                ← research.md, porting-plan.md, decisions.md, logs of findings
+  docs/                ← research.md, porting-plan.md, decisions.md and decisions-2.md, logs of findings
   third_party/spyro-1  ← decomp submodule — never edit in place; changes go in patches/
   third_party/PsyCross ← PsyQ reimplementation
   patches/             ← our changes to submodules (git format-patch / quilt style)
