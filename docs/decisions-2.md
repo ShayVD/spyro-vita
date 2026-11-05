@@ -114,6 +114,11 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 
 ## 2026-11-05 — vita-port-kit runtime modules
 
+### D107. The audio output ring and its thread are vita-port-kit's `vita/runtime/audioout`
+- **What:** `src/platform/common/audio_ring.c` moved to vita-port-kit as `vpk_audio_ring` (vendored in `third_party/vita-port-kit/vita/runtime/audioout`), merged with kh1-decomp's simpler ring. D88's held level is the ring's `rate_control 1`; its constants stayed in `psx_audio_ring.h`, which now maps the `psx_audio_ring_*` names to the kit's and passes them as the ring's config. `audio.c`'s output thread (the BGM port, 512-frame grains, core 1, priority 0x68) is the kit's `vpk_audio_out` with those settings.
+- **Why:** kh1-decomp had a second copy of the same output thread and a ring without the level control; one copy in the kit, used by both games (vita-port-kit roadmap K4).
+- **Checked:** the clock model (`tests/audio`, 10 minutes) prints the same numbers as before, byte for byte; the VPK builds. Device behaviour: a hardware run before merging.
+
 ### D108. The disc image's reader is vita-port-kit's `vita/runtime/discimage`
 - **What:** `cdimage.c`'s sector reading (the two 32-sector windows), its sniffing of the file (sync pattern, sector size, first LBA; .iso, CHD, PBP, ECM), the ISO9660 walk and SHA-1 moved to vita-port-kit as `vpk_discimage` (vendored in `third_party/vita-port-kit/vita/runtime/discimage`), merged there with kh1-decomp's reader. `cdimage.c` keeps what is Spyro's: the search of the data folder, the cue sheet, every message to the player, the cut-short and SCUS-94228 / WAD.WAD checks, the marker. `psx_sha1_*` map to the kit's.
 - **Why:** kh1-decomp had a second reader of the same sectors (vita-port-kit roadmap K4). The kit's opens with 64-bit offsets (sceIo on the Vita, `fseeko` on hosts); images here are under 2 GB, so nothing changes for this game.
