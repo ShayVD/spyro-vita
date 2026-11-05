@@ -50,6 +50,8 @@ void *func_80016784(int size) {
   u32 *tail, *head, *next;
 
   nd_list_linked();
+  if (g_present.audit) /* stage 7a's HUD check (present.c, D104) */
+    port_present_hud_list((void *)(uintptr_t)hud[1], (void *)(uintptr_t)hud[0]);
   for (;;) {
     if (at == base) {
       /* World OT empty: draw the HUD OT alone. */

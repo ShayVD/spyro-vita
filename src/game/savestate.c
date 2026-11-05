@@ -18,6 +18,7 @@
 
 #include "psx_arena.h"
 #include "psx_cdnative.h"
+#include "psx_clock.h"
 #include "psx_spu.h"
 #include "psx_state.h"
 #include "psx_walk.h"
@@ -42,9 +43,8 @@ extern DRAWENV activeDrawEnv; /* PsyCross PsyX_GPU.cpp */
 extern DISPENV activeDispEnv, currentDispEnv;
 extern int g_GPUDisabledState, g_splitIndex;
 extern void ClearSplits(void);
-extern void (*vsync_callback)(void);    /* LIBETC.C */
+extern void (*vsync_callback)(void);    /* libetc.c */
 extern void (*drawsync_callback)(void); /* LIBGPU.C */
-extern int PsyX_Sys_GetVBlankCount(void);
 extern unsigned char g_psx_kernel_ram[0x10000]; /* arena.c */
 extern unsigned int g_mips_sp, g_mips_v1;       /* mips2c_rt.c */
 extern void GamestateDraw(void);
@@ -124,7 +124,7 @@ static void chunk_vram(PsxStateIO *io) {
 static void chunk_spu(PsxStateIO *io) { psx_state_io(io, &g_psx_spu, sizeof g_psx_spu); }
 
 static void chunk_plat(PsxStateIO *io) {
-  int vblank = PsyX_Sys_GetVBlankCount();
+  int vblank = psx_clock_count();
   psx_state_io(io, &vblank, sizeof vblank);
   if (io->mode == PSX_STATE_LOAD)
     savestate_plat_set_vblank(vblank);
@@ -171,7 +171,7 @@ static void make_header(Header *h) {
   h->layout[3] = (uint32_t)(uintptr_t)_end;
   h->layout[4] = (uint32_t)(uintptr_t)&savestate_point;
   h->layout[5] = (uint32_t)(uintptr_t)&GamestateDraw;
-  h->vblank = PsyX_Sys_GetVBlankCount();
+  h->vblank = psx_clock_count();
   h->gamestate = g_Gamestate;
   h->level = g_LevelId;
   h->nchunks = NCHUNKS;

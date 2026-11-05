@@ -31,7 +31,28 @@ typedef struct {
                            this (the safety net against running late, D75) */
   int stats;        /* time update and draw (also with both features off);
                      2 also maps the arena pages each pass dirties */
+  int audit;        /* stage 7a (D104), debug only: the in-between frames per
+                       gamestate and their cost, and the HUD check */
 } PresentConfig;
+
+#define PRESENT_GAMESTATES 16 /* GS_Playing .. GS_Credits (common.h) */
+#define PRESENT_HUD_DIFFS 8   /* the first ticks whose two HUD lists differ */
+#define PRESENT_HUD_WORDS 13  /* a packet's tag and up to 12 words, kept for those */
+
+/* audit: per gamestate (g_Gamestate at the draw) */
+typedef struct {
+  long long ticks, interp, skipped; /* skipped: a cut, a gamestate or level
+                                       change, a camera jump, the budget */
+  long long us_pass, packets; /* the in-between pass: time, OT packets drawn */
+  long long hud_same, hud_differ; /* its HUD list against the real frame's */
+} PresentGsStats;
+
+typedef struct {
+  int vblank, gamestate, level;
+  int packets[2]; /* the in-between pass's HUD list, the real frame's */
+  int first;      /* the first packet that differs */
+  uint32_t words[2][PRESENT_HUD_WORDS]; /* its tag and words in each list */
+} PresentHudDiff;
 
 typedef struct {
   long long ticks, passes, logic_passes, interp_frames, skipped_interp;
@@ -51,6 +72,9 @@ typedef struct {
   uint32_t dirty_union[PRESENT_PAGES / 32]; /* every page any pass wrote */
   long long missed_pages; /* stats 2: dirty pages outside snapshot and scratch */
   uint32_t missed_union[PRESENT_PAGES / 32];
+  PresentGsStats gs[PRESENT_GAMESTATES]; /* audit */
+  PresentHudDiff hud_diff[PRESENT_HUD_DIFFS];
+  int nhud_diff;
 } PresentStats;
 
 extern PresentConfig g_present;
@@ -89,6 +113,22 @@ const uint16_t *port_present_shown_pixels(void);
 
 /* order_table.c: a C-built 2D primitive went into the HUD OT. */
 void port_present_note_2d(void *prim);
+/* order_table.c func_80016784, before it links the HUD OT (head..tail) into
+ * a list: the audit's HUD check (D104). */
+void port_present_hud_list(const void *head, const void *tail);
+
+/* Stage 7a's read audit (D104, the linux32 host's --present-reads): called
+ * at each draw's start (after the update) and around the in-between pass's
+ * GamestateDraw. NULL: off. */
+typedef struct PresentReadAudit {
+  void (*tick)(void);
+  void (*pass)(int begin);
+} PresentReadAudit;
+extern const PresentReadAudit *g_present_reads;
+/* The region of the PS1 address a (for the read audit's lines): scratchpad,
+ * data, stack, mobys, particles, prims (the buffers and OTs the next draw
+ * rewrites), level (everything else). */
+const char *port_present_region(uint32_t a);
 
 /* Where a draw into db_buf (a DB's m_PolyBuf) starts writing primitives: the
  * lower buffer while any option is on (D54), PortPolySpace() in

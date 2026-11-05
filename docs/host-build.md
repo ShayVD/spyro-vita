@@ -85,6 +85,10 @@ Optional, off by default (`docs/presentation.md`):
 - `--widescreen` draws once in 16:9 (the wider view reaches the logic) except in attract demos, which keep the exact 4:3 logic. `--widescreen-exact`: the exact two-draw form always. `--widescreen-logic`: one draw always (diagnostic: the demos desync).
 - Any of these turns on `--out960`, which writes 960×544 pictures (shots and `--serve`).
 - `--present-stats` logs per-tick costs at exit. `--present-dirty` also maps the arena pages a pass writes.
+- Stage 7a's audits (D104, with `--interp`; debug only):
+  - `--present-audit` logs per gamestate, at exit, the in-between frames, their cost and OT packets, and whether their HUD list is the real frame's; the first differing ticks get their packet's words.
+  - `--present-reads FILE` traces what every Nth in-between pass reads (`--present-reads-every N`, default 30) against what changes before the next draw: `src/platform/linux32/readset.c`, with the arena `mprotect`ed and the data pages stepped word by word. That is slow.
+  - `tools/present_reads.py FILE...` names the words from `tools/layout/psx.map` per gamestate. `tools/present_audit.sh PREFIX` runs D104's set.
 - `tools/side_by_side.py OUT.png A.png B.png … [--cols N] [--scale F] [--crop X,Y,W,H]` puts shots next to each other.
 
 ## Playing it yourself (D22)
