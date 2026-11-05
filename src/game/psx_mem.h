@@ -40,6 +40,9 @@ extern uintptr_t g_psx_arena_base;
 #define MEM_COLL_TAGGED(p) ((int)((uintptr_t)(p) & 1))
 #define MEM_MODEL_PTR(w) ((uintptr_t)(w) & ~(uintptr_t)1)
 #define MEM_MODEL_SIMPLE(w) (!(w) || ((uintptr_t)(w) & 1))
+/* A g_Models[] word that code offsets before an access (the arena builds'
+ * HPTR at that access maps a SimpleModel's alias): masked first here. */
+#define MEM_MODEL_AT(w) MEM_MODEL_PTR(w)
 #define MEM_SIMPLE_ADDR(a) ((uintptr_t)(a) | 1)
 /* OT tags the renderers build: an asm tag constant K (length << 24 |
  * 0x80000000), kept as is; a tag word linking to P, or (T 0, the chain's
@@ -77,6 +80,9 @@ extern uintptr_t g_psx_arena_base;
  * word counts as one, as the original's sign test does). */
 #define MEM_MODEL_PTR(w) MIPS_KUSEG(w)
 #define MEM_MODEL_SIMPLE(w) ((int32_t)(uintptr_t)(w) >= 0)
+/* A g_Models[] word that code offsets before an access: as it is (the
+ * access's HPTR maps a SimpleModel's alias). */
+#define MEM_MODEL_AT(w) (w)
 /* An address in the form g_Models[] holds a SimpleModel's (to compare
  * with one). */
 #define MEM_SIMPLE_ADDR(a) ((uint32_t)(a) & 0x7FFFFFFFu)

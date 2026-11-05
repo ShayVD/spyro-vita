@@ -191,7 +191,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   /* the outline's 16 radii (scratch +0x00..+0x0F) and 16 heights (+0x0C
    * after the copy below) from Spyro's model frame */
   {
-    const u32 models = MIPS_KUSEG(AT32(ADDR_ND(g_Models)));
+    const u32 models = MIPS_KUSEG(MEM_MODEL_AT(AT32(ADDR_ND(g_Models))));
     const u32 step = AT8(spyro + 0x24);
     if (step) {
       /* blending two frames: the anim and frame of each (+0x18, +0x1E) */
