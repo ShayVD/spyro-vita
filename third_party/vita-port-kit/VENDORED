@@ -1,3 +1,4 @@
 # vita-port-kit, vendored by tools/vendor.sh: do not edit these files here; change the kit and re-vendor.
-commit d261775dc8a60f9e296b7d74f7cfe9bcc9ef0b23
+commit 001ccdfe81600cc579774638c619215de1804fbd
 path vita/tools
+path vita/cmake
