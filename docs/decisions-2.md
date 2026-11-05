@@ -118,3 +118,8 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **What:** `src/platform/common/audio_ring.c` moved to vita-port-kit as `vpk_audio_ring` (vendored in `third_party/vita-port-kit/vita/runtime/audioout`), merged with kh1-decomp's simpler ring. D88's held level is the ring's `rate_control 1`; its constants stayed in `psx_audio_ring.h`, which now maps the `psx_audio_ring_*` names to the kit's and passes them as the ring's config. `audio.c`'s output thread (the BGM port, 512-frame grains, core 1, priority 0x68) is the kit's `vpk_audio_out` with those settings.
 - **Why:** kh1-decomp had a second copy of the same output thread and a ring without the level control; one copy in the kit, used by both games (vita-port-kit roadmap K4).
 - **Checked:** the clock model (`tests/audio`, 10 minutes) prints the same numbers as before, byte for byte; the VPK builds. Device behaviour: a hardware run before merging.
+
+### D109. The touch panels and the menu tap are vita-port-kit's `vita/runtime/touch`
+- **What:** `pad.c`'s panel areas (with the front panel's range as the fallback), the fingers as 0..1, and D46's tap test (0.3 s, under 0.04 of the panel, one finger) are vita-port-kit's `vpk_touch` / `VpkTap` (vendored in `third_party/vita-port-kit/vita/runtime/touch`), merged there with kh1-decomp's rear quarters and tap. What counts as a tap here (the middle third, start and end), the rear halves as L2 / R2 and the `pad=` gestures stay in `pad.c`.
+- **Why:** kh1-decomp had its own rear mapping and tap (vita-port-kit roadmap K4).
+- **Checked:** the kit's touch test covers this game's tap settings; the VPK builds. Device behaviour: a hardware run before merging (a tap opens the menu, rear touch with `reartouch=1`).
