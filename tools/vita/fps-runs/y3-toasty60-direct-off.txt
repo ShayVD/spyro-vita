@@ -1,0 +1,12 @@
+# Run Y3 (D99): O2 (o2-60-fr2.txt, X7's) on D99's VPK with nd_direct=0: the shipped defaults at
+# 60 fps on the Toasty route, the render thread re-making the walk's vertices (expand_lean) as on
+# main. Y4 is the same with nd_direct=1: the render thread's busy time per picture, late vblanks
+# and the GPU's time (gpu_meter) before and after. Unattended:
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh \
+#     logs/hw-y3 1500 @tools/vita/fps-runs/y3-toasty60-direct-off.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+nd_direct=0
+gpu_parts=1

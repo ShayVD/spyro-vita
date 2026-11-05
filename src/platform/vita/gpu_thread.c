@@ -58,6 +58,10 @@
 GlEnv g_gl_env;
 int g_rt_active;
 
+/* src/game/native_draw.c: direct vertices (D99) */
+extern int g_nd_direct;
+int nd_direct_ranges(const uint32_t **r);
+
 #define RING (1u << 20)        /* commands; a frame's are ~40 KB */
 #define INLINE_MAX (192 << 10) /* a LoadImage bigger than this waits instead */
 #define NSLAB 4
@@ -82,7 +86,7 @@ typedef struct {
 typedef struct { Cmd hd; GlEnv env; } CEnv;
 typedef struct { Cmd hd; int enable; SplitHead head; } CClip;
 typedef struct { Cmd hd; int a, b; } CTwo; /* C_TEX, C_BLEND, C_DRAW, C_COMMIT */
-typedef struct { Cmd hd; int count, slab, side; } CVerts;
+typedef struct { Cmd hd; int count, slab, side, ndr; } CVerts; /* + ndr pairs (D99) */
 typedef struct { Cmd hd; int x, y, w, h; unsigned char r, g, b; } CClear;
 typedef struct { Cmd hd; int x, y, w, h, dx, dy, has_src; } CCopy; /* + w*h words */
 typedef struct { Cmd hd; void (*fn)(void *); void *ptr; uint8_t arg[32]; } CCall;
@@ -153,7 +157,8 @@ static void run(const Cmd *c) {
     break;
   case C_VERTS: {
     const CVerts *k = (const CVerts *)c;
-    gl_vertices(s_slab[k->slab], k->side ? s_slab_side[k->slab] : g_vcache_side, k->count);
+    gl_vertices(s_slab[k->slab], k->side ? s_slab_side[k->slab] : g_vcache_side, k->count,
+                (const uint32_t *)(k + 1), k->ndr);
     count(K_VERTS); /* the slab before this one is free from here */
     break;
   }
@@ -451,6 +456,8 @@ void rt_GR_Clear(int x, int y, int w, int h, unsigned char r, unsigned char g, u
 
 void rt_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   int slab = (int)(s_verts_posted % NSLAB), side = gl_vcache_side_used();
+  const uint32_t *dr = NULL;
+  const int ndr = g_nd_direct ? nd_direct_ranges(&dr) : 0; /* the walk's direct triangles (D99) */
   CVerts *c;
   if (count > MAX_VERTEX_BUFFER_SIZE)
     count = MAX_VERTEX_BUFFER_SIZE;
@@ -470,10 +477,13 @@ void rt_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
     else
       side = 0;
   }
-  c = RESERVE(CVerts, C_VERTS, 0);
+  c = RESERVE(CVerts, C_VERTS, (uint32_t)ndr * 8);
   c->count = count;
   c->slab = slab;
   c->side = side;
+  c->ndr = ndr;
+  if (ndr)
+    memcpy(c + 1, dr, (size_t)ndr * 8);
   post(&c->hd);
   s_verts_posted++;
 }

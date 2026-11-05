@@ -47,8 +47,13 @@
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
 #include "../../game/present.h"
+#include "psx_lean.h"
 #include "psx_vcache.h"
 #include "gpu_rt.h"
+
+/* src/game/native_draw.c: direct vertices (D99) */
+extern int g_nd_direct, g_nd_direct_ok;
+int nd_direct_ranges(const uint32_t **r);
 
 #define VW 1024
 #define VH 512
@@ -225,6 +230,31 @@ static int s_lean;     /* gpu_lean and s_xmode without s_vc: draws use s_lbuf (D
 
 static int lean_for(int xmode, int vc) { return g_vita_opts.gpu_lean && xmode && !vc; }
 
+/* nd_direct (D99, psx_lean.h): the vertex buffer is drawn from the vertices
+ * as they came (the walk's lean form, the UV box in their last 4 bytes),
+ * and what depends on the atlas and the options per vertex from a side
+ * stream: the atlas offset, then the flags gpu_lean keeps in tcx, tcy. The
+ * same values reach the same attributes as from s_lbuf. */
+typedef struct {
+  int16_t off[2];
+  uint8_t tc[2];
+  uint8_t pad[2];
+} DSide;
+static DSide s_dside[MAX_VERTEX_BUFFER_SIZE];
+static GLuint s_vbo_side;
+static int s_direct; /* this vertex buffer: the slab's vertices with s_dside */
+static struct {
+  unsigned bufs, tris, conv, other;
+  unsigned cbufs;           /* nd_direct=2: vertex buffers compared */
+  uint64_t cverts, cbad;    /* ... their vertices, and those that differ */
+  unsigned ctkind;          /* ... triangles whose kind differs */
+} s_dst;
+
+/* Whether the walk may leave a list direct (native_draw.c reads it when the
+ * list is linked): the lean vertex in gpu_fused's one pass. Set where the
+ * options change, which the game thread waits for (gpu_thread.c's sync). */
+static void direct_mode(void) { g_nd_direct_ok = s_lean && g_vita_opts.gpu_fused == 1; }
+
 /* per 300-vblank report */
 static struct {
   unsigned draws, tris, uploads, readbacks, replays, copies, moves, presents;
@@ -232,11 +262,18 @@ static struct {
   unsigned gl_draws;  /* glDrawArrays for the game's triangles (gpu_time=2) */
   unsigned sub_joins; /* untextured subtract draws joined (gpu_fused, D92) */
   uint64_t vbo_bytes, vbo_us; /* their glBufferData (gpu_time=2) */
+  /* where the GL side's time goes (D99, the "gpu parts" line): vertex
+   * buffers (expand_us is part of it), the draws' work before their batch,
+   * the target logs' copies, and the batches' GL calls */
+  uint64_t verts_us, pre_us, log_us, issue_us;
   unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
   unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
 } s_st;
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+/* gpu_parts=1 (D99): the clock for the "gpu parts" line's timers, else 0.
+ * Off, they cost nothing: on hardware they added 0.17 ms per vblank (Y1). */
+static inline uint64_t parts_us(void) { return g_vita_opts.gpu_parts ? now_us() : 0; }
 
 /* prof.c's parts are the game thread's: on the render thread (D63) its
  * own report in gpu_thread.c counts this time instead */
@@ -2131,6 +2168,130 @@ static void expand_lean(const GrVertex *src, int count) {
   s_st.expand_us += now_us() - t0;
 }
 
+/* expand_lean's atlas look-up for a triangle's page, CLUT and box (u0..v1,
+ * wrap), through the memo: 0 and the entry, or 1 (not in the atlas) */
+static inline int amemo_find(int page, int clut, int u0, int v0, int u1, int v1, int wrap,
+                             int *ax, int *ay, int *plain) {
+  const uint32_t k0 = (uint32_t)(uint16_t)page | (uint32_t)(uint16_t)clut << 16;
+  const uint32_t k1 =
+      (uint32_t)(u0 >> 5 | (v0 >> 5) << 3 | (u1 >> 5) << 6 | (v1 >> 5) << 9 | wrap << 12);
+  const uint32_t h = ((k0 * 0x9E3779B1u) ^ (k1 * 0x85EBCA6Bu)) >> 26;
+  int miss;
+  s_ast.blocks++;
+  if (s_amemo[h].gen == s_agen && s_amemo[h].k0 == k0 && s_amemo[h].k1 == k1) {
+    *ax = s_amemo[h].ax, *ay = s_amemo[h].ay, *plain = s_amemo[h].plain;
+    return 0;
+  }
+  s_ast.finds++;
+  miss = atlas_find(page >> 7 & 3, page, clut, u0 >> 5, v0 >> 5, u1 >> 5, v1 >> 5, wrap, ax, ay,
+                    plain);
+  if (!miss) {
+    s_amemo[h].k0 = k0, s_amemo[h].k1 = k1, s_amemo[h].gen = s_agen;
+    s_amemo[h].ax = (int16_t)*ax, s_amemo[h].ay = (int16_t)*ay;
+    s_amemo[h].plain = (uint8_t)*plain;
+  }
+  return miss;
+}
+
+/* nd_direct=1 (D99): gpu_fused's pass for a vertex buffer the walk left in
+ * the lean form, in place. A triangle in the walk's ranges (dr: ndr pairs
+ * of vertex indices) already has its box; any other (PsyCross's own
+ * primitives, one the PS1 GPU skips) is converted here first by the same
+ * rule (lean_convert). Then, per triangle, what expand_lean adds: the atlas
+ * look-up, the kind, and the side stream's offset and flags. Nothing else
+ * is copied: the vertices go to the GPU from vb. check (nd_direct=2): the
+ * atlas is the one expand_lean just used, never started over here. */
+static void expand_direct(GrVertex *vb, int count, const uint32_t *dr, int ndr, int check) {
+  uint64_t t0 = now_us();
+  int i, k, r = 0;
+  if (!check && (s_filter || s_cache) && (s_aflush || s_afull))
+    atlas_reset();
+  for (i = 0; i < count; i += 3) {
+    uint32_t *const t = (uint32_t *)(vb + i);
+    const int n = count - i < 3 ? count - i : 3;
+    uint32_t box, poly;
+    int u0, v0, u1, v1, wrap, filt = 0, kind = 0, du = 0, dv = 0, page, clut, bright;
+    DSide d;
+    while (r < ndr && dr[2 * r + 1] <= (uint32_t)i)
+      r++;
+    if (n == 3 && r < ndr && dr[2 * r] <= (uint32_t)i) {
+      poly = 1; /* the walk's: a polygon the GPU doesn't skip */
+      s_dst.tris++;
+    } else {
+      poly = lean_convert(t, n) & VREF_POLY;
+      s_dst.conv++;
+    }
+    box = t[4];
+    u0 = (int)(box & 0xFF), v0 = (int)(box >> 8 & 0xFF);
+    u1 = (int)(box >> 16 & 0xFF), v1 = (int)(box >> 24);
+    wrap = s_filter && lean_box_tile(box);
+    page = (int16_t)t[1], clut = (int16_t)(t[1] >> 16), bright = (int)(t[2] >> 16 & 0xFF);
+    if ((s_filter || s_cache) && bright == 2 && (page >> 7 & 3) < 3) {
+      int ax, ay, plain;
+      if (!amemo_find(page, clut, u0, v0, u1, v1, wrap, &ax, &ay, &plain)) {
+        filt = s_filter && poly;
+        kind = filt ? 2 : plain ? 3 : 1;
+        s_ast.plain += kind == 3;
+        du = ax - (u0 & ~31);
+        dv = ay - (v0 & ~31);
+      } else {
+        s_ast.misses++;
+      }
+    }
+    s_tkind[i / 3] = (uint8_t)kind;
+    d.off[0] = (int16_t)du;
+    d.off[1] = (int16_t)dv;
+    d.tc[0] = (uint8_t)(bright == 2 ? filt : 2); /* 2: untextured (gpu_uber) */
+    d.tc[1] = (uint8_t)(wrap && filt);
+    d.pad[0] = d.pad[1] = 0;
+    for (k = 0; k < n; k++)
+      s_dside[i + k] = d;
+  }
+  if (!check && (s_filter || s_cache))
+    atlas_decode();
+  s_st.expand_us += now_us() - t0;
+}
+
+/* nd_direct=2 (D99, diagnostic): the walk listed its direct triangles but
+ * left them as before, and expand_lean has just made s_lbuf and s_tkind of
+ * vb. Here a copy of vb is made direct as the walk would (lean_direct_tri),
+ * expand_direct runs on it, and every vertex's attributes are compared with
+ * s_lbuf's: x to a, the box, the offset, the flags; and each triangle's
+ * kind. What is drawn stays expand_lean's. */
+static GrVertex *s_dcopy;
+static uint8_t s_tkind_ref[MAX_VERTEX_BUFFER_SIZE / 3 + 1];
+
+static void direct_check(const GrVertex *vb, int count, const uint32_t *dr, int ndr) {
+  int i, r;
+  if (!s_dcopy && !(s_dcopy = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE)))
+    return;
+  memcpy(s_dcopy, vb, (size_t)count * sizeof *vb);
+  for (r = 0; r < ndr; r++)
+    for (i = (int)dr[2 * r]; i + 3 <= (int)dr[2 * r + 1] && i + 3 <= count; i += 3)
+      lean_direct_tri((uint32_t *)(s_dcopy + i));
+  memcpy(s_tkind_ref, s_tkind, (size_t)(count + 2) / 3);
+  expand_direct(s_dcopy, count, dr, ndr, 1);
+  s_dst.cbufs++;
+  for (i = 0; i < count; i++) {
+    const LVertex *l = &s_lbuf[i];
+    const uint32_t *d = (const uint32_t *)(s_dcopy + i);
+    const DSide *e = &s_dside[i];
+    s_dst.cverts++;
+    if (memcmp(&l->g, d, 16) || memcmp(l->box, &d[4], 4) || memcmp(l->off, e->off, 4) ||
+        (uint8_t)l->g.tcx != e->tc[0] || (uint8_t)l->g.tcy != e->tc[1]) {
+      if (s_dst.cbad++ < 8)
+        vita_log("gpu: nd_direct=2: vertex %d of %d differs: %08x %08x %08x %08x box %08x off "
+                 "%d,%d tc %d,%d / box %08x off %d,%d tc %d,%d (D99)",
+                 i, count, d[0], d[1], d[2], d[3], *(const uint32_t *)l->box, l->off[0],
+                 l->off[1], (uint8_t)l->g.tcx, (uint8_t)l->g.tcy, d[4], e->off[0], e->off[1],
+                 e->tc[0], e->tc[1]);
+    }
+  }
+  for (i = 0; i < (count + 2) / 3; i++)
+    s_dst.ctkind += s_tkind[i] != s_tkind_ref[i];
+  memcpy(s_tkind, s_tkind_ref, (size_t)(count + 2) / 3);
+}
+
 /* gpu_time=2: what the vertex upload cost (t0 0: not measured) */
 static void vbo_count(uint64_t t0, size_t bytes) {
   if (!t0)
@@ -2142,7 +2303,8 @@ static void vbo_count(uint64_t t0, size_t bytes) {
 /* The vertices into the VBO (vitaGL gives a fresh buffer per glBufferData).
  * Triangles with an edge >= 1024 x or >= 512 y are collapsed: the PS1 GPU
  * skips them (gpu_soft.c's rule). side: the vcache's answers for them (D39). */
-static void vertices_in(const GrVertex *vertices, const VCacheVert *side, int count) {
+static void vertices_in(const GrVertex *vertices, const VCacheVert *side, int count,
+                        const uint32_t *dr, int ndr) {
   uint64_t t0;
   int i, k;
   if (count > MAX_VERTEX_BUFFER_SIZE)
@@ -2150,10 +2312,41 @@ static void vertices_in(const GrVertex *vertices, const VCacheVert *side, int co
   s_vorig = vertices;
   s_side = side;
   s_fused = s_xmode && s_lean && s_fmode;
+  s_direct = s_fused && g_nd_direct == 1 && g_vita_opts.gpu_fused == 1;
+  if (s_direct) { /* D99: the vertices as they came, and the side stream */
+    s_nverts = count;
+    fill_buffer();
+    /* the render thread's slab, or PsyCross's buffer: drawn and logged
+     * from here, never read again before it is refilled */
+    expand_direct((GrVertex *)(uintptr_t)vertices, count, dr, ndr, 0);
+    t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo_side);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_dside, s_dside, GL_STREAM_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *vertices, vertices, GL_STREAM_DRAW);
+    vbo_count(t0, (size_t)count * (sizeof *s_dside + sizeof *vertices));
+    s_dst.bufs++;
+    return;
+  }
+  if (ndr && g_nd_direct == 1) {
+    /* walked direct, drawn another way: the options changed between the
+     * walk and here, which their sync rules out (D99). Their spare bytes
+     * back as the vertex cache's mark leaves them for the filter. */
+    const uint32_t ref = s_filter && !s_vc ? VREF_POLY : 0;
+    int r;
+    for (r = 0; r < ndr; r++)
+      for (i = (int)dr[2 * r]; i + 3 <= (int)dr[2 * r + 1] && i + 3 <= count; i += 3) {
+        uint32_t *t = (uint32_t *)(uintptr_t)(vertices + i);
+        t[4] = t[LEAN_VW + 4] = t[2 * LEAN_VW + 4] = ref;
+      }
+    s_dst.other++;
+  }
   if (s_fused) { /* D92: the copy, the collapse and expand() in one pass */
     s_nverts = count;
     fill_buffer();
     expand_lean(vertices, count); /* may draw into the atlas, with other buffers bound */
+    if (g_nd_direct == 2 && ndr)
+      direct_check(vertices, count, dr, ndr);
     t0 = g_vita_opts.gpu_time == 2 ? now_us() : 0;
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof *s_lbuf, s_lbuf, GL_STREAM_DRAW);
@@ -2195,26 +2388,32 @@ static void vertices_in(const GrVertex *vertices, const VCacheVert *side, int co
   vbo_count(t0, (size_t)count * sizeof *vertices);
 }
 
-void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count) {
-  uint64_t t0 = 0;
+void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
+                 const uint32_t *dr, int ndr) {
+  uint64_t t0 = 0, t1;
   batch_flush();
+  t1 = parts_us();
   if (g_vita_opts.gpu_fused == 2) {
     s_fmode = (int)(s_fab.turn++ & 1);
     t0 = now_us();
   } else {
     s_fmode = g_vita_opts.gpu_fused != 0;
   }
-  vertices_in(vertices, side, count);
+  vertices_in(vertices, side, count, dr, ndr);
   if (t0) {
     s_fab.bufs[s_fmode]++;
     s_fab.vert_us[s_fmode] += now_us() - t0;
   }
+  if (t1)
+    s_st.verts_us += now_us() - t1;
 }
 
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
+  const uint32_t *dr = NULL;
+  const int ndr = g_nd_direct ? nd_direct_ranges(&dr) : 0;
   if (s_vc)
     psx_vcache_set_base(vertices);
-  gl_vertices(vertices, g_vcache_side, count);
+  gl_vertices(vertices, g_vcache_side, count, dr, ndr);
 }
 
 /* persp or subpixel: the render thread needs the vcache's answers too */
@@ -2225,7 +2424,9 @@ int gl_vcache_side_used(void) { return s_vc; }
 static void sync_pages(int start, int n) {
   int i, last_page = -1, last_clut = -1;
   for (i = 0; i < n; i += 3) {
-    const GrVertex *v = s_fused ? &s_lbuf[start + i].g : s_vbuf + start + i;
+    const GrVertex *v = s_direct  ? s_vorig + start + i
+                        : s_fused ? &s_lbuf[start + i].g
+                                  : s_vbuf + start + i;
     int page = (uint16_t)v->page, clut = (uint16_t)v->clut;
     if (page != last_page) {
       int pw = s_texmode == P_T4 ? 64 : s_texmode == P_T8 ? 128 : 256;
@@ -2561,7 +2762,27 @@ static void batch_issue(const Batch *b) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glEnableVertexAttribArray(2);
-  if (s_lean) {
+  if (s_lean && s_direct) { /* D99: the slab's vertices, then the side stream */
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    glDisableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
+    s_xattr = 1;
+    glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, x));
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, u));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GrVertex), (void *)offsetof(GrVertex, r));
+    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (void *)offsetof(GrVertex, tcx));
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo_side);
+    glVertexAttribPointer(4, 2, GL_SHORT, GL_FALSE, sizeof(DSide), (void *)offsetof(DSide, off));
+    glVertexAttribPointer(6, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(DSide), (void *)offsetof(DSide, tc));
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    if ((s_filter || s_cache) && s_texmode != P_UNTEX) {
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, s_atex[s_acur]);
+      glActiveTexture(GL_TEXTURE0);
+      s_ainuse[s_acur] = 1;
+    }
+  } else if (s_lean) {
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glDisableVertexAttribArray(5);
@@ -2645,16 +2866,18 @@ static void batch_issue(const Batch *b) {
 
 static void batch_flush(void) {
   Batch b = s_batch;
+  uint64_t t0;
   if (!b.n)
     return;
   s_batch.n = 0;
-  if (g_vita_opts.gpu_fused == 2) {
-    const uint64_t t0 = now_us();
-    batch_issue(&b);
-    s_fab.issue_us[s_fmode] += now_us() - t0;
-    return;
-  }
+  t0 = g_vita_opts.gpu_parts || g_vita_opts.gpu_fused == 2 ? now_us() : 0;
   batch_issue(&b);
+  if (!t0)
+    return;
+  t0 = now_us() - t0;
+  s_st.issue_us += t0;
+  if (g_vita_opts.gpu_fused == 2)
+    s_fab.issue_us[s_fmode] += t0;
 }
 
 void gl_flush_draws(void) { batch_flush(); }
@@ -2662,6 +2885,7 @@ void gl_flush_draws(void) { batch_flush(); }
 void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   Target *t = s_cur;
   int n = triangles * 3, x0, y0, x1, y1;
+  uint64_t t0;
   if (!t || triangles <= 0 || start_vertex < 0 || start_vertex + n > s_nverts)
     return;
   if (s_texmode < 0) {
@@ -2680,6 +2904,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
              v[0].b);
   }
   /* what follows sends the batch first wherever it reaches the GPU */
+  t0 = parts_us();
   sample_begin();
   if (s_texmode != P_UNTEX && any_stale())
     sync_pages(start_vertex, n);
@@ -2688,6 +2913,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     upload_vram();
   if (s_npsrc)
     pres_touch(t, 0);
+  if (t0)
+    s_st.pre_us += now_us() - t0;
 
   /* the target's own scale: s_sx, s_sy unless dynres scaled it (D75); a
    * held batch never spans a change of it (set_tscale runs only after a
@@ -2745,6 +2972,7 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
     if (!g_vita_opts.gpu_join)
       batch_flush();
   }
+  t0 = parts_us();
   {
     LogEntry *e = log_add(t, LOG_DRAW, (size_t)n * sizeof(GrVertex));
     if (e) {
@@ -2757,6 +2985,8 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
       memcpy(t->log.data + e->off, s_vorig + start_vertex, (size_t)n * sizeof(GrVertex));
     }
   }
+  if (t0)
+    s_st.log_us += now_us() - t0;
   t->cpu_stale = 1;
   s_gen++;
   s_st.draws++;
@@ -3022,6 +3252,8 @@ int gl_gpu_init(void) {
   s_vram_tex = new_tex(VW / 2, VH, NULL);
   s_rgb_tex = new_tex(4, 4, NULL);
   glGenBuffers(1, &s_vbo);
+  glGenBuffers(1, &s_vbo_side);
+  direct_mode();
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glDisable(GL_STENCIL_TEST);
@@ -3557,6 +3789,7 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   s_lean = lean;
   memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
   psx_vcache_enable(s_vc ? 2 : filter ? 1 : 0);
+  direct_mode();
   if (res != g_vita_opts.gpu_res) {
     g_vita_opts.gpu_res = res;
     gl_rescale();
@@ -3565,6 +3798,27 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
 }
 
 void gl_report(int vblank) {
+  static int last;
+  if (g_vita_opts.gpu_parts && vblank > last) {
+    const unsigned nv = (unsigned)(vblank - last);
+    const unsigned gx = (unsigned)(__atomic_exchange_n(&g_gxm_scene_us, 0, __ATOMIC_RELAXED) / nv);
+#define MSV(x) (unsigned)((x) / nv / 1000), (unsigned)((x) / nv % 1000 / 10)
+    vita_log("gpu parts %d: per vblank ms: vertex buffers %u.%02u (expand %u.%02u), the draws' "
+             "work before their batch %u.%02u, target logs %u.%02u, the batches' GL calls "
+             "%u.%02u; in sceGxmBeginScene/EndScene %u.%02u (D99)",
+             vblank, MSV(s_st.verts_us), MSV(s_st.expand_us), MSV(s_st.pre_us), MSV(s_st.log_us),
+             MSV(s_st.issue_us), gx / 1000, gx % 1000 / 10);
+#undef MSV
+  }
+  last = vblank;
+  if (g_nd_direct)
+    vita_log("gpu %d: nd_direct=%d: %u vertex buffers drawn direct, %u of their triangles as the "
+             "walk left them, %u converted here; %u buffers walked direct drawn another way; "
+             "nd_direct=2's check: %u buffers, %llu vertices, %llu differ, %u triangles of "
+             "another kind (D99)",
+             vblank, g_nd_direct, s_dst.bufs, s_dst.tris, s_dst.conv, s_dst.other, s_dst.cbufs,
+             (unsigned long long)s_dst.cverts, (unsigned long long)s_dst.cbad, s_dst.ctkind);
+  memset(&s_dst, 0, sizeof s_dst);
   vita_log("gpu %d: %u draws, %u triangles, %u presents, %u VRAM uploads (%u.%02u ms), "
            "%u copies into targets (%u moves between them), %u readbacks (%u replayed; "
            "%u.%02u ms), %d targets at %dx%d; %u untextured subtract draws joined (D92)",

@@ -1,0 +1,36 @@
+diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
+--- a/include/PsyX/PsyX_render.h
++++ b/include/PsyX/PsyX_render.h
+@@ -242,6 +242,10 @@
+ extern int PsyX_SplitStateSize(void);
+ extern void PsyX_SplitStateSave(void* buf);
+ extern void PsyX_SplitStateRestore(const void* buf);
++/* Spyro port (D99): called when the splits and the vertex buffer are
++ * emptied (ClearSplits: after a drawn list, at a scene's start), so state
++ * kept per vertex buffer outside PsyCross goes with them. */
++extern void (*g_psyxClearSplitsHook)(void);
+ 
+ extern void			GR_PushDebugLabel(const char* label);
+ extern void			GR_PopDebugLabel();
+\ No newline at end of file
+diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
+--- a/src/gpu/PsyX_GPU.cpp
++++ b/src/gpu/PsyX_GPU.cpp
+@@ -57,6 +57,8 @@
+ 
+ int g_vertexIndex = 0;
+ int g_splitIndex = 0;
++
++void (*g_psyxClearSplitsHook)(void) = NULL;
+ 
+ void ClearSplits()
+ {
+@@ -64,6 +66,8 @@
+ 	g_vertexIndex = 0;
+ 	g_splitIndex = 0;
+ 	g_splits[0].texFormat = (TexFormat)0xFFFF;
++	if (g_psyxClearSplitsHook)
++		g_psyxClearSplitsHook();
+ }
+ 
+ template<class T>

@@ -163,6 +163,13 @@
  *       nd_ab=1         with native_draw=1, timing: native_draw 0, 1 and 2
  *                       take turns, 8 lists each, and the "draw ab" and
  *                       "parse ab" lines time each (diagnostic, D91, D92)
+ *       nd_direct=1     with native_draw 1 or 2 and the lean GL vertex
+ *                       (gpu_lean, gpu_fused=1, no persp or subpixel): the
+ *                       walk leaves its triangles in the GL's form and the
+ *                       render thread draws them as they are, adding only
+ *                       the atlas's part (default 0; D99). 2: the walk
+ *                       lists them only, and the GL side converts them as
+ *                       well and compares (diagnostic)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -252,6 +259,7 @@ extern int g_ngte_fx;     /* src/game/mips2c_rt.c, D98 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
 extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
+extern int g_nd_direct; /* D99 */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -385,6 +393,8 @@ static void read_config(void) {
       g_vita_opts.gpu_lean = atoi(v);
     else if (!strcmp(line, "gpu_fused"))
       g_vita_opts.gpu_fused = atoi(v);
+    else if (!strcmp(line, "gpu_parts"))
+      g_vita_opts.gpu_parts = atoi(v);
     else if (!strcmp(line, "parse_thread"))
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "native_draw"))
@@ -393,6 +403,8 @@ static void read_config(void) {
       g_nd_fast = atoi(v);
     else if (!strcmp(line, "nd_ab"))
       g_nd_ab = atoi(v);
+    else if (!strcmp(line, "nd_direct"))
+      g_nd_direct = atoi(v);
     else if (!strcmp(line, "parse_core"))
       g_vita_opts.parse_core = atoi(v);
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
@@ -578,7 +590,8 @@ int main(int argc, char **argv) {
   }
   vita_parse_init(); /* after the render thread (D71) */
   nd_init(vita_log);
-  vita_log("native_draw=%d nd_fast=%d nd_ab=%d: %s", g_native_draw, g_nd_fast, g_nd_ab,
+  vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
+           g_nd_ab, g_nd_direct,
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
            : g_native_draw == 2   ? "the renderers' PS1 primitives parsed by the walk with the "
                                     "native draw lists' converter (D92)"

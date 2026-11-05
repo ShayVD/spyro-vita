@@ -382,6 +382,18 @@ So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWa
 - **D95 and D98 on hardware** (D98): the shadows and flame (`fx`) and the particles take 0.032 and 0.017 ms per vblank as mips2c units (X2), 0.021 and 0.010 as D95's hand C with records (X4), 0.027 and 0.012 with D98's native maths (X5): D98 is slower for these short loops, so `ngte_fx` stays 0. All four runs give the same 18 pictures and memory card.
 - **Toasty** (X6, X7): at 30 fps no late vblanks in play; at 60 fps 0.1 late per 300 (worst 1), the GPU at 6.3 ms a picture (max 7.7), the render thread 10.6 ms a picture, as D81's O2.
 
+**Runs Y1 and Y2** (2026-11-05, D99; VPK D99 at `937d6e6`): X4's switches with `nd_direct` 0 and 1, the stage 2 direct vertices. Both runs had D99's `gpu parts` timers on, which cost the GL layer 0.17 ms per vblank against X4 (now behind `gpu_parts=1`). The route (51 windows):
+
+| Part (windows) | Run | logic | renderers | draw/other | OT walk | PS1 GPU → vitaGL | SPU + mixer | XA reads | present | sum | emulation, measured |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| the route (51) | Y1 (`nd_direct=0`) | 0.15 | 2.86 | 0.20 | 2.10 | 3.61 | 0.24 | 0.44 | 0.31 | 9.92 | 64% |
+| | Y2 (`nd_direct=1`) | 0.15 | 2.85 | 0.20 | 2.08 | 3.58 | 0.23 | 0.44 | 0.30 | 9.82 | 64% |
+
+- **Before and after: 9.92 → 9.82 ms per vblank** with every layer on the game thread.
+  - The GL side's vertex buffers (inside the OT walk's layer here) fell 1.11 → 0.65 ms; the walk grew by as much (0.91 → 1.35).
+  - What stays in the PS1 GPU → vitaGL layer is `GR_DrawTriangles`: per vblank, the draws' work before their batch 0.15 ms, the target logs' copies 0.17, the batches' GL calls 0.49, and inside `sceGxmBeginScene`/`EndScene` 0.13 (Y2's `gpu parts`). That is 0.9 of its 3.6 ms; the rest of `GR_DrawTriangles`' time is in none of these parts, and the next thing to measure.
+- **At 60 fps** (Y3, Y4, the shipped threads): the render thread 0.75 ms per vblank lighter, the parse thread 0.72 heavier, late vblanks fewer (D99).
+
 
 ---
 
@@ -640,6 +652,22 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
 - `r_shadows.s`, `r_flame.s` and `r_particles.s`'s seven drawing entries (2,642 instructions) are hand C on the GTE register file (`src/game/shadows_hand.c`, `flame_hand.c`, `particles_hand.c`; `HAND_RENDERER_UNIT`), checked call by call against their mips2c units and by the oracle replay. Their polygons are native records with `native_draw=1`; their lines stay PS1 primitives.
 - So every renderer's polygons now reach the walk as records. What stays PS1 primitives: lines, the HUD's and `flight.c`'s 2D primitives (parsed natively by `nd_fast`), and the draw environment packets.
 - Left as mips2c in the renderers: `r_cyclorama.s`'s helpers, `r_environment.s`'s other functions and `r_moby.s`'s culls (stage 3), and `r_particles.s`'s slot allocators. D96 (stage 3) made them hand C too.
+
+**Then (D99, 2026-11-04): direct vertices, the last piece, behind `nd_direct=1` (default 0).**
+- **What was left:** each triangle was converted twice, by the walk (`em_prim`, into PsyCross's `GrVertex`) and again by the render thread (`expand_lean`: every vertex copied into the lean vertex with its UV box, atlas offset and flags). U1 timed that second pass at 1.9 ms of the render thread's 2.8 ms per vertex buffer (D92); X4 at 0.79–0.92 ms per vblank on the game thread.
+- **Now:** the walk writes each triangle's UV box into the vertex's spare bytes and lists the triangle. The render thread draws the slab's vertices as they came and adds only what depends on the atlas and the options, the atlas offset and two flags, in a side stream of 8 bytes a vertex. One rule for the box on both sides (`src/platform/common/psx_lean.h`). Everything `em_prim` makes is covered: the records and every polygon packet `nd_fast` parses (the HUD's polygons, particles, shadows, flame). PsyCross's own sprites, lines and rectangles are converted on the render thread by the same rule.
+- **The OT walk stays.** It orders the records with what is still a PS1 packet, and with the markers it visits a few hundred packets a list. Its cost was the conversions.
+- **Checked:**
+  - **host:** every packet both ways, 0 differ, every file identical on the demos, gems, 16:9 with 60 fps in-between frames, lod, routes A and B and the whole tour; `host_checks.sh` byte-identical with main; the oracle replay 0 FAIL.
+  - **Vita3K against main's VPK:** shots, window captures and card identical on gems, gems with every layer on the game thread, gems with `tex_filter=1`, the demos, 16:9 at 60 fps, and the pause route with a save state and load. `nd_direct=2` compares the render thread's own conversion with `expand_lean`'s, attribute by attribute: 0 of 21.9 M vertices differ.
+- **Hardware (Y1–Y4, 2026-11-05, D99):**
+  - **Pictures:** the same 18 pictures and card with the switch off and on.
+  - **K route, every layer on the game thread** (§3.5): the GL side's vertex buffers drop 1.11 → 0.65 ms per vblank, but the walk grows by as much. The box costs the same wherever it is computed, so the sum moves 9.92 → 9.82 ms.
+  - **Toasty at 60 fps, the shipped threads:**
+    - the render thread, the wall at 60 fps, does 0.75 ms per vblank less, 19% of its work;
+    - the parse thread does 0.72 more, and the game thread waits 0.33 more for it;
+    - late vblanks fell (the Stone Hill demo 9.9 → 2.9 per 300, Toasty 0.1 → 0.0, loads 169 → 97).
+  - **The default stays 0 (the owner's decision).** A cheaper box in the walk (ARMv6 SIMD minima and maxima, the skip test from the spans) would make it a gain on every thread.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 

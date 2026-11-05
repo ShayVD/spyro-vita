@@ -98,6 +98,13 @@
  *   and 2, only the records go through the converter.
  *   --nd-ab: native_draw 0, 1 and 2 in turn by blocks of lists (nd_ab, the
  *   Vita's timing run, D91, D92).
+ *   --nd-direct (with --native-draw or --native-draw-parse): the walk
+ *   leaves its triangles in the GPU renderer's lean form (nd_direct=1,
+ *   D99); the software rasterizer doesn't read what changes, so every
+ *   file is the same. --nd-direct-check: every packet the walk parses
+ *   itself is parsed both ways and compared ("native draw direct check"
+ *   lines; what stays is the direct way's with --nd-direct). Not with
+ *   --vcache or the other two checks, whose walks compare GrVertex.
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
@@ -127,6 +134,8 @@ void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
 extern int g_nd_ab;                    /* D91 */
 extern int g_nd_fast, g_nd_pcheck;     /* D92 */
+extern int g_nd_direct, g_nd_direct_ok, g_nd_dcheck; /* D99 */
+void nd_dcheck_report(void);
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
@@ -135,6 +144,7 @@ static void nd_atexit(void) {
   nd_report((int)host_vblank_count());
   nd_check_report();
   nd_pcheck_report();
+  nd_dcheck_report();
 }
 
 #include <stdio.h>
@@ -202,7 +212,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -489,6 +499,10 @@ int main(int argc, char **argv) {
       g_nd_fast = to_int(val);
     } else if (strcmp(a, "--nd-ab") == 0) {
       g_nd_ab = 1;
+    } else if (strcmp(a, "--nd-direct") == 0) {
+      g_nd_direct = 1;
+    } else if (strcmp(a, "--nd-direct-check") == 0) {
+      g_nd_dcheck = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {
       TAKE();
       g_gte_audit = to_int(val);
@@ -594,6 +608,14 @@ int main(int argc, char **argv) {
 #if SPYRO_ARENA_MOVED
   port_arena_symbols(host_log); /* the Vita's data labels (D25, D97) */
 #endif
+  /* the software rasterizer takes direct vertices (D99), but the vertex
+   * cache's references and the other checks' GrVertex comparisons don't */
+  g_nd_direct_ok = !s_vcache && !g_nd_check && !g_nd_pcheck;
+  if (g_nd_dcheck && !g_nd_direct_ok) {
+    host_log("--nd-direct-check: not with --vcache, --native-draw-check or "
+             "--native-draw-parse-check");
+    return 1;
+  }
   nd_init(host_log);
   if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
     host_log("walk: no 16 MB-aligned memory for the copy");

@@ -69,6 +69,7 @@ typedef struct {
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
   int gpu_fused;      /* gpu_fused=1: gpu_lean's vertices in one pass, programs per run, untextured
                          subtract draws joined (D92) */
+  int gpu_parts;      /* gpu_parts=1: time the GL side's parts, the "gpu parts" line (D99) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU

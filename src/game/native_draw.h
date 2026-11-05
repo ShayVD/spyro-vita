@@ -145,6 +145,33 @@ extern NdSide g_nd_side[ND_SIDE_N];
 #define ND_SIDE_AT(p) (&g_nd_side[((p) >> 2) & (ND_SIDE_N - 1)])
 #define ND_SIDE_KEY(p) (((p) & 0x1FFFFFu) | g_nd.key)
 
+/* Direct vertices (D99, src/platform/common/psx_lean.h). config
+ * nd_direct=1 (host --nd-direct), with native_draw 1 or 2: each triangle
+ * the walk makes (em_prim: the records and the polygon packets it parses)
+ * that the PS1 GPU doesn't skip leaves the walk in the GPU renderer's lean
+ * form (its UV box in the vertex's spare bytes), and its vertices are
+ * listed (nd_direct_ranges), so the renderer draws them as they are.
+ * nd_direct=2 (the Vita's check): the walk lists them but leaves them as
+ * before, and the renderer converts them itself and compares. The platform
+ * says whether its renderer takes them now (g_nd_direct_ok: the Vita's lean
+ * GL path; the host's software rasterizer, which doesn't read those bytes),
+ * and a list is walked direct only then: the mode goes to the walk with the
+ * list (g_psx_walk_nd's ND_WALK_* bits). */
+extern int g_nd_direct;
+extern int g_nd_direct_ok;
+enum { ND_WALK_DIRECT = 0x10, ND_WALK_RANGES = 0x20 };
+/* The direct triangles of the vertex buffer the walk is filling: n ranges
+ * of vertex indices, [r[2i], r[2i + 1]), ascending, whole triangles. They
+ * go when PsyCross empties the buffer (ClearSplits, patch 0014), so read
+ * them at GR_UpdateVertexBuffer. */
+enum { ND_DR_MAX = 2048 };
+int nd_direct_ranges(const u32 **r);
+/* host --nd-direct-check: every packet the walk parses itself both ways
+ * from the same state, the direct triangles compared with the reference's
+ * after psx_lean.h's rule (native_draw.c) */
+extern int g_nd_dcheck;
+void nd_dcheck_report(void);
+
 /* nd_ab=1: native_draw 0, 1 or 2, the one the list being built now is
  * counted under, or -1 (a block's first lists, or nd_ab off) */
 enum { ND_AB_VARIANTS = 3 };
