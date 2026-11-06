@@ -180,6 +180,14 @@
  *                       the render thread converts them (expand_lean). 2:
  *                       the walk lists them only, and the GL side converts
  *                       them as well and compares (diagnostic)
+ *       gpu_clear=1     with gpu=1, ClearImage's VRAM rect and the logs'
+ *                       replays filled row by row with NEON, and a whole
+ *                       clear's log base kept as its colour (D111; default
+ *                       0: the clears as before). 2: also, a clear of a
+ *                       target whole leaves s_vram to the target's
+ *                       read-back, which rewrites that rect anyway. The same
+ *                       pixels. 3: 2's audit, poison where 2 writes nothing
+ *                       (a picture that differs shows a reader; diagnostic)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -271,6 +279,7 @@ extern int g_native_draw; /* src/game/native_draw.c, D82 */
 extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
 extern int g_nd_direct; /* D99 */
+extern int g_gpu_clear; /* gpu_soft.c, D111 */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -409,6 +418,8 @@ static void read_config(void) {
       g_vita_opts.gpu_fused = atoi(v);
     else if (!strcmp(line, "gpu_parts"))
       g_vita_opts.gpu_parts = atoi(v);
+    else if (!strcmp(line, "gpu_clear"))
+      g_gpu_clear = atoi(v);
     else if (!strcmp(line, "parse_thread"))
       g_vita_opts.parse_thread = atoi(v);
     else if (!strcmp(line, "native_draw"))
@@ -612,6 +623,13 @@ int main(int argc, char **argv) {
                                     "native draw lists' converter (D92)"
            : g_fast_render == 2   ? "the hand renderers' primitives as native draw lists (D82)"
                                   : "needs fast_render=2: off");
+  vita_log("gpu_clear=%d: %s", g_gpu_clear,
+           g_gpu_clear >= 3   ? "the clears row by row, a target's whole clear left to its "
+                                "read-back, poison in its place (audit, D111)"
+           : g_gpu_clear == 2 ? "the clears row by row, a target's whole clear left to its "
+                                "read-back (D111)"
+           : g_gpu_clear      ? "the clears row by row (D111)"
+                              : "the clears pixel by pixel");
   vita_present_init();
   vita_picture_init();
   vita_pad_init();

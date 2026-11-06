@@ -13,6 +13,7 @@
 
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
+#include "psx_fill.h"
 
 #define VW 1024
 #define VH 512
@@ -24,6 +25,13 @@ uint16_t *host_vram(void) { return s_vram; }
 TextureID g_whiteTexture = 1; /* untextured splits */
 TextureID g_vramTexture = 2;  /* textured splits */
 int g_cfg_bilinearFiltering = 0;
+
+/* gpu_clear (D111): 0 ClearImage's pixels one at a time through the wrap, as
+ * before; 1 or more, each row's run in one go (psx_fill_rect, the same
+ * pixels). The host's --gpu-clear, the Vita's gpu_clear= (whose GL side,
+ * gpu_gl.c, has 2 and 3 as well); not renamed in the Vita build, so both
+ * rasterizers there read the one switch. */
+int g_gpu_clear;
 
 static const GrVertex *s_verts;
 static int s_nverts;
@@ -95,6 +103,10 @@ void GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g,
                   unsigned char b) {
   uint16_t c = (uint16_t)((r >> 3) | (g >> 3) << 5 | (b >> 3) << 10);
   int i, j;
+  if (g_gpu_clear) {
+    psx_fill_rect(s_vram, x, y, w, h, c);
+    return;
+  }
   for (i = 0; i < h; i++) {
     uint16_t *row = s_vram + ((y + i) & (VH - 1)) * VW;
     for (j = 0; j < w; j++)
