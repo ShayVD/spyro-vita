@@ -6,6 +6,11 @@
 #ifndef PSX_CDIMAGE_H
 #define PSX_CDIMAGE_H
 
+/* The sector reader, sniffing, directory walk and SHA-1 are vita-port-kit's
+ * discimage (third_party/vita-port-kit/vita/runtime/discimage, D108);
+ * cdimage.c keeps the image search, the messages and the disc check. */
+#include "../../../third_party/vita-port-kit/vita/runtime/discimage/vpk_discimage.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -76,15 +81,11 @@ void psx_cdimage_layout(int *sector, int *base);
  * subheader, 24: Form 1 data). Returns n, or -1 past the end of the image. */
 int psx_cdimage_read(int lba, int off, void *buf, int n);
 
-/* SHA-1 (cdimage.c), for the disc check and the tests. */
-typedef struct {
-  unsigned int h[5];
-  unsigned long long len;
-  unsigned char buf[64];
-} PsxSha1;
-void psx_sha1_init(PsxSha1 *s);
-void psx_sha1_update(PsxSha1 *s, const void *data, unsigned n);
-void psx_sha1_hex(PsxSha1 *s, char out[41]);
+/* SHA-1, for the disc check and the tests: vita-port-kit's (D108). */
+typedef VpkSha1 PsxSha1;
+#define psx_sha1_init vpk_sha1_init
+#define psx_sha1_update vpk_sha1_update
+#define psx_sha1_hex vpk_sha1_hex
 
 /* libcd.c's I/O accounting, for cdimage.c's reads */
 void psx_cd_io_add(unsigned bytes, unsigned long long t0);
