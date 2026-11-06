@@ -17,7 +17,8 @@ import sys
 # chunk_globals() in src/game/savestate.c, with port_cheats_state()
 SAVED = {"g_mips_sp", "g_mips_v1",
          "cheats_port.c:s_pending", "cheats_port.c:s_level", "cheats_port.c:s_age",
-         "cheats_port.c:s_title_done"}  # the queued cheat (D50)
+         "cheats_port.c:s_title_done",  # the queued cheat (D50)
+         "gteRegs"}  # chunk_gpu(); ours since stage 8c (gte_regs.c, D116)
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only
@@ -38,6 +39,8 @@ CONSTANT = {
 SETTINGS = {
     "g_port_controls",          # camera_hand.c: free camera, invert, speed (D47)
     "g_port_skip_logos",        # cheats_port.c (D50)
+    "g_psyxRtpHook", "g_psyxRtpValueHook",  # gte_ops.c (D116): the vertex cache's hooks,
+                                # set by the picture options (psx_vcache_enable, D39, D89)
 }
 CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle

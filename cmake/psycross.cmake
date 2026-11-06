@@ -20,7 +20,13 @@ if(SPYRO_PSYCROSS_PLATFORM)
     "${PSYCROSS_DIR}/src/render/PsyX_render.cpp"
     "${PSYCROSS_DIR}/src/render/glad.c")
 endif()
-set_source_files_properties(${PSYCROSS_SRCS} PROPERTIES LANGUAGE CXX)
+# libgte, the GTE register file and its moves are ours since stage 8c
+# (src/game/libgte.c, gte_regs.c; D116): PsyCross's GTE is only the
+# reference below.
+set(PSYCROSS_GTE_SRCS "${PSYCROSS_DIR}/src/psx/LIBGTE.C" "${PSYCROSS_DIR}/src/psx/INLINE_C.C"
+  "${PSYCROSS_DIR}/src/gte/PsyX_GTE.cpp")
+list(REMOVE_ITEM PSYCROSS_SRCS ${PSYCROSS_GTE_SRCS})
+set_source_files_properties(${PSYCROSS_SRCS} ${PSYCROSS_GTE_SRCS} PROPERTIES LANGUAGE CXX)
 set_source_files_properties("${PSYCROSS_DIR}/src/render/glad.c" PROPERTIES LANGUAGE C)
 
 add_library(psycross STATIC ${PSYCROSS_SRCS})
@@ -32,3 +38,34 @@ target_compile_definitions(psycross PUBLIC
   USE_EXTENDED_PRIM_POINTERS=0 USE_PGXP=0)
 target_compile_options(psycross PRIVATE ${SPYRO_GUARD_FLAGS} -w
   $<$<COMPILE_LANGUAGE:CXX>:-Wno-narrowing>)
+
+# The reference (docs/native-plan.md, the stage 8 plan, D113; D116): PsyCross's
+# GTE beside ours, for tests/gte, which compares the two call by call, and
+# for the mips2c units of the arena build, which call its GTE_operator at
+# fast_render=0. Its libgte and register moves are renamed psyx_*;
+# GTE_operator keeps its name and works on our gteRegs and RTP hooks (patch
+# 0015 drops PsyCross's definitions of them). Never in the native build's
+# game (no mips2c units, nothing calls GTE_operator).
+if(SPYRO_HOST STREQUAL "linux32" OR NOT SPYRO_NATIVE_MEM)
+  set(psycross_ref_default ON)
+else()
+  set(psycross_ref_default OFF)
+endif()
+option(SPYRO_PSYCROSS_REF "Build PsyCross's GTE as the reference library psycross_ref" ${psycross_ref_default})
+if(NOT SPYRO_NATIVE_MEM AND NOT SPYRO_PSYCROSS_REF)
+  message(FATAL_ERROR "the mips2c units call GTE_operator: SPYRO_PSYCROSS_REF needs to be ON without SPYRO_NATIVE_MEM")
+endif()
+if(SPYRO_PSYCROSS_REF)
+  add_library(psycross_ref STATIC ${PSYCROSS_GTE_SRCS})
+  target_include_directories(psycross_ref PUBLIC
+    "${PSYCROSS_DIR}/include" "${PSYCROSS_DIR}/include/psx")
+  target_include_directories(psycross_ref PRIVATE "${PSYCROSS_DIR}/src")
+  set(psycross_ref_names InitGeom SetGeomOffset SetGeomScreen SetTransMatrix MulMatrix MulMatrix0
+      MTC2 MFC2 CTC2 CFC2)
+  foreach(n ${psycross_ref_names})
+    target_compile_definitions(psycross_ref PRIVATE ${n}=psyx_${n})
+  endforeach()
+  target_compile_definitions(psycross_ref PRIVATE PSYX_NO_SDL USE_EXTENDED_PRIM_POINTERS=0 USE_PGXP=0)
+  target_compile_options(psycross_ref PRIVATE ${SPYRO_GUARD_FLAGS} -w
+    $<$<COMPILE_LANGUAGE:CXX>:-Wno-narrowing>)
+endif()

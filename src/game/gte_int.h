@@ -34,10 +34,15 @@ GTE_INT_INL int Dot(const Vector3D *r, const Vector3D *v) {
   return (int)((long long)(S16(r->x) * S16(v->x)) + S16(r->y) * S16(v->y) + S16(r->z) * S16(v->z));
 }
 
-/* A row of MVMVA or RTPS (sf 1, lm 0, no translation) read back as IR:
- * the row times V0, >> 12, clamped to 16 bits. */
+/* A row of MVMVA or RTPS (sf 1, no translation) read back as MAC: the row
+ * times V0, >> 12. */
+GTE_INT_INL int RotMac(const short *row, int vx, int vy, int vz) {
+  return (int)(((long long)(row[0] * vx) + row[1] * vy + row[2] * vz) >> 12);
+}
+
+/* The same row (lm 0) read back as IR: the MAC clamped to 16 bits. */
 GTE_INT_INL int RotClamp(const short *row, int vx, int vy, int vz) {
-  int v = (int)(((long long)(row[0] * vx) + row[1] * vy + row[2] * vz) >> 12);
+  int v = RotMac(row, vx, vy, vz);
   return v > 0x7FFF ? 0x7FFF : v < -0x8000 ? -0x8000 : v;
 }
 

@@ -98,6 +98,10 @@ SOFTWARE.
 
 PsyCross's `src/gte/half_float.cpp` follows a public-domain gist by Fabian Giesen (rygorous).
 `patches/PsyCross/` holds this port's changes to PsyCross, under the MIT licence like PsyCross.
+Some of the port's own files are derived from PsyCross and keep its notice above: its GTE
+arithmetic, expression for expression, in `src/game/gte_inline.h` and `src/game/gte_ops.c`
+(decisions D72), and its libgte and GTE register file in `src/game/libgte.c` and
+`src/game/gte_regs.c` (D116).
 `src/platform/common/libgpu.c` (stage 8b, D115) is ported from PsyCross's `src/psx/LIBGPU.C` with our patches' changes, under the notice above.
 
 ### TheMobyCollective/spyro-1
