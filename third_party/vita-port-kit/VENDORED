@@ -3,5 +3,6 @@ commit 27f0788508b254c78bbbb4031996263a896bf71e
 path vita/tools
 path vita/cmake
 path vita/runtime/audioout
+path vita/runtime/touch
 path vita/runtime/modmenu
 path vita/runtime/discimage
