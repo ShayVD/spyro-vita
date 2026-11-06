@@ -19,6 +19,7 @@
 #include "vita.h"
 #include "../../game/port_controls.h"
 #include "menu_opts.h"
+#include "psx_pad.h"
 
 #include <SDL2/SDL.h>
 #include <math.h>
@@ -28,8 +29,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-extern int g_padCommEnable; /* LIBPAD.C: PadStartCom/PadStopCom */
 
 enum {
   PSX_SELECT = 0x0001, PSX_L3 = 0x0002, PSX_R3 = 0x0004, PSX_START = 0x0008,
@@ -461,8 +460,8 @@ void vita_pad_vblank(void) {
   fill(s_pad[1], 0, 0, NULL);
 }
 
-/* The PsyX_Pad_* calls LIBPAD.C makes. */
-void PsyX_Pad_InitPad(int slot, unsigned char *padData) {
+/* The psx_pad_* calls our libpad makes (psx_pad.h, D114). */
+void psx_pad_init(int slot, unsigned char *padData) {
   if (slot < 0 || slot > 1)
     return;
   static const unsigned char centred[4] = {0x80, 0x80, 0x80, 0x80};
@@ -470,16 +469,14 @@ void PsyX_Pad_InitPad(int slot, unsigned char *padData) {
   fill(padData, slot == 0, 0, g_vita_opts.analog ? centred : NULL);
 }
 
-int PsyX_Pad_GetStatus(int mtap, int slot) {
+int psx_pad_status(int mtap, int slot) {
   (void)mtap;
   return slot == 0;
 }
 
-void PsyX_Pad_Vibrate(int mtap, int slot, unsigned char *table, int len) {
+void psx_pad_vibrate(int mtap, int slot, unsigned char *table, int len) {
   (void)mtap;
   (void)slot;
   (void)table;
   (void)len;
 }
-
-void PsyX_Pad_InternalPadUpdates(void) {}
