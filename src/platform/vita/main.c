@@ -95,9 +95,9 @@
  *                       vblank, and the game thread never waits for a
  *                       present; a render thread that falls behind skips
  *                       late frames' draws (in-between frames first) and
- *                       keeps their uploads (stage 7c, D112). Default 0:
- *                       VSync presents, as before, until its hardware pair
- *                       has run. realtime=0 is unchanged either way
+ *                       keeps their uploads (stage 7c, D112). Default 1
+ *                       since its hardware runs 7C1-7C4; 0: VSync presents,
+ *                       as before D112. realtime=0 is unchanged either way
  *       xa_ahead=0      with cd_native=0: the XA music's sectors read on
  *                       the game thread (default 1: read ahead of the CD
  *                       head on core 1; D64, D68)
@@ -265,6 +265,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
+                        .present_due = 1, /* D112: the default after hardware runs 7C1-7C4 */
                         .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */
                         .dynres = 0, /* D75: off by default after hardware run J6 */
                         .atlas_cpu = 1, /* D79 */

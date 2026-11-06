@@ -64,7 +64,8 @@ typedef struct {
   int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
   int present_due;    /* present_due=1: with realtime=1 and the render thread, the render thread
                          shows each frame at its due vblank and the game never waits for a
-                         present (stage 7c, D112); 0 (default): presents from VSync, as before */
+                         present (stage 7c, D112; the default since 7C1-7C4); 0: presents from VSync,
+                         as before */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int cd_native;      /* cd_native=1: CdReads as file reads on a worker, the XA stream read ahead (D93) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
