@@ -1058,7 +1058,7 @@ So every callback runs on the game thread inside a `VSync(0)`, in a burst after 
 - **`PortPresentDraw`,** in place of `GamestateDraw`, runs four steps:
   1. `snap_take()` copies what the draw path writes that the game reads again: the scratchpad; the data and bss (0x8006BBE0–0x8007AA38); the moby array; the particle space; each sector's bytes 0x18–0x1B; the GTE registers; PsyCross's draw and display environments; and `g_mips_v1`.
   2. `blend_state()` moves the camera, Spyro, the mobys and the particles halfway back to the last tick, in place.
-  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`), and captures its picture.
+  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`; our libgpu's `g_psx_vram_frozen` since D115), and captures its picture.
   4. `snap_restore()`.
 
   Then the logic pass runs: the game's own draw.
@@ -1238,7 +1238,7 @@ D113 found that stage 8 needn't wait for 7g: `g_psyxVramFrozen` and the `DrawOTa
 
 ### Stage 8: retire PsyCross (medium, low–medium risk, after stages 1, 2, 4 and 7c; not after 7g)
 
-**Status (D113, 2026-11-06): planned below. 8a done (D114).**
+**Status (D113, 2026-11-06): planned below. 8a done (D114). 8b done (D115): our `libgpu.c` in place of `LIBGPU.C`, the hooks direct calls.**
 
 **Replaces** (D): what's left of PsyCross:
 - libgpu's environment calls (`PutDrawEnv` 26, `PutDispEnv` 29, `DrawSync` 57, `LoadImage` 20, `StoreImage` 6, `MoveImage` 2 call sites in the decomp C; D113 recounts them);
@@ -1380,7 +1380,7 @@ The register file's moves and `GTE_operator` are a few hundred calls a vblank; l
 ##### What can't change
 
 - **Faithfulness:** `tools/host_checks.sh` byte-identical (traces, shots, WAVs, memory cards); Vita3K shots, window captures and card identical to main's VPK; the oracle replay on the arena build; both attract demos tick for tick against the emulator.
-- **Save states:** the `GPU ` chunk (`DRAWENV`, two `DISPENV`, `g_GPUDisabledState`, `gteRegs`) keeps its bytes, so a format-2 state saved before stage 8 loads after it. Each step checks that.
+- **Save states:** the `GPU ` chunk (`DRAWENV`, two `DISPENV`, `g_GPUDisabledState`, `gteRegs`) keeps its bytes, so a format-2 state saved before stage 8 loads after it. Each step checks that. *Corrected by D115:* no build loads another build's state (D51 refuses it as "another build", rightly: a state holds code and data addresses, `vsync_callback` in this chunk among them). What each step can check is that the format is unchanged: the same chunks and lengths, and, between states saved at the same vblank by main and the step, every differing word an address that moved with the build (`tools/state_cmp.py`).
 - **`tools/build_matching.sh` stays green.**
 - **The decomp is patched only where a call is removed outright.** Stage 8 removes none: every one of the 28 entry points keeps its name and contract. So stage 8 adds no decomp patch.
 
@@ -1429,7 +1429,7 @@ Status as of 2026-11-06 (D113; the table's layout is D101's). The payoff column 
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
 | 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
 | 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d–7g wait for a reason other than CPU (D104) |
-| 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113); 8a done (D114): 8a–8c at once, 8d our walk, 8e the build (the owner's header decision), 8f a hardware pair |
+| 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113); 8a done (D114), 8b done (D115): 8a–8c at once, 8d our walk, 8e the build (the owner's header decision), 8f a hardware pair |
 
 **What can run at once:**
 - **Now:** 7c's pictures on hardware (D112), and 7d if a reason for it comes (7d changes the renderers' interfaces).

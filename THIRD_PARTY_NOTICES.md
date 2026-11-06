@@ -98,6 +98,7 @@ SOFTWARE.
 
 PsyCross's `src/gte/half_float.cpp` follows a public-domain gist by Fabian Giesen (rygorous).
 `patches/PsyCross/` holds this port's changes to PsyCross, under the MIT licence like PsyCross.
+`src/platform/common/libgpu.c` (stage 8b, D115) is ported from PsyCross's `src/psx/LIBGPU.C` with our patches' changes, under the notice above.
 
 ### TheMobyCollective/spyro-1
 

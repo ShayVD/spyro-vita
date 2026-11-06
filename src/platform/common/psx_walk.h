@@ -42,9 +42,17 @@ int psx_walk_mode(void);
 /* The walker: walk the list handed over last (PsxWalkThread.post). */
 void psx_walk_run(void);
 
+/* DrawOTag (libgpu.c): 1 if the walk took the list p (copied, and walked
+ * later or on the walker); 0 if DrawOTag must walk it in place now (no
+ * walk, or the list starts outside the copy). */
+int psx_walk_hand_over(unsigned long *p);
+/* libgpu.c's VRAM calls: g_psx_vram_frozen, or on the walker its value when
+ * the list was handed over. */
+int psx_walk_vram_frozen(void);
+
 /* Game thread. Everything handed over has been walked and what was
- * deferred has run. PsyCross's own calls and VSync do this first
- * (g_psyxGpuGate); so must anything else that reads or writes the GPU state
+ * deferred has run. libgpu's calls and VSync do this first (libgpu.c,
+ * libetc.c); so must anything else that reads or writes the GPU state
  * a walk uses. A no-op on the walker. */
 void psx_walk_join(void);
 /* 1 while a list handed over hasn't been joined (game thread). */

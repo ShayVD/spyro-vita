@@ -115,11 +115,11 @@ PSYQ_LIBS = [
     (r"^__main$", "crt"),
     (r".", "libgpu"),  # SetDefDrawEnv ... DrawOTag, PutDrawEnv, SetDrawMode
 ]
-# Who runs each library on the Vita: our own libcd/libspu/libmcrd/libetc/libpad
-# (src/platform/common; libetc since D104, libpad since D114), our rand_psyq.c,
-# PsyCross for the rest.
+# Who runs each library on the Vita: our own libcd/libspu/libmcrd/libetc/libpad/
+# libgpu (src/platform/common; libetc since D104, libpad since D114, libgpu's API
+# since D115), our rand_psyq.c, PsyCross for the rest.
 PSYQ_CAT = {"libspu": "E", "libcd": "E", "libmcrd": "E", "libetc": "E", "libpad": "E",
-            "libc rand": "B1"}
+            "libgpu": "E", "libc rand": "B1"}
 
 
 def psyq_split(path):
@@ -242,7 +242,8 @@ PLATFORM_E = {
     "common": ["arena.c", "psx_arena.h", "cdimage.c", "psx_cdimage.h", "libcd.c", "psx_cd.h",
                "libmcrd.c", "libspu.c", "psx_spu.h", "xa.c", "psx_xa.h", "vcache.c",
                "psx_vcache.h", "walk.c", "psx_walk.h", "psx_hooks.h", "psx_state.h",
-               "libetc.c", "clock.c", "psx_clock.h", "libpad.c", "psx_pad.h"],
+               "libetc.c", "clock.c", "psx_clock.h", "libpad.c", "psx_pad.h",
+               "libgpu.c", "psx_libgpu.h"],
     # gpu_gl.c: the PS1 GPU (primitives, VRAM, texture pages, CLUTs, blend
     # modes) drawn with vitaGL; gpu.c/video.c: the GR_* switch and gpu=0's
     # software picture; vblank.c: the PS1's vblank clock over sceDisplay;
@@ -277,7 +278,7 @@ def source_rows(build):
     ps = sorted(glob.glob(os.path.join(PSYCROSS, "src/psx/*.C")) + glob.glob(os.path.join(PSYCROSS, "src/gte/*.cpp"))
                 + glob.glob(os.path.join(PSYCROSS, "src/gpu/*.cpp")))
     for p in ps:
-        if not re.search(r"/(LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD)\.C$", p):
+        if not re.search(r"/(LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD|LIBGPU)\.C$", p):
             add("D", p)
     if build:
         gen = os.path.join(build, "gen/mips2c")

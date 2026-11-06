@@ -32,6 +32,20 @@ static void expect_px(int x, int y, uint16_t want, const char *what) {
   }
 }
 
+/* PsyQ's ClearOTagR, as PsyCross's LIBGPU.C had it: entry 0 ends the list,
+ * each other links to the one before. Our libgpu (D115) leaves it out: the
+ * game links its own OT (order_table.c). */
+static void clear_ot_r(u_long *ot, int n) {
+  OT_TAG *t = (OT_TAG *)ot;
+  int i;
+  termPrim(t);
+  setlen(t, 0);
+  for (i = 1; i < n; i++) {
+    setaddr(&t[i], &t[i - 1]);
+    setlen(&t[i], 0);
+  }
+}
+
 static void expect(int cond, const char *what) {
   if (!cond) {
     printf("FAIL %s\n", what);
@@ -103,7 +117,7 @@ static void test_draw(const char *outdir) {
   expect(de.dfe == 1, "SetDefDrawEnv gives dfe=1");
 
   ot = arena_alloc(8 * sizeof(u_long));
-  ClearOTagR(ot, 8);
+  clear_ot_r(ot, 8);
 
   f3 = arena_alloc(sizeof *f3); /* drawn first */
   setPolyF3(f3);
@@ -263,6 +277,8 @@ int port_present_frame_due(int v) {
 }
 const uint16_t *port_present_shown_pixels(void) { return 0; }
 int port_present_frame_is_wide(void) { return 0; }
+int port_present_ot_pre(u_long *p) { (void)p; return 0; } /* libgpu.c's DrawOTag */
+void port_present_ot_post(u_long *p) { (void)p; }
 void port_lod_report(char *out, unsigned len) {
   if (len)
     out[0] = 0;
