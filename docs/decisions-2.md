@@ -232,19 +232,27 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **The queue's drops weren't followed.** In the gamestates that tick every vblank, two frames are filed a vblank, so the queue drops its oldest and moves the rest up. The render thread didn't know: slots came back before any frame was due, and nothing was shown for 300 vblanks. Each filed frame now names the frame dropped for it.
   - **Presents inside a command** were timed twice in the render line.
 - **Size:** ~670 lines with comments, over 18 files (`gpu_thread.c` ~380 of them). The plan said ~300–500.
-- **Checks** (logs gitignored, in this worktree's `logs/`; main is `0c3fff4`). The host binary is `869ba2f`'s; the commits after it change only Vita files:
+- **Checks** (logs gitignored, in this worktree's `logs/`). The host runs are this branch on main `0c3fff4`; the host binary is `869ba2f`'s, and the commits after it change only Vita files. The Vita3K runs are this branch merged with main `172b8ec` (`logs/s7c-branch-8.vpk`, SHA-1 `c0ac8e98…`), against main's CI VPK (run 42200382743, `a2ff7c01…`):
   - **Host, against main's binary** (`build/s7c-ref/spyro-main`; `tools/host_checks.sh`):
     - plain: 279 of 279 files identical (`logs/s7c-main-*`, `logs/s7c-br-*`);
     - `EXTRA=--interp`: 279 of 279 identical, the shots taken by vblank from the presentation frames (`logs/s7c-main-i-*`, `logs/s7c-br-i-*`);
     - the attract demos with `--widescreen --interp --present-stats`: 50 of 50 identical (shots every 250, trace, WAV; `logs/s7c-*-wsdemo`).
   - **ctest:** 17 of 17 (`gte` skipped, as on main). **Matching build:** green (`logs/s7c-matching.txt`).
-  - **Vita3K `realtime=0`, main's CI VPK** (run 42184150441, SHA-1 `91313cb5…`) against this branch's (the gems script, `frames=8768 shot_every=512`, `CAPTURE=1`):
-    - 30 fps: 17 of 17 shots, 17 of 17 window captures and the memory card identical;
-    - 60 fps forced (`interp=1 interp_budget=0`): 17 of 17 shots and the card identical; captures VPK_FINAL_CAPTURES.
-    - `present_due` is off in `realtime=0`, so these runs show the default is main's.
+  - **Vita3K `realtime=0`** (the gems script, `frames=8768 shot_every=512`, `CAPTURE=1`; `present_due` is off in `realtime=0`, so these show the default is main's):
+    - **30 fps:** 17 of 17 shots, 17 of 17 window captures and the memory card identical (`logs/s7c-v3k-m2-gems`, `-b8-gems`).
+    - **60 fps forced** (`interp=1 interp_budget=0`; main's VPK three times, this branch's three times):
+      - In every run, 17 of 17 shots and the card are identical to main's.
+      - Main's three runs have identical captures.
+      - The branch runs have at most one capture each that differs from them below the window's top row, a different one each time: none in one run; the 30×60 patch at 8704 that D100 and D106 saw in another; a 94×18 patch at 8192 in the third. Row 1 differs by 1–2 in some grabs, as D106 recorded. That is the grab.
+      - The earlier branch builds of this PR gave the same: 17 of 17 everything against main `0c3fff4`'s CI VPK (`91313cb5…`) at both rates.
+    - **Vita3K crashed twice** on the branch's 60 fps gems runs, on VPKs 4 and 8, of 7 such runs; 0 of 4 on main's. The crash is inside Vita3K's renderer thread: `free()` of a bad pointer in `renderer::cmd_handle_set_context`, in its macOS crash report. With `realtime=0` the branch issues the same GL calls in the same order as main. Read as a Vita3K race the timing exposes, but noted: the hardware runs will say whether anything like it happens on a Vita.
   - **Vita3K with `REALTIME=1` and `present_due=1`:** the gems script and the K route (`k-route.pad` with `m1-xa-k.cfg`'s menu warps) reach `frames=` with no hang. The menu warps, loads, title and intro work. The present line's counts add up.
     - Timing in Vita3K says little. Late vblanks per 300 differ by 3× between two runs of the same VPK and settings (the Mac was loaded by host checks and another session's Vita3K runs). And in Vita3K a swap costs the render thread about a whole vblank, where X7 measured 10.6 ms a picture on hardware.
-    - In the gamestates that tick every vblank, the render thread is the wall in Vita3K with either setting. With `present_due=0` the game absorbs that in `VSync`; with `present_due=1` it waited for the vertex slabs mid-tick and ran late (up to 120 vblanks late per 300). That is what the hold of two vblanks per picture is for. VITA3K_HOLD_RESULT
+    - In the gamestates that tick every vblank, the render thread is the wall in Vita3K with either setting. With `present_due=0` the game absorbs that in `VSync`; with `present_due=1`, before the hold, it waited for the vertex slabs mid-tick and ran up to 120 vblanks late per 300.
+    - With the hold (VPK 7), that was gone: on the K route, late vblanks per 300 were 1.4 in the attract demo and 1.5 in Artisans, the game thread at most 39% busy.
+    - On the merged VPK, `present_due` 1 against 0, late vblanks per 300 on the K route: title 3.4 against 8.2, the attract demo's flight 17.0 against 59.3, Artisans 11.5 against 7.6. "Previous frame not shown yet" went from 1.4–1.9 s a window to 0.
+    - Over the route, the render thread showed 15,894 frames at their vblank: 444 late (509 vblanks), 666 never shown, draws skipped for 655 in-between and 569 real frames, and 427 presents held (`logs/s7c-v3k-b8-k60-rt-*`).
+    - The route's level warps (`menu_test`) took or didn't from run to run with either setting; the menu opened, saved and closed in every run.
 - **The hardware pair** (proposed, not run; the owner's yes first for each run): runs 7C1–7C4 in `tools/vita/fps-runs/README.md`. On one VPK: X7's settings on the K route and on the Toasty route, `present_due=0` against `=1`.
   - **What decides it:** late vblanks per 300 (above all in the attract demo's flight), the game thread's waits (`wfr` should be 0 with 7c, `wpool` small), the `7c:` skips, and the pictures looking right.
   - **If it passes,** `present_due=1` becomes the Vita's default in a follow-up. If it doesn't, the switch stays off and 7c's host side (frames by due vblank) stays, as it changes nothing.
