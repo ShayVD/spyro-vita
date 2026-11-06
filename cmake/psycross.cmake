@@ -2,7 +2,8 @@
 # PS1-native primitive layout (docs/porting-plan.md §5): no extended prim
 # pointers, no PGXP. Our own libcd and SPU replace LIBCD.C, LIBSPU.C and the
 # OpenAL backend (§6), our file-backed libmcrd replaces LIBMCRD.C, and our
-# libetc (VSync over the port's own clock, stage 7b, D104) replaces LIBETC.C.
+# libetc (VSync over the port's own clock, stage 7b, D104) replaces LIBETC.C,
+# our libpad (stage 8a, D114) LIBPAD.C, and our libgpu (stage 8b, D115) LIBGPU.C.
 # The platform layer (window, timing, pad, GR_* renderer)
 # comes from src/platform/<host> unless SPYRO_PSYCROSS_PLATFORM is ON.
 option(SPYRO_PSYCROSS_PLATFORM "Use PsyCross's own SDL2/GL platform layer" OFF)
@@ -11,7 +12,7 @@ file(GLOB PSYCROSS_SRCS
   "${PSYCROSS_DIR}/src/psx/*.C"
   "${PSYCROSS_DIR}/src/gte/*.cpp"
   "${PSYCROSS_DIR}/src/gpu/*.cpp")
-list(FILTER PSYCROSS_SRCS EXCLUDE REGEX "/(LIBCD|LIBSPU|LIBMCRD|LIBETC)\\.C$")
+list(FILTER PSYCROSS_SRCS EXCLUDE REGEX "/(LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD|LIBGPU)\\.C$")
 if(SPYRO_PSYCROSS_PLATFORM)
   list(APPEND PSYCROSS_SRCS
     "${PSYCROSS_DIR}/src/PsyX_main.cpp"

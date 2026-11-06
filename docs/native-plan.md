@@ -36,6 +36,7 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 4, native memory: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100); the data labels as ordinary globals, the game's memory one heap block (overlay space), the scratchpad its own array, save states format 2, and native memory the Vita's default since a hardware pair (D106);
   - stage 7's steps 7a and 7b: the host audits of the in-between frame, and the port's own `VSync` over one clock module (D104);
   - stage 7's step 7c: frames carry their due vblank, and with `present_due=1` the Vita's render thread shows them at their display vblank and the game thread never waits for a present (D112). Its hardware pair (7C1–7C4) took the Stone Hill flight's late vblanks to 0, and `present_due=1` is the Vita's default since.
+- stage 8's step 8a: libpad is ours (`src/platform/common/libpad.c`), and PsyCross's `LIBPAD.C` isn't built (D114).
 - **Planned:** stage 8, retiring PsyCross (D113): six of its files are still linked (43 KB of the Vita's code), for 28 PsyQ entry points and, around them, the walk, the GPU state and the GTE register file. Six steps, *estimate* ~2k lines with checks.
 - **What I recommend next** (updated by D104, D105 and D106, 2026-11-05, and D111, D112 and D113, 2026-11-06):
   1. **7c's pictures on hardware** (D112): 7C1–7C4's routes take no shots, so with `present_due=1` (now the default) the pictures have been compared only in Vita3K's `realtime=0`, where 7c is off. A 60 fps route with shots on hardware, or the owner watching one, with `gpu_clear=2` as shipped.
@@ -1057,7 +1058,7 @@ So every callback runs on the game thread inside a `VSync(0)`, in a burst after 
 - **`PortPresentDraw`,** in place of `GamestateDraw`, runs four steps:
   1. `snap_take()` copies what the draw path writes that the game reads again: the scratchpad; the data and bss (0x8006BBE0–0x8007AA38); the moby array; the particle space; each sector's bytes 0x18–0x1B; the GTE registers; PsyCross's draw and display environments; and `g_mips_v1`.
   2. `blend_state()` moves the camera, Spyro, the mobys and the particles halfway back to the last tick, in place.
-  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`), and captures its picture.
+  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`; our libgpu's `g_psx_vram_frozen` since D115), and captures its picture.
   4. `snap_restore()`.
 
   Then the logic pass runs: the game's own draw.
@@ -1237,13 +1238,13 @@ D113 found that stage 8 needn't wait for 7g: `g_psyxVramFrozen` and the `DrawOTa
 
 ### Stage 8: retire PsyCross (medium, low–medium risk, after stages 1, 2, 4 and 7c; not after 7g)
 
-**Status (D113, 2026-11-06): planned below; not started.**
+**Status (D113, 2026-11-06): planned below. 8a done (D114). 8b done (D115): our `libgpu.c` in place of `LIBGPU.C`, the hooks direct calls.**
 
 **Replaces** (D): what's left of PsyCross:
 - libgpu's environment calls (`PutDrawEnv` 26, `PutDispEnv` 29, `DrawSync` 57, `LoadImage` 20, `StoreImage` 6, `MoveImage` 2 call sites in the decomp C; D113 recounts them);
 - the OT walk for the leftover primitives;
 - libgte's 12 calls;
-- libpad (libetc is ours since D104).
+- libpad (ours since 8a, D114; libetc since D104).
 
 **Method:** thin native functions with the same contracts, or none where a stage removed the call. A patch to the decomp only where a call is removed outright.
 
@@ -1379,7 +1380,7 @@ The register file's moves and `GTE_operator` are a few hundred calls a vblank; l
 ##### What can't change
 
 - **Faithfulness:** `tools/host_checks.sh` byte-identical (traces, shots, WAVs, memory cards); Vita3K shots, window captures and card identical to main's VPK; the oracle replay on the arena build; both attract demos tick for tick against the emulator.
-- **Save states:** the `GPU ` chunk (`DRAWENV`, two `DISPENV`, `g_GPUDisabledState`, `gteRegs`) keeps its bytes, so a format-2 state saved before stage 8 loads after it. Each step checks that.
+- **Save states:** the `GPU ` chunk (`DRAWENV`, two `DISPENV`, `g_GPUDisabledState`, `gteRegs`) keeps its bytes, so a format-2 state saved before stage 8 loads after it. Each step checks that. *Corrected by D115:* no build loads another build's state (D51 refuses it as "another build", rightly: a state holds code and data addresses, `vsync_callback` in this chunk among them). What each step can check is that the format is unchanged: the same chunks and lengths, and, between states saved at the same vblank by main and the step, every differing word an address that moved with the build (`tools/state_cmp.py`).
 - **`tools/build_matching.sh` stays green.**
 - **The decomp is patched only where a call is removed outright.** Stage 8 removes none: every one of the 28 entry points keeps its name and contract. So stage 8 adds no decomp patch.
 
@@ -1387,7 +1388,7 @@ The register file's moves and `GTE_operator` are a few hundred calls a vblank; l
 
 | Step | What | Waits for | Check | Size |
 |---|---|---|---|---|
-| **8a** | **libpad.** `src/platform/common/libpad.c` replaces `LIBPAD.C` (left out in `cmake/psycross.cmake`, as `LIBETC.C` is): the eight entry points with PsyCross's results (`PadInfoMode` 7, `PadGetState` from the platform's status), over the platforms' pad functions (renamed from `PsyX_Pad_*`). | — | `host_checks.sh` byte-identical (pad scripts, analog runs); Vita3K gems: shots, captures, card identical to main's VPK | ~80 lines |
+| **8a** | **Done (D114).** **libpad.** `src/platform/common/libpad.c` replaces `LIBPAD.C` (left out in `cmake/psycross.cmake`, as `LIBETC.C` is): the eight entry points with PsyCross's results (`PadInfoMode` 7, `PadGetState` from the platform's status), over the platforms' pad functions (renamed from `PsyX_Pad_*`). | — | `host_checks.sh` byte-identical (pad scripts, analog runs); Vita3K gems: shots, captures, card identical to main's VPK | ~80 lines |
 | **8b** | **libgpu's API.** `src/platform/common/libgpu.c` replaces `LIBGPU.C`: the 14 entry points with today's semantics, and the hooks as our own code. The gate is a direct call into `walk.c`; the VRAM freeze is our flag, set by `present.c` (above); `DrawOTag`'s pre and post call `present.c`, its done `vcache.c`. It still calls PsyCross's walk, splits and GPU state until 8d. `LIBGPU.C`'s hunks in patches 0005, 0008 and 0009 become dead. | — | `host_checks.sh` byte-identical; the host's VRAM dumps (`--vram-shot`, D111's 239) identical; Vita3K against main's VPK: gems, the demos (the 16:9 attract pass: the freeze), the pause route with a save state and a load: shots, captures, card identical; a state saved on main loads | ~300 lines |
 | **8c** | **libgte and the register file.** The six functions in our C (`src/game/libgte.c`) on the fixed-point maths of `gte_int.h`, leaving the registers as PsyCross's do: `MulMatrix` and `MulMatrix0` leave the rotation as `m0` and `IR`, `MAC` and `FLAG` from their last `RTIR`; `InitGeom` sets `ZSF3`, `ZSF4`, `H`, `DQA`, `DQB`, `OFX`, `OFY`. `gteRegs`, `MTC2`, `CTC2` and `MFC2` move to our own file, the RTP hooks' definitions to `gte_ops.c`. Then `PsyX_GTE.cpp`, `LIBGTE.C` and `INLINE_C.C` leave the native and Vita builds; the arena build takes `GTE_operator` from the reference library. | — | `tests/gte`: each function against PsyCross's on random inputs and register states, the whole register file identical after each call, a mutant caught; `host_checks.sh` byte-identical; the oracle replay on the arena build (7,155 PASS, D97); Vita3K gems identical | ~250 lines, ~150 of test. **Done (D116):** `libgte.c`, `gte_regs.c`, the reference library `psycross_ref` (patch 0015); ~190 lines and ~240 of test |
 | **8d** | **Our walk.** `src/platform/common/gpu_walk.c` replaces `PsyX_GPU.cpp`: the loop with the GP0 split, the records' packets and the `nd_fast` packets as direct calls into `native_draw.c`, the leftover parsers (lines, polylines, `TILE`/`SPRT`, the fill, `DR_MOVE`, `DR_LOAD`, E1–E6), the splits and the vertex buffer with today's `GrVertex`, and the GPU state. Polygons always go through the records' converter, with `native_draw=0` too: D92's per-packet check showed it parses as PsyCross does. `GrVertex` and the `GR_*` declarations move to our own header (`src/platform/common/psx_gpu.h`). | 8b | a new host check, `--walk-check` (reference build): every packet through both walks from the same state; splits, vertices and draw environment identical, 0 differ, on the demos, gems, wsi, lod, routes A and B and the tour, with `native_draw` 0, 1 and 2, `nd_direct` 0 and 1, and the vertex cache on; the existing checks still 0 differ; `host_checks.sh` byte-identical; Vita3K against main's VPK on D105's six runs | ~800 lines, ~250 of check |
@@ -1428,7 +1429,7 @@ Status as of 2026-11-06 (D113; the table's layout is D101's). The payoff column 
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
 | 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
 | 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d–7g wait for a reason other than CPU (D104) |
-| 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113): 8a–8c at once, 8d our walk, 8e the build (the owner's header decision), 8f a hardware pair. 8c done (D116): libgte and the register file are ours, PsyCross's GTE only the reference |
+| 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113); 8a done (D114), 8b done (D115), 8c done (D116: libgte and the register file are ours, PsyCross's GTE only the reference): 8a–8c at once, 8d our walk, 8e the build (the owner's header decision), 8f a hardware pair |
 
 **What can run at once:**
 - **Now:** 7c's pictures on hardware (D112), and 7d if a reason for it comes (7d changes the renderers' interfaces).

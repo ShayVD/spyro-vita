@@ -360,6 +360,8 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
   }
 }
 
+static int s_ot_done; /* psx_vcache_enable: mode != 0 */
+
 static void done_hook(void) {
   g_vcache_stats.frames++;
   if (s_count > g_vcache_stats.peak)
@@ -409,5 +411,10 @@ void psx_vcache_enable(int mode) {
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
   g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
   g_psyxPolyHook = mode ? poly_hook : NULL;
-  g_psyxDrawOTagDone = mode ? done_hook : NULL;
+  s_ot_done = mode != 0;
+}
+
+void psx_vcache_ot_done(void) {
+  if (s_ot_done)
+    done_hook();
 }

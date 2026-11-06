@@ -1,10 +1,12 @@
 /* PsyQ's libetc for the port (stage 7b, D104), in place of PsyCross's
  * LIBETC.C (cmake/psycross.cmake leaves it out, as it does LIBCD.C, LIBSPU.C
  * and LIBMCRD.C): VSync, VSyncCallback and ResetCallback over the clock
- * (psx_clock.h), with LIBETC.C's semantics and our two PsyCross patches'
- * hooks (0005 g_psyxVSyncHook, 0009 g_psyxGpuGate). The game calls
- * VSyncCallback, StopCallback and VSync; LIBGPU.C calls GetVideoMode. */
+ * (psx_clock.h), with LIBETC.C's semantics and what were our two PsyCross
+ * patches' hooks (0005 g_psyxVSyncHook; 0009's gate, now psx_walk_join
+ * directly, stage 8b). The game calls
+ * VSyncCallback, StopCallback and VSync; libgpu.c calls GetVideoMode. */
 #include "psx_clock.h"
+#include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdint.h>
@@ -19,8 +21,7 @@ int (*g_psyxVSyncHook)(int mode) = NULL;
 static int s_vmode = MODE_NTSC;
 
 int VSync(int mode) {
-  if (g_psyxGpuGate) /* an OT walk still running elsewhere finishes first (D71) */
-    g_psyxGpuGate();
+  psx_walk_join(); /* an OT walk still running elsewhere finishes first (D71) */
   if (g_psyxVSyncHook)
     return g_psyxVSyncHook(mode);
   if (mode == 0)

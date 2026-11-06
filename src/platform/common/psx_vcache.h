@@ -33,6 +33,10 @@ typedef struct {
  * 2: projections are recorded and looked up too. */
 void psx_vcache_enable(int mode);
 
+/* DrawOTag (libgpu.c) as it returns, drawn or skipped: the next frame's
+ * projections begin (nothing with mode 0). */
+void psx_vcache_ot_done(void);
+
 /* The vertex a reference names (1), or 0 if none; valid until the next
  * DrawOTag returns. */
 int psx_vcache_get(uint32_t ref, VCacheVert *out);

@@ -44,7 +44,7 @@ extern DISPENV activeDispEnv, currentDispEnv;
 extern int g_GPUDisabledState, g_splitIndex;
 extern void ClearSplits(void);
 extern void (*vsync_callback)(void);    /* libetc.c */
-extern void (*drawsync_callback)(void); /* LIBGPU.C */
+extern void (*drawsync_callback)(void); /* libgpu.c (psx_libgpu.h) */
 extern unsigned char g_psx_kernel_ram[0x10000]; /* arena.c */
 extern unsigned int g_mips_sp, g_mips_v1;       /* mips2c_rt.c */
 extern void GamestateDraw(void);
