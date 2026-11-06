@@ -18,13 +18,12 @@
  * centred. With the sticks centred the game plays as with the digital pad. */
 #include "host.h"
 #include "psx_arena.h"
+#include "psx_pad.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-extern int g_padCommEnable; /* LIBPAD.C: PadStartCom/PadStopCom */
 
 typedef struct {
   int vblank;    /* absolute, or the offset of an anchored line */
@@ -274,24 +273,22 @@ void host_pad_rewind(int vblank) {
 
 void host_pad_set_live(uint16_t mask) { s_live = mask; }
 
-/* The PsyX_Pad_* calls LIBPAD.C makes. */
-void PsyX_Pad_InitPad(int slot, unsigned char *padData) {
+/* The psx_pad_* calls our libpad makes (psx_pad.h, D114). */
+void psx_pad_init(int slot, unsigned char *padData) {
   if (slot < 0 || slot > 1)
     return;
   s_pad[slot] = padData;
   fill(padData, slot == 0, 0);
 }
 
-int PsyX_Pad_GetStatus(int mtap, int slot) {
+int psx_pad_status(int mtap, int slot) {
   (void)mtap;
   return slot == 0;
 }
 
-void PsyX_Pad_Vibrate(int mtap, int slot, unsigned char *table, int len) {
+void psx_pad_vibrate(int mtap, int slot, unsigned char *table, int len) {
   (void)mtap;
   (void)slot;
   (void)table;
   (void)len;
 }
-
-void PsyX_Pad_InternalPadUpdates(void) {}
