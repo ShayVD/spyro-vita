@@ -192,6 +192,20 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **Why:** kh1-decomp had a second copy of the same output thread and a ring without the level control; one copy in the kit, used by both games (vita-port-kit roadmap K4).
 - **Checked:** the clock model (`tests/audio`, 10 minutes) prints the same numbers as before, byte for byte; the VPK builds. Device behaviour: a hardware run before merging.
 
+### D108. The disc image's reader is vita-port-kit's `vita/runtime/discimage`
+- **What:** `cdimage.c`'s sector reading (the two 32-sector windows), its sniffing of the file (sync pattern, sector size, first LBA; .iso, CHD, PBP, ECM), the ISO9660 walk and SHA-1 moved to vita-port-kit as `vpk_discimage` (vendored in `third_party/vita-port-kit/vita/runtime/discimage`), merged there with kh1-decomp's reader. `cdimage.c` keeps what is Spyro's: the search of the data folder, the cue sheet, every message to the player, the cut-short and SCUS-94228 / WAD.WAD checks, the marker. `psx_sha1_*` map to the kit's.
+- **Why:** kh1-decomp had a second reader of the same sectors (vita-port-kit roadmap K4). The kit's opens with 64-bit offsets (sceIo on the Vita, `fseeko` on hosts); images here are under 2 GB, so nothing changes for this game.
+- **Checked:** `ctest` and `tests/cd/image_variants.py` (every good dump and every refusal) on the host; the VPK builds. Device behaviour: a hardware run before merging.
+
+### D109. The touch panels and the menu tap are vita-port-kit's `vita/runtime/touch`
+- **What:** `pad.c`'s panel areas (with the front panel's range as the fallback), the fingers as 0..1, and D46's tap test (0.3 s, under 0.04 of the panel, one finger) are vita-port-kit's `vpk_touch` / `VpkTap` (vendored in `third_party/vita-port-kit/vita/runtime/touch`), merged there with kh1-decomp's rear quarters and tap. What counts as a tap here (the middle third, start and end), the rear halves as L2 / R2 and the `pad=` gestures stay in `pad.c`.
+- **Why:** kh1-decomp had its own rear mapping and tap (vita-port-kit roadmap K4).
+- **Checked:** the kit's touch test covers this game's tap settings; the VPK builds. Hardware (2026-11-06, the PR's CI VPK, `pad=` gestures): a tap at the left edge does nothing, a tap in the middle opens the menu and the next one closes it. Rear touch not run (it needs hands on the panel).
+
+### D110. The options table and panel are vita-port-kit's `vita/runtime/modmenu`
+- **What:** D45's `menu_opts.c` (the table: text, stepping, layout, load, save) and `menu_panel.c` (the CPU-drawn panel and its 5x7 font) moved to vita-port-kit as `vpk_menu` / `vpk_menu_panel` (vendored in `third_party/vita-port-kit/vita/runtime/modmenu`). `menu_opts.h` and `menu_panel.h` map this game's names to the kit's; the sections (`MenuSection`, `g_menu_section_names`) stay here, since the kit takes a game's section names. The save is the kit's append form of `vpk_config_rewrite`, which kh1-decomp uses in place.
+- **Why:** vita-port-kit roadmap K4 (one menu framework for the ports).
+- **Checked:** `tests/menu_panel` against the kit writes the same three PPMs and the same `config.txt`, byte for byte, as main's code; the VPK builds. Hardware (2026-11-06, the PR's CI VPK, the K route with `menu_test`): both scripted visits opened the menu, warped, saved `config.txt` and closed.
 ## 2026-11-06 — stage 7c: presents at the due vblank
 
 ### D112. Stage 7c: every frame carries its due vblank; the host shows the frame due at each vblank (the same frames as before); on the Vita, `present_due=1` lets the render thread show frames at their display vblank without the game thread presenting. Off by default until its hardware pair has run
