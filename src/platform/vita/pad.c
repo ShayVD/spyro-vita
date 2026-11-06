@@ -24,6 +24,7 @@
 #include <math.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
+#include "../../../third_party/vita-port-kit/vita/runtime/touch/vpk_touch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,35 +69,20 @@ void vita_menu_request(void); /* menu.c: open the menu at the next VSync */
 
 /* Touch, read with sceTouch for both panels: SDL's Vita touch exists only
  * with its video subsystem, which gpu=1 (vitaGL) doesn't start (main.c).
- * Positions are 0..1 across a panel's active area. */
-static SceTouchPanelInfo s_panel[2];
-
-static void touch_init(void) {
-  int p;
-  for (p = 0; p < 2; p++) {
-    sceTouchSetSamplingState(p, SCE_TOUCH_SAMPLING_STATE_START);
-    if (sceTouchGetPanelInfo(p, &s_panel[p]) < 0 || s_panel[p].maxAaX <= s_panel[p].minAaX ||
-        s_panel[p].maxAaY <= s_panel[p].minAaY) {
-      s_panel[p].minAaX = s_panel[p].minAaY = 0; /* the front panel's range */
-      s_panel[p].maxAaX = 1919, s_panel[p].maxAaY = 1087;
-    }
-  }
-}
+ * Positions are 0..1 across a panel's active area. The panels, their areas
+ * and the tap below are vita-port-kit's touch module (D109). */
+static void touch_init(void) { vpk_touch_init(); }
 
 /* A panel's fingers now: up to max (x, y) pairs and ids; returns how many. */
 static int touch_read(int port, float *xy, int *ids, int max) {
-  const SceTouchPanelInfo *pi = &s_panel[port];
-  SceTouchData d;
-  int i, n;
-  if (sceTouchPeek(port, &d, 1) < 1)
-    return 0;
-  n = (int)d.reportNum < max ? (int)d.reportNum : max;
+  VpkTouchFinger f[4];
+  int i, n = vpk_touch_read(port, f, max < 4 ? max : 4);
   for (i = 0; i < n; i++) {
-    xy[2 * i] = (float)(d.report[i].x - pi->minAaX) / (pi->maxAaX - pi->minAaX);
-    xy[2 * i + 1] = (float)(d.report[i].y - pi->minAaY) / (pi->maxAaY - pi->minAaY);
-    ids[i] = d.report[i].id;
+    xy[2 * i] = f[i].u;
+    xy[2 * i + 1] = f[i].v;
+    ids[i] = f[i].id;
   }
-  return n;
+  return n < 0 ? 0 : n;
 }
 
 /* Front touch taps (touch_menu=, D46), judged once a poll: one finger, down
@@ -106,11 +92,7 @@ static int touch_read(int port, float *xy, int *ids, int max) {
 #define TAP_US 300000
 #define TAP_MOVE 0.04f
 static int s_touch_menu = 1; /* a menu row's value (k_rows): config.txt touch_menu= */
-static struct {
-  int down, multi, id;
-  SceUInt64 t0;
-  float x0, y0, x, y, moved;
-} s_touch;
+static VpkTap s_touch = {TAP_US, TAP_MOVE, 1}; /* a second finger: no tap */
 static int s_tap; /* a tap seen, not yet taken */
 
 static int in_middle(float x, float y) {
@@ -119,29 +101,12 @@ static int in_middle(float x, float y) {
 
 static void touch_sample(int n, const float *xy, const int *ids) {
   SceUInt64 now = sceKernelGetProcessTimeWide();
-  float d;
-  if (n == 0) {
-    if (s_touch.down && !s_touch.multi && now - s_touch.t0 <= TAP_US &&
-        s_touch.moved < TAP_MOVE && in_middle(s_touch.x0, s_touch.y0) &&
-        in_middle(s_touch.x, s_touch.y)) {
-      s_tap = 1;
-      vita_log("pad: tap at %.2f,%.2f (%u ms)", s_touch.x, s_touch.y,
-               (unsigned)((now - s_touch.t0) / 1000));
-    }
-    s_touch.down = 0;
-    return;
+  if (vpk_tap_poll(&s_touch, n, n ? xy[0] : 0, n ? xy[1] : 0, n ? ids[0] : 0, now) &&
+      in_middle(s_touch.x0, s_touch.y0) && in_middle(s_touch.x, s_touch.y)) {
+    s_tap = 1;
+    vita_log("pad: tap at %.2f,%.2f (%u ms)", s_touch.x, s_touch.y,
+             (unsigned)((now - s_touch.t0) / 1000));
   }
-  if (!s_touch.down) {
-    s_touch.down = 1, s_touch.multi = n > 1, s_touch.id = ids[0], s_touch.t0 = now;
-    s_touch.x0 = s_touch.x = xy[0], s_touch.y0 = s_touch.y = xy[1], s_touch.moved = 0;
-    return;
-  }
-  if (n > 1 || ids[0] != s_touch.id)
-    s_touch.multi = 1;
-  s_touch.x = xy[0], s_touch.y = xy[1];
-  d = fmaxf(fabsf(s_touch.x - s_touch.x0), fabsf(s_touch.y - s_touch.y0));
-  if (d > s_touch.moved)
-    s_touch.moved = d;
 }
 
 /* pad= gestures (tests): played one after another, a poll per step, in
