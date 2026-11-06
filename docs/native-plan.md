@@ -1057,7 +1057,7 @@ So every callback runs on the game thread inside a `VSync(0)`, in a burst after 
 - **`PortPresentDraw`,** in place of `GamestateDraw`, runs four steps:
   1. `snap_take()` copies what the draw path writes that the game reads again: the scratchpad; the data and bss (0x8006BBE0–0x8007AA38); the moby array; the particle space; each sector's bytes 0x18–0x1B; the GTE registers; PsyCross's draw and display environments; and `g_mips_v1`.
   2. `blend_state()` moves the camera, Spyro, the mobys and the particles halfway back to the last tick, in place.
-  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`), and captures its picture.
+  3. `presentation_pass()` runs the whole `GamestateDraw` again with `VSync` frozen (`pass_vsync`), SPU writes dropped (`g_psx_spu_frozen`) and VRAM writes frozen (`g_psyxVramFrozen`; our libgpu's `g_psx_vram_frozen` since D115), and captures its picture.
   4. `snap_restore()`.
 
   Then the logic pass runs: the game's own draw.

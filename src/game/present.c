@@ -21,6 +21,7 @@
 #include "psx_mem.h"
 #include "psx_spu.h"
 #include "psx_walk.h"
+#include "psx_libgpu.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdlib.h>
@@ -304,10 +305,10 @@ static void capture_area(void *arg) {
     g_present_capture->capture(r.x, r.y, r.w, r.h);
     return;
   }
-  frozen = g_psyxVramFrozen;
-  g_psyxVramFrozen = 0; /* our own read, not the game's */
+  frozen = g_psx_vram_frozen;
+  g_psx_vram_frozen = 0; /* our own read, not the game's */
   StoreImage(&r, (u_long *)s_capture);
-  g_psyxVramFrozen = frozen;
+  g_psx_vram_frozen = frozen;
 }
 
 /* The capture into a presentation slot, after the capture itself (D71) */
@@ -457,7 +458,7 @@ int port_present_frame_is_wide(void) {
   return s_shown >= 0 && s_frame_wide[s_shown];
 }
 
-/* ---------- PsyCross hooks ---------- */
+/* ---------- DrawOTag's pre and post (libgpu.c) ---------- */
 
 static int s_suppress_ot; /* logic pass under faithful widescreen */
 static int s_audit_pass;  /* audit: 1 in the in-between pass, 2 in the logic pass */
@@ -587,13 +588,17 @@ static void game_draw(int shown) {
   port_lod_draw_end(shown);
 }
 
-static void hooks_init(void) {
-  static int done;
-  if (done)
-    return;
-  done = 1;
-  g_psyxDrawOTagPre = ot_pre;
-  g_psyxDrawOTagPost = ot_post;
+/* DrawOTag's calls do nothing until the first presentation tick (they were
+ * PsyCross hooks installed there, patch 0005). */
+static int s_ot_hooks;
+
+static void hooks_init(void) { s_ot_hooks = 1; }
+
+int port_present_ot_pre(u_long *p) { return s_ot_hooks ? ot_pre(p) : 0; }
+
+void port_present_ot_post(u_long *p) {
+  if (s_ot_hooks)
+    ot_post(p);
 }
 
 /* ---------- snapshot of the game-visible state ---------- */
@@ -1223,7 +1228,7 @@ static void presentation_pass(int wide, int own_state) {
   s_capture_on = 1;
   g_psyxVSyncHook = pass_vsync;
   g_psx_spu_frozen = 1;
-  g_psyxVramFrozen = 1; /* the pause screen's VRAM saves happen once, for real */
+  g_psx_vram_frozen = 1; /* the pause screen's VRAM saves happen once, for real */
   if (own_state)
     wide_state_in();
   s_in_game_draw = 1;
@@ -1231,7 +1236,7 @@ static void presentation_pass(int wide, int own_state) {
   s_in_game_draw = 0;
   if (own_state)
     wide_state_out();
-  g_psyxVramFrozen = 0;
+  g_psx_vram_frozen = 0;
   g_psx_spu_frozen = 0;
   g_present_stats.spu_dropped = g_psx_spu_dropped;
   g_psyxVSyncHook = vsync_hook;

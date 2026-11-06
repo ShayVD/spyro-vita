@@ -1,7 +1,8 @@
 /* The OT walk from a copy of the frame's primitives (psx_walk.h, decisions
  * D71).
  *
- * DrawOTag hands its list over (g_psyxDrawOTagWalk) instead of walking it.
+ * DrawOTag (libgpu.c) hands its list over (psx_walk_hand_over) instead of
+ * walking it.
  * What the list can reach is copied first into a second 16 MB-aligned arena
  * at the same offsets: the draw's primitive span and the OT's terminator
  * (present.c port_present_prim_ranges; the game links its OT buckets
@@ -20,16 +21,17 @@
  * The walk owns PsyCross's GPU state (the draw and display environments, the
  * splits, the vertex buffer) and, on the Vita, the render thread's command
  * ring, from the handover to the join. The game thread joins before it
- * touches any of it: PsyCross's calls and VSync gate (g_psyxGpuGate), save
+ * touches any of it: libgpu's calls and VSync join first (psx_walk_join), save
  * states join, and present.c defers its few touches after a DrawOTag
  * (psx_walk_after). What the walk reads of the game's other state is taken
- * at the handover: g_psyxVramFrozen here, the vertex cache's table
+ * at the handover: g_psx_vram_frozen here, the vertex cache's table
  * (psx_vcache_frame_take), the display state the GL side sees (the Vita's
  * PsxWalkThread.submitted). */
 #include "psx_walk.h"
 #include "psx_arena.h"
 #include "../../game/psx_mem.h"
 #include "psx_vcache.h"
+#include "psx_libgpu.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdio.h>
@@ -66,7 +68,7 @@ static struct {
   uintptr_t head; /* the list's first packet, in the copy */
   int tag;        /* g_psx_walk_tag at the handover */
   int nd;         /* g_psx_walk_nd at the handover */
-  int frozen;     /* g_psyxVramFrozen at the handover */
+  int frozen;     /* g_psx_vram_frozen at the handover */
   PsxVcacheFrame vc;
 } s_job;
 
@@ -118,17 +120,19 @@ static uintptr_t next_packet(uintptr_t packet) {
   return place(MEM_OT_OFS(*(const uint32_t *)packet));
 }
 
-static int vram_frozen(void) { return on_walker() ? s_job.frozen : g_psyxVramFrozen; }
+int psx_walk_vram_frozen(void) { return on_walker() ? s_job.frozen : g_psx_vram_frozen; }
 
 int psx_walk_nd(void) { return on_walker() ? s_job.nd : g_psx_walk_nd; }
 
-static int walk_hook(u_long *p) {
+int psx_walk_hand_over(u_long *p) {
   uint32_t head = (uint32_t)((uintptr_t)p - g_psx_arena_base);
   unsigned long long t0;
   int i;
+  if (s_mode == PSX_WALK_OFF)
+    return 0; /* no walk: DrawOTag walks in place, uncounted */
   if ((uintptr_t)p < g_psx_arena_base || head >= PSX_MEM_SIZE) {
     s_stats.in_place++;
-    return 0; /* PsyCross walks it now */
+    return 0; /* DrawOTag walks it in place now */
   }
   t0 = now();
   s_job.n = s_ranges_fn(s_job.r, MAX_RANGES);
@@ -153,7 +157,7 @@ static int walk_hook(u_long *p) {
       return 0;
     }
   }
-  s_job.frozen = g_psyxVramFrozen;
+  s_job.frozen = g_psx_vram_frozen;
   s_job.tag = g_psx_walk_tag;
   s_job.nd = g_psx_walk_nd;
   psx_vcache_frame_take(&s_job.vc);
@@ -172,7 +176,7 @@ void psx_walk_run(void) {
   s_in_job = 1;
   g_psyxNextPacket = next_packet;
   psx_vcache_frame_use(&s_job.vc);
-  /* DrawOTag's own walk (LIBGPU.C) from here on */
+  /* DrawOTag's own walk (libgpu.c walk_in_place) from here on */
   if (PsyX_BeginScene())
     ClearSplits();
   ParsePrimitivesLinkedList((u_long *)s_job.head, 0);
@@ -286,8 +290,5 @@ int psx_walk_init(int mode, PsxWalkRangesFn ranges, const PsxWalkThread *thr) {
   if (thr)
     s_thr = *thr;
   psx_vcache_double();
-  g_psyxGpuGate = psx_walk_join;
-  g_psyxVramFrozenGet = vram_frozen;
-  g_psyxDrawOTagWalk = walk_hook;
   return 0;
 }
