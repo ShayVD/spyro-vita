@@ -209,6 +209,10 @@ static int vcount(void) {
  * display is at (psx_clock_due); the 16 bits the display gives are enough
  * for a difference of a few vblanks, so no widening here (it's the game
  * thread's). */
+unsigned vita_display_vcount(void) {
+  return ((unsigned)sceDisplayGetVcount() + s_vc_offset) & 0xffffu;
+}
+
 int vita_vblank_past_due(int due) {
   int base;
   unsigned raw;

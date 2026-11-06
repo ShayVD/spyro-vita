@@ -38,10 +38,11 @@
  * present_due=1 with realtime=1 (stage 7c, D112) moves the widescreen and
  * 60 fps frames' presents here, off VSync. Each frame's commit carries the
  * vblank it's due at (present.c); the render thread shows the newest frame
- * due at a frame boundary (a frame filed) or when it has nothing to run (a
- * small thread on core 2 wakes it at each display vblank), or between two
- * commands once one is a vblank late, and the game thread never waits for
- * a present. A frame's draws start with a C_BEGIN; when the render thread
+ * due at a frame boundary (a frame filed) or when it has nothing to run (it
+ * then looks at the display's vcount every millisecond), or between two
+ * commands once one is a vblank late (it looks every 16 commands), and the
+ * game thread never waits for a present. While the game thread waits for
+ * the ring or a vertex slab, it shows at most a picture every two vblanks. A frame's draws start with a C_BEGIN; when the render thread
  * reaches one already a vblank or more past its due, it skips that frame's
  * draws, its capture and its commit: an in-between frame's always, a real
  * frame's only when a later frame is filed already or the game thread is
@@ -59,7 +60,6 @@
 #include "watchdog.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
-#include <psp2/display.h>
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -156,11 +156,12 @@ static struct {
   int slot, due, wide;
 } s_pend[PEND]; /* the render thread's, in filing order */
 static int s_npend;
-static volatile int s_pend_any;  /* s_npend > 0, for the vblank thread */
-static volatile uint32_t s_vsq;  /* the display's vblanks, counted by the vblank thread */
-static uint32_t s_vsq_seen;      /* the render thread's last look between commands */
-static uint32_t s_vsq_idle;      /* and its last look with nothing to run */
-static uint32_t s_vsq_shown;     /* s_vsq at its last due present */
+/* the display's 16-bit vcount (vita_display_vcount) at the render thread's
+ * last look between commands, its last look with nothing to run, and its
+ * last due present */
+static unsigned s_vc_seen, s_vc_idle, s_vc_shown;
+static unsigned s_cmds_since_look;
+#define LOOK_EVERY 16 /* commands between two looks at the display's vcount */
 static int s_skip;               /* this frame's draws skipped: 1 in-between, 2 real */
 static int s_verts_skipped;      /* the vertex buffer the next draws would use wasn't taken */
 static int s_presented;          /* a picture was just drawn and swapped (posted, or due) */
@@ -197,7 +198,6 @@ static void picture_done(void) {
 static void pend_drop(int n) { /* the oldest n */
   memmove(s_pend, s_pend + n, (size_t)(s_npend - n) * sizeof s_pend[0]);
   s_npend -= n;
-  s_pend_any = s_npend > 0;
 }
 
 /* 7c: the newest frame filed whose due vblank the display has reached goes
@@ -222,7 +222,7 @@ static void rt_due(int min_past) {
    * wall, and every present is time not spent on the draws it waits for.
    * At most a picture every two display vblanks then, so it costs
    * pictures, not the game's ticks. */
-  if (s_vsq - s_vsq_shown < 2 && game_waits_for_pools()) {
+  if (((vita_display_vcount() - s_vc_shown) & 0xffffu) < 2 && game_waits_for_pools()) {
     s_due_held++;
     return;
   }
@@ -240,7 +240,7 @@ static void rt_due(int min_past) {
     s_due_late_vbl += (uint32_t)past;
   }
   gl_present(s_pend[best].slot, s_pend[best].wide, 0);
-  s_vsq_shown = s_vsq;
+  s_vc_shown = vita_display_vcount();
   s_due_shown++;
   pend_drop(best + 1);
   s_presented = 1; /* picture_done() once its time is counted */
@@ -265,7 +265,6 @@ static void pend_remove(int slot) {
     return;
   memmove(s_pend + i, s_pend + i + 1, (size_t)(s_npend - i - 1) * sizeof s_pend[0]);
   s_npend--;
-  s_pend_any = s_npend > 0;
   s_due_never++;
 }
 
@@ -289,7 +288,6 @@ static void rt_file(const PresentFrame *f) {
   s_pend[s_npend].due = f->due;
   s_pend[s_npend].wide = f->wide;
   s_npend++;
-  s_pend_any = 1;
   rt_due(0); /* a frame boundary */
 }
 
@@ -425,20 +423,29 @@ static int rt_main(SceSize args, void *argp) {
     const Cmd *c;
     uint64_t t0;
     if (__atomic_load_n(&s_wpub, __ATOMIC_ACQUIRE) == r) {
-      if (s_npend && s_vsq != s_vsq_idle) { /* 7c: idle at a new display vblank */
-        s_vsq_idle = s_vsq;
-        rt_due_timed(0);
-        continue;
+      if (s_npend) { /* 7c: idle, at a new display vblank */
+        unsigned vc = vita_display_vcount();
+        if (vc != s_vc_idle) {
+          s_vc_idle = vc;
+          rt_due_timed(0);
+          continue;
+        }
       }
-      /* nothing to run: sleep until the game thread posts, or (7c, frames
-       * filed) the vblank thread sees a new vblank. Each signals only when
-       * it sees s_rt_sleeping, so nothing is lost either way */
+      /* nothing to run: sleep until the game thread posts (it signals only
+       * when it sees s_rt_sleeping, so nothing is lost either way). 7c, with
+       * frames waiting for their vblank: a millisecond at most, then look
+       * at the display again (no second waiter on its vblank beside the
+       * GPU's flip) */
       __atomic_store_n(&s_rt_sleeping, 1, __ATOMIC_SEQ_CST);
       g_wd.rt = 0; /* breadcrumbs (watchdog.c, D73) */
-      if (__atomic_load_n(&s_wpub, __ATOMIC_SEQ_CST) != r ||
-          (s_npend && __atomic_load_n(&s_vsq, __ATOMIC_SEQ_CST) != s_vsq_idle)) {
+      if (__atomic_load_n(&s_wpub, __ATOMIC_SEQ_CST) != r) {
         if (!__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
           sceKernelWaitSema(s_rt_sema, 1, NULL); /* its signal is on the way */
+      } else if (s_npend) {
+        SceUInt tmo = 1000;
+        if (sceKernelWaitSema(s_rt_sema, 1, &tmo) < 0 &&
+            !__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
+          sceKernelWaitSema(s_rt_sema, 1, NULL); /* timed out as a signal came */
       } else {
         sceKernelWaitSema(s_rt_sema, 1, NULL);
       }
@@ -458,9 +465,13 @@ static int rt_main(SceSize args, void *argp) {
     __atomic_store_n(&s_done[K_BYTES], r, __ATOMIC_RELEASE);
     count(K_CMDS);
     rt_wake_game();
-    if (s_npend && s_vsq != s_vsq_seen) { /* 7c: the display reached a new vblank */
-      s_vsq_seen = s_vsq;
-      rt_due_timed(1); /* mid-frame: only a frame a vblank late */
+    if (s_npend && ++s_cmds_since_look >= LOOK_EVERY) { /* 7c: a new display vblank? */
+      unsigned vc = vita_display_vcount();
+      s_cmds_since_look = 0;
+      if (vc != s_vc_seen) {
+        s_vc_seen = vc;
+        rt_due_timed(1); /* mid-frame: only a frame a vblank late */
+      }
     }
   }
   return 0;
@@ -975,34 +986,12 @@ const struct PresentCapture *vita_gpu_present_capture(void) { return &s_capture;
 
 static void k_init(void *a) { *(int *)a = gl_gpu_init(); }
 
-/* 7c: wakes the render thread at each display vblank while frames wait for
- * theirs (it counts every vblank; the render thread looks between commands). */
-static int vbl_main(SceSize args, void *argp) {
-  (void)args;
-  (void)argp;
-  for (;;) {
-    sceDisplayWaitVblankStart();
-    __atomic_add_fetch(&s_vsq, 1, __ATOMIC_SEQ_CST);
-    if (s_pend_any && __atomic_load_n(&s_rt_sleeping, __ATOMIC_SEQ_CST) &&
-        __atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
-      sceKernelSignalSema(s_rt_sema, 1);
-  }
-  return 0;
-}
-
 static void due_start(int r) {
-  SceUID th;
   if (!g_vita_opts.present_due)
     return;
   if (!g_rt_active || !g_vita_opts.realtime || r != 0) {
     vita_log("present: present_due=1 needs realtime=1, gpu=1 and render_thread=1: presents from "
              "VSync, as before (D112)");
-    return;
-  }
-  th = sceKernelCreateThread("spyro_vblank", vbl_main, PRIORITY - 8, 16 << 10, 0,
-                             SCE_KERNEL_CPU_MASK_USER_2, NULL);
-  if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {
-    vita_log("present: no vblank thread (%08x): presents from VSync, as before", (unsigned)th);
     return;
   }
   s_due = 1;

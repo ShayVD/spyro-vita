@@ -164,6 +164,7 @@ int vita_gpu_due_report(char *buf, int size); /* the present line's 7c part; 0: 
  * (negative: before it); any thread. Large while our clock isn't counted
  * against the display (start-up, after the menu). */
 int vita_vblank_past_due(int due);
+unsigned vita_display_vcount(void); /* its 16 bits (vcount_test's offset too); any thread */
 #define VITA_DUE_UNCOUNTED 0x7fff /* vita_vblank_past_due: no count against the display yet */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
