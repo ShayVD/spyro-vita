@@ -199,7 +199,8 @@ void mips2c_break(u32 code, u32 pc) __attribute__((noreturn));
 void mips2c_bad_jump(const char *unit, u32 target) __attribute__((noreturn));
 void mips2c_fell_off(const char *unit) __attribute__((noreturn));
 
-/* PsyCross's GTE (src/gte/PsyX_GTE.cpp, src/psx/INLINE_C.C), decision D2. */
+/* The GTE (decision D2): GTE_operator is PsyCross's (src/gte/PsyX_GTE.cpp,
+ * the reference library since D116), the register moves ours (gte_regs.c). */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -217,7 +218,7 @@ unsigned int CFC2(int reg);
  * INLINE_C.C does, register for register, but inline: for a plain register
  * the switch folds away and the move is one load or store. The registers
  * with more to them (IRGB/ORGB 28-29, LZCS 30, LZCR 31 on writes; FLAG 31 on
- * control writes) still go to PsyCross. Bit-exact by construction; checked
+ * control writes) still go to the functions (gte_regs.c since D116). Bit-exact by construction; checked
  * by the oracle traces and screenshots (docs/presentation.md, 60 fps cost). */
 #include <gtereg.h>
 

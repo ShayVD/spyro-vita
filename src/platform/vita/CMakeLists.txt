@@ -20,6 +20,9 @@ target_compile_definitions(psycross PUBLIC RENDERER_OGL)
 # at -O0, and its pictures are the reference); on the Vita its GTE and OT
 # walk are hot, so optimise it (no x87 excess precision on ARM).
 target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
+if(TARGET psycross_ref) # the moved arena's mips2c units (D116)
+  target_compile_options(psycross_ref PRIVATE ${SPYRO_OPT_FLAGS})
+endif()
 
 file(GLOB VITA_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 # The software rasterizer and display-rect reader are linux32's (D26). The

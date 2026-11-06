@@ -1,0 +1,16 @@
+diff --git a/src/gte/PsyX_GTE.cpp b/src/gte/PsyX_GTE.cpp
+--- a/src/gte/PsyX_GTE.cpp
++++ b/src/gte/PsyX_GTE.cpp
+@@ -9,9 +9,9 @@
+ 
+ 
+ 
+-GTERegisters gteRegs;
+-void (*g_psyxRtpHook)(int idx, int sf) = NULL;
+-void (*g_psyxRtpValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) = NULL;
++/* Spyro port (docs/decisions-2.md D116): the register file and the RTP
++ * hooks are the port's own (src/game/gte_regs.c, src/game/gte_ops.c). This
++ * file is only built as the reference, whose GTE_operator works on them. */
+ 
+ #define GTE_SF(op)			((op >> 19) & 1)
+ #define GTE_MX(op)			((op >> 17) & 3)

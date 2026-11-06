@@ -81,3 +81,8 @@ endif()
 add_library(spyro_game STATIC $<TARGET_OBJECTS:spyro_game_main>
   $<TARGET_OBJECTS:spyro_game_data> $<TARGET_OBJECTS:spyro_game_ovl>
   $<TARGET_OBJECTS:spyro_game_m2c> $<TARGET_OBJECTS:spyro_game_port>)
+# The mips2c units call PsyCross's GTE_operator at fast_render=0: the
+# reference library's (cmake/psycross.cmake, D116).
+if(NOT SPYRO_NATIVE_MEM)
+  target_link_libraries(spyro_game INTERFACE psycross_ref)
+endif()
