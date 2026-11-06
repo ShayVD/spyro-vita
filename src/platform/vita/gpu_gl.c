@@ -266,6 +266,9 @@ static struct {
    * buffers (expand_us is part of it), the draws' work before their batch,
    * the target logs' copies, and the batches' GL calls */
   uint64_t verts_us, pre_us, log_us, issue_us;
+  /* D105: the whole of each entry point the layer's time is (prof.c's
+   * "raster" on the game thread), and the GL calls inside the draws */
+  uint64_t draw_us, draw_issue_us, clear_us, copy_us, read_us;
   unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
   unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
 } s_st;
@@ -2254,7 +2257,8 @@ static void expand_direct(GrVertex *vb, int count, const uint32_t *dr, int ndr, 
 
 /* nd_direct=2 (D99, diagnostic): the walk listed its direct triangles but
  * left them as before, and expand_lean has just made s_lbuf and s_tkind of
- * vb. Here a copy of vb is made direct as the walk would (lean_direct_tri),
+ * vb. Here a copy of vb is made direct as the walk would (its lane form,
+ * D105: the Vita's SIMD instructions against expand_lean's rule),
  * expand_direct runs on it, and every vertex's attributes are compared with
  * s_lbuf's: x to a, the box, the offset, the flags; and each triangle's
  * kind. What is drawn stays expand_lean's. */
@@ -2267,8 +2271,10 @@ static void direct_check(const GrVertex *vb, int count, const uint32_t *dr, int 
     return;
   memcpy(s_dcopy, vb, (size_t)count * sizeof *vb);
   for (r = 0; r < ndr; r++)
-    for (i = (int)dr[2 * r]; i + 3 <= (int)dr[2 * r + 1] && i + 3 <= count; i += 3)
-      lean_direct_tri((uint32_t *)(s_dcopy + i));
+    for (i = (int)dr[2 * r]; i + 3 <= (int)dr[2 * r + 1] && i + 3 <= count; i += 3) {
+      uint32_t *const t = (uint32_t *)(s_dcopy + i);
+      t[4] = t[LEAN_VW + 4] = t[2 * LEAN_VW + 4] = lean_box_lanes(t);
+    }
   memcpy(s_tkind_ref, s_tkind, (size_t)(count + 2) / 3);
   expand_direct(s_dcopy, count, dr, ndr, 1);
   s_dst.cbufs++;
@@ -2882,7 +2888,7 @@ static void batch_flush(void) {
 
 void gl_flush_draws(void) { batch_flush(); }
 
-void gl_GR_DrawTriangles(int start_vertex, int triangles) {
+static void draw_triangles(int start_vertex, int triangles) {
   Target *t = s_cur;
   int n = triangles * 3, x0, y0, x1, y1;
   uint64_t t0;
@@ -2991,6 +2997,16 @@ void gl_GR_DrawTriangles(int start_vertex, int triangles) {
   s_gen++;
   s_st.draws++;
   s_st.tris += triangles;
+}
+
+/* gpu_parts=1: each entry point's whole time (D105) */
+void gl_GR_DrawTriangles(int start_vertex, int triangles) {
+  const uint64_t t0 = parts_us(), i0 = s_st.issue_us;
+  draw_triangles(start_vertex, triangles);
+  if (t0) {
+    s_st.draw_us += now_us() - t0;
+    s_st.draw_issue_us += s_st.issue_us - i0;
+  }
 }
 
 /* ---- VRAM transfers (coordinates wrap like the PS1's) ---- */
@@ -3106,8 +3122,8 @@ static void clear_targets(int x, int y, int w, int h) {
   }
 }
 
-void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g,
-                     unsigned char b) {
+static void clear_vram(int x, int y, int w, int h, unsigned char r, unsigned char g,
+                       unsigned char b) {
   batch_flush();
   uint16_t c = (uint16_t)((r >> 3) | (g >> 3) << 5 | (b >> 3) << 10);
   int i, j;
@@ -3129,6 +3145,14 @@ void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char 
   glDisable(GL_SCISSOR_TEST);
 }
 
+void gl_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g,
+                     unsigned char b) {
+  const uint64_t t0 = parts_us();
+  clear_vram(x, y, w, h, r, g, b);
+  if (t0)
+    s_st.clear_us += now_us() - t0;
+}
+
 /* PsyX's GL backend clears the window here; GR_ClearVRAM did the targets. */
 void gl_GR_Clear(int x, int y, int w, int h, unsigned char r, unsigned char g,
                  unsigned char b) {
@@ -3137,8 +3161,8 @@ void gl_GR_Clear(int x, int y, int w, int h, unsigned char r, unsigned char g,
 }
 
 /* LoadImage (src = host data, stride w) or MoveImage (src = NULL, VRAM). */
-void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
-                    int dst_y) {
+static void copy_vram(unsigned short *src, int x, int y, int w, int h, int dst_x,
+                      int dst_y) {
   batch_flush();
   int i, j;
   if (w <= 0 || h <= 0)
@@ -3173,7 +3197,15 @@ void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
   s_move_src = NULL;
 }
 
-void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
+void gl_GR_CopyVRAM(unsigned short *src, int x, int y, int w, int h, int dst_x,
+                    int dst_y) {
+  const uint64_t t0 = parts_us();
+  copy_vram(src, x, y, w, h, dst_x, dst_y);
+  if (t0)
+    s_st.copy_us += now_us() - t0;
+}
+
+static void read_vram(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
   batch_flush();
   int i, j;
   pieces(x, y, dst_w, dst_h, sync_rect);
@@ -3182,6 +3214,13 @@ void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
     for (j = 0; j < dst_w; j++)
       *dst++ = row[(x + j) & (VW - 1)];
   }
+}
+
+void gl_GR_ReadVRAM(unsigned short *dst, int x, int y, int dst_w, int dst_h) {
+  const uint64_t t0 = parts_us();
+  read_vram(dst, x, y, dst_w, dst_h);
+  if (t0)
+    s_st.read_us += now_us() - t0;
 }
 
 uint16_t *gl_host_vram(void) { return s_vram; }
@@ -3808,6 +3847,11 @@ void gl_report(int vblank) {
              "%u.%02u; in sceGxmBeginScene/EndScene %u.%02u (D99)",
              vblank, MSV(s_st.verts_us), MSV(s_st.expand_us), MSV(s_st.pre_us), MSV(s_st.log_us),
              MSV(s_st.issue_us), gx / 1000, gx % 1000 / 10);
+    vita_log("gpu parts %d: per vblank ms: GR_DrawTriangles %u.%02u (the batches' GL calls in it "
+             "%u.%02u), GR_ClearVRAM %u.%02u, GR_CopyVRAM %u.%02u, GR_ReadVRAM %u.%02u (each with "
+             "the GL calls of the batch it sent first; D105)",
+             vblank, MSV(s_st.draw_us), MSV(s_st.draw_issue_us), MSV(s_st.clear_us),
+             MSV(s_st.copy_us), MSV(s_st.read_us));
 #undef MSV
   }
   last = vblank;

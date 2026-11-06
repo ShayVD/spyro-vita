@@ -4,3 +4,4 @@ path vita/tools
 path vita/cmake
 path vita/runtime/audioout
 path vita/runtime/touch
+path vita/runtime/discimage

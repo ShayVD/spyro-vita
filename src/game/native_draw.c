@@ -214,22 +214,45 @@ static void em_begin(Em *e) {
  * GPU doesn't skip in the renderer's lean form (ND_WALK_DIRECT) and in the
  * ranges, or only in the ranges (ND_WALK_RANGES, the Vita's check). A
  * skipped one, or one with no range left, stays as it is: the renderer
- * converts it, as it does PsyCross's. */
-static void em_direct(const Em *e, GrVertex *v, u32 i, u32 nt) {
-  u32 k;
-  for (k = 0; k < nt; k++, i += 3) {
-    u32 *const t = (u32 *)(v + 3 * k);
-    if (lean_skipped(t)) {
-      s_dr_skipped++;
-      continue;
-    }
-    if (!dr_add(i)) {
-      s_dr_full++;
-      continue;
-    }
-    if (e->direct & ND_WALK_DIRECT)
-      lean_direct_tri(t);
-    s_dr_tris++;
+ * converts it, as it does PsyCross's.
+ * D105: lean_skipped's and lean_box's rules on whole words (psx_lean.h's
+ * lane operations), each vertex's u/v word made once, and a quad's two
+ * triangles (prim vertices 0 1 2 and 1 2 3: TriangulateQuad's) sharing
+ * their edge's test and their two vertices' lowest bytes. Untextured
+ * polygons' u/v are 0, so their box is 0. The same boxes and the same
+ * triangles as the rule: --nd-direct-check compares them, tests/lean the
+ * lanes. */
+static inline void em_direct_one(const Em *e, u32 *t, u32 i, u32 far, u32 box) {
+  if (far) {
+    s_dr_skipped++;
+    return;
+  }
+  if (!dr_add(i)) {
+    s_dr_full++;
+    return;
+  }
+  if (e->direct & ND_WALK_DIRECT)
+    t[4] = t[LEAN_VW + 4] = t[2 * LEAN_VW + 4] = box;
+  s_dr_tris++;
+}
+
+static void em_direct(const Em *e, GrVertex *v, u32 i, u32 nt, u32 tex) {
+  u32 *const t = (u32 *)v;
+  const u32 x0 = t[0], x1 = t[LEAN_VW], x2 = t[2 * LEAN_VW];
+  const u32 e12 = lean_edge_far(x1, x2);
+  u32 m12 = 0, b0 = 0, b1 = 0;
+  if (tex) {
+    m12 = lean_min8(lean_uvw(t[LEAN_VW + 2]), lean_uvw(t[2 * LEAN_VW + 2]));
+    b0 = lean_box_of(lean_min8(m12, lean_uvw(t[2])));
+  }
+  em_direct_one(e, t, i, e12 | lean_edge_far(x0, x1) | lean_edge_far(x2, x0), b0);
+  if (nt == 2) {
+    /* the second triangle's vertices 3 and 4 are 1 and 2 */
+    const u32 x5 = t[5 * LEAN_VW];
+    if (tex)
+      b1 = lean_box_of(lean_min8(m12, lean_uvw(t[5 * LEAN_VW + 2])));
+    em_direct_one(e, t + 3 * LEAN_VW, i + 3, e12 | lean_edge_far(x2, x5) | lean_edge_far(x5, x1),
+                  b1);
   }
 }
 
@@ -362,7 +385,7 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
       v[3] = v[1];
     }
     if (e->direct)
-      em_direct(e, v, (u32)*fill, n == 4 ? 2 : 1);
+      em_direct(e, v, (u32)*fill, n == 4 ? 2 : 1, f & F_TEX);
     *fill += n == 4 ? 6 : 3;
   }
   s_emitted++;
