@@ -214,6 +214,11 @@ static int game_waits_for_pools(void) {
   return w == K_VERTS + 1 || w == K_BYTES + 1;
 }
 
+/* The game thread (or the walk) waited for the ring or a vertex slab since
+ * this thread's last due present. */
+static volatile uint32_t s_pool_waits; /* counted up by game_wait() */
+static uint32_t s_pool_waits_shown;
+
 static void rt_due(int min_past) {
   int i, best = -1, past = 0, p0;
   if (!s_npend)
@@ -222,7 +227,8 @@ static void rt_due(int min_past) {
    * wall, and every present is time not spent on the draws it waits for.
    * At most a picture every two display vblanks then, so it costs
    * pictures, not the game's ticks. */
-  if (((vita_display_vcount() - s_vc_shown) & 0xffffu) < 2 && game_waits_for_pools()) {
+  if (((vita_display_vcount() - s_vc_shown) & 0xffffu) < 2 &&
+      (s_pool_waits != s_pool_waits_shown || game_waits_for_pools())) {
     s_due_held++;
     return;
   }
@@ -241,6 +247,7 @@ static void rt_due(int min_past) {
   }
   gl_present(s_pend[best].slot, s_pend[best].wide, 0);
   s_vc_shown = vita_display_vcount();
+  s_pool_waits_shown = s_pool_waits;
   s_due_shown++;
   pend_drop(best + 1);
   s_presented = 1; /* picture_done() once its time is counted */
@@ -485,6 +492,8 @@ static void game_wait(int why, int k, uint32_t target) {
   if (reached(k, target))
     return;
   t0 = now_us();
+  if (why == W_SLAB || why == W_RING)
+    __atomic_add_fetch(&s_pool_waits, 1, __ATOMIC_SEQ_CST); /* 7c's present hold */
   prof_enter(PROF_WAIT);
   g_wd.rt_wait = why + 1;
   while (!reached(k, target)) {
