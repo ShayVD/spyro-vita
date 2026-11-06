@@ -260,6 +260,39 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - **Vita3K crashed itself** (`EXC_BAD_ACCESS`, its handler's "write protected region" at `0x606A5018`) at vblank 3,000 of the 60 fps runs with `gpu_time=2`: once in two runs of main's VPK, and in both runs with `gpu_clear=1`. It is the same crash, with the same address, on main's VPK. Up to it, `gpu_clear=1`'s 12 files are main's. D86 saw Vita3K crash the same way in pause runs on main's path.
     - **At 60 fps on the render thread** (Vita3K, the shipped threads, 16:9, `interp=1 interp_budget=0`, gems; means of 27 windows from vblank 900; `logs/d111-v3k-t60-0`, `t60-2`): the clear's parts sum to 0.98 ms per vblank with `gpu_clear=0` (`s_vram` 0.37, the log's base 0.53, `glClear` 0.08) and 0.05 with `=2`. The render thread is 16.6 ms busy per vblank either way: in Vita3K it is held by Vita3K's own GPU, so its gain is run Y12's to give.
     - **Repeats** (the gems timing run three times each, interleaved, `logs/d111-v3k-t0*`, `t2*`): `GR_ClearVRAM` 0.32–0.46 ms per vblank with `gpu_clear=0`, 0.03–0.08 with `=2`. `GR_DrawTriangles` moved 0.12–0.39 with the Mac's load (other sessions' runs), in both.
-- **Hardware:** not run. Proposed: Y9–Y12 (`tools/vita/fps-runs/README.md`), Y6 and Y8 again with `gpu_clear` 0 and 2. The K route with every layer on the game thread gives the split on the Vita and the gain; Toasty at 60 fps gives the render thread's. Each needs the owner's yes.
-- **Default: 0** until the hardware pair; the owner decides. For 2: identical pictures and VRAM in every check, and in Vita3K the clear at a sixth of its cost. Against: until Y9 it isn't known how much of the hardware's 2.70 ms is the loops.
-- **Not done:** merging or skipping the targets' `glClear` (10% in Vita3K; Y9 says whether it matters on the Vita). The presentation's own clears and `present.c` are stage 7c's, untouched here.
+- **Hardware: Y9–Y12** (2026-11-06; approved by the owner in this session's chat, after PR #92 was merged; the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh`, the kit's lock free and no kh1-decomp run in progress). VPK `logs/d111-vpk-2.vpk`, SHA-1 `7e64a4d7…`, built from `9d441c5`, the same tree as main `c088cc0`. Y6 and Y8 again, with `gpu_clear` 0 against 2 (`tools/vita/fps-runs/README.md`; logs `logs/hw-y9`…`y12`, gitignored). All four reached `frames=`, with no crash dump, and the owner's files were put back each time. Afterwards main's CI eboot went back on the Vita (`c088cc0`, CI run 42211088923, `b92d7b4c…`) and read back identical.
+  - **The same pictures:** Y9 (`gpu_clear=0`), Y10 (`=2`) and D105's Y6: all 18 pictures (9 shots and the GPU's own frame at each) identical, and the three memory cards identical.
+  - **The split on the Vita** (Y9, the K route with every layer on the game thread; the third `gpu parts` line, means of the 57 windows from vblank 900, ms per vblank):
+
+    | | `GR_ClearVRAM` | `s_vram` | log base | `glClear` | the batch, uploads, slots, bind |
+    |---|---:|---:|---:|---:|---:|
+    | Y9, `gpu_clear=0` | 2.77 | 1.07 | 1.65 | 0.03 | 0.00 |
+    | Y10, `gpu_clear=2` | 0.03 | 0.00 | 0.00 | 0.02 | 0.00 |
+
+    - **On the Vita the two loops are 99% of a clear** (Vita3K: 85%). The `glClear` is 0.03 ms, so merging or scissoring it isn't worth doing.
+  - **The K route, every layer on the game thread** (`native_share.py --fps 30`, means of the route's 50 windows without the quit window, as D105):
+
+    | | renderers | OT walk | PS1 GPU → vitaGL | sum |
+    |---|---:|---:|---:|---:|
+    | Y6 (D105) | 2.84 | 1.77 | 3.50 | 9.39 |
+    | Y9, `gpu_clear=0` | 2.84 | 1.82 | 3.59 | 9.54 |
+    | Y10, `gpu_clear=2` | 2.73 | 1.75 | **1.01** | **6.70** |
+
+    - **The sum falls 2.84 ms per vblank (−30%)**, and the PS1 GPU → vitaGL layer to 28% of what it was. Y9 is Y6's configuration, 0.15 ms apart, one run each.
+  - **Toasty at 60 fps, the shipped threads** (Y11 against Y12; means of the 68 windows from vblank 900; `fps60_summary.py`):
+
+    | per vblank | Y8 (D105) | Y11, `gpu_clear=0` | Y12, `gpu_clear=2` |
+    |---|---:|---:|---:|
+    | render thread busy | 10.58 ms | 10.49 ms | **8.12 ms** |
+    | of it, `GR_ClearVRAM` (`s_vram`, log base, `glClear`) | 5.71 | 5.46 (2.10, 3.19, 0.15) | **0.15** (0, 0, 0.13) |
+    | the GPU meter's present, with its wait for the display, per picture | — | 1.62 ms | 3.98 ms |
+    | parse thread busy; the game thread's wait for the walk | 2.10; 1.11 | 2.12; 1.11 | 2.13; 1.10 |
+    | game thread busy | 38.1% | 37.5% | 36.6% |
+    | late vblanks per 300: the Stone Hill demo, Artisans, Toasty | 3.0, 0.4, 0.0 | 3.0, 0.6, 0.1 | **0.7**, 0.4, 0.3 |
+    | late vblanks in the load windows; falls to 30 fps | 108 in 15; 4 | 102 in 13; 4 | **68** in 15; 5 |
+
+    - **The render thread, the wall at 60 fps (D81), does 5.3 ms per vblank less clearing.** Its busy time falls 2.37 ms; the rest of the freed time it now spends waiting for the display inside the present (+2.36 ms a picture). It finishes early.
+    - **The Stone Hill demo's flight**, where the render thread was the wall (15.4 ms a picture in D98's X7, 12.9 in Y11), now takes 7.2 ms a picture, with 0.7 late vblanks per 300 against 3.0. The loads have 68 late vblanks against 102.
+    - Toasty's 0.3 against 0.1 is 6 vblanks in 21 windows (one run each, and the windows split differently between levels in real time). Read it as noise.
+- **Default:** 0 in this code; the owner decides. For 2: identical pictures, VRAM and memory cards in every check (the host, Vita3K, and hardware Y9 against Y10); the K route −30% CPU per vblank with every layer on one thread; at 60 fps the render thread no longer the wall in the Stone Hill flight, and late vblanks fewer. Against: none measured. The read-back that 2 relies on is the existing rule for every draw, and the poison audit found no reader that skips it. Set it in `src/platform/vita/main.c` beside `nd_direct`'s default.
+- **Not done:** the targets' `glClear` (0.03 ms per vblank on the Vita: not worth it). The presentation's own clears and `present.c` are stage 7c's, untouched here.
