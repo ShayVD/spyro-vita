@@ -111,6 +111,8 @@
  *   itself is parsed both ways and compared ("native draw direct check"
  *   lines; what stays is the direct way's with --nd-direct). Not with
  *   --vcache or the other two checks, whose walks compare GrVertex.
+ *   --gpu-clear: ClearImage's rect filled row by row (psx_fill.h, the
+ *   Vita's gpu_clear=1, D111): the same pixels, so every file is the same.
  *   --prof-draw: log
  *   each renderer's CPU time over the run at exit (prof_draw.c; relative
  *   numbers only, under qemu).
@@ -141,6 +143,7 @@ extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
 extern int g_nd_ab;                    /* D91 */
 extern int g_nd_fast, g_nd_pcheck;     /* D92 */
 extern int g_nd_direct, g_nd_direct_ok, g_nd_dcheck; /* D99 */
+extern int g_gpu_clear; /* gpu_soft.c, D111 */
 void nd_dcheck_report(void);
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
@@ -219,7 +222,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -558,6 +561,8 @@ int main(int argc, char **argv) {
       g_nd_direct = 1;
     } else if (strcmp(a, "--nd-direct-check") == 0) {
       g_nd_dcheck = 1;
+    } else if (strcmp(a, "--gpu-clear") == 0) {
+      g_gpu_clear = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {
       TAKE();
       g_gte_audit = to_int(val);

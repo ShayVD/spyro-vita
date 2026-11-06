@@ -1,0 +1,18 @@
+# Run Y9 (D111, docs/native-plan.md §3.5): Y6 (y2-k1-direct-on.txt, the shipped nd_direct=1) on
+# D111's VPK with gpu_clear=0: every layer on the game thread at 30 fps. Y9 has the clears as
+# before (pixel by pixel), Y10 gpu_clear=2 (row by row, a target's whole clear left to its
+# read-back); the pair gives the GR_ClearVRAM split and the CPU per vblank before and after, and
+# the same 18 pictures and card. Unattended:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y9 1500 \
+#     @tools/vita/fps-runs/y9-k1-clear-off.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+ngte_fx=0
+gpu_time=0
+dynres=0
+nd_direct=1
+gpu_parts=1
+gpu_clear=0

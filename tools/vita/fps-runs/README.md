@@ -441,3 +441,27 @@ Y1–Y4 again, on D105's VPK: the walk (`em_direct`) makes the box and the skip 
 **What to read:** as Y1–Y4. Y5 and Y6: the 18 pictures and the memory card identical; the walk itself is the OT walk's layer less the `gpu parts` vertex buffers (with `render_thread=0` they are inside it), Y6 against Y5 and against Y2. Y7 and Y8: the `render`, `parse` and `time` lines (the render thread, the parse thread, the game thread's wait for the walk) and `fps60_summary.py`'s late vblanks. The second `gpu parts` line in Y5: what the "PS1 GPU → vitaGL" layer (prof.c's `raster`) is made of.
 
 **Ran** on 2026-11-05 (D105, approved by the owner; VPK `logs/d105-vpk-1.vpk`, SHA-1 `751098f5…`, built from this PR's code before one host-only C expression was parenthesised; `logs/hw-y5`…`y8`): all four reached `frames=`, no crash dump. Y5 and Y6: all 18 pictures (also Y1's) and the memory card identical; the route 9.81 → 9.39 ms per vblank (50 windows, without the quit window). Y7 and Y8: the render thread 0.83 ms per vblank lighter, the parse thread 0.22 heavier, late vblanks fewer. The new `gpu parts` line: `GR_ClearVRAM` 2.70 of the layer's 3.66 ms per vblank (Y5), 5.7 on the render thread at 60 fps. Main's eboot (`987363e`) went back on the Vita afterwards.
+
+## Runs Y9–Y12: the clears (D111)
+
+Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing by `gpu_clear` alone: 0, the clears as before D111 (each pixel through the wrap, and each whole clear writing the target log's base), against 2 (the VRAM rect row by row with NEON, the log's base kept as the colour, and a target's whole clear left to its read-back). All four have `gpu_parts=1`, whose third `gpu parts` line splits `GR_ClearVRAM`: the batch it sends first, its VRAM rect, the uploads and copies it sends, the target logs, the presentation slots, the binds and the `glClear`.
+
+| Run | File | As | Route | About |
+|---|---|---|---|---|
+| Y9 | `y9-k1-clear-off.txt` | Y6, `gpu_clear=0` | the K route with shots, virtual vblanks | 4–5 min |
+| Y10 | `y10-k1-clear-on.txt` | Y6, `gpu_clear=2` | as Y9 | 4–5 min |
+| Y11 | `y11-toasty60-clear-off.txt` | Y8, `gpu_clear=0` | the Toasty route, `REALTIME=1` | 7 min |
+| Y12 | `y12-toasty60-clear-on.txt` | Y8, `gpu_clear=2` | as Y11 | 7 min |
+
+**Unattended** (each run needs the owner's yes first; put main's eboot back afterwards). With `V` the absolute path of D111's VPK and `K`, `T` as for Y1–Y4:
+- Y9: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y9 1500 @tools/vita/fps-runs/y9-k1-clear-off.txt @tools/vita/hw-routes/n-gte-k.cfg`
+- Y10: the same with `y10-k1-clear-on.txt` into `logs/hw-y10`
+- Y11: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y11 1500 @tools/vita/fps-runs/y11-toasty60-clear-off.txt @tools/vita/hw-routes/o-toasty.cfg`
+- Y12: the same with `y12-toasty60-clear-on.txt` into `logs/hw-y12`
+
+**What to read:**
+- Y9 and Y10 take their 18 pictures at the same vblanks: both sets, Y6's, and the memory cards must be identical.
+- The third `gpu parts` line in Y9: what `GR_ClearVRAM` costs on the Vita, part by part (the split Vita3K gave is in D111). Y10 against Y9: the same line, and `native_share.py logs/hw-yN/spyro.log --fps 30 --all` for the PS1 GPU → vitaGL layer and the sum per vblank.
+- Y11 and Y12: the `render` lines (the render thread's busy time per picture), the `gpu parts` lines, `fps60_summary.py`'s late vblanks, and the `dynres` lines' GPU time.
+
+**Not run yet** (proposed with D111; needs the owner's yes).

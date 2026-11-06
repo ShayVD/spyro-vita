@@ -1,0 +1,13 @@
+# Run Y12 (D111): Y8 (y4-toasty60-direct-on.txt) on D111's VPK with gpu_clear=2: the shipped
+# defaults at 60 fps on the Toasty route, the clears on the render thread. Y11 has them as
+# before, Y12 gpu_clear=2: the render thread's busy time per picture, the GR_ClearVRAM split,
+# late vblanks and the GPU's time (gpu_meter) before and after. Unattended:
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh \
+#     logs/hw-y12 1500 @tools/vita/fps-runs/y12-toasty60-clear-on.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1
+fast_render=2
+nd_direct=1
+gpu_parts=1
+gpu_clear=2
