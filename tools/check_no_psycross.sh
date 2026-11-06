@@ -49,7 +49,11 @@ ref=$(find "$out" -name 'libpsycross_ref.a' -not -path '*/tests/*' | head -1)
 if [ -z "$ref" ]; then
   echo "skip nm:  $out has no libpsycross_ref.a to list PsyCross's symbols from (SPYRO_PSYCROSS_REF=OFF)"
 else
-  "$nm" -g --defined-only "$ref" 2> /dev/null | awk 'NF == 3 { print $3 }' | sort -u > "$tmp/ref"
+  # Strong symbols only: weak ones (W, V) are inline or template code the
+  # compiler emits wherever a header uses it, and __x86.get_pc_thunk.* is
+  # i686 position-independent code's helper, emitted into every object.
+  "$nm" -g --defined-only "$ref" 2> /dev/null |
+    awk 'NF == 3 && $2 ~ /^[TDBRCGS]$/ && $3 !~ /^__x86\.get_pc_thunk/ { print $3 }' | sort -u > "$tmp/ref"
   # The names our own objects define too (libgte's six functions, the GPU
   # state, the walk's entry points...): the binary has ours, which the map
   # check above already places.
