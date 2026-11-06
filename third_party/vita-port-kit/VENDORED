@@ -1,5 +1,6 @@
 # vita-port-kit, vendored by tools/vendor.sh: do not edit these files here; change the kit and re-vendor.
-commit f5c448fd9b053440ffc48a7a6c478a87b4757e03
+commit 42069344f0e9743330adc51ead6e3b189cd3527c
 path vita/tools
 path vita/cmake
 path vita/runtime/audioout
+path vita/runtime/discimage
