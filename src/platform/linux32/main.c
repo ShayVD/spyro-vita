@@ -307,6 +307,8 @@ static void present_report(void) {
   host_log("present: interp frames %lld, skipped %lld (%lld for the budget), "
            "2D narrowed %lld, SPU writes dropped %lld", s->interp_frames,
            s->skipped_interp, s->budget_skips, s->squeezed_2d, s->spu_dropped);
+  host_log("present: frames by due vblank (7c, D112): %lld shown late, %lld never shown, "
+           "%lld dropped from a full queue", s->due_late, s->due_superseded, s->queue_drops);
   host_log("present: snapshot %lld bytes copied per tick (in and out)",
            s->snapshot_bytes / t);
   host_log("present: animation tracks blended %lld, kept %lld; particles "

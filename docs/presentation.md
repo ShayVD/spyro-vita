@@ -32,6 +32,8 @@ shown          ...F(N-1)          I(N-1,N)            F(N)  ...
 
 The presenter queue shows one captured frame per vblank. Real frames land on the same vblanks as the original's, byte for byte, so interpolation adds no latency (`logs/run3-interp` vs `logs/run3-off960`, vblanks 4400–4431).
 
+Since stage 7c (D112) each frame carries the vblank it's due at: a frame filed at vblank count c behind k waiting ones is due at c + 1 + k. The host takes the frame due at each vblank (`port_present_frame_due`), the same frame the queue gave. On the Vita with `present_due=1` and real time, the render thread shows each frame when the display reaches its due vblank, without the game thread presenting it.
+
 ## Widescreen
 
 ### Projection: the camera matrix, not the GTE

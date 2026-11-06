@@ -11,6 +11,11 @@
            log from before the meter's own line, the "dynres N:" line's)
   pres     the meter's present (with its wait for the display)
   busy     the game thread's busy % per vblank ("time N:", waits left out)
+  wfr      ms the game thread waited for the render thread's previous present
+           ("render N:": "previous frame not shown yet"; 0 with present_due=1)
+  wpool    ms it waited for the ring or a vertex slab ("ring full", "vertex slabs")
+  skip     frames whose draws the render thread skipped (present_due=1, D112:
+           the "present N:" line's 7c part, in-between and real frames)
 Windows are named by the level the last "where:" line before their end
 names. A window with a "where:" line inside it (a level load, the title's
 start, a menu warp) is a load window: it's listed but kept out of the level's
@@ -55,10 +60,18 @@ def windows(path):
             mm = re.search(r"([\d.]+) ms per picture", body)
             if mm:
                 d["rend"] = float(mm.group(1))
+            waits = dict((k, float(x)) for k, x in re.findall(
+                r"(ring full|previous frame not shown yet|vertex slabs) ([\d.]+) ms", body))
+            if waits:
+                d["wfr"] = waits.get("previous frame not shown yet", 0.0)
+                d["wpool"] = waits.get("ring full", 0.0) + waits.get("vertex slabs", 0.0)
         elif kind == "present":
             mm = re.search(r"\((\d+) falls to a held 30 fps\)", body)
             if mm:
                 d["falls"] = int(mm.group(1))
+            mm = re.search(r"draws skipped for (\d+) in-between and (\d+) real frames", body)
+            if mm:
+                d["skip"] = int(mm.group(1)) + int(mm.group(2))
         elif kind == "dynres" and "gpu" not in d:
             # D75 before the meter's own line (J6): pictures and ms at each scale
             ps = [(int(p), float(x)) for p, x in re.findall(r"(\d+) pictures, ([\d.]+) ms", body)]
@@ -91,7 +104,7 @@ def main():
     ap.add_argument("--to", dest="hi", type=int, default=1 << 30)
     a = ap.parse_args()
     ws = [d for d in windows(a.log) if a.lo <= d["n"] <= a.hi]
-    cols = ["late", "pics", "falls", "rend", "gpu", "pres", "busy"]
+    cols = ["late", "pics", "falls", "rend", "gpu", "pres", "busy", "wfr", "wpool", "skip"]
 
     def fmt(d, k):
         x = d.get(k)
@@ -115,7 +128,8 @@ def main():
             continue
         levels.setdefault(d["level"], []).append(d)
     print(f"{'level':20s} {'win':>4} {'late/300':>9} {'worst':>6} {'clean':>6} {'falls':>6} "
-          f"{'rend ms':>8} {'gpu ms':>7} {'gpu max':>8} {'busy %':>7} {'busy max':>9}")
+          f"{'rend ms':>8} {'gpu ms':>7} {'gpu max':>8} {'busy %':>7} {'busy max':>9} "
+          f"{'wfr ms':>7} {'wpool ms':>9} {'skips':>6}")
     for name, ds in levels.items():
         def mean(k):
             xs = [d[k] for d in ds if k in d]
@@ -127,7 +141,8 @@ def main():
         clean = sum(1 for d in ds if d.get("late", 0) <= 5)
         print(f"{name[:20]:20s} {len(ds):4d} {mean('late'):9.1f} {top('late'):6d} {clean:6d} "
               f"{sum(d.get('falls', 0) for d in ds):6d} {mean('rend'):8.2f} {mean('gpu'):7.2f} "
-              f"{top('gpu'):8.2f} {mean('busy'):7.1f} {top('busy'):9d}")
+              f"{top('gpu'):8.2f} {mean('busy'):7.1f} {top('busy'):9d} "
+              f"{mean('wfr'):7.2f} {mean('wpool'):9.2f} {sum(d.get('skip', 0) for d in ds):6d}")
     print(f"loads: {loads['windows']} windows, {loads['late']} vblanks late, {loads['falls']} falls to 30")
 
 

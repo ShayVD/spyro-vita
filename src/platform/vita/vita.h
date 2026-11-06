@@ -62,6 +62,10 @@ typedef struct {
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
   int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
   int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
+  int present_due;    /* present_due=1: with realtime=1 and the render thread, the render thread
+                         shows each frame at its due vblank and the game never waits for a
+                         present (stage 7c, D112; the default since 7C1-7C4); 0: presents from VSync,
+                         as before */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int cd_native;      /* cd_native=1: CdReads as file reads on a worker, the XA stream read ahead (D93) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
@@ -148,6 +152,21 @@ void vita_gpu_vram_loaded(void);    /* s_vram was overwritten */
 /* gpu_gl.c: presentation frames captured and kept on the GPU */
 struct PresentCapture;
 const struct PresentCapture *vita_gpu_present_capture(void);
+/* gpu_thread.c, stage 7c (D112): present_due=1 in effect (realtime=1, gpu=1,
+ * the render thread). Then the game thread takes the frame due at each
+ * vblank (vita_gpu_due_vblank, which also serves shots) and, once per
+ * VSync, posts only what isn't a due frame: the PS1 display
+ * (vita_gpu_present_due). The render thread shows the frames. */
+int vita_gpu_due_mode(void);
+void vita_gpu_due_vblank(int vblank);
+int vita_gpu_present_due(void); /* the pictures shown since the last call */
+int vita_gpu_due_report(char *buf, int size); /* the present line's 7c part; 0: none */
+/* vblank.c: how many vblanks the display is past `due`, in our vblanks
+ * (negative: before it); any thread. Large while our clock isn't counted
+ * against the display (start-up, after the menu). */
+int vita_vblank_past_due(int due);
+unsigned vita_display_vcount(void); /* its 16 bits (vcount_test's offset too); any thread */
+#define VITA_DUE_UNCOUNTED 0x7fff /* vita_vblank_past_due: no count against the display yet */
 
 /* pad.c: SDL2 game controller -> PS1 digital pad */
 void vita_pad_init(void);

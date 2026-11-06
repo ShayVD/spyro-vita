@@ -296,3 +296,70 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - Toasty's 0.3 against 0.1 is 6 vblanks in 21 windows (one run each, and the windows split differently between levels in real time). Read it as noise.
 - **Default: `gpu_clear=2` on the Vita** (the owner's decision, 2026-11-06, after Y9–Y12; the host stays 0). For: identical pictures, VRAM and memory cards in every check (the host, Vita3K, and hardware Y9 against Y10); the K route −30% CPU per vblank with every layer on one thread; at 60 fps the render thread no longer the wall in the Stone Hill flight, and late vblanks fewer. Against: none measured. The read-back that 2 relies on is the existing rule for every draw, and the poison audit found no reader that skips it. Set in `src/platform/vita/main.c` beside `nd_direct`'s default; the options menu doesn't save it, so only a config line `gpu_clear=0` gives the old clears back.
 - **Not done:** the targets' `glClear` (0.03 ms per vblank on the Vita: not worth it). The presentation's own clears and `present.c` are stage 7c's, untouched here.
+
+## 2026-11-06 — stage 7c: presents at the due vblank
+
+### D112. Stage 7c: every frame carries its due vblank; the host shows the frame due at each vblank (the same frames as before); on the Vita, `present_due=1` lets the render thread show frames at their display vblank without the game thread presenting. The Vita's default since its hardware pair (7C1–7C4)
+- **Why:** step 7c of the stage 7 plan (`docs/native-plan.md` §5, D101, D104). The aim is that a late render thread costs pictures, not ticks. Until now the game thread posted every present from `VSync` and waited for the previous one to have run ("previous frame not shown yet"): in X7's Stone Hill attract-demo flight that wait was 477 ms in every 300-vblank window (`fps60_summary.py`'s new `wfr` column on `logs/hw-x7`). D108–D110 went to merged PRs and D111 to the clears, so this is D112.
+- **Frames carry their due vblank** (`present.c`, every platform):
+  - The queue is taken one frame per vblank, so a frame filed at vblank count c behind k waiting ones is due at c + 1 + k. When the queue is full (4 waiting), its oldest frame goes and the rest each come due a vblank sooner, as the queue always behaved.
+  - `PresentFrame` (slot, due, wide, in-between or real, and the slot dropped for it) goes to the platform with each commit. A new optional `begin(due, interp)` comes at a capturing pass's first `DrawOTag`.
+  - `port_present_frame_due(v)` takes the newest frame due at vblank v. The host calls it at each virtual vblank in place of `port_present_frame()`. By the arithmetic above it is the frame the old pop gave, and the host checks below confirm that byte for byte. `--present-stats` counts frames taken late, never taken, and dropped: 0, 0 and 768 in the widescreen attract demos (the drops are the gamestates that tick every vblank, as before).
+  - Shots on the host come from the frame due at their vblank, as they did. The Vita's `realtime=0` path is unchanged: its one pop per virtual vblank is the same frame.
+- **`present_due=1` on the Vita** (`gpu_thread.c`, `vblank.c`; only with `realtime=1`, `gpu=1` and `render_thread=1`, otherwise logged and off):
+  - **The game thread** takes the frame due at each vblank it runs (the catch-up's too) and posts only the PS1 display's pictures (loads, boot logos, both features off), without waiting for the previous present. A shot at a vblank (`shot_hd`) posts the frame due there, synchronously, as before.
+  - **The render thread** keeps the filed frames and shows the newest one whose due vblank the display has reached. It reads the display's 16-bit vcount against the clock's base (`psx_clock_display_base`, `vita_vblank_past_due`).
+  - **When it presents:** at a frame boundary (a frame filed) or when it has nothing to run (then it looks every millisecond). Between two draws it presents only a frame already a vblank late (it looks every 16 commands). A present swaps, and in Vita3K a swap holds the render thread until the next flip, so presenting the moment a frame fell due left it almost no time to draw. Presented at a frame boundary within its vblank, a frame still flips at the same vblank.
+  - **Falling behind:**
+    - A frame's `C_BEGIN` already a vblank or more past its due skips that frame's draws, capture and commit. For an in-between frame that's always (its real frame is due too). For a real frame, only when a later frame is filed already or the game waits for the ring or a vertex slab.
+    - Uploads (`C_COPY`, `C_CALL`), clears and the state commands always run. The clears are the other session's (D111), untouched here.
+    - A PS1 display present with a later present already posted isn't drawn.
+    - While the game thread has waited for the pools since the last picture, the render thread shows at most one picture every two display vblanks.
+  - **No new thread:** a first version had a vblank thread waking the render thread at each display vblank. It is gone, so there is no second waiter on `sceDisplayWaitVblankStart` beside vitaGL's flip.
+  - **The `present N:` line** gains a `7c:` part: frames shown at their vblank, how many late and by how many vblanks, how many never shown, the draws skipped (in-between and real frames), the PS1 display pictures dropped, and the presents held. The game thread's own view (frames taken late, never taken, dropped from the full queue) gets a second line when it isn't all zero.
+  - **The `render N:` line:** "previous frame not shown yet" is 0 with `present_due=1`.
+- **Behind a switch:** `present_due=0` is main's code path from before D112. 7c changes when pictures reach the screen, and only hardware could say whether that is better, so the switch stayed 0 until runs 7C1–7C4 (below). In Vita3K, real time is too noisy to decide it (below). `config.txt` key `present_due`, `docs/vita-testing.md`.
+- **Two bugs found in Vita3K, fixed before the checks:**
+  - **The queue's drops weren't followed.** In the gamestates that tick every vblank, two frames are filed a vblank, so the queue drops its oldest and moves the rest up. The render thread didn't know: slots came back before any frame was due, and nothing was shown for 300 vblanks. Each filed frame now names the frame dropped for it.
+  - **Presents inside a command** were timed twice in the render line.
+- **Size:** ~670 lines with comments, over 18 files (`gpu_thread.c` ~380 of them). The plan said ~300–500.
+- **Checks** (logs gitignored, in this worktree's `logs/`). The host runs are this branch on main `0c3fff4`; the host binary is `869ba2f`'s, and the commits after it change only Vita files. The Vita3K runs are this branch merged with main `172b8ec` (`logs/s7c-branch-8.vpk`, SHA-1 `c0ac8e98…`), against main's CI VPK (run 42200382743, `a2ff7c01…`):
+  - **Host, against main's binary** (`build/s7c-ref/spyro-main`; `tools/host_checks.sh`):
+    - plain: 279 of 279 files identical (`logs/s7c-main-*`, `logs/s7c-br-*`);
+    - `EXTRA=--interp`: 279 of 279 identical, the shots taken by vblank from the presentation frames (`logs/s7c-main-i-*`, `logs/s7c-br-i-*`);
+    - the attract demos with `--widescreen --interp --present-stats`: 50 of 50 identical (shots every 250, trace, WAV; `logs/s7c-*-wsdemo`).
+  - **ctest:** 17 of 17 (`gte` skipped, as on main). **Matching build:** green (`logs/s7c-matching.txt`).
+  - **Vita3K `realtime=0`** (the gems script, `frames=8768 shot_every=512`, `CAPTURE=1`; `present_due` is off in `realtime=0`, so these show the default is main's):
+    - **30 fps:** 17 of 17 shots, 17 of 17 window captures and the memory card identical (`logs/s7c-v3k-m2-gems`, `-b8-gems`).
+    - **60 fps forced** (`interp=1 interp_budget=0`; main's VPK three times, this branch's three times):
+      - In every run, 17 of 17 shots and the card are identical to main's.
+      - Main's three runs have identical captures.
+      - The branch runs have at most one capture each that differs from them below the window's top row, a different one each time: none in one run; the 30×60 patch at 8704 that D100 and D106 saw in another; a 94×18 patch at 8192 in the third. Row 1 differs by 1–2 in some grabs, as D106 recorded. That is the grab.
+      - The earlier branch builds of this PR gave the same: 17 of 17 everything against main `0c3fff4`'s CI VPK (`91313cb5…`) at both rates.
+    - **Vita3K crashed** twice on the branch's 60 fps gems runs (VPKs 4 and 8, of 7 such runs), and once on main's own CI VPK (`c088cc0`, 30 fps, `logs/s7c-v3k-m3-gems-crashed`). The crash is inside Vita3K's renderer thread: `free()` of a bad pointer in `renderer::cmd_handle_set_context`, from its macOS crash report. It is Vita3K's, not 7c's.
+    - **After main's D111 (the clears) merged:** this branch on main `c088cc0` (`logs/s7c-branch-9.vpk`, `a2456f9c…`) against main's CI VPK (`2e3e0ecc…`), the gems script at 30 fps: 17 of 17 shots, 17 of 17 captures and the card identical. Host and VPK build clean.
+  - **Vita3K with `REALTIME=1` and `present_due=1`:** the gems script and the K route (`k-route.pad` with `m1-xa-k.cfg`'s menu warps) reach `frames=` with no hang. The menu warps, loads, title and intro work. The present line's counts add up.
+    - Timing in Vita3K says little. Late vblanks per 300 differ by 3× between two runs of the same VPK and settings (the Mac was loaded by host checks and another session's Vita3K runs). And in Vita3K a swap costs the render thread about a whole vblank, where X7 measured 10.6 ms a picture on hardware.
+    - In the gamestates that tick every vblank, the render thread is the wall in Vita3K with either setting. With `present_due=0` the game absorbs that in `VSync`; with `present_due=1`, before the hold, it waited for the vertex slabs mid-tick and ran up to 120 vblanks late per 300.
+    - With the hold (VPK 7), that was gone: on the K route, late vblanks per 300 were 1.4 in the attract demo and 1.5 in Artisans, the game thread at most 39% busy.
+    - On the merged VPK, `present_due` 1 against 0, late vblanks per 300 on the K route: title 3.4 against 8.2, the attract demo's flight 17.0 against 59.3, Artisans 11.5 against 7.6. "Previous frame not shown yet" went from 1.4–1.9 s a window to 0.
+    - Over the route, the render thread showed 15,894 frames at their vblank: 444 late (509 vblanks), 666 never shown, draws skipped for 655 in-between and 569 real frames, and 427 presents held (`logs/s7c-v3k-b8-k60-rt-*`).
+    - The route's level warps (`menu_test`) took or didn't from run to run with either setting; the menu opened, saved and closed in every run.
+- **Hardware: 7C1–7C4** (2026-11-06; approved by the owner in this session's chat; the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh`, the kit's lock free). VPK `logs/s7c-branch-9.vpk`, SHA-1 `a2456f9c…`, D112 merged with main `c088cc0` (so before D111's `gpu_clear=2` default). X7's settings at 60 fps on the K route and the Toasty route, `present_due=0` against `=1` (`tools/vita/fps-runs/README.md`; logs `logs/hw-7c1`…`7c4`, gitignored). All four reached `frames=`, with no crash dump, and the owner's files were put back each time. Afterwards main's CI eboot (`c088cc0`, `b92d7b4c…`) went back on the Vita and read back identical.
+  - **Late vblanks per 300** (`fps60_summary.py`, worst in brackets):
+
+    | | Stone Hill demo flight | Artisans | Dark Hollow | Toasty | loads, late vblanks in all | `wfr` a window in the flight |
+    |---|---:|---:|---:|---:|---:|---:|
+    | 7C1, `present_due=0` | 3.2 (13) | 0.6 (8) | 0.0 | — | 74 | 612 ms |
+    | 7C2, `present_due=1` | **0.0** | 0.6 (8) | 0.0 | — | 66 | **0** |
+    | 7C3, `present_due=0` | 3.8 (14) | 0.6 (8) | — | 0.2 (2) | 78 | 627 ms |
+    | 7C4, `present_due=1` | **0.0** | 0.4 (8) | — | 0.0 (1) | 79 | **0** |
+
+    - **The point of 7c holds on hardware:** in the attract demo's flight, where the render thread is the wall (15.7 ms a picture), the game thread is no longer late. With `present_due=0` it waited 0.6 s a window for the previous present; with `=1` it never waits for one. X7 had 5.4 late per 300 there.
+    - **In play and in the loads nothing changes** that one run each can show.
+  - **The render thread's side** (the `7c:` totals): 7C2 showed 17,406 frames at their vblank, 8 late (17 vblanks); 7C4 20,426, 13 late (24 vblanks). It skipped 4 and 11 frames' draws (1 a real frame's), never a PS1 display picture, and held 0 and 18 presents. The frames never shown (1,047 and 2,718) are those of the gamestates that tick every vblank, which the full queue drops on main too.
+  - **What's left of the game waiting for the render thread** with 7c: the vertex slabs, in 7C4 only (354 ms in the Toasty window with a load, 9 ms or less in five others), never the ring.
+  - **Not checked on hardware: the pictures.** These routes take no shots, and nobody watched the runs. Vita3K's `realtime=0` shots and captures are main's, and 7c's rules keep every upload and clear.
+  - 7C4's route died once more than 7C3's and ended in a game over. Toasty's route drifts in real time (X7, Y7, Y8 and Y12 ended the same way).
+  - The render thread is 90% busy or more in some windows of every run, with either switch: its present waiting for the display.
+- **Default: `present_due=1` on the Vita** (the owner's decision, 2026-11-06, after 7C1–7C4; the host has no such switch). For: no late vblanks in the flight, no game-thread waits for presents, play unchanged. Against: the pictures haven't been seen on hardware with it, 7C4's one skipped real frame and held presents are new behaviour, and the runs had `gpu_clear=0` where main's default is now 2 (D111). Set in `g_vita_opts`' initializer in `src/platform/vita/main.c`; it takes effect only with `realtime=1`, `gpu=1` and `render_thread=1` (all three the Vita's defaults), so `realtime=0`, Vita3K's checks included, is unchanged. The options menu doesn't save it, so a config line `present_due=0` gives `VSync`'s presents back. No VPK was built or run with the new default (the owner's call: just the PR).

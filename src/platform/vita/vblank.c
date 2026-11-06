@@ -154,12 +154,21 @@ static void vblank(void) {
 /* shot_hold: after the shot's picture is shown, hold.req (its vblank) asks
  * for a window capture and the game waits for hold.ack. Files, not the log:
  * Vita3K writes the log to the host in 4 KB blocks. */
-static void present(void) {
-  int shown = vita_video_present();
+static void hold(void);
+
+static void shown_pictures(int shown) {
   if (shown)
     vita_boot_close(); /* the disc screen's framebuffer isn't shown any more (D60) */
   s_stat_shown += shown;
   vita_bench_present(shown);
+}
+
+static void present(void) {
+  shown_pictures(vita_video_present());
+  hold();
+}
+
+static void hold(void) {
   if (s_hold && g_vita_opts.shot_hold > 0) {
     char buf[16];
     SceIoStat st;
@@ -183,15 +192,34 @@ static void present(void) {
 
 /* The display's vcount, widened (D90). vcount_test=N (tests) moves its 16
  * bits so they wrap N vblanks after the first read, not up to 18 minutes on. */
+static volatile unsigned s_vc_offset;
+
 static int vcount(void) {
-  static unsigned offset;
   unsigned raw = (unsigned)sceDisplayGetVcount();
   if (!s_vc.valid && g_vita_opts.vcount_test > 0) {
-    offset = 0x10000u - (unsigned)g_vita_opts.vcount_test - raw;
+    s_vc_offset = 0x10000u - (unsigned)g_vita_opts.vcount_test - raw;
     vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D90)",
              g_vita_opts.vcount_test);
   }
-  return vita_vcount_widen(&s_vc, (raw + offset) & 0xffffu); /* 16 bits, as on hardware */
+  return vita_vcount_widen(&s_vc, (raw + s_vc_offset) & 0xffffu); /* 16 bits, as on hardware */
+}
+
+/* Stage 7c (D112), from any thread: the display against `due`, in our
+ * vblanks. The widened vcount less the clock's base is our vblank the
+ * display is at (psx_clock_due); the 16 bits the display gives are enough
+ * for a difference of a few vblanks, so no widening here (it's the game
+ * thread's). */
+unsigned vita_display_vcount(void) {
+  return ((unsigned)sceDisplayGetVcount() + s_vc_offset) & 0xffffu;
+}
+
+int vita_vblank_past_due(int due) {
+  int base;
+  unsigned raw;
+  if (!psx_clock_display_base(&base))
+    return VITA_DUE_UNCOUNTED;
+  raw = ((unsigned)sceDisplayGetVcount() + s_vc_offset) & 0xffffu;
+  return (int16_t)(uint16_t)(raw - (unsigned)base - (unsigned)due);
 }
 
 static void wait_display(void) { sceDisplayWaitVblankStart(); }
@@ -211,6 +239,17 @@ void psx_platform_vsync(void) {
   n = psx_clock_due(1, vcount, wait_display, &late);
   prof_leave();
   s_stat_late += late;
+  if (vita_gpu_due_mode()) {
+    /* 7c (D112): each vblank takes the frame due at it; the render thread
+     * shows it at the display's vblank. Only the PS1 display is posted. */
+    while (n-- > 0) {
+      vblank();
+      vita_gpu_due_vblank(psx_clock_count());
+    }
+    shown_pictures(vita_gpu_present_due());
+    hold();
+    return;
+  }
   while (n-- > 0)
     vblank();
   present();

@@ -34,6 +34,12 @@ void psx_clock_resync(void);
  * itself moves as the caller runs them (psx_clock_tick). */
 int psx_clock_due(int count, int (*vcount)(void), void (*wait)(void), int *late);
 
+/* The display's vcount at our vblank 0, as psx_clock_due() counts it, so
+ * another thread can tell which of our vblanks the display is at (stage 7c,
+ * D112: vcount - base). Returns 0 while it isn't counted (before the first
+ * wait, after psx_clock_set or psx_clock_resync). Any thread. */
+int psx_clock_display_base(int *base);
+
 /* The game's VSyncCallback, if it set one (libetc.c). */
 void psx_clock_callback(void);
 
