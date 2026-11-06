@@ -206,6 +206,7 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **What:** D45's `menu_opts.c` (the table: text, stepping, layout, load, save) and `menu_panel.c` (the CPU-drawn panel and its 5x7 font) moved to vita-port-kit as `vpk_menu` / `vpk_menu_panel` (vendored in `third_party/vita-port-kit/vita/runtime/modmenu`). `menu_opts.h` and `menu_panel.h` map this game's names to the kit's; the sections (`MenuSection`, `g_menu_section_names`) stay here, since the kit takes a game's section names. The save is the kit's append form of `vpk_config_rewrite`, which kh1-decomp uses in place.
 - **Why:** vita-port-kit roadmap K4 (one menu framework for the ports).
 - **Checked:** `tests/menu_panel` against the kit writes the same three PPMs and the same `config.txt`, byte for byte, as main's code; the VPK builds. Hardware (2026-11-06, the PR's CI VPK, the K route with `menu_test`): both scripted visits opened the menu, warped, saved `config.txt` and closed.
+
 ## 2026-11-06 — the clears
 
 ### D111. The clears: the two CPU loops are most of `GR_ClearVRAM`; `gpu_clear=1` fills them row by row with NEON and keeps the log's base as a colour, `gpu_clear=2` also leaves a target's whole clear to its read-back. Identical pictures; off by default until hardware
