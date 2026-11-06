@@ -89,6 +89,15 @@
  *       render_thread=0 GL on the game thread, as before D63 (default 1:
  *                       with gpu=1, every GL call on a render thread of its
  *                       own on core 2, the game thread on core 0; D68)
+ *       present_due=1   with realtime=1 and render_thread=1 (gpu=1): each
+ *                       widescreen or 60 fps frame carries the vblank it's
+ *                       due at, the render thread shows it at that display
+ *                       vblank, and the game thread never waits for a
+ *                       present; a render thread that falls behind skips
+ *                       late frames' draws (in-between frames first) and
+ *                       keeps their uploads (stage 7c, D112). Default 0:
+ *                       VSync presents, as before, until its hardware pair
+ *                       has run. realtime=0 is unchanged either way
  *       xa_ahead=0      with cd_native=0: the XA music's sectors read on
  *                       the game thread (default 1: read ahead of the CD
  *                       head on core 1; D64, D68)
@@ -376,6 +385,8 @@ static void read_config(void) {
       g_vita_opts.mixer = atoi(v);
     else if (!strcmp(line, "render_thread"))
       g_vita_opts.render_thread = atoi(v), switch_line[0] = 1;
+    else if (!strcmp(line, "present_due"))
+      g_vita_opts.present_due = atoi(v);
     else if (!strcmp(line, "xa_ahead"))
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "cd_native"))

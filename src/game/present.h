@@ -65,6 +65,12 @@ typedef struct {
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
   long long budget_holds; /* times 60 fps fell back to a held 30 (D68) */
+  /* stage 7c (D112): frames carry their due vblank. On the host and with
+   * virtual vblanks the frame due at each vblank is shown at it, so these
+   * stay 0 there; with the Vita's real time, the game thread's own view. */
+  long long due_late;       /* frames taken after their due vblank */
+  long long due_superseded; /* frames never taken: a newer one was due too */
+  long long queue_drops;    /* frames dropped from a full queue (QUEUE waiting) */
   long long display_fallbacks; /* pictures that showed the PS1 display instead */
   long long particles_blended;
   long long snapshot_bytes; /* copied in and out by the region snapshot */
@@ -80,13 +86,25 @@ typedef struct {
 extern PresentConfig g_present;
 extern PresentStats g_present_stats;
 
+/* A frame filed into a slot (stage 7c, D112): the vblank it's due at, the
+ * first vblank it is shown at (shown at the first vblank >= due, until a
+ * newer frame is due), whether it's 16:9, and whether it's an in-between
+ * frame (D30) rather than a real one. */
+typedef struct PresentFrame {
+  int slot, due, wide, interp;
+} PresentFrame;
+
 /* A platform that keeps captured pictures itself (the Vita's GPU renderer):
  * capture() is called after a presentation pass's DrawOTag with the VRAM rect
  * just drawn, commit() then files that picture as slot 0..PRESENT_SLOTS-1.
+ * begin() (may be NULL) comes before that, at the first DrawOTag of a pass
+ * that captures: the frame's draws start, with the due vblank it will get
+ * as far as known then (7c's render thread skips a late frame's draws).
  * NULL (default): StoreImage into our own pixel slots. */
 typedef struct PresentCapture {
   void (*capture)(int x, int y, int w, int h);
-  void (*commit)(int slot);
+  void (*commit)(const PresentFrame *f);
+  void (*begin)(int due, int interp);
 } PresentCapture;
 extern const PresentCapture *g_present_capture;
 
@@ -105,6 +123,13 @@ int port_present_frame_is_wide(void); /* the frame returned was widescreen */
  * g_present_capture set, port_present_frame() is NULL and this is the one
  * to use. Call one of the two, once per picture shown. */
 int port_present_frame_slot(void);
+/* Stage 7c (D112): the same, by due vblank: the newest frame due at vblank
+ * v (taken once per vblank, at the vblank itself: the host, realtime=0, and
+ * the Vita's game thread with present_due=1). Frames are due one per vblank
+ * after the vblank they were filed at, in order, so on the host this is the
+ * same frame port_present_frame_slot() takes. */
+int port_present_frame_due(int v);
+int port_present_slot_due(int slot); /* the due vblank filed with a slot */
 const uint16_t *port_present_slot_pixels(int slot); /* NULL with a platform capture */
 int port_present_frame_new(void); /* that call took a frame not shown before */
 /* The pixels on screen now, without taking a new frame (screenshots); NULL

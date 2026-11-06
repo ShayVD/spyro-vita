@@ -262,10 +262,20 @@ static void unsqueeze_2d(void) {
  * screen. Without a
  * platform capture (g_present_capture NULL) a slot holds the pixels
  * (StoreImage of the drawn area); with one (the Vita's GPU renderer) the
- * platform keeps the picture in its own slot and we only number them. */
+ * platform keeps the picture in its own slot and we only number them.
+ *
+ * Each frame carries the vblank it's due at (stage 7c, D112). Taken one per
+ * vblank, the queue shows its head at the next vblank, so the frame filed
+ * at vblank count c behind k waiting ones is due at c + 1 + k; when the
+ * queue is full its oldest goes and the rest move up a vblank. That is what
+ * the platform's render thread needs to show a frame at its own display
+ * vblank, without the game thread presenting it. */
 #define QUEUE 4
 static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H];
 static uint8_t s_frame_wide[PRESENT_SLOTS];
+static int s_frame_due[PRESENT_SLOTS];
+static int s_pass_interp; /* the capture under way is an in-between frame's */
+static int s_frame_begun; /* its begin() has gone to the platform */
 static int s_qhead, s_qcount; /* oldest queued slot, number queued */
 static int s_shown = -1;      /* slot on screen */
 static int s_in_game_draw;    /* inside GamestateDraw (a pass or the real one) */
@@ -302,11 +312,27 @@ static void capture_area(void *arg) {
 
 /* The capture into a presentation slot, after the capture itself (D71) */
 static void commit_slot(void *arg) {
-  int slot = *(const int *)arg;
+  const PresentFrame *f = arg;
   if (g_present_capture)
-    g_present_capture->commit(slot);
+    g_present_capture->commit(f);
   else
-    memcpy(s_frames[slot], s_capture, sizeof s_capture);
+    memcpy(s_frames[f->slot], s_capture, sizeof s_capture);
+}
+
+/* The vblank the next frame filed would be due at (7c): its place in the
+ * queue after the ones waiting, the oldest dropped if it's full. */
+static int due_next(void) {
+  return psx_clock_count() + 1 + (s_qcount < QUEUE ? s_qcount : QUEUE - 1);
+}
+
+/* A capturing pass's first DrawOTag: the platform hears the frame's draws
+ * start (7c's render thread may skip a late one's). */
+static void frame_begin(void) {
+  if (s_frame_begun)
+    return;
+  s_frame_begun = 1;
+  if (g_present_capture && g_present_capture->begin)
+    g_present_capture->begin(due_next(), s_pass_interp);
 }
 
 static void capture_now(void) {
@@ -314,20 +340,29 @@ static void capture_now(void) {
   s_captured = 1;
 }
 
-static void push_capture(int wide) {
-  int slot;
+static void push_capture(int wide, int interp) {
+  PresentFrame f;
+  int i;
+  s_frame_begun = 0;
   if (!s_captured)
     return;
   s_captured = 0;
-  if (s_qcount == QUEUE) { /* drop the oldest */
+  if (s_qcount == QUEUE) { /* drop the oldest; the rest are due a vblank sooner */
     s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
+    for (i = 0; i < s_qcount; i++)
+      s_frame_due[(s_qhead + i) % PRESENT_SLOTS]--;
+    g_present_stats.queue_drops++;
   }
   /* This may be the slot on screen (after a run of drops); harmless: the
    * queue isn't empty now, so the next vblank shows a newer slot. */
-  slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
-  psx_walk_after(commit_slot, &slot, sizeof slot);
-  s_frame_wide[slot] = (uint8_t)wide;
+  f.slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
+  f.due = due_next();
+  f.wide = wide;
+  f.interp = interp;
+  psx_walk_after(commit_slot, &f, sizeof f);
+  s_frame_wide[f.slot] = (uint8_t)wide;
+  s_frame_due[f.slot] = f.due;
   s_qcount++;
   s_last_push_vblank = psx_clock_count();
 }
@@ -341,8 +376,28 @@ void port_present_reset(void) {
   s_qcount = 0;
   s_shown = -1;
   s_captured = 0;
+  s_frame_begun = 0;
   s_foreign_vblank = -1;
   s_last_push_vblank = -1000;
+}
+
+/* The frame shown now, after a pop: a slot, or -1 for the PS1 display. The
+ * game drew outside GamestateDraw since our last frame (loading screens,
+ * code that draws from GamestateUpdate): that picture is the PS1
+ * display's. A slow tick alone keeps the last frame on screen: falling back
+ * then made the picture jump between 16:9 and 4:3. */
+static int shown_slot(void) {
+  if (s_shown < 0 || s_foreign_vblank > s_last_push_vblank) {
+    g_present_stats.display_fallbacks++;
+    return -1;
+  }
+  return s_shown;
+}
+
+static void pop(void) {
+  s_shown = s_qhead;
+  s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
+  s_qcount--;
 }
 
 int port_present_frame_slot(void) {
@@ -352,20 +407,31 @@ int port_present_frame_slot(void) {
     return -1;
   }
   s_popped = s_qcount > 0;
-  if (s_qcount > 0) {
-    s_shown = s_qhead;
-    s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
-    s_qcount--;
-  }
-  /* The game drew outside GamestateDraw since our last frame (loading
-   * screens, code that draws from GamestateUpdate): that picture is the PS1
-   * display's. A slow tick alone keeps the last frame on screen: falling
-   * back then made the picture jump between 16:9 and 4:3. */
-  if (s_shown < 0 || s_foreign_vblank > s_last_push_vblank) {
-    g_present_stats.display_fallbacks++;
+  if (s_qcount > 0)
+    pop();
+  return shown_slot();
+}
+
+int port_present_frame_due(int v) {
+  if (!port_present_active()) {
+    s_qcount = 0;
+    s_shown = -1;
     return -1;
   }
-  return s_shown;
+  s_popped = 0;
+  while (s_qcount > 0 && s_frame_due[s_qhead] - v <= 0) {
+    if (s_popped)
+      g_present_stats.due_superseded++;
+    pop();
+    s_popped = 1;
+  }
+  if (s_popped && s_frame_due[s_shown] != v)
+    g_present_stats.due_late++;
+  return shown_slot();
+}
+
+int port_present_slot_due(int slot) {
+  return slot >= 0 && slot < PRESENT_SLOTS ? s_frame_due[slot] : 0;
 }
 
 const uint16_t *port_present_slot_pixels(int slot) {
@@ -405,6 +471,8 @@ static int ot_pre(u_long *p) {
     s_n2d = 0;
     return 1;
   }
+  if (s_capture_on)
+    frame_begin();
   if (s_record_2d)
     squeeze_2d();
   return 0;
@@ -1333,13 +1401,15 @@ void PortPresentDraw(void) {
         s_audit_packets = s_nhud[0] = 0;
         if (g_present_reads)
           g_present_reads->pass(1);
+        s_pass_interp = 1;
         presentation_pass(g_present.widescreen, wide_pass);
+        s_pass_interp = 0;
         if (g_present_reads)
           g_present_reads->pass(0);
         s_audit_pass = 0;
         gs->us_pass += now_us() - tp;
         gs->packets += s_audit_packets;
-        push_capture(g_present.widescreen); /* shown before this tick's frame */
+        push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
         shown = 1;
       } else {
@@ -1385,7 +1455,7 @@ void PortPresentDraw(void) {
   g_psyxVSyncHook = NULL;
   /* This tick's frame goes in the queue where the original draw finishes,
    * so real frames are shown on the same vblanks as without presentation. */
-  push_capture(wide_pass || logic_wide);
+  push_capture(wide_pass || logic_wide, 0);
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t - (timed ? s_tick_vsync_us : 0);
   if (g_present.interp_budget_us) {

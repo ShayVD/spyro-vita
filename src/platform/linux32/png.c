@@ -8,6 +8,7 @@
  * when widescreen, pillarboxed 4:3 otherwise (D67). */
 #include "host.h"
 #include "../../game/present.h" /* also built by the Vita target */
+#include "psx_clock.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -136,9 +137,10 @@ static uint8_t *ps1_display_rgb(int *pw, int *ph) {
 #define OUT_W 960
 #define OUT_H 544
 
-/* linux32: one presentation frame per vblank (the Vita takes them when it
- * presents, video.c and gpu_gl.c). */
-void host_present_vblank(void) { (void)port_present_frame(); }
+/* linux32: the presentation frame due at this vblank, shown inline (stage
+ * 7c, D112; the Vita takes them when it presents, video.c and
+ * gpu_thread.c). */
+void host_present_vblank(void) { (void)port_present_frame_due(psx_clock_count()); }
 
 /* Bilinear scale of src (sw x sh RGB) into the dst rectangle x0..x0+w. */
 static void scale_into(uint8_t *dst, int x0, int w, const uint8_t *src, int sw,

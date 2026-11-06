@@ -257,6 +257,10 @@ void spyro_trace_vblank(int vblank) { (void)vblank; }
 void spyro_trace_close(void) {}
 void spyro_moby_dump(const char *path) { (void)path; }
 const uint16_t *port_present_frame(void) { return 0; }
+int port_present_frame_due(int v) {
+  (void)v;
+  return -1;
+}
 const uint16_t *port_present_shown_pixels(void) { return 0; }
 int port_present_frame_is_wide(void) { return 0; }
 void port_lod_report(char *out, unsigned len) {

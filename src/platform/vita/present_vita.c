@@ -73,6 +73,8 @@ void vita_present_report(int vblank) {
   static PresentStats last;
   const PresentStats *s = &g_present_stats;
   long long ticks = s->ticks - last.ticks;
+  char due[320];
+  int has_due = vita_gpu_due_report(due, sizeof due); /* 7c (D112); its window too */
   if (!port_present_active() || ticks <= 0) {
     last = *s; /* windows with both off aren't reported, nor carried over */
     return;
@@ -80,12 +82,17 @@ void vita_present_report(int vblank) {
   vita_log("present %d: %lld ticks; per tick us: logic draw %lld, passes %lld, snapshot %lld, "
            "blend %lld; %lld in-between frames, %lld skipped for the budget (%lld falls to a held "
            "30 fps), %lld otherwise; "
-           "%lld pictures from the 4:3 display",
+           "%lld pictures from the 4:3 display%s%s",
            vblank, ticks, (s->us_logic - last.us_logic) / ticks,
            (s->us_pass - last.us_pass) / ticks, (s->us_snapshot - last.us_snapshot) / ticks,
            (s->us_blend - last.us_blend) / ticks, s->interp_frames - last.interp_frames,
            s->budget_skips - last.budget_skips, s->budget_holds - last.budget_holds,
            s->skipped_interp - last.skipped_interp,
-           s->display_fallbacks - last.display_fallbacks);
+           s->display_fallbacks - last.display_fallbacks, has_due ? "; " : "", has_due ? due : "");
+  if (has_due && (s->due_late != last.due_late || s->due_superseded != last.due_superseded ||
+                  s->queue_drops != last.queue_drops))
+    vita_log("present %d: the game thread's frames by due vblank: %lld taken late, %lld never "
+             "taken, %lld dropped from a full queue", vblank, s->due_late - last.due_late,
+             s->due_superseded - last.due_superseded, s->queue_drops - last.queue_drops);
   last = *s;
 }
