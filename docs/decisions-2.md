@@ -206,3 +206,60 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **What:** D45's `menu_opts.c` (the table: text, stepping, layout, load, save) and `menu_panel.c` (the CPU-drawn panel and its 5x7 font) moved to vita-port-kit as `vpk_menu` / `vpk_menu_panel` (vendored in `third_party/vita-port-kit/vita/runtime/modmenu`). `menu_opts.h` and `menu_panel.h` map this game's names to the kit's; the sections (`MenuSection`, `g_menu_section_names`) stay here, since the kit takes a game's section names. The save is the kit's append form of `vpk_config_rewrite`, which kh1-decomp uses in place.
 - **Why:** vita-port-kit roadmap K4 (one menu framework for the ports).
 - **Checked:** `tests/menu_panel` against the kit writes the same three PPMs and the same `config.txt`, byte for byte, as main's code; the VPK builds. Hardware (2026-11-06, the PR's CI VPK, the K route with `menu_test`): both scripted visits opened the menu, warped, saved `config.txt` and closed.
+
+## 2026-11-06 — the clears
+
+### D111. The clears: the two CPU loops are most of `GR_ClearVRAM`; `gpu_clear=1` fills them row by row with NEON and keeps the log's base as a colour, `gpu_clear=2` also leaves a target's whole clear to its read-back. Identical pictures; off by default until hardware
+- **Why:** D105 found `GR_ClearVRAM` to be 2.70 of the PS1 GPU → vitaGL layer's 3.66 ms per vblank (Y5, the K route with every layer on the game thread), and 5.7 ms per vblank of the render thread at 60 fps (Y7, Y8), but not which part of it.
+- **What a clear is** (`src/platform/vita/gpu_gl.c` `clear_vram`, `clear_targets`; a host count over the attract demos, `logs/clr-count`): Spyro clears once a frame. The clear is the draw buffer it is about to draw, 512×224 at (0, 8) or (0, 248), whole and unwrapped, in the level's sky colour (black only at loads; 2,985 clears in 6,000 vblanks, plus a few 512×480 and 512×512 at start-up). For each one `gpu_gl.c`:
+  1. sent the held batch;
+  2. set the rect's 114,688 pixels of `s_vram` one at a time through the wrap (`row[(x + j) & 1023]`);
+  3. sent pending uploads and copies (`flush_pending`);
+  4. per target: started the log again, writing its base whole with the colour (`log_begin`, another 114,688 pixels); then the presentation slots (`pres_touch`), the bind and a scissored `glClear`.
+- **The split:** `gpu_parts=1` gains a third `gpu parts` line with those parts, plus how many clears and pixels, and how many pixels were left to the read-back. In Vita3K (VPK `logs/d111-vpk-1.vpk`; the gems script, every layer on the game thread; means of the 26 windows from vblank 900, ms per vblank; `logs/d111-v3k-t0`…`t2`):
+
+  | `gpu_clear` | `GR_ClearVRAM` | the batch | `s_vram` | uploads | log base | slots, bind | `glClear` |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | 0 (as before) | 0.325 | 0.000 | 0.121 | 0.000 | 0.156 | 0.000 | 0.033 |
+  | 1 | 0.093 | 0.000 | 0.040 | 0.000 | 0.000 | 0.001 | 0.041 |
+  | 2 | 0.055 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.045 |
+
+  - **The two CPU loops are 85% of the clear**; the `glClear` is 10%, and the rest nothing (in play no batch is held at the frame's start, no upload is pending and every presentation picture was handed its target's texture). Vita3K's GPU calls are not the Vita's, and its CPU is about 9× the Vita's here (0.33 against Y5's 2.70), so the hardware split is run Y9's to give. If the `glClear` turns out larger on the Vita, the next step is merging or skipping it; the loops' share says start with them.
+- **Decided** (`src/platform/common/psx_fill.h`, `gpu_gl.c`, `src/platform/linux32/gpu_soft.c`; `gpu_clear=` in `config.txt`, `g_gpu_clear` in `gpu_soft.c`, so both rasterizers read the one switch):
+  - **`gpu_clear=1`:**
+    - The rect is split where it wraps, and each row's piece filled in one go (`psx_fill_rect`, `psx_fill16`): 16 pixels a step with two NEON stores on the Vita (after up to 7 pixels to align), two a step as 32-bit words elsewhere. The same pixels as the plain loop, also for rects wider than 1024 or higher than 512.
+    - A whole clear's log base isn't written: the log keeps "the colour" (`solid`), and a replay fills the rect with it. The replay's own `LOG_CLEAR` entries use the same fill.
+    - `s_vram`, the GPU's pictures and every reader see the same pixels; only the log's internal copy is not made.
+  - **`gpu_clear=2`:** 1, and a clear whose unwrapped piece is a target's whole rect doesn't write `s_vram` there. The target is marked as drawn (`cpu_stale`), which is already the rule for every draw into a target: whatever reads that VRAM first (`sync_rect` for a texture page, `MoveImage` or `StoreImage`, a screenshot, `drop_target` at a save state or a rescale) gets the target's pixels back. The read-back rewrites the whole rect, from the log by the software rasterizer (the replay). This clear has just started that log, so the replay's base is the colour and then whatever was drawn after it.
+    - Only with `gpu_readback=1` (the default; with 0 every read-back is the GPU's) and at full scale (`pm` 1000: dynres off, the default).
+    - The one case where 2 reads back where 0 did not is a target cleared and then given more than 8 MB of `LoadImage` before any draw. The log overflows (`LOG_MAX_DATA`) and the read-back is the GPU's. It would still be the same pixels there: the clear colour comes back exact (a 5-bit `v` is `v · 8 / 255` to GL and `v · 8` in the texture), and so do the copies, drawn nearest at full scale and drawn down nearest. Spyro never does it.
+  - **`gpu_clear=3`**, 2's audit: the pixels 2 leaves unwritten get `0xFC1F` instead (STP set, red and blue full). A reader that skipped the read-back would show it in a picture, a capture or a texture.
+  - **The host's `--gpu-clear`** is 1's fill in the software rasterizer (`gpu_soft.c`, which the Vita also links for the replays). The host has no targets, so 2 and 3 are the Vita's.
+  - **Off, nothing changes:** `gpu_clear=0` runs the old loops. The timers follow D99's rule: the clock is read only with `gpu_parts=1`, and the counts are two additions per clear.
+- **Checked:**
+  - **`tests/fill`** (ctest `fill`, `fill_mutant`): `psx_fill_rect` against the plain loop. Random rects at every alignment: wraps right and down, wider than 1024, higher than 512, empty and negative, each in its own colour. Plus the edge cases (Spyro's clears, whole VRAM, wraps by one, runs either side of NEON's 24-pixel threshold). After each rect, every row it reached is compared whole. The host's C path: 32,976 rects, 315.5 M pixels, **0 differ**. The mutant (the wrapped piece one pixel short) fails.
+  - **The NEON path** (`tests/fill/arm_check.sh`; not in CI, since this session can't change the workflow file: a step after the host tests is the owner's to add): built with the Vita's compiler (vitasdk GCC, `-O2`, its default Cortex-A9 Thumb-2 with NEON; 4 `vst1.16` in the test) and run under qemu-arm. 1,048,784 rects, 9.36 G pixels, **0 differ**.
+  - **`tools/host_checks.sh`** against a build of main `0c3fff4` (`build/main-src`): **287/287 files byte-identical** for main, this branch, and this branch with `EXTRA=--gpu-clear` (`logs/clr-main-*`, `clr-off-*`, `clr-on-*`: demo 28, the whole tour 143, routes A and B 58 each; the logs with the prefix replaced).
+  - **The host's VRAM** (`--vram-shot`), main against `--gpu-clear` (`logs/clrv-*`): the demos every 250 vblanks, gems with the pause every 100, routes A and B every 250. **239 VRAM dumps and their 239 shots identical.**
+  - ctest 19/19 (`gte` skipped, as on main); `tools/build_matching.sh` `PSX.EXE SHA-1 OK`.
+  - **Vita3K against main's VPK** (`logs/main-0c3fff4.vpk`, SHA-1 `ced71363…`, against `logs/d111-vpk-1.vpk`, `2553c8b6…`; shots are the read-back replays, captures the GPU's own window, `CAPTURE=1`; logs `logs/d111-v3k-*`):
+
+    | Run | `gpu_clear=1` | `gpu_clear=2` | `gpu_clear=3` (poison) |
+    |---|---|---|---|
+    | gems script (8,768 vblanks, every 500) | 17/17 shots, 17/17 captures, card | 17/17, 17/17, card | 17/17, 17/17, card |
+    | gems, then pause and inventory (to 9,100: 10 shots from 6,000, the pause screens' `StoreImage` read-back) | 10/10, 10/10, card | 10/10, 10/10, card | 10/10, 10/10, card |
+    | attract demos (12,000 vblanks, every 1,000) | 12/12, 10/11; a second run 11/11 (see below) | 12/12, 11/11 | 12/12, 11/11 |
+    | gems in 16:9, 60 fps forced (`interp=1 interp_budget=0`, to 6,600, every 500) | 13/13, 4/13 (see below) | 13/13, 12/13 (see below) | 13/13, 13/13 |
+    | the same with `gpu_time=2` (a `glFinish` at each capture, as D105) | 6/6, 6/6 up to Vita3K's crash at 3,000 (twice; see below) | 13/13, 13/13, card | 13/13, 12/13 (see below), card |
+
+    - **The audit is clean.** With poison in every pixel `gpu_clear=2` leaves unwritten, every shot, capture and card is main's, the pause route's `StoreImage` read-backs included, and that route reads back as often as main (11 times, all replayed). Nothing read those pixels without the target's read-back.
+    - **The captures that differ are Vita3K's, not pictures.** Every shot (the replays: what the game's VRAM holds) is identical in every run, and the cards too.
+      - At 60 fps main's own VPK differs from itself: of three runs with `gpu_time=2` (`logs/d111-v3k-g60r-main`, `g60r2`, `g60r3`), two agree and the third differs from them in 7 of 13 captures.
+      - The audit's one differing capture (`win-6500`) is pixel-identical to the one `gpu_clear=1` took without `gpu_time=2`, so the window showed one of several pictures. It holds no poison-coloured pixel.
+      - In the demos, `gpu_clear=1`'s `win-11000` differed from main in the screen's top line only (1,106 of the grab's pixels, row 1). A second run (`logs/d111-v3k-demo2-c1`) is identical to main in all 23 files, and main's own second run (`demo2-main`) matches its first.
+    - **Vita3K crashed itself** (`EXC_BAD_ACCESS`, its handler's "write protected region" at `0x606A5018`) at vblank 3,000 of the 60 fps runs with `gpu_time=2`: once in two runs of main's VPK, and in both runs with `gpu_clear=1`. It is the same crash, with the same address, on main's VPK. Up to it, `gpu_clear=1`'s 12 files are main's. D86 saw Vita3K crash the same way in pause runs on main's path.
+    - **At 60 fps on the render thread** (Vita3K, the shipped threads, 16:9, `interp=1 interp_budget=0`, gems; means of 27 windows from vblank 900; `logs/d111-v3k-t60-0`, `t60-2`): the clear's parts sum to 0.98 ms per vblank with `gpu_clear=0` (`s_vram` 0.37, the log's base 0.53, `glClear` 0.08) and 0.05 with `=2`. The render thread is 16.6 ms busy per vblank either way: in Vita3K it is held by Vita3K's own GPU, so its gain is run Y12's to give.
+    - **Repeats** (the gems timing run three times each, interleaved, `logs/d111-v3k-t0*`, `t2*`): `GR_ClearVRAM` 0.32–0.46 ms per vblank with `gpu_clear=0`, 0.03–0.08 with `=2`. `GR_DrawTriangles` moved 0.12–0.39 with the Mac's load (other sessions' runs), in both.
+- **Hardware:** not run. Proposed: Y9–Y12 (`tools/vita/fps-runs/README.md`), Y6 and Y8 again with `gpu_clear` 0 and 2. The K route with every layer on the game thread gives the split on the Vita and the gain; Toasty at 60 fps gives the render thread's. Each needs the owner's yes.
+- **Default: 0** until the hardware pair; the owner decides. For 2: identical pictures and VRAM in every check, and in Vita3K the clear at a sixth of its cost. Against: until Y9 it isn't known how much of the hardware's 2.70 ms is the loops.
+- **Not done:** merging or skipping the targets' `glClear` (10% in Vita3K; Y9 says whether it matters on the Vita). The presentation's own clears and `present.c` are stage 7c's, untouched here.

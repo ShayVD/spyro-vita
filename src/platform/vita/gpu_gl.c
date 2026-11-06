@@ -47,12 +47,21 @@
 #include "PsyX/PsyX_render.h"
 #include "gpu/PsyX_GPU.h"
 #include "../../game/present.h"
+#include "psx_fill.h"
 #include "psx_lean.h"
 #include "psx_vcache.h"
 #include "gpu_rt.h"
 
 /* src/game/native_draw.c: direct vertices (D99) */
 extern int g_nd_direct, g_nd_direct_ok;
+/* gpu_soft.c, config.txt's gpu_clear= (D111): 0 the clears as before D111;
+ * 1 their VRAM rect and the log's replays filled row by row (psx_fill.h)
+ * and a whole clear's log base kept as its colour; 2 also, a clear of a
+ * target whole leaves s_vram to the target's read-back; 3, 2's audit: those
+ * pixels get CLEAR_POISON instead, which shows wherever something reads
+ * them without the read-back. The same pixels with 0, 1 and 2. */
+extern int g_gpu_clear;
+#define CLEAR_POISON 0xFC1F /* STP set, red and blue full, no green */
 int nd_direct_ranges(const uint32_t **r);
 
 #define VW 1024
@@ -100,6 +109,8 @@ typedef struct {
 
 typedef struct {
   uint16_t *base;   /* the target's rect when the log began */
+  int solid;        /* gpu_clear>=1 (D111): base is all of color, not written */
+  uint16_t color;
   LogEntry *ents;
   int nents, capents;
   uint8_t *data;
@@ -269,6 +280,13 @@ static struct {
   /* D105: the whole of each entry point the layer's time is (prof.c's
    * "raster" on the game thread), and the GL calls inside the draws */
   uint64_t draw_us, draw_issue_us, clear_us, copy_us, read_us;
+  /* D111: GR_ClearVRAM's parts (gpu_parts=1): the batch it sends first, its
+   * VRAM rect in s_vram, the uploads and copies it sends (flush_pending),
+   * and per target the log, the presentation slots, the bind and the
+   * glClear; how many clears and pixels, and those left to the read-back */
+  uint64_t clr_flush_us, clr_soft_us, clr_pend_us, clr_log_us, clr_pres_us, clr_bind_us,
+      clr_gl_us, clr_px, clr_left;
+  unsigned clears;
   unsigned captures, pres_copies, pres_late, pres_handed, pres_direct; /* presentation pictures (D69) */
   unsigned decodes;   /* atlas decode passes (each a scene on the 2048x2048 atlas) */
 } s_st;
@@ -1563,9 +1581,12 @@ static void log_begin(Target *t, int from_vram, uint16_t color) {
   int i, j;
   if (!l->base)
     l->base = malloc((size_t)t->w * t->h * 2);
-  for (i = 0; i < t->h; i++)
-    for (j = 0; j < t->w; j++)
-      l->base[i * t->w + j] = from_vram ? s_vram[(t->y + i) * VW + t->x + j] : color;
+  l->solid = !from_vram && g_gpu_clear; /* D111: replay fills it */
+  l->color = color;
+  if (!l->solid && l->base)
+    for (i = 0; i < t->h; i++)
+      for (j = 0; j < t->w; j++)
+        l->base[i * t->w + j] = from_vram ? s_vram[(t->y + i) * VW + t->x + j] : color;
   l->nents = 0;
   l->ndata = 0;
   l->ok = l->base != NULL;
@@ -1629,7 +1650,10 @@ static int replay(Target *t) {
     return -1;
   memcpy(sv, s_vram, sizeof s_vram);
   for (i = 0; i < t->h; i++)
-    memcpy(sv + (t->y + i) * VW + t->x, l->base + i * t->w, (size_t)t->w * 2);
+    if (l->solid)
+      psx_fill16(sv + (t->y + i) * VW + t->x, l->color, t->w);
+    else
+      memcpy(sv + (t->y + i) * VW + t->x, l->base + i * t->w, (size_t)t->w * 2);
   for (k = 0; k < l->nents; k++) {
     const LogEntry *e = &l->ents[k];
     switch (e->kind) {
@@ -1647,8 +1671,11 @@ static int replay(Target *t) {
       break;
     case LOG_CLEAR:
       for (i = 0; i < e->h; i++)
-        for (j = 0; j < e->w; j++)
-          sv[(e->y + i) * VW + e->x + j] = e->color;
+        if (g_gpu_clear)
+          psx_fill16(sv + (e->y + i) * VW + e->x, e->color, e->w);
+        else
+          for (j = 0; j < e->w; j++)
+            sv[(e->y + i) * VW + e->x + j] = e->color;
       break;
     }
   }
@@ -3086,6 +3113,16 @@ static void clear_dirty(int x, int y, int w, int h) {
 
 static float s_clear_rgb[3]; /* and as GL's clear colour */
 
+/* gpu_parts=1 (D111): the time since *t, into acc; *t moves on. Off, the
+ * clock is never read. */
+static inline void clr_part(uint64_t *acc, uint64_t *t) {
+  if (*t) {
+    const uint64_t n = now_us();
+    *acc += n - *t;
+    *t = n;
+  }
+}
+
 static void clear_targets(int x, int y, int w, int h) {
   int k;
   for (k = 0; k < s_ntargets; k++) {
@@ -3094,8 +3131,10 @@ static void clear_targets(int x, int y, int w, int h) {
     int x1 = x + w < t->x + t->w ? x + w : t->x + t->w;
     int y1 = y + h < t->y + t->h ? y + h : t->y + t->h;
     int sx0, sy0, sx1, sy1, whole;
+    uint64_t t0;
     if (x0 >= x1 || y0 >= y1)
       continue;
+    t0 = parts_us();
     whole = x0 == t->x && y0 == t->y && x1 == t->x + t->w && y1 == t->y + t->h;
     if (whole) {
       log_begin(t, 0, s_clear15); /* cleared whole: the log starts again */
@@ -3106,8 +3145,10 @@ static void clear_targets(int x, int y, int w, int h) {
         e->color = s_clear15;
       }
     }
+    clr_part(&s_st.clr_log_us, &t0);
     if (s_npsrc)
       pres_touch(t, whole);
+    clr_part(&s_st.clr_pres_us, &t0);
     if (whole) /* nothing drawn before is kept: dynres's scale from here (D75) */
       set_tscale(t, dynres_scale());
     sx0 = (int)((x0 - t->x) * t->sx + 0.5f);
@@ -3115,28 +3156,74 @@ static void clear_targets(int x, int y, int w, int h) {
     sx1 = x1 == t->x + t->w ? t->dpw : (int)((x1 - t->x) * t->sx + 0.5f);
     sy1 = y1 == t->y + t->h ? t->dph : (int)((y1 - t->y) * t->sy + 0.5f);
     bind_fbo(t->fbo);
+    clr_part(&s_st.clr_bind_us, &t0);
     glClearColor(s_clear_rgb[0], s_clear_rgb[1], s_clear_rgb[2], 1.0f);
     glEnable(GL_SCISSOR_TEST);
     glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
     glClear(GL_COLOR_BUFFER_BIT);
+    clr_part(&s_st.clr_gl_us, &t0);
   }
+}
+
+/* gpu_clear>=1 (D111): an unwrapped piece of the clear into s_vram, row by
+ * row. With 2, a piece that is a target's whole rect isn't written: the
+ * target is marked as drawn (cpu_stale), so whatever reads s_vram there
+ * first gets the target's pixels back (sync_rect, readback, drop_target),
+ * which rewrites its whole rect: from the log (replay), which this clear
+ * starts again as the colour (clear_targets' log_begin). Only with
+ * gpu_readback=1 (the default: the replay), and at full scale (dynres off
+ * or 1000 per mille). A log grown past LOG_MAX_DATA before any draw (8 MB
+ * of LoadImage into the target) would be read back from the GPU instead,
+ * where main read nothing: the clear's colour comes back exact there (a
+ * 5-bit value v is v * 8 / 255 to GL, v * 8 in the texture), and so do the
+ * copies, drawn nearest at full scale and drawn down nearest.
+ * 3: the same, with CLEAR_POISON written there instead (the audit). */
+static void clear_piece(int x, int y, int w, int h) {
+  int k;
+  if (g_gpu_clear >= 2 && g_vita_opts.gpu_readback)
+    for (k = 0; k < s_ntargets; k++) {
+      Target *t = &s_targets[k];
+      if (x == t->x && y == t->y && w == t->w && h == t->h && t->pm == 1000) {
+        t->cpu_stale = 1;
+        s_st.clr_left += (uint64_t)w * h;
+        if (g_gpu_clear == 3)
+          psx_fill_rect(s_vram, x, y, w, h, CLEAR_POISON);
+        return;
+      }
+    }
+  psx_fill_rect(s_vram, x, y, w, h, s_clear15);
 }
 
 static void clear_vram(int x, int y, int w, int h, unsigned char r, unsigned char g,
                        unsigned char b) {
+  uint64_t t0 = parts_us();
+  const uint64_t i0 = s_st.issue_us;
   batch_flush();
+  if (t0) { /* the batch's GL calls, as batch_flush timed them */
+    s_st.clr_flush_us += s_st.issue_us - i0;
+    t0 = now_us();
+  }
   uint16_t c = (uint16_t)((r >> 3) | (g >> 3) << 5 | (b >> 3) << 10);
   int i, j;
   if (w <= 0 || h <= 0)
     return;
-  for (i = 0; i < h; i++) {
-    uint16_t *row = s_vram + ((y + i) & (VH - 1)) * VW;
-    for (j = 0; j < w; j++)
-      row[(x + j) & (VW - 1)] = c;
+  s_st.clears++;
+  s_st.clr_px += (uint64_t)w * h;
+  if (g_gpu_clear) {
+    s_clear15 = c;
+    pieces(x, y, w, h, clear_piece);
+  } else {
+    for (i = 0; i < h; i++) {
+      uint16_t *row = s_vram + ((y + i) & (VH - 1)) * VW;
+      for (j = 0; j < w; j++)
+        row[(x + j) & (VW - 1)] = c;
+    }
   }
+  clr_part(&s_st.clr_soft_us, &t0);
   pieces(x, y, w, h, clear_dirty);
   s_gen++;
   flush_pending();
+  clr_part(&s_st.clr_pend_us, &t0);
   s_clear15 = c;
   s_clear_rgb[0] = (r >> 3) * 8 / 255.0f;
   s_clear_rgb[1] = (g >> 3) * 8 / 255.0f;
@@ -3852,6 +3939,14 @@ void gl_report(int vblank) {
              "the GL calls of the batch it sent first; D105)",
              vblank, MSV(s_st.draw_us), MSV(s_st.draw_issue_us), MSV(s_st.clear_us),
              MSV(s_st.copy_us), MSV(s_st.read_us));
+    vita_log("gpu parts %d: per vblank ms: GR_ClearVRAM's parts: the batch it sent first "
+             "%u.%02u, its VRAM rect %u.%02u, the uploads and copies it sent %u.%02u, target "
+             "logs %u.%02u, presentation slots %u.%02u, binds %u.%02u, glClear %u.%02u; %u clears, "
+             "%u K pixels, %u K left to the read-back (gpu_clear=%d, D111)",
+             vblank, MSV(s_st.clr_flush_us), MSV(s_st.clr_soft_us), MSV(s_st.clr_pend_us),
+             MSV(s_st.clr_log_us), MSV(s_st.clr_pres_us), MSV(s_st.clr_bind_us),
+             MSV(s_st.clr_gl_us), s_st.clears, (unsigned)(s_st.clr_px >> 10),
+             (unsigned)(s_st.clr_left >> 10), g_gpu_clear);
 #undef MSV
   }
   last = vblank;
