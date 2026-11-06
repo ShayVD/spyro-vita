@@ -180,14 +180,16 @@
  *                       the render thread converts them (expand_lean). 2:
  *                       the walk lists them only, and the GL side converts
  *                       them as well and compares (diagnostic)
- *       gpu_clear=1     with gpu=1, ClearImage's VRAM rect and the logs'
- *                       replays filled row by row with NEON, and a whole
- *                       clear's log base kept as its colour (D111; default
- *                       0: the clears as before). 2: also, a clear of a
- *                       target whole leaves s_vram to the target's
- *                       read-back, which rewrites that rect anyway. The same
- *                       pixels. 3: 2's audit, poison where 2 writes nothing
- *                       (a picture that differs shows a reader; diagnostic)
+ *       gpu_clear=0     with gpu=1, the clears as before D111: each pixel
+ *                       through the wrap, and each whole clear writing the
+ *                       target log's base (default 2 since D111's hardware
+ *                       runs: ClearImage's VRAM rect and the logs' replays
+ *                       filled row by row with NEON, a whole clear's log base
+ *                       kept as its colour, and a clear of a target whole
+ *                       left to the target's read-back, which rewrites that
+ *                       rect anyway; the same pixels). 1: the fills only.
+ *                       3: 2's audit, poison where 2 writes nothing (a
+ *                       picture that differs shows a reader; diagnostic)
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
@@ -551,6 +553,7 @@ int main(int argc, char **argv) {
            scePowerGetGpuXbarClockFrequency());
   g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
   g_nd_direct = 1;   /* the Vita's default since D105; the host's stays 0 */
+  g_gpu_clear = 2;   /* the Vita's default since D111's Y9-Y12; the host's stays 0 */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,

@@ -260,12 +260,46 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - **Vita3K crashed itself** (`EXC_BAD_ACCESS`, its handler's "write protected region" at `0x606A5018`) at vblank 3,000 of the 60 fps runs with `gpu_time=2`: once in two runs of main's VPK, and in both runs with `gpu_clear=1`. It is the same crash, with the same address, on main's VPK. Up to it, `gpu_clear=1`'s 12 files are main's. D86 saw Vita3K crash the same way in pause runs on main's path.
     - **At 60 fps on the render thread** (Vita3K, the shipped threads, 16:9, `interp=1 interp_budget=0`, gems; means of 27 windows from vblank 900; `logs/d111-v3k-t60-0`, `t60-2`): the clear's parts sum to 0.98 ms per vblank with `gpu_clear=0` (`s_vram` 0.37, the log's base 0.53, `glClear` 0.08) and 0.05 with `=2`. The render thread is 16.6 ms busy per vblank either way: in Vita3K it is held by Vita3K's own GPU, so its gain is run Y12's to give.
     - **Repeats** (the gems timing run three times each, interleaved, `logs/d111-v3k-t0*`, `t2*`): `GR_ClearVRAM` 0.32–0.46 ms per vblank with `gpu_clear=0`, 0.03–0.08 with `=2`. `GR_DrawTriangles` moved 0.12–0.39 with the Mac's load (other sessions' runs), in both.
-- **Hardware:** not run. Proposed: Y9–Y12 (`tools/vita/fps-runs/README.md`), Y6 and Y8 again with `gpu_clear` 0 and 2. The K route with every layer on the game thread gives the split on the Vita and the gain; Toasty at 60 fps gives the render thread's. Each needs the owner's yes.
-- **Default: 0** until the hardware pair; the owner decides. For 2: identical pictures and VRAM in every check, and in Vita3K the clear at a sixth of its cost. Against: until Y9 it isn't known how much of the hardware's 2.70 ms is the loops.
-- **Not done:** merging or skipping the targets' `glClear` (10% in Vita3K; Y9 says whether it matters on the Vita). The presentation's own clears and `present.c` are stage 7c's, untouched here.
+- **Hardware: Y9–Y12** (2026-11-06; approved by the owner in this session's chat, after PR #92 was merged; the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh`, the kit's lock free and no kh1-decomp run in progress). VPK `logs/d111-vpk-2.vpk`, SHA-1 `7e64a4d7…`, built from `9d441c5`, the same tree as main `c088cc0`. Y6 and Y8 again, with `gpu_clear` 0 against 2 (`tools/vita/fps-runs/README.md`; logs `logs/hw-y9`…`y12`, gitignored). All four reached `frames=`, with no crash dump, and the owner's files were put back each time. Afterwards main's CI eboot went back on the Vita (`c088cc0`, CI run 42211088923, `b92d7b4c…`) and read back identical.
+  - **The same pictures:** Y9 (`gpu_clear=0`), Y10 (`=2`) and D105's Y6: all 18 pictures (9 shots and the GPU's own frame at each) identical, and the three memory cards identical.
+  - **The split on the Vita** (Y9, the K route with every layer on the game thread; the third `gpu parts` line, means of the 57 windows from vblank 900, ms per vblank):
+
+    | | `GR_ClearVRAM` | `s_vram` | log base | `glClear` | the batch, uploads, slots, bind |
+    |---|---:|---:|---:|---:|---:|
+    | Y9, `gpu_clear=0` | 2.77 | 1.07 | 1.65 | 0.03 | 0.00 |
+    | Y10, `gpu_clear=2` | 0.03 | 0.00 | 0.00 | 0.02 | 0.00 |
+
+    - **On the Vita the two loops are 99% of a clear** (Vita3K: 85%). The `glClear` is 0.03 ms, so merging or scissoring it isn't worth doing.
+  - **The K route, every layer on the game thread** (`native_share.py --fps 30`, means of the route's 50 windows without the quit window, as D105):
+
+    | | renderers | OT walk | PS1 GPU → vitaGL | sum |
+    |---|---:|---:|---:|---:|
+    | Y6 (D105) | 2.84 | 1.77 | 3.50 | 9.39 |
+    | Y9, `gpu_clear=0` | 2.84 | 1.82 | 3.59 | 9.54 |
+    | Y10, `gpu_clear=2` | 2.73 | 1.75 | **1.01** | **6.70** |
+
+    - **The sum falls 2.84 ms per vblank (−30%)**, and the PS1 GPU → vitaGL layer to 28% of what it was. Y9 is Y6's configuration, 0.15 ms apart, one run each.
+  - **Toasty at 60 fps, the shipped threads** (Y11 against Y12; means of the 68 windows from vblank 900; `fps60_summary.py`):
+
+    | per vblank | Y8 (D105) | Y11, `gpu_clear=0` | Y12, `gpu_clear=2` |
+    |---|---:|---:|---:|
+    | render thread busy | 10.58 ms | 10.49 ms | **8.12 ms** |
+    | of it, `GR_ClearVRAM` (`s_vram`, log base, `glClear`) | 5.71 | 5.46 (2.10, 3.19, 0.15) | **0.15** (0, 0, 0.13) |
+    | the GPU meter's present, with its wait for the display, per picture | — | 1.62 ms | 3.98 ms |
+    | parse thread busy; the game thread's wait for the walk | 2.10; 1.11 | 2.12; 1.11 | 2.13; 1.10 |
+    | game thread busy | 38.1% | 37.5% | 36.6% |
+    | late vblanks per 300: the Stone Hill demo, Artisans, Toasty | 3.0, 0.4, 0.0 | 3.0, 0.6, 0.1 | **0.7**, 0.4, 0.3 |
+    | late vblanks in the load windows; falls to 30 fps | 108 in 15; 4 | 102 in 13; 4 | **68** in 15; 5 |
+
+    - **The render thread, the wall at 60 fps (D81), does 5.3 ms per vblank less clearing.** Its busy time falls 2.37 ms; the rest of the freed time it now spends waiting for the display inside the present (+2.36 ms a picture). It finishes early.
+    - **The Stone Hill demo's flight**, where the render thread was the wall (15.4 ms a picture in D98's X7, 12.9 in Y11), now takes 7.2 ms a picture, with 0.7 late vblanks per 300 against 3.0. The loads have 68 late vblanks against 102.
+    - Toasty's 0.3 against 0.1 is 6 vblanks in 21 windows (one run each, and the windows split differently between levels in real time). Read it as noise.
+- **Default: `gpu_clear=2` on the Vita** (the owner's decision, 2026-11-06, after Y9–Y12; the host stays 0). For: identical pictures, VRAM and memory cards in every check (the host, Vita3K, and hardware Y9 against Y10); the K route −30% CPU per vblank with every layer on one thread; at 60 fps the render thread no longer the wall in the Stone Hill flight, and late vblanks fewer. Against: none measured. The read-back that 2 relies on is the existing rule for every draw, and the poison audit found no reader that skips it. Set in `src/platform/vita/main.c` beside `nd_direct`'s default; the options menu doesn't save it, so only a config line `gpu_clear=0` gives the old clears back.
+- **Not done:** the targets' `glClear` (0.03 ms per vblank on the Vita: not worth it). The presentation's own clears and `present.c` are stage 7c's, untouched here.
+
 ## 2026-11-06 — stage 7c: presents at the due vblank
 
-### D112. Stage 7c: every frame carries its due vblank; the host shows the frame due at each vblank (the same frames as before); on the Vita, `present_due=1` lets the render thread show frames at their display vblank without the game thread presenting. Off by default until its hardware pair has run
+### D112. Stage 7c: every frame carries its due vblank; the host shows the frame due at each vblank (the same frames as before); on the Vita, `present_due=1` lets the render thread show frames at their display vblank without the game thread presenting. Off by default; its hardware pair (7C1–7C4) has run
 - **Why:** step 7c of the stage 7 plan (`docs/native-plan.md` §5, D101, D104). The aim is that a late render thread costs pictures, not ticks. Until now the game thread posted every present from `VSync` and waited for the previous one to have run ("previous frame not shown yet"): in X7's Stone Hill attract-demo flight that wait was 477 ms in every 300-vblank window (`fps60_summary.py`'s new `wfr` column on `logs/hw-x7`). D108–D110 went to merged PRs and D111 to the clears, so this is D112.
 - **Frames carry their due vblank** (`present.c`, every platform):
   - The queue is taken one frame per vblank, so a frame filed at vblank count c behind k waiting ones is due at c + 1 + k. When the queue is full (4 waiting), its oldest frame goes and the rest each come due a vblank sooner, as the queue always behaved.
@@ -311,6 +345,21 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - On the merged VPK, `present_due` 1 against 0, late vblanks per 300 on the K route: title 3.4 against 8.2, the attract demo's flight 17.0 against 59.3, Artisans 11.5 against 7.6. "Previous frame not shown yet" went from 1.4–1.9 s a window to 0.
     - Over the route, the render thread showed 15,894 frames at their vblank: 444 late (509 vblanks), 666 never shown, draws skipped for 655 in-between and 569 real frames, and 427 presents held (`logs/s7c-v3k-b8-k60-rt-*`).
     - The route's level warps (`menu_test`) took or didn't from run to run with either setting; the menu opened, saved and closed in every run.
-- **The hardware pair** (proposed, not run; the owner's yes first for each run): runs 7C1–7C4 in `tools/vita/fps-runs/README.md`. On one VPK: X7's settings on the K route and on the Toasty route, `present_due=0` against `=1`.
-  - **What decides it:** late vblanks per 300 (above all in the attract demo's flight), the game thread's waits (`wfr` should be 0 with 7c, `wpool` small), the `7c:` skips, and the pictures looking right.
-  - **If it passes,** `present_due=1` becomes the Vita's default in a follow-up. If it doesn't, the switch stays off and 7c's host side (frames by due vblank) stays, as it changes nothing.
+- **Hardware: 7C1–7C4** (2026-11-06; approved by the owner in this session's chat; the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh`, the kit's lock free). VPK `logs/s7c-branch-9.vpk`, SHA-1 `a2456f9c…`, D112 merged with main `c088cc0` (so before D111's `gpu_clear=2` default). X7's settings at 60 fps on the K route and the Toasty route, `present_due=0` against `=1` (`tools/vita/fps-runs/README.md`; logs `logs/hw-7c1`…`7c4`, gitignored). All four reached `frames=`, with no crash dump, and the owner's files were put back each time. Afterwards main's CI eboot (`c088cc0`, `b92d7b4c…`) went back on the Vita and read back identical.
+  - **Late vblanks per 300** (`fps60_summary.py`, worst in brackets):
+
+    | | Stone Hill demo flight | Artisans | Dark Hollow | Toasty | loads, late vblanks in all | `wfr` a window in the flight |
+    |---|---:|---:|---:|---:|---:|---:|
+    | 7C1, `present_due=0` | 3.2 (13) | 0.6 (8) | 0.0 | — | 74 | 612 ms |
+    | 7C2, `present_due=1` | **0.0** | 0.6 (8) | 0.0 | — | 66 | **0** |
+    | 7C3, `present_due=0` | 3.8 (14) | 0.6 (8) | — | 0.2 (2) | 78 | 627 ms |
+    | 7C4, `present_due=1` | **0.0** | 0.4 (8) | — | 0.0 (1) | 79 | **0** |
+
+    - **The point of 7c holds on hardware:** in the attract demo's flight, where the render thread is the wall (15.7 ms a picture), the game thread is no longer late. With `present_due=0` it waited 0.6 s a window for the previous present; with `=1` it never waits for one. X7 had 5.4 late per 300 there.
+    - **In play and in the loads nothing changes** that one run each can show.
+  - **The render thread's side** (the `7c:` totals): 7C2 showed 17,406 frames at their vblank, 8 late (17 vblanks); 7C4 20,426, 13 late (24 vblanks). It skipped 4 and 11 frames' draws (1 a real frame's), never a PS1 display picture, and held 0 and 18 presents. The frames never shown (1,047 and 2,718) are those of the gamestates that tick every vblank, which the full queue drops on main too.
+  - **What's left of the game waiting for the render thread** with 7c: the vertex slabs, in 7C4 only (354 ms in the Toasty window with a load, 9 ms or less in five others), never the ring.
+  - **Not checked on hardware: the pictures.** These routes take no shots, and nobody watched the runs. Vita3K's `realtime=0` shots and captures are main's, and 7c's rules keep every upload and clear.
+  - 7C4's route died once more than 7C3's and ended in a game over. Toasty's route drifts in real time (X7, Y7, Y8 and Y12 ended the same way).
+  - The render thread is 90% busy or more in some windows of every run, with either switch: its present waiting for the display.
+- **Default: still 0.** Recommended: `present_due=1` as the Vita's default, the owner's decision, in a follow-up that also takes D111's `gpu_clear=2` into account (these runs had `gpu_clear=0`). For: no late vblanks in the flight, no game-thread waits for presents, play unchanged. Against: the pictures haven't been seen on hardware with it, and 7C4's one skipped real frame and held presents are new behaviour. A run with shots, or the owner watching a route, would settle the pictures. If it stays off, 7c's host side (frames by due vblank) stays, as it changes nothing.

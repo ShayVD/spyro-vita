@@ -464,7 +464,8 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - The third `gpu parts` line in Y9: what `GR_ClearVRAM` costs on the Vita, part by part (the split Vita3K gave is in D111). Y10 against Y9: the same line, and `native_share.py logs/hw-yN/spyro.log --fps 30 --all` for the PS1 GPU → vitaGL layer and the sum per vblank.
 - Y11 and Y12: the `render` lines (the render thread's busy time per picture), the `gpu parts` lines, `fps60_summary.py`'s late vblanks, and the `dynres` lines' GPU time.
 
-**Not run yet** (proposed with D111; needs the owner's yes).
+**Ran** on 2026-11-06 (D111, approved by the owner; VPK `logs/d111-vpk-2.vpk`, SHA-1 `7e64a4d7…`, the tree of main `c088cc0`; `logs/hw-y9`…`y12`): all four reached `frames=`, no crash dump. Y9 and Y10: all 18 pictures (also Y6's) and the memory card identical; `GR_ClearVRAM` 2.77 → 0.03 ms per vblank (Y9: `s_vram` 1.07, the log base 1.65, `glClear` 0.03); the route 9.54 → 6.70 ms per vblank (50 windows, without the quit window). Y11 and Y12: the render thread's clears 5.46 → 0.15 ms per vblank, its busy time 10.49 → 8.12; the Stone Hill demo 3.0 → 0.7 late vblanks per 300, loads 102 → 68. Main's CI eboot (`c088cc0`, `b92d7b4c…`) went back on the Vita afterwards and read back identical.
+
 
 ## Runs 7C1–7C4: presents at the due vblank (stage 7c, D112)
 
@@ -489,3 +490,18 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - The `vblank N:` lines' late vblanks: the game thread's own lateness. In the attract demo's flight, 7C2 against 7C1 is the point of 7c: a late render thread should cost pictures, not ticks.
 - The `present N:` lines' `7c:` part (7C2, 7C4): the frames the render thread showed at their vblank, how many late and by how many vblanks, how many never showed, and the draws it skipped (in-between frames, real frames) and the PS1 display pictures it dropped. In play there should be almost no skips; in the flight they are the pictures 7c gives up instead of ticks.
 - The picture must look the same: no flashes of an old frame, the pause and inventory backgrounds right, the loads and the menu (the routes' LEVEL WARP) unchanged.
+
+**Ran** on 2026-11-06 (D112, approved by the owner in the session's chat; VPK `logs/s7c-branch-9.vpk`, SHA-1 `a2456f9c…`, D112 merged with main `c088cc0`, so `gpu_clear=0`; `logs/hw-7c1`…`7c4`, gitignored): all four reached `frames=`, no crash dump, the owner's files put back each time; main's eboot (`c088cc0`, `b92d7b4c…`) went back afterwards and read back identical. These routes take no shots, so the pictures weren't compared on hardware (Vita3K's `realtime=0` ones are main's). `fps60_summary.py`, late vblanks per 300 (worst):
+
+| | Stone Hill demo flight | Artisans | Dark Hollow | Toasty | loads (late vblanks in all) | `wfr` in the flight |
+|---|---:|---:|---:|---:|---:|---:|
+| 7C1, `present_due=0` | 3.2 (13) | 0.6 (8) | 0.0 | — | 74 | 612 ms |
+| 7C2, `present_due=1` | **0.0** | 0.6 (8) | 0.0 | — | 66 | **0** |
+| 7C3, `present_due=0` | 3.8 (14) | 0.6 (8) | — | 0.2 (2) | 78 | 627 ms |
+| 7C4, `present_due=1` | **0.0** | 0.4 (8) | — | 0.0 (1) | 79 | **0** |
+
+- The flight's windows are vblanks 3,948–5,681 (`--from 3948 --to 5682`). X7 had 5.4 there (worst 34).
+- `7c:` totals: 7C2 showed 17,406 frames at their vblank, 8 late (17 vblanks), skipped 4 in-between frames' draws and no real frame's, dropped no PS1 display picture and held no present; 7C4 20,426, 13 late (24 vblanks), 10 in-between and 1 real frame skipped, 18 presents held (3 in the Toasty window with a load, 7 in Toasty play at vblank 15,300, 8 as the game over began). The 1,047 and 2,718 frames never shown are the title screen's, the cutscenes' and the game over's: the gamestates that tick every vblank, whose frames the full queue drops on main too (the game thread's `298 dropped from a full queue`).
+- The game thread's waits for the render thread with 7c: the vertex slabs only, in 7C4 only: 354 ms in the Toasty window with a load (vblank 13,200), 9 ms or less in five others; never the ring.
+- The render thread is 90% busy or more in some windows of every run (12, 4, 15 and 10): its present waiting for the display, with either switch.
+- 7C4's route died once more than 7C3's and ended in a game over: Toasty's route in real time drifts (X7, Y7, Y8 and Y12 ended the same way), so its windows split differently between levels.

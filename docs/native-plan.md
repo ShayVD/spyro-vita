@@ -32,15 +32,14 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 3, readable C for all the mips2c code (D83, D87, D94, D96);
   - stage 5, native audio (D84, D88);
   - stage 6, native file I/O (D93);
-  - stage 2: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` by default on the Vita since D105; the clears' cheaper path behind `gpu_clear` (D111), waiting for its hardware pair;
+  - stage 2: native draw records from every renderer (D82–D95), `native_draw=1` by default on the Vita; the direct vertices (D99) with the walk's box as SIMD (D105), a net gain on hardware with identical pictures, `nd_direct=1` by default on the Vita since D105; the clears' cheaper path behind `gpu_clear` (D111): on hardware the K route −30% CPU per vblank, and at 60 fps the render thread no longer the wall in the attract demo's flight, with identical pictures; `gpu_clear=2` by default on the Vita since D111;
   - stage 4, native memory: the Vita's moved arena on the host (D97); every decode site named in `psx_mem.h`, and a native build with no mips2c units that runs at any base, below 2 GB too, with the bit-31 tags in bit 0 (D100); the data labels as ordinary globals, the game's memory one heap block (overlay space), the scratchpad its own array, save states format 2, and native memory the Vita's default since a hardware pair (D106);
   - stage 7's steps 7a and 7b: the host audits of the in-between frame, and the port's own `VSync` over one clock module (D104);
-  - stage 7's step 7c in code: frames carry their due vblank, and with `present_due=1` the Vita's render thread shows them at their display vblank and the game thread never waits for a present (D112). Off by default until its hardware pair (7C1–7C4) has run.
-- **What I recommend next** (updated by D111 and D112, 2026-11-06):
-  1. **The clears' hardware pair** (D111, Y9–Y12 in `tools/vita/fps-runs/README.md`): `GR_ClearVRAM` is three quarters of what is left of the PS1 GPU → vitaGL translation, and 5.7 ms per vblank of the render thread at 60 fps. In Vita3K it is 85% two CPU loops (the software VRAM and the target log's base), and `gpu_clear=2` takes it from 0.33 to 0.06 ms per vblank with identical pictures. Y9 gives the hardware split, Y10–Y12 the gain; then the default is the owner's to set.
-  2. **7c's hardware pair** (D112; the owner's yes first): runs 7C1–7C4, the K and Toasty routes at 60 fps with `present_due` 0 and 1. If late vblanks and the game thread's waits come down without the pictures suffering, `present_due=1` becomes the Vita's default. Best run after the clears' pair, since both change what the render thread spends per picture.
-  3. **7d–7g** still wait for a need the CPU numbers don't give (D104). 7c's pair can give one: game-thread waits that 7c doesn't remove.
-  4. **Stage 8,** retiring PsyCross, last.
+  - stage 7's step 7c: frames carry their due vblank, and with `present_due=1` the Vita's render thread shows them at their display vblank and the game thread never waits for a present (D112). Its hardware pair (7C1–7C4) took the Stone Hill flight's late vblanks to 0; off by default until the owner sets it.
+- **What I recommend next** (updated by D104, D105 and D106, 2026-11-05, and D111 and D112, 2026-11-06):
+  1. **`present_due=1` the Vita's default** (D112; the owner's decision): on hardware the game thread no longer waits for a present (`wfr` 0 in every window), and the Stone Hill attract demo's flight has no late vblanks (3.2–3.8 per 300 with `present_due=0`), with play unchanged. Those routes take no shots, so the pictures were compared in Vita3K (`realtime=0`, identical), not on hardware. A one-line change beside `gpu_clear`'s default in `src/platform/vita/main.c`.
+  2. **7d–7g** still wait for a need the CPU numbers don't give (D104). 7c's pair gave none: what is left of the game thread's waits for the render thread is the vertex slabs around loads (0.35 s in one Toasty window with a load).
+  3. **Stage 8,** retiring PsyCross, last. Stage 2 is done: with the clears gone (D111) what is left of the PS1 GPU → vitaGL layer is about 1.0 ms per vblank, mostly `GR_DrawTriangles` (0.81 on the K route).
 
 ---
 
@@ -407,6 +406,16 @@ So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWa
 - **What the PS1 GPU → vitaGL layer is** (Y5, prof.c's `raster` 3.66 ms per vblank from vblank 900): `GR_ClearVRAM` **2.70**, `GR_DrawTriangles` 0.85 (the batches' GL calls in it 0.36, the work before them 0.15, the logs 0.19), the VRAM reads and copies 0.01. The clears are the walk's fill packets turned into `ClearImage`: a per-pixel wrapped loop over the software VRAM and a `glClear` per target. On the render thread at 60 fps (Y7, Y8) they are 5.7 ms per vblank against the draws' 1.5. That is the layer's next target.
 - **At 60 fps** (Y7, Y8): the render thread 0.83 ms per vblank lighter, the parse thread 0.22 heavier, the game thread's wait for the walk 0.10 longer with its busy share unchanged, late vblanks fewer (D105).
 
+**Runs Y9–Y12** (2026-11-06, D111; VPK `logs/d111-vpk-2.vpk`, the tree of main `c088cc0`): Y6 and Y8 again with `gpu_clear` 0 and 2, the clears. All 18 pictures and the card identical (also against Y6). The K route with every layer on the game thread (50 windows):
+
+| | `gpu_clear` | renderers | OT walk | PS1 GPU → vitaGL | sum | of the layer: `GR_ClearVRAM` (`s_vram`, log base, `glClear`) |
+|---|---|---:|---:|---:|---:|---:|
+| Y9 | 0 | 2.84 | 1.82 | 3.59 | 9.54 | 2.77 (1.07, 1.65, 0.03) |
+| Y10 | 2 | 2.73 | 1.75 | **1.01** | **6.70** | 0.03 (0, 0, 0.02) |
+
+- **The clears were two CPU loops** (99% on the Vita): the software VRAM, and the target log's base. With `gpu_clear=2` neither runs, and the sum falls 30%. What is left of the layer is `GR_DrawTriangles` (0.81).
+- **At 60 fps** (Y11, Y12): the render thread's clears 5.46 → 0.15 ms per vblank, its busy time 10.49 → 8.12; the Stone Hill demo's flight 12.9 → 7.2 ms a picture and 3.0 → 0.7 late vblanks per 300; the loads 102 → 68 late vblanks.
+
 
 ---
 
@@ -697,7 +706,11 @@ The decomp C's own primitives stay PS1 primitives in the same OT: `draw.c` (52 l
   - `gpu_clear=3`: 2's audit, poison in the pixels 2 leaves unwritten.
   - The host's `--gpu-clear` is 1's fill in the software rasterizer (`gpu_soft.c`).
 - **Checked:** `tests/fill` (the fill against the plain loop: the host's C path, 0.3 G pixels, and the Vita's NEON under qemu-arm, 9.4 G pixels, 0 differ; the mutant caught); `host_checks.sh` 287/287 identical for main, off and on; the host's VRAM dumps identical with and without `--gpu-clear` (239 dumps over the demos, gems with the pause, routes A and B); Vita3K against main's VPK: every shot and card identical with 1, 2 and the audit, the pause screens' read-back included; the captures that differ are Vita3K's (main's own differ between runs at 60 fps; D111 has the table).
-- **Not done:** the hardware pair Y9–Y12 (proposed; the owner's yes first), and the default, the owner's decision after it.
+- **Hardware (Y9–Y12, 2026-11-06, D111):** the same 18 pictures and card as Y6, with `gpu_clear` 0 and 2.
+  - **On the Vita the loops are 99% of a clear:** `s_vram` 1.07 and the log base 1.65 of 2.77 ms per vblank. The `glClear` is 0.03.
+  - **The K route with every layer on the game thread:** 9.54 → **6.70 ms per vblank (−30%)**, the PS1 GPU → vitaGL layer 3.59 → 1.01.
+  - **Toasty at 60 fps:** the render thread clears for 0.15 ms per vblank instead of 5.46, and is busy 8.12 ms instead of 10.49; the rest of the freed time it waits for the display. The Stone Hill demo's flight, where it was the wall, now takes 7.2 ms a picture (12.9 in Y11), with 0.7 late vblanks per 300 against 3.0. The loads have 68 late vblanks against 102.
+- **Default: `gpu_clear=2` on the Vita** since D111's hardware runs (the owner's decision); the host stays 0.
 
 ### Stage 3: readable C for the rest of the mips2c code (large, low–medium risk, in parallel with stage 2)
 
@@ -990,7 +1003,7 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 **Optional:** yes, the presentation modes (`interp=`), as today.
 
-**Status (D112, 2026-11-06): 7a, 7b and 7c done, 7c behind `present_due` (default 0) until its hardware pair; 7d–7g wait for a reason other than CPU.**
+**Status (D112, 2026-11-06): 7a, 7b and 7c done, 7c behind `present_due` (default 0; its hardware pair 7C1–7C4 run, the default the owner's); 7d–7g wait for a reason other than CPU.**
 - **7b:** `src/platform/common/libetc.c` is the port's `VSync`, `VSyncCallback` and `ResetCallback`, in place of PsyCross's `LIBETC.C`. `clock.c` holds the vblank count and the Vita's catch-up arithmetic for both platforms, and `tests/vcount` tests that code itself. Host checks 287/287, both demos tick for tick, Vita3K 17/17 shots, 17/17 captures and the card identical to main's VPK.
 - **7a:** `--present-audit` and `--present-reads` on the host. The findings are below ("What 7a found (D104)").
 
@@ -1174,7 +1187,12 @@ From `host_checks.sh`'s four runs with `--interp --present-audit --present-reads
   - A frame whose draws start a vblank late has them skipped, keeping its uploads and clears: in-between frames always, real frames when a later one is filed or the game waits for the pools.
   - While the game waits for the ring or a slab, the render thread shows at most a picture every two vblanks.
   - The `present N:` line has a `7c:` part.
-- **Default off:** `realtime=0` and `present_due=0` are main's path. Vita3K `realtime=0` shots, captures and card are identical to main's VPK. Vita3K's real time can't judge the timing (a swap costs its render thread a whole vblank, and runs of one VPK differ 3×), so the hardware pair decides the default.
+- **Default off:** `realtime=0` and `present_due=0` are main's path. Vita3K `realtime=0` shots, captures and card are identical to main's VPK. Vita3K's real time can't judge the timing (a swap costs its render thread a whole vblank, and runs of one VPK differ 3×), so the hardware pair decides the default. It stays 0 until the owner sets it.
+- **On hardware** (7C1–7C4, the owner's yes, 2026-11-06; X7's settings at 60 fps, `present_due` 0 against 1 on one VPK): all four to `frames=`, no crash.
+  - The Stone Hill attract demo's flight: 3.2 and 3.8 late vblanks per 300 with `present_due=0` (worst 13 and 14), **0 with `=1`**. The game thread's wait for the previous present, 612–627 ms a window, is gone in every window.
+  - In play (Artisans, Dark Hollow, Toasty) late vblanks stay where they were (0.0–0.6 per 300), and the loads the same (66–79 late vblanks in all).
+  - These routes take no shots, so the pictures weren't compared on hardware; Vita3K's `realtime=0` shots and captures are main's.
+  - The render thread showed 99.9% of its frames at their vblank; it skipped 4 and 11 frames' draws in the two runs (one of them a real frame's), and never a PS1 display picture. The frames never shown are the ones the full queue drops in the gamestates that tick every vblank, as on main.
 - **Size:** ~670 lines with comments, about a third over the estimate. Most of it is the render thread's bookkeeping, plus the drop and hold rules Vita3K showed were needed.
 
 ##### How faithfulness stays testable
@@ -1241,17 +1259,17 @@ Status as of 2026-11-04 (D101). The payoff column gives the measured share each 
 | 0 measure | — | the render thread ~35% waiting; D72 bought −36% (§3.4) | none | done (§3.4) |
 | 0b atlas on the CPU, XA read-ahead | — | 1.4–9.1 ms of GPU per picture in play; 0.5–0.6 ms of CPU per vblank | low | done (D78, D79) |
 | 1 native GTE | — | the renderers −15 to −20% on hardware, 1.0–1.9 ms per tick at 60 fps | low | done (D80, D81, D98); `fast_render=2` is the default |
-| 2 native draw lists | 1 | the OT walk (2.09 ms) and the PS1 GPU → vitaGL translation (3.44 ms, 35%); the render thread, the wall at 60 fps in the attract demo's flight | medium–high | records done (D82–D95), `native_draw=1` the Vita's default; direct vertices (D99, D105), `nd_direct=1` the Vita's default; the clears (2.70 of the translation's 3.66 ms, D105) behind `gpu_clear` (D111), hardware pair Y9–Y12 next |
+| 2 native draw lists | 1 | the OT walk (2.09 ms) and the PS1 GPU → vitaGL translation (3.44 ms, 35%); the render thread, the wall at 60 fps in the attract demo's flight | medium–high | records done (D82–D95), `native_draw=1` the Vita's default; direct vertices (D99, D105), `nd_direct=1` the Vita's default; the clears behind `gpu_clear` (D111): the translation 3.59 → 1.01 ms on hardware, `gpu_clear=2` the Vita's default |
 | 3 readable C for mips2c | — (in parallel with 2: different files) | maintainability; prerequisite for 4 | low–medium | done (D83, D87, D94, D96) |
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
 | 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
-| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done behind `present_due`, its hardware pair next (D112); 7d–7g wait for a reason other than CPU (D104) |
+| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done behind `present_due`, its hardware pair run (D112), the default the owner's; 7d–7g wait for a reason other than CPU (D104) |
 | 8 retire PsyCross | 1, 2, 7 | one dependency fewer | low | not planned in detail |
 
 **What can run at once:**
-- **Now:** the clears' hardware pair (D111; the code is behind `gpu_clear`) and 7c's (D112; behind `present_due`), each with the owner's yes first, and 7d if a reason for it comes (7d changes the renderers' interfaces).
-- **Done:** 7a and 7b (D104); 7c in code, off by default (D112); stage 2's direct vertices as the default (D105); stage 4, 4f–4i included (D106).
+- **Now:** `present_due`'s default (D112, the owner's call), and 7d if a reason for it comes (7d changes the renderers' interfaces).
+- **Done:** 7a and 7b (D104); 7c, behind `present_due` with its hardware pair run (D112); stage 2's direct vertices as the default (D105); stage 4, 4f–4i included (D106); stage 2's clears as the default (D111).
 - **Then** 7e–7g, then stage 8.
 
 ## 6. Reproducing these numbers
