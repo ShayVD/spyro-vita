@@ -420,3 +420,24 @@ D99's `nd_direct=1` (the walk leaves its triangles in the GL's lean form and the
 - Y3 and Y4: `tools/vita/fps60_summary.py` per level, and the `render` lines' busy time per picture.
 
 **Ran** on 2026-11-05 (D99, approved by the owner; VPK `logs/d99-vpk-2.vpk`, `937d6e6`; `logs/hw-y1`…`y4`): all four reached `frames=`, no crash dump. These runs had the `gpu parts` timers on without the `gpu_parts=1` line (it came after them; the files now carry it). Y1 and Y2: all 18 pictures and the memory card identical; the route 9.92 → 9.82 ms per vblank. Y3 and Y4: the render thread 0.75 ms per vblank lighter, the parse thread 0.72 heavier, late vblanks fewer. Main's eboot (`32c498d`) went back on the Vita afterwards.
+
+## Runs Y5–Y8: the walk's box as SIMD (D105)
+
+Y1–Y4 again, on D105's VPK: the walk (`em_direct`) makes the box and the skip test with ARMv6's SIMD instructions (`psx_lean.h`'s lane form), and the `gpu parts` lines gain a second one with each entry point's whole time (`GR_DrawTriangles` and the GL calls in it, `GR_ClearVRAM`, `GR_CopyVRAM`, `GR_ReadVRAM`). The same four files, so each pair again differs by `nd_direct` alone; all four have `gpu_parts=1`.
+
+| Run | File | As | Route | About |
+|---|---|---|---|---|
+| Y5 | `y1-k1-direct-off.txt` | Y1 | the K route with shots, virtual vblanks | 4–5 min |
+| Y6 | `y2-k1-direct-on.txt` | Y2 | as Y5 | 4–5 min |
+| Y7 | `y3-toasty60-direct-off.txt` | Y3 | the Toasty route, `REALTIME=1` | 7 min |
+| Y8 | `y4-toasty60-direct-on.txt` | Y4 | as Y7 | 7 min |
+
+**Unattended** (each run needs the owner's yes first; put main's eboot back afterwards). With `V` the absolute path of D105's VPK and `K`, `T` as for Y1–Y4:
+- Y5: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y5 1500 @tools/vita/fps-runs/y1-k1-direct-off.txt @tools/vita/hw-routes/n-gte-k.cfg`
+- Y6: the same with `y2-k1-direct-on.txt` into `logs/hw-y6`
+- Y7: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y7 1500 @tools/vita/fps-runs/y3-toasty60-direct-off.txt @tools/vita/hw-routes/o-toasty.cfg`
+- Y8: the same with `y4-toasty60-direct-on.txt` into `logs/hw-y8`
+
+**What to read:** as Y1–Y4. Y5 and Y6: the 18 pictures and the memory card identical; the walk itself is the OT walk's layer less the `gpu parts` vertex buffers (with `render_thread=0` they are inside it), Y6 against Y5 and against Y2. Y7 and Y8: the `render`, `parse` and `time` lines (the render thread, the parse thread, the game thread's wait for the walk) and `fps60_summary.py`'s late vblanks. The second `gpu parts` line in Y5: what the "PS1 GPU → vitaGL" layer (prof.c's `raster`) is made of.
+
+**Ran** on 2026-11-05 (D105, approved by the owner; VPK `logs/d105-vpk-1.vpk`, SHA-1 `751098f5…`, built from this PR's code before one host-only C expression was parenthesised; `logs/hw-y5`…`y8`): all four reached `frames=`, no crash dump. Y5 and Y6: all 18 pictures (also Y1's) and the memory card identical; the route 9.81 → 9.39 ms per vblank (50 windows, without the quit window). Y7 and Y8: the render thread 0.83 ms per vblank lighter, the parse thread 0.22 heavier, late vblanks fewer. The new `gpu parts` line: `GR_ClearVRAM` 2.70 of the layer's 3.66 ms per vblank (Y5), 5.7 on the render thread at 60 fps. Main's eboot (`987363e`) went back on the Vita afterwards.
