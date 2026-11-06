@@ -160,6 +160,7 @@ static volatile int s_pend_any;  /* s_npend > 0, for the vblank thread */
 static volatile uint32_t s_vsq;  /* the display's vblanks, counted by the vblank thread */
 static uint32_t s_vsq_seen;      /* the render thread's last look between commands */
 static uint32_t s_vsq_idle;      /* and its last look with nothing to run */
+static uint32_t s_vsq_shown;     /* s_vsq at its last due present */
 static int s_skip;               /* this frame's draws skipped: 1 in-between, 2 real */
 static int s_verts_skipped;      /* the vertex buffer the next draws would use wasn't taken */
 static int s_presented;          /* a picture was just drawn and swapped (posted, or due) */
@@ -168,7 +169,7 @@ static uint32_t s_commits_run;
 static volatile uint32_t s_rt_pictures; /* pictures shown: due ones and posted ones */
 /* counted up; the report takes the differences */
 static volatile uint32_t s_due_shown, s_due_late, s_due_late_vbl, s_due_never, s_skip_interp,
-    s_skip_real, s_skip_display;
+    s_skip_real, s_skip_display, s_due_held;
 
 /* ---- the render thread ---- */
 
@@ -208,10 +209,23 @@ static void pend_drop(int n) { /* the oldest n */
  * come within its vblank), and between two draws only one a vblank late is
  * shown. Inside a command (a frame filed) its time is the command's;
  * rt_due_timed() between commands. */
+static int game_waits_for_pools(void) {
+  int w = __atomic_load_n(&s_game_waiting, __ATOMIC_SEQ_CST);
+  return w == K_VERTS + 1 || w == K_BYTES + 1;
+}
+
 static void rt_due(int min_past) {
   int i, best = -1, past = 0, p0;
   if (!s_npend)
     return;
+  /* The game thread waits for the slabs or the ring: this thread is the
+   * wall, and every present is time not spent on the draws it waits for.
+   * At most a picture every two display vblanks then, so it costs
+   * pictures, not the game's ticks. */
+  if (s_vsq - s_vsq_shown < 2 && game_waits_for_pools()) {
+    s_due_held++;
+    return;
+  }
   p0 = vita_vblank_past_due(s_pend[0].due);
   for (i = 0; i < s_npend; i++) {
     int p = p0 - (s_pend[i].due - s_pend[0].due);
@@ -226,6 +240,7 @@ static void rt_due(int min_past) {
     s_due_late_vbl += (uint32_t)past;
   }
   gl_present(s_pend[best].slot, s_pend[best].wide, 0);
+  s_vsq_shown = s_vsq;
   s_due_shown++;
   pend_drop(best + 1);
   s_presented = 1; /* picture_done() once its time is counted */
@@ -283,7 +298,7 @@ static void rt_file(const PresentFrame *f) {
  * too), a real frame's only when it would be superseded anyway (a later
  * frame filed) or the game thread waits for the pools. */
 static void rt_begin(const CBegin *k) {
-  int past = vita_vblank_past_due(k->due), w;
+  int past = vita_vblank_past_due(k->due);
   s_skip = 0;
   if (past < 1 || past == VITA_DUE_UNCOUNTED) /* on time, or no clock to tell by */
     return;
@@ -292,8 +307,7 @@ static void rt_begin(const CBegin *k) {
     s_skip_interp++;
     return;
   }
-  w = __atomic_load_n(&s_game_waiting, __ATOMIC_SEQ_CST);
-  if (s_commits_posted - s_commits_run >= 2 || w == K_VERTS + 1 || w == K_BYTES + 1) {
+  if (s_commits_posted - s_commits_run >= 2 || game_waits_for_pools()) {
     s_skip = 2;
     s_skip_real++;
   }
@@ -938,20 +952,20 @@ int vita_gpu_present_due(void) {
 
 /* The present line's 7c part (present_vita.c), since the last call. */
 int vita_gpu_due_report(char *buf, int size) {
-  static uint32_t last[7];
-  uint32_t now[7], d[7];
+  static uint32_t last[8];
+  uint32_t now[8], d[8];
   int i;
   if (!vita_gpu_due_mode())
     return 0;
   now[0] = s_due_shown, now[1] = s_due_late, now[2] = s_due_late_vbl, now[3] = s_due_never;
-  now[4] = s_skip_interp, now[5] = s_skip_real, now[6] = s_skip_display;
-  for (i = 0; i < 7; i++)
+  now[4] = s_skip_interp, now[5] = s_skip_real, now[6] = s_skip_display, now[7] = s_due_held;
+  for (i = 0; i < 8; i++)
     d[i] = now[i] - last[i], last[i] = now[i];
   snprintf(buf, (size_t)size,
            "7c: %u frames shown by the render thread at their vblank, %u of them late (%u vblanks "
            "in all), %u never shown; draws skipped for %u in-between and %u real frames; %u PS1 "
-           "display pictures dropped",
-           d[0], d[1], d[2], d[3], d[4], d[5], d[6]);
+           "display pictures dropped; %u presents held while the game waited for the pools",
+           d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]);
   return 1;
 }
 
