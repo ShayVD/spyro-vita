@@ -441,3 +441,27 @@ Y1–Y4 again, on D105's VPK: the walk (`em_direct`) makes the box and the skip 
 **What to read:** as Y1–Y4. Y5 and Y6: the 18 pictures and the memory card identical; the walk itself is the OT walk's layer less the `gpu parts` vertex buffers (with `render_thread=0` they are inside it), Y6 against Y5 and against Y2. Y7 and Y8: the `render`, `parse` and `time` lines (the render thread, the parse thread, the game thread's wait for the walk) and `fps60_summary.py`'s late vblanks. The second `gpu parts` line in Y5: what the "PS1 GPU → vitaGL" layer (prof.c's `raster`) is made of.
 
 **Ran** on 2026-11-05 (D105, approved by the owner; VPK `logs/d105-vpk-1.vpk`, SHA-1 `751098f5…`, built from this PR's code before one host-only C expression was parenthesised; `logs/hw-y5`…`y8`): all four reached `frames=`, no crash dump. Y5 and Y6: all 18 pictures (also Y1's) and the memory card identical; the route 9.81 → 9.39 ms per vblank (50 windows, without the quit window). Y7 and Y8: the render thread 0.83 ms per vblank lighter, the parse thread 0.22 heavier, late vblanks fewer. The new `gpu parts` line: `GR_ClearVRAM` 2.70 of the layer's 3.66 ms per vblank (Y5), 5.7 on the render thread at 60 fps. Main's eboot (`987363e`) went back on the Vita afterwards.
+
+## Runs 7C1–7C4: presents at the due vblank (stage 7c, D112)
+
+`present_due=1` against `present_due=0` (VSync's presents, as on main) on one VPK, so each pair differs by that switch alone. Both routes at 60 fps with X7's settings (O2's `o2-60-fr2.txt`: the shipped defaults, `interp=1`, `gpu_meter=1`), real-time vblanks. The K route includes the Stone Hill attract demo's flight, where the render thread is the wall (X7: 15.4 ms a picture, 5.4 late vblanks per 300).
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7C1 | `s7c1-k60-due0.txt` | X7's, `present_due=0` | the K route without shots (`k-route.pad`, `m1-xa-k.cfg`), `REALTIME=1` | 5–6 min |
+| 7C2 | `s7c2-k60-due1.txt` | 7C1 with `present_due=1` | as 7C1 | 5–6 min |
+| 7C3 | `s7c3-toasty60-due0.txt` | X7's, `present_due=0` | the Toasty route (`o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1` | 7 min |
+| 7C4 | `s7c4-toasty60-due1.txt` | 7C3 with `present_due=1` | as 7C3 | 7 min |
+
+**Unattended** (each run needs the owner's yes first; put main's eboot back afterwards). With `V` the absolute path of D112's VPK, `K=$PWD/tools/vita/hw-routes/k-route.pad`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`:
+- 7C1: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7c1 1500 @tools/vita/fps-runs/s7c1-k60-due0.txt @tools/vita/hw-routes/m1-xa-k.cfg`
+- 7C2: the same with `s7c2-k60-due1.txt` into `logs/hw-7c2`
+- 7C3: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7c3 1500 @tools/vita/fps-runs/s7c3-toasty60-due0.txt @tools/vita/hw-routes/o-toasty.cfg`
+- 7C4: the same with `s7c4-toasty60-due1.txt` into `logs/hw-7c4`
+
+**What to read:**
+- `python3 tools/vita/fps60_summary.py logs/hw-7cN/spyro.log` per level: late vblanks per 300, the falls to 30, the render thread's ms per picture, the game thread's busy %. 7C1 and 7C3 should be X7's again (the code they run is main's).
+- The `render N:` lines' game-thread waits: "previous frame not shown yet" should be 0 in 7C2 and 7C4 (the game no longer waits for a present), and "vertex slabs" and "ring full" are what is left of the game waiting for the render thread.
+- The `vblank N:` lines' late vblanks: the game thread's own lateness. In the attract demo's flight, 7C2 against 7C1 is the point of 7c: a late render thread should cost pictures, not ticks.
+- The `present N:` lines' `7c:` part (7C2, 7C4): the frames the render thread showed at their vblank, how many late and by how many vblanks, how many never showed, and the draws it skipped (in-between frames, real frames) and the PS1 display pictures it dropped. In play there should be almost no skips; in the flight they are the pictures 7c gives up instead of ticks.
+- The picture must look the same: no flashes of an old frame, the pause and inventory backgrounds right, the loads and the menu (the routes' LEVEL WARP) unchanged.

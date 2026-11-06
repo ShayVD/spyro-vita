@@ -89,9 +89,11 @@ extern PresentStats g_present_stats;
 /* A frame filed into a slot (stage 7c, D112): the vblank it's due at, the
  * first vblank it is shown at (shown at the first vblank >= due, until a
  * newer frame is due), whether it's 16:9, and whether it's an in-between
- * frame (D30) rather than a real one. */
+ * frame (D30) rather than a real one. dropped: the slot of the oldest
+ * waiting frame the full queue dropped to make room for this one (never
+ * shown; the frames still waiting are each due a vblank sooner), or -1. */
 typedef struct PresentFrame {
-  int slot, due, wide, interp;
+  int slot, due, wide, interp, dropped;
 } PresentFrame;
 
 /* A platform that keeps captured pictures itself (the Vita's GPU renderer):

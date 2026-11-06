@@ -347,7 +347,9 @@ static void push_capture(int wide, int interp) {
   if (!s_captured)
     return;
   s_captured = 0;
+  f.dropped = -1;
   if (s_qcount == QUEUE) { /* drop the oldest; the rest are due a vblank sooner */
+    f.dropped = s_qhead;
     s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
     for (i = 0; i < s_qcount; i++)

@@ -160,7 +160,7 @@ static volatile uint32_t s_vsq;  /* the display's vblanks, counted by the vblank
 static uint32_t s_vsq_seen;      /* the render thread's last look */
 static int s_skip;               /* this frame's draws skipped: 1 in-between, 2 real */
 static int s_verts_skipped;      /* the vertex buffer the next draws would use wasn't taken */
-static int s_presented;          /* the command just run drew and swapped a posted present */
+static int s_presented;          /* a picture was just drawn and swapped (posted, or due) */
 static volatile uint32_t s_commits_posted; /* frames filed into the ring */
 static uint32_t s_commits_run;
 static volatile uint32_t s_rt_pictures; /* pictures shown: due ones and posted ones */
@@ -199,10 +199,10 @@ static void pend_drop(int n) { /* the oldest n */
 
 /* 7c: the newest frame filed whose due vblank the display has reached goes
  * on the screen; older ones never will. One read of the display's vcount:
- * the frames' dues are relative to the first's. */
+ * the frames' dues are relative to the first's. Inside a command (a frame
+ * filed) its time is the command's; rt_due_timed() between commands. */
 static void rt_due(void) {
   int i, best = -1, past = 0, p0;
-  uint64_t t0;
   s_vsq_seen = s_vsq;
   if (!s_npend)
     return;
@@ -219,25 +219,47 @@ static void rt_due(void) {
     s_due_late++;
     s_due_late_vbl += (uint32_t)past;
   }
-  t0 = now_us();
   gl_present(s_pend[best].slot, s_pend[best].wide, 0);
-  s_rt_busy_us += (uint32_t)(now_us() - t0);
   s_due_shown++;
   pend_drop(best + 1);
-  picture_done();
+  s_presented = 1; /* picture_done() once its time is counted */
 }
 
-/* 7c: a frame filed (its picture now in its slot) waits for its vblank. A
- * slot filed again holds a newer picture: the older entry is gone. */
+static void rt_due_timed(void) {
+  uint64_t t0 = now_us();
+  rt_due();
+  s_rt_busy_us += (uint32_t)(now_us() - t0);
+  if (s_presented) {
+    s_presented = 0;
+    picture_done();
+  }
+}
+
+/* The waiting frame in `slot`, if any, goes (never shown). */
+static void pend_remove(int slot) {
+  int i;
+  for (i = 0; i < s_npend && s_pend[i].slot != slot; i++)
+    ;
+  if (i == s_npend)
+    return;
+  memmove(s_pend + i, s_pend + i + 1, (size_t)(s_npend - i - 1) * sizeof s_pend[0]);
+  s_npend--;
+  s_pend_any = s_npend > 0;
+  s_due_never++;
+}
+
+/* 7c: a frame filed (its picture now in its slot) waits for its vblank.
+ * When present.c's queue was full it dropped its oldest frame for this one
+ * and moved the rest up a vblank: the same here. A slot filed again holds a
+ * newer picture: the older entry is gone. */
 static void rt_file(const PresentFrame *f) {
   int i;
-  for (i = 0; i < s_npend && s_pend[i].slot != f->slot; i++)
-    ;
-  if (i < s_npend) {
-    memmove(s_pend + i, s_pend + i + 1, (size_t)(s_npend - i - 1) * sizeof s_pend[0]);
-    s_npend--;
-    s_due_never++;
+  if (f->dropped >= 0) {
+    pend_remove(f->dropped);
+    for (i = 0; i < s_npend; i++)
+      s_pend[i].due--;
   }
+  pend_remove(f->slot);
   if (s_npend == PEND) {
     pend_drop(1);
     s_due_never++;
@@ -384,7 +406,7 @@ static int rt_main(SceSize args, void *argp) {
     uint64_t t0;
     if (__atomic_load_n(&s_wpub, __ATOMIC_ACQUIRE) == r) {
       if (s_npend && s_vsq != s_vsq_seen) { /* 7c: a new display vblank */
-        rt_due();
+        rt_due_timed();
         continue;
       }
       /* nothing to run: sleep until the game thread posts, or (7c, frames
@@ -416,7 +438,7 @@ static int rt_main(SceSize args, void *argp) {
     count(K_CMDS);
     rt_wake_game();
     if (s_npend && s_vsq != s_vsq_seen) /* 7c: the display reached a new vblank */
-      rt_due();
+      rt_due_timed();
   }
   return 0;
 }
