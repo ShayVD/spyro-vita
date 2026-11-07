@@ -550,7 +550,7 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **Not done:** 8e (the build without PsyCross) waits for the owner's decision on the headers (D113: A, B or C); nothing here makes it. No hardware run: 8f covers the whole stage, with the owner's yes first for each run. The oracle replay wasn't rerun: the arena build's mips2c units and their GTE are untouched, and the replay compares RAM, not the walk.
 - **Credit:** `gpu_walk.c` is PsyCross's walk ported, and `psx_gpu.h` keeps its `GrVertex` and `GR_*` declarations; both under PsyCross's MIT notice (`THIRD_PARTY_NOTICES.md`).
 
-### D118. Stage 8e: the native and Vita builds compile no PsyCross code. Its `include/psx` headers stay, behind our patches (the owner's choice, A), and its GTE and walk are only the checks' reference library. The dead patch hunks go. Identical output on the host, in Vita3K and against the emulator
+### D118. Stage 8e: the native and Vita builds compile no PsyCross code. Its `include/psx` headers stay, behind our patches (the owner's choice, A), and its GTE and walk are only the checks' reference library. The dead patch hunks go. Identical output on the host, in Vita3K, against the emulator and on hardware (8f); stage 8 is done
 - **Why:** step 8e of the stage 8 plan (`docs/native-plan.md` §5, D113). After 8a–8d (D114–D117), the `psycross` library compiled four files the link never pulled in (`LIBAPI.C`, `LIBSN.C`, `ABS.C` and `half_float.cpp`). Our patches still carried hunks for files no build compiled any more, and for hooks nothing set.
 - **The headers, the owner's decision** (2026-11-06, in the coordinator's chat, answering "Which option?": "Keep them (Recommended)"): **option A of D113**.
   - PsyCross's `include/psx` headers stay as they are, behind `patches/PsyCross`.
@@ -628,5 +628,35 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - **The gems run's window captures from 4,500 on** differ only in pixel row 1 of the 1,920×1,088 grab, the window's top edge (`logs/s8e/pngrows.py`, `logs/s8e/v3k-gems-win-rows.txt`). The rest of each picture is identical, and so are all 17 shots. That row varies between grabs of the same build (8a's notes). Another session's Vita3K runs were taking turns with these under the runner's lock.
     - **The pause route's save state:** all 12 chunks identical, and the layout words too (`tools/state_cmp.py`, `logs/s8e/state_cmp-v3k.txt`). Only the header's build string differs: the two builds' times. The memory card (`card0`) is identical.
   - **`tools/check_no_assets.sh`** passes. **`tools/build_matching.sh`** is green: `PSX.EXE SHA-1 OK` and every overlay OK (`logs/s8e/matching.log`). No decomp file changes.
-- **Not done here:** 8f, the hardware pair for the whole stage (8H1–8H4), comes after this PR's checks, with the owner's yes first for each run. Its results go in this decision and in `docs/native-plan.md` §3.5.
+- **Hardware: 8H1–8H4, step 8f** (2026-11-07). Approved by the owner in this session's chat ("Yes, run 8H1–8H4").
+  - **Set-up:** the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh` (`logs/s8e/hw.sh`). The kit's lock was free and no kh1-decomp run was in progress when they started. Logs are `logs/hw-8h1`…`8h4`, gitignored.
+  - **The VPKs:** main's (`logs/s8e-main.vpk`, `e640170`) against the branch's (`logs/s8e-br.vpk`), on one route each:
+    - Y10's settings on the K route (every layer on the game thread, virtual vblanks, the shipped `gpu_clear=2` and `nd_direct=1`; `y10-k1-clear-on.txt`);
+    - Y12's on the Toasty route (the shipped defaults at 60 fps, real-time vblanks; `y12-toasty60-clear-on.txt`).
+  - All four runs reached `frames=`, and the owner's files were put back each time.
+  - **Afterwards** main's CI eboot went back on the Vita (`e640170`, CI run 42355157951, `80d09c2e…`) and read back identical (`logs/s8e/restore.txt`).
+  - **The restore broke the rule.** It ran while a kh1-vita hardware run held the kit's lock: PID 44152, `p13-a0`, started after 8H4 had ended. The FTP put and get went ahead without waiting for the lock. They touched only `ux0:app/SPYV00001/eboot.bin`, but put about 5 MB of FTP traffic in that run's time.
+  - **The K route (8H1, 8H2): all 18 pictures (9 readback shots, 9 HD shots from the GPU) and the memory card identical.** Every layer per vblank is the same within 0.01 ms (`native_share.py --fps 30 --all`, 51 windows; `logs/s8e/8h12-share.txt`):
+
+    | Run | logic | renderers | draw/other | OT walk | render thread | SPU + mixer | XA/CD | present | sum |
+    |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+    | 8H1 (main) | 0.13 | 2.72 | 0.20 | 1.76 | 1.03 | 0.23 | 0.43 | 0.29 | 6.79 |
+    | 8H2 (stage 8) | 0.13 | 2.72 | 0.19 | 1.76 | 1.03 | 0.23 | 0.43 | 0.28 | 6.77 |
+
+  - **Toasty at 60 fps (8H3, 8H4):** the same late vblanks where the route is the same (`fps60_summary.py`, `logs/s8e/8h34-fps60.txt`):
+    - Stone Hill: 0 and 0 per 300; the render thread 6.94 and 7.04 ms a picture.
+    - Toasty: 0.4 and 0.4.
+    - Artisans: 3.5 against 4.3. The windows around the route's game over differ, worst 55 against 68; Toasty's real-time route drifts, as in X7, Y7, Y8, Y11 and Y12.
+    - The loads: 132 against 120.
+    - In all, about 203 late vblanks against 205. The two ELFs' code is byte-identical (above), so the spread is the runs' own.
+    - The GPU per picture is 4.34 and 4.38 ms in the last window.
+  - **A crash dump at exit, in both 8H3 (main) and 8H4 (stage 8).** Both runs logged `frames=21000 reached, exiting`; the dump came after it.
+    - Both dumps say the same (read with `logs/s8e/dumpthreads.py` and `dumpstack.py`, vita-parse-core's thread layout; each against its own ELF, the eboot's load offset taken from the render thread's entry; `logs/s8e/8h3-render-frames.txt`, `8h4-render-frames.txt`):
+      - `spyro_render` took a data abort in a system library (PC `0xe0077854`);
+      - its stack is `rt_main` → `rt_due` (7c's present at the due vblank, `gpu_thread.c:248`) → `batch_issue` → `gl_report` → `swap` → `vglSwapBuffers` → `__wrap_sceGxmEndScene`;
+      - meanwhile the game thread was in `sceKernelExitProcess`.
+    - **The cause:** `vblank.c`'s `frames=` exit doesn't stop the render thread, which since D112 (`present_due=1`, real-time vblanks only) presents on its own.
+    - Earlier hardware pairs had no dump: Y11 and Y12 had `present_due=0`; 7C2 and 7C4 had `present_due=1`, but their routes may not have ended mid-present.
+    - **Main does the same, so it isn't stage 8's.** Players never take this exit (`frames=0`; the PS button's close is the system's), but every scripted 60 fps run will now leave a dump. A follow-up.
+  - **Stage 8's pass criteria hold:** the same 18 pictures and card; no layer slower on the K route; late vblanks at 60 fps no worse. **Stage 8 is done.**
 - **Credit:** unchanged. PsyCross's headers are compiled as they are, under its MIT notice. The port's files derived from its code (D72, D115–D117) keep that notice.
