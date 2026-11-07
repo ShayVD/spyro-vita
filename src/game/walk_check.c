@@ -594,6 +594,10 @@ int walk_check_init(void (*log)(const char *fmt, ...)) {
   return -1;
 }
 void walk_check_report(void) {}
+unsigned long long walk_check_synth(unsigned n, unsigned seed) {
+  (void)n, (void)seed;
+  return 0;
+}
 void walk_ref_sync(void) {}
 void walk_ref_parse(u_long *p, int single, PsxGpuNext next) {
   (void)p, (void)single, (void)next;
