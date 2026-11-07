@@ -9,7 +9,7 @@
  * when it's recorded, never pointed at:
  *   - a split's environments (the DRAWENV and DISPENV PsyCross passes), its
  *     texture and blend mode, and its first vertex and count;
- *   - the vertices of a DrawAllSplits (GR_UpdateVertexBuffer: PsyCross's
+ *   - the vertices of a psx_gpu_draw_splits (GR_UpdateVertexBuffer: the walk's
  *     buffer, after its parse) in one of NSLAB vertex slabs, with the vertex
  *     cache's answers when persp or subpixel are on. A slab is written again
  *     only once the render thread has started two later vertex buffers, so
@@ -68,8 +68,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "PsyX/PsyX_render.h"
-#include "gpu/PsyX_GPU.h"
+#include "psx_gpu.h"
 #include "../../game/present.h"
 #include "psx_walk.h"
 #include "psx_clock.h"
@@ -89,7 +88,7 @@ int nd_direct_ranges(const uint32_t **r);
 
 static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 
-typedef struct { /* PsyX_GPU.cpp's GPUDrawSplit starts like this (gpu_gl.c) */
+typedef struct { /* the walk's PsxGpuSplit starts like this (psx_gpu.h, gpu_gl.c) */
   DRAWENV drawenv;
   DISPENV dispenv;
 } SplitHead;

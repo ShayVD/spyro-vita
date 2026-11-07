@@ -9,8 +9,7 @@
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdint.h>
 
-#include "PsyX/PsyX_render.h"
-#include "psx/libgpu.h" /* DISPENV */
+#include "psx_gpu.h"
 #include "psx_vcache.h"
 
 /* What the GL side reads of the game's display state, as it was when the

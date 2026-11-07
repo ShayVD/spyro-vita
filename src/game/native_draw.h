@@ -15,18 +15,19 @@
  * the marker. A primitive appended to a bucket whose tail is a marker of
  * this list joins that marker's records instead (the last record's link),
  * so a marker stands for every primitive the renderers put in a row into
- * one bucket. When the OT walk reaches it (PsyCross patch 0010's packet
- * hook, nd_packet), it emits the records as PsyCross's Process*Poly would
- * have emitted the primitives: the same splits (PsyX_AddSplit with the same
- * flags under the same draw state) and the same vertices, in the OT's own
- * order: buckets, FIFO within a bucket, the HUD chain last.
+ * one bucket. When the OT walk reaches it (gpu_walk.c calls nd_packet, D117;
+ * PsyCross's patch 0010 hooked it in before), it emits the records as
+ * PsyCross's Process*Poly would have emitted the primitives: the same
+ * splits (psx_gpu_add_split with the same flags under the same draw state)
+ * and the same vertices, in the OT's own order: buckets, FIFO within a
+ * bucket, the HUD chain last.
  *
  * A record (D91): the next record's offset (ND_END: none), the kind
  * (ND_K_*), then the primitive's words after its tag as the PS1 primitive
  * holds them (the colour word with the code byte, then each vertex's
  * colour, x/y and texture word as the kind has them). The renderers store
  * no more than the primitive's own words; the walk, on the parse thread
- * (D71), turns them into PsyCross's GrVertex (MakeVertex*'s order, a quad's
+ * (D71), turns them into the walk's GrVertex (MakeVertex*'s order, a quad's
  * 0, 1, 3, 2) and adds the draw offset, the draw environment's dither
  * flag, the vertex cache's hook and a quad's split into two triangles.
  *
@@ -59,8 +60,6 @@
  * HUD), unless nd_fast=0. */
 extern int g_native_draw;
 extern int g_nd_fast;
-/* the check's reference walk: no packet parsed by nd_packet but markers */
-extern int g_nd_fast_off;
 /* host --native-draw-check: each converted renderer's call runs both ways */
 extern int g_nd_check;
 /* config nd_ab=1 (D91, D92, diagnostic): native_draw 0, 1 and 2 take turns
@@ -114,10 +113,19 @@ void nd_begin(void);
 void nd_end(void);
 /* func_80016784: the OT is linked and handed to DrawOTag. */
 void nd_list_linked(void);
-/* At start-up (after the config): installs the walk's packet hook. */
+/* At start-up (after the config): the walk gives nd_packet each packet
+ * from then on (g_nd_walk), when native_draw or its check is on. */
 void nd_init(void (*log)(const char *fmt, ...));
-/* The walk's packet hook (PsyCross patch 0010). */
+extern int g_nd_walk;
+/* The walk's (gpu_walk.c): a packet with a nonzero length, 1 if it emitted
+ * it (a marker's records, or nd_fast's parse of a whole packet), else 0
+ * and the walk parses it. */
 int nd_packet(uintptr_t packet);
+/* The walk's: one polygon command it parses itself (PsyCross's polygon
+ * parsers before D117), as they made it */
+void nd_poly(const u32 *c);
+/* The walk's: its splits and vertex buffer emptied */
+void nd_walk_cleared(void);
 /* A log line with the counts since the last call (prefix: "native draw N:") */
 void nd_report(int vblank);
 /* host --native-draw-check: the call both ways (native_draw_check.c) */
@@ -127,7 +135,8 @@ void nd_check_began(void); /* nd_begin, for the check */
 void nd_check_set_log(void (*log)(const char *fmt, ...));
 void nd_check_report(void);
 /* host --native-draw-parse-check (D92): a packet nd_packet parses, parsed
- * by PsyCross too from the same state and compared; fast's answer */
+ * by PsyCross's walk too (the reference library's, SPYRO_PSYCROSS_REF) from
+ * the same state and compared; fast's answer */
 extern int g_nd_pcheck;
 int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m));
 void nd_pcheck_report(void);
@@ -162,7 +171,7 @@ extern int g_nd_direct_ok;
 enum { ND_WALK_DIRECT = 0x10, ND_WALK_RANGES = 0x20 };
 /* The direct triangles of the vertex buffer the walk is filling: n ranges
  * of vertex indices, [r[2i], r[2i + 1]), ascending, whole triangles. They
- * go when PsyCross empties the buffer (ClearSplits, patch 0014), so read
+ * go when the walk empties the buffer (nd_walk_cleared), so read
  * them at GR_UpdateVertexBuffer. */
 enum { ND_DR_MAX = 2048 };
 int nd_direct_ranges(const u32 **r);

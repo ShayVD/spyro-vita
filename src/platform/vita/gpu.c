@@ -8,13 +8,13 @@
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdint.h>
 
-#include "PsyX/PsyX_render.h"
+#include "psx_gpu.h"
 
 int g_vita_gpu; /* 1: gpu_gl.c is drawing */
 extern int g_rt_active; /* gpu_thread.c */
 int g_vita_gl;  /* 1: vitaGL owns the display (gpu_gl.c presents) */
 
-/* split tags PsyX_GPU.cpp puts on textured/untextured splits */
+/* split tags the walk (gpu_walk.c) puts on textured/untextured splits */
 TextureID g_whiteTexture = 1;
 TextureID g_vramTexture = 2;
 int g_cfg_bilinearFiltering = 0;

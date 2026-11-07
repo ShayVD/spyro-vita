@@ -7,7 +7,7 @@
  * at the same offsets: the draw's primitive span and the OT's terminator
  * (present.c port_present_prim_ranges; the game links its OT buckets
  * straight from primitive to primitive, order_table.c). The walk then
- * follows the copy (g_psyxNextPacket), so the game may write its next
+ * follows the copy (its next_packet), so the game may write its next
  * frame's primitives meanwhile. A packet outside the copy is read in place
  * and counted (stats.foreign): none is expected.
  *
@@ -18,7 +18,7 @@
  *    next gate. That's the latest a walk can happen, so comparing a host run
  *    with the in-place walk checks every gate and every deferral.
  *
- * The walk owns PsyCross's GPU state (the draw and display environments, the
+ * The walk owns the GPU state (gpu_walk.c: the draw and display environments, the
  * splits, the vertex buffer) and, on the Vita, the render thread's command
  * ring, from the handover to the join. The game thread joins before it
  * touches any of it: libgpu's calls and VSync join first (psx_walk_join), save
@@ -32,26 +32,17 @@
 #include "../../game/psx_mem.h"
 #include "psx_vcache.h"
 #include "psx_libgpu.h"
+#include "psx_gpu.h"
 
-#include <assert.h> /* PsyCross headers use static_assert */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "psx/libgte.h"
-#include "psx/libgpu.h"
 
 #if defined(__linux__)
 #include <sys/mman.h>
 #else
 #include <malloc.h>
 #endif
-
-/* PsyCross (gpu/PsyX_GPU.h) and the platform's vblank.c */
-void ClearSplits(void);
-void DrawAllSplits(void);
-void ParsePrimitivesLinkedList(u_long *p, int singlePrimitive);
-char PsyX_BeginScene(void);
 
 #define MAX_RANGES 8
 #define DEFER_BYTES 2048
@@ -174,15 +165,11 @@ int psx_walk_hand_over(u_long *p) {
 void psx_walk_run(void) {
   unsigned long long t0 = now();
   s_in_job = 1;
-  g_psyxNextPacket = next_packet;
   psx_vcache_frame_use(&s_job.vc);
-  /* DrawOTag's own walk (libgpu.c walk_in_place) from here on */
-  if (PsyX_BeginScene())
-    ClearSplits();
-  ParsePrimitivesLinkedList((u_long *)s_job.head, 0);
-  DrawAllSplits();
+  /* DrawOTag's own walk (libgpu.c) from here on, over the copy */
+  psx_gpu_walk_scene((u_long *)s_job.head, 0, next_packet);
+  psx_gpu_draw_splits();
   psx_vcache_frame_use(NULL);
-  g_psyxNextPacket = NULL;
   s_in_job = 0;
   t0 = now() - t0;
   s_stats.walk_us += t0;

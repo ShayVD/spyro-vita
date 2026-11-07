@@ -103,6 +103,7 @@ arithmetic, expression for expression, in `src/game/gte_inline.h` and `src/game/
 (decisions D72), and its libgte and GTE register file in `src/game/libgte.c` and
 `src/game/gte_regs.c` (D116).
 `src/platform/common/libgpu.c` (stage 8b, D115) is ported from PsyCross's `src/psx/LIBGPU.C` with our patches' changes, under the notice above.
+`src/platform/common/gpu_walk.c` (stage 8d, D117), the OT walk with its parsers, draw splits and vertex buffer, is ported from PsyCross's `src/gpu/PsyX_GPU.cpp` with our patches' changes, and `src/platform/common/psx_gpu.h` keeps the layout of PsyCross's `GrVertex` and its `GR_*` declarations (`include/PsyX/PsyX_render.h`), both under the notice above.
 
 ### TheMobyCollective/spyro-1
 

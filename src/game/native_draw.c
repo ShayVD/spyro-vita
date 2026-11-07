@@ -1,6 +1,8 @@
 /* Native draw lists (decisions D82, D86, D91): the record pools, the list
  * turn-over and the OT walk's side, which emits a marker's records as
- * PsyCross's parse would have emitted the primitives they came from.
+ * PsyCross's parse would have emitted the primitives they came from. The
+ * walk (gpu_walk.c, D117) calls nd_packet for each packet and nd_poly for
+ * each polygon command it parses itself.
  * native_draw.h has the format and the renderers' side. */
 #include "native_draw.h"
 
@@ -8,14 +10,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "PsyX/PsyX_render.h"
+#include "psx_gpu.h"
 #include "psx_lean.h"
+#include "psx_vcache.h"
 #include "psx_walk.h"
 
-extern DRAWENV activeDrawEnv; /* PsyX_GPU.cpp */
-extern DISPENV activeDispEnv;
-
 int g_native_draw;
+int g_nd_walk; /* the walk gives nd_packet each packet (nd_init) */
 int g_nd_check;
 int g_nd_ab;
 NdSide g_nd_side[ND_SIDE_N];
@@ -45,7 +46,8 @@ static struct {
 } s_dr;
 static unsigned s_dr_tris, s_dr_skipped, s_dr_full;
 
-static void dr_clear(void) { s_dr.n = 0; }
+/* the walk emptied its vertex buffer (gpu_walk.c): the ranges go with it */
+void nd_walk_cleared(void) { s_dr.n = 0; }
 
 int nd_direct_ranges(const u32 **r) {
   *r = &s_dr.r[0][0];
@@ -96,8 +98,7 @@ void nd_init(void (*log)(const char *fmt, ...)) {
   }
   cursor_at(&g_nd_pool[0]);
   g_nd.key = g_nd.id << 21;
-  g_psyxPacketHook = nd_packet;
-  g_psyxClearSplitsHook = dr_clear;
+  g_nd_walk = 1;
 }
 
 void nd_begin(void) {
@@ -163,7 +164,8 @@ void nd_list_linked(void) {
     memset(g_nd_side, 0, sizeof g_nd_side);
 }
 
-/* PsyCross's DrawEnvOffset, as integers (its float sums are exact here) */
+/* PsyCross's DrawEnvOffset, as integers (its float sums are exact here;
+ * gpu_walk.c's draw_offset) */
 static void draw_offset(int *ox, int *oy) {
   if (activeDrawEnv.dfe) {
     *ox = activeDrawEnv.ofs[0] - activeDispEnv.disp.x;
@@ -203,7 +205,7 @@ typedef struct {
 static int s_dc_force = -1;
 
 static void em_begin(Em *e) {
-  e->vb = PsyX_VertexBuffer(&e->fill);
+  e->vb = psx_gpu_vertex_buffer(&e->fill);
   e->prev = ~0u;
   draw_offset(&e->ox, &e->oy);
   e->dmask = activeDrawEnv.dtd ? 1u << 24 : 0;
@@ -328,7 +330,7 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
   }
   key = split_key(f);
   if (key != e->prev) {
-    PsyX_AddSplit((f & F_SEMI) != 0, (f & F_TEX) != 0);
+    psx_gpu_add_split((f & F_SEMI) != 0, (f & F_TEX) != 0);
     e->prev = key;
   }
   if (*fill + 6 > MAX_VERTEX_BUFFER_SIZE)
@@ -370,12 +372,12 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
   }
   {
     GrVertex *v = vb + *fill;
-    if (g_psyxPolyHook) {
+    if (psx_vcache_polys) {
       /* the primitive's own x/y, as MakeVertex* passes them */
       short *p[4];
       for (k = 0; k < n; k++)
         p[k] = (short *)(uintptr_t)xy[n == 4 ? k_order[k] : k];
-      g_psyxPolyHook(v, p, (int)n);
+      psx_vcache_poly(v, p, (int)n);
     }
     if (n == 4) {
       /* TriangulateQuad */
@@ -410,7 +412,6 @@ static void emit(const u32 *w, u32 at, u32 cap) {
 static const u8 k_poly_kind[8] = {ND_K_F3, ND_K_FT3, ND_K_F4, ND_K_FT4,
                                   ND_K_G3, ND_K_GT3, ND_K_G4, ND_K_GT4};
 int g_nd_fast = 1;
-int g_nd_fast_off; /* the check's reference walk: PsyCross's own */
 static unsigned s_fast_packets, s_fast_polys;
 
 /* the words of the command at c (code in its top byte), or 0 if this parse
@@ -450,6 +451,19 @@ static int fast_packet(const u32 *m) {
   return 1;
 }
 
+/* One polygon command (GP0 20h-3Fh, its words at c) the walk parses itself
+ * (gpu_walk.c, D117): its vertices as PsyCross's Process*Poly made them,
+ * with a split of its own as each of its polygons asked AddSplit, never
+ * direct (the polygons the walk parsed weren't, D99), not counted. */
+void nd_poly(const u32 *c) {
+  const unsigned emitted = s_emitted;
+  Em e;
+  em_begin(&e);
+  e.direct = 0;
+  em_prim(&e, k_poly_kind[*c >> 26 & 7], c);
+  s_emitted = emitted;
+}
+
 /* a marker's records (m: the marker) */
 static int marker_packet(const u32 *m) {
   const u32 pool = m[1] >> 11 & 1;
@@ -468,48 +482,48 @@ static struct {
   unsigned long long packets, tris, direct, bad;
 } s_dc;
 static GrVertex *s_dc_ref;
-static u32 s_dc_state[64];
+static PsxGpuSplitState s_dc_state;
 
 static int dcheck_packet(const u32 *m, int (*fn)(const u32 *m)) {
   int *fill, fill0, fill1, split0, nsplit, i, bad = 0;
   int ref_split[64][8];
-  GrVertex *const vb = PsyX_VertexBuffer(&fill);
+  GrVertex *const vb = psx_gpu_vertex_buffer(&fill);
   const DRAWENV env0 = activeDrawEnv;
   DRAWENV env1;
   const u32 n0 = s_dr.n, end0 = n0 ? s_dr.r[n0 - 1][1] : 0;
   u32 r = n0 ? n0 - 1 : 0;
   if (!s_dc_ref)
     s_dc_ref = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE);
-  if (!s_dc_ref || PsyX_SplitStateSize() > (int)sizeof s_dc_state)
+  if (!s_dc_ref)
     return fn(m);
   fill0 = *fill;
-  split0 = PsyX_SplitCount();
-  PsyX_SplitStateSave(s_dc_state);
+  split0 = psx_gpu_split_count();
+  psx_gpu_split_state_save(&s_dc_state);
   s_dc_force = 0;
   i = fn(m);
   s_dc_force = -1;
   if (!i)
     return 0; /* not taken (fast_packet decides before it emits) */
   fill1 = *fill;
-  nsplit = PsyX_SplitCount() - split0;
+  nsplit = psx_gpu_split_count() - split0;
   if (nsplit > 63)
     nsplit = 63;
   for (i = 0; i <= nsplit; i++)
-    PsyX_SplitGet(split0 + i, ref_split[i]);
+    psx_gpu_split_get(split0 + i, ref_split[i]);
   ref_split[nsplit][5] = 0; /* the open split's count: the walk sets it after the packet */
   env1 = activeDrawEnv;
   memcpy(s_dc_ref, vb + fill0, (size_t)(fill1 - fill0) * sizeof(GrVertex));
-  PsyX_SplitStateRestore(s_dc_state);
+  psx_gpu_split_state_restore(&s_dc_state);
   activeDrawEnv = env0;
   s_dc_force = ND_WALK_DIRECT;
   fn(m);
   s_dc_force = -1;
   s_dc.packets++;
-  if (*fill != fill1 || PsyX_SplitCount() - split0 != nsplit)
+  if (*fill != fill1 || psx_gpu_split_count() - split0 != nsplit)
     bad = 1;
   for (i = 0; !bad && i <= nsplit; i++) {
     int got[8];
-    PsyX_SplitGet(split0 + i, got);
+    psx_gpu_split_get(split0 + i, got);
     if (i == nsplit)
       got[5] = 0;
     if (memcmp(got, ref_split[i], sizeof got))
@@ -576,7 +590,7 @@ int nd_packet(uintptr_t packet) {
   w1 = m[1];
   if ((m[0] >> 24) != 2 || (w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24)) {
     const u32 cls = w1 >> 29;
-    if (g_nd_fast && !g_nd_fast_off && psx_walk_nd() &&
+    if (g_nd_fast && psx_walk_nd() &&
         (g_nd_pcheck   ? nd_pcheck_packet(m, fast_packet)
          : g_nd_dcheck ? dcheck_packet(m, fast_packet)
                        : fast_packet(m)))

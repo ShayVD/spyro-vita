@@ -104,6 +104,14 @@
  *   and 2, only the records go through the converter.
  *   --nd-ab: native_draw 0, 1 and 2 in turn by blocks of lists (nd_ab, the
  *   Vita's timing run, D91, D92).
+ *   These checks need the reference build (the arena build, linux32's
+ *   default: SPYRO_PSYCROSS_REF, D117), whose PsyCross walk they compare with.
+ *   --walk-check: every packet our OT walk (gpu_walk.c) parses goes through
+ *   PsyCross's walk too from the same state; the vertices, splits and draw
+ *   environment must be the same ("walk check" lines; D117). WALK_MUTATE=1
+ *   or 2 in the environment: a mutant the check must catch.
+ *   --walk-check-synth N: N random packets of every GP0 kind (those no run
+ *   reaches too) through both walks, then exit; nothing else runs.
  *   --nd-direct (with --native-draw or --native-draw-parse): the walk
  *   leaves its triangles in the GPU renderer's lean form (nd_direct=1,
  *   D99); the software rasterizer doesn't read what changes, so every
@@ -144,6 +152,11 @@ extern int g_nd_ab;                    /* D91 */
 extern int g_nd_fast, g_nd_pcheck;     /* D92 */
 extern int g_nd_direct, g_nd_direct_ok, g_nd_dcheck; /* D99 */
 extern int g_gpu_clear; /* gpu_soft.c, D111 */
+extern const int g_walk_ref_built;  /* src/game/walk_check.c, D117 */
+int walk_check_init(void (*log)(const char *fmt, ...));
+void walk_check_report(void);
+unsigned long long walk_check_synth(unsigned n, unsigned seed);
+static int s_walk_check, s_walk_synth;
 void nd_dcheck_report(void);
 void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
@@ -154,6 +167,7 @@ static void nd_atexit(void) {
   nd_check_report();
   nd_pcheck_report();
   nd_dcheck_report();
+  walk_check_report();
 }
 
 #include <stdio.h>
@@ -222,7 +236,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -563,6 +577,12 @@ int main(int argc, char **argv) {
       g_nd_direct = 1;
     } else if (strcmp(a, "--nd-direct-check") == 0) {
       g_nd_dcheck = 1;
+    } else if (strcmp(a, "--walk-check") == 0) {
+      s_walk_check = 1;
+    } else if (strcmp(a, "--walk-check-synth") == 0) {
+      TAKE();
+      s_walk_synth = to_int(val);
+      s_walk_check = 1;
     } else if (strcmp(a, "--gpu-clear") == 0) {
       g_gpu_clear = 1;
     } else if (strcmp(a, "--gte-audit") == 0) {
@@ -682,6 +702,19 @@ int main(int argc, char **argv) {
              "--native-draw-parse-check");
     return 1;
   }
+  if ((g_nd_check || g_nd_pcheck) && !g_walk_ref_built) {
+    host_log("--native-draw-check and --native-draw-parse-check compare with PsyCross's walk: "
+             "the reference build only (SPYRO_PSYCROSS_REF)");
+    return 1;
+  }
+  if (s_walk_check && g_nd_pcheck) {
+    host_log("--walk-check: not with --native-draw-parse-check (both drive PsyCross's walk)");
+    return 1;
+  }
+  if (s_walk_check && walk_check_init(host_log) != 0)
+    return 1;
+  if (s_walk_synth) /* random packets through both walks, then exit (the report at exit) */
+    return walk_check_synth((unsigned)s_walk_synth, 1) ? 1 : 0;
   nd_init(host_log);
   if (s_walk && psx_walk_init(PSX_WALK_LAZY, port_present_prim_ranges, NULL) != 0) {
     host_log("walk: no 16 MB-aligned memory for the copy");

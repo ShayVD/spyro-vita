@@ -1,5 +1,5 @@
 /* Software PS1 GPU behind PsyCross's GR_* interface for the headless linux32
- * host (docs/porting-plan.md §5). PsyX_GPU.cpp turns OT primitives into
+ * host (docs/porting-plan.md §5). The OT walk (gpu_walk.c) turns OT primitives into
  * GrVertex triangles and "splits"; we rasterize them into a CPU 1024x512
  * 15-bit VRAM with PS1 rules: integer vertices, top-left fill (right and
  * bottom edges not drawn), affine UVs, 4/8/16 bpp + CLUT, texel*colour/128,
@@ -9,10 +9,10 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
-#include "PsyX/PsyX_render.h"
-#include "gpu/PsyX_GPU.h"
+#include "psx_gpu.h"
 #include "psx_fill.h"
 
 #define VW 1024
@@ -41,9 +41,10 @@ static BlendMode s_blend;
 static int s_clip_x0, s_clip_y0, s_clip_x1, s_clip_y1; /* inclusive */
 static int s_org_x, s_org_y; /* VRAM position of vertex (0,0) */
 
-/* PsyX_GPU.cpp's DrawSplit passes &split.drawenv.clip, and GPUDrawSplit
- * starts with { DRAWENV drawenv; DISPENV dispenv; } (both packed), so the
- * rect gives us the env the split's vertices were built with. */
+/* The walk's draw_split passes &split.drawenv.clip, and PsxGpuSplit
+ * (psx_gpu.h, PsyCross's GPUDrawSplit before D117) starts with
+ * { DRAWENV drawenv; DISPENV dispenv; } (both packed), so the rect gives
+ * us the env the split's vertices were built with. */
 typedef struct {
   DRAWENV drawenv;
   DISPENV dispenv;

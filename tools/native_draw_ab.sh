@@ -19,7 +19,14 @@
 # MODE=dir runs native_draw=1 with direct vertices and their check (D99: every
 # packet the walk parses itself both ways, "native draw direct check" lines);
 # MODE=dir2 the same with native_draw=2.
+# MODE=wc0, wc1, wc1d, wc2, wc2d: the walk check (D117: every packet our walk
+# parses also through PsyCross's walk, "walk check" lines; the reference
+# build) with native_draw 0, 1, 1 and nd_direct, 2, 2 and nd_direct. The vc
+# scenario is the walk check with the vertex cache on (no direct vertices
+# there, D99).
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
+# N0_FROM=PREFIX: no n0 run; compare with logs/PREFIX-SCENARIO-n0 (one
+# baseline for several modes).
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
@@ -36,7 +43,12 @@ run() { # NAME MODE
   p2) extra="$extra --native-draw-parse-check ${ND_ARGS:-}";;
   chkp) extra="$extra --native-draw-check --native-draw-parse-check ${ND_ARGS:-}";;
   dir) extra="$extra --native-draw --nd-direct --nd-direct-check ${ND_ARGS:-}";;
-  dir2) extra="$extra --native-draw-parse --nd-direct --nd-direct-check ${ND_ARGS:-}";; esac
+  dir2) extra="$extra --native-draw-parse --nd-direct --nd-direct-check ${ND_ARGS:-}";;
+  wc0) extra="$extra --walk-check ${ND_ARGS:-}";;
+  wc1) extra="$extra --native-draw --walk-check ${ND_ARGS:-}";;
+  wc1d) extra="$extra --native-draw --nd-direct --walk-check ${ND_ARGS:-}";;
+  wc2) extra="$extra --native-draw-parse --walk-check ${ND_ARGS:-}";;
+  wc2d) extra="$extra --native-draw-parse --nd-direct --walk-check ${ND_ARGS:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
@@ -54,8 +66,9 @@ run() { # NAME MODE
   echo "exit $?" >> $D/stdout.txt
 }
 for n in "$@"; do
-  run $n n0; run $n $M
-  a=logs/$P-$n-n0; b=logs/$P-$n-$M; same=0; diff=0
+  if [ -n "${N0_FROM:-}" ]; then a=logs/$N0_FROM-$n-n0; else run $n n0; a=logs/$P-$n-n0; fi
+  run $n $M
+  b=logs/$P-$n-$M; same=0; diff=0
   for x in $(cd $a && find . -type f ! -name spyro.log ! -name stdout.txt | sort); do
     if cmp -s "$a/$x" "$b/$x"; then same=$((same + 1)); else diff=$((diff + 1)); echo "  DIFF $n $x"; fi
   done
@@ -63,6 +76,7 @@ for n in "$@"; do
   grep -h "native draw check: func" $b/spyro.log | sed 's/^/  /'
   grep -h "native draw parse check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -h "native draw direct check: [0-9]" $b/spyro.log | sed 's/^/  /'
+  grep -h "walk check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -c "differ (" $b/spyro.log | sed 's/^/  lines naming a difference: /'
   # vc: the host's pictures don't use the cache, so the files can't show it
   # missing; the hand renderers must feed it (D89)

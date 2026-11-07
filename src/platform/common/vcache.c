@@ -23,7 +23,7 @@
  * entry keeps up to four candidates (position and depth): every distinct
  * projection under its key, plus depth / 16 for a vertex that may be a
  * precision one (no translation, every coordinate a multiple of 16 below
- * 4096). poly_hook then picks, for each polygon, the candidates whose depths
+ * 4096). psx_vcache_poly then picks, for each polygon, the candidates whose depths
  * have the smallest spread: one point at another scale is 4 or 16 times
  * off, another point on the same pixel is as far off as it is in depth,
  * and a real polygon's depths are much closer. A key with more than four
@@ -40,7 +40,7 @@
  * polygon's own pick, neighbours took points up to a pixel apart and the
  * waterfall showed a dashed crack.
  *
- * DrawOTag: each polygon's vertices are looked up (poly_hook) while the OT
+ * DrawOTag: each polygon's vertices are looked up (psx_vcache_poly) while the OT
  * is parsed, which happens inside DrawOTag, before the table moves on to the
  * next frame (done_hook). A frame is everything projected between two
  * DrawOTag calls; Spyro builds and draws its OT in the same frame
@@ -56,7 +56,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "PsyX/PsyX_render.h"
+#include "psx_gpu.h"
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
 
@@ -127,7 +127,7 @@ static Entry *find(uint32_t key, int add) {
   return NULL;
 }
 
-/* poly_hook's lookup: the entry for key in the frame being walked */
+/* psx_vcache_poly's lookup: the entry for key in the frame being walked */
 static const Entry *look(uint32_t key) {
   uint32_t i = hash(key), n;
   if (!s_rtab)
@@ -271,7 +271,10 @@ static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int
   rtp_point(proj, vx, vy, vz, sxy, sz3, 1);
 }
 
-static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
+int psx_vcache_polys;
+
+void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
+  GrVertex *const vertex = (GrVertex *)vertex_;
   const Entry *e[4];
   uint32_t ref[4], persp = VREF_PERSP;
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
@@ -339,7 +342,7 @@ static void poly_hook(GrVertex *vertex, short *const *xy, int n) {
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
   if (s_base && vertex >= s_base && vertex - s_base <= MAX_VERTEX_BUFFER_SIZE - 6) {
-    /* PsyX splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
+    /* the walk splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
     static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
     const int *order = n == 4 ? k_quad : k_tri;
     VCacheVert c[4], *side = g_vcache_side + (vertex - s_base);
@@ -410,7 +413,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
 void psx_vcache_enable(int mode) {
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
   g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
-  g_psyxPolyHook = mode ? poly_hook : NULL;
+  psx_vcache_polys = mode != 0;
   s_ot_done = mode != 0;
 }
 

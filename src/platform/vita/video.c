@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "gpu/PsyX_GPU.h" /* currentDispEnv, g_GPUDisabledState */
+#include "psx_gpu.h" /* currentDispEnv, g_GPUDisabledState */
 #include "../../game/present.h"
 
 uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */

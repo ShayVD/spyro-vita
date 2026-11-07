@@ -33,6 +33,14 @@ typedef struct {
  * 2: projections are recorded and looked up too. */
 void psx_vcache_enable(int mode);
 
+/* The walk's (gpu_walk.c, native_draw.c), when psx_vcache_polys (mode 1 or
+ * 2): a polygon's vertices (a GrVertex each, 3 or 4, before a quad is split
+ * into triangles) with the primitive's own screen coordinates. It fills
+ * each vertex's tcx/tcy/_p0/_p1 and nothing else (PsyCross's poly hook,
+ * patch 0007, before D117). */
+extern int psx_vcache_polys;
+void psx_vcache_poly(void *vertex, short *const *xy, int n);
+
 /* DrawOTag (libgpu.c) as it returns, drawn or skipped: the next frame's
  * projections begin (nothing with mode 0). */
 void psx_vcache_ot_done(void);

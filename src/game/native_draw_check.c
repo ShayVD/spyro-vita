@@ -5,17 +5,18 @@
  * records (native_draw=1), whose results the game goes on with. Then:
  *  - the packets each run appended to the OT, bucket by bucket in the order
  *    the OT link walks them (the world OT's highest bucket first, then the
- *    HUD's), go through PsyCross's own OT walk (PsyX_ParseList, which the
- *    marker hook takes part in) from the same draw state, and the vertices,
- *    the splits and the draw state they leave must be the same bytes;
+ *    HUD's), go through an OT walk from the same draw state, and the
+ *    vertices, the splits and the draw state they leave must be the same
+ *    bytes: the primitives through PsyCross's own walk (the reference
+ *    library's, walk_check.h, D117), the records through ours (gpu_walk.c);
  *  - the arena outside the primitives written and the two OTs, the
  *    scratchpad buffer and every GTE register must be the same.
- * The walk is PsyCross's, so this checks the records against what PsyCross
- * makes of the primitives, not against a copy of its rules. A run of the
- * host's scripts checks every call they make. With nd_fast (D92) the
- * primitives are walked a third time as native_draw=2's walk parses them
- * (nd_packet's own parse of each packet), which must give the same bytes
- * too; the reference walk turns it off (g_nd_fast_off). */
+ * The reference walk is PsyCross's, so this checks the records against what
+ * PsyCross makes of the primitives, not against a copy of its rules. A run
+ * of the host's scripts checks every call they make. With nd_fast (D92) the
+ * primitives are walked a third time, by our walk as native_draw=2 parses
+ * them (nd_packet's own parse of each packet), which must give the same
+ * bytes too. Needs the reference build (SPYRO_PSYCROSS_REF). */
 #include "native_draw.h"
 #include "render_hand.h"
 
@@ -24,8 +25,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "PsyX/PsyX_render.h"
 #include "psx_arena.h"
+#include "psx_gpu.h"
+#include "walk_check.h"
 
 extern DRAWENV activeDrawEnv;
 extern char g_WorldOT[], g_HudOT[]; /* the OTs' addresses (order_table.c) */
@@ -90,8 +92,8 @@ static u32 *link_of(u32 packet) {
   return (u32 *)MEM_OT_NEXT(AT32_ND(MIPS_KUSEG(packet)));
 }
 
-/* The packets this call appended, in the OT walk's order, copied (with
- * links rewritten for PsyX_ParseList) into buf. Returns the count. */
+/* The packets this call appended, in the OT walk's order, copied into buf
+ * (walked in that order by seq_next). Returns the count. */
 typedef struct {
   u32 *words;
   u32 n, cap;
@@ -144,7 +146,7 @@ static int collect(Seq *q) {
   return q->count;
 }
 
-/* PsyX_ParseList over a sequence: each packet's link is the next one */
+/* a walk over a sequence: each packet's link is the next one */
 static Seq *s_walking;
 static int s_walk_i;
 static uintptr_t seq_next(uintptr_t packet) {
@@ -161,30 +163,51 @@ typedef struct {
 } Walked;
 static Walked s_walked[3];
 
-static void walk_seq(Seq *q, Walked *w, const DRAWENV *env0) {
-  int *fill, i;
-  GrVertex *vb = PsyX_VertexBuffer(&fill);
-  uintptr_t (*saved)(uintptr_t) = g_psyxNextPacket;
+/* the sequence through PsyCross's walk (ref) or ours, from env0 and empty
+ * splits */
+static void walk_seq(Seq *q, Walked *w, const DRAWENV *env0, int ref) {
+  int *fill, ref_fill, i;
+  const GrVertex *vb;
+  const DRAWENV *env;
   activeDrawEnv = *env0;
+  if (ref)
+    walk_ref_sync();
   w->nv = 0;
   w->nsplit = 0;
   if (q->count) {
     q->words[q->at[q->count - 1] - q->words] |= 0xFFFFFFu; /* the end */
     s_walking = q;
     s_walk_i = 0;
-    g_psyxNextPacket = seq_next;
-    PsyX_ParseList((u_long *)q->at[0]);
-    g_psyxNextPacket = saved;
+    if (ref)
+      walk_ref_parse((u_long *)q->at[0], 0, seq_next);
+    else
+      psx_gpu_walk((u_long *)q->at[0], 0, seq_next);
   }
-  w->nv = *fill;
+  if (ref) {
+    vb = walk_ref_vertices(&ref_fill);
+    w->nv = ref_fill;
+    w->nsplit = walk_ref_split_count();
+    env = walk_ref_env();
+  } else {
+    vb = psx_gpu_vertex_buffer(&fill);
+    w->nv = *fill;
+    w->nsplit = psx_gpu_split_count();
+    env = &activeDrawEnv;
+  }
   memcpy(w->v, vb, (size_t)w->nv * sizeof *vb);
-  w->nsplit = PsyX_SplitCount();
-  for (i = 1; i <= w->nsplit && i <= 512; i++)
-    PsyX_SplitGet(i, w->split[i - 1]);
-  w->tpage = activeDrawEnv.tpage;
-  w->dtd = activeDrawEnv.dtd;
-  w->dfe = activeDrawEnv.dfe;
-  PsyX_ClearSplits();
+  for (i = 1; i <= w->nsplit && i <= 512; i++) {
+    if (ref)
+      walk_ref_split_get(i, w->split[i - 1]);
+    else
+      psx_gpu_split_get(i, w->split[i - 1]);
+  }
+  w->tpage = env->tpage;
+  w->dtd = env->dtd;
+  w->dfe = env->dfe;
+  if (ref)
+    walk_ref_clear();
+  else
+    psx_gpu_clear_splits();
 }
 
 static int walked_differ(const Walked *a, const Walked *b) {
@@ -323,16 +346,14 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
     }
   }
 
-  (void)PsyX_VertexBuffer(&fill);
-  if (!bad && collect(&s_seq[1]) >= 0 && *fill == 0 && PsyX_SplitCount() == 0) {
+  (void)psx_gpu_vertex_buffer(&fill);
+  if (!bad && collect(&s_seq[1]) >= 0 && *fill == 0 && psx_gpu_split_count() == 0) {
     env0 = activeDrawEnv;
-    g_nd_fast_off = 1; /* the primitives as PsyCross parses them (D92) */
-    walk_seq(&s_seq[0], &s_walked[0], &env0);
-    g_nd_fast_off = 0;
-    walk_seq(&s_seq[1], &s_walked[1], &env0);
+    walk_seq(&s_seq[0], &s_walked[0], &env0, 1); /* the primitives as PsyCross parses them */
+    walk_seq(&s_seq[1], &s_walked[1], &env0, 0); /* the records, our walk */
     /* and as native_draw=2's walk parses them (D92), when nd_fast is on */
     if (g_nd_fast)
-      walk_seq(&s_seq[0], &s_walked[2], &env0);
+      walk_seq(&s_seq[0], &s_walked[2], &env0, 0);
     activeDrawEnv = env0;
     s_stats[k].packets_ps1 += (unsigned)s_seq[0].count;
     s_stats[k].packets_nd += (unsigned)s_seq[1].count;
@@ -369,15 +390,14 @@ void nd_check_report(void) {
 
 /* native_draw 1 and 2's parse of PS1 packets (D92; host
  * --native-draw-parse-check): each packet nd_packet takes is parsed by
- * PsyCross first, from the same state (a copy of the packet alone, the
- * hook off), and then by fast (nd_packet's own), whose result the walk goes
- * on with. The vertices and splits each adds and the draw environment each
- * leaves must be the same bytes. */
+ * PsyCross first (the reference walk, given our state: a copy of the
+ * packet alone), and then by fast (nd_packet's own), whose result the walk
+ * goes on with. The vertices and splits each adds and the draw environment
+ * each leaves must be the same bytes. */
 int g_nd_pcheck;
 static struct {
   unsigned long long packets, bad, tris;
 } s_pc;
-static unsigned char s_pc_state[256];
 static GrVertex s_pc_v[2][64 * 6];
 
 typedef struct {
@@ -386,49 +406,55 @@ typedef struct {
 } PcOut;
 static PcOut s_pc_out[2];
 
-static void pc_take(PcOut *o, GrVertex *dst, int fill0, int split0) {
-  int *fill, i;
-  GrVertex *vb = PsyX_VertexBuffer(&fill);
-  o->nv = *fill - fill0;
+/* what a parse added: the reference walk's (ref) or ours */
+static void pc_take(PcOut *o, GrVertex *dst, int fill0, int split0, int ref) {
+  int *fill, ref_fill, i;
+  const GrVertex *vb;
+  if (ref) {
+    vb = walk_ref_vertices(&ref_fill);
+    o->nv = ref_fill - fill0;
+    o->nsplit = walk_ref_split_count() - split0;
+  } else {
+    vb = psx_gpu_vertex_buffer(&fill);
+    o->nv = *fill - fill0;
+    o->nsplit = psx_gpu_split_count() - split0;
+  }
   if (o->nv > 64 * 6)
     o->nv = 64 * 6;
   memcpy(dst, vb + fill0, (size_t)o->nv * sizeof *vb);
-  o->nsplit = PsyX_SplitCount() - split0;
   if (o->nsplit > 63)
     o->nsplit = 63;
-  for (i = 0; i <= o->nsplit; i++)
-    PsyX_SplitGet(split0 + i, o->split[i]);
-  /* the last split's count: the walk sets it after each packet (the first
-   * run's PsyX_ParseList did); the vertices' count stands for it */
+  for (i = 0; i <= o->nsplit; i++) {
+    if (ref)
+      walk_ref_split_get(split0 + i, o->split[i]);
+    else
+      psx_gpu_split_get(split0 + i, o->split[i]);
+  }
+  /* the last split's count: the walk sets it after each packet (the
+   * reference's list walk did); the vertices' count stands for it */
   o->split[o->nsplit][5] = 0;
-  o->env = activeDrawEnv;
+  o->env = ref ? *walk_ref_env() : activeDrawEnv;
 }
 
 int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m)) {
   static u32 one[1 + 256];
   const u32 len = m[0] >> 24;
   int *fill, fill0, split0, r, bad = 0, ns;
-  int (*hook)(uintptr_t) = g_psyxPacketHook;
-  DRAWENV env0 = activeDrawEnv;
-  (void)PsyX_VertexBuffer(&fill);
-  if (PsyX_SplitStateSize() > (int)sizeof s_pc_state || len > 256)
+  (void)psx_gpu_vertex_buffer(&fill);
+  if (len > 256)
     return fast(m);
   fill0 = *fill;
-  split0 = PsyX_SplitCount();
-  PsyX_SplitStateSave(s_pc_state);
-  /* PsyCross's own: the packet alone, as the end of a list */
+  split0 = psx_gpu_split_count();
+  /* PsyCross's own: the packet alone, as the end of a list, from our state */
   one[0] = len << 24 | 0xFFFFFFu;
   memcpy(one + 1, m + 1, len * 4);
-  g_psyxPacketHook = NULL;
-  PsyX_ParseList((u_long *)one);
-  g_psyxPacketHook = hook;
-  pc_take(&s_pc_out[0], s_pc_v[0], fill0, split0);
-  PsyX_SplitStateRestore(s_pc_state);
-  activeDrawEnv = env0;
+  walk_ref_sync();
+  walk_ref_parse((u_long *)one, 0, NULL);
+  pc_take(&s_pc_out[0], s_pc_v[0], fill0, split0, 1);
   r = fast(m);
   if (!r)
-    return 0; /* not taken: PsyCross parses it, as above */
-  pc_take(&s_pc_out[1], s_pc_v[1], fill0, split0);
+    return 0; /* not taken: our walk parses it */
+  pc_take(&s_pc_out[1], s_pc_v[1], fill0, split0, 0);
   s_pc.packets++;
   s_pc.tris += (unsigned)(s_pc_out[1].nv / 3);
   ns = s_pc_out[0].nsplit;
