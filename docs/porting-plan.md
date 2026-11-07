@@ -1,6 +1,6 @@
 # Porting plan: Spyro the Dragon (SCUS-94228) → PS Vita
 
-Written 2026-10-29, at the end of M0. Paths without a prefix are relative to `third_party/spyro-1` (decomp commit `d2ac00b`). `PsyCross/...` means `third_party/PsyCross` (commit `e56e4cd`). Counts come from scripts run over the `.s` files (instruction = a line with the splat `/* off addr word */` prefix), not from file sizes.
+Written 2026-10-29, at the end of M0. **Since stage 8 (2026-11-07, D113–D118) PsyCross is no longer linked into the native or Vita build:** every PsyQ entry point the game calls is ours (`src/platform/common/` libcd, libspu, libmcrd, libetc, libpad and libgpu; `src/game/libgte.c` and the GTE register file), and so is the OT walk (`gpu_walk.c`). What stays of PsyCross is its `include/psx` headers, behind `patches/PsyCross`, and its GTE and walk as the checks' reference library (`psycross_ref`). §3's and §5's "PsyCross" plans are M0's and are kept as written. Paths without a prefix are relative to `third_party/spyro-1` (decomp commit `d2ac00b`). `PsyCross/...` means `third_party/PsyCross` (commit `e56e4cd`). Counts come from scripts run over the `.s` files (instruction = a line with the splat `/* off addr word */` prefix), not from file sizes.
 
 ---
 
@@ -118,6 +118,8 @@ Renderers also **store data in GTE control registers** (e.g. the camera position
 
 ## 3. PsyQ surface vs PsyCross
 
+*Since D118 none of this table's PsyCross bodies is linked: each library is ours (§0's note above, `docs/native-plan.md` stage 8).*
+
 The game calls exactly **76 PsyQ entry points** (every named `glabel` in `asm/psyq.s` that something outside psyq references), plus the CRT start-up `func_8005B8E0` (zeroes BSS, sets up the heap and `$sp` from `_ramsize`, calls `main`). The C has no GTE macros or inline asm. All GTE use is in the `.s` files (§2.3), which the translator maps to the GTE model.
 
 "Covered" means PsyCross has a body that does what Spyro needs. "Partial" means a body exists but is stubbed or wrong for Spyro's usage. Evidence: `PsyCross/src/psx/*.C`.
@@ -213,7 +215,7 @@ The game calls exactly **76 PsyQ entry points** (every named `glabel` in `asm/ps
   - Game over: MoveImage freeze, then `isbg=0` (`draw.c:1671-1677`).
   - Boot logos: 24-bit display (`initialization.c:273-387`).
 
-**PsyCross plus vitaGL:**
+**PsyCross plus vitaGL** (M0's plan; the walk is ours since D117, and PsyCross's renderer, `PsyX_render.cpp`, was never compiled: `src/platform/vita/gpu_gl.c` draws with vitaGL):
 
 | Need | Status | Work |
 |---|---|---|

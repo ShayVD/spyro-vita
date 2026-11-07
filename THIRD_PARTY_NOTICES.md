@@ -96,6 +96,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+Since stage 8 (D118) the Vita build links no PsyCross archive. PsyCross stays in this list
+because the game compiles against its headers (`include/psx`, with our patches) and because of
+the port's files derived from its code (below). Its GTE and OT walk are also built as a reference
+library for the host's checks, which the VPK doesn't contain; `half_float.cpp` is no longer
+compiled.
 PsyCross's `src/gte/half_float.cpp` follows a public-domain gist by Fabian Giesen (rygorous).
 `patches/PsyCross/` holds this port's changes to PsyCross, under the MIT licence like PsyCross.
 Some of the port's own files are derived from PsyCross and keep its notice above: its GTE
