@@ -436,13 +436,14 @@ static void pc_take(PcOut *o, GrVertex *dst, int fill0, int split0, int ref) {
   o->env = ref ? *walk_ref_env() : activeDrawEnv;
 }
 
-int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m)) {
+/* the game thread's walk only: the reference syncs from it (walk_ref_sync) */
+int nd_pcheck_packet(PsxGpuWalk *w, const u32 *m, int (*fast)(PsxGpuWalk *w, const u32 *m)) {
   static u32 one[1 + 256];
   const u32 len = m[0] >> 24;
   int *fill, fill0, split0, r, bad = 0, ns;
   (void)psx_gpu_vertex_buffer(&fill);
   if (len > 256)
-    return fast(m);
+    return fast(w, m);
   fill0 = *fill;
   split0 = psx_gpu_split_count();
   /* PsyCross's own: the packet alone, as the end of a list, from our state */
@@ -451,7 +452,7 @@ int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m)) {
   walk_ref_sync();
   walk_ref_parse((u_long *)one, 0, NULL);
   pc_take(&s_pc_out[0], s_pc_v[0], fill0, split0, 1);
-  r = fast(m);
+  r = fast(w, m);
   if (!r)
     return 0; /* not taken: our walk parses it */
   pc_take(&s_pc_out[1], s_pc_v[1], fill0, split0, 0);

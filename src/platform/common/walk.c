@@ -164,11 +164,16 @@ int psx_walk_hand_over(u_long *p) {
 
 void psx_walk_run(void) {
   unsigned long long t0 = now();
+  PsxGpuWalk *const w = psx_gpu_game_walk();
   s_in_job = 1;
   psx_vcache_frame_use(&s_job.vc);
-  /* DrawOTag's own walk (libgpu.c) from here on, over the copy */
-  psx_gpu_walk_scene((u_long *)s_job.head, 0, next_packet);
-  psx_gpu_draw_splits();
+  /* DrawOTag's own walk (libgpu.c) from here on, over the copy: the
+   * packets its substitutions name (present.c's narrowed HUD) are found
+   * by their origin (D122) */
+  w->copy = s_copy;
+  psx_gpu_walk_scene_in(w, (u_long *)s_job.head, 0, next_packet);
+  w->copy = 0;
+  psx_gpu_draw_splits_in(w);
   psx_vcache_frame_use(NULL);
   s_in_job = 0;
   t0 = now() - t0;
