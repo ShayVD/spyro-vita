@@ -505,3 +505,44 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - The game thread's waits for the render thread with 7c: the vertex slabs only, in 7C4 only: 354 ms in the Toasty window with a load (vblank 13,200), 9 ms or less in five others; never the ring.
 - The render thread is 90% busy or more in some windows of every run (12, 4, 15 and 10): its present waiting for the display, with either switch.
 - 7C4's route died once more than 7C3's and ended in a game over: Toasty's route in real time drifts (X7, Y7, Y8 and Y12 ended the same way), so its windows split differently between levels.
+
+## Runs 7P1 and 7P2: 7c's pictures on hardware (D119; ran 2026-11-07)
+
+7C1–7C4 took no shots, so with `present_due=1` (the Vita's default since D112) the pictures have only been compared in Vita3K's `realtime=0`, where 7c is off. This pair takes them on the device, at 60 fps in real time, where 7c is on.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7P1 | `s7p1-k60-shots-due0.txt` | X7's at 60 fps, `present_due=0` | the K route (`k-route.pad`) with `p-shots-k.cfg`: nine places, each shot at V and V+1, `shot_hd=1`; `REALTIME=1` | 6–7 min |
+| 7P2 | `s7p2-k60-shots-due1.txt` | 7P1 with the shipped `present_due=1` | as 7P1 | 6–7 min |
+
+**The VPK:** main's CI VPK for both runs; `DEVICE_DEFAULTS=1` keeps `gpu_clear=2` and the other shipped defaults.
+
+**Unattended** (each run needs the owner's yes first; check the kit's lock and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of main's VPK and `K=$PWD/tools/vita/hw-routes/k-route.pad`:
+- 7P1: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7p1 1500 @tools/vita/fps-runs/s7p1-k60-shots-due0.txt @tools/vita/hw-routes/p-shots-k.cfg`
+- 7P2: the same with `s7p2-k60-shots-due1.txt` into `logs/hw-7p2`
+
+**What to read:**
+- **The pictures.** Each vblank in the list gives `shot-V.png`, the PS1 display read back from VRAM (the logic's frame), and `shot-V-hd.png`, the GPU's 960×544 picture of the frame due at V. V and V+1 between them catch a real frame and an in-between frame.
+  - Real time drifts, so the two runs' pictures aren't expected to be byte-identical: compare them in pairs, and look at any pair that differs.
+  - What a bug would look like: a missing layer (the sky, the HUD, a moby), a picture from the wrong tick, a HUD from another frame, tearing, or an old frame flashed back.
+- **The timing:** `fps60_summary.py` and the `present N:` lines' `7c:` part, against 7C1 and 7C2 (D112).
+- **Judder** shows only on the screen: the owner watching 7P2 is the check for it.
+- **The exit:** with `present_due=1` the scripted `frames=` exit may leave a crash dump (D118, main's too), unless the fix from the session that stops the render thread first has merged.
+
+**Ran** on 2026-11-07 (D119, approved by the owner in the session's chat; main's CI VPK `a47a30b`, SHA-1 `6405579f…`, its eboot `ad2d5e56…`; `logs/hw-7p1`, `logs/hw-7p2` of the stage7d-renderers worktree, gitignored). Both reached `frames=` (282 s and 279 s), the owner's files were put back each time, and neither left a crash dump (the newest dumps on the Vita are from 13:21 and 13:28 UTC, before these runs). Main's eboot stayed on the Vita and read back identical.
+- **The pictures:** 36 per run, with `save/` identical.
+  - **The PS1 display** (`shot-V.png`, the logic's frame): 16 of 18 identical. The two that differ are 6000 and 6001, the Stone Hill attract demo's flight, which is at another point of its path in each run (real time). Both pictures are whole.
+  - **The HD pictures** (`shot-V-hd.png`): 8 of 18 identical (3000, 10800, 12000, 15000 and their V+1). 6000/6001 differ as above. The other 8 differ where the PS1 display is the same, so the tick is the same and only the presented phase differs. With `present_due=0` the HD shot is the next frame the game thread presents after V; with `=1` it is the frame due at V (`gpu_thread.c`, `vita_gpu_due_vblank`).
+    - 7P1's 9001 is byte-identical to 7P2's 9000, and 7P1's 16501 to 7P2's 16500: `present_due=0` is a vblank behind there.
+    - 13500/13501 and 17900/17901 differ in 0.5–3% of the pixels, all in the box around Spyro and Sparx; the rest of the picture is the same.
+  - The differing pictures were looked at, at every place where they differ: no missing layer (sky, HUD, mobys), no frame from another tick, no HUD from another frame, no tearing, no old frame.
+- **The timing** (`fps60_summary.py`), late vblanks per 300 (worst), with the shots in:
+
+| | title | Stone Hill | Artisans | Dark Hollow | loads (late vblanks in all) | `wfr` in Stone Hill |
+|---|---|---|---|---|---|---|
+| 7P1, `present_due=0` | 6.7 (60) | 11.7 (61) | 10.0 (64) | 16.5 (62) | 65 | 6.96 ms |
+| 7P2, `present_due=1` | 6.7 (60) | 11.3 (61) | 9.8 (62) | 16.1 (61) | 66 | **0** |
+
+  - **The shots cost the late vblanks:** each pair of shots (a VRAM readback, an HD shot the game waits for, and four PNGs written on the game thread) makes 58–64 vblanks late in the window after it. Without the 18 windows that hold a shot, the route from vblank 900 has 64 late vblanks in 41 windows with `present_due=0` and 58 with `=1` (1.56 and 1.41 per 300), as 7C1/7C2's play.
+  - **`7c:` totals (7P2):** 17,282 frames shown at their vblank, 29 late (151 vblanks), 1,048 never shown (the gamestates that tick every vblank, as 7C2), 20 in-between frames' draws skipped and no real frame's, no PS1 display picture dropped, no present held. Outside the shot windows: 5 late (14 vblanks), at vblanks 600, 7200 and two loads (7C2: 8 late, 17 vblanks).
+- **Judder:** the runs were unattended; whether the screen judders is for the owner to say.
