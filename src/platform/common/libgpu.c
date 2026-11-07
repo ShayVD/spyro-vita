@@ -19,37 +19,22 @@
  *    psx_walk_hand_over; its done (0007 g_psyxDrawOTagDone): the vertex
  *    cache's psx_vcache_ot_done (vcache.c).
  *
- * Until step 8d the walk itself, its splits and vertex buffer and the GPU
- * state (activeDrawEnv, activeDispEnv, currentDispEnv, g_GPUDisabledState)
- * stay PsyCross's (PsyX_GPU.cpp). */
+ * The walk itself, its splits and vertex buffer and the GPU state
+ * (activeDrawEnv, activeDispEnv, currentDispEnv, g_GPUDisabledState) are
+ * gpu_walk.c's (stage 8d, D117; PsyCross's PsyX_GPU.cpp before). */
+#include "psx_gpu.h"
 #include "psx_libgpu.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
 
-#include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
-#include "psx/libgte.h" /* libgpu.h needs its SVECTOR */
-#include "psx/libgpu.h"
 #include "psx/libetc.h"
-#include "PsyX/PsyX_render.h"
-#include "PsyX/PsyX_public.h"
-
-/* PsyCross's walk and GPU state (gpu/PsyX_GPU.h) until 8d */
-extern DISPENV activeDispEnv, currentDispEnv;
-extern DRAWENV activeDrawEnv;
-extern int g_GPUDisabledState;
-extern int g_splitIndex;
-void ClearSplits(void);
-void DrawAllSplits(void);
-void ParsePrimitivesLinkedList(u_long *p, int singlePrimitive);
 
 int g_psx_vram_frozen;
 void (*drawsync_callback)(void) = NULL;
-/* PsyX_GPU.cpp's walk reads it (LIBGPU.C's debugger pause; never set) */
-int g_dbg_emulatorPaused;
 
 int ClearImage(RECT16 *rect, u_char r, u_char g, u_char b) {
   psx_walk_join();
@@ -89,8 +74,8 @@ int DrawSync(int mode) {
   psx_walk_join();
   GR_UpdateVRAM();
   GR_ReadFramebufferDataToVRAM();
-  if (g_splitIndex > 0)
-    DrawAllSplits();
+  if (psx_gpu_split_count() > 0)
+    psx_gpu_draw_splits();
   if (drawsync_callback)
     drawsync_callback();
   return 0;
@@ -106,10 +91,10 @@ int ResetGraph(int mode) {
   if (mode == 0) { /* reset the GPU state */
     g_GPUDisabledState = 0;
     ClearImage(&activeDrawEnv.clip, 0, 0, 0);
-    ClearSplits();
+    psx_gpu_clear_splits();
     PsyX_EndScene();
   } else if (mode == 1) { /* cancel all drawing */
-    ClearSplits();
+    psx_gpu_clear_splits();
     PsyX_EndScene();
   }
   return 0;
@@ -188,14 +173,6 @@ void SetDrawMode(DR_MODE *p, int dfe, int dtd, int tpage, RECT16 *tw) {
   setDrawMode(p, dfe, dtd, tpage, tw);
 }
 
-/* The scene begins here unless the walk took the list: PsyX_BeginScene
- * (both vblank.c) and the walk (PsyX_GPU.cpp), as walk.c's psx_walk_run. */
-static void walk_in_place(u_long *p, int single) {
-  if (PsyX_BeginScene())
-    ClearSplits();
-  ParsePrimitivesLinkedList(p, single);
-}
-
 void DrawOTag(u_long *p) {
   psx_walk_join();
   if (port_present_ot_pre(p)) {
@@ -203,12 +180,12 @@ void DrawOTag(u_long *p) {
     return;
   }
   if (g_GPUDisabledState) {
-    ClearSplits();
+    psx_gpu_clear_splits();
     return; /* LIBGPU.C: no post or done call here */
   }
-  if (!psx_walk_hand_over(p)) {
-    walk_in_place(p, 0);
-    DrawAllSplits();
+  if (!psx_walk_hand_over(p)) { /* the scene begins here unless the walk took the list */
+    psx_gpu_walk_scene(p, 0, NULL);
+    psx_gpu_draw_splits();
   }
   port_present_ot_post(p);
   psx_vcache_ot_done();
@@ -218,8 +195,8 @@ void DrawOTag(u_long *p) {
 void DrawPrim(void *p) {
   psx_walk_join();
   if (g_GPUDisabledState) {
-    ClearSplits();
+    psx_gpu_clear_splits();
     return;
   }
-  walk_in_place((u_long *)p, 1);
+  psx_gpu_walk_scene((u_long *)p, 1, NULL);
 }

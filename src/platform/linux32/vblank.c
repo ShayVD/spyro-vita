@@ -14,9 +14,7 @@
 #include <stdlib.h>
 
 #include "psx/libetc.h"
-#include "PsyX/PsyX_render.h"
-#include "PsyX/PsyX_public.h"
-#include "gpu/PsyX_GPU.h"
+#include "psx_gpu.h"
 
 HostOpts g_host_opts = {.shot_dir = "."};
 
@@ -103,8 +101,8 @@ void PsyX_UpdateInput(void) {}
  * PutDrawEnv clears when it is called; LIBGPU's copy of the env is ours to
  * mark as done). Returning 0 stops DrawOTag from dropping pending splits. */
 char PsyX_BeginScene(void) {
-  if (g_splitIndex > 0)
-    DrawAllSplits();
+  if (psx_gpu_split_count() > 0)
+    psx_gpu_draw_splits();
   if (activeDrawEnv.isbg) {
     const RECT16 *c = &activeDrawEnv.clip;
     GR_ClearVRAM(c->x, c->y, c->w, c->h, activeDrawEnv.r0, activeDrawEnv.g0,

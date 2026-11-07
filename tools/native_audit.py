@@ -235,7 +235,8 @@ GAME_FILES = {
            "moby_cull_hand.c", "env_update_hand.c", "sky_clip_hand.c"],
     "C": ["mips2c_rt.c", "mips2c_rt.h"],
     "E": ["gte_inline.h", "gte_ops.c"],
-    "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h"],
+    "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h",
+          "walk_check.c", "walk_check.h"],
 }
 # src/platform/common and src/platform/vita: the rest is F (native).
 PLATFORM_E = {
@@ -243,7 +244,7 @@ PLATFORM_E = {
                "libmcrd.c", "libspu.c", "psx_spu.h", "xa.c", "psx_xa.h", "vcache.c",
                "psx_vcache.h", "walk.c", "psx_walk.h", "psx_hooks.h", "psx_state.h",
                "libetc.c", "clock.c", "psx_clock.h", "libpad.c", "psx_pad.h",
-               "libgpu.c", "psx_libgpu.h"],
+               "libgpu.c", "psx_libgpu.h", "gpu_walk.c", "psx_gpu.h"],
     # gpu_gl.c: the PS1 GPU (primitives, VRAM, texture pages, CLUTs, blend
     # modes) drawn with vitaGL; gpu.c/video.c: the GR_* switch and gpu=0's
     # software picture; vblank.c: the PS1's vblank clock over sceDisplay;
@@ -278,7 +279,9 @@ def source_rows(build):
     ps = sorted(glob.glob(os.path.join(PSYCROSS, "src/psx/*.C")) + glob.glob(os.path.join(PSYCROSS, "src/gte/*.cpp"))
                 + glob.glob(os.path.join(PSYCROSS, "src/gpu/*.cpp")))
     for p in ps:
-        if not re.search(r"/(LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD|LIBGPU)\.C$", p):
+        # ours: LIBCD..LIBGPU (E since D104, D114, D115); PsyX_GPU.cpp, the
+        # walk, is the reference's only since D117 (gpu_walk.c)
+        if not re.search(r"/((LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD|LIBGPU)\.C|PsyX_GPU\.cpp)$", p):
             add("D", p)
     if build:
         gen = os.path.join(build, "gen/mips2c")
