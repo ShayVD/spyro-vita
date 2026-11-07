@@ -549,3 +549,114 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **Hunks the game still needs** (headers): 0001 (the OT macros: `nextPrim`, `getlen`, `isendprim`, which `gpu_walk.c` uses), 0004 (`DRAWENV`'s PsyQ layout), 0006 (`setDrawMode`), and 0007's and 0011's `gtereg.h` declarations of the RTP hooks (`vcache.c`, `gte_ops.c`).
 - **Not done:** 8e (the build without PsyCross) waits for the owner's decision on the headers (D113: A, B or C); nothing here makes it. No hardware run: 8f covers the whole stage, with the owner's yes first for each run. The oracle replay wasn't rerun: the arena build's mips2c units and their GTE are untouched, and the replay compares RAM, not the walk.
 - **Credit:** `gpu_walk.c` is PsyCross's walk ported, and `psx_gpu.h` keeps its `GrVertex` and `GR_*` declarations; both under PsyCross's MIT notice (`THIRD_PARTY_NOTICES.md`).
+
+### D118. Stage 8e: the native and Vita builds compile no PsyCross code. Its `include/psx` headers stay, behind our patches (the owner's choice, A), and its GTE and walk are only the checks' reference library. The dead patch hunks go. Identical output on the host, in Vita3K, against the emulator and on hardware (8f); stage 8 is done
+- **Why:** step 8e of the stage 8 plan (`docs/native-plan.md` §5, D113). After 8a–8d (D114–D117), the `psycross` library compiled four files the link never pulled in (`LIBAPI.C`, `LIBSN.C`, `ABS.C` and `half_float.cpp`). Our patches still carried hunks for files no build compiled any more, and for hooks nothing set.
+- **The headers, the owner's decision** (2026-11-06, in the coordinator's chat, answering "Which option?": "Keep them (Recommended)"): **option A of D113**.
+  - PsyCross's `include/psx` headers stay as they are, behind `patches/PsyCross`.
+  - The licence stays exactly as it is: MIT, credited in `THIRD_PARTY_NOTICES.md` and in the VPK's `licenses/`.
+  - Options B (copy them into `src/` with the notice) and C (write our own) aren't taken.
+- **What** (main `e640170` as the base, D117 merged):
+  - **`cmake/psycross.cmake` builds no `psycross` library.**
+    - `psycross_headers` (an `INTERFACE` target: `include`, `include/psx`, `USE_EXTENDED_PRIM_POINTERS=0`, `USE_PGXP=0`) takes its place at every link: `game.cmake`, `mips2c.cmake`, `platform_common.cmake`, the linux32 and Vita platforms, and the `cd`, `menu_panel`, `platform` and `m2c_diff` tests.
+    - The `SPYRO_PSYCROSS_PLATFORM` option (PsyCross's own SDL2/GL platform layer, never used by the port) goes.
+    - The private `${PSYCROSS_DIR}/src` includes of the linux32 and Vita platforms and of `tests/platform` go: no file of ours includes a PsyCross header outside `include/psx` (D117).
+    - The Vita's `RENDERER_OGL` and `-O` now apply to `psycross_ref` alone, built only in the moved arena's configuration.
+  - **`psycross_ref`** (`SPYRO_PSYCROSS_REF`, D116, D117) is unchanged: PsyCross's GTE (`LIBGTE.C`, `INLINE_C.C`, `PsyX_GTE.cpp`) and walk (`PsyX_GPU.cpp`), renamed. It builds for the tests and for the arena build's mips2c units and walk checks.
+  - **The dead patch hunks go,** with D115's and D117's lists:
+    - the `LIBETC.C` hunks of 0002, 0005 and 0009 (D104);
+    - the `LIBGPU.C` hunks of 0005, 0007, 0008 and 0009 (D115);
+    - the `libgpu.h` declarations only `LIBGPU.C` used: `g_psyxDrawOTagPre`, `g_psyxDrawOTagPost`, `g_psyxDrawOTagDone`, `g_psyxVramFrozen`, `g_psyxGpuGate`, `g_psyxDrawOTagWalk` and `g_psyxVramFrozenGet`;
+    - **0008 whole** (nothing was left in it);
+    - **0010 and 0014 whole** (the reference's packet and clear-splits hooks are never set, and `PsyX_AddSplit`, `PsyX_VertexBuffer`, `PsyX_SplitCount`, `PsyX_SplitGet`, `PsyX_ClearSplits` and `PsyX_ParseList` have no caller; D117).
+  - **How the patches were changed:**
+    - Each changed patch was regenerated from the series applied in a scratch copy, with the dead changes taken out.
+    - 0012's `PsyX_render.h` hunk had 0010's declarations as its context, so it moved onto the header without them. 0005's `libetc.h` hunk stays: `g_psyxVSyncHook` is our `libetc.c`'s.
+    - The new series (0001–0007, 0009, 0011–0013, 0015) applies with no fuzz and no offset.
+    - The patched tree differs from main's only in `LIBETC.C` and `LIBGPU.C` (no build compiles either), in `libgpu.h` (the seven declarations above), and in 0010's and 0014's additions to `PsyX_render.h` and `PsyX_GPU.cpp`.
+    - What stays patches the headers (0001, 0004, 0006, 0013, 0005's `libetc.h`, the RTP hooks in 0007's and 0011's `gtereg.h`) and the reference (0002's `platform.h`, 0003, 0007, 0009, 0011 and 0012's other hunks, 0015).
+  - **`tools/native_audit.py` counts D as 0.**
+    - The game's libgte is E (`src/game/libgte.c` and `gte_regs.c` are now listed as E; 8c had left them as G).
+    - libc and the start-up code are the C library's (X).
+    - libapi (`LoadExec`, `_96_init`, `_96_remove`, 34 instructions) is a new category, N ("not run by the port"): only the decomp's `crash_demo.c` calls it, and it isn't linked.
+    - PsyCross's four reference files are T (host and test only).
+    - Table 1a is now: A 35.6%, B1 27.9%, B2 18.4%, E 16.7%, X 1.4%, N 0.0%.
+  - **`tools/check_no_psycross.sh BUILD vita|linux32`** (new) makes the two link checks repeatable:
+    - the game's link map (from `tools/native_audit_map.sh`) loads no `libpsycross*.a` and names no `CMakeFiles/psycross*` object;
+    - `nm` of the binary defines none of the reference library's own strong symbols: neither its `psyx_*` renames, nor the names it keeps (`GTE_operator`, `LIM`, its C++ helpers) unless our objects define them too.
+  - **Docs:** `CLAUDE.md`'s Rendering line (our walk, PsyCross's headers only), `docs/porting-plan.md` (a note that §3's and §5's PsyCross plans are M0's), `README.md` (our code stands in for the PlayStation libraries), and `THIRD_PARTY_NOTICES.md`.
+    - The notices file gains a note: no PsyCross archive is linked, and the row stays for the headers and the derived files. Its licence text and credit are unchanged.
+    - The VPK's copies of `README.md` and `THIRD_PARTY_NOTICES.md` change with them.
+- **What it changes in the binaries:**
+  - **The Vita ELF's code is main's byte for byte** (`arm-vita-eabi-size` and `objcopy -j`; `logs/s8e/vita-size.txt`).
+    - The sizes are the same: `.text` 3,571,324 with `.data` 81,990 and `.bss` 24,357,836.
+    - `.data` is identical. `.rodata` differs in 7 bytes: two `__TIME__` build stamps.
+    - `.text` differs in 262 bytes, all past `etext`: linker-generated data after the last function, not code.
+    - Main's link map still loaded `libpsycross.a` (`LOAD`) and took no member from it; the branch's names no PsyCross library.
+  - **The native linux32 binary links as C instead of C++,** with no C++ library left in it.
+    - So it takes libgcc's 64-bit division helpers (`_divdi3`, `_moddi3`, `_udivdi3`: 960 bytes of `.text`) statically from `libgcc.a`, where g++'s link had them from `libgcc_s`.
+    - Every object of ours has the same size in both link maps (`logs/s8e/mapsizes.py`, `logs/s8e/binary-cmp.txt`).
+  - **The arena binary's `.text` is 432 bytes smaller:** the reference walk without 0010's and 0014's code.
+- **Checked** (main `e640170`: `build/base-src`, a clean export; the branch: `build/linux32`, `build/linux32-native`, `build/vita`; logs under `logs/s8e*`, gitignored):
+  - **The link checks** (`tools/check_no_psycross.sh`; `logs/s8e/check-native.txt`, `logs/s8e/vita-build.log`):
+    - **The Vita ELF's link map has no `libpsycross.a` member, and loads no PsyCross library at all.**
+    - **`nm` of the native linux32 build defines none of the 141 symbols only the reference library defines,** and its map loads no PsyCross library either.
+    - The checks are shown to catch PsyCross code:
+      - On main's native build (before the merge with 8d), the map check named `libpsycross.a(PsyX_GPU.cpp.o)`.
+      - On the arena build, which links the reference on purpose, both checks fail: the map names `libpsycross_ref.a`, and `nm` finds 72 of its symbols (`GTE_operator` among them; `logs/s8e/check-arena-expected-fail.txt`).
+  - **`tools/host_checks.sh`, on the native and on the arena build: 279/279 files byte-identical on each** (the demos 26, the whole tour 141, routes A and B 56 each). Each run's `spyro.log` and `stdout.txt` are identical with the prefix swapped (`logs/s8e-hc-main-*` against `logs/s8e-hc-br-*`, `logs/s8e/hc-compare.txt`).
+  - **Both attract demos match the emulator tick for tick,** all 11 columns, on all four builds (main's and the branch's, native and arena): Stone Hill 866 ticks, Doctor Shemp (level 24) 833 (`trace_diff.py --key tick` against a fresh capture, `logs/s8e/trace-diff-demos.txt`).
+    - D116's 768 for Doctor Shemp was against the older `cap3`, which is no longer on this machine.
+  - **The oracle replay.** `logs/caps` and PCSX-Redux were gone with the worktrees that held them.
+    - With the owner's yes, the pinned emulator was fetched (`tools/oracle/fetch_redux.sh`, `a5d621af`, SHA-1 checked, into the gitignored `.tools/`).
+    - The attract demos were captured again (`logs/s8e-cap`: vblanks 1,100–14,500, 4 samples a function every 150 vblanks; 95 samples).
+    - Replayed on the `-DSPYRO_M2C_REF=ON` arena build: **75 PASS, 0 FAIL, 20 NOEXIT on the branch, and the same on main** (five computed-jump `D_` labels the capture ended inside, 4 each; `logs/s8e-rp-br`, `logs/s8e-rp-main`): the two summaries and the replays' whole output are identical.
+  - **ctest: 25/25 on the arena build** (CI's configuration; `logs/s8e/ctest-arena.txt`), with `tests/gte` and `tests/walk` against the reference library.
+    - **On the native build, 21 of 22:** `platform_linux32` segfaults before its first frame (`logs/s8e/ctest-native.txt`). Main's native build fails it the same way, so it isn't 8e's.
+    - CI runs ctest only on the arena build, so nothing ran that test natively before. It is a follow-up.
+  - **Vita3K against main's VPK** (D105's six runs, as D117's; `logs/s8e-main.vpk`, SHA-1 `dc2933bf…`, against `logs/s8e-br.vpk`, `a8c8dd37…`; `CAPTURE=1`, `realtime=0`; `logs/s8e-v3k-*`, `logs/s8e/v3k.sh`, `logs/s8e/v3k-cmp.txt`). Every run reached its last vblank on the first try, both VPKs.
+
+    | Run | Shots | Captures | Card |
+    |---|---|---|---|
+    | gems script (8,768 vblanks, every 500) | 17/17 | 17/17 below the window's first row (8 whole) | identical |
+    | gems, every layer on the game thread (`render_thread=0 parse_thread=0`) | 17/17 | 17/17 | identical |
+    | gems with `tex_filter=1` | 17/17 | 17/17 | identical |
+    | attract demos, 16:9 (12,000, every 1,000) | 12/12 | 11/11 | identical |
+    | gems, 16:9 at 60 fps forced (`interp=1 interp_budget=0 gpu_time=2`, to 6,600) | 13/13 | 13/13 | identical |
+    | the pause route, 16:9 at 60 fps forced: a state saved at 7,000 and loaded at 7,200, then the pause menu and the inventory (to 9,100, every 120) | 75/75 | — | identical |
+
+    - **The gems run's window captures from 4,500 on** differ only in pixel row 1 of the 1,920×1,088 grab, the window's top edge (`logs/s8e/pngrows.py`, `logs/s8e/v3k-gems-win-rows.txt`). The rest of each picture is identical, and so are all 17 shots. That row varies between grabs of the same build (8a's notes). Another session's Vita3K runs were taking turns with these under the runner's lock.
+    - **The pause route's save state:** all 12 chunks identical, and the layout words too (`tools/state_cmp.py`, `logs/s8e/state_cmp-v3k.txt`). Only the header's build string differs: the two builds' times. The memory card (`card0`) is identical.
+  - **`tools/check_no_assets.sh`** passes. **`tools/build_matching.sh`** is green: `PSX.EXE SHA-1 OK` and every overlay OK (`logs/s8e/matching.log`). No decomp file changes.
+- **Hardware: 8H1–8H4, step 8f** (2026-11-07). Approved by the owner in this session's chat ("Yes, run 8H1–8H4").
+  - **Set-up:** the owner's Vita at 192.168.1.4, vitacompanion 1.05, `tools/vita/hw_run.sh` (`logs/s8e/hw.sh`). The kit's lock was free and no kh1-decomp run was in progress when they started. Logs are `logs/hw-8h1`…`8h4`, gitignored.
+  - **The VPKs:** main's (`logs/s8e-main.vpk`, `e640170`) against the branch's (`logs/s8e-br.vpk`), on one route each:
+    - Y10's settings on the K route (every layer on the game thread, virtual vblanks, the shipped `gpu_clear=2` and `nd_direct=1`; `y10-k1-clear-on.txt`);
+    - Y12's on the Toasty route (the shipped defaults at 60 fps, real-time vblanks; `y12-toasty60-clear-on.txt`).
+  - All four runs reached `frames=`, and the owner's files were put back each time.
+  - **Afterwards** main's CI eboot went back on the Vita (`e640170`, CI run 42355157951, `80d09c2e…`) and read back identical (`logs/s8e/restore.txt`).
+  - **The restore broke the rule.** It ran while a kh1-vita hardware run held the kit's lock: PID 44152, `p13-a0`, started after 8H4 had ended. The FTP put and get went ahead without waiting for the lock. They touched only `ux0:app/SPYV00001/eboot.bin`, but put about 5 MB of FTP traffic in that run's time.
+  - **The K route (8H1, 8H2): all 18 pictures (9 readback shots, 9 HD shots from the GPU) and the memory card identical.** Every layer per vblank is the same within 0.01 ms (`native_share.py --fps 30 --all`, 51 windows; `logs/s8e/8h12-share.txt`):
+
+    | Run | logic | renderers | draw/other | OT walk | render thread | SPU + mixer | XA/CD | present | sum |
+    |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+    | 8H1 (main) | 0.13 | 2.72 | 0.20 | 1.76 | 1.03 | 0.23 | 0.43 | 0.29 | 6.79 |
+    | 8H2 (stage 8) | 0.13 | 2.72 | 0.19 | 1.76 | 1.03 | 0.23 | 0.43 | 0.28 | 6.77 |
+
+  - **Toasty at 60 fps (8H3, 8H4):** the same late vblanks where the route is the same (`fps60_summary.py`, `logs/s8e/8h34-fps60.txt`):
+    - Stone Hill: 0 and 0 per 300; the render thread 6.94 and 7.04 ms a picture.
+    - Toasty: 0.4 and 0.4.
+    - Artisans: 3.5 against 4.3. The windows around the route's game over differ, worst 55 against 68; Toasty's real-time route drifts, as in X7, Y7, Y8, Y11 and Y12.
+    - The loads: 132 against 120.
+    - In all, about 203 late vblanks against 205. The two ELFs' code is byte-identical (above), so the spread is the runs' own.
+    - The GPU per picture is 4.34 and 4.38 ms in the last window.
+  - **A crash dump at exit, in both 8H3 (main) and 8H4 (stage 8).** Both runs logged `frames=21000 reached, exiting`; the dump came after it.
+    - Both dumps say the same (read with `logs/s8e/dumpthreads.py` and `dumpstack.py`, vita-parse-core's thread layout; each against its own ELF, the eboot's load offset taken from the render thread's entry; `logs/s8e/8h3-render-frames.txt`, `8h4-render-frames.txt`):
+      - `spyro_render` took a data abort in a system library (PC `0xe0077854`);
+      - its stack is `rt_main` → `rt_due` (7c's present at the due vblank, `gpu_thread.c:248`) → `batch_issue` → `gl_report` → `swap` → `vglSwapBuffers` → `__wrap_sceGxmEndScene`;
+      - meanwhile the game thread was in `sceKernelExitProcess`.
+    - **The cause:** `vblank.c`'s `frames=` exit doesn't stop the render thread, which since D112 (`present_due=1`, real-time vblanks only) presents on its own.
+    - Earlier hardware pairs had no dump: Y11 and Y12 had `present_due=0`; 7C2 and 7C4 had `present_due=1`, but their routes may not have ended mid-present.
+    - **Main does the same, so it isn't stage 8's.** Players never take this exit (`frames=0`; the PS button's close is the system's), but every scripted 60 fps run will now leave a dump. A follow-up.
+  - **Stage 8's pass criteria hold:** the same 18 pictures and card; no layer slower on the K route; late vblanks at 60 fps no worse. **Stage 8 is done.**
+- **Credit:** unchanged. PsyCross's headers are compiled as they are, under its MIT notice. The port's files derived from its code (D72, D115–D117) keep that notice.

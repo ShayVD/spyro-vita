@@ -2,7 +2,7 @@
 # The CD cases need the extracted disc; they skip (exit 77) when it is missing.
 # The image cases (D60) need the user's dump in disc/image as well.
 add_executable(test_cd test_cd.c)
-target_link_libraries(test_cd PRIVATE spyro_platform_common psycross)
+target_link_libraries(test_cd PRIVATE spyro_platform_common)
 target_compile_options(test_cd PRIVATE -m32 -O1 -g ${SPYRO_GUARD_FLAGS})
 target_link_options(test_cd PRIVATE -m32 -no-pie)
 add_test(NAME cd COMMAND test_cd "${CMAKE_SOURCE_DIR}/disc/files" "${CMAKE_SOURCE_DIR}/disc/image"

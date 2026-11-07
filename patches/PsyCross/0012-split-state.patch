@@ -1,10 +1,10 @@
 diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
 --- a/include/PsyX/PsyX_render.h
 +++ b/include/PsyX/PsyX_render.h
-@@ -236,6 +236,12 @@
- extern void PsyX_SplitGet(int i, int out[8]);
- extern void PsyX_ClearSplits(void);
- extern void PsyX_ParseList(u_long* p);
+@@ -218,6 +218,12 @@ extern void			GR_UpdateVertexBuffer(const GrVertex* vertices, int count);
+  * (otherwise unused in this build) and nothing else. */
+ extern void (*g_psyxPolyHook)(GrVertex* vertex, short* const* xy, int n);
+ extern void			GR_DrawTriangles(int start_vertex, int triangles);
 +/* Spyro port (D92): the walk's split and vertex fill, kept and put back
 + * (the host's parse check runs a packet twice from the same state).
 + * PsyX_SplitStateSize: the bytes PsyX_SplitStateSave writes. */
@@ -17,9 +17,9 @@ diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
 diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
 --- a/src/gpu/PsyX_GPU.cpp
 +++ b/src/gpu/PsyX_GPU.cpp
-@@ -858,6 +858,38 @@
- 	ParsePrimitivesLinkedList(p, 0);
- }
+@@ -815,6 +815,38 @@ static int Gp0CommandWords(const u_int* cmd, const u_int* end);
+ 
+ uintptr_t (*g_psyxNextPacket)(uintptr_t packet) = NULL;
  
 +// Spyro port (D92): see PsyX_render.h. The splits after the current one are
 +// only written when a new one starts, so the current one is all to keep.

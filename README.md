@@ -4,10 +4,11 @@ A native PlayStation Vita port of *Spyro the Dragon* (1998, PlayStation, USA rel
 
 This is not an emulator. The game's own code, from the
 [TheMobyCollective/spyro-1](https://github.com/TheMobyCollective/spyro-1) decompilation, is compiled
-for the Vita's ARM CPU. [PsyCross](https://github.com/OpenDriver2/PsyCross) stands in for Sony's
-PlayStation libraries, and the PS1's graphics are drawn by the Vita's GPU (vitaGL). The game logic
-runs at its original ~30 Hz, so it plays exactly as on a PS1, and the picture fills the Vita's
-960×544 screen in 16:9.
+for the Vita's ARM CPU. The port's own code stands in for Sony's PlayStation libraries (written
+against [PsyCross](https://github.com/OpenDriver2/PsyCross)'s headers, parts of it ported from
+PsyCross's code), and the PS1's graphics are drawn by the Vita's GPU (vitaGL). The game logic runs
+at its original ~30 Hz, so it plays exactly as on a PS1, and the picture fills the Vita's 960×544
+screen in 16:9.
 
 **You need your own copy of the game.** The VPK contains no game data at all: no code, levels,
 textures, music or logos from the disc. You dump your own *Spyro the Dragon* (USA) disc and copy

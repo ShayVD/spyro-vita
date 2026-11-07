@@ -1,7 +1,7 @@
 diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
 --- a/include/PsyX/PsyX_render.h
 +++ b/include/PsyX/PsyX_render.h
-@@ -211,6 +211,12 @@
+@@ -211,6 +211,12 @@ extern void			GR_DestroyTexture(TextureID texture);
  extern void			GR_Clear(int x, int y, int w, int h, unsigned char r, unsigned char g, unsigned char b);
  extern void			GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g, unsigned char b);
  extern void			GR_UpdateVertexBuffer(const GrVertex* vertices, int count);
@@ -17,7 +17,7 @@ diff --git a/include/PsyX/PsyX_render.h b/include/PsyX/PsyX_render.h
 diff --git a/include/psx/gtereg.h b/include/psx/gtereg.h
 --- a/include/psx/gtereg.h
 +++ b/include/psx/gtereg.h
-@@ -108,6 +108,12 @@
+@@ -108,6 +108,12 @@ extern GTERegisters gteRegs;
  extern int GTE_operator(int);
  extern int LIM(int value, int max, int min, unsigned int flag);
  
@@ -30,23 +30,10 @@ diff --git a/include/psx/gtereg.h b/include/psx/gtereg.h
  #if defined(_LANGUAGE_C_PLUS_PLUS)||defined(__cplusplus)||defined(c_plusplus)
  }
  #endif
-diff --git a/include/psx/libgpu.h b/include/psx/libgpu.h
---- a/include/psx/libgpu.h
-+++ b/include/psx/libgpu.h
-@@ -861,6 +861,9 @@
-  * skips the list. The post hook runs after the list is drawn. */
- extern int (*g_psyxDrawOTagPre)(u_long *p);
- extern void (*g_psyxDrawOTagPost)(u_long *p);
-+/* Spyro port (docs/decisions.md D39): called when DrawOTag returns, whether
-+ * the list was drawn or the pre hook skipped it. */
-+extern void (*g_psyxDrawOTagDone)(void);
- extern void DrawOTagIO(u_long *p);
- extern void DrawOTagEnv(u_long *p, DRAWENV *env);
- extern void DrawPrim(void *p);
 diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
 --- a/src/gpu/PsyX_GPU.cpp
 +++ b/src/gpu/PsyX_GPU.cpp
-@@ -209,6 +209,8 @@
+@@ -209,6 +209,8 @@ inline void ApplyVertexPGXP(GrVertex* v, VERTTYPE* p, float ofsX, float ofsY, us
  #endif
  }
  
@@ -55,7 +42,7 @@ diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
  void MakeVertexTriangle(GrVertex* vertex, VERTTYPE* p0, VERTTYPE* p1, VERTTYPE* p2, ushort gteidx)
  {
  	assert(p0);
-@@ -233,6 +235,12 @@
+@@ -233,6 +235,12 @@ void MakeVertexTriangle(GrVertex* vertex, VERTTYPE* p0, VERTTYPE* p1, VERTTYPE*
  	ApplyVertexPGXP(&vertex[1], p1, ofsX, ofsY, gteidx, -1);
  	ApplyVertexPGXP(&vertex[2], p2, ofsX, ofsY, gteidx, 0);
  
@@ -68,19 +55,19 @@ diff --git a/src/gpu/PsyX_GPU.cpp b/src/gpu/PsyX_GPU.cpp
  	ScreenCoordsToEmulator(vertex, 3);
  }
  
-@@ -264,6 +272,12 @@
- 	ApplyVertexPGXP(&vertex[1], p1, ofsX, ofsY, gteidx, -2);
+@@ -265,6 +273,12 @@ void MakeVertexQuad(GrVertex* vertex, VERTTYPE* p0, VERTTYPE* p1, VERTTYPE* p2,
  	ApplyVertexPGXP(&vertex[2], p2, ofsX, ofsY, gteidx, -1);
  	ApplyVertexPGXP(&vertex[3], p3, ofsX, ofsY, gteidx, 0);
-+
+ 
 +	if (g_psyxPolyHook)
 +	{
 +		short* const xy[4] = { p0, p1, p2, p3 };
 +		g_psyxPolyHook(vertex, xy, 4);
 +	}
- 
++
  	ScreenCoordsToEmulator(vertex, 4);
  }
+ 
 diff --git a/src/gte/PsyX_GTE.cpp b/src/gte/PsyX_GTE.cpp
 --- a/src/gte/PsyX_GTE.cpp
 +++ b/src/gte/PsyX_GTE.cpp
@@ -92,43 +79,13 @@ diff --git a/src/gte/PsyX_GTE.cpp b/src/gte/PsyX_GTE.cpp
  
  #define GTE_SF(op)			((op >> 19) & 1)
  #define GTE_MX(op)			((op >> 17) & 3)
-@@ -434,6 +435,9 @@
- 
+@@ -435,6 +436,9 @@ int GTE_RotTransPers(int idx, int lm)
  	PGXP_EmitCacheData(&vdata);
  #endif
-+
+ 
 +	if (g_psyxRtpHook)
 +		g_psyxRtpHook(idx, m_sf);
- 
++
  	return h_over_sz3;
  }
-diff --git a/src/psx/LIBGPU.C b/src/psx/LIBGPU.C
---- a/src/psx/LIBGPU.C
-+++ b/src/psx/LIBGPU.C
-@@ -418,11 +418,16 @@
  
- int (*g_psyxDrawOTagPre)(u_long* p) = NULL;
- void (*g_psyxDrawOTagPost)(u_long* p) = NULL;
-+void (*g_psyxDrawOTagDone)(void) = NULL;
- 
- void DrawOTag(u_long* p)
- {
- 	if (g_psyxDrawOTagPre && g_psyxDrawOTagPre(p))
-+	{
-+		if (g_psyxDrawOTagDone)
-+			g_psyxDrawOTagDone();
- 		return;
-+	}
- 
- 	do
- 	{
-@@ -447,6 +452,9 @@
- 
- 	if (g_psyxDrawOTagPost)
- 		g_psyxDrawOTagPost(p);
-+
-+	if (g_psyxDrawOTagDone)
-+		g_psyxDrawOTagDone();
- }
-  
- void DrawPrim(void* p)

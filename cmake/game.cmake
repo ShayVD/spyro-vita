@@ -14,7 +14,7 @@ target_compile_definitions(spyro_game_main PRIVATE
 # asm/data/*.s; GCC 2.7.2 made them common symbols, so do we.
 target_compile_options(spyro_game_main PRIVATE ${SPYRO_HOST_FLAGS} -fcommon
   -include "${CMAKE_SOURCE_DIR}/src/compat/port_prefix.h")
-target_link_libraries(spyro_game_main PRIVATE psycross)
+target_link_libraries(spyro_game_main PRIVATE psycross_headers)
 
 # The decomp's main() becomes spyro_decomp_main(); src/game/port.c's
 # spyro_main() sets up PS1 memory first.
