@@ -10,7 +10,7 @@ Numbers from tools and logs are measured. Numbers marked *estimate* are reasonin
 
 ## Summary
 
-Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status lines in §5 and §3.5. The first version (D76) was written on main `2a0691c`.
+Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status lines in §5 and §3.5. The first version (D76) was written on main `2a0691c`. Stage 7's remaining steps were planned again on 2026-11-07 (D119, main `a47a30b`), and the fully-native list below is checked item by item there: what is done, what a step takes, and what stays by design.
 
 - **The game itself is mostly native.** No instruction of the original game runs as mips2c any more (D96). Of the original executable's 91,415 MIPS instructions, **63.5% run as readable C** (matched decomp C plus hand C on the decomp's structs); counting all 37 overlays as they are on the disc, **94.1%**. With the hand C that still keeps the PS1 machine model (the GTE register file, the scratchpad, `HPTR`), it's 81.9% and 97.1% (D96, §5 stage 3). D76 measured 50.6% and 91.7%.
 - **Most of the time still goes to the emulation layers, but less of it.** On the K route with every layer on the game thread (run X4, D98, §3.5) a vblank takes **9.73 ms of CPU, and 64% of it is the measured emulation layers** (54–70% by part). Before: N1 (D80) 10.95 ms and 69%; stage 0 (K1, §3.4) 78–84% with its estimate of the software GTE. Since D80 the renderers' GTE is native maths, so 64% is close to the whole emulation share (*estimate*). The largest layer is the PS1 GPU → vitaGL translation (3.44 ms, 35%), then the renderers (2.86 ms: the game's own code, plus building the records) and the OT walk (2.09 ms).
@@ -37,9 +37,13 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 7's steps 7a and 7b: the host audits of the in-between frame, and the port's own `VSync` over one clock module (D104);
   - stage 7's step 7c: frames carry their due vblank, and with `present_due=1` the Vita's render thread shows them at their display vblank and the game thread never waits for a present (D112). Its hardware pair (7C1–7C4) took the Stone Hill flight's late vblanks to 0, and `present_due=1` is the Vita's default since.
 - stage 8, all of it (D113–D118; on hardware 8H1–8H4): libpad, libgpu's API, libgte with the GTE register file, and the OT walk with its splits, vertex buffer and GPU state are ours (`src/platform/common/libpad.c`, `libgpu.c`, `gpu_walk.c`; `src/game/libgte.c`, `gte_regs.c`). The Vita ELF links nothing of PsyCross since 8d, and since 8e the native and Vita builds compile no PsyCross code: only its `include/psx` headers (the owner's choice, A). PsyCross's GTE and walk are the reference the host's checks compare with (`SPYRO_PSYCROSS_REF`, `--walk-check`).
-- **What I recommend next** (updated by D104, D105 and D106, 2026-11-05, D111, D112 and D113, 2026-11-06, D117 and D118, 2026-11-07):
-  1. **7c's pictures on hardware** (D112): 7C1–7C4's routes take no shots, so with `present_due=1` (now the default) the pictures have been compared only in Vita3K's `realtime=0`, where 7c is off. A 60 fps route with shots on hardware, or the owner watching one, with `gpu_clear=2` as shipped.
-  2. **7d–7g** still wait for a need the CPU numbers don't give (D104). 7c's pair gave none: what is left of the game thread's waits for the render thread is the vertex slabs around loads (0.35 s in one Toasty window with a load).
+- **What I recommend next** (updated by D104, D105 and D106, 2026-11-05, D111, D112 and D113, 2026-11-06, D117, D118 and D119, 2026-11-07):
+  1. **7c's pictures on hardware** (D112, D119): 7C1–7C4's routes take no shots, so with `present_due=1` (now the default) the pictures have been compared only in Vita3K's `realtime=0`, where 7c is off. D119 proposes the pair 7P1/7P2: the K route at 60 fps with shots at V and V+1, main's VPK with `present_due` 0 against 1, `gpu_clear=2` as shipped. It needs the owner's yes.
+  2. **7d, 7d2, 7e, 7f, 7g, in that order** (the owner's decision of 2026-11-07, D119, over D104's "wait"). D119 refreshed the plan for today's code ("The plan refreshed (D119)" in §5 stage 7):
+     - the re-entrant renderers are a second build of each renderer, with the presenter's context mapped by name;
+     - 7d2 takes the renderers' hand C to readable C by D87's rule (63.5% → 81.9% of the executable, *expected*);
+     - the presenter is the decomp's own draw code compiled a second time against a snapshot;
+     - 7g retires D30's pass and `g_psx_vram_frozen`, and moves the 2D narrowing into the walk.
   3. **Stage 8 is done** (D113–D118): the native and Vita builds compile no PsyCross code, only its headers (the owner's choice, A), and 8H1–8H4 matched main on hardware. What it left: the scripted `frames=` exit at 60 fps crashes the render thread mid-present (D118, main's too; a follow-up). Stage 2 is done: with the clears gone (D111) what is left of the PS1 GPU → vitaGL layer is about 1.0 ms per vblank, mostly `GR_DrawTriangles` (0.81 on the K route), and that is our code; stage 8 isn't a CPU stage.
 
 ---
@@ -1015,7 +1019,7 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 **Optional:** yes, the presentation modes (`interp=`), as today.
 
-**Status (D112, 2026-11-06): 7a, 7b and 7c done; 7c's `present_due=1` the Vita's default since its hardware pair 7C1–7C4; 7d–7g wait for a reason other than CPU.**
+**Status (D119, 2026-11-07): 7a, 7b and 7c done; 7c's `present_due=1` the Vita's default since its hardware pair 7C1–7C4. 7d–7g go ahead (the owner's decision, D119), planned again for today's code with a new step 7d2 ("The plan refreshed (D119)", below); 7c's pictures on hardware proposed (7P1/7P2).**
 - **7b:** `src/platform/common/libetc.c` is the port's `VSync`, `VSyncCallback` and `ResetCallback`, in place of PsyCross's `LIBETC.C`. `clock.c` holds the vblank count and the Vita's catch-up arithmetic for both platforms, and `tests/vcount` tests that code itself. Host checks 287/287, both demos tick for tick, Vita3K 17/17 shots, 17/17 captures and the card identical to main's VPK.
 - **7a:** `--present-audit` and `--present-reads` on the host. The findings are below ("What 7a found (D104)").
 
@@ -1153,6 +1157,8 @@ So every callback runs on the game thread inside a `VSync(0)`, in a burst after 
 
 All told *estimate* ~4–7k lines, more than the ~2–4k above: the re-entrant renderers and the presenter's draw weren't counted there.
 
+**7d–7g as D101 wrote them are superseded** by "The plan refreshed (D119)" below, which keeps their aims and checks and changes how 7d and 7e are built. It also adds 7d2.
+
 **Order:**
 - **7a and 7b now:** both are small, and neither waits for anything.
 - **7c after D99.**
@@ -1206,6 +1212,69 @@ From `host_checks.sh`'s four runs with `--interp --present-audit --present-reads
   - These routes take no shots, so the pictures weren't compared on hardware; Vita3K's `realtime=0` shots and captures are main's.
   - The render thread showed 99.9% of its frames at their vblank; it skipped 4 and 11 frames' draws in the two runs (one of them a real frame's), and never a PS1 display picture. The frames never shown are the ones the full queue drops in the gamestates that tick every vblank, as on main.
 - **Size:** ~670 lines with comments, about a third over the estimate. Most of it is the render thread's bookkeeping, plus the drop and hold rules Vita3K showed were needed.
+
+##### The plan refreshed (D119, 2026-11-07)
+
+The owner asked on 2026-11-07 for 7d–7g to go ahead ("lets kick off another session to finish off the remaining stage 7 and other pieces for native"). That overrides D104's and D112's "wait". This is D101's plan checked against main `a47a30b`, after stages 4 and 8. D119 has the reasons in full.
+
+**What is different from D101's day:**
+- **Every dependency is met:**
+  - D99's direct vertices, and 7c's frames, which carry their due vblank;
+  - stage 4 (`HPTR` a plain cast in the native build, the decode sites named, `g_psx_scratch` its own array, the labels ordinary globals);
+  - stage 8 (the GPU state, the walk, libgpu, libgte and the register file are ours). PsyCross's global state no longer stands in the way.
+- **The register file is still exact on the logic path:** the renderers' native maths leave `gteRegs` as the register-file code would (`NGTE_TAIL`, `NgteSync`, `render_hand.h`), and the effects stay on the register file at the Vita's `ngte_fx=0`.
+- **The renderers' state, by name:**
+  - `SCRATCH_BASE` (29 uses in eight files);
+  - the spill area `D_80077DD8`;
+  - the hand stack under `g_mips_sp` (`particles_hand.c`);
+  - the sector flags `D_800771C8`;
+  - the sector cache in bytes 0x18–0x1B of each sector header (`env_hand.c`, the only state reached through level data);
+  - `m_WasDrawn` in the moby array;
+  - `g_nd`'s record pool;
+  - `g_CurDB`'s OT and primitive buffer.
+- **The decomp's C** issues no GTE command and doesn't touch the scratchpad. It reaches the GTE only through libgte. So the scratchpad, the spill area and the data registers belong to the hand C alone.
+
+**The steps** (in this order, each its own PR; the owner merges each before the next builds on it):
+
+| Step | What | Check | Size |
+|---|---|---|---|
+| **7d** | **Re-entrant renderers by a second build.** Each renderer file gains `NAME_hand_pres.c` (beside `_ngte` and `_ndr`): the native-maths code, effects included, with the state above mapped by name onto one presenter context (`render_ctx.h`). The context holds its own register file (set from the logic's control registers), scratchpad, spill area and hand stack, sector cache and flags (`SEC_CACHE()` in `env_hand.c`), and record pool, OT and primitive buffer. **The logic's build is unchanged byte for byte**; a context parameter would change the game thread's codegen. One presenter, so one static context. | new `--render-ctx-check`: at each renderer call of the logic draw, the presenter build runs from the same inputs; primitives, records, side outputs and the whole register file compared, the live state put back; 0 differences on the demos, gems, wsi, lod, routes A and B and the tour. `--fast-render-check`, `--native-draw-check`, `--walk-check` 0 differences; `host_checks.sh` byte-identical; Vita3K identical | *estimate* ~0.8–1.3k lines with the check |
+| **7d2** | **The renderers' hand C to readable C (B2 → B1), by D87's rule** (collision D83, math and `42CC4.s` D87). Control registers a renderer sets stay set. The data registers it leaves go, with the `NGTE_TAIL` register-file steps and the `NgteSync` replays. Scratchpad state becomes locals or named fields where no call reads it after (a poison audit shows which bytes cross calls). The spill area and the hand stack go in the native build. Behind `fast_render=3`; the presenter build takes the same code, so its context has no register file. | the oracle replay on the arena build with D83/D87-style shadows (each call against the mips2c unit: RAM but the scratchpad, and the control registers); `host_checks.sh` byte-identical with `fast_render=3`; `--render-ctx-check`; Vita3K identical; on hardware (the owner's yes first) the K route with every layer on the game thread, for time and pictures. Then the owner decides the default, and the register-file builds can leave the native build | *estimate* ~1–2k lines changed, mostly deletions |
+| **7e** | **The presenter's draw: the decomp's own draw code, compiled a second time.** `src/gamestates/draw.c` and its callees are built again with `-include` of a names header. Each global they read maps onto the snapshot's copy, each renderer onto its 7d build, and D30's hooks onto stubs (`VSync` doesn't wait; `Spu*`, `LoadImage`, `StoreImage`, `MoveImage` dropped). No decomp file is edited. The frame is D30's pass's by construction, HUD included, so the HUD reuse and the dragon ring's exception go. The snapshot: 7a's read globals (`tools/present_reads.py`), plus the moby array and the particle space copied and blended in the copy, with the pointers into them rebased (an audit finds which globals hold such pointers). A link check keeps the presenter's objects off any writable global outside the snapshot, the context and the read-only level data. On the game thread, at D30's pass's point, behind `interp_mode=2`; D30's pass stays as the reference and fallback. The callees are inventoried from the link map: those touching no global are shared. | every tick on the host, the presenter's frame against D30's pass's, record for record, on the demos, gems, wsi, routes A and B and the tour; with it on, traces, WAVs and cards identical to `--interp` off, shots identical to D30's; the link check | *estimate* ~0.8–1.5k lines |
+| **7f** | **The presenter on its own core.** Its frame is recorded into its own command buffer and handed whole to the render thread (today the game thread is the command ring's only producer). The walk of its leftover primitives runs with its own walk state (`gpu_walk.c`'s is global today). It starts after update N, beside the logic draw N. If it is still running when update N+1 starts, the game thread waits: the level data's animated bytes change in the update, and the wait keeps the frame exact with no copy. A frame not ready by its due vblank isn't shown (7c's rules). In play `snap_take`, `blend_state`, the pass and `snap_restore` leave the game thread, and `interp_budget` goes for play. **First, merge main after the session that stops the render thread before the `frames=` exit** (D118's dump). | the host as for 7e (the worker inline); Vita3K `realtime=0` shots and captures identical to D30's on the same VPK; on hardware (the owner's yes first): X6 and X7's Toasty route and the K route at 60 fps, for the game thread's busy %, late vblanks, the presenter's misses and the join's wait | *estimate* ~0.6–1k lines |
+| **7g** | **The other gamestates, then D30's pass retires.** In D104's coverage order (credits, title, cutscenes, pause and inventory, transitions, dragon, balloonist, fairy, exits): each is its draw function in the presenter build, the overlays included. Then the arena snapshot, `pass_vsync`, `g_psx_spu_frozen` and `g_psx_vram_frozen` (once `g_psyxVramFrozen`, D115) go. The presenter build drops those calls by name. The HUD's 16:9 narrowing moves from editing the OT's primitives in place and putting them back (`present.c` `narrow_x`) into the walk's conversion, so no pass edits the game's memory. A gamestate left without the presenter could only show its real frame twice, which changes 60 fps there: a switch and the owner's decision; the plan is that every gamestate takes it. | as 7e, per gamestate; the pause route's shots in Vita3K (D70); `--widescreen` shots byte-identical after the narrowing moves | *estimate* ~0.8–1.5k lines |
+
+All told *estimate* ~4–7k lines, the same as D101's total, distributed differently. The second build costs less than hand C for the draw path, while 7f's second producer and 7d2 are new.
+
+**The other pieces:**
+- **(a) The B2 hand C's machine model** (the register file, the scratchpad, the spill area, `HPTR`): all of it in 7d2. 7d moves none of it, so its check can compare the logic's code against itself.
+  - `tools/native_audit.py` on main `a47a30b` (`logs/s7p/audit-before.txt`, gitignored): readable C (A + B1) **63.5%** of the executable and **94.1%** of the whole game; B2 16,845 instructions (18.4%) in 25 functions.
+  - After 7d2 with `fast_render=3` the default (*expected*): **81.9%** and **97.1%**, B2 at 0. What is left is E (16.7%, the PsyQ libraries the decomp calls, as our code) and X (1.4%, libc).
+  - In the native build `HPTR` is already a plain cast (D100); the arena build keeps it for the oracle.
+- **(b) `g_psx_vram_frozen` and the in-place 2D narrowing:** 7g.
+- **(c) The fully-native list** (the Summary):
+
+  | Item | State |
+  |---|---|
+  | no MIPS register model | done but the spill area and the hand stack under `g_mips_sp`: 7d2 |
+  | no GTE register file | the renderers' use of it: 7d2. **By design:** the control registers libgte, the camera and the hand C set (the state §4 keeps), and `gteRegs` as the arena build's record for the oracle |
+  | no PS1 primitives or OT walk | **by design** (D113): the decomp's C writes the primitives and links the OT; the walk is ours (D117) |
+  | no 2 MB arena or 24-bit links | done (D106). **By design:** the heap is one block of the PS1's size with the decomp's packed formats, decoded relative to its base (`psx_mem.h`) |
+  | no sector-addressed CD | done (D93); libcd's API stays as the decomp's calls, in our code |
+  | no software SPU register model | done (D84, D88); libspu's API state stays as the decomp's calls |
+  | no vblank emulation driving the logic | presentation left `VSync` (7c); the in-between frame leaves the game thread (7f); D30's pass and its hooks go (7g). **By design** (D101): the callbacks per vblank in `VSync(0)` with the catch-up, the PS1 interrupt's count |
+  | PsyCross | its headers and the checks' reference stay (D118, the owner's choice A) |
+
+  Outside the plan, and not blocking it: the native build's `platform_linux32` ctest segfault (D118), and the watchdog's per-thread CPU line (stage 0's follow-up).
+
+**7c's pictures on hardware (7P1/7P2, proposed; the owner's yes first):**
+- **The VPK:** main's CI VPK for both runs, with X7's settings at 60 fps (`REALTIME=1`, `DEVICE_DEFAULTS=1`, so `gpu_clear=2` as shipped). 7P1 sets `present_due=0` (`s7p1-k60-shots-due0.txt`); 7P2 keeps the shipped `=1` (`s7p2-k60-shots-due1.txt`).
+- **The route:** the K route with `p-shots-k.cfg`: `n-gte-k.cfg`'s nine places, each shot at V and V+1, so a real frame and an in-between frame are both caught, with `shot_hd=1` (the GPU's frame due at that vblank).
+- **The comparison:**
+  - Real time drifts, so the pairs are compared, not required identical. Any pair that differs is looked at for a missing layer, a frame from the wrong tick, a HUD from another frame, or tearing.
+  - The `7c:` counts and late vblanks against 7C1/7C2.
+  - The owner watching is the check for judder.
+- **Expected:** D118's dump at 7P2's exit, unless the parallel fix has merged.
 
 ##### How faithfulness stays testable
 
@@ -1417,8 +1486,8 @@ Each step changes no output, so each can be merged on the host's and Vita3K's ch
 ##### What stays after stage 8
 
 - **The PS1 primitives and the OT.** The decomp's own C writes them (`draw.c`, the HUD, `flight.c`, the environment packets), and the walk orders the records with them (D99). Stage 8 owns the walk; it doesn't remove it. Removing the OT would mean the decomp C writing records, a change to the decomp beyond removing a call.
-- **The GTE register file** as the B2 hand C's machine model, now in our code. Taking the B2 hand C to readable C (B1) is what is left of stage 3's aim, not stage 8.
-- **`g_psyxVramFrozen`'s role** (as our flag) and the in-place 2D narrowing, until 7g.
+- **The GTE register file** as the B2 hand C's machine model, now in our code. Taking the B2 hand C to readable C (B1) is what is left of stage 3's aim, not stage 8. D119 plans it as step 7d2.
+- **`g_psyxVramFrozen`'s role** (as our flag `g_psx_vram_frozen`) and the in-place 2D narrowing, until 7g (D119: the presenter build drops the VRAM calls by name, and the narrowing moves into the walk's conversion).
 - **PsyCross as the reference** in the arena build and the tests, and its credit in `THIRD_PARTY_NOTICES.md`.
 - **With header choice A,** the submodule, for its headers.
 
@@ -1426,7 +1495,7 @@ Each step changes no output, so each can be merged on the host's and Vita3K's ch
 
 ### Order and what can run at once
 
-Status as of 2026-11-06 (D113; the table's layout is D101's). The payoff column gives the measured share each stage targets; ms are per vblank on the K route with every layer on the game thread (X4, §3.5) unless it says otherwise.
+Status as of 2026-11-07 (D119; the table's layout is D101's). The payoff column gives the measured share each stage targets; ms are per vblank on the K route with every layer on the game thread (X4, §3.5) unless it says otherwise.
 
 | Stage | Depends on | Payoff (measured share it targets) | Risk | Status |
 |---|---|---|---|---|
@@ -1438,13 +1507,13 @@ Status as of 2026-11-06 (D113; the table's layout is D101's). The payoff column 
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
 | 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
-| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d–7g wait for a reason other than CPU (D104) |
+| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d, 7d2, 7e, 7f, 7g go ahead (the owner's decision, D119), planned again for today's code; 7c's pictures on hardware proposed (7P1/7P2) |
 | 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113); 8a done (D114), 8b done (D115), 8c done (D116: libgte and the register file are ours, PsyCross's GTE only the reference), 8d done (D117: our walk, the Vita ELF links nothing of PsyCross), 8e done (D118: no `psycross` library, PsyCross's headers kept, the owner's choice A), 8f done (D118: 8H1–8H4, the same as main on hardware). **Done** |
 
 **What can run at once:**
-- **Now:** 7c's pictures on hardware (D112), and 7d if a reason for it comes (7d changes the renderers' interfaces).
+- **Now:** 7c's pictures on hardware (7P1/7P2, D119; the owner's yes first), which can run while 7d is written. Then 7d, 7d2, 7e, 7f and 7g one after another: 7d and 7d2 touch the same renderer files, 7e builds on 7d, 7f on 7e and on the session that stops the render thread before the `frames=` exit, and 7g on 7f.
 - **Done:** 7a and 7b (D104); 7c, `present_due=1` the Vita's default after its hardware pair (D112); stage 2's direct vertices as the default (D105); stage 4, 4f–4i included (D106); stage 2's clears as the default (D111).
-- **Stage 8 (D113): done** (D114–D118, 8H1–8H4 on hardware). None waits for 7d–7g, and 7d–7g, if they come, don't wait for stage 8.
+- **Stage 8 (D113): done** (D114–D118, 8H1–8H4 on hardware). None waited for 7d–7g.
 
 ## 6. Reproducing these numbers
 

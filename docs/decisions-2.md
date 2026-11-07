@@ -660,3 +660,122 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - **Main does the same, so it isn't stage 8's.** Players never take this exit (`frames=0`; the PS button's close is the system's), but every scripted 60 fps run will now leave a dump. A follow-up.
   - **Stage 8's pass criteria hold:** the same 18 pictures and card; no layer slower on the K route; late vblanks at 60 fps no worse. **Stage 8 is done.**
 - **Credit:** unchanged. PsyCross's headers are compiled as they are, under its MIT notice. The port's files derived from its code (D72, D115–D117) keep that notice.
+
+## 2026-11-07 — stage 7's plan refreshed: 7d–7g go ahead
+
+### D119. Stage 7d–7g go ahead at the owner's request, over D104's and D112's "wait". The plan is checked again against today's code: the presenter becomes the game's own draw code compiled a second time against a snapshot, and a new step, 7d2, takes the renderers' hand C to readable C. What stays by design is named. This entry changes no engine code; a hardware pair for 7c's pictures is proposed
+- **The owner's decision** (2026-11-07, in the coordinator's chat): "lets kick off another session to finish off the remaining stage 7 and other pieces for native". That overrides D104's and D112's call that 7d–7g wait for a need the CPU numbers don't give. What it asks for:
+  - 7d–7g;
+  - 7c's pictures on hardware;
+  - the "other pieces" `docs/native-plan.md` lists as open.
+  - Each step is its own PR. Behaviour changes go behind switches that default to today's behaviour, and the owner decides the defaults.
+- **What changed since D101 wrote 7d–7g** (2026-11-04, main `82d05ce`; checked on main `a47a30b`):
+  - **Every dependency is met:**
+    - D99's direct vertices, and 7c's frames, which carry their due vblank (D112);
+    - stage 4 in full (D97, D100, D106): `HPTR` and `MIPS_KUSEG` are plain casts in the native build, the decode sites are named in `psx_mem.h`, the scratchpad is its own array (`g_psx_scratch`), and the data labels are ordinary globals;
+    - stage 8 (D113–D118): the GPU state, the walk (`gpu_walk.c`), libgpu (`libgpu.c`), libgte and the register file (`libgte.c`, `gte_regs.c`) are all our code. So 7d–7g touch no PsyCross state, and D101's worry about PsyCross's single global state is gone.
+  - **The register file is still exact on the logic path.** At `fast_render=2` the renderers run native maths, but they leave `gteRegs` as the register-file code would have: each loop runs its last `NGTE_TAIL` steps on the register file, and the other commands replay through `NgteSync` (`render_hand.h`). `ngte_fx=0` (the Vita's default) keeps the shadows, flame and particles on the register file (D95, D98).
+  - **The renderers' state, by name** (counted in `src/game/*_hand.c`):
+    - `SCRATCH_BASE` in eight renderer files (29 uses);
+    - the spill area `D_80077DD8` (`hand_spill_regs`, plus `moby_cull_hand.c`, `sky_clip_hand.c` and `particles_hand.c`);
+    - the emulated stack under `g_mips_sp`, which `particles_hand.c` writes (`AT32(g_mips_sp - 0x8u)`, and a spill of `g_mips_sp - 0x18`);
+    - the sector flags `D_800771C8` (`env_hand.c`);
+    - the sector cache in bytes 0x18–0x1B of each sector header in the level data (`env_hand.c` `SEC_ANIMS`, which `present.c` saves and restores per sector);
+    - `m_WasDrawn` in the moby array (`moby_cull_hand.c`);
+    - `g_nd`'s cursor into the record pools (`native_draw.c`);
+    - the OT and the primitive buffer of `g_CurDB`.
+  - **The decomp's own C** issues no GTE command and doesn't touch the scratchpad (a `grep` of `third_party/spyro-1/src` finds no `gte_`, `MTC2`, `gteRegs` or 0x1F800000 use): it reaches the GTE only through libgte's six functions. So the scratchpad, the spill area and the GTE's data registers are the hand C's alone.
+- **7d, refreshed: re-entrant renderers by a second build, not by a parameter.**
+  - Each renderer file is already compiled two or three times with different macros: `NAME_hand.c` (`NGTE 0`), `NAME_hand_ngte.c` (`NGTE 1`), and `NAME_hand_ndr.c` for the effects. 7d adds `NAME_hand_pres.c`: the native-maths code (`NGTE 1`, `NGTE_MATH 1`, the effects included), with the state above mapped by name onto one presenter context (`render_ctx.h`):
+    - its own register file, set from the logic's control registers at the snapshot;
+    - its own 1 KB scratchpad, spill area and hand stack;
+    - its own sector cache and sector flags (a `SEC_CACHE()` macro in `env_hand.c`, the only state reached through level data rather than by a name);
+    - its own record pool, OT and primitive buffer.
+  - **The logic's build doesn't change by a byte**, so its checks are unchanged by construction. A context passed as a parameter would change the codegen of the logic's renderers, on the game thread, which only hardware could clear.
+  - **One presenter, one context:** a tick has one in-between frame, so the presenter's context is a static, not thread-local state.
+  - **The check, new:** `--render-ctx-check`. At each renderer call of the logic draw, it takes the inputs the context holds, runs the presenter build from them, and compares the primitives and records written, the side outputs and the whole register file. Then it puts the live state back. It must show 0 differences on the demos, gems, wsi, lod, routes A and B and the tour. D101's checks also stay: `--fast-render-check`, `--native-draw-check` and `--walk-check` at 0 differences, `host_checks.sh` byte-identical, and Vita3K identical.
+  - **Why a private register file, not D101's "C values"?** The C values come in 7d2, for both builds at once. In 7d the presenter build is the logic build's code with other names, so the check can compare everything, the register file included.
+- **7d2, new: the renderers' hand C to readable C** (B2 → B1). This is other piece (a): "the GTE register file is still the machine model of the B2 hand C", and the scratchpad and `HPTR` with it.
+  - **The rule is D87's,** which collision (D83), math, `42CC4.s` and the gamestates 8 and 11 update (D87) already follow:
+    - the control registers a renderer sets (the rotations and translations, through `CTC2`) are set the same;
+    - the data registers it leaves (V0, IR, MAC, the FIFOs, FLAG) are a calculator's leftovers, and go. So do the `NGTE_TAIL` register-file steps and the `NgteSync` replays.
+    - The scratchpad becomes locals or named fields where nothing reads it across calls. Which bytes do cross calls is shown by a host audit that poisons a renderer's scratchpad writes after it returns: any reader would change the host checks.
+    - The spill area and the hand stack go in the native build. Only `fast_render=0`, the arena build's mips2c fallback, needed them byte for byte.
+  - **Behind a switch:** `fast_render=3`. It changes no picture and no logic. It does change the CPU, and the effects move to native maths with it (`ngte_fx=0` is the Vita's default today). So it waits for a hardware pair, and the owner decides the default. Once it is the default, the register-file builds (`fast_render=1` and 2, `ngte_fx`, the `_ndr` builds) can leave the native build in a cleanup, and `tools/native_audit.py` counts the 25 functions as B1.
+  - **The checks:**
+    - the oracle replay on the arena build, with shadows as D83 and D87 have them: each renderer call runs the mips2c unit from the same state, and compares RAM but the scratchpad, plus the control registers;
+    - `host_checks.sh` byte-identical with `fast_render=3`, and `--render-ctx-check`;
+    - Vita3K identical;
+    - on hardware (the owner's yes first), the K route with every layer on the game thread, for the renderers' time, and its pictures.
+  - **The numbers, before** (`tools/native_audit.py` on main `a47a30b`; `logs/s7p/audit-before.txt`, gitignored):
+    - readable C (A + B1) is **63.5% of the executable** and **94.1% of the whole game**;
+    - B2 is 16,845 instructions (18.4%) in 25 functions;
+    - with B2, the readable share would be 81.9% and 97.1%.
+    - **After 7d2** (*expected*): 81.9% and 97.1% readable, B2 at 0. What is left is E (16.7%: the PsyQ libraries the decomp calls, done as our code) and X (1.4%: libc).
+  - **Order:** right after 7d, because it touches the same files, and before 7e. 7e–7g don't wait for it: the presenter build simply takes `fast_render=3`'s code once 7d2 is merged.
+- **7e, refreshed: the presenter's draw is the decomp's own draw code, compiled a second time.** D101 planned hand C for `GamestateDraw`'s play branch.
+  - Instead, the decomp's draw path (`src/gamestates/draw.c` and its callees) is built again with `-include` of a names header. The header maps each global it reads onto the snapshot's copy (`g_Camera` → `g_pres.Camera`, …), each renderer onto its 7d presenter build, and D30's three hooks onto stubs: `VSync` doesn't wait, the `Spu*` calls are dropped, and `LoadImage`, `StoreImage` and `MoveImage` are dropped, as the freeze drops them today.
+  - The decomp's files aren't edited (no patch; it is a compile option), and the matching build is untouched.
+  - **Its frame is D30's pass's frame by construction,** HUD included. So 7a's HUD question goes, and so does the dragon cutscene's ring: the presenter draws its own HUD, as D30's pass does.
+  - **The snapshot:**
+    - the globals 7a found the pass reads (`tools/present_reads.py`, 73 in play);
+    - the moby array and the particle space, copied and then blended in the copy, as `blend_state` blends the live ones today;
+    - pointers into the moby array or the particle space held by the copied globals, rebased onto the copies. Which globals hold them is found by an audit that scans the snapshot for words pointing into those two regions.
+  - **A link check** keeps it honest. `nm` of the presenter's objects may reference no writable global outside the snapshot, the context and the read-only level data. It is the guarantee 7f needs to run them on another core.
+  - **Still on the game thread,** at D30's pass's point, behind `interp_mode=2`. D30's pass stays as the reference and the fallback.
+  - **The check:** every tick on the host, the presenter's frame is compared with D30's pass's, record for record, on the demos, gems, wsi, routes A and B and the tour. With `interp_mode=2`, traces, WAVs and cards are identical to `--interp` off, and the shots are identical to D30's.
+  - The callees reached from the draw path (math, the OT helpers, the moby helpers) are inventoried from the link map in 7e's first commit. Those that touch no global are shared; the rest get the presenter build.
+- **7f, refreshed:**
+  - **Two producers into the render thread:** the presenter's frame is recorded into its own command buffer and handed to the render thread whole. Today the game thread is the command ring's only producer.
+  - **The walk** for the presenter's leftover primitives runs with its own walk state. `gpu_walk.c`'s state is one global today.
+  - **The join:** the presenter starts after update N, beside the logic draw N. If it is still running when update N+1 starts, the game thread waits for it, because the level data's animated bytes (7a: about 150 bytes a tick) change in the update. That keeps the frame exact with no copy of the level data. Hardware measures the wait.
+  - **Before its render-thread work:** merge main after the parallel session that stops the render thread before the `frames=` exit (D118's dump) has landed.
+  - **The checks** stay D101's: the host as for 7e, with the worker run inline; Vita3K `realtime=0`; on hardware (the owner's yes first), X6 and X7's Toasty route and the K route at 60 fps, for the game thread's busy %, late vblanks and the presenter's misses.
+  - **Size** *estimate* ~600–1,000 lines. D101 had ~300–500, but the second producer and the walk's state weren't counted.
+- **7g, refreshed:** the other gamestates, in the coverage order of D104. Each is its draw function in the presenter build, overlays included (the title, the credits).
+  - **Then D30's pass retires,** and with it:
+    - the arena snapshot (`snap_take`, `snap_restore`);
+    - `pass_vsync`;
+    - `g_psx_spu_frozen`;
+    - and other piece (b): `g_psx_vram_frozen`, the flag that took over `g_psyxVramFrozen` (D115). The presenter build drops those calls by name instead.
+  - **Also in 7g,** the rest of piece (b): the HUD's 2D narrowing for 16:9 moves from editing the OT's primitives in place and putting them back (`present.c` `narrow_x`) into the walk's conversion of those primitives. Then no pass edits the game's memory. The check: the host's `--widescreen` shots byte-identical.
+  - **A gamestate the presenter doesn't take** can only show its real frame on both vblanks, since D30's pass is gone. That would change what 60 fps shows there, so it goes behind a switch and the owner decides. The plan is that every gamestate takes the presenter.
+  - **Size** *estimate* ~0.8–1.5k lines with the checks. D101 had ~0.5–1k, but kept D30's pass for some gamestates.
+- **Other piece (c): the fully-native list, item by item** (`docs/native-plan.md` §4 and the Summary):
+  - **No MIPS register model:** mips2c is gone from the game (D96). What is left is the spill area and the hand stack under `g_mips_sp` (`particles_hand.c`, `render_hand.h`; `collision_hand.c` and `42CC4_hand.c` save and restore `g_mips_sp`), and they go in 7d2.
+  - **No GTE register file:** the renderers' use of it goes in 7d2.
+    - **Stays by design:** the control registers that libgte's six functions, the camera and the hand C set. They are the state that really lives across calls, which §4 keeps as named state.
+    - `gteRegs` also stays as the arena build's record for the oracle.
+  - **No PS1 primitives or OT walk:** stays by design (D113). The decomp's C writes the primitives and links the OT, and the walk is ours (D117).
+  - **No 2 MB arena or 24-bit links:** native memory is the Vita's default (D106).
+    - **Stays by design:** the game's heap is one block the size of the PS1's, holding the decomp's packed formats (OT links and animation frames by their low bits, decoded relative to the base: `psx_mem.h`). §4 keeps the level-data budget and the WAD formats.
+  - **No sector-addressed CD:** done (D93, `cd_native=1`). libcd's API stays as the decomp's calls, in our code.
+  - **No software SPU register model:** done (D84, D88, `mixer=3`). libspu's API state stays as the decomp's calls.
+  - **No vblank emulation driving the logic:**
+    - presentation left `VSync` in 7c (D112);
+    - the in-between frame leaves the game thread in 7f;
+    - D30's pass and its hooks go in 7g.
+    - **Stays by design** (D101): the callbacks per vblank in `VSync(0)` with the catch-up. They are the PS1 interrupt's count, and `g_DeltaTime`'s 3 and 4 come from it.
+  - **PsyCross:** its headers and the checks' reference library stay (D118, the owner's choice A).
+  - **Outside the plan, open:**
+    - the native build's `platform_linux32` ctest segfault (D118; CI runs ctest on the arena build only);
+    - the watchdog's per-thread CPU line (stage 0's follow-up, §5).
+    - Neither blocks stage 7.
+- **7c's pictures on hardware: a pair proposed** (7P1, 7P2; not run, it needs the owner's yes):
+  - **The VPK:** main's CI VPK on both runs. 7P1 sets `present_due=0` in `config.txt`; 7P2 keeps the shipped `present_due=1`. Both use the shipped `gpu_clear=2`.
+  - **The settings:** X7's at 60 fps (`interp=1`, `REALTIME=1`, `DEVICE_DEFAULTS=1`).
+  - **The route:** the K route (`k-route.pad`), with a new `p-shots-k.cfg`: `n-gte-k.cfg`'s nine places, each shot at V and V+1, so both a real frame and an in-between frame are caught, with `shot_hd=1`.
+  - **What it can show:**
+    - every HD shot is the frame due at its vblank, from the GPU (D112);
+    - real time drifts, so the two runs' pictures can't be byte-identical. The pairs are compared, and any that differ are looked at for a missing layer, a frame from the wrong tick, a HUD from another frame, or tearing;
+    - the `7c:` counts and late vblanks against 7C1/7C2;
+    - the owner watching the screen is the check for judder, which shots can't show.
+  - **Expected:** a crash dump at 7P2's exit (D118's, main's too) unless the parallel session's fix has merged by then.
+- **The steps and sizes** (`docs/native-plan.md` §5 has the table):
+  - **7d** *estimate* ~0.8–1.3k lines with its check;
+  - **7d2** ~1–2k changed, mostly deletions of register-file code;
+  - **7e** ~0.8–1.5k;
+  - **7f** ~0.6–1k;
+  - **7g** ~0.8–1.5k.
+  - All told ~4–7k, the same as D101's total, distributed differently: the second-build approach costs less than hand C for the draw path, while the render thread's second producer and 7d2 are new.
+- **This PR:** docs, two hardware run files and a route for 7P1/7P2. No engine code, so no output changes. `tools/build_matching.sh`, ctest and `tools/check_no_assets.sh` are run as for every PR.
