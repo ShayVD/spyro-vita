@@ -505,3 +505,26 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - The game thread's waits for the render thread with 7c: the vertex slabs only, in 7C4 only: 354 ms in the Toasty window with a load (vblank 13,200), 9 ms or less in five others; never the ring.
 - The render thread is 90% busy or more in some windows of every run (12, 4, 15 and 10): its present waiting for the display, with either switch.
 - 7C4's route died once more than 7C3's and ended in a game over: Toasty's route in real time drifts (X7, Y7, Y8 and Y12 ended the same way), so its windows split differently between levels.
+
+## Runs 7P1 and 7P2: 7c's pictures on hardware (D119; proposed, not run)
+
+7C1–7C4 took no shots, so with `present_due=1` (the Vita's default since D112) the pictures have only been compared in Vita3K's `realtime=0`, where 7c is off. This pair takes them on the device, at 60 fps in real time, where 7c is on.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7P1 | `s7p1-k60-shots-due0.txt` | X7's at 60 fps, `present_due=0` | the K route (`k-route.pad`) with `p-shots-k.cfg`: nine places, each shot at V and V+1, `shot_hd=1`; `REALTIME=1` | 6–7 min |
+| 7P2 | `s7p2-k60-shots-due1.txt` | 7P1 with the shipped `present_due=1` | as 7P1 | 6–7 min |
+
+**The VPK:** main's CI VPK for both runs; `DEVICE_DEFAULTS=1` keeps `gpu_clear=2` and the other shipped defaults.
+
+**Unattended** (each run needs the owner's yes first; check the kit's lock and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of main's VPK and `K=$PWD/tools/vita/hw-routes/k-route.pad`:
+- 7P1: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7p1 1500 @tools/vita/fps-runs/s7p1-k60-shots-due0.txt @tools/vita/hw-routes/p-shots-k.cfg`
+- 7P2: the same with `s7p2-k60-shots-due1.txt` into `logs/hw-7p2`
+
+**What to read:**
+- **The pictures.** Each vblank in the list gives `shot-V.png`, the PS1 display read back from VRAM (the logic's frame), and `shot-V-hd.png`, the GPU's 960×544 picture of the frame due at V. V and V+1 between them catch a real frame and an in-between frame.
+  - Real time drifts, so the two runs' pictures aren't expected to be byte-identical: compare them in pairs, and look at any pair that differs.
+  - What a bug would look like: a missing layer (the sky, the HUD, a moby), a picture from the wrong tick, a HUD from another frame, tearing, or an old frame flashed back.
+- **The timing:** `fps60_summary.py` and the `present N:` lines' `7c:` part, against 7C1 and 7C2 (D112).
+- **Judder** shows only on the screen: the owner watching 7P2 is the check for it.
+- **The exit:** with `present_due=1` the scripted `frames=` exit may leave a crash dump (D118, main's too), unless the fix from the session that stops the render thread first has merged.
