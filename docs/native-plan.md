@@ -38,7 +38,7 @@ Brought up to date on 2026-11-04 (D101, main `82d05ce`) from the stage status li
   - stage 7's step 7c: frames carry their due vblank, and with `present_due=1` the Vita's render thread shows them at their display vblank and the game thread never waits for a present (D112). Its hardware pair (7C1–7C4) took the Stone Hill flight's late vblanks to 0, and `present_due=1` is the Vita's default since.
 - stage 8, all of it (D113–D118; on hardware 8H1–8H4): libpad, libgpu's API, libgte with the GTE register file, and the OT walk with its splits, vertex buffer and GPU state are ours (`src/platform/common/libpad.c`, `libgpu.c`, `gpu_walk.c`; `src/game/libgte.c`, `gte_regs.c`). The Vita ELF links nothing of PsyCross since 8d, and since 8e the native and Vita builds compile no PsyCross code: only its `include/psx` headers (the owner's choice, A). PsyCross's GTE and walk are the reference the host's checks compare with (`SPYRO_PSYCROSS_REF`, `--walk-check`).
 - **What I recommend next** (updated by D104, D105 and D106, 2026-11-05, D111, D112 and D113, 2026-11-06, D117, D118 and D119, 2026-11-07):
-  1. **7c's pictures on hardware** (D112, D119): 7C1–7C4's routes take no shots, so with `present_due=1` (now the default) the pictures have been compared only in Vita3K's `realtime=0`, where 7c is off. D119 proposes the pair 7P1/7P2: the K route at 60 fps with shots at V and V+1, main's VPK with `present_due` 0 against 1, `gpu_clear=2` as shipped. It needs the owner's yes.
+  1. **7c's pictures on hardware: done** (D119, 7P1/7P2, 2026-11-07): the K route at 60 fps with shots at V and V+1, main's VPK with `present_due` 0 against 1. No picture fault; the HD shots differ only by the vblank each mode presents. Judder is the owner's to judge on the screen.
   2. **7d, 7d2, 7e, 7f, 7g, in that order** (the owner's decision of 2026-11-07, D119, over D104's "wait"). D119 refreshed the plan for today's code ("The plan refreshed (D119)" in §5 stage 7):
      - the re-entrant renderers are a second build of each renderer, with the presenter's context mapped by name;
      - 7d2 takes the renderers' hand C to readable C by D87's rule (63.5% → 81.9% of the executable, *expected*);
@@ -431,6 +431,11 @@ So about a third of the render thread's busy time is `vglSwapBuffers` and `vglWa
 - **Against Y10's 6.70** (the same settings on main `c088cc0`) the sum is about the same.
 - **Toasty at 60 fps** (Y12's settings; 8H3 main, 8H4 stage 8): 0 late vblanks per 300 in Stone Hill and 0.4 in Toasty in both. In Artisans, around the real-time route's game over, 3.5 against 4.3. The loads 132 against 120. In all, about 203 against 205: the runs' own spread.
 - **Both runs left a crash dump at exit:** the render thread presents through 7c's `rt_due` while `frames=` exits the process (D118). It is main's too, and only the scripted exit hits it.
+
+**Runs 7P1 and 7P2** (2026-11-07, D119; main's CI VPK `a47a30b`; `tools/vita/fps-runs/README.md`, "Runs 7P1 and 7P2"). The K route at 60 fps with X7's settings and the shipped `gpu_clear=2`, shots at nine places at V and V+1 with `shot_hd=1`, `present_due` 0 (7P1) against 1 (7P2):
+- **The pictures:** the PS1 display identical in 16 of 18 shots (6000/6001 are the attract demo at another point of its path: real time). In the HD shots, 8 of 18 differ with the same PS1 display: one vblank apart, because `present_due=0` shoots the next frame presented and `=1` the frame due at V (7P1's 9001 and 16501 are byte-identical to 7P2's 9000 and 16500), or within the box around Spyro and Sparx. No picture fault in any pair, and the card is identical.
+- **The timing:** each pair of shots costs 58–64 late vblanks in the window after it. Without those windows, 1.56 against 1.41 late vblanks per 300 from vblank 900, and 7P2's `7c:` part 5 late frames in 14 vblanks (7C2: 8 in 17). The wait for the previous present in Stone Hill: 6.96 ms against 0.
+- **No crash dump at exit** in either run, as in 7C2 and 7C4; 8H3 and 8H4 (Toasty, 21,000 vblanks) left one each. D118's exit dump is intermittent, and the session that stops the render thread first (PR #103) is its fix.
 
 
 ---
@@ -1019,7 +1024,7 @@ That needs everything shared with the game thread to be gone or copied: the GTE 
 
 **Optional:** yes, the presentation modes (`interp=`), as today.
 
-**Status (D119, 2026-11-07): 7a, 7b and 7c done; 7c's `present_due=1` the Vita's default since its hardware pair 7C1–7C4. 7d–7g go ahead (the owner's decision, D119), planned again for today's code with a new step 7d2 ("The plan refreshed (D119)", below); 7c's pictures on hardware proposed (7P1/7P2).**
+**Status (D119, 2026-11-07): 7a, 7b and 7c done; 7c's `present_due=1` the Vita's default since its hardware pair 7C1–7C4. 7d–7g go ahead (the owner's decision, D119), planned again for today's code with a new step 7d2 ("The plan refreshed (D119)", below); 7c's pictures checked on hardware (7P1/7P2, no fault).**
 - **7b:** `src/platform/common/libetc.c` is the port's `VSync`, `VSyncCallback` and `ResetCallback`, in place of PsyCross's `LIBETC.C`. `clock.c` holds the vblank count and the Vita's catch-up arithmetic for both platforms, and `tests/vcount` tests that code itself. Host checks 287/287, both demos tick for tick, Vita3K 17/17 shots, 17/17 captures and the card identical to main's VPK.
 - **7a:** `--present-audit` and `--present-reads` on the host. The findings are below ("What 7a found (D104)").
 
@@ -1267,7 +1272,7 @@ All told *estimate* ~4–7k lines, the same as D101's total, distributed differe
 
   Outside the plan, and not blocking it: the native build's `platform_linux32` ctest segfault (D118), and the watchdog's per-thread CPU line (stage 0's follow-up).
 
-**7c's pictures on hardware (7P1/7P2, proposed; the owner's yes first):**
+**7c's pictures on hardware (7P1/7P2; ran 2026-11-07, results in §3.5):**
 - **The VPK:** main's CI VPK for both runs, with X7's settings at 60 fps (`REALTIME=1`, `DEVICE_DEFAULTS=1`, so `gpu_clear=2` as shipped). 7P1 sets `present_due=0` (`s7p1-k60-shots-due0.txt`); 7P2 keeps the shipped `=1` (`s7p2-k60-shots-due1.txt`).
 - **The route:** the K route with `p-shots-k.cfg`: `n-gte-k.cfg`'s nine places, each shot at V and V+1, so a real frame and an in-between frame are both caught, with `shot_hd=1` (the GPU's frame due at that vblank).
 - **The comparison:**
@@ -1507,11 +1512,11 @@ Status as of 2026-11-07 (D119; the table's layout is D101's). The payoff column 
 | 5 native audio | — | SPU + mixer 0.90 → 0.26 ms (core 1) | low–medium | done (D84, D88); `mixer=3` is the default |
 | 6 native file I/O | — | the game thread's wait for its CdReads −9%, file-system calls 232 → 98 | low–medium | done (D93); `cd_native=1` is the Vita's default |
 | 4 native memory | 2, 3 | maintainability; prerequisite for 7d and 8 | high | done (D97, D100, D106); native memory is the Vita's default |
-| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d, 7d2, 7e, 7f, 7g go ahead (the owner's decision, D119), planned again for today's code; 7c's pictures on hardware proposed (7P1/7P2) |
+| 7 decoupled timing | 1, 2 (D99), 4 (4b, 4c) | at 60 fps, the in-between frame off the game thread (3.8–5.2 ms per tick in play, X7); a late render thread costs pictures, not ticks | high | 7a and 7b done (D104); 7c done, `present_due=1` the Vita's default after its hardware pair (D112); 7d, 7d2, 7e, 7f, 7g go ahead (the owner's decision, D119), planned again for today's code; 7c's pictures checked on hardware (7P1/7P2) |
 | 8 retire PsyCross | 1, 2, 4, 7c (not 7g, D113) | one dependency fewer; 43 KB of the Vita ELF's code; the GPU state in our code. Not CPU | low–medium | planned (D113); 8a done (D114), 8b done (D115), 8c done (D116: libgte and the register file are ours, PsyCross's GTE only the reference), 8d done (D117: our walk, the Vita ELF links nothing of PsyCross), 8e done (D118: no `psycross` library, PsyCross's headers kept, the owner's choice A), 8f done (D118: 8H1–8H4, the same as main on hardware). **Done** |
 
 **What can run at once:**
-- **Now:** 7c's pictures on hardware (7P1/7P2, D119; the owner's yes first), which can run while 7d is written. Then 7d, 7d2, 7e, 7f and 7g one after another: 7d and 7d2 touch the same renderer files, 7e builds on 7d, 7f on 7e and on the session that stops the render thread before the `frames=` exit, and 7g on 7f.
+- **Now:** 7d (7c's pictures were checked on hardware, 7P1/7P2, D119). Then 7d2, 7e, 7f and 7g one after another: 7d and 7d2 touch the same renderer files, 7e builds on 7d, 7f on 7e and on the session that stops the render thread before the `frames=` exit, and 7g on 7f.
 - **Done:** 7a and 7b (D104); 7c, `present_due=1` the Vita's default after its hardware pair (D112); stage 2's direct vertices as the default (D105); stage 4, 4f–4i included (D106); stage 2's clears as the default (D111).
 - **Stage 8 (D113): done** (D114–D118, 8H1–8H4 on hardware). None waited for 7d–7g.
 

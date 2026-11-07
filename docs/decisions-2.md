@@ -761,7 +761,7 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - the native build's `platform_linux32` ctest segfault (D118; CI runs ctest on the arena build only);
     - the watchdog's per-thread CPU line (stage 0's follow-up, §5).
     - Neither blocks stage 7.
-- **7c's pictures on hardware: a pair proposed** (7P1, 7P2; not run, it needs the owner's yes):
+- **7c's pictures on hardware: a pair, run on 2026-11-07** (7P1, 7P2; the owner's yes in the session's chat; results below):
   - **The VPK:** main's CI VPK on both runs. 7P1 sets `present_due=0` in `config.txt`; 7P2 keeps the shipped `present_due=1`. Both use the shipped `gpu_clear=2`.
   - **The settings:** X7's at 60 fps (`interp=1`, `REALTIME=1`, `DEVICE_DEFAULTS=1`).
   - **The route:** the K route (`k-route.pad`), with a new `p-shots-k.cfg`: `n-gte-k.cfg`'s nine places, each shot at V and V+1, so both a real frame and an in-between frame are caught, with `shot_hd=1`.
@@ -771,6 +771,11 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - the `7c:` counts and late vblanks against 7C1/7C2;
     - the owner watching the screen is the check for judder, which shots can't show.
   - **Expected:** a crash dump at 7P2's exit (D118's, main's too) unless the parallel session's fix has merged by then.
+  - **Result** (main's CI VPK `a47a30b`; `logs/hw-7p1`, `logs/hw-7p2`; `tools/vita/fps-runs/README.md` has the tables):
+    - Both runs reached `frames=` with no crash dump, as in 7C2/7C4; D118's exit dump (8H3, 8H4) is intermittent, and PR #103 is its fix. Main's eboot read back identical afterwards.
+    - **No picture fault.** The PS1 display is identical in 16 of 18 shots; 6000/6001 are the attract demo's flight at another point of its path (real time). In the HD shots, 8 of the 18 differ with the same PS1 display: the same tick, presented one vblank apart (7P1's 9001 and 16501 are byte-identical to 7P2's 9000 and 16500), or differing only around Spyro and Sparx (0.5–3% of the pixels). The differing pictures were looked at, at every place: no missing layer, no HUD from another frame, no tearing.
+    - **The timing:** the shots cost 58–64 late vblanks in each window after a shot, in both runs. Without those windows the route has 1.56 (`present_due=0`) and 1.41 (`=1`) late vblanks per 300, and 7P2's `7c:` part 5 late frames (7C2: 8). The game thread's wait for the previous present in Stone Hill is 6.96 ms with `=0` and 0 with `=1`, as 7C1/7C2.
+    - **So 7c's `present_due=1` stays the default** with its pictures now checked on hardware. Judder needs the owner's eyes: these runs were unattended.
 - **The steps and sizes** (`docs/native-plan.md` §5 has the table):
   - **7d** *estimate* ~0.8–1.3k lines with its check;
   - **7d2** ~1–2k changed, mostly deletions of register-file code;
