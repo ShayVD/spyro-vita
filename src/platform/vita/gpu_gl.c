@@ -379,6 +379,18 @@ static void sample_scene(void) {
   }
 }
 
+static int s_vgl_up; /* vglInitExtended has run */
+
+/* Before the app's own exit (vita_gpu_stop, D119): no scene left on the GPU
+ * and no flip in the display queue, so nothing of vitaGL's is under way
+ * when the process goes. */
+void gl_quit(void) {
+  if (!s_vgl_up)
+    return;
+  glFinish();
+  sceGxmDisplayQueueFinish();
+}
+
 /* every swap goes through here */
 static void swap(void) {
   if (s_sample.state == 2) {
@@ -3340,6 +3352,7 @@ int gl_gpu_init(void) {
    * initialises either way. */
   if (vglInitExtended(0, SCREEN_W, SCREEN_H, 32 << 20, SCE_GXM_MULTISAMPLE_NONE))
     vita_log("gpu: vitaGL clamped the resolution to the display's");
+  s_vgl_up = 1;
   vglWaitVblankStart(GL_TRUE);
   vita_log("gpu: vitaGL %s, %s; pools KB: RAM %u, VRAM %u, phycont %u",
            (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),

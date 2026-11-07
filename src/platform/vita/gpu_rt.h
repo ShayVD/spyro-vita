@@ -51,6 +51,7 @@ void gl_rescale(void);
 void gl_vram_loaded(void);
 int gl_set_options(int res, int filter, int persp, int subpixel, int cache);
 void gl_report(int vblank);
+void gl_quit(void); /* the GPU's work and the display queue finished (D119) */
 void gl_arm_sample(void);
 int gl_take_sample(unsigned *frame_us, unsigned *tail_us); /* any thread */
 void gl_overlay(const uint8_t *rgb, int w, int h);

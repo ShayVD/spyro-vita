@@ -248,6 +248,7 @@
 #include <psp2/display.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -491,6 +492,20 @@ static void read_config(void) {
   }
 }
 
+void vita_exit(int res) {
+  unsigned long long t0 = sceKernelGetProcessTimeWide();
+  int r = vita_gpu_stop();
+  int quiet = vita_gpu_meter_quiet(100000);
+  vita_log("exit: render thread %s, GPU meter %s, in %u ms (D119)",
+           r > 0 ? "stopped" : r < 0 ? "not stopped" : "none", quiet ? "quiet" : "still polling",
+           (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
+  if (r < 0)
+    vita_log("exit: sceKernelWaitThreadEnd: %08x", (unsigned)r);
+  sceKernelExitProcess(res);
+  for (;;)
+    sceKernelDelayThread(1000000);
+}
+
 /* Without a disc there is nothing to run: say why on screen (bootscreen.c)
  * and in the log (psx_cd_error: no image, an .iso, a wrong disc, ...) and
  * wait for a button to quit. frames= quits after that many vblanks (Vita3K
@@ -510,12 +525,12 @@ static void no_disc(void) {
     for (i = 0; c && i < (int)(sizeof buttons / sizeof *buttons); i++)
       down |= SDL_GameControllerGetButton(c, buttons[i]);
     if (down && !held) /* a press, not a button held since the bubble */
-      sceKernelExitProcess(0);
+      vita_exit(0);
     held = down;
     sceDisplayWaitVblankStart(); /* the buttons once a vblank, not a spinning core */
     if (g_vita_opts.frames > 0 && frame >= g_vita_opts.frames) {
       vita_log("frames=%d reached, exiting", g_vita_opts.frames);
-      sceKernelExitProcess(0);
+      vita_exit(0);
     }
   }
 }
@@ -587,7 +602,7 @@ int main(int argc, char **argv) {
   if (SDL_Init((g_vita_gpu ? 0 : SDL_INIT_VIDEO) | (g_vita_opts.mixer >= 3 ? 0 : SDL_INIT_AUDIO) |
                SDL_INIT_GAMECONTROLLER) != 0) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
-    sceKernelExitProcess(1);
+    vita_exit(1);
   }
   /* the disc before the renderer: its screens (a first-start check, or why
    * the game can't start) go straight to the display (bootscreen.c, D60) */
@@ -616,7 +631,7 @@ int main(int argc, char **argv) {
   if (vita_video_init() != 0) {
     /* once vitaGL has the display, SDL's renderer can't take it */
     vita_log("video: renderer set-up failed%s", g_vita_gpu ? " (try gpu=0 in config.txt)" : "");
-    sceKernelExitProcess(1);
+    vita_exit(1);
   }
   vita_parse_init(); /* after the render thread (D71) */
   nd_init(vita_log);
@@ -638,7 +653,7 @@ int main(int argc, char **argv) {
   vita_picture_init();
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
-    sceKernelExitProcess(1);
+    vita_exit(1);
   vita_audio_init();
   vita_xa_ahead_init();
 
