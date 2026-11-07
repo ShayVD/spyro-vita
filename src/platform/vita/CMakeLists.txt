@@ -13,12 +13,16 @@ set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.10")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 
-# PsyX_render.h only types TextureID for its GL renderers; the software
-# rasterizer (D26) uses the same handle type.
+# PsyX_render.h only types TextureID for its GL renderers. Our code uses
+# psx_gpu.h since D117; the reference walk (psycross_ref) still includes it.
 target_compile_definitions(psycross PUBLIC RENDERER_OGL)
+if(TARGET psycross_ref)
+  target_compile_definitions(psycross_ref PRIVATE RENDERER_OGL)
+endif()
 # cmake/psycross.cmake gives PsyCross no -O (the linux32 debug build runs it
-# at -O0, and its pictures are the reference); on the Vita its GTE and OT
-# walk are hot, so optimise it (no x87 excess precision on ARM).
+# at -O0, and its pictures are the reference); on the Vita optimise it (no
+# x87 excess precision on ARM). Since D117 nothing of it is linked in the
+# native Vita build (8e removes the library).
 target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
 if(TARGET psycross_ref) # the moved arena's mips2c units (D116)
   target_compile_options(psycross_ref PRIVATE ${SPYRO_OPT_FLAGS})

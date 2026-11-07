@@ -279,6 +279,13 @@ const uint16_t *port_present_shown_pixels(void) { return 0; }
 int port_present_frame_is_wide(void) { return 0; }
 int port_present_ot_pre(u_long *p) { (void)p; return 0; } /* libgpu.c's DrawOTag */
 void port_present_ot_post(u_long *p) { (void)p; }
+/* native_draw.c's neighbours in the game (its checks, the renderers' mode):
+ * the walk only needs its converter here, with native_draw off */
+int g_fast_render;
+int g_nd_pcheck;
+void nd_check_set_log(void (*log)(const char *fmt, ...)) { (void)log; }
+void nd_check_began(void) {}
+int nd_pcheck_packet(const unsigned *m, int (*fast)(const unsigned *m)) { return fast(m); }
 void port_lod_report(char *out, unsigned len) {
   if (len)
     out[0] = 0;

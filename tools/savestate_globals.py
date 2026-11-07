@@ -49,9 +49,11 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # g_lod is the player's setting, kept), fast_render=2's per-call check
 # (hand_check.c, host tests, D80), and the native draw lists (native_draw.c,
 # D82: the switch, and records that live from a renderer call to its list's
-# walk, which a state taken at the loop top never holds; its check, tests).
+# walk, which a state taken at the loop top never holds; its check, tests),
+# and the walk check (walk_check.c, D117: host tests, the reference walk's
+# copy of the walk's state, synced before every packet).
 NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
-            "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.")
+            "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.", "/walk_check.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

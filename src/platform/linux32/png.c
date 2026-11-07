@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "gpu/PsyX_GPU.h"
+#include "psx_gpu.h"
 
 static uint32_t s_crc_table[256];
 

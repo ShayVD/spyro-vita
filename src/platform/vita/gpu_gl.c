@@ -1,5 +1,5 @@
 /* Vita GPU renderer (gpu=1, decisions D35): PsyCross's GR_* interface on
- * vitaGL. PsyX_GPU.cpp's OT walker hands us the same GrVertex triangles and
+ * vitaGL. The OT walk (gpu_walk.c) hands us the same GrVertex triangles and
  * splits as the software rasterizer (src/platform/linux32/gpu_soft.c); here
  * they are drawn by the GPU at the screen's resolution.
  *
@@ -44,8 +44,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 
-#include "PsyX/PsyX_render.h"
-#include "gpu/PsyX_GPU.h"
+#include "psx_gpu.h"
 #include "../../game/present.h"
 #include "psx_fill.h"
 #include "psx_lean.h"
@@ -83,7 +82,7 @@ static uint16_t s_vram[VW * VH];
 static int s_vram_dirty = 1; /* s_vram newer than the GPU's copy */
 static int s_aflush = 1;     /* s_vram changed: the decoded atlas starts over (D41) */
 
-typedef struct { /* PsyX_GPU.cpp's GPUDrawSplit starts like this (gpu_soft.c) */
+typedef struct { /* the walk's PsxGpuSplit starts like this (psx_gpu.h, gpu_soft.c) */
   DRAWENV drawenv;
   DISPENV dispenv;
 } SplitHead;

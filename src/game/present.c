@@ -22,6 +22,7 @@
 #include "psx_spu.h"
 #include "psx_walk.h"
 #include "psx_libgpu.h"
+#include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdlib.h>
@@ -42,8 +43,6 @@
 #include <libetc.h>
 #include <libgpu.h>
 
-extern DRAWENV activeDrawEnv; /* PsyCross LIBGPU.C */
-extern DISPENV activeDispEnv;
 extern void GamestateDraw(void);
 extern unsigned int g_mips_v1; /* mips2c_rt.c */
 

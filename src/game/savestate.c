@@ -22,6 +22,7 @@
 #include "psx_spu.h"
 #include "psx_state.h"
 #include "psx_walk.h"
+#include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdio.h>
@@ -39,10 +40,6 @@
 #define SPYRO_BUILD_ID "unknown"
 #endif
 
-extern DRAWENV activeDrawEnv; /* PsyCross PsyX_GPU.cpp */
-extern DISPENV activeDispEnv, currentDispEnv;
-extern int g_GPUDisabledState, g_splitIndex;
-extern void ClearSplits(void);
 extern void (*vsync_callback)(void);    /* libetc.c */
 extern void (*drawsync_callback)(void); /* libgpu.c (psx_libgpu.h) */
 extern unsigned char g_psx_kernel_ram[0x10000]; /* arena.c */
@@ -111,7 +108,7 @@ static void chunk_gpu(PsxStateIO *io) {
   psx_state_io(io, &drawsync_callback, sizeof drawsync_callback);
   psx_state_io(io, &gteRegs, sizeof gteRegs);
   if (io->mode == PSX_STATE_LOAD)
-    ClearSplits(); /* nothing of the old timeline left to draw */
+    psx_gpu_clear_splits(); /* nothing of the old timeline left to draw */
 }
 
 static void chunk_vram(PsxStateIO *io) {
@@ -439,10 +436,10 @@ static void service(void) {
   }
   /* primitives still waiting to be drawn (a DrawPrim since the last
    * DrawOTag) aren't part of a state: wait for a tick without them */
-  if (g_splitIndex > 0 && ++s_req_ticks < SAVE_WAIT_TICKS)
+  if (psx_gpu_split_count() > 0 && ++s_req_ticks < SAVE_WAIT_TICKS)
     return;
   s_req_slot = 0;
-  if (g_splitIndex > 0)
+  if (psx_gpu_split_count() > 0)
     message("CANNOT SAVE STATE %d HERE", slot);
   else if (save(slot) == 0)
     message("STATE %d SAVED", slot);

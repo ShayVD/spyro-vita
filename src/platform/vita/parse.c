@@ -1,8 +1,8 @@
-/* The parse thread (config.txt parse_thread=1, decisions D71): PsyCross's
- * OT walk (ParsePrimitivesLinkedList and DrawAllSplits, which record the
+/* The parse thread (config.txt parse_thread=1, decisions D71): the
+ * OT walk (gpu_walk.c's psx_gpu_walk and psx_gpu_draw_splits, which record the
  * render thread's commands) on a thread of its own, walking a copy of the
  * frame's primitives (src/platform/common/walk.c) while the game thread goes
- * on with the next frame. The game thread joins at its next PsyCross call or
+ * on with the next frame. The game thread joins at its next libgpu call or
  * VSync: GamestateDraw's DrawSync(0), after the next tick's render path.
  * Needs the render thread (D63): the walk's GR_* calls are commands there,
  * so no GL call runs here.
