@@ -44,6 +44,7 @@ CATS = [
     ("F", "native Vita platform code"),
     ("G", "port features over the game (platform-neutral)"),
     ("X", "third-party native libraries (vitaGL, SDL2, newlib, libstdc++, SCE stubs)"),
+    ("N", "not run by the port (libapi: only the decomp's crash_demo.c calls it, and it isn't linked)"),
     ("T", "host and test only (not in the Vita ELF)"),
 ]
 CAT_NAMES = dict(CATS)
@@ -117,9 +118,12 @@ PSYQ_LIBS = [
 ]
 # Who runs each library on the Vita: our own libcd/libspu/libmcrd/libetc/libpad/
 # libgpu (src/platform/common; libetc since D104, libpad since D114, libgpu's API
-# since D115), our rand_psyq.c, PsyCross for the rest.
+# since D115) and libgte (src/game/libgte.c, D116), our rand_psyq.c, and the C
+# library (newlib) for libc and the start-up code. Since stage 8e (D118)
+# nothing is PsyCross's (D); libapi isn't linked (N).
 PSYQ_CAT = {"libspu": "E", "libcd": "E", "libmcrd": "E", "libetc": "E", "libpad": "E",
-            "libgpu": "E", "libc rand": "B1"}
+            "libgpu": "E", "libgte": "E", "libc rand": "B1", "libc": "X", "crt": "X",
+            "libapi": "N"}
 
 
 def psyq_split(path):
@@ -234,7 +238,7 @@ GAME_FILES = {
            "particles_hand.c", "particles_hand_ngte.c",
            "moby_cull_hand.c", "env_update_hand.c", "sky_clip_hand.c"],
     "C": ["mips2c_rt.c", "mips2c_rt.h"],
-    "E": ["gte_inline.h", "gte_ops.c"],
+    "E": ["gte_inline.h", "gte_ops.c", "libgte.c", "gte_regs.c"],
     "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h",
           "walk_check.c", "walk_check.h"],
 }
@@ -276,13 +280,13 @@ def source_rows(build):
         add("E" if b == "gpu_soft.c" else ("F" if b == "png.c" else "T"), p)
     for p in sorted(glob.glob(os.path.join(ROOT, "src/compat/*.[ch]"))):
         add("A", p, os.path.relpath(p, ROOT) + " (decomp build shims)")
-    ps = sorted(glob.glob(os.path.join(PSYCROSS, "src/psx/*.C")) + glob.glob(os.path.join(PSYCROSS, "src/gte/*.cpp"))
-                + glob.glob(os.path.join(PSYCROSS, "src/gpu/*.cpp")))
-    for p in ps:
-        # ours: LIBCD..LIBGPU (E since D104, D114, D115); PsyX_GPU.cpp, the
-        # walk, is the reference's only since D117 (gpu_walk.c)
-        if not re.search(r"/((LIBCD|LIBSPU|LIBMCRD|LIBETC|LIBPAD|LIBGPU)\.C|PsyX_GPU\.cpp)$", p):
-            add("D", p)
+    # PsyCross: since stage 8e (D118) the Vita build compiles none of its code,
+    # only its headers. Its GTE and walk are the reference library
+    # (psycross_ref: the tests, the arena build's mips2c units and walk
+    # checks), so T; the rest of its sources isn't compiled at all.
+    for f in ("src/psx/LIBGTE.C", "src/psx/INLINE_C.C", "src/gte/PsyX_GTE.cpp", "src/gpu/PsyX_GPU.cpp"):
+        p = os.path.join(PSYCROSS, f)
+        add("T", p, "third_party/PsyCross/" + f + " (the reference library)")
     if build:
         gen = os.path.join(build, "gen/mips2c")
         for p in sorted(glob.glob(os.path.join(gen, "m2c_*.c"))):
@@ -322,7 +326,7 @@ def obj_category(f):
     m = re.search(r"\(([^)]+)\)$", f)
     member = m.group(1) if m else os.path.basename(f)
     base = re.sub(r"\.(obj|o)$", "", member)
-    if "libpsycross.a" in f:
+    if "libpsycross" in f:  # none since D118; psycross_ref in an arena build
         return "D", member
     if "libspyro_game.a" in f:
         if base.startswith("m2c_"):
@@ -376,8 +380,8 @@ def elf_rows(build, orig):
 PROF_GROUPS = [
     (None, r"^m2c_gte_|^gte_|GTE_operator|^(MTC2|MFC2|CTC2|CFC2|LWC2|SWC2)|PsyX_GTE|LIBGTE|INLINE_C", "GTE in software"),
     ("T", r"gpu_soft|^GR_DrawTriangles$|^gradients$", "host picture (software rasterizer; not on the Vita at gpu=1)"),
-    ("D", r"PsyX_GPU|LIBGPU", "PS1 primitives: PsyCross OT walk and translation"),
-    ("E", r"walk\.c|vcache\.c", "PS1 primitives: PsyCross OT walk and translation"),
+    ("D", r"PsyX_GPU|LIBGPU", "PS1 primitives: the OT walk and translation"),
+    ("E", r"walk\.c|vcache\.c|libgpu\.c", "PS1 primitives: the OT walk and translation"),
     ("E", r"libspu|xa\.c|psx_spu|psx_xa", "SPU and XA in software"),
     ("E", r"libcd|cdimage", "CD in software"),
     ("T", r"audio\.c", "SPU and XA in software"),

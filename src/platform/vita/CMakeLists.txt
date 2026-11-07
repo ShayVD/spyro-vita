@@ -1,4 +1,4 @@
-# PS Vita build (decisions D4, D7, D25, D26): the same game, PsyCross and
+# PS Vita build (decisions D4, D7, D25, D26): the same game and
 # src/platform/common as linux32, plus the Vita platform layer here; packed
 # as a VPK.
 #   cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita \
@@ -13,18 +13,14 @@ set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.10")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 
-# PsyX_render.h only types TextureID for its GL renderers. Our code uses
-# psx_gpu.h since D117; the reference walk (psycross_ref) still includes it.
-target_compile_definitions(psycross PUBLIC RENDERER_OGL)
+# The native Vita build compiles no PsyCross code, only its headers (stage
+# 8e, D118). The moved arena's mips2c units (D116) link the reference
+# library: PsyX_render.h types TextureID only for its GL renderers, and
+# cmake/psycross.cmake gives it no -O (the linux32 debug build runs it at -O0,
+# and its pictures are the reference), so optimise it here (no x87 excess
+# precision on ARM).
 if(TARGET psycross_ref)
   target_compile_definitions(psycross_ref PRIVATE RENDERER_OGL)
-endif()
-# cmake/psycross.cmake gives PsyCross no -O (the linux32 debug build runs it
-# at -O0, and its pictures are the reference); on the Vita optimise it (no
-# x87 excess precision on ARM). Since D117 nothing of it is linked in the
-# native Vita build (8e removes the library).
-target_compile_options(psycross PRIVATE ${SPYRO_OPT_FLAGS})
-if(TARGET psycross_ref) # the moved arena's mips2c units (D116)
   target_compile_options(psycross_ref PRIVATE ${SPYRO_OPT_FLAGS})
 endif()
 
@@ -40,12 +36,12 @@ add_executable(spyro_vita ${VITA_SRCS}
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c")
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}" "${PSYCROSS_DIR}/src")
+  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
 # and the vitaGL stack for the GPU renderer (D35).
-target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common psycross
+target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common
   SDL2 vitaGL vitashark SceShaccCgExt mathneon taihen_stub SceShaccCg_stub
   SceDisplay_stub SceCtrl_stub SceAudio_stub SceAudioIn_stub SceSysmodule_stub
   SceGxm_stub SceCommonDialog_stub SceAppMgr_stub SceAppUtil_stub SceTouch_stub

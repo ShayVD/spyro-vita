@@ -318,7 +318,7 @@ target_include_directories(spyro_game_port PRIVATE
 # trace.c reads game state through the decomp's headers.
 target_include_directories(spyro_game_port AFTER PRIVATE
   "${CMAKE_SOURCE_DIR}/src/compat" "${S1_DIR}/include")
-target_link_libraries(spyro_game_port PRIVATE psycross)
+target_link_libraries(spyro_game_port PRIVATE psycross_headers)
 target_compile_options(spyro_game_port PRIVATE ${SPYRO_HOST_FLAGS})
 # Save states refuse states from another build (src/game/savestate.c, D51).
 execute_process(COMMAND git describe --always --dirty
