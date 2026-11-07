@@ -231,7 +231,7 @@ int vita_gpu_meter(uint32_t *busy_us, uint32_t *scenes) {
 
 unsigned vita_gpu_meter_dropped(void) { return s_dropped; }
 
-/* Before the app's own exit (vita_exit, D119), after gl_quit: until the
+/* Before the app's own exit (vita_exit, D120), after gl_quit: until the
  * thread has seen every scene done, so it is asleep on its semaphore, not
  * reading a fence word, when the process goes; max_us at most. 1: quiet. */
 int vita_gpu_meter_quiet(unsigned max_us) {

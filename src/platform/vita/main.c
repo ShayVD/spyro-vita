@@ -496,7 +496,7 @@ void vita_exit(int res) {
   unsigned long long t0 = sceKernelGetProcessTimeWide();
   int r = vita_gpu_stop();
   int quiet = vita_gpu_meter_quiet(100000);
-  vita_log("exit: render thread %s, GPU meter %s, in %u ms (D119)",
+  vita_log("exit: render thread %s, GPU meter %s, in %u ms (D120)",
            r > 0 ? "stopped" : r < 0 ? "not stopped" : "none", quiet ? "quiet" : "still polling",
            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   if (r < 0)

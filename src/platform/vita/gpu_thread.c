@@ -120,7 +120,7 @@ static uint32_t s_nposted;        /* game thread: commands recorded */
 static SceUID s_rt_sema, s_game_sema;
 static volatile int s_rt_sleeping;
 static SceUID s_rt_th = -1;
-static int s_rt_quit; /* the render thread's: C_QUIT has run (D119) */
+static int s_rt_quit; /* the render thread's: C_QUIT has run (D120) */
 
 /* What the render thread has done, each counted up; the game thread waits
  * for one of them to reach a target. */
@@ -417,7 +417,7 @@ static void run(const Cmd *c) {
   case C_BEGIN:
     rt_begin((const CBegin *)c);
     break;
-  case C_QUIT: /* the app's own exit (vita_gpu_stop, D119) */
+  case C_QUIT: /* the app's own exit (vita_gpu_stop, D120) */
     gl_quit();
     s_rt_quit = 1;
     break;
@@ -1031,7 +1031,7 @@ int vita_gpu_init(void) {
   return r;
 }
 
-/* The app's own exits (vita_exit: frames=, the start-up errors, D119):
+/* The app's own exits (vita_exit: frames=, the start-up errors, D120):
  * with present_due=1 the render thread presents on its own, and a process
  * exit under a swap aborts it in sceGxmEndScene (a crash dump, D118's 8H3
  * and 8H4). So the walk is joined (reserve does it: the parse thread then

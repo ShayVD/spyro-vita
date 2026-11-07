@@ -118,12 +118,12 @@ int vita_gpu_set_options(int res, int filter, int persp, int subpixel, int cache
 void vita_gpu_arm_sample(void);   /* GPU-time the next picture too */
 int vita_gpu_take_sample(unsigned *frame_us, unsigned *tail_us); /* 1 = a new one */
 /* gpu_thread.c: the render thread stopped and joined before the app's own
- * exit (D119): 1 stopped, 0 none running, <0 sceKernelWaitThreadEnd's error */
+ * exit (D120): 1 stopped, 0 none running, <0 sceKernelWaitThreadEnd's error */
 int vita_gpu_stop(void);
 int vita_gpu_meter_quiet(unsigned max_us); /* gpu_meter.c: every scene seen done; 1 = quiet */
 /* main.c: every exit the app makes itself (frames=, no disc, start-up
  * errors): the render thread stopped and the GPU idle first, then
- * sceKernelExitProcess(res) (D119). Not the PS button's close: the system's */
+ * sceKernelExitProcess(res) (D120). Not the PS button's close: the system's */
 void vita_exit(int res) __attribute__((noreturn));
 
 /* bench.c: bench=1 (D41) */

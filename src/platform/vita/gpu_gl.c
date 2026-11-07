@@ -381,7 +381,7 @@ static void sample_scene(void) {
 
 static int s_vgl_up; /* vglInitExtended has run */
 
-/* Before the app's own exit (vita_gpu_stop, D119): no scene left on the GPU
+/* Before the app's own exit (vita_gpu_stop, D120): no scene left on the GPU
  * and no flip in the display queue, so nothing of vitaGL's is under way
  * when the process goes. */
 void gl_quit(void) {

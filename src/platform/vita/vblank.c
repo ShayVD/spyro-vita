@@ -145,7 +145,7 @@ static void vblank(void) {
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
     vita_log("frames=%d reached, exiting", g_vita_opts.frames);
-    vita_exit(0); /* the render thread first (D119) */
+    vita_exit(0); /* the render thread first (D120) */
   }
 }
 
