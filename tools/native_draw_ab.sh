@@ -31,7 +31,10 @@
 # MODE=frc: the renderers' per-call check (--fast-render-check; at FR=3 each
 # call against fast_render=1's build, D124); MODE=poison: --render-poison
 # (D124: after each renderer call what fast_render=3 doesn't write is
-# overwritten); MODE=plain: nothing more (with FR=3, fast_render=3 alone).
+# overwritten); MODE=plain: nothing more (with FR=3, fast_render=3 alone);
+# MODE=all3: native_draw=1 with the per-call check, the presenter check (at
+# FR=3 chained: each call's readable run is the presenter check) and the
+# walk check in one run.
 # FR=N: the second run of each pair at --fast-render N (default 2; the n0
 # run stays at 2, main's default).
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
@@ -60,6 +63,7 @@ run() { # NAME MODE
   frc) extra="$extra --native-draw --fast-render-check ${ND_ARGS:-}";;
   frc0) extra="$extra --fast-render-check ${ND_ARGS:-}";;
   poison) extra="$extra --render-poison ${ND_ARGS:-}";;
+  all3) extra="$extra --native-draw --fast-render-check --render-ctx-check --walk-check ${ND_ARGS:-}";;
   plain) extra="$extra ${ND_ARGS:-}";;
   wc1) extra="$extra --native-draw --walk-check ${ND_ARGS:-}";;
   wc1d) extra="$extra --native-draw --nd-direct --walk-check ${ND_ARGS:-}";;

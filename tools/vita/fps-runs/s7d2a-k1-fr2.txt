@@ -1,0 +1,13 @@
+# Run 7D2a (stage 7d2, D124; proposed, the owner decides): X4's settings (every layer on the game
+# thread at 30 fps, so the "time" and "draw" lines are the renderers' CPU without waits) with the
+# shipped fast_render=2, on this branch's VPK: the baseline for 7D2b. Unattended:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7d2a 1500 \
+#     @tools/vita/fps-runs/s7d2a-k1-fr2.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=2
+ngte_fx=0
+gpu_time=0
+dynres=0

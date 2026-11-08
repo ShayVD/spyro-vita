@@ -1,0 +1,13 @@
+# Run 7D2b (stage 7d2, D124; proposed, the owner decides): 7D2a with fast_render=3, the renderers as
+# readable C (no GTE data registers, scratchpad, spill area or hand stack). Its "draw" lines against
+# 7D2a's are 7d2's cost or gain on hardware; its 18 pictures and memory card must be 7D2a's. Same
+# route and VPK:
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7d2b 1500 \
+#     @tools/vita/fps-runs/s7d2b-k1-fr3.txt @tools/vita/hw-routes/n-gte-k.cfg
+config_version=3
+interp=0
+render_thread=0
+parse_thread=0
+fast_render=3
+gpu_time=0
+dynres=0
