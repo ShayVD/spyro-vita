@@ -36,6 +36,7 @@
 
 #include "lod.h"
 #include "psx_arena.h"
+#include "pres/pres_snap.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdlib.h>
@@ -446,7 +447,8 @@ static void set_presenter(void) {
     for (i = 0; i < (8 + OT_BYTES) / 4; i++)
       ot[i] = reloc(ot[i]);
   }
-  /* the labels */
+  /* the labels; the snapshot's copies (stage 7e, D124) as the game's now */
+  pres_snap_from_live();
   g_pres_gte = gteRegs;
 #if SPYRO_NATIVE_MEM
   memcpy(g_pres_scratch, g_psx_scratch, sizeof g_pres_scratch);

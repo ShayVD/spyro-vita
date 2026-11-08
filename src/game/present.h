@@ -31,6 +31,9 @@ typedef struct {
                            this (the safety net against running late, D75) */
   int stats;        /* time update and draw (also with both features off);
                      2 also maps the arena pages each pass dirties */
+  int interp_mode;  /* stage 7e (D124): 2 = in play the in-between frame is the
+                       presenter's (the draw code built again over a snapshot,
+                       src/game/pres/), not D30's pass; 0 or 1 = D30's pass */
   int audit;        /* stage 7a (D104), debug only: the in-between frames per
                        gamestate and their cost, and the HUD check */
 } PresentConfig;
