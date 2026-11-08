@@ -51,9 +51,14 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # D82: the switch, and records that live from a renderer call to its list's
 # walk, which a state taken at the loop top never holds; its check, tests),
 # and the walk check (walk_check.c, D117: host tests, the reference walk's
-# copy of the walk's state, synced before every packet).
+# copy of the walk's state, synced before every packet), and the presenter's
+# builds and context (NAME_hand_pres.c, lod_pres.c, render_ctx*.c, D123:
+# set before each presenter call from the game's, never read by the game;
+# the subdivision tables' copies, set at start-up; the check, host tests).
 NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
-            "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.", "/walk_check.c.")
+            "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.", "/walk_check.c.",
+            "_pres.c.", "/render_ctx.c.", "/render_ctx_check.c.", "/render_ctx_gte_regs.c.",
+            "/render_ctx_gte_ops.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

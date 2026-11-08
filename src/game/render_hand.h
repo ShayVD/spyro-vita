@@ -34,7 +34,7 @@
 
 /* The scratchpad (0x1F800000 on the PS1) is at the arena base; in the
  * native build it is its own array (psx_arena.h, D106). */
-#if SPYRO_NATIVE_MEM
+#if SPYRO_NATIVE_MEM || RENDER_PRES /* the presenter's (render_ctx_names.h, D123) */
 extern unsigned char g_psx_scratch[1024];
 #define SCRATCH_BASE ((u32)(uintptr_t)g_psx_scratch)
 #else
@@ -291,10 +291,21 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
 
 /* The entry fast_render picks: 1 the hand C on the register file, 2 its
  * native-GTE build (NAME_ngte, from NAME_hand_ngte.c). */
+/* host --render-ctx-check (stage 7d, D123; render_ctx_check.c): each call
+ * also runs the presenter build (NAME_pres) from the same inputs in its own
+ * context, and the two are compared. */
+extern int g_render_ctx_check;
+#ifndef RENDER_CTX_FN
+#define RENDER_CTX_FN
+typedef u32 (*RenderCtxFn)(u32, u32, u32, u32);
+#endif
+u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 a0, u32 a1, u32 a2,
+                     u32 a3);
 #define HAND_PICK(name, hand, a0, a1, a2, a3)                                  \
   (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
    : g_hand_check        ? hand_check(#name, hand, name##_ngte, a0, a1, a2, a3) \
    : g_nd_check          ? nd_check(#name, name##_ngte, a0, a1, a2, a3)         \
+   : g_render_ctx_check  ? render_ctx_check(#name, name##_ngte, name##_pres, a0, a1, a2, a3) \
                          : name##_ngte(a0, a1, a2, a3))
 
 /* fast_render switch for a hand-written entry point (mips2c.cmake
@@ -303,7 +314,12 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
  * translated callers and the oracle replay use) pick the hand C or the unit.
  * HAND is the hand C, taking the four argument registers. In the NGTE build
  * this defines NAME_ngte, the same function with the native GTE maths. */
-#if NGTE
+#if RENDER_PRES
+/* The presenter build (NAME_hand_pres.c, stage 7d, D123): the native-GTE
+ * code on the presenter's state (render_ctx_names.h), as NAME_pres. */
+#define HAND_RENDERER(name, hand)                                              \
+  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif NGTE
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
 #elif SPYRO_NATIVE_MEM
@@ -311,6 +327,7 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
  * stack arguments (only the units read them). */
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
     return HAND_PICK(name, hand, a0, a1, a2, a3);                              \
@@ -320,6 +337,7 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
       return HAND_PICK(name, hand, a0, a1, a2, a3);                            \
@@ -366,8 +384,11 @@ extern int g_ngte_fx;
   (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
    : g_hand_check        ? HAND_CHECK_UNIT(name, hand, a0, a1, a2, a3)          \
    : g_nd_check          ? nd_check(#name, HAND_UNIT2(name), a0, a1, a2, a3)    \
+   : g_render_ctx_check  ? render_ctx_check(#name, HAND_UNIT2(name), name##_pres, a0, a1, a2, a3) \
                          : HAND_UNIT2(name)(a0, a1, a2, a3))
-#if NGTE && NGTE_MATH
+#if RENDER_PRES
+#define HAND_RENDERER_UNIT(name, hand) HAND_RENDERER(name, hand)
+#elif NGTE && NGTE_MATH
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
 #elif NGTE
@@ -377,6 +398,7 @@ extern int g_ngte_fx;
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
+  u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
     return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                         \
@@ -387,6 +409,7 @@ extern int g_ngte_fx;
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
+  u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
       return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                       \

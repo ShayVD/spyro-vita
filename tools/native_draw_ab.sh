@@ -24,6 +24,10 @@
 # build) with native_draw 0, 1, 1 and nd_direct, 2, 2 and nd_direct. The vc
 # scenario is the walk check with the vertex cache on (no direct vertices
 # there, D99).
+# MODE=rc runs native_draw=1 with the presenter builds' check (stage 7d,
+# D123: each renderer call also runs NAME_pres in its own context, "render
+# ctx:" lines, which must say 0 differences and 0 writes); MODE=rc0 the same
+# check with native_draw 0.
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 # N0_FROM=PREFIX: no n0 run; compare with logs/PREFIX-SCENARIO-n0 (one
 # baseline for several modes).
@@ -45,6 +49,8 @@ run() { # NAME MODE
   dir) extra="$extra --native-draw --nd-direct --nd-direct-check ${ND_ARGS:-}";;
   dir2) extra="$extra --native-draw-parse --nd-direct --nd-direct-check ${ND_ARGS:-}";;
   wc0) extra="$extra --walk-check ${ND_ARGS:-}";;
+  rc) extra="$extra --native-draw --render-ctx-check ${ND_ARGS:-}";;
+  rc0) extra="$extra --render-ctx-check ${ND_ARGS:-}";;
   wc1) extra="$extra --native-draw --walk-check ${ND_ARGS:-}";;
   wc1d) extra="$extra --native-draw --nd-direct --walk-check ${ND_ARGS:-}";;
   wc2) extra="$extra --native-draw-parse --walk-check ${ND_ARGS:-}";;
@@ -77,6 +83,7 @@ for n in "$@"; do
   grep -h "native draw parse check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -h "native draw direct check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -h "walk check: [0-9]" $b/spyro.log | sed 's/^/  /'
+  grep -h "render ctx: func[0-9A-F_]*: " $b/spyro.log | sed 's/^.*render ctx: /  /'
   grep -c "differ (" $b/spyro.log | sed 's/^/  lines naming a difference: /'
   # vc: the host's pictures don't use the cache, so the files can't show it
   # missing; the hand renderers must feed it (D89)

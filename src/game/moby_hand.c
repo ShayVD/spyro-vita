@@ -777,8 +777,24 @@ static void LinkBuckets(const FaceCtx *c, u32 zone, u32 rbk) {
   }
 }
 
+#if RENDER_PRES
+/* The presenter build (stage 7d, D123; render_ctx_names.h). The game's draw
+ * writes a frame's replacement faces into the model's face list and puts
+ * the old ones back after (RestoreFaces): a write to data the game shares.
+ * The presenter copies the list (its first word is its length) and makes
+ * the replacements in the copy, which PickFaces then draws; the save list
+ * in its work area is written as the game's is. A list too long for the
+ * copy is drawn without them, and counted. */
+static u32 s_faces[0x4000];
+static int s_faces_on; /* s_faces holds this record's faces */
+extern unsigned g_pres_face_misses;
+#endif
+
 /* Put back the faces the frame replaced. */
 static void RestoreFaces(void) {
+#if RENDER_PRES
+  s_faces_on = 0; /* the model was never changed */
+#else
   const u32 *save = (const u32 *)(D_8006FCF4 + TBL_FACE_SAVE);
   u32 e;
   while ((e = *save++) != 0) {
@@ -787,6 +803,7 @@ static void RestoreFaces(void) {
     while (n--)
       *face++ = *save++;
   }
+#endif
 }
 
 /* A record's set-up, shared by the regular and the specular draw loops. */
@@ -865,6 +882,15 @@ static inline void ReplaceFaces(const RecState *s) {
     const u32 *swap = (const u32 *)s->frame + s->frame->m_VertexColorOffset;
     const u32 model_faces = s->anim->m_Faces;
     u32 w;
+#if RENDER_PRES
+    const u32 *list = HPTR(const u32, model_faces);
+    const u32 bytes = 4u + list[0];
+    s_faces_on = bytes <= sizeof s_faces;
+    if (s_faces_on)
+      memcpy(s_faces, list, bytes);
+    else
+      g_pres_face_misses++;
+#endif
     do {
       u32 face_addr, k;
       u32 *face;
@@ -872,7 +898,17 @@ static inline void ReplaceFaces(const RecState *s) {
       face_addr = (w & 0xFFFF) + model_faces;
       k = (w >> 24) & 0x7F;
       *save++ = (face_addr << 8) + k;
+#if RENDER_PRES
+      face = s_faces + (w & 0xFFFF) / 4;
+      if (!s_faces_on || (w & 0xFFFF) + k * 4 > bytes) {
+        const u32 *m = HPTR(const u32, face_addr);
+        while (k--)
+          *save++ = *m++, swap++;
+        continue;
+      }
+#else
       face = HPTR(u32, face_addr);
+#endif
       while (k--) {
         *save++ = *face;
         *face++ = *swap++;
@@ -900,7 +936,11 @@ static inline const u32 *PickFaces(const RecState *s, FaceCtx *c) {
   const u32 *faces;
   c->tex_bias = 0;
   if (s->detail > 0) {
+#if RENDER_PRES
+    faces = s_faces_on ? s_faces : HPTR(const u32, anim->m_Faces);
+#else
     faces = HPTR(const u32, anim->m_Faces);
+#endif
     if (s->detail - 0x400 >= 0) {
       c->colours = HPTR(const u8, anim->m_Colors);
     } else {
