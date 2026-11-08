@@ -54,11 +54,16 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # copy of the walk's state, synced before every packet), and the presenter's
 # builds and context (NAME_hand_pres.c, lod_pres.c, render_ctx*.c, D123:
 # set before each presenter call from the game's, never read by the game;
-# the subdivision tables' copies, set at start-up; the check, host tests).
+# the subdivision tables' copies, set at start-up; the check, host tests),
+# and the presenter's draw (src/game/pres/, D124: its snapshot and context
+# taken from the game's at every frame it draws, never read by the game; its
+# record serial, which only its own side table uses, emptied each frame;
+# the check and the audit, host tests).
 NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
             "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.", "/walk_check.c.",
             "_pres.c.", "/render_ctx.c.", "/render_ctx_check.c.", "/render_ctx_gte_regs.c.",
-            "/render_ctx_gte_ops.c.")
+            "/render_ctx_gte_ops.c.", "/pres/pres_snap.c.", "/pres/pres_draw.c.",
+            "/pres/pres_check.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

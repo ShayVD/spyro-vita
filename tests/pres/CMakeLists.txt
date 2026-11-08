@@ -10,9 +10,10 @@
 if(NOT TARGET spyro_pres_decomp)
   return()
 endif()
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# Python by its path: ctest runs an imported executable target under the
+# cross-compiling emulator (qemu-i386)
 add_test(NAME pres_link
-         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/link_check.py" "${CMAKE_OBJDUMP}" "${CMAKE_NM}"
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/link_check.py" "${CMAKE_OBJDUMP}" "${CMAKE_NM}"
                  "${CMAKE_BINARY_DIR}/pres_draw.o" "$<TARGET_OBJECTS:spyro_game_port>"
                  "$<TARGET_OBJECTS:spyro_platform_common>" "$<TARGET_OBJECTS:spyro_game_main>")
 if(TARGET spyro AND EXISTS "${CMAKE_SOURCE_DIR}/disc/files/manifest.json")
