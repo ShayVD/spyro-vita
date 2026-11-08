@@ -34,7 +34,9 @@
 # overwritten); MODE=plain: nothing more (with FR=3, fast_render=3 alone);
 # MODE=all3: native_draw=1 with the per-call check, the presenter check (at
 # FR=3 chained: each call's readable run is the presenter check) and the
-# walk check in one run.
+# walk check in one run. The per-call check's counts mean nothing there:
+# fast_render=1's build makes no records, so with native_draw=1 its RAM
+# can't match; run it with MODE=frc0 (native_draw 0).
 # FR=N: the second run of each pair at --fast-render N (default 2; the n0
 # run stays at 2, main's default).
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
