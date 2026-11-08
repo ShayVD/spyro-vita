@@ -120,12 +120,12 @@ extern int g_nd_walk;
 /* The walk's (gpu_walk.c): a packet with a nonzero length, 1 if it emitted
  * it (a marker's records, or nd_fast's parse of a whole packet), else 0
  * and the walk parses it. */
-int nd_packet(uintptr_t packet);
+struct PsxGpuWalk; /* psx_gpu.h */
+int nd_packet(struct PsxGpuWalk *w, uintptr_t packet);
 /* The walk's: one polygon command it parses itself (PsyCross's polygon
- * parsers before D117), as they made it */
-void nd_poly(const u32 *c);
-/* The walk's: its splits and vertex buffer emptied */
-void nd_walk_cleared(void);
+ * parsers before D117), as they made it. w: the walk whose vertex buffer,
+ * splits, draw environment and direct ranges they go to (D122). */
+void nd_poly(struct PsxGpuWalk *w, const u32 *c);
 /* A log line with the counts since the last call (prefix: "native draw N:") */
 void nd_report(int vblank);
 /* host --native-draw-check: the call both ways (native_draw_check.c) */
@@ -138,7 +138,8 @@ void nd_check_report(void);
  * by PsyCross's walk too (the reference library's, SPYRO_PSYCROSS_REF) from
  * the same state and compared; fast's answer */
 extern int g_nd_pcheck;
-int nd_pcheck_packet(const u32 *m, int (*fast)(const u32 *m));
+int nd_pcheck_packet(struct PsxGpuWalk *w, const u32 *m,
+                     int (*fast)(struct PsxGpuWalk *w, const u32 *m));
 void nd_pcheck_report(void);
 
 /* The side table (D91): this list's markers by their address, each with
@@ -169,10 +170,10 @@ extern NdSide g_nd_side[ND_SIDE_N];
 extern int g_nd_direct;
 extern int g_nd_direct_ok;
 enum { ND_WALK_DIRECT = 0x10, ND_WALK_RANGES = 0x20 };
-/* The direct triangles of the vertex buffer the walk is filling: n ranges
- * of vertex indices, [r[2i], r[2i + 1]), ascending, whole triangles. They
- * go when the walk empties the buffer (nd_walk_cleared), so read
- * them at GR_UpdateVertexBuffer. */
+/* The direct triangles of the vertex buffer the game thread's walk is
+ * filling: n ranges of vertex indices, [r[2i], r[2i + 1]), ascending, whole
+ * triangles. They go when the walk empties the buffer (its ndr, D122), so
+ * read them at GR_UpdateVertexBuffer. */
 enum { ND_DR_MAX = 2048 };
 int nd_direct_ranges(const u32 **r);
 /* host --nd-direct-check: every packet the walk parses itself both ways

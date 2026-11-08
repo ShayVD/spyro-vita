@@ -231,6 +231,21 @@ int vita_gpu_meter(uint32_t *busy_us, uint32_t *scenes) {
 
 unsigned vita_gpu_meter_dropped(void) { return s_dropped; }
 
+/* Before the app's own exit (vita_exit, D120), after gl_quit: until the
+ * thread has seen every scene done, so it is asleep on its semaphore, not
+ * reading a fence word, when the process goes; max_us at most. 1: quiet. */
+int vita_gpu_meter_quiet(unsigned max_us) {
+  uint64_t t0 = now_us();
+  if (!s_on)
+    return 1;
+  while (__atomic_load_n(&s_r, __ATOMIC_ACQUIRE) != __atomic_load_n(&s_w, __ATOMIC_ACQUIRE)) {
+    if (s_dead || now_us() - t0 > max_us)
+      return s_dead;
+    sceKernelDelayThread(POLL_US);
+  }
+  return 1;
+}
+
 /* Per kind (GPU_K_*), the busy time and the scenes so far (counted up:
  * take differences); 0 if there's no measure. Any thread. */
 int vita_gpu_meter_kinds(uint32_t busy_us[GPU_K_COUNT], uint32_t scenes[GPU_K_COUNT]) {

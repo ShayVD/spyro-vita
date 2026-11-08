@@ -94,7 +94,7 @@ typedef struct { /* the walk's PsxGpuSplit starts like this (psx_gpu.h, gpu_gl.c
 } SplitHead;
 
 enum { C_WRAP, C_ENV, C_CLIP, C_TEX, C_BLEND, C_VERTS, C_DRAW, C_CLEAR, C_COPY, C_CALL,
-       C_PRESENT, C_CAPTURE, C_COMMIT, C_BEGIN };
+       C_PRESENT, C_CAPTURE, C_COMMIT, C_BEGIN, C_QUIT };
 
 typedef struct {
   uint16_t type, pad;
@@ -119,6 +119,8 @@ static volatile uint32_t s_wpub;  /* bytes the render thread may run */
 static uint32_t s_nposted;        /* game thread: commands recorded */
 static SceUID s_rt_sema, s_game_sema;
 static volatile int s_rt_sleeping;
+static SceUID s_rt_th = -1;
+static int s_rt_quit; /* the render thread's: C_QUIT has run (D120) */
 
 /* What the render thread has done, each counted up; the game thread waits
  * for one of them to reach a target. */
@@ -415,6 +417,10 @@ static void run(const Cmd *c) {
   case C_BEGIN:
     rt_begin((const CBegin *)c);
     break;
+  case C_QUIT: /* the app's own exit (vita_gpu_stop, D120) */
+    gl_quit();
+    s_rt_quit = 1;
+    break;
   default:
     s_rt_bad++;
     break;
@@ -471,6 +477,10 @@ static int rt_main(SceSize args, void *argp) {
     __atomic_store_n(&s_done[K_BYTES], r, __ATOMIC_RELEASE);
     count(K_CMDS);
     rt_wake_game();
+    if (s_rt_quit) { /* no present after it: frames still filed are never shown */
+      g_wd.rt = 0;
+      return 0;
+    }
     if (s_npend && ++s_cmds_since_look >= LOOK_EVERY) { /* 7c: a new display vblank? */
       unsigned vc = vita_display_vcount();
       s_cmds_since_look = 0;
@@ -640,6 +650,7 @@ static int start(void) {
     return -1;
   }
   g_rt_active = 1;
+  s_rt_th = th;
   vita_watchdog_thread(WD_T_RENDER, th);
   /* the game thread on core 0: the mixer has core 1 (D37), this core 2 */
   sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
@@ -1018,6 +1029,29 @@ int vita_gpu_init(void) {
   s_sync_why = W_SYNC;
   due_start(r);
   return r;
+}
+
+/* The app's own exits (vita_exit: frames=, the start-up errors, D120):
+ * with present_due=1 the render thread presents on its own, and a process
+ * exit under a swap aborts it in sceGxmEndScene (a crash dump, D118's 8H3
+ * and 8H4). So the walk is joined (reserve does it: the parse thread then
+ * only waits for a list), C_QUIT goes last in the ring, and the render
+ * thread runs what is before it, waits for the GPU and the display queue
+ * (gl_quit) and returns, before the process exits. The game thread only. */
+int vita_gpu_stop(void) {
+  SceUInt tmo = 2000000;
+  int r;
+  if (!g_rt_active) { /* the GL, if up, is this thread's */
+    if (g_vita_gl)
+      gl_quit();
+    return 0;
+  }
+  post(RESERVE(Cmd, C_QUIT, 0));
+  r = sceKernelWaitThreadEnd(s_rt_th, NULL, &tmo);
+  if (r < 0)
+    return r;
+  g_rt_active = 0;
+  return 1;
 }
 
 static void k_sync_display(void *a) {

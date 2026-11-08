@@ -93,7 +93,7 @@ Files the app writes:
 | Key | Meaning |
 |---|---|
 | `disc=PATH` | the disc image or the extracted files are somewhere other than `ux0:data/spyro` |
-| `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits |
+| `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits. The render thread is stopped and joined first, with an `exit:` line in the log (D120) |
 | `keep_awake=1` | no standby, no dimming and no screen off while the app runs: unattended runs, where nothing presses a button (`tools/vita/hw_run.sh` writes it; D77). Default 0: the Vita's own power settings |
 | `shot=V1,V2,...` | save a PNG of the picture at these vblanks, in `ux0:data/spyro/shots/` |
 | `shot_every=N` | and every N vblanks |

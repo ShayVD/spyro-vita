@@ -34,37 +34,35 @@ static unsigned s_markers, s_records, s_e1, s_emitted;
 /* packets the walk parsed itself, by GP0 class: polygons, lines, rectangles, other */
 static unsigned s_other[4];
 
-/* Direct vertices (D99): the vertex buffer's direct ranges, and the walk's
- * counts: direct triangles, those the GPU skips (left as they are), lists
- * walked direct, triangles left for want of a range */
+/* Direct vertices (D99): the walk's counts: direct triangles, those the
+ * GPU skips (left as they are), lists walked direct, triangles left for
+ * want of a range. The ranges are the walk's (PsxGpuWalk's dr, D122): they
+ * go when it empties its vertex buffer. */
 int g_nd_direct;
 int g_nd_direct_ok;
 int g_nd_dcheck;
-static struct {
-  u32 n;
-  u32 r[ND_DR_MAX][2];
-} s_dr;
 static unsigned s_dr_tris, s_dr_skipped, s_dr_full;
 
-/* the walk emptied its vertex buffer (gpu_walk.c): the ranges go with it */
-void nd_walk_cleared(void) { s_dr.n = 0; }
+_Static_assert(ND_DR_MAX == PSX_GPU_DIRECT_MAX, "the walk's room for the direct ranges");
 
+/* the game thread's walk's */
 int nd_direct_ranges(const u32 **r) {
-  *r = &s_dr.r[0][0];
-  return (int)s_dr.n;
+  const PsxGpuWalk *const w = psx_gpu_game_walk();
+  *r = &w->dr[0][0];
+  return (int)w->ndr;
 }
 
-/* the triangle at vertex i into the ranges: 0 if there's no room */
-static inline int dr_add(u32 i) {
-  if (s_dr.n && s_dr.r[s_dr.n - 1][1] == i) {
-    s_dr.r[s_dr.n - 1][1] = i + 3;
+/* the triangle at vertex i into the walk's ranges: 0 if there's no room */
+static inline int dr_add(PsxGpuWalk *w, u32 i) {
+  if (w->ndr && w->dr[w->ndr - 1][1] == i) {
+    w->dr[w->ndr - 1][1] = i + 3;
     return 1;
   }
-  if (s_dr.n == ND_DR_MAX)
+  if (w->ndr == ND_DR_MAX)
     return 0;
-  s_dr.r[s_dr.n][0] = i;
-  s_dr.r[s_dr.n][1] = i + 3;
-  s_dr.n++;
+  w->dr[w->ndr][0] = i;
+  w->dr[w->ndr][1] = i + 3;
+  w->ndr++;
   return 1;
 }
 
@@ -165,11 +163,11 @@ void nd_list_linked(void) {
 }
 
 /* PsyCross's DrawEnvOffset, as integers (its float sums are exact here;
- * gpu_walk.c's draw_offset) */
-static void draw_offset(int *ox, int *oy) {
-  if (activeDrawEnv.dfe) {
-    *ox = activeDrawEnv.ofs[0] - activeDispEnv.disp.x;
-    *oy = activeDrawEnv.ofs[1] - activeDispEnv.disp.y;
+ * gpu_walk.c's draw_offset), under the walk's environments */
+static void draw_offset(const PsxGpuWalk *w, int *ox, int *oy) {
+  if (w->env->dfe) {
+    *ox = w->env->ofs[0] - w->disp->disp.x;
+    *oy = w->env->ofs[1] - w->disp->disp.y;
   } else {
     *ox = *oy = 0;
   }
@@ -181,18 +179,20 @@ enum { F_TEX = 1, F_SEMI = 2 };
 /* What AddSplit compares that a record can change: the blend (from the
  * tpage, semi-transparent only), the texture format (from the tpage, for
  * every polygon), textured or not, and drawing to the display area. */
-static inline u32 split_key(u32 f) {
-  const u32 tp = activeDrawEnv.tpage;
+static inline u32 split_key(const DRAWENV *env, u32 f) {
+  const u32 tp = env->tpage;
   const u32 blend = (f & F_SEMI) ? ((tp >> 5) & 3) + 1 : 0;
-  return blend | ((tp >> 7) & 3) << 3 | (f & F_TEX) << 5 | (u32)(activeDrawEnv.dfe != 0) << 6;
+  return blend | ((tp >> 7) & 3) << 3 | (f & F_TEX) << 5 | (u32)(env->dfe != 0) << 6;
 }
 
 #define ND_RAW 0x808080u /* an unshaded texture's colour (MakeColourNoShade) */
 
-/* The walk's state while it emits: the vertex buffer, the last split key
- * (AddSplit is only called when it changes), the dither mask and the draw
- * offset */
+/* The walk's state while it emits: the walk and its draw environment, the
+ * vertex buffer, the last split key (AddSplit is only called when it
+ * changes), the dither mask and the draw offset */
 typedef struct {
+  PsxGpuWalk *w;
+  DRAWENV *env;
   GrVertex *vb;
   int *fill;
   u32 prev, dmask;
@@ -204,11 +204,14 @@ typedef struct {
  * the list's) */
 static int s_dc_force = -1;
 
-static void em_begin(Em *e) {
-  e->vb = psx_gpu_vertex_buffer(&e->fill);
+static void em_begin(Em *e, PsxGpuWalk *w) {
+  e->w = w;
+  e->env = w->env;
+  e->vb = w->vb;
+  e->fill = &w->nv;
   e->prev = ~0u;
-  draw_offset(&e->ox, &e->oy);
-  e->dmask = activeDrawEnv.dtd ? 1u << 24 : 0;
+  draw_offset(w, &e->ox, &e->oy);
+  e->dmask = e->env->dtd ? 1u << 24 : 0;
   e->direct = (u32)(s_dc_force >= 0 ? s_dc_force : psx_walk_nd()) & (ND_WALK_DIRECT | ND_WALK_RANGES);
 }
 
@@ -229,7 +232,7 @@ static inline void em_direct_one(const Em *e, u32 *t, u32 i, u32 far, u32 box) {
     s_dr_skipped++;
     return;
   }
-  if (!dr_add(i)) {
+  if (!dr_add(e->w, i)) {
     s_dr_full++;
     return;
   }
@@ -275,11 +278,11 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
   switch (kind) {
   case ND_K_E1:
     /* ProcessDrawEnv's DR_TPAGE */
-    activeDrawEnv.tpage = (u_short)(c0 & 0x1FF);
-    activeDrawEnv.dtd = (u_char)(c0 >> 9 & 1);
-    activeDrawEnv.dfe = (u_char)(c0 >> 10 & 1);
-    draw_offset(&e->ox, &e->oy);
-    e->dmask = activeDrawEnv.dtd ? 1u << 24 : 0;
+    e->env->tpage = (u_short)(c0 & 0x1FF);
+    e->env->dtd = (u_char)(c0 >> 9 & 1);
+    e->env->dfe = (u_char)(c0 >> 10 & 1);
+    draw_offset(e->w, &e->ox, &e->oy);
+    e->dmask = e->env->dtd ? 1u << 24 : 0;
     s_e1++;
     return;
   case ND_K_F3:
@@ -324,13 +327,13 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
   if (f & F_TEX) {
     tp = *uv[1] >> 16;
     pc = tp | (*uv[0] & 0xFFFF0000u);
-    activeDrawEnv.tpage = (u_short)tp;
+    e->env->tpage = (u_short)tp;
     if (kind == ND_K_FT3 && (*xy[0] & *xy[1] & *xy[2]) == 0xFFFFFFFFu)
       return; /* IsNull: SCE's tpage-only hack */
   }
-  key = split_key(f);
+  key = split_key(e->env, f);
   if (key != e->prev) {
-    psx_gpu_add_split((f & F_SEMI) != 0, (f & F_TEX) != 0);
+    psx_gpu_add_split_in(e->w, (f & F_SEMI) != 0, (f & F_TEX) != 0);
     e->prev = key;
   }
   if (*fill + 6 > MAX_VERTEX_BUFFER_SIZE)
@@ -395,9 +398,9 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
 
 /* The records of one marker, from the one at word `at` of pool w (cap
  * words), in their order. */
-static void emit(const u32 *w, u32 at, u32 cap) {
+static void emit(PsxGpuWalk *wk, const u32 *w, u32 at, u32 cap) {
   Em e;
-  em_begin(&e);
+  em_begin(&e, wk);
   for (; at < cap; at = w[at]) {
     s_records++;
     em_prim(&e, w[at + 1], w + at + 2);
@@ -427,7 +430,7 @@ static inline u32 fast_words(u32 c) {
   return 0;
 }
 
-static int fast_packet(const u32 *m) {
+static int fast_packet(PsxGpuWalk *w, const u32 *m) {
   const u32 *c = m + 1, *const end = c + (m[0] >> 24), *p;
   Em e;
   for (p = c; p < end;) {
@@ -436,7 +439,7 @@ static int fast_packet(const u32 *m) {
       return 0;
     p += n;
   }
-  em_begin(&e);
+  em_begin(&e, w);
   for (p = c; p < end;) {
     const u32 code = *p >> 24, n = fast_words(*p);
     if ((code & 0xE0) == 0x20) {
@@ -455,19 +458,19 @@ static int fast_packet(const u32 *m) {
  * (gpu_walk.c, D117): its vertices as PsyCross's Process*Poly made them,
  * with a split of its own as each of its polygons asked AddSplit, never
  * direct (the polygons the walk parsed weren't, D99), not counted. */
-void nd_poly(const u32 *c) {
+void nd_poly(PsxGpuWalk *w, const u32 *c) {
   const unsigned emitted = s_emitted;
   Em e;
-  em_begin(&e);
+  em_begin(&e, w);
   e.direct = 0;
   em_prim(&e, k_poly_kind[*c >> 26 & 7], c);
   s_emitted = emitted;
 }
 
 /* a marker's records (m: the marker) */
-static int marker_packet(const u32 *m) {
+static int marker_packet(PsxGpuWalk *w, const u32 *m) {
   const u32 pool = m[1] >> 11 & 1;
-  emit(g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
+  emit(w, g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
   return 1;
 }
 
@@ -484,66 +487,67 @@ static struct {
 static GrVertex *s_dc_ref;
 static PsxGpuSplitState s_dc_state;
 
-static int dcheck_packet(const u32 *m, int (*fn)(const u32 *m)) {
-  int *fill, fill0, fill1, split0, nsplit, i, bad = 0;
+static int dcheck_packet(PsxGpuWalk *w, const u32 *m, int (*fn)(PsxGpuWalk *w, const u32 *m)) {
+  int *const fill = &w->nv;
+  int fill0, fill1, split0, nsplit, i, bad = 0;
   int ref_split[64][8];
-  GrVertex *const vb = psx_gpu_vertex_buffer(&fill);
-  const DRAWENV env0 = activeDrawEnv;
+  GrVertex *const vb = w->vb;
+  const DRAWENV env0 = *w->env;
   DRAWENV env1;
-  const u32 n0 = s_dr.n, end0 = n0 ? s_dr.r[n0 - 1][1] : 0;
+  const u32 n0 = w->ndr, end0 = n0 ? w->dr[n0 - 1][1] : 0;
   u32 r = n0 ? n0 - 1 : 0;
   if (!s_dc_ref)
     s_dc_ref = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE);
   if (!s_dc_ref)
-    return fn(m);
+    return fn(w, m);
   fill0 = *fill;
-  split0 = psx_gpu_split_count();
-  psx_gpu_split_state_save(&s_dc_state);
+  split0 = w->ns;
+  psx_gpu_split_state_save_in(w, &s_dc_state);
   s_dc_force = 0;
-  i = fn(m);
+  i = fn(w, m);
   s_dc_force = -1;
   if (!i)
     return 0; /* not taken (fast_packet decides before it emits) */
   fill1 = *fill;
-  nsplit = psx_gpu_split_count() - split0;
+  nsplit = w->ns - split0;
   if (nsplit > 63)
     nsplit = 63;
   for (i = 0; i <= nsplit; i++)
-    psx_gpu_split_get(split0 + i, ref_split[i]);
+    psx_gpu_split_get_in(w, split0 + i, ref_split[i]);
   ref_split[nsplit][5] = 0; /* the open split's count: the walk sets it after the packet */
-  env1 = activeDrawEnv;
+  env1 = *w->env;
   memcpy(s_dc_ref, vb + fill0, (size_t)(fill1 - fill0) * sizeof(GrVertex));
-  psx_gpu_split_state_restore(&s_dc_state);
-  activeDrawEnv = env0;
+  psx_gpu_split_state_restore_in(w, &s_dc_state);
+  *w->env = env0;
   s_dc_force = ND_WALK_DIRECT;
-  fn(m);
+  fn(w, m);
   s_dc_force = -1;
   s_dc.packets++;
-  if (*fill != fill1 || psx_gpu_split_count() - split0 != nsplit)
+  if (*fill != fill1 || w->ns - split0 != nsplit)
     bad = 1;
   for (i = 0; !bad && i <= nsplit; i++) {
     int got[8];
-    psx_gpu_split_get(split0 + i, got);
+    psx_gpu_split_get_in(w, split0 + i, got);
     if (i == nsplit)
       got[5] = 0;
     if (memcmp(got, ref_split[i], sizeof got))
       bad = 2;
   }
-  if (!bad && memcmp(&activeDrawEnv, &env1, sizeof env1))
+  if (!bad && memcmp(w->env, &env1, sizeof env1))
     bad = 3;
   /* the triangles: each in a range the direct way added, or not */
   for (i = fill0; !bad && i + 3 <= fill1; i += 3) {
     u32 want[15];
     int in;
-    while (r < s_dr.n && s_dr.r[r][1] <= (u32)i)
+    while (r < w->ndr && w->dr[r][1] <= (u32)i)
       r++;
-    in = r < s_dr.n && s_dr.r[r][0] <= (u32)i && (r >= n0 || (u32)i >= end0);
+    in = r < w->ndr && w->dr[r][0] <= (u32)i && (r >= n0 || (u32)i >= end0);
     memcpy(want, s_dc_ref + (i - fill0), sizeof want);
     s_dc.tris++;
     if (in) {
       lean_direct_tri(want);
       s_dc.direct++;
-    } else if (!lean_skipped(want) && s_dr.n < ND_DR_MAX) {
+    } else if (!lean_skipped(want) && w->ndr < ND_DR_MAX) {
       bad = 4; /* a triangle left as it was that should have been direct */
     }
     if (!bad && memcmp(vb + i, want, sizeof want))
@@ -570,9 +574,9 @@ static int dcheck_packet(const u32 *m, int (*fn)(const u32 *m)) {
   if (!(psx_walk_nd() & ND_WALK_DIRECT)) {
     /* the reference stays */
     memcpy(vb + fill0, s_dc_ref, (size_t)(fill1 - fill0) * sizeof(GrVertex));
-    s_dr.n = n0;
+    w->ndr = n0;
     if (n0)
-      s_dr.r[n0 - 1][1] = end0;
+      w->dr[n0 - 1][1] = end0;
   }
   return 1;
 }
@@ -584,24 +588,24 @@ void nd_dcheck_report(void) {
           s_dc.packets, s_dc.bad, s_dc.tris, s_dc.direct);
 }
 
-int nd_packet(uintptr_t packet) {
+int nd_packet(PsxGpuWalk *w, uintptr_t packet) {
   const u32 *m = (const u32 *)packet;
   u32 w1;
   w1 = m[1];
   if ((m[0] >> 24) != 2 || (w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24)) {
     const u32 cls = w1 >> 29;
     if (g_nd_fast && psx_walk_nd() &&
-        (g_nd_pcheck   ? nd_pcheck_packet(m, fast_packet)
-         : g_nd_dcheck ? dcheck_packet(m, fast_packet)
-                       : fast_packet(m)))
+        (g_nd_pcheck   ? nd_pcheck_packet(w, m, fast_packet)
+         : g_nd_dcheck ? dcheck_packet(w, m, fast_packet)
+                       : fast_packet(w, m)))
       return 1;
     s_other[cls == 1 ? 0 : cls == 2 ? 1 : cls == 3 ? 2 : 3]++;
     return 0;
   }
   s_markers++;
   if (g_nd_dcheck)
-    return dcheck_packet(m, marker_packet);
-  return marker_packet(m);
+    return dcheck_packet(w, m, marker_packet);
+  return marker_packet(w, m);
 }
 
 void nd_report(int vblank) {

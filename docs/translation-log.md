@@ -473,6 +473,15 @@ Not asm: PsyCross's OT walk (`src/gpu/PsyX_GPU.cpp`, with patches 0003, 0007, 00
 
 **Checks** (details in D117): `--walk-check` 0 packets differ, both mutants caught; `tests/walk`'s random packets 0 differ, its mutants caught; `--native-draw-check` and `--native-draw-parse-check` now against the reference walk; `tools/host_checks.sh` 279 of 279 files byte-identical with main; Vita3K's six D105 runs identical to main's VPK; ctest 22/22.
 
+## Stage 7f/7g pieces: the walk's state per instance, the HUD's narrowing in the walk (2026-11-07, decisions D122)
+
+No game function changes. Two port-side changes ahead of 7f and 7g:
+
+| Part | Method | Verified by | Known differences |
+|---|---|---|---|
+| The walk's state (`gpu_walk.c`, `psx_gpu.h` `PsxGpuWalk`) | the statics (vertex buffer, splits, DrawPrim's mode, debug label, custom texture) into a struct with pointers to the draw and display environments it uses and the converter's direct ranges; the game thread's walk one static instance; `nd_packet`/`nd_poly` take the walk | `--walk-check`, `--native-draw-check`, `tools/host_checks.sh` (with and without `--interp`) and Vita3K against main | none |
+| The HUD's 16:9 narrowing (`present.c` `squeeze_2d`) | the same rules on a copy of each noted 2D primitive, handed to the game walk as a substitution (`PsxGpuSubst`) that the walk parses in the primitive's place; nothing restored after `DrawOTag` | `--widescreen` host runs (`host_checks.sh` with `EXTRA=--widescreen`, the 16:9 pause route) byte-identical to main; `--walk-check` at 16:9 | none |
+
 ## Stage 7d: the renderers' presenter builds (2026-11-07, decisions D123)
 
 No new translation: the hand C of decisions D72–D98 compiled once more as `NAME_hand_pres.c`, on the presenter's state by name (`render_ctx_names.h`). Two places have presenter code of their own (`#if RENDER_PRES`), because the game's code writes data the game shares there; the game's builds compile to the same code as before (D123's disassembly comparison).

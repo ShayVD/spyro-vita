@@ -285,15 +285,28 @@ int g_fast_render;
 int g_nd_pcheck;
 void nd_check_set_log(void (*log)(const char *fmt, ...)) { (void)log; }
 void nd_check_began(void) {}
-int nd_pcheck_packet(const unsigned *m, int (*fast)(const unsigned *m)) { return fast(m); }
+struct PsxGpuWalk;
+int nd_pcheck_packet(struct PsxGpuWalk *w, const unsigned *m,
+                     int (*fast)(struct PsxGpuWalk *w, const unsigned *m)) {
+  return fast(w, m);
+}
 void port_lod_report(char *out, unsigned len) {
   if (len)
     out[0] = 0;
 }
 int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
 #if SPYRO_NATIVE_MEM
-/* src/game/port.c's: no data labels here, only the arena (D106). */
-void *psx_mem_host(uint32_t a) { return (void *)(g_psx_arena_base + (a - PSX_MEM_PSX)); }
+/* src/game/port.c's, with a zeroed stand-in for the labels image (D106):
+ * the block starts at main_BSS_END's page, so a label (the pad script reads
+ * g_Gamestate and g_LevelId) is not in it. Zero, as the arena build reads. */
+static unsigned char s_labels[PSX_BSS_END - PSX_LABELS_PSX];
+void *psx_mem_host(uint32_t a) {
+  if (a >= PSX_LABELS_PSX && a < PSX_BSS_END)
+    return s_labels + (a - PSX_LABELS_PSX);
+  if (a >= PSX_BSS_END && a - PSX_MEM_PSX < PSX_MEM_SIZE)
+    return (void *)(g_psx_arena_base + (a - PSX_MEM_PSX));
+  return NULL;
+}
 #endif
 
 int main(int argc, char **argv) {

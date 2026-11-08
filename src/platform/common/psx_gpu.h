@@ -91,28 +91,6 @@ extern int g_GPUDisabledState;
  * primitives); NULL in psx_gpu_walk: the tag's own link (nextPrim). */
 typedef uintptr_t (*PsxGpuNext)(uintptr_t packet);
 
-/* The OT from p to its end: each packet's GP0 commands into the splits and
- * the vertex buffer (PsyCross's ParsePrimitivesLinkedList). single: p is
- * one primitive (DrawPrim), parsed as a whole. */
-void psx_gpu_walk(u_long *p, int single, PsxGpuNext next);
-/* The scene's start, then psx_gpu_walk: DrawOTag's (libgpu.c) and the
- * walk from the copy's (walk.c) */
-void psx_gpu_walk_scene(u_long *p, int single, PsxGpuNext next);
-/* The splits drawn (GR_UpdateVertexBuffer, then each split's state and its
- * triangles), then emptied (PsyCross's DrawAllSplits) */
-void psx_gpu_draw_splits(void);
-/* Both emptied (PsyCross's ClearSplits); the native draw's direct ranges
- * with them (nd_walk_cleared) */
-void psx_gpu_clear_splits(void);
-/* The splits so far (PsyCross's g_splitIndex: index 1 up) */
-int psx_gpu_split_count(void);
-
-/* For the records' converter (native_draw.c): what parsing a polygon with
- * these flags does to the splits under activeDrawEnv as it is now, and the
- * vertex buffer with its fill (vertices). */
-void psx_gpu_add_split(int semiTrans, int textured);
-GrVertex *psx_gpu_vertex_buffer(int **fill);
-
 /* A split, with PsyCross's GPUDrawSplit's layout (the reference walk's
  * splits compare byte for byte). It starts with the two environments: the
  * renderers' GR_SetupClipMode gets &drawenv.clip and reads them from there
@@ -128,9 +106,86 @@ typedef struct {
   u_short numVerts;
   const char *debugText;
 } PsxGpuSplit;
+
+/* Packets the walk parses from other words than the list's (D122, from
+ * stage 7g): n of them, by their address in the game's memory (at,
+ * ascending), each with the words parsed in its place (words[i]: its tag,
+ * then as many words as the tag's length says). The HUD's 2D primitives
+ * narrowed for 16:9 (present.c), so the game's primitives stay as it wrote
+ * them. The list's links are still the game's: only the parse changes. */
+typedef struct {
+  int n;
+  const uintptr_t *at;
+  const u_int *const *words;
+} PsxGpuSubst;
+
+#define PSX_GPU_MAX_SPLITS 4096
+/* the records' converter's direct ranges (native_draw.c, D99): ND_DR_MAX */
+#define PSX_GPU_DIRECT_MAX 2048
+
+/* One walk's state (D122, for stage 7f's second walk): its vertex buffer
+ * and splits, the custom texture and debug label its packets set, the GPU
+ * state it draws with and changes (the draw environment, read and written
+ * by the packets' E1-E5 and the records' draw modes; the display
+ * environment, read), the records' converter's direct ranges over its
+ * vertex buffer, and the packets it parses from other words. The game
+ * thread's is one static instance (psx_gpu_game_walk), on activeDrawEnv
+ * and activeDispEnv; the functions without _in work on it. */
+typedef struct PsxGpuWalk {
+  int nv, ns;    /* the vertices and the last split (PsyCross's g_vertexIndex, g_splitIndex) */
+  int prim_mode; /* DrawPrim's 1 (g_DrawPrimMode) */
+  const char *debug_text;
+  TextureID override;
+  int override_w, override_h;
+  DRAWENV *env;
+  const DISPENV *disp;
+  /* where the list is walked from when not from the game's memory (walk.c's
+   * copy of PSX_MEM_SIZE bytes from g_psx_arena_base), else 0: subst's
+   * addresses are the game's */
+  uintptr_t copy;
+  const PsxGpuSubst *subst; /* NULL: none */
+  uint32_t ndr;             /* direct ranges: [dr[i][0], dr[i][1]) */
+  /* the buffers, the instance's own arrays (pointers, so a static
+   * instance's initialiser leaves them in .bss) */
+  uint32_t (*dr)[2];   /* PSX_GPU_DIRECT_MAX */
+  PsxGpuSplit *splits; /* PSX_GPU_MAX_SPLITS */
+  GrVertex *vb;        /* MAX_VERTEX_BUFFER_SIZE */
+} PsxGpuWalk;
+
+/* the game thread's walk */
+PsxGpuWalk *psx_gpu_game_walk(void);
+
+/* The OT from p to its end: each packet's GP0 commands into the splits and
+ * the vertex buffer (PsyCross's ParsePrimitivesLinkedList). single: p is
+ * one primitive (DrawPrim), parsed as a whole. */
+void psx_gpu_walk(u_long *p, int single, PsxGpuNext next);
+void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next);
+/* The scene's start, then psx_gpu_walk: DrawOTag's (libgpu.c) and the
+ * walk from the copy's (walk.c) */
+void psx_gpu_walk_scene(u_long *p, int single, PsxGpuNext next);
+void psx_gpu_walk_scene_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next);
+/* The splits drawn (GR_UpdateVertexBuffer, then each split's state and its
+ * triangles), then emptied (PsyCross's DrawAllSplits) */
+void psx_gpu_draw_splits(void);
+void psx_gpu_draw_splits_in(PsxGpuWalk *w);
+/* Both emptied (PsyCross's ClearSplits); the native draw's direct ranges
+ * with them */
+void psx_gpu_clear_splits(void);
+void psx_gpu_clear_splits_in(PsxGpuWalk *w);
+/* The splits so far (PsyCross's g_splitIndex: index 1 up) */
+int psx_gpu_split_count(void);
+
+/* For the records' converter (native_draw.c): what parsing a polygon with
+ * these flags does to the splits under the walk's draw environment as it
+ * is now, and the vertex buffer with its fill (vertices). */
+void psx_gpu_add_split(int semiTrans, int textured);
+void psx_gpu_add_split_in(PsxGpuWalk *w, int semiTrans, int textured);
+GrVertex *psx_gpu_vertex_buffer(int **fill);
+
 const PsxGpuSplit *psx_gpu_split(int i);
 /* split i's fields the host's checks compare (PsyCross's PsyX_SplitGet) */
 void psx_gpu_split_get(int i, int out[8]);
+void psx_gpu_split_get_in(const PsxGpuWalk *w, int i, int out[8]);
 
 /* The walk's split and vertex fill, kept and put back (a check runs a
  * packet twice from the same state), as PsyCross's PsyXSplitState */
@@ -141,6 +196,8 @@ typedef struct {
 } PsxGpuSplitState;
 void psx_gpu_split_state_save(PsxGpuSplitState *s);
 void psx_gpu_split_state_restore(const PsxGpuSplitState *s);
+void psx_gpu_split_state_save_in(const PsxGpuWalk *w, PsxGpuSplitState *s);
+void psx_gpu_split_state_restore_in(PsxGpuWalk *w, const PsxGpuSplitState *s);
 /* PsyCross's custom texture (the 0xB1 packet): texture, width, height */
 void psx_gpu_override_get(int out[3]);
 void psx_gpu_override_set(const int in[3]);
