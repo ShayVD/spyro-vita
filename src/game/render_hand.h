@@ -565,7 +565,14 @@ extern int g_ngte_fx;
  * HAND_UNIT_FN_RC. --fast-render-check compares it with the hand C of
  * fast_render 1 and 2 (hand_check_rc), and --render-poison runs at 1 and 2
  * as for the renderers. */
-#if NGTE_RC
+#if NGTE_RC && RENDER_PRES
+/* a presenter build of one of them (render_ctx_names.h, then NGTE_RC 1,
+ * then the source): NAME_pres, the readable code on the presenter's state */
+#define HAND_UNIT_FN_RC(name, hand) HAND_UNIT_FN_RC_(name, hand, 0)
+#define HAND_UNIT_FN_RC_V0(name, hand) HAND_UNIT_FN_RC_(name, hand, 1)
+#define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
+  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif NGTE_RC
 #define HAND_UNIT_FN_RC(name, hand) HAND_UNIT_FN_RC_(name, hand, 0)
 #define HAND_UNIT_FN_RC_V0(name, hand) HAND_UNIT_FN_RC_(name, hand, 1)
 #define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
