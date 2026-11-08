@@ -493,3 +493,12 @@ No new translation: the hand C of decisions D72–D98 compiled once more as `NAM
 | `SectorLists`' animation step (`env_hand.c`, presenter build) | the sector's four animation bytes from the presenter's copy; a sector to animate copied into the presenter's area, animated there, the lists pointed at the copy | as above, and each copy compared with the sector the game animated | none seen; a sector with no room left in the area is drawn as it is and counted |
 | The GTE's moves and commands (`render_ctx_gte_regs.c`, `render_ctx_gte_ops.c`) | `gte_regs.c` and `gte_ops.c` compiled again on the presenter's register file | as above (the whole register file compared after every call) | none |
 | LOD's hooks (`lod_pres.c`) | `lod.c` compiled again on the presenter's names | the lod scenario (2x draw distance): LOD's whole state compared after every call | none |
+
+## Stage 7e: the presenter's draw (2026-11-08, decisions D124)
+
+No new translation: the decomp's `gamestates/draw.c`, `camera.c` and `environment.c` and our `order_table.c`, `moby_lists_hand.c`, `cyclorama_hand.c`, `libgte.c`, `math_hand.c`, `images_hand.c`, `moby_cull_hand.c` and `sky_clip_hand.c`, compiled once more with `-include src/game/pres/pres_names.h` into one object (`cmake/presenter.cmake`, `pres_draw.o`) whose only global is `GamestateDraw_pres`. No source is edited; the game's own objects are unchanged.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `GamestateDraw_pres` and the 64 functions its play branch reaches (`tests/pres/link_check.py` lists them) | the same sources again, the state they write or must see blended renamed onto the snapshot's copies (`pres_snap_names.h`) and 7d's context, the renderers onto `NAME_pres`, `VSync` onto a stub that doesn't wait, the VRAM calls dropped | `--pres-check` (each in-between frame in play drawn by the presenter and by D30's pass, the two lists compared record for record) on the demos, wsi, gems, routes A and B and the tour; with `--interp-mode 2` every file the same as D30's; `pres_link` | the polygons' bits the PS1 GPU ignores (UV pad halves, later colour code bytes) hold what the presenter's buffer held before, not the game's |
+| `moby_cull_hand.c`, `sky_clip_hand.c` entries (`src/game/pres/moby_cull.c`, `sky_clip.c`) | the hand C called directly, as the native build's entries do (`render_hand.h` `HAND_UNIT_FN_` redefined in the wrapper) | as above | none |

@@ -21,6 +21,7 @@ data, or a local the list below names (PRIVATE). A common symbol (the
 decomp's uninitialised globals, -fcommon) is the game's, so an outside
 name.
 """
+import os
 import re
 import subprocess
 import sys
@@ -34,6 +35,7 @@ func_credits_8007BFD0 func_8001EB80 D_8007567C""".split())
 # copy were needed)
 READ_ONLY = r"""
 ^(memcpy|memset|sprintf|snprintf|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
+^__aeabi_(idiv|uidiv|idivmod|uidivmod|ldivmod|uldivmod)$
 ^g_psx_arena_base$
 ^port_ws_(hud_ofx|hud_r11|r1112)$
 ^port_poly_start$
@@ -174,6 +176,14 @@ def main():
         print("pres_link: the presenter's draw names what isn't its own, read only, its output or shared:")
         print("\n".join(bad))
         sys.exit(1)
+    if os.environ.get("PRES_LINK_LIST"):
+        own = sorted(x for x in outside if x.startswith(("g_pres_", "pres_")) or x.endswith("_pres"))
+        rest = sorted(x for x in outside if x not in own)
+        print("reached (the presenter's copies): " + " ".join(sorted(reached)))
+        print("its own: " + " ".join(own))
+        print("read only: " + " ".join(x for x in rest if ro.match(x)))
+        print("output: " + " ".join(x for x in rest if out.match(x) and not ro.match(x)))
+        print("shared: " + " ".join(x for x in rest if not ro.match(x) and not out.match(x)))
     print("pres_link: %d functions reached from GamestateDraw_pres; %d outside names, each the "
           "presenter's own, read only, its output or shared" % (len(reached), len(outside)))
 

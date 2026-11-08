@@ -50,6 +50,8 @@ typedef struct {
                            4:3 draw: costs CPU); attract demos always do */
   int interp_budget;  /* interp_budget=0: no safety net; else (default) the in-between frame is
                          skipped only if the game thread would run late (D75) */
+  int interp_mode;    /* interp_mode=2 (stage 7e, D124): in play the in-between frame is the
+                         presenter's (src/game/pres/), not D30's pass; default 0 */
   int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;

@@ -28,6 +28,7 @@ void vita_present_apply(void) {
   g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
   g_present.interp_anim = g_vita_opts.interp == 1;
   g_present.interp_budget_us = g_vita_opts.interp_budget ? NET_US : 0;
+  g_present.interp_mode = g_vita_opts.interp_mode;
 }
 
 /* Widescreen from the menu: the GPU's targets again at the new width. */
@@ -52,6 +53,8 @@ static const MenuOption k_rows[] = {
 };
 MENU_OPTION_LIST(g_menu_present, k_rows);
 
+int pres_draw_available(void); /* src/game/pres/pres_draw.c */
+
 void vita_present_init(void) {
   vita_present_apply();
   g_present.stats = g_vita_opts.stats ? 1 : 0;
@@ -66,6 +69,11 @@ void vita_present_init(void) {
            g_vita_opts.widescreen, g_vita_opts.interp,
            g_vita_opts.interp_budget ? "at 31.3 ms a tick" : "off",
            g_present_capture ? "GPU" : "CPU");
+  if (g_vita_opts.interp_mode == 2) /* stage 7e (D124) */
+    vita_log("present: interp_mode=2: %s", pres_draw_available()
+                                               ? "in play the presenter draws the in-between frame"
+                                               : "no presenter (not built, no area, or fast_render "
+                                                 "isn't 2): D30's pass draws it");
 }
 
 /* One line per stats report, totals since the last one. */
