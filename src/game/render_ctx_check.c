@@ -132,6 +132,7 @@ static int s_npairs;
 static u32 s_delta; /* the mirror's offset from the arena */
 static u32 s_buf_lo, s_buf_hi; /* the primitive buffers and OTs, live */
 static int s_mirror_pairs;     /* the first s_pairs: the mirror's regions (reloc) */
+static int s_sec_pair0 = MAX_PAIRS; /* the sectors the presenter animated: s_pairs from here */
 
 static void pair(const void *lo, u32 len, const void *to) {
   if (s_npairs < MAX_PAIRS && len) {
@@ -175,6 +176,7 @@ static u32 sector_anims(int i) {
 static void set_pairs(void) {
   const uintptr_t m = render_ctx_area();
   s_npairs = 0;
+  s_sec_pair0 = MAX_PAIRS;
   s_delta = (u32)(m - g_psx_arena_base);
   s_buf_lo = s_buf_hi = 0;
   if (in_arena_ptr(g_Buffers.m_LowerPolyBuffer, 1) && in_arena_ptr(g_Buffers.m_WorldOTStart, OT_BYTES)) {
@@ -224,6 +226,14 @@ static int same_word(u32 p, u32 g) {
   for (i = 0; i < s_npairs; i++) {
     const Pair *q = &s_pairs[i];
     if (g - q->lo <= q->len && p == g - q->lo + q->to)
+      return 1;
+  }
+  /* a subdivision list's sector header, the sector's address >> 2 (psx_mem.h
+   * MEM_SUBDIV_HDR on a build whose arena is the PS1's KSEG0): the
+   * presenter's names its copy of an animated sector */
+  for (i = s_sec_pair0; i < s_npairs; i++) {
+    const Pair *q = &s_pairs[i];
+    if ((g << 2) - q->lo < q->len && p << 2 == (g << 2) - q->lo + q->to && (p ^ g) >> 30 == 0)
       return 1;
   }
   if ((p ^ g) >> 24 == 0 && s_buf_hi) {
@@ -395,18 +405,25 @@ static int restore_game(int k) {
 }
 
 /* Whether the work area's word at off may be a pointer to relocate. The
- * moby records (moby_hand.c TBL_RECORDS, 0x38 bytes each) hold flags, the
- * position, the matrix and the specular colour beside their four pointers,
- * and the face saves (TBL_FACE_SAVE) are addr << 8 | count and the words:
- * any of those can look like an address in a pair (a clipped record's
- * flags 0x80020000 are in the hand stack's, which made a depth scale of 8
- * and an endless LinkBuckets), so only the pointers go through reloc. */
+ * moby records (moby_hand.c TBL_RECORDS, 0x38 bytes each, ended by one
+ * whose flags are 0) hold flags, the position, the matrix and the specular
+ * colour beside their four pointers, and any of those can look like an
+ * address in a pair: a clipped record's flags, 0x80020000, are in the hand
+ * stack's, which made a depth scale of 8 and an endless LinkBuckets. So in
+ * the records only the pointers go through reloc. The rest of the area is
+ * other renderers' tables at other times (the lit list at 0x2400, inside
+ * the records' space, is moby pointers), all of it relocated as before. */
+enum { REC_AT = 0x1600, REC_MAX = 0x2A00, REC_LEN = 0x38 };
+static u32 s_rec_end; /* past the records' ending one, from REC_AT */
+static void work_records(void) {
+  u32 off = REC_AT;
+  while (off + REC_LEN <= REC_MAX && *(const u32 *)(D_8006FCF4 + off))
+    off += REC_LEN;
+  s_rec_end = off + 4 <= REC_MAX ? off + 4 : REC_MAX;
+}
 static int work_ptr(u32 off) {
-  enum { RECORDS = 0x1600, FACE_SAVE = 0x2A00, REC = 0x38 };
-  if (off >= FACE_SAVE)
-    return 0;
-  if (off >= RECORDS) {
-    const u32 w = (off - RECORDS) % REC / 4;
+  if (off >= REC_AT && off < s_rec_end) {
+    const u32 w = (off - REC_AT) % REC_LEN / 4;
     return w == 1 || w == 2 || w == 3 || w == 13; /* m_Anim, m_Frame, m_NextFrame, m_Moby */
   }
   return 1;
@@ -440,6 +457,8 @@ static void set_presenter(void) {
     u32 *to = (u32 *)s_labels[l].pres;
     const u32 *from = (const u32 *)s_labels[l].game;
     const int work = s_labels[l].game == D_8006FCF4;
+    if (work)
+      work_records();
     for (i = 0; i < s_labels[l].len / 4; i++)
       to[i] = work && !work_ptr(i * 4) ? from[i] : reloc(from[i]);
   }
@@ -582,6 +601,7 @@ u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 
   /* the sectors the presenter animated: its copies stand for them */
   {
     int i;
+    s_sec_pair0 = s_npairs;
     for (i = 0; i < g_pres_nsectors && s_env_call; i++)
       pair((void *)(uintptr_t)g_pres_sectors[i].sec, g_pres_sectors[i].len,
            (void *)(uintptr_t)g_pres_sectors[i].copy);

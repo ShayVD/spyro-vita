@@ -886,13 +886,32 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - `g_MobyShadows`, `g_Particles`, `g_Glows`, `g_Sparkles`, `g_SpyroFlame` and the HUD mobys' `m_WasDrawn` (above);
   - the faces and the sector animations (above);
   - in the check: `D_80075780`, the renderers' bound on the primitive pointer, is the pointer plus 0x1C000 (`draw.c`), past the OTs in a level with the reduced buffers, so it moves with the buffers whatever it holds; and LOD's limits are buffer addresses, so its state is moved too;
-  - in the check, a hang (wsi at vblank 9856, the tour at 24192 in level 52, found on 2026-11-08 by gdb, `logs/s7d-hang/`): the check moved every word of the work area that looked like a pointer into a pair. A clipped moby record's flags, 0x80020000 (`REC_CLIP`, depth offset 2), fall in the hand stack's pair, so the presenter's specular mobys read a depth scale of 8. Scale plus depth scale over 8 makes `LinkBuckets`' span 0, and its loop never ends. The game never builds such a record, so the logic's code stays as it is. The check now moves only the records' four pointers (`m_Anim`, `m_Frame`, `m_NextFrame`, `m_Moby`) and copies the face saves as they are (`work_ptr`).
-- **The game's builds are unchanged.** `logs/s7d/objcmp.sh` compiles every renderer file (and `gte_regs.c`, `gte_ops.c`, `lod.c`, `hand_check.c`, `native_draw.c`) from this branch and from main (`4514e36`) with the same command and compares the disassembly function by function:
+  - in the check, a hang (wsi at vblank 9856, the tour at 24192 in level 52, found on 2026-11-08 by gdb, `logs/s7d-hang/`): the check moved every word of the work area that looked like a pointer into a pair. A clipped moby record's flags, 0x80020000 (`REC_CLIP`, depth offset 2), fall in the hand stack's pair, so the presenter's specular mobys read a depth scale of 8. Scale plus depth scale over 8 makes `LinkBuckets`' span 0, and its loop never ends. The game never builds such a record, so the logic's code stays as it is. The check now walks the records (0x1600 on, ended by one whose flags are 0) and moves only their four pointers (`m_Anim`, `m_Frame`, `m_NextFrame`, `m_Moby`); the rest of the work area is relocated as before (`work_records`, `work_ptr`). A first try that kept the whole of 0x1600–0x2A00 unmoved was wrong, and the check said so: the lit list at 0x2400 is moby pointers inside that space, and unmoved they made the presenter's lit mobys clear the game's mobys' `m_WasDrawn` (43,882 writes on wsi, `logs/s7d3-wsi-rc`).
+  - in the check, the tour's environment (2,976 work-area differences in one level, `logs/s7d4-whole-rc`): a subdivision list's sector header is the sector's address >> 2 on the arena build (`psx_mem.h` `MEM_SUBDIV_HDR`), and the presenter's names its copy of an animated sector (0x804007AC >> 2 against the game's 0x8008F404 >> 2). That is right; the compare didn't know the form. `same_word` now accepts it, for the copies the presenter made in that call only.
+- **The game's builds are unchanged.** `logs/s7d/objcmp.sh` compiles every renderer file (and `gte_regs.c`, `gte_ops.c`, `lod.c`, `hand_check.c`, `native_draw.c`) from this branch and from main (`4514e36`, and again after the merge from `a20f4bb`) with the same command and compares the disassembly function by function:
   - every `_ngte` and `_ndr` build, `gte_regs`, `gte_ops`, `hand_check` and `native_draw`: identical;
   - the `NAME_hand.c` builds: identical but for the renderers' entry wrappers (`func_XXXXXXXX` and `func_XXXXXXXX__m2c`), which gain the check's branch (one flag test, as `--native-draw-check`'s);
   - `lod.c`: identical but for its three new state functions.
-- **Results:** RESULTS
+- **Results** (2026-11-08, this branch merged with main `a20f4bb`; logs under `logs/s7d/`):
+  - **host pairs,** `--native-draw --render-ctx-check` against the same scenario at `native_draw=0` (`tools/native_draw_ab.sh`, `MODE=rc`, `N0_FROM=s7d`; summaries `logs/s7d/ab4-rc-*.txt`, `ab5-rc-whole.txt`), every file byte-identical and every renderer at 0 differences, 0 writes, 0 traps:
+
+    | Scenario | Files identical | Renderers clean | Calls checked |
+    |---|---|---|---|
+    | demo | 26/26 | 11/11 | 31,778 |
+    | gems | 19/19 | 10/10 | 21,365 |
+    | wsi | 25/25 | 11/11 | 83,495 |
+    | vc | 19/19 | 10/10 | 21,365 |
+    | lod | 19/19 | 10/10 | 21,365 |
+    | route A | 55/55 | 10/10 | 35,761 |
+    | route B | 56/56 | 10/10 | 35,795 |
+    | the tour (100,000 vblanks) | 141/141 | 11/11 | 320,964 |
+
+    The seven ran on binary `eb50bbf7` (`logs/s7d4-*-rc`), the tour on `final-bin2.txt`'s, which adds only the compare's sector-header form above (`logs/s7d5-whole-rc`). The tour on `eb50bbf7` was byte-identical too (141/141) with the environment's 2,976 header words its only differences (`logs/s7d4-whole-rc`);
+  - **the native build** (`build/linux32-native`, 4,000 vblanks): 10 renderers, 0 differences, 0 writes (`logs/s7d/native-rc2.out`);
+  - **Vita3K:** this branch's VPK against main `a20f4bb`'s CI VPK, gems pad, 8,768 vblanks, a shot and a window capture every 500: 35 of 35 files identical, 17 shots, 17 captures and the card (`logs/s7d/v3k-main2`, `v3k-branch4`, `v3k-cmp4.txt`). An earlier run of the branch (`v3k-branch2`) stopped at 40 s when Vita3K itself crashed (a null access at a host PC, `vita3k.txt`); its 13 files were identical, and the next two runs went to the end. Vita3K, not hardware: 7d changes nothing the Vita runs until 7e;
+  - **the game's builds:** `logs/s7d/objcmp.sh` and `fncmp.sh` against main `a20f4bb` (`objcmp-a20f4bb.txt`, `fncmp-a20f4bb.txt`), as above;
+  - **build_matching** green, PSX.EXE SHA-1 OK (`logs/s7d/build_matching2.txt`); **ctest** 26 passed and `gte` skipped as on main, of 27, the two new tests included (`logs/s7d/ctest2.txt`); `tools/check_no_assets.sh` exit 0.
 - **What it costs:** nothing on the Vita until 7e calls the presenter. The ELF gains the presenter's code (twelve renderers, the GTE, LOD), and the entry wrappers gain a flag test.
 - **The link check** (`tests/render_ctx/link_check.sh`, ctest `render_ctx_link`): the undefined symbols of every presenter object must be the presenter's own (`g_pres_*`, `pres_*`) or on a read-only list (the level and game data the draw reads, read-only tables, libc's copies and libgcc's division). 10 objects pass, on the arena and the native builds. It is the guarantee 7f needs to run them on another core, for what they reach by name; the trap covers what they reach through pointers.
-- **Size:** ~1,250 lines with comments: the check 590, the context and names 340, the presenter code in the two renderers 80, the builds and tests the rest. D119's estimate was ~0.8–1.3k.
+- **Size:** ~1,290 lines with comments: the check 630, the context and names 340, the presenter code in the two renderers 80, the builds and tests the rest. D119's estimate was ~0.8–1.3k.
 - **Next:** 7d2, the renderers' hand C to readable C by D87's rule, behind `fast_render=3`; the presenter build takes the same code.
