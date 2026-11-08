@@ -941,7 +941,7 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **In `present.c`:** at D30's pass's point, with `interp_mode=2` and in play, `presenter_pass` draws the frame (16:9 included; in an attract demo at 16:9 it starts from the 16:9 copies of the visibility state and leaves its own there, as D30's pass does). It saves no state but the GPU environments its `PutDrawEnv` and `PutDispEnv` change. D30's pass leaves libgpu's environment put last (`currentDispEnv`) changed for the logic's `PutDispEnv`; the presenter in its place leaves it as the pass would. Elsewhere, and in the other gamestates, D30's pass runs as before; `interp_mode` 0 (the default) changes nothing.
 - **The check** (`--pres-check`, `src/game/pres/pres_check.c`): in play the presenter draws each in-between frame first, its list recorded and not walked (`currentDispEnv` put back), then D30's pass, recorded and shown. A frame record is the draw and display environments put, then the list in its order: each packet's words after its link, a native_draw marker's records expanded. The polygons' bits the PS1 GPU ignores aren't compared (the high half of a textured polygon's third and fourth UV words, a gouraud polygon's later colour code bytes): they hold what the buffer held before, and the presenter's buffers are its own. Without that, the first difference was such a pad word (`logs/s7e-try7`).
 - **What the check found on the way** (each fixed before the results):
-  - `D_80075950` is defined in `draw.c` itself, so the presenter had its own (a common symbol the game shares): now a snapshot label. The link check names common symbols as the game's since;
+  - `D_80075950` is defined in `draw.c` itself, uninitialised: a common symbol, so the presenter's copy of `draw.c` wrote the game's own pacer (the link check had taken the common symbol for the presenter's). Now a snapshot label, and the link check names common symbols as the game's;
   - the particle space begins where the world OT ends, so the particle list's pointer was taken for the buffers' end and moved into the buffers' mirror (a crash, `logs/s7e-try2`): an address is matched inside a region first, a region's end only after;
   - libgpu's `currentDispEnv` (above): the check's presenter, run first, moved D30's display environment;
   - the glows' positions (above): a glow on a blended moby drew from the game's moby.
@@ -953,19 +953,19 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 
     | Scenario | Frames compared | Identical | Packets (records) in D30's | Files identical |
     |---|---:|---:|---:|---|
-    | demo (the attract demos) | 1,971 | 1,971 | 3,330,208 | (the first try, `logs/s7e-try8`) |
+    | demo (the attract demos) | 1,971 | 1,971 | 3,330,208 | — (a single run, `logs/s7e-try8`) |
     | demo, `--native-draw` | 1,971 | 1,971 | 65,585 (3,264,623 records) | 26/26 |
     | wsi (the demos at 16:9: the 16:9 pass's own visibility state) | 1,971 | 1,971 | 3,623,748 | 26/26 |
     | gems (16:9 play) | 1,211 | 1,211 | 2,151,615 | 19/19 |
     | route A | 2,475 | 2,475 | 3,937,846 | 56/56 |
     | route B | 2,019 | 2,019 | 3,042,916 | 56/56 |
-    | the tour (100,000 vblanks) | TOUR_CHK | | | |
-    | the native build, demo to 5,000, `--native-draw` | 534 | 534 | 13,537 (819,204 records) | (`logs/s7e-native-chk`) |
+    | the tour (100,000 vblanks) | 25,353 | 25,353 | 39,788,372 | 141/141 |
+    | the native build, demo to 5,000, `--native-draw` | 534 | 534 | 13,537 (819,204 records) | — (a single run, `logs/s7e-native-chk`) |
 
     The frames not compared are the other gamestates' (D30's pass draws them) and the camera's jumps (neither draws one).
-  - **`--interp-mode 2`, the presenter's frame shown** (`MODE=m2`, against the same scenario with `--interp`): demo (`--native-draw`) 26/26 files, wsi 26/26, gems 19/19, route A 56/56, route B 56/56, the tour TOUR_M2. Their traces, WAVs and cards are also byte-identical to the same runs with `--interp` off (host_checks' runs below): demo, wsi, routes A and B.
+  - **`--interp-mode 2`, the presenter's frame shown** (`MODE=m2`, against the same scenario with `--interp`): demo (`--native-draw`) 26/26 files, wsi 26/26, gems 19/19, route A 56/56, route B 56/56, the tour 141/141. Their traces, WAVs and cards are also byte-identical to the same runs with `--interp` off (host_checks' runs below): demo, wsi, routes A and B, the tour.
   - **The switch off** (`tools/host_checks.sh`, `logs/s7e-hc*`): the arena build **287 of 287** files and the native build **287 of 287**, against D122's runs of the same (`../quirky-curie-9d98fe/logs/d121-br-{arena,native}-*`: main `063ff4c` with D122, which 7d's merge left unchanged by D123's checks), logs included with the folder's name swapped (`logs/s7e/hc-cmp.sh`).
-  - **`--render-ctx-check`** with the renderers on the snapshot's names: ctest's `render_ctx_demo`, and gems (`MODE=rc`): RC_GEMS.
+  - **`--render-ctx-check`** with the renderers on the snapshot's names: ctest's `render_ctx_demo`, and gems (`MODE=rc`, `logs/s7erc-gems.txt`): 10 renderers, 21,365 calls, 0 differences, 0 writes, the files 19 of 19 identical (D123 had the same count).
   - **The link check:** the arena build 65 functions, the native build 63, the Vita's ARM objects 52 (at `-O2`; libgcc's `__aeabi_idiv` is on the list as `__divdi3` is), all passing. 7d's `render_ctx_link` passes.
   - **ctest:** the arena build 28 passed, `gte` skipped as on main, of 29; the native build 24 passed, `gte` skipped, of 25; the two new tests (`pres_link`, `pres_demo`) included. `savestate_globals` now knows the presenter's files (`tools/savestate_globals.py`: its state is taken from the game's at every frame it draws and never read by the game).
   - **`tools/build_matching.sh`:** `PSX.EXE SHA-1 OK`, every overlay OK. `tools/check_no_assets.sh` exit 0. The Vita build has no new kind of warning; the decomp's own warnings (`common.h` int conversions) appear again for the files built twice.
