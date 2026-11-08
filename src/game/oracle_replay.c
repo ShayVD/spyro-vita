@@ -474,6 +474,22 @@ __attribute__((constructor)) static void shadow_from_env(void) {
 #define COL_SHADOW_FAILS() 0
 #endif
 
+/* fast_render=3's renderers against their mips2c units (hand_check.c,
+ * D124): in the replay at --fast-render 3, and with SPYRO_SHADOW=render
+ * over a whole host run. The units are linked in every arena build. */
+extern int g_render_shadow, g_render_shadow_fail;
+extern unsigned long g_render_shadow_calls;
+static void render_shadow_report(void) {
+  fprintf(stderr, "shadow: render %d mismatches in %lu calls\n", g_render_shadow_fail, g_render_shadow_calls);
+}
+__attribute__((constructor)) static void render_shadow_from_env(void) {
+  const char *l = getenv("SPYRO_SHADOW");
+  if (!l || !strstr(l, "render"))
+    return;
+  g_render_shadow = 1;
+  atexit(render_shadow_report);
+}
+
 /* Child: run one sample, print its line, exit 0 (pass) or 1 (fail). */
 static int run_one(const char *name, int k, Snap *in, Snap *out) {
   u8 *arena = (u8 *)g_psx_arena_base;
@@ -488,7 +504,7 @@ static int run_one(const char *name, int k, Snap *in, Snap *out) {
   }
   v0 = call_entry(e, in);
   v1 = g_mips_v1;
-  ncol = COL_SHADOW_FAILS();
+  ncol = COL_SHADOW_FAILS() + (u32)g_render_shadow_fail;
   if (getenv("SPYRO_REPLAY_DUMP")) { /* the host's RAM after the call, for offline diffs */
     FILE *df = fopen(getenv("SPYRO_REPLAY_DUMP"), "wb");
     if (df) {
@@ -691,6 +707,10 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
   g_mobys_shadow = !getenv("SPYRO_REPLAY_MOBYSHADOW") || atoi(getenv("SPYRO_REPLAY_MOBYSHADOW"));
   g_hand_shadow = !getenv("SPYRO_REPLAY_HANDSHADOW") || atoi(getenv("SPYRO_REPLAY_HANDSHADOW"));
 #endif
+  /* fast_render=3's renderers against their units (hand_check.c, D124; the
+   * units are linked in every arena build) */
+  g_render_shadow = g_fast_render == 3 &&
+                    (!getenv("SPYRO_REPLAY_RENDERSHADOW") || atoi(getenv("SPYRO_REPLAY_RENDERSHADOW")));
   if (ignore)
     load_ignore(ignore);
   if (fnmap)

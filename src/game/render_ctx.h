@@ -8,7 +8,10 @@
  * file, the scratchpad, the spill area and hand stack, the work area, the
  * sector flags, the primitive buffer and OTs, the record pool, LOD's state.
  * So the presenter (7e) can draw while the game's draw runs (7f). The
- * logic's build is unchanged.
+ * logic's build is unchanged. Since 7d2 (D124) the presenter build is
+ * fast_render=3's readable code: of the GTE it has the control registers
+ * only, and in place of the scratchpad, spill area and hand stack, its own
+ * working memory.
  *
  * This header is the game side's view: the presenter's state by its own
  * names, the entries, and the host's check (--render-ctx-check,
@@ -39,23 +42,22 @@ u32 func_80058BA8_pres(u32, u32, u32, u32); /* the glows and sparkles */
 u32 func_80058864_pres(u32, u32, u32, u32); /* the dragon rescue's ring */
 
 /* ---- the presenter's state (render_ctx_names.h maps the game's names) ---- */
+/* the control registers (CP2C); the data half is a view the shared
+ * headers compile against, which render_ctx_check keeps unused */
 extern GTERegisters g_pres_gte;
-extern unsigned char g_pres_scratch[1024];
+extern unsigned char g_pres_scratch[1024]; /* the working memory */
 enum {
-  PRES_SPILL = 0xC8,   /* D_80077DD8 .. D_80077EA0 */
   PRES_WORK = 0x31A0,  /* D_8006FCF4 (g_SonyImage's space) */
   PRES_SEEN = 0x100,   /* D_800771C8 */
-  PRES_STACK = 0x1000, /* the hand stack under g_pres_mips_sp */
   PRES_SHADOWS = 0xC,  /* g_MobyShadows (MobyShadow) */
   PRES_PARTICLES = 4,  /* g_Particles: the particle list's pointer */
   PRES_GLOWS = 0x240,  /* g_Glows: 16 of 0x24 bytes */
   PRES_SPARKLES = 0xC0, /* g_Sparkles: 8 of 0x18 bytes */
   PRES_FLAME = 0x138,  /* g_SpyroFlame */
 };
-extern char g_pres_spill[PRES_SPILL], g_pres_work[PRES_WORK], g_pres_seen[PRES_SEEN];
+extern char g_pres_work[PRES_WORK], g_pres_seen[PRES_SEEN];
 extern char g_pres_moby_shadows[PRES_SHADOWS], g_pres_particles[PRES_PARTICLES];
 extern char g_pres_glows[PRES_GLOWS], g_pres_sparkles[PRES_SPARKLES], g_pres_spyro_flame[PRES_FLAME];
-extern u32 g_pres_mips_sp;
 extern char g_pres_prim_next[4], g_pres_prim_end[4], g_pres_prim_full[4];
 extern char g_pres_world_ot[4], g_pres_hud_ot[4];
 extern NdCursor g_pres_nd;
@@ -66,12 +68,8 @@ extern void (*g_pres_rtp_hook)(int idx, int sf);
 extern void (*g_pres_rtp_value_hook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3);
 extern int g_pres_lod_k, g_pres_lod_pass, g_pres_lod_stats;
 
-/* At start, after port.c's scratchpad relocations: the presenter's copies
- * of the tables that hold scratchpad addresses. */
+/* At start (nothing to do since D124). */
 void render_ctx_init(void);
-
-/* The hand stack's top (the presenter's g_mips_sp at a call's start). */
-u32 render_ctx_stack_top(void);
 
 /* The presenter's area: PRES_AREA bytes the arena's allocation adds after
  * the game's memory (arena.c), so OT links and packed addresses reach it

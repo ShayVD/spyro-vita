@@ -36,7 +36,17 @@
  * DPCS are native maths (gte_native.h); the animation blends and the
  * subdivision grids run native but for their last steps. What the native
  * commands would have left in the GTE goes back into it at the end of each
- * pass, or before the register-file code that follows. */
+ * pass, or before the register-file code that follows.
+ *
+ * fast_render=3 (env_hand_rc.c, NGTE_RC, D124): all of it native, the
+ * blends and grids to their last step; the control registers moved as the
+ * asm moves them (the matrices, the camera offset the high-poly pass keeps
+ * in the back colour, and the far colour each colour command uses: the
+ * flushes write the last one's). The working values the asm keeps in the
+ * scratchpad (the projected vertices, the subdivision grid, the last
+ * list's end) go to the renderers' working memory, which nothing reads
+ * after a call (D124's audit), and the subdivision tables' scratchpad
+ * addresses are taken as offsets into it. */
 #include "render_hand.h"
 #if NGTE
 #include "native_draw.h"
@@ -74,6 +84,14 @@ extern char D_8006D5E4[]; /* last list, quad: twelve GT3s */
 #define LIST_4X4 (LISTS + 0x1E00)  /* polygons for 4x4 subdivision */
 #define LIST_LOW (LISTS + 0x2000)  /* low-poly sectors; then 2x2; then last */
 #define SC(off) (SCRATCH_BASE + (u32)(off))
+/* A subdivision table's word: a scratchpad address (port.c relocates them
+ * to the game's scratchpad); at fast_render=3 its offset into the working
+ * memory. */
+#if NGTE_RC
+#define SC_TABLE(w) SC((w) & 0x3FFu)
+#else
+#define SC_TABLE(w) (w)
+#endif
 #define SC_LAST_END 0x3FC /* scratchpad word: the last list's end */
 
 /* GTE registers (data, then control) */
@@ -180,7 +198,11 @@ static void AnimCopy(u32 src, u32 size, u32 dst) {
  * asm loads a word past each frame's end, and the IR registers keep it. */
 static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
   u32 a = f->a, b = f->b, end = f->a + f->size + 4, wa, wb;
+#if NGTE_RC
+  u32 fc;
+#else
   MTC2(f->blend << 4, IR0);
+#endif
   wa = AT32(a);
   a += 4;
   wb = AT32(b);
@@ -188,12 +210,22 @@ static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
 #if NGTE
   {
     /* native but for the last three steps (three INTPL refill the colour
-     * FIFO); IR1-3 then get the vertex the last native step moved there */
+     * FIFO); IR1-3 then get the vertex the last native step moved there.
+     * fast_render=3: every step, and the far colour the last one took */
     const int ir0 = (s16)(f->blend << 4);
+#if NGTE_RC
+    const u32 code = 0;
+    while (end != a) {
+      NgteCol o;
+      fc = wb;
+      o = ngte_intpl(wa >> 21, (wa >> 10) & 0x7FF, wa & 0x3FF, ir0, wb >> 21, (wb >> 10) & 0x7FF, wb & 0x3FF,
+                     code);
+#else
     const u32 code = C2_CODE;
     while ((s32)(end - a) > 12) {
       NgteCol o = ngte_intpl(wa >> 21, (wa >> 10) & 0x7FF, wa & 0x3FF, ir0, wb >> 21,
                              (wb >> 10) & 0x7FF, wb & 0x3FF, code);
+#endif
       wa = AT32(a);
       wb = AT32(b);
       dst += 4;
@@ -203,6 +235,11 @@ static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
     }
   }
 #endif
+#if NGTE_RC
+  CTC2(fc >> 21, C_RFC);
+  CTC2((fc >> 10) & 0x7FF, C_GFC);
+  CTC2(fc & 0x3FF, C_BFC);
+#else
   MTC2(wa >> 21, IR1);
   MTC2((wa >> 10) & 0x7FF, IR2);
   MTC2(wa & 0x3FF, IR3);
@@ -225,6 +262,7 @@ static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
     w += MFC2(MAC3);
     AT32(dst - 4) = w;
   } while (end != a);
+#endif
 }
 
 /* Colours with a step (the top byte, a word count) to the next one written. */
@@ -246,15 +284,26 @@ static inline void LoadFarColour(u32 w) {
 
 static void AnimBlendColours(const AnimFrames *f, u32 dst) {
   u32 a = f->a, b = f->b, end = f->a + f->size, wa, wb;
+#if NGTE_RC
+  u32 fc;
+#else
   MTC2(f->blend << 4, IR0);
+#endif
   wa = AT32(a);
   wb = AT32(b);
 #if NGTE
   {
-    /* native but for the last three DPCS */
+    /* native but for the last three DPCS (fast_render=3: all of them, and
+     * the far colour the last one took) */
     const int ir0 = (s16)(f->blend << 4);
+#if NGTE_RC
+    while (end != a) {
+      const u32 step = (wa >> 22) & 0x3FC;
+      fc = wb;
+#else
     while ((s32)(end - a) > 12) {
       const u32 step = (wa >> 22) & 0x3FC;
+#endif
       const u32 rgb = ngte_dpcs(wa & 0xFFFFFF, ir0, (wb << 4) & 0xFF0, (wb >> 4) & 0xFF0, (wb >> 12) & 0xFF0).rgb2;
       wa = AT32(a + 4);
       wb = AT32(b + 4);
@@ -265,6 +314,9 @@ static void AnimBlendColours(const AnimFrames *f, u32 dst) {
     }
   }
 #endif
+#if NGTE_RC
+  LoadFarColour(fc);
+#else
   do {
     u32 step;
     MTC2(wa & 0xFFFFFF, RGBC);
@@ -278,6 +330,7 @@ static void AnimBlendColours(const AnimFrames *f, u32 dst) {
     dst += step;
     AT32(dst) = MFC2(RGB2);
   } while (end != a);
+#endif
 }
 
 /* High-poly colours: a near and a far colour per step, into the two tables. */
@@ -298,7 +351,11 @@ static void AnimCopyColourPairs(u32 src, u32 size, u32 sec) {
 
 static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
   u32 a = f->a, b = f->b, end, counts, near, far, w0, w1;
+#if NGTE_RC
+  u32 fc;
+#else
   MTC2(f->blend << 4, IR0);
+#endif
   end = f->a + f->size;
   counts = AT32(sec + SEC_HIGH);
   near = sec + SEC_DATA + ((counts >> 22) & 0x3FC);
@@ -308,15 +365,23 @@ static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
   far = near + ((counts >> 6) & 0x3FC);
 #if NGTE
   {
-    /* native but for the last two steps (four DPCS) */
+    /* native but for the last two steps (four DPCS; fast_render=3: all of
+     * them, and the far colour the last one took) */
     const int ir0 = (s16)(f->blend << 4);
+#if NGTE_RC
+    while (a != end) {
+#else
     while ((s32)(end - a) > 16) {
+#endif
       const u32 step = (w0 >> 22) & 0x3FC;
       u32 rgb = ngte_dpcs(w0 & 0xFFFFFF, ir0, (w1 << 4) & 0xFF0, (w1 >> 4) & 0xFF0, (w1 >> 12) & 0xFF0).rgb2;
       w0 = AT32(a + 4);
       w1 = AT32(b + 4);
       near += step;
       AT32(near) = rgb;
+#if NGTE_RC
+      fc = w1;
+#endif
       rgb = ngte_dpcs(w0, ir0, (w1 << 4) & 0xFF0, (w1 >> 4) & 0xFF0, (w1 >> 12) & 0xFF0).rgb2;
       a += 8;
       b += 8;
@@ -327,6 +392,9 @@ static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
     }
   }
 #endif
+#if NGTE_RC
+  LoadFarColour(fc);
+#else
   do {
     u32 step;
     MTC2(w0 & 0xFFFFFF, RGBC);
@@ -347,6 +415,7 @@ static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
     far += step;
     AT32(far) = MFC2(RGB2);
   } while (a != end);
+#endif
 }
 
 /* g_EnvironmentAnimations' lists for the four kinds a sector can name. */
@@ -407,6 +476,9 @@ typedef struct {
 } CullMvmva;
 
 static void CullFlush(CullMvmva *m) {
+#if NGTE_RC
+  (void)m; /* fast_render=3: nothing to replay */
+#else
   if (!m->pending)
     return;
   MTC2(m->ir3, IR3);
@@ -418,6 +490,7 @@ static void CullFlush(CullMvmva *m) {
   if (m->read_ir2)
     (void)MFC2(IR2);
   m->pending = 0;
+#endif
 }
 #endif
 
@@ -598,6 +671,7 @@ static void SectorLists(s32 group, const CamPos *cam) {
 
 /* A low-poly vertex (z 11 bits, x 11, y 10, relative to the sector's
  * origin) into V0. */
+#if !NGTE_RC
 static inline void LoadLowVertex(u32 w, u32 oz, u32 ox, u32 oy) {
   u32 z = (w >> 21) + oz;
   u32 x = ox - ((w >> 10) & 0x7FF);
@@ -605,6 +679,7 @@ static inline void LoadLowVertex(u32 w, u32 oz, u32 ox, u32 oy) {
   MTC2(z, VZ0);
   MTC2(x + (y << 16), VXY0);
 }
+#endif
 #if NGTE
 static inline u32 LowVZ(u32 w, u32 oz) { return (w >> 21) + oz; }
 static inline u32 LowVXY(u32 w, u32 ox, u32 oy) {
@@ -932,6 +1007,7 @@ static inline u32 HighVertexXY(u32 w, u32 oy, u32 oz) {
 
 /* A vertex's colour faded from its near colour to its far one: F is 0x1000
  * at full near colour (DPCS: far + (near - far) * F). */
+#if !NGTE_RC
 static inline u32 FadeColour(u32 near_addr, u32 far_addr, u32 f) {
   u32 near = AT32(near_addr), far;
   if ((s32)(f - 0x1000) >= 0)
@@ -947,6 +1023,7 @@ static inline u32 FadeColour(u32 near_addr, u32 far_addr, u32 f) {
   gte_dpcs();
   return MFC2(RGB2);
 }
+#endif
 #if NGTE
 static inline u32 FadeColourN(NgteSync *s, u32 near_addr, u32 far_addr, u32 f) {
   u32 near = AT32(near_addr), far, rfc, gfc, bfc;
@@ -1775,9 +1852,10 @@ static void GridTransform(u32 n, int behind_flag) {
   small = GridVertex(GRID(0), &vz, &vxy);
 #if NGTE
   {
-    /* native but for the last NGTE_TAIL points (n is 6 or more) */
+    /* native but for the last NGTE_TAIL points (n is 6 or more;
+     * fast_render=3: every point) */
     const NgteProj P = s_proj;
-    while ((s32)(end - p) > NGTE_TAIL * 0x10) {
+    while (NGTE_RC ? p != end : (s32)(end - p) > NGTE_TAIL * 0x10) {
       const NgteRtp t = ngte_rtps_w(&P, vxy, vz);
       const u32 sxy = t.sxy;
       u32 f = t.sz3;
@@ -1801,6 +1879,7 @@ static void GridTransform(u32 n, int behind_flag) {
     }
   }
 #endif
+#if !NGTE_RC
   MTC2(vz, VZ0);
   MTC2(vxy, VXY0);
   do {
@@ -1828,6 +1907,7 @@ static void GridTransform(u32 n, int behind_flag) {
       f |= 0x8000;
     AT32(p - 0x1C) = f;
   } while (p != end);
+#endif
 }
 
 /* A point's screen position moved toward the average of two others (GPF
@@ -1835,6 +1915,17 @@ static void GridTransform(u32 n, int behind_flag) {
  * perspective error of interpolated points close to the camera. */
 static void GridCorrect(u32 g, u32 w_out, u32 w_in, u32 pa_addr, u32 pb_addr) {
   u32 xy = AT32(g), pa, pb, m1, m2, n1, n2, x, y;
+#if NGTE_RC
+  NgteCol o;
+  pa = AT32(pa_addr);
+  pb = AT32(pb_addr);
+  o = ngte_gpf0((s16)xy, (s16)((s32)xy >> 16), 0, (s16)w_out, 0);
+  m1 = (u32)o.mac1;
+  m2 = (u32)o.mac2;
+  o = ngte_gpf0((s16)((s32)(s16)pa + (s32)(s16)pb), (s16)(((s32)pa >> 16) + ((s32)pb >> 16)), 0, (s16)w_in, 0);
+  n1 = (u32)o.mac1;
+  n2 = (u32)o.mac2;
+#else
   MTC2(w_out, IR0);
   MTC2((u32)(s32)(s16)xy, IR1);
   MTC2((u32)((s32)xy >> 16), IR2);
@@ -1849,6 +1940,7 @@ static void GridCorrect(u32 g, u32 w_out, u32 w_in, u32 pa_addr, u32 pb_addr) {
   gte_gpf0();
   n1 = MFC2(MAC1);
   n2 = MFC2(MAC2);
+#endif
   x = (u32)((s32)(m1 + n1) >> 8);
   y = (u32)((s32)(m2 + n2) >> 8);
   AT32(g) = (x & 0xFFFF) + (y << 16);
@@ -1879,7 +1971,7 @@ static void Grid5x5Inner(void) {
   if ((s32)(d - m) < 0)
     m = d;
   for (k = 0; k < 16; k += 4) {
-    u32 g = AT32(ADDR(D_8006D0D8) + k);
+    u32 g = SC_TABLE(AT32(ADDR(D_8006D0D8) + k));
     if (AT32(g + 4) & 0xF000)
       continue;
     GridCorrect(g, 0x100 - m, m >> 1, g - 0x40, g + 0x40);
@@ -1939,6 +2031,11 @@ static u32 EdgeTriangle(u32 fp, u32 ot, u32 e, u32 tex, u32 w3, u32 code_sub) {
  * overflowed (the polygon passed it as a whole otherwise). 1 = drop it. */
 static inline int PieceBack(u32 w3, u32 xy0, u32 xy1, u32 xy2) {
   s32 a;
+#if NGTE_RC
+  if (w3 & 4)
+    return 0;
+  a = ngte_nclip(xy0, xy1, xy2);
+#else
   MTC2(xy0, SXY0);
   MTC2(xy1, SXY1);
   MTC2(xy2, SXY2);
@@ -1946,6 +2043,7 @@ static inline int PieceBack(u32 w3, u32 xy0, u32 xy1, u32 xy2) {
   if (w3 & 4)
     return 0;
   a = (s32)MFC2(MAC0);
+#endif
   if (w3 & 2)
     a = -a;
   return a < 0;
@@ -1956,11 +2054,15 @@ static inline int PieceQuadBack(u32 w3, u32 xy0, u32 xy1, u32 xy2, u32 xy3) {
   s32 a;
   if (!PieceBack(w3, xy0, xy1, xy2))
     return 0;
+#if NGTE_RC
+  a = ngte_nclip(xy3, xy2, xy1);
+#else
   MTC2(xy3, SXY0);
   MTC2(xy2, SXY1);
   MTC2(xy1, SXY2);
   gte_nclip();
   a = (s32)MFC2(MAC0);
+#endif
   if (w3 & 2)
     a = -a;
   return a < 0;
@@ -2056,7 +2158,7 @@ static u32 Subdiv2x2Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
   }
 
   for (k = 0; k < 4; k++) {
-    const u32 g = AT32(ADDR(D_8006CF48) + k * 4), uvp = tex + 8 + k * 8;
+    const u32 g = SC_TABLE(AT32(ADDR(D_8006CF48) + k * 4)), uvp = tex + 8 + k * 8;
     u32 f0 = AT32(g + 0x4), f1 = AT32(g + 0x14), f2 = AT32(g + 0x34), f3 = AT32(g + 0x44);
     u32 uvw0 = AT32(uvp), uvw1, zs, xy0, xy1, xy2, xy3;
     if (f0 & f1 & f2 & f3 & 0xF000)
@@ -2301,7 +2403,7 @@ static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
   }
 
   for (k = 0; k < 16; k++) {
-    const u32 g = AT32(ADDR(D_8006CF58) + k * 4), uvp = tex + 0x28 + k * 8;
+    const u32 g = SC_TABLE(AT32(ADDR(D_8006CF58) + k * 4)), uvp = tex + 0x28 + k * 8;
     u32 f0 = AT32(g + 0x4), f1 = AT32(g + 0x14), f2 = AT32(g + 0x54), f3 = AT32(g + 0x64);
     u32 uvw0 = AT32(uvp), uvw1, zs, xy0, xy1, xy2, xy3;
     int small;

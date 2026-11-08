@@ -17,7 +17,9 @@
  *
  * fast_render=2 (NGTE, render_hand.h, decisions D80): both passes project
  * natively (gte_native.h) and replay their last four RTPS on the register
- * file at the end of the pass, before the next CTC2s. */
+ * file at the end of the pass, before the next CTC2s. fast_render=3
+ * (NGTE_RC, D124) doesn't: it sets the two matrices and projects, and the
+ * clip words go to the renderers' working memory (SCRATCH_BASE). */
 #include "render_hand.h"
 
 /* fast_render=2 with native_draw=1 (decisions D82, native_draw.h): the
@@ -72,12 +74,14 @@ static inline void VertexWords(u32 w, s32 ox, s32 oy, s32 oz, u32 *vxy, u32 *vz)
   *vz = z;
   *vxy = x + (y << 16);
 }
+#if !NGTE
 static inline void LoadVertex(u32 w, s32 ox, s32 oy, s32 oz) {
   u32 vxy, vz;
   VertexWords(w, ox, oy, oz, &vxy, &vz);
   MTC2(vz, 1);  /* VZ0 */
   MTC2(vxy, 0); /* VXY0 */
 }
+#endif
 
 /* Pass 1: the sectors whose sphere is in front of the camera. */
 static void SkyVisibleSectors(s32 group, const u32 *view) {
@@ -208,6 +212,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
         all_out &= flags;
         scratch[i] = flags;
       } while (++i != n);
+#if !NGTE_RC
       for (i = n > 4 ? n - 4 : 0; i <= n; i++) {
         VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
         if (i < n)
@@ -215,6 +220,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
         else
           ngte_v0(&sync, vxy, vz);
       }
+#endif
     }
 #else
     LoadVertex(vert[0], ox, oy, oz);

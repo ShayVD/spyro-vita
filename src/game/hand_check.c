@@ -265,6 +265,158 @@ u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u3
   return r;
 }
 
+/* fast_render=3 (D124): fast_render=1's build (the reference: today's hand
+ * C on the register file) and the readable build from the same state. The
+ * readable build writes no scratchpad, GTE data register, FLAG, spill area
+ * or hand stack, so those aren't compared: RAM but the spill area and the
+ * stack below $sp, the control registers but FLAG, and the result for the
+ * _v0 entries. The game goes on with the readable build's state; the
+ * scratchpad and data registers keep what was there before the call, which
+ * --render-poison shows nothing reads. */
+extern char D_80077DD8[];
+static void rc_mask(u32 sp) {
+  const uintptr_t base = g_psx_arena_base;
+  const uintptr_t spill = (uintptr_t)D_80077DD8;
+  const uintptr_t stack = (uintptr_t)(sp - 0x1000u);
+  if (spill >= base && spill + 0xC8 <= base + PSX_MEM_SIZE)
+    memcpy(s_reg + (spill - base), s_before + (spill - base), 0xC8);
+  if (sp && stack >= base && stack + 0x1000 <= base + PSX_MEM_SIZE)
+    memcpy(s_reg + (stack - base), s_before + (stack - base), 0x1000);
+#if !SPYRO_NATIVE_MEM
+  memcpy(s_reg, s_before, 1024); /* the scratchpad, at the arena's base */
+#endif
+}
+static u32 rc_check(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3, int cmp_v0) {
+  const int k = stat_index(name);
+  const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
+  u32 sp = g_mips_sp, v1 = g_mips_v1, r, rr;
+  if (s_in_check)
+    return rc(a0, a1, a2, a3);
+  s_in_check = 1;
+  if (sweep)
+    sweep_begin();
+  if (!s_before) {
+    s_before = malloc(PSX_MEM_SIZE);
+    s_reg = malloc(PSX_MEM_SIZE);
+  }
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
+  memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
+  s_gte_before = gteRegs;
+  rr = reg(a0, a1, a2, a3);
+  memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
+  s_gte_reg = gteRegs;
+  restore_before(sp, v1);
+  r = rc(a0, a1, a2, a3);
+  rc_mask(sp);
+  s_stats[k].calls++;
+  if (memcmp(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE) ||
+      memcmp(s_gte_reg.CP2C.r, gteRegs.CP2C.r, 31 * 4)) {
+    if (s_stats[k].bad++ < 20 && s_log) {
+      const unsigned char *ram = (const unsigned char *)g_psx_arena_base;
+      unsigned n = 0, i;
+      s_log("hand check: %s call %lu: fast_render=1 and fast_render=3 differ", name, s_stats[k].calls);
+      for (i = 0; i < PSX_MEM_SIZE && n < 8; i += 4) {
+        u32 a, b;
+        memcpy(&a, s_reg + i, 4);
+        memcpy(&b, ram + i, 4);
+        if (a != b) {
+          s_log("  ram %08x: 1 %08x 3 %08x", 0x80000000u + i, a, b);
+          n++;
+        }
+      }
+      for (i = 0; i < 31; i++)
+        if (s_gte_reg.CP2C.r[i] != gteRegs.CP2C.r[i])
+          s_log("  gte c%u: 1 %08x 3 %08x", i, s_gte_reg.CP2C.r[i], gteRegs.CP2C.r[i]);
+    }
+  } else if (cmp_v0 && rr != r) {
+    if (s_stats[k].bad++ < 20 && s_log)
+      s_log("hand check: %s call %lu: v0 %08x (fast_render=1) and %08x (fast_render=3) differ", name,
+            s_stats[k].calls, rr, r);
+  }
+  if (sweep)
+    sweep_end();
+  s_in_check = 0;
+  return r;
+}
+u32 hand_check_rc(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return rc_check(name, reg, rc, a0, a1, a2, a3, 0);
+}
+u32 hand_check_rc_v0(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return rc_check(name, reg, rc, a0, a1, a2, a3, 1);
+}
+
+/* The oracle replay's shadow for fast_render=3 (D124; as collision's D83
+ * and math's D87): each call runs the renderer's mips2c unit from the same
+ * state first, then the readable build. RAM (but the scratchpad, the spill
+ * area and the emulated stack below the call), the result for the _v0
+ * entries and the control registers (but FLAG) must match ("rendershadow"
+ * lines, g_render_shadow_fail); the call then leaves the unit's state in
+ * what wasn't compared (the scratchpad, the GTE, the spill area, the
+ * stack), so a replay sample still compares whole with the emulator's. On
+ * by default in the replay at --fast-render 3 (SPYRO_REPLAY_RENDERSHADOW=0
+ * turns it off), and over whole host runs with SPYRO_SHADOW=render. */
+int g_render_shadow, g_render_shadow_fail;
+unsigned long g_render_shadow_calls;
+#if !SPYRO_NATIVE_MEM
+static int shadow_skip(u32 off, u32 sp) {
+  const u32 spill = (u32)((uintptr_t)D_80077DD8 - g_psx_arena_base);
+  const u32 stack = sp - (u32)g_psx_arena_base;
+  return off < 0x400u || (off - spill < 0xC8u) || (off < stack && off >= stack - 0x1000u);
+}
+static u32 render_shadow_(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3,
+                          int cmp_v0) {
+  const u32 sp = g_mips_sp, v1 = g_mips_v1;
+  u32 ru, r, i, v1u, bad = 0;
+  const u32 *a, *b;
+  if (s_in_check)
+    return rc(a0, a1, a2, a3);
+  s_in_check = 1;
+  if (!s_before) {
+    s_before = malloc(PSX_MEM_SIZE);
+    s_reg = malloc(PSX_MEM_SIZE);
+  }
+  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
+  s_gte_before = gteRegs;
+  ru = unit(a0, a1, a2, a3);
+  v1u = g_mips_v1;
+  memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
+  s_gte_reg = gteRegs;
+  memcpy((void *)g_psx_arena_base, s_before, PSX_MEM_SIZE);
+  gteRegs = s_gte_before;
+  g_mips_sp = sp;
+  g_mips_v1 = v1;
+  r = rc(a0, a1, a2, a3);
+  g_render_shadow_calls++;
+  a = (const u32 *)s_reg;
+  b = (const u32 *)g_psx_arena_base;
+  for (i = 0; i < PSX_MEM_SIZE / 4; i++)
+    if (a[i] != b[i] && !shadow_skip(i * 4, sp) && bad++ < 8)
+      printf("  rendershadow %s ram %08x unit %08x readable %08x\n", name, 0x80000000u + i * 4, a[i], b[i]);
+  for (i = 0; i < 31; i++)
+    if (s_gte_reg.CP2C.r[i] != gteRegs.CP2C.r[i] && bad++ < 16)
+      printf("  rendershadow %s gte c%u unit %08x readable %08x\n", name, i, s_gte_reg.CP2C.r[i],
+             gteRegs.CP2C.r[i]);
+  if (cmp_v0 && ru != r && bad++ < 16)
+    printf("  rendershadow %s result unit %08x readable %08x\n", name, ru, r);
+  g_render_shadow_fail += bad;
+  /* the unit's state where nothing was compared */
+  memcpy((void *)g_psx_arena_base, s_reg, 0x400);
+  memcpy(D_80077DD8, s_reg + ((uintptr_t)D_80077DD8 - g_psx_arena_base), 0xC8);
+  if (sp >= g_psx_arena_base + 0x1000u && sp <= g_psx_arena_base + PSX_MEM_SIZE)
+    memcpy((void *)(uintptr_t)(sp - 0x1000u), s_reg + (sp - 0x1000u - g_psx_arena_base), 0x1000);
+  gteRegs = s_gte_reg;
+  g_mips_v1 = v1u;
+  s_in_check = 0;
+  return ru;
+}
+u32 render_shadow(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return render_shadow_(name, unit, rc, a0, a1, a2, a3, 0);
+}
+u32 render_shadow_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return render_shadow_(name, unit, rc, a0, a1, a2, a3, 1);
+}
+#endif
+
 /* As hand_check, for a function whose result its callers read (D96). */
 u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
   s_cmp_v0 = 1;

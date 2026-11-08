@@ -120,7 +120,9 @@
  *                       renderers and the inline GTE commands, the same
  *                       results; D72); fast_render=2: the hand-written
  *                       renderers with native GTE maths, the same results
- *                       again (D80)
+ *                       again (D80); fast_render=3: the same renderers as
+ *                       readable C, no GTE data registers, scratchpad,
+ *                       spill area or hand stack, the same pictures (D124)
  *       ngte_fx=1       with fast_render=2, the shadows, the flame and the
  *                       particles with native GTE maths too, the same
  *                       results (D98; default 0: those three on the GTE
@@ -573,7 +575,8 @@ int main(int argc, char **argv) {
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
-           g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
+           g_fast_render == 3 ? "hand-written renderers as readable C (D124)"
+           : g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
            : g_fast_render    ? "hand-written renderers, inline GTE commands (D72)"
                               : "translated renderers, PsyCross's GTE_operator");
   if (g_fast_render == 2)
@@ -640,8 +643,8 @@ int main(int argc, char **argv) {
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
            : g_native_draw == 2   ? "the renderers' PS1 primitives parsed by the walk with the "
                                     "native draw lists' converter (D92)"
-           : g_fast_render == 2   ? "the hand renderers' primitives as native draw lists (D82)"
-                                  : "needs fast_render=2: off");
+           : g_fast_render >= 2   ? "the hand renderers' primitives as native draw lists (D82)"
+                                  : "needs fast_render=2 or 3: off");
   vita_log("gpu_clear=%d: %s", g_gpu_clear,
            g_gpu_clear >= 3   ? "the clears row by row, a target's whole clear left to its "
                                 "read-back, poison in its place (audit, D111)"

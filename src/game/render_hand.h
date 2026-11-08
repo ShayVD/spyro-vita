@@ -32,9 +32,33 @@
  * tables: vertex, colour and clip-word indices come pre-multiplied by 4). */
 #define WORD_AT(base, bytes) (*(const u32 *)((const u8 *)(base) + (bytes)))
 
+/* fast_render=3 (stage 7d2, decisions D124): NAME_hand_rc.c, and the
+ * presenter's NAME_hand_pres.c, build the renderers as readable C by D87's
+ * rule. The control registers a renderer sets are set as before (the
+ * rotation and translation; what libgte and the camera set is read); the
+ * data registers, FLAG and the GTE commands are not used at all, nor the
+ * PS1 scratchpad, the register spill area or the hand stack. The
+ * register-file builds (NAME_hand.c, _ngte, _ndr) are unchanged; with them
+ * gone (the owner's call on the default), the `#if !NGTE_RC` code goes. */
+#ifndef NGTE_RC
+#define NGTE_RC 0
+#endif
+#if NGTE_RC
+#undef NGTE
+#define NGTE 1
+#undef NGTE_MATH
+#define NGTE_MATH 1
+#endif
+
 /* The scratchpad (0x1F800000 on the PS1) is at the arena base; in the
- * native build it is its own array (psx_arena.h, D106). */
-#if SPYRO_NATIVE_MEM || RENDER_PRES /* the presenter's (render_ctx_names.h, D123) */
+ * native build it is its own array (psx_arena.h, D106). At fast_render=3 a
+ * renderer's working memory is its own (g_render_work, the presenter's
+ * g_pres_scratch): nothing reads it across calls (the poison audit, D124),
+ * so it is no longer the PS1's scratchpad. */
+#if NGTE_RC
+extern unsigned char g_render_work[1024];
+#define SCRATCH_BASE ((u32)(uintptr_t)g_render_work)
+#elif SPYRO_NATIVE_MEM || RENDER_PRES /* the presenter's (render_ctx_names.h, D123) */
 extern unsigned char g_psx_scratch[1024];
 #define SCRATCH_BASE ((u32)(uintptr_t)g_psx_scratch)
 #else
@@ -50,6 +74,10 @@ extern unsigned char g_psx_scratch[1024];
  * with s0-s7, gp and fp at 0, sp at g_mips_sp and ra at MIPS_RA_SENTINEL,
  * so that is what they store; the hand C stores the same, so RAM stays
  * byte-identical to fast_render=0 (the oracle ignores the area). */
+#if NGTE_RC
+/* fast_render=3: no spill area (nothing reads it, D124) */
+static inline void hand_spill_regs(void) {}
+#else
 extern char D_80077DD8[];
 static inline void hand_spill_regs(void) {
   u32 *spill = (u32 *)D_80077DD8;
@@ -61,6 +89,7 @@ static inline void hand_spill_regs(void) {
   spill[10] = 0;  /* fp */
   spill[11] = MIPS_RA_SENTINEL;
 }
+#endif
 
 /* fast_render=2 (decisions D80, docs/native-plan.md stage 1): each hand
  * renderer is compiled twice. NAME_hand.c itself, with NGTE 0, is today's
@@ -124,6 +153,49 @@ typedef struct {
   u32 seq, last_r, last_c, last_s;
 } NgteSync;
 
+#if NGTE_RC
+/* fast_render=3: no register file to keep, so nothing is recorded. The
+ * calls below stay in the shared source for the register-file builds and
+ * compile to nothing here; NCLIP's winding is still computed from the
+ * screen words as set. */
+static inline void ngte_sync_init(NgteSync *s) { s->sxy0 = s->sxy1 = s->sxy2 = s->v0xy = s->v0z = s->nc = 0; }
+static inline void ngte_rtps_rec(NgteSync *s, u32 vxy, u32 vz, u32 rd) { (void)s, (void)vxy, (void)vz, (void)rd; }
+/* the vertex the asm leaves in V0 (the one after the last), which a moby
+ * sprite's projection takes (moby_hand.c DrawSprite) */
+static inline void ngte_v0(NgteSync *s, u32 vxy, u32 vz) {
+  s->v0xy = vxy;
+  s->v0z = vz;
+}
+/* A colour command's far colour, a control register the asm sets: the
+ * last one's goes there at the flush, where the register-file builds
+ * replay them (the same points in the code). */
+static inline void ngte_dpcs_rec(NgteSync *s, u32 rgbc, u32 ir0, u32 rfc, u32 gfc, u32 bfc) {
+  (void)rgbc, (void)ir0;
+  s->rfc[0] = rfc, s->gfc[0] = gfc, s->bfc[0] = bfc, s->nc = 1;
+}
+static inline void ngte_intpl_rec(NgteSync *s, u32 ir1, u32 ir2, u32 ir3, u32 ir0, u32 rfc, u32 gfc,
+                                  u32 bfc) {
+  (void)ir1, (void)ir2, (void)ir3, (void)ir0;
+  s->rfc[0] = rfc, s->gfc[0] = gfc, s->bfc[0] = bfc, s->nc = 1;
+}
+static inline void ngte_rgbc(NgteSync *s, u32 rgbc) { (void)s, (void)rgbc; }
+static inline void ngte_sxy(NgteSync *s, u32 xy0, u32 xy1, u32 xy2) {
+  s->sxy0 = xy0;
+  s->sxy1 = xy1;
+  s->sxy2 = xy2;
+}
+static inline void ngte_sxy0(NgteSync *s, u32 xy) { s->sxy0 = xy; }
+static inline s32 ngte_nclip_s(NgteSync *s) { return ngte_nclip(s->sxy0, s->sxy1, s->sxy2); }
+static inline void ngte_flush(NgteSync *s) {
+  if (s->nc) {
+    CTC2(s->rfc[0], 21);
+    CTC2(s->gfc[0], 22);
+    CTC2(s->bfc[0], 23);
+    s->nc = 0;
+  }
+}
+static inline void ngte_rtps_run(NgteSync *s, u32 n) { (void)s, (void)n; }
+#else
 static inline void ngte_sync_init(NgteSync *s) { memset(s, 0, sizeof *s); }
 
 static inline void ngte_rtps_rec(NgteSync *s, u32 vxy, u32 vz, u32 rd) {
@@ -274,6 +346,7 @@ static inline void ngte_rtps_run(NgteSync *s, u32 n) {
   else
     ngte_flush(s);
 }
+#endif /* NGTE_RC */
 
 /* Run both hand renderers from the same state and compare RAM, the
  * scratchpad and every GTE register (host --fast-render-check, hand_check.c).
@@ -301,8 +374,39 @@ typedef u32 (*RenderCtxFn)(u32, u32, u32, u32);
 #endif
 u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 a0, u32 a1, u32 a2,
                      u32 a3);
+/* fast_render=3 (D124): the readable build, NAME_rc. --fast-render-check
+ * compares it with fast_render=1's build (hand_check_rc: RAM but the spill
+ * area and the hand stack, and the control registers but FLAG); the other
+ * checks run as at 2. */
+u32 hand_check_rc(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3);
+u32 hand_check_rc_v0(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3);
+/* the oracle replay's shadow at fast_render=3 (hand_check.c; the arena
+ * build, which links the mips2c units) */
+extern int g_render_shadow;
+u32 render_shadow(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3);
+u32 render_shadow_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3);
+#if SPYRO_NATIVE_MEM
+#define HAND_SHADOW_RC(name, a0, a1, a2, a3) /* no units in the native build */
+#else
+#define HAND_SHADOW_RC(name, a0, a1, a2, a3)                                   \
+  g_render_shadow ? render_shadow(#name, name##_gen__m2c, name##_rc, a0, a1, a2, a3) :
+#endif
+#define HAND_PICK_RC(name, ref, a0, a1, a2, a3)                                \
+  (HAND_SHADOW_RC(name, a0, a1, a2, a3)                                        \
+   g_hand_check          ? hand_check_rc(#name, ref, name##_rc, a0, a1, a2, a3)  \
+   : g_nd_check          ? nd_check(#name, name##_rc, a0, a1, a2, a3)            \
+   : g_render_ctx_check  ? render_ctx_check(#name, name##_rc, name##_pres, a0, a1, a2, a3) \
+                         : name##_rc(a0, a1, a2, a3))
+/* host --render-poison (D124, render_poison.c): at fast_render 1 and 2,
+ * after each renderer call the scratchpad, the GTE's data registers and
+ * FLAG, the spill area and the hand stack are overwritten; a run whose
+ * outputs stay byte-identical shows nothing reads them across calls. */
+extern int g_render_poison;
+u32 render_poison(const char *name, HandFn fn, u32 a0, u32 a1, u32 a2, u32 a3);
 #define HAND_PICK(name, hand, a0, a1, a2, a3)                                  \
-  (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
+  (g_fast_render_ro == 3 ? HAND_PICK_RC(name, hand, a0, a1, a2, a3)           \
+   : g_render_poison     ? render_poison(#name, g_fast_render_ro == 2 ? name##_ngte : hand, a0, a1, a2, a3) \
+   : g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                              \
    : g_hand_check        ? hand_check(#name, hand, name##_ngte, a0, a1, a2, a3) \
    : g_nd_check          ? nd_check(#name, name##_ngte, a0, a1, a2, a3)         \
    : g_render_ctx_check  ? render_ctx_check(#name, name##_ngte, name##_pres, a0, a1, a2, a3) \
@@ -315,10 +419,13 @@ u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 
  * HAND is the hand C, taking the four argument registers. In the NGTE build
  * this defines NAME_ngte, the same function with the native GTE maths. */
 #if RENDER_PRES
-/* The presenter build (NAME_hand_pres.c, stage 7d, D123): the native-GTE
- * code on the presenter's state (render_ctx_names.h), as NAME_pres. */
+/* The presenter build (NAME_hand_pres.c, stage 7d, D123): fast_render=3's
+ * code (D124) on the presenter's state (render_ctx_names.h), as NAME_pres. */
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#elif NGTE_RC
+#define HAND_RENDERER(name, hand)                                              \
+  u32 name##_rc(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
 #elif NGTE
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
@@ -327,6 +434,7 @@ u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 
  * stack arguments (only the units read them). */
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
   u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
@@ -337,6 +445,7 @@ u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
   u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
@@ -381,12 +490,14 @@ extern int g_ngte_fx;
   hand_check_unit(#name, name##_gen__m2c, hand, HAND_UNIT2(name), a0, a1, a2, a3)
 #endif
 #define HAND_PICK_UNIT(name, hand, a0, a1, a2, a3)                             \
-  (g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                                \
+  (g_fast_render_ro == 3 ? HAND_PICK_RC(name, hand, a0, a1, a2, a3)           \
+   : g_render_poison     ? render_poison(#name, g_fast_render_ro == 2 ? HAND_UNIT2(name) : hand, a0, a1, a2, a3) \
+   : g_fast_render_ro != 2 ? hand(a0, a1, a2, a3)                              \
    : g_hand_check        ? HAND_CHECK_UNIT(name, hand, a0, a1, a2, a3)          \
    : g_nd_check          ? nd_check(#name, HAND_UNIT2(name), a0, a1, a2, a3)    \
    : g_render_ctx_check  ? render_ctx_check(#name, HAND_UNIT2(name), name##_pres, a0, a1, a2, a3) \
                          : HAND_UNIT2(name)(a0, a1, a2, a3))
-#if RENDER_PRES
+#if RENDER_PRES || NGTE_RC
 #define HAND_RENDERER_UNIT(name, hand) HAND_RENDERER(name, hand)
 #elif NGTE && NGTE_MATH
 #define HAND_RENDERER_UNIT(name, hand)                                         \
@@ -398,6 +509,7 @@ extern int g_ngte_fx;
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
   u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
@@ -409,6 +521,7 @@ extern int g_ngte_fx;
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
   u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
@@ -440,7 +553,69 @@ extern int g_ngte_fx;
 #define HAND_UNIT_FN(name, hand) HAND_UNIT_FN_(name, hand, hand_check)
 /* For a function whose callers read its result: the check compares it too. */
 #define HAND_UNIT_FN_V0(name, hand) HAND_UNIT_FN_(name, hand, hand_check_v0)
+/* The B2 ones among them (the culls, the sky's clipping, the environment's
+ * animation update) also have fast_render=3's build, NAME_hand_rc.c (D124):
+ * HAND_UNIT_FN_RC. --fast-render-check compares it with the hand C of
+ * fast_render 1 and 2 (hand_check_rc), and --render-poison runs at 1 and 2
+ * as for the renderers. */
+#if NGTE_RC
+#define HAND_UNIT_FN_RC(name, hand) HAND_UNIT_FN_RC_(name, hand, 0)
+#define HAND_UNIT_FN_RC_V0(name, hand) HAND_UNIT_FN_RC_(name, hand, 1)
+#define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
+  u32 name##_rc(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+#else
 #if SPYRO_NATIVE_MEM
+#define HAND_UNIT_SHADOW_RC(name, v0, a0, a1, a2, a3) /* no units in the native build */
+#else
+#define HAND_UNIT_SHADOW_RC(name, v0, a0, a1, a2, a3)                          \
+  g_render_shadow ? (v0 ? render_shadow_v0 : render_shadow)(#name, name##_gen__m2c, name##_rc, a0, a1, a2, a3) :
+#endif
+#define HAND_UNIT_RC_PICK(name, hand, v0, a0, a1, a2, a3)                      \
+  (g_fast_render_ro == 3                                                       \
+     ? (HAND_UNIT_SHADOW_RC(name, v0, a0, a1, a2, a3)                          \
+        g_hand_check ? (v0 ? hand_check_rc_v0 : hand_check_rc)(#name, hand, name##_rc, a0, a1, a2, a3) \
+                     : name##_rc(a0, a1, a2, a3))                              \
+   : g_render_poison ? render_poison(#name, hand, a0, a1, a2, a3)              \
+                     : hand(a0, a1, a2, a3))
+#define HAND_UNIT_FN_RC(name, hand) HAND_UNIT_FN_RC_(name, hand, 0)
+#define HAND_UNIT_FN_RC_V0(name, hand) HAND_UNIT_FN_RC_(name, hand, 1)
+#if SPYRO_NATIVE_MEM
+#define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    (void)a4, (void)a5, (void)a6, (void)a7;                                    \
+    return HAND_UNIT_RC_PICK(name, hand, v0, a0, a1, a2, a3);                  \
+  }
+#else
+#define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
+  u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
+  u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
+  u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
+    if (!g_fast_render_ro)                                                     \
+      return name##_gen__m2c(a0, a1, a2, a3);                                  \
+    if (g_hand_check && g_fast_render_ro == 2)                                 \
+      return (v0 ? hand_check_v0 : hand_check)(#name, name##_gen__m2c, hand, a0, a1, a2, a3); \
+    return HAND_UNIT_RC_PICK(name, hand, v0, a0, a1, a2, a3);                  \
+  }                                                                            \
+  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+    u32 r_, sp_ = g_mips_sp;                                                   \
+    if (!g_fast_render_ro)                                                     \
+      return name##_gen(a0, a1, a2, a3, a4, a5, a6, a7);                       \
+    g_mips_sp = sp_ - 32u;                                                     \
+    M_U32(sp_ - 16u) = a4;                                                     \
+    M_U32(sp_ - 12u) = a5;                                                     \
+    M_U32(sp_ - 8u) = a6;                                                      \
+    M_U32(sp_ - 4u) = a7;                                                      \
+    r_ = name##__m2c(a0, a1, a2, a3);                                          \
+    g_mips_sp = sp_;                                                           \
+    return r_;                                                                 \
+  }
+#endif
+#endif
+#if NGTE_RC
+#define HAND_UNIT_FN_(name, hand, check) /* no fast_render=3 build */
+#elif SPYRO_NATIVE_MEM
 #define HAND_UNIT_FN_(name, hand, check)                                       \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
@@ -470,6 +645,197 @@ extern int g_ngte_fx;
     g_mips_sp = sp_;                                                           \
     return r_;                                                                 \
   }
+#endif
+
+
+#if NGTE_RC
+/* fast_render=3 (D124): the GTE's data registers, FLAG and its commands are
+ * not used. Anything left of them in a NAME_hand_rc.c or NAME_hand_pres.c
+ * build fails to compile here. The control registers (CTC2, CFC2 and the
+ * C2_ names of gtereg.h's control half) stay. */
+#undef MTC2
+#undef MFC2
+#define MTC2(v, r) ngte_rc_no_data_registers
+#define MFC2(r) ngte_rc_no_data_registers
+#undef gte_rtps
+#undef gte_nclip
+#define gte_rtps() ngte_rc_no_gte_commands
+#define gte_nclip() ngte_rc_no_gte_commands
+#undef m2c_gte_0x138041C
+#define m2c_gte_0x138041C ngte_rc_no_gte_commands
+#undef m2c_gte_0x170000C
+#define m2c_gte_0x170000C ngte_rc_no_gte_commands
+#undef m2c_gte_0x180001
+#define m2c_gte_0x180001 ngte_rc_no_gte_commands
+#undef m2c_gte_0x190003D
+#define m2c_gte_0x190003D ngte_rc_no_gte_commands
+#undef m2c_gte_0x198003D
+#define m2c_gte_0x198003D ngte_rc_no_gte_commands
+#undef m2c_gte_0x1A0003E
+#define m2c_gte_0x1A0003E ngte_rc_no_gte_commands
+#undef m2c_gte_0x1A8003E
+#define m2c_gte_0x1A8003E ngte_rc_no_gte_commands
+#undef m2c_gte_0x280030
+#define m2c_gte_0x280030 ngte_rc_no_gte_commands
+#undef m2c_gte_0x41E012
+#define m2c_gte_0x41E012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x43E012
+#define m2c_gte_0x43E012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x45E012
+#define m2c_gte_0x45E012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x480012
+#define m2c_gte_0x480012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x486012
+#define m2c_gte_0x486012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x49E012
+#define m2c_gte_0x49E012 ngte_rc_no_gte_commands
+#undef m2c_gte_0x780010
+#define m2c_gte_0x780010 ngte_rc_no_gte_commands
+#undef m2c_gte_0x980011
+#define m2c_gte_0x980011 ngte_rc_no_gte_commands
+#undef m2c_gte_0xA00428
+#define m2c_gte_0xA00428 ngte_rc_no_gte_commands
+#undef C2_VX0
+#define C2_VX0 ngte_rc_no_data_registers
+#undef C2_VY0
+#define C2_VY0 ngte_rc_no_data_registers
+#undef C2_VZ0
+#define C2_VZ0 ngte_rc_no_data_registers
+#undef C2_VX1
+#define C2_VX1 ngte_rc_no_data_registers
+#undef C2_VY1
+#define C2_VY1 ngte_rc_no_data_registers
+#undef C2_VZ1
+#define C2_VZ1 ngte_rc_no_data_registers
+#undef C2_VX2
+#define C2_VX2 ngte_rc_no_data_registers
+#undef C2_VY2
+#define C2_VY2 ngte_rc_no_data_registers
+#undef C2_VZ2
+#define C2_VZ2 ngte_rc_no_data_registers
+#undef C2_R
+#define C2_R ngte_rc_no_data_registers
+#undef C2_G
+#define C2_G ngte_rc_no_data_registers
+#undef C2_B
+#define C2_B ngte_rc_no_data_registers
+#undef C2_CODE
+#define C2_CODE ngte_rc_no_data_registers
+#undef C2_OTZ
+#define C2_OTZ ngte_rc_no_data_registers
+#undef C2_IR0
+#define C2_IR0 ngte_rc_no_data_registers
+#undef C2_IR1
+#define C2_IR1 ngte_rc_no_data_registers
+#undef C2_IR2
+#define C2_IR2 ngte_rc_no_data_registers
+#undef C2_IR3
+#define C2_IR3 ngte_rc_no_data_registers
+#undef C2_SXY0
+#define C2_SXY0 ngte_rc_no_data_registers
+#undef C2_SX0
+#define C2_SX0 ngte_rc_no_data_registers
+#undef C2_SY0
+#define C2_SY0 ngte_rc_no_data_registers
+#undef C2_SXY1
+#define C2_SXY1 ngte_rc_no_data_registers
+#undef C2_SX1
+#define C2_SX1 ngte_rc_no_data_registers
+#undef C2_SY1
+#define C2_SY1 ngte_rc_no_data_registers
+#undef C2_SXY2
+#define C2_SXY2 ngte_rc_no_data_registers
+#undef C2_SX2
+#define C2_SX2 ngte_rc_no_data_registers
+#undef C2_SY2
+#define C2_SY2 ngte_rc_no_data_registers
+#undef C2_SXYP
+#define C2_SXYP ngte_rc_no_data_registers
+#undef C2_SXP
+#define C2_SXP ngte_rc_no_data_registers
+#undef C2_SYP
+#define C2_SYP ngte_rc_no_data_registers
+#undef C2_SZ0
+#define C2_SZ0 ngte_rc_no_data_registers
+#undef C2_SZ1
+#define C2_SZ1 ngte_rc_no_data_registers
+#undef C2_SZ2
+#define C2_SZ2 ngte_rc_no_data_registers
+#undef C2_SZ3
+#define C2_SZ3 ngte_rc_no_data_registers
+#undef C2_RGB0
+#define C2_RGB0 ngte_rc_no_data_registers
+#undef C2_R0
+#define C2_R0 ngte_rc_no_data_registers
+#undef C2_G0
+#define C2_G0 ngte_rc_no_data_registers
+#undef C2_B0
+#define C2_B0 ngte_rc_no_data_registers
+#undef C2_CD0
+#define C2_CD0 ngte_rc_no_data_registers
+#undef C2_RGB1
+#define C2_RGB1 ngte_rc_no_data_registers
+#undef C2_R1
+#define C2_R1 ngte_rc_no_data_registers
+#undef C2_G1
+#define C2_G1 ngte_rc_no_data_registers
+#undef C2_B1
+#define C2_B1 ngte_rc_no_data_registers
+#undef C2_CD1
+#define C2_CD1 ngte_rc_no_data_registers
+#undef C2_RGB2
+#define C2_RGB2 ngte_rc_no_data_registers
+#undef C2_R2
+#define C2_R2 ngte_rc_no_data_registers
+#undef C2_G2
+#define C2_G2 ngte_rc_no_data_registers
+#undef C2_B2
+#define C2_B2 ngte_rc_no_data_registers
+#undef C2_CD2
+#define C2_CD2 ngte_rc_no_data_registers
+#undef C2_RES1
+#define C2_RES1 ngte_rc_no_data_registers
+#undef C2_MAC0
+#define C2_MAC0 ngte_rc_no_data_registers
+#undef C2_MAC1
+#define C2_MAC1 ngte_rc_no_data_registers
+#undef C2_MAC2
+#define C2_MAC2 ngte_rc_no_data_registers
+#undef C2_MAC3
+#define C2_MAC3 ngte_rc_no_data_registers
+#undef C2_IRGB
+#define C2_IRGB ngte_rc_no_data_registers
+#undef C2_ORGB
+#define C2_ORGB ngte_rc_no_data_registers
+#undef C2_LZCS
+#define C2_LZCS ngte_rc_no_data_registers
+#undef C2_LZCR
+#define C2_LZCR ngte_rc_no_data_registers
+#undef C2_FLAG
+#define C2_FLAG ngte_rc_no_data_registers
+/* nor the spill area or the hand stack (a name left resolves to nothing
+ * at link time) */
+#define g_mips_sp ngte_rc_no_hand_stack
+#define D_80077DD8 ngte_rc_no_spill_area
+/* gteRegs.CP2D by name: the logic's control registers only (the presenter's
+ * have no data half at all, render_ctx.h) */
+typedef struct { psxCP2Ctrl CP2C; } NgteCtlRegs;
+#if !RENDER_PRES
+#define gteRegs (*(NgteCtlRegs *)&gteRegs.CP2C)
+#endif
+/* CTC2 as mips2c_rt.h's but for FLAG (31), a command's result, which these
+ * builds never move: so a register number the compiler can't fold (a
+ * loop's) needs no out-of-line move */
+static inline __attribute__((always_inline)) void ngte_rc_ctc2(unsigned int value, int reg) {
+  switch (reg) {
+  case 4: case 12: case 20: case 26: case 27: case 29: case 30:
+    value = (unsigned int)(int)(short)value;
+    break;
+  }
+  gteRegs.CP2C.p[reg].d = value;
+}
+#undef CTC2
+#define CTC2(v, r) ngte_rc_ctc2((v), (r))
 #endif
 
 #endif

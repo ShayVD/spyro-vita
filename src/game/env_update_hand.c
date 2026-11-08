@@ -20,7 +20,9 @@
  *    vertex.
  *
  * The GTE moves and commands, the scratchpad's stores and every RAM store
- * are the asm's; registers the asm leaves aside. Checked per call by
+ * are the asm's; registers the asm leaves aside. fast_render=3
+ * (env_update_hand_rc.c, NGTE_RC, D124): the two commands as native maths,
+ * no GTE data register or scratchpad. Checked per call by
  * --fast-render-check against the mips2c unit and by the oracle replay
  * (docs/translation-log.md). */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -122,6 +124,15 @@ static const u8 *StepBig(u8 *anim, u32 dt) {
 /* One axis of a triangle blended between two frames' (A's weight WA, B's
  * WB, out of 0x1000): GPF puts A's three coordinates times WA into MAC1-3,
  * GPL adds B's times WB. */
+#if NGTE_RC
+/* fast_render=3 (D124): the same two commands as native maths, MAC1-3 as
+ * values (an IR register holds 16 bits of the word moved there). */
+static NgteCol BlendAxis(u32 a, u32 b, u32 wa, u32 wb) {
+  const NgteCol f = ngte_gpf0((s16)(a & 0x3FFF), (s16)Vertex1(a), (s16)Vertex2(a), (s16)wa, 0);
+  return ngte_gpl0(f.mac1, f.mac2, f.mac3, (s16)(b & 0x3FFF), (s16)Vertex1(b), (s16)Vertex2(b), (s16)wb,
+                   0);
+}
+#else
 static void BlendAxis(u32 a, u32 b, u32 wa, u32 wb) {
   MTC2(wa, 8); /* IR0 */
   MTC2(a & 0x3FFF, 9);
@@ -134,16 +145,34 @@ static void BlendAxis(u32 a, u32 b, u32 wa, u32 wb) {
   MTC2(Vertex2(b), 11);
   m2c_gte_0x1A0003E(); /* GPL, sf 0 */
 }
+#endif
 
 /* Two frames' triangles blended into the level's, each turned to start at
  * its lowest vertex (its height offsets as 8 bits, unchecked). The x and y
- * coordinates go through the scratchpad's first six words, as in the asm. */
+ * coordinates go through the scratchpad's first six words, as in the asm
+ * (not at fast_render=3: nothing reads them, D124). */
 static void BlendCollision(u32 dst, u32 src_a, u32 src_b, u32 end, u32 wa, u32 wb) {
+#if !NGTE_RC
   u32 *const scratch = (u32 *)SCRATCH_BASE;
+#endif
   do {
     const u32 *a = HPTR(const u32, src_a), *b = HPTR(const u32, src_b);
     u32 *d = HPTR(u32, dst);
     u32 x0, x1, x2, y0, y1, y2, z0, z1, z2;
+#if NGTE_RC
+    NgteCol c = BlendAxis(a[0], b[0], wa, wb);
+    x0 = (u32)(c.mac1 >> 12);
+    x1 = (u32)(c.mac2 >> 12);
+    x2 = (u32)(c.mac3 >> 12);
+    c = BlendAxis(a[1], b[1], wa, wb);
+    y0 = (u32)(c.mac1 >> 12);
+    y1 = (u32)(c.mac2 >> 12);
+    y2 = (u32)(c.mac3 >> 12);
+    c = BlendAxis(a[2], b[2], wa, wb);
+    z0 = (u32)c.mac1 >> 12; /* the heights shifted unsigned (srl) */
+    z1 = (u32)c.mac2 >> 12;
+    z2 = (u32)c.mac3 >> 12;
+#else
     BlendAxis(a[0], b[0], wa, wb);
     scratch[0] = x0 = (u32)((s32)MFC2(25) >> 12);
     scratch[1] = x1 = (u32)((s32)MFC2(26) >> 12);
@@ -156,6 +185,7 @@ static void BlendCollision(u32 dst, u32 src_a, u32 src_b, u32 end, u32 wa, u32 w
     z0 = MFC2(25) >> 12; /* the heights shifted unsigned (srl) */
     z1 = MFC2(26) >> 12;
     z2 = MFC2(27) >> 12;
+#endif
     if ((s32)(z1 - z0) >= 0 && (s32)(z2 - z0) >= 0) {
       d[2] = Pack(z0, z1, z2, 0xFF, 16, 24);
       d[1] = PACK_XY(y0, y1, y2);
@@ -257,4 +287,4 @@ static u32 UpdateAnimations(u32 a0, u32 a1, u32 a2, u32 a3) {
   return 0;
 }
 
-HAND_UNIT_FN(func_8002A6FC, UpdateAnimations)
+HAND_UNIT_FN_RC(func_8002A6FC, UpdateAnimations)
