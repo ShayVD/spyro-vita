@@ -1270,7 +1270,7 @@ All told *estimate* ~4–7k lines, the same as D101's total, distributed differe
   | no vblank emulation driving the logic | presentation left `VSync` (7c); the in-between frame leaves the game thread (7f); D30's pass and its hooks go (7g). **By design** (D101): the callbacks per vblank in `VSync(0)` with the catch-up, the PS1 interrupt's count |
   | PsyCross | its headers and the checks' reference stay (D118, the owner's choice A) |
 
-  Outside the plan, and not blocking it: the native build's `platform_linux32` ctest segfault (D118), and the watchdog's per-thread CPU line (stage 0's follow-up).
+  Outside the plan, and not blocking it: the watchdog's per-thread CPU line (stage 0's follow-up). The native build's `platform_linux32` ctest segfault (D118) is fixed: the test's own `psx_mem_host` was wrong (D121).
 
 **7c's pictures on hardware (7P1/7P2; ran 2026-11-07, results in §3.5):**
 - **The VPK:** main's CI VPK for both runs, with X7's settings at 60 fps (`REALTIME=1`, `DEVICE_DEFAULTS=1`, so `gpu_clear=2` as shipped). 7P1 sets `present_due=0` (`s7p1-k60-shots-due0.txt`); 7P2 keeps the shipped `=1` (`s7p2-k60-shots-due1.txt`).
