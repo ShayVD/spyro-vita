@@ -39,6 +39,10 @@
 #define RENDER_CTX_NAMES_H
 
 #define RENDER_PRES 1
+/* 7d2 (D124): the presenter builds are fast_render=3's readable code; its
+ * context has the GTE's control registers only, and no scratchpad copy,
+ * spill area or hand stack (7e keys on this) */
+#define RENDER_CTX_READABLE 1
 
 /* the GTE: the control registers (render_hand.h bans the rest in the
  * presenter's build; the names below only let the shared headers' unused

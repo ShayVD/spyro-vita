@@ -18,6 +18,10 @@
  * render_ctx_check.c). */
 #ifndef RENDER_CTX_H
 #define RENDER_CTX_H
+/* 7d2 (D124): the presenter builds are fast_render=3's readable code; its
+ * context has the GTE's control registers only, and no scratchpad copy,
+ * spill area or hand stack (7e keys on this) */
+#define RENDER_CTX_READABLE 1
 
 #include "mips2c_rt.h"
 #include "native_draw.h"
