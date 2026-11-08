@@ -285,7 +285,11 @@ int g_fast_render;
 int g_nd_pcheck;
 void nd_check_set_log(void (*log)(const char *fmt, ...)) { (void)log; }
 void nd_check_began(void) {}
-int nd_pcheck_packet(const unsigned *m, int (*fast)(const unsigned *m)) { return fast(m); }
+struct PsxGpuWalk;
+int nd_pcheck_packet(struct PsxGpuWalk *w, const unsigned *m,
+                     int (*fast)(struct PsxGpuWalk *w, const unsigned *m)) {
+  return fast(w, m);
+}
 void port_lod_report(char *out, unsigned len) {
   if (len)
     out[0] = 0;

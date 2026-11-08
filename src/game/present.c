@@ -107,19 +107,27 @@ unsigned int port_ws_hud_r11(unsigned int r11r12) {
 
 /* C-built 2D primitives go into the HUD OT through func_800168DC
  * (order_table.c). For DrawOTag their x is narrowed about the centre so
- * they keep their shape on a 16:9 display, then restored. Full-width ones
- * (fades, letterbox bars, separators) and the grayscale screen copy behind
- * the pause menus stay as they are. */
+ * they keep their shape on a 16:9 display. Full-width ones (fades,
+ * letterbox bars, separators) and the grayscale screen copy behind the
+ * pause menus stay as they are.
+ * The narrowing is the walk's (D122, from stage 7g): at DrawOTag each
+ * noted primitive that narrows is copied, narrowed in the copy, and handed
+ * to the game thread's walk as a substitution (psx_gpu.h PsxGpuSubst), so
+ * the walk parses the narrowed words in its place and the game's own
+ * primitives are never edited. Before D122 they were narrowed in place
+ * and put back after DrawOTag. */
 #define MAX_2D 512
-#define MAX_SAVED 4096
+#define MAX_SUBST_WORDS 8192 /* a primitive is 13 words at most, with its tag */
 static void *s_2d[MAX_2D];
 static int s_n2d;
 static int s_record_2d;
-static struct {
-  uint32_t *at;
-  uint32_t old;
-} s_saved[MAX_SAVED];
-static int s_nsaved;
+/* the substitutions the walk has: the primitives' addresses (ascending)
+ * and their narrowed copies. Written at DrawOTag after the walk's join, so
+ * a walk on another thread (D71) still reads the last list's. */
+static uintptr_t s_sub_at[MAX_2D];
+static const u_int *s_sub_words[MAX_2D];
+static u_int s_sub_pool[MAX_SUBST_WORDS];
+static PsxGpuSubst s_sub = {0, s_sub_at, s_sub_words};
 
 void port_present_note_2d(void *prim) {
   if (s_record_2d && s_n2d < MAX_2D)
@@ -131,14 +139,6 @@ static int narrow_x(int x) {
   /* round to nearest, symmetric about the centre */
   return SCREEN_CX + (d >= 0 ? (d * WS_NUM + WS_DEN / 2) / WS_DEN
                              : -((-d * WS_NUM + WS_DEN / 2) / WS_DEN));
-}
-
-static void save_word(uint32_t *w) {
-  if (s_nsaved < MAX_SAVED) {
-    s_saved[s_nsaved].at = w;
-    s_saved[s_nsaved].old = *w;
-    s_nsaved++;
-  }
 }
 
 static void set_x(uint32_t *w, int x) {
@@ -211,16 +211,29 @@ static int is_screen_copy(const uint32_t *p) {
   return (code & 0xFC) == 0x2C && (p[2] >> 16) == ((224u << 6) | (512u >> 4));
 }
 
+/* The walk's substitutions emptied (before a DrawOTag, after the join) */
+static void subst_clear(void) {
+  s_sub.n = 0;
+  psx_gpu_game_walk()->subst = NULL;
+}
+
+/* The noted primitives that narrow, each copied into the pool and narrowed
+ * there, as the walk's substitutions: the words DrawOTag walked before D122
+ * when they were narrowed in place */
 static void squeeze_2d(void) {
-  int i, j;
-  s_nsaved = 0;
+  int i, j, used = 0;
+  subst_clear();
   for (i = 0; i < s_n2d; i++) {
-    uint32_t *tag = (uint32_t *)s_2d[i];
-    int len = (int)(tag[0] >> 24);
-    uint32_t *xy[8];
+    const uint32_t *const prim = (const uint32_t *)s_2d[i];
+    const int len = (int)(prim[0] >> 24);
+    uint32_t *tag, *xy[8];
     int n, rect_w, minx = 1 << 30, maxx = -(1 << 30);
     if (len == 0)
       continue;
+    if (used + 1 + len > MAX_SUBST_WORDS)
+      break; /* never reached: 512 primitives of 13 words */
+    tag = s_sub_pool + used;
+    memcpy(tag, prim, (size_t)(1 + len) * 4);
     n = prim_xy_words(tag + 1, len, xy, &rect_w);
     if (n == 0 || is_screen_copy(tag + 1))
       continue;
@@ -236,24 +249,24 @@ static void squeeze_2d(void) {
     if (rect_w >= 0) {
       /* TILE/SPRT can't change width: move its centre */
       int cx = XY_X(*xy[0]) + rect_w / 2;
-      save_word(xy[0]);
       set_x(xy[0], narrow_x(cx) - rect_w / 2);
     } else {
-      for (j = 0; j < n; j++) {
-        save_word(xy[j]);
+      for (j = 0; j < n; j++)
         set_x(xy[j], narrow_x(XY_X(*xy[j])));
-      }
     }
+    /* in address order (insertion: they are noted nearly in order) */
+    for (j = s_sub.n; j > 0 && s_sub_at[j - 1] > (uintptr_t)prim; j--) {
+      s_sub_at[j] = s_sub_at[j - 1];
+      s_sub_words[j] = s_sub_words[j - 1];
+    }
+    s_sub_at[j] = (uintptr_t)prim;
+    s_sub_words[j] = tag;
+    s_sub.n++;
+    used += 1 + len;
     g_present_stats.squeezed_2d++;
   }
-}
-
-static void unsqueeze_2d(void) {
-  while (s_nsaved > 0) {
-    s_nsaved--;
-    *s_saved[s_nsaved].at = s_saved[s_nsaved].old;
-  }
-  s_n2d = 0;
+  if (s_sub.n)
+    psx_gpu_game_walk()->subst = &s_sub;
 }
 
 /* ---------- presenter: captured frames, shown one per vblank ---------- */
@@ -469,6 +482,8 @@ static int ot_pre(u_long *p) {
     s_audit_packets += count_packets((const uint32_t *)p);
   if (!s_in_game_draw)
     s_foreign_vblank = psx_clock_count();
+  if (s_sub.n)
+    subst_clear(); /* the last list's (DrawOTag joined its walk first) */
   if (s_suppress_ot) {
     s_n2d = 0;
     return 1;
@@ -480,9 +495,11 @@ static int ot_pre(u_long *p) {
   return 0;
 }
 
+/* The substitutions stay for the walk, which may still run (D71): the next
+ * DrawOTag empties them after its join. */
 static void ot_post(u_long *p) {
   (void)p;
-  unsqueeze_2d();
+  s_n2d = 0;
   if (s_capture_on)
     capture_now();
 }
