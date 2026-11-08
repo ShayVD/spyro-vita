@@ -215,6 +215,7 @@ static void AnimBlendVertices(const AnimFrames *f, u32 dst) {
     const int ir0 = (s16)(f->blend << 4);
 #if NGTE_RC
     const u32 code = 0;
+    fc = wb; /* (a frame of no vertices: the game has none) */
     while (end != a) {
       NgteCol o;
       fc = wb;
@@ -297,6 +298,7 @@ static void AnimBlendColours(const AnimFrames *f, u32 dst) {
      * the far colour the last one took) */
     const int ir0 = (s16)(f->blend << 4);
 #if NGTE_RC
+    fc = wb; /* (no colours: the game has none) */
     while (end != a) {
       const u32 step = (wa >> 22) & 0x3FC;
       fc = wb;
@@ -369,6 +371,7 @@ static void AnimBlendColourPairs(const AnimFrames *f, u32 sec) {
      * them, and the far colour the last one took) */
     const int ir0 = (s16)(f->blend << 4);
 #if NGTE_RC
+    fc = w1; /* (no colours: the game has none) */
     while (a != end) {
 #else
     while ((s32)(end - a) > 16) {
