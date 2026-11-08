@@ -389,6 +389,16 @@ static u32 render_shadow_(const char *name, HandFn unit, HandFn rc, u32 a0, u32 
   g_render_shadow_calls++;
   a = (const u32 *)s_reg;
   b = (const u32 *)g_psx_arena_base;
+  if (getenv("SPYRO_RENDER_SHADOW_BITE")) {
+    /* the check's own test: one word the unit wrote, flipped in the
+     * readable build's result, must show */
+    const u32 *o = (const u32 *)s_before;
+    for (i = 0x400 / 4; i < PSX_MEM_SIZE / 4; i++)
+      if (a[i] != o[i] && !shadow_skip(i * 4, sp)) {
+        ((u32 *)g_psx_arena_base)[i] ^= 1u;
+        break;
+      }
+  }
   for (i = 0; i < PSX_MEM_SIZE / 4; i++)
     if (a[i] != b[i] && !shadow_skip(i * 4, sp) && bad++ < 8)
       printf("  rendershadow %s ram %08x unit %08x readable %08x\n", name, 0x80000000u + i * 4, a[i], b[i]);

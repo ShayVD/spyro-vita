@@ -391,9 +391,12 @@ u32 render_shadow_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u
 #define HAND_SHADOW_RC(name, a0, a1, a2, a3)                                   \
   g_render_shadow ? render_shadow(#name, name##_gen__m2c, name##_rc, a0, a1, a2, a3) :
 #endif
+/* With both --fast-render-check and --render-ctx-check, the hand check's
+ * readable call is itself the presenter check (NAME_rcx), so one run does
+ * both. */
 #define HAND_PICK_RC(name, ref, a0, a1, a2, a3)                                \
   (HAND_SHADOW_RC(name, a0, a1, a2, a3)                                        \
-   g_hand_check          ? hand_check_rc(#name, ref, name##_rc, a0, a1, a2, a3)  \
+   g_hand_check          ? hand_check_rc(#name, ref, g_render_ctx_check ? name##_rcx : name##_rc, a0, a1, a2, a3) \
    : g_nd_check          ? nd_check(#name, name##_rc, a0, a1, a2, a3)            \
    : g_render_ctx_check  ? render_ctx_check(#name, name##_rc, name##_pres, a0, a1, a2, a3) \
                          : name##_rc(a0, a1, a2, a3))
@@ -418,6 +421,14 @@ u32 render_poison(const char *name, HandFn fn, u32 a0, u32 a1, u32 a2, u32 a3);
  * translated callers and the oracle replay use) pick the hand C or the unit.
  * HAND is the hand C, taking the four argument registers. In the NGTE build
  * this defines NAME_ngte, the same function with the native GTE maths. */
+/* The logic builds' fast_render=3 entries, and the readable call run as
+ * the presenter check (HAND_PICK_RC) */
+#define HAND_RC_CTX(name)                                                      \
+  u32 name##_rc(u32, u32, u32, u32);                                           \
+  u32 name##_pres(u32, u32, u32, u32);                                         \
+  static u32 name##_rcx(u32 a0, u32 a1, u32 a2, u32 a3) {                      \
+    return render_ctx_check(#name, name##_rc, name##_pres, a0, a1, a2, a3);    \
+  }
 #if RENDER_PRES
 /* The presenter build (NAME_hand_pres.c, stage 7d, D123): fast_render=3's
  * code (D124) on the presenter's state (render_ctx_names.h), as NAME_pres. */
@@ -434,8 +445,7 @@ u32 render_poison(const char *name, HandFn fn, u32 a0, u32 a1, u32 a2, u32 a3);
  * stack arguments (only the units read them). */
 #define HAND_RENDERER(name, hand)                                              \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
-  u32 name##_rc(u32, u32, u32, u32);                                           \
-  u32 name##_pres(u32, u32, u32, u32);                                         \
+  HAND_RC_CTX(name)                                                            \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
     return HAND_PICK(name, hand, a0, a1, a2, a3);                              \
@@ -445,8 +455,7 @@ u32 render_poison(const char *name, HandFn fn, u32 a0, u32 a1, u32 a2, u32 a3);
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
-  u32 name##_rc(u32, u32, u32, u32);                                           \
-  u32 name##_pres(u32, u32, u32, u32);                                         \
+  HAND_RC_CTX(name)                                                            \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
       return HAND_PICK(name, hand, a0, a1, a2, a3);                            \
@@ -509,8 +518,7 @@ extern int g_ngte_fx;
 #define HAND_RENDERER_UNIT(name, hand)                                         \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
-  u32 name##_rc(u32, u32, u32, u32);                                           \
-  u32 name##_pres(u32, u32, u32, u32);                                         \
+  HAND_RC_CTX(name)                                                            \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
     return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                         \
@@ -521,8 +529,7 @@ extern int g_ngte_fx;
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_ngte(u32, u32, u32, u32);                                         \
   u32 name##_ndr(u32, u32, u32, u32);                                          \
-  u32 name##_rc(u32, u32, u32, u32);                                           \
-  u32 name##_pres(u32, u32, u32, u32);                                         \
+  HAND_RC_CTX(name)                                                            \
   u32 name##__m2c(u32 a0, u32 a1, u32 a2, u32 a3) {                            \
     if (g_fast_render_ro)                                                      \
       return HAND_PICK_UNIT(name, hand, a0, a1, a2, a3);                       \
