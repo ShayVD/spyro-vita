@@ -9,6 +9,9 @@
 #include "native_draw.h"
 #include "present.h"
 #include "render_ctx.h"
+#ifndef RENDER_CTX_READABLE
+#define RENDER_CTX_READABLE 0 /* before 7d2 */
+#endif
 #include "psx_arena.h"
 #include "psx_clock.h"
 #include "psx_walk.h"
@@ -170,7 +173,9 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
 #else
   memcpy(g_pres_scratch, (void *)g_psx_arena_base, sizeof g_pres_scratch);
 #endif
+#if !RENDER_CTX_READABLE /* 7d2's readable renderers have no spill area or hand stack */
   memcpy(g_pres_spill, D_80077DD8, PRES_SPILL);
+#endif
   memcpy(g_pres_work, D_8006FCF4, PRES_WORK);
   memcpy(g_pres_seen, flags ? (const void *)flags : (const void *)D_800771C8, PRES_SEEN);
   memcpy(g_pres_moby_shadows, &g_MobyShadows, PRES_SHADOWS);
@@ -181,7 +186,9 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   n = sector_count();
   for (i = 0; i < n; i++)
     g_pres_sec_anims[i] = caches ? (i < ncaches ? caches[i] : 0) : sector_anims(i);
+#if !RENDER_CTX_READABLE
   g_pres_mips_sp = render_ctx_stack_top();
+#endif
   g_pres_narrow = wide;
   g_pres_rtp_hook = NULL;
   g_pres_rtp_value_hook = NULL;

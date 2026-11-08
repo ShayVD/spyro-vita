@@ -31,6 +31,26 @@
 
 #define PRES_DRAW 1
 
+/* Once 7d2 is in (render_ctx.h, render_ctx_names.h say RENDER_CTX_READABLE),
+ * the renderers' presenter builds are fast_render=3's readable code, with no
+ * GTE data registers, scratchpad, spill area or hand stack of their own: the
+ * culls and the sky's clipping are built on that code too (moby_cull.c,
+ * sky_clip.c: their entries NAME_pres), and libgte's matrix product sets
+ * only the rotation it leaves (LIBGTE_CONTROL_ONLY). Before, the
+ * register-file code (fast_render=2's) on 7d's context. */
+#ifndef RENDER_CTX_READABLE
+#define RENDER_CTX_READABLE 0
+#endif
+#if RENDER_CTX_READABLE
+#define LIBGTE_CONTROL_ONLY 1
+#define func_8001F158 func_8001F158_pres
+#define func_800208FC func_800208FC_pres
+#define func_8004F000 func_8004F000_pres
+#define func_8004F4BC func_8004F4BC_pres
+#define func_80050240 func_80050240_pres
+#define func_8004FEA0 func_8004FEA0_pres
+#endif
+
 /* the entry */
 #define GamestateDraw GamestateDraw_pres
 

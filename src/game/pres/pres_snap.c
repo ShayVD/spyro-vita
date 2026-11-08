@@ -8,6 +8,9 @@
 
 #include "present.h"
 #include "render_ctx.h"
+#ifndef RENDER_CTX_READABLE
+#define RENDER_CTX_READABLE 0 /* before 7d2 */
+#endif
 #include "psx_arena.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -167,7 +170,9 @@ static void audit(int nmobys) {
   audit_words("g_Sparkles", (const unsigned char *)g_Sparkles, PRES_SPARKLES, 0x18);
   audit_words("g_SpyroFlame", (const unsigned char *)&g_SpyroFlame, PRES_FLAME, 0);
   audit_words("g_MobyShadows", (const unsigned char *)&g_MobyShadows, PRES_SHADOWS, 0);
+#if !RENDER_CTX_READABLE
   audit_words("D_80077DD8 (spill area)", (const unsigned char *)D_80077DD8, PRES_SPILL, 0);
+#endif
 }
 
 void pres_snap_audit_report(void (*log)(const char *fmt, ...)) {

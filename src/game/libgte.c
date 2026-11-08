@@ -61,11 +61,17 @@ static void mul_columns(const MATRIX *m0, const MATRIX *m1, short p[3][3]) {
   }
   memcpy(&gteRegs.CP2C.r[0], m0->m, 16);
   gteRegs.CP2C.p[4].sd = m0->m[2][2];
+#if LIBGTE_CONTROL_ONLY
+  /* the presenter's build on fast_render=3's renderers (stage 7e, D124):
+   * they read the rotation, never the data registers or FLAG */
+  (void)mac, (void)ir, (void)flag;
+#else
   for (int i = 0; i < 3; i++) {
     gteRegs.CP2D.p[25 + i].sd = mac[i];
     gteRegs.CP2D.p[9 + i].sd = ir[i];
   }
   C2_FLAG = flag;
+#endif
 }
 
 void InitGeom(void) {
@@ -106,8 +112,12 @@ MATRIX *MulMatrix0(MATRIX *m0, MATRIX *m1, MATRIX *m2) {
   short p[3][3];
   const short vx = m1->m[0][2], vy = m1->m[1][2], vz = m1->m[2][2];
   mul_columns(m0, m1, p);
+#if LIBGTE_CONTROL_ONLY
+  (void)vx, (void)vy, (void)vz;
+#else
   gteRegs.CP2D.p[0].d = (unsigned short)vx | (unsigned int)(unsigned short)vy << 16;
   gteRegs.CP2D.p[1].d = (unsigned short)vz;
+#endif
   memcpy(m2->m, p, sizeof p);
   return m2;
 }
