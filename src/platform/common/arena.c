@@ -25,6 +25,8 @@ unsigned char g_psx_scratch[1024];
  * small integers (PSX_KUSEG, src/compat/port_prefix.h). The arena's own first
  * KB is the scratchpad, so they can't go there. */
 unsigned char g_psx_kernel_ram[0x10000];
+uint32_t g_psx_arena_extra;
+uintptr_t g_psx_arena_extra_at;
 
 #if defined(__linux__)
 #include <sys/mman.h>
@@ -37,8 +39,8 @@ unsigned char g_psx_kernel_ram[0x10000];
 #endif
 
 #if defined(__linux__)
-static void *map_at(uint32_t at, int prot) {
-  void *p = mmap((void *)(uintptr_t)at, PSX_MEM_SIZE, prot,
+static void *map_at_n(uint32_t at, uint32_t len, int prot) {
+  void *p = mmap((void *)(uintptr_t)at, len, prot,
                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
   if (p == MAP_FAILED || (uintptr_t)p != at) {
     fprintf(stderr, "psx_arena_init: mmap at 0x%08x failed\n", (unsigned)at);
@@ -46,14 +48,17 @@ static void *map_at(uint32_t at, int prot) {
   }
   return p;
 }
+static void *map_at(uint32_t at, int prot) { return map_at_n(at, PSX_MEM_SIZE, prot); }
 #endif
 
 void psx_arena_init(void) {
   void *p;
 #if SPYRO_NATIVE_MEM && !(defined(__linux__) && defined(PSX_ARENA_AT))
-  p = memalign(0x1000, PSX_MEM_SIZE);
+  p = memalign(0x1000, PSX_MEM_SIZE + g_psx_arena_extra);
 #elif defined(__linux__)
   p = map_at(PSX_ARENA_AT, PROT_READ | PROT_WRITE);
+  if (g_psx_arena_extra)
+    map_at_n(PSX_ARENA_AT + PSX_MEM_SIZE, g_psx_arena_extra, PROT_READ | PROT_WRITE);
 #if SPYRO_ARENA_MOVED && !SPYRO_NATIVE_MEM
   /* The moved arena's aliases of PS1 RAM (mips2c_rt.h) must not reach other
    * memory: the Vita has none there (D25); here nothing may be mapped there.
@@ -62,7 +67,7 @@ void psx_arena_init(void) {
   map_at(PSX_ARENA_AT & 0x7FFFFFFFu, PROT_NONE);
 #endif
 #else
-  p = memalign(0x1000000, PSX_RAM_SIZE);
+  p = memalign(0x1000000, PSX_RAM_SIZE + g_psx_arena_extra);
 #endif
 #if SPYRO_NATIVE_MEM
   if (!p) {
@@ -77,5 +82,9 @@ void psx_arena_init(void) {
 #endif
   memset(p, 0, PSX_MEM_SIZE);
   g_psx_arena_base = (uintptr_t)p;
+  if (g_psx_arena_extra) {
+    g_psx_arena_extra_at = (uintptr_t)p + PSX_MEM_SIZE;
+    memset((void *)g_psx_arena_extra_at, 0, g_psx_arena_extra);
+  }
 }
 

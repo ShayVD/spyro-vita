@@ -14,6 +14,7 @@ extern void psx_overlays_init(void);
 extern uint32_t g_mips_sp;
 extern char D_8006BBE0[];               /* OT terminator primitive (order_table.c) */
 extern uint32_t *s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xxxx */
+void render_ctx_init(void);            /* render_ctx.c (stage 7d, D123) */
 
 #define EMU_STACK_TOP 0x80020000u /* free on the host: part of the PS1 exe image */
 
@@ -106,6 +107,7 @@ void spyro_main(void) {
   memcpy(PSX_OT_TERMINATOR, D_8006BBE0, 0x14);
 #endif
   scratch_relocs();
+  render_ctx_init(); /* the presenter's tables (stage 7d, D123) */
 #if SPYRO_NATIVE_MEM
   {
     /* D100: no mips2c stack in the arena. The hand C still makes the asm's

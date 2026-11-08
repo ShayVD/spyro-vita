@@ -222,6 +222,12 @@ unsigned int CFC2(int reg);
  * by the oracle traces and screenshots (docs/presentation.md, 60 fps cost). */
 #include <gtereg.h>
 
+/* The out-of-line moves below: gte_regs.c's, or in the presenter build
+ * (render_ctx_names.h, D123) its copy on the presenter's register file. */
+#ifndef M2C_GTE_SLOW
+#define M2C_GTE_SLOW(f) (f)
+#endif
+
 static inline __attribute__((always_inline)) unsigned int m2c_mfc2(int reg) {
   switch (reg) {
   case 1: case 3: case 5: case 8: case 9: case 10: case 11:
@@ -234,7 +240,7 @@ static inline __attribute__((always_inline)) unsigned int m2c_mfc2(int reg) {
     gteRegs.CP2D.p[reg].d = C2_SXY2;
     break;
   case 28: case 29:
-    return (MFC2)(reg);
+    return M2C_GTE_SLOW(MFC2)(reg);
   }
   return gteRegs.CP2D.p[reg].d;
 }
@@ -247,7 +253,7 @@ static inline __attribute__((always_inline)) void m2c_mtc2(unsigned int value, i
     C2_SXY2 = value;
     break;
   case 28: case 30: case 31:
-    (MTC2)(value, reg);
+    M2C_GTE_SLOW(MTC2)(value, reg);
     return;
   }
   gteRegs.CP2D.p[reg].d = value;
@@ -259,7 +265,7 @@ static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, i
     value = (int)(short)value;
     break;
   case 31:
-    (CTC2)(value, reg);
+    M2C_GTE_SLOW(CTC2)(value, reg);
     return;
   }
   gteRegs.CP2C.p[reg].d = value;

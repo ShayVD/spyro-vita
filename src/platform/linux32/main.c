@@ -106,6 +106,10 @@
  *   Vita's timing run, D91, D92).
  *   These checks need the reference build (the arena build, linux32's
  *   default: SPYRO_PSYCROSS_REF, D117), whose PsyCross walk they compare with.
+ *   --render-ctx-check (stage 7d, D123): each renderer call also runs its
+ *   presenter build (NAME_hand_pres.c) from the same inputs in its own
+ *   context, with the game's memory read-only, and compares the two
+ *   ("render ctx:" lines; src/game/render_ctx_check.c).
  *   --walk-check: every packet our OT walk (gpu_walk.c) parses goes through
  *   PsyCross's walk too from the same state; the vertices, splits and draw
  *   environment must be the same ("walk check" lines; D117). WALK_MUTATE=1
@@ -162,6 +166,15 @@ void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
+/* src/game/render_ctx_check.c (stage 7d, D123) */
+extern int g_render_ctx_check;
+void render_ctx_want_area(void);
+void render_ctx_check_set_log(void (*log)(const char *fmt, ...));
+int render_ctx_check_report(void);
+static void render_ctx_atexit(void) {
+  if (g_render_ctx_check)
+    render_ctx_check_report();
+}
 static void nd_atexit(void) {
   nd_report((int)host_vblank_count());
   nd_check_report();
@@ -236,7 +249,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -557,6 +570,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render-check") == 0) {
       g_hand_check = 1;
       hand_check_set_log(host_log);
+    } else if (strcmp(a, "--render-ctx-check") == 0) {
+      g_render_ctx_check = 1;
+      render_ctx_want_area();
+      render_ctx_check_set_log(host_log);
     } else if (strcmp(a, "--native-draw") == 0) {
       g_native_draw = 1;
     } else if (strcmp(a, "--native-draw-check") == 0) {
@@ -683,6 +700,7 @@ int main(int argc, char **argv) {
   atexit(walk_report);
   atexit(mixer_report);
   atexit(nd_atexit);
+  atexit(render_ctx_atexit);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)

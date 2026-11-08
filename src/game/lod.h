@@ -35,6 +35,10 @@ void port_lod_reset(void);
 /* One line of statistics since the last call (empty when nothing was drawn
  * with the option on); resets them. */
 void port_lod_report(char *out, unsigned len);
+/* All of lod.c's state, for the presenter's copy (lod_pres.c, D123) */
+unsigned port_lod_state_size(void);
+void port_lod_state_get(unsigned char *p);
+void port_lod_state_set(const unsigned char *p);
 
 #ifdef __cplusplus
 }

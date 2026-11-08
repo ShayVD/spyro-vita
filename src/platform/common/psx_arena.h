@@ -61,6 +61,12 @@ static inline int psx_mem_in_(uint32_t a, uint32_t len, uint32_t lo, uint32_t hi
 #define PSX_OT_TERMINATOR ((void *)(g_psx_arena_base + PSX_OT_TERMINATOR_OFS))
 
 void psx_arena_init(void);
+/* Bytes psx_arena_init adds right after the game's memory, inside the same
+ * 16 MB window, so OT links and packed addresses reach them too: the
+ * presenter's area (src/game/render_ctx.h, D123). Set before
+ * psx_arena_init; 0 (the default) adds none. The extra's address after it. */
+extern uint32_t g_psx_arena_extra;
+extern uintptr_t g_psx_arena_extra_at;
 
 #ifdef __cplusplus
 }

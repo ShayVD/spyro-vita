@@ -67,7 +67,14 @@ uintptr_t mem_audit(uintptr_t a, const char *file, int line);
 /* A subdivision list's sector header: its offset >> 2, below any polygon
  * address. */
 #define MEM_SUBDIV_HDR(sec) (((uint32_t)(sec) - (uint32_t)g_psx_arena_base) >> 2)
+#if RENDER_PRES
+/* the presenter's sector copies are after the arena (render_ctx.h): its
+ * headers are offsets up to the 16 MB window's end; a polygon's address is
+ * a host address, above that on every host */
+#define MEM_SUBDIV_IS_HDR(e) ((uint32_t)(e) < 0x400000u)
+#else
 #define MEM_SUBDIV_IS_HDR(e) ((uint32_t)(e) < 0x80000u)
+#endif
 #define MEM_SUBDIV_SEC(e) MEM_AUDIT_((uint32_t)g_psx_arena_base + ((uint32_t)(e) << 2))
 #else
 /* An OT link (a tag's low 24 bits) -> the primitive's address. */

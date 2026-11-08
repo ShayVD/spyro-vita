@@ -421,6 +421,22 @@ static void CullFlush(CullMvmva *m) {
 }
 #endif
 
+#if RENDER_PRES
+/* The presenter build (stage 7d, D123; render_ctx_names.h). The game's draw
+ * applies a visible sector's pending animations into the level's data
+ * (SectorAnimate) and marks them done in the sector's header (SEC_ANIMS):
+ * a write to data the game shares. The presenter takes the four bytes from
+ * its own copy instead (g_pres_sec_anims, by sector), and animates a copy
+ * of the sector in its area (pres_sector_copy), which the sector
+ * lists then point at; the copy's bytes go back to its own. */
+extern u32 g_pres_sec_anims[];
+void pres_sectors_reset(void);
+u32 pres_sector_copy(u32 sec);
+#define SEC_ANIMS_OF(sec, seen) g_pres_sec_anims[(seen) - ADDR(D_800771C8)]
+#else
+#define SEC_ANIMS_OF(sec, seen) AT32((sec) + SEC_ANIMS)
+#endif
+
 static void SectorLists(s32 group, const CamPos *cam) {
   const u32 env = ADDR(g_Environment);
   const u32 lod = PORT_LOD_ENV(AT32(env + 0x24)) >> 4; /* m_LodDistance */
@@ -436,11 +452,17 @@ static void SectorLists(s32 group, const CamPos *cam) {
 
   for (s = 0; s < 0x100; s += 4)
     AT32(ADDR(D_800771C8) + s) = 0;
+#if RENDER_PRES
+  pres_sectors_reset();
+#endif
   if (group >= 0)
     group_list = HPTR(const u8, AT32(MIPS_KUSEG(AT32(env + 0x8)) + (u32)group * 4));
 
   for (;;) {
     u32 raw, sec, w0, w1, kind, r, ra, rb, rc, rd, depth, sx, sy, v, anims, entry, seen, mask;
+#if RENDER_PRES
+    const u32 low_at = low, high_at = high; /* the list slots this sector may take */
+#endif
     if (group >= 0) {
       u32 idx = *group_list++;
       if (idx == 0xFF)
@@ -507,7 +529,7 @@ static void SectorLists(s32 group, const CamPos *cam) {
       sy = -sy;
     if ((s32)(((sy - rc) << 5) - (v + (v << 4))) >= 0)
       continue; /* off the top or bottom */
-    anims = AT32(sec + SEC_ANIMS);
+    anims = SEC_ANIMS_OF(sec, seen);
     if ((s32)(depth - r) > 0) {
       v = depth - rb;
       if ((s32)(((sx + ra) << 2) - (v + (v << 1))) < 0) {
@@ -544,7 +566,22 @@ static void SectorLists(s32 group, const CamPos *cam) {
 #if NGTE
       CullFlush(&mv);
 #endif
+#if RENDER_PRES
+      {
+        const u32 copy = pres_sector_copy(sec);
+        if (copy) { /* else (no room) the sector as it is, counted */
+          if (!(kind & SEC_NO_LOW))
+            AT32(low_at) = copy | (AT32(low_at) & 3u);
+          if (high != high_at)
+            AT32(high_at) = copy | (AT32(high_at) & 3u);
+          AT32(copy + SEC_ANIMS) = SEC_ANIMS_OF(sec, seen);
+          SectorAnimate(copy, anims);
+          SEC_ANIMS_OF(sec, seen) = AT32(copy + SEC_ANIMS);
+        }
+      }
+#else
       SectorAnimate(sec, anims);
+#endif
     }
   }
 #if NGTE

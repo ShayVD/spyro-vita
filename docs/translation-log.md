@@ -481,3 +481,15 @@ No game function changes. Two port-side changes ahead of 7f and 7g:
 |---|---|---|---|
 | The walk's state (`gpu_walk.c`, `psx_gpu.h` `PsxGpuWalk`) | the statics (vertex buffer, splits, DrawPrim's mode, debug label, custom texture) into a struct with pointers to the draw and display environments it uses and the converter's direct ranges; the game thread's walk one static instance; `nd_packet`/`nd_poly` take the walk | `--walk-check`, `--native-draw-check`, `tools/host_checks.sh` (with and without `--interp`) and Vita3K against main | none |
 | The HUD's 16:9 narrowing (`present.c` `squeeze_2d`) | the same rules on a copy of each noted 2D primitive, handed to the game walk as a substitution (`PsxGpuSubst`) that the walk parses in the primitive's place; nothing restored after `DrawOTag` | `--widescreen` host runs (`host_checks.sh` with `EXTRA=--widescreen`, the 16:9 pause route) byte-identical to main; `--walk-check` at 16:9 | none |
+
+## Stage 7d: the renderers' presenter builds (2026-11-07, decisions D123)
+
+No new translation: the hand C of decisions D72–D98 compiled once more as `NAME_hand_pres.c`, on the presenter's state by name (`render_ctx_names.h`). Two places have presenter code of their own (`#if RENDER_PRES`), because the game's code writes data the game shares there; the game's builds compile to the same code as before (D123's disassembly comparison).
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| The twelve renderer entries as `NAME_pres` (`env_hand_pres.c`, `moby_hand_pres.c`, `sky_hand_pres.c`, `pete_render_hand_pres.c`, `shadows_hand_pres.c`, `flame_hand_pres.c`, `particles_hand_pres.c`) | the `NGTE 1` source again, the state renamed (D123) | `--render-ctx-check` (each call beside the game's, the game's memory read-only): 0 differences, 0 writes on the demos, gems, wsi, lod, routes A and B and the tour; `render_ctx_link` | the native maths for the effects too (the Vita's game build has `ngte_fx=0`): the same outputs by D98 |
+| `ReplaceFaces`, `PickFaces`, `RestoreFaces` (`moby_hand.c`, presenter build) | the face list copied, the replacements made in the copy, which is drawn; the save list written as the game's | as above: the work area and every primitive the same as the game's | a list over 64 KB is drawn without the frame's replacements and counted (none seen) |
+| `SectorLists`' animation step (`env_hand.c`, presenter build) | the sector's four animation bytes from the presenter's copy; a sector to animate copied into the presenter's area, animated there, the lists pointed at the copy | as above, and each copy compared with the sector the game animated | none seen; a sector with no room left in the area is drawn as it is and counted |
+| The GTE's moves and commands (`render_ctx_gte_regs.c`, `render_ctx_gte_ops.c`) | `gte_regs.c` and `gte_ops.c` compiled again on the presenter's register file | as above (the whole register file compared after every call) | none |
+| LOD's hooks (`lod_pres.c`) | `lod.c` compiled again on the presenter's names | the lod scenario (2x draw distance): LOD's whole state compared after every call | none |

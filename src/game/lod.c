@@ -364,3 +364,18 @@ void port_lod_report(char *out, unsigned len) {
              s_st.env_cuts, s_st.moby_cuts);
   memset(&s_st, 0, sizeof s_st);
 }
+
+/* ---- the presenter's copy (lod_pres.c, stage 7d, D123) ----
+ * The same file compiled again on the presenter's names: its own state,
+ * which --render-ctx-check sets to the game's before each renderer call and
+ * compares after. All of this file's state, in one block. */
+#define LOD_STATE(X)                                                           \
+  X(g_lod) X(g_lod_k) X(g_lod_pass) X(g_lod_stats) X(s_k) X(s_hold) X(s_ext)   \
+  X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_poly_lo)              \
+  X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end) X(s_rec2) X(s_st)
+#define LOD_SIZE(v) + sizeof v
+#define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
+#define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;
+unsigned port_lod_state_size(void) { return 0 LOD_STATE(LOD_SIZE); }
+void port_lod_state_get(unsigned char *p) { LOD_STATE(LOD_GET) }
+void port_lod_state_set(const unsigned char *p) { LOD_STATE(LOD_SET) }
