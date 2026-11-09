@@ -204,11 +204,61 @@ static void run(unsigned op, const uint32_t *s, const uint32_t *after) {
     check("MVMVA", "FLAG", want[63], o.flag);
     break;
   }
+  /* fast_render=3's (stage 7d2, D124) */
+  case 0x41E012: /* MVMVA sf 0: R, LLM, LCM x IR */
+  case 0x43E012:
+  case 0x45E012: {
+    NgteMat m = op == 0x41E012 ? ngte_rot_get() : op == 0x43E012 ? ngte_llm_get() : ngte_lcm_get();
+    NgteVec o = ngte_mvmva0(&m, ir_view(9), ir_view(10), ir_view(11));
+    check("MVMVA0", "MAC1", want[25], (uint32_t)o.mac1);
+    check("MVMVA0", "MAC2", want[26], (uint32_t)o.mac2);
+    check("MVMVA0", "MAC3", want[27], (uint32_t)o.mac3);
+    check("MVMVA0", "IR1", W_IR(9), (uint32_t)o.ir1);
+    check("MVMVA0", "IR2", W_IR(10), (uint32_t)o.ir2);
+    check("MVMVA0", "IR3", W_IR(11), (uint32_t)o.ir3);
+    check("MVMVA0", "FLAG", want[63], o.flag);
+    break;
+  }
+  case 0x170000C: /* OP sf 0 */
+  case 0xA00428: { /* SQR sf 0 lm 1 */
+    NgteVec o = op == 0x170000C ? ngte_op0(C2_R11, C2_R22, C2_R33, ir_view(9), ir_view(10), ir_view(11))
+                                : ngte_sqr0(ir_view(9), ir_view(10), ir_view(11));
+    check("OP/SQR", "MAC1", want[25], (uint32_t)o.mac1);
+    check("OP/SQR", "MAC2", want[26], (uint32_t)o.mac2);
+    check("OP/SQR", "MAC3", want[27], (uint32_t)o.mac3);
+    check("OP/SQR", "IR1", W_IR(9), (uint32_t)o.ir1);
+    check("OP/SQR", "IR2", W_IR(10), (uint32_t)o.ir2);
+    check("OP/SQR", "IR3", W_IR(11), (uint32_t)o.ir3);
+    check("OP/SQR", "FLAG", want[63], o.flag);
+    break;
+  }
+  case 0x1A8003E: /* GPL sf 1 */
+  case 0x138041C: { /* CC sf 1 lm 1 */
+    NgteCol o;
+    if (op == 0x1A8003E) {
+      o = ngte_gpl1((int32_t)d_reg(25), (int32_t)d_reg(26), (int32_t)d_reg(27), ir_view(9), ir_view(10),
+                    ir_view(11), ir_view(8), d_reg(6) >> 24);
+    } else {
+      NgteMat lc = ngte_lcm_get();
+      o = ngte_cc(&lc, C2_RBK, C2_GBK, C2_BBK, d_reg(6), ir_view(9), ir_view(10), ir_view(11));
+    }
+    check("GPL1/CC", "MAC1", want[25], (uint32_t)o.mac1);
+    check("GPL1/CC", "MAC2", want[26], (uint32_t)o.mac2);
+    check("GPL1/CC", "MAC3", want[27], (uint32_t)o.mac3);
+    check("GPL1/CC", "IR1", W_IR(9), (uint32_t)o.ir1);
+    check("GPL1/CC", "IR2", W_IR(10), (uint32_t)o.ir2);
+    check("GPL1/CC", "IR3", W_IR(11), (uint32_t)o.ir3);
+    check("GPL1/CC", "RGB2", want[22], o.rgb2);
+    check("GPL1/CC", "FLAG", want[63], o.flag);
+    break;
+  }
   }
 }
 
 static const unsigned k_ops[] = {0x180001, 0x1400006, 0x780010, 0x980011, 0x190003D,
-                                 0x49E012, 0x486012, 0x480012, 0x280030, 0x198003D, 0x1A0003E};
+                                 0x49E012, 0x486012, 0x480012, 0x280030, 0x198003D, 0x1A0003E,
+                                 /* D124 */ 0x41E012, 0x43E012, 0x45E012, 0x170000C, 0xA00428,
+                                 0x1A8003E, 0x138041C};
 
 int main(int argc, char **argv) {
   uint32_t s[64];

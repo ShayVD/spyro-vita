@@ -28,13 +28,24 @@
 # D123: each renderer call also runs NAME_pres in its own context, "render
 # ctx:" lines, which must say 0 differences and 0 writes); MODE=rc0 the same
 # check with native_draw 0.
+# MODE=frc: the renderers' per-call check (--fast-render-check; at FR=3 each
+# call against fast_render=1's build, D124); MODE=poison: --render-poison
+# (D124: after each renderer call what fast_render=3 doesn't write is
+# overwritten); MODE=plain: nothing more (with FR=3, fast_render=3 alone);
+# MODE=all3: native_draw=1 with the per-call check, the presenter check (at
+# FR=3 chained: each call's readable run is the presenter check) and the
+# walk check in one run. The per-call check's counts mean nothing there:
+# fast_render=1's build makes no records, so with native_draw=1 its RAM
+# can't match; run it with MODE=frc0 (native_draw 0).
+# FR=N: the second run of each pair at --fast-render N (default 2; the n0
+# run stays at 2, main's default).
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 # N0_FROM=PREFIX: no n0 run; compare with logs/PREFIX-SCENARIO-n0 (one
 # baseline for several modes).
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
-B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}
+B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}; FR=${FR:-2}
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
@@ -51,6 +62,11 @@ run() { # NAME MODE
   wc0) extra="$extra --walk-check ${ND_ARGS:-}";;
   rc) extra="$extra --native-draw --render-ctx-check ${ND_ARGS:-}";;
   rc0) extra="$extra --render-ctx-check ${ND_ARGS:-}";;
+  frc) extra="$extra --native-draw --fast-render-check ${ND_ARGS:-}";;
+  frc0) extra="$extra --fast-render-check ${ND_ARGS:-}";;
+  poison) extra="$extra --render-poison ${ND_ARGS:-}";;
+  all3) extra="$extra --native-draw --fast-render-check --render-ctx-check --walk-check ${ND_ARGS:-}";;
+  plain) extra="$extra ${ND_ARGS:-}";;
   wc1) extra="$extra --native-draw --walk-check ${ND_ARGS:-}";;
   wc1d) extra="$extra --native-draw --nd-direct --walk-check ${ND_ARGS:-}";;
   wc2) extra="$extra --native-draw-parse --walk-check ${ND_ARGS:-}";;
@@ -67,7 +83,9 @@ run() { # NAME MODE
   whole) args="--frames 100000 --pad tools/oracle/pads/newgame_host.txt --pad-after tools/oracle/pads/fairy_after.txt --shot-every 1000 --tour 11,12,13,14,15,20,21,22,23,24,25,30,31,32,33,34,35,40,41,42,43,44,45,50,51,52,53,54,55,60,61,62,63,end2,64,end3,credits,levels,lives --tour-stay 300";;
   *) echo "unknown scenario $n"; exit 2;;
   esac
-  tools/tc $B --disc $DISC --fast-render 2 --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
+  fr=2
+  [ "$m" = n0 ] || fr=$FR
+  tools/tc $B --disc $DISC --fast-render $fr --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra $args > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
 }
@@ -84,6 +102,8 @@ for n in "$@"; do
   grep -h "native draw direct check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -h "walk check: [0-9]" $b/spyro.log | sed 's/^/  /'
   grep -h "render ctx: func[0-9A-F_]*: " $b/spyro.log | sed 's/^.*render ctx: /  /'
+  grep -h "hand check: func[0-9A-F_]* [0-9]* calls" $b/spyro.log | sed 's/^.*hand check: /  /'
+  grep -h "render poison:" $b/spyro.log | sed 's/^.*render poison: /  poison: /'
   grep -c "differ (" $b/spyro.log | sed 's/^/  lines naming a difference: /'
   # vc: the host's pictures don't use the cache, so the files can't show it
   # missing; the hand renderers must feed it (D89)

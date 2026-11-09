@@ -1,17 +1,20 @@
 /* The presenter's context (stage 7d, decisions D123; render_ctx.h): the
  * state render_ctx_names.h renames the renderers' onto, and the calls the
- * presenter builds make in place of the game's (nd_begin, nd_end). The GTE
- * register file and commands are render_ctx_gte_regs.c's and
- * render_ctx_gte_ops.c's; LOD's hooks are lod_pres.c's. */
+ * presenter builds make in place of the game's (nd_begin, nd_end). Since
+ * 7d2 (D124) the presenter build is fast_render=3's readable code: its GTE
+ * is the control registers alone, and it has no scratchpad, spill area or
+ * hand stack, only its working memory. LOD's hooks are lod_pres.c's. */
 #include "render_ctx.h"
+#include "gte_native.h"
 #include "psx_arena.h"
 
 #include <stdint.h>
 #include <string.h>
 
-/* the scratchpad, as aligned as the PS1's (D106) */
+/* the control registers (the data half only a view, render_ctx_names.h) */
+GTERegisters g_pres_gte;
+/* the renderers' working memory (render_hand.h SCRATCH_BASE) */
 unsigned char g_pres_scratch[1024] __attribute__((aligned(1024)));
-char g_pres_spill[PRES_SPILL] __attribute__((aligned(4)));
 char g_pres_work[PRES_WORK] __attribute__((aligned(4)));
 char g_pres_seen[PRES_SEEN] __attribute__((aligned(4)));
 char g_pres_moby_shadows[PRES_SHADOWS] __attribute__((aligned(4)));
@@ -19,8 +22,6 @@ char g_pres_particles[PRES_PARTICLES] __attribute__((aligned(4)));
 char g_pres_glows[PRES_GLOWS] __attribute__((aligned(4)));
 char g_pres_sparkles[PRES_SPARKLES] __attribute__((aligned(4)));
 char g_pres_spyro_flame[PRES_FLAME] __attribute__((aligned(4)));
-static u32 s_stack[PRES_STACK / 4];
-u32 g_pres_mips_sp;
 char g_pres_prim_next[4] __attribute__((aligned(4)));
 char g_pres_prim_end[4] __attribute__((aligned(4)));
 char g_pres_prim_full[4] __attribute__((aligned(4)));
@@ -31,28 +32,23 @@ NdSide g_pres_nd_side[ND_SIDE_N];
 unsigned g_pres_nd_fallback;
 int g_pres_narrow;
 
-/* The subdivision tables whose words are scratchpad addresses (env_hand.c;
- * port.c scratch_relocs), as the presenter's: its own scratchpad's. */
-extern char D_8006CF48[], D_8006CF58[], D_8006D0D8[];
-u32 g_pres_grid2[4], g_pres_grid4[16], g_pres_inner4[4];
-static void tables(u32 *to, const char *from, int n) {
-  int i;
-  for (i = 0; i < n; i++)
-    to[i] = (u32)(uintptr_t)g_pres_scratch + (((const u32 *)from)[i] & 0x3FFu);
-}
-void render_ctx_init(void) {
-  tables(g_pres_grid2, D_8006CF48, 4);
-  tables(g_pres_grid4, D_8006CF58, 16);
-  tables(g_pres_inner4, D_8006D0D8, 4);
-}
+/* Nothing to set up since 7d2 (D124): the subdivision tables are read as
+ * offsets into the working memory. Kept for the callers. */
+void render_ctx_init(void) {}
 
-/* The top, less the 0x20 bytes of argument space mips2c's entries leave
- * above $sp (render_hand.h HAND_RENDERER). */
-u32 render_ctx_stack_top(void) { return (u32)(uintptr_t)(s_stack + PRES_STACK / 4) - 0x20u; }
+/* The vertex cache's hook on a native projection (gte_ops.c's ngte_vcache,
+ * on the presenter's hook) */
+void pres_ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
+  const int proj[15] = {p->r11, p->r12, p->r13, p->r21, p->r22, p->r23, p->r31, p->r32, p->r33,
+                        p->trx, p->try_, p->trz, p->ofx, p->ofy, p->h};
+  g_pres_rtp_value_hook(proj, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3);
+}
+void (*g_pres_rtp_hook)(int idx, int sf);
+void (*g_pres_rtp_value_hook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3);
 
 /* native_draw.c's, on the presenter's cursor (its check isn't the
  * presenter's: --native-draw-check runs the game's builds) */
-void pres_nd_begin(void) { g_pres_nd.on = g_native_draw == 1 && g_fast_render_ro == 2; }
+void pres_nd_begin(void) { g_pres_nd.on = g_native_draw == 1 && g_fast_render_ro >= 2; }
 void pres_nd_end(void) { g_pres_nd.on = 0; }
 
 /* The sectors the presenter animates (env_hand.c): a copy each, in the

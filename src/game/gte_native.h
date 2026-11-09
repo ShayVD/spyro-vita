@@ -347,6 +347,18 @@ NGTE_INL NgteCol ngte_gpl0(int mac1, int mac2, int mac3, int ir1, int ir2, int i
   return o;
 }
 
+/* GPL (0x1A8003E: sf 1, lm 0): MAC1-3 (<< 12) plus IR1-3 times IR0,
+ * >> 12 (the sky's clipping, fast_render=3: D124). */
+NGTE_INL NgteCol ngte_gpl1(int mac1, int mac2, int mac3, int ir1, int ir2, int ir3, int ir0, unsigned int code) {
+  NgteCol o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1(((long long)mac1 << 12) + (ir0 * ir1), &flag, 1);
+  o.mac2 = NGTE_A2(((long long)mac2 << 12) + (ir0 * ir2), &flag, 1);
+  o.mac3 = NGTE_A3(((long long)mac3 << 12) + (ir0 * ir3), &flag, 1);
+  ngte_col_finish(&o, code, &flag);
+  return o;
+}
+
 /* ===================================================================== */
 /* MVMVA with sf 1, lm 0: a matrix times a vector, plus a translation      */
 /* ===================================================================== */
@@ -391,5 +403,107 @@ NGTE_INL NgteVec ngte_mvmva(const NgteMat *m, int t1, int t2, int t3, int vx, in
   o.flag = flag;
   return o;
 }
+
+
+/* ===================================================================== */
+/* For fast_render=3 (stage 7d2, decisions D124): the rest of what the    */
+/* renderers issue, so none of them needs the register file. Each is      */
+/* gte_inline.h's command, expression for expression, on values.          */
+/* ===================================================================== */
+
+/* The light matrix and the light colour matrix as MVMVA reads them
+ * (mx 1, mx 2). */
+NGTE_INL NgteMat ngte_llm_get(void) {
+  NgteMat m;
+  m.m11 = C2_L11, m.m12 = C2_L12, m.m13 = C2_L13;
+  m.m21 = C2_L21, m.m22 = C2_L22, m.m23 = C2_L23;
+  m.m31 = C2_L31, m.m32 = C2_L32, m.m33 = C2_L33;
+  return m;
+}
+NGTE_INL NgteMat ngte_lcm_get(void) {
+  NgteMat m;
+  m.m11 = C2_LR1, m.m12 = C2_LR2, m.m13 = C2_LR3;
+  m.m21 = C2_LG1, m.m22 = C2_LG2, m.m23 = C2_LG3;
+  m.m31 = C2_LB1, m.m32 = C2_LB2, m.m33 = C2_LB3;
+  return m;
+}
+
+/* MVMVA sf 0, lm 0, no translation (0x41E012, 0x43E012, 0x45E012: the
+ * rotation, light or light colour matrix times IR). */
+NGTE_INL NgteVec ngte_mvmva0(const NgteMat *m, int vx, int vy, int vz) {
+  NgteVec o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1((long long)(m->m11 * vx) + (m->m12 * vy) + (m->m13 * vz), &flag, 0);
+  o.mac2 = NGTE_A2((long long)(m->m21 * vx) + (m->m22 * vy) + (m->m23 * vz), &flag, 0);
+  o.mac3 = NGTE_A3((long long)(m->m31 * vx) + (m->m32 * vy) + (m->m33 * vz), &flag, 0);
+  o.ir1 = NGTE_B1(o.mac1, &flag, 0);
+  o.ir2 = NGTE_B2(o.mac2, &flag, 0);
+  o.ir3 = NGTE_B3(o.mac3, &flag, 0);
+  o.flag = flag;
+  return o;
+}
+
+/* OP (0x170000C: sf 0, lm 0): the cross product of IR1-3 with R11, R22,
+ * R33. */
+NGTE_INL NgteVec ngte_op0(int r11, int r22, int r33, int ir1, int ir2, int ir3) {
+  NgteVec o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1((long long)(r22 * ir3) - (r33 * ir2), &flag, 0);
+  o.mac2 = NGTE_A2((long long)(r33 * ir1) - (r11 * ir3), &flag, 0);
+  o.mac3 = NGTE_A3((long long)(r11 * ir2) - (r22 * ir1), &flag, 0);
+  o.ir1 = NGTE_B1(o.mac1, &flag, 0);
+  o.ir2 = NGTE_B2(o.mac2, &flag, 0);
+  o.ir3 = NGTE_B3(o.mac3, &flag, 0);
+  o.flag = flag;
+  return o;
+}
+
+/* SQR (0xA00428: sf 0, lm 1): IR1-3 squared. */
+NGTE_INL NgteVec ngte_sqr0(int ir1, int ir2, int ir3) {
+  NgteVec o;
+  unsigned int flag = 0;
+  o.mac1 = NGTE_A1(ir1 * ir1, &flag, 0);
+  o.mac2 = NGTE_A2(ir2 * ir2, &flag, 0);
+  o.mac3 = NGTE_A3(ir3 * ir3, &flag, 0);
+  o.ir1 = NGTE_B1(o.mac1, &flag, 1);
+  o.ir2 = NGTE_B2(o.mac2, &flag, 1);
+  o.ir3 = NGTE_B3(o.mac3, &flag, 1);
+  o.flag = flag;
+  return o;
+}
+
+/* CC (0x138041C: sf 1, lm 1): the back colour plus the light colour matrix
+ * times IR1-3, then RGBC's colour (<< 4) times that; the colour pushed.
+ * IR1-3 are the last stage's, clamped at 0 (lm 1). */
+NGTE_INL NgteCol ngte_cc(const NgteMat *lc, int rbk, int gbk, int bbk, unsigned int rgbc, int ir1, int ir2,
+                         int ir3) {
+  NgteCol o;
+  unsigned int flag = 0, r, g, b;
+  const int cr = (int)(rgbc & 0xff), cg = (int)((rgbc >> 8) & 0xff), cb = (int)((rgbc >> 16) & 0xff);
+  int i1, i2, i3;
+  o.mac1 = NGTE_A1((long long)((long long)rbk << 12) + (lc->m11 * ir1) + (lc->m12 * ir2) + (lc->m13 * ir3), &flag, 1);
+  o.mac2 = NGTE_A2((long long)((long long)gbk << 12) + (lc->m21 * ir1) + (lc->m22 * ir2) + (lc->m23 * ir3), &flag, 1);
+  o.mac3 = NGTE_A3((long long)((long long)bbk << 12) + (lc->m31 * ir1) + (lc->m32 * ir2) + (lc->m33 * ir3), &flag, 1);
+  i1 = NGTE_B1(o.mac1, &flag, 1);
+  i2 = NGTE_B2(o.mac2, &flag, 1);
+  i3 = NGTE_B3(o.mac3, &flag, 1);
+  o.mac1 = NGTE_A1((cr << 4) * i1, &flag, 1);
+  o.mac2 = NGTE_A2((cg << 4) * i2, &flag, 1);
+  o.mac3 = NGTE_A3((cb << 4) * i3, &flag, 1);
+  o.ir1 = NGTE_B1(o.mac1, &flag, 1);
+  o.ir2 = NGTE_B2(o.mac2, &flag, 1);
+  o.ir3 = NGTE_B3(o.mac3, &flag, 1);
+  r = (unsigned int)NGTE_C1(o.mac1 >> 4, &flag);
+  g = (unsigned int)NGTE_C2(o.mac2 >> 4, &flag);
+  b = (unsigned int)NGTE_C3(o.mac3 >> 4, &flag);
+  o.rgb2 = r | g << 8 | b << 16 | (rgbc >> 24) << 24;
+  o.flag = flag;
+  return o;
+}
+
+/* LZCR as the register file's MTC2 30 leaves it (gte_regs.c: PsyCross's
+ * leading zeros, 32 for 0; a real GTE counts leading sign bits, which
+ * differs only for a negative value). */
+NGTE_INL unsigned int ngte_lzcr(unsigned int v) { return v ? (unsigned int)__builtin_clz(v) : 32u; }
 
 #endif

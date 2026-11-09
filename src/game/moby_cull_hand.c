@@ -17,6 +17,8 @@
  * its register save to D_80077DD8 is hand_spill_regs (render_hand.h). It
  * leaves the GTE's rotation matrix, V0, IR, MAC and FLAG as its commands
  * left them, so this does the same moves and commands in the same order.
+ * fast_render=3 (moby_cull_hand_rc.c, NGTE_RC, D124) sets the rotation
+ * matrix as the asm does and does the rest as native maths on values.
  * The draw-distance hooks of tools/mips2c/hints.yaml (lod.c, decisions D49)
  * are made where the unit makes them, with the same values.
  *
@@ -111,6 +113,75 @@ typedef struct {
   Mat view;
 } Cam;
 
+#if NGTE_RC
+/* fast_render=3 (D124): the matrix as MVMVA reads it once MatToGte has
+ * set it (CTC2 4 sign-extends R33), and the rotation of a vector by it
+ * (MVMVA sf 1): IR1-3 and MAC1-3, as values. */
+static inline NgteMat MatNgte(const Mat *m) {
+  NgteMat n;
+  n.m11 = (s16)m->r11r12, n.m12 = (s16)(m->r11r12 >> 16), n.m13 = (s16)m->r13r21;
+  n.m21 = (s16)(m->r13r21 >> 16), n.m22 = (s16)m->r22r23, n.m23 = (s16)(m->r22r23 >> 16);
+  n.m31 = (s16)m->r31r32, n.m32 = (s16)(m->r31r32 >> 16), n.m33 = (s16)m->r33;
+  return n;
+}
+static inline NgteVec Rotate(const Mat *m, int vx, int vy, int vz) {
+  const NgteMat n = MatNgte(m);
+  return ngte_mvmva(&n, 0, 0, 0, vx, vy, vz);
+}
+
+/* The matrix turned by an angle (a byte, doubled: the sine table's index):
+ * two of its columns from the matrix times a unit vector each, as the
+ * register-file code below. The Z and Y turns set the GTE's matrix (the
+ * asm's state), the X turn leaves it. */
+static inline void TurnZ(Mat *m, u32 a) {
+  NgteVec u, v;
+  s32 c, s;
+  if (!a)
+    return;
+  c = (s16)AT16(D_8006CC78 + a);
+  s = (s16)AT16(D_8006CBF8 + a);
+  u = Rotate(m, c, 0, s);
+  v = Rotate(m, (s16)-s, 0, c);
+  m->r11r12 = (m->r11r12 & 0xFFFF0000) + ((u32)u.ir1 & 0xFFFF);
+  m->r31r32 = (m->r31r32 & 0xFFFF0000) + ((u32)u.ir3 & 0xFFFF);
+  m->r13r21 = ((u32)v.ir1 & 0xFFFF) + ((u32)u.ir2 << 16);
+  m->r22r23 = (m->r22r23 & 0xFFFF) + ((u32)v.ir2 << 16);
+  m->r33 = (u32)v.ir3 & 0xFFFF;
+  MatToGte(m);
+}
+
+static inline void TurnY(Mat *m, u32 a) {
+  NgteVec u, v;
+  s32 c, s;
+  if (!a)
+    return;
+  c = (s16)AT16(D_8006CC78 + a);
+  s = (s16)AT16(D_8006CBF8 + a);
+  u = Rotate(m, 0, c, s);
+  v = Rotate(m, 0, (s16)-s, c);
+  m->r11r12 = (m->r11r12 & 0xFFFF) + ((u32)u.ir1 << 16);
+  m->r31r32 = (m->r31r32 & 0xFFFF) + ((u32)u.ir3 << 16);
+  m->r13r21 = (m->r13r21 & 0xFFFF0000) + ((u32)v.ir1 & 0xFFFF);
+  m->r22r23 = ((u32)v.ir2 << 16) + ((u32)u.ir2 & 0xFFFF);
+  m->r33 = (u32)v.ir3 & 0xFFFF;
+  MatToGte(m);
+}
+
+static inline void TurnX(Mat *m, u32 a) {
+  NgteVec u, v;
+  s32 c, s;
+  if (!a)
+    return;
+  c = (s16)AT16(D_8006CC78 + a);
+  s = (s16)AT16(D_8006CBF8 + a);
+  u = Rotate(m, c, s, 0);
+  v = Rotate(m, (s16)-s, c, 0);
+  m->r13r21 = (m->r13r21 & 0xFFFF) + ((u32)u.ir2 << 16);
+  m->r11r12 = ((u32)v.ir1 << 16) + ((u32)u.ir1 & 0xFFFF);
+  m->r31r32 = ((u32)v.ir3 << 16) + ((u32)u.ir3 & 0xFFFF);
+  m->r22r23 = (m->r22r23 & 0xFFFF0000) + ((u32)v.ir2 & 0xFFFF);
+}
+#else
 /* The matrix turned by an angle (a byte, doubled: the sine table's index),
  * two of its columns from the matrix times a unit vector each (MVMVA): the
  * same three as moby_hand.c's, but the X turn, the last, leaves the GTE's
@@ -190,6 +261,7 @@ static inline void TurnX(Mat *m, u32 a) {
   m->r31r32 = (z1 << 16) + (z0 & 0xFFFF);
   m->r22r23 = (m->r22r23 & 0xFFFF0000) + (y1 & 0xFFFF);
 }
+#endif
 
 /* abs, as the asm's `neg` when negative. */
 static inline u32 Abs32(u32 v) {
@@ -256,15 +328,25 @@ static inline __attribute__((always_inline)) int CullMoby(u32 moby, u32 rec, u32
   anim = *HPTR(u32, model + ((anims & 0xFF) << 2) + MODEL_ANIMS);
   MatToGte(&cam->view);
   r = (u32)*HPTR(u8, anim + ANIM_RADIUS) << 4;
+#if NGTE_RC
+  {
+    /* the view matrix times (y, z, x), as the asm loads them into IR1-3 */
+    const NgteVec v = Rotate(&cam->view, (s16)y, (s16)z, (s16)x);
+    z = (u32)v.mac3;
+    y = (u32)v.mac2;
+    x = (u32)v.mac1;
+  }
+#else
   MTC2(x, 11);
   MTC2(y, 9);
   MTC2(z, 10);
   gte_mvmva_rt_ir();
-  ex = (r >> 1) + (r >> 2) + (r >> 5); /* the radius scaled to the view's */
-  ez = (r >> 1) + (r >> 4) + (r >> 5); /* sides and its depth */
   z = MFC2(27);
   y = MFC2(26);
   x = MFC2(25);
+#endif
+  ex = (r >> 1) + (r >> 2) + (r >> 5); /* the radius scaled to the view's */
+  ez = (r >> 1) + (r >> 4) + (r >> 5); /* sides and its depth */
   /* Beyond the box's depth, behind the camera, or off a side. */
   if ((s32)(z - box) >= 0 || (s32)(z + r) <= 0)
     return CULL_NEXT;
@@ -421,5 +503,5 @@ static u32 CullSpecular(u32 a0, u32 a1, u32 a2, u32 a3) {
   return PSX_ADDR(g_MobyShadows); /* v0, as the asm leaves it */
 }
 
-HAND_UNIT_FN(func_8001F158, CullMobys)
-HAND_UNIT_FN(func_800208FC, CullSpecular)
+HAND_UNIT_FN_RC(func_8001F158, CullMobys)
+HAND_UNIT_FN_RC(func_800208FC, CullSpecular)

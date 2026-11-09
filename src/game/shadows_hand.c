@@ -35,6 +35,12 @@
  * RTPS (MobyShadowsTail), which together write every data register the
  * call's commands write.
  *
+ * fast_render=3 (shadows_hand_rc.c, NGTE_RC, D124): the same native maths
+ * with the control registers moved where the asm moves them, and no more:
+ * all sixteen of Spyro's points native, no MobyShadowsTail. The working
+ * values the asm keeps in the scratchpad go to the renderers' working
+ * memory (SCRATCH_BASE), which nothing reads after a call.
+ *
  * With native_draw=1 too (decisions D82, D86): every primitive is still
  * built where it was (the buffer's pointer and the bytes the game leaves
  * past it don't change), and where the asm links it, it goes to the walk
@@ -214,7 +220,11 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       {
         /* GPF then GPL (sf 0), native; the six colours pushed, the IR
          * words the last GPL leaves */
+#if NGTE_RC
+        const u32 code = 0; /* only the colour FIFO takes it, which no one reads */
+#else
         const u32 code = gteRegs.CP2D.r[6] >> 24;
+#endif
         for (k = 3; (s32)k > 0; k--, p += 3) {
           const u32 b0 = AT8(p + 0), b1 = AT8(p + 1), b2 = AT8(p + 2);
           const u32 c0 = AT8(p + 8), c1 = AT8(p + 9), c2 = AT8(p + 10);
@@ -329,6 +339,14 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       vxy = (dxz & 0xFFFFu) + (hy << 18);
       hgt++;
       rad++;
+#if NGTE_RC
+      {
+        const NgteRtp q = ngte_rtps_w(&P, vxy, dz_);
+        AT32(o + 0x0) = q.sxy;
+        AT32(o + 0x4) = q.sz3;
+        (void)irw, (void)ir0w, (void)rgbw, (void)blend;
+      }
+#else
       if (o < scr + 0x60) {
         /* the first twelve native; the last four on the register file,
          * which then holds what all sixteen leave */
@@ -355,6 +373,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         AT32(o + 0x0) = MFC2(14);
         AT32(o + 0x4) = MFC2(19);
       }
+#endif
       d = AT32(dir);
       r = AT8(rad - 1);
       dir += 4;
@@ -471,6 +490,7 @@ typedef struct {
   u8 irw_set, facing, read_corner;
 } MsAnchor;
 
+#if !NGTE_RC
 static void MobyShadowsTail(u32 scr, const MsAnchor *a, int anchored, const u32 *nxy, const u32 *nz,
                             u32 nnear) {
   const u32 r0 = AT32(scr + 0xC), r1 = AT32(scr + 0x10), r2 = AT32(scr + 0x14);
@@ -542,6 +562,7 @@ static void MobyShadowsTail(u32 scr, const MsAnchor *a, int anchored, const u32 
   }
   memcpy(gteRegs.CP2C.r, ctl, sizeof ctl);
 }
+#endif /* !NGTE_RC */
 #endif
 
 static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
@@ -950,7 +971,7 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
   }
   AT32(ADDR_ND(D_800757B0)) = AT32(scr + 0x28);
-#if NGTE_MATH
+#if NGTE_MATH && !NGTE_RC
   MobyShadowsTail(scr, &anchor, anchored, nxy, nz, nnear);
 #endif
 #if NGTE

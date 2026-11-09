@@ -8,12 +8,13 @@
  * logic's build doesn't include this file and doesn't change.
  *
  * What a renderer reaches and where it goes:
- *  - the GTE register file, its moves for IRGB/ORGB, LZCS/LZCR and FLAG
- *    (gte_regs.c) and the GTE commands (gte_ops.c): the presenter's own
- *    register file and its own copies of both files (render_ctx_gte.c);
- *  - the scratchpad (render_hand.h SCRATCH_BASE), the three subdivision
- *    tables whose words are scratchpad addresses, the register spill area
- *    D_80077DD8 and the hand stack under g_mips_sp;
+ *  - the GTE's control registers: the presenter's own (g_pres_gte; since
+ *    7d2, D124, the presenter build is fast_render=3's code, which uses no
+ *    data register or GTE command, so its GTERegisters' data half is only a
+ *    view the shared headers compile against, and render_ctx_check makes
+ *    sure nothing touches it);
+ *  - the renderers' working memory (render_hand.h SCRATCH_BASE: at
+ *    fast_render=3 g_render_work, no longer the PS1 scratchpad);
  *  - the work area D_8006FCF4 (the moby tables and records, the sector and
  *    polygon lists, the moby shadow list), the sector flags D_800771C8 and
  *    g_MobyShadows (the shadow list's texture and next entry);
@@ -38,8 +39,14 @@
 #define RENDER_CTX_NAMES_H
 
 #define RENDER_PRES 1
+/* 7d2 (D124): the presenter builds are fast_render=3's readable code; its
+ * context has the GTE's control registers only, and no scratchpad copy,
+ * spill area or hand stack (7e keys on this) */
+#define RENDER_CTX_READABLE 1
 
-/* the GTE */
+/* the GTE: the control registers (render_hand.h bans the rest in the
+ * presenter's build; the names below only let the shared headers' unused
+ * inline code compile) */
 #define gteRegs g_pres_gte
 #define M2C_GTE_SLOW(f) pres_##f
 #define m2c_gte_0x138041C pres_gte_0x138041C
@@ -59,7 +66,8 @@
 #define m2c_gte_0x780010 pres_gte_0x780010
 #define m2c_gte_0x980011 pres_gte_0x980011
 #define m2c_gte_0xA00428 pres_gte_0xA00428
-/* render_ctx_gte_regs.c's moves (mips2c_rt.h M2C_GTE_SLOW) */
+/* the moves mips2c_rt.h's inline code names (M2C_GTE_SLOW); no presenter
+ * code calls them, so none is defined */
 unsigned int pres_MFC2(int reg);
 void pres_MTC2(unsigned int value, int reg);
 void pres_CTC2(unsigned int value, int reg);
@@ -68,16 +76,8 @@ unsigned int pres_CFC2(int reg);
 #define g_psyxRtpValueHook g_pres_rtp_value_hook
 #define ngte_vcache pres_ngte_vcache
 
-/* the scratchpad, the spill area, the hand stack */
-#define g_psx_scratch g_pres_scratch
-#define D_80077DD8 g_pres_spill
-#define g_mips_sp g_pres_mips_sp
-
-/* the subdivision tables whose words are scratchpad addresses (port.c
- * scratch_relocs): the presenter's copies point at its own scratchpad */
-#define D_8006CF48 g_pres_grid2
-#define D_8006CF58 g_pres_grid4
-#define D_8006D0D8 g_pres_inner4
+/* the working memory (fast_render=3's, render_hand.h) */
+#define g_render_work g_pres_scratch
 
 /* the work area and the sector flags */
 #define D_8006FCF4 g_pres_work
