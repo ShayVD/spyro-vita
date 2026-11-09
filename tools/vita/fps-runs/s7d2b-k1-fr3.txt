@@ -1,4 +1,4 @@
-# Run 7D2b (stage 7d2, D124; proposed, the owner decides): 7D2a with fast_render=3, the renderers as
+# Run 7D2b (stage 7d2, D124; ran 2026-11-09, results in the README): 7D2a with fast_render=3, the renderers as
 # readable C (no GTE data registers, scratchpad, spill area or hand stack). Its "draw" lines against
 # 7D2a's are 7d2's cost or gain on hardware; its 18 pictures and memory card must be 7D2a's. Same
 # route and VPK:
