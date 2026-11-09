@@ -4,20 +4,17 @@
  * cueing) and a portal's face (func_8004FEA0), with the clipping helpers
  * they share (func_8004F7E8 and func_8005060C, func_8004FF90,
  * func_8004FDAC). Written by hand from the asm as C (decisions D96, the D72
- * method): the asm's control flow and arithmetic with named locals, its GTE
- * commands on the register file, and the scratchpad, the spill area
- * (D_80077DD8) and the lists it keeps in D_8006FCF4 as it leaves them.
- *
- * fast_render=3 (sky_clip_hand_rc.c, NGTE_RC, D124): the control registers
- * (the rotations, the translation, the far colour) set as the asm sets
- * them, the commands as native maths on values; no data register, and no
- * spill area: what the asm saves there it loads back unchanged.
+ * method): the asm's control flow and arithmetic with named locals, and the
+ * lists it keeps in D_8006FCF4 as it leaves them. Since D124 as readable C:
+ * the control registers (the rotations, the translation, the far colour)
+ * set as the asm sets them, the commands as native maths on values; no data
+ * register, and no spill area: what the asm saves there it loads back
+ * unchanged.
  *
  * The sky renderer itself is sky_hand.c (D72), so the unit stays linked for
- * fast_render=0 (render_hand.h HAND_UNIT_FN): fast_render 1 and 2 run this,
- * --fast-render-check compares each call with the unit (the whole arena,
- * the scratchpad, every GTE register), and the oracle replay against
- * PCSX-Redux (docs/translation-log.md). The polygons stay PS1 primitives;
+ * fast_render=0 (render_hand.h HAND_UNIT_FN_RC); --fast-render-check and
+ * the oracle replay's shadow compare each call with the unit, and the
+ * oracle replay with PCSX-Redux (docs/translation-log.md). The polygons stay PS1 primitives;
  * with native_draw the walk parses them (nd_fast, D92).
  *
  * A sky is a list of sectors (sky_hand.c says how one is laid out). Each
@@ -35,6 +32,7 @@
  * waits on a stack (D_80075798's pointer, from D_8006FCF4 + 0x800) until
  * the sector's triangles are done. A portal's face is two triangles
  * clipped the same way, without colours, the halves in a queue. */
+#define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
 #include <stdint.h>
@@ -51,9 +49,6 @@ extern char D_80075798[];   /* the clipped triangles' stack pointer */
 extern char D_800757B0[];   /* the primitive buffer's next free byte */
 extern char D_800758B0[];   /* set when the buffer filled up */
 extern char D_80075934[];   /* the world OT slot the portals draw into */
-#if !NGTE_RC
-extern char D_80077DD8[];   /* the asm's spill area */
-#endif
 extern char D_80077EA0[];   /* the portal's outline on screen: its edges */
 extern char D_8007AA00[];   /* the portal's box on screen: top, bottom, right, left */
 
@@ -116,26 +111,14 @@ static void SectorsInFront(const u32 *view, u32 count, u32 sectors) {
   CTC2(0u, 5);
   CTC2(0u, 6);
   CTC2(0u, 7);
-#if NGTE_RC
   const NgteProj P = ngte_proj_get();
-#endif
   for (; s != end; s++) {
     const u32 *sector = HPTR(const u32, *s);
     s32 radius;
-#if NGTE_RC
     radius = (s16)sector[SEC_CENTER_Z];
     if ((s32)((u32)ngte_rtps_w(&P, sector[SEC_CENTER_XY], (u32)((s32)sector[SEC_CENTER_Z] >> 16)).mac3 -
               (u32)radius) > 0)
       *out++ = *s;
-#else
-    MTC2(sector[SEC_CENTER_XY], 0);
-    MTC2((u32)((s32)sector[SEC_CENTER_Z] >> 16), 1);
-    radius = (s16)sector[SEC_CENTER_Z];
-    gte_rtps();
-    (void)MFC2(19); /* the asm reads SZ3 first (a read that normalises it) */
-    if ((s32)(MFC2(27) - (u32)radius) > 0)
-      *out++ = *s;
-#endif
   }
   *out = 0;
 }
@@ -164,22 +147,12 @@ static u32 ClipFlags(u32 sxy, const Box *b) {
 }
 
 /* A packed vertex (sky_hand.c's VertexWords) into the GTE's V0. */
-#if NGTE_RC
 static NgteRtp ProjectVertex(const NgteProj *P, u32 w, s32 ox, s32 oy, s32 oz) {
   u32 z = (w >> 21) + (u32)oz;
   u32 x = (u32)ox - ((w >> 10) & 0x7FF);
   u32 y = (u32)oy - (w & 0x3FF);
   return ngte_rtps_w(P, x + (y << 16), z);
 }
-#else
-static void LoadVertex(u32 w, s32 ox, s32 oy, s32 oz) {
-  u32 z = (w >> 21) + (u32)oz;
-  u32 x = (u32)ox - ((w >> 10) & 0x7FF);
-  u32 y = (u32)oy - (w & 0x3FF);
-  MTC2(z, 1);
-  MTC2(x + (y << 16), 0);
-}
-#endif
 
 /* A sector's vertices projected, each one's clip word into the scratchpad;
  * the flags they all share. As in sky_hand.c, each RTPS overlaps loading
@@ -190,24 +163,12 @@ static u32 ProjectSector(const u32 *sector, const Box *box) {
   const u32 n = sector[SEC_ORIGIN_Z] & 0xFFFF;
   const u32 *vert = sector + SEC_VERTICES;
   u32 *scratch = (u32 *)SCRATCH_BASE, all = ~0u, i = 0;
-#if NGTE_RC
   const NgteProj P = ngte_proj_get();
   do {
     const u32 flags = ClipFlags(ProjectVertex(&P, vert[i], ox, oy, oz).sxy, box);
     all &= flags;
     scratch[i] = flags;
   } while (++i != n);
-#else
-  LoadVertex(vert[0], ox, oy, oz);
-  do {
-    u32 flags;
-    gte_rtps();
-    LoadVertex(vert[i + 1], ox, oy, oz);
-    flags = ClipFlags(MFC2(14), box); /* SXY2 */
-    all &= flags;
-    scratch[i] = flags;
-  } while (++i != n);
-#endif
   return all;
 }
 
@@ -223,7 +184,6 @@ static void FogColours(const u32 *colours, u32 bytes) {
   CTC2(((fog >> 16) & 0xFF) << 4, 23); /* BFC */
   CTC2((fog & 0xFF) << 4, 21);         /* RFC */
   CTC2(((fog >> 8) & 0xFF) << 4, 22);  /* GFC */
-#if NGTE_RC
   {
     const int ir0 = (s16) * (const u32 *)D_8007575C;
     const int rfc = (int)((fog & 0xFF) << 4), gfc = (int)(((fog >> 8) & 0xFF) << 4);
@@ -231,15 +191,6 @@ static void FogColours(const u32 *colours, u32 bytes) {
     for (; c != end; c++)
       *out++ = ngte_dpcs(*c, ir0, rfc, gfc, bfc).rgb2;
   }
-#else
-  MTC2(*(const u32 *)D_8007575C, 8);   /* IR0 */
-  MTC2(*c++, 6);
-  do {
-    m2c_gte_0x780010(); /* DPCS */
-    *out++ = MFC2(22);  /* RGB2 */
-    MTC2(*c++, 6);
-  } while (c != end + 1);
-#endif
 }
 
 /* The colour word at a byte offset (the triangles index colours by 4s). */
@@ -328,7 +279,6 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
   Chain ch;
   (void)a0, (void)a1, (void)a2, (void)a3;
 
-  hand_spill_regs();
   SectorsInFront((const u32 *)(g_Camera + 0x14), cyc[0], cyc[1]);
   SetRotation((const u32 *)g_Camera);
   ChainBegin(&ch);
@@ -399,7 +349,6 @@ static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb) {
   const u32 fc = r->a3, ea = e[EDGE_A];
   u32 den, num;
   s32 t;
-#if NGTE_RC
   const u32 rgbc = r->a2; /* from's colour */
   CTC2((fc & 0xFF) << 4, 21);
   CTC2(((fc >> 8) & 0xFF) << 4, 22);
@@ -423,40 +372,12 @@ static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb) {
     *rgb = 0x30000000u | c.rgb2;
     return ((u32)p.mac2 << 16) | ((u32)p.mac1 & 0xFFFF);
   }
-#else
-  MTC2(r->a2, 6); /* RGBC: from's colour */
-  CTC2((fc & 0xFF) << 4, 21);
-  CTC2(((fc >> 8) & 0xFF) << 4, 22);
-  CTC2(((fc >> 16) & 0xFF) << 4, 23);
-  r->a2 = e[EDGE_B];
-  r->a3 = e[EDGE_C];
-  MTC2(x0, 25); /* MAC1, MAC2: the start */
-  MTC2(y0, 26);
-  MTC2(dx, 9); /* IR1, IR2: the side */
-  MTC2(dy, 10);
-  den = ea * dx + r->a2 * dy;
-  if (den == 0) {
-    *rgb = y0 | dy;
-    return x0;
-  }
-  num = ((ea * x0 + r->a3 + r->a2 * y0) << 7) + 0x40;
-  t = Quotient((s32)num, (s32)den);
-  MTC2(((0u - (u32)t) << 5) + 0x10, 8); /* IR0 */
-  m2c_gte_0x1A8003E();                 /* GPL, sf=1 */
-  {
-    const u32 mac1 = MFC2(25), mac2 = MFC2(26);
-    m2c_gte_0x780010(); /* DPCS */
-    *rgb = 0x30000000u | MFC2(22);
-    return (mac2 << 16) | (mac1 & 0xFFFF);
-  }
-#endif
 }
 
 /* NCLIP's sign of each corner against an edge: 8, 0x10, 0x20 for the
  * corners on its outer side (or on it). */
 static u32 OutsideEdge(const u32 *e, u32 xy0, u32 xy1, u32 xy2, int face) {
   u32 out = 0;
-#if NGTE_RC
   (void)face; /* SXY0-1 end up the same either way */
   if (ngte_nclip(e[EDGE_XY0], e[EDGE_XY1], xy0) <= 0)
     out |= 8;
@@ -464,27 +385,6 @@ static u32 OutsideEdge(const u32 *e, u32 xy0, u32 xy1, u32 xy2, int face) {
     out |= 0x10;
   if (ngte_nclip(e[EDGE_XY0], e[EDGE_XY1], xy2) <= 0)
     out |= 0x20;
-#else
-  if (face) {
-    MTC2(e[EDGE_XY1], 13);
-    MTC2(e[EDGE_XY0], 12);
-  } else {
-    MTC2(e[EDGE_XY0], 12);
-    MTC2(e[EDGE_XY1], 13);
-  }
-  MTC2(xy0, 14);
-  gte_nclip();
-  if ((s32)MFC2(24) <= 0)
-    out |= 8;
-  MTC2(xy1, 14);
-  gte_nclip();
-  if ((s32)MFC2(24) <= 0)
-    out |= 0x10;
-  MTC2(xy2, 14);
-  gte_nclip();
-  if ((s32)MFC2(24) <= 0)
-    out |= 0x20;
-#endif
   return out;
 }
 
@@ -525,11 +425,7 @@ static void Push(u32 xy0, u32 xy1, u32 xy2, u32 c0, u32 c1, u32 c2, u32 edge) {
  * leaves a quad, whose half (the cut points and the far inner corner)
  * waits on the stack. Every corner off: dropped. */
 static void ClipSky(Portal *o, Tri t, u32 edge, u32 ra) {
-#if NGTE_RC
   u32 sp[SPILL_RA + 1]; /* the asm's saves, which it loads back unchanged */
-#else
-  u32 *const sp = SPILL;
-#endif
   for (;; edge += EDGE_SIZE) {
     const u32 *e = HPTR(const u32, edge);
     u32 p0, p1, p2, c0, c1, c2, q0, q1, r0, r1, out;
@@ -629,7 +525,6 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
   Portal o;
   Box b;
 
-  hand_spill_regs();
   SectorsInFront(HPTR(const u32, view), s[0], s[1]);
   SetRotation(HPTR(const u32, proj));
   ChainBegin(&o.ch);
@@ -654,9 +549,6 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
     table = fog ? (const u8 *)FOG_COLOURS : (const u8 *)colours;
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
-#if !NGTE_RC
-    SPILL[SPILL_LIST] = list;
-#endif
     for (; tri != end; tri += 2) {
       const u32 f0 = WORD_AT(scratch, tri[0] >> 20), f1 = WORD_AT(scratch, (tri[0] >> 10) & 0x3FC);
       const u32 f2 = WORD_AT(scratch, tri[0] & 0x3FC);
@@ -680,9 +572,6 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
       t = (Tri){{AT32(p), AT32(p + 4), AT32(p + 8)}, {AT32(p + 0xC), AT32(p + 0x10), AT32(p + 0x14)}};
       ClipSky(&o, t, AT32(p + 0x18) + EDGE_SIZE, ra2);
     }
-#if !NGTE_RC
-    list = SPILL[SPILL_LIST];
-#endif
     *(u32 *)D_80075798 = CLIP_STACK;
   }
   ChainEnd(&o.ch, PortalSlot());
@@ -804,7 +693,6 @@ static u32 PortalFace(u32 a0, u32 a1, u32 a2, u32 a3) {
   Face f;
   (void)a1;
 
-  hand_spill_regs();
   f.colour = ((*HPTR(const u32, a0) << 8) >> 8) | 0x20000000u;
   f.queue = CLIP_STACK;
   f.prim = *(u32 *)D_800757B0;

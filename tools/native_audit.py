@@ -231,12 +231,14 @@ GAME_FILES = {
            "pete_transition_hand.c", "memory.c", "order_table.c", "rand_psyq.c",
            "system_time.c", "hand_structs.h", "cyclorama_hand.c", "moby_lists_hand.c",
            "particle_alloc_hand.c", "images_hand.c", "moby_helpers_hand.c", "credits_hand.c",
-           "particle_slots_hand.c", "env_anim_hand.c", "env_anim_hand.h"],
-    "B2": ["env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h",
-           "env_hand_ngte.c", "moby_hand_ngte.c", "pete_render_hand_ngte.c", "sky_hand_ngte.c",
-           "shadows_hand.c", "shadows_hand_ngte.c", "flame_hand.c", "flame_hand_ngte.c",
-           "particles_hand.c", "particles_hand_ngte.c",
+           "particle_slots_hand.c", "env_anim_hand.c", "env_anim_hand.h",
+           # the renderers and the B2 functions beside them: readable since
+           # D124, and the only build since D127 took the register-file ones
+           # (fast_render 1 and 2) out
+           "env_hand.c", "moby_hand.c", "pete_render_hand.c", "sky_hand.c", "render_hand.h",
+           "shadows_hand.c", "flame_hand.c", "particles_hand.c",
            "moby_cull_hand.c", "env_update_hand.c", "sky_clip_hand.c"],
+    "B2": [],
     "C": ["mips2c_rt.c", "mips2c_rt.h"],
     "E": ["gte_inline.h", "gte_ops.c", "libgte.c", "gte_regs.c"],
     "T": ["oracle_replay.c", "trace.c", "hand_index.c", "hand_shadow.c", "hand_shadow.h",

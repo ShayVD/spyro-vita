@@ -109,13 +109,8 @@ void spyro_main(void) {
   scratch_relocs();
   render_ctx_init(); /* the presenter's tables (stage 7d, D123) */
 #if SPYRO_NATIVE_MEM
-  {
-    /* D100: no mips2c stack in the arena. The hand C still makes the asm's
-     * few stores below $sp (render_hand.h hand_spill_regs, particles_hand.c);
-     * nothing reads them back, so they land in a small array. */
-    static uint32_t s_hand_stack[64];
-    g_mips_sp = (uint32_t)(uintptr_t)&s_hand_stack[64];
-  }
+  /* D100: no mips2c stack in the arena; since D127 (the register-file
+   * renderers gone) no code stores below $sp either, so g_mips_sp stays 0. */
 #else
   g_mips_sp = (uint32_t)(uintptr_t)PSX_ARENA(EMU_STACK_TOP);
 #endif

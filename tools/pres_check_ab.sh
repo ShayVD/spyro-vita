@@ -9,7 +9,7 @@
 #   m2   --interp-mode 2: the presenter's frame is the one shown in play;
 #        every trace, shot, WAV and card must be byte-identical to D30's.
 # ND=1 adds --native-draw to both runs (the Vita's records, D91); FR=N adds
-# --fast-render N (3: the Vita's default since D124).
+# --fast-render N (3, the default since D127, or 0).
 # Usage: [BIN=...] [DISC=disc/files] [MODE=chk|m2] [ND=1] [FR=N] [I_FROM=PREFIX]
 #        tools/pres_check_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-i, logs/PREFIX-SCENARIO-MODE, a summary line each.

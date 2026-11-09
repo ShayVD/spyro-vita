@@ -3,15 +3,13 @@
  * stage 2, decisions D95): func_800573C8 draws the particles, func_80058BA8
  * the glows (func_800580F4) and the sparkles (func_800584C4), and
  * func_80058864 the dragon rescue's ring (gamestate 8). They replace the
- * mips2c translation when fast_render is 1 or 2 (render_hand.h
- * HAND_RENDERER_UNIT); fast_render=0 runs the translation, which stays
- * linked as NAME_gen, and the host's --fast-render-check runs it beside
- * every call (docs/translation-log.md). The unit's other entries (the slot
- * allocators func_8005882C, func_80058AE8, func_80058B60, func_80058B68)
- * stay mips2c. The method is D72's, as shadows_hand.c: the asm's control
- * flow with its registers as locals where they carry no other name, its
- * GTE commands on the register file, and what it leaves in RAM, the
- * scratchpad and the GTE exactly.
+ * mips2c translation (render_hand.h HAND_RENDERER); fast_render=0 runs the
+ * translation, which stays linked as NAME_gen, and the host's
+ * --fast-render-check runs it beside every call (docs/translation-log.md).
+ * The unit's other entries (the slot allocators) are particle_slots_hand.c.
+ * The method is D72's, as shadows_hand.c: the asm's control flow with its
+ * registers as locals where they carry no other name, and what it leaves
+ * in RAM exactly; since D124 as readable C (render_hand.h).
  *
  * Particles (g_Particles, 0x20 bytes each, ended by a type of -1; a type
  * byte below 0 skips one): by type, a point (LINE_F2 one pixel long, 0), a
@@ -21,30 +19,19 @@
  * (POLY_FT4, 5). Byte 3 says it was drawn. A full primitive buffer sets
  * D_800758B0 and ends the list.
  *
- * fast_render=2 (particles_hand_ngte.c, NGTE 1; decisions D98): the GTE
- * commands as native maths on C values (gte_native.h). The control
- * registers are moved as the asm moves them. Points, streaks and screen
- * quads (types 0, 1, 3: nearly every particle), the turned quads' first
- * RTPS, the glows and the sparkles' first RTPS run native and leave their
- * results in locals; a PSync keeps what can still show in the register
- * file (the last four RTPS's V0, the last three GPF's inputs, IR0-3's words
- * as the code leaves them) and puts it there (psync_flush) at the end and
- * before the rarer paths, which stay on the register file: the rest of the
- * turned quads (types 2, 5; TurnedQuad turns the rotation), types 4 and 6
- * on (which no run reaches), and a live sparkle's cross. The dragon
- * rescue's ring runs native but for its last four points.
- *
- * fast_render=3 (particles_hand_rc.c, NGTE_RC, D124): every path native,
- * the rarer ones too, with the control registers moved as the asm moves
- * them; a path that moves them reads them back for the next native
- * command (the asm's turned quads can leave the rotation swapped, which the
- * next particles see). No PSync replay, no register save into the
- * scratchpad, the spill area or the hand stack.
+ * The GTE commands are native maths on C values (gte_native.h; D98, D124),
+ * every path, with the control registers moved as the asm moves them; a
+ * path that moves them reads them back for the next native command (the
+ * asm's turned quads can leave the rotation swapped, which the next
+ * particles see). A PSync holds the projection and the IR words the next
+ * command reads; nothing goes to the scratchpad, the spill area or the
+ * hand stack.
  *
  * With native_draw=1 too (decisions D82): every primitive is still built
  * where it was; the polygons go to the walk as native records where the
  * asm links them (Link); the lines (records hold polygons only) are linked
  * as they are. */
+#define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
 extern char g_Camera[];
@@ -59,9 +46,6 @@ extern char D_80076278[];      /* particle texture tables, by subtype */
 extern char D_80075780[];      /* the primitive buffer's end */
 extern char D_800757B0[];      /* the primitive buffer's next free byte */
 extern char D_800758B0[];      /* set when the buffer filled up */
-#if !NGTE_RC
-extern char D_80077DD8[];
-#endif
 extern char g_WorldOT[];
 extern char g_HudOT[];
 
@@ -79,17 +63,14 @@ extern char g_HudOT[];
 /* Into OT slot `slot` (tail +0, head +4): a polygon as a native record
  * when native_draw is on, else as it is. */
 static inline void Link(u32 slot, u32 prim, int kind) {
-#if NGTE
   if (g_nd.on) {
     nd_append(kind, slot, prim);
     return;
   }
-#endif
   (void)kind;
   nd_ot_append(slot, prim);
 }
 
-#if NGTE_MATH
 /* fast_render=2's record of the native commands (D98). RTPS and GPF write
  * MAC1-3, IR1-3's low halves and FLAG; RTPS also IR0's low half, MAC0, both
  * FIFOs and V0 (as moved); GPF the colour FIFO. So the register file is
@@ -111,19 +92,11 @@ typedef struct {
 
 static inline void psync_init(PSync *s) {
   s->P = ngte_proj_get();
-#if NGTE_RC
   /* fast_render=3: the control registers only. The code byte goes only into
    * the colour FIFO, and every GPF here has the IR words it reads moved
    * first (but IR3, whose result no one reads) */
   s->code = 0;
   s->irw[0] = s->irw[1] = s->irw[2] = s->irw[3] = 0;
-#else
-  s->code = gteRegs.CP2D.r[6] >> 24;
-  s->irw[0] = gteRegs.CP2D.r[8];
-  s->irw[1] = gteRegs.CP2D.r[9];
-  s->irw[2] = gteRegs.CP2D.r[10];
-  s->irw[3] = gteRegs.CP2D.r[11];
-#endif
   s->nr = s->ng = s->rd19 = 0;
   s->seq = s->last_r = s->last_g = 0;
 }
@@ -158,53 +131,7 @@ static inline NgteCol psync_gpf(PSync *s, int sf) {
   return o;
 }
 
-#if NGTE_RC
 static void psync_flush(PSync *s) { (void)s; }
-#else
-static inline void psync_flush_r(PSync *s) {
-  u32 k;
-  for (k = s->nr > 4 ? s->nr - 4 : 0; k < s->nr; k++) {
-    MTC2(s->vz[k & 3], 1);
-    MTC2(s->vxy[k & 3], 0);
-    RTPS();
-  }
-  if (s->rd19)
-    (void)MFC2(19);
-}
-static inline void psync_flush_g(PSync *s) {
-  u32 k;
-  for (k = s->ng > 3 ? s->ng - 3 : 0; k < s->ng; k++) {
-    const u32 *g = s->g[k % 3];
-    MTC2(g[0], 8);
-    MTC2(g[1], 9);
-    MTC2(g[2], 10);
-    MTC2(g[3], 11);
-    if (s->gsf[k % 3])
-      GPF0LM();
-    else
-      GPF0();
-  }
-}
-
-/* The register file as the native commands would have left it. */
-static void psync_flush(PSync *s) {
-  if (s->nr && s->ng && s->last_g < s->last_r) {
-    psync_flush_g(s);
-    psync_flush_r(s);
-  } else {
-    if (s->nr)
-      psync_flush_r(s);
-    if (s->ng)
-      psync_flush_g(s);
-  }
-  MTC2(s->irw[0], 8);
-  MTC2(s->irw[1], 9);
-  MTC2(s->irw[2], 10);
-  MTC2(s->irw[3], 11);
-  s->nr = s->ng = s->rd19 = 0;
-}
-#endif /* NGTE_RC */
-#endif
 
 /* The four-way screen test of a quad's corners (the asm's three chains of
  * tests on x, y): some corner below the top, some above the bottom (y
@@ -254,7 +181,6 @@ static inline void QuadUVs(u32 prim, u32 w0, u32 w1) {
  * The asm leaves the swapped rotation in place when the bias puts the quad
  * behind the OT (the next particles see it): so does this. Returns the
  * primitive buffer's next free byte. */
-#if NGTE_RC
 /* fast_render=3: the same from the GPF's MAC1-2 as values. */
 static u32 TurnedQuad(u32 prim, u32 p, u32 tex, u32 depth, u32 ot, s32 mac1, s32 mac2) {
   const u32 a2 = SRA((u32)mac1, 10), a3 = SRA((u32)mac2, 10);
@@ -300,66 +226,6 @@ static u32 TurnedQuad(u32 prim, u32 p, u32 tex, u32 depth, u32 ot, s32 mac1, s32
   Link((depth << 3) + ot, prim, ND_K_FT4);
   return prim + 0x28;
 }
-#else
-static u32 TurnedQuad(u32 prim, u32 p, u32 tex, u32 depth, u32 ot) {
-  u32 a2 = SRA(MFC2(25), 10), a3 = SRA(MFC2(26), 10);
-  u32 v0, v1, r0, r1, r2, r3, r4, t3, t4, x0, x1, x2;
-  MTC2(0u, 1);
-  MTC2(((0u - a2) & 0xFFFFu) + ((0u - a3) << 16), 0);
-  MTC2(0u, 3);
-  MTC2((a3 & 0xFFFFu) + ((0u - a2) << 16), 2);
-  MTC2(0u, 5);
-  MTC2(((0u - a3) & 0xFFFFu) + (a2 << 16), 4);
-  v0 = a2;
-  v1 = a3;
-  r0 = CFC2(0);
-  r1 = CFC2(1);
-  r2 = CFC2(2);
-  r3 = CFC2(3);
-  r4 = CFC2(4);
-  CTC2(0u, 1);
-  CTC2(0u, 3);
-  CTC2(0x1000u, 0);
-  CTC2(0x1000u, 4);
-  CTC2(0xA00u, 2);
-  v1 <<= 16;
-  v0 &= 0xFFFFu;
-  RTPT();
-  v0 += v1;
-  t3 = AT16(p - 0x10); /* the texture: bias << 8 | frame */
-  v1 = AT32(p - 0x14); /* the colour */
-  t4 = t3 >> 8;
-  depth -= t4;
-  if ((s32)depth < 0)
-    return prim;
-  tex += (t3 & 0xFFu) << 3;
-  t3 = AT32(tex + 0x4);
-  t4 = AT32(tex + 0x8);
-  x0 = MFC2(12);
-  MTC2(v0, 0);
-  MTC2(0u, 1);
-  x1 = MFC2(13);
-  x2 = MFC2(14);
-  RTPS();
-  AT32(prim + 0x8) = x0;
-  AT32(prim + 0x10) = x1;
-  AT32(prim + 0x18) = x2;
-  AT32(prim + 0x4) = v1;
-  AT32(prim + 0x0) = 0x9000000u; /* POLY_FT4 */
-  QuadUVs(prim, t3, t4);
-  AT32(prim + 0x20) = MFC2(14);
-  CTC2(r0, 0);
-  CTC2(r1, 1);
-  CTC2(r2, 2);
-  CTC2(r3, 3);
-  CTC2(r4, 4);
-  CTC2(0u, 5);
-  CTC2(0u, 6);
-  CTC2(0u, 7);
-  Link((depth << 3) + ot, prim, ND_K_FT4);
-  return prim + 0x28;
-}
-#endif
 
 /* ===================================================================== */
 /* func_800573C8: the particles                                           */
@@ -369,7 +235,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 scr = SCRATCH_BASE, cam = ADDR_ND(g_Camera);
   const u32 sin_tab = ADDR_ND(D_8006CBF8), tex_tab = ADDR_ND(D_80076278);
   u32 cx, cy, cz, lim, p, prim, ot, gp, i;
-#if NGTE_MATH
   PSync ps;
   int rf; /* the register file holds everything (a register-file path ran) */
 #define PS_NATIVE()                                                            \
@@ -382,23 +247,9 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     if (!rf)                                                                   \
       psync_flush(&ps), rf = 1;                                                \
   } while (0)
-#endif
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
-#if NGTE_RC
   (void)scr, (void)i;
-#else
-  /* the register save, into the scratchpad here (as mips2c's units start:
-   * s0-s7, gp, fp 0, sp the MIPS stack, ra the sentinel) */
-  for (i = 0; i < 8; i++)
-    AT32(scr + i * 4) = 0;
-  AT32(scr + 0x20) = 0;
-  AT32(scr + 0x24) = g_mips_sp;
-  AT32(scr + 0x28) = 0;
-  AT32(scr + 0x2C) = MIPS_RA_SENTINEL;
-#endif
-#if NGTE
   nd_begin();
-#endif
   CTC2(AT32(cam + 0x0), 0);
   CTC2(AT32(cam + 0x4), 1);
   CTC2(AT32(cam + 0x8), 2);
@@ -412,10 +263,8 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   cz = SRA(AT32(cam + 0x30), 2);
   CTC2(0u, 28);    /* DQB */
   CTC2(0x100u, 27); /* DQA */
-#if NGTE_MATH
   psync_init(&ps);
   rf = 0;
-#endif
   lim = AT32(ADDR_ND(D_80075780)) - 0x400u;
   p = PTR(AT32(ADDR_ND(g_Particles)));
   prim = AT32(ADDR_ND(D_800757B0));
@@ -432,9 +281,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       break;      /* the end */
     }
     if ((s32)(lim - prim) <= 0) {
-#if NGTE_MATH
       PS_REGFILE();
-#endif
       if (type == 4) {
         /* type 4 moves its position into the translation and clears V0
          * before it looks for room */
@@ -442,10 +289,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         CTC2(SRA(w0 << 16, 16), 5);
         CTC2(SRA(w0, 16), 6);
         CTC2(SRA(w1 << 16, 16), 7);
-#if !NGTE_RC
-        MTC2(0u, 0);
-        MTC2(0u, 1);
-#endif
       }
       AT32(ADDR_ND(D_800758B0)) = 1;
       break;
@@ -453,13 +296,10 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     switch (type) {
     case 0: { /* a point: LINE_F2 one pixel long */
       u32 depth_bias, sz, sxy;
-#if NGTE_MATH
       PS_NATIVE();
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
       v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
-#if NGTE_MATH
       {
         const NgteRtp o = psync_rtps(&ps, v0, (at & 0xFFFFu) - cx);
         sz = o.sz3;
@@ -471,18 +311,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       AT32(prim + 0x4) = AT32(p + 0xC); /* colour */
       AT8(p + 0x3) = 0;
       p += 0x20;
-#else
-      MTC2(v0, 0);
-      MTC2((at & 0xFFFFu) - cx, 1);
-      depth_bias = (a0 >> 16) & 0xFFu;
-      RTPS();
-      gp = S16(p + 0x20);
-      AT32(prim + 0x4) = AT32(p + 0xC); /* colour */
-      AT8(p + 0x3) = 0;
-      p += 0x20;
-      sz = MFC2(19);
-      sxy = MFC2(14);
-#endif
       if (sz == 0 || !PointOnScreen(sz, sxy, 0, 0x2000u))
         continue;
       AT8(p - 0x1D) = 1;
@@ -498,13 +326,10 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
     case 1: { /* a streak: LINE_G2 between two positions */
       u32 sz, sxy, sxy2, w;
-#if NGTE_MATH
       PS_NATIVE();
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
       v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
-#if NGTE_MATH
       {
         const NgteRtp o = psync_rtps(&ps, v0, (at & 0xFFFFu) - cx);
         sz = o.sz3;
@@ -522,27 +347,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       if (sz == 0 || !PointOnScreen(sz, sxy, 0, 0x2000u))
         continue;
       a1 = AT32(p - 0xC);
-#else
-      MTC2(v0, 0);
-      MTC2((at & 0xFFFFu) - cx, 1);
-      at = (a0 >> 16) - cx;
-      RTPS();
-      w = AT32(p + 0xC);
-      gp = S16(p + 0x20);
-      p += 0x20;
-      v0 = (cy - (w & 0xFFFFu)) + ((cz - (w >> 16)) << 16);
-      AT8(p - 0x1D) = 0;
-      MTC2(v0, 0);
-      MTC2(at, 1);
-      sz = MFC2(19);
-      sxy = MFC2(14);
-      RTPS();
-      a0 = AT32(p - 0x10);
-      if (sz == 0 || !PointOnScreen(sz, sxy, 0, 0x2000u))
-        continue;
-      a1 = AT32(p - 0xC);
-      sxy2 = MFC2(14);
-#endif
       AT32(prim + 0x8) = sxy;
       AT32(prim + 0x10) = sxy2;
       AT32(prim + 0x4) = a0;
@@ -558,15 +362,10 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
     case 2: { /* a quad turned by its angle, at its position */
       u32 tex, sz, sxy, sn, cs;
-#if NGTE_RC
       NgteRtp c; /* the centre's RTPS: MAC1-3 the view position, IR3 */
-#endif
-#if NGTE_MATH
       PS_NATIVE();
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
-#if NGTE_MATH
       v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
       AT8(p + 0x3) = 0;
       {
@@ -574,9 +373,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         sz = o.sz3;
         sxy = o.sxy;
         ps.rd19 = 1;
-#if NGTE_RC
         c = o;
-#endif
       }
       at = (gp & 0xFFu) << 2;
       tex = PTR(AT32(at + tex_tab));
@@ -584,21 +381,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       a0 = ((a0 >> 23) + 0x40u) & 0x1FEu;
       gp = S16(p + 0x20);
       p += 0x20;
-#else
-      MTC2((at & 0xFFFFu) - cx, 1);
-      v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
-      AT8(p + 0x3) = 0;
-      MTC2(v0, 0);
-      at = (gp & 0xFFu) << 2;
-      RTPS();
-      tex = PTR(AT32(at + tex_tab));
-      v0 = (a0 >> 16) & 0xFFu;
-      a0 = ((a0 >> 23) + 0x40u) & 0x1FEu;
-      gp = S16(p + 0x20);
-      p += 0x20;
-      sz = MFC2(19);
-      sxy = MFC2(14);
-#endif
       sn = S16(a0 + sin_tab);
       if ((s32)(sz - 0x80u) < 0 || (s32)(sz - 0x2000u) >= 0)
         continue;
@@ -607,10 +389,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       cs = S16(a0 + sin_tab + 0x80);
       if ((s32)(sxy << 16) <= 0 || (s32)((sxy << 16) - 0x2000000u) >= 0)
         continue;
-#if NGTE_MATH
       PS_REGFILE(); /* the turn moves the rotation */
-#endif
-#if NGTE_RC
       {
         /* GPF: the half-size (IR0) times the sine and cosine, IR3 the
          * RTPS's (its result unread); the view position, << 2, the
@@ -622,31 +401,14 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         CTC2((u32)c.mac3 << 2, 7);
         prim = TurnedQuad(prim, p, tex, sz >> 5, ot, g.mac1, g.mac2);
       }
-#else
-      MTC2(v0, 8);
-      MTC2(sn, 9);
-      MTC2(cs, 10);
-      {
-        const u32 m1 = MFC2(25), m2 = MFC2(26), m3 = MFC2(27);
-        GPF0();
-        AT8(p - 0x1D) = 1;
-        CTC2(m1 << 2, 5);
-        CTC2(m2 << 2, 6);
-        CTC2(m3 << 2, 7);
-      }
-      prim = TurnedQuad(prim, p, tex, sz >> 5, ot);
-#endif
       continue;
     }
     case 3: { /* a quad facing the screen, sized by its depth */
       u32 tex, sz, sxy, t, x0, x1, half_u, half_v;
-#if NGTE_MATH
       u32 mac0;
       PS_NATIVE();
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
-#if NGTE_MATH
       v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
       AT8(p + 0x3) = 0;
       {
@@ -662,21 +424,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       ps.irw[2] = a0 >> 24;
       gp = S16(p + 0x20);
       p += 0x20;
-#else
-      MTC2((at & 0xFFFFu) - cx, 1);
-      v0 = (cy - (at >> 16)) + ((cz - (a0 & 0xFFFFu)) << 16);
-      MTC2(v0, 0);
-      AT8(p + 0x3) = 0;
-      at = gp & 0xFFu;
-      RTPS();
-      tex = PTR(AT32((at << 2) + tex_tab));
-      MTC2((a0 >> 16) & 0xFFu, 9);
-      MTC2(a0 >> 24, 10);
-      gp = S16(p + 0x20);
-      p += 0x20;
-      sz = MFC2(19);
-      sxy = MFC2(14);
-#endif
       if ((s32)(sz - 0x80u) < 0 || (s32)(sz - 0x2000u) >= 0)
         continue;
       if ((s32)(sxy - 0x10000u) <= 0 || (s32)(sxy - 0x1000000u) >= 0)
@@ -685,7 +432,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       if ((s32)(sxy << 16) <= 0 || (s32)((sxy << 16) - 0x2000000u) >= 0)
         continue;
       AT8(p - 0x1D) = 1;
-#if NGTE_MATH
       ps.irw[0] = mac0 >> 12;
       v1 = (sz >> 5) - (t >> 8);
       if ((s32)v1 < 0)
@@ -698,18 +444,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       tex += (t & 0xFFu) << 3;
       x0 = AT32(tex + 0x4);
       x1 = AT32(tex + 0x8);
-#else
-      MTC2(MFC2(24) >> 12, 8);
-      v1 = (sz >> 5) - (t >> 8);
-      if ((s32)v1 < 0)
-        continue;
-      GPF0();
-      tex += (t & 0xFFu) << 3;
-      x0 = AT32(tex + 0x4);
-      x1 = AT32(tex + 0x8);
-      a2 = MFC2(25) >> 12;
-      a3 = MFC2(26) >> 12;
-#endif
       half_u = a2 >> 1;
       half_v = (a3 >> 1) << 16;
       a3 <<= 16;
@@ -727,12 +461,9 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
     case 4: { /* a 3D streak: LINE_G2 from the position along its vector */
       u32 sz, sxy, sxy2, w;
-#if NGTE_MATH
       PS_REGFILE(); /* it moves the translation */
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
-#if NGTE_RC
       {
         /* the two ends as translations, each projected from the origin */
         NgteProj Q;
@@ -762,33 +493,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       if (!PointOnScreen(sz, sxy, 0x40u, 0x800u))
         continue;
       AT8(p - 0x1D) = 1;
-#else
-      CTC2(SRA(at << 16, 16), 5);
-      CTC2(SRA(at, 16), 6);
-      CTC2(SRA(a0 << 16, 16), 7);
-      MTC2(0u, 0);
-      MTC2(0u, 1);
-      RTPS();
-      w = AT32(p + 0xC);
-      gp = S16(p + 0x20);
-      p += 0x20;
-      AT8(p - 0x1D) = 0;
-      CTC2(SRA(a0, 16), 5);
-      CTC2(SRA(w << 16, 16), 6);
-      CTC2(SRA(w, 16), 7);
-      sz = MFC2(19);
-      sxy = MFC2(14);
-      RTPS();
-      a0 = AT32(p - 0x10);
-      a1 = AT32(p - 0xC);
-      CTC2(0u, 5);
-      CTC2(0u, 6);
-      CTC2(0u, 7);
-      if (!PointOnScreen(sz, sxy, 0x40u, 0x800u))
-        continue;
-      AT8(p - 0x1D) = 1;
-      sxy2 = MFC2(14);
-#endif
       AT32(prim + 0x8) = sxy;
       AT32(prim + 0x10) = sxy2;
       AT32(prim + 0x4) = a0;
@@ -803,9 +507,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
     case 5: { /* a quad turned in the world (its own matrix) */
       u32 tex, sn, cs, s_v0, s_v1, s_a0;
-#if NGTE_MATH
       PS_REGFILE();
-#endif
       a1 = AT32(p + 0x4);
       a2 = AT32(p + 0x8);
       tex = PTR(AT32(((gp & 0xFFu) << 2) + tex_tab));
@@ -815,7 +517,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       p += 0x20;
       sn = S16(a0 + sin_tab);
       cs = S16(a0 + sin_tab + 0x80);
-#if NGTE_RC
       {
         /* GPF as case 2's (IR3 whatever it holds: its result unread) */
         const NgteCol g = ngte_gpf0((s16)sn, (s16)cs, 0, (s16)v0, 0);
@@ -827,26 +528,11 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         CTC2(s_a0, 7);
         prim = TurnedQuad(prim, p, tex, s_a0 >> 7, ot, g.mac1, g.mac2);
       }
-#else
-      MTC2(v0, 8);
-      MTC2(sn, 9);
-      MTC2(cs, 10);
-      s_v0 = SRA(a1 << 16, 14);
-      GPF0();
-      s_v1 = SRA(a1, 14);
-      s_a0 = SRA(a2 << 16, 14);
-      CTC2(s_v0, 5);
-      CTC2(s_v1, 6);
-      CTC2(s_a0, 7);
-      prim = TurnedQuad(prim, p, tex, s_a0 >> 7, ot);
-#endif
       continue;
     }
     default: { /* 6 on: a quad turned by its angle, its size from the texture */
       u32 tex, sn, cs, t, w0, x0, x1, x3, z0, z1, z2, z3, depth;
-#if NGTE_MATH
       PS_REGFILE();
-#endif
       at = AT32(p + 0x4);
       a0 = AT32(p + 0x8);
       v0 = at >> 16;
@@ -858,7 +544,6 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       a0 = (a0 >> 16) & 0xFFu;
       v0 = cy - v0;
       v1 = (cz - v1) << 16;
-#if NGTE_RC
       {
         const NgteCol g = ngte_gpf0((s16)sn, (s16)cs, 0, (s16)a0, 0);
         tex = PTR(AT32(((gp & 0xFFu) << 2) + tex_tab));
@@ -908,78 +593,15 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         prim += 0x28;
       }
       continue;
-#else
-      MTC2(a0, 8);
-      MTC2(sn, 9);
-      MTC2(cs, 10);
-      tex = ((gp & 0xFFu) << 2) + tex_tab;
-      GPF0();
-      tex = PTR(AT32(tex));
-      a1 = SRA(MFC2(25), 12);
-      a0 = SRA(MFC2(26), 12);
-      gp = S16(p + 0x20);
-      p += 0x20;
-      MTC2(v0 - a1 + v1, 0);
-      MTC2(at + a0, 1);
-      MTC2(v0 + a0 + v1, 2);
-      MTC2(at + a1, 3);
-      MTC2(v0 - a0 + v1, 4);
-      MTC2(at - a1, 5);
-      a3 = at - a0;
-      t0 = v0 + a1;
-      RTPT();
-      t0 += v1;
-      t = AT16(p - 0x10);
-      w0 = AT32(p - 0x14); /* the colour */
-      {
-        const u32 e = ((t & 0xFFu) << 3) + tex;
-        x0 = AT32(e + 0x4); /* (the texture words, here) */
-        x1 = AT32(e + 0x8);
-      }
-      {
-        const u32 s0 = MFC2(12), s1 = MFC2(13), s2 = MFC2(14);
-        MTC2(t0, 0);
-        MTC2(a3, 1);
-        z0 = MFC2(17);
-        z1 = MFC2(18);
-        z2 = MFC2(19);
-        RTPS();
-        AT32(prim + 0x4) = w0;
-        AT32(prim + 0x0) = 0x9000000u; /* POLY_FT4 */
-        QuadUVs(prim, x0, x1);
-        x3 = MFC2(14);
-        z3 = MFC2(19);
-        depth = z0 + z1 + z2 + z3;
-        if ((s32)(depth - 0x200u) < 0 || (s32)(depth - 0x8000u) >= 0)
-          continue;
-        depth = (depth >> 7) - (t >> 8);
-        if ((s32)depth < 0)
-          continue;
-        AT32(prim + 0x8) = s0;
-        AT32(prim + 0x10) = s1;
-        AT32(prim + 0x18) = s2;
-        AT32(prim + 0x20) = x3;
-        if (!QuadOnScreen(s0, s1, s2, x3))
-          continue;
-        AT8(p - 0x1D) = 1;
-        Link((depth << 3) + ot, prim, ND_K_FT4);
-        prim += 0x28;
-      }
-      continue;
-#endif
     }
     }
   }
   AT32(ADDR_ND(D_800757B0)) = prim;
-#if NGTE_MATH
   if (!rf)
     psync_flush(&ps);
 #undef PS_NATIVE
 #undef PS_REGFILE
-#endif
-#if NGTE
   nd_end();
-#endif
   return 0;
 }
 
@@ -996,23 +618,7 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
 static void Glows(void) {
   const u32 cam = ADDR_ND(g_Camera), ot = MIPS_KUSEG(AT32(ADDR_ND(g_WorldOT)));
   u32 cx, cy, cz, g, n, prim = AT32(ADDR_ND(D_800757B0)), hi = 0, lo = 0;
-#if NGTE_MATH
   PSync ps;
-#endif
-#if !NGTE_RC
-  {
-    /* the register save as the unit makes it here, called from
-     * func_80058BA8: s0-s7, gp, fp 0, sp the MIPS stack less its frame,
-     * ra the call's return address in the unit */
-    u32 *spill = (u32 *)D_80077DD8, i;
-    for (i = 0; i < 8; i++)
-      spill[i] = 0;
-    spill[8] = 0;
-    spill[9] = g_mips_sp - 0x18u;
-    spill[10] = 0;
-    spill[11] = 0x80058BB8u;
-  }
-#endif
   CTC2(AT32(cam + 0x0), 0);
   CTC2(AT32(cam + 0x4), 1);
   CTC2(AT32(cam + 0x8), 2);
@@ -1024,9 +630,7 @@ static void Glows(void) {
   cx = AT32(cam + 0x28);
   cy = AT32(cam + 0x2C);
   cz = AT32(cam + 0x30);
-#if NGTE_MATH
   psync_init(&ps);
-#endif
   g = ADDR_ND(g_Glows);
   for (n = 16; (s32)n > 0; n--, g += 0x24) {
     u32 verts = AT32(g + 0x0), pos, dx, dy, dz, sum, shift = 0, centre, sz, slot, f0, vl, colour;
@@ -1048,7 +652,6 @@ static void Glows(void) {
       dy = SRA(dy, shift & 31);
       dz = SRA(dz, shift & 31);
     }
-#if NGTE_MATH
     {
       const NgteRtp o = psync_rtps(&ps, (dy & 0xFFFFu) | (dz << 16), dx);
       centre = o.sxy;
@@ -1057,16 +660,6 @@ static void Glows(void) {
     AT32(prim + 0x0) = 0x2000000u;
     AT32(prim + 0x4) = 0xE1000220u; /* draw mode: additive, tpage 0x220 */
     AT32(prim + 0x8) = 0u;
-#else
-    MTC2(dx, 1);
-    MTC2((dy & 0xFFFFu) | (dz << 16), 0);
-    RTPS();
-    AT32(prim + 0x0) = 0x2000000u;
-    AT32(prim + 0x4) = 0xE1000220u; /* draw mode: additive, tpage 0x220 */
-    AT32(prim + 0x8) = 0u;
-    centre = MFC2(14);
-    sz = MFC2(27);
-#endif
     sy = (s32)centre >> 16;
     sx = (s32)(centre << 16) >> 16;
     sz <<= shift & 31;
@@ -1089,7 +682,6 @@ static void Glows(void) {
       f0 |= 4;
     if (sx <= 0)
       f0 |= 8;
-#if NGTE_MATH
     ps.irw[0] = lo;
     Link(slot, prim, ND_K_E1);
     prim += 0xC;
@@ -1104,20 +696,6 @@ static void Glows(void) {
       mx = (u32)c0.mac1;
       my = (u32)c0.mac2;
     }
-#else
-    MTC2(lo, 8);
-    Link(slot, prim, ND_K_E1);
-    prim += 0xC;
-    vl = PTR(AT32(g + 0x4));
-    MTC2(AT32(vl + 0x0), 9);
-    MTC2(AT32(vl + 0x4), 10);
-    vl += 8;
-    verts--;
-    GPF0LM();
-    colour = ((AT32(g + 0xC) << 8) >> 8) | 0x32000000u; /* G3 */
-    mx = MFC2(25);
-    my = MFC2(26);
-#endif
     {
       u32 rx = mx + (u32)sx, ry = my + (u32)sy, f1 = 0, rim;
       if ((s32)(ry - 1u) <= 0)
@@ -1131,7 +709,6 @@ static void Glows(void) {
       rim = (rx & 0xFFFFu) | (ry << 16);
       do {
         u32 nx, ny, f2, rim2;
-#if NGTE_MATH
         ps.irw[1] = AT32(vl + 0x0);
         ps.irw[2] = AT32(vl + 0x4);
         AT32(prim + 0x0) = 0x6000000u;
@@ -1145,19 +722,6 @@ static void Glows(void) {
         AT32(prim + 0x10) = rim;
         AT32(prim + 0xC) = 0u;
         AT32(prim + 0x14) = 0u;
-#else
-        MTC2(AT32(vl + 0x0), 9);
-        MTC2(AT32(vl + 0x4), 10);
-        AT32(prim + 0x0) = 0x6000000u;
-        GPF0LM();
-        AT32(prim + 0x8) = centre;
-        AT32(prim + 0x4) = colour;
-        AT32(prim + 0x10) = rim;
-        AT32(prim + 0xC) = 0u;
-        AT32(prim + 0x14) = 0u;
-        nx = MFC2(25) + (u32)sx;
-        ny = MFC2(26) + (u32)sy;
-#endif
         f2 = 0;
         if ((s32)(ny - 1u) <= 0)
           f2 |= 1;
@@ -1181,9 +745,7 @@ static void Glows(void) {
     }
   }
   (void)hi;
-#if NGTE_MATH
   psync_flush(&ps); /* before the sparkles move DQA and DQB */
-#endif
   AT32(ADDR_ND(D_800757B0)) = prim;
 }
 
@@ -1196,10 +758,8 @@ static void Sparkles(u32 dt) {
   const u32 cam = ADDR_ND(g_Camera), sin_tab = ADDR_ND(D_8006CBF8);
   const u32 ot = MIPS_KUSEG(AT32(ADDR_ND(g_WorldOT)));
   u32 prim = AT32(ADDR_ND(D_800757B0)), cx, cy, cz, s, end, hi = 0, lo = 0;
-#if NGTE_MATH
   PSync ps;
   int rf = 0; /* as ParticlesDraw's */
-#endif
   {
     const u32 r0 = AT32(cam + 0x0), r1 = AT32(cam + 0x4), r2 = AT32(cam + 0x8);
     const u32 r3 = AT32(cam + 0xC), r4 = AT32(cam + 0x10);
@@ -1219,9 +779,7 @@ static void Sparkles(u32 dt) {
   CTC2(0u, 7);
   CTC2(0u, 28);
   CTC2(0x100u, 27);
-#if NGTE_MATH
   psync_init(&ps);
-#endif
   cx = AT32(cam + 0x28);
   cy = AT32(cam + 0x2C);
   cz = AT32(cam + 0x30);
@@ -1230,9 +788,7 @@ static void Sparkles(u32 dt) {
   for (;;) {
     u32 w, life, spin, len, age, ang, sz, sxy, col, size, x0, x1, x2, slot;
     u32 m1, m2, m3, scale;
-#if NGTE_RC
     NgteRtp c; /* the sparkle's RTPS: MAC1-3 its view position, IR3 */
-#endif
     if (s == end)
       break;
     s += 0x18;
@@ -1256,7 +812,6 @@ static void Sparkles(u32 dt) {
       const u32 dx = SRA(AT32(s + 0x0) - cx, 2);
       const u32 dy = SRA(cy - AT32(s + 0x4), 2);
       const u32 dz = SRA(cz - AT32(s + 0x8), 2);
-#if NGTE_MATH
       if (rf)
         psync_init(&ps), rf = 0;
       {
@@ -1264,43 +819,26 @@ static void Sparkles(u32 dt) {
         sz = o.sz3;
         sxy = o.sxy;
         ps.rd19 = 1;
-#if NGTE_RC
         c = o;
-#endif
       }
-#else
-      MTC2((dy & 0xFFFFu) | (dz << 16), 0);
-      MTC2(dx, 1);
-#endif
     }
     ang = (ang << 1) + sin_tab;
-#if NGTE_MATH
     size = AT32(s + 0x14);
     col = AT32(s + 0x10);
-#else
-    RTPS();
-    size = AT32(s + 0x14); /* size (low byte), the far limit (bits 8-15) */
-    col = AT32(s + 0x10);
-    sz = MFC2(19);
-    sxy = MFC2(14);
-#endif
     if ((s32)((size & 0xFF00u) - sz) <= 0 || (s32)(sz - 0x80u) <= 0 ||
         (s32)(sxy - 0x10000u) <= 0 || (s32)(sxy - 0x1000000u) >= 0 || (s32)(sxy << 16) <= 0 ||
         (s32)((sxy << 16) - 0x2000000u) >= 0) {
       AT8(s + 0xC) = 0;
       continue;
     }
-#if NGTE_MATH
     /* the cross on the register file: it moves the rotation */
     if (!rf)
       psync_flush(&ps), rf = 1;
-#endif
     col |= 0x40000000u; /* LINE_F2 */
     AT32(prim + 0x4) = col;
     AT32(prim + 0x14) = col;
     scale = 0x100u - lo;
     MIPS_MULT(scale, size & 0xFFu);
-#if NGTE_RC
     {
       /* GPF: the size (IR0) times the cosine and sine, IR3 the RTPS's;
        * the view position, << 1, the translation; the cross's rotation a
@@ -1333,44 +871,6 @@ static void Sparkles(u32 dt) {
       x2 = t.sxy[2];
       AT32(prim + 0xC) = ngte_rtps_w(&Q, (ay << 16) + (ax & 0xFFFFu), 0u).sxy;
     }
-#else
-    {
-      const u32 sn = S16(ang), cs = S16(ang + 0x80);
-      MTC2(lo, 8);
-      MTC2(sn, 10);
-      MTC2(cs, 9);
-    }
-    m1 = MFC2(25);
-    m2 = MFC2(26);
-    m3 = MFC2(27);
-    GPF0();
-    {
-      u32 r = (s32)(m3 - 0x1000u) < 0 ? 0x1000u : m3, ax, ay;
-      CTC2(m1 << 1, 5);
-      CTC2(m2 << 1, 6);
-      CTC2(m3 << 1, 7);
-      ax = SRA(MFC2(25), 19);
-      ay = SRA(MFC2(26), 19);
-      MTC2(0u, 1);
-      MTC2(((0u - ax) & 0xFFFFu) + ((0u - ay) << 16), 0);
-      MTC2(0u, 3);
-      MTC2((ay & 0xFFFFu) + ((0u - ax) << 16), 2);
-      MTC2(0u, 5);
-      MTC2(((0u - ay) & 0xFFFFu) + (ax << 16), 4);
-      CTC2(0u, 1);
-      CTC2(0u, 3);
-      CTC2(r, 0);
-      CTC2(r, 2);
-      CTC2(r, 4);
-      RTPT();
-      x0 = MFC2(12);
-      MTC2((ay << 16) + (ax & 0xFFFFu), 0);
-      MTC2(0u, 1);
-      x1 = MFC2(13);
-      x2 = MFC2(14);
-      RTPS();
-    }
-#endif
     AT32(prim + 0x8) = x0;
     AT32(prim + 0x18) = x1;
     AT32(prim + 0x1C) = x2;
@@ -1384,9 +884,6 @@ static void Sparkles(u32 dt) {
       AT32(prim + 0x10) = MEM_TAG_LINK(MEM_TAG(0x83000000u), prim); /* the second line, then the first */
       slot = (d << 3) + ot;
     }
-#if !NGTE_RC
-    AT32(prim + 0xC) = MFC2(14);
-#endif
     {
       const u32 l0 = CFC2(8), l1 = CFC2(9), l2 = CFC2(10), l3 = CFC2(11), l4 = CFC2(12);
       CTC2(l0, 0);
@@ -1411,27 +908,17 @@ static void Sparkles(u32 dt) {
     prim += 0x20;
   }
   (void)hi;
-#if NGTE_MATH
   if (!rf)
     psync_flush(&ps);
-#endif
   AT32(ADDR_ND(D_800757B0)) = prim;
 }
 
 static u32 GlowsAndSparkles(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
-#if !NGTE_RC
-  /* the asm's frame: ra (the caller's, the sentinel from C) at sp - 0x8 */
-  AT32(g_mips_sp - 0x8u) = MIPS_RA_SENTINEL;
-#endif
-#if NGTE
   nd_begin();
-#endif
   Glows();
   Sparkles(AT32(ADDR_ND(g_DeltaTime)));
-#if NGTE
   nd_end();
-#endif
   return 0;
 }
 
@@ -1448,21 +935,16 @@ static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 cam = ADDR_ND(g_Camera), d = ADDR_ND(D_80076248), scr = SCRATCH_BASE;
   const u32 cos_tab = ADDR_ND(D_8006CC78), sin_tab = ADDR_ND(D_8006CBF8);
   u32 centre, ang, o, radius, prim, hud, shade, in, out;
-#if NGTE_MATH
   /* native but for the last four points (render_hand.h's NgteSync) */
   NgteSync sync;
   NgteProj P;
-#endif
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
-#if NGTE
   nd_begin();
-#endif
   CTC2(AT32(cam + 0x0), 0);
   CTC2(AT32(cam + 0x4), 1);
   CTC2(AT32(cam + 0x8), 2);
   CTC2(AT32(cam + 0xC), 3);
   CTC2(AT32(cam + 0x10), 4);
-#if NGTE_RC
   {
     /* the ring's centre in view space, the translation */
     const NgteProj P0 = ngte_proj_get();
@@ -1473,24 +955,6 @@ static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     CTC2((u32)u.mac2, 6);
     CTC2((u32)u.mac3, 7);
   }
-#else
-  MTC2(AT32(d + 0x4) - AT32(cam + 0x28), 11);
-  MTC2(AT32(cam + 0x2C) - AT32(d + 0x8), 9);
-  MTC2(AT32(cam + 0x30) - AT32(d + 0xC), 10);
-#endif
-#if NGTE_MATH
-#if !NGTE_RC
-  {
-    /* the IR words stay moved (the RTPS below rewrite only their low
-     * halves); the MVMVA native */
-    const NgteProj P0 = ngte_proj_get();
-    const NgteMat m = ngte_rot_of(&P0);
-    const NgteVec u = ngte_mvmva(&m, 0, 0, 0, (s16)C2_IR1, (s16)C2_IR2, (s16)C2_IR3);
-    CTC2((u32)u.mac1, 5);
-    CTC2((u32)u.mac2, 6);
-    CTC2((u32)u.mac3, 7);
-  }
-#endif
   CTC2(AT32(d + 0x10), 0);
   CTC2(AT32(d + 0x14), 1);
   CTC2(AT32(d + 0x18), 2);
@@ -1500,43 +964,16 @@ static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   ngte_sync_init(&sync);
   ngte_rtps_rec(&sync, 0u, 0u, 0);
   centre = ngte_rtps_w(&P, 0u, 0u).sxy;
-#else
-  MVMVA_RT_IR();
-  {
-    const u32 m1 = MFC2(25), m2 = MFC2(26), m3 = MFC2(27);
-    CTC2(m1, 5);
-    CTC2(m2, 6);
-    CTC2(m3, 7);
-  }
-  CTC2(AT32(d + 0x10), 0);
-  CTC2(AT32(d + 0x14), 1);
-  CTC2(AT32(d + 0x18), 2);
-  CTC2(AT32(d + 0x1C), 3);
-  CTC2(AT32(d + 0x20), 4);
-  MTC2(0u, 0);
-  MTC2(0u, 1);
-  RTPS();
-  centre = MFC2(14);
-#endif
   radius = AT32(d + 0x24);
   /* the inner ring: scratch +0x04..+0x20, the last again at +0x00 */
   o = scr;
   for (ang = 0x1C0u;;) {
     const u32 c = S16(cos_tab + ang), sv = S16(sin_tab + ang);
-#if NGTE_MATH
     const u32 vz = SRA(c * radius, 12), vxy = SRA(sv * radius, 12);
     ngte_rtps_rec(&sync, vxy, vz, 0);
     ang -= 0x40u;
     o += 4;
     AT32(o) = ngte_rtps_w(&P, vxy, vz).sxy;
-#else
-    MTC2(SRA(c * radius, 12), 1);
-    MTC2(SRA(sv * radius, 12), 0);
-    ang -= 0x40u;
-    o += 4;
-    RTPS();
-    AT32(o) = MFC2(14);
-#endif
     if ((s32)ang < 0)
       break;
   }
@@ -1545,26 +982,15 @@ static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   o += 4;
   for (ang = 0x1E0u;;) {
     const u32 c = S16(cos_tab + ang), sv = S16(sin_tab + ang);
-#if NGTE_MATH
     const u32 vz = SRA(c * radius, 10), vxy = SRA(sv * radius, 10);
     ngte_rtps_rec(&sync, vxy, vz, 0);
     ang -= 0x40u;
     o += 4;
     AT32(o - 4) = ngte_rtps_w(&P, vxy, vz).sxy;
-#else
-    MTC2(SRA(c * radius, 10), 1);
-    MTC2(SRA(sv * radius, 10), 0);
-    ang -= 0x40u;
-    o += 4;
-    RTPS();
-    AT32(o - 4) = MFC2(14);
-#endif
     if ((s32)ang < 0)
       break;
   }
-#if NGTE_MATH
   ngte_flush(&sync);
-#endif
   prim = AT32(ADDR_ND(D_800757B0));
   hud = MIPS_KUSEG(AT32(ADDR_ND(g_HudOT)));
   AT32(prim + 0x8) = 0u;
@@ -1597,12 +1023,10 @@ static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     prim += 0x14;
   }
   AT32(ADDR_ND(D_800757B0)) = prim;
-#if NGTE
   nd_end();
-#endif
   return 0;
 }
 
-HAND_RENDERER_UNIT(func_800573C8, ParticlesDraw)
-HAND_RENDERER_UNIT(func_80058BA8, GlowsAndSparkles)
-HAND_RENDERER_UNIT(func_80058864, DragonRing)
+HAND_RENDERER(func_800573C8, ParticlesDraw)
+HAND_RENDERER(func_80058BA8, GlowsAndSparkles)
+HAND_RENDERER(func_80058864, DragonRing)

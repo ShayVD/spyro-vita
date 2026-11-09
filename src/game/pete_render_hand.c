@@ -1,9 +1,11 @@
 /* Spyro's renderer, func_80023AC4 (asm/renderers/r_pete.s, hand-written
  * asm in the original), written by hand from the asm as C (decisions D72,
- * the D33 method). It replaces the mips2c translation when fast_render=1
- * (render_hand.h HAND_RENDERER); fast_render=0 runs the translation, which
- * stays linked as func_80023AC4_gen. Checked against PCSX-Redux by the
- * oracle replay and against the translation by host runs
+ * the D33 method), and since D124 as readable C (render_hand.h). It
+ * replaces the mips2c translation (render_hand.h HAND_RENDERER);
+ * fast_render=0 runs the translation, which stays linked as
+ * func_80023AC4_gen. Checked against the
+ * translation by --fast-render-check and the oracle replay's shadow, which
+ * run it beside every call, and against PCSX-Redux by the oracle replay
  * (docs/translation-log.md).
  *
  * Spyro is three parts, body, head and tail, each animated on its own
@@ -29,22 +31,12 @@
  *     second case; and
  *  7. links the buckets into the world OT.
  *
- * The GTE sees the same moves and commands as in the asm, in an order that
- * gives the same registers (moves to different registers commute), so the
- * pipelined V0 (the vertex after the last one) and the MFC2 read-backs
- * (VZ0, SZ3, IR1-3) leave the GTE as the asm does.
- *
- * fast_render=2 (NGTE, render_hand.h, decisions D80): the vertices' RTPS
- * and INTPL and the faces' NCLIP are native maths (gte_native.h). What they
- * would have left in the GTE goes back into it at the end of each part (the
- * next part moves its own matrix in) and after the faces; the set-up, the
- * floor heights and clipping and the colour filter stay on the register
- * file.
- *
- * fast_render=3 (pete_render_hand_rc.c, NGTE_RC, D124): all of it native,
- * the set-up, floor and filter too, with the control registers (the
+ * The GTE commands are native maths on values (gte_native.h; D80 made the
+ * vertices' RTPS and INTPL and the faces' NCLIP so, D124 the set-up, the
+ * floor and the filter), with the control registers (the
  * matrices, the translations, the far colour, the back colour that holds
  * the depth parameters) moved as the asm moves them, and nothing else. */
+#define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
 extern char g_Spyro[];
@@ -125,7 +117,6 @@ static inline void SetMatrix(const u32 m[5]) {
   CTC2(m[4], 4);
 }
 
-#if NGTE_RC
 /* fast_render=3: the matrix as MVMVA reads it once SetMatrix has set it,
  * and a vector rotated by it (MVMVA sf 1, no translation). */
 static inline NgteVec Rotate(const u32 m[5], int vx, int vy, int vz) {
@@ -183,85 +174,6 @@ static void RotateMatrix(u32 m[5], u32 angles) {
     SetMatrix(m);
   }
 }
-#else
-/* asm 800241E0-80024400, entered with the return address in t8: the matrix
- * M (the CPU's copy, a3 t0 t1 t2 t3) turned by the angle bytes of ANGLES
- * (z, y, x; byte 2, 1, 0) in turn, each by two MVMVAs of the GTE's R (the
- * same matrix) on a cosine/sine vector. */
-static void RotateMatrix(u32 m[5], u32 angles) {
-  const u16 *sine = (const u16 *)D_8006CBF8, *cosine = (const u16 *)D_8006CC78;
-  u32 i, s, c, a0, a1, a2, x, y, z;
-
-  i = (angles >> 16) & 0xFF;
-  if (i) {
-    c = cosine[i];
-    s = sine[i];
-    MTC2(c, 0);
-    MTC2(s, 1);
-    gte_mvmva_v0();
-    a0 = MFC2(9);
-    a1 = MFC2(10);
-    a2 = MFC2(11);
-    MTC2((0u - s) & 0xFFFF, 0);
-    MTC2(c, 1);
-    gte_mvmva_v0();
-    m[0] = (m[0] & 0xFFFF0000u) + (a0 & 0xFFFF);
-    m[3] = (m[3] & 0xFFFF0000u) + (a2 & 0xFFFF);
-    x = MFC2(9);
-    y = MFC2(10);
-    z = MFC2(11);
-    m[1] = (x & 0xFFFF) + (a1 << 16);
-    m[2] = (m[2] & 0xFFFF) + (y << 16);
-    m[4] = z & 0xFFFF;
-    SetMatrix(m);
-  }
-  i = (angles >> 8) & 0xFF;
-  if (i) {
-    c = cosine[i];
-    s = sine[i];
-    MTC2(c << 16, 0);
-    MTC2(s, 1);
-    gte_mvmva_v0();
-    a0 = MFC2(9);
-    a1 = MFC2(10);
-    a2 = MFC2(11);
-    MTC2(0u - (s << 16), 0);
-    MTC2(c, 1);
-    gte_mvmva_v0();
-    m[0] = (m[0] & 0xFFFF) + (a0 << 16);
-    m[3] = (m[3] & 0xFFFF) + (a2 << 16);
-    x = MFC2(9);
-    y = MFC2(10);
-    z = MFC2(11);
-    m[1] = (m[1] & 0xFFFF0000u) + (x & 0xFFFF);
-    m[2] = (y << 16) + (a1 & 0xFFFF);
-    m[4] = z & 0xFFFF;
-    SetMatrix(m);
-  }
-  i = angles & 0xFF;
-  if (i) {
-    c = cosine[i];
-    s = sine[i];
-    MTC2(0, 1);
-    MTC2((s << 16) + c, 0);
-    gte_mvmva_v0();
-    a0 = MFC2(9);
-    a1 = MFC2(10);
-    a2 = MFC2(11);
-    MTC2(((0u - s) & 0xFFFF) + (c << 16), 0);
-    MTC2(0, 1);
-    gte_mvmva_v0();
-    m[1] = (m[1] & 0xFFFF) + (a1 << 16);
-    x = MFC2(9);
-    y = MFC2(10);
-    z = MFC2(11);
-    m[0] = (x << 16) + (a0 & 0xFFFF);
-    m[3] = (z << 16) + (a2 & 0xFFFF);
-    m[2] = (m[2] & 0xFFFF0000u) + (y & 0xFFFF);
-    SetMatrix(m);
-  }
-}
-#endif
 
 /* A part's frame into a part record's three stream pointers (PR_A or PR_B):
  * the base words (the animation's, past the earlier parts' vertices), the
@@ -384,7 +296,6 @@ static inline void DecodeB(Stream *st) {
  * step of the first run transforms whatever V0 held; the run ends at FP ==
  * STOP, and the asm then runs again from the same slot to the end
  * (`mflo`, the end kept in LO), so the first slot is written twice. */
-#if NGTE
 /* PartVertices, native: the same steps and stores; V0 is a pair of locals,
  * starting from what the GTE held, and each part's last RTPS and INTPL go
  * back to the register file before the next part's matrix does. */
@@ -392,14 +303,10 @@ static void PartVertices(u32 floor) {
   u32 *rec = (u32 *)(WORK + W_PARTS);
   u32 info = rec[PR_INFO];
   u32 fp = SCRATCH_BASE, sp = WORK + W_VERTS;
-#if NGTE_RC
   /* fast_render=3: the asm's first step transforms whatever V0 held into
    * a slot the run then writes again (a part 0 of two vertices aside,
    * which Spyro's models don't have); here it is skipped (dead) */
   u32 cxy = 0, cz = 0, dead = 1;
-#else
-  u32 cxy = gteRegs.CP2D.p[0].d, cz = gteRegs.CP2D.p[1].d; /* V0 */
-#endif
   NgteSync sync;
   ngte_sync_init(&sync);
 
@@ -421,15 +328,11 @@ static void PartVertices(u32 floor) {
     if (!blend) {
       for (;;) {
         do {
-#if NGTE_RC
           if (dead && last != stop)
             t.sxy = t.sz3 = 0;
           else
-#endif
           t = ngte_rtps_w(&P, cxy, cz);
-#if NGTE_RC
           dead = 0;
-#endif
           ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
           DecodeA(&a);
           sp += 0x10;
@@ -451,24 +354,16 @@ static void PartVertices(u32 floor) {
       }
     } else {
       const int ir0 = (s16)blend;
-#if NGTE_RC
       const u32 code = 0; /* RGBC's: only the colour FIFO takes it */
-#else
-      const u32 code = C2_CODE;
-#endif
       StreamInit(&b, rec, PR_B, info & 0x2000);
       for (;;) {
         do {
           NgteCol o;
-#if NGTE_RC
           if (dead && last != stop)
             t.sxy = t.sz3 = 0;
           else
-#endif
           t = ngte_rtps_w(&P, cxy, cz);
-#if NGTE_RC
           dead = 0;
-#endif
           ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
           DecodeA(&a);
           sp += 0x10;
@@ -506,106 +401,8 @@ static void PartVertices(u32 floor) {
       AT32(sp - 0x8) = (u32)(s32)(s16)cz;
     }
     ngte_flush(&sync);
-#if !NGTE_RC
-    if (floor)
-      (void)MFC2(1); /* the asm read VZ0 after the last RTPS */
-#endif
   } while (info != 0);
 }
-#else
-static void PartVertices(u32 floor) {
-  u32 *rec = (u32 *)(WORK + W_PARTS);
-  u32 info = rec[PR_INFO];
-  u32 fp = SCRATCH_BASE, sp = WORK + W_VERTS;
-
-  do {
-    Stream a, b;
-    u32 blend, last, stop;
-    CTC2(rec[PR_TR], 5);
-    CTC2(rec[PR_TR + 1], 6);
-    CTC2(rec[PR_TR + 2], 7);
-    if ((s32)info < 0)
-      SetMatrix(rec + PR_MATRIX);
-    last = SCRATCH_BASE + ((info >> 14) & 0x3FF) - 4;
-    stop = fp + 4;
-    StreamInit(&a, rec, PR_A, info & 0x1000);
-    blend = info & 0xFFF;
-    if (!blend) {
-      for (;;) {
-        do {
-          gte_rtps();
-          DecodeA(&a);
-          sp += 0x10;
-          fp += 4;
-          AT32(sp - 0x10) = MFC2(19);
-          if (floor) {
-            AT32(sp - 0xC) = MFC2(0);
-            AT32(sp - 0x8) = MFC2(1);
-          }
-          MTC2((a.y << 16) + a.x, 0);
-          MTC2(a.z, 1);
-          AT32(fp - 4) = MFC2(14);
-        } while (fp != stop);
-        if (last == stop)
-          break;
-        stop = last;
-        sp -= 0x10;
-        fp -= 4;
-      }
-    } else {
-      StreamInit(&b, rec, PR_B, info & 0x2000);
-      for (;;) {
-        do {
-          u32 sxy, sz, m1, m2, m3;
-          gte_rtps();
-          DecodeA(&a);
-          sp += 0x10;
-          fp += 4;
-          DecodeB(&b);
-          MTC2(blend, 8);
-          MTC2(a.z, 9);
-          MTC2(a.x, 10);
-          MTC2(a.y, 11);
-          CTC2(b.z, 21);
-          CTC2(b.x, 22);
-          CTC2(b.y, 23);
-          sxy = MFC2(14);
-          sz = MFC2(19);
-          gte_intpl();
-          AT32(fp - 4) = sxy;
-          AT32(sp - 0x10) = sz;
-          if (floor) {
-            AT32(sp - 0xC) = MFC2(0);
-            AT32(sp - 0x8) = MFC2(1);
-          }
-          m1 = MFC2(25);
-          m2 = MFC2(26);
-          m3 = MFC2(27);
-          MTC2(m1, 1);
-          MTC2(m2 + (m3 << 16), 0);
-        } while (fp != stop);
-        if (last == stop)
-          break;
-        stop = last;
-        sp -= 0x10;
-        fp -= 4;
-      }
-    }
-    /* asm 80024A14: the part's last vertex */
-    gte_rtps();
-    sp += 0x10;
-    fp += 4;
-    rec += PR_WORDS;
-    info = rec[PR_INFO];
-    AT32(fp - 4) = MFC2(14);
-    AT32(sp - 0x10) = MFC2(19);
-    if (floor) {
-      AT32(sp - 0xC) = MFC2(0);
-      AT32(sp - 0x8) = MFC2(1);
-    }
-  } while (info != 0);
-}
-#endif
 
 /* asm 80024A5C-80024B5C: each vertex's height above the floor, in place of
  * its VXY0: Spyro's z less the floor distance, less the vertex's y in
@@ -619,7 +416,6 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
   int part;
 
   SetMatrix((const u32 *)(spyro + SP_MATRIX));
-#if NGTE_RC
   {
     /* fast_render=3: each part's joint by Spyro's matrix is the
      * translation; each vertex (VXY0, VZ0 from its record) by the matrix
@@ -646,47 +442,9 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
       g -= 0x10;
     }
   }
-#else
-  for (part = 0; part < 3; part++) {
-    const u32 end = WORK + W_VERTS + ((u32)hdr[AN_PART_END + part] << 4);
-    const u32 *joint = (const u32 *)(WORK + W_JOINTS + part * 12);
-    u32 m1, m2, m3;
-    MTC2(0u - joint[1], 9);
-    MTC2(0u - joint[2], 10);
-    MTC2(joint[0], 11);
-    gte_mvmva_ir();
-    m1 = MFC2(25);
-    m2 = MFC2(26);
-    m3 = MFC2(27);
-    CTC2(m1, 5);
-    CTC2(m2, 6);
-    CTC2(m3, 7);
-    MTC2(AT32(g + 4), 0);
-    MTC2(AT32(g + 8), 1);
-    g += 0x10;
-    for (;;) {
-      u32 nxy, nz, y;
-      int more;
-      gte_mvmva_v0_tr();
-      nxy = AT32(g + 4);
-      nz = AT32(g + 8);
-      y = MFC2(26);
-      MTC2(nxy, 0);
-      MTC2(nz, 1);
-      AT32(g - 0xC) = level - y;
-      more = g != end;
-      g += 0x10;
-      if (!more)
-        break;
-    }
-    g -= 0x10;
-  }
-#endif
 }
 
-#if NGTE_RC
 #define FILTER_CODE 0u /* D124: measured below */
-#endif
 /* asm 80024B7C-80024C2C: the colours blended towards the colour filter
  * (Fairy Kiss) into W_COLOURS, by INTPL; pipelined like the vertices, so
  * IR1-3 end holding the colour after the last. */
@@ -696,7 +454,6 @@ static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
   u32 out = WORK + W_COLOURS;
   u32 w;
 
-#if NGTE_RC
   CTC2((filter << 4) & 0xFF0, 21);
   CTC2((filter >> 4) & 0xFF0, 22);
   CTC2((filter >> 12) & 0xFF0, 23);
@@ -711,28 +468,6 @@ static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
                     .rgb2;
     out += 4;
   } while (c != end);
-#else
-  MTC2((filter >> 24) << 4, 8);
-  CTC2((filter << 4) & 0xFF0, 21);
-  CTC2((filter >> 4) & 0xFF0, 22);
-  CTC2((filter >> 12) & 0xFF0, 23);
-  w = *c++;
-  MTC2((w << 4) & 0xFF0, 9);
-  MTC2((w >> 4) & 0xFF0, 10);
-  MTC2((w >> 12) & 0xFF0, 11);
-  end = c + *(const u16 *)(hdr + AN_COLOUR_COUNT);
-  do {
-    u32 rgb;
-    gte_intpl();
-    w = *c++;
-    rgb = MFC2(22);
-    AT32(out) = rgb;
-    MTC2((w << 4) & 0xFF0, 9);
-    MTC2((w >> 4) & 0xFF0, 10);
-    MTC2((w >> 12) & 0xFF0, 11);
-    out += 4;
-  } while (c != end);
-#endif
   return WORK + W_COLOURS;
 }
 
@@ -760,7 +495,6 @@ static inline u32 Bucket(const Faces *f, u32 sum, u32 w1) {
  * read before the primitive was written (as the asm does). */
 static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket, u32 tail,
                                                            u32 size, int kind) {
-#if NGTE
   /* native_draw=1 (decisions D82, native_draw.h): the primitive as the
    * vertices PsyCross would make of it, into the marker at the bucket's
    * tail or as a marker linked in its place */
@@ -768,9 +502,6 @@ static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket,
     f->prim += size;
     return;
   }
-#else
-  (void)kind;
-#endif
   AT32(bucket) = f->prim;
   if (tail) {
     u32 t = MIPS_KUSEG(tail);
@@ -786,7 +517,6 @@ static inline __attribute__((always_inline)) void LinkPrim(Faces *f, u32 bucket,
   f->prim += size;
 }
 
-#if NGTE
 /* LinkPrim for a record built from values (D86, nd_open's r): the
  * primitive's stores after the face's last check are skipped. */
 static inline __attribute__((always_inline)) void LinkRec(Faces *f, u32 bucket, u32 tail,
@@ -809,7 +539,6 @@ static inline __attribute__((always_inline)) void LinkRec(Faces *f, u32 bucket, 
   }
   f->prim += size;
 }
-#endif
 
 /* SZ of a vertex: the vertex records by byte offset index*4 (path A). */
 #define SZ_A(i4) ((u32)AT16(WORK + W_VERTS + ((i4) << 2)))
@@ -834,7 +563,6 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
     return;
   tail = AT32(bucket);
   uv2 = AT32(face - 4);
-#if NGTE
   {
     u32 *r = nd_open(3);
     if (r) { /* D86: the record from the values; the xy the face loop stored */
@@ -847,7 +575,6 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
       return;
     }
   }
-#endif
   AT32(prim + 0x10) = col1;
   AT32(prim + 0x1C) = col2;
   AT32(prim + 0x4) = col0 + ((w1 & 1) << 25);
@@ -868,10 +595,8 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
  * does (stray stores past the last primitive). */
 static void DrawFaces(Faces *f, u32 face, u32 end) {
   const u32 *scr = (const u32 *)SCRATCH_BASE;
-#if NGTE
   NgteSync sync;
   ngte_sync_init(&sync);
-#endif
 
   while (face != end) {
     const u32 w0 = AT32(face), w1 = AT32(face + 4);
@@ -882,29 +607,15 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
 
     if ((s32)w0 >= 0) {
       /* asm 80024EA8: a triangle */
-#if NGTE
       s32 n;
       ngte_sxy(&sync, xy0, xy1, xy2);
       n = ngte_nclip_s(&sync);
-#else
-      MTC2(xy0, 12);
-      MTC2(xy1, 13);
-      MTC2(xy2, 14);
-#endif
       AT32(prim + 0x8) = xy0;
       AT32(prim + 0x14) = xy1;
-#if !NGTE
-      gte_nclip();
-#endif
       AT32(prim + 0x20) = xy2;
       face += 0x14;
-#if NGTE
       if (!(w0 & 1) && n <= 0)
         continue;
-#else
-      if (!(w0 & 1) && (s32)MFC2(24) <= 0)
-        continue;
-#endif
       EmitGT3(f, face, w1, i0, i1, i2, c0, c1, 0);
     } else {
       /* asm 80024C9C: a quad, drawn whole or as the half facing the camera */
@@ -912,32 +623,18 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       const u32 i3 = w2 & 0x7FC, c3 = (w2 >> 9) & 0x7FC;
       const u32 xy3 = WORD_AT(scr, i3);
       u32 col0, sum, bucket, tail, uv2;
-#if NGTE
       s32 m012;
       ngte_sxy(&sync, xy0, xy1, xy2);
       m012 = ngte_nclip_s(&sync);
-#else
-      MTC2(xy0, 12);
-      MTC2(xy1, 13);
-      MTC2(xy2, 14);
-      gte_nclip();
-#endif
       AT32(prim + 0x8) = xy0;
       AT32(prim + 0x14) = xy1;
       AT32(prim + 0x20) = xy2;
       AT32(prim + 0x2C) = xy3;
       face += 0x18;
       if (!(w0 & 1)) {
-#if NGTE
         s32 n012 = m012, n312;
         ngte_sxy0(&sync, xy3);
         n312 = ngte_nclip_s(&sync);
-#else
-        s32 n012 = (s32)MFC2(24), n312;
-        MTC2(xy3, 12);
-        gte_nclip();
-        n312 = (s32)MFC2(24);
-#endif
         if (n012 >= 0) {
           if (n312 <= 0)
             continue;
@@ -958,7 +655,6 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
         continue;
       tail = AT32(bucket);
       uv2 = AT32(face - 4);
-#if NGTE
       {
         u32 *r = nd_open(4);
         if (r) {
@@ -970,7 +666,6 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
           continue;
         }
       }
-#endif
       AT32(prim + 0x10) = WORD_AT(f->colours, c1);
       AT32(prim + 0x1C) = WORD_AT(f->colours, (w1 << 1) & 0x7FC);
       AT32(prim + 0x28) = WORD_AT(f->colours, c3);
@@ -983,9 +678,7 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       LinkPrim(f, bucket, tail, 0x34, ND_K_GT4);
     }
   }
-#if NGTE
   ngte_flush(&sync);
-#endif
 }
 
 /* asm 80025310..80025430 (and its two copies): the point where edge P-Q
@@ -997,7 +690,6 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
   u32 hi, lo, m1, m2, m3;
   mips2c_div(hp << 12, hp - hq, &hi, &lo);
   (void)hi;
-#if NGTE_RC
   {
     /* three INTPL by IR0 = the fraction: the colour's channels, the screen
      * x and y, the texture u and v (only MAC1-2 read for the last two) */
@@ -1017,36 +709,6 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
     CTC2((uvq >> 8) & 0xFF, 22);
     CTC2((cq >> 16) & 0xFF, 23);
   }
-#else
-  MTC2(cp & 0xFF, 9);
-  CTC2(cq & 0xFF, 21);
-  MTC2((cp >> 8) & 0xFF, 10);
-  CTC2((cq >> 8) & 0xFF, 22);
-  MTC2((cp >> 16) & 0xFF, 11);
-  CTC2((cq >> 16) & 0xFF, 23);
-  MTC2(lo, 8);
-  gte_intpl();
-  m3 = MFC2(27);
-  m2 = MFC2(26);
-  m1 = MFC2(25);
-  AT32(out + 0x4) = (((m3 << 8) + m2) << 8) + m1;
-  MTC2(SRA(xyp << 16, 16), 9);
-  CTC2(SRA(xyq << 16, 16), 21);
-  MTC2(SRA(xyp, 16), 10);
-  CTC2(SRA(xyq, 16), 22);
-  gte_intpl();
-  m2 = MFC2(26);
-  m1 = MFC2(25);
-  AT32(out + 0x8) = (m1 & 0xFFFF) + (m2 << 16);
-  MTC2(uvp & 0xFF, 9);
-  CTC2(uvq & 0xFF, 21);
-  MTC2((uvp >> 8) & 0xFF, 10);
-  CTC2((uvq >> 8) & 0xFF, 22);
-  gte_intpl();
-  m2 = MFC2(26);
-  m1 = MFC2(25);
-  AT16(out + 0xC) = (u16)(m1 + (m2 << 8));
-#endif
   return out + 0xC;
 }
 
@@ -1073,25 +735,13 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
   xy0 = WORD_AT(scr, v0 >> 2);
   xy1 = WORD_AT(scr, v1 >> 2);
   xy2 = WORD_AT(scr, v2 >> 2);
-#if !NGTE_RC
-  MTC2(xy0, 12);
-  MTC2(xy1, 13);
-  MTC2(xy2, 14);
-#endif
   AT32(prim + 0x8) = xy0;
   AT32(prim + 0x14) = xy1;
-#if !NGTE_RC
-  gte_nclip();
-#endif
   AT32(prim + 0x20) = xy2;
   sum += sum >> 1;
   sum += z1 >> 1;
   if (!(flags & 1)) {
-#if NGTE_RC
     u32 n = (u32)ngte_nclip(xy0, xy1, xy2);
-#else
-    u32 n = MFC2(24);
-#endif
     if ((s32)flags < 0)
       n = 0u - n;
     if ((s32)n <= 0)
@@ -1278,7 +928,6 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   (void)a2_;
   (void)a3_;
 
-  hand_spill_regs();
 
   /* asm 80023B2C-80023E08: the part records */
   for (part = 0; part < 3; part++) {
@@ -1320,7 +969,6 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       head[0] = SRA(jh, 21);
     } else {
       u32 bh = AT32(body_b + 0x10), bt = AT32(body_b + 0x14);
-#if NGTE_RC
       /* INTPL of the joints toward the blended frame's (the far colour) */
       const int ir0 = (s16)(blend0 << 8);
       NgteCol o = ngte_intpl((s16)SRA(jh, 21), (s16)FIELD(jh, 11, 21), (s16)FIELD(jh, 22, 21), ir0,
@@ -1332,29 +980,6 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       CTC2(SRA(bt, 21), 21);
       CTC2(FIELD(bt, 11, 21), 22);
       CTC2(FIELD(bt, 22, 21), 23);
-#else
-      MTC2(blend0 << 8, 8);
-      MTC2(SRA(jh, 21), 9);
-      MTC2(FIELD(jh, 11, 21), 10);
-      MTC2(FIELD(jh, 22, 21), 11);
-      CTC2(SRA(bh, 21), 21);
-      CTC2(FIELD(bh, 11, 21), 22);
-      CTC2(FIELD(bh, 22, 21), 23);
-      gte_intpl();
-      MTC2(SRA(jt, 21), 9);
-      MTC2(FIELD(jt, 11, 21), 10);
-      MTC2(FIELD(jt, 22, 21), 11);
-      CTC2(SRA(bt, 21), 21);
-      CTC2(FIELD(bt, 11, 21), 22);
-      CTC2(FIELD(bt, 22, 21), 23);
-      head[0] = MFC2(25);
-      head[1] = MFC2(26);
-      head[2] = MFC2(27);
-      gte_intpl();
-      tail[0] = MFC2(25);
-      tail[1] = MFC2(26);
-      tail[2] = MFC2(27);
-#endif
     }
   }
 
@@ -1367,31 +992,19 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   CTC2(0, 5);
   CTC2(0, 6);
   CTC2(0, 7);
-#if NGTE_RC
   {
     const NgteVec v = Rotate(cam, (s16)y, (s16)z, (s16)x);
     z = (u32)v.mac3;
     y = (u32)v.mac2;
     x = (u32)v.mac1;
   }
-#else
-  MTC2(x, 11);
-  MTC2(y, 9);
-  MTC2(z, 10);
-  gte_mvmva_ir();
-  z = MFC2(27);
-  y = MFC2(26);
-  x = MFC2(25);
-#endif
   if ((s32)(z - 0x4000) >= 0)
     return 0;
   far = z + 0x800;
   if ((s32)(far - x) <= 0 || (s32)(far + x) <= 0 || (s32)(far - y) <= 0 ||
       (s32)(far + y) <= 0)
     return 0;
-#if NGTE
   nd_begin(); /* past the two returns above */
-#endif
 
   /* asm 80023F8C: the depth parameters, kept in the GTE's back colour:
    * RBK the larger depth shift, GBK Spyro's OT slot, BBK his depth less
@@ -1435,7 +1048,6 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   for (part = 0; part < 5; part++)
     rec0[PR_MATRIX + part] = m[part];
   /* the head's and tail's positions: their joints by the body's matrix */
-#if NGTE_RC
   {
     const NgteProj P = ngte_proj_get();
     const NgteRtp h = ngte_rtps_w(&P, (0u - head[1]) + ((0u - head[2]) << 16), head[0]);
@@ -1447,23 +1059,6 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     rec0[2 * PR_WORDS + PR_TR + 1] = (u32)t.ir2;
     rec0[2 * PR_WORDS + PR_TR + 2] = (u32)t.ir3;
   }
-#else
-  MTC2((0u - head[1]) + ((0u - head[2]) << 16), 0);
-  MTC2(head[0], 1);
-  gte_rtps();
-  head[0] = MFC2(9);
-  MTC2((0u - tail[1]) + ((0u - tail[2]) << 16), 0);
-  MTC2(tail[0], 1);
-  head[1] = MFC2(10);
-  head[2] = MFC2(11);
-  gte_rtps();
-  rec0[PR_WORDS + PR_TR] = head[0];
-  rec0[PR_WORDS + PR_TR + 1] = head[1];
-  rec0[PR_WORDS + PR_TR + 2] = head[2];
-  rec0[2 * PR_WORDS + PR_TR] = MFC2(9);
-  rec0[2 * PR_WORDS + PR_TR + 1] = MFC2(10);
-  rec0[2 * PR_WORDS + PR_TR + 2] = MFC2(11);
-#endif
   for (part = 0; part < 5; part++)
     saved[part] = m[part];
 
@@ -1528,9 +1123,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       DrawFacesClipped(&f, start, end);
   }
   LinkBuckets(&f);
-#if NGTE
   nd_end();
-#endif
   return 0; /* v0 is dead at every caller (tools/oracle/ignore_ranges.txt) */
 }
 

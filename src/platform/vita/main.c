@@ -122,19 +122,14 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
- *       fast_render=2   the hand-written renderers with native GTE maths
- *                       on the GTE register file's model (D80; the default
- *                       before D124). Default 3: the same renderers as
+ *       fast_render=0   the arena build only: the renderers as translated
+ *                       from the asm. Default 3 (D124, the owner's decision
+ *                       after 7D2a/7D2b), the only choice in the native
+ *                       build (D100): the hand-written renderers as
  *                       readable C, no GTE data registers, scratchpad,
- *                       spill area or hand stack, the same pictures and 5%
- *                       less time (D124, the owner's decision after 7D2a/
- *                       7D2b). 1: the inline GTE commands on the register
- *                       file (D72); 0: the renderers as translated from the
- *                       asm (taken as 1 in the native build, D100)
- *       ngte_fx=1       with fast_render=2, the shadows, the flame and the
- *                       particles with native GTE maths too, the same
- *                       results (D98; default 0: those three on the GTE
- *                       register file, as D95 wrote them)
+ *                       spill area or hand stack. The register-file builds
+ *                       of 1 and 2, and ngte_fx, went in D127; any other
+ *                       value is taken as 3
  *       gpu_direct=0    with gpu=1, each widescreen or 60 fps picture copied
  *                       into its slot and the screen cleared before it, as
  *                       before D69 (default 1: a picture that is one target
@@ -289,7 +284,6 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
 
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
-extern int g_ngte_fx;     /* src/game/mips2c_rt.c, D98 */
 extern int g_native_draw; /* src/game/native_draw.c, D82 */
 extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
@@ -442,12 +436,10 @@ static void read_config(void) {
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
 #if SPYRO_NATIVE_MEM
-      g_fast_render = atoi(v) ? atoi(v) : 1; /* no mips2c units in a native build (D100) */
+      g_fast_render = 3; /* no mips2c units in a native build (D100); 1 and 2 went in D127 */
 #else
-      g_fast_render = atoi(v);
+      g_fast_render = atoi(v) ? 3 : 0; /* 0 the units; 1 and 2 went in D127 */
 #endif
-    else if (!strcmp(line, "ngte_fx"))
-      g_ngte_fx = atoi(v);
     else if (!strcmp(line, "gpu_direct"))
       g_vita_opts.gpu_direct = atoi(v);
     else if (!strcmp(line, "gpu_lean"))
@@ -609,18 +601,12 @@ int main(int argc, char **argv) {
   g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
   g_nd_direct = 1;   /* the Vita's default since D105; the host's stays 0 */
   g_gpu_clear = 2;   /* the Vita's default since D111's Y9-Y12; the host's stays 0 */
-  g_fast_render = 3; /* the Vita's default since D124 (the owner, 2026-11-09, after 7D2a/7D2b);
-                      the host keeps mips2c_rt.c's 2 */
+  g_fast_render = 3; /* the default since D124 (the owner, 2026-11-09, after 7D2a/7D2b) */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
-           g_fast_render == 3 ? "hand-written renderers as readable C (D124)"
-           : g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
-           : g_fast_render    ? "hand-written renderers, inline GTE commands (D72)"
-                              : "translated renderers, PsyCross's GTE_operator");
-  if (g_fast_render == 2)
-    vita_log("ngte_fx=%d: the shadows, flame and particles %s", g_ngte_fx,
-             g_ngte_fx ? "with native GTE maths (D98)" : "on the GTE register file (D95)");
+           g_fast_render ? "hand-written renderers as readable C (D124)"
+                         : "translated renderers, PsyCross's GTE_operator");
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
@@ -682,8 +668,8 @@ int main(int argc, char **argv) {
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
            : g_native_draw == 2   ? "the renderers' PS1 primitives parsed by the walk with the "
                                     "native draw lists' converter (D92)"
-           : g_fast_render >= 2   ? "the hand renderers' primitives as native draw lists (D82)"
-                                  : "needs fast_render=2 or 3: off");
+           : g_fast_render        ? "the hand renderers' primitives as native draw lists (D82)"
+                                  : "needs fast_render=3: off");
   vita_log("gpu_clear=%d: %s", g_gpu_clear,
            g_gpu_clear >= 3   ? "the clears row by row, a target's whole clear left to its "
                                 "read-back, poison in its place (audit, D111)"

@@ -1,10 +1,11 @@
 /* Spyro's flame, func_80058D64 (asm/renderers/r_flame.s, hand-written asm
  * in the original), written by hand from the asm as C (docs/native-plan.md
- * stage 2, decisions D95). It replaces the mips2c translation when
- * fast_render is 1 or 2 (render_hand.h HAND_RENDERER_UNIT); fast_render=0
- * runs the translation, which stays linked as func_80058D64_gen, and the
- * host's --fast-render-check runs it beside every call
- * (docs/translation-log.md). The method is D72's, as shadows_hand.c.
+ * stage 2, decisions D95), and since D124 as readable C (render_hand.h). It
+ * replaces the mips2c translation (render_hand.h HAND_RENDERER);
+ * fast_render=0 runs the translation, which stays linked as
+ * func_80058D64_gen, and the host's --fast-render-check runs it beside
+ * every call (docs/translation-log.md). The method is D72's, as
+ * shadows_hand.c.
  *
  * The flame (g_SpyroFlame) is up to 8 segments, each a frame of a ring
  * mesh (D_8006DAA8, from the frame table D_8006D94C). For a segment whose
@@ -14,24 +15,14 @@
  * each quad's upper edge the next one's lower edge, fading as it goes. All
  * into the world OT bucket of their depth.
  *
- * fast_render=2 (flame_hand_ngte.c, NGTE 1; decisions D98): the GTE
- * commands as native maths on C values (gte_native.h). The control
- * registers are moved as the asm moves them. The data registers' results
- * stay in locals, with V0-V2 as the code last moved them, and at the end
- * the register file is made what the asm leaves (FlameTail): the last two
- * projections (RTPS or RTPT) run again on the register file. The last is
- * always an RTPT, which rewrites SXY0-2, SZ1-3, MAC, IR, the depth cue and
- * FLAG; SZ0 is the one before's last depth. The head's NCLIPs write only
- * what that RTPT rewrites; the reads that zero a register's top half (SZ1-3)
- * are done again once.
- *
- * fast_render=3 (flame_hand_rc.c, NGTE_RC, D124): the same native maths
- * with the control registers moved as the asm moves them and nothing else:
- * no IR moves, no FlameTail.
+ * The GTE commands are native maths on C values (gte_native.h; D98, D124),
+ * with the control registers moved as the asm moves them and nothing
+ * else.
  *
  * With native_draw=1 too (decisions D82): each primitive is still built
  * where it was, and where the asm links it it goes to the walk as a
  * native record (nd_append). */
+#define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
 extern char g_SpyroFlame[]; /* position (+0x00), per segment: frame (+0x20), first
@@ -57,12 +48,10 @@ extern char g_WorldOT[];
 /* Link the primitive at prim into world OT slot `slot` (the asm's OtAppend:
  * the bucket's tail at +0, head at +4), or as a native record. */
 static inline void Link(u32 slot, u32 prim, int kind) {
-#if NGTE
   if (g_nd.on) {
     nd_append(kind, slot, prim);
     return;
   }
-#endif
   (void)kind;
   nd_ot_append(slot, prim);
 }
@@ -71,34 +60,20 @@ static inline void Link(u32 slot, u32 prim, int kind) {
  * its three colours, then NCLIP; linked if it faces the camera. */
 static inline u32 HeadTriangle(u32 prim, u32 slot, u32 xy0, u32 xy1, u32 xy2, u32 c0, u32 c1,
                                u32 c2) {
-#if NGTE_MATH
   const s32 mac0 = ngte_nclip(xy0, xy1, xy2); /* the strip's RTPT rewrites what NCLIP writes */
   AT32(prim + 0x8) = xy0;
   AT32(prim + 0x10) = xy1;
-#else
-  MTC2(xy0, 12);
-  MTC2(xy1, 13);
-  MTC2(xy2, 14);
-  AT32(prim + 0x8) = xy0;
-  AT32(prim + 0x10) = xy1;
-  NCLIP();
-#endif
   AT32(prim + 0x18) = xy2;
   AT32(prim + 0x4) = c0;
   AT32(prim + 0xC) = c1;
   AT32(prim + 0x14) = c2;
   AT32(prim + 0x0) = 0x6000000u; /* G3 */
-#if NGTE_MATH
   if (mac0 <= 0)
-#else
-  if ((s32)MFC2(24) <= 0)
-#endif
     return prim; /* facing away: the space is used again */
   Link(slot, prim, ND_K_G3);
   return prim + 0x1C;
 }
 
-#if NGTE_MATH
 /* The native commands' record (D98): V0-V2 as the code last moved them,
  * the last two projections with V0-V2 as they were then, and which of
  * SZ1-3 the code read (MFC2 17-19 zero their top halves, which no command
@@ -112,60 +87,11 @@ typedef struct {
   u8 v2_set; /* fast_render=3: V2 moved in this call (the head's RTPT) */
 } FlameSync;
 
-#if NGTE_RC
 /* fast_render=3 (D124): only V0-V2 as this call moved them; no tail */
 static inline void FlameEvent(FlameSync *f, int rtpt) {
   if (rtpt)
     f->v2_set = 1;
 }
-#else
-static inline void FlameEvent(FlameSync *f, int rtpt) {
-  const u32 k = f->nev++ & 1;
-  memcpy(f->ev[k], f->v, sizeof f->v);
-  f->ev_rtpt[k] = (u8)rtpt;
-}
-
-/* The register file as the asm leaves it. U: the first MVMVA, whose
- * results stand if nothing was projected. */
-static void FlameTail(FlameSync *f, const NgteVec *u) {
-  u32 k;
-  if (f->nev == 0) {
-    C2_MAC1 = u->mac1;
-    C2_MAC2 = u->mac2;
-    C2_MAC3 = u->mac3;
-    C2_IR1 = (short)u->ir1;
-    C2_IR2 = (short)u->ir2;
-    C2_IR3 = (short)u->ir3;
-    C2_FLAG = u->flag;
-  }
-  for (k = f->nev > 2 ? f->nev - 2 : 0; k < f->nev; k++) {
-    const u32 *v = f->ev[k & 1];
-    MTC2(v[0], 0);
-    MTC2(v[1], 1);
-    MTC2(v[2], 2);
-    MTC2(v[3], 3);
-    MTC2(v[4], 4);
-    MTC2(v[5], 5);
-    if (f->ev_rtpt[k & 1])
-      RTPT();
-    else
-      RTPS();
-  }
-  MTC2(f->v[0], 0);
-  MTC2(f->v[1], 1);
-  MTC2(f->v[2], 2);
-  MTC2(f->v[3], 3);
-  MTC2(f->v[4], 4);
-  MTC2(f->v[5], 5);
-  if (f->rd17)
-    (void)MFC2(17);
-  if (f->rd18)
-    (void)MFC2(18);
-  if (f->rd19)
-    (void)MFC2(19);
-}
-#endif /* NGTE_RC */
-#endif
 
 static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 fl = ADDR_ND(g_SpyroFlame), cam = ADDR_ND(g_Camera);
@@ -173,16 +99,11 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 ot = MIPS_KUSEG(AT32(ADDR_ND(g_WorldOT)));
   u32 prim = AT32(ADDR_ND(D_800757B0));
   u32 big, seg;
-#if NGTE_MATH
   FlameSync fs;
   NgteProj P;
   NgteVec u;
-#endif
   (void)a0_, (void)a1_, (void)a2_, (void)a3_;
-  hand_spill_regs();
-#if NGTE
   nd_begin();
-#endif
   {
     /* the flame's position from the camera through the view matrix, as the
      * translation; then the flame's own rotation */
@@ -197,12 +118,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     CTC2(0u, 5);
     CTC2(0u, 6);
     CTC2(0u, 7);
-#if !NGTE_RC
-    MTC2(dx, 11);
-    MTC2(dy, 9);
-    MTC2(dz, 10);
-#endif
-#if NGTE_MATH
     {
       /* the IR words stay moved (their top halves are what the asm
        * leaves); the MVMVA native */
@@ -213,32 +128,17 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       CTC2((u32)u.mac2, 6);
       CTC2((u32)u.mac1, 5);
     }
-#else
-    MVMVA_RT_IR();
-    {
-      const u32 m3 = MFC2(27), m2 = MFC2(26), m1 = MFC2(25);
-      CTC2(m3, 7);
-      CTC2(m2, 6);
-      CTC2(m1, 5);
-    }
-#endif
     CTC2(AT32(fl + 0xB8), 0);
     CTC2(AT32(fl + 0xBC), 1);
     CTC2(AT32(fl + 0xC0), 2);
     CTC2(AT32(fl + 0xC4), 3);
     CTC2(AT32(fl + 0xC8), 4);
   }
-#if NGTE_MATH
   P = ngte_proj_get();
-#if NGTE_RC
   memset(fs.v, 0, sizeof fs.v);
   fs.v2_set = 0;
-#else
-  memcpy(fs.v, gteRegs.CP2D.r, sizeof fs.v);
-#endif
   fs.nev = 0;
   fs.rd17 = fs.rd18 = fs.rd19 = 0;
-#endif
   big = AT32(fl + 0x9C);
   for (seg = 8; seg-- != 0;) {
     u32 frame, step, base, ring, ring_end, first, word, pt, edge1, gp;
@@ -268,7 +168,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       u32 nxt0, nxt1, scale, ang, sz, tip, s0x, s1x, s2x, colours, ca, cb, cc, cd, slot;
       s32 vz, vx, vy, cs, sn, a0, a1, a2, a3, b0, b1;
       gp = 1;
-#if NGTE_MATH
       fs.v[1] = SEXT16(tip0);
       fs.v[0] = ((0u - (u32)((s32)tip0 >> 16)) & 0xFFFFu) | (0u - (tip1 << 16));
       {
@@ -280,13 +179,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       }
       nxt0 = AT32(pt - 0x10);
       nxt1 = AT32(pt - 0xC);
-#else
-      MTC2(SEXT16(tip0), 1);
-      MTC2(((0u - (u32)((s32)tip0 >> 16)) & 0xFFFFu) | (0u - (tip1 << 16)), 0);
-      nxt0 = AT32(pt - 0x10);
-      nxt1 = AT32(pt - 0xC);
-      RTPS();
-#endif
       vz = (s32)SEXT16(nxt0);
       vx = (s32)nxt0 >> 16;
       scale = big ? 0x40u : 0x2Cu;
@@ -294,10 +186,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       vy = (s32)SEXT16(nxt1);
       cs = (s32)S16(sin_tab + ang + 0x80);
       sn = (s32)S16(sin_tab + ang);
-#if !NGTE_MATH
-      sz = MFC2(19);
-      tip = MFC2(14);
-#endif
       cs = (s32)(scale * (u32)cs) >> 11;
       sn = (s32)(scale * (u32)sn) >> 11;
       a0 = cs - vx;
@@ -311,7 +199,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       }
       b0 = sn - vx;
       b1 = cs - vy;
-#if NGTE_MATH
       fs.v[1] = fs.v[3] = fs.v[5] = (u32)vz;
       fs.v[0] = ((u32)b0 & 0xFFFFu) | ((u32)b1 << 16);
       fs.v[2] = ((u32)a0 & 0xFFFFu) | ((u32)a1 << 16);
@@ -324,16 +211,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         s1x = t.sxy[1];
         s2x = t.sxy[2];
       }
-#else
-      MTC2((u32)vz, 1);
-      MTC2((u32)vz, 3);
-      MTC2((u32)vz, 5);
-      MTC2(((u32)b0 & 0xFFFFu) | ((u32)b1 << 16), 0);
-      MTC2(((u32)a0 & 0xFFFFu) | ((u32)a1 << 16), 2);
-      MTC2(((u32)a2 & 0xFFFFu) | ((u32)a3 << 16), 4);
-      colours = ADDR_ND(D_8006E1A8) + (big ? 0x10u : 0u);
-      RTPT();
-#endif
       ca = AT32(colours + 0x0);
       cb = AT32(colours + 0x4);
       cc = AT32(colours + 0x8);
@@ -342,11 +219,6 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       if ((s32)sz < 0)
         continue; /* too near: the whole segment goes */
       slot = (sz << 3) + ot;
-#if !NGTE_MATH
-      s0x = MFC2(12);
-      s1x = MFC2(13);
-      s2x = MFC2(14);
-#endif
       prim = HeadTriangle(prim, slot, tip, s1x, s0x, ca, cc, cb);
       prim = HeadTriangle(prim, slot, tip, s0x, s2x, ca, cb, cd);
       prim = HeadTriangle(prim, slot, tip, s2x, s1x, ca, cd, cc);
@@ -387,9 +259,7 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       for (;;) {
         u32 p0, p1, rad;
         s32 vz, vx, vy, cs, sn, e0, e1, f0, f1;
-#if NGTE_MATH
         NgteRtpt st;
-#endif
         p0 = AT32(pt + 0x0);
         p1 = AT32(pt + 0x4);
         pt -= 0x10;
@@ -413,11 +283,9 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         e1 = sn - vy;
         f0 = e0 - (cs << 1);
         f1 = e1 - (sn << 1);
-#if NGTE_MATH
         fs.v[1] = fs.v[3] = (u32)vz;
         fs.v[0] = ((u32)e0 & 0xFFFFu) | ((u32)e1 << 16);
         fs.v[2] = ((u32)f0 & 0xFFFFu) | ((u32)f1 << 16);
-#if NGTE_RC
         if (!fs.v2_set) {
           /* V2 as the code before left it: none of this call's, and only
            * the first two points are read, so two RTPS */
@@ -425,17 +293,9 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
           st.sxy[0] = q0.sxy, st.sz[0] = q0.sz3;
           st.sxy[1] = q1.sxy, st.sz[1] = q1.sz3;
         } else
-#endif
         st = ngte_rtpt_w(&P, fs.v[0], fs.v[1], fs.v[2], fs.v[3], fs.v[4], fs.v[5]);
         FlameEvent(&fs, 1);
         fs.rd17 = fs.rd18 = 1;
-#else
-        MTC2((u32)vz, 1);
-        MTC2((u32)vz, 3);
-        MTC2(((u32)e0 & 0xFFFFu) | ((u32)e1 << 16), 0);
-        MTC2(((u32)f0 & 0xFFFFu) | ((u32)f1 << 16), 2);
-        RTPT();
-#endif
         AT32(prim + 0x8) = quad_edge;
         AT32(prim + 0x14) = edge1;
         AT32(prim + 0xC) = uv0;
@@ -444,13 +304,8 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         AT32(prim + 0x10) = colour;
         AT32(prim + 0x0) = 0xC000000u; /* GT4 */
         {
-#if NGTE_MATH
           const u32 x0 = st.sxy[0], x1 = st.sxy[1];
           u32 depth = st.sz[0] + st.sz[1];
-#else
-          const u32 x0 = MFC2(12), x1 = MFC2(13);
-          u32 depth = MFC2(17) + MFC2(18);
-#endif
           if (quad_edge == 0) {
             /* the first edge: nothing drawn yet */
             quad_edge = x0;
@@ -492,13 +347,8 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
   }
   AT32(ADDR_ND(D_800757B0)) = prim;
-#if NGTE_MATH && !NGTE_RC
-  FlameTail(&fs, &u);
-#endif
-#if NGTE
   nd_end();
-#endif
   return 0;
 }
 
-HAND_RENDERER_UNIT(func_80058D64, FlameDraw)
+HAND_RENDERER(func_80058D64, FlameDraw)

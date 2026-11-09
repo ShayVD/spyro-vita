@@ -1,6 +1,6 @@
 #!/bin/sh
 # Native draw lists (decisions D82) against the OT walk's parse: a scenario
-# with --fast-render 2 and nothing else (n0), and with --native-draw-check
+# with --fast-render 3 and nothing else (n0), and with --native-draw-check
 # (chk: each converted renderer call also runs both ways and compares the
 # triangles PsyCross's walk makes; the game goes on with the native draw
 # lists), from the same binary. Every trace, shot, WAV and save file of the
@@ -28,24 +28,22 @@
 # D123: each renderer call also runs NAME_pres in its own context, "render
 # ctx:" lines, which must say 0 differences and 0 writes); MODE=rc0 the same
 # check with native_draw 0.
-# MODE=frc: the renderers' per-call check (--fast-render-check; at FR=3 each
-# call against fast_render=1's build, D124); MODE=poison: --render-poison
-# (D124: after each renderer call what fast_render=3 doesn't write is
-# overwritten); MODE=plain: nothing more (with FR=3, fast_render=3 alone);
-# MODE=all3: native_draw=1 with the per-call check, the presenter check (at
-# FR=3 chained: each call's readable run is the presenter check) and the
-# walk check in one run. The per-call check's counts mean nothing there:
-# fast_render=1's build makes no records, so with native_draw=1 its RAM
-# can't match; run it with MODE=frc0 (native_draw 0).
-# FR=N: the second run of each pair at --fast-render N (default 2; the n0
-# run stays at 2, main's default).
+# MODE=frc: the renderers' per-call check (--fast-render-check: each call
+# against its mips2c unit, D127) with native_draw=1; MODE=frc0 the same with
+# native_draw 0; MODE=plain: nothing more; MODE=all3: native_draw=1 with the
+# per-call check, the presenter check (chained: each call's hand C run is
+# the presenter check) and the walk check in one run. The per-call check's
+# counts mean nothing with native_draw=1: the unit makes no records, so its
+# RAM can't match; use MODE=frc0 for them.
+# FR=N: the second run of each pair at --fast-render N (default 3, the only
+# value but 0 since D127; the n0 run at the binary's default).
 # ND_ARGS goes to the second run of each pair only (D91: "--nd-var 2", "--nd-ab").
 # N0_FROM=PREFIX: no n0 run; compare with logs/PREFIX-SCENARIO-n0 (one
 # baseline for several modes).
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
-B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}; FR=${FR:-2}
+B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}; FR=${FR:-3}
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
@@ -64,7 +62,6 @@ run() { # NAME MODE
   rc0) extra="$extra --render-ctx-check ${ND_ARGS:-}";;
   frc) extra="$extra --native-draw --fast-render-check ${ND_ARGS:-}";;
   frc0) extra="$extra --fast-render-check ${ND_ARGS:-}";;
-  poison) extra="$extra --render-poison ${ND_ARGS:-}";;
   all3) extra="$extra --native-draw --fast-render-check --render-ctx-check --walk-check ${ND_ARGS:-}";;
   plain) extra="$extra ${ND_ARGS:-}";;
   wc1) extra="$extra --native-draw --walk-check ${ND_ARGS:-}";;
@@ -83,7 +80,7 @@ run() { # NAME MODE
   whole) args="--frames 100000 --pad tools/oracle/pads/newgame_host.txt --pad-after tools/oracle/pads/fairy_after.txt --shot-every 1000 --tour 11,12,13,14,15,20,21,22,23,24,25,30,31,32,33,34,35,40,41,42,43,44,45,50,51,52,53,54,55,60,61,62,63,end2,64,end3,credits,levels,lives --tour-stay 300";;
   *) echo "unknown scenario $n"; exit 2;;
   esac
-  fr=2
+  fr=3
   [ "$m" = n0 ] || fr=$FR
   tools/tc $B --disc $DISC --fast-render $fr --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra $args > $D/stdout.txt 2>&1

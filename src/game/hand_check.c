@@ -1,28 +1,26 @@
-/* fast_render=2's per-call check (decisions D80; host --fast-render-check).
+/* --fast-render-check (host, the arena build; decisions D80, D95, D96,
+ * D124, D127).
  *
- * Each call of a hand renderer runs twice from the same state: first the
- * register-file hand C (fast_render=1), whose results are kept aside, then
- * the native-GTE build (fast_render=2), whose results the game goes on with.
- * The two must leave the same RAM (the whole 2 MB arena, which holds the
- * renderers' scratchpad, the primitive buffers and the OTs), the same
- * scratchpad buffer and every GTE register's raw storage, so a run of the
- * host's scripts checks every call they make, not only the frames a capture
- * samples. The port's hooks inside the renderers (lod.c's counters) run
- * twice; nothing they count is compared.
- *
- * The renderers written by hand after D80 (D95, D98) are checked three
- * ways instead (hand_check_unit): the mips2c unit first, as the reference,
- * then fast_render=1's build and fast_render=2's, each from the same state
- * and each compared with the unit.
- *
- * --gte-audit N (with the check) also finds, every Nth call of each
- * renderer, which GTE registers it reads from before the call: each of the
- * 64 registers in turn has its raw storage changed (two patterns) and the
- * register-file hand C runs again from the same state. A register whose
- * change shows in RAM is read ("in"); one whose change shows only in other
- * registers the renderer leaves feeds GTE results nothing in the call reads
- * ("gte"); one left exactly as changed is untouched ("kept"); the rest are
- * written before any read ("dead" on entry). */
+ * Each call of a hand-written renderer, or of the units' other functions
+ * written by hand, runs twice from the same state: first the mips2c unit,
+ * the reference, whose results are kept aside, then the hand C, whose
+ * results the game goes on with, so a run of the host's scripts checks every
+ * call they make, not only the frames a capture samples. The port's hooks
+ * inside the renderers (lod.c's counters) run twice; nothing they count is
+ * compared.
+ *  - hand_check (HAND_UNIT_FN, the functions whose asm uses no GTE,
+ *    scratchpad or register model): the whole 2 MB arena, the scratchpad
+ *    buffer and every GTE register's raw storage must come out the same.
+ *  - hand_check_rc (the renderers and the B2 functions beside them, readable
+ *    since D124): RAM but the scratchpad, the spill area and the stack below
+ *    $sp, and the control registers but FLAG: the hand C writes none of the
+ *    rest, which nothing reads across calls (D124's poison audit). Until
+ *    D127 the reference was fast_render=1's build, the register-file hand C
+ *    the oracle replay and these checks had held to the unit since D72; it
+ *    went with fast_render 1 and 2.
+ *  - render_shadow (the oracle replay at fast_render=3, SPYRO_SHADOW=render):
+ *    as hand_check_rc, then the unit's state goes on where nothing was
+ *    compared, so a replay sample compares whole with the emulator's. */
 #include "render_hand.h"
 
 #include <stdarg.h>
@@ -33,7 +31,6 @@
 #include "psx_arena.h"
 
 int g_hand_check;
-int g_gte_audit; /* every Nth call, 0 off */
 /* --particle-sweep (D95): no run of the game reaches the particle types 4
  * on, so before each func_800573C8 call every live particle's type is
  * set to 4, 5, 6 or 7 in turn (its subtype and data as they are), both
@@ -109,9 +106,7 @@ static GTERegisters s_gte_before, s_gte_reg;
 enum { MAX_NAMES = 48 };
 static struct {
   const char *name;
-  unsigned long calls, bad, bad1, audited;
-  int unit; /* checked against the mips2c unit (hand_check_unit) */
-  unsigned long long in, gte, kept; /* bit i: register i (32 + control) */
+  unsigned long calls, bad;
 } s_stats[MAX_NAMES];
 
 void hand_check_set_log(void (*log)(const char *fmt, ...)) { s_log = log; }
@@ -142,13 +137,13 @@ static void report_diff(const char *name, unsigned long call, const char *ref, c
     memcpy(&a, s_reg + i, 4);
     memcpy(&b, ram + i, 4);
     if (a != b) {
-      s_log("  ram %08x: 1 %08x 2 %08x", 0x80000000u + i, a, b);
+      s_log("  ram %08x: unit %08x hand %08x", 0x80000000u + i, a, b);
       n++;
     }
   }
   for (i = 0; i < 64; i++)
     if (*gte_reg(&s_gte_reg, (int)i) != *gte_reg(&gteRegs, (int)i))
-      s_log("  gte %s%u: 1 %08x 2 %08x", i < 32 ? "d" : "c", i & 31, *gte_reg(&s_gte_reg, (int)i),
+      s_log("  gte %s%u: unit %08x hand %08x", i < 32 ? "d" : "c", i & 31, *gte_reg(&s_gte_reg, (int)i),
             *gte_reg(&gteRegs, (int)i));
   if (memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg))
     s_log("  scratchpad buffer differs");
@@ -169,42 +164,17 @@ static void restore_before(u32 sp, u32 v1) {
   g_mips_v1 = v1;
 }
 
-/* The live-in audit of one call (the state before it is in s_before...;
- * s_reg... holds the unchanged run's result). */
-static void audit_call(int k, HandFn reg, u32 a0, u32 a1, u32 a2, u32 a3, u32 sp, u32 v1) {
-  static const u32 pat[2] = {0x00010001u, 0xFFFFFFFFu};
-  int i, j;
-  for (i = 0; i < 64; i++)
-    for (j = 0; j < 2; j++) {
-      restore_before(sp, v1);
-      *gte_reg(&gteRegs, i) ^= pat[j];
-      reg(a0, a1, a2, a3);
-      if (memcmp(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE) ||
-          memcmp(s_scr_reg, g_psx_scratch, sizeof s_scr_reg)) {
-        s_stats[k].in |= 1ull << i;
-      } else if (memcmp(&s_gte_reg, &gteRegs, sizeof gteRegs)) {
-        GTERegisters g = gteRegs;
-        *gte_reg(&g, i) ^= pat[j];
-        if (memcmp(&s_gte_reg, &g, sizeof g))
-          s_stats[k].gte |= 1ull << i;
-        else
-          s_stats[k].kept |= 1ull << i;
-      }
-    }
-  s_stats[k].audited++;
-}
-
 static int s_in_check; /* a checked call inside another runs once (D96) */
 static int s_cmp_v0;    /* hand_check_v0: the results must match too */
 
-u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
+u32 hand_check(const char *name, HandFn unit, HandFn hand, u32 a0, u32 a1, u32 a2, u32 a3) {
   const int k = stat_index(name);
   const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
   const int cmp_v0 = s_cmp_v0;
   u32 sp = g_mips_sp, v1 = g_mips_v1, r, rr;
   s_cmp_v0 = 0;
   if (s_in_check)
-    return native(a0, a1, a2, a3);
+    return hand(a0, a1, a2, a3);
   s_in_check = 1;
   if (sweep)
     sweep_begin();
@@ -215,20 +185,18 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
-  rr = reg(a0, a1, a2, a3);
+  rr = unit(a0, a1, a2, a3);
   memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
   s_gte_reg = gteRegs;
-  if (g_gte_audit && s_stats[k].calls % (unsigned long)g_gte_audit == 0)
-    audit_call(k, reg, a0, a1, a2, a3, sp, v1);
 
   restore_before(sp, v1);
-  r = native(a0, a1, a2, a3);
+  r = hand(a0, a1, a2, a3);
 
   s_stats[k].calls++;
   if (differs()) {
     if (s_stats[k].bad++ < 20)
-      report_diff(name, s_stats[k].calls, "fast_render=1", "fast_render=2");
+      report_diff(name, s_stats[k].calls, "the mips2c unit", "the hand C");
   } else if (cmp_v0 && rr != r) {
     if (s_stats[k].bad++ < 20 && s_log)
       s_log("hand check: %s call %lu: v0 %08x (the mips2c unit) and %08x (the hand C) differ", name,
@@ -240,55 +208,14 @@ u32 hand_check(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 
   return r;
 }
 
-u32 hand_check_unit(const char *name, HandFn unit, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2,
-                    u32 a3) {
-  const int k = stat_index(name);
-  const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
-  u32 sp = g_mips_sp, v1 = g_mips_v1, r;
-  if (s_in_check)
-    return native(a0, a1, a2, a3);
-  s_in_check = 1;
-  s_stats[k].unit = 1;
-  if (sweep)
-    sweep_begin();
-  if (!s_before) {
-    s_before = malloc(PSX_MEM_SIZE);
-    s_reg = malloc(PSX_MEM_SIZE);
-  }
-  memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
-  memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
-  s_gte_before = gteRegs;
-  unit(a0, a1, a2, a3);
-  memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
-  memcpy(s_scr_reg, g_psx_scratch, sizeof s_scr_reg);
-  s_gte_reg = gteRegs;
-  if (g_gte_audit && s_stats[k].calls % (unsigned long)g_gte_audit == 0)
-    audit_call(k, unit, a0, a1, a2, a3, sp, v1);
-
-  s_stats[k].calls++;
-  restore_before(sp, v1);
-  reg(a0, a1, a2, a3);
-  if (differs() && s_stats[k].bad1++ < 20)
-    report_diff(name, s_stats[k].calls, "the mips2c unit", "fast_render=1");
-
-  restore_before(sp, v1);
-  r = native(a0, a1, a2, a3);
-  if (differs() && s_stats[k].bad++ < 20)
-    report_diff(name, s_stats[k].calls, "the mips2c unit", "fast_render=2");
-  if (sweep)
-    sweep_end();
-  s_in_check = 0;
-  return r;
-}
-
-/* fast_render=3 (D124): fast_render=1's build (the reference: today's hand
- * C on the register file) and the readable build from the same state. The
- * readable build writes no scratchpad, GTE data register, FLAG, spill area
- * or hand stack, so those aren't compared: RAM but the spill area and the
- * stack below $sp, the control registers but FLAG, and the result for the
- * _v0 entries. The game goes on with the readable build's state; the
- * scratchpad and data registers keep what was there before the call, which
- * --render-poison shows nothing reads. */
+/* The renderers (D124, D127): the mips2c unit (the reference) and the
+ * readable hand C from the same state. The hand C writes no scratchpad, GTE
+ * data register, FLAG, spill area or hand stack, so those aren't compared:
+ * RAM but the scratchpad, the spill area and the stack below $sp, the
+ * control registers but FLAG, and the result for the _v0 entries. The game
+ * goes on with the hand C's state; the scratchpad and data registers keep
+ * what was there before the call, which D124's poison audit showed nothing
+ * reads. */
 extern char D_80077DD8[];
 static void rc_mask(u32 sp) {
   const uintptr_t base = g_psx_arena_base;
@@ -302,7 +229,7 @@ static void rc_mask(u32 sp) {
   memcpy(s_reg, s_before, 1024); /* the scratchpad, at the arena's base */
 #endif
 }
-static u32 rc_check(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3, int cmp_v0) {
+static u32 rc_check(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3, int cmp_v0) {
   const int k = stat_index(name);
   const int sweep = g_particle_sweep && !strcmp(name, "func_800573C8");
   u32 sp = g_mips_sp, v1 = g_mips_v1, r, rr;
@@ -318,7 +245,7 @@ static u32 rc_check(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32
   memcpy(s_before, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   memcpy(s_scr_before, g_psx_scratch, sizeof s_scr_before);
   s_gte_before = gteRegs;
-  rr = reg(a0, a1, a2, a3);
+  rr = unit(a0, a1, a2, a3);
   memcpy(s_reg, (void *)g_psx_arena_base, PSX_MEM_SIZE);
   s_gte_reg = gteRegs;
   restore_before(sp, v1);
@@ -330,23 +257,23 @@ static u32 rc_check(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32
     if (s_stats[k].bad++ < 20 && s_log) {
       const unsigned char *ram = (const unsigned char *)g_psx_arena_base;
       unsigned n = 0, i;
-      s_log("hand check: %s call %lu: fast_render=1 and fast_render=3 differ", name, s_stats[k].calls);
+      s_log("hand check: %s call %lu: the mips2c unit and the hand C differ", name, s_stats[k].calls);
       for (i = 0; i < PSX_MEM_SIZE && n < 8; i += 4) {
         u32 a, b;
         memcpy(&a, s_reg + i, 4);
         memcpy(&b, ram + i, 4);
         if (a != b) {
-          s_log("  ram %08x: 1 %08x 3 %08x", 0x80000000u + i, a, b);
+          s_log("  ram %08x: unit %08x hand %08x", 0x80000000u + i, a, b);
           n++;
         }
       }
       for (i = 0; i < 31; i++)
         if (s_gte_reg.CP2C.r[i] != gteRegs.CP2C.r[i])
-          s_log("  gte c%u: 1 %08x 3 %08x", i, s_gte_reg.CP2C.r[i], gteRegs.CP2C.r[i]);
+          s_log("  gte c%u: unit %08x hand %08x", i, s_gte_reg.CP2C.r[i], gteRegs.CP2C.r[i]);
     }
   } else if (cmp_v0 && rr != r) {
     if (s_stats[k].bad++ < 20 && s_log)
-      s_log("hand check: %s call %lu: v0 %08x (fast_render=1) and %08x (fast_render=3) differ", name,
+      s_log("hand check: %s call %lu: v0 %08x (the mips2c unit) and %08x (the hand C) differ", name,
             s_stats[k].calls, rr, r);
   }
   if (sweep)
@@ -354,11 +281,11 @@ static u32 rc_check(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32
   s_in_check = 0;
   return r;
 }
-u32 hand_check_rc(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
-  return rc_check(name, reg, rc, a0, a1, a2, a3, 0);
+u32 hand_check_rc(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return rc_check(name, unit, rc, a0, a1, a2, a3, 0);
 }
-u32 hand_check_rc_v0(const char *name, HandFn reg, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
-  return rc_check(name, reg, rc, a0, a1, a2, a3, 1);
+u32 hand_check_rc_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u32 a2, u32 a3) {
+  return rc_check(name, unit, rc, a0, a1, a2, a3, 1);
 }
 
 /* The oracle replay's shadow for fast_render=3 (D124; as collision's D83
@@ -444,51 +371,16 @@ u32 render_shadow_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u
 #endif
 
 /* As hand_check, for a function whose result its callers read (D96). */
-u32 hand_check_v0(const char *name, HandFn reg, HandFn native, u32 a0, u32 a1, u32 a2, u32 a3) {
+u32 hand_check_v0(const char *name, HandFn unit, HandFn hand, u32 a0, u32 a1, u32 a2, u32 a3) {
   s_cmp_v0 = 1;
-  return hand_check(name, reg, native, a0, a1, a2, a3);
-}
-
-static const char *reg_name(int i) {
-  static const char *const d[32] = {"VXY0", "VZ0", "VXY1", "VZ1", "VXY2", "VZ2", "RGBC", "OTZ",
-                                    "IR0", "IR1", "IR2", "IR3", "SXY0", "SXY1", "SXY2", "SXYP",
-                                    "SZ0", "SZ1", "SZ2", "SZ3", "RGB0", "RGB1", "RGB2", "RES1",
-                                    "MAC0", "MAC1", "MAC2", "MAC3", "IRGB", "ORGB", "LZCS", "LZCR"};
-  static const char *const c[32] = {"R11R12", "R13R21", "R22R23", "R31R32", "R33", "TRX", "TRY",
-                                    "TRZ", "L11L12", "L13L21", "L22L23", "L31L32", "L33", "RBK",
-                                    "GBK", "BBK", "LR1LR2", "LR3LG1", "LG2LG3", "LB1LB2", "LB3",
-                                    "RFC", "GFC", "BFC", "OFX", "OFY", "H", "DQA", "DQB", "ZSF3",
-                                    "ZSF4", "FLAG"};
-  return i < 32 ? d[i] : c[i - 32];
-}
-
-static void log_regs(const char *name, const char *what, unsigned long long m) {
-  char line[512];
-  int i, n = 0;
-  line[0] = 0;
-  for (i = 0; i < 64; i++)
-    if (m >> i & 1)
-      n += snprintf(line + n, sizeof line - (size_t)n, " %s", reg_name(i));
-  s_log("gte audit: %s %s:%s", name, what, n ? line : " none");
+  return hand_check(name, unit, hand, a0, a1, a2, a3);
 }
 
 void hand_check_report(void) {
   int i;
   if (!g_hand_check || !s_log)
     return;
-  for (i = 0; i < MAX_NAMES && s_stats[i].name; i++) {
-    if (s_stats[i].unit)
-      s_log("hand check: %s %lu calls, %lu differ (fast_render=2 against the mips2c unit; "
-            "fast_render=1 against it: %lu differ)",
-            s_stats[i].name, s_stats[i].calls, s_stats[i].bad, s_stats[i].bad1);
-    else
-      s_log("hand check: %s %lu calls, %lu differ", s_stats[i].name, s_stats[i].calls, s_stats[i].bad);
-    if (s_stats[i].audited) {
-      s_log("gte audit: %s %lu calls audited", s_stats[i].name, s_stats[i].audited);
-      log_regs(s_stats[i].name, "in", s_stats[i].in);
-      log_regs(s_stats[i].name, "gte", s_stats[i].gte & ~s_stats[i].in);
-      log_regs(s_stats[i].name, "kept", s_stats[i].kept & ~(s_stats[i].in | s_stats[i].gte));
-      log_regs(s_stats[i].name, "dead", ~(s_stats[i].in | s_stats[i].gte | s_stats[i].kept));
-    }
-  }
+  for (i = 0; i < MAX_NAMES && s_stats[i].name; i++)
+    s_log("hand check: %s %lu calls, %lu differ (the hand C against the mips2c unit)", s_stats[i].name,
+          s_stats[i].calls, s_stats[i].bad);
 }
