@@ -1,12 +1,13 @@
 /* --pres-check (stage 7e, decisions D125; pres_draw.h): every in-between
- * frame in play is drawn twice from the same state, by the presenter and
+ * frame (in play until stage 7g, D128; since, in every gamestate) is drawn twice from the same state, by the presenter and
  * by D30's pass, and the two lists DrawOTag is given are compared record
  * for record. Only D30's is walked and shown, so every file the run
  * writes is the same as with --interp alone.
  *
  * A frame record (s_frame[which]): the draw and display environments put
  * before DrawOTag, the 2D primitives noted for the 16:9 narrowing, then
- * the list in its order: each packet's length and words after its link,
+ * the list in its order: each packet's length and words after its link
+ * (without the bits the PS1 GPU ignores: put_poly, put_line),
  * and for a native_draw marker (native_draw.h) each of its records' kind
  * and words instead. The primitives' addresses aren't compared (the
  * presenter's buffers are its own), only what they say. */
@@ -35,6 +36,10 @@ typedef struct {
 
 static Frame s_frame[2];
 static unsigned long s_ticks, s_same, s_differ, s_skipped[5], s_packets, s_records;
+/* stage 7g (D128): the frames compared and differing, by gamestate */
+enum { GAMESTATES = 16 };
+extern int g_Gamestate;
+static unsigned long s_gs_same[GAMESTATES], s_gs_differ[GAMESTATES];
 static unsigned s_shown;
 static void (*s_log)(const char *fmt, ...);
 
@@ -74,6 +79,19 @@ static void put_poly(Frame *f, const uint32_t *w, uint32_t n) {
     put(f, w[i]);
 }
 
+/* A line's words after its tag (stage 7g, D128): a gouraud line's later
+ * colours without their code byte, which the PS1 GPU ignores (the pause
+ * screens' LINE_G2 frames, func_8001844C, never set it), as put_poly. A
+ * polyline's colours and points alternate up to its 0x5xxx5xxx end. */
+static void put_line(Frame *f, const uint32_t *w, uint32_t n) {
+  const int gouraud = (w[0] >> 24) & 0x10;
+  uint32_t i;
+  for (i = 0; i < n; i++) {
+    const int colour = gouraud && i >= 2 && !(i & 1) && (w[i] & 0xF000F000u) != 0x50005000u;
+    put(f, colour ? w[i] & 0xFFFFFFu : w[i]);
+  }
+}
+
 static const uint32_t *next_packet(const uint32_t *p) {
   return (*p & 0xFFFFFFu) == 0xFFFFFFu ? NULL : (const uint32_t *)MEM_OT_NEXT(*p);
 }
@@ -105,10 +123,22 @@ void pres_check_frame(int which, const void *ot_head, const DRAWENV *de, const D
   uint32_t guard = 0;
   if (!f->w && !(f->w = malloc(FRAME_MAX * sizeof(uint32_t))))
     return;
-  if (f->on) /* one list per frame in play: a second is recorded after it */
+  if (f->on) { /* one list per frame in play: a second is recorded after it */
+    /* Stage 7g (D129): a later list's draw environment without what the
+     * walk of the earlier one leaves in it, the page it drew last and the
+     * background clear done (gpu_walk.c): the presenter's lists here are
+     * recorded, not walked. The flight results' first tick draws twice
+     * with no PutDrawEnv between (flight.c). */
+    DRAWENV e;
+    memcpy(&e, de, sizeof e);
+    e.tpage = 0;
+    e.isbg = 0;
     put(f, 0xEEEEEEEEu);
+    put_words(f, &e, sizeof e);
+  } else {
+    put_words(f, de, sizeof *de);
+  }
   f->on = 1;
-  put_words(f, de, sizeof *de);
   put_words(f, dd, sizeof *dd);
   for (; p && guard++ < FRAME_MAX; p = next_packet(p)) {
     const uint32_t len = *p >> 24;
@@ -121,6 +151,8 @@ void pres_check_frame(int which, const void *ot_head, const DRAWENV *de, const D
     put(f, 0xED000000u | len);
     if ((p[1] >> 29) == 1) /* a polygon (GP0 0x20-0x3F) */
       put_poly(f, p + 1, len);
+    else if ((p[1] >> 29) == 2) /* a line (GP0 0x40-0x5F) */
+      put_line(f, p + 1, len);
     else
       put_words(f, p + 1, len * 4);
     f->packets++;
@@ -150,8 +182,10 @@ void pres_check_compare(void) {
   s_records += d->records;
   if (i == n && d->n == p->n && !d->full && !p->full) {
     s_same++;
+    s_gs_same[(unsigned)g_Gamestate % GAMESTATES]++;
   } else {
     s_differ++;
+    s_gs_differ[(unsigned)g_Gamestate % GAMESTATES]++;
     if (s_shown < SHOW && s_log) {
       const char *dump = getenv("PRES_CHECK_DUMP"); /* debug: the first pair's words */
       if (dump && !s_shown) {
@@ -169,16 +203,16 @@ void pres_check_compare(void) {
         }
       }
       s_shown++;
-      s_log("pres check: frame %lu differs at word %u of %u (D30's) / %u (presenter's): "
-            "%08X / %08X%s",
-            s_ticks, i, d->n, p->n, i < d->n ? d->w[i] : 0, i < p->n ? p->w[i] : 0,
+      s_log("pres check: frame %lu (gamestate %d) differs at word %u of %u (D30's) / %u "
+            "(presenter's): %08X / %08X%s",
+            s_ticks, g_Gamestate, i, d->n, p->n, i < d->n ? d->w[i] : 0, i < p->n ? p->w[i] : 0,
             d->full || p->full ? " (a record full)" : "");
     }
   }
   reset();
 }
 
-/* why: 0 not play, 1 the presenter drew nothing, 2 D30's pass drew
+/* why: 0 not compared by choice (before 7g: not play), 1 the presenter drew nothing, 2 D30's pass drew
  * nothing, 3 the camera jumped, 4 the presenter not there (its area,
  * fast_render) */
 void pres_check_skip(int why) {
@@ -193,6 +227,15 @@ int pres_check_report(void (*log)(const char *fmt, ...)) {
         "D30's, %lu camera jumps, %lu without the presenter",
         s_same + s_differ, s_same, s_differ, s_packets, s_records, s_skipped[0], s_skipped[1],
         s_skipped[2], s_skipped[3], s_skipped[4]);
+  if (log) {
+    char line[512];
+    int g, k = 0;
+    for (g = 0; g < GAMESTATES; g++)
+      if (s_gs_same[g] + s_gs_differ[g])
+        k += snprintf(line + k, sizeof line - k, " %d:%lu/%lu", g, s_gs_same[g],
+                      s_gs_same[g] + s_gs_differ[g]);
+    log("pres check: by gamestate (identical/compared):%s", k ? line : " none");
+  }
   return s_differ != 0;
 }
 

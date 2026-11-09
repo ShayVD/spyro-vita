@@ -18,19 +18,30 @@
 # demos' 16:9 pass keeps its own visibility state), gems (16:9 play),
 # routeA, routeB, whole (the 100,000-vblank tour).
 # I_FROM=PREFIX: no reference run; compare with logs/PREFIX-SCENARIO-i.
+# I_BIN=PATH: the reference run's binary (default BIN), e.g. main's.
+# EXTRA: more options for the MODE run (--pres-write-check, --pres-check-late
+# in place of chk's --pres-check: D128).
+# Stage 7g (D128) adds three scenarios for the gamestates the others don't
+# reach: pause (16:9, the gems script then the pause menu and the
+# inventory, logs/pads/gems-pause-s8d.txt), die (the gems script, then
+# Spyro poked under the floor twice: a respawn, then with no lives left a
+# game over; a dragon rescue on the way) and flight (the gems script, then
+# the menu's level warp to Sunny Flight, where Spyro drowns: the flight
+# results). "whole" reaches the credits, the cutscenes and the fairy.
 # Each run has a stall guard: timeout ${STALL:-14400} s inside the container.
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo wsi gems routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}
+IB=${I_BIN:-$B}
 nd=; [ "${ND:-0}" = 1 ] && nd=--native-draw
 [ -n "${FR:-}" ] && nd="$nd --fast-render $FR"
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
   extra="--save $D/save --interp $nd"
-  case $n in demo|routeA|wsi) extra="$extra --wav $D/audio.wav";; esac
-  case $m in chk) extra="$extra --pres-check";; m2) extra="$extra --interp-mode 2";; esac
+  case $n in demo|routeA|wsi|pause) extra="$extra --wav $D/audio.wav";; esac
+  case $m in chk) extra="$extra --pres-check ${EXTRA:-}";; m2) extra="$extra --interp-mode 2 ${EXTRA:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
@@ -38,10 +49,14 @@ run() { # NAME MODE
   wsi) args="--frames 12000 --shot-every 500 --widescreen --out960";;
   routeA) args="--frames 13000 --pad tools/oracle/pads/newgame_host.txt --tour levels --tour-stay 300 --pad-after tools/oracle/pads/route_portal_exit.txt --shot-every 250";;
   routeB) args="--frames 13000 --pad tools/oracle/pads/newgame_host.txt --tour levels,21 --tour-stay 300 --pad-after tools/oracle/pads/route_vortex_balloon.txt --shot-every 250";;
+  pause) args="--frames 9100 --pad logs/pads/gems-pause-s8d.txt --widescreen --shot-every 100";;
+  flight) args="--frames 11000 --pad logs/pads/gems.txt --shot-every 250 --cheat 7600:warp:15";;
+  die) args="--frames 11000 --pad logs/pads/gems.txt --shot-every 250 --poke 7400:80078a60=00000100 --poke 9000:8007582c=00000000 --poke 9100:80078a60=00000100";;
   whole) args="--frames 100000 --pad tools/oracle/pads/newgame_host.txt --pad-after tools/oracle/pads/fairy_after.txt --shot-every 1000 --tour 11,12,13,14,15,20,21,22,23,24,25,30,31,32,33,34,35,40,41,42,43,44,45,50,51,52,53,54,55,60,61,62,63,end2,64,end3,credits,levels,lives --tour-stay 300";;
   *) echo "unknown scenario $n"; exit 2;;
   esac
-  tools/tc timeout ${STALL:-14400} $B --disc $DISC --log $D/spyro.log --trace $D/trace.tsv \
+  bin=$B; [ $m = i ] && bin=$IB
+  tools/tc timeout ${STALL:-14400} $bin --disc $DISC --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra $args > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
 }
@@ -53,7 +68,7 @@ for n in "$@"; do
     if cmp -s "$a/$x" "$b/$x"; then same=$((same + 1)); else diff=$((diff + 1)); echo "  DIFF $n $x"; fi
   done
   [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
-  grep -h "pres check: [0-9]* frames" $b/spyro.log | sed 's/^.*pres check: /  /'
+  grep -h "pres check: [0-9]* frames\|pres check: by gamestate\|pres write check: [0-9]* presenter\|host pres: " $b/spyro.log | sed 's/^.*host /  /'
   grep -h "pres check: frame" $b/spyro.log | head -3 | sed 's/^.*pres check: /  /'
   echo "$n: $same identical, $diff different ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 done

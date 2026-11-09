@@ -37,6 +37,7 @@
 #include "buffers.h"
 #include "common.h"
 #include "camera.h"
+#include "cutscene.h" /* g_CreditsStage (stage 7g) */
 #include "environment.h"
 #include "gamepad.h"
 #include "graphics.h"
@@ -1317,6 +1318,7 @@ static void presentation_pass(int wide, int own_state) {
 }
 
 const PresentPresOut *g_present_pres;
+void (*g_present_pres_watch)(int after);
 
 #if SPYRO_PRESENTER
 /* ---------- the presenter (stage 7e, D125; on its own core, 7f, D126) ----------
@@ -1365,11 +1367,13 @@ typedef struct {
   const PresentPresOut *out; /* on the worker, into its buffer; NULL: inline */
   int check;                 /* --pres-check: the list recorded, not drawn */
   int wide;                  /* 16:9: its HUD narrowed */
+  int interp;                /* an in-between frame (blended); 0: a real one (stage 7g) */
   int gl_wide;               /* g_present.widescreen, for the GL side's display state */
   int disabled;              /* g_GPUDisabledState */
   PresentFrame f;            /* on the worker: the slot reserved for it */
   int begun, captured, squeezed;
   int async; /* --pres-check-thread: on the host's thread */
+  int gs;         /* the gamestate it draws */
   DISPENV put;    /* what it left as currentDispEnv */
   DISPENV expect; /* what the game thread put there for it */
   long long us;
@@ -1468,9 +1472,9 @@ void pres_DrawOTag(u_long *p) {
   if (!j->begun) {
     j->begun = 1;
     if (j->out)
-      j->out->begin(j->f.due, 1);
+      j->out->begin(j->f.due, j->interp);
     else if (g_present_capture && g_present_capture->begin)
-      g_present_capture->begin(due_next(), 1);
+      g_present_capture->begin(due_next(), j->interp);
   }
   if (j->out)
     j->out->env(&s_pw_cur, j->disabled, j->gl_wide);
@@ -1513,10 +1517,14 @@ static void job_done(void) {
   g_present_stats.squeezed_2d += s_job.squeezed;
   if (s_job.check)
     return;
-  if (memcmp(&s_job.put, &s_job.expect, sizeof s_job.put))
+  if (memcmp(&s_job.put, &s_job.expect, sizeof s_job.put)) {
     s_pstats.disp_misses++;
-  if (!s_job.captured)
+    s_pstats.disp_miss_gs |= 1u << (s_job.gs & 31);
+  }
+  if (!s_job.captured) {
     s_pstats.uncaptured++;
+    s_pstats.uncaptured_gs |= 1u << (s_job.gs & 31);
+  }
 }
 
 void port_present_pres_join(void) {
@@ -1552,30 +1560,45 @@ void port_present_pres_stats(PresentPresStats *out) { memset(out, 0, sizeof *out
 
 #if SPYRO_PRESENTER
 
-/* The in-between frame from the presenter, in place of D30's pass.
+/* Stage 7g (D128): on the worker the frame's slot is reserved before the
+ * draw runs, and libgpu's environment put last is set to the DB's, so the
+ * draw must file a frame and put that environment. Every gamestate's draw
+ * does (each ends with PutDispEnv(&g_CurDB->m_DispEnv) and a DrawOTag)
+ * but the credits' first stage, which only copies the last picture into
+ * the other buffer (credits_hand.c Draw: MoveImage, no DrawOTag): D30's
+ * pass filed no frame there, so the presenter draws it inline, where its
+ * frame isn't filed either. The host's runs count both
+ * (PresentPresStats' disp_miss_gs, uncaptured_gs). */
+static int files_a_frame(void) { return !(g_Gamestate == GS_Credits && g_CreditsStage == -1); }
+
+/* A frame from the presenter, in place of D30's pass: the in-between
+ * frame (blend 1), or since stage 7g (D128) the attract demos' 16:9 real
+ * frame too (blend 0, own_state), in every gamestate.
  * own_state: it starts from the 16:9 copies of the visibility state and
  * leaves its own there (wide_state_in, wide_state_out); then it runs
  * inline, as D30's 16:9 pass after it reads them. check: --pres-check,
  * its list recorded for the compare and not drawn. Returns 0 if no frame
  * (the camera jumped); else 1 inline (its frame captured, for the caller
  * to queue) or 2 on the worker (its frame queued already). */
-static int presenter_pass(int wide, int own_state, int check) {
+static int presenter_pass(int wide, int own_state, int blend, int check) {
   long long t = now_us();
   const int own = own_state && s_wide_valid && s_wide_level == g_LevelId &&
                   s_wide_nsectors == g_Environment.m_SectorCount;
   const PresentPresOut *const w = g_present_pres;
-  const int worker = !check && !own_state && w && w->usable();
+  const int worker = !check && !own_state && w && w->usable() && files_a_frame();
   /* --pres-check-thread: the check's presenter on a thread beside D30's
    * pass and the logic draw (its list only recorded, never drawn) */
   const int async_check = check && !own_state && g_pres_check_thread && w && w->post;
   port_present_pres_join(); /* (it was, at the loop top) */
   if (!alloc_walk() ||
-      !pres_draw_prepare(1, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
+      !pres_draw_prepare(blend, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
                          own ? s_wide_nsectors : 0))
     return 0;
   memset(&s_job, 0, sizeof s_job);
   s_job.check = check;
   s_job.wide = wide;
+  s_job.interp = blend;
+  s_job.gs = g_Gamestate;
   s_job.gl_wide = g_present.widescreen;
   s_job.disabled = g_GPUDisabledState;
   /* libgpu's environments as the presenter's PutDrawEnv and PutDispEnv
@@ -1603,7 +1626,7 @@ static int presenter_pass(int wide, int own_state, int check) {
   if (worker) {
     s_job.out = w;
     s_frame_begun = 0;
-    reserve(wide, 1, &s_job.f); /* filed now: shown before this tick's frame */
+    reserve(wide, blend, &s_job.f); /* filed now: shown before this tick's frame */
     w->submit(&s_job.f);
     g_faces_copy = 1; /* the logic draw's faces into a copy while it runs beside (moby_hand.c) */
     w->post(job_run);
@@ -1616,10 +1639,16 @@ static int presenter_pass(int wide, int own_state, int check) {
   {
     PsxGpuWalk *const ranges = g_nd_ranges_walk;
     g_nd_ranges_walk = &s_pw; /* the Vita's vertex buffers: the presenter's direct ranges */
+    if (g_present_pres_watch)
+      g_present_pres_watch(0);
     job_run();
+    if (g_present_pres_watch)
+      g_present_pres_watch(1);
     g_nd_ranges_walk = ranges;
   }
   job_done();
+  if (!check) /* libgpu's environment put last, as the pass's left it (7e) */
+    currentDispEnv = s_pw_cur;
   if (own_state && !check) {
     wide_state_out(); /* the level's sector count and the bytes past the presenter's */
     pres_draw_visibility(s_wide_flags, s_wide_cache, s_wide_nsectors);
@@ -1731,7 +1760,7 @@ const char *port_present_region(uint32_t a) {
 
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp, timed, shown = 0, pres_play = 0;
+  int wide_pass, wide_pass_d30, logic_wide, interp, timed, shown = 0, pres = 0, pres_worker = 0;
   long long t, t_interp = 0;
   PresentGsStats *gs = gs_stats();
   if (g_present_reads)
@@ -1767,16 +1796,21 @@ void PortPresentDraw(void) {
     wide_pass = g_present.widescreen && exact;
     logic_wide = g_present.widescreen && !exact;
   }
+  wide_pass_d30 = wide_pass; /* 0 once the presenter draws it (stage 7g) */
 
   interp = g_present.interp && can_interp();
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
 #if SPYRO_PRESENTER
-  /* Stage 7f (D126): in play the presenter on its own core costs the game
-   * thread only its snapshot, so interp_budget no longer applies there */
-  pres_play = interp && g_present.interp_mode == 2 && !g_pres_check && !wide_pass &&
-              g_Gamestate == GS_Playing && g_present_pres && g_present_pres->usable() &&
-              pres_draw_available();
+  /* The presenter draws this tick's in-between frame (stage 7e, D125), in
+   * every gamestate since stage 7g (D128), and the attract demos' 16:9 real
+   * frame; with --pres-check it draws them too, before D30's passes, and
+   * the lists are compared. */
+  pres = (g_present.interp_mode == 2 || g_pres_check) && pres_draw_available();
+  /* Stage 7f (D126): on its own core it costs the game thread only its
+   * snapshot, so interp_budget no longer applies */
+  pres_worker = interp && pres && !g_pres_check && !wide_pass && g_present_pres &&
+                g_present_pres->usable() && files_a_frame();
 #endif
   /* interp_budget_us: the last tick's game CPU time without the in-between
    * frame, plus what that frame cost when it last ran, must fit. Otherwise
@@ -1784,47 +1818,48 @@ void PortPresentDraw(void) {
    * running late, which would slow the game itself (D28); budget_allows
    * holds 30 fps for a while after a miss (D68). Only the game thread's
    * own time counts: the GPU is the platform's to fix (D75). */
-  if (interp && g_present.interp_budget_us && !pres_play && !budget_allows()) {
+  if (interp && g_present.interp_budget_us && !pres_worker && !budget_allows()) {
     interp = 0;
     g_present_stats.budget_skips++;
   }
   s_prev_interp = interp;
 #if SPYRO_PRESENTER
-  /* Stage 7e (D125): interp_mode=2, the presenter's frame in play; with
-   * --pres-check it is drawn too, before D30's pass, and compared. */
-  {
-    const int pres_on = interp && (g_present.interp_mode == 2 || g_pres_check) &&
-                        g_Gamestate == GS_Playing && pres_draw_available();
-    if (g_pres_check && interp && !pres_on)
-      pres_check_skip(g_Gamestate == GS_Playing ? 4 : 0);
-    if (pres_on && g_pres_check) {
-      if (!presenter_pass(g_present.widescreen, wide_pass, 1))
-        pres_check_skip(3);
-      else
-        s_pres_record = 2; /* D30's pass below records its list too */
-    } else if (pres_on) {
-      long long tp = now_us();
-      int r;
-      t_interp = tp;
-      s_pass_interp = 1;
-      r = presenter_pass(g_present.widescreen, wide_pass, 0);
-      if (r) {
-        if (r == 1) /* inline: its capture; on the worker it was filed already */
-          push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
-        g_present_stats.interp_frames++;
-        shown = 1;
-      } else {
-        g_present_stats.skipped_interp++;
-      }
-      s_pass_interp = 0;
-      gs->us_pass += now_us() - tp;
-      t_interp = now_us() - t_interp;
-      s_interp_cost = t_interp;
-      interp = 0; /* D30's pass doesn't run */
+  if (g_pres_check && interp && !pres)
+    pres_check_skip(4);
+  if (interp && pres && g_pres_check) {
+    if (!presenter_pass(g_present.widescreen, wide_pass, 1, 1))
+      pres_check_skip(3);
+    else
+      s_pres_record = 2; /* D30's pass below records its list too */
+  } else if (interp && pres) {
+    long long tp = now_us();
+    int r;
+    t_interp = tp;
+    s_pass_interp = 1;
+    r = presenter_pass(g_present.widescreen, wide_pass, 1, 0);
+    if (r) {
+      if (r == 1) /* inline: its capture; on the worker it was filed already */
+        push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
+      g_present_stats.interp_frames++;
+      shown = 1;
+    } else {
+      g_present_stats.skipped_interp++;
     }
+    s_pass_interp = 0;
+    gs->us_pass += now_us() - tp;
+    t_interp = now_us() - t_interp;
+    s_interp_cost = t_interp;
+    interp = 0; /* D30's pass doesn't run */
+  }
+  /* the attract demos' 16:9 real frame (D30's two-draw form): the
+   * presenter's, unblended, from its own visibility state, queued after the
+   * logic pass below as D30's was */
+  if (wide_pass && pres && !g_pres_check) {
+    presenter_pass(1, 1, 0, 0);
+    wide_pass_d30 = 0;
   }
 #endif
-  if (interp || wide_pass) {
+  if (interp || wide_pass_d30) {
     snap_take();
     if (interp) {
       t_interp = now_us();
@@ -1867,8 +1902,23 @@ void PortPresentDraw(void) {
       t_interp = now_us() - t_interp;
       s_interp_cost = t_interp;
     }
-    if (wide_pass) {
+    if (wide_pass_d30) {
+#if SPYRO_PRESENTER
+      /* --pres-check: the presenter's 16:9 real frame first (stage 7g) */
+      if (pres && g_pres_check) {
+        if (presenter_pass(1, 1, 0, 1))
+          s_pres_record = 2;
+        else
+          pres_check_skip(1);
+      }
+#endif
       presentation_pass(1, 1); /* queued after the logic pass, below */
+#if SPYRO_PRESENTER
+      if (s_pres_record == 2) {
+        s_pres_record = 0;
+        check_after(1);
+      }
+#endif
       snap_restore();
     }
   }

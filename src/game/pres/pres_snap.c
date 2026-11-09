@@ -20,6 +20,7 @@
 #include "buffers.h"
 #include "camera.h"
 #include "common.h"
+#include "dragon.h"
 #include "graphics.h"
 #include "hud.h"
 #include "moby.h"
@@ -40,6 +41,7 @@ PresSnapRegion g_pres_regions[PRES_REGIONS];
 
 #if !SPYRO_PRESENTER
 /* the moved arena (cmake/presenter.cmake): no presenter */
+const char *pres_snap_misplaced(void) { return NULL; }
 void pres_snap_from_live(void) {}
 int pres_snap_take(int blend) { return (void)blend, 0; }
 uint32_t pres_snap_rebase(uint32_t a) { return a; }
@@ -49,22 +51,36 @@ void pres_snap_audit_report(void (*log)(const char *fmt, ...)) { (void)log; }
 /* the presenter's copies the snapshot sets by name (pres_snap_names.h;
  * render_ctx.h; lod_pres.c) */
 extern Camera g_pres_snap_g_Camera;
+extern unsigned char g_pres_snap_g_DragonCutscene[]; /* (stage 7g) */
+static_assert(offsetof(__typeof__(g_DragonCutscene), m_CutsceneSpyro) == 0x88 &&
+                  offsetof(__typeof__(g_DragonCutscene), m_RescuedDragonMoby) == 0x90,
+              "g_DragonCutscene's mobys");
 extern Spyro g_pres_snap_g_Spyro;
 extern Moby *g_pres_snap_g_LevelMobys;
 extern DB *g_pres_snap_g_CurDB;
 extern DB g_pres_snap_g_DB[2];
 extern Moby *g_pres_level_mobys;
+extern unsigned char g_pres_snap_g_Buffers[]; /* g_Buffers' copy (stage 7g) */
 extern char D_8006FCF4[], D_80077DD8[];
 
 static unsigned char *game_labels(void) { return (unsigned char *)PSX_ARENA(DATA_LO); }
 
-void pres_snap_from_live(void) {
-  const unsigned char *g = game_labels();
+/* The whole data region into the mirror (stage 7g, D128; 7e copied only
+ * the named labels): the game's code reads past a table's end into the
+ * next label (the title's border animation, TitlescreenDraw's
+ * g_TitlescreenAnimIn[m_SubTick - 16]; the rescued dragon's name), and
+ * past the named labels the mirror held zeros. 61 KB a frame. */
+static void mirror_take(void) { memcpy(g_pres_mirror, game_labels(), g_pres_mirror_len); }
+
+const char *pres_snap_misplaced(void) {
   int i;
   for (i = 0; i < g_pres_snap_nlabels; i++)
-    memcpy(g_pres_mirror + g_pres_snap_labels[i].off, g + g_pres_snap_labels[i].off,
-           g_pres_snap_labels[i].len);
+    if (g_pres_snap_labels[i].at && g_pres_snap_labels[i].at != game_labels() + g_pres_snap_labels[i].off)
+      return g_pres_snap_labels[i].name;
+  return NULL;
 }
+
+void pres_snap_from_live(void) { mirror_take(); }
 
 static int in_arena(const void *p, uint32_t len) {
   uintptr_t a = (uintptr_t)p;
@@ -212,7 +228,6 @@ void pres_snap_fields(unsigned char *p, uint32_t n, uint32_t stride) {
 
 int pres_snap_take(int blend) {
   const uintptr_t area = render_ctx_area();
-  const unsigned char *g = game_labels();
   int i, nmobys;
   uint32_t buf_lo = 0, buf_len = 0;
   if (!area)
@@ -236,11 +251,9 @@ int pres_snap_take(int blend) {
     region(PRES_REGION_PARTICLES, g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE, area + AREA_PARTICLES);
   if (g_pres_audit)
     audit(nmobys);
-  /* the labels; then the mirror is a region too, for pointers between
-   * labels (g_CurDB into g_DB) */
-  for (i = 0; i < g_pres_snap_nlabels; i++)
-    memcpy(g_pres_mirror + g_pres_snap_labels[i].off, g + g_pres_snap_labels[i].off,
-           g_pres_snap_labels[i].len);
+  /* the labels (the whole region, mirror_take); then the mirror is a
+   * region too, for pointers between labels (g_CurDB into g_DB) */
+  mirror_take();
   /* the copies */
   if (g_pres_regions[PRES_REGION_MOBYS].len)
     memcpy((void *)(area + AREA_MOBYS), g_LevelMobys, g_pres_regions[PRES_REGION_MOBYS].len);
@@ -256,6 +269,10 @@ int pres_snap_take(int blend) {
   REBASE_PTR(g_pres_snap_g_LevelMobys);
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Camera + 0xD0, 1, 0);     /* the camera's moby */
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Spyro + 0x21C, 1, 0);     /* the moby Spyro uses */
+  /* stage 7g (D128): the dragon rescue's mobys (the cutscene's Spyro and
+   * dragon, the dragon rescued: --pres-audit's g_DragonCutscene +0x88,
+   * +0x8C, +0x90) */
+  pres_snap_fields(g_pres_snap_g_DragonCutscene + 0x88, 3, 4);
   if (g_pres_regions[PRES_REGION_MOBYS].len) /* each moby's next in its collision chain */
     pres_snap_fields((unsigned char *)(area + AREA_MOBYS) + 0x4, (uint32_t)nmobys, sizeof(Moby));
   if (g_pres_regions[PRES_REGION_PARTICLES].len) /* each particle's moby */
@@ -267,6 +284,24 @@ int pres_snap_take(int blend) {
   }
   region(PRES_REGION_MIRROR, game_labels(), g_pres_mirror_len, (uintptr_t)g_pres_mirror);
   REBASE_PTR(g_pres_snap_g_CurDB);
+  /* stage 7g (D128): the buffers' pointers the other gamestates' draws
+   * take their primitives and the HUD's mobys from (the flight results,
+   * the pause screens, the exits) onto the presenter's buffers and copies;
+   * the rest of g_Buffers (the level's data, the shared animations) stay
+   * the game's */
+  {
+    static const size_t fields[] = {
+        offsetof(__typeof__(g_Buffers), m_LowerPolyBuffer), offsetof(__typeof__(g_Buffers), m_HigherPolyBuffer),
+        offsetof(__typeof__(g_Buffers), m_HudOTStart), offsetof(__typeof__(g_Buffers), m_WorldOTStart),
+        offsetof(__typeof__(g_Buffers), m_ParticleSpaceStart)};
+    size_t k;
+    for (k = 0; k < sizeof fields / sizeof fields[0]; k++) {
+      void *p;
+      memcpy(&p, g_pres_snap_g_Buffers + fields[k], sizeof p);
+      REBASE_PTR(p);
+      memcpy(g_pres_snap_g_Buffers + fields[k], &p, sizeof p);
+    }
+  }
   g_pres_regions[PRES_REGION_MIRROR].len = 0;
   g_pres_level_mobys = g_pres_snap_g_LevelMobys;
   /* the particle list's pointer is the renderers' (render_ctx.h) */

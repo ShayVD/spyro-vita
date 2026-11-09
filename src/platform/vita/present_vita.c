@@ -54,6 +54,7 @@ static const MenuOption k_rows[] = {
 MENU_OPTION_LIST(g_menu_present, k_rows);
 
 int pres_draw_available(void); /* src/game/pres/pres_draw.c */
+const char *pres_snap_misplaced(void); /* src/game/pres/pres_snap.c (D128) */
 
 void vita_present_init(void) {
   vita_present_apply();
@@ -69,11 +70,15 @@ void vita_present_init(void) {
            g_vita_opts.widescreen, g_vita_opts.interp,
            g_vita_opts.interp_budget ? "at 31.3 ms a tick" : "off",
            g_present_capture ? "GPU" : "CPU");
-  if (g_vita_opts.interp_mode == 2) /* stage 7e (D125) */
-    vita_log("present: interp_mode=2: %s", pres_draw_available()
-                                               ? "in play the presenter draws the in-between frame"
-                                               : "no presenter (not built, no area, or fast_render "
-                                                 "not 2 or 3): D30's pass draws it");
+  if (g_vita_opts.interp_mode == 2) { /* stage 7e (D125); every gamestate since 7g (D128) */
+    if (pres_draw_available())
+      vita_log("present: interp_mode=2: the presenter draws the in-between frame and the attract "
+               "demos' 16:9 frame");
+    else
+      vita_log("present: interp_mode=2: no presenter (not built, no area, fast_render not 3, or "
+               "a label outside the data region: %s): D30's pass draws them",
+               pres_snap_misplaced() ? pres_snap_misplaced() : "none");
+  }
 }
 
 /* One line per stats report, totals since the last one. */

@@ -54,3 +54,18 @@ int host_pres_thread_init(void) {
   g_present_pres = &s_out;
   return 0;
 }
+
+/* --pres-check-late (stage 7g, D128; pres_watch.c): the presenter's list
+ * for the compare recorded at the join, after the logic draw, on the game
+ * thread */
+static void (*s_late)(void);
+static void late_post(void (*fn)(void)) { s_late = fn; }
+static void late_wait(void) {
+  if (s_late)
+    s_late();
+  s_late = NULL;
+}
+static const PresentPresOut s_late_out = {usable, NULL, late_post, late_wait, NULL, NULL,
+                                          NULL,   NULL, NULL,      NULL,      NULL};
+
+void host_pres_late_init(void) { g_present_pres = &s_late_out; }
