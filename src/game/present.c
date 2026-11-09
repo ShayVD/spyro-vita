@@ -1369,6 +1369,7 @@ typedef struct {
   int disabled;              /* g_GPUDisabledState */
   PresentFrame f;            /* on the worker: the slot reserved for it */
   int begun, captured, squeezed;
+  int async; /* --pres-check-thread: on the host's thread */
   DISPENV put;    /* what it left as currentDispEnv */
   DISPENV expect; /* what the game thread put there for it */
   long long us;
@@ -1376,6 +1377,21 @@ typedef struct {
 static PresJob s_job;
 static int s_job_pending; /* game thread: running on the worker, not joined */
 static PresentPresStats s_pstats;
+/* --pres-check-thread: what the check does once the presenter's thread is
+ * joined: 1 compare, 2 + why skip */
+static int s_check_deferred;
+
+/* D30's pass's side of --pres-check: compare (what 1) or skip (2 + why),
+ * now or, with the presenter's list still being recorded on its thread, at
+ * the join */
+static void check_after(int what) {
+  if (s_job_pending && s_job.check)
+    s_check_deferred = what;
+  else if (what == 1)
+    pres_check_compare();
+  else
+    pres_check_skip(what - 2);
+}
 extern int g_faces_copy; /* render_ctx.c, moby_hand.c */
 
 static int alloc_walk(void) {
@@ -1445,7 +1461,8 @@ void pres_DrawOTag(u_long *p) {
   if (j->check) { /* ot_pre's --pres-check record (D125) */
     pres_check_frame(1, p, &s_pw_env, &s_pw_active, s_pw.nd_pool, s_pw.nd_pool_cap);
     s_pn2d = 0;
-    psx_vcache_ot_done(); /* (the check is inline) */
+    if (!j->async)
+      psx_vcache_ot_done(); /* (inline: as DrawOTag's) */
     return;
   }
   if (!j->begun) {
@@ -1510,6 +1527,13 @@ void port_present_pres_join(void) {
   t = now_us();
   g_present_pres->wait();
   g_faces_copy = 0;
+  if (s_check_deferred) { /* --pres-check-thread: D30's frame waited for the presenter's */
+    if (s_check_deferred == 1)
+      pres_check_compare();
+    else
+      pres_check_skip(s_check_deferred - 2);
+    s_check_deferred = 0;
+  }
   t = now_us() - t;
   s_pstats.join_wait_us += t;
   s_pstats.joins_waited += t > 50; /* a wait, not a handover */
@@ -1541,6 +1565,9 @@ static int presenter_pass(int wide, int own_state, int check) {
                   s_wide_nsectors == g_Environment.m_SectorCount;
   const PresentPresOut *const w = g_present_pres;
   const int worker = !check && !own_state && w && w->usable();
+  /* --pres-check-thread: the check's presenter on a thread beside D30's
+   * pass and the logic draw (its list only recorded, never drawn) */
+  const int async_check = check && !own_state && g_pres_check_thread && w && w->post;
   port_present_pres_join(); /* (it was, at the loop top) */
   if (!alloc_walk() ||
       !pres_draw_prepare(1, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
@@ -1565,6 +1592,13 @@ static int presenter_pass(int wide, int own_state, int check) {
   if (!check) { /* the presenter's PutDispEnv's, for the logic draw's (job_done checks it) */
     s_job.expect = (g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0])->m_DispEnv;
     currentDispEnv = s_job.expect;
+  }
+  if (async_check) {
+    s_job.async = 1;
+    g_faces_copy = !g_faces_race;
+    w->post(job_run);
+    s_job_pending = 1;
+    return 2;
   }
   if (worker) {
     s_job.out = w;
@@ -1809,7 +1843,7 @@ void PortPresentDraw(void) {
 #if SPYRO_PRESENTER
         if (s_pres_record == 2) {
           s_pres_record = 0;
-          pres_check_compare();
+          check_after(1);
         }
 #endif
         if (g_present_reads)
@@ -1825,7 +1859,7 @@ void PortPresentDraw(void) {
 #if SPYRO_PRESENTER
         if (s_pres_record == 2) {
           s_pres_record = 0;
-          pres_check_skip(2);
+          check_after(2 + 2);
         }
 #endif
       }

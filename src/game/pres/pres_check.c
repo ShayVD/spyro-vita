@@ -21,6 +21,8 @@
 #include <string.h>
 
 int g_pres_check;
+int g_pres_check_thread; /* D126: the presenter's list recorded on a thread of its own */
+int g_faces_race;        /* D126, diagnostic: the logic draw's faces in place meanwhile */
 
 enum { FRAME_MAX = 1u << 20, SHOW = 8 };
 

@@ -57,6 +57,12 @@ int port_present_blend_to(void *camera, void *spyro, void *mobys, void *particle
  * (pres_check.c): the draw and display environments put, then each packet
  * in the list's order, a marker's records expanded (native_draw.h). */
 extern int g_pres_check;
+/* Stage 7f (D126), the host's --pres-check-thread: the presenter's list is
+ * recorded on a thread of its own (g_present_pres's post and wait) beside
+ * D30's pass and the logic draw, and compared at the join; the logic
+ * draw's face replacements go into a copy meanwhile, as on the Vita, unless
+ * g_faces_race (--faces-race, diagnostic: in place, as before 7f). */
+extern int g_pres_check_thread, g_faces_race;
 /* which: 0 D30's pass, 1 the presenter; de, dd: the draw and display
  * environments its list is walked with; pool: the presenter's records'
  * pool (pool_cap words), NULL for g_nd_pool's */

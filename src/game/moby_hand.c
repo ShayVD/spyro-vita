@@ -883,6 +883,11 @@ extern unsigned g_faces_in_place;
 #define FACES_COPY g_faces_copy
 #define FACES_PRES 0
 #endif
+/* the check's counts (render_ctx.c): the game's draws' records with
+ * replacements, the model whose faces are replaced in place now, and the
+ * presenter's reads of that model's faces then */
+extern unsigned g_faces_swaps, g_pres_face_overlaps;
+extern volatile u32 g_pres_faces_busy;
 
 /* Put back the faces the frame replaced. */
 static void RestoreFaces(void) {
@@ -893,6 +898,7 @@ static void RestoreFaces(void) {
     s_faces_on = 0;
     return;
   }
+  g_pres_faces_busy = 0; /* (the old faces go back below) */
   const u32 *save = (const u32 *)(D_8006FCF4 + TBL_FACE_SAVE);
   u32 e;
   while ((e = *save++) != 0) {
@@ -988,6 +994,12 @@ static inline void ReplaceFaces(const RecState *s) {
     const u32 *swap = (const u32 *)s->frame + s->frame->m_VertexColorOffset;
     const u32 model_faces = s->anim->m_Faces;
     u32 w, bytes = 0;
+#if RENDER_PRES
+    if (g_pres_faces_busy == model_faces)
+      g_pres_face_overlaps++;
+#else
+    g_faces_swaps++;
+#endif
     if (FACES_COPY) {
       const u32 *list = HPTR(const u32, model_faces);
       bytes = 4u + list[0];
@@ -1021,6 +1033,7 @@ static inline void ReplaceFaces(const RecState *s) {
         }
       } else {
         face = HPTR(u32, face_addr);
+        g_pres_faces_busy = model_faces;
       }
       while (k--) {
         *save++ = *face;
@@ -1050,6 +1063,10 @@ static inline const u32 *PickFaces(const RecState *s, FaceCtx *c) {
   c->tex_bias = 0;
   if (s->detail > 0) {
     faces = s_faces_on ? s_faces : HPTR(const u32, anim->m_Faces);
+#if RENDER_PRES
+    if (!s_faces_on && g_pres_faces_busy == anim->m_Faces)
+      g_pres_face_overlaps++;
+#endif
     if (s->detail - 0x400 >= 0) {
       c->colours = HPTR(const u8, anim->m_Colors);
     } else {

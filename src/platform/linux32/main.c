@@ -125,6 +125,11 @@
  *   a thread of its own). --faces-copy: the logic draw's moby face
  *   replacements in a copy for the whole run, as while the Vita's
  *   presenter draws beside it (moby_hand.c); every file must be the same.
+ *   --pres-check-thread: --pres-check with the presenter's list recorded
+ *   on a thread of its own beside D30's pass and the logic draw (the
+ *   Vita's 7f), compared at the join; --faces-race (diagnostic) leaves the
+ *   logic draw's face replacements in place meanwhile, as before 7f, to
+ *   show the race the copy removes.
  *   --render-ctx-check (stage 7d, D123): each renderer call also runs its
  *   presenter build (NAME_hand_pres.c) from the same inputs in its own
  *   context, with the game's memory read-only, and compares the two
@@ -188,6 +193,9 @@ void nd_pcheck_report(void);
 /* src/game/pres/ (stage 7e, D125) */
 extern int g_pres_check, g_pres_audit;
 extern int g_faces_copy; /* src/game/render_ctx.c (stage 7f, D126) */
+extern int g_pres_check_thread, g_faces_race; /* src/game/pres/pres_check.c (D126) */
+int host_pres_thread_init(void);              /* pres_thread.c (D126) */
+extern unsigned g_faces_swaps, g_pres_face_overlaps; /* render_ctx.c (D126) */
 void pres_draw_want(void);
 void pres_check_set_log(void (*log)(const char *fmt, ...));
 int pres_check_report(void (*log)(const char *fmt, ...));
@@ -199,6 +207,11 @@ static void pres_atexit(void) {
     host_log("pres: %lld frames inline; %lld display environments not the presenter's, %lld "
              "frames uncaptured", st.inline_frames, st.disp_misses, st.uncaptured);
   }
+  if (g_pres_check_thread)
+    host_log("pres check thread: %u records with face replacements in the game's draws (the "
+             "faces %s), %u reads by the presenter of a model whose faces the game's draw had "
+             "replaced in place then", g_faces_swaps, g_faces_race ? "in place" : "in a copy",
+             g_pres_face_overlaps);
   if (g_pres_check)
     pres_check_report(host_log);
   if (g_pres_audit)
@@ -292,7 +305,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -565,10 +578,19 @@ int main(int argc, char **argv) {
         pres_draw_want();
     } else if (strcmp(a, "--faces-copy") == 0) {
       g_faces_copy = 1; /* D126: the logic draw's faces in a copy all run (as beside the worker) */
-    } else if (strcmp(a, "--pres-check") == 0) {
+    } else if (strcmp(a, "--pres-check") == 0 || strcmp(a, "--pres-check-thread") == 0) {
       g_pres_check = 1;
       pres_draw_want();
       pres_check_set_log(host_log);
+      if (strcmp(a, "--pres-check-thread") == 0) { /* D126: the presenter beside the draws */
+        if (host_pres_thread_init() != 0) {
+          fprintf(stderr, "--pres-check-thread: no thread\n");
+          return 2;
+        }
+        g_pres_check_thread = 1;
+      }
+    } else if (strcmp(a, "--faces-race") == 0) {
+      g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
     } else if (strcmp(a, "--pres-audit") == 0) {
       g_pres_audit = 1;
       pres_draw_want();
