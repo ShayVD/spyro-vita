@@ -23,6 +23,9 @@
 #include "psx_walk.h"
 #include "psx_libgpu.h"
 #include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
+#if SPYRO_PRESENTER
+#include "pres/pres_draw.h" /* stage 7e (D125): interp_mode=2 */
+#endif
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdlib.h>
@@ -473,6 +476,11 @@ int port_present_frame_is_wide(void) {
 /* ---------- DrawOTag's pre and post (libgpu.c) ---------- */
 
 static int s_suppress_ot; /* logic pass under faithful widescreen */
+#if SPYRO_PRESENTER
+/* --pres-check (stage 7e, D125): 1 while the presenter draws (its list is
+ * recorded, not walked), 2 while D30's pass draws (recorded and walked) */
+static int s_pres_record;
+#endif
 static int s_audit_pass;  /* audit: 1 in the in-between pass, 2 in the logic pass */
 static long long s_audit_packets;
 static long long count_packets(const uint32_t *p);
@@ -484,6 +492,15 @@ static int ot_pre(u_long *p) {
     s_foreign_vblank = psx_clock_count();
   if (s_sub.n)
     subst_clear(); /* the last list's (DrawOTag joined its walk first) */
+#if SPYRO_PRESENTER
+  if (s_pres_record == 1) {
+    pres_check_frame(1, p);
+    s_n2d = 0;
+    return 1;
+  }
+  if (s_pres_record == 2)
+    pres_check_frame(0, p);
+#endif
   if (s_suppress_ot) {
     s_n2d = 0;
     return 1;
@@ -893,11 +910,12 @@ static void set_moby_track(Moby *m, const Track *t) {
   m->m_AnimationState.m_FrameProgress = t->prog;
 }
 
-/* Spyro's tracks k = 0 body, 1 head, 2 tail (r_pete reads these bytes). */
-static Track spyro_track(int k) {
-  const unsigned char *anims = &g_Spyro.m_bodyAnimation;
-  const unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
-  const unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+/* Spyro's tracks k = 0 body, 1 head, 2 tail (r_pete reads these bytes);
+ * sp: the game's Spyro, or the presenter's copy (stage 7e, D125). */
+static Track spyro_track(const Spyro *sp, int k) {
+  const unsigned char *anims = &sp->m_bodyAnimation;
+  const unsigned char *frames = &sp->m_bodyAnimationFrame;
+  const unsigned char *progs = &sp->m_bodyFrameProgress;
   Track t;
   t.anim = anims[2 * k];
   t.next = anims[2 * k + 1];
@@ -907,10 +925,10 @@ static Track spyro_track(int k) {
   return t;
 }
 
-static void set_spyro_track(int k, const Track *t) {
-  unsigned char *anims = &g_Spyro.m_bodyAnimation;
-  unsigned char *frames = &g_Spyro.m_bodyAnimationFrame;
-  unsigned char *progs = &g_Spyro.m_bodyFrameProgress;
+static void set_spyro_track(Spyro *sp, int k, const Track *t) {
+  unsigned char *anims = &sp->m_bodyAnimation;
+  unsigned char *frames = &sp->m_bodyAnimationFrame;
+  unsigned char *progs = &sp->m_bodyFrameProgress;
   anims[2 * k] = t->anim;
   anims[2 * k + 1] = t->next;
   frames[2 * k] = t->frame;
@@ -918,9 +936,8 @@ static void set_spyro_track(int k, const Track *t) {
   progs[k] = t->prog;
 }
 
-static Vector3D8 *spyro_rot(int k) {
-  return k == 0 ? &g_Spyro.m_bodyRotation
-                : k == 1 ? &g_Spyro.m_headRotation : &g_Spyro.m_tailRotation;
+static Vector3D8 *spyro_rot(Spyro *sp, int k) {
+  return k == 0 ? &sp->m_bodyRotation : k == 1 ? &sp->m_headRotation : &sp->m_tailRotation;
 }
 
 /* Halfway along a track. A tick advances progress and crosses at most one
@@ -951,14 +968,16 @@ static int mid_track(Track *cur, const Track *prev, int len) {
   return 0;
 }
 
-static int count_mobys(void) {
+static int count_mobys_at(const Moby *mobys) {
   int n = 0;
-  if (!g_LevelMobys)
+  if (!mobys)
     return 0;
-  while (n < MAX_MOBYS && (signed char)g_LevelMobys[n].m_State != -1)
+  while (n < MAX_MOBYS && (signed char)mobys[n].m_State != -1)
     n++;
   return n;
 }
+
+static int count_mobys(void) { return count_mobys_at(g_LevelMobys); }
 
 static long long s_t_update;
 
@@ -980,8 +999,8 @@ void PortPresentBeforeUpdate(void) {
   s_prev.cam_rot = g_Camera.m_Rotation;
   s_prev.spyro_pos = g_Spyro.m_Position;
   for (i = 0; i < 3; i++) {
-    s_prev.spyro_rot[i] = *spyro_rot(i);
-    s_prev.spyro_track[i] = spyro_track(i);
+    s_prev.spyro_rot[i] = *spyro_rot(&g_Spyro, i);
+    s_prev.spyro_track[i] = spyro_track(&g_Spyro, i);
   }
   s_prev.nmobys = g_present.interp_mobys ? count_mobys() : 0;
   for (i = 0; i < s_prev.nmobys; i++) {
@@ -1041,10 +1060,10 @@ static void mid_rot8(Vector3D8 *cur, const Vector3D8 *prev) {
  * and render type match and whose timer moved on a little is the same
  * particle one tick later. A reused slot starts its timer again. */
 #define PARTICLE_JUMP 0x800
-static void blend_particles(void) {
+static void blend_particles(Particle *parts) {
   int i, k;
-  for (i = 0; i < MAX_PARTICLES && g_Particles[i].m_RenderType != 0xFF; i++) {
-    Particle *c = &g_Particles[i];
+  for (i = 0; i < MAX_PARTICLES && parts[i].m_RenderType != 0xFF; i++) {
+    Particle *c = &parts[i];
     const Particle *p = &s_prev.particles[i];
     short *cp = &c->m_Data.m_Position.x;
     const short *pp = &p->m_Data.m_Position.x;
@@ -1077,35 +1096,37 @@ static int can_interp(void) {
          s_prev.level == g_LevelId;
 }
 
-/* Blend in place (the snapshot restores it). Camera rotation feeds
+/* Blend the camera, Spyro, the mobys and the particles given: the game's
+ * own in place for D30's pass (the snapshot restores them), or the
+ * presenter's copies (stage 7e, D125; pres_snap.c). Camera rotation feeds
  * CameraUpdateMatrices at the start of GamestateDraw. Returns 0 if the
  * camera jumped: no in-between frame then. */
-static int blend_state(void) {
+static int blend_on(Camera *camera, Spyro *sp, Moby *mobys, Particle *parts) {
   int i, n;
-  Vector3D cam = g_Camera.m_Position;
-  if (!mid_vec(&cam, &s_prev.cam_pos, &g_Camera.m_Position))
+  Vector3D cam = camera->m_Position;
+  if (!mid_vec(&cam, &s_prev.cam_pos, &camera->m_Position))
     return 0;
-  g_Camera.m_Position = cam;
-  g_Camera.m_Rotation.x = mid_angle12(s_prev.cam_rot.x, g_Camera.m_Rotation.x);
-  g_Camera.m_Rotation.y = mid_angle12(s_prev.cam_rot.y, g_Camera.m_Rotation.y);
-  g_Camera.m_Rotation.z = mid_angle12(s_prev.cam_rot.z, g_Camera.m_Rotation.z);
+  camera->m_Position = cam;
+  camera->m_Rotation.x = mid_angle12(s_prev.cam_rot.x, camera->m_Rotation.x);
+  camera->m_Rotation.y = mid_angle12(s_prev.cam_rot.y, camera->m_Rotation.y);
+  camera->m_Rotation.z = mid_angle12(s_prev.cam_rot.z, camera->m_Rotation.z);
   if (!g_present.interp_mobys)
     return 1;
-  if (mid_vec(&g_Spyro.m_Position, &s_prev.spyro_pos, &g_Spyro.m_Position)) {
+  if (mid_vec(&sp->m_Position, &s_prev.spyro_pos, &sp->m_Position)) {
     for (i = 0; i < 3; i++) {
-      Track t = spyro_track(i);
-      mid_rot8(spyro_rot(i), &s_prev.spyro_rot[i]);
+      Track t = spyro_track(sp, i);
+      mid_rot8(spyro_rot(sp, i), &s_prev.spyro_rot[i]);
       if (g_present.interp_anim) {
         count_track(mid_track(&t, &s_prev.spyro_track[i], SPYRO_FRAME));
-        set_spyro_track(i, &t);
+        set_spyro_track(sp, i, &t);
       }
     }
   }
-  n = count_mobys();
+  n = count_mobys_at(mobys);
   if (n > s_prev.nmobys)
     n = s_prev.nmobys;
   for (i = 0; i < n; i++) {
-    Moby *m = &g_LevelMobys[i];
+    Moby *m = &mobys[i];
     const MobyXf *p = &s_prev.mobys[i];
     if (m->m_Class != p->cls || (signed char)m->m_State < 0 || p->state < 0)
       continue;
@@ -1118,10 +1139,22 @@ static int blend_state(void) {
       }
     }
   }
-  if (s_prev.have_particles && in_arena(g_Particles, sizeof s_prev.particles))
-    blend_particles();
+  if (s_prev.have_particles && parts)
+    blend_particles(parts);
   return 1;
 }
+
+static int blend_state(void) {
+  return blend_on(&g_Camera, &g_Spyro, g_LevelMobys,
+                  in_arena(g_Particles, sizeof s_prev.particles) ? g_Particles : NULL);
+}
+
+#if SPYRO_PRESENTER
+/* The presenter's copies (pres_snap.c), blended as the game's would be */
+int port_present_blend_to(void *camera, void *spyro, void *mobys, void *particles) {
+  return blend_on(camera, spyro, mobys, particles);
+}
+#endif
 
 /* ---------- passes ---------- */
 
@@ -1262,6 +1295,54 @@ static void presentation_pass(int wide, int own_state) {
   g_present_stats.passes++;
   g_present_stats.us_pass += now_us() - t;
 }
+
+#if SPYRO_PRESENTER
+/* Stage 7e (D125): the in-between frame from the presenter, the game's
+ * draw code built a second time over a snapshot (pres_draw.c), in place
+ * of D30's pass over the game's memory: nothing to snapshot and put back
+ * here, only the GPU environments its PutDrawEnv and PutDispEnv change.
+ * own_state: it starts from the 16:9 copies of the visibility state and
+ * leaves its own there (wide_state_in, wide_state_out). check: --pres-check,
+ * the list recorded for the compare and not drawn. 0 if no frame. */
+static int presenter_pass(int wide, int own_state, int check) {
+  long long t = now_us();
+  const int own = own_state && s_wide_valid && s_wide_level == g_LevelId &&
+                  s_wide_nsectors == g_Environment.m_SectorCount;
+  int ok;
+  /* PutDispEnv keeps the environment put last (currentDispEnv), which D30's
+   * pass leaves changed for the logic's: the presenter in its place leaves
+   * it as the pass would; in the check, where D30's pass follows, as it was */
+  const DISPENV put_last = currentDispEnv;
+  g_present_narrow = 0;
+  s_record_2d = wide;
+  s_n2d = 0;
+  s_capture_on = !check;
+  s_pres_record = check ? 1 : 0;
+  g_psx_vram_frozen = 1; /* as in D30's pass: the walk's VRAM calls */
+  psx_walk_after(envs_take, NULL, 0);
+  s_in_game_draw = 1;
+  ok = pres_draw_frame(1, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
+                       own ? s_wide_nsectors : 0);
+  s_in_game_draw = 0;
+  psx_walk_after(envs_restore, NULL, 0);
+  if (check)
+    currentDispEnv = put_last;
+  if (ok && own_state && !check) {
+    wide_state_out(); /* the level's sector count and the bytes past the presenter's */
+    pres_draw_visibility(s_wide_flags, s_wide_cache, s_wide_nsectors);
+  }
+  g_psx_vram_frozen = 0;
+  s_pres_record = 0;
+  s_capture_on = 0;
+  s_record_2d = 0;
+  s_n2d = 0;
+  if (!check) {
+    g_present_stats.passes++;
+    g_present_stats.us_pass += now_us() - t;
+  }
+  return ok;
+}
+#endif
 
 /* ---------- stage 7a's audits (D104, debug only) ---------- */
 
@@ -1411,6 +1492,38 @@ void PortPresentDraw(void) {
     g_present_stats.budget_skips++;
   }
   s_prev_interp = interp;
+#if SPYRO_PRESENTER
+  /* Stage 7e (D125): interp_mode=2, the presenter's frame in play; with
+   * --pres-check it is drawn too, before D30's pass, and compared. */
+  {
+    const int pres_on = interp && (g_present.interp_mode == 2 || g_pres_check) &&
+                        g_Gamestate == GS_Playing && pres_draw_available();
+    if (g_pres_check && interp && !pres_on)
+      pres_check_skip(g_Gamestate == GS_Playing ? 4 : 0);
+    if (pres_on && g_pres_check) {
+      if (!presenter_pass(g_present.widescreen, wide_pass, 1))
+        pres_check_skip(3);
+      else
+        s_pres_record = 2; /* D30's pass below records its list too */
+    } else if (pres_on) {
+      long long tp = now_us();
+      t_interp = tp;
+      s_pass_interp = 1;
+      if (presenter_pass(g_present.widescreen, wide_pass, 0)) {
+        push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
+        g_present_stats.interp_frames++;
+        shown = 1;
+      } else {
+        g_present_stats.skipped_interp++;
+      }
+      s_pass_interp = 0;
+      gs->us_pass += now_us() - tp;
+      t_interp = now_us() - t_interp;
+      s_interp_cost = t_interp;
+      interp = 0; /* D30's pass doesn't run */
+    }
+  }
+#endif
   if (interp || wide_pass) {
     snap_take();
     if (interp) {
@@ -1427,6 +1540,12 @@ void PortPresentDraw(void) {
         s_pass_interp = 1;
         presentation_pass(g_present.widescreen, wide_pass);
         s_pass_interp = 0;
+#if SPYRO_PRESENTER
+        if (s_pres_record == 2) {
+          s_pres_record = 0;
+          pres_check_compare();
+        }
+#endif
         if (g_present_reads)
           g_present_reads->pass(0);
         s_audit_pass = 0;
@@ -1437,6 +1556,12 @@ void PortPresentDraw(void) {
         shown = 1;
       } else {
         g_present_stats.skipped_interp++;
+#if SPYRO_PRESENTER
+        if (s_pres_record == 2) {
+          s_pres_record = 0;
+          pres_check_skip(2);
+        }
+#endif
       }
       snap_restore();
       t_interp = now_us() - t_interp;

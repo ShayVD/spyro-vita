@@ -83,6 +83,8 @@ A visible side effect of faithful mode: a moby that's only visible in the extra 
 
 ## 60 fps
 
+**Stage 7e (D125): the presenter.** With `interp_mode=2` (host `--interp-mode 2`) the in-between frame in play isn't drawn by the pass below over the game's own memory, but by the presenter: `draw.c` and the files its play branch calls, compiled a second time with `-include src/game/pres/pres_names.h` onto a snapshot (`src/game/pres/`: the labels the draw reads, each at its own offset in a mirror of the data region; the moby array and the particle space copied, pointers into them moved onto the copies; its own primitive buffers and OTs), blended as below. Its frame is the pass's, record for record (`--pres-check`), so every shot is the same. The other gamestates keep the pass (7g).
+
 ### What the render path reads
 
 `GamestateDraw` (`draw.c:2651`) for gameplay is: `CameraUpdateMatrices`, then

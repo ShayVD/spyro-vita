@@ -114,6 +114,13 @@
  *   Vita's timing run, D91, D92).
  *   These checks need the reference build (the arena build, linux32's
  *   default: SPYRO_PSYCROSS_REF, D117), whose PsyCross walk they compare with.
+ *   --interp-mode 2 (stage 7e, D125; with --interp): in play the in-between
+ *   frame is the presenter's, the game's draw code built again over a
+ *   snapshot (src/game/pres/), not D30's pass. --pres-check (with
+ *   --interp): the presenter draws each in-between frame in play too, and
+ *   its list is compared with D30's pass's record for record ("pres check"
+ *   lines; D30's frame is the one shown). --pres-audit: which words of the
+ *   snapshot point into the moby array or the particle space ("pres audit").
  *   --render-ctx-check (stage 7d, D123): each renderer call also runs its
  *   presenter build (NAME_hand_pres.c) from the same inputs in its own
  *   context, with the game's memory read-only, and compares the two
@@ -174,6 +181,19 @@ void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
+/* src/game/pres/ (stage 7e, D125) */
+extern int g_pres_check, g_pres_audit;
+void pres_draw_want(void);
+void pres_check_set_log(void (*log)(const char *fmt, ...));
+int pres_check_report(void (*log)(const char *fmt, ...));
+void pres_snap_audit_report(void (*log)(const char *fmt, ...));
+static void pres_atexit(void) {
+  if (g_pres_check)
+    pres_check_report(host_log);
+  if (g_pres_audit)
+    pres_snap_audit_report(host_log);
+}
+
 /* src/game/render_ctx_check.c (stage 7d, D123) */
 extern int g_render_ctx_check;
 void render_ctx_want_area(void);
@@ -261,7 +281,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -527,6 +547,18 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--interp-camera") == 0) {
       g_present.interp = 1;
       g_present.interp_mobys = g_present.interp_anim = 0;
+    } else if (strcmp(a, "--interp-mode") == 0) {
+      TAKE();
+      g_present.interp_mode = to_int(val);
+      if (g_present.interp_mode == 2)
+        pres_draw_want();
+    } else if (strcmp(a, "--pres-check") == 0) {
+      g_pres_check = 1;
+      pres_draw_want();
+      pres_check_set_log(host_log);
+    } else if (strcmp(a, "--pres-audit") == 0) {
+      g_pres_audit = 1;
+      pres_draw_want();
     } else if (strcmp(a, "--interp-budget") == 0) {
       TAKE();
       g_present.interp_budget_us = to_int(val);
@@ -716,6 +748,7 @@ int main(int argc, char **argv) {
   atexit(mixer_report);
   atexit(nd_atexit);
   atexit(render_ctx_atexit);
+  atexit(pres_atexit);
   if (pad && host_pad_load(pad) != 0)
     return 1;
   if (pad_after && host_pad_load_after(pad_after) != 0)

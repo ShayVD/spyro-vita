@@ -45,6 +45,7 @@
 
 #include "lod.h"
 #include "psx_arena.h"
+#include "pres/pres_snap.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stddef.h>
@@ -462,6 +463,8 @@ static void set_presenter(void) {
   memset(&g_pres_gte, RC_GUARD, sizeof g_pres_gte);
   g_pres_gte.CP2C = gteRegs.CP2C;
   memset(g_pres_scratch, RC_WORK_FILL, sizeof g_pres_scratch);
+  /* the labels; the snapshot's copies (stage 7e, D125) as the game's now */
+  pres_snap_from_live();
   for (l = 0; l < NLABELS; l++) {
     u32 *to = (u32 *)s_labels[l].pres;
     const u32 *from = (const u32 *)s_labels[l].game;

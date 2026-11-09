@@ -57,10 +57,14 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # set before each presenter call from the game's, never read by the game;
 # the check, host tests), and fast_render=3's working memory and its poison
 # audit (render_rc.c, D124: a renderer call's scratch, which nothing reads
-# after the call).
+# after the call), and the presenter's draw (src/game/pres/, D125: its
+# snapshot and context taken from the game's at every frame it draws, never
+# read by the game; its record serial, which only its own side table uses,
+# emptied each frame; the check and the audit, host tests).
 NOT_GAME = ("/present.c.", "/oracle_replay.c.", "/trace.c.", "/savestate.c.", "/lod.c.",
             "/hand_check.c.", "/native_draw.c.", "/native_draw_check.c.", "/walk_check.c.",
-            "_pres.c.", "/render_ctx.c.", "/render_ctx_check.c.", "/render_rc.c.")
+            "_pres.c.", "/render_ctx.c.", "/render_ctx_check.c.", "/render_rc.c.", "/pres/pres_snap.c.",
+            "/pres/pres_draw.c.", "/pres/pres_check.c.")
 DATA_TYPES = set("BbCDdGgSsVv")
 
 

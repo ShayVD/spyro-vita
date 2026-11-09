@@ -130,4 +130,10 @@ unsigned int pres_CFC2(int reg);
 #define port_lod_near_full pres_lod_near_full
 #define port_lod_env_lists pres_lod_env_lists
 
+/* stage 7e (D125): the game state the renderers read that the presenter
+ * has its own of, the snapshot's copies (src/game/pres/pres_snap_names.h:
+ * the camera and Spyro blended, the rest as the game had it after the
+ * update) */
+#include "pres/pres_snap_names.h"
+
 #endif

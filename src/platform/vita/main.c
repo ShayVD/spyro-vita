@@ -75,6 +75,13 @@
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
  *                       with config_version=2; D45)
+ *       interp_mode=2   with interp: in play the in-between frame is drawn by
+ *                       the presenter (the game's draw code built a second
+ *                       time over a snapshot, src/game/pres/; stage 7e,
+ *                       D125), not by D30's pass over the game's memory. The
+ *                       same pictures; default 0 (D30's pass). Read before
+ *                       the arena is set up: it adds the presenter's 2.25 MB
+ *                       after the game's memory.
  *       interp_budget=0 no safety net: the in-between frame always runs.
  *                       Any other value (default 1): skip it only while the
  *                       game thread's own CPU time per tick would pass 15/16
@@ -250,6 +257,7 @@
 #include <SDL2/SDL.h>
 #include <psp2/display.h>
 #include <psp2/io/stat.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
@@ -328,6 +336,29 @@ static void parse_poke(const char *v) {
 /* render_thread=0, xa_ahead=0 and gpu_opaque=0 lines in a file older than
  * config_version=3, not taken (D68): the menu's save drops them (menu.c) */
 const char *g_vita_config_stale[4];
+
+void pres_draw_want(void); /* src/game/pres/pres_draw.c */
+
+/* interp_mode=2 (stage 7e, D125): the presenter's area comes with the
+ * game's memory (psx_arena_init, before anything uses the heap), so
+ * config.txt is looked at for that line first, into a static buffer. */
+static int config_wants_presenter(void) {
+  static char buf[16384];
+  const char *p;
+  int n;
+  SceUID fd = sceIoOpen(VITA_DATA_DIR "/config.txt", SCE_O_RDONLY, 0);
+  if (fd < 0)
+    return 0;
+  n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  if (n <= 0)
+    return 0;
+  buf[n] = 0;
+  for (p = buf; (p = strstr(p, "interp_mode=")) != NULL; p += 12)
+    if ((p == buf || p[-1] == '\n') && p[12] == '2')
+      return 1;
+  return 0;
+}
 
 static void read_config(void) {
   char line[512];
@@ -441,6 +472,8 @@ static void read_config(void) {
       g_vita_opts.parse_core = atoi(v);
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
+    else if (!strcmp(line, "interp_mode"))
+      g_vita_opts.interp_mode = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
       g_vita_opts.gpu_meter = atoi(v);
     else if (!strcmp(line, "log_sync"))
@@ -562,7 +595,10 @@ int main(int argc, char **argv) {
 
   /* the arena first, before anything else uses the heap: save states hold
    * pointers into it, so it should land at the same address every launch,
-   * whatever config.txt turns on (D51) */
+   * whatever config.txt turns on (D51); interp_mode=2 adds the
+   * presenter's area after it (D125) */
+  if (config_wants_presenter())
+    pres_draw_want();
   psx_arena_init();
   vita_log_open();
   vita_log("Spyro Vita (" __DATE__ " " __TIME__ ")");
