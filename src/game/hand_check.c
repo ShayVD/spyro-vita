@@ -381,6 +381,6 @@ void hand_check_report(void) {
   if (!g_hand_check || !s_log)
     return;
   for (i = 0; i < MAX_NAMES && s_stats[i].name; i++)
-    s_log("hand check: %s %lu calls, %lu differ (the hand C against the mips2c unit)", s_stats[i].name,
+    s_log("hand check: %s %lu calls, %lu differ, the hand C against the mips2c unit", s_stats[i].name,
           s_stats[i].calls, s_stats[i].bad);
 }
