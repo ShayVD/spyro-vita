@@ -3,4 +3,5 @@
 #     tools/vita/hw_run.sh logs/hw-7f4 1500 @tools/vita/fps-runs/s7f4-k60-d30.txt @tools/vita/hw-routes/m1-xa-k.cfg
 config_version=3
 interp=1
+interp_mode=0
 gpu_meter=1
