@@ -107,7 +107,7 @@ void vita_pres_report(int vblank) {
   static unsigned faces0;
   unsigned long long t = now_us();
   PresentPresStats s;
-  uint32_t rt[5] = {0, 0, 0, 0, 0}, busy = s_busy_us, jobs = s_jobs;
+  uint32_t rt[6] = {0, 0, 0, 0, 0, 0}, busy = s_busy_us, jobs = s_jobs;
   if (g_vita_opts.interp_mode != 2)
     return;
   port_present_pres_stats(&s);
@@ -120,12 +120,13 @@ void vita_pres_report(int vblank) {
              "the joins; the render thread ran %u of its buffers, passed %u by (not ready by their "
              "vblank) and waited %u.%02u ms per vblank for them; %u waits for a free buffer, %u "
              "too big; %lld display environments not the presenter's, %lld frames uncaptured; "
-             "%u face lists too long for the logic draw's copy (replaced in place)",
+             "%u face lists too long for the logic draw's copy (replaced in place); %u presents of "
+             "a slot never filed (the screen kept)",
              vblank, s.worker_frames, s_core, s.inline_frames, b / n / 1000, b / n % 1000 / 10,
              wall ? (unsigned)(b * 100ull / wall) : 0, jobs - jobs0, s.join_wait_us / n / 1000,
              s.join_wait_us / n % 1000 / 10, s.joins_waited, rt[0], rt[1], rt[2] / n / 1000,
              rt[2] / n % 1000 / 10, rt[3], rt[4], s.disp_misses, s.uncaptured,
-             g_faces_in_place - faces0);
+             g_faces_in_place - faces0, rt[5]);
   }
   faces0 = g_faces_in_place;
   t0 = t;

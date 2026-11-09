@@ -235,7 +235,7 @@ void vita_pres_report(int vblank);
 /* gpu_thread.c: its buffers in the render thread's command ring */
 struct PresentPresOut;
 const struct PresentPresOut *vita_gpu_pres_out(void);
-void vita_gpu_pres_report(uint32_t out[5]);
+void vita_gpu_pres_report(uint32_t out[6]);
 void nd_report(int vblank); /* src/game/native_draw.c, D82 */
 void vita_gpu_walk_submitted(void); /* gpu_thread.c: the display state for that walk */
 

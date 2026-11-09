@@ -115,7 +115,7 @@ typedef struct { Cmd hd; PresentFrame f; } CCommit;
 typedef struct { Cmd hd; int due, interp; } CBegin;
 /* stage 7f (D126): the presenter's buffer number job, run here whole; then
  * the display state env (what the presenter's draws leave) */
-typedef struct { Cmd hd; uint32_t job; int has_frame, due; GlEnv env; } CBuf;
+typedef struct { Cmd hd; uint32_t job; int has_frame, due, slot; GlEnv env; } CBuf;
 /* in a presenter's buffer: count vertices at voff in its own vertex area,
  * + ndr direct ranges (D99) */
 typedef struct { Cmd hd; int count, voff, ndr; } CPVerts;
@@ -375,9 +375,14 @@ static int s_pb_ok;                       /* the buffers are there */
 static uint32_t s_pb_posted;              /* game thread: jobs placed in the ring */
 static volatile uint32_t s_pb_finished;   /* render thread: the last job run or passed by */
 static const PBuf *s_pb_running;          /* render thread: the buffer being run */
+/* render thread: a slot a C_BUF filed into that no C_COMMIT has filled
+ * since (the buffer passed by, too big, or uncaptured): a C_PRESENT of it
+ * keeps the picture on screen rather than show the slot's older one */
+static uint8_t s_slot_stale[PRESENT_SLOTS];
 static void rt_look(void);
 /* counted up; the report takes the differences */
-static volatile uint32_t s_pb_run, s_pb_passed, s_pb_wait_us, s_pb_free_waits, s_pb_overflows;
+static volatile uint32_t s_pb_run, s_pb_passed, s_pb_wait_us, s_pb_free_waits, s_pb_overflows,
+    s_pb_stale;
 
 static int pbuf_alloc(void) {
   int i;
@@ -412,6 +417,8 @@ static void run_buf(const CBuf *k) {
   const PBuf *b = &s_pb[k->job % PBUF_N];
   const int skip = s_skip;
   uint32_t off = 0;
+  if (k->has_frame && k->slot >= 0 && k->slot < PRESENT_SLOTS)
+    s_slot_stale[k->slot] = 1; /* until its C_COMMIT runs */
   if (buf_state(k) == 1) {
     s_pb_running = b;
     s_skip = 0;
@@ -489,6 +496,10 @@ static void run(const Cmd *c) {
     s_skip = 0; /* posted from VSync: no frame's draws are under way */
     if (s_due)
       rt_posted(k);
+    /* 7f: a slot whose presenter frame was never filed keeps the screen */
+    if (k->slot >= 0 && k->slot < PRESENT_SLOTS && s_slot_stale[k->slot] && !k->shot) {
+      s_pb_stale++;
+    } else
     /* 7c: a PS1 display picture with a later present posted already isn't drawn */
     if (s_due && k->slot < 0 && !k->shot &&
         __atomic_load_n(&s_presents_posted, __ATOMIC_SEQ_CST) - s_done[K_PRESENTS] > 1) {
@@ -515,6 +526,8 @@ static void run(const Cmd *c) {
       break;
     }
     gl_pres_commit(k->f.slot);
+    if (k->f.slot >= 0 && k->f.slot < PRESENT_SLOTS)
+      s_slot_stale[k->f.slot] = 0;
     if (s_due)
       rt_file(&k->f);
     break;
@@ -1115,6 +1128,7 @@ static void pres_submit(const PresentFrame *f) {
   c->job = ++s_pb_posted;
   c->has_frame = f != NULL;
   c->due = f ? f->due : 0;
+  c->slot = f ? f->slot : -1;
   c->env = e;
   if (f) {
     if (f->slot == s_on_screen)
@@ -1273,7 +1287,9 @@ static void pb_close(void) {
     b->used = 0;
     s_pb_overflows++;
   }
-  __atomic_store_n(&b->ready, s_pw_job, __ATOMIC_RELEASE);
+  /* seq_cst, as post()'s: the render thread stores s_rt_sleeping, then
+   * reads ready; this stores ready, then reads s_rt_sleeping */
+  __atomic_store_n(&b->ready, s_pw_job, __ATOMIC_SEQ_CST);
   if (__atomic_load_n(&s_rt_sleeping, __ATOMIC_SEQ_CST) &&
       __atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
     sceKernelSignalSema(s_rt_sema, 1);
@@ -1299,11 +1315,12 @@ const PresentPresOut *vita_gpu_pres_out(void) {
 }
 
 /* The "pres" line's render-thread part since the last call */
-void vita_gpu_pres_report(uint32_t out[5]) {
-  static uint32_t last[5];
-  const uint32_t now[5] = {s_pb_run, s_pb_passed, s_pb_wait_us, s_pb_free_waits, s_pb_overflows};
+void vita_gpu_pres_report(uint32_t out[6]) {
+  static uint32_t last[6];
+  const uint32_t now[6] = {s_pb_run,        s_pb_passed,    s_pb_wait_us,
+                           s_pb_free_waits, s_pb_overflows, s_pb_stale};
   int i;
-  for (i = 0; i < 5; i++)
+  for (i = 0; i < 6; i++)
     out[i] = now[i] - last[i], last[i] = now[i];
 }
 

@@ -1558,6 +1558,8 @@ static int presenter_pass(int wide, int own_state, int check) {
   s_pw_cur = currentDispEnv;
   psx_gpu_clear_splits_in(&s_pw);
   s_pw.subst = NULL;
+  /* its draws: into the worker's buffer, or (inline) the GR_* calls */
+  s_pw.out = worker ? w->gpu : NULL;
   pres_draw_pool(&s_pw.nd_pool, &s_pw.nd_pool_cap);
   s_pn2d = 0;
   if (!check) { /* the presenter's PutDispEnv's, for the logic draw's (job_done checks it) */
