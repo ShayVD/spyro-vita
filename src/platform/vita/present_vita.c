@@ -69,11 +69,11 @@ void vita_present_init(void) {
            g_vita_opts.widescreen, g_vita_opts.interp,
            g_vita_opts.interp_budget ? "at 31.3 ms a tick" : "off",
            g_present_capture ? "GPU" : "CPU");
-  if (g_vita_opts.interp_mode == 2) /* stage 7e (D124) */
+  if (g_vita_opts.interp_mode == 2) /* stage 7e (D125) */
     vita_log("present: interp_mode=2: %s", pres_draw_available()
                                                ? "in play the presenter draws the in-between frame"
                                                : "no presenter (not built, no area, or fast_render "
-                                                 "isn't 2): D30's pass draws it");
+                                                 "not 2 or 3): D30's pass draws it");
 }
 
 /* One line per stats report, totals since the last one. */

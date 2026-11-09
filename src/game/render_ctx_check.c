@@ -22,10 +22,19 @@
  *     may have changed) and put back.
  *  5. The game's build runs, as the game goes on with it.
  *  6. The two are compared: the mirror against the arena, the presenter's
- *     labels, register file, scratchpad, records, side table, sector bytes,
+ *     labels, control registers, records, side table, sector bytes,
  *     animated sector copies and LOD state against the game's, word for
  *     word, where a word may differ only as a relocated pointer (or a 24-bit
  *     OT link to one) does.
+ *
+ * Since 7d2 (D124) the presenter build is fast_render=3's readable code: no
+ * GTE data registers, no PS1 scratchpad, spill area or hand stack. So the
+ * game's build (fast_render 2 or 3) and the presenter's are compared on the
+ * control registers but FLAG; the presenter's working memory starts each
+ * call filled with a pattern, and the data half of its GTERegisters (only a
+ * view for the shared headers) must keep the pattern it is given. At
+ * fast_render=2 this compares the register-file code with the readable code
+ * on every call.
  *
  * Mismatches and traps go to the log ("render ctx:" lines, the first few
  * per renderer) and to render_ctx_check_report's counts, by kind. */
@@ -39,6 +48,7 @@
 #include "pres/pres_snap.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,7 +73,8 @@ static void (*s_log)(const char *fmt, ...);
 void render_ctx_check_set_log(void (*log)(const char *fmt, ...)) { s_log = log; }
 
 /* the game's labels the presenter has its own of */
-extern char D_80077DD8[], D_8006FCF4[], D_800771C8[], g_Particles[], g_Sparkles[];
+extern unsigned char g_render_work[1024]; /* fast_render=3's working memory (render_hand.h) */
+extern char D_8006FCF4[], D_800771C8[], g_Particles[], g_Sparkles[];
 extern char g_SpyroFlame[], g_Hud[];
 #define L_SHADOWS ((char *)&g_MobyShadows)
 /* the decomp's (graphics.h, buffers.h) as words */
@@ -78,6 +89,8 @@ void pres_lod_state_set(const unsigned char *p);
 extern Moby *g_pres_level_mobys;
 
 enum { MAX_NAMES = 16, SHOW = 6, MAX_MOBYS = 1024, PARTICLE_SPACE = 0x2000, OT_BYTES = 0x4000 };
+/* the presenter's GTE data half and its working memory at each call (D124) */
+enum { RC_GUARD = 0xA5, RC_WORK_FILL = 0xC3 };
 
 static struct {
   const char *name;
@@ -111,7 +124,6 @@ static struct {
   u32 len;
   char *saved;
 } s_labels[] = {
-    {"spill area", D_80077DD8, g_pres_spill, PRES_SPILL, 0},
     {"work area", D_8006FCF4, g_pres_work, PRES_WORK, 0},
     {"sector flags", D_800771C8, g_pres_seen, PRES_SEEN, 0},
     {"shadow list", L_SHADOWS, g_pres_moby_shadows, PRES_SHADOWS, 0},
@@ -198,13 +210,12 @@ static void set_pairs(void) {
 #else
   pair(g_psx_scratch, sizeof g_pres_scratch, g_pres_scratch);
 #endif
+  pair(g_render_work, sizeof g_pres_scratch, g_pres_scratch); /* fast_render=3's (D124) */
   {
     int i;
     for (i = 0; i < NLABELS; i++)
       pair(s_labels[i].game, s_labels[i].len, s_labels[i].pres);
   }
-  pair((void *)(uintptr_t)(g_mips_sp - PRES_STACK + 0x20u), PRES_STACK,
-       (void *)(uintptr_t)(render_ctx_stack_top() - PRES_STACK + 0x20u));
 }
 
 /* A pointer of the game's as the presenter's: into the mirror, or into its
@@ -447,14 +458,13 @@ static void set_presenter(void) {
     for (i = 0; i < (8 + OT_BYTES) / 4; i++)
       ot[i] = reloc(ot[i]);
   }
-  /* the labels; the snapshot's copies (stage 7e, D124) as the game's now */
+  /* the control registers; the data half a guard, the working memory a
+   * pattern (D124) */
+  memset(&g_pres_gte, RC_GUARD, sizeof g_pres_gte);
+  g_pres_gte.CP2C = gteRegs.CP2C;
+  memset(g_pres_scratch, RC_WORK_FILL, sizeof g_pres_scratch);
+  /* the labels; the snapshot's copies (stage 7e, D125) as the game's now */
   pres_snap_from_live();
-  g_pres_gte = gteRegs;
-#if SPYRO_NATIVE_MEM
-  memcpy(g_pres_scratch, g_psx_scratch, sizeof g_pres_scratch);
-#else
-  memcpy(g_pres_scratch, (void *)g_psx_arena_base, sizeof g_pres_scratch);
-#endif
   for (l = 0; l < NLABELS; l++) {
     u32 *to = (u32 *)s_labels[l].pres;
     const u32 *from = (const u32 *)s_labels[l].game;
@@ -472,7 +482,6 @@ static void set_presenter(void) {
   *(u32 *)g_pres_prim_full = *(u32 *)L_FULL;
   *(u32 *)g_pres_world_ot = reloc(world);
   *(u32 *)g_pres_hud_ot = reloc(hud);
-  g_pres_mips_sp = render_ctx_stack_top();
   g_pres_narrow = g_present_narrow;
   g_pres_rtp_hook = NULL;
   g_pres_rtp_value_hook = NULL;
@@ -516,14 +525,19 @@ static void compare(int k, u32 rp, u32 rg) {
   int l;
   if (rp != rg && !same_word(rp, rg))
     bad(k, "result", 0, rg, rp);
-  if (memcmp(&g_pres_gte, &gteRegs, sizeof gteRegs))
-    cmp_words(k, "register file", &g_pres_gte, &gteRegs, sizeof gteRegs);
-#if SPYRO_NATIVE_MEM
-  cmp_words(k, "scratchpad", g_pres_scratch, g_psx_scratch, sizeof g_pres_scratch);
-#else
-  cmp_words(k, "scratchpad", g_pres_scratch, (void *)g_psx_arena_base, sizeof g_pres_scratch);
-#endif
-  /* the spill area's $sp: the stack's pair relates the two */
+  /* the control registers but FLAG (D124: a command's result, as the data
+   * registers) */
+  if (memcmp(&g_pres_gte.CP2C, &gteRegs.CP2C, 31 * 4))
+    cmp_words(k, "control registers", &g_pres_gte.CP2C, &gteRegs.CP2C, 31 * 4);
+  {
+    /* the data half no presenter code may use */
+    const unsigned char *g = (const unsigned char *)&g_pres_gte;
+    for (i = 0; i < (u32)offsetof(GTERegisters, CP2C); i++)
+      if (g[i] != RC_GUARD) {
+        bad(k, "GTE data half used", i, RC_GUARD, g[i]);
+        break;
+      }
+  }
   for (i = 0; i < (u32)NLABELS; i++)
     cmp_words(k, s_labels[i].what, s_labels[i].pres, s_labels[i].game, s_labels[i].len);
   if (!same_word(*(u32 *)g_pres_prim_next, *(u32 *)L_NEXT))

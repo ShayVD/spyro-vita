@@ -546,3 +546,25 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
   - **The shots cost the late vblanks:** each pair of shots (a VRAM readback, an HD shot the game waits for, and four PNGs written on the game thread) makes 58–64 vblanks late in the window after it. Without the 18 windows that hold a shot, the route from vblank 900 has 64 late vblanks in 41 windows with `present_due=0` and 58 with `=1` (1.56 and 1.41 per 300), as 7C1/7C2's play.
   - **`7c:` totals (7P2):** 17,282 frames shown at their vblank, 29 late (151 vblanks), 1,048 never shown (the gamestates that tick every vblank, as 7C2), 20 in-between frames' draws skipped and no real frame's, no PS1 display picture dropped, no present held. Outside the shot windows: 5 late (14 vblanks), at vblanks 600, 7200 and two loads (7C2: 8 late, 17 vblanks).
 - **Judder:** the runs were unattended; whether the screen judders is for the owner to say.
+
+## Runs 7D2a and 7D2b: fast_render=3 on hardware (D124; ran 2026-11-09)
+
+7d2 adds `fast_render=3`, the renderers as readable C (no GTE data registers, PS1 scratchpad, spill area or hand stack). The host, the oracle replay and Vita3K show it changes no picture and no logic; only hardware can show what it costs or saves the game thread. This pair is X4/X5's method: every layer on the game thread at 30 fps, so each renderer's "draw" line is its CPU without waits.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7D2a | `s7d2a-k1-fr2.txt` | X4's (`render_thread=0`, `parse_thread=0`, 30 fps), the shipped `fast_render=2`, `ngte_fx=0` | the K route (`k-route.pad`) with `n-gte-k.cfg`: nine shots with `shot_hd=1`, the pause menu at 11,400, `frames=18000` | 5 min |
+| 7D2b | `s7d2b-k1-fr3.txt` | 7D2a with `fast_render=3` | as 7D2a | 5 min |
+
+**The VPK:** this branch's, for both (main's has no `fast_render=3`). `DEVICE_DEFAULTS=1` keeps the other shipped defaults (`native_draw=1`, `nd_direct=1`, `gpu_clear=2`, `present_due=1`, `mixer=3`, `cd_native=1`).
+
+**Unattended** (each run needs the owner's yes first; check `~/.cache/vita-port-kit/hw.lock` and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of this branch's VPK and `K=$PWD/tools/vita/hw-routes/k-route.pad`:
+- 7D2a: `VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7d2a 1500 @tools/vita/fps-runs/s7d2a-k1-fr2.txt @tools/vita/hw-routes/n-gte-k.cfg`
+- 7D2b: the same with `s7d2b-k1-fr3.txt` into `logs/hw-7d2b`
+
+**What to read:**
+- **The pictures:** `realtime=0` (no `REALTIME=1`), so 7D2b's 18 shots (PS1 display and HD) and its memory card must be byte-identical to 7D2a's.
+- **The time:** each renderer's ms per vblank in the `draw` lines (env, mobys, lit, specular, Spyro, sky, shadows, flame, particles), and `time`'s `game`, 7D2b against 7D2a (`tools/vita/hw_cmp.py`), from vblank 600.
+- **Then the owner decides** whether `fast_render=3` becomes the default; if it does, the register-file builds (`fast_render=1` and 2, `ngte_fx`, the `_ndr` and `_ngte` builds) can leave the native build in a cleanup.
+
+**Ran** on 2026-11-09 (D124, approved by the owner in the session's chat; VPK `logs/s7d2/s7d2-final.vpk`, SHA-1 `cb60802b…`; `logs/hw-7d2a`, `logs/hw-7d2b`, gitignored). The kit's lock was free and no kh1-decomp run was going. Both reached `frames=` (165 s and 159 s), no crash dump, the owner's files put back each time. **All 18 pictures and the memory card identical.** `hw_cmp.py` (58 windows from vblank 900, ms per vblank): `game` 2.976 → 2.843; env 1.207 → 1.141, mobys 0.754 → 0.701, Spyro 0.154 → 0.131, sky 0.493 → 0.506; the four 2.609 → 2.478 (−5%). `native_share.py --fps 30 --all`: renderers 2.72 → 2.59, sum 6.51 → 6.36, every other layer within 0.01. Main's eboot (`2e73e77`, `ad011afa…`) went back afterwards, with the kit's lock held, and read back identical. **The owner then made `fast_render=3` the Vita's default** (D124).

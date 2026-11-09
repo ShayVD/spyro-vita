@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: demo_check.sh SPYRO DISC OUTDIR (stage 7e, D124)
+# Usage: demo_check.sh SPYRO DISC OUTDIR (stage 7e, D125)
 # The attract demo to vblank 5,000 with --interp --pres-check (its play
 # starts near vblank 3,900): at least 400 in-between frames in play drawn by
 # the presenter and by D30's pass, every one identical record for record.

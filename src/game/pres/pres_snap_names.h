@@ -1,4 +1,4 @@
-/* The snapshot's labels (stage 7e, decisions D124; pres_snap.h).
+/* The snapshot's labels (stage 7e, decisions D125; pres_snap.h).
  *
  * Each game label the presenter's draw reads or writes and the game
  * changes during play is renamed here onto the presenter's copy,

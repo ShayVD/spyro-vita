@@ -39,7 +39,12 @@
  * would have left in the GTE goes back into it at the end of each part (the
  * next part moves its own matrix in) and after the faces; the set-up, the
  * floor heights and clipping and the colour filter stay on the register
- * file. */
+ * file.
+ *
+ * fast_render=3 (pete_render_hand_rc.c, NGTE_RC, D124): all of it native,
+ * the set-up, floor and filter too, with the control registers (the
+ * matrices, the translations, the far colour, the back colour that holds
+ * the depth parameters) moved as the asm moves them, and nothing else. */
 #include "render_hand.h"
 
 extern char g_Spyro[];
@@ -120,6 +125,65 @@ static inline void SetMatrix(const u32 m[5]) {
   CTC2(m[4], 4);
 }
 
+#if NGTE_RC
+/* fast_render=3: the matrix as MVMVA reads it once SetMatrix has set it,
+ * and a vector rotated by it (MVMVA sf 1, no translation). */
+static inline NgteVec Rotate(const u32 m[5], int vx, int vy, int vz) {
+  NgteMat n;
+  n.m11 = (s16)m[0], n.m12 = (s16)(m[0] >> 16), n.m13 = (s16)m[1];
+  n.m21 = (s16)(m[1] >> 16), n.m22 = (s16)m[2], n.m23 = (s16)(m[2] >> 16);
+  n.m31 = (s16)m[3], n.m32 = (s16)(m[3] >> 16), n.m33 = (s16)m[4];
+  return ngte_mvmva(&n, 0, 0, 0, vx, vy, vz);
+}
+
+/* RotateMatrix below as values: the GTE's R is M at every call (each turn
+ * sets it), so each turn rotates its two unit vectors by M. */
+static void RotateMatrix(u32 m[5], u32 angles) {
+  const u16 *sine = (const u16 *)D_8006CBF8, *cosine = (const u16 *)D_8006CC78;
+  u32 i;
+  s32 s, c;
+  NgteVec a, b;
+
+  i = (angles >> 16) & 0xFF;
+  if (i) {
+    c = (s16)cosine[i];
+    s = (s16)sine[i];
+    a = Rotate(m, c, 0, s);
+    b = Rotate(m, (s16)-s, 0, c);
+    m[0] = (m[0] & 0xFFFF0000u) + ((u32)a.ir1 & 0xFFFF);
+    m[3] = (m[3] & 0xFFFF0000u) + ((u32)a.ir3 & 0xFFFF);
+    m[1] = ((u32)b.ir1 & 0xFFFF) + ((u32)a.ir2 << 16);
+    m[2] = (m[2] & 0xFFFF) + ((u32)b.ir2 << 16);
+    m[4] = (u32)b.ir3 & 0xFFFF;
+    SetMatrix(m);
+  }
+  i = (angles >> 8) & 0xFF;
+  if (i) {
+    c = (s16)cosine[i];
+    s = (s16)sine[i];
+    a = Rotate(m, 0, c, s);
+    b = Rotate(m, 0, (s16)-s, c);
+    m[0] = (m[0] & 0xFFFF) + ((u32)a.ir1 << 16);
+    m[3] = (m[3] & 0xFFFF) + ((u32)a.ir3 << 16);
+    m[1] = (m[1] & 0xFFFF0000u) + ((u32)b.ir1 & 0xFFFF);
+    m[2] = ((u32)b.ir2 << 16) + ((u32)a.ir2 & 0xFFFF);
+    m[4] = (u32)b.ir3 & 0xFFFF;
+    SetMatrix(m);
+  }
+  i = angles & 0xFF;
+  if (i) {
+    c = (s16)cosine[i];
+    s = (s16)sine[i];
+    a = Rotate(m, c, s, 0);
+    b = Rotate(m, (s16)-s, c, 0);
+    m[1] = (m[1] & 0xFFFF) + ((u32)a.ir2 << 16);
+    m[0] = ((u32)b.ir1 << 16) + ((u32)a.ir1 & 0xFFFF);
+    m[3] = ((u32)b.ir3 << 16) + ((u32)a.ir3 & 0xFFFF);
+    m[2] = (m[2] & 0xFFFF0000u) + ((u32)b.ir2 & 0xFFFF);
+    SetMatrix(m);
+  }
+}
+#else
 /* asm 800241E0-80024400, entered with the return address in t8: the matrix
  * M (the CPU's copy, a3 t0 t1 t2 t3) turned by the angle bytes of ANGLES
  * (z, y, x; byte 2, 1, 0) in turn, each by two MVMVAs of the GTE's R (the
@@ -197,6 +261,7 @@ static void RotateMatrix(u32 m[5], u32 angles) {
     SetMatrix(m);
   }
 }
+#endif
 
 /* A part's frame into a part record's three stream pointers (PR_A or PR_B):
  * the base words (the animation's, past the earlier parts' vertices), the
@@ -327,7 +392,14 @@ static void PartVertices(u32 floor) {
   u32 *rec = (u32 *)(WORK + W_PARTS);
   u32 info = rec[PR_INFO];
   u32 fp = SCRATCH_BASE, sp = WORK + W_VERTS;
+#if NGTE_RC
+  /* fast_render=3: the asm's first step transforms whatever V0 held into
+   * a slot the run then writes again (a part 0 of two vertices aside,
+   * which Spyro's models don't have); here it is skipped (dead) */
+  u32 cxy = 0, cz = 0, dead = 1;
+#else
   u32 cxy = gteRegs.CP2D.p[0].d, cz = gteRegs.CP2D.p[1].d; /* V0 */
+#endif
   NgteSync sync;
   ngte_sync_init(&sync);
 
@@ -349,7 +421,15 @@ static void PartVertices(u32 floor) {
     if (!blend) {
       for (;;) {
         do {
+#if NGTE_RC
+          if (dead && last != stop)
+            t.sxy = t.sz3 = 0;
+          else
+#endif
           t = ngte_rtps_w(&P, cxy, cz);
+#if NGTE_RC
+          dead = 0;
+#endif
           ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
           DecodeA(&a);
           sp += 0x10;
@@ -371,12 +451,24 @@ static void PartVertices(u32 floor) {
       }
     } else {
       const int ir0 = (s16)blend;
+#if NGTE_RC
+      const u32 code = 0; /* RGBC's: only the colour FIFO takes it */
+#else
       const u32 code = C2_CODE;
+#endif
       StreamInit(&b, rec, PR_B, info & 0x2000);
       for (;;) {
         do {
           NgteCol o;
+#if NGTE_RC
+          if (dead && last != stop)
+            t.sxy = t.sz3 = 0;
+          else
+#endif
           t = ngte_rtps_w(&P, cxy, cz);
+#if NGTE_RC
+          dead = 0;
+#endif
           ngte_rtps_rec(&sync, cxy, cz, NGTE_RD_SZ3);
           DecodeA(&a);
           sp += 0x10;
@@ -414,8 +506,10 @@ static void PartVertices(u32 floor) {
       AT32(sp - 0x8) = (u32)(s32)(s16)cz;
     }
     ngte_flush(&sync);
+#if !NGTE_RC
     if (floor)
       (void)MFC2(1); /* the asm read VZ0 after the last RTPS */
+#endif
   } while (info != 0);
 }
 #else
@@ -525,6 +619,34 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
   int part;
 
   SetMatrix((const u32 *)(spyro + SP_MATRIX));
+#if NGTE_RC
+  {
+    /* fast_render=3: each part's joint by Spyro's matrix is the
+     * translation; each vertex (VXY0, VZ0 from its record) by the matrix
+     * plus it gives its y */
+    const NgteMat m = ngte_rot_get();
+    for (part = 0; part < 3; part++) {
+      const u32 end = WORK + W_VERTS + ((u32)hdr[AN_PART_END + part] << 4);
+      const u32 *joint = (const u32 *)(WORK + W_JOINTS + part * 12);
+      const NgteVec j = ngte_mvmva(&m, 0, 0, 0, (s16)(0u - joint[1]), (s16)(0u - joint[2]), (s16)joint[0]);
+      CTC2((u32)j.mac1, 5);
+      CTC2((u32)j.mac2, 6);
+      CTC2((u32)j.mac3, 7);
+      g += 0x10;
+      for (;;) {
+        const u32 vxy = AT32(g - 0xC), vz = AT32(g - 0x8);
+        const NgteVec v = ngte_mvmva(&m, j.mac1, j.mac2, j.mac3, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz));
+        int more;
+        AT32(g - 0xC) = level - (u32)v.mac2;
+        more = g != end;
+        g += 0x10;
+        if (!more)
+          break;
+      }
+      g -= 0x10;
+    }
+  }
+#else
   for (part = 0; part < 3; part++) {
     const u32 end = WORK + W_VERTS + ((u32)hdr[AN_PART_END + part] << 4);
     const u32 *joint = (const u32 *)(WORK + W_JOINTS + part * 12);
@@ -559,8 +681,12 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
     }
     g -= 0x10;
   }
+#endif
 }
 
+#if NGTE_RC
+#define FILTER_CODE 0u /* D124: measured below */
+#endif
 /* asm 80024B7C-80024C2C: the colours blended towards the colour filter
  * (Fairy Kiss) into W_COLOURS, by INTPL; pipelined like the vertices, so
  * IR1-3 end holding the colour after the last. */
@@ -570,6 +696,22 @@ static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
   u32 out = WORK + W_COLOURS;
   u32 w;
 
+#if NGTE_RC
+  CTC2((filter << 4) & 0xFF0, 21);
+  CTC2((filter >> 4) & 0xFF0, 22);
+  CTC2((filter >> 12) & 0xFF0, 23);
+  end = c + *(const u16 *)(hdr + AN_COLOUR_COUNT);
+  do {
+    /* INTPL of the colour's channels << 4 toward the far colour by the
+     * filter's amount; the code byte is RGBC_CODE's (FILTER_CODE below) */
+    w = *c++;
+    AT32(out) = ngte_intpl((s16)((w << 4) & 0xFF0), (s16)((w >> 4) & 0xFF0), (s16)((w >> 12) & 0xFF0),
+                           (s16)((filter >> 24) << 4), (int)((filter << 4) & 0xFF0),
+                           (int)((filter >> 4) & 0xFF0), (int)((filter >> 12) & 0xFF0), FILTER_CODE)
+                    .rgb2;
+    out += 4;
+  } while (c != end);
+#else
   MTC2((filter >> 24) << 4, 8);
   CTC2((filter << 4) & 0xFF0, 21);
   CTC2((filter >> 4) & 0xFF0, 22);
@@ -590,6 +732,7 @@ static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
     MTC2((w >> 12) & 0xFF0, 11);
     out += 4;
   } while (c != end);
+#endif
   return WORK + W_COLOURS;
 }
 
@@ -854,6 +997,27 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
   u32 hi, lo, m1, m2, m3;
   mips2c_div(hp << 12, hp - hq, &hi, &lo);
   (void)hi;
+#if NGTE_RC
+  {
+    /* three INTPL by IR0 = the fraction: the colour's channels, the screen
+     * x and y, the texture u and v (only MAC1-2 read for the last two) */
+    const int ir0 = (s16)lo;
+    NgteCol o = ngte_intpl((s16)(cp & 0xFF), (s16)((cp >> 8) & 0xFF), (s16)((cp >> 16) & 0xFF), ir0,
+                           (int)(cq & 0xFF), (int)((cq >> 8) & 0xFF), (int)((cq >> 16) & 0xFF), 0);
+    m1 = (u32)o.mac1, m2 = (u32)o.mac2, m3 = (u32)o.mac3;
+    AT32(out + 0x4) = (((m3 << 8) + m2) << 8) + m1;
+    o = ngte_intpl((s16)SRA(xyp << 16, 16), (s16)SRA(xyp, 16), 0, ir0, (int)SRA(xyq << 16, 16),
+                   (int)SRA(xyq, 16), 0, 0);
+    AT32(out + 0x8) = ((u32)o.mac1 & 0xFFFF) + ((u32)o.mac2 << 16);
+    o = ngte_intpl((s16)(uvp & 0xFF), (s16)((uvp >> 8) & 0xFF), 0, ir0, (int)(uvq & 0xFF),
+                   (int)((uvq >> 8) & 0xFF), 0, 0);
+    AT16(out + 0xC) = (u16)((u32)o.mac1 + ((u32)o.mac2 << 8));
+    /* the far colour as the asm leaves it */
+    CTC2(uvq & 0xFF, 21);
+    CTC2((uvq >> 8) & 0xFF, 22);
+    CTC2((cq >> 16) & 0xFF, 23);
+  }
+#else
   MTC2(cp & 0xFF, 9);
   CTC2(cq & 0xFF, 21);
   MTC2((cp >> 8) & 0xFF, 10);
@@ -882,6 +1046,7 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
   m2 = MFC2(26);
   m1 = MFC2(25);
   AT16(out + 0xC) = (u16)(m1 + (m2 << 8));
+#endif
   return out + 0xC;
 }
 
@@ -908,17 +1073,25 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
   xy0 = WORD_AT(scr, v0 >> 2);
   xy1 = WORD_AT(scr, v1 >> 2);
   xy2 = WORD_AT(scr, v2 >> 2);
+#if !NGTE_RC
   MTC2(xy0, 12);
   MTC2(xy1, 13);
   MTC2(xy2, 14);
+#endif
   AT32(prim + 0x8) = xy0;
   AT32(prim + 0x14) = xy1;
+#if !NGTE_RC
   gte_nclip();
+#endif
   AT32(prim + 0x20) = xy2;
   sum += sum >> 1;
   sum += z1 >> 1;
   if (!(flags & 1)) {
+#if NGTE_RC
+    u32 n = (u32)ngte_nclip(xy0, xy1, xy2);
+#else
     u32 n = MFC2(24);
+#endif
     if ((s32)flags < 0)
       n = 0u - n;
     if ((s32)n <= 0)
@@ -1147,6 +1320,19 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       head[0] = SRA(jh, 21);
     } else {
       u32 bh = AT32(body_b + 0x10), bt = AT32(body_b + 0x14);
+#if NGTE_RC
+      /* INTPL of the joints toward the blended frame's (the far colour) */
+      const int ir0 = (s16)(blend0 << 8);
+      NgteCol o = ngte_intpl((s16)SRA(jh, 21), (s16)FIELD(jh, 11, 21), (s16)FIELD(jh, 22, 21), ir0,
+                             (int)SRA(bh, 21), (int)FIELD(bh, 11, 21), (int)FIELD(bh, 22, 21), 0);
+      head[0] = (u32)o.mac1, head[1] = (u32)o.mac2, head[2] = (u32)o.mac3;
+      o = ngte_intpl((s16)SRA(jt, 21), (s16)FIELD(jt, 11, 21), (s16)FIELD(jt, 22, 21), ir0, (int)SRA(bt, 21),
+                     (int)FIELD(bt, 11, 21), (int)FIELD(bt, 22, 21), 0);
+      tail[0] = (u32)o.mac1, tail[1] = (u32)o.mac2, tail[2] = (u32)o.mac3;
+      CTC2(SRA(bt, 21), 21);
+      CTC2(FIELD(bt, 11, 21), 22);
+      CTC2(FIELD(bt, 22, 21), 23);
+#else
       MTC2(blend0 << 8, 8);
       MTC2(SRA(jh, 21), 9);
       MTC2(FIELD(jh, 11, 21), 10);
@@ -1168,6 +1354,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       tail[0] = MFC2(25);
       tail[1] = MFC2(26);
       tail[2] = MFC2(27);
+#endif
     }
   }
 
@@ -1180,6 +1367,14 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   CTC2(0, 5);
   CTC2(0, 6);
   CTC2(0, 7);
+#if NGTE_RC
+  {
+    const NgteVec v = Rotate(cam, (s16)y, (s16)z, (s16)x);
+    z = (u32)v.mac3;
+    y = (u32)v.mac2;
+    x = (u32)v.mac1;
+  }
+#else
   MTC2(x, 11);
   MTC2(y, 9);
   MTC2(z, 10);
@@ -1187,6 +1382,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   z = MFC2(27);
   y = MFC2(26);
   x = MFC2(25);
+#endif
   if ((s32)(z - 0x4000) >= 0)
     return 0;
   far = z + 0x800;
@@ -1239,6 +1435,19 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   for (part = 0; part < 5; part++)
     rec0[PR_MATRIX + part] = m[part];
   /* the head's and tail's positions: their joints by the body's matrix */
+#if NGTE_RC
+  {
+    const NgteProj P = ngte_proj_get();
+    const NgteRtp h = ngte_rtps_w(&P, (0u - head[1]) + ((0u - head[2]) << 16), head[0]);
+    const NgteRtp t = ngte_rtps_w(&P, (0u - tail[1]) + ((0u - tail[2]) << 16), tail[0]);
+    rec0[PR_WORDS + PR_TR] = (u32)h.ir1;
+    rec0[PR_WORDS + PR_TR + 1] = (u32)h.ir2;
+    rec0[PR_WORDS + PR_TR + 2] = (u32)h.ir3;
+    rec0[2 * PR_WORDS + PR_TR] = (u32)t.ir1;
+    rec0[2 * PR_WORDS + PR_TR + 1] = (u32)t.ir2;
+    rec0[2 * PR_WORDS + PR_TR + 2] = (u32)t.ir3;
+  }
+#else
   MTC2((0u - head[1]) + ((0u - head[2]) << 16), 0);
   MTC2(head[0], 1);
   gte_rtps();
@@ -1254,6 +1463,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   rec0[2 * PR_WORDS + PR_TR] = MFC2(9);
   rec0[2 * PR_WORDS + PR_TR + 1] = MFC2(10);
   rec0[2 * PR_WORDS + PR_TR + 2] = MFC2(11);
+#endif
   for (part = 0; part < 5; part++)
     saved[part] = m[part];
 

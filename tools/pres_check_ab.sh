@@ -1,5 +1,5 @@
 #!/bin/sh
-# Stage 7e (decisions D124): the presenter's in-between frame against D30's
+# Stage 7e (decisions D125): the presenter's in-between frame against D30's
 # pass. Each scenario runs with --interp (D30's pass draws the in-between
 # frame: the reference, "i") and then in MODE:
 #   chk  --pres-check: the presenter draws each in-between frame in play
@@ -8,8 +8,9 @@
 #        file must be byte-identical to the reference's;
 #   m2   --interp-mode 2: the presenter's frame is the one shown in play;
 #        every trace, shot, WAV and card must be byte-identical to D30's.
-# ND=1 adds --native-draw to both runs (the Vita's records, D91).
-# Usage: [BIN=...] [DISC=disc/files] [MODE=chk|m2] [ND=1] [I_FROM=PREFIX]
+# ND=1 adds --native-draw to both runs (the Vita's records, D91); FR=N adds
+# --fast-render N (3: the Vita's default since D124).
+# Usage: [BIN=...] [DISC=disc/files] [MODE=chk|m2] [ND=1] [FR=N] [I_FROM=PREFIX]
 #        tools/pres_check_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-i, logs/PREFIX-SCENARIO-MODE, a summary line each.
 # Scenarios (default: demo wsi gems routeA routeB): native_draw_ab.sh's, all
@@ -23,6 +24,7 @@ P=$1; shift
 [ $# -gt 0 ] || set -- demo wsi gems routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}
 nd=; [ "${ND:-0}" = 1 ] && nd=--native-draw
+[ -n "${FR:-}" ] && nd="$nd --fast-render $FR"
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D

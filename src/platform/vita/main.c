@@ -78,7 +78,7 @@
  *       interp_mode=2   with interp: in play the in-between frame is drawn by
  *                       the presenter (the game's draw code built a second
  *                       time over a snapshot, src/game/pres/; stage 7e,
- *                       D124), not by D30's pass over the game's memory. The
+ *                       D125), not by D30's pass over the game's memory. The
  *                       same pictures; default 0 (D30's pass). Read before
  *                       the arena is set up: it adds the presenter's 2.25 MB
  *                       after the game's memory.
@@ -122,12 +122,15 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
- *       fast_render=0   the renderers as translated from the asm and
- *                       PsyCross's GTE_operator (default 1: the hand-written
- *                       renderers and the inline GTE commands, the same
- *                       results; D72); fast_render=2: the hand-written
- *                       renderers with native GTE maths, the same results
- *                       again (D80)
+ *       fast_render=2   the hand-written renderers with native GTE maths
+ *                       on the GTE register file's model (D80; the default
+ *                       before D124). Default 3: the same renderers as
+ *                       readable C, no GTE data registers, scratchpad,
+ *                       spill area or hand stack, the same pictures and 5%
+ *                       less time (D124, the owner's decision after 7D2a/
+ *                       7D2b). 1: the inline GTE commands on the register
+ *                       file (D72); 0: the renderers as translated from the
+ *                       asm (taken as 1 in the native build, D100)
  *       ngte_fx=1       with fast_render=2, the shadows, the flame and the
  *                       particles with native GTE maths too, the same
  *                       results (D98; default 0: those three on the GTE
@@ -336,7 +339,7 @@ const char *g_vita_config_stale[4];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
-/* interp_mode=2 (stage 7e, D124): the presenter's area comes with the
+/* interp_mode=2 (stage 7e, D125): the presenter's area comes with the
  * game's memory (psx_arena_init, before anything uses the heap), so
  * config.txt is looked at for that line first, into a static buffer. */
 static int config_wants_presenter(void) {
@@ -593,7 +596,7 @@ int main(int argc, char **argv) {
   /* the arena first, before anything else uses the heap: save states hold
    * pointers into it, so it should land at the same address every launch,
    * whatever config.txt turns on (D51); interp_mode=2 adds the
-   * presenter's area after it (D124) */
+   * presenter's area after it (D125) */
   if (config_wants_presenter())
     pres_draw_want();
   psx_arena_init();
@@ -606,10 +609,13 @@ int main(int argc, char **argv) {
   g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
   g_nd_direct = 1;   /* the Vita's default since D105; the host's stays 0 */
   g_gpu_clear = 2;   /* the Vita's default since D111's Y9-Y12; the host's stays 0 */
+  g_fast_render = 3; /* the Vita's default since D124 (the owner, 2026-11-09, after 7D2a/7D2b);
+                      the host keeps mips2c_rt.c's 2 */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
-           g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
+           g_fast_render == 3 ? "hand-written renderers as readable C (D124)"
+           : g_fast_render == 2 ? "hand-written renderers, native GTE maths (D80)"
            : g_fast_render    ? "hand-written renderers, inline GTE commands (D72)"
                               : "translated renderers, PsyCross's GTE_operator");
   if (g_fast_render == 2)
@@ -676,8 +682,8 @@ int main(int argc, char **argv) {
            !g_native_draw         ? "the renderers' primitives parsed by PsyCross's OT walk"
            : g_native_draw == 2   ? "the renderers' PS1 primitives parsed by the walk with the "
                                     "native draw lists' converter (D92)"
-           : g_fast_render == 2   ? "the hand renderers' primitives as native draw lists (D82)"
-                                  : "needs fast_render=2: off");
+           : g_fast_render >= 2   ? "the hand renderers' primitives as native draw lists (D82)"
+                                  : "needs fast_render=2 or 3: off");
   vita_log("gpu_clear=%d: %s", g_gpu_clear,
            g_gpu_clear >= 3   ? "the clears row by row, a target's whole clear left to its "
                                 "read-back, poison in its place (audit, D111)"

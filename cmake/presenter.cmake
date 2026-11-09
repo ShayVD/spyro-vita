@@ -1,4 +1,4 @@
-# Stage 7e (decisions D124; docs/native-plan.md stage 7): the presenter's
+# Stage 7e (decisions D125; docs/native-plan.md stage 7): the presenter's
 # draw, the game's own draw code compiled a second time.
 #
 # The draw path's files (the decomp's draw.c, camera.c and environment.c,

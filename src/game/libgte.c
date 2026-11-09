@@ -62,7 +62,7 @@ static void mul_columns(const MATRIX *m0, const MATRIX *m1, short p[3][3]) {
   memcpy(&gteRegs.CP2C.r[0], m0->m, 16);
   gteRegs.CP2C.p[4].sd = m0->m[2][2];
 #if LIBGTE_CONTROL_ONLY
-  /* the presenter's build on fast_render=3's renderers (stage 7e, D124):
+  /* the presenter's build on fast_render=3's renderers (stage 7e, D125):
    * they read the rotation, never the data registers or FLAG */
   (void)mac, (void)ir, (void)flag;
 #else

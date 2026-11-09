@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The presenter's link check (stage 7e, D124; ctest pres_link).
+"""The presenter's link check (stage 7e, D125; ctest pres_link).
 
   link_check.py OBJDUMP NM PRES_OBJ GAME_OBJ...
 

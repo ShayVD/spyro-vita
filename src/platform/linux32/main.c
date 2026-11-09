@@ -91,6 +91,14 @@
  *   checked against their mips2c units, fast_render=1 and 2 each.
  *   --ngte-fx: fast_render=2's shadows, flame and particles with native
  *   GTE maths (D98; else on the register file, as D95 wrote them).
+ *   --fast-render 3 (stage 7d2, D124): the renderers as readable C (no
+ *   GTE data registers, scratchpad, spill area or hand stack); with
+ *   --fast-render-check each call is compared with fast_render=1's (RAM
+ *   but the spill area and hand stack, the control registers but FLAG).
+ *   --render-poison (at 1 or 2): after each renderer call, the scratchpad,
+ *   the GTE's data registers and FLAG, the spill area and the hand stack
+ *   are overwritten with a pattern (src/game/render_rc.c): byte-identical
+ *   outputs show nothing reads what fast_render=3 doesn't write.
  *   --native-draw (with
  *   --fast-render 2): the converted renderers' primitives go to the OT walk
  *   as native draw lists (src/game/native_draw.h, decisions D82);
@@ -106,7 +114,7 @@
  *   Vita's timing run, D91, D92).
  *   These checks need the reference build (the arena build, linux32's
  *   default: SPYRO_PSYCROSS_REF, D117), whose PsyCross walk they compare with.
- *   --interp-mode 2 (stage 7e, D124; with --interp): in play the in-between
+ *   --interp-mode 2 (stage 7e, D125; with --interp): in play the in-between
  *   frame is the presenter's, the game's draw code built again over a
  *   snapshot (src/game/pres/), not D30's pass. --pres-check (with
  *   --interp): the presenter draws each in-between frame in play too, and
@@ -173,7 +181,7 @@ void nd_init(void (*log)(const char *fmt, ...));
 void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
-/* src/game/pres/ (stage 7e, D124) */
+/* src/game/pres/ (stage 7e, D125) */
 extern int g_pres_check, g_pres_audit;
 void pres_draw_want(void);
 void pres_check_set_log(void (*log)(const char *fmt, ...));
@@ -191,9 +199,13 @@ extern int g_render_ctx_check;
 void render_ctx_want_area(void);
 void render_ctx_check_set_log(void (*log)(const char *fmt, ...));
 int render_ctx_check_report(void);
+extern int g_render_poison;
+extern unsigned long g_render_poison_calls;
 static void render_ctx_atexit(void) {
   if (g_render_ctx_check)
     render_ctx_check_report();
+  if (g_render_poison)
+    host_log("render poison: %lu renderer calls followed by the poison (D124)", g_render_poison_calls);
 }
 static void nd_atexit(void) {
   nd_report((int)host_vblank_count());
@@ -269,7 +281,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -591,6 +603,9 @@ int main(int argc, char **argv) {
         return 1;
       }
 #endif
+    } else if (strcmp(a, "--render-poison") == 0 || strcmp(a, "--render-poison-bite") == 0) {
+      extern int g_render_poison; /* render_rc.c, D124; -bite: OFX too, which must show */
+      g_render_poison = a[15] ? 2 : 1;
     } else if (strcmp(a, "--ngte-fx") == 0) {
       extern int g_ngte_fx; /* mips2c_rt.c, D98 */
       g_ngte_fx = 1;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The snapshot's labels (stage 7e, D124; src/game/pres/pres_snap_names.h).
+"""The snapshot's labels (stage 7e, D125; src/game/pres/pres_snap_names.h).
 
 Each `#define LABEL g_pres_snap_LABEL` in the names header gets its copy at
 LABEL's own offset in a mirror of the game's data region (psx.map

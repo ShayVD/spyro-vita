@@ -1,4 +1,4 @@
-/* The presenter's draw (stage 7e, decisions D124; docs/native-plan.md
+/* The presenter's draw (stage 7e, decisions D125; docs/native-plan.md
  * stage 7, "The plan refreshed (D119)").
  *
  * interp_mode=2 (host --interp-mode 2): in play, the in-between frame is

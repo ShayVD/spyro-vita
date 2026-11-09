@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The presenter's call graph, from the game's objects (stage 7e, D124).
+"""The presenter's call graph, from the game's objects (stage 7e, D125).
 
 Reads `objdump -dr` of the game's objects (the decomp's C, our src/game,
 the platform's common code) and lists every function reachable from

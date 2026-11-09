@@ -1,4 +1,4 @@
-/* The presenter's draw (stage 7e, decisions D124; pres_draw.h): its
+/* The presenter's draw (stage 7e, decisions D125; pres_draw.h): its
  * context from the game's state, the frame, and the calls the presenter's
  * objects make in place of the game's (pres_names.h). Ordinary game code,
  * on the game thread. */
@@ -50,7 +50,11 @@ void pres_draw_want(void) {
     render_ctx_want_area();
 }
 
-int pres_draw_available(void) { return g_pres_built && render_ctx_area() && g_fast_render_ro == 2; }
+/* fast_render 2 or 3 (the host's and the Vita's defaults, D124): the
+ * presenter's renderers are 3's readable code, the same pictures as both */
+int pres_draw_available(void) {
+  return g_pres_built && render_ctx_area() && (g_fast_render_ro == 2 || g_fast_render_ro == 3);
+}
 
 /* ---- the calls the presenter's objects make in place of the game's ---- */
 

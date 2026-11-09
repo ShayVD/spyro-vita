@@ -1,4 +1,4 @@
-/* The presenter's snapshot (stage 7e, decisions D124; pres_snap.c).
+/* The presenter's snapshot (stage 7e, decisions D125; pres_snap.c).
  *
  * What the presenter's draw reads of the game's changing state, as its own
  * copies, taken after the update at D30's pass's point:

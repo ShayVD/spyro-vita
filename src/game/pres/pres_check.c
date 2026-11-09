@@ -1,4 +1,4 @@
-/* --pres-check (stage 7e, decisions D124; pres_draw.h): every in-between
+/* --pres-check (stage 7e, decisions D125; pres_draw.h): every in-between
  * frame in play is drawn twice from the same state, by the presenter and
  * by D30's pass, and the two lists DrawOTag is given are compared record
  * for record. Only D30's is walked and shown, so every file the run

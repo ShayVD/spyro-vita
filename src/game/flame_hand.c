@@ -25,6 +25,10 @@
  * what that RTPT rewrites; the reads that zero a register's top half (SZ1-3)
  * are done again once.
  *
+ * fast_render=3 (flame_hand_rc.c, NGTE_RC, D124): the same native maths
+ * with the control registers moved as the asm moves them and nothing else:
+ * no IR moves, no FlameTail.
+ *
  * With native_draw=1 too (decisions D82): each primitive is still built
  * where it was, and where the asm links it it goes to the walk as a
  * native record (nd_append). */
@@ -105,8 +109,16 @@ typedef struct {
   u8 ev_rtpt[2];
   u32 nev;
   u8 rd17, rd18, rd19;
+  u8 v2_set; /* fast_render=3: V2 moved in this call (the head's RTPT) */
 } FlameSync;
 
+#if NGTE_RC
+/* fast_render=3 (D124): only V0-V2 as this call moved them; no tail */
+static inline void FlameEvent(FlameSync *f, int rtpt) {
+  if (rtpt)
+    f->v2_set = 1;
+}
+#else
 static inline void FlameEvent(FlameSync *f, int rtpt) {
   const u32 k = f->nev++ & 1;
   memcpy(f->ev[k], f->v, sizeof f->v);
@@ -152,6 +164,7 @@ static void FlameTail(FlameSync *f, const NgteVec *u) {
   if (f->rd19)
     (void)MFC2(19);
 }
+#endif /* NGTE_RC */
 #endif
 
 static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
@@ -184,9 +197,11 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     CTC2(0u, 5);
     CTC2(0u, 6);
     CTC2(0u, 7);
+#if !NGTE_RC
     MTC2(dx, 11);
     MTC2(dy, 9);
     MTC2(dz, 10);
+#endif
 #if NGTE_MATH
     {
       /* the IR words stay moved (their top halves are what the asm
@@ -215,7 +230,12 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   }
 #if NGTE_MATH
   P = ngte_proj_get();
+#if NGTE_RC
+  memset(fs.v, 0, sizeof fs.v);
+  fs.v2_set = 0;
+#else
   memcpy(fs.v, gteRegs.CP2D.r, sizeof fs.v);
+#endif
   fs.nev = 0;
   fs.rd17 = fs.rd18 = fs.rd19 = 0;
 #endif
@@ -397,6 +417,15 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         fs.v[1] = fs.v[3] = (u32)vz;
         fs.v[0] = ((u32)e0 & 0xFFFFu) | ((u32)e1 << 16);
         fs.v[2] = ((u32)f0 & 0xFFFFu) | ((u32)f1 << 16);
+#if NGTE_RC
+        if (!fs.v2_set) {
+          /* V2 as the code before left it: none of this call's, and only
+           * the first two points are read, so two RTPS */
+          const NgteRtp q0 = ngte_rtps_w(&P, fs.v[0], fs.v[1]), q1 = ngte_rtps_w(&P, fs.v[2], fs.v[3]);
+          st.sxy[0] = q0.sxy, st.sz[0] = q0.sz3;
+          st.sxy[1] = q1.sxy, st.sz[1] = q1.sz3;
+        } else
+#endif
         st = ngte_rtpt_w(&P, fs.v[0], fs.v[1], fs.v[2], fs.v[3], fs.v[4], fs.v[5]);
         FlameEvent(&fs, 1);
         fs.rd17 = fs.rd18 = 1;
@@ -463,7 +492,7 @@ static u32 FlameDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     }
   }
   AT32(ADDR_ND(D_800757B0)) = prim;
-#if NGTE_MATH
+#if NGTE_MATH && !NGTE_RC
   FlameTail(&fs, &u);
 #endif
 #if NGTE

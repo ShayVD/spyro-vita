@@ -1,4 +1,4 @@
-# Stage 7e (decisions D124): the presenter's draw (src/game/pres/).
+# Stage 7e (decisions D125): the presenter's draw (src/game/pres/).
 #  - pres_link: from GamestateDraw_pres, every name the presenter's object
 #    reaches outside itself is its own (context, snapshot, renderers), read
 #    only, its output on the game thread, or a game function that names no

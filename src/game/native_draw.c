@@ -102,7 +102,7 @@ void nd_init(void (*log)(const char *fmt, ...)) {
 void nd_begin(void) {
   if (g_nd_check)
     nd_check_began();
-  g_nd.on = g_native_draw == 1 && g_fast_render_ro == 2;
+  g_nd.on = g_native_draw == 1 && g_fast_render_ro >= 2; /* 2, and 3 (D124) */
 }
 
 void nd_end(void) { g_nd.on = 0; }

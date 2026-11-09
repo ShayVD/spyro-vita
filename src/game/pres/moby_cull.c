@@ -1,5 +1,5 @@
 /* The moby culls (moby_cull_hand.c) in the presenter's build (stage 7e,
- * D124; cmake/presenter.cmake): its entries take the presenter's plain
+ * D125; cmake/presenter.cmake): its entries take the presenter's plain
  * form, the hand C at fast_render=2 with no unit or check to pick, as the
  * native build's are (render_hand.h HAND_UNIT_FN_); on 7d2's readable code
  * (RENDER_CTX_READABLE) its own presenter entries. pres_names.h comes first

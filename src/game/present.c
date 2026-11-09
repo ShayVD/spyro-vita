@@ -24,7 +24,7 @@
 #include "psx_libgpu.h"
 #include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
 #if SPYRO_PRESENTER
-#include "pres/pres_draw.h" /* stage 7e (D124): interp_mode=2 */
+#include "pres/pres_draw.h" /* stage 7e (D125): interp_mode=2 */
 #endif
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -477,7 +477,7 @@ int port_present_frame_is_wide(void) {
 
 static int s_suppress_ot; /* logic pass under faithful widescreen */
 #if SPYRO_PRESENTER
-/* --pres-check (stage 7e, D124): 1 while the presenter draws (its list is
+/* --pres-check (stage 7e, D125): 1 while the presenter draws (its list is
  * recorded, not walked), 2 while D30's pass draws (recorded and walked) */
 static int s_pres_record;
 #endif
@@ -911,7 +911,7 @@ static void set_moby_track(Moby *m, const Track *t) {
 }
 
 /* Spyro's tracks k = 0 body, 1 head, 2 tail (r_pete reads these bytes);
- * sp: the game's Spyro, or the presenter's copy (stage 7e, D124). */
+ * sp: the game's Spyro, or the presenter's copy (stage 7e, D125). */
 static Track spyro_track(const Spyro *sp, int k) {
   const unsigned char *anims = &sp->m_bodyAnimation;
   const unsigned char *frames = &sp->m_bodyAnimationFrame;
@@ -1098,7 +1098,7 @@ static int can_interp(void) {
 
 /* Blend the camera, Spyro, the mobys and the particles given: the game's
  * own in place for D30's pass (the snapshot restores them), or the
- * presenter's copies (stage 7e, D124; pres_snap.c). Camera rotation feeds
+ * presenter's copies (stage 7e, D125; pres_snap.c). Camera rotation feeds
  * CameraUpdateMatrices at the start of GamestateDraw. Returns 0 if the
  * camera jumped: no in-between frame then. */
 static int blend_on(Camera *camera, Spyro *sp, Moby *mobys, Particle *parts) {
@@ -1297,7 +1297,7 @@ static void presentation_pass(int wide, int own_state) {
 }
 
 #if SPYRO_PRESENTER
-/* Stage 7e (D124): the in-between frame from the presenter, the game's
+/* Stage 7e (D125): the in-between frame from the presenter, the game's
  * draw code built a second time over a snapshot (pres_draw.c), in place
  * of D30's pass over the game's memory: nothing to snapshot and put back
  * here, only the GPU environments its PutDrawEnv and PutDispEnv change.
@@ -1493,7 +1493,7 @@ void PortPresentDraw(void) {
   }
   s_prev_interp = interp;
 #if SPYRO_PRESENTER
-  /* Stage 7e (D124): interp_mode=2, the presenter's frame in play; with
+  /* Stage 7e (D125): interp_mode=2, the presenter's frame in play; with
    * --pres-check it is drawn too, before D30's pass, and compared. */
   {
     const int pres_on = interp && (g_present.interp_mode == 2 || g_pres_check) &&

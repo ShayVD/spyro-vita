@@ -1,4 +1,4 @@
-/* The presenter's snapshot (stage 7e, decisions D124; pres_snap.h).
+/* The presenter's snapshot (stage 7e, decisions D125; pres_snap.h).
  *
  * Ordinary game code: it reads the game's state by the game's names and
  * writes the presenter's copies by theirs (g_pres_snap_*, g_pres_* of
@@ -252,7 +252,7 @@ int pres_snap_take(int blend) {
     memset((void *)(area + ((uint32_t)(uintptr_t)g_Buffers.m_HudOTStart - buf_lo)), 0,
            (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart + OT_BYTES - (uintptr_t)g_Buffers.m_HudOTStart));
   /* the pointers into the copies (the audit, --pres-audit, found which;
-   * D124 has its table) */
+   * D125 has its table) */
   REBASE_PTR(g_pres_snap_g_LevelMobys);
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Camera + 0xD0, 1, 0);     /* the camera's moby */
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Spyro + 0x21C, 1, 0);     /* the moby Spyro uses */
