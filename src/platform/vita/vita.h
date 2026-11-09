@@ -78,6 +78,9 @@ typedef struct {
   int gpu_parts;      /* gpu_parts=1: time the GL side's parts, the "gpu parts" line (D99) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
+  int pres_thread;    /* pres_thread=1 (default): with interp_mode=2, the presenter's in-between
+                         frame on its own thread (stage 7f, D126); 0: on the game thread (7e) */
+  int pres_core;      /* pres_core=3: that thread on core 3, if a user thread may run there */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU
                          can't keep up; 88, 75, 67: that scale, always (D75) */
   int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
@@ -221,6 +224,18 @@ void vita_cores_probe(void); /* logs whether a user thread runs on core 3 */
 void vita_parse_init(void);  /* after vita_video_init (the render thread) */
 int vita_parse_on_walker(void); /* 1 on the parse thread */
 void vita_parse_report(int vblank);
+int vita_core3_ok(void); /* the start-up check found a thread of ours may run on core 3 */
+
+/* pres_thread.c: the presenter's thread (stage 7f, D126) */
+void vita_pres_init(void); /* after vita_parse_init, before vita_present_init */
+int vita_pres_thread_up(void);
+void vita_pres_post(void (*fn)(void));
+void vita_pres_wait(void);
+void vita_pres_report(int vblank);
+/* gpu_thread.c: its buffers in the render thread's command ring */
+struct PresentPresOut;
+const struct PresentPresOut *vita_gpu_pres_out(void);
+void vita_gpu_pres_report(uint32_t out[5]);
 void nd_report(int vblank); /* src/game/native_draw.c, D82 */
 void vita_gpu_walk_submitted(void); /* gpu_thread.c: the display state for that walk */
 

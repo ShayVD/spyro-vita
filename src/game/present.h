@@ -113,6 +113,52 @@ typedef struct PresentCapture {
 } PresentCapture;
 extern const PresentCapture *g_present_capture;
 
+/* Stage 7f (D126): a platform that runs the presenter's in-between frame
+ * on a core of its own (the Vita). The presenter records the frame into a
+ * buffer of its own, which the render thread runs whole where the game
+ * thread placed it in the command ring: before the logic draw's commands.
+ * Without it (the host) the presenter runs inline, on the game thread, at
+ * the same point, and draws through the GR_* calls.
+ *  - usable: the worker can draw the frame now (its thread is up; no
+ *    vertex cache, whose tables are the game thread's);
+ *  - submit (game thread): the buffer's place in the ring; f: the frame it
+ *    files (its slot reserved), NULL: none;
+ *  - post (game thread): fn on the worker; wait: until it has returned;
+ *  - on the worker, between open and close: gpu (the walk's draws), env
+ *    (the display state its draws see), begin, capture and commit (as
+ *    PresentCapture's, into the buffer). close: the buffer is whole; the
+ *    render thread may run it. */
+struct PsxGpuOut;
+typedef struct PresentPresOut {
+  int (*usable)(void);
+  void (*submit)(const PresentFrame *f);
+  void (*post)(void (*fn)(void));
+  void (*wait)(void);
+  const struct PsxGpuOut *gpu;
+  void (*open)(void);
+  void (*env)(const void *dispenv, int disabled, int wide);
+  void (*begin)(int due, int interp);
+  void (*capture)(int x, int y, int w, int h);
+  void (*commit)(const PresentFrame *f);
+  void (*close)(void);
+} PresentPresOut;
+extern const PresentPresOut *g_present_pres;
+
+/* Stage 7f's numbers since the last call (the platform's present line):
+ * frames the presenter drew on the worker and inline, the worker's time,
+ * the game thread's waits for it at the join (count, time), and the
+ * display environments the game thread put for it that weren't the
+ * presenter's (0 expected). */
+typedef struct {
+  long long worker_frames, inline_frames, worker_us, joins_waited, join_wait_us, disp_misses;
+  long long uncaptured; /* frames it drew without a capture (none expected in play) */
+} PresentPresStats;
+void port_present_pres_stats(PresentPresStats *out);
+/* The game thread, before anything that changes what the presenter reads
+ * (the update, a save state, the exit): the presenter's frame, if one is
+ * under way on the worker, has finished. */
+void port_present_pres_join(void);
+
 /* Microseconds for interp_budget_us and the stats; default clock() (CPU
  * time). The Vita sets sceKernelGetProcessTimeWide. */
 extern long long (*g_present_clock_us)(void);

@@ -1,0 +1,8 @@
+# Run 7F1 (D126): X6 with today's defaults: 30 fps, the threads on (fast_render=3, present_due=1
+# since D124 and D112), D75's meter, the Toasty route (o-toasty.cfg). The game thread's busy % at
+# 30 fps, which 7F3 should come close to at 60. Real-time vblanks:
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7f1 1500 @tools/vita/fps-runs/s7f1-toasty30.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=0
+gpu_meter=1

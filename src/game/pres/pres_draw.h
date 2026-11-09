@@ -4,13 +4,20 @@
  * interp_mode=2 (host --interp-mode 2): in play, the in-between frame is
  * drawn by the game's own draw code compiled a second time
  * (GamestateDraw_pres, cmake/presenter.cmake) from a snapshot
- * (pres_snap.c), not by D30's pass over the game's own memory. It runs on
- * the game thread at D30's pass's point; D30's pass stays the reference
- * (--pres-check) and the fallback for the other gamestates. */
+ * (pres_snap.c), not by D30's pass over the game's own memory. It starts
+ * at D30's pass's point; with a platform worker (stage 7f, D126; present.c)
+ * it draws on its own core beside the logic draw, else inline on the game
+ * thread. D30's pass stays the reference (--pres-check) and the fallback
+ * for the other gamestates. */
 #ifndef PRES_DRAW_H
 #define PRES_DRAW_H
 
 #include <stdint.h>
+
+#include <assert.h> /* PsyCross headers use C11 static_assert */
+#include "psx/types.h"
+#include "psx/libgte.h"
+#include "psx/libgpu.h"
 
 /* whether this build has the presenter (not with the moved arena) */
 extern const int g_pres_built;
@@ -21,14 +28,24 @@ void pres_draw_want(void);
 /* 1 if the presenter can draw now: built, its area there, fast_render=2 */
 int pres_draw_available(void);
 
-/* The in-between frame from the game's state now, blended (blend 1) or as
- * it is (0). wide: 16:9. flags/caches: the sector flags and the sectors'
- * four animation bytes the draw starts from (present.c's 16:9 copies in
- * an attract demo), NULL for the game's. Its DrawOTag goes through
- * present.c's hooks as any pass's. Returns 0 if there was no frame (the
- * camera jumped). */
-int pres_draw_frame(int blend, int wide, const uint8_t *flags, const uint32_t *caches, int ncaches);
-/* After pres_draw_frame: the presenter's sector flags and caches, for
+/* The in-between frame from the game's state now, in two (stage 7f, D126):
+ *  - pres_draw_prepare, on the game thread after the update: the snapshot,
+ *    blended (blend 1) or as it is (0), and the renderers' context. wide:
+ *    16:9. flags/caches: the sector flags and the sectors' four animation
+ *    bytes the draw starts from (present.c's 16:9 copies in an attract
+ *    demo), NULL for the game's. Returns 0 if there is no frame (the camera
+ *    jumped);
+ *  - GamestateDraw_pres, the draw, on the worker or inline: its output is
+ *    present.c's presenter versions of DrawOTag and the rest
+ *    (pres_names.h). */
+int pres_draw_prepare(int blend, int wide, const uint8_t *flags, const uint32_t *caches,
+                      int ncaches);
+void GamestateDraw_pres(void);
+/* the presenter's records' pool (its own; NULL with native_draw off) */
+void pres_draw_pool(const uint32_t **w, uint32_t *cap);
+/* the records' mode of its list (native_draw.c's g_psx_walk_nd, its own) */
+extern int g_pres_walk_nd;
+/* After the draw: the presenter's sector flags and caches, for
  * present.c's 16:9 copies. */
 void pres_draw_visibility(uint8_t *flags, uint32_t *caches, int ncaches);
 
@@ -40,7 +57,11 @@ int port_present_blend_to(void *camera, void *spyro, void *mobys, void *particle
  * (pres_check.c): the draw and display environments put, then each packet
  * in the list's order, a marker's records expanded (native_draw.h). */
 extern int g_pres_check;
-void pres_check_frame(int which, const void *ot_head); /* 0 D30's pass, 1 the presenter */
+/* which: 0 D30's pass, 1 the presenter; de, dd: the draw and display
+ * environments its list is walked with; pool: the presenter's records'
+ * pool (pool_cap words), NULL for g_nd_pool's */
+void pres_check_frame(int which, const void *ot_head, const DRAWENV *de, const DISPENV *dd,
+                      const uint32_t *pool, uint32_t pool_cap);
 void pres_check_compare(void);                          /* after both, this tick */
 void pres_check_skip(int why);                          /* a tick not compared */
 int pres_check_report(void (*log)(const char *fmt, ...)); /* 0 when nothing differed */

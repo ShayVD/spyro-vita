@@ -25,6 +25,8 @@
 #include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
 #if SPYRO_PRESENTER
 #include "pres/pres_draw.h" /* stage 7e (D125): interp_mode=2 */
+#include "native_draw.h"    /* stage 7f (D126): g_nd_ranges_walk */
+#include "psx_vcache.h"
 #endif
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -220,14 +222,17 @@ static void subst_clear(void) {
   psx_gpu_game_walk()->subst = NULL;
 }
 
-/* The noted primitives that narrow, each copied into the pool and narrowed
- * there, as the walk's substitutions: the words DrawOTag walked before D122
- * when they were narrowed in place */
-static void squeeze_2d(void) {
-  int i, j, used = 0;
-  subst_clear();
-  for (i = 0; i < s_n2d; i++) {
-    const uint32_t *const prim = (const uint32_t *)s_2d[i];
+/* The noted primitives (n of them) that narrow, each copied into the pool
+ * and narrowed there, as a walk's substitutions (*nsub of them, by address
+ * in at, their words in words): the words DrawOTag walked before D122 when
+ * they were narrowed in place. Returns how many narrowed. The game
+ * thread's (squeeze_2d) and the presenter's own (stage 7f, D126). */
+static int squeeze(void *const *notes, int nnotes, uintptr_t *at, const u_int **words,
+                   u_int *pool, int *nsub) {
+  int i, j, used = 0, squeezed = 0;
+  *nsub = 0;
+  for (i = 0; i < nnotes; i++) {
+    const uint32_t *const prim = (const uint32_t *)notes[i];
     const int len = (int)(prim[0] >> 24);
     uint32_t *tag, *xy[8];
     int n, rect_w, minx = 1 << 30, maxx = -(1 << 30);
@@ -235,7 +240,7 @@ static void squeeze_2d(void) {
       continue;
     if (used + 1 + len > MAX_SUBST_WORDS)
       break; /* never reached: 512 primitives of 13 words */
-    tag = s_sub_pool + used;
+    tag = pool + used;
     memcpy(tag, prim, (size_t)(1 + len) * 4);
     n = prim_xy_words(tag + 1, len, xy, &rect_w);
     if (n == 0 || is_screen_copy(tag + 1))
@@ -258,16 +263,22 @@ static void squeeze_2d(void) {
         set_x(xy[j], narrow_x(XY_X(*xy[j])));
     }
     /* in address order (insertion: they are noted nearly in order) */
-    for (j = s_sub.n; j > 0 && s_sub_at[j - 1] > (uintptr_t)prim; j--) {
-      s_sub_at[j] = s_sub_at[j - 1];
-      s_sub_words[j] = s_sub_words[j - 1];
+    for (j = *nsub; j > 0 && at[j - 1] > (uintptr_t)prim; j--) {
+      at[j] = at[j - 1];
+      words[j] = words[j - 1];
     }
-    s_sub_at[j] = (uintptr_t)prim;
-    s_sub_words[j] = tag;
-    s_sub.n++;
+    at[j] = (uintptr_t)prim;
+    words[j] = tag;
+    (*nsub)++;
     used += 1 + len;
-    g_present_stats.squeezed_2d++;
+    squeezed++;
   }
+  return squeezed;
+}
+
+static void squeeze_2d(void) {
+  subst_clear();
+  g_present_stats.squeezed_2d += squeeze(s_2d, s_n2d, s_sub_at, s_sub_words, s_sub_pool, &s_sub.n);
   if (s_sub.n)
     psx_gpu_game_walk()->subst = &s_sub;
 }
@@ -356,16 +367,14 @@ static void capture_now(void) {
   s_captured = 1;
 }
 
-static void push_capture(int wide, int interp) {
-  PresentFrame f;
+/* A frame's place in the queue: its slot and due vblank (and the frame
+ * dropped for it). push_capture's; stage 7f's presenter has its frame's
+ * reserved before it is drawn (D126). */
+static void reserve(int wide, int interp, PresentFrame *f) {
   int i;
-  s_frame_begun = 0;
-  if (!s_captured)
-    return;
-  s_captured = 0;
-  f.dropped = -1;
+  f->dropped = -1;
   if (s_qcount == QUEUE) { /* drop the oldest; the rest are due a vblank sooner */
-    f.dropped = s_qhead;
+    f->dropped = s_qhead;
     s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
     for (i = 0; i < s_qcount; i++)
@@ -374,15 +383,24 @@ static void push_capture(int wide, int interp) {
   }
   /* This may be the slot on screen (after a run of drops); harmless: the
    * queue isn't empty now, so the next vblank shows a newer slot. */
-  f.slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
-  f.due = due_next();
-  f.wide = wide;
-  f.interp = interp;
-  psx_walk_after(commit_slot, &f, sizeof f);
-  s_frame_wide[f.slot] = (uint8_t)wide;
-  s_frame_due[f.slot] = f.due;
+  f->slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
+  f->due = due_next();
+  f->wide = wide;
+  f->interp = interp;
+  s_frame_wide[f->slot] = (uint8_t)wide;
+  s_frame_due[f->slot] = f->due;
   s_qcount++;
   s_last_push_vblank = psx_clock_count();
+}
+
+static void push_capture(int wide, int interp) {
+  PresentFrame f;
+  s_frame_begun = 0;
+  if (!s_captured)
+    return;
+  s_captured = 0;
+  reserve(wide, interp, &f);
+  psx_walk_after(commit_slot, &f, sizeof f);
 }
 
 /* A save state was loaded (D51): the queued frames are from before it, and
@@ -390,6 +408,9 @@ static void push_capture(int wide, int interp) {
 static void budget_reset(void);
 
 void port_present_reset(void) {
+#if SPYRO_PRESENTER
+  port_present_pres_join();
+#endif
   budget_reset();
   s_qcount = 0;
   s_shown = -1;
@@ -477,8 +498,9 @@ int port_present_frame_is_wide(void) {
 
 static int s_suppress_ot; /* logic pass under faithful widescreen */
 #if SPYRO_PRESENTER
-/* --pres-check (stage 7e, D125): 1 while the presenter draws (its list is
- * recorded, not walked), 2 while D30's pass draws (recorded and walked) */
+/* --pres-check (stage 7e, D125): 2 while D30's pass draws (its list
+ * recorded and walked; the presenter's is recorded by its own DrawOTag,
+ * pres_DrawOTag) */
 static int s_pres_record;
 #endif
 static int s_audit_pass;  /* audit: 1 in the in-between pass, 2 in the logic pass */
@@ -493,13 +515,8 @@ static int ot_pre(u_long *p) {
   if (s_sub.n)
     subst_clear(); /* the last list's (DrawOTag joined its walk first) */
 #if SPYRO_PRESENTER
-  if (s_pres_record == 1) {
-    pres_check_frame(1, p);
-    s_n2d = 0;
-    return 1;
-  }
   if (s_pres_record == 2)
-    pres_check_frame(0, p);
+    pres_check_frame(0, p, &activeDrawEnv, &activeDispEnv, NULL, 0);
 #endif
   if (s_suppress_ot) {
     s_n2d = 0;
@@ -984,6 +1001,9 @@ static long long s_t_update;
 void PortPresentBeforeUpdate(void) {
   long long t;
   int i;
+#if SPYRO_PRESENTER
+  port_present_pres_join(); /* stage 7f (D126): before the update changes what it reads */
+#endif
   savestate_point(); /* the main loop top: save states happen here (D51) */
   if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
@@ -1296,51 +1316,285 @@ static void presentation_pass(int wide, int own_state) {
   g_present_stats.us_pass += now_us() - t;
 }
 
+const PresentPresOut *g_present_pres;
+
 #if SPYRO_PRESENTER
-/* Stage 7e (D125): the in-between frame from the presenter, the game's
- * draw code built a second time over a snapshot (pres_draw.c), in place
- * of D30's pass over the game's memory: nothing to snapshot and put back
- * here, only the GPU environments its PutDrawEnv and PutDispEnv change.
+/* ---------- the presenter (stage 7e, D125; on its own core, 7f, D126) ----------
+ *
+ * In play with interp_mode=2 the in-between frame is the presenter's: the
+ * game's draw code built a second time over a snapshot (pres_draw.c). Its
+ * output calls are its own, here: PutDrawEnv, PutDispEnv, DrawSync and
+ * DrawOTag on libgpu's environments' copies and on a walk of its own (the
+ * second PsxGpuWalk, gpu_walk.c), and its 2D primitives noted for the 16:9
+ * narrowing into its own substitutions. So it shares nothing with the logic
+ * draw but read-only data, and can run beside it:
+ *  - the game thread takes the snapshot after update N (pres_draw_prepare)
+ *    and starts the job;
+ *  - with a platform worker (g_present_pres, the Vita) the job runs there,
+ *    beside the logic draw N, recording into a buffer of its own; the game
+ *    thread placed the buffer in the command ring first, so the render
+ *    thread draws it before the logic's frame, as 7e drew it before;
+ *  - else (the host, or the Vita with the vertex cache on) it runs inline,
+ *    on the game thread, through the GR_* calls, as 7e did;
+ *  - the game thread joins it before update N+1 (port_present_pres_join):
+ *    the update changes the level's data the presenter reads (the
+ *    animated bytes), and the wait keeps its frame exact without a copy.
+ * libgpu's currentDispEnv: the presenter's PutDispEnv left it set to its
+ * environment for the logic draw's (7e, D125). The game thread puts the
+ * same value itself when it starts the job (the DB the draw goes to, the
+ * one GamestateDraw takes), and the join counts any frame whose
+ * environment wasn't that (disp_misses, 0 expected).
+ * The one write the two draws could race on: the moby renderers' face
+ * replacements, which the game's draw makes in the model's list and puts
+ * back (D123). While the presenter runs beside it, the game's draw makes
+ * them in a copy too (g_faces_copy), so neither writes a model's faces. */
+
+static DRAWENV s_pw_env;
+static DISPENV s_pw_active, s_pw_cur; /* activeDispEnv and currentDispEnv, the presenter's */
+static PsxGpuWalk s_pw = {.env = &s_pw_env, .disp = &s_pw_active, .own = 1};
+
+/* its 16:9 narrowing (squeeze_2d's, its own) */
+static void *s_p2d[MAX_2D];
+static int s_pn2d;
+static uintptr_t s_psub_at[MAX_2D];
+static const u_int *s_psub_words[MAX_2D];
+static u_int s_psub_pool[MAX_SUBST_WORDS];
+static PsxGpuSubst s_psub = {0, s_psub_at, s_psub_words};
+
+typedef struct {
+  const PresentPresOut *out; /* on the worker, into its buffer; NULL: inline */
+  int check;                 /* --pres-check: the list recorded, not drawn */
+  int wide;                  /* 16:9: its HUD narrowed */
+  int gl_wide;               /* g_present.widescreen, for the GL side's display state */
+  int disabled;              /* g_GPUDisabledState */
+  PresentFrame f;            /* on the worker: the slot reserved for it */
+  int begun, captured, squeezed;
+  DISPENV put;    /* what it left as currentDispEnv */
+  DISPENV expect; /* what the game thread put there for it */
+  long long us;
+} PresJob;
+static PresJob s_job;
+static int s_job_pending; /* game thread: running on the worker, not joined */
+static PresentPresStats s_pstats;
+extern int g_faces_copy; /* render_ctx.c, moby_hand.c */
+
+static int alloc_walk(void) {
+  if (s_pw.vb)
+    return 1;
+  s_pw.vb = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE);
+  s_pw.splits = malloc(sizeof(PsxGpuSplit) * PSX_GPU_MAX_SPLITS);
+  s_pw.dr = malloc(sizeof(uint32_t) * 2 * PSX_GPU_DIRECT_MAX);
+  if (!s_pw.vb || !s_pw.splits || !s_pw.dr) {
+    free(s_pw.vb), free(s_pw.splits), free(s_pw.dr);
+    s_pw.vb = NULL, s_pw.splits = NULL, s_pw.dr = NULL;
+    return 0;
+  }
+  psx_gpu_clear_splits_in(&s_pw);
+  return 1;
+}
+
+/* order_table.c's note, in the presenter's build */
+void pres_note_2d(void *prim) {
+  if (s_job.wide && s_pn2d < MAX_2D)
+    s_p2d[s_pn2d++] = prim;
+}
+
+/* libgpu.c's PutDispEnv and PutDrawEnv on the presenter's environments */
+DISPENV *pres_PutDispEnv(DISPENV *env) {
+  if (env->isinter != s_pw_cur.isinter || env->disp.y == s_pw_cur.disp.y) {
+    s_pw_active = s_pw_cur = *env;
+  } else {
+    s_pw_active = s_pw_cur;
+    s_pw_cur = *env;
+  }
+  return 0;
+}
+
+DRAWENV *pres_PutDrawEnv(DRAWENV *env) {
+  memcpy(&s_pw_env, env, sizeof s_pw_env);
+  return 0;
+}
+
+/* libgpu.c's DrawSync: the walk's leftover splits (no callback: the game
+ * sets none) */
+int pres_DrawSync(int mode) {
+  (void)mode;
+  if (!s_job.check)
+    psx_gpu_draw_splits_own(&s_pw);
+  return 0;
+}
+
+static void pres_capture(int y) {
+  if (s_job.out) {
+    s_job.out->capture(0, y, PRESENT_W, PRESENT_H);
+  } else if (g_present_capture) {
+    g_present_capture->capture(0, y, PRESENT_W, PRESENT_H);
+  } else { /* capture_area's StoreImage, from the presenter's area */
+    RECT16 r;
+    r.x = 0, r.y = (short)y, r.w = PRESENT_W, r.h = PRESENT_H;
+    StoreImage(&r, (u_long *)s_capture);
+  }
+  s_job.captured = 1;
+}
+
+/* libgpu.c's DrawOTag with present.c's ot_pre and ot_post, on the
+ * presenter's walk: the frame's start (7c), its 2D primitives narrowed,
+ * the list walked and drawn, the capture */
+void pres_DrawOTag(u_long *p) {
+  PresJob *const j = &s_job;
+  if (j->check) { /* ot_pre's --pres-check record (D125) */
+    pres_check_frame(1, p, &s_pw_env, &s_pw_active, s_pw.nd_pool, s_pw.nd_pool_cap);
+    s_pn2d = 0;
+    psx_vcache_ot_done(); /* (the check is inline) */
+    return;
+  }
+  if (!j->begun) {
+    j->begun = 1;
+    if (j->out)
+      j->out->begin(j->f.due, 1);
+    else if (g_present_capture && g_present_capture->begin)
+      g_present_capture->begin(due_next(), 1);
+  }
+  if (j->out)
+    j->out->env(&s_pw_cur, j->disabled, j->gl_wide);
+  s_pw.subst = NULL;
+  s_psub.n = 0;
+  if (j->wide) {
+    j->squeezed += squeeze(s_p2d, s_pn2d, s_psub_at, s_psub_words, s_psub_pool, &s_psub.n);
+    if (s_psub.n)
+      s_pw.subst = &s_psub;
+  }
+  s_pn2d = 0;
+  if (j->disabled) { /* LIBGPU.C: no post */
+    psx_gpu_clear_splits_in(&s_pw);
+    return;
+  }
+  s_pw.nd = g_pres_walk_nd;
+  psx_gpu_walk_own(&s_pw, p);
+  pres_capture(s_pw_env.ofs[1]);
+  if (!j->out)
+    psx_vcache_ot_done(); /* inline: as DrawOTag's (the worker never has the vertex cache) */
+}
+
+/* the job: the presenter's draw, on the worker or inline */
+static void job_run(void) {
+  long long t = now_us();
+  if (s_job.out)
+    s_job.out->open();
+  GamestateDraw_pres();
+  if (s_job.out) {
+    if (s_job.captured)
+      s_job.out->commit(&s_job.f);
+    s_job.out->close();
+  }
+  s_job.put = s_pw_cur;
+  s_job.us = now_us() - t;
+}
+
+/* After the job (the game thread): its numbers */
+static void job_done(void) {
+  g_present_stats.squeezed_2d += s_job.squeezed;
+  if (s_job.check)
+    return;
+  if (memcmp(&s_job.put, &s_job.expect, sizeof s_job.put))
+    s_pstats.disp_misses++;
+  if (!s_job.captured)
+    s_pstats.uncaptured++;
+}
+
+void port_present_pres_join(void) {
+  long long t;
+  if (!s_job_pending)
+    return;
+  s_job_pending = 0;
+  t = now_us();
+  g_present_pres->wait();
+  g_faces_copy = 0;
+  t = now_us() - t;
+  s_pstats.join_wait_us += t;
+  s_pstats.joins_waited += t > 50; /* a wait, not a handover */
+  s_pstats.worker_us += s_job.us;
+  job_done();
+}
+
+void port_present_pres_stats(PresentPresStats *out) {
+  *out = s_pstats;
+  memset(&s_pstats, 0, sizeof s_pstats);
+}
+#else
+void port_present_pres_join(void) {}
+void port_present_pres_stats(PresentPresStats *out) { memset(out, 0, sizeof *out); }
+#endif
+
+#if SPYRO_PRESENTER
+
+/* The in-between frame from the presenter, in place of D30's pass.
  * own_state: it starts from the 16:9 copies of the visibility state and
- * leaves its own there (wide_state_in, wide_state_out). check: --pres-check,
- * the list recorded for the compare and not drawn. 0 if no frame. */
+ * leaves its own there (wide_state_in, wide_state_out); then it runs
+ * inline, as D30's 16:9 pass after it reads them. check: --pres-check,
+ * its list recorded for the compare and not drawn. Returns 0 if no frame
+ * (the camera jumped); else 1 inline (its frame captured, for the caller
+ * to queue) or 2 on the worker (its frame queued already). */
 static int presenter_pass(int wide, int own_state, int check) {
   long long t = now_us();
   const int own = own_state && s_wide_valid && s_wide_level == g_LevelId &&
                   s_wide_nsectors == g_Environment.m_SectorCount;
-  int ok;
-  /* PutDispEnv keeps the environment put last (currentDispEnv), which D30's
-   * pass leaves changed for the logic's: the presenter in its place leaves
-   * it as the pass would; in the check, where D30's pass follows, as it was */
-  const DISPENV put_last = currentDispEnv;
-  g_present_narrow = 0;
-  s_record_2d = wide;
-  s_n2d = 0;
-  s_capture_on = !check;
-  s_pres_record = check ? 1 : 0;
-  g_psx_vram_frozen = 1; /* as in D30's pass: the walk's VRAM calls */
-  psx_walk_after(envs_take, NULL, 0);
-  s_in_game_draw = 1;
-  ok = pres_draw_frame(1, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
-                       own ? s_wide_nsectors : 0);
-  s_in_game_draw = 0;
-  psx_walk_after(envs_restore, NULL, 0);
-  if (check)
-    currentDispEnv = put_last;
-  if (ok && own_state && !check) {
+  const PresentPresOut *const w = g_present_pres;
+  const int worker = !check && !own_state && w && w->usable();
+  port_present_pres_join(); /* (it was, at the loop top) */
+  if (!alloc_walk() ||
+      !pres_draw_prepare(1, wide, own ? s_wide_flags : NULL, own ? s_wide_cache : NULL,
+                         own ? s_wide_nsectors : 0))
+    return 0;
+  memset(&s_job, 0, sizeof s_job);
+  s_job.check = check;
+  s_job.wide = wide;
+  s_job.gl_wide = g_present.widescreen;
+  s_job.disabled = g_GPUDisabledState;
+  /* libgpu's environments as the presenter's PutDrawEnv and PutDispEnv
+   * find them (pres_draw_prepare joined the game's walk) */
+  s_pw_env = activeDrawEnv;
+  s_pw_active = activeDispEnv;
+  s_pw_cur = currentDispEnv;
+  psx_gpu_clear_splits_in(&s_pw);
+  s_pw.subst = NULL;
+  pres_draw_pool(&s_pw.nd_pool, &s_pw.nd_pool_cap);
+  s_pn2d = 0;
+  if (!check) { /* the presenter's PutDispEnv's, for the logic draw's (job_done checks it) */
+    s_job.expect = (g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0])->m_DispEnv;
+    currentDispEnv = s_job.expect;
+  }
+  if (worker) {
+    s_job.out = w;
+    s_frame_begun = 0;
+    reserve(wide, 1, &s_job.f); /* filed now: shown before this tick's frame */
+    w->submit(&s_job.f);
+    g_faces_copy = 1; /* the logic draw's faces into a copy while it runs beside (moby_hand.c) */
+    w->post(job_run);
+    s_job_pending = 1;
+    s_pstats.worker_frames++;
+    g_present_stats.passes++;
+    g_present_stats.us_pass += now_us() - t; /* the game thread's part */
+    return 2;
+  }
+  {
+    PsxGpuWalk *const ranges = g_nd_ranges_walk;
+    g_nd_ranges_walk = &s_pw; /* the Vita's vertex buffers: the presenter's direct ranges */
+    job_run();
+    g_nd_ranges_walk = ranges;
+  }
+  job_done();
+  if (own_state && !check) {
     wide_state_out(); /* the level's sector count and the bytes past the presenter's */
     pres_draw_visibility(s_wide_flags, s_wide_cache, s_wide_nsectors);
   }
-  g_psx_vram_frozen = 0;
-  s_pres_record = 0;
-  s_capture_on = 0;
-  s_record_2d = 0;
-  s_n2d = 0;
   if (!check) {
+    s_captured = s_job.captured;
+    s_pstats.inline_frames++;
     g_present_stats.passes++;
     g_present_stats.us_pass += now_us() - t;
   }
-  return ok;
+  return 1;
 }
 #endif
 
@@ -1441,7 +1695,7 @@ const char *port_present_region(uint32_t a) {
 
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp, timed, shown = 0;
+  int wide_pass, logic_wide, interp, timed, shown = 0, pres_play = 0;
   long long t, t_interp = 0;
   PresentGsStats *gs = gs_stats();
   if (g_present_reads)
@@ -1481,13 +1735,20 @@ void PortPresentDraw(void) {
   interp = g_present.interp && can_interp();
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
+#if SPYRO_PRESENTER
+  /* Stage 7f (D126): in play the presenter on its own core costs the game
+   * thread only its snapshot, so interp_budget no longer applies there */
+  pres_play = interp && g_present.interp_mode == 2 && !g_pres_check && !wide_pass &&
+              g_Gamestate == GS_Playing && g_present_pres && g_present_pres->usable() &&
+              pres_draw_available();
+#endif
   /* interp_budget_us: the last tick's game CPU time without the in-between
    * frame, plus what that frame cost when it last ran, must fit. Otherwise
    * this tick shows its real frame for both vblanks (30 fps) instead of
    * running late, which would slow the game itself (D28); budget_allows
    * holds 30 fps for a while after a miss (D68). Only the game thread's
    * own time counts: the GPU is the platform's to fix (D75). */
-  if (interp && g_present.interp_budget_us && !budget_allows()) {
+  if (interp && g_present.interp_budget_us && !pres_play && !budget_allows()) {
     interp = 0;
     g_present_stats.budget_skips++;
   }
@@ -1507,10 +1768,13 @@ void PortPresentDraw(void) {
         s_pres_record = 2; /* D30's pass below records its list too */
     } else if (pres_on) {
       long long tp = now_us();
+      int r;
       t_interp = tp;
       s_pass_interp = 1;
-      if (presenter_pass(g_present.widescreen, wide_pass, 0)) {
-        push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
+      r = presenter_pass(g_present.widescreen, wide_pass, 0);
+      if (r) {
+        if (r == 1) /* inline: its capture; on the worker it was filed already */
+          push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
         g_present_stats.interp_frames++;
         shown = 1;
       } else {

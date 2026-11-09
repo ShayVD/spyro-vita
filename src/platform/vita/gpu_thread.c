@@ -72,6 +72,7 @@
 #include "../../game/present.h"
 #include "psx_walk.h"
 #include "psx_clock.h"
+#include "psx_vcache.h"
 
 GlEnv g_gl_env;
 int g_rt_active;
@@ -94,7 +95,7 @@ typedef struct { /* the walk's PsxGpuSplit starts like this (psx_gpu.h, gpu_gl.c
 } SplitHead;
 
 enum { C_WRAP, C_ENV, C_CLIP, C_TEX, C_BLEND, C_VERTS, C_DRAW, C_CLEAR, C_COPY, C_CALL,
-       C_PRESENT, C_CAPTURE, C_COMMIT, C_BEGIN, C_QUIT };
+       C_PRESENT, C_CAPTURE, C_COMMIT, C_BEGIN, C_QUIT, C_BUF, C_PVERTS };
 
 typedef struct {
   uint16_t type, pad;
@@ -112,6 +113,12 @@ typedef struct { Cmd hd; int slot, wide, shot, due; } CPresent; /* due: the game
 typedef struct { Cmd hd; int x, y, w, h; } CCapture;
 typedef struct { Cmd hd; PresentFrame f; } CCommit;
 typedef struct { Cmd hd; int due, interp; } CBegin;
+/* stage 7f (D126): the presenter's buffer number job, run here whole; then
+ * the display state env (what the presenter's draws leave) */
+typedef struct { Cmd hd; uint32_t job; int has_frame, due; GlEnv env; } CBuf;
+/* in a presenter's buffer: count vertices at voff in its own vertex area,
+ * + ndr direct ranges (D99) */
+typedef struct { Cmd hd; int count, voff, ndr; } CPVerts;
 
 static uint8_t *s_ring;
 static uint32_t s_w;              /* game thread: bytes recorded */
@@ -330,6 +337,103 @@ static void rt_posted(const CPresent *k) {
       i++;
   pend_drop(i);
 }
+/* ---- stage 7f (D126): the presenter's buffers ----
+ *
+ * The presenter draws the in-between frame on a core of its own
+ * (pres_thread.c) beside the logic draw, so it can't write this ring: the
+ * game thread and the parse thread take turns at it. It records its frame
+ * into a buffer of its own instead, in the ring's command format, its
+ * vertex buffers in the buffer's own vertex area. The game thread places a
+ * C_BUF in the ring when it starts the presenter, before the logic draw's
+ * commands, and the render thread runs the buffer whole when it gets
+ * there, as it ran 7e's presenter's commands from the ring before:
+ *  - not closed yet: the render thread waits for it (shows due frames
+ *    meanwhile, as when it has nothing to run), unless (present_due=1) its
+ *    frame is a vblank or more past its due vblank, when the buffer is
+ *    passed by and its frame is never shown (7c's rule for a frame that
+ *    isn't ready by its vblank: the real frame after it is);
+ *  - then the display state the game thread sent with the C_BUF (the
+ *    presenter's, as 7e left it for the logic's draws).
+ * Three buffers in turn. Job k's buffer is written once the render thread
+ * has finished with job k-2's: job k-3's vertices (in the same buffer) are
+ * then two vertex buffers back at least, the slabs' rule. */
+#define PBUF_N 3
+#define PBUF_BYTES (256u << 10) /* a frame's commands: ~40 KB, its vertices apart */
+
+typedef struct {
+  uint8_t *cmd;
+  uint32_t used;
+  GrVertex *verts;
+  uint32_t nverts;
+  volatile uint32_t ready; /* the job closed in it (counted from 1) */
+  int overflow;
+  GlEnv env;       /* the presenter's display state, for its draws */
+  int env_pending; /* not yet recorded */
+} PBuf;
+static PBuf s_pb[PBUF_N];
+static int s_pb_ok;                       /* the buffers are there */
+static uint32_t s_pb_posted;              /* game thread: jobs placed in the ring */
+static volatile uint32_t s_pb_finished;   /* render thread: the last job run or passed by */
+static const PBuf *s_pb_running;          /* render thread: the buffer being run */
+static void rt_look(void);
+/* counted up; the report takes the differences */
+static volatile uint32_t s_pb_run, s_pb_passed, s_pb_wait_us, s_pb_free_waits, s_pb_overflows;
+
+static int pbuf_alloc(void) {
+  int i;
+  if (s_pb_ok)
+    return 1;
+  for (i = 0; i < PBUF_N; i++) {
+    s_pb[i].cmd = memalign(64, PBUF_BYTES);
+    s_pb[i].verts = malloc(sizeof(GrVertex) * MAX_VERTEX_BUFFER_SIZE);
+    if (!s_pb[i].cmd || !s_pb[i].verts)
+      return 0;
+  }
+  s_pb_ok = 1;
+  return 1;
+}
+
+/* C_BUF: run it now (1), pass it by (2), or wait for it (0) */
+static int buf_state(const CBuf *k) {
+  const PBuf *b = &s_pb[k->job % PBUF_N];
+  if (__atomic_load_n(&b->ready, __ATOMIC_ACQUIRE) == k->job)
+    return 1;
+  if (s_due && k->has_frame) {
+    int past = vita_vblank_past_due(k->due);
+    if (past >= 1 && past != VITA_DUE_UNCOUNTED)
+      return 2;
+  }
+  return 0;
+}
+
+static void run(const Cmd *c);
+
+static void run_buf(const CBuf *k) {
+  const PBuf *b = &s_pb[k->job % PBUF_N];
+  const int skip = s_skip;
+  uint32_t off = 0;
+  if (buf_state(k) == 1) {
+    s_pb_running = b;
+    s_skip = 0;
+    while (off < b->used) {
+      const Cmd *c = (const Cmd *)(b->cmd + off);
+      run(c);
+      off += c->size;
+      s_rt_cmds++;
+      rt_look(); /* 7c: a new display vblank? (as for the ring's commands) */
+    }
+    s_pb_running = NULL;
+    s_pb_run++;
+  } else {
+    s_pb_passed++; /* not ready by its vblank: never shown */
+  }
+  s_skip = skip;
+  if (k->has_frame)
+    s_commits_run++; /* (its C_COMMIT, if it ran, didn't count) */
+  g_gl_env = k->env;
+  __atomic_store_n(&s_pb_finished, k->job, __ATOMIC_RELEASE);
+}
+
 static void run(const Cmd *c) {
   switch (c->type) {
   case C_WRAP:
@@ -404,7 +508,8 @@ static void run(const Cmd *c) {
   }
   case C_COMMIT: {
     const CCommit *k = (const CCommit *)c;
-    s_commits_run++;
+    if (!s_pb_running) /* a presenter's buffer's counts at its C_BUF */
+      s_commits_run++;
     if (s_skip) { /* the frame's draws weren't drawn: nothing to file */
       s_skip = 0;
       break;
@@ -417,6 +522,17 @@ static void run(const Cmd *c) {
   case C_BEGIN:
     rt_begin((const CBegin *)c);
     break;
+  case C_BUF: /* stage 7f (D126) */
+    run_buf((const CBuf *)c);
+    break;
+  case C_PVERTS: { /* stage 7f: a presenter's buffer's vertices */
+    const CPVerts *k = (const CPVerts *)c;
+    s_verts_skipped = s_skip != 0;
+    if (!s_skip && s_pb_running)
+      gl_vertices(s_pb_running->verts + k->voff, g_vcache_side, k->count,
+                  (const uint32_t *)(k + 1), k->ndr);
+    break; /* no K_VERTS: the slabs are the game thread's */
+  }
   case C_QUIT: /* the app's own exit (vita_gpu_stop, D120) */
     gl_quit();
     s_rt_quit = 1;
@@ -427,6 +543,47 @@ static void run(const Cmd *c) {
   }
 }
 
+/* 7c: between commands, every LOOK_EVERY, a new display vblank? Then a
+ * frame a vblank late is shown. */
+static void rt_look(void) {
+  if (s_npend && ++s_cmds_since_look >= LOOK_EVERY) {
+    unsigned vc = vita_display_vcount();
+    s_cmds_since_look = 0;
+    if (vc != s_vc_seen) {
+      s_vc_seen = vc;
+      rt_due_timed(1); /* mid-frame: only a frame a vblank late */
+    }
+  }
+}
+
+/* Stage 7f (D126): the C_BUF at the ring's head isn't closed yet and its
+ * frame isn't late: wait for the presenter as with nothing to run (due
+ * frames shown meanwhile), a millisecond at most at a time, so a frame that
+ * becomes late is passed by; its close signals as a post does. */
+static void rt_wait_buf(const CBuf *k) {
+  uint64_t t0 = now_us();
+  if (s_npend) {
+    unsigned vc = vita_display_vcount();
+    if (vc != s_vc_idle) {
+      s_vc_idle = vc;
+      rt_due_timed(0);
+      return;
+    }
+  }
+  __atomic_store_n(&s_rt_sleeping, 1, __ATOMIC_SEQ_CST);
+  g_wd.rt = 0;
+  if (buf_state(k)) {
+    if (!__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
+      sceKernelWaitSema(s_rt_sema, 1, NULL); /* its signal is on the way */
+  } else {
+    SceUInt tmo = 1000;
+    if (sceKernelWaitSema(s_rt_sema, 1, &tmo) < 0 &&
+        !__atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
+      sceKernelWaitSema(s_rt_sema, 1, NULL); /* timed out as a signal came */
+  }
+  s_pb_wait_us += (uint32_t)(now_us() - t0);
+}
+
 static int rt_main(SceSize args, void *argp) {
   uint32_t r = 0;
   (void)args;
@@ -434,6 +591,13 @@ static int rt_main(SceSize args, void *argp) {
   for (;;) {
     const Cmd *c;
     uint64_t t0;
+    if (__atomic_load_n(&s_wpub, __ATOMIC_ACQUIRE) != r) {
+      c = (const Cmd *)(s_ring + (r & (RING - 1)));
+      if (c->type == C_BUF && !buf_state((const CBuf *)c)) {
+        rt_wait_buf((const CBuf *)c);
+        continue;
+      }
+    }
     if (__atomic_load_n(&s_wpub, __ATOMIC_ACQUIRE) == r) {
       if (s_npend) { /* 7c: idle, at a new display vblank */
         unsigned vc = vita_display_vcount();
@@ -481,14 +645,7 @@ static int rt_main(SceSize args, void *argp) {
       g_wd.rt = 0;
       return 0;
     }
-    if (s_npend && ++s_cmds_since_look >= LOOK_EVERY) { /* 7c: a new display vblank? */
-      unsigned vc = vita_display_vcount();
-      s_cmds_since_look = 0;
-      if (vc != s_vc_seen) {
-        s_vc_seen = vc;
-        rt_due_timed(1); /* mid-frame: only a frame a vblank late */
-      }
-    }
+    rt_look(); /* 7c: a new display vblank? */
   }
   return 0;
 }
@@ -585,10 +742,12 @@ static GlEnv s_walk_env;
 
 void vita_gpu_walk_submitted(void) { env_now(&s_walk_env); }
 
+/* The display state the render thread has last (C_ENV, or a C_BUF's) */
+static GlEnv sent;
+static int sent_valid;
+
 /* The game's display state as the GL side should see it from here on. */
 static void env_sync(void) {
-  static GlEnv sent;
-  static int sent_valid;
   GlEnv e;
   if (vita_parse_on_walker()) {
     e = s_walk_env;
@@ -939,6 +1098,214 @@ static void begin(int due, int interp) {
 }
 
 static const PresentCapture s_capture = {capture, commit, begin};
+
+/* ---- stage 7f (D126): the presenter's buffers, the game thread's and the
+ * worker's sides (the render thread's: run_buf) ---- */
+
+static uint32_t s_pw_job;   /* worker: the job being recorded */
+static PBuf *s_pw_buf;      /* worker: its buffer */
+
+/* game thread: the buffer's place in the ring, before the logic draw's
+ * commands; f: the frame it files (NULL: none) */
+static void pres_submit(const PresentFrame *f) {
+  CBuf *c;
+  GlEnv e;
+  env_now(&e); /* the presenter's display state, as 7e's env_sync found it */
+  c = RESERVE(CBuf, C_BUF, 0);
+  c->job = ++s_pb_posted;
+  c->has_frame = f != NULL;
+  c->due = f ? f->due : 0;
+  c->env = e;
+  if (f) {
+    if (f->slot == s_on_screen)
+      s_on_screen = -1; /* new content: draw it again (commit's) */
+    /* counted before the render thread can run it (rt_begin's comparison) */
+    __atomic_add_fetch(&s_commits_posted, 1, __ATOMIC_SEQ_CST);
+  }
+  sent = e; /* what the render thread has after it */
+  sent_valid = 1;
+  s_pw_job = c->job; /* the worker reads it after post()'s semaphore */
+  post(&c->hd);
+}
+
+/* ---- the worker's recording (PresentPresOut's and PsxGpuOut's) ---- */
+
+static Cmd *pb_reserve(int type, uint32_t size) {
+  PBuf *const b = s_pw_buf;
+  Cmd *c;
+  if (b->overflow || b->used + size > PBUF_BYTES) {
+    b->overflow = 1;
+    return NULL;
+  }
+  c = (Cmd *)(b->cmd + b->used);
+  c->type = (uint16_t)type;
+  c->size = size;
+  return c;
+}
+
+#define PB_RESERVE(T, type, extra) ((T *)pb_reserve(type, (sizeof(T) + (extra) + 7) & ~7u))
+static void pb_post(const Cmd *c) { s_pw_buf->used += c->size; }
+
+/* the presenter's display state, before the first command that reads it
+ * (env_sync's places: a clip, a capture) */
+static void pb_env(void) {
+  CEnv *c;
+  if (!s_pw_buf->env_pending || !(c = PB_RESERVE(CEnv, C_ENV, 0)))
+    return;
+  s_pw_buf->env_pending = 0;
+  c->env = s_pw_buf->env;
+  pb_post(&c->hd);
+}
+
+static void pb_verts(const PsxGpuWalk *w) {
+  PBuf *const b = s_pw_buf;
+  const int ndr = g_nd_direct ? (int)w->ndr : 0; /* the walk's direct triangles (D99) */
+  int count = w->nv < 0 ? 0 : w->nv > MAX_VERTEX_BUFFER_SIZE ? MAX_VERTEX_BUFFER_SIZE : w->nv;
+  CPVerts *c;
+  if (b->nverts + (uint32_t)count > MAX_VERTEX_BUFFER_SIZE) {
+    b->overflow = 1;
+    return;
+  }
+  if (!(c = PB_RESERVE(CPVerts, C_PVERTS, (uint32_t)ndr * 8)))
+    return;
+  memcpy(b->verts + b->nverts, w->vb, (size_t)count * sizeof(GrVertex));
+  c->count = count;
+  c->voff = (int)b->nverts;
+  c->ndr = ndr;
+  if (ndr)
+    memcpy(c + 1, w->dr, (size_t)ndr * 8);
+  b->nverts += (uint32_t)count;
+  pb_post(&c->hd);
+}
+
+static void pb_two(int type, int a, int b) {
+  CTwo *c = PB_RESERVE(CTwo, type, 0);
+  if (!c)
+    return;
+  c->a = a;
+  c->b = b;
+  pb_post(&c->hd);
+}
+
+/* gpu_walk.c's draw_split as the render thread's commands (the rest of its
+ * calls do nothing in gpu_gl.c) */
+static void pb_split(const PsxGpuSplit *s) {
+  CClip *c;
+  pb_two(C_TEX, (int)s->textureId, (int)s->texFormat);
+  pb_env();
+  if ((c = PB_RESERVE(CClip, C_CLIP, 0)) != NULL) {
+    c->enable = s->drawenv.dfe;
+    memcpy(&c->head, &s->drawenv.clip, sizeof c->head); /* rt_GR_SetupClipMode's */
+    pb_post(&c->hd);
+  }
+  pb_two(C_BLEND, (int)s->blendMode, 0);
+  pb_two(C_DRAW, s->startVertex, s->numVerts / 3);
+}
+
+static void pb_clear(int x, int y, int w, int h, unsigned char r, unsigned char g, unsigned char b) {
+  CClear *c = PB_RESERVE(CClear, C_CLEAR, 0);
+  if (!c)
+    return;
+  c->x = x, c->y = y, c->w = w, c->h = h;
+  c->r = r, c->g = g, c->b = b;
+  pb_post(&c->hd);
+}
+
+static const PsxGpuOut s_pb_gpu = {pb_verts, pb_split, pb_clear};
+
+/* The job's buffer, once the render thread has finished with job k-2's
+ * (the vertices' rule above) */
+static void pb_open(void) {
+  const uint32_t k = s_pw_job;
+  PBuf *b = &s_pb[k % PBUF_N];
+  if (k > 2 && (int32_t)(__atomic_load_n(&s_pb_finished, __ATOMIC_ACQUIRE) - (k - 2)) < 0) {
+    s_pb_free_waits++;
+    while ((int32_t)(__atomic_load_n(&s_pb_finished, __ATOMIC_ACQUIRE) - (k - 2)) < 0)
+      sceKernelDelayThread(200);
+  }
+  b->used = 0;
+  b->nverts = 0;
+  b->overflow = 0;
+  b->env_pending = 0;
+  s_pw_buf = b;
+}
+
+static void pb_set_env(const void *dispenv, int disabled, int wide) {
+  GlEnv *e = &s_pw_buf->env;
+  memset(e, 0, sizeof *e);
+  memcpy(&e->disp, dispenv, sizeof e->disp);
+  e->disabled = disabled;
+  e->wide = wide;
+  s_pw_buf->env_pending = 1;
+}
+
+static void pb_begin(int due, int interp) {
+  CBegin *c;
+  if (!vita_gpu_due_mode() || !(c = PB_RESERVE(CBegin, C_BEGIN, 0)))
+    return;
+  c->due = due;
+  c->interp = interp;
+  pb_post(&c->hd);
+}
+
+static void pb_capture(int x, int y, int w, int h) {
+  CCapture *c;
+  pb_env();
+  if (!(c = PB_RESERVE(CCapture, C_CAPTURE, 0)))
+    return;
+  c->x = x, c->y = y, c->w = w, c->h = h;
+  pb_post(&c->hd);
+}
+
+static void pb_commit(const PresentFrame *f) {
+  CCommit *c = PB_RESERVE(CCommit, C_COMMIT, 0);
+  if (!c)
+    return;
+  c->f = *f;
+  pb_post(&c->hd);
+}
+
+/* the buffer is whole: the render thread may run it. One too big is run
+ * empty (its frame never filed, counted). */
+static void pb_close(void) {
+  PBuf *const b = s_pw_buf;
+  if (b->overflow) {
+    b->used = 0;
+    s_pb_overflows++;
+  }
+  __atomic_store_n(&b->ready, s_pw_job, __ATOMIC_RELEASE);
+  if (__atomic_load_n(&s_rt_sleeping, __ATOMIC_SEQ_CST) &&
+      __atomic_exchange_n(&s_rt_sleeping, 0, __ATOMIC_SEQ_CST))
+    sceKernelSignalSema(s_rt_sema, 1);
+}
+
+/* the worker can draw the frame: the render thread and the buffers are
+ * there, and no vertex cache (its tables are the game thread's) */
+static int pb_usable(void) {
+  return g_rt_active && g_vita_gpu && s_pb_ok && vita_pres_thread_up() && !gl_vcache_side_used() &&
+         !psx_vcache_polys;
+}
+
+static const PresentPresOut s_pres_out = {pb_usable,  pres_submit, vita_pres_post, vita_pres_wait,
+                                          &s_pb_gpu,  pb_open,     pb_set_env,    pb_begin,
+                                          pb_capture, pb_commit,   pb_close};
+
+/* The presenter's buffers (vita_pres_init, with interp_mode=2): NULL
+ * without the render thread or memory. */
+const PresentPresOut *vita_gpu_pres_out(void) {
+  if (!g_rt_active || !g_vita_gpu)
+    return NULL;
+  return pbuf_alloc() ? &s_pres_out : NULL;
+}
+
+/* The "pres" line's render-thread part since the last call */
+void vita_gpu_pres_report(uint32_t out[5]) {
+  static uint32_t last[5];
+  const uint32_t now[5] = {s_pb_run, s_pb_passed, s_pb_wait_us, s_pb_free_waits, s_pb_overflows};
+  int i;
+  for (i = 0; i < 5; i++)
+    out[i] = now[i] - last[i], last[i] = now[i];
+}
 
 /* ---- 7c on the game thread (vblank.c, with present_due=1) ---- */
 

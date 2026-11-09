@@ -76,13 +76,15 @@ static const uint32_t *next_packet(const uint32_t *p) {
   return (*p & 0xFFFFFFu) == 0xFFFFFFu ? NULL : (const uint32_t *)MEM_OT_NEXT(*p);
 }
 
-/* a marker's records: the pool by its bit, the first record's offset */
-static void records(Frame *f, const uint32_t *m) {
+/* a marker's records: the pool by its bit (or the list's own pool, the
+ * presenter's, own_w), the first record's offset */
+static void records(Frame *f, const uint32_t *m, const uint32_t *own_w, uint32_t own_cap) {
   const NdPool *pool = &g_nd_pool[m[1] >> 11 & 1];
+  const uint32_t *const pw = own_w ? own_w : pool->w, cap = own_w ? own_cap : pool->cap;
   uint32_t off = m[2], guard = 0;
-  while (off != ND_END && pool->w && off + 2 <= pool->cap && guard++ < FRAME_MAX) {
-    const uint32_t *r = pool->w + off, kind = r[1], body = ND_BODY(kind);
-    if (off + 2 + body > pool->cap)
+  while (off != ND_END && pw && off + 2 <= cap && guard++ < FRAME_MAX) {
+    const uint32_t *r = pw + off, kind = r[1], body = ND_BODY(kind);
+    if (off + 2 + body > cap)
       break;
     put(f, 0xEC000000u | kind);
     if (kind <= ND_K_GT4)
@@ -94,7 +96,8 @@ static void records(Frame *f, const uint32_t *m) {
   }
 }
 
-void pres_check_frame(int which, const void *ot_head) {
+void pres_check_frame(int which, const void *ot_head, const DRAWENV *de, const DISPENV *dd,
+                      const uint32_t *pool, uint32_t pool_cap) {
   Frame *f = &s_frame[which & 1];
   const uint32_t *p = ot_head;
   uint32_t guard = 0;
@@ -103,14 +106,14 @@ void pres_check_frame(int which, const void *ot_head) {
   if (f->on) /* one list per frame in play: a second is recorded after it */
     put(f, 0xEEEEEEEEu);
   f->on = 1;
-  put_words(f, &activeDrawEnv, sizeof activeDrawEnv);
-  put_words(f, &activeDispEnv, sizeof activeDispEnv);
+  put_words(f, de, sizeof *de);
+  put_words(f, dd, sizeof *dd);
   for (; p && guard++ < FRAME_MAX; p = next_packet(p)) {
     const uint32_t len = *p >> 24;
     if (!len)
       continue;
     if (len == 2 && (p[1] & 0xFFF000u) == ND_MAGIC && !(p[1] >> 24)) {
-      records(f, p);
+      records(f, p, pool, pool_cap);
       continue;
     }
     put(f, 0xED000000u | len);

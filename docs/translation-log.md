@@ -523,3 +523,11 @@ No new translation: the decomp's `gamestates/draw.c`, `camera.c` and `environmen
 |---|---|---|---|
 | `GamestateDraw_pres` and the 64 functions its play branch reaches (`tests/pres/link_check.py` lists them) | the same sources again, the state they write or must see blended renamed onto the snapshot's copies (`pres_snap_names.h`) and 7d's context, the renderers onto `NAME_pres`, `VSync` onto a stub that doesn't wait, the VRAM calls dropped | `--pres-check` (each in-between frame in play drawn by the presenter and by D30's pass, the two lists compared record for record) on the demos, wsi, gems, routes A and B and the tour; with `--interp-mode 2` every file the same as D30's; `pres_link` | the polygons' bits the PS1 GPU ignores (UV pad halves, later colour code bytes) hold what the presenter's buffer held before, not the game's |
 | `moby_cull_hand.c`, `sky_clip_hand.c` entries (`src/game/pres/moby_cull.c`, `sky_clip.c`) | the hand C called directly, as the native build's entries do (`render_hand.h` `HAND_UNIT_FN_` redefined in the wrapper) | as above | none |
+
+## Stage 7f: the presenter on its own core (2026-11-09, decisions D126)
+
+No new translation. The presenter's build (7e's) maps its five output calls onto port code of its own (`pres_names.h`: `DrawOTag`, `PutDrawEnv`, `PutDispEnv`, `DrawSync`, `port_present_note_2d` → `present.c`'s `pres_*`), which work on copies of libgpu's environments, on a second OT walk (`gpu_walk.c`'s `PsxGpuWalk` with `own`: no VRAM calls, no check hooks, its own scene start, records' mode and records' pool) and on its own 16:9 substitutions. `pres_link` now allows the presenter no output of the game's.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `pres_DrawOTag`, `pres_PutDrawEnv`, `pres_PutDispEnv`, `pres_DrawSync`, `pres_note_2d` (`present.c`) | libgpu.c's and present.c's (`ot_pre`, `ot_post`) on the presenter's own state, as 7e reached them through the game's | `--pres-check` (the presenter's environments and list against D30's pass's, record for record), and with `--interp-mode 2` every file D30's, on the host (inline); Vita3K's shots and captures against D30's on the same VPK | the walk's check hooks (`--walk-check`) see only the game thread's walk |

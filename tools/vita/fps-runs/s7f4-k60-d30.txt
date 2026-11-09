@@ -1,0 +1,6 @@
+# Run 7F4 (D126): 7C2's K route at 60 fps with today's defaults, D30's pass (interp_mode 0).
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7f4 1500 @tools/vita/fps-runs/s7f4-k60-d30.txt @tools/vita/hw-routes/m1-xa-k.cfg
+config_version=3
+interp=1
+gpu_meter=1

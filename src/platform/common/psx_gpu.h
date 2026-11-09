@@ -150,7 +150,33 @@ typedef struct PsxGpuWalk {
   uint32_t (*dr)[2];   /* PSX_GPU_DIRECT_MAX */
   PsxGpuSplit *splits; /* PSX_GPU_MAX_SPLITS */
   GrVertex *vb;        /* MAX_VERTEX_BUFFER_SIZE */
+  /* Stage 7f's second walk (the presenter's, on its own core; D126). The
+   * game thread's walk has none of these (0 and NULL), and goes on as it
+   * was: */
+  const struct PsxGpuOut *out; /* its draws, clears and vertex buffers (NULL: the GR_* calls) */
+  int own;                 /* 1: no VRAM calls (D30's freeze, for good), no check hooks, its
+                            * own scene start (psx_gpu_walk_own) */
+  int nd;                  /* with own: the records' mode of its list (g_psx_walk_nd's) */
+  const uint32_t *nd_pool; /* with own: its records' pool (native_draw.c), nd_pool_cap words */
+  uint32_t nd_pool_cap;
 } PsxGpuWalk;
+
+/* What a walk of its own (stage 7f) draws with, in place of the GR_* calls,
+ * which on the Vita are the game thread's command ring (D63): the vertex
+ * buffer with the walk's direct ranges (D99), one split's state and
+ * triangles (draw_split's calls), and a clear (the scene's isbg). */
+typedef struct PsxGpuOut {
+  void (*verts)(const PsxGpuWalk *w);
+  void (*split)(const PsxGpuSplit *s);
+  void (*clear)(int x, int y, int w, int h, unsigned char r, unsigned char g, unsigned char b);
+} PsxGpuOut;
+
+/* A walk of its own (w->own): the scene's start as PsyX_BeginScene's on its
+ * own state (its pending splits drawn, its draw environment's isbg clear),
+ * the list from p to its end, then its splits drawn (DrawOTag's). */
+void psx_gpu_walk_own(PsxGpuWalk *w, u_long *p);
+/* its splits drawn, if any (DrawSync's) */
+void psx_gpu_draw_splits_own(PsxGpuWalk *w);
 
 /* the game thread's walk */
 PsxGpuWalk *psx_gpu_game_walk(void);

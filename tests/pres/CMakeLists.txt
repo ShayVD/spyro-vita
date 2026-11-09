@@ -1,7 +1,7 @@
 # Stage 7e (decisions D125): the presenter's draw (src/game/pres/).
 #  - pres_link: from GamestateDraw_pres, every name the presenter's object
 #    reaches outside itself is its own (context, snapshot, renderers), read
-#    only, its output on the game thread, or a game function that names no
+#    only, its output (none since 7f, D126), or a game function that names no
 #    writable data (link_check.py), so the presenter writes nothing of the
 #    game's by name.
 #  - pres_demo: the attract demo to vblank 5,000 with --interp --pres-check:

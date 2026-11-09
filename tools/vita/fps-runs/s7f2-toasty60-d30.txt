@@ -1,0 +1,7 @@
+# Run 7F2 (D126): X7 with today's defaults: 60 fps, D30's pass draws the in-between frame on the
+# game thread (interp_mode 0), the Toasty route. The reference for 7F3.
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7f2 1500 @tools/vita/fps-runs/s7f2-toasty60-d30.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1

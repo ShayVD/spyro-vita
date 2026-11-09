@@ -60,6 +60,11 @@ void pres_nd_end(void) { g_pres_nd.on = 0; }
 u32 g_pres_sec_anims[PRES_SEEN];
 unsigned g_pres_sector_misses;
 unsigned g_pres_face_misses; /* moby_hand.c: face lists too long for the copy */
+/* stage 7f (D126): the game's draw replaces faces in a copy while the
+ * presenter draws beside it (present.c sets it), and the lists too long
+ * for that copy, replaced in place */
+int g_faces_copy;
+unsigned g_faces_in_place;
 static uintptr_t s_sec_next;
 RenderCtxSector g_pres_sectors[PRES_SECTORS_MAX];
 int g_pres_nsectors;

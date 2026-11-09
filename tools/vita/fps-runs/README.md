@@ -568,3 +568,29 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - **Then the owner decides** whether `fast_render=3` becomes the default; if it does, the register-file builds (`fast_render=1` and 2, `ngte_fx`, the `_ndr` and `_ngte` builds) can leave the native build in a cleanup.
 
 **Ran** on 2026-11-09 (D124, approved by the owner in the session's chat; VPK `logs/s7d2/s7d2-final.vpk`, SHA-1 `cb60802b…`; `logs/hw-7d2a`, `logs/hw-7d2b`, gitignored). The kit's lock was free and no kh1-decomp run was going. Both reached `frames=` (165 s and 159 s), no crash dump, the owner's files put back each time. **All 18 pictures and the memory card identical.** `hw_cmp.py` (58 windows from vblank 900, ms per vblank): `game` 2.976 → 2.843; env 1.207 → 1.141, mobys 0.754 → 0.701, Spyro 0.154 → 0.131, sky 0.493 → 0.506; the four 2.609 → 2.478 (−5%). `native_share.py --fps 30 --all`: renderers 2.72 → 2.59, sum 6.51 → 6.36, every other layer within 0.01. Main's eboot (`2e73e77`, `ad011afa…`) went back afterwards, with the kit's lock held, and read back identical. **The owner then made `fast_render=3` the Vita's default** (D124).
+
+## Runs 7F1–7F5: the presenter on its own core (D126; proposed, not run)
+
+7f moves the in-between frame in play off the game thread: with `interp_mode=2` the presenter draws it on a thread of its own (`pres_thread=1`, core 1) beside the logic draw, recording into the render thread's buffers, and the game thread joins it before the next update. The host and Vita3K (`realtime=0`) show the pictures are D30's; only hardware can show the game thread's time, the late vblanks and whether the presenter's frames are ready by their vblank.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7F1 | `s7f1-toasty30.txt` | X6's with today's defaults: 30 fps | the Toasty route (`o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1` | 7 min |
+| 7F2 | `s7f2-toasty60-d30.txt` | X7's with today's defaults: 60 fps, D30's pass | as 7F1 | 7 min |
+| 7F3 | `s7f3-toasty60-pres.txt` | 7F2 with `interp_mode=2` (the presenter on its thread) | as 7F1 | 7 min |
+| 7F4 | `s7f4-k60-d30.txt` | 7C2's K route at 60 fps with today's defaults, D30's pass | the K route (`k-route.pad`, `m1-xa-k.cfg`), `REALTIME=1` | 5–6 min |
+| 7F5 | `s7f5-k60-pres.txt` | 7F4 with `interp_mode=2` | as 7F4 | 5–6 min |
+
+**The VPK:** this branch's, for all five (main's has no presenter thread; with `interp_mode` 0 the branch runs main's code path). `DEVICE_DEFAULTS=1` keeps the shipped defaults (`fast_render=3`, `native_draw=1`, `nd_direct=1`, `gpu_clear=2`, `present_due=1`, `mixer=3`, `cd_native=1`).
+
+**Unattended** (each run needs the owner's yes first; check `~/.cache/vita-port-kit/hw.lock` and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of this branch's VPK, `T=$PWD/tools/vita/hw-routes/o-toasty.pad` and `K=$PWD/tools/vita/hw-routes/k-route.pad`:
+- 7F1: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7f1 1500 @tools/vita/fps-runs/s7f1-toasty30.txt @tools/vita/hw-routes/o-toasty.cfg`
+- 7F2, 7F3: the same with `s7f2-toasty60-d30.txt`, `s7f3-toasty60-pres.txt` into `logs/hw-7f2`, `logs/hw-7f3`
+- 7F4: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7f4 1500 @tools/vita/fps-runs/s7f4-k60-d30.txt @tools/vita/hw-routes/m1-xa-k.cfg`
+- 7F5: the same with `s7f5-k60-pres.txt` into `logs/hw-7f5`
+
+**What to read** (`fps60_summary.py`, `hw_cmp.py`, by window from vblank 900):
+- **The game thread:** `time`'s busy % and `game` ms per vblank, 7F3 against 7F2 and 7F1 (D119's *estimate*: Toasty 39.5% at 60 fps → about 21.5%, near 30 fps's); 7F5 against 7F4. The `present` lines' "passes" µs a tick are only the game thread's part (the snapshot) with the presenter on its thread.
+- **Late vblanks** per 300 (the `vblank` lines) and the `7c:` part of the `present` lines: no more than 7F2's and 7F4's.
+- **The presenter** (the `pres` lines, 7F3 and 7F5): its frames on core 1, its thread's busy ms per vblank, the game thread's wait at the join (ms per vblank, and in how many joins), the buffers the render thread ran and passed by (not ready by their vblank: never shown), its waits for the presenter, and "display environments not the presenter's" and "frames uncaptured" (both 0 expected).
+- **The pictures:** these routes take no shots; Vita3K's `realtime=0` shots and captures are D30's (D126).

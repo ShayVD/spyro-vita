@@ -176,6 +176,8 @@ enum { ND_WALK_DIRECT = 0x10, ND_WALK_RANGES = 0x20 };
  * read them at GR_UpdateVertexBuffer. */
 enum { ND_DR_MAX = 2048 };
 int nd_direct_ranges(const u32 **r);
+/* the walk whose ranges nd_direct_ranges gives (NULL: the game thread's) */
+extern struct PsxGpuWalk *g_nd_ranges_walk;
 /* host --nd-direct-check: every packet the walk parses itself both ways
  * from the same state, the direct triangles compared with the reference's
  * after psx_lean.h's rule (native_draw.c) */

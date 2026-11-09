@@ -89,6 +89,8 @@ void vita_cores_probe(void) {
 
 /* ---- the parse thread ---- */
 
+int vita_core3_ok(void) { return s_core3_ok; }
+
 static SceUID s_th = -1, s_go, s_done;
 static int s_core;
 static uintptr_t s_stack_lo, s_stack_hi; /* the parse thread's stack */

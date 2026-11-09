@@ -203,6 +203,15 @@
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
+ *       pres_thread=0   with interp_mode=2, the presenter's in-between frame
+ *                       on the game thread, as 7e (default 1: on a thread of
+ *                       its own beside the logic draw, recording into the
+ *                       render thread's buffers; stage 7f, D126). It needs
+ *                       gpu=1 and render_thread=1, and with persp or
+ *                       subpixel on (the vertex cache) the frame is drawn
+ *                       on the game thread anyway
+ *       pres_core=3     that thread on core 3 if the start-up check allows
+ *                       it; else core 1 (default 1; D126)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -253,6 +262,7 @@
 #include "psx_cdnative.h"
 #include "psx_hooks.h"
 #include "../../game/cheats_port.h"
+#include "../../game/present.h" /* port_present_pres_join (D126) */
 
 #include <SDL2/SDL.h>
 #include <psp2/display.h>
@@ -283,7 +293,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
-                        .parse_core = 1,
+                        .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
 
@@ -470,6 +480,10 @@ static void read_config(void) {
       g_nd_direct = atoi(v);
     else if (!strcmp(line, "parse_core"))
       g_vita_opts.parse_core = atoi(v);
+    else if (!strcmp(line, "pres_thread"))
+      g_vita_opts.pres_thread = atoi(v);
+    else if (!strcmp(line, "pres_core"))
+      g_vita_opts.pres_core = atoi(v);
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "interp_mode"))
@@ -530,7 +544,9 @@ static void read_config(void) {
 
 void vita_exit(int res) {
   unsigned long long t0 = sceKernelGetProcessTimeWide();
-  int r = vita_gpu_stop();
+  int r;
+  port_present_pres_join(); /* the presenter's frame first (stage 7f, D126) */
+  r = vita_gpu_stop();
   int quiet = vita_gpu_meter_quiet(100000);
   vita_log("exit: render thread %s, GPU meter %s, in %u ms (D120)",
            r > 0 ? "stopped" : r < 0 ? "not stopped" : "none", quiet ? "quiet" : "still polling",
@@ -676,6 +692,7 @@ int main(int argc, char **argv) {
     vita_exit(1);
   }
   vita_parse_init(); /* after the render thread (D71) */
+  vita_pres_init();  /* stage 7f (D126): with interp_mode=2 */
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,

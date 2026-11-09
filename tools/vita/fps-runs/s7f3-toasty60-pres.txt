@@ -1,0 +1,10 @@
+# Run 7F3 (D126): 7F2 with interp_mode=2: in play the presenter draws the in-between frame on its
+# own thread (pres_thread=1, core 1), beside the logic draw (stage 7f). The "pres" lines: its
+# frames, its thread's time, the game thread's wait at the join, the buffers the render thread
+# passed by (not ready by their vblank).
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7f3 1500 @tools/vita/fps-runs/s7f3-toasty60-pres.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1
+interp_mode=2

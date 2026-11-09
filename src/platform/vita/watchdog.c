@@ -61,7 +61,9 @@ static volatile unsigned s_spin;
 static const char *const k_parts[] = {"game logic", "OT walk", "raster", "SPU/CD", "present", "wait"};
 static const char *const k_ctx[] = {"start-up", "play", "options menu", "save state"};
 static const char *const k_cmds[] = {"wrap", "env", "clip", "texture", "blend", "vertices", "draw",
-                                     "clear", "copy", "call", "present", "capture", "commit"};
+                                     "clear", "copy", "call", "present", "capture", "commit",
+                                     "frame begin", "quit", "the presenter's buffer",
+                                     "the presenter's vertices"};
 static const char *const k_rt_waits[] = {"ring full", "previous frame not shown yet", "sync call",
                                          "vertex slabs", "GPU start-up"};
 static const char *const k_mixer[] = {"idle", "XA decode", "voices", "mix", "audio out"};
