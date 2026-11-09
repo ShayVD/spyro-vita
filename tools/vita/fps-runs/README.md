@@ -581,7 +581,7 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 | 7F4 | `s7f4-k60-d30.txt` | 7C2's K route at 60 fps with today's defaults, D30's pass | the K route (`k-route.pad`, `m1-xa-k.cfg`), `REALTIME=1` | 5–6 min |
 | 7F5 | `s7f5-k60-pres.txt` | 7F4 with `interp_mode=2` | as 7F4 | 5–6 min |
 
-**The VPK:** this branch's, for all five (main's has no presenter thread; with `interp_mode` 0 the branch runs main's code path). `DEVICE_DEFAULTS=1` keeps the shipped defaults (`fast_render=3`, `native_draw=1`, `nd_direct=1`, `gpu_clear=2`, `present_due=1`, `mixer=3`, `cd_native=1`).
+**The VPK:** this branch's, for all five (main's has no presenter thread; with `interp_mode` 0 the branch runs main's code path). Since `interp_mode=2` became the Vita's default (D126, after these runs) 7F2 and 7F4 carry `interp_mode=0`; when they ran it was the default. Every earlier run here with `interp=1` and no `interp_mode` line ran D30's pass: repeating one on a VPK from D126 on needs `interp_mode=0` added. `DEVICE_DEFAULTS=1` keeps the shipped defaults (`fast_render=3`, `native_draw=1`, `nd_direct=1`, `gpu_clear=2`, `present_due=1`, `mixer=3`, `cd_native=1`).
 
 **Unattended** (each run needs the owner's yes first; check `~/.cache/vita-port-kit/hw.lock` and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of this branch's VPK, `T=$PWD/tools/vita/hw-routes/o-toasty.pad` and `K=$PWD/tools/vita/hw-routes/k-route.pad`:
 - 7F1: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7f1 1500 @tools/vita/fps-runs/s7f1-toasty30.txt @tools/vita/hw-routes/o-toasty.cfg`
