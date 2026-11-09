@@ -13,7 +13,10 @@ functions name from outside must be one of:
     renderers (NAME_pres, 7d);
   - a read-only name (READ_ONLY below): the game's constant tables, the
     level's data and the pointers set when a level loads;
-  - its output on the game thread (OUTPUT below), which 7f routes;
+  - its output (OUTPUT below): empty since stage 7f (D126), which maps
+    DrawOTag, PutDrawEnv, PutDispEnv, DrawSync and port_present_note_2d
+    onto present.c's presenter versions (pres_*), so it runs beside the
+    logic draw on a core of its own;
   - a function of the game's that names no writable data at all, itself
     or through what it calls ("shared"), found in GAME_OBJ.
 What the presenter's object defines itself must be functions, constant
@@ -45,11 +48,10 @@ READ_ONLY = r"""
 ^D_80074B84$
 """
 
-# the presenter's output, on the game thread in 7e (7f gives it its own)
+# the presenter's output of the game's: none since 7f (D126); 7e's were
+# DrawOTag, PutDrawEnv, PutDispEnv, DrawSync, port_present_note_2d and
+# g_psx_walk_nd
 OUTPUT = r"""
-^(DrawOTag|PutDrawEnv|PutDispEnv|DrawSync)$
-^port_present_note_2d$
-^g_psx_walk_nd$
 """
 
 PRIVATE = set()
@@ -101,7 +103,8 @@ def main():
     objdump, nm, pres = sys.argv[1:4]
     game_objs = [o for a in sys.argv[4:] for o in a.split(";") if o]
     ro = re.compile("|".join(x for x in READ_ONLY.split("\n") if x))
-    out = re.compile("|".join(x for x in OUTPUT.split("\n") if x))
+    out_lines = [x for x in OUTPUT.split("\n") if x]
+    out = re.compile("|".join(out_lines)) if out_lines else None
     pf = functions(objdump, pres)
     pt = symtab(nm, pres)
     if "GamestateDraw_pres" not in pf:
@@ -165,7 +168,7 @@ def main():
                 continue
             outside.add(s)
     for s in sorted(outside):
-        if s.startswith(("g_pres_", "pres_")) or s.endswith("_pres") or ro.match(s) or out.match(s):
+        if s.startswith(("g_pres_", "pres_")) or s.endswith("_pres") or ro.match(s) or (out and out.match(s)):
             continue
         why = shared(s, set())
         if why:
@@ -182,8 +185,8 @@ def main():
         print("reached (the presenter's copies): " + " ".join(sorted(reached)))
         print("its own: " + " ".join(own))
         print("read only: " + " ".join(x for x in rest if ro.match(x)))
-        print("output: " + " ".join(x for x in rest if out.match(x) and not ro.match(x)))
-        print("shared: " + " ".join(x for x in rest if not ro.match(x) and not out.match(x)))
+        print("output: " + " ".join(x for x in rest if out and out.match(x) and not ro.match(x)))
+        print("shared: " + " ".join(x for x in rest if not ro.match(x) and not (out and out.match(x))))
     print("pres_link: %d functions reached from GamestateDraw_pres; %d outside names, each the "
           "presenter's own, read only, its output or shared" % (len(reached), len(outside)))
 

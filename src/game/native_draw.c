@@ -45,9 +45,12 @@ static unsigned s_dr_tris, s_dr_skipped, s_dr_full;
 
 _Static_assert(ND_DR_MAX == PSX_GPU_DIRECT_MAX, "the walk's room for the direct ranges");
 
-/* the game thread's walk's */
+/* the game thread's walk's, or while the presenter draws inline through the
+ * GR_* calls its own (stage 7f, D126) */
+PsxGpuWalk *g_nd_ranges_walk;
+
 int nd_direct_ranges(const u32 **r) {
-  const PsxGpuWalk *const w = psx_gpu_game_walk();
+  const PsxGpuWalk *const w = g_nd_ranges_walk ? g_nd_ranges_walk : psx_gpu_game_walk();
   *r = &w->dr[0][0];
   return (int)w->ndr;
 }
@@ -204,6 +207,10 @@ typedef struct {
  * the list's) */
 static int s_dc_force = -1;
 
+/* the records' mode of the list w walks: a walk of its own (the
+ * presenter's, stage 7f, D126) keeps its list's; else the handover's */
+static inline int walk_nd(const PsxGpuWalk *w) { return w->own ? w->nd : psx_walk_nd(); }
+
 static void em_begin(Em *e, PsxGpuWalk *w) {
   e->w = w;
   e->env = w->env;
@@ -212,7 +219,8 @@ static void em_begin(Em *e, PsxGpuWalk *w) {
   e->prev = ~0u;
   draw_offset(w, &e->ox, &e->oy);
   e->dmask = e->env->dtd ? 1u << 24 : 0;
-  e->direct = (u32)(s_dc_force >= 0 ? s_dc_force : psx_walk_nd()) & (ND_WALK_DIRECT | ND_WALK_RANGES);
+  /* a walk of its own (the presenter's, stage 7f, D126) keeps its list's mode */
+  e->direct = (u32)(s_dc_force >= 0 ? s_dc_force : walk_nd(w)) & (ND_WALK_DIRECT | ND_WALK_RANGES);
 }
 
 /* D99: the triangles just made at vertex i (nt of them, at v), each one the
@@ -470,7 +478,10 @@ void nd_poly(PsxGpuWalk *w, const u32 *c) {
 /* a marker's records (m: the marker) */
 static int marker_packet(PsxGpuWalk *w, const u32 *m) {
   const u32 pool = m[1] >> 11 & 1;
-  emit(w, g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
+  if (w->own && w->nd_pool) /* the presenter's own pool (stage 7f, D126) */
+    emit(w, w->nd_pool, m[2], w->nd_pool_cap);
+  else
+    emit(w, g_nd_pool[pool].w, m[2], g_nd_pool[pool].cap);
   return 1;
 }
 
@@ -571,7 +582,7 @@ static int dcheck_packet(PsxGpuWalk *w, const u32 *m, int (*fn)(PsxGpuWalk *w, c
             i - 3, x[0], x[1], x[2], x[3], x[4], y[0], y[1], y[2], y[3], y[4]);
     }
   }
-  if (!(psx_walk_nd() & ND_WALK_DIRECT)) {
+  if (!(walk_nd(w) & ND_WALK_DIRECT)) {
     /* the reference stays */
     memcpy(vb + fill0, s_dc_ref, (size_t)(fill1 - fill0) * sizeof(GrVertex));
     w->ndr = n0;
@@ -594,7 +605,7 @@ int nd_packet(PsxGpuWalk *w, uintptr_t packet) {
   w1 = m[1];
   if ((m[0] >> 24) != 2 || (w1 & 0xFFF000u) != ND_MAGIC || (w1 >> 24)) {
     const u32 cls = w1 >> 29;
-    if (g_nd_fast && psx_walk_nd() &&
+    if (g_nd_fast && walk_nd(w) &&
         (g_nd_pcheck   ? nd_pcheck_packet(w, m, fast_packet)
          : g_nd_dcheck ? dcheck_packet(w, m, fast_packet)
                        : fast_packet(w, m)))

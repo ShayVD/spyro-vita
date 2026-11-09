@@ -17,6 +17,7 @@
 #include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
+#include <stdlib.h>
 #include <string.h>
 
 #include "buffers.h"
@@ -30,11 +31,10 @@
 #include <libgpu.h>
 
 #if SPYRO_PRESENTER
-const int g_pres_built = 1;
-void GamestateDraw_pres(void); /* pres_draw.o (cmake/presenter.cmake) */
+const int g_pres_built = 1; /* GamestateDraw_pres: pres_draw.o (cmake/presenter.cmake) */
 #else
 const int g_pres_built = 0;
-static void GamestateDraw_pres(void) {}
+void GamestateDraw_pres(void) {}
 #endif
 
 #define OT_BYTES 0x4000
@@ -99,12 +99,16 @@ void pres_PortProjectionHook(short pM[3][3]) {
 void pres_hud_list(const void *head, const void *tail) { (void)head, (void)tail; }
 
 /* native_draw.c nd_list_linked on the presenter's cursor: the walk's mode
- * for the list (the game's rule), and the cursor off its pool. The game's
- * pool and serial don't move. */
+ * for the list (the game's rule, into the presenter's own: its walk takes
+ * it, stage 7f), and the cursor off its pool. The game's pool, serial and
+ * g_psx_walk_nd don't move. */
+int g_pres_walk_nd;
+
 void pres_nd_list_linked(void) {
-  g_psx_walk_nd = g_native_draw;
+  int nd = g_native_draw;
   if (g_native_draw && g_nd_direct && g_nd_direct_ok)
-    g_psx_walk_nd |= g_nd_direct == 2 ? ND_WALK_RANGES : ND_WALK_DIRECT;
+    nd |= g_nd_direct == 2 ? ND_WALK_RANGES : ND_WALK_DIRECT;
+  g_pres_walk_nd = nd;
   g_pres_nd.base = g_pres_nd.wp = g_pres_nd.lim = NULL;
 }
 
@@ -112,15 +116,27 @@ void pres_nd_list_linked(void) {
 
 static u32 s_serial;
 
-/* The presenter's records go to the pool the game isn't writing (the walk
- * of the game's last list, which read it, is joined first), under a
- * serial of its own; the walk finds them by the marker's pool bit. */
+/* The presenter's records go to a pool of its own, as big as the game's
+ * (stage 7f, D126: 7e used the game's other pool, which the logic draw
+ * may write while the presenter runs beside it), under a serial of its
+ * own; its walk finds them there (PsxGpuWalk's nd_pool). The game's walk
+ * is joined first, as before: the presenter starts from the GPU state it
+ * leaves. */
+#define POOL_WORDS (256u * 1024u) /* native_draw.c's */
+static u32 *s_pool;
+
+void pres_draw_pool(const uint32_t **w, uint32_t *cap) {
+  *w = s_pool;
+  *cap = s_pool ? POOL_WORDS : 0;
+}
+
 static void records_begin(void) {
-  const u32 pool = g_nd_cur ^ 1u;
-  const NdPool *p = &g_nd_pool[pool];
+  const u32 pool = 0; /* the marker's bit: its walk reads s_pool whatever it says */
   psx_walk_join();
-  g_pres_nd.base = g_pres_nd.wp = p->w;
-  g_pres_nd.lim = p->w ? p->w + p->cap - ND_MAXW : NULL;
+  if (!s_pool && g_nd_pool[0].w) /* native_draw on */
+    s_pool = malloc(POOL_WORDS * sizeof(u32));
+  g_pres_nd.base = g_pres_nd.wp = s_pool;
+  g_pres_nd.lim = s_pool ? s_pool + POOL_WORDS - ND_MAXW : NULL;
   g_pres_nd.id = ND_MAGIC | pool << 11 | s_serial;
   g_pres_nd.key = g_pres_nd.id << 21;
   g_pres_nd.on = 0;
@@ -200,13 +216,14 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   lod_begin();
 }
 
-int pres_draw_frame(int blend, int wide, const uint8_t *flags, const uint32_t *caches, int ncaches) {
+int pres_draw_prepare(int blend, int wide, const uint8_t *flags, const uint32_t *caches,
+                      int ncaches) {
   if (!pres_draw_available() || !pres_snap_take(blend))
     return 0;
   context(wide, flags, caches, ncaches);
-  GamestateDraw_pres();
   return 1;
 }
+
 
 void pres_draw_visibility(uint8_t *flags, uint32_t *caches, int ncaches) {
   int i, n = sector_count();

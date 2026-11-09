@@ -32,6 +32,9 @@ CONSTANT = {
     "env_hand.c:s_proj",        # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80, D124)
     "port.c:s_kuseg_sink",      # the native build's sink for stray stores, never read (D106)
+    # a record's faces copied while the presenter draws beside the game's draw (D126):
+    # written by ReplaceFaces, emptied by RestoreFaces in the same record, never across ticks
+    "moby_hand.c:s_faces", "moby_hand.c:s_faces_on",
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {

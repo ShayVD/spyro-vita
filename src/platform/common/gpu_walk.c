@@ -171,8 +171,12 @@ void psx_gpu_add_split(int semiTrans, int textured) {
   psx_gpu_add_split_in(&s_game, semiTrans, textured);
 }
 
-static void draw_split(const PsxGpuSplit *s) {
+static void draw_split(const PsxGpuWalk *w, const PsxGpuSplit *s) {
   const int on_screen = s->drawenv.dfe;
+  if (w->out) { /* a walk of its own (stage 7f, D126) */
+    w->out->split(s);
+    return;
+  }
   if (s->debugText)
     GR_PushDebugLabel(s->debugText);
   GR_SetStencilMode(s->drawPrimMode);
@@ -189,9 +193,12 @@ static void draw_split(const PsxGpuSplit *s) {
 
 void psx_gpu_draw_splits_in(PsxGpuWalk *w) {
   int i;
-  GR_UpdateVertexBuffer(w->vb, w->nv);
+  if (w->out)
+    w->out->verts(w);
+  else
+    GR_UpdateVertexBuffer(w->vb, w->nv);
   for (i = 1; i <= w->ns; i++)
-    draw_split(&w->splits[i]);
+    draw_split(w, &w->splits[i]);
   psx_gpu_clear_splits_in(w);
 }
 
@@ -453,7 +460,9 @@ static int parse_env(PsxGpuWalk *wk, const u_int *c, int len) {
 }
 
 /* the fill, DR_MOVE and DR_LOAD go to libgpu (the check sees them first) */
-static void vram_fill(const RECT16 *r, int cr, int cg, int cb) {
+static void vram_fill(const PsxGpuWalk *w, const RECT16 *r, int cr, int cg, int cb) {
+  if (w->own)
+    return; /* D30's freeze, which 7e's presenter ran under (D126) */
   if (g_psx_gpu_check)
     g_psx_gpu_check->vram(0, r, cr, cg, cb, NULL);
   ClearImage((RECT16 *)r, (u_char)cr, (u_char)cg, (u_char)cb);
@@ -476,6 +485,10 @@ static int parse_command(PsxGpuWalk *w, const u_int *c, int len) {
       const int x = (int)(c[3] & 0xFFFF), y = (int)(c[3] >> 16 & 0xFFFF);
       memcpy(&r.x, &c[2], 4);
       memcpy(&r.w, &c[4], 4);
+      if (w->own) {
+        n = 5; /* D30's freeze (D126) */
+        break;
+      }
       if (g_psx_gpu_check)
         g_psx_gpu_check->vram(1, &r, x, y, 0, NULL);
       MoveImage(&r, x, y);
@@ -499,9 +512,11 @@ static int parse_command(PsxGpuWalk *w, const u_int *c, int len) {
     RECT16 r;
     memcpy(&r.x, &c[1], 4);
     memcpy(&r.w, &c[2], 4);
-    if (g_psx_gpu_check)
-      g_psx_gpu_check->vram(2, &r, 0, 0, 0, &c[3]);
-    LoadImage(&r, (u_long *)&c[3]);
+    if (!w->own) { /* else D30's freeze (D126) */
+      if (g_psx_gpu_check)
+        g_psx_gpu_check->vram(2, &r, 0, 0, 0, &c[3]);
+      LoadImage(&r, (u_long *)&c[3]);
+    }
     n = len;
     break;
   }
@@ -579,7 +594,7 @@ static void parse_packet(PsxGpuWalk *w, const u_int *tag, int len) {
       r.y = (short)((c[1] >> 16) & 0x1FF);
       r.w = (short)(((c[2] & 0x3FF) + 0xF) & ~0xF);
       r.h = (short)((c[2] >> 16) & 0x1FF);
-      vram_fill(&r, (int)(c[0] & 0xFF), (int)((c[0] >> 8) & 0xFF), (int)((c[0] >> 16) & 0xFF));
+      vram_fill(w, &r, (int)(c[0] & 0xFF), (int)((c[0] >> 8) & 0xFF), (int)((c[0] >> 16) & 0xFF));
     } else if (code >= 0x20) { /* 00h-1Fh other than 02h are NOPs here */
       parse_command(w, c, words);
     }
@@ -617,6 +632,8 @@ static uintptr_t subst_of(const PsxGpuWalk *w, uintptr_t pk) {
 }
 
 void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
+  /* the check's hooks are the game thread's walk's (D126) */
+  const PsxGpuCheck *const chk = w->own ? NULL : g_psx_gpu_check;
   uintptr_t pk;
   if (!p)
     return;
@@ -625,12 +642,12 @@ void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
     /* the primitive as one command, its tag's length as PsyCross's
      * ParsePrimitive took it */
     const P_TAG *t = (const P_TAG *)p;
-    if (g_psx_gpu_check)
-      g_psx_gpu_check->pre((uintptr_t)p, 1);
+    if (chk)
+      chk->pre((uintptr_t)p, 1);
     parse_command(w, (const u_int *)p + 1, (int)t->len);
     close_split(w);
-    if (g_psx_gpu_check)
-      g_psx_gpu_check->post((uintptr_t)p, 1);
+    if (chk)
+      chk->post((uintptr_t)p, 1);
     return;
   }
   for (pk = (uintptr_t)p;; pk = next ? next(pk) : (uintptr_t)nextPrim(pk)) {
@@ -639,8 +656,8 @@ void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
       /* the words parsed: the packet's, or the ones w->subst has for it
        * (its tag the same); the list goes on from the packet's own link */
       const uintptr_t q = w->subst ? subst_of(w, pk) : pk;
-      if (g_psx_gpu_check)
-        g_psx_gpu_check->pre(q, 0);
+      if (chk)
+        chk->pre(q, 0);
       if (!(g_nd_walk && nd_packet(w, q))) {
         if (len > 32)
           PsyX_Log_Error("[Psy-X] [%s] - got invalid tag length %d, code %d\n",
@@ -648,8 +665,8 @@ void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
         parse_packet(w, (const u_int *)q, len);
       }
       close_split(w);
-      if (g_psx_gpu_check)
-        g_psx_gpu_check->post(q, 0);
+      if (chk)
+        chk->post(q, 0);
     } else {
       close_split(w);
     }
@@ -668,4 +685,30 @@ void psx_gpu_walk_scene_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next
 
 void psx_gpu_walk_scene(u_long *p, int single, PsxGpuNext next) {
   psx_gpu_walk_scene_in(&s_game, p, single, next);
+}
+
+/* Stage 7f (D126): a walk of its own, the presenter's, on its own core.
+ * PsyX_BeginScene's work on its own state, then DrawOTag's walk and draw. */
+static void begin_own(PsxGpuWalk *w) {
+  if (w->ns > 0)
+    psx_gpu_draw_splits_in(w);
+  if (w->env->isbg) {
+    const RECT16 *c = &w->env->clip;
+    if (w->out)
+      w->out->clear(c->x, c->y, c->w, c->h, w->env->r0, w->env->g0, w->env->b0);
+    else
+      GR_ClearVRAM(c->x, c->y, c->w, c->h, w->env->r0, w->env->g0, w->env->b0);
+    w->env->isbg = 0;
+  }
+}
+
+void psx_gpu_walk_own(PsxGpuWalk *w, u_long *p) {
+  begin_own(w);
+  psx_gpu_walk_in(w, p, 0, NULL);
+  psx_gpu_draw_splits_in(w);
+}
+
+void psx_gpu_draw_splits_own(PsxGpuWalk *w) {
+  if (w->ns > 0)
+    psx_gpu_draw_splits_in(w);
 }

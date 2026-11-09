@@ -20,9 +20,10 @@
  *    primitive space (PortPolySpace), the 16:9 projection
  *    (PortProjectionHook), the HUD audit (port_present_hud_list), and
  *    native_draw's list end (nd_list_linked).
- * What stays the game's, as the presenter's output on the game thread (7f
- * routes them): DrawOTag, PutDrawEnv, PutDispEnv, DrawSync, and
- * port_present_note_2d (the 2D primitives for the 16:9 narrowing). */
+ *  - its output (stage 7f, D126): DrawOTag, PutDrawEnv, PutDispEnv,
+ *    DrawSync and port_present_note_2d, onto present.c's presenter
+ *    versions, on its own environments, walk and 2D notes, so it shares
+ *    nothing with the logic draw it runs beside. */
 #ifndef PRES_NAMES_H
 #define PRES_NAMES_H
 
@@ -87,5 +88,12 @@
 #define PortProjectionHook pres_PortProjectionHook
 #define port_present_hud_list pres_hud_list
 #define nd_list_linked pres_nd_list_linked
+
+/* its output (present.c, stage 7f) */
+#define DrawOTag pres_DrawOTag
+#define PutDrawEnv pres_PutDrawEnv
+#define PutDispEnv pres_PutDispEnv
+#define DrawSync pres_DrawSync
+#define port_present_note_2d pres_note_2d
 
 #endif

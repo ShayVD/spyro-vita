@@ -129,6 +129,7 @@ static void vblank(void) {
     if (g_vita_gpu)
       vita_gpu_report(v);
     vita_parse_report(v);
+    vita_pres_report(v);
     nd_report(v);
     vita_present_report(v);
     vita_picture_report(v);
