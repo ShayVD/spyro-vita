@@ -29,11 +29,8 @@ CONSTANT = {
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
-    "g_ngte_fx",                # mips2c_rt.c: set at start-up, as g_fast_render (D98)
-    "env_hand_ngte.c:s_proj",   # read from the GTE at the start of every EnvDraw, before
-                                # use; a state is never taken inside a draw (D80)
-    "env_hand_rc.c:s_proj",     # the same, fast_render=3's build (D124)
-    "port.c:s_hand_stack.0",    # the native build's below-$sp stores, never read (D100)
+    "env_hand.c:s_proj",        # read from the GTE at the start of every EnvDraw, before
+                                # use; a state is never taken inside a draw (D80, D124)
     "port.c:s_kuseg_sink",      # the native build's sink for stray stores, never read (D106)
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
@@ -47,17 +44,16 @@ CONSTANT_PREFIXES = ("Terminator_",)  # ovl_table.c: fixed arena addresses (D20)
 # Port files whose state isn't the game's: the presenter (D30), the oracle
 # replay and trace (tests), save states themselves, the draw distance
 # (lod.c, D49: picture only; per draw, or reset on load by port_lod_reset;
-# g_lod is the player's setting, kept), fast_render=2's per-call check
-# (hand_check.c, host tests, D80), and the native draw lists (native_draw.c,
+# g_lod is the player's setting, kept), the renderers' per-call check
+# (hand_check.c, host tests, D80, D127), and the native draw lists (native_draw.c,
 # D82: the switch, and records that live from a renderer call to its list's
 # walk, which a state taken at the loop top never holds; its check, tests),
 # and the walk check (walk_check.c, D117: host tests, the reference walk's
 # copy of the walk's state, synced before every packet), and the presenter's
 # builds and context (NAME_hand_pres.c, lod_pres.c, render_ctx*.c, D123:
 # set before each presenter call from the game's, never read by the game;
-# the check, host tests), and fast_render=3's working memory and its poison
-# audit (render_rc.c, D124: a renderer call's scratch, which nothing reads
-# after the call), and the presenter's draw (src/game/pres/, D125: its
+# the check, host tests), and the renderers' working memory (render_rc.c,
+# D124: a renderer call's scratch, which nothing reads after the call), and the presenter's draw (src/game/pres/, D125: its
 # snapshot and context taken from the game's at every frame it draws, never
 # read by the game; its record serial, which only its own side table uses,
 # emptied each frame; the check and the audit, host tests).

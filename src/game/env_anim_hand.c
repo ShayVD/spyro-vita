@@ -4,10 +4,10 @@
  * reads as C (docs/native-plan.md stage 3, decisions D96). The asm uses
  * neither the scratchpad nor the GTE.
  *
- * The environment's renderer and its animations' update are hand C on the
- * GTE register file (env_hand.c, env_update_hand.c), so the unit stays
- * linked for fast_render=0 (render_hand.h HAND_UNIT_FN): fast_render 1 and
- * 2 run this, --fast-render-check compares each call with the unit
+ * The environment's renderer and its animations' update are hand C
+ * (env_hand.c, env_update_hand.c), so the unit stays linked for
+ * fast_render=0 (render_hand.h HAND_UNIT_FN): fast_render=3 runs this,
+ * --fast-render-check compares each call with the unit
  * (docs/translation-log.md). */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 

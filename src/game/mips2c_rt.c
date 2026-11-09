@@ -6,12 +6,7 @@
 
 u32 g_mips_sp;
 u32 g_mips_v1;
-int g_fast_render = 2; /* mips2c_rt.h, D72, D80; 2 by default since D81 */
-/* fast_render=2's shadows, flame and particles (render_hand.h
- * HAND_RENDERER_UNIT): 1 their native GTE maths (D98), 0 the register file
- * (D95), the default: on hardware the native maths are a few microseconds
- * per vblank slower for these short loops (runs X4, X5) */
-int g_ngte_fx;
+int g_fast_render = 3; /* mips2c_rt.h, D72, D124; 3 by default since D127 */
 
 /* R3000 division: no trap; x/0 gives hi = x, lo = -1 (x >= 0) or 1. */
 void mips2c_div(u32 a, u32 b, u32 *hi, u32 *lo) {
