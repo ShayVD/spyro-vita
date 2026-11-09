@@ -276,12 +276,12 @@ static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, i
 #define CTC2(v, r) m2c_ctc2((v), (r))
 #define CFC2(r) (gteRegs.CP2C.p[(r)].d)
 
-/* fast_render (config.txt, host --fast-render; decisions D72, D80, D81):
- * 2 (the default since D81) the hand-written renderers with native GTE maths
- * (gte_native.h); 1 the same renderers on the register file, with the inline
- * GTE commands below; 0 the mips2c units and PsyCross's GTE_operator. Set once at start,
- * before any game code, so it's read through a const alias like the arena
- * base. */
+/* fast_render (config.txt, host --fast-render; decisions D72, D124, D127):
+ * 3 (the default) the hand-written renderers as readable C (render_hand.h);
+ * 0, the arena build only, the mips2c units and PsyCross's GTE_operator.
+ * The register-file builds of 1 and 2 (D72, D80) went in D127. Any other
+ * value than 0 runs the hand C. Set once at start, before any game code,
+ * so it's read through a const alias like the arena base. */
 extern int g_fast_render;
 extern const int g_fast_render_ro __asm__("g_fast_render");
 

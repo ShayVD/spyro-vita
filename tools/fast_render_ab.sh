@@ -1,11 +1,11 @@
 #!/bin/sh
 # The hand-written renderers and inline GTE commands against the translation
 # they replace (decisions D72): each scenario runs with --fast-render 0, then
-# 1, from the same binary, and every trace, shot, WAV and save file of the
-# pair must be byte-identical. The host is deterministic (D38). FAST="1 2"
-# compares the register-file hand C with its native-GTE build instead (D80).
-# EXTRA_B: more options for the second run of each pair only (EXTRA_B="--ngte-fx --fast-render-check":
-# the shadows, flame and particles' native GTE maths, each call checked too; D98).
+# 3 (D124, D127: the only other value since the register-file builds of 1
+# and 2 went), from the same binary, and every trace, shot, WAV and save file
+# of the pair must be byte-identical. The host is deterministic (D38).
+# EXTRA_B: more options for the second run of each pair only
+# (EXTRA_B=--fast-render-check: each call checked against the unit too).
 # Usage: [BIN=path/to/spyro] [DISC=disc/files] [FAST="A B"] [EXTRA_B=...] tools/fast_render_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-fA, logs/PREFIX-SCENARIO-fB, and a summary line per scenario.
 # Scenarios (default: gems demo wsi lod routeA routeB): gems (Artisans gem
@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- gems demo wsi lod routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
-set -f; FAST=${FAST:-0 1}; FA=${FAST% *}; FB=${FAST#* }; set +f
+set -f; FAST=${FAST:-0 3}; FA=${FAST% *}; FB=${FAST#* }; set +f
 run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D

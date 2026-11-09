@@ -187,9 +187,9 @@ foreach(u ${M2C_REF_UNITS})
 endforeach()
 
 # Hand-written renderers (src/game/render_hand.h HAND_RENDERER, decisions
-# D72): the mips2c unit stays linked with the function's two entries renamed
-# NAME_gen and NAME_gen__m2c, and fast_render (config.txt, host
-# --fast-render) picks the hand C or the unit at each call.
+# D72, D124, D127): the mips2c unit stays linked with the function's two
+# entries renamed NAME_gen and NAME_gen__m2c, and fast_render (config.txt,
+# host --fast-render: 3 the hand C, 0 the unit) picks at each call.
 set(M2C_RENDER_HAND
   asm/renderers/r_cyclorama.s:func_8004EBA8
   asm/renderers/r_environment.s:func_800258F0
@@ -238,9 +238,8 @@ set(M2C_RENDER_INNER
   asm/renderers/r_cyclorama.s:D_800506B4)
 # Of M2C_RENDER_HAND, the hand C that is readable (no GTE, scratchpad or
 # register model), for tools/native_audit.py's B1: first those whose asm uses
-# none, then (D124, fast_render=3 the Vita's default since 2026-11-09) the
-# ones the Vita now runs as their readable build, NAME_hand_rc.c, with the
-# labels inside them.
+# none, then the ones readable since D124 (their only build since D127),
+# with the labels inside them: all of them.
 set(M2C_RENDER_READABLE
   asm/renderers/r_environment.s:EnvAnimSetFlags
   asm/renderers/r_environment.s:EnvAnimGetState

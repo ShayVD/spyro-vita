@@ -75,32 +75,19 @@
  *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
- * --fast-render 0: the renderers' mips2c units and PsyCross's GTE_operator
- *   instead of the hand-written renderers; 1: the hand-written renderers
- *   with the inline GTE commands on the register file (decisions D72).
- *   --fast-render 2 (the default, D81): the hand-written renderers with
- *   native GTE maths (decisions D80); with
- *   --fast-render-check each renderer call also runs the fast_render=1
- *   code from the same state and must leave the same RAM and GTE
- *   (src/game/hand_check.c; "hand check" lines); --gte-audit N also
- *   lists the GTE registers each renderer reads from before the call, from
- *   every Nth call ("gte audit" lines). --particle-sweep (with the
- *   check, D95): before each particle draw every live particle's type is
- *   set to 4..7 in turn, which no run reaches, both ways are compared, and
- *   the types are put back. The shadows, flame and particles (D95) are
- *   checked against their mips2c units, fast_render=1 and 2 each.
- *   --ngte-fx: fast_render=2's shadows, flame and particles with native
- *   GTE maths (D98; else on the register file, as D95 wrote them).
- *   --fast-render 3 (stage 7d2, D124): the renderers as readable C (no
- *   GTE data registers, scratchpad, spill area or hand stack); with
- *   --fast-render-check each call is compared with fast_render=1's (RAM
- *   but the spill area and hand stack, the control registers but FLAG).
- *   --render-poison (at 1 or 2): after each renderer call, the scratchpad,
- *   the GTE's data registers and FLAG, the spill area and the hand stack
- *   are overwritten with a pattern (src/game/render_rc.c): byte-identical
- *   outputs show nothing reads what fast_render=3 doesn't write.
- *   --native-draw (with
- *   --fast-render 2): the converted renderers' primitives go to the OT walk
+ * --fast-render 3 (the default since D127): the hand-written renderers as
+ *   readable C (stage 7d2, D124: no GTE data registers, scratchpad, spill
+ *   area or hand stack); 0 (the arena build): the renderers' mips2c units
+ *   and PsyCross's GTE_operator instead. 1 and 2, the register-file builds
+ *   (D72, D80), went in D127. --fast-render-check (the arena build): each
+ *   call of a hand-written renderer or unit function also runs its mips2c
+ *   unit from the same state first, and the two must leave the same RAM
+ *   but the scratchpad, spill area and stack, and the same control
+ *   registers but FLAG (src/game/hand_check.c; "hand check" lines).
+ *   --particle-sweep (with the check, D95): before each particle draw every
+ *   live particle's type is set to 4..7 in turn, which no run reaches, both
+ *   ways are compared, and the types are put back.
+ *   --native-draw: the converted renderers' primitives go to the OT walk
  *   as native draw lists (src/game/native_draw.h, decisions D82);
  *   --native-draw-check runs each of their calls both ways and compares the
  *   triangles PsyCross's walk makes of them ("native draw check" lines).
@@ -172,7 +159,7 @@
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
 void host_prof_draw_report(void);
-extern int g_hand_check, g_gte_audit; /* src/game/hand_check.c, D80 */
+extern int g_hand_check; /* src/game/hand_check.c, D80, D127 */
 void hand_check_set_log(void (*log)(const char *fmt, ...));
 void hand_check_report(void);
 extern int g_native_draw, g_nd_check; /* src/game/native_draw.c, D82 */
@@ -223,13 +210,9 @@ extern int g_render_ctx_check;
 void render_ctx_want_area(void);
 void render_ctx_check_set_log(void (*log)(const char *fmt, ...));
 int render_ctx_check_report(void);
-extern int g_render_poison;
-extern unsigned long g_render_poison_calls;
 static void render_ctx_atexit(void) {
   if (g_render_ctx_check)
     render_ctx_check_report();
-  if (g_render_poison)
-    host_log("render poison: %lu renderer calls followed by the poison (D124)", g_render_poison_calls);
 }
 static void nd_atexit(void) {
   nd_report((int)host_vblank_count());
@@ -305,7 +288,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|1|2|3] [--render-poison] [--ngte-fx] [--fast-render-check [--gte-audit N]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -632,18 +615,17 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--fast-render") == 0) {
       TAKE();
       g_fast_render = to_int(val);
+      if (g_fast_render != 0 && g_fast_render != 3) {
+        fprintf(stderr, "spyro: --fast-render %d: 3 (the readable renderers) or 0 (the mips2c units); "
+                        "1 and 2 went in D127\n", g_fast_render);
+        return 1;
+      }
 #if SPYRO_NATIVE_MEM
       if (g_fast_render == 0) {
         fprintf(stderr, "spyro: --fast-render 0 runs the mips2c units, which a native build doesn't link (D100)\n");
         return 1;
       }
 #endif
-    } else if (strcmp(a, "--render-poison") == 0 || strcmp(a, "--render-poison-bite") == 0) {
-      extern int g_render_poison; /* render_rc.c, D124; -bite: OFX too, which must show */
-      g_render_poison = a[15] ? 2 : 1;
-    } else if (strcmp(a, "--ngte-fx") == 0) {
-      extern int g_ngte_fx; /* mips2c_rt.c, D98 */
-      g_ngte_fx = 1;
     } else if (strcmp(a, "--particle-sweep") == 0) {
       extern int g_particle_sweep; /* hand_check.c, D95 */
       g_particle_sweep = 1;
@@ -684,9 +666,6 @@ int main(int argc, char **argv) {
       s_walk_check = 1;
     } else if (strcmp(a, "--gpu-clear") == 0) {
       g_gpu_clear = 1;
-    } else if (strcmp(a, "--gte-audit") == 0) {
-      TAKE();
-      g_gte_audit = to_int(val);
     } else if (strcmp(a, "--vcache") == 0) {
       psx_vcache_enable(2);
       s_vcache = 1;
