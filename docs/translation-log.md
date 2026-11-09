@@ -498,6 +498,8 @@ No new translation: the hand C of decisions D72–D98 compiled once more as `NAM
 
 No new translation from the asm: each B2 hand C file of decisions D72–D98 and D96 gains a readable build, `NAME_hand_rc.c` (`NGTE_RC`), behind `fast_render=3`, and the presenter builds (`NAME_hand_pres.c`) take it. The register-file builds (`fast_render` 1 and 2) are unchanged. In a readable build any GTE data register, FLAG, GTE command, the spill area or the hand stack fails to compile or link (`render_hand.h`); the control registers the asm sets are set the same; the scratchpad is the build's own working memory (`g_render_work`; nothing reads it across calls, D124's poison audit).
 
+**Since 2026-11-09 `fast_render=3` is the Vita's default** (the owner's decision after the hardware pair 7D2a/7D2b: identical pictures and card, the renderers 5% lighter). The host's default stays 2. `tools/native_audit.py` now counts these files' functions as readable (B1): 81.9% of the executable's instructions, 97.1% of the whole game.
+
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
 | `func_800258F0` (`env_hand.c`) | the native passes to their last step (the culling MVMVA without `CullFlush`, the vertex loops, the grids, the animation blends' INTPL and DPCS); `GridCorrect`'s GPF and the pieces' NCLIP native; the far colour of each fade written at the flushes, the blends' at their ends; the subdivision tables' words as offsets into the working memory (`SC_TABLE`) | D124's checks (below) | zero-count loops the game never builds |

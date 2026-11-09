@@ -115,14 +115,15 @@
  *                       these three needs config_version=3 in the file too:
  *                       without it, it is taken as written before they were
  *                       on by default, and ignored
- *       fast_render=0   the renderers as translated from the asm and
- *                       PsyCross's GTE_operator (default 1: the hand-written
- *                       renderers and the inline GTE commands, the same
- *                       results; D72); fast_render=2: the hand-written
- *                       renderers with native GTE maths, the same results
- *                       again (D80); fast_render=3: the same renderers as
+ *       fast_render=2   the hand-written renderers with native GTE maths
+ *                       on the GTE register file's model (D80; the default
+ *                       before D124). Default 3: the same renderers as
  *                       readable C, no GTE data registers, scratchpad,
- *                       spill area or hand stack, the same pictures (D124)
+ *                       spill area or hand stack, the same pictures and 5%
+ *                       less time (D124, the owner's decision after 7D2a/
+ *                       7D2b). 1: the inline GTE commands on the register
+ *                       file (D72); 0: the renderers as translated from the
+ *                       asm (taken as 1 in the native build, D100)
  *       ngte_fx=1       with fast_render=2, the shadows, the flame and the
  *                       particles with native GTE maths too, the same
  *                       results (D98; default 0: those three on the GTE
@@ -572,6 +573,8 @@ int main(int argc, char **argv) {
   g_native_draw = 1; /* the Vita's default since D91; the host's stays 0 */
   g_nd_direct = 1;   /* the Vita's default since D105; the host's stays 0 */
   g_gpu_clear = 2;   /* the Vita's default since D111's Y9-Y12; the host's stays 0 */
+  g_fast_render = 3; /* the Vita's default since D124 (the owner, 2026-11-09, after 7D2a/7D2b);
+                      the host keeps mips2c_rt.c's 2 */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
   vita_log("fast_render=%d: %s", g_fast_render,
