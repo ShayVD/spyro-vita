@@ -1258,6 +1258,7 @@ All told *estimate* ~4–7k lines, the same as D101's total, distributed differe
 - **(a) The B2 hand C's machine model** (the register file, the scratchpad, the spill area, `HPTR`): all of it in 7d2. 7d moves none of it, so its check can compare the logic's code against itself.
   - `tools/native_audit.py` on main `a47a30b` (`logs/s7p/audit-before.txt`, gitignored): readable C (A + B1) **63.5%** of the executable and **94.1%** of the whole game; B2 16,845 instructions (18.4%) in 25 functions.
   - After 7d2 with `fast_render=3` the Vita's default (measured, D124): **81.9%** and **97.1%**, B2 at 0. What is left is E (16.7%, the PsyQ libraries the decomp calls, as our code) and X (1.4%, libc).
+  - After D127 took the register-file builds out of the sources (measured, `logs/cleanup/audit-after.txt`): the instructions as above; B2 source lines 11,493 → 0 (B1 8,993 → 17,129), the Vita's code lines 85,885 → 82,327, the Vita ELF's `.text` 3,887,578 → 3,700,476 bytes.
   - In the native build `HPTR` is already a plain cast (D100); the arena build keeps it for the oracle.
 - **(b) `g_psx_vram_frozen` and the in-place 2D narrowing:** 7g. The narrowing is done ahead of 7g (D122); `g_psx_vram_frozen` stays 7g's.
 - **(c) The fully-native list** (the Summary):
