@@ -33,6 +33,8 @@
 #include "variables.h"
 #include "vector.h"
 
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130) */
+
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
  * -0x7FF..0x800, as the asm does: `andi 0xFFF; slti 0x801; addiu -0x1000`. */
 static inline int AngleDelta(int delta) {
@@ -708,11 +710,11 @@ static void ScriptedControl(void) {
   if (flags & (CTRL_MOVE_X | CTRL_MOVE_Y | CTRL_MOVE_Z)) {
     if (flags & CTRL_MOVE_BY_VELOCITY) {
       if (flags & CTRL_MOVE_X)
-        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.unk_0x208.x);
+        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, T60_SHARE(g_Spyro.unk_0x208.x));
       if (flags & CTRL_MOVE_Y)
-        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, g_Spyro.unk_0x208.y);
+        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, T60_SHARE(g_Spyro.unk_0x208.y));
       if (flags & CTRL_MOVE_Z)
-        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, g_Spyro.unk_0x208.z);
+        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, T60_SHARE(g_Spyro.unk_0x208.z));
     } else {
       if (flags & CTRL_MOVE_X)
         ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.m_portalEndPos.x - g_Spyro.m_Position.x);
@@ -901,7 +903,7 @@ void func_8003FE40(void) {
   g_Spyro.m_touchingMoby = 0;
   g_Spyro.m_touchingSurface = 0xFF;
   g_Spyro.m_againstWall = 0;
-  g_Spyro.m_floorIdleTime++;
+  T60_TICK_DO(g_Spyro.m_floorIdleTime++); /* it counts 30 Hz ticks */
   VecNull(&g_Spyro.m_wallAgainstSpyro);
   VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_CollisionMovement);
   VecNull(&ph->m_CollisionMovement);
@@ -912,7 +914,13 @@ void func_8003FE40(void) {
   else
     g_Spyro.m_ControlFlags = 0;
 
+#if SPYRO_TICK60
+  /* 60 Hz logic (D130): the low bits carried to the tick's second half, so
+   * a tick moves him what the original's >> 6 of the two vblanks' sum does */
+  t60_spyro_shift(&ph->m_Velocity);
+#else
   VecShiftRight(&ph->m_Velocity, 6);
+#endif
   if (g_Spyro.m_ControlFlags & CTRL_SKIP_SURFACE_CHECK) {
     VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_Velocity);
   } else {

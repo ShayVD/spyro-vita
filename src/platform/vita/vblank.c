@@ -9,6 +9,7 @@
  * scripted test runs replay exactly. The clock, its catch-up arithmetic and
  * VSync itself are shared with linux32 (common/clock.c, libetc.c, D104).
  * Also PsyX's scene hooks (isbg clears), the same as linux32's. */
+#include "../../game/tick60.h"
 #include "vita.h"
 #include "vcount.h"
 #include "watchdog.h"
@@ -146,6 +147,7 @@ static void vblank(void) {
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
     vita_log("frames=%d reached, exiting", g_vita_opts.frames);
+    tick60_report(vita_log); /* 60 Hz logic's counts (D130) */
     vita_exit(0); /* the render thread first (D120) */
   }
 }

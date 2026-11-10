@@ -13,6 +13,7 @@ Prototype on the linux32 host (2026-10-30). Both features are optional, and off 
 | `--interp-no-anim` | 60 fps, transforms only (no animation frames or particles); for comparisons. |
 | `--interp-camera` | 60 fps, camera only. |
 | `--out960` | Pictures (shots, `--serve`) at 960×544: full width for widescreen frames, 4:3 pillarboxed otherwise. Turned on by any of the above. |
+| `--tick60` | 60 Hz logic in play, the 60 fps option's third value (D130, `docs/tick60.md`): no in-between frame after a 60 Hz update; the 30 Hz gamestates keep it with `--interp`. |
 | `--present-stats` | Times update, draw, the presenter's frames and blending; logs a summary at exit. (`--present-dirty`, which checked D30's region snapshot against a full copy of the arena, went with the pass: D129.) |
 
 `PresentConfig g_present` (`src/game/present.h`) holds the same switches for other platforms.

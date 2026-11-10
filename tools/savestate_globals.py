@@ -18,7 +18,10 @@ import sys
 SAVED = {"g_mips_sp", "g_mips_v1",
          "cheats_port.c:s_pending", "cheats_port.c:s_level", "cheats_port.c:s_age",
          "cheats_port.c:s_title_done",  # the queued cheat (D50)
-         "gteRegs"}  # chunk_gpu(); ours since stage 8c (gte_regs.c, D116)
+         "gteRegs",  # chunk_gpu(); ours since stage 8c (gte_regs.c, D116)
+         # tick60_state() (the "T60 " chunk, D130): the mode, and of the rules'
+         # state the half tick and Spyro's carry; the rest is set every update
+         "g_tick60_mode", "g_t60"}
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only
@@ -28,6 +31,10 @@ CONSTANT = {
     "g_m2c_seed",               # oracle_replay.c (tests only)
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
+    "tick60_update.o.c:s_tilt", # the same, in the 60 Hz rules' copy (D130)
+    # the 60 Hz rules' scratch, set at every update before use (t60_rules.c, D130)
+    "s_t60_delta", "s_t60_list30", "s_t60_list60",
+    "g_t60_stats", "g_t60_stats_on",  # tick60.c: --tick60-stats' counters, the log only
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
     "env_hand.c:s_proj",        # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80, D124)

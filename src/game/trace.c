@@ -27,7 +27,10 @@ int spyro_trace_open(const char *path) {
   return 0;
 }
 
+static void moby_trace_vblank(int vblank);
+
 void spyro_trace_vblank(int vblank) {
+  moby_trace_vblank(vblank);
   if (!s_trace)
     return;
   fprintf(s_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%08x\n",
@@ -39,10 +42,42 @@ void spyro_trace_vblank(int vblank) {
     fflush(s_trace);
 }
 
+/* --moby-trace (60 Hz logic's statistics, D130, tools/tick60_stats.py):
+ * in play, every live moby within 0x8000 of Spyro, each vblank: its slot,
+ * class, position, rotation, state, substate and animation. */
+static FILE *s_moby_trace;
+
+int spyro_moby_trace_open(const char *path) {
+  s_moby_trace = fopen(path, "w");
+  if (!s_moby_trace)
+    return -1;
+  fprintf(s_moby_trace, "vblank\tlevel\tslot\tclass\tx\ty\tz\trx\try\trz\tstate\tsub\tanim\tframe\n");
+  return 0;
+}
+
+static void moby_trace_vblank(int vblank) {
+  int i;
+  if (!s_moby_trace || g_Gamestate != GS_Playing || g_LoadStage >= 0 || !g_LevelMobys)
+    return;
+  for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++) {
+    const Moby *m = &g_LevelMobys[i];
+    int dx = m->m_Position.x - g_Spyro.m_Position.x, dy = m->m_Position.y - g_Spyro.m_Position.y;
+    if (m->m_State >= 0x80 || dx < -0x8000 || dx > 0x8000 || dy < -0x8000 || dy > 0x8000)
+      continue;
+    fprintf(s_moby_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", vblank, g_LevelId, i,
+            m->m_Class, m->m_Position.x, m->m_Position.y, m->m_Position.z, m->m_Rotation.x,
+            m->m_Rotation.y, m->m_Rotation.z, m->m_State, m->m_Substate,
+            m->m_AnimationState.m_Animation, m->m_AnimationState.m_Frame);
+  }
+}
+
 void spyro_trace_close(void) {
   if (s_trace)
     fclose(s_trace);
   s_trace = NULL;
+  if (s_moby_trace)
+    fclose(s_moby_trace);
+  s_moby_trace = NULL;
 }
 
 /* The level's mobys (class, position, state) as TSV, for finding things to

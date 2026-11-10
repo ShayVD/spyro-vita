@@ -1,0 +1,8 @@
+# Run T60-2 (D130; ran 2026-11-10, logs/hw-t60-*): the same route and VPK as T60-1 with interp=1 (the interpolated
+# 60 fps, today's default), against 7G1: the pilot's VPK at its default must run as main's did
+# (the 60 Hz rules are compiled in but never called).
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-t60-2 1500 @tools/vita/fps-runs/t60-2-toasty-interp.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1

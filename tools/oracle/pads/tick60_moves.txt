@@ -1,0 +1,39 @@
+# 60 Hz logic's Spyro moves (D130, docs/tick60.md): a new game, then in
+# Artisans (running back towards the camera, away from the first dragon)
+# a standing jump, a straight run, a running jump, a charge, a
+# turn and a glide, each from where the last left him. Open loop: run with
+# and without --tick60 and compare the traces vblank for vblank
+# (tools/tick60_stats.py --spyro-paths).
+2 none
+2 none
+1902 start
+1908 none
+2102 cross
+2108 none
+2402 cross
+2408 none
+2602 cross
+2608 none
+2802 cross
+2808 none
+6422 up
+6420 cross
+6426 none
+6480 down
+6600 none
+6660 down
+6720 down+cross
+6726 down
+6800 none
+6860 square
+6950 none
+7000 down+left
+7060 down
+7120 down+cross
+7270 none
+7330 down+right
+7370 down+right+cross
+7376 down+right
+7450 none
+7500 right
+7560 none
