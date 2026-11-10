@@ -221,7 +221,12 @@ void func_800522C0(Moby **pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyL
  * finished. The new frame's sound, if it has one, goes on the queue. */
 static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
   AnimationState *a = &m->m_AnimationState;
+#if SPYRO_TICK60
+  /* 60 Hz logic (D130): half a tick's step a vblank (tick60_rules.h) */
+  u_int progress = a->m_FrameProgress + t60_anim_step(a->m_PerFrameProgress, speedDiv);
+#else
   u_int progress = a->m_FrameProgress + ((u_int)a->m_PerFrameProgress >> (speedDiv & 31));
+#endif
   const Model *model;
   const AnimationHeader *anim;
   int frame, sound;

@@ -18,7 +18,14 @@ import sys
 SAVED = {"g_mips_sp", "g_mips_v1",
          "cheats_port.c:s_pending", "cheats_port.c:s_level", "cheats_port.c:s_age",
          "cheats_port.c:s_title_done",  # the queued cheat (D50)
-         "gteRegs"}  # chunk_gpu(); ours since stage 8c (gte_regs.c, D116)
+         "gteRegs",  # chunk_gpu(); ours since stage 8c (gte_regs.c, D116)
+         # tick60_state() (the "T60 " chunk, D130): the mode, and of the rules'
+         # state the half tick and Spyro's carry; the rest is set every update
+         "g_tick60_mode", "g_t60",
+         # chunk_region() (the "REGN" chunk, D134): PAL's language, screen
+         # position and language slots (region_game.c)
+         "g_Language", "g_ScreenOffsetX", "g_ScreenOffsetY", "g_WadCutscenesPal",
+         "g_LevelDragonsPal"}
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only
@@ -28,6 +35,10 @@ CONSTANT = {
     "g_m2c_seed",               # oracle_replay.c (tests only)
     "cheats_port.c:s_log",      # the log function, set at start-up
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
+    "tick60_update.o.c:s_tilt", # the same, in the 60 Hz rules' copy (D130)
+    # the 60 Hz rules' scratch, set at every update before use (t60_rules.c, D130)
+    "s_t60_delta", "s_t60_list30", "s_t60_list60",
+    "g_t60_stats", "g_t60_stats_on",  # tick60.c: --tick60-stats' counters, the log only
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
     "env_hand.c:s_proj",        # read from the GTE at the start of every EnvDraw, before
                                 # use; a state is never taken inside a draw (D80, D124)
@@ -35,6 +46,9 @@ CONSTANT = {
     # a record's faces copied while the presenter draws beside the game's draw (D126):
     # written by ReplaceFaces, emptied by RestoreFaces in the same record, never across ticks
     "moby_hand.c:s_faces", "moby_hand.c:s_faces_on",
+    # the region's data copied from the disc's executable once, at start-up, before any
+    # game code; the game only reads it (region_data.c, D133)
+    "region_data.c:s_loaded",
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {

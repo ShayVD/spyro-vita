@@ -963,7 +963,7 @@ static void FloorTerrain(int x, int y, int z, int last, int *floor, int camera) 
         continue;
       *floor = height;
       if (camera) {
-        if (REGION_IS(PAL)) /* PAL keeps the floor's normal too (PAL 0x800538B4, D135) */
+        if (REGION_IS(PAL)) /* PAL keeps the floor's normal too (PAL 0x800538B4, D134) */
           g_CollisionNormal = n;
         D_80075844 = tc->m_TriangleOcclusionAssignment[idx];
         continue;

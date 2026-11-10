@@ -114,7 +114,7 @@ void spyro_main(void) {
   if (region_map(g_Region)) {
     /* PAL's text, tables and music tables, from the player's own executable
      * (D133), once the game's memory is in place: the music tables go over
-     * the US labels (D135) */
+     * the US labels (D134) */
     RegionDataStats st;
     char err[200];
     if (region_data_load_disc(1, &st, err, sizeof err) != 0)

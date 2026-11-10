@@ -3,7 +3,7 @@
 @@ -8,3 +8,6 @@ void func_8001277C(void);
  void Initialize(void);
  
-+/// @brief PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D135)
++/// @brief PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D134)
 +void ClearFrameBuffersPal(void);
 +
  #endif // !__INITIALIZE_H
@@ -12,7 +12,7 @@
 @@ -29,3 +29,21 @@ extern int g_RegionTiming; /* 1: PAL's own 50 Hz constants (RT's pal) */
  #endif
  
-+/* Code and data only PAL has (D135): a matching build compiles them for PAL
++/* Code and data only PAL has (D134): a matching build compiles them for PAL
 + * alone, so the US build's SHA-1 doesn't move; the port has them always. */
 +#ifdef REGION
 +#define REGION_HAS_PAL (REGION == REGION_PAL)
@@ -38,7 +38,7 @@
  
 +#include "region.h"
 +
-+/* PAL (D135, docs/regions-plan.md §2.3, §3.4): the WAD header has 16
++/* PAL (D134, docs/regions-plan.md §2.3, §3.4): the WAD header has 16
 + * cutscene slots (the title's, then intro, outro 1 and outro 2 for each of
 + * the five languages) and a level header 5 x 6 dragon slots, language major.
 + * The PAL matching build has PAL's shapes. The port keeps the US shapes (the
@@ -117,7 +117,7 @@
 @@ -175,4 +176,5 @@ void CheatResetBuffer(void) {
  
  // Does the level warp cheat (which doesn't exist in the final game)
-+#if REGION_HAS_US // PAL has no level-warp code (D135); the port's menu keeps it
++#if REGION_HAS_US // PAL has no level-warp code (D134); the port's menu keeps it
  void CheatProcessLevelWarp(void) {
    int level;
 @@ -252,4 +254,5 @@ void CheatProcessLevelWarp(void) {
@@ -139,7 +139,7 @@
        props->m_CutsceneId = 2;
 +      if (REGION_IS(PAL)) {
 +        // PAL: the four words after m_CutsceneTicks, one per language
-+        // after English, for the second cutscene (D135)
++        // after English, for the second cutscene (D134)
 +        ((int *)props)[17] = 14;
 +        ((int *)props)[18] = 30;
 +        ((int *)props)[19] = 20;
@@ -172,7 +172,7 @@
 -  DrawSync(0);
 +#if REGION_HAS_PAL
 +  if (REGION_IS(PAL)) {
-+    ClearFrameBuffersPal(); // PAL: 512x256 twice (D135)
++    ClearFrameBuffersPal(); // PAL: 512x256 twice (D134)
 +  }
 +#endif
 +#if REGION_HAS_US
@@ -271,7 +271,7 @@
  
 -  // Warp code handling takes priority
 -  if (g_LevelCheatActive) {
-+  // Warp code handling takes priority (PAL has no level-warp code, D135)
++  // Warp code handling takes priority (PAL has no level-warp code, D134)
 +  if (!REGION_IS(PAL) && g_LevelCheatActive) {
      CheatProcessLevelWarp();
      return;
@@ -281,7 +281,7 @@
 -  g_TitlescreenState.m_Mode = TSM_Menu;
 -  g_TitlescreenState.m_SubState = TS_SubState_LoadMemCards;
 -  g_TitlescreenState.m_State = TSS_Setup;
-+  // PAL: its title overlay's own mode 0, sub-state 7 (D135)
++  // PAL: its title overlay's own mode 0, sub-state 7 (D134)
 +  g_TitlescreenState.m_Mode = RV(TSM_Menu, 0, TSM_Menu);
 +  g_TitlescreenState.m_SubState = RV(TS_SubState_LoadMemCards, 7, TS_SubState_LoadMemCards);
 +  if (!REGION_IS(PAL)) {
@@ -292,7 +292,7 @@
 @@ -1005,7 +1009,12 @@ int func_80032AB0(void) {
   * - TSD_DemoLevel: Loads level from g_DemoLevelIds table
   */
-+// The flyby's height: PAL's is higher and wider, for its 256 lines (D135)
++// The flyby's height: PAL's is higher and wider, for its 256 lines (D134)
 +#define FLYBY_Z(s) RV(((s) >> 1) + 0x2980, (s) * 3 / 4 + 0x2AA0, ((s) >> 1) + 0x2980)
 +
  void GamestateCutsceneTransition(void) {
@@ -307,7 +307,7 @@
      g_TitlescreenState.m_State = TSS_Loading;
 +#if REGION_HAS_PAL
 +    if (REGION_IS(PAL)) {
-+      // PAL: the screen position the pause menu sets (D135)
++      // PAL: the screen position the pause menu sets (D134)
 +      g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
 +      g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
 +    }
@@ -432,7 +432,7 @@
 +#endif
 +
 +#if REGION_HAS_PAL
-+// PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D135)
++// PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D134)
 +void ClearFrameBuffersPal(void) {
 +  RECT rect;
 +
@@ -453,7 +453,7 @@
 -  SetDispMask(0);   // Disable display
 +  SetDispMask(0); // Disable display
 +  if (REGION_IS(PAL)) {
-+    SetVideoMode(MODE_PAL); // PAL: 50 Hz, 256 lines (D135)
++    SetVideoMode(MODE_PAL); // PAL: 50 Hz, 256 lines (D134)
 +  }
    ResetGraph(0);    // Reset the GPU
    SetGraphDebug(0); // Disable debug output
@@ -463,7 +463,7 @@
 +#if REGION_HAS_PAL
 +  if (REGION_IS(PAL)) {
 +    // PAL draws and shows all 256 lines; the display's position on the TV
-+    // is the pause menu's screen position (D135)
++    // is the pause menu's screen position (D134)
 +    SetDefDrawEnv(&g_DB[0].m_DrawEnv, 0, 0, 512, 256);
 +    SetDefDrawEnv(&g_DB[1].m_DrawEnv, 0, 256, 512, 256);
 +    SetDefDispEnv(&g_DB[0].m_DispEnv, 0, 256, 512, 256);
@@ -515,7 +515,7 @@
    RECT frameRect;
    RECT pad;
 +#else
-+  RECT pad; // PAL: the frame's top and bottom lines (D135)
++  RECT pad; // PAL: the frame's top and bottom lines (D134)
 +  RECT frameRect;
 +#endif
    char *levelVram;
@@ -680,7 +680,7 @@
    int x;
  
 +#if REGION_HAS_PAL
-+  // PAL: the dragon's slot in the level header's language (D135)
++  // PAL: the dragon's slot in the level header's language (D134)
 +  OffsetLength *dragon;
 +#define DRAGON (*dragon)
 +#else
@@ -745,7 +745,7 @@
  #include <stdio.h>
  
 +#if defined(REGION) && REGION == 1
-+// PAL's (include/region.h, D135), in the PAL matching build only; the port's
++// PAL's (include/region.h, D134), in the PAL matching build only; the port's
 +// are in src/game/region_game.c
 +int g_Language;
 +int g_ScreenOffsetX = 4;
@@ -766,7 +766,7 @@
      }
      VecCopy(&newPos, &g_CollisionPoint);
 +    if (REGION_IS(PAL)) {
-+      // PAL: test again from the corrected point (D135)
++      // PAL: test again from the corrected point (D134)
 +      ColSphere(&newPos, collisionRadius, collisionRadius);
 +      VecCopy(&newPos, &g_CollisionPoint);
 +    }
@@ -776,7 +776,7 @@
    Vector3D newPos;
    int floorZ;
 +#if REGION_HAS_PAL
-+  int result = 0; // PAL: 4 when the move slid along a wall (D135)
++  int result = 0; // PAL: 4 when the move slid along a wall (D134)
 +#endif
  
    if (D_800756C4 == 3) {
@@ -808,7 +808,7 @@
                        500, flags);
 +#if REGION_HAS_PAL
 +    if (REGION_IS(PAL) && result == 4) {
-+      // PAL: sliding along a steep wall costs a quarter of the speed (D135)
++      // PAL: sliding along a steep wall costs a quarter of the speed (D134)
 +      int slope = Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0);
 +      if (slope >= 36 && slope <= 220 && *pHorizontalSpeed > 0) {
 +        *pHorizontalSpeed = *pHorizontalSpeed * 3 / 4;
@@ -823,7 +823,7 @@
    // When airborne and not idle, try a simple vertical raycast
    // This catches cases where the rotated ray missed but floor exists
 -  if (g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
-+  // PAL: not in states 11 and 2 (D135)
++  // PAL: not in states 11 and 2 (D134)
 +  if ((!REGION_IS(PAL) || (g_Spyro.m_State != 11 && g_Spyro.m_State != 2)) &&
 +      g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
      // Axis-aligned vertical ray (no rotation)

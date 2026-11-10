@@ -20,6 +20,8 @@
 #include "variables.h"
 #include "vector.h"
 
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130) */
+
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
  * -0x7FF..0x800, as the asm does: `andi 0xFFF; slti 0x801; addiu -0x1000`. */
 static inline int AngleDelta(int delta) {
@@ -213,9 +215,9 @@ void func_80034480(void) {
     if (g_Camera.unk_0xC4 != 0) {
       if (g_Camera.m_State == 0 || g_Camera.m_State == 0x80000009) {
         if (g_Camera.unk_0xE8 != 0)
-          g_Camera.unk_0xC4--;
+          T60_TICK_DO(g_Camera.unk_0xC4--);
       } else {
-        g_Camera.unk_0xC4--;
+        T60_TICK_DO(g_Camera.unk_0xC4--);
       }
     }
 
@@ -223,7 +225,7 @@ void func_80034480(void) {
     if ((int)g_Camera.m_State >= 0) {
       func_80017AA4(&target, &g_Spyro.m_Position);
       if ((u_int)(target.x - 0x21) >= 0x1BF || (u_int)(target.y - 0x19) >= 0xBF || isFar) {
-        g_Camera.m_SpyroOffCenterFrames++;
+        T60_TICK_DO(g_Camera.m_SpyroOffCenterFrames++); /* counts 30 Hz ticks */
         return;
       }
     }
@@ -237,7 +239,7 @@ void func_80034480(void) {
     g_Spyro.m_sortingDepth = 2;
   D_8007AA10.unk_1c = 0;
 
-  if (++g_Camera.m_SpyroOffCenterFrames > 30) {
+  if (T60_TICK_AND(++g_Camera.m_SpyroOffCenterFrames > 30)) {
     for (i = 0; i < 5; i++) {
       g_Camera.m_SphericalPreset = &D_8006CAB4[i];
       func_80034358();
@@ -862,17 +864,17 @@ static void UpdateLook(void) {
   pad = g_PadFrame;
   if (pad->m_Type == CONTROLLER_TYPE_STICK &&
       !(pad->m_Sticks.m_LeftX == 0x7F && pad->m_Sticks.m_LeftY == 0x7F)) {
-    g_Cam.m_LookYaw += (pad->m_Sticks.m_LeftX - 0x7F) >> 1;
-    g_Cam.m_LookPitch += LookInvert((0x7F - pad->m_Sticks.m_LeftY) >> 1);
+    g_Cam.m_LookYaw += T60_SHARE((pad->m_Sticks.m_LeftX - 0x7F) >> 1);
+    g_Cam.m_LookPitch += LookInvert(T60_SHARE((0x7F - pad->m_Sticks.m_LeftY) >> 1));
   } else {
     if (g_Pad.m_Held & PAD_LEFT)
-      g_Cam.m_LookYaw -= 0x30;
+      g_Cam.m_LookYaw -= T60_SHARE(0x30);
     else if (g_Pad.m_Held & PAD_RIGHT)
-      g_Cam.m_LookYaw += 0x30;
+      g_Cam.m_LookYaw += T60_SHARE(0x30);
     if (g_Pad.m_Held & PAD_UP)
-      g_Cam.m_LookPitch += LookInvert(0x30);
+      g_Cam.m_LookPitch += LookInvert(T60_SHARE(0x30));
     else if (g_Pad.m_Held & PAD_DOWN)
-      g_Cam.m_LookPitch -= LookInvert(0x30);
+      g_Cam.m_LookPitch -= LookInvert(T60_SHARE(0x30));
   }
   g_Cam.m_LookYaw = Clamp(g_Cam.m_LookYaw, -0x400, 0x400);
   g_Cam.m_LookPitch = Clamp(g_Cam.m_LookPitch, -0x3D0, 0x500);
@@ -1010,10 +1012,10 @@ void func_80035FB4(void) {
     break;
   case CAM_RECENTRE:
     UpdateRecentre();
-    D_80075938--;
+    T60_TICK_DO(D_80075938--);
     break;
   case CAM_RECENTRE_SLOW:
-    D_80075938--;
+    T60_TICK_DO(D_80075938--);
     break;
   case CAM_STATE_1:
     UpdateState1();

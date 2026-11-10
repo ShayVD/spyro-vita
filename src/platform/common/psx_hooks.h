@@ -24,6 +24,7 @@ void psx_spu_vblank(void); /* once per virtual vblank */
 /* Per-vblank game-state trace (src/game/trace.c). */
 int spyro_trace_open(const char *path); /* 0 = ok */
 void spyro_trace_vblank(int vblank);
+int spyro_moby_trace_open(const char *path); /* --moby-trace (D130), 0 = ok */
 void spyro_trace_close(void);
 void spyro_moby_dump(const char *path); /* level mobys as TSV (trace.c) */
 

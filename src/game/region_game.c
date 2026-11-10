@@ -1,5 +1,5 @@
 /* The release's game data the port keeps beside the US-shaped labels
- * (docs/regions-plan.md §2.3, §3.4; decisions D135).
+ * (docs/regions-plan.md §2.3, §3.4; decisions D134).
  *
  * g_WadHeader and g_LevelHeader are PS1 RAM labels laid out as the US
  * executable's (D23, D106), so a PAL header can't be copied over them: PAL's

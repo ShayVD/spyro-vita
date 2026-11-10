@@ -10,7 +10,7 @@
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
- *         [--present-stats] [--vcache]
+ *         [--present-stats] [--vcache] [--tick60] [--tick60-stats]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
@@ -50,6 +50,11 @@
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  *   --present-native: the presentation frames as drawn, 512x240 (to compare
  *   with the Vita's shots).
+ * --tick60: 60 Hz logic in play, the 60 fps option's third value (D130,
+ *   docs/tick60.md): an update in play is one vblank, run by the update
+ *   path's second compile (cmake/tick60.cmake); every other gamestate and
+ *   the attract demos stay at 30 Hz (add --interp for their in-between
+ *   frame). --tick60-stats: the updates' CPU time by rate, logged at exit.
  * --present-stats: time update, draw and the presenter's frames; logged at
  *   exit. (--present-dirty, --present-audit and --present-reads, D30's
  *   pass's and stage 7a's audits of it, went with the pass: D129.)
@@ -152,6 +157,7 @@
 #include "host.h"
 #include "port_controls.h"
 #include "lod.h"
+#include "tick60.h"
 #include "present.h"
 #include "menu_panel.h"
 #include "psx_arena.h"
@@ -185,7 +191,7 @@ void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
 /* src/game/pres/ (stage 7e, D125) */
-extern int g_pres_check, g_pres_audit;
+extern int g_pres_check, g_pres_audit, g_pres_particles_full;
 extern long long g_pres_ovl_unknown; /* pres_draw.c (stage 7g, D128) */
 extern int g_faces_copy; /* src/game/render_ctx.c (stage 7f, D126) */
 extern int g_pres_check_thread, g_faces_race; /* src/game/pres/pres_check.c (D126) */
@@ -304,11 +310,11 @@ static void usage(void) {
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
+          "             [--out960] [--present-stats] [--vcache] [--walk-lazy] [--tick60]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -350,6 +356,11 @@ static void present_report(void) {
   host_log("present: animation tracks blended %lld, kept %lld; particles "
            "blended %lld; blending %lld us per tick", s->anim_blended,
            s->anim_kept, s->particles_blended, s->us_blend / t);
+  host_log_flush();
+}
+
+static void tick60_atexit(void) {
+  tick60_report(host_log);
   host_log_flush();
 }
 
@@ -457,6 +468,10 @@ int main(int argc, char **argv) {
       TAKE();
       if (spyro_trace_open(val) != 0)
         return 1;
+    } else if (strcmp(a, "--moby-trace") == 0) {
+      TAKE();
+      if (spyro_moby_trace_open(val) != 0) /* 60 Hz logic's statistics (D130) */
+        return 1;
     } else if (strcmp(a, "--wav") == 0) {
       TAKE();
       if (host_audio_wav_open(val) != 0)
@@ -545,6 +560,8 @@ int main(int argc, char **argv) {
       s_pres_watch = 1;
     } else if (strcmp(a, "--faces-race") == 0) {
       g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
+    } else if (strcmp(a, "--pres-particles-full") == 0) {
+      g_pres_particles_full = 1; /* tests (D136): the copy's particle slots all taken */
     } else if (strcmp(a, "--pres-audit") == 0) {
       g_pres_audit = 1;
       pres_draw_want();
@@ -557,6 +574,10 @@ int main(int argc, char **argv) {
       g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
+    } else if (strcmp(a, "--tick60") == 0) {
+      g_tick60_mode = 1; /* 60 Hz logic in play (D130, src/game/tick60.c) */
+    } else if (strcmp(a, "--tick60-stats") == 0) {
+      g_t60_stats_on = 1;
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
@@ -707,6 +728,7 @@ int main(int argc, char **argv) {
   if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
   atexit(present_report);
+  atexit(tick60_atexit);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
   atexit(hand_check_report);
