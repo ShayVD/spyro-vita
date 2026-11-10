@@ -42,6 +42,9 @@ CONSTANT = {
     # a record's faces copied while the presenter draws beside the game's draw (D126):
     # written by ReplaceFaces, emptied by RestoreFaces in the same record, never across ticks
     "moby_hand.c:s_faces", "moby_hand.c:s_faces_on",
+    # the region's data copied from the disc's executable once, at start-up, before any
+    # game code; the game only reads it (region_data.c, D133)
+    "region_data.c:s_loaded",
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {

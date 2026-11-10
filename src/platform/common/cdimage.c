@@ -429,6 +429,11 @@ int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *e
                 r->exe, r->serial, exe_sha1, r->exe_sha1);
   }
   g_Region = r->id;
+  g_RegionTiming = r->id == PSX_REGION_PAL; /* PAL 60 comes with R3 (D133) */
+  if (!r->supported && g_RegionDev) {
+    say("--region-dev: opening a release that isn't supported yet");
+    return 0;
+  }
   if (!r->supported)
     return fail(err, PSX_CD_ERR_NOT_SUPPORTED, "NOT SUPPORTED YET",
                 "This is Spyro the Dragon (%s), %s. Spyro Vita recognises it but can't run it "

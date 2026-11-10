@@ -33,8 +33,10 @@ else()
 endif()
 
 include(cmake/prepare.cmake)
+# The port's own patches, then the region switches it shares with the
+# matching builds (tools/build_matching.sh REGION=..., D133).
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
-              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port" S1_DIR)
+              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region" S1_DIR)
 spyro_prepare(PsyCross "${CMAKE_SOURCE_DIR}/third_party/PsyCross"
               "${CMAKE_SOURCE_DIR}/patches/PsyCross" PSYCROSS_DIR)
 

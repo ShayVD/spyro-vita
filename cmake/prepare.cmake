@@ -1,10 +1,15 @@
 # Copy a submodule into the build tree and apply our patches to the copy
 # (CLAUDE.md: never edit third_party/ in place). Re-runs when a patch changes.
-#   spyro_prepare(<name> <src dir> <patch dir> <out var>)
-function(spyro_prepare name src patchdir outvar)
+#   spyro_prepare(<name> <src dir> <patch dir>[;<patch dir>...] <out var>)
+# Each folder's patches in name order, the folders in the order given.
+function(spyro_prepare name src patchdirs outvar)
   set(dst "${CMAKE_BINARY_DIR}/patched/${name}")
-  file(GLOB patches CONFIGURE_DEPENDS "${patchdir}/*.patch")
-  list(SORT patches)
+  set(patches)
+  foreach(patchdir ${patchdirs})
+    file(GLOB dir_patches CONFIGURE_DEPENDS "${patchdir}/*.patch")
+    list(SORT dir_patches)
+    list(APPEND patches ${dir_patches})
+  endforeach()
   set(stamp "${dst}.stamp")
   set(want "")
   foreach(p ${patches})

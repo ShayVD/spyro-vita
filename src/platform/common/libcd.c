@@ -235,6 +235,7 @@ int psx_cd_open(const char *disc_dir) {
   cd_close_files();
   memset(&s_err, 0, sizeof s_err);
   g_Region = PSX_REGION_US;
+  g_RegionTiming = 0;
   snprintf(s_dir, sizeof s_dir, "%s", disc_dir);
   snprintf(path, sizeof path, "%s/manifest.json", disc_dir);
   f = cdio_open(path);
@@ -365,6 +366,31 @@ int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]) {
     cdio_read_at(fp, (long)(lba - f->lba) * 2048, raw + 8, 2048);
   }
   return 0;
+}
+
+int psx_cd_read_file(const char *path, void *buf, int cap) {
+  unsigned char raw[PSX_CD_RAW_SECTOR];
+  const CdFile *f = NULL;
+  int i, n;
+  for (i = 0; i < s_nfiles && !f; i++) {
+    const char *a = s_files[i].path, *b = path;
+    for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++)
+      ;
+    if (!*a && !*b)
+      f = &s_files[i];
+  }
+  if (!f || f->xa)
+    return -1;
+  if (!buf)
+    return f->size;
+  n = f->size < cap ? f->size : cap;
+  for (i = 0; i * 2048 < n; i++) {
+    int k = n - i * 2048 < 2048 ? n - i * 2048 : 2048;
+    if (psx_cd_read_raw(f->lba + i, raw) != 0)
+      return -1;
+    memcpy((unsigned char *)buf + i * 2048, raw + 8, (size_t)k);
+  }
+  return n;
 }
 
 int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc) {

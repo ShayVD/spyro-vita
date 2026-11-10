@@ -11,6 +11,12 @@ coverage is the share of its masked instructions that difflib finds, in order,
 between the neighbouring functions that were found (an estimate: a changed
 function's counterpart is looked for in that gap only).
 
+--exact (D133) also compares the constants the mask hides but no relocation
+uses: slti/sltiu/andi/xori immediates, and addiu/ori from $zero (li). A
+region edit (RV/RT in the decomp's C) is proved by its function being "same"
+with --exact in that region's matching build (tools/build_matching.sh
+REGION=pal). --only NAME,... prints those functions' results.
+
 It prints names, addresses, sizes and ratios: no game data. Inputs come from the
 player's own disc (disc/, gitignored).
 
@@ -39,6 +45,8 @@ LEVELS = [f"LEVEL_{w}{l}" for w in range(1, 7) for l in range(6)][:35]
 MASK_IMM = {0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x20, 0x21, 0x22, 0x23,
             0x24, 0x25, 0x26, 0x28, 0x29, 0x2A, 0x2B, 0x2E, 0x32, 0x3A}
 K = 4  # words in the index key
+EXACT = False  # --exact: keep the immediates no relocation uses
+NEVER_RELOC = {0x0A, 0x0B, 0x0C, 0x0E}  # slti, sltiu, andi, xori
 
 
 def norm(w):
@@ -47,6 +55,8 @@ def norm(w):
         return w & 0xFC000000
     if op == 0x0F:
         return w & 0xFFFF0000
+    if EXACT and (op in NEVER_RELOC or (op in (0x09, 0x0D) and (w >> 21) & 31 == 0)):
+        return w
     if op in MASK_IMM and ((w >> 21) & 31) != 29:
         return w & 0xFFFF0000
     return w
@@ -131,7 +141,11 @@ def main():
     ap.add_argument("--elf", default=ELF)
     ap.add_argument("--json")
     ap.add_argument("--list", action="store_true", help="list the functions that differ")
+    ap.add_argument("--exact", action="store_true", help="compare li/slti/andi constants too")
+    ap.add_argument("--only", help="print these functions' results (comma-separated)")
     a = ap.parse_args()
+    global EXACT
+    EXACT = a.exact
     d, secs, names, funcs = elf_sections_and_funcs(a.elf)
 
     def sec(name):
@@ -160,6 +174,14 @@ def main():
             T, S, C = T + t, S + s, C + c
             out["." + n] = res
         print(f"all overlays: {T} bytes; same {100 * S / T:.1f}%; weighted coverage {100 * C / T:.1f}%")
+    if a.only:
+        want = set(a.only.split(","))
+        for sname, res in out.items():
+            for r in res:
+                if r["name"] in want:
+                    print(f"  {sname} {r['name']} {r['addr']:08x} {r['size']}: "
+                          + (f"same at {0x80010000 + 4 * r['hits'][0]:08x}" if len(r["hits"]) == 1
+                             else f"differs, coverage={r['coverage']}"))
     if a.list:
         for sname, res in out.items():
             for r in res:
