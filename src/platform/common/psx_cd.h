@@ -26,6 +26,11 @@ const PsxCdStream *psx_cd_stream(void);
  * file covers (filled with zeros). */
 int psx_cd_read_raw(int lba, unsigned char raw[PSX_CD_RAW_SECTOR]);
 
+/* A data file of the open disc ("SCES_014.38", case ignored), whole: up to
+ * cap bytes into buf; with buf NULL, its size. Returns the bytes, or -1 (no
+ * such file, an XA file, a read error). For the region data loader (D133). */
+int psx_cd_read_file(const char *path, void *buf, int cap);
+
 /* Where the XA sector at lba lies in the files, for a reader of its own (the
  * Vita's read-ahead thread, D64): psx_cd_read_raw's bytes are `left`
  * consecutive sectors, the first at byte `offset` of `path`, one every

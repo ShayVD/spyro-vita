@@ -29,11 +29,26 @@ typedef struct {
   int video_hz;        /* 60 (NTSC) or 50 (PAL) */
   const char *save_dir; /* under the save folder: "" (US, the folder itself), "pal", "jp" */
   int supported;       /* 0: recognised, refused with "not supported yet" */
+  /* the game's layout (regions plan §2.3, §3.4; D133) */
+  unsigned overlay_base;  /* where a level's overlay is loaded; 0: not measured yet */
+  int level_header_size;  /* LevelHeader's bytes: 464, PAL 656 (m_Dragons[5][6]) */
+  struct {                /* WAD.WAD header entries; -1: none */
+    int title_overlay, cutscenes, ncutscenes, gameover_skybox, pete, levels, credits_overlay,
+        credits_data, font, credits_text;
+  } wad;
 } PsxRegion;
 
 /* PSX_REGION_*: the open disc's. PSX_REGION_US until psx_cd_open finds
  * another, which it does before the game's first instruction. */
 extern int g_Region;
+/* 1 when RT()'s PAL values apply (include/region.h, D133): the PAL disc at
+ * its own 50 Hz. 0 for US and JP (and, later, PAL 60). */
+extern int g_RegionTiming;
+
+/* Developers only (host --region-dev, D133): psx_cd_open opens a release
+ * that isn't supported yet instead of refusing it, so later stages can be
+ * built against it. Never on for players. */
+extern int g_RegionDev;
 
 const PsxRegion *psx_region_info(int id); /* NULL past the table */
 const PsxRegion *psx_region(void);        /* g_Region's */
