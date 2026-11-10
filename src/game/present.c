@@ -13,6 +13,7 @@
  * beside the logic draw. Until stage 7g (D129) D30's pass drew those frames
  * by running GamestateDraw itself over the game's own memory and putting a
  * snapshot back. */
+#include "tick60.h"
 #include "present.h"
 #include "lod.h"
 #include "savestate.h"
@@ -1447,7 +1448,9 @@ void PortPresentDraw(void) {
     logic_wide = g_present.widescreen && !exact;
   }
 
-  interp = g_present.interp && pres && can_interp();
+  /* A 60 Hz update (D130) is one vblank: its frame is the next one shown,
+   * with nothing in between */
+  interp = g_present.interp && pres && can_interp() && !g_t60.next;
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
 #if SPYRO_PRESENTER

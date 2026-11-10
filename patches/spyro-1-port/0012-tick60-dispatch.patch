@@ -1,0 +1,38 @@
+--- a/src/main.c
++++ b/src/main.c
+@@ -18,6 +18,10 @@
+  * docs/presentation.md). With both off, PortPresentDraw() is GamestateDraw(). */
+ void PortPresentBeforeUpdate(void);
+ void PortPresentDraw(void);
++/* 60 Hz logic, opt-in (src/game/tick60.c, decisions D130): in play an
++ * update can be one vblank. Off, both are the original's lines below. */
++void PortGamestateUpdate(void);
++int PortTickDelta(int pUnprocessed);
+ #endif
+ 
+ void main(void) {
+@@ -27,10 +31,15 @@
+     g_PadMutex = 0;
+ #ifdef SPYRO_PORT
+     PortPresentBeforeUpdate();
+-#endif
++    PortGamestateUpdate();
++#else
+     GamestateUpdate();
++#endif
+     g_PadMutex = 1;
+ 
++#ifdef SPYRO_PORT
++    g_DeltaTime = PortTickDelta(g_UnprocessedFrames);
++#else
+     g_DeltaTime = g_UnprocessedFrames;
+ 
+     if (g_DeltaTime < 2)
+@@ -38,6 +47,7 @@
+ 
+     if (g_DeltaTime > 4)
+       g_DeltaTime = 4;
++#endif
+ 
+     g_UnprocessedFrames = 0;
+ 

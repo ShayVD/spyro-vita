@@ -12,6 +12,8 @@
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdint.h>
 
+#include "tick60_sites.h" /* 60 Hz logic's sites: macros only (D130) */
+
 /* PS1 RAM address -> host address in the arena (src/platform/common/arena.c).
  * Used by patches/spyro-1-port for the decomp's hard-coded RAM addresses. */
 extern uintptr_t g_psx_arena_base;

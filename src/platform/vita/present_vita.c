@@ -6,6 +6,7 @@
  * the GPU). */
 #include "vita.h"
 #include "../../game/present.h"
+#include "../../game/tick60.h"
 #include "host.h" /* linux32's, for png.c's shots */
 #include "menu_opts.h"
 
@@ -24,9 +25,11 @@ static long long vita_clock_us(void) { return (long long)sceKernelGetProcessTime
 void vita_present_apply(void) {
   g_present.widescreen = g_vita_opts.widescreen != 0;
   g_present.ws_exact = g_vita_opts.widescreen_exact != 0;
+  /* 4, 60 Hz logic (D130): in play every frame is a real one; the other
+   * gamestates and the attract demos run at 30 Hz with the in-between frame */
   g_present.interp = g_vita_opts.interp != 0;
-  g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
-  g_present.interp_anim = g_vita_opts.interp == 1;
+  g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2 || g_vita_opts.interp == 4;
+  g_present.interp_anim = g_vita_opts.interp == 1 || g_vita_opts.interp == 4;
   g_present.interp_budget_us = g_vita_opts.interp_budget ? NET_US : 0;
 }
 
@@ -41,13 +44,13 @@ static void widescreen_changed(void) {
  * beside the label when selected ("< NO ANIM >"); 60 fps is off by default
  * (D44). The 60 FPS BUDGET row went with D75: with 60 fps on, the
  * in-between frame always runs (interp_budget is config.txt's only). */
-static const char *const k_interp_names[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
+static const char *const k_interp_names[] = {"OFF", "ON", "NO ANIM", "CAMERA", "60 HZ"};
 static const MenuOption k_rows[] = {
     {.section = MENU_PICTURE, .label = "WIDESCREEN", .key = "widescreen",
      .value = &g_vita_opts.widescreen, .names = g_menu_off_on, .count = 2,
      .on_change = widescreen_changed},
     {.section = MENU_PICTURE, .label = "60 FPS (EXPERIMENTAL)", .key = "interp",
-     .value = &g_vita_opts.interp, .names = k_interp_names, .count = 4,
+     .value = &g_vita_opts.interp, .names = k_interp_names, .count = 5,
      .on_change = vita_present_apply},
 };
 MENU_OPTION_LIST(g_menu_present, k_rows);
@@ -56,6 +59,13 @@ int pres_draw_available(void); /* src/game/pres/pres_draw.c */
 const char *pres_snap_misplaced(void); /* src/game/pres/pres_snap.c (D128) */
 
 void vita_present_init(void) {
+  /* 60 Hz logic (D130) is read once, at start: its value in the menu takes
+   * effect at the next start */
+  g_tick60_mode = g_vita_opts.interp == 4 && tick60_built();
+  if (g_vita_opts.interp == 4)
+    vita_log("present: 60 Hz logic in play (interp=4, D130)%s",
+             tick60_built() ? "; the other gamestates at 30 Hz with the in-between frame"
+                            : ": not in this build, 30 Hz");
   vita_present_apply();
   g_present.stats = g_vita_opts.stats ? 1 : 0;
   g_present_clock_us = vita_clock_us;

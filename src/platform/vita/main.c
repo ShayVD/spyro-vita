@@ -68,7 +68,8 @@
  *       interp=1        60 fps, experimental (default 0: 30 fps; D44):
  *                       an in-between frame per tick (camera, Spyro, mobys,
  *                       animation, particles); 2: no animation blending;
- *                       3: camera only. interp=1 needs config_version=2 (or 3) in
+ *                       3: camera only; 4: 60 Hz logic in play (D130,
+ *                       docs/tick60.md), read at start only. interp=1 needs config_version=2 (or 3) in
  *                       the file too: without it the line is taken as the
  *                       old default the menu used to write, and read as 0
  *                       (widescreen, interp, interp_budget and the other

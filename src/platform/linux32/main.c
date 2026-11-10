@@ -10,7 +10,7 @@
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
- *         [--present-stats] [--vcache]
+ *         [--present-stats] [--vcache] [--tick60] [--tick60-stats]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
@@ -46,6 +46,11 @@
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  *   --present-native: the presentation frames as drawn, 512x240 (to compare
  *   with the Vita's shots).
+ * --tick60: 60 Hz logic in play, the 60 fps option's third value (D130,
+ *   docs/tick60.md): an update in play is one vblank, run by the update
+ *   path's second compile (cmake/tick60.cmake); every other gamestate and
+ *   the attract demos stay at 30 Hz (add --interp for their in-between
+ *   frame). --tick60-stats: the updates' CPU time by rate, logged at exit.
  * --present-stats: time update, draw and the presenter's frames; logged at
  *   exit. (--present-dirty, --present-audit and --present-reads, D30's
  *   pass's and stage 7a's audits of it, went with the pass: D129.)
@@ -148,6 +153,7 @@
 #include "host.h"
 #include "port_controls.h"
 #include "lod.h"
+#include "tick60.h"
 #include "present.h"
 #include "menu_panel.h"
 #include "psx_arena.h"
@@ -298,7 +304,7 @@ static void usage(void) {
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
+          "             [--out960] [--present-stats] [--vcache] [--walk-lazy] [--tick60]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
@@ -344,6 +350,11 @@ static void present_report(void) {
   host_log("present: animation tracks blended %lld, kept %lld; particles "
            "blended %lld; blending %lld us per tick", s->anim_blended,
            s->anim_kept, s->particles_blended, s->us_blend / t);
+  host_log_flush();
+}
+
+static void tick60_atexit(void) {
+  tick60_report(host_log);
   host_log_flush();
 }
 
@@ -447,6 +458,10 @@ int main(int argc, char **argv) {
       TAKE();
       if (spyro_trace_open(val) != 0)
         return 1;
+    } else if (strcmp(a, "--moby-trace") == 0) {
+      TAKE();
+      if (spyro_moby_trace_open(val) != 0) /* 60 Hz logic's statistics (D130) */
+        return 1;
     } else if (strcmp(a, "--wav") == 0) {
       TAKE();
       if (host_audio_wav_open(val) != 0)
@@ -547,6 +562,10 @@ int main(int argc, char **argv) {
       g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
+    } else if (strcmp(a, "--tick60") == 0) {
+      g_tick60_mode = 1; /* 60 Hz logic in play (D130, src/game/tick60.c) */
+    } else if (strcmp(a, "--tick60-stats") == 0) {
+      g_t60_stats_on = 1;
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
@@ -697,6 +716,7 @@ int main(int argc, char **argv) {
   if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
   atexit(present_report);
+  atexit(tick60_atexit);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
   atexit(hand_check_report);

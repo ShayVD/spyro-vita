@@ -11,6 +11,7 @@
  * The native build's states are format 2 (D106): its game memory is a block
  * from the heap and its data labels a section of their own, each a chunk,
  * and the header records both addresses. */
+#include "tick60.h"
 #include "savestate.h"
 #include "cheats_port.h"
 #include "present.h"
@@ -140,6 +141,7 @@ static const struct {
     {"GLOB", chunk_globals}, {"GPU ", chunk_gpu},    {"VRAM", chunk_vram},
     {"SPU ", chunk_spu},   {"XA  ", psx_xa_state},   {"CD  ", psx_cd_state},
     {"MCRD", psx_mcrd_state}, {"PLAT", chunk_plat},
+    {"T60 ", tick60_state}, /* the mode it was made in (D130, §7.2) */
 };
 #define NCHUNKS (int)(sizeof k_chunks / sizeof k_chunks[0])
 

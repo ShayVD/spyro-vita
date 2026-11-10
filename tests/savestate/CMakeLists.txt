@@ -5,4 +5,5 @@ add_test(NAME savestate_globals
     --nm "${CMAKE_NM}" --bin "$<TARGET_FILE:spyro>"
     "$<TARGET_OBJECTS:spyro_game_main>" "$<TARGET_OBJECTS:spyro_game_ovl>"
     "$<TARGET_OBJECTS:spyro_game_m2c>" "$<TARGET_OBJECTS:spyro_game_port>"
+    ${T60_GAME_SRCS} # the 60 Hz rules' object (D130)
   COMMAND_EXPAND_LISTS)
