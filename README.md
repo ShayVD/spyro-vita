@@ -142,7 +142,7 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | Section | Rows | Default |
 |---|---|---|
 | PICTURE | Widescreen 16:9 | on |
-| | 60 FPS (experimental) | off |
+| | 60 FPS (experimental: off / on / 60 Hz; 60 Hz takes effect at the next start) | off |
 | | Texture filter (off / bilinear / 3-point) | off (the PS1's sharp texels) |
 | | Perspective-correct textures | off |
 | | Sub-pixel vertices (no PS1 wobble) | off |
@@ -177,6 +177,10 @@ Every option, and the extra ones `config.txt` takes, is described in
 
 - **60 fps is still marked experimental** and off by default. On hardware it now holds 60 fps in
   play in every level measured; the attract demo's flight scenes can still slip below it.
+- **60 FPS's "60 Hz" value is a pilot** (the game's logic itself at 60 Hz in play, not only the
+  picture): only Artisans and its levels' enemies and objects run at 60 Hz; elsewhere they move at
+  30 Hz while Spyro and the camera run at 60. It isn't the PS1's game tick for tick
+  (`docs/tick60.md`).
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
 - **The first time you pick a texture filter, perspective or sub-pixel setting**, the menu pauses
   for a few seconds while its shaders compile. That happens once per start-up.
