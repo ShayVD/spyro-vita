@@ -46,9 +46,6 @@ void psx_walk_run(void);
  * later or on the walker); 0 if DrawOTag must walk it in place now (no
  * walk, or the list starts outside the copy). */
 int psx_walk_hand_over(unsigned long *p);
-/* libgpu.c's VRAM calls: g_psx_vram_frozen, or on the walker its value when
- * the list was handed over. */
-int psx_walk_vram_frozen(void);
 
 /* Game thread. Everything handed over has been walked and what was
  * deferred has run. libgpu's calls and VSync do this first (libgpu.c,

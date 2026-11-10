@@ -28,7 +28,6 @@ void vita_present_apply(void) {
   g_present.interp_mobys = g_vita_opts.interp == 1 || g_vita_opts.interp == 2;
   g_present.interp_anim = g_vita_opts.interp == 1;
   g_present.interp_budget_us = g_vita_opts.interp_budget ? NET_US : 0;
-  g_present.interp_mode = g_vita_opts.interp_mode;
 }
 
 /* Widescreen from the menu: the GPU's targets again at the new width. */
@@ -70,15 +69,13 @@ void vita_present_init(void) {
            g_vita_opts.widescreen, g_vita_opts.interp,
            g_vita_opts.interp_budget ? "at 31.3 ms a tick" : "off",
            g_present_capture ? "GPU" : "CPU");
-  if (g_vita_opts.interp_mode == 2) { /* stage 7e (D125); every gamestate since 7g (D128) */
-    if (pres_draw_available())
-      vita_log("present: interp_mode=2: the presenter draws the in-between frame and the attract "
-               "demos' 16:9 frame");
-    else
-      vita_log("present: interp_mode=2: no presenter (not built, no area, fast_render not 3, or "
-               "a label outside the data region: %s): D30's pass draws them",
-               pres_snap_misplaced() ? pres_snap_misplaced() : "none");
-  }
+  if (pres_draw_available()) /* stages 7e-7g (D125, D126, D128, D129) */
+    vita_log("present: the presenter draws the in-between frame and the attract demos' 16:9 "
+             "frame");
+  else
+    vita_log("present: no presenter (not built, no area, fast_render not 3, or a label outside "
+             "the data region: %s): no in-between frame, and the attract demos 4:3",
+             pres_snap_misplaced() ? pres_snap_misplaced() : "none");
 }
 
 /* One line per stats report, totals since the last one. */
@@ -92,12 +89,12 @@ void vita_present_report(int vblank) {
     last = *s; /* windows with both off aren't reported, nor carried over */
     return;
   }
-  vita_log("present %d: %lld ticks; per tick us: logic draw %lld, passes %lld, snapshot %lld, "
-           "blend %lld; %lld in-between frames, %lld skipped for the budget (%lld falls to a held "
+  vita_log("present %d: %lld ticks; per tick us: logic draw %lld, the presenter on this thread "
+           "%lld, blend %lld; %lld in-between frames, %lld skipped for the budget (%lld falls to a held "
            "30 fps), %lld otherwise; "
            "%lld pictures from the 4:3 display%s%s",
            vblank, ticks, (s->us_logic - last.us_logic) / ticks,
-           (s->us_pass - last.us_pass) / ticks, (s->us_snapshot - last.us_snapshot) / ticks,
+           (s->us_pass - last.us_pass) / ticks,
            (s->us_blend - last.us_blend) / ticks, s->interp_frames - last.interp_frames,
            s->budget_skips - last.budget_skips, s->budget_holds - last.budget_holds,
            s->skipped_interp - last.skipped_interp,

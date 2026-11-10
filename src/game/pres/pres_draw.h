@@ -1,14 +1,13 @@
 /* The presenter's draw (stage 7e, decisions D125; docs/native-plan.md
  * stage 7, "The plan refreshed (D119)").
  *
- * interp_mode=2 (host --interp-mode 2): in play, the in-between frame is
- * drawn by the game's own draw code compiled a second time
- * (GamestateDraw_pres, cmake/presenter.cmake) from a snapshot
- * (pres_snap.c), not by D30's pass over the game's own memory. It starts
- * at D30's pass's point; with a platform worker (stage 7f, D126; present.c)
- * it draws on its own core beside the logic draw, else inline on the game
- * thread. D30's pass stays the reference (--pres-check) and the fallback
- * for the other gamestates. */
+ * The in-between frame, and the attract demos' 16:9 real frame, are drawn
+ * by the game's own draw code compiled a second time (GamestateDraw_pres,
+ * cmake/presenter.cmake) from a snapshot (pres_snap.c), in every gamestate
+ * (stage 7g, D128). It starts after the update, before the logic draw;
+ * with a platform worker (stage 7f, D126; present.c) it draws on its own
+ * core beside the logic draw, else inline on the game thread. D30's pass
+ * over the game's own memory drew them until D129. */
 #ifndef PRES_DRAW_H
 #define PRES_DRAW_H
 
@@ -68,21 +67,24 @@ void (**pres_flight5(void))(void);
 int (**pres_flight4(void))(int, void *, int);
 void (**pres_balloon4(void))(void);
 
-/* present.c's blend_state on the snapshot's copies (present.c) */
+/* present.c's blend on the snapshot's copies (present.c) */
 int port_present_blend_to(void *camera, void *spyro, void *mobys, void *particles);
 
-/* --pres-check (present.c): the presenter's frame against D30's pass's,
- * record for record. Each DrawOTag's list is read into a frame record
+/* --pres-check (present.c): the presenter's frame against another drawn
+ * from the same state, record for record: since D129 its frame from the
+ * snapshot unblended against the logic draw's own (D125-D128: its
+ * in-between frame against D30's pass's). Each DrawOTag's list is read into a frame record
  * (pres_check.c): the draw and display environments put, then each packet
  * in the list's order, a marker's records expanded (native_draw.h). */
 extern int g_pres_check;
 /* Stage 7f (D126), the host's --pres-check-thread: the presenter's list is
  * recorded on a thread of its own (g_present_pres's post and wait) beside
- * D30's pass and the logic draw, and compared at the join; the logic
+ * the logic draw, and compared at the join (--pres-check-late, D128: at
+ * the join, after it); the logic
  * draw's face replacements go into a copy meanwhile, as on the Vita, unless
  * g_faces_race (--faces-race, diagnostic: in place, as before 7f). */
 extern int g_pres_check_thread, g_faces_race;
-/* which: 0 D30's pass, 1 the presenter; de, dd: the draw and display
+/* which: 0 the logic draw (D30's pass until D129), 1 the presenter; de, dd: the draw and display
  * environments its list is walked with; pool: the presenter's records'
  * pool (pool_cap words), NULL for g_nd_pool's */
 void pres_check_frame(int which, const void *ot_head, const DRAWENV *de, const DISPENV *dd,

@@ -6,18 +6,20 @@ Prototype on the linux32 host (2026-10-30). Both features are optional, and off 
 
 | Flag | Effect |
 |---|---|
-| `--widescreen` | 16:9 picture, drawn once: the wider view is also what the logic sees (mobys visible at the 16:9 edges count as on screen). Attract demos keep the original 4:3 logic, a hidden 4:3 draw plus a 16:9 pass, so they replay exactly. See [One draw or two](#one-draw-or-two). |
+| `--widescreen` | 16:9 picture, drawn once: the wider view is also what the logic sees (mobys visible at the 16:9 edges count as on screen). Attract demos keep the original 4:3 logic, a hidden 4:3 draw plus the presenter's 16:9 frame (D30's 16:9 pass until D129), so they replay exactly. See [One draw or two](#one-draw-or-two). |
 | `--widescreen-exact` | the two-draw form always: the logic identical to 4:3 in play too, at the cost of one more render path per tick. |
 | `--widescreen-logic` | one draw always, attract demos too. Diagnostic only: the demos desync. |
 | `--interp` | 60 fps: one extra frame between ticks, with the camera, Spyro, mobys, their animation frames and the particles blended. |
 | `--interp-no-anim` | 60 fps, transforms only (no animation frames or particles); for comparisons. |
 | `--interp-camera` | 60 fps, camera only. |
 | `--out960` | Pictures (shots, `--serve`) at 960×544: full width for widescreen frames, 4:3 pillarboxed otherwise. Turned on by any of the above. |
-| `--present-stats` | Times update, draw, passes, snapshot and blending; logs a summary at exit. `--present-dirty` also checks the region snapshot against a full copy of the arena and lists any page it would have missed. |
+| `--present-stats` | Times update, draw, the presenter's frames and blending; logs a summary at exit. (`--present-dirty`, which checked D30's region snapshot against a full copy of the arena, went with the pass: D129.) |
 
 `PresentConfig g_present` (`src/game/present.h`) holds the same switches for other platforms.
 
 ## The idea in one paragraph
+
+**Since stage 7g (D128, D129)** the frames the logic draw doesn't draw (the in-between frame, and the attract demos' 16:9 frame) are the **presenter's**: the game's own draw code compiled a second time over a snapshot of what it reads (`src/game/pres/`), in every gamestate, blended for the in-between frame, on a thread of its own on the Vita (D126). It writes none of the game's memory, so nothing needs putting back. D30's presentation pass, described in the rest of this paragraph and in "Keeping the game out of it" below, is how it was done from D30 until D129; its snapshot, its freezes of the SPU and VRAM calls and its frozen `VSync` are gone (the presenter build drops those calls by name, `pres_names.h`). The picture below still holds with "presenter" for "pass", and no restore.
 
 The game's own `GamestateDraw` is the render path. A **presentation pass** snapshots everything the game can see, adjusts that state (a narrower projection; a blended camera and blended mobys), runs `GamestateDraw` with time frozen, captures the picture and restores the snapshot. None of its side effects reach the game. The **logic pass** is the original `GamestateDraw`, unchanged, run once per tick as before. When widescreen is on, the logic pass's `DrawOTag` is skipped, so it only leaves behind its side effects, computed with the original 4:3 frustum. The logic never runs twice, and it never sees a presentation-only value.
 
@@ -89,6 +91,8 @@ A visible side effect of faithful mode: a moby that's only visible in the extra 
 
 **Stage 7g, part 1 (D128): every gamestate.** The presenter build now holds every gamestate's draw: the rest of `draw.c`, the overlays' draws (the title's `TitlescreenDraw`; each flight level's results, `Flight5` and `Flight4`; each balloon level's talk, `Balloonist4`, which the game calls through the pointers the level sets: `pres_ovl.c` points those calls at the presenter's copies), `credits_hand.c`'s draw, `spu.c` for the sounds the flight results play (on the snapshot's copies, the SPU writes dropped) and `completion.c`. The snapshot copies the whole data region (the game reads past a table's end into the next label: the title's border animation, the rescued dragon's name), rebases `g_Buffers`' buffer pointers and the dragon rescue's mobys, and refuses to run if a named label isn't in that region. With `interp_mode=2` the presenter draws the in-between frame in every gamestate and the attract demos' 16:9 frame (inline: it starts from the visibility state the in-between frame leaves); on the Vita the in-between frame goes to its thread in every gamestate but the credits' first stage, which files no frame. `--pres-check` compares each of them with D30's pass, record for record, and logs the counts by gamestate. D30's pass stays the reference and what `interp_mode` 0 draws.
 
+**Stage 7g, part 2 (D129): D30's pass retired.** No gamestate needs the pass after D128, so it went: `presentation_pass`, its region snapshot and restore, `pass_vsync`, libspu's and libgpu's freezes, the live-state blend, and the debug switches that measured it (`--present-dirty`, `--present-audit`, `--present-reads`). `interp_mode` went too: the presenter always draws, and its area is always allocated. Without a presenter (the moved arena; `fast_render` 0) there is no in-between frame and the attract demos are 4:3. `--pres-check` now compares the presenter's frame from the same snapshot unblended with the logic draw's own list, every tick.
+
 ### What the render path reads
 
 `GamestateDraw` (`draw.c:2651`) for gameplay is: `CameraUpdateMatrices`, then
@@ -122,6 +126,8 @@ Saved per tick for blending (`PortPresentBeforeUpdate`, before `GamestateUpdate`
 - a moby changed class or died, or jumped more than 0x2000 (that moby uses its current value).
 
 ### Keeping the game out of it
+
+*(D30's pass, until D129: the presenter writes none of the game's memory, `--pres-write-check`, D128.)*
 
 | Effect of re-running `GamestateDraw` | Handled by |
 |---|---|
@@ -283,7 +289,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 | `tools/mips2c/hints.yaml`, `mips2c.py` | `before` hints: `func_80022A2C` HUD path at `0x80022D2C` (OFX) and `0x80022D78` (R11) | `PORT_WS_HUD_*` is the identity |
 | `patches/spyro-1-port/0010-primitive-space-hook.patch` | `GamestateDraw`: `PortPolySpace()` after it points the draw at its buffer (D54) | returns at once |
 | `src/game/order_table.c` `func_800168DC` | records HUD-OT primitives for the 2D squeeze | records nothing |
-| `src/platform/common/libspu.c` | drops writes while `g_psx_spu_frozen` | never set |
+| `src/platform/common/libspu.c` | dropped writes while `g_psx_spu_frozen` (until D129) | never set |
 | `src/game/present.c/.h` | everything else | |
 | `src/platform/linux32` | flags, 960×544 output (`png.c`), presenter per vblank (`vblank.c`) | `--out960` off: old output path |
 

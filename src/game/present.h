@@ -13,15 +13,14 @@ extern "C" {
 
 #define PRESENT_W 512 /* captured frame: the 512x240 display area, PS1 15-bit */
 #define PRESENT_H 240
-#define PRESENT_PAGES 512 /* 4 KB pages of the 2 MB arena */
 #define PRESENT_SLOTS 6   /* captured frames: queued and on screen */
 
 typedef struct {
   int widescreen; /* narrow the projection to 17/21 and fill the screen */
   int ws_logic;   /* one 16:9 draw always, attract demos too (diagnostic:
                      the demos desync) */
-  int ws_exact;   /* the original 4:3 logic always: a hidden 4:3 draw plus a
-                     16:9 presentation pass (the default does this only in
+  int ws_exact;   /* the original 4:3 logic always: a hidden 4:3 draw plus the
+                     presenter's 16:9 frame (the default does this only in
                      attract demos, and draws once in 16:9 otherwise) */
   int interp;     /* an extra frame between ticks, blended state */
   int interp_mobys; /* blend mobys and Spyro too, not only the camera */
@@ -29,41 +28,17 @@ typedef struct {
   int interp_budget_us; /* >0: skip the in-between frame while the game
                            thread's CPU time per tick with it would exceed
                            this (the safety net against running late, D75) */
-  int stats;        /* time update and draw (also with both features off);
-                     2 also maps the arena pages each pass dirties */
-  int interp_mode;  /* stage 7e (D125): 2 = in play the in-between frame is the
-                       presenter's (the draw code built again over a snapshot,
-                       src/game/pres/), not D30's pass; 0 or 1 = D30's pass */
-  int audit;        /* stage 7a (D104), debug only: the in-between frames per
-                       gamestate and their cost, and the HUD check */
+  int stats;        /* time update and draw (also with both features off) */
 } PresentConfig;
 
-#define PRESENT_GAMESTATES 16 /* GS_Playing .. GS_Credits (common.h) */
-#define PRESENT_HUD_DIFFS 8   /* the first ticks whose two HUD lists differ */
-#define PRESENT_HUD_WORDS 13  /* a packet's tag and up to 12 words, kept for those */
-
-/* audit: per gamestate (g_Gamestate at the draw) */
 typedef struct {
-  long long ticks, interp, skipped; /* skipped: a cut, a gamestate or level
-                                       change, a camera jump, the budget */
-  long long us_pass, packets; /* the in-between pass: time, OT packets drawn */
-  long long hud_same, hud_differ; /* its HUD list against the real frame's */
-} PresentGsStats;
-
-typedef struct {
-  int vblank, gamestate, level;
-  int packets[2]; /* the in-between pass's HUD list, the real frame's */
-  int first;      /* the first packet that differs */
-  uint32_t words[2][PRESENT_HUD_WORDS]; /* its tag and words in each list */
-} PresentHudDiff;
-
-typedef struct {
-  long long ticks, passes, logic_passes, interp_frames, skipped_interp;
-  long long us_pass, us_snapshot, us_logic, us_update; /* summed microseconds;
-                                                   us_logic leaves out VSync waits */
+  long long ticks, passes, logic_passes, interp_frames, skipped_interp; /* passes: the
+                                                                   presenter's frames */
+  long long us_pass, us_logic, us_update; /* summed microseconds (us_pass: the
+                                             presenter's frames on the game thread);
+                                             us_logic leaves out VSync waits */
   long long us_vsync; /* inside VSync(0) during the logic pass (host vblank work) */
   long long us_blend; /* saving the previous tick and blending (interp) */
-  long long spu_dropped; /* SPU writes swallowed inside presentation passes */
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
@@ -76,14 +51,6 @@ typedef struct {
   long long queue_drops;    /* frames dropped from a full queue (QUEUE waiting) */
   long long display_fallbacks; /* pictures that showed the PS1 display instead */
   long long particles_blended;
-  long long snapshot_bytes; /* copied in and out by the region snapshot */
-  long long dirty_pages, dirty_max; /* stats 2: 4 KB pages a pass wrote */
-  uint32_t dirty_union[PRESENT_PAGES / 32]; /* every page any pass wrote */
-  long long missed_pages; /* stats 2: dirty pages outside snapshot and scratch */
-  uint32_t missed_union[PRESENT_PAGES / 32];
-  PresentGsStats gs[PRESENT_GAMESTATES]; /* audit */
-  PresentHudDiff hud_diff[PRESENT_HUD_DIFFS];
-  int nhud_diff;
 } PresentStats;
 
 extern PresentConfig g_present;
@@ -100,9 +67,9 @@ typedef struct PresentFrame {
 } PresentFrame;
 
 /* A platform that keeps captured pictures itself (the Vita's GPU renderer):
- * capture() is called after a presentation pass's DrawOTag with the VRAM rect
+ * capture() is called after a captured draw's DrawOTag with the VRAM rect
  * just drawn, commit() then files that picture as slot 0..PRESENT_SLOTS-1.
- * begin() (may be NULL) comes before that, at the first DrawOTag of a pass
+ * begin() (may be NULL) comes before that, at the first DrawOTag of a draw
  * that captures: the frame's draws start, with the due vblank it will get
  * as far as known then (7c's render thread skips a late frame's draws).
  * NULL (default): StoreImage into our own pixel slots. */
@@ -195,22 +162,6 @@ const uint16_t *port_present_shown_pixels(void);
 
 /* order_table.c: a C-built 2D primitive went into the HUD OT. */
 void port_present_note_2d(void *prim);
-/* order_table.c func_80016784, before it links the HUD OT (head..tail) into
- * a list: the audit's HUD check (D104). */
-void port_present_hud_list(const void *head, const void *tail);
-
-/* Stage 7a's read audit (D104, the linux32 host's --present-reads): called
- * at each draw's start (after the update) and around the in-between pass's
- * GamestateDraw. NULL: off. */
-typedef struct PresentReadAudit {
-  void (*tick)(void);
-  void (*pass)(int begin);
-} PresentReadAudit;
-extern const PresentReadAudit *g_present_reads;
-/* The region of the PS1 address a (for the read audit's lines): scratchpad,
- * data, stack, mobys, particles, prims (the buffers and OTs the next draw
- * rewrites), level (everything else). */
-const char *port_present_region(uint32_t a);
 
 /* Where a draw into db_buf (a DB's m_PolyBuf) starts writing primitives: the
  * lower buffer while any option is on (D54), PortPolySpace() in

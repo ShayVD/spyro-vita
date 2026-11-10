@@ -10,13 +10,6 @@
 extern "C" {
 #endif
 
-/* Nonzero makes ClearImage, LoadImage, StoreImage and MoveImage do nothing.
- * A presentation pass re-runs the game's draw; VRAM bookkeeping there (the
- * pause screen saves the texture pages and overwrites them) must happen
- * once, in the real draw. Set and cleared by present.c (was PsyCross's
- * g_psyxVramFrozen, patch 0008). A walk on another thread reads the value
- * taken at its handover (psx_walk_vram_frozen, walk.c). */
-extern int g_psx_vram_frozen;
 
 /* DrawSync's callback (DrawSyncCallback); saved in a save state's GPU chunk
  * (savestate.c), so it keeps LIBGPU.C's name. */

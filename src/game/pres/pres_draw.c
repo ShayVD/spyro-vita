@@ -63,7 +63,7 @@ int pres_draw_available(void) {
 
 /* ---- the calls the presenter's objects make in place of the game's ---- */
 
-/* D30's pass_vsync: inside the presenter time stands still. VSync(0)
+/* Inside the presenter time stands still (D30's pass_vsync, until D129). VSync(0)
  * doesn't wait, and VSync(-1) is far enough ahead that the draw's "two
  * vblanks since the last frame" loops end at once; D_80075950 is the
  * snapshot's. Stage 7g (D128): but each VSync(0) moves the presenter's own
@@ -82,7 +82,9 @@ int pres_VSync(int mode) {
   return psx_clock_count() + 1000 + s_vsyncs;
 }
 
-/* D30's freeze drops these in a pass; the presenter never makes them */
+/* VRAM transfers: the presenter never makes them (the logic draw makes
+ * the pause screens' copies once, for real; D30's pass dropped them under
+ * g_psx_vram_frozen until D129) */
 void pres_LoadImage(RECT *r, u_long *p) { (void)r, (void)p; }
 void pres_StoreImage(RECT *r, u_long *p) { (void)r, (void)p; }
 void pres_MoveImage(RECT *r, int x, int y) { (void)r, (void)x, (void)y; }
@@ -110,8 +112,6 @@ void pres_PortProjectionHook(short pM[3][3]) {
     pM[0][j] = (short)(pM[0][j] * 17 / 21);
 }
 
-/* stage 7a's HUD audit is D30's pass's (present.c) */
-void pres_hud_list(const void *head, const void *tail) { (void)head, (void)tail; }
 
 /* native_draw.c nd_list_linked on the presenter's cursor: the walk's mode
  * for the list (the game's rule, into the presenter's own: its walk takes
@@ -173,8 +173,8 @@ static u32 sector_anims(int i) {
   return a >= g_psx_arena_base && a - g_psx_arena_base < PSX_MEM_SIZE ? *(const u32 *)a : 0;
 }
 
-/* LOD's state as the game's port_lod_draw_begin(1) leaves it for D30's
- * pass (the game's state is put back), its buffer addresses moved onto
+/* LOD's state as the game's port_lod_draw_begin(1) leaves it for a
+ * shown draw (the game's state is put back), its buffer addresses moved onto
  * the presenter's */
 static unsigned char s_lod_game[512], s_lod[512];
 static void lod_begin(void) {
@@ -197,7 +197,7 @@ static void lod_begin(void) {
   pres_lod_state_set(s_lod);
 }
 
-/* The renderers' state as D30's pass finds it in the game's: the register
+/* The renderers' state as the logic draw finds it in the game's: the register
  * file, the scratchpad, the spill and work areas, the sector flags and
  * bytes, the shadow list, the glows, sparkles and flame. */
 static void context(int wide, const uint8_t *flags, const uint32_t *caches, int ncaches) {

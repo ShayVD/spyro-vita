@@ -24,7 +24,7 @@
  * touches any of it: libgpu's calls and VSync join first (psx_walk_join), save
  * states join, and present.c defers its few touches after a DrawOTag
  * (psx_walk_after). What the walk reads of the game's other state is taken
- * at the handover: g_psx_vram_frozen here, the vertex cache's table
+ * at the handover: the vertex cache's table
  * (psx_vcache_frame_take), the display state the GL side sees (the Vita's
  * PsxWalkThread.submitted). */
 #include "psx_walk.h"
@@ -59,7 +59,6 @@ static struct {
   uintptr_t head; /* the list's first packet, in the copy */
   int tag;        /* g_psx_walk_tag at the handover */
   int nd;         /* g_psx_walk_nd at the handover */
-  int frozen;     /* g_psx_vram_frozen at the handover */
   PsxVcacheFrame vc;
 } s_job;
 
@@ -111,8 +110,6 @@ static uintptr_t next_packet(uintptr_t packet) {
   return place(MEM_OT_OFS(*(const uint32_t *)packet));
 }
 
-int psx_walk_vram_frozen(void) { return on_walker() ? s_job.frozen : g_psx_vram_frozen; }
-
 int psx_walk_nd(void) { return on_walker() ? s_job.nd : g_psx_walk_nd; }
 
 int psx_walk_hand_over(u_long *p) {
@@ -148,7 +145,6 @@ int psx_walk_hand_over(u_long *p) {
       return 0;
     }
   }
-  s_job.frozen = g_psx_vram_frozen;
   s_job.tag = g_psx_walk_tag;
   s_job.nd = g_psx_walk_nd;
   psx_vcache_frame_take(&s_job.vc);

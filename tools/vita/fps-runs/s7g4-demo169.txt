@@ -1,0 +1,12 @@
+# Run 7G4 (D129): the attract demos at 16:9 and 60 fps in real time, from the title (no pad):
+# the game thread's busy % in Stone Hill's and Doctor Shemp's demos with both frames the
+# presenter's on the game thread (D30's 16:9 pass gone), against 7F2 and 7F3's Stone Hill windows
+# (40.1% → 46.1% with the presenter's in-between frame before D30's 16:9 pass), and the late
+# vblanks in the flight.
+#   REALTIME=1 VPK=... DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7g4 900 @tools/vita/fps-runs/s7g4-demo169.txt
+config_version=3
+interp=1
+gpu_meter=1
+widescreen=1
+frames=12000

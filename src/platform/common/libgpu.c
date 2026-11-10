@@ -11,9 +11,9 @@
  *  - the gate (0009 g_psyxGpuGate): psx_walk_join (walk.c), first in every
  *    call that reads or writes the GPU state a walk uses, so a walk still
  *    running elsewhere finishes first; a no-op with no walk handed over;
- *  - the VRAM freeze (0008 g_psyxVramFrozen): our flag g_psx_vram_frozen,
- *    set by present.c, read through psx_walk_vram_frozen (on the walker:
- *    its value at the handover);
+ *  - the VRAM freeze (0008 g_psyxVramFrozen, later our g_psx_vram_frozen):
+ *    gone with D30's pass (stage 7g, D129), the one caller; the presenter
+ *    never makes these calls (src/game/pres/pres_names.h);
  *  - DrawOTag's pre and post (0005): present.c's port_present_ot_pre and
  *    port_present_ot_post; its walk (0009 g_psyxDrawOTagWalk):
  *    psx_walk_hand_over; its done (0007 g_psyxDrawOTagDone): the vertex
@@ -33,13 +33,10 @@
 
 #include "psx/libetc.h"
 
-int g_psx_vram_frozen;
 void (*drawsync_callback)(void) = NULL;
 
 int ClearImage(RECT16 *rect, u_char r, u_char g, u_char b) {
   psx_walk_join();
-  if (psx_walk_vram_frozen())
-    return 0;
   GR_ClearVRAM(rect->x, rect->y, rect->w, rect->h, r, g, b);
   GR_Clear(rect->x, rect->y, rect->w, rect->h, r, g, b);
   return 0;
@@ -47,24 +44,18 @@ int ClearImage(RECT16 *rect, u_char r, u_char g, u_char b) {
 
 int LoadImage(RECT16 *rect, u_long *p) {
   psx_walk_join();
-  if (psx_walk_vram_frozen())
-    return 0;
   GR_CopyVRAM((unsigned short *)p, 0, 0, rect->w, rect->h, rect->x, rect->y);
   return 0;
 }
 
 int StoreImage(RECT16 *rect, u_long *p) {
   psx_walk_join();
-  if (psx_walk_vram_frozen())
-    return 0;
   GR_ReadVRAM((unsigned short *)p, rect->x, rect->y, rect->w, rect->h);
   return 0;
 }
 
 int MoveImage(RECT16 *rect, int x, int y) {
   psx_walk_join();
-  if (psx_walk_vram_frozen())
-    return 0;
   GR_CopyVRAM(NULL, rect->x, rect->y, rect->w, rect->h, x, y);
   return 0;
 }

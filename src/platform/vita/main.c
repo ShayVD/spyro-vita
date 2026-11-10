@@ -75,15 +75,14 @@
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
  *                       with config_version=2; D45)
- *       interp_mode=0   with interp, D30's pass over the game's memory draws
- *                       the in-between frame, on the game thread. The
- *                       default, 2: in play the presenter draws it (the
- *                       game's draw code built a second time over a
- *                       snapshot, src/game/pres/; stage 7e, D125), on a
- *                       thread of its own (pres_thread, D126). The same
- *                       pictures. Read before the arena is set up: 2 adds
- *                       the presenter's 2.25 MB after the game's memory,
- *                       whether or not 60 fps is on.
+ *                       (The in-between frame, and the attract demos'
+ *                       16:9 frame, are the presenter's: the game's draw
+ *                       code built a second time over a snapshot,
+ *                       src/game/pres/, stages 7e-7g, D125-D129, on a
+ *                       thread of its own, pres_thread. Its 2.25 MB come
+ *                       after the game's memory. interp_mode=, which chose
+ *                       it over D30's pass, went with the pass, D129: a
+ *                       line of it is logged as an unknown key.)
  *       interp_budget=0 no safety net: the in-between frame always runs.
  *                       Any other value (default 1): skip it only while the
  *                       game thread's own CPU time per tick would pass 15/16
@@ -200,7 +199,7 @@
  *       parse_core=3    that thread on core 3, the system's, if the start-up
  *                       check ("cores" line) found a thread of ours may run
  *                       there; else core 1 (default 1; D71)
- *       pres_thread=0   with interp_mode=2, the presenter's in-between frame
+ *       pres_thread=0   the presenter's in-between frame
  *                       on the game thread, as 7e (default 1: on a thread of
  *                       its own beside the logic draw, recording into the
  *                       render thread's buffers; stage 7f, D126). It needs
@@ -291,7 +290,6 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
-                        .interp_mode = 2, /* D126: the default (the owner, 2026-11-09) */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
 
@@ -345,30 +343,6 @@ static void parse_poke(const char *v) {
 const char *g_vita_config_stale[4];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
-
-/* interp_mode=2 (stage 7e, D125; the default since D126): the presenter's
- * area comes with the game's memory (psx_arena_init, before anything uses
- * the heap), so config.txt is looked at for that line first, into a static
- * buffer. The last interp_mode line wins, as in read_config; none, or no
- * file, is the default: 2, so the area is there whenever 60 fps is turned
- * on in the menu. */
-static int config_wants_presenter(void) {
-  static char buf[16384];
-  const char *p;
-  int n, want = g_vita_opts.interp_mode == 2;
-  SceUID fd = sceIoOpen(VITA_DATA_DIR "/config.txt", SCE_O_RDONLY, 0);
-  if (fd < 0)
-    return want;
-  n = sceIoRead(fd, buf, sizeof buf - 1);
-  sceIoClose(fd);
-  if (n <= 0)
-    return want;
-  buf[n] = 0;
-  for (p = buf; (p = strstr(p, "interp_mode=")) != NULL; p += 12)
-    if (p == buf || p[-1] == '\n')
-      want = atoi(p + 12) == 2;
-  return want;
-}
 
 static void read_config(void) {
   char line[512];
@@ -484,8 +458,6 @@ static void read_config(void) {
       g_vita_opts.pres_core = atoi(v);
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
-    else if (!strcmp(line, "interp_mode"))
-      g_vita_opts.interp_mode = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
       g_vita_opts.gpu_meter = atoi(v);
     else if (!strcmp(line, "log_sync"))
@@ -609,10 +581,10 @@ int main(int argc, char **argv) {
 
   /* the arena first, before anything else uses the heap: save states hold
    * pointers into it, so it should land at the same address every launch,
-   * whatever config.txt turns on (D51); interp_mode=2 (the default,
-   * D126) adds the presenter's area after it (D125) */
-  if (config_wants_presenter())
-    pres_draw_want();
+   * whatever config.txt turns on (D51); the presenter's area comes after
+   * it (D125), always since D129 (60 fps and widescreen can be turned on
+   * in the menu, and only the presenter draws their frames) */
+  pres_draw_want();
   psx_arena_init();
   vita_log_open();
   vita_log("Spyro Vita (" __DATE__ " " __TIME__ ")");
@@ -684,7 +656,7 @@ int main(int argc, char **argv) {
     vita_exit(1);
   }
   vita_parse_init(); /* after the render thread (D71) */
-  vita_pres_init();  /* stage 7f (D126): with interp_mode=2 */
+  vita_pres_init();  /* stage 7f (D126) */
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,
