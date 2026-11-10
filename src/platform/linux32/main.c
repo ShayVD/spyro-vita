@@ -18,6 +18,10 @@
  * --disc: the extracted files (with manifest.json), or a folder holding a
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
  *   WAD.WAD the first time and remember it in FILE, as the Vita does.
+ * --region-dev: open a PAL or JP disc, which players get refused as not
+ *   supported yet (D133). --region-check: with it, load the disc's region
+ *   data (src/game/region_data.c) from its executable, print what it found
+ *   and exit (0 when every pointer to a string lands on one).
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
  *   samples that read the CD.
@@ -156,6 +160,7 @@
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
+#include "region_data.h"
 #include "psx_spu.h"
 
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
@@ -258,6 +263,7 @@ static void mixer_report(void) {
 }
 
 static int s_cd_native; /* --cd-native (D93) */
+static int s_region_check; /* --region-check (D133) */
 
 static unsigned long long now_us(void) {
   struct timespec ts;
@@ -302,7 +308,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -403,6 +409,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--disc-marker") == 0) {
       TAKE();
       psx_cd_set_verify(val, NULL);
+    } else if (strcmp(a, "--region-dev") == 0) {
+      g_RegionDev = 1; /* open a release that isn't supported yet (D133) */
+    } else if (strcmp(a, "--region-check") == 0) {
+      g_RegionDev = s_region_check = 1;
     } else if (strcmp(a, "--replay") == 0) {
       TAKE();
       replay = val;
@@ -750,6 +760,24 @@ int main(int argc, char **argv) {
     host_log_flush();
     disc_refused();
     return 1;
+  }
+  if (s_region_check) { /* the region data loader against the disc's executable, then exit */
+    RegionDataStats st;
+    char err[200];
+    int rc = region_data_load_disc(0, &st, err, sizeof err);
+    if (rc != 0) {
+      fprintf(stderr, "region check: %s: %s\n", psx_region()->serial, err);
+    } else {
+      printf("region check: %s (%s): %d blocks, %d bytes; %d pointers relocated, %d into the "
+             "strings, %d of them at a string that ends in its block; %d words aimed at the "
+             "code left alone; %d tables over US labels (%d bytes) checked, not copied\n",
+             psx_region()->serial, psx_region()->area, st.blocks, st.bytes, st.relocs,
+             st.to_strings, st.strings_ok, st.not_relocated, st.fills, st.fill_bytes);
+      if (st.strings_ok != st.to_strings)
+        rc = 1;
+    }
+    host_log_flush();
+    return rc ? 1 : 0;
   }
   if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
     char dir[512];
