@@ -22,16 +22,21 @@ From the user's real dump (a 2352-byte .bin and its .cue) it makes, in WORK
            track 1 isn't MODE2 (and no image beside it); a damaged
            manifest.json. Each must exit 1
            with its title on stderr; its panel is written as disc-error.png.
+  regions: for each OTHER.cue:OTHER_FILES pair (the PAL and JP dumps, D132):
+           its .cue and .bin, and its extracted files' executable with the
+           manifest, refused with "NOT SUPPORTED YET"; its image with one
+           byte of the executable changed, "WRONG VERSION OF THE GAME".
 
 The full-size copies (~0.7 GB each) are made one at a time and deleted; the
 refusals that need a whole image are sparse files holding only the
 sectors the check reads. The .bin itself is hard-linked, never copied.
 
-Usage: python3 -I tests/cd/image_variants.py IMAGE.cue FILES_DIR WORK OUT
+Usage: python3 -I tests/cd/image_variants.py IMAGE.cue FILES_DIR WORK OUT [OTHER.cue:OTHER_FILES ...]
   IMAGE.cue  the user's dump (disc/image/...cue)
   FILES_DIR  the extracted files of the same dump (disc/files)
   WORK       scratch folder inside the repo (build/discvar)
   OUT        logs and pictures (logs/runN-variants)
+  OTHER      another region's dump and its files ("disc/image-pal/...cue:disc/files-pal")
 """
 import json
 import os
@@ -119,9 +124,10 @@ def write(path, data):
 
 
 def main(argv):
-    if len(argv) != 5:
+    if len(argv) < 5:
         sys.exit(__doc__)
-    cue, files, work, out = (os.path.abspath(a) for a in argv[1:])
+    cue, files, work, out = (os.path.abspath(a) for a in argv[1:5])
+    others = [tuple(os.path.abspath(p) for p in a.split(":")) for a in argv[5:]]
     text = open(cue, encoding="latin-1").read()
     binname = re.search(r'FILE\s+"([^"]+)"', text).group(1)
     image = os.path.join(os.path.dirname(cue), binname)
@@ -261,6 +267,34 @@ def main(argv):
     refused("no-file-list",
             lambda d: sparse_copy(image, os.path.join(d, "spyro.bin"), set(range(0, 17)), size),
             "THE IMAGE IS DAMAGED")
+
+    # ---- other regions (D132) ----
+    for ocue, ofiles in others:
+        otext = open(ocue, encoding="latin-1").read()
+        obin = re.search(r'FILE\s+"([^"]+)"', otext).group(1)
+        oimage = os.path.join(os.path.dirname(ocue), obin)
+        osize = os.path.getsize(os.path.realpath(oimage))
+        omanifest = json.load(open(os.path.join(ofiles, "manifest.json")))
+        cnf_text = open(os.path.join(ofiles, "SYSTEM.CNF"), encoding="latin-1").read()
+        oexe_name = re.search(r"cdrom:[\\/]*([^;\s]+)", cnf_text).group(1)
+        oexe = next(m for m in omanifest if m["path"] == oexe_name)
+        tag = oexe_name.split("_")[0].lower()
+        refused(f"{tag}-image",
+                lambda d: (link(oimage, os.path.join(d, obin)), shutil.copy(ocue, d)),
+                "NOT SUPPORTED YET")
+
+        def ofiles_copy(d):  # what the check reads: the manifest, SYSTEM.CNF, the executable
+            for name in ("manifest.json", "SYSTEM.CNF", oexe_name):
+                shutil.copy(os.path.join(ofiles, name), d)
+        refused(f"{tag}-files", ofiles_copy, "NOT SUPPORTED YET")
+
+        def oexe_flip(lba, sec, at=oexe["lba"] + 100):
+            if lba == at:
+                sec[24 + 7] ^= 0xff
+        refused(f"{tag}-wrong-exe",
+                lambda d: sparse_copy(oimage, os.path.join(d, "spyro.bin"),
+                                      small_sectors(omanifest), osize, oexe_flip),
+                "WRONG VERSION OF THE GAME")
 
     width = max(len(r[0]) for r in results)
     lines = [f"{n:<{width}}  {s:<4}  {d}" for n, s, d in results]

@@ -84,6 +84,7 @@ Files the app writes:
 | `ux0:data/spyro/spyro.log` | the log. **Please send it back after a test**, whatever happened |
 | `ux0:data/spyro/save/card0` | memory card 1 (created when the game first saves) |
 | `ux0:data/spyro/save/state1.bin` … `state3.bin` | quick-save states from the menu (3.8 MB each; decisions D51) |
+| `ux0:data/spyro/save/pal/`, `save/jp/` | the PAL and Japanese discs' own cards, states and `disc-verified.txt`, once those discs run (D132); `save/` itself stays the US disc's |
 | `ux0:data/spyro/shots/` | PNGs, only if `config.txt` asks for them |
 
 ## 3. Optional `ux0:data/spyro/config.txt`

@@ -10,6 +10,7 @@
  * discimage (third_party/vita-port-kit/vita/runtime/discimage, D108);
  * cdimage.c keeps the image search, the messages and the disc check. */
 #include "../../../third_party/vita-port-kit/vita/runtime/discimage/vpk_discimage.h"
+#include "psx_region.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,6 +25,7 @@ enum {
   PSX_CD_ERR_WRONG_DISC, /* another game or release, or a bad dump */
   PSX_CD_ERR_BAD_IMAGE,  /* unreadable, damaged or cut short */
   PSX_CD_ERR_MANIFEST,   /* manifest.json there but unreadable */
+  PSX_CD_ERR_NOT_SUPPORTED, /* a known PAL or JP release, not run yet (D132) */
 };
 
 typedef struct {
@@ -69,7 +71,8 @@ typedef struct {
 } PsxCdImageFile;
 
 /* Looks for an image in dir, opens it, walks its ISO9660 directory and
- * checks it is SCUS-94228. On success returns 0 and the file table (sorted by
+ * checks it is a release the region table knows (psx_region.h, D132), whose
+ * region it puts in g_Region. On success returns 0 and the file table (sorted by
  * LBA, malloc'd, the caller frees it); otherwise fills *err. */
 int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCdError *err);
 void psx_cdimage_close(void);
@@ -80,6 +83,12 @@ void psx_cdimage_layout(int *sector, int *base);
 /* n bytes from offset off of the 2352-byte raw sector at lba (off 16: the
  * subheader, 24: Form 1 data). Returns n, or -1 past the end of the image. */
 int psx_cdimage_read(int lba, int off, void *buf, int n);
+
+/* r's executable has SHA-1 exe_sha1 (hex): 0 and g_Region = r's region if
+ * it is r's release and r is supported; otherwise fills *err ("WRONG VERSION
+ * OF THE GAME", or "NOT SUPPORTED YET" with g_Region set). Both backends'
+ * check (D132). */
+int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *err);
 
 /* SHA-1, for the disc check and the tests: vita-port-kit's (D108). */
 typedef VpkSha1 PsxSha1;

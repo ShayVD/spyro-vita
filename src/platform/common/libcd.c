@@ -169,6 +169,59 @@ static int open_image(const char *disc_dir) {
   return 0;
 }
 
+static int have_file(const char *path) {
+  for (int i = 0; i < s_nfiles; i++) {
+    const char *a = s_files[i].path, *b = path;
+    for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++)
+      ;
+    if (!*a && !*b)
+      return 1;
+  }
+  return 0;
+}
+
+/* The extracted files' release (D132): SYSTEM.CNF's BOOT file, or else a
+ * known executable in the manifest. The US files aren't hashed, as before
+ * (tools/extract_disc.py checked them); another region's executable is, and
+ * the release is refused until its stages land (psx_cd_check_release). */
+static int files_region(void) {
+  const PsxRegion *r = NULL;
+  char path[512], buf[2048], exe[64], hex[41];
+  unsigned char block[4096];
+  size_t n;
+  PsxSha1 sha;
+  FILE *f;
+  snprintf(path, sizeof path, "%s/SYSTEM.CNF", s_dir);
+  if ((f = fopen(path, "rb"))) {
+    n = fread(buf, 1, sizeof buf, f);
+    fclose(f);
+    if (psx_region_boot_exe(buf, n, exe, sizeof exe) == 0)
+      r = psx_region_by_exe(exe);
+  }
+  for (int i = 0; !r && i < PSX_REGION_COUNT; i++)
+    if (have_file(psx_region_info(i)->exe))
+      r = psx_region_info(i);
+  if (!r || r->id == PSX_REGION_US)
+    return 0;
+  snprintf(path, sizeof path, "%s/%s", s_dir, r->exe);
+  if (!(f = fopen(path, "rb"))) {
+    s_err.code = PSX_CD_ERR_MANIFEST;
+    snprintf(s_err.title, sizeof s_err.title, "A FILE IS MISSING");
+    snprintf(s_err.text, sizeof s_err.text,
+             "%s is in manifest.json but not in %s. Run tools/extract_disc.py again.", r->exe,
+             s_dir);
+    return -1;
+  }
+  psx_sha1_init(&sha);
+  while ((n = fread(block, 1, sizeof block, f)) > 0)
+    psx_sha1_update(&sha, block, (unsigned)n);
+  fclose(f);
+  psx_sha1_hex(&sha, hex);
+  fprintf(stderr, "libcd: %s is Spyro the Dragon (%s), %s, SHA-1 %.8s\n", r->exe, r->area,
+          r->serial, hex);
+  return psx_cd_check_release(r, hex, &s_err);
+}
+
 int psx_cd_open(const char *disc_dir) {
   char path[512], type[8];
   FILE *f;
@@ -181,6 +234,7 @@ int psx_cd_open(const char *disc_dir) {
     cd.log = 1;
   cd_close_files();
   memset(&s_err, 0, sizeof s_err);
+  g_Region = PSX_REGION_US;
   snprintf(s_dir, sizeof s_dir, "%s", disc_dir);
   snprintf(path, sizeof path, "%s/manifest.json", disc_dir);
   f = cdio_open(path);
@@ -230,6 +284,11 @@ int psx_cd_open(const char *disc_dir) {
   free(json);
   if (s_nfiles == 0)
     return manifest_error(path, "lists no files");
+  if (files_region() != 0) {
+    fprintf(stderr, "libcd: %s: %s\n", s_err.title, s_err.text);
+    cd_close_files();
+    return -1;
+  }
   return 0;
 }
 

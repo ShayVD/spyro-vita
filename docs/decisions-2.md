@@ -1338,3 +1338,28 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   7. the port's menu languages and a Japanese font;
   8. hardware runs, each with the owner's yes.
 - **Not done:** everything in the plan's stages. Redux at 50 Hz for PAL isn't checked yet (R0).
+
+## 2026-11-10 — the PAL and Japanese discs: R0
+
+### D132. Stage R0 of `docs/regions-plan.md`: one table of the releases Spyro Vita knows (`src/platform/common/region.c`, `psx_region.h`; `tools/extract_disc.py`'s `REGIONS`). The disc's region comes from the executable `SYSTEM.CNF` boots and that executable's SHA-1, and goes in `g_Region` before the game's first instruction. The PAL (SCES-01438) and Japanese (SCPS-10083) releases are recognised and refused with a "NOT SUPPORTED YET" panel until their stages land. Their saves will go to `save/pal/` and `save/jp/`; `save/` stays the US disc's. The oracle takes `DISC=` and `BIOS=`, and PCSX-Redux runs the PAL disc at 50 Hz with the US BIOS
+- **Why:** the owner asked for the PAL stages, R0 first (2026-11-10). D60 had one executable name and two hashes, and refused everything else as a wrong disc.
+- **The owner's decisions it relies on** (plan §10, not yet answered; the plan's recommendations as defaults): 3, PAL first; 4, per-region save folders with `save/` staying US. **Decision 6 is still open:** the PAL and JP hashes in the table are of the owner's one dump of each, not confirmed against Redump (redump.org was unreachable here too). If Redump's differ, only the table changes.
+- **The table** (`region.c`, one row a release): area, serial, executable, the executable's and `WAD.WAD`'s SHA-1, the WAD header's LBA and entry count (37/102, 500/114, 500/116), the six music files, the memory-card file name, the video rate, the save folder, and whether it runs. `extract_disc.py` keeps every file's SHA-1 per release (the PAL and JP ones from `disc/files-pal`, `disc/files-jp`).
+- **Detection** (`cdimage.c` for an image, `libcd.c` for extracted files):
+  1. `SYSTEM.CNF`'s BOOT file names the release. With no `SYSTEM.CNF`, or one that boots something else, the first known executable on the disc does (as D60 looked for `SCUS_942.28`).
+  2. The executable is hashed. A wrong hash is "WRONG VERSION OF THE GAME"; the US text is D60's, the others name the edition they expected.
+  3. A known release that doesn't run yet is "NOT SUPPORTED YET" (`PSX_CD_ERR_NOT_SUPPORTED`), with `g_Region` set. An unknown boot file (another game, the JP SCPS-10085 standard edition) stays "WRONG DISC".
+  4. The WAD check (D60) uses the region's hash, and its marker goes in the region's folder.
+  - **US unchanged on purpose:** extracted US files still aren't hashed at start-up (the extractor checked them); another region's executable is.
+- **Saves:** `psx_region_path` puts the cards, the save states and the disc marker in `save/` for the US disc and `save/pal/`, `save/jp/` otherwise (Vita: `main.c`, `savestate_vita.c`; host: under `--save DIR`).
+- **Oracle:** `tools/oracle/run.sh` and `tools/oracle/redux` take `DISC=` (a `.cue` or a folder with one; default `disc/image`) and `BIOS=` (default `disc/bios/SCPH1001.BIN`). `run.sh` also finds the emulator where `fetch_redux.sh` puts it. `tools/oracle/vrate.lua` measures emulated CPU cycles between vblanks.
+- **Checked:**
+  - **Redux's video rate** (`logs/r0-vrate-{us,pal,jp,pal2}`, SCPH-1001): US 564,398 cycles a vblank (60.009 Hz), JP the same, **PAL 673,844 (50.262 Hz)**. Redux starts every disc at NTSC with this BIOS and switches when the PAL game sets its video mode, about vblank 1,400 (`r0-vrate-pal2`: 60.009 Hz to vblank 1,350, 50.262 Hz from 1,650 on). PAL `main` (0x80015DCC) is in RAM by vblank 1,200. **So no PAL BIOS is needed** (plan §8).
+  - **Host, detection** (`logs/r0-detect/`): `disc/files` and `disc/image` run; `files-pal`, `image-pal`, `files-jp` and `image-jp` exit 1 with "NOT SUPPORTED YET" and `disc-error.png`.
+  - **`tests/cd/image_variants.py`** with the PAL and JP pairs: **29/29 cases ok** (`logs/r0-variants/summary.txt`): D60's 23 unchanged, plus each region's image and extracted files refused as not supported yet, and its image with one executable byte changed refused as a wrong version.
+  - **`ctest -R '^cd$'`** passes, with the region helpers' new cases (`tests/cd/test_cd.c`).
+  - **`extract_disc.py`** on the three images (`logs/r0-extract/`): all 16 US files match SCUS-94228; all 16 PAL files match SCES-01438 and all 10 JP files SCPS-10083, each with the note that the port can't run it yet (exit 0).
+  - **Vita3K** (this branch's VPK, `logs/r0-vita3k-*`): the PAL and JP images show the panel (`win-grab.png`); the US files and image reach the title as before (`r0-vita3k-us/shot-2400.png`), saves in `ux0:data/spyro/save`.
+  - **US host checks** (`tools/host_checks.sh`, default build): **279 of 279 files byte-identical** to main `21ae3ca`'s (`logs/r0-main-*` against `logs/r0-br-*`, `logs/r0-hc-cmp.txt`: the demo 26, the tour 141, routes A and B 56 each, cards included).
+  - **US matching build:** `PSX.EXE SHA-1 OK` (`logs/r0-matching/build.txt`).
+- **Not done:** everything after R0. Hardware: R0 changes nothing a US player sees but the README line, so no Vita run is asked for here.

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Extract the files from your own Spyro the Dragon (USA, SCUS-94228) disc
-image, for the port (ux0:data/spyro/ on the Vita).
+"""Extract the files from your own Spyro the Dragon disc image, for the port
+(ux0:data/spyro/ on the Vita). The port runs the USA release, SCUS-94228;
+the European (SCES-01438) and Japanese (SCPS-10083) releases are recognised
+too, and the port says they aren't supported yet (decisions D132).
 
 Reads a raw dump: a .cue sheet (the first track's file is used), or a
 .bin/.img with 2352-byte sectors (the usual bin/cue, Redump, CloneCD .img)
@@ -12,9 +14,10 @@ with a note on how to get a raw dump: an .iso has lost the XA music.
 Form 1 files are written as plain 2048-byte-per-sector data. XA / Form 2 files
 (streamed audio or video) are written as 2336-byte sectors (subheader + data),
 the same layout dumpsxiso uses. A manifest.json records each file's LBA, size
-and type. Every file is then checked against the SHA-1 of a good dump
-(KNOWN below): SCUS_942.28 or WAD.WAD wrong is an error (another version of
-the game, or a bad dump); other files only warn.
+and type. The release is the one whose executable SYSTEM.CNF boots (REGIONS
+below), and every file is then checked against the SHA-1 of a good dump of
+it: the executable or WAD.WAD wrong is an error (another version of the
+game, or a bad dump); other files only warn.
 
 Usage: python3 -I tools/extract_disc.py [--no-verify] <image.cue|.bin> <out_dir>
 Needs Python 3.6 or newer, nothing else.
@@ -33,28 +36,77 @@ XA_FORM2 = 0x1000
 XA_INTERLEAVED = 0x2000
 XA_CDDA = 0x4000
 
-# SHA-1 of each file from a good dump of SCUS-94228, as this script writes it
-# (XA files as 2336-byte sectors). SCUS_942.28 is the executable the decomp
-# rebuilds byte for byte (tools/build_matching.sh).
-KNOWN = {
-    "SYSTEM.CNF": "913fe0d270ad295117e6a91eb667284845df8918",
-    "WAD.WAD": "ab68001377ea93fb309a5c2a35e772c9d1f57e0b",
-    "SCUS_942.28": "84e3728ab94720d0873e2514adf4aade4935e0c5",
-    "PETEXA0.STR": "045a1fedd5d4a224c95a65f3802488bf9c952c60",
-    "PETEXA1.STR": "4fad48fbc15616998efb9379e976f5891d7c97e4",
-    "PETEXA2.STR": "19ed8ddac4a83182d1744139b23a5bd284e5cba1",
-    "PETEXA3.STR": "e51baa4cefc3f85e454943d964a3690b9f34be52",
-    "PETEXA4.STR": "6c6b387bcd7b61226281d2adf48adbab547fa089",
-    "PETEXA5.STR": "aa4a2c6b2eac867751d30a761ca9ab97877c3ce4",
-    "S0/CRASH.EXE": "82d1047a5bf6b6563ea0107706e02b9e01dbcc2a",
-    "S0/S000000D.NSD": "fb9788f83e39c71b61064ace91e41c2c5d79b58b",
-    "S0/S000000D.NSF": "4203d38457b960452ba99e7f23955d40f3ba04e9",
-    "S0/S000003C.NSD": "aa2d89c6e8b630df93120a332af2132858b604d8",
-    "S0/S000003C.NSF": "c5105ab984dbcee6a787eb2a178f2764c37c36c1",
-    "S0/WARP.BIN": "b5895f4fe129f9afdba70cfd1fdef794032be99f",
-    "SOURCE/SOURCE.TRD": "498601c3f0b08dd66b53b16c2be9ac10d171721f",
+# SHA-1 of each file from a good dump of each release, as this script writes
+# it (XA files as 2336-byte sectors), with its serial and executable; the
+# port's table is src/platform/common/region.c (D132). SCUS_942.28 is the
+# executable the decomp rebuilds byte for byte (tools/build_matching.sh). The
+# PAL and JP hashes are of one dump each, not yet checked against Redump
+# (docs/regions-plan.md §10, decision 6).
+REGIONS = {
+    "USA": {
+        "serial": "SCUS-94228",
+        "exe": "SCUS_942.28",
+        "supported": True,
+        "files": {
+            "SYSTEM.CNF": "913fe0d270ad295117e6a91eb667284845df8918",
+            "WAD.WAD": "ab68001377ea93fb309a5c2a35e772c9d1f57e0b",
+            "SCUS_942.28": "84e3728ab94720d0873e2514adf4aade4935e0c5",
+            "PETEXA0.STR": "045a1fedd5d4a224c95a65f3802488bf9c952c60",
+            "PETEXA1.STR": "4fad48fbc15616998efb9379e976f5891d7c97e4",
+            "PETEXA2.STR": "19ed8ddac4a83182d1744139b23a5bd284e5cba1",
+            "PETEXA3.STR": "e51baa4cefc3f85e454943d964a3690b9f34be52",
+            "PETEXA4.STR": "6c6b387bcd7b61226281d2adf48adbab547fa089",
+            "PETEXA5.STR": "aa4a2c6b2eac867751d30a761ca9ab97877c3ce4",
+            "S0/CRASH.EXE": "82d1047a5bf6b6563ea0107706e02b9e01dbcc2a",
+            "S0/S000000D.NSD": "fb9788f83e39c71b61064ace91e41c2c5d79b58b",
+            "S0/S000000D.NSF": "4203d38457b960452ba99e7f23955d40f3ba04e9",
+            "S0/S000003C.NSD": "aa2d89c6e8b630df93120a332af2132858b604d8",
+            "S0/S000003C.NSF": "c5105ab984dbcee6a787eb2a178f2764c37c36c1",
+            "S0/WARP.BIN": "b5895f4fe129f9afdba70cfd1fdef794032be99f",
+            "SOURCE/SOURCE.TRD": "498601c3f0b08dd66b53b16c2be9ac10d171721f",
+        },
+    },
+    "Europe": {
+        "serial": "SCES-01438",
+        "exe": "SCES_014.38",
+        "supported": False,
+        "files": {
+            "SYSTEM.CNF": "413c21c006d9fb38562650f14cf6fa37e7c33d06",
+            "WAD.WAD": "f1fc05d7cf197ba9cfc693738b44020d8798f99d",
+            "SCES_014.38": "fdd04c044cd1892ae28c43e9e619dd41a848058a",
+            "MUSIC1.STR": "193272992b656801080299b2e7204fc3aaacd4d6",
+            "MUSIC2.STR": "5abb0f4f153ebc71fa0b940bdd6868865650e1b1",
+            "MUSIC3.STR": "df9e18a9795e17521816b7339cf6987525f05cba",
+            "MUSIC4.STR": "b3380d844fdf21bfa2354e4cd24c6cdb2a3970bf",
+            "MUSIC5.STR": "06b576a42b4ed411e5ffe7acf1ccabf869c20689",
+            "MUSIC6.STR": "11e64cab0b72999f08c908b65093bd1196b565dc",
+            "S0/CRASH.EXE": "d965322d31403c6ae1307235286d4bf15c2aa385",
+            "S0/S000000D.NSD": "cb4291cb519855c6f69bf40722559cd337fec077",
+            "S0/S000000D.NSF": "73d832166ac03ee8f2f3475a26fc3620d59eb7e6",
+            "S0/S000003C.NSD": "ce6a5fbabe3cc9040cfa2a36ce5e9b4f903c8619",
+            "S0/S000003C.NSF": "fb81d721d27dbe5ecde854366d6c6c12e76e59ea",
+            "S0/WARP.BIN": "068bb105369931465c41735fd16dbe0ba535a2c7",
+            "SOURCE/SOURCE.TRD": "498601c3f0b08dd66b53b16c2be9ac10d171721f",
+        },
+    },
+    "Japan": {
+        "serial": "SCPS-10083",
+        "exe": "SCPS_100.83",
+        "supported": False,
+        "files": {
+            "SYSTEM.CNF": "d2a1c4dcdb824e4ebb064387d8c227278ad81e65",
+            "WAD.WAD": "812f63ff07366cf80f152ffd5bdd2e03e0582abb",
+            "SCPS_100.83": "3818ddb9520e2fe0114de48f5392972c33690399",
+            "MUSIC1.STR": "193272992b656801080299b2e7204fc3aaacd4d6",
+            "MUSIC2.STR": "5abb0f4f153ebc71fa0b940bdd6868865650e1b1",
+            "MUSIC3.STR": "df9e18a9795e17521816b7339cf6987525f05cba",
+            "MUSIC4.STR": "b3380d844fdf21bfa2354e4cd24c6cdb2a3970bf",
+            "MUSIC5.STR": "06b576a42b4ed411e5ffe7acf1ccabf869c20689",
+            "MUSIC6.STR": "11e64cab0b72999f08c908b65093bd1196b565dc",
+            "SOURCE/SOURCE.TRD": "498601c3f0b08dd66b53b16c2be9ac10d171721f",
+        },
+    },
 }
-REQUIRED = ("SCUS_942.28", "WAD.WAD")
 
 
 class DumpError(Exception):
@@ -196,16 +248,38 @@ def extract(image, out_dir):
     return manifest
 
 
-def verify(manifest, out_dir):
-    """Errors (wrong game or a bad dump) and warnings, against KNOWN."""
+def region_of(manifest, out_dir):
+    """The release (a REGIONS key): the one whose executable SYSTEM.CNF
+    boots, else the first whose executable is on the disc, else None."""
+    have = {m["path"].replace(os.sep, "/").upper() for m in manifest}
+    boot = None
+    if "SYSTEM.CNF" in have:
+        text = open(os.path.join(out_dir, "SYSTEM.CNF"), "rb").read().decode("latin-1")
+        m = re.search(r"cdrom:[\\/]*([^;\s]+)", text)
+        if m:
+            boot = re.split(r"[\\/]", m.group(1))[-1].upper()
+    for name, r in REGIONS.items():
+        if boot == r["exe"]:
+            return name, boot
+    for name, r in REGIONS.items():
+        if r["exe"] in have:
+            return name, boot
+    return None, boot
+
+
+def verify(manifest, out_dir, region):
+    """Errors (wrong game or a bad dump) and warnings, against REGIONS."""
     errors, warnings = [], []
+    known = REGIONS[region]["files"]
+    required = (REGIONS[region]["exe"], "WAD.WAD")
     have = {m["path"].replace(os.sep, "/"): m["path"] for m in manifest}
-    for name in REQUIRED:
+    for name in required:
         if name not in have:
-            errors.append(f"{name} is missing: this isn't Spyro the Dragon (USA, SCUS-94228)")
-    for name, want in sorted(KNOWN.items()):
+            errors.append(f"{name} is missing: this isn't Spyro the Dragon ({region}, "
+                          f"{REGIONS[region]['serial']})")
+    for name, want in sorted(known.items()):
         if name not in have:
-            if name not in REQUIRED:
+            if name not in required:
                 warnings.append(f"{name} is missing")
             continue
         h = hashlib.sha1()
@@ -214,7 +288,7 @@ def verify(manifest, out_dir):
                 h.update(block)
         if h.hexdigest() != want:
             msg = f"{name}: SHA-1 {h.hexdigest()}, a good dump has {want}"
-            (errors if name in REQUIRED else warnings).append(msg)
+            (errors if name in required else warnings).append(msg)
     return errors, warnings
 
 
@@ -230,17 +304,29 @@ def main(argv):
         print(f'{m["lba"]:>7}  {m["type"]:<4}  {m["size"]:>11}  {m["path"]}')
     if "--no-verify" in argv:
         return 0
-    errors, warnings = verify(manifest, args[1])
+    region, boot = region_of(manifest, args[1])
+    if region is None:
+        print(f"error: this isn't Spyro the Dragon: it boots {boot or 'nothing'}. The port needs "
+              "the USA release, SCUS-94228.", file=sys.stderr)
+        return 1
+    r = REGIONS[region]
+    errors, warnings = verify(manifest, args[1], region)
     for w in warnings:
         print("warning:", w, file=sys.stderr)
     for e in errors:
         print("error:", e, file=sys.stderr)
     if errors:
-        print("This needs the USA release, SCUS-94228. --no-verify keeps going anyway; "
-              "the port may not run.", file=sys.stderr)
+        print(f"This looks like Spyro the Dragon ({region}, {r['serial']}), but not a good "
+              "dump of the release the port knows. The port needs the USA release, SCUS-94228. "
+              "--no-verify keeps going anyway; the port may not run.", file=sys.stderr)
         return 1
-    print(f"All {len(KNOWN) - len(warnings)} known files match a good dump of SCUS-94228. "
-          f"Copy everything in {args[1]} (manifest.json too) to ux0:data/spyro/.")
+    print(f"All {len(r['files']) - len(warnings)} known files match a good dump of "
+          f"{r['serial']} ({region}).")
+    if not r["supported"]:
+        print("Spyro Vita recognises this release but can't run it yet: it needs the USA "
+              "release, SCUS-94228, for now.")
+        return 0
+    print(f"Copy everything in {args[1]} (manifest.json too) to ux0:data/spyro/.")
     return 0
 
 
