@@ -22,8 +22,9 @@ to Sony Interactive Entertainment, Insomniac Games, Activision or Universal.
 
 - A PS Vita or PS TV that runs homebrew (HENkaku / Ensō), with
   [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
-- Your own **Spyro the Dragon, USA, SCUS-94228** disc. The PAL and Japanese releases and the demo
-  discs are different builds and won't run (the game checks which one you have).
+- Your own **Spyro the Dragon, USA, SCUS-94228** disc. The PAL (SCES-01438) and Japanese
+  (SCPS-10083) releases are different builds: the port recognises them and says they aren't
+  supported yet. Demo discs won't run (the game checks which one you have).
 - A computer with a CD/DVD drive, to dump the disc.
 - `ur0:data/libshacccg.suprx` on the Vita (Sony's shader compiler module; see step 3).
 

@@ -771,6 +771,10 @@ int main(int argc, char **argv) {
     disc_refused();
     return 1;
   }
+  if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
+    char dir[512];
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 0));
+  }
   /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1
    * the CD interrupt ends it. With no interrupts here, a read completes
    * inside CdRead unless a latency is asked for (decisions D17). */

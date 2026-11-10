@@ -33,6 +33,7 @@ int spyro_replay(const char *dir, const char *only, const char *ignore, const ch
 
 /* Memory cards (src/platform/common/libmcrd.c): <dir>/card0, card1. */
 void psx_mcrd_set_root(const char *dir);
+const char *psx_mcrd_root(void);
 
 #ifdef __cplusplus
 }

@@ -2,6 +2,8 @@
 # Run PCSX-Redux headless with tools/oracle/oracle.lua on the user's disc
 # image and BIOS (both under the gitignored disc/).
 #   tools/oracle/redux OUTDIR [VAR=value ...]     (ORACLE_* variables, see oracle.lua)
+# DISC: a .cue or a folder holding one (default disc/image, the USA disc;
+# disc/image-pal, disc/image-jp, D132). BIOS: default disc/bios/SCPH1001.BIN.
 # REDUX_CPU=-dynarec to try the recompiler (default -interpreter: exact
 # breakpoints, and the dynarec crashed during the BIOS boot in the Linux build).
 set -euo pipefail
@@ -10,7 +12,10 @@ exe=$("$root/tools/oracle/fetch_redux.sh")
 out=$1; shift
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
-cue=$(ls "$root"/disc/image/*.cue | head -1)
+abs() { case $1 in /*) echo "$1" ;; *) echo "$root/$1" ;; esac; }
+disc=$(abs "${DISC:-disc/image}")
+if [ -d "$disc" ]; then cue=$(ls "$disc"/*.cue | head -1); else cue=$disc; fi
+bios=$(abs "${BIOS:-disc/bios/SCPH1001.BIN}")
 # A pcsx.json in the working directory makes Redux portable: settings and
 # memory cards stay in OUTDIR. The SPU paces the CPU from the audio callback;
 # use the null sync thread instead, muted, at 8x (Speed 0, "unbounded", hung the CPU after any slow Lua callback). Emulated
@@ -20,4 +25,4 @@ cue=$(ls "$root"/disc/image/*.cue | head -1)
 JSON
 cd "$out"
 exec env ORACLE_OUT="$out" "$@" "$exe" -no-ui -debugger ${REDUX_CPU:--interpreter} ${REDUX_GPU:--softgpu} -stdout -lua_stdout \
-  -bios "$root/disc/bios/SCPH1001.BIN" -iso "$cue" -dofile "$root/tools/oracle/oracle.lua" -run
+  -bios "$bios" -iso "$cue" -dofile "$root/tools/oracle/oracle.lua" -run
