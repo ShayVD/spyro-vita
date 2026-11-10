@@ -9,7 +9,7 @@ set -uo pipefail
 kit=$(cd "$(dirname "$0")" && pwd)
 : "${HW_GAME:?set HW_GAME to the hw.game file of the game (vita/tools/hw.game.example)}"
 HW_GAME=$(cd "$(dirname "$HW_GAME")" && pwd)/$(basename "$HW_GAME")
-groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || cd "$(dirname "$HW_GAME")/../.." && pwd) # the game file is ROOT/tools/vita/hw.game
+groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$HW_GAME")/../.." && pwd)) # the game file is ROOT/tools/vita/hw.game
 HW_NAME=
 # shellcheck source=/dev/null
 . "$HW_GAME"

@@ -36,7 +36,8 @@ add_executable(spyro_vita ${VITA_SRCS}
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c")
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}")
+  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}"
+  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/vcount")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
@@ -71,11 +72,13 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules
-# (8-bit indexed, these sizes) before it's packed.
+# (8-bit indexed, these sizes) by vita-port-kit's livearea_png.py before it's
+# packed.
 # The art in SPYRO_LIVEAREA_DIR is converted (D59): disc/livearea (gitignored,
 # tools/vita/livearea_local.sh) when it's there, else assets/livearea, the
 # official art committed at the owner's decision (not under MIT; see its
-# README). With neither, make_livearea.py draws D55's original art.
+# README), by livearea_png.py's `from`. With neither, make_livearea.py draws
+# D55's original art.
 if(EXISTS "${CMAKE_SOURCE_DIR}/disc/livearea/bg.png")
   set(la_default "${CMAKE_SOURCE_DIR}/disc/livearea")
 else()
@@ -87,7 +90,9 @@ set(LA_DIR "${CMAKE_CURRENT_BINARY_DIR}/livearea")
 set(LA_PNGS "${LA_DIR}/icon0.png" "${LA_DIR}/bg.png" "${LA_DIR}/startup.png")
 set(LA_LOCAL "${SPYRO_LIVEAREA_DIR}/icon0.png" "${SPYRO_LIVEAREA_DIR}/bg.png"
   "${SPYRO_LIVEAREA_DIR}/startup.png")
-set(LA_ARGS "${LA_DIR}")
+set(LA_PNG "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/tools/livearea_png.py")
+set(LA_MAKE "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py")
+set(LA_ARGS "${LA_MAKE}" "${LA_DIR}")
 set(LA_DEPS "")
 set(la_have_local ON)
 foreach(f ${LA_LOCAL})
@@ -97,14 +102,14 @@ foreach(f ${LA_LOCAL})
 endforeach()
 if(la_have_local)
   message(STATUS "LiveArea: art from ${SPYRO_LIVEAREA_DIR}")
-  set(LA_ARGS --from "${SPYRO_LIVEAREA_DIR}" "${LA_DIR}")
+  set(LA_ARGS "${LA_PNG}" from "${SPYRO_LIVEAREA_DIR}" "${LA_DIR}")
   set(LA_DEPS ${LA_LOCAL})
 endif()
 add_custom_command(OUTPUT ${LA_PNGS}
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_ARGS}
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" --check
+  COMMAND Python3::Interpreter ${LA_ARGS}
+  COMMAND Python3::Interpreter "${LA_PNG}" check
     "${LA_DIR}/icon0.png" 128x128 "${LA_DIR}/bg.png" 840x500 "${LA_DIR}/startup.png" 280x158
-  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_DEPS}
+  DEPENDS "${LA_MAKE}" "${LA_PNG}" ${LA_DEPS}
   COMMENT "LiveArea art")
 add_custom_target(spyro_vita_livearea DEPENDS ${LA_PNGS})
 set(LA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents")

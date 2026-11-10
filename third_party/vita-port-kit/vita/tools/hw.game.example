@@ -28,6 +28,9 @@ HW_SAVE_DIR=save
 # Optional hooks (bash functions):
 #   hw_config_base OWNER_CFG  print the run's first config.txt lines (OWNER_CFG: a copy of the owner's
 #                             config.txt, or empty when there is none). Default: the owner's lines but pad=.
+#                             spyro-vita's keeps only the owner's disc= line, then adds realtime=0 (unless
+#                             REALTIME=1), keep_awake=1 and the settings its host comparisons use (unless
+#                             DEVICE_DEFAULTS=1): a game's own knobs for scripted runs belong here.
 #   hw_after_setup BACKUP_DIR after the owner's files are set aside and the run's are up (BACKUP_DIR holds a
 #                             copy of the owner's config.txt and small save files)
 #   hw_after_collect OUT_DIR  after the run's files are fetched

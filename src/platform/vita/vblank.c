@@ -1,6 +1,6 @@
 /* Vita time (decisions D28). By default the game's vblanks follow the
  * display's own counter (sceDisplayGetVcount, widened from its 16 bits by
- * vcount.h, D90): VSync(0) waits for the next
+ * vita-port-kit's vpk_vcount.h, D90): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
  * would have, so the game's delta time keeps its speed and the audio stays
@@ -11,7 +11,7 @@
  * Also PsyX's scene hooks (isbg clears), the same as linux32's. */
 #include "../../game/tick60.h"
 #include "vita.h"
-#include "vcount.h"
+#include "vpk_vcount.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
@@ -34,7 +34,7 @@ int host_shot_display(const char *path); /* linux32/png.c */
 
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
-static VitaVcount s_vc;
+static VpkVcount s_vc;
 static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 
 int vita_vblank_count(void) { return psx_clock_count(); }
@@ -202,7 +202,7 @@ static int vcount(void) {
     vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D90)",
              g_vita_opts.vcount_test);
   }
-  return vita_vcount_widen(&s_vc, (raw + s_vc_offset) & 0xffffu); /* 16 bits, as on hardware */
+  return (int)vpk_vcount_widen(&s_vc, (raw + s_vc_offset) & 0xffffu); /* 16 bits, as on hardware */
 }
 
 /* Stage 7c (D112), from any thread: the display against `due`, in our

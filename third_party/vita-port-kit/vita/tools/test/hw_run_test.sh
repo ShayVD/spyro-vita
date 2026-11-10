@@ -33,8 +33,8 @@ echo 'eboot' > "$w/vpk/eboot.bin"; echo 'sfo' > "$w/vpk/sce_sys/param.sfo"
 export HW_GAME=$w/game/tools/vita/hw.game HW_STATE=$w/state VITA_IP=127.0.0.1 w_marker=$w/marker
 
 port=$((20000 + RANDOM % 20000))
-start_mock() { # VERSION
-  MOCK_VERSION=$1 python3 -I "$tools/hw_mock.py" "$w/vita-$1" $port $((port + 1)) > "$w/mock-$1.log" 2>&1 &
+start_mock() { # VERSION [NAME]
+  MOCK_VERSION=$1 python3 -I "$tools/hw_mock.py" "$w/vita-${2:-$1}" $port $((port + 1)) > "$w/mock-${2:-$1}.log" 2>&1 &
   mock=$!
   export VITA_FTP_PORT=$port VITA_CMD_PORT=$((port + 1))
   for _ in $(seq 50); do python3 -c "import socket; socket.create_connection(('127.0.0.1', $port), 1)" 2> /dev/null && return; sleep 0.1; done
@@ -82,4 +82,20 @@ for ver in 1.08 1.05; do
   check "hw_ftp refuses writes outside the game's folders" "! python3 -I '$tools/hw_ftp.py' put '$w/pad.txt' ux0:data/other.txt 2> /dev/null"
   kill $mock; wait $mock 2>/dev/null || true
 done
+# A game that is a git checkout (every real one): its tools/vita/hw.env gives VITA_IP, HW_VPK is found from the
+# game's root, and the run's account names the commit.
+echo "a game in a git checkout:"
+cp -R "$w/game" "$w/ggame"
+git -C "$w/ggame" init -q
+git -C "$w/ggame" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m test
+echo "VITA_IP=127.0.0.1" > "$w/ggame/tools/vita/hw.env"
+start_mock 1.08 git
+mkdir -p "$w/vita-git/ux0/data/testgame"
+rc=0; (unset VITA_IP VPK; HW_GAME=$w/ggame/tools/vita/hw.game "$tools/hw_check.sh") > "$w/check-git.txt" 2>&1 || rc=$?
+check "hw_check reads tools/vita/hw.env" "grep -q 'hw_check: ready' '$w/check-git.txt'"
+rc=0; (unset VITA_IP VPK; HW_GAME=$w/ggame/tools/vita/hw.game "$tools/hw_run.sh" "$w/out-git" 30 frames=1200) > "$w/run-git.txt" 2>&1 || rc=$?
+check "hw_run reads hw.env and finds HW_VPK from the game's root" "[ $rc = 0 ] && grep -q 'frames= reached' '$w/out-git/hw-run.txt'"
+check "the run's account names the commit" "grep -q \"app: eboot.bin (.*, test.vpk, $(git -C "$w/ggame" rev-parse --short HEAD))\" '$w/out-git/hw-run.txt'"
+kill $mock; wait $mock 2>/dev/null || true
+
 [ $fails = 0 ] && echo "hw_run_test: ok" || { echo "hw_run_test: $fails failed (logs in $w)"; trap - EXIT; exit 1; }
