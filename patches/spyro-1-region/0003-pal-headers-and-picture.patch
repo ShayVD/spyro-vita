@@ -747,7 +747,7 @@
 +#if defined(REGION) && REGION == 1
 +// PAL's (include/region.h, D134), in the PAL matching build only; the port's
 +// are in src/game/region_game.c
-+int g_Language;
++int g_Language = 0;
 +int g_ScreenOffsetX = 4;
 +int g_ScreenOffsetY = 16;
 +#endif
