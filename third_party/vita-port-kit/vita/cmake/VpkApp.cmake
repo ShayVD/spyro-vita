@@ -7,7 +7,13 @@
 #     VPK <out.vpk>                 relative to CMAKE_CURRENT_BINARY_DIR, or absolute
 #     TITLE_ID <ABCD00001> VERSION <##.##> NAME <title>
 #     [FILE <src> <dest in the VPK> ...]          sce_sys/icon0.png, sce_sys/livearea/contents/..., README.md ...
-#     [DEPENDS <target> ...])                     targets that make FILE sources
+#     [DEPENDS <target> ...]                      targets that make FILE sources
+#     [SCE_HEADROOM <bytes>])                     links with -Wl,--defsym=__sce_headroom=<bytes> (0x4000)
+#
+# SCE_HEADROOM (default: the variable VPK_SCE_HEADROOM, else none) keeps that much room between the text and data
+# segments, where vita-elf-create puts its SCE data (a few KB); without it a build whose text ends just below a
+# 64 KiB boundary fails "segment 1 overlaps" (vita/docs/gotchas.md 17, spyro-vita D32). It costs address space, not
+# memory. Off by default so an existing game's layout doesn't move under it.
 #
 # Makes the target <executable target>-vpk (in ALL). Its steps, with the work files in <out.vpk>.d/:
 #   1. vpk_check_procparams.cmake: arm-vita-eabi-nm must list sceUserMainThreadStackSize and _newlib_heap_size_user
@@ -18,7 +24,7 @@ include_guard(GLOBAL)
 set(VPK_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 function(vpk_add_app elf)
-  cmake_parse_arguments(A "" "VPK;TITLE_ID;VERSION;NAME" "FILE;DEPENDS" ${ARGN})
+  cmake_parse_arguments(A "" "VPK;TITLE_ID;VERSION;NAME;SCE_HEADROOM" "FILE;DEPENDS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "vpk_add_app: unknown arguments ${A_UNPARSED_ARGUMENTS}")
   endif()
@@ -41,6 +47,15 @@ function(vpk_add_app elf)
       message(FATAL_ERROR "vpk_add_app: ${t} is not set: configure with vitasdk's share/vita.toolchain.cmake")
     endif()
   endforeach()
+  if(NOT DEFINED A_SCE_HEADROOM AND DEFINED VPK_SCE_HEADROOM)
+    set(A_SCE_HEADROOM "${VPK_SCE_HEADROOM}")
+  endif()
+  if(A_SCE_HEADROOM)
+    if(NOT A_SCE_HEADROOM MATCHES "^(0[xX][0-9a-fA-F]+|[0-9]+)$")
+      message(FATAL_ERROR "vpk_add_app: SCE_HEADROOM ${A_SCE_HEADROOM} is not a number (0x4000)")
+    endif()
+    target_link_options(${elf} PRIVATE "-Wl,--defsym=__sce_headroom=${A_SCE_HEADROOM}")
+  endif()
   list(LENGTH A_FILE n)
   math(EXPR odd "${n} % 2")
   if(odd)

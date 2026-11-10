@@ -5,7 +5,7 @@ runs the same commands for CMake games (spyro-vita).
 
     vpk_pack.py pack --elf APP.elf --vpk OUT.vpk --title-id ABCD00001 --version 01.00 --name "Title"
                      [--file SRC=DEST]... [--placeholder-art] [--work DIR]
-    vpk_pack.py check APP.elf        the process-parameter check alone
+    vpk_pack.py check APP.elf        the process-parameter check alone, and the room after the text segment
     vpk_pack.py show OUT.vpk         param.sfo's values and the file list (name, size, crc32): diff two builds' output
 
 The steps are vita-elf-create, vita-make-fself -s -c, vita-mksfoex with APP_VER, TITLE_ID and ATTRIBUTE2=12 (the
@@ -14,11 +14,17 @@ sceUserMainThreadStackSize and _newlib_heap_size_user: the SDK reads both by nam
 them, so LTO drops them unless they are marked used (vita/runtime/procparam's VPK_PROCESS_PARAMS), and the app then
 starts with a 256 KiB main stack and stops at launch without a log.
 
+vita-elf-create puts its SCE data (module info, import tables: a few KB) after the text segment, and the data segment
+starts at a 64 KiB boundary after it; when text ends closer to it than that, it fails "segment 1 overlaps" (gotchas
+17). This script packs a linked ELF, so it can't add the room: link with -Wl,--defsym=__sce_headroom=0x4000
+(VpkApp.cmake's SCE_HEADROOM). It says so when vita-elf-create fails that way, and warns before packing when the gap
+is under 16 KiB, since the next change that grows or shrinks the text can hit it.
+
 --placeholder-art writes a plain one-colour icon0.png, LiveArea bg.png, startup.png and template.xml into the work
 folder and packs them, for a game with no art of its own. --file SRC=DEST adds a file (DEST is the path in the VPK,
 sce_sys/icon0.png ...). vitasdk comes from $VITASDK (default /usr/local/vitasdk).
 
-As a module: check_procparams(), pack(), placeholder_livearea(), read_sfo(), show().
+As a module: check_procparams(), text_gap(), sce_headroom(), pack(), placeholder_livearea(), read_sfo(), show().
 """
 import argparse
 import os
@@ -31,6 +37,9 @@ import zlib
 
 PROCPARAMS = ("sceUserMainThreadStackSize", "_newlib_heap_size_user")
 ATTRIBUTE2 = 12
+HEADROOM = 0x4000  # what gotchas 17 links with (spyro-vita D32)
+HEADROOM_FIX = ("link with -Wl,--defsym=__sce_headroom=0x%x (vitasdk's linker script keeps that much room after the "
+                "text segment; VpkApp.cmake: SCE_HEADROOM 0x%x; vita/docs/gotchas.md 17)" % (HEADROOM, HEADROOM))
 
 
 class PackError(Exception):
@@ -60,6 +69,36 @@ def check_procparams(elf, b=None):
     out = run([b + "arm-vita-eabi-nm", elf], "arm-vita-eabi-nm").stdout
     defined = set(f[2] for f in (l.split() for l in out.splitlines()) if len(f) == 3)
     return [s for s in PROCPARAMS if s not in defined]
+
+
+def text_gap(elf):
+    """Bytes between the end of the ELF's first load segment (the text) and the start of the next (the data), where
+    vita-elf-create puts its SCE data; None with fewer than two load segments."""
+    with open(elf, "rb") as f:
+        data = f.read()
+    if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
+        raise PackError("%s is not a 32-bit little-endian ELF" % elf)
+    phoff, = struct.unpack_from("<I", data, 28)
+    phentsize, phnum = struct.unpack_from("<HH", data, 42)
+    loads = []
+    for i in range(phnum):
+        p_type, _off, vaddr, _paddr, _filesz, memsz = struct.unpack_from("<6I", data, phoff + i * phentsize)
+        if p_type == 1:  # PT_LOAD
+            loads.append((vaddr, memsz))
+    if len(loads) < 2:
+        return None
+    loads.sort()
+    return loads[1][0] - (loads[0][0] + loads[0][1])
+
+
+def sce_headroom(elf, b=None):
+    """__sce_headroom's value when the link defined it (-Wl,--defsym=__sce_headroom=...), else None."""
+    b = b or sdk_bin()
+    for line in run([b + "arm-vita-eabi-nm", elf], "arm-vita-eabi-nm").stdout.splitlines():
+        f = line.split()
+        if len(f) == 3 and f[2] == "__sce_headroom":
+            return int(f[0], 16)
+    return None
 
 
 def png_plain(path, w, h, rgb):
@@ -100,10 +139,20 @@ def pack(elf, vpk, title_id, version, name, files=(), work=None, b=None):
     if lost:
         raise PackError("%s missing from the link (dropped by LTO? define them with VPK_PROCESS_PARAMS, "
                         "vita/runtime/procparam, which marks them used)" % " ".join(lost))
+    gap = text_gap(elf)
+    if gap is not None and gap < HEADROOM:
+        sys.stderr.write("vpk: warning: %s's text segment ends %d bytes before its data segment; vita-elf-create "
+                         "needs a few KB there, and a change to the text can take them away: %s\n"
+                         % (elf, gap, HEADROOM_FIX))
     work = work or os.path.dirname(os.path.abspath(vpk))
     os.makedirs(work, exist_ok=True)
     velf = os.path.join(work, os.path.splitext(os.path.basename(elf))[0] + ".velf")
-    run([b + "vita-elf-create", elf, velf], "vita-elf-create")
+    try:
+        run([b + "vita-elf-create", elf, velf], "vita-elf-create")
+    except PackError as e:
+        if "overlaps" in str(e):
+            raise PackError("%s\nNo room for the SCE data after the text segment: %s" % (e, HEADROOM_FIX))
+        raise
     eboot = os.path.join(work, "eboot.bin")
     run([b + "vita-make-fself", "-s", "-c", velf, eboot], "vita-make-fself")
     sfo = os.path.join(work, "param.sfo")
@@ -169,6 +218,11 @@ def main():
                 print("vpk: %s missing from %s" % (" ".join(lost), a.elf))
                 return 1
             print("vpk: %s has %s" % (a.elf, " and ".join(PROCPARAMS)))
+            gap, room = text_gap(a.elf), sce_headroom(a.elf)
+            if gap is not None:
+                print("vpk: %d bytes between the text and data segments, __sce_headroom %s%s"
+                      % (gap, "0x%x" % room if room is not None else "not set",
+                         "" if gap >= HEADROOM else " (under 16 KiB: %s)" % HEADROOM_FIX))
         elif a.cmd == "show":
             print("\n".join(show(a.vpk)))
         else:

@@ -1,4 +1,4 @@
-/* The Vita's widened vblank counter (src/platform/vita/vcount.h, D90).
+/* The Vita's widened vblank counter (vita-port-kit's vpk_vcount.h, D90).
  *
  * The display's sceDisplayGetVcount counts in 16 bits on hardware. Before
  * D90 vblank.c's PsyX_WaitForTimestep compared it with a 32-bit target, so
@@ -15,13 +15,13 @@
  * build (VCOUNT_MUTANT=1) uses the raw counter, as before D90, and must
  * fail. */
 #include "psx_clock.h"
-#include "vcount.h"
+#include "vpk_vcount.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 static unsigned s_disp; /* the display's vblanks since boot */
-static VitaVcount s_vc;
+static VpkVcount s_vc;
 static int s_waits;
 static int s_fail;
 
@@ -30,7 +30,7 @@ static int vcount(void) {
 #if VCOUNT_MUTANT
   return (int)raw;
 #else
-  return vita_vcount_widen(&s_vc, raw);
+  return (int)vpk_vcount_widen(&s_vc, raw);
 #endif
 }
 
@@ -69,15 +69,15 @@ static void check(int ok, const char *what) {
 
 /* The widener alone. */
 static void widen_cases(void) {
-  VitaVcount v = {0};
-  check(vita_vcount_widen(&v, 0xfffe) == 0xfffe, "first read");
-  check(vita_vcount_widen(&v, 0xffff) == 0xffff, "step to 0xffff");
-  check(vita_vcount_widen(&v, 0) == 0x10000, "0xffff -> 0 is one step");
-  check(vita_vcount_widen(&v, 5) == 0x10005, "steps after the wrap");
-  check(vita_vcount_widen(&v, 5) == 0x10005, "no step");
+  VpkVcount v = {0};
+  check(vpk_vcount_widen(&v, 0xfffe) == 0xfffe, "first read");
+  check(vpk_vcount_widen(&v, 0xffff) == 0xffff, "step to 0xffff");
+  check(vpk_vcount_widen(&v, 0) == 0x10000, "0xffff -> 0 is one step");
+  check(vpk_vcount_widen(&v, 5) == 0x10005, "steps after the wrap");
+  check(vpk_vcount_widen(&v, 5) == 0x10005, "no step");
   v.valid = 0;
-  vita_vcount_widen(&v, 0x12345678u); /* a wider counter: the same steps */
-  check(vita_vcount_widen(&v, 0x12345678u + 1000) == 0x5678 + 1000, "wider counter");
+  vpk_vcount_widen(&v, 0x12345678u); /* a wider counter: the same steps */
+  check(vpk_vcount_widen(&v, 0x12345678u + 1000) == 0x5678 + 1000, "wider counter");
 }
 
 /* A long play from the dump's start, frames 0-3 vblanks, VSync(1) or (2). */

@@ -7,27 +7,17 @@ so the build needs nothing new. The output is the same on every run.
 
   make_livearea.py OUTDIR      write OUTDIR/icon0.png (128x128),
                                OUTDIR/bg.png (840x500), OUTDIR/startup.png (280x158)
-  make_livearea.py --check PNG WxH ...
-                               fail unless each PNG is WxH, 8-bit indexed
-  make_livearea.py --from DIR OUTDIR
-                               the player's own art instead: DIR/icon0.png,
-                               DIR/bg.png and DIR/startup.png (8-bit RGB or
-                               RGBA or palette, already at the sizes below),
-                               converted to 8-bit indexed. The build passes
-                               disc/livearea (gitignored, made by
-                               tools/vita/livearea_local.sh) if it's there,
-                               else assets/livearea (the committed official
-                               art, D59)
 
-The Vita wants sce_sys PNGs 8-bit indexed (palette) at these sizes: the
-bubble icon 128x128, the LiveArea background 840x500, the gate 280x158.
+The PNGs are written 8-bit indexed (palette), as the Vita wants sce_sys art,
+by vita-port-kit's livearea_png.py, which also checks them (`check`) and
+converts the player's own art instead of this (`from DIR OUTDIR`: the build
+passes disc/livearea, gitignored, made by tools/vita/livearea_local.sh, if
+it's there, else assets/livearea, the committed official art, D59).
 """
 import math
 import os
 import random
-import struct
 import sys
-import zlib
 
 # ---------------------------------------------------------------- canvas
 
@@ -323,164 +313,20 @@ def make_bg():
 
 
 # ---------------------------------------------------------------- PNG
+# The PNG half (quantize, the indexed PNG writer, --check, --from) is
+# vita-port-kit's livearea_png.py now (third_party/vita-port-kit/vita/tools).
 
-
-def quantize(cv, n=256):
-    """Median cut on a 5-bit-per-channel histogram; returns (palette, indices)."""
-    rgb = [tuple(max(0, min(255, int(round(c)))) for c in p) for p in cv.px]
-    hist = {}
-    for c in rgb:
-        hist[c] = hist.get(c, 0) + 1
-    if len(hist) <= n:
-        pal = sorted(hist)
-        idx = {c: i for i, c in enumerate(pal)}
-        return pal, [idx[c] for c in rgb]
-    keys = {}
-    for c, k in hist.items():
-        q = (c[0] >> 3, c[1] >> 3, c[2] >> 3)
-        keys.setdefault(q, []).append((c, k))
-    boxes = [sorted(keys)]
-    while len(boxes) < n:
-        def spread(b):
-            return max(max(q[i] for q in b) - min(q[i] for q in b) for i in range(3))
-        cand = [b for b in boxes if len(b) > 1]
-        if not cand:
-            break
-        b = max(cand, key=lambda b: (spread(b), len(b)))
-        boxes.remove(b)
-        axis = max(range(3), key=lambda i: max(q[i] for q in b) - min(q[i] for q in b))
-        b.sort(key=lambda q: (q[axis], q))
-        total = sum(k for q in b for _, k in keys[q])
-        acc, cut = 0, 1
-        for j, q in enumerate(b[:-1]):
-            acc += sum(k for _, k in keys[q])
-            cut = j + 1
-            if acc * 2 >= total:
-                break
-        boxes += [b[:cut], b[cut:]]
-    boxes.sort()
-    pal, qidx = [], {}
-    for i, b in enumerate(boxes):
-        tot = [0, 0, 0]
-        cnt = 0
-        for q in b:
-            qidx[q] = i
-            for c, k in keys[q]:
-                cnt += k
-                for j in range(3):
-                    tot[j] += c[j] * k
-        pal.append(tuple(int(round(t / cnt)) for t in tot))
-    # Map through a 4x4 ordered dither so the sky's gradients don't band.
-    out = []
-    for i, c in enumerate(rgb):
-        d = BAYER[(i // cv.w) % 4][i % cv.w % 4] - 8
-        q = tuple(min(31, max(0, (v + d) >> 3)) for v in c)
-        out.append(qidx[q] if q in qidx else qidx[(c[0] >> 3, c[1] >> 3, c[2] >> 3)])
-    return pal, out
-
-
-SIZES = (("icon0.png", (128, 128)), ("bg.png", (840, 500)), ("startup.png", (280, 158)))
-
-BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "..", "third_party", "vita-port-kit", "vita", "tools"))
+import livearea_png  # noqa: E402
 
 
 def write_png(cv, path):
-    pal, idx = quantize(cv)
-    w = cv.w
-    raw = b"".join(b"\0" + bytes(idx[y * w:(y + 1) * w]) for y in range(cv.h))
-
-    def chunk(t, d):
-        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
-
-    png = b"\x89PNG\r\n\x1a\n"
-    png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, cv.h, 8, 3, 0, 0, 0))
-    png += chunk(b"PLTE", b"".join(bytes(c) for c in pal))
-    png += chunk(b"IDAT", zlib.compress(raw, 9))
-    png += chunk(b"IEND", b"")
-    with open(path, "wb") as f:
-        f.write(png)
-
-
-def read_png(path):
-    """A Canvas from an 8-bit, non-interlaced RGB, RGBA (what sips writes) or
-    palette PNG (what this script writes); alpha is dropped onto black."""
-    d = open(path, "rb").read()
-    if d[:8] != b"\x89PNG\r\n\x1a\n":
-        sys.exit(f"{path}: not a PNG")
-    pos, idat, w, pal = 8, b"", 0, None
-    while pos < len(d):
-        n, t = struct.unpack(">I4s", d[pos:pos + 8])
-        body = d[pos + 8:pos + 8 + n]
-        if t == b"IHDR":
-            w, h, depth, ctype, _, _, lace = struct.unpack(">IIBBBBB", body)
-            if depth != 8 or ctype not in (2, 3, 6) or lace:
-                sys.exit(f"{path}: wants 8-bit RGB, RGBA or palette, not interlaced "
-                         f"(depth {depth}, colour type {ctype}, interlace {lace})")
-            bpp = {2: 3, 3: 1, 6: 4}[ctype]
-        elif t == b"PLTE":
-            pal = [tuple(body[i:i + 3]) for i in range(0, len(body), 3)]
-        elif t == b"IDAT":
-            idat += body
-        pos += 12 + n
-    raw = zlib.decompress(idat)
-    stride = w * bpp
-    cv = Canvas(w, h)
-    prev = bytearray(stride)
-    for y in range(h):
-        f = raw[y * (stride + 1)]
-        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
-        for i in range(stride):
-            a = line[i - bpp] if i >= bpp else 0
-            b = prev[i]
-            c = prev[i - bpp] if i >= bpp else 0
-            if f == 1:
-                line[i] = (line[i] + a) & 255
-            elif f == 2:
-                line[i] = (line[i] + b) & 255
-            elif f == 3:
-                line[i] = (line[i] + ((a + b) >> 1)) & 255
-            elif f == 4:
-                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
-                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
-        for x in range(w):
-            p = pal[line[x]] if bpp == 1 else line[x * bpp:x * bpp + bpp]
-            k = p[3] / 255 if bpp == 4 else 1.0
-            cv.px[y * w + x] = [p[0] * k, p[1] * k, p[2] * k]
-        prev = line
-    return cv
-
-
-def check_png(path, size):
-    """The Vita's rule for sce_sys art: 8-bit indexed (colour type 3) at size."""
-    d = open(path, "rb").read()
-    if d[:8] != b"\x89PNG\r\n\x1a\n" or d[12:16] != b"IHDR":
-        return f"{path}: not a PNG"
-    w, h, depth, ctype = struct.unpack(">IIBB", d[16:26])
-    if (w, h) != size:
-        return f"{path}: {w}x{h}, wants {size[0]}x{size[1]}"
-    if depth != 8 or ctype != 3:
-        return f"{path}: bit depth {depth}, colour type {ctype}; wants 8-bit indexed"
-    return None
+    rgb = [tuple(max(0, min(255, int(round(c)))) for c in p) for p in cv.px]
+    livearea_png.write_png(cv.w, cv.h, rgb, path)
 
 
 def main(argv):
-    if len(argv) > 1 and argv[1] == "--check":
-        errs = []
-        for path, size in zip(argv[2::2], argv[3::2]):
-            e = check_png(path, tuple(int(v) for v in size.split("x")))
-            if e:
-                errs.append(e)
-        for e in errs:
-            print(e, file=sys.stderr)
-        return 1 if errs else 0
-    if len(argv) == 4 and argv[1] == "--from":
-        os.makedirs(argv[3], exist_ok=True)
-        for name, size in SIZES:
-            cv = read_png(os.path.join(argv[2], name))
-            if (cv.w, cv.h) != size:
-                sys.exit(f"{argv[2]}/{name}: {cv.w}x{cv.h}, wants {size[0]}x{size[1]}")
-            write_png(cv, os.path.join(argv[3], name))
-        return 0
     if len(argv) != 2:
         sys.exit(__doc__)
     os.makedirs(argv[1], exist_ok=True)

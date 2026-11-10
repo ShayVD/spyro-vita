@@ -30,16 +30,9 @@ cmake -S . -B "$out" -G Ninja -DSPYRO_HOST=vita \
   -DPython3_EXECUTABLE="$(command -v python3)" ${SPYRO_CMAKE_ARGS:-}
 cmake --build "$out"
 
-# What went into the VPK, and the Vita's rules for its sce_sys art.
-check="$out/vpk-check"
-rm -rf "$check"
-python3 -m zipfile -e "$out/spyro-vita.vpk" "$check"
+# What went into the VPK, and the Vita's rules for it (vita-port-kit's
+# livearea_png.py: eboot.bin, param.sfo, template.xml and the three sce_sys
+# PNGs present, not empty, 8-bit indexed at their sizes).
 python3 -m zipfile -l "$out/spyro-vita.vpk"
-python3 tools/vita/make_livearea.py --check \
-  "$check/sce_sys/icon0.png" 128x128 \
-  "$check/sce_sys/livearea/contents/bg.png" 840x500 \
-  "$check/sce_sys/livearea/contents/startup.png" 280x158
-for f in eboot.bin sce_sys/param.sfo sce_sys/livearea/contents/template.xml; do
-  [ -s "$check/$f" ] || { echo "VPK lacks $f" >&2; exit 1; }
-done
+python3 third_party/vita-port-kit/vita/tools/livearea_png.py vpk "$out/spyro-vita.vpk" --livearea
 echo "VPK OK: $out/spyro-vita.vpk"
