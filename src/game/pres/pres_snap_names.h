@@ -68,8 +68,103 @@
 #define g_TracerCount g_pres_snap_g_TracerCount
 #define g_TracerLists g_pres_snap_g_TracerLists
 #define g_TracerPointCount g_pres_snap_g_TracerPointCount
-/* read by GamestateDraw's other branches only (7g's), copied all the same */
+/* read by GamestateDraw's other branches (stage 7g, D128) */
 #define g_TitlescreenState g_pres_snap_g_TitlescreenState
 #define g_CreditsStage g_pres_snap_g_CreditsStage
+
+/* Stage 7g (D128): what the other gamestates' draws read or write
+ * (tools/pres_inventory.py --all-gamestates), the overlays' draws
+ * included: the title, the flight results (Flight5_LEVEL_*), the credits.
+ * Each is copied as it is after the update, so the presenter starts from
+ * D30's pass's state and its writes stay its own. */
+/* the level's environment (the credits set its culling distance) and the
+ * buffers' pointers (the flight results, the pause screens and the exits
+ * draw from the lower buffer up and put the HUD's mobys under the HUD OT:
+ * rebased onto the presenter's buffers, pres_snap.c) */
+#define g_Environment g_pres_snap_g_Environment
+#define g_Buffers g_pres_snap_g_Buffers
+/* the sounds the flight results play (spu.c PlaySound on the copies; the
+ * SPU's writes are dropped, as D30's freeze dropped them) and libc's rand
+ * seed PlaySound draws from */
+#define g_Spu g_pres_snap_g_Spu
+#define D_80075AC0 g_pres_snap_D_80075AC0
+/* the pause, inventory and flight-results screens */
+#define D_8007568C g_pres_snap_D_8007568C
+#define D_8007569C g_pres_snap_D_8007569C
+#define D_80075720 g_pres_snap_D_80075720
+#define D_80075744 g_pres_snap_D_80075744
+#define D_80075748 g_pres_snap_D_80075748
+#define D_80075754 g_pres_snap_D_80075754
+#define D_800757C8 g_pres_snap_D_800757C8
+#define D_800757CC g_pres_snap_D_800757CC
+#define D_800758B8 g_pres_snap_D_800758B8
+#define D_800758F4 g_pres_snap_D_800758F4
+#define D_80075900 g_pres_snap_D_80075900
+#define D_80075908 g_pres_snap_D_80075908
+#define D_80075914 g_pres_snap_D_80075914
+#define g_ActAvailable g_pres_snap_g_ActAvailable
+#define g_ActEnabled g_pres_snap_g_ActEnabled
+#define g_DragonTotal g_pres_snap_g_DragonTotal
+#define g_EggTotal g_pres_snap_g_EggTotal
+#define g_GemTotal g_pres_snap_g_GemTotal
+#define g_Homeworld g_pres_snap_g_Homeworld
+#define g_LevelIndex g_pres_snap_g_LevelIndex
+#define g_LevelDragonCount g_pres_snap_g_LevelDragonCount
+#define g_LevelEggCount g_pres_snap_g_LevelEggCount
+#define g_LevelGemCount g_pres_snap_g_LevelGemCount
+#define g_FlightCollected g_pres_snap_g_FlightCollected
+#define g_FlightCourseRecords g_pres_snap_g_FlightCourseRecords
+#define g_FlightObjectiveCounters g_pres_snap_g_FlightObjectiveCounters
+#define D_800758D0 g_pres_snap_D_800758D0
+/* the level transitions and entrances */
+#define D_8007587C g_pres_snap_D_8007587C
+#define D_80075910 g_pres_snap_D_80075910
+#define g_LevelTransChestDuration g_pres_snap_g_LevelTransChestDuration
+#define g_LevelTransGems g_pres_snap_g_LevelTransGems
+#define g_LevelTransHudActive g_pres_snap_g_LevelTransHudActive
+#define g_LevelTransTicks g_pres_snap_g_LevelTransTicks
+#define g_NGemsSinceLevelEntry g_pres_snap_g_NGemsSinceLevelEntry
+#define g_NextLevelId g_pres_snap_g_NextLevelId
+#define g_PreviousLevelIndex g_pres_snap_g_PreviousLevelIndex
+#define g_RecentGemsCollected g_pres_snap_g_RecentGemsCollected
+/* the respawn and the game over */
+#define D_80075940 g_pres_snap_D_80075940
+#define g_GameOverLetterDisplayTicks g_pres_snap_g_GameOverLetterDisplayTicks
+#define g_GameOverRotY g_pres_snap_g_GameOverRotY
+#define g_GameOverRotZ g_pres_snap_g_GameOverRotZ
+#define g_GameOverSkyboxRotY g_pres_snap_g_GameOverSkyboxRotY
+#define g_GameOverSkyboxRotZ g_pres_snap_g_GameOverSkyboxRotZ
+#define g_GameOverTextRot g_pres_snap_g_GameOverTextRot
+#define g_GameOverTicks g_pres_snap_g_GameOverTicks
+#define g_LoadStage g_pres_snap_g_LoadStage
+/* the dragons, the fairy, the balloonist */
+#define D_80076248 g_pres_snap_D_80076248
+#define D_800777E8 g_pres_snap_D_800777E8
+#define g_DragonCutscene g_pres_snap_g_DragonCutscene
+#define g_FairyCutscene g_pres_snap_g_FairyCutscene
+/* the title, its attract demos' text, and the cutscenes */
+#define g_CutsceneLayout g_pres_snap_g_CutsceneLayout
+#define g_VisitedFlags g_pres_snap_g_VisitedFlags
+/* the credits: the letters (D_8007589C, D_800756E4 in use) and the
+ * roll's timer */
+#define D_8007589C g_pres_snap_D_8007589C
+#define D_800756E4 g_pres_snap_D_800756E4
+#define g_CreditsTimer g_pres_snap_g_CreditsTimer
+/* tables the game sets once (copied all the same: they sit among the
+ * labels the update writes). The decomp's strings.c tables (the dragons',
+ * levels', homeworlds' and the balloonists' names and lines) are C data in
+ * the port, not in the data region, and constant: the presenter reads the
+ * game's (tests/pres/link_check.py) */
+#define g_FairyDialogueBoxSizes g_pres_snap_g_FairyDialogueBoxSizes
+#define g_GameOverTextXY g_pres_snap_g_GameOverTextXY
+#define g_GameOverTextZ g_pres_snap_g_GameOverTextZ
+#define g_GrayscalePalette g_pres_snap_g_GrayscalePalette
+#define g_TargetDragonCounts g_pres_snap_g_TargetDragonCounts
+#define g_TargetEggCounts g_pres_snap_g_TargetEggCounts
+#define g_TargetGemCounts g_pres_snap_g_TargetGemCounts
+#define g_TitlescreenAnimIn g_pres_snap_g_TitlescreenAnimIn
+#define g_TitlescreenAnimOut g_pres_snap_g_TitlescreenAnimOut
+#define g_TitlescreenSelColors g_pres_snap_g_TitlescreenSelColors
+#define g_TitlescreenSprites g_pres_snap_g_TitlescreenSprites
 
 #endif

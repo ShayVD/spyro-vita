@@ -76,7 +76,7 @@
 #define func_80058BA8 func_80058BA8_pres
 #define func_80058864 func_80058864_pres
 
-/* D30's hooks */
+/* D30's hooks (pres_draw.c) */
 #define VSync pres_VSync
 #define LoadImage pres_LoadImage
 #define StoreImage pres_StoreImage
@@ -88,6 +88,23 @@
 #define PortProjectionHook pres_PortProjectionHook
 #define port_present_hud_list pres_hud_list
 #define nd_list_linked pres_nd_list_linked
+
+/* Stage 7g (D128): the other gamestates' draws.
+ *  - the overlay functions they call through the pointers the level set
+ *    (overlay_pointers.c): the flight results' draw (D_8007567C) and its
+ *    time (D_800758C4), the balloonist's talk (D_800758D8). Each call goes
+ *    to the presenter's copy of the same level's function instead
+ *    (pres_ovl.c), which pres_draw.c picks on the game thread;
+ *  - the sounds the flight results play: PlaySound and its helpers run on
+ *    the snapshot's copies (g_Spu, the rand seed), as D30's pass ran them
+ *    on the game's and put them back; their SPU writes are dropped, as
+ *    libspu dropped them under D30's freeze (g_psx_spu_frozen);
+ *  - libc's rand on the snapshot's seed (pres_ovl.c). */
+#define D_8007567C (*pres_flight5())
+#define D_800758C4 (*pres_flight4())
+#define D_800758D8 (*pres_balloon4())
+#define SpuSetVoiceAttr pres_SpuSetVoiceAttr
+#define rand pres_rand
 
 /* its output (present.c, stage 7f) */
 #define DrawOTag pres_DrawOTag

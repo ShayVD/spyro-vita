@@ -53,7 +53,12 @@ void pres_draw_want(void) {
 /* fast_render 2 or 3 (the host's and the Vita's defaults, D124): the
  * presenter's renderers are 3's readable code, the same pictures as both */
 int pres_draw_available(void) {
-  return g_pres_built && render_ctx_area() && (g_fast_render_ro == 2 || g_fast_render_ro == 3);
+  static int s_labels = -1; /* stage 7g (D128): the named labels where the mirror copies from */
+  if (!g_pres_built || !render_ctx_area() || !(g_fast_render_ro == 2 || g_fast_render_ro == 3))
+    return 0;
+  if (s_labels < 0)
+    s_labels = pres_snap_misplaced() == NULL;
+  return s_labels;
 }
 
 /* ---- the calls the presenter's objects make in place of the game's ---- */
@@ -61,10 +66,20 @@ int pres_draw_available(void) {
 /* D30's pass_vsync: inside the presenter time stands still. VSync(0)
  * doesn't wait, and VSync(-1) is far enough ahead that the draw's "two
  * vblanks since the last frame" loops end at once; D_80075950 is the
- * snapshot's. */
+ * snapshot's. Stage 7g (D128): but each VSync(0) moves the presenter's own
+ * count on one, as a vblank would. On the flight results' first tick the
+ * draw sets the pacer from VSync(-1) and then waits for two vblanks after
+ * it (flight.c: the tail after both branches), which a count that never
+ * moves would wait for forever (D129's check draws that tick; D30's pass
+ * never did, nor does the in-between frame: a gamestate's first tick has
+ * none). The draws use VSync's value for the pacer alone, so no frame
+ * changes. pres_draw_prepare starts the count. */
+static int s_vsyncs;
+
 int pres_VSync(int mode) {
-  (void)mode;
-  return psx_clock_count() + 1000;
+  if (mode == 0)
+    s_vsyncs++;
+  return psx_clock_count() + 1000 + s_vsyncs;
 }
 
 /* D30's freeze drops these in a pass; the presenter never makes them */
@@ -216,10 +231,50 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   lod_begin();
 }
 
+/* The overlay functions the game would call through its pointers, as
+ * indices the presenter's pres_flight5, pres_flight4 and pres_balloon4
+ * (pres_ovl.c) map onto its own copies. */
+int g_pres_ovl[PRES_OVLS] = {-1, -1, -1};
+long long g_pres_ovl_unknown;
+#if SPYRO_PRESENTER
+#include "overlay_pointers.h"
+#define FLIGHT(n) void Flight5_LEVEL_##n(void); int Flight4_LEVEL_##n(int, Vector3D *, int);
+#define BALLOON(n) void Balloonist4_LEVEL_##n(void);
+PRES_FLIGHT_LEVELS(FLIGHT)
+PRES_BALLOON_LEVELS(BALLOON)
+#define F5(n) (void *)Flight5_LEVEL_##n,
+#define F4(n) (void *)Flight4_LEVEL_##n,
+#define B4(n) (void *)Balloonist4_LEVEL_##n,
+static int ovl_index(int which, const void *fn, void *const *game, int n) {
+  int i;
+  for (i = 0; i < n; i++)
+    if (fn == game[i])
+      return g_pres_ovl[which] = i;
+  g_pres_ovl[which] = -1;
+  return -1;
+}
+static void ovl_pick(void) {
+  static void *const flight5[] = {PRES_FLIGHT_LEVELS(F5) NULL};
+  static void *const flight4[] = {PRES_FLIGHT_LEVELS(F4) NULL};
+  static void *const balloon4[] = {PRES_BALLOON_LEVELS(B4) NULL};
+  ovl_index(PRES_OVL_FLIGHT5, (const void *)D_8007567C, flight5, PRES_FLIGHTS);
+  ovl_index(PRES_OVL_FLIGHT4, (const void *)D_800758C4, flight4, PRES_FLIGHTS);
+  ovl_index(PRES_OVL_BALLOON4, (const void *)D_800758D8, balloon4, PRES_BALLOONS);
+  /* the gamestates that call them: a pointer the presenter can't follow */
+  if ((g_Gamestate == GS_FlightResults && (g_pres_ovl[PRES_OVL_FLIGHT5] < 0 || g_pres_ovl[PRES_OVL_FLIGHT4] < 0)) ||
+      (g_Gamestate == GS_Balloonist && g_pres_ovl[PRES_OVL_BALLOON4] < 0))
+    g_pres_ovl_unknown++;
+}
+#else
+static void ovl_pick(void) {}
+#endif
+
 int pres_draw_prepare(int blend, int wide, const uint8_t *flags, const uint32_t *caches,
                       int ncaches) {
   if (!pres_draw_available() || !pres_snap_take(blend))
     return 0;
+  s_vsyncs = 0;
+  ovl_pick();
   context(wide, flags, caches, ncaches);
   return 1;
 }

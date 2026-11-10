@@ -83,11 +83,14 @@ def main():
     ap.add_argument("--root", action="append", default=None)
     ap.add_argument("--stop", action="append", default=[])
     ap.add_argument("--tsv", help="write the inventory as TSV here")
+    ap.add_argument("--all-gamestates", action="store_true",
+                    help="follow every gamestate's draw (stage 7g), the overlays' objects included")
     a = ap.parse_args()
     roots = a.root or ["GamestateDraw"]
     objs = []
     for pat in ("CMakeFiles/spyro_game_main.dir/**/*.o", "CMakeFiles/spyro_game_port.dir/**/*.o",
-                "CMakeFiles/spyro_platform_common.dir/**/*.o"):
+                "CMakeFiles/spyro_platform_common.dir/**/*.o") + (
+                    ("CMakeFiles/spyro_game_ovl.dir/**/*.o",) if a.all_gamestates else ()):
         objs += glob.glob(os.path.join(a.build, pat), recursive=True)
     if not objs:
         sys.exit("no objects under %s" % a.build)
@@ -105,7 +108,9 @@ def main():
             # a TU's static function: calls to it from its own TU name it bare
             where.setdefault(key, short)
             body[key] = (short, b)
-    stop = set(RENDERERS) | set(OTHER_GAMESTATES) | set(OUTPUT) | set(a.stop)
+    stop = set(RENDERERS) | set(OUTPUT) | set(a.stop)
+    if not a.all_gamestates:
+        stop |= set(OTHER_GAMESTATES)
 
     def resolve(name, obj):
         local = obj + ":" + name

@@ -143,6 +143,9 @@ typedef struct PresentPresOut {
   void (*close)(void);
 } PresentPresOut;
 extern const PresentPresOut *g_present_pres;
+/* The host's --pres-write-check (stage 7g, D128): called before (0) and
+ * after (1) each presenter frame drawn inline; NULL elsewhere. */
+extern void (*g_present_pres_watch)(int after);
 
 /* Stage 7f's numbers since the last call (the platform's present line):
  * frames the presenter drew on the worker and inline, the worker's time,
@@ -152,6 +155,9 @@ extern const PresentPresOut *g_present_pres;
 typedef struct {
   long long worker_frames, inline_frames, worker_us, joins_waited, join_wait_us, disp_misses;
   long long uncaptured; /* frames it drew without a capture (none expected in play) */
+  /* stage 7g (D128): the gamestates (bit k: gamestate k) of the frames
+   * counted in disp_misses and uncaptured */
+  unsigned disp_miss_gs, uncaptured_gs;
 } PresentPresStats;
 void port_present_pres_stats(PresentPresStats *out);
 /* The game thread, before anything that changes what the presenter reads

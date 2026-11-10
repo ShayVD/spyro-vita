@@ -19,11 +19,18 @@
 typedef struct {
   const char *name;
   unsigned off, len; /* in the mirror (from 0x8006BBE0), to the next label */
+  const void *at;    /* the game's symbol (NULL: only at its PS1 address) */
 } PresSnapLabel;
 extern const PresSnapLabel g_pres_snap_labels[];
 extern const int g_pres_snap_nlabels;
 extern const unsigned g_pres_mirror_len;
 extern unsigned char g_pres_mirror[];
+
+/* Stage 7g (D128): NULL if every named label is in the data region the
+ * mirror copies from, else the first that isn't (C data of the port's, at
+ * an address of its own: its copy would be zeros); then the presenter
+ * doesn't draw (pres_draw_available). */
+const char *pres_snap_misplaced(void);
 
 /* The game's labels as the presenter's copies, raw (no rebase, no blend):
  * --render-ctx-check gives the renderers' presenter builds the game's

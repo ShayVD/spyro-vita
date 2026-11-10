@@ -29,17 +29,26 @@ import re
 import subprocess
 import sys
 
-STOP = set("""func_8001A050 func_8001A40C func_8001CA38 func_8001CFDC func_8001C694
-func_8001D718 func_8001E24C func_8001E6B8 TitlescreenDraw func_8001E9C8
-func_credits_8007BFD0 func_8001EB80 D_8007567C""".split())
+# Since stage 7g (D128) every gamestate's draw is followed; 7e and 7f
+# stopped at the other gamestates' (func_8001A050 and the rest).
+STOP = set()
 
-# read only during play (each checked: the draw path built again stores
-# through none of them, by name; the --pres-check frames would differ if a
-# copy were needed)
+# read only (each checked: the draw path built again stores through none
+# of them, by name; the --pres-check frames would differ if a copy were
+# needed). Stage 7g (D128) adds the decomp's strings.c tables (constant C
+# data, outside the data region the snapshot mirrors) and the kernel RAM
+# base the port's small addresses go to, and the native build's
+# translation of a PS1 address (psx_kuseg_host, port.c: PSX_KUSEG), which
+# only PlaySound reaches, through the sound reference it is given, NULL in
+# every call the draws make (the flight results'); --pres-write-check holds
+# that the presenter writes none of the game's memory.
 READ_ONLY = r"""
-^(memcpy|memset|sprintf|snprintf|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
+^(memcpy|memset|sprintf|snprintf|strcpy|strlen|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
 ^__aeabi_(idiv|uidiv|idivmod|uidivmod|ldivmod|uldivmod)$
 ^g_psx_arena_base$
+^g_psx_kernel_ram$
+^psx_kuseg_host$
+^(g_DragonNames|g_HomeworldNames|g_HomeworldNamesLength|g_LevelNames|g_BalloonistDialogue|g_BalloonistDialogueIndices|g_BalloonistNames)$
 ^port_ws_(hud_ofx|hud_r11|r1112)$
 ^port_poly_start$
 ^g_present$
@@ -59,6 +68,15 @@ PRIVATE = set()
 FN_RE = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 REL_RE = re.compile(r"^\s+[0-9a-f]+: (R_\w+)\s+(\S+?)(?:[-+]0x[0-9a-f]+)?$")
 CALL_RE = re.compile(r"\b(?:call|bl|blx|b)\s+[0-9a-f]+ <([^>+]+)>")
+# an indirect call (x86 call *..., ARM blx through a register): a function
+# pointer the by-name check can't follow
+INDIRECT_RE = re.compile(r"\bcall\s+\*|\bblx\s+(?:r\d+|ip|sl|fp|lr)\b")
+# Stage 7g (D128): the only indirect calls allowed, each through a pointer
+# pres_ovl.c returns (pres_names.h maps the game's overlay pointers onto
+# those): draw.c's flight results (D_8007567C), the balloonist's talk
+# (D_800758D8) and the flight results' time (D_800758C4)
+OVL_ROOTS = re.compile(r"^(Flight5_LEVEL_|Flight4_LEVEL_|Balloonist4_LEVEL_)\d+$")
+INDIRECT_OK = re.compile(r"^(GamestateDraw_pres|func_8001E24C|Flight5_LEVEL_\d+)$")
 
 
 def run(*cmd):
@@ -76,6 +94,8 @@ def functions(objdump, path):
             continue
         if cur is None:
             continue
+        if INDIRECT_RE.search(line):
+            funcs[cur].add("*indirect*")
         m = REL_RE.match(line)
         if m:
             funcs[cur].add(m.group(2))
@@ -148,7 +168,9 @@ def main():
         return ""
 
     bad, reached, outside, private = [], set(), set(), set()
-    work = ["GamestateDraw_pres"]
+    # the entry, and the overlay functions pres_ovl.c's tables hold (reached
+    # through the pointers it returns, which the walk can't follow)
+    work = ["GamestateDraw_pres"] + sorted(f for f in pf if OVL_ROOTS.match(f))
     while work:
         fn = work.pop()
         if fn in reached:
@@ -158,11 +180,17 @@ def main():
             ty = pt.get(s)
             if s in STOP:
                 continue
+            if s == "*indirect*":
+                if not INDIRECT_OK.match(fn):
+                    bad.append("  %s calls through a pointer" % fn)
+                continue
             if s in pf:
                 work.append(s)
                 continue
             if s.startswith(".rodata") or ty in ("r", "R"):
                 continue
+            if s.startswith(".text"):
+                continue  # its own code: an ARM switch's jump table (x86 puts it in .rodata)
             if s.startswith((".bss", ".data", ".sbss", ".sdata")) or ty in ("b", "d", "B", "D"):
                 private.add("%s (in %s)" % (s, fn))
                 continue

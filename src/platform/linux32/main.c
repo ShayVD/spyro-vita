@@ -117,6 +117,13 @@
  *   Vita's 7f), compared at the join; --faces-race (diagnostic) leaves the
  *   logic draw's face replacements in place meanwhile, as before 7f, to
  *   show the race the copy removes.
+ *   Stage 7g (D128): the presenter draws every gamestate's in-between
+ *   frame, and the attract demos' 16:9 real frame, and --pres-check
+ *   compares each. --pres-check-late: --pres-check with the presenter's
+ *   list recorded after the logic draw (at the join), so a frame that
+ *   depends on what the logic draw writes differs. --pres-write-check
+ *   (with --interp-mode 2): each presenter frame must leave the game's
+ *   memory as it found it ("pres write check" lines; pres_watch.c).
  *   --render-ctx-check (stage 7d, D123): each renderer call also runs its
  *   presenter build (NAME_hand_pres.c) from the same inputs in its own
  *   context, with the game's memory read-only, and compares the two
@@ -179,20 +186,31 @@ void nd_check_report(void);
 void nd_pcheck_report(void);
 /* src/game/pres/ (stage 7e, D125) */
 extern int g_pres_check, g_pres_audit;
+extern long long g_pres_ovl_unknown; /* pres_draw.c (stage 7g, D128) */
 extern int g_faces_copy; /* src/game/render_ctx.c (stage 7f, D126) */
 extern int g_pres_check_thread, g_faces_race; /* src/game/pres/pres_check.c (D126) */
 int host_pres_thread_init(void);              /* pres_thread.c (D126) */
+void host_pres_late_init(void);               /* pres_thread.c (D128) */
+void host_pres_watch_init(void);              /* pres_watch.c (D128) */
+int host_pres_watch_report(void);
+static int s_pres_watch;
 extern unsigned g_faces_swaps, g_pres_face_overlaps; /* render_ctx.c (D126) */
 void pres_draw_want(void);
 void pres_check_set_log(void (*log)(const char *fmt, ...));
 int pres_check_report(void (*log)(const char *fmt, ...));
 void pres_snap_audit_report(void (*log)(const char *fmt, ...));
+const char *pres_snap_misplaced(void); /* pres_snap.c (D128) */
 static void pres_atexit(void) {
+  if ((g_present.interp_mode == 2 || g_pres_check) && pres_snap_misplaced())
+    host_log("pres: %s isn't in the data region the snapshot mirrors: no presenter",
+             pres_snap_misplaced());
   if (g_present.interp_mode == 2) { /* stage 7f (D126): the host runs it inline */
     PresentPresStats st;
     port_present_pres_stats(&st);
-    host_log("pres: %lld frames inline; %lld display environments not the presenter's, %lld "
-             "frames uncaptured", st.inline_frames, st.disp_misses, st.uncaptured);
+    host_log("pres: %lld frames inline; %lld display environments not the presenter's "
+             "(gamestates 0x%X), %lld frames uncaptured (gamestates 0x%X); %lld overlay pointers "
+             "it couldn't follow", st.inline_frames, st.disp_misses, st.disp_miss_gs,
+             st.uncaptured, st.uncaptured_gs, g_pres_ovl_unknown);
   }
   if (g_pres_check_thread)
     host_log("pres check thread: %u records with face replacements in the game's draws (the "
@@ -201,6 +219,8 @@ static void pres_atexit(void) {
              g_pres_face_overlaps);
   if (g_pres_check)
     pres_check_report(host_log);
+  if (s_pres_watch)
+    host_pres_watch_report();
   if (g_pres_audit)
     pres_snap_audit_report(host_log);
 }
@@ -288,7 +308,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -572,6 +592,17 @@ int main(int argc, char **argv) {
         }
         g_pres_check_thread = 1;
       }
+    } else if (strcmp(a, "--pres-check-late") == 0) {
+      /* stage 7g (D128): --pres-check with the presenter's list recorded
+       * after the logic draw (pres_thread.c) */
+      g_pres_check = 1;
+      pres_draw_want();
+      pres_check_set_log(host_log);
+      host_pres_late_init();
+      g_pres_check_thread = 1;
+    } else if (strcmp(a, "--pres-write-check") == 0) {
+      host_pres_watch_init(); /* stage 7g (D128): pres_watch.c */
+      s_pres_watch = 1;
     } else if (strcmp(a, "--faces-race") == 0) {
       g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
     } else if (strcmp(a, "--pres-audit") == 0) {
