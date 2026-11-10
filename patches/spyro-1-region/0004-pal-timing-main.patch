@@ -1,0 +1,349 @@
+--- a/src/camera.c
++++ b/src/camera.c
+@@ -11,6 +11,7 @@
+ #include "spyro.h"
+ 
+ #include <libgte.h>
++#include "region.h"
+ 
+ // FYI, these are inside of this file rather than just extern,
+ // because otherwise the compiler didn't make use of gp_rel!
+@@ -258,9 +258,9 @@
+ 
+   // If L2 or R2 is held, set the rotation speed accordingly
+   if (g_Pad.m_Held & PAD_R2) {
+-    D_80075924 = -1024;
++    D_80075924 = -RT(1024, 1229);
+   } else if (g_Pad.m_Held & PAD_L2) {
+-    D_80075924 = 1024;
++    D_80075924 = RT(1024, 1229);
+   }
+ }
+ 
+@@ -381,7 +381,7 @@
+ 
+   // Reset Spyro's acceleration, and give him negative z acceleration
+   VecNull(&g_Spyro.m_Physics.m_Acceleration);
+-  g_Spyro.m_Physics.m_Acceleration.z = -8960;
++  g_Spyro.m_Physics.m_Acceleration.z = -RT(8960, 10752);
+ 
+   // Copy over the camera rotation
+   g_Camera.m_Rotation.x = g_Camera.unk_0xEC->m_CameraRotation.x;
+--- a/src/cd.c
++++ b/src/cd.c
+@@ -3,6 +3,7 @@
+ #include "cd.h"
+ #include "music.h"
+ #include "spu.h"
++#include "region.h"
+ 
+ void CDLoadTime(void) {
+ 
+@@ -85,11 +85,16 @@
+   };
+ 
+   // Set the mode to double speed
+   CdControl(CdlSetmode, &modeFlags, 0);
+ 
+-  g_CDMaxReadTime = maxTime;
++  // PAL (D135): the timeout in 50 Hz vblanks, 5/6 of the US one from 6 up
++  if (RT(1, maxTime < 6)) {
++    g_CDMaxReadTime = maxTime;
++  } else {
++    g_CDMaxReadTime = (maxTime * 5 + 3) / 6;
++  }
+   g_CDReadTime = 0;
+ 
+   CdIntToPos(sector + (offset / 2048), &g_CdState.m_ReadLoc);
+ 
+   CdControl(CdlSetloc, (void *)&g_CdState.m_ReadLoc, nullptr);
+@@ -110,11 +110,16 @@
+   u_char modeFlags = CdlModeSpeed;
+ 
+   // Set the mode to double speed
+   CdControl(CdlSetmode, &modeFlags, 0);
+ 
+-  g_CDMaxReadTime = maxTime;
++  // PAL (D135): the timeout in 50 Hz vblanks, 5/6 of the US one from 6 up
++  if (RT(1, maxTime < 6)) {
++    g_CDMaxReadTime = maxTime;
++  } else {
++    g_CDMaxReadTime = (maxTime * 5 + 3) / 6;
++  }
+   g_CDReadTime = 0;
+ 
+   CdIntToPos(sector + (offset / 2048), &g_CdState.m_ReadLoc);
+ 
+   CdControl(CdlSetloc, (void *)&g_CdState.m_ReadLoc, nullptr);
+--- a/src/cutscene.c
++++ b/src/cutscene.c
+@@ -3,6 +3,7 @@
+ #include "camera.h"
+ #include "cutscene.h"
+ #include "moby.h"
++#include "region.h"
+ 
+ // 10:10:10 format (top 2 bits unused), where every value was divided by 256
+ #define UNPACK_VECTOR(v, packedPos)                                            \
+@@ -59,10 +59,12 @@
+       b = (g_CutsceneLayout->m_CurrentTick & 1) << 5;
+     }
+ 
+-    g_LevelMobys[i].m_AnimationState.m_Animation = a / 60;
+-    g_LevelMobys[i].m_AnimationState.m_Frame = a % 60;
+-    g_LevelMobys[i].m_AnimationState.m_NextAnimation = (a + 1) / 60;
+-    g_LevelMobys[i].m_AnimationState.m_NextFrame = (a + 1) % 60;
++    // PAL (D135): its cutscene data holds 50 frames an animation (2 s at 25 Hz),
++    // a data layout that stays PAL's in PAL 60: RV, not RT
++    g_LevelMobys[i].m_AnimationState.m_Animation = a / RV(60, 50, 60);
++    g_LevelMobys[i].m_AnimationState.m_Frame = a % RV(60, 50, 60);
++    g_LevelMobys[i].m_AnimationState.m_NextAnimation = (a + 1) / RV(60, 50, 60);
++    g_LevelMobys[i].m_AnimationState.m_NextFrame = (a + 1) % RV(60, 50, 60);
+     g_LevelMobys[i].m_AnimationState.m_FrameProgress = b;
+ 
+     UNPACK_VECTOR(v, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a]);
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -30,6 +30,7 @@
+ #include <libetc.h>
+ #include <libgpu.h>
+ #include <stdio.h>
++#include "region.h"
+ 
+ extern unsigned int strlen(char *);
+ 
+@@ -323,7 +323,7 @@
+         width = width >> 2;
+       }
+ 
+-      if (tracer_ptr[j].Age <= 80) {
++      if (tracer_ptr[j].Age <= RT(80, 67)) {
+         point_count++;
+ 
+         // delta = current - next
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -1401,22 +1401,22 @@
+ 
+     // Only play the sound effect if the demo finished playing
+     if (g_GameTick >= g_DemoLengths[g_DemoIndex]) {
+-      g_CutsceneLayout->m_CurrentTick = 720;
++      g_CutsceneLayout->m_CurrentTick = RT(720, 600);
+       g_Spu.m_SoundDefinitions = &g_CutsceneSoundDef;
+       g_Spu.m_SoundDefinitions->m_Addr =
+           0x262D0; // Hardcoded addresses... yippee
+       g_Spu.m_SoundDefinitions->m_LoopAddr = -1;
+       g_Spu.m_SoundDefinitions->unk_0x8 = 80;
+       g_Spu.m_SoundDefinitions->m_Pitch = g_CutscenePitchTable[0];
+       g_Spu.m_SoundDefinitions->m_PitchVariance = 0;
+       g_Spu.m_SoundDefinitions->m_PitchMultiplier = 0;
+       g_Spu.m_SoundDefinitions->m_VarianceType = 0;
+       g_Spu.m_NextSoundOverrideFlags = 1;
+       g_Spu.m_VolumeOverride.left = 0x3FFF;
+       g_Spu.m_VolumeOverride.right = 0x3FFF;
+       PlaySound(0, nullptr, 16, (u_char *)&g_DragonCutscene.m_SoundVoice);
+     } else {
+-      g_CutsceneLayout->m_CurrentTick = 1168;
++      g_CutsceneLayout->m_CurrentTick = RT(1168, 972);
+     }
+ 
+     g_TitlescreenState.m_SubState = 1;
+--- a/src/hud.c
++++ b/src/hud.c
+@@ -6,6 +6,7 @@
+ #include "memory.h"
+ #include "overlay_pointers.h"
+ #include "variables.h"
++#include "region.h"
+ 
+ void HudPrint(int pIdx, int pLen, int pValue, int pArg4) {
+   char buf[8];
+@@ -188,17 +188,17 @@
+       }
+     } else {
+       g_Hud.m_GemSteadyTicks = 0;
+-      if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount >= 3 &&
++      if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount >= RT(3, 2) &&
+           (g_Hud.m_GemProgress & 0x1F) == 0) {
+         g_Hud.m_GemProgress -= 0x20;
+       } else {
+         g_Hud.m_GemProgress -= 0x10;
+       }
+       HudPrint(0, 4, g_Hud.m_GemCount + 1, 0);
+       HudMobyRotate(0, 4, g_Hud.m_GemProgress);
+-      if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount > 200) {
++      if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount > RT(200, 160)) {
+         g_Hud.m_GemCount += 8;
+-      } else if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount > 20 ||
++      } else if (g_LevelGemCount[g_LevelIndex] - g_Hud.m_GemCount > RT(20, 16) ||
+                  g_Hud.m_GemProgress == 0xC0) {
+         g_Hud.m_GemCount += 1;
+       }
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -29,6 +29,7 @@
+ #include "region.h"
+ 
+ #include <stdio.h>
++#include "region.h"
+ 
+ extern int _stacksize;
+ 
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -1646,20 +1646,20 @@
+ 
+   if (pSpawnMode == 0) {
+     VecCopy(&targetPosition, &pMoby->m_Position);
+-    initialZVelocity = 140;
++    initialZVelocity = RT(140, 168);
+   } else if (pSpawnMode == 6) {
+     VecCopy(&targetPosition, &pMoby->m_Position);
+-    initialZVelocity = 300;
++    initialZVelocity = RT(300, 360);
+     targetPosition.x += (rand() & 0x1FF) - 256;
+     targetPosition.y += (rand() & 0x1FF) - 256;
+   } else if (pSpawnMode == 1) {
+     VecCopy(&targetPosition, &pMoby->m_Position);
+-    initialZVelocity = 140;
++    initialZVelocity = RT(140, 168);
+     targetPosition.x += (rand() & 0x3FF) - 512;
+     targetPosition.y += (rand() & 0x3FF) - 512;
+   } else if (pSpawnMode == 2) {
+     VecCopy(&targetPosition, pTargetPosition);
+-    initialZVelocity = 140;
++    initialZVelocity = RT(140, 168);
+   } else if (pSpawnMode == 3 || pSpawnMode == 4) {
+     if (pSpawnMode == 4 || g_Spyro.m_State == 11 || g_Spyro.m_State == 24 ||
+         g_Spyro.m_State == 20 || g_Spyro.m_State == 44) {
+@@ -1715,7 +1715,7 @@
+ 
+   while (zVelocity > 0 || targetPosition.z < currentZ) {
+     currentZ += zVelocity;
+-    zVelocity -= 10;
++    zVelocity -= RT(10, 12);
+     flightFrames++;
+   }
+ 
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -162,23 +162,23 @@
+     g_Spyro.m_bodyAnimation = g_Spyro.m_nextBodyAnimation;
+     g_Spyro.m_bodyAnimationFrame = g_Spyro.m_nextBodyAnimationFrame;
+ 
+-    if (g_Spyro.m_lastAnimationState == 6 && g_Spyro.unk_0x84 < 24) {
++    if (g_Spyro.m_lastAnimationState == 6 && g_Spyro.unk_0x84 < RT(24, 20)) {
+       g_Spyro.m_bodyTransitionType = TRANSITION_SLOW_BLEND;
+       g_Spyro.m_nextBodyAnimation =
+           spyro_StateDefaultAnimation[g_Spyro.m_State];
+       g_Spyro.m_nextBodyAnimationFrame = 0;
+       g_Spyro.m_bodyFrameProgress = 2;
+       g_Spyro.m_lastAnimationState = g_Spyro.m_State;
+     } else {
+       g_Spyro.m_nextBodyAnimationFrame =
+           spyro_AnimationDetails[g_Spyro.m_nextBodyAnimation].m_EndFrame;
+       g_Spyro.m_bodyFrameProgress = 4;
+       g_Spyro.m_bodyTransitionType = TRANSITION_HOLD_END;
+ 
+       if (g_Spyro.m_lastAnimationState == 6) {
+         D_8007584C = 0xA0;
+-        if (D_800757D0 < 0xF) {
+-          D_800757D0 = 0xF;
++        if (D_800757D0 < RT(0xF, 0xD)) {
++          D_800757D0 = RT(0xF, 0xD);
+         }
+       }
+     }
+@@ -1065,8 +1065,9 @@
+   if (v >= 0) {
+     // I failed to find a better match than the << 1 >> 1
+     // I'm guessing they did some kind of shifting, or masking
+-    g_Spyro.m_Physics.m_Acceleration.x += (COSINE_8(v) << 1 >> 1) >> 4;
+-    g_Spyro.m_Physics.m_Acceleration.y += (SINE_8(v) << 1 >> 1) >> 4;
++    // PAL (D135): x1.2, as (x * 307) >> 12
++    g_Spyro.m_Physics.m_Acceleration.x += RT((COSINE_8(v) << 1 >> 1) >> 4, (COSINE_8(v) * 307) >> 12);
++    g_Spyro.m_Physics.m_Acceleration.y += RT((SINE_8(v) << 1 >> 1) >> 4, (SINE_8(v) * 307) >> 12);
+   }
+ }
+ 
+@@ -1436,7 +1436,7 @@
+   case 11:
+     func_8003DAE4();
+     if ((g_Spyro.m_walkingState & 1) && g_Spyro.m_touchingMoby != 0) {
+-      g_Spyro.m_Physics.m_SpeedAngle.m_Speed = 2560;
++      g_Spyro.m_Physics.m_SpeedAngle.m_Speed = RT(2560, 3072);
+     }
+     break;
+   case 19:
+@@ -1458,7 +1458,7 @@
+   case 21:
+     func_8003DAE4();
+     g_Spyro.m_bodyAnimationSpeed =
+-        ((g_Spyro.m_Physics.m_SpeedAngle.m_Speed - 0x640) >> 9) + 6;
++        ((g_Spyro.m_Physics.m_SpeedAngle.m_Speed - RT(0x640, 0x780)) >> 9) + 6;
+     if (g_Spyro.m_bodyAnimationSpeed < 6) {
+       g_Spyro.m_bodyAnimationSpeed = 6;
+     }
+@@ -1506,9 +1506,9 @@
+     break;
+   case 24:
+     RotateSpyroToAcceleration();
+-    g_Spyro.m_Physics.m_gravity += 12;
+-    if (g_Spyro.m_Physics.m_gravity > 192) {
+-      g_Spyro.m_Physics.m_gravity = 192;
++    g_Spyro.m_Physics.m_gravity += RT(12, 17);
++    if (g_Spyro.m_Physics.m_gravity > RT(192, 276)) {
++      g_Spyro.m_Physics.m_gravity = RT(192, 276);
+     }
+     break;
+   default:
+@@ -1793,24 +1793,24 @@
+       } else {
+         g_SpawnParticle(1, 0, &particleStart, (int)&direction);
+       }
+-    } else if ((g_Pad.m_Down & PAD_CIRCLE) && g_Spyro.unk_0x1a0 >= 44) {
++    } else if ((g_Pad.m_Down & PAD_CIRCLE) && g_Spyro.unk_0x1a0 >= RT(44, 36)) {
+       g_Spyro.unk_0x1a0 = -1;
+       g_Spyro.unk_0x60 = 2;
+       g_Spyro.m_headFrameProgress = 4;
+       g_Spyro.m_nextHeadAnimationFrame = 0;
+       g_SpyroFlame.m_IsFlameActive = 1;
+       g_SpyroFlame.unk_99[0] = 0;
+       g_SpyroFlame.unk_99[1] = 1;
+       g_SpyroFlame.unk_99[2] = rand() & 1;
+ 
+       if (g_SpyroFlame.m_FairyKissTimer != 0) {
+         g_SpyroFlame.unk_9c = 1;
+       } else {
+         g_SpyroFlame.unk_9c = 0;
+       }
+ 
+       Memset(&g_SpyroFlame.unk_20, 0, 8);
+-    } else if (g_Spyro.unk_0x1a0 >= 48) {
++    } else if (g_Spyro.unk_0x1a0 >= RT(48, 40)) {
+       g_SpyroFlame.m_IsFlameActive = 0;
+       Memset(&g_SpyroFlame.unk_20, 0, 8);
+       g_Spyro.unk_0x198 = 0;
+@@ -1959,19 +1959,19 @@
+       }
+       break;
+     case 30:
+-      if (g_Spyro.m_idleTimer > 100) {
++      if (g_Spyro.m_idleTimer > RT(100, 83)) {
+         func_8002C85C();
+       }
+       break;
+     case 31:
+-      if (g_Spyro.m_idleTimer > 124) {
++      if (g_Spyro.m_idleTimer > RT(124, 103)) {
+         func_8002C85C();
+       }
+       break;
+     }
+   } else if (g_Spyro.m_Position.z < 1024 ||
+              // m_walkingState gets reused as a timer below
+-             (g_Spyro.m_State == 6 && g_Spyro.m_walkingState > 120)) {
++             (g_Spyro.m_State == 6 && g_Spyro.m_walkingState > RT(120, 100))) {
+     func_8002C85C();
+   } else {
+     if (g_Spyro.m_Position.z < D_8006E9A4[g_LevelIndex]) {
