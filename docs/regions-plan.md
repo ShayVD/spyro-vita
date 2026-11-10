@@ -172,8 +172,8 @@ So PAL's design rate is delta 2 at 50 Hz: **a 25 Hz tick**.
 | Level overlays' `UpdateMoby`, `SpawnMoby`, `SpawnParticle`, balloonist | e.g. Artisans: timer 90→75, 200→240, 130→156 | **about 2,740 / 42 / 910 over 37 overlays** |
 
 **Not retuned:**
-- the camera (`func_80033F08`, `func_80034480`, `func_80034CE8`, `func_800357A4`, `func_80035FB4` are identical), so it moves 5/6 as fast in real time;
-- the cyclorama;
+- ~~the camera (`func_80033F08`, `func_80034480`, `func_80034CE8`, `func_800357A4`, `func_80035FB4` are identical), so it moves 5/6 as fast in real time;~~ **Corrected in D133:** these were "identical" only because the comparison masks `li` constants. With `compare_code.py --exact`, `func_80034CE8` (1024→1475, 2048→2457), `func_800357A4` (45→38 twice, 8→7, 90→75), `func_80035F58` (1024→1229) and `func_80035FB4` (90→75 four times) are retuned too. `func_80033F08` and `func_80034480` stay identical. Stage R3 takes the camera's sites as well.
+- the cyclorama (its only constants, 240→256 four times in `func_80050BD0`, are the 256-line picture's: R2);
 - the HUD, which already counts vblanks through `g_DeltaTime`.
 
 The overlay counts only include constants that align one to one. Each level also has a few hundred inserted or changed instructions.
