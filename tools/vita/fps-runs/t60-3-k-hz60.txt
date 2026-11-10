@@ -1,0 +1,9 @@
+# Run T60-3 (D130, proposed): 7G2's K route with 60 Hz logic (interp=4): the title, the attract
+# demos (which stay at 30 Hz with the in-between frame, §7.2), Artisans, Stone Hill and Dark
+# Hollow (the pilot's levels). Against 7G2: the game thread in play at 60 Hz, and the demos and
+# menus unchanged.
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-t60-3 1500 @tools/vita/fps-runs/t60-3-k-hz60.txt @tools/vita/hw-routes/m1-xa-k.cfg
+config_version=3
+interp=4
+gpu_meter=1

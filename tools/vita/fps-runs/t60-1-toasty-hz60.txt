@@ -1,0 +1,11 @@
+# Run T60-1 (D130, proposed): 7G1's Toasty route with 60 Hz logic (interp=4) on the pilot's VPK.
+# Toasty is one of the pilot's levels: its mobys run the 60 Hz rules. Against 7G1 (interp=1, the
+# same route): the game thread's ms per vblank and busy % (every play vblank is now a whole update
+# and a whole draw), late vblanks, falls to 30 fps. The route's walk in Toasty is mostly camera
+# turns; at 60 Hz Spyro's short walks land a little differently (D130), so compare the windows by
+# gamestate, not shot for shot.
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-t60-1 1500 @tools/vita/fps-runs/t60-1-toasty-hz60.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=4
+gpu_meter=1
