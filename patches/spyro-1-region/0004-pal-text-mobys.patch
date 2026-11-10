@@ -137,7 +137,7 @@
 +
  /// @brief Creates shaded line
  void func_8001844C(int pX0, int pY0, int pX1, int pY1) {
-@@ -204,6 +313,50 @@ void func_8001860C(int pX0, int pX1, int pY0, int pY1) {
+@@ -204,6 +313,52 @@ void func_8001860C(int pX0, int pX1, int pY0, int pY1) {
  }
  
 +#if REGION_HAS_PAL
@@ -146,9 +146,11 @@
 +extern char g_PalRescuedFormat[];   // PAL 0x8007BEDC
 +extern char *g_PalDragonNames[80];  // PAL 0x800752B0
 +#if defined(REGION) && REGION == REGION_PAL
-+char *g_PalRescuedText[5];
-+char g_PalRescuedFormat[8];
-+char *g_PalDragonNames[80];
++// stand-ins: initialised, since the build drops common symbols; the format
++// longer than -G8's 8 bytes, so it isn't $gp-addressed as PAL's isn't
++char *g_PalRescuedText[5] = {0};
++char g_PalRescuedFormat[16] = {0};
++char *g_PalDragonNames[80] = {0};
 +#endif
 +#endif
 +
@@ -188,7 +190,7 @@
 +  {
    char *name;
    int length;
-@@ -231,4 +384,6 @@ void func_80018728(void) {
+@@ -231,4 +386,6 @@ void func_80018728(void) {
      mobys--;
    }
 +  }
