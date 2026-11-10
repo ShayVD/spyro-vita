@@ -1,4 +1,4 @@
-# Run T60-1 (D130, proposed): 7G1's Toasty route with 60 Hz logic (interp=4) on the pilot's VPK.
+# Run T60-1 (D130; ran 2026-11-10, logs/hw-t60-*): 7G1's Toasty route with 60 Hz logic (interp=4) on the pilot's VPK.
 # Toasty is one of the pilot's levels: its mobys run the 60 Hz rules. Against 7G1 (interp=1, the
 # same route): the game thread's ms per vblank and busy % (every play vblank is now a whole update
 # and a whole draw), late vblanks, falls to 30 fps. The route's walk in Toasty is mostly camera

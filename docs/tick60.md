@@ -237,7 +237,7 @@ The update is a small part of the cost. The draw runs every vblank, which double
   - the 152 other classes;
   - particles and spawns;
   - a 60 Hz copy of the HUD;
-  - Vita3K and hardware runs of the mode (proposed below).
+  - a Vita3K run of the mode (the hardware runs are below).
 
 ## Checks (2026-11-10, this branch)
 
@@ -250,14 +250,39 @@ The update is a small part of the cost. The draw runs every vblank, which double
 - **60 Hz, host:** the runs above all reach their `--frames` with exit 0. With `--tick60 --interp --pres-check --widescreen` on the gems script, `--pres-check` compares 5,763 frames, 5,763 identical, 2,420 of them 60 Hz play frames (`logs/t60/pc60`).
 - **Vita:** the VPK builds (VitaSDK, native memory) and the link check passes on ARM (157 functions made local; its 3 extra "own" entries are ARM section anchors); `.text` 3,814,684 → 4,018,820 bytes, +204 KB for the second compile. Not run in Vita3K: Vita3K was busy with another project's queued runs during this session.
 
-## Hardware runs (proposed, not run)
+## Hardware runs (2026-11-10, the owner's yes in chat)
 
-Each needs the owner's yes first. kh1-decomp shares the Vita: check `~/.cache/vita-port-kit/hw.lock`.
+The VPK `logs/hw-t60/t60.vpk` (SHA-1 `8c51c866…`, eboot `8bc2750d…`), with `REALTIME=1` and `DEVICE_DEFAULTS=1`, on the owner's Vita. Nobody held the kit's lock. Every run reached `frames=` with exit 0, no hang line and no crash dump. Logs are gitignored, under `logs/hw-t60-{1,2,3}`. The configs are `tools/vita/fps-runs/t60-*.txt`, with each command in its file's header.
 
-| Run | Config | Route | What it measures |
-|---|---|---|---|
-| T60-1 | `tools/vita/fps-runs/t60-1-toasty-hz60.txt` (`interp=4`) | Toasty (`o-toasty`) | the game thread at 60 Hz in a pilot level, against 7G1 |
-| T60-2 | `t60-2-toasty-interp.txt` (`interp=1`) | Toasty | the pilot's VPK at its default runs as main's did |
-| T60-3 | `t60-3-k-hz60.txt` (`interp=4`) | the K route | title, demos (30 Hz), Artisans, Stone Hill, Dark Hollow at 60 Hz, against 7G2 |
+| | 7G1 (main, interpolated) | **T60-2** (this VPK, interpolated) | **T60-1** (this VPK, 60 Hz) |
+|---|---:|---:|---:|
+| Game thread, ms a vblank (the route from vblank 900) | 3.30 | 3.31 | 4.14 |
+| The four renderers, ms a vblank | 1.97 | 1.98 | 2.89 |
+| Late vblanks per 300 | 1.12 | 1.16 | 1.02 |
+| Falls to 30 fps | 0 | 0 | 0 |
+| Toasty: busy % (max) | 24.9 (33) | 25.0 (33) | **48.2 (62)** |
+| Toasty: late per 300 | 0.0 | 0.0 | 0.0 |
+| Toasty: GPU ms a picture | 6.28 | 6.35 | 6.79 |
+| Updates at 60 Hz (late) | — | — | 7,233 (7) |
 
-The command for each is in its file's header. Vita3K first (`tools/vita/vita3k_run.sh`, `realtime=0`, with `interp=4` on the gems pad), then hardware.
+| The K route | 7G2 (main, interpolated) | **T60-3** (this VPK, 60 Hz) |
+|---|---:|---:|
+| Game thread, ms a vblank | 3.85 | 5.08 |
+| The four renderers, ms a vblank | 2.37 | 3.76 |
+| Late vblanks per 300 | 1.05 | 1.03 |
+| Falls to 30 fps | 0 | 0 |
+| Busy % (max): title | 19.4 | 19.6 |
+| Artisans | 22.0 (38) | 26.5 (67) |
+| Stone Hill (its attract demo at 30 Hz in some windows) | 38.1 (76) | 52.4 (76) |
+| Dark Hollow | 38.8 (39) | **69.9 (70)** |
+| Late per 300 in Stone Hill and Dark Hollow | 0.1, 0.0 | 0.0, 0.0 |
+| Updates at 60 Hz (late) | — | 7,253 (3) |
+
+How to read these:
+- **T60-2 is 7G1 within noise** in every game-thread figure. The 60 Hz rules compiled into the VPK cost nothing when they are off.
+  - Its render thread's ms a picture in Toasty, 14.2 against 10.0, includes the thread's waits for the GPU and the display. Its GPU time and late vblanks are unchanged.
+- **At 60 Hz the game thread is busy about 1.3× to 1.8× as much in play as interpolated.** Toasty goes from 25% to 48%, Dark Hollow from 39% to 70%. That's above the audit's estimate of ~43%, because every play vblank is now a whole draw.
+- **60 fps still holds.** No late vblank in the pilot's levels, no fall to 30, and only 3 to 7 updates of 2+ vblanks over ~7,200.
+- **Dark Hollow at 70% leaves the least headroom measured.** The levels outside the pilot run their mobys at 30 Hz but still draw every vblank, so they cost about the same.
+
+At the owner's request, this VPK's eboot stays installed on the Vita (`8bc2750d…`, read back after T60-3); the owner's earlier one (`66f57eff…`) is in `logs/hw-t60/eboot-before.bin`.

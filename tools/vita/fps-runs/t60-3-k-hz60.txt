@@ -1,4 +1,4 @@
-# Run T60-3 (D130, proposed): 7G2's K route with 60 Hz logic (interp=4): the title, the attract
+# Run T60-3 (D130; ran 2026-11-10, logs/hw-t60-*): 7G2's K route with 60 Hz logic (interp=4): the title, the attract
 # demos (which stay at 30 Hz with the in-between frame, §7.2), Artisans, Stone Hill and Dark
 # Hollow (the pilot's levels). Against 7G2: the game thread in play at 60 Hz, and the demos and
 # menus unchanged.

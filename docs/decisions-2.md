@@ -1333,8 +1333,13 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
     - None is the 2× or 0.5× of a missed site.
   - **The game thread on the host:** the update per second of play ×1.74 (468 µs a 30 Hz update, 406 µs a 60 Hz one). The draw runs twice as often a second, which dominates, as §7.3 expected.
   - **Vita:** the VPK builds and links (the link check passes on ARM); `.text` +204 KB (3,814,684 → 4,018,820). Not run in Vita3K: it was busy with another project's queued runs.
-- **Hardware:** none run. Proposed, each needing the owner's yes: T60-1 (Toasty at `interp=4`, against 7G1), T60-2 (the same VPK at `interp=1`), T60-3 (the K route at `interp=4`, against 7G2) (`tools/vita/fps-runs/t60-*.txt`).
-- **Not done:** the other 152 classes; particles and spawns; the HUD; the switch at a level load (§7.1); Spyro along walls; Vita3K and hardware runs of the mode.
+- **Hardware: T60-1 to T60-3 ran on 2026-11-10** (the owner's yes in chat). They used the VPK `8c51c866…` with `REALTIME=1` and `DEVICE_DEFAULTS=1`; the kit's lock was free. Every run reached `frames=` with no crash dump. Logs are under `logs/hw-t60-*`, gitignored. Full tables are in `docs/tick60.md`.
+  - **T60-2, the Toasty route at `interp=1`, against 7G1:** the same within noise. Game ms a vblank 3.30 → 3.31, renderers 1.97 → 1.98, late per 300 1.12 → 1.16, Toasty busy 24.9 → 25.0%. The compiled-in rules cost nothing when off.
+  - **T60-1, Toasty at `interp=4`:** game ms a vblank 4.14, renderers 2.89, late 1.02 per 300, no fall to 30. Toasty is **48.2% busy** (max 62), with no late vblank. 7,233 updates at 60 Hz, 7 of them late.
+  - **T60-3, the K route at `interp=4`, against 7G2:** game ms a vblank 3.85 → 5.08. Busy: Stone Hill 38.1 → 52.4%, Dark Hollow **38.8 → 69.9%**. No late vblank in either, and no fall to 30. 7,253 updates at 60 Hz, 3 of them late.
+  - **Reading:** at 60 Hz the game thread is busy 1.3× to 1.8× as much in play, above §7.3's ~43% estimate for Toasty because every play vblank is a whole draw. 60 fps holds in every pilot level measured; Dark Hollow, at 70%, has the least headroom.
+  - **The eboot:** at the owner's request this VPK's eboot (`8bc2750d…`, read back) stays installed. The earlier one (`66f57eff…`) is kept in `logs/hw-t60/eboot-before.bin`.
+- **Not done:** the other 152 classes; particles and spawns; the HUD; the switch at a level load (§7.1); Spyro along walls; a Vita3K run of the mode.
 
 ## 2026-11-10 — the PAL and Japanese discs: the plan
 
