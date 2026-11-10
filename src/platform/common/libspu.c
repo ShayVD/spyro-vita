@@ -128,6 +128,8 @@ static int voice_sample(PsxSpuVoice *v) {
 
 #define VBLANK_SAMPLES PSX_SPU_VBLANK_SAMPLES
 
+int g_psx_spu_vblank_samples = PSX_SPU_RATE / 60;
+
 void psx_spu_mix_regs(PsxSpuMixRegs *r) {
   const PsxCdStream *cd = psx_cd_stream();
   r->mvol_l = g_psx_spu.mvol_l;
@@ -139,7 +141,7 @@ void psx_spu_mix_regs(PsxSpuMixRegs *r) {
 }
 
 void psx_spu_mix(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
-                 short out[PSX_SPU_VBLANK_SAMPLES * 2]) {
+                 short out[PSX_SPU_VBLANK_SAMPLES_MAX * 2]) {
   int n, i;
   for (n = 0; n < VBLANK_SAMPLES; n++) {
     int l = 0, r = 0, cl, cr;
@@ -194,7 +196,7 @@ void psx_spu_step(void) {
 }
 
 void psx_spu_vblank(void) {
-  static short out[VBLANK_SAMPLES * 2];
+  static short out[PSX_SPU_VBLANK_SAMPLES_MAX * 2];
   PsxSpuMixRegs r;
   psx_spu_mix_regs(&r);
   if (g_psx_spu_native)

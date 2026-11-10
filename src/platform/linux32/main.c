@@ -19,7 +19,9 @@
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
  *   WAD.WAD the first time and remember it in FILE, as the Vita does.
  * --region-dev: open a PAL or JP disc, which players get refused as not
- *   supported yet (D133). --region-check: with it, load the disc's region
+ *   supported yet (D133). --pal60: the PAL disc with US timing at 60 Hz
+ *   ("PAL 60", D138); without it PAL runs at its own 50 Hz (a VSync is a
+ *   50 Hz vblank: 3 CD sectors, 882 samples). --region-check: with it, load the disc's region
  *   data (src/game/region_data.c) from its executable, print what it found
  *   and exit (0 when every pointer to a string lands on one).
  * --replay: replay the oracle's function samples in DIR through the
@@ -168,6 +170,8 @@
 #include "psx_walk.h"
 #include "region_data.h"
 #include "psx_spu.h"
+#include "psx_clock.h"
+#include "psx_region.h"
 
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
@@ -422,6 +426,8 @@ int main(int argc, char **argv) {
       psx_cd_set_verify(val, NULL);
     } else if (strcmp(a, "--region-dev") == 0) {
       g_RegionDev = 1; /* open a release that isn't supported yet (D133) */
+    } else if (strcmp(a, "--pal60") == 0) {
+      g_RegionPal60 = 1; /* PAL 60 (regions plan §7.4, D138) */
     } else if (strcmp(a, "--region-check") == 0) {
       g_RegionDev = s_region_check = 1;
     } else if (strcmp(a, "--replay") == 0) {
@@ -782,6 +788,16 @@ int main(int argc, char **argv) {
     host_log_flush();
     disc_refused();
     return 1;
+  }
+  /* the game's vblank rate: 50 Hz for PAL at its own timing (D138) */
+  psx_clock_set_hz(psx_region_vblank_hz());
+  g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
+  if (g_Region != PSX_REGION_US)
+    host_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
+             g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
+  if (g_tick60_mode && g_Region != PSX_REGION_US) {
+    host_log("--tick60: the US disc only for now (regions plan §6.3); off");
+    g_tick60_mode = 0;
   }
   if (s_region_check) { /* the region data loader against the disc's executable, then exit */
     RegionDataStats st;

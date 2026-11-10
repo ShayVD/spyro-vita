@@ -220,7 +220,9 @@ int vita_vblank_past_due(int due) {
   if (!psx_clock_display_base(&base))
     return VITA_DUE_UNCOUNTED;
   raw = ((unsigned)sceDisplayGetVcount() + s_vc_offset) & 0xffffu;
-  return (int16_t)(uint16_t)(raw - (unsigned)base - (unsigned)due);
+  /* at 50 Hz (PAL, D138) the display vblank `due` starts at, and ours past it */
+  return psx_clock_display_to_ours(
+      (int16_t)(uint16_t)(raw - (unsigned)psx_clock_display_due(base, due)));
 }
 
 static void wait_display(void) { sceDisplayWaitVblankStart(); }

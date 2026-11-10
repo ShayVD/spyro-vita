@@ -1,7 +1,8 @@
 /* SPU state behind our libspu (docs/porting-plan.md §6): the 512 KB SPU RAM
  * image and 24 voices with the hardware's playback position (current ADPCM
  * block + 4.12 sample counter). psx_spu_vblank() mixes one vblank of output
- * (735 samples at 44.1 kHz) and hands it to psx_audio_out(). */
+ * (735 samples at 44.1 kHz; 882 for a 50 Hz vblank, D138) and hands it to
+ * psx_audio_out(). */
 #ifndef PSX_SPU_H
 #define PSX_SPU_H
 
@@ -12,8 +13,12 @@ extern "C" {
 #define PSX_SPU_RAM_SIZE 0x80000
 #define PSX_SPU_VOICES 24
 #define PSX_SPU_RATE 44100
-#define PSX_SPU_VBLANK_HZ 60 /* virtual vblank: 735 samples each */
-#define PSX_SPU_VBLANK_SAMPLES (PSX_SPU_RATE / PSX_SPU_VBLANK_HZ)
+/* A virtual vblank's samples: 735 at 60 Hz, 882 at PAL's own 50 Hz
+ * (psx_region_vblank_hz; set by the platform once the disc is open, D138).
+ * Buffers are sized for the most. */
+#define PSX_SPU_VBLANK_SAMPLES_MAX (PSX_SPU_RATE / 50)
+extern int g_psx_spu_vblank_samples;
+#define PSX_SPU_VBLANK_SAMPLES g_psx_spu_vblank_samples
 
 enum { PSX_ENV_OFF, PSX_ENV_ATTACK, PSX_ENV_DECAY, PSX_ENV_SUSTAIN, PSX_ENV_RELEASE };
 
@@ -72,7 +77,7 @@ typedef struct {
  * status, envelopes) is what the mix leaves. */
 void psx_spu_mix_regs(PsxSpuMixRegs *r);
 void psx_spu_mix(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
-                 short out[PSX_SPU_VBLANK_SAMPLES * 2]);
+                 short out[PSX_SPU_VBLANK_SAMPLES_MAX * 2]);
 void psx_spu_step(void);
 
 /* libspu.c's step past the end of cur_addr's block (the block flags: loop
@@ -85,7 +90,7 @@ int psx_spu_voice_next_pos(PsxSpuVoice *v);
  * SpuWrite); g_psx_spu_simd 0 takes the C path on ARM too (tests). */
 extern int g_psx_spu_native, g_psx_spu_simd;
 void psx_spu_mix_native(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
-                        short out[PSX_SPU_VBLANK_SAMPLES * 2]);
+                        short out[PSX_SPU_VBLANK_SAMPLES_MAX * 2]);
 void psx_spu_pcm_write(unsigned addr, unsigned size); /* SPU RAM written: forget its PCM */
 void psx_spu_pcm_reset(void);                         /* forget every block (SpuInit, a state load) */
 typedef struct {
