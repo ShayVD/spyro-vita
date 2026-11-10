@@ -1,0 +1,197 @@
+--- a/include/region.h
++++ b/include/region.h
+@@ -44,4 +44,15 @@ extern int g_RegionTiming; /* 1: PAL's own 50 Hz constants (RT's pal) */
+  * 4 and 16 at start). US and JP keep 0 and never read them. */
+ extern int g_Language;
++
++/* PAL's own tables (D139): PAL_DATA(sym, pal_addr) names one in PAL code.
++ * The PAL matching build links sym (a stand-in: only its relocation is
++ * compared); the port reads the player's executable's copy at pal_addr
++ * (src/game/region_data.c), sym's type giving the shape. */
++#ifdef SPYRO_PORT
++void *PortRegionData(unsigned pal_addr);
++#define PAL_DATA(sym, pal_addr) (*(__typeof__(sym) *)PortRegionData(pal_addr))
++#else
++#define PAL_DATA(sym, pal_addr) sym
++#endif
+ extern int g_ScreenOffsetX;
+ extern int g_ScreenOffsetY;
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -27,4 +27,5 @@
+ #include "titlescreen.h"
+ #include "variables.h"
++#include "region.h"
+ 
+ #include <libetc.h>
+@@ -140,4 +141,112 @@ Moby *func_800181AC(char *pText, Vector3D *pPosition, Vector3D *pTextSpacing,
+ }
+ 
++#if REGION_HAS_PAL
++/**
++ * @brief PAL: create text Mobys, both of the US functions above in one, with
++ * the five languages' extra marks (PAL 0x8001BD5C, decisions D139).
++ *
++ * With pTextSpacing NULL every character is a capital, as func_80017FE4's.
++ * Otherwise the first letter of each word is a capital and the rest are
++ * moved by pTextSpacing, as func_800181AC's. A lowercase 'a'-'e' after a
++ * letter is its accent, Moby classes 365-369, laid over that letter; 'f' a
++ * raised period. Spanish turns '!' and '?' over when they open a sentence.
++ */
++Moby *func_pal_8001BD5C(u_char *pText, Vector3D *pPosition, Vector3D *pTextSpacing,
++                        int pSpaceWidth, int pShadeIndex) {
++  int isCapital;
++  int wasCapital;
++
++  isCapital = 1;
++  wasCapital = 1;
++  while (*pText != '\0') {
++    if (*pText != ' ') {
++      g_HudMobys -= 1;
++      Memset(g_HudMobys, 0, sizeof(Moby));
++      VecCopy(&g_HudMobys->m_Position, pPosition);
++      if (*pText >= 'A' && *pText <= 'Z') {
++        g_HudMobys->m_Class = MOBYCLASS_LETTER_A + *pText - 'A';
++      } else if (*pText >= '0' && *pText <= '9') {
++        isCapital = 1;
++        g_HudMobys->m_Class = MOBYCLASS_NUMBER_0 + *pText - '0';
++      } else if (*pText >= 'a' && *pText <= 'f') {
++        // An accent: back over the letter before
++        if (wasCapital) {
++          pPosition->x -= pSpaceWidth;
++        } else {
++          pPosition->x -= pTextSpacing->x;
++        }
++        g_HudMobys->m_Position.x = pPosition->x;
++        if (*pText >= 'a' && *pText <= 'e') {
++          g_HudMobys->m_Class = *pText + 268; // 365-369
++        }
++        if (*pText == 'f') {
++          g_HudMobys->m_Class = MOBYCLASS_PERIOD;
++          g_HudMobys->m_Position.y -= pSpaceWidth / 3;
++        }
++        isCapital = wasCapital;
++      } else if (*pText == '/') {
++        isCapital = 1;
++        g_HudMobys->m_Class = MOBYCLASS_SLASH;
++      } else if (*pText == '-') {
++        g_HudMobys->m_Class = MOBYCLASS_SLASH; // a dash: the slash turned
++        g_HudMobys->m_Rotation.x = 41;
++        g_HudMobys->m_Position.z += 2560;
++        isCapital = 1;
++      } else if (*pText == '%') {
++        isCapital = 1;
++        g_HudMobys->m_Class = MOBYCLASS_PERCENT;
++      } else if (*pText == '^') {
++        isCapital = 1;
++        g_HudMobys->m_Class = MOBYCLASS_CARET;
++      } else if (*pText == '+') {
++        isCapital = 1;
++        g_HudMobys->m_Class = MOBYCLASS_PLUS;
++      } else if (*pText == '!') {
++        g_HudMobys->m_Class = MOBYCLASS_EXCLAMATION_MARK;
++        if (g_Language == 3 && pText[1] != ' ' && pText[1] != '\0') {
++          g_HudMobys->m_Rotation.x = 128; // Spanish: opening, upside down
++        }
++        isCapital = 1;
++      } else if (*pText == '?') {
++        g_HudMobys->m_Class = MOBYCLASS_QUESTION_MARK;
++        if (g_Language == 3 && pText[1] != ' ' && pText[1] != '\0') {
++          g_HudMobys->m_Rotation.x = 128;
++        }
++        isCapital = 1;
++      } else if (*pText == '.') {
++        g_HudMobys->m_Class = MOBYCLASS_PERIOD;
++      } else if (*pText == ',') {
++        g_HudMobys->m_Class = MOBYCLASS_LETTER_APOSTROPHE;
++      } else {
++        g_HudMobys->m_Class = MOBYCLASS_LETTER_APOSTROPHE;
++        g_HudMobys->m_Position.y -= pSpaceWidth * 2 / 3;
++      }
++      g_HudMobys->m_DepthOffset = 0x7F;
++      g_HudMobys->m_SpecularMetalType = pShadeIndex;
++      g_HudMobys->m_RenderRadius = 0xFF;
++      if (isCapital) {
++        pPosition->x += pSpaceWidth;
++      } else {
++        pPosition->x += pTextSpacing->x;
++        g_HudMobys->m_Position.y += pTextSpacing->y;
++        g_HudMobys->m_Position.z = pTextSpacing->z;
++      }
++      wasCapital = isCapital;
++      if (((*pText >= 'A' && *pText <= 'Z') || (*pText >= 'a' && *pText <= 'f')) &&
++          pTextSpacing != nullptr) {
++        isCapital = 0;
++      } else {
++        isCapital = 1;
++      }
++    } else {
++      pPosition->x += pSpaceWidth * 2 / 3;
++      isCapital = 1;
++    }
++    pText++;
++  }
++  return g_HudMobys;
++}
++#endif
++
+ /// @brief Creates shaded line
+ void func_8001844C(int pX0, int pY0, int pX1, int pY1) {
+@@ -204,6 +313,50 @@ void func_8001860C(int pX0, int pX1, int pY0, int pY1) {
+ }
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): "RESCUED" in five languages, "%s %s", the dragons' names
++extern char *g_PalRescuedText[5];   // PAL 0x8007529C
++extern char g_PalRescuedFormat[];   // PAL 0x8007BEDC
++extern char *g_PalDragonNames[80];  // PAL 0x800752B0
++#if defined(REGION) && REGION == REGION_PAL
++char *g_PalRescuedText[5];
++char g_PalRescuedFormat[8];
++char *g_PalDragonNames[80];
++#endif
++#endif
++
+ /// @brief Creates rescued dragon text
+ void func_80018728(void) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: one line in the language, by the merged text Mobys (PAL 0x8001C484)
++    char text[32];
++    Vector3D pos;
++    Vector3D spacing;
++    Moby *mobys;
++    int i;
++
++    sprintf(text, PAL_DATA(g_PalRescuedFormat, 0x8007BEDC),
++            PAL_DATA(g_PalRescuedText, 0x8007529C)[g_Language],
++            PAL_DATA(g_PalDragonNames, 0x800752B0)
++                [((int *)g_DragonCutscene.m_RescuedDragonMoby->m_Props)[14]]);
++    pos.x = 254 - (strlen(text) - 1) * 8;
++    mobys = g_HudMobys;
++    pos.y = 216;
++    pos.z = 4352;
++    spacing.x = 16;
++    spacing.y = 1;
++    spacing.z = 5120;
++    func_pal_8001BD5C(text, &pos, &spacing, 18, 11);
++    mobys--;
++    for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
++      mobys->m_Rotation.z =
++          COSINE_8((g_DragonCutscene.unk_0x50 * 2 + i * 12) & 0xFF) >> 7;
++      mobys--;
++    }
++    return;
++  }
++#endif
++#if REGION_HAS_US
++  {
+   char *name;
+   int length;
+@@ -231,4 +384,6 @@ void func_80018728(void) {
+     mobys--;
+   }
++  }
++#endif
+ }
+ 
