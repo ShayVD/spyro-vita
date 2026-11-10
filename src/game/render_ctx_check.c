@@ -454,7 +454,7 @@ static void set_presenter(void) {
   for (i = 0; i < (u32)s_mirror_pairs; i++)
     memcpy((void *)(uintptr_t)s_pairs[i].to, (void *)(uintptr_t)s_pairs[i].lo, s_pairs[i].len);
   /* and the word past the particle space: the -1 loaders.c puts in a 257th
-   * slot, where the particles' walk stops when all 256 are in use (D132) */
+   * slot, where the particles' walk stops when all 256 are in use (D136) */
   if (in_arena_ptr(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE + 4))
     memcpy((char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE + s_delta,
            (char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE, 4);

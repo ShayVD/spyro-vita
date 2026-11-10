@@ -129,7 +129,7 @@ int vita_gpu_meter_quiet(unsigned max_us); /* gpu_meter.c: every scene seen done
  * sceKernelExitProcess(res) (D120). Not the PS button's close: the system's */
 void vita_exit(int res) __attribute__((noreturn));
 /* main.c: the app started again in its own place (the menu's RESTART NOW,
- * D132): stopped as for an exit, the log flushed, then app0:eboot.bin
+ * D136): stopped as for an exit, the log flushed, then app0:eboot.bin
  * loaded (sceAppMgrLoadExec); if that fails, an exit */
 void vita_restart(void) __attribute__((noreturn));
 
@@ -153,7 +153,7 @@ int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
 extern const char *g_vita_config_stale[4]; /* main.c: stale switch lines (D68), NULL-ended */
 int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
-/* A question over the menu (D132): the text, a blank line, the choices
+/* A question over the menu (D136): the text, a blank line, the choices
  * (UP/DOWN, X answers with the one chosen: 0..nchoice-1; O, START,
  * TRIANGLE or a tap with -1). From a row's on_change or action: the menu
  * shows it in place of the rows and calls done(answer) in its loop. */

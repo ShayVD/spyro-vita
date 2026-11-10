@@ -542,6 +542,37 @@ static void test_native(const char *what) {
 /* The platform's audio sink; this test only needs SPU state. */
 void psx_audio_out(const short *pcm, int frames) { (void)pcm; (void)frames; }
 
+/* The region table's helpers (psx_region.h, D132): no disc needed. */
+static void test_region(void) {
+  static const char cnf[] = "BOOT = cdrom:\\SCES_014.38;1\r\nTCB = 4\r\n";
+  char exe[32], serial[32], path[128];
+  const char *area;
+  CHECK(psx_region_boot_exe(cnf, sizeof cnf - 1, exe, sizeof exe) == 0);
+  CHECK(strcmp(exe, "SCES_014.38") == 0);
+  CHECK(psx_region_boot_exe("BOOT=cdrom:/x/scus_942.28;1", 27, exe, sizeof exe) == 0);
+  CHECK(strcmp(exe, "SCUS_942.28") == 0);
+  CHECK(psx_region_boot_exe("TCB = 4", 7, exe, sizeof exe) == -1);
+  psx_region_serial("SCPS_100.83", serial, sizeof serial, &area);
+  CHECK(strcmp(serial, "SCPS-10083") == 0 && strcmp(area, "Japan") == 0);
+  psx_region_serial("SCES_014.38", serial, sizeof serial, &area);
+  CHECK(strcmp(serial, "SCES-01438") == 0 && strcmp(area, "PAL, Europe") == 0);
+  CHECK(psx_region_by_exe("scus_942.28") == psx_region_info(PSX_REGION_US));
+  CHECK(psx_region_by_exe("SCES_014.38")->id == PSX_REGION_PAL);
+  CHECK(psx_region_by_exe("SCPS_100.83")->id == PSX_REGION_JP);
+  CHECK(psx_region_by_exe("SCPS_100.85") == NULL); /* the standard JP release: not known */
+  CHECK(psx_region_info(PSX_REGION_US)->supported && !psx_region_info(PSX_REGION_PAL)->supported);
+  CHECK(psx_region_info(PSX_REGION_COUNT) == NULL);
+  g_Region = PSX_REGION_US;
+  CHECK(strcmp(psx_region_path(path, sizeof path, "ux0:data/spyro/save", "card0", 0),
+               "ux0:data/spyro/save/card0") == 0);
+  g_Region = PSX_REGION_PAL;
+  CHECK(strcmp(psx_region_path(path, sizeof path, "save", NULL, 0), "save/pal") == 0);
+  g_Region = PSX_REGION_JP;
+  CHECK(strcmp(psx_region_path(path, sizeof path, "save", "disc-verified.txt", 0),
+               "save/jp/disc-verified.txt") == 0);
+  g_Region = PSX_REGION_US;
+}
+
 int main(int argc, char **argv) {
   const char *dir = argc > 1 ? argv[1] : "disc/files";
   char path[512];
@@ -550,6 +581,7 @@ int main(int argc, char **argv) {
   test_spu_transfer();
   test_spu_voices();
   test_cd_pos();
+  test_region();
 
   snprintf(path, sizeof path, "%s/manifest.json", dir);
   f = fopen(path, "rb");
@@ -561,6 +593,7 @@ int main(int argc, char **argv) {
   fclose(f);
   CHECK(psx_cd_open(dir) == 0);
   CHECK(strcmp(psx_cd_source(), "files") == 0);
+  CHECK(g_Region == PSX_REGION_US);
   test_cd_read(dir);
   test_cd_xa(dir);
   test_known_hashes("files");

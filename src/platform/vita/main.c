@@ -7,7 +7,9 @@
  *                              never in the VPK
  *   ux0:data/spyro/save/disc-verified.txt  the image whose WAD.WAD was
  *                              checked (D60)
- *   ux0:data/spyro/save/       memory cards: card0 (port A), card1 (port B)
+ *   ux0:data/spyro/save/       memory cards: card0 (port A), card1 (port B),
+ *                              and the save states; save/pal/ and save/jp/
+ *                              hold the PAL and JP discs' own (D132)
  *   ux0:data/spyro/spyro.log   the log (send it back after a test)
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
@@ -535,13 +537,13 @@ void vita_exit(int res) {
     sceKernelDelayThread(1000000);
 }
 
-/* D132: the menu's RESTART NOW. The memory cards' files are written whole
+/* D136: the menu's RESTART NOW. The memory cards' files are written whole
  * when the game asks (libmcrd.c), a save state at the main loop's top
  * (D51), and the menu runs in the game's VSync wait: none is half written. */
 void vita_restart(void) {
   int r;
   stop_threads("restart");
-  vita_log("restart: loading app0:eboot.bin in this app's place (D132)");
+  vita_log("restart: loading app0:eboot.bin in this app's place (D136)");
   vita_log_flush();
   r = sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
   /* 0: the system replaces this process when it is ready (Vita3K returns
@@ -593,9 +595,9 @@ static void disc_progress(int percent) {
   if (percent % 4)
     return;
   snprintf(text, sizeof text,
-           "First start: checking that your disc image is a good dump of SCUS-94228. This is "
+           "First start: checking that your disc image is a good dump of %s. This is "
            "done once.\n\n%d%%",
-           percent);
+           psx_region()->serial, percent);
   vita_boot_panel("CHECKING THE DISC IMAGE", text, "");
 }
 
@@ -716,7 +718,12 @@ int main(int argc, char **argv) {
   vita_log("game memory at %p, data labels at %p (native, D106)", (void *)g_psx_arena_base,
            (void *)s1_labels);
 #endif
-  psx_mcrd_set_root(VITA_DATA_DIR "/save");
+  { /* the disc's region's folder (D132): save/ for the US disc, save/pal, save/jp */
+    char dir[256];
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, VITA_DATA_DIR "/save", NULL, 1));
+    vita_log("disc: Spyro the Dragon (%s), %s; saves in %s", psx_region()->area,
+             psx_region()->serial, dir);
+  }
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);

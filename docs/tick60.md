@@ -7,7 +7,7 @@ The 60 fps option's third value. **Off** is 30 Hz logic at 30 fps; **interpolate
 | Where | How | When |
 |---|---|---|
 | linux32 host | `--tick60` (`--tick60-stats` adds the updates' CPU time to the log at exit). Add `--interp` for the in-between frame in the gamestates that stay at 30 Hz | at start |
-| Vita | `config.txt` `interp=4`, or the menu's 60 FPS row, value **60 HZ** | read at start. A change in the menu into or out of 60 HZ asks: **RESTART NOW** (the options saved, the app started again) or **UNDO** (the row put back); ○ leaves it for the next start, and a **60 HZ LOGIC** row says ON AT RESTART or OFF AT RESTART until then (D132) |
+| Vita | `config.txt` `interp=4`, or the menu's 60 FPS row, value **60 HZ** | read at start. A change in the menu into or out of 60 HZ asks: **RESTART NOW** (the options saved, the app started again) or **UNDO** (the row put back); ○ leaves it for the next start, and a **60 HZ LOGIC** row says ON AT RESTART or OFF AT RESTART until then (D136) |
 
 The setting is chosen at boot (§7.1's fallback). Moving it to a switch at a level load needs §7.1's list of carried-over state checked first. Because the rules keep game state in the original's units (below), that list should be short, but it isn't checked yet.
 

@@ -44,7 +44,7 @@ static void widescreen_changed(void) {
 /* 60 Hz logic is read once, at start (D130): a change of the 60 FPS row
  * into or out of 60 HZ asks whether to restart now (RESTART NOW), or puts
  * the row back (UNDO); O leaves it for the next start, and the 60 HZ LOGIC
- * row says so while it waits (D132). */
+ * row says so while it waits (D136). */
 static int s_tick60_now;  /* this run's logic: 60 Hz (1) or 30 Hz (0) */
 static int s_interp_last; /* the 60 FPS row's value before the last change */
 static int s_interp_undo; /* UNDO's value: the row's before the restart was pending */

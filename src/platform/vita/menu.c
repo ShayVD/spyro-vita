@@ -27,7 +27,7 @@ static uint16_t s_prev;
 
 int vita_pad_take_tap(void); /* pad.c: a tap on the front touch screen */
 
-/* The question shown in place of the rows (vita_menu_ask, D132), and its
+/* The question shown in place of the rows (vita_menu_ask, D136), and its
  * choice under the bar. */
 static const VitaMenuAsk *s_ask;
 static int s_ask_sel;
@@ -100,7 +100,7 @@ static void save(void) {
 
 void vita_menu_restart(void) {
   save();
-  vita_log("menu: restarting the app (D132)");
+  vita_log("menu: restarting the app (D136)");
   vita_restart();
 }
 
@@ -165,7 +165,7 @@ int vita_menu_test_keys(const char *list) {
 }
 
 /* The lines again after a change (a row's `visible` may have changed: the
- * 60 HZ LOGIC row, D132), the same row kept selected. Returns the count. */
+ * 60 HZ LOGIC row, D136), the same row kept selected. Returns the count. */
 static int relayout(MenuRow *rows, const MenuOption **opts, int *sel) {
   const MenuOption *was = opts[*sel];
   int i, m = menu_opts_layout(k_lists, NLISTS, rows, opts, MAX_LINES);
@@ -227,7 +227,7 @@ int vita_menu_service(void) {
     }
     pressed = m & ~prev;
     prev = m;
-    if (s_ask) { /* a question (D132): its choices, or O for none */
+    if (s_ask) { /* a question (D136): its choices, or O for none */
       int answer = -2;
       if (pressed & (B_UP | B_DOWN))
         s_ask_sel = (s_ask_sel + (pressed & B_UP ? s_ask->nchoice - 1 : 1)) % s_ask->nchoice, dirty = 1;

@@ -34,7 +34,7 @@
  * (`*(int *)(&g_Particles[256]) = -1`): with all 256 slots in use (Alloc
  * takes one over when none is free) it is where the particles' walk stops.
  * The copy holds it too; the region (rebasing, the fields) stays 0x2000
- * (D132) */
+ * (D136) */
 #define PARTICLE_END_WORD 4
 #define OT_BYTES 0x4000
 /* the area's first 2 MB (render_ctx.h PRES_SECTORS_AT): the buffers'
@@ -266,7 +266,7 @@ int pres_snap_take(int blend) {
     memcpy((void *)(area + AREA_MOBYS), g_LevelMobys, g_pres_regions[PRES_REGION_MOBYS].len);
   if (g_pres_regions[PRES_REGION_PARTICLES].len) {
     memcpy((void *)(area + AREA_PARTICLES), g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
-    /* the end word (D132): without it the presenter's walk went on past the
+    /* the end word (D136): without it the presenter's walk went on past the
      * copy when every slot was in use, into the area's zeros and what lies
      * past them, and drew from a NULL texture table entry (the Vita's crash
      * in Gnasty Gnorc's fight, logs/t60-crash-20261110) */
@@ -276,7 +276,7 @@ int pres_snap_take(int blend) {
     else
       memset((void *)(area + AREA_PARTICLES + PARTICLE_SPACE), 0xFF, PARTICLE_END_WORD);
   }
-  /* --pres-particles-full (tests, D132): the copy's free slots made holes,
+  /* --pres-particles-full (tests, D136): the copy's free slots made holes,
    * so the presenter's walk goes on past the last slot, as it does when all
    * 256 are in use (Alloc then takes over a slot: no -1 in the space) */
   if (g_pres_particles_full && g_pres_regions[PRES_REGION_PARTICLES].len) {

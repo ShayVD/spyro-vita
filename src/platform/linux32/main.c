@@ -551,7 +551,7 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--faces-race") == 0) {
       g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
     } else if (strcmp(a, "--pres-particles-full") == 0) {
-      g_pres_particles_full = 1; /* tests (D132): the copy's particle slots all taken */
+      g_pres_particles_full = 1; /* tests (D136): the copy's particle slots all taken */
     } else if (strcmp(a, "--pres-audit") == 0) {
       g_pres_audit = 1;
       pres_draw_want();
@@ -772,6 +772,10 @@ int main(int argc, char **argv) {
     host_log_flush();
     disc_refused();
     return 1;
+  }
+  if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
+    char dir[512];
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 0));
   }
   /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1
    * the CD interrupt ends it. With no interrupts here, a read completes

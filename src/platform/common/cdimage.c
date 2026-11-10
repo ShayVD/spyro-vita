@@ -8,6 +8,7 @@
  * here is the search of the data folder, the cue sheet, the messages and the
  * disc check. */
 #include "psx_cdimage.h"
+#include "psx_region.h"
 
 #include <dirent.h>
 #include <stdarg.h>
@@ -22,11 +23,9 @@
 #define XA_INTERLEAVED 0x2000
 #define XA_CDDA 0x4000
 
-/* SHA-1 of a good dump of SCUS-94228 (extract_disc.py's KNOWN). */
-#define EXE_NAME "SCUS_942.28"
-#define EXE_SHA1 "84e3728ab94720d0873e2514adf4aade4935e0c5"
+/* The executables and their SHA-1s are the region table's (psx_region.h,
+ * D132; extract_disc.py's REGIONS). */
 #define WAD_NAME "WAD.WAD"
-#define WAD_SHA1 "ab68001377ea93fb309a5c2a35e772c9d1f57e0b"
 
 static VpkDisc s_disc; /* the image, read through two 32-sector windows */
 static struct {
@@ -363,7 +362,7 @@ static int by_lba(const void *a, const void *b) {
   return (x->lba > y->lba) - (x->lba < y->lba);
 }
 
-/* ---- is it SCUS-94228? ---- */
+/* ---- which release is it? (D132) ---- */
 
 static const PsxCdImageFile *lookup(const Table *t, const char *path) {
   for (int i = 0; i < t->n; i++)
@@ -389,39 +388,17 @@ static int hash_file(const PsxCdImageFile *f, char hex[41], int progress) {
   return 0;
 }
 
-/* SYSTEM.CNF's BOOT line as a serial ("SCES-00900"), and the region. */
-static void boot_serial(const Table *t, char *serial, size_t cap, const char **region) {
+/* SYSTEM.CNF's BOOT file ("SCES_014.38"), or "" without one. */
+static void boot_exe(const Table *t, char *exe, size_t cap) {
   const PsxCdImageFile *cnf = lookup(t, "SYSTEM.CNF");
-  unsigned char buf[2048 + 1];
-  const char *p;
-  size_t n = 0;
-  serial[0] = 0;
-  *region = "";
+  unsigned char buf[2048];
+  exe[0] = 0;
   if (!cnf || cnf->size <= 0 || read_form1(cnf->lba, 1, buf) != 0)
     return;
-  buf[cnf->size < 2048 ? cnf->size : 2048] = 0;
-  if (!(p = strstr((char *)buf, "cdrom:")))
-    return;
-  for (p += 6; *p == '\\' || *p == '/'; p++)
-    ;
-  for (; *p && *p != ';' && *p > ' ' && n + 2 < cap; p++) {
-    if (*p == '\\' || *p == '/')
-      n = 0; /* a folder: keep the last part */
-    else if (*p != '.' && *p != '_')
-      serial[n++] = (char)(*p >= 'a' && *p <= 'z' ? *p - 32 : *p);
-    if (n == 4 && *p != '\\' && *p != '/')
-      serial[n++] = '-';
-  }
-  serial[n] = 0;
-  if (!strncmp(serial, "SCUS", 4) || !strncmp(serial, "SLUS", 4))
-    *region = "USA";
-  else if (serial[0] == 'S' && serial[2] == 'E')
-    *region = "PAL, Europe";
-  else if (serial[0] == 'S' && (serial[2] == 'P' || serial[2] == 'J'))
-    *region = "Japan";
+  psx_region_boot_exe((const char *)buf, cnf->size < 2048 ? (size_t)cnf->size : 2048, exe, cap);
 }
 
-static int verified_before(char *key, size_t cap) {
+static int verified_before(const char *marker, char *key, size_t cap) {
   struct stat st;
   char line[700] = "";
   FILE *f;
@@ -429,7 +406,7 @@ static int verified_before(char *key, size_t cap) {
   if (stat(s_img.path, &st) != 0)
     return 0;
   snprintf(key, cap, "%ld %lld %s", s_img.size, (long long)st.st_mtime, s_img.path);
-  if (!(f = fopen(s_marker, "rb")))
+  if (!(f = fopen(marker, "rb")))
     return 0;
   if (!fgets(line, sizeof line, f))
     line[0] = 0;
@@ -438,12 +415,60 @@ static int verified_before(char *key, size_t cap) {
   return strcmp(line, key) == 0;
 }
 
+int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *err) {
+  if (strcmp(exe_sha1, r->exe_sha1) != 0) {
+    if (r->id == PSX_REGION_US)
+      return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG VERSION OF THE GAME",
+                  "%s on this disc isn't the one Spyro Vita needs (SHA-1 %.8s, needs %.8s): "
+                  "another release of the game (Greatest Hits, a demo) or a bad dump.",
+                  r->exe, exe_sha1, r->exe_sha1);
+    return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG VERSION OF THE GAME",
+                "%s on this disc isn't the one of the %s release Spyro Vita knows (SHA-1 %.8s, "
+                "it knows %.8s): another edition of the game (a reprint, a demo) or a bad dump. "
+                "Spyro Vita needs Spyro the Dragon (USA), SCUS-94228.",
+                r->exe, r->serial, exe_sha1, r->exe_sha1);
+  }
+  g_Region = r->id;
+  if (!r->supported)
+    return fail(err, PSX_CD_ERR_NOT_SUPPORTED, "NOT SUPPORTED YET",
+                "This is Spyro the Dragon (%s), %s. Spyro Vita recognises it but can't run it "
+                "yet: the European and Japanese releases are being worked on. For now Spyro Vita "
+                "needs Spyro the Dragon (USA), SCUS-94228.",
+                r->area, r->serial);
+  return 0;
+}
+
+/* The marker of the WAD.WAD check, in the region's save folder (D132): the
+ * path set for the US disc, with pal/ or jp/ before its file name. */
+static void marker_path(char *out, size_t cap) {
+  char dir[512];
+  const char *slash = strrchr(s_marker, '/');
+  if (!slash) {
+    psx_region_path(out, cap, ".", s_marker, 1);
+    return;
+  }
+  snprintf(dir, sizeof dir, "%.*s", (int)(slash - s_marker), s_marker);
+  psx_region_path(out, cap, dir, slash + 1, 1);
+}
+
 static int check_disc(const Table *t, PsxCdError *err) {
-  const PsxCdImageFile *exe = lookup(t, EXE_NAME), *wad = lookup(t, WAD_NAME);
-  char hex[41], serial[32], key[700], msg[800];
-  const char *region;
+  const PsxCdImageFile *exe = NULL, *wad = lookup(t, WAD_NAME);
+  const PsxRegion *r = NULL;
+  char hex[41], boot[64], serial[32], key[700], marker[600], msg[800];
+  const char *area;
+  int i;
+  boot_exe(t, boot, sizeof boot);
+  if (boot[0])
+    r = psx_region_by_exe(boot);
+  /* no SYSTEM.CNF, or it boots something else: a known executable, as
+   * before the region table */
+  for (i = 0; !r && i < PSX_REGION_COUNT; i++)
+    if (lookup(t, psx_region_info(i)->exe))
+      r = psx_region_info(i);
+  if (r)
+    exe = lookup(t, r->exe);
   if (!exe) {
-    boot_serial(t, serial, sizeof serial, &region);
+    psx_region_serial(boot, serial, sizeof serial, &area);
     if (!serial[0])
       return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC",
                   "%s isn't a PlayStation game disc. Spyro Vita needs Spyro the Dragon (USA), "
@@ -451,22 +476,25 @@ static int check_disc(const Table *t, PsxCdError *err) {
                   s_img.name);
     return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC",
                 "This is %s%s%s%s, not Spyro the Dragon (USA). Spyro Vita needs SCUS-94228.",
-                serial, *region ? " (" : "", region, *region ? ")" : "");
+                serial, *area ? " (" : "", area, *area ? ")" : "");
   }
   if (hash_file(exe, hex, 0) != 0)
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS DAMAGED",
                 "%s can't be read from %s. Copy the image again, or dump the disc again.",
-                EXE_NAME, s_img.name);
-  if (strcmp(hex, EXE_SHA1) != 0)
-    return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG VERSION OF THE GAME",
-                "%s on this disc isn't the one Spyro Vita needs (SHA-1 %.8s, needs %.8s): "
-                "another release of the game (Greatest Hits, a demo) or a bad dump.",
-                EXE_NAME, hex, EXE_SHA1);
+                r->exe, s_img.name);
+  if (r->id != PSX_REGION_US) {
+    snprintf(msg, sizeof msg, "%s is Spyro the Dragon (%s), %s, SHA-1 %.8s", r->exe, r->area,
+             r->serial, hex);
+    say(msg);
+  }
+  if (psx_cd_check_release(r, hex, err) != 0)
+    return -1;
   if (!s_marker[0])
     return 0;
   if (!wad)
     return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC", "This disc has no %s.", WAD_NAME);
-  if (verified_before(key, sizeof key)) {
+  marker_path(marker, sizeof marker);
+  if (verified_before(marker, key, sizeof key)) {
     say("WAD.WAD checked before (same image, size and date)");
     return 0;
   }
@@ -474,19 +502,19 @@ static int check_disc(const Table *t, PsxCdError *err) {
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS DAMAGED",
                 "%s can't be read from %s. Copy the image again, or dump the disc again.",
                 WAD_NAME, s_img.name);
-  if (strcmp(hex, WAD_SHA1) != 0)
+  if (strcmp(hex, r->wad_sha1) != 0)
     return fail(err, PSX_CD_ERR_WRONG_DISC, "BAD DUMP",
-                "%s on this disc doesn't match a good dump of SCUS-94228 (SHA-1 %.8s, needs "
+                "%s on this disc doesn't match a good dump of %s (SHA-1 %.8s, needs "
                 "%.8s). Dump the disc again.",
-                WAD_NAME, hex, WAD_SHA1);
+                WAD_NAME, r->serial, hex, r->wad_sha1);
   if (key[0]) {
-    FILE *f = fopen(s_marker, "wb");
+    FILE *f = fopen(marker, "wb");
     if (f) {
       fprintf(f, "%s\n", key);
       fclose(f);
     }
   }
-  snprintf(msg, sizeof msg, "WAD.WAD matches a good dump; marker %s", s_marker);
+  snprintf(msg, sizeof msg, "WAD.WAD matches a good dump; marker %s", marker);
   say(msg);
   return 0;
 }

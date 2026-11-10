@@ -125,7 +125,7 @@ void vita_log_open(void) {
   FILE *f;
   sceIoMkdir(VITA_DATA_DIR, 0777);
   /* the last run's log kept beside it: the menu's RESTART NOW starts the
-   * app again (D132), and so does a player after a crash */
+   * app again (D136), and so does a player after a crash */
   sceIoRemove(VITA_DATA_DIR "/spyro-prev.log");
   if (sceIoRename(VITA_DATA_DIR "/spyro.log", VITA_DATA_DIR "/spyro-prev.log") < 0)
     sceIoRemove(VITA_DATA_DIR "/spyro.log");
