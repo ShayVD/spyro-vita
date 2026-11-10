@@ -1335,3 +1335,42 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **Vita:** the VPK builds and links (the link check passes on ARM); `.text` +204 KB (3,814,684 → 4,018,820). Not run in Vita3K: it was busy with another project's queued runs.
 - **Hardware:** none run. Proposed, each needing the owner's yes: T60-1 (Toasty at `interp=4`, against 7G1), T60-2 (the same VPK at `interp=1`), T60-3 (the K route at `interp=4`, against 7G2) (`tools/vita/fps-runs/t60-*.txt`).
 - **Not done:** the other 152 classes; particles and spawns; the HUD; the switch at a level load (§7.1); Spyro along walls; Vita3K and hardware runs of the mode.
+
+## 2026-11-10 — the PAL and Japanese discs: the plan
+
+### D131. PAL (SCES-01438) and Japanese (SCPS-10083) discs: a staged plan, `docs/regions-plan.md`, for the owner's review before any engine work. It recommends (c): one codebase with region switches in the shared source, region versions of the rewritten functions, PAL and JP data read from the player's verified executable through committed address maps, and per-region matching builds as the check. PAL comes first, at its own 25 Hz by default
+- **Why now:** the owner asked for PAL and JP disc support so more players can use their own discs in their language (2026-11-10). Until now only SCUS-94228 runs (D60 refuses the rest).
+- **D130:** D130 is the 60 Hz logic pilot's number (its branch `claude/tick60-pilot`, not merged), so this entry is D131.
+- **The discs:**
+  - The owner's images were copied into the gitignored `disc/image-pal/` and `disc/image-jp/`, then extracted to `disc/files-pal/` and `disc/files-jp/`. Their hashes are in the plan, §1.
+  - The PAL archive had no `.cue`; a one-track cue was written beside it.
+  - The JP image is the Limited Edition's disc 1, SCPS-10083.
+  - Neither image's hash could be confirmed against Redump from here.
+- **What decided it:**
+  - **PAL** keeps NTSC's tick (25 Hz at 50 Hz) and retunes thousands of constants by hand: about 250 sites in Spyro, and about 3,700 over the level overlays. Some of the retune is changed instruction sequences. So PAL's gameplay is its code, not a table.
+  - **PAL's language system is code too:** the merged letter spawner with accent models, the title's select, and the cutscenes and dragon voices chosen by language.
+  - **JP** is a post-US branch with a 2D font, new game states, a rewritten camera and shifted structs. That's about 13,000 new instructions in the main executable alone (*estimate*).
+  - **So (a), the US code with each region's data, is wrong for both.** (b) alone would copy whole 15–40 KB functions to change their constants.
+- **Committed now:**
+  - `tools/regions/compare_code.py`: function-by-function comparison of the matching build with another release's executable or WAD overlays, relocations masked. It prints names, addresses and ratios only.
+  - The plan.
+
+  No engine code.
+- **Measured:**
+
+  | Release | Main exe: bytes the same | Main exe: coverage | Level overlays: coverage |
+  |---|---|---|---|
+  | PAL | 61.4% (about 80% counting the relocation-only renderers) | 96.7% | 96.0% |
+  | JP | 47.0% | 92.6% | 72.3% (three overlays not measured) |
+
+  - **PCSX-Redux** loads both discs' executables with the current BIOS (SCPH-1001).
+- **The owner decides** (plan §10):
+  1. the approach;
+  2. PAL's timing, its own 25 Hz and/or "PAL 60";
+  3. the order;
+  4. the save folders;
+  5. data from the disc;
+  6. the hashes and other editions;
+  7. the port's menu languages and a Japanese font;
+  8. hardware runs, each with the owner's yes.
+- **Not done:** everything in the plan's stages. Redux at 50 Hz for PAL isn't checked yet (R0).
