@@ -597,7 +597,7 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 
 **Ran** on 2026-11-09 (D126, approved by the owner in the session's chat; VPK `logs/s7f/s7f-final.vpk`, SHA-1 `6389fc63…`; `logs/hw-7f1`…`7f5`, gitignored), taking the kit's lock in turn with kh1-decomp's runs. All five reached `frames=`, no crash dump, the owner's files put back each time; main's eboot (`66f57eff…`) went back afterwards and read back identical. The game thread's busy %: Toasty 21.1% (30 fps), 41.3% (60, D30's pass), **24.9%** (60, the presenter); Dark Hollow 61.0% → **38.0%**; Stone Hill 46.2% → 38.8%. The presenter: 0 buffers passed by, the join's wait 0.00–0.03 ms per vblank. Late vblanks per 300 no worse in the levels but for 7F3's two windows after Toasty's game over (39 and 48, waits for the vertex slabs; 7F2 had 16 there); D126 has the details.
 
-## Runs 7G1–7G4: every gamestate on the presenter, D30's pass gone (D128, D129; proposed, not run)
+## Runs 7G1–7G4: every gamestate on the presenter, D30's pass gone (D128, D129; ran 2026-11-10, results in D129)
 
 7g puts every gamestate's in-between frame on the presenter (on its thread on the Vita, but the credits' first stage) and the attract demos' 16:9 frame too (on the game thread), and retires D30's pass (D129). The host and Vita3K (`realtime=0`) show the pictures are D30's; only hardware can show the game thread's time in the gamestates 7f left to D30's pass, the late vblanks, and the pause route's pictures without Vita3K's breaks.
 
