@@ -124,7 +124,11 @@ static int cookie_write(void *cookie, const char *buf, int n) {
 void vita_log_open(void) {
   FILE *f;
   sceIoMkdir(VITA_DATA_DIR, 0777);
-  sceIoRemove(VITA_DATA_DIR "/spyro.log");
+  /* the last run's log kept beside it: the menu's RESTART NOW starts the
+   * app again (D132), and so does a player after a crash */
+  sceIoRemove(VITA_DATA_DIR "/spyro-prev.log");
+  if (sceIoRename(VITA_DATA_DIR "/spyro.log", VITA_DATA_DIR "/spyro-prev.log") < 0)
+    sceIoRemove(VITA_DATA_DIR "/spyro.log");
   s_fd = sceIoOpen(VITA_DATA_DIR "/spyro.log", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
   f = funopen(NULL, NULL, cookie_write, NULL, NULL);
   if (f) {

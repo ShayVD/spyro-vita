@@ -27,6 +27,16 @@ static uint16_t s_prev;
 
 int vita_pad_take_tap(void); /* pad.c: a tap on the front touch screen */
 
+/* The question shown in place of the rows (vita_menu_ask, D132), and its
+ * choice under the bar. */
+static const VitaMenuAsk *s_ask;
+static int s_ask_sel;
+
+void vita_menu_ask(const VitaMenuAsk *ask) {
+  s_ask = ask;
+  s_ask_sel = 0;
+}
+
 /* pad.c: a tap in the middle of the front touch screen (D46). */
 void vita_menu_request(void) { s_requested = 1; }
 
@@ -88,6 +98,27 @@ static void save(void) {
   vita_log("menu: saved%s", line);
 }
 
+void vita_menu_restart(void) {
+  save();
+  vita_log("menu: restarting the app (D132)");
+  vita_restart();
+}
+
+/* The question's panel: its text, a blank line, its choices. Returns its
+ * height. */
+static int ask_draw(uint8_t *panel) {
+  MenuRow rows[8];
+  int n = 0, i, first;
+  for (i = 0; i < 3 && s_ask->text[i]; i++)
+    rows[n].label = s_ask->text[i], rows[n++].value = "";
+  rows[n].label = "", rows[n++].value = "";
+  first = n;
+  for (i = 0; i < s_ask->nchoice; i++)
+    rows[n].label = s_ask->choice[i], rows[n++].value = s_ask->hint[i] ? s_ask->hint[i] : "";
+  menu_panel_draw(panel, s_ask->title, rows, n, first + s_ask_sel, 0, n, s_ask->footer);
+  return menu_panel_height(n);
+}
+
 /* The next row from line `sel` in direction dir, skipping headers. */
 static int step_row(const MenuOption *const *opts, int n, int sel, int dir) {
   int i;
@@ -131,6 +162,22 @@ int vita_menu_test_keys(const char *list) {
     s_keys[s_nkeys++] = k_names[k].bit;
   }
   return 0;
+}
+
+/* The lines again after a change (a row's `visible` may have changed: the
+ * 60 HZ LOGIC row, D132), the same row kept selected. Returns the count. */
+static int relayout(MenuRow *rows, const MenuOption **opts, int *sel) {
+  const MenuOption *was = opts[*sel];
+  int i, m = menu_opts_layout(k_lists, NLISTS, rows, opts, MAX_LINES);
+  for (i = 0; i < m && opts[i] != was; i++)
+    ;
+  if (i < m)
+    *sel = i;
+  else if (*sel < m) /* it went: the row now in its place (or the next) */
+    *sel = step_row(opts, m, *sel - 1, 1);
+  else /* or the last */
+    *sel = step_row(opts, m, m, -1);
+  return m;
 }
 
 /* vblank.c, at each VSync: runs the menu if it was asked for. Returns 1 if
@@ -180,6 +227,26 @@ int vita_menu_service(void) {
     }
     pressed = m & ~prev;
     prev = m;
+    if (s_ask) { /* a question (D132): its choices, or O for none */
+      int answer = -2;
+      if (pressed & (B_UP | B_DOWN))
+        s_ask_sel = (s_ask_sel + (pressed & B_UP ? s_ask->nchoice - 1 : 1)) % s_ask->nchoice, dirty = 1;
+      if (pressed & B_CROSS)
+        answer = s_ask_sel;
+      if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || vita_pad_take_tap())
+        answer = -1;
+      if (answer != -2) {
+        const VitaMenuAsk *a = s_ask;
+        s_ask = NULL;
+        vita_log("menu: \"%s\": %s", a->title, answer < 0 ? "none (O)" : a->choice[answer]);
+        a->done(answer); /* may not return: RESTART NOW */
+        n = relayout(rows, opts, &sel);
+        lines = n < MENU_PANEL_LINES ? n : MENU_PANEL_LINES;
+        h = menu_panel_height(lines);
+        dirty = 1;
+      }
+      pressed = 0;
+    }
     if (pressed & B_UP)
       sel = step_row(opts, n, sel, -1), dirty = 1;
     if (pressed & B_DOWN)
@@ -188,8 +255,17 @@ int vita_menu_service(void) {
       open = menu_opt_change(opts[sel], 1) != 2, dirty = 1;
     if (opts[sel] && (pressed & B_LEFT))
       menu_opt_change(opts[sel], -1), dirty = 1;
-    if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || vita_pad_take_tap())
+    if (pressed & (B_RIGHT | B_CROSS | B_LEFT)) { /* rows may have come or gone */
+      n = relayout(rows, opts, &sel);
+      lines = n < MENU_PANEL_LINES ? n : MENU_PANEL_LINES;
+      h = menu_panel_height(lines);
+    }
+    if (!s_ask && ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || vita_pad_take_tap()))
       open = 0; /* or a tap again */
+    if (dirty && open && s_ask) {
+      vita_video_overlay(panel, MENU_PANEL_W, ask_draw(panel));
+      dirty = 0;
+    }
     if (dirty && open) {
       for (i = 0; i < n; i++)
         if (opts[i])

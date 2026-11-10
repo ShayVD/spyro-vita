@@ -64,4 +64,8 @@ void pres_snap_fields(unsigned char *p, uint32_t n, uint32_t stride);
 extern int g_pres_audit;
 void pres_snap_audit_report(void (*log)(const char *fmt, ...));
 
+/* --pres-particles-full (tests, D132): every free particle slot of the
+ * copy made a hole (-2), as if all 256 were in use */
+extern int g_pres_particles_full;
+
 #endif

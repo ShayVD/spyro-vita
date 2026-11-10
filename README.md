@@ -142,7 +142,7 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | Section | Rows | Default |
 |---|---|---|
 | PICTURE | Widescreen 16:9 | on |
-| | 60 FPS (experimental: off / on / 60 Hz; 60 Hz takes effect at the next start) | off |
+| | 60 FPS (experimental: off / on / 60 Hz; 60 Hz starts or stops only when the game starts, so choosing it or leaving it asks whether to restart now or undo; ○ leaves it for the next start, and a 60 HZ LOGIC row says ON/OFF AT RESTART meanwhile) | off |
 | | Texture filter (off / bilinear / 3-point) | off (the PS1's sharp texels) |
 | | Perspective-correct textures | off |
 | | Sub-pixel vertices (no PS1 wobble) | off |

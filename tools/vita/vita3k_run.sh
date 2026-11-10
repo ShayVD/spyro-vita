@@ -106,7 +106,7 @@ fi
 # switches, counts: main.c).
 printf 'config_version=3\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
-rm -rf "$data/shots" "$data/spyro.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"
+rm -rf "$data/shots" "$data/spyro.log" "$data/spyro-prev.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"
 if [ -n "${PAD:-}" ]; then
   cp "$PAD" "$data/pad.txt"; cp "$PAD" "$out/pad.txt"
@@ -161,6 +161,9 @@ sleep 1
 stop_vita3k
 cp "$data/config.txt" "$out/config.txt"
 cp "$data/spyro.log" "$out/spyro.log" 2>/dev/null || echo "no spyro.log"
+# the log of a run before the app started itself again (the menu's RESTART
+# NOW, D132): the app keeps it as spyro-prev.log
+[ -f "$data/spyro-prev.log" ] && cp "$data/spyro-prev.log" "$out/spyro-prev.log"
 [ -d "$data/shots" ] && cp "$data/shots/"*.png "$out/" 2>/dev/null || true
 [ -f "$data/audio.wav" ] && cp "$data/audio.wav" "$out/"
 rm -rf "$out/save"; cp -R "$data/save" "$out/save"

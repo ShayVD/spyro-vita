@@ -262,6 +262,7 @@
 #include "../../game/present.h" /* port_present_pres_join (D126) */
 
 #include <SDL2/SDL.h>
+#include <psp2/appmgr.h>
 #include <psp2/display.h>
 #include <psp2/io/stat.h>
 #include <psp2/io/fcntl.h>
@@ -513,18 +514,46 @@ static void read_config(void) {
   }
 }
 
-void vita_exit(int res) {
+/* The presenter's frame, the render thread and the GPU done (D120). */
+static void stop_threads(const char *why) {
   unsigned long long t0 = sceKernelGetProcessTimeWide();
   int r;
   port_present_pres_join(); /* the presenter's frame first (stage 7f, D126) */
   r = vita_gpu_stop();
   int quiet = vita_gpu_meter_quiet(100000);
-  vita_log("exit: render thread %s, GPU meter %s, in %u ms (D120)",
+  vita_log("%s: render thread %s, GPU meter %s, in %u ms (D120)", why,
            r > 0 ? "stopped" : r < 0 ? "not stopped" : "none", quiet ? "quiet" : "still polling",
            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   if (r < 0)
-    vita_log("exit: sceKernelWaitThreadEnd: %08x", (unsigned)r);
+    vita_log("%s: sceKernelWaitThreadEnd: %08x", why, (unsigned)r);
+}
+
+void vita_exit(int res) {
+  stop_threads("exit");
   sceKernelExitProcess(res);
+  for (;;)
+    sceKernelDelayThread(1000000);
+}
+
+/* D132: the menu's RESTART NOW. The memory cards' files are written whole
+ * when the game asks (libmcrd.c), a save state at the main loop's top
+ * (D51), and the menu runs in the game's VSync wait: none is half written. */
+void vita_restart(void) {
+  int r;
+  stop_threads("restart");
+  vita_log("restart: loading app0:eboot.bin in this app's place (D132)");
+  vita_log_flush();
+  r = sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
+  /* 0: the system replaces this process when it is ready (Vita3K returns
+   * first); it's given 5 s before an exit */
+  if (r >= 0) {
+    int i;
+    for (i = 0; i < 50; i++)
+      sceKernelDelayThread(100000);
+  }
+  vita_log("restart: sceAppMgrLoadExec: %08x, and this app still runs: exiting instead (start "
+           "it again)", (unsigned)r);
+  sceKernelExitProcess(0); /* the threads are already stopped */
   for (;;)
     sceKernelDelayThread(1000000);
 }

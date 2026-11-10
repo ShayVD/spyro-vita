@@ -30,6 +30,12 @@
 #define DATA_LO 0x8006BBE0u
 #define MAX_MOBYS 1024
 #define PARTICLE_SPACE 0x2000
+/* and the word after it, the -1 loaders.c writes as a 257th slot's
+ * (`*(int *)(&g_Particles[256]) = -1`): with all 256 slots in use (Alloc
+ * takes one over when none is free) it is where the particles' walk stops.
+ * The copy holds it too; the region (rebasing, the fields) stays 0x2000
+ * (D132) */
+#define PARTICLE_END_WORD 4
 #define OT_BYTES 0x4000
 /* the area's first 2 MB (render_ctx.h PRES_SECTORS_AT): the buffers'
  * mirror from its start, the mobys and the particles above it */
@@ -37,6 +43,7 @@
 #define AREA_PARTICLES 0x180000u
 
 int g_pres_audit;
+int g_pres_particles_full;
 PresSnapRegion g_pres_regions[PRES_REGIONS];
 
 #if !SPYRO_PRESENTER
@@ -257,8 +264,28 @@ int pres_snap_take(int blend) {
   /* the copies */
   if (g_pres_regions[PRES_REGION_MOBYS].len)
     memcpy((void *)(area + AREA_MOBYS), g_LevelMobys, g_pres_regions[PRES_REGION_MOBYS].len);
-  if (g_pres_regions[PRES_REGION_PARTICLES].len)
+  if (g_pres_regions[PRES_REGION_PARTICLES].len) {
     memcpy((void *)(area + AREA_PARTICLES), g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
+    /* the end word (D132): without it the presenter's walk went on past the
+     * copy when every slot was in use, into the area's zeros and what lies
+     * past them, and drew from a NULL texture table entry (the Vita's crash
+     * in Gnasty Gnorc's fight, logs/t60-crash-20261110) */
+    if (in_arena(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE + PARTICLE_END_WORD))
+      memcpy((void *)(area + AREA_PARTICLES + PARTICLE_SPACE),
+             (const char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE, PARTICLE_END_WORD);
+    else
+      memset((void *)(area + AREA_PARTICLES + PARTICLE_SPACE), 0xFF, PARTICLE_END_WORD);
+  }
+  /* --pres-particles-full (tests, D132): the copy's free slots made holes,
+   * so the presenter's walk goes on past the last slot, as it does when all
+   * 256 are in use (Alloc then takes over a slot: no -1 in the space) */
+  if (g_pres_particles_full && g_pres_regions[PRES_REGION_PARTICLES].len) {
+    unsigned char *q = (unsigned char *)(area + AREA_PARTICLES) + 1; /* m_RenderType */
+    int s, end = 0;
+    for (s = 0; s < PARTICLE_SPACE / 0x20; s++, q += 0x20)
+      if (end || (signed char)*q == -1)
+        end = 1, *q = 0xFE;
+  }
   /* the presenter's OTs start empty, as the game's do (func_80016784
    * clears every bucket it links) */
   if (buf_len)
