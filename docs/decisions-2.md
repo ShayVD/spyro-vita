@@ -1492,3 +1492,24 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **US matching build:** `PSX.EXE SHA-1 OK` (`logs/r2a/matching-us.log`).
   - **The PAL disc on the host** (`--region-dev`, `logs/r2-pal-boot1/`): boots through the logos to the title flythrough at 512×256. It then crashes in the US title overlay's `TitlescreenDraw`, which draws a Moby PAL's title data doesn't have: PAL's title overlay is its own (part C or later).
   - US host checks and Vita: see the PR.
+
+## 2026-11-10 — RetroAchievements
+
+### D140. RetroAchievements: a plan, `docs/retroachievements-plan.md`, for the owner's decisions before any integration. RA's rules as written don't allow unlocks from a non-emulator client, so nothing that submits to RA ships without RA's written yes. The owner asks RA's admins first. Meanwhile the memory work (RA-2) and the core with a fake server (RA-3) can be built and checked on the host
+- **Why:** the owner wants RetroAchievements in Spyro Vita, so players can earn the existing Spyro the Dragon set (NTSC-U). Three things were unknown: RA's policy, how the set's PS1 addresses map onto native memory, and the dependency.
+- **The number:** main has up to D136. D135 is left to PAL stage R3, and R2 part B (`claude/pal-r2b`) has D139, so D137 and D138 are taken to be in flight elsewhere. This is D140.
+- **What was found** (sources and commits in the plan):
+  - **Policy:**
+    - RA's player rules untrack accounts that unlock "using methods outside hardcore-compliant emulators", with no appeals.
+    - The standalone page excludes "decompilations, recompilations, and other unofficial ports".
+    - RA's server treats an unknown user agent as `ClientSupportLevel::Unknown`: hardcore unlocks are stored as casual, and a "Warning: Unknown Emulator" entry is added to the game's list.
+    - Whom to ask: the site account RAdmin. The plan's Appendix A is a draft.
+  - **Identity:** the US disc's rcheevos hash is `3e9eb765a7b2912e60c30f363f0a3574`, which RA's public `r=gameid` maps to game 11279. The PAL disc maps to the same game, the Japanese disc to 6800.
+  - **Memory:**
+    - Of the set's 997 public code notes, 989 are at their PS1 offsets in the labels or the block.
+    - Eight need care: the BIOS's boot path in kernel RAM (five notes), the executable's `"DRAGON X"` marker and the Crash demo byte (two), and libetc's vblank counter (one).
+    - Pointer words hold host addresses in the native build, so the read callback translates them back.
+    - The set's own logic needs a login to read, so stage RA-1 gets the exact list with the owner's account.
+  - **Frames:** RA evaluates once per PS1 vblank (as emulators do: the set's timers count vblanks), not once per logic tick.
+- **Added:** `tools/ra/ra_addrs.py`. It sorts a set's addresses (from code notes, or from patch data) by where they live in the port. Neither input is committed; both are RA's data.
+- **Not done:** no rcheevos, no networking and no integration code; they wait for the owner's decisions (plan §7). Nothing was sent to RA except the public, unauthenticated lookups, with a research user agent that names no emulator.
