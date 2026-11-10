@@ -20,6 +20,7 @@
  * unit instead, linked as <name>_gen, for A/B tests. */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 
+#include "region.h"
 #include "common.h"
 
 #include "collision.h"
@@ -962,6 +963,8 @@ static void FloorTerrain(int x, int y, int z, int last, int *floor, int camera) 
         continue;
       *floor = height;
       if (camera) {
+        if (REGION_IS(PAL)) /* PAL keeps the floor's normal too (PAL 0x800538B4, D135) */
+          g_CollisionNormal = n;
         D_80075844 = tc->m_TriangleOcclusionAssignment[idx];
         continue;
       }

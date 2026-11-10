@@ -1,0 +1,830 @@
+--- a/include/initialization.h
++++ b/include/initialization.h
+@@ -8,3 +8,6 @@ void func_8001277C(void);
+ void Initialize(void);
+ 
++/// @brief PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D135)
++void ClearFrameBuffersPal(void);
++
+ #endif // !__INITIALIZE_H
+--- a/include/region.h
++++ b/include/region.h
+@@ -29,3 +29,21 @@ extern int g_RegionTiming; /* 1: PAL's own 50 Hz constants (RT's pal) */
+ #endif
+ 
++/* Code and data only PAL has (D135): a matching build compiles them for PAL
++ * alone, so the US build's SHA-1 doesn't move; the port has them always. */
++#ifdef REGION
++#define REGION_HAS_PAL (REGION == REGION_PAL)
++#define REGION_HAS_US (REGION != REGION_PAL) /* US code PAL replaced */
++#else
++#define REGION_HAS_PAL 1
++#define REGION_HAS_US 1
++#endif
++
++/* PAL (docs/regions-plan.md §3.2-§3.3): the language the title screen set,
++ * 0 English, 1 French, 2 German, 3 Spanish, 4 Italian (PAL 0x8007C0CC), and
++ * the screen position the pause menu sets (PAL 0x8007B74C, 0x8007B750;
++ * 4 and 16 at start). US and JP keep 0 and never read them. */
++extern int g_Language;
++extern int g_ScreenOffsetX;
++extern int g_ScreenOffsetY;
++
+ #endif
+--- a/include/wad.h
++++ b/include/wad.h
+@@ -2,4 +2,20 @@
+ #define __WAD_H_
+ 
++#include "region.h"
++
++/* PAL (D135, docs/regions-plan.md §2.3, §3.4): the WAD header has 16
++ * cutscene slots (the title's, then intro, outro 1 and outro 2 for each of
++ * the five languages) and a level header 5 x 6 dragon slots, language major.
++ * The PAL matching build has PAL's shapes. The port keeps the US shapes (the
++ * labels are PS1 RAM's) and holds PAL's slots beside them
++ * (src/game/region_game.c): read them through these. */
++#if defined(REGION) && REGION == REGION_PAL
++#define WAD_CUTSCENE_SLOTS 16
++#define LEVEL_DRAGONS OffsetLength m_Dragons[5][6]
++#else
++#define WAD_CUTSCENE_SLOTS 4
++#define LEVEL_DRAGONS OffsetLength m_Dragons[6]
++#endif
++
+ typedef struct {
+   int m_Offset;
+@@ -21,5 +37,5 @@ extern struct {
+   OffsetLength m_TitleScreenOverlay;
+ 
+-  OffsetLength m_CutsceneData[4]; // CutsceneType
++  OffsetLength m_CutsceneData[WAD_CUTSCENE_SLOTS]; // CutsceneType
+ 
+   OffsetLength m_GameOverSkybox; // Skybox used on the game over screen
+@@ -47,5 +63,5 @@ typedef struct {
+   int m_SceneOffset;
+   int m_SceneSize;
+-  OffsetLength m_Dragons[6];
++  LEVEL_DRAGONS;
+   int m_ModelOffsets[64];
+   short m_ModelIndices[64];
+@@ -54,3 +70,38 @@ typedef struct {
+ extern LevelHeader g_LevelHeader;
+ 
++/* PAL's intros are slots 1, 4, 7, 10 and 13 (1 + language * 3) */
++#define CUTSCENE_IS_INTRO(i)                                                   \
++  RV((i) == Cutscene_Intro, (i) != 0 && ((i) - 1) % 3 == 0, (i) == Cutscene_Intro)
++/* the endings, slots 2 and 3, PAL's 2, 3, 5, 6, ... */
++#define CUTSCENE_IS_OUTRO(i) RV((i) >= Cutscene_Outro1, (i) != 0 && ((i) - 1) % 3 > 0, (i) >= Cutscene_Outro1)
++#define CUTSCENE_IS_OUTRO2(i)                                                  \
++  RV((i) == Cutscene_Outro2, ((i) - 1) % 3 == 2, (i) == Cutscene_Outro2)
++
++#ifdef SPYRO_PORT
++extern OffsetLength g_WadCutscenesPal[16];
++extern OffsetLength g_LevelDragonsPal[5][6];
++void PortWadHeader(void *raw);
++void PortLevelHeader(void *raw);
++#define WAD_CUTSCENE(i) (*(REGION_IS(PAL) ? &g_WadCutscenesPal[i] : &g_WadHeader.m_CutsceneData[i]))
++#define LEVEL_DRAGON_PTR(i) (REGION_IS(PAL) ? &g_LevelDragonsPal[g_Language][i] : &g_LevelHeader.m_Dragons[i])
++/* PAL's per-cutscene tables have a slot each (PAL 0x8007457C, 0x800745BC),
++ * read from the player's executable (src/game/region_data.c) */
++void *PortRegionData(unsigned pal_addr);
++#define CUTSCENE_VRAM_SIZES (REGION_IS(PAL) ? (int *)PortRegionData(0x8007457C) : D_8006EE5C)
++#define CUTSCENE_PITCHES (REGION_IS(PAL) ? (int *)PortRegionData(0x800745BC) : g_CutscenePitchTable)
++#define WAD_HEADER_COPY(src) PortWadHeader(src)
++#define LEVEL_HEADER_COPY(src) PortLevelHeader(src)
++#else
++#define WAD_CUTSCENE(i) g_WadHeader.m_CutsceneData[i]
++#if REGION == REGION_PAL
++#define LEVEL_DRAGON_PTR(i) (&g_LevelHeader.m_Dragons[g_Language][i])
++#else
++#define LEVEL_DRAGON_PTR(i) (&g_LevelHeader.m_Dragons[i])
++#endif
++#define CUTSCENE_VRAM_SIZES D_8006EE5C
++#define CUTSCENE_PITCHES g_CutscenePitchTable
++#define WAD_HEADER_COPY(src) Memcpy(&g_WadHeader, (src), sizeof(g_WadHeader))
++#define LEVEL_HEADER_COPY(src) Memcpy(&g_LevelHeader, (src), sizeof(g_LevelHeader))
++#endif
++
+ #endif
+--- a/src/cheats.c
++++ b/src/cheats.c
+@@ -1,3 +1,4 @@
+ #include "cheats.h"
++#include "region.h"
+ #include "camera.h"
+ #include "common.h"
+@@ -175,4 +176,5 @@ void CheatResetBuffer(void) {
+ 
+ // Does the level warp cheat (which doesn't exist in the final game)
++#if REGION_HAS_US // PAL has no level-warp code (D135); the port's menu keeps it
+ void CheatProcessLevelWarp(void) {
+   int level;
+@@ -252,4 +254,5 @@ void CheatProcessLevelWarp(void) {
+   }
+ }
++#endif
+ 
+ // Applies the cheat effect based on the input id
+--- a/src/gamestates/init.c
++++ b/src/gamestates/init.c
+@@ -25,4 +25,5 @@
+ #include "titlescreen.h"
+ #include "variables.h"
++#include "wad.h"
+ 
+ extern int D_80075720; // Selected menu item index
+@@ -249,4 +250,12 @@ void func_8002C924(Moby *pMoby) {
+       // Replace the cutscene with the second one
+       props->m_CutsceneId = 2;
++      if (REGION_IS(PAL)) {
++        // PAL: the four words after m_CutsceneTicks, one per language
++        // after English, for the second cutscene (D135)
++        ((int *)props)[17] = 14;
++        ((int *)props)[18] = 30;
++        ((int *)props)[19] = 20;
++        ((int *)props)[20] = 30;
++      }
+     }
+   }
+@@ -272,4 +281,10 @@ void func_8002C924(Moby *pMoby) {
+ 
+       props->m_NameIndex = 16;
++      if (REGION_IS(PAL)) {
++        ((int *)props)[17] = 26;
++        ((int *)props)[18] = 40;
++        ((int *)props)[19] = 40;
++        ((int *)props)[20] = 40;
++      }
+     }
+   }
+@@ -592,11 +607,22 @@ void func_8002D170(void) {
+ void InitCreditsSequence(int pLoadSharedModels) {
+   char _pad[32]; // Stack padding to match original 72-byte frame
++#if REGION_HAS_US
+   RECT rect;
++#endif
+   int creditsType;
+ 
+   // Clear the entire framebuffer to black
+-  setRECT(&rect, 0, 0, 512, 480);
+-  ClearImage(&rect, 0, 0, 0);
+-  DrawSync(0);
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    ClearFrameBuffersPal(); // PAL: 512x256 twice (D135)
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) {
++    setRECT(&rect, 0, 0, 512, 480);
++    ClearImage(&rect, 0, 0, 0);
++    DrawSync(0);
++  }
++#endif
+ 
+   // Stop all 24 SPU voice channels, clear moby sound refs, and stop CD music
+@@ -669,5 +695,5 @@ void StartCutscenePlayback(void) {
+ 
+   // Intro cutscene special handling: skip low-poly world rendering
+-  if (cutsceneIdx == 1) {
++  if (CUTSCENE_IS_INTRO(RV(cutsceneIdx, g_CutsceneIdx, cutsceneIdx))) {
+     g_SkipLowPolyWorld = 1;
+   }
+@@ -682,5 +708,5 @@ void StartCutscenePlayback(void) {
+   g_Spu.m_SoundDefinitions->unk_0x8 = 0x50;  // Unused?
+   g_Spu.m_SoundDefinitions->m_Pitch =
+-      g_CutscenePitchTable[cutsceneIdx];         // Cutscene-specific pitch
++      CUTSCENE_PITCHES[RV(cutsceneIdx, g_CutsceneIdx, cutsceneIdx)]; // Cutscene-specific pitch
+   g_Spu.m_SoundDefinitions->m_PitchVariance = 0; // No pitch randomization
+   g_Spu.m_SoundDefinitions->m_PitchMultiplier = 0;
+@@ -715,11 +741,38 @@ void StartCutscenePlayback(void) {
+  */
+ void EndCutscenePlayback(void) {
++#if REGION_HAS_US
+   RECT rc;
++#endif
++#if REGION_HAS_PAL
++  // PAL: slot 1 + language * 3 + 0 is an intro, + 1 outro 1, + 2 outro 2
++  int kind;
++
++  if (REGION_IS(PAL)) {
++    if (g_CutsceneIdx == 0) {
++      return;
++    }
++    kind = (g_CutsceneIdx - 1) % 3;
++  } else {
++    kind = g_CutsceneIdx;
++  }
++#define CUTSCENE_KIND kind
++#else
++#define CUTSCENE_KIND g_CutsceneIdx
++#endif
+ 
+-  if (g_CutsceneIdx == 1) {
++  if (CUTSCENE_KIND == RV(1, 0, 1)) {
+     // clear the screen
+-    setRECT(&rc, 0, 0, 0x200, 0x1E0);
+-    ClearImage(&rc, 0U, 0U, 0U);
+-    DrawSync(0);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      ClearFrameBuffersPal();
++    }
++#endif
++#if REGION_HAS_US
++    if (!REGION_IS(PAL)) {
++      setRECT(&rc, 0, 0, 0x200, 0x1E0);
++      ClearImage(&rc, 0U, 0U, 0U);
++      DrawSync(0);
++    }
++#endif
+ 
+     // stop all sounds
+@@ -744,9 +797,9 @@ void EndCutscenePlayback(void) {
+     g_LevelId = 10;
+     g_StateSwitch = 1;
+-  } else if (g_CutsceneIdx == 2) {
++  } else if (CUTSCENE_KIND == RV(2, 1, 2)) {
+     // play credits 1
+     InitCreditsSequence(0);
+     g_StateSwitch = 1;
+-  } else if (g_CutsceneIdx == 3) {
++  } else if (CUTSCENE_KIND == RV(3, 2, 3)) {
+     // play credits 2
+     g_CreditsSequence = 10;
+@@ -754,3 +807,4 @@ void EndCutscenePlayback(void) {
+     g_StateSwitch = 1;
+   }
++#undef CUTSCENE_KIND
+ }
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -27,4 +27,5 @@
+ #include "titlescreen.h"
+ #include "variables.h"
++#include "region.h"
+ #include "wad.h"
+ 
+@@ -475,6 +476,6 @@ void func_8002EB2C(void) {
+ #endif
+ 
+-  // Warp code handling takes priority
+-  if (g_LevelCheatActive) {
++  // Warp code handling takes priority (PAL has no level-warp code, D135)
++  if (!REGION_IS(PAL) && g_LevelCheatActive) {
+     CheatProcessLevelWarp();
+     return;
+@@ -977,7 +978,10 @@ int func_80032AB0(void) {
+ #endif
+ 
+-  g_TitlescreenState.m_Mode = TSM_Menu;
+-  g_TitlescreenState.m_SubState = TS_SubState_LoadMemCards;
+-  g_TitlescreenState.m_State = TSS_Setup;
++  // PAL: its title overlay's own mode 0, sub-state 7 (D135)
++  g_TitlescreenState.m_Mode = RV(TSM_Menu, 0, TSM_Menu);
++  g_TitlescreenState.m_SubState = RV(TS_SubState_LoadMemCards, 7, TS_SubState_LoadMemCards);
++  if (!REGION_IS(PAL)) {
++    g_TitlescreenState.m_State = TSS_Setup;
++  }
+   return MemCardSync(McSyncMode_Sync,
+                      (void *)&g_TitlescreenState.m_CardCompletedFunc,
+@@ -1005,7 +1009,12 @@ int func_80032AB0(void) {
+  * - TSD_DemoLevel: Loads level from g_DemoLevelIds table
+  */
++// The flyby's height: PAL's is higher and wider, for its 256 lines (D135)
++#define FLYBY_Z(s) RV(((s) >> 1) + 0x2980, (s) * 3 / 4 + 0x2AA0, ((s) >> 1) + 0x2980)
++
+ void GamestateCutsceneTransition(void) {
+   Vector3D tempPos;
++#if REGION_HAS_US
+   RECT rect;
++#endif
+   int tick;
+   int angle;
+@@ -1019,8 +1028,15 @@ void GamestateCutsceneTransition(void) {
+     SpuUpdate();
+     g_TitlescreenState.m_State = TSS_Loading;
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: the screen position the pause menu sets (D135)
++      g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
++      g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
++    }
++#endif
+ 
+     if (g_TitlescreenState.m_DemoType == TSD_Cutscene) {
+       // Cutscene mode
+-      g_CutsceneIdx = 1;
++      g_CutsceneIdx = RV(1, g_Language * 3 + 1, 1); // PAL: the language's intro
+       g_LoadStage = 0;
+       g_Buffers.m_CopyBuf = g_OverlaySpacePointer;
+@@ -1059,5 +1075,5 @@ void GamestateCutsceneTransition(void) {
+     g_Spyro.m_Position.x = 0x2780;
+     g_Spyro.m_Position.y = 0xF00;
+-    g_Spyro.m_Position.z = 0x29A0;
++    g_Spyro.m_Position.z = RV(0x29A0, 0x2AA0, 0x29A0); // PAL: 256 lines
+     g_Spyro.m_bodyAnimation = 16;
+     g_Spyro.m_nextBodyAnimation = 16;
+@@ -1097,5 +1113,5 @@ void GamestateCutsceneTransition(void) {
+           (Sin(((-g_TitlescreenState.m_Tick) << 10) / 80) >> 1) + 0xE80;
+       g_Spyro.m_Position.z =
+-          (Sin(((-g_TitlescreenState.m_Tick) << 10) / 80) >> 1) + 0x2980;
++          FLYBY_Z(Sin(((-g_TitlescreenState.m_Tick) << 10) / 80));
+     } else if (tick < 120) {
+       // Fixed position
+@@ -1119,6 +1135,5 @@ void GamestateCutsceneTransition(void) {
+           0xE80;
+       g_Spyro.m_Position.z =
+-          (Sin(((g_TitlescreenState.m_Tick - 240) << 10) / 80 + 0xC00) >> 1) +
+-          0x2980;
++          FLYBY_Z(Sin(((g_TitlescreenState.m_Tick - 240) << 10) / 80 + 0xC00));
+     } else {
+       // Final position
+@@ -1145,10 +1160,19 @@ void GamestateCutsceneTransition(void) {
+       if (g_TitlescreenState.m_Tick >= 384 && g_LoadStage == 7) {
+         // Flyby complete and cutscene data ready - finalize and start playback
+-        rect.w = 512;
+-        rect.x = 0;
+-        rect.y = 0;
+-        rect.h = 480;
+-        ClearImage(&rect, 0, 0, 0);
+-        DrawSync(0);
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          ClearFrameBuffersPal();
++        }
++#endif
++#if REGION_HAS_US
++        if (!REGION_IS(PAL)) {
++          rect.w = 512;
++          rect.x = 0;
++          rect.y = 0;
++          rect.h = 480;
++          ClearImage(&rect, 0, 0, 0);
++          DrawSync(0);
++        }
++#endif
+         g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1);
+@@ -1185,9 +1209,11 @@ void GamestateCutsceneTransition(void) {
+ /// @brief Gamestate 14 - Cutscene update
+ void GamestateCutsceneUpdate(void) {
++#if REGION_HAS_US
+   RECT rc;
++#endif
+   int duration;
+   int currentTick;
+ 
+-  if (g_CutsceneIdx >= 2) {
++  if (CUTSCENE_IS_OUTRO(g_CutsceneIdx)) {
+     if (g_CutsceneLayout->m_CurrentTick == 0) {
+       // Initial cutscene setup
+@@ -1196,7 +1222,16 @@ void GamestateCutsceneUpdate(void) {
+ 
+       // Clear screen
+-      setRECT(&rc, 0, 0, 512, 480);
+-      ClearImage(&rc, 0, 0, 0);
+-      DrawSync(0);
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        ClearFrameBuffersPal();
++      }
++#endif
++#if REGION_HAS_US
++      if (!REGION_IS(PAL)) {
++        setRECT(&rc, 0, 0, 512, 480);
++        ClearImage(&rc, 0, 0, 0);
++        DrawSync(0);
++      }
++#endif
+ 
+       g_LoadStage = 0;
+@@ -1204,5 +1239,5 @@ void GamestateCutsceneUpdate(void) {
+       g_Buffers.m_DiscCopyBuf = g_OverlaySpacePointer;
+ 
+-      if (g_CutsceneIdx == 3) {
++      if (CUTSCENE_IS_OUTRO2(g_CutsceneIdx)) {
+         g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1); // Allocate buffers with reduced space for credits 2
+@@ -1244,5 +1279,5 @@ void GamestateCutsceneUpdate(void) {
+ 
+     // Skip functionality for intro cutscene
+-    if (g_CutsceneIdx == 1) {
++    if (CUTSCENE_IS_INTRO(g_CutsceneIdx)) {
+       if (g_Pad.m_Held & (PAD_START | PAD_CROSS)) {
+         CutsceneLayout *pCutscene;
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -28,4 +28,5 @@
+ #include "variables.h"
+ #include "wad.h"
++#include "region.h"
+ 
+ #include <stdio.h>
+@@ -33,9 +34,33 @@
+ extern int _stacksize;
+ 
++#ifdef REGION
++// The matching builds name PsyQ's SetVideoMode by its US address (asm/psyq.s)
++int func_8005EB88(int mode);
++#define SetVideoMode func_8005EB88
++#endif
++
++#if REGION_HAS_PAL
++// PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D135)
++void ClearFrameBuffersPal(void) {
++  RECT rect;
++
++  setRECT(&rect, 0, 0, 512, 256);
++  ClearImage(&rect, 0, 0, 0);
++  rect.y = 256;
++  ClearImage(&rect, 0, 0, 0);
++  DrawSync(0);
++}
++#endif
++
+ // Graphics init
+ void GraphicsInitialize(void) {
++#if REGION_HAS_US
+   RECT clearRect;
++#endif
+ 
+-  SetDispMask(0);   // Disable display
++  SetDispMask(0); // Disable display
++  if (REGION_IS(PAL)) {
++    SetVideoMode(MODE_PAL); // PAL: 50 Hz, 256 lines (D135)
++  }
+   ResetGraph(0);    // Reset the GPU
+   SetGraphDebug(0); // Disable debug output
+@@ -59,4 +84,30 @@ void GraphicsInitialize(void) {
+   // When we're drawing to db 0, we want to display db 1
+   // and vice versa
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL draws and shows all 256 lines; the display's position on the TV
++    // is the pause menu's screen position (D135)
++    SetDefDrawEnv(&g_DB[0].m_DrawEnv, 0, 0, 512, 256);
++    SetDefDrawEnv(&g_DB[1].m_DrawEnv, 0, 256, 512, 256);
++    SetDefDispEnv(&g_DB[0].m_DispEnv, 0, 256, 512, 256);
++    SetDefDispEnv(&g_DB[1].m_DispEnv, 0, 0, 512, 256);
++
++    g_DB[1].m_DrawEnv.ofs[1] = 256;
++    g_DB[1].m_DispEnv.screen.h = 256;
++    g_DB[0].m_DispEnv.screen.h = 256;
++    g_DB[0].m_DrawEnv.ofs[1] = 0;
++    g_DB[0].m_DrawEnv.isbg = 1;
++    g_DB[1].m_DrawEnv.isbg = 1;
++    g_DB[0].m_DrawEnv.dtd = 1;
++    g_DB[1].m_DrawEnv.dtd = 1;
++    g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
++    g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
++
++    ClearFrameBuffersPal();
++    SetDispMask(1);
++    return;
++  }
++#endif
++#if REGION_HAS_US
+   SetDefDrawEnv(&g_DB[0].m_DrawEnv, 0, 8, 512, 224);
+   SetDefDrawEnv(&g_DB[1].m_DrawEnv, 0, 248, 512, 224);
+@@ -77,4 +128,5 @@ void GraphicsInitialize(void) {
+   DrawSync(0);    // Wait for the GPU to finish
+   SetDispMask(1); // Enable display
++#endif
+ }
+ 
+@@ -133,5 +185,5 @@ void CDInitialize(void) {
+ void WadInitialize(void) {
+   // TODO: lba.h from mkpsxiso
+-  g_CdState.m_WadSector = 37;
++  g_CdState.m_WadSector = RV(37, 500, 500);
+ 
+   // Read the WAD header into overlay space
+@@ -139,5 +191,5 @@ void WadInitialize(void) {
+ 
+   // Copy the WAD header to the global struct
+-  Memcpy(&g_WadHeader, g_OverlaySpacePointer, sizeof(g_WadHeader));
++  WAD_HEADER_COPY(g_OverlaySpacePointer);
+ }
+ 
+@@ -242,6 +294,11 @@ extern int g_port_skip_logos;
+ // Init function
+ void Initialize(void) {
++#if REGION_HAS_US
+   RECT frameRect;
+   RECT pad;
++#else
++  RECT pad; // PAL: the frame's top and bottom lines (D135)
++  RECT frameRect;
++#endif
+   char *levelVram;
+   char *universalImage;
+@@ -269,5 +326,5 @@ void Initialize(void) {
+ 
+   InitGeom();
+-  SetGeomOffset(256, 120); // Set the screen center
++  SetGeomOffset(256, RV(120, 128, 120)); // Set the screen center (PAL: 256 lines)
+   SetGeomScreen(341);      // Set the FOV
+ 
+@@ -277,4 +334,13 @@ void Initialize(void) {
+   g_Buffers.m_DiscCopyBuf = Terminator_titlescreen_code;
+ 
++  if (REGION_IS(PAL)) {
++    // PAL shows the logos 8 lines down its 256: clear the 8 above and below
++    setRECT(&pad, 0, 0, 768, 8);
++    ClearImage(&pad, 0, 0, 0);
++    pad.y = 248;
++    ClearImage(&pad, 0, 0, 0);
++    DrawSync(0);
++  }
++
+   frameCountStart = VSync(-1); // Get the frame count
+ 
+@@ -293,5 +359,5 @@ void Initialize(void) {
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf,
+                   i * blend_step - blend_start);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
+@@ -306,9 +372,8 @@ void Initialize(void) {
+ 
+   CDLoadSync(g_CdState.m_WadSector, g_OverlaySpacePointer, 2048,
+-             g_WadHeader.m_CutsceneData[Cutscene_Titlescreen].m_Offset,
++             WAD_CUTSCENE(Cutscene_Titlescreen).m_Offset,
+              600); // Load titlescreen_data.wad's header
+ 
+-  Memcpy(&g_LevelHeader, g_OverlaySpacePointer,
+-         sizeof(g_LevelHeader)); // Copy it to the header struct
++  LEVEL_HEADER_COPY(g_OverlaySpacePointer); // Copy it to the header struct
+ 
+   levelVram = (char *)PSX_ADDR(0x80200000) - _stacksize - 0x40000;
+@@ -316,5 +381,5 @@ void Initialize(void) {
+   CDLoadSync(g_CdState.m_WadSector, levelVram, 0x40000,
+              g_LevelHeader.m_VramSramOffset +
+-                 g_WadHeader.m_CutsceneData[Cutscene_Titlescreen].m_Offset,
++                 WAD_CUTSCENE(Cutscene_Titlescreen).m_Offset,
+              600); // Load the titlescreen VRAM
+ 
+@@ -342,5 +407,5 @@ void Initialize(void) {
+     // Decompress the image
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
+@@ -358,5 +423,5 @@ void Initialize(void) {
+     func_80017F24(universalImage, universalImage - image_size,
+                   k * blend_step - blend_start);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, (u_long *)(universalImage - image_size));
+     DrawSync(0);
+@@ -383,5 +448,5 @@ void Initialize(void) {
+     func_80017F24(universalImage, universalImage - image_size,
+                   -(l + 1) * blend_step);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, (u_long *)(universalImage - image_size));
+     DrawSync(0);
+@@ -398,7 +463,11 @@ void Initialize(void) {
+   PutDispEnv(&g_DB[1].m_DispEnv);
+ 
+-  setRECT(&pad, 0, 0, 512, 480); // 480..?
+-  ClearImage(&pad, 0, 0, 0);
+-  DrawSync(0);
++  if (REGION_IS(PAL)) {
++    ClearFrameBuffersPal();
++  } else {
++    setRECT(&pad, 0, 0, 512, 480); // 480..?
++    ClearImage(&pad, 0, 0, 0);
++    DrawSync(0);
++  }
+ 
+   // Enable display again
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -860,5 +860,5 @@ void LoadCutscene(void) {
+     // Load the level header from disc
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_CopyBuf, 2048,
+-                g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset, 600);
++                WAD_CUTSCENE(g_CutsceneIdx).m_Offset, 600);
+ 
+     g_LoadStage = 1;
+@@ -867,11 +867,11 @@ void LoadCutscene(void) {
+ 
+     // Copy the level header to the global struct
+-    Memcpy(&g_LevelHeader, g_Buffers.m_CopyBuf, sizeof(g_LevelHeader));
++    LEVEL_HEADER_COPY(g_Buffers.m_CopyBuf);
+ 
+     // Load the VRAM for the cutscene from disc
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_CopyBuf,
+-                D_8006EE5C[g_CutsceneIdx],
++                CUTSCENE_VRAM_SIZES[g_CutsceneIdx],
+                 g_LevelHeader.m_VramSramOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -882,5 +882,5 @@ void LoadCutscene(void) {
+     // Load the cutscene VRAM from the buffer into VRAM
+     // The shift for is dividing by 1024, because every line is 1024 bytes
+-    setRECT(&r, 512, 0, 512, D_8006EE5C[g_CutsceneIdx] >> 10);
++    setRECT(&r, 512, 0, 512, CUTSCENE_VRAM_SIZES[g_CutsceneIdx] >> 10);
+     LoadImage(&r, g_Buffers.m_CopyBuf);
+ 
+@@ -893,5 +893,5 @@ void LoadCutscene(void) {
+                 g_LevelHeader.m_VramSramSize - 0x80000,
+                 g_LevelHeader.m_VramSramOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset +
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset +
+                     0x80000,
+                 600);
+@@ -915,5 +915,5 @@ void LoadCutscene(void) {
+                 g_LevelHeader.m_DataSize,
+                 g_LevelHeader.m_DataOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -928,5 +928,5 @@ void LoadCutscene(void) {
+     g_Cyclorama = g_NewCyclorama;
+ 
+-    if (g_CutsceneIdx == Cutscene_Intro) {
++    if (CUTSCENE_IS_INTRO(g_CutsceneIdx)) {
+ 
+       dataSize = g_LevelHeader.m_ModelDataSize - 0x60000;
+@@ -941,5 +941,5 @@ void LoadCutscene(void) {
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_ModelData, dataSize,
+                 g_LevelHeader.m_ModelDataOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -955,5 +955,5 @@ void LoadCutscene(void) {
+         0x60000,
+         g_LevelHeader.m_ModelDataOffset + g_LevelHeader.m_ModelDataSize -
+-            0x60000 + g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++            0x60000 + WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+         600);
+ 
+@@ -979,5 +979,5 @@ void LoadCutscene(void) {
+                 g_Buffers.m_LevelSceneSize,
+                 g_LevelHeader.m_SceneOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -1033,4 +1033,12 @@ void LoadDragonCutscene(void) {
+   int x;
+ 
++#if REGION_HAS_PAL
++  // PAL: the dragon's slot in the level header's language (D135)
++  OffsetLength *dragon;
++#define DRAGON (*dragon)
++#else
++#define DRAGON g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx]
++#endif
++
+   // Wait for the CD subsystem to finish loading
+   CDLoadTime();
+@@ -1040,4 +1048,8 @@ void LoadDragonCutscene(void) {
+     return;
+ 
++#if REGION_HAS_PAL
++  dragon = LEVEL_DRAGON_PTR(g_DragonCutscene.m_CutsceneIdx);
++#endif
++
+   switch (g_DragonCutscene.m_Stage) {
+   case 0: // Prepare to load dragon cutscene data, compute lengths and overflow
+@@ -1052,8 +1064,8 @@ void LoadDragonCutscene(void) {
+ 
+     // Full read if it fits
+-    if (g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length <=
++    if (DRAGON.m_Length <=
+         modelSpaceLeft) {
+       g_DragonCutscene.m_LoadLength =
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length;
++          DRAGON.m_Length;
+       g_DragonCutscene.m_HasOverflow = 0;
+     } else {
+@@ -1070,5 +1082,5 @@ void LoadDragonCutscene(void) {
+         g_CdState.m_WadSector, g_Buffers.m_ModelData,
+         g_DragonCutscene.m_LoadLength,
+-        g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Offset +
++        DRAGON.m_Offset +
+             g_WadHeader.m_LevelEntry[g_LevelIndex].m_Data.m_Offset,
+         600);
+@@ -1129,7 +1141,7 @@ void LoadDragonCutscene(void) {
+           (char *)g_Buffers.m_ModelData + g_DragonCutscene.m_LoadLength -
+               g_DragonCutscene.m_Header.m_DragonModel.m_Offset,
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length -
++          DRAGON.m_Length -
+               g_DragonCutscene.m_LoadLength,
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Offset +
++          DRAGON.m_Offset +
+               g_WadHeader.m_LevelEntry[g_LevelIndex].m_Data.m_Offset +
+               g_DragonCutscene.m_LoadLength,
+@@ -1319,4 +1331,5 @@ void LoadDragonCutscene(void) {
+     break;
+   }
++#undef DRAGON
+ }
+ 
+@@ -1465,5 +1478,5 @@ void LoadLevel(int pArg) {
+   case 4: // Place header and start loading VRAM
+ 
+-    Memcpy(&g_LevelHeader, g_Buffers.m_DiscCopyBuf, sizeof(g_LevelHeader));
++    LEVEL_HEADER_COPY(g_Buffers.m_DiscCopyBuf);
+ 
+     // Load the 512x512 VRAM image
+--- a/src/main.c
++++ b/src/main.c
+@@ -8,4 +8,12 @@
+ #include <stdio.h>
+ 
++#if defined(REGION) && REGION == 1
++// PAL's (include/region.h, D135), in the PAL matching build only; the port's
++// are in src/game/region_game.c
++int g_Language;
++int g_ScreenOffsetX = 4;
++int g_ScreenOffsetY = 16;
++#endif
++
+ // These ARE in this file!
+ u_char g_PadMutex;
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -11,4 +11,5 @@
+ #include "moby.h"
+ #include "moby_helpers.h"
++#include "region.h"
+ #include "overlay_pointers.h"
+ #include "renderers.h"
+@@ -671,4 +672,9 @@ int func_80039398(Moby *pMoby, int distance, int mobyCollisionRadius,
+     }
+     VecCopy(&newPos, &g_CollisionPoint);
++    if (REGION_IS(PAL)) {
++      // PAL: test again from the corrected point (D135)
++      ColSphere(&newPos, collisionRadius, collisionRadius);
++      VecCopy(&newPos, &g_CollisionPoint);
++    }
+   }
+ 
+@@ -732,4 +738,7 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+   Vector3D newPos;
+   int floorZ;
++#if REGION_HAS_PAL
++  int result = 0; // PAL: 4 when the move slid along a wall (D135)
++#endif
+ 
+   if (D_800756C4 == 3) {
+@@ -762,4 +771,12 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+     }
+     VecCopy(&newPos, &g_CollisionPoint);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: test again from the corrected point, and tell the caller
++      ColSphere(&newPos, collisionRadius, collisionRadius);
++      VecCopy(&newPos, &g_CollisionPoint);
++      result = 4;
++    }
++#endif
+   }
+ 
+@@ -798,5 +815,9 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+ 
+   func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  #if REGION_HAS_PAL
++  return result;
++#else
+   return 0;
++#endif
+ }
+ 
+@@ -852,4 +873,13 @@ int MobyMoveWithGravity(Moby *pMoby, int *pHorizontalSpeed, int pAngle,
+     result = MobyMove(pMoby, pAngle, *pHorizontalSpeed, mobyCollisionRadius,
+                       500, flags);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL) && result == 4) {
++      // PAL: sliding along a steep wall costs a quarter of the speed (D135)
++      int slope = Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0);
++      if (slope >= 36 && slope <= 220 && *pHorizontalSpeed > 0) {
++        *pHorizontalSpeed = *pHorizontalSpeed * 3 / 4;
++      }
++    }
++#endif
+     *pHorizontalSpeed -= pDeceleration;
+     if (*pHorizontalSpeed < 0) {
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -914,5 +914,7 @@ void UpdateSlopeFloorCollision(void) {
+   // When airborne and not idle, try a simple vertical raycast
+   // This catches cases where the rotated ray missed but floor exists
+-  if (g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
++  // PAL: not in states 11 and 2 (D135)
++  if ((!REGION_IS(PAL) || (g_Spyro.m_State != 11 && g_Spyro.m_State != 2)) &&
++      g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
+     // Axis-aligned vertical ray (no rotation)
+     vec1.z = -0x104;

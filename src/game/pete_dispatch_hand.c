@@ -18,6 +18,7 @@
 #include "math.h"
 #include "overlay_pointers.h"
 #include "rand.h"
+#include "region.h"
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
@@ -241,7 +242,13 @@ void func_80047B60(void) {
         UpdateFlightCeiling();
     }
     CheckWallsUnlessAgainstOne();
-    VecCopy(&g_Spyro.m_Physics.m_Acceleration, &g_Spyro.m_Physics.m_TrueVelocity);
+    if (REGION_IS(PAL)) {
+      /* PAL keeps the vertical acceleration (PAL 0x8004D6F0, D135) */
+      g_Spyro.m_Physics.m_Acceleration.x = g_Spyro.m_Physics.m_TrueVelocity.x;
+      g_Spyro.m_Physics.m_Acceleration.y = g_Spyro.m_Physics.m_TrueVelocity.y;
+    } else {
+      VecCopy(&g_Spyro.m_Physics.m_Acceleration, &g_Spyro.m_Physics.m_TrueVelocity);
+    }
     break;
 
   case 23:
