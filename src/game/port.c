@@ -2,6 +2,8 @@
  * (docs/porting-plan.md §4.3): the parts of PS1 memory the game expects at
  * fixed places, then the game. */
 #include "psx_arena.h"
+#include "psx_region.h"
+#include "region_data.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -10,6 +12,7 @@
 #include <string.h>
 
 extern void spyro_decomp_main(void);
+void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 extern void psx_overlays_init(void);
 extern uint32_t g_mips_sp;
 extern char D_8006BBE0[];               /* OT terminator primitive (order_table.c) */
@@ -108,6 +111,15 @@ void spyro_main(void) {
 #endif
   scratch_relocs();
   render_ctx_init(); /* the presenter's tables (stage 7d, D123) */
+  if (region_map(g_Region)) {
+    /* PAL's text, tables and music tables, from the player's own executable
+     * (D133), once the game's memory is in place: the music tables go over
+     * the US labels (D134) */
+    RegionDataStats st;
+    char err[200];
+    if (region_data_load_disc(1, &st, err, sizeof err) != 0)
+      PortFatal("%s's data: %s", psx_region()->serial, err);
+  }
 #if SPYRO_NATIVE_MEM
   /* D100: no mips2c stack in the arena; since D127 (the register-file
    * renderers gone) no code stores below $sp either, so g_mips_sp stays 0. */

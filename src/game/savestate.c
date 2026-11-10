@@ -24,6 +24,7 @@
 #include "psx_state.h"
 #include "psx_walk.h"
 #include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
+#include "psx_region.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 #include <stdio.h>
@@ -100,6 +101,22 @@ static void chunk_globals(PsxStateIO *io) {
   port_cheats_state(io);
 }
 
+/* PAL's game state outside the arena (src/game/region_game.c, D134): the
+ * language, the screen position, and the WAD's and level's language slots.
+ * Empty for US and JP, whose states keep their content. */
+extern int g_Language, g_ScreenOffsetX, g_ScreenOffsetY;
+extern unsigned char g_WadCutscenesPal[16 * 8], g_LevelDragonsPal[5 * 6 * 8];
+
+static void chunk_region(PsxStateIO *io) {
+  if (g_Region != PSX_REGION_PAL)
+    return;
+  psx_state_io(io, &g_Language, sizeof g_Language);
+  psx_state_io(io, &g_ScreenOffsetX, sizeof g_ScreenOffsetX);
+  psx_state_io(io, &g_ScreenOffsetY, sizeof g_ScreenOffsetY);
+  psx_state_io(io, g_WadCutscenesPal, sizeof g_WadCutscenesPal);
+  psx_state_io(io, g_LevelDragonsPal, sizeof g_LevelDragonsPal);
+}
+
 static void chunk_gpu(PsxStateIO *io) {
   psx_state_io(io, &activeDrawEnv, sizeof activeDrawEnv);
   psx_state_io(io, &activeDispEnv, sizeof activeDispEnv);
@@ -142,6 +159,7 @@ static const struct {
     {"SPU ", chunk_spu},   {"XA  ", psx_xa_state},   {"CD  ", psx_cd_state},
     {"MCRD", psx_mcrd_state}, {"PLAT", chunk_plat},
     {"T60 ", tick60_state}, /* the mode it was made in (D130, §7.2) */
+    {"REGN", chunk_region}, /* PAL's language and slots (D134) */
 };
 #define NCHUNKS (int)(sizeof k_chunks / sizeof k_chunks[0])
 

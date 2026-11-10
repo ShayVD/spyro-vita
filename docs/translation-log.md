@@ -555,3 +555,21 @@ No new translation. `GamestateDraw_pres`'s `func_800573C8_pres` (`particles_hand
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
 | `pres_snap_take` (`src/game/pres/pres_snap.c`, port code) | the 4 bytes after the particle space copied after it in the presenter's area; the region stays 0x2000 bytes | `--pres-particles-full` (every free slot of the copy a hole): SIGSEGV in `func_800573C8_pres` before, `--pres-check` 4,553 of 4,553 frames identical after (`logs/d132/repro-*`); `pres_check_ab.sh` and `host_checks.sh` against main's files (D136) | none |
+## Stage R2, part A: PAL's headers, picture and shared fixes (2026-11-10, decisions D134)
+
+Region switches in the decomp's C (`patches/spyro-1-region/0003-pal-headers-and-picture.patch`) and in our hand C. "Exact" is a `-DREGION=1` compile of the one file compared with the PAL executable at the function's address, every bit but the relocated fields (constants included); the full `REGION=pal` build's `compare-exe-exact.txt` is the PR's check.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `GraphicsInitialize`, `WadInitialize`, `ClearFrameBuffersPal` (new, PAL 0x8001BCF0) | decomp C, `REGION_IS(PAL)` branches and `RV` | exact against PAL 0x80015E70, 0x800160F0, 0x8001BCF0 | none |
+| `Initialize` | decomp C, `RV` | against PAL 0x800163A4 | the logo hold's `210` (PAL 160) twice: R3's timing site |
+| `LoadCutscene`, `LoadDragonCutscene` | decomp C: `WAD_CUTSCENE`, `LEVEL_HEADER_COPY`, `CUTSCENE_IS_INTRO`, `LEVEL_DRAGON_PTR` | exact against PAL 0x80018180, 0x800187B4 | none |
+| `InitCreditsSequence`, `StartCutscenePlayback`, `func_8002C924` | decomp C | exact against PAL 0x8003229C, 0x8003237C, 0x80031964 | none |
+| `EndCutscenePlayback` | decomp C | against PAL 0x800324B8 | `(slot − 1) % 3`'s registers: PAL computes in `a0`, gcc 2.7.2 here in `v1`; same instructions otherwise |
+| `func_80032AB0`, `GamestateCutsceneTransition`, `GamestateCutsceneUpdate`, `func_8002EB2C` | decomp C | exact against PAL 0x80037C08, 0x80037C58, 0x80038340, 0x80033B20 | none |
+| `func_80039398`, `MobyMove`, `UpdateSlopeFloorCollision` | decomp C | exact against PAL 0x8003E5E4, 0x8003E8F8, 0x80043744 | none |
+| `MobyMoveWithGravity` | decomp C | against PAL 0x8003EBB4 | `500` (PAL 600) and `-260` (PAL −311) twice: R3's timing sites |
+| `CheatProcessLevelWarp` | left out of the PAL matching build (`REGION_HAS_US`) | PAL has none (`CheatResetBuffer` runs into `CheatApplyEffect`) | the port keeps it for its menu warp |
+| `FloorTerrain` (`collision_hand.c`, `func_8004DF24`'s camera path) | hand C: `g_CollisionNormal = n` on PAL | read against PAL 0x800538B4 (stores the normal's three words); no Redux sample yet | none known |
+| `func_80047B60`'s states 6 and 16 (`pete_dispatch_hand.c`) | hand C: x and y of the post-collision velocity on PAL, `VecCopy` on US | read against PAL 0x8004D6F0; no Redux sample yet | none known |
+| `PortWadHeader`, `PortLevelHeader`, `PortRegionData` (`src/game/region_game.c`) | port code | US: the original copies, so the US host checks; PAL: the host boots the PAL disc to the title flythrough | — |

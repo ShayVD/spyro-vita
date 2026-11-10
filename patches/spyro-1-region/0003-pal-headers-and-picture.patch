@@ -1,0 +1,3335 @@
+--- a/include/initialization.h
++++ b/include/initialization.h
+@@ -8,3 +8,6 @@ void func_8001277C(void);
+ void Initialize(void);
+ 
++/// @brief PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D134)
++void ClearFrameBuffersPal(void);
++
+ #endif // !__INITIALIZE_H
+--- a/include/region.h
++++ b/include/region.h
+@@ -29,3 +29,21 @@ extern int g_RegionTiming; /* 1: PAL's own 50 Hz constants (RT's pal) */
+ #endif
+ 
++/* Code and data only PAL has (D134): a matching build compiles them for PAL
++ * alone, so the US build's SHA-1 doesn't move; the port has them always. */
++#ifdef REGION
++#define REGION_HAS_PAL (REGION == REGION_PAL)
++#define REGION_HAS_US (REGION != REGION_PAL) /* US code PAL replaced */
++#else
++#define REGION_HAS_PAL 1
++#define REGION_HAS_US 1
++#endif
++
++/* PAL (docs/regions-plan.md §3.2-§3.3): the language the title screen set,
++ * 0 English, 1 French, 2 German, 3 Spanish, 4 Italian (PAL 0x8007C0CC), and
++ * the screen position the pause menu sets (PAL 0x8007B74C, 0x8007B750;
++ * 4 and 16 at start). US and JP keep 0 and never read them. */
++extern int g_Language;
++extern int g_ScreenOffsetX;
++extern int g_ScreenOffsetY;
++
+ #endif
+--- a/include/wad.h
++++ b/include/wad.h
+@@ -2,4 +2,20 @@
+ #define __WAD_H_
+ 
++#include "region.h"
++
++/* PAL (D134, docs/regions-plan.md §2.3, §3.4): the WAD header has 16
++ * cutscene slots (the title's, then intro, outro 1 and outro 2 for each of
++ * the five languages) and a level header 5 x 6 dragon slots, language major.
++ * The PAL matching build has PAL's shapes. The port keeps the US shapes (the
++ * labels are PS1 RAM's) and holds PAL's slots beside them
++ * (src/game/region_game.c): read them through these. */
++#if defined(REGION) && REGION == REGION_PAL
++#define WAD_CUTSCENE_SLOTS 16
++#define LEVEL_DRAGONS OffsetLength m_Dragons[5][6]
++#else
++#define WAD_CUTSCENE_SLOTS 4
++#define LEVEL_DRAGONS OffsetLength m_Dragons[6]
++#endif
++
+ typedef struct {
+   int m_Offset;
+@@ -21,5 +37,5 @@ extern struct {
+   OffsetLength m_TitleScreenOverlay;
+ 
+-  OffsetLength m_CutsceneData[4]; // CutsceneType
++  OffsetLength m_CutsceneData[WAD_CUTSCENE_SLOTS]; // CutsceneType
+ 
+   OffsetLength m_GameOverSkybox; // Skybox used on the game over screen
+@@ -47,5 +63,5 @@ typedef struct {
+   int m_SceneOffset;
+   int m_SceneSize;
+-  OffsetLength m_Dragons[6];
++  LEVEL_DRAGONS;
+   int m_ModelOffsets[64];
+   short m_ModelIndices[64];
+@@ -54,3 +70,38 @@ typedef struct {
+ extern LevelHeader g_LevelHeader;
+ 
++/* PAL's intros are slots 1, 4, 7, 10 and 13 (1 + language * 3) */
++#define CUTSCENE_IS_INTRO(i)                                                   \
++  RV((i) == Cutscene_Intro, (i) != 0 && ((i) - 1) % 3 == 0, (i) == Cutscene_Intro)
++/* the endings, slots 2 and 3, PAL's 2, 3, 5, 6, ... */
++#define CUTSCENE_IS_OUTRO(i) RV((i) >= Cutscene_Outro1, (i) != 0 && ((i) - 1) % 3 > 0, (i) >= Cutscene_Outro1)
++#define CUTSCENE_IS_OUTRO2(i)                                                  \
++  RV((i) == Cutscene_Outro2, ((i) - 1) % 3 == 2, (i) == Cutscene_Outro2)
++
++#ifdef SPYRO_PORT
++extern OffsetLength g_WadCutscenesPal[16];
++extern OffsetLength g_LevelDragonsPal[5][6];
++void PortWadHeader(void *raw);
++void PortLevelHeader(void *raw);
++#define WAD_CUTSCENE(i) (*(REGION_IS(PAL) ? &g_WadCutscenesPal[i] : &g_WadHeader.m_CutsceneData[i]))
++#define LEVEL_DRAGON_PTR(i) (REGION_IS(PAL) ? &g_LevelDragonsPal[g_Language][i] : &g_LevelHeader.m_Dragons[i])
++/* PAL's per-cutscene tables have a slot each (PAL 0x8007457C, 0x800745BC),
++ * read from the player's executable (src/game/region_data.c) */
++void *PortRegionData(unsigned pal_addr);
++#define CUTSCENE_VRAM_SIZES (REGION_IS(PAL) ? (int *)PortRegionData(0x8007457C) : D_8006EE5C)
++#define CUTSCENE_PITCHES (REGION_IS(PAL) ? (int *)PortRegionData(0x800745BC) : g_CutscenePitchTable)
++#define WAD_HEADER_COPY(src) PortWadHeader(src)
++#define LEVEL_HEADER_COPY(src) PortLevelHeader(src)
++#else
++#define WAD_CUTSCENE(i) g_WadHeader.m_CutsceneData[i]
++#if REGION == REGION_PAL
++#define LEVEL_DRAGON_PTR(i) (&g_LevelHeader.m_Dragons[g_Language][i])
++#else
++#define LEVEL_DRAGON_PTR(i) (&g_LevelHeader.m_Dragons[i])
++#endif
++#define CUTSCENE_VRAM_SIZES D_8006EE5C
++#define CUTSCENE_PITCHES g_CutscenePitchTable
++#define WAD_HEADER_COPY(src) Memcpy(&g_WadHeader, (src), sizeof(g_WadHeader))
++#define LEVEL_HEADER_COPY(src) Memcpy(&g_LevelHeader, (src), sizeof(g_LevelHeader))
++#endif
++
+ #endif
+--- a/src/cheats.c
++++ b/src/cheats.c
+@@ -1,3 +1,4 @@
+ #include "cheats.h"
++#include "region.h"
+ #include "camera.h"
+ #include "common.h"
+@@ -175,4 +176,5 @@ void CheatResetBuffer(void) {
+ 
+ // Does the level warp cheat (which doesn't exist in the final game)
++#if REGION_HAS_US // PAL has no level-warp code (D134); the port's menu keeps it
+ void CheatProcessLevelWarp(void) {
+   int level;
+@@ -252,4 +254,5 @@ void CheatProcessLevelWarp(void) {
+   }
+ }
++#endif
+ 
+ // Applies the cheat effect based on the input id
+--- a/src/gamestates/init.c
++++ b/src/gamestates/init.c
+@@ -25,4 +25,5 @@
+ #include "titlescreen.h"
+ #include "variables.h"
++#include "wad.h"
+ 
+ extern int D_80075720; // Selected menu item index
+@@ -249,4 +250,12 @@ void func_8002C924(Moby *pMoby) {
+       // Replace the cutscene with the second one
+       props->m_CutsceneId = 2;
++      if (REGION_IS(PAL)) {
++        // PAL: the four words after m_CutsceneTicks, one per language
++        // after English, for the second cutscene (D134)
++        ((int *)props)[17] = 14;
++        ((int *)props)[18] = 30;
++        ((int *)props)[19] = 20;
++        ((int *)props)[20] = 30;
++      }
+     }
+   }
+@@ -272,4 +281,10 @@ void func_8002C924(Moby *pMoby) {
+ 
+       props->m_NameIndex = 16;
++      if (REGION_IS(PAL)) {
++        ((int *)props)[17] = 26;
++        ((int *)props)[18] = 40;
++        ((int *)props)[19] = 40;
++        ((int *)props)[20] = 40;
++      }
+     }
+   }
+@@ -592,11 +607,22 @@ void func_8002D170(void) {
+ void InitCreditsSequence(int pLoadSharedModels) {
+   char _pad[32]; // Stack padding to match original 72-byte frame
++#if REGION_HAS_US
+   RECT rect;
++#endif
+   int creditsType;
+ 
+   // Clear the entire framebuffer to black
+-  setRECT(&rect, 0, 0, 512, 480);
+-  ClearImage(&rect, 0, 0, 0);
+-  DrawSync(0);
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    ClearFrameBuffersPal(); // PAL: 512x256 twice (D134)
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) {
++    setRECT(&rect, 0, 0, 512, 480);
++    ClearImage(&rect, 0, 0, 0);
++    DrawSync(0);
++  }
++#endif
+ 
+   // Stop all 24 SPU voice channels, clear moby sound refs, and stop CD music
+@@ -669,5 +695,5 @@ void StartCutscenePlayback(void) {
+ 
+   // Intro cutscene special handling: skip low-poly world rendering
+-  if (cutsceneIdx == 1) {
++  if (CUTSCENE_IS_INTRO(RV(cutsceneIdx, g_CutsceneIdx, cutsceneIdx))) {
+     g_SkipLowPolyWorld = 1;
+   }
+@@ -682,5 +708,5 @@ void StartCutscenePlayback(void) {
+   g_Spu.m_SoundDefinitions->unk_0x8 = 0x50;  // Unused?
+   g_Spu.m_SoundDefinitions->m_Pitch =
+-      g_CutscenePitchTable[cutsceneIdx];         // Cutscene-specific pitch
++      CUTSCENE_PITCHES[RV(cutsceneIdx, g_CutsceneIdx, cutsceneIdx)]; // Cutscene-specific pitch
+   g_Spu.m_SoundDefinitions->m_PitchVariance = 0; // No pitch randomization
+   g_Spu.m_SoundDefinitions->m_PitchMultiplier = 0;
+@@ -715,11 +741,38 @@ void StartCutscenePlayback(void) {
+  */
+ void EndCutscenePlayback(void) {
++#if REGION_HAS_US
+   RECT rc;
++#endif
++#if REGION_HAS_PAL
++  // PAL: slot 1 + language * 3 + 0 is an intro, + 1 outro 1, + 2 outro 2
++  int kind;
++
++  if (REGION_IS(PAL)) {
++    if (g_CutsceneIdx == 0) {
++      return;
++    }
++    kind = (g_CutsceneIdx - 1) % 3;
++  } else {
++    kind = g_CutsceneIdx;
++  }
++#define CUTSCENE_KIND kind
++#else
++#define CUTSCENE_KIND g_CutsceneIdx
++#endif
+ 
+-  if (g_CutsceneIdx == 1) {
++  if (CUTSCENE_KIND == RV(1, 0, 1)) {
+     // clear the screen
+-    setRECT(&rc, 0, 0, 0x200, 0x1E0);
+-    ClearImage(&rc, 0U, 0U, 0U);
+-    DrawSync(0);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      ClearFrameBuffersPal();
++    }
++#endif
++#if REGION_HAS_US
++    if (!REGION_IS(PAL)) {
++      setRECT(&rc, 0, 0, 0x200, 0x1E0);
++      ClearImage(&rc, 0U, 0U, 0U);
++      DrawSync(0);
++    }
++#endif
+ 
+     // stop all sounds
+@@ -744,9 +797,9 @@ void EndCutscenePlayback(void) {
+     g_LevelId = 10;
+     g_StateSwitch = 1;
+-  } else if (g_CutsceneIdx == 2) {
++  } else if (CUTSCENE_KIND == RV(2, 1, 2)) {
+     // play credits 1
+     InitCreditsSequence(0);
+     g_StateSwitch = 1;
+-  } else if (g_CutsceneIdx == 3) {
++  } else if (CUTSCENE_KIND == RV(3, 2, 3)) {
+     // play credits 2
+     g_CreditsSequence = 10;
+@@ -754,3 +807,4 @@ void EndCutscenePlayback(void) {
+     g_StateSwitch = 1;
+   }
++#undef CUTSCENE_KIND
+ }
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -27,4 +27,5 @@
+ #include "titlescreen.h"
+ #include "variables.h"
++#include "region.h"
+ #include "wad.h"
+ 
+@@ -475,6 +476,6 @@ void func_8002EB2C(void) {
+ #endif
+ 
+-  // Warp code handling takes priority
+-  if (g_LevelCheatActive) {
++  // Warp code handling takes priority (PAL has no level-warp code, D134)
++  if (!REGION_IS(PAL) && g_LevelCheatActive) {
+     CheatProcessLevelWarp();
+     return;
+@@ -977,7 +978,10 @@ int func_80032AB0(void) {
+ #endif
+ 
+-  g_TitlescreenState.m_Mode = TSM_Menu;
+-  g_TitlescreenState.m_SubState = TS_SubState_LoadMemCards;
+-  g_TitlescreenState.m_State = TSS_Setup;
++  // PAL: its title overlay's own mode 0, sub-state 7 (D134)
++  g_TitlescreenState.m_Mode = RV(TSM_Menu, 0, TSM_Menu);
++  g_TitlescreenState.m_SubState = RV(TS_SubState_LoadMemCards, 7, TS_SubState_LoadMemCards);
++  if (!REGION_IS(PAL)) {
++    g_TitlescreenState.m_State = TSS_Setup;
++  }
+   return MemCardSync(McSyncMode_Sync,
+                      (void *)&g_TitlescreenState.m_CardCompletedFunc,
+@@ -1005,7 +1009,12 @@ int func_80032AB0(void) {
+  * - TSD_DemoLevel: Loads level from g_DemoLevelIds table
+  */
++// The flyby's height: PAL's is higher and wider, for its 256 lines (D134)
++#define FLYBY_Z(s) RV(((s) >> 1) + 0x2980, (s) * 3 / 4 + 0x2AA0, ((s) >> 1) + 0x2980)
++
+ void GamestateCutsceneTransition(void) {
+   Vector3D tempPos;
++#if REGION_HAS_US
+   RECT rect;
++#endif
+   int tick;
+   int angle;
+@@ -1019,8 +1028,15 @@ void GamestateCutsceneTransition(void) {
+     SpuUpdate();
+     g_TitlescreenState.m_State = TSS_Loading;
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: the screen position the pause menu sets (D134)
++      g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
++      g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
++    }
++#endif
+ 
+     if (g_TitlescreenState.m_DemoType == TSD_Cutscene) {
+       // Cutscene mode
+-      g_CutsceneIdx = 1;
++      g_CutsceneIdx = RV(1, g_Language * 3 + 1, 1); // PAL: the language's intro
+       g_LoadStage = 0;
+       g_Buffers.m_CopyBuf = g_OverlaySpacePointer;
+@@ -1059,5 +1075,5 @@ void GamestateCutsceneTransition(void) {
+     g_Spyro.m_Position.x = 0x2780;
+     g_Spyro.m_Position.y = 0xF00;
+-    g_Spyro.m_Position.z = 0x29A0;
++    g_Spyro.m_Position.z = RV(0x29A0, 0x2AA0, 0x29A0); // PAL: 256 lines
+     g_Spyro.m_bodyAnimation = 16;
+     g_Spyro.m_nextBodyAnimation = 16;
+@@ -1097,5 +1113,5 @@ void GamestateCutsceneTransition(void) {
+           (Sin(((-g_TitlescreenState.m_Tick) << 10) / 80) >> 1) + 0xE80;
+       g_Spyro.m_Position.z =
+-          (Sin(((-g_TitlescreenState.m_Tick) << 10) / 80) >> 1) + 0x2980;
++          FLYBY_Z(Sin(((-g_TitlescreenState.m_Tick) << 10) / 80));
+     } else if (tick < 120) {
+       // Fixed position
+@@ -1119,6 +1135,5 @@ void GamestateCutsceneTransition(void) {
+           0xE80;
+       g_Spyro.m_Position.z =
+-          (Sin(((g_TitlescreenState.m_Tick - 240) << 10) / 80 + 0xC00) >> 1) +
+-          0x2980;
++          FLYBY_Z(Sin(((g_TitlescreenState.m_Tick - 240) << 10) / 80 + 0xC00));
+     } else {
+       // Final position
+@@ -1145,10 +1160,19 @@ void GamestateCutsceneTransition(void) {
+       if (g_TitlescreenState.m_Tick >= 384 && g_LoadStage == 7) {
+         // Flyby complete and cutscene data ready - finalize and start playback
+-        rect.w = 512;
+-        rect.x = 0;
+-        rect.y = 0;
+-        rect.h = 480;
+-        ClearImage(&rect, 0, 0, 0);
+-        DrawSync(0);
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          ClearFrameBuffersPal();
++        }
++#endif
++#if REGION_HAS_US
++        if (!REGION_IS(PAL)) {
++          rect.w = 512;
++          rect.x = 0;
++          rect.y = 0;
++          rect.h = 480;
++          ClearImage(&rect, 0, 0, 0);
++          DrawSync(0);
++        }
++#endif
+         g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1);
+@@ -1185,9 +1209,11 @@ void GamestateCutsceneTransition(void) {
+ /// @brief Gamestate 14 - Cutscene update
+ void GamestateCutsceneUpdate(void) {
++#if REGION_HAS_US
+   RECT rc;
++#endif
+   int duration;
+   int currentTick;
+ 
+-  if (g_CutsceneIdx >= 2) {
++  if (CUTSCENE_IS_OUTRO(g_CutsceneIdx)) {
+     if (g_CutsceneLayout->m_CurrentTick == 0) {
+       // Initial cutscene setup
+@@ -1196,7 +1222,16 @@ void GamestateCutsceneUpdate(void) {
+ 
+       // Clear screen
+-      setRECT(&rc, 0, 0, 512, 480);
+-      ClearImage(&rc, 0, 0, 0);
+-      DrawSync(0);
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        ClearFrameBuffersPal();
++      }
++#endif
++#if REGION_HAS_US
++      if (!REGION_IS(PAL)) {
++        setRECT(&rc, 0, 0, 512, 480);
++        ClearImage(&rc, 0, 0, 0);
++        DrawSync(0);
++      }
++#endif
+ 
+       g_LoadStage = 0;
+@@ -1204,5 +1239,5 @@ void GamestateCutsceneUpdate(void) {
+       g_Buffers.m_DiscCopyBuf = g_OverlaySpacePointer;
+ 
+-      if (g_CutsceneIdx == 3) {
++      if (CUTSCENE_IS_OUTRO2(g_CutsceneIdx)) {
+         g_Buffers.m_SharedAnimations = (void *)(PSX_ADDR(0x80200000) - _stacksize);
+         AllocateBuffers(1); // Allocate buffers with reduced space for credits 2
+@@ -1244,5 +1279,5 @@ void GamestateCutsceneUpdate(void) {
+ 
+     // Skip functionality for intro cutscene
+-    if (g_CutsceneIdx == 1) {
++    if (CUTSCENE_IS_INTRO(g_CutsceneIdx)) {
+       if (g_Pad.m_Held & (PAD_START | PAD_CROSS)) {
+         CutsceneLayout *pCutscene;
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -28,4 +28,5 @@
+ #include "variables.h"
+ #include "wad.h"
++#include "region.h"
+ 
+ #include <stdio.h>
+@@ -33,9 +34,33 @@
+ extern int _stacksize;
+ 
++#ifdef REGION
++// The matching builds name PsyQ's SetVideoMode by its US address (asm/psyq.s)
++int func_8005EB88(int mode);
++#define SetVideoMode func_8005EB88
++#endif
++
++#if REGION_HAS_PAL
++// PAL: clear both 512x256 frame buffers (PAL 0x8001BCF0, D134)
++void ClearFrameBuffersPal(void) {
++  RECT rect;
++
++  setRECT(&rect, 0, 0, 512, 256);
++  ClearImage(&rect, 0, 0, 0);
++  rect.y = 256;
++  ClearImage(&rect, 0, 0, 0);
++  DrawSync(0);
++}
++#endif
++
+ // Graphics init
+ void GraphicsInitialize(void) {
++#if REGION_HAS_US
+   RECT clearRect;
++#endif
+ 
+-  SetDispMask(0);   // Disable display
++  SetDispMask(0); // Disable display
++  if (REGION_IS(PAL)) {
++    SetVideoMode(MODE_PAL); // PAL: 50 Hz, 256 lines (D134)
++  }
+   ResetGraph(0);    // Reset the GPU
+   SetGraphDebug(0); // Disable debug output
+@@ -59,4 +84,30 @@ void GraphicsInitialize(void) {
+   // When we're drawing to db 0, we want to display db 1
+   // and vice versa
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL draws and shows all 256 lines; the display's position on the TV
++    // is the pause menu's screen position (D134)
++    SetDefDrawEnv(&g_DB[0].m_DrawEnv, 0, 0, 512, 256);
++    SetDefDrawEnv(&g_DB[1].m_DrawEnv, 0, 256, 512, 256);
++    SetDefDispEnv(&g_DB[0].m_DispEnv, 0, 256, 512, 256);
++    SetDefDispEnv(&g_DB[1].m_DispEnv, 0, 0, 512, 256);
++
++    g_DB[1].m_DrawEnv.ofs[1] = 256;
++    g_DB[1].m_DispEnv.screen.h = 256;
++    g_DB[0].m_DispEnv.screen.h = 256;
++    g_DB[0].m_DrawEnv.ofs[1] = 0;
++    g_DB[0].m_DrawEnv.isbg = 1;
++    g_DB[1].m_DrawEnv.isbg = 1;
++    g_DB[0].m_DrawEnv.dtd = 1;
++    g_DB[1].m_DrawEnv.dtd = 1;
++    g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
++    g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
++
++    ClearFrameBuffersPal();
++    SetDispMask(1);
++    return;
++  }
++#endif
++#if REGION_HAS_US
+   SetDefDrawEnv(&g_DB[0].m_DrawEnv, 0, 8, 512, 224);
+   SetDefDrawEnv(&g_DB[1].m_DrawEnv, 0, 248, 512, 224);
+@@ -77,4 +128,5 @@ void GraphicsInitialize(void) {
+   DrawSync(0);    // Wait for the GPU to finish
+   SetDispMask(1); // Enable display
++#endif
+ }
+ 
+@@ -133,5 +185,5 @@ void CDInitialize(void) {
+ void WadInitialize(void) {
+   // TODO: lba.h from mkpsxiso
+-  g_CdState.m_WadSector = 37;
++  g_CdState.m_WadSector = RV(37, 500, 500);
+ 
+   // Read the WAD header into overlay space
+@@ -139,5 +191,5 @@ void WadInitialize(void) {
+ 
+   // Copy the WAD header to the global struct
+-  Memcpy(&g_WadHeader, g_OverlaySpacePointer, sizeof(g_WadHeader));
++  WAD_HEADER_COPY(g_OverlaySpacePointer);
+ }
+ 
+@@ -242,6 +294,11 @@ extern int g_port_skip_logos;
+ // Init function
+ void Initialize(void) {
++#if REGION_HAS_US
+   RECT frameRect;
+   RECT pad;
++#else
++  RECT pad; // PAL: the frame's top and bottom lines (D134)
++  RECT frameRect;
++#endif
+   char *levelVram;
+   char *universalImage;
+@@ -269,5 +326,5 @@ void Initialize(void) {
+ 
+   InitGeom();
+-  SetGeomOffset(256, 120); // Set the screen center
++  SetGeomOffset(256, RV(120, 128, 120)); // Set the screen center (PAL: 256 lines)
+   SetGeomScreen(341);      // Set the FOV
+ 
+@@ -277,4 +334,13 @@ void Initialize(void) {
+   g_Buffers.m_DiscCopyBuf = Terminator_titlescreen_code;
+ 
++  if (REGION_IS(PAL)) {
++    // PAL shows the logos 8 lines down its 256: clear the 8 above and below
++    setRECT(&pad, 0, 0, 768, 8);
++    ClearImage(&pad, 0, 0, 0);
++    pad.y = 248;
++    ClearImage(&pad, 0, 0, 0);
++    DrawSync(0);
++  }
++
+   frameCountStart = VSync(-1); // Get the frame count
+ 
+@@ -293,5 +359,5 @@ void Initialize(void) {
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf,
+                   i * blend_step - blend_start);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
+@@ -306,9 +372,8 @@ void Initialize(void) {
+ 
+   CDLoadSync(g_CdState.m_WadSector, g_OverlaySpacePointer, 2048,
+-             g_WadHeader.m_CutsceneData[Cutscene_Titlescreen].m_Offset,
++             WAD_CUTSCENE(Cutscene_Titlescreen).m_Offset,
+              600); // Load titlescreen_data.wad's header
+ 
+-  Memcpy(&g_LevelHeader, g_OverlaySpacePointer,
+-         sizeof(g_LevelHeader)); // Copy it to the header struct
++  LEVEL_HEADER_COPY(g_OverlaySpacePointer); // Copy it to the header struct
+ 
+   levelVram = (char *)PSX_ADDR(0x80200000) - _stacksize - 0x40000;
+@@ -316,5 +381,5 @@ void Initialize(void) {
+   CDLoadSync(g_CdState.m_WadSector, levelVram, 0x40000,
+              g_LevelHeader.m_VramSramOffset +
+-                 g_WadHeader.m_CutsceneData[Cutscene_Titlescreen].m_Offset,
++                 WAD_CUTSCENE(Cutscene_Titlescreen).m_Offset,
+              600); // Load the titlescreen VRAM
+ 
+@@ -342,5 +407,5 @@ void Initialize(void) {
+     // Decompress the image
+     func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
+@@ -358,5 +423,5 @@ void Initialize(void) {
+     func_80017F24(universalImage, universalImage - image_size,
+                   k * blend_step - blend_start);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, (u_long *)(universalImage - image_size));
+     DrawSync(0);
+@@ -383,5 +448,5 @@ void Initialize(void) {
+     func_80017F24(universalImage, universalImage - image_size,
+                   -(l + 1) * blend_step);
+-    setRECT(&frameRect, 0, 0, rgb24_w, rgb24_h);
++    setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, (u_long *)(universalImage - image_size));
+     DrawSync(0);
+@@ -398,7 +463,11 @@ void Initialize(void) {
+   PutDispEnv(&g_DB[1].m_DispEnv);
+ 
+-  setRECT(&pad, 0, 0, 512, 480); // 480..?
+-  ClearImage(&pad, 0, 0, 0);
+-  DrawSync(0);
++  if (REGION_IS(PAL)) {
++    ClearFrameBuffersPal();
++  } else {
++    setRECT(&pad, 0, 0, 512, 480); // 480..?
++    ClearImage(&pad, 0, 0, 0);
++    DrawSync(0);
++  }
+ 
+   // Enable display again
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -860,5 +860,5 @@ void LoadCutscene(void) {
+     // Load the level header from disc
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_CopyBuf, 2048,
+-                g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset, 600);
++                WAD_CUTSCENE(g_CutsceneIdx).m_Offset, 600);
+ 
+     g_LoadStage = 1;
+@@ -867,11 +867,11 @@ void LoadCutscene(void) {
+ 
+     // Copy the level header to the global struct
+-    Memcpy(&g_LevelHeader, g_Buffers.m_CopyBuf, sizeof(g_LevelHeader));
++    LEVEL_HEADER_COPY(g_Buffers.m_CopyBuf);
+ 
+     // Load the VRAM for the cutscene from disc
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_CopyBuf,
+-                D_8006EE5C[g_CutsceneIdx],
++                CUTSCENE_VRAM_SIZES[g_CutsceneIdx],
+                 g_LevelHeader.m_VramSramOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -882,5 +882,5 @@ void LoadCutscene(void) {
+     // Load the cutscene VRAM from the buffer into VRAM
+     // The shift for is dividing by 1024, because every line is 1024 bytes
+-    setRECT(&r, 512, 0, 512, D_8006EE5C[g_CutsceneIdx] >> 10);
++    setRECT(&r, 512, 0, 512, CUTSCENE_VRAM_SIZES[g_CutsceneIdx] >> 10);
+     LoadImage(&r, g_Buffers.m_CopyBuf);
+ 
+@@ -893,5 +893,5 @@ void LoadCutscene(void) {
+                 g_LevelHeader.m_VramSramSize - 0x80000,
+                 g_LevelHeader.m_VramSramOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset +
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset +
+                     0x80000,
+                 600);
+@@ -915,5 +915,5 @@ void LoadCutscene(void) {
+                 g_LevelHeader.m_DataSize,
+                 g_LevelHeader.m_DataOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -928,5 +928,5 @@ void LoadCutscene(void) {
+     g_Cyclorama = g_NewCyclorama;
+ 
+-    if (g_CutsceneIdx == Cutscene_Intro) {
++    if (CUTSCENE_IS_INTRO(g_CutsceneIdx)) {
+ 
+       dataSize = g_LevelHeader.m_ModelDataSize - 0x60000;
+@@ -941,5 +941,5 @@ void LoadCutscene(void) {
+     CDLoadAsync(g_CdState.m_WadSector, g_Buffers.m_ModelData, dataSize,
+                 g_LevelHeader.m_ModelDataOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -955,5 +955,5 @@ void LoadCutscene(void) {
+         0x60000,
+         g_LevelHeader.m_ModelDataOffset + g_LevelHeader.m_ModelDataSize -
+-            0x60000 + g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++            0x60000 + WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+         600);
+ 
+@@ -979,5 +979,5 @@ void LoadCutscene(void) {
+                 g_Buffers.m_LevelSceneSize,
+                 g_LevelHeader.m_SceneOffset +
+-                    g_WadHeader.m_CutsceneData[g_CutsceneIdx].m_Offset,
++                    WAD_CUTSCENE(g_CutsceneIdx).m_Offset,
+                 600);
+ 
+@@ -1033,4 +1033,12 @@ void LoadDragonCutscene(void) {
+   int x;
+ 
++#if REGION_HAS_PAL
++  // PAL: the dragon's slot in the level header's language (D134)
++  OffsetLength *dragon;
++#define DRAGON (*dragon)
++#else
++#define DRAGON g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx]
++#endif
++
+   // Wait for the CD subsystem to finish loading
+   CDLoadTime();
+@@ -1040,4 +1048,8 @@ void LoadDragonCutscene(void) {
+     return;
+ 
++#if REGION_HAS_PAL
++  dragon = LEVEL_DRAGON_PTR(g_DragonCutscene.m_CutsceneIdx);
++#endif
++
+   switch (g_DragonCutscene.m_Stage) {
+   case 0: // Prepare to load dragon cutscene data, compute lengths and overflow
+@@ -1052,8 +1064,8 @@ void LoadDragonCutscene(void) {
+ 
+     // Full read if it fits
+-    if (g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length <=
++    if (DRAGON.m_Length <=
+         modelSpaceLeft) {
+       g_DragonCutscene.m_LoadLength =
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length;
++          DRAGON.m_Length;
+       g_DragonCutscene.m_HasOverflow = 0;
+     } else {
+@@ -1070,5 +1082,5 @@ void LoadDragonCutscene(void) {
+         g_CdState.m_WadSector, g_Buffers.m_ModelData,
+         g_DragonCutscene.m_LoadLength,
+-        g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Offset +
++        DRAGON.m_Offset +
+             g_WadHeader.m_LevelEntry[g_LevelIndex].m_Data.m_Offset,
+         600);
+@@ -1129,7 +1141,7 @@ void LoadDragonCutscene(void) {
+           (char *)g_Buffers.m_ModelData + g_DragonCutscene.m_LoadLength -
+               g_DragonCutscene.m_Header.m_DragonModel.m_Offset,
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Length -
++          DRAGON.m_Length -
+               g_DragonCutscene.m_LoadLength,
+-          g_LevelHeader.m_Dragons[g_DragonCutscene.m_CutsceneIdx].m_Offset +
++          DRAGON.m_Offset +
+               g_WadHeader.m_LevelEntry[g_LevelIndex].m_Data.m_Offset +
+               g_DragonCutscene.m_LoadLength,
+@@ -1319,4 +1331,5 @@ void LoadDragonCutscene(void) {
+     break;
+   }
++#undef DRAGON
+ }
+ 
+@@ -1465,5 +1478,5 @@ void LoadLevel(int pArg) {
+   case 4: // Place header and start loading VRAM
+ 
+-    Memcpy(&g_LevelHeader, g_Buffers.m_DiscCopyBuf, sizeof(g_LevelHeader));
++    LEVEL_HEADER_COPY(g_Buffers.m_DiscCopyBuf);
+ 
+     // Load the 512x512 VRAM image
+--- a/src/main.c
++++ b/src/main.c
+@@ -8,4 +8,12 @@
+ #include <stdio.h>
+ 
++#if defined(REGION) && REGION == 1
++// PAL's (include/region.h, D134), in the PAL matching build only; the port's
++// are in src/game/region_game.c
++int g_Language = 0;
++int g_ScreenOffsetX = 4;
++int g_ScreenOffsetY = 16;
++#endif
++
+ // These ARE in this file!
+ u_char g_PadMutex;
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -11,4 +11,5 @@
+ #include "moby.h"
+ #include "moby_helpers.h"
++#include "region.h"
+ #include "overlay_pointers.h"
+ #include "renderers.h"
+@@ -698,4 +699,9 @@ int func_80039398(Moby *pMoby, int distance, int mobyCollisionRadius,
+     }
+     VecCopy(&newPos, &g_CollisionPoint);
++    if (REGION_IS(PAL)) {
++      // PAL: test again from the corrected point (D134)
++      ColSphere(&newPos, collisionRadius, collisionRadius);
++      VecCopy(&newPos, &g_CollisionPoint);
++    }
+   }
+ 
+@@ -759,4 +765,7 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+   Vector3D newPos;
+   int floorZ;
++#if REGION_HAS_PAL
++  int result = 0; // PAL: 4 when the move slid along a wall (D134)
++#endif
+ 
+   if (D_800756C4 == 3) {
+@@ -794,4 +803,12 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+     }
+     VecCopy(&newPos, &g_CollisionPoint);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: test again from the corrected point, and tell the caller
++      ColSphere(&newPos, collisionRadius, collisionRadius);
++      VecCopy(&newPos, &g_CollisionPoint);
++      result = 4;
++    }
++#endif
+   }
+ 
+@@ -830,7 +847,29 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+ 
+   func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  #if REGION_HAS_PAL
++  return result;
++#else
+   return 0;
++#endif
+ }
+ 
++#if REGION_HAS_PAL
++// PAL (D134): when MobyMove slid along a wall (4) on a slope of 36-220, the
++// horizontal speed loses a quarter, before the deceleration. A macro around
++// MobyMoveWithGravity's one call, so the line after the call stays the
++// original's (the 60 Hz rules' port patch rewrites it, D130).
++#define MobyMove(m, a, d, mr, cr, f)                                            \
++  ({                                                                           \
++    int moveResult = MobyMove(m, a, d, mr, cr, f);                             \
++    if (REGION_IS(PAL) && moveResult == 4) {                                   \
++      int slope = Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0); \
++      if (slope >= 36 && slope <= 220 && *pHorizontalSpeed > 0) {              \
++        *pHorizontalSpeed = *pHorizontalSpeed * 3 / 4;                         \
++      }                                                                        \
++    }                                                                          \
++    moveResult;                                                                \
++  })
++#endif
++
+ /**
+  * @brief Updates moby movement with horizontal motion, deceleration and
+@@ -926,4 +965,8 @@ int MobyMoveWithGravity(Moby *pMoby, int *pHorizontalSpeed, int pAngle,
+ }
+ 
++#if REGION_HAS_PAL
++#undef MobyMove
++#endif
++
+ /// @brief Moby walking movement, used by most fodder and classes 214/216
+ void func_80039AA8(Moby *pMoby, MobyWanderState *pWander) {
+new file mode 100644
+--- a//dev/null
++++ b/src/moby_helpers.c.orig
+@@ -0,0 +1,2486 @@
++#include <rand.h>
++#include <string.h>
++#include <sys/types.h>
++
++#include "42CC4.h"
++#include "checkpoint.h"
++#include "collision.h"
++#include "common.h"
++#include "hud.h"
++#include "math.h"
++#include "moby.h"
++#include "moby_helpers.h"
++#include "overlay_pointers.h"
++#include "renderers.h"
++#include "sony_image.h"
++#include "spu.h"
++#include "spyro.h"
++#include "strings.h"
++#include "variables.h"
++
++#ifndef SPYRO_PORT /* host libc already declares it, with a const char * */
++extern unsigned int strlen(char *);
++#endif
++
++/// @brief Function that ticks a timer
++/// @param pTimer The timer to update
++/// @param pTimerType The type of timer, equal to the size of the type
++/// @return non-0 if the timer has elapsed
++int func_80037F90(void *pTimer, int pTimerType) {
++  if (pTimerType == sizeof(int)) {
++    int timer = *(int *)pTimer;
++
++    // D_800756C4 is deltatime inside overlays
++    if (D_800756C4 >= timer) { // Less time left than the delta time
++      if (timer != 0) {
++        *(int *)pTimer = 0;
++        return 2; // Timer underflowed
++      }
++
++      return 1;
++    } else {
++      *(int *)pTimer -= D_800756C4;
++      return 0;
++    }
++
++  } else if (pTimerType == sizeof(short)) {
++    short timer = *(short *)pTimer;
++
++    if (D_800756C4 >= timer) { // Less time left than the delta time
++      if (timer != 0) {
++        *(short *)pTimer = 0;
++        return 2; // Timer underflowed
++      }
++
++      return 1;
++    } else {
++      *(short *)pTimer -= D_800756C4;
++      return 0;
++    }
++
++  } else if (pTimerType == sizeof(char)) {
++    u_char timer = *(u_char *)pTimer;
++
++    if (D_800756C4 >= timer) { // Less time left than the delta time
++      if (timer != 0) {
++        *(char *)pTimer = 0;
++        return 2; // Timer underflowed
++      }
++
++      return 1;
++    } else {
++      *(char *)pTimer -= D_800756C4;
++      return 0;
++    }
++  }
++}
++
++// Angle functions
++
++/// @brief Adds two angles together
++/// @param p1 Angle 1
++/// @param p2 Angle 2
++/// @return The sum of the two angles
++int AngleAdd(int p1, int p2) { return ((p1 + p2 + 256) % 256); }
++
++/// @brief Clamps the distance between two angles to a maximum
++/// @param p1 Angle 1
++/// @param p2 Angle 2
++/// @param p3 Maximum distance
++/// @return The new angle after clamping
++int AngleClampDistance(int p1, int p2, int maxDist) {
++  int diff = AngleSignedDistance(p1, p2);
++
++  // If the distance between p1 and p2 is larger than maxDist
++  // then return either p2 + maxDist or p2 - maxDist
++  if (ABS(diff) > maxDist) {
++    if (diff < 0) {
++      return AngleAdd(p2, maxDist);
++    } else {
++      return AngleAdd(p2, -maxDist);
++    }
++  }
++
++  // If the distance between p1 and p2 is within maxDist, return p1 as is
++  return p1;
++}
++
++/// @brief Linearly interpolates between two angles
++/// @param p1 Angle 1
++/// @param p2 Angle 2
++/// @param interp Interpolation factor (0-255)
++/// @return The interpolated angle
++int AngleLerp(int p1, int p2, u_char interp) {
++  return AngleAdd(p2, (AngleSignedDistance(p2, p1) * (interp)) >> 8);
++}
++
++/// @brief Interpolates between two angles, clamping the maximum distance
++/// between calls
++/// @param p1 Angle 1
++/// @param p2 Angle 2
++/// @param maxDistance Maximum distance per call
++/// @param interp Interpolation factor (0-255)
++/// @return The resulting angle after clamping and interpolation
++int AngleLerpClamped(int p1, int p2, int maxDistance, u_char interp) {
++  return AngleLerp(AngleClampDistance(p1, p2, maxDistance), p2, interp);
++}
++
++/// @brief Gives the shorted signed distance from angle p1 to angle p2
++/// @param p1 Angle 1
++/// @param p2 Angle 2
++/// @return Distance normalised to -128 to 128
++int AngleSignedDistance(int p1, int p2) {
++  int diff = p2 - p1;
++
++  // Normalize to -128 to 128
++  if (diff > 128) {
++    diff -= 256;
++  }
++
++  if (diff < -128) {
++    diff += 256;
++  }
++
++  return diff;
++}
++
++// Vision functions
++
++int func_800381E8(Moby *moby, int range) { // Unused
++  // Returns true if spyro is in the range of the moby's vision
++  return func_80017908(Atan2(g_Spyro.m_Position.x - moby->m_Position.x,
++                             g_Spyro.m_Position.y - moby->m_Position.y, 0),
++                       moby->m_Rotation.z) < range;
++}
++
++/// @brief Checks if there is a clear line of sight from a point to Spyro
++/// @param pPoint The starting point of the ray
++/// @return 1 if there's nothing blocking, 0 if obstructed
++int MobyCanSeeSpyro(Vector3D *pPoint) {
++  Vector3D distance;
++  Vector3D rayStart;
++  Vector3D rayEnd;
++  int raySegments;
++  int magnitude;
++  int i;
++
++  VecSub(&distance, &g_Spyro.m_Position, pPoint);
++  magnitude = VecMagnitude(&distance, 1);
++  // SKELETON: Newton's method, which result isn't used
++  VecRefineMagnitude(&distance, magnitude, 1);
++  VecScaleToLength(&distance, magnitude, 1024);
++  VecCopy(&rayStart, pPoint);
++
++  raySegments = magnitude >> 10; // div by 1024
++
++  for (i = 0; i < raySegments; i++) {
++    VecAdd(&rayEnd, &rayStart, &distance);
++
++    // Look if we've got a collision
++    if (ColTraceRay(&rayStart, &rayEnd))
++      return 0; // If we did, return it
++
++    VecCopy(&rayStart, &rayEnd); // Advance the ray
++  }
++
++  return 1;
++}
++
++// Looks for the floor below the Moby
++int MobyFloorHeight(Moby *pMoby) {
++  int position;
++
++  pMoby->m_Position.z += 1500;
++  position = ColFindFloor(&pMoby->m_Position, 4096);
++  pMoby->m_Position.z -= 1500;
++
++  return position;
++}
++
++int MobyFloorStandable(Moby *pMoby) {
++  pMoby->m_Position.z += 1500;
++  ColFindFloor(&pMoby->m_Position, 4096);
++  pMoby->m_Position.z -= 1500;
++  return (signed char)Atan2Fast(g_CollisionNormal.z,
++                                VecMagnitude(&g_CollisionNormal, 0)) < 24;
++}
++
++int func_80038400(Moby *pMoby, int pDistFromFloor) {
++  int position;
++
++  pMoby->m_Position.z += pDistFromFloor;
++  position = ColFindFloor(&pMoby->m_Position, pDistFromFloor + 4096);
++  pMoby->m_Position.z -= pDistFromFloor;
++
++  return position;
++}
++
++void MobySnapToGround(Moby *pMoby) {
++  int floorZ = MobyFloorHeight(pMoby);
++
++  pMoby->m_Position.z = floorZ + pMoby->m_FloorDistance;
++
++  MobyUpdateShadow(pMoby);
++}
++
++inline static int SavedMobyIsDead(int mobyIndex) {
++  int index = mobyIndex >> 5;
++  int bit = mobyIndex & 0x1F;
++  return g_Checkpoint.m_KilledMobysSaved[index] & (1 << bit);
++}
++
++/// @brief Returns if a Moby has been killed
++int MobyIsMarkedKilled(Moby *pMoby) {
++  // Since load scene sets m_DropMoby to 0xff if the moby is dead
++  // the check for it is a bit odd
++  return SavedMobyIsDead(pMoby - g_LevelMobys) && pMoby->m_DropMoby == 0xff;
++}
++
++void MobyPlaySound(Moby *pMoby, int pSoundIndex, u_char *pChannel) {
++  if (pChannel != nullptr) {
++    PlaySound(g_Models[pMoby->m_Class]->m_Sounds[pSoundIndex], pMoby,
++              0x08 /* 3D */, pChannel);
++  } else {
++    // stop sounds from this moby
++    func_800562A4(pMoby, 1);
++    PlaySound(g_Models[pMoby->m_Class]->m_Sounds[pSoundIndex], pMoby,
++              0x08 /* 3D */, &pMoby->m_SoundChannel);
++  }
++}
++
++void MobyCreatePoof(Moby *pMoby, int pSmokeSize) {
++  if (pMoby != nullptr) {
++    PlaySound(g_Spu.m_SoundTable->mobyPoof, pMoby, 0x08 /* 3D */,
++              &pMoby->m_SoundChannel);
++
++  } else {
++    PlaySound(g_Spu.m_SoundTable->mobyPoof, nullptr, 0x10 /* 2D */, nullptr);
++  }
++
++  func_800530C0(pMoby, pSmokeSize);
++}
++
++/// @brief Moves a Moby around a point toward a target angle, with angle limits
++/// and collision checks
++int func_80038638(Moby *pMoby, Vector3D *pCenter, int radius, int targetAngle,
++                  int angleThreshold, int moveSpeed, int turnSpeed,
++                  int turnThreshold, int limitAngle1, int limitAngle2,
++                  int mobyCollisionRadius, int collisionRadius, int flags) {
++  Vector3D targetPosition;
++  int moveAngle;
++  int angle;
++  int angleDiff;
++  int result;
++
++  angle = Atan2(pMoby->m_Position.x - pCenter->x,
++                pMoby->m_Position.y - pCenter->y, 0);
++  angleDiff = AngleSignedDistance(targetAngle, angle);
++  result = ABS(angleDiff);
++
++  if (result < angleThreshold) {
++    return result;
++  }
++
++  if (limitAngle1 != 0xFF && func_80017908(angle, limitAngle1) < 5) {
++    result = AngleSignedDistance(limitAngle1, angle);
++    if ((angleDiff < 0 && result < 0) || (angleDiff > 0 && result > 0)) {
++      return 256;
++    }
++  }
++
++  if (limitAngle2 != 0xFF && func_80017908(angle, limitAngle2) < 5) {
++    result = AngleSignedDistance(limitAngle2, angle);
++    if ((angleDiff < 0 && result < 0) || (angleDiff > 0 && result > 0)) {
++      return 256;
++    }
++  }
++
++  if (angleDiff < 0) {
++    angle = AngleAdd(angle, 3);
++  } else {
++    angle = AngleAdd(angle, -3);
++  }
++
++  targetPosition.x = pCenter->x + FIXED_MUL(COSINE_8(angle), radius);
++  targetPosition.y = pCenter->y + FIXED_MUL(SINE_8(angle), radius);
++  moveAngle = Atan2(targetPosition.x - pMoby->m_Position.x,
++                    targetPosition.y - pMoby->m_Position.y, 0);
++
++  if (D_800756C4 == 3) {
++    moveSpeed += moveSpeed >> 1;
++  } else if (D_800756C4 == 4) {
++    moveSpeed <<= 1;
++  }
++
++  if (flags & 0x8) {
++    MobyRotateToAngle(pMoby,
++                      Atan2(pCenter->x - pMoby->m_Position.x,
++                            pCenter->y - pMoby->m_Position.y, 0),
++                      turnSpeed, 0, 0);
++    result = MobyMove(pMoby, moveAngle, moveSpeed, mobyCollisionRadius,
++                      collisionRadius, flags);
++    if (result) {
++      return -result;
++    }
++  } else if (MobyRotateToAngle(pMoby, moveAngle, turnSpeed, turnThreshold, 1)) {
++    result = func_80039398(pMoby, moveSpeed, mobyCollisionRadius,
++                           collisionRadius, flags);
++    if (result) {
++      return -result;
++    }
++  }
++
++  return ABS(angleDiff);
++}
++
++int func_8003891C(Vector3D *pVec1, Vector3D *pVec2, int p3, int p4, int *pOut) {
++  struct {
++    int x;
++    int y;
++  } vec;
++  int t;
++
++  vec.x = pVec1->x - pVec2->x;
++  vec.y = pVec1->y - pVec2->y;
++  t = VecMagnitude((Vector3D *)&vec, 0) / p3;
++  if (pOut != nullptr) {
++    *pOut = t;
++  }
++  if (t != 0) {
++    return -(pVec1->z - pVec2->z + (p4 * (t * t) >> 1)) / t;
++  }
++  return 0;
++}
++
++/// @brief Finds the path node closest to the moby
++int func_80038A40(Moby *pMoby, PathData *pPathData, int *pNodeIndexOut) {
++  int closestNodeDistance = 0xffffff;
++  int closestNodeIndex;
++  int i;
++
++  for (i = 0; i < pPathData->m_NodeCount; i++) {
++    int distance =
++        OctDistance(&pMoby->m_Position, &pPathData->m_Nodes[i].m_Position);
++    if (distance < closestNodeDistance) {
++      closestNodeDistance = distance;
++      closestNodeIndex = i;
++    }
++  }
++
++  if (pNodeIndexOut != nullptr) {
++    *pNodeIndexOut = closestNodeIndex;
++  }
++
++  return closestNodeDistance;
++}
++
++/// @brief Finds the path node closest to Spyro
++int PathNodeClosestToSpyro(PathData *pPathData, int *pNodeIndexOut) {
++  int closestNodeDistance = 0xffffff;
++  int closestNodeIndex;
++  int i;
++
++  for (i = 0; i < pPathData->m_NodeCount; i++) {
++    int distance =
++        OctDistance(&g_Spyro.m_Position, &pPathData->m_Nodes[i].m_Position);
++    if (distance < closestNodeDistance) {
++      closestNodeDistance = distance;
++      closestNodeIndex = i;
++    }
++  }
++
++  if (pNodeIndexOut != nullptr) {
++    *pNodeIndexOut = closestNodeIndex;
++  }
++
++  return closestNodeDistance;
++}
++
++/// @brief Find the path node furthest away from Spyro
++int PathNodeFurthestFromSpyro(PathData *pPathData) {
++  int furthestNodeDistance = 0;
++  int furthestNodeIndex;
++  int i;
++
++  for (i = 0; i < pPathData->m_NodeCount; i++) {
++    int distance =
++        OctDistance(&g_Spyro.m_Position, &pPathData->m_Nodes[i].m_Position);
++    if (distance > furthestNodeDistance) {
++      furthestNodeDistance = distance;
++      furthestNodeIndex = i;
++    }
++  }
++  return furthestNodeIndex;
++}
++
++/// @brief Checks if a point is within a rectangle
++int func_80038C4C(Vector3D *point, Vector3D *rect) {
++  // The stack usage here is insane
++  Vector3D diff2;
++  Vector3D diff;
++  int z = rect[1].z;
++
++  VecSub(&diff, point, rect);
++
++  diff2.x = FIXED_MUL(diff.x, COSINE_8(z)) - FIXED_MUL(diff.y, SINE_8(z));
++  diff2.y = FIXED_MUL(diff.x, SINE_8(z)) + FIXED_MUL(diff.y, COSINE_8(z));
++
++  diff2.x = ABS(diff2.x);
++  diff2.y = ABS(diff2.y);
++
++  if (diff2.x < rect[1].x && diff2.y < rect[1].y)
++    return 1;
++
++  return 0;
++}
++
++/// @brief Returns the dot product of a vector and a plane's normal vector
++/// (doesn't use the GTE)
++int func_80038D54(Vector3D *param_1, Plane *param_2) {
++  Vector3D unused; // Needed to match stack usage
++  int sum = param_2->normal.x * param_1->x + param_2->normal.y * param_1->y +
++            param_2->normal.z * param_1->z;
++  return ABS((sum >> 10) + param_2->offset);
++}
++
++/// @brief Rotate moby to face Spyro
++/// @param pMoby The moby to rotate
++/// @param rotSpeed The rotation speed
++/// @param withinAngle The threshold angle for "close enough"
++/// @param continueRotation Whether to continue rotating when close
++/// @return 1 if close to target angle, 0 otherwise
++int MobyRotateToSpyro(Moby *pMoby, int rotSpeed, int withinAngle,
++                      int continueRotation) {
++  int angleDiff;
++  int targetAngle;
++
++  // Calculate angle from moby to Spyro
++  targetAngle = Atan2(g_Spyro.m_Position.x - pMoby->m_Position.x,
++                      g_Spyro.m_Position.y - pMoby->m_Position.y, 0);
++
++  // Calculate absolute angle difference
++  angleDiff = func_80017908(targetAngle, pMoby->m_Rotation.z);
++
++  // Scale rotation speed based on delta time
++  if (D_800756C4 == 3) {
++    rotSpeed += rotSpeed >> 1; // 1.5x speed
++  } else if (D_800756C4 == 4) {
++    rotSpeed <<= 1; // 2x speed
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    rotSpeed = T60_SHARE(rotSpeed);
++  }
++#endif
++
++  // Clamp rotSpeed to not exceed angleDiff
++  if (angleDiff < rotSpeed) {
++    rotSpeed = angleDiff;
++  }
++
++  // Check if close enough to target
++  if (withinAngle < func_80017908(targetAngle, pMoby->m_Rotation.z)) {
++    // Not close enough - rotate and return 0
++    pMoby->m_Rotation.z = func_800179F0(targetAngle, pMoby->m_Rotation.z,
++                                        rotSpeed, (rotSpeed >> 1) + 1);
++    return 0;
++  }
++
++  // Close enough to target - optionally continue rotating for smooth finish
++  if (continueRotation) {
++    pMoby->m_Rotation.z = func_800179F0(targetAngle, pMoby->m_Rotation.z,
++                                        rotSpeed, (rotSpeed >> 1) + 1);
++  }
++
++  return 1; // Moby is facing close enough to target
++}
++
++/// @brief Rotate moby to face an angle
++/// @param pMoby The moby to rotate
++/// @param targetAngle The target angle to face
++/// @param rotSpeed The rotation speed
++/// @param withinAngle The threshold angle for "close enough"
++/// @param continueRotation Whether to continue rotating when close
++/// @return 1 if close to target angle, 0 otherwise
++int MobyRotateToAngle(Moby *pMoby, int targetAngle, int rotSpeed,
++                      int withinAngle, int continueRotation) {
++  int angleDiff;
++
++  // Calculate the absolute difference between target and current rotation
++  angleDiff = func_80017908(targetAngle, pMoby->m_Rotation.z);
++
++  // Scale rotation speed based on frame timing (D_800756C4 is delta time)
++  if (D_800756C4 == 3) {
++    rotSpeed += rotSpeed >> 1; // 1.5x speed
++  } else if (D_800756C4 == 4) {
++    rotSpeed <<= 1; // 2x speed
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    rotSpeed = T60_SHARE(rotSpeed);
++  }
++#endif
++
++  // Clamp rotation speed to not overshoot the target
++  if (angleDiff < rotSpeed) {
++    rotSpeed = angleDiff;
++  }
++
++  // If not yet close enough to target angle, rotate and return 0
++  if (angleDiff >= withinAngle) {
++    pMoby->m_Rotation.z = func_800179F0(targetAngle, pMoby->m_Rotation.z,
++                                        rotSpeed, (rotSpeed >> 1) + 1);
++    return 0;
++  }
++
++  // Close enough to target - optionally continue rotating for smooth finish
++  if (continueRotation) {
++    pMoby->m_Rotation.z = func_800179F0(targetAngle, pMoby->m_Rotation.z,
++                                        rotSpeed, (rotSpeed >> 1) + 1);
++  }
++
++  return 1; // Moby is facing close enough to target
++}
++
++int func_80038FC8(Moby *pMoby, int *pTurnDirection, int *pFacingAngle,
++                  int pTurnSpeed, int pTurnSwitchThreshold,
++                  int pBaseTurnAnimation) {
++  int targetAngle;
++  int oppositeTargetAngle;
++  int angleDelta;
++  int oppositeAngleDelta;
++  int turnDirection;
++  int newAngle;
++
++  targetAngle = Atan2(g_Spyro.m_Position.x - pMoby->m_Position.x,
++                      g_Spyro.m_Position.y - pMoby->m_Position.y, 1);
++  angleDelta = (targetAngle - *pFacingAngle) & 0xFFF;
++  oppositeTargetAngle = targetAngle - 2048;
++  oppositeAngleDelta = (oppositeTargetAngle - *pFacingAngle) & 0xFFF;
++
++  if (angleDelta > 2048) {
++    angleDelta -= 4096;
++  }
++  if (oppositeAngleDelta > 2048) {
++    oppositeAngleDelta -= 4096;
++  }
++
++  if (D_800756C4 == 3) {
++    pTurnSpeed += pTurnSpeed >> 1;
++  } else if (D_800756C4 == 4) {
++    pTurnSpeed <<= 1;
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    pTurnSpeed = T60_SHARE(pTurnSpeed);
++  }
++#endif
++
++  if (ABS(angleDelta) < pTurnSpeed) {
++    pTurnSpeed = ABS(angleDelta);
++  }
++
++  turnDirection = *pTurnDirection;
++  if (turnDirection == 0) {
++    if (angleDelta < 0) {
++      turnDirection = -1;
++    } else {
++      turnDirection = 1;
++    }
++    *pTurnDirection = turnDirection;
++  } else if (angleDelta < 0) {
++    if (turnDirection > 0 && pTurnSwitchThreshold < ABS(oppositeAngleDelta)) {
++      *pTurnDirection = -1;
++    }
++  } else if (turnDirection < 0 && angleDelta > 0 &&
++             pTurnSwitchThreshold < ABS(oppositeAngleDelta)) {
++    *pTurnDirection = 1;
++  }
++
++  if (ABS(angleDelta) > 256) {
++    if (*pTurnDirection == 1) {
++      MOBY_ANIM_CHANGE_CLEAR_FINISHED(pMoby, pBaseTurnAnimation);
++    } else {
++      MOBY_ANIM_CHANGE_CLEAR_FINISHED(pMoby, pBaseTurnAnimation + 1);
++    }
++  }
++
++  newAngle = *pFacingAngle + pTurnSpeed * *pTurnDirection;
++  *pFacingAngle = newAngle;
++  if (newAngle < 0) {
++    *pFacingAngle = newAngle + 4096;
++  }
++  pMoby->m_Rotation.z = *pFacingAngle >> 4;
++
++  return angleDelta;
++}
++
++int func_80039228(Moby *pMoby, Vector3D vec1, int arg4, int arg5, int arg6) {
++  Vector3D vec2;
++  Vector3D vec3;
++
++  if (D_800756C4 == 3) {
++    // vec1 *= 1.5
++    VecCopy(&vec3, &vec1);
++    VecShiftRight(&vec3, 1);
++    VecAdd(&vec1, &vec1, &vec3);
++  } else if (D_800756C4 == 4) {
++    // vec1 *= 2
++    VecShiftLeft(&vec1, 1);
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    vec1.x = T60_SHARE(vec1.x);
++    vec1.y = T60_SHARE(vec1.y);
++    vec1.z = T60_SHARE(vec1.z);
++  }
++#endif
++  VecAdd(&vec2, &pMoby->m_Position, &vec1);
++  if (arg6 & 1) {
++    vec2.z += 300 + arg5;
++  }
++  if (arg4 && ColMoby(&vec2, arg4, nullptr, 0, pMoby, 0)) {
++    return 1;
++  }
++  if (arg5 && ColSphere(&vec2, arg5, arg5)) {
++    return 2;
++  }
++  if (arg6 & 1) {
++    vec2.z -= 300 + arg5;
++  }
++  VecCopy(&pMoby->m_Position, &vec2);
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  return 0;
++}
++
++int func_80039398(Moby *pMoby, int distance, int mobyCollisionRadius,
++                  int collisionRadius, int flags) {
++  Vector3D newPos;
++  int floorZ;
++  int delta;
++  int zBase;
++  int slope;
++  int absDelta;
++
++  if (D_800756C4 == 3) {
++    distance = distance + (distance >> 1);
++  } else if (D_800756C4 == 4) {
++    distance = distance << 1;
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    distance = T60_SHARE(distance);
++  }
++#endif
++
++  newPos.x =
++      pMoby->m_Position.x + FIXED_MUL(COSINE_8(pMoby->m_Rotation.z), distance);
++  newPos.y =
++      pMoby->m_Position.y + FIXED_MUL(SINE_8(pMoby->m_Rotation.z), distance);
++  newPos.z = pMoby->m_Position.z;
++
++  if (mobyCollisionRadius != 0) {
++    if (flags & 0x2) {
++      ColMoby(&newPos, mobyCollisionRadius, 0, 0, pMoby, 3);
++    } else if (ColMoby(&newPos, mobyCollisionRadius, 0, 0, pMoby, 0) != 0) {
++      return 1;
++    }
++  }
++
++  if (flags & 0x1) {
++    zBase = newPos.z + 300;
++    newPos.z = zBase + collisionRadius;
++  }
++  if (collisionRadius != 0 &&
++      ColSphere(&newPos, collisionRadius, collisionRadius) != 0) {
++    if ((flags & 0x20) == 0) {
++      return 2;
++    }
++    VecCopy(&newPos, &g_CollisionPoint);
++  }
++
++  if (flags & 0x1) {
++    zBase = newPos.z - 300;
++    newPos.z = zBase - collisionRadius;
++  }
++
++  if (flags & 0x4 || flags & 0x10 || flags & 0x40) {
++    newPos.z = newPos.z + 1024;
++    floorZ = ColFindFloor(&newPos, 5000);
++  }
++
++  if (flags & 0x10) {
++    if (ABS2((floorZ + pMoby->m_FloorDistance) - pMoby->m_Position.z) >=
++        0x191) {
++      return 2;
++    }
++  }
++
++  if (flags & 0x40) {
++    slope = Atan2(VecMagnitude(&g_CollisionNormal, 0), g_CollisionNormal.z, 0);
++    if (slope > 128) {
++      slope = slope - 256;
++    }
++    if (ABS(slope) < 23) {
++      return 2;
++    }
++  }
++
++  pMoby->m_Position.x = newPos.x;
++  pMoby->m_Position.y = newPos.y;
++
++  if (flags & 0x4) {
++    delta = (floorZ + pMoby->m_FloorDistance) - pMoby->m_Position.z;
++    absDelta = ABS(delta);
++    if (absDelta > 600) {
++      if (delta > 0) {
++        pMoby->m_Position.z = pMoby->m_Position.z + 250;
++      } else {
++        pMoby->m_Position.z = pMoby->m_Position.z - 250;
++      }
++    } else {
++      pMoby->m_Position.z = floorZ + pMoby->m_FloorDistance;
++    }
++  }
++
++  if (flags & 0x4 || flags & 0x10 || flags & 0x40) {
++    MobyUpdateShadow(pMoby);
++  }
++
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  return 0;
++}
++
++/// @brief Moves a moby horizontally by (distance) along (angle), then resolves
++/// floor/wall collision and snaps height, gated by flag bits. Returns 0
++/// normally, 1 on a blocking hit, 2 when the floor is out of reach.
++int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
++             int collisionRadius, int flags) {
++  Vector3D newPos;
++  int floorZ;
++
++  if (D_800756C4 == 3) {
++    distance = distance + (distance >> 1);
++  } else if (D_800756C4 == 4) {
++    distance = distance << 1;
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    distance = T60_SHARE(distance);
++  }
++#endif
++
++  newPos.x = pMoby->m_Position.x + FIXED_MUL(COSINE_8(angle), distance);
++  newPos.y = pMoby->m_Position.y + FIXED_MUL(SINE_8(angle), distance);
++  newPos.z = pMoby->m_Position.z;
++
++  if (mobyCollisionRadius != 0) {
++    if (flags & 0x2) {
++      ColMoby(&newPos, mobyCollisionRadius, 0, 0, pMoby, 3);
++    } else if (ColMoby(&newPos, mobyCollisionRadius, 0, 0, pMoby, 0)) {
++      return 1;
++    }
++  }
++
++  if (flags & 0x1) {
++    newPos.z += 300;
++    newPos.z += collisionRadius;
++  }
++
++  if (collisionRadius != 0 &&
++      ColSphere(&newPos, collisionRadius, collisionRadius) != 0) {
++    if ((flags & 0x20) == 0) {
++      return 2;
++    }
++    VecCopy(&newPos, &g_CollisionPoint);
++  }
++
++  if (flags & 0x10 || flags & 0x4) {
++    newPos.z = newPos.z + 0x400;
++    floorZ = ColFindFloor(&newPos, 0x1388);
++  }
++
++  if (flags & 0x10) {
++    if (ABS2((floorZ + pMoby->m_FloorDistance) - pMoby->m_Position.z) >= 0xC9) {
++      return 2;
++    }
++  }
++
++  pMoby->m_Position.x = newPos.x;
++  pMoby->m_Position.y = newPos.y;
++
++  if (flags & 0x4) {
++    int delta = (floorZ + pMoby->m_FloorDistance) - pMoby->m_Position.z;
++    newPos.z = newPos.z + 1024;
++
++    if (ABS(delta) > 600) {
++      if (delta > 0) {
++        pMoby->m_Position.z = pMoby->m_Position.z + 250;
++      } else {
++        pMoby->m_Position.z = pMoby->m_Position.z - 250;
++      }
++    } else {
++      pMoby->m_Position.z = floorZ + pMoby->m_FloorDistance;
++    }
++  }
++
++  if (flags & 0x4 || flags & 0x10 || flags & 0x40) {
++    MobyUpdateShadow(pMoby);
++  }
++
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  return 0;
++}
++
++/**
++ * @brief Updates moby movement with horizontal motion, deceleration and
++ * gravity.
++ *
++ * Handles two types of movement:
++ * 1. Horizontal movement via speed - calls MobyMove while speed > 0
++ * 2. Vertical movement with gravity - applies velocity and detects landing
++ *
++ * @param pMoby The moby to move
++ * @param pHorizontalSpeed Pointer to horizontal speed (decremented each frame
++ * until 0)
++ * @param pAngle Angle parameter passed to horizontal movement
++ * @param pZVelocity Pointer to vertical velocity (NULL or 0xFFFF to disable)
++ * @param pDeceleration Amount to subtract from horizontal speed each frame
++ * @param pGravity Gravity to subtract from z velocity each frame
++ * @return 0 = normal, 2 = horizontal collision, 3 = landed on ground
++ */
++int MobyMoveWithGravity(Moby *pMoby, int *pHorizontalSpeed, int pAngle,
++                        int *pZVelocity, int pDeceleration, int pGravity) {
++  int result;
++  int flags;
++  int mobyCollisionRadius;
++  int floorZ;
++  u_char collisionRange;
++
++  result = 0;
++  flags = 0x21;
++  mobyCollisionRadius = 300;
++
++  // Check if pZVelocity is valid
++  if (pZVelocity == nullptr || *pZVelocity == 0xFFFF) {
++    flags = 0x25;
++  }
++
++  // Check collisionRange for Moby collision radius and flag modifications
++  collisionRange = pMoby->m_CollisionRange;
++  if (collisionRange == 0xFE) {
++    flags = 1;
++  } else if (collisionRange != 0) {
++    flags &= ~0x20;
++    mobyCollisionRadius = collisionRange << 2;
++    if (collisionRange == 0xFF) {
++      mobyCollisionRadius = 0;
++    }
++  }
++
++  // Handle horizontal movement
++  if (*pHorizontalSpeed != 0) {
++    // Horizontal movement with collision detection
++    result = MobyMove(pMoby, pAngle, *pHorizontalSpeed, mobyCollisionRadius,
++                      500, flags);
++    T60_TICK_END_DO(*pHorizontalSpeed -= pDeceleration); // after the tick's move (D130)
++    if (*pHorizontalSpeed < 0) {
++      *pHorizontalSpeed = 0;
++    }
++  }
++
++  // Early return if collision detected
++  if (result == 2) {
++    return 2;
++  }
++
++  // Skip z handling if pZVelocity invalid
++  if (pZVelocity == nullptr) {
++    return result;
++  }
++
++  if (*pZVelocity == 0xFFFF) {
++    return result;
++  }
++
++  // Handle z movement
++  floorZ = func_80038400(pMoby, 600); // Get floor Z height at moby position
++  pMoby->m_Position.z += T60_SHARE(*pZVelocity);
++  T60_TICK_END_DO(*pZVelocity -= pGravity); // after the tick's move (D130)
++  if (*pZVelocity < -260) {
++    *pZVelocity = -260;
++  }
++
++  // Check if landed
++  if (*pZVelocity <= 0) {
++    int landingZ = floorZ + pMoby->m_FloorDistance;
++    if (pMoby->m_Position.z < landingZ) {
++      pMoby->m_Position.z = landingZ;
++      result = 3;
++    }
++  }
++
++  MobyUpdateShadow(pMoby); // Update moby collision/position
++
++  return result;
++}
++
++/// @brief Moby walking movement, used by most fodder and classes 214/216
++void func_80039AA8(Moby *pMoby, MobyWanderState *pWander) {
++  int moveSpeed;
++  int turnSpeed;
++  int turnAngle;
++  int spyroDistance;
++  int originDistance;
++  int movementResult;
++  int randomTurn;
++  int facingTargetAngle;
++
++  turnSpeed = pWander->m_TurnSpeed;
++  moveSpeed = pWander->m_MoveSpeed;
++  facingTargetAngle = 1;
++
++  if (D_800756C4 == 3) {
++    moveSpeed += moveSpeed >> 1;
++    turnSpeed += turnSpeed >> 1;
++  } else if (D_800756C4 == 4) {
++    moveSpeed <<= 1;
++    turnSpeed <<= 1;
++  }
++
++  if (T60_TICK_AND(!pWander->m_TurnTimer--)) {
++    randomTurn = RandRange(pWander->m_RandomTurnMin, pWander->m_RandomTurnMax);
++
++    if (rand() & 1) {
++      randomTurn = -randomTurn;
++    }
++
++    pWander->m_TargetAngle = (pWander->m_TargetAngle + randomTurn + 256) % 256;
++    pWander->m_TurnTimer =
++        RandRange(pWander->m_TurnTimerMin, pWander->m_TurnTimerMax);
++    pWander->m_TargetAngleOffset = 0;
++    pWander->m_IsFleeing = 0;
++  }
++
++  turnAngle = pWander->m_TargetAngle;
++
++  if (pWander->m_TargetAngleOffsetLimit != 0) {
++    turnAngle += pWander->m_TargetAngleOffset;
++    T60_TICK_DO(pWander->m_TargetAngleOffset += pWander->m_TargetAngleOffsetStep *
++                                    pWander->m_TargetAngleOffsetDirection);
++
++    if (T60_TICK_AND(ABS2(pWander->m_TargetAngleOffset) >=
++        pWander->m_TargetAngleOffsetLimit)) {
++      pWander->m_TargetAngleOffsetDirection =
++          -pWander->m_TargetAngleOffsetDirection;
++    }
++  }
++
++  if (MobyRotateToAngle(pMoby, turnAngle, turnSpeed, 5, 1) == 0) {
++    facingTargetAngle = 0;
++  }
++
++  if (pWander->m_IgnoreMobyCollisionTimer != 0) {
++    movementResult =
++        func_80039398(pMoby, moveSpeed, 0, pWander->m_CollisionRadius, 85);
++  } else {
++    movementResult = func_80039398(pMoby, moveSpeed, pWander->m_CollisionRadius,
++                                   pWander->m_CollisionRadius, 85);
++  }
++
++  if (movementResult != 0) {
++    if (facingTargetAngle != 0) {
++      pWander->m_TargetAngle =
++          AngleAdd(pWander->m_TargetAngle, RandRange(64, 192));
++      pWander->m_TurnTimer =
++          RandRange(pWander->m_TurnTimerMin, pWander->m_TurnTimerMax);
++      pWander->m_IsFleeing = 0;
++
++      if (movementResult & 2) {
++        pWander->m_FleeDelay = 20;
++      } else {
++        pWander->m_IgnoreMobyCollisionTimer = 6;
++      }
++    }
++    return;
++  }
++
++  spyroDistance = OctDistance(&pMoby->m_Position, &g_Spyro.m_Position);
++
++  if (spyroDistance < 1100 && pWander->m_IsFleeing == 0) {
++    pWander->m_TargetAngle =
++        Atan2(pMoby->m_Position.x - g_Spyro.m_Position.x,
++              pMoby->m_Position.y - g_Spyro.m_Position.y, 0);
++    pWander->m_TargetAngle =
++        AngleAdd(pWander->m_TargetAngle, RandRange(-60, 60));
++    pWander->m_TurnTimer =
++        RandRange(pWander->m_TurnTimerMin, pWander->m_TurnTimerMax);
++    pWander->m_IsFleeing = 1;
++    return;
++  }
++
++  if (pWander->m_FleeRadius != 0 && pWander->m_IsFleeing == 0 &&
++      pWander->m_FleeDelay == 0 &&
++      spyroDistance < (pWander->m_FleeRadius << 10)) {
++    pWander->m_TargetAngle =
++        Atan2(pMoby->m_Position.x - g_Spyro.m_Position.x,
++              pMoby->m_Position.y - g_Spyro.m_Position.y, 0);
++    pWander->m_TargetAngle =
++        AngleAdd(pWander->m_TargetAngle, RandRange(-48, 48));
++    pWander->m_TurnTimer =
++        RandRange(pWander->m_TurnTimerMin, pWander->m_TurnTimerMax);
++    pWander->m_IsFleeing = 1;
++    return;
++  }
++
++  originDistance = OctDistance(&pMoby->m_Position, &pWander->m_Origin);
++
++  if ((pWander->m_WanderRadius << 10) < originDistance) {
++    pWander->m_TargetAngle =
++        Atan2(pWander->m_Origin.x - pMoby->m_Position.x,
++              pWander->m_Origin.y - pMoby->m_Position.y, 0);
++    pWander->m_IsFleeing = 0;
++    pWander->m_FleeDelay = 20;
++    pWander->m_TurnTimer = originDistance / pWander->m_MoveSpeed;
++    return;
++  }
++
++  if (pWander->m_FleeDelay != 0) {
++    T60_TICK_DO(pWander->m_FleeDelay--);
++  }
++
++  if (pWander->m_IgnoreMobyCollisionTimer != 0) {
++    T60_TICK_DO(pWander->m_IgnoreMobyCollisionTimer--);
++  }
++}
++
++int func_80039E94(Moby *pMoby, PathData *pPath, int arrivalRadius, int speed,
++                  int mobyCollisionRadius, int turnSpeed, int withinAngle,
++                  int waitForFlags, int moveFlags) {
++  int closeInZ;
++  int targetAngle;
++  int dx;
++  int dy;
++  Moby **pWaitList;
++  Moby *pOther;
++  int reachedNode;
++
++  // Scale walk speed by the frame's delta time.
++  if (D_800756C4 == 3) {
++    speed = speed + (speed >> 1);
++  } else if (D_800756C4 == 4) {
++    speed = speed << 1;
++  }
++
++  reachedNode = 0;
++
++  if (moveFlags & 0x100) {
++    // Only "arrive" once we are also close in Z to the node.
++    int zDelta =
++        pMoby->m_Position.z - pPath->m_Nodes[pPath->m_CurrentNode].m_Position.z;
++    closeInZ = ABS(zDelta) < arrivalRadius;
++  } else {
++    closeInZ = 1;
++  }
++
++  // Have we reached the current node (close in XY and, if required, Z)?
++  if (OctDistance(&pMoby->m_Position,
++                  &pPath->m_Nodes[pPath->m_CurrentNode].m_Position) <
++          arrivalRadius &&
++      closeInZ != 0) {
++    pMoby->m_Substate = 0;
++
++    if (pPath->m_Reversed == -1) {
++      // Forward traversal: advance, wrapping back to the first node.
++      if ((u_char)(++pPath->m_CurrentNode) == pPath->m_NodeCount) {
++        pPath->m_CurrentNode = 0;
++      }
++    } else {
++      // Reverse traversal: step back, wrapping to the last node.
++      if ((u_char)(--pPath->m_CurrentNode) == 0xFF) {
++        pPath->m_CurrentNode = pPath->m_NodeCount - 1;
++      }
++    }
++
++    reachedNode = pPath->m_CurrentNode + 0x100;
++  }
++
++  // Steer toward the (possibly newly selected) current node.
++  dx = pPath->m_Nodes[pPath->m_CurrentNode].m_Position.x - pMoby->m_Position.x;
++  dy = pPath->m_Nodes[pPath->m_CurrentNode].m_Position.y - pMoby->m_Position.y;
++  targetAngle = Atan2(dx, dy, 0);
++
++  // Already facing the node: finish the turn smoothly and walk toward it.
++  if (withinAngle >= func_80017908(targetAngle, pMoby->m_Rotation.z)) {
++    pMoby->m_Substate = 1;
++    MobyRotateToAngle(pMoby, targetAngle, turnSpeed, withinAngle, 1);
++    func_80039398(pMoby, speed, mobyCollisionRadius, 0, moveFlags);
++  } else if (pMoby->m_Substate == 0 && waitForFlags != 0xFF) {
++    // Freshly idle: skip the turn while a linked moby in the same pod that is
++    // on-screen and active is still busy.
++    pWaitList = (Moby **)(&g_SonyImage.u.m_Buf[0x400]);
++    pOther = *pWaitList++;
++    while (pOther != nullptr) {
++      if (pOther->m_Pod == waitForFlags && pOther->m_State < 0x80 &&
++          pOther->m_Substate == 1) {
++        break;
++      }
++      pOther = *pWaitList++;
++    }
++    if (pOther == nullptr) {
++      do {
++        pMoby->m_Rotation.z = func_800179F0(targetAngle, pMoby->m_Rotation.z,
++                                            T60_SHARE(turnSpeed), withinAngle);
++        pMoby->m_Substate = 2;
++      } while (0);
++    }
++  } else {
++    pMoby->m_Rotation.z =
++        func_800179F0(targetAngle, pMoby->m_Rotation.z, T60_SHARE(turnSpeed), withinAngle);
++  }
++
++  return reachedNode;
++}
++
++int func_8003A16C(Moby *pMoby, PathData *pPath, int threshold, int maxMag,
++                  int mobyCollisionRadius, int clampRange, int arc,
++                  int *pHeading) {
++  Vector3D8 rot;
++  Vector3D dir;
++  MATRIX mtx;
++  int mag;
++  int heading;
++  int delta;
++  int absDelta;
++  int reached;
++
++  VecSub(&dir, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
++         &pMoby->m_Position);
++  rot.x = 0;
++  mag = VecMagnitude(&dir, 0);
++  rot.y = Atan2(mag, dir.z, 0);
++  if (VecMagnitude(&dir, 0) < threshold) {
++    rot.z = *pHeading;
++  } else {
++    heading = Atan2(dir.x, dir.y, 0);
++    delta = (heading - *pHeading) & 0xFF;
++
++    if (delta > 128) {
++      delta = delta - 256;
++    }
++
++    absDelta = (delta >= 0) ? delta : -delta;
++
++    if (arc < absDelta) {
++      maxMag = 0;
++    }
++
++    if (delta < -clampRange) {
++      delta = -clampRange;
++    }
++
++    if (clampRange < delta) {
++      delta = clampRange;
++    }
++
++    heading = delta + *pHeading;
++    rot.z = heading;
++    *pHeading = heading & 0xFF;
++  }
++
++  mag = VecMagnitude(&dir, 1);
++
++  if (mag < maxMag) {
++    maxMag = mag;
++  }
++
++  RotVec8ToMatrix(&rot, &mtx, 0);
++
++  dir.x = maxMag;
++  dir.y = 0;
++  dir.z = 0;
++
++  VecRotateByMatrix(&mtx, &dir, &dir);
++  VecAdd(&dir, &pMoby->m_Position, &dir);
++
++  if (mobyCollisionRadius != 0) {
++    ColMoby(&dir, mobyCollisionRadius, 0, 0, pMoby, 0);
++  }
++
++  dir.z = dir.z + 0x400;
++  mag = ColFindFloor(&dir, 0x400);
++
++  if (mag != 0) {
++    dir.z = mag;
++  } else {
++    dir.z = dir.z - 0x400;
++  }
++
++  VecCopy(&pMoby->m_Position, &dir);
++  MobyUpdateShadow(pMoby);
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++
++  reached = 0;
++
++  VecSub(&dir, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
++         &pMoby->m_Position);
++
++  if (VecMagnitude(&dir, 1) < threshold) {
++    pMoby->m_Substate = 0;
++    pPath->m_CurrentNode = pPath->m_CurrentNode + 1;
++    if (pPath->m_CurrentNode == pPath->m_NodeCount) {
++      pPath->m_CurrentNode = 0;
++    }
++    reached = pPath->m_CurrentNode + 0x100;
++  }
++
++  return reached;
++}
++
++/**
++ * @brief Moves a moby along a 3D path with rotation toward waypoints.
++ *
++ * This function handles path-following movement for mobys, computing both
++ * horizontal (yaw) and vertical (pitch) rotation toward the current waypoint.
++ * The moby's rotation.z is updated directly as it turns toward each waypoint.
++ *
++ * Algorithm:
++ * 1. Calculate direction vector from moby to current waypoint
++ * 2. Compute pitch angle from horizontal distance and Z difference
++ * 3. If close to waypoint (< threshold), maintain current heading
++ * 4. Otherwise, compute yaw angle difference and clamp by turnRate
++ * 5. If angle difference exceeds angleLimit, stop movement (speed = 0)
++ * 6. Build rotation matrix and create velocity vector
++ * 7. If pVelocity provided, apply exponential smoothing (0.75 decay factor)
++ * 8. Perform collision check if bounds != 0 via ColMoby
++ * 9. Find floor below new position via ColFindFloor (1024 unit probe)
++ * 10. Commit position, update shadow and collision chain
++ * 11. If within threshold of waypoint, advance to next node (wrapping to 0)
++ *
++ * The velocity smoothing uses: vel = vel + frame_vel; vel -= vel/4
++ * This creates an exponential moving average for smoother movement.
++ *
++ * @param pMoby The moby to move along the path
++ * @param pPath Path data containing waypoint nodes
++ * @param threshold Distance to consider a waypoint reached
++ * @param maxSpeed Maximum movement speed per frame
++ * @param bounds Collision bounds radius (0 to skip collision checks)
++ * @param turnRate Maximum angle change per frame (8-bit angle units)
++ * @param angleLimit If angle to waypoint exceeds this, movement stops
++ * @param pVelocity Optional velocity accumulator for smoothing (NULL to skip)
++ * @return 0 if still following path, (newNodeIndex + 0x100) when waypoint
++ * reached
++ */
++int MoveMobyAlongPath(Moby *pMoby, PathData *pPath, int threshold, int maxSpeed,
++                      int bounds, int turnRate, int angleLimit,
++                      Vector3D *pVelocity) {
++  Vector3D8 rotation;
++  Vector3D vec;
++  MATRIX matrix;
++  int angleDiff;
++  int currentAngle;
++  int absAngle;
++  int dist;
++  int floorZ;
++  int result;
++
++  // Calculate direction vector from moby to current waypoint
++  VecSub(&vec, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
++         &pMoby->m_Position);
++
++  // Calculate pitch angle (elevation) toward waypoint
++  rotation.x = 0;
++  rotation.y = Atan2(VecMagnitude(&vec, 0), vec.z, 0);
++
++  if (VecMagnitude(&vec, 0) < threshold) {
++    // Close to waypoint - maintain current heading
++    rotation.z = pMoby->m_Rotation.z;
++  } else {
++    // Calculate yaw angle toward waypoint and turn toward it
++    angleDiff = Atan2(vec.x, vec.y, 0);
++    currentAngle = pMoby->m_Rotation.z;
++    // Normalize angle difference to signed 8-bit range (-128 to 127)
++    angleDiff = (angleDiff - currentAngle) & 0xFF;
++    if (angleDiff > 128) {
++      angleDiff -= 256;
++    }
++
++    absAngle = ABS(angleDiff);
++
++    // Stop movement if facing too far from waypoint
++    if (angleLimit < absAngle) {
++      maxSpeed = 0;
++    }
++
++    // Clamp turn rate
++    if (angleDiff < -turnRate) {
++      angleDiff = -turnRate;
++    }
++    if (angleDiff > turnRate) {
++      angleDiff = turnRate;
++    }
++
++    rotation.z = currentAngle + angleDiff;
++    pMoby->m_Rotation.z = rotation.z;
++  }
++
++  // Limit speed to remaining distance
++  dist = VecMagnitude(&vec, 1);
++  if (dist < maxSpeed) {
++    maxSpeed = dist;
++  }
++
++  // Create velocity vector from speed and rotation
++  RotVec8ToMatrix(&rotation, &matrix, nullptr);
++  vec.x = maxSpeed;
++  vec.y = 0;
++  vec.z = 0;
++  VecRotateByMatrix(&matrix, &vec, &vec);
++
++  if (pVelocity != nullptr) {
++    // Smooth velocity using exponential moving average (decay factor 0.75)
++    VecAdd(pVelocity, pVelocity, &vec);
++    VecCopy(&vec, pVelocity);
++    VecShiftRight(&vec, 2);
++    VecSub(pVelocity, pVelocity, &vec);
++    VecAdd(&vec, &pMoby->m_Position, pVelocity);
++  } else {
++    VecAdd(&vec, &pMoby->m_Position, &vec);
++  }
++
++  // Perform moby-to-moby collision check
++  if (bounds != 0) {
++    ColMoby(&vec, bounds, 0, 0, pMoby, 0);
++  }
++
++  // Find floor below new position (probe 1024 units down)
++  vec.z += 1024;
++  // Cast ray downward to find floor height
++  floorZ = ColFindFloor(&vec, 1024);
++  dist = floorZ;
++  if (dist != 0) {
++    vec.z = dist;
++  } else {
++    vec.z -= 1024;
++  }
++
++  // Commit position and update moby state
++  VecCopy(&pMoby->m_Position, &vec);
++  MobyUpdateShadow(pMoby);                 // Update shadow
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN); // Update collision chain
++
++  // Check if waypoint reached
++  result = 0;
++  VecSub(&vec, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
++         &pMoby->m_Position);
++  if (VecMagnitude(&vec, 1) < threshold) {
++    pMoby->m_Substate = 0;
++    pPath->m_CurrentNode++;
++    if ((pPath->m_CurrentNode & 0xFF) == pPath->m_NodeCount) {
++      pPath->m_CurrentNode = 0;
++    }
++    result = pPath->m_CurrentNode + 256;
++  }
++
++  return result;
++}
++
++void func_8003A720(Moby *pMoby) {
++  pMoby->m_RenderRadius = 16;
++  pMoby->m_UpdateDistance = 0xff;
++  pMoby->m_DepthOffset = 4;
++  pMoby->m_State = 0;
++  pMoby->m_Substate = 0;
++  pMoby->m_AnimationState.m_Animation = 0;
++  pMoby->m_AnimationState.m_NextAnimation = 0;
++  pMoby->m_AnimationState.m_Frame = 0;
++  pMoby->m_AnimationState.m_NextFrame = 1;
++  pMoby->m_AnimationState.m_FrameProgress = 0;
++  pMoby->m_AnimationState.m_PerFrameProgress = 32;
++  pMoby->m_Pod = -1;
++  pMoby->m_SectorIndex = -1;
++  pMoby->m_DropMoby = -1;
++  pMoby->m_DamageFlags = 0;
++  pMoby->m_Rotation.x = 0;
++  pMoby->m_Rotation.y = 0;
++  pMoby->m_Rotation.z = 0;
++  pMoby->m_ShadowDistance = 0;
++  pMoby->m_ScaleOverride = 0;
++  pMoby->m_SoundChannel = 0x7f;
++  pMoby->m_FloorDistance = 0;
++  pMoby->m_Renderer.raw = 32;
++  *((int *)pMoby->m_SpecularMetalColor) = 0;
++}
++
++// Unused
++int func_8003A79C(Moby *pMoby, PathData *path, int pDivider) {
++  Vector3D dist;
++
++  dist.x =
++      path->m_Nodes[path->m_CurrentNode].m_Position.x - pMoby->m_Position.x;
++  dist.y =
++      path->m_Nodes[path->m_CurrentNode].m_Position.y - pMoby->m_Position.y;
++  dist.z =
++      path->m_Nodes[path->m_CurrentNode].m_Position.z - pMoby->m_Position.z;
++
++  return VecMagnitude(&dist, 1) / pDivider;
++}
++
++/// @brief Compute interpolated velocity to reach a target position
++/// @param pMoby Moby whose position is used as starting point
++/// @param pParam Frame timing data (indices 1-3) and target positions
++/// @param pDest Output vector for the computed velocity adjustment
++/// @param pVec Scratch vector (preserves original pDest value)
++/// @note Unused
++void unused_MobyInterpolateVelocity(Moby *pMoby, u_char *pParam,
++                                    Vector3D *pDest, Vector3D *pVec) {
++  u_char val;
++  int offset;
++
++  val = pParam[3] & 0xFE;
++  pParam[2] = val;
++
++  if (val >= 9) {
++    pParam[2] = 8;
++  }
++
++  VecCopy(pVec, pDest);
++  VecMult(pDest, pVec, pParam[2] >> 1);
++  VecAdd(pDest, pDest, &pMoby->m_Position);
++  offset = (pParam[1] << 4) + 8;
++  VecSub(pDest, (Vector3D *)(pParam + offset), pDest);
++  func_800177F8(pDest, pDest, pParam[3] - (pParam[2] >> 1));
++}
++
++/// @brief Interpolate between two vectors using precomputed curve weights
++/// @param pDest Output vector for the interpolated result
++/// @param pParam Parameter struct where byte at offset 2 selects curve type
++/// @param pIndex Index into the weight table (selects which weight pair)
++/// @param pVec1 First input vector
++/// @param pVec2 Second input vector
++/// @note Unused (possibly an early version of func_8003BFC0)
++void unused_VecInterpolateCurve(Vector3D *pDest, u_char *pParam, int pIndex,
++                                Vector3D *pVec1, Vector3D *pVec2) {
++  Vector3D vec1;
++  Vector3D vec2;
++  short *table;
++  short *weights;
++
++  if (pParam[2] == 2) {
++    table = D_80075280;
++  } else if (pParam[2] == 4) {
++    table = D_8006CBA4;
++  } else {
++    table = D_8006CBCC;
++    if (pParam[2] == 6) {
++      table = D_8006CBB4;
++    }
++  }
++
++  weights = (short *)((u_int)(pIndex << 2) + (u_int)table);
++
++  VecMult(&vec1, pVec1, weights[0]);
++  VecMult(&vec2, pVec2, weights[1]);
++  VecAdd(pDest, &vec1, &vec2);
++  VecShiftRight(pDest, 10);
++}
++
++///// @brief Advanced flame heat effect with external heat tracking and RGB
++/// specular color output
++/// @param pMoby The moby to apply the flame heat effect to
++/// @param heat Current heat value (caller-managed, typically 0-80+)
++/// @return Updated heat value (caller should store and pass back on subsequent
++/// frames)
++int ApplyFlameHeatExternal(Moby *pMoby, int heat) {
++  int scaledHeat;
++  int colorTemp, specularColor;
++
++  if (heat || pMoby->m_DamageFlags) {
++    if ((pMoby->m_DamageFlags & 0x10000) && heat < 80) {
++      heat += T60_SHARE(16);
++    } else if (heat >= 33) {
++      heat -= T60_SHARE(2);
++    } else if (heat > 0) {
++      T60_TICK_DO(heat--);
++    }
++
++    scaledHeat = heat >> 2;
++    specularColor = scaledHeat + 24;
++    specularColor = specularColor << 12;
++    colorTemp = 24 - scaledHeat;
++    colorTemp = colorTemp << 6;
++    colorTemp = colorTemp + 0xa00000;
++    specularColor = specularColor + colorTemp;
++    specularColor = specularColor + 24;
++    specularColor = specularColor - scaledHeat;
++    *(int *)&pMoby->m_SpecularMetalColor[0] = specularColor;
++  }
++
++  return heat;
++}
++
++/// @brief Apply flame heat
++void ApplyFlameHeat(Moby *pMoby) {
++  // Are we being flamed?
++  if (pMoby->m_DamageFlags & 0x10000) {
++    // Being flamed, heat up
++    pMoby->m_SpecularMetalColor[2] += T60_SHARE(24);
++    if (pMoby->m_SpecularMetalColor[2] > 96) {
++      pMoby->m_SpecularMetalColor[2] = 96;
++    }
++  } else {
++    // Not being flamed, cool down
++    if (pMoby->m_SpecularMetalColor[2] > 32) {
++      pMoby->m_SpecularMetalColor[2] -= T60_SHARE(2);
++    } else if (pMoby->m_SpecularMetalColor[2] > 0) {
++      T60_TICK_DO(pMoby->m_SpecularMetalColor[2]--);
++    }
++  }
++}
++
++/// @brief Spawns a sparkle particle attached to a moby
++/// @param pMoby The moby to attach the sparkle to
++/// @param pOffset The offset vector to rotate by the moby's rotation matrix
++/// @return The slot index, or -1 if no slot available
++int SpawnMobySparkle(Moby *pMoby, Vector3D *pOffset) {
++  Sparkle *sparkle;
++
++  int slot = func_8005882C(); // Allocate sparkle particle slot
++
++  if (slot >= 0) {
++    sparkle = &g_Sparkles[slot];
++
++    // Set color to white (RGB)
++    sparkle->m_Color.r = 0xFF;
++    sparkle->m_Color.g = 0xFF;
++    sparkle->m_Color.b = 0xFF;
++
++    // Ensure moby's rotation matrix is up-to-date before using it
++    func_800529E4(pMoby, UPDATE_PROP_ROTMATRIX);
++
++    // Calculate world position: rotate offset by moby's matrix, add moby
++    // position
++    VecRotateByMatrix((MATRIX *)&pMoby->m_RotationMatrix, pOffset,
++                      &sparkle->m_Position);
++    VecAdd(&sparkle->m_Position, &sparkle->m_Position, &pMoby->m_Position);
++
++    sparkle->m_0x0E = rand(); // Random variation
++    sparkle->m_0x0F = 3;      // Particle type
++    sparkle->m_Life = 0x20;   // Duration
++    sparkle->m_Speed = 0x10;  // Speed
++    sparkle->m_Fade = 0x20;   // Fade duration
++    sparkle->m_Size = 0x40;   // Size
++  }
++
++  return slot;
++}
++
++/// @brief Spawns a Moby drop and initializes its position and movement
++Moby *MobySpawnDrop(Moby *pMoby, int pSpawnMode, Vector3D *pStartPosition,
++                    Vector3D *pTargetPosition) {
++  Vector3D startPosition;
++  Vector3D targetPosition;
++  Moby *spawnedMoby;
++  MobyCollectableProps *dropProps;
++  int dropClass;
++  int initialZVelocity;
++  int flightFrames;
++  int floorZ;
++  int surfaceAngle;
++  int currentZ;
++  int zVelocity;
++
++  dropClass = pMoby->m_DropMoby & 0x7F;
++
++  if (dropClass >= 1 && dropClass < 127) {
++    if (pMoby->m_DroppedFlag & 0x80) {
++      return nullptr;
++    } else {
++      pMoby->m_DroppedFlag |= 0x80;
++    }
++  } else {
++    int roll;
++
++    dropClass = MOBYCLASS_LIFE_ORB;
++
++    // rand() % 100
++    roll = FIXED_MUL(rand() & 0xFFF, 100);
++
++    // 2% Life statue, 10% Butterfly, 88% Life Orb
++    if (roll <= 1) {
++      dropClass = MOBYCLASS_LIFE_STATUE;
++    } else if (g_Spyro.m_health < 3 && roll <= 11) {
++      dropClass = MOBYCLASS_BUTTERFLY;
++    }
++  }
++
++  if (dropClass == MOBYCLASS_BUTTERFLY) {
++    if (g_Sparx != nullptr || g_Spyro.m_health < 0) {
++      spawnedMoby = (*g_SpawnMoby)(MOBYCLASS_BUTTERFLY, pMoby);
++    } else {
++      spawnedMoby = (*g_SpawnMoby)(MOBYCLASS_SPARX, pMoby);
++      MobyPlaySound(spawnedMoby, 0, nullptr);
++      g_Spyro.m_health = 1;
++      g_Sparx = spawnedMoby;
++    }
++
++    return spawnedMoby;
++  } else if (dropClass == MOBYCLASS_LIFE_STATUE) {
++    spawnedMoby = (*g_SpawnMoby)(MOBYCLASS_LIFE_STATUE, pMoby);
++    dropProps = spawnedMoby->m_Props;
++    dropProps->m_SpawnState = 1;
++    return spawnedMoby;
++  }
++
++  spawnedMoby = (*g_SpawnMoby)(dropClass, pMoby);
++  dropProps = spawnedMoby->m_Props;
++
++  if (pSpawnMode == 0) {
++    VecCopy(&targetPosition, &pMoby->m_Position);
++    initialZVelocity = 140;
++  } else if (pSpawnMode == 6) {
++    VecCopy(&targetPosition, &pMoby->m_Position);
++    initialZVelocity = 300;
++    targetPosition.x += (rand() & 0x1FF) - 256;
++    targetPosition.y += (rand() & 0x1FF) - 256;
++  } else if (pSpawnMode == 1) {
++    VecCopy(&targetPosition, &pMoby->m_Position);
++    initialZVelocity = 140;
++    targetPosition.x += (rand() & 0x3FF) - 512;
++    targetPosition.y += (rand() & 0x3FF) - 512;
++  } else if (pSpawnMode == 2) {
++    VecCopy(&targetPosition, pTargetPosition);
++    initialZVelocity = 140;
++  } else if (pSpawnMode == 3 || pSpawnMode == 4) {
++    if (pSpawnMode == 4 || g_Spyro.m_State == 11 || g_Spyro.m_State == 24 ||
++        g_Spyro.m_State == 20 || g_Spyro.m_State == 44) {
++      if (pSpawnMode == 4 ||
++          (OctDistance(&spawnedMoby->m_Position, &g_Spyro.m_Position) < 0x800 &&
++           ABS2((spawnedMoby->m_Position.z - spawnedMoby->m_FloorDistance) -
++                g_Spyro.m_Position.z) < 0x400)) {
++        VecCopy(&spawnedMoby->m_Position, &pMoby->m_Position);
++        spawnedMoby->m_Position.z += 256;
++        VecCopy(&dropProps->m_InitPos, &spawnedMoby->m_Position);
++        dropProps->m_RotY = rand() & 0xE;
++        dropProps->m_RotZ = rand() & 0xE;
++        dropProps->m_RotationTicks = rand() & 0xE;
++        spawnedMoby->m_Substate = 3;
++        spawnedMoby->m_UpdateDistance = 0xFF;
++        return spawnedMoby;
++      }
++    }
++
++    VecCopy(&targetPosition, &pMoby->m_Position);
++    initialZVelocity = 140;
++    targetPosition.x += (rand() & 0x3FF) - 512;
++    targetPosition.y += (rand() & 0x3FF) - 512;
++  } else if (pSpawnMode == 5) {
++    VecCopy(&spawnedMoby->m_Position, &pMoby->m_Position);
++    spawnedMoby->m_Position.z += 256;
++    VecNull(&dropProps->m_InitPos);
++    return spawnedMoby;
++  }
++
++  if (pStartPosition != nullptr) {
++    VecCopy(&startPosition, pStartPosition);
++  } else {
++    VecCopy(&startPosition, &pMoby->m_Position);
++    startPosition.z += 256;
++  }
++
++  targetPosition.z += 1024;
++  floorZ = ColFindFloor(&targetPosition, 2048);
++  targetPosition.z -= 1024;
++
++  surfaceAngle = (signed char)Atan2Fast(g_CollisionNormal.z,
++                                        VecMagnitude(&g_CollisionNormal, 0));
++
++  if (floorZ == 0 || surfaceAngle >= 24 ||
++      ColMoby(&targetPosition, 200, nullptr, 0, nullptr, 0) != 0) {
++    VecCopy(&targetPosition, &pMoby->m_Position);
++  }
++
++  flightFrames = 0;
++  currentZ = startPosition.z;
++  zVelocity = initialZVelocity;
++
++  while (zVelocity > 0 || targetPosition.z < currentZ) {
++    currentZ += zVelocity;
++    zVelocity -= 10;
++    flightFrames++;
++  }
++
++  VecCopy(&spawnedMoby->m_Position, &startPosition);
++  VecSub(&targetPosition, &targetPosition, &startPosition);
++  func_800177F8(&targetPosition, &targetPosition, flightFrames);
++  targetPosition.z = initialZVelocity;
++  VecCopy(&dropProps->m_InitPos, &targetPosition);
++  dropProps->m_SpawnState = 1;
++
++  return spawnedMoby;
++}
++
++// Moby pods
++
++/// @brief Are any mobys in this pod still alive?
++int func_8003B0DC(int pPod) {
++  u_short *pod;
++  int mobyId;
++
++  if (pPod >= g_MobyPodCount)
++    return 0;
++
++  // Can't use an iterator, because func_8003B160 doesn't match that way.
++  pod = g_MobyPods[pPod];
++
++  do {
++
++    mobyId = *pod;
++
++    if ((u_char)g_LevelMobys[mobyId & 0x7FFF].m_State <= 127)
++      return 1;
++
++    pod++;
++
++    // If the top bit is set, we're done
++    // This one (and the one below) are a bit different for some reason
++  } while ((mobyId << 16) >= 0);
++
++  return 0;
++}
++
++/// @brief Are all mobys in this pod in this state? (Unused)
++int func_8003B160(int pPod, u_int pState) {
++  u_short *pod;
++  int mobyId;
++
++  if (pPod >= g_MobyPodCount)
++    return 0;
++
++  pod = g_MobyPods[pPod];
++
++  // Only matched when using a do-while loop and defining pod
++  do {
++
++    mobyId = *pod;
++
++    if ((u_char)g_LevelMobys[mobyId & 0x7FFF].m_State != pState)
++      return 0;
++
++    pod++;
++
++    // If the top bit is set, we're done
++    // This one (and the one above) are a bit different for some reason
++  } while ((mobyId << 16) >= 0);
++
++  return 1;
++}
++
++/// @brief Set the state of all mobys in the moby's pod
++void func_8003B1E8(Moby *pMoby, u_int pState) {
++  u_short *pod;
++
++  if (pMoby->m_Pod >= g_MobyPodCount) {
++    if ((u_char)pMoby->m_State <= 127)
++      pMoby->m_State = pState;
++    return;
++  }
++
++  pod = g_MobyPods[pMoby->m_Pod];
++
++  do {
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127)
++      g_LevelMobys[*pod & 0x7FFF].m_State = pState;
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++// Something related to damaging other mobys inside a pod (metalhead)
++void func_8003B294(Moby *pMoby, int pPodIdx, uint pFlag, int pWithinOctDist,
++                   int pWithinZDist, int pWithinXYDist, int pWithinAngle) {
++  int angle2;
++  Moby *check_moby;
++  ushort *pod_list;
++
++  if (pPodIdx >= g_MobyPodCount)
++    return;
++
++  pod_list = g_MobyPods[pPodIdx];
++  while (1) {
++    check_moby = &g_LevelMobys[*pod_list & 0x7FFF];
++    if (check_moby->m_State < 0x80 &&
++        ABS2(pMoby->m_Position.x - check_moby->m_Position.x) < pWithinXYDist &&
++        ABS2(pMoby->m_Position.y - check_moby->m_Position.y) < pWithinXYDist &&
++        OctDistance(&pMoby->m_Position, &check_moby->m_Position) <
++            pWithinOctDist &&
++        ABS2(check_moby->m_Position.z - pMoby->m_Position.z) < pWithinZDist) {
++      angle2 = Atan2(check_moby->m_Position.x - (pMoby->m_Position).x,
++                     check_moby->m_Position.y - (pMoby->m_Position).y, 0);
++      if (func_80017908((pMoby->m_Rotation).z, angle2) < pWithinAngle) {
++        check_moby->m_DamageFlags |= pFlag;
++      }
++    }
++    if ((short)*pod_list < 0) {
++      break;
++    }
++    ++pod_list;
++  }
++}
++
++/// @brief Sets the state of all mobys in this pod, if they do not have a
++/// certain state
++void MobyPodSetStateIfNot(Moby *pMoby, u_int pState, u_int pRequiredNotState) {
++  u_short *pod;
++
++  if (pMoby->m_Pod >= g_MobyPodCount) {
++    if ((u_char)pMoby->m_State <= 127 &&
++        (u_char)pMoby->m_State != pRequiredNotState)
++      pMoby->m_State = pState;
++    return;
++  }
++
++  pod = g_MobyPods[pMoby->m_Pod];
++
++  do {
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127 &&
++        (u_char)g_LevelMobys[*pod & 0x7FFF].m_State != pRequiredNotState)
++      g_LevelMobys[*pod & 0x7FFF].m_State = pState;
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++/// @brief Sets the state of all mobys in this pod, if they have a certain state
++void MobyPodSetStateIf(Moby *pMoby, u_int pState, u_int pRequiredState) {
++  u_short *pod;
++
++  if (pMoby->m_Pod >= g_MobyPodCount) {
++    // SKELETON: Checking if the state is less than 127 is a bit weird
++    // probably a copy paste from MobyPodSetStateIfNot
++    if ((u_char)pMoby->m_State <= 127 &&
++        (u_char)pMoby->m_State == pRequiredState)
++      pMoby->m_State = pState;
++    return;
++  }
++
++  pod = g_MobyPods[pMoby->m_Pod];
++
++  do {
++    // SKELETON: Ditto
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127 &&
++        (u_char)g_LevelMobys[*pod & 0x7FFF].m_State == pRequiredState)
++      g_LevelMobys[*pod & 0x7FFF].m_State = pState;
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++/// @brief Sets the damage flags of all mobys in this pod (metalhead)
++void PodDamage(int pPodId, int pDamageFlags) {
++  u_short *pod;
++
++  if (pPodId >= g_MobyPodCount) {
++    return;
++  }
++
++  pod = g_MobyPods[pPodId];
++
++  do {
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127)
++      g_LevelMobys[*pod & 0x7FFF].m_DamageFlags |= pDamageFlags;
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++/// @brief Deallocates all mobys inside this pod (metalhead)
++void PodDeallocate(int pPodId) {
++  u_short *pod;
++
++  if (pPodId >= g_MobyPodCount) {
++    return;
++  }
++
++  pod = g_MobyPods[pPodId];
++
++  do {
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127)
++      MobyFree(&g_LevelMobys[*pod & 0x7FFF]);
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++/// @brief Sets the substate of all mobys in this pod
++void MobyPodSetSubstate(Moby *pMoby, u_int pSubstate) {
++  u_short *pod;
++
++  if (pMoby->m_Pod >= g_MobyPodCount) {
++    // SKELETON: There's no check that checks if the Moby is alive, where there
++    // is one in all the other ones, and below :p
++    pMoby->m_Substate = pSubstate;
++    return;
++  }
++
++  pod = g_MobyPods[pMoby->m_Pod];
++
++  do {
++    if ((u_char)g_LevelMobys[*pod & 0x7FFF].m_State <= 127)
++      g_LevelMobys[*pod & 0x7FFF].m_Substate = pSubstate;
++
++    // If the top bit is set (so negative), we're done
++  } while ((*((short *)pod++)) >= 0);
++}
++
++// Moby collectables
++
++// Marks a moby as killed
++void MobyMarkKilled(Moby *pMoby) {
++  // Make sure the Moby is a static one
++  if (pMoby >= g_LevelMobys && pMoby < g_DynMobys) {
++    // Get the index by subtracting the base moby pointer
++    int mobyIndex = pMoby - g_LevelMobys;
++
++    // Seperate variables, won't match otherwise
++    int killArrayIndex = mobyIndex >> 5; // / 32
++    int bitOffset = mobyIndex & 0x1f;    // % 32
++
++    g_Checkpoint.m_KilledMobys[killArrayIndex] |= 1 << bitOffset;
++  }
++}
++
++/// @brief Collects a collectable moby
++void MobyMarkCollected(int pGemValue, Moby *pMoby) {
++  int mobyIndex, arrayIndex;
++
++  if (pGemValue != 0) {
++    if (pMoby->m_Position.z >= 0x300) {
++      GenerateGemCollectMobys(pGemValue, pMoby);
++    }
++
++    g_GemTotal += pGemValue;
++    g_LevelGemCount[g_LevelIndex] += pGemValue;
++  }
++
++  // Check if the moby is a dynamic moby
++  // If it's not, use the Moby's index into the Moby array
++  // If it IS, we have to use m_MobyIndex, which is the parent
++  // Moby's index, instead.
++  if (pMoby >= g_LevelMobys && pMoby < g_DynMobys) {
++    int t;
++    // Not entirely sure what this shuffle of variables is good for
++    mobyIndex = pMoby - g_LevelMobys;
++    t = mobyIndex;
++    arrayIndex = mobyIndex >> 5;
++    mobyIndex &= 31;
++    g_Checkpoint.m_KilledMobys[arrayIndex] |= 1 << mobyIndex;
++    mobyIndex = t;
++  } else {
++    mobyIndex = pMoby->m_MobyIndex;
++  }
++
++  // 2D array, 32 ints per level
++  arrayIndex = mobyIndex >> 5;
++  mobyIndex &= 31;
++  D_80077908[g_LevelIndex][arrayIndex] |= 1 << mobyIndex;
++
++  PlaySound(g_Spu.m_SoundTable->gemPickup, pMoby, 16, nullptr);
++}
++
++/// @brief Collect a gem moby, adds it to the collected gem array
++void MobyCollectItem(Moby *pMoby) {
++  char x[16];
++  int gem_value;
++
++  // Update recently collected items, presumably for the little animation when
++  // you leave a level
++  g_RecentGemsCollected[g_NGemsSinceLevelEntry & 0x1F] = pMoby->m_Class;
++  g_NGemsSinceLevelEntry += 1;
++
++  // If this was a key, mark it as collected
++  if (pMoby == g_KeyMoby) {
++    g_KeyFlag = 3;
++  }
++
++  // Updates the moby's rotation matrix
++  // I'm not entirely sure why
++  func_800529E4(pMoby, UPDATE_PROP_ROTMATRIX);
++
++  // particle spawn
++  (*g_SpawnParticle)(6, 0xC, pMoby,
++                     D_8006E44C[12 + (pMoby->m_Class - MOBYCLASS_GEM_1)]);
++
++  if (pMoby->m_Class == MOBYCLASS_GEM_1)
++    gem_value = 1;
++  else if (pMoby->m_Class == MOBYCLASS_GEM_2)
++    gem_value = 2;
++  else if (pMoby->m_Class == MOBYCLASS_GEM_5)
++    gem_value = 5;
++  else if (pMoby->m_Class == MOBYCLASS_GEM_10)
++    gem_value = 10;
++  else if (pMoby->m_Class == MOBYCLASS_GEM_25)
++    gem_value = 25;
++  else
++    return;
++
++  // persist gem collection
++  MobyMarkCollected(gem_value, pMoby);
++}
++
++/// @brief Moves a moby toward a target position, rotating to face it
++/// @param pMoby The moby to move
++/// @param pTarget Target position to move toward
++/// @param pSpeed Movement speed
++/// @param turnRateH Horizontal (yaw) turn rate limit
++/// @param turnRateV Vertical (pitch) turn rate limit
++/// @param pBounds Collision bounds radius (0 to skip collision checks)
++/// @return 1 if collision occurred, 0 otherwise
++int MobyMoveTowardTarget(Moby *pMoby, Vector3D *pTarget, int pSpeed,
++                         int turnRateH, int turnRateV, int pBounds) {
++  Vector3D diff;
++  MATRIX matrix;
++  int result;
++  int azimuth;
++  int elevation;
++
++  result = 0;
++
++  VecSub(&diff, pTarget, &pMoby->m_Position);
++  azimuth = Atan2(diff.x, diff.y, 0);
++  elevation = Atan2(VecMagnitude(&diff, 0), diff.z, 0);
++
++  // Calculate azimuth difference and sign-extend from byte
++  azimuth = (azimuth - pMoby->m_Rotation.z) & 0xFF;
++  if (azimuth >= 128) {
++    azimuth -= 256;
++  }
++
++  // Clamp azimuth diff to turn rate
++  if (azimuth < -turnRateH) {
++    azimuth = -turnRateH;
++  }
++  if (turnRateH < azimuth) {
++    azimuth = turnRateH;
++  }
++
++  // Calculate elevation difference and sign-extend from byte
++  elevation = (elevation - pMoby->m_Rotation.y) & 0xFF;
++  if (elevation >= 128) {
++    elevation -= 256;
++  }
++
++  // Clamp elevation diff to turn rate
++  if (elevation < -turnRateV) {
++    elevation = -turnRateV;
++  }
++  if (turnRateV < elevation) {
++    elevation = turnRateV;
++  }
++
++  // Update rotation
++  pMoby->m_Rotation.z += azimuth;
++  pMoby->m_Rotation.y += elevation;
++
++  // Create rotation matrix from moby rotation
++  RotVec8ToMatrix(&pMoby->m_Rotation, &matrix, nullptr);
++
++  // Create velocity vector (speed, 0, 0) and rotate by matrix
++  diff.x = pSpeed;
++  diff.y = 0;
++  diff.z = 0;
++  VecRotateByMatrix(&matrix, &diff, &diff);
++
++  // Add velocity to position
++  VecAdd(&pMoby->m_Position, &pMoby->m_Position, &diff);
++
++  // Check collisions if bounds specified
++  if (pBounds != 0) {
++    if (ColSphere(&pMoby->m_Position, pBounds, pBounds)) {
++      VecCopy(&pMoby->m_Position, &g_CollisionPoint);
++      result = 1;
++    }
++    if (ColMoby(&pMoby->m_Position, pBounds, nullptr, 0, pMoby, 1)) {
++      result = 1;
++    }
++  }
++
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  MobyFloorHeight(pMoby);
++  MobyUpdateShadow(pMoby);
++
++  return result;
++}
++
++int MobyMoveForward(Moby *pMoby, int pForwardDist, int pMobyRadius,
++                    int pGroundRadius, int flags) {
++  MATRIX mat;
++  Vector3D pos;
++  int surfaceZ;
++
++  if (D_800756C4 == 3) {
++    pForwardDist += pForwardDist >> 1;
++  } else if (D_800756C4 == 4) {
++    pForwardDist *= 2;
++  }
++#if SPYRO_TICK60
++  else if (D_800756C4 == 1) { // 60 Hz logic: this vblank's share (D130)
++    pForwardDist = T60_SHARE(pForwardDist);
++  }
++#endif
++
++  RotVec8ToMatrix(&pMoby->m_Rotation, &mat, nullptr);
++
++  pos.x = pForwardDist;
++  pos.z = 0;
++  pos.y = 0;
++
++  // Transform the forward offset into world space using the Moby's rotation
++  VecRotateByMatrix(&mat, &pos, &pos);
++  VecAdd(&pos, &pos, &pMoby->m_Position);
++
++  // Optionally lift the test point up before collision checks
++  if (flags & 0x01) {
++    pos.z += 300 + pGroundRadius;
++  }
++
++  // Check for Moby collisions at the target position
++  if (pMobyRadius != 0) {
++    if (!(flags & 0x02)) {
++      // Abort move if something is in the way
++      if (ColMoby(&pos, pMobyRadius, nullptr, 0, pMoby, 0) != 0) {
++        return 1;
++      }
++    } else {
++      // Register collision but don't stop
++      ColMoby(&pos, pMobyRadius, nullptr, 0, pMoby, 3);
++    }
++  }
++
++  // Check for environment collision at the target position
++  if (pGroundRadius != 0 &&
++      ColSphere(&pos, pGroundRadius, pGroundRadius) != 0) {
++    return 2;
++  }
++
++  // Undo the z lift now that collision checks are done
++  if (flags & 0x01) {
++    pos.z -= 300 + pGroundRadius;
++  }
++
++  // Find the surface directly below
++  if (flags & (0x4 | 0x10)) {
++    pos.z += 1024; // raise origin so the downward trace starts above ground
++    surfaceZ = ColFindFloor(&pos, 1024 * 2);
++  }
++
++  // Reject the move if it would place the moby too far above or below the
++  // surface
++  if (flags & 0x10) {
++    int mobyZ = pMoby->m_Position.z;
++    if (ABS2(surfaceZ - mobyZ) > 200) {
++      return 2;
++    }
++  }
++
++  VecCopy(&pMoby->m_Position, &pos);
++  MobyUpdateShadow(pMoby);
++  func_800529E4(pMoby, UPDATE_PROP_CHAIN);
++  return 0;
++}
++
++/// @brief Determines which quadrant Spyro is in relative to the moby
++/// @param pMoby The moby to check from
++/// @return A bitmask (1, 2, 4, or 8) indicating the quadrant
++/// @note Unused
++int unused_GetSpyroQuadrant(Moby *pMoby) {
++  MATRIX matrix;
++  Vector3D8 rot;
++  Vector3D diff;
++  int result;
++
++  result = 0xF;
++
++  if (pMoby->m_Rotation.z != 0) {
++    rot.x = 0;
++    rot.y = 0;
++    rot.z = -pMoby->m_Rotation.z;
++    RotVec8ToMatrix(&rot, &matrix, nullptr);
++    VecSub(&diff, &pMoby->m_Position, &g_Spyro.m_Position);
++    VecRotateByMatrix(&matrix, &diff, &diff);
++  } else {
++    VecSub(&diff, &pMoby->m_Position, &g_Spyro.m_Position);
++  }
++
++  if (diff.x > 0) {
++    result &= 0x6;
++  } else {
++    result &= 0x9;
++  }
++
++  if (diff.y > 0) {
++    result &= 0x3;
++  } else {
++    result &= 0xC;
++  }
++
++  return result;
++}
++
++INCLUDE_ASM_REORDER_HACK("asm/nonmatchings/moby_helpers", func_8003BFC0);
++
++#define setMobyLetterProps(props, parent, index, len)                          \
++  (props)->m_Parent = parent;                                                  \
++  (props)->m_Len = len;                                                        \
++  (props)->m_Index = index
++
++// Create portal text
++void func_8003C358(Moby *pMoby, int pIsLevelName) {
++  char const *level_name;
++  Moby *char_moby;
++  Vector3D *pos;
++  Vector3D vec1;
++  Vector3D vec2;
++  Vector3D vec3;
++  Vector3D vec4;
++  u_char z_rot;
++  u_char textBowAngle;
++  u_char character;
++  int char_moby_class;
++  int string_len;
++  int i;
++
++  if (pIsLevelName) {
++    level_name = g_LevelNames[*(int *)(pMoby->m_Props)];
++    z_rot = pMoby->m_Rotation.z;
++  } else {
++    level_name = g_LevelNames[36]; //"RETURN HOME"
++    z_rot = Atan2(g_Spyro.m_Position.x - pMoby->m_Position.x,
++                  g_Spyro.m_Position.y - pMoby->m_Position.y, 0);
++  }
++
++  setXYZ(&vec1, Cos(z_rot << 4) * 3 >> 4, Sin(z_rot << 4) * 3 >> 4, 0);
++
++  setXYZ(&vec2, Cos((z_rot + 64) << 4) >> 5, Sin((z_rot + 64) << 4) >> 5, 0);
++
++  if (pIsLevelName != 0) {
++    if (pMoby->m_Substate == 0) {
++      z_rot = pMoby->m_Rotation.z + 128;
++    } else {
++      z_rot = pMoby->m_Rotation.z;
++      VecNull(&vec3);
++      VecSub(&vec1, &vec3, &vec1);
++      VecSub(&vec2, &vec3, &vec2);
++    }
++  }
++
++  string_len = strlen((char *)level_name);
++
++  VecMult(&vec3, &vec2, string_len - 1);
++
++  VecShiftLeft(&vec2, 1);
++
++  textBowAngle = (string_len - 1) * 2;
++
++  vec3.z += Cos(textBowAngle << 4) * 3 >> 3;
++
++  setXYZ(&vec4, vec1.x * Cos(textBowAngle << 4),
++         vec1.y * Cos(textBowAngle << 4), 0);
++
++  for (i = 0; i < string_len; textBowAngle -= 4, ++i) {
++    character = level_name[i];
++
++    if (character != ' ') { // Skip spaces
++      char_moby_class = character;
++
++      if (character >= 'A' && character <= 'Z') {
++        char_moby_class = char_moby_class - 'A' + MOBYCLASS_LETTER_A;
++      } else {
++        // If not a letter, we just turn it into an apostrophe
++        char_moby_class = MOBYCLASS_LETTER_APOSTROPHE;
++      }
++
++      char_moby = (*g_SpawnMoby)(char_moby_class, pMoby);
++      setMobyLetterProps((MobyLetterProps *)char_moby->m_Props, pMoby, i,
++                         string_len);
++      pos = &char_moby->m_Position;
++      setXYZ(pos, vec1.x * Cos(textBowAngle << 4),
++             vec1.y * Cos(textBowAngle << 4), 0);
++      VecSub(pos, pos, &vec4);
++
++      VecShiftRight(pos, 10); // Divide by 1024
++
++      VecAdd(pos, pos, &vec1);
++      VecAdd(pos, pos, &pMoby->m_Position);
++      VecSub(pos, pos, &vec3);
++
++      char_moby->m_Position.z += Cos(textBowAngle << 4) * 3 >> 3;
++
++      // Apostrophes are placed higher
++      if (char_moby->m_Class == MOBYCLASS_LETTER_APOSTROPHE)
++        char_moby->m_Position.z += 256;
++
++      char_moby->m_Rotation.z = z_rot;
++      char_moby->m_FloorDistance = z_rot;
++      char_moby->m_State = pMoby->m_Substate;
++      char_moby->m_Substate = i * 8;
++      char_moby->m_SpecularMetalType = 2;
++    }
++
++    VecSub(&vec3, &vec3, &vec2);
++  }
++}
++
++/// @brief Updates a dragon fragment's animation each frame
++/// @param pMoby The fragment moby to update
++/// Applies velocity to position, gravity to z velocity (clamped to -128),
++/// rotation deltas, and spawns particles every other frame. When lifetime
++/// expires or fragment falls below initZ, spawns end particles and deactivates
++/// the moby.
++void MobyUpdateDragonFragment(Moby *pMoby) {
++  MobyDragonFragmentProps *props = pMoby->m_Props;
++  int particleParams[3];
++
++  if (props->m_Lifetime != 0 && pMoby->m_Position.z > props->m_MinZ) {
++    // Update position with velocity
++    pMoby->m_Position.x += T60_SHARE(props->m_Velocity.x);
++    pMoby->m_Position.y += T60_SHARE(props->m_Velocity.y);
++
++    // Apply gravity to z velocity
++    T60_TICK_DO(props->m_Velocity.z -= 6);
++    if (props->m_Velocity.z < -0x80) {
++      props->m_Velocity.z = -0x80;
++    }
++
++    // Update z position
++    pMoby->m_Position.z += T60_SHARE(props->m_Velocity.z);
++
++    // Update rotation
++    pMoby->m_Rotation.x += T60_SHARE8(props->m_AngularVelocity.x);
++    pMoby->m_Rotation.y += T60_SHARE8(props->m_AngularVelocity.y);
++    pMoby->m_Rotation.z += T60_SHARE8(props->m_AngularVelocity.z);
++
++    // Decrement timer
++    T60_TICK_DO(props->m_Lifetime--);
++
++    // Spawn particles every other frame
++    if (T60_TICK_AND((props->m_Lifetime & 1) == 0)) {
++      particleParams[0] = rand() & 3;
++      particleParams[1] = rand() & 3;
++      particleParams[2] = 0x14;
++      (*g_SpawnParticle)(1, 1, &pMoby->m_Position, (int)particleParams);
++    }
++  } else {
++    // Fragment finished - spawn end particles and deactivate
++    (*g_SpawnParticle)(3, 0x46, &pMoby->m_Position, 0x10);
++    MobyFree(pMoby);
++  }
++}
++
++/// @brief Calculates viewing angles from Spyro to a target position
++/// @param pTarget The target position to look at
++/// Stores clamped elevation angle in g_Spyro.m_HeadLookTarget.y
++/// Stores clamped azimuth angle in g_Spyro.m_HeadLookTarget.z
++void SetSpyroHeadLookTarget(Vector3D *pTarget) {
++  MATRIX matrix;
++  Vector3D vec;
++  int magnitude;
++  int angle;
++
++  vec.x = 0x64;
++  vec.y = 0;
++  vec.z = 0x40;
++
++  VecRotateByMatrix(&g_Spyro.m_RotationMatrix, &vec, &vec);
++  VecAdd(&vec, &vec, &g_Spyro.m_Position);
++  VecSub(&vec, pTarget, &vec);
++  func_80016FD0(&matrix, &g_Spyro.m_RotationMatrix);
++  VecRotateByMatrix(&matrix, &vec, &vec);
++
++  magnitude = VecMagnitude(&vec, 0);
++  angle = Atan2(magnitude, vec.z, 1);
++  g_Spyro.m_HeadLookTarget.y = angle;
++
++  if ((u_int)(angle - 0x181) < 0x67F) {
++    g_Spyro.m_HeadLookTarget.y = 0x180;
++  } else if ((u_int)(angle - 0x800) < 0x680) {
++    g_Spyro.m_HeadLookTarget.y = 0xE80;
++  }
++
++  angle = Atan2(vec.x, vec.y, 1);
++  g_Spyro.m_HeadLookTarget.z = angle;
++
++  if ((u_int)(angle - 0x201) < 0x5FF) {
++    g_Spyro.m_HeadLookTarget.z = 0x200;
++  } else if ((u_int)(angle - 0x800) < 0x600) {
++    g_Spyro.m_HeadLookTarget.z = 0xE00;
++  }
++}
++
++/// @brief Updates a moby to follow a path, advancing waypoints when close
++/// @param pMoby The moby to move along the path
++/// @param pPath The path data containing waypoints
++/// @param threshold Distance threshold to advance to the next waypoint
++/// @param maxSpeed Maximum movement speed (clamped)
++/// @param pBounds Collision bounds (passed to MobyMoveTowardTarget)
++/// @param turnRateH Horizontal/yaw turn rate
++/// @param turnRateV Vertical/pitch turn rate
++/// @note Only used for Puffer Bird in Lofty Castle
++void UpdatePufferBirdMobyPathNode(Moby *pMoby, PathData *pPath, int threshold,
++                                  int maxSpeed, int pBounds, int turnRateH,
++                                  int turnRateV) {
++  Vector3D localVec;
++  int dist;
++
++  // Calculate vector from current waypoint to moby position
++  VecSub(&localVec, &pMoby->m_Position,
++         &pPath->m_Nodes[pPath->m_CurrentNode].m_Position);
++  dist = VecMagnitude(&localVec, 1);
++
++  // If moby is close enough to the current waypoint, advance to the next one
++  if (dist < threshold) {
++    if (pPath->m_Reversed == -1) {
++      // Normal direction: increment node index
++      pPath->m_CurrentNode++;
++      if ((pPath->m_CurrentNode & 0xFF) == pPath->m_NodeCount) {
++        // Wrap around to the beginning
++        pPath->m_CurrentNode = 0;
++      }
++    } else {
++      // Reversed direction: decrement node index
++      pPath->m_CurrentNode--;
++      if ((pPath->m_CurrentNode & 0xFF) == 0xFF) {
++        // Wrap around to the last node
++        pPath->m_CurrentNode = pPath->m_NodeCount - 1;
++      }
++    }
++  }
++
++  // Convert distance to speed (divide by 16) and clamp to max
++  dist >>= 4;
++  if (maxSpeed < dist) {
++    dist = maxSpeed;
++  }
++
++  // Move the moby toward the current waypoint
++  MobyMoveTowardTarget(pMoby, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
++                       dist, turnRateH, turnRateV, pBounds);
++}
++
++/// @brief Registers a flight level collectible moby type in one of 4 slots
++/// @param index The moby type index to register
++void RegisterFlightMobyCollectibleType(int index) {
++  int i;
++
++  g_FlightObjectiveCounters[index]++;
++
++  for (i = 0; i < 4; i++) {
++    if (g_FlightObjectiveActiveSlots[i] < 0) {
++      g_FlightObjectiveActiveSlots[i] = index;
++      return;
++    }
++    if (g_FlightObjectiveActiveSlots[i] == index) {
++      return;
++    }
++  }
++}
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -914,5 +914,7 @@ void UpdateSlopeFloorCollision(void) {
+   // When airborne and not idle, try a simple vertical raycast
+   // This catches cases where the rotated ray missed but floor exists
+-  if (g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
++  // PAL: not in states 11 and 2 (D134)
++  if ((!REGION_IS(PAL) || (g_Spyro.m_State != 11 && g_Spyro.m_State != 2)) &&
++      g_Spyro.m_airTime != 0 && g_Spyro.m_floorIdleTime == 0) {
+     // Axis-aligned vertical ray (no rotation)
+     vec1.z = -0x104;
