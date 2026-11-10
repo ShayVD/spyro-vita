@@ -24,6 +24,16 @@ HW_NAMES=(save)
 HW_COLLECT=(save)
 # a folder in HW_DATA the run starts empty, or from SAVE=DIR (none: leave it empty)
 HW_SAVE_DIR=save
+# optional: the unstripped ELF of the build HW_VPK packs (before vita-elf-create), relative to the game repo's
+# root; copied next to each crash dump a run fetches (OUT_DIR/psp2core-X.elf) with its SHA-1 in hw-run.txt, so the
+# dump is read against the same build. With VPK= pointing at another build, give that build's ELF as HW_ELF= too.
+# The environment's HW_ELF wins over this line.
+HW_ELF=
+# 1: fetch the Vita's eboot.bin before the run (OUT_DIR/eboot-before.bin) and put it back when the run ends,
+# however it ends, with a read-back (only eboot.bin: a run that installed the whole app leaves its sce_sys/).
+# Default 0: a batch of runs leaves its build installed; end the batch with hw_run.sh --put-eboot instead.
+# The environment's HW_KEEP_APP wins over this line.
+HW_KEEP_APP=0
 
 # Optional hooks (bash functions):
 #   hw_config_base OWNER_CFG  print the run's first config.txt lines (OWNER_CFG: a copy of the owner's

@@ -15,6 +15,7 @@ carried a copy), the game's paths made settings.
     hw_ftp.py mv FROM TO                 rename
     hw_ftp.py rm REMOTE                  a file
     hw_ftp.py rmtree REMOTE              a folder and everything in it
+    hw_ftp.py lock                       whether another run holds the Vita (exit 3, no network)
 
 Paths are the Vita's (ux0:data/GAME/config.txt); FTP spells them
 /ux0:/data/GAME/config.txt. VITA_IP is the Vita's address, VITA_FTP_PORT
@@ -25,10 +26,19 @@ touched): the runner must not be able to touch another app's files whatever
 it is told. The game's folders come from HW_DATA (ux0:data/GAME) and
 HW_TITLE_ID, from the environment or from the game file HW_GAME names
 (KEY=VALUE lines, as hw_run.sh reads it); with neither, nothing is writable.
+
+One user of the Vita at a time: while hw_run.sh's lock ($HW_STATE/hw.lock,
+default ~/.cache/vita-port-kit) holds the PID of a live process, every
+operation, reads and commands too, is refused with exit 3 ("the Vita is in
+use by PID N (GAME)"), except for the lock's holder and its children
+(hw_run.sh exports HW_LOCK_HELD=its PID; a script that took the lock itself
+is an ancestor of the call). A lock left by a dead PID does not count.
+HW_IGNORE_LOCK=1 skips the check.
 """
 import ftplib
 import os
 import socket
+import subprocess
 import sys
 
 IP = os.environ.get("VITA_IP", "")
@@ -58,6 +68,58 @@ WRITABLE = tuple(w for w in (
 
 class Missing(Exception):
     pass
+
+
+def parent(pid):
+    """the parent PID of pid, 0 when unknown"""
+    try:
+        with open("/proc/%d/stat" % pid) as f:  # Linux
+            return int(f.read().rsplit(")", 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True).stdout
+        return int(out.strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def ancestors():
+    """this process and the ones that started it"""
+    seen, pid = {os.getpid()}, os.getppid()
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        pid = parent(pid)
+    return seen
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def lock_owner():
+    """(PID, game) of a live run holding hw_run.sh's lock that isn't this
+    process's own runner, or None"""
+    lock = os.path.join(os.environ.get("HW_STATE") or os.path.expanduser("~/.cache/vita-port-kit"), "hw.lock")
+    try:
+        with open(os.path.join(lock, "pid")) as f:
+            pid = int(f.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    if pid <= 0 or not alive(pid) or str(pid) == os.environ.get("HW_LOCK_HELD") or pid in ancestors():
+        return None
+    try:
+        with open(os.path.join(lock, "game")) as f:
+            game = f.read().strip() or "?"
+    except OSError:
+        game = "?"
+    return pid, game
 
 
 def ftp_path(p):
@@ -234,6 +296,14 @@ def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
     op, args = argv[1], argv[2:]
+    owner = lock_owner() if op == "lock" or os.environ.get("HW_IGNORE_LOCK") != "1" else None
+    if op == "lock":
+        print("in use by PID %d (%s)" % owner if owner else "free")
+        return 3 if owner else 0
+    if owner:
+        print("hw_ftp: the Vita is in use by PID %d (%s): not running %s (HW_IGNORE_LOCK=1 overrides)"
+              % (owner + (op,)), file=sys.stderr)
+        return 3
     try:
         if op == "cmd":
             print(command(" ".join(args)) or "(no reply)")

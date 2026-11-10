@@ -1,8 +1,10 @@
 /* The disc image layer (vpk_discimage.h).
- * From kh1-decomp host/port/cd_image.c @ 85befa4a and spyro-vita src/platform/common/cdimage.c @ 987363e. */
+ * From kh1-decomp host/port/cd_image.c @ 85befa4a and spyro-vita src/platform/common/cdimage.c @ 987363e; the
+ * folder search, cue sheets and boot serial from spyro-vita src/platform/common/cdimage.c @ bb62f38. */
 #define _FILE_OFFSET_BITS 64 /* 32-bit hosts: off_t and fseeko past 2 GiB */
 #include "vpk_discimage.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -356,6 +358,335 @@ int vpk_disc_walk(VpkDisc *d, int (*fn)(void *user, const VpkDiscEntry *e), void
   size = (int)le32(pvd + 156 + 10);
   d->bad_lba = lba;
   return walk(d, "", lba, size, 0, fn, user);
+}
+
+/* ---- cue sheets (from spyro-vita cdimage.c @ bb62f38, D60) ---- */
+
+static int lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+
+/* the word at p (any case), followed by a blank or the line's end q */
+static int keyword(const char *p, const char *q, const char *word) {
+  for (; *word; p++, word++)
+    if (p >= q || lower((unsigned char)*p) != lower((unsigned char)*word))
+      return 0;
+  return p == q || *p == ' ' || *p == '\t';
+}
+
+static const char *skip_blank(const char *p, const char *q) {
+  while (p < q && (*p == ' ' || *p == '\t'))
+    p++;
+  return p;
+}
+
+static const char *skip_word(const char *p, const char *q) {
+  while (p < q && *p != ' ' && *p != '\t')
+    p++;
+  return p;
+}
+
+/* "mm:ss:ff" as sectors, or -1 */
+static int msf(const char *p, const char *q) {
+  int v[3] = {0, 0, 0}, i, digits;
+  for (i = 0; i < 3; i++) {
+    for (digits = 0; p < q && *p >= '0' && *p <= '9'; p++, digits++)
+      v[i] = v[i] * 10 + (*p - '0');
+    if (!digits || (i < 2 && (p >= q || *p++ != ':')))
+      return -1;
+  }
+  return (v[0] * 60 + v[1]) * 75 + v[2];
+}
+
+static int cue_mode(const char *p, const char *q, int *sector) {
+  static const struct {
+    const char *word;
+    int mode, sector;
+  } k[] = {{"AUDIO", VPK_CUE_AUDIO, 2352},           {"CDG", VPK_CUE_CDG, 2448},
+           {"MODE1/2048", VPK_CUE_MODE1_2048, 2048}, {"MODE1/2352", VPK_CUE_MODE1_2352, 2352},
+           {"MODE2/2336", VPK_CUE_MODE2_2336, 2336}, {"MODE2/2352", VPK_CUE_MODE2_2352, 2352},
+           {"MODE2/2448", VPK_CUE_MODE2_2448, 2448}};
+  const char *slash;
+  unsigned i;
+  for (i = 0; i < sizeof k / sizeof *k; i++)
+    if (keyword(p, q, k[i].word)) {
+      *sector = k[i].sector;
+      return k[i].mode;
+    }
+  /* CDI/2352, MODE2/2324 ...: the size after the '/' */
+  *sector = 0;
+  for (slash = p; slash < q && *slash != '/' && *slash != ' ' && *slash != '\t'; slash++)
+    ;
+  if (slash < q && *slash == '/')
+    *sector = atoi(slash + 1);
+  return VPK_CUE_OTHER;
+}
+
+int vpk_cue_parse(const char *text, int n, VpkCue *c) {
+  const char *p = text, *end = text + (n > 0 ? n : 0), *q;
+  int used = 0;
+  memset(c, 0, sizeof *c);
+  if (end - p >= 3 && (unsigned char)p[0] == 0xef && (unsigned char)p[1] == 0xbb && (unsigned char)p[2] == 0xbf)
+    p += 3;
+  for (; p < end; p = q + 1) {
+    for (q = p; q < end && *q != '\r' && *q != '\n'; q++)
+      ;
+    p = skip_blank(p, q);
+    if (keyword(p, q, "FILE")) {
+      const char *s = skip_blank(p + 4, q), *e;
+      if (s < q && *s == '"') { /* quoted: up to the closing quote */
+        for (e = ++s; e < q && *e != '"'; e++)
+          ;
+      } else { /* unquoted: up to the type word (BINARY, WAVE ...), after a name that may hold blanks */
+        const char *last = q, *type;
+        while (last > s && (last[-1] == ' ' || last[-1] == '\t'))
+          last--;
+        for (type = last; type > s && type[-1] != ' ' && type[-1] != '\t'; type--)
+          ;
+        for (e = type > s ? type : last; e > s && (e[-1] == ' ' || e[-1] == '\t'); e--)
+          ;
+      }
+      if (e <= s || c->nfiles == VPK_CUE_TRACKS || used + (int)(e - s) + 1 > (int)sizeof c->names)
+        return -1;
+      c->file_at[c->nfiles++] = used;
+      memcpy(c->names + used, s, (size_t)(e - s));
+      used += (int)(e - s);
+      c->names[used++] = 0;
+    } else if (keyword(p, q, "TRACK")) {
+      VpkCueTrack *t;
+      const char *s = skip_blank(p + 5, q);
+      if (!c->nfiles || c->ntracks == VPK_CUE_TRACKS)
+        return -1;
+      t = &c->track[c->ntracks++];
+      t->number = atoi(s);
+      t->mode = cue_mode(skip_blank(skip_word(s, q), q), q, &t->sector);
+      t->file = c->nfiles - 1;
+      t->index0 = t->index1 = -1;
+    } else if (c->ntracks && keyword(p, q, "INDEX")) {
+      const char *s = skip_blank(p + 5, q);
+      int i = atoi(s), at = msf(skip_blank(skip_word(s, q), q), q);
+      if (i == 0)
+        c->track[c->ntracks - 1].index0 = at;
+      else if (i == 1)
+        c->track[c->ntracks - 1].index1 = at;
+    } else if (c->ntracks && keyword(p, q, "PREGAP")) {
+      int at = msf(skip_blank(p + 6, q), q);
+      c->track[c->ntracks - 1].pregap = at > 0 ? at : 0;
+    }
+    if (q >= end)
+      break;
+  }
+  return c->ntracks ? c->ntracks : -1;
+}
+
+int vpk_cue_data_track(const VpkCue *c) {
+  int i;
+  for (i = 0; i < c->ntracks; i++)
+#if defined(DISCIMAGE_MUTANT) && DISCIMAGE_MUTANT == 2 /* the test's mutant: the first track, data or not */
+    return i;
+#else
+    if (c->track[i].mode != VPK_CUE_AUDIO && c->track[i].mode != VPK_CUE_CDG)
+      return i;
+#endif
+  return -1;
+}
+
+const char *vpk_cue_file(const VpkCue *c, int file) {
+  return file >= 0 && file < c->nfiles ? c->names + c->file_at[file] : "";
+}
+
+/* ---- the image in a folder (from spyro-vita cdimage.c @ bb62f38, D60) ---- */
+
+#define MAX_CANDIDATES 256
+#define MAX_CUE (64 * 1024)
+
+static int ci_cmp(const char *a, const char *b) {
+  for (; *a && lower((unsigned char)*a) == lower((unsigned char)*b); a++, b++)
+    ;
+  return lower((unsigned char)*a) - lower((unsigned char)*b);
+}
+
+/* name order ignoring case; names that differ only in case in byte order, so every file system gives one order */
+static int by_name(const void *a, const void *b) {
+  const char *x = *(const char *const *)a, *y = *(const char *const *)b;
+  int r = ci_cmp(x, y);
+  return r ? r : strcmp(x, y);
+}
+
+static int has_ext(const char *name, const char *ext) {
+  size_t n = strlen(name), e = strlen(ext);
+  return n > e && ci_cmp(name + n - e, ext) == 0;
+}
+
+static void join(char *out, size_t cap, const char *dir, const char *name) {
+  size_t n = strlen(dir);
+  int sep = n && dir[n - 1] != '/' && dir[n - 1] != '\\' && dir[n - 1] != ':';
+  snprintf(out, cap, "%s%s%s", dir, sep ? "/" : "", name);
+}
+
+/* want, its folders dropped, in dir: the name as the folder spells it (the same spelling first, else one that
+ * differs in case) */
+static int in_dir(const char *dir, const char *want, char *out, size_t cap) {
+  DIR *d = opendir(dir);
+  struct dirent *e;
+  const char *base = want, *p;
+  int found = 0;
+  for (p = want; *p; p++)
+    if (*p == '/' || *p == '\\')
+      base = p + 1;
+  if (!d)
+    return 0;
+  while ((e = readdir(d)))
+    if (ci_cmp(e->d_name, base) == 0) {
+      snprintf(out, cap, "%s", e->d_name);
+      found = 1;
+      if (strcmp(e->d_name, base) == 0)
+        break;
+    }
+  closedir(d);
+  return found;
+}
+
+/* a .cue candidate: its data track's file as f->image; VPK_IMG_OK or why not */
+static int from_cue(const char *dir, const VpkDiscSearch *s, VpkDiscFound *f) {
+  char path[512], *text;
+  VpkCue *c;
+  File h;
+  int n = 0, t, r = VPK_IMG_OK;
+  join(path, sizeof path, dir, f->name);
+  if ((h = f_open(path)) == NO_FILE)
+    return VPK_IMG_CUE_UNREADABLE;
+  text = malloc(MAX_CUE);
+  c = malloc(sizeof *c);
+  if (text && c)
+    n = f_read(h, text, MAX_CUE);
+  f_close(h);
+  if (!text || !c)
+    r = VPK_IMG_CUE_UNREADABLE;
+  else if (vpk_cue_parse(text, n, c) < 0)
+    r = VPK_IMG_CUE_BAD;
+  else if ((t = vpk_cue_data_track(c)) < 0)
+    r = VPK_IMG_CUE_TRACK;
+  else {
+    const char *name = vpk_cue_file(c, c->track[t].file);
+    f->track = c->track[t].number;
+    f->mode = c->track[t].mode;
+    if (s->cue_modes && !(s->cue_modes & 1u << f->mode))
+      r = VPK_IMG_CUE_TRACK;
+    else if (!in_dir(dir, name, f->image, sizeof f->image)) {
+      snprintf(f->image, sizeof f->image, "%s", name);
+      r = VPK_IMG_CUE_MISSING;
+    }
+  }
+  free(text);
+  free(c);
+  return r;
+}
+
+static void found_init(VpkDiscFound *f, int status) {
+  memset(f, 0, sizeof *f);
+  f->status = status;
+  f->mode = -1;
+  f->kind = VPK_DISC_UNREADABLE;
+}
+
+int vpk_disc_find_image(const char *dir, const VpkDiscSearch *s, VpkDiscFound *out) {
+  static const char *const exts[] = {".cue", ".bin", ".img", ".iso", ".chd", ".pbp", ".ecm"};
+  static const VpkDiscSearch defaults = {0, 0, NULL, NULL};
+  char *names[MAX_CANDIDATES];
+  int nnames = 0, i, pass, found = 0, have_first = 0;
+  unsigned kinds;
+  DIR *d;
+  struct dirent *e;
+  VpkDiscFound f;
+  if (!s)
+    s = &defaults;
+  kinds = s->kinds ? s->kinds : (1u << VPK_DISC_RAW | 1u << VPK_DISC_ISO);
+  found_init(out, VPK_IMG_NONE);
+  if (!(d = opendir(dir)))
+    return -1;
+  while ((e = readdir(d)) && nnames < MAX_CANDIDATES)
+    for (i = 0; i < (int)(sizeof exts / sizeof *exts); i++)
+      if (has_ext(e->d_name, exts[i])) {
+        if ((names[nnames] = malloc(strlen(e->d_name) + 1)))
+          strcpy(names[nnames++], e->d_name);
+        break;
+      }
+  closedir(d);
+  qsort(names, (size_t)nnames, sizeof *names, by_name);
+
+  for (pass = 0; pass < 2 && !found; pass++)
+    for (i = 0; i < nnames && !found; i++) {
+      int cue = has_ext(names[i], ".cue");
+#if defined(DISCIMAGE_MUTANT) && DISCIMAGE_MUTANT == 1 /* the test's mutant: one pass in name order */
+      if (pass == 1)
+        break;
+#else
+      if ((pass == 0) != cue)
+        continue;
+#endif
+      found_init(&f, VPK_IMG_OK);
+      f.cue = cue;
+      snprintf(f.name, sizeof f.name, "%s", names[i]);
+      if (cue)
+        f.status = from_cue(dir, s, &f);
+      else
+        snprintf(f.image, sizeof f.image, "%s", names[i]);
+      if (f.status == VPK_IMG_OK) {
+        join(f.path, sizeof f.path, dir, f.image);
+        f.kind = vpk_disc_sniff(f.path, &f.l);
+        if (!(kinds & 1u << f.kind))
+          f.status = VPK_IMG_KIND;
+      }
+      if (s->seen)
+        s->seen(s->user, &f);
+      if (f.status == VPK_IMG_OK || !have_first) {
+        *out = f;
+        found = f.status == VPK_IMG_OK;
+        have_first = 1;
+      }
+    }
+  for (i = 0; i < nnames; i++)
+    free(names[i]);
+  return found ? 0 : -1;
+}
+
+/* ---- SYSTEM.CNF (from spyro-vita cdimage.c @ bb62f38, D60) ---- */
+
+int vpk_disc_boot_serial(const char *cnf, int n, char *serial, int cap) {
+  const char *p = cnf, *end = cnf + (n > 0 ? n : 0), *q;
+  if (cap <= 0)
+    return -1;
+  serial[0] = 0;
+  for (; p < end; p = q + 1) {
+    const char *s, *name;
+    int k = 0;
+    for (q = p; q < end && *q != '\r' && *q != '\n'; q++)
+      ;
+    p = skip_blank(p, q);
+    if (q - p < 5 || lower((unsigned char)p[0]) != 'b' || lower((unsigned char)p[1]) != 'o' ||
+        lower((unsigned char)p[2]) != 'o' || lower((unsigned char)p[3]) != 't')
+      continue;
+    s = p + 4;
+    if (s < q && *s == '2') /* BOOT2: a PS2 disc */
+      s++;
+    s = skip_blank(s, q);
+    if (s >= q || *s != '=')
+      continue;
+    /* past "cdrom:" / "cdrom0:" and every folder: the last part, up to ";1" or a blank */
+    for (name = s = skip_blank(s + 1, q); s < q && *s != ';' && *s != ' ' && *s != '\t'; s++)
+      if (*s == ':' || *s == '\\' || *s == '/')
+        name = s + 1;
+    for (; name < s && k + 2 < cap; name++) {
+      if (*name == '.' || *name == '_')
+        continue;
+      if (k == 4)
+        serial[k++] = '-';
+      serial[k++] = (char)(*name >= 'a' && *name <= 'z' ? *name - 32 : *name);
+    }
+    serial[k] = 0;
+    if (k)
+      return 0;
+  }
+  return -1;
 }
 
 /* ---- SHA-1 (FIPS 180-4) ---- */
