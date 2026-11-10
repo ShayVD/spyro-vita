@@ -548,13 +548,13 @@ No new translation. 7e's presenter build gains the rest of the draw path, compil
 
 No new translation, and none removed: D30's presentation pass ran the game's own `GamestateDraw` over its memory and put a snapshot back; it is gone with that snapshot, `pass_vsync` and libspu's and libgpu's freezes, and the presenter (D125, D128) draws every frame the logic draw doesn't. The presenter's functions are D128's, unchanged. `--pres-check` now compares the presenter's frame from the snapshot unblended with the logic draw's own list, record for record, every tick, with the bits the PS1 GPU ignores left out as before (D128's table): the decomp's draw code on the same state, twice, gives the same list.
 
-## The presenter's particle copy ends with the game's end word (2026-11-10, decisions D136)
+## The presenter's particle copy ends with the game's end word (2026-11-10, decisions D139)
 
 No new translation. `GamestateDraw_pres`'s `func_800573C8_pres` (`particles_hand.c` built again) reads the snapshot's copy of the particle space, which now also holds the word after it, the `-1` that `loaders.c` puts in a 257th slot. With all 256 slots in use the walk stopped there in the game and went past the copy in the presenter (stage 7e's bug, the Vita's crash in Gnasty Gnorc's fight). The function's code is unchanged.
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
-| `pres_snap_take` (`src/game/pres/pres_snap.c`, port code) | the 4 bytes after the particle space copied after it in the presenter's area; the region stays 0x2000 bytes | `--pres-particles-full` (every free slot of the copy a hole): SIGSEGV in `func_800573C8_pres` before, `--pres-check` 4,553 of 4,553 frames identical after (`logs/d132/repro-*`); `pres_check_ab.sh` and `host_checks.sh` against main's files (D136) | none |
+| `pres_snap_take` (`src/game/pres/pres_snap.c`, port code) | the 4 bytes after the particle space copied after it in the presenter's area; the region stays 0x2000 bytes | `--pres-particles-full` (every free slot of the copy a hole): SIGSEGV in `func_800573C8_pres` before, `--pres-check` 4,553 of 4,553 frames identical after (`logs/d132/repro-*`); `pres_check_ab.sh` and `host_checks.sh` against main's files (D139) | none |
 ## Stage R2, part A: PAL's headers, picture and shared fixes (2026-11-10, decisions D134)
 
 Region switches in the decomp's C (`patches/spyro-1-region/0003-pal-headers-and-picture.patch`) and in our hand C. "Exact" is a `-DREGION=1` compile of the one file compared with the PAL executable at the function's address, every bit but the relocated fields (constants included); the full `REGION=pal` build's `compare-exe-exact.txt` is the PR's check.
@@ -573,3 +573,12 @@ Region switches in the decomp's C (`patches/spyro-1-region/0003-pal-headers-and-
 | `FloorTerrain` (`collision_hand.c`, `func_8004DF24`'s camera path) | hand C: `g_CollisionNormal = n` on PAL | read against PAL 0x800538B4 (stores the normal's three words); no Redux sample yet | none known |
 | `func_80047B60`'s states 6 and 16 (`pete_dispatch_hand.c`) | hand C: x and y of the post-collision velocity on PAL, `VecCopy` on US | read against PAL 0x8004D6F0; no Redux sample yet | none known |
 | `PortWadHeader`, `PortLevelHeader`, `PortRegionData` (`src/game/region_game.c`) | port code | US: the original copies, so the US host checks; PAL: the host boots the PAL disc to the title flythrough | — |
+
+## Stage R2, part B: PAL's text Mobys (2026-11-10, decisions D139)
+
+`patches/spyro-1-region/0004-pal-text-mobys.patch`. "Exact" as in part A.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_pal_8001BD5C` (new, `draw.c`; PAL 0x8001BD5C, 275 instructions) | decomp C, PAL only (`REGION_HAS_PAL`) | exact against the PAL disc | none |
+| `func_80018728` | decomp C: a PAL block (`REGION_IS(PAL)`) beside the US one, PAL's tables through `PAL_DATA` | exact against PAL 0x8001C484 | none |

@@ -1492,3 +1492,16 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **US matching build:** `PSX.EXE SHA-1 OK` (`logs/r2a/matching-us.log`).
   - **The PAL disc on the host** (`--region-dev`, `logs/r2-pal-boot1/`): boots through the logos to the title flythrough at 512×256. It then crashes in the US title overlay's `TitlescreenDraw`, which draws a Moby PAL's title data doesn't have: PAL's title overlay is its own (part C or later).
   - US host checks and Vita: see the PR.
+
+### D139. Stage R2, part B: PAL's text Mobys, the two US spawners merged into one with the five languages' marks (`func_pal_8001BD5C`, PAL 0x8001BD5C), and the rescued dragon's line built with it in the language (`func_80018728`). Both are decomp C proved against the PAL disc instruction for instruction. PAL's own tables are read through `PAL_DATA()` from the player's executable
+- **Why:** every PAL text the game draws in 3D letters goes through this one function (74 calls in the main executable, more in the flight and balloonist overlays), so it comes before the menus and the title that call it (plan §3.3).
+- **The owner's decisions it relies on:** as D134 (1 and 5 by default; 6 still open, checked on `fdd04c04…`).
+- **What PAL's spawner does** (read from PAL 0x8001BD5C and proved by compiling the C):
+  - one signature, `(text, position, spacing, width, shade)`: with `spacing` NULL every letter is a capital (US `func_80017FE4`), otherwise the first letter of each word is and the rest are lowered and spaced by `spacing` (US `func_800181AC`);
+  - a lowercase `a`–`e` after a letter is its accent, Moby classes 365–369 (`c + 268`), drawn over that letter: the position steps back by the advance the letter used, and the accent advances by the same; `f` is a period raised by a third of the width (an umlaut's dot);
+  - `-` is the slash turned 41/256 of a turn and raised 2,560; `!` and `?` are turned upside down (rotation 128) in Spanish when another character follows (¡, ¿); `,` is the apostrophe unmoved; any other character the apostrophe lowered by two thirds of the width; a space advances two thirds of the width;
+  - classes 365–369 have no US names and their models are in PAL's WAD.
+- **`func_80018728`** (PAL 0x8001C484): `sprintf("%s %s", RESCUED[g_Language], name)` into a 32-byte buffer, centred at `254 − (length − 1) × 8`, height 216, through the spawner with spacing (16, 1, 5120), width 18, shade 11; the wave over the letters is the US one.
+- **`PAL_DATA(sym, pal_addr)`** (`include/region.h`): PAL-only tables (`g_PalRescuedText` PAL 0x8007529C, `g_PalRescuedFormat` 0x8007BEDC, `g_PalDragonNames` 0x800752B0). The PAL matching build links stand-ins (only their relocations are compared); the port reads the copy `region_data_load_disc` made from the player's executable (D133's data block, its pointers relocated), with the symbol's type for the shape.
+- **Not called yet in the port for PAL's other text:** the menus, HUD texts, level names and the title still call the US spawners with US strings; they come with the rewrites (handed over: shared notes `r2-handover.md`).
+- **Checked:** `func_pal_8001BD5C` (275 instructions) and `func_80018728` (79): exact against the PAL disc (a `-DREGION=1` compile of `draw.c`, constants included); the full `REGION=pal` build's comparison and the US checks: see the PR.
