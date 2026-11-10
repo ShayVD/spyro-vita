@@ -10,8 +10,7 @@
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
- *         [--present-stats | --present-dirty] [--present-audit]
- *         [--present-reads FILE [--present-reads-every N]] [--vcache]
+ *         [--present-stats] [--vcache]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
@@ -47,13 +46,9 @@
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  *   --present-native: the presentation frames as drawn, 512x240 (to compare
  *   with the Vita's shots).
- * --present-stats: time update, draw and passes; logged at exit.
- *   --present-dirty also lists the arena pages the passes wrote.
- * --present-audit (with --interp; stage 7a, D104): per gamestate, the
- *   in-between frames, their cost and whether their HUD list is the real
- *   frame's; logged at exit. --present-reads FILE: every Nth in-between pass
- *   (--present-reads-every, 30) traces what it reads (readset.c; summed up
- *   by tools/present_reads.py).
+ * --present-stats: time update, draw and the presenter's frames; logged at
+ *   exit. (--present-dirty, --present-audit and --present-reads, D30's
+ *   pass's and stage 7a's audits of it, went with the pass: D129.)
  * --analog: the pad is a DualShock in analog mode; pad script lines may set
  *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
  *   --free-camera: the right stick turns and tilts the camera
@@ -101,28 +96,28 @@
  *   Vita's timing run, D91, D92).
  *   These checks need the reference build (the arena build, linux32's
  *   default: SPYRO_PSYCROSS_REF, D117), whose PsyCross walk they compare with.
- *   --interp-mode 2 (stage 7e, D125; with --interp): in play the in-between
- *   frame is the presenter's, the game's draw code built again over a
- *   snapshot (src/game/pres/), not D30's pass. --pres-check (with
- *   --interp): the presenter draws each in-between frame in play too, and
- *   its list is compared with D30's pass's record for record ("pres check"
- *   lines; D30's frame is the one shown). --pres-audit: which words of the
- *   snapshot point into the moby array or the particle space ("pres audit").
- *   The host runs the presenter inline (stage 7f, D126: on the Vita it has
- *   a thread of its own). --faces-copy: the logic draw's moby face
+ *   The presenter (stage 7e-7g, D125, D126, D128, D129; src/game/pres/):
+ *   the game's draw code built again over a snapshot draws every
+ *   in-between frame (--interp) and the attract demos' 16:9 frame
+ *   (--widescreen); D30's pass over the game's own memory did until D129
+ *   (--interp-mode 2 chose the presenter before; it is gone). The host runs
+ *   it inline (stage 7f, D126: on the Vita it has a thread of its own).
+ *   --pres-check (D129): each tick the presenter also draws from the
+ *   snapshot unblended, and its list is compared with the logic draw's
+ *   record for record ("pres check" lines); with or without --interp and
+ *   --widescreen, every file is the same as without it. --pres-audit:
+ *   which words of the snapshot point into the moby array or the particle
+ *   space ("pres audit"). --faces-copy: the logic draw's moby face
  *   replacements in a copy for the whole run, as while the Vita's
  *   presenter draws beside it (moby_hand.c); every file must be the same.
  *   --pres-check-thread: --pres-check with the presenter's list recorded
- *   on a thread of its own beside D30's pass and the logic draw (the
- *   Vita's 7f), compared at the join; --faces-race (diagnostic) leaves the
- *   logic draw's face replacements in place meanwhile, as before 7f, to
- *   show the race the copy removes.
- *   Stage 7g (D128): the presenter draws every gamestate's in-between
- *   frame, and the attract demos' 16:9 real frame, and --pres-check
- *   compares each. --pres-check-late: --pres-check with the presenter's
- *   list recorded after the logic draw (at the join), so a frame that
- *   depends on what the logic draw writes differs. --pres-write-check
- *   (with --interp-mode 2): each presenter frame must leave the game's
+ *   on a thread of its own beside the logic draw (the Vita's 7f), compared
+ *   at the join; --faces-race (diagnostic) leaves the logic draw's face
+ *   replacements in place meanwhile, as before 7f, to show the race the
+ *   copy removes. --pres-check-late (D128): --pres-check with the
+ *   presenter's list recorded after the logic draw (at the join), so a
+ *   frame that depends on what the logic draw writes differs.
+ *   --pres-write-check (D128): each presenter frame must leave the game's
  *   memory as it found it ("pres write check" lines; pres_watch.c).
  *   --render-ctx-check (stage 7d, D123): each renderer call also runs its
  *   presenter build (NAME_hand_pres.c) from the same inputs in its own
@@ -201,10 +196,10 @@ int pres_check_report(void (*log)(const char *fmt, ...));
 void pres_snap_audit_report(void (*log)(const char *fmt, ...));
 const char *pres_snap_misplaced(void); /* pres_snap.c (D128) */
 static void pres_atexit(void) {
-  if ((g_present.interp_mode == 2 || g_pres_check) && pres_snap_misplaced())
+  if (pres_snap_misplaced())
     host_log("pres: %s isn't in the data region the snapshot mirrors: no presenter",
              pres_snap_misplaced());
-  if (g_present.interp_mode == 2) { /* stage 7f (D126): the host runs it inline */
+  if (port_present_active()) { /* stage 7f (D126): the host runs it inline */
     PresentPresStats st;
     port_present_pres_stats(&st);
     host_log("pres: %lld frames inline; %lld display environments not the presenter's "
@@ -303,12 +298,11 @@ static void usage(void) {
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--present-audit] [--present-reads FILE]\n"
-          "             [--present-reads-every N] [--vcache] [--walk-lazy]\n"
+          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--interp-mode 2] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -333,80 +327,23 @@ static void disc_refused(void) {
   free(rgb);
 }
 
-static void log_pages(const char *what, const uint32_t *bits) {
-  int i, start = -1;
-  for (i = 0; i <= PRESENT_PAGES; i++) {
-    int d = i < PRESENT_PAGES && (bits[i / 32] >> (i % 32) & 1);
-    if (d && start < 0)
-      start = i;
-    if (!d && start >= 0) {
-      host_log("present: %s %08x-%08x", what, PSX_MEM_PSX + start * 4096,
-               PSX_MEM_PSX + i * 4096 - 1);
-      start = -1;
-    }
-  }
-}
-
-/* --present-audit (D104) */
-static void audit_report(void) {
-  const PresentStats *s = &g_present_stats;
-  int i;
-  if (!g_present.audit)
-    return;
-  for (i = 0; i < PRESENT_GAMESTATES; i++) {
-    const PresentGsStats *g = &s->gs[i];
-    long long n = g->interp ? g->interp : 1;
-    if (!g->ticks)
-      continue;
-    host_log("present audit: gamestate %d: %lld ticks, %lld in-between frames, %lld skipped; "
-             "per in-between frame %lld us, %lld OT packets; HUD list the real frame's %lld, differs %lld",
-             i, g->ticks, g->interp, g->skipped, g->us_pass / n, g->packets / n, g->hud_same,
-             g->hud_differ);
-  }
-  for (i = 0; i < s->nhud_diff; i++)
-    host_log("present audit: HUD differs at vblank %d (gamestate %d, level %d): %d packets "
-             "and %d, the first different %d",
-             s->hud_diff[i].vblank, s->hud_diff[i].gamestate, s->hud_diff[i].level,
-             s->hud_diff[i].packets[0], s->hud_diff[i].packets[1], s->hud_diff[i].first);
-  for (i = 0; i < s->nhud_diff; i++)
-    for (int k = 0; k < 2; k++) {
-      char line[200];
-      int len = 0;
-      for (int w = 0; w < PRESENT_HUD_WORDS; w++)
-        len += snprintf(line + len, sizeof line - len, " %08x", s->hud_diff[i].words[k][w]);
-      host_log("present audit: vblank %d, %s:%s", s->hud_diff[i].vblank,
-               k ? "real frame" : "in-between", line);
-    }
-  host_log_flush();
-}
-
 static void present_report(void) {
   const PresentStats *s = &g_present_stats;
   long long t = s->ticks ? s->ticks : 1;
-  audit_report();
   if (!g_present.stats)
     return;
   host_log("present: %lld ticks; per tick us: update %lld, logic draw %lld "
-           "(+%lld in VSync waits), passes %lld (%lld passes), snapshot %lld",
+           "(+%lld in VSync waits), the presenter %lld (%lld frames)",
            s->ticks, s->us_update / t, s->us_logic / t,
-           s->us_vsync / t, s->us_pass / t, s->passes, s->us_snapshot / t);
+           s->us_vsync / t, s->us_pass / t, s->passes);
   host_log("present: interp frames %lld, skipped %lld (%lld for the budget), "
-           "2D narrowed %lld, SPU writes dropped %lld", s->interp_frames,
-           s->skipped_interp, s->budget_skips, s->squeezed_2d, s->spu_dropped);
+           "2D narrowed %lld", s->interp_frames,
+           s->skipped_interp, s->budget_skips, s->squeezed_2d);
   host_log("present: frames by due vblank (7c, D112): %lld shown late, %lld never shown, "
            "%lld dropped from a full queue", s->due_late, s->due_superseded, s->queue_drops);
-  host_log("present: snapshot %lld bytes copied per tick (in and out)",
-           s->snapshot_bytes / t);
   host_log("present: animation tracks blended %lld, kept %lld; particles "
            "blended %lld; blending %lld us per tick", s->anim_blended,
            s->anim_kept, s->particles_blended, s->us_blend / t);
-  if (g_present.stats > 1 && s->passes) {
-    host_log("present: pages still changed after the region restore, per pass: avg %lld, max %lld (4 KB); "
-             "outside the snapshot and scratch: %lld",
-             s->dirty_pages / s->passes, s->dirty_max, s->missed_pages);
-    log_pages("dirty", s->dirty_union);
-    log_pages("MISSED", s->missed_union);
-  }
   host_log_flush();
 }
 
@@ -428,8 +365,6 @@ static void vcache_report(void) {
 }
 
 static int s_walk;
-static const char *s_reads; /* --present-reads FILE */
-static int s_reads_every;
 
 static void walk_report(void) {
   PsxWalkStats w;
@@ -574,11 +509,6 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--interp-camera") == 0) {
       g_present.interp = 1;
       g_present.interp_mobys = g_present.interp_anim = 0;
-    } else if (strcmp(a, "--interp-mode") == 0) {
-      TAKE();
-      g_present.interp_mode = to_int(val);
-      if (g_present.interp_mode == 2)
-        pres_draw_want();
     } else if (strcmp(a, "--faces-copy") == 0) {
       g_faces_copy = 1; /* D126: the logic draw's faces in a copy all run (as beside the worker) */
     } else if (strcmp(a, "--pres-check") == 0 || strcmp(a, "--pres-check-thread") == 0) {
@@ -617,21 +547,6 @@ int main(int argc, char **argv) {
       g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
-    } else if (strcmp(a, "--present-dirty") == 0) {
-      g_present.stats = 2;
-    } else if (strcmp(a, "--present-audit") == 0) {
-      g_present.audit = 1;
-    } else if (strcmp(a, "--present-reads") == 0) {
-      TAKE();
-      s_reads = val;
-#if SPYRO_NATIVE_MEM
-      fprintf(stderr, "spyro: --present-reads traces the arena by PS1 address, which a native build "
-                      "doesn't have (the arena build's; D104, D106)\n");
-      return 1;
-#endif
-    } else if (strcmp(a, "--present-reads-every") == 0) {
-      TAKE();
-      s_reads_every = to_int(val);
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
@@ -781,10 +696,6 @@ int main(int argc, char **argv) {
     usage();
   if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
-  if (s_reads && host_reads_open(s_reads, s_reads_every) != 0) {
-    fprintf(stderr, "spyro: can't write %s\n", s_reads);
-    return 1;
-  }
   atexit(present_report);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
@@ -801,6 +712,9 @@ int main(int argc, char **argv) {
 
   if (serve_port && host_serve_start(serve_port) != 0)
     return 1;
+  /* the presenter's area after the game's memory, whatever the switches
+   * (stage 7g, D129: it draws every frame the logic draw doesn't) */
+  pres_draw_want();
   psx_arena_init();
 #if SPYRO_ARENA_MOVED
   port_arena_symbols(host_log); /* the Vita's data labels (D25, D97) */

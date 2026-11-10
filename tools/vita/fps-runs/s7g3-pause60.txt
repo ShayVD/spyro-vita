@@ -1,0 +1,10 @@
+# Runs 7G3 and 7G3m (D129): the pause route at 16:9 and 60 fps with virtual vblanks, shots every
+# 100: 7G3 on stage 7g's VPK (the presenter draws the pause menu's and the inventory's in-between
+# frames on its thread), 7G3m on main's VPK with interp_mode=0 added (D30's pass). The shots and
+# the memory card must be identical (D70's pause route; Vita3K crashes in this route's opening
+# at 60 fps, so it can't stand in).
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/pause-ws.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7g3 1500 @tools/vita/fps-runs/s7g3-pause60.txt @tools/vita/hw-routes/pause-ws.cfg
+config_version=3
+interp=1
+interp_budget=0

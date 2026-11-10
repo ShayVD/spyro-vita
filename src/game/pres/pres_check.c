@@ -1,8 +1,11 @@
-/* --pres-check (stage 7e, decisions D125; pres_draw.h): every in-between
- * frame (in play until stage 7g, D128; since, in every gamestate) is drawn twice from the same state, by the presenter and
- * by D30's pass, and the two lists DrawOTag is given are compared record
- * for record. Only D30's is walked and shown, so every file the run
- * writes is the same as with --interp alone.
+/* --pres-check (stage 7e, decisions D125; pres_draw.h): a frame is drawn
+ * twice from the same state, and the two lists DrawOTag is given are
+ * compared record for record. Since D129: each tick the presenter draws
+ * from the snapshot unblended, and the logic draw draws as ever; only the
+ * logic draw's list is walked, so every file the run writes is the same as
+ * without the check. Until then (D125-D128) the presenter's in-between
+ * frame was compared with D30's pass's, in play and since D128 in every
+ * gamestate.
  *
  * A frame record (s_frame[which]): the draw and display environments put
  * before DrawOTag, the 2D primitives noted for the 16:9 narrowing, then
@@ -203,7 +206,7 @@ void pres_check_compare(void) {
         }
       }
       s_shown++;
-      s_log("pres check: frame %lu (gamestate %d) differs at word %u of %u (D30's) / %u "
+      s_log("pres check: frame %lu (gamestate %d) differs at word %u of %u (the logic draw's) / %u "
             "(presenter's): %08X / %08X%s",
             s_ticks, g_Gamestate, i, d->n, p->n, i < d->n ? d->w[i] : 0, i < p->n ? p->w[i] : 0,
             d->full || p->full ? " (a record full)" : "");
@@ -212,7 +215,7 @@ void pres_check_compare(void) {
   reset();
 }
 
-/* why: 0 not compared by choice (before 7g: not play), 1 the presenter drew nothing, 2 D30's pass drew
+/* why: 0 not compared by choice (before 7g: not play), 1 the presenter drew nothing, 2 the logic draw drew
  * nothing, 3 the camera jumped, 4 the presenter not there (its area,
  * fast_render) */
 void pres_check_skip(int why) {
@@ -223,8 +226,8 @@ void pres_check_skip(int why) {
 int pres_check_report(void (*log)(const char *fmt, ...)) {
   if (log)
     log("pres check: %lu frames compared, %lu identical, %lu differ (%lu packets, %lu records "
-        "in D30's); not compared: %lu other gamestates, %lu without the presenter's, %lu without "
-        "D30's, %lu camera jumps, %lu without the presenter",
+        "in the logic draw's); not compared: %lu other gamestates, %lu without the presenter's, "
+        "%lu without the logic draw's, %lu camera jumps, %lu without the presenter",
         s_same + s_differ, s_same, s_differ, s_packets, s_records, s_skipped[0], s_skipped[1],
         s_skipped[2], s_skipped[3], s_skipped[4]);
   if (log) {

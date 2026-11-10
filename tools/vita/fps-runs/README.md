@@ -596,3 +596,29 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - **The pictures:** these routes take no shots; Vita3K's `realtime=0` shots and captures are D30's (D126).
 
 **Ran** on 2026-11-09 (D126, approved by the owner in the session's chat; VPK `logs/s7f/s7f-final.vpk`, SHA-1 `6389fc63…`; `logs/hw-7f1`…`7f5`, gitignored), taking the kit's lock in turn with kh1-decomp's runs. All five reached `frames=`, no crash dump, the owner's files put back each time; main's eboot (`66f57eff…`) went back afterwards and read back identical. The game thread's busy %: Toasty 21.1% (30 fps), 41.3% (60, D30's pass), **24.9%** (60, the presenter); Dark Hollow 61.0% → **38.0%**; Stone Hill 46.2% → 38.8%. The presenter: 0 buffers passed by, the join's wait 0.00–0.03 ms per vblank. Late vblanks per 300 no worse in the levels but for 7F3's two windows after Toasty's game over (39 and 48, waits for the vertex slabs; 7F2 had 16 there); D126 has the details.
+
+## Runs 7G1–7G4: every gamestate on the presenter, D30's pass gone (D128, D129; ran 2026-11-10, results in D129)
+
+7g puts every gamestate's in-between frame on the presenter (on its thread on the Vita, but the credits' first stage) and the attract demos' 16:9 frame too (on the game thread), and retires D30's pass (D129). The host and Vita3K (`realtime=0`) show the pictures are D30's; only hardware can show the game thread's time in the gamestates 7f left to D30's pass, the late vblanks, and the pause route's pictures without Vita3K's breaks.
+
+| Run | File | Switches | Route | About |
+|---|---|---|---|---|
+| 7G1 | `s7g1-toasty60.txt` | 7F3's: 60 fps, the shipped defaults | the Toasty route (`o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1` | 7 min |
+| 7G2 | `s7g2-k60.txt` | 7F5's | the K route (`k-route.pad`, `m1-xa-k.cfg`), `REALTIME=1` | 5–6 min |
+| 7G3 | `s7g3-pause60.txt` | 60 fps, no safety net, 16:9 | the pause route (`pause-ws.pad`, `pause-ws.cfg`), virtual vblanks, a shot every 100 | 3 min |
+| 7G3m | `s7g3-pause60.txt` plus `interp_mode=0` | as 7G3 on main's VPK (D30's pass) | as 7G3 | 3 min |
+| 7G4 | `s7g4-demo169.txt` | 60 fps, 16:9, no pad | the attract demos from the title, `REALTIME=1`, 12,000 vblanks | 4 min |
+
+**The VPK:** this branch's (stage 7g) for 7G1–7G3 and 7G4; main's for 7G3m (any VPK from before D129: `interp_mode=0` there is D30's pass). `DEVICE_DEFAULTS=1` keeps the shipped defaults.
+
+**Unattended** (each run needs the owner's yes first; check `~/.cache/vita-port-kit/hw.lock` and that no kh1-decomp run is going; put main's eboot back afterwards and read it back). With `V` the absolute path of this branch's VPK, `M` main's, `T=$PWD/tools/vita/hw-routes/o-toasty.pad`, `K=$PWD/tools/vita/hw-routes/k-route.pad`, `P=$PWD/tools/vita/hw-routes/pause-ws.pad`:
+- 7G1: `REALTIME=1 VPK=$V PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7g1 1500 @tools/vita/fps-runs/s7g1-toasty60.txt @tools/vita/hw-routes/o-toasty.cfg`
+- 7G2: `REALTIME=1 VPK=$V PAD=$K DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7g2 1500 @tools/vita/fps-runs/s7g2-k60.txt @tools/vita/hw-routes/m1-xa-k.cfg`
+- 7G3: `VPK=$V PAD=$P DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7g3 1500 @tools/vita/fps-runs/s7g3-pause60.txt @tools/vita/hw-routes/pause-ws.cfg`
+- 7G3m: `VPK=$M PAD=$P DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7g3m 1500 @tools/vita/fps-runs/s7g3-pause60.txt @tools/vita/hw-routes/pause-ws.cfg interp_mode=0`
+- 7G4: `REALTIME=1 VPK=$V DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7g4 900 @tools/vita/fps-runs/s7g4-demo169.txt`
+
+**What to read:**
+- **7G1, 7G2** (`fps60_summary.py`, `hw_cmp.py` from vblank 900): the game thread's busy % and late vblanks per 300 by level against 7F3 and 7F5; the `pres` lines' frames on core 1 and inline (inline: the attract demos at 16:9 and the credits' first stage), buffers passed by, the join's wait; in 7G1 the windows after Toasty's game over.
+- **7G3 against 7G3m:** the 91 shots and the memory card byte-identical (`cmp`).
+- **7G4:** the game thread's busy % in the demos' windows against 7F2's and 7F3's Stone Hill windows, the late vblanks in the flight.

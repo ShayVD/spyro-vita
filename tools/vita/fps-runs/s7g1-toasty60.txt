@@ -1,0 +1,10 @@
+# Run 7G1 (D129): 7F3's Toasty route at 60 fps on stage 7g's VPK: the presenter draws every
+# gamestate's in-between frame on its thread (D128) and D30's pass is gone (D129). Against 7F3
+# (the presenter in play only) and 7F2 (D30's pass): the game thread's busy %, late vblanks, and
+# the two windows after Toasty's game over (vblanks ~19,500 and ~19,800), where 7F3 had 39 and 48
+# late vblanks with D30's pass drawing the respawn's and the transition's in-between frames.
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7g1 1500 @tools/vita/fps-runs/s7g1-toasty60.txt @tools/vita/hw-routes/o-toasty.cfg
+config_version=3
+interp=1
+gpu_meter=1

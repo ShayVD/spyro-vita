@@ -13,12 +13,12 @@
  *    presenter's object keeps global (the rest of its functions are made
  *    local, so a call between them stays in the presenter's copies);
  *  - each renderer onto its 7d build (NAME_pres);
- *  - D30's hooks: VSync doesn't wait (pres_VSync), and LoadImage,
+ *  - D30's hooks (the pass's until D129): VSync doesn't wait (pres_VSync), and LoadImage,
  *    StoreImage, MoveImage and ClearImage are dropped (pres_*Image), as
- *    D30's freeze drops them;
+ *    D30's freeze dropped them;
  *  - present.c's hooks the draw calls, onto the presenter's own: the
  *    primitive space (PortPolySpace), the 16:9 projection
- *    (PortProjectionHook), the HUD audit (port_present_hud_list), and
+ *    (PortProjectionHook), and
  *    native_draw's list end (nd_list_linked).
  *  - its output (stage 7f, D126): DrawOTag, PutDrawEnv, PutDispEnv,
  *    DrawSync and port_present_note_2d, onto present.c's presenter
@@ -86,7 +86,6 @@
 /* present.c's and native_draw.c's, the presenter's own (pres_draw.c) */
 #define PortPolySpace pres_PortPolySpace
 #define PortProjectionHook pres_PortProjectionHook
-#define port_present_hud_list pres_hud_list
 #define nd_list_linked pres_nd_list_linked
 
 /* Stage 7g (D128): the other gamestates' draws.
@@ -98,7 +97,7 @@
  *  - the sounds the flight results play: PlaySound and its helpers run on
  *    the snapshot's copies (g_Spu, the rand seed), as D30's pass ran them
  *    on the game's and put them back; their SPU writes are dropped, as
- *    libspu dropped them under D30's freeze (g_psx_spu_frozen);
+ *    libspu dropped them under D30's freeze (g_psx_spu_frozen, until D129);
  *  - libc's rand on the snapshot's seed (pres_ovl.c). */
 #define D_8007567C (*pres_flight5())
 #define D_800758C4 (*pres_flight4())

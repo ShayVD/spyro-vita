@@ -1,22 +1,26 @@
 #!/bin/sh
-# Stage 7e (decisions D125): the presenter's in-between frame against D30's
-# pass. Each scenario runs with --interp (D30's pass draws the in-between
-# frame: the reference, "i") and then in MODE:
-#   chk  --pres-check: the presenter draws each in-between frame in play
-#        too, and its list is compared with D30's record for record ("pres
-#        check" lines must say 0 differ); D30's is the one shown, so every
-#        file must be byte-identical to the reference's;
-#   m2   --interp-mode 2: the presenter's frame is the one shown in play;
-#        every trace, shot, WAV and card must be byte-identical to D30's.
-# ND=1 adds --native-draw to both runs (the Vita's records, D91); FR=N adds
-# --fast-render N (3, the default since D127, or 0).
-# Usage: [BIN=...] [DISC=disc/files] [MODE=chk|m2] [ND=1] [FR=N] [I_FROM=PREFIX]
+# The presenter's frames (stages 7e-7g, decisions D125, D128, D129). Each
+# scenario runs as the reference ("i": with I_BIN, e.g. main's binary
+# before D129, D30's pass draws the in-between frame) and then in MODE:
+#   chk  --pres-check: each tick the presenter also draws from the snapshot
+#        unblended, and its list is compared with the logic draw's record
+#        for record ("pres check" lines must say 0 differ; until D129 its
+#        in-between frame was compared with D30's pass's); every file must
+#        be byte-identical to the reference's;
+#   m2   the presenter's frames shown (since D129 always; before, it took
+#        --interp-mode 2): every trace, shot, WAV and card must be
+#        byte-identical to the reference's (D30's, from a binary before
+#        D129).
+# Every run has --interp. ND=1 adds --native-draw to both runs (the Vita's
+# records, D91); FR=N adds --fast-render N (3, the default since D127, or
+# 0).
+# Usage: [BIN=...] [I_BIN=...] [DISC=disc/files] [MODE=chk|m2] [ND=1] [FR=N] [I_FROM=PREFIX]
 #        tools/pres_check_ab.sh PREFIX [SCENARIO...]
 #   -> logs/PREFIX-SCENARIO-i, logs/PREFIX-SCENARIO-MODE, a summary line each.
 # Scenarios (default: demo wsi gems routeA routeB): native_draw_ab.sh's, all
 # with --interp: demo (the attract demos), wsi (the same at 16:9: the
-# demos' 16:9 pass keeps its own visibility state), gems (16:9 play),
-# routeA, routeB, whole (the 100,000-vblank tour).
+# presenter draws the demos' 16:9 frame from its own visibility state),
+# gems (16:9 play), routeA, routeB, whole (the 100,000-vblank tour).
 # I_FROM=PREFIX: no reference run; compare with logs/PREFIX-SCENARIO-i.
 # I_BIN=PATH: the reference run's binary (default BIN), e.g. main's.
 # EXTRA: more options for the MODE run (--pres-write-check, --pres-check-late
@@ -41,7 +45,7 @@ run() { # NAME MODE
   rm -rf $D; mkdir -p $D
   extra="--save $D/save --interp $nd"
   case $n in demo|routeA|wsi|pause) extra="$extra --wav $D/audio.wav";; esac
-  case $m in chk) extra="$extra --pres-check ${EXTRA:-}";; m2) extra="$extra --interp-mode 2 ${EXTRA:-}";; esac
+  case $m in chk) extra="$extra --pres-check ${EXTRA:-}";; m2) extra="$extra ${EXTRA:-}";; esac
   GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;

@@ -1,0 +1,9 @@
+# Run 7G2 (D129): 7F5's K route at 60 fps on stage 7g's VPK. Against 7F5 and 7F4: the game
+# thread in the title, the cutscenes and the level transitions (the presenter's thread now), and
+# in the Stone Hill attract demo at 16:9 (both its frames the presenter's, inline: D30's 16:9
+# pass is gone).
+#   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-7g2 1500 @tools/vita/fps-runs/s7g2-k60.txt @tools/vita/hw-routes/m1-xa-k.cfg
+config_version=3
+interp=1
+gpu_meter=1

@@ -12,8 +12,9 @@
 # function the set defines goes to the set's own copy, and every other name
 # stays the game's. tests/pres/link_check.py checks what those are.
 #
-# Not with the moved arena (D25, D97: the labels through pointers): there
-# interp_mode=2 falls back to D30's pass (present.c).
+# Not with the moved arena (D25, D97: the labels through pointers): with
+# no presenter there is no in-between frame, and the attract demos are
+# drawn 4:3 by the logic draw (present.c; D30's pass drew them until D129).
 set(SPYRO_PRESENTER ON)
 if(SPYRO_ARENA_MOVED)
   set(SPYRO_PRESENTER OFF)

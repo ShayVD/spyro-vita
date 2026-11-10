@@ -1,5 +1,5 @@
-/* The presenter's thread (stage 7f, decisions D126): with interp_mode=2, the
- * in-between frame in play is drawn here, on a core of its own, beside the
+/* The presenter's thread (stage 7f, decisions D126): the in-between frame
+ * (in every gamestate since 7g, D128) is drawn here, on a core of its own, beside the
  * logic draw on the game thread (src/game/present.c's presenter, recording
  * into gpu_thread.c's buffers). Core 1 (the mixer's, the XA reader's and
  * the parse thread's, behind them), or core 3 with pres_core=3 when the
@@ -63,8 +63,6 @@ void vita_pres_wait(void) {
 void vita_pres_init(void) {
   unsigned mask = SCE_KERNEL_CPU_MASK_USER_1;
   SceUID th;
-  if (g_vita_opts.interp_mode != 2)
-    return;
   if (!g_vita_opts.pres_thread) {
     vita_log("pres: pres_thread=0: the presenter draws on the game thread (as 7e, D125)");
     return;
@@ -93,8 +91,8 @@ void vita_pres_init(void) {
     return;
   }
   s_th = th;
-  vita_log("pres: in play the presenter draws the in-between frame on its own thread, core %d, "
-           "priority 0x%x, beside the logic draw (stage 7f, D126)",
+  vita_log("pres: the presenter draws the in-between frame on its own thread, core %d, "
+           "priority 0x%x, beside the logic draw (stage 7f, D126; every gamestate, D128)",
            s_core, PRIORITY);
 }
 
@@ -108,8 +106,6 @@ void vita_pres_report(int vblank) {
   unsigned long long t = now_us();
   PresentPresStats s;
   uint32_t rt[6] = {0, 0, 0, 0, 0, 0}, busy = s_busy_us, jobs = s_jobs;
-  if (g_vita_opts.interp_mode != 2)
-    return;
   port_present_pres_stats(&s);
   if (g_present_pres)
     vita_gpu_pres_report(rt);

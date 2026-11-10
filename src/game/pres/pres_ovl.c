@@ -13,7 +13,7 @@
  *  - pres_rand: libc's rand (rand_psyq.c) on the snapshot's seed
  *    (D_80075AC0, pres_snap_names.h);
  *  - pres_SpuSetVoiceAttr: the SPU write PlaySound makes, dropped, as D30's
- *    pass dropped it (libspu.c, g_psx_spu_frozen). */
+ *    pass dropped it (libspu.c's g_psx_spu_frozen, until D129). */
 #include <stddef.h>
 
 #include "pres_draw.h"

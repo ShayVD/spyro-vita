@@ -50,9 +50,6 @@ typedef struct {
                            4:3 draw: costs CPU); attract demos always do */
   int interp_budget;  /* interp_budget=0: no safety net; else (default) the in-between frame is
                          skipped only if the game thread would run late (D75) */
-  int interp_mode;    /* interp_mode=2 (stage 7e, D125): in play the in-between frame is the
-                         presenter's (src/game/pres/), not D30's pass; the default
-                         since D126; 0: D30's pass */
   int menu_test[4];   /* menu_test=V1,V2,...: open the options menu at these vblanks and
                          play a fixed sequence (tests without a controller: menu.c) */
   int nmenu_test;
@@ -79,8 +76,8 @@ typedef struct {
   int gpu_parts;      /* gpu_parts=1: time the GL side's parts, the "gpu parts" line (D99) */
   int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
-  int pres_thread;    /* pres_thread=1 (default): with interp_mode=2, the presenter's in-between
-                         frame on its own thread (stage 7f, D126); 0: on the game thread (7e) */
+  int pres_thread;    /* pres_thread=1 (default): the presenter's in-between frame on its own
+                         thread (stage 7f, D126); 0: on the game thread (7e) */
   int pres_core;      /* pres_core=3: that thread on core 3, if a user thread may run there */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU
                          can't keep up; 88, 75, 67: that scale, always (D75) */

@@ -1,7 +1,7 @@
 /* The presenter's snapshot (stage 7e, decisions D125; pres_snap.c).
  *
  * What the presenter's draw reads of the game's changing state, as its own
- * copies, taken after the update at D30's pass's point:
+ * copies, taken after the update, before the logic draw:
  *  - the labels pres_snap_names.h names, each at its own offset in a
  *    mirror of the data region (g_pres_mirror, tools/pres_snap_syms.py);
  *  - the moby array and the particle space, copied into the presenter's
@@ -10,7 +10,8 @@
  *  - the primitive buffers and OTs: the presenter's own, a mirror of the
  *    game's layout in the area (the same sizes, so the same bounds trip).
  * Then the camera, Spyro, the mobys and the particles are blended in the
- * copies, as present.c's blend_state blends the live ones for D30's pass. */
+ * copies, as present.c's blend_on blended the live ones for D30's pass
+ * until D129. */
 #ifndef PRES_SNAP_H
 #define PRES_SNAP_H
 

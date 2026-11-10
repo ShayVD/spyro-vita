@@ -1306,7 +1306,7 @@ static const PresentPresOut s_pres_out = {pb_usable,  pres_submit, vita_pres_pos
                                           &s_pb_gpu,  pb_open,     pb_set_env,    pb_begin,
                                           pb_capture, pb_commit,   pb_close};
 
-/* The presenter's buffers (vita_pres_init, with interp_mode=2): NULL
+/* The presenter's buffers (vita_pres_init): NULL
  * without the render thread or memory. */
 const PresentPresOut *vita_gpu_pres_out(void) {
   if (!g_rt_active || !g_vita_gpu)
