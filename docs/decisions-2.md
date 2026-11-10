@@ -1511,3 +1511,18 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **US matching build:** `PSX.EXE SHA-1 OK` with every R3 patch (`logs/r3-matching/us5.txt`, the final tree on main 8f96a63; and after each step before the rebase: `us.txt`, `us2.txt`, `us3.txt`).
   - **US host checks** (`tools/host_checks.sh`, R3's three PRs together on main 8f96a63): **279 of 279 files byte-identical** both to main's run (R1's `r0-main-*`, main 21ae3ca; D130, R0, R1 and R2's first part each reported 279 of 279 since) and to R2's first part's own run (`r2a-hc-*`) (`logs/r3-hc-cmp-final.txt`, `logs/r3-hc-cmp-final-r2a.txt`; also before the rebase: `r3-hc-cmp.txt`, `r3-hc-cmp2.txt`).
   - **Not checked on PAL in play:** with R2's first part the host runs the PAL disc through its logos and title flythrough (at 50 Hz with D138, `logs/r3-pal-boot3/`), but the title screen is the US overlay's until R2 brings PAL's, so no level is reached yet. Plan §9's Redux traces of Spyro's speed and a moby's path come with R4. `tools/tick60_cpp_check.py` (D130's token check against main) now differs on the files R3 touched, by the `RT()`s.
+
+### D137. Stage R3, part 2: the level overlays' PAL timing sites are `RT(us, pal)` in `moby_update.c`, `moby_spawn.c` and `particle_spawn.c`, the sources every level overlay is built from: 1,134 literals. In those sources, the timing sites (×1.2, ×1.44, ×5/6, ×3/4) in the 35 level overlays fall from 3,519 to 542. The rest are listed (`docs/pal-retune/overlays-left.md`)
+- **Why:** R3 (plan §9); D135's tool and patch folders.
+- **The owner's decisions it relies on:** as D135 (1, 2; 6 still open).
+- **How:** `retune.py propose` over the 35 level overlays, twice. The first pass ran from the US build's line tables. The second ran from the first pass's `REGION=pal` build, which pairs better with PAL, and looked two lines either side (a store the compiler puts on its condition's line, a call's arguments). One literal is often the site in several overlays (a moby class is one source, `overlays/mobys.yaml`); it changes only if every overlay agrees.
+- **Taken:** proposals whose PAL/US ratio is a timing one. **Not taken:**
+  - `balloonist.c` and `flight.c`: R2 rewrites the balloonist's dialogue and the flight results screen for the languages. Their timing sites (about 75) go with that work.
+  - proposals with no timing ratio (layout, misalignment in rewritten code);
+  - sites with no literal on or near their line (macros, values computed from others);
+  - literals PAL changed in some overlays and not others (conflicts).
+  The last two make up the 542 left: `docs/pal-retune/overlays-left.md`, by line.
+- **The port:** 65 of the edits are on lines the 60 Hz pilot rewrote (`T60_TICK_DO(props->m_0x14 -= RT(8, …))`, `T60_SHARE(RT(8, 10))`): `patches/spyro-1-region-port/0005`. Both trees end with the same `RT` pairs (1,276 in `moby_update.c`).
+- **Checked:**
+  - **`REGION=pal`** (`logs/r3-fin/compare-wad-strict.txt`, the final tree on main 8f96a63; the same counts as before the rebase, `logs/r3-final/`): constant sites over all 37 overlays 5,501 → 2,535. No function gained a site. The unpaired instructions are unchanged within 3% (17,823 → 18,225); the inserted sequences are still to do. No overlay function is strictly the same yet: every `UpdateMoby` has PAL's inserted code.
+  - **US:** as D135 (`PSX.EXE SHA-1 OK`, `logs/r3-matching/us5.txt`; host checks 279 of 279, `logs/r3-hc-cmp-final.txt`).

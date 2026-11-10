@@ -1,6 +1,6 @@
 # PAL timing: stage R3 of the regions plan
 
-Stage R3 of `docs/regions-plan.md` (§3.1, §6.3, §7.4, §9). The PAL release (SCES-01438) keeps NTSC's tick (two vblanks) at 50 Hz, so its logic runs at 25 Hz, and its programmers rescaled the game's constants to keep real-time speed: speeds ×1.2, accelerations ×1.44, durations ×5/6. R3 puts every one of those sites in the shared source as `RT(us, pal)` (`include/region.h`, D133), and gives the platform a 50 Hz vblank clock. Decisions: D135 (the method, the main executable, the hand C); the level overlays (D137) and the platform's 50 Hz clock and PAL 60 (D138) are their own PRs.
+Stage R3 of `docs/regions-plan.md` (§3.1, §6.3, §7.4, §9). The PAL release (SCES-01438) keeps NTSC's tick (two vblanks) at 50 Hz, so its logic runs at 25 Hz, and its programmers rescaled the game's constants to keep real-time speed: speeds ×1.2, accelerations ×1.44, durations ×5/6. R3 puts every one of those sites in the shared source as `RT(us, pal)` (`include/region.h`, D133), and gives the platform a 50 Hz vblank clock. Decisions: D135 (the method, the main executable, the hand C), D137 (the level overlays); the platform's 50 Hz clock and PAL 60 (D138) are their own PR.
 
 ## The tool: `tools/regions/retune.py`
 
@@ -58,6 +58,22 @@ These functions are hand-written C in the port (`src/game/hand_index.c`), from a
 | `func_80034CE8`, `func_800357A4`, `func_80035FB4` (camera) | `camera_hand.c` | 17 of 17 | none |
 
 The two sites of `func_80043FE4` left alone (116 and 117) aren't timing: the wing trail's vertex indices differ (US 9 and 9 + 0x5B, PAL 89 and 89 + 11), a model difference that needs `RV()`, not `RT()`.
+
+## The level overlays (D137)
+
+`patches/spyro-1-region*/0005-pal-timing-overlays.patch`: 1,134 literals in `moby_update.c` (1,106), `moby_spawn.c` (26) and `particle_spawn.c` (2), the code every level overlay is built from (`overlays/overlays.yaml`). A moby class is one source for every level that has it, so one literal is often the site in several overlays, and it changes only if they all agree. 65 of the edits are on lines the 60 Hz pilot rewrote (`T60_SHARE(RT(8, 10))`).
+
+Two passes of `retune.py propose`, taking only the proposals whose PAL/US ratio is a timing one (×1.2, ×1.44, ×5/6, ×3/4). The first pass used the US build's line tables. The second used the first pass's `REGION=pal` build and looked two lines either side.
+
+| Over the 35 level overlays, against the PAL disc | Before R3 | After |
+|---|---|---|
+| Timing sites in R3's three sources | 3,519 | **542** |
+| Constant sites, every kind, all 37 overlays | 5,501 | 2,535 |
+| Unpaired instructions (US side) | 17,823 | 18,225 |
+
+No function gained a site. No overlay function is strictly the same yet: every `UpdateMoby` keeps PAL's inserted code (the unpaired instructions), which is the next piece of work. The 542 sites left are listed by line in `docs/pal-retune/overlays-left.md`; each needs reading (a macro, a value computed from others, or a literal PAL changed in some levels only).
+
+**Not taken, for R2:** `balloonist.c` (its dialogue is rewritten for the five languages; 70 timing sites) and `flight.c`'s results screen (its text layout), and the proposals with no timing ratio (the 256-line picture's layout, alignments in rewritten code).
 
 ## Not R3's
 
