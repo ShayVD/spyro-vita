@@ -191,7 +191,7 @@ void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
 /* src/game/pres/ (stage 7e, D125) */
-extern int g_pres_check, g_pres_audit;
+extern int g_pres_check, g_pres_audit, g_pres_particles_full;
 extern long long g_pres_ovl_unknown; /* pres_draw.c (stage 7g, D128) */
 extern int g_faces_copy; /* src/game/render_ctx.c (stage 7f, D126) */
 extern int g_pres_check_thread, g_faces_race; /* src/game/pres/pres_check.c (D126) */
@@ -314,7 +314,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -560,6 +560,8 @@ int main(int argc, char **argv) {
       s_pres_watch = 1;
     } else if (strcmp(a, "--faces-race") == 0) {
       g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
+    } else if (strcmp(a, "--pres-particles-full") == 0) {
+      g_pres_particles_full = 1; /* tests (D136): the copy's particle slots all taken */
     } else if (strcmp(a, "--pres-audit") == 0) {
       g_pres_audit = 1;
       pres_draw_want();
