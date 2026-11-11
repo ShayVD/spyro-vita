@@ -1526,5 +1526,10 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **Checks:**
   - `tools/tick60_cpp_check.py`: **11 of 11** files preprocess to main's tokens, `pete.c` through `0015` included. The tool now applies `patches/spyro-1-region/` after `patches/spyro-1-port/` to its base copy, as `CMakeLists.txt` does; without that it reported the region headers (D133) as differences in 4 files.
   - The 60 Hz object: 159 functions made local (157 + the two new ones), no new writable static (`build/linux32/tick60_update.o.txt`).
-  - Off and interpolated against main's binary: the host checks, `pres_check_ab.sh MODE=chk` and the oracle replay are running; results below when they finish.
+  - **Off:** `tools/host_checks.sh` with main `8f96a63`'s binary and this branch's: **287 of 287 files identical** (demo 28, the whole-game tour 143, routes A and B 58 each; the logs with their folder names masked; `logs/p60hc-{main,fix}-*`, `logs/p60/hc_cmp.txt`).
+  - **Interpolated:** `tools/pres_check_ab.sh MODE=chk`, main's binary as the reference: **153 of 153 files identical** (demo 26, wsi 26, gems 19, routes A and B 56 each), and `pres check` **30,229 of 30,229 frames identical** (`logs/p60pc-*`, `logs/p60/pres_check_ab.txt`).
+  - **The oracle replay** (`s8e-cap`): **75 PASS, 0 FAIL, 20 NOEXIT** on both binaries, the summaries identical (`logs/caps/rp-{main,fix}`).
+  - **ctest:** 28 passed, `gte` skipped (no `logs/gte/gte.bin` in this worktree), of 29, as on main. `gte` first failed to start: Docker's file sharing had left its binary without the execute bit (as in D136); with the bit set it skips (`logs/p60/ctest*.txt`). `tools/check_no_assets.sh`: exit 0.
+  - **60 Hz with the presenter:** the Gnorc Cove portal entry with `--tick60 --interp --pres-check --widescreen`: 988 of 988 frames identical (761 in play at 60 Hz, 210 in the transition; `logs/p60/glpc`).
+  - **Vita:** built by the PR's CI only; not run in Vita3K or on hardware.
 - **Not checked:** hardware (proposed in the PR, the owner's yes first); a whirlwind outside the pilot's levels (the same 0x800 lift as the vortex, by reading); the rides and cutscene pad locks (bit 31 only, as the portal).
