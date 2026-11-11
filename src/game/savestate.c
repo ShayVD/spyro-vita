@@ -105,6 +105,7 @@ static void chunk_globals(PsxStateIO *io) {
  * language, the screen position, and the WAD's and level's language slots.
  * Empty for US and JP, whose states keep their content. */
 extern int g_Language, g_ScreenOffsetX, g_ScreenOffsetY;
+extern int g_PalCardHeaderDirty, g_PalTitleCardLoad;
 extern unsigned char g_WadCutscenesPal[16 * 8], g_LevelDragonsPal[5 * 6 * 8];
 
 static void chunk_region(PsxStateIO *io) {
@@ -115,6 +116,8 @@ static void chunk_region(PsxStateIO *io) {
   psx_state_io(io, &g_ScreenOffsetY, sizeof g_ScreenOffsetY);
   psx_state_io(io, g_WadCutscenesPal, sizeof g_WadCutscenesPal);
   psx_state_io(io, g_LevelDragonsPal, sizeof g_LevelDragonsPal);
+  psx_state_io(io, &g_PalCardHeaderDirty, sizeof g_PalCardHeaderDirty); /* D139 */
+  psx_state_io(io, &g_PalTitleCardLoad, sizeof g_PalTitleCardLoad);
 }
 
 static void chunk_gpu(PsxStateIO *io) {
