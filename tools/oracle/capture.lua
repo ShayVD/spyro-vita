@@ -17,7 +17,7 @@
 -- then pixels; tools/oracle/shot2png.py) and VRAM (vram-V.bin, 1024x512
 -- 16-bit, the host's --vram-shot format, tools/vram.py).
 -- $ORACLE_REGION=pal (with DISC=disc/image-pal): the PAL disc's addresses for
--- the trace, the pad's state anchors and the endings (D142); its tour takes
+-- the trace, the pad's state anchors and the endings (D143); its tour takes
 -- no level numbers (PAL has no warp code).
 --
 -- File layout, little endian: "SPYF", version, function address, sample
@@ -44,9 +44,9 @@ local vblank = 0
 
 -- The game's RAM addresses: psx.map's (NTSC-U), or with $ORACLE_REGION=pal
 -- the PAL executable's (SCES-01438 fdd04c04..., placed by
--- tools/regions/data_map.py; D133, D142). PAL has no level-warp code or
+-- tools/regions/data_map.py; D133, D143). PAL has no level-warp code or
 -- variables (D134), so its tour takes no level numbers; the endings' two
--- labels data_map can't place were read from PAL's code (D142).
+-- labels data_map can't place were read from PAL's code (D143).
 local region = (os.getenv('ORACLE_REGION') or 'us'):lower()
 local A = {
   gamestate = 0x800757D8, level = 0x8007596C, tick = 0x8007572C, spyro = 0x80078A58,

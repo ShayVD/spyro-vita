@@ -12,7 +12,7 @@ port reads the data from the player's verified executable at start-up
   the executable's code (jump tables, function pointers) are left alone.
 - Fills (FILLS below): US data labels whose table the release keeps in the
   same shape at another address (tools/regions/data_map.py places them, with
-  --aligned since D142). The table must be as long as the US label, end where
+  --aligned since D143). The table must be as long as the US label, end where
   the release's next placed label starts, and hold no pointer into the
   executable, or the tool stops. A fill is copied over its US label at
   start-up. A "timing" fill (PAL's speeds, turn rates and the camera's, x1.2
@@ -51,7 +51,7 @@ REGIONS = {
         # the music: XA files' first sectors, track lengths, track numbers,
         # each level's choice of three (src/music.c, initialization.c:152)
         "fills": ["D_8006EEDC", "D_8006EF9C", "D_8006F05C", "D_8006F200",
-                  # D142, PAL's own whatever the timing: Spyro's animations'
+                  # D143, PAL's own whatever the timing: Spyro's animations'
                   # first and last frames (PAL's model has fewer frames:
                   # with the US table he stepped past its last one and the
                   # renderer read garbage, the host's first PAL level), his
@@ -65,9 +65,9 @@ REGIONS = {
                   # six of the particle spawner's positions (D_8006E4E0[],
                   # particle_spawn.c), 144 further in x in PAL. No function
                   # data_map pairs reads D_8006E52C, so its PAL address is
-                  # given (from aligning the two releases' data, D142)
+                  # given (from aligning the two releases' data, D143)
                   ("D_8006E52C", 0x800739A0)],
-        # D142, PAL's 50 Hz retune in tables R3's constant sites couldn't
+        # D143, PAL's 50 Hz retune in tables R3's constant sites couldn't
         # see: Spyro's slope speeds (func_8003EA68, func_80047B60), turn
         # rates (UpdateSpyroTurnMomentum, func_80043FE4's turn on the spot
         # and flight turn), the camera's (func_80034CE8)

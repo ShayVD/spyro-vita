@@ -295,7 +295,7 @@ void port_lod_report(char *out, unsigned len) {
     out[0] = 0;
 }
 int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
-int port_cheat_pending(void) { return 0; } /* tour.c's PAL warp (D142) */
+int port_cheat_pending(void) { return 0; } /* tour.c's PAL warp (D143) */
 #if SPYRO_NATIVE_MEM
 /* src/game/port.c's, with a zeroed stand-in for the labels image (D106):
  * the block starts at main_BSS_END's page, so a label (the pad script reads

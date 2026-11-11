@@ -22,7 +22,7 @@ import re
 import sys
 
 FRAME = 4
-PER_VBLANK = 735  # 44,100 / 60; 882 (44,100 / 50) for the PAL disc at 50 Hz (D138, D142)
+PER_VBLANK = 735  # 44,100 / 60; 882 (44,100 / 50) for the PAL disc at 50 Hz (D138, D143)
 
 
 def per_vblank(log):

@@ -18,7 +18,7 @@
  *       region_dev=1    open a release that isn't supported yet instead of
  *                       its "NOT SUPPORTED YET" panel (the host's
  *                       --region-dev; developers' test runs only: no menu
- *                       row writes it, D142); default 0
+ *                       row writes it, D143); default 0
  *       frames=N        exit after N vblanks (default 0: never)
  *       keep_awake=1    no standby, dimming or screen off while it runs
  *                       (tools/vita/hw_run.sh writes it; D77)
@@ -386,7 +386,7 @@ static void read_config(void) {
     else if (!strcmp(line, "pal60"))
       g_RegionPal60 = atoi(v) != 0; /* PAL 60 (regions plan §7.4, D138) */
     else if (!strcmp(line, "region_dev"))
-      g_RegionDev = atoi(v) != 0; /* the host's --region-dev (D133, D142) */
+      g_RegionDev = atoi(v) != 0; /* the host's --region-dev (D133, D143) */
     else if (!strcmp(line, "frames"))
       g_vita_opts.frames = atoi(v);
     else if (!strcmp(line, "keep_awake"))

@@ -78,7 +78,7 @@ def map_labels(path):
 
 
 def aligned(cc, res, US, OT, labels, code):
-    """--aligned (D142): the functions that aren't "same", paired inside the
+    """--aligned (D143): the functions that aren't "same", paired inside the
     blocks difflib aligns between their placed neighbours (as compare_code's
     coverage does). Returns {us address: Counter(other address)}."""
     T = [cc.norm(w) for w in OT]

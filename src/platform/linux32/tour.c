@@ -12,7 +12,7 @@
  *            TRIANGLE 3, RIGHT 4, DOWN 5, LEFT 6).
  *            PAL's inventory has no warp code (D134), so on the PAL disc
  *            the warp is the Vita menu's (port_cheat_request,
- *            cheats_port.c; D50, D142), which opens the inventory itself.
+ *            cheats_port.c; D50, D143), which opens the inventory itself.
  *            It is asked for again whenever none is pending until the
  *            level changes: the game drops a pending cheat when a flight
  *            level's timer ends first (its results get Cross, as below).

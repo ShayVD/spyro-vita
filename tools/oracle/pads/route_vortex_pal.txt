@@ -1,4 +1,4 @@
-# PAL route B, first half (D142): route_vortex_balloon.txt through
+# PAL route B, first half (D143): route_vortex_balloon.txt through
 # tools/regions/pad_pal.py, cut after Dry Canyon's exit vortex has taken
 # Spyro home to Peace Keepers. The scaled walk on the balloonist's dock
 # drifts into the water at 50 Hz, and PAL's balloonist (its dialogue and

@@ -1,4 +1,4 @@
-# PAL route A (D142): route_portal_exit.txt through tools/regions/pad_pal.py,
+# PAL route A (D143): route_portal_exit.txt through tools/regions/pad_pal.py,
 # then cut by hand: at 50 Hz the scaled walk carries Spyro into the portal
 # 306 vblanks after the anchor (the host, logs/r4/h-pal-routeA), so the
 # walk's lines after +300 (the US route's stop, turn and jump) are gone.

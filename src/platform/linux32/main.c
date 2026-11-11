@@ -821,7 +821,7 @@ int main(int argc, char **argv) {
   if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
     char dir[512];
     /* both folders now, as the Vita does: the cards make one level and the
-     * save states none (D142) */
+     * save states none (D143) */
     mkdir(psx_mcrd_root(), 0777);
     psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 1));
   }

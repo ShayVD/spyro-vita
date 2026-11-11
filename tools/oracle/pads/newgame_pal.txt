@@ -1,5 +1,5 @@
 # New game from the PAL disc's title in PCSX-Redux (SCES-01438, DISC=disc/image-pal,
-# ORACLE_REGION=pal; D142): START, then CROSS through the language (English,
+# ORACLE_REGION=pal; D143): START, then CROSS through the language (English,
 # the default), the menu and the memory-card checks, as newgame.txt does for
 # NTSC-U. Anchored on the title's gamestate, which starts with the logos.
 @gs=13,level=0 +1300 start
