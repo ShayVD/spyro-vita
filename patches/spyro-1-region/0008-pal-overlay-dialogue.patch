@@ -1,0 +1,1123 @@
+--- a/include/overlay_pointers.h
++++ b/include/overlay_pointers.h
+@@ -63,7 +63,8 @@ extern int (*D_800758C4)(int pTimer, Vector3D *pPos, int pColor); // g_DrawTime
+     void NAME_OVERLAY_FUNCTION_LEVEL(Flight2, level)(int pUnk); \
+     void NAME_OVERLAY_FUNCTION_LEVEL(Flight3, level)(void); \
+     int NAME_OVERLAY_FUNCTION_LEVEL(Flight4, level)(int pTimer, Vector3D* pPos, int pColor); \
+-    void NAME_OVERLAY_FUNCTION_LEVEL(Flight5, level)(void);
++    void NAME_OVERLAY_FUNCTION_LEVEL(Flight5, level)(void); \
++    int NAME_OVERLAY_FUNCTION_LEVEL(func_pal_80081758, level)(char *pText); /* PAL (D142) */
+ 
+ #define FOR_BALLOONS(b) \
+     b(10) \
+--- a/src/main.c
++++ b/src/main.c
+@@ -140,6 +140,35 @@ char *g_PalTotalTreasureText[5] = {0};
+ u_char g_PalTreasureFoundX[5] = {0};
+ u_char g_PalTotalTreasureX[5] = {0};
+ u_char g_PalReturningHomeX[5] = {0};
++// stand-ins for the overlays' PAL tables (balloonist.c, flight.c; D139):
++// initialised, since the build drops common symbols
++char *g_PalBalloonistNames[6] = {0};
++char *g_PalTheBalloonistText[5] = {0};
++char *g_PalHopOnText[5] = {0};
++char *g_PalNeedALiftText[5] = {0};
++char *g_PalReadyToGoText[5] = {0};
++char *g_PalLikeToGoText[5] = {0};
++char *g_PalGoToText[5] = {0};
++char *g_PalStayHereText[5] = {0};
++char *g_PalBalloonistDialogue[36 * 15] = {0};
++char *g_PalFlightCompletedText[5] = {0};
++char *g_PalFlightQuitText[5] = {0};
++char *g_PalFlightTimeUpText[5] = {0};
++char *g_PalFlightCrashedText[5] = {0};
++char *g_PalFlightAllInOneText[5] = {0};
++char *g_PalFlightTotalText[5] = {0};
++char *g_PalFlightPressText[5] = {0};
++int g_PalFlightPressButtonAt[5] = {0};
++char *g_PalFlightTryAgainText[5] = {0};
++char *g_PalFlightYesText[5] = {0};
++char *g_PalFlightNoText[5] = {0};
++char *g_PalFlightTimeAttackText[5] = {0};
++char *g_PalFlightBestTimeText[5] = {0};
++char *g_PalFlightYourTimeText[5] = {0};
++char *g_PalFlightNewRecordText[5] = {0};
++char *g_PalFlightObjectiveNames[6][5][4] = {{{0}}};
++// PAL bss: the flight overlays' letter counter (SetOverlayPointers sets it)
++int (*g_PalLetterCount)(char *pText) = 0;
+ #endif
+ 
+ // These ARE in this file!
+--- a/src/overlay_pointers.c
++++ b/src/overlay_pointers.c
+@@ -2,6 +2,7 @@
+ #include "buffers.h"
+ #include "common.h"
+ #include "moby.h"
++#include "region.h"
+ 
+ #include <stdlib.h>
+ 
+@@ -409,6 +410,17 @@ void func_level_64_800840FC();
+     D_800758D8 = Balloonist4_LEVEL_##pLevel;                                   \
+     break;
+ 
++// PAL (D142): its flight overlays' letter counter, which their results
++// screens call through a pointer the executable sets here (PAL 0x8007C0B8)
++#if REGION_HAS_PAL
++extern int (*g_PalLetterCount)(char *pText);
++#define PAL_LETTER_COUNT(pLevel)                                               \
++  if (REGION_IS(PAL))                                                          \
++    g_PalLetterCount = func_pal_80081758_LEVEL_##pLevel;
++#else
++#define PAL_LETTER_COUNT(pLevel)
++#endif
++
+ #define LEVEL_CASE_FLIGHT(pLevel)                                              \
+   case pLevel:                                                                 \
+     g_Buffers.m_CopyBuf = Terminator_LEVEL_##pLevel;                           \
+@@ -416,6 +428,7 @@ void func_level_64_800840FC();
+     g_UpdateMoby = UpdateMoby_LEVEL_##pLevel;                                  \
+     g_SpawnParticle = SpawnParticle_LEVEL_##pLevel;                            \
+     g_UpdateParticle = UpdateParticle_LEVEL_##pLevel;                          \
++    PAL_LETTER_COUNT(pLevel)                                                   \
+     D_80075694 = Flight1_LEVEL_##pLevel;                                       \
+     D_800757A8 = Flight2_LEVEL_##pLevel;                                       \
+     g_FlightResultsUpdate = Flight3_LEVEL_##pLevel;                            \
+--- a/src/overlays/balloonist.c
++++ b/src/overlays/balloonist.c
+@@ -21,6 +21,7 @@
+ #include "spyro.h"
+ #include "strings.h"
+ #include "variables.h"
++#include "region.h"
+ 
+ #include <rand.h>
+ #include <stdio.h>
+@@ -36,6 +37,25 @@ int func_8001796C(int, int);
+ extern SphericalCoordsOffset D_8006C8BC;
+ extern int D_8006EADC[9][2]; // BalloonArrivalJumpoffXY;
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): the merged text spawner (draw.c) and the five-language
++// tables the balloonist's text comes from (EN, FR, DE, ES, IT)
++Moby *func_pal_8001BD5C(u_char *pText, Vector3D *pPosition,
++                        Vector3D *pTextSpacing, int pSpaceWidth,
++                        int pShadeIndex);
++extern char *g_PalBalloonistNames[6];       // PAL 0x80075738
++extern char *g_PalTheBalloonistText[5];     // PAL 0x80075210
++extern char *g_PalHopOnText[5];             // PAL 0x80075224 "WHERE TO, SPYRO?"
++extern char *g_PalNeedALiftText[5];         // PAL 0x80075238
++extern char *g_PalReadyToGoText[5];         // PAL 0x8007524C
++extern char *g_PalLikeToGoText[5];          // PAL 0x80075260
++extern char *g_PalGoToText[5];              // PAL 0x80075274 "GO TO "
++extern char *g_PalStayHereText[5];          // PAL 0x80075288
++extern char *g_PalHomeworldNames[5 * 6];    // PAL 0x800753F0, [language][world]
++extern char *g_PalLevelNames[5 * 36];       // PAL 0x80075468, [language][level]
++extern char *g_PalBalloonistDialogue[36 * 15]; // PAL 0x80075750, [id][language][line]
++#endif
++
+ void NAME_OVERLAY_FUNCTION(Balloonist1)(Moby *pBalloonist) {
+   int *props;
+   Vector3D vec;
+@@ -406,8 +426,10 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+     Vector3D vec;
+     Vector3D16 shortvec;
+     int lerpProgress, currentAngle, currentDist;
+-    if (D_800777E8.unk_0x04 < 102) {
+-      lerpProgress = Sin((D_800777E8.unk_0x04 * 2048) / 102 - 1024) + 4096;
++    // PAL: the climb runs every frame, its end checked after it (below)
++    if (REGION_IS(PAL) || D_800777E8.unk_0x04 < 102) {
++      lerpProgress =
++          Sin((D_800777E8.unk_0x04 * 2048) / RT(102, 86) - 1024) + 4096;
+       if (D_800777E8.unk_0x04 == g_DeltaTime) {
+         D_800777E8.m_BalloonMoby->m_SectorIndex = -1;
+         D_800777E8.unk_0x38 = Atan2(
+@@ -436,25 +458,26 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+         g_Spyro.m_bodyFrameProgress = 0;
+         g_Spyro.m_bodyAnimationSpeed = 7;
+       }
+-      if (D_800777E8.unk_0x04 < 48) {
++      if (D_800777E8.unk_0x04 < RT(48, 40)) {
+         g_Spyro.m_Position.x =
+             D_800777E8.unk_0x18.x +
+             ((D_800777E8.unk_0x2C.x - D_800777E8.unk_0x18.x) *
+              D_800777E8.unk_0x04) /
+-                48;
++                RT(48, 40);
+         g_Spyro.m_Position.y =
+             D_800777E8.unk_0x18.y +
+             ((D_800777E8.unk_0x2C.y - D_800777E8.unk_0x18.y) *
+              D_800777E8.unk_0x04) /
+-                48;
++                RT(48, 40);
+         g_Spyro.m_Position.z =
+-            D_800777E8.unk_0x18.z + (Sin(D_800777E8.unk_0x04 << 5) * 10) / 36;
++            D_800777E8.unk_0x18.z +
++            (Sin(D_800777E8.unk_0x04 * RT(32, 38)) * 10) / 36;
+         g_Spyro.m_surfaceBelowSpyro =
+             ColFindFloor(&g_Spyro.m_Position, 0x10000);
+         RotVec8ToMatrix(&g_Spyro.m_bodyRotation, &g_Spyro.m_RotationMatrix, 0);
+         func_80049FAC(1);
+       } else {
+-        if (D_800777E8.unk_0x04 - g_DeltaTime < 48) {
++        if (D_800777E8.unk_0x04 - g_DeltaTime < RT(48, 40)) {
+           D_800777E8.unk_0x18.x = D_800777E8.unk_0x2C.x;
+           D_800777E8.unk_0x18.y = D_800777E8.unk_0x2C.y;
+           D_800777E8.unk_0x18.z = D_800777E8.unk_0x18.z + 805;
+@@ -464,20 +487,21 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+           g_Spyro.m_bodyFrameProgress = 0;
+           g_Spyro.m_bodyAnimationSpeed = 4;
+         }
+-        if (53 < D_800777E8.unk_0x04 - g_DeltaTime) {
++        if (RT(53, 45) < D_800777E8.unk_0x04 - g_DeltaTime) {
+           g_Spyro.m_bodyAnimationSpeed = 7;
+           g_Spyro.m_Position.x =
+               D_800777E8.unk_0x18.x +
+               ((D_800777E8.unk_0x2C.x - D_800777E8.unk_0x18.x) *
+-               (D_800777E8.unk_0x04 - 54)) /
+-                  48;
++               (D_800777E8.unk_0x04 - RT(54, 46))) /
++                  RT(48, 40);
+           g_Spyro.m_Position.y =
+               D_800777E8.unk_0x18.y +
+               ((D_800777E8.unk_0x2C.y - D_800777E8.unk_0x18.y) *
+-               (D_800777E8.unk_0x04 - 54)) /
+-                  48;
+-          g_Spyro.m_Position.z = D_800777E8.unk_0x18.z +
+-                                 (Sin((D_800777E8.unk_0x04 - 54) * 32) >> 2);
++               (D_800777E8.unk_0x04 - RT(54, 46))) /
++                  RT(48, 40);
++          g_Spyro.m_Position.z =
++              D_800777E8.unk_0x18.z +
++              (Sin((D_800777E8.unk_0x04 - RT(54, 46)) * RT(32, 38)) >> 2);
+         }
+       }
+       if ((D_800777E8.unk_0x50 - D_800777E8.unk_0x38 & 0xfff) <= 2048) {
+@@ -524,6 +548,10 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+           D_800777E8.unk_0x5C[0] +
+           ((D_800777E8.unk_0x5C[1] - D_800777E8.unk_0x5C[0]) * lerpProgress >>
+            13);
++      if (REGION_IS(PAL) && D_800777E8.unk_0x04 >= RT(102, 84)) {
++        D_800777E8.m_State = 3;
++        D_800777E8.unk_0x04 = 0;
++      }
+     } else {
+       D_800777E8.m_State = 3;
+       D_800777E8.unk_0x04 = 0;
+@@ -696,17 +724,24 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+ 
+   case 7: {
+     int pad[2];
+-    if (D_800777E8.unk_0x04 < 64) {
+-      g_Spyro.m_Position.x = D_800777E8.unk_0x18.x +
+-                             ((D_800777E8.unk_0x2C.x - D_800777E8.unk_0x18.x) *
+-                                  D_800777E8.unk_0x04 >>
+-                              6);
+-      g_Spyro.m_Position.y = D_800777E8.unk_0x18.y +
+-                             ((D_800777E8.unk_0x2C.y - D_800777E8.unk_0x18.y) *
+-                                  D_800777E8.unk_0x04 >>
+-                              6);
++    // PAL: the walk off the balloon in 54 frames, not 64
++    if (D_800777E8.unk_0x04 < RT(64, 54)) {
++      g_Spyro.m_Position.x =
++          D_800777E8.unk_0x18.x +
++          RT((D_800777E8.unk_0x2C.x - D_800777E8.unk_0x18.x) *
++                     D_800777E8.unk_0x04 >>
++                 6,
++             (D_800777E8.unk_0x2C.x - D_800777E8.unk_0x18.x) *
++                 D_800777E8.unk_0x04 / 54);
++      g_Spyro.m_Position.y =
++          D_800777E8.unk_0x18.y +
++          RT((D_800777E8.unk_0x2C.y - D_800777E8.unk_0x18.y) *
++                     D_800777E8.unk_0x04 >>
++                 6,
++             (D_800777E8.unk_0x2C.y - D_800777E8.unk_0x18.y) *
++                 D_800777E8.unk_0x04 / 54);
+       g_Spyro.m_Position.z = D_800777E8.unk_0x2C.z +
+-                             (Sin(D_800777E8.unk_0x04 * 24 + 512) *
++                             (Sin(D_800777E8.unk_0x04 * RT(24, 28) + 512) *
+                               (D_800777E8.unk_0x18.z - D_800777E8.unk_0x2C.z)) /
+                                  2896;
+       g_Spyro.m_surfaceBelowSpyro = ColFindFloor(&g_Spyro.m_Position, 0x10000);
+@@ -742,6 +777,261 @@ void NAME_OVERLAY_FUNCTION(Balloonist3)(void) {
+ }
+ 
+ void NAME_OVERLAY_FUNCTION(Balloonist4)(void) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: the language's text by the merged spawner; every dialogue is three
++    // lines, centred, in a box as wide as the longest
++    if (D_800777E8.m_State <= 3) {
++      if (D_800777E8.m_State <= 1) {
++        Vector3D vec1;
++        Vector3D vec2;
++        char buffer[32];
++        Moby *hudmobyptr;
++        int i;
++
++        hudmobyptr = g_HudMobys;
++        sprintf(buffer, "%s %s",
++                PAL_DATA(g_PalBalloonistNames, 0x80075738)[g_LevelId / 10 - 1],
++                PAL_DATA(g_PalTheBalloonistText, 0x80075210)[g_Language]);
++        vec1.x = 0x108 - strlen(buffer) * 8;
++        vec1.y = 216;
++        vec1.z = 0x1100;
++        vec2.x = 0x10;
++        vec2.y = 0x1;
++        vec2.z = 0x1400;
++        func_pal_8001BD5C(buffer, &vec1, &vec2, 0x12, 0xb);
++        hudmobyptr--;
++        for (i = 0; (int)g_HudMobys <= (int)hudmobyptr; i++) {
++          hudmobyptr->m_Rotation.z =
++              COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
++          hudmobyptr--;
++        }
++      }
++      if (D_800777E8.m_State == 1) {
++        if (D_800777E8.m_DialogueId <= 29 || D_800777E8.m_DialogueId >= 33) {
++          Vector3D vec1;
++          Vector3D vec2;
++          int widths[3];
++          Moby *hudmobyptr;
++          int i;
++          int line;
++          int maxWidth;
++          int width;
++          int half;
++
++          // the three menus (30-32) have no lines in the table
++          if (D_800777E8.m_DialogueId < 30) {
++            line = D_800777E8.m_DialogueId;
++          } else {
++            line = D_800777E8.m_DialogueId - 3;
++          }
++          i = 0;
++          maxWidth = 0;
++          vec1.y = 39;
++          vec1.z = 0x1400;
++          vec2.x = 15;
++          vec2.y = 1;
++          vec1.x = 0;
++          vec2.z = 0x1600;
++          line = line * 15 + g_Language * 3;
++          // measure each line: spawn it, then drop its Mobys
++          for (; i < 3; i++) {
++            hudmobyptr = g_HudMobys;
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalBalloonistDialogue, 0x80075750)[line + i],
++                &vec1, &vec2, 16, 11);
++            width = vec1.x;
++            g_HudMobys = hudmobyptr;
++            widths[i] = width;
++            if (maxWidth < width)
++              maxWidth = width;
++            vec1.x = 0;
++          }
++          for (i = 0; i < 3; i++) {
++            vec1.x = 264 - widths[i] / 2;
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalBalloonistDialogue, 0x80075750)[line + i],
++                &vec1, &vec2, 16, 11);
++            vec1.y += 18;
++          }
++          if (D_800777E8.unk_0x04 < 80) {
++            if ((int)g_HudMobys <= (int)(hudmobyptr - D_800777E8.unk_0x04))
++              g_HudMobys = hudmobyptr - D_800777E8.unk_0x04;
++          }
++          hudmobyptr--;
++          for (i = 0; (int)g_HudMobys <= (int)hudmobyptr; i++) {
++            hudmobyptr->m_Rotation.z =
++                COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
++            hudmobyptr--;
++          }
++          half = maxWidth / 2;
++          func_8001860C(248 - half, half + 264, 24, 98);
++          if (D_800777E8.unk_0x04 > 0x4f) {
++            vec1.x = half + 248;
++            vec1.y = 90;
++            vec1.z = 0x1100;
++            func_80018534(&vec1, D_800777E8.unk_0x04, 0);
++          }
++        } else if (D_800777E8.m_DialogueId == 30) {
++          Vector3D vec1;
++          Vector3D vec2;
++          Moby *hudmobyptr;
++          int someflag;
++          int i;
++          int j;
++
++          vec2.x = 0xe;
++          vec2.z = 0x1600;
++          vec1.z = 0x1400;
++          vec1.x = 0xf0;
++          vec2.y = 0x1;
++          vec1.y = 0x24;
++
++          if (D_800777E8.m_DialogueTopStr == 0) {
++            func_pal_8001BD5C(PAL_DATA(g_PalHopOnText, 0x80075224)[g_Language],
++                              &vec1, &vec2, 0x10, 0xb);
++          } else {
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalNeedALiftText, 0x80075238)[g_Language], &vec1,
++                &vec2, 0x10, 0xb);
++          }
++          vec1.x = 0x110;
++          vec1.y += 21;
++          hudmobyptr = g_HudMobys - 1;
++          func_pal_8001BD5C(PAL_DATA(g_PalStayHereText, 0x80075288)[g_Language],
++                            &vec1, &vec2, 0x10, 0xb);
++          vec1.y += 0xf;
++          if (D_800777E8.unk_0x08 == 0) {
++            for (i = 0; g_HudMobys <= hudmobyptr; i++) {
++              hudmobyptr->m_Rotation.z =
++                  COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
++              hudmobyptr--;
++            }
++          }
++          someflag = 1;
++          for (i = 0; i < 6; i++) {
++            if (g_LevelId / 10 - 1 != i && D_800758D0[i] == 2) {
++              vec1.x = 0x110;
++              hudmobyptr = g_HudMobys - 1;
++              func_pal_8001BD5C(
++                  PAL_DATA(g_PalHomeworldNames, 0x800753F0)[g_Language * 6 + i],
++                  &vec1, &vec2, 0x10, 0xb);
++              vec1.y += 0xf;
++              if (D_800777E8.unk_0x08 == someflag) {
++                for (j = 0; g_HudMobys <= hudmobyptr; j++) {
++                  hudmobyptr->m_Rotation.z =
++                      COSINE_8((D_800777E8.unk_0x04 * 4 + (j * 12) & 0xff)) >>
++                      8;
++                  hudmobyptr--;
++                }
++              }
++              someflag++;
++            }
++          }
++          func_8001860C(0xe0, 484, 24, someflag * 0xf + 0x33);
++          func_8001844C(0xf0, 45, 0x1a0, 45);
++          vec1.x = 0xf4;
++          vec1.y = D_800777E8.unk_0x08 * 0xf + 0x36;
++          vec1.z = 0x1100;
++          func_80018534(&vec1, D_800777E8.unk_0x04, 0);
++        } else if (D_800777E8.m_DialogueId == 31 ||
++                   D_800777E8.m_DialogueId == 32) {
++          Vector3D vec1;
++          Vector3D vec2;
++          char buffer[32];
++          Moby *hudmobyptr;
++          int i;
++
++          func_8001860C(0x48, 0x1b8, 24, 98);
++          func_8001844C(100, 51, 0x184, 51);
++          vec1.x = 0x60;
++          vec1.y = D_800777E8.unk_0x08 * 0x13 + 63;
++          vec1.z = 0x1100;
++          func_80018534(&vec1, D_800777E8.unk_0x04, 0);
++          vec2.x = 15;
++          vec2.z = 0x1600;
++          vec1.z = 0x1400;
++          vec1.y = 39;
++          vec2.y = 1;
++          vec1.x = 0x60;
++
++          if (D_800777E8.m_DialogueId == 31)
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalReadyToGoText, 0x8007524C)[g_Language], &vec1,
++                &vec2, 16, 0xb);
++          else
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalLikeToGoText, 0x80075260)[g_Language], &vec1,
++                &vec2, 16, 0xb);
++          vec1.x = 0x80;
++          vec1.y += 0x19;
++          hudmobyptr = g_HudMobys - 1;
++          func_pal_8001BD5C(PAL_DATA(g_PalStayHereText, 0x80075288)[g_Language],
++                            &vec1, &vec2, 16, 0xb);
++          vec1.y += 0x13;
++          if (D_800777E8.unk_0x08 == 0) {
++            for (i = 0; g_HudMobys <= hudmobyptr; i++) {
++              hudmobyptr->m_Rotation.z =
++                  COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
++              hudmobyptr--;
++            }
++          }
++          vec1.x = 0x80;
++          hudmobyptr = g_HudMobys - 1;
++          if (D_800777E8.m_DialogueId == 31) {
++            sprintf(buffer, "%s%s",
++                    PAL_DATA(g_PalGoToText, 0x80075274)[g_Language],
++                    PAL_DATA(g_PalHomeworldNames,
++                             0x800753F0)[g_Language * 6 + g_LevelId / 10]);
++          } else {
++            sprintf(buffer, "%s%s",
++                    PAL_DATA(g_PalGoToText, 0x80075274)[g_Language],
++                    PAL_DATA(g_PalLevelNames, 0x80075468)
++                        [g_Language * 36 + (g_NextLevelId / 10 - 1) * 6 +
++                         g_NextLevelId % 10]);
++          }
++
++          func_pal_8001BD5C(buffer, &vec1, &vec2, 16, 11);
++
++          if (D_800777E8.unk_0x08 == 1) {
++            for (i = 0; g_HudMobys <= hudmobyptr; i++) {
++              hudmobyptr->m_Rotation.z =
++                  COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
++              hudmobyptr--;
++            }
++          }
++        }
++      }
++
++      func_800521C0();
++      func_80019698();
++
++      if (D_800777E8.m_State <= 1) {
++        g_SonyImage.m_ShadedMobys[0] = 0;
++        func_80018880();
++        func_80022A2C();
++      }
++      func_8002B9CC();
++      func_80050BD0();
++      func_800573C8();
++    } else {
++      Moby **ptr;
++      func_800521C0();
++      ptr = (Moby **)&g_SonyImage.u.m_Buf[0];
++      while (*ptr)
++        ptr++;
++      ptr[0] = D_800777E8.m_BalloonMoby;
++      ptr[1] = 0;
++      func_80019698();
++      func_8002B9CC();
++      func_80050BD0();
++      func_800573C8();
++    }
++    return;
++  }
++#endif
++#if REGION_HAS_US
++  {
+   if (D_800777E8.m_State <= 3) {
+     if (D_800777E8.m_State <= 1) {
+       Vector3D vec1;
+@@ -944,4 +1234,6 @@ void NAME_OVERLAY_FUNCTION(Balloonist4)(void) {
+     func_80050BD0();
+     func_800573C8();
+   }
++  }
++#endif
+ }
+--- a/src/overlays/flight.c
++++ b/src/overlays/flight.c
+@@ -20,6 +20,7 @@
+ #include "spu.h"
+ #include "spyro.h"
+ #include "variables.h"
++#include "region.h"
+ 
+ #include <libetc.h>
+ #include <stdio.h>
+@@ -48,6 +49,47 @@ extern u_short g_GrayscalePalette[32]; // 32 colors
+ // look into defining
+ extern char *D_8006E8C0[6][4];
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): the merged text spawner (draw.c), the letter counter below
++// (set by SetOverlayPointers) and the five-language results screen text
++Moby *func_pal_8001BD5C(u_char *pText, Vector3D *pPosition,
++                        Vector3D *pTextSpacing, int pSpaceWidth,
++                        int pShadeIndex);
++extern int (*g_PalLetterCount)(char *pText); // PAL 0x8007C0B8 (bss)
++extern char *g_PalFlightCompletedText[5];    // PAL 0x80073D34
++extern char *g_PalFlightQuitText[5];         // PAL 0x80073D48
++extern char *g_PalFlightTimeUpText[5];       // PAL 0x80073D5C
++extern char *g_PalFlightCrashedText[5];      // PAL 0x80073D70
++extern char *g_PalFlightAllInOneText[5];     // PAL 0x80073D84
++extern char *g_PalFlightTotalText[5];        // PAL 0x80073D98
++extern char *g_PalFlightPressText[5];        // PAL 0x80073DAC "PRESS   BUTTON"
++extern int g_PalFlightPressButtonAt[5];      // PAL 0x80073DC0, the X's letter
++extern char *g_PalFlightTryAgainText[5];     // PAL 0x80073DD4
++extern char *g_PalFlightYesText[5];          // PAL 0x80073DE8
++extern char *g_PalFlightNoText[5];           // PAL 0x80073DFC
++extern char *g_PalFlightTimeAttackText[5];   // PAL 0x80073E10
++extern char *g_PalFlightBestTimeText[5];     // PAL 0x80073E24
++extern char *g_PalFlightYourTimeText[5];     // PAL 0x80073E38
++extern char *g_PalFlightNewRecordText[5];    // PAL 0x80073E4C
++extern char *g_PalFlightObjectiveNames[6][5][4]; // PAL 0x80073E60, [world][language]
++
++/// @brief PAL: the letters of pText, its accents ('a'-'f') not counted
++/// (PAL 0x80081758 in every flight overlay)
++int NAME_OVERLAY_FUNCTION(func_pal_80081758)(char *pText) {
++  int count;
++
++  count = 0;
++  if (*pText != '\0') {
++    do {
++      if (!(*pText >= 'a' && *pText <= 'f'))
++        count++;
++      pText++;
++    } while (*pText != '\0');
++  }
++  return count;
++}
++#endif
++
+ void NAME_OVERLAY_FUNCTION(Flight1)(void) {
+   if (g_Gamestate != GS_FlightResults) {
+     g_Gamestate = GS_FlightResults;
+@@ -72,8 +114,9 @@ void NAME_OVERLAY_FUNCTION(Flight2)(int pUnk) {
+   int i;
+ 
+   if (pUnk) {
+-    setRECT(&rc, 512, 0, 256, 225);
+-    LoadImage(&rc, g_Buffers.m_HudOTStart - 0x1C200);
++    // PAL: the 512x256 screen's copy
++    setRECT(&rc, 512, 0, 256, RV(225, 257, 225));
++    LoadImage(&rc, g_Buffers.m_HudOTStart - RV(0x1C200, 0x20200, 0x1C200));
+     DrawSync(0);
+   }
+   g_Gamestate = GS_Playing;
+@@ -109,7 +152,8 @@ void NAME_OVERLAY_FUNCTION(Flight2)(int pUnk) {
+     g_RecentGemsCollected[i & 31] = D_8006E998[i % 12];
+   }
+   g_Spyro.m_walkingState = 0;
+-  if (g_Camera.m_State == 0x8000000E) {
++  // PAL: whatever the camera's state
++  if (REGION_IS(PAL) || g_Camera.m_State == 0x8000000E) {
+     g_Camera.unk_0xC0 = D_8006C588[g_Spyro.m_State];
+   }
+ }
+@@ -153,10 +197,19 @@ void NAME_OVERLAY_FUNCTION(Flight3)(void) {
+         switch (D_80075720) {
+         case 0:
+           (*D_800757A8)(1);
++          if (REGION_IS(PAL)) {
++            // PAL: Spyro's head and the camera's preset reset first
++            VecNull(&g_Spyro.m_HeadLookTarget);
++            g_Camera.m_SphericalPreset = &D_8006C934;
++            func_80034358();
++          }
+           func_800144C8();
+           break;
+         case 1:
+           (*D_800757A8)(0);
++          if (REGION_IS(PAL)) {
++            VecNull(&g_Spyro.m_HeadLookTarget); // PAL
++          }
+           func_8002C618();
+           break;
+         }
+@@ -173,6 +226,15 @@ void NAME_OVERLAY_FUNCTION(Flight3)(void) {
+   }
+ }
+ 
++// PAL: the time's characters by the merged spawner
++#if REGION_HAS_PAL
++#define FLIGHT4_TEXT(text, pos, color)                                         \
++  (REGION_IS(PAL) ? func_pal_8001BD5C(text, pos, nullptr, 18, color)           \
++                  : func_80017FE4(text, pos, 18, color))
++#else
++#define FLIGHT4_TEXT(text, pos, color) func_80017FE4(text, pos, 18, color)
++#endif
++
+ int NAME_OVERLAY_FUNCTION(Flight4)(int pTimer, Vector3D *pPos, int pColor) {
+   int centisecs;
+   int mins;
+@@ -183,12 +245,13 @@ int NAME_OVERLAY_FUNCTION(Flight4)(int pTimer, Vector3D *pPos, int pColor) {
+   if (pTimer < 0) {
+     pPos->x -= 54;
+     pPos->y -= 5;
+-    func_80017FE4("......", pPos, 18, pColor);
++    FLIGHT4_TEXT("......", pPos, pColor);
+     return 6;
+   } else {
+-    mins = pTimer / 36000;
+-    secs = (pTimer / 600) % 60;
+-    centisecs = (pTimer / 6) % 100;
++    // PAL: the timer counts 50 a second
++    mins = pTimer / RT(36000, 30000);
++    secs = (pTimer / RT(600, 500)) % 60;
++    centisecs = (pTimer / RT(6, 5)) % 100;
+     if (mins != 0) {
+       sprintf(text, "%d %02d.%02d", mins, secs, centisecs);
+     } else {
+@@ -196,15 +259,15 @@ int NAME_OVERLAY_FUNCTION(Flight4)(int pTimer, Vector3D *pPos, int pColor) {
+     }
+     len = strlen(text);
+     pPos->x -= len * 9;
+-    func_80017FE4(text, pPos, 18, pColor);
++    FLIGHT4_TEXT(text, pPos, pColor);
+     if (mins != 0) {
+       pPos->x -= 108;
+       pPos->y += 1;
+       pPos->z = pPos->z * 3 >> 1;
+-      func_80017FE4(".", pPos, 18, pColor);
++      FLIGHT4_TEXT(".", pPos, pColor);
+       pPos->x -= 18;
+       pPos->y -= 8;
+-      func_80017FE4(".", pPos, 18, pColor);
++      FLIGHT4_TEXT(".", pPos, pColor);
+       len++;
+     }
+     return len;
+@@ -212,6 +275,449 @@ int NAME_OVERLAY_FUNCTION(Flight4)(int pTimer, Vector3D *pPos, int pColor) {
+ }
+ 
+ void NAME_OVERLAY_FUNCTION(Flight5)(void) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: a 512x256 screen, and the text in the language, centred by its
++    // letter count, through the merged spawner
++    POLY_FT4 *ft4;
++    LINE_F2 *l2;
++
++    int i;
++
++    int isCompleted;
++    int sfx_idx;
++    int earnedGems;
++    int mobyCount;
++
++    Moby *mobys;
++    Moby **mobyBuf;
++
++    RECT rcStore;
++    char text[32];
++    Vector3D vec;
++
++    if (D_800758B8 == 0) {
++      func_800521C0();
++      func_80019698();
++      func_800573C8();
++      func_80050BD0();
++      func_8002B9CC();
++      DrawSync(0);
++      VSync(0);
++      PutDispEnv(&g_CurDB->m_DispEnv);
++      PutDrawEnv(&g_CurDB->m_DrawEnv);
++      DrawOTag(func_80016784(0x800));
++      DrawSync(0);
++      VSync(0);
++      PutDispEnv(&g_CurDB->m_DispEnv);
++      setRECT(&rcStore, 512, 0, 256, 257);
++      StoreImage(&rcStore, g_Buffers.m_HudOTStart - 0x20200);
++      for (i = 0; i < 4; i++) {
++        setRECT(&rcStore, i * 128, g_CurDB != g_DB ? 256 : 0, 128, 256);
++        StoreImage(&rcStore, g_Buffers.m_LowerPolyBuffer);
++        DrawSync(0);
++        func_80017E98(g_Buffers.m_LowerPolyBuffer, 0x8000);
++        setRECT(&rcStore, 512 + i * 64, 0, 64, 256);
++        LoadImage(&rcStore, g_Buffers.m_LowerPolyBuffer);
++      }
++      setRECT(&rcStore, 512, 256, 32, 1);
++      LoadImage(&rcStore, (u_long *)g_GrayscalePalette);
++      DrawSync(0);
++      D_80075950.post = VSync(-1);
++    } else {
++      isCompleted = 0;
++      if (g_CurDB == &g_DB[0]) {
++        PutDrawEnv(&g_DB[1].m_DrawEnv);
++      } else {
++        PutDrawEnv(&g_DB[0].m_DrawEnv);
++      }
++
++      D_800758B0 = 0;
++      D_800757B0 = g_Buffers.m_LowerPolyBuffer;
++      D_80075780 = g_Buffers.m_LowerPolyBuffer + 0x1C000;
++      g_HudMobys = D_800756FC = g_Buffers.m_HudOTStart - 0x20200;
++      for (i = 0; i < 4; i++) {
++        ft4 = D_800757B0;
++        ft4->tag = PRIM_TAG(POLY_FT4);
++        ft4->code = PRIM_POLY_FT4;
++        setRGB0(ft4, 0x4C, 0x80, 0x40);
++        setXY4(ft4, i * 128, 0, ft4->x0 + 128, ft4->y0, ft4->x0,
++               ft4->y0 + 256 - 1, ft4->x0 + 128, ft4->y0 + 256 - 1);
++        setUV4(ft4, 0, 0, ft4->u0 + 128, ft4->v0, ft4->u0, ft4->v0 + 256 - 1,
++               ft4->u0 + 128, ft4->v0 + 256 - 1);
++        ft4->clut = getClut(512, 256);
++        ft4->tpage = getTPage(1, 0, 512, 0) + i;
++        func_800168DC(ft4);
++        D_800757B0 = ft4 + 1;
++      }
++      l2 = D_800757B0;
++      l2->tag = PRIM_TAG(LINE_F2);
++      l2->code = PRIM_LINE_F2;
++      setXY2(l2, 0, 255, 512, 255);
++      setRGB0(l2, 0, 0, 0);
++      func_800168DC(l2);
++      D_800757B0 = l2 + 1;
++      if (D_80075744 < 100) {
++        earnedGems = 0;
++        if (g_FlightObjectiveCounters[0] + g_FlightObjectiveCounters[1] +
++                g_FlightObjectiveCounters[2] + g_FlightObjectiveCounters[3] ==
++            32) {
++          isCompleted = 1;
++          strcpy(text,
++                 PAL_DATA(g_PalFlightCompletedText, 0x80073D34)[g_Language]);
++        } else if (D_80075900 != 0) {
++          strcpy(text, PAL_DATA(g_PalFlightQuitText, 0x80073D48)[g_Language]);
++        } else if (D_80075908 < 0) {
++          strcpy(text, PAL_DATA(g_PalFlightTimeUpText, 0x80073D5C)[g_Language]);
++        } else {
++          strcpy(text,
++                 PAL_DATA(g_PalFlightCrashedText, 0x80073D70)[g_Language]);
++        }
++        setXYZ(&vec, 268 - g_PalLetterCount(text) * 12, 30, 0xC00);
++        func_pal_8001BD5C(text, &vec, nullptr, 24, 11);
++        Memset(--g_HudMobys, 0, 88);
++        g_HudMobys->m_Class = 471;
++        g_HudMobys->m_Position.x = 460;
++        g_HudMobys->m_Position.y = 40;
++        g_HudMobys->m_Position.z = 0xC00;
++        g_HudMobys->m_Rotation.y = COSINE_8(g_Hud.unk_0x3c) >> 9;
++        g_HudMobys->m_Rotation.z = g_Hud.unk_0x3c;
++        g_HudMobys->m_DepthOffset = 127;
++        g_HudMobys->m_SpecularMetalType = 11;
++        g_HudMobys->m_RenderRadius = 255;
++        func_8001844C(60, 46, 452, 46);
++
++        setXYZ(&vec, 100, 60, 0x1100);
++        func_pal_8001BD5C(PAL_DATA(g_PalFlightObjectiveNames,
++                                   0x80073E60)[g_Homeworld][g_Language][0],
++                          &vec, nullptr, 18, 11);
++        if (D_80075744 > 0) {
++          sprintf(text, "%d/8", g_FlightObjectiveCounters[0]);
++          setXYZ(&vec, 320, 60, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        }
++        if (D_80075744 >= 2) {
++          if (g_FlightObjectiveCounters[0] == 8) {
++            if (g_FlightCollected[g_Homeworld][0]) {
++              sprintf(text, "^");
++            } else {
++              sprintf(text, "%d", D_8006E920[g_Homeworld][0]);
++              earnedGems += D_8006E920[g_Homeworld][0];
++            }
++            sfx_idx = 0;
++          } else {
++            sprintf(text, "0");
++            sfx_idx = 33;
++          }
++          setXYZ(&vec, 480 - (strlen(text) * 18), 60, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++          if (D_8007569C < 2) {
++            PlaySound(((char *)g_Spu.m_SoundTable)[sfx_idx],
++                      (Moby *)&g_Spyro.m_Position, 0x10, 0);
++            D_8007569C = 2;
++          }
++        }
++
++        setXYZ(&vec, 100, 80, 0x1100);
++        func_pal_8001BD5C(PAL_DATA(g_PalFlightObjectiveNames,
++                                   0x80073E60)[g_Homeworld][g_Language][1],
++                          &vec, nullptr, 18, 11);
++        if (D_80075744 >= 3) {
++          sprintf(text, "%d/8", g_FlightObjectiveCounters[1]);
++          setXYZ(&vec, 320, 80, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        }
++        if (D_80075744 >= 4) {
++          if (g_FlightObjectiveCounters[1] == 8) {
++            if (g_FlightCollected[g_Homeworld][1]) {
++              sprintf(text, "^");
++            } else {
++              sprintf(text, "%d", D_8006E920[g_Homeworld][1]);
++              earnedGems += D_8006E920[g_Homeworld][1];
++            }
++            sfx_idx = 0;
++          } else {
++            sprintf(text, "0");
++            sfx_idx = 33;
++          }
++          setXYZ(&vec, 480 - (strlen(text) * 18), 80, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++          if (D_8007569C < 4) {
++            PlaySound(((char *)g_Spu.m_SoundTable)[sfx_idx],
++                      (Moby *)&g_Spyro.m_Position, 0x10, 0);
++            D_8007569C = 4;
++          }
++        }
++
++        setXYZ(&vec, 100, 100, 0x1100);
++        func_pal_8001BD5C(PAL_DATA(g_PalFlightObjectiveNames,
++                                   0x80073E60)[g_Homeworld][g_Language][2],
++                          &vec, nullptr, 18, 11);
++        if (D_80075744 >= 5) {
++          sprintf(text, "%d/8", g_FlightObjectiveCounters[2]);
++          setXYZ(&vec, 320, 100, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        }
++        if (D_80075744 >= 6) {
++          if (g_FlightObjectiveCounters[2] == 8) {
++            if (g_FlightCollected[g_Homeworld][2]) {
++              sprintf(text, "^");
++            } else {
++              sprintf(text, "%d", D_8006E920[g_Homeworld][2]);
++              earnedGems += D_8006E920[g_Homeworld][2];
++            }
++            sfx_idx = 0;
++          } else {
++            sprintf(text, "0");
++            sfx_idx = 33;
++          }
++          setXYZ(&vec, 480 - (strlen(text) * 18), 100, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++          if (D_8007569C < 6) {
++            PlaySound(((char *)g_Spu.m_SoundTable)[sfx_idx],
++                      (Moby *)&g_Spyro.m_Position, 0x10, 0);
++            D_8007569C = 6;
++          }
++        }
++
++        setXYZ(&vec, 100, 120, 0x1100);
++        func_pal_8001BD5C(PAL_DATA(g_PalFlightObjectiveNames,
++                                   0x80073E60)[g_Homeworld][g_Language][3],
++                          &vec, nullptr, 18, 11);
++        if (D_80075744 >= 7) {
++          sprintf(text, "%d/8", g_FlightObjectiveCounters[3]);
++          setXYZ(&vec, 320, 120, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        }
++        if (D_80075744 >= 8) {
++          if (g_FlightObjectiveCounters[3] == 8) {
++            if (g_FlightCollected[g_Homeworld][3]) {
++              sprintf(text, "^");
++            } else {
++              sprintf(text, "%d", D_8006E920[g_Homeworld][3]);
++              earnedGems += D_8006E920[g_Homeworld][3];
++            }
++            sfx_idx = 0;
++          } else {
++            sprintf(text, "0");
++            sfx_idx = 33;
++          }
++          setXYZ(&vec, 480 - (strlen(text) * 18), 120, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++          if (D_8007569C < 8) {
++            PlaySound(((char *)g_Spu.m_SoundTable)[sfx_idx],
++                      (Moby *)&g_Spyro.m_Position, 0x10, 0);
++            D_8007569C = 8;
++          }
++        }
++
++        setXYZ(&vec, 100, 140, 0x1100);
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFlightAllInOneText, 0x80073D84)[g_Language], &vec,
++            nullptr, 18, 11);
++        if (D_80075744 >= 9) {
++          if (g_FlightObjectiveCounters[0] + g_FlightObjectiveCounters[1] +
++                  g_FlightObjectiveCounters[2] + g_FlightObjectiveCounters[3] ==
++              32) {
++            if (g_FlightCollected[g_Homeworld][4]) {
++              sprintf(text, "^");
++            } else {
++              sprintf(text, "%d", D_8006E920[g_Homeworld][4]);
++              earnedGems += D_8006E920[g_Homeworld][4];
++            }
++            sfx_idx = 0;
++          } else {
++            sprintf(text, "0");
++            sfx_idx = 33;
++          }
++          setXYZ(&vec, 480 - (strlen(text) * 18), 140, 0x1100);
++          func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++          if (D_8007569C < 9) {
++            PlaySound(((char *)g_Spu.m_SoundTable)[sfx_idx],
++                      (Moby *)&g_Spyro.m_Position, 0x10, 0);
++            D_8007569C = 9;
++          }
++        }
++        func_8001844C(416, 150, 470, 150);
++        setXYZ(&vec, 100, 160, 0x1100);
++        func_pal_8001BD5C(PAL_DATA(g_PalFlightTotalText, 0x80073D98)[g_Language],
++                          &vec, nullptr, 18, 11);
++        sprintf(text, "%d", earnedGems);
++        setXYZ(&vec, 480 - (strlen(text) * 18), 160, 0x1100);
++        func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        func_8001844C(60, 176, 452, 176);
++        if (D_80075744 >= 9) {
++          if ((isCompleted != 0) || (g_FlightCourseRecords[g_Homeworld] != 0)) {
++            // "PRESS X TO CONTINUE", the X at its letter
++            strcpy(text,
++                   PAL_DATA(g_PalFlightPressText, 0x80073DAC)[g_Language]);
++            setXYZ(&vec, 256 - (g_PalLetterCount(text) - 1) * 9, 210, 0x1100);
++            func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++            vec.x = PAL_DATA(g_PalFlightPressButtonAt, 0x80073DC0)[g_Language] *
++                        18 -
++                    (g_PalLetterCount(text) - 1) * 9 + 247;
++            func_pal_8001BD5C("X", &vec, nullptr, 18, 10);
++          } else {
++            strcpy(text,
++                   PAL_DATA(g_PalFlightTryAgainText, 0x80073DD4)[g_Language]);
++            setXYZ(&vec, 366 - (g_PalLetterCount(text) + 1) * 18, 190, 0x1100);
++            func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++            setXYZ(&vec, 366, 190, 0x1100);
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalFlightYesText, 0x80073DE8)[g_Language], &vec,
++                nullptr, 18, (D_80075720 == 0 && D_8007568C % 16 < 6) * 2 + 10);
++            mobys = g_HudMobys;
++            mobyCount =
++                strlen(PAL_DATA(g_PalFlightYesText, 0x80073DE8)[g_Language]);
++            setXYZ(&vec, 366, 210, 0x1100);
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalFlightNoText, 0x80073DFC)[g_Language], &vec,
++                nullptr, 18, (D_80075720 == 1 && D_8007568C % 16 < 6) * 2 + 10);
++            if (D_80075720 != 0) {
++              mobys = g_HudMobys;
++              mobyCount =
++                  strlen(PAL_DATA(g_PalFlightNoText, 0x80073DFC)[g_Language]);
++            }
++            for (i = 0; i < mobyCount; i++) {
++              mobys->m_Rotation.z =
++                  COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              mobys++;
++            }
++          }
++        }
++        mobyBuf = g_SonyImage.m_ShadedMobys;
++        for (i = 0; i < 4; ++i) {
++          *mobyBuf++ = g_Hud.m_Mobys + i;
++        }
++        *mobyBuf = nullptr;
++
++      } else {
++        strcpy(text,
++               PAL_DATA(g_PalFlightTimeAttackText, 0x80073E10)[g_Language]);
++        setXYZ(&vec, 256 - (g_PalLetterCount(text) - 1) * 12, 40, 0xC00);
++        func_pal_8001BD5C(text, &vec, nullptr, 24, 11);
++        func_8001844C(60, 61, 452, 61);
++        strcpy(text,
++               PAL_DATA(g_PalFlightBestTimeText, 0x80073E24)[g_Language]);
++        setXYZ(&vec, 392 - (g_PalLetterCount(text) - 1) * 9, 80, 0x1100);
++        if (g_Language == 1) {
++          vec.x -= 18;
++        }
++        func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        setXYZ(&vec, 401, 100, 0x1100);
++        D_800758C4(g_FlightCourseRecords[g_Homeworld], &vec, 11);
++        strcpy(text,
++               PAL_DATA(g_PalFlightYourTimeText, 0x80073E38)[g_Language]);
++        setXYZ(&vec, 128 - (g_PalLetterCount(text) - 1) * 9, 80, 0x1100);
++        func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        setXYZ(&vec, 137, 100, 0x1100);
++        if (g_FlightCourseRecords[g_Homeworld] >= D_800758F4) {
++          i = 8;
++        } else {
++          i = 11;
++        }
++        if (g_FlightObjectiveCounters[0] + g_FlightObjectiveCounters[1] +
++                g_FlightObjectiveCounters[2] + g_FlightObjectiveCounters[3] ==
++            32) {
++          mobyCount = (*D_800758C4)(D_800758F4, &vec, i);
++          mobys = g_HudMobys;
++          for (i = 0; i < mobyCount; i++) {
++            mobys->m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++            mobys++;
++          }
++        } else {
++          (*D_800758C4)(-1, &vec, 11);
++        }
++        if (g_FlightObjectiveCounters[0] + g_FlightObjectiveCounters[1] +
++                g_FlightObjectiveCounters[2] + g_FlightObjectiveCounters[3] <
++            32) {
++          if (D_80075900 != 0) {
++            strcpy(text, PAL_DATA(g_PalFlightQuitText, 0x80073D48)[g_Language]);
++          } else {
++            strcpy(text,
++                   PAL_DATA(g_PalFlightCrashedText, 0x80073D70)[g_Language]);
++          }
++          mobyCount = strlen(text);
++          setXYZ(&vec, 268 - g_PalLetterCount(text) * 12, 150, 0xC00);
++          func_pal_8001BD5C(text, &vec, nullptr, 24, 11);
++          mobys = g_HudMobys;
++          for (i = 0; i < mobyCount; i++) {
++            mobys->m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++            mobys++;
++          }
++
++        } else if (g_FlightCourseRecords[g_Homeworld] >= D_800758F4) {
++          strcpy(text,
++                 PAL_DATA(g_PalFlightNewRecordText, 0x80073E4C)[g_Language]);
++          mobyCount = 10;
++          setXYZ(&vec, 256 - (g_PalLetterCount(text) - 1) * 12, 150, 0xC00);
++          func_pal_8001BD5C(text, &vec, nullptr, 24, 8);
++
++          mobys = g_HudMobys;
++          for (i = 0; i < mobyCount; i++) {
++            mobys->m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++            mobys++;
++          }
++        }
++        func_8001844C(60, 171, 452, 171);
++        strcpy(text,
++               PAL_DATA(g_PalFlightTryAgainText, 0x80073DD4)[g_Language]);
++        setXYZ(&vec, 366 - (g_PalLetterCount(text) + 1) * 18, 190, 0x1100);
++        func_pal_8001BD5C(text, &vec, nullptr, 18, 11);
++        setXYZ(&vec, 366, 190, 0x1100);
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFlightYesText, 0x80073DE8)[g_Language], &vec, nullptr,
++            18, (D_80075720 == 0 && D_8007568C % 16 < 6) * 2 + 10);
++        mobys = g_HudMobys;
++        mobyCount = strlen(PAL_DATA(g_PalFlightYesText, 0x80073DE8)[g_Language]);
++        setXYZ(&vec, 366, 210, 0x1100);
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFlightNoText, 0x80073DFC)[g_Language], &vec, nullptr,
++            18, (D_80075720 == 1 && D_8007568C % 16 < 6) * 2 + 10);
++        if (D_80075720 != 0) {
++          mobys = g_HudMobys;
++          mobyCount =
++              strlen(PAL_DATA(g_PalFlightNoText, 0x80073DFC)[g_Language]);
++        }
++        for (i = 0; i < mobyCount; i++) {
++          mobys->m_Rotation.z =
++              COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++          mobys++;
++        }
++        g_SonyImage.m_ShadedMobys[0] = 0;
++      }
++    }
++
++    if (D_800758B8 > 0) {
++      func_80018880();
++      Memset(g_SonyImage.u.m_Buf, 0, 0x900);
++      func_80022A2C();
++    }
++
++    DrawOTag(func_80016784(0));
++    DrawSync(0);
++
++    if (D_80075784) {
++      VSync(0);
++    }
++
++    D_80075950.pre = VSync(-1);
++    while (D_80075950.pre - D_80075950.post < 2) {
++      VSync(0);
++      D_80075950.pre = VSync(-1);
++    }
++
++    D_80075950.post = VSync(-1);
++    PutDispEnv(&g_CurDB->m_DispEnv);
++    D_800758B8++;
++    return;
++  }
++#endif
++#if REGION_HAS_US
++  {
+ 
+   POLY_FT4 *ft4;
+   LINE_F2 *l2;
+@@ -609,4 +1115,6 @@ void NAME_OVERLAY_FUNCTION(Flight5)(void) {
+   D_80075950.post = VSync(-1);
+   PutDispEnv(&g_CurDB->m_DispEnv);
+   D_800758B8++;
+-}
+\ No newline at end of file
++  }
++#endif
++}

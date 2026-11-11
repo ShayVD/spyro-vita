@@ -106,6 +106,7 @@ static void chunk_globals(PsxStateIO *io) {
  * Empty for US and JP, whose states keep their content. */
 extern int g_Language, g_ScreenOffsetX, g_ScreenOffsetY;
 extern int g_PalCardHeaderDirty, g_PalTitleCardLoad;
+extern int (*g_PalLetterCount)(char *pText);
 extern unsigned char g_WadCutscenesPal[16 * 8], g_LevelDragonsPal[5 * 6 * 8];
 
 static void chunk_region(PsxStateIO *io) {
@@ -118,6 +119,7 @@ static void chunk_region(PsxStateIO *io) {
   psx_state_io(io, g_LevelDragonsPal, sizeof g_LevelDragonsPal);
   psx_state_io(io, &g_PalCardHeaderDirty, sizeof g_PalCardHeaderDirty); /* D139 */
   psx_state_io(io, &g_PalTitleCardLoad, sizeof g_PalTitleCardLoad);
+  psx_state_io(io, &g_PalLetterCount, sizeof g_PalLetterCount); /* D144: a function of this binary, as the level's other overlay pointers */
 }
 
 static void chunk_gpu(PsxStateIO *io) {
