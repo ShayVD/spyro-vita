@@ -1,6 +1,7 @@
 /* Port start-up between the platform's main() and the decomp's main()
  * (docs/porting-plan.md §4.3): the parts of PS1 memory the game expects at
  * fixed places, then the game. */
+#include "port_controls.h"
 #include "psx_arena.h"
 #include "psx_region.h"
 #include "region_data.h"
@@ -10,6 +11,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The port's control options (port_controls.h, decisions D47): all off
+ * unless the platform turns them on, so the camera is the original's.
+ * Defined here, outside the files the 60 Hz rules build again, so that
+ * camera_hand.c reads this copy in both rule sets (D142). */
+PortControls g_port_controls = {0, 0, 0, 100};
 
 extern void spyro_decomp_main(void);
 void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));

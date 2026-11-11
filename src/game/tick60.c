@@ -30,15 +30,19 @@ extern struct {
 void GamestateUpdate_60(void); /* tick60.cmake's object: the update path at 60 Hz */
 int tick60_built(void) { return 1; }
 
-/* The game's own UpdateMoby of the pilot's levels (Artisans and its
- * levels), which the 60 Hz rules' copies stand in for: t60_rules.c, where
- * these names are its copies, compares g_UpdateMoby with these. */
-void UpdateMoby_LEVEL_10(void), UpdateMoby_LEVEL_11(void), UpdateMoby_LEVEL_12(void);
-void UpdateMoby_LEVEL_13(void), UpdateMoby_LEVEL_14(void), UpdateMoby_LEVEL_15(void);
+/* The game's own UpdateMoby of every level (tick60/t60_levels.h), which
+ * the 60 Hz rules' copies stand in for: t60_rules.c, where these names are
+ * its copies, compares g_UpdateMoby with these. */
+#define T60_LEVEL(name, pilot) void UpdateMoby_##name(void);
+#include "tick60/t60_levels.h"
+#undef T60_LEVEL
 void *tick60_game_update_moby(int pIndex) {
-  static void (*const k[])(void) = {UpdateMoby_LEVEL_10, UpdateMoby_LEVEL_11, UpdateMoby_LEVEL_12,
-                                    UpdateMoby_LEVEL_13, UpdateMoby_LEVEL_14, UpdateMoby_LEVEL_15};
-  return pIndex >= 0 && pIndex < 6 ? (void *)k[pIndex] : NULL;
+#define T60_LEVEL(name, pilot) UpdateMoby_##name,
+  static void (*const k[])(void) = {
+#include "tick60/t60_levels.h"
+  };
+#undef T60_LEVEL
+  return pIndex >= 0 && pIndex < (int)(sizeof k / sizeof k[0]) ? (void *)k[pIndex] : NULL;
 }
 #else
 int tick60_built(void) { return 0; }

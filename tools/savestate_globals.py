@@ -37,7 +37,7 @@ CONSTANT = {
     "camera_hand.c:s_tilt",     # set before the springs, cleared after (D47)
     "tick60_update.o.c:s_tilt", # the same, in the 60 Hz rules' copy (D130)
     # the 60 Hz rules' scratch, set at every update before use (t60_rules.c, D130)
-    "s_t60_delta", "s_t60_list30", "s_t60_list60",
+    "s_t60_delta", "s_t60_list30", "s_t60_list60", "s_t60_pilot",
     "g_t60_stats", "g_t60_stats_on",  # tick60.c: --tick60-stats' counters, the log only
     "g_fast_render",            # mips2c_rt.c: set at start-up, before any game code (D72)
     "env_hand.c:s_proj",        # read from the GTE at the start of every EnvDraw, before
@@ -52,7 +52,7 @@ CONSTANT = {
 }
 # The player's settings, which a load keeps, as it keeps the memory card.
 SETTINGS = {
-    "g_port_controls",          # camera_hand.c: free camera, invert, speed (D47)
+    "g_port_controls",          # port.c: free camera, invert, speed (D47, D142)
     "g_port_skip_logos",        # cheats_port.c (D50)
     "g_psyxRtpHook", "g_psyxRtpValueHook",  # gte_ops.c (D116): the vertex cache's hooks,
                                 # set by the picture options (psx_vcache_enable, D39, D89)
