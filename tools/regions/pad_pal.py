@@ -7,7 +7,7 @@ takes 5/6 of the vblanks: every state-anchored offset (`@gs=G,level=L +N`)
 becomes round(N * 5/6), kept even (a tick's first vblank, as the US scripts'
 are) and kept in order. Absolute lines (`V buttons`) are left alone: they
 are before the game starts, at the title, and need their own times
-(newgame_pal_host.txt). poke: lines keep the host's addresses; capture.lua
+(newgame_pal_host_en.txt). poke: lines keep the host's addresses; capture.lua
 moves them to PAL's with ORACLE_REGION=pal.
 
 It is a first version of a route, not a proof: check that the run reaches
