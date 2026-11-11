@@ -89,6 +89,9 @@ void pres_LoadImage(RECT *r, u_long *p) { (void)r, (void)p; }
 void pres_StoreImage(RECT *r, u_long *p) { (void)r, (void)p; }
 void pres_MoveImage(RECT *r, int x, int y) { (void)r, (void)x, (void)y; }
 void pres_ClearImage(RECT *r, u_char cr, u_char cg, u_char cb) { (void)r, (void)cr, (void)cg, (void)cb; }
+/* PAL's clear of both 512x256 buffers (initialization.c, D134), which its
+ * game-over draw makes at tick 15 (D139): ClearImage twice, so dropped too */
+void pres_ClearFrameBuffersPal(void) {}
 
 /* present.c PortPolySpace (D54), on the presenter's buffers: every draw
  * starts at the lower buffer and spans both, the HUD's mobys and the

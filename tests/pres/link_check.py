@@ -44,7 +44,11 @@ STOP = set()
 # that the presenter writes none of the game's memory. Stage R3 (D135)
 # adds g_RegionTiming, the RT() switch that draw.c, hud.c and the rest now
 # read: set once when the disc opens (libcd.c psx_cd_open, cdimage.c),
-# never by the game.
+# never by the game. Stage R2 (D139) adds PortRegionData, the PAL tables'
+# copy made once from the player's executable before the game's first
+# instruction (region_data.c; its PortFatal only for an unmapped address,
+# which the matching build's per-function proof rules out), and g_Region,
+# g_Language and the screen position, which the draws read for PAL.
 READ_ONLY = r"""
 ^(memcpy|memset|sprintf|snprintf|strcpy|strlen|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
 ^__aeabi_(idiv|uidiv|idivmod|uidivmod|ldivmod|uldivmod)$
@@ -56,6 +60,8 @@ READ_ONLY = r"""
 ^port_poly_start$
 ^g_present$
 ^g_RegionTiming$
+^PortRegionData$
+^(g_Region|g_Language|g_ScreenOffsetX|g_ScreenOffsetY)$
 ^(g_Environment|g_EnvironmentAnimations|g_Models|g_SkipLowPolyWorld|g_Buffers|g_LevelId)$
 ^D_8006[0-9A-F]{4}$
 ^D_80074B84$
