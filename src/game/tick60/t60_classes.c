@@ -2,9 +2,10 @@
  * each one's judgment: its per-tick sites as durations, speeds,
  * probabilities or sequence steps, and what it cost). A class listed here
  * runs every vblank in the pilot's levels (Artisans and its levels:
- * cmake/tick60.cmake's T60_LEVELS), with its sites marked in
- * patches/spyro-1-port/0014-tick60-artisans-mobys.patch. Any other class
- * runs the original's rules every other vblank (t60_rules.c). */
+ * t60_levels.h's pilot rows), with its sites marked in
+ * patches/spyro-1-port/0014-tick60-artisans-mobys.patch. In the other
+ * levels only the classes of t60_class_60_everywhere do (D142). Any other
+ * class runs the original's rules every other vblank (t60_rules.c). */
 #include "tick60_rules.h"
 
 static const unsigned char k_60[512] = {
@@ -77,4 +78,13 @@ static const unsigned char k_60[512] = {
 
 int t60_class_60(int pClass) {
   return pClass >= 0 && pClass < (int)sizeof k_60 && k_60[pClass];
+}
+
+/* Judged for 60 Hz in every level, not only the pilot's (D142). Sparx
+ * follows Spyro, who moves every vblank in every level, so at 30 Hz he
+ * trailed in steps. His body is one in moby_update.c for every level (the
+ * overlays differ only in which classes they keep), so its judgment and
+ * sites (D130) hold in all of them. */
+int t60_class_60_everywhere(int pClass) {
+  return pClass == 120; /* Sparx */
 }

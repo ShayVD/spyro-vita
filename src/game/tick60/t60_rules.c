@@ -4,12 +4,14 @@
  * func_800522C0) are the set's 60 Hz copies.
  *
  * In a 60 Hz update:
- *   - the pilot's levels' mobys run the second compile of their overlay's
- *     UpdateMoby: a class judged for 60 Hz (t60_classes.c) every vblank,
- *     any other one every other vblank, as at 30 Hz;
- *   - every other level's mobys, the particles and the HUD run the game's
- *     own code at 30 Hz: on the vblank that starts a 30 Hz tick, with the
- *     vblanks since the last one started as g_DeltaTime. */
+ *   - every level's mobys run the second compile of their overlay's
+ *     UpdateMoby (t60_levels.h). A class judged for 60 Hz (t60_classes.c)
+ *     runs every vblank: in the pilot's levels every judged class, in the
+ *     others only those judged for every level (Sparx, D142). Any other
+ *     class runs every other vblank, as at 30 Hz;
+ *   - the particles and the HUD run the game's own code at 30 Hz: on the
+ *     vblank that starts a 30 Hz tick, with the vblanks since the last one
+ *     started as g_DeltaTime. */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 
 #include "common.h"
@@ -26,17 +28,27 @@
  * the names here are this set's copies */
 void *tick60_game_update_moby(int pIndex);
 
-void UpdateMoby_LEVEL_10(void), UpdateMoby_LEVEL_11(void), UpdateMoby_LEVEL_12(void);
-void UpdateMoby_LEVEL_13(void), UpdateMoby_LEVEL_14(void), UpdateMoby_LEVEL_15(void);
-static void (*const k_update_60[])(void) = {UpdateMoby_LEVEL_10, UpdateMoby_LEVEL_11,
-                                            UpdateMoby_LEVEL_12, UpdateMoby_LEVEL_13,
-                                            UpdateMoby_LEVEL_14, UpdateMoby_LEVEL_15};
+#define T60_LEVEL(name, pilot) void UpdateMoby_##name(void);
+#include "t60_levels.h"
+#undef T60_LEVEL
+#define T60_LEVEL(name, pilot) UpdateMoby_##name,
+static void (*const k_update_60[])(void) = {
+#include "t60_levels.h"
+};
+#undef T60_LEVEL
+#define T60_LEVEL(name, pilot) pilot,
+static const unsigned char k_pilot[] = {
+#include "t60_levels.h"
+};
+#undef T60_LEVEL
 #define N_LEVELS_60 (int)(sizeof k_update_60 / sizeof k_update_60[0])
 
-/* this update's g_DeltaTime, for the 60 Hz classes; the lists split by rate
- * (rebuilt every update: scratch, not state) */
+/* this update's g_DeltaTime, for the 60 Hz classes; the lists split by rate;
+ * whether this level is one of the pilot's (rebuilt every update: scratch,
+ * not state) */
 static int s_t60_delta;
 static Moby *s_t60_list60[1024], *s_t60_list30[1024];
+static int s_t60_pilot;
 
 /* A 30 Hz part, on the vblank that starts a tick. */
 #define AT_30(call)                                                            \
@@ -54,6 +66,7 @@ void t60_update_moby(void) {
   s_t60_delta = d;
   for (i = 0; i < N_LEVELS_60; i++)
     if ((void *)g_UpdateMoby == tick60_game_update_moby(i)) {
+      s_t60_pilot = k_pilot[i];
       k_update_60[i]();
       g_DeltaTime = d;
       return;
@@ -67,8 +80,14 @@ void t60_hud_tick(void) { AT_30(HudTick()); }
 
 /* UpdateMoby's loop, per moby: its class's rate. 0 skips a 30 Hz class
  * between ticks. The loop sets D_800756C4 from g_DeltaTime after this. */
+/* A class runs at 60 Hz: in the pilot's levels every class judged for it,
+ * elsewhere those judged for every level (D142). */
+static int class_60(int pClass) {
+  return s_t60_pilot ? t60_class_60(pClass) : t60_class_60_everywhere(pClass);
+}
+
 int t60_moby_begin(Moby *pMoby) {
-  if (t60_class_60(pMoby->m_Class)) {
+  if (class_60(pMoby->m_Class)) {
     g_DeltaTime = s_t60_delta;
     return 1;
   }
@@ -86,7 +105,7 @@ int t60_moby_begin(Moby *pMoby) {
 void t60_moby_animate(Moby **pList) {
   Moby **a = s_t60_list60, **b = s_t60_list30, *m;
   while ((m = *pList++)) {
-    if (t60_class_60(m->m_Class))
+    if (class_60(m->m_Class))
       *a++ = m;
     else
       *b++ = m;

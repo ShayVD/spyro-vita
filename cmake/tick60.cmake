@@ -11,8 +11,9 @@
 # GamestateUpdate_60: inside it each call of a function the set defines
 # goes to the set's own copy, every other name stays the game's. Unlike the
 # presenter's (cmake/presenter.cmake), the 60 Hz rules write the game's own
-# memory: their data names stay the game's (a definition the set makes is
-# weakened, so the game's wins), and the tool refuses writable data of the
+# memory: their data names stay the game's (the tool refuses a global data
+# definition in the set: on ARM the set's code would reach its own copy
+# through a section anchor, D142), and it refuses writable data of the
 # set's own that isn't listed in it.
 #
 # The 30 Hz objects are not touched: built without SPYRO_TICK60 the hunks'
@@ -63,20 +64,22 @@ target_include_directories(spyro_t60_port AFTER PRIVATE
 target_link_libraries(spyro_t60_port PRIVATE psycross_headers)
 target_compile_options(spyro_t60_port PRIVATE ${SPYRO_HOST_FLAGS} "SHELL:-include ${T60_RULES_H}")
 
-# the moby classes of the pilot's levels (Artisans and its levels:
-# docs/tick60.md), preprocessed and stripped as overlays.cmake does them,
-# with SPYRO_TICK60. The other levels' mobys run the game's own update at
-# 30 Hz, every other vblank (t60_rules.c).
-set(T60_LEVELS LEVEL_10 LEVEL_11 LEVEL_12 LEVEL_13 LEVEL_14 LEVEL_15)
+# every level's moby classes (src/game/tick60/t60_levels.h), preprocessed
+# and stripped as overlays.cmake does them, with SPYRO_TICK60. In the
+# pilot's levels (Artisans and its levels: docs/tick60.md) every class
+# judged for 60 Hz runs every vblank; in the others only Sparx does (D142),
+# and the rest the original's rules every other vblank (t60_rules.c).
 set(T60_OVL_SRCS)
+set(T60_LEVELS)
 foreach(row ${ovl_rows})
   string(REGEX MATCH "^([^|]+)\\|([^|]+)\\|(.*)$" _ "${row}")
   set(ovl "${CMAKE_MATCH_1}")
   set(file "${CMAKE_MATCH_2}")
   set(cls "${CMAKE_MATCH_3}")
-  if(NOT ovl IN_LIST T60_LEVELS OR NOT file STREQUAL "moby_update.c")
+  if(NOT file STREQUAL "moby_update.c")
     continue()
   endif()
+  list(APPEND T60_LEVELS "${ovl}")
   set(out "${GEN_DIR}/ovl60/${ovl}/moby_update.c")
   add_custom_command(OUTPUT "${out}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${GEN_DIR}/ovl60/${ovl}"
@@ -91,6 +94,18 @@ foreach(row ${ovl_rows})
     VERBATIM)
   list(APPEND T60_OVL_SRCS "${out}")
 endforeach()
+# t60_levels.h must name the same levels, in the same order
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${T60_DIR}/t60_levels.h")
+file(STRINGS "${T60_DIR}/t60_levels.h" t60_rows REGEX "^T60_LEVEL\\(")
+set(t60_names)
+foreach(r ${t60_rows})
+  string(REGEX MATCH "^T60_LEVEL\\(([A-Z0-9_]+)," _ "${r}")
+  list(APPEND t60_names "${CMAKE_MATCH_1}")
+endforeach()
+if(NOT t60_names STREQUAL T60_LEVELS)
+  message(FATAL_ERROR "src/game/tick60/t60_levels.h lists ${t60_names}, the overlays with "
+    "moby_update.c are ${T60_LEVELS}")
+endif()
 add_library(spyro_t60_ovl OBJECT ${T60_OVL_SRCS})
 target_include_directories(spyro_t60_ovl PRIVATE "${CMAKE_SOURCE_DIR}/src/platform/common")
 target_compile_options(spyro_t60_ovl PRIVATE ${SPYRO_HOST_FLAGS} -fcommon -w)
