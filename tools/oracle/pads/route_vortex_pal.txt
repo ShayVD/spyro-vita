@@ -1,0 +1,40 @@
+# PAL route B, first half (D142): route_vortex_balloon.txt through
+# tools/regions/pad_pal.py, cut after Dry Canyon's exit vortex has taken
+# Spyro home to Peace Keepers. The scaled walk on the balloonist's dock
+# drifts into the water at 50 Hz, and PAL's balloonist (its dialogue and
+# destination menu) is R2 part B's: the balloon half needs both, then a
+# steered walk (--step). The original's comments follow.
+
+# Route B: Dry Canyon's exit vortex (gamestate 1 with the transition home),
+# then the Peace Keepers balloonist to Magic Crafters (gamestate 12, the ride
+# and the arrival). The pad-after script of a new game and `--tour levels,21`
+# / ORACLE_TOUR=levels,21. Two pokes put Spyro on the vortex's ledge and on
+# the balloonist's dock (Spyro's x, y, z at 0x80078A58); from there on he
+# walks, and everything is the game's own code (docs/whole-game-host.md).
+# Steered on the host in logs/run3-step-vortex and logs/run4-step-balloon,
+# made state-anchored by tools/anchor_pad.py.
+@gs=0,level=21 +42 poke:80078a58=00026a00
+@gs=0,level=21 +42 poke:80078a5c=0001c7ec
+@gs=0,level=21 +42 poke:80078a60=00004b00
+@gs=0,level=21 +92 up
+@gs=0,level=21 +102 up+left
+@gs=0,level=21 +110 up+right
+@gs=0,level=21 +120 up
+@gs=0,level=21 +142 up+left
+@gs=0,level=21 +146 up
+@gs=0,level=21 +186 up+left
+@gs=0,level=21 +190 up
+@gs=0,level=21 +200 up+left
+@gs=0,level=21 +202 up
+@gs=0,level=21 +212 up+left
+@gs=0,level=21 +216 up
+@gs=0,level=21 +226 up+left
+@gs=0,level=21 +242 up
+@gs=0,level=21 +276 up+right
+@gs=0,level=21 +292 none
+@gs=0,level=21 +460 up+cross
+@gs=0,level=21 +466 up
+@gs=0,level=21 +480 none
+@gs=1,level=21 +0 none
+@gs=1,level=20 +0 none
+@gs=0,level=20 +0 none

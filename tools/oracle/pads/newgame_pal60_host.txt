@@ -1,0 +1,13 @@
+# New game from the PAL disc's title in PAL 60 (--pal60, 60 Hz vblanks) on
+# the linux32 host with --region-dev, English: as newgame_pal_host.txt, at
+# PAL 60's title times (logs/r4/step-pal60, D142).
+2282 start
+2288 none
+2438 cross
+2444 none
+2644 cross
+2650 none
+2850 cross
+2856 none
+3056 cross
+3062 none

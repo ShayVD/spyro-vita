@@ -1,0 +1,18 @@
+# New game from the PAL disc's title in PCSX-Redux (SCES-01438, DISC=disc/image-pal,
+# ORACLE_REGION=pal; D142): START, then CROSS through the language (English,
+# the default), the menu and the memory-card checks, as newgame.txt does for
+# NTSC-U. Anchored on the title's gamestate, which starts with the logos.
+@gs=13,level=0 +1300 start
+@gs=13,level=0 +1306 none
+@gs=13,level=0 +1500 cross
+@gs=13,level=0 +1506 none
+@gs=13,level=0 +1800 cross
+@gs=13,level=0 +1806 none
+@gs=13,level=0 +2000 cross
+@gs=13,level=0 +2006 none
+@gs=13,level=0 +2200 cross
+@gs=13,level=0 +2206 none
+@gs=13,level=0 +2400 cross
+@gs=13,level=0 +2406 none
+@gs=13,level=0 +2600 cross
+@gs=13,level=0 +2606 none

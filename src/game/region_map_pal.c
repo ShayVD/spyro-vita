@@ -9,6 +9,43 @@ extern unsigned char D_8006EEDC[];
 extern unsigned char D_8006EF9C[];
 extern unsigned char D_8006F05C[];
 extern unsigned char D_8006F200[];
+extern unsigned char spyro_AnimationDetails[];
+extern unsigned char D_8006BC84[];
+extern unsigned char D_8006CB8C[];
+extern unsigned char g_HudMobyTargetPos[];
+extern unsigned char g_HudEggTargetRect[];
+extern unsigned char g_DemoLengths[];
+extern unsigned char D_8006F140[];
+extern unsigned char D_8006E52C[];
+extern unsigned char D_8006C5B8[];
+extern unsigned char D_8006C5BC[];
+extern unsigned char D_8006C5C0[];
+extern unsigned char D_8006C5C4[];
+extern unsigned char D_8006C5C8[];
+extern unsigned char D_8006C5CC[];
+extern unsigned char D_8006C5F0[];
+extern unsigned char D_8006C6F8[];
+extern unsigned char D_8006C704[];
+extern unsigned char D_8006C70A[];
+extern unsigned char D_8006C710[];
+extern unsigned char D_8006C754[];
+extern unsigned char D_8006C760[];
+extern unsigned char D_8006C76C[];
+extern unsigned char D_8006C778[];
+extern unsigned char D_8006C784[];
+extern unsigned char D_8006C790[];
+extern unsigned char D_8006C79C[];
+extern unsigned char D_8006C7A8[];
+extern unsigned char D_8006C7B4[];
+extern unsigned char D_8006C7C0[];
+extern unsigned char D_8006C7CC[];
+extern unsigned char D_8006C7D8[];
+extern unsigned char D_8006C7E4[];
+extern unsigned char D_8006C7F0[];
+extern unsigned char D_8006C7FC[];
+extern unsigned char D_8006C808[];
+extern unsigned char D_8006C814[];
+extern unsigned char D_8006C820[];
 
 /* data: 1427 pointers into the blocks; 26 words aimed at the code, left alone */
 static const uint16_t k_data_relocs[1427] = {
@@ -138,11 +175,48 @@ static const RegionBlock k_blocks[2] = {
     {"data", 0x80071054, 0xAFAC, k_data_relocs, 1427},
 };
 
-static const RegionFill k_fills[4] = {
-    {"D_8006EEDC", 0x8007465C, 192},
-    {"D_8006EF9C", 0x8007471C, 192},
-    {"D_8006F05C", 0x800747DC, 228},
-    {"D_8006F200", 0x80074980, 24},
+static const RegionFill k_fills[41] = {
+    {"D_8006EEDC", 0x8007465C, 192, 0},
+    {"D_8006EF9C", 0x8007471C, 192, 0},
+    {"D_8006F05C", 0x800747DC, 228, 0},
+    {"D_8006F200", 0x80074980, 24, 0},
+    {"spyro_AnimationDetails", 0x80071914, 184, 0},
+    {"D_8006BC84", 0x800710F8, 2028, 0},
+    {"D_8006CB8C", 0x80072000, 24, 0},
+    {"g_HudMobyTargetPos", 0x80073B00, 144, 0},
+    {"g_HudEggTargetRect", 0x80073B90, 96, 0},
+    {"g_DemoLengths", 0x8007460C, 16, 0},
+    {"D_8006F140", 0x800748C0, 192, 0},
+    {"D_8006E52C", 0x800739A0, 68, 0},
+    {"D_8006C5B8", 0x80071A2C, 4, 1},
+    {"D_8006C5BC", 0x80071A30, 4, 1},
+    {"D_8006C5C0", 0x80071A34, 4, 1},
+    {"D_8006C5C4", 0x80071A38, 4, 1},
+    {"D_8006C5C8", 0x80071A3C, 4, 1},
+    {"D_8006C5CC", 0x80071A40, 4, 1},
+    {"D_8006C5F0", 0x80071A64, 264, 1},
+    {"D_8006C6F8", 0x80071B6C, 12, 1},
+    {"D_8006C704", 0x80071B78, 6, 1},
+    {"D_8006C70A", 0x80071B7E, 6, 1},
+    {"D_8006C710", 0x80071B84, 4, 1},
+    {"D_8006C754", 0x80071BC8, 12, 1},
+    {"D_8006C760", 0x80071BD4, 12, 1},
+    {"D_8006C76C", 0x80071BE0, 12, 1},
+    {"D_8006C778", 0x80071BEC, 12, 1},
+    {"D_8006C784", 0x80071BF8, 12, 1},
+    {"D_8006C790", 0x80071C04, 12, 1},
+    {"D_8006C79C", 0x80071C10, 12, 1},
+    {"D_8006C7A8", 0x80071C1C, 12, 1},
+    {"D_8006C7B4", 0x80071C28, 12, 1},
+    {"D_8006C7C0", 0x80071C34, 12, 1},
+    {"D_8006C7CC", 0x80071C40, 12, 1},
+    {"D_8006C7D8", 0x80071C4C, 12, 1},
+    {"D_8006C7E4", 0x80071C58, 12, 1},
+    {"D_8006C7F0", 0x80071C64, 12, 1},
+    {"D_8006C7FC", 0x80071C70, 12, 1},
+    {"D_8006C808", 0x80071C7C, 12, 1},
+    {"D_8006C814", 0x80071C88, 12, 1},
+    {"D_8006C820", 0x80071C94, 12, 1},
 };
 
 static void *fill_dst(int i) {
@@ -155,10 +229,84 @@ static void *fill_dst(int i) {
     return D_8006F05C;
   case 3:
     return D_8006F200;
+  case 4:
+    return spyro_AnimationDetails;
+  case 5:
+    return D_8006BC84;
+  case 6:
+    return D_8006CB8C;
+  case 7:
+    return g_HudMobyTargetPos;
+  case 8:
+    return g_HudEggTargetRect;
+  case 9:
+    return g_DemoLengths;
+  case 10:
+    return D_8006F140;
+  case 11:
+    return D_8006E52C;
+  case 12:
+    return D_8006C5B8;
+  case 13:
+    return D_8006C5BC;
+  case 14:
+    return D_8006C5C0;
+  case 15:
+    return D_8006C5C4;
+  case 16:
+    return D_8006C5C8;
+  case 17:
+    return D_8006C5CC;
+  case 18:
+    return D_8006C5F0;
+  case 19:
+    return D_8006C6F8;
+  case 20:
+    return D_8006C704;
+  case 21:
+    return D_8006C70A;
+  case 22:
+    return D_8006C710;
+  case 23:
+    return D_8006C754;
+  case 24:
+    return D_8006C760;
+  case 25:
+    return D_8006C76C;
+  case 26:
+    return D_8006C778;
+  case 27:
+    return D_8006C784;
+  case 28:
+    return D_8006C790;
+  case 29:
+    return D_8006C79C;
+  case 30:
+    return D_8006C7A8;
+  case 31:
+    return D_8006C7B4;
+  case 32:
+    return D_8006C7C0;
+  case 33:
+    return D_8006C7CC;
+  case 34:
+    return D_8006C7D8;
+  case 35:
+    return D_8006C7E4;
+  case 36:
+    return D_8006C7F0;
+  case 37:
+    return D_8006C7FC;
+  case 38:
+    return D_8006C808;
+  case 39:
+    return D_8006C814;
+  case 40:
+    return D_8006C820;
   }
   return NULL;
 }
 
 const RegionMap g_RegionMapPal = {
     PSX_REGION_PAL, "fdd04c044cd1892ae28c43e9e619dd41a848058a", 444416,
-    k_blocks, 2, k_fills, 4, fill_dst};
+    k_blocks, 2, k_fills, 41, fill_dst};

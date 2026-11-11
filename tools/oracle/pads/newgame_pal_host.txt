@@ -1,0 +1,14 @@
+# New game from the PAL disc's title (SCES-01438, 50 Hz) on the linux32 host
+# with --region-dev, English (the title's default language): START, then
+# CROSS four times, as newgame_host.txt does for NTSC-U. Steered with --step
+# (logs/r4/step-title, D142); the vblanks are 50 Hz ones.
+1902 start
+1908 none
+2058 cross
+2064 none
+2264 cross
+2270 none
+2470 cross
+2476 none
+2676 cross
+2682 none

@@ -26,6 +26,7 @@ typedef struct {
 typedef struct {
   const char *label;       /* the US label it goes over ("D_8006EEDC") */
   uint32_t addr, size;     /* in the release's executable; size is the label's */
+  int timing;              /* 1: only at the release's own timing (g_RegionTiming); PAL 60 keeps US's (D142) */
 } RegionFill;
 
 typedef struct {

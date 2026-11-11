@@ -142,7 +142,7 @@ int region_data_load(const RegionMap *m, const unsigned char *exe, int size, int
       return fail(err, cap, "table %s (%08x) is outside the executable", f->label,
                   (unsigned)f->addr);
     }
-    if (fills) {
+    if (fills && (!f->timing || g_RegionTiming)) {
       void *dst = m->fill_dst(i);
       if (!dst) {
         unload();

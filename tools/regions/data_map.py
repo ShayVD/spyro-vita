@@ -17,6 +17,7 @@ US code: the matching build (build/s1-matching/build/PSX.EXE, psx.elf, psx.map).
 """
 import argparse
 import collections
+import difflib
 import importlib.util
 import os
 import re
@@ -76,7 +77,35 @@ def map_labels(path):
     return labels, sorted(labels)
 
 
-def build(other_exe, us_exe, elf, psxmap):
+def aligned(cc, res, US, OT, labels, code):
+    """--aligned (D142): the functions that aren't "same", paired inside the
+    blocks difflib aligns between their placed neighbours (as compare_code's
+    coverage does). Returns {us address: Counter(other address)}."""
+    T = [cc.norm(w) for w in OT]
+    seen = collections.defaultdict(collections.Counter)
+    for i, r in enumerate(res):
+        if r["hits"]:
+            continue
+        prev = next((res[j] for j in range(i - 1, -1, -1) if len(res[j]["hits"]) == 1), None)
+        nxt = next((res[j] for j in range(i + 1, len(res)) if len(res[j]["hits"]) == 1), None)
+        lo = prev["hits"][0] + prev["size"] // 4 if prev else 0
+        hi = nxt["hits"][0] if nxt else len(T)
+        if hi <= lo or hi - lo > 40000:
+            continue
+        i0 = (r["addr"] - BASE) // 4
+        U = [cc.norm(w) for w in US[i0: i0 + r["size"] // 4]]
+        u = dict(refs(US, r["addr"], r["size"]))
+        o = dict(refs(OT, BASE + lo * 4, (hi - lo) * 4))
+        sm = difflib.SequenceMatcher(None, U, T[lo:hi], autojunk=False)
+        for blk in sm.get_matching_blocks():
+            for k in range(blk.size):
+                a, b = u.get(blk.a + k), o.get(blk.b + k)
+                if a in labels and a not in code and b is not None:
+                    seen[a][b] += 1
+    return seen
+
+
+def build(other_exe, us_exe, elf, psxmap, loose=False):
     cc = load_compare()
     d, secs, names, funcs = cc.elf_sections_and_funcs(elf)
     i = [k for k, v in names.items() if v == ".main"][0]
@@ -96,6 +125,10 @@ def build(other_exe, us_exe, elf, psxmap):
             a = u.get(k)
             if a in labels and a not in code:
                 seen[a][b] += 1
+    if loose:
+        for a, c in aligned(cc, res, US, OT, labels, code).items():
+            if a not in seen:
+                seen[a] = c
     out, conflicts = [], []
     for a in sorted(seen):
         (b, n), *rest = seen[a].most_common()
@@ -115,8 +148,11 @@ def main():
     ap.add_argument("--map", default="build/s1-matching/build/psx.map")
     ap.add_argument("--tsv")
     ap.add_argument("--labels", help="print only these labels")
+    ap.add_argument("--aligned", action="store_true",
+                    help="also place labels only functions that aren't the same use, through "
+                         "their difflib-aligned blocks (less sure: check by reading the code)")
     a = ap.parse_args()
-    out, conflicts = build(a.other_exe, a.us_exe, a.elf, a.map)
+    out, conflicts = build(a.other_exe, a.us_exe, a.elf, a.map, a.aligned)
     want = set(a.labels.split(",")) if a.labels else None
     lines = [f"{n}\t{u:08x}\t{o:08x}\t{s}\t{c}" for n, u, o, s, c in out if not want or n in want]
     print(f"{len(out)} labels mapped, {len(conflicts)} placed differently by two functions (left out)")
