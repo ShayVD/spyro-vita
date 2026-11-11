@@ -586,3 +586,23 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `func_80034CE8`, `func_800357A4`, `func_80035FB4` | `src/game/camera_hand.c` | 17 of 17 | `ClampSpeedRange`: PAL's first azimuth clamp is −2458..2457, the second stays ±0x800 |
 
 **Verified by:** reading (the maps), and the US host checks for the US path. Not yet by PCSX-Redux on the PAL disc: the host can't run PAL until R2 (it stops before the first VSync), so the traces of Spyro's speed against Redux at 25 Hz come with R4.
+
+## Stage R2, part B: PAL's languages (2026-11-11, decisions D139)
+
+`patches/spyro-1-region/0006-pal-text-mobys.patch`, `0007-pal-text-title-menus.patch` and our hand C. "Exact" is a `-DREGION=1` compile of the one file compared with the PAL executable (or the PAL title overlay at 0x80081428) at the function's address: every bit but the relocated fields, constants included, and every relocated field's symbol checked to be where PAL's instruction points (the symbol's PAL address from `compare_code.py`'s map, the data map, or the code that uses it). "US identical" is the same file built with `-DREGION=0` against the tree before the change, object for object.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_pal_8001BD5C` (new), `func_80018728` | decomp C (D139's first commit) | exact against PAL 0x8001BD5C, 0x8001C484 | none |
+| `func_80018908`, `func_800190D4`, `func_80019300`, `func_8001973C` | decomp C | exact against PAL 0x8001C650, 0x8001CE34, 0x8001D05C, 0x8001D4A0 | none |
+| `func_8001A40C` (pause, options, screen adjust, inventory; 2,878 instructions) | decomp C, PAL body first | exact against PAL 0x8001E2C4 | the quit page's buffer is PAL's 16 bytes in the matching build; Spanish's "?SALIR DEL JUEGO?" overruns it on the PS1, so the port's is 32 |
+| `func_8001C694`, `func_8001CA38`, `func_8001E24C`, `func_8001E6B8`, `func_8001EB80` | decomp C | exact against PAL 0x80020FC0, 0x80021360, 0x800230C4, 0x800235DC, 0x80023BA0 | none |
+| `func_8001D718` (Zoe's save menu, 1,050 instructions) | decomp C, PAL body first | against PAL 0x80022058 | pages 3 and 4 (no card, no save file): `v0` and `v1` swapped in 22 instructions and one `nop` placed differently, so ours is one instruction shorter; the rest, shifted by that word, is exact and every relocation is PAL's. A tie in gcc 2.7.2's allocator; twelve source shapes tried |
+| `func_8002E12C` (the pause menu's update), `func_8002DA74` (the transition gems) | decomp C | exact against PAL 0x80032D58, 0x80032854 | none |
+| `func_8003C358` (`moby_helpers.c`, the floating level names) | decomp C | exact against PAL 0x80041698 | none |
+| `HudTick`, `InitFairyCutscene`, `Initialize` | decomp C, `RV` | exact against PAL 0x80059FF4, 0x80031D3C, 0x800163A4 | none (`Initialize`'s timing sites are R3's, already in) |
+| `TitlescreenUpdate`, `TitlescreenDraw` (title overlay; 2,498 and 1,091 instructions) | decomp C, PAL bodies and switches | exact against PAL's overlay at 0x8008159C, 0x80083E54; `TitlescreenPlaySound` and `TitlescreenDrawSprite` stay exact | the L1+Triangle Crash demo is left out of the port, as the US title's is (D11) |
+| `func_800314B4` (`gamestates_hand.c`, the fairy's save) | hand C: the release's card name; `PalCardHeaderWrite` | read against PAL 0x800373C8–0x80037470; the rest of the function differs only in registers and one reordered block | none known |
+| `func_8002F3E4` (`gamestates_hand.c`, the dragon cutscene) | hand C: `DragonVoiceDelay`, the floor store, the dragon's 0-tick frames | read against PAL 0x800355B8, 0x80035800–0x800358E0, 0x80035C08 | none known |
+| `func_credits_8007AA50`, `func_credits_8007BFD0` (`credits_hand.c`) | hand C: `LEVEL_HEADER_COPY`, `RT`, PAL's 512×256 copy | read against PAL's credits overlay (0x80081458, 0x800829E8) | PAL's debug `printf` left out |
+| `func_8003EA68` (`pete_state_hand.c`), `func_80043FE4` (`pete_hand.c`) | hand C: the sounds, level 43's gravity, the wing trail's vertices | read against PAL 0x80044328, 0x80044410, 0x800447D4, 0x800451DC, 0x8004B908 | none known |

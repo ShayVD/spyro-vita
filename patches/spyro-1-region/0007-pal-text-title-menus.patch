@@ -2332,6 +2332,41 @@
        (*g_SpawnParticle)(16, 77, &vec, 0);
      } else if (g_Hud.m_EggSteadyTicks > 8) {
        g_Hud.m_EggCount += 1;
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -281,6 +281,14 @@ void func_8001277C(void) {
+ 
+ void Terminator_titlescreen_code(void); // Titlescreen terminator
+ 
++// The boot logo's compressed image: PAL's is its own (SCEE's, 12,516 bytes at
++// PAL 0x80076298), read from the player's executable in the port (D139)
++#if REGION_HAS_PAL
++#define SONY_IMAGE (REGION_IS(PAL) ? &PAL_DATA(g_SonyImage, 0x80076298) : &g_SonyImage)
++#else
++#define SONY_IMAGE (&g_SonyImage)
++#endif
++
+ // Init function
+ void Initialize(void) {
+ #if REGION_HAS_US
+@@ -346,7 +354,7 @@ void Initialize(void) {
+ 
+   for (i = 0; i < 8; ++i) {
+     // Decompress the image
+-    func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf,
++    func_80017F24(SONY_IMAGE, g_Buffers.m_CopyBuf,
+                   i * blend_step - blend_start);
+     setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+@@ -395,7 +403,7 @@ void Initialize(void) {
+ 
+   for (j = 0; j < 8; ++j) {
+     // Decompress the image
+-    func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
++    func_80017F24(SONY_IMAGE, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
+     setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
 --- a/src/main.c
 +++ b/src/main.c
 @@ -13,6 +13,133 @@
@@ -2739,7 +2774,7 @@
  
    if (g_Fade)
      --g_Fade;
-@@ -121,10 +233,140 @@ void TitlescreenUpdate(void) {
+@@ -121,10 +233,143 @@ void TitlescreenUpdate(void) {
    func_8002BFE0(g_CutsceneLayout->m_CurrentTick);
  
    g_Camera.m_Rotation.x = 0;
@@ -2805,6 +2840,7 @@
 +          }
 +        }
 +      } else if (g_TitlescreenState.m_SubState == 4) {
++#ifndef SPYRO_PORT /* the port can't chain-load S0/CRASH.EXE (decisions D11) */
 +        if ((g_Pad.m_Held & (PAD_L1 | PAD_TRIANGLE)) ==
 +            (PAD_L1 | PAD_TRIANGLE)) {
 +          KillSoundsAndMusic(0);
@@ -2817,7 +2853,9 @@
 +            CDMusicUpdate();
 +          }
 +          CrashDemoLaunch();
-+        } else if (g_TitlescreenState.m_OptionSelected == 0 &&
++        } else
++#endif
++        if (g_TitlescreenState.m_OptionSelected == 0 &&
 +                   (g_Pad.m_Down & (PAD_START | PAD_CROSS))) {
 +          g_TitlescreenState.m_SubState = 5;
 +          TitlescreenPlaySound(7);
@@ -2881,7 +2919,7 @@
      if (g_TitlescreenState.m_SubState < 2) {
        // Kick out while we're still loading from the CD
        CDLoadTime();
-@@ -209,6 +451,7 @@ void TitlescreenUpdate(void) {
+@@ -209,6 +454,7 @@ void TitlescreenUpdate(void) {
          DrawSync(0);
        }
      }
@@ -2889,7 +2927,7 @@
      break;
    }
    case TSM_Menu: {
-@@ -284,13 +527,13 @@ void TitlescreenUpdate(void) {
+@@ -284,13 +530,13 @@ void TitlescreenUpdate(void) {
            // Port A is valid, but needs to be formatted, ask if that's ok
            g_TitlescreenState.m_CardSelected = 0;
            g_TitlescreenState.m_SubState = TS_SubState_MemCardFormat1;
@@ -2905,7 +2943,7 @@
          } else {
            // No valid cards found
            g_TitlescreenState.m_CardSelected = -1;
-@@ -310,7 +553,7 @@ void TitlescreenUpdate(void) {
+@@ -310,7 +556,7 @@ void TitlescreenUpdate(void) {
        if (g_TitlescreenState.m_State == 0) {
          // Read save file from the selected card
          MemCardReadFile(g_TitlescreenState.m_CardSelected << 4,
@@ -2914,7 +2952,7 @@
                          (u_long *)g_TitlescreenState.m_MemCardSave, 0,
                          sizeof(MemCardSaveFile));
          g_TitlescreenState.m_State = 1;
-@@ -520,9 +763,19 @@ void TitlescreenUpdate(void) {
+@@ -520,9 +766,19 @@ void TitlescreenUpdate(void) {
                TitlescreenPlaySound(2);
              }
            } else {
@@ -2934,7 +2972,7 @@
            }
          }
        }
-@@ -573,6 +826,12 @@ void TitlescreenUpdate(void) {
+@@ -573,6 +829,12 @@ void TitlescreenUpdate(void) {
        break;
      }
      case TS_SubState_FormatFailed: {
@@ -2947,7 +2985,7 @@
        CheckMemcardsExist();
  
        if (g_TitlescreenState.m_CardStates[g_TitlescreenState.m_CardSelected] !=
-@@ -584,11 +843,23 @@ void TitlescreenUpdate(void) {
+@@ -584,11 +846,23 @@ void TitlescreenUpdate(void) {
          break;
        }
  
@@ -2972,7 +3010,7 @@
          } else if (g_Pad.m_Down & (PAD_CROSS | PAD_START)) {
            if (g_TitlescreenState.m_OptionSelected == 0) {
              // retry format
-@@ -654,14 +925,35 @@ void TitlescreenUpdate(void) {
+@@ -654,14 +928,35 @@ void TitlescreenUpdate(void) {
          if (g_TitlescreenState.m_MemCardTries == 0) {
            g_TitlescreenState.m_CardResultData =
                MemCardCreateFile(g_TitlescreenState.m_CardSelected << 4,
@@ -3010,7 +3048,7 @@
  
            g_FairyCutscene.unk_0x20 = func_80017FD4();
            g_TitlescreenState.m_MemCardSave->m_Header.m_Clut[15] =
-@@ -674,7 +966,7 @@ void TitlescreenUpdate(void) {
+@@ -674,7 +969,7 @@ void TitlescreenUpdate(void) {
              SaveCreate((SaveFile *)(mcs + i * sizeof(SaveFile)));
            }
            MemCardWriteFile(g_TitlescreenState.m_CardSelected << 4,
@@ -3019,7 +3057,7 @@
                             (u_long *)g_TitlescreenState.m_MemCardSave, 0,
                             sizeof(MemCardSaveFile));
  
-@@ -700,7 +992,7 @@ void TitlescreenUpdate(void) {
+@@ -700,7 +995,7 @@ void TitlescreenUpdate(void) {
          } else {
            // Save succeeded, let's re-read it off the card
            MemCardReadFile(g_TitlescreenState.m_CardSelected << 4,
@@ -3028,7 +3066,7 @@
                            (u_long *)g_TitlescreenState.m_MemCardSave, 0,
                            sizeof(MemCardSaveFile));
            g_TitlescreenState.m_State = 3;
-@@ -782,6 +1074,17 @@ void TitlescreenUpdate(void) {
+@@ -782,6 +1077,17 @@ void TitlescreenUpdate(void) {
        break;
      }
      case TS_SubState_CantCreateSave: {
@@ -3046,7 +3084,7 @@
        CheckMemcardsExist();
  
        if (g_TitlescreenState.m_CardStates[g_TitlescreenState.m_CardSelected] !=
-@@ -793,15 +1096,31 @@ void TitlescreenUpdate(void) {
+@@ -793,15 +1099,31 @@ void TitlescreenUpdate(void) {
          break;
        }
  
@@ -3079,7 +3117,7 @@
          } else if (g_Pad.m_Down & (PAD_CROSS | PAD_START)) {
            if (g_TitlescreenState.m_OptionSelected == 0) {
              g_TitlescreenState.m_SubState = TS_SubState_CreatingSaveFile;
-@@ -844,7 +1163,7 @@ void TitlescreenUpdate(void) {
+@@ -844,7 +1166,7 @@ void TitlescreenUpdate(void) {
            if (g_TitlescreenState
                    .m_CardNeedsFormat[g_TitlescreenState.m_OptionSelected]) {
              g_TitlescreenState.m_SubState = TS_SubState_MemCardFormat1;
@@ -3088,7 +3126,7 @@
            } else {
              g_TitlescreenState.m_SubState = TS_SubState_ReadSelectedCard;
              g_TitlescreenState.m_State = 0;
-@@ -1037,6 +1356,16 @@ void TitlescreenUpdate(void) {
+@@ -1037,6 +1359,16 @@ void TitlescreenUpdate(void) {
          g_Fade = 15;
  
        if (g_TitlescreenState.m_SubTick >= 16) {
@@ -3105,7 +3143,7 @@
          RECT rc;
          MemCardStop();
          g_TitlescreenState.m_Mode = TSM_Demo;
-@@ -1044,6 +1373,8 @@ void TitlescreenUpdate(void) {
+@@ -1044,6 +1376,8 @@ void TitlescreenUpdate(void) {
          setRECT(&rc, 0, 0, 512, 480);
          ClearImage(&rc, 0, 0, 0);
          DrawSync(0);
@@ -3114,7 +3152,7 @@
        }
      }
      break;
-@@ -1070,6 +1401,24 @@ void TitlescreenUpdate(void) {
+@@ -1070,6 +1404,24 @@ void TitlescreenUpdate(void) {
    }
  }
  
@@ -3139,7 +3177,7 @@
  void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
    POLY_FT4 *p;
    int mirrored = 0;
-@@ -1083,17 +1432,17 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
+@@ -1083,17 +1435,17 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
    p->tag = PRIM_TAG(POLY_FT4);
    ((u_long *)p)[1] = g_TitlescreenSelColors[pColorId];
  
@@ -3166,7 +3204,7 @@
  
    // add to OT
    func_800168DC(p);
-@@ -1108,8 +1457,348 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
+@@ -1108,8 +1460,348 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
    }
  }
  
@@ -3515,7 +3553,7 @@
    switch (g_TitlescreenState.m_Mode) {
    case TSM_Init: {
  
-@@ -1408,6 +2097,8 @@ void TitlescreenDraw(void) {
+@@ -1408,6 +2100,8 @@ void TitlescreenDraw(void) {
      break;
    }
    }
