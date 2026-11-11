@@ -71,7 +71,8 @@ static const unsigned char k_60[512] = {
     [421] = 1, /* Life Basket */
     /* left at 30 Hz: 286 ambient sound player (its path step), 308 flight
      * plane, 398 portal path moby, 407 train front, 408 train carriage
-     * (func_8003BFC0, or a script Spyro's own 60 Hz side shares) */
+     * (func_8003BFC0, or a script Spyro's own 60 Hz side shares: its hold
+     * on him lasts the 30 Hz tick, t60_spyro_release, D141) */
 };
 
 int t60_class_60(int pClass) {

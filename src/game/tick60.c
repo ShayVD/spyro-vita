@@ -2,6 +2,8 @@
  * docs/tick60.md). Compiled once, into every build. The 60 Hz rules
  * themselves are src/game/tick60/ and the hunks behind SPYRO_TICK60,
  * built a second time by cmake/tick60.cmake. */
+#include <assert.h> /* PsyCross headers (spyro.h's) use C11 static_assert */
+
 #include "tick60.h"
 #include "present.h"
 #include "psx_state.h"
@@ -9,6 +11,7 @@
 #include "common.h"
 #include "gamepad.h"
 #include "gamestates/update.h"
+#include "spyro.h"
 
 int g_tick60_mode;
 Tick60State g_t60;
@@ -75,6 +78,15 @@ void PortGamestateUpdate(void) {
     g_t60_stats.late += g_DeltaTime > 1;
     GamestateUpdate_60();
     g_t60.active = 0;
+    if (g_t60.spyro_held && !wants_60()) {
+      /* The tick's first half left play (the portal's gamestate 1, the
+       * pause menu): the 30 Hz update that follows finds Spyro as the
+       * original's tick left him, his script's hold and his lift let go
+       * (t60_rules.c, D141) */
+      g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
+      g_Spyro.m_DamageFlags &= ~0x800;
+      g_t60.spyro_held = 0;
+    }
     if (g_t60_stats_on)
       g_t60_stats.us60 += now_us() - t;
     return;
@@ -135,8 +147,10 @@ void tick60_state(struct PsxStateIO *io) {
   psx_state_io(io, &g_t60.acc, sizeof g_t60.acc);
   psx_state_io(io, &g_t60.since, sizeof g_t60.since);
   psx_state_io(io, g_t60.spyro_carry, sizeof g_t60.spyro_carry);
-  if (io->mode == PSX_STATE_LOAD)
+  if (io->mode == PSX_STATE_LOAD) {
     g_tick60_mode = mode;
+    g_t60.spyro_held = 0; /* the state's own bit 31 stands; its tick's end lets it go */
+  }
 }
 
 void tick60_report(void (*log)(const char *fmt, ...)) {

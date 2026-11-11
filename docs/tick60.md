@@ -29,6 +29,14 @@ In a 60 Hz update:
 | Sounds (`SoundsUpdate`, `SpuUpdate`) and the XA poll (`CDMusicUpdate`) | 60 Hz | the game's own, every update: positional volumes are recomputed from distances (their smoothing converges sooner), `KillOrphans` on `g_GameTick % 64` runs on both vblanks of that tick (idempotent), the music is polled twice as often (§7.2) |
 | The moby animation step | by class | half a step a vblank for a 60 Hz class (`moby_lists_hand.c` `Animate`, `T60_ANIM_LOWER`/`UPPER`, at most one frame a tick as the original), the original's step every other vblank for the rest |
 
+### Scripts that move Spyro (D141)
+
+A moby that drives Spyro (a portal's path, an exit vortex, a whirlwind, a ride, a cutscene's pad lock) sets `m_ControlFlags` with bit 31 in its update, and a vortex or whirlwind also sets `m_DamageFlags` 0x800 (its lift: state 17). Spyro's update (`func_8004A200`) lets go of bit 31 and clears the damage flags each time; the moby sets them again in its next update, which runs before his. In the 60 Hz rules **a hold lasts the 30 Hz tick** (`0015-tick60-script-hold.patch`, `t60_rules.c`):
+- `t60_spyro_release` lets go of bit 31 on the vblank that ends a tick, or after a late update, and keeps it for the tick's second half;
+- `t60_spyro_damage_end` clears the damage flags on the vblank that ends a tick and, on the first, keeps only 0x800; one-shot hits are still taken once a tick.
+
+A moby at 30 Hz sets them once a tick. Without this the second vblank found bit 31 clear, `func_8003FE40` zeroed the flags and Spyro was the player's again for half of every tick: a portal never carried him in and its camera kept starting its path over (the owner's Gnorc Gnexus report), and a vortex's lift dropped him from state 17 to 15 every other vblank, so it never took him home. A tick cut short by a gamestate change (the portal's or vortex's gamestate 1, the pause menu) lets go of both in `PortGamestateUpdate`, so the 30 Hz update after it finds Spyro as the original's tick left him. No moby reads `g_Spyro.m_ControlFlags`, so a 60 Hz class sees no difference.
+
 ### Units stay the original's
 
 The 60 Hz rules never change what a value means. A counter still counts 30 Hz ticks, a speed is still per 30 Hz tick, and each vblank applies its share. Three things follow from that:
@@ -86,7 +94,7 @@ Artisans (level 10), Stone Hill, Dark Hollow, Town Square, Toasty and Sunny Flig
 |---|---:|---|
 | 60, with sites | 31 | 10, 16, 17, 23, 33, 34, 49, 110, 113, 114, 115, 120, 121, 165, 174, 250, 300, 309, 329, 335, 339, 349, 362, 390, 391, 392, 395, 502; the chest and basket fragments (69/151/257/425/480); the flight HUD icons (387–389, 393–396, 490–491); the letters (76, 426–451) |
 | 60, no sites | 28 | 1, 9, 11, 13, 18, 78, 129, 157, 166, 173, 187, 194, 195, 234, 251, 299, 314, 323, 331–333, 350, 353, 358, 412, 413, 416, 421; the tulips (336/342); the water splashes and bubbles (363/364/400/405/477/507/508) |
-| 30 | 5 | 286 ambient sound player (its path step), 308 flight plane, 407 train front, 408 train carriage (all three `func_8003BFC0`, a frame-counted path walker not converted), 398 portal path moby (a script Spyro's 60 Hz side already shares) |
+| 30 | 5 | 286 ambient sound player (its path step), 308 flight plane, 407 train front, 408 train carriage (all three `func_8003BFC0`, a frame-counted path walker not converted), 398 portal path moby (a script Spyro's 60 Hz side shares: its hold on him lasts the 30 Hz tick, D141) |
 
 "No sites" means everything per tick goes through what's already right at 60 Hz: the converted helpers, `TICK_TIMER`, `g_DeltaTime`-scaled code, and animation events, which fire once.
 
@@ -220,6 +228,7 @@ The update is a small part of the cost. The draw runs every vblank, which double
 - **Spyro:**
   - running along a wall (above);
   - the coyote time, air time and the like count 30 Hz ticks, so they're exact; jump heights match.
+  - a standing jump with up held, from the same spot, goes elsewhere at 60 Hz (routes A and B's jumps, D141: ~280 units forward instead of ~820 in 24 vblanks; ~430 units to the side). Not investigated: the air steering or the camera that "up" is relative to. It's why routes A and B as written don't reach their portal and vortex at 60 Hz.
 - **Classes:**
   - Decelerations guarded by a threshold (Bull state 4, Ram state 2, Shepherd state 7, sheep fodder, Shepherd) can lose half a move step once, on the tick that crosses it.
   - Fragments are freed one vblank early (their lifetime reaches 0 at a tick's start).

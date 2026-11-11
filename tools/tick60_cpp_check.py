@@ -4,7 +4,7 @@
   tools/tick60_cpp_check.py [--base REF] [--build build/linux32]
 
 Every 30 Hz file the 60 Hz pilot touches (the decomp's, through
-patches/spyro-1-port, and our hand C) is preprocessed twice with the flags
+patches/spyro-1-port and patches/spyro-1-region, and our hand C) is preprocessed twice with the flags
 the build compiles it with (build.ninja: its 30 Hz target's DEFINES, FLAGS
 and INCLUDES; the overlays' preprocessor flags for moby_update.c): as this
 tree has it, and as REF (default origin/main) has it. The two token streams
@@ -68,8 +68,11 @@ def main():
     base_s1 = os.path.join(work, "base/spyro-1")
     for d in ("src", "include"):
         shutil.copytree(os.path.join(ROOT, "third_party/spyro-1", d), os.path.join(base_s1, d))
-    patches = sorted(p for p in git("ls-tree", "--name-only", a.base, "patches/spyro-1-port/").decode().split()
-                     if p.endswith(".patch"))
+    # the port's patches, then the region switches (D133), as CMakeLists.txt's spyro_prepare applies them
+    patches = []
+    for d in ("patches/spyro-1-port/", "patches/spyro-1-region/"):
+        patches += sorted(p for p in git("ls-tree", "--name-only", a.base, d).decode().split()
+                          if p.endswith(".patch"))
     for p in patches:
         subprocess.run(["patch", "-p1", "--forward", "--quiet"], input=git("show", f"{a.base}:{p}"),
                        cwd=base_s1, check=True)
