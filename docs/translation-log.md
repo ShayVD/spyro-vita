@@ -609,3 +609,15 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `func_credits_8007AA50`, `func_credits_8007BFD0` (`credits_hand.c`) | hand C: `LEVEL_HEADER_COPY`, `RT`, PAL's 512×256 copy | read against PAL's credits overlay (0x80081458, 0x800829E8) | PAL's debug `printf` left out |
 | `func_80050BD0` (`cyclorama_hand.c`, the sky) | hand C: `SCREEN_H` is `RV(240, 256, 240)` | PAL's 16 differing constants, all screen height (240/239/241 → 256/255/257, `compare_code.py` strict); on the host the PAL inventory's background lost the blocks its sky left below line 240 | none known |
 | `func_8003EA68` (`pete_state_hand.c`), `func_80043FE4` (`pete_hand.c`) | hand C: the sounds, level 43's gravity, the wing trail's vertices | read against PAL 0x80044328, 0x80044410, 0x800447D4, 0x800451DC, 0x8004B908 | none known |
+
+## Stage R2, part C: the overlays' dialogue (2026-11-11, decisions D145)
+
+`patches/spyro-1-region/0008-pal-overlay-dialogue.patch`. "Exact" as in part B, against PAL's overlay (WAD entries 21 + 2k, loaded at 0x80081428), in every overlay that compiles the file.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `Balloonist1`, `Balloonist2` | decomp C, unchanged | exact in LEVEL_10, 11, 13, 20, 21, 22, 30, 40, 50, 60 | none |
+| `Balloonist3` | decomp C, `RT` (the climb in, the step out), one `REGION_IS(PAL)` restructure (the climb runs, then tests its end) | exact in the ten overlays (LEVEL_10 0x80081990) | none |
+| `Balloonist4` (the dialogue and menus) | decomp C, PAL body first | exact in the ten overlays (LEVEL_10 0x80083970) | none |
+| `func_pal_80081758` (new), `Flight1`–`Flight5` | decomp C; `Flight5` PAL body first; `Flight4` `RT` | exact in LEVEL_15, 25, 35, 45, 55 (0x80081758 … 0x80082058) | none |
+| `SetOverlayPointers` | decomp C: `g_PalLetterCount` set for PAL's flight levels | read against PAL 0x8005FE04 (stored before `Flight1`'s pointer); the function differs from PAL's in its other overlays' addresses anyway | none |
