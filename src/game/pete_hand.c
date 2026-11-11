@@ -21,6 +21,7 @@
 #include "region.h" /* RT(): PAL 50 Hz retune (regions plan R3) */
 #include "spu.h"
 #include "spyro.h"
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130, D144) */
 #include "variables.h"
 #include "vector.h"
 
@@ -998,11 +999,11 @@ static void UpdateCircleMoby(void) {
   VecSub(&offset, &moby->m_Position, &g_Spyro.m_Position);
   distance = VecMagnitude(&offset, 0);
   around = Atan2(offset.x, offset.y, 1);
-  step = (g_Spyro.m_walkingState == 1 ? -D_800758A0 : D_800758A0) >> 6;
+  step = T60_SHARE((g_Spyro.m_walkingState == 1 ? -D_800758A0 : D_800758A0) >> 6); /* 60 Hz: the turn a tick, shared (D144) */
 
   func_8003D3B8(RT(0x280, 768));
   UpdateSpyroTurnMomentum(0);
-  D_800758A0 += RT(0x20, 38);
+  T60_TICK_DO(D_800758A0 += RT(0x20, 38)); /* 60 Hz: the push's speed-up, once a tick (D144) */
   if (ph->m_TargetSpeedAngle.m_Speed < D_800758A0)
     D_800758A0 = ph->m_TargetSpeedAngle.m_Speed;
   around = (around + step + 0x800) & 0xFFF;

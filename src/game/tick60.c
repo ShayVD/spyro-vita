@@ -33,11 +33,11 @@ int tick60_built(void) { return 1; }
 /* The game's own UpdateMoby of every level (tick60/t60_levels.h), which
  * the 60 Hz rules' copies stand in for: t60_rules.c, where these names are
  * its copies, compares g_UpdateMoby with these. */
-#define T60_LEVEL(name, pilot) void UpdateMoby_##name(void);
+#define T60_LEVEL(name) void UpdateMoby_##name(void);
 #include "tick60/t60_levels.h"
 #undef T60_LEVEL
 void *tick60_game_update_moby(int pIndex) {
-#define T60_LEVEL(name, pilot) UpdateMoby_##name,
+#define T60_LEVEL(name) UpdateMoby_##name,
   static void (*const k[])(void) = {
 #include "tick60/t60_levels.h"
   };

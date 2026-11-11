@@ -6,9 +6,8 @@
  * In a 60 Hz update:
  *   - every level's mobys run the second compile of their overlay's
  *     UpdateMoby (t60_levels.h). A class judged for 60 Hz (t60_classes.c)
- *     runs every vblank: in the pilot's levels every judged class, in the
- *     others only those judged for every level (Sparx, D142). Any other
- *     class runs every other vblank, as at 30 Hz;
+ *     runs every vblank (in every level since D144); any other class
+ *     every other vblank, as at 30 Hz;
  *   - the particles and the HUD run the game's own code at 30 Hz: on the
  *     vblank that starts a 30 Hz tick, with the vblanks since the last one
  *     started as g_DeltaTime. */
@@ -17,6 +16,7 @@
 #include "common.h"
 #include "hud.h"
 #include "moby.h"
+#include "moby_helpers.h"
 #include "moby_lists.h"
 #include "overlay_pointers.h"
 #include "sony_image.h"
@@ -24,31 +24,24 @@
 
 #include "tick60_rules.h"
 
-/* the game's 30 Hz pointers of the pilot's levels' UpdateMoby (tick60.c):
+/* the game's 30 Hz pointers of every level's UpdateMoby (tick60.c):
  * the names here are this set's copies */
 void *tick60_game_update_moby(int pIndex);
 
-#define T60_LEVEL(name, pilot) void UpdateMoby_##name(void);
+#define T60_LEVEL(name) void UpdateMoby_##name(void);
 #include "t60_levels.h"
 #undef T60_LEVEL
-#define T60_LEVEL(name, pilot) UpdateMoby_##name,
+#define T60_LEVEL(name) UpdateMoby_##name,
 static void (*const k_update_60[])(void) = {
-#include "t60_levels.h"
-};
-#undef T60_LEVEL
-#define T60_LEVEL(name, pilot) pilot,
-static const unsigned char k_pilot[] = {
 #include "t60_levels.h"
 };
 #undef T60_LEVEL
 #define N_LEVELS_60 (int)(sizeof k_update_60 / sizeof k_update_60[0])
 
-/* this update's g_DeltaTime, for the 60 Hz classes; the lists split by rate;
- * whether this level is one of the pilot's (rebuilt every update: scratch,
- * not state) */
+/* this update's g_DeltaTime, for the 60 Hz classes; the lists split by rate
+ * (rebuilt every update: scratch, not state) */
 static int s_t60_delta;
 static Moby *s_t60_list60[1024], *s_t60_list30[1024];
-static int s_t60_pilot;
 
 /* A 30 Hz part, on the vblank that starts a tick. */
 #define AT_30(call)                                                            \
@@ -64,9 +57,10 @@ static int s_t60_pilot;
 void t60_update_moby(void) {
   int i, d = g_DeltaTime;
   s_t60_delta = d;
+  if (g_t60.tick)
+    g_t60.path_n = 0; /* a new tick: no path step taken yet (t60_path_step) */
   for (i = 0; i < N_LEVELS_60; i++)
     if ((void *)g_UpdateMoby == tick60_game_update_moby(i)) {
-      s_t60_pilot = k_pilot[i];
       k_update_60[i]();
       g_DeltaTime = d;
       return;
@@ -80,15 +74,13 @@ void t60_hud_tick(void) { AT_30(HudTick()); }
 
 /* UpdateMoby's loop, per moby: its class's rate. 0 skips a 30 Hz class
  * between ticks. The loop sets D_800756C4 from g_DeltaTime after this. */
-/* A class runs at 60 Hz: in the pilot's levels every class judged for it,
- * elsewhere those judged for every level (D142). */
-static int class_60(int pClass) {
-  return s_t60_pilot ? t60_class_60(pClass) : t60_class_60_everywhere(pClass);
-}
+static void path_rest(Moby *pMoby);
 
 int t60_moby_begin(Moby *pMoby) {
-  if (class_60(pMoby->m_Class)) {
+  if (t60_class_60(pMoby->m_Class)) {
     g_DeltaTime = s_t60_delta;
+    if (g_t60.upper && g_t60.path_n)
+      path_rest(pMoby);
     return 1;
   }
   if (!g_t60.tick)
@@ -105,7 +97,7 @@ int t60_moby_begin(Moby *pMoby) {
 void t60_moby_animate(Moby **pList) {
   Moby **a = s_t60_list60, **b = s_t60_list30, *m;
   while ((m = *pList++)) {
-    if (class_60(m->m_Class))
+    if (t60_class_60(m->m_Class))
       *a++ = m;
     else
       *b++ = m;
@@ -176,4 +168,73 @@ void t60_spyro_release(void) {
   } else {
     g_t60.spyro_held = 1;
   }
+}
+
+/* func_8003BFC0 (moby_helpers_hand.c), the frame-counted path step: one
+ * frame a call, the segment to the next node taking pSegmentDuration
+ * frames, each a share of the way left, curved from the last segment's
+ * direction in its first frames. At 60 Hz a frame still is a 30 Hz tick's
+ * (units stay the original's): on a tick's first vblank the step is taken
+ * whole (its frame counter, the node it reaches, its return, the moby's
+ * heading), the moby moved by half of it, and the rest kept; the moby's
+ * update on the second vblank moves it by the rest (t60_moby_begin, before
+ * its class's code), and a call then returns 0 and moves nothing more. So
+ * at the end of every tick the moby is where the original's tick puts it,
+ * whether or not its class calls the step again in the second half. A
+ * class at 30 Hz takes the original's step; a late update takes the
+ * tick's step whole, unless the tick's first half took it. A save state
+ * taken between a tick's halves drops the rest (half a frame's move). */
+#undef func_8003BFC0
+int func_8003BFC0(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int *pSegmentFrame,
+                  int pSegmentDuration, int pFlags);
+
+/* one step a tick a moby, even if its class moves it onto another path in
+ * the tick's first half */
+static int path_find(Moby *pMoby) {
+  int i;
+  for (i = 0; i < g_t60.path_n; i++)
+    if (g_t60.path[i].moby == pMoby)
+      return i;
+  return -1;
+}
+
+static void path_rest(Moby *pMoby) {
+  int i;
+  for (i = 0; i < g_t60.path_n; i++)
+    if (g_t60.path[i].moby == pMoby) {
+      int *r = g_t60.path[i].rest;
+      pMoby->m_Position.x += r[0];
+      pMoby->m_Position.y += r[1];
+      pMoby->m_Position.z += r[2];
+      r[0] = r[1] = r[2] = 0;
+    }
+}
+
+int t60_path_step(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int *pSegmentFrame,
+                  int pSegmentDuration, int pFlags) {
+  Vector3D from;
+  int r, k, *rest;
+  if (!t60_class_60(pMoby->m_Class)) /* a 30 Hz class: the original's step */
+    return func_8003BFC0(pMoby, pPath, pPreviousMovement, pSegmentFrame, pSegmentDuration, pFlags);
+  if (path_find(pMoby) >= 0)
+    return 0; /* this tick's step is taken (its rest moved in t60_moby_begin) */
+  from = pMoby->m_Position;
+  r = func_8003BFC0(pMoby, pPath, pPreviousMovement, pSegmentFrame, pSegmentDuration, pFlags);
+  if (g_t60.path_n >= (int)(sizeof g_t60.path / sizeof g_t60.path[0]))
+    return r; /* the table is full: the step whole */
+  k = g_t60.path_n++;
+  g_t60.path[k].moby = pMoby;
+  rest = g_t60.path[k].rest;
+  rest[0] = rest[1] = rest[2] = 0;
+  if (g_DeltaTime == 1 && !g_t60.upper) {
+    /* the tick's first half: move by half the step, keep the rest */
+    rest[0] = (pMoby->m_Position.x - from.x) - ((pMoby->m_Position.x - from.x) >> 1);
+    rest[1] = (pMoby->m_Position.y - from.y) - ((pMoby->m_Position.y - from.y) >> 1);
+    rest[2] = (pMoby->m_Position.z - from.z) - ((pMoby->m_Position.z - from.z) >> 1);
+    pMoby->m_Position.x -= rest[0];
+    pMoby->m_Position.y -= rest[1];
+    pMoby->m_Position.z -= rest[2];
+  }
+  /* else: first taken in the second half, or a late update: whole, once */
+  return r;
 }

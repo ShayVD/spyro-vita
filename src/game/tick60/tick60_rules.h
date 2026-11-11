@@ -31,12 +31,17 @@ void t60_update_particles(void);  /* the particles, at 30 Hz */
 int t60_moby_begin(struct Moby *pMoby); /* UpdateMoby's loop: 0 skips a 30 Hz class between ticks */
 void t60_moby_animate(struct Moby **pList); /* UpdateMoby's animation step, by class rate */
 int t60_class_60(int pClass);     /* a class judged for 60 Hz (t60_classes.c) */
-int t60_class_60_everywhere(int pClass); /* ... and for every level, not only the pilot's (D142) */
 void t60_hud_tick(void);          /* the HUD, at 30 Hz */
 struct Vector3D;
 void t60_spyro_shift(void *pVelocity); /* func_8003FE40's >> 6, its low bits carried */
 void t60_spyro_damage_end(void);  /* func_8004A200: a vortex's lift (0x800) lasts a 30 Hz tick */
 void t60_spyro_release(void);     /* func_8004A200's end: a script's hold lasts a 30 Hz tick */
+
+/* func_8003BFC0, a moby's frame-counted path step (moby_helpers_hand.c), in
+ * the 60 Hz rules: its frame a tick, split over the tick's two vblanks
+ * (t60_rules.c, D144). Every call in the set goes to t60_path_step, which
+ * moby_helpers.h's declaration declares. */
+#define func_8003BFC0 t60_path_step
 
 /* moby_lists_hand.c's animation step (its speedDiv): half a 30 Hz tick's
  * step, the lower or the upper half. The original's step advances at most
