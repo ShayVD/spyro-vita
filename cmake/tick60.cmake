@@ -65,9 +65,8 @@ target_link_libraries(spyro_t60_port PRIVATE psycross_headers)
 target_compile_options(spyro_t60_port PRIVATE ${SPYRO_HOST_FLAGS} "SHELL:-include ${T60_RULES_H}")
 
 # every level's moby classes (src/game/tick60/t60_levels.h), preprocessed
-# and stripped as overlays.cmake does them, with SPYRO_TICK60. In the
-# pilot's levels (Artisans and its levels: docs/tick60.md) every class
-# judged for 60 Hz runs every vblank; in the others only Sparx does (D142),
+# and stripped as overlays.cmake does them, with SPYRO_TICK60. Every class
+# judged for 60 Hz (t60_classes.c) runs every vblank, in every level (D144),
 # and the rest the original's rules every other vblank (t60_rules.c).
 set(T60_OVL_SRCS)
 set(T60_LEVELS)
@@ -99,7 +98,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${T60_DIR}/t60_l
 file(STRINGS "${T60_DIR}/t60_levels.h" t60_rows REGEX "^T60_LEVEL\\(")
 set(t60_names)
 foreach(r ${t60_rows})
-  string(REGEX MATCH "^T60_LEVEL\\(([A-Z0-9_]+)," _ "${r}")
+  string(REGEX MATCH "^T60_LEVEL\\(([A-Z0-9_]+)\\)" _ "${r}")
   list(APPEND t60_names "${CMAKE_MATCH_1}")
 endforeach()
 if(NOT t60_names STREQUAL T60_LEVELS)
