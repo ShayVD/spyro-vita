@@ -31,6 +31,7 @@ void t60_update_particles(void);  /* the particles, at 30 Hz */
 int t60_moby_begin(struct Moby *pMoby); /* UpdateMoby's loop: 0 skips a 30 Hz class between ticks */
 void t60_moby_animate(struct Moby **pList); /* UpdateMoby's animation step, by class rate */
 int t60_class_60(int pClass);     /* a class judged for 60 Hz (t60_classes.c) */
+int t60_class_60_everywhere(int pClass); /* ... and for every level, not only the pilot's (D142) */
 void t60_hud_tick(void);          /* the HUD, at 30 Hz */
 struct Vector3D;
 void t60_spyro_shift(void *pVelocity); /* func_8003FE40's >> 6, its low bits carried */

@@ -8,9 +8,14 @@ IN.o with:
   - every function it defines made local, but the entry, renamed NEW: a
     call inside the set goes to the set's copy, a call from the game's
     30 Hz code never reaches it;
-  - every global data definition weakened: the rules write the game's own
-    memory, so the game's definition wins (a common symbol, the decomp's
-    -fcommon globals, is the game's already);
+  - no global data definition (D142): the rules write the game's own
+    memory, so a global the set uses must be the game's, through an extern
+    or a common symbol (the decomp's -fcommon globals). The set used to
+    weaken its definitions so the game's would win, but on ARM GCC reaches
+    a global defined in the same file through a section anchor (the
+    section's base plus an offset), not through the symbol: the Vita's
+    60 Hz camera read its own copy of g_port_controls, which nothing wrote,
+    so the free camera was off at 60 Hz whatever the menu said;
   - no writable data of its own (local .data/.bss) but what ALLOWED lists:
     a function-static the 30 Hz code also has would split the game's state
     in two. Read-only data (tables, strings) may be copied.
@@ -57,13 +62,13 @@ def main():
     entries = dict(e.split("=", 1) for e in a.entry)
     allowed = [re.compile(p) for p in ALLOWED.split()]
     syms = nm(a.nm, a.inp)
-    funcs, weak, own, ro, common = [], [], [], [], []
+    funcs, defined, own, ro, common = [], [], [], [], []
     for name, t in syms:
         if t in "T":
             if name not in entries:
                 funcs.append(name)
         elif t in "DBGS":
-            weak.append(name)
+            defined.append(name)
         elif t in "dbgs":
             own.append(name)
         elif t in "Rr":
@@ -73,6 +78,10 @@ def main():
     for e in entries:
         if (e, "T") not in syms:
             sys.exit(f"tick60_link: the entry {e} isn't defined")
+    if defined:
+        sys.exit("tick60_link: global data defined in the 60 Hz rules' files, which their code "
+                 "may reach through a section anchor and so never the game's copy; define it "
+                 "outside the set (an extern here): " + ", ".join(sorted(defined)))
     bad = [n for n in own if not any(p.search(n) for p in allowed)]
     # local labels the compiler makes for its own constants are read-only
     bad = [n for n in bad if not re.match(r"^\.L|^\$", n)]
@@ -82,17 +91,14 @@ def main():
     loc = a.out + ".localize"
     with open(loc, "w") as f:
         f.write("\n".join(funcs) + "\n")
-    wk = a.out + ".weaken"
-    with open(wk, "w") as f:
-        f.write("\n".join(weak) + "\n")
-    cmd = [a.objcopy, "--localize-symbols=" + loc, "--weaken-symbols=" + wk]
+    cmd = [a.objcopy, "--localize-symbols=" + loc]
     for old, new in entries.items():
         cmd.append(f"--redefine-sym={old}={new}")
     subprocess.run(cmd + [a.inp, a.out], check=True)
     if a.report:
         with open(a.report, "w") as f:
             f.write(f"entries: {', '.join(f'{o} as {n}' for o, n in entries.items())}\n")
-            for title, group in (("functions made local", funcs), ("data weakened (the game's)", weak),
+            for title, group in (("functions made local", funcs),
                                  ("the rules' own writable data", own), ("common (the game's)", common),
                                  ("read-only", ro)):
                 f.write(f"{title}: {len(group)}\n")

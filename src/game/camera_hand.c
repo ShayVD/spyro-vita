@@ -39,9 +39,9 @@ extern int D_80075894; // Passive camera's hold timer (camera.c)
 extern int D_80075924; // L2/R2 turn speed (camera.c, func_80035F58)
 extern int D_80075938; // Ticks before an auto-centre may end
 
-/* The port's control options (port_controls.h, decisions D47): all off
- * unless the platform turns them on, so the camera is the original's. */
-PortControls g_port_controls = {0, 0, 0, 100};
+/* g_port_controls (port_controls.h, D47) is defined in port.c, not here:
+ * this file is also built into the 60 Hz rules (cmake/tick60.cmake), and
+ * there a definition of its own would be the copy its code reads (D142). */
 
 /* The free camera's elevation bias for this tick's springs (func_80034CE8),
  * set by func_80035FB4 around them; 0 everywhere else. */

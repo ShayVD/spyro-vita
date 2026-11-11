@@ -24,7 +24,8 @@ In a 60 Hz update:
 | The camera | 60 Hz | Its springs already ran per vblank. Its per-tick counters and look-mode speeds are marked |
 | The environment's animations, the fade, the HUD's timers in vblanks | 60 Hz | already scaled by `g_DeltaTime` |
 | The moby classes judged for 60 Hz, in the pilot's levels | 60 Hz | 59 class bodies; `src/game/tick60/t60_classes.c` |
-| Every other moby class, and every moby in the other levels | 30 Hz | the original's rules, on the vblank that starts a 30 Hz tick, with `g_DeltaTime` 2 |
+| Sparx, in every level (D142) | 60 Hz | `t60_class_60_everywhere`: his body is the same in every overlay, and he follows Spyro, who moves every vblank everywhere |
+| Every other moby class, and every other moby in the other levels | 30 Hz | the original's rules, on the vblank that starts a 30 Hz tick, with `g_DeltaTime` 2 |
 | Particles, the HUD | 30 Hz | the same, every other vblank (not in the pilot's scope) |
 | Sounds (`SoundsUpdate`, `SpuUpdate`) and the XA poll (`CDMusicUpdate`) | 60 Hz | the game's own, every update: positional volumes are recomputed from distances (their smoothing converges sooner), `KillOrphans` on `g_GameTick % 64` runs on both vblanks of that tick (idempotent), the music is polled twice as often (§7.2) |
 | The moby animation step | by class | half a step a vblank for a 60 Hz class (`moby_lists_hand.c` `Animate`, `T60_ANIM_LOWER`/`UPPER`, at most one frame a tick as the original), the original's step every other vblank for the rest |
@@ -64,17 +65,17 @@ With the velocity change at the tick's start (or end, as the original orders it)
 `cmake/tick60.cmake` compiles the update path a second time with `-DSPYRO_TICK60=1` and `-include src/game/tick60/tick60_rules.h`:
 - the decomp's `update.c`, `pete.c`, `camera.c` and `moby_helpers.c`;
 - our `pete_hand.c`, `pete_dispatch_hand.c`, `pete_transition_hand.c`, `pete_state_hand.c`, `camera_hand.c` and `moby_lists_hand.c`;
-- the six pilot levels' `moby_update.c`;
+- every level's `moby_update.c` (35 overlays, `src/game/tick60/t60_levels.h`; the six pilot levels' only, before D142);
 - the rules' own `src/game/tick60/t60_rules.c` and `t60_classes.c`.
 
 `tools/tick60_link.py` links them into one object, `tick60_update.o`:
 - **Functions:** every function becomes local except the entry, `GamestateUpdate`, renamed `GamestateUpdate_60`. Inside the object, each call goes to the set's own copy; the game's 30 Hz code never reaches one.
-- **Data:** unlike the presenter, the rules write the game's own memory. So every global data definition is weakened (the game's wins).
+- **Data:** unlike the presenter, the rules write the game's own memory, so the tool refuses a global data definition in the set: each global the set uses is the game's, through an extern or a common symbol. Until D142 it weakened them instead, so that the game's definition would win at link time. That holds on x86 but not on ARM, where GCC reaches a global defined in the same file through a section anchor (the section's base plus an offset), never through its symbol. So the Vita's 60 Hz camera read its own copy of `g_port_controls`, which nothing wrote, and the free camera was off at 60 Hz whatever the menu said. `g_port_controls` is now defined in `port.c`, outside the set.
 - **Writable statics:** the tool refuses any of the set's own unless it is listed. Two are, `s_t60_*` (the rules' per-update scratch) and `camera_hand.c`'s `s_tilt` (set and cleared within one call).
 
-The report is `build/*/tick60_update.o.txt`: 157 functions made local, 1 definition weakened, 4 of its own.
+The report is `build/*/tick60_update.o.txt`: 189 functions made local (157 at D130; D141's two, and since D142 every level's `UpdateMoby`), 5 of its own, no data defined.
 
-The dispatch is `src/game/tick60.c` (`PortGamestateUpdate`), which `main.c` calls in place of `GamestateUpdate` (0012). It picks the 60 Hz object for an update in play, and the original's otherwise. In `t60_rules.c`, `t60_update_moby` compares `g_UpdateMoby` with the game's six pilot-level functions and calls the 60 Hz copy, or runs the game's own at 30 Hz.
+The dispatch is `src/game/tick60.c` (`PortGamestateUpdate`), which `main.c` calls in place of `GamestateUpdate` (0012). It picks the 60 Hz object for an update in play, and the original's otherwise. In `t60_rules.c`, `t60_update_moby` compares `g_UpdateMoby` with the game's `UpdateMoby` of each level in `t60_levels.h` and calls that level's 60 Hz copy, noting whether the level is one of the pilot's (`s_t60_pilot`): there every class judged for 60 Hz runs every vblank, elsewhere only Sparx (D142). A level not in the list (none today) runs the game's own at 30 Hz.
 
 ### The proof that off and interpolated are unchanged
 
@@ -239,7 +240,7 @@ The update is a small part of the cost. The draw runs every vblank, which double
   - particles;
   - the HUD;
   - the five classes above;
-  - every moby in the 31 levels outside the pilot (their classes were never judged).
+  - every moby but Sparx in the 29 levels outside the pilot (their classes were judged only in the pilot's levels; D142 ran Sparx at 60 Hz everywhere).
   - Cutscene cameras stay recorded at 30 Hz (§7.2); the cutscenes themselves are 30 Hz gamestates.
 - **Not done:**
   - the switch at a level load (§7.1);
