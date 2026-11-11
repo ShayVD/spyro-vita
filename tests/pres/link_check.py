@@ -41,7 +41,10 @@ STOP = set()
 # translation of a PS1 address (psx_kuseg_host, port.c: PSX_KUSEG), which
 # only PlaySound reaches, through the sound reference it is given, NULL in
 # every call the draws make (the flight results'); --pres-write-check holds
-# that the presenter writes none of the game's memory.
+# that the presenter writes none of the game's memory. Stage R3 (D135)
+# adds g_RegionTiming, the RT() switch that draw.c, hud.c and the rest now
+# read: set once when the disc opens (libcd.c psx_cd_open, cdimage.c),
+# never by the game.
 READ_ONLY = r"""
 ^(memcpy|memset|sprintf|snprintf|strcpy|strlen|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
 ^__aeabi_(idiv|uidiv|idivmod|uidivmod|ldivmod|uldivmod)$
@@ -52,6 +55,7 @@ READ_ONLY = r"""
 ^port_ws_(hud_ofx|hud_r11|r1112)$
 ^port_poly_start$
 ^g_present$
+^g_RegionTiming$
 ^(g_Environment|g_EnvironmentAnimations|g_Models|g_SkipLowPolyWorld|g_Buffers|g_LevelId)$
 ^D_8006[0-9A-F]{4}$
 ^D_80074B84$
