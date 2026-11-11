@@ -3,7 +3,8 @@
 #
 # Builds from an rsync copy in build/s1-matching so third_party/spyro-1 stays
 # pristine; applies patches/spyro-1/*.patch, then patches/spyro-1-region/*.patch
-# (the region switches the port shares, D133) to the copy only.
+# (the region switches the port shares, D133), then patches/
+# spyro-1-region-matching/*.patch (D135) to the copy only.
 #
 # REGION=us (default) is the SHA-1-checked NTSC-U build. REGION=pal or jp
 # builds the same source with -DREGION=1 or 2 in build/s1-matching-REGION
@@ -11,7 +12,8 @@
 # by function with that release's executable and WAD overlays from
 # disc/files-REGION (tools/regions/compare_code.py; the summaries in
 # build/s1-matching-REGION/compare-*.txt, the lists in compare-*.json; the
-# executable once more with --exact, constants included).
+# executable once more with --exact, constants included; and both once more
+# with tools/regions/retune.py, strictly: compare-*-strict.txt, D135).
 #
 # Uses a native arm64 image on Apple Silicon: python and binutils run natively
 # and only the i386 gcc2.7.2 cc1 goes through binfmt emulation. Running the whole
@@ -59,7 +61,10 @@ fi
 mkdir -p "$out"
 rsync -a --delete --exclude .git --exclude /build --exclude /psyq/include "$src/" "$out/"
 rsync -a --delete "$psyq_inc/" "$out/psyq/include/"
-for p in "$root"/patches/spyro-1/*.patch "$root"/patches/spyro-1-region/*.patch; do
+# spyro-1-region-matching: region edits on lines the port's own patches
+# rewrote; the port has them in spyro-1-region-port (D135)
+for p in "$root"/patches/spyro-1/*.patch "$root"/patches/spyro-1-region/*.patch \
+         "$root"/patches/spyro-1-region-matching/*.patch; do
   [ -e "$p" ] || continue
   (cd "$out" && patch -p1 --forward --quiet < "$p")
 done
@@ -80,6 +85,13 @@ if [ "$region" != us ]; then
   # constants too (--exact): what proves an RV/RT edit (D133)
   python3 -I "$root/tools/regions/compare_code.py" exe "$files/$exe" --elf "$out/build/psx.elf" \
     --exact --list --json "$out/compare-exe-exact.json" | tee "$out/compare-exe-exact.txt"
+  # strictly (D135): every immediate but the relocated ones, addiu v0,v0,192 too;
+  # per function its constant sites and unpaired instructions left
+  python3 -I "$root/tools/regions/retune.py" sites exe "$files/$exe" "$region" --elf "$out/build/psx.elf" \
+    --list --json "$out/compare-exe-strict.json" | tee "$out/compare-exe-strict.txt"
+  python3 -I "$root/tools/regions/retune.py" sites wad "$files/WAD.WAD" "$region" --elf "$out/build/psx.elf" \
+    --list --json "$out/compare-wad-strict.json" > "$out/compare-wad-strict.txt"
+  head -1 "$out/compare-wad-strict.txt"
   exit 0
 fi
 

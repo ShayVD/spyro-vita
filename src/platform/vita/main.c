@@ -13,6 +13,8 @@
  *   ux0:data/spyro/spyro.log   the log (send it back after a test)
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
+ *       pal60=1         the PAL disc with US timing at 60 Hz ("PAL 60",
+ *                       D138); default 0: PAL at its own 50 Hz
  *       frames=N        exit after N vblanks (default 0: never)
  *       keep_awake=1    no standby, dimming or screen off while it runs
  *                       (tools/vita/hw_run.sh writes it; D77)
@@ -260,6 +262,9 @@
 #include "psx_cdimage.h"
 #include "psx_cdnative.h"
 #include "psx_hooks.h"
+#include "psx_clock.h"
+#include "psx_region.h"
+#include "psx_spu.h"
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
 
@@ -374,6 +379,8 @@ static void read_config(void) {
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
+    else if (!strcmp(line, "pal60"))
+      g_RegionPal60 = atoi(v) != 0; /* PAL 60 (regions plan §7.4, D138) */
     else if (!strcmp(line, "frames"))
       g_vita_opts.frames = atoi(v);
     else if (!strcmp(line, "keep_awake"))
@@ -673,6 +680,13 @@ int main(int argc, char **argv) {
     vita_log("disc: %s, opened in %u ms (%u reads, %u KB)", psx_cd_source(),
              (unsigned)((now_us() - t0) / 1000), io.reads, io.kbytes);
   }
+  /* the game's vblank rate: 50 Hz for PAL at its own timing, 5 for every 6
+   * of the display's (regions plan §6.3, D138) */
+  psx_clock_set_hz(psx_region_vblank_hz());
+  g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
+  if (g_Region != PSX_REGION_US)
+    vita_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
+             g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
   if (g_vita_opts.cd_native) {
     if (psx_cdn_start() == 0) {
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());

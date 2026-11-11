@@ -11,7 +11,10 @@
 
 int g_Region = PSX_REGION_US;
 int g_RegionTiming;
+int g_RegionPal60;
 int g_RegionDev;
+
+int psx_region_vblank_hz(void) { return g_RegionTiming ? 50 : 60; }
 
 /* Overlay bases: US from the matching build's psx.map, PAL from its
  * SetOverlayPointers and title overlay (regions plan §3.3); JP's isn't

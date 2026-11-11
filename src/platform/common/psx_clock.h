@@ -36,9 +36,20 @@ int psx_clock_due(int count, int (*vcount)(void), void (*wait)(void), int *late)
 
 /* The display's vcount at our vblank 0, as psx_clock_due() counts it, so
  * another thread can tell which of our vblanks the display is at (stage 7c,
- * D112: vcount - base). Returns 0 while it isn't counted (before the first
- * wait, after psx_clock_set or psx_clock_resync). Any thread. */
+ * D112: vcount - base; at 50 Hz through the two calls below). Returns 0
+ * while it isn't counted (before the first wait, after psx_clock_set or
+ * psx_clock_resync). Any thread. */
 int psx_clock_display_base(int *base);
+
+/* The game's vblank rate (D138): 60, or 50 for the PAL disc at its own
+ * timing (psx_region_vblank_hz), set by the platform once the disc is open.
+ * psx_clock_due then runs 5 of our vblanks for every 6 of the display's. */
+void psx_clock_set_hz(int hz);
+int psx_clock_hz(void);
+/* At 60 Hz: base + due, and n. At 50: the display vblank our vblank `due`
+ * starts at, and display vblanks as ours (any thread). */
+int psx_clock_display_due(int base, int due);
+int psx_clock_display_to_ours(int n);
 
 /* The game's VSyncCallback, if it set one (libetc.c). */
 void psx_clock_callback(void);

@@ -14,6 +14,7 @@
 #include "psx_cdimage.h"
 #include "psx_cdnative.h"
 #include "psx_hooks.h"
+#include "psx_region.h"
 #include "psx_state.h"
 #include "psx_xa.h"
 
@@ -24,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VBLANK_HZ 60 /* virtual vblank rate the stream speed is based on */
 
 typedef struct {
   char path[128];
@@ -529,7 +529,10 @@ void psx_cd_vblank(void) {
   cd_tick();
   if (s_stream.active) {
     int from = s_stream.lba;
-    cd.head_q += (cd.mode & CdlModeSpeed) ? 150 * 4 / VBLANK_HZ : 75 * 4 / VBLANK_HZ;
+    /* the drive by real time: 2.5 sectors a 60 Hz vblank at double speed,
+     * 3 a 50 Hz one (PAL at its own timing, D138) */
+    int hz = psx_region_vblank_hz();
+    cd.head_q += (cd.mode & CdlModeSpeed) ? 150 * 4 / hz : 75 * 4 / hz;
     s_stream.lba = cd.head_q / 4;
     for (; from < s_stream.lba; from++) /* sectors the head passed */
       psx_xa_sector(from);

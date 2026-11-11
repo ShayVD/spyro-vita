@@ -1,0 +1,60 @@
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -31,6 +31,7 @@
+ 
+ #include <libmcrd.h>
+ #include <rand.h>
++#include "region.h"
+ 
+ extern int _stacksize;
+ 
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -386,7 +386,7 @@
+              g_WadHeader.m_UniversalLogo.m_Offset, 600);
+ 
+   // Wait for 210 frames, / 60 = 3.5 seconds
+-  while (VSync(-1) - frameCountStart < 210)
++  while (VSync(-1) - frameCountStart < RT(210, 160))
+     VSync(0);
+ 
+   // Clear the copy buffer for the images
+@@ -429,7 +429,7 @@
+   } while (g_LoadStage < 10);
+ 
+   // Wait for 210 frames, / 60 = 3.5 seconds
+-  while (VSync(-1) - frameCountStart < 210)
++  while (VSync(-1) - frameCountStart < RT(210, 160))
+     VSync(0);
+ 
+   // Fade out the Universal logo
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -18,6 +18,7 @@
+ #include "spyro.h"
+ #include "strings.h"
+ #include "variables.h"
++#include "region.h"
+ 
+ extern unsigned int strlen(char *);
+ 
+@@ -887,7 +888,7 @@
+   if (*pHorizontalSpeed != 0) {
+     // Horizontal movement with collision detection
+     result = MobyMove(pMoby, pAngle, *pHorizontalSpeed, mobyCollisionRadius,
+-                      500, flags);
++                      RT(500, 600), flags);
+     *pHorizontalSpeed -= pDeceleration;
+     if (*pHorizontalSpeed < 0) {
+       *pHorizontalSpeed = 0;
+@@ -912,8 +913,8 @@
+   floorZ = func_80038400(pMoby, 600); // Get floor Z height at moby position
+   pMoby->m_Position.z += *pZVelocity;
+   *pZVelocity -= pGravity;
+-  if (*pZVelocity < -260) {
+-    *pZVelocity = -260;
++  if (*pZVelocity < -RT(260, 311)) {
++    *pZVelocity = -RT(260, 311);
+   }
+ 
+   // Check if landed
