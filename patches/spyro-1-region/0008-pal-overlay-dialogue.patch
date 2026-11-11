@@ -6,7 +6,7 @@
      int NAME_OVERLAY_FUNCTION_LEVEL(Flight4, level)(int pTimer, Vector3D* pPos, int pColor); \
 -    void NAME_OVERLAY_FUNCTION_LEVEL(Flight5, level)(void);
 +    void NAME_OVERLAY_FUNCTION_LEVEL(Flight5, level)(void); \
-+    int NAME_OVERLAY_FUNCTION_LEVEL(func_pal_80081758, level)(char *pText); /* PAL (D142) */
++    int NAME_OVERLAY_FUNCTION_LEVEL(func_pal_80081758, level)(char *pText); /* PAL (D145) */
  
  #define FOR_BALLOONS(b) \
      b(10) \
@@ -62,7 +62,7 @@
      D_800758D8 = Balloonist4_LEVEL_##pLevel;                                   \
      break;
  
-+// PAL (D142): its flight overlays' letter counter, which their results
++// PAL (D145): its flight overlays' letter counter, which their results
 +// screens call through a pointer the executable sets here (PAL 0x8007C0B8)
 +#if REGION_HAS_PAL
 +extern int (*g_PalLetterCount)(char *pText);

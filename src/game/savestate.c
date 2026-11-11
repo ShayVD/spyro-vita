@@ -119,7 +119,7 @@ static void chunk_region(PsxStateIO *io) {
   psx_state_io(io, g_LevelDragonsPal, sizeof g_LevelDragonsPal);
   psx_state_io(io, &g_PalCardHeaderDirty, sizeof g_PalCardHeaderDirty); /* D139 */
   psx_state_io(io, &g_PalTitleCardLoad, sizeof g_PalTitleCardLoad);
-  psx_state_io(io, &g_PalLetterCount, sizeof g_PalLetterCount); /* D144: a function of this binary, as the level's other overlay pointers */
+  psx_state_io(io, &g_PalLetterCount, sizeof g_PalLetterCount); /* D145: a function of this binary, as the level's other overlay pointers */
 }
 
 static void chunk_gpu(PsxStateIO *io) {

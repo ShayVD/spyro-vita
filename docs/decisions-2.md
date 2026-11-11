@@ -1675,7 +1675,7 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 
 ## 2026-11-11 — the PAL disc: R2, part C, the overlays' dialogue
 
-### D144. Stage R2 of `docs/regions-plan.md`, part C: the level overlays' PAL text, the balloonist's dialogue and the flight levels' results and time-attack screens, as decomp C that compiles with `-DREGION=1` to PAL's own code in every overlay that builds it (`patches/spyro-1-region/0008-pal-overlay-dialogue.patch`), with the 50 Hz timing sites R3 left in those two files (D137) as `RT()`. PAL's flight overlays count letters through a function the executable points to, which `SetOverlayPointers` now sets for PAL. PAL stays refused for players until R4
+### D145. Stage R2 of `docs/regions-plan.md`, part C: the level overlays' PAL text, the balloonist's dialogue and the flight levels' results and time-attack screens, as decomp C that compiles with `-DREGION=1` to PAL's own code in every overlay that builds it (`patches/spyro-1-region/0008-pal-overlay-dialogue.patch`), with the 50 Hz timing sites R3 left in those two files (D137) as `RT()`. PAL's flight overlays count letters through a function the executable points to, which `SetOverlayPointers` now sets for PAL. PAL stays refused for players until R4
 - **Why:** the second of R2 part B's PRs (D139's "level overlays' dialogue"); R3 left `balloonist.c` and `flight.c`'s timing sites to it because R2 rewrites them (D137).
 - **The owner's decisions it relies on:** as D139 (1, 5 and 7 by default; 6 open; checked on PAL image `52bba2f6…`).
 - **What PAL does** (read from the overlays and proved by compiling them; the per-screen layouts are in `docs/translation-log.md`):

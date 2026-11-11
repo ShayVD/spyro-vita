@@ -10,7 +10,7 @@
  *    presenter's copy of the same level's function, which pres_draw.c finds
  *    on the game thread (g_pres_ovl), or a function that does nothing if
  *    the game's pointer is none of them (counted there);
- *  - pres_letters (D144): the same for the letter count PAL's flight
+ *  - pres_letters (D145): the same for the letter count PAL's flight
  *    results call through g_PalLetterCount;
  *  - pres_rand: libc's rand (rand_psyq.c) on the snapshot's seed
  *    (D_80075AC0, pres_snap_names.h);

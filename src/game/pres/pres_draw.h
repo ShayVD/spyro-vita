@@ -56,7 +56,7 @@ void pres_draw_visibility(uint8_t *flags, uint32_t *caches, int ncaches);
  * the levels below, is set on the game thread from the game's pointers
  * (pres_draw_prepare), -1 for none of them; pres_ovl.c's pres_flight5,
  * pres_flight4 and pres_balloon4 are the presenter's calls' targets.
- * D144: PAL's flight results also count a line's letters through a pointer
+ * D145: PAL's flight results also count a line's letters through a pointer
  * the level set (g_PalLetterCount, func_pal_80081758_LEVEL_*): pres_letters. */
 #define PRES_FLIGHT_LEVELS(X) X(15) X(25) X(35) X(45) X(55)
 #define PRES_BALLOON_LEVELS(X) X(10) X(11) X(13) X(20) X(21) X(22) X(30) X(40) X(50) X(60)

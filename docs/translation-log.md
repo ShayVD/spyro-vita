@@ -610,7 +610,7 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `func_80050BD0` (`cyclorama_hand.c`, the sky) | hand C: `SCREEN_H` is `RV(240, 256, 240)` | PAL's 16 differing constants, all screen height (240/239/241 → 256/255/257, `compare_code.py` strict); on the host the PAL inventory's background lost the blocks its sky left below line 240 | none known |
 | `func_8003EA68` (`pete_state_hand.c`), `func_80043FE4` (`pete_hand.c`) | hand C: the sounds, level 43's gravity, the wing trail's vertices | read against PAL 0x80044328, 0x80044410, 0x800447D4, 0x800451DC, 0x8004B908 | none known |
 
-## Stage R2, part C: the overlays' dialogue (2026-11-11, decisions D144)
+## Stage R2, part C: the overlays' dialogue (2026-11-11, decisions D145)
 
 `patches/spyro-1-region/0008-pal-overlay-dialogue.patch`. "Exact" as in part B, against PAL's overlay (WAD entries 21 + 2k, loaded at 0x80081428), in every overlay that compiles the file.
 

@@ -250,7 +250,7 @@ PRES_BALLOON_LEVELS(BALLOON)
 #define F4(n) (void *)Flight4_LEVEL_##n,
 #define B4(n) (void *)Balloonist4_LEVEL_##n,
 #define FL(n) (void *)func_pal_80081758_LEVEL_##n,
-extern int (*g_PalLetterCount)(char *pText); /* PAL's, D144; 0 on US */
+extern int (*g_PalLetterCount)(char *pText); /* PAL's, D145; 0 on US */
 static int ovl_index(int which, const void *fn, void *const *game, int n) {
   int i;
   for (i = 0; i < n; i++)
