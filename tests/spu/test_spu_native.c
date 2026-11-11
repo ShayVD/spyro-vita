@@ -128,12 +128,14 @@ static int compare(int vb, const char *what, const PsxSpuVoice *va, const PsxSpu
 
 int main(int argc, char **argv) {
   static PsxSpuVoice va[PSX_SPU_VOICES], vn[PSX_SPU_VOICES], vs[PSX_SPU_VOICES];
-  static short oa[PSX_SPU_VBLANK_SAMPLES * 2], on[PSX_SPU_VBLANK_SAMPLES * 2],
-      os[PSX_SPU_VBLANK_SAMPLES * 2];
+  static short oa[PSX_SPU_VBLANK_SAMPLES_MAX * 2], on[PSX_SPU_VBLANK_SAMPLES_MAX * 2],
+      os[PSX_SPU_VBLANK_SAMPLES_MAX * 2];
   int vblanks = argc > 1 ? atoi(argv[1]) : 20000, vb, simd_checked = 0;
   size_t xan;
   PsxSpuMixRegs reg;
   s_rng = argc > 2 ? (unsigned)atoi(argv[2]) : 1;
+  if (argc > 3) /* samples a vblank: 882 for PAL's 50 Hz (D138) */
+    g_psx_spu_vblank_samples = atoi(argv[3]);
   g_psx_spu_native = 1;
   SpuInit();
   random_ram(0, PSX_SPU_RAM_SIZE);

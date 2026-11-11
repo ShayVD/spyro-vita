@@ -1526,3 +1526,24 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **Checked:**
   - **`REGION=pal`** (`logs/r3-fin/compare-wad-strict.txt`, the final tree on main 8f96a63; the same counts as before the rebase, `logs/r3-final/`): constant sites over all 37 overlays 5,501 → 2,535. No function gained a site. The unpaired instructions are unchanged within 3% (17,823 → 18,225); the inserted sequences are still to do. No overlay function is strictly the same yet: every `UpdateMoby` has PAL's inserted code.
   - **US:** as D135 (`PSX.EXE SHA-1 OK`, `logs/r3-matching/us5.txt`; host checks 279 of 279, `logs/r3-hc-cmp-final.txt`).
+
+## 2026-11-10 — the PAL disc: R3, the platform at 50 Hz and PAL 60
+
+### D138. Stage R3, part 3 (plan §6.3, §7.4): the game's vblank runs at `psx_region_vblank_hz()`, 50 for the PAL disc at its own timing and 60 otherwise. The Vita counts 5 of its vblanks for every 6 of the display's; the CD streams 3 sectors and the SPU mixes 882 samples a 50 Hz vblank; the host's VSync is one 50 Hz vblank. "PAL 60" (`--pal60`, `config.txt` `pal60=1`) is PAL's code with US timing at 60 Hz. The presenter keeps its one in-between frame a tick, so PAL is 50 frames a second on the 60 Hz display; 25 → 60 blending by time is left
+- **Why:** R3 (plan §9): PAL's 25 Hz tick is two vblanks of a 50 Hz clock, and today's clock is the display's.
+- **The owner's decisions it relies on:** 2 (PAL 25 Hz by default, PAL 60 as an option); decision 6 is still open.
+- **The rate:** `psx_region_vblank_hz()` (`region.c`) is 50 when `g_RegionTiming` is set. That's the PAL disc without `g_RegionPal60` (set from `--pal60` or `pal60=1` before the disc opens; `cdimage.c`). Each platform hands the rate to the clock and the SPU once the disc is open (`psx_clock_set_hz`, `g_psx_spu_vblank_samples`).
+- **The Vita's real-time clock** (`clock.c`): at 50 Hz `psx_clock_due` counts the display's widened vcount as `floor(display * 50 / 60)` of ours. Its base stays in the display's vblanks. The 7c due-frame check (`vita_vblank_past_due`, D112) converts through `psx_clock_display_due` (the display vblank our vblank starts at) and `psx_clock_display_to_ours`. At 60 Hz each is the old arithmetic, unchanged.
+- **The CD** (`libcd.c`): the drive's quarter-sectors a vblank are `150 * 4 / hz` at double speed: 10 at 60, 12 at 50 (3 sectors). XA keeps real time.
+- **The SPU** (`libspu.c`, `spu_native.c`, the Vita's mixer): `PSX_SPU_VBLANK_SAMPLES` is now a variable, 735 or 882 (44,100 / hz); the buffers are sized for 882 (`PSX_SPU_VBLANK_SAMPLES_MAX`). The audio ring needs nothing: 50 × 882 is 44,100 frames a second, as 60 × 735 is.
+- **The 60 Hz pilot** (D130) is US only for now: `--tick60` and `interp=4` are turned off with a log line on another disc.
+- **Not done:**
+  - **The presenter at 25 → 60.** It blends at ½ only (`present.c` `mid_i`, `mid_track`) and draws one in-between frame a tick, due at a game vblank. A frame due at each display vblank, with its own fraction, is a change to the 7c pipeline. It needs the Vita (the owner's yes), and PAL can't run until R2.
+  - **PAL 60's cutscenes:** PAL's cutscene index (`(tick * 3) >> 2`, R2's) assumes 50 Hz. At 60 it would run 20% fast against the voices, so PAL 60 needs those gamestates at 50 Hz, or the index scaled with the rate.
+  - **A menu row for PAL 60:** the config key only, until R2 makes PAL playable (and #117's menu changes have landed).
+- **Checked:**
+  - **`tests/vcount`:** at 60 Hz its three plays give main's numbers exactly (vblank counts 1,199,970, 2,000,718, 2,399,765, run beside main's `clock.c`). Two new 50 Hz plays across the 16-bit wraps pass, and so do the new conversion cases. The mutant (the raw counter) still hangs and fails.
+  - **`tests/spu`:** `spu_native` (735) passes, and so does the new `spu_native_50hz` (882 samples, 5,000 vblanks, native mix against the reference); the mutant still fails. `ctest` for cd, spu and vcount: **6 of 6 passed** (`logs/r3-host/ctest3.txt`: cd, spu_native, spu_native_50hz, spu_native_mutant, vcount, vcount_mutant; the mutants are expected to fail and are marked so).
+  - **The host:** `--region-dev --disc disc/files-pal` runs at 50 Hz (`region: SCES-01438, 50 Hz vblanks (PAL timing)`) through the logos and the title flythrough to the title screen in 2,500 vblanks, no hang (`logs/r3-pal-boot3/`, R3's three PRs on main with R2's first part). The title screen is drawn by the US overlay until R2 brings PAL's.
+  - **US unchanged:** host checks 279 of 279 byte-identical to main's and to R2's first part's run (`logs/r3-hc-cmp-final.txt`, `logs/r3-hc-cmp-final-r2a.txt`; R3's three PRs together on main 8f96a63: D135). `ctest` as above is that tree's (`logs/r3-host/ctest3.txt`, 6 of 6).
+  - **Vita:** the VPK builds (`logs/r3-vita/build.txt`, `VPK OK`, R3's three PRs together), with no warnings from the changed files. No Vita3K or hardware run: nothing a US player sees changes, and PAL can't run yet.

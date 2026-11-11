@@ -9,6 +9,7 @@
 #include "../../game/tick60.h"
 #include "host.h" /* linux32's, for png.c's shots */
 #include "menu_opts.h"
+#include "psx_region.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
@@ -52,7 +53,8 @@ static const char *const k_interp_names[] = {"OFF", "ON", "NO ANIM", "CAMERA", "
 static char s_undo_hint[24];
 static const char *s_pending_text[1];
 
-static int logic60(int interp) { return interp == 4 && tick60_built(); }
+/* the US disc only for now (PAL and JP: regions plan §6.3, D138) */
+static int logic60(int interp) { return interp == 4 && tick60_built() && g_Region == PSX_REGION_US; }
 static int restart_pending(void) { return logic60(g_vita_opts.interp) != s_tick60_now; }
 
 static void restart_answer(int answer);

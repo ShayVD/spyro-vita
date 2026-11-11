@@ -42,8 +42,17 @@ typedef struct {
  * another, which it does before the game's first instruction. */
 extern int g_Region;
 /* 1 when RT()'s PAL values apply (include/region.h, D133): the PAL disc at
- * its own 50 Hz. 0 for US and JP (and, later, PAL 60). */
+ * its own 50 Hz. 0 for US and JP, and for PAL 60. */
 extern int g_RegionTiming;
+/* "PAL 60" (regions plan §7.4, D138): the player's option, set before
+ * psx_cd_open. The PAL disc then runs with every RT() site at its US value,
+ * at the US 60 Hz vblank: PAL's text, voices and picture at NTSC speed. */
+extern int g_RegionPal60;
+
+/* The game's vblank rate, from g_RegionTiming: 50 (PAL at its own timing) or
+ * 60. The CD drive, the SPU's samples a vblank and the Vita's real-time clock
+ * follow it (regions plan §6.3, D138). */
+int psx_region_vblank_hz(void);
 
 /* Developers only (host --region-dev, D133): psx_cd_open opens a release
  * that isn't supported yet instead of refusing it, so later stages can be
