@@ -18,6 +18,7 @@
 #include "psx_arena.h"
 #include "psx_mem.h"
 #include "rand.h"
+#include "region.h" /* RT(): PAL 50 Hz retune (regions plan R3) */
 #include "spu.h"
 #include "spyro.h"
 #include "variables.h"
@@ -348,16 +349,16 @@ static int TurnLeft(void) {
 static int TurnWhileMoving(void) {
   int speed = g_Spyro.m_Physics.m_SpeedAngle.m_Speed;
 
-  if (speed < 0x400)
+  if (speed < RT(0x400, 1229))
     ApplySpyroSoftTurn();
   else
-    UpdateSpyroTurnMomentum(speed < 0xC80 ? 1 : 2);
+    UpdateSpyroTurnMomentum(speed < RT(0xC80, 3840) ? 1 : 2);
   return TurnLeft();
 }
 
 /* Up to speed while the turn is small (0x140 a tick), down by 0xC0. */
 static void AccelerateUnlessTurning(int pTurnLeft) {
-  func_8003D92C(pTurnLeft <= 0x200 ? 0x140 : 0, 0xC0);
+  func_8003D92C(pTurnLeft <= 0x200 ? RT(0x140, 461) : 0, RT(0xC0, 276));
 }
 
 static void SlowDown(int pAmount) {
@@ -386,7 +387,7 @@ static int PushOffWall(void) {
 /* Falling: a fixed pull relative to the true velocity; on the ground the
  * slope's gravity vector (unk_0xdc). */
 static void ApplyFall(void) {
-  g_Spyro.m_Physics.m_Acceleration.z = g_Spyro.m_Physics.m_TrueVelocity.z - 0xC0;
+  g_Spyro.m_Physics.m_Acceleration.z = g_Spyro.m_Physics.m_TrueVelocity.z - RT(0xC0, 276);
 }
 
 static void ApplyGroundGravity(void) {
@@ -420,7 +421,7 @@ static void UpdateIdle(void) {
   TickInvulnerability();
   if (g_Spyro.unk_0x194 == 0) {
     func_8003D3B8(0);
-  } else if (g_Spyro.m_idleTimer >= 45 && !g_SpyroFlame.m_IsFlameActive) {
+  } else if (g_Spyro.m_idleTimer >= RT(45, 38) && !g_SpyroFlame.m_IsFlameActive) {
     if (g_Spyro.m_walkingState != 0) {
       g_Spyro.unk_0x194 = 0;
     } else {
@@ -446,7 +447,7 @@ static void UpdateRunning(void) {
   g_Spyro.m_walkingState = 0;
   turnLeft = TurnWhileMoving();
   if (g_Spyro.m_walkingState) /* A sharp soft turn: brake */
-    SlowDown(0xC0);
+    SlowDown(RT(0xC0, 276));
   else
     AccelerateUnlessTurning(turnLeft);
 
@@ -478,7 +479,7 @@ static void UpdateState3(void) {
   if (g_Spyro.m_onEdge)
     ph->m_SpeedAngle.m_Speed = 0;
   else if (g_Spyro.m_walkingState)
-    SlowDown(0xC0);
+    SlowDown(RT(0xC0, 276));
   else
     AccelerateUnlessTurning(turnLeft);
 
@@ -505,7 +506,7 @@ static void UpdateTurnOnSpot(int pTicksInState) {
   if (g_Spyro.m_onEdge)
     g_Spyro.m_Physics.m_SpeedAngle.m_Speed = 0;
   else
-    SlowDown(0x100);
+    SlowDown(RT(0x100, 369));
   func_8003D978();
   ApplyGroundGravity();
 }
@@ -519,27 +520,27 @@ static void UpdateJump(int pTicksInState) {
   int length;
 
   TickInvulnerability();
-  func_8003D3B8(0xC80);
+  func_8003D3B8(RT(0xC80, 3840));
   UpdateSpyroTurnMomentum(2);
-  func_8003D92C(0x140, 0xC0);
+  func_8003D92C(RT(0x140, 461), RT(0xC0, 276));
 
   ph->unk_0xe8.x = ph->m_SpeedAngle.m_Speed * Cos(ph->m_TargetSpeedAngle.m_RotZ) >> 12;
   ph->unk_0xe8.y = ph->m_SpeedAngle.m_Speed * Sin(ph->m_TargetSpeedAngle.m_RotZ) >> 12;
   VecSub(&pull, &ph->unk_0xe8, &ph->m_Acceleration);
   pull.z = 0;
   length = VecMagnitude(&pull, 0);
-  if (length > 0x280)
-    VecScaleToLength(&pull, length, 0x280);
+  if (length > RT(0x280, 922))
+    VecScaleToLength(&pull, length, RT(0x280, 922));
   VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &pull);
   if (g_Spyro.m_againstWall)
     PushOffWall();
 
-  if (pTicksInState < 13 && g_Spyro.m_walkingState == 0 &&
+  if (pTicksInState < RT(13, 11) && g_Spyro.m_walkingState == 0 &&
       ((g_PadFrame->m_Held & PAD_CROSS) || D_800756B4)) {
     /* Hold the jump: aim the vertical acceleration at the jump's target
      * height (m_highestFlightPoint) and move that target up. */
     int rise;
-    ph->unk_0xe8.z += 0xD7 + ph->m_gravity;
+    ph->unk_0xe8.z += RT(0xD7, 310) + ph->m_gravity;
     rise = (g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z) * 64 - ph->m_Velocity.z + ph->unk_0xe8.z;
     ph->m_Acceleration.z = rise;
     g_Spyro.m_highestFlightPoint = (g_Spyro.m_Position.z * 64 + rise + ph->m_Velocity.z) >> 6;
@@ -562,14 +563,14 @@ static void UpdateAirborne(void) {
     int turn;
     func_8003D3B8(ph->unk_0x144);
     turn = AngleDelta(ph->m_TargetSpeedAngle.m_RotZ - ph->m_SpeedAngle.m_RotZ);
-    if (turn > 0x20)
-      turn = 0x20;
-    if (turn < -0x20)
-      turn = -0x20;
+    if (turn > RT(0x20, 38))
+      turn = RT(0x20, 38);
+    if (turn < RT(-0x20, -38))
+      turn = RT(-0x20, -38);
     func_8003D52C(turn);
   }
 
-  if (ph->m_TrueSpeed < 0x80) {
+  if (ph->m_TrueSpeed < RT(0x80, 154)) {
     VecCopy(&drag, &g_Spyro.m_wallAgainstSpyro);
     VecShiftRight(&drag, 3);
     VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &drag);
@@ -587,8 +588,8 @@ static void UpdateAirborne(void) {
   if (g_Spyro.m_floorIdleTime == 0 && g_Spyro.m_slopeAngle < 0x20)
     func_8003E90C();
 
-  if (ph->m_Acceleration.z < -0x2300)
-    ph->m_Acceleration.z = -0x2300;
+  if (ph->m_Acceleration.z < RT(-0x2300, -10752))
+    ph->m_Acceleration.z = RT(-0x2300, -10752);
   if (g_Spyro.m_againstWall)
     PushOffWall();
 }
@@ -600,8 +601,8 @@ static void UpdateSidestep(void) {
   TickInvulnerability();
   func_8003D3B8(0x1000);
   UpdateSpyroTurnMomentum(3);
-  ph->m_TargetSpeedAngle.m_Speed = 0x1000;
-  func_8003D92C(0x140, 0xC0);
+  ph->m_TargetSpeedAngle.m_Speed = RT(0x1000, 4915);
+  func_8003D92C(RT(0x140, 461), RT(0xC0, 276));
 
   ph->m_Acceleration.x = 0;
   ph->m_Acceleration.z = 0;
@@ -623,27 +624,32 @@ static int ClampTurn(int pTurn) {
   return pTurn;
 }
 
+/* PAL's x1.2 on a speed the US code takes as is: v * 4915 >> 12 (the asm's
+ * shift/add chain). The US path returns v untouched. */
+static inline int PalSpeed(int v) { return RT(v, v * 4915 >> 12); }
+
 /* Supercharge, and flight-style speed from height: speed from the drop
  * below the highest point, 0x1F80 on the level. */
 static void UpdateSuperchargeSpeed(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
   int drop = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z;
 
+  /* PAL scales the square root by 4915/4096 (x1.2) and the base to 9677. */
   if (drop >= 0)
-    ph->m_SpeedAngle.m_Speed = func_80017A38(drop << 13) + 0x1F80;
+    ph->m_SpeedAngle.m_Speed = PalSpeed(func_80017A38(drop << 13)) + RT(0x1F80, 9677);
   else
-    ph->m_SpeedAngle.m_Speed = 0x1F80 - func_80017A38(-drop << 13);
+    ph->m_SpeedAngle.m_Speed = RT(0x1F80, 9677) - PalSpeed(func_80017A38(-drop << 13));
   if (ph->m_SpeedAngle.m_Speed > 0x5900)
     ph->m_SpeedAngle.m_Speed = 0x5900;
-  if (ph->m_SpeedAngle.m_Speed < 0x1400) {
-    ph->m_TargetSpeedAngle.m_Speed = 0x1400;
+  if (ph->m_SpeedAngle.m_Speed < RT(0x1400, 6144)) {
+    ph->m_TargetSpeedAngle.m_Speed = RT(0x1400, 6144);
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z;
   }
 
   func_8003D978();
   VecCopy(&ph->unk_0xe8, &ph->m_Acceleration);
   if (g_Spyro.m_onEdge)
-    ph->m_Acceleration.z -= 0xC0;
+    ph->m_Acceleration.z -= RT(0xC0, 276);
   else
     ApplyGroundGravity();
 }
@@ -720,7 +726,7 @@ static void UpdateCharge(void) {
       decay.y = -ph->unk_0xe8.y * 300 >> 12;
       decay.z = -ph->unk_0xe8.z * 300 >> 12;
       VecAdd(&ph->unk_0xe8, &ph->unk_0xe8, &decay);
-      ph->m_SpeedAngle.m_Speed = 0x240;
+      ph->m_SpeedAngle.m_Speed = RT(0x240, 829);
       func_8003D978();
       VecAdd(&ph->unk_0xe8, &ph->unk_0xe8, &ph->m_Acceleration);
       VecAdd(&ph->unk_0xe8, &ph->unk_0xe8, SLOPE_GRAVITY(ph));
@@ -731,16 +737,16 @@ static void UpdateCharge(void) {
     int speed;
 
     ph->m_TargetSpeedAngle.m_Speed = 0;
-    func_8003D92C(0, 0x180);
+    func_8003D92C(0, RT(0x180, 737));
     func_8003D978();
     VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, SLOPE_GRAVITY(ph));
     speed = ph->m_SpeedAngle.m_Speed = VecMagnitude(&ph->m_Acceleration, 1);
-    if (speed > 0x2300) {
-      VecScaleToLength(&ph->m_Acceleration, speed, 0x2300);
-      ph->m_SpeedAngle.m_Speed = 0x2300;
+    if (speed > RT(0x2300, 10752)) {
+      VecScaleToLength(&ph->m_Acceleration, speed, RT(0x2300, 10752));
+      ph->m_SpeedAngle.m_Speed = RT(0x2300, 10752);
     }
     if (g_Spyro.m_onEdge)
-      ph->m_Acceleration.z -= 0xC0;
+      ph->m_Acceleration.z -= RT(0xC0, 276);
     else
       ApplyGroundGravity();
   }
@@ -750,8 +756,8 @@ static void UpdateCharge(void) {
 void func_80017614(Vector3D *pVec, int pMul, int pShift);
 
 static void ClampFall(void) {
-  if (g_Spyro.m_Physics.m_Acceleration.z < -0x2300)
-    g_Spyro.m_Physics.m_Acceleration.z = -0x2300;
+  if (g_Spyro.m_Physics.m_Acceleration.z < RT(-0x2300, -10752))
+    g_Spyro.m_Physics.m_Acceleration.z = RT(-0x2300, -10752);
 }
 
 /* States 7 and 14: hurt. Speed runs down; falls under gravity. */
@@ -759,7 +765,7 @@ static void UpdateHurt(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
   ph->m_TargetSpeedAngle.m_Speed = 0;
-  func_8003D92C(0, 0xC0);
+  func_8003D92C(0, RT(0xC0, 276));
   func_8003D978();
   ApplyFall();
   ClampFall();
@@ -773,7 +779,7 @@ static void UpdateKnockback(int pTicksInState) {
   TickInvulnerability();
   if (ph->m_Acceleration.z < 0)
     ph->m_Acceleration.z = 0;
-  if (pTicksInState >= 19)
+  if (pTicksInState >= RT(19, 16))
     func_80017614(&ph->m_Acceleration, 7, 3);
   ph->m_Acceleration.z += ph->m_gravity;
 }
@@ -784,13 +790,13 @@ static void UpdateTumble(int pSpin) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
   if (g_Spyro.m_airTime) {
-    ph->m_Acceleration.z -= 0x600;
+    ph->m_Acceleration.z -= RT(0x600, 2212);
     ClampFall();
   } else {
     VecNull(&ph->m_Acceleration);
   }
   if (pSpin)
-    ph->m_SpeedAngle.m_RotZ += 0x55;
+    ph->m_SpeedAngle.m_RotZ += RT(0x55, 102);
 }
 
 /* State 16: falling with gravity only. */
@@ -827,13 +833,13 @@ static void UpdateWhirlwind(void) {
   if (g_Spyro.m_Position.z < D_80075668 + 0x400) {
     /* Bottom: rise gathers speed; aim at the centre. */
     int height;
-    rise = ph->unk_0xe8.z + 0x80;
-    if (rise > 0x12C0)
-      rise = 0x12C0;
+    rise = ph->unk_0xe8.z + RT(0x80, 184);
+    if (rise > RT(0x12C0, 5760))
+      rise = RT(0x12C0, 5760);
     VecCopy(&pull, &g_Spyro.unk_0x17c);
     height = g_Spyro.m_Position.z - D_80075668;
     g_Spyro.m_walkingState = 0;
-    ph->unk_0x144 = 0x400;
+    ph->unk_0x144 = RT(0x400, 1229);
     heading = (height * height >> 11) + D_8007578C;
   } else if (g_Spyro.m_Position.z < g_Spyro.m_highestFlightPoint - 0x400) {
     /* Middle: circle the centre, wider with height up to the radius. */
@@ -842,9 +848,9 @@ static void UpdateWhirlwind(void) {
       D_8007578C += 0x200;
     }
     along = g_Spyro.m_Position.z - D_80075668 - 0x400;
-    ph->unk_0x144 = 0xC80;
+    ph->unk_0x144 = RT(0xC80, 3840);
     heading = (D_8007578C + D_800757F0 * along / D_80075724 + ((int)((u_int)along << 10) >> 10)) & 0xFFF;
-    rise = 0x12C0;
+    rise = RT(0x12C0, 5760);
     if (radius < along)
       along = radius;
     pull.x = along * Cos(ph->m_SpeedAngle.m_RotZ) >> 12;
@@ -863,8 +869,8 @@ static void UpdateWhirlwind(void) {
     pull.z = 0;
     VecAdd(&pull, &pull, &g_Spyro.unk_0x17c);
     below = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z;
-    rise = below * 4800 >> 10;
-    ph->unk_0x144 = 0xC80;
+    rise = below * RT(4800, 5760) >> 10;
+    ph->unk_0x144 = RT(0xC80, 3840);
     heading = (wind->m_Rotation.z << 4) - (below * below >> 11);
   }
 
@@ -889,20 +895,20 @@ static void UpdateSlide(void) {
   int length;
 
   TickInvulnerability();
-  TurnBodyToVelocity(8, 4);
+  TurnBodyToVelocity(RT(8, 10), 4);
   if (g_Spyro.m_slopeAngle < 0x17) {
     VecNull(&friction);
     VecSub(&friction, &friction, &ph->unk_0xe8);
     length = VecMagnitude(&friction, 1);
-    if (length > 0x100)
-      VecScaleToLength(&friction, length, 0x100);
+    if (length > RT(0x100, 369))
+      VecScaleToLength(&friction, length, RT(0x100, 369));
     VecAdd(&ph->unk_0xe8, &ph->unk_0xe8, &friction);
   }
   VecAdd(&ph->unk_0xe8, &ph->unk_0xe8, SLOPE_GRAVITY(ph));
   length = ph->m_SpeedAngle.m_Speed = VecMagnitude(&ph->unk_0xe8, 1);
-  if (length > 0x2300) {
-    VecScaleToLength(&ph->unk_0xe8, length, 0x2300);
-    ph->m_SpeedAngle.m_Speed = 0x2300;
+  if (length > RT(0x2300, 10752)) {
+    VecScaleToLength(&ph->unk_0xe8, length, RT(0x2300, 10752));
+    ph->m_SpeedAngle.m_Speed = RT(0x2300, 10752);
   }
   VecAdd(&ph->m_Acceleration, &ph->unk_0xe8, &ph->unk_0xdc);
 }
@@ -926,13 +932,13 @@ static void UpdateFlyingAbility(void) {
     AccelerateAlongHeading();
     VecCopy(&ph->unk_0xe8, &ph->m_Acceleration);
   } else {
-    ph->m_TargetSpeedAngle.m_Speed = 0x1E00;
-    func_8003D92C(0x240, 0x180);
+    ph->m_TargetSpeedAngle.m_Speed = RT(0x1E00, 9216);
+    func_8003D92C(RT(0x240, 829), RT(0x180, 737));
     AccelerateAlongHeading();
   }
   if (g_Spyro.m_againstWall)
     PushOffWall();
-  ph->m_Acceleration.z -= 0xC0;
+  ph->m_Acceleration.z -= RT(0xC0, 276);
   ClampFall();
 }
 
@@ -950,12 +956,12 @@ static void UpdateStop(void) {
     length = VecMagnitude(&drag, 0);
     if (length > 0x40)
       VecScaleToLength(&drag, length, 0x40);
-    drag.z = -0xC0;
+    drag.z = RT(-0xC0, -276);
     VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &drag);
   } else {
     length = VecMagnitude(&drag, 1);
-    if (length > 0x100)
-      VecScaleToLength(&drag, length, 0x100);
+    if (length > RT(0x100, 369))
+      VecScaleToLength(&drag, length, RT(0x100, 369));
     VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &drag);
     ApplyGroundGravity();
   }
@@ -994,9 +1000,9 @@ static void UpdateCircleMoby(void) {
   around = Atan2(offset.x, offset.y, 1);
   step = (g_Spyro.m_walkingState == 1 ? -D_800758A0 : D_800758A0) >> 6;
 
-  func_8003D3B8(0x280);
+  func_8003D3B8(RT(0x280, 768));
   UpdateSpyroTurnMomentum(0);
-  D_800758A0 += 0x20;
+  D_800758A0 += RT(0x20, 38);
   if (ph->m_TargetSpeedAngle.m_Speed < D_800758A0)
     D_800758A0 = ph->m_TargetSpeedAngle.m_Speed;
   around = (around + step + 0x800) & 0xFFF;
@@ -1015,7 +1021,7 @@ static void UpdateCircleMoby(void) {
   VecCopy(&ph->m_Acceleration, &offset);
   ph->m_SpeedAngle.m_RotZ = (ph->m_SpeedAngle.m_RotZ + step) & 0xFFF;
   if (g_Spyro.m_onEdge)
-    ph->m_Acceleration.z -= 0xC0;
+    ph->m_Acceleration.z -= RT(0xC0, 276);
   else
     ApplyGroundGravity();
 }
@@ -1032,20 +1038,20 @@ static void EaseSpeedTo(int pTarget) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
   if (ph->m_SpeedAngle.m_Speed < pTarget) {
-    ph->m_SpeedAngle.m_Speed += 0x80;
+    ph->m_SpeedAngle.m_Speed += RT(0x80, 184);
     if (pTarget < ph->m_SpeedAngle.m_Speed)
       ph->m_SpeedAngle.m_Speed = pTarget;
   } else if (pTarget < ph->m_SpeedAngle.m_Speed) {
-    ph->m_SpeedAngle.m_Speed -= 0x80;
+    ph->m_SpeedAngle.m_Speed -= RT(0x80, 184);
     if (ph->m_SpeedAngle.m_Speed < pTarget)
       ph->m_SpeedAngle.m_Speed = pTarget;
   }
-  if (ph->m_SpeedAngle.m_Speed < 0x780)
-    ph->m_SpeedAngle.m_Speed = 0x780;
+  if (ph->m_SpeedAngle.m_Speed < RT(0x780, 2304))
+    ph->m_SpeedAngle.m_Speed = RT(0x780, 2304);
 }
 
 /* Roll towards wings level, at most 0x10 a tick: the step. */
-static int RollToLevel(void) { return Clamp(AngleDelta(-g_Spyro.m_Physics.m_SpeedAngle.m_RotX), -0x10, 0x10); }
+static int RollToLevel(void) { return Clamp(AngleDelta(-g_Spyro.m_Physics.m_SpeedAngle.m_RotX), RT(-0x10, -19), RT(0x10, 19)); }
 
 static void AddRoll(int pStep) {
   g_Spyro.m_Physics.m_SpeedAngle.m_RotX = (g_Spyro.m_Physics.m_SpeedAngle.m_RotX + pStep) & 0xFFF;
@@ -1055,7 +1061,7 @@ static void AddRoll(int pStep) {
 static void BankIntoTurn(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
-  AddRoll(Clamp(AngleDelta(-ph->m_TurnMomentum * 8 - ph->m_SpeedAngle.m_RotX), -0x10, 0x10));
+  AddRoll(Clamp(AngleDelta(-ph->m_TurnMomentum * 8 - ph->m_SpeedAngle.m_RotX), RT(-0x10, -19), RT(0x10, 19)));
 }
 
 /* Head for the camera state Spyro's state asks for, drawn in front. */
@@ -1075,8 +1081,8 @@ static void PortalFall(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
   ph->m_Acceleration.z = ph->m_TrueVelocity.z + ph->m_gravity;
-  if (ph->m_Acceleration.z < -0x780)
-    ph->m_Acceleration.z = -0x780;
+  if (ph->m_Acceleration.z < RT(-0x780, -2304))
+    ph->m_Acceleration.z = RT(-0x780, -2304);
 }
 
 /* Pitch while flying out of a portal (m_walkingState 10): climb at first,
@@ -1084,7 +1090,7 @@ static void PortalFall(void) {
 static int PortalPitchStep(void) {
   int pitch = g_Spyro.m_Physics.m_SpeedAngle.m_RotY, step;
 
-  if (g_Spyro.m_idleTimer < 16)
+  if (g_Spyro.m_idleTimer < RT(16, 13))
     return 0;
 
   step = ColFindFloor(&g_Spyro.m_Position, 0x10000);
@@ -1096,20 +1102,20 @@ static int PortalPitchStep(void) {
     }
     if (height < 0x800) {
       step = AngleDelta(-0x100 - pitch) >> 2;
-      return step < -0x3C ? -0x3C : step > 0x3C ? 0x3C : step;
+      return step < RT(-0x3C, -72) ? RT(-0x3C, -72) : step > RT(0x3C, 72) ? RT(0x3C, 72) : step;
     }
   }
 
   if ((u_int)(pitch + 0x100) <= 0x500) {
     g_Spyro.unk_0x254 = 0;
-    return 0x1E;
+    return RT(0x1E, 36);
   }
   g_Spyro.unk_0x254 = 1;
   step = AngleDelta(-0x400 - pitch);
   if (g_LevelId == 22 && Abs(step) < 0x100)
     g_Camera.unk_0xC0 = D_8006C588[g_Spyro.m_State];
   step >>= 4;
-  return step < -0x1E ? -0x1E : step > 0x1E ? 0x1E : step;
+  return step < RT(-0x1E, -36) ? RT(-0x1E, -36) : step > RT(0x1E, 36) ? RT(0x1E, 36) : step;
 }
 
 /* States 15, 23, 32, 33 and 34 without the flying ability: flying through
@@ -1129,11 +1135,14 @@ static void UpdatePortalFlight(void) {
   sinH = Sin(heading);
   ahead = (stickY * cosH - stickX * sinH) >> 12;
 
-  /* Back on the stick slows down to as little as 0x780. */
-  ph->m_TargetSpeedAngle.m_Speed = ahead >= 0 ? 0x1900 : ((int)((u_int)(ahead * 35) << 7) >> 7) + 0x1900;
+  /* Back on the stick slows down to as little as 0x780. PAL: ahead * 42
+   * (computed as (ahead * 21 << 8) >> 7) on a 7680 base. */
+  ph->m_TargetSpeedAngle.m_Speed = ahead >= 0 ? RT(0x1900, 7680)
+                                             : RT((int)((u_int)(ahead * 35) << 7) >> 7,
+                                                  (int)((u_int)(ahead * 21) << 8) >> 7) + RT(0x1900, 7680);
   EaseSpeedTo(ph->m_TargetSpeedAngle.m_Speed);
 
-  ph->m_TurnMomentum = turn * 20 >> 7;
+  ph->m_TurnMomentum = turn * RT(20, 24) >> 7;
   ph->m_SpeedAngle.m_RotZ += ph->m_TurnMomentum; /* not wrapped here */
   g_Spyro.m_bodyRotation.z = ph->m_SpeedAngle.m_RotZ >> 4;
 
@@ -1208,12 +1217,16 @@ static void DpadAxis(int *pAxis, int pPlus, int pMinus) {
  * that height. */
 static int SpeedFromHeight(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
-  int below = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z;
+  int below = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z, root;
 
-  if (below < 0)
-    ph->m_SpeedAngle.m_Speed = 0x1040 - (func_80017A38(-below) << 7);
-  else
-    ph->m_SpeedAngle.m_Speed = (func_80017A38(below) << 6) + 0x1040;
+  /* PAL: the root times 1.2 ((root * 4915) >> 5 or >> 6) on a 4992 base. */
+  if (below < 0) {
+    root = func_80017A38(-below);
+    ph->m_SpeedAngle.m_Speed = RT(0x1040, 4992) - RT(root << 7, root * 4915 >> 5);
+  } else {
+    root = func_80017A38(below);
+    ph->m_SpeedAngle.m_Speed = RT(root << 6, root * 4915 >> 6) + RT(0x1040, 4992);
+  }
   return below;
 }
 
@@ -1278,14 +1291,14 @@ static void FlyFree(void) {
     pitchIn = stickY;
   } else {
     pitchIn = ph->m_SpeedAngle.m_RotY >> 3;
-    if (ph->m_SpeedAngle.m_Speed < 0x1040)
-      pitchIn += (0x1040 - ph->m_SpeedAngle.m_Speed) >> 6;
+    if (ph->m_SpeedAngle.m_Speed < RT(0x1040, 4992))
+      pitchIn += (RT(0x1040, 4992) - ph->m_SpeedAngle.m_Speed) >> 6;
     pitchIn = Clamp(pitchIn, -0x7F, 0x7F);
   }
 
   cosPitch = Cos(ph->m_SpeedAngle.m_RotY);
-  pitchStep = pitchIn * -15 >> 7;
-  turnStep = -stickX * 20 >> 7;
+  pitchStep = pitchIn * RT(-15, -18) >> 7;
+  turnStep = -stickX * RT(20, 24) >> 7;
 
   if (g_Spyro.m_Position.z < g_Spyro.m_highestFlightPoint) {
     Vector3D ahead;
@@ -1296,8 +1309,8 @@ static void FlyFree(void) {
       VecAdd(&ahead, &ahead, &g_Spyro.m_Position);
       if (func_80033E40(&g_Spyro.m_Position, &ahead) == 0) { /* blocked */
         int lift = (g_Spyro.m_Position.z - g_CollisionPoint.z) >> 3;
-        if (lift >= 8)
-          lift = 7;
+        if (lift >= RT(8, 10))
+          lift = RT(7, 9);
         pitchStep += lift;
       }
     }
@@ -1310,18 +1323,18 @@ static void FlyFree(void) {
 
   below = SpeedFromHeight();
   if (!g_IsFlightLevel)
-    ph->m_SpeedAngle.m_Speed += 0x41E;
+    ph->m_SpeedAngle.m_Speed += RT(0x41E, 1308);
   CapSpeed();
   /* Can't dive steeper than the height below the highest point allows. */
-  ceiling = (below + 0x132) >> 2;
+  ceiling = (below + RT(0x132, 441)) >> 2;
   if (ceiling < 0)
     ceiling = 0;
   if (ceiling < ph->m_SpeedAngle.m_RotY)
     ph->m_SpeedAngle.m_RotY = ceiling;
   if (ph->m_SpeedAngle.m_RotY < -0x320)
     ph->m_SpeedAngle.m_RotY = -0x320;
-  if (ph->m_SpeedAngle.m_Speed < 0x780)
-    ph->m_SpeedAngle.m_Speed = 0x780;
+  if (ph->m_SpeedAngle.m_Speed < RT(0x780, 2304))
+    ph->m_SpeedAngle.m_Speed = RT(0x780, 2304);
 
   /* Roll spring: D_80075960 is the roll rate x 64, driven by the turn
    * (less when pitched), damped, and pulled back to level. */
@@ -1342,7 +1355,7 @@ static void FlyLoop(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
 
   ph->m_SpeedAngle.m_RotZ &= 0xFFF;
-  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + 0x1E);
+  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + RT(0x1E, 36));
   if (ph->m_SpeedAngle.m_RotY > 0x400) {
     g_Spyro.unk_0x254 = 1;
   } else if (ph->m_SpeedAngle.m_RotY > 0) {
@@ -1354,7 +1367,7 @@ static void FlyLoop(void) {
 
   SpeedFromHeight();
   CapSpeed();
-  if (ph->m_SpeedAngle.m_Speed < 0x1E00 && !g_Spyro.unk_0x254)
+  if (ph->m_SpeedAngle.m_Speed < RT(0x1E00, 9216) && !g_Spyro.unk_0x254)
     EndManoeuvre();
   func_8003D978();
 }
@@ -1370,7 +1383,7 @@ static void FlyTurnAround(void) {
     int toHeight = D_80075700 - g_Spyro.m_Position.z;
     int pitchStep = AngleDelta(-ph->m_SpeedAngle.m_RotY) + ((toHeight - (ph->m_TrueVelocity.z >> 5)) >> 2);
 
-    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(pitchStep, -0x1E, 0x1E));
+    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(pitchStep, RT(-0x1E, -36), RT(0x1E, 36)));
     ph->m_SpeedAngle.m_RotZ &= 0xFFF;
     if (Abs(ph->m_SpeedAngle.m_RotX) < 0x40) {
       if (Abs(toHeight) < 0x100 && Abs(ph->m_SpeedAngle.m_RotY) < 0x80) {
@@ -1379,14 +1392,14 @@ static void FlyTurnAround(void) {
       }
       ph->m_SpeedAngle.m_RotX = 0;
     } else {
-      D_800758A0 = Clamp(D_800758A0 + RollToLevel(), -0x40, 0x40);
+      D_800758A0 = Clamp(D_800758A0 + RollToLevel(), RT(-0x40, -76), RT(0x40, 76));
       AddRoll(D_800758A0);
     }
     if (ph->m_SpeedAngle.m_RotX > 0x800)
       ph->m_SpeedAngle.m_RotX -= 0x1000;
   } else {
     ph->m_SpeedAngle.m_RotZ &= 0xFFF;
-    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + 0x1E);
+    ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + RT(0x1E, 36));
     if (ph->m_SpeedAngle.m_RotY < -0x400) {
       g_Spyro.unk_0x254 = 1;
       ph->m_SpeedAngle.m_RotZ = (ph->m_SpeedAngle.m_RotZ + 0x800) & 0xFFF;
@@ -1399,7 +1412,7 @@ static void FlyTurnAround(void) {
 
   SpeedFromHeight();
   CapSpeed();
-  if (ph->m_SpeedAngle.m_Speed < 0x1E00 && !g_Spyro.unk_0x254 && ph->m_SpeedAngle.m_RotY < 0x400)
+  if (ph->m_SpeedAngle.m_Speed < RT(0x1E00, 9216) && !g_Spyro.unk_0x254 && ph->m_SpeedAngle.m_RotY < 0x400)
     EndManoeuvre();
   func_8003D978();
 }
@@ -1415,11 +1428,12 @@ static void FlyClimbOut(void) {
     func_80037714(&D_8006EBCC);
   }
 
-  ph->m_SpeedAngle.m_RotY = AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(AngleDelta(0x400 - ph->m_SpeedAngle.m_RotY), -0x1E, 0x1E));
+  ph->m_SpeedAngle.m_RotY =
+      AngleDelta(ph->m_SpeedAngle.m_RotY + Clamp(AngleDelta(0x400 - ph->m_SpeedAngle.m_RotY), RT(-0x1E, -36), RT(0x1E, 36)));
   ph->m_SpeedAngle.m_RotZ &= 0xFFF;
   roll = Abs(ph->m_SpeedAngle.m_RotY - 0x400) < 0x80 ? 0x40 : RollToLevel();
   AddRoll(roll);
-  ph->m_SpeedAngle.m_Speed += Clamp(0x1040 - ph->m_SpeedAngle.m_Speed, -0x80, 0x80);
+  ph->m_SpeedAngle.m_Speed += Clamp(RT(0x1040, 4992) - ph->m_SpeedAngle.m_Speed, -0x80, 0x80);
   func_8003D978();
 }
 
@@ -1430,8 +1444,8 @@ static void FlyIn(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
   int pitch;
 
-  ph->m_TargetSpeedAngle.m_Speed = 0x1900;
-  EaseSpeedTo(0x1900);
+  ph->m_TargetSpeedAngle.m_Speed = RT(0x1900, 7680);
+  EaseSpeedTo(RT(0x1900, 7680));
   g_Spyro.m_bodyRotation.z = ph->m_SpeedAngle.m_RotZ >> 4;
   if (g_Spyro.unk_0x254) {
     if (ph->m_SpeedAngle.m_RotY >= -0xFF)
@@ -1440,7 +1454,7 @@ static void FlyIn(void) {
     g_Spyro.unk_0x254 = 1;
   }
 
-  pitch = (ph->m_SpeedAngle.m_RotY + 0x1E) & 0xFFF;
+  pitch = (ph->m_SpeedAngle.m_RotY + RT(0x1E, 36)) & 0xFFF;
   ph->m_SpeedAngle.m_RotY = pitch;
   g_Spyro.m_bodyRotation.y = pitch >> 4;
   if (pitch > 0x800)
@@ -1489,6 +1503,8 @@ static void SpawnWingTrails(void) {
   if (moving && blend < 13)
     blend += 4;
 
+  /* PAL (SCES-01438) has 89 and 100 here (li 89, +11): a model-data
+   * difference, not a 50 Hz retune, so not under RT. */
   for (i = 0, vertex = 9; i < 2; i++, vertex += 0x5B) {
     Vector3D tip, other;
 
@@ -1560,15 +1576,16 @@ static void UpdateFlying(void) {
 
   /* Speed from the height below the highest point reached: v^2 = v0^2 + 2gh
    * style, through the square root func_80017A38. */
+  /* (PAL scales the root by 1.2: PalSpeed.) */
   climb = g_Spyro.m_highestFlightPoint - g_Spyro.m_Position.z;
   if (climb >= 0)
-    ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed + func_80017A38(climb << 13);
+    ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed + PalSpeed(func_80017A38(climb << 13));
   else
-    ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed - func_80017A38(-climb << 13);
+    ph->m_SpeedAngle.m_Speed = ph->m_TargetSpeedAngle.m_Speed - PalSpeed(func_80017A38(-climb << 13));
   if (ph->m_SpeedAngle.m_Speed > 0x5900)
     ph->m_SpeedAngle.m_Speed = 0x5900;
-  if (ph->m_SpeedAngle.m_Speed < 0x1400) {
-    ph->m_TargetSpeedAngle.m_Speed = 0x1400;
+  if (ph->m_SpeedAngle.m_Speed < RT(0x1400, 6144)) {
+    ph->m_TargetSpeedAngle.m_Speed = RT(0x1400, 6144);
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z;
   }
 
@@ -1578,7 +1595,7 @@ static void UpdateFlying(void) {
     VecAdd(&ph->m_Acceleration, &ph->m_Acceleration, &ph->unk_0xdc);
 
   /* Rumble with speed. */
-  D_8007584C = ((ph->m_SpeedAngle.m_Speed - 0x1400) >> 7) + 20;
+  D_8007584C = ((ph->m_SpeedAngle.m_Speed - RT(0x1400, 6144)) >> 7) + 20;
   if (D_8007584C < 0x50)
     D_8007584C = 0x50;
   if (D_8007584C > 0xA0)

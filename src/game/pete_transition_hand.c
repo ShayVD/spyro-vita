@@ -18,6 +18,7 @@
 #include "loaders.h"
 #include "math.h"
 #include "overlay_pointers.h"
+#include "region.h" /* RT(): PAL 50 Hz retune (D133) */
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
@@ -53,7 +54,7 @@ extern int D_8006EA40[]; // Moby class spawned when he sinks, by D_80075728
 #define STEEP_SLOPE 23 /* m_slopeAngle Spyro can't stand on */
 
 /* A jump out of a charge or supercharge: one kick of upward acceleration. */
-#define JUMP_BOOST 0xDC0
+#define JUMP_BOOST RT(0xDC0, 4224)
 
 #define ph (&g_Spyro.m_Physics)
 
@@ -88,9 +89,9 @@ static int GroundAction(void) {
 static int MovingState(void) {
   int speed = ph->m_SpeedAngle.m_Speed;
 
-  if (speed > 0xF00)
+  if (speed > RT(0xF00, 0x1200))
     return 2;
-  if (speed > 0x780)
+  if (speed > RT(0x780, 0x900))
     return 21;
   return 1;
 }
@@ -100,7 +101,7 @@ static int MovingState(void) {
 static int LandingState(void) {
   if (ph->m_TargetSpeedAngle.m_Speed > 0)
     return MovingState();
-  if (ph->m_SpeedAngle.m_Speed < 0x780) {
+  if (ph->m_SpeedAngle.m_Speed < RT(0x780, 0x900)) {
     func_8003DFA4();
     return 0;
   }
@@ -116,7 +117,7 @@ static int GlideState(void) {
 static int IsBlocked(void) {
   int speed = ph->m_SpeedAngle.m_Speed;
 
-  return speed > 0xC80 && ph->m_TrueSpeed * 2 < speed;
+  return speed > RT(0xC80, 0xF00) && ph->m_TrueSpeed * 2 < speed;
 }
 
 /* Dot products with the floor's normal (m_floorPositonOnSlope); the asm's
@@ -153,7 +154,7 @@ static void EndHurt(int pTicks) {
 /* Falling for ten seconds: in a flight level the level's own handler, else
  * a free life and the death respawn (which takes it again). */
 static void FellTooLong(void) {
-  if (g_Spyro.m_idleTimer <= 300)
+  if (g_Spyro.m_idleTimer <= RT(300, 250))
     return;
   if (g_IsFlightLevel) {
     (*D_80075694)();
@@ -213,13 +214,13 @@ static int FromStanding(void) {
       return 1;
     if (g_Spyro.m_noGamepadUpdateFrames)
       return 0;
-    if (g_Spyro.m_idleTimer < 31)
+    if (g_Spyro.m_idleTimer < RT(31, 26))
       return NONE;
     return g_Spyro.m_onEdge ? NONE : 0;
   }
 
   /* Pushed along (a hit, a moving floor): stopping (3), phase 7. */
-  if (ph->m_TrueSpeed > 0x400) {
+  if (ph->m_TrueSpeed > RT(0x400, 1229)) {
     func_8003EA68(3);
     g_Spyro.m_walkingState = 7;
     return NONE;
@@ -273,9 +274,9 @@ static int FromRunning(void) {
   }
   /* (The asm tests the target speed for 0 again here, which can't be.) */
   speed = ph->m_SpeedAngle.m_Speed;
-  if (speed < 0x640)
+  if (speed < RT(0x640, 0x780))
     return 1;
-  if (speed < 0xC80)
+  if (speed < RT(0xC80, 0xF00))
     return 21;
   return NONE;
 }
@@ -291,11 +292,11 @@ static int FromStopping(void) {
     return next;
   speed = ph->m_SpeedAngle.m_Speed;
   target = ph->m_TargetSpeedAngle.m_Speed;
-  if (speed == 0 && target == 0 && ph->m_TrueSpeed < 0x100)
+  if (speed == 0 && target == 0 && ph->m_TrueSpeed < RT(0x100, 307))
     return 0;
   if (target <= 0)
     return NONE;
-  if (g_Spyro.m_idleTimer < 18 &&
+  if (g_Spyro.m_idleTimer < RT(18, 15) &&
       func_80017928(ph->m_TargetSpeedAngle.m_RotZ, ph->m_SpeedAngle.m_RotZ) > 0x500)
     return 4;
   return speed > 0 ? MovingState() : NONE;
@@ -307,11 +308,11 @@ static int FromTurning(void) {
     return NONE;
   if (IsFalling())
     return 6;
-  if (g_Spyro.m_idleTimer < 37)
+  if (g_Spyro.m_idleTimer < RT(37, 31))
     return NONE;
   if (g_Pad.m_NoMovementButtonPressed)
     return 0;
-  ph->m_SpeedAngle.m_Speed = 0xA00;
+  ph->m_SpeedAngle.m_Speed = RT(0xA00, 0xC00);
   return 1;
 }
 
@@ -328,7 +329,7 @@ static int FromJumping(void) {
   if (g_Spyro.m_walkingState == 0 && !(g_Pad.m_Held & PAD_CROSS) && !D_800756B4)
     g_Spyro.m_walkingState = 2;
 
-  if (g_Spyro.m_airTime == 0 && g_Spyro.m_idleTimer >= 16) {
+  if (g_Spyro.m_airTime == 0 && g_Spyro.m_idleTimer >= RT(16, 14)) {
     if (g_Spyro.m_slopeAngle >= STEEP_SLOPE)
       return 19;
     if (FloorDot3(&ph->m_Acceleration) >= 0)
@@ -337,12 +338,12 @@ static int FromJumping(void) {
   }
   if (g_Pad.m_Held & PAD_SQUARE) {
     func_8003EA68(20);
-    ph->m_SpeedAngle.m_Speed = 0x1F80;
+    ph->m_SpeedAngle.m_Speed = RT(0x1F80, 9677);
     return NONE;
   }
   if (!g_Spyro.m_onSlope && g_Spyro.m_walkingState == 1 && g_Spyro.m_isGliding)
     return GlideState();
-  if (ph->m_TrueVelocity.z < -0x1900 || g_Spyro.m_idleTimer > 120)
+  if (ph->m_TrueVelocity.z < RT(-0x1900, -0x1E00) || g_Spyro.m_idleTimer > RT(120, 100))
     return 6;
   return NONE;
 }
@@ -358,7 +359,7 @@ static int FromAirborne(void) {
     if (g_Spyro.m_walkingState == 0) {
       int next = GlideState();
 
-      if (!g_Spyro.m_onSlope || g_Spyro.m_idleTimer >= (next == 32 ? 16 : 31))
+      if (!g_Spyro.m_onSlope || g_Spyro.m_idleTimer >= (next == 32 ? RT(16, 14) : RT(31, 27)))
         return next;
       return NONE;
     }
@@ -405,7 +406,7 @@ static int FromSidestep(int pButton) {
     return NONE;
   if (IsFalling())
     return 6;
-  if ((g_Pad.m_Held & pButton) || g_Spyro.m_idleTimer <= 20)
+  if ((g_Pad.m_Held & pButton) || g_Spyro.m_idleTimer <= RT(20, 17))
     return NONE;
   VecCopy(&ph->m_Acceleration, &ph->unk_0xe8);
   ph->m_SpeedAngle.m_Speed = 0;
@@ -442,13 +443,13 @@ static int FromCharging(void) {
     g_Spyro.m_walkingState &= ~0x80;
     return NONE;
   }
-  if (ph->m_SpeedAngle.m_Speed > 0x3000)
+  if (ph->m_SpeedAngle.m_Speed > RT(0x3000, 14746))
     return 44;
   if (g_Spyro.m_walkingState & 0x80)
     return NONE;
   g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z;
   speed = VecMagnitude(&ph->unk_0xe8, 1);
-  ph->m_TargetSpeedAngle.m_Speed = speed < 0x1F80 ? 0x1F80 : speed;
+  ph->m_TargetSpeedAngle.m_Speed = speed < RT(0x1F80, 9677) ? RT(0x1F80, 9677) : speed;
   g_Spyro.m_walkingState |= 0x80;
   return NONE;
 }
@@ -457,9 +458,9 @@ static int FromCharging(void) {
 static int FromKnockback(void) {
   if (HandleSpyroDamage(DAMAGE_ALL))
     return NONE;
-  if (g_Spyro.m_idleTimer > 16 && (g_Spyro.m_airTime != 0 || g_Spyro.m_slopeAngle >= STEEP_SLOPE))
+  if (g_Spyro.m_idleTimer > RT(16, 13) && (g_Spyro.m_airTime != 0 || g_Spyro.m_slopeAngle >= STEEP_SLOPE))
     return 6;
-  return g_Spyro.m_idleTimer > 24 ? 0 : NONE;
+  return g_Spyro.m_idleTimer > RT(24, 20) ? 0 : NONE;
 }
 
 /* States 15 (gliding) and 23 (gliding slowly). Lands, falls when it loses
@@ -470,12 +471,12 @@ static int FromGlide(void) {
     return NONE;
   if (g_Spyro.m_airTime == 0)
     return g_Spyro.m_slopeAngle >= STEEP_SLOPE ? 6 : LandingState();
-  if (!g_Spyro.m_floorIdleTime || ph->m_TrueSpeed < 0x400)
+  if (!g_Spyro.m_floorIdleTime || ph->m_TrueSpeed < RT(0x400, 853))
     return 6;
   if (g_Pad.m_Held & PAD_SQUARE)
     return 20;
   if (g_Spyro.m_State == 15) {
-    if (g_Spyro.m_idleTimer > 16 && (g_Pad.m_Down & PAD_TRIANGLE))
+    if (g_Spyro.m_idleTimer > RT(16, 13) && (g_Pad.m_Down & PAD_TRIANGLE))
       return 16;
     if (g_Spyro.m_flyingAbility) {
       if (g_Spyro.m_walkingState == 0)
@@ -484,7 +485,7 @@ static int FromGlide(void) {
     }
     if (g_Spyro.m_walkingState == 0 && g_Spyro.m_highestFlightPoint + 0x18 < g_Spyro.m_Position.z)
       return 6;
-    if (ph->m_SpeedAngle.m_Speed >= 0xC80 || g_Spyro.m_idleTimer <= 16)
+    if (ph->m_SpeedAngle.m_Speed >= RT(0xC80, 0xF00) || g_Spyro.m_idleTimer <= RT(16, 13))
       return NONE;
     return 23;
   }
@@ -493,7 +494,7 @@ static int FromGlide(void) {
     return 16;
   if (g_Spyro.m_highestFlightPoint + 0x18 < g_Spyro.m_Position.z)
     return 6;
-  return ph->m_SpeedAngle.m_Speed > 0xC80 ? GlideState() : NONE;
+  return ph->m_SpeedAngle.m_Speed > RT(0xC80, 0xF00) ? GlideState() : NONE;
 }
 
 /* State 16: dropping out of a glide. Landing stands (early, on flat
@@ -502,7 +503,7 @@ static int FromDrop(void) {
   if (HandleSpyroDamage(DAMAGE_ALL))
     return NONE;
   if (g_Spyro.m_Position.z >= D_8006E9A4[g_LevelIndex] && g_Spyro.m_airTime == 0) {
-    if (g_Spyro.m_idleTimer < 24 && g_Spyro.m_slopeAngle < STEEP_SLOPE) {
+    if (g_Spyro.m_idleTimer < RT(24, 20) && g_Spyro.m_slopeAngle < STEEP_SLOPE) {
       func_8003EA68(0);
     } else {
       func_8003EA68(6);
@@ -516,7 +517,7 @@ static int FromDrop(void) {
     FellTooLong();
     return NONE;
   }
-  if (!g_Spyro.m_onSlope || g_Spyro.m_idleTimer >= 16)
+  if (!g_Spyro.m_onSlope || g_Spyro.m_idleTimer >= RT(16, 14))
     return 15;
   return NONE;
 }
@@ -530,7 +531,7 @@ static int FromIdleAnimation(void) {
     return NONE;
   if ((next = GroundAction()) != NONE)
     return next;
-  if (ph->m_TrueSpeed > 0x400)
+  if (ph->m_TrueSpeed > RT(0x400, 1229))
     return 3;
   if (!CameraHoldsSpyro()) {
     if (!g_Pad.m_NoMovementButtonPressed)
@@ -560,13 +561,13 @@ static int FromSliding(void) {
     return NONE;
   if ((g_Pad.m_Held & PAD_CROSS) && g_Spyro.m_idleTimer < 4)
     return 5;
-  if ((g_Pad.m_Held & PAD_SQUARE) && ph->m_SpeedAngle.m_Speed > 0x1F00)
+  if ((g_Pad.m_Held & PAD_SQUARE) && ph->m_SpeedAngle.m_Speed > RT(0x1F00, 9523))
     return 20;
   if (g_Spyro.m_airTime >= 8)
     return 6;
   if (g_Spyro.m_slopeAngle < STEEP_SLOPE &&
       g_Spyro.m_nextBodyAnimationFrame == spyro_AnimationDetails[20].m_EndFrame - 1 &&
-      ph->m_TrueSpeed < 0x900)
+      ph->m_TrueSpeed < RT(0x900, 2765))
     return LandingState();
   FellTooLong();
   return NONE;
@@ -600,9 +601,9 @@ static int FromTrotting(void) {
     return NONE;
   if ((next = GroundAction()) != NONE)
     return next;
-  if (ph->m_SpeedAngle.m_Speed > 0xF00)
+  if (ph->m_SpeedAngle.m_Speed > RT(0xF00, 0x1200))
     return 2;
-  return ph->m_SpeedAngle.m_Speed < 0x640 ? 1 : NONE;
+  return ph->m_SpeedAngle.m_Speed < RT(0x640, 0x780) ? 1 : NONE;
 }
 
 /* State 24: the supercharge's jump. Cross held in the first ticks
@@ -676,16 +677,16 @@ static void FromFlightGlide(int pState) {
   vz = ph->m_TrueVelocity.z;
   if (g_Spyro.m_airTime == 0) {
     next = g_Spyro.m_slopeAngle >= STEEP_SLOPE ? 6 : LandingState();
-  } else if (!g_Spyro.m_floorIdleTime || ph->m_TrueSpeed < 0x400) {
+  } else if (!g_Spyro.m_floorIdleTime || ph->m_TrueSpeed < RT(0x400, 853)) {
     next = 6;
   } else if (pState == 32) {
-    if (vz > 0x800 || (g_Pad.m_Down & PAD_CROSS))
+    if (vz > RT(0x800, 2458) || (g_Pad.m_Down & PAD_CROSS))
       next = 33;
-    else if (vz < -0x1000)
+    else if (vz < RT(-0x1000, -4915))
       next = 34;
   } else if (pState == 34 && (g_Pad.m_Down & PAD_CROSS)) {
     next = 33;
-  } else if (g_Spyro.m_idleTimer >= 31 && (pState == 33 ? vz < 0x600 : vz >= -0xBFF)) {
+  } else if (g_Spyro.m_idleTimer >= RT(31, 26) && (pState == 33 ? vz < RT(0x600, 1843) : vz >= RT(-0xBFF, -3685))) {
     next = 32;
   }
   if (next != NONE)
@@ -699,7 +700,7 @@ static void FromFlightGlide(int pState) {
     func_8003EA68(20);
     return;
   }
-  if (g_Spyro.m_idleTimer > 16 && (g_Pad.m_Down & PAD_TRIANGLE))
+  if (g_Spyro.m_idleTimer > RT(16, 13) && (g_Pad.m_Down & PAD_TRIANGLE))
     func_8003EA68(16);
 }
 
@@ -713,7 +714,7 @@ static int FromSupercharge(void) {
   if (HandleSpyroDamage(DAMAGE_SUPERCHARGE))
     return NONE;
   if (g_Pad.m_Held & PAD_CROSS) {
-    if (D_80075700 >= 10 || g_Spyro.m_airTime != 0)
+    if (D_80075700 >= RT(10, 8) || g_Spyro.m_airTime != 0)
       jump = 1;
     else
       D_80075700 += g_DeltaTime;
@@ -732,11 +733,11 @@ static int FromSupercharge(void) {
   }
   if (g_Spyro.m_slopeAngle >= STEEP_SLOPE)
     return 6;
-  if (g_Spyro.m_idleTimer >= 15 && !(g_Pad.m_Held & PAD_SQUARE))
+  if (g_Spyro.m_idleTimer >= RT(15, 13) && !(g_Pad.m_Held & PAD_SQUARE))
     return 11;
   if (!g_Spyro.m_touchingMoby && IsBlocked() && !g_HasLevelTransition)
     return 12;
-  return ph->m_SpeedAngle.m_Speed < 0x1E00 ? 11 : NONE;
+  return ph->m_SpeedAngle.m_Speed < RT(0x1E00, 0x2400) ? 11 : NONE;
 }
 
 /// @brief Spyro's state machine: after the physics, picks his next state
@@ -782,14 +783,14 @@ void func_80041670(void) {
    * hit is still on (7: 0x20, 25: 0x10). */
   case 7:
     if (!(g_Spyro.m_DamageFlags & 0x20))
-      EndHurt(24);
+      EndHurt(RT(24, 20));
     break;
   case 25:
     if (!(g_Spyro.m_DamageFlags & 0x10))
-      EndHurt(24);
+      EndHurt(RT(24, 20));
     break;
-  case 14: case 22: case 28: EndHurt(24); break;
-  case 27: EndHurt(48); break;
+  case 14: case 22: case 28: EndHurt(RT(24, 20)); break;
+  case 27: EndHurt(RT(48, 40)); break;
 
   default: /* 30, 31: dying */
     break;
