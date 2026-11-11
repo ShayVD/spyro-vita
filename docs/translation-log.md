@@ -573,3 +573,16 @@ Region switches in the decomp's C (`patches/spyro-1-region/0003-pal-headers-and-
 | `FloorTerrain` (`collision_hand.c`, `func_8004DF24`'s camera path) | hand C: `g_CollisionNormal = n` on PAL | read against PAL 0x800538B4 (stores the normal's three words); no Redux sample yet | none known |
 | `func_80047B60`'s states 6 and 16 (`pete_dispatch_hand.c`) | hand C: x and y of the post-collision velocity on PAL, `VecCopy` on US | read against PAL 0x8004D6F0; no Redux sample yet | none known |
 | `PortWadHeader`, `PortLevelHeader`, `PortRegionData` (`src/game/region_game.c`) | port code | US: the original copies, so the US host checks; PAL: the host boots the PAL disc to the title flythrough | — |
+## PAL timing: R3's retune in the hand C (2026-11-10, decisions D135)
+
+No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT(us, pal)` (`include/region.h`, D133): with `g_RegionTiming` 0 (the US disc, JP, PAL 60) each is its US literal, spelled as it was, so the US code is unchanged (`tools/host_checks.sh`: 279 of 279 files byte-identical). Each site was found by aligning the function's asm with PAL's (`tools/regions/retune.py sites`, strictly: only relocated immediates masked) and placed in the hand C by reading the two side by side (`retune.py context`); the maps, site by site, are in `docs/pal-retune/`.
+
+| Function | File | PAL sites | Notes |
+|---|---|---|---|
+| `func_80043FE4` | `src/game/pete_hand.c` | 176 of 178; 34 changed sequences | `PalSpeed(v)` (`RT(v, v * 4915 >> 12)`: PAL multiplies a square root by 1.2); `SpeedFromHeight`, the portal flight's target speed and four multipliers restructured with the US expression kept inside `RT`. Sites 116 and 117 (the wing trail's vertex indices) are a model difference, not timing: left, marked |
+| `func_8003EA68` | `src/game/pete_state_hand.c` | 64 of 64 | four PAL behaviour changes (three added sounds, a level-43 supercharge gravity) not taken, marked |
+| `func_8003FE40` | `src/game/pete_state_hand.c` | 3 of 3 | |
+| `func_80041670` | `src/game/pete_transition_hand.c` | 89 of 89 | |
+| `func_80034CE8`, `func_800357A4`, `func_80035FB4` | `src/game/camera_hand.c` | 17 of 17 | `ClampSpeedRange`: PAL's first azimuth clamp is −2458..2457, the second stays ±0x800 |
+
+**Verified by:** reading (the maps), and the US host checks for the US path. Not yet by PCSX-Redux on the PAL disc: the host can't run PAL until R2 (it stops before the first VSync), so the traces of Spyro's speed against Redux at 25 Hz come with R4.
