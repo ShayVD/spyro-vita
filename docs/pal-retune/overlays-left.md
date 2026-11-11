@@ -1,5 +1,8 @@
 # Overlay timing sites left after R3 (D137)
 
+**Done (D146):** every site below, and PAL's inserted code around them, is ported. 249 of the WAD's 253 overlay functions are strictly PAL's, and no constant differs outside the credits overlay. What's left, scheduling only, is in D146. The list is kept as D137's record; its line numbers are the tree before D146.
+
+
 `REGION=pal` build against the PAL disc (`build_matching.sh`'s `compare-wad-strict.txt`), the sites whose PAL/US ratio is a timing one, in R3's three sources: **542 site instances on 154 lines**. Each needs reading (`retune.py context`): the literal isn't on or next to the line (a macro, a value computed from others, a register the compiler kept), or PAL changed it in some levels and not others. Lines are the patched tree's (`build/s1-matching-pal/src/overlays/`, the decomp's line plus the one `#include "region.h"`).
 
 Outside R3's sources (R2's): `balloonist.c` 70, `titlescreen.c` 14; 23 with no line.

@@ -24,11 +24,16 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 src="$root/third_party/spyro-1"
 region="${REGION:-us}"
+ld_extra=""
 case "$region" in
   us) region_n=0; target=all; out="$root/build/s1-matching" ;;
   # the decomp's "all" ends with its own SHA-256 check of the US outputs;
-  # "non_matching" builds the same files without it
-  pal) region_n=1; target=non_matching; out="$root/build/s1-matching-pal" ;;
+  # "non_matching" builds the same files without it.
+  # PAL's flight overlays copy their text from tables with strcpy (D145),
+  # which the US code only ever inlines (constant strings): the decomp has no
+  # strcpy to link, so it's PAL's own address (PsyQ libc; D146)
+  pal) region_n=1; target=non_matching; out="$root/build/s1-matching-pal"
+       ld_extra="--defsym=strcpy=0x80067B9C" ;;
   jp) region_n=2; target=non_matching; out="$root/build/s1-matching-jp" ;;
   *) echo "REGION must be us, pal or jp" >&2; exit 1 ;;
 esac
@@ -72,7 +77,8 @@ done
 docker build --platform "$platform" -t "$image" "$out" >/dev/null
 docker run --rm --platform "$platform" -v "$out:/s1" "$image" bash -c "
   mkdir -p build/src/overlays build/asm build/wad
-  make $target -j$jobs SHELL='/bin/bash -o pipefail' GCC='mipsel-linux-gnu-cpp -DREGION=$region_n'
+  make $target -j$jobs SHELL='/bin/bash -o pipefail' GCC='mipsel-linux-gnu-cpp -DREGION=$region_n' \
+    ${ld_extra:+PSYQ_LIB='$ld_extra'}
 "
 
 if [ "$region" != us ]; then

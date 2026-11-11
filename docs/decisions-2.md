@@ -1713,3 +1713,59 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - **Vita3K** (this branch's VPK, `region_dev=1`, the PAL image): the logos, the flythrough and the Stone Hill demo (`logs/r4/v3k-pal-demo`); a new game through the intro cutscene into Artisans in play, with music and sounds (`logs/r4/v3k-pal-newgame`, `realtime=0`, the host's pad: 140 s of audio for 7,000 vblanks, 50 Hz); saves in `ux0:data/spyro/save/pal`. These runs were before #129 (D139): the title screen was then the US overlay drawing PAL's data (garbled); #129 brings PAL's title.
   - **US unchanged:** `tools/host_checks.sh`, main `3f70f0d`'s binary (`build/bins/r4-main`, built from main's host sources before this PR's C changes) against this branch's final binary: **287 of 287 files identical** (demo 28, the whole tour 143, routes A and B 58 each; logs with their folder names masked; `logs/r4hc-main-*`, `logs/r4hc-br6-*`, `logs/r4/hc-cmp-main-br6.txt`); after merging main `79facf6` (#127, D142), again **287 of 287** against that main's host sources (`logs/r4hc-main2-*`, `logs/r4hc-br7-*`, `logs/r4/hc-cmp-main2-br7.txt`), and its matching build `PSX.EXE SHA-1 OK` (`logs/r4/matching-us2.txt`). ctest: 30 of 30 (`vcount` first failed to start, its binary without the execute bit from Docker's file sharing as in D136, D141; passed once set; `logs/r4/ctest*.txt`). US matching build: `PSX.EXE SHA-1 OK` (`logs/r4/matching-us.txt`). `tools/check_no_assets.sh`: exit 0.
 - **Not done (R4's later parts):** the overlays' PAL code (its own stage, above), then the demos tick for tick; route B's balloon half and the tour in each language (after R2 part B); hardware (proposed, the owner's yes first); turning PAL on.
+
+## 2026-11-11 — the PAL disc: R3, part 4 (the overlays' PAL code)
+
+### D146. Stage R3, part 4: the level overlays' PAL code. The sequences PAL inserted or rewrote in `moby_update.c`, `moby_spawn.c` and `particle_spawn.c`, and the timing sites D137 left there, are `REGION_IS(PAL)`, `RV()` and `RT()` in the decomp's C, so that with `-DREGION=1` the level overlays compile to PAL's own code. Of the 35 level overlays' functions from those sources, all but two are strictly PAL's, constants included: `UpdateMoby` 33 of 35, `SpawnMoby`, `SpawnParticle` and `UpdateParticle` 35 of 35 each. Counting every function in the WAD's overlays (R2's balloonist, flight and title ones included), 249 of 253 are PAL's (146 before), and no constant differs outside the credits overlay (1,913 before). Two new macros take the retunes PAL computes: `RT_TIME(t)` (a duration's 5/6, with PAL's rounding and its second evaluation of `t`) and `RT_SPEED(v)` (a speed's 6/5)
+- **Why:** R4 (D143) found the PAL attract demos leave the PS1's path on the first tick of play. Sparx draws rand() four times a tick on PAL and three on the host; the fourth is in a sequence PAL inserted (LEVEL_11 0x8008BC40). D137 had left those sequences (about 154 in the moby update functions) and 542 constant sites. Until they're ported no PAL demo or route can match the PS1 tick for tick, and PAL stays refused for players.
+- **Method:** each round was `REGION=pal tools/build_matching.sh`, then `retune.py sites wad` (D135): every overlay function aligned with PAL's, constants compared strictly, each difference mapped to its C line through the build's DWARF. Each was read beside PAL's MIPS and written as one of these:
+  - `RT(us, pal)` when PAL's value is US's ×6/5 or ×5/6 (rounded): the 50 Hz retune. PAL 60 keeps US's value.
+  - `RT_TIME()` or `RT_SPEED()` when PAL scales a value the code computes: a random duration, a path node's speed, a thrown arc.
+  - `RV(us, pal, jp)` when no timing formula gives PAL's value: a release change, which PAL 60 keeps.
+  - `REGION_IS(PAL)` for code PAL added or dropped, with `#if REGION_HAS_PAL` where US's build mustn't see a symbol.
+  
+  Two gcc 2.7.2 habits mattered:
+  - It merges identical blocks, so a PAL block that "jumps elsewhere" was a twin that had been retuned in one copy only.
+  - It keeps a much-used constant in a saved register. LEVEL_61's 445 unpaired instructions (a whole function's registers) came from three `MobyMoveWithGravity` arguments that PAL changes from 16 to 19. With them retuned, gcc keeps 2 in `$fp`, as PAL's code does.
+- **`RT_TIME(t)`:** `t >= 6 ? (t * 5 + 3) / 6 : t`, PAL's own macro, with its branches in PAL's order. PAL evaluates `t` once for the test and again for the value, so a random duration (`rand()`, `RandRange()`) draws twice on PAL. That is Sparx's fourth rand(), and the butterflies' and the ambient emitters' extra draws. The macro does the same at PAL 50; US, JP and PAL 60 evaluate `t` once, as US's code does.
+- **What PAL changed besides the retune** (each a `REGION_IS(PAL)` or an `RV()`; the patch has the rest):
+  - **The accents:** classes 365–369 are the accents 'a'–'e' in PAL's text. `overlays/mobys.yaml` names them "Accent a..e (PAL)" in every overlay, and they're spawned and updated with the letters (`case 365 ... 369` under `REGION_HAS_PAL`).
+  - **The crystal dragons' props** (class 250): PAL's props hold the second cutscene's length in the four other languages after `m_CutsceneTicks` (D134). This class's shake timer and stored angles are therefore four words further on (`DRAGON_SHAKE`, `DRAGON_ANGLES`), in a patch of their own in both builds' series (`0010-pal-dragon-props.patch`).
+  - **The egg thieves** (class 33):
+    - their speed by level: 0xEA in Peace Keepers, 0xF0 in Dry Canyon, 0xF6 elsewhere (US 0xCD in all);
+    - a turn of their own at a path's end (`m_0x30`);
+    - their own catch-up speed.
+  - **Language and dialogue:**
+    - the ending cutscenes by language (`g_CutsceneIdx = g_Language * 3 + 2` for Gnasty Gnorc, `+ 3` for Gnasty's Loot's ending);
+    - an added sound in Gnasty Gnorc's fight, in English only;
+    - the Gnorc Gnexus balloonist's random top line;
+    - the five homeworld balloonists' greeting, one of 2 (US 3).
+  - **Moved or dropped behaviour:**
+    - Toasty's Shepherd moves with `MobyMoveWithGravity` (US: `MobyMove`), and each charge goes 0x78 further.
+    - Toasty's Sheepdog drops a homing gem and isn't marked killed, and drops nothing when it falls out.
+    - The Slap-Happy Armored Monk flips its `m_0x10` when it comes back, not when it's hit.
+    - The Gnorc-Adier snaps to the ground under 0x800.
+    - Jacques also updates his collision and skips an unused distance.
+    - The Metalback Spiders play two sounds US doesn't.
+  - **Moby fields set:**
+    - The Gnorc's charge knockback sets `m_CollisionRange` 1.
+    - The Armoured Ice Gnorc sets `m_DepthOffset` −2 as it lands.
+    - The TNT and Gnorc Cove barrels clear `m_Rotation.y` as they roll.
+  - **Gnasty's tracers:** the tracer projectiles' rows are 125 points in Gnasty Gnorc's fight (US 150) and 121 for the Dream Weavers cannon (US 145).
+  - **Values that aren't timing** (`RV`): the Key Thief's (Gnasty) speeds, the Kiss Fairy's path distance, the Tree Tops thieves', Toasty's, the Cauldron's, the Armored Horrors' frame range.
+  - **Order only** (no behaviour): the Machine Gunner and the Barrel Dispenser set two fields in PAL's order, under `REGION_IS`, for the strict match.
+  - **R3's mistakes, corrected:**
+    - Doctor Shemp's attack test was `RT(9, 6)`; PAL keeps 9.
+    - In the port, R3's `0005` had left three `MobyMoveWithGravity` calls in Artisans' 60 Hz classes at `0xC, 0xC`. They're `RT()` now, as in the matching build.
+- **The port:** the matching build's edit is the reference.
+  - The port's `moby_update.c` gets the same change by a three-way merge: the port's file before, the matching build's before, the matching build's after.
+  - The conflicts were resolved by hand: the three calls above, and four 60 Hz lines where `T60_SHARE()` now shares PAL's value (`T60_SHARE(RT(100, 120))` and similar).
+  - The patches are `patches/spyro-1-region/0009` (the other four files, and what both builds share), `spyro-1-region-matching/0009` and `0010`, and `spyro-1-region-port/0009` and `0010`. `spyro-1-tick60/0001` was regenerated over them the same way.
+- **The PAL matching build links again:** R2's PAL `flight.c` (D145) calls `strcpy`, which the decomp doesn't define. `build_matching.sh` gives PAL's link `--defsym=strcpy=0x80067B9C` (PsyQ's libc in PAL's executable).
+- **What's left in the overlays** (`compare-wad-strict.txt`):
+  - `UpdateMoby_LEVEL_21` (2 instructions): the Musket Gnorc's (Dry Canyon) two frame stores, in another register and order.
+  - `UpdateMoby_LEVEL_64` (1 instruction): the Key Thief's (Gnasty's Loot) speed constant, loaded later.
+  
+  Both have the same values and stores as PAL's: gcc's scheduling, not behaviour. The credits overlay's two functions (36 constant sites) are hand C in the port (`credits_hand.c`, retuned in D139) and asm in the matching build, so they're outside these sources.
+- **PAL 60 and the tracer rows:** `RT()` keeps US's 150- and 145-point rows under PAL 60, with PAL's code around them. Whether PAL's props hold three US-sized rows isn't checked; the props are the level's own, from PAL's WAD. PAL 60 is a developer mode until R4 turns PAL on.
+- **Not judged for 60 Hz:** PAL's added code (the egg thieves' turn, the Shepherd's move, the added resets) wasn't judged as D144's classes were. `--tick60` is off on the PAL disc (D138), so nothing runs it yet; it's a follow-up for when PAL gets 60 Hz.

@@ -73,6 +73,8 @@ Two passes of `retune.py propose`, taking only the proposals whose PAL/US ratio 
 
 No function gained a site. No overlay function is strictly the same yet: every `UpdateMoby` keeps PAL's inserted code (the unpaired instructions), which is the next piece of work. The 542 sites left are listed by line in `docs/pal-retune/overlays-left.md`; each needs reading (a macro, a value computed from others, or a literal PAL changed in some levels only).
 
+**D146 (R3, part 4)** ported the 542 sites and PAL's inserted code. `UpdateMoby` is strictly PAL's in 33 of the 35 level overlays (the other two differ only in gcc's scheduling, same values). `SpawnMoby`, `SpawnParticle` and `UpdateParticle` are PAL's in all 35. The new `RT_TIME()` and `RT_SPEED()` take the durations and speeds PAL computes (`include/region.h` through the region patches).
+
 **Not taken, for R2:** `balloonist.c` (its dialogue is rewritten for the five languages; 70 timing sites) and `flight.c`'s results screen (its text layout), and the proposals with no timing ratio (the 256-line picture's layout, alignments in rewritten code).
 
 ## Not R3's
