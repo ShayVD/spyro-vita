@@ -1,0 +1,75 @@
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -1198,6 +1198,12 @@
+   int absDelta;
+   int reached;
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D144): the step and the turn a tick, shared over its two
++  // vblanks
++  maxMag = T60_SHARE(maxMag);
++  clampRange = T60_SHARE(clampRange);
++#endif
+   VecSub(&dir, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
+          &pMoby->m_Position);
+   rot.x = 0;
+@@ -1328,6 +1334,10 @@
+   int floorZ;
+   int result;
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D144): the turn a tick, shared over its two vblanks
++  turnRate = T60_SHARE(turnRate);
++#endif
+   // Calculate direction vector from moby to current waypoint
+   VecSub(&vec, &pPath->m_Nodes[pPath->m_CurrentNode].m_Position,
+          &pMoby->m_Position);
+@@ -1381,6 +1391,26 @@
+   vec.z = 0;
+   VecRotateByMatrix(&matrix, &vec, &vec);
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D144): the smoothing once a tick, on its first vblank (with
++  // the whole tick's step); each vblank moves its share of the velocity
++  if (pVelocity != nullptr) {
++    if (g_DeltaTime != 1 || !g_t60.upper) {
++      VecAdd(pVelocity, pVelocity, &vec);
++      VecCopy(&vec, pVelocity);
++      VecShiftRight(&vec, 2);
++      VecSub(pVelocity, pVelocity, &vec);
++    }
++    vec.x = T60_SHARE(pVelocity->x);
++    vec.y = T60_SHARE(pVelocity->y);
++    vec.z = T60_SHARE(pVelocity->z);
++  } else {
++    vec.x = T60_SHARE(vec.x);
++    vec.y = T60_SHARE(vec.y);
++    vec.z = T60_SHARE(vec.z);
++  }
++  VecAdd(&vec, &pMoby->m_Position, &vec);
++#else
+   if (pVelocity != nullptr) {
+     // Smooth velocity using exponential moving average (decay factor 0.75)
+     VecAdd(pVelocity, pVelocity, &vec);
+@@ -1391,6 +1421,7 @@
+   } else {
+     VecAdd(&vec, &pMoby->m_Position, &vec);
+   }
++#endif
+ 
+   // Perform moby-to-moby collision check
+   if (bounds != 0) {
+@@ -2088,6 +2119,13 @@
+   int azimuth;
+   int elevation;
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D144): the move and the turns a tick, shared over its two
++  // vblanks
++  pSpeed = T60_SHARE(pSpeed);
++  turnRateH = T60_SHARE(turnRateH);
++  turnRateV = T60_SHARE(turnRateV);
++#endif
+   result = 0;
+ 
+   VecSub(&diff, pTarget, &pMoby->m_Position);
