@@ -10,6 +10,8 @@
  *    presenter's copy of the same level's function, which pres_draw.c finds
  *    on the game thread (g_pres_ovl), or a function that does nothing if
  *    the game's pointer is none of them (counted there);
+ *  - pres_letters (D144): the same for the letter count PAL's flight
+ *    results call through g_PalLetterCount;
  *  - pres_rand: libc's rand (rand_psyq.c) on the snapshot's seed
  *    (D_80075AC0, pres_snap_names.h);
  *  - pres_SpuSetVoiceAttr: the SPU write PlaySound makes, dropped, as D30's
@@ -18,20 +20,24 @@
 
 #include "pres_draw.h"
 
-#define FLIGHT(n) void Flight5_LEVEL_##n(void); int Flight4_LEVEL_##n(int, void *, int);
+#define FLIGHT(n) void Flight5_LEVEL_##n(void); int Flight4_LEVEL_##n(int, void *, int); \
+  int func_pal_80081758_LEVEL_##n(char *);
 #define BALLOON(n) void Balloonist4_LEVEL_##n(void);
 PRES_FLIGHT_LEVELS(FLIGHT)
 PRES_BALLOON_LEVELS(BALLOON)
 
 static void none(void) {}
 static int none4(int a, void *b, int c) { return (void)a, (void)b, (void)c, 0; }
+static int none_letters(char *t) { return (void)t, 0; }
 
 #define F5(n) Flight5_LEVEL_##n,
 #define F4(n) Flight4_LEVEL_##n,
 #define B4(n) Balloonist4_LEVEL_##n,
+#define FL(n) func_pal_80081758_LEVEL_##n,
 static void (*const s_flight5[])(void) = {PRES_FLIGHT_LEVELS(F5) none};
 static int (*const s_flight4[])(int, void *, int) = {PRES_FLIGHT_LEVELS(F4) none4};
 static void (*const s_balloon4[])(void) = {PRES_BALLOON_LEVELS(B4) none};
+static int (*const s_letters[])(char *) = {PRES_FLIGHT_LEVELS(FL) none_letters};
 
 static int pick(int which, int n) {
   const int i = g_pres_ovl[which];
@@ -48,6 +54,10 @@ int (**pres_flight4(void))(int, void *, int) {
 
 void (**pres_balloon4(void))(void) {
   return (void (**)(void))&s_balloon4[pick(PRES_OVL_BALLOON4, PRES_BALLOONS)];
+}
+
+int (**pres_letters(void))(char *) {
+  return (int (**)(char *))&s_letters[pick(PRES_OVL_LETTERS, PRES_FLIGHTS)];
 }
 
 extern unsigned int D_80075AC0;

@@ -103,6 +103,8 @@
 #define D_8007567C (*pres_flight5())
 #define D_800758C4 (*pres_flight4())
 #define D_800758D8 (*pres_balloon4())
+/* D144: PAL's flight results' letter count, the same way (pres_ovl.c) */
+#define g_PalLetterCount (*pres_letters())
 #define SpuSetVoiceAttr pres_SpuSetVoiceAttr
 #define rand pres_rand
 

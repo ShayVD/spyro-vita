@@ -85,7 +85,8 @@ INDIRECT_RE = re.compile(r"\bcall\s+\*|\bblx\s+(?:r\d+|ip|sl|fp|lr)\b")
 # pres_ovl.c returns (pres_names.h maps the game's overlay pointers onto
 # those): draw.c's flight results (D_8007567C), the balloonist's talk
 # (D_800758D8) and the flight results' time (D_800758C4)
-OVL_ROOTS = re.compile(r"^(Flight5_LEVEL_|Flight4_LEVEL_|Balloonist4_LEVEL_)\d+$")
+# D144: and PAL's letter count (g_PalLetterCount, called from Flight5)
+OVL_ROOTS = re.compile(r"^(Flight5_LEVEL_|Flight4_LEVEL_|Balloonist4_LEVEL_|func_pal_80081758_LEVEL_)\d+$")
 INDIRECT_OK = re.compile(r"^(GamestateDraw_pres|func_8001E24C|Flight5_LEVEL_\d+)$")
 
 
