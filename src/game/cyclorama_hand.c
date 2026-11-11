@@ -25,6 +25,7 @@
 #include "math.h"
 #include "renderers.h"
 #include "vector.h"
+#include "region.h"
 
 #include <libgte.h>
 #include <stddef.h>
@@ -68,7 +69,9 @@ u_int func_80050BD0_gen();
 #if !M2C_func_80050BD0
 
 #define SCREEN_W 0x200
-#define SCREEN_H 0xF0
+/* PAL draws 256 lines: its 16 screen-height constants are 256, 255 and 257
+ * (PAL 0x80056268 on, D139) */
+#define SCREEN_H RV(0xF0, 0x100, 0xF0)
 
 /* A product as the R3000A's mult leaves it in LO. */
 static inline int MulLo(int a, int b) { return (int)((u_int)a * (u_int)b); }

@@ -80,6 +80,25 @@
    mobys--;
    for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
      mobys->m_Rotation.z = COSINE_8((g_LevelTicks * 4 + i * 12) & 0xFF) >> 7;
+@@ -616,14 +634,14 @@ void func_80018F30(void) {
+   D_800757B0 = ++bar;
+   bar->tag = PRIM_TAG(POLY_F4);
+   bar->code = PRIM_POLY_F4;
+-  bar->y2 = 240;
+-  bar->y3 = 240;
++  bar->y2 = RV(240, 256, 240); // PAL: its 256 lines (D139)
++  bar->y3 = RV(240, 256, 240);
+   bar->x0 = 0;
+   bar->x1 = 512;
+   bar->x2 = 0;
+   bar->x3 = 512;
+-  bar->y0 = 240 - D_800756C0;
+-  bar->y1 = 240 - D_800756C0;
++  bar->y0 = RV(240, 256, 240) - D_800756C0;
++  bar->y1 = RV(240, 256, 240) - D_800756C0;
+   setRGB0(bar, 0, 0, 0);
+   func_800168DC(bar);
+   D_800757B0 = bar + 1;
 @@ -643,7 +661,16 @@ void func_800190D4(int pMode, int pR, int pG, int pB) {
    f4->tag = PRIM_TAG(POLY_F4);
  
@@ -2046,7 +2065,31 @@
  
 --- a/src/gamestates/init.c
 +++ b/src/gamestates/init.c
-@@ -486,11 +486,12 @@ void InitFairyCutscene(Moby *pMoby) {
+@@ -95,8 +95,9 @@ void func_8002C534(int pResumeMusic) {
+   RECT rect;
+ 
+   // Restores the VRAM that it overwrote for the background
+-  setRECT(&rect, 512, 0, 256, 225);
+-  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - 115200));
++  // PAL: its 256 lines (D139)
++  setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
++  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - RV(115200, 0x20200, 115200)));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+@@ -185,8 +186,9 @@ void func_8002C7BC(void) {
+   RECT rect;
+ 
+   // Restores the VRAM that it overwrote for the background
+-  setRECT(&rect, 512, 0, 256, 225);
+-  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - 115200));
++  // PAL: its 256 lines (D139)
++  setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
++  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - RV(115200, 0x20200, 115200)));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+@@ -486,11 +488,12 @@ void InitFairyCutscene(Moby *pMoby) {
  
    g_FairyCutscene.m_CameraStartDistance = VecMagnitude(&vec, 0);
  
@@ -2062,7 +2105,7 @@
  
    g_FairyCutscene.m_CameraStartZ = g_Camera.m_Position.z;
    g_FairyCutscene.m_CameraViewAngle = angle;
-@@ -499,11 +500,11 @@ void InitFairyCutscene(Moby *pMoby) {
+@@ -499,11 +502,11 @@ void InitFairyCutscene(Moby *pMoby) {
    if (func_80017928(g_FairyCutscene.m_CameraStartAngle, angle) > 0x400) {
      g_FairyCutscene.m_MenuOffsetX = 0;
      g_FairyCutscene.m_CameraViewAngle =
@@ -2321,6 +2364,77 @@
        return;
      }
    }
+@@ -1326,6 +1486,9 @@ extern void Terminator_titlescreen_code(void);
+ int func_800334D4(void) {
+   RECT r;
+   char _pad[8]; // Hmmmm..?
++#if REGION_HAS_PAL
++  RECT palTitleRect;
++#endif
+ 
+   PadDemoUpdate();
+ 
+@@ -1362,12 +1525,19 @@ int func_800334D4(void) {
+     KillSoundsAndMusic(0);
+     SpuUpdate();
+ 
+-    r.x = 0;
+-    r.y = 0;
+-    r.w = 0x200;
+-    r.h = 0x1E0;
+-    ClearImage(&r, 0, 0, 0);
+-    DrawSync(0);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      ClearFrameBuffersPal(); // PAL: both 512x256 buffers
++    } else
++#endif
++    {
++      r.x = 0;
++      r.y = 0;
++      r.w = 0x200;
++      r.h = 0x1E0;
++      ClearImage(&r, 0, 0, 0);
++      DrawSync(0);
++    }
+ 
+     g_Buffers.m_CopyBuf = &Terminator_titlescreen_code;
+     g_Buffers.m_DiscCopyBuf = &Terminator_titlescreen_code;
+@@ -1419,11 +1589,30 @@ int func_800334D4(void) {
+       g_CutsceneLayout->m_CurrentTick = RT(1168, 972);
+     }
+ 
+-    g_TitlescreenState.m_SubState = 1;
++    g_TitlescreenState.m_SubState = RV(1, 2, 1);
+ 
+-    CDLoadAsync(g_CdState.m_WadSector,
+-                (char *)g_Buffers.m_LowerPolyBuffer - 0x40000, 0x40000,
+-                g_WadHeader.m_wad1.m_Offset, 600);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: the title's graphics are loaded here, synchronously: wad1's
++      // first 128 KB goes to VRAM (512,256 256x256), then the rest (400 KB)
++      // below the lower poly buffer; the title resumes at sub-state 2.
++      CDLoadSync(g_CdState.m_WadSector,
++                 (char *)g_Buffers.m_LowerPolyBuffer - 0x22000, 0x20000,
++                 g_WadHeader.m_wad1.m_Offset, 600);
++      setRECT(&palTitleRect, 512, 256, 256, 256);
++      LoadImage(&palTitleRect,
++                (u_long *)((char *)g_Buffers.m_LowerPolyBuffer - 0x22000));
++      DrawSync(0);
++      CDLoadSync(g_CdState.m_WadSector,
++                 (char *)g_Buffers.m_LowerPolyBuffer - 0x66000, 0x64000,
++                 g_WadHeader.m_wad1.m_Offset + 0x20000, 600);
++    } else
++#endif
++    {
++      CDLoadAsync(g_CdState.m_WadSector,
++                  (char *)g_Buffers.m_LowerPolyBuffer - 0x40000, 0x40000,
++                  g_WadHeader.m_wad1.m_Offset, 600);
++    }
+ 
+     g_StateSwitch = 1;
+ 
 --- a/src/hud.c
 +++ b/src/hud.c
 @@ -342,7 +342,7 @@ void HudTick(void) {
