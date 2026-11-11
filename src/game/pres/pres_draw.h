@@ -55,17 +55,20 @@ void pres_draw_visibility(uint8_t *flags, uint32_t *caches, int ncaches);
  * Balloonist4_LEVEL_*). Which level's each pointer is, as an index into
  * the levels below, is set on the game thread from the game's pointers
  * (pres_draw_prepare), -1 for none of them; pres_ovl.c's pres_flight5,
- * pres_flight4 and pres_balloon4 are the presenter's calls' targets. */
+ * pres_flight4 and pres_balloon4 are the presenter's calls' targets.
+ * D145: PAL's flight results also count a line's letters through a pointer
+ * the level set (g_PalLetterCount, func_pal_80081758_LEVEL_*): pres_letters. */
 #define PRES_FLIGHT_LEVELS(X) X(15) X(25) X(35) X(45) X(55)
 #define PRES_BALLOON_LEVELS(X) X(10) X(11) X(13) X(20) X(21) X(22) X(30) X(40) X(50) X(60)
 #define PRES_FLIGHTS 5
 #define PRES_BALLOONS 10
-enum { PRES_OVL_FLIGHT5, PRES_OVL_FLIGHT4, PRES_OVL_BALLOON4, PRES_OVLS };
+enum { PRES_OVL_FLIGHT5, PRES_OVL_FLIGHT4, PRES_OVL_BALLOON4, PRES_OVL_LETTERS, PRES_OVLS };
 extern int g_pres_ovl[PRES_OVLS];
 extern long long g_pres_ovl_unknown; /* a pointer set to none of them, drawn as nothing */
 void (**pres_flight5(void))(void);
 int (**pres_flight4(void))(int, void *, int);
 void (**pres_balloon4(void))(void);
+int (**pres_letters(void))(char *);
 
 /* present.c's blend on the snapshot's copies (present.c) */
 int port_present_blend_to(void *camera, void *spyro, void *mobys, void *particles);

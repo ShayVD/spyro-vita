@@ -241,13 +241,16 @@ int g_pres_ovl[PRES_OVLS] = {-1, -1, -1};
 long long g_pres_ovl_unknown;
 #if SPYRO_PRESENTER
 #include "overlay_pointers.h"
-#define FLIGHT(n) void Flight5_LEVEL_##n(void); int Flight4_LEVEL_##n(int, Vector3D *, int);
+#define FLIGHT(n) void Flight5_LEVEL_##n(void); int Flight4_LEVEL_##n(int, Vector3D *, int); \
+  int func_pal_80081758_LEVEL_##n(char *);
 #define BALLOON(n) void Balloonist4_LEVEL_##n(void);
 PRES_FLIGHT_LEVELS(FLIGHT)
 PRES_BALLOON_LEVELS(BALLOON)
 #define F5(n) (void *)Flight5_LEVEL_##n,
 #define F4(n) (void *)Flight4_LEVEL_##n,
 #define B4(n) (void *)Balloonist4_LEVEL_##n,
+#define FL(n) (void *)func_pal_80081758_LEVEL_##n,
+extern int (*g_PalLetterCount)(char *pText); /* PAL's, D145; 0 on US */
 static int ovl_index(int which, const void *fn, void *const *game, int n) {
   int i;
   for (i = 0; i < n; i++)
@@ -260,11 +263,14 @@ static void ovl_pick(void) {
   static void *const flight5[] = {PRES_FLIGHT_LEVELS(F5) NULL};
   static void *const flight4[] = {PRES_FLIGHT_LEVELS(F4) NULL};
   static void *const balloon4[] = {PRES_BALLOON_LEVELS(B4) NULL};
+  static void *const letters[] = {PRES_FLIGHT_LEVELS(FL) NULL};
   ovl_index(PRES_OVL_FLIGHT5, (const void *)D_8007567C, flight5, PRES_FLIGHTS);
   ovl_index(PRES_OVL_FLIGHT4, (const void *)D_800758C4, flight4, PRES_FLIGHTS);
   ovl_index(PRES_OVL_BALLOON4, (const void *)D_800758D8, balloon4, PRES_BALLOONS);
+  ovl_index(PRES_OVL_LETTERS, (const void *)g_PalLetterCount, letters, PRES_FLIGHTS);
   /* the gamestates that call them: a pointer the presenter can't follow */
-  if ((g_Gamestate == GS_FlightResults && (g_pres_ovl[PRES_OVL_FLIGHT5] < 0 || g_pres_ovl[PRES_OVL_FLIGHT4] < 0)) ||
+  if ((g_Gamestate == GS_FlightResults && (g_pres_ovl[PRES_OVL_FLIGHT5] < 0 || g_pres_ovl[PRES_OVL_FLIGHT4] < 0 ||
+                                           (g_PalLetterCount && g_pres_ovl[PRES_OVL_LETTERS] < 0))) ||
       (g_Gamestate == GS_Balloonist && g_pres_ovl[PRES_OVL_BALLOON4] < 0))
     g_pres_ovl_unknown++;
 }
