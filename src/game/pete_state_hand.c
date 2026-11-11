@@ -257,7 +257,8 @@ static void EnterKnockback(void) {
   g_Spyro.unk_0x15c = 1;
   Rumble(&D_8007584C, 0x78);
   Rumble(&D_800757D0, RT(0xF, 13));
-  /* PAL adds a sound here (table byte 0x43; a release change, not ported) */
+  if (REGION_IS(PAL)) /* PAL (0x800447D4) adds a sound (D139) */
+    PlaySound(g_Spu.m_SoundTable->sound_0x43, SPYRO_MOBY, 16, NULL);
 }
 
 /* States 7 and 14: hurt. Pushed back against his motion, at most 0x1E00. */
@@ -368,9 +369,9 @@ static void EnterFlying(void) {
     StartFastFlight();
   g_Spyro.m_walkingState = 0xC0;
   ph->m_TurnMomentum = 0;
-  /* PAL uses -3840 instead when g_LevelId (PAL 0x8007C23C) is 43: a release
-   * change, not a retune, so not ported. */
-  ph->m_gravity = RT(-0x240, -829);
+  /* PAL (0x800451DC, D139): -3840 when g_LevelId is 43, a release change,
+   * not a retune (PAL 60 keeps it) */
+  ph->m_gravity = REGION_IS(PAL) && g_LevelId == 43 ? -3840 : RT(-0x240, -829);
   func_8003E1AC();
   ApplySlopeGravity();
   g_Spyro.unk_0x15c = 1;
@@ -463,7 +464,8 @@ void func_8003EA68(int pNewState) {
     g_Spyro.unk_0x15c = 0;
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z + (ph->m_Acceleration.z >> 6);
     D_800756B4 = g_Spyro.m_State == 29;
-    /* PAL adds a sound here (table byte 0x42; a release change, not ported) */
+    if (REGION_IS(PAL)) /* PAL (0x80044328) adds a sound (D139) */
+      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 6:
     g_Spyro.m_walkingState = 0;
@@ -489,7 +491,8 @@ void func_8003EA68(int pNewState) {
   case 8:
     g_Spyro.m_walkingState = 0;
     g_Spyro.unk_0x15c = 1;
-    /* PAL adds a sound here (table byte 0x42; a release change, not ported) */
+    if (REGION_IS(PAL)) /* PAL (0x80044410) adds a sound (D139) */
+      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 9: case 10: /* sidestepping */
     g_Spyro.m_walkingState = 0;

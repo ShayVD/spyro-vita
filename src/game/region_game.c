@@ -30,6 +30,8 @@ _Static_assert(sizeof(LevelHeader) == 464, "the port's level header is the US on
 int g_Language;
 int g_ScreenOffsetX = 4; /* PAL's start values (PAL 0x8007B74C, 0x8007B750) */
 int g_ScreenOffsetY = 16;
+int g_PalCardHeaderDirty; /* PAL 0x8007C148: the card header needs writing again (D139) */
+int g_PalTitleCardLoad;   /* PAL 0x8007BFF0: the title's first read of the card header, 0-6, 7 done (D139) */
 OffsetLength g_WadCutscenesPal[16];
 OffsetLength g_LevelDragonsPal[5][6];
 
