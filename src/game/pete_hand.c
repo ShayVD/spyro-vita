@@ -1503,9 +1503,9 @@ static void SpawnWingTrails(void) {
   if (moving && blend < 13)
     blend += 4;
 
-  /* PAL (SCES-01438) has 89 and 100 here (li 89, +11): a model-data
-   * difference, not a 50 Hz retune, so not under RT. */
-  for (i = 0, vertex = 9; i < 2; i++, vertex += 0x5B) {
+  /* The wing tips' vertices: PAL's model has them at 89 and 100 (li 89, +11;
+   * a model difference, not a retune, D139) */
+  for (i = 0, vertex = RV(9, 89, 9); i < 2; i++, vertex += RV(0x5B, 11, 0x5B)) {
     Vector3D tip, other;
 
     func_80052F38(vertex, &tip, g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame);

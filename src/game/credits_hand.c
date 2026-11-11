@@ -13,6 +13,7 @@
 #include <stdlib.h>
 
 #include "common.h"
+#include "region.h"
 
 #include "buffers.h"
 #include "camera.h"
@@ -133,7 +134,7 @@ static void FirstPart(void) {
     g_Buffers.m_CopyBuf = g_Buffers.m_DiscCopyBuf = (void *)(uintptr_t)g_CreditsBuffer;
   }
   CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, 0x800, PART_OFFSET, CD_TIME);
-  Memcpy(&g_LevelHeader, g_Buffers.m_DiscCopyBuf, 0x1D0);
+  LEVEL_HEADER_COPY(g_Buffers.m_DiscCopyBuf); /* PAL: its 656-byte header (D139) */
   CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, 0x60000, g_LevelHeader.m_VramSramOffset + PART_OFFSET,
              CD_TIME);
   setRECT(&rect, 0x200, 0, 0x200, 0x180);
@@ -252,7 +253,7 @@ typedef struct {
 static void SpellLine(int s, int *big) {
   CreditsLine *line = &D_80075708[s];
   const char *c;
-  int from = 0, colon = 0, half, i;
+  int from = 0, colon = 0, half, i, ticks = RT(30, 25);
   Pen pen;
   line->m_State = LINE_SPELT;
   if (g_CreditsDisplayedCount < s)
@@ -317,7 +318,8 @@ static void SpellLine(int s, int *big) {
     pen.x += *big ? 0x10 : pen.gap;
     *big = IsDigit((u_char)*c);
   }
-  /* Centred on the screen, then sent back 30 ticks along their flight. */
+  /* Centred on the screen, then sent back 30 ticks along their flight (PAL:
+   * 25, and the spins and the fall below x1.2, its 50 Hz retune, D139). */
   half = (pen.x - 0x100) >> 1;
   for (i = 0; i < D_800756E4; i++) {
     CreditsLetter *l = &D_8007589C[i];
@@ -325,17 +327,17 @@ static void SpellLine(int s, int *big) {
     if (l->m_Line != s)
       continue;
     x = (short)(l->m_Pos[0] - half);
-    l->m_Vel[0] = -((x - 0x100) * 3) / 30;
-    l->m_Vel[2] = -(l->m_Pos[2] * 2) / 30;
-    l->m_Pos[0] = x - l->m_Vel[0] * 30;
-    l->m_Pos[2] -= l->m_Vel[2] * 30;
-    l->m_Spin[0] = RandRangeSigned(4, 15);
-    l->m_Spin[1] = RandRangeSigned(4, 15);
-    l->m_Spin[2] = RandRangeSigned(4, 15);
-    l->m_Angle[0] = -l->m_Spin[0] * 30;
-    l->m_Angle[1] = -l->m_Spin[1] * 30;
-    l->m_Angle[2] = -l->m_Spin[2] * 30;
-    l->m_Timer = 30;
+    l->m_Vel[0] = -((x - 0x100) * 3) / ticks;
+    l->m_Vel[2] = -(l->m_Pos[2] * 2) / ticks;
+    l->m_Pos[0] = x - l->m_Vel[0] * ticks;
+    l->m_Pos[2] -= l->m_Vel[2] * ticks;
+    l->m_Spin[0] = RandRangeSigned(RT(4, 5), RT(15, 18));
+    l->m_Spin[1] = RandRangeSigned(RT(4, 5), RT(15, 18));
+    l->m_Spin[2] = RandRangeSigned(RT(4, 5), RT(15, 18));
+    l->m_Angle[0] = -l->m_Spin[0] * ticks;
+    l->m_Angle[1] = -l->m_Spin[1] * ticks;
+    l->m_Angle[2] = -l->m_Spin[2] * ticks;
+    l->m_Timer = ticks;
   }
 }
 
@@ -391,12 +393,12 @@ static void Letters(void) {
         continue;
       /* In place: the fall it will take later. */
       l->m_State = LETTER_PLACED;
-      l->m_Vel[0] = RandRangeSigned(3, 11);
-      l->m_Vel[1] = -RandRange(6, 10);
-      l->m_Vel[2] = RandRange(-35, 35);
-      l->m_Spin[0] = RandRangeSigned(4, 9);
-      l->m_Spin[1] = RandRangeSigned(4, 9);
-      l->m_Spin[2] = RandRangeSigned(4, 9);
+      l->m_Vel[0] = RandRangeSigned(RT(3, 4), RT(11, 13));
+      l->m_Vel[1] = -RandRange(RT(6, 7), RT(10, 12));
+      l->m_Vel[2] = RandRange(RT(-35, -41), RT(35, 42));
+      l->m_Spin[0] = RandRangeSigned(RT(4, 5), RT(9, 11));
+      l->m_Spin[1] = RandRangeSigned(RT(4, 5), RT(9, 11));
+      l->m_Spin[2] = RandRangeSigned(RT(4, 5), RT(9, 11));
     } else if (l->m_State == LETTER_OUT) {
       l->m_Pos[0] += l->m_Vel[0];
       l->m_Pos[1] += l->m_Vel[1];
@@ -405,8 +407,8 @@ static void Letters(void) {
       l->m_Vel[1]++;
       l->m_Angle[1] += l->m_Spin[1];
       l->m_Angle[2] += l->m_Spin[2];
-      if (l->m_Vel[1] >= 0x15)
-        l->m_Vel[1] = 0x14;
+      if (l->m_Vel[1] >= RT(0x15, 25))
+        l->m_Vel[1] = RT(0x14, 24);
       if (l->m_Pos[1] >= 0x119)
         l->m_State = LETTER_GONE;
     }
@@ -435,7 +437,7 @@ static void NextPart(void) {
     g_CreditsStage++;
     break;
   case 1:
-    Memcpy(&g_LevelHeader, D_800757EC, 0x1D0);
+    LEVEL_HEADER_COPY(D_800757EC); /* PAL: its 656-byte header (D139) */
     CDLoadAsync(g_CdState.m_WadSector, D_800757EC, 0x20000, g_LevelHeader.m_VramSramOffset + PART_OFFSET, CD_TIME);
     g_CreditsStage++;
     break;
@@ -504,8 +506,14 @@ static void Draw(void) {
   if (g_CreditsStage == -1) {
     DrawSync(0);
     VSync(0);
-    y = g_CurDB == &g_DB[0] ? 8 : 0xF8;
-    setRECT(&rect, 0, y, 0x200, 0xE0);
+    if (REGION_IS(PAL)) {
+      /* PAL (its overlay's 0x800829E8): the whole 512x256 buffer (D139) */
+      y = g_CurDB == &g_DB[0] ? 0 : 0x100;
+      setRECT(&rect, 0, y, 0x200, 0x100);
+    } else {
+      y = g_CurDB == &g_DB[0] ? 8 : 0xF8;
+      setRECT(&rect, 0, y, 0x200, 0xE0);
+    }
     MoveImage(&rect, 0, 0x100 - y);
     DrawSync(0);
     return;

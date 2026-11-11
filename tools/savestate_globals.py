@@ -23,9 +23,9 @@ SAVED = {"g_mips_sp", "g_mips_v1",
          # state the half tick and Spyro's carry; the rest is set every update
          "g_tick60_mode", "g_t60",
          # chunk_region() (the "REGN" chunk, D134): PAL's language, screen
-         # position and language slots (region_game.c)
+         # position, language slots and card-header state (region_game.c)
          "g_Language", "g_ScreenOffsetX", "g_ScreenOffsetY", "g_WadCutscenesPal",
-         "g_LevelDragonsPal"}
+         "g_LevelDragonsPal", "g_PalCardHeaderDirty", "g_PalTitleCardLoad"}
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only
