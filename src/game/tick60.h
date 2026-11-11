@@ -41,6 +41,13 @@ typedef struct {
   int next;       /* PortTickDelta's: the next update is a 60 Hz one */
   int spyro_carry[3]; /* Spyro's move: the low 6 bits of a tick's first half (t60_spyro_shift) */
   int spyro_held;  /* a tick's first half kept Spyro's script hold (m_ControlFlags bit 31) and lift (m_DamageFlags 0x800) for its second (t60_rules.c) */
+  /* func_8003BFC0's path steps this tick (t60_path_step, D144): each one's
+   * moby, and the half of the step its second vblank still moves */
+  int path_n;
+  struct {
+    void *moby;
+    int rest[3];
+  } path[64];
 } Tick60State;
 extern Tick60State g_t60;
 

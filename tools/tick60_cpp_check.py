@@ -4,7 +4,8 @@
   tools/tick60_cpp_check.py [--base REF] [--build build/linux32]
 
 Every 30 Hz file the 60 Hz pilot touches (the decomp's, through
-patches/spyro-1-port, patches/spyro-1-region and patches/spyro-1-region-port, and our hand C) is preprocessed twice with the flags
+patches/spyro-1-port, patches/spyro-1-region, patches/spyro-1-region-port and
+patches/spyro-1-tick60, and our hand C) is preprocessed twice with the flags
 the build compiles it with (build.ninja: its 30 Hz target's DEFINES, FLAGS
 and INCLUDES; the overlays' preprocessor flags for moby_update.c): as this
 tree has it, and as REF (default origin/main) has it. The two token streams
@@ -71,7 +72,8 @@ def main():
     # the port's patches, then the region switches (D133) and the port's region edits (D135),
     # as CMakeLists.txt's spyro_prepare applies them
     patches = []
-    for d in ("patches/spyro-1-port/", "patches/spyro-1-region/", "patches/spyro-1-region-port/"):
+    for d in ("patches/spyro-1-port/", "patches/spyro-1-region/", "patches/spyro-1-region-port/",
+              "patches/spyro-1-tick60/"):
         patches += sorted(p for p in git("ls-tree", "--name-only", a.base, d).decode().split()
                           if p.endswith(".patch"))
     for p in patches:
