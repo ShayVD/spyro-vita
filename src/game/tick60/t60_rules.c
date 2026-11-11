@@ -18,6 +18,7 @@
 #include "moby_lists.h"
 #include "overlay_pointers.h"
 #include "sony_image.h"
+#include "spyro.h"
 
 #include "tick60_rules.h"
 
@@ -124,5 +125,36 @@ void t60_spyro_shift(void *pVelocity) {
       v[k] = (v[k] + c[k]) >> 6;
       c[k] = 0;
     }
+  }
+}
+
+/* func_8004A200's end (0015): the original lets go of a script's hold on
+ * Spyro (m_ControlFlags bit 31) after each of his updates, and clears his
+ * m_DamageFlags; the moby whose script it is sets them again in its next
+ * update, before his. A moby that runs at 30 Hz sets them once a tick, so
+ * in the 60 Hz rules a hold lasts the tick's two vblanks (D141):
+ *   - bit 31 is let go on the vblank that ends a tick (or after a late
+ *     update, which is a whole one). Otherwise the second vblank found it
+ *     clear, func_8003FE40 zeroed the flags and Spyro was the player's
+ *     again for half of every tick: a portal's path (class 398) never
+ *     carried him in, and its camera left its path mode and started over;
+ *   - of the damage flags, a vortex's or whirlwind's lift (0x800, classes
+ *     9 and 300) is kept for the second half: HandleSpyroDamage drops him
+ *     from state 17 to 15 when it is missing. The one-shot hits are taken
+ *     once a tick, as before.
+ * A tick cut short by a gamestate change lets go in PortGamestateUpdate. */
+void t60_spyro_damage_end(void) {
+  if (g_t60.upper || g_DeltaTime != 1)
+    g_Spyro.m_DamageFlags = 0;
+  else
+    g_Spyro.m_DamageFlags &= 0x800;
+}
+
+void t60_spyro_release(void) {
+  if (g_t60.upper || g_DeltaTime != 1) {
+    g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
+    g_t60.spyro_held = 0;
+  } else {
+    g_t60.spyro_held = 1;
   }
 }
