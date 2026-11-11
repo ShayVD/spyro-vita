@@ -94,6 +94,8 @@ Files the app writes:
 | Key | Meaning |
 |---|---|
 | `disc=PATH` | the disc image or the extracted files are somewhere other than `ux0:data/spyro` |
+| `pal60=1` | the PAL disc with US timing at 60 Hz ("PAL 60", D138); default 0, PAL at its own 50 Hz |
+| `region_dev=1` | developers' test runs only (D143): open a release that isn't supported yet (PAL, Japan) instead of its "NOT SUPPORTED YET" panel, as the host's `--region-dev`. No menu row writes it; the menu's save keeps the line. `DISC=disc/image-pal tools/vita/vita3k_run.sh OUT 400 region_dev=1 frames=4500` runs the PAL disc to its first attract demo |
 | `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits. The render thread is stopped and joined first, with an `exit:` line in the log (D120) |
 | `keep_awake=1` | no standby, no dimming and no screen off while the app runs: unattended runs, where nothing presses a button (`tools/vita/hw_run.sh` writes it; D77). Default 0: the Vita's own power settings |
 | `shot=V1,V2,...` | save a PNG of the picture at these vblanks, in `ux0:data/spyro/shots/` |

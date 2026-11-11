@@ -255,6 +255,7 @@ static void nd_atexit(void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 extern void spyro_main(void);
@@ -819,7 +820,10 @@ int main(int argc, char **argv) {
   }
   if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
     char dir[512];
-    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 0));
+    /* both folders now, as the Vita does: the cards make one level and the
+     * save states none (D143) */
+    mkdir(psx_mcrd_root(), 0777);
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 1));
   }
   /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1
    * the CD interrupt ends it. With no interrupts here, a read completes

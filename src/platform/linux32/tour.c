@@ -10,6 +10,12 @@
  *            (cheats.c) runs while g_LevelCheatActive; it takes the world
  *            digit, then the level digit (CIRCLE 0, CROSS 1, SQUARE 2,
  *            TRIANGLE 3, RIGHT 4, DOWN 5, LEFT 6).
+ *            PAL's inventory has no warp code (D134), so on the PAL disc
+ *            the warp is the Vita menu's (port_cheat_request,
+ *            cheats_port.c; D50, D143), which opens the inventory itself.
+ *            It is asked for again whenever none is pending until the
+ *            level changes: the game drops a pending cheat when a flight
+ *            level's timer ends first (its results get Cross, as below).
  *   credits  the credits cheat (cheats.c CheatTable[2]) typed in the
  *            inventory: InitCreditsSequence(0), then back to this level.
  *   levels   the LEVELS OPEN cheat (CheatTable[3]): every level visited,
@@ -26,6 +32,9 @@
 #include "host.h"
 #include "psx_arena.h"
 #include "psx_hooks.h"
+#include "psx_region.h"
+
+#include "../../game/cheats_port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +72,7 @@ static int s_t0 = -1, s_at = -1, s_len;
 static TourEv s_seq[SEQ_MAX];
 static int s_nseq;
 static int s_mask = -1;
+static int s_warp; /* the warp start() set up and not yet taken (PAL), or 0 */
 
 static uint32_t *ram(uint32_t a) { return (uint32_t *)PSX_ARENA(a); }
 
@@ -153,6 +163,10 @@ static void start(int entry) {
   } else if (entry == TOUR_END2 || entry == TOUR_END3) {
     ev(0, entry == TOUR_END2 ? EV_END2 : EV_END3, NULL);
     s_len = 0;
+  } else if (g_Region == PSX_REGION_PAL) {
+    /* no warp code in PAL's inventory: the menu's warp (host_tour_vblank) */
+    s_warp = entry;
+    s_len = 1200;
   } else {
     open_inventory();
     ev(200, EV_CHEAT, NULL);
@@ -203,8 +217,21 @@ int host_tour_vblank(int vblank, int pad_done) {
                  s_seq[k].kind == EV_END2 ? 2 : 3, vblank);
       }
     }
-    if (t >= s_len)
+    if (s_warp) {
+      if (gs == 1 || level == s_warp) {
+        s_warp = 0; /* taken: the level transition */
+      } else if (gs == 7) {
+        return vblank % 60 < 6 ? 0x4000 : 0; /* flight results: Cross */
+      } else if (!port_cheat_pending() && port_cheat_request(PORT_CHEAT_WARP, s_warp)) {
+        host_log("tour: warp to %d asked for at vblank %d", s_warp, vblank);
+      }
+    }
+    if (t >= s_len) {
+      if (s_warp)
+        host_log("tour: warp to %d never taken", s_warp);
+      s_warp = 0;
       s_at = -1;
+    }
     return s_mask;
   }
   if (gs == 7) { /* flight results: Cross, every second */
