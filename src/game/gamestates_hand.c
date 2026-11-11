@@ -316,12 +316,15 @@ static void FairyExit(void) {
  * into the halfword at +0x7C (the icon palette's colour 14) and the save's id
  * into +0x7E (colour 15, the id the read above checks). MemCardSync(0) waits. */
 static void PalCardHeaderWrite(void) {
-  static u_char hdr[0x100]; /* PAL's buffer; the port leaves its disc data read-only */
+  /* PAL's buffer is a global (0x80076298); here a local, as the port's
+   * MemCardWriteFile writes before it returns, so save states have nothing to keep */
+  u_int words[0x100 / 4];
+  u_char *hdr = (u_char *)words;
   g_PalCardHeaderDirty = 0;
   Memcpy(hdr, PortRegionData(0x80074C24), 0x100);
   *(u_short *)(hdr + 0x7C) = g_Language + (g_ScreenOffsetX << 4) + (g_ScreenOffsetY << 10);
   *(u_short *)(hdr + 0x7E) = fc.unk_0x20;
-  MemCardWriteFile(fc.m_MemoryCardSlot, (char *)psx_region()->card, (u_int *)hdr, 0, 0x100);
+  MemCardWriteFile(fc.m_MemoryCardSlot, (char *)psx_region()->card, words, 0, 0x100);
   MemCardSync(0, &fc.unk_0x24, &fc.unk_0x28);
 }
 
