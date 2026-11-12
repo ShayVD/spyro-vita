@@ -67,7 +67,8 @@ def main():
     work = os.path.join(build, "t60cpp")
     shutil.rmtree(work, ignore_errors=True)
     base_s1 = os.path.join(work, "base/spyro-1")
-    for d in ("src", "include"):
+    # overlays/: region patch 0009 (D146) edits its YAML; without it the patch fails (D150)
+    for d in ("src", "include", "overlays"):
         shutil.copytree(os.path.join(ROOT, "third_party/spyro-1", d), os.path.join(base_s1, d))
     # the port's patches, then the region switches (D133) and the port's region edits (D135),
     # as CMakeLists.txt's spyro_prepare applies them

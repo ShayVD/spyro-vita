@@ -4,7 +4,7 @@
 # the game thread (parse_thread=0); the hand-written renderers (fast_render=1). dynres=0 keeps the
 # resolution fixed on builds with D75. Route: leave the game alone from boot for 3 minutes (title,
 # flythrough, both attract demos), then 2 minutes in Artisans and 2 in Toasty. Send spyro.log as k1.log.
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

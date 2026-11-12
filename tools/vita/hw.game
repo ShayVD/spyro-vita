@@ -21,12 +21,12 @@ HW_SAVE_DIR=save
 
 # The run's first config.txt lines: the owner's disc= kept; virtual vblanks unless REALTIME=1; as vita3k_run.sh,
 # the host's picture and camera so runs compare with it, unless DEVICE_DEFAULTS=1 (later lines win;
-# config_version=3: main.c); no standby, dimming or screen off while it runs (vblank.c).
+# config_version=4: main.c); no standby, dimming or screen off while it runs (vblank.c).
 hw_config_base() {
   [ -n "$1" ] && grep -E '^disc=' "$1" || true
   [ "${REALTIME:-0}" = 1 ] || echo "realtime=0"
   [ "${DEVICE_DEFAULTS:-0}" = 1 ] ||
-    printf 'config_version=3\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n'
+    printf 'config_version=4\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n'
   echo "keep_awake=1"
 }
 

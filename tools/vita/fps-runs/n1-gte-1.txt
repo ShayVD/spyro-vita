@@ -3,7 +3,7 @@
 # (render_thread=0, parse_thread=0), 30 fps, fixed resolution (dynres=0). Route: K1's: leave the
 # game alone from boot for 3 minutes (title, flythrough, both attract demos), then 2 minutes in
 # Artisans and 2 in Toasty. Send spyro.log as n1.log.
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

@@ -4,7 +4,7 @@
 # Artisans and 2 in Stone Hill. Send spyro.log as l2.log. The meter's "texture decodes" row should
 # read 0; the "atlas N: atlas_cpu=1:" lines give the CPU's time per 32x32 block and any waits for
 # the GPU; the "atlas N:" block counts should be L1's.
-config_version=3
+config_version=4
 interp=0
 render_thread=1
 parse_thread=1

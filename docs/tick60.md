@@ -7,7 +7,9 @@ The 60 fps option's third value. **Off** is 30 Hz logic at 30 fps; **interpolate
 | Where | How | When |
 |---|---|---|
 | linux32 host | `--tick60` (`--tick60-stats` adds the updates' CPU time to the log at exit). Add `--interp` for the in-between frame in the gamestates that stay at 30 Hz | at start |
-| Vita | `config.txt` `interp=4`, or the menu's 60 FPS row, value **60 HZ** | read at start. A change in the menu into or out of 60 HZ asks: **RESTART NOW** (the options saved, the app started again) or **UNDO** (the row put back); ○ leaves it for the next start, and a **60 HZ LOGIC** row says ON AT RESTART or OFF AT RESTART until then (D136) |
+| Vita | `config.txt` `interp=4`, or the menu's 60 FPS row, value **60 HZ** (the default since D150) | read at start. A change in the menu into or out of 60 HZ asks: **RESTART NOW** (the options saved, the app started again) or **UNDO** (the row put back); ○ leaves it for the next start, and a **60 HZ LOGIC** row says ON AT RESTART or OFF AT RESTART until then (D136) |
+
+**Which discs** (D150): the US disc and the PAL disc, which runs at US timing (PAL 60, D138). PAL's own code in what the rules compile (its `REGION_IS(PAL)` blocks and `RV()` sites in `moby_update.c`, `update.c`, `pete.c`, `moby_helpers.c` and the hand C) was judged as the classes were: one site needed marking, `MobyMoveWithGravity`'s wall-slide slowdown (`patches/spyro-1-tick60/0003`). Not PAL at its own 50 Hz (the host's `--pal50`, the Vita's `pal50=1`: the rules' shares assume 30 Hz ticks) and not JP (not supported yet); there the option runs as interpolated.
 
 The setting is chosen at boot (§7.1's fallback). Moving it to a switch at a level load needs §7.1's list of carried-over state checked first. Because the rules keep game state in the original's units (below), that list should be short, but it isn't checked yet.
 

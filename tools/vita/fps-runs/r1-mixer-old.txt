@@ -5,7 +5,7 @@
 #     tools/vita/hw_run.sh logs/hw-r1 1500 @tools/vita/fps-runs/r1-mixer-old.txt @tools/vita/hw-routes/r-audio-k.cfg
 # By hand: leave it alone from boot through the title and the Stone Hill attract demo, then start or
 # load a game, 2 minutes in Artisans, then Stone Hill for 2 minutes. Send it as r1.log.
-config_version=3
+config_version=4
 interp=0
 dynres=0
 mixer=1

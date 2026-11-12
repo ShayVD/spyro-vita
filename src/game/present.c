@@ -21,6 +21,7 @@
 #include "psx_arena.h"
 #include "psx_clock.h"
 #include "psx_mem.h"
+#include "psx_region.h" /* g_Region: PAL's screen copy (is_screen_copy) */
 #include "psx_walk.h"
 #include "psx_libgpu.h"
 #include "psx_gpu.h" /* the GPU state (gpu_walk.c) */
@@ -211,11 +212,16 @@ static int prim_xy_words(uint32_t *p, int len, uint32_t **xy, int *rect_w) {
 }
 
 /* The pause, inventory and flight-results backgrounds: POLY_FT4 strips of a
- * grayscale copy of the last frame, CLUT at VRAM (512,224) (draw.c). The copy
- * is already a widescreen frame, so it is shown full width. */
+ * grayscale copy of the last frame, CLUT at VRAM (512,224) (draw.c), PAL's
+ * at (512,256) under its 256-line picture (draw.c's RV(224, 256, 224), the
+ * flight results' getClut(512, 256)). The copy is already a widescreen
+ * frame, so it is shown full width. Before D150 only US's CLUT was known, so
+ * PAL's strips were narrowed to 4:3 like the HUD: bars at the pause screen's
+ * sides in 16:9. */
 static int is_screen_copy(const uint32_t *p) {
-  uint32_t code = p[0] >> 24;
-  return (code & 0xFC) == 0x2C && (p[2] >> 16) == ((224u << 6) | (512u >> 4));
+  const uint32_t code = p[0] >> 24;
+  const uint32_t y = g_Region == PSX_REGION_PAL ? 256u : 224u;
+  return (code & 0xFC) == 0x2C && (p[2] >> 16) == ((y << 6) | (512u >> 4));
 }
 
 /* The walk's substitutions emptied (before a DrawOTag, after the join) */

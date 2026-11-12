@@ -2,7 +2,7 @@
 # the same with present_due=1.
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7c3 1500 @tools/vita/fps-runs/s7c3-toasty60-due0.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

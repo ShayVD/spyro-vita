@@ -1,0 +1,72 @@
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -1367,6 +1367,13 @@ void GamestateCutsceneTransition(void) {
+   g_TitlescreenState.m_Tick++;
+ }
+ 
++// PAL's recorded cutscenes are sampled for its 25 Hz ticks, so they count
++// its 50 Hz vblanks: at US timing (PAL 60, D150) d of ours are d * 5 / 6 of
++// them, the remainder carried; otherwise d (src/game/region_game.c). The
++// port's only: PAL 60 isn't a PS1 mode, and the matching builds don't apply
++// this patch.
++int PortCutsceneTicks(int d);
++
+ /// @brief Gamestate 14 - Cutscene update
+ void GamestateCutsceneUpdate(void) {
+ #if REGION_HAS_US
+@@ -1417,7 +1424,7 @@ void GamestateCutsceneUpdate(void) {
+   // Main update
+   currentTick = g_CutsceneLayout->m_CurrentTick;
+   duration = g_CutsceneLayout->m_Duration;
+-  currentTick += g_DeltaTime;
++  currentTick += PortCutsceneTicks(g_DeltaTime); // PAL 60: PAL's 50 Hz vblanks (D150)
+   duration <<= 1;
+   g_CutsceneLayout->m_CurrentTick = currentTick;
+ 
+@@ -1588,7 +1595,7 @@ int func_800334D4(void) {
+ 
+     // Only play the sound effect if the demo finished playing
+     if (g_GameTick >= g_DemoLengths[g_DemoIndex]) {
+-      g_CutsceneLayout->m_CurrentTick = RT(720, 600);
++      g_CutsceneLayout->m_CurrentTick = RV(720, 600, 720); // the flyby's, PAL's at 50 Hz (D150)
+       g_Spu.m_SoundDefinitions = &g_CutsceneSoundDef;
+       g_Spu.m_SoundDefinitions->m_Addr =
+           0x262D0; // Hardcoded addresses... yippee
+@@ -1603,7 +1610,7 @@ int func_800334D4(void) {
+       g_Spu.m_VolumeOverride.right = 0x3FFF;
+       PlaySound(0, nullptr, 16, (u_char *)&g_DragonCutscene.m_SoundVoice);
+     } else {
+-      g_CutsceneLayout->m_CurrentTick = RT(1168, 972);
++      g_CutsceneLayout->m_CurrentTick = RV(1168, 972, 1168); // the flyby's (D150)
+     }
+ 
+     g_TitlescreenState.m_SubState = RV(1, 2, 1);
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -5085,7 +5085,7 @@ void NAME_OVERLAY_FUNCTION(UpdateMoby)(void) {
+         // PAL's rows hold a 25 Hz flight's points, 5/6 as many (D146)
+         projectileProps->m_0x04 =
+             REGION_IS(PAL)
+-                ? (TracerPoint *)props->m_0x28.m_Normal + props->m_0x20 * RT(0x91, 0x79)
++                ? (TracerPoint *)props->m_0x28.m_Normal + props->m_0x20 * RV(0x91, 0x79, 0x91) // PAL's rows at any timing (D150)
+                 : props->m_0x28.m_Normal[props->m_0x20];
+         projectile->m_RenderRadius = 0;
+         projectile->m_UpdateDistance = 0xFF;
+@@ -5225,7 +5225,7 @@ void NAME_OVERLAY_FUNCTION(UpdateMoby)(void) {
+                           projectileProps->m_0x0e, &flightTime);
+         projectileProps->m_0x04 =
+             REGION_IS(PAL)
+-                ? (TracerPoint *)props->m_0x28.m_Targeted + props->m_0x20 * RT(0x82, 0x6C)
++                ? (TracerPoint *)props->m_0x28.m_Targeted + props->m_0x20 * RV(0x82, 0x6C, 0x82) // (D150)
+                 : props->m_0x28.m_Targeted[props->m_0x20];
+         velocityZ = projectileProps->m_0x0a;
+         projectileProps->m_0x02 = 1;
+@@ -12615,7 +12615,7 @@ void NAME_OVERLAY_FUNCTION(UpdateMoby)(void) {
+           }
+           projectileProps->m_0x00 =
+               REGION_IS(PAL)
+-                  ? (TracerPoint *)props->m_0xe0 + props->m_0x68 % 3 * RT(150, 125)
++                  ? (TracerPoint *)props->m_0xe0 + props->m_0x68 % 3 * RV(150, 125, 150) // (D150)
+                   : (TracerPoint *)props->m_0xe0[props->m_0x68 % 3];
+           projectileProps->m_0x0a = 0;
+           projectileProps->m_0x06 = RT(0xA0, 0x85);

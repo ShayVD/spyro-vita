@@ -8,7 +8,7 @@ rows (the lines here stay, but the run's picture settings would be the menu's).
 
 All runs use the same VPK, the one from this PR. Since D68 the three switches are on by default
 (`render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`) and `gpu_time` is 0. The files set each switch
-the run needs, and they carry `config_version=3`: without it a `=0` for one of the switches is
+the run needs, and they carry `config_version=4`: without it a `=0` for one of the switches is
 taken as an old file's and ignored (D68). Since D74 `gpu_lean=1` (D70) and `parse_thread=1` (D71)
 are on by default too: the files no longer set them, and a file that wants one off says `=0`.
 

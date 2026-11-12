@@ -19,9 +19,12 @@
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
  *   WAD.WAD the first time and remember it in FILE, as the Vita does.
  * --region-dev: open a PAL or JP disc, which players get refused as not
- *   supported yet (D133). --pal60: the PAL disc with US timing at 60 Hz
- *   ("PAL 60", D138); without it PAL runs at its own 50 Hz (a VSync is a
- *   50 Hz vblank: 3 CD sectors, 882 samples). --display60 (D148): frames
+ *   supported yet (D133). The PAL disc runs with US timing at 60 Hz ("PAL
+ *   60", D138; the only way players run it since D150). --pal50: PAL at its
+ *   own 50 Hz instead (a VSync is a 50 Hz vblank: 3 CD sectors, 882
+ *   samples), as the PS1 runs it: the PAL attract demos' checks against
+ *   PCSX-Redux need it (D149). --pal60, the default since D150, is still
+ *   taken. --display60 (D148): frames
  *   due at a 60 Hz display's vblanks, as the Vita's: at 50 Hz, with
  *   --interp, a frame for each, blended by its time between two ticks
  *   (one or two a vblank of ours, taken in turn; --present-stats counts
@@ -323,7 +326,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal60] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -438,8 +441,10 @@ int main(int argc, char **argv) {
       psx_cd_set_verify(val, NULL);
     } else if (strcmp(a, "--region-dev") == 0) {
       g_RegionDev = 1; /* open a release that isn't supported yet (D133) */
+    } else if (strcmp(a, "--pal50") == 0) {
+      g_RegionPal50 = 1; /* PAL at its own 50 Hz (D150) */
     } else if (strcmp(a, "--pal60") == 0) {
-      g_RegionPal60 = 1; /* PAL 60 (regions plan §7.4, D138) */
+      g_RegionPal50 = 0; /* PAL 60 (regions plan §7.4, D138), the default since D150 */
     } else if (strcmp(a, "--display60") == 0) {
       s_display60 = 1; /* frames due at a 60 Hz display's vblanks (D148) */
     } else if (strcmp(a, "--region-check") == 0) {
@@ -812,8 +817,12 @@ int main(int argc, char **argv) {
   if (g_Region != PSX_REGION_US)
     host_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
              g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
-  if (g_tick60_mode && g_Region != PSX_REGION_US) {
-    host_log("--tick60: the US disc only for now (regions plan §6.3); off");
+  /* 60 Hz logic: the US disc and PAL at US timing (D150); not PAL at its own
+   * 50 Hz (the rules' shares assume 30 Hz ticks) nor JP, not judged yet */
+  if (g_tick60_mode && !(g_Region == PSX_REGION_US ||
+                         (g_Region == PSX_REGION_PAL && !g_RegionTiming))) {
+    host_log("--tick60: not on %s%s (D150); off", psx_region()->serial,
+             g_RegionTiming ? " at its own timing (--pal50)" : "");
     g_tick60_mode = 0;
   }
   if (s_region_check) { /* the region data loader against the disc's executable, then exit */

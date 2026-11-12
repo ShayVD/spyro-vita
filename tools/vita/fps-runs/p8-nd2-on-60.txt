@@ -1,6 +1,6 @@
 # Run P8 (D86): P7 with native_draw=1 (the records built from values, no PS1 primitive stores in
 # the hot sites). Same route, REALTIME=1. Against P7, and against D82's P6 (logs/hw-p6).
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

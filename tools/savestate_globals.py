@@ -25,7 +25,8 @@ SAVED = {"g_mips_sp", "g_mips_v1",
          # chunk_region() (the "REGN" chunk, D134): PAL's language, screen
          # position, language slots and card-header state (region_game.c)
          "g_Language", "g_ScreenOffsetX", "g_ScreenOffsetY", "g_WadCutscenesPal",
-         "g_LevelDragonsPal", "g_PalCardHeaderDirty", "g_PalTitleCardLoad", "g_PalLetterCount"}
+         "g_LevelDragonsPal", "g_PalCardHeaderDirty", "g_PalTitleCardLoad", "g_PalLetterCount",
+         "g_PalCutsceneCarry"}  # PAL 60's cutscene clock (D150)
 # Written once at start-up or never: initialised tables and pointers.
 CONSTANT = {
     "CheatTable",               # cheats.c: the cheat button sequences, read only

@@ -3,7 +3,7 @@
 # one VPK for all four 7C runs (the owner's yes first for each):
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7c1 1500 @tools/vita/fps-runs/s7c1-k60-due0.txt @tools/vita/hw-routes/m1-xa-k.cfg
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

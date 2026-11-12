@@ -1,7 +1,7 @@
 # Run P2 (D82): P1 with native_draw=1, the hand renderers' primitives reaching the OT walk as native
 # draw lists (the vertices PsyCross would make of them). Against P1, window by window: the "time"
 # lines' ot (the walk) and the "draw" lines' renderers (which now build the vertices). Same route.
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

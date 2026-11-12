@@ -3,6 +3,6 @@
 # 30 fps, which 7F3 should come close to at 60. Real-time vblanks:
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7f1 1500 @tools/vita/fps-runs/s7f1-toasty30.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=3
+config_version=4
 interp=0
 gpu_meter=1

@@ -5,7 +5,7 @@
 # vblanks in the flight.
 #   REALTIME=1 VPK=... DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7g4 900 @tools/vita/fps-runs/s7g4-demo169.txt
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 widescreen=1

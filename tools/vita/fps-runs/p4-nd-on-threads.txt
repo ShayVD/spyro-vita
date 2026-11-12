@@ -1,6 +1,6 @@
 # Run P4 (D82): P3 with native_draw=1. Against P3: the parse thread's busy ms per vblank and the game
 # thread's waits for it ("parse" lines), the render thread ("render" lines), the GPU ("gpu meter").
-config_version=3
+config_version=4
 interp=0
 render_thread=1
 parse_thread=1
