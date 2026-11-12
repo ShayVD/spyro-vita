@@ -7,7 +7,10 @@
 #include <stdio.h>
 
 #include "common.h"
+#include "camera.h"
+#include "cutscene.h"
 #include "cyclorama.h"
+#include "dragon.h"
 #include "environment.h"
 #include "loaders.h"
 #include "moby.h"
@@ -28,9 +31,11 @@ int spyro_trace_open(const char *path) {
 }
 
 static void moby_trace_vblank(int vblank);
+static void cutscene_trace_vblank(int vblank);
 
 void spyro_trace_vblank(int vblank) {
   moby_trace_vblank(vblank);
+  cutscene_trace_vblank(vblank);
   if (!s_trace)
     return;
   fprintf(s_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%08x\n",
@@ -71,7 +76,58 @@ static void moby_trace_vblank(int vblank) {
   }
 }
 
+/* --cutscene-trace (D151): in the intro and endings (gamestate 14) and a
+ * dragon's talk (gamestate 8, its state 4), each vblank, the cutscene's tick, the camera and each cutscene moby's position,
+ * frame and frame progress: how evenly PAL's 25 Hz data plays at 30 Hz. */
+static FILE *s_cut_trace;
+
+int spyro_cutscene_trace_open(const char *path) {
+  s_cut_trace = fopen(path, "w");
+  if (!s_cut_trace)
+    return -1;
+  fprintf(s_cut_trace, "vblank\tcuttick\tslot\tx\ty\tz\trx\try\trz\tframe\tprogress\n");
+  return 0;
+}
+
+static void cutscene_trace_vblank(int vblank) {
+  int i;
+  if (s_cut_trace && g_Gamestate == GS_Dragon && g_DragonCutscene.m_State == 4) {
+    /* a dragon's talk: slot -1 the camera, 0 and 1 its two mobys */
+    Moby *const m2[2] = {g_DragonCutscene.m_CutsceneSpyro, g_DragonCutscene.m_CutsceneDragon};
+    fprintf(s_cut_trace, "%d\t%d\t-1\t%d\t%d\t%d\t%d\t%d\t%d\t0\t0\n", vblank,
+            g_DragonCutscene.m_CutsceneTicks, g_Camera.m_Position.x, g_Camera.m_Position.y,
+            g_Camera.m_Position.z, g_Camera.m_Rotation.x, g_Camera.m_Rotation.y,
+            g_Camera.m_Rotation.z);
+    for (i = 0; i < 2; i++)
+      if (m2[i])
+        fprintf(s_cut_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", vblank,
+                g_DragonCutscene.m_CutsceneTicks, i, m2[i]->m_Position.x, m2[i]->m_Position.y,
+                m2[i]->m_Position.z, m2[i]->m_Rotation.x, m2[i]->m_Rotation.y,
+                m2[i]->m_Rotation.z, m2[i]->m_AnimationState.m_Frame,
+                m2[i]->m_AnimationState.m_FrameProgress);
+    return;
+  }
+  if (!s_cut_trace || g_Gamestate != GS_Cutscene || !g_CutsceneLayout || g_LoadStage < 10)
+    return;
+  fprintf(s_cut_trace, "%d\t%d\t-1\t%d\t%d\t%d\t%d\t%d\t%d\t0\t0\n", vblank,
+          g_CutsceneLayout->m_CurrentTick, g_Camera.m_Position.x, g_Camera.m_Position.y,
+          g_Camera.m_Position.z, g_Camera.m_Rotation.x, g_Camera.m_Rotation.y, g_Camera.m_Rotation.z);
+  for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < 16; i++) {
+    const Moby *m = &g_LevelMobys[i];
+    fprintf(s_cut_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", vblank,
+            g_CutsceneLayout->m_CurrentTick, i, m->m_Position.x, m->m_Position.y,
+            m->m_Position.z, m->m_Rotation.x, m->m_Rotation.y, m->m_Rotation.z,
+            m->m_AnimationState.m_Animation * 64 + m->m_AnimationState.m_Frame,
+            m->m_AnimationState.m_FrameProgress);
+  }
+  if ((vblank & 63) == 0)
+    fflush(s_cut_trace);
+}
+
 void spyro_trace_close(void) {
+  if (s_cut_trace)
+    fclose(s_cut_trace);
+  s_cut_trace = NULL;
   if (s_trace)
     fclose(s_trace);
   s_trace = NULL;

@@ -647,3 +647,10 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `func_8002F3E4` (`gamestates_hand.c`, the dragon cutscene) | hand C: the talk (state 4) counts PAL's 50 Hz vblanks at US timing (`PortCutsceneTicks`), and `DragonVoiceDelay` scales PAL's voice delay whatever the timing | PAL at its own timing (`--pal50`): unchanged by construction (`PortCutsceneTicks(d)` is `d`, and `RT(0, 1)` was 1); the PAL attract demos against PCSX-Redux | the mips2c translation keeps US's; PAL 60's talk shows a 25 Hz sample for one 30 Hz tick in six twice |
 | `PortCutsceneTicks` (`region_game.c`, new) | the port's own: `d * 5 / 6` with the remainder carried, for PAL at US timing | PAL 60's intro against PAL 50's in real time (D150) | none |
 | `MobyMoveWithGravity` (`moby_helpers.c`, PAL's wall-slide slowdown) | decomp C: `T60_TICK_END_DO` in the 60 Hz rules (`patches/spyro-1-tick60/0003`) | the 30 Hz text is the original's tokens | a slide found on a tick's first vblank alone isn't slowed |
+
+## PAL 60's cutscenes at their exact time (2026-11-12, decisions D151)
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_8002BFE0` (`cutscene.c`, the intro's and endings' playback) | decomp C, port only (`patches/spyro-1-region-port/0012`): PAL at US timing calls `PortCutscenePlay` (`region_game.c`), the same placement at the cutscene's exact time | `--cutscene-trace` against US's opening: even animation steps, the camera held at cuts only, the same length | the camera moves between 25 Hz samples (the original holds one a tick) |
+| `func_8002F3E4` (`gamestates_hand.c`, a dragon's talk) | hand C: `CutsceneCameraAt` and `CutsceneAnimate` from the exact time for PAL at US timing | a PAL 60 dragon rescue's talk, before and after | as above |

@@ -43,6 +43,8 @@
  * --tour: after the pad script, visit levels with the level-warp cheat, run
  *   the credits or an ending (src/platform/linux32/tour.c).
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
+ * --cutscene-trace: in gamestate 14, the camera and the cutscene mobys each
+ *   vblank (src/game/trace.c, D151).
  * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
  *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
@@ -316,7 +318,7 @@ static void usage(void) {
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
-          "[--serve PORT] [--trace FILE]\n"
+          "[--serve PORT] [--trace FILE] [--cutscene-trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
@@ -492,6 +494,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--trace") == 0) {
       TAKE();
       if (spyro_trace_open(val) != 0)
+        return 1;
+    } else if (strcmp(a, "--cutscene-trace") == 0) {
+      TAKE();
+      if (spyro_cutscene_trace_open(val) != 0) /* the cutscenes' playback (D151) */
         return 1;
     } else if (strcmp(a, "--moby-trace") == 0) {
       TAKE();

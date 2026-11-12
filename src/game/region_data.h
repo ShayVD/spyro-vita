@@ -65,5 +65,12 @@ void *region_data_ptr(uint32_t addr);
  * are d * 5 / 6 of them, the remainder carried; otherwise d (region_game.c,
  * D150). update.c's GamestateCutsceneUpdate declares it too (0011). */
 int PortCutsceneTicks(int d);
+/* The same clock's exact time in sixths (ticks * 6 + the remainder), or -1
+ * when PAL isn't at US timing; an angle between two samples; and
+ * func_8002BFE0 at that time (D151). */
+int PortCutsceneTime6(int ticks);
+int PortCutsceneAngle(int a0, int a1, int f, int n);
+int PortCutsceneCut(const int *p0, const int *p1); /* position and angles, 6 words each */
+int PortCutscenePlay(void);
 
 #endif

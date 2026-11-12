@@ -16,6 +16,9 @@
 #include <string.h>
 
 #include "common.h"
+#include "camera.h"
+#include "cutscene.h"
+#include "moby.h"
 #include "wad.h"
 
 #include "psx_region.h"
@@ -52,6 +55,97 @@ int PortCutsceneTicks(int d) {
   n = d * 5 + g_PalCutsceneCarry;
   g_PalCutsceneCarry = n % 6;
   return n / 6;
+}
+
+/* PAL at US timing's cutscene time in sixths of its 50 Hz vblanks (1/300 s):
+ * the tick PortCutsceneTicks left and the remainder it carries. It moves by
+ * exactly 5 a vblank of ours, 10 a 30 Hz tick, where the tick moves 2, 2, 1
+ * (D151). -1 when PAL isn't at US timing. */
+int PortCutsceneTime6(int ticks) {
+  if (g_Region != PSX_REGION_PAL || g_RegionTiming)
+    return -1;
+  return ticks * 6 + g_PalCutsceneCarry;
+}
+
+/* An angle between two of a cutscene's samples, f twelfths of the way, the
+ * short way round. A sample itself is kept as the data has it (0-4096). */
+/* Whether two camera samples are a cut, not a move: a shot ends at the
+ * first and the next starts at the second. Then the camera holds the first
+ * until the second's time, as the original does. The presenter's jump
+ * (present.c's JUMP, 0x2000 on an axis) for the position, and an eighth of
+ * a turn for an angle. */
+int PortCutsceneCut(const int *p0, const int *p1) {
+  int i;
+  for (i = 0; i < 3; i++)
+    if (p1[i] - p0[i] > 0x2000 || p0[i] - p1[i] > 0x2000)
+      return 1;
+  for (i = 3; i < 6; i++) {
+    const int d = ((p1[i] - p0[i] + 2048) & 4095) - 2048;
+    if (d > 0x200 || d < -0x200)
+      return 1;
+  }
+  return 0;
+}
+
+int PortCutsceneAngle(int a0, int a1, int f, int n) {
+  int d = ((a1 - a0 + 2048) & 4095) - 2048;
+  if (f == 0)
+    return a0;
+  return (a0 + d * f / n) & 4095;
+}
+
+/* func_8002BFE0 (cutscene.c) for PAL at US timing (D151): the intro's and
+ * endings' camera and mobys at the cutscene's exact time instead of its
+ * tick. The tick moves 2, 2, 1 of PAL's 50 Hz vblanks a 30 Hz tick (D150),
+ * so a mobys' animation and path took a whole step on two ticks and half a
+ * step on the third, and the camera, one sample per 2 of them, held for one
+ * tick in six: the choppy characters the owner saw. At its exact time each
+ * tick moves 5/6 of a 25 Hz sample. The mobys as func_8002BFE0 places them
+ * (their frame and its 64ths, their position between two samples), from
+ * the time; the camera between its two samples (the original shows a
+ * sample a tick; 25 Hz samples have no 30 Hz one). Returns 0 when not PAL
+ * at US timing or not the intro or an ending (the title's flyby keeps its
+ * own tick), and func_8002BFE0 then runs as before. */
+#define CUT_UNPACK(v, p)                                                       \
+  ((v).x = ((p) & 0x3FF00000) >> 12, (v).y = ((p) & 0x000FFC00) >> 2,          \
+   (v).z = ((p) & 0x000003FF) << 8)
+int PortCutscenePlay(void) {
+  const int t6 = PortCutsceneTime6(g_CutsceneLayout->m_CurrentTick);
+  const CutsceneCameraData *c0, *c1;
+  int i, k, f;
+  if (t6 < 0 || g_Gamestate != GS_Cutscene)
+    return 0;
+  k = t6 / 12;
+  f = t6 % 12;
+  c0 = &g_CutsceneLayout->m_CameraData[k];
+  c1 = k + 1 < g_CutsceneLayout->m_Duration ? c0 + 1 : c0;
+  if (PortCutsceneCut(&c0->m_Position.x, &c1->m_Position.x))
+    f = 0; /* a cut: hold the shot until the next one starts */
+  g_Camera.m_Position.x = c0->m_Position.x + (c1->m_Position.x - c0->m_Position.x) * f / 12;
+  g_Camera.m_Position.y = c0->m_Position.y + (c1->m_Position.y - c0->m_Position.y) * f / 12;
+  g_Camera.m_Position.z = c0->m_Position.z + (c1->m_Position.z - c0->m_Position.z) * f / 12;
+  g_Camera.m_Rotation.x = PortCutsceneAngle(c0->m_Rotation.x, c1->m_Rotation.x, f, 12);
+  g_Camera.m_Rotation.y = PortCutsceneAngle(c0->m_Rotation.y, c1->m_Rotation.y, f, 12);
+  g_Camera.m_Rotation.z = PortCutsceneAngle(c0->m_Rotation.z, c1->m_Rotation.z, f, 12);
+  for (i = 0; i < g_CutsceneLayout->m_MobyCount; i++) {
+    const int ppt = g_Models[1 + i]->m_Animations[0]->m_ProgressPerTick;
+    /* the vblanks a frame lasts (func_8002BFE0's four cases), in sixths */
+    const int span = 6 * (ppt == 16 ? 8 : ppt == 21 ? 6 : ppt == 32 ? 4 : 2);
+    const int a = t6 / span, b = (t6 % span) * 64 / span;
+    AnimationState *as = &g_LevelMobys[i].m_AnimationState;
+    Vector3D v, v2;
+    as->m_Animation = a / 50; /* PAL's data: 50 frames an animation (D135) */
+    as->m_Frame = a % 50;
+    as->m_NextAnimation = (a + 1) / 50;
+    as->m_NextFrame = (a + 1) % 50;
+    as->m_FrameProgress = b;
+    CUT_UNPACK(v, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a]);
+    CUT_UNPACK(v2, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a + 1]);
+    g_LevelMobys[i].m_Position.x = (v.x * (64 - b) + v2.x * b) >> 6;
+    g_LevelMobys[i].m_Position.y = (v.y * (64 - b) + v2.y * b) >> 6;
+    g_LevelMobys[i].m_Position.z = (v.z * (64 - b) + v2.z * b) >> 6;
+  }
+  return 1;
 }
 OffsetLength g_LevelDragonsPal[5][6];
 

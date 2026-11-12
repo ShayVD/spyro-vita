@@ -554,14 +554,20 @@ static void DragonWobble(Moby *dragon, const u_char *steps) {
 static void CutsceneAnimate(Moby *m, int model, int ticks) {
   const AnimationHeader *anim = g_Models[model]->m_Animations[0];
   int p = anim->m_ProgressPerTick, n = p == 0x10 ? 8 : p == 0x15 ? 6 : p == 0x20 ? 4 : 2;
+  const int t6 = PortCutsceneTime6(ticks); /* PAL at US timing: the exact time (D151) */
   /* PAL (0x80035C08): the dragon's model at 0 ticks per frame holds its
    * first frame (D139) */
   if (REGION_IS(PAL) && model == 0x1FF && p == 0)
     n = 0x100;
   AnimationState *a = &m->m_AnimationState;
-  a->m_Frame = ticks / n;
+  if (t6 >= 0) {
+    a->m_Frame = t6 / (6 * n);
+    a->m_FrameProgress = ((t6 % (6 * n)) << 6) / (6 * n);
+  } else {
+    a->m_Frame = ticks / n;
+    a->m_FrameProgress = ((ticks % n) << 6) / n;
+  }
   a->m_NextFrame = a->m_Frame + 1;
-  a->m_FrameProgress = ((ticks % n) << 6) / n;
   if (a->m_NextFrame >= anim->m_NumFrames) {
     a->m_Frame = anim->m_NumFrames - 1;
     a->m_FrameProgress = 0;
@@ -574,6 +580,24 @@ static void CutsceneCamera(int k) {
   const int *f = (const int *)dc.unk_0x48 + k * 6;
   g_Camera.m_Position.x = f[0], g_Camera.m_Position.y = f[1], g_Camera.m_Position.z = f[2];
   g_Camera.m_Rotation.x = f[3], g_Camera.m_Rotation.y = f[4], g_Camera.m_Rotation.z = f[5];
+}
+
+/* PAL at US timing (D151): the talk at its exact time t6, in sixths of
+ * PAL's 50 Hz vblanks (PortCutsceneTime6), so each 30 Hz tick moves 5/6 of
+ * a 25 Hz sample where its tick moves 2, 2, 1 vblanks (D150): the camera
+ * between its two frames (2 vblanks, 12 sixths, apart), and a moby's frame
+ * and 64ths as CutsceneAnimate gives them, from the time. */
+static void CutsceneCameraAt(int t6) {
+  const int k = t6 / 12;
+  const int *a = (const int *)dc.unk_0x48 + k * 6;
+  const int *b = k + 1 < dc.unk_0x4C ? a + 6 : a;
+  const int f = PortCutsceneCut(a, b) ? 0 : t6 % 12; /* a cut: hold the shot */
+  g_Camera.m_Position.x = a[0] + (b[0] - a[0]) * f / 12;
+  g_Camera.m_Position.y = a[1] + (b[1] - a[1]) * f / 12;
+  g_Camera.m_Position.z = a[2] + (b[2] - a[2]) * f / 12;
+  g_Camera.m_Rotation.x = PortCutsceneAngle(a[3], b[3], f, 12);
+  g_Camera.m_Rotation.y = PortCutsceneAngle(a[4], b[4], f, 12);
+  g_Camera.m_Rotation.z = PortCutsceneAngle(a[5], b[5], f, 12);
 }
 
 /* The HUD's dragon icons (its mobys 5 to 7) back at their places, then
@@ -877,7 +901,10 @@ static void DragonCutscene(void) {
       Memcpy(g_Spu.m_SoundDefinitions, &saved, sizeof saved);
       dc.unk_0x58 = 1;
     }
-    CutsceneCamera(dc.m_CutsceneTicks >> 1);
+    if (PortCutsceneTime6(dc.m_CutsceneTicks) >= 0)
+      CutsceneCameraAt(PortCutsceneTime6(dc.m_CutsceneTicks)); /* PAL at US timing (D151) */
+    else
+      CutsceneCamera(dc.m_CutsceneTicks >> 1);
     CutsceneAnimate(dc.m_CutsceneSpyro, 0x1FE, dc.m_CutsceneTicks);
     CutsceneAnimate(dc.m_CutsceneDragon, 0x1FF, dc.m_CutsceneTicks);
     if (g_Pad.m_Down & PAD_CROSS) {
