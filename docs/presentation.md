@@ -298,7 +298,7 @@ Pictures (`logs/run7-compare`, made with `tools/side_by_side.py`; the left half 
 
 ## On the Vita
 
-Wired in on 2026-10-30. On the Vita, **widescreen is on by default; 60 fps is experimental and off by default** (D44: it doesn't fit the CPU at 16:9 yet; see "60 fps on the Vita" above). The linux32 host keeps both off, so its oracle checks stay exact. `config.txt` keys: `widescreen=0/1`, `interp=0/1` (`2` without animation, `3` camera only; `interp=1` counts only with `config_version=2` or later; the menu writes `config_version=3` since D68) and `interp_budget` (default on; `0` turns off the game thread's safety net, D75). The user's guide is `docs/vita-testing.md`. Scripted Vita3K runs (`tools/vita/vita3k_run.sh`) write `widescreen=0` and `interp=0` first, so they still compare with the host unless a run turns them on.
+Wired in on 2026-10-30. On the Vita, **widescreen is on by default; 60 fps is experimental and off by default** (D44: it doesn't fit the CPU at 16:9 yet; see "60 fps on the Vita" above). The linux32 host keeps both off, so its oracle checks stay exact. `config.txt` keys: `widescreen=0/1`, `interp=0/1/4` (OFF, INTERPOLATED, 60 HZ; D44's `2` without animation and `3` camera only are read as `1` since D148, and stay the host's `--interp-no-anim` and `--interp-camera`; `interp=1` counts only with `config_version=2` or later; the menu writes `config_version=3` since D68) and `interp_budget` (default on; `0` turns off the game thread's safety net, D75). The user's guide is `docs/vita-testing.md`. Scripted Vita3K runs (`tools/vita/vita3k_run.sh`) write `widescreen=0` and `interp=0` first, so they still compare with the host unless a run turns them on.
 
 **Options menu** (`src/platform/vita/menu.c`, panel drawn by `src/platform/common/menu_panel.c`): hold SELECT and press START.
 - **Pausing:** the menu runs inside the game's VSync wait (`vblank.c`), so the game is paused. Afterwards the real-time count starts again, with no catch-up, so `g_DeltaTime` doesn't jump.
@@ -307,7 +307,7 @@ Wired in on 2026-10-30. On the Vita, **widescreen is on by default; 60 fps is ex
   - they apply at once (`vita_present_apply`; `present.c` takes them at its next tick, drops its queue when switched off, and starts blending afresh when switched on);
   - widescreen re-scales the GPU targets (`vita_gpu_rescale`);
   - closing writes every row's key back to `config.txt`, with `config_version=2` (`3` since D68), and keeps its other lines (the rows are a table, D45).
-- **Labels:** `WIDESCREEN` and `60 FPS (EXPERIMENTAL)` (OFF by default; ON, `NO ANIM`, `CAMERA`). `60 FPS BUDGET` was removed in D75: with 60 fps on, the in-between frame always runs, unless the game thread itself would run late.
+- **Labels:** `WIDESCREEN` and `60 FPS` (OFF by default; INTERPOLATED, 60 HZ; until D148 `60 FPS (EXPERIMENTAL)` with ON, `NO ANIM`, `CAMERA`: the label is short so `< INTERPOLATED >` fits beside it in the panel's 32 columns). With another disc than the US one, the row offers OFF and INTERPOLATED and a `60 HZ LOGIC: US DISC ONLY` row follows it; with the PAL disc a `PAL 60` row (D148). `60 FPS BUDGET` was removed in D75: with 60 fps on, the in-between frame always runs, unless the game thread itself would run late.
 - **Drawing:** the panel is drawn on the CPU, uploaded once, and drawn 1:1 over the last picture by either renderer.
 - **Tests:** `tests/menu_panel` renders the panel on the host; `menu_test=V` drives the menu in scripted runs.
 

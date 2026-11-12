@@ -21,7 +21,11 @@
  * --region-dev: open a PAL or JP disc, which players get refused as not
  *   supported yet (D133). --pal60: the PAL disc with US timing at 60 Hz
  *   ("PAL 60", D138); without it PAL runs at its own 50 Hz (a VSync is a
- *   50 Hz vblank: 3 CD sectors, 882 samples). --region-check: with it, load the disc's region
+ *   50 Hz vblank: 3 CD sectors, 882 samples). --display60 (D148): frames
+ *   due at a 60 Hz display's vblanks, as the Vita's: at 50 Hz, with
+ *   --interp, a frame for each, blended by its time between two ticks
+ *   (one or two a vblank of ours, taken in turn; --present-stats counts
+ *   them). --region-check: with it, load the disc's region
  *   data (src/game/region_data.c) from its executable, print what it found
  *   and exit (0 when every pointer to a string lands on one).
  * --replay: replay the oracle's function samples in DIR through the
@@ -319,7 +323,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal60] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -344,6 +348,8 @@ static void disc_refused(void) {
   free(rgb);
 }
 
+static int s_display60; /* --display60 (D148) */
+
 static void present_report(void) {
   const PresentStats *s = &g_present_stats;
   long long t = s->ticks ? s->ticks : 1;
@@ -358,6 +364,11 @@ static void present_report(void) {
            s->skipped_interp, s->budget_skips, s->squeezed_2d);
   host_log("present: frames by due vblank (7c, D112): %lld shown late, %lld never shown, "
            "%lld dropped from a full queue", s->due_late, s->due_superseded, s->queue_drops);
+  if (s->time_ticks || s->time_fallbacks)
+    host_log("present: by time (D148): %lld ticks, %lld frames, %lld logic draws hidden, %lld "
+             "ticks shown by their logic draw; %lld display vblanks, %lld of them with no new frame",
+             s->time_ticks, s->time_frames, s->time_hidden, s->time_fallbacks, s->due_units,
+             s->due_held);
   host_log("present: animation tracks blended %lld, kept %lld; particles "
            "blended %lld; blending %lld us per tick", s->anim_blended,
            s->anim_kept, s->particles_blended, s->us_blend / t);
@@ -429,6 +440,8 @@ int main(int argc, char **argv) {
       g_RegionDev = 1; /* open a release that isn't supported yet (D133) */
     } else if (strcmp(a, "--pal60") == 0) {
       g_RegionPal60 = 1; /* PAL 60 (regions plan §7.4, D138) */
+    } else if (strcmp(a, "--display60") == 0) {
+      s_display60 = 1; /* frames due at a 60 Hz display's vblanks (D148) */
     } else if (strcmp(a, "--region-check") == 0) {
       g_RegionDev = s_region_check = 1;
     } else if (strcmp(a, "--replay") == 0) {
@@ -792,7 +805,10 @@ int main(int argc, char **argv) {
   }
   /* the game's vblank rate: 50 Hz for PAL at its own timing (D138) */
   psx_clock_set_hz(psx_region_vblank_hz());
+  psx_clock_set_due_display(s_display60);
   g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
+  if (psx_clock_due_display())
+    host_log("present: frames due at a 60 Hz display's vblanks (--display60, D148)");
   if (g_Region != PSX_REGION_US)
     host_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
              g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");

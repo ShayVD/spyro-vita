@@ -3765,17 +3765,18 @@ static void present_slot(int slot, int wide) {
     }
   } else {
     const uint16_t *px = port_present_slot_pixels(slot);
-    static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
+    const int ph = port_present_slot_h(slot); /* 256 for PAL's display (D148) */
+    static uint8_t rgb[PRESENT_W * PRESENT_H_MAX * 3];
     int i;
-    for (i = 0; px && i < PRESENT_W * PRESENT_H; i++) {
+    for (i = 0; px && i < PRESENT_W * ph; i++) {
       int r = px[i] & 31, g = (px[i] >> 5) & 31, b = (px[i] >> 10) & 31;
       rgb[i * 3] = (uint8_t)(r << 3 | r >> 2);
       rgb[i * 3 + 1] = (uint8_t)(g << 3 | g >> 2);
       rgb[i * 3 + 2] = (uint8_t)(b << 3 | b >> 2);
     }
     glBindTexture(GL_TEXTURE_2D, s_rgb_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
-    src[1] = (float)shown_top(PRESENT_H) / PRESENT_H;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, ph, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    src[1] = (float)shown_top(ph) / ph;
     src[3] = 1 - src[1];
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lin ? GL_LINEAR : GL_NEAREST);

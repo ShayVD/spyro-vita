@@ -22,20 +22,42 @@ void psx_clock_set_hz(int hz) {
 
 int psx_clock_hz(void) { return s_hz; }
 
+/* The frames' due vblanks are the display's (D148): set once, at start,
+ * by a platform that shows each frame at its due display vblank. At 60 Hz
+ * the two counts are the same. */
+static int s_due_display;
+
+void psx_clock_set_due_display(int on) { s_due_display = on != 0; }
+
+int psx_clock_due_display(void) { return s_due_display && s_hz != 60; }
+
+int psx_clock_due_at(int vblank) {
+  /* the first display vblank at or after our vblank, from vblank 0 */
+  if (!psx_clock_due_display())
+    return vblank;
+  return (int)(((long long)vblank * 60 + s_hz - 1) / s_hz);
+}
+
 /* The display's vblanks as ours: the same count at 60 Hz, 5 of 6 at 50. */
 static int scaled(int display) {
   return s_hz == 60 ? display : (int)((long long)display * s_hz / 60);
 }
 
 int psx_clock_display_due(int base, int due) {
-  /* the first display vblank at or after our vblank `due`: ceil(due * 60 / hz) */
-  return s_hz == 60 ? base + due : base + (int)(((long long)due * 60 + s_hz - 1) / s_hz);
+  /* the first display vblank at or after our vblank `due`: ceil(due * 60 / hz);
+   * a due that is the display's already (D148): base + due */
+  if (s_hz == 60 || s_due_display)
+    return base + due;
+  return base + (int)(((long long)due * 60 + s_hz - 1) / s_hz);
 }
 
 int psx_clock_display_to_ours(int n) {
-  /* display vblanks past a due one, as ours (floor, either sign) */
+  /* display vblanks past a due one, as ours (floor, either sign); as the
+   * dues' unit when that's the display's (D148) */
   long long x = (long long)n * s_hz;
-  return s_hz == 60 ? n : (int)(x >= 0 ? x / 60 : -((-x + 59) / 60));
+  if (s_hz == 60 || s_due_display)
+    return n;
+  return (int)(x >= 0 ? x / 60 : -((-x + 59) / 60));
 }
 
 int psx_clock_tick(void) { return ++s_vblank; }

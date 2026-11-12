@@ -135,10 +135,11 @@ static int present_frame(int slot) {
   const uint16_t *px = port_present_slot_pixels(slot);
   int fresh = port_present_frame_new() || s_tex_slot != slot, x, y, pitch;
   void *pixels;
-  SDL_Rect src = {0, 0, PRESENT_W, PRESENT_H}, shown, dst;
+  const int h = port_present_slot_h(slot); /* 256 for PAL's display (D148) */
+  SDL_Rect src = {0, 0, PRESENT_W, h}, shown, dst;
   prof_enter(PROF_PRESENT);
   if (fresh && px && SDL_LockTexture(s_tex, &src, &pixels, &pitch) == 0) {
-    for (y = 0; y < PRESENT_H; y++) {
+    for (y = 0; y < h; y++) {
       const uint16_t *s = px + y * PRESENT_W;
       uint8_t *d = (uint8_t *)pixels + (size_t)y * pitch;
       for (x = 0; x < PRESENT_W; x++, d += 4) {
@@ -154,8 +155,8 @@ static int present_frame(int slot) {
   }
   s_last.valid = 0; /* the texture no longer holds the display rect */
   shown = src;
-  shown.y = SHOWN_TOP(PRESENT_H);
-  shown.h = PRESENT_H - 2 * shown.y;
+  shown.y = SHOWN_TOP(h);
+  shown.h = h - 2 * shown.y;
   dst.y = 0;
   dst.h = SCREEN_H;
   dst.w = port_present_frame_is_wide() ? SCREEN_W : AREA43_W;
