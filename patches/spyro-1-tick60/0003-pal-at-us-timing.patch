@@ -1,0 +1,44 @@
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -858,14 +858,16 @@ int MobyMove(Moby *pMoby, int angle, int distance, int mobyCollisionRadius,
+ // PAL (D134): when MobyMove slid along a wall (4) on a slope of 36-220, the
+ // horizontal speed loses a quarter, before the deceleration. A macro around
+ // MobyMoveWithGravity's one call, so the line after the call stays the
+-// original's (the 60 Hz rules' port patch rewrites it, D130).
++// original's (the 60 Hz rules' port patch rewrites it, D130). 60 Hz logic
++// (D150): a quarter once a tick, on the vblank that ends it, as the
++// deceleration after it (a slide the first vblank alone finds is missed).
+ #define MobyMove(m, a, d, mr, cr, f)                                            \
+   ({                                                                           \
+     int moveResult = MobyMove(m, a, d, mr, cr, f);                             \
+     if (REGION_IS(PAL) && moveResult == 4) {                                   \
+       int slope = Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0); \
+       if (slope >= 36 && slope <= 220 && *pHorizontalSpeed > 0) {              \
+-        *pHorizontalSpeed = *pHorizontalSpeed * 3 / 4;                         \
++        T60_TICK_END_DO(*pHorizontalSpeed = *pHorizontalSpeed * 3 / 4);        \
+       }                                                                        \
+     }                                                                          \
+     moveResult;                                                                \
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -6771,14 +6771,18 @@ void NAME_OVERLAY_FUNCTION(UpdateMoby)(void) {
+           }
+ 
+           activePoints = 0;
++          // PAL's rows hold 0x79 and 0x6C points (above): at US timing (PAL
++          // 60, D150) a shot flies as long as US's, so at most 0x6C points,
++          // or the last row runs past PAL's props. PAL 50 and US: 0x78.
++#define TRACER_POINTS_MAX RV(0x78, RT(0x6C, 0x78), 0x78)
+ #if SPYRO_TICK60
+           // 60 Hz: a tracer point once a tick, at the tick's end (the
+           // original's points: same spacing, the 0x78 cap lasts as long),
+           // or when the shot stops (state 1)
+-          if (moby->m_State < 2 && g_TracerCount < 3 && props->m_0x13 < 0x78 &&
++          if (moby->m_State < 2 && g_TracerCount < 3 && props->m_0x13 < TRACER_POINTS_MAX &&
+               (g_t60.upper || g_DeltaTime != 1 || moby->m_State == 1)) {
+ #else
+-          if (moby->m_State < 2 && g_TracerCount < 3 && props->m_0x13 < 0x78) {
++          if (moby->m_State < 2 && g_TracerCount < 3 && props->m_0x13 < TRACER_POINTS_MAX) {
+ #endif
+             tracerPointIndex = props->m_0x13;
+             VecCopy(&props->m_0x04[tracerPointIndex].WorldPos,

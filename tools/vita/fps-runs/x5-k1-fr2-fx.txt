@@ -3,7 +3,7 @@
 # gain on hardware; its 18 pictures and memory card must be X4's. Same route as X4:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x5 1500 \
 #     @tools/vita/fps-runs/x5-k1-fr2-fx.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

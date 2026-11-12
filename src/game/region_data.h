@@ -61,4 +61,9 @@ int region_data_load_disc(int fills, RegionDataStats *stats, char *err, size_t c
  * NULL. */
 void *region_data_ptr(uint32_t addr);
 
+/* PAL's recorded cutscenes count its 50 Hz vblanks: d of ours at US timing
+ * are d * 5 / 6 of them, the remainder carried; otherwise d (region_game.c,
+ * D150). update.c's GamestateCutsceneUpdate declares it too (0011). */
+int PortCutsceneTicks(int d);
+
 #endif

@@ -6,6 +6,6 @@
 # gamestate, not shot for shot.
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-t60-1 1500 @tools/vita/fps-runs/t60-1-toasty-hz60.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=3
+config_version=4
 interp=4
 gpu_meter=1

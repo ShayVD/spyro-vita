@@ -13,10 +13,12 @@
  *   ux0:data/spyro/spyro.log   the log (send it back after a test)
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
- *       pal60=1         the PAL disc with US timing at 60 Hz ("PAL 60",
- *                       D138); default 0: PAL at its own 50 Hz. Read at
- *                       start; the menu's PAL 60 row (the PAL disc only,
- *                       D148) writes it and asks to restart
+ *       pal50=1         the PAL disc at its own 50 Hz timing, as the PS1
+ *                       runs it (developers' test runs only: no menu row
+ *                       writes it, D150); default 0: PAL with US timing at
+ *                       60 Hz ("PAL 60", D138), the way players run it. A
+ *                       pal60= line (D148's PAL 60 row) is no longer read;
+ *                       the menu's next save drops it
  *       region_dev=1    open a release that isn't supported yet instead of
  *                       its "NOT SUPPORTED YET" panel (the host's
  *                       --region-dev; developers' test runs only: no menu
@@ -75,14 +77,18 @@
  *                       software rasterizer (default 1)
  *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
  *                       game logic is unchanged; docs/presentation.md, D30)
- *       interp=1        60 fps (default 0: 30 fps; D44): the menu's
- *                       INTERPOLATED, an in-between frame per tick (camera,
- *                       Spyro, mobys, animation, particles); 4: 60 HZ, 60 Hz
- *                       logic in play (D130, docs/tick60.md), read at start
- *                       only, the US disc only (D148). 2 and 3 (D44's
- *                       diagnostic modes) are read as 1 (D148). interp=1 needs config_version=2 (or 3) in
- *                       the file too: without it the line is taken as the
- *                       old default the menu used to write, and read as 0
+ *       interp=4        the menu's 60 FPS row (D148, D150): 4 (the
+ *                       default since D150) is 60 HZ, 60 Hz logic in play
+ *                       (D130, docs/tick60.md; the US disc and PAL at US
+ *                       timing), read at start only; 1 INTERPOLATED, an
+ *                       in-between frame per tick (camera, Spyro, mobys,
+ *                       animation, particles); 0 OFF, 30 fps. 2 and 3 (D44's
+ *                       diagnostic modes) are read as 1 (D148). Written as
+ *                       a default, a line is read as today's (D150): an
+ *                       interp=0 without config_version=4 is the old
+ *                       default the menu wrote (off, D44 to D149), and an
+ *                       interp=1 without config_version=2 the one before
+ *                       it; either is read as 4
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
@@ -295,7 +301,7 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
+                        .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
@@ -357,6 +363,8 @@ static void parse_poke(const char *v) {
 /* render_thread=0, xa_ahead=0 and gpu_opaque=0 lines in a file older than
  * config_version=3, not taken (D68): the menu's save drops them (menu.c) */
 const char *g_vita_config_stale[4];
+/* a pal60= line (D148's PAL 60 row, gone with D150): the menu's save drops it */
+int g_vita_config_pal60;
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
@@ -383,8 +391,11 @@ static void read_config(void) {
     if (!strcmp(line, "interp"))
       interp_line = 1; /* D44, below */
     if (vita_menu_load(line, v))
-      ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45); and
-           pal60, PAL 60 (regions plan §7.4, D138), a row since D148 */
+      ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
+    else if (!strcmp(line, "pal50"))
+      g_RegionPal50 = atoi(v) != 0; /* the host's --pal50 (D150) */
+    else if (!strcmp(line, "pal60"))
+      g_vita_config_pal60 = 1; /* D148's PAL 60 row, gone with D150: dropped at the next save */
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
     else if (!strcmp(line, "region_dev"))
@@ -507,13 +518,22 @@ static void read_config(void) {
       vita_log("config: unknown key %s", line);
   }
   fclose(f);
-  /* Before 60 fps went experimental (D44) it was the default, and the menu
-   * wrote interp=1 on every save whether or not the player chose it. */
-  if (interp_line && g_vita_opts.interp == 1 && version < 2) {
-    g_vita_opts.interp = 0;
-    vita_log("config: interp=1 without config_version=2 is the old default: 60 fps stays off "
-             "(turn it on in the menu, SELECT+START)");
+  /* The menu writes every row's key on every save, so a default it wrote
+   * isn't the player's choice: read as today's default, 60 HZ (D150), as D68
+   * did for its switches. Before 60 fps went experimental (D44) it was the
+   * default, and the menu wrote interp=1 (config_version 1); from D44 to D149
+   * off was, and it wrote interp=0 (config_version 2 and 3). A 1 written
+   * since D44, a 4, or any value with config_version=4 is the player's. */
+  if (interp_line && ((g_vita_opts.interp == 1 && version < 2) ||
+                      (g_vita_opts.interp == 0 && version < 4))) {
+    vita_log("config: interp=%d without config_version=%d is an old default: 60 HZ, the "
+             "default since D150 (interp=4; change it in the menu, SELECT+START)",
+             g_vita_opts.interp, g_vita_opts.interp == 1 ? 2 : 4);
+    g_vita_opts.interp = 4;
   }
+  if (g_vita_config_pal60)
+    vita_log("config: pal60= is no longer read (D150): the PAL disc runs at US timing, and the "
+             "60 FPS row's 60 HZ is 60 Hz logic on it too");
   /* D44's diagnostic 60 fps values, no animation blending (2) and camera
    * only (3), left the menu with D148: either is INTERPOLATED now. The menu
    * writes the 1 back at its next save; nothing else reads a version for it. */

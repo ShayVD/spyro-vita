@@ -4,7 +4,7 @@
 # late vblanks and the GPU's time (gpu_meter) before and after. Unattended:
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh \
 #     logs/hw-y11 1500 @tools/vita/fps-runs/y11-toasty60-clear-off.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

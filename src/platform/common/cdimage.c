@@ -429,7 +429,7 @@ int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *e
                 r->exe, r->serial, exe_sha1, r->exe_sha1);
   }
   g_Region = r->id;
-  g_RegionTiming = r->id == PSX_REGION_PAL && !g_RegionPal60; /* PAL 60: D138 */
+  g_RegionTiming = r->id == PSX_REGION_PAL && g_RegionPal50; /* PAL 60 by default: D138, D150 */
   if (!r->supported && g_RegionDev) {
     say("--region-dev: opening a release that isn't supported yet");
     return 0;

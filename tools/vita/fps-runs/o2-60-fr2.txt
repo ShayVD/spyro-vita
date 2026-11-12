@@ -1,5 +1,5 @@
 # Run O2 (D81): O1 with fast_render=2, the renderers' GTE commands as native maths (D80). Same routes as O1.
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

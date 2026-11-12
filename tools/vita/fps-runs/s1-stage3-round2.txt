@@ -2,7 +2,7 @@
 # and 11 update as hand-written C, against the same route on main's VPK (S1 main, S2 this branch,
 # the same lines): the pictures and the memory card must be identical, and the "update" lines show
 # what the game logic costs. Q's switches (q1-collision.txt).
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

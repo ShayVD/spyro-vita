@@ -34,6 +34,25 @@ int g_PalCardHeaderDirty; /* PAL 0x8007C148: the card header needs writing again
 int g_PalTitleCardLoad;   /* PAL 0x8007BFF0: the title's first read of the card header, 0-6, 7 done (D139) */
 int (*g_PalLetterCount)(char *pText); /* PAL 0x8007C0B8: the flight overlay's letter counter, set by SetOverlayPointers (D145) */
 OffsetLength g_WadCutscenesPal[16];
+
+/* PAL's recorded cutscenes (the title's flyby, the intro and the endings'
+ * camera and moby samples, the dragons' talk) are sampled for its 25 Hz
+ * ticks: its flyby's loop points are US's x5/6 (976, 1120, 1274 against
+ * 1172, 1344, 1530; titlescreen.c), and a dragon's voice delay is scaled
+ * the same way (DragonVoiceDelay). So they count 50 Hz vblanks. At US
+ * timing (PAL 60, the only way players run PAL since D150), d of our 60 Hz
+ * vblanks are d * 5 / 6 of them, the remainder carried to the next call;
+ * otherwise d. Without it PAL 60's intro, endings and dragons ran 20% fast
+ * and ended before their voices (D138's open "PAL 60's cutscenes"). */
+int g_PalCutsceneCarry; /* saved in states (savestate.c's REGN chunk) */
+int PortCutsceneTicks(int d) {
+  int n;
+  if (g_Region != PSX_REGION_PAL || g_RegionTiming)
+    return d;
+  n = d * 5 + g_PalCutsceneCarry;
+  g_PalCutsceneCarry = n % 6;
+  return n / 6;
+}
 OffsetLength g_LevelDragonsPal[5][6];
 
 #define PAL_WAD_ENTRIES 114

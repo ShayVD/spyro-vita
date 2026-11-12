@@ -3,6 +3,6 @@
 # (the 60 Hz rules are compiled in but never called).
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-t60-2 1500 @tools/vita/fps-runs/t60-2-toasty-interp.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1

@@ -4,7 +4,7 @@
 # (title, flythrough, the Stone Hill attract demo), then 2 minutes in Artisans and 2 in Stone Hill.
 # Send spyro.log as l1.log. Against L2 (the same route) the meter's "texture decodes" row is the
 # pass's GPU time, and the "atlas N:" lines' block counts must match.
-config_version=3
+config_version=4
 interp=0
 render_thread=1
 parse_thread=1

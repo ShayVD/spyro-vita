@@ -1,6 +1,6 @@
 # Run P3 (D82): K3's switches, the shipped threads at 30 fps (render thread, parse thread), with
 # fast_render=2 and native_draw=0; D75's GPU meter (gpu_meter=1), fixed resolution. Same route as P1.
-config_version=3
+config_version=4
 interp=0
 render_thread=1
 parse_thread=1

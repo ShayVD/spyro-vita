@@ -4,7 +4,7 @@
 # with and without the prefetch. T2: native_draw 0, side+prefetch, uncached pools (copied, walked in
 # place), the probe cached and uncached, D86's path. The Toasty route, REALTIME=1. Read with
 # tools/vita/nd_ab_summary.py --t1/--t2. Today's VPK has only native_draw 0 and 1 (T3's file).
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=2

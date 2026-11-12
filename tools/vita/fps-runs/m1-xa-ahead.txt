@@ -3,7 +3,7 @@
 # again. The K route: leave it alone from boot through the title, the flythrough and the Stone Hill
 # attract demo, then start or load a game, 2 minutes in Artisans, then into Stone Hill for 2
 # minutes (more level changes are welcome). Send it as m1.log.
-config_version=3
+config_version=4
 interp=0
 xa_ahead=1
 dynres=0

@@ -1,7 +1,7 @@
 # Run N2 (docs/native-plan.md stage 1, D80): N1 with fast_render=2, the renderers' GTE commands as
 # native maths on C values (gte_native.h), the same results. The "draw" lines' renderer ms against
 # N1's show what stage 1 bought on hardware. Same route as N1. Send spyro.log as n2.log.
-config_version=3
+config_version=4
 interp=0
 render_thread=0
 parse_thread=0

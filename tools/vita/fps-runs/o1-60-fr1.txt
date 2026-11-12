@@ -1,7 +1,7 @@
 # Run O1 (D81): main's defaults with the menu's 60 FPS on (interp=1, nothing else changed), D75's GPU meter
 # on, and fast_render=1 (the register-file hand C, D72). Against O2 it says what stage 1's native GTE maths
 # buys at 60 fps; against hw-main-2a0691c and J6, whether 60 fps holds now. Run with REALTIME=1 for times.
-config_version=3
+config_version=4
 interp=1
 gpu_meter=1
 fast_render=1

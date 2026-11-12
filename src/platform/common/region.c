@@ -11,7 +11,7 @@
 
 int g_Region = PSX_REGION_US;
 int g_RegionTiming;
-int g_RegionPal60;
+int g_RegionPal50;
 int g_RegionDev;
 
 int psx_region_vblank_hz(void) { return g_RegionTiming ? 50 : 60; }

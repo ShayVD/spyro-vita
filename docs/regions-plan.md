@@ -446,6 +446,7 @@ JP is 60 Hz and needs none of this. It needs its 512×232 picture, the ordering-
 ### 7.4 Options
 
 - **PAL timing:** "PAL 50 Hz" (default) or "PAL 60". PAL 60 is PAL's code with every `RT()` site at its US value, at the US tick. It's PAL's text, voices and 256-line picture at NTSC speed. It isn't the original, but it's how many PAL players would like to play.
+  - **Decided (D150, the owner, 2026-11-12):** PAL runs as PAL 60 only, with the 60 FPS row's three values (60 HZ, 60 Hz logic, the default) as on the US disc. PAL's own 50 Hz stays for developers (`--pal50`, `pal50=1`), for the checks against the PS1.
 - **PAL's pause-menu screen position** is part of the original and stays, but it moves a 512×256 picture inside the Vita's frame. The stage decides whether it does anything visible or is kept as a no-op that still saves its value.
 - **No language select for US or JP:** those discs have one language. PAL's language is chosen on its own title screen, as on the PS1.
 

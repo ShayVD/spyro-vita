@@ -39,6 +39,7 @@
 #include "vector.h"
 #include "region.h"
 #include "psx_region.h"
+#include "region_data.h" /* PortCutsceneTicks (D150) */
 
 extern int g_PalCardHeaderDirty; /* PAL 0x8007C148: the title or pause menu changed the language or screen position (region_game.c) */
 
@@ -839,13 +840,15 @@ static void DragonAppear(void) {
 /* The tick the dragon's voice starts at: props word 16; PAL (0x80035800,
  * D139) takes words 17-20 for French, German, Spanish and Italian unless
  * -1 (each dub's own timing, set by func_8002C924) and scales it to 25 Hz
- * ticks, (t * 5 + 3) / 6 from 6 on (RT: US timing in PAL 60). */
+ * ticks, (t * 5 + 3) / 6 from 6 on. PAL's talk counts its 50 Hz vblanks at
+ * US timing too (Dragon, PortCutsceneTicks; D150), so the scale is PAL's
+ * whatever the timing (RT, US's in PAL 60, until D150). */
 static int DragonVoiceDelay(Moby *dragon) {
   int *props = dragon->m_Props, t = props[16];
   if (REGION_IS(PAL)) {
     if (g_Language >= 1 && g_Language <= 4 && props[16 + g_Language] != -1)
       t = props[16 + g_Language];
-    if (RT(0, 1) && t >= 6)
+    if (t >= 6)
       t = (t * 5 + 3) / 6;
   }
   return t;
@@ -983,7 +986,11 @@ static void DragonEnd(void) {
 
 static void Dragon(void) {
   Moby *m;
-  dc.m_CutsceneTicks += g_DeltaTime;
+  /* The talk (4) plays PAL's recorded camera and animations, sampled for
+   * its 25 Hz ticks: at US timing it counts PAL's 50 Hz vblanks, so it
+   * keeps time with the dragon's voice (PortCutsceneTicks, D150). The other
+   * stages are the code's own timing. */
+  dc.m_CutsceneTicks += dc.m_State == 4 ? PortCutsceneTicks(g_DeltaTime) : g_DeltaTime;
   dc.unk_0x50 += g_DeltaTime;
   switch (dc.m_State) {
   case DRAGON_FREE:

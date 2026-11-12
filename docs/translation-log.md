@@ -639,3 +639,11 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 |---|---|---|---|
 | `func_80022A2C` (`moby_hand.c`, lit mobys) | hand C: the GTE offset restored after the lit mobys is `RV(0x780000, 0x800000, 0x780000)` (OFY 120, PAL 128) | PAL 0x8002899C `lui 0x80` against US 0x80023964 `lui 0x78`; the PAL demos' rand() callers and particle lists against PCSX-Redux (D147) | the mips2c translation (`--fast-render 0`) keeps US's 120 |
 | `ColMoby` (`collision_hand.c`, `MobyVolumes`) | hand C: for PAL the hit moby is recorded after the pass-through test (D149) | the US/PAL instruction diff (PAL 0x80053CA4, 0x80053D50, 0x80053E68, 0x80054008); the three PAL attract demos against PCSX-Redux, every trace column, tick for tick | the mips2c translation keeps US's order |
+
+## PAL at US timing, 60 Hz logic on PAL (2026-11-12, decisions D150)
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_8002F3E4` (`gamestates_hand.c`, the dragon cutscene) | hand C: the talk (state 4) counts PAL's 50 Hz vblanks at US timing (`PortCutsceneTicks`), and `DragonVoiceDelay` scales PAL's voice delay whatever the timing | PAL at its own timing (`--pal50`): unchanged by construction (`PortCutsceneTicks(d)` is `d`, and `RT(0, 1)` was 1); the PAL attract demos against PCSX-Redux | the mips2c translation keeps US's; PAL 60's talk shows a 25 Hz sample for one 30 Hz tick in six twice |
+| `PortCutsceneTicks` (`region_game.c`, new) | the port's own: `d * 5 / 6` with the remainder carried, for PAL at US timing | PAL 60's intro against PAL 50's in real time (D150) | none |
+| `MobyMoveWithGravity` (`moby_helpers.c`, PAL's wall-slide slowdown) | decomp C: `T60_TICK_END_DO` in the 60 Hz rules (`patches/spyro-1-tick60/0003`) | the 30 Hz text is the original's tokens | a slide found on a tick's first vblank alone isn't slowed |
