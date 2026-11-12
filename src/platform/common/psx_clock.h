@@ -51,6 +51,18 @@ int psx_clock_hz(void);
 int psx_clock_display_due(int base, int due);
 int psx_clock_display_to_ours(int n);
 
+/* Frames due at the display's vblanks (D148): a platform that shows each
+ * presentation frame at its due display vblank (the Vita's 7c, D112; the
+ * host's --display60) sets this once, at start. Then, at 50 Hz, the dues
+ * present.c files and the two calls above are the display's 60 Hz
+ * vblanks (from the same base), so the presenter can blend a frame for
+ * every display vblank by its time between two ticks. At 60 Hz nothing
+ * changes. psx_clock_due_at: our vblank as a due, the first display vblank
+ * at or after it (our vblank itself at 60 Hz or without this). */
+void psx_clock_set_due_display(int on);
+int psx_clock_due_display(void); /* on, and the clock at 50 Hz */
+int psx_clock_due_at(int vblank);
+
 /* The game's VSyncCallback, if it set one (libetc.c). */
 void psx_clock_callback(void);
 

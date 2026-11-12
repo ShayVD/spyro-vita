@@ -14,7 +14,9 @@
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
  *       pal60=1         the PAL disc with US timing at 60 Hz ("PAL 60",
- *                       D138); default 0: PAL at its own 50 Hz
+ *                       D138); default 0: PAL at its own 50 Hz. Read at
+ *                       start; the menu's PAL 60 row (the PAL disc only,
+ *                       D148) writes it and asks to restart
  *       region_dev=1    open a release that isn't supported yet instead of
  *                       its "NOT SUPPORTED YET" panel (the host's
  *                       --region-dev; developers' test runs only: no menu
@@ -73,11 +75,12 @@
  *                       software rasterizer (default 1)
  *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
  *                       game logic is unchanged; docs/presentation.md, D30)
- *       interp=1        60 fps, experimental (default 0: 30 fps; D44):
- *                       an in-between frame per tick (camera, Spyro, mobys,
- *                       animation, particles); 2: no animation blending;
- *                       3: camera only; 4: 60 Hz logic in play (D130,
- *                       docs/tick60.md), read at start only. interp=1 needs config_version=2 (or 3) in
+ *       interp=1        60 fps (default 0: 30 fps; D44): the menu's
+ *                       INTERPOLATED, an in-between frame per tick (camera,
+ *                       Spyro, mobys, animation, particles); 4: 60 HZ, 60 Hz
+ *                       logic in play (D130, docs/tick60.md), read at start
+ *                       only, the US disc only (D148). 2 and 3 (D44's
+ *                       diagnostic modes) are read as 1 (D148). interp=1 needs config_version=2 (or 3) in
  *                       the file too: without it the line is taken as the
  *                       old default the menu used to write, and read as 0
  *                       (widescreen, interp, interp_budget and the other
@@ -380,11 +383,10 @@ static void read_config(void) {
     if (!strcmp(line, "interp"))
       interp_line = 1; /* D44, below */
     if (vita_menu_load(line, v))
-      ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
+      ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45); and
+           pal60, PAL 60 (regions plan §7.4, D138), a row since D148 */
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
-    else if (!strcmp(line, "pal60"))
-      g_RegionPal60 = atoi(v) != 0; /* PAL 60 (regions plan §7.4, D138) */
     else if (!strcmp(line, "region_dev"))
       g_RegionDev = atoi(v) != 0; /* the host's --region-dev (D133, D143) */
     else if (!strcmp(line, "frames"))
@@ -511,6 +513,14 @@ static void read_config(void) {
     g_vita_opts.interp = 0;
     vita_log("config: interp=1 without config_version=2 is the old default: 60 fps stays off "
              "(turn it on in the menu, SELECT+START)");
+  }
+  /* D44's diagnostic 60 fps values, no animation blending (2) and camera
+   * only (3), left the menu with D148: either is INTERPOLATED now. The menu
+   * writes the 1 back at its next save; nothing else reads a version for it. */
+  if (g_vita_opts.interp == 2 || g_vita_opts.interp == 3) {
+    vita_log("config: interp=%d (%s) is no longer offered (D148): INTERPOLATED (interp=1)",
+             g_vita_opts.interp, g_vita_opts.interp == 2 ? "no animation blending" : "camera only");
+    g_vita_opts.interp = 1;
   }
   /* The render thread, the XA read-ahead and the opaque path were off by
    * default until their hardware run (D63-D66); a 0 written before that

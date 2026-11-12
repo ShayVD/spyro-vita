@@ -300,8 +300,9 @@ static void squeeze_2d(void) {
  * the platform's render thread needs to show a frame at its own display
  * vblank, without the game thread presenting it. */
 #define QUEUE 4
-static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H];
+static uint16_t s_frames[PRESENT_SLOTS][PRESENT_W * PRESENT_H_MAX];
 static uint8_t s_frame_wide[PRESENT_SLOTS];
+static uint16_t s_frame_h[PRESENT_SLOTS]; /* its lines (D148) */
 static int s_frame_due[PRESENT_SLOTS];
 static int s_frame_begun; /* its begin() has gone to the platform */
 static int s_qhead, s_qcount; /* oldest queued slot, number queued */
@@ -313,8 +314,13 @@ static int s_last_push_vblank = -1000;
 
 const PresentCapture *g_present_capture;
 
-static uint16_t s_capture[PRESENT_W * PRESENT_H];
-static int s_captured, s_capture_on;
+static uint16_t s_capture[PRESENT_W * PRESENT_H_MAX];
+static int s_captured, s_capture_on, s_capture_h = PRESENT_H;
+
+/* A frame's lines (D148): a 256-line display (PAL's, D134) is drawn whole;
+ * the US's 240-line one has 224 drawn 8 lines down, which the platforms
+ * crop (shown_top). */
+static int capture_h(const DISPENV *d) { return d->disp.h == PRESENT_H_MAX ? PRESENT_H_MAX : PRESENT_H; }
 
 /* The capture of the area just drawn, into the platform's slot or (without
  * a platform capture) s_capture by StoreImage. With the OT walked later or
@@ -326,7 +332,7 @@ static void capture_area(void *arg) {
   r.x = 0;
   r.y = activeDrawEnv.ofs[1];
   r.w = PRESENT_W;
-  r.h = PRESENT_H;
+  r.h = (short)(s_capture_h = capture_h(&activeDispEnv));
   if (g_present_capture) {
     g_present_capture->capture(r.x, r.y, r.w, r.h);
     return;
@@ -339,15 +345,44 @@ static void commit_slot(void *arg) {
   const PresentFrame *f = arg;
   if (g_present_capture)
     g_present_capture->commit(f);
-  else
+  else {
     memcpy(s_frames[f->slot], s_capture, sizeof s_capture);
+    s_frame_h[f->slot] = (uint16_t)s_capture_h;
+  }
 }
 
 /* The vblank the next frame filed would be due at (7c): its place in the
  * queue after the ones waiting, the oldest dropped if it's full. */
 static int due_next(void) {
-  return psx_clock_count() + 1 + (s_qcount < QUEUE ? s_qcount : QUEUE - 1);
+  return psx_clock_due_at(psx_clock_count() + 1 + (s_qcount < QUEUE ? s_qcount : QUEUE - 1));
 }
+
+/* By time (D148): the display vblank the next frame filed is drawn for
+ * (a due the display's), or -1: due_next()'s. */
+static int s_due_for = -1;
+
+/* D148: 60 fps by time, with the game's clock at 50 Hz (PAL at its own
+ * timing) and the frames due at the display's 60 Hz vblanks
+ * (psx_clock_due_display). Times are in TU, 1/300 s: a game vblank is 6,
+ * a display vblank 5 (60 / gcd(hz, 60) and hz / gcd(hz, 60)). Tick N,
+ * drawn at our vblank c, is shown at c + 4: hi = 6 (c + 4), one of our
+ * vblanks after the in-between frame's real frame (c + 3: filed after the
+ * logic draw's VSync, at c + 2, due a vblank after), so that at most one
+ * of its display vblanks comes before the draw's wait is over: that
+ * frame is drawn before the draw, on the presenter's core beside it, and
+ * the others after it, each with a display vblank or more to be drawn in.
+ * The display vblanks u since the last tick's time (5u in (lo, hi]: 2.4 a
+ * tick, so 2 or 3) each get a frame of their own, the two ticks blended
+ * with the previous one's weight (hi - 5u) / span. At 5u == hi it is tick
+ * N unblended. */
+typedef struct {
+  int on;   /* a tick by time: its time is the next tick's start */
+  int n;    /* the presenter's frames to draw (0: the logic draw's frame, due at u0) */
+  int u0;   /* the first display vblank the tick covers */
+  int hi;   /* the tick's time, TU */
+  int span; /* hi less the last tick's time, TU (0: no blend) */
+} TimePlan;
+static int s_time_valid, s_time_hi; /* the last tick's time (by time), TU */
 
 /* A capturing pass's first DrawOTag: the platform hears the frame's draws
  * start (7c's render thread may skip a late one's). */
@@ -356,7 +391,7 @@ static void frame_begin(void) {
     return;
   s_frame_begun = 1;
   if (g_present_capture && g_present_capture->begin)
-    g_present_capture->begin(due_next(), 0); /* the logic pass's: a real frame */
+    g_present_capture->begin(s_due_for >= 0 ? s_due_for : due_next(), 0); /* the logic pass's: a real frame */
 }
 
 static void capture_now(void) {
@@ -370,18 +405,19 @@ static void capture_now(void) {
 static void reserve(int wide, int interp, PresentFrame *f) {
   int i;
   f->dropped = -1;
+  f->fixed = s_due_for >= 0;
   if (s_qcount == QUEUE) { /* drop the oldest; the rest are due a vblank sooner */
     f->dropped = s_qhead;
     s_qhead = (s_qhead + 1) % PRESENT_SLOTS;
     s_qcount--;
-    for (i = 0; i < s_qcount; i++)
+    for (i = 0; i < s_qcount && !f->fixed; i++) /* by time: each keeps its own (D148) */
       s_frame_due[(s_qhead + i) % PRESENT_SLOTS]--;
     g_present_stats.queue_drops++;
   }
   /* This may be the slot on screen (after a run of drops); harmless: the
    * queue isn't empty now, so the next vblank shows a newer slot. */
   f->slot = (s_qhead + s_qcount) % PRESENT_SLOTS;
-  f->due = due_next();
+  f->due = f->fixed ? s_due_for : due_next();
   f->wide = wide;
   f->interp = interp;
   s_frame_wide[f->slot] = (uint8_t)wide;
@@ -415,6 +451,7 @@ void port_present_reset(void) {
   s_frame_begun = 0;
   s_foreign_vblank = -1;
   s_last_push_vblank = -1000;
+  s_time_valid = 0;
 }
 
 /* The frame shown now, after a pop: a slot, or -1 for the PS1 display. The
@@ -463,12 +500,21 @@ int port_present_frame_due(int v) {
   }
   if (s_popped && s_frame_due[s_shown] != v)
     g_present_stats.due_late++;
+  g_present_stats.due_units++;
+  if (!s_popped && s_shown >= 0)
+    g_present_stats.due_held++;
   return shown_slot();
 }
 
 int port_present_slot_due(int slot) {
   return slot >= 0 && slot < PRESENT_SLOTS ? s_frame_due[slot] : 0;
 }
+
+int port_present_slot_h(int slot) {
+  return slot >= 0 && slot < PRESENT_SLOTS && s_frame_h[slot] ? s_frame_h[slot] : PRESENT_H;
+}
+
+int port_present_shown_h(void) { return port_present_slot_h(s_shown); }
 
 const uint16_t *port_present_slot_pixels(int slot) {
   return slot < 0 || slot >= PRESENT_SLOTS || g_present_capture ? NULL : s_frames[slot];
@@ -739,23 +785,32 @@ static Vector3D8 *spyro_rot(Spyro *sp, int k) {
   return k == 0 ? &sp->m_bodyRotation : k == 1 ? &sp->m_headRotation : &sp->m_tailRotation;
 }
 
-/* Halfway along a track. A tick advances progress and crosses at most one
- * frame (then frame = the old next frame, anim = the old next anim), so the
- * midpoint is either between the same two frames or on one side of the
- * crossing. Anything else (a new animation started, a loop restarted) keeps
- * this tick's pose. Returns 1 if the track was blended. */
+/* The blend's weight of the previous tick, s_wn / s_wd: 1/2 for the
+ * in-between frame, or (D148, by time) the frame's place between the two
+ * ticks' times. Every blend below is written so that at 1/2 it is the
+ * halfway arithmetic it always was, rounding included. */
+static int s_wn = 1, s_wd = 2;
+/* from prev toward cur by 1 - s_wn / s_wd; d = cur - prev >= 0 */
+static int toward(int prev, int d) { return prev + d * (s_wd - s_wn) / s_wd; }
+
+/* Along a track, by the blend's weight (halfway for the in-between frame).
+ * A tick advances progress and crosses at most one frame (then frame = the
+ * old next frame, anim = the old next anim), so the point is either between
+ * the same two frames or on one side of the crossing. Anything else (a new
+ * animation started, a loop restarted) keeps this tick's pose. Returns 1 if
+ * the track was blended. */
 static int mid_track(Track *cur, const Track *prev, int len) {
   int mid;
   if (cur->anim == prev->anim && cur->next == prev->next &&
       cur->frame == prev->frame && cur->nframe == prev->nframe) {
     if (cur->prog < prev->prog)
       return 0;
-    cur->prog = (unsigned char)((prev->prog + cur->prog) / 2);
+    cur->prog = (unsigned char)toward(prev->prog, cur->prog - prev->prog);
     return 1;
   }
   if (cur->anim == prev->next && cur->frame == prev->nframe &&
       prev->prog < len && cur->prog < len) {
-    mid = (prev->prog + cur->prog + len) / 2;
+    mid = toward(prev->prog, cur->prog + len - prev->prog);
     if (mid >= len) {
       cur->prog = (unsigned char)(mid - len);
     } else {
@@ -820,15 +875,17 @@ void PortPresentBeforeUpdate(void) {
   g_present_stats.us_blend += now_us() - t;
 }
 
-/* Halfway between the previous tick and this one, measured from this one
- * (so values stay in the game's own range). Jumps (teleports, respawns,
- * camera cuts) are not blended. */
+/* Between the previous tick and this one by the blend's weight (halfway
+ * for the in-between frame), measured from this one (so values stay in the
+ * game's own range). Jumps (teleports, respawns, camera cuts) are not
+ * blended. */
 #define JUMP 0x2000
+static int back(int d) { return d * s_wn / s_wd; } /* d / 2 at 1/2 */
 static int mid_i(int prev, int cur, int *ok) {
   int d = cur - prev;
   if (d > JUMP || d < -JUMP)
     *ok = 0;
-  return cur - d / 2;
+  return cur - back(d);
 }
 
 static int mid_vec(Vector3D *out, const Vector3D *prev, const Vector3D *cur) {
@@ -844,12 +901,12 @@ static int mid_vec(Vector3D *out, const Vector3D *prev, const Vector3D *cur) {
 
 static short mid_angle12(short prev, short cur) {
   int d = ((cur - prev + 0x800) & 0xFFF) - 0x800;
-  return (short)(cur - d / 2);
+  return (short)(cur - back(d));
 }
 
 static unsigned char mid_angle8(unsigned char prev, unsigned char cur) {
   int d = (signed char)(unsigned char)(cur - prev);
-  return (unsigned char)(cur - d / 2);
+  return (unsigned char)(cur - back(d));
 }
 
 static void mid_rot8(Vector3D8 *cur, const Vector3D8 *prev) {
@@ -881,7 +938,7 @@ static void blend_particles(Particle *parts) {
     if (k < 3)
       continue;
     for (k = 0; k < 3; k++)
-      cp[k] = (short)(cp[k] - d[k] / 2);
+      cp[k] = (short)(cp[k] - back(d[k]));
     g_present_stats.particles_blended++;
   }
 }
@@ -1182,13 +1239,15 @@ int pres_DrawSync(int mode) {
 }
 
 static void pres_capture(int y) {
+  const int h = capture_h(&s_pw_active); /* (D148) */
   if (s_job.out) {
-    s_job.out->capture(0, y, PRESENT_W, PRESENT_H);
+    s_job.out->capture(0, y, PRESENT_W, h);
   } else if (g_present_capture) {
-    g_present_capture->capture(0, y, PRESENT_W, PRESENT_H);
+    g_present_capture->capture(0, y, PRESENT_W, h);
   } else { /* capture_area's StoreImage, from the presenter's area */
     RECT16 r;
-    r.x = 0, r.y = (short)y, r.w = PRESENT_W, r.h = PRESENT_H;
+    s_capture_h = h;
+    r.x = 0, r.y = (short)y, r.w = PRESENT_W, r.h = (short)h;
     StoreImage(&r, (u_long *)s_capture);
   }
   s_job.captured = 1;
@@ -1211,7 +1270,7 @@ void pres_DrawOTag(u_long *p) {
     if (j->out)
       j->out->begin(j->f.due, j->interp);
     else if (g_present_capture && g_present_capture->begin)
-      g_present_capture->begin(due_next(), j->interp);
+      g_present_capture->begin(s_due_for >= 0 ? s_due_for : due_next(), j->interp);
   }
   if (j->out)
     j->out->env(&s_pw_cur, j->disabled, j->gl_wide);
@@ -1402,10 +1461,98 @@ static int presenter_pass(int wide, int own_state, int blend, int check) {
 }
 #endif
 
+#if SPYRO_PRESENTER
+static int gcd(int a, int b) { return b ? gcd(b, a % b) : a; }
+static int tu_game(void) { return 60 / gcd(psx_clock_hz(), 60); }
+static int tu_display(void) { return psx_clock_hz() / gcd(psx_clock_hz(), 60); }
+
+/* This tick's display vblanks (D148): blended if it may be (the in-between
+ * frame's conditions, the last tick's time known and at most
+ * PSX_CLOCK_MAX_CATCH_UP vblanks back, a gamestate that files frames).
+ * Display vblanks before the next of ours (lo) are too soon to draw for:
+ * after a slow tick the frame on screen is held there. */
+static TimePlan time_plan(int interp) {
+  TimePlan p = {0};
+  const int tg = tu_game(), td = tu_display(), c = psx_clock_count();
+  int lo = tg * (c + 2);
+  p.on = 1;
+  p.hi = tg * (c + 4);
+  if (interp && s_time_valid && p.hi - s_time_hi > 0 &&
+      p.hi - s_time_hi <= tg * PSX_CLOCK_MAX_CATCH_UP && files_a_frame()) {
+    p.span = p.hi - s_time_hi;
+    if (s_time_hi > lo)
+      lo = s_time_hi;
+  }
+  p.u0 = lo / td + 1;
+  if (p.span)
+    p.n = p.hi / td - lo / td;
+  return p;
+}
+
+/* Frame i of a tick by time: the presenter's, blended for its display
+ * vblank (unblended at the tick's own time), filed due at it. Returns
+ * presenter_pass's 0 (no frame), 1 (inline, queued here) or 2 (worker). */
+static int time_frame(const TimePlan *p, int i, int wide_pass) {
+  const int u = p->u0 + i, wn = p->hi - tu_display() * u;
+  int r;
+  s_wn = wn;
+  s_wd = p->span;
+  s_due_for = u;
+  r = presenter_pass(g_present.widescreen, wide_pass, wn != 0, 0);
+  if (r == 1)
+    push_capture(g_present.widescreen, wn != 0);
+  s_wn = 1;
+  s_wd = 2;
+  s_due_for = -1;
+  if (r) {
+    g_present_stats.time_frames++;
+    if (wn)
+      g_present_stats.interp_frames++;
+  } else {
+    g_present_stats.skipped_interp++;
+  }
+  return r;
+}
+
+/* The tick's frames after its first (D148), after the logic draw. The
+ * game's draw makes the tick's VSync(0) itself (GamestateDraw ends with
+ * DrawSync, VSync, PutDispEnv and DrawOTag), so these are filed after
+ * that wait: the plan's time, one of our vblanks after the original's
+ * real frame, leaves each a display vblank or more to be drawn in (a
+ * frame its vblank has passed already is dropped). Each waits for the one
+ * before (the presenter has one snapshot). libgpu's display environment is
+ * the logic draw's afterwards: the presenter sets it for the draw it
+ * expects next (presenter_pass), which here has been. */
+static void time_rest(const TimePlan *p, int wide_pass) {
+  int i;
+  for (i = 1; i < p->n; i++) {
+    DISPENV keep;
+    if (p->u0 + i - psx_clock_due_at(psx_clock_count()) <= 0) {
+      g_present_stats.skipped_interp++; /* its display vblank has passed */
+      continue;
+    }
+    keep = currentDispEnv;
+    time_frame(p, i, wide_pass);
+    currentDispEnv = keep;
+  }
+}
+
+/* The tick's end: its time is where the next one's frames start */
+static void time_done(const TimePlan *p) {
+  s_time_valid = p->on;
+  s_time_hi = p->hi;
+  if (p->on && p->n)
+    g_present_stats.time_ticks++;
+  else if (p->on)
+    g_present_stats.time_fallbacks++;
+}
+#endif
+
 /* main.c, instead of GamestateDraw() (patches/spyro-1-port/0005). */
 void PortPresentDraw(void) {
-  int wide_pass, logic_wide, interp, timed, active, pres = 0, pres_worker = 0;
+  int wide_pass, logic_wide, interp, timed, active, pres = 0, pres_worker = 0, hide;
   long long t, t_interp = 0;
+  TimePlan tp = {0};
   if (g_present.stats) {
     g_present_stats.us_update += now_us() - s_t_update;
     g_present_stats.ticks++;
@@ -1451,6 +1598,18 @@ void PortPresentDraw(void) {
   /* A 60 Hz update (D130) is one vblank: its frame is the next one shown,
    * with nothing in between */
   interp = g_present.interp && pres && can_interp() && !g_t60.next;
+#if SPYRO_PRESENTER
+  /* D148: 60 fps by time. The game's clock at 50 Hz (PAL), frames due at
+   * the display's vblanks: a frame for every display vblank this tick
+   * covers, each blended by its own time between the two ticks. */
+  if (g_present.interp && psx_clock_due_display() && pres) {
+    tp = time_plan(interp);
+    if (!tp.n) {
+      interp = 0; /* shown by its logic draw, at the tick's first display vblank */
+      s_due_for = tp.u0;
+    }
+  }
+#endif
   if (g_present.interp && !interp)
     g_present_stats.skipped_interp++;
 #if SPYRO_PRESENTER
@@ -1468,20 +1627,28 @@ void PortPresentDraw(void) {
   if (interp && g_present.interp_budget_us && !pres_worker && !budget_allows()) {
     interp = 0;
     g_present_stats.budget_skips++;
+    if (tp.n) { /* by time: the logic draw's frame then (D148) */
+      tp.n = 0;
+      s_due_for = tp.u0;
+    }
   }
   s_prev_interp = interp;
 #if SPYRO_PRESENTER
   /* The in-between frame: the presenter's (stage 7e, D125; every gamestate
-   * since 7g, D128) */
+   * since 7g, D128); by time (D148), the tick's first frame */
   if (interp) {
-    long long tp = now_us();
+    long long tp0 = now_us();
     int r;
-    t_interp = tp;
-    r = presenter_pass(g_present.widescreen, wide_pass, 1, 0);
+    t_interp = tp0;
+    r = tp.n ? time_frame(&tp, 0, wide_pass) : presenter_pass(g_present.widescreen, wide_pass, 1, 0);
     if (r) {
-      if (r == 1) /* inline: its capture; on the worker it was filed already */
+      if (r == 1 && !tp.n) /* inline: its capture; on the worker it was filed already */
         push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
-      g_present_stats.interp_frames++;
+      if (!tp.n)
+        g_present_stats.interp_frames++;
+    } else if (tp.n) { /* by time: no blend (the camera jumped): the logic draw's frame */
+      tp.n = 0;          /* (time_frame counted it) */
+      s_due_for = tp.u0;
     } else {
       g_present_stats.skipped_interp++;
     }
@@ -1489,8 +1656,9 @@ void PortPresentDraw(void) {
     s_interp_cost = t_interp;
   }
   /* the attract demos' 16:9 real frame: the presenter's, unblended, from
-   * its own visibility state, queued after the logic pass below */
-  if (wide_pass)
+   * its own visibility state, queued after the logic pass below (by time,
+   * the frames blended by time are the picture: D148) */
+  if (wide_pass && !tp.n)
     presenter_pass(1, 1, 0, 0);
   /* --pres-check (stage 7e, D125; since D129): the presenter's frame from
    * the same snapshot unblended against the logic draw's own list, record
@@ -1504,16 +1672,19 @@ void PortPresentDraw(void) {
       pres_check_skip(1);
   }
 #endif
+  /* By time (D148) the logic draw is hidden as the attract demos' 4:3 one
+   * is: the presenter's frames are the picture. */
+  hide = wide_pass || tp.n;
 
   /* The logic pass: the game's own draw, side effects and all. */
   t = now_us();
   s_tick_vsync_us = 0;
   if (timed)
     g_psyxVSyncHook = timed_vsync;
-  s_suppress_ot = wide_pass;
+  s_suppress_ot = hide;
   g_present_narrow = logic_wide;
   s_record_2d = logic_wide;
-  s_capture_on = active && !wide_pass;
+  s_capture_on = active && !hide;
   s_in_game_draw = 1;
   game_draw(!wide_pass);
   s_in_game_draw = 0;
@@ -1530,12 +1701,20 @@ void PortPresentDraw(void) {
   g_psyxVSyncHook = NULL;
   /* This tick's frame goes in the queue where the original draw finishes,
    * so real frames are shown on the same vblanks as without presentation. */
-  if (active)
+  if (active && !tp.n)
     push_capture(wide_pass || logic_wide, 0);
+  s_due_for = -1;
   g_present_stats.logic_passes++;
   g_present_stats.us_logic += now_us() - t - (timed ? s_tick_vsync_us : 0);
   if (g_present.interp_budget_us) {
     s_logic_cost = now_us() - t - s_tick_vsync_us;
     s_busy_wo_interp = now_us() - s_t_update - s_tick_vsync_us - t_interp;
   }
+#if SPYRO_PRESENTER
+  if (tp.n) { /* by time (D148): the tick's other frames */
+    g_present_stats.time_hidden++;
+    time_rest(&tp, wide_pass);
+  }
+  time_done(&tp);
+#endif
 }
