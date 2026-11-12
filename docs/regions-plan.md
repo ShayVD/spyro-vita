@@ -233,7 +233,7 @@ Only PAL's code at 25 Hz is PAL.
   - `UpdateSlopeFloorCollision`'s change is a test of Spyro's state (not 11, not 2) before its fallback ray; the offsets were register addressing.
   - `func_8003E90C`'s is `x >> 4` → `(x × 307) >> 12`, ×1.2: a 50 Hz speed retune (R3), not a fixed-point change.
   - `MobyMoveWithGravity`'s slowdown on a `MobyMove` result of 4 scales the *horizontal* speed by 3/4.
-  - `ColMoby` is identical apart from relocations. `func_8004DF24` also keeps the floor's normal in `g_CollisionNormal`. `func_80047B60` copies only x and y of the post-collision velocity in the air.
+  - `ColMoby` is identical apart from relocations. *(Wrong, D149: in its four volume kinds PAL records the hit moby after the pass-through test, not before, so a pass-through volume doesn't block in PAL.)* `func_8004DF24` also keeps the floor's normal in `g_CollisionNormal`. `func_80047B60` copies only x and y of the post-collision velocity in the air.
   - The title flyby's `(Sin >> 1) + 0x2980` → `Sin × 3/4 + 0x2AA0` in `GamestateCutsceneTransition` is the 256-line picture's (Spyro's path raised), not timing.
 - **Debug `printf`s** remain in the CD functions, `LoadLevel` and `KillOrphans`. They have no behaviour.
 
