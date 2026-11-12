@@ -1769,3 +1769,15 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   Both have the same values and stores as PAL's: gcc's scheduling, not behaviour. The credits overlay's two functions (36 constant sites) are hand C in the port (`credits_hand.c`, retuned in D139) and asm in the matching build, so they're outside these sources.
 - **PAL 60 and the tracer rows:** `RT()` keeps US's 150- and 145-point rows under PAL 60, with PAL's code around them. Whether PAL's props hold three US-sized rows isn't checked; the props are the level's own, from PAL's WAD. PAL 60 is a developer mode until R4 turns PAL on.
 - **Not judged for 60 Hz:** PAL's added code (the egg thieves' turn, the Shepherd's move, the added resets) wasn't judged as D144's classes were. `--tick60` is off on the PAL disc (D138), so nothing runs it yet; it's a follow-up for when PAL gets 60 Hz.
+- **Checked:**
+  - **The patches:** both series, applied in their real order, rebuild the edited trees exactly. Matching: `moby_update.c`, `moby_spawn.c`, `particle_spawn.c`, `region.h` and `mobys.yaml` are equal to the edit. Port and port + tick60: `moby_update.c` is equal to the merged files. The merge was audited: the port-vs-matching differences after it are the same as before it, apart from the resolved conflicts.
+  - **Matching builds:** US `PSX.EXE SHA-1 OK` (`logs/pal-ov/final-us-matching.txt`). `REGION=pal`: 249 of 253 strictly the same (`logs/pal-ov/final-pal-matching.txt`, `build/s1-matching-pal/compare-wad-strict.txt`).
+  - **Host build:** the build passes, with the 60 Hz rules (`logs/pal-ov/final-host-build2.txt`).
+  - **US unchanged, off:** `tools/host_checks.sh` with main `b8911b4`'s binary and this branch's: **287 of 287 files identical** (demo, the whole tour, routes A and B). The logs were compared with their folder and binary names masked (`logs/pov-main-*`, `logs/pov-br-*`, `logs/pal-ov/hc-cmp.txt`).
+  - **US unchanged, interpolated:** `tools/pres_check_ab.sh MODE=chk` with main's binary as the reference: files identical: demo 26/26, wsi 26/26, routes A and B 56/56 each, and `pres check` 6,169, 6,169, 6,669 and 6,669 frames identical, 0 differing (`logs/pov-pc-*`, `logs/pal-ov/pres-check.txt`). gems (rerun once its pad `logs/pads/gems.txt` was copied into this worktree): 19/19 files and 4,553 frames identical (`logs/pal-ov/pres-check-gems.txt`).
+  - `tools/check_no_assets.sh`: exit 0.
+  - **The PAL attract demos against PCSX-Redux** (R4's capture `rx-pal-demo`, 16,000 vblanks; the host with `--region-dev --disc disc/files-pal`; `trace_diff.py --key tick --where gamestate=0,level=N`; `logs/pal-ov/demo-diff.txt`):
+    - Stone Hill (11): the same through tick 166; before this work it differed at tick 1.
+    - Doctor Shemp (24) and Icy Flight (55): the same through tick 41.
+    
+    At each first divergence only `rand` differs; Spyro's position, state and the rest still agree. **Not yet tick for tick.** With the overlays now PAL's, the next differing draw is probably outside them (the main executable's hand C, or a table). Finding it is R4's rand-caller comparison (D143), told.
