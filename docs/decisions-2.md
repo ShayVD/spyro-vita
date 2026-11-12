@@ -1966,3 +1966,45 @@ Logs are in the worktree's `logs/u60/` and `logs/u60hc-*`, `logs/u60pc-*` (gitig
   - **PAL at 60 HZ** (the PAL 60 new game, START, SELECT, 16:9; the final VPK, with a state saved at 5,200 and loaded at 5,600): 1,958 updates at 60 Hz; the pause and inventory backdrops full width (`v3k-pal-60hz-fin/win-6300.png`, and `v3k-pal-60hz`).
   - **PAL INTERPOLATED** (the same script): 149 or 150 in-between frames every 150 ticks (`v3k-pal-interp`).
 - **Not run:** the matching build (`tools/build_matching.sh`): it applies `patches/spyro-1`, `spyro-1-region` and `spyro-1-region-matching`, none of which changed. **Hardware:** not run; it needs the owner's yes.
+
+## 2026-11-12 — PAL 60's cutscenes at their exact time
+
+### D151. For PAL at US timing, the intro, the endings and the dragons' talk are placed at the cutscene's exact time, in sixths of PAL's 50 Hz vblanks, instead of at its tick: every 30 Hz tick moves 5/6 of a 25 Hz sample, so the characters' animation and paths step evenly, and the camera moves between its samples instead of holding one tick in six. US, JP and PAL at its own timing run the original's code
+- **Why:** the owner played main `8ca72b6` (D150) on the Vita with the PAL disc at 60 HZ: "characters in opening seemed a bit choppy" (`logs/hw-pal-8ca72b6-20261112/` in the main checkout). The log's pacing in the opening (gamestate 14, vblanks 1715–4570) was clean: 150 ticks and 150 in-between frames a window, none late or skipped.
+- **The cause: D150's cutscene clock.** PAL's cutscene data is sampled for 25 Hz ticks, and D150 counts PAL's 50 Hz vblanks at US timing with `PortCutsceneTicks`, 5/6 of ours with the remainder carried, so the cutscene's tick moves 2, 2, 1 a 30 Hz tick. `func_8002BFE0` places the mobys and the camera from that tick:
+  - a moby's animation time (its frame and 64ths) moved 32, 32, 16 a tick (16, 16, 8 for the slower models): a whole step on two ticks and half a step on the third;
+  - the camera, one sample per 2 of the tick, held for one tick in six.
+  
+  The speed was right (D150: 49.0 s, PAL 50's 48.96), the steps weren't even. The dragons' talk (`DragonCutscene`, `CutsceneCamera`, `CutsceneAnimate` in `gamestates_hand.c`) did the same.
+- **Not the presenter:** it blends the cutscene mobys as it does a level's. On the host's opening with `--interp`, US blends 30,678 animation tracks and keeps 18, PAL 27,978 and 46, at single-digit microseconds a tick: the hardware log's 8–9 us "blend" is a cutscene's few mobys, not mobys left out. Both skip the in-between frame 11 times (the camera's cuts), before and after this change.
+- **Not D150's open "animations 20% fast":** that is play (PAL's models at 30 Hz ticks); a cutscene's mobys are placed from the cutscene's time, which D150 already keeps.
+- **The fix** (`src/game/region_game.c`, `patches/spyro-1-region-port/0012-pal60-cutscene-time.patch`, `gamestates_hand.c`):
+  - `PortCutsceneTime6(tick)`: the cutscene's exact time, `tick * 6` plus the carry `PortCutsceneTicks` keeps, in 1/300 s; it moves exactly 10 a 30 Hz tick. -1 when PAL isn't at US timing.
+  - `PortCutscenePlay()`, called first in `func_8002BFE0` (port only, `#ifndef REGION`): in gamestate 14 with PAL at US timing, each moby's frame and 64ths from the time (`func_8002BFE0`'s four frame lengths, PAL's 50 frames an animation) and its position between two samples as before; the camera between its two samples, angles the short way. The title's flyby keeps the original's code (its own tick, D150).
+  - **Cuts:** two samples more than 0x2000 apart on an axis (the presenter's jump, `present.c`) or an eighth of a turn apart are a cut, and the camera holds the first until the second's time, as the original does. Without it the first Vita3K run showed in-between frames dropped where the camera was half way between two shots.
+  - The dragons' talk: `CutsceneCameraAt(t6)` between frames, and `CutsceneAnimate` from the time.
+  - The camera between samples is the port's own: the original shows one sample a tick, and 25 Hz samples have no 30 Hz one. A sample itself is the data's, angle and all.
+- **A tool:** `--cutscene-trace FILE` (host, `trace.c`): in gamestate 14 and a dragon's talk, each vblank, the cutscene's tick, the camera and each cutscene moby's position, frame and 64ths.
+
+#### Checked
+Logs are in the worktree's `logs/u61/` (gitignored). Main `8ca72b6`'s tree is D150's commit's (`git diff` empty), so D150's binary `spyro-u60c` stands for main; this branch's is `spyro-c3` (the host checks) and `spyro-c4` (`c3` with the cut test; `objdump` differs in `func_8002F3E4`, `PortCutscenePlay` and the new `PortCutsceneCut` only).
+- **The opening, US against PAL 60** (host, a new game, `--cutscene-trace`; `cut_anim.py`, `cam_holds.py`, `cut_even.py`):
+
+  | | US | PAL 60 before | PAL 60 after |
+  |---|---|---|---|
+  | the cutscene's tick a 30 Hz tick | 2 every tick | 2, 2, 1 | 2, 2, 1 (the time moves 10 sixths every tick) |
+  | animation time a tick (64ths) | 32, or 16 for slow models | 32, 32, 16; 16, 16, 8 | 27 or 26; 14 or 13 |
+  | camera held while moving | 0 of 386 ticks | 65 of 259 (25%) | 1 of 387 (a cut) |
+  | camera unevenness (tick to tick) | 0.136 | 0.620 | 0.150 |
+  | length (gamestate 14) | 2,940 vblanks | 2,940 | 2,940 |
+
+  64 × 5/12 is 26.7 a tick: the 25 Hz data at its real speed (US's 32 is its own 30 Hz data's).
+- **A dragon's talk** (PAL 60, `logs/pads/pal60_gems.txt`: the PAL 60 new game, then the gems script shifted to PAL's arrival, with the `die` scenario's first poke, frees Artisans' dragon at vblank 5,609): animation steps 27/26, 18/17 and 13 after, against 32/16 and 21/22/11 before (a build with `PortCutsceneTime6` returning -1, for this measure only); the camera held in 39 of 153 moving ticks before, 0 of 230 after.
+- **US unchanged:** `tools/host_checks.sh` with `spyro-c3`: **287 of 287 files identical** to D150's `spyro-u60c` run (`logs/u61/hc_cmp.txt`).
+- **The PAL attract demos at `--pal50`** against PCSX-Redux: Stone Hill 726 of 726 ticks identical, Doctor Shemp 766 of 766, Icy Flight 774 of 774, all 11 columns (`logs/u61/h-pal-demo50`).
+- **ctest:** 29 of 30 passed and `gte` skipped, as on main (the build with the cut test) (`logs/u61/ctest.txt`).
+- **Vita3K** (the VPK with the Mac's VitaSDK, `realtime=0`, 60 HZ, 16:9):
+  - **PAL's opening** (`v3k-pal-intro3`): 150 ticks and 148–150 in-between frames a window in the cutscene, the others at the camera's cuts; the captures render (`win-4400.png`, `win-5200.png`, `win-6000.png`).
+  - **US's opening** (`v3k-us-intro`): the same pattern, 147–150 a window.
+  - One run of the same VPK (`v3k-pal-intro2`) stopped at vblank 5,200 when Vita3K itself died (`Trace/BPT trap` in the emulator process, `vita3k.txt`); the same VPK and script run again reached 6,800 (`v3k-pal-intro3`). Not seen again.
+- **Not run:** hardware (the owner's yes first): whether the opening looks smooth is the owner's call; the numbers above say each tick now moves the same amount.
