@@ -621,3 +621,9 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `Balloonist4` (the dialogue and menus) | decomp C, PAL body first | exact in the ten overlays (LEVEL_10 0x80083970) | none |
 | `func_pal_80081758` (new), `Flight1`–`Flight5` | decomp C; `Flight5` PAL body first; `Flight4` `RT` | exact in LEVEL_15, 25, 35, 45, 55 (0x80081758 … 0x80082058) | none |
 | `SetOverlayPointers` | decomp C: `g_PalLetterCount` set for PAL's flight levels | read against PAL 0x8005FE04 (stored before `Flight1`'s pointer); the function differs from PAL's in its other overlays' addresses anyway | none |
+
+## Stage R4: the attract demos (2026-11-12, decisions D147)
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_80022A2C` (`moby_hand.c`, lit mobys) | hand C: the GTE offset restored after the lit mobys is `RV(0x780000, 0x800000, 0x780000)` (OFY 120, PAL 128) | PAL 0x8002899C `lui 0x80` against US 0x80023964 `lui 0x78`; the PAL demos' rand() callers and particle lists against PCSX-Redux (D147) | the mips2c translation (`--fast-render 0`) keeps US's 120 |
