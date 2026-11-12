@@ -13,6 +13,11 @@ extern "C" {
 
 #define PRESENT_W 512 /* captured frame: the 512x240 display area, PS1 15-bit */
 #define PRESENT_H 240
+/* PAL's display is 512x256, all of it drawn (D134): its frames are 256 lines
+ * (D148; until then 240 with the US's 8-line margin, so the bottom 32 of
+ * PAL's lines, the title's language row among them, were never shown).
+ * port_present_slot_h(): a slot's lines. */
+#define PRESENT_H_MAX 256
 #define PRESENT_SLOTS 6   /* captured frames: queued and on screen */
 
 typedef struct {
@@ -50,6 +55,15 @@ typedef struct {
   long long due_superseded; /* frames never taken: a newer one was due too */
   long long queue_drops;    /* frames dropped from a full queue (QUEUE waiting) */
   long long display_fallbacks; /* pictures that showed the PS1 display instead */
+  /* D148, 60 fps by time (the game's clock at 50 Hz, frames due at the
+   * display's 60 Hz vblanks): */
+  long long time_ticks;  /* ticks whose frames were blended by time */
+  long long time_frames; /* the presenter's frames for them, one a display vblank */
+  long long time_hidden; /* logic draws not drawn (the presenter's frames shown) */
+  long long time_fallbacks; /* ticks shown by their logic draw (no blend: a jump,
+                               a new gamestate, the presenter unable) */
+  long long due_units, due_held; /* port_present_frame_due's vblanks, and those
+                                    with no new frame while one was shown */
   long long particles_blended;
 } PresentStats;
 
@@ -64,6 +78,8 @@ extern PresentStats g_present_stats;
  * shown; the frames still waiting are each due a vblank sooner), or -1. */
 typedef struct PresentFrame {
   int slot, due, wide, interp, dropped;
+  int fixed; /* by time (D148): the frames still waiting keep their dues
+                when one is dropped (each is drawn for its own display vblank) */
 } PresentFrame;
 
 /* A platform that keeps captured pictures itself (the Vita's GPU renderer):
@@ -154,11 +170,13 @@ int port_present_frame_slot(void);
  * same frame port_present_frame_slot() takes. */
 int port_present_frame_due(int v);
 int port_present_slot_due(int slot); /* the due vblank filed with a slot */
+int port_present_slot_h(int slot);   /* its lines: PRESENT_H, or 256 for PAL's display (D148) */
 const uint16_t *port_present_slot_pixels(int slot); /* NULL with a platform capture */
 int port_present_frame_new(void); /* that call took a frame not shown before */
 /* The pixels on screen now, without taking a new frame (screenshots); NULL
  * when the PS1 display is shown or the platform keeps the pictures. */
 const uint16_t *port_present_shown_pixels(void);
+int port_present_shown_h(void); /* their lines (port_present_slot_h) */
 
 /* order_table.c: a C-built 2D primitive went into the HUD OT. */
 void port_present_note_2d(void *prim);

@@ -276,6 +276,7 @@ int port_present_frame_due(int v) {
   return -1;
 }
 const uint16_t *port_present_shown_pixels(void) { return 0; }
+int port_present_shown_h(void) { return 240; } /* (D148) */
 int port_present_frame_is_wide(void) { return 0; }
 int port_present_ot_pre(u_long *p) { (void)p; return 0; } /* libgpu.c's DrawOTag */
 void port_present_ot_post(u_long *p) { (void)p; }

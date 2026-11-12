@@ -42,15 +42,17 @@ static void changed(void) { s_changes++; }
 static int gpu_on(void) { return s_gpu; }
 static const char *const k_res[] = {"NATIVE", "PS1", "2X"};
 static int act(void) { return ++s_actions, 1; }
-static const char *const k_interp[] = {"OFF", "ON", "NO ANIM", "CAMERA"};
+/* the 60 FPS row since D148 (present_vita.c): OFF, INTERPOLATED, 60 HZ */
+static const char *const k_interp[] = {"OFF", "INTERPOLATED", "60 HZ"};
+static const int k_interp_values[] = {0, 1, 4};
 static const int k_budgets[] = {0, 20, 23, 26, 30};
 static const char *const k_budget_names[] = {"NEVER SKIP", "20 MS", "23 MS", "26 MS", "30 MS"};
 static const char *const k_save_names[] = {"PRESS X"};
 static const MenuOption k_a[] = {
     {.section = MENU_PICTURE, .label = "WIDESCREEN", .key = "widescreen", .value = &s_ws,
      .names = g_menu_off_on, .count = 2, .on_change = changed},
-    {.section = MENU_PICTURE, .label = "60 FPS (EXPERIMENTAL)", .key = "interp",
-     .value = &s_interp, .names = k_interp, .count = 4},
+    {.section = MENU_PICTURE, .label = "60 FPS", .key = "interp", .value = &s_interp,
+     .names = k_interp, .values = k_interp_values, .count = 3},
     {.section = MENU_PICTURE, .label = "60 FPS BUDGET", .key = "interp_budget",
      .value = &s_budget, .names = k_budget_names, .values = k_budgets, .count = 5,
      .fmt = "%d MS"},
@@ -87,7 +89,14 @@ static void test_table(const char *dir) {
   CHECK(!strcmp(menu_opt_text(&k_a[0], buf, sizeof buf), "ON"), "widescreen ON");
   CHECK(menu_opt_change(&k_a[0], 1) == 1 && s_ws == 0 && s_changes == 1, "widescreen toggled");
   CHECK(menu_opt_change(&k_a[0], -1) == 1 && s_ws == 1, "widescreen back");
-  CHECK(menu_opt_change(&k_a[1], -1) == 1 && s_interp == 3, "interp wraps left");
+  CHECK(menu_opt_change(&k_a[1], -1) == 1 && s_interp == 4, "interp wraps left to 60 HZ");
+  CHECK(menu_opt_change(&k_a[1], 1) == 1 && s_interp == 0, "interp wraps right to OFF");
+  CHECK(menu_opt_change(&k_a[1], 1) == 1 && s_interp == 1 &&
+            !strcmp(menu_opt_text(&k_a[1], buf, sizeof buf), "INTERPOLATED"),
+        "interp OFF -> INTERPOLATED");
+  /* D148: the selected value between arrows beside the label, in the
+   * panel's 32 columns (640 pixels less the margins, 18 a character) */
+  CHECK(strlen(k_a[1].label) + strlen(" < INTERPOLATED >") <= 32, "the 60 FPS row fits");
   CHECK(!strcmp(menu_opt_text(&k_a[2], buf, sizeof buf), "26 MS"), "budget 26 MS");
   menu_opt_change(&k_a[2], 1), menu_opt_change(&k_a[2], 1);
   CHECK(s_budget == 0 && !strcmp(menu_opt_text(&k_a[2], buf, sizeof buf), "NEVER SKIP"),
@@ -110,7 +119,8 @@ static void test_table(const char *dir) {
   f = fopen(path, "w");
   fputs("disc=ux0:data/x\nwidescreen=0\n# a comment\nconfig_version=1\ninterp=1\nstats=2", f);
   fclose(f);
-  CHECK(menu_opts_load(lists, 3, "interp", "2") == 1 && s_interp == 2, "load interp");
+  CHECK(menu_opts_load(lists, 3, "interp", "60 hz") == 1 && s_interp == 4, "load interp by name");
+  CHECK(menu_opts_load(lists, 3, "interp", "1") == 1 && s_interp == 1, "load interp");
   CHECK(menu_opts_load(lists, 3, "stats", "2") == 0, "stats isn't a row");
   CHECK(menu_opts_load(lists, 3, "cam_speed", "75") == 1 && s_speed == 75, "load speed");
   CHECK(menu_opts_load(lists, 3, "res", "ps1") == 1 && s_res == 1, "load res by name");
@@ -127,7 +137,7 @@ static void test_table(const char *dir) {
   if (f)
     fclose(f);
   CHECK(!strcmp(text, "disc=ux0:data/x\n# a comment\nstats=2\nconfig_version=2\nwidescreen=1\n"
-                      "interp=2\ninterp_budget=26\ncam_speed=75\nres=1\n"),
+                      "interp=1\ninterp_budget=26\ncam_speed=75\nres=1\n"),
         "saved config.txt:\n%s", text);
 }
 
@@ -139,7 +149,7 @@ int main(int argc, char **argv) {
   static char labels[24][16];
   static const MenuRow rows[] = {{"PICTURE", NULL},
                                  {"WIDESCREEN", "ON"},
-                                 {"60 FPS (EXPERIMENTAL)", "NO ANIM"},
+                                 {"60 FPS", "< INTERPOLATED >"},
                                  {"60 FPS BUDGET", "26 MS"}};
 
   CHECK(h <= 520, "a full panel is %d pixels high (screen 544)", h);
