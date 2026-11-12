@@ -29,7 +29,6 @@
  * register, no sync. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
-#include "region.h"
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
 extern char D_800757B0[];       /* the primitive buffer's next free byte */
@@ -1652,11 +1651,9 @@ static int LitMoby(u32 moby, u32 *shadow) {
   /* The screen offset back; the buckets, highest first, into one chain
    * for the OT slot of its zone (the HUD OT's first for a HUD model at
    * zone 0), after a draw-mode primitive (the blend mode for its
-   * semi-transparent faces) when it has any. The offset is the release's
-   * screen centre: PAL's asm restores 128 (PAL 0x8002899C), its 256-line
-   * picture's (Initialize's SetGeomOffset; D147). */
+   * semi-transparent faces) when it has any. */
   CTC2(0x1000000u, 24);
-  CTC2(RV(0x780000u, 0x800000u, 0x780000u), 25);
+  CTC2(0x780000u, 25);
   *(u32 *)D_800757B0 = c.prim;
   if ((s32)(c.highest - c.lowest) >= 0) {
     u32 b = c.highest, tail = AT32(b), head = AT32(b + 4), ot, slot, last, mode;
