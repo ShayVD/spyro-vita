@@ -1796,3 +1796,97 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **The whole game in each language** (R4's step after R2 part B, D139, D145; host, 50 Hz, a new game through PAL's title with `newgame_pal_host_{en,fr,de,es,it}.txt`, then the tour as D143's, 100,000 vblanks each, main `b8911b4`'s binary; `logs/r4/h-pal-tour-{en,fr,de,es}`, `-it2`): every run exit 0, all 34 warps taken, ending 2, level 64, ending 3, the credits and both cheats; no crash, no hang. The five traces are identical row for row (the language changes only what is drawn); 8 of the 100 shots differ by language: the title (2), the flight results (levels 25, 35 and 55, each in its language, accents drawn: TU AS RATÉ, ABGESTÜRZT, TE HAS CAÍDO, PRECIPITATO) and the pause and inventory screens after the credits (the level names in the language where the disc has them). The credits are the same in every language. The flight results' fourth row (the copters) has no count in any language; not compared with the PS1 (no route reaches those results there yet).
 - **The Italian pad:** `newgame_pal_host_it.txt` (D143) pressed its fourth RIGHT and UP at the same vblank, 2050; the later line won, so it chose Spanish (its first tour, `logs/r4/h-pal-tour-it`, was Spanish's to the byte). UP is at 2100 now.
 - **US unchanged:** `tools/host_checks.sh` with main `b8911b4`'s host sources against this branch's: **287 of 287 files identical** (`logs/r4hc-main-ofy-*`, `logs/r4hc-br-ofy-*`); the matching build `PSX.EXE SHA-1 OK` (`logs/r4/matching-ofy.txt`); `tools/check_no_assets.sh` exit 0.
+
+## 2026-11-12 — the 60 FPS row, 60 HZ on other discs, PAL's 60 fps and its 256 lines
+
+### D148. The menu's 60 FPS row is OFF, INTERPOLATED and 60 HZ (D44's NO ANIM and CAMERA gone, `interp=2` and `3` read as 1); on a disc other than the US one it offers OFF and INTERPOLATED under a `60 HZ LOGIC: US DISC ONLY` row, and the log says what runs; the PAL disc gets a PAL 60 row with D136's restart question; PAL at its own 50 Hz is 60 fps by time (a frame for every display vblank, blended at its own time between two 25 Hz ticks); and presentation frames take the display's height, so PAL's 256-line picture, the title's language row with it, is shown whole
+- **Why:** the owner tried main `44e5ba3` on the Vita with the PAL disc (`region_dev=1`; `logs/hw-pal-try-20261112/` in the main checkout, gitignored). They found:
+  - the 60 FPS row's five values confusing;
+  - 60 HZ did nothing on PAL, silently: `logic60()` is the US disc's only (D138), there was no restart question, and the log still said `present: 60 Hz logic in play (interp=4, D130)`;
+  - PAL's frame rate uneven: the FPS counter jumped between the high 40s and 51 (`vblank N: 300 vblanks in 6006 ms (49.9 per second), 302 pictures`: 50 pictures a second on a 60 Hz display, so every fifth display vblank showed a picture again);
+  - no language select on PAL's title.
+  
+  They asked for one PR (`docs/regions-plan.md`'s R4 session, `pal-r4-whole-game`, owns PAL's enabling PR and was told what this touches).
+- **The number:** D148 is the next free on main `44e5ba3` (D147); #135, open, adds none.
+
+#### The 60 FPS row
+- **Values:** `k_interp_names` is `OFF`, `INTERPOLATED`, `60 HZ` for the values 0, 1 and 4 (`present_vita.c`, the row's `values`). `interp=2` (no animation blending) and `interp=3` (camera only), D44's diagnostic modes, are gone from the Vita: `vita_present_apply` sets `interp_mobys` and `interp_anim` with `interp`.
+- **Old configs:** `read_config` (`main.c`) reads a 2 or a 3 as 1, with a log line (`config: interp=2 (no animation blending) is no longer offered (D148): INTERPOLATED (interp=1)`); the menu writes the 1 back at its next save. No new `config_version`: the mapping holds whatever the file's version, and D44's rule (`interp=1` needs version 2 or later) runs first, as before.
+- **The label** is `60 FPS`, not `60 FPS (EXPERIMENTAL)`: the selected value is shown between arrows beside the label, and the panel holds 32 characters a row (640 pixels less the margins, 18 a character). `60 FPS (EXPERIMENTAL)` and `< INTERPOLATED >` are 38. The README's known issue now says 60 fps is off by default; it was marked experimental there too. 60 HZ is still described as experimental in the README.
+- **Kept on the host:** `--interp-no-anim` and `--interp-camera`, and `PresentConfig`'s `interp_mobys` and `interp_anim`, for comparisons (docs/presentation.md); nothing on the Vita sets them apart from `interp` now.
+- `tests/menu_panel`'s sample row is the new one (values 0, 1, 4; it checks the wraps, a load by name and the width).
+
+#### 60 HZ on another disc
+- `logic60()` stays the US disc's only (D138: PAL's added code isn't judged for 60 Hz; below).
+- **The menu:** with another disc, the keyed 60 FPS row is hidden and a twin shows (OFF, INTERPOLATED; its own copy of the value, no key), with a `60 HZ LOGIC` row under it reading `US DISC ONLY` (an action that does nothing). A config's `interp=4` runs as INTERPOLATED there and stays in `config.txt` for the US disc, saved by the hidden keyed row, until the player changes the twin.
+- **The log:** `present: 60 Hz logic is the US disc's only (interp=4, D138, D148): this disc runs 25 Hz logic with the in-between frame (INTERPOLATED); interp=4 stays in config.txt for the US disc until the 60 FPS row is changed` (30 Hz with PAL 60). A build without the rules says so; only the US disc with the rules says "in play".
+
+#### 60 Hz logic on PAL: what it would take (not done)
+- **PAL 60** (`pal60=1`: PAL's code, US timing, 60 Hz vblanks) is the near case. The 60 Hz rules' edits (`patches/spyro-1-tick60/`) are already written on PAL's `RT()` text (D144, D146), and PAL 60's `RT()` values are US's. What's left is PAL's own code in what the rules compile again, judged as D144 judged the classes:
+  - in the overlays' shared `moby_update.c`: 28 `REGION_IS(PAL)` blocks and 23 `RV()` sites. Among them: the egg thieves' turn toggle, a mover's ground snap, the added sounds, a homing drop not marked killed, and a moby's collision update every update;
+  - in the main executable's update path: about 24 sites in `gamestates/update.c` (many are the pause and menu pages, not rates), 4 in `moby_helpers.c` (D134's shared fixes: `func_80039398`/`MobyMove`'s re-test, `MobyMoveWithGravity`'s slope slowdown), 1 in `pete.c`, 6 in the hand C (`pete_hand.c`, `pete_dispatch_hand.c`, `pete_state_hand.c`).
+  
+  Then: lift the region gates (`logic60()`, the host's `--tick60` refusal in `linux32/main.c`), run a PAL 60 host tour at `--tick60` against one without (R4's PAL pads), Vita3K, hardware. D138's open "PAL 60's cutscenes" (the index assumes 50 Hz) applies with or without 60 Hz.
+- **PAL at its own 50 Hz:** the rules split a tick's per-tick amounts over its two vblanks (`T60_SHARE`), so they'd run 50 Hz logic on PAL's 25 Hz constants. Beyond PAL 60's judging, it needs the 83 `RT_TIME`/`RT_SPEED` sites in `moby_update.c` judged, and the rules' own constants that assume 60 (the frame-counted path step, `t60_rules.c`). The presenter needs nothing more: blending by time takes any tick length (one-vblank ticks are the title's).
+- **Estimate:** PAL 60 with 60 Hz logic is one session's work, like D144's but on about a tenth of the sites. 50 Hz logic is that plus the retune sites. Neither is small enough for this PR.
+
+#### The PAL 60 row
+- A `PAL 60` row (key `pal60`, OFF or ON), shown with the PAL disc only, under the 60 FPS rows. `pal60=` was `read_config`'s own key; the row loads it now (the same key, before the disc opens; `g_RegionPal60`). Read at start, so a change asks D136's question, `PAL 60 BEGINS` (or `STOPS`) `WHEN THE GAME STARTS AGAIN`, RESTART NOW (60 Hz or 50 Hz) or UNDO (`BACK TO OFF`/`ON`), and a `PAL 60 TIMING` row says ON or OFF AT RESTART while it waits. The two questions share the restart code (`restart_ask(ASK_T60 | ASK_PAL60)`).
+- With PAL 60, PAL is US timing: 30 Hz logic, 30 or 60 fps (INTERPOLATED, the half blend) as on the US disc.
+- The README's options table doesn't list the row: PAL isn't playable for players yet. R4's enabling PR adds it (told).
+
+#### 60 fps by time (PAL at its own 50 Hz)
+- **What was there** (D138): the presenter blends one in-between frame a tick, at ½, due at a game vblank. At 50 Hz that's 50 frames a second, shown at the display vblank each 50 Hz vblank starts at: one display vblank in six showed its picture again.
+- **Dues in display vblanks:** a platform that shows each frame at its due display vblank sets `psx_clock_set_due_display(1)` once at start: the Vita with 7c's due presents (D112), the host with `--display60`. Then, at 50 Hz only, the dues `present.c` files are display vblanks counted from the same base (`psx_clock_due_at(v)`: our vblank as one, `ceil(v * 60 / hz)`), and `psx_clock_display_due` / `psx_clock_display_to_ours` don't convert. At 60 Hz each is the old arithmetic. The game thread and the host take frames per display vblank (one or two per vblank of ours: `vita_gpu_due_vblank`, `host_present_vblank`). A frame still dropped from a full queue no longer moves the others' dues (`PresentFrame.fixed`). The render thread's rule is the same.
+- **A frame per display vblank** (`time_plan`, `time_frame`, `time_rest`):
+  - Times are in 1/300 s (a game vblank is 6, a display vblank 5).
+  - Tick N, drawn at our vblank c, is shown at `hi = 6(c + 4)`: one vblank of ours after the in-between frame's real frame. That frame is filed after the logic draw's VSync and due a vblank later, at c + 3. The reason: the game's draw makes the tick's `VSync(0)` itself (GamestateDraw ends with DrawSync, VSync, PutDispEnv, DrawOTag), so frames filed after the draw land after that wait. With `hi = 6(c + 4)`, at most one of the tick's display vblanks falls inside it.
+  - That first frame is drawn before the logic draw, on the presenter's core beside it, as the in-between frame is. The others are drawn after it, each with a display vblank or more of slack. A frame whose display vblank has passed is dropped.
+  - Every display vblank u with 5u in (last tick's time, hi] gets its own frame: 2.4 a tick at 25 Hz, so 2 or 3.
+  - Each frame is the presenter's, the two ticks blended with the previous tick's weight `(hi - 5u) / (hi - last)`, unblended when 5u == hi.
+  - The logic draw is hidden as in the attract demos (`s_suppress_ot`): its side effects run, its list isn't drawn, and the presenter's frames are the picture.
+  - Without a blend (a new gamestate or level, a camera jump, the last tick more than 8 vblanks back, a credits stage that files no frame, `interp_budget`) the tick shows its logic draw's own frame at its first display vblank.
+- **The blends at any weight:** `mid_i`, the angles, the particles and `mid_track` take the previous tick's weight `s_wn / s_wd`, written so that at ½ they are exactly the old halves, rounding included (`cur - d * 1 / 2 == cur - d / 2`; `prev + (cur - prev) / 2 == (prev + cur) / 2` for the progress, which never goes back in a blended track).
+- **Two wrong turns:**
+  - Drawing a tick's later frames from the hook on the logic draw's own `VSync(0)` broke the logic draw: `--pres-check` differed on 2,831 of 2,832 frames, and the game changed.
+  - Drawing every frame before the logic draw made the game thread wait for each in turn (Vita3K: about 9 ms a vblank, frames not ready by their vblank).
+  
+  The presenter sets libgpu's `currentDispEnv` for the logic draw it expects next, so after the draw it's put back (`time_rest`).
+- **OFF** on PAL is unchanged: 25 frames a second, each at the display vblank its 50 Hz vblank starts at.
+- **Cost:** about 2.4 presenter frames a tick (about 60 a second) instead of one, with the logic draw's GPU work and its walk gone. The game thread waits for the presenter once on a tick with three frames.
+- **Stats:** `present N: by time (D148): …` on the Vita and the host (`--present-stats`): ticks, frames, logic draws hidden, ticks shown by their logic draw, and the display vblanks with no new frame.
+
+#### PAL's 256 lines and the language select
+- **The cause:** `present.c` captured every presentation frame as 512×240, the US display, whose drawn 224 lines start 8 down; the platforms crop those 8 (`shown_top`). PAL's display is 512×256, all of it drawn (D134). So its frames lost their bottom 32 lines, and the title's language row (under START GAME, between arrows when chosen) sits in them. On the Vita the frames were 960×476, stretched to the screen. The PAL title with `skip_logos=1` and a card shows the row the same way; the owner's start had it off the picture.
+- **The fix:** a frame takes the display's height: 256 when `disp.h` is 256, else 240 as before (`capture_h`), for the logic draw's capture and the presenter's. The host's pixel slots are `PRESENT_H_MAX` lines and keep each one's (`port_present_slot_h`, `port_present_shown_h`): `png.c`, the Vita's software renderer (`video.c`) and the GPU renderer's CPU-slot path take them. The GPU renderer already handled a 256-line rect (`shown_top(256)` is 0, the scale 544/256): its frames are 960×544 now. The host's 4:3 shots of a 256-line picture are 725 pixels wide (544 × 4/3), not 777. US is unchanged: its display is 240 lines.
+
+#### Checked
+Logs are in the worktree's `logs/d148*` (gitignored). Binaries: main `44e5ba3`'s host build (`build/bins/spyro-main-44e5ba3`) and this branch's (`spyro-d148b`).
+
+- **US unchanged, off:** `tools/host_checks.sh` with main's binary and the branch's: **287 of 287 files identical** (demo, the whole tour, routes A and B; logs compared with folder and binary names masked; `logs/d148hc-main-*`, `logs/d148hc-fin-*`, `logs/d148/host_checks_cmp_final.txt`).
+- **US unchanged, interpolated:** `tools/pres_check_ab.sh MODE=chk`, main's binary as the reference: demo 26/26 files identical, wsi 26/26, gems 19/19, routes A and B 56/56 each. `pres check` identical on every frame: 6,169, 6,169, 4,553, 6,669 and 6,669 frames, 0 differ (`logs/d148/pres_check_ab.txt`, `logs/d148pc-*`).
+- **PAL, interpolated, the old way unchanged:** `--interp --widescreen` on the PAL disc (a new game into Artisans, 9,000 vblanks, `--save`). Main's and the branch's trace are identical, and 9 of 9 shots are identical (`logs/d148/hp-iw-main`, `hp-iw`).
+- **PAL by time** (`--display60`, the same run):
+  - The trace is identical to the run without it, so presenting by time doesn't touch the game.
+  - `pres check`: 4,719 of 4,719 frames identical (gamestates 0, 13, 14).
+  - 10,800 display vblanks, 6 without a new frame (gamestate changes); 4,712 ticks blended by time, 7 shown by their logic draw (`logs/d148/hp-bt4`).
+  - The title flow without a card (6,000 vblanks): the trace is identical to the game's with presentation off (`h-pal-bt4`, `h-pal-ref`).
+  - `--pres-write-check`: 6,785 presenter frames, none wrote the game's memory (`hp-wc`).
+  - The first draft (frames after the draw, without putting libgpu's display environment back) changed the game in that title run; that's what found it.
+- **ctest:** 29 of 30 passed (`logs/d148/ctest.txt`). `render_ctx_link` fails on `g_Region`: main's own failure since D147, which #135 fixes. With #135's `link_check.sh` the test passes on this build (the file not committed here).
+- **Matching build:** `PSX.EXE SHA-1 OK` on this branch, before and after the changes (`logs/d148/build_matching.txt`, `build_matching_final.txt`); no decomp or patch file changed.
+- `tools/check_no_assets.sh`: exit 0.
+- **Vita3K** (the VPK built with the Mac's VitaSDK, `logs/d148/v3k-*`; `REALTIME=1`, the PAL image, `region_dev=1`):
+  - **The PAL title before the fix:** the language row cut off at the screen's bottom edge (`v3k-pal-title/win-grab.png`). **After:** START GAME with ENGLISH under it, frames 960×544 (`v3k-pal-title3/win-grab.png`).
+  - **The PAL menu with `interp=4`:** 60 FPS INTERPOLATED, 60 HZ LOGIC: US DISC ONLY, PAL 60 OFF, and the log line above (`v3k-pal-menu`).
+  - **PAL 60 OFF → ON:** the question, RESTART NOW 60 HZ / UNDO BACK TO OFF (`v3k-pal-ask`).
+  - **The US menu:** 60 FPS `< INTERPOLATED >`, no PAL rows (`v3k-us-menu`).
+  - **`interp=2`:** the migration's log line, then `interp 1` (`v3k-migrate`).
+  - **PAL's pacing at 60 fps by time** (the Mac otherwise idle):
+    - on the title, 354–360 pictures per 300 vblanks (6 s), 0 not ready by their vblank, 0–3 late;
+    - in Artisans after a new game (the host's PAL pad), 358–361, 0 late, 0–2 not ready;
+    - the game thread waited for the presenter about 5.7 ms per 50 Hz vblank (the joins before a tick's later frames);
+    - main's PAL was 300 per 300 (50 a second; the owner's log).
+    
+    With the host's checks running beside it, Vita3K's presenter took three times as long, so frames were late and 270–290 were shown: the timings are the emulator's, and hardware decides.
+- **Not done: hardware.** The pacing, the presenter's cost at 2.4 frames a tick, and the CPU left for the game thread need a run on the owner's Vita, which needs the owner's yes. It is set up for PAL, with `config.txt.before-pal` as its backup.
