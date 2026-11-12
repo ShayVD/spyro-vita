@@ -1,0 +1,117 @@
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -20078,56 +20078,63 @@
+     }
+     case 250: { // Crystal Dragon
+       RescuedDragonMobyProps *dragonProps = moby->m_Props;
++/* PAL's props hold the second cutscene's length in the four other
++ * languages after m_CutsceneTicks (init.c, D134), so this class's own two
++ * fields are four words further on there (D146) */
++#define DRAGON_SHAKE(p) \
++  (*(REGION_IS(PAL) ? &((int *)(p))[21] : &(p)->m_ShakeTimer))
++#define DRAGON_ANGLES(p) \
++  (REGION_IS(PAL) ? (Vector3D *)&((int *)(p))[22] : &(p)->m_AngleStorage)
+ 
+       if (moby->m_State == 0) {
+         if (dragonProps->m_DragonPadLink != -1) {
+           g_LevelMobys[dragonProps->m_DragonPadLink].m_State = 3;
+         }
+         moby->m_State = 1;
+-        dragonProps->m_AngleStorage.x = moby->m_Rotation.x;
+-        dragonProps->m_AngleStorage.y = moby->m_Rotation.y;
+-        dragonProps->m_AngleStorage.z = moby->m_Position.z;
++        DRAGON_ANGLES(dragonProps)->x = moby->m_Rotation.x;
++        DRAGON_ANGLES(dragonProps)->y = moby->m_Rotation.y;
++        DRAGON_ANGLES(dragonProps)->z = moby->m_Position.z;
+       } else if (moby->m_State == 1) {
+-        dragonProps->m_ShakeTimer += g_DeltaTime;
+-        if (dragonProps->m_ShakeTimer > 256) {
+-          dragonProps->m_ShakeTimer = 0;
+-          moby->m_Rotation.x = dragonProps->m_AngleStorage.x;
+-          moby->m_Rotation.y = dragonProps->m_AngleStorage.y;
+-          moby->m_Position.z = dragonProps->m_AngleStorage.z;
++        DRAGON_SHAKE(dragonProps) += g_DeltaTime;
++        if (DRAGON_SHAKE(dragonProps) > 256) {
++          DRAGON_SHAKE(dragonProps) = 0;
++          moby->m_Rotation.x = DRAGON_ANGLES(dragonProps)->x;
++          moby->m_Rotation.y = DRAGON_ANGLES(dragonProps)->y;
++          moby->m_Position.z = DRAGON_ANGLES(dragonProps)->z;
+           moby->m_DamageFlags = 0;
+           func_800562A4(moby, 1);
+-        } else if (dragonProps->m_ShakeTimer >= 192) {
++        } else if (DRAGON_SHAKE(dragonProps) >= 192) {
+ 
+           if (!IsMobyPlayingSound(moby, g_Models[moby->m_Class]->m_Sounds[0])) {
+             MobyPlaySound(moby, 0, 0);
+           }
+           moby->m_Rotation.x =
+-              g_MobyShakeOffsets[(dragonProps->m_ShakeTimer - 192) >> 1][0] +
+-              dragonProps->m_AngleStorage.x;
++              g_MobyShakeOffsets[(DRAGON_SHAKE(dragonProps) - 192) >> 1][0] +
++              DRAGON_ANGLES(dragonProps)->x;
+           moby->m_Rotation.y =
+-              g_MobyShakeOffsets[(dragonProps->m_ShakeTimer - 192) >> 1][1] +
+-              dragonProps->m_AngleStorage.y;
+-          moby->m_Position.z =
+-              dragonProps->m_AngleStorage.z +
+-              (ABS2(g_MobyShakeOffsets[(dragonProps->m_ShakeTimer - 192) >> 1]
++              g_MobyShakeOffsets[(DRAGON_SHAKE(dragonProps) - 192) >> 1][1] +
++              DRAGON_ANGLES(dragonProps)->y;
++          moby->m_Position.z =
++              DRAGON_ANGLES(dragonProps)->z +
++              (ABS2(g_MobyShakeOffsets[(DRAGON_SHAKE(dragonProps) - 192) >> 1]
+                                       [0]) +
+-               ABS2(g_MobyShakeOffsets[(dragonProps->m_ShakeTimer - 192) >> 1]
++               ABS2(g_MobyShakeOffsets[(DRAGON_SHAKE(dragonProps) - 192) >> 1]
+                                       [1])) *
+                   6;
+-        } else if (dragonProps->m_ShakeTimer >= 188) {
+-          dragonProps->m_AngleStorage.x = moby->m_Rotation.x;
+-          dragonProps->m_AngleStorage.y = moby->m_Rotation.y;
+-          dragonProps->m_AngleStorage.z = moby->m_Position.z;
++        } else if (DRAGON_SHAKE(dragonProps) >= 188) {
++          DRAGON_ANGLES(dragonProps)->x = moby->m_Rotation.x;
++          DRAGON_ANGLES(dragonProps)->y = moby->m_Rotation.y;
++          DRAGON_ANGLES(dragonProps)->z = moby->m_Position.z;
+         } else if (moby->m_DamageFlags != 0) {
+-          dragonProps->m_ShakeTimer = 188;
++          DRAGON_SHAKE(dragonProps) = 188;
+           func_800562A4(moby, 1);
+         } else {
+-          if ((dragonProps->m_ShakeTimer >> 1) == 16 && (rand() & 3) == 0) {
++          if ((DRAGON_SHAKE(dragonProps) >> 1) == 16 && (rand() & 3) == 0) {
+             SpawnMobySparkle(moby, &D_8006E57C[0]);
+-          } else if ((dragonProps->m_ShakeTimer >> 1) == 48 &&
++          } else if ((DRAGON_SHAKE(dragonProps) >> 1) == 48 &&
+                      (rand() & 3) == 0) {
+             SpawnMobySparkle(moby, &D_8006E57C[1]);
+-          } else if ((dragonProps->m_ShakeTimer >> 1) == 80 &&
++          } else if ((DRAGON_SHAKE(dragonProps) >> 1) == 80 &&
+                      (rand() & 3) == 0) {
+             SpawnMobySparkle(moby, &D_8006E57C[2]);
+           }
+\ No newline at end of file
+@@ -20173,9 +20180,9 @@
+                 MobyFree(moby);
+               } else {
+                 moby->m_State = 2;
+-                moby->m_Rotation.x = dragonProps->m_AngleStorage.x;
+-                moby->m_Rotation.y = dragonProps->m_AngleStorage.y;
+-                moby->m_Position.z = dragonProps->m_AngleStorage.z;
++                moby->m_Rotation.x = DRAGON_ANGLES(dragonProps)->x;
++                moby->m_Rotation.y = DRAGON_ANGLES(dragonProps)->y;
++                moby->m_Position.z = DRAGON_ANGLES(dragonProps)->z;
+                 func_8002C924(moby);
+                 VecNull(&g_Spyro.m_HeadLookTarget);
+                 g_Spyro.m_ControlFlags =
+\ No newline at end of file
+@@ -20211,6 +20218,8 @@
+       }
+       break;
+     }
++#undef DRAGON_SHAKE
++#undef DRAGON_ANGLES
+     case 251: { // Crystal Dragon fragment
+       MobyUpdateDragonFragment(moby);
+       break;
+\ No newline at end of file
