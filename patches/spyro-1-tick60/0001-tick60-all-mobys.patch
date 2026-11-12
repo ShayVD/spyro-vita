@@ -4,13 +4,13 @@
            continue;
          }
  
--        moby->m_Position.z -= 100;
-+        moby->m_Position.z -= T60_SHARE(100); // 60 Hz: the sink's per-tick step, shared
+-        moby->m_Position.z -= RT(100, 120);
++        moby->m_Position.z -= T60_SHARE(RT(100, 120)); // 60 Hz: the sink's per-tick step, shared
          break;
        }
        }
 \ No newline at end of file
-@@ -2303,8 +2303,8 @@
+@@ -2334,8 +2334,8 @@
        }
  
        case 3:
@@ -19,10 +19,10 @@
 +        moby->m_Rotation.x += T60_SHARE8((u_char)props->m_0x2c); // 60 Hz: death tumble, a share (signed -10..10 in a byte)
 +        moby->m_Rotation.y += T60_SHARE8((u_char)props->m_0x2e); // 60 Hz: death tumble, a share
          if (MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c,
-                                 &props->m_0x14, RT(0xC, 0xF), 0x10) == 3) {
+                                 &props->m_0x14, RT(0xC, 0xF), RT(0x10, 0x13)) == 3) {
            func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
 \ No newline at end of file
-@@ -2551,6 +2551,15 @@
+@@ -2582,6 +2582,15 @@
          case 1: {
            int distance =
                OctDistance(&moby->m_Position, &props->m_0x00->m_Position);
@@ -39,7 +39,7 @@
              distance = props->m_0x06;
            }
 \ No newline at end of file
-@@ -2598,9 +2607,9 @@
+@@ -2629,9 +2638,9 @@
                continue;
              } else {
                moby->m_Position.x +=
@@ -52,7 +52,7 @@
            }
            break;
 \ No newline at end of file
-@@ -3004,13 +3013,13 @@
+@@ -3035,13 +3044,13 @@
          }
          break;
        case 9:
@@ -73,7 +73,7 @@
            VecCopy(&vec_38, &moby->m_Position);
            vec_38.z += 200;
 \ No newline at end of file
-@@ -3130,7 +3139,7 @@
+@@ -3161,7 +3170,7 @@
  
          MobyRotateToSpyro(moby, 4, 0, 0);
  
@@ -83,19 +83,19 @@
            if (actionMode >= 2) {
              value = RandRange(0x3C, 100);
 \ No newline at end of file
-@@ -3214,8 +3223,8 @@
+@@ -3245,8 +3254,8 @@
  
          MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 12);
  
 -        if (moby->m_AnimationState.m_NextFrame > 4 &&
--            moby->m_AnimationState.m_NextFrame < 21) {
+-            moby->m_AnimationState.m_NextFrame < RT(21, 18)) {
 +        if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame > 4 &&
-+            moby->m_AnimationState.m_NextFrame < 21)) { // 60 Hz: one zap projectile a tick (the frame test holds on both vblanks)
++            moby->m_AnimationState.m_NextFrame < RT(21, 18))) { // 60 Hz: one zap projectile a tick (the frame test holds on both vblanks)
            projectile = g_SpawnMoby(82, moby);
            projectileProps = projectile->m_Props;
            func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
 \ No newline at end of file
-@@ -3243,7 +3252,11 @@
+@@ -3274,7 +3283,11 @@
            projectileProps->m_0x0c = RT(0xB4, 0x96);
            projectileProps->m_0x0e = props->m_0x00 + 2;
            projectileProps->m_0x0f = 0;
@@ -108,19 +108,19 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -3262,8 +3275,8 @@
+@@ -3293,8 +3306,8 @@
  
          MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 13);
  
 -        if (moby->m_AnimationState.m_NextFrame > 3 &&
--            moby->m_AnimationState.m_NextFrame < 9 && props->m_0x28 >= RT(7, 6)) {
+-            moby->m_AnimationState.m_NextFrame < RT(9, 8) && props->m_0x28 >= RT(7, 6)) {
 +        if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame > 3 &&
-+            moby->m_AnimationState.m_NextFrame < 9 && props->m_0x28 >= RT(7, 6))) { // 60 Hz: tested at tick starts, so the fireball period stays 8 vblanks (6 PAL), not 7
++            moby->m_AnimationState.m_NextFrame < RT(9, 8) && props->m_0x28 >= RT(7, 6))) { // 60 Hz: tested at tick starts, so the fireball period stays 8 vblanks (6 PAL), not 7
            projectile = g_SpawnMoby(70, moby);
            VecCopy(&projectile->m_Position, &props->m_0x38);
            projectileProps = projectile->m_Props;
 \ No newline at end of file
-@@ -3553,7 +3566,7 @@
+@@ -3584,7 +3597,7 @@
              progress = ((moby->m_AnimationState.m_NextFrame - RT(7, 6)) << 12) / 25;
              VecMult(&delta, &delta, progress);
              VecShiftRight(&delta, 12);
@@ -130,7 +130,7 @@
              g_IsSpyroHidden = 1;
              g_Spyro.m_ControlFlags = 0x80006107;
 \ No newline at end of file
-@@ -3855,7 +3868,7 @@
+@@ -3886,7 +3899,7 @@
              MobyFree(moby);
            } else if (props->m_0x08 > 0) {
              MobyMove(moby, props->m_0x04, props->m_0x08, 500, 700, 1);
@@ -140,7 +140,7 @@
            break;
          }
 \ No newline at end of file
-@@ -4049,7 +4062,7 @@
+@@ -4080,7 +4093,7 @@
            continue;
          }
  
@@ -148,9 +148,9 @@
 +        moby->m_Rotation.y += T60_SHARE(4); // 60 Hz: the fling spin, a share
          MobyRotateToAngle(moby, (props->m_0x08 + 0x80) & 0xFF, 0x10, 0x20, 1);
          MobyMoveWithGravity(moby, &props->m_0x00, props->m_0x08, &props->m_0x04,
-                             0xC, 0xC);
+                             RT(0xC, 0xF), RT(0xC, 0xF));
 \ No newline at end of file
-@@ -4097,7 +4110,7 @@
+@@ -4128,7 +4141,7 @@
                ColTraceRay(&oldPosition, &moby->m_Position)) {
              moby->m_State = 1;
            }
@@ -160,7 +160,7 @@
            moby->m_State = 1;
          }
 \ No newline at end of file
-@@ -4160,7 +4173,7 @@
+@@ -4191,7 +4204,7 @@
  
          floorZ = MobyFloorHeight(moby);
          height = moby->m_Position.z - 0x50;
@@ -170,7 +170,7 @@
            props->m_0x04 = RT(0x50, 0x60);
          }
 \ No newline at end of file
-@@ -4170,17 +4183,17 @@
+@@ -4201,17 +4214,17 @@
          if (ABS2(props->m_0x04) < RT(0x32, 0x3C)) {
            props->m_0x04 = 0;
          }
@@ -196,7 +196,7 @@
  
          if (moby->m_Substate != 2 && props->m_0x0a < RT(0x79, 0x65)) {
 \ No newline at end of file
-@@ -4237,10 +4250,10 @@
+@@ -4268,10 +4281,10 @@
            continue;
          }
  
@@ -212,7 +212,7 @@
            props->m_0x04 = -RT(0xA0, 0xBF);
          }
 \ No newline at end of file
-@@ -4249,7 +4262,14 @@
+@@ -4280,7 +4293,14 @@
          velocity.y = props->m_0x02;
          velocity.z = props->m_0x04;
          VecCopy(&oldPosition, &moby->m_Position);
@@ -228,7 +228,7 @@
          if (TICK_TIMER(props->m_0x0a)) {
            MobyFree(moby);
 \ No newline at end of file
-@@ -4294,16 +4314,16 @@
+@@ -4325,16 +4345,16 @@
          break;
        } else if (moby->m_State == 1) {
          // Move cage towards the floor at increasing speed
@@ -249,7 +249,7 @@
          if (g_AnimationFinished) {
            MobyFree(moby);
 \ No newline at end of file
-@@ -4379,7 +4399,7 @@
+@@ -4410,7 +4430,7 @@
            if (angleDelta < -2) {
              angleDelta = -2;
            }
@@ -259,7 +259,7 @@
          if (moby->m_WasDrawn && DISTANCE_TO_SPYRO(moby) < 0x800 &&
              SPYRO_BASE_Z_DISTANCE(moby) < 0x800) {
 \ No newline at end of file
-@@ -4707,7 +4727,7 @@
+@@ -4738,7 +4758,7 @@
        case 5:
          if (props->m_0x04 > 0) {
            MobyMove(moby, props->m_0x08, props->m_0x04, 500, 700, 0);
@@ -269,7 +269,7 @@
          if (g_AnimationFinished) {
            func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
 \ No newline at end of file
-@@ -4801,9 +4821,9 @@
+@@ -4832,9 +4852,9 @@
        switch (moby->m_State) {
        case 0: {
          moby->m_Position.x +=
@@ -282,7 +282,7 @@
            MobyFree(moby);
            continue;
 \ No newline at end of file
-@@ -4817,8 +4837,8 @@
+@@ -4848,8 +4868,8 @@
            MobyFree(moby);
            continue;
          }
@@ -294,7 +294,7 @@
          break;
        }
 \ No newline at end of file
-@@ -4848,7 +4868,7 @@
+@@ -4879,7 +4899,7 @@
      case 77:    // Dream Weavers Cannon Effect
      case 168: { // Gnasty Projectile Effect
        if (moby->m_Substate != 0) {
@@ -304,7 +304,7 @@
          moby->m_AnimationState.m_NextFrame = 1;
          moby->m_AnimationState.m_FrameProgress = 0;
 \ No newline at end of file
-@@ -4864,7 +4884,14 @@
+@@ -4895,7 +4915,14 @@
        Vector3D oldPosition;
  
        VecCopy(&oldPosition, &moby->m_Position);
@@ -320,7 +320,7 @@
        if (props->m_0x0f == 1) {
          if (TICK_TIMER(props->m_0x0c)) {
 \ No newline at end of file
-@@ -4996,7 +5023,7 @@
+@@ -5027,7 +5054,7 @@
        case 2: {
          int i;
  
@@ -330,7 +330,7 @@
            Vector3D particleVelocity;
            moby->m_DamageFlags = 0;
 \ No newline at end of file
-@@ -5040,7 +5067,11 @@
+@@ -5071,7 +5098,11 @@
          projectileProps = projectile->m_Props;
          VecCopy(&projectile->m_Position, &moby->m_Position);
          projectile->m_Rotation.z = moby->m_Rotation.z;
@@ -343,7 +343,7 @@
          projectileProps->m_0x08 = RT(800, 960);
          projectileProps->m_0x0e = -6;
 \ No newline at end of file
-@@ -5398,16 +5429,16 @@
+@@ -5436,16 +5467,16 @@
        }
  
        case 3: {
@@ -365,7 +365,7 @@
                props->m_0x54 = 0;
              }
 \ No newline at end of file
-@@ -6627,6 +6658,41 @@
+@@ -6665,6 +6696,41 @@
                props->m_0x0c = 0;
              }
  
@@ -408,7 +408,7 @@
                moby->m_Position.x +=
                    FIXED_MUL(props->m_0x08, COSINE_8(moby->m_Rotation.z));
 \ No newline at end of file
-@@ -6644,6 +6710,7 @@
+@@ -6682,6 +6748,7 @@
                  props->m_0x00--;
                }
              } while (props->m_0x12 != 0);
@@ -417,7 +417,7 @@
              if (TICK_TIMER(props->m_0x10)) {
                moby->m_State = 1;
 \ No newline at end of file
-@@ -6666,7 +6733,15 @@
+@@ -6704,7 +6771,15 @@
            }
  
            activePoints = 0;
@@ -434,7 +434,7 @@
              VecCopy(&props->m_0x04[tracerPointIndex].WorldPos,
                      &moby->m_Position);
 \ No newline at end of file
-@@ -6953,24 +7028,24 @@
+@@ -6991,24 +7066,24 @@
            }
          }
  
@@ -469,7 +469,7 @@
          g_SpawnParticle(8, 70, &moby->m_Position, 0x10);
          MobyFree(moby);
 \ No newline at end of file
-@@ -7234,8 +7309,8 @@
+@@ -7272,8 +7347,8 @@
  
          speed = VecMagnitude(&collectableMovePos, 1);
  
@@ -481,7 +481,7 @@
  
          VecAdd(&collectableMovePos, &moby->m_Position, &collectableMovePos);
 \ No newline at end of file
-@@ -7398,10 +7473,17 @@
+@@ -7436,10 +7511,17 @@
          }
  
          // Spin rapidly while being sucked in
@@ -500,7 +500,7 @@
        }
  
 \ No newline at end of file
-@@ -7420,8 +7502,8 @@
+@@ -7458,8 +7540,8 @@
                collectableProps->m_RotZ;
            collectableProps->m_RotationTicks += g_DeltaTime << 1;
          } else if (moby->m_Class == 15) {
@@ -512,7 +512,7 @@
            moby->m_Rotation.x =
                (COSINE_8(collectableProps->m_RotationTicks) >> 7) +
 \ No newline at end of file
-@@ -7511,7 +7593,7 @@
+@@ -7549,7 +7631,7 @@
          if (zDelta > 0x40) {
            zDelta = 0x40;
          }
@@ -522,7 +522,7 @@
        }
  
 \ No newline at end of file
-@@ -7547,7 +7629,7 @@
+@@ -7585,7 +7667,7 @@
          if (zDelta > 0x40) {
            zDelta = 0x40;
          }
@@ -532,17 +532,17 @@
        }
  
 \ No newline at end of file
-@@ -7558,7 +7640,7 @@
+@@ -7596,7 +7678,7 @@
                  0xFF;
          func_80038638(moby, &g_LevelMobys[props->m_0x00].m_Position, 0x600,
-                       angle, 0, props->m_0x20, 0x10, 0, 0xFF, 0xFF, 0, 0, 8);
+                       angle, 0, props->m_0x20, RT(0x10, 0x13), 0, 0xFF, 0xFF, 0, 0, 8);
 -        moby->m_Position.z += (props->m_0x20 - 0x20) >> 3;
 +        moby->m_Position.z += T60_SHARE((props->m_0x20 - 0x20) >> 3); // 60 Hz: rise share (m_0x20 grows by g_DeltaTime * 2)
          props->m_0x20 += g_DeltaTime * 2;
          if (props->m_0x20 > 0x100) {
            props->m_0x20 = 0x100;
 \ No newline at end of file
-@@ -7573,7 +7655,7 @@
+@@ -7611,7 +7693,7 @@
  
        func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
        MobyGetAnimatedVertex(moby, 0, &particlePosition);
@@ -552,7 +552,7 @@
      }
      case 109: { // High Caves fairies
 \ No newline at end of file
-@@ -7625,7 +7707,15 @@
+@@ -7663,7 +7745,15 @@
            if (distance >= 0x201) {
              VecScaleToLength(&targetPosition, distance, 0x200);
            }
@@ -569,7 +569,7 @@
            angle = (moby->m_Rotation.z - g_Spyro.m_bodyRotation.z) & 0xFF;
            if (angle > 0x80) {
 \ No newline at end of file
-@@ -7637,7 +7727,7 @@
+@@ -7675,7 +7765,7 @@
            if (angle > 4) {
              angle = 4;
            }
@@ -579,7 +579,7 @@
            g_Spyro.unk_0x21c = &g_Spyro.m_Position;
            g_Spyro.m_mobyInUseBySpyro = 0;
 \ No newline at end of file
-@@ -7665,7 +7755,7 @@
+@@ -7703,7 +7793,7 @@
            if (angle > 3) {
              angle = 3;
            }
@@ -589,7 +589,7 @@
            g_Spyro.unk_0x21c = &g_Spyro.m_Position;
            g_Spyro.m_mobyInUseBySpyro = 0;
 \ No newline at end of file
-@@ -7718,7 +7808,7 @@
+@@ -7756,7 +7846,7 @@
              if (distance > 0x40) {
                distance = 0x40;
              }
@@ -599,7 +599,7 @@
            break;
          } else if ((props->m_0x00 & 8) != 0) {
 \ No newline at end of file
-@@ -7752,8 +7842,8 @@
+@@ -7790,8 +7880,8 @@
            if (distance > 0x10) {
              distance = 0x10;
            }
@@ -611,7 +611,7 @@
            if (OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x14)) <
                0x200) {
 \ No newline at end of file
-@@ -7804,7 +7894,7 @@
+@@ -7842,7 +7932,7 @@
                  if (distance > 0x80) {
                    distance = 0x80;
                  }
@@ -621,7 +621,7 @@
                }
              }
 \ No newline at end of file
-@@ -7892,7 +7982,7 @@
+@@ -7930,7 +8020,7 @@
            if (distance < -0x40) {
              distance = -0x40;
            }
@@ -631,7 +631,7 @@
            if (OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x14)) <
                0x200) {
 \ No newline at end of file
-@@ -7933,7 +8023,7 @@
+@@ -7971,7 +8061,7 @@
              if (distance < -0x80) {
                distance = -0x80;
              }
@@ -641,7 +641,7 @@
              distance = 0x140;
              angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x14));
 \ No newline at end of file
-@@ -7958,7 +8048,7 @@
+@@ -7996,7 +8086,7 @@
              if (distance < -0x40) {
                distance = -0x40;
              }
@@ -651,7 +651,7 @@
              if (OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x14)) <
                  0x200) {
 \ No newline at end of file
-@@ -8039,13 +8129,13 @@
+@@ -8077,13 +8167,13 @@
              if (distance < -0x80) {
                distance = -0x80;
              }
@@ -668,7 +668,7 @@
  
            if (g_Spyro.m_Position.z <= 0x9357) {
 \ No newline at end of file
-@@ -8138,7 +8228,7 @@
+@@ -8176,7 +8266,7 @@
            if (targetPosition.z > 0x80) {
              targetPosition.z = 0x80;
            }
@@ -678,7 +678,7 @@
          }
        }
 \ No newline at end of file
-@@ -9403,7 +9493,7 @@
+@@ -9443,7 +9533,7 @@
              props->m_0x08->m_OtOffset = -8;
            }
          } else {
@@ -688,7 +688,7 @@
              props->m_0x08->m_Radius = 0x800;
            }
 \ No newline at end of file
-@@ -9414,7 +9504,7 @@
+@@ -9454,7 +9544,7 @@
            }
          }
        } else if (props->m_0x08 != 0) {
@@ -698,7 +698,7 @@
          if (props->m_0x08->m_Radius <= 0x400 && props->m_0x18 >= 0 &&
              ENV_ANIM_FRAME(EnvAnimGetState(props->m_0x18)) > 0) {
 \ No newline at end of file
-@@ -9618,17 +9708,17 @@
+@@ -9658,17 +9748,17 @@
                g_LevelMobys[props->m_0x54].m_Position, moby->m_Position);
          } else if (props->m_0x50 == 2) {
            Vector3D vec13;
@@ -722,7 +722,7 @@
            }
          }
 \ No newline at end of file
-@@ -9666,7 +9756,7 @@
+@@ -9706,7 +9796,7 @@
        case 8:
          result = ColFindFloor(&moby->m_Position, 0x10000);
          if (result > 0x80 && result < 0x1800) {
@@ -732,7 +732,7 @@
          MobyRotateToSpyro(moby, 4, 0, 0);
          func_800529E4(moby, UPDATE_PROP_ROTMATRIX | UPDATE_PROP_COLLISION);
 \ No newline at end of file
-@@ -10002,16 +10092,16 @@
+@@ -10043,16 +10133,16 @@
            continue;
          }
  
@@ -754,7 +754,7 @@
                props->m_0x5c = 0;
              }
 \ No newline at end of file
-@@ -10299,7 +10389,7 @@
+@@ -10348,7 +10438,7 @@
        if (moby->m_State == 0) {
  
          if (props->m_0x0c != 0) {
@@ -764,7 +764,7 @@
              props->m_0x04 = -RT(0xF0, 0x11F);
            }
 \ No newline at end of file
-@@ -10324,15 +10414,15 @@
+@@ -10373,15 +10463,15 @@
          work.x = 0;
          work.y = 0;
          work.z = 0;
@@ -788,7 +788,7 @@
  
          if (props->m_0x07 == 0) {
 \ No newline at end of file
-@@ -10744,10 +10834,10 @@
+@@ -10793,10 +10883,10 @@
  
        case 2: {
          if (moby->m_AnimationState.m_Frame < 5) {
@@ -802,7 +802,7 @@
          }
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -10769,7 +10859,7 @@
+@@ -10818,7 +10908,7 @@
          }
  
          if (moby->m_AnimationState.m_Frame >= 4 && props->m_0x24 >= RT(0x29, 0x31)) {
@@ -812,9 +812,9 @@
  
          if (DISTANCE_TO_SPYRO(moby) < 1500 &&
 \ No newline at end of file
-@@ -10781,7 +10871,7 @@
-             g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), 135);
-             g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), 135);
+@@ -10830,7 +10920,7 @@
+             g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), RT(135, 162));
+             g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), RT(135, 162));
              g_Spyro.unk_0x208.z = RT(0x32, 0x3C);
 -          } else if (props->m_0x30 == 1) {
 +          } else if (T60_TICK_AND(props->m_0x30 == 1)) { // 60 Hz: next step a tick later
@@ -822,7 +822,7 @@
              props->m_0x3c = RT(0x1E, 0x19);
              g_Spyro.m_ControlFlags |= 0x80000200;
 \ No newline at end of file
-@@ -10950,7 +11040,7 @@
+@@ -10999,7 +11089,7 @@
                  heightDifference = RT(0x32, 0x3C);
                }
              }
@@ -832,7 +832,7 @@
              moby->m_Position.z = targetPosition.z;
            }
 \ No newline at end of file
-@@ -10964,7 +11054,7 @@
+@@ -11013,7 +11103,7 @@
  
          case 1: {
            int frameThreshold;
@@ -842,7 +842,7 @@
              if (props->m_0x24 == 2 || moby->m_Class == 241) {
                int offset = RT(320, 384);
 \ No newline at end of file
-@@ -11048,7 +11138,7 @@
+@@ -11097,7 +11187,7 @@
                heightDifference = RT(0x32, 0x3C);
              }
            }
@@ -852,7 +852,7 @@
  
          if (OctDistance(&moby->m_Position, &props->m_0x00) < RT(0x51, 0x61) &&
 \ No newline at end of file
-@@ -11102,7 +11192,7 @@
+@@ -11151,7 +11241,7 @@
  
        func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
        MobyGetAnimatedVertex(moby, 0, &attachmentPosition);
@@ -862,17 +862,17 @@
      }
      case 143: { // Gnasty Laser Explosion
 \ No newline at end of file
-@@ -11289,7 +11379,7 @@
+@@ -11341,7 +11431,7 @@
            MobyFree(moby);
            continue;
          }
--        moby->m_Position.z -= 100;
-+        moby->m_Position.z -= T60_SHARE(100); // 60 Hz: sinking in water, a share of the tick's 100
+-        moby->m_Position.z -= RT(100, 120);
++        moby->m_Position.z -= T60_SHARE(RT(100, 120)); // 60 Hz: sinking in water, a share of the tick's 100
          break;
        }
        break;
 \ No newline at end of file
-@@ -11419,7 +11509,7 @@
+@@ -11471,7 +11561,7 @@
              continue;
            }
            props->m_0x18 = func_800179F0(ANGLE_TO_SPYRO(moby->m_Position),
@@ -882,17 +882,17 @@
                ((props->m_0x1c - props->m_0x18) & 0xFF) >= 0xF1) {
              props->m_0x18 = props->m_0x1c;
 \ No newline at end of file
-@@ -11431,7 +11521,7 @@
+@@ -11483,7 +11573,7 @@
                props->m_0x18 = props->m_0x20;
              }
            }
--          props->m_0x2c += props->m_0x28;
-+          props->m_0x2c += T60_SHARE(props->m_0x28); // 60 Hz: gun sweep, a share of the tick's sweep
+-          props->m_0x2c += RT_SPEED(props->m_0x28);
++          props->m_0x2c += T60_SHARE(RT_SPEED(props->m_0x28)); // 60 Hz: gun sweep, a share of the tick's sweep
            angleDifference =
                AngleSignedDistance(props->m_0x18, props->m_0x2c >> 4);
            if (TICK_TIMER(props->m_0x30)) {
 \ No newline at end of file
-@@ -11443,7 +11533,7 @@
+@@ -11495,7 +11585,7 @@
              }
            }
            moby->m_Rotation.z = props->m_0x2c >> 4;
@@ -902,7 +902,7 @@
              int projectileSpeed;
              Moby *projectile = g_SpawnMoby(156, moby);
 \ No newline at end of file
-@@ -11531,7 +11621,7 @@
+@@ -11583,7 +11673,7 @@
            MobyFree(moby);
            continue;
          }
@@ -912,7 +912,7 @@
        }
        break;
 \ No newline at end of file
-@@ -11728,7 +11818,7 @@
+@@ -11780,7 +11870,7 @@
            MobyFree(moby);
            continue;
          }
@@ -922,7 +922,7 @@
        }
        func_800529E4(moby, UPDATE_PROP_COLLISION);
 \ No newline at end of file
-@@ -11872,17 +11962,24 @@
+@@ -11926,17 +12016,24 @@
        Vector3D color;
  
        if (moby->m_WasDrawn) {
@@ -954,7 +954,7 @@
              vec_particle[1].x = rand() & 3;
              vec_particle[1].y = rand() & 3;
 \ No newline at end of file
-@@ -12028,7 +12125,7 @@
+@@ -12085,7 +12182,7 @@
          }
  
          VecNull(&velocity);
@@ -964,7 +964,7 @@
        }
  
 \ No newline at end of file
-@@ -12071,7 +12168,14 @@
+@@ -12128,7 +12225,14 @@
          }
          TICK_TIMER(props->m_0x0e);
          VecCopy(&oldPosition, &moby->m_Position);
@@ -980,7 +980,7 @@
              moby->m_Position.z < 0 || moby->m_Position.z > 0x4800 ||
              moby->m_Position.y > 0x1F000 || moby->m_Position.x > 0x20800) {
 \ No newline at end of file
-@@ -12169,12 +12273,12 @@
+@@ -12226,12 +12330,12 @@
  
        if (moby->m_AnimationState.m_NextAnimation == 0 &&
            moby->m_RenderRadius != 0) {
@@ -996,17 +996,17 @@
                  0) {
            MobyPlaySound(moby, 5, 0);
 \ No newline at end of file
-@@ -12215,7 +12319,7 @@
+@@ -12272,7 +12376,7 @@
          }
          if (TICK_TIMER(props->m_0x08)) {
-           minSpeed = 0xDC - D_80075838[props->m_0x04] * 6;
+           minSpeed = RV(0xDC, 0x112, 0xDC) - D_80075838[props->m_0x04] * RV(6, 7, 6);
 -          props->m_0x10 -= RT(10, 12);
 +          T60_TICK_DO(props->m_0x10 -= RT(10, 12)); // 60 Hz: slow-down once a tick (TICK_TIMER stays true at 0), before the walk uses it
            if (props->m_0x10 < minSpeed) {
              props->m_0x10 = minSpeed;
            }
 \ No newline at end of file
-@@ -12227,14 +12331,14 @@
+@@ -12284,14 +12388,14 @@
          result = func_80039E94(moby, props->m_0x00, RT(450, 540), moveSpeed, 0, RT(0xA, 0xC),
                                 0x28, 0xFF, 1);
          floorHeight = func_80038400(moby, 3000);
@@ -1025,7 +1025,7 @@
          if ((result & 0x100) != 0 &&
              (PATH_CUR_NODE(props->m_0x00).unk_0xC & 3) == 1) {
 \ No newline at end of file
-@@ -12331,7 +12435,7 @@
+@@ -12388,7 +12492,7 @@
            break;
          case 1:
            if (props->m_KnockbackSpeed >= RT(16, 19)) {
@@ -1035,7 +1035,7 @@
                       700, 5);
            }
 \ No newline at end of file
-@@ -12584,14 +12688,14 @@
+@@ -12643,14 +12747,14 @@
        case 4: {
          int floorHeight;
          floorHeight = func_80038400(moby, 3000);
@@ -1054,7 +1054,7 @@
          MobyRotateToSpyro(moby, 4, 0, 0);
          if ((distance < 0x2000 && SPYRO_BASE_Z_DELTA(moby) >= -0x6A3) ||
 \ No newline at end of file
-@@ -12639,14 +12743,14 @@
+@@ -12698,14 +12802,14 @@
          result = func_80039E94(moby, props->m_0x00, RT(0x200, 0x267), moveSpeed, 0, RT(7, 9),
                                 0x28, 0xFF, 0);
          floorHeight = func_80038400(moby, 3000);
@@ -1073,7 +1073,7 @@
          if (result == 0x101 && DISTANCE_TO_SPYRO(moby) > 0x2000) {
            moby->m_State = 4;
 \ No newline at end of file
-@@ -12679,15 +12783,15 @@
+@@ -12738,15 +12842,15 @@
            angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
            MobyRotateToAngle(moby, angle, 6, 0, 0);
            floorHeight = func_80038400(moby, 3000);
@@ -1093,7 +1093,7 @@
            break;
          }
 \ No newline at end of file
-@@ -12702,14 +12806,14 @@
+@@ -12761,14 +12865,14 @@
          result = func_80039E94(moby, props->m_0x00, RT(300, 360), moveSpeed, 0, RT(0xA, 0xC),
                                 0x28, 0xFF, 0);
          floorHeight = func_80038400(moby, 3000);
@@ -1112,7 +1112,7 @@
          if (result == 0x100) {
            moby->m_State = 12;
 \ No newline at end of file
-@@ -12828,14 +12932,14 @@
+@@ -12890,14 +12994,14 @@
        case 11: {
          int floorHeight;
          floorHeight = func_80038400(moby, 3000);
@@ -1131,7 +1131,7 @@
          if (MobyRotateToSpyro(moby, 5, 0, 0) != 0 &&
              moby->m_AnimationState.m_NextAnimation != 4) {
 \ No newline at end of file
-@@ -12855,14 +12959,14 @@
+@@ -12917,14 +13021,14 @@
          int floorHeight;
          floorHeight = func_80038400(moby, 3000);
          MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 0);
@@ -1150,7 +1150,7 @@
          MobyRotateToSpyro(moby, 4, 0, 0);
          if (props->m_0x60 == 0 && distance >= 3600 && distance < 9400 &&
 \ No newline at end of file
-@@ -13008,10 +13112,10 @@
+@@ -13070,10 +13174,10 @@
            rotation -= 0x100;
          }
  
@@ -1165,7 +1165,7 @@
          if (props->m_0x20 > 0x800) {
            props->m_0x20 -= 0x1000;
 \ No newline at end of file
-@@ -13639,11 +13743,11 @@
+@@ -13701,11 +13805,11 @@
                spawned->m_RenderRadius = 0x50;
                props->m_0x04 = 0;
              }
@@ -1182,7 +1182,7 @@
                moby->m_State = 1;
              }
 \ No newline at end of file
-@@ -13654,7 +13758,7 @@
+@@ -13716,7 +13820,7 @@
                moby->m_State = 1;
                continue;
              }
@@ -1192,7 +1192,7 @@
                props->m_0x08 = 0;
              }
 \ No newline at end of file
-@@ -13682,7 +13786,7 @@
+@@ -13744,7 +13848,7 @@
            }
  
            activePoints = 0;
@@ -1202,7 +1202,7 @@
              VecCopy(&props->m_0x00[tracerPointIndex].WorldPos,
                      &moby->m_Position);
 \ No newline at end of file
-@@ -13992,10 +14096,10 @@
+@@ -14054,10 +14158,10 @@
          Vector3D particleVelocity;
  
          VecCopy(&oldPosition, &moby->m_Position);
@@ -1218,7 +1218,7 @@
            moby->m_State = 1;
          }
 \ No newline at end of file
-@@ -14005,10 +14109,10 @@
+@@ -14067,10 +14171,10 @@
          oldPosition.x = 0;
          oldPosition.y = 0;
          oldPosition.z = 0;
@@ -1234,7 +1234,7 @@
          break;
        }
 \ No newline at end of file
-@@ -14156,7 +14260,7 @@
+@@ -14218,7 +14322,7 @@
              if (temp < -0x100) {
                temp = -0x100;
              }
@@ -1244,7 +1244,7 @@
              break;
            }
 \ No newline at end of file
-@@ -14221,7 +14325,7 @@
+@@ -14283,7 +14387,7 @@
                temp = -0x80;
              }
  
@@ -1254,7 +1254,7 @@
  
              if (DISTANCE_TO_SPYRO(moby) > 0x3800) {
 \ No newline at end of file
-@@ -14260,7 +14364,7 @@
+@@ -14322,7 +14426,7 @@
                temp = -0x80;
              }
  
@@ -1264,7 +1264,7 @@
              break;
            }
 \ No newline at end of file
-@@ -14319,7 +14423,7 @@
+@@ -14381,7 +14485,7 @@
                temp = -0x80;
              }
  
@@ -1274,7 +1274,7 @@
              break;
            }
 \ No newline at end of file
-@@ -14339,7 +14443,7 @@
+@@ -14401,7 +14505,7 @@
                temp = -0x100;
              }
  
@@ -1284,7 +1284,7 @@
              break;
            }
 \ No newline at end of file
-@@ -14367,7 +14471,7 @@
+@@ -14429,7 +14533,7 @@
                temp = -0x80;
              }
  
@@ -1294,7 +1294,7 @@
            } else {
              int temp;
 \ No newline at end of file
-@@ -14405,10 +14509,10 @@
+@@ -14467,10 +14571,10 @@
              speed -= 0x100;
            }
  
@@ -1309,7 +1309,7 @@
            if (props->m_0x08 > 0x800) {
              props->m_0x08 -= 0x1000;
 \ No newline at end of file
-@@ -14495,12 +14599,12 @@
+@@ -14557,12 +14661,12 @@
  
        if (moby->m_AnimationState.m_NextAnimation == 0 &&
            moby->m_RenderRadius != 0) {
@@ -1325,7 +1325,7 @@
            MobyPlaySound(moby, 5, 0);
          }
 \ No newline at end of file
-@@ -14560,7 +14664,7 @@
+@@ -14622,7 +14726,7 @@
                }
  
                if (result >= 0x5B) {
@@ -1335,7 +1335,7 @@
                  props->m_0x1c = 0;
                }
 \ No newline at end of file
-@@ -14951,9 +15055,9 @@
+@@ -15013,9 +15117,9 @@
          func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
  
          if (props->m_0x00 % 4 < 2) {
@@ -1348,7 +1348,7 @@
          break;
        case 3:
 \ No newline at end of file
-@@ -15138,7 +15242,7 @@
+@@ -15200,7 +15304,7 @@
          }
  
          if (props->m_0x10 >= RT(0x15, 0x19)) {
@@ -1358,7 +1358,7 @@
          MobyMove(moby, props->m_0x0c, props->m_0x10, 0, 700, 5);
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -15717,7 +15821,7 @@
+@@ -15782,7 +15886,7 @@
            break;
          case 1:
            if (props->m_KnockbackSpeed >= RT(16, 19)) {
@@ -1368,7 +1368,7 @@
                       700, 5);
            }
 \ No newline at end of file
-@@ -15831,7 +15935,7 @@
+@@ -15896,7 +16000,7 @@
  
        moby->m_SoundDistance = 0x20;
        // Continuous projectile rotation
@@ -1378,7 +1378,7 @@
        switch (moby->m_State) {
        case 0: { // Flying state
 \ No newline at end of file
-@@ -15845,7 +15949,7 @@
+@@ -15910,7 +16014,7 @@
          // Only enable Moby collision radius once the delay has elapsed
          mobyCollisionRadius = TICK_TIMER(props->m_MobyCollisionDelay) ? 300 : 0;
  
@@ -1388,7 +1388,7 @@
          // Enter explosion state upon collision with Mobys/Environment, Spyro
          // or expiration of lifetime
 \ No newline at end of file
-@@ -15989,7 +16093,11 @@
+@@ -16054,7 +16158,11 @@
          if (g_Spyro.m_State == 25) {
            // Will cause 2 laughing anims in most cases, 1 if it's a lag frame
            // Only decrements when the animation is finished
@@ -1401,7 +1401,7 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -16020,7 +16128,7 @@
+@@ -16085,7 +16193,7 @@
            MobyMove(moby, props->m_KnockbackAngle, props->m_KnockbackSpeed, 500,
                     700, 1);
            // Incrementally reduce knockback speed
@@ -1411,7 +1411,7 @@
  
          // Wrap up Moby's death
 \ No newline at end of file
-@@ -16548,7 +16656,7 @@
+@@ -16613,7 +16721,7 @@
          }
          ColMoby(&moby->m_Position, (props->m_0x00 + 2) << 8, 0, 0x90000, moby,
                  2);
@@ -1421,12 +1421,14 @@
            break;
          }
 \ No newline at end of file
-@@ -16561,14 +16669,14 @@
+@@ -16626,16 +16734,16 @@
          int floorZ;
  
          MobyPlaySound(moby, 2, &moby->m_SoundChannel);
 -        moby->m_Rotation.x += 6;
 +        moby->m_Rotation.x += T60_SHARE(6); // 60 Hz: the roll's spin, shared
+         if (REGION_IS(PAL))
+           moby->m_Rotation.y = 0;
          floorZ = ColFindFloor(&moby->m_Position, 0x800);
          if (moby->m_Position.z - floorZ >= 0x181) {
 -          props->m_0x0c -= RT(0xA, 0xC);
@@ -1440,7 +1442,7 @@
            Moby *splash = g_SpawnMoby(400, moby);
            func_800562A4(moby, 1);
 \ No newline at end of file
-@@ -16736,7 +16844,7 @@
+@@ -16803,7 +16911,7 @@
            moby->m_Position.x = delta.x;
            moby->m_Position.y = delta.y;
          } else {
@@ -1450,7 +1452,7 @@
            moby->m_Position.y += pathDelta.y;
          }
 \ No newline at end of file
-@@ -16823,7 +16931,7 @@
+@@ -16890,7 +16998,7 @@
        int i;
  
        if (moby->m_State != 4) {
@@ -1460,7 +1462,7 @@
  
        if ((moby->m_DamageFlags &
 \ No newline at end of file
-@@ -16915,12 +17023,12 @@
+@@ -16982,12 +17090,12 @@
              Vector3D particlePosition;
  
              MobyGetAnimatedVertex(moby, 0, &particlePosition);
@@ -1476,7 +1478,7 @@
          }
  
 \ No newline at end of file
-@@ -17021,7 +17129,7 @@
+@@ -17088,7 +17196,7 @@
            g_LevelMobys[props->m_0x00].m_Substate = 4;
            g_LevelMobys[props->m_0x00].m_Rotation.x = 0;
            g_LevelMobys[props->m_0x00].m_Rotation.y = 0;
@@ -1486,7 +1488,7 @@
        }
  
 \ No newline at end of file
-@@ -17274,7 +17382,7 @@
+@@ -17341,7 +17449,7 @@
          }
          ColMoby(&moby->m_Position, (props->m_0x00 + 2) << 8, 0, 0x90000, moby,
                  2);
@@ -1496,7 +1498,7 @@
            MobyMarkKilled(moby);
            MobyFree(moby);
 \ No newline at end of file
-@@ -17284,7 +17392,7 @@
+@@ -17351,7 +17459,7 @@
        case 4: {
          int result;
  
@@ -1506,7 +1508,7 @@
          if (props->m_0x00 >= 0x10) {
            result = MobyMove(moby, props->m_0x08, RT(0xF0, 0x120), 0x200, 0x200, 0);
 \ No newline at end of file
-@@ -17321,10 +17429,10 @@
+@@ -17388,10 +17496,10 @@
              moby->m_State = 2;
            }
          }
@@ -1522,12 +1524,14 @@
            props->m_0x0c = -RT(0x80, 0x9A);
          }
 \ No newline at end of file
-@@ -17338,14 +17446,14 @@
+@@ -17405,16 +17513,16 @@
          int floorZ;
  
          MobyPlaySound(moby, 2, &moby->m_SoundChannel);
 -        moby->m_Rotation.x += 6;
 +        moby->m_Rotation.x += T60_SHARE(6); // 60 Hz: the roll's spin, shared
+         if (REGION_IS(PAL))
+           moby->m_Rotation.y = 0;
          floorZ = ColFindFloor(&moby->m_Position, 0x800);
          if (moby->m_Position.z - floorZ >= 0x181) {
 -          props->m_0x0c -= RT(0xA, 0xC);
@@ -1541,7 +1545,7 @@
            Moby *splash = g_SpawnMoby(400, moby);
            func_800562A4(moby, 1);
 \ No newline at end of file
-@@ -17440,7 +17548,7 @@
+@@ -17509,7 +17617,7 @@
        } else {
          // If the snowball doesn't collide and the lifetime isn't expired,
          // merely spawn trail particles
@@ -1551,7 +1555,7 @@
        break;
      }
 \ No newline at end of file
-@@ -17448,7 +17556,7 @@
+@@ -17517,7 +17625,7 @@
        Moby210Props *props = moby->m_Props;
  
        moby->m_RenderRadius = 0x20;
@@ -1561,7 +1565,7 @@
          props->m_0x00 -= props->m_0x08;
        }
 \ No newline at end of file
-@@ -17566,7 +17674,7 @@
+@@ -17635,7 +17743,7 @@
          }
          if (props->m_0x20 != 0) {
            MobyMove(moby, props->m_0x1c, props->m_0x20, 300, 300, 1);
@@ -1571,7 +1575,7 @@
              props->m_0x20 = 0;
            }
 \ No newline at end of file
-@@ -17581,7 +17689,7 @@
+@@ -17650,7 +17758,7 @@
        case 3: {
          if (props->m_0x20 != 0) {
            MobyMove(moby, props->m_0x1c, props->m_0x20, 300, 300, 1);
@@ -1581,7 +1585,7 @@
              props->m_0x20 = 0;
            }
 \ No newline at end of file
-@@ -17690,7 +17798,7 @@
+@@ -17759,7 +17867,7 @@
        switch (moby->m_State) {
        case 0: {
          if (props->m_0x0c != 0) {
@@ -1591,7 +1595,7 @@
            props->m_0x0c = RT(0x78, 0x64);
            moby->m_State = 2;
 \ No newline at end of file
-@@ -17719,8 +17827,8 @@
+@@ -17788,8 +17896,8 @@
            vec2.z = props->m_0x18;
            VecAdd(&vec2, &vec2, &g_Spyro.m_Position);
            MobyMoveTowardTarget(moby, &vec2, 0x60, 8, 8, 0x100);
@@ -1603,7 +1607,7 @@
  
          if (TICK_TIMER(props->m_0x1c)) {
 \ No newline at end of file
-@@ -17957,7 +18065,7 @@
+@@ -18026,7 +18134,7 @@
            }
  
            if (props->m_0x40 < RT(170, 204)) {
@@ -1613,7 +1617,7 @@
  
            func_80039398(moby, props->m_0x40, 0, 0, 5);
 \ No newline at end of file
-@@ -18015,7 +18123,7 @@
+@@ -18084,7 +18192,7 @@
        case 3:
          if (props->m_0x58 != 0) {
            MobyMove(moby, props->m_0x54, props->m_0x58, 300, 300, 5);
@@ -1623,7 +1627,7 @@
              props->m_0x58 = 0;
            }
 \ No newline at end of file
-@@ -18113,7 +18221,17 @@
+@@ -18182,7 +18290,17 @@
              projectileProps = projectile->m_Props;
              VecCopy(&projectile->m_Position, &linkedMoby->m_Position);
              projectile->m_Rotation.z = linkedMoby->m_Rotation.z;
@@ -1642,7 +1646,7 @@
              projectile->m_Rotation.z = ANGLE_TO_SPYRO(projectile->m_Position);
              VecCopy(&targetPosition, &g_Spyro.m_Position);
 \ No newline at end of file
-@@ -18181,7 +18299,17 @@
+@@ -18250,7 +18368,17 @@
              projectileProps = projectile->m_Props;
              VecCopy(&projectile->m_Position, &linkedMoby->m_Position);
              projectile->m_Rotation.z = angle;
@@ -1661,7 +1665,7 @@
              VecCopy(&targetPosition, &childMoby->m_Position);
              targetPosition.z += 1325;
 \ No newline at end of file
-@@ -18269,7 +18397,7 @@
+@@ -18338,7 +18466,7 @@
              angle = ANGLE_FROM(moby->m_Position, targetPosition);
              if (MobyRotateToAngle(moby, angle, 6, 0x14, 1) != 0) {
                if (props->m_0x40 < RT(0x82, 0x9C)) {
@@ -1671,17 +1675,17 @@
                func_80039398(moby, props->m_0x40, 0, 0, 4);
              }
 \ No newline at end of file
-@@ -18456,7 +18584,7 @@
+@@ -18525,7 +18653,7 @@
          }
        }
  
 -      props->m_0x00 += props->m_0x04;
 +      props->m_0x00 += T60_SHARE(props->m_0x04); // 60 Hz: the lid's share of the tick's move
  
-       if (props->m_0x00 > 0x120) {
-         props->m_0x00 = 0x120;
+       if (props->m_0x00 > RV(0x120, 0x100, 0x120)) {
+         props->m_0x00 = RV(0x120, 0x100, 0x120);
 \ No newline at end of file
-@@ -18466,7 +18594,7 @@
+@@ -18535,7 +18663,7 @@
          props->m_0x00 = 0;
        }
  
@@ -1691,7 +1695,7 @@
        if (props->m_0x04 < -0x20) {
          props->m_0x04 = -0x20;
 \ No newline at end of file
-@@ -18534,7 +18662,7 @@
+@@ -18603,7 +18731,7 @@
            break;
          }
  
@@ -1701,7 +1705,7 @@
            g_SpawnParticle(1, 0, &props->m_0x0c->m_Position,
                            (int)&particleVelocity);
 \ No newline at end of file
-@@ -18566,7 +18694,7 @@
+@@ -18635,7 +18763,7 @@
        func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
  
        if (props->m_0x0c != 0) {
@@ -1711,7 +1715,7 @@
            ((int *)linkedMoby->m_Props)[19] = RT(0x3C, 0x32);
            MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 3);
 \ No newline at end of file
-@@ -18678,7 +18806,7 @@
+@@ -18747,7 +18875,7 @@
            VecRotateByMatrix((MATRIX *)&moby->m_RotationMatrix,
                              &particleVelocity, &particleVelocity);
  
@@ -1721,7 +1725,7 @@
              particleVelocity.y += (rand() & 0xF) - 8;
              g_SpawnParticle(1, 74, &particlePosition, (int)&particleVelocity);
 \ No newline at end of file
-@@ -18709,7 +18837,17 @@
+@@ -18778,7 +18906,17 @@
          projectileProps = projectile->m_Props;
          VecCopy(&projectile->m_Position, &moby->m_Position);
          projectile->m_Rotation.z = moby->m_Rotation.z;
@@ -1740,7 +1744,7 @@
          projectileProps->m_0x08 = -5;
          projectileProps->m_0x00 = RT(0xF0, 0x120);
 \ No newline at end of file
-@@ -19205,7 +19343,7 @@
+@@ -19274,7 +19412,7 @@
        case 7:
          if (props->m_0x04 > 0) {
            MobyMove(moby, props->m_0x00, props->m_0x04, 500, 700, 1);
@@ -1750,7 +1754,7 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -19297,7 +19435,7 @@
+@@ -19366,7 +19504,7 @@
            if (zDelta >= -0x63) {
              moby->m_Position.z = props->m_0x08.z;
            } else {
@@ -1760,7 +1764,7 @@
          }
  
 \ No newline at end of file
-@@ -19404,7 +19542,7 @@
+@@ -19473,7 +19611,7 @@
          }
  
          if (props->m_0x00 < RT(170, 204)) {
@@ -1770,7 +1774,7 @@
  
          if (distance < 0x4000 && props->m_0x28 != 2) {
 \ No newline at end of file
-@@ -19413,13 +19551,13 @@
+@@ -19482,13 +19620,13 @@
  
          if (props->m_0x1c != 0) {
            if (props->m_0x24 == 1) {
@@ -1787,7 +1791,7 @@
              if ((props->m_0x20 >> 4) <= 0) {
                props->m_0x24 = 0;
 \ No newline at end of file
-@@ -19431,9 +19569,9 @@
+@@ -19500,9 +19638,9 @@
  
          if (ABS2(zDelta) >= 0x47) {
            if (zDelta < 0) {
@@ -1800,7 +1804,7 @@
          } else {
            moby->m_Position.z = targetZ;
 \ No newline at end of file
-@@ -19528,9 +19666,9 @@
+@@ -19597,9 +19735,9 @@
  
          if (ABS2(zDelta) >= 0x3D) {
            if (zDelta < 0) {
@@ -1813,7 +1817,7 @@
          }
  
 \ No newline at end of file
-@@ -19549,7 +19687,7 @@
+@@ -19618,7 +19756,7 @@
          func_80039398(moby, props->m_0x00, 0, 0, 0);
  
          if (distance < 3000 && props->m_0x00 >= RT(0x33, 0x3D)) {
@@ -1823,7 +1827,7 @@
  
          if (distance < 0x80) {
 \ No newline at end of file
-@@ -19567,7 +19705,7 @@
+@@ -19636,7 +19774,7 @@
  
          if (props->m_0x00 > 0) {
            MobyMove(moby, props->m_0x04, props->m_0x00, 0, 0, 0);
@@ -1833,7 +1837,7 @@
  
          VecCopy(&vec, &moby->m_Position);
 \ No newline at end of file
-@@ -19575,7 +19713,7 @@
+@@ -19644,7 +19782,7 @@
          floorZ = ColFindFloor(&vec, 0x800);
  
          if (floorZ < moby->m_Position.z) {
@@ -1843,7 +1847,7 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -19699,7 +19837,11 @@
+@@ -19768,7 +19906,11 @@
          // If Spyro has been flattened
          if (g_Spyro.m_State == 25) {
            // Scratch serves as laugh anim counter here
@@ -1856,7 +1860,7 @@
          if (g_AnimationFinished) {
            // If Spyro was hit, enter laughing state, otherwise idle
 \ No newline at end of file
-@@ -19776,10 +19918,10 @@
+@@ -19847,10 +19989,10 @@
          }
          // Apply horizontal movement along knockback angle during fall
          if (props->m_FallKnockbackSpeed) {
@@ -1872,7 +1876,7 @@
          moby->m_Position.z += 0x200;
          floorHeight = ColFindFloor(&moby->m_Position, 0x1000);
 \ No newline at end of file
-@@ -19791,11 +19933,11 @@
+@@ -19862,11 +20004,11 @@
          } else {
            moby->m_Position.z -= 0x200;
            // Accelerate gravity until 240 if the Moby is falling off a ledge
@@ -1887,17 +1891,17 @@
          break;
        }
 \ No newline at end of file
-@@ -19820,7 +19962,7 @@
+@@ -19891,7 +20033,7 @@
      case 232: { // Gnorc Copter Blades
        Moby232Props *props = moby->m_Props;
  
 -      moby->m_Rotation.z += RT(8, 10);
 +      moby->m_Rotation.z += T60_SHARE(RT(8, 10)); // 60 Hz: spin share
        if (MobyMoveWithGravity(moby, &props->m_0x08, props->m_0x00,
-                               &props->m_0x04, 0xC, 0xC) == 3 ||
+                               &props->m_0x04, RT(0xC, 0xF), RT(0xC, 0xF)) == 3 ||
            TICK_TIMER(props->m_0x0c)) {
 \ No newline at end of file
-@@ -19866,7 +20008,7 @@
+@@ -19937,7 +20079,7 @@
          break;
        case 1:
          if (props->m_0x20 >= RT(16, 19)) {
@@ -1907,7 +1911,7 @@
          }
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -19890,23 +20032,23 @@
+@@ -19961,23 +20103,23 @@
      }
      case 237: { // Cannonball
        Moby237Props *props = moby->m_Props;
@@ -1937,7 +1941,7 @@
            props->m_0x0c += g_DeltaTime;
  
 \ No newline at end of file
-@@ -19916,7 +20058,7 @@
+@@ -19987,7 +20129,7 @@
            }
  
            if (props->m_0x14 != 0) {
@@ -1947,7 +1951,7 @@
  
            if (ColSphere(&moby->m_Position, 0x168, 0x168) != 0) {
 \ No newline at end of file
-@@ -19937,12 +20079,12 @@
+@@ -20008,12 +20150,12 @@
            }
          }
  
@@ -1964,7 +1968,7 @@
        }
  
 \ No newline at end of file
-@@ -20015,7 +20157,7 @@
+@@ -20086,7 +20228,7 @@
  
        case 5:
          if (props->m_0x20 >= RT(0x10, 0x13)) {
@@ -1974,7 +1978,7 @@
          }
  
 \ No newline at end of file
-@@ -20383,7 +20525,7 @@
+@@ -20463,7 +20605,7 @@
        case 3:
          if (props->m_0x18 != 0) {
            MobyMove(moby, props->m_0x1c, props->m_0x18, 0, 700, 5);
@@ -1984,7 +1988,7 @@
              props->m_0x18 = 0;
            }
 \ No newline at end of file
-@@ -20626,16 +20768,16 @@
+@@ -20706,16 +20848,16 @@
        if (!(moby->m_RenderRadius & 0x80) && (moby->m_RenderRadius != 0)) {
          if (digitProps->m_Lifetime > 0) {
  
@@ -2007,7 +2011,7 @@
            if (moby->m_Position.z > 1023) {
              if (ColSphere(&moby->m_Position, 0x100, 0x100)) {
 \ No newline at end of file
-@@ -20658,7 +20800,7 @@
+@@ -20738,7 +20880,7 @@
                  digitProps->m_Velocity.z += g_CollisionNormal.z;
                }
              }
@@ -2017,7 +2021,7 @@
              // to break in Ice Cavern
            } else {
 \ No newline at end of file
-@@ -20756,7 +20898,7 @@
+@@ -20836,7 +20978,7 @@
          distance = DISTANCE_TO_SPYRO(moby);
  
          if (props->m_0x08 >= 0) {
@@ -2027,7 +2031,7 @@
            }
          }
 \ No newline at end of file
-@@ -20784,8 +20926,8 @@
+@@ -20864,8 +21006,8 @@
          }
  
          if (props->m_0x04 != -1) {
@@ -2039,7 +2043,7 @@
                        &g_LevelMobys[props->m_0x08], 8,
                        &g_LevelMobys[props->m_0x08].m_SoundChannel);
 \ No newline at end of file
-@@ -20898,7 +21040,7 @@
+@@ -20978,7 +21120,7 @@
  
                if ((*(u_int *)&linkedMoby->m_AnimationState & 0xFF0000FF) ==
                    0x04000004) {
@@ -2049,7 +2053,7 @@
                    props->m_0x14 = RT(0x5A, 0x4B);
                  }
 \ No newline at end of file
-@@ -20928,7 +21070,7 @@
+@@ -21008,7 +21150,7 @@
        case 3: {
          if (props->m_0x38 != 0) {
            MobyMove(moby, props->m_0x3c, props->m_0x38, 0, 700, 5);
@@ -2059,7 +2063,7 @@
              props->m_0x38 = 0;
            }
 \ No newline at end of file
-@@ -21623,8 +21765,8 @@
+@@ -21703,8 +21845,8 @@
            continue;
          }
  
@@ -2071,7 +2075,7 @@
  
          if (distance >= 0xC9) {
 \ No newline at end of file
-@@ -21665,11 +21807,11 @@
+@@ -21745,11 +21887,11 @@
  
        case 18: {
          int floorHeight = MobyFloorHeight(moby);
@@ -2086,7 +2090,7 @@
              props->m_0x30 = -200;
            }
 \ No newline at end of file
-@@ -21679,7 +21821,7 @@
+@@ -21759,7 +21901,7 @@
  
          if (props->m_0x18 != 0) {
            MobyMove(moby, props->m_0x1c, props->m_0x18, 0, 700, 1);
@@ -2096,7 +2100,7 @@
              props->m_0x18 = 0;
            }
 \ No newline at end of file
-@@ -21723,7 +21865,7 @@
+@@ -21803,7 +21945,7 @@
        Moby283Props *props = moby->m_Props;
  
        if (moby->m_State != 2) {
@@ -2106,7 +2110,7 @@
          if ((moby->m_DamageFlags & (MOBY_DAMAGE_FLAME | MOBY_DAMAGE_CHARGE |
                                      MOBY_DAMAGE_SUPER)) != 0) {
 \ No newline at end of file
-@@ -21769,7 +21911,7 @@
+@@ -21849,7 +21991,7 @@
                SPYRO_BASE_Z_DISTANCE(moby) < 0x800) {
              MobyRotateToSpyro(moby, 8, 0x10, 1);
              if (props->m_0x10 != 0) {
@@ -2116,7 +2120,7 @@
                  break;
                }
 \ No newline at end of file
-@@ -21955,7 +22097,7 @@
+@@ -22035,7 +22177,7 @@
          }
  
          if (props->m_0x08 != 0) {
@@ -2126,7 +2130,7 @@
          }
  
 \ No newline at end of file
-@@ -22340,7 +22482,7 @@
+@@ -22420,7 +22562,7 @@
          if (angleDelta > 8) {
            angleDelta = 8;
          }
@@ -2136,7 +2140,7 @@
          if ((props->m_0x10 & 4) == 0) {
            if (func_8003A16C(moby, props->m_0x0c, 0x200, 0x80, 0x300, 8, 0x10,
 \ No newline at end of file
-@@ -22359,7 +22501,7 @@
+@@ -22439,7 +22581,7 @@
            RotVec8ToMatrix(&moby->m_Rotation, &matrix, 0);
            VecRotateByMatrix(&matrix, &vector, &vector);
            VecAdd(&vector, &vector, &moby->m_Position);
@@ -2146,7 +2150,7 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -22453,6 +22595,10 @@
+@@ -22533,6 +22675,10 @@
            break;
  
          case 1:
@@ -2158,7 +2162,7 @@
              moby->m_Position.x += ambProps->m_0x18.x;
              moby->m_Position.y += ambProps->m_0x18.y;
 \ No newline at end of file
-@@ -22539,20 +22685,20 @@
+@@ -22619,20 +22765,20 @@
          continue;
        }
  
@@ -2187,7 +2191,7 @@
          if (props->m_0x04 < -RT(0x80, 0x99)) {
            props->m_0x04 = -RT(0x80, 0x99);
 \ No newline at end of file
-@@ -22563,7 +22709,7 @@
+@@ -22643,7 +22789,7 @@
          }
  
          if (props->m_0x10 == 0) {
@@ -2197,7 +2201,7 @@
            if (moby->m_Rotation.y + props->m_0x0e == 0x20 ||
                moby->m_Rotation.y + props->m_0x0e == 0xE0) {
 \ No newline at end of file
-@@ -22571,17 +22717,17 @@
+@@ -22651,17 +22797,17 @@
              props->m_0x0e = temp;
            }
  
@@ -2221,7 +2225,7 @@
      }
      case 293 ... 294: { // Tree Tops Green and Red Thieves
 \ No newline at end of file
-@@ -22704,12 +22850,12 @@
+@@ -22784,12 +22930,12 @@
  
        if (moby->m_AnimationState.m_NextAnimation == 4 &&
            moby->m_RenderRadius != 0) {
@@ -2237,7 +2241,7 @@
                  0) {
            MobyPlaySound(moby, 5, 0);
 \ No newline at end of file
-@@ -22733,14 +22879,14 @@
+@@ -22813,14 +22959,14 @@
          result =
              func_80039E94(moby, props->m_0x04, RT(380, 456), speed, 0, RT(8, 10), 0x28, 0xFF, 0);
          floorHeight = func_80038400(moby, 3000);
@@ -2256,7 +2260,7 @@
  
          if (props->m_0x24 == 0) {
 \ No newline at end of file
-@@ -22858,17 +23004,17 @@
+@@ -22938,17 +23084,17 @@
          result = func_80039E94(moby, props->m_0x04, RT(380, 456), speed, 0, RT(0xA, 0xC), 0x28,
                                 0xFF, 0);
          floorHeight = func_80038400(moby, 3000);
@@ -2279,7 +2283,7 @@
              Vector3D m_Position;
              Vector3D m_Velocity;
 \ No newline at end of file
-@@ -23050,7 +23196,7 @@
+@@ -23130,7 +23276,7 @@
        if (angle < -2) {
          angle = -2;
        }
@@ -2289,7 +2293,7 @@
        VecCopy(&oldPosition, &moby->m_Position);
  
 \ No newline at end of file
-@@ -23089,7 +23235,7 @@
+@@ -23169,7 +23315,7 @@
            }
          }
        } else {
@@ -2299,7 +2303,7 @@
  
        if (ColTraceRay(&oldPosition, &moby->m_Position) != 0) {
 \ No newline at end of file
-@@ -23562,7 +23708,7 @@
+@@ -23642,7 +23788,7 @@
  
          distance = OctDistance(&g_Spyro.m_Position,
                                 (Vector3D *)((u_char *)props->m_0x08 + 0x18));
@@ -2309,7 +2313,7 @@
          }
  
 \ No newline at end of file
-@@ -23590,7 +23736,7 @@
+@@ -23670,7 +23816,7 @@
        }
  
        case 1:
@@ -2319,7 +2323,7 @@
          }
          EnvAnimSetFlags(props->m_0x00, ENV_ANIM_FLAG_UNPAUSE, 0);
 \ No newline at end of file
-@@ -23602,7 +23748,7 @@
+@@ -23682,7 +23828,7 @@
            MOBY_ANIM_RESTART(moby, 0);
            continue;
          }
@@ -2329,7 +2333,7 @@
                          (Vector3D *)((u_char *)props->m_0x08 + 0x18)) <
                  0x2000) {
 \ No newline at end of file
-@@ -23632,7 +23778,7 @@
+@@ -23712,7 +23858,7 @@
          break;
  
        case 4:
@@ -2339,7 +2343,7 @@
          }
          EnvAnimSetFlags(props->m_0x00, ENV_ANIM_FLAG_UNPAUSE, 0);
 \ No newline at end of file
-@@ -23799,8 +23945,8 @@
+@@ -23879,8 +24025,8 @@
          if (props->m_0x2c < 0x40) {
            props->m_0x2c = 0x40;
          }
@@ -2351,7 +2355,7 @@
        }
  
 \ No newline at end of file
-@@ -24157,10 +24303,10 @@
+@@ -24246,10 +24392,10 @@
            rotation -= 0x100;
          }
  
@@ -2366,7 +2370,7 @@
          if (props->m_0x0c > 0x800) {
            props->m_0x0c -= 0x1000;
 \ No newline at end of file
-@@ -24258,18 +24404,18 @@
+@@ -24347,18 +24493,18 @@
            }
          }
  
@@ -2394,7 +2398,7 @@
  
            particlePosition.x = (rand() & 0xFE) - 127;
 \ No newline at end of file
-@@ -24278,7 +24424,7 @@
+@@ -24367,7 +24513,7 @@
            VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
            g_SpawnParticle(1, 66, &particlePosition, 1);
          }
@@ -2404,8 +2408,8 @@
          if (moby->m_WasDrawn) {
            g_SpawnParticle(8, 70, &moby->m_Position, 0x10);
 \ No newline at end of file
-@@ -24337,7 +24483,7 @@
-             props->m_Timer = 90;
+@@ -24426,7 +24572,7 @@
+             props->m_Timer = RT(90, 75);
            }
  
 -          for (i = 0; i < 6; i++) {
@@ -2414,7 +2418,7 @@
              vel[0].y = D_8006E614[i >> 1].m_LocalOffset.y;
              vel[0].z = D_8006E614[i >> 1].m_LocalOffset.z;
 \ No newline at end of file
-@@ -24355,7 +24501,7 @@
+@@ -24444,7 +24590,7 @@
            }
            count = props->m_Timer / 40 + 1;
  
@@ -2424,7 +2428,7 @@
              // int is a particle size and the second int is
              // color intensity, stored as / 8
 \ No newline at end of file
-@@ -24404,7 +24550,7 @@
+@@ -24493,7 +24639,7 @@
        }
  
        case 3: // Explosion
@@ -2434,7 +2438,7 @@
            MobyFragmentProps *fp1;
            Moby152Props *fp2;
 \ No newline at end of file
-@@ -24485,7 +24631,7 @@
+@@ -24574,7 +24720,7 @@
  
          ColMoby(&moby->m_Position, (props->m_Timer + 1) * 0x100, 0, 0x50000,
                  moby, 0);
@@ -2444,7 +2448,7 @@
            MobyMarkKilled(moby);
            MobyFree(moby);
 \ No newline at end of file
-@@ -24763,8 +24909,8 @@
+@@ -24852,8 +24998,8 @@
        if (props->m_IsThrown) {
          if (!TICK_TIMER(props->m_Lifetime)) {
            MobyMove(moby, props->m_ThrowAngle, RT(90, 108), 0, 0, 0);
@@ -2456,7 +2460,7 @@
              props->m_ZVelocity = -120;
            }
 \ No newline at end of file
-@@ -24778,14 +24924,21 @@
+@@ -24867,14 +25013,21 @@
        Moby318Props *props = moby->m_Props;
  
        if (!TICK_TIMER(props->m_0x0c) && moby->m_WasDrawn) {
@@ -2482,7 +2486,7 @@
          MobyFree(moby);
        }
 \ No newline at end of file
-@@ -25819,8 +25972,8 @@
+@@ -25914,8 +26067,8 @@
          moby->m_Rotation.x = -moby->m_AnimationState.m_Animation << 6;
        }
  
@@ -2494,7 +2498,7 @@
        }
  
 \ No newline at end of file
-@@ -25940,8 +26093,8 @@
+@@ -26035,8 +26188,8 @@
            moby->m_Position.z = 5500;
            props->m_0x00 = RT(0x1E, 0x19);
          } else {
@@ -2506,7 +2510,7 @@
            VecAdd(&moby->m_Position, &moby->m_Position, &delta);
          }
 \ No newline at end of file
-@@ -26586,17 +26739,17 @@
+@@ -26694,17 +26847,17 @@
        MobyFragmentProps *props = moby->m_Props;
  
        if (props->m_Lifetime > 0 && moby->m_WasDrawn) {
@@ -2533,7 +2537,7 @@
          MobyFree(moby);
        }
 \ No newline at end of file
-@@ -26751,7 +26904,7 @@
+@@ -26859,7 +27012,7 @@
              continue;
            }
            if (props->m_0x1c < RT(200, 240))
@@ -2543,7 +2547,7 @@
            if (MobyRotateToAngle(moby, angle, 8, 0x26, 1) != 0)
              func_80039398(moby, props->m_0x1c, 0x200, 0x200, 0x23);
 \ No newline at end of file
-@@ -26812,7 +26965,7 @@
+@@ -26920,7 +27073,7 @@
        case 4: {
          int floorHeight;
          if (props->m_0x1c < RT(200, 240))
@@ -2553,7 +2557,7 @@
          floorHeight = MobyFloorHeight(moby);
          if (moby->m_Position.z - floorHeight > 500) {
 \ No newline at end of file
-@@ -26867,7 +27020,7 @@
+@@ -26975,7 +27128,7 @@
          if (props->m_0x24 < RT(0xA5, 0x8A))
            MobyRotateToAngle(moby, props->m_0x20, 7, 0, 0);
          if (TICK_TIMER(props->m_0x24)) {
@@ -2563,7 +2567,7 @@
              props->m_0x1c = 0;
          }
 \ No newline at end of file
-@@ -27367,7 +27520,7 @@
+@@ -27475,7 +27628,7 @@
            }
            func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
            MobyGetAnimatedVertex(moby, 0, &vertexPosition);
@@ -2573,7 +2577,7 @@
              angle2 = moby->m_Rotation.z + angleOffset;
              particleVelocity.x = COSINE_8(angle2) >> 5;
 \ No newline at end of file
-@@ -27573,7 +27726,7 @@
+@@ -27681,7 +27834,7 @@
        case 7:
          if (props->m_0x04 > 0) {
            MobyMove(moby, props->m_0x00, props->m_0x04, 500, 700, 1);
@@ -2583,7 +2587,7 @@
          if (g_AnimationFinished) {
            func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
 \ No newline at end of file
-@@ -27627,10 +27780,17 @@
+@@ -27735,10 +27888,17 @@
        if (moby->m_WasDrawn == 0 || TICK_TIMER(props->m_Lifetime)) {
          MobyFree(moby);
        } else {
@@ -2605,7 +2609,7 @@
        break;
      }
 \ No newline at end of file
-@@ -28291,7 +28451,7 @@
+@@ -28399,7 +28559,7 @@
                              &particleVelocity, &particleVelocity);
            particleVelocity.x += (rand() & 0xF) - 8;
            particleVelocity.y += (rand() & 0xF) - 8;
@@ -2615,7 +2619,7 @@
            if (moby->m_SoundChannel == 0x7F) {
              MobyPlaySound(moby, 0, 0);
 \ No newline at end of file
-@@ -28300,7 +28460,13 @@
+@@ -28408,7 +28568,13 @@
          }
  
          if (props->m_0x10 < 0xB4) {
@@ -2630,7 +2634,7 @@
              particlePosition.y = 0;
              particlePosition.z = 0x14C;
 \ No newline at end of file
-@@ -28344,6 +28510,14 @@
+@@ -28452,6 +28618,14 @@
          Moby *parent;
          int magnitude;
  
@@ -2646,7 +2650,7 @@
            VecSub(&delta, &PATH_CUR_POS(props->m_0x14), &moby->m_Position);
            VecCopy(&props->m_0x04, &delta);
 \ No newline at end of file
-@@ -28543,7 +28717,7 @@
+@@ -28651,7 +28825,7 @@
        }
  
        case 4: {
@@ -2656,7 +2660,7 @@
          if (TICK_TIMER(props->m_0x18) && g_AnimationFinished) {
            moby->m_State = 0;
 \ No newline at end of file
-@@ -28670,7 +28844,7 @@
+@@ -28778,7 +28952,7 @@
            continue;
          }
  
@@ -2666,7 +2670,7 @@
        }
        }
 \ No newline at end of file
-@@ -28693,7 +28867,7 @@
+@@ -28801,7 +28975,7 @@
          func_8003BFC0(moby, props->m_Path, &props->m_0x08, &props->m_0x04, 0x10,
                        4);
          func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
@@ -2676,7 +2680,7 @@
            g_SpawnParticle(1, 19, &particlePosition, 0);
          }
 \ No newline at end of file
-@@ -29279,19 +29453,19 @@
+@@ -29390,19 +29564,19 @@
        if (!TICK_TIMER(props->m_Lifetime) && moby->m_Position.z >= 2000 &&
            moby->m_WasDrawn) {
  
@@ -2705,7 +2709,7 @@
          MobyFree(moby);
        }
 \ No newline at end of file
-@@ -29315,17 +29489,17 @@
+@@ -29426,17 +29600,17 @@
              props->m_Velocity.z += g_CollisionNormal.z;
            }
          }
@@ -2732,7 +2736,7 @@
          MobyFree(moby);
        }
 \ No newline at end of file
-@@ -29775,7 +29949,7 @@
+@@ -29886,7 +30060,7 @@
  
          if (props->m_0x20 > 0) {
            MobyMove(moby, props->m_0x1c, props->m_0x20, 500, 700, 1);
@@ -2742,7 +2746,7 @@
  
          if (g_AnimationFinished) {
 \ No newline at end of file
-@@ -30016,10 +30190,10 @@
+@@ -30127,10 +30301,10 @@
            }
  
            threshold = props->m_0x14 - (distance >> 6);
@@ -2756,7 +2760,7 @@
                              ANGLE_FROM(g_Camera.m_Position, moby->m_Position)) <
                    0x28) {
 \ No newline at end of file
-@@ -30112,8 +30286,8 @@
+@@ -30223,8 +30397,8 @@
        }
  
        case 4: {
@@ -2768,7 +2772,7 @@
          if (MobyMoveWithGravity(moby, &props->m_0x24, props->m_0x20,
                                  &props->m_0x28, RT(0xC, 0xF), RT(0xE, 0x11)) == 3) {
 \ No newline at end of file
-@@ -30305,21 +30479,21 @@
+@@ -30416,21 +30590,21 @@
        Vector3D particleVelocity;
  
        if (props->m_Lifetime > 0 && moby->m_WasDrawn) {
@@ -2799,7 +2803,7 @@
            particleVelocity.y = rand() & 3;
            particleVelocity.z = 0x14;
 \ No newline at end of file
-@@ -30327,7 +30501,7 @@
+@@ -30438,7 +30612,7 @@
            g_SpawnParticle(1, 1, &moby->m_Position, (int)&particleVelocity);
          }
  
@@ -2809,7 +2813,7 @@
          g_SpawnParticle(8, 70, &moby->m_Position, 0x10);
          MobyFree(moby);
 \ No newline at end of file
-@@ -30425,7 +30599,7 @@
+@@ -30536,7 +30710,7 @@
          if (angleDelta < -2) {
            angleDelta = -2;
          }
@@ -2819,7 +2823,7 @@
          distance = OctDistance(&moby->m_Position, &props->m_0x04);
          angleDelta = (Atan2(distance, props->m_0x04.z - moby->m_Position.z, 0) -
 \ No newline at end of file
-@@ -30440,7 +30614,7 @@
+@@ -30551,7 +30725,7 @@
          if (angleDelta < -2) {
            angleDelta = -2;
          }
@@ -2829,7 +2833,7 @@
  
        VecCopy(&oldPosition, &moby->m_Position);
 \ No newline at end of file
-@@ -30561,7 +30735,7 @@
+@@ -30672,7 +30846,7 @@
          } else if (moby->m_State == 0) {
            props->m_0x4c = -1;
          } else {
@@ -2839,7 +2843,7 @@
        } else {
          props->m_0x4c = -1;
 \ No newline at end of file
-@@ -30976,7 +31150,7 @@
+@@ -31087,7 +31261,7 @@
        }
  
        case 2: {

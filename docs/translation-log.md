@@ -622,6 +622,17 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `func_pal_80081758` (new), `Flight1`–`Flight5` | decomp C; `Flight5` PAL body first; `Flight4` `RT` | exact in LEVEL_15, 25, 35, 45, 55 (0x80081758 … 0x80082058) | none |
 | `SetOverlayPointers` | decomp C: `g_PalLetterCount` set for PAL's flight levels | read against PAL 0x8005FE04 (stored before `Flight1`'s pointer); the function differs from PAL's in its other overlays' addresses anyway | none |
 
+## Stage R3, part 4: the overlays' PAL code (2026-11-11, decisions D146)
+
+`patches/spyro-1-region/0009-pal-overlay-code.patch`, `spyro-1-region-{matching,port}/0009-pal-overlay-code.patch` and `0010-pal-dragon-props.patch`. "Strict" is `retune.py sites wad`'s compare of the `REGION=pal` matching build against PAL's `WAD.WAD`: every instruction the same, constants included, relocations masked.
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `UpdateMoby_LEVEL_10` … `UpdateMoby_LEVEL_64`, 35 overlays (`moby_update.c`) | decomp C, `RT`, `RT_TIME`, `RT_SPEED`, `RV`, `REGION_IS(PAL)` | strict against each PAL overlay (WAD entries 21 + 2k): 33 of 35 the same | `LEVEL_21`: 2 instructions, `LEVEL_64`: 1, scheduled differently with the same values and stores (D146) |
+| `SpawnMoby_*` (`moby_spawn.c`), `SpawnParticle_*` (`particle_spawn.c`) | decomp C, `RT`, `RT_TIME` | strict: 35 of 35 each | none |
+| `UpdateParticle_*` (`particle_update.c`) | decomp C, unchanged | strict: 35 of 35 (PAL changed nothing there after D137) | none |
+| the port's `moby_update.c` (30 Hz and 60 Hz) | the matching build's change, merged three ways onto the port's file | both patch chains applied and compared with the edited trees; host build | the 60 Hz rules weren't judged for PAL's added code (PAL has no 60 Hz yet) |
+
 ## Stage R4: the attract demos (2026-11-12, decisions D147)
 
 | Function | Method | Verified by | Known differences |
