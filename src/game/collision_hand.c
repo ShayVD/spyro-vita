@@ -1278,13 +1278,20 @@ static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int p
           break;
         }
         }
-        hit = m;
+        /* US records the moby before the pass test, so a pass volume is
+         * still the hit ColMoby returns; PAL records it after (its asm moves
+         * the `addi s2, fp, 0` past the branch, PAL 0x80053CA4 and the three
+         * kinds after it): a pass volume damages but doesn't block (D149). */
+        if (!REGION_IS(PAL))
+          hit = m;
         if (!(word & VOLUME_NO_DAMAGE))
           m->m_DamageFlags |= pApplyingDamage;
         if (pReceivingDamage)
           *pReceivingDamage |= e[-1];
         if (word & VOLUME_PASS)
           continue;
+        if (REGION_IS(PAL))
+          hit = m;
         if (arg5 & 1) {
           MobyPushOut(pPos, v, len2, limit);
           return (int)(uintptr_t)m;

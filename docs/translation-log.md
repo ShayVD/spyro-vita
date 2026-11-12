@@ -633,8 +633,9 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 | `UpdateParticle_*` (`particle_update.c`) | decomp C, unchanged | strict: 35 of 35 (PAL changed nothing there after D137) | none |
 | the port's `moby_update.c` (30 Hz and 60 Hz) | the matching build's change, merged three ways onto the port's file | both patch chains applied and compared with the edited trees; host build | the 60 Hz rules weren't judged for PAL's added code (PAL has no 60 Hz yet) |
 
-## Stage R4: the attract demos (2026-11-12, decisions D147)
+## Stage R4: the attract demos (2026-11-12, decisions D147, D149)
 
 | Function | Method | Verified by | Known differences |
 |---|---|---|---|
 | `func_80022A2C` (`moby_hand.c`, lit mobys) | hand C: the GTE offset restored after the lit mobys is `RV(0x780000, 0x800000, 0x780000)` (OFY 120, PAL 128) | PAL 0x8002899C `lui 0x80` against US 0x80023964 `lui 0x78`; the PAL demos' rand() callers and particle lists against PCSX-Redux (D147) | the mips2c translation (`--fast-render 0`) keeps US's 120 |
+| `ColMoby` (`collision_hand.c`, `MobyVolumes`) | hand C: for PAL the hit moby is recorded after the pass-through test (D149) | the US/PAL instruction diff (PAL 0x80053CA4, 0x80053D50, 0x80053E68, 0x80054008); the three PAL attract demos against PCSX-Redux, every trace column, tick for tick | the mips2c translation keeps US's order |
