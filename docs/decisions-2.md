@@ -1874,7 +1874,7 @@ Logs are in the worktree's `logs/d148*` (gitignored). Binaries: main `44e5ba3`'s
   - The title flow without a card (6,000 vblanks): the trace is identical to the game's with presentation off (`h-pal-bt4`, `h-pal-ref`).
   - `--pres-write-check`: 6,785 presenter frames, none wrote the game's memory (`hp-wc`).
   - The first draft (frames after the draw, without putting libgpu's display environment back) changed the game in that title run; that's what found it.
-- **ctest:** 29 of 30 passed (`logs/d148/ctest.txt`). `render_ctx_link` fails on `g_Region`: main's own failure since D147, which #135 fixes. With #135's `link_check.sh` the test passes on this build (the file not committed here).
+- **ctest:** 29 of 30 passed on `44e5ba3` (`logs/d148/ctest.txt`). `render_ctx_link` failed on `g_Region`: main's own failure since D147, which #135 fixed. With #135 merged in (main `f0a0e14`), it passes (`logs/d148/ctest-link-merged.txt`).
 - **Matching build:** `PSX.EXE SHA-1 OK` on this branch, before and after the changes (`logs/d148/build_matching.txt`, `build_matching_final.txt`); no decomp or patch file changed.
 - `tools/check_no_assets.sh`: exit 0.
 - **Vita3K** (the VPK built with the Mac's VitaSDK, `logs/d148/v3k-*`; `REALTIME=1`, the PAL image, `region_dev=1`):
