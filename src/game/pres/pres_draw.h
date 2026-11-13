@@ -40,6 +40,9 @@ int pres_draw_available(void);
 int pres_draw_prepare(int blend, int wide, const uint8_t *flags, const uint32_t *caches,
                       int ncaches);
 void GamestateDraw_pres(void);
+/* between the two, for an inline draw that is shown: the vertex cache
+ * records its projections too, if it is on (D152) */
+void pres_draw_vcache(void);
 /* the presenter's records' pool (its own; NULL with native_draw off) */
 void pres_draw_pool(const uint32_t **w, uint32_t *cap);
 /* the records' mode of its list (native_draw.c's g_psx_walk_nd, its own) */

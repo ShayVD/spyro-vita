@@ -2008,3 +2008,43 @@ Logs are in the worktree's `logs/u61/` (gitignored). Main `8ca72b6`'s tree is D1
   - **US's opening** (`v3k-us-intro`): the same pattern, 147–150 a window.
   - One run of the same VPK (`v3k-pal-intro2`) stopped at vblank 5,200 when Vita3K itself died (`Trace/BPT trap` in the emulator process, `vita3k.txt`); the same VPK and script run again reached 6,800 (`v3k-pal-intro3`). Not seen again.
 - **Not run:** hardware (the owner's yes first): whether the opening looks smooth is the owner's call; the numbers above say each tick now moves the same amount.
+
+## 2026-11-13 — the vertex cache with the in-between frame
+
+### D152. With SUB-PIXEL VERTICES or PERSPECTIVE on, the in-between frame's polygons get the vertex cache's answers as the logic frame's do: the walk tells the cache where each polygon's answers go, whichever walk it is, and the cache records the presenter's projections while it draws inline. Before, with an in-between frame, every polygon of every frame was drawn with answers left from an older frame: thin lines along polygon edges, a line along a quad's diagonal, torn letters
+- **Why:** the owner on the Vita, main `4d3e1da` with the PAL disc (60 HZ, 16:9, `persp=1`, `subpixel=1`, `tex_filter=0`): "you should be able to see clear lines between textures" (`logs/hw-pal-4d3e1da-20261113-seams/` in the main checkout: the title's flyby, the title, the save menu). The log's `vcache` line said 48–56% of the title's polygons found their vertices; play at 60 Hz logic says 93–98%.
+- **Not D151's code (#139), nor D150's.** Two older faults, both in how the in-between frame (the presenter, D125–D126) meets the vertex cache (D39, D43). D150 made them show: 60 HZ is the default since, and with it the title, the menus and the cutscenes run 30 Hz ticks with an in-between frame. Play at 60 Hz logic has no in-between frame and never showed them. INTERPOLATED with either option had them since 7f.
+- **Cause 1, the lines: the answers went to the buffer drawn last.** For every polygon vertex the cache leaves its answer (the sub-pixel offset and the depth) in `g_vcache_side` at the vertex's index, and the renderer reads them in order (D43). `psx_vcache_poly` found that index from the vertex buffer `GR_UpdateVertexBuffer` had been given last (`psx_vcache_set_base`), and wrote nothing for a vertex outside it. Since 7f (D126) the presenter's walk has a vertex buffer of its own, so with the two walks taking turns each one's vertices were never in "the last buffer drawn": no polygon's answers were written, in the logic frame or the in-between one, and both were drawn with whatever the array still held from the last time one walk ran twice in a row (a dropped in-between frame). A vertex then moved by another vertex's sub-pixel offset (up to half a pixel each way, so two polygons sharing an edge no longer met) and took another's depth (a quad's two triangles mapped differently: the diagonal); 2D polygons, which find nothing and should stay as they are, took them too (the letters).
+  - Measured on main with a counter for the polygons whose answers weren't written (Vita3K, the owner's settings, the title): **every polygon of every frame** once the frames alternate, e.g. 1,434 of 1,434 a frame at vblanks 300–600 (`logs/u62/v3k-before`), and the window shows the owner's lines (`win-2100.png`).
+- **Cause 2, behind it: the in-between frame found nothing.** The presenter's renderers have their own hooks for the cache, and they were null "until 7e wants them" (D123) and stayed so: its projections were never recorded, so its polygons found no vertex (the 48%: the logic frames' 98% and the in-between frames' 0). With cause 1 alone fixed, an in-between frame would be drawn at integer positions with affine textures between two frames that weren't: a 60 Hz shimmer. The presenter already runs inline when the cache is on, for the cache's sake (D126: "whose tables are the game thread's"), and its `DrawOTag` already closes the cache's frame.
+- **The fix:**
+  - `psx_vcache_poly(vertex, xy, n, side)`: the walk says where the polygon's answers go, `g_vcache_side` at its first vertex's index in the buffer it is filling (`native_draw.c`), so there is no "last buffer" to be wrong about; `psx_vcache_set_base` is gone (`gpu_gl.c`, `gpu_thread.c`). `psx_vcache_poly_ref` is the three-argument form for `--walk-check`'s reference walk (no answers). One array still serves both walks: while the cache is on, only one walk fills a buffer at a time and draws it before the other starts (the game's, on the parse thread too, is joined before the presenter's inline draw; the presenter's worker never runs with the cache). `psx_vcache.h` says so.
+  - `pres_draw_vcache()` (`pres_draw.c`), called by `presenter_pass` for an inline draw that is shown: the presenter's value hook is the game's (`rtp_value_hook`), so its native projections are recorded in the frame's table as the game's are. Its register-file hook stays null (the presenter has no register file since D124, and that hook reads the game's). Not for the worker (never with the cache) nor for `--pres-check`'s recorded list.
+- **Cost:** none where the cache is off. With it on, the in-between frame now records its projections (as many as the logic frame's) and its polygons' lookups find them. In Vita3K, on the title, the presenter's part of a tick went from 0.98 to 2.78 ms (the logic draw 1.9–2.0 ms both times; `v3k-before`, `v3k-after`). **Not measured on the Vita**, where the owner's log has the presenter at 5.1–6.7 ms a tick on the title and the game thread 43–56% busy: the in-between frame will cost more there, and where it no longer fits `interp_budget` skips it (the `present` line counts them).
+
+#### Checked
+Logs are in the worktree's `logs/u62/` (gitignored). Main `f4f2f04`'s tree is D151's commit's (`git diff` empty).
+- **Vita3K, the owner's settings** (the VPK with the Mac's VitaSDK, PAL disc, 60 HZ, 16:9, `persp=1`, `subpixel=1`, `tex_filter=0`, `draw_distance=100`; main's VPK is main with the counter and its log text only):
+
+  | The title, vblanks 600–2700 | main | this branch |
+  |---|---|---|
+  | polygons a frame whose answers weren't written | all of them (875–1,434 of 875–1,434) | none (the argument) |
+  | polygons with every vertex found | 48–49% | 96–99% |
+  | projections recorded a frame | 1,353–2,021 | 2,719–4,023 |
+  | the window (`win-2100.png`) | the owner's lines on the sky, the mountains and the ground | none |
+
+  - **A new game** with the fix (`v3k-after-ng`, `logs/pads/pal60_gems.txt`, 7,000 vblanks): the save menu's frame and letters whole (`win-3000.png`), the opening (`win-3900.png`) and play clean; 93–99% found in every window.
+- **Which options, which disc** (Vita3K, the title at vblank 1,200, `narrow.sh`, `narrow2.sh`):
+
+  | Run | main | this branch |
+  |---|---|---|
+  | US disc, both options | no polygon's answers written, 48% found; this capture shows no lines (what the array held happened to fit) | 97% found, clean |
+  | PAL, `subpixel=1` only | none written; the lines | 97%, clean |
+  | PAL, `persp=1` only | none written; **the whole window one flat colour**: the frames alternated from the first, so the array was still zeros and every depth 0 | 97%, clean |
+  | PAL, both off | no vertex cache, clean | (unchanged) |
+  | PAL, both on, 60 FPS OFF (no in-between frame) | all written, 97% found | (unchanged) |
+
+  So: either option, any disc, and only with an in-between frame. How bad it looked depended on what the array held from the last time one walk ran twice in a row, from near right to the flat screen.
+- **Host, the cache with the in-between frame** (`--interp --vcache`, main's `spyro-c4` against `spyro-u62`): gems 48.6% of polygons with every vertex found before, 97.2% after; the attract demos 48.7% and 97.3%. Every other file of the runs identical (19 of 19 and 13 of 13: traces, screenshots, audio): the cache only reads (`logs/u62/h-vc.txt`).
+- **Host unchanged without it:** `tools/host_checks.sh` with `spyro-u62`: **287 of 287 files identical** to D151's run (`logs/u62/hc_cmp.txt`). ctest: 29 of 30 passed and `gte` skipped, as on main (`logs/u62/ctest.txt`).
+- **Not checked:** the Vita itself (the lines gone, and the in-between frame's cost there); JP.

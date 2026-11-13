@@ -892,7 +892,6 @@ void rt_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
     game_wait(W_SLAB, K_VERTS, s_verts_posted - NSLAB + 2);
   memcpy(s_slab[slab], vertices, (size_t)count * sizeof *vertices);
   if (side) {
-    psx_vcache_set_base(vertices);
     if (!s_slab_side[slab])
       s_slab_side[slab] = malloc(sizeof(VCacheVert) * (MAX_VERTEX_BUFFER_SIZE + 6));
     if (s_slab_side[slab])
