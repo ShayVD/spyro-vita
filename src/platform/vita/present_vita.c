@@ -233,6 +233,9 @@ void vita_present_report(int vblank) {
              vblank, s->time_ticks - last.time_ticks, s->time_frames - last.time_frames,
              s->time_hidden - last.time_hidden, s->time_fallbacks - last.time_fallbacks,
              s->due_units - last.due_units, s->due_held - last.due_held);
+  if (s->cut_placed != last.cut_placed)
+    vita_log("present %d: %lld in-between frames with the cutscene's mobys placed at their own "
+             "time (PAL at US timing, D156)", vblank, s->cut_placed - last.cut_placed);
   if (has_due && (s->due_late != last.due_late || s->due_superseded != last.due_superseded ||
                   s->queue_drops != last.queue_drops))
     vita_log("present %d: the game thread's frames by due vblank: %lld taken late, %lld never "

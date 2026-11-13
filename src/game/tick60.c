@@ -57,6 +57,8 @@ static int wants_60(void) {
 
 static long long now_us(void) { return g_present_clock_us(); }
 
+void PortPalAnimClock(int d); /* region_game.c: PAL's animation clock (D155) */
+
 void PortGamestateUpdate(void) {
   long long t = g_t60_stats_on ? now_us() : 0;
 #if SPYRO_TICK60_RULES
@@ -80,7 +82,11 @@ void PortGamestateUpdate(void) {
     g_t60_stats.ticks60++;
     g_t60_stats.half_ticks += g_t60.tick;
     g_t60_stats.late += g_DeltaTime > 1;
-    GamestateUpdate_60();
+    {
+      const int d = g_DeltaTime; /* the rules set it per class */
+      GamestateUpdate_60();
+      PortPalAnimClock(d);
+    }
     g_t60.active = 0;
     if (g_t60.spyro_held && !wants_60()) {
       /* The tick's first half left play (the portal's gamestate 1, the
@@ -109,7 +115,9 @@ void PortGamestateUpdate(void) {
   g_t60_stats.ticks30++;
   {
     int play = g_Gamestate == GS_Playing;
+    const int d = g_DeltaTime;
     GamestateUpdate();
+    PortPalAnimClock(d);
     if (g_t60_stats_on) {
       g_t60_stats.us30 += now_us() - t;
       if (play) {

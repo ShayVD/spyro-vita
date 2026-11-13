@@ -219,13 +219,22 @@ void func_800522C0(Moby **pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyL
  * down; negative is a catch-up step (a tick of more than two vblanks): it
  * keeps the flags of the step before, and a finished animation stays
  * finished. The new frame's sound, if it has one, goes on the queue. */
+int PortPalAnimStep(unsigned per, int speedDiv);
 static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
   AnimationState *a = &m->m_AnimationState;
+  /* PAL at US timing (D155): 5/6 of the step, PAL's models having 5/6 of
+   * US's frames (region_game.c); -1 otherwise, and the original's step.
+   * The shadow build compares with the original's code, so it keeps it. */
+#if HAND_SHADOW
+  const int pal = -1;
+#else
+  const int pal = PortPalAnimStep(a->m_PerFrameProgress, speedDiv);
+#endif
 #if SPYRO_TICK60
   /* 60 Hz logic (D130): half a tick's step a vblank (tick60_rules.h) */
-  u_int progress = a->m_FrameProgress + t60_anim_step(a->m_PerFrameProgress, speedDiv);
+  u_int progress = a->m_FrameProgress + (pal >= 0 ? (u_int)pal : t60_anim_step(a->m_PerFrameProgress, speedDiv));
 #else
-  u_int progress = a->m_FrameProgress + ((u_int)a->m_PerFrameProgress >> (speedDiv & 31));
+  u_int progress = a->m_FrameProgress + (pal >= 0 ? (u_int)pal : (u_int)a->m_PerFrameProgress >> (speedDiv & 31));
 #endif
   const Model *model;
   const AnimationHeader *anim;

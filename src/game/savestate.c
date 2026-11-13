@@ -107,7 +107,7 @@ static void chunk_globals(PsxStateIO *io) {
 extern int g_Language, g_ScreenOffsetX, g_ScreenOffsetY;
 extern int g_PalCardHeaderDirty, g_PalTitleCardLoad;
 extern int (*g_PalLetterCount)(char *pText);
-extern int g_PalCutsceneCarry;
+extern int g_PalCutsceneCarry, g_PalAnimClock, g_PalSpyroCarry[3], g_PalCutscenePlayed;
 extern unsigned char g_WadCutscenesPal[16 * 8], g_LevelDragonsPal[5 * 6 * 8];
 
 static void chunk_region(PsxStateIO *io) {
@@ -122,6 +122,9 @@ static void chunk_region(PsxStateIO *io) {
   psx_state_io(io, &g_PalTitleCardLoad, sizeof g_PalTitleCardLoad);
   psx_state_io(io, &g_PalLetterCount, sizeof g_PalLetterCount); /* D145: a function of this binary, as the level's other overlay pointers */
   psx_state_io(io, &g_PalCutsceneCarry, sizeof g_PalCutsceneCarry); /* PAL 60's cutscene clock (D150) */
+  psx_state_io(io, &g_PalAnimClock, sizeof g_PalAnimClock); /* PAL 60's animation steps (D155) */
+  psx_state_io(io, g_PalSpyroCarry, sizeof g_PalSpyroCarry);
+  psx_state_io(io, &g_PalCutscenePlayed, sizeof g_PalCutscenePlayed); /* the in-between frame's cutscene time (D156) */
 }
 
 static void chunk_gpu(PsxStateIO *io) {

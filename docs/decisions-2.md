@@ -2078,3 +2078,93 @@ Logs are in the worktree's `logs/u63/` (gitignored).
   - the host binary of the branch with both is byte for byte D152's (`cmp` of `spyro-u64` and `spyro-u62`), the one D152's host checks ran on;
   - Vita3K, the owner's settings from an old file (`v3k-both`: PAL disc, 60 HZ, 16:9, `persp=1`, `subpixel=1`, `config_version=4`, `tex_filter=2`, `dynres=1`): both log lines, `gpu: tex_filter=0 persp=1 subpixel=1`, `dynres: off`; 97–99% of the title's polygons with every vertex found and no lines in the window (`win-1200.png`); the menu's save leaves `config_version=5` and neither line.
 - **Not checked:** the Vita (D152's hardware run was its commit `c39e00f`, before this one).
+
+## 2026-11-13 — PAL's animations and flyby at their own speed
+
+### D155. At US timing PAL's animations take the ticks US's take: every animation step is 5/6 of its amount, for mobys and for Spyro, because PAL's models hold 5/6 of US's frames. The 161 frame numbers in the level code are PAL's on the PAL disc at any timing (they were US's at US timing). The title's flyby counts PAL's 50 Hz vblanks, as the intro does. US, JP and PAL at its own 50 Hz run the original's code
+- **Why:** the owner, 2026-11-13, after playing main `2401dae` on the Vita with the PAL disc: "can we fix the PAL animation speed?". D150 had left it open: at US timing (the only way players run PAL since D150) Spyro's and the mobys' animations and the title's flyby ran about 20% fast.
+- **What PAL's data is** (measured here; D143 had it for Spyro's animation 16):
+  - **Spyro:** `spyro_AnimationDetails` in the two executables, all 46 animations: PAL's end frame is 0.75 to 0.90 of US's (18 for 22, 8 for 10, 15 for 20), the frame rate byte the same in every one.
+  - **Mobys:** the models Artisans loads on both discs, 61 animations: 929 frames on US, 789 on PAL (0.85), the same step a tick (`m_ProgressPerTick`) in all 61. 29 are the same length: single-frame models, and Sparx's six, which PAL didn't shorten.
+  - **PAL's code steps them by US's amounts:** no `RT()` site sets an animation's speed. On a PAL PS1 that is right, a tick being 1/25 s. At US timing a tick is 1/30 s, so every animation played in 5/6 of its time.
+- **The fix, the speed.** At US timing with the PAL disc, each animation step is 5/6 of its amount (`src/game/region_game.c`):
+  - **A moby's step** (`moby_lists_hand.c`'s `Animate`, the port's `func_800522C0`): `PortPalAnimStep`, the 64ths its speed gives for the vblanks the step covers, 5/12 of the speed a vblank, taken from a clock of game vblanks (`g_PalAnimClock`, 0 to 11) instead of a remainder per moby: a step over the vblanks from t0 to t0 + v is `5 * speed * (t0 + v) / 12 - 5 * speed * t0 / 12`. Twelve vblanks give exactly five times the speed. The step's kind says which vblanks: a tick's two, a late tick's catch-up vblank or two after them, or in the 60 Hz rules the tick's first or second vblank. A speed above 64 counts as 64, the original moving at most a frame a tick. `PortGamestateUpdate` (`tick60.c`) moves the clock on after every update.
+  - **Spyro's steppers** (`pete.c`: body, head and tail; nine sites that add 16ths of a frame, once a vblank in play): `PortSpyroAnimStep`, 5/6 of the amount with the remainder carried for each of the three.
+  - The clock and the three remainders are in the save states' `REGN` chunk (`tools/savestate_globals.py` lists them).
+  - **Everything through those steps is slowed, blends between animations included,** so a blend also lasts as long as on a PAL PS1 (120 ms for the usual three ticks, US's is 100).
+  - **Spyro's walk and charge are US's, not a PAL PS1's.** Their speed follows his ground speed, which at US timing is US's. By the numbers a PAL PS1 plays them faster than a US one (PAL raised his speed constants by 6/5 and shortened the animations as well); that wasn't measured here. At US timing his feet now keep US's pace over the ground.
+- **The fix, the frame numbers.** PAL's code tests and sets animation frames by number (the Club Gnorc's test is for frame 8 on US, 7 on PAL), and R3 made those sites `RT(us, pal)` with the timing constants. They aren't timing: they index PAL's models. At US timing PAL's shorter animations were compared with US's numbers, so an event came late in its animation or never, and a frame set by number could be past the animation's end. They are `RF(us, pal)` now, PAL's number on the PAL disc at any timing (`RV(us, pal, us)`): 160 sites in `moby_update.c` over 43 class bodies, 1 in `moby_spawn.c`. Found by the operand each `RT()` stands against (`m_Frame`, `m_NextFrame`, a local that holds one), each read.
+- **The fix, the flyby.** PAL's title flyby advances its count by 2 a tick, in PAL's 50 Hz vblanks. It now adds `PortCutsceneTicks(2)`, D150's clock: 5/3 a tick at US timing with the remainder carried, 2 at PAL's own. The count can then be odd, so the loop point (1120, taken three times in four) is tested as passed instead of as equal, the same test while the count is even, and a loop keeps what the count had past its end. `PortCutscenePlay` (D151) places the flyby's camera between its samples as it does the intro's.
+- **Where:** `patches/spyro-1-tick60/0004-pal60-animation.patch`, port only and applied last (the 60 Hz rules' patches rewrite some of the same lines; the matching builds keep `RT()`, the same constant there): `RF` in `region.h`, the 161 sites, `pete.c`'s nine, `titlescreen.c`. `src/game/region_game.c`, `moby_lists_hand.c`, `tick60.c`, `savestate.c`.
+- **The shadow build** (`HAND_SHADOW`, which compares `Animate` with the original's code) keeps the original's step.
+- **Host tools:** `--anim-trace FILE` (Spyro's body animation each vblank in play); `--moby-trace` has two more columns, `prog` and `per`; `--moby-dump` lists every loaded model's animations (`# model CLASS anims N: FRAMES/STEP ...`); `--cutscene-trace` also traces the title's flyby.
+
+#### Checked
+Logs are in the worktree's `logs/u65/` (gitignored). Binaries: `spyro-u65a` (this branch; the long US checks), `spyro-u65b` (the final one: `u65a` with a guard in `trace.c`'s title rows, checked against it below), `spyro-u65-nofix` (`u65a` with the three step functions and the flyby's clock switched off, for the "before" columns; not committed). The Mac was loaded by other sessions (load average 40–110): the first build took over an hour.
+- **Spyro's animations** (host, a new game, standing where he arrives in Artisans; `--anim-trace`, `anim_rate.py`), seconds a loop:
+
+  | | US | PAL at 50 Hz | PAL at US timing, before | after |
+  |---|---|---|---|---|
+  | animation 0 (idle; 22 frames on US, 18 on PAL) | 2.95 | 2.90 | 2.43 | 2.90 |
+  | animation 40 (one of his idle ones; 28, 23) | 3.77 | 3.72 | 3.10 | 3.72 |
+
+- **The mobys' animations** (the same runs, 700 vblanks of standing; `--moby-trace`, `moby_rate.py` with the models' frame counts), loops a second:
+
+  | class, animation (frames US, PAL) | US | PAL at 50 Hz | before | after |
+  |---|---|---|---|---|
+  | 10, 0 (62, 51) | 0.241 | 0.244 | 0.294 | 0.244 |
+  | 110, 0 (10, 9) | 0.982 | 0.909 | 1.091 | 0.909 |
+  | 114, 0 (90, 75) | 0.166 | 0.166 | 0.201 | 0.163 |
+  | 114, 2 (55, 46) | 0.274 | 0.275 | 0.329 | 0.273 |
+  | 120, 4: Sparx (15, 15) | 0.999 | 0.832 | 0.999 | 0.832 |
+  | 339, 0 (34, 28) | 0.441 | 0.446 | 0.535 | 0.445 |
+
+  Before, every one ran 20% faster than on a PAL PS1; after, at its speed. Sparx's animations are the same length on both discs, so a PAL PS1 plays them at 5/6 of US's speed, and so does this.
+- **The title's flyby** (`--cutscene-trace`, `flyby.py`), from its start to its first loop: US 22.35 s (1,341 vblanks, the count to 1342), PAL at 50 Hz 22.34 s (1,117 vblanks at 50 a second, the count to 1118), PAL at US timing 18.62 s before (1,117 vblanks at 60) and 22.35 s after (1,341 vblanks, the count moving 2, 2, 1 a tick). The camera is never held for a tick while it moves, and its steps are as even as US's (0.052 against 0.051).
+- **The frame numbers.** `logs/u65/rt_sites.py` lists every `RT()` site of a source with the operand left of it; of `moby_update.c`'s 1,623, 157 stand against `m_Frame` or `m_NextFrame`, 2 against a local that is compared with one, 1 is a random frame's range; each of the 161 was read (PAL's number is 5/6 of US's in every one). Against PAL's models of every level (the whole tour's `--moby-dump`, `frame_sites.py`): 11 of the 160 took a US frame number past the end of every PAL animation of their class. The Red Hat Gnorc was set to frames 50 and 51 where its longest PAL animation has 46; the others are tests that could never pass (Doctor Shemp, the Large Beast, the Armored Druid, the Machine Gunner, a cannon, a chicken cage, a fairy). 3 sites read another moby's frame than their class's.
+- **US unchanged:** `tools/host_checks.sh` with `spyro-u65a` against D152's run of main's host binary (`logs/u62hc-*`): 287 of 287 files identical (the attract demos, the whole tour, routes A and B) (`logs/u65/hc_cmp.txt`).
+- **The final binary** (`spyro-u65b`) against `spyro-u65a`: the attract demos' run, 28 of 28 files identical (`logs/u65/final_bin.txt`); the PAL tours and the Vita3K run below are the final code's.
+- **PAL's attract demos at its own 50 Hz** (`--pal50`) against PCSX-Redux, all 11 trace columns: Stone Hill 726 of 726 ticks identical, Doctor Shemp 766 of 766, Icy Flight 774 of 774 (`logs/u65/h-pal-demo50`).
+- **The 30 Hz text** (`tools/tick60_cpp_check.py` against `origin/main`): 8 of 11 files preprocess to main's tokens; `pete.c`, `moby_update.c` and `moby_lists_hand.c` differ, at this entry's sites (`logs/u65/tick60_cpp.txt`).
+- **PAL's whole game at US timing** (host, the US tour's list, 100,000 vblanks, `--moby-dump`): exit 0. All 34 warps taken, both endings set up and played, the credits and the two cheats; no crash, no hang (`logs/u65/pal60-whole`).
+- **60 Hz logic on PAL** (a new game and a tour standing 1,800 vblanks in Artisans and its levels, 22,000 vblanks, `--tick60` against without, `tools/tick60_stats.py`): 61 class rows. The animation frames a second are the same at both rates in every class that animates (23 classes, ratios 0.93–1.02; 12.5 a second for a step of 32, where it was 15). Every other ratio is within 0.8–1.25 but the fodder frog's distance, 0.77: one of that level's four frogs stood against a wall for 90% of its wandering in the 60 Hz run (`frog.py`); the wander code doesn't read the animation, and with the fixes off the same pair of runs gives 1.09. 16,980 updates at 60 Hz, 8 late (`logs/u65/pal60-stats.txt`, `pal60-tour30`, `pal60-tour60`).
+- **ctest:** 29 of 30 passed and `gte` skipped (no `logs/gte/gte.bin` here), as on main (`logs/u65/ctest.txt`).
+- **Vita3K** (the final code's VPK with the Mac's VitaSDK; `realtime=0`; 60 HZ, 16:9, perspective and sub-pixel on, draw distance 200%, the owner's settings):
+  - **the PAL image,** a new game left in the opening, 6,000 vblanks (`logs/u65/v3k-pal-intro`): it runs to the end; the flyby and the opening render (`win-1500.png`, `win-4400.png`, `win-4401.png`, `win-5200.png`);
+  - **the US image,** a new game through the opening into Artisans, 9,000 vblanks (`logs/u65/v3k-us`): it runs to the end, 2,653 updates at 60 Hz in play, 1 late.
+- **Not checked:** the Vita (the owner's yes first). Whether an enemy's attack now lands where PAL's animation shows it wasn't looked at enemy by enemy: the frame numbers are PAL's own, as on a PAL PS1. The matching build wasn't run: it applies none of the patch series that changed.
+- **For the README:** a line saying PAL's animations run about 20% fast is no longer true.
+
+## 2026-11-13 — the opening's dragons on the in-between frame
+
+### D156. For PAL at US timing, the in-between frame places a cutscene's mobys at its own time, origin and pose together, as the tick places them. It took the origin halfway between the two ticks' origins and the pose halfway along the animation, which is not one place on the moby's path whenever a tick passes a keyframe: a dragon was drawn up to some hundreds of units off for one frame. US's ticks never pass one
+- **Why:** the owner, 2026-11-13, PAL disc on the Vita, main `2401dae`, 60 HZ with perspective and sub-pixel on: "the dragons in the opening sequence are still a little jittery, can you see anything from logs? lines are gone though so that worked". (D151 had evened the ticks; the owner's "characters in opening seemed a bit choppy" was about main before it.)
+- **The log** (`logs/hw-pal-2401dae-20261113/` in the main checkout): nothing wrong with the pacing. In the opening (gamestate 14 from vblank 1278), every window after the load has 150 ticks and 150 in-between frames in 300 vblanks at 59.9–60.0 a second, 300 frames shown at their vblank, none late, none skipped for the budget; the game thread is 75–82% busy (a logic draw of about 8 ms and the presenter's 12.4–13.7 ms a tick). So not D152's dearer in-between frame.
+- **Not PAL's data.** Its camera samples and keyframes are evenly resampled from US's (`logs/u65/keys.py`, from a save state inside the intro on each disc): every fifth PAL camera sample is a US sample and the others lie between two; among the keyframes of the eight models that move, no place in a cycle of five moves twice as far as the others, which frames left out would show.
+- **Not the ticks.** `--cutscene-trace` on the host: PAL's animation time moves 27 or 26 64ths a tick (D151). The models' vertices, from frame to frame at 60 a second (`logs/u65/pose_even.py`: each tick's pose and the one halfway), change their step by 12–26% on average on PAL against 8–19% on US: the difference is the rounding of half a step to 13 or 14 64ths, a small fraction of a pixel.
+- **Ruled out on the way:** the draw distance (the owner runs 200%; the log's `150 back-offs` in 150 draws is the limiter holding the scale at x1.00, and the presenter draws with the same scale); the vertex cache (the presenter's renderers are the logic draw's code with the same hook).
+- **The cause.** A cutscene moby's recorded origin (`m_PackedPos`, 10 bits an axis) is coarse: in the intro it moves in jumps of 1,024 units, each spread over one keyframe interval, and the model's vertices take the jump back (the first dragon: 7 jumps on PAL, its vertices' own step across one 13 units; without a jump 2). Origin and pose belong to one time. `func_8002BFE0` and D151's `PortCutscenePlay` take both from the tick's time. The presenter's in-between frame (`present.c` `blend_on`) didn't: the origin halfway between the two ticks' origins, the pose halfway along the animation track (`mid_track`). On a path of straight pieces, halfway between two points is on the path only when both are on one piece.
+  - **US:** a tick steps from keyframe to keyframe or to the middle of one (32 64ths a tick), so both ticks are always on one piece. No in-between frame is off.
+  - **PAL at US timing:** a tick is 5/6 of a 25 Hz sample (27 or 26 64ths), so ticks pass keyframes at any point. Where the origin jumps at that keyframe, the in-between frame's origin is ahead of or behind its pose.
+  - **How much** (`logs/u65/origin_err.py`: D151's traces of the intro and each disc's `m_PackedPos`, halfway worked out as the presenter does): US, 0 of 23,484 in-between placements off; PAL at US timing, 358 of 23,487 off by 16 units or more (1.5%): the two dragons that walk 88 and 84 times, by up to 400 and 192 units, the others 3 to 43 times, and by up to 2,160 units at the few places an origin jumps further than 1,024.
+- **The fix.** `PortCutsceneInBetween` (`region_game.c`), called at the end of `blend_on`: for PAL at US timing, when this update and the one before both played the cutscene and its time moved on, the presenter's copy of the cutscene's mobys is placed by `cutscene_mobys_at`, the code `PortCutscenePlay` places the tick's with, at the time between the two ticks' (the blend's weight back from this one: halfway). `PortCutscenePlay` leaves its time in `g_PalCutscenePlayed`; `PortPresentBeforeUpdate` takes it every tick, so a time is never an older tick's. It is in the save states' `REGN` chunk.
+  - The camera keeps the presenter's blend: its path has no jumps to take back, and a cut still drops the in-between frame.
+  - The title's flyby (D155) and the endings go the same way. A dragon's talk (gamestate 8) has no recorded origins.
+  - US, JP and PAL at its own 50 Hz: `PortCutsceneInBetween` returns 0 and nothing changes.
+- **Host tools:** `--cutscene-trace FILE` also writes `FILE.keys` (the first cutscene's models: four vertex words of every keyframe) and `FILE.mid` (each in-between frame's cutscene mobys as the presenter is about to draw them); `--present-stats` counts the in-between frames placed this way.
+
+#### Checked
+Logs are in the worktree's `logs/u65/` (gitignored); the binaries are D155's.
+- **The in-between frames as the presenter draws them** (host, `--interp`, a new game left in the intro; `--cutscene-trace`'s `FILE.mid`, `mid_check.py`: each in-between frame's origin against the recorded path's point at its own pose's time):
+
+  | | in-between placements | off by 16 units or more | the most |
+  |---|---|---|---|
+  | US | 23,424 | 0 | 0 |
+  | PAL at US timing, before | 23,424 | 354 | 2,160 units |
+  | PAL at US timing, after | 23,408 | 0 | 0 |
+
+  After, 2,904 in-between frames of that run were placed by the new code (the intro's 1,463 and the title flyby's before it); none on US.
+- **The intro's ticks are D151's:** the animation time moves 27 or 26 64ths a tick (13 or 14 for the two slow models) for every model, as before. The intro is 2,938 vblanks long, 2,940 before: the flyby now leaves the cutscene clock's remainder at another point when the intro starts (D155), so the trace isn't row for row D151's. On US the intro's rows are D151's, byte for byte (`intro_same.sh`, `final_bin.txt`: 49,980 rows).
+- **Vita3K** (D155's runs): the log's new line counts the in-between frames placed this way. PAL: 148–150 in every whole 300-vblank window of the opening, 147–150 in the title's. US: the line never appears.
+- **US unchanged, ctest, PAL at 50 Hz:** D155's checks ran with this change in the binary.
+- **Not checked:** the Vita (the owner's yes first). Whether this is all of what the owner saw is theirs to say: it is the one fault found in the opening that PAL has and US hasn't, and it puts a dragon up to some hundreds of units off for a sixtieth of a second, a few times a second while it walks.
