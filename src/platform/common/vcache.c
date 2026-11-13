@@ -91,10 +91,7 @@ static Entry s_tab0[VC_SIZE];
 static Entry *s_tab = s_tab0, *s_tab1; /* the table recording; the other one (D71) */
 static const Entry *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
-static const GrVertex *s_base;
 VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
-
-void psx_vcache_set_base(const void *vertex_buffer) { s_base = (const GrVertex *)vertex_buffer; }
 static uint32_t s_gen = 1;
 static unsigned s_count; /* entries this frame */
 
@@ -273,7 +270,7 @@ static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int
 
 int psx_vcache_polys;
 
-void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
+void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   GrVertex *const vertex = (GrVertex *)vertex_;
   const Entry *e[4];
   uint32_t ref[4], persp = VREF_PERSP;
@@ -341,11 +338,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
       r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
-  if (s_base && vertex >= s_base && vertex - s_base <= MAX_VERTEX_BUFFER_SIZE - 6) {
+  if (side) {
     /* the walk splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
     static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
     const int *order = n == 4 ? k_quad : k_tri;
-    VCacheVert c[4], *side = g_vcache_side + (vertex - s_base);
+    VCacheVert c[4];
     for (i = 0; i < n; i++) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
@@ -361,6 +358,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
   }
+}
+
+void psx_vcache_poly_ref(void *vertex, short *const *xy, int n) {
+  psx_vcache_poly(vertex, xy, n, NULL);
 }
 
 static int s_ot_done; /* psx_vcache_enable: mode != 0 */

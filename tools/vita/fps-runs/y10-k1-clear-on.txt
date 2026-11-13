@@ -5,7 +5,7 @@
 # the same 18 pictures and card. Unattended:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y10 1500 \
 #     @tools/vita/fps-runs/y10-k1-clear-on.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=4
+config_version=5
 interp=0
 render_thread=0
 parse_thread=0

@@ -3,7 +3,7 @@
 # main. Y2 is the same with nd_direct=1; the pair gives the CPU per vblank before and after. Unattended:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-y1 1500 \
 #     @tools/vita/fps-runs/y1-k1-direct-off.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=4
+config_version=5
 interp=0
 render_thread=0
 parse_thread=0

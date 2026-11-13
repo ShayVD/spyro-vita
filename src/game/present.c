@@ -1445,6 +1445,8 @@ static int presenter_pass(int wide, int own_state, int blend, int check) {
     g_nd_ranges_walk = &s_pw; /* the Vita's vertex buffers: the presenter's direct ranges */
     if (g_present_pres_watch)
       g_present_pres_watch(0);
+    if (!check) /* inline, and drawn: its polygons find their vertices (D152) */
+      pres_draw_vcache();
     job_run();
     if (g_present_pres_watch)
       g_present_pres_watch(1);

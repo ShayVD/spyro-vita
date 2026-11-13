@@ -1,7 +1,7 @@
 # Run K2 (docs/native-plan.md, D76): K1 with the renderers as translated from the asm and
 # PsyCross's GTE_operator (fast_render=0). Against K1 it gives, on hardware, the cost of the
 # register-model code and the software GTE in the renderers. The same route as K1. Send it as k2.log.
-config_version=4
+config_version=5
 interp=0
 render_thread=0
 parse_thread=0

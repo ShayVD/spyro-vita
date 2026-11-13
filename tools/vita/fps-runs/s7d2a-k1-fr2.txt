@@ -3,7 +3,7 @@
 # shipped fast_render=2, on this branch's VPK: the baseline for 7D2b. Unattended:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-7d2a 1500 \
 #     @tools/vita/fps-runs/s7d2a-k1-fr2.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=4
+config_version=5
 interp=0
 render_thread=0
 parse_thread=0

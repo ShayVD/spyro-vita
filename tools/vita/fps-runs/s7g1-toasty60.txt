@@ -5,6 +5,6 @@
 # late vblanks with D30's pass drawing the respawn's and the transition's in-between frames.
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7g1 1500 @tools/vita/fps-runs/s7g1-toasty60.txt @tools/vita/hw-routes/o-toasty.cfg
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1

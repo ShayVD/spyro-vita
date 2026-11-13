@@ -2,7 +2,7 @@
 # game thread never waits for a present, and a late render thread skips frames' draws (stage 7c).
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7c2 1500 @tools/vita/fps-runs/s7c2-k60-due1.txt @tools/vita/hw-routes/m1-xa-k.cfg
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1
 fast_render=2

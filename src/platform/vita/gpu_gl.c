@@ -2455,8 +2455,6 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   const uint32_t *dr = NULL;
   const int ndr = g_nd_direct ? nd_direct_ranges(&dr) : 0;
-  if (s_vc)
-    psx_vcache_set_base(vertices);
   gl_vertices(vertices, g_vcache_side, count, dr, ndr);
 }
 
