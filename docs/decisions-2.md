@@ -2053,6 +2053,7 @@ Logs are in the worktree's `logs/u62/` (gitignored). Main `f4f2f04`'s tree is D1
   - Polygons with every vertex found: 96–99% on the title and the save menu, 99% in the opening, 91–95% in play (48–56% on the title in the owner's log of main).
   - **Cost:** on the title the presenter's part of a tick is 8.3–13.5 ms, mostly 10.5–11.6 (5.1–6.7 ms in the owner's log of main), beside a logic draw of 6.3–8.9 ms. No in-between frame skipped for the budget in the title's steady windows (150 of 150); 32–62 a window in the four windows with the start, the save menu's load and the opening's two loads. Virtual vblanks: this says what a frame costs, not whether real-time play holds 60 fps.
 - **Not checked:** real-time play on the Vita (the owner's to judge: the build is left installed); INTERPOLATED with these options in a heavy level, where the dearer in-between frame may be skipped more often; JP.
+
 ## 2026-11-13 — the menu without TEX FILTER and DYNAMIC RES
 
 ### D153. The options menu's TEX FILTER and DYNAMIC RES rows are gone (the owner's decision). `tex_filter=` and `dynres=` stay as developers' `config.txt` keys, read only from a file with `config_version=5`: a value an older file holds was a row's, isn't taken (both run at their defaults, off), and goes at the menu's next save
@@ -2073,4 +2074,7 @@ Logs are in the worktree's `logs/u63/` (gitignored).
   - **An old file** (`v3k-menu-old`: `config_version=4`, `tex_filter=2`, `dynres=1`): both log lines; the GPU starts with `tex_filter=0` and `dynres: off, scale 100%`. The menu then switches PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES on and closes: the save lists every other row, and the file after it has `config_version=5`, `persp=1`, `subpixel=1` and no `tex_filter=` or `dynres=` line.
   - **A developer's file** (`v3k-menu-dev`: the tool's `config_version=5`, `tex_filter=1`, `dynres=75`): `gpu: tex_filter=1`, `dynres: fixed, scale 75%`; after the menu's save both lines are still in the file.
   - The Mac was heavily loaded by other sessions while these ran (load average 40–95): the first tries timed out in Vita3K's GPU start-up and were run again with longer timeouts.
-- **Not checked:** the Vita.
+- **With D152 on one branch** (the owner: "can we put the menu change on the same pr to save time"; the commit was made on a branch of its own from main, opened as #141, and picked onto #140's branch; `logs/u64/`):
+  - the host binary of the branch with both is byte for byte D152's (`cmp` of `spyro-u64` and `spyro-u62`), the one D152's host checks ran on;
+  - Vita3K, the owner's settings from an old file (`v3k-both`: PAL disc, 60 HZ, 16:9, `persp=1`, `subpixel=1`, `config_version=4`, `tex_filter=2`, `dynres=1`): both log lines, `gpu: tex_filter=0 persp=1 subpixel=1`, `dynres: off`; 97–99% of the title's polygons with every vertex found and no lines in the window (`win-1200.png`); the menu's save leaves `config_version=5` and neither line.
+- **Not checked:** the Vita (D152's hardware run was its commit `c39e00f`, before this one).
