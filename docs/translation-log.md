@@ -654,3 +654,14 @@ No new translation. Six hand-written functions take PAL's 50 Hz constants as `RT
 |---|---|---|---|
 | `func_8002BFE0` (`cutscene.c`, the intro's and endings' playback) | decomp C, port only (`patches/spyro-1-region-port/0012`): PAL at US timing calls `PortCutscenePlay` (`region_game.c`), the same placement at the cutscene's exact time | `--cutscene-trace` against US's opening: even animation steps, the camera held at cuts only, the same length | the camera moves between 25 Hz samples (the original holds one a tick) |
 | `func_8002F3E4` (`gamestates_hand.c`, a dragon's talk) | hand C: `CutsceneCameraAt` and `CutsceneAnimate` from the exact time for PAL at US timing | a PAL 60 dragon rescue's talk, before and after | as above |
+
+## PAL's animations at US timing, and the in-between frame's cutscene mobys (2026-11-13, decisions D155, D156)
+
+| Function | Method | Verified by | Known differences |
+|---|---|---|---|
+| `func_800522C0` (`moby_lists_hand.c`, `Animate`) | hand C: for PAL at US timing the step is `PortPalAnimStep`'s (`region_game.c`), 5/6 of the original's, from a clock of game vblanks | `--moby-trace` in Artisans: each animation's loops a second are PAL at 50 Hz's (20% more before); US's host checks identical | PAL at US timing isn't a PS1 mode: a step isn't the original's there. The shadow build keeps the original's step |
+| `func_8003CB24`, `func_8003CBB8`, `UpdateBodyAnimationState`, `func_800495D8`, `func_80049660`, `func_80049DFC` (`pete.c`, Spyro's body, head and tail steppers) | decomp C, port only (`patches/spyro-1-tick60/0004`): each amount through `PortSpyroAnimStep`, 5/6 with the remainder carried for PAL at US timing, the amount itself otherwise | `--anim-trace`: the idle loop 2.90 s as PAL at 50 Hz (2.43 s before); the 30 Hz text differs only there | as above |
+| `UpdateMoby`, `SpawnMoby` (`moby_update.c`, `moby_spawn.c`: 161 frame numbers) | decomp C, port only (`0004`): `RF(us, pal)`, PAL's number on the PAL disc at any timing, where R3 had `RT(us, pal)` | each site read; at PAL's own timing the value is the one `RT()` gave (the PAL demos still match the PS1 tick for tick) | none on a PS1 mode |
+| `TitlescreenUpdate` (`titlescreen.c`, PAL's flyby count) | decomp C, port only (`0004`): `PortCutsceneTicks(2)` and the loop point tested as passed | `--cutscene-trace`: the flyby's first loop after 22.35 s, as US (18.62 s before); at PAL's own timing the count moves 2 a tick as before | the count can be odd at US timing |
+| `PortCutsceneInBetween` (`region_game.c`, new; called from `present.c` `blend_on`) | the port's own: PAL at US timing's cutscene mobys at the in-between frame's time, by the code that places the tick's (`cutscene_mobys_at`) | `--cutscene-trace`'s `FILE.mid`: 0 of 23,408 in-between placements off their path (354 of 23,424 before; US 0) | the presenter's in-between frame isn't the original's anywhere |
+

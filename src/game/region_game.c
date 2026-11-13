@@ -57,6 +57,58 @@ int PortCutsceneTicks(int d) {
   return n / 6;
 }
 
+/* PAL's models at US timing (D155). PAL's models hold 5/6 of US's frames
+ * (Spyro's 46 animations 0.75 to 0.90 of US's, spyro_AnimationDetails; a
+ * moby's the same way), made for PAL's 25 Hz ticks, and PAL's code steps
+ * them by US's amounts. At US timing (30 Hz ticks, the only way players run
+ * PAL since D150) they played 20% fast. So there each step is 5/6 of its
+ * amount, and every animation takes the ticks US's takes.
+ *
+ * A moby's step (moby_lists_hand.c's Animate): the 64ths of a frame its
+ * speed gives for the vblanks the step covers, from a clock of game vblanks
+ * instead of a remainder per moby: F(t) = 5 * speed * t / 12 (a tick's 2
+ * vblanks give 5/6 of the speed; 12 vblanks exactly 5 times it), and a step
+ * over [t0, t0 + v) is F(t0 + v) - F(t0). The step's speedDiv says which
+ * vblanks: a tick's two; the vblank or two after them (a late tick's
+ * catch-up step, negative); or, in the 60 Hz rules, the tick's first or
+ * second (T60_ANIM_LOWER, _UPPER). A speed above 64 is 64: the original
+ * moves at most a frame a tick. -1 when PAL isn't at US timing. */
+int g_PalAnimClock;     /* game vblanks, mod 12; saved in states (REGN) */
+int g_PalSpyroCarry[3]; /* Spyro's body, head and tail remainders; saved too */
+int PortPalAnimStep(unsigned per, int speedDiv) {
+  int t0 = g_PalAnimClock, v = 2;
+  if (g_Region != PSX_REGION_PAL || g_RegionTiming)
+    return -1;
+  if (speedDiv < 0) {
+    t0 += 2;
+    v = speedDiv & 31 ? 1 : 2;
+  } else if (speedDiv & 0x60) { /* tick60_rules.h's T60_ANIM_LOWER, _UPPER */
+    v = 1;
+  } else {
+    per >>= speedDiv & 31; /* no caller's, but the original's shift */
+  }
+  if (per > 64)
+    per = 64;
+  return (int)(5 * per * (unsigned)(t0 + v) / 12 - 5 * per * (unsigned)t0 / 12);
+}
+
+/* The clock: d vblanks of game time have passed (PortGamestateUpdate, after
+ * each update). */
+void PortPalAnimClock(int d) { g_PalAnimClock = (g_PalAnimClock + d) % 12; }
+
+/* Spyro's steppers (pete.c: body, head and tail, part 0 to 2) add 16ths of
+ * a frame once a vblank, or once a tick outside play: 5/6 of the amount,
+ * the remainder carried for the part. The amount itself when PAL isn't at
+ * US timing. */
+int PortSpyroAnimStep(int pAmount, int pPart) {
+  int n;
+  if (g_Region != PSX_REGION_PAL || g_RegionTiming)
+    return pAmount;
+  n = pAmount * 5 + g_PalSpyroCarry[pPart];
+  g_PalSpyroCarry[pPart] = n % 6;
+  return n / 6;
+}
+
 /* PAL at US timing's cutscene time in sixths of its 50 Hz vblanks (1/300 s):
  * the tick PortCutsceneTicks left and the remainder it carries. It moves by
  * exactly 5 a vblank of ours, 10 a 30 Hz tick, where the tick moves 2, 2, 1
@@ -104,16 +156,51 @@ int PortCutsceneAngle(int a0, int a1, int f, int n) {
  * (their frame and its 64ths, their position between two samples), from
  * the time; the camera between its two samples (the original shows a
  * sample a tick; 25 Hz samples have no 30 Hz one). Returns 0 when not PAL
- * at US timing or not the intro or an ending (the title's flyby keeps its
- * own tick), and func_8002BFE0 then runs as before. */
+ * at US timing or not the intro, an ending or the title's flyby (D155: its
+ * tick counts PAL's vblanks too now, titlescreen.c), and func_8002BFE0 then
+ * runs as before. */
 #define CUT_UNPACK(v, p)                                                       \
   ((v).x = ((p) & 0x3FF00000) >> 12, (v).y = ((p) & 0x000FFC00) >> 2,          \
    (v).z = ((p) & 0x000003FF) << 8)
+
+/* The cutscene's first n mobys at the time t6, in mobys[]: each one's frame
+ * and its 64ths, and its origin between the same two keyframes' samples.
+ * The two belong together: a moby's recorded origin is coarse (10 bits an
+ * axis, in steps of 1024 in the intro) and moves in jumps that its vertices
+ * take back (the intro's first dragon: 7 jumps of 1024, its vertices' own
+ * step across one 13 units), so an origin and a pose from different times
+ * show the moby somewhere it never is. */
+static void cutscene_mobys_at(Moby *mobys, int n, int t6) {
+  int i;
+  for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < n; i++) {
+    const int ppt = g_Models[1 + i]->m_Animations[0]->m_ProgressPerTick;
+    /* the vblanks a frame lasts (func_8002BFE0's four cases), in sixths */
+    const int span = 6 * (ppt == 16 ? 8 : ppt == 21 ? 6 : ppt == 32 ? 4 : 2);
+    const int a = t6 / span, b = (t6 % span) * 64 / span;
+    AnimationState *as = &mobys[i].m_AnimationState;
+    Vector3D v, v2;
+    as->m_Animation = a / 50; /* PAL's data: 50 frames an animation (D135) */
+    as->m_Frame = a % 50;
+    as->m_NextAnimation = (a + 1) / 50;
+    as->m_NextFrame = (a + 1) % 50;
+    as->m_FrameProgress = b;
+    CUT_UNPACK(v, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a]);
+    CUT_UNPACK(v2, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a + 1]);
+    mobys[i].m_Position.x = (v.x * (64 - b) + v2.x * b) >> 6;
+    mobys[i].m_Position.y = (v.y * (64 - b) + v2.y * b) >> 6;
+    mobys[i].m_Position.z = (v.z * (64 - b) + v2.z * b) >> 6;
+  }
+}
+
+/* The time PortCutscenePlay placed the mobys at in the update that just
+ * ran, -1 once the presenter has taken it (or none). Saved in states. */
+int g_PalCutscenePlayed = -1;
+
 int PortCutscenePlay(void) {
   const int t6 = PortCutsceneTime6(g_CutsceneLayout->m_CurrentTick);
   const CutsceneCameraData *c0, *c1;
-  int i, k, f;
-  if (t6 < 0 || g_Gamestate != GS_Cutscene)
+  int k, f;
+  if (t6 < 0 || (g_Gamestate != GS_Cutscene && g_Gamestate != GS_TitleScreen))
     return 0;
   k = t6 / 12;
   f = t6 % 12;
@@ -127,24 +214,39 @@ int PortCutscenePlay(void) {
   g_Camera.m_Rotation.x = PortCutsceneAngle(c0->m_Rotation.x, c1->m_Rotation.x, f, 12);
   g_Camera.m_Rotation.y = PortCutsceneAngle(c0->m_Rotation.y, c1->m_Rotation.y, f, 12);
   g_Camera.m_Rotation.z = PortCutsceneAngle(c0->m_Rotation.z, c1->m_Rotation.z, f, 12);
-  for (i = 0; i < g_CutsceneLayout->m_MobyCount; i++) {
-    const int ppt = g_Models[1 + i]->m_Animations[0]->m_ProgressPerTick;
-    /* the vblanks a frame lasts (func_8002BFE0's four cases), in sixths */
-    const int span = 6 * (ppt == 16 ? 8 : ppt == 21 ? 6 : ppt == 32 ? 4 : 2);
-    const int a = t6 / span, b = (t6 % span) * 64 / span;
-    AnimationState *as = &g_LevelMobys[i].m_AnimationState;
-    Vector3D v, v2;
-    as->m_Animation = a / 50; /* PAL's data: 50 frames an animation (D135) */
-    as->m_Frame = a % 50;
-    as->m_NextAnimation = (a + 1) / 50;
-    as->m_NextFrame = (a + 1) % 50;
-    as->m_FrameProgress = b;
-    CUT_UNPACK(v, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a]);
-    CUT_UNPACK(v2, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a + 1]);
-    g_LevelMobys[i].m_Position.x = (v.x * (64 - b) + v2.x * b) >> 6;
-    g_LevelMobys[i].m_Position.y = (v.y * (64 - b) + v2.y * b) >> 6;
-    g_LevelMobys[i].m_Position.z = (v.z * (64 - b) + v2.z * b) >> 6;
-  }
+  cutscene_mobys_at(g_LevelMobys, 0x7FFFFFFF, t6);
+  g_PalCutscenePlayed = t6;
+  return 1;
+}
+
+/* The presenter's in-between frame (present.c, D156). It blends a moby's
+ * origin halfway between the two ticks' origins and its pose along its
+ * animation, which is the moby's own path only while both ticks are
+ * between the same two keyframes. US's ticks are: its cutscenes step from
+ * keyframe to keyframe. PAL's at US timing aren't (a tick is 5/6 of a 25 Hz
+ * sample, D151), so wherever a tick took a moby past a keyframe at which
+ * its origin jumped, the in-between frame showed it up to some hundreds of
+ * units off for one frame: 358 of the intro's 23,487 in-between placements,
+ * none of US's. So for these cutscenes the in-between frame's mobys are
+ * placed as the tick's are, by cutscene_mobys_at, at the time between the
+ * two ticks' (wn / wd of the way back from this one: halfway).
+ *
+ * PortCutsceneTaken: before each update, the time the update before it
+ * played the cutscene at, or -1. PortCutsceneInBetween: after the update,
+ * the presenter's copy of the mobys at the in-between time; 0 when this
+ * update or the one before played no cutscene, or the time didn't move on
+ * by a tick's worth (the title's flyby looping, a menu holding it). */
+int PortCutsceneTaken(void) {
+  const int t = g_PalCutscenePlayed;
+  g_PalCutscenePlayed = -1;
+  return t;
+}
+
+int PortCutsceneInBetween(Moby *mobys, int n, int before, int wn, int wd) {
+  const int now = g_PalCutscenePlayed;
+  if (before < 0 || now <= before || now - before > 40 || wd <= 0)
+    return 0;
+  cutscene_mobys_at(mobys, n, now - (now - before) * wn / wd);
   return 1;
 }
 OffsetLength g_LevelDragonsPal[5][6];
