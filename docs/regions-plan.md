@@ -453,7 +453,7 @@ JP is 60 Hz and needs none of this. It needs its 512×232 picture, the ordering-
 
 ### 7.5 LiveArea, README, bounty
 
-**Done for PAL (R4, D154, 2026-11-13):** `region.c` marks SCES-01438 supported, so a player's PAL disc opens without `region_dev=1`; the README lists both releases with their executables' hashes and music names, PAL's language choice, its `save/pal/` folder and the known difference (PAL's animations ~20% fast at US timing, until that fix lands). The LiveArea needed no change. JP is still refused with "NOT SUPPORTED YET".
+**Done for PAL (R4, D154, 2026-11-13):** `region.c` marks SCES-01438 supported, so a player's PAL disc opens without `region_dev=1`; the README lists both releases with their executables' hashes and music names, PAL's language choice and its `save/pal/` folder. Its known difference (PAL's animations ~20% fast at US timing) went once D155 fixed it. The LiveArea needed no change. JP is still refused with "NOT SUPPORTED YET".
 
 - **One VPK, title ID `SPYV00001`,** for every region. The LiveArea art (`assets/livearea/`, the owner's D59 exception) needs no change.
 - **The README** lists the supported serials and hashes, the file names (`MUSIC*.STR`) and the editions not yet known.

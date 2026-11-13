@@ -198,7 +198,8 @@ Every option, and the extra ones `config.txt` takes, is described in
   can't either). The options menu stays in English.
 - **Speed:** the European disc runs at the USA release's speed and 60 Hz, with the same 60 FPS
   row, and not at the 50 Hz of a PAL PlayStation. Its text, voices, cutscenes and its taller
-  256-line picture are the European release's.
+  256-line picture are the European release's. Its animations, cutscenes and title flyby still play
+  at the speed they have on a PAL PlayStation.
 
 ## Known issues
 
@@ -207,9 +208,6 @@ Every option, and the extra ones `config.txt` takes, is described in
   For the original's timing exactly, choose interpolated (still 60 pictures a second) or off.
   On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
   still slip below it.
-- **On the European disc, Spyro's and the characters' animations in play, and the title screen's
-  flyby, run about 20% fast.** The European release's animations are made for its 25 Hz game tick
-  (50 Hz PAL), and the port runs it at the USA release's speed. A fix is being worked on.
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
 - **The first time you pick the perspective or sub-pixel setting**, the menu pauses
   for a few seconds while its shaders compile. That happens once per start-up.
