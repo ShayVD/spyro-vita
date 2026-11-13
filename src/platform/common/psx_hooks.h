@@ -26,6 +26,9 @@ int spyro_trace_open(const char *path); /* 0 = ok */
 void spyro_trace_vblank(int vblank);
 int spyro_moby_trace_open(const char *path); /* --moby-trace (D130), 0 = ok */
 int spyro_cutscene_trace_open(const char *path); /* --cutscene-trace (D151), 0 = ok */
+int spyro_anim_trace_open(const char *path); /* --anim-trace (D155), 0 = ok */
+struct Moby;
+void spyro_cutscene_trace_mid(const struct Moby *mobys, int n); /* --cutscene-trace's FILE.mid (D156) */
 void spyro_trace_close(void);
 void spyro_moby_dump(const char *path); /* level mobys as TSV (trace.c) */
 

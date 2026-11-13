@@ -46,6 +46,7 @@ typedef struct {
   long long us_blend; /* saving the previous tick and blending (interp) */
   long long squeezed_2d; /* 2D primitives narrowed for widescreen */
   long long anim_blended, anim_kept; /* animation tracks in in-between frames */
+  long long cut_placed; /* in-between frames with PAL 60's cutscene mobys at their own time (D156) */
   long long budget_skips; /* in-between frames skipped for interp_budget_us */
   long long budget_holds; /* times 60 fps fell back to a held 30 (D68) */
   /* stage 7c (D112): frames carry their due vblank. On the host and with

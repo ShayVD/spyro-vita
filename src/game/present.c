@@ -29,6 +29,7 @@
 #include "pres/pres_draw.h" /* stage 7e-7g (D125, D126, D128): the presenter */
 #include "native_draw.h"    /* stage 7f (D126): g_nd_ranges_walk */
 #include "psx_vcache.h"
+#include "psx_hooks.h" /* spyro_cutscene_trace_mid */
 #endif
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -736,7 +737,13 @@ static struct {
   MobyXf mobys[MAX_MOBYS];
   int have_particles;
   Particle particles[MAX_PARTICLES];
+  int cut_t6; /* PAL at US timing: the cutscene's time at that tick, or -1 (D156) */
 } s_prev;
+
+/* region_game.c (D156): PAL at US timing's cutscene mobys at the in-between
+ * frame's own time */
+int PortCutsceneTaken(void);
+int PortCutsceneInBetween(Moby *mobys, int n, int before, int wn, int wd);
 
 /* Moby animation (AnimationState, func_800522C0): 64 progress units per
  * frame. Spyro's body, head and tail (pete.c func_8003CB24 and kin): 16. */
@@ -850,6 +857,7 @@ void PortPresentBeforeUpdate(void) {
   savestate_point(); /* the main loop top: save states happen here (D51) */
   if (g_present.stats || g_present.interp_budget_us)
     s_t_update = now_us();
+  s_prev.cut_t6 = PortCutsceneTaken(); /* taken every tick, so never an old one */
   if (!g_present.interp) {
     s_prev.valid = 0; /* switched on later: no blending with an old tick */
     return;
@@ -1004,6 +1012,11 @@ static int blend_on(Camera *camera, Spyro *sp, Moby *mobys, Particle *parts) {
       }
     }
   }
+  /* PAL at US timing's cutscenes (D156): their mobys' origin and pose from
+   * the in-between time itself, not each blended its own way */
+  if (g_present.interp_anim && PortCutsceneInBetween(mobys, n, s_prev.cut_t6, s_wn, s_wd))
+    g_present_stats.cut_placed++;
+  spyro_cutscene_trace_mid(mobys, n);
   if (s_prev.have_particles && parts)
     blend_particles(parts);
   return 1;

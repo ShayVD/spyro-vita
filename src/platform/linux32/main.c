@@ -43,8 +43,9 @@
  * --tour: after the pad script, visit levels with the level-warp cheat, run
  *   the credits or an ending (src/platform/linux32/tour.c).
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
- * --cutscene-trace: in gamestate 14, the camera and the cutscene mobys each
- *   vblank (src/game/trace.c, D151).
+ * --cutscene-trace: in gamestate 14 and the title's flyby, the camera and
+ *   the cutscene mobys each vblank (src/game/trace.c, D151).
+ * --anim-trace: in play, Spyro's body animation each vblank (D155).
  * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
  *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
@@ -319,6 +320,7 @@ static void usage(void) {
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE] [--cutscene-trace FILE]\n"
+          "             [--anim-trace FILE]\n"
           "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
@@ -375,8 +377,9 @@ static void present_report(void) {
              s->time_ticks, s->time_frames, s->time_hidden, s->time_fallbacks, s->due_units,
              s->due_held);
   host_log("present: animation tracks blended %lld, kept %lld; particles "
-           "blended %lld; blending %lld us per tick", s->anim_blended,
-           s->anim_kept, s->particles_blended, s->us_blend / t);
+           "blended %lld; blending %lld us per tick; %lld in-between frames with a PAL cutscene's mobys "
+           "at their own time (D156)",
+           s->anim_blended, s->anim_kept, s->particles_blended, s->us_blend / t, s->cut_placed);
   host_log_flush();
 }
 
@@ -498,6 +501,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--cutscene-trace") == 0) {
       TAKE();
       if (spyro_cutscene_trace_open(val) != 0) /* the cutscenes' playback (D151) */
+        return 1;
+    } else if (strcmp(a, "--anim-trace") == 0) {
+      TAKE();
+      if (spyro_anim_trace_open(val) != 0) /* Spyro's animation in play (D155) */
         return 1;
     } else if (strcmp(a, "--moby-trace") == 0) {
       TAKE();
