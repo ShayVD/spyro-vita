@@ -10,7 +10,7 @@ include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
-set(VITA_VERSION "01.10")
+set(VITA_VERSION "01.20")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 
 # The native Vita build compiles no PsyCross code, only its headers (stage
