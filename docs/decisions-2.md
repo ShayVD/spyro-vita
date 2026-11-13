@@ -2079,6 +2079,37 @@ Logs are in the worktree's `logs/u63/` (gitignored).
   - Vita3K, the owner's settings from an old file (`v3k-both`: PAL disc, 60 HZ, 16:9, `persp=1`, `subpixel=1`, `config_version=4`, `tex_filter=2`, `dynres=1`): both log lines, `gpu: tex_filter=0 persp=1 subpixel=1`, `dynres: off`; 97–99% of the title's polygons with every vertex found and no lines in the window (`win-1200.png`); the menu's save leaves `config_version=5` and neither line.
 - **Not checked:** the Vita (D152's hardware run was its commit `c39e00f`, before this one).
 
+## 2026-11-13 — the PAL disc for players
+
+### D154. The European release, SCES-01438, is supported: a player's PAL disc opens without `region_dev=1` and runs as D150 set it (US timing, the one 60 FPS row). The README lists both releases. Japan, SCPS-10083, is still recognised and refused with "NOT SUPPORTED YET"
+- **Why:** the owner, 2026-11-13, through the coordinating session: "ok lets switch it on for players and have it not blocked, and update the readme". They had played PAL on the Vita on main's builds for two days (the title, the save menu, the opening, Artisans), with `region_dev=1`. "Not blocked": not waiting for the Vita3K and hardware runs R4 had still planned (`docs/regions-plan.md` §8's PAL column).
+- **What R4 had shown before this** (D147, D149): with D146's overlays, the three PAL attract demos match PCSX-Redux tick for tick at PAL's own 50 Hz (Stone Hill 726 ticks, Doctor Shemp 766, Icy Flight 774, all 11 trace columns), and the host's tour reaches both endings and the credits in each of the five languages.
+- **The flag:** `src/platform/common/region.c` (`.supported = 1` for PAL) and `tools/extract_disc.py`'s `REGIONS` (`"supported": True`), which must agree. `--region-dev` and `region_dev=1` stay, for JP.
+- **Text that named only the USA disc:** the disc panels in `cdimage.c` (`NO DISC IMAGE FOUND`, `WRONG DISC`, `WRONG VERSION OF THE GAME`, and `NOT SUPPORTED YET`, now JP's alone) name both releases; so do `extract_disc.py`'s messages. The LiveArea names no disc and is unchanged (§7.5).
+- **Tests:** `tests/cd/test_cd.c` checks that US and PAL are supported and JP isn't. `tests/cd/image_variants.py` reads `extract_disc.py`'s `REGIONS`: a release the port runs must open from its image and from its extracted files and run 10 vblanks; one it doesn't is refused with "NOT SUPPORTED YET" both ways.
+- **The README:** both releases with their executables' SHA-1 and music names; the port tells them apart by the executable `SYSTEM.CNF` boots and its hash; PAL's saves, states and disc check in `save/pal/`; the language chosen on PAL's title screen; PAL at US speed and 60 Hz. The options table loses D153's two rows (#140 missed the README), and the known issue about compiling shaders names only the perspective and sub-pixel settings.
+- **Known difference, stated in the README as its own known-issue line so it can go when it's fixed:** at US timing PAL's animations in play and its title flyby run about 20% fast (PAL's 25 Hz models, D143, D150). PR #142 (D155, D156, open when this was written) fixes it: if it lands first, that README bullet goes. This decision doesn't touch the timing code.
+- **Docs:** `docs/regions-plan.md` (§1's table, §7.5's status, §9's R4 row), `docs/vita-testing.md` (the panels, `region_dev=`), `docs/host-build.md` (`--region-dev`, the PAL pads, `image_variants.py`).
+
+#### Checked
+Discs: PAL image `52bba2f6…` (`disc/image-pal`), its files (`SCES_014.38` `fdd04c04…`, `WAD.WAD` `f1fc05d7…`); US from `disc/files`; JP image `disc/image-jp`. Logs in the worktree's `logs/d154/` (gitignored). The host binaries are forced rebuilds of main `2401dae` and this branch (`logs/d154/run.sh`), and differ (`cmp`).
+- **US unchanged:** the host checks, main against this branch, 287 of 287 files identical (demo 28, whole 143, route A 58, route B 58). The matching build: `PSX.EXE SHA-1 OK`. ctest: 30 of 30. `tools/check_no_assets.sh`: clean.
+- **PAL opens without `--region-dev`:**
+  - the attract demos at `--pal50`, against PCSX-Redux (`logs/r4/rx-pal-demo20k`), 20,000 vblanks: Stone Hill 726 ticks, Doctor Shemp 766, Icy Flight 774, all 11 trace columns identical, as with `--region-dev` in D149;
+  - as players run it (US timing, from the image), `newgame_pal60_host_en.txt`: the title, a new game in English, Artisans by vblank 6,000; the card goes to `save/pal/`; the log says `region: SCES-01438, 60 Hz vblanks (PAL 60)`.
+- **Main refuses the same image** ("NOT SUPPORTED YET", exit 1), and the branch refuses JP's with the new text (exit 1, its panel written).
+- **Vita3K** (the VPK of this branch, built on the Mac; `logs/d154/v3k-pal/`): the PAL image with no `region_dev=` line, the same pad, 6,000 virtual vblanks. The disc check passes with its marker in `save/pal/`, the title shows START GAME and ENGLISH, and the game is in Artisans at vblank 6,000.
+- **`tests/cd/image_variants.py`** with the PAL and JP dumps (`logs/d154/variants/`): 29 of 29 cases.
+  - `sces-image` and `sces-files` open (exit 0).
+  - `scps-image` and `scps-files` get "NOT SUPPORTED YET".
+  - Both `-wrong-exe` cases get "WRONG VERSION OF THE GAME".
+  - The US refusals show the new text (`none`, `wrong-region`).
+- **Not checked:**
+  - **The Vita:** no hardware run for this change. The owner has played PAL on main's builds with `region_dev=1` for two days, and this change only removes the need for that line.
+  - `tools/extract_disc.py` run on the PAL image: its table is loaded by `image_variants.py`, but its messages weren't printed.
+  - The other four languages in Vita3K, the card save at the fairy on PAL, and route B's balloon half against Redux (R4's list).
+  - JP beyond its refusal.
+
 ## 2026-11-13 — PAL's animations and flyby at their own speed
 
 ### D155. At US timing PAL's animations take the ticks US's take: every animation step is 5/6 of its amount, for mobys and for Spyro, because PAL's models hold 5/6 of US's frames. The 161 frame numbers in the level code are PAL's on the PAL disc at any timing (they were US's at US timing). The title's flyby counts PAL's 50 Hz vblanks, as the intro does. US, JP and PAL at its own 50 Hz run the original's code

@@ -19,7 +19,8 @@
  *                       60 Hz ("PAL 60", D138), the way players run it. A
  *                       pal60= line (D148's PAL 60 row) is no longer read;
  *                       the menu's next save drops it
- *       region_dev=1    open a release that isn't supported yet instead of
+ *       region_dev=1    open a release that isn't supported yet (JP; PAL
+ *                       runs without it since D154) instead of
  *                       its "NOT SUPPORTED YET" panel (the host's
  *                       --region-dev; developers' test runs only: no menu
  *                       row writes it, D143); default 0

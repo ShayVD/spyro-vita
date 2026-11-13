@@ -6,7 +6,7 @@ plays, drawn by the Vita's GPU. Read "What to expect" before you test.
 ## What you need
 
 - A PS Vita or PS TV with HENkaku/Ensō (any firmware that runs homebrew), and VitaShell.
-- Your own copy of *Spyro the Dragon* (USA, SCUS-94228), dumped to a `.bin`/`.cue`
+- Your own copy of *Spyro the Dragon* (USA, SCUS-94228, or Europe, SCES-01438, since D154), dumped to a `.bin`/`.cue`
   (MODE2/2352, one data track). The VPK contains no game data at all.
 - Optionally a computer with Python 3, to extract the files from the dump instead (step 2).
 - **`ur0:data/libshacccg.suprx`, for the GPU renderer.** The GPU renderer (`gpu=1`, the default,
@@ -70,8 +70,9 @@ When the game can't start it shows a panel saying why, and X, O or START quits (
 | `NO DISC IMAGE FOUND` | no `manifest.json` and no image in the folder |
 | `AN ISO HAS NO MUSIC` | a 2048-byte `.iso` |
 | `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE USED` | `.chd`, `.ecm`, PSP `EBOOT.PBP` |
-| `WRONG DISC` | no `SCUS_942.28` (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
-| `WRONG VERSION OF THE GAME` | `SCUS_942.28`'s SHA-1 isn't `84e3728a…` |
+| `WRONG DISC` | no known release's executable (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
+| `WRONG VERSION OF THE GAME` | the executable's SHA-1 isn't its release's (`SCUS_942.28`: `84e3728a…`; `SCES_014.38`: `fdd04c04…`) |
+| `NOT SUPPORTED YET` | the Japanese release, SCPS-10083 (PAL was refused this way until D154) |
 | `BAD DUMP` | `WAD.WAD`'s SHA-1 isn't `ab680013…` (first start only) |
 | `THE IMAGE IS CUT SHORT`, `THE IMAGE IS DAMAGED`, `CAN'T READ THE IMAGE` | a truncated image, an unreadable file list, an unknown format |
 | `THE .BIN IS MISSING`, `CAN'T READ THE CUE FILE` | a `.cue` naming a file that isn't there, or whose track 1 isn't MODE2 |
@@ -95,7 +96,7 @@ Files the app writes:
 |---|---|
 | `disc=PATH` | the disc image or the extracted files are somewhere other than `ux0:data/spyro` |
 | `pal50=1` | developers only: the PAL disc at its own 50 Hz timing (25 Hz logic, as the PS1 runs it; with `interp=1` a frame blended by time for every display vblank, D148), for checks against the PS1. Default 0: the PAL disc runs with US timing at 60 Hz ("PAL 60", D138), the only way players run it since D150, and the `60 FPS` row works on it as on the US disc. No menu row writes it. A `pal60=` line (D148's `PAL 60` row, gone with D150) is no longer read: the log says so and the menu's next save drops it |
-| `region_dev=1` | developers' test runs only (D143): open a release that isn't supported yet (PAL, Japan) instead of its "NOT SUPPORTED YET" panel, as the host's `--region-dev`. No menu row writes it; the menu's save keeps the line. `DISC=disc/image-pal tools/vita/vita3k_run.sh OUT 400 region_dev=1 frames=4500` runs the PAL disc to its first attract demo |
+| `region_dev=1` | developers' test runs only (D143): open a release that isn't supported yet (Japan; PAL until D154, which runs without it now) instead of its "NOT SUPPORTED YET" panel, as the host's `--region-dev`. No menu row writes it; the menu's save keeps the line. `DISC=disc/image-pal tools/vita/vita3k_run.sh OUT 400 region_dev=1 frames=4500` runs the PAL disc to its first attract demo |
 | `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits. The render thread is stopped and joined first, with an `exit:` line in the log (D120) |
 | `keep_awake=1` | no standby, no dimming and no screen off while the app runs: unattended runs, where nothing presses a button (`tools/vita/hw_run.sh` writes it; D77). Default 0: the Vita's own power settings |
 | `shot=V1,V2,...` | save a PNG of the picture at these vblanks, in `ux0:data/spyro/shots/` |

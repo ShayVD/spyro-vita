@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Extract the files from your own Spyro the Dragon disc image, for the port
-(ux0:data/spyro/ on the Vita). The port runs the USA release, SCUS-94228;
-the European (SCES-01438) and Japanese (SCPS-10083) releases are recognised
-too, and the port says they aren't supported yet (decisions D132).
+(ux0:data/spyro/ on the Vita). The port runs the USA release, SCUS-94228,
+and the European one, SCES-01438 (decisions D154); the Japanese release
+(SCPS-10083) is recognised too, and the port says it isn't supported yet
+(decisions D132).
 
 Reads a raw dump: a .cue sheet (the first track's file is used), or a
 .bin/.img with 2352-byte sectors (the usual bin/cue, Redump, CloneCD .img)
@@ -69,7 +70,7 @@ REGIONS = {
     "Europe": {
         "serial": "SCES-01438",
         "exe": "SCES_014.38",
-        "supported": False,
+        "supported": True,
         "files": {
             "SYSTEM.CNF": "413c21c006d9fb38562650f14cf6fa37e7c33d06",
             "WAD.WAD": "f1fc05d7cf197ba9cfc693738b44020d8798f99d",
@@ -317,14 +318,15 @@ def main(argv):
         print("error:", e, file=sys.stderr)
     if errors:
         print(f"This looks like Spyro the Dragon ({region}, {r['serial']}), but not a good "
-              "dump of the release the port knows. The port needs the USA release, SCUS-94228. "
+              "dump of the release the port knows. The port needs the USA release, SCUS-94228, "
+              "or the European one, SCES-01438. "
               "--no-verify keeps going anyway; the port may not run.", file=sys.stderr)
         return 1
     print(f"All {len(r['files']) - len(warnings)} known files match a good dump of "
           f"{r['serial']} ({region}).")
     if not r["supported"]:
         print("Spyro Vita recognises this release but can't run it yet: it needs the USA "
-              "release, SCUS-94228, for now.")
+              "release, SCUS-94228, or the European one, SCES-01438, for now.")
         return 0
     print(f"Copy everything in {args[1]} (manifest.json too) to ux0:data/spyro/.")
     return 0

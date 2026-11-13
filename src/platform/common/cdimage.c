@@ -192,8 +192,8 @@ static void say(const char *what) { fprintf(stderr, "libcd: %s\n", what); }
 
 static int not_found(PsxCdError *err, const char *dir) {
   return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
-              "Copy your Spyro the Dragon (USA) disc image to %s/: the .bin and .cue of a raw "
-              "dump (a CloneCD .img works too). See the README.",
+              "Copy your Spyro the Dragon disc image (USA or Europe) to %s/: the .bin and .cue of "
+              "a raw dump (a CloneCD .img works too). See the README.",
               dir);
 }
 
@@ -425,7 +425,7 @@ int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *e
     return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG VERSION OF THE GAME",
                 "%s on this disc isn't the one of the %s release Spyro Vita knows (SHA-1 %.8s, "
                 "it knows %.8s): another edition of the game (a reprint, a demo) or a bad dump. "
-                "Spyro Vita needs Spyro the Dragon (USA), SCUS-94228.",
+                "Spyro Vita needs Spyro the Dragon, USA (SCUS-94228) or Europe (SCES-01438).",
                 r->exe, r->serial, exe_sha1, r->exe_sha1);
   }
   g_Region = r->id;
@@ -437,8 +437,8 @@ int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *e
   if (!r->supported)
     return fail(err, PSX_CD_ERR_NOT_SUPPORTED, "NOT SUPPORTED YET",
                 "This is Spyro the Dragon (%s), %s. Spyro Vita recognises it but can't run it "
-                "yet: the European and Japanese releases are being worked on. For now Spyro Vita "
-                "needs Spyro the Dragon (USA), SCUS-94228.",
+                "yet: the Japanese release is being worked on. For now Spyro Vita needs Spyro "
+                "the Dragon, USA (SCUS-94228) or Europe (SCES-01438).",
                 r->area, r->serial);
   return 0;
 }
@@ -476,11 +476,12 @@ static int check_disc(const Table *t, PsxCdError *err) {
     psx_region_serial(boot, serial, sizeof serial, &area);
     if (!serial[0])
       return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC",
-                  "%s isn't a PlayStation game disc. Spyro Vita needs Spyro the Dragon (USA), "
-                  "SCUS-94228.",
+                  "%s isn't a PlayStation game disc. Spyro Vita needs Spyro the Dragon, USA "
+                  "(SCUS-94228) or Europe (SCES-01438).",
                   s_img.name);
     return fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC",
-                "This is %s%s%s%s, not Spyro the Dragon (USA). Spyro Vita needs SCUS-94228.",
+                "This is %s%s%s%s, not Spyro the Dragon. Spyro Vita needs Spyro the Dragon, USA "
+                "(SCUS-94228) or Europe (SCES-01438).",
                 serial, *area ? " (" : "", area, *area ? ")" : "");
   }
   if (hash_file(exe, hex, 0) != 0)

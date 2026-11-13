@@ -1,8 +1,8 @@
 /* The releases Spyro Vita knows (psx_region.h, decisions D132). The hashes
  * are of the files as tools/extract_disc.py writes them (its REGIONS table
  * holds the same); the WAD layouts and music names are docs/regions-plan.md
- * §2.3 and §5. PAL and JP are recognised but not run until their stages
- * land (regions plan §9). */
+ * §2.3 and §5. US and PAL are run (PAL since R4, D154); JP is recognised
+ * but not run until its stages land (regions plan §9). */
 #include "psx_region.h"
 
 #include <stdio.h>
@@ -49,7 +49,7 @@ static const PsxRegion s_regions[PSX_REGION_COUNT] = {
      .card = "BESCES-01438SPYRO",
      .video_hz = 50,
      .save_dir = "pal",
-     .supported = 0,
+     .supported = 1,
      .overlay_base = 0x80081428,
      .level_header_size = 656,
      .wad = {2, 3, 16, 19, 20, 21, 93, 94, -1, -1}},
