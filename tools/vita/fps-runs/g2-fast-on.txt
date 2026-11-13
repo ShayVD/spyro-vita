@@ -1,4 +1,4 @@
 # Run E2, the hand-written renderers and the inline GTE commands (fast_render=1, the default from D72 to D81), 30 fps
-config_version=4
+config_version=5
 fast_render=1
 interp=0

@@ -1,5 +1,5 @@
-/* Dynamic resolution (config.txt dynres=, the menu's DYNAMIC RES row;
- * decisions D75): the game's targets drawn into a smaller part of
+/* Dynamic resolution (config.txt dynres=, a developer's key since D153:
+ * the menu's DYNAMIC RES row is gone; decisions D75): the game's targets drawn into a smaller part of
  * themselves when the GPU can't keep up, and scaled up when shown.
  *
  * gpu_gl.c does the drawing: a target takes the scale at its whole clear

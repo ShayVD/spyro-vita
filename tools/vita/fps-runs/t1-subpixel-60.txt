@@ -2,7 +2,7 @@
 # (hw-routes/o-toasty.cfg and .pad), REALTIME=1: does 60 fps still hold with the vertex cache fed
 # by the hand renderers, in the intro cutscene (gamestate 14) and in Toasty's heavy views? Against
 # logs/hw-p7 (subpixel=0): late vblanks, the threads' ms per vblank, the vcache lines.
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1
 fast_render=2

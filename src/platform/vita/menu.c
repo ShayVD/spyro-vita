@@ -76,19 +76,23 @@ int vita_menu_load(const char *key, const char *v) {
 
 /* config.txt with the rows' keys replaced (other lines kept). */
 static void save(void) {
-  const char *drop[6] = {"config_version"};
+  const char *drop[8] = {"config_version"};
   char line[512] = "";
   size_t n = 0;
   int l, i, nd = 1;
-  /* config_version=4: this interp= is the player's (main.c, read_config;
+  /* config_version=5: this interp= is the player's (main.c, read_config;
    * D44, D150), and so is a 0 for the D68 switches: the stale ones go, and
-   * D148's pal60= (D150) */
+   * D148's pal60= (D150), and a tex_filter= or dynres= line the rows gone
+   * with D153 wrote (5: one written after it is a developer's) */
   for (i = 0; i < 3; i++)
     if (g_vita_config_stale[i])
       drop[nd++] = g_vita_config_stale[i];
   if (g_vita_config_pal60)
     drop[nd++] = "pal60";
-  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=4\n") != 0) {
+  for (i = 0; i < 2; i++)
+    if (g_vita_config_rows_gone[i])
+      drop[nd++] = g_vita_config_rows_gone[i];
+  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=5\n") != 0) {
     vita_log("menu: cannot write %s", CONFIG);
     return;
   }

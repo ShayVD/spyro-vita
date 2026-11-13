@@ -4,7 +4,7 @@
 # the ms the game thread waited for its CdReads. Unattended, the K route with shots:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-v1 1500 @tools/vita/fps-runs/v1-cd-sector.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=4
+config_version=5
 interp=0
 dynres=0
 cd_native=0

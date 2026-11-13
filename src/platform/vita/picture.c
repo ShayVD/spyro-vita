@@ -1,9 +1,11 @@
 /* The options menu's picture rows (decisions D48, D49): the GPU renderer's
- * texture filter, perspective, sub-pixel vertices and resolution (D39-D43,
- * until now config.txt only), and the longer draw distance
- * (src/game/lod.c). All change at once. The GPU rows are hidden with the
- * software renderer (gpu=0, or the GPU's shaders failed), where they do
- * nothing; their keys are still read and saved. */
+ * perspective, sub-pixel vertices and resolution (D39-D43), and the longer
+ * draw distance (src/game/lod.c). All change at once. The GPU rows are
+ * hidden with the software renderer (gpu=0, or the GPU's shaders failed),
+ * where they do nothing; their keys are still read and saved.
+ * The texture filter (TEX FILTER, D48) and the dynamic resolution (DYNAMIC
+ * RES, D75) had rows until D153: tex_filter= and dynres= are developers'
+ * config.txt keys now (main.c, read_config). */
 #include "vita.h"
 #include "../../game/lod.h"
 #include "menu_opts.h"
@@ -11,7 +13,8 @@
 static int gpu_shown(void) { return g_vita_gpu; }
 
 /* The options the GPU draws with now: a set whose shaders don't compile
- * (vita_gpu_set_options) puts the menu's value back. */
+ * (vita_gpu_set_options) puts the menu's value back. (tex_filter is the
+ * config's, a developer's key since D153: it goes with the set.) */
 static int s_filter, s_persp, s_subpixel;
 
 static void gpu_changed(void) {
@@ -68,22 +71,13 @@ void vita_picture_report(int vblank) {
     vita_log("lod %d: %s", vblank, line);
 }
 
-/* 3-point filtering stays, labelled: on hardware it costs about a third of
- * the frame rate at native resolution (D43, bench on 26f3138). */
-static const char *const k_filter_names[] = {"OFF", "BILINEAR", "3-POINT (SLOW)"};
 /* 2X-4X (supersampled) were removed: too slow on the Vita's GPU (D85) */
 static const char *const k_res_names[] = {"NATIVE", "PS1"};
 static const char *const k_dd_names[] = {"OFF", "1.5X", "2X"};
-/* dynres= (D75): off, auto, or a fixed scale in percent */
-static const char *const k_dynres_names[] = {"OFF", "AUTO", "88%", "75%", "67%"};
-static const int k_dynres_values[] = {0, 1, 88, 75, 67};
 static const int k_dd_values[] = {100, 150, 200};
 /* Labels and values fit the 640-pixel panel with "< >" round the value
  * (18 pixels a letter: at most 31 letters together). */
 static const MenuOption k_rows[] = {
-    {.section = MENU_PICTURE, .label = "TEX FILTER", .key = "tex_filter",
-     .value = &g_vita_opts.tex_filter, .names = k_filter_names, .count = 3,
-     .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "PERSPECTIVE TEXTURES", .key = "persp",
      .value = &g_vita_opts.persp, .names = g_menu_off_on, .count = 2,
      .on_change = gpu_changed, .visible = gpu_shown},
@@ -92,9 +86,6 @@ static const MenuOption k_rows[] = {
      .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
      .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},
-    {.section = MENU_PICTURE, .label = "DYNAMIC RES", .key = "dynres", .value = &g_vita_opts.dynres,
-     .names = k_dynres_names, .values = k_dynres_values, .count = 5, .fmt = "%d%%",
-     .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "DRAW DISTANCE (EXP.)", .key = "draw_distance",
      .value = &g_vita_opts.draw_distance, .names = k_dd_names, .values = k_dd_values,
      .count = 3, .fmt = "%d%%", .on_change = draw_distance_changed},

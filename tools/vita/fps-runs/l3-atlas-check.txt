@@ -4,7 +4,7 @@
 # draws on the Mac's GPU). The same route as L1, 3 minutes alone from boot, then Artisans and
 # Stone Hill. Send spyro.log as l3.log: "atlas N: atlas_cpu=2:" lines should say 0 differ, and
 # there should be no "atlas: atlas_cpu=2: ... texels differ" line.
-config_version=4
+config_version=5
 interp=0
 render_thread=1
 parse_thread=1

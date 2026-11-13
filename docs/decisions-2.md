@@ -2008,3 +2008,25 @@ Logs are in the worktree's `logs/u61/` (gitignored). Main `8ca72b6`'s tree is D1
   - **US's opening** (`v3k-us-intro`): the same pattern, 147–150 a window.
   - One run of the same VPK (`v3k-pal-intro2`) stopped at vblank 5,200 when Vita3K itself died (`Trace/BPT trap` in the emulator process, `vita3k.txt`); the same VPK and script run again reached 6,800 (`v3k-pal-intro3`). Not seen again.
 - **Not run:** hardware (the owner's yes first): whether the opening looks smooth is the owner's call; the numbers above say each tick now moves the same amount.
+
+## 2026-11-13 — the menu without TEX FILTER and DYNAMIC RES
+
+### D153. The options menu's TEX FILTER and DYNAMIC RES rows are gone (the owner's decision). `tex_filter=` and `dynres=` stay as developers' `config.txt` keys, read only from a file with `config_version=5`: a value an older file holds was a row's, isn't taken (both run at their defaults, off), and goes at the menu's next save
+- **Why:** the owner, 2026-11-13: "we need to remove the dynamic res option from mod menu, and remove the tex filter option too". The rows were D48's (`TEX FILTER`: OFF, BILINEAR, 3-POINT (SLOW)) and D75's (`DYNAMIC RES`: OFF, AUTO, 88%, 75%, 67%; off by default since hardware run J6, where a lower scale saved little).
+- **The rows** (`src/platform/vita/picture.c`): PICTURE now lists WIDESCREEN, 60 FPS, PERSPECTIVE TEXTURES, SUB-PIXEL VERTICES, RESOLUTION and DRAW DISTANCE (EXP.). The touch menu opens the same panel, and no check counts or names the rows (`tests/menu_panel` has its own lists).
+- **A value saved earlier.** The menu writes every row's key at every save, so every config.txt it wrote has a `tex_filter=` and a `dynres=` line; the owner's had `tex_filter=2` on 2026-11-12. With no row left, such a value would stay on with nothing in the game to turn it off. So, as D150 did for `interp=0` (`main.c` `read_config`):
+  - the two lines are taken only when the file says `config_version=5`. In an older file they aren't taken, the log says so when the value wasn't 0 (`config: tex_filter=2 without config_version=5 is from the menu's TEX FILTER row, gone since D153: off`), and the menu's next save drops them (`g_vita_config_rows_gone`, `menu.c`);
+  - the menu's save writes `config_version=5` (4 since D150). Nothing else changes with the version: `interp` and D68's switches keep their rules (`< 4`, `< 3`).
+- **The keys stay, for developers** (as `pal50=` did in D150): the renderer's filter and `dynres.c` are untouched, `bench=1` still cycles the filter, and the test files and procedures that set them keep working. A line written into a file that has `config_version=5` is a developer's and the menu's save keeps it, as it keeps every line that isn't a row's.
+  - The test tools write the version: `tools/vita/vita3k_run.sh` and every `tools/vita/fps-runs/*.txt` (4 → 5), and `tools/vita/hw.game` now writes it with `DEVICE_DEFAULTS=1` too (it wrote none there, so a hardware run's own `tex_filter=` line would have been dropped, and its `interp=0` read as an old default).
+- **Not done:** the filter's and the dynamic resolution's code isn't removed (the keys use it). A player who wants either has to edit config.txt by hand, with `config_version=5` in it.
+
+#### Checked
+Logs are in the worktree's `logs/u63/` (gitignored).
+- **The host is main's:** nothing the host builds changed, and its binary is byte for byte main's (`cmp` of `spyro-u63` and D151's `spyro-c4`, SHA-1 `872d72f1…`), so the host checks are main's by construction. ctest: 29 of 30 passed and `gte` skipped, as on main (`logs/u63/ctest.txt`).
+- **Vita3K** (the VPK with the Mac's VitaSDK; `menu.sh`, `menu-grab.sh`):
+  - **The panel** (`menu-open.png`, `menu_test=400`): PICTURE shows the six rows above; no TEX FILTER, no DYNAMIC RES.
+  - **An old file** (`v3k-menu-old`: `config_version=4`, `tex_filter=2`, `dynres=1`): both log lines; the GPU starts with `tex_filter=0` and `dynres: off, scale 100%`. The menu then switches PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES on and closes: the save lists every other row, and the file after it has `config_version=5`, `persp=1`, `subpixel=1` and no `tex_filter=` or `dynres=` line.
+  - **A developer's file** (`v3k-menu-dev`: the tool's `config_version=5`, `tex_filter=1`, `dynres=75`): `gpu: tex_filter=1`, `dynres: fixed, scale 75%`; after the menu's save both lines are still in the file.
+  - The Mac was heavily loaded by other sessions while these ran (load average 40–95): the first tries timed out in Vita3K's GPU start-up and were run again with longer timeouts.
+- **Not checked:** the Vita.
