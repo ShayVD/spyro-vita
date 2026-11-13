@@ -31,6 +31,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **Disc data on the host** (gitignored):
   - `disc/image/` holds the original bin/cue.
   - `disc/files/` holds the extracted files, written by `tools/extract_disc.py`, with a `manifest.json` of each file's LBA, size and type.
+  - `disc/psn/<ID>/EBOOT.PBP` holds the owner's PlayStation Store copies (the PS1 Classics, from the Vita's `ux0:pspemu/PSP/GAME/<ID>/`: NPUI94228 and NPEE00076 are both the USA disc, NPJI00062 the Japanese one), which the port reads in place (D157, D158); `tests/pbp` runs every copy there.
   - The executable on the disc is `SCUS_942.28`. It's the same file the decomp builds as `PSX.EXE` (SHA-1 verified).
   - Level overlays live inside `WAD.WAD`.
   - The `PETEXA*.STR` music streams are XA, stored as 2336-byte sectors (subheader + data).

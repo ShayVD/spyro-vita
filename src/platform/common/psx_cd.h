@@ -57,6 +57,9 @@ typedef struct {
   char path[512];
   long offset, data_limit;
   int stride, data_skip, raw_skip, left, xa;
+  int pbp; /* the digital copy (D157): path is its EBOOT.PBP and offset the first
+              LBA, to read through psx_pbp_read_sectors on a psx_pbp_clone of
+              psx_cdimage_pbp(); stride PSX_PBP_SECTOR, the skips an image's */
 } PsxCdLoc;
 int psx_cd_locate(int lba, PsxCdLoc *loc);
 

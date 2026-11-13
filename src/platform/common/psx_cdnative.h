@@ -58,6 +58,23 @@ typedef struct {
   unsigned long long chunk_us, decode_us;
 } PsxCdnStats;
 void psx_cdn_stats(PsxCdnStats *out);
+/* The worker's reads of the digital copy (its own handle; psx_pbp.h, D158). */
+#include "psx_pbp.h"
+#include <stddef.h>
+void psx_cdn_pbp_stats(PsxPbpStats *out);
+/* The "cd: digital copy:" line (both handles' counts) into out; 0 when no copy is open. */
+int psx_cdn_pbp_report(char *out, size_t cap);
+/* Waits until the worker has nothing in flight (a CdRead or a stream chunk),
+ * then drops the worker's and the helper's handles on the copy, their
+ * counts kept: psx_cdimage_close, before the game thread's handle goes. */
+void psx_cdn_quiesce(void);
+void psx_cdn_pbp_drop(void);
+/* A copy is open again (psx_cdimage_open): the worker may clone it. */
+void psx_cdn_pbp_opened(void);
+/* D158, set before psx_cdn_start: 1 (the default) starts a helper thread
+ * that decodes the second half of a long read of the copy on another core;
+ * 0 leaves the worker alone (the Vita's cd_helper=0). */
+extern int g_psx_cdn_helper;
 
 #ifdef __cplusplus
 }

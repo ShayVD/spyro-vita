@@ -309,6 +309,11 @@ static void cd_stats_report(void) {
     host_log("cd: the worker %u ms on the CdReads; %u of them after a stream chunk",
              (unsigned)(st.job_us / 1000), st.behind_chunk);
   }
+  { /* the digital copy's decoder (D158) */
+    char line[400];
+    if (psx_cdn_pbp_report(line, sizeof line))
+      host_log("%s", line);
+  }
   host_log_flush();
 }
 

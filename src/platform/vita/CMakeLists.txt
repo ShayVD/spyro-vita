@@ -12,6 +12,17 @@ set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.10")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
+# Unsafe (vita-make-fself without -s): the app may read ux0:pspemu, where the
+# PlayStation Store's PS1 Classic of the game is installed, and play it from
+# there (cdimage.c, D157). The player must have enabled unsafe homebrew in
+# HENkaku's settings, as for VitaShell. OFF keeps the safe app, which then
+# finds the digital copy only as a .pbp the player copied into ux0:data/spyro.
+option(SPYRO_UNSAFE "Unsafe app: reads the PSP emulator's folders for the digital copy (D157)" ON)
+if(SPYRO_UNSAFE)
+  set(VPK_UNSAFE UNSAFE)
+else()
+  set(VPK_UNSAFE "")
+endif()
 
 # The native Vita build compiles no PsyCross code, only its headers (stage
 # 8e, D118). The moved arena's mips2c units (D116) link the reference
@@ -125,7 +136,7 @@ endforeach()
 
 # Also refuses a link without _newlib_heap_size_user / sceUserMainThreadStackSize
 # (main.c). The VPK lands at the top of the build tree: build/vita/spyro-vita.vpk.
-vpk_add_app(spyro_vita VPK "${CMAKE_BINARY_DIR}/spyro-vita.vpk"
+vpk_add_app(spyro_vita VPK "${CMAKE_BINARY_DIR}/spyro-vita.vpk" ${VPK_UNSAFE}
   TITLE_ID ${VITA_TITLEID} VERSION ${VITA_VERSION} NAME "${VITA_APP_NAME}"
   FILE "${LA_DIR}/icon0.png" sce_sys/icon0.png
        "${LA_DIR}/bg.png" sce_sys/livearea/contents/bg.png

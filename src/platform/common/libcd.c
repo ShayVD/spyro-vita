@@ -68,6 +68,14 @@ void psx_cd_io(PsxCdIo *out) {
     out->kbytes += st.kbytes;
     out->us += st.us;
   }
+  if (psx_cdimage_pbp()) { /* the copy's file reads (compressed bytes) are its decoder's, not the kit's (D158) */
+    PsxPbpStats g, w;
+    psx_cdimage_pbp_stats(&g);
+    psx_cdn_pbp_stats(&w);
+    out->reads += g.reads + w.reads;
+    out->kbytes += (unsigned)((g.read_bytes + w.read_bytes) >> 10);
+    out->us += g.read_us + w.read_us;
+  }
 }
 unsigned long long psx_cd_now(void) { return s_clock ? s_clock() : 0; }
 
@@ -184,9 +192,14 @@ static int have_file(const char *path) {
  * known executable in the manifest. The US files aren't hashed, as before
  * (tools/extract_disc.py checked them); another region's executable is, and
  * the release is refused until its stages land (psx_cd_check_release). */
+static int manifest_has(void *user, const char *name) {
+  (void)user;
+  return have_file(name);
+}
+
 static int files_region(void) {
-  const PsxRegion *r = NULL;
-  char path[512], buf[2048], exe[64], hex[41];
+  const PsxRegion *r;
+  char path[512], buf[2048], exe[64] = "", hex[41];
   unsigned char block[4096];
   size_t n;
   PsxSha1 sha;
@@ -195,12 +208,9 @@ static int files_region(void) {
   if ((f = fopen(path, "rb"))) {
     n = fread(buf, 1, sizeof buf, f);
     fclose(f);
-    if (psx_region_boot_exe(buf, n, exe, sizeof exe) == 0)
-      r = psx_region_by_exe(exe);
+    psx_region_boot_exe(buf, n, exe, sizeof exe);
   }
-  for (int i = 0; !r && i < PSX_REGION_COUNT; i++)
-    if (have_file(psx_region_info(i)->exe))
-      r = psx_region_info(i);
+  r = psx_region_of_disc(exe, manifest_has, NULL);
   if (!r || r->id == PSX_REGION_US)
     return 0;
   snprintf(path, sizeof path, "%s/%s", s_dir, r->exe);
@@ -398,6 +408,8 @@ int psx_cd_xa_locate(int lba, PsxCdXaLoc *loc) {
   if (!f || !f->xa)
     return -1;
   loc->left = f->lba + f->nsect - lba;
+  if (s_image && psx_cdimage_pbp())
+    return -1; /* the digital copy's sectors can't be read by offset: its reader's are the game thread's */
   if (s_image) {
     int sector, base;
     psx_cdimage_layout(&sector, &base);
@@ -423,11 +435,13 @@ int psx_cd_locate(int lba, PsxCdLoc *loc) {
   loc->left = f->nsect - rel;
   loc->xa = f->xa;
   loc->data_limit = -1;
+  loc->pbp = 0;
   if (s_image) {
     int sector, base;
     psx_cdimage_layout(&sector, &base);
     snprintf(loc->path, sizeof loc->path, "%s", psx_cdimage_path());
-    loc->offset = (long)(lba - base) * sector;
+    loc->pbp = psx_cdimage_pbp() != NULL;
+    loc->offset = loc->pbp ? lba : (long)(lba - base) * sector; /* the copy: an LBA, not bytes */
     loc->stride = sector;
     loc->raw_skip = 16; /* sync and header, as image_read_raw */
     loc->data_skip = 24;

@@ -135,6 +135,9 @@
  *                       thread on core 1, and the XA stream is read ahead
  *                       from its start there (instead of xa_ahead's
  *                       windows); the same bytes, the same ticks (D93)
+ *       cd_helper=0     with cd_native=1 and the digital copy: no helper
+ *                       thread on core 2 decoding the second half of a long
+ *                       read (default 1; D158)
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -471,6 +474,8 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "cd_native"))
       g_vita_opts.cd_native = atoi(v);
+    else if (!strcmp(line, "cd_helper"))
+      g_psx_cdn_helper = atoi(v); /* D158 */
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
@@ -715,6 +720,7 @@ int main(int argc, char **argv) {
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
+  sceIoMkdir(VITA_DATA_DIR, 0777); /* a first start from the Store copy alone has no data folder yet (D158) */
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
