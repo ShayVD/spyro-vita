@@ -3,7 +3,7 @@
 # of 8 lists; gpu_fused=2 takes the render thread's way before D92 and gpu_fused=1's in turn, a
 # vertex buffer each. The Toasty route, REALTIME=1. Read with tools/vita/nd_ab_summary.py and
 # tools/vita/fused_ab_summary.py.
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1
 fast_render=2

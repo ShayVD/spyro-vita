@@ -4,7 +4,7 @@
 # The shadows, flame and particles on the GTE register file (ngte_fx=0, the default). Unattended:
 #   VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-x4 1500 \
 #     @tools/vita/fps-runs/x4-k1-fr2.txt @tools/vita/hw-routes/n-gte-k.cfg
-config_version=4
+config_version=5
 interp=0
 render_thread=0
 parse_thread=0

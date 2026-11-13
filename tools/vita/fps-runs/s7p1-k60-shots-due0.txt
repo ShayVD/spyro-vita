@@ -2,7 +2,7 @@
 # present_due=0 (VSync's presents, as before D112), on the K route with shots at V and V+1 (p-shots-k.cfg):
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7p1 1500 @tools/vita/fps-runs/s7p1-k60-shots-due0.txt @tools/vita/hw-routes/p-shots-k.cfg
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1
 fast_render=2

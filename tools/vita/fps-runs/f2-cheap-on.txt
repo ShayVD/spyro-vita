@@ -1,6 +1,6 @@
 # D70: as F1 with the 28-byte vertex (gpu_lean=1, the default since D74)
 interp=1
-config_version=4
+config_version=5
 interp_budget=0
 gpu_time=2
 render_thread=1

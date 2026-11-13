@@ -92,7 +92,8 @@
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=2; D45)
+ *                       with config_version=5 (2 at D45; 3: D68; 4: D150;
+ *                       5: D153, tex_filter= and dynres= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -229,13 +230,15 @@
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
- *                       decisions D39)
+ *                       decisions D39). A developer's key since D153 (the
+ *                       menu's TEX FILTER row is gone): read only with
+ *                       config_version=5 in the file, as dynres= is
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
- *                       (tex_filter, persp, subpixel, res, draw_distance are
- *                       also options menu rows: picture.c, D48)
+ *                       (persp, subpixel, res, draw_distance are also
+ *                       options menu rows: picture.c, D48)
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
@@ -365,12 +368,22 @@ static void parse_poke(const char *v) {
 const char *g_vita_config_stale[4];
 /* a pal60= line (D148's PAL 60 row, gone with D150): the menu's save drops it */
 int g_vita_config_pal60;
+/* tex_filter= and dynres= lines in a file older than config_version=5: the
+ * rows the menu had until D153 wrote them, so they aren't taken and the
+ * menu's save drops them (NULL-ended) */
+const char *g_vita_config_rows_gone[3];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
 static void read_config(void) {
   char line[512];
   int version = 1, interp_line = 0, i;
+  /* D153: the two keys whose menu rows are gone; taken after the loop, once
+   * the file's version is known */
+  static const char *const k_gone_keys[2] = {"tex_filter", "dynres"};
+  static const char *const k_gone_rows[2] = {"TEX FILTER", "DYNAMIC RES"};
+  int *const gone[2] = {&g_vita_opts.tex_filter, &g_vita_opts.dynres};
+  int gone_line[2] = {0, 0}, gone_value[2] = {0, 0}, ngone = 0;
   /* D68: the three switches' lines; a 0 before config_version=3 was the
    * old default or a test file's (tools/vita/fps-runs) */
   static const char *const k_switch_keys[3] = {"render_thread", "xa_ahead", "gpu_opaque"};
@@ -396,6 +409,11 @@ static void read_config(void) {
       g_RegionPal50 = atoi(v) != 0; /* the host's --pal50 (D150) */
     else if (!strcmp(line, "pal60"))
       g_vita_config_pal60 = 1; /* D148's PAL 60 row, gone with D150: dropped at the next save */
+    else if (!strcmp(line, k_gone_keys[0]) || !strcmp(line, k_gone_keys[1])) {
+      i = strcmp(line, k_gone_keys[0]) != 0;
+      gone_line[i] = 1;
+      gone_value[i] = atoi(v);
+    }
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
     else if (!strcmp(line, "region_dev"))
@@ -534,6 +552,23 @@ static void read_config(void) {
   if (g_vita_config_pal60)
     vita_log("config: pal60= is no longer read (D150): the PAL disc runs at US timing, and the "
              "60 FPS row's 60 HZ is 60 Hz logic on it too");
+  /* The menu's TEX FILTER and DYNAMIC RES rows are gone (D153), and the menu
+   * wrote every row's key at every save: a line from before config_version=5
+   * may be a row's, with no row left to change it, so it isn't taken (both
+   * stay off, the defaults) and goes at the menu's next save. With
+   * config_version=5 the line is a developer's (the test tools write it). */
+  for (i = 0; i < 2; i++) {
+    if (!gone_line[i])
+      continue;
+    if (version >= 5) {
+      *gone[i] = gone_value[i];
+    } else {
+      g_vita_config_rows_gone[ngone++] = k_gone_keys[i];
+      if (gone_value[i] != 0)
+        vita_log("config: %s=%d without config_version=5 is from the menu's %s row, gone "
+                 "since D153: off", k_gone_keys[i], gone_value[i], k_gone_rows[i]);
+    }
+  }
   /* D44's diagnostic 60 fps values, no animation blending (2) and camera
    * only (3), left the menu with D148: either is INTERPOLATED now. The menu
    * writes the 1 back at its next save; nothing else reads a version for it. */

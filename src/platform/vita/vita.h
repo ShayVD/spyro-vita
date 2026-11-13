@@ -55,7 +55,8 @@ typedef struct {
   int nmenu_test;
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37);
                          3: the native mix on that thread, 4: lockstep (D84) */
-  int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43) */
+  int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43);
+                         a developer's key, no menu row since D153 */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
@@ -80,7 +81,8 @@ typedef struct {
                          thread (stage 7f, D126); 0: on the game thread (7e) */
   int pres_core;      /* pres_core=3: that thread on core 3, if a user thread may run there */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU
-                         can't keep up; 88, 75, 67: that scale, always (D75) */
+                         can't keep up; 88, 75, 67: that scale, always (D75); a developer's
+                         key, no menu row since D153 */
   int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
   int log_sync;       /* log_sync=1: each log line written on its own thread, not by the log's (D75) */
   int atlas_cpu;      /* atlas_cpu=1: atlas blocks decoded on the CPU into the texture; 0 the GPU
@@ -153,6 +155,8 @@ int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
 extern const char *g_vita_config_stale[4]; /* main.c: stale switch lines (D68), NULL-ended */
 extern int g_vita_config_pal60; /* main.c: a pal60= line, dropped at the next save (D150) */
+/* main.c: tex_filter= and dynres= lines from the rows gone with D153, dropped too (NULL-ended) */
+extern const char *g_vita_config_rows_gone[3];
 int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
 /* A question over the menu (D136): the text, a blank line, the choices
  * (UP/DOWN, X answers with the one chosen: 0..nchoice-1; O, START,

@@ -1,6 +1,6 @@
 # Run R2 (D84): R1 with the native mix (mixer=3: SPU RAM decoded to PCM once, the NEON mix, XA
 # decoded on the read-ahead thread, sceAudioOut). The same route as R1. Send it as r2.log.
-config_version=4
+config_version=5
 interp=0
 dynres=0
 mixer=3

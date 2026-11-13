@@ -1,7 +1,7 @@
 # Run V2 (D93): V1 with the native disc reads (cd_native=1: each CdRead one read of a file at
 # an offset on a worker on core 1, the XA stream read ahead from its start there). The same
 # route; the pictures and the memory card should be V1's.
-config_version=4
+config_version=5
 interp=0
 dynres=0
 cd_native=1

@@ -1,7 +1,7 @@
 # Run 7F5 (D126): 7F4 with interp_mode=2: the presenter on its own thread (stage 7f).
 #   REALTIME=1 VPK=... PAD=$PWD/tools/vita/hw-routes/k-route.pad DEVICE_DEFAULTS=1 \
 #     tools/vita/hw_run.sh logs/hw-7f5 1500 @tools/vita/fps-runs/s7f5-k60-pres.txt @tools/vita/hw-routes/m1-xa-k.cfg
-config_version=4
+config_version=5
 interp=1
 gpu_meter=1
 interp_mode=2

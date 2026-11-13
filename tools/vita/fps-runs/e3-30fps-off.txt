@@ -1,5 +1,5 @@
 # Run E3, 30 fps with the passes as before D69 (gpu_direct=0), GPU timing on
 interp=0
-config_version=4
+config_version=5
 gpu_time=2
 gpu_direct=0
