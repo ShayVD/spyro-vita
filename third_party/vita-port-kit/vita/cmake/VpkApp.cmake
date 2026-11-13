@@ -8,7 +8,10 @@
 #     TITLE_ID <ABCD00001> VERSION <##.##> NAME <title>
 #     [FILE <src> <dest in the VPK> ...]          sce_sys/icon0.png, sce_sys/livearea/contents/..., README.md ...
 #     [DEPENDS <target> ...]                      targets that make FILE sources
-#     [SCE_HEADROOM <bytes>])                     links with -Wl,--defsym=__sce_headroom=<bytes> (0x4000)
+#     [SCE_HEADROOM <bytes>]                      links with -Wl,--defsym=__sce_headroom=<bytes> (0x4000)
+#     [UNSAFE])                                   vita-make-fself without -s: the app sees the whole file
+#                                                 system (ux0:pspemu ...), and the player must have
+#                                                 enabled unsafe homebrew in HENkaku (spyro-vita D157)
 #
 # SCE_HEADROOM (default: the variable VPK_SCE_HEADROOM, else none) keeps that much room between the text and data
 # segments, where vita-elf-create puts its SCE data (a few KB); without it a build whose text ends just below a
@@ -24,7 +27,7 @@ include_guard(GLOBAL)
 set(VPK_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 function(vpk_add_app elf)
-  cmake_parse_arguments(A "" "VPK;TITLE_ID;VERSION;NAME;SCE_HEADROOM" "FILE;DEPENDS" ${ARGN})
+  cmake_parse_arguments(A "UNSAFE" "VPK;TITLE_ID;VERSION;NAME;SCE_HEADROOM" "FILE;DEPENDS" ${ARGN})
   if(A_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "vpk_add_app: unknown arguments ${A_UNPARSED_ARGUMENTS}")
   endif()
@@ -88,8 +91,13 @@ function(vpk_add_app elf)
     COMMAND "${VITA_ELF_CREATE}" "$<TARGET_FILE:${elf}>" "${velf}"
     DEPENDS "${stamp}" ${elf}
     COMMENT "vita-elf-create ${elf}" VERBATIM)
+  if(A_UNSAFE)
+    set(fself_safe "")
+  else()
+    set(fself_safe "-s")
+  endif()
   add_custom_command(OUTPUT "${eboot}"
-    COMMAND "${VITA_MAKE_FSELF}" -s -c "${velf}" "${eboot}"
+    COMMAND "${VITA_MAKE_FSELF}" ${fself_safe} -c "${velf}" "${eboot}"
     DEPENDS "${velf}"
     COMMENT "vita-make-fself ${elf}" VERBATIM)
   add_custom_command(OUTPUT "${sfo}"

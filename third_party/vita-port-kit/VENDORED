@@ -1,4 +1,8 @@
 # vita-port-kit, vendored by tools/vendor.sh: do not edit these files here; change the kit and re-vendor.
+# Local changes, made here (spyro-vita D157, D158; the owner doesn't upstream the kit): vita/cmake/VpkApp.cmake
+# takes an UNSAFE argument (vita-make-fself without -s); vita/runtime/discimage reads from a source of sectors
+# in place of a file (vpk_disc_open_source: the digital copy walked and read by the same code as an image).
+# Before a re-vendor, take their diff from git (git log -p -- third_party/vita-port-kit) and re-apply it.
 commit fae5c87958b7cac8cc2ef5eefbaae34f0f8679a7
 path vita/tools
 path vita/cmake

@@ -127,11 +127,41 @@ int vpk_disc_open(VpkDisc *d, const char *path, const VpkDiscLayout *l, int wind
   return 0;
 }
 
+int vpk_disc_open_source(VpkDisc *d, int (*read)(void *user, int lba, unsigned char raw[2352]), void *user,
+                         int nsect) {
+  unsigned char *keep[2] = {d->win[0].buf, d->win[1].buf};
+  unsigned long long (*now)(void) = d->now;
+  void (*io)(unsigned, unsigned long long) = d->io;
+  if (D_OPEN(d))
+    vpk_disc_close(d);
+  memset(d, 0, sizeof *d);
+  d->now = now;
+  d->io = io;
+  d->win[0].buf = keep[0];
+  d->win[1].buf = keep[1];
+  d->source_buf = malloc(RAW);
+  if (!d->source_buf)
+    return -1;
+  d->source = read;
+  d->source_user = user;
+  d->source_lba = -1;
+  d->l.sector = RAW;
+  d->l.data_off = 24;
+  d->l.base = 0;
+  d->nsect = nsect;
+  d->size = (long long)nsect * RAW;
+  d->open = 1;
+  return 0;
+}
+
 int vpk_disc_is_open(const VpkDisc *d) { return D_OPEN(d); }
 
 void vpk_disc_close(VpkDisc *d) {
-  if (D_OPEN(d))
+  if (D_OPEN(d) && !d->source)
     f_close(D_FILE(d));
+  free(d->source_buf);
+  d->source_buf = NULL;
+  d->source = NULL;
   d->open = 0;
   d->fp = NULL;
   d->win[0].n = d->win[1].n = 0;
@@ -162,6 +192,15 @@ int vpk_disc_read_raw(VpkDisc *d, int lba, int off, void *buf, int n) {
   unsigned long long t0;
   if (!D_OPEN(d) || rel < 0 || rel >= d->nsect || off < 0 || n < 0 || off + n > limit)
     return -1;
+  if (d->source) { /* a source of sectors: the last one kept */
+    if (lba != d->source_lba) {
+      if (d->source(d->source_user, lba, d->source_buf) != 0)
+        return -1;
+      d->source_lba = lba;
+    }
+    memcpy(buf, d->source_buf + off, (size_t)n);
+    return n;
+  }
   if (!d->windows) {
     int got;
     t0 = now(d);

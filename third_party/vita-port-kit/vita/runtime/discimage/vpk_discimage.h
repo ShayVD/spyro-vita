@@ -44,7 +44,19 @@ typedef struct {
   /* optional I/O accounting: now() before each file-system read, io(bytes, t0) after it */
   unsigned long long (*now)(void);
   void (*io)(unsigned bytes, unsigned long long t0);
+  /* a source of sectors in place of a file (vpk_disc_open_source): the last sector it gave */
+  int (*source)(void *user, int lba, unsigned char raw[2352]);
+  void *source_user;
+  int source_lba;
+  unsigned char *source_buf;
 } VpkDisc;
+
+/* Opens d over a source of raw sectors instead of a file (spyro-vita's digital copy, D158): read(user, lba,
+ * raw) fills the 2352-byte raw sector at lba (mode 2 form 1 data at 24) and returns 0, or -1 past the end;
+ * nsect is how many it holds, from LBA 0. Every read, find and walk then works as on a raw image, through a
+ * one-sector buffer (no windows). 0, or -1 (no memory). */
+int vpk_disc_open_source(VpkDisc *d, int (*read)(void *user, int lba, unsigned char raw[2352]), void *user,
+                         int nsect);
 
 /* What path is: VPK_DISC_RAW (with *l: sector size, first LBA from the first sync pattern whose next sector has one
  * too, data offset from sector 16's mode), VPK_DISC_ISO (2048-byte sectors, "CD001" at sector 16), a container to
