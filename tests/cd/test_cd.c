@@ -560,7 +560,9 @@ static void test_region(void) {
   CHECK(psx_region_by_exe("SCES_014.38")->id == PSX_REGION_PAL);
   CHECK(psx_region_by_exe("SCPS_100.83")->id == PSX_REGION_JP);
   CHECK(psx_region_by_exe("SCPS_100.85") == NULL); /* the standard JP release: not known */
-  CHECK(psx_region_info(PSX_REGION_US)->supported && !psx_region_info(PSX_REGION_PAL)->supported);
+  /* US and PAL run (PAL since D154); JP is recognised and refused */
+  CHECK(psx_region_info(PSX_REGION_US)->supported && psx_region_info(PSX_REGION_PAL)->supported &&
+        !psx_region_info(PSX_REGION_JP)->supported);
   CHECK(psx_region_info(PSX_REGION_COUNT) == NULL);
   g_Region = PSX_REGION_US;
   CHECK(strcmp(psx_region_path(path, sizeof path, "ux0:data/spyro/save", "card0", 0),

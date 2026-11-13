@@ -25,7 +25,7 @@ enum {
   PSX_CD_ERR_WRONG_DISC, /* another game or release, or a bad dump */
   PSX_CD_ERR_BAD_IMAGE,  /* unreadable, damaged or cut short */
   PSX_CD_ERR_MANIFEST,   /* manifest.json there but unreadable */
-  PSX_CD_ERR_NOT_SUPPORTED, /* a known PAL or JP release, not run yet (D132) */
+  PSX_CD_ERR_NOT_SUPPORTED, /* a known release not run yet: JP (D132; PAL runs, D154) */
 };
 
 typedef struct {

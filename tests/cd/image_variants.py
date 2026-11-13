@@ -23,9 +23,12 @@ From the user's real dump (a 2352-byte .bin and its .cue) it makes, in WORK
            manifest.json. Each must exit 1
            with its title on stderr; its panel is written as disc-error.png.
   regions: for each OTHER.cue:OTHER_FILES pair (the PAL and JP dumps, D132):
-           its .cue and .bin, and its extracted files' executable with the
-           manifest, refused with "NOT SUPPORTED YET"; its image with one
-           byte of the executable changed, "WRONG VERSION OF THE GAME".
+           a release the port runs (PAL, D154; tools/extract_disc.py's
+           REGIONS "supported") must open from its .cue and .bin and from
+           its extracted files and run 10 vblanks (exit 0, no panel); one
+           it doesn't (JP) is refused with "NOT SUPPORTED YET" both ways.
+           Either way its image with one byte of the executable changed is
+           "WRONG VERSION OF THE GAME".
 
 The full-size copies (~0.7 GB each) are made one at a time and deleted; the
 refusals that need a whole image are sparse files holding only the
@@ -44,6 +47,10 @@ import re
 import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "tools"))
+from extract_disc import REGIONS  # noqa: E402  (which releases the port runs)
 
 RAW = 2352
 FRAMES = 1200
@@ -178,6 +185,19 @@ def main(argv):
                         f"exit {r}: {got_title}: {got_text}".replace("\n", " / ")))
         shutil.rmtree(d)
 
+    def opened(name, make):  # another region's release the port runs (D154)
+        d = fresh(os.path.join(work, name))
+        o = fresh(os.path.join(out, name))
+        make(d)
+        r = tc([SPYRO, "--disc", rel(d), "--frames", "10", "--shot-dir", rel(o)],
+               os.path.join(o, "stdout.txt"))
+        s = open(os.path.join(o, "stdout.txt")).read()
+        ok = r == 0 and not os.path.exists(os.path.join(o, "disc-error.png"))
+        region = re.search(r"libcd: \S+ is Spyro the Dragon .*", s)
+        results.append((name, "ok" if ok else "FAIL",
+                        f"exit {r}" + (f": {region.group(0)}" if region else "")))
+        shutil.rmtree(d)
+
     # ---- good ----
     good("cue", lambda d: (link(image, os.path.join(d, binname)), shutil.copy(cue, d)), "(from ")
     good("bare-bin", lambda d: link(image, os.path.join(d, "spyro.bin")), "spyro.bin, 2352")
@@ -279,14 +299,28 @@ def main(argv):
         oexe_name = re.search(r"cdrom:[\\/]*([^;\s]+)", cnf_text).group(1)
         oexe = next(m for m in omanifest if m["path"] == oexe_name)
         tag = oexe_name.split("_")[0].lower()
-        refused(f"{tag}-image",
-                lambda d: (link(oimage, os.path.join(d, obin)), shutil.copy(ocue, d)),
-                "NOT SUPPORTED YET")
+        runs = any(r["exe"] == oexe_name and r["supported"] for r in REGIONS.values())
+
+        def oimage_link(d):
+            link(oimage, os.path.join(d, obin))
+            shutil.copy(ocue, d)
 
         def ofiles_copy(d):  # what the check reads: the manifest, SYSTEM.CNF, the executable
             for name in ("manifest.json", "SYSTEM.CNF", oexe_name):
                 shutil.copy(os.path.join(ofiles, name), d)
-        refused(f"{tag}-files", ofiles_copy, "NOT SUPPORTED YET")
+
+        def ofiles_link(d):  # every file, hard-linked: the game reads them all
+            for m in omanifest:
+                dst = os.path.join(d, m["path"])
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                link(os.path.join(ofiles, m["path"]), dst)
+            shutil.copy(os.path.join(ofiles, "manifest.json"), d)
+        if runs:
+            opened(f"{tag}-image", oimage_link)
+            opened(f"{tag}-files", ofiles_link)
+        else:
+            refused(f"{tag}-image", oimage_link, "NOT SUPPORTED YET")
+            refused(f"{tag}-files", ofiles_copy, "NOT SUPPORTED YET")
 
         def oexe_flip(lba, sec, at=oexe["lba"] + 100):
             if lba == at:

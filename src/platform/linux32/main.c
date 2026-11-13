@@ -18,9 +18,9 @@
  * --disc: the extracted files (with manifest.json), or a folder holding a
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
  *   WAD.WAD the first time and remember it in FILE, as the Vita does.
- * --region-dev: open a PAL or JP disc, which players get refused as not
- *   supported yet (D133). The PAL disc runs with US timing at 60 Hz ("PAL
- *   60", D138; the only way players run it since D150). --pal50: PAL at its
+ * --region-dev: open a JP disc, which players get refused as not supported
+ *   yet (D133; PAL needed it until D154). The PAL disc runs with US timing
+ *   at 60 Hz ("PAL 60", D138; the only way players run it since D150). --pal50: PAL at its
  *   own 50 Hz instead (a VSync is a 50 Hz vblank: 3 CD sectors, 882
  *   samples), as the PS1 runs it: the PAL attract demos' checks against
  *   PCSX-Redux need it (D149). --pal60, the default since D150, is still
