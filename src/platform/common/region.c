@@ -93,6 +93,31 @@ const PsxRegion *psx_region_by_exe(const char *exe) {
   return NULL;
 }
 
+const PsxRegion *psx_region_by_disc_id(const char *disc_id) {
+  for (int i = 0; i < PSX_REGION_COUNT; i++) {
+    const char *a = s_regions[i].serial, *b = disc_id;
+    for (; *a && *b; a++) {
+      if (*a == '-')
+        continue;
+      if (upper(*a) != upper(*b))
+        break;
+      b++;
+    }
+    if (!*a && !*b)
+      return &s_regions[i];
+  }
+  return NULL;
+}
+
+const PsxRegion *psx_region_of_disc(const char *boot_exe, int (*has_file)(void *user, const char *name),
+                                    void *user) {
+  const PsxRegion *r = boot_exe && boot_exe[0] ? psx_region_by_exe(boot_exe) : NULL;
+  for (int i = 0; !r && i < PSX_REGION_COUNT; i++)
+    if (has_file(user, s_regions[i].exe))
+      r = &s_regions[i];
+  return r;
+}
+
 int psx_region_boot_exe(const char *cnf, size_t len, char *exe, size_t cap) {
   size_t i, n = 0;
   exe[0] = 0;
