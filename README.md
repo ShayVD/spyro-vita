@@ -23,17 +23,22 @@ to Sony Interactive Entertainment, Insomniac Games, Activision or Universal.
 
 - A PS Vita or PS TV that runs homebrew (HENkaku / Ensō), with
   [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
-- Your own **Spyro the Dragon** disc, either release:
-  - **USA, SCUS-94228**;
-  - **Europe (PAL), SCES-01438**, in English, French, German, Spanish and Italian
-    (see [The European disc](#the-european-pal-disc)).
+- Your own copy of **Spyro the Dragon**, either:
+  - **the disc**, USA (SCUS-94228) or Europe (PAL, SCES-01438, in English, French, German,
+    Spanish and Italian; see [The European disc](#the-european-pal-disc)), and a computer with
+    a CD/DVD drive to dump it (step 1); or
+  - **the digital copy** from the PlayStation Store (the PS1 Classic), installed on the Vita
+    from your account. Nothing to dump: the port reads it from the Vita itself
+    (see [The digital copy](#or-the-digital-copy-from-the-playstation-store)).
 
-  There's nothing to set: the port reads which release it is from the disc itself (the
+  There's nothing to set: the port reads which release it is from the game itself (the
   executable `SYSTEM.CNF` names, and that file's SHA-1). The Japanese release (SCPS-10083) is a
   different build: the port recognises it and says it isn't supported yet. Demo discs won't run
   (the game checks which one you have).
-- A computer with a CD/DVD drive, to dump the disc.
 - `ur0:data/libshacccg.suprx` on the Vita (Sony's shader compiler module; see step 3).
+- **Unsafe homebrew enabled** in HENkaku's settings (the usual setting for VitaShell and most
+  homebrew): the port needs it to find the digital copy in the PSP emulator's folders. With a
+  disc image it runs either way.
 
 ## 1. Dump your disc to bin/cue
 
@@ -65,7 +70,7 @@ A CloneCD `.img` (2352-byte sectors) works as it is, and so do images with 2448-
 | `.iso` (2048-byte sectors) | it has lost the XA music; dump the disc as `.bin` + `.cue` instead |
 | `.chd` | compressed; convert it with `chdman` (above) |
 | `.ecm` | compressed; unpack it with `unecm` |
-| PSP `EBOOT.PBP` | converted for the PSP; it has lost the music, so dump the disc instead |
+| PSP `EBOOT.PBP` | a PS1 Classic of Spyro is played from it in place (the PlayStation Store's copy, or one made with PSX2PSP from a good dump, which holds the same disc); any other PBP is refused and says so |
 
 ## 2. Install
 
@@ -102,6 +107,37 @@ a good dump of its release:
 `WAD.WAD` must match too. Copy the **contents** of `spyro-files/` to `ux0:data/spyro/`
 (`manifest.json` included, the `.STR` files as they are).
 
+### Or: the digital copy from the PlayStation Store
+
+If you bought *Spyro the Dragon* on the PlayStation Store (the PS1 Classic; it still works from
+your download list), install it on the Vita as usual: it lands in `ux0:pspemu/PSP/GAME/NPUI94228/`
+(the Americas), `NPEE00076/` (Europe) or `NPJI00062/` (Japan) as a PSP-style `EBOOT.PBP`. Then
+leave `ux0:data/spyro/` without a disc image and start Spyro Vita: it finds the copy and plays
+it from there. Nothing is copied or converted: the PSP format keeps the disc's sectors, music
+included, and the port reads them in place, decoding each block as the game asks for it (the
+file's header is encrypted; the port recovers its key from the file itself, so no licence file
+is needed). The executable and `WAD.WAD` are checked against the same SHA-1s as a dump's
+(decisions D157, D158):
+
+| Store copy | What it holds | What the port does |
+|---|---|---|
+| Americas, `NPUI94228` | the USA disc, SCUS-94228, byte for byte | plays it |
+| Europe, `NPEE00076` | the USA disc as well (Sony's European release is the NTSC game) | plays it as the USA release; the PAL version, SCES-01438, exists only on disc |
+| Japan, `NPJI00062` | the Japanese disc, SCPS-10083 | recognises it and says it isn't supported yet, as for the disc |
+
+With more than one installed the port takes a release it runs before one it only recognises,
+then the first folder by name, and `spyro.log` lists them all; `disc=ux0:pspemu/PSP/GAME/NPUI94228`
+in `config.txt` names one. Loading from a copy is slower than from a disc image (every block is
+decompressed on the Vita's CPU: about 2.7 MB/s against 11), and the one-time check of the level
+data at the first start takes about a minute.
+
+This needs unsafe homebrew enabled in HENkaku's settings, so the port may read `ux0:pspemu`
+(Adrenaline's `uma0:`, `imc0:`, `xmc0:`, `ur0:` and `grw0:` memory sticks are looked at too). Without it, copy
+the `EBOOT.PBP` into `ux0:data/spyro/` with VitaShell instead: the port reads it from there the
+same way. On a PC, `pbp_extract EBOOT.PBP spyro-files` (`tools/pbp_extract.c`, built with the
+host build) writes the game's files as `extract_disc.py` would, if you want them. The Japanese
+copy is recognised and refused as not supported yet, like the disc.
+
 ## 3. Get `libshacccg.suprx`
 
 The port draws with the Vita's GPU through vitaGL, which compiles its shaders on the device with
@@ -126,10 +162,11 @@ progress panel; it remembers the image in `ux0:data/spyro/save/disc-verified.txt
 `save/pal/` for the European disc, so later starts skip this). The executable is checked on every
 start, which takes no time.
 
-If the game can't start, a panel says why and what to do, and ✕ quits: no disc image found (it
-names the folder), an `.iso`, `.chd`, `.pbp` or `.ecm`, the wrong disc (another region or release:
-it shows the disc's serial, or the executable's SHA-1), a bad dump, or an image that is cut short
-or can't be read.
+If the game can't start, a panel says why and what to do, and ✕ quits: no disc image found and
+no digital copy (it names the folder), an `.iso`, `.chd`, `.pbp` or `.ecm`, the wrong disc
+(another region or release: it shows the disc's serial, or the executable's SHA-1), a bad dump,
+an image that is cut short or can't be read, or a digital copy that can't be read (a damaged
+download).
 
 ### Controls
 
