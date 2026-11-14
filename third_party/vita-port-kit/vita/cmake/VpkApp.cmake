@@ -9,19 +9,22 @@
 #     [FILE <src> <dest in the VPK> ...]          sce_sys/icon0.png, sce_sys/livearea/contents/..., README.md ...
 #     [DEPENDS <target> ...]                      targets that make FILE sources
 #     [SCE_HEADROOM <bytes>]                      links with -Wl,--defsym=__sce_headroom=<bytes> (0x4000)
-#     [UNSAFE])                                   vita-make-fself without -s: the app sees the whole file
-#                                                 system (ux0:pspemu ...), and the player must have
-#                                                 enabled unsafe homebrew in HENkaku (spyro-vita D157)
+#     [UNSAFE])                                   an unsafe app (vita-make-fself without -s; below)
 #
 # SCE_HEADROOM (default: the variable VPK_SCE_HEADROOM, else none) keeps that much room between the text and data
 # segments, where vita-elf-create puts its SCE data (a few KB); without it a build whose text ends just below a
 # 64 KiB boundary fails "segment 1 overlaps" (vita/docs/gotchas.md 17, spyro-vita D32). It costs address space, not
 # memory. Off by default so an existing game's layout doesn't move under it.
 #
+# UNSAFE makes the eboot.bin without vita-make-fself's -s: the app then sees the whole file system (ux0:pspemu,
+# ur0: ...) instead of its own folders and ux0:data, and it starts only on a Vita whose owner enabled unsafe homebrew
+# in HENkaku's settings. Off by default: a game takes it only for a feature that needs those folders, behind an
+# option of its own (spyro-vita D157: the PlayStation Store copy read from ux0:pspemu, -DSPYRO_UNSAFE=ON).
+#
 # Makes the target <executable target>-vpk (in ALL). Its steps, with the work files in <out.vpk>.d/:
 #   1. vpk_check_procparams.cmake: arm-vita-eabi-nm must list sceUserMainThreadStackSize and _newlib_heap_size_user
 #      (the SDK reads both by name; LTO drops them unless marked used, and the app then stops at launch, no log)
-#   2. vita-elf-create, 3. vita-make-fself -s -c,
+#   2. vita-elf-create, 3. vita-make-fself -s -c (UNSAFE: -c alone),
 #   4. vita-mksfoex -s APP_VER -s TITLE_ID -d ATTRIBUTE2=12 (the extended memory budget), 5. vita-pack-vpk
 include_guard(GLOBAL)
 set(VPK_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")

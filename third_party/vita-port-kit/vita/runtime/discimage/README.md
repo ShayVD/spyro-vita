@@ -22,6 +22,14 @@ count the file-system time.
 - `vpk_disc_walk(d, fn, user)`: every file in the tree with its CD-XA attributes (form 2, interleaved, CD-DA).
 - `vpk_sha1_*`: for checking the disc is the right release.
 
+`vpk_disc_open_source(d, read, user, nsect)` opens the same reader over sectors the game supplies in place of a
+file: `read(user, lba, raw)` fills one 2352-byte raw sector. It is for a disc kept in a container the game decodes
+itself; spyro-vita reads the PlayStation Store's PS1 Classic `EBOOT.PBP` this way (its D157, D158: compressed blocks
+of 16 sectors), so the lookups, the walk with its limits, and the 2048-byte reads are the ones an image gets. The
+kit doesn't decode any container. One sector is kept, so a walk or a file read asks the source once a sector; a game
+that reads many sectors at once from its container should do that beside this (spyro-vita's loads read the decoder
+directly), and count its own I/O (`now` / `io` aren't called).
+
 Offsets are 64-bit everywhere: `sceIo` on the Vita (newlib's `fseek` takes a 32-bit `long`), `fseeko` with
 `_FILE_OFFSET_BITS 64` on hosts (a plain `fopen` of a 3.3 GiB image fails on 32-bit glibc).
 
@@ -70,7 +78,9 @@ names (spyro-vita looks only among the candidates).
 
 **Test:** `test/discimage_test.c` writes a small ISO9660 tree as a `.iso`, raw mode 1, raw mode 2 (with and
 without a pregap) and raw 2448 images, and checks sniffing, lookups, the walk, straight and windowed reads, the
-ends, a sparse `.iso` read past 3 GiB, and SHA-1's FIPS vectors. It parses cue sheets (multi-file, pregaps, every
+ends, a sparse `.iso` read past 3 GiB, and SHA-1's FIPS vectors. A source of sectors serves the same tree: the
+lookups, the walk, both reads, one ask per sector, a source that fails (and what it wrote isn't served afterwards),
+the ends, and a file opened over it. It parses cue sheets (multi-file, pregaps, every
 mode, BOM, CRLF, errors), and writes folders of images and sheets that check the search: cues first, name order,
 a cue's file in another case and folder, a cue passed over for its `.bin`, a multi-file cue's data track, a Redump
 dump without its cue, the first reason when nothing is usable; and the boot serial. `-DDISCIMAGE_MUTANT=1` (no

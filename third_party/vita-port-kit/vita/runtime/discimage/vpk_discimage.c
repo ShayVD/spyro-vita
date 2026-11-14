@@ -1,6 +1,7 @@
 /* The disc image layer (vpk_discimage.h).
  * From kh1-decomp host/port/cd_image.c @ 85befa4a and spyro-vita src/platform/common/cdimage.c @ 987363e; the
- * folder search, cue sheets and boot serial from spyro-vita src/platform/common/cdimage.c @ bb62f38. */
+ * folder search, cue sheets and boot serial from spyro-vita src/platform/common/cdimage.c @ bb62f38; the source of
+ * sectors from spyro-vita PR #146 (its D158). */
 #define _FILE_OFFSET_BITS 64 /* 32-bit hosts: off_t and fseeko past 2 GiB */
 #include "vpk_discimage.h"
 
@@ -98,6 +99,8 @@ int vpk_disc_open(VpkDisc *d, const char *path, const VpkDiscLayout *l, int wind
   unsigned char *keep[2] = {d->win[0].buf, d->win[1].buf};
   unsigned long long (*now)(void) = d->now;
   void (*io)(unsigned, unsigned long long) = d->io;
+  if (D_OPEN(d)) /* a reopen: the file or the source's buffer it had */
+    vpk_disc_close(d);
   memset(d, 0, sizeof *d);
   d->now = now;
   d->io = io;
@@ -139,6 +142,8 @@ int vpk_disc_open_source(VpkDisc *d, int (*read)(void *user, int lba, unsigned c
   d->io = io;
   d->win[0].buf = keep[0];
   d->win[1].buf = keep[1];
+  if (!read || nsect <= 0)
+    return -1;
   d->source_buf = malloc(RAW);
   if (!d->source_buf)
     return -1;
@@ -194,6 +199,7 @@ int vpk_disc_read_raw(VpkDisc *d, int lba, int off, void *buf, int n) {
     return -1;
   if (d->source) { /* a source of sectors: the last one kept */
     if (lba != d->source_lba) {
+      d->source_lba = -1; /* a source that fails may have written part of the buffer */
       if (d->source(d->source_user, lba, d->source_buf) != 0)
         return -1;
       d->source_lba = lba;
