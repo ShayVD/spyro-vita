@@ -28,6 +28,7 @@
  * the PSP's. The LZRC decoder follows the public-domain pkg2zip's structure
  * (Mārtiņš Možeiko, after tpu's libkirk). Nothing here is copied from a GPL
  * project. */
+#define _FILE_OFFSET_BITS 64 /* 32-bit hosts: a file past 2 GiB opens, and is refused for what it is */
 #include "psx_pbp.h"
 #include "psx_aes128.h"
 #include "psx_cdimage.h" /* SHA-1 */
@@ -102,16 +103,25 @@ typedef struct {
 typedef SceUID Fd;
 static Fd fd_open(const char *path) { SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0); return fd < 0 ? -1 : fd; }
 static void fd_close(Fd fd) { sceIoClose(fd); }
-static long fd_size(Fd fd) { return (long)sceIoLseek(fd, 0, SCE_SEEK_END); }
+static long long fd_size(Fd fd) { return (long long)sceIoLseek(fd, 0, SCE_SEEK_END); }
+/* One call gives the whole read on the Vita's cards (cdnative.c's reads of an
+ * image, 300 KB a call on hardware since D93, never loop); the loop is for a
+ * file system that gives it in parts, and costs nothing when it doesn't. */
 static int fd_pread(Fd fd, void *buf, unsigned n, long off) {
-  int got = (int)sceIoPread(fd, buf, (SceSize)n, (SceOff)off);
-  return got < 0 ? 0 : got;
+  unsigned got = 0;
+  while (got < n) {
+    int r = (int)sceIoPread(fd, (char *)buf + got, (SceSize)(n - got), (SceOff)off + (SceOff)got);
+    if (r <= 0)
+      break;
+    got += (unsigned)r;
+  }
+  return (int)got;
 }
 #else
 typedef int Fd;
 static Fd fd_open(const char *path) { return open(path, O_RDONLY); }
 static void fd_close(Fd fd) { close(fd); }
-static long fd_size(Fd fd) { return (long)lseek(fd, 0, SEEK_END); }
+static long long fd_size(Fd fd) { return (long long)lseek(fd, 0, SEEK_END); }
 static int fd_pread(Fd fd, void *buf, unsigned n, long off) {
   unsigned got = 0;
   while (got < n) {
@@ -786,6 +796,12 @@ static int sfo_string(const unsigned char *sfo, unsigned n, const char *key, cha
   return -1;
 }
 
+/* A PS1 Classic of one disc is under 1 GB (a CD's 333,000 raw sectors are
+ * 783 MB before compression), and every offset here is a 32-bit long: a file
+ * of 2 GiB or more is refused as too large before anything is read by
+ * offset, not passed on with its size cut to 32 bits. */
+#define FILE_MAX 0x7FFFFFFFll
+
 /* The PBP's header: the SFO's place and the PSAR's, both inside the file
  * (size bytes). 0, or -1 if it isn't one. */
 static int pbp_header(Fd fd, long size, long *sfo_off, unsigned *sfo_len, long *psar_off) {
@@ -806,17 +822,21 @@ static int pbp_header(Fd fd, long size, long *sfo_off, unsigned *sfo_len, long *
 }
 
 int psx_pbp_peek_disc_id(const char *path, char *disc_id, size_t cap) {
-  Fd fd = fd_open(path);
+  Fd fd;
   unsigned char *sfo;
   long sfo_off, psar;
+  long long size;
   unsigned sfo_len;
   int r = -1;
   if (cap == 0)
-    return -1;
+    return -1; /* before the open: nothing to close */
   disc_id[0] = 0;
+  fd = fd_open(path);
   if (fd < 0)
     return -1;
-  if (pbp_header(fd, fd_size(fd), &sfo_off, &sfo_len, &psar) == 0 && (sfo = malloc(sfo_len))) {
+  size = fd_size(fd);
+  if (size > 0 && size <= FILE_MAX && pbp_header(fd, (long)size, &sfo_off, &sfo_len, &psar) == 0 &&
+      (sfo = malloc(sfo_len))) {
     if (read_at(fd, sfo_off, sfo, sfo_len) == 0) {
       sfo_string(sfo, sfo_len, "DISC_ID", disc_id, cap);
       r = 0;
@@ -848,7 +868,16 @@ int psx_pbp_open(PsxPbp **out, const char *path, PsxPbpError *err) {
     free(p);
     return fail(err, PSX_PBP_ERR_UNREADABLE, "%s can't be opened", path);
   }
-  p->file_size = fd_size(p->fd);
+  {
+    long long size = fd_size(p->fd);
+    if (size > FILE_MAX) {
+      psx_pbp_close(p);
+      return fail(err, PSX_PBP_ERR_NOT_PBP,
+                  "%s is %u MB, larger than any single-disc PS1 Classic (a CD holds under 800 MB)", path,
+                  (unsigned)(size >> 20));
+    }
+    p->file_size = size < 0 ? 0 : (long)size;
+  }
   if (pbp_header(p->fd, p->file_size, &sfo_off, &sfo_len, &p->psar) != 0) {
     psx_pbp_close(p);
     return fail(err, PSX_PBP_ERR_NOT_PBP, "%s isn't a PSP EBOOT.PBP", path);
@@ -1228,6 +1257,12 @@ static int collect_entry(void *user, const VpkDiscEntry *e) {
   Collect *c = user;
   Entry *f;
   const char *s;
+  /* the names go into manifest.json as they are, which libcd.c reads back with a small reader of
+   * its own: a quote, a brace or a control byte (none of them a disc name's character) would break
+   * that file for it, so such a name is refused here, not escaped ('\\' is refused below) */
+  for (s = e->path; *s; s++)
+    if ((unsigned char)*s < 0x20 || *s == 0x7F || *s == '"' || *s == '{' || *s == '}')
+      return fail(c->err, PSX_PBP_ERR_BLOCK, "a file name on the disc isn't a PlayStation disc's");
   /* a path that would leave the folder (the extractor writes these as paths): the
    * walker joins names with '/', so a part that is empty, "." or ".." or holds '\' is hostile */
   for (s = e->path; *s;) {
@@ -1348,9 +1383,24 @@ static int list_files(PsxPbp *p, Files *files, PsxPbpError *err) {
   return 0;
 }
 
+static int extract_files(PsxPbp *p, const char *out_dir, int *region,
+                         void (*progress)(void *user, int percent, const char *file), void *user,
+                         PsxPbpError *err);
+
 int psx_pbp_extract(PsxPbp *p, const char *out_dir, int *region,
                     void (*progress)(void *user, int percent, const char *file), void *user,
                     PsxPbpError *err) {
+  int edc = p->edc, r;
+  psx_pbp_set_edc(p, 1); /* the files as a dump's: the error codes computed */
+  r = extract_files(p, out_dir, region, progress, user, err);
+  if (!edc) /* the handle as the caller had it: the game's reads leave the codes zero (D158) */
+    psx_pbp_set_edc(p, 0);
+  return r;
+}
+
+static int extract_files(PsxPbp *p, const char *out_dir, int *region,
+                         void (*progress)(void *user, int percent, const char *file), void *user,
+                         PsxPbpError *err) {
   static Files files; /* 36 KB: not on the Vita's stack */
   unsigned char raw[PSX_PBP_SECTOR];
   const PsxRegion *r;
@@ -1360,7 +1410,6 @@ int psx_pbp_extract(PsxPbp *p, const char *out_dir, int *region,
   int i, last_pct = -1;
   if (err)
     err->code = PSX_PBP_OK;
-  psx_pbp_set_edc(p, 1); /* the files as a dump's: the music's EDC computed */
   if (list_files(p, &files, err) != 0)
     return -1;
   r = disc_region(p, &files);
@@ -1448,6 +1497,7 @@ int psx_pbp_extract(PsxPbp *p, const char *out_dir, int *region,
   fputs("[", out);
   for (i = 0; i < files.n; i++) {
     const Entry *e = &files.v[i];
+    /* the path needs no escaping: collect_entry refused every name with a byte JSON would */
     fprintf(out, "%s\n  {\n    \"path\": \"%s\",\n    \"lba\": %u,\n    \"size\": %u,\n    \"type\": \"%s\"\n  }",
             i ? "," : "", e->path, e->lba, e->size, e->xa ? "xa" : "data");
   }

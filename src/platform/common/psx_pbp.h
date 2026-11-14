@@ -15,8 +15,10 @@
  * psx_pbp_read_sectors serves sectors through a one-block cache, and
  * psx_pbp_extract writes the disc's files as tools/extract_disc.py does (a
  * manifest.json, data files, XA files as 2336-byte sectors), checking the
- * executable and WAD.WAD against the region table on the way. Plain C and
- * stdio, for every host; one PsxPbp is for one thread. */
+ * executable and WAD.WAD against the region table on the way. Plain C for
+ * every host: the image is read by offset through the system's own calls
+ * (pread, the Vita's sceIoPread; no stdio buffer), the extractor writes with
+ * stdio. One PsxPbp is for one thread. */
 #ifndef PSX_PBP_H
 #define PSX_PBP_H
 
@@ -66,16 +68,19 @@ int psx_pbp_sectors(const PsxPbp *p);
 int psx_pbp_read_sectors(PsxPbp *p, int lba, int count, unsigned char *out);
 
 /* Quick look without reading the image header: PARAM.SFO's DISC_ID of the
- * PBP at path, or -1 if it isn't a PBP. For choosing among the installed
- * titles before decrypting anything. */
+ * PBP at path ("" when its PARAM.SFO has none), or -1 if it isn't a PBP
+ * (or is 2 GiB or more, which no single-disc PS1 Classic is). For choosing
+ * among several copies before decrypting anything. */
 int psx_pbp_peek_disc_id(const char *path, char *disc_id, size_t cap);
 
 /* The file it was opened from. */
 const char *psx_pbp_path(const PsxPbp *p);
 
-/* Compute the Form 2 sectors' EDC (zero in the image, present on a disc)
- * when a block is decoded: on for the extractor and comparisons with a dump,
- * off (the default) for the game, which never reads it (D158). */
+/* Compute the sectors' error codes (zero in the image, present on a disc:
+ * a Form 2 sector's EDC, a Form 1 sector's EDC and P/Q parity) when a block
+ * is decoded: on for comparisons with a dump, off (the default) for the
+ * game, which never reads them (D158). psx_pbp_extract computes them
+ * whatever this says, and leaves the setting as it found it. */
 void psx_pbp_set_edc(PsxPbp *p, int on);
 
 /* Counts since the open, for the "cd:" lines (D158): blocks decoded, blocks
