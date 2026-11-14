@@ -754,8 +754,16 @@ static void ScriptedControl(void) {
     if (flags & CTRL_CAMERA_FOCUS) {
       g_Camera.m_FocusRotation = 0;
       g_Camera.unk_0xC0 = 0x8000000A;
-      g_Camera.m_Focus = g_Spyro.unk_0x21c;
-      g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
+      /* unk_0x21c/220 are NULL until a moby sets them (func_8004AC24 wipes
+       * g_Spyro). FollowMoby sets this flag without them, so the tick after
+       * a moby lets go of Spyro (the Peace Keepers cannon) reaches here with
+       * both NULL: the original read address 0 and went on; the port would
+       * crash in func_80033F08 (the C2-12828-1 dump, logs/hw-crash). Keep
+       * the focus and preset FollowMoby just set instead. */
+      if (g_Spyro.unk_0x21c)
+        g_Camera.m_Focus = g_Spyro.unk_0x21c;
+      if (g_Spyro.unk_0x220)
+        g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
     } else if (flags & 0x400) {
       g_Camera.unk_0xC0 = 0x8000000B;
     } else if (flags & CTRL_FOLLOW_MOBY) {
