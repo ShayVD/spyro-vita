@@ -2304,3 +2304,10 @@ Logs are in the worktree's `logs/u65/` (gitignored); the binaries are D155's.
   - **Vita3K at 60 HZ**, the VPK of `9aba89f` (`v3k/`): Artisans with two poked hits and cross taps through the lockout, then Cliff Town by the menu's warp with charge-hops, a hit and taps (`v3kA`, 8,000 vblanks): the 61 shots of play in Artisans (6500 to 7100) are the fixed host run's byte for byte, where the PR's head's host run differs from the first hit (6770) on; Cliff Town's are the same by eye (the menu's warp lands a vblank later than the host's cheat), Spyro on the ground through the lockout at 7750 where the PR's head has jumped. Tree Tops' supercharge jump (`B-fix-l1`, 6,850 vblanks): in the air by 6680 as the fixed host run, the PR's head's still on the ground.
   - **Vita3K broke many of that day's runs**, in its renderer thread (`VKTextureCache::upload_texture_impl` or `cmd_handle_create_context` in the crash reports): in the opening under load, and on a quiet machine at vblank ~6470 in Tree Tops on every try, the PR's base's VPK (2 of 2) as this one (9 of 9). The Tree Tops run above ran with six busy processes beside it.
   - Not run on hardware.
+
+### D161. A release carries two VPKs: the safe app and the unsafe one (2026-11-14)
+
+- **Decision** (the owner's): CI builds `-DSPYRO_UNSAFE=ON` as well, in its own job `Vita VPK (unsafe)`, for every run, and a draft release gets `spyro-vita-unsafe.vpk` beside `spyro-vita.vpk`. The default stays OFF (D157): `spyro-vita.vpk` is the safe app it always was.
+- **Why:** a safe app can't open `ux0:pspemu`, so a Store copy had to be copied (340 MB twice on the card). Issue #132 asked to play it in place; only an unsafe app can, and asking them to build one isn't an answer.
+- **Same title ID**, so one VPK replaces the other and settings and saves stay. Each job checks its kind with `vpk_pack.py show` (`eboot safe` / `eboot unsafe`).
+- **Checked:** the PR's CI run builds both and passes both kind checks. The draft-release step runs only on a tag, so it is unrun until the next one. The unsafe build ran in Vita3K for D157's fixes; not on hardware by us.

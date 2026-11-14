@@ -128,15 +128,20 @@ CPU: about 2.7 MB/s against 11), and the one-time check of the level data at the
 takes about a minute. A disc image in the folder is unaffected by any of this: it loads and plays
 as before.
 
-**Why the copy has to be copied.** The released VPK is a *safe* homebrew app, like every release
-before it: it can read `ux0:data/` and its own folders, and not `ux0:pspemu`, where the Store
-installs the game. So it never looks there. If you build the port yourself with
-`-DSPYRO_UNSAFE=ON` (see [docs/vita-testing.md](docs/vita-testing.md)) you get an *unsafe* app,
-which needs unsafe homebrew enabled in HENkaku's settings and then finds the copy where the Store
-put it, with nothing to copy: `ux0:pspemu/PSP/GAME/` first, then Adrenaline's memory sticks
-(`uma0:`, `imc0:`, `xmc0:`, `ur0:`, `grw0:`). With more than one copy installed that build takes a
-release it runs before one it only recognises, then the first folder by name; `spyro.log` lists
-them all, and `disc=ux0:pspemu/PSP/GAME/NPUI94228` in `config.txt` names one.
+**Why the copy has to be copied, and the VPK that doesn't need it.** `spyro-vita.vpk` is a *safe*
+homebrew app, like every release before it: it can read `ux0:data/` and its own folders, and not
+`ux0:pspemu`, where the Store installs the game. So it never looks there.
+
+A release also carries **`spyro-vita-unsafe.vpk`**: the same game built as an *unsafe* app
+(`-DSPYRO_UNSAFE=ON`, see [docs/vita-testing.md](docs/vita-testing.md)). It needs **Enable Unsafe
+Homebrew** switched on in HENkaku's settings, and can then read the whole memory card, so it finds
+the copy where the Store put it, with nothing to copy: `ux0:pspemu/PSP/GAME/` first, then
+Adrenaline's memory sticks (`uma0:`, `imc0:`, `xmc0:`, `ur0:`, `grw0:`). Install one VPK or the
+other: they are the same app (`SPYV00001`), so one replaces the other, and settings and saves stay.
+If you play from a disc image, or don't mind copying the `EBOOT.PBP`, take the safe one. With more
+than one copy installed the unsafe build takes a release it runs before one it only recognises,
+then the first folder by name; `spyro.log` lists them all, and
+`disc=ux0:pspemu/PSP/GAME/NPUI94228` in `config.txt` names one.
 
 On a PC, `pbp_extract EBOOT.PBP spyro-files` (`tools/pbp_extract.c`, built with the host build)
 writes the game's files as `extract_disc.py` would, if you want them.
