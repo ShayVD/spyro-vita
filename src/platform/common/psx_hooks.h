@@ -16,6 +16,12 @@ void psx_cd_vblank(void);              /* once per virtual vblank, before the VS
  * psx_cd_vblank() and each CdSync(1, ...) poll while a read is pending; 0
  * completes the read (and fires the callback) inside CdRead. */
 void psx_cd_set_read_latency(int ticks);
+/* With the native reads (D93): a CdRead completes at the first tick after the
+ * worker has finished it, not after the latency, so the game's loaders (which
+ * poll once a frame) animate the loading screen while the worker reads, as
+ * on the PS1 (D159). CdSync(0) and CdReadSync(0) still wait for it. The
+ * timing then depends on the file system, so the host leaves it off. */
+void psx_cd_set_read_async(int on);
 void psx_cd_set_log(int on); /* one stderr line per CdRead; also SPYRO_CD_LOG=1 */
 
 /* SPU (src/platform/common/libspu.c). */

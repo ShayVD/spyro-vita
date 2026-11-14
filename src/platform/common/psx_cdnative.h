@@ -32,6 +32,9 @@ void psx_cdn_read_finish(int lba, int count, void *dst);
 /* Waits for a posted read, which then counts as not posted (CdReadBreak,
  * CdInit, save states). */
 void psx_cdn_read_drain(void);
+/* 1 when no posted read is still in progress: the worker finished it, or none
+ * was posted (psx_cdn_read_finish then reads now). Doesn't wait (D159). */
+int psx_cdn_read_done(void);
 
 /* ---- the XA stream ---- */
 /* libcd.c: a ReadS/ReadN stream starts at lba (and after a state load). */

@@ -69,6 +69,7 @@ typedef struct {
                          as before */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int cd_native;      /* cd_native=1: CdReads as file reads on a worker, the XA stream read ahead (D93) */
+  int cd_async;       /* cd_async=1: a CdRead completes when the worker is done, the loaders animate meanwhile (D159) */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
   int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */

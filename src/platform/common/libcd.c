@@ -52,6 +52,7 @@ static struct {
   unsigned char *rd_buf;
   CdlCB read_cb, sync_cb, ready_cb;
   int latency, log;
+  int async; /* a native read completes when the worker is done (D159), not after latency ticks */
 } cd = {.latency = 1, .sync_status = CdlComplete, .stat = CdlStatStandby};
 
 static PsxCdStream s_stream = {.mix = {0x80, 0, 0, 0x80}};
@@ -304,6 +305,7 @@ int psx_cd_open(const char *disc_dir) {
 }
 
 void psx_cd_set_read_latency(int ticks) { cd.latency = ticks < 0 ? 0 : ticks; }
+void psx_cd_set_read_async(int on) { cd.async = on != 0; }
 void psx_cd_set_log(int on) { cd.log = on; }
 const PsxCdStream *psx_cd_stream(void) { return &s_stream; }
 
@@ -534,8 +536,23 @@ static void cd_complete_read(void) {
     cb(CdlComplete, cd.result);
 }
 
+/* an asynchronous read (D159): done when the worker is */
+static int cd_async_read(void) { return cd.async && cd_native_read(); }
+
 static void cd_tick(void) {
-  if (cd.rd_pending && --cd.rd_ticks <= 0)
+  if (!cd.rd_pending)
+    return;
+  if (cd_async_read() ? psx_cdn_read_done() : --cd.rd_ticks <= 0)
+    cd_complete_read();
+}
+
+/* CDLoadSync (cd.c) spins on m_IsReading calling CDLoadTime, without a VSync
+ * or a CdSync: on the PS1 the CD interrupt ends the loop. An asynchronous
+ * read is completed here, each time the loop comes round (D159; CDLoadTime
+ * calls this through patches/spyro-1-port/0011). The other modes complete
+ * inside CdRead or at a tick, as before, so the host's runs don't change. */
+void PortCdLoadPoll(void) {
+  if (cd.rd_pending && cd_async_read() && psx_cdn_read_done())
     cd_complete_read();
 }
 
@@ -716,7 +733,9 @@ int CdRead(int sectors, u_long *buf, int mode) {
   cd_set_stat();
   if (cd.log)
     fprintf(stderr, "libcd: CdRead lba %d sectors %d mode 0x%02x\n", cd.rd_lba, sectors, mode);
-  if (cd.latency == 0)
+  if (cd_async_read()) /* the worker reads; cd_tick completes it once done (D159) */
+    psx_cdn_read_post(cd.rd_lba, cd.rd_count, cd.rd_buf);
+  else if (cd.latency == 0)
     cd_complete_read();
   else if (cd_native_read()) /* read while the ticks pass; complete at the same tick */
     psx_cdn_read_post(cd.rd_lba, cd.rd_count, cd.rd_buf);

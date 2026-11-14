@@ -336,7 +336,7 @@ static void usage(void) {
           "[--cam-speed PERCENT]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
-          "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
+          "             [--mixer 1|3] [--cd-native] [--cd-async] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -715,6 +715,8 @@ int main(int argc, char **argv) {
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
     } else if (strcmp(a, "--cd-native") == 0) {
       s_cd_native = 1;
+    } else if (strcmp(a, "--cd-async") == 0) {
+      psx_cd_set_read_async(1); /* with --cd-native: the Vita's cd_async=1 (D159); not deterministic */
     } else if (strcmp(a, "--cd-stats") == 0) {
       psx_cd_set_clock(now_us);
       atexit(cd_stats_report);

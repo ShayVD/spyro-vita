@@ -415,6 +415,7 @@ static void job_wait(void) {
   __atomic_store_n(&s_job.state, J_IDLE, __ATOMIC_RELEASE);
 }
 
+int psx_cdn_read_done(void) { return __atomic_load_n(&s_job.state, __ATOMIC_ACQUIRE) != J_WANTED; }
 void psx_cdn_read_drain(void) {
   if (s_started)
     job_wait();

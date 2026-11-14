@@ -1,0 +1,20 @@
+diff --git a/src/cd.c b/src/cd.c
+--- a/src/cd.c
++++ b/src/cd.c
+@@ -4,7 +4,16 @@
+ #include "music.h"
+ #include "spu.h"
+ 
++#ifdef SPYRO_PORT
++void PortCdLoadPoll(void); /* src/platform/common/libcd.c */
++#endif
++
+ void CDLoadTime(void) {
++#ifdef SPYRO_PORT
++  // CDLoadSync spins here without a VSync; on the PS1 the CD interrupt ends
++  // the read. The port completes an asynchronous read here (D159).
++  PortCdLoadPoll();
++#endif
+ 
+   if (g_CDMaxReadTime == 0)
+     return; // No timer set

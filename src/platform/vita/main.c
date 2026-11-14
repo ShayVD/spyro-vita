@@ -136,8 +136,12 @@
  *                       from its start there (instead of xa_ahead's
  *                       windows); the same bytes, the same ticks (D93)
  *       cd_helper=0     with cd_native=1 and the digital copy: no helper
- *                       thread on core 2 decoding the second half of a long
- *                       read (default 1; D158)
+ *                       thread decoding the second half of a long read
+ *                       (default 1; D158)
+ *       cd_async=0      with cd_native=1: a CdRead completes inside CdRead
+ *                       again, freezing the loading screen for each read
+ *                       (default 1: it completes at the first vblank after
+ *                       the worker is done, and the loaders animate; D159)
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -318,6 +322,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
+                        .cd_async = 1,  /* D159 */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -476,6 +481,8 @@ static void read_config(void) {
       g_vita_opts.cd_native = atoi(v);
     else if (!strcmp(line, "cd_helper"))
       g_psx_cdn_helper = atoi(v); /* D158 */
+    else if (!strcmp(line, "cd_async"))
+      g_vita_opts.cd_async = atoi(v); /* D159 */
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
@@ -770,6 +777,11 @@ int main(int argc, char **argv) {
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
       vita_log("cd: native file reads and the XA stream on a worker on core 2, priority 0x88 "
                "(cd_native=1, D93)");
+      if (g_vita_opts.cd_async) {
+        psx_cd_set_read_async(1);
+        vita_log("cd: a CdRead completes at the first vblank after the worker is done; the loaders "
+                 "animate meanwhile (cd_async=1, D159)");
+      }
     } else {
       vita_log("cd: no worker thread for cd_native=1: the sector reads as before");
     }
