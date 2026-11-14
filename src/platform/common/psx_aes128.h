@@ -1,34 +1,19 @@
 /* AES-128 for the PS1 Classics EBOOT's PGD header (pbp.c, decisions D157):
- * tiny-AES-c (third_party/tiny-AES-c, the Unlicense; the owner's fork of
- * kokke's), one block at a time, with CBC over a buffer done here. The
- * configuration macros below must match the ones aes.c is compiled with
- * (cmake/platform_common.cmake). */
+ * kokke's tiny-AES-c (third_party/tiny-AES-c, upstream, the Unlicense), one
+ * block at a time, with CBC over a buffer done here. aes128.c is the only
+ * file that includes tiny-AES-c's header, so its ECB / CBC / CTR switches
+ * stay out of everything else. */
 #ifndef PSX_AES128_H
 #define PSX_AES128_H
-
-#ifndef AES128
-#define AES128 1
-#endif
-#ifndef AES_ENABLE_ECB
-#define AES_ENABLE_ECB 1
-#endif
-#ifndef AES_ENABLE_CBC
-#define AES_ENABLE_CBC 0
-#endif
-#ifndef AES_ENABLE_CTR
-#define AES_ENABLE_CTR 0
-#endif
-#ifndef AES_SBOX_MODE
-#define AES_SBOX_MODE 3 /* AES_SBOX_MODE_FAST: a table, not constant time; nothing secret here */
-#endif
-#include "../../../third_party/tiny-AES-c/aes.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* The expanded key: tiny-AES-c's struct AES_ctx for AES-128 with no CBC or
+ * CTR state (aes128.c checks the size). */
 typedef struct {
-  struct AES_ctx ctx;
+  unsigned char round_key[176];
 } PsxAes128;
 
 void psx_aes128_init(PsxAes128 *a, const unsigned char key[16]);

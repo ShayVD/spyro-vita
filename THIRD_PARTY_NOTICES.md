@@ -44,7 +44,7 @@ one object to `eboot.bin`. It was built with VitaSDK 2026.08 (built 2026-08-25, 
 | GCC runtime (`libgcc`, `libstdc++`) | GCC of VitaSDK 2026.08 | GPL-3.0 with the GCC Runtime Library Exception 3.1 | [licenses/GCC-RUNTIME-EXCEPTION-3.1.txt](licenses/GCC-RUNTIME-EXCEPTION-3.1.txt), [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt) |
 | [vita-headers](https://github.com/vitasdk/vita-headers) (the `Sce*_stub` import stubs) | VitaSDK 2026.08 | MIT | below |
 | [taiHEN](https://github.com/yifanlu/taiHEN) (`taihen_stub`) | vdpm `0.11` | MIT | below |
-| [tiny-AES-c](https://github.com/mistial-dev/tiny-AES-c) (AES-128 for the digital copy's header, D157) | vendored, commit `4258d2a` | Unlicense (public domain) | [third_party/tiny-AES-c/unlicense.txt](third_party/tiny-AES-c/unlicense.txt) |
+| [tiny-AES-c](https://github.com/kokke/tiny-AES-c) (AES-128 for the digital copy's header, D157) | vendored, upstream commit `2385675` | Unlicense (public domain) | [third_party/tiny-AES-c/unlicense.txt](third_party/tiny-AES-c/unlicense.txt) |
 
 `libpthread` (pthread-embedded, LGPL-2.1) is on the link line, but the map shows no object taken
 from it.
@@ -339,7 +339,8 @@ SOFTWARE.
 
 ### tiny-AES-c
 
-`third_party/tiny-AES-c` (kokke's tiny-AES-c, the owner's fork), the Unlicense:
+`third_party/tiny-AES-c` (kokke's tiny-AES-c, upstream at commit
+`23856752fbd139da0b8ca6e471a13d5bcc99a08d`, unchanged), the Unlicense:
 
 ```
 This is free and unencumbered software released into the public domain.
