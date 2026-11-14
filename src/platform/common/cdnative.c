@@ -36,6 +36,7 @@
 #include "psx_cd.h"
 #include "psx_cdimage.h"
 #include "psx_cdnative.h"
+#include "psx_pbp.h"
 #include "psx_spu.h"
 #include "psx_xa.h"
 
@@ -70,7 +71,6 @@ volatile int g_psx_cdn_busy;
 /* ---- the platform: files, a thread, two semaphores ---- */
 
 #ifdef __vita__
-#define PRIORITY 0x90 /* behind the mixer on core 1, as xa_ahead.c */
 static SceUID s_work, s_done, s_thread;
 static int fs_open(const char *path) {
   SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
@@ -142,6 +142,215 @@ static int timed_pread(int fd, void *buf, int n, long off, unsigned *calls, unsi
   return got;
 }
 
+/* ---- the digital copy (D157, D158) ---- */
+
+int g_psx_cdn_helper = 1;
+
+/* Where the Vita's worker runs, chosen in psx_cdn_start by what the disc is:
+ * - an image or extracted files: core 1 at 0x90, behind the mixer, as
+ *   xa_ahead.c and as since D93 (a stream chunk is a 1 ms file read);
+ * - the digital copy: core 2 at 0x88, below the render thread (0x80). Its
+ *   stream chunks are 50 ms decodes, and on core 1 at 0x90 they held up the
+ *   walk the game thread joins every tick (D158's stutter). */
+enum { CORE_IMAGE = 1, PRIORITY_IMAGE = 0x90, CORE_COPY = 2, PRIORITY_COPY = 0x88 };
+static int s_core = CORE_IMAGE, s_priority = PRIORITY_IMAGE;
+void psx_cdn_where(int *core, int *priority) {
+  *core = s_core;
+  *priority = s_priority;
+}
+
+/* The worker's own handle on the copy and the helper thread's, made at their
+ * first read; psx_cdimage_close drops them (psx_cdn_pbp_drop, after the
+ * worker is quiet), so a clone is always of the copy that is open. Each
+ * thread publishes its handle's counts after a read (s_snap), so the game
+ * thread's stats never touch a handle another thread owns. */
+static PsxPbp *s_pbp, *s_pbp2;
+static PsxPbpStats s_snap[2];  /* the worker's and the helper's, each one writer */
+static PsxPbpStats s_pbp_gone; /* the counts of handles dropped since */
+static int s_pbp_failed;
+/* the gate (D158): open while the game thread's handle may be cloned; shut by
+ * psx_cdn_quiesce before that handle goes, and read by the worker after it
+ * raised g_psx_cdn_busy, so a worker that wakes late sees it shut */
+static volatile int s_pbp_gate = 1;
+
+static void add_stats(PsxPbpStats *sum, const PsxPbpStats *st) {
+  sum->blocks += st->blocks, sum->hits += st->hits, sum->reads += st->reads;
+  sum->read_bytes += st->read_bytes, sum->read_us += st->read_us, sum->decode_us += st->decode_us;
+}
+
+static PsxPbp *clone_of_open(PsxPbp **slot) {
+  PsxPbp *game;
+  if (!__atomic_load_n(&s_pbp_gate, __ATOMIC_SEQ_CST) || !(game = psx_cdimage_pbp()))
+    return NULL;
+  if (!*slot && psx_pbp_clone(game, slot) != 0 && !s_pbp_failed++)
+    fprintf(stderr, "libcd: cd_native: no handle of its own on %s: its reads give zeros\n", psx_pbp_path(game));
+  return *slot;
+}
+
+void psx_cdn_quiesce(void) {
+  __atomic_store_n(&s_pbp_gate, 0, __ATOMIC_SEQ_CST);
+  if (!s_started)
+    return;
+  psx_cdn_read_drain();
+  while (__atomic_load_n(&g_psx_cdn_busy, __ATOMIC_SEQ_CST)) { /* a stream chunk in progress: let it finish */
+#ifdef __vita__
+    sceKernelDelayThread(1000);
+#else
+    usleep(1000);
+#endif
+  }
+}
+
+void psx_cdn_pbp_drop(void) {
+  PsxPbp **slots[2] = {&s_pbp, &s_pbp2};
+  int i;
+  for (i = 0; i < 2; i++) {
+    if (*slots[i]) {
+      psx_pbp_stats(*slots[i], &s_snap[i]);
+      psx_pbp_close(*slots[i]);
+      *slots[i] = NULL;
+    }
+    add_stats(&s_pbp_gone, &s_snap[i]);
+    memset(&s_snap[i], 0, sizeof s_snap[i]);
+  }
+}
+
+void psx_cdn_pbp_opened(void) { __atomic_store_n(&s_pbp_gate, 1, __ATOMIC_SEQ_CST); }
+
+void psx_cdn_pbp_stats(PsxPbpStats *out) {
+  *out = s_pbp_gone; /* the snapshots are read across threads: approximate while it runs */
+  add_stats(out, &s_snap[0]);
+  add_stats(out, &s_snap[1]);
+}
+
+int psx_cdn_pbp_report(char *out, size_t cap) {
+  PsxPbpStats g, w;
+  if (!psx_cdimage_pbp())
+    return 0;
+  psx_cdimage_pbp_stats(&g);
+  psx_cdn_pbp_stats(&w);
+  snprintf(out, cap,
+           "cd: digital copy: %u blocks decoded in %u ms (%u from the cache), %u file reads of %u KB in %u ms; "
+           "the worker %u blocks in %u ms, %u reads of %u KB in %u ms",
+           g.blocks, (unsigned)(g.decode_us / 1000), g.hits, g.reads, (unsigned)(g.read_bytes >> 10),
+           (unsigned)(g.read_us / 1000), w.blocks, (unsigned)(w.decode_us / 1000), w.reads,
+           (unsigned)(w.read_bytes >> 10), (unsigned)(w.read_us / 1000));
+  return 1;
+}
+
+/* The helper thread (D158): the second half of a long read of the copy is
+ * decoded on another core while the worker decodes the first. Its own
+ * semaphores and its own clone; it writes only its own part of s_scratch. */
+#ifdef __vita__
+static SceUID s_help_work, s_help_done, s_help_thread;
+#else
+static sem_t s_help_work_sem, s_help_done_sem;
+static sem_t *const s_help_work = &s_help_work_sem, *const s_help_done = &s_help_done_sem;
+static pthread_t s_help_thread;
+#endif
+static int s_help_started;
+static struct {
+  int lba, count;
+  unsigned char *dst;
+  int ok;
+} s_help;
+
+#ifdef __vita__
+static int helper(SceSize args, void *argp) {
+  (void)args, (void)argp;
+#else
+static void *helper(void *arg) {
+  (void)arg;
+#endif
+  for (;;) {
+    PsxPbp *p;
+    sem_take(s_help_work);
+    p = clone_of_open(&s_pbp2);
+    s_help.ok = p && psx_pbp_read_sectors(p, s_help.lba, s_help.count, s_help.dst) == 0;
+    if (p)
+      psx_pbp_stats(p, &s_snap[1]);
+    sem_signal(s_help_done);
+  }
+#ifdef __vita__
+  return 0;
+#else
+  return NULL;
+#endif
+}
+
+static int helper_start(void) {
+  if (s_help_started)
+    return 0;
+#ifdef __vita__
+  s_help_work = sceKernelCreateSema("spyro_cd_help", 0, 0, 1, NULL);
+  s_help_done = sceKernelCreateSema("spyro_cd_helped", 0, 0, 1, NULL);
+  /* core 1, below the parse thread (0x98) and the presenter (0x9A), which are idle during a load */
+  s_help_thread = sceKernelCreateThread("spyro_cd_help", helper, 0x9C, 0x4000, 0, SCE_KERNEL_CPU_MASK_USER_1, NULL);
+  if (s_help_work < 0 || s_help_done < 0 || s_help_thread < 0 || sceKernelStartThread(s_help_thread, 0, NULL) < 0) {
+    if (s_help_thread >= 0)
+      sceKernelDeleteThread(s_help_thread);
+    if (s_help_done >= 0)
+      sceKernelDeleteSema(s_help_done);
+    if (s_help_work >= 0)
+      sceKernelDeleteSema(s_help_work);
+    return -1;
+  }
+#else
+  if (sem_init(s_help_work, 0, 0))
+    return -1;
+  if (sem_init(s_help_done, 0, 0)) {
+    sem_destroy(s_help_work);
+    return -1;
+  }
+  if (pthread_create(&s_help_thread, NULL, helper, NULL)) {
+    sem_destroy(s_help_work);
+    sem_destroy(s_help_done);
+    return -1;
+  }
+#endif
+  s_help_started = 1;
+  return 0;
+}
+
+/* m raw sectors from loc's sector first_rel on into s_scratch: an image's
+ * by offset, the digital copy's through its decoder, split at a block
+ * boundary with the helper when it is long enough. Returns the bytes. */
+static int read_raw(const PsxCdLoc *loc, int first_rel, int m, unsigned *calls, unsigned *kb,
+                    unsigned long long *us) {
+  if (loc->pbp) {
+    unsigned long long t0 = psx_cd_now();
+    PsxPbp *p = clone_of_open(&s_pbp);
+    int first = (int)loc->offset + first_rel, got = 0, mine = m, split = 0;
+    /* a CdRead's piece (up to 8 blocks), not the stream's 2-block chunks: those
+     * would lose the cached boundary block between one chunk and the next */
+    if (p && s_help_started && m >= 4 * PSX_PBP_BLOCK_SECTORS) {
+      int mid = (first + m / 2) & ~(PSX_PBP_BLOCK_SECTORS - 1); /* the helper's half starts on a block */
+      if (mid > first && mid < first + m) {
+        s_help.lba = mid;
+        s_help.count = first + m - mid;
+        s_help.dst = s_scratch + (size_t)(mid - first) * PSX_PBP_SECTOR;
+        mine = mid - first;
+        split = 1;
+        sem_signal(s_help_work);
+      }
+    }
+    if (p && psx_pbp_read_sectors(p, first, mine, s_scratch) == 0)
+      got = mine * PSX_PBP_SECTOR;
+    if (p)
+      psx_pbp_stats(p, &s_snap[0]);
+    if (split) {
+      sem_take(s_help_done);
+      got = got == mine * PSX_PBP_SECTOR && s_help.ok ? m * PSX_PBP_SECTOR : 0;
+    }
+    (*calls)++;
+    *kb += (unsigned)got / 1024;
+    *us += psx_cd_now() - t0;
+    return got;
+  }
+  return timed_pread(fd_for(loc->path), s_scratch, m * loc->stride,
+                     loc->offset + (long)first_rel * loc->stride, calls, kb, us);
+}
+
 /* ---- CdRead ---- */
 
 enum { J_IDLE, J_WANTED, J_DONE };
@@ -164,17 +373,16 @@ static void read_range(int lba, int count, unsigned char *dst) {
       continue;
     }
     n = count < loc.left ? count : loc.left;
-    fd = fd_for(loc.path);
     if (loc.stride == 2048) { /* an extracted data file: its bytes are the sectors' */
       int want = n * 2048;
+      fd = fd_for(loc.path);
       int got = timed_pread(fd, dst, want, loc.offset, &s_st.reads, &s_st.kbytes, &s_st.us);
       memset(dst + got, 0, (size_t)(want - got));
     } else {
       int done = 0;
       while (done < n) {
         int m = n - done < SCRATCH ? n - done : SCRATCH, k;
-        int got = timed_pread(fd, s_scratch, m * loc.stride, loc.offset + (long)done * loc.stride,
-                              &s_st.reads, &s_st.kbytes, &s_st.us);
+        int got = read_raw(&loc, done, m, &s_st.reads, &s_st.kbytes, &s_st.us);
         for (k = 0; k < m; k++) {
           unsigned char *out = dst + (size_t)(done + k) * 2048;
           long have = (long)got - (long)k * loc.stride - loc.data_skip;
@@ -217,6 +425,7 @@ static void job_wait(void) {
   __atomic_store_n(&s_job.state, J_IDLE, __ATOMIC_RELEASE);
 }
 
+int psx_cdn_read_done(void) { return __atomic_load_n(&s_job.state, __ATOMIC_ACQUIRE) != J_WANTED; }
 void psx_cdn_read_drain(void) {
   if (s_started)
     job_wait();
@@ -295,8 +504,7 @@ static void fill(Chunk *c) {
       }
       continue;
     }
-    got = timed_pread(fd_for(loc.path), s_scratch, m * loc.stride, loc.offset, &s_st.chunk_reads,
-                      &s_st.chunk_kb, &s_st.chunk_us);
+    got = read_raw(&loc, 0, m, &s_st.chunk_reads, &s_st.chunk_kb, &s_st.chunk_us);
     for (k = 0; k < m; k++, i++) {
       const unsigned char *src = s_scratch + (size_t)k * loc.stride + loc.raw_skip;
       if ((long)k * loc.stride + loc.raw_skip + PSX_CD_RAW_SECTOR > got)
@@ -338,9 +546,9 @@ static void *worker(void *arg) {
 #endif
   for (;;) {
     Chunk *c;
-    g_psx_cdn_busy = 0;
+    __atomic_store_n(&g_psx_cdn_busy, 0, __ATOMIC_SEQ_CST);
     sem_take(s_work);
-    g_psx_cdn_busy = 1;
+    __atomic_store_n(&g_psx_cdn_busy, 1, __ATOMIC_SEQ_CST); /* before any look at the gate (clone_of_open) */
     for (;;) { /* a CdRead first: the game thread may be waiting for it */
       if (__atomic_load_n(&s_job.state, __ATOMIC_ACQUIRE) == J_WANTED) {
         unsigned long long t0 = psx_cd_now();
@@ -370,14 +578,21 @@ int psx_cdn_start(void) {
     return 0;
   }
   s_chunk = calloc(NCHUNK, sizeof *s_chunk);
+  /* a scratch buffer in memory the CPU doesn't cache was tried (D158): no gain on the Vita */
   s_scratch = malloc((size_t)SCRATCH * MAX_STRIDE);
   if (!s_chunk || !s_scratch)
     goto fail;
+  if (g_psx_cdn_helper && psx_cdimage_pbp() && helper_start() != 0)
+    fprintf(stderr, "libcd: cd_native: no helper thread; the copy decoded on the worker alone\n");
+  /* the disc is open by now (the Vita's main.c, the host's): the copy moves the worker (D158) */
+  s_core = psx_cdimage_pbp() ? CORE_COPY : CORE_IMAGE;
+  s_priority = psx_cdimage_pbp() ? PRIORITY_COPY : PRIORITY_IMAGE;
 #ifdef __vita__
   s_work = sceKernelCreateSema("spyro_cd_work", 0, 0, 1 << 20, NULL);
   s_done = sceKernelCreateSema("spyro_cd_done", 0, 0, 1, NULL);
-  s_thread = sceKernelCreateThread("spyro_cd", worker, PRIORITY, 0x4000, 0,
-                                   SCE_KERNEL_CPU_MASK_USER_1, NULL);
+  s_thread = sceKernelCreateThread("spyro_cd", worker, s_priority, 0x4000, 0,
+                                   s_core == CORE_COPY ? SCE_KERNEL_CPU_MASK_USER_2 : SCE_KERNEL_CPU_MASK_USER_1,
+                                   NULL);
   if (s_work < 0 || s_done < 0 || s_thread < 0 || sceKernelStartThread(s_thread, 0, NULL) < 0)
     goto fail;
 #else

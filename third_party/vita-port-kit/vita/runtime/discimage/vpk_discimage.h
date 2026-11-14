@@ -8,12 +8,13 @@
  * game's sequential reads cost one call per 32 sectors.  vpk_disc_find looks a file up by ISO9660 path,
  * vpk_disc_walk lists the whole directory tree (with each record's CD-XA attributes).  SHA-1 for disc checks.
  * vpk_disc_find_image picks the image in a data folder (cue sheets first, vpk_cue_parse), vpk_disc_boot_serial
- * reads SYSTEM.CNF's boot line; what each refusal says to the player stays in the game.
+ * reads SYSTEM.CNF's boot line; what each refusal says to the player stays in the game.  vpk_disc_open_source
+ * serves the same reads, lookups and walk from sectors the game supplies (a container it decodes itself).
  *
  * From kh1-decomp host/port/cd_image.c @ 85befa4a (2048 / 2352 images, 64-bit reads, the path lookup) and
  * spyro-vita src/platform/common/cdimage.c @ 987363e (sniffing, sync-pattern layout and pregap, windows, the
  * directory walk, SHA-1; decisions D58, D60) and @ bb62f38 (the folder search, the cue sheet, the boot serial;
- * D60). */
+ * D60); vpk_disc_open_source from spyro-vita PR #146 (D158). */
 #ifndef VPK_DISCIMAGE_H
 #define VPK_DISCIMAGE_H
 
@@ -44,14 +45,30 @@ typedef struct {
   /* optional I/O accounting: now() before each file-system read, io(bytes, t0) after it */
   unsigned long long (*now)(void);
   void (*io)(unsigned bytes, unsigned long long t0);
+  /* a source of sectors in place of a file (vpk_disc_open_source): the last sector it gave */
+  int (*source)(void *user, int lba, unsigned char raw[2352]);
+  void *source_user;
+  int source_lba;
+  unsigned char *source_buf;
 } VpkDisc;
+
+/* Opens d over a source of raw sectors in place of a file, for a disc kept in a container the game decodes itself
+ * (spyro-vita reads the PlayStation Store's compressed PBP this way, its D158): read(user, lba, raw) fills the
+ * 2352-byte raw sector at lba (mode 2: the subheader at 16, form 1's data at 24) and returns 0, or nonzero when it
+ * can't; nsect is how many sectors it holds, from LBA 0.  vpk_disc_read_raw, vpk_disc_read, vpk_disc_find and
+ * vpk_disc_walk then work as on a raw image, through a one-sector buffer: no windows, and the now / io hooks aren't
+ * called (the source counts its own reads).  user must stay valid until vpk_disc_close.  0, or -1 (no memory, no
+ * read, nsect <= 0); d as for vpk_disc_open. */
+int vpk_disc_open_source(VpkDisc *d, int (*read)(void *user, int lba, unsigned char raw[2352]), void *user,
+                         int nsect);
 
 /* What path is: VPK_DISC_RAW (with *l: sector size, first LBA from the first sync pattern whose next sector has one
  * too, data offset from sector 16's mode), VPK_DISC_ISO (2048-byte sectors, "CD001" at sector 16), a container to
  * convert (CHD, PBP, ECM), unknown, or unreadable.  Reads the first ~720 KiB. */
 int vpk_disc_sniff(const char *path, VpkDiscLayout *l);
-/* Opens path with layout l (d zeroed before its first open; a reopen keeps the windows' buffers) (from vpk_disc_sniff); windows 1: reads through two 32-sector windows, 0: straight to
- * the file.  0 on success, -1 if it cannot be opened, -2 if its size cannot be read. */
+/* Opens path with layout l (from vpk_disc_sniff); d zeroed before its first open, and an open d is closed first (a
+ * reopen keeps the windows' buffers).  windows 1: reads through two 32-sector windows, 0: straight to the file.
+ * 0 on success, -1 if it cannot be opened, -2 if its size cannot be read. */
 int vpk_disc_open(VpkDisc *d, const char *path, const VpkDiscLayout *l, int windows);
 /* vpk_disc_sniff then vpk_disc_open for a raw image or an .iso, and the primary volume descriptor checked (type 1,
  * "CD001"); 0 on success, else -1 (d is left closed). */

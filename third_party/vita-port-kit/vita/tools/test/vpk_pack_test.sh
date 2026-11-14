@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # vpk_pack.py and vita/cmake/VpkApp.cmake on three tiny apps (needs vitasdk, cmake and ninja; no game data):
-#   good  VPK_PROCESS_PARAMS: both pack, and give the same param.sfo values and file list
+#   good  VPK_PROCESS_PARAMS: both pack, and give the same param.sfo values and file list; safe by default,
+#         unsafe with --unsafe / UNSAFE (the eboot.bin's authority ID), nothing else in the VPK changed
 #   bad   no process parameters at all (newlib still leaves an undefined weak _newlib_heap_size_user): both refuse
 #   lto   the two variables without `used`, -flto: the stack size is dropped, both refuse
 #   tight good's code with .rodata padded until the text ends 500 bytes before the data segment, less than the
@@ -67,7 +68,15 @@ for app in bad lto; do
   [[ ! -e "$T/py/$app.vpk" ]] || fail "python left $app.vpk"
 done
 grep -q "_newlib_heap_size_user" "$T/py-bad.log" || fail "python bad: the weak heap reference passed"
-echo "ok: vpk_pack.py packs good, refuses bad and lto"
+grep -qx "eboot safe (authority 0x2f00000000000002)" "$T/py.show" || { cat "$T/py.show"; fail "python: good isn't a safe app"; }
+$PACK pack --elf "$T/good.elf" --vpk "$T/py-unsafe/good.vpk" --title-id VPKT00001 --version 01.02 --name "Kit Test" \
+  --unsafe --placeholder-art --file "$T/good.c=src/good.c" >/dev/null
+$PACK show "$T/py-unsafe/good.vpk" > "$T/py-unsafe.show"
+grep -qx "eboot unsafe (authority 0x2f00000000000001)" "$T/py-unsafe.show" || { cat "$T/py-unsafe.show"; fail "python --unsafe: not an unsafe app"; }
+if ! diff <(grep -v "^eboot \|^file eboot.bin " "$T/py.show") <(grep -v "^eboot \|^file eboot.bin " "$T/py-unsafe.show"); then
+  fail "python: --unsafe changed more than the eboot.bin"
+fi
+echo "ok: vpk_pack.py packs good (safe; unsafe with --unsafe), refuses bad and lto"
 
 # Python, tight: fails with the fix named, packs once linked with the headroom
 if $PACK pack --elf "$T/tight.elf" --vpk "$T/py/tight.vpk" --title-id VPKT00001 --version 01.02 --name x \
@@ -105,6 +114,9 @@ endif()
 if(DEFINED HEADROOM_ARG)
   set(extra SCE_HEADROOM \${HEADROOM_ARG})
 endif()
+if(UNSAFE_ARG)
+  list(APPEND extra UNSAFE)
+endif()
 add_executable(\${app} \${src}.c)
 target_include_directories(\${app} PRIVATE "$KIT/vita/runtime/procparam")
 target_compile_definitions(\${app} PRIVATE PAD=$PAD)
@@ -136,7 +148,14 @@ $PACK show "$T/cm/b-good/good.vpk" > "$T/cm.show"
 if ! diff <(grep -v "^file eboot.bin " "$T/py.show") <(grep -v "^file eboot.bin " "$T/cm.show"); then
   fail "python and cmake VPKs differ"
 fi
-echo "ok: VpkApp.cmake packs good the same as vpk_pack.py, refuses bad and lto"
+cmake -S "$T/cm" -B "$T/cm/b-unsafe" -G Ninja -DAPP=good -DUNSAFE_ARG=ON \
+  -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake" > "$T/cm-unsafe.log" 2>&1 \
+  && cmake --build "$T/cm/b-unsafe" >> "$T/cm-unsafe.log" 2>&1 || { cat "$T/cm-unsafe.log"; fail "cmake build good UNSAFE"; }
+$PACK show "$T/cm/b-unsafe/good.vpk" > "$T/cm-unsafe.show"
+if ! diff <(grep -v "^file eboot.bin " "$T/py-unsafe.show") <(grep -v "^file eboot.bin " "$T/cm-unsafe.show"); then
+  fail "python --unsafe and cmake UNSAFE VPKs differ"
+fi
+echo "ok: VpkApp.cmake packs good the same as vpk_pack.py (safe, and unsafe with UNSAFE), refuses bad and lto"
 
 # CMake, tight: SCE_HEADROOM and VPK_SCE_HEADROOM reach the link line and the ELF; without either it fails
 for app in tight tight_arg tight_var; do

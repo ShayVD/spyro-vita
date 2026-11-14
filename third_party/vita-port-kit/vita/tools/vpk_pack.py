@@ -4,9 +4,10 @@ From kh1-decomp tools/vita/build.py @ 85befa4a (package(), png_icon() and the li
 runs the same commands for CMake games (spyro-vita).
 
     vpk_pack.py pack --elf APP.elf --vpk OUT.vpk --title-id ABCD00001 --version 01.00 --name "Title"
-                     [--file SRC=DEST]... [--placeholder-art] [--work DIR]
+                     [--file SRC=DEST]... [--placeholder-art] [--work DIR] [--unsafe]
     vpk_pack.py check APP.elf        the process-parameter check alone, and the room after the text segment
-    vpk_pack.py show OUT.vpk         param.sfo's values and the file list (name, size, crc32): diff two builds' output
+    vpk_pack.py show OUT.vpk         param.sfo's values, whether the eboot.bin is a safe or an unsafe app, and the
+                                     file list (name, size, crc32): diff two builds' output
 
 The steps are vita-elf-create, vita-make-fself -s -c, vita-mksfoex with APP_VER, TITLE_ID and ATTRIBUTE2=12 (the
 extended memory budget), and vita-pack-vpk with the sce_sys files. Before them the ELF must still define
@@ -20,11 +21,16 @@ starts at a 64 KiB boundary after it; when text ends closer to it than that, it 
 (VpkApp.cmake's SCE_HEADROOM). It says so when vita-elf-create fails that way, and warns before packing when the gap
 is under 16 KiB, since the next change that grows or shrinks the text can hit it.
 
+--unsafe leaves out vita-make-fself's -s (VpkApp.cmake's UNSAFE): the app sees the whole file system (ux0:pspemu,
+ur0: ...) and starts only where the owner enabled unsafe homebrew in HENkaku's settings. Take it only for a feature
+that needs those folders.
+
 --placeholder-art writes a plain one-colour icon0.png, LiveArea bg.png, startup.png and template.xml into the work
 folder and packs them, for a game with no art of its own. --file SRC=DEST adds a file (DEST is the path in the VPK,
 sce_sys/icon0.png ...). vitasdk comes from $VITASDK (default /usr/local/vitasdk).
 
-As a module: check_procparams(), text_gap(), sce_headroom(), pack(), placeholder_livearea(), read_sfo(), show().
+As a module: check_procparams(), text_gap(), sce_headroom(), pack(), placeholder_livearea(), read_sfo(),
+self_authority(), show().
 """
 import argparse
 import os
@@ -128,8 +134,9 @@ def placeholder_livearea(sysdir, icon=(0x20, 0x30, 0x80), bg=(0x10, 0x18, 0x40),
              "livearea/contents/template.xml")]
 
 
-def pack(elf, vpk, title_id, version, name, files=(), work=None, b=None):
-    """elf -> work/<elf>.velf, work/eboot.bin, work/param.sfo -> vpk (files: (src, dest) pairs). Raises PackError."""
+def pack(elf, vpk, title_id, version, name, files=(), work=None, b=None, unsafe=False):
+    """elf -> work/<elf>.velf, work/eboot.bin, work/param.sfo -> vpk (files: (src, dest) pairs). unsafe: an unsafe
+    app (vita-make-fself without -s). Raises PackError."""
     if not re.fullmatch(r"[A-Z]{4}[0-9]{5}", title_id):
         raise PackError("title id %r is not four capitals and five digits (ABCD00001)" % title_id)
     if not re.fullmatch(r"[0-9]{2}\.[0-9]{2}", version):
@@ -154,7 +161,7 @@ def pack(elf, vpk, title_id, version, name, files=(), work=None, b=None):
             raise PackError("%s\nNo room for the SCE data after the text segment: %s" % (e, HEADROOM_FIX))
         raise
     eboot = os.path.join(work, "eboot.bin")
-    run([b + "vita-make-fself", "-s", "-c", velf, eboot], "vita-make-fself")
+    run([b + "vita-make-fself"] + ([] if unsafe else ["-s"]) + ["-c", velf, eboot], "vita-make-fself")
     sfo = os.path.join(work, "param.sfo")
     run([b + "vita-mksfoex", "-s", "APP_VER=" + version, "-s", "TITLE_ID=" + title_id,
          "-d", "ATTRIBUTE2=%d" % ATTRIBUTE2, name, sfo], "vita-mksfoex")
@@ -183,14 +190,33 @@ def read_sfo(data):
     return out
 
 
+SAFE_AUTHORITY = 0x2F00000000000002    # vita-make-fself -s
+UNSAFE_AUTHORITY = 0x2F00000000000001  # without it
+
+
+def self_authority(eboot):
+    """An eboot.bin's program authority ID (the first field of the SELF's app info, whose offset is at 0x38): what
+    vita-make-fself's -s sets, and what the Vita checks against the owner's unsafe-homebrew setting."""
+    if len(eboot) < 0x40 or eboot[:4] != b"SCE\0":
+        raise PackError("eboot.bin is not a SELF")
+    at = struct.unpack_from("<Q", eboot, 0x38)[0]
+    if at + 8 > len(eboot):
+        raise PackError("eboot.bin's app info lies past its end")
+    return struct.unpack_from("<Q", eboot, at)[0]
+
+
 def show(vpk):
-    """Lines describing a VPK: its param.sfo values, then each file's name, size and crc32."""
+    """Lines describing a VPK: its param.sfo values, the eboot.bin's safe / unsafe kind, then each file's name, size
+    and crc32."""
     lines = []
     with zipfile.ZipFile(vpk) as z:
         infos = sorted(z.infolist(), key=lambda i: i.filename)
         sfo = read_sfo(z.read("sce_sys/param.sfo"))
         for k in sorted(sfo):
             lines.append("sfo %s=%s" % (k, sfo[k]))
+        auth = self_authority(z.read("eboot.bin"))
+        lines.append("eboot %s (authority 0x%016x)"
+                     % ({SAFE_AUTHORITY: "safe", UNSAFE_AUTHORITY: "unsafe"}.get(auth, "unknown"), auth))
         for i in infos:
             lines.append("file %s %d %08x" % (i.filename, i.file_size, i.CRC))
     return lines
@@ -208,6 +234,7 @@ def main():
     p.add_argument("--file", action="append", default=[], metavar="SRC=DEST")
     p.add_argument("--placeholder-art", action="store_true")
     p.add_argument("--work", help="folder for the .velf, eboot.bin, param.sfo (default: the VPK's)")
+    p.add_argument("--unsafe", action="store_true", help="an unsafe app: vita-make-fself without -s")
     sub.add_parser("check").add_argument("elf")
     sub.add_parser("show").add_argument("vpk")
     a = ap.parse_args()
@@ -235,7 +262,7 @@ def main():
                 if not sep:
                     ap.error("--file wants SRC=DEST: %s" % f)
                 files.append((src, dest))
-            pack(a.elf, a.vpk, a.title_id, a.version, a.name, files, work)
+            pack(a.elf, a.vpk, a.title_id, a.version, a.name, files, work, unsafe=a.unsafe)
             print("vpk: %s" % a.vpk)
     except PackError as e:
         print("vpk: %s" % e)

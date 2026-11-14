@@ -27,11 +27,15 @@ cmake --build build/vita
 ```
 
 The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`, version
-01.10). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
+01.20). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
 time by `tools/vita/make_livearea.py`, decisions D55, or, as now, converted from `assets/livearea/` (the committed official art), or from your own art in the gitignored `disc/livearea/` when that holds `icon0.png`, `bg.png` and `startup.png`: `tools/vita/livearea_local.sh LOGO TITLE [GATE]` makes them, then re-run cmake; D59), `README.md` and `licenses/`. CI builds the
 same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
 `docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
+- The VPK is a safe app (`-DSPYRO_UNSAFE=OFF`, the default; D157): it plays a disc image, the extracted files, or the
+  PlayStation Store copy's `EBOOT.PBP` from `ux0:data/spyro/`. `-DSPYRO_UNSAFE=ON` (or
+  `SPYRO_CMAKE_ARGS=-DSPYRO_UNSAFE=ON` for `tools/ci/build_vpk.sh`) builds an unsafe app that also looks for the Store
+  copy in `ux0:pspemu`; neither CI nor a release builds that.
 - The VPK uses native memory (decisions D106): the game's data labels are ordinary globals and its memory one block
   from the heap. `-DSPYRO_NATIVE_MEM=OFF` (or `SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=OFF` for `tools/ci/build_vpk.sh`)
   builds the moved arena of D25 instead, the default before D106.
@@ -62,14 +66,45 @@ spyro-files` (decisions D58) and copy the *contents* of `spyro-files/` to `ux0:d
 (`manifest.json` included, the `.STR` files as they are). When `manifest.json` is there it wins over
 any image (`libcd: extracted files ...` in the log).
 
+**Or the digital copy** (decisions D157, D158): the PlayStation Store's Spyro is installed on the
+Vita as `ux0:pspemu/PSP/GAME/NPUI94228/EBOOT.PBP` (NPEE00076 holds the same USA disc; NPJI00062 is
+the Japanese disc and is refused as not supported yet). Copy that `EBOOT.PBP` into `ux0:data/spyro/`
+with VitaShell, with no image and no `manifest.json` beside it (an image there is taken first):
+the app opens it in place as the disc (`libcd: digital copy ux0:data/spyro/EBOOT.PBP: SCUS94228
+"Spyro the Dragon™", PGD header, 281280 sectors`, then the same `disc:` line as an image's; the
+first start hashes `WAD.WAD` through the decoder, about a minute). This works with the VPK as
+released and as CI builds it, which is a safe app.
+
+A safe app can't read `ux0:pspemu`, so it doesn't look there, and its log has no line about it.
+`-DSPYRO_UNSAFE=ON` at configure time (default `OFF`) builds an unsafe app instead: the Vita
+must have unsafe homebrew enabled in HENkaku's settings, the log says `disc: an unsafe build: ...`
+at the start, and with nothing usable in the data folder the app finds the installed copy itself
+(`libcd: ... is SCUS94228` for every copy found, the chosen one first, then `libcd: digital copy
+ux0:pspemu/.../EBOOT.PBP: ...`). `disc=ux0:pspemu/PSP/GAME/NPJI00062` in `config.txt` opens one
+folder's copy instead of the scan's choice (an unsafe build only: a safe one can't open the
+folder and shows `NO DISC IMAGE FOUND` for it). `vpk_pack.py show build/vita/spyro-vita.vpk`
+(`third_party/vita-port-kit/vita/tools/`) prints `eboot safe` or `eboot unsafe` for a VPK.
+
+**What changes with a copy and what doesn't** (D158, D159). With a disc image or the extracted
+files, nothing: the CD worker is on core 1 at priority 0x90 and a CdRead completes inside CdRead,
+as in v1.2.0, and the start-up log has the one `cd:` line it had (`cd: native file reads and the
+XA stream on a worker on core 1, priority 0x90 (cd_native=1, D93)`). With a digital copy open,
+the same line says `core 2, priority 0x88`, a second line says `cd: a CdRead completes at the
+first vblank after the worker is done ... (cd_async=1, D159: the digital copy's default)`, and
+two lines join the `cd:` line every 300 vblanks: `cd: digital copy:` (the decoder's counts) and
+`cd: asynchronous CdReads (D159): N completed at a vblank, ... N waited for in a loop that polls
+without a vblank (CDLoadSync), ...` (where each read was completed; the waits are the game's own
+synchronous loads).
+
 When the game can't start it shows a panel saying why, and X, O or START quits (the same text is in
 `spyro.log`, after `disc:`):
 
 | Panel title | When |
 |---|---|
-| `NO DISC IMAGE FOUND` | no `manifest.json` and no image in the folder |
+| `NO DISC IMAGE FOUND` | no `manifest.json`, no image and no digital copy in the folder (D157); an unsafe build also found no copy installed on the Vita, and its text says so |
 | `AN ISO HAS NO MUSIC` | a 2048-byte `.iso` |
-| `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE USED` | `.chd`, `.ecm`, PSP `EBOOT.PBP` |
+| `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE READ AS A DISC` | `.chd`, `.ecm`, a PSP `EBOOT.PBP` that isn't a PS1 Classic of Spyro |
+| `CAN'T READ THE DIGITAL COPY`, `THE DIGITAL COPY IS DAMAGED` | the digital copy's `EBOOT.PBP` can't be decoded, or its file list can't be read (D157); its executable and `WAD.WAD` get the same `WRONG VERSION OF THE GAME` and `BAD DUMP` checks as an image |
 | `WRONG DISC` | no known release's executable (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
 | `WRONG VERSION OF THE GAME` | the executable's SHA-1 isn't its release's (`SCUS_942.28`: `84e3728a…`; `SCES_014.38`: `fdd04c04…`) |
 | `NOT SUPPORTED YET` | the Japanese release, SCPS-10083 (PAL was refused this way until D154) |
@@ -122,7 +157,9 @@ Files the app writes:
 | `render_thread=0` | GPU: every GL call on the game thread, as before D63. Default 1 since D68: a render thread of its own on core 2 and the game on core 0; the same pictures, the game thread 23–53% busy at 60 fps on hardware instead of 93% at 30 (C1 run). A `render N:` line every 300 vblanks says how busy that thread was and how long the game waited for it. A `0` here needs `config_version=3` too, as for the next two (D68) |
 | `present_due=1` | With `realtime=1`, `gpu=1` and `render_thread=1`: each 16:9 or 60 fps frame carries the vblank it is due at, the render thread shows it when the display reaches that vblank, and the game thread never waits for a present. A render thread that falls behind skips late frames' draws (in-between frames first; real frames only when a later one is filed or the game waits for the ring or a vertex slab) and keeps their uploads; the `present N:` line counts it (stage 7c, D112). Default 1 since its hardware runs 7C1–7C4 (D112); 0 gives `VSync`'s presents back. `realtime=0` is unchanged either way |
 | `xa_ahead=0` | with `cd_native=0` only (D93): the XA music's sectors read one at a time on the game thread. Default 1 since D68: read ahead of the CD head on core 1 (D64), the same sectors, after level changes too (D78). An `xa N:` line every 300 vblanks; its last field counts the asks for a window that found none to reuse (0, or a few when the reader falls behind; hundreds in a row is a stuck read-ahead) |
-| `cd_native=0` | the disc read through the CD model's sectors, as before D93 (`xa_ahead` then applies). Default 1 since D93: the disc read natively, a CdRead as one read of a file at an offset (from `manifest.json`, or the image's own directory) on a worker thread on core 1, and the XA stream is read ahead from where it starts there, keeping the sectors of the channel that plays, instead of `xa_ahead`'s windows. The same bytes and the same ticks as the sector reads. The `cd:` line's reads and time then are the worker's; its last part, the time the game thread waited for its CdReads, is the load time to compare. The `xa N:` lines count the stream's chunks as windows |
+| `cd_native=0` | the disc read through the CD model's sectors, as before D93 (`xa_ahead` then applies). Default 1 since D93: the disc read natively, a CdRead as one read of a file at an offset (from `manifest.json`, or the image's own directory) on a worker thread on core 1 at priority 0x90, and the XA stream is read ahead from where it starts there, keeping the sectors of the channel that plays, instead of `xa_ahead`'s windows. The same bytes and the same ticks as the sector reads. The `cd:` line's reads and time then are the worker's; its last part, the time the game thread waited for its CdReads, is the load time to compare. The `xa N:` lines count the stream's chunks as windows. With the digital copy (D157) the worker is on core 2 at 0x88 instead (its stream chunks are 50 ms decodes, D158; the start-up `cd:` line names the core and priority either way), and a `cd: digital copy:` line follows: blocks decoded and the time, the file reads, for the game thread's handle and the worker's |
+| `cd_async=0` or `1` | with `cd_native=1`. `0`: a CdRead completes inside CdRead, the loading screen still for the read's time. `1` (D159): it completes at the first vblank (or CdSync poll) after the worker is done, and the loaders, which poll once a frame, animate meanwhile as on the PS1; a loop that waits for a read without a vblank (the game's `CDLoadSync`) sleeps until the worker is done. Not set: `1` with the digital copy (110 ms a read, which froze the loading screens), `0` with a disc image or extracted files (27 ms a read; as before D159). `cd_async=1` with an image is for trying it; no hardware run has measured it there |
+| `cd_helper=0` | with `cd_native=1` and the digital copy: no helper thread. Default 1 (D158): the second half of a long read of the copy (four blocks or more) is decoded by a helper on core 1 (below the walk and the presenter) while the worker, on core 2 below the render thread, decodes the first. With an image or files there is no helper either way |
 | `gpu_opaque=0` | GPU: every atlas triangle drawn with the `discard` shader. Default 1 since D68: with `tex_cache=1`, triangles whose texture has no transparent or semi-transparent texel are drawn by a shader without `discard`, the same pixels (D65). The `atlas N:` lines count them |
 | `gpu_direct=0` | GPU: each widescreen or 60 fps picture copied into its own slot, and the screen cleared under it, as before D69. Default 1: a picture that is one of the game's draw areas whole is shown straight from it, and when the game clears that area for a later frame the slot takes its texture instead of a copy (one full-screen GPU pass fewer per picture, the same pixels). The `gpu N: ... presentation pictures` line every 300 vblanks counts them |
 | `gpu_lean=0` | GPU: the 40-byte vertex everywhere. Default 1 since D74 (hardware logs `hw-main-2a0691c` and `hw-pr49-i1` ran with it, no fault): with `tex_cache=1` or `tex_filter` and neither `persp` nor `subpixel`, a 28-byte vertex instead of 40 (the same pixels), and one atlas lookup for a quad's two triangles (D70). The `gpu_time=2` line's vertex upload KB shows it |

@@ -79,6 +79,22 @@ void psx_cdimage_close(void);
 const char *psx_cdimage_path(void);
 /* The open image's sector size (2352 or 2448) and first LBA */
 void psx_cdimage_layout(int *sector, int *base);
+/* The Vita only, and only for an unsafe app (-DSPYRO_UNSAFE=ON), which can
+ * read them: 1 has psx_cdimage_open look, when the data folder holds nothing
+ * usable, for the digital copy where the PlayStation Store installed it
+ * (<root>pspemu/PSP/GAME/<ID>/EBOOT.PBP). 0, the default: only the data
+ * folder is searched, nothing outside it is opened, and the messages name
+ * the data folder alone. Set before psx_cd_open. */
+void psx_cdimage_scan_installed(int on);
+/* The digital copy (psx_pbp.h, D157) when the open "image" is a PS1
+ * Classic's EBOOT.PBP, else NULL. Its sectors come from psx_cdimage_read as
+ * an image's; another thread reads it through psx_pbp_clone. */
+struct PsxPbp;
+struct PsxPbp *psx_cdimage_pbp(void);
+/* The game thread's handle's counts (psx_pbp.h; zeros without a copy): the
+ * open, the hashes and the sector reads the worker doesn't serve (D158). */
+#include "psx_pbp.h"
+void psx_cdimage_pbp_stats(PsxPbpStats *out);
 
 /* n bytes from offset off of the 2352-byte raw sector at lba (off 16: the
  * subheader, 24: Form 1 data). Returns n, or -1 past the end of the image. */

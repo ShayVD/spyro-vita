@@ -68,6 +68,15 @@ const PsxRegion *psx_region_info(int id); /* NULL past the table */
 const PsxRegion *psx_region(void);        /* g_Region's */
 /* The region whose executable is named exe (case ignored), or NULL. */
 const PsxRegion *psx_region_by_exe(const char *exe);
+/* The region whose serial a PBP's disc ID is ("SCUS94228" for SCUS-94228;
+ * case ignored), or NULL (D157). */
+const PsxRegion *psx_region_by_disc_id(const char *disc_id);
+/* The release a disc is: the one whose executable SYSTEM.CNF boots (boot_exe
+ * from psx_region_boot_exe, or "" / NULL without one), else the first whose
+ * executable has_file(user, name) finds on it, else NULL. The one rule for
+ * the image, the extracted files and the digital copy (D158). */
+const PsxRegion *psx_region_of_disc(const char *boot_exe, int (*has_file)(void *user, const char *name),
+                                    void *user);
 
 /* SYSTEM.CNF's BOOT file ("cdrom:\SCES_014.38;1" -> "SCES_014.38", any
  * folder dropped, upper case), from its text. 0, or -1 without one. */

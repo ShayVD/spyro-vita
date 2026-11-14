@@ -3,7 +3,8 @@
  * image with subchannel data (2448).  Each must sniff to its layout, find files by path (case, separators,
  * ";1"), walk the same tree (with an XA attribute), read the same data straight and through the windows, and
  * refuse reads past the end.  A sparse .iso past 3 GiB reads its last sector (64-bit offsets on a 32-bit host).
- * Plus the containers sniff as such, and SHA-1's FIPS vectors.  Cue sheets parse (multi-file, pregaps, modes, case,
+ * A source of sectors in place of a file serves the same tree.  Plus the containers sniff as such, and SHA-1's
+ * FIPS vectors.  Cue sheets parse (multi-file, pregaps, modes, case,
  * BOM, CRLF), and folders of such images, written in the scratch directory, pick the image spyro-vita's search
  * would: every .cue first, name order ignoring case, a .cue's file found in another case or folder, a .cue the game
  * can't use passed over for its .bin, a multi-file cue's data track, the first reason when nothing is usable.  The
@@ -132,6 +133,69 @@ static void one(const char *path, int ssize, int off, int mode, int base) {
   }
   CHECK(!memcmp(a, b, 2048) && a[2047] == 24);
   CHECK(b[2047] == 24 && b[4095] == 25 && b[2046] == 0xA5);
+}
+
+/* ---- a source of sectors in place of a file ---- */
+
+static int src_asks, src_fail_at = -1;
+static int src_read(void *user, int lba, unsigned char raw[2352]) {
+  src_asks++;
+  if (lba == src_fail_at) { /* a failing source that wrote first */
+    memset(raw, 0xEE, 2352);
+    return -1;
+  }
+  memset(raw, 0, 2352);
+  raw[15] = 2;
+  raw[18] = raw[22] = (unsigned char)(lba == 30 ? 0x20 : 0x08);
+  memcpy(raw + 24, ((unsigned char (*)[2048])user)[lba], 2048);
+  return 0;
+}
+
+static void source_tests(const char *file_image) {
+  static VpkDisc d;
+  VpkDiscLayout l;
+  unsigned char a[2048 * 2], sub[8];
+  unsigned lba = 0, size = 0;
+  Seen s;
+  CHECK(vpk_disc_open_source(&d, NULL, img, NSECT) == -1 && !vpk_disc_is_open(&d));
+  CHECK(vpk_disc_open_source(&d, src_read, img, 0) == -1 && !vpk_disc_is_open(&d));
+  CHECK(vpk_disc_open_source(&d, src_read, img, NSECT) == 0 && vpk_disc_is_open(&d));
+  CHECK(d.nsect == NSECT && d.l.sector == 2352 && d.l.data_off == 24 && d.l.base == 0);
+  CHECK(vpk_disc_find(&d, "\\SYSTEM.CNF;1", &lba, &size) == 0 && lba == 20 && size == 30);
+  CHECK(vpk_disc_find(&d, "/data/level.bin", &lba, &size) == 0 && lba == 24 && size == 5000);
+  memset(&s, 0, sizeof s);
+  CHECK(vpk_disc_walk(&d, saw, &s) == 0 && s.n == 3 && s.xa == 1);
+  CHECK(!strcmp(s.paths[0], "SYSTEM.CNF") && !strcmp(s.paths[1], "DATA/LEVEL.BIN") && !strcmp(s.paths[2], "MUSIC.STR"));
+  CHECK(vpk_disc_read(&d, 24, 2, a) == 0 && a[2047] == 24 && a[4095] == 25 && a[2046] == 0xA5);
+  /* the last sector given is kept: its subheader and its data cost one ask */
+  src_asks = 0;
+  CHECK(vpk_disc_read_raw(&d, 30, 16, sub, 8) == 8 && (sub[2] & 0x20) && src_asks == 1);
+  CHECK(vpk_disc_read_raw(&d, 30, 24, a, 2048) == 2048 && a[2047] == 30 && src_asks == 1);
+  CHECK(vpk_disc_read_raw(&d, 31, 24, a, 2048) == 2048 && a[2047] == 31 && src_asks == 2);
+  /* the ends: of the disc (the source isn't asked) and of the sector */
+  CHECK(vpk_disc_read(&d, NSECT, 1, a) == -1 && vpk_disc_read(&d, -1, 1, a) == -1 && src_asks == 2);
+  CHECK(vpk_disc_read(&d, NSECT - 1, 1, a) == 0 && a[2047] == NSECT - 1);
+  CHECK(vpk_disc_read_raw(&d, 20, 2351, sub, 2) == -1);
+  /* a source that fails: the read fails, and the bytes it wrote aren't served as the sector kept before */
+  CHECK(vpk_disc_read(&d, 21, 1, a) == 0 && a[2047] == 21);
+  src_fail_at = 22;
+  CHECK(vpk_disc_read(&d, 22, 1, a) == -1);
+  CHECK(vpk_disc_read(&d, 21, 1, a) == 0 && a[2047] == 21 && a[0] != 0xEE);
+  src_fail_at = 18; /* the root directory: the walk names the sector */
+  memset(&s, 0, sizeof s);
+  CHECK(vpk_disc_walk(&d, saw, &s) != 0 && d.bad_lba == 18);
+  src_fail_at = -1;
+  /* a file opened over it, then the source again, then closed: each open closes the one before */
+  memset(&l, 0, sizeof l);
+  CHECK(vpk_disc_sniff(file_image, &l) == VPK_DISC_RAW && vpk_disc_open(&d, file_image, &l, 0) == 0);
+  src_asks = 0;
+  CHECK(d.source == NULL && vpk_disc_read(&d, 24, 1, a) == 0 && a[2047] == 24 && src_asks == 0);
+  CHECK(vpk_disc_open_source(&d, src_read, img, NSECT) == 0);
+  CHECK(vpk_disc_read(&d, 25, 1, a) == 0 && a[2047] == 25 && src_asks == 1);
+  vpk_disc_close(&d);
+  CHECK(!vpk_disc_is_open(&d) && d.source == NULL && d.source_buf == NULL);
+  CHECK(vpk_disc_read(&d, 25, 1, a) == -1);
+  vpk_disc_close(&d); /* twice is harmless */
 }
 
 /* ---- cue sheets and the folder search ---- */
@@ -356,6 +420,7 @@ int main(int argc, char **argv) {
     vpk_disc_close(&d);
     remove(p);
   }
+  snprintf(p, sizeof p, "%s/t2.bin", dir), source_tests(p);
   snprintf(p, sizeof p, "%s/t.chd", dir);
   f = fopen(p, "wb"), fwrite("MComprHD", 1, 8, f), fclose(f);
   CHECK(vpk_disc_sniff(p, &l) == VPK_DISC_CHD && vpk_disc_open_any(&d, p, 0) == -1 && !vpk_disc_is_open(&d));
