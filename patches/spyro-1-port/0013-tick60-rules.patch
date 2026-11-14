@@ -322,7 +322,7 @@
  
    // Increment air time counter (reset to 0 when grounded)
 -  g_Spyro.m_airTime++;
-+  T60_TICK_DO(g_Spyro.m_airTime++); // 60 Hz logic: it counts 30 Hz ticks (D130)
++  T60_TICK_INC_FROM0(g_Spyro.m_airTime, T60_FROM0_AIR); // 60 Hz logic: marked the vblank the air starts, then 30 Hz ticks (D130, D160)
  
    // Initialize floor position to default "pointing up" vector
    VecNull(&g_Spyro.m_floorPositonOnSlope);
@@ -331,7 +331,7 @@
      g_Spyro.m_airTime = 0;
    } else {
 -    g_Spyro.m_airTime++;
-+    T60_TICK_DO(g_Spyro.m_airTime++); // 60 Hz logic: it counts 30 Hz ticks (D130)
++    T60_TICK_INC_FROM0(g_Spyro.m_airTime, T60_FROM0_AIR); // 60 Hz logic: marked the vblank the air starts, then 30 Hz ticks (D130, D160)
    }
  }
  
@@ -344,3 +344,12 @@
    }
  
    UpdateSpyroPhysicsAndSurfaces();
+@@ -1917,7 +1917,7 @@
+   }
+ 
+   if (!(g_Spyro.m_ControlFlags & 0x100) && g_Spyro.unk_0x194 == 0) {
+-    func_80041670();
++    T60_SPYRO_TRANSITIONS(func_80041670()); // 60 Hz logic: the state transitions once a tick, at its end, seeing both vblanks' presses, as the original's (D160)
+   }
+ 
+   for (i = 0; i < g_DeltaTime; i++) {

@@ -14,6 +14,7 @@
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 
 #include "common.h"
+#include "gamepad.h"
 #include "hud.h"
 #include "moby.h"
 #include "moby_helpers.h"
@@ -155,14 +156,14 @@ void t60_spyro_shift(void *pVelocity) {
  *     once a tick, as before.
  * A tick cut short by a gamestate change lets go in PortGamestateUpdate. */
 void t60_spyro_damage_end(void) {
-  if (g_t60.upper || g_DeltaTime != 1)
+  if (T60_TICK_ENDS)
     g_Spyro.m_DamageFlags = 0;
   else
     g_Spyro.m_DamageFlags &= 0x800;
 }
 
 void t60_spyro_release(void) {
-  if (g_t60.upper || g_DeltaTime != 1) {
+  if (T60_TICK_ENDS) {
     g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
     g_t60.spyro_held = 0;
   } else {
@@ -226,7 +227,7 @@ int t60_path_step(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int
   g_t60.path[k].moby = pMoby;
   rest = g_t60.path[k].rest;
   rest[0] = rest[1] = rest[2] = 0;
-  if (g_DeltaTime == 1 && !g_t60.upper) {
+  if (t60_first_half()) {
     /* the tick's first half: move by half the step, keep the rest */
     rest[0] = (pMoby->m_Position.x - from.x) - ((pMoby->m_Position.x - from.x) >> 1);
     rest[1] = (pMoby->m_Position.y - from.y) - ((pMoby->m_Position.y - from.y) >> 1);
@@ -237,4 +238,62 @@ int t60_path_step(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int
   }
   /* else: first taken in the second half, or a late update: whole, once */
   return r;
+}
+
+/* The wall contact (m_againstWall, m_wallAgainstSpyro; D160). The original
+ * clears it at func_8003FE40's start, its one collision pass over the
+ * tick's move sets it, and the next tick's two physics substeps both read
+ * it. At 60 Hz each vblank has its own pass: a tick's first vblank starts
+ * the contact fresh and, at its end, keeps what it found for the second
+ * vblank and puts the last tick's back, which the second vblank's physics
+ * then reads as the original's second substep did; the second vblank goes
+ * on from the first's contact and leaves the tick's for the next. A late
+ * update is a whole tick: the original's clear. */
+void t60_wall_begin(void) {
+  if (g_DeltaTime == 1 && g_t60.upper) { /* the tick's second vblank */
+    g_Spyro.m_againstWall = g_t60.wall_acc;
+    g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_acc_vec[0];
+    g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_acc_vec[1];
+    g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_acc_vec[2];
+    return;
+  }
+  if (t60_first_half()) {
+    g_t60.wall_pub = g_Spyro.m_againstWall;
+    g_t60.wall_pub_vec[0] = g_Spyro.m_wallAgainstSpyro.x;
+    g_t60.wall_pub_vec[1] = g_Spyro.m_wallAgainstSpyro.y;
+    g_t60.wall_pub_vec[2] = g_Spyro.m_wallAgainstSpyro.z;
+  }
+  g_Spyro.m_againstWall = 0;
+  g_Spyro.m_wallAgainstSpyro.x = g_Spyro.m_wallAgainstSpyro.y = g_Spyro.m_wallAgainstSpyro.z = 0;
+}
+
+void t60_wall_end(void) {
+  if (!t60_first_half())
+    return;
+  g_t60.wall_acc = g_Spyro.m_againstWall;
+  g_t60.wall_acc_vec[0] = g_Spyro.m_wallAgainstSpyro.x;
+  g_t60.wall_acc_vec[1] = g_Spyro.m_wallAgainstSpyro.y;
+  g_t60.wall_acc_vec[2] = g_Spyro.m_wallAgainstSpyro.z;
+  g_Spyro.m_againstWall = g_t60.wall_pub;
+  g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_pub_vec[0];
+  g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_pub_vec[1];
+  g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_pub_vec[2];
+}
+
+/* Spyro's state transitions once a tick (T60_SPYRO_TRANSITIONS, D160). The
+ * original's PadVSync ORs the presses and releases of a tick's two vblanks
+ * into g_Pad.m_Down and m_Released (g_UnprocessedFrames != 0), so the
+ * transitions at the tick's end see a press on either. At 60 Hz each vblank
+ * is sampled on its own; tick60.c keeps the first vblank's, and they are
+ * ORed in for the transitions only, then the live values put back. */
+void t60_pad_tick_begin(void) {
+  g_t60.pad_down_saved = g_Pad.m_Down;
+  g_t60.pad_released_saved = g_Pad.m_Released;
+  g_Pad.m_Down |= g_t60.pad_down_acc;
+  g_Pad.m_Released |= g_t60.pad_released_acc;
+}
+
+void t60_pad_tick_end(void) {
+  g_Pad.m_Down = g_t60.pad_down_saved;
+  g_Pad.m_Released = g_t60.pad_released_saved;
 }

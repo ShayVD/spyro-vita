@@ -57,6 +57,8 @@ A 30 Hz tick is two vblanks. The first **starts** the tick and the second ends i
 | `T60_TICK_DO(step)` | a duration counter, a velocity change before the move, a spawn or sound taken once a tick | runs on the vblank that starts a tick |
 | `T60_TICK_END_DO(step)` | a step the original takes **after** the tick's move (move, then slow down or fall faster) | runs on the vblank that ends a tick, so the tick's second half still moves by the old velocity |
 | `T60_TICK_AND(cond)` | a condition that may come true only once a tick: a counter's test with its step, a random roll (same odds a second), a test of a once-a-tick counter that triggers a one-shot action | `tick && cond` |
+| `T60_SPYRO_TRANSITIONS(call)` | Spyro's state transitions (`func_80041670`), which the original runs once a tick after the move and collision (D160) | runs on the vblank that ends a tick, with the tick's two vblanks' presses and releases ORed into `g_Pad` for it |
+| `T60_TICK_INC_FROM0(counter, k)` | a counter a test zeroes every vblank and reads as "not zero" (`m_airTime`, `m_floorIdleTime`; D160) | steps on the vblank the counter leaves zero, and on the one that starts a tick; `k` names the counter, so its other sites in that vblank step too |
 | `T60_SHARE(x)`, `T60_SHARE8(x)` | an amount per tick: a speed, a turn, a phase, a drift (`SHARE8`: a signed delta held in a byte) | this vblank's share: `x >> 1`, then `x - (x >> 1)` |
 
 With the velocity change at the tick's start (or end, as the original orders it) and the move shared, a moby's position at the end of every tick is exactly the original's, given the same inputs. Where a fix needed new code, it's an `#if SPYRO_TICK60 … #else <original> #endif` block (5 in the classes, 1 in `func_8003FE40`'s `>> 6`, the helpers' 7 speed sites, and the loop and animation hooks).
@@ -428,8 +430,9 @@ The update is a small part of the cost. The draw runs every vblank, which double
 ## Known differences and open items
 
 - **Spyro:**
-  - running along a wall (above);
-  - the coyote time, air time and the like count 30 Hz ticks, so they're exact; jump heights match.
+  - Spyro's state transitions run once a tick, at its end, seeing the presses of both its vblanks (`T60_SPYRO_TRANSITIONS`, D160): a state lasts whole ticks, the landing tests see the geometry after two substeps, the input latency is the original's. `tools/tick60_fuzz.py` plays random pad scripts at both rates from one Cliff Town save state and compares the jump cadence;
+  - running along a wall (above): since D160 the wall contact is the tick's at 60 Hz too (`t60_wall_begin`/`t60_wall_end`: a tick's first vblank keeps what it found for the second and puts the last tick's back for the second's physics; the wall ray once a tick, at its end). The running-jump script's drift from the 30 Hz run stops after the wall sections (3,741 units at the end for 14,727 before); a smaller speed sawtooth remains, the per-vblank pass still finding contacts the original's one pass over the whole move wouldn't;
+  - the coyote time, air time and the like count 30 Hz ticks, so they're exact; jump heights match. A counter the floor test zeroes every vblank (`m_airTime`, `m_floorIdleTime`) is stepped on the vblank it leaves zero too (`T60_TICK_INC_FROM0`, D160), so "airborne" is true on either half of a tick; the charge jump's and supercharge jump's landing tests wait for two substeps, as the original's whole tick gave them (D160: before that, a charge jump with cross held landed every vblank, Spyro hopping 50 units in place, the "bunny hop" of issue #148).
   - a standing jump with up held, from the same spot, goes elsewhere at 60 Hz (routes A and B's jumps, D141: ~280 units forward instead of ~820 in 24 vblanks; ~430 units to the side). Not investigated: the air steering or the camera that "up" is relative to. It's why routes A and B as written don't reach their portal and vortex at 60 Hz.
 - **Classes:**
   - Decelerations guarded by a threshold (Bull state 4, Ram state 2, Shepherd state 7, sheep fodder, Shepherd) can lose half a move step once, on the tick that crosses it.

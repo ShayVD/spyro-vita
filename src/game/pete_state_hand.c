@@ -911,9 +911,15 @@ void func_8003FE40(void) {
 
   g_Spyro.m_touchingMoby = 0;
   g_Spyro.m_touchingSurface = 0xFF;
+#if SPYRO_TICK60
+  t60_wall_begin(); /* the wall contact is the tick's (D160) */
+#else
   g_Spyro.m_againstWall = 0;
-  T60_TICK_DO(g_Spyro.m_floorIdleTime++); /* it counts 30 Hz ticks */
+#endif
+  T60_TICK_INC_FROM0(g_Spyro.m_floorIdleTime, T60_FROM0_FLOOR); /* marked the vblank the floor is left, then 30 Hz ticks (D160) */
+#if !SPYRO_TICK60
   VecNull(&g_Spyro.m_wallAgainstSpyro);
+#endif
   VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_CollisionMovement);
   VecNull(&ph->m_CollisionMovement);
   VecCopy(&g_Spyro.m_previousPosition, &g_Spyro.m_Position);
@@ -949,5 +955,8 @@ void func_8003FE40(void) {
   ph->m_TrueVelocity.y /= g_DeltaTime;
   ph->m_TrueVelocity.z /= g_DeltaTime;
   ph->m_TrueSpeed = VecMagnitude(&ph->m_TrueVelocity, 1);
+#if SPYRO_TICK60
+  t60_wall_end();
+#endif
 }
 #endif

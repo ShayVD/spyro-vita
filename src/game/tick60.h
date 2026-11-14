@@ -41,6 +41,16 @@ typedef struct {
   int next;       /* PortTickDelta's: the next update is a 60 Hz one */
   int spyro_carry[3]; /* Spyro's move: the low 6 bits of a tick's first half (t60_spyro_shift) */
   int spyro_held;  /* a tick's first half kept Spyro's script hold (m_ControlFlags bit 31) and lift (m_DamageFlags 0x800) for its second (t60_rules.c) */
+  /* func_8003FE40's wall contact (m_againstWall, m_wallAgainstSpyro) is a
+   * tick's (t60_wall_begin/end, D160): what its first vblank found, carried
+   * into its second (acc), and the last tick's, which this tick's physics
+   * still read (pub) */
+  int wall_acc, wall_acc_vec[3], wall_pub, wall_pub_vec[3];
+  int from0[2];   /* T60_TICK_INC_FROM0: the counter left zero this vblank, so its other sites step too (cleared each update) */
+  /* Spyro's state transitions run once a tick, at its end (T60_SPYRO_TRANSITIONS, D160): the
+   * presses and releases of the tick's first vblank, which they must still see
+   * (the original's PadVSync ORs a tick's two vblanks), and the live values put back after */
+  int pad_down_acc, pad_released_acc, pad_down_saved, pad_released_saved;
   /* func_8003BFC0's path steps this tick (t60_path_step, D144): each one's
    * moby, and the half of the step its second vblank still moves */
   int path_n;
@@ -50,6 +60,10 @@ typedef struct {
   } path[64];
 } Tick60State;
 extern Tick60State g_t60;
+/* this update is a tick's first vblank (not its second, not a late update): the half whose
+ * once-a-tick state the rules carry into the second (the wall contact, the pad's presses) */
+extern int g_DeltaTime;
+static inline int t60_first_half(void) { return g_DeltaTime == 1 && !g_t60.upper; }
 
 typedef struct {
   long long ticks60, ticks30, half_ticks, late; /* late: 60 Hz updates of 2+ vblanks */

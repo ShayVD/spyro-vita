@@ -82,10 +82,18 @@ void PortGamestateUpdate(void) {
     g_t60_stats.ticks60++;
     g_t60_stats.half_ticks += g_t60.tick;
     g_t60_stats.late += g_DeltaTime > 1;
+    g_t60.from0[0] = g_t60.from0[1] = 0;
     {
       const int d = g_DeltaTime; /* the rules set it per class */
       GamestateUpdate_60();
       PortPalAnimClock(d);
+    }
+    /* the transitions at the tick's end must still see this vblank's presses (T60_SPYRO_TRANSITIONS) */
+    if (t60_first_half()) {
+      g_t60.pad_down_acc = g_Pad.m_Down;
+      g_t60.pad_released_acc = g_Pad.m_Released;
+    } else {
+      g_t60.pad_down_acc = g_t60.pad_released_acc = 0;
     }
     g_t60.active = 0;
     if (g_t60.spyro_held && !wants_60()) {
@@ -159,6 +167,14 @@ void tick60_state(struct PsxStateIO *io) {
   psx_state_io(io, &g_t60.acc, sizeof g_t60.acc);
   psx_state_io(io, &g_t60.since, sizeof g_t60.since);
   psx_state_io(io, g_t60.spyro_carry, sizeof g_t60.spyro_carry);
+  /* the wall contact between a tick's halves (t60_wall_begin/end, D160) */
+  psx_state_io(io, &g_t60.wall_acc, sizeof g_t60.wall_acc);
+  psx_state_io(io, g_t60.wall_acc_vec, sizeof g_t60.wall_acc_vec);
+  psx_state_io(io, &g_t60.wall_pub, sizeof g_t60.wall_pub);
+  psx_state_io(io, g_t60.wall_pub_vec, sizeof g_t60.wall_pub_vec);
+  /* a tick's first vblank's presses, for the transitions at its end (T60_SPYRO_TRANSITIONS, D160) */
+  psx_state_io(io, &g_t60.pad_down_acc, sizeof g_t60.pad_down_acc);
+  psx_state_io(io, &g_t60.pad_released_acc, sizeof g_t60.pad_released_acc);
   if (io->mode == PSX_STATE_LOAD) {
     g_tick60_mode = mode;
     g_t60.spyro_held = 0; /* the state's own bit 31 stands; its tick's end lets it go */
