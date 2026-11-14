@@ -23,6 +23,8 @@ typedef struct {
                           2: the presentation frame as drawn, 512x240 */
   int npokes;          /* --poke V:ADDR=VALUE: test set-ups (a word in PS1 RAM) */
   struct { int vblank; uint32_t addr, value; } pokes[16];
+  int nhitches;        /* --hitch V:N: N more vblanks pass at vblank V before the game goes on (a late update) */
+  struct { int vblank, n; } hitches[16];
   int npeeks;          /* --peek ADDR:N: log N words of PS1 RAM with every shot */
   struct { uint32_t addr; int n; } peeks[8];
   int lod_stats;       /* --lod-stats N: a draw-distance line every N vblanks */

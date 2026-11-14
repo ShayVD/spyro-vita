@@ -39,6 +39,9 @@
  * --skip-logos: no Sony and Universal logos at boot (D50).
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
+ * --hitch: at vblank V, N more vblanks pass before the game's VSync returns:
+ *   its next update is late by N, as when the Vita drops frames (tests of the
+ *   late paths, such as the 60 Hz rules' g_DeltaTime 2+, D160).
  * --peek: log N words of PS1 RAM from hex ADDR with every shot.
  * --tour: after the pad script, visit levels with the level-warp cheat, run
  *   the credits or an ending (src/platform/linux32/tour.c).
@@ -321,7 +324,7 @@ static void usage(void) {
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
           "[--serve PORT] [--trace FILE] [--cutscene-trace FILE]\n"
           "             [--anim-trace FILE]\n"
-          "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
+          "             [--step DIR] [--poke V:ADDR=VALUE]... [--hitch V:N]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
@@ -523,6 +526,13 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--hitch") == 0) {
+      int v, n;
+      TAKE();
+      if (g_host_opts.nhitches == 16 || sscanf(val, "%d:%d", &v, &n) != 2 || n < 1 || n > 8)
+        usage();
+      g_host_opts.hitches[g_host_opts.nhitches].vblank = v;
+      g_host_opts.hitches[g_host_opts.nhitches++].n = n;
     } else if (strcmp(a, "--cheat") == 0) {
       static const char *const names[] = {"", "lives", "levels", "credits", "warp"};
       char name[16];
