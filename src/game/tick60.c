@@ -48,6 +48,18 @@ void *tick60_game_update_moby(int pIndex) {
 int tick60_built(void) { return 0; }
 #endif
 
+/* What a tick's first vblank keeps for its second (t60_rules.c, D160): the
+ * pad's presses and Spyro's damage flags for his transitions, the pad's
+ * lockout, the wall contact. Nothing is kept as a tick starts, nor once
+ * play is left. */
+static void carry_clear(void) {
+  g_t60.pad_down_acc = g_t60.pad_released_acc = 0;
+  g_t60.damage_acc = 0;
+  g_t60.pad_locked = 0;
+  g_t60.wall_acc = 0;
+  g_t60.wall_acc_vec[0] = g_t60.wall_acc_vec[1] = g_t60.wall_acc_vec[2] = 0;
+}
+
 /* An update runs the 60 Hz rules in play, outside the attract demos (they
  * replay 30 Hz input, §7.2). */
 static int wants_60(void) {
@@ -82,6 +94,9 @@ void PortGamestateUpdate(void) {
     g_t60_stats.ticks60++;
     g_t60_stats.half_ticks += g_t60.tick;
     g_t60_stats.late += g_DeltaTime > 1;
+    g_t60.from0[0] = g_t60.from0[1] = 0;
+    if (g_t60.tick)
+      carry_clear();
     {
       const int d = g_DeltaTime; /* the rules set it per class */
       GamestateUpdate_60();
@@ -92,10 +107,18 @@ void PortGamestateUpdate(void) {
       /* The tick's first half left play (the portal's gamestate 1, the
        * pause menu): the 30 Hz update that follows finds Spyro as the
        * original's tick left him, his script's hold and his lift let go
-       * (t60_rules.c, D141) */
+       * (t60_rules.c, D141), and the wall contact the tick's, as far as it
+       * got (D160). The transitions of that tick never ran: what its
+       * first vblank kept for them (a press, a one-shot hit) is dropped
+       * with the tick. */
       g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
       g_Spyro.m_DamageFlags &= ~0x800;
       g_t60.spyro_held = 0;
+      g_Spyro.m_againstWall = g_t60.wall_acc;
+      g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_acc_vec[0];
+      g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_acc_vec[1];
+      g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_acc_vec[2];
+      carry_clear();
     }
     if (g_t60_stats_on)
       g_t60_stats.us60 += now_us() - t;
@@ -108,6 +131,7 @@ void PortGamestateUpdate(void) {
   g_t60.acc = 0;
   g_t60.since = 0;
   g_t60.spyro_carry[0] = g_t60.spyro_carry[1] = g_t60.spyro_carry[2] = 0;
+  carry_clear();
   g_t60.tick = 1;
   if (g_DeltaTime < 2)
     g_DeltaTime = 2;
@@ -159,6 +183,17 @@ void tick60_state(struct PsxStateIO *io) {
   psx_state_io(io, &g_t60.acc, sizeof g_t60.acc);
   psx_state_io(io, &g_t60.since, sizeof g_t60.since);
   psx_state_io(io, g_t60.spyro_carry, sizeof g_t60.spyro_carry);
+  /* the wall contact between a tick's halves (t60_wall_begin/end, D160) */
+  psx_state_io(io, &g_t60.wall_acc, sizeof g_t60.wall_acc);
+  psx_state_io(io, g_t60.wall_acc_vec, sizeof g_t60.wall_acc_vec);
+  psx_state_io(io, &g_t60.wall_pub, sizeof g_t60.wall_pub);
+  psx_state_io(io, g_t60.wall_pub_vec, sizeof g_t60.wall_pub_vec);
+  /* a tick's first vblank's presses and damage flags, for the transitions at its end
+   * (T60_SPYRO_TRANSITIONS, D160), and its pad lockout (T60_PAD_LOCKED) */
+  psx_state_io(io, &g_t60.pad_down_acc, sizeof g_t60.pad_down_acc);
+  psx_state_io(io, &g_t60.pad_released_acc, sizeof g_t60.pad_released_acc);
+  psx_state_io(io, &g_t60.damage_acc, sizeof g_t60.damage_acc);
+  psx_state_io(io, &g_t60.pad_locked, sizeof g_t60.pad_locked);
   if (io->mode == PSX_STATE_LOAD) {
     g_tick60_mode = mode;
     g_t60.spyro_held = 0; /* the state's own bit 31 stands; its tick's end lets it go */

@@ -92,7 +92,20 @@ void host_vblank(void) {
   }
 }
 
-void psx_platform_vsync(void) { host_vblank(); }
+/* VSync(0): one vblank, or with --hitch V:N at vblank V, N more before the
+ * game goes on: its next update is a late one. */
+void psx_platform_vsync(void) {
+  int v;
+  host_vblank();
+  v = host_vblank_count();
+  for (int i = 0; i < g_host_opts.nhitches; i++)
+    if (g_host_opts.hitches[i].vblank == v) {
+      host_log("hitch: %d more vblanks at vblank %d", g_host_opts.hitches[i].n, v);
+      for (int k = 0; k < g_host_opts.hitches[i].n; k++)
+        host_vblank();
+      break;
+    }
+}
 
 void PsyX_UpdateInput(void) {}
 

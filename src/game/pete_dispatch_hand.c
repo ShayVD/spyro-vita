@@ -228,7 +228,7 @@ void func_80047B60(void) {
   case 5: case 17:
     func_8003FE40();
     UpdateSlopeFloorCollision();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 6: case 16:
@@ -243,7 +243,7 @@ void func_80047B60(void) {
       else
         UpdateFlightCeiling();
     }
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     if (REGION_IS(PAL)) {
       /* PAL keeps the vertical acceleration (PAL 0x8004D6F0, D134) */
       g_Spyro.m_Physics.m_Acceleration.x = g_Spyro.m_Physics.m_TrueVelocity.x;
@@ -263,7 +263,7 @@ void func_80047B60(void) {
       else
         UpdateFlightCeiling();
     }
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 32: case 33: case 34:
@@ -281,7 +281,7 @@ void func_80047B60(void) {
         UpdateFlightCeiling();
       }
     }
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 15:
@@ -293,7 +293,7 @@ void func_80047B60(void) {
     UpdateSlopeFloorCollision();
     if (g_Spyro.m_flyingAbility)
       UpdateFlightCeiling();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     if ((g_Spyro.m_ControlFlags & CTRL_SKIP_SURFACE_CHECK) && g_Spyro.m_walkingState == 9)
       g_Spyro.m_surfaceBelowSpyro = ColFindFloor(&g_Spyro.m_Position, 0x10000);
     break;
@@ -312,7 +312,7 @@ void func_80047B60(void) {
     func_8003E1AC();
     ApplySlopeGravity();
     AdjustAirCollision();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 19:

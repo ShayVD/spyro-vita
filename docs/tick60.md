@@ -35,7 +35,9 @@ In a 60 Hz update:
 
 A moby that drives Spyro (a portal's path, an exit vortex, a whirlwind, a ride, a cutscene's pad lock) sets `m_ControlFlags` with bit 31 in its update, and a vortex or whirlwind also sets `m_DamageFlags` 0x800 (its lift: state 17). Spyro's update (`func_8004A200`) lets go of bit 31 and clears the damage flags each time; the moby sets them again in its next update, which runs before his. In the 60 Hz rules **a hold lasts the 30 Hz tick** (`0015-tick60-script-hold.patch`, `t60_rules.c`):
 - `t60_spyro_release` lets go of bit 31 on the vblank that ends a tick, or after a late update, and keeps it for the tick's second half;
-- `t60_spyro_damage_end` clears the damage flags on the vblank that ends a tick and, on the first, keeps only 0x800; one-shot hits are still taken once a tick.
+- `t60_spyro_damage_end` clears the damage flags on the vblank that ends a tick and, on the first, keeps only 0x800 in `g_Spyro`.
+
+**Hits** (D160): the damage flags' one reader is Spyro's state transitions (`HandleSpyroDamage`, `func_80041270`), which run once a tick, at its end. A tick's first vblank therefore keeps all of its flags aside (`g_t60.damage_acc`) and `t60_transitions_begin` ORs them in for the transitions: a hit a moby sets once (`g_Spyro.m_DamageFlags = 0x86`), or a touch that lasts one vblank (`func_8003FE40`'s `ColMoby`), counts on either vblank of the tick, as it did when the transitions ran every vblank. A tick whose first vblank leaves play (a pause, a portal) never runs its transitions: what that vblank kept (a hit, a press) goes with it.
 
 A moby at 30 Hz sets them once a tick. Without this the second vblank found bit 31 clear, `func_8003FE40` zeroed the flags and Spyro was the player's again for half of every tick: a portal never carried him in and its camera kept starting its path over (the owner's Gnorc Gnexus report), and a vortex's lift dropped him from state 17 to 15 every other vblank, so it never took him home. A tick cut short by a gamestate change (the portal's or vortex's gamestate 1, the pause menu) lets go of both in `PortGamestateUpdate`, so the 30 Hz update after it finds Spyro as the original's tick left him. No moby reads `g_Spyro.m_ControlFlags`, so a 60 Hz class sees no difference.
 
@@ -57,6 +59,10 @@ A 30 Hz tick is two vblanks. The first **starts** the tick and the second ends i
 | `T60_TICK_DO(step)` | a duration counter, a velocity change before the move, a spawn or sound taken once a tick | runs on the vblank that starts a tick |
 | `T60_TICK_END_DO(step)` | a step the original takes **after** the tick's move (move, then slow down or fall faster) | runs on the vblank that ends a tick, so the tick's second half still moves by the old velocity |
 | `T60_TICK_AND(cond)` | a condition that may come true only once a tick: a counter's test with its step, a random roll (same odds a second), a test of a once-a-tick counter that triggers a one-shot action | `tick && cond` |
+| `T60_SPYRO_TRANSITIONS(call)` | Spyro's state transitions (`func_80041670`), which the original runs once a tick after the move and collision (D160) | runs on the vblank that ends a tick, with the tick's two vblanks' presses and releases ORed into `g_Pad` for it (not into a pad the lockout has blanked) and the two vblanks' damage flags ORed into `m_DamageFlags` |
+| `T60_TICK_VBLANKS(g_DeltaTime)` | a counter the transitions step by `g_DeltaTime` (the supercharge's held cross, `D_80075700`; D160) | the vblanks of the tick the update ends: its own plus the first vblank's one |
+| `T60_PAD_LOCKED(test)` | the pad lockout's test in Spyro's update (`m_noGamepadUpdateFrames != 0`, a count of ticks; D160) | the test, and on a tick's second vblank also true when its first was locked out: a lockout lasts whole ticks, as the original's one test a tick gives |
+| `T60_TICK_INC_FROM0(counter, k)` | a counter a test zeroes every vblank and reads as "not zero" (`m_airTime`, `m_floorIdleTime`; D160) | steps on the vblank the counter leaves zero, and on the one that starts a tick; `k` names the counter, so its other sites in that vblank step too |
 | `T60_SHARE(x)`, `T60_SHARE8(x)` | an amount per tick: a speed, a turn, a phase, a drift (`SHARE8`: a signed delta held in a byte) | this vblank's share: `x >> 1`, then `x - (x >> 1)` |
 
 With the velocity change at the tick's start (or end, as the original orders it) and the move shared, a moby's position at the end of every tick is exactly the original's, given the same inputs. Where a fix needed new code, it's an `#if SPYRO_TICK60 … #else <original> #endif` block (5 in the classes, 1 in `func_8003FE40`'s `>> 6`, the helpers' 7 speed sites, and the loop and animation hooks).
@@ -84,7 +90,7 @@ The dispatch is `src/game/tick60.c` (`PortGamestateUpdate`), which `main.c` call
 - **What changes on the 30 Hz path, by design:**
   - `main.c`'s dispatch (0012);
   - `present.c` (no in-between frame after a 60 Hz update: `&& !g_t60.next`, always true when off);
-  - `savestate.c` (a `T60 ` chunk: the mode, the half tick, Spyro's carry);
+  - `savestate.c` (a `T60 ` chunk: the mode, the half tick, Spyro's carry, and what a tick's first vblank keeps for its second: the wall contact, the pad's presses and lockout, the damage flags; D160);
   - `trace.c` (`--moby-trace`, off unless asked);
   - the Vita's menu row (a fifth value).
 
@@ -428,8 +434,9 @@ The update is a small part of the cost. The draw runs every vblank, which double
 ## Known differences and open items
 
 - **Spyro:**
-  - running along a wall (above);
-  - the coyote time, air time and the like count 30 Hz ticks, so they're exact; jump heights match.
+  - Spyro's state transitions run once a tick, at its end, seeing the presses of both its vblanks (`T60_SPYRO_TRANSITIONS`, D160): a state lasts whole ticks, the landing tests see the geometry after two substeps, the input latency is the original's. What they read arrives on either vblank, so a tick's first vblank keeps it for them: the pad's presses and releases, and the damage flags ("Hits", above). The pad lockout (`m_noGamepadUpdateFrames`, after a hit or a respawn) lasts whole ticks (`T60_PAD_LOCKED`) and what is kept from a locked-out vblank is the blank pad, so no press gets through one; the supercharge's held-cross count takes the tick's vblanks (`T60_TICK_VBLANKS`), so its jump comes after ten vblanks of hold as at 30 Hz. `tools/tick60_fuzz.py` plays random pad scripts at both rates from one save state and compares them: the jump cadence (`moves`, Cliff Town), poked hits on either vblank and cross tapped through the lockout (`hits`), and a poked supercharge's jump (`super`, Tree Tops);
+  - running along a wall (above): since D160 the wall contact is the tick's at 60 Hz too (`t60_wall_begin`/`t60_wall_end`: a tick's first vblank keeps what it found for the second and puts the last tick's back for the second's physics; the wall ray once a tick, at its end). The running-jump script's drift from the 30 Hz run stops after the wall sections (3,741 units at the end for 14,727 before); a smaller speed sawtooth remains, the per-vblank pass still finding contacts the original's one pass over the whole move wouldn't;
+  - the coyote time, air time and the like count 30 Hz ticks, so they're exact; jump heights match. A counter the floor test zeroes every vblank (`m_airTime`, `m_floorIdleTime`) is stepped on the vblank it leaves zero too (`T60_TICK_INC_FROM0`, D160), so "airborne" is true on either half of a tick; the charge jump's and supercharge jump's landing tests wait for two substeps, as the original's whole tick gave them (D160: before that, a charge jump with cross held landed every vblank, Spyro hopping 50 units in place, the "bunny hop" of issue #148).
   - a standing jump with up held, from the same spot, goes elsewhere at 60 Hz (routes A and B's jumps, D141: ~280 units forward instead of ~820 in 24 vblanks; ~430 units to the side). Not investigated: the air steering or the camera that "up" is relative to. It's why routes A and B as written don't reach their portal and vortex at 60 Hz.
 - **Classes:**
   - Decelerations guarded by a threshold (Bull state 4, Ram state 2, Shepherd state 7, sheep fodder, Shepherd) can lose half a move step once, on the tick that crosses it.

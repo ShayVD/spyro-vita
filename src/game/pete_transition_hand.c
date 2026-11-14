@@ -20,6 +20,7 @@
 #include "overlay_pointers.h"
 #include "region.h" /* RT(): PAL 50 Hz retune (D133) */
 #include "spyro.h"
+#include "tick60_sites.h" /* 60 Hz logic's sites (D160) */
 #include "variables.h"
 #include "vector.h"
 
@@ -717,7 +718,7 @@ static int FromSupercharge(void) {
     if (D_80075700 >= RT(10, 8) || g_Spyro.m_airTime != 0)
       jump = 1;
     else
-      D_80075700 += g_DeltaTime;
+      D_80075700 += T60_TICK_VBLANKS(g_DeltaTime); /* 60 Hz logic: the tick's vblanks, the transitions being once a tick (D160) */
   }
   if (jump || (g_Pad.m_Released & PAD_CROSS)) {
     func_8003EA68(24);

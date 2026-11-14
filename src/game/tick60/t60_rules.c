@@ -14,6 +14,7 @@
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 
 #include "common.h"
+#include "gamepad.h"
 #include "hud.h"
 #include "moby.h"
 #include "moby_helpers.h"
@@ -151,18 +152,30 @@ void t60_spyro_shift(void *pVelocity) {
  *     carried him in, and its camera left its path mode and started over;
  *   - of the damage flags, a vortex's or whirlwind's lift (0x800, classes
  *     9 and 300) is kept for the second half: HandleSpyroDamage drops him
- *     from state 17 to 15 when it is missing. The one-shot hits are taken
- *     once a tick, as before.
+ *     from state 17 to 15 when it is missing.
+ * The flags' one reader is HandleSpyroDamage and its like, in his state
+ * transitions, which run once a tick, at its end (T60_SPYRO_TRANSITIONS,
+ * D160). So a tick's first vblank keeps all of its flags for them
+ * (damage_acc; t60_transitions_begin ORs them in): a hit a moby sets once
+ * (moby_update.c's `g_Spyro.m_DamageFlags = 0x86`), or a touch of one
+ * vblank (func_8003FE40's ColMoby), on a first vblank is taken at the
+ * tick's end, as on a second. It keeps the pad's presses and releases the
+ * same way, here, inside his update: while his lockout has the pad blanked
+ * (m_noGamepadUpdateFrames) what is kept is blank too.
  * A tick cut short by a gamestate change lets go in PortGamestateUpdate. */
 void t60_spyro_damage_end(void) {
-  if (g_t60.upper || g_DeltaTime != 1)
+  if (T60_TICK_ENDS) {
     g_Spyro.m_DamageFlags = 0;
-  else
-    g_Spyro.m_DamageFlags &= 0x800;
+    return;
+  }
+  g_t60.damage_acc = g_Spyro.m_DamageFlags;
+  g_t60.pad_down_acc = g_Pad.m_Down;
+  g_t60.pad_released_acc = g_Pad.m_Released;
+  g_Spyro.m_DamageFlags &= 0x800;
 }
 
 void t60_spyro_release(void) {
-  if (g_t60.upper || g_DeltaTime != 1) {
+  if (T60_TICK_ENDS) {
     g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
     g_t60.spyro_held = 0;
   } else {
@@ -226,7 +239,7 @@ int t60_path_step(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int
   g_t60.path[k].moby = pMoby;
   rest = g_t60.path[k].rest;
   rest[0] = rest[1] = rest[2] = 0;
-  if (g_DeltaTime == 1 && !g_t60.upper) {
+  if (t60_first_half()) {
     /* the tick's first half: move by half the step, keep the rest */
     rest[0] = (pMoby->m_Position.x - from.x) - ((pMoby->m_Position.x - from.x) >> 1);
     rest[1] = (pMoby->m_Position.y - from.y) - ((pMoby->m_Position.y - from.y) >> 1);
@@ -237,4 +250,85 @@ int t60_path_step(Moby *pMoby, PathData *pPath, Vector3D *pPreviousMovement, int
   }
   /* else: first taken in the second half, or a late update: whole, once */
   return r;
+}
+
+/* The wall contact (m_againstWall, m_wallAgainstSpyro; D160). The original
+ * clears it at func_8003FE40's start, its one collision pass over the
+ * tick's move sets it, and the next tick's two physics substeps both read
+ * it. At 60 Hz each vblank has its own pass: a tick's first vblank starts
+ * the contact fresh and, at its end, keeps what it found for the second
+ * vblank and puts the last tick's back, which the second vblank's physics
+ * then reads as the original's second substep did; the second vblank goes
+ * on from the first's contact and leaves the tick's for the next. A late
+ * update that starts a tick is a whole one: the original's clear. One that
+ * ends a tick goes on from the first vblank's contact like any second
+ * vblank (every update in play runs this collision once, func_80047B60,
+ * so the first vblank's contact is always this tick's). */
+void t60_wall_begin(void) {
+  if (g_t60.upper) { /* the tick's second update */
+    g_Spyro.m_againstWall = g_t60.wall_acc;
+    g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_acc_vec[0];
+    g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_acc_vec[1];
+    g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_acc_vec[2];
+    return;
+  }
+  if (t60_first_half()) {
+    g_t60.wall_pub = g_Spyro.m_againstWall;
+    g_t60.wall_pub_vec[0] = g_Spyro.m_wallAgainstSpyro.x;
+    g_t60.wall_pub_vec[1] = g_Spyro.m_wallAgainstSpyro.y;
+    g_t60.wall_pub_vec[2] = g_Spyro.m_wallAgainstSpyro.z;
+  }
+  g_Spyro.m_againstWall = 0;
+  g_Spyro.m_wallAgainstSpyro.x = g_Spyro.m_wallAgainstSpyro.y = g_Spyro.m_wallAgainstSpyro.z = 0;
+}
+
+void t60_wall_end(void) {
+  if (!t60_first_half())
+    return;
+  g_t60.wall_acc = g_Spyro.m_againstWall;
+  g_t60.wall_acc_vec[0] = g_Spyro.m_wallAgainstSpyro.x;
+  g_t60.wall_acc_vec[1] = g_Spyro.m_wallAgainstSpyro.y;
+  g_t60.wall_acc_vec[2] = g_Spyro.m_wallAgainstSpyro.z;
+  g_Spyro.m_againstWall = g_t60.wall_pub;
+  g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_pub_vec[0];
+  g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_pub_vec[1];
+  g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_pub_vec[2];
+}
+
+/* Spyro's state transitions once a tick (T60_SPYRO_TRANSITIONS, D160). The
+ * original's PadVSync ORs the presses and releases of a tick's two vblanks
+ * into g_Pad.m_Down and m_Released (g_UnprocessedFrames != 0), so the
+ * transitions at the tick's end see a press on either. At 60 Hz each vblank
+ * is sampled on its own; t60_spyro_damage_end keeps the first vblank's, and
+ * they are ORed in for the transitions only, then the live values put back.
+ * Not into a pad the lockout has blanked (g_PadSwapFlag: func_8004A200
+ * swapped the blank one in): the original's transitions see nothing then.
+ * The first vblank's damage flags are ORed in too; t60_spyro_damage_end
+ * clears them after, as the original does. */
+void t60_transitions_begin(void) {
+  g_t60.pad_down_saved = g_Pad.m_Down;
+  g_t60.pad_released_saved = g_Pad.m_Released;
+  if (!g_PadSwapFlag) {
+    g_Pad.m_Down |= g_t60.pad_down_acc;
+    g_Pad.m_Released |= g_t60.pad_released_acc;
+  }
+  g_Spyro.m_DamageFlags |= g_t60.damage_acc;
+}
+
+void t60_transitions_end(void) {
+  g_Pad.m_Down = g_t60.pad_down_saved;
+  g_Pad.m_Released = g_t60.pad_released_saved;
+}
+
+/* func_8004A200's pad lockout (m_noGamepadUpdateFrames, D160): the original
+ * tests it once a tick, steps it, and the whole tick (its two physics
+ * substeps and its transitions) has the blank pad. Here the count steps on
+ * a tick's first vblank, so on the lockout's last tick the second vblank
+ * found zero and the live pad: a press on it reached the transitions a
+ * tick early. The tick's second update is locked out when its first was. */
+int t60_pad_locked(int pLocked) {
+  if (g_t60.upper)
+    return pLocked || g_t60.pad_locked;
+  g_t60.pad_locked = pLocked;
+  return pLocked;
 }
