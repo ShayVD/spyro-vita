@@ -10,7 +10,7 @@ include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
-set(VITA_VERSION "01.20")
+set(VITA_VERSION "01.21")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 # SPYRO_UNSAFE, off by default: the release VPK and CI's stay safe apps. A safe
 # app plays the PlayStation Store's PS1 Classic of the game (the digital copy,
