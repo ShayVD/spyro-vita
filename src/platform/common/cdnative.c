@@ -71,7 +71,9 @@ volatile int g_psx_cdn_busy;
 /* ---- the platform: files, a thread, two semaphores ---- */
 
 #ifdef __vita__
-#define PRIORITY 0x90 /* behind the mixer on core 1, as xa_ahead.c */
+#define PRIORITY 0x88 /* core 2, below the render thread (0x80): from the digital copy the
+                      * stream's chunks are 50 ms decodes, and on core 1 at 0x90 they held up the
+                      * walk the game thread joins every tick (D158's stutter) */
 static SceUID s_work, s_done, s_thread;
 static int fs_open(const char *path) {
   SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
@@ -272,8 +274,8 @@ static int helper_start(void) {
 #ifdef __vita__
   s_help_work = sceKernelCreateSema("spyro_cd_help", 0, 0, 1, NULL);
   s_help_done = sceKernelCreateSema("spyro_cd_helped", 0, 0, 1, NULL);
-  /* core 2, the render thread's (0x80), which has room and is idle during a load; below it */
-  s_help_thread = sceKernelCreateThread("spyro_cd_help", helper, 0x88, 0x4000, 0, SCE_KERNEL_CPU_MASK_USER_2, NULL);
+  /* core 1, below the parse thread (0x98) and the presenter (0x9A), which are idle during a load */
+  s_help_thread = sceKernelCreateThread("spyro_cd_help", helper, 0x9C, 0x4000, 0, SCE_KERNEL_CPU_MASK_USER_1, NULL);
   if (s_help_work < 0 || s_help_done < 0 || s_help_thread < 0 || sceKernelStartThread(s_help_thread, 0, NULL) < 0) {
     if (s_help_thread >= 0)
       sceKernelDeleteThread(s_help_thread);
@@ -575,7 +577,7 @@ int psx_cdn_start(void) {
   s_work = sceKernelCreateSema("spyro_cd_work", 0, 0, 1 << 20, NULL);
   s_done = sceKernelCreateSema("spyro_cd_done", 0, 0, 1, NULL);
   s_thread = sceKernelCreateThread("spyro_cd", worker, PRIORITY, 0x4000, 0,
-                                   SCE_KERNEL_CPU_MASK_USER_1, NULL);
+                                   SCE_KERNEL_CPU_MASK_USER_2, NULL);
   if (s_work < 0 || s_done < 0 || s_thread < 0 || sceKernelStartThread(s_thread, 0, NULL) < 0)
     goto fail;
 #else

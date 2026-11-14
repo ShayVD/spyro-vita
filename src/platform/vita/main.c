@@ -768,7 +768,7 @@ int main(int argc, char **argv) {
   if (g_vita_opts.cd_native) {
     if (psx_cdn_start() == 0) {
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
-      vita_log("cd: native file reads and the XA stream on a worker on core 1, priority 0x90 "
+      vita_log("cd: native file reads and the XA stream on a worker on core 2, priority 0x88 "
                "(cd_native=1, D93)");
     } else {
       vita_log("cd: no worker thread for cd_native=1: the sector reads as before");
