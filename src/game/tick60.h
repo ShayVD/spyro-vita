@@ -49,8 +49,11 @@ typedef struct {
   int from0[2];   /* T60_TICK_INC_FROM0: the counter left zero this vblank, so its other sites step too (cleared each update) */
   /* Spyro's state transitions run once a tick, at its end (T60_SPYRO_TRANSITIONS, D160): the
    * presses and releases of the tick's first vblank, which they must still see
-   * (the original's PadVSync ORs a tick's two vblanks), and the live values put back after */
+   * (the original's PadVSync ORs a tick's two vblanks), and the live values put back after.
+   * Taken inside his update (t60_spyro_damage_end), so a pad his lockout blanked stays blank */
   int pad_down_acc, pad_released_acc, pad_down_saved, pad_released_saved;
+  int damage_acc; /* the tick's first vblank's m_DamageFlags, which the transitions at its end must still see (a moby's one-shot hit) */
+  int pad_locked; /* the tick's first vblank had the pad locked out (m_noGamepadUpdateFrames): its second has too (T60_PAD_LOCKED) */
   /* func_8003BFC0's path steps this tick (t60_path_step, D144): each one's
    * moby, and the half of the step its second vblank still moves */
   int path_n;

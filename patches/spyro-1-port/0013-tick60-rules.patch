@@ -337,7 +337,8 @@
  
 @@ -1903,7 +1903,7 @@
  
-   if (g_Spyro.m_noGamepadUpdateFrames != 0) {
+-  if (g_Spyro.m_noGamepadUpdateFrames != 0) {
++  if (T60_PAD_LOCKED(g_Spyro.m_noGamepadUpdateFrames != 0)) { // 60 Hz logic: a lockout lasts its 30 Hz tick (D160)
      func_80053708(&g_Pad, &g_PadBackup);
 -    g_Spyro.m_noGamepadUpdateFrames--;
 +    T60_TICK_DO(g_Spyro.m_noGamepadUpdateFrames--); // 60 Hz logic: 30 Hz ticks (D130)

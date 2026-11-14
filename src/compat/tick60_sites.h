@@ -27,8 +27,14 @@
  *     it in that vblank steps once the first did, as the original's do;
  *   - Spyro's state transitions, which the original runs once a tick after
  *     the tick's move and collision: T60_SPYRO_TRANSITIONS(call), on the
- *     vblank that ends a tick, seeing the presses of both its vblanks
- *     (t60_pad_tick_begin/end; D160);
+ *     vblank that ends a tick, seeing the presses of both its vblanks and
+ *     the damage flags of both (t60_transitions_begin/end; D160);
+ *   - a counter the transitions step by g_DeltaTime (the supercharge's
+ *     held cross): T60_TICK_VBLANKS(g_DeltaTime), the vblanks of the tick
+ *     they end, not of its last update;
+ *   - the pad lockout's test (m_noGamepadUpdateFrames, a count of ticks):
+ *     T60_PAD_LOCKED(test), which holds for the tick's second vblank when
+ *     its first was locked out, as the original's one test a tick does;
  *   - an amount per tick (a speed, a turn, a drift): T60_SHARE(amount),
  *     this vblank's share of it (half, the two halves summing to it);
  *     T60_SHARE8 for a turn held in a byte (-funsigned-char: 250 is -6).
@@ -51,7 +57,10 @@
             : (g_t60.tick || g_t60.from0[k]) ? (void)((x)++) : (void)0)
 #define T60_SHARE(x) t60_share(x)
 #define T60_SPYRO_TRANSITIONS(call) \
-  (T60_TICK_ENDS ? (t60_pad_tick_begin(), (void)(call), t60_pad_tick_end()) : (void)0)
+  (T60_TICK_ENDS ? (t60_transitions_begin(), (void)(call), t60_transitions_end()) : (void)0)
+/* the vblanks of the tick this update ends: its own and, on a tick's second update, the first's one */
+#define T60_TICK_VBLANKS(d) ((d) + g_t60.upper)
+#define T60_PAD_LOCKED(c) t60_pad_locked(c)
 #define T60_SHARE8(x) t60_share((signed char)(x))
 #else
 #define T60_TICK_DO(e) e
@@ -60,6 +69,8 @@
 #define T60_TICK_INC_FROM0(x, k) x++
 #define T60_SHARE(x) x
 #define T60_SPYRO_TRANSITIONS(call) call
+#define T60_TICK_VBLANKS(d) d
+#define T60_PAD_LOCKED(c) c
 #define T60_SHARE8(x) x
 #endif
 

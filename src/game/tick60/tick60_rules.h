@@ -34,12 +34,13 @@ int t60_class_60(int pClass);     /* a class judged for 60 Hz (t60_classes.c) */
 void t60_hud_tick(void);          /* the HUD, at 30 Hz */
 struct Vector3D;
 void t60_spyro_shift(void *pVelocity); /* func_8003FE40's >> 6, its low bits carried */
-void t60_spyro_damage_end(void);  /* func_8004A200: a vortex's lift (0x800) lasts a 30 Hz tick */
+void t60_spyro_damage_end(void);  /* func_8004A200: a vortex's lift (0x800) lasts a 30 Hz tick; a first vblank's flags and presses kept for the transitions */
 void t60_spyro_release(void);     /* func_8004A200's end: a script's hold lasts a 30 Hz tick */
 void t60_wall_begin(void); /* func_8003FE40's start: the wall contact cleared, or restored from the tick's first vblank (D160) */
 void t60_wall_end(void);   /* its end: a first vblank's contact kept for the second, the physics reading the last tick's */
-void t60_pad_tick_begin(void); /* before Spyro's transitions at a tick's end: the first vblank's presses ORed in (D160) */
-void t60_pad_tick_end(void);   /* after them: the live values back */
+void t60_transitions_begin(void); /* before Spyro's transitions at a tick's end: the first vblank's presses and damage flags ORed in (D160) */
+void t60_transitions_end(void);   /* after them: the pad's live values back */
+int t60_pad_locked(int pLocked);  /* func_8004A200's lockout test: a lockout lasts its tick (D160) */
 
 /* func_8003BFC0, a moby's frame-counted path step (moby_helpers_hand.c), in
  * the 60 Hz rules: its frame a tick, split over the tick's two vblanks
