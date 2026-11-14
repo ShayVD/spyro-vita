@@ -6,8 +6,14 @@
  * stream costs one file-system call per 32 sectors. The reading, sniffing,
  * directory walk and SHA-1 are vita-port-kit's discimage (D108); what stays
  * here is the search of the data folder, the cue sheet, the messages and the
- * disc check. */
+ * disc check.
+ *
+ * The digital copy (D157): a PS1 Classic's EBOOT.PBP, in the data folder or
+ * (on the Vita) in the PSP emulator's folders, is read in place through
+ * pbp.c: the same file table and sector reads, decoded block by block. */
 #include "psx_cdimage.h"
+#include "psx_cdnative.h"
+#include "psx_pbp.h"
 #include "psx_region.h"
 
 #include <dirent.h>
@@ -27,7 +33,8 @@
  * D132; extract_disc.py's REGIONS). */
 #define WAD_NAME "WAD.WAD"
 
-static VpkDisc s_disc; /* the image, read through two 32-sector windows */
+static VpkDisc s_disc; /* the image, read through two 32-sector windows; or the copy's sectors (D158) */
+static PsxPbp *s_pbp;  /* the digital copy (D157): the game thread's handle, s_disc's source */
 static struct {
   char path[512];
   char name[128]; /* for messages: the file name alone */
@@ -42,7 +49,12 @@ void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent)) {
   s_progress = progress;
 }
 
+/* 1: an unsafe Vita app, which may look in the PSP emulator's folders (find_installed) */
+static int s_scan_installed;
+void psx_cdimage_scan_installed(int on) { s_scan_installed = on != 0; }
+
 const char *psx_cdimage_path(void) { return vpk_disc_is_open(&s_disc) ? s_img.path : NULL; }
+struct PsxPbp *psx_cdimage_pbp(void) { return s_pbp; }
 
 void psx_cdimage_layout(int *sector, int *base) {
   *sector = s_disc.l.sector;
@@ -191,11 +203,137 @@ static int open_image(const char *path, const char *name, const VpkDiscLayout *l
 static void say(const char *what) { fprintf(stderr, "libcd: %s\n", what); }
 
 static int not_found(PsxCdError *err, const char *dir) {
+  /* the digital copy (D157): from the data folder; an unsafe app also reads it where the Store put it */
   return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
               "Copy your Spyro the Dragon disc image (USA or Europe) to %s/: the .bin and .cue of "
-              "a raw dump (a CloneCD .img works too). See the README.",
-              dir);
+              "a raw dump (a CloneCD .img works too). %s See the README.",
+              dir,
+              s_scan_installed
+                  ? "Or install your copy from the PlayStation Store on this Vita: it is read from there."
+                  : "Or copy the EBOOT.PBP of your PlayStation Store copy there.");
 }
+
+/* ---- the digital copy (D157) ---- */
+
+/* path is a .pbp: open it as the disc if it is a PS1 Classic of a release
+ * the region table knows. */
+static int open_pbp(const char *path, const char *name, PsxCdError *err) {
+  PsxPbpError pe;
+  PsxPbp *p;
+  char msg[700];
+  if (psx_pbp_open(&p, path, &pe) != 0) {
+    if (pe.code == PSX_PBP_ERR_NOT_PBP || pe.code == PSX_PBP_ERR_MULTI_DISC || pe.code == PSX_PBP_ERR_PGD)
+      return fail(err, PSX_CD_ERR_CONVERT, "A PBP CAN'T BE READ AS A DISC",
+                  "%s: %s. Spyro Vita reads the PlayStation Store's own EBOOT.PBP of Spyro the "
+                  "Dragon; for anything else, dump your disc as .bin + .cue (MODE2/2352).",
+                  name, pe.text);
+    return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE DIGITAL COPY",
+                "%s: %s. Copy it again; if the download itself is damaged, delete it and download "
+                "it again.",
+                name, pe.text);
+  }
+  if (!psx_region_by_disc_id(psx_pbp_disc_id(p))) {
+    char serial[32];
+    const char *area;
+    psx_region_serial(psx_pbp_disc_id(p), serial, sizeof serial, &area);
+    fail(err, PSX_CD_ERR_WRONG_DISC, "WRONG DISC",
+         "%s is %s%s%s%s (\"%s\"), not Spyro the Dragon. Spyro Vita needs Spyro the Dragon, USA "
+         "(SCUS-94228) or Europe (SCES-01438).",
+         name, serial[0] ? serial : "another title", *area ? " (" : "", area, *area ? ")" : "",
+         psx_pbp_title(p));
+    psx_pbp_close(p);
+    return -1;
+  }
+  /* the copy's sectors as the disc: the kit's reads, find and walk serve it as an image (D158) */
+  s_disc.now = psx_cd_now;
+  s_disc.io = NULL; /* its reads are the decoder's, counted by psx_pbp_stats */
+  if (vpk_disc_open_source(&s_disc, psx_pbp_source, p, psx_pbp_sectors(p)) != 0) {
+    psx_pbp_close(p);
+    return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE DIGITAL COPY", "%s: out of memory", name);
+  }
+  s_pbp = p;
+  psx_pbp_set_clock(p, psx_cd_now);
+  psx_cdn_pbp_opened();
+  memset(&s_img, 0, sizeof s_img);
+  snprintf(s_img.path, sizeof s_img.path, "%s", path);
+  snprintf(s_img.name, sizeof s_img.name, "%s", name);
+  s_img.size = (long)psx_pbp_sectors(p) * PSX_PBP_SECTOR;
+  snprintf(msg, sizeof msg, "digital copy %s: %s \"%s\", %s, %d sectors", path, psx_pbp_disc_id(p),
+           psx_pbp_title(p), psx_pbp_encrypted(p) ? "PGD header" : "plain header", psx_pbp_sectors(p));
+  say(msg);
+  return 0;
+}
+
+#ifdef __vita__
+/* The PSP emulator's game folders, on the Vita's card and where Adrenaline
+ * may keep a memory stick: the first EBOOT.PBP whose disc ID is a known
+ * release. Only an unsafe app (-DSPYRO_UNSAFE=ON, psx_cdimage_scan_installed)
+ * calls this: a safe one can't open these folders, so it doesn't try, and
+ * its log has no failed scan. */
+static int find_installed(PsxCdError *err) {
+  static const char *const roots[] = {"ux0:", "uma0:", "imc0:", "xmc0:", "ur0:", "grw0:"};
+  enum { MAX_COPIES = 8 };
+  typedef struct {
+    char path[512], name[32], id[16];
+    int supported;
+  } Copy;
+  Copy copies[MAX_COPIES];
+  int i, j, n = 0;
+  char msg[600];
+  for (i = 0; i < (int)(sizeof roots / sizeof *roots); i++) {
+    char dir[64], path[512], id[16];
+    DIR *d;
+    struct dirent *e;
+    snprintf(dir, sizeof dir, "%spspemu/PSP/GAME", roots[i]);
+    if (!(d = opendir(dir)))
+      continue;
+    while ((e = readdir(d)) && n < MAX_COPIES) {
+      const PsxRegion *r;
+      if (e->d_name[0] == '.')
+        continue;
+      snprintf(path, sizeof path, "%s/%s/EBOOT.PBP", dir, e->d_name);
+      if (psx_pbp_peek_disc_id(path, id, sizeof id) != 0 || !(r = psx_region_by_disc_id(id)))
+        continue;
+      snprintf(copies[n].path, sizeof copies[n].path, "%s", path);
+      snprintf(copies[n].name, sizeof copies[n].name, "%s", e->d_name);
+      snprintf(copies[n].id, sizeof copies[n].id, "%s", id);
+      copies[n].supported = r->supported;
+      n++;
+    }
+    closedir(d);
+  }
+  if (!n) {
+    say("no PS1 Classic of Spyro the Dragon in a pspemu/PSP/GAME folder");
+    return -1;
+  }
+  /* several copies: the releases the port runs before one it only recognises,
+   * then by folder name (NPEE before NPUI), so the choice is the same every
+   * start; config.txt's disc= names one folder to use instead (D158) */
+  for (i = 1; i < n; i++)
+    for (j = i; j > 0; j--) {
+      int before = copies[j].supported > copies[j - 1].supported ||
+                   (copies[j].supported == copies[j - 1].supported && strcmp(copies[j].name, copies[j - 1].name) < 0);
+      if (!before)
+        break;
+      {
+        Copy t = copies[j];
+        copies[j] = copies[j - 1];
+        copies[j - 1] = t;
+      }
+    }
+  for (i = 0; i < n; i++) {
+    snprintf(msg, sizeof msg, "%s is %s%s", copies[i].path, copies[i].id, i ? " (another copy)" : "");
+    say(msg);
+  }
+  for (i = 0; i < n; i++) {
+    if (open_pbp(copies[i].path, copies[i].name, err) == 0)
+      return 0;
+    snprintf(msg, sizeof msg, "%s: %s", copies[i].path, err->title);
+    say(msg);
+  }
+  return -1;
+}
+#endif
 
 /* The first usable image in dir: .cue files first, then .bin/.img (and any
  * other candidate whose data is a raw image), each in name order ignoring
@@ -208,8 +346,13 @@ static int find_image(const char *dir, PsxCdError *err) {
   PsxCdError first = {0};
   DIR *d = opendir(dir);
   struct dirent *e;
-  if (!d)
+  if (!d) {
+#ifdef __vita__
+    if (s_scan_installed && find_installed(err) == 0) /* no data folder yet: the installed copy still counts (D158) */
+      return 0;
+#endif
     return not_found(err, dir);
+  }
   while ((e = readdir(d)) && nnames < MAX_NAMES)
     for (i = 0; i < (int)(sizeof exts / sizeof *exts); i++)
       if (has_ext(e->d_name, exts[i])) {
@@ -219,13 +362,28 @@ static int find_image(const char *dir, PsxCdError *err) {
   closedir(d);
   qsort(names, (size_t)nnames, sizeof *names, name_cmp);
 
-  for (pass = 0; pass < 2 && found < 0; pass++)
+  /* four passes: every .cue, then every image file, then the .pbp files of a
+   * release the port runs, then the others (a copy loads slower than an
+   * image, so an image beside it wins; a copy the port can't run never wins
+   * over one it can; D158) */
+  for (pass = 0; pass < 4 && found < 0; pass++)
     for (i = 0; i < nnames && found < 0; i++) {
       const char *name = names[i];
       PsxCdError why = {0};
       int kind;
-      if ((pass == 0) != has_ext(name, ".cue"))
-        continue;
+      {
+        int is_cue = has_ext(name, ".cue"), is_pbp = has_ext(name, ".pbp");
+        if (pass == 0 ? !is_cue : pass == 1 ? is_cue || is_pbp : !is_pbp)
+          continue;
+      }
+      if (pass >= 2) {
+        const PsxRegion *r;
+        char id[16];
+        snprintf(path, sizeof path, "%s/%s", dir, name);
+        r = psx_pbp_peek_disc_id(path, id, sizeof id) == 0 ? psx_region_by_disc_id(id) : NULL;
+        if ((pass == 2) != (r && r->supported))
+          continue;
+      }
       if (pass == 0) {
         if (resolve_cue(dir, name, names, nnames, path, sizeof path, &why) == 0) {
           kind = sniff(path, &lay);
@@ -269,11 +427,11 @@ static int find_image(const char *dir, PsxCdError *err) {
                "then copy the .bin and .cue to %s/.",
                name, dir);
           break;
-        case K_PBP:
-          fail(&why, PSX_CD_ERR_CONVERT, "A PBP CAN'T BE USED",
-               "%s is a PSP EBOOT.PBP, which has lost the game's music. Dump your disc as "
-               ".bin + .cue (MODE2/2352) and copy both to %s/.",
-               name, dir);
+        case K_PBP: /* the digital copy, read in place (D157) */
+          if (open_pbp(path, name, &why) == 0) {
+            found = i;
+            continue;
+          }
           break;
         case K_ECM:
           fail(&why, PSX_CD_ERR_CONVERT, "UNPACK THE ECM FIRST",
@@ -295,6 +453,16 @@ static int find_image(const char *dir, PsxCdError *err) {
       if (!first.code)
         first = why;
     }
+#ifdef __vita__
+  if (s_scan_installed && found < 0 && (!first.code || first.code == PSX_CD_ERR_CONVERT)) {
+    /* nothing usable copied here: the copy from the PlayStation Store, if installed */
+    PsxCdError why = {0};
+    if (find_installed(&why) == 0)
+      found = nnames; /* not one of the names: the installed copy */
+    else if (!first.code && why.code)
+      first = why;
+  }
+#endif
   if (found < 0 && first.code)
     *err = first;
   else if (found < 0)
@@ -312,11 +480,40 @@ int psx_cdimage_read(int lba, int off, void *buf, int n) {
 }
 
 void psx_cdimage_close(void) {
+  if (s_pbp) { /* the worker's and the helper's handles on it first, once they are quiet */
+    psx_cdn_quiesce();
+    psx_cdn_pbp_drop();
+  }
   vpk_disc_close(&s_disc);
+  psx_pbp_close(s_pbp);
+  s_pbp = NULL;
   memset(&s_img, 0, sizeof s_img);
 }
 
+void psx_cdimage_pbp_stats(PsxPbpStats *out) {
+  if (s_pbp)
+    psx_pbp_stats(s_pbp, out);
+  else
+    memset(out, 0, sizeof *out);
+}
+
+/* count sectors' 2048 data bytes from lba: an image's through the kit's
+ * windows, the copy's straight from its decoder a block at a time (the
+ * first-start hash: no per-sector copies) */
 static int read_form1(int lba, int count, unsigned char *out) {
+  if (s_pbp) {
+    static unsigned char block[PSX_PBP_BLOCK_SECTORS * PSX_PBP_SECTOR]; /* the game thread's */
+    while (count > 0) {
+      int k = lba % PSX_PBP_BLOCK_SECTORS, i;
+      int n = PSX_PBP_BLOCK_SECTORS - k < count ? PSX_PBP_BLOCK_SECTORS - k : count;
+      if (psx_pbp_read_sectors(s_pbp, lba, n, block) != 0)
+        return -1;
+      for (i = 0; i < n; i++)
+        memcpy(out + 2048 * i, block + i * PSX_PBP_SECTOR + 24, 2048);
+      out += 2048 * n, lba += n, count -= n;
+    }
+    return 0;
+  }
   return vpk_disc_read(&s_disc, lba, count, out);
 }
 
@@ -372,13 +569,14 @@ static const PsxCdImageFile *lookup(const Table *t, const char *path) {
 }
 
 static int hash_file(const PsxCdImageFile *f, char hex[41], int progress) {
-  static unsigned char sec[2048];
+  static unsigned char sec[16 * 2048]; /* 16 sectors at a time: one of the copy's blocks, or an image's window's half */
   PsxSha1 s;
   int nsect = (f->size + 2047) / 2048, last = -1;
   psx_sha1_init(&s);
-  for (int i = 0; i < nsect; i++) {
-    int n = f->size - i * 2048 < 2048 ? f->size - i * 2048 : 2048;
-    if (psx_cdimage_read(f->lba + i, 24, sec, 2048) != 2048)
+  for (int i = 0; i < nsect; i += 16) {
+    int m = nsect - i < 16 ? nsect - i : 16;
+    int n = f->size - i * 2048 < m * 2048 ? f->size - i * 2048 : m * 2048;
+    if (read_form1(f->lba + i, m, sec) != 0)
       return -1;
     psx_sha1_update(&s, sec, (unsigned)n);
     if (progress && s_progress && i * 100 / nsect != last)
@@ -456,20 +654,17 @@ static void marker_path(char *out, size_t cap) {
   psx_region_path(out, cap, dir, slash + 1, 1);
 }
 
+static int table_has(void *user, const char *name) { return lookup(user, name) != NULL; }
+
 static int check_disc(const Table *t, PsxCdError *err) {
   const PsxCdImageFile *exe = NULL, *wad = lookup(t, WAD_NAME);
-  const PsxRegion *r = NULL;
+  const PsxRegion *r;
   char hex[41], boot[64], serial[32], key[700], marker[600], msg[800];
   const char *area;
-  int i;
   boot_exe(t, boot, sizeof boot);
-  if (boot[0])
-    r = psx_region_by_exe(boot);
-  /* no SYSTEM.CNF, or it boots something else: a known executable, as
-   * before the region table */
-  for (i = 0; !r && i < PSX_REGION_COUNT; i++)
-    if (lookup(t, psx_region_info(i)->exe))
-      r = psx_region_info(i);
+  /* the release SYSTEM.CNF boots; without one, or booting something else, a
+   * known executable on the disc, as before the region table */
+  r = psx_region_of_disc(boot, table_has, (void *)t);
   if (r)
     exe = lookup(t, r->exe);
   if (!exe) {
@@ -527,11 +722,12 @@ static int check_disc(const Table *t, PsxCdError *err) {
 
 /* The image ends before sector need (an LBA): copied or dumped only in part. */
 static int cut_short(PsxCdError *err, int need) {
+  int sector, base;
+  psx_cdimage_layout(&sector, &base);
   return fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS CUT SHORT",
               "%s is cut short: %ld MB of the %ld MB or more the game needs. Copy it again, or "
               "dump the disc again.",
-              s_img.name, s_img.size >> 20,
-              (long)((long long)(need - s_disc.l.base) * s_disc.l.sector >> 20));
+              s_img.name, s_img.size >> 20, (long)((long long)(need - base) * sector >> 20));
 }
 
 int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCdError *err) {
@@ -549,17 +745,23 @@ int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCd
     goto bad;
   }
   {
-    int r = vpk_disc_walk(&s_disc, add_file, &t);
+    int r = vpk_disc_walk(&s_disc, add_file, &t); /* the image's, or the copy's through its source */
     t.bad_lba = s_disc.bad_lba;
     if (r != 0 || t.n == 0) {
       if (t.bad_lba - s_disc.l.base >= s_disc.nsect) {
         cut_short(err, t.bad_lba + 1);
         goto bad;
       }
-      fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS DAMAGED",
-           "%s: the disc's file list can't be read (sector %d). Copy the image again, or dump "
-           "the disc again.",
-           s_img.name, t.bad_lba);
+      if (s_pbp)
+        fail(err, PSX_CD_ERR_BAD_IMAGE, "THE DIGITAL COPY IS DAMAGED",
+             "%s: the disc's file list can't be read (sector %d). Copy it again, or delete the "
+             "download and download it again.",
+             s_img.name, t.bad_lba);
+      else
+        fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS DAMAGED",
+             "%s: the disc's file list can't be read (sector %d). Copy the image again, or dump "
+             "the disc again.",
+             s_img.name, t.bad_lba);
       goto bad;
     }
   }

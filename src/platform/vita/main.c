@@ -134,7 +134,18 @@
  *                       CdRead is a read of a file at an offset on a worker
  *                       thread on core 1, and the XA stream is read ahead
  *                       from its start there (instead of xa_ahead's
- *                       windows); the same bytes, the same ticks (D93)
+ *                       windows); the same bytes, the same ticks (D93).
+ *                       With the digital copy the worker is on core 2
+ *                       instead (D158)
+ *       cd_helper=0     with cd_native=1 and the digital copy: no helper
+ *                       thread decoding the second half of a long read
+ *                       (default 1; D158)
+ *       cd_async=0|1    with cd_native=1: 0, a CdRead completes inside
+ *                       CdRead; 1, at the first vblank after the worker is
+ *                       done, so the loaders animate meanwhile (D159). Not
+ *                       set: 1 for the digital copy, whose reads are slow
+ *                       enough to freeze the loading screen, 0 for a disc
+ *                       image or extracted files, as before D159
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -315,6 +326,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
+                        .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -471,6 +483,10 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "cd_native"))
       g_vita_opts.cd_native = atoi(v);
+    else if (!strcmp(line, "cd_helper"))
+      g_psx_cdn_helper = atoi(v); /* D158 */
+    else if (!strcmp(line, "cd_async"))
+      g_vita_opts.cd_async = atoi(v); /* D159 */
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
@@ -715,6 +731,8 @@ int main(int argc, char **argv) {
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
+  sceIoMkdir(VITA_DATA_DIR, 0777); /* a first start has no data folder yet: made, so the save folder below can be
+                                    * (an unsafe build may start from the installed Store copy alone, D158) */
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
@@ -741,6 +759,13 @@ int main(int argc, char **argv) {
    * the game can't start) go straight to the display (bootscreen.c, D60) */
   psx_cd_set_verify(VITA_DATA_DIR "/save/disc-verified.txt", disc_progress);
   psx_cd_set_clock(now_us);
+#ifdef SPYRO_UNSAFE
+  /* an unsafe app (-DSPYRO_UNSAFE=ON) can read the PSP emulator's folders: with no image in the
+   * data folder, the PlayStation Store's copy is looked for where it was installed (D157) */
+  psx_cdimage_scan_installed(1);
+  vita_log("disc: an unsafe build: with no image in %s, ux0:pspemu is searched for the digital copy "
+           "(SPYRO_UNSAFE, D157)", g_vita_opts.disc_dir);
+#endif
   {
     unsigned long long t0 = now_us();
     PsxCdIo io;
@@ -761,9 +786,18 @@ int main(int argc, char **argv) {
              g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
   if (g_vita_opts.cd_native) {
     if (psx_cdn_start() == 0) {
+      int core, priority, copy = psx_cdimage_pbp() != NULL;
+      psx_cdn_where(&core, &priority); /* core 1 at 0x90, or core 2 at 0x88 for the digital copy (D158) */
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
-      vita_log("cd: native file reads and the XA stream on a worker on core 1, priority 0x90 "
-               "(cd_native=1, D93)");
+      vita_log("cd: native file reads and the XA stream on a worker on core %d, priority 0x%x "
+               "(cd_native=1, D93)", core, priority);
+      /* asynchronous completion (D159): the digital copy's default, an image's only when asked for */
+      if (g_vita_opts.cd_async < 0 ? copy : g_vita_opts.cd_async) {
+        psx_cd_set_read_async(1);
+        vita_log("cd: a CdRead completes at the first vblank after the worker is done; the loaders "
+                 "animate meanwhile (cd_async=1, D159%s)",
+                 g_vita_opts.cd_async < 0 ? ": the digital copy's default" : "");
+      }
     } else {
       vita_log("cd: no worker thread for cd_native=1: the sector reads as before");
     }

@@ -10,7 +10,7 @@ steps modulo 0x10000 instead, so the count only grows; read it at least once per
 - Give the game a test knob that moves the wrap close to start-up (spyro-vita's `vcount_test=N` adds an offset to the
   raw counter), so a hardware run can check it in 30 seconds instead of 18 minutes.
 
-Frame pacing built on it (due-vblank presents, the 60 / 30 hold) is described in `../../docs/presentation.md`.
+Frame pacing built on it (due-vblank presents, the 60 / 30 hold) is `../pacing/` (the rules as code) and `../../docs/presentation.md` (why).
 
 **From:** spyro-vita `src/platform/vita/vcount.h` @ `bb62f38`.
 

@@ -3,6 +3,8 @@
 #ifndef PSX_HOOKS_H
 #define PSX_HOOKS_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,6 +18,21 @@ void psx_cd_vblank(void);              /* once per virtual vblank, before the VS
  * psx_cd_vblank() and each CdSync(1, ...) poll while a read is pending; 0
  * completes the read (and fires the callback) inside CdRead. */
 void psx_cd_set_read_latency(int ticks);
+/* With the native reads (D93): a CdRead completes at the first tick after the
+ * worker has finished it, not after the latency, so the game's loaders (which
+ * poll once a frame) animate the loading screen while the worker reads, as
+ * on the PS1 (D159). CdSync(0) and CdReadSync(0) still wait for it, and so
+ * does a loop that polls without a vblank between (PortCdLoadPoll, libcd.c).
+ * The timing then depends on the file system, so it is off unless asked for:
+ * the Vita turns it on for the digital copy only (an image or extracted
+ * files complete as before), the host with --cd-async. A setting, not part
+ * of a save state. */
+void psx_cd_set_read_async(int on);
+int psx_cd_read_async(void); /* the setting */
+/* The "cd: asynchronous CdReads" line into out (where each was completed:
+ * at a vblank or a poll with the worker done, or waited for); 0 when the
+ * setting is off. */
+int psx_cd_async_report(char *out, size_t cap);
 void psx_cd_set_log(int on); /* one stderr line per CdRead; also SPYRO_CD_LOG=1 */
 
 /* SPU (src/platform/common/libspu.c). */

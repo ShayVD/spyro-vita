@@ -21,7 +21,8 @@
 
 extern int g_rt_active; /* gpu_thread.c */
 
-#define PRIORITY 0x98 /* behind the mixer (0x70) and the XA reader (0x90) on core 1 */
+#define PRIORITY 0x98 /* behind the mixer (0x70) and the XA reader or cd_native's worker (0x90) on core 1; with the
+                       * digital copy that worker is on core 2 and its helper here at 0x9C (cdnative.c, D158) */
 #define STACK (256 << 10)
 #define PROBE_US 50000
 

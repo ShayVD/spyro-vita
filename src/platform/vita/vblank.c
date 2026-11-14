@@ -77,6 +77,13 @@ static void cd_report(void) {
     vita_log("cd: cd_native's worker: %u.%02u ms on the CdReads; %u of them after a stream chunk",
              (unsigned)(st.job_us / 1000), (unsigned)(st.job_us % 1000 / 10), st.behind_chunk);
   }
+  { /* the digital copy's decoder (D158): the game thread's handle and the worker's */
+    char line[400];
+    if (psx_cdn_pbp_report(line, sizeof line))
+      vita_log("%s", line);
+    if (psx_cd_async_report(line, sizeof line)) /* D159: only with cd_async on */
+      vita_log("%s", line);
+  }
 }
 
 static void vblank(void) {

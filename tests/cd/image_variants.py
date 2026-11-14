@@ -244,7 +244,7 @@ def main(argv):
     refused("chd", lambda d: write(os.path.join(d, "spyro.chd"), b"MComprHD" + bytes(200)),
             "CONVERT THE CHD FIRST")
     refused("pbp", lambda d: write(os.path.join(d, "EBOOT.PBP"), b"\0PBP" + bytes(200)),
-            "A PBP CAN'T BE USED")
+            "A PBP CAN'T BE READ AS A DISC")  # not a PS1 Classic (D157); a real one opens
     refused("ecm", lambda d: write(os.path.join(d, "spyro.bin.ecm"), b"ECM\0" + bytes(200)),
             "UNPACK THE ECM FIRST")
     refused("random", lambda d: write(os.path.join(d, "spyro.bin"), os.urandom(1 << 20)),
