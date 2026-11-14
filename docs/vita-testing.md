@@ -35,7 +35,8 @@ same VPK for every pull request and push to `main` (`.github/workflows/build.yml
 - The VPK is a safe app (`-DSPYRO_UNSAFE=OFF`, the default; D157): it plays a disc image, the extracted files, or the
   PlayStation Store copy's `EBOOT.PBP` from `ux0:data/spyro/`. `-DSPYRO_UNSAFE=ON` (or
   `SPYRO_CMAKE_ARGS=-DSPYRO_UNSAFE=ON` for `tools/ci/build_vpk.sh`) builds an unsafe app that also looks for the Store
-  copy in `ux0:pspemu`; neither CI nor a release builds that.
+  copy in `ux0:pspemu`. CI builds that too, as `spyro-vita-unsafe.vpk` (the job `Vita VPK (unsafe)`), and a release
+  carries both (D161).
 - The VPK uses native memory (decisions D106): the game's data labels are ordinary globals and its memory one block
   from the heap. `-DSPYRO_NATIVE_MEM=OFF` (or `SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=OFF` for `tools/ci/build_vpk.sh`)
   builds the moved arena of D25 instead, the default before D106.
@@ -72,11 +73,12 @@ the Japanese disc and is refused as not supported yet). Copy that `EBOOT.PBP` in
 with VitaShell, with no image and no `manifest.json` beside it (an image there is taken first):
 the app opens it in place as the disc (`libcd: digital copy ux0:data/spyro/EBOOT.PBP: SCUS94228
 "Spyro the Dragon™", PGD header, 281280 sectors`, then the same `disc:` line as an image's; the
-first start hashes `WAD.WAD` through the decoder, about a minute). This works with the VPK as
-released and as CI builds it, which is a safe app.
+first start hashes `WAD.WAD` through the decoder, about a minute). This works with
+`spyro-vita.vpk`, which is a safe app.
 
 A safe app can't read `ux0:pspemu`, so it doesn't look there, and its log has no line about it.
-`-DSPYRO_UNSAFE=ON` at configure time (default `OFF`) builds an unsafe app instead: the Vita
+`-DSPYRO_UNSAFE=ON` at configure time (default `OFF`) builds an unsafe app instead
+(`spyro-vita-unsafe.vpk` from CI and in a release, D161): the Vita
 must have unsafe homebrew enabled in HENkaku's settings, the log says `disc: an unsafe build: ...`
 at the start, and with nothing usable in the data folder the app finds the installed copy itself
 (`libcd: ... is SCUS94228` for every copy found, the chosen one first, then `libcd: digital copy

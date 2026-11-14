@@ -12,7 +12,8 @@ set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.21")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
-# SPYRO_UNSAFE, off by default: the release VPK and CI's stay safe apps. A safe
+# SPYRO_UNSAFE, off by default: spyro-vita.vpk stays a safe app (CI builds the
+# ON variant beside it as spyro-vita-unsafe.vpk, and a release has both, D161). A safe
 # app plays the PlayStation Store's PS1 Classic of the game (the digital copy,
 # D157) when the player copies its EBOOT.PBP into ux0:data/spyro. ON builds an
 # unsafe app (vita-make-fself without -s; the kit's UNSAFE), which the player
