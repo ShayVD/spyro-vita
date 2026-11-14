@@ -49,6 +49,10 @@ void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent)) {
   s_progress = progress;
 }
 
+/* 1: an unsafe Vita app, which may look in the PSP emulator's folders (find_installed) */
+static int s_scan_installed;
+void psx_cdimage_scan_installed(int on) { s_scan_installed = on != 0; }
+
 const char *psx_cdimage_path(void) { return vpk_disc_is_open(&s_disc) ? s_img.path : NULL; }
 struct PsxPbp *psx_cdimage_pbp(void) { return s_pbp; }
 
@@ -199,11 +203,14 @@ static int open_image(const char *path, const char *name, const VpkDiscLayout *l
 static void say(const char *what) { fprintf(stderr, "libcd: %s\n", what); }
 
 static int not_found(PsxCdError *err, const char *dir) {
+  /* the digital copy (D157): from the data folder; an unsafe app also reads it where the Store put it */
   return fail(err, PSX_CD_ERR_NOT_FOUND, "NO DISC IMAGE FOUND",
               "Copy your Spyro the Dragon disc image (USA or Europe) to %s/: the .bin and .cue of "
-              "a raw dump (a CloneCD .img works too). Or install your copy from the PlayStation "
-              "Store on this Vita: it is read from there. See the README.",
-              dir);
+              "a raw dump (a CloneCD .img works too). %s See the README.",
+              dir,
+              s_scan_installed
+                  ? "Or install your copy from the PlayStation Store on this Vita: it is read from there."
+                  : "Or copy the EBOOT.PBP of your PlayStation Store copy there.");
 }
 
 /* ---- the digital copy (D157) ---- */
@@ -221,7 +228,9 @@ static int open_pbp(const char *path, const char *name, PsxCdError *err) {
                   "Dragon; for anything else, dump your disc as .bin + .cue (MODE2/2352).",
                   name, pe.text);
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE DIGITAL COPY",
-                "%s: %s. If the download is damaged, delete it and download it again.", name, pe.text);
+                "%s: %s. Copy it again; if the download itself is damaged, delete it and download "
+                "it again.",
+                name, pe.text);
   }
   if (!psx_region_by_disc_id(psx_pbp_disc_id(p))) {
     char serial[32];
@@ -258,8 +267,9 @@ static int open_pbp(const char *path, const char *name, PsxCdError *err) {
 #ifdef __vita__
 /* The PSP emulator's game folders, on the Vita's card and where Adrenaline
  * may keep a memory stick: the first EBOOT.PBP whose disc ID is a known
- * release. Needs an unsafe app (SPYRO_UNSAFE): a safe one sees none of
- * these folders and finds no candidate. */
+ * release. Only an unsafe app (-DSPYRO_UNSAFE=ON, psx_cdimage_scan_installed)
+ * calls this: a safe one can't open these folders, so it doesn't try, and
+ * its log has no failed scan. */
 static int find_installed(PsxCdError *err) {
   static const char *const roots[] = {"ux0:", "uma0:", "imc0:", "xmc0:", "ur0:", "grw0:"};
   enum { MAX_COPIES = 8 };
@@ -338,7 +348,7 @@ static int find_image(const char *dir, PsxCdError *err) {
   struct dirent *e;
   if (!d) {
 #ifdef __vita__
-    if (find_installed(err) == 0) /* no data folder yet: the installed copy still counts (D158) */
+    if (s_scan_installed && find_installed(err) == 0) /* no data folder yet: the installed copy still counts (D158) */
       return 0;
 #endif
     return not_found(err, dir);
@@ -444,7 +454,7 @@ static int find_image(const char *dir, PsxCdError *err) {
         first = why;
     }
 #ifdef __vita__
-  if (found < 0 && (!first.code || first.code == PSX_CD_ERR_CONVERT)) {
+  if (s_scan_installed && found < 0 && (!first.code || first.code == PSX_CD_ERR_CONVERT)) {
     /* nothing usable copied here: the copy from the PlayStation Store, if installed */
     PsxCdError why = {0};
     if (find_installed(&why) == 0)
@@ -744,7 +754,8 @@ int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCd
       }
       if (s_pbp)
         fail(err, PSX_CD_ERR_BAD_IMAGE, "THE DIGITAL COPY IS DAMAGED",
-             "%s: the disc's file list can't be read (sector %d). Delete the download and download it again.",
+             "%s: the disc's file list can't be read (sector %d). Copy it again, or delete the "
+             "download and download it again.",
              s_img.name, t.bad_lba);
       else
         fail(err, PSX_CD_ERR_BAD_IMAGE, "THE IMAGE IS DAMAGED",

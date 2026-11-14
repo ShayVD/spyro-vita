@@ -12,12 +12,14 @@ set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
 set(VITA_VERSION "01.20")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
-# Unsafe (vita-make-fself without -s): the app may read ux0:pspemu, where the
-# PlayStation Store's PS1 Classic of the game is installed, and play it from
-# there (cdimage.c, D157). The player must have enabled unsafe homebrew in
-# HENkaku's settings, as for VitaShell. OFF keeps the safe app, which then
-# finds the digital copy only as a .pbp the player copied into ux0:data/spyro.
-option(SPYRO_UNSAFE "Unsafe app: reads the PSP emulator's folders for the digital copy (D157)" ON)
+# SPYRO_UNSAFE, off by default: the release VPK and CI's stay safe apps. A safe
+# app plays the PlayStation Store's PS1 Classic of the game (the digital copy,
+# D157) when the player copies its EBOOT.PBP into ux0:data/spyro. ON builds an
+# unsafe app (vita-make-fself without -s; the kit's UNSAFE), which the player
+# must have enabled in HENkaku's settings, and which also looks for the copy
+# where the Store installed it, in ux0:pspemu (cdimage.c's scan, switched on
+# from main.c under this definition).
+option(SPYRO_UNSAFE "Unsafe app: also reads the PSP emulator's folders for the digital copy (D157)" OFF)
 if(SPYRO_UNSAFE)
   set(VPK_UNSAFE UNSAFE)
 else()
@@ -46,6 +48,9 @@ add_executable(spyro_vita ${VITA_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c")
+if(SPYRO_UNSAFE)
+  target_compile_definitions(spyro_vita PRIVATE SPYRO_UNSAFE=1)
+endif()
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/vcount")

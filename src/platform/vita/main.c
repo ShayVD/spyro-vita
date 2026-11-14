@@ -727,7 +727,8 @@ int main(int argc, char **argv) {
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
-  sceIoMkdir(VITA_DATA_DIR, 0777); /* a first start from the Store copy alone has no data folder yet (D158) */
+  sceIoMkdir(VITA_DATA_DIR, 0777); /* a first start has no data folder yet: made, so the save folder below can be
+                                    * (an unsafe build may start from the installed Store copy alone, D158) */
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
@@ -754,6 +755,13 @@ int main(int argc, char **argv) {
    * the game can't start) go straight to the display (bootscreen.c, D60) */
   psx_cd_set_verify(VITA_DATA_DIR "/save/disc-verified.txt", disc_progress);
   psx_cd_set_clock(now_us);
+#ifdef SPYRO_UNSAFE
+  /* an unsafe app (-DSPYRO_UNSAFE=ON) can read the PSP emulator's folders: with no image in the
+   * data folder, the PlayStation Store's copy is looked for where it was installed (D157) */
+  psx_cdimage_scan_installed(1);
+  vita_log("disc: an unsafe build: with no image in %s, ux0:pspemu is searched for the digital copy "
+           "(SPYRO_UNSAFE, D157)", g_vita_opts.disc_dir);
+#endif
   {
     unsigned long long t0 = now_us();
     PsxCdIo io;
