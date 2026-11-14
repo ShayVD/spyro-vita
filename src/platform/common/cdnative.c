@@ -71,9 +71,6 @@ volatile int g_psx_cdn_busy;
 /* ---- the platform: files, a thread, two semaphores ---- */
 
 #ifdef __vita__
-#define PRIORITY 0x88 /* core 2, below the render thread (0x80): from the digital copy the
-                      * stream's chunks are 50 ms decodes, and on core 1 at 0x90 they held up the
-                      * walk the game thread joins every tick (D158's stutter) */
 static SceUID s_work, s_done, s_thread;
 static int fs_open(const char *path) {
   SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
@@ -148,6 +145,19 @@ static int timed_pread(int fd, void *buf, int n, long off, unsigned *calls, unsi
 /* ---- the digital copy (D157, D158) ---- */
 
 int g_psx_cdn_helper = 1;
+
+/* Where the Vita's worker runs, chosen in psx_cdn_start by what the disc is:
+ * - an image or extracted files: core 1 at 0x90, behind the mixer, as
+ *   xa_ahead.c and as since D93 (a stream chunk is a 1 ms file read);
+ * - the digital copy: core 2 at 0x88, below the render thread (0x80). Its
+ *   stream chunks are 50 ms decodes, and on core 1 at 0x90 they held up the
+ *   walk the game thread joins every tick (D158's stutter). */
+enum { CORE_IMAGE = 1, PRIORITY_IMAGE = 0x90, CORE_COPY = 2, PRIORITY_COPY = 0x88 };
+static int s_core = CORE_IMAGE, s_priority = PRIORITY_IMAGE;
+void psx_cdn_where(int *core, int *priority) {
+  *core = s_core;
+  *priority = s_priority;
+}
 
 /* The worker's own handle on the copy and the helper thread's, made at their
  * first read; psx_cdimage_close drops them (psx_cdn_pbp_drop, after the
@@ -574,11 +584,15 @@ int psx_cdn_start(void) {
     goto fail;
   if (g_psx_cdn_helper && psx_cdimage_pbp() && helper_start() != 0)
     fprintf(stderr, "libcd: cd_native: no helper thread; the copy decoded on the worker alone\n");
+  /* the disc is open by now (the Vita's main.c, the host's): the copy moves the worker (D158) */
+  s_core = psx_cdimage_pbp() ? CORE_COPY : CORE_IMAGE;
+  s_priority = psx_cdimage_pbp() ? PRIORITY_COPY : PRIORITY_IMAGE;
 #ifdef __vita__
   s_work = sceKernelCreateSema("spyro_cd_work", 0, 0, 1 << 20, NULL);
   s_done = sceKernelCreateSema("spyro_cd_done", 0, 0, 1, NULL);
-  s_thread = sceKernelCreateThread("spyro_cd", worker, PRIORITY, 0x4000, 0,
-                                   SCE_KERNEL_CPU_MASK_USER_2, NULL);
+  s_thread = sceKernelCreateThread("spyro_cd", worker, s_priority, 0x4000, 0,
+                                   s_core == CORE_COPY ? SCE_KERNEL_CPU_MASK_USER_2 : SCE_KERNEL_CPU_MASK_USER_1,
+                                   NULL);
   if (s_work < 0 || s_done < 0 || s_thread < 0 || sceKernelStartThread(s_thread, 0, NULL) < 0)
     goto fail;
 #else

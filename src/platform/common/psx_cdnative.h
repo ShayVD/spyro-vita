@@ -74,6 +74,10 @@ void psx_cdn_quiesce(void);
 void psx_cdn_pbp_drop(void);
 /* A copy is open again (psx_cdimage_open): the worker may clone it. */
 void psx_cdn_pbp_opened(void);
+/* The Vita core and priority psx_cdn_start gave the worker: core 1 at 0x90
+ * for an image or extracted files, as since D93; core 2 at 0x88 when the
+ * digital copy is open (D158). For the log. */
+void psx_cdn_where(int *core, int *priority);
 /* D158, set before psx_cdn_start: 1 (the default) starts a helper thread
  * that decodes the second half of a long read of the copy on another core;
  * 0 leaves the worker alone (the Vita's cd_helper=0). */

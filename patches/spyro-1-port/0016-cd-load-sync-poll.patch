@@ -1,0 +1,22 @@
+diff --git a/src/cd.c b/src/cd.c
+--- a/src/cd.c
++++ b/src/cd.c
+@@ -6,6 +6,18 @@
+ 
+ void CDLoadTime(void) {
+ 
++#ifdef SPYRO_PORT
++  // An asynchronous read (D159) is completed here once the port's worker is
++  // done: CDLoadSync spins on m_IsReading calling only this, where the PS1's
++  // CD interrupt ends the read. While the worker still has the read the
++  // timer below doesn't run (PortCdLoadPoll, src/platform/common/libcd.c,
++  // says why). Kept below the blank line so the region patches' first hunk
++  // of this file (patches/spyro-1-region/0004) keeps its context.
++  int PortCdLoadPoll(void);
++  if (PortCdLoadPoll())
++    g_CDReadTime = 0;
++#endif
++
+   if (g_CDMaxReadTime == 0)
+     return; // No timer set
+ 

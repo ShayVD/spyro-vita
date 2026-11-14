@@ -134,14 +134,18 @@
  *                       CdRead is a read of a file at an offset on a worker
  *                       thread on core 1, and the XA stream is read ahead
  *                       from its start there (instead of xa_ahead's
- *                       windows); the same bytes, the same ticks (D93)
+ *                       windows); the same bytes, the same ticks (D93).
+ *                       With the digital copy the worker is on core 2
+ *                       instead (D158)
  *       cd_helper=0     with cd_native=1 and the digital copy: no helper
  *                       thread decoding the second half of a long read
  *                       (default 1; D158)
- *       cd_async=0      with cd_native=1: a CdRead completes inside CdRead
- *                       again, freezing the loading screen for each read
- *                       (default 1: it completes at the first vblank after
- *                       the worker is done, and the loaders animate; D159)
+ *       cd_async=0|1    with cd_native=1: 0, a CdRead completes inside
+ *                       CdRead; 1, at the first vblank after the worker is
+ *                       done, so the loaders animate meanwhile (D159). Not
+ *                       set: 1 for the digital copy, whose reads are slow
+ *                       enough to freeze the loading screen, 0 for a disc
+ *                       image or extracted files, as before D159
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -322,7 +326,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
-                        .cd_async = 1,  /* D159 */
+                        .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .draw_distance = 100};
@@ -782,13 +786,17 @@ int main(int argc, char **argv) {
              g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
   if (g_vita_opts.cd_native) {
     if (psx_cdn_start() == 0) {
+      int core, priority, copy = psx_cdimage_pbp() != NULL;
+      psx_cdn_where(&core, &priority); /* core 1 at 0x90, or core 2 at 0x88 for the digital copy (D158) */
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
-      vita_log("cd: native file reads and the XA stream on a worker on core 2, priority 0x88 "
-               "(cd_native=1, D93)");
-      if (g_vita_opts.cd_async) {
+      vita_log("cd: native file reads and the XA stream on a worker on core %d, priority 0x%x "
+               "(cd_native=1, D93)", core, priority);
+      /* asynchronous completion (D159): the digital copy's default, an image's only when asked for */
+      if (g_vita_opts.cd_async < 0 ? copy : g_vita_opts.cd_async) {
         psx_cd_set_read_async(1);
         vita_log("cd: a CdRead completes at the first vblank after the worker is done; the loaders "
-                 "animate meanwhile (cd_async=1, D159)");
+                 "animate meanwhile (cd_async=1, D159%s)",
+                 g_vita_opts.cd_async < 0 ? ": the digital copy's default" : "");
       }
     } else {
       vita_log("cd: no worker thread for cd_native=1: the sector reads as before");

@@ -52,8 +52,17 @@ static struct {
   unsigned char *rd_buf;
   CdlCB read_cb, sync_cb, ready_cb;
   int latency, log;
-  int async; /* a native read completes when the worker is done (D159), not after latency ticks */
 } cd = {.latency = 1, .sync_status = CdlComplete, .stat = CdlStatStandby};
+
+/* D159's switch and its poll count. Settings of the run, not the drive's
+ * state: outside cd, which psx_cd_state saves whole, so a save state keeps
+ * v1.2.0's layout and a state load can't change the setting. */
+static int s_async; /* a native read completes when the worker is done, not after latency ticks */
+static int s_polls; /* PortCdLoadPoll's calls since the last vblank (or the read's start) that found it still with the worker */
+enum { POLLS_A_VBLANK = 4 }; /* more than the loaders make in a frame; a loop that waits for the read passes it at once */
+/* where the asynchronous reads were completed, for the "cd: asynchronous" line */
+enum { ASYNC_VBLANK, ASYNC_SYNC_POLL, ASYNC_LOAD_POLL, ASYNC_LOOP_WAIT, ASYNC_SYNC_WAIT, ASYNC_WHERES };
+static unsigned s_async_at[ASYNC_WHERES];
 
 static PsxCdStream s_stream = {.mix = {0x80, 0, 0, 0x80}};
 
@@ -305,7 +314,8 @@ int psx_cd_open(const char *disc_dir) {
 }
 
 void psx_cd_set_read_latency(int ticks) { cd.latency = ticks < 0 ? 0 : ticks; }
-void psx_cd_set_read_async(int on) { cd.async = on != 0; }
+void psx_cd_set_read_async(int on) { s_async = on != 0; }
+int psx_cd_read_async(void) { return s_async; }
 void psx_cd_set_log(int on) { cd.log = on; }
 const PsxCdStream *psx_cd_stream(void) { return &s_stream; }
 
@@ -537,27 +547,73 @@ static void cd_complete_read(void) {
 }
 
 /* an asynchronous read (D159): done when the worker is */
-static int cd_async_read(void) { return cd.async && cd_native_read(); }
+static int cd_async_read(void) { return s_async && cd_native_read(); }
 
-static void cd_tick(void) {
+static void cd_tick(int where) {
   if (!cd.rd_pending)
     return;
-  if (cd_async_read() ? psx_cdn_read_done() : --cd.rd_ticks <= 0)
+  if (cd_async_read()) {
+    if (psx_cdn_read_done()) {
+      s_async_at[where]++;
+      cd_complete_read();
+    }
+  } else if (--cd.rd_ticks <= 0) {
     cd_complete_read();
+  }
 }
 
-/* CDLoadSync (cd.c) spins on m_IsReading calling CDLoadTime, without a VSync
- * or a CdSync: on the PS1 the CD interrupt ends the loop. An asynchronous
- * read is completed here, each time the loop comes round (D159; CDLoadTime
- * calls this through patches/spyro-1-port/0011). The other modes complete
- * inside CdRead or at a tick, as before, so the host's runs don't change. */
-void PortCdLoadPoll(void) {
-  if (cd.rd_pending && cd_async_read() && psx_cdn_read_done())
-    cd_complete_read();
+int psx_cd_async_report(char *out, size_t cap) {
+  if (!s_async)
+    return 0;
+  snprintf(out, cap,
+           "cd: asynchronous CdReads (D159): %u completed at a vblank, %u at a CdSync poll, %u at a "
+           "CDLoadTime poll with the worker done; %u waited for in a loop that polls without a vblank "
+           "(CDLoadSync), %u by CdSync(0)",
+           s_async_at[ASYNC_VBLANK], s_async_at[ASYNC_SYNC_POLL], s_async_at[ASYNC_LOAD_POLL],
+           s_async_at[ASYNC_LOOP_WAIT], s_async_at[ASYNC_SYNC_WAIT]);
+  return 1;
+}
+
+/* CDLoadTime (cd.c) calls this first (patches/spyro-1-port/0016, D159).
+ * Without an asynchronous read pending it does nothing and returns 0: the
+ * other modes complete inside CdRead or at a tick, as before, so an image's
+ * or the host's runs don't change.
+ *
+ * With one pending:
+ * - The worker is done: the read is completed here. CDLoadSync spins on
+ *   m_IsReading calling only CDLoadTime, without a VSync or a CdSync (on the
+ *   PS1 the CD interrupt ends that loop), so no tick would complete it.
+ * - The worker still has it, and this is one of the first POLLS_A_VBLANK
+ *   calls since the last vblank: nothing. The loaders (loaders.c, the title
+ *   screen, the credits) call CDLoadTime once a frame and draw meanwhile.
+ * - The worker still has it, and the calls keep coming with no vblank
+ *   between: this is a loop that only the read's end can leave (CDLoadSync,
+ *   the title screen's wait before the demo), so the game thread sleeps
+ *   until the worker is done (psx_cdn_read_finish's wait, as a synchronous
+ *   read does) in place of spinning on its core.
+ * Returns 1 while the worker still has the read. CDLoadTime then holds the
+ * game's read timer at 0: the timer is the PS1's guard against a drive that
+ * stopped answering (600 vblanks, then CdInit and the read again), the
+ * worker always answers, and a retry here would wait for the same read and
+ * then read it twice. So a slow card never trips it, as it never could
+ * while reads completed inside CdRead. */
+int PortCdLoadPoll(void) {
+  if (!cd.rd_pending || !cd_async_read())
+    return 0;
+  if (psx_cdn_read_done()) {
+    s_async_at[ASYNC_LOAD_POLL]++;
+  } else {
+    if (s_polls++ < POLLS_A_VBLANK)
+      return 1;
+    s_async_at[ASYNC_LOOP_WAIT]++;
+  }
+  cd_complete_read();
+  return 0;
 }
 
 void psx_cd_vblank(void) {
-  cd_tick();
+  s_polls = 0;
+  cd_tick(ASYNC_VBLANK);
   if (s_stream.active) {
     int from = s_stream.lba;
     /* the drive by real time: 2.5 sectors a 60 Hz vblank at double speed,
@@ -707,10 +763,12 @@ int CdControlF(u_char com, u_char *param) { return cd_command(com, param, NULL);
 
 int CdSync(int mode, u_char *result) {
   if (mode == 0) {
-    if (cd.rd_pending)
+    if (cd.rd_pending) {
+      s_async_at[ASYNC_SYNC_WAIT] += cd_async_read();
       cd_complete_read();
+    }
   } else if (cd.rd_pending) {
-    cd_tick();
+    cd_tick(ASYNC_SYNC_POLL);
   }
   if (result)
     memcpy(result, cd.result, sizeof cd.result);
@@ -733,8 +791,10 @@ int CdRead(int sectors, u_long *buf, int mode) {
   cd_set_stat();
   if (cd.log)
     fprintf(stderr, "libcd: CdRead lba %d sectors %d mode 0x%02x\n", cd.rd_lba, sectors, mode);
-  if (cd_async_read()) /* the worker reads; cd_tick completes it once done (D159) */
+  if (cd_async_read()) { /* the worker reads; cd_tick completes it once done (D159) */
+    s_polls = 0; /* a new read: its first polls look, whatever the last read's wait counted */
     psx_cdn_read_post(cd.rd_lba, cd.rd_count, cd.rd_buf);
+  }
   else if (cd.latency == 0)
     cd_complete_read();
   else if (cd_native_read()) /* read while the ticks pass; complete at the same tick */
@@ -743,8 +803,10 @@ int CdRead(int sectors, u_long *buf, int mode) {
 }
 
 int CdReadSync(int mode, u_char *result) {
-  if (mode == 0 && cd.rd_pending)
+  if (mode == 0 && cd.rd_pending) {
+    s_async_at[ASYNC_SYNC_WAIT] += cd_async_read();
     cd_complete_read();
+  }
   if (result) {
     memset(result, 0, 8);
     result[0] = cd.stat;

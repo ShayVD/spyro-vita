@@ -81,6 +81,8 @@ static void cd_report(void) {
     char line[400];
     if (psx_cdn_pbp_report(line, sizeof line))
       vita_log("%s", line);
+    if (psx_cd_async_report(line, sizeof line)) /* D159: only with cd_async on */
+      vita_log("%s", line);
   }
 }
 
