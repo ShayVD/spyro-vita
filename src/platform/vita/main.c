@@ -58,7 +58,8 @@
  *                       scripted runs compared with the host; D28)
  *       gpu=0           the software rasterizer instead of the GPU renderer
  *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
- *                       and falls back to gpu=0 without it; D35)
+ *                       and falls back to gpu=0 without it; D35; found by
+ *                       loading it when a safe app can't stat ur0:, D162)
  *       res=native      gpu=1 draws at the screen's resolution (the default:
  *                       the 4:3 picture is 778x544 screen pixels, 16:9 is
  *                       960x544, from the 512x224 the game draws; D67);
@@ -304,6 +305,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <vitashark.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -346,6 +348,35 @@ void port_arena_symbols(void (*log)(const char *fmt, ...));
 static int file_exists(const char *path) {
   SceIoStat st;
   return sceIoGetstat(path, &st) >= 0;
+}
+
+/* Is vitaGL's runtime shader compiler there? The stat of ur0:data that
+ * decided it (D35) is refused to a safe app on some set-ups (a PS TV with
+ * YAMT's mounts: 0x80010002, "no such file", for a stat and for a module
+ * load alike), and the safe VPK then ran on the software rasterizer with
+ * the module installed (D162). So: the stat where it is allowed; else the
+ * module loaded the way vitaGL does, with the libshark vitaGL uses (it
+ * stays initialised, and vitaGL's own shark_init finds it so: nothing is
+ * loaded twice), from vitaGL's two places and then from the copies a
+ * player can make where a safe app may read, the data folder and the app's
+ * own. One log line says which, or every failure's code. */
+static int shader_compiler_present(void) {
+  static const char *const paths[] = {"ur0:data/libshacccg.suprx", "ur0:data/external/libshacccg.suprx",
+                                      VITA_DATA_DIR "/libshacccg.suprx", "app0:libshacccg.suprx"};
+  int i, r;
+  for (i = 0; i < 2; i++) {
+    SceIoStat st;
+    if (sceIoGetstat(paths[i], &st) >= 0)
+      return 1;
+  }
+  for (i = 0; i < 4; i++) {
+    if ((r = shark_init(i == 0 ? NULL : paths[i])) >= 0) {
+      vita_log("gpu: shader compiler loaded from %s (a stat of ur0:data is refused here: a safe app)", paths[i]);
+      return 1;
+    }
+    vita_log("gpu: shark_init(%s): %08x", paths[i], (unsigned)r);
+  }
+  return 0;
 }
 
 static void parse_list(const char *v, int *out, int *n, int max) {
@@ -738,8 +769,7 @@ int main(int argc, char **argv) {
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
 
   /* gpu=1 needs vitaGL's runtime shader compiler; without it, gpu=0 */
-  if (g_vita_opts.gpu && !file_exists("ur0:data/libshacccg.suprx") &&
-      !file_exists("ur0:data/external/libshacccg.suprx")) {
+  if (g_vita_opts.gpu && !shader_compiler_present()) {
     vita_log("gpu: no ur0:data/libshacccg.suprx, so no shader compiler: "
              "using the software renderer (gpu=0)");
     g_vita_opts.gpu = 0;

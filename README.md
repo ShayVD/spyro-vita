@@ -158,7 +158,7 @@ the same file:
   writes `ur0:data/libshacccg.suprx`.
 - **ShaRKF00D**, the older tool, does the same from the *PSM Dev* app if you have it installed.
 
-The port also looks in `ur0:data/external/libshacccg.suprx`. Without the module it still runs, but
+The port also looks in `ur0:data/external/libshacccg.suprx`, and then in `ux0:data/spyro/libshacccg.suprx`: on some set-ups a safe app can't read `ur0:data` at all (a PS TV with YAMT, for one), and the log then says `software (gpu=0)` although the module is installed; a copy of it in the data folder, beside `config.txt`, is what the safe app loads there. Without the module it still runs, but
 draws on the CPU, which is too slow on a Vita (`spyro.log` says
 `gpu: no ur0:data/libshacccg.suprx ...`).
 
