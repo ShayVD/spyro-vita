@@ -31,6 +31,8 @@ typedef struct {
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int vcount_test;    /* vcount_test=N: the display's vcount wraps N vblanks in (D90) */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
+  int shacc_ur0;      /* shacc_ur0=0: ur0:data counts as unreadable, a test of the shader
+                         compiler's other place, the data folder (D162; default 1) */
   int gpu_res;        /* res= (gpu_res=): GPU targets at 0 (default, res=native) the
                          screen's pixels; 1 (res=ps1) the PS1's (D40; 2-4 removed, D85) */
   int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */

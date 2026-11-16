@@ -1,6 +1,6 @@
 # Decisions, part 2
 
-Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record each decision with its date, what was chosen, and why.
+Decisions D103–D161; D1–D102 are in [decisions.md](decisions.md), and D162 on in [decisions-3.md](decisions-3.md) (this file is at the 512 KiB limit). Record each decision with its date, what was chosen, and why.
 
 ## 2026-11-05 — hardware runs
 
