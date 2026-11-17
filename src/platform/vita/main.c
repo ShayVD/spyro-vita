@@ -61,8 +61,13 @@
  *                       on the linux32 host, however long a frame takes (for
  *                       scripted runs compared with the host; D28)
  *       gpu=0           the software rasterizer instead of the GPU renderer
- *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
- *                       and falls back to gpu=0 without it; D35)
+ *                       (gpu=1, the default, needs Sony's shader compiler,
+ *                       libshacccg.suprx, in ur0:data, ur0:data/external or
+ *                       the data folder, and falls back to gpu=0 without
+ *                       it, after a screen that says so; D35, D163)
+ *       shacc_ur0=0     a test of D163: ur0:data counts as unreadable, as
+ *                       for a safe app on some set-ups (issue #152), so the
+ *                       compiler is looked for in the data folder only
  *       res=native      gpu=1 draws at the screen's resolution (the default:
  *                       the 4:3 picture is 778x544 screen pixels, 16:9 is
  *                       960x544, from the 512x224 the game draws; D67);
@@ -308,6 +313,8 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <vitaGL.h>
+#include <vitashark.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -332,6 +339,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
                         .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
+                        .shacc_ur0 = 1, /* D163 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
                         .cam_speed = 100, .cam_recentre = 1, .draw_distance = 100};
 
@@ -347,9 +355,52 @@ void nd_init(void (*log)(const char *fmt, ...));
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
 void port_arena_symbols(void (*log)(const char *fmt, ...));
 
-static int file_exists(const char *path) {
-  SceIoStat st;
-  return sceIoGetstat(path, &st) >= 0;
+/* vitaGL's runtime shader compiler, Sony's libshacccg.suprx (D35, D163).
+ * The places: vitaGL's own two in ur0:data, then the data folder, for the
+ * set-ups where a safe app is refused ur0:data (issue #152: a PS TV whose
+ * safe apps get 0x80010002, "no such file", there for a stat and for a
+ * module load alike, with the module installed; the owner's Vita reads it).
+ *   1: in one of vitaGL's places by a stat, as before D163: vitaGL loads it
+ *      at its start and nothing here changes.
+ *   2: loaded here, with the libshark vitaGL links and the allocators
+ *      vitaGL's own start gives it (start_shader_compiler: vglMalloc and
+ *      vglFree, which the compiler calls from the first compile on, after
+ *      vglInit). shark_init does nothing once the module is loaded, so
+ *      vitaGL's start finds the compiler there and loads nothing again.
+ *   0: none. s_shacc_code is then the first place's code, for the screen.
+ * Every refusal goes to the log with its code. */
+static void *shacc_malloc(size_t size) { return vglMalloc(size); }
+static void shacc_free(void *p) { vglFree(p); }
+static int s_shacc_code;
+
+static int shader_compiler(void) {
+  static const char *const paths[3] = {"ur0:data/libshacccg.suprx",
+                                       "ur0:data/external/libshacccg.suprx",
+                                       VITA_DATA_DIR "/libshacccg.suprx"};
+  int first = g_vita_opts.shacc_ur0 ? 0 : 2, i, r;
+  int stat_code[2] = {0, 0};
+  if (!g_vita_opts.shacc_ur0)
+    vita_log("gpu: shacc_ur0=0: ur0:data counts as unreadable (a test of D163)");
+  for (i = first; i < 2; i++) {
+    SceIoStat st;
+    if ((stat_code[i] = sceIoGetstat(paths[i], &st)) >= 0)
+      return 1;
+  }
+  s_shacc_code = 0;
+  for (i = first; i < 3; i++) {
+    shark_set_allocators(shacc_malloc, shacc_free);
+    if ((r = shark_init(paths[i])) >= 0) {
+      vita_log("gpu: shader compiler loaded from %s (D163)", paths[i]);
+      return 2;
+    }
+    if (i < 2)
+      vita_log("gpu: %s: stat %08x, load %08x", paths[i], (unsigned)stat_code[i], (unsigned)r);
+    else
+      vita_log("gpu: %s: load %08x", paths[i], (unsigned)r);
+    if (!s_shacc_code)
+      s_shacc_code = i < 2 ? stat_code[i] : r;
+  }
+  return 0;
 }
 
 static void parse_list(const char *v, int *out, int *n, int max) {
@@ -457,6 +508,8 @@ static void read_config(void) {
       g_vita_opts.vcount_test = atoi(v);
     else if (!strcmp(line, "gpu"))
       g_vita_opts.gpu = atoi(v);
+    else if (!strcmp(line, "shacc_ur0"))
+      g_vita_opts.shacc_ur0 = atoi(v); /* D163 */
     else if (!strcmp(line, "gpu_res")) /* res='s old name; res= is a menu row */
       g_vita_opts.gpu_res = parse_res(v);
     else if (!strcmp(line, "gpu_time"))
@@ -659,33 +712,63 @@ void vita_restart(void) {
     sceKernelDelayThread(1000000);
 }
 
-/* Without a disc there is nothing to run: say why on screen (bootscreen.c)
- * and in the log (psx_cd_error: no image, an .iso, a wrong disc, ...) and
- * wait for a button to quit. frames= quits after that many vblanks (Vita3K
- * tests). */
-static void no_disc(void) {
-  const PsxCdError *e = psx_cd_error();
+/* A boot panel is up (bootscreen.c): wait for a press of X, O or Start, not
+ * a button held since the bubble. 1: pressed; 0: `frames` vblanks went by
+ * without one (frames > 0: a scripted run). */
+static int panel_wait(int frames) {
   int buttons[] = {SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START};
-  int held = 1, frame = 0, i;
+  int held = 1, frame = 0, pressed = 0, i;
   SDL_GameController *c = NULL;
-  vita_log("disc: %s: %s", e->title, e->text);
-  vita_boot_panel(e->title, e->text, "PRESS X TO EXIT");
-  for (;; frame++) {
+  for (; !pressed; frame++) {
     int down = 0;
     SDL_PumpEvents();
     if (!c && SDL_NumJoysticks() > 0)
       c = SDL_GameControllerOpen(0);
     for (i = 0; c && i < (int)(sizeof buttons / sizeof *buttons); i++)
       down |= SDL_GameControllerGetButton(c, buttons[i]);
-    if (down && !held) /* a press, not a button held since the bubble */
-      vita_exit(0);
+    pressed = down && !held;
     held = down;
+    if (pressed)
+      break;
     sceDisplayWaitVblankStart(); /* the buttons once a vblank, not a spinning core */
-    if (g_vita_opts.frames > 0 && frame >= g_vita_opts.frames) {
-      vita_log("frames=%d reached, exiting", g_vita_opts.frames);
-      vita_exit(0);
-    }
+    if (frames > 0 && frame >= frames)
+      break;
   }
+  if (c)
+    SDL_GameControllerClose(c); /* pad.c opens it again for the game */
+  return pressed;
+}
+
+/* Without a disc there is nothing to run: say why on screen (bootscreen.c)
+ * and in the log (psx_cd_error: no image, an .iso, a wrong disc, ...) and
+ * wait for a button to quit. frames= quits after that many vblanks (Vita3K
+ * tests). */
+static void no_disc(void) {
+  const PsxCdError *e = psx_cd_error();
+  vita_log("disc: %s: %s", e->title, e->text);
+  vita_boot_panel(e->title, e->text, "PRESS X TO EXIT");
+  if (!panel_wait(g_vita_opts.frames))
+    vita_log("frames=%d reached, exiting", g_vita_opts.frames);
+  vita_exit(0);
+}
+
+/* gpu=1 was wanted and no shader compiler loaded (shader_compiler): the
+ * game runs on the software rasterizer, several times slower, so say so
+ * before it starts instead of only in the log (issue #152, D163). gpu=0 in
+ * config.txt never comes here. A scripted run (frames=) goes on by itself
+ * after 5 s. */
+#define NO_SHACC_FRAMES 300
+static void no_shader_compiler(void) {
+  char text[512];
+  snprintf(text, sizeof text,
+           "The GPU renderer needs Sony's shader compiler, libshacccg.suprx, and it could not "
+           "be loaded (%08X). The game will run on the software renderer, which is much "
+           "slower.\n\nInstall it as the README's step 3 says. If it is already in ur0:data, "
+           "this app can't read it there: copy it to " VITA_DATA_DIR "/ as well.",
+           (unsigned)s_shacc_code);
+  vita_boot_panel("NO SHADER COMPILER", text, "PRESS X TO CONTINUE");
+  if (!panel_wait(g_vita_opts.frames > 0 ? NO_SHACC_FRAMES : 0))
+    vita_log("gpu: the shader compiler's screen left after %d vblanks (frames=)", NO_SHACC_FRAMES);
 }
 
 /* The first start with a disc image hashes WAD.WAD (D60): a few seconds. */
@@ -703,6 +786,7 @@ static void disc_progress(int percent) {
 static unsigned long long now_us(void) { return sceKernelGetProcessTimeWide(); }
 
 int main(int argc, char **argv) {
+  int no_shacc = 0;
   (void)argc;
   (void)argv;
   scePowerSetArmClockFrequency(444);
@@ -742,11 +826,11 @@ int main(int argc, char **argv) {
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
 
   /* gpu=1 needs vitaGL's runtime shader compiler; without it, gpu=0 */
-  if (g_vita_opts.gpu && !file_exists("ur0:data/libshacccg.suprx") &&
-      !file_exists("ur0:data/external/libshacccg.suprx")) {
-    vita_log("gpu: no ur0:data/libshacccg.suprx, so no shader compiler: "
+  if (g_vita_opts.gpu && !shader_compiler()) {
+    vita_log("gpu: no shader compiler (libshacccg.suprx) could be loaded: "
              "using the software renderer (gpu=0)");
     g_vita_opts.gpu = 0;
+    no_shacc = 1;
   }
   g_vita_gpu = g_vita_opts.gpu != 0;
   vita_log("renderer: %s", g_vita_gpu ? "GPU (vitaGL, gpu=1)" : "software (gpu=0)");
@@ -759,6 +843,8 @@ int main(int argc, char **argv) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
     vita_exit(1);
   }
+  if (no_shacc)
+    no_shader_compiler(); /* needs SDL's pad; before the disc's own screens */
   /* the disc before the renderer: its screens (a first-start check, or why
    * the game can't start) go straight to the display (bootscreen.c, D60) */
   psx_cd_set_verify(VITA_DATA_DIR "/save/disc-verified.txt", disc_progress);

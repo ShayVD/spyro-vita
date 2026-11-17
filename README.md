@@ -159,8 +159,13 @@ the same file:
 - **ShaRKF00D**, the older tool, does the same from the *PSM Dev* app if you have it installed.
 
 The port also looks in `ur0:data/external/libshacccg.suprx`. Without the module it still runs, but
-draws on the CPU, which is too slow on a Vita (`spyro.log` says
-`gpu: no ur0:data/libshacccg.suprx ...`).
+draws on the CPU, which is too slow on a Vita: a screen says so at the start (**NO SHADER
+COMPILER**), and `spyro.log` says `gpu: no shader compiler (libshacccg.suprx) could be loaded ...`.
+
+**If you see that screen with the module installed:** on some set-ups `spyro-vita.vpk`, a safe
+app, can't read `ur0:data` (seen on a PS TV; issue #152). Copy the file to
+`ux0:data/spyro/libshacccg.suprx` as well, with VitaShell: the port loads it from there when the
+other two places fail.
 
 ## 4. Play
 
@@ -292,7 +297,7 @@ The other builds are for development:
 - **Vita build and testing in Vita3K:** [docs/vita-testing.md](docs/vita-testing.md).
 
 How it works: [docs/porting-plan.md](docs/porting-plan.md), decisions with their reasons in
-[docs/decisions.md](docs/decisions.md) (D1–D102) and [docs/decisions-2.md](docs/decisions-2.md) (D103 on), and every translated function in
+[docs/decisions.md](docs/decisions.md) (D1–D102), [docs/decisions-2.md](docs/decisions-2.md) (D103–D161) and [docs/decisions-3.md](docs/decisions-3.md) (D162 on), and every translated function in
 [docs/translation-log.md](docs/translation-log.md).
 
 ## Licence and credits
