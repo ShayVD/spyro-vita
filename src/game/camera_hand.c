@@ -47,6 +47,12 @@ extern int D_80075938; // Ticks before an auto-centre may end
  * set by func_80035FB4 around them; 0 everywhere else. */
 static int s_tilt;
 
+/* The port's camera options read above their definitions (with the free
+ * camera's, near func_80035FB4): the right stick off centre (issue #154),
+ * and no recentring in this camera state (cam_recentre=0). */
+static int FreeCameraHeld(void);
+static int RecentreOff(void);
+
 /* The free camera's elevation limits: the follow preset is 0xA0. */
 #define TILT_ELEVATION_MIN (-0x60)
 #define TILT_ELEVATION_MAX 0x2A0
@@ -372,6 +378,8 @@ void func_80034CE8(int pRow) {
     pull = RT(0x400, 1475);
   if (D_80075924 != 0) {
     error = D_80075924;
+  } else if (RecentreOff()) {
+    error = 0; /* port: the camera keeps its heading (cam_recentre=0) */
   } else if (CAMERA_AUTO() && g_Cam.m_State == CAM_RECENTRE_SLOW && D_800756B8) {
     error = 0;
   } else if (((CAMERA_PASSIVE() && (g_Spyro.m_State == 5 || g_Spyro.m_State == 6)) || D_8007592C) &&
@@ -666,7 +674,10 @@ static void LeadSpyro(int pShift) {
  * passive camera instead holds still while D_80075894 runs (see the end of
  * func_80035FB4); the timer restarts at 90 whenever a button is down, Spyro
  * is hidden or the camera rides a platform, and only counts down while the
- * simulated sphere is off the follow preset. */
+ * simulated sphere is off the follow preset. The port's free camera counts
+ * as a button (issue #154): the game's m_NoButtonsDown sees only the left
+ * stick, so steering with the right one alone ran the timer out, stopped
+ * the camera and capped its turn (func_80034CE8's 0x800 clamp). */
 static void UpdateFollow(void) {
   int azimuth, elevation;
 
@@ -679,7 +690,8 @@ static void UpdateFollow(void) {
       ApplySphericalPreset();
   }
 
-  if (!(CAMERA_AUTO() && g_Pad.m_NoButtonsDown && D_800756B8) || g_Cam.m_OnMovingPlatform) {
+  if (!(CAMERA_AUTO() && g_Pad.m_NoButtonsDown && !FreeCameraHeld() && D_800756B8) ||
+      g_Cam.m_OnMovingPlatform) {
     D_80075894 = RT(90, 75);
     return;
   }
@@ -946,6 +958,37 @@ static int IsTurnLocked(u_int pState) {
 static int FreeCameraOn(void) {
   return g_port_controls.free_camera && PortControlsLive() &&
          g_Pad.m_Type == CONTROLLER_TYPE_STICK;
+}
+
+/* The right stick off centre: input, for the passive camera's hold timer
+ * (UpdateFollow), as L2/R2 are. */
+static int FreeCameraHeld(void) {
+  return FreeCameraOn() && (g_Pad.m_Sticks.m_RightX != 0x7F || g_Pad.m_Sticks.m_RightY != 0x7F);
+}
+
+/* No recentring (port, cam_recentre=0, issue #154): in the follow states
+ * the azimuth spring stops pulling the camera round behind Spyro, so it
+ * keeps its heading and follows him; only L2/R2 and the free camera turn
+ * it (they still win, func_80034CE8). The elevation, the radius and every
+ * other state are the game's. Flight levels keep it: the camera swings
+ * with Spyro's turns there (UpdateState5). */
+static int RecentreOff(void) {
+  if (!g_port_controls.no_recentre || !PortControlsLive())
+    return 0;
+  switch (g_Cam.m_State) {
+  case CAM_FOLLOW:
+  case CAM_SPEED_CHECK:
+  case CAM_RECENTRE:
+  case CAM_RECENTRE_SLOW:
+  case CAM_STATE_1:
+  case CAM_STATE_2:
+  case CAM_STATE_4:
+    return 1;
+  case CAM_STATE_5:
+    return !g_Spyro.m_flyingAbility;
+  default:
+    return 0;
+  }
 }
 
 /* Turning: where L2/R2 would (after func_80035F58, which wins when either

@@ -12,6 +12,7 @@
  *         [--interp-budget US] [--out960 | --present-native]
  *         [--present-stats] [--vcache] [--tick60] [--tick60-stats]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
+ *         [--no-cam-recentre]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
@@ -77,6 +78,8 @@
  *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
  *   --free-camera: the right stick turns and tilts the camera
  *   (--cam-invert-x, --cam-invert-y, --cam-speed PERCENT; D47).
+ *   --no-cam-recentre: the follow camera keeps its heading instead of
+ *   swinging back behind Spyro; only L2/R2 and the free camera turn it (D162).
  * --vcache: record the GTE's projections in the vertex cache the Vita's
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
@@ -338,7 +341,7 @@ static void usage(void) {
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
           "             [--out960] [--present-stats] [--vcache] [--walk-lazy] [--tick60]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
-          "[--cam-speed PERCENT]\n"
+          "[--cam-speed PERCENT] [--no-cam-recentre]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
           "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-async] [--cd-stats]\n"
@@ -716,6 +719,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--cam-speed") == 0) {
       TAKE();
       g_port_controls.speed = atoi(val);
+    } else if (strcmp(a, "--no-cam-recentre") == 0) {
+      g_port_controls.no_recentre = 1;
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;

@@ -48,7 +48,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **Code we write** goes in `src/game/` (translated functions, keeping the original `func_XXXXXXXX` names plus a short comment saying where they came from) and in `src/platform/<target>/`.
 - **Every translated function** gets a note in `docs/translation-log.md`: method used, how it was verified, known differences.
 - **Logs and screenshots** from runs go in `logs/runN-*`, the same as the KH ports.
-- **Record decisions** with their reasons in `docs/decisions-3.md` (D162 on; D1–D102 are in `docs/decisions.md` and D103–D161 in `docs/decisions-2.md`, which are full: the 512 KiB file limit in `tools/check_no_assets.sh`).
+- **Record decisions** with their reasons in `docs/decisions-3.md` (D162 on; D1–D102 are in `docs/decisions.md` and D103–D161 in `docs/decisions-2.md`, both full: the 512 KiB file limit in `tools/check_no_assets.sh`).
 
 ## Reference projects (ours)
 - `~/Projects/kh1-decomp`: decomp layout, host shims, data relocations (`data_relocs.tsv`), overlay handling (`docs/native-overlays.md`), Vita packaging and logging (`tools/vita/build.py`, `host/vita/`; raw sceGxm, not vitaGL).

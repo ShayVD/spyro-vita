@@ -16,7 +16,7 @@
  * unless the platform turns them on, so the camera is the original's.
  * Defined here, outside the files the 60 Hz rules build again, so that
  * camera_hand.c reads this copy in both rule sets (D142). */
-PortControls g_port_controls = {0, 0, 0, 100};
+PortControls g_port_controls = {0, 0, 0, 100, 0};
 
 extern void spyro_decomp_main(void);
 void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));

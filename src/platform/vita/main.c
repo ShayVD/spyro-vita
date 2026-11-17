@@ -52,6 +52,10 @@
  *                       looks up)
  *       cam_speed=N     the free camera's turn speed, 50..200 percent
  *                       (default 100, L2/R2's)
+ *       cam_recentre=0  the camera keeps its heading as Spyro runs: it no
+ *                       longer swings back behind him; only the right
+ *                       stick and L2/R2 turn it (default 1, as the
+ *                       original; flight levels always recentre; D162)
  *                       (the controls are also in the menu, CONTROLS)
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
@@ -60,8 +64,8 @@
  *                       (gpu=1, the default, needs Sony's shader compiler,
  *                       libshacccg.suprx, in ur0:data, ur0:data/external or
  *                       the data folder, and falls back to gpu=0 without
- *                       it, after a screen that says so; D35, D162)
- *       shacc_ur0=0     a test of D162: ur0:data counts as unreadable, as
+ *                       it, after a screen that says so; D35, D163)
+ *       shacc_ur0=0     a test of D163: ur0:data counts as unreadable, as
  *                       for a safe app on some set-ups (issue #152), so the
  *                       compiler is looked for in the data folder only
  *       res=native      gpu=1 draws at the screen's resolution (the default:
@@ -335,9 +339,9 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
                         .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
-                        .shacc_ur0 = 1, /* D162 */
+                        .shacc_ur0 = 1, /* D163 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
-                        .cam_speed = 100, .draw_distance = 100};
+                        .cam_speed = 100, .cam_recentre = 1, .draw_distance = 100};
 
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
@@ -351,12 +355,12 @@ void nd_init(void (*log)(const char *fmt, ...));
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
 void port_arena_symbols(void (*log)(const char *fmt, ...));
 
-/* vitaGL's runtime shader compiler, Sony's libshacccg.suprx (D35, D162).
+/* vitaGL's runtime shader compiler, Sony's libshacccg.suprx (D35, D163).
  * The places: vitaGL's own two in ur0:data, then the data folder, for the
  * set-ups where a safe app is refused ur0:data (issue #152: a PS TV whose
  * safe apps get 0x80010002, "no such file", there for a stat and for a
  * module load alike, with the module installed; the owner's Vita reads it).
- *   1: in one of vitaGL's places by a stat, as before D162: vitaGL loads it
+ *   1: in one of vitaGL's places by a stat, as before D163: vitaGL loads it
  *      at its start and nothing here changes.
  *   2: loaded here, with the libshark vitaGL links and the allocators
  *      vitaGL's own start gives it (start_shader_compiler: vglMalloc and
@@ -376,7 +380,7 @@ static int shader_compiler(void) {
   int first = g_vita_opts.shacc_ur0 ? 0 : 2, i, r;
   int stat_code[2] = {0, 0};
   if (!g_vita_opts.shacc_ur0)
-    vita_log("gpu: shacc_ur0=0: ur0:data counts as unreadable (a test of D162)");
+    vita_log("gpu: shacc_ur0=0: ur0:data counts as unreadable (a test of D163)");
   for (i = first; i < 2; i++) {
     SceIoStat st;
     if ((stat_code[i] = sceIoGetstat(paths[i], &st)) >= 0)
@@ -386,7 +390,7 @@ static int shader_compiler(void) {
   for (i = first; i < 3; i++) {
     shark_set_allocators(shacc_malloc, shacc_free);
     if ((r = shark_init(paths[i])) >= 0) {
-      vita_log("gpu: shader compiler loaded from %s (D162)", paths[i]);
+      vita_log("gpu: shader compiler loaded from %s (D163)", paths[i]);
       return 2;
     }
     if (i < 2)
@@ -505,7 +509,7 @@ static void read_config(void) {
     else if (!strcmp(line, "gpu"))
       g_vita_opts.gpu = atoi(v);
     else if (!strcmp(line, "shacc_ur0"))
-      g_vita_opts.shacc_ur0 = atoi(v); /* D162 */
+      g_vita_opts.shacc_ur0 = atoi(v); /* D163 */
     else if (!strcmp(line, "gpu_res")) /* res='s old name; res= is a menu row */
       g_vita_opts.gpu_res = parse_res(v);
     else if (!strcmp(line, "gpu_time"))
@@ -750,7 +754,7 @@ static void no_disc(void) {
 
 /* gpu=1 was wanted and no shader compiler loaded (shader_compiler): the
  * game runs on the software rasterizer, several times slower, so say so
- * before it starts instead of only in the log (issue #152, D162). gpu=0 in
+ * before it starts instead of only in the log (issue #152, D163). gpu=0 in
  * config.txt never comes here. A scripted run (frames=) goes on by itself
  * after 5 s. */
 #define NO_SHACC_FRAMES 300

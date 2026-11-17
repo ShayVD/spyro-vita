@@ -1,6 +1,6 @@
 # Decisions, part 2
 
-Decisions D103–D161; D1–D102 are in [decisions.md](decisions.md), and D162 on in [decisions-3.md](decisions-3.md) (this file is at the 512 KiB limit). Record each decision with its date, what was chosen, and why.
+Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record each decision with its date, what was chosen, and why.
 
 ## 2026-11-05 — hardware runs
 
@@ -2311,3 +2311,5 @@ Logs are in the worktree's `logs/u65/` (gitignored); the binaries are D155's.
 - **Why:** a safe app can't open `ux0:pspemu`, so a Store copy had to be copied (340 MB twice on the card). Issue #132 asked to play it in place; only an unsafe app can, and asking them to build one isn't an answer.
 - **Same title ID**, so one VPK replaces the other and settings and saves stay. Each job checks its kind with `vpk_pack.py show` (`eboot safe` / `eboot unsafe`).
 - **Checked:** the PR's CI run builds both and passes both kind checks. The draft-release step runs only on a tag, so it is unrun until the next one. The unsafe build ran in Vita3K for D157's fixes; not on hardware by us.
+
+D162 on are in [decisions-3.md](decisions-3.md): this file reached the 512 KiB limit of `tools/check_no_assets.sh`.

@@ -14,7 +14,7 @@ plays, drawn by the Vita's GPU. Read "What to expect" before you test.
   module. It's the usual file for vitaGL ports, extracted from your own Vita with ShaRKBR33D.
   `ur0:data/external/libshacccg.suprx` works too, and so does a copy in the data folder,
   `ux0:data/spyro/libshacccg.suprx`, for the set-ups where a safe app can't read `ur0:data` (issue
-  #152, D162: the log then says `gpu: shader compiler loaded from ux0:data/spyro/libshacccg.suprx`).
+  #152, D163: the log then says `gpu: shader compiler loaded from ux0:data/spyro/libshacccg.suprx`).
   Without it the app shows the **NO SHADER COMPILER** screen (X goes on), logs each place's error
   code and `gpu: no shader compiler (libshacccg.suprx) could be loaded ...`, and draws on the CPU
   instead (`gpu=0`, decisions D26): correct, but too slow on hardware.
@@ -149,11 +149,12 @@ Files the app writes:
 | `cam_invert_x=0`, `cam_invert_y=0` | flip the free camera's left/right and up/down back. Both default to 1 (D53). Invert Y also flips Triangle look mode's up/down: on (the default), up looks up in both; off, up looks down, as in the original's look mode. `tools/vita/vita3k_run.sh` writes all three as 0 so scripted runs match the host |
 | `touch_menu=0` | a tap in the middle of the front touch screen no longer opens the options menu (default 1: it does, as SELECT+START; D46) |
 | `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
+| `cam_recentre=0` | the camera keeps its heading as Spyro runs instead of swinging back behind him; only the right stick and L2/R2 turn it. Default 1, the original's. Flight levels always recentre (D162) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
-| `shacc_ur0=0` | tests (D162): `ur0:data` counts as unreadable, as for a safe app on some set-ups (issue #152), so the shader compiler is loaded from `ux0:data/spyro/libshacccg.suprx`, or, with no copy there, the **NO SHADER COMPILER** screen comes up (it leaves by itself after 300 vblanks when `frames=` is set) and the run is `gpu=0` |
+| `shacc_ur0=0` | tests (D163): `ur0:data` counts as unreadable, as for a safe app on some set-ups (issue #152), so the shader compiler is loaded from `ux0:data/spyro/libshacccg.suprx`, or, with no copy there, the **NO SHADER COMPILER** screen comes up (it leaves by itself after 300 vblanks when `frames=` is set) and the run is `gpu=0` |
 | `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4` (supersampled) were removed and now give native (D85). `gpu_res=` is the old name |
 | `gpu_time=1` | GPU: one GPU-timed frame per 300 vblanks in the log (see below). Default 0 since D68: its two `glFinish` calls are a hitch every 5 s at 60 fps. `gpu_time=2` also times that frame's scene on its own and counts GL draw calls and vertex uploads: measurement only, for `docs/fps-plan.md`'s Run A; don't combine it with `bench=` |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
@@ -285,12 +286,16 @@ GPU renderer). A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 In the options menu (SELECT+START), CONTROLS:
 - `ANALOG STICK` OFF goes back to the digital pad (the left stick is the d-pad, 8 directions).
 - `FREE CAMERA` ON makes the right stick turn the camera in proportion and tilt it up and down.
-  Let go, and the game's camera swings back behind Spyro as after L2/R2. Look mode, cutscenes and
-  scripted cameras are unchanged (D47).
+  Let go, and the game's camera swings back behind Spyro as after L2/R2 (with the passive camera,
+  the game's default, it first holds still for 90 vblanks, about 1.5 s, as after L2/R2: D162). Look mode, cutscenes
+  and scripted cameras are unchanged (D47).
 - `INVERT CAMERA X` flips the turn. `INVERT CAMERA Y` flips the tilt and Triangle look mode
   together. OFF: up looks down, the game's own way in look mode and flight. ON: up looks up in both.
   Flight itself is unchanged.
 - `CAMERA SPEED` sets the turn speed, 50–200%.
+- `CAMERA RECENTRE` OFF: the camera no longer swings round behind Spyro by itself. It keeps its
+  heading and follows him; the right stick and L2/R2 turn it. Its height and distance are still the
+  game's. Flight levels always recentre (D162).
 - `REAR TOUCH L2/R2` is `reartouch=`.
 - `TOUCH TO OPEN MENU` (on by default): a short tap in the middle of the front touch screen opens
   the menu, and another tap closes it. Swipes, held fingers and touches near the edges don't count.
@@ -345,7 +350,7 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
 
 **With the GPU (`gpu=1`) in Vita3K:**
 
-- `libshacccg.suprx` has to be in Vita3K's `fs/ur0/data/` (or, since D162, in its
+- `libshacccg.suprx` has to be in Vita3K's `fs/ur0/data/` (or, since D163, in its
   `fs/ux0/data/spyro/`).
 - Vita3K returns zeros for anything read back from what the GPU drew (`glReadPixels`, so
   `shot_hd=1` and `gpu_readback=0`). The normal shots still work. They come from the readback

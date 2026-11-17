@@ -59,7 +59,7 @@ hw_check_game() {
   if v size ur0:data/libshacccg.suprx > /dev/null 2>&1 || v size ur0:data/external/libshacccg.suprx > /dev/null 2>&1; then
     ok "ur0:data/libshacccg.suprx (the GPU's shader compiler)"
   elif v size "$HW_DATA/libshacccg.suprx" > /dev/null 2>&1; then
-    ok "$HW_DATA/libshacccg.suprx (the GPU's shader compiler, from the data folder: D162)"
+    ok "$HW_DATA/libshacccg.suprx (the GPU's shader compiler, from the data folder: D163)"
   else
     no "no libshacccg.suprx in ur0:data or $HW_DATA: the app falls back to the slow CPU renderer"
   fi

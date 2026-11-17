@@ -191,7 +191,7 @@ download).
 | ○ | ○ | Flame |
 | △ | △ | Look around |
 | L / R | L1 / R1 | Sidestep |
-| Right stick | (free camera) | Turn and tilt the camera; let go and the game's camera takes over |
+| Right stick | (free camera) | Turn and tilt the camera; let go and the game's camera takes over (with *Camera recentre* off, it stays where you turned it) |
 | START | START | Pause |
 | SELECT | SELECT | Inventory |
 | SELECT + START, or tap the middle of the screen | | **Options menu** |
@@ -218,6 +218,7 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | | Free camera (right stick) | on |
 | | Invert camera X / Invert camera Y | on / on |
 | | Camera speed | 100% |
+| | Camera recentre (off: the camera keeps its heading instead of swinging back behind Spyro; flight levels always recentre) | on |
 | | Rear touch L2/R2 | off |
 | | Touch to open menu | on |
 | GAME | Skip intro logos | off |
