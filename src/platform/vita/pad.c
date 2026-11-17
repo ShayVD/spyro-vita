@@ -316,6 +316,7 @@ static void controls_apply(void) {
   if (g_vita_opts.cam_speed < 50 || g_vita_opts.cam_speed > 200) /* config.txt by hand */
     g_vita_opts.cam_speed = g_vita_opts.cam_speed < 50 ? 50 : 200;
   g_port_controls.speed = g_vita_opts.cam_speed;
+  g_port_controls.no_recentre = !g_vita_opts.cam_recentre;
 }
 
 void vita_pad_init(void) {
@@ -324,10 +325,10 @@ void vita_pad_init(void) {
     vita_log("pad: no game controller");
   controls_apply();
   touch_init();
-  vita_log("pad: %s; free camera %d (invert x %d, y %d, speed %d%%), rear touch %d",
+  vita_log("pad: %s; free camera %d (invert x %d, y %d, speed %d%%), recentre %d, rear touch %d",
            g_vita_opts.analog ? "analog (DualShock)" : "digital", g_vita_opts.free_camera,
            g_vita_opts.cam_invert_x, g_vita_opts.cam_invert_y, g_vita_opts.cam_speed,
-           g_vita_opts.reartouch);
+           g_vita_opts.cam_recentre, g_vita_opts.reartouch);
 }
 
 /* The options menu's CONTROLS rows (menu.c, D45-D47). */
@@ -346,6 +347,9 @@ static const MenuOption k_rows[] = {
      .on_change = controls_apply},
     {.section = MENU_CONTROLS, .label = "CAMERA SPEED", .key = "cam_speed",
      .value = &g_vita_opts.cam_speed, .min = 50, .max = 200, .step = 25, .fmt = "%d%%",
+     .on_change = controls_apply},
+    {.section = MENU_CONTROLS, .label = "CAMERA RECENTRE", .key = "cam_recentre",
+     .value = &g_vita_opts.cam_recentre, .names = g_menu_off_on, .count = 2,
      .on_change = controls_apply},
     {.section = MENU_CONTROLS, .label = "REAR TOUCH L2/R2", .key = "reartouch",
      .value = &g_vita_opts.reartouch, .names = g_menu_off_on, .count = 2},

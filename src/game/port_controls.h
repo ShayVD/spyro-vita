@@ -9,6 +9,7 @@ typedef struct {
   int invert_x;    /* the right stick's turn the other way */
   int invert_y;    /* the right stick's tilt, and Triangle look mode's up/down */
   int speed;       /* turn speed in percent (100: L2/R2's) */
+  int no_recentre; /* the follow camera doesn't swing back behind Spyro (D162) */
 } PortControls;
 
 extern PortControls g_port_controls;

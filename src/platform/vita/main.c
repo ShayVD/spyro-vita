@@ -52,6 +52,10 @@
  *                       looks up)
  *       cam_speed=N     the free camera's turn speed, 50..200 percent
  *                       (default 100, L2/R2's)
+ *       cam_recentre=0  the camera keeps its heading as Spyro runs: it no
+ *                       longer swings back behind him; only the right
+ *                       stick and L2/R2 turn it (default 1, as the
+ *                       original; flight levels always recentre; D162)
  *                       (the controls are also in the menu, CONTROLS)
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
@@ -329,7 +333,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
-                        .cam_speed = 100, .draw_distance = 100};
+                        .cam_speed = 100, .cam_recentre = 1, .draw_distance = 100};
 
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
