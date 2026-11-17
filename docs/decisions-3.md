@@ -15,11 +15,17 @@ Decisions from D162 on; D1–D102 are in [decisions.md](decisions.md) and D103�
   - **`shacc_ur0=0`** (`config.txt`, tests): `ur0:data` counts as unreadable, so the other place and the screen can be run on a device that reads `ur0:data`.
   - `tools/vita/hw.game`'s check accepts the data folder's copy too.
 - **This file:** `decisions-2.md` was 1.5 KB under the 512 KiB limit of `tools/check_no_assets.sh`, so D162 starts part 3.
-- **Checked** (2026-11-16, Vita3K, the safe VPK of this branch built with the local VitaSDK, `realtime=0`; logs in the worktree's `logs/d162/`, gitignored; Vita3K is not hardware and has no safe app's sandbox):
+- **Checked in Vita3K** (2026-11-16, the safe VPK of this branch built with the local VitaSDK, `realtime=0`; logs in the worktree's `logs/d162/`, gitignored; Vita3K is not hardware and has no safe app's sandbox):
   - **A, nothing forced** (`a-ur0`, 1,800 vblanks): `renderer: GPU (vitaGL, gpu=1)`, shaders compiled, no new log line.
   - **B, `shacc_ur0=0` with a copy in the data folder** (`b-data`): `gpu: shader compiler loaded from ux0:data/spyro/libshacccg.suprx (D162)`, `renderer: GPU`, `shaders compiled in 56106 ms`, `GPU renderer ready`; its 6 shots are A's byte for byte (the readback replay).
   - **C, `shacc_ur0=0` with no copy:** the screen is up and stays without a press (`c3-press/win-grab.png`, 12 of the panel's 13 lines; `c1-panel`, 30 s); X (Vita3K's key, sent to its window) goes on into the logos on the software renderer (`c3-press/c3-after.png`); with `frames=1800` it leaves after 300 vblanks and the run is `gpu=0`, its 6 shots A's byte for byte (`c2-soft`). The load of a file that isn't there is `80010002` in Vita3K too.
-  - **The unsafe VPK:** built by CI only.
+- **Checked on hardware** (2026-11-17, the owner's Vita, the safe VPK of `29bc908`, eboot SHA-1 `737e29b4…`, `tools/vita/hw_run.sh` with `realtime=0`; `logs/d162/hw-*`, the three runs and the copy in `hw-run-all.sh`). This Vita's safe app reads `ur0:data`, so B and C are by `shacc_ur0=0`:
+  - **A, nothing forced** (`hw-a`, the title route, 2,700 vblanks): `renderer: GPU (vitaGL, gpu=1)`, `shaders compiled in 9940 ms`, no new log line.
+  - **B, `shacc_ur0=0` with the Vita's own module copied to `ux0:data/spyro/`** (3,407,920 bytes, `hw-b`): `gpu: shader compiler loaded from ux0:data/spyro/libshacccg.suprx (D162)`, `renderer: GPU`, `shaders compiled in 9974 ms`, `GPU renderer ready`. A safe app does load a module from the data folder, and the compiler works on vitaGL's allocators set before the load. Its 5 shots and its 5 GPU pictures (`shot-V-hd.png`, 960x544) are A's byte for byte.
+  - **C, `shacc_ur0=0` with no copy** (`hw-c`): `ux0:data/spyro/libshacccg.suprx: load 80010002`, the screen left after 300 vblanks (`frames=`), `renderer: software (gpu=0)`, 5 shots A's byte for byte, at 20.7 vblanks a second (`realtime=0`) where A's GPU run does 100 and more: what the screen warns of.
+  - The copy was removed afterwards, and the owner's `config.txt`, `save/` and log were put back by each run.
 - **Not checked:**
-  - **Hardware.** Not the owner's Vita (A, and B and C by `shacc_ur0=0`), and not the PS TV of the report, the only device known to show the fault: its owner is asked to run the release that carries this.
-  - **A device with no module at all** (the `ur0:data` lines of the log and the screen's code from a stat): Vita3K's `ur0:data` is shared with other runs, so the module wasn't moved away; C runs the same code from the third place on.
+  - **The PS TV of the report**, the only device known to show the fault: its owner is asked to run the release that carries this.
+  - **X on the screen, on hardware:** the runs were scripted, so the screen left by `frames=`. The press was run in Vita3K (above); the wait is the disc screens' loop (D60), moved into `panel_wait`.
+  - **A device with no module at all** (the `ur0:data` lines of the log and the screen's code from a stat): neither Vita3K's nor the Vita's module was moved away; C runs the same code from the third place on.
+  - **The unsafe VPK:** built by CI only.
