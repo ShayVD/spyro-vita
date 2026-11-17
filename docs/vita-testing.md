@@ -146,6 +146,7 @@ Files the app writes:
 | `cam_invert_x=0`, `cam_invert_y=0` | flip the free camera's left/right and up/down back. Both default to 1 (D53). Invert Y also flips Triangle look mode's up/down: on (the default), up looks up in both; off, up looks down, as in the original's look mode. `tools/vita/vita3k_run.sh` writes all three as 0 so scripted runs match the host |
 | `touch_menu=0` | a tap in the middle of the front touch screen no longer opens the options menu (default 1: it does, as SELECT+START; D46) |
 | `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
+| `cam_recentre=0` | the camera keeps its heading as Spyro runs instead of swinging back behind him; only the right stick and L2/R2 turn it. Default 1, the original's. Flight levels always recentre (D162) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
@@ -281,12 +282,16 @@ GPU renderer). A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 In the options menu (SELECT+START), CONTROLS:
 - `ANALOG STICK` OFF goes back to the digital pad (the left stick is the d-pad, 8 directions).
 - `FREE CAMERA` ON makes the right stick turn the camera in proportion and tilt it up and down.
-  Let go, and the game's camera swings back behind Spyro as after L2/R2. Look mode, cutscenes and
-  scripted cameras are unchanged (D47).
+  Let go, and the game's camera swings back behind Spyro as after L2/R2 (with the passive camera,
+  the game's default, it first holds still for 90 vblanks, about 1.5 s, as after L2/R2: D162). Look mode, cutscenes
+  and scripted cameras are unchanged (D47).
 - `INVERT CAMERA X` flips the turn. `INVERT CAMERA Y` flips the tilt and Triangle look mode
   together. OFF: up looks down, the game's own way in look mode and flight. ON: up looks up in both.
   Flight itself is unchanged.
 - `CAMERA SPEED` sets the turn speed, 50–200%.
+- `CAMERA RECENTRE` OFF: the camera no longer swings round behind Spyro by itself. It keeps its
+  heading and follows him; the right stick and L2/R2 turn it. Its height and distance are still the
+  game's. Flight levels always recentre (D162).
 - `REAR TOUCH L2/R2` is `reartouch=`.
 - `TOUCH TO OPEN MENU` (on by default): a short tap in the middle of the front touch screen opens
   the menu, and another tap closes it. Swipes, held fingers and touches near the edges don't count.

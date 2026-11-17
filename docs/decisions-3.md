@@ -1,0 +1,16 @@
+# Decisions, part 3
+
+Decisions from D162 on; D1–D102 are in [decisions.md](decisions.md), D103–D161 in [decisions-2.md](decisions-2.md). Record each decision with its date, what was chosen, and why.
+
+### D162. The free camera's right stick holds the passive camera; an option turns the recentring off (issue #154, 2026-11-17)
+
+- **Why:** issue #154: with the passive camera (the default, `D_80075914` 0x52) the free camera (D47/D53) "takes control over your right stick". `UpdateFollow` (in `func_80035FB4`, `src/game/camera_hand.c`) restarts the hold timer `D_80075894` (`RT(90,75)`) only while some input is held, and its test is `g_Pad.m_NoButtonsDown` (`gamepad.c`), which counts the buttons and the left stick, not the right one. So with the right stick alone held the timer ran out after 90 vblanks (2 a tick), `StopSphere()` and the 0x800 azimuth clamp started pulling the camera back behind Spyro against the stick: the turn dropped to about half its speed, and on release the camera swung back at once.
+- **Chosen:**
+  - **The right stick counts as input** for that timer when the free camera is on (`FreeCameraHeld()`: on, and either right axis off 0x7F). The camera now holds while the stick is held, and after release it holds 90 vblanks (about 1.5 s) before swinging back, as after L2/R2.
+  - **`CAMERA RECENTRE` (CONTROLS, `cam_recentre`, default ON, the original)**: OFF makes the springs' azimuth error 0 (`RecentreOff()`, in `func_80034CE8`, after L2/R2's and the free camera's own override, which still win), so the camera keeps its heading while Spyro runs: no swing back behind him, in either camera mode. Only in the ground follow states (`CAM_FOLLOW`, `CAM_SPEED_CHECK`, the two recentre states, 1, 2, 4, and 5 without `m_flyingAbility`); flight levels, cutscenes, fly-ins and other scripted states keep the original's. Elevation and distance are untouched. Host: `--no-cam-recentre`; Vita: `g_port_controls.no_recentre` from `controls_apply()`, gated by `PortControlsLive()` like the other control options.
+- **Checked** (the host, `logs/freecam154/`, pad script `pad.txt`: new game, the right stick held right from 7200 to 8100, then left stick up from 8700):
+  - `before` (main's binary, `--analog --free-camera`): the timer 90 to 0 by 7320; the turn ~890-945 units per 60 vblanks, then ~460-500; at release it snaps back to 0x400 by 8280.
+  - `after`: the timer stays 90 for the whole hold, the turn ~946-975 throughout; at release it holds 90 vblanks, then swings back to 0x400 by 8640.
+  - `norecentre` (`--no-cam-recentre`): the heading stays 0xbf9 after release and while Spyro runs (8700-9600); `shot-9300` shows Spyro running away from the kept camera.
+  - **Options off:** `tools/host_checks.sh` with main's binary and this one (`logs/fc154-base-*`, `logs/fc154-new-*`): the demos, the whole-game tour and routes A and B give byte-identical traces, shots, audio and saves; an `--analog` run without the free camera (`logs/freecam154/analog-only-*`) is byte-identical too.
+  - The VPK: three local builds in the VitaSDK container (amd64, emulated) died of segfaults in gcc and Python on files this change doesn't touch (`logs/freecam154/vita-build*.log`), so the PR's CI build is the check. Not run in Vita3K or on hardware.
