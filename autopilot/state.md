@@ -24,7 +24,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/decisions-2.md",
         "docs/vita-testing.md"
       ],
-      "agent": "a9f0c514add020e03"
+      "agent": "a9f0c514add020e03",
+      "reported": true
     }
   ],
   "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
