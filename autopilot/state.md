@@ -53,7 +53,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "files": [
         "src/platform/vita/main.c"
       ],
-      "agent": "a6a41aad4afa276bc"
+      "agent": "a6a41aad4afa276bc",
+      "reported": true
     }
   ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
@@ -106,7 +107,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 166,
+    "step": 1,
+    "pid": 15488,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-166-1.log",
+    "started_at": "2026-11-19T19:26:08Z"
+  },
   "batch": null
 }
 ```
@@ -156,3 +164,4 @@ continue.
 - 19:06Z phase 8: #161 attempt 2 done (reports/161-2.md): Vita3K's crash is the game wrapping vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; vdm_ring=1024 passed 5/5 vs 2/5. Every route now passes vdm_ring=1024. Gate running (gate.py, all four routes). Filed #166 (main.c unknown-key line).
 - 19:14Z phase 8: merged #161 (5eb8423; every route exit 0 first try with vdm_ring=1024, pictures identical). Baseline base-5eb8423 = the gate's runs, the first with every route complete and counters on all of them; last_good = 5eb8423. Vita3K: 0 crashes.
 - phase 8: workers on #162 (presenter thread with the cache on), #164 (gems pad), #166 (main.c vdm_ring key).
+- 19:26Z phase 8: #166 reported done (reports/166-1.md); gate running (gate.py, four routes).
