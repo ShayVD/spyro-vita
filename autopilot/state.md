@@ -9,7 +9,53 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 162,
+      "branch": "auto/162-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-162",
+      "pids": [],
+      "started_at": "2026-11-19T19:15:29Z",
+      "files": [
+        "src/platform/vita/gpu_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_rt.h",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/pres/pres_draw.c",
+        "docs/decisions-2.md",
+        "docs/presentation.md"
+      ],
+      "agent": "af4c271dab36becb5"
+    },
+    {
+      "issue": 164,
+      "branch": "auto/164-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-164",
+      "pids": [],
+      "started_at": "2026-11-19T19:15:29Z",
+      "files": [
+        "tools/oracle/pads/",
+        "tools/native_draw_ab.sh",
+        "tools/host_checks.sh",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a855348e48c6c64af"
+    },
+    {
+      "issue": 166,
+      "branch": "auto/166-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-166",
+      "pids": [],
+      "started_at": "2026-11-19T19:15:29Z",
+      "files": [
+        "src/platform/vita/main.c"
+      ],
+      "agent": "a6a41aad4afa276bc"
+    }
+  ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5eb8423",
@@ -109,3 +155,4 @@ continue.
 - 18:18Z phase 8: merged #163 (ad697c3; host-only by construction, title 10/10 same, pause-ws 3 crashes with #161's signature and identical pictures before them). last_good stays 0525e1f: no route can pass reliably in Vita3K until #161. Vita3K: 3 crashes (pause-ws, cache off).
 - 19:06Z phase 8: #161 attempt 2 done (reports/161-2.md): Vita3K's crash is the game wrapping vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; vdm_ring=1024 passed 5/5 vs 2/5. Every route now passes vdm_ring=1024. Gate running (gate.py, all four routes). Filed #166 (main.c unknown-key line).
 - 19:14Z phase 8: merged #161 (5eb8423; every route exit 0 first try with vdm_ring=1024, pictures identical). Baseline base-5eb8423 = the gate's runs, the first with every route complete and counters on all of them; last_good = 5eb8423. Vita3K: 0 crashes.
+- phase 8: workers on #162 (presenter thread with the cache on), #164 (gems pad), #166 (main.c vdm_ring key).
