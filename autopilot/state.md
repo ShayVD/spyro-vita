@@ -28,6 +28,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "af4c271dab36becb5"
+    },
+    {
+      "issue": 167,
+      "branch": "auto/167-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-167",
+      "pids": [],
+      "started_at": "2026-11-19T19:49:58Z",
+      "files": [
+        "tools/oracle/pads/",
+        "tools/native_draw_ab.sh",
+        "tools/fast_render_ab.sh",
+        "tools/mixer_ab.sh",
+        "tools/pres_check_ab.sh",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a921d4c46ae9921de"
     }
   ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
@@ -133,3 +150,4 @@ continue.
 - 19:26Z phase 8: #166 reported done (reports/166-1.md); gate running (gate.py, four routes).
 - 19:47Z phase 8: merged #166 (every route passes, pictures and counters unchanged). Vita3K: 1 start-up crash (title, MoltenVK device lost at the first acquire; gotchas 24), rerun passed.
 - 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
+- phase 8: worker on #167 (pad scripts, from auto/164-1).
