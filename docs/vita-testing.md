@@ -336,6 +336,13 @@ so a stray write by the game there would look the same; D132 lists the checks th
 change, run the base VPK as many times on the same route, interleaved: on 2026-11-19 wobble60 passed 1 run in 5 or
 fewer on every build.
 
+**Pass `vdm_ring=1024` on every Vita3K route (D132).** Those corrupted commands are ones the game overwrote in the
+VDM ring before Vita3K's render thread ran them: the game gets ahead of Vita3K's renderer and wraps vitaGL's 128 KB
+ring. `vdm_ring=KB` in `config.txt` sizes the ring (`gpu_gl.c`, before `vglInit*`; no line keeps vitaGL's default,
+which is what the hardware runs). With 1 MB, `wobble60` passed 5 of 5 against 2 of 5 without it, and `title`,
+`pause-ws` and `pause-ws-wobble` passed with pictures identical to the baseline's. `main.c` logs
+`config: unknown key vdm_ring` for it; that is expected.
+
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
 Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
