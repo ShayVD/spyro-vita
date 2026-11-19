@@ -73,9 +73,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "kind": "baseline",
     "issue": 0,
     "step": 1,
-    "pid": 70358,
+    "pid": 93058,
     "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline.log",
-    "started_at": "2026-11-19T11:52:05Z"
+    "started_at": "2026-11-19T11:53:22Z"
   },
   "batch": null
 }
@@ -105,3 +105,4 @@ continue.
 (The coordinator's short log: one line per tick that changed something.)
 - 2026-11-19 phase 8: autopilot started at phase 8 on the owner's word (optimisations; PS1 wobble removal as a menu option). Disc: runtime/disc links to the gitignored disc/image (CLAUDE.md keeps it there).
 - 2026-11-19 phase 8: filed #158 (wobble fix missing on the presenter's frames), #159 (vertex cache cost), #160 (perfcount counters); worker on #158; baseline build and routes running. Vita3K: none yet.
+- 11:53Z phase 8: baseline build failed on setup (main checkout's build/vita has a non-Docker CMake cache); rerun into build/vita-ap. Vita3K: none yet.
