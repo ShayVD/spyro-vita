@@ -4036,8 +4036,11 @@ void gl_report(int vblank) {
   if (g_vita_opts.gpu_time)
     s_sample.state = 1;
   if (s_vc) {
-    const VCacheStats *c = &g_vcache_stats;
-    unsigned f = c->frames ? c->frames : 1;
+    VCacheStats sum;
+    const VCacheStats *c = &sum;
+    unsigned f, k;
+    psx_vcache_stats_sum(&sum);
+    f = c->frames ? c->frames : 1;
     vita_log("vcache %d: %u frames; per frame %u projected (peak %u), %u invalid, %u ambiguous, "
              "%u unrecorded; %u polygons, %u%% with every vertex found, %u%% of vertices found; "
              "expand %u.%02u ms",
@@ -4045,6 +4048,20 @@ void gl_report(int vblank) {
              c->full / f, c->polys / f, c->polys ? (unsigned)(100ull * c->persp / c->polys) : 0,
              c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
              (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
+    /* the logic draw's frames and the presenter's apart (#158): found in
+     * the other's entries, and vertices whose answer the renderer couldn't
+     * be given (not in a vertex buffer the cache knows) */
+    for (k = 0; k < 2; k++) {
+      c = &g_vcache_stats[k];
+      f = c->frames ? c->frames : 1;
+      vita_log("vcache %d %s: %u frames; per frame %u projected, %u polygons, %u%% with every "
+               "vertex found, %u%% of vertices found, %u%% in the other's entries, %u%% lost",
+               vblank, k == VC_LOGIC ? "logic" : "pres", c->frames, c->records / f, c->polys / f,
+               c->polys ? (unsigned)(100ull * c->persp / c->polys) : 0,
+               c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
+               c->verts ? (unsigned)(100ull * c->other / c->verts) : 0,
+               c->verts ? (unsigned)(100ull * c->side_lost / c->verts) : 0);
+    }
     psx_vcache_stats_reset();
   }
   if (s_filter || s_cache) {

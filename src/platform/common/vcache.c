@@ -48,7 +48,16 @@
  *
  * When the OT is walked later or elsewhere (walk.c, D71), the frame's table
  * goes with the list (psx_vcache_frame_take) and the next frame records
- * into a second one: the two tables take turns. */
+ * into a second one: the two tables take turns.
+ *
+ * The presenter (D125-D129) draws every frame the logic draw doesn't, from
+ * its own build of the renderers, on the game thread when the cache is on
+ * (D126). Its projections come through its own hook (g_pres_rtp_value_hook)
+ * into a table of its own, and from psx_vcache_pres_begin to its DrawOTag's
+ * done hook its polygons are looked up there (#158). Before, it recorded
+ * nothing and looked up the logic draw's table, between two logic frames:
+ * its vertices were found in the update's projections or not at all, and
+ * its done hook cut the logic frame's table short. */
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -84,41 +93,83 @@ typedef struct {
   uint32_t gen; /* frame; an entry from another frame is empty */
   uint8_t state, n;
   uint8_t multi; /* candidates more than a pixel apart: different points */
+  uint8_t src;   /* the kind of frame whose projection made it (VC_LOGIC, VC_PRES) */
   Cand c[VC_CANDS];
 } Entry;
 
+/* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
+ * record into their own, so each frame looks up only its own (#158) */
+typedef struct {
+  Entry *tab;     /* the table recording */
+  uint32_t gen;   /* its frame */
+  unsigned count; /* entries this frame */
+} Rec;
+
 static Entry s_tab0[VC_SIZE];
-static Entry *s_tab = s_tab0, *s_tab1; /* the table recording; the other one (D71) */
+static Entry *s_tab1;                  /* the logic draw's other table (D71) */
+static Rec s_rec[2] = {{s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
 static const Entry *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
-static const GrVertex *s_base;
 VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
 
-void psx_vcache_set_base(const void *vertex_buffer) { s_base = (const GrVertex *)vertex_buffer; }
-static uint32_t s_gen = 1;
-static unsigned s_count; /* entries this frame */
+/* The vertex buffers the renderer has been given (psx_vcache_set_base):
+ * the logic draw's walk's, the presenter's (D125: its own walk) and the
+ * check's. A polygon's answer goes to g_vcache_side at its index in its own
+ * walk's buffer, whichever buffer the renderer had last (#158: with the two
+ * walks taking turns at 60 fps, that was always the other one). */
+#define VC_BASES 4
+static const GrVertex *s_bases[VC_BASES];
+static int s_nbases;
 
-VCacheStats g_vcache_stats;
+void psx_vcache_set_base(const void *vertex_buffer) {
+  const GrVertex *const b = (const GrVertex *)vertex_buffer;
+  int i;
+  for (i = 0; i < s_nbases; i++)
+    if (s_bases[i] == b)
+      return;
+  /* a buffer first seen: its polygons' answers couldn't be written, so this
+   * once it is drawn as not found (integer and affine, as the PS1) */
+  for (i = 0; i < MAX_VERTEX_BUFFER_SIZE + 6; i++) {
+    g_vcache_side[i].dx = g_vcache_side[i].dy = 0;
+    g_vcache_side[i].w = 1;
+  }
+  if (s_nbases < VC_BASES)
+    s_bases[s_nbases++] = b;
+}
 
-void psx_vcache_stats_reset(void) { memset(&g_vcache_stats, 0, sizeof g_vcache_stats); }
+VCacheStats g_vcache_stats[2];
+static int s_pres; /* the presenter's frame: its DrawOTag hasn't returned (psx_vcache_pres_begin) */
+
+void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_stats); }
+
+void psx_vcache_stats_sum(VCacheStats *out) {
+  const unsigned *a = (const unsigned *)&g_vcache_stats[0], *b = (const unsigned *)&g_vcache_stats[1];
+  unsigned *o = (unsigned *)out;
+  size_t i;
+  for (i = 0; i < sizeof *out / sizeof(unsigned); i++)
+    o[i] = a[i] + b[i];
+  out->peak = g_vcache_stats[0].peak > g_vcache_stats[1].peak ? g_vcache_stats[0].peak
+                                                               : g_vcache_stats[1].peak;
+}
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
 
-/* The entry for key in this frame, or a free one for it (gen set, state 0),
+/* The entry for key in r's frame, or a free one for it (gen set, state 0),
  * or NULL when the probe is exhausted. */
-static Entry *find(uint32_t key, int add) {
+static Entry *find(Rec *r, int kind, uint32_t key, int add) {
   uint32_t i = hash(key), n;
   for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
-    Entry *e = &s_tab[i];
-    if (e->gen != s_gen) {
-      if (!add || s_count >= VC_MAX)
+    Entry *e = &r->tab[i];
+    if (e->gen != r->gen) {
+      if (!add || r->count >= VC_MAX)
         return NULL;
-      e->gen = s_gen;
+      e->gen = r->gen;
       e->key = key;
       e->state = 0;
       e->n = 0;
       e->multi = 0;
-      s_count++;
+      e->src = (uint8_t)kind;
+      r->count++;
       return e;
     }
     if (e->key == key)
@@ -127,11 +178,14 @@ static Entry *find(uint32_t key, int add) {
   return NULL;
 }
 
-/* psx_vcache_poly's lookup: the entry for key in the frame being walked */
+/* psx_vcache_poly's lookup: the entry for key in the frame being walked
+ * (the presenter's own, in its frame) */
 static const Entry *look(uint32_t key) {
   uint32_t i = hash(key), n;
+  if (s_pres)
+    return find(&s_rec[VC_PRES], VC_PRES, key, 0);
   if (!s_rtab)
-    return find(key, 0);
+    return find(&s_rec[VC_LOGIC], VC_LOGIC, key, 0);
   for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
     const Entry *e = &s_rtab[i];
     if (e->gen != s_rgen)
@@ -169,24 +223,24 @@ static int add_cand(Entry *e, int16_t dx, int16_t dy, float w) {
   return 0;
 }
 
-static void record(uint32_t key, int state, float dx, float dy, float w, float w_alt) {
-  Entry *e = find(key, 1);
+static void record(int kind, uint32_t key, int state, float dx, float dy, float w, float w_alt) {
+  Entry *e = find(&s_rec[kind], kind, key, 1);
   int16_t fx = fix8(dx), fy = fix8(dy);
   if (!e) {
-    g_vcache_stats.full++;
+    g_vcache_stats[kind].full++;
     return;
   }
   if (e->state == 0) {
     e->state = state;
     if (state == E_INVALID) {
-      g_vcache_stats.invalid++;
+      g_vcache_stats[kind].invalid++;
       return;
     }
   } else if (e->state != state || state != E_VALID) {
     /* a clamped projection and another one under the same key: the prims
      * that use it can't be told apart */
     if (e->state != E_AMBIGUOUS && !(e->state == E_INVALID && state == E_INVALID))
-      g_vcache_stats.ambiguous++;
+      g_vcache_stats[kind].ambiguous++;
     if (!(e->state == E_INVALID && state == E_INVALID))
       e->state = E_AMBIGUOUS;
     return;
@@ -195,7 +249,7 @@ static void record(uint32_t key, int state, float dx, float dy, float w, float w
    * several polygons), the same point at another scale, or a different
    * point on the same pixel. Each is a candidate; each polygon picks. */
   if (add_cand(e, fx, fy, w) || (w_alt > 0 && add_cand(e, fx, fy, w_alt))) {
-    g_vcache_stats.ambiguous++;
+    g_vcache_stats[kind].ambiguous++;
     e->state = E_AMBIGUOUS;
   }
 }
@@ -209,13 +263,14 @@ static void record(uint32_t key, int state, float dx, float dy, float w, float w
  * the registers it read, proj = R11-R33, TRX-TRZ, OFX, OFY, H (PROJ_*). */
 enum { PROJ_TR = 9, PROJ_OFX = 12, PROJ_OFY = 13, PROJ_H = 14, PROJ_N = 15 };
 
-static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int sz, int sf) {
+static void rtp_point(int kind, const int *proj, int vx, int vy, int vz, uint32_t key, int sz,
+                      int sf) {
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = proj[PROJ_H];
   const int *rm = proj, *tr = proj + PROJ_TR;
   int64_t mx, my, mz;
   float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
-  g_vcache_stats.records++;
+  g_vcache_stats[kind].records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
@@ -225,7 +280,7 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
    * projection of this vertex. */
   if (!sf || sz <= 0 || h >= 2 * sz || (mx >> 12) > 0x7FFF || (mx >> 12) < -0x8000 ||
       (my >> 12) > 0x7FFF || (my >> 12) < -0x8000) {
-    record(key, E_INVALID, 0, 0, 0, 0);
+    record(kind, key, E_INVALID, 0, 0, 0, 0);
     return;
   }
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
@@ -234,7 +289,7 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
   ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
   oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
   if (z <= 0) {
-    record(key, E_INVALID, 0, 0, 0, 0);
+    record(kind, key, E_INVALID, 0, 0, 0, 0);
     return;
   }
   r = (float)h / (z * sz); /* one division for h / sz and h / z */
@@ -245,7 +300,7 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
   ex = ox + (float)(int32_t)(mx >> 12) * isz - sx;
   ey = oy + (float)(int32_t)(my >> 12) * isz - sy;
   if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
-    record(key, E_INVALID, 0, 0, 0, 0);
+    record(kind, key, E_INVALID, 0, 0, 0, 0);
     return;
   }
   if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
@@ -253,7 +308,7 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
     w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
-  record(key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
+  record(kind, key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
 }
 
 /* RTPS/RTPT on the register file: PsyCross's GTE_operator (fast_render=0)
@@ -262,13 +317,19 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
 static void rtp_hook(int idx, int sf) {
   const int proj[PROJ_N] = {C2_R11, C2_R12, C2_R13, C2_R21, C2_R22, C2_R23, C2_R31, C2_R32, C2_R33,
                             C2_TRX, C2_TRY, C2_TRZ, C2_OFX, C2_OFY, (unsigned short)C2_H};
-  rtp_point(proj, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2, (unsigned short)C2_SZ3, sf);
+  rtp_point(VC_LOGIC, proj, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2, (unsigned short)C2_SZ3, sf);
 }
 
 /* The hand renderers' native RTPS (gte_native.h, fast_render=2, D80, D89):
  * the same projection, given as values. */
 static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
-  rtp_point(proj, vx, vy, vz, sxy, sz3, 1);
+  rtp_point(VC_LOGIC, proj, vx, vy, vz, sxy, sz3, 1);
+}
+
+/* The presenter's renderers' native RTPS (render_ctx.c pres_ngte_vcache,
+ * on g_pres_rtp_value_hook): into the presenter's own table (#158) */
+static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
+  rtp_point(VC_PRES, proj, vx, vy, vz, sxy, sz3, 1);
 }
 
 int psx_vcache_polys;
@@ -279,9 +340,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   uint32_t ref[4], persp = VREF_PERSP;
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
   float best = 4.0f; /* a polygon's depths are never 4x apart */
+  VCacheStats *const st = &g_vcache_stats[s_pres];
 
-  g_vcache_stats.polys++;
-  g_vcache_stats.verts += n;
+  st->polys++;
+  st->verts += n;
   if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
     for (i = 0; i < n; i++) {
       uint32_t r = VREF_POLY;
@@ -295,16 +357,19 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     e[i] = f && f->state == E_VALID && f->n ? f : NULL;
     ref[i] = VREF_POLY;
     if (e[i]) {
-      ref[i] |= (uint32_t)(f - (s_rtab ? s_rtab : s_tab)) + 1;
-      g_vcache_stats.hits++;
+      const Entry *tab = s_pres ? s_rec[VC_PRES].tab : s_rtab ? s_rtab : s_rec[VC_LOGIC].tab;
+      ref[i] |= (uint32_t)(f - tab) + 1;
+      st->hits++;
+      if (f->src != s_pres)
+        st->other++;
     } else {
       persp = 0;
       if (!f)
-        g_vcache_stats.miss_none++;
+        st->miss_none++;
       else if (f->state == E_INVALID)
-        g_vcache_stats.miss_invalid++;
+        st->miss_invalid++;
       else
-        g_vcache_stats.miss_ambiguous++;
+        st->miss_ambiguous++;
     }
   }
   /* each candidate of the first vertex against the closest of every
@@ -334,18 +399,22 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   if (best_c < 0)
     persp = 0;
   if (persp)
-    g_vcache_stats.persp++;
+    st->persp++;
   for (i = 0; i < n; i++) {
     uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
     if (e[i] && e[i]->multi)
       r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
-  if (s_base && vertex >= s_base && vertex - s_base <= MAX_VERTEX_BUFFER_SIZE - 6) {
+  for (i = 0; i < s_nbases; i++)
+    if (vertex >= s_bases[i] && vertex - s_bases[i] <= MAX_VERTEX_BUFFER_SIZE - 6)
+      break;
+  if (i < s_nbases) {
     /* the walk splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
+    const GrVertex *const base = s_bases[i];
     static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
     const int *order = n == 4 ? k_quad : k_tri;
-    VCacheVert c[4], *side = g_vcache_side + (vertex - s_base);
+    VCacheVert c[4], *side = g_vcache_side + (vertex - base);
     for (i = 0; i < n; i++) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
@@ -360,23 +429,42 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
+  } else if (s_nbases) {
+    st->side_lost += n;
   }
 }
 
 static int s_ot_done; /* psx_vcache_enable: mode != 0 */
 
+/* the presenter's next frame (psx_vcache_pres_begin): its table's entries
+ * from before are old */
+static void pres_next(void) {
+  Rec *const r = &s_rec[VC_PRES];
+  r->count = 0;
+  if (++r->gen == 0) {
+    memset(r->tab, 0, sizeof(Entry) * VC_SIZE);
+    r->gen = 1;
+  }
+}
+
 static void done_hook(void) {
-  g_vcache_stats.frames++;
-  if (s_count > g_vcache_stats.peak)
-    g_vcache_stats.peak = s_count;
-  s_count = 0;
+  Rec *const r = &s_rec[s_pres];
+  VCacheStats *const st = &g_vcache_stats[s_pres];
+  st->frames++;
+  if (r->count > st->peak)
+    st->peak = r->count;
+  if (s_pres) { /* the presenter's: its next frame begins at psx_vcache_pres_begin */
+    s_pres = 0;
+    return;
+  }
+  r->count = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
-    s_tab = s_tab == s_tab0 ? s_tab1 : s_tab0;
-  if (++s_gen == 0) { /* wrapped: no old entry may look current */
+    r->tab = r->tab == s_tab0 ? s_tab1 : s_tab0;
+  if (++r->gen == 0) { /* wrapped: no old entry may look current */
     memset(s_tab0, 0, sizeof s_tab0);
     if (s_tab1)
       memset(s_tab1, 0, sizeof s_tab0);
-    s_gen = 1;
+    r->gen = 1;
   }
 }
 
@@ -387,8 +475,8 @@ int psx_vcache_double(void) {
 }
 
 void psx_vcache_frame_take(PsxVcacheFrame *f) {
-  f->tab = s_tab;
-  f->gen = s_gen;
+  f->tab = s_rec[VC_LOGIC].tab;
+  f->gen = s_rec[VC_LOGIC].gen;
 }
 
 void psx_vcache_frame_use(const PsxVcacheFrame *f) {
@@ -401,7 +489,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
   const Entry *e;
   if (!slot || slot > VC_SIZE)
     return 0;
-  e = &s_tab[slot - 1];
+  e = &s_rec[VC_LOGIC].tab[slot - 1];
   if (d >= e->n)
     d = 0;
   out->dx = e->c[0].dx; /* the same for every polygon */
@@ -420,4 +508,18 @@ void psx_vcache_enable(int mode) {
 void psx_vcache_ot_done(void) {
   if (s_ot_done)
     done_hook();
+}
+
+PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
+  Rec *const r = &s_rec[VC_PRES];
+  s_pres = 0;
+  if (!s_ot_done)
+    return NULL;
+  if (g_psyxRtpValueHook && !r->tab) /* recording: the presenter's table, once */
+    r->tab = calloc(VC_SIZE, sizeof(Entry));
+  if (!r->tab) /* tex_filter only (polygons just marked), or no memory: as before #158 */
+    return NULL;
+  pres_next();
+  s_pres = walks != 0;
+  return s_pres && g_psyxRtpValueHook ? pres_rtp_value_hook : NULL;
 }

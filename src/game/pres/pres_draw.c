@@ -14,6 +14,8 @@
 #endif
 #include "psx_arena.h"
 #include "psx_clock.h"
+#include "psx_gpu.h" /* g_GPUDisabledState */
+#include "psx_vcache.h"
 #include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -225,9 +227,14 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   g_pres_mips_sp = render_ctx_stack_top();
 #endif
   g_pres_narrow = wide;
-  g_pres_rtp_hook = NULL;
-  g_pres_rtp_value_hook = NULL;
+  g_pres_rtp_hook = NULL; /* (7d2's readable renderers have no register file) */
   records_begin();
+  /* The vertex cache (persp, subpixel; #158): the presenter's frame, its
+   * projections into its own table, its polygons looked up there (its
+   * DrawOTag walks and ends it unless the GPU is disabled). After
+   * records_begin: the game's walk, which looks up the logic draw's, is
+   * joined. */
+  g_pres_rtp_value_hook = psx_vcache_pres_begin(!g_GPUDisabledState);
   lod_begin();
 }
 
