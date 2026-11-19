@@ -9,7 +9,27 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 160,
+      "branch": "auto/160-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-160",
+      "pids": [],
+      "started_at": "2026-11-19T14:22:56Z",
+      "files": [
+        "third_party/vita-port-kit/",
+        "src/platform/vita/",
+        "src/platform/common/gpu_walk.c",
+        "src/platform/common/vcache.c",
+        "CMakeLists.txt",
+        "cmake/",
+        "autopilot/config.json",
+        "docs/decisions-2.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "aec0c934d50cf302d"
+    }
+  ],
   "last_good": "",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
