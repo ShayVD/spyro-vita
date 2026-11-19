@@ -9,7 +9,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 165,
+      "branch": "auto/165-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-165",
+      "pids": [],
+      "started_at": "2026-11-19T23:49:09Z",
+      "files": [
+        "docs/host-build.md",
+        "docs/decisions-2.md"
+      ],
+      "agent": "ae82a5ee766344247"
+    }
+  ],
   "last_good": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
@@ -132,3 +145,4 @@ continue.
 - 22:44Z phase 8: merged #159 (every route first try, pictures and counters unchanged; same answers with ~60% fewer divisions per vertex). New baseline from the gate; last_good moved. Vita3K: 0 crashes.
 - phase 8: worker on #168 (host determinism with --prof-draw; the profiler is src/platform/linux32/prof_draw.c, not src/game/).
 - 23:48Z phase 8: merged #168 (bec34cc; the gems runs shared ./save, so only the first reached the gems; each run now gets its own card and a gems check). Script/docs only.
+- phase 8: worker on #165 (docs for #163), the last open issue.
