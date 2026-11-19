@@ -1,23 +1,62 @@
 {
-  "limits": {"workers": 5, "stall_hours": 2, "max_attempts": 2, "max_issues_per_day": 20, "stop_rounds": 3,
-             "noise": 0.02, "target_fps": 60},
+  "limits": {
+    "workers": 5,
+    "stall_hours": 2,
+    "max_attempts": 2,
+    "max_issues_per_day": 20,
+    "stop_rounds": 3,
+    "noise": 0.02,
+    "target_fps": 60
+  },
   "hw_game": "tools/vita/hw.game",
   "build_mode": "per_branch",
   "commands": {
-    "build": "docker run --rm -v \"$PWD:/work\" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh",
+    "build": "cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_TOOLCHAIN_FILE=/usr/local/vitasdk/share/vita.toolchain.cmake -DPython3_EXECUTABLE=/usr/bin/python3 && cmake --build build/vita",
     "host_tests": "{{the host test command: a linux32 build plus ctest (docs/host-build.md)}}",
     "quick_check": "{{build_mode batched only}}",
     "vpk_version": "{{the command that prints the next free VPK version}}",
-    "phase_gates": {"1": "tools/build_matching.sh"}
+    "phase_gates": {
+      "1": "tools/build_matching.sh"
+    }
   },
   "routes": [
-    {"name": "title", "timeout": 300, "config": ["shot=300,900,1500,2100,2640", "shot_hd=1", "frames=2700"], "pad": null},
-    {"name": "pause-ws", "timeout": 1200, "config": ["widescreen=1", "shot_every=100", "frames=9100"],
-     "pad": "tools/vita/hw-routes/pause-ws.pad"},
-    {"name": "pause-ws-wobble", "timeout": 1200,
-     "config": ["widescreen=1", "persp=1", "subpixel=1", "shot_every=100", "frames=9100"],
-     "pad": "tools/vita/hw-routes/pause-ws.pad"}
+    {
+      "name": "title",
+      "timeout": 300,
+      "config": [
+        "shot=300,900,1500,2100,2640",
+        "shot_hd=1",
+        "frames=2700"
+      ],
+      "pad": null
+    },
+    {
+      "name": "pause-ws",
+      "timeout": 1200,
+      "config": [
+        "widescreen=1",
+        "shot_every=100",
+        "frames=9100"
+      ],
+      "pad": "tools/vita/hw-routes/pause-ws.pad"
+    },
+    {
+      "name": "pause-ws-wobble",
+      "timeout": 1200,
+      "config": [
+        "widescreen=1",
+        "persp=1",
+        "subpixel=1",
+        "shot_every=100",
+        "frames=9100"
+      ],
+      "pad": "tools/vita/hw-routes/pause-ws.pad"
+    }
   ],
-  "shots": {"max_diff": 0.0, "tol": 0, "edge": 0},
+  "shots": {
+    "max_diff": 0.0,
+    "tol": 0,
+    "edge": 0
+  },
   "benchmark": []
 }

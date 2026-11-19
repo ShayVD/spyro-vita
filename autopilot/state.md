@@ -28,7 +28,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/decisions-2.md",
         "docs/presentation.md"
       ],
-      "agent": "a73c23883e2369b4f"
+      "agent": "a73c23883e2369b4f",
+      "last_commit_at": "2026-11-19T12:01:54+00:00"
     }
   ],
   "last_good": "",
@@ -73,9 +74,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "kind": "baseline",
     "issue": 0,
     "step": 1,
-    "pid": 93058,
+    "pid": 82907,
     "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline.log",
-    "started_at": "2026-11-19T11:53:22Z"
+    "started_at": "2026-11-19T12:36:49Z"
   },
   "batch": null
 }
@@ -106,3 +107,4 @@ continue.
 - 2026-11-19 phase 8: autopilot started at phase 8 on the owner's word (optimisations; PS1 wobble removal as a menu option). Disc: runtime/disc links to the gitignored disc/image (CLAUDE.md keeps it there).
 - 2026-11-19 phase 8: filed #158 (wobble fix missing on the presenter's frames), #159 (vertex cache cost), #160 (perfcount counters); worker on #158; baseline build and routes running. Vita3K: none yet.
 - 11:53Z phase 8: baseline build failed on setup (main checkout's build/vita has a non-Docker CMake cache); rerun into build/vita-ap. Vita3K: none yet.
+- 12:36Z phase 8: the vitasdk/vitasdk image is amd64 (emulated on this arm64 Mac: 76/505 in 42 min); build command switched to the native VitaSDK (docs/vita-testing.md), baseline restarted into build/ap-native. The stopped Docker build's container (elegant_shaw) is left to finish: docker stop was refused by the permission check. Vita3K: none yet.
