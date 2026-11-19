@@ -37,7 +37,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "cmake/",
         "tests/"
       ],
-      "agent": "a3f59b59b45c5fc1d"
+      "agent": "a3f59b59b45c5fc1d",
+      "last_commit_at": "2026-11-19T17:32:37+00:00"
     }
   ],
   "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
