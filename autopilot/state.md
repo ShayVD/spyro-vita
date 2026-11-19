@@ -23,7 +23,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/gte_native.h",
         "docs/decisions-2.md"
       ],
-      "agent": "a8691855df65aa8f1", "last_commit_at": "2026-11-19T21:55:09+00:00"
+      "agent": "a8691855df65aa8f1",
+      "last_commit_at": "2026-11-19T21:55:09+00:00",
+      "reported": true
     }
   ],
   "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
@@ -52,6 +54,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #162 (presenter on core 1 with the cache on)",
       "expected": "about half of D89's ~4.5 ms/vblank cache work leaves the game thread; s7f3-toasty60-pres + o-toasty + persp=1 subpixel=1, A this path vs B pres_thread=0",
       "issue": 162
+    },
+    {
+      "title": "Hardware run for #159 (cheaper vertex cache)",
+      "expected": "less game- and presenter-thread time with persp+subpixel at 60 fps; D133's form on the merged VPK vs 8dab625",
+      "issue": 159
     }
   ],
   "owner_decisions": [
@@ -81,7 +88,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 159,
+    "step": 1,
+    "pid": 59658,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-159-1.log",
+    "started_at": "2026-11-19T22:37:23Z"
+  },
   "batch": null
 }
 ```
@@ -139,3 +153,4 @@ continue.
 - 21:21Z phase 8: merged #162 (every route first try, pictures identical, wobble60 vc.* -50% on the game thread). New baseline = the gate's runs; last_good moved. Vita3K: 0 crashes.
 - phase 8: worker on #159 (cheaper vertex cache); #167's worker resumed after the API limit.
 - 21:30Z phase 8: merged #167 (6a92241; tools/pads/docs only: scope, merge, noassets; worker's host A/B checks all identical). Filed #168 (fast_render_ab gems run loads a vblank late with --prof-draw).
+- 22:37Z phase 8: #159 reported done (reports/159-1.md): same answers (checksums identical over 91 M vertices), divisions/vertex ~1.0 -> ~0.4, table lines -15%. Gate running.
