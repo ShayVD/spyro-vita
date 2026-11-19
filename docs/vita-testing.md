@@ -325,6 +325,17 @@ The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the p
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
 menu from 8,601.
 
+**When Vita3K crashes (exit 2, D132, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
+address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed
+or not. The place it died is in the macOS crash report (`~/Library/Logs/DiagnosticReports/Vita3K-*.ips`, matched to
+the run by its time; macOS keeps 25). The faulting thread's Vita3K frames are offsets into the binary: name them from
+`nm -n /Applications/Vita3K.app/Contents/MacOS/Vita3K` (the symbol at or below 0x100000000 + offset). On the pause
+routes it has always been Vita3K's render thread running a corrupted command (`process_batch`). Vita3K keeps an
+immediate context's commands in the game's VDM ring buffer and its context object in the game's context host memory,
+so a stray write by the game there would look the same; D132 lists the checks that found none. Before blaming a
+change, run the base VPK as many times on the same route, interleaved: on 2026-11-19 wobble60 passed 1 run in 5 or
+fewer on every build.
+
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
 Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
