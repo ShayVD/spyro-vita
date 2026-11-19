@@ -37,7 +37,7 @@ scenario() { # NAME args...
   [ -d "$b" ] && [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   echo "$n: $same identical, $diff different; audio.wav $(shasum $b/audio.wav | cut -c1-12), $(stat -f %z $b/audio.wav 2>/dev/null || stat -c %s $b/audio.wav) bytes ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 }
-GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
+GEMS="--frames 8768 --pad tools/oracle/pads/gems.txt --shot-every 500"
 for s in "$@"; do
   case $s in
   demo) scenario demo --frames 12000 --shot-every 500 ;;

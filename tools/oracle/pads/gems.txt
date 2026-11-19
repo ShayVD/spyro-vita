@@ -1,7 +1,7 @@
 # The gems route on the linux32 host (8,768 vblanks): New Game from the title,
 # the intro, then Artisans: over the ledge to the waterfall pool and four red
 # gems. From M2's logs/run9-gems/replay_pad.txt (docs/host-build.md); kept in
-# logs/pads/gems.txt (gitignored) until #164; older logs and docs name that path.
+# pads/gems.txt under the gitignored logs/ until #164; older logs and docs name that path.
 2 none
 2 none
 1902 start
