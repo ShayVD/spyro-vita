@@ -9,11 +9,33 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
-  "last_good": "",
+  "workers": [
+    {
+      "issue": 160,
+      "branch": "auto/160-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-160",
+      "pids": [],
+      "started_at": "2026-11-19T14:22:56Z",
+      "files": [
+        "third_party/vita-port-kit/",
+        "src/platform/vita/",
+        "src/platform/common/gpu_walk.c",
+        "src/platform/common/vcache.c",
+        "CMakeLists.txt",
+        "cmake/",
+        "autopilot/config.json",
+        "docs/decisions-2.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "aec0c934d50cf302d",
+      "last_commit_at": "2026-11-19T15:36:43+00:00",
+      "reported": true
+    }
+  ],
+  "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
-    "commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-0525e1f",
+    "commit": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -41,25 +63,25 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 6
+    "count": 7
   },
   "round": {
     "n": 1,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
     "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
     "started_at": "2026-11-19T13:05:58Z",
-    "filed": 6,
+    "filed": 7,
     "investigated": false
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": {
-    "kind": "baseline",
-    "issue": 0,
+    "kind": "gate",
+    "issue": 160,
     "step": 1,
-    "pid": 7740,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-0525e1f/wobble60",
-    "started_at": "2026-11-19T14:22:21Z"
+    "pid": 39403,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-160.log",
+    "started_at": "2026-11-19T15:49:44Z"
   },
   "batch": null
 }
@@ -95,3 +117,6 @@ continue.
 - 13:05Z phase 8: pause-ws-wobble crashed again on the baseline VPK (r2, ~7800): filed #161; it is autopilot's, not a branch's. Baseline base-f7aeb43 set (title, pause-ws pass); last_good stays empty until the wobble route passes. Round 1 started. Vita3K: 2 crashes (wobble route, same VPK).
 - 14:12Z phase 8: #158 reported done (report runtime/autopilot/reports/158-1.md): presenter frames 0% -> logic's share found; on Vita3K at 60 fps both kinds had been 100% side_lost since D125. Gate running (runs/gate-158-1). Vita3K (worker's): pause-ws 1 crash, pause-ws-wobble 2 crashes (#161).
 - 14:22Z phase 8: merged #158 (0525e1f; gate all routes pass, shots identical). Added route wobble60 (60 fps with persp+subpixel); baseline base-0525e1f = the gate's runs + wobble60 (running). Filed #162 (presenter thread with the cache on), #163 (ctest exec bits). Vita3K: 2 crashes in the gate (pause-ws, pause-ws-wobble first tries; reruns passed).
+- 14:25Z phase 8: baseline base-0525e1f set (gate-158-1's runs + wobble60, which crashed in Vita3K both tries: the 73-picture run kept as the baseline). last_good = 0525e1f: every route reached its stop line or crashed only with #161's Vita3K signature on the same VPK. Vita3K: 2 crashes (wobble60).
+- 15:35Z phase 8: #160 worker flagged 'Interfere With Workloads' by the harness; checked its commands: no kills, no docker stops, Vita3K config untouched, only its own build/ copies and Vita3K runs. Found another project's autopilot (atv2-vita) running Vita3K concurrently (lock is per game): lead added to #161; worker told to stop measuring crash rates and commit. Vita3K: none of ours new.
+- 15:49Z phase 8: #160 reported (reports/160-1.md); wobble60 was non-deterministic (interp_budget=1 skips by measured time): route now interp_budget=0, re-baselining it on 0525e1f's VPK, then gating #160 (one job). .gitignore runtime/ anchored to /runtime/ (it hid the kit's vita/runtime/). Filed #164 (gems pad untracked). Vita3K (worker's): 4 crashes, 1 overlapped atv2-vita's Vita3K.

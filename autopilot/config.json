@@ -59,6 +59,7 @@
         "config_version=3",
         "widescreen=1",
         "interp=1",
+        "interp_budget=0",
         "persp=1",
         "subpixel=1",
         "shot_every=100",
