@@ -142,6 +142,14 @@ include(cmake/psycross.cmake)
 include(cmake/platform_common.cmake)
 include(cmake/game.cmake)
 
+# linux32: every link goes through cmake/link_exec.sh, which makes sure an
+# executable keeps its execute bit: ld's own chmod of its output is now and
+# then lost on tools/tc's bind mount (colima's reverse-sshfs; issue #163).
+if(SPYRO_HOST STREQUAL "linux32")
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
+    "sh ${CMAKE_SOURCE_DIR}/cmake/link_exec.sh <TARGET> --")
+endif()
+
 add_subdirectory(src/platform/${SPYRO_HOST})
 
 if(SPYRO_HOST STREQUAL "linux32")
