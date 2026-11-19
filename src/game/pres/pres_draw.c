@@ -233,7 +233,9 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
    * projections into its own table, its polygons looked up there (its
    * DrawOTag walks and ends it unless the GPU is disabled). After
    * records_begin: the game's walk, which looks up the logic draw's, is
-   * joined. */
+   * joined. On the Vita's presenter thread the frame is handed to it as
+   * its buffer is placed (gpu_thread.c pres_submit, #162) and ends as the
+   * buffer closes. */
   g_pres_rtp_value_hook = psx_vcache_pres_begin(!g_GPUDisabledState);
   lod_begin();
 }

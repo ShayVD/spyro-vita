@@ -1398,3 +1398,57 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **The change** (`src/platform/vita/gpu_gl.c`, `fd5f624`): `gl_gpu_init` reads a `vdm_ring=KB` line from `config.txt` itself (`vdm_ring_kb`) and calls `vglSetVDMBufferSize` before `vglInitExtended`. No line or 0 leaves vitaGL's default (GXM's 128 KB), so a build without the line is exactly as before; the value is capped at 16 MB and rounded down to 4 KB. It is read in `gpu_gl.c` because the ring has to be sized before `vglInit*` and `main.c`'s options are outside this change, so `main.c` logs `config: unknown key vdm_ring` (harmless). Off by default: on hardware a bigger ring only costs RAM (896 KB more of vitaGL's 200 MB pool at 1 MB) and changes no picture, but no hardware run has had it, and D89's hardware runs with `subpixel=1` didn't crash with the default ring.
 - **Checked** (Vita3K, `vdm_ring=1024`, `$RUNS/auto-161-2`): `wobble60` 5 of 5 (`vdm-1`…`vdm-5`), each 91 of 91 shots the same as `base-0525e1f/wobble60` (`shots_cmp.py --max-diff 0 --tol 0 --edge 0`); `title` 10 of 10 the same as `base-cfe0d45/title` (`gate-title`); `pause-ws` 91 of 91 (`gate-pause-ws`); `pause-ws-wobble` 91 of 91 (`gate-pause-ws-wobble`), all exit 0. 20 Vita3K runs in all. Hardware: not run (needs the owner's yes).
 - **What the gates should do.** Every Vita3K route gets `vdm_ring=1024` in its config lines (`autopilot/config.json`'s routes: the coordinator's file), so a Vita3K crash means something again. A crash with the line on is news: run the base VPK on the same route with the line before blaming a change, as before. Leave the default alone until a hardware run shows a bigger ring costs nothing there.
+
+## 2026-11-19 — the presenter on its own core with the vertex cache on (#162)
+
+### D133. With `persp`/`subpixel` on, the presenter's in-between frame runs on its own thread (`pres_thread=1`) like every other frame. It projects into its own table and writes its answers to a side array of its own, which its buffer carries to the render thread. The game thread's share of the vertex cache's work halves at 60 fps, and every picture is unchanged
+- **Why** (issue #162): D126 kept the presenter inline whenever the vertex cache was on (`gpu_thread.c` `pb_usable`: `!gl_vcache_side_used() && !psx_vcache_polys`), because the cache's tables and `g_vcache_side` belonged to the game thread. Since D130 the presenter has its own table, but three things were still shared:
+  - `s_pres`, the global flag that says "the presenter's frame is open", which chooses the table, the counters and the stats for every polygon;
+  - `g_vcache_side`, which both walks write at their own indices;
+  - `g_vcache_work`, the D131 counters.
+  So since D129 the wobble fix put the whole in-between frame back on the game thread, on every frame at 60 fps.
+- **The change** (`src/platform/common/vcache.c`, `psx_vcache.h`, `src/platform/vita/gpu_thread.c`, `gpu_gl.c`; comments in `src/game/pres/pres_draw.c`):
+  - **Handing over:** `pres_draw.c`'s context still opens the presenter's frame on the game thread (`psx_vcache_pres_begin`). On the worker path, `pres_submit`, which places the job's `C_BUF` before the logic draw starts, then calls `psx_vcache_pres_detach`: `s_pres` goes back to 0, so the logic draw's lookups and its done hook behave as without a presenter, and `s_pres_async` is set. While `s_pres_async` is set, `psx_vcache_poly` treats a polygon whose vertices are outside the game's walk's buffer (`psx_gpu_game_walk()->vb`, the only buffer the logic draw walks into) as the presenter's. It looks the polygon up in the presenter's table and adds to the presenter's stats. The game-buffer test comes first, so the logic draw's walk never reads `s_pres_async`. The worker ends the frame in `pb_close` (`psx_vcache_pres_end`: frames, peak), because its `DrawOTag` doesn't call the done hook (`present.c`).
+  - **Its answers:** they go to `s_pres_side` (a 512 KB malloc) at the vertex's index in the presenter's walk's buffer. The cache learns that buffer from `psx_vcache_set_base` during a presenter frame drawn inline, so the first presenter frame with the cache on still runs inline; `psx_vcache_pres_async_ok` gates the thread on it. `pb_verts` copies the answers into the job's buffer beside its vertices (`PBuf.side`, 3 × 512 KB, allocated the first time the cache asks for the worker). `C_PVERTS` carries a `side` flag, and the render thread passes that area to `gl_vertices` in place of `g_vcache_side`. The side area follows the same reuse rule as the vertices: job k's buffer is reused once job k-2 has finished.
+  - **The counters:** `g_vcache_work` (D131's `vc.*`) is now the game thread's work (with its walk: the logic draw, and the presenter when inline). `g_vcache_pres_work` is the presenter's thread's. That keeps one writer per counter, with plain adds. The Vita log gains a `vcache N work:` line that gives both since the last report.
+  - **What the presenter's thread touches:** its table (`s_rec[VC_PRES]`, renewed by `psx_vcache_pres_begin` on the game thread after the join), `s_pres_side`, `g_vcache_pres_work`, `g_vcache_stats[VC_PRES]` and its own buffer. None of these is written by the game thread or the parse thread while it runs. The render thread's report resets `g_vcache_stats` while either thread adds to it; that was already so for the logic draw's walk on the parse thread, and it is statistics only.
+  - **Unchanged:** with `tex_filter` alone (polygons only marked, nothing recorded) the presenter stays inline. `pres_thread=0` keeps it on the game thread with the cache, exactly as before (checked below). The host runs the presenter inline, through the same `s_pres` path as before. With the cache off, `pb_usable` is D126's.
+- **Vita3K** (`realtime=0`; VPK of `2fa01a0`, SHA-1 `fb0a0d7d…`, `$RUNS/auto-162-1/br1.vpk`; runs in `$RUNS/auto-162-1/<route>`, `results.txt`). Every route has `vdm_ring=1024` and every run exited 0 on its first try. Compared with `shots_cmp.py --max-diff 0 --tol 0 --edge 0` against `$RUNS/base-5eb8423`:
+  - `title`: 10 of 10 the same;
+  - `pause-ws`: 91 of 91;
+  - `pause-ws-wobble`: 91 of 91;
+  - `wobble60`: 91 of 91, and again 91 of 91 in a second run (`wobble60-again`);
+  - `wobble60` with `pres_thread=0` (`wobble60-pt0`): 91 of 91, with every `vc.*` counter exactly the baseline's.
+- **The presenter's frames on its thread** (`wobble60`, the `pres` lines): from the 600 window on, 81 frames on core 1 and 1 inline (the first, which teaches the cache its buffer). After that every frame ran on core 1 (150 a window): 0 inline, 0 buffers passed by, 0 too big, 0 waits for a free buffer, 0 display environments not the presenter's, 0 frames uncaptured.
+- **Found share, unchanged** (`vcache N pres:` lines, the Artisans windows 6,600–9,000, baseline → this change):
+
+  | Window | Polygons found whole | Vertices found | Lost |
+  |---|---|---|---|
+  | 6,600 | 92% → 92% | 97% → 97% | 0% → 0% |
+  | 6,900 | 95% → 95% | 98% → 98% | 0% → 0% |
+  | 7,200 | 94% → 94% | 97% → 97% | 0% → 0% |
+  | 7,500 | 95% → 95% | 98% → 98% | 0% → 0% |
+  | 7,800 | 95% → 95% | 98% → 98% | 0% → 0% |
+  | 8,100 | 96% → 96% | 98% → 98% | 0% → 0% |
+  | 8,400 | 94% → 94% | 97% → 97% | 0% → 0% |
+  | 8,700 | 94% → 94% | 97% → 97% | 0% → 0% |
+  | 9,000 | 97% → 97% | 98% → 98% | 0% → 0% |
+
+  The projections per frame are the same: 4,300 → 4,300 at 6,600, 4,316 → 4,316 at 7,500. The logic draw's lines are unchanged too, including the occasional "198%"/"204%" of vertices found: the baseline has them as well. They come from the render thread's report resetting the stats while the parse thread adds to them.
+- **Work counters** (`perf_report.py` against `base-5eb8423`, vblanks 6,600–9,000, noise 2%; `$RUNS/auto-162-1/perf_report.txt`):
+  - **`pause-ws`:** every counter the same; `vc.*` and `pres.frames` are 0.
+  - **`wobble60`:** every GL, GR, upload and `ot.packets` counter the same, within 0.1%. The differences are a few draws per 2,400 vblanks; the GL counters are pulled once a vblank from where the render thread has got to. `vc.proj` 3,565.7 → 1,785.1, `vc.polys` 1,534.7 → 768.2, `vc.verts` 5,293.2 → 2,649.8 and `vc.misses` 105.0 → 52.4 per frame, each −49.9 to −50.1%. That is the presenter's half moved to its thread: the `vcache N work:` lines give the two threads about equal shares (at 7,500: the game thread 647,545 projections, the presenter's thread 647,445). `pres.frames` 0.498 → 0.498.
+- **Vita3K's time lines** (not evidence, D112): in the same windows the `present` line's "presenter on this thread" went from 5,499–12,604 µs a tick to 209–258 (the snapshot and context), and the game thread's busy share from 33–84% to 18–29%. The presenter's thread was busy 1.2–4.3 ms per vblank.
+- **Host:** the host runs the presenter inline, so it checks that the inline path is unchanged. Both binaries were built here: the branch's (`build/linux32`) and one built from a clean copy of `1b248ca` (`build/base-src`, `build/base-linux32`). Logs are under `logs/` in the worktree (gitignored); the script is `logs/h162.sh`.
+  - **The attract demos with the cache**, for 12,000 vblanks at 16:9 and 60 fps (`--widescreen --interp --out960 --vcache`): 26 of 26 files identical to the base binary's (trace, shots, WAV, card), and the logs are identical too (`logs/h162-base-vc`, `h162-new-vc`). The presenter's frames found 96.1% of polygons whole and 98.4% of vertices, and the logic draw's 97.9% and 99.3%, as in D130.
+  - **`--pres-check` with the cache:** 6,169 frames compared, 6,169 identical, 0 differ. 26 of 26 files and the log are identical to the base binary's (`logs/h162-*-pchk`).
+  - **`tools/native_draw_ab.sh n162 demo wsi`** (`logs/n162-ndab.txt`): demo 26 of 26 and wsi 25 of 25 files identical, every native draw check 0 differ. The gems pad isn't in a fresh worktree, so its `gems` and `vc` scenarios weren't run; the `--vcache` A/B above stands in for `vc`.
+  - **ctest:** 29 of 29 passed, `gte` skipped as on main (`logs/n162-ctest.txt`).
+  - The VPK builds with no warning in the changed files. `tools/build_matching.sh`: `PSX.EXE SHA-1 OK`.
+- **Hardware: not run** (it needs the owner's yes). The run to do is 7F3, `tools/vita/fps-runs/s7f3-toasty60-pres.txt`, with `persp=1 subpixel=1` added on the command line, run twice on this VPK. Once as it is (the presenter on core 1) and once with `pres_thread=0` too, which is the code path before this change:
+  - `REALTIME=1 VPK=$V PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-162a 1500 @tools/vita/fps-runs/s7f3-toasty60-pres.txt @tools/vita/hw-routes/o-toasty.cfg persp=1 subpixel=1`
+  - the same into `logs/hw-162b`, with `pres_thread=0` added.
+  Read the game thread's busy share and late vblanks with `fps60_summary.py` and `hw_cmp.py`, and the `pres`, `vcache N work:` and `vpk-perfcount:` lines. D89 measured the cache at about 4.5 ms a vblank on the game thread at 60 fps. Expected: about half of that leaves the game thread, and the presenter's thread gains it, along with its 512 KB copy of the answers a frame.
+- **Not done:**
+  - `present.c`'s comment at the presenter's `DrawOTag` ("the worker never has the vertex cache") is now out of date. `present.c` is outside this change's files.
+  - `tools/vita/fps-runs` has no file of its own for the run above; the run uses 7F3's file with two extra lines.
