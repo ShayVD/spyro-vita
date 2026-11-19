@@ -24,7 +24,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/decisions-2.md",
         "docs/vita-testing.md"
       ],
-      "agent": "ac38131f5d6cefc87"
+      "agent": "ac38131f5d6cefc87",
+      "last_commit_at": "2026-11-19T18:00:31+00:00"
     },
     {
       "issue": 163,
@@ -126,3 +127,4 @@ continue.
 - 16:10Z phase 8: merged #160 (cfe0d45; gate: title/pause-ws/pause-ws-wobble pass, identical pictures; wobble60 crashed 3/3 with #161's signature at the baseline's own crash points, pictures identical up to them, another project's Vita3K overlapping: autopilot's, not the branch's). Baseline base-cfe0d45 with counters: gate runs + wobble60 (running). Vita3K: 3 crashes (wobble60).
 - phase 8: workers on #161 (Vita3K crash, with the concurrent-Vita3K confound to separate) and #163 (ctest exec bits).
 - 16:17Z phase 8: baseline base-cfe0d45: title/pause-ws/pause-ws-wobble from gate-160-1 (with counters); wobble60 crashed 4/4 on cfe0d45's VPK (0/7 with the gate's), against 2/4 on 0525e1f: suspected regression from #160, not proven (atv2-vita's Vita3K overlapped both sets). wobble60's picture baseline stays 0525e1f's complete run; no wobble60 counters baseline yet. last_good stays 0525e1f; the A/B handed to #161's worker before any bisect/revert. Vita3K: 4 crashes (wobble60).
+- 18:01Z phase 8: #161 interim D132 (0ec1ba6): the crash is on Vita3K's render thread running corrupted renderer::Commands (host fault; Vita3K keeps them in the guest's VDM ring); every setting crashes; crashes also with no other Vita3K running; 0525e1f vs cfe0d45 3/9 vs 0/12 overall but 1/5 vs 0/5 interleaved and a clean cfe0d45-code build 1/5: #160 not shown to raise the rate. A diagnostic build passed 4/5 (layout or timing?). Suspected-regression note on #160 stands down for now.
