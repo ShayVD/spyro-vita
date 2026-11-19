@@ -9,11 +9,42 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 163,
+      "branch": "auto/163-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-163",
+      "pids": [],
+      "started_at": "2026-11-19T16:11:07Z",
+      "files": [
+        "CMakeLists.txt",
+        "cmake/",
+        "tests/"
+      ],
+      "agent": "a3f59b59b45c5fc1d",
+      "last_commit_at": "2026-11-19T17:32:37+00:00"
+    },
+    {
+      "issue": 161,
+      "branch": "auto/161-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-161",
+      "pids": [],
+      "started_at": "2026-11-19T18:04:32Z",
+      "files": [
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_thread.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "docs/decisions-2.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a9f0c514add020e03"
+    }
+  ],
   "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-0525e1f",
-    "commit": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cfe0d45",
+    "commit": "cfe0d45460fc5e50705eef89432ebfc521de7e09"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -36,7 +67,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "switch": "state.phase"
     }
   ],
-  "attempts": {},
+  "attempts": {
+    "161": 1
+  },
   "blocked": [],
   "issues_filed": {
     "date": "2026-11-19",
@@ -53,14 +86,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 1,
-    "pid": 52453,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cfe0d45",
-    "started_at": "2026-11-19T16:10:33Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -100,3 +126,8 @@ continue.
 - 15:49Z phase 8: #160 reported (reports/160-1.md); wobble60 was non-deterministic (interp_budget=1 skips by measured time): route now interp_budget=0, re-baselining it on 0525e1f's VPK, then gating #160 (one job). .gitignore runtime/ anchored to /runtime/ (it hid the kit's vita/runtime/). Filed #164 (gems pad untracked). Vita3K (worker's): 4 crashes, 1 overlapped atv2-vita's Vita3K.
 - 15:58Z phase 8: wobble60 re-baselined with interp_budget=0 on 0525e1f: deterministic (runs b and d 91/91 same; base-0525e1f/wobble60 = run b). #160 gate: merge and build pass; route step rerun (coordinator script bug: run folder missing, every route exit 1 before Vita3K started; not the branch's). Vita3K: 2 crashes (wobble60 baseline tries a and c).
 - 16:10Z phase 8: merged #160 (cfe0d45; gate: title/pause-ws/pause-ws-wobble pass, identical pictures; wobble60 crashed 3/3 with #161's signature at the baseline's own crash points, pictures identical up to them, another project's Vita3K overlapping: autopilot's, not the branch's). Baseline base-cfe0d45 with counters: gate runs + wobble60 (running). Vita3K: 3 crashes (wobble60).
+- phase 8: workers on #161 (Vita3K crash, with the concurrent-Vita3K confound to separate) and #163 (ctest exec bits).
+- 16:17Z phase 8: baseline base-cfe0d45: title/pause-ws/pause-ws-wobble from gate-160-1 (with counters); wobble60 crashed 4/4 on cfe0d45's VPK (0/7 with the gate's), against 2/4 on 0525e1f: suspected regression from #160, not proven (atv2-vita's Vita3K overlapped both sets). wobble60's picture baseline stays 0525e1f's complete run; no wobble60 counters baseline yet. last_good stays 0525e1f; the A/B handed to #161's worker before any bisect/revert. Vita3K: 4 crashes (wobble60).
+- 18:01Z phase 8: #161 interim D132 (0ec1ba6): the crash is on Vita3K's render thread running corrupted renderer::Commands (host fault; Vita3K keeps them in the guest's VDM ring); every setting crashes; crashes also with no other Vita3K running; 0525e1f vs cfe0d45 3/9 vs 0/12 overall but 1/5 vs 0/5 interleaved and a clean cfe0d45-code build 1/5: #160 not shown to raise the rate. A diagnostic build passed 4/5 (layout or timing?). Suspected-regression note on #160 stands down for now.
+- 18:04Z phase 8: #161 attempt 1 incomplete (reports/161-1.md): the crash is Vita3K's render thread running corrupted commands; no guest write found; every setting crashes, solo too; #160 cleared; a read-only diagnostic build passed 4/5 (unexplained). Attempt counted, branch auto/161-1 kept for attempt 2. Gate policy meanwhile: a route ending in exit 2 with this signature is Vita3K's; compare pictures up to the crash and run autopilot's VPK interleaved. Vita3K: 21 crashes in the worker's 26 runs.
+- phase 8: #161 attempt 2 started (auto/161-2): diag1 vs clean interleaved, bisect the diag patch, vglSetVDMBufferSize probe; ~20 runs.
