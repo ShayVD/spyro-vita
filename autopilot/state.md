@@ -14,7 +14,24 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 158,
       "branch": "auto/158-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-158",
-      "pids": [],
+      "pids": [
+        19611,
+        28938,
+        8669,
+        24788,
+        24793,
+        25939,
+        32280,
+        32282,
+        44300,
+        44951,
+        79567,
+        89904,
+        91298,
+        95182,
+        4680,
+        17286
+      ],
       "started_at": "2026-11-19T11:51:30Z",
       "files": [
         "src/game/pres/pres_draw.c",
@@ -29,7 +46,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "a73c23883e2369b4f",
-      "last_commit_at": "2026-11-19T12:01:54+00:00"
+      "last_commit_at": "2026-11-19T13:01:11+00:00"
     }
   ],
   "last_good": "",
