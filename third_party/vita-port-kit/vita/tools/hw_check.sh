@@ -5,11 +5,13 @@
 # port is asked "version" and "nosleep status"). From spyro-vita tools/vita/hw_check.sh @ e365217.
 #   HW_GAME=tools/vita/hw.game hw_check.sh
 # VITA_IP, or the game's tools/vita/hw.env (gitignored; VITA_IP=192.168.1.23).
+# While hw_run.sh's lock ($HW_STATE/hw.lock) holds a live PID, another run has the Vita: it says "in use by PID N
+# (GAME): not probing" and exits 0 without a packet to the Vita. HW_CHECK_FORCE=1 probes anyway.
 set -uo pipefail
 kit=$(cd "$(dirname "$0")" && pwd)
 : "${HW_GAME:?set HW_GAME to the hw.game file of the game (vita/tools/hw.game.example)}"
 HW_GAME=$(cd "$(dirname "$HW_GAME")" && pwd)/$(basename "$HW_GAME")
-groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || cd "$(dirname "$HW_GAME")/../.." && pwd) # the game file is ROOT/tools/vita/hw.game
+groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$HW_GAME")/../.." && pwd)) # the game file is ROOT/tools/vita/hw.game
 HW_NAME=
 # shellcheck source=/dev/null
 . "$HW_GAME"
@@ -26,11 +28,18 @@ no() { echo "  FAIL  $*"; bad=1; }
 note() { echo "  note  $*"; }
 
 echo "hw_check: the Vita at $VITA_IP, for $name"
+if [ "${HW_CHECK_FORCE:-0}" = 1 ]; then
+  export HW_IGNORE_LOCK=1 # hw_ftp.py would refuse while the lock is held
+else
+  busy=$(v lock); [ $? = 3 ] && { echo "hw_check: $busy: not probing (HW_CHECK_FORCE=1 probes anyway)"; exit 0; }
+fi
+case $(uname) in Darwin|*BSD) wait_s="-t 4" ;; *) wait_s="-W 4" ;; esac # -t is Linux's TTL
 if l=$(v ls ux0: 2>&1); then
   ok "FTP on port ${VITA_FTP_PORT:-1337}: ux0: has $(wc -l <<< "$l" | tr -d ' ') entries"
 else
   no "FTP on port ${VITA_FTP_PORT:-1337}: $l"
-  if ! ping -c 2 -t 4 "$VITA_IP" > /dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  if ! ping -c 2 $wait_s "$VITA_IP" > /dev/null 2>&1; then
     echo "hw_check: no answer to ping at $VITA_IP: the Vita is asleep or off (press PS to wake it), or this isn't its address"
   elif grep -q 'refused' <<< "$l"; then
     echo "hw_check: $VITA_IP answers ping but nothing listens on ${VITA_FTP_PORT:-1337}: vitacompanion isn't loaded, or this address is another device"

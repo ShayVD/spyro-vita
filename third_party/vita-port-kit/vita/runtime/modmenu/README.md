@@ -16,7 +16,10 @@ A port's own options menu, the part that is the same in every game:
   head, then every key).
 
 What stays in the game: its rows and what they change, its sections' names, how the menu opens (a tap,
-SELECT+START), pausing the game, and drawing the image.
+SELECT+START), pausing the game, and drawing the image. So does what an older `config.txt` means when a row's
+default changes or a row goes: `vpk_menu_save` keeps every line that isn't a row's, so the game reads
+`config_version` and drops a removed row's line itself (`../../docs/gotchas.md` 22; spyro-vita D150, D153). A row
+holds 32 characters with its value between `< >`: check a new label against the longest value.
 
 **From:** spyro-vita `src/platform/common/menu_opts.c` / `menu_panel.c` @ `987363e` (its decisions D45); the
 in-place rewrite from kh1-decomp `host/vita/menu.c`'s `save()` @ `85befa4a`. spyro-vita uses the table and the

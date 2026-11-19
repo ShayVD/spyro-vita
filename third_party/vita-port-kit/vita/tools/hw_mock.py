@@ -12,7 +12,9 @@ spyro-vita tools/vita/hw_mock.py @ e365217, the game's paths made settings
 ROOT/ux0, ROOT/ur0 are the devices. The fake game runs 600 vblanks a second
 and ends its log with a line that matches both "frames=N reached" and
 "frames: stop". MOCK_VERSION=1.05 answers with 1.05's commands (kill, no
-version, quit or promote) instead of 1.08's.
+version, quit or promote) instead of 1.08's. A rename onto a name that is
+there fails, as on the Vita; onto a missing name it works (hw_run.sh's
+eboot.bin upload: eboot.bin.hw-new, delete eboot.bin, rename).
 """
 import os
 import shutil
@@ -237,7 +239,12 @@ class Ftp(socketserver.StreamRequestHandler):
                 raise OSError("no %s" % arg)
             self.send("350 OK")
         elif cmd == "RNTO":
-            os.rename(self.rnfr, self.full(arg))
+            # ftpvita (vitacompanion 1.05 and 1.08) renames with sceIoRename, which fails onto a name
+            # that is there; onto a missing name it is a plain rename
+            to = self.full(arg)
+            if os.path.exists(to):
+                raise OSError("Error renaming: %s is there" % arg)
+            os.rename(self.rnfr, to)
             self.send("250 OK")
         elif cmd == "QUIT":
             self.send("221 Bye")

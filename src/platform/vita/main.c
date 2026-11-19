@@ -252,6 +252,7 @@
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
+#include "vita_pc.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
@@ -523,6 +524,7 @@ void vita_exit(int res) {
            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   if (r < 0)
     vita_log("exit: sceKernelWaitThreadEnd: %08x", (unsigned)r);
+  vita_pc_flush(); /* the work counters' last window, the render thread's work in it (D131) */
   sceKernelExitProcess(res);
   for (;;)
     sceKernelDelayThread(1000000);
@@ -598,6 +600,7 @@ int main(int argc, char **argv) {
   g_fast_render = 3; /* the default since D124 (the owner, 2026-11-09, after 7D2a/7D2b) */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
+  vita_pc_init(); /* the work counters (perfcount.c, D131) */
   vita_log("fast_render=%d: %s", g_fast_render,
            g_fast_render ? "hand-written renderers as readable C (D124)"
                          : "translated renderers, PsyCross's GTE_operator");
