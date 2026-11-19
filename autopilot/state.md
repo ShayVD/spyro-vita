@@ -9,29 +9,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 159,
-      "branch": "auto/159-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-159",
-      "pids": [],
-      "started_at": "2026-11-19T21:21:51Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/gte_ops.c",
-        "src/game/gte_native.h",
-        "docs/decisions-2.md"
-      ],
-      "agent": "a8691855df65aa8f1",
-      "last_commit_at": "2026-11-19T21:55:09+00:00",
-      "reported": true
-    }
-  ],
-  "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
+  "workers": [],
+  "last_good": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-a86cab5",
-    "commit": "a86cab56aaea9741264a16e1502d826ee5313bbc"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
+    "commit": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -88,14 +70,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 159,
-    "step": 1,
-    "pid": 59658,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-159-1.log",
-    "started_at": "2026-11-19T22:37:23Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -154,3 +129,4 @@ continue.
 - phase 8: worker on #159 (cheaper vertex cache); #167's worker resumed after the API limit.
 - 21:30Z phase 8: merged #167 (6a92241; tools/pads/docs only: scope, merge, noassets; worker's host A/B checks all identical). Filed #168 (fast_render_ab gems run loads a vblank late with --prof-draw).
 - 22:37Z phase 8: #159 reported done (reports/159-1.md): same answers (checksums identical over 91 M vertices), divisions/vertex ~1.0 -> ~0.4, table lines -15%. Gate running.
+- 22:44Z phase 8: merged #159 (every route first try, pictures and counters unchanged; same answers with ~60% fewer divisions per vertex). New baseline from the gate; last_good moved. Vita3K: 0 crashes.
