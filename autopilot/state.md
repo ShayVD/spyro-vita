@@ -11,29 +11,43 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 162,
-      "branch": "auto/162-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-162",
+      "issue": 167,
+      "branch": "auto/167-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-167",
       "pids": [],
-      "started_at": "2026-11-19T19:15:29Z",
+      "started_at": "2026-11-19T19:49:58Z",
       "files": [
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_rt.h",
-        "src/platform/vita/pres_thread.c",
+        "tools/oracle/pads/",
+        "tools/native_draw_ab.sh",
+        "tools/fast_render_ab.sh",
+        "tools/mixer_ab.sh",
+        "tools/pres_check_ab.sh",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a921d4c46ae9921de",
+      "last_commit_at": "2026-11-19T19:51:49+00:00"
+    },
+    {
+      "issue": 159,
+      "branch": "auto/159-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-159",
+      "pids": [],
+      "started_at": "2026-11-19T21:21:51Z",
+      "files": [
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h",
-        "src/game/pres/pres_draw.c",
-        "docs/decisions-2.md",
-        "docs/presentation.md"
+        "src/game/gte_ops.c",
+        "src/game/gte_native.h",
+        "docs/decisions-2.md"
       ],
-      "agent": "af4c271dab36becb5"
+      "agent": "a8691855df65aa8f1"
     }
   ],
-  "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
+  "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5eb8423",
-    "commit": "5eb84234d664763592342c1b91555ed9ab12b6ae"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-a86cab5",
+    "commit": "a86cab56aaea9741264a16e1502d826ee5313bbc"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -51,6 +65,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware check of vdm_ring=1024 (D132) before making it the default",
       "expected": "no fps or picture change, +896 KB RAM; owner-approved run only",
       "issue": 0
+    },
+    {
+      "title": "Hardware A/B for #162 (presenter on core 1 with the cache on)",
+      "expected": "about half of D89's ~4.5 ms/vblank cache work leaves the game thread; s7f3-toasty60-pres + o-toasty + persp=1 subpixel=1, A this path vs B pres_thread=0",
+      "issue": 162
     }
   ],
   "owner_decisions": [
@@ -133,3 +152,7 @@ continue.
 - 19:26Z phase 8: #166 reported done (reports/166-1.md); gate running (gate.py, four routes).
 - 19:47Z phase 8: merged #166 (every route passes, pictures and counters unchanged). Vita3K: 1 start-up crash (title, MoltenVK device lost at the first acquire; gotchas 24), rerun passed.
 - 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
+- phase 8: worker on #167 (pad scripts, from auto/164-1).
+- 21:12Z phase 8: #162 reported done (reports/162-1.md): presenter on core 1 with the cache on, pictures identical, game thread's vc.* -50% on wobble60. Gate running. #167's worker stopped on the API weekly limit (resets 21:00 Dublin); its commits are on auto/167-1, to resume by message.
+- 21:21Z phase 8: merged #162 (every route first try, pictures identical, wobble60 vc.* -50% on the game thread). New baseline = the gate's runs; last_good moved. Vita3K: 0 crashes.
+- phase 8: worker on #159 (cheaper vertex cache); #167's worker resumed after the API limit.
