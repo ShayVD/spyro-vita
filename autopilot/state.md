@@ -23,7 +23,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "ae82a5ee766344247"
     }
   ],
-  "last_good": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
+  "last_good": "c713ab2a8933bf0f2d8880a266296032c61e0233",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
     "commit": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce"
@@ -71,14 +71,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 11
+    "count": 12
   },
   "round": {
-    "n": 1,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
-    "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
-    "started_at": "2026-11-19T13:05:58Z",
-    "filed": 11,
+    "n": 2,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
+    "base_commit": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
+    "started_at": "2026-11-19T23:55:09Z",
+    "filed": 1,
     "investigated": false
   },
   "rounds_without_gain": 0,
@@ -146,3 +146,4 @@ continue.
 - phase 8: worker on #168 (host determinism with --prof-draw; the profiler is src/platform/linux32/prof_draw.c, not src/game/).
 - 23:48Z phase 8: merged #168 (bec34cc; the gems runs shared ./save, so only the first reached the gems; each run now gets its own card and a gems check). Script/docs only.
 - phase 8: worker on #165 (docs for #163), the last open issue.
+- 23:55Z phase 8: merged #165 (docs). Round 1 ended with a gain: wobble60 vc.proj/polys/verts/misses -50% (base-5eb8423, the first wobble60 counters, vs base-bbc36b1), none worse; rounds_without_gain 0. last_good = head (no src/cmake/kit change since bbc36b1, whose gate is the regression run). Round 2 started; first candidate from the counters: redundant GL state calls (programs 105 vs draws 84 per frame).
