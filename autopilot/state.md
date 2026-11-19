@@ -9,7 +9,37 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 161,
+      "branch": "auto/161-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-161",
+      "pids": [],
+      "started_at": "2026-11-19T16:11:07Z",
+      "files": [
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_thread.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "docs/decisions-2.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "ac38131f5d6cefc87"
+    },
+    {
+      "issue": 163,
+      "branch": "auto/163-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-163",
+      "pids": [],
+      "started_at": "2026-11-19T16:11:07Z",
+      "files": [
+        "CMakeLists.txt",
+        "cmake/",
+        "tests/"
+      ],
+      "agent": "a3f59b59b45c5fc1d"
+    }
+  ],
   "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-0525e1f",
@@ -100,3 +130,4 @@ continue.
 - 15:49Z phase 8: #160 reported (reports/160-1.md); wobble60 was non-deterministic (interp_budget=1 skips by measured time): route now interp_budget=0, re-baselining it on 0525e1f's VPK, then gating #160 (one job). .gitignore runtime/ anchored to /runtime/ (it hid the kit's vita/runtime/). Filed #164 (gems pad untracked). Vita3K (worker's): 4 crashes, 1 overlapped atv2-vita's Vita3K.
 - 15:58Z phase 8: wobble60 re-baselined with interp_budget=0 on 0525e1f: deterministic (runs b and d 91/91 same; base-0525e1f/wobble60 = run b). #160 gate: merge and build pass; route step rerun (coordinator script bug: run folder missing, every route exit 1 before Vita3K started; not the branch's). Vita3K: 2 crashes (wobble60 baseline tries a and c).
 - 16:10Z phase 8: merged #160 (cfe0d45; gate: title/pause-ws/pause-ws-wobble pass, identical pictures; wobble60 crashed 3/3 with #161's signature at the baseline's own crash points, pictures identical up to them, another project's Vita3K overlapping: autopilot's, not the branch's). Baseline base-cfe0d45 with counters: gate runs + wobble60 (running). Vita3K: 3 crashes (wobble60).
+- phase 8: workers on #161 (Vita3K crash, with the concurrent-Vita3K confound to separate) and #163 (ctest exec bits).
