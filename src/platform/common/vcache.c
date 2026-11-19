@@ -71,11 +71,20 @@
  * ends the frame as its buffer closes (psx_vcache_pres_end). The
  * presenter's thread touches only its own table, its own side array, its
  * own counters and the presenter's VCacheStats; the logic draw never
- * reads the flag that says a presenter's frame is open. */
+ * reads the flag that says a presenter's frame is open.
+ *
+ * The cost (#159; D89 measured the cache at ~4.5 ms a vblank of the game
+ * thread on hardware): every answer is as before, with less work. A record
+ * finds its entry before the maths, and an ambiguous key needs none. Depth
+ * ratios are compared without dividing unless the quotient's rounding
+ * could decide the comparison (same_depth, under4, under3999). An entry is
+ * 40 bytes, not 44. The g_vcache_cost counters count the divisions, probes
+ * and table lines. */
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -83,7 +92,9 @@
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
 
-/* 8192 entries (360 KB) stay in the A9's L2; a frame projects up to ~4100
+void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
+
+/* 8192 entries (320 KB) stay in the A9's L2; a frame projects up to ~4100
  * distinct points (logs/run6-host-demo-vcache2), and recording stops at
  * 3/4 full rather than probe far */
 #define VC_BITS 13
@@ -102,30 +113,55 @@ typedef struct {
   float w;
 } Cand;
 
+/* An entry: its key, a tag, and the candidates. The tag holds the entry's
+ * frame (24 bits: an entry from another frame is empty) and the rest of
+ * what was its own 32-bit header before #159, so an entry is 40 bytes, not
+ * 44: a probe and the first candidate fall in one 32-byte line more often. */
+#define T_STATE(t) ((t) & 3u)      /* E_* (0: just made) */
+#define T_N(t) (((t) >> 2) & 7u)   /* candidates */
+#define T_MULTI 0x20u              /* candidates more than 1/8 pixel apart: different points */
+#define T_SRC 0x40u                /* made by the presenter's projections (VC_PRES) */
+#define T_GEN(t) ((t) >> 8)
+#define VC_GEN_END (1u << 24)      /* a table's frames count 1 to this, then from 1 again */
+
 typedef struct {
   uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
-  uint32_t gen; /* frame; an entry from another frame is empty */
-  uint8_t state, n;
-  uint8_t multi; /* candidates more than a pixel apart: different points */
-  uint8_t src;   /* the kind of frame whose projection made it (VC_LOGIC, VC_PRES) */
+  uint32_t tag;
   Cand c[VC_CANDS];
 } Entry;
+
+typedef struct {
+  Entry s[VC_SIZE];
+  int stale; /* holds frames from before its count came round: cleared before it records */
+} Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
  * record into their own, so each frame looks up only its own (#158) */
 typedef struct {
-  Entry *tab;     /* the table recording */
+  Table *tab;     /* the table recording */
   uint32_t gen;   /* its frame */
   unsigned count; /* entries this frame */
 } Rec;
 
-static Entry s_tab0[VC_SIZE];
+static Table s_tab0 __attribute__((aligned(64)));
 static const GrVertex *s_pres_vb; /* the presenter's walk's vertex buffer (its first inline frame) */
 static VCacheVert *s_pres_side;   /* the answers for it, while it runs on its own thread */
-static Entry *s_tab1;                  /* the logic draw's other table (D71) */
-static Rec s_rec[2] = {{s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
-static const Entry *s_rtab;            /* the walk's table and frame, NULL: this one */
+static Table *s_tab1;                  /* the logic draw's other table (D71) */
+static Rec s_rec[2] = {{&s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
+static const Table *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
+
+/* a table on the heap, line-aligned like s_tab0 (never freed) */
+static Table *table_new(void) {
+  char *const p = calloc(1, sizeof(Table) + 63);
+  return p ? (Table *)(((uintptr_t)p + 63) & ~(uintptr_t)63) : NULL;
+}
+
+static void table_clear(Table *t) {
+  memset(t->s, 0, sizeof t->s);
+  t->stale = 0;
+}
+
 VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
 
 /* The vertex buffers the renderer has been given (psx_vcache_set_base):
@@ -181,8 +217,59 @@ VCacheStats g_vcache_stats[2];
  * inline), g_vcache_pres_work the presenter's thread's (#162): one writer
  * each, plain adds. */
 unsigned g_vcache_work[4], g_vcache_pres_work[4];
+/* What that work cost (issue #159), the same way, counts that don't depend
+ * on timing: float divisions, the table's slots a record's or a lookup's
+ * probe examined, and the 32-byte lines of the table each touched (a model:
+ * the lines its accesses fall in, from a line-aligned table). */
+unsigned g_vcache_cost[VCC_N], g_vcache_pres_cost[VCC_N];
+#define COST(work) ((work) == g_vcache_work ? g_vcache_cost : g_vcache_pres_cost)
+
+/* The distinct lines one record or lookup touches (it reads upwards). */
+typedef struct {
+  uint32_t last;
+  unsigned n;
+} Touch;
+static inline void touch(Touch *t, size_t at, size_t len) {
+  uint32_t l = (uint32_t)(at / 32), h = (uint32_t)((at + len - 1) / 32);
+  for (; l <= h; l++)
+    if (l != t->last) {
+      t->last = l;
+      t->n++;
+    }
+}
+#define TOUCH0 {0xFFFFFFFFu, 0}
 
 void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_stats); }
+
+/* the cost line, since the last one */
+static void cost_line(void) {
+  static unsigned last[2][VCC_N], wlast[2][4];
+  unsigned d[2][VCC_N], w[2][4], t, i;
+  for (t = 0; t < 2; t++) {
+    for (i = 0; i < VCC_N; i++) {
+      const unsigned v = (t ? g_vcache_pres_cost : g_vcache_cost)[i];
+      d[t][i] = v - last[t][i];
+      last[t][i] = v;
+    }
+    for (i = 0; i < 4; i++) {
+      const unsigned v = (t ? g_vcache_pres_work : g_vcache_work)[i];
+      w[t][i] = v - wlast[t][i];
+      wlast[t][i] = v;
+    }
+  }
+  for (t = 0; t < 2; t++) {
+    const unsigned p = w[t][0], v = w[t][2];
+#define PER(x, n) (x), (unsigned)((n) ? (x) / (n) : 0), (unsigned)((n) ? 100ull * (x) / (n) % 100 : 0)
+    PsyX_Log("vcache cost%s: %u projected: %u divisions (%u.%02u each), %u probes (%u.%02u), "
+             "%u table lines (%u.%02u); %u vertices looked up: %u divisions (%u.%02u each), "
+             "%u probes (%u.%02u), %u table lines (%u.%02u)",
+             t ? " (the presenter's thread)" : " (the game thread)", p,
+             PER(d[t][VCC_REC_DIV], p), PER(d[t][VCC_REC_PROBES], p),
+             PER(d[t][VCC_REC_LINES], p), v, PER(d[t][VCC_LOOK_DIV], v),
+             PER(d[t][VCC_LOOK_PROBES], v), PER(d[t][VCC_LOOK_LINES], v));
+#undef PER
+  }
+}
 
 void psx_vcache_stats_sum(VCacheStats *out) {
   const unsigned *a = (const unsigned *)&g_vcache_stats[0], *b = (const unsigned *)&g_vcache_stats[1];
@@ -192,51 +279,67 @@ void psx_vcache_stats_sum(VCacheStats *out) {
     o[i] = a[i] + b[i];
   out->peak = g_vcache_stats[0].peak > g_vcache_stats[1].peak ? g_vcache_stats[0].peak
                                                                : g_vcache_stats[1].peak;
+  cost_line();
 }
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
 
 /* The entry for key in r's frame, or a free one for it (gen set, state 0),
- * or NULL when the probe is exhausted. */
-static Entry *find(Rec *r, int kind, uint32_t key, int add) {
+ * or -1 when the probe is exhausted. */
+static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch *t) {
+  Entry *const s = r->tab->s;
+  const uint32_t gen = r->gen;
   uint32_t i = hash(key), n;
   for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
-    Entry *e = &r->tab[i];
-    if (e->gen != r->gen) {
+    ++*probes;
+    touch(t, i * sizeof(Entry), 8); /* key, tag */
+    if (T_GEN(s[i].tag) != gen) {
       if (!add || r->count >= VC_MAX)
-        return NULL;
-      e->gen = r->gen;
-      e->key = key;
-      e->state = 0;
-      e->n = 0;
-      e->multi = 0;
-      e->src = (uint8_t)kind;
+        return -1;
+      s[i].key = key;
+      s[i].tag = gen << 8 | (kind == VC_PRES ? T_SRC : 0);
       r->count++;
-      return e;
+      return (int)i;
     }
-    if (e->key == key)
-      return e;
+    if (s[i].key == key)
+      return (int)i;
   }
-  return NULL;
+  return -1;
 }
 
 /* psx_vcache_poly's lookup: the entry for key in the frame being walked
- * (pres: the presenter's own, in its frame) */
-static const Entry *look(int pres, uint32_t key) {
+ * (pres: the presenter's own, in its frame), and its table */
+static int look(int pres, uint32_t key, unsigned *probes, Touch *t, const Table **tab) {
   uint32_t i = hash(key), n;
-  if (pres)
-    return find(&s_rec[VC_PRES], VC_PRES, key, 0);
-  if (!s_rtab)
-    return find(&s_rec[VC_LOGIC], VC_LOGIC, key, 0);
-  for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
-    const Entry *e = &s_rtab[i];
-    if (e->gen != s_rgen)
-      return NULL;
-    if (e->key == key)
-      return e;
+  if (pres || !s_rtab) {
+    Rec *const r = &s_rec[pres ? VC_PRES : VC_LOGIC];
+    *tab = r->tab;
+    return find(r, pres ? VC_PRES : VC_LOGIC, key, 0, probes, t);
   }
-  return NULL;
+  *tab = s_rtab;
+  for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
+    const Entry *const e = &s_rtab->s[i];
+    ++*probes;
+    touch(t, i * sizeof(Entry), 8); /* key, tag */
+    if (T_GEN(e->tag) != s_rgen)
+      return -1;
+    if (e->key == key)
+      return (int)i;
+  }
+  return -1;
 }
+
+/* x as a float: the host's x87 (i686, no SSE) can keep an expression at
+ * long double precision until it's stored, and the answers were float
+ * since they went to record() as arguments; elsewhere a float is a float */
+#if defined(__i386__) && !defined(__SSE_MATH__)
+static inline float flt(float x) {
+  volatile float v = x;
+  return v;
+}
+#else
+#define flt(x) (x)
+#endif
 
 static inline float ratio(float a, float b) { return a > b ? a / b : b / a; }
 
@@ -245,56 +348,43 @@ static inline int16_t fix8(float d) {
   return (int16_t)(f > 32767.0f ? 32767 : f < -32767.0f ? -32767 : f);
 }
 
-/* One more projection under e's key: 0 = kept (or already there), -1 = no
- * room. The same point at the same depth is kept once. */
-static int add_cand(Entry *e, int16_t dx, int16_t dy, float w) {
-  int j;
-  for (j = 0; j < e->n; j++) {
-    int ddx = e->c[j].dx - dx, ddy = e->c[j].dy - dy;
+/* ratio(a, b) <= 1.02f, the same answer without the division unless the
+ * ratio is within 1e-4 of the bound: outside that, how the quotient would
+ * be rounded (float, or the host's x87) can't change the comparison. The
+ * depths are > 0. */
+static inline int same_depth(float a, float b, unsigned *div) {
+  const float hi = a > b ? a : b, lo = a > b ? b : a;
+  if (hi <= lo * 1.0199f)
+    return 1;
+  if (hi >= lo * 1.0201f)
+    return 0;
+  ++*div;
+  return ratio(a, b) <= 1.02f;
+}
+
+/* One more projection under slot s's key (its candidates c): 0 = kept (or
+ * already there), -1 = no room. The same point at the same depth is kept
+ * once. */
+static int add_cand(Entry *s, Cand *c, int16_t dx, int16_t dy, float w, unsigned *cost) {
+  const unsigned n = T_N(s->tag);
+  unsigned j;
+  for (j = 0; j < n; j++) {
+    int ddx = c[j].dx - dx, ddy = c[j].dy - dy;
     if (ddx > 32 || ddx < -32 || ddy > 32 || ddy < -32)
-      e->multi = 1; /* more than 1/8 pixel apart: not one point */
-    else if (ratio(w, e->c[j].w) <= 1.02f)
+      s->tag |= T_MULTI; /* more than 1/8 pixel apart: not one point */
+    else if (same_depth(w, c[j].w, &cost[VCC_REC_DIV]))
       return 0;
   }
-  if (e->n == VC_CANDS)
+  if (n == VC_CANDS)
     return -1;
-  e->c[e->n].dx = dx;
-  e->c[e->n].dy = dy;
-  e->c[e->n].w = w;
-  e->n++;
+  c[n].dx = dx;
+  c[n].dy = dy;
+  c[n].w = w;
+  s->tag += 1u << 2; /* n + 1 */
   return 0;
 }
 
-static void record(int kind, uint32_t key, int state, float dx, float dy, float w, float w_alt) {
-  Entry *e = find(&s_rec[kind], kind, key, 1);
-  int16_t fx = fix8(dx), fy = fix8(dy);
-  if (!e) {
-    g_vcache_stats[kind].full++;
-    return;
-  }
-  if (e->state == 0) {
-    e->state = state;
-    if (state == E_INVALID) {
-      g_vcache_stats[kind].invalid++;
-      return;
-    }
-  } else if (e->state != state || state != E_VALID) {
-    /* a clamped projection and another one under the same key: the prims
-     * that use it can't be told apart */
-    if (e->state != E_AMBIGUOUS && !(e->state == E_INVALID && state == E_INVALID))
-      g_vcache_stats[kind].ambiguous++;
-    if (!(e->state == E_INVALID && state == E_INVALID))
-      e->state = E_AMBIGUOUS;
-    return;
-  }
-  /* Another projection under this key: the same point again (shared by
-   * several polygons), the same point at another scale, or a different
-   * point on the same pixel. Each is a candidate; each polygon picks. */
-  if (add_cand(e, fx, fy, w) || (w_alt > 0 && add_cand(e, fx, fy, w_alt))) {
-    g_vcache_stats[kind].ambiguous++;
-    e->state = E_AMBIGUOUS;
-  }
-}
+static inline void set_state(Entry *s, unsigned state) { s->tag = (s->tag & ~3u) | state; }
 
 /* PsyX_GTE.cpp's VX/VY/VZ for idx 0-2 */
 #define V_X(n) (gteRegs.CP2D.p[(n) << 1].sw.l)
@@ -307,13 +397,37 @@ enum { PROJ_TR = 9, PROJ_OFX = 12, PROJ_OFY = 13, PROJ_H = 14, PROJ_N = 15 };
 
 static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy, int vz,
                       uint32_t key, int sz, int sf) {
+  unsigned *const cost = COST(work);
+  Rec *const rec = &s_rec[kind];
+  VCacheStats *const st = &g_vcache_stats[kind];
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = proj[PROJ_H];
   const int *rm = proj, *tr = proj + PROJ_TR;
   int64_t mx, my, mz;
-  float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
+  float x, y, z, r, iz, isz, ox, oy, ex, ey, w = 0, w_alt = 0;
+  Touch t = TOUCH0;
+  Entry *s;
+  Cand *c;
+  unsigned prev, state = E_INVALID;
+  int16_t fx = 0, fy = 0;
+  int i;
 
-  g_vcache_stats[kind].records++;
+  st->records++;
   work[0]++;
+  /* The entry first (made if it's new): a key already ambiguous stays so,
+   * whatever this projection is, so it needs none of the maths below. */
+  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (i < 0) {
+    st->full++;
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
+  s = &rec->tab->s[i];
+  c = s->c;
+  prev = T_STATE(s->tag);
+  if (prev == E_AMBIGUOUS) {
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
   /* the 44-bit sums the GTE shifts into MAC1-3 */
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
@@ -322,36 +436,62 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
    * or a divide overflow (H >= 2 SZ3) means the GTE's answer isn't the
    * projection of this vertex. */
   if (!sf || sz <= 0 || h >= 2 * sz || (mx >> 12) > 0x7FFF || (mx >> 12) < -0x8000 ||
-      (my >> 12) > 0x7FFF || (my >> 12) < -0x8000) {
-    record(kind, key, E_INVALID, 0, 0, 0, 0);
-    return;
-  }
+      (my >> 12) > 0x7FFF || (my >> 12) < -0x8000)
+    goto done;
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
   y = (float)(int32_t)(my >> 12) + (float)(my & 0xFFF) * (1.0f / 4096);
   z = (float)(int32_t)(mz >> 12) + (float)(mz & 0xFFF) * (1.0f / 4096);
   ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
   oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
-  if (z <= 0) {
-    record(kind, key, E_INVALID, 0, 0, 0, 0);
-    return;
-  }
+  if (z <= 0)
+    goto done;
   r = (float)h / (z * sz); /* one division for h / sz and h / z */
+  cost[VCC_REC_DIV]++;
   isz = r * z;
   iz = r * sz;
   /* Check against the GTE's own model (truncated x, y and SZ3): off by more
    * than its rounding means SX/SY saturated. */
   ex = ox + (float)(int32_t)(mx >> 12) * isz - sx;
   ey = oy + (float)(int32_t)(my >> 12) * isz - sy;
-  if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
-    record(kind, key, E_INVALID, 0, 0, 0, 0);
-    return;
-  }
+  if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f)
+    goto done;
   if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
       vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
-    w_alt = z * (1.0f / 16); /* maybe r_environment's x16 precision path */
+    w_alt = flt(z * (1.0f / 16)); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. */
-  record(kind, key, E_VALID, ox + x * iz - sx - 0.5f, oy + y * iz - sy - 0.5f, z, w_alt);
+  fx = fix8(flt(ox + x * iz - sx - 0.5f));
+  fy = fix8(flt(oy + y * iz - sy - 0.5f));
+  w = flt(z);
+  state = E_VALID;
+done:
+  if (prev == 0) {
+    set_state(s, state);
+    if (state == E_INVALID) {
+      st->invalid++;
+      cost[VCC_REC_LINES] += t.n;
+      return;
+    }
+  } else if (prev != state || state != E_VALID) {
+    /* a clamped projection and another one under the same key: the prims
+     * that use it can't be told apart */
+    if (!(prev == E_INVALID && state == E_INVALID)) {
+      st->ambiguous++;
+      set_state(s, E_AMBIGUOUS);
+    }
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
+  /* Another projection under this key: the same point again (shared by
+   * several polygons), the same point at another scale, or a different
+   * point on the same pixel. Each is a candidate; each polygon picks. */
+  touch(&t, (size_t)i * sizeof(Entry) + offsetof(Entry, c),
+        sizeof(Cand) * (T_N(s->tag) < VC_CANDS ? T_N(s->tag) + 1u : VC_CANDS));
+  cost[VCC_REC_LINES] += t.n;
+  if (add_cand(s, c, fx, fy, w, cost) || (w_alt > 0 && add_cand(s, c, fx, fy, w_alt, cost))) {
+    st->ambiguous++;
+    set_state(s, E_AMBIGUOUS);
+  }
 }
 
 /* RTPS/RTPT on the register file: PsyCross's GTE_operator (fast_render=0)
@@ -378,11 +518,18 @@ static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigne
             sz3, 1);
 }
 
+/* ratio(a, b) < 4, exactly (depths > 0; times 4 isn't rounded) */
+static inline int under4(float a, float b) { return a > b ? a < b * 4.0f : b < a * 4.0f; }
+/* ratio(a, b) < 3.999 or so: the quotient, however rounded, is under 4 */
+static inline int under3999(float a, float b) { return a > b ? a < b * 3.999f : b < a * 3.999f; }
+
 int psx_vcache_polys;
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   GrVertex *const vertex = (GrVertex *)vertex_;
-  const Entry *e[4];
+  const Cand *e[4];   /* each vertex's candidates, NULL: not found */
+  uint32_t et[4];     /* and its slot's tag */
+  unsigned en[4];     /* how many */
   uint32_t ref[4], persp = VREF_PERSP;
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
   float best = 4.0f; /* a polygon's depths are never 4x apart */
@@ -398,6 +545,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   const int pres = s_pres || async;
   VCacheStats *const st = &g_vcache_stats[pres];
   unsigned *const work = async ? g_vcache_pres_work : g_vcache_work;
+  unsigned *const cost = COST(work);
 
   st->polys++;
   st->verts += n;
@@ -412,45 +560,87 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   }
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
-    const Entry *f = look(pres, key);
-    e[i] = f && f->state == E_VALID && f->n ? f : NULL;
+    Touch t = TOUCH0;
+    const Table *tab;
+    const int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
+    const uint32_t tag = k >= 0 ? tab->s[k].tag : 0;
     ref[i] = VREF_POLY;
-    if (e[i]) {
-      const Entry *tab = pres ? s_rec[VC_PRES].tab : s_rtab ? s_rtab : s_rec[VC_LOGIC].tab;
-      ref[i] |= (uint32_t)(f - tab) + 1;
+    if (k >= 0 && T_STATE(tag) == E_VALID && T_N(tag)) {
+      touch(&t, (size_t)k * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * T_N(tag));
+      e[i] = tab->s[k].c;
+      et[i] = tag;
+      en[i] = T_N(tag);
+      ref[i] |= (uint32_t)k + 1;
       st->hits++;
-      if (f->src != pres)
+      if (!(tag & T_SRC) != !pres)
         st->other++;
     } else {
+      e[i] = NULL;
+      et[i] = 0;
+      en[i] = 0;
       persp = 0;
       work[3]++;
-      if (!f)
+      if (k < 0)
         st->miss_none++;
-      else if (f->state == E_INVALID)
+      else if (T_STATE(tag) == E_INVALID)
         st->miss_invalid++;
       else
         st->miss_ambiguous++;
     }
+    cost[VCC_LOOK_LINES] += t.n;
   }
   /* each candidate of the first vertex against the closest of every
    * other's; the choice whose worst depth ratio is smallest. Candidates of
    * one point at other scales differ by 4 or 16 times, different points on
-   * one pixel by their distance: a polygon's real depths are much closer. */
-  for (c = 0; persp && c < e[0]->n; c++) {
+   * one pixel by their distance: a polygon's real depths are much closer.
+   *
+   * The same choice with fewer divisions (#159). A ratio of 4 or more (4b <=
+   * a, exact: b times 4 isn't rounded) can't be a polygon's: if it were the
+   * closest, the worst would be at least 4 and the choice not taken, so such
+   * candidates are passed over without dividing. With one candidate for
+   * the first vertex, only whether each other vertex's closest ratio is
+   * under 4 matters; a vertex with one candidate left is then its own
+   * closest, and it's under 4 without dividing when it's under 3.999 (how
+   * the quotient would round can't reach 4). Every other ratio is divided
+   * as before, so the choice and the depths are the same. */
+  for (c = 0; persp && c < (int)en[0]; c++) {
+    const float w0 = e[0][c].w;
     float worst = 1;
+    int ok = 1;
     try_pick[0] = c;
-    for (i = 1; i < n; i++) {
+    for (i = 1; ok && i < n; i++) {
       float r_best = 1e30f;
-      for (j = 0; j < e[i]->n; j++) {
-        float r = ratio(e[i]->c[j].w, e[0]->c[c].w);
-        if (r < r_best) {
-          r_best = r;
-          try_pick[i] = j;
+      int left = 0, last = 0;
+      for (j = 0; j < (int)en[i]; j++)
+        if (under4(e[i][j].w, w0)) {
+          left++;
+          last = j;
         }
+      if (!left) {
+        ok = 0;
+        break;
       }
+      if (left == 1 && en[0] == 1) {
+        try_pick[i] = last;
+        if (!under3999(e[i][last].w, w0)) {
+          const float r = ratio(e[i][last].w, w0);
+          cost[VCC_LOOK_DIV]++;
+          worst = r > worst ? r : worst;
+        }
+        continue;
+      }
+      for (j = 0; j < (int)en[i]; j++)
+        if (under4(e[i][j].w, w0)) {
+          const float r = ratio(e[i][j].w, w0);
+          cost[VCC_LOOK_DIV]++;
+          if (r < r_best) {
+            r_best = r;
+            try_pick[i] = j;
+          }
+        }
       worst = r_best > worst ? r_best : worst;
     }
-    if (worst < best) {
+    if (ok && worst < best) {
       best = worst;
       best_c = c;
       memcpy(pick, try_pick, sizeof pick);
@@ -462,7 +652,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     st->persp++;
   for (i = 0; i < n; i++) {
     uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
-    if (e[i] && e[i]->multi)
+    if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
@@ -490,12 +680,12 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
       if (e[i]) {
-        if (!e[i]->multi) {
-          c[i].dx = e[i]->c[0].dx;
-          c[i].dy = e[i]->c[0].dy;
+        if (!(et[i] & T_MULTI)) {
+          c[i].dx = e[i][0].dx;
+          c[i].dy = e[i][0].dy;
         }
         if (persp)
-          c[i].w = e[i]->c[pick[i]].w;
+          c[i].w = e[i][pick[i]].w;
       }
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
@@ -512,8 +702,8 @@ static int s_ot_done; /* psx_vcache_enable: mode != 0 */
 static void pres_next(void) {
   Rec *const r = &s_rec[VC_PRES];
   r->count = 0;
-  if (++r->gen == 0) {
-    memset(r->tab, 0, sizeof(Entry) * VC_SIZE);
+  if (++r->gen == VC_GEN_END) {
+    table_clear(r->tab);
     r->gen = 1;
   }
 }
@@ -530,18 +720,22 @@ static void done_hook(void) {
   }
   r->count = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
-    r->tab = r->tab == s_tab0 ? s_tab1 : s_tab0;
-  if (++r->gen == 0) { /* wrapped: no old entry may look current */
-    memset(s_tab0, 0, sizeof s_tab0);
+    r->tab = r->tab == &s_tab0 ? s_tab1 : &s_tab0;
+  if (++r->gen == VC_GEN_END) { /* came round: no old entry may look current */
+    s_tab0.stale = 1;
     if (s_tab1)
-      memset(s_tab1, 0, sizeof s_tab0);
+      s_tab1->stale = 1;
     r->gen = 1;
   }
+  /* each table is cleared as it starts recording, not while the other
+   * frame's walk may still read it */
+  if (r->tab->stale)
+    table_clear(r->tab);
 }
 
 int psx_vcache_double(void) {
   if (!s_tab1)
-    s_tab1 = calloc(VC_SIZE, sizeof(Entry));
+    s_tab1 = table_new();
   return s_tab1 ? 0 : -1;
 }
 
@@ -551,21 +745,20 @@ void psx_vcache_frame_take(PsxVcacheFrame *f) {
 }
 
 void psx_vcache_frame_use(const PsxVcacheFrame *f) {
-  s_rtab = f ? (const Entry *)f->tab : NULL;
+  s_rtab = f ? (const Table *)f->tab : NULL;
   s_rgen = f ? f->gen : 0;
 }
 
 int psx_vcache_get(uint32_t ref, VCacheVert *out) {
   uint32_t slot = ref & VREF_SLOT, d = (ref >> VREF_CAND_SHIFT) & 3;
-  const Entry *e;
+  const Table *t = s_rec[VC_LOGIC].tab;
   if (!slot || slot > VC_SIZE)
     return 0;
-  e = &s_rec[VC_LOGIC].tab[slot - 1];
-  if (d >= e->n)
+  if (d >= T_N(t->s[slot - 1].tag))
     d = 0;
-  out->dx = e->c[0].dx; /* the same for every polygon */
-  out->dy = e->c[0].dy;
-  out->w = e->c[d].w;
+  out->dx = t->s[slot - 1].c[0].dx; /* the same for every polygon */
+  out->dy = t->s[slot - 1].c[0].dy;
+  out->w = t->s[slot - 1].c[d].w;
   return 1;
 }
 
@@ -588,7 +781,7 @@ PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
   if (!s_ot_done)
     return NULL;
   if (g_psyxRtpValueHook && !r->tab) /* recording: the presenter's table, once */
-    r->tab = calloc(VC_SIZE, sizeof(Entry));
+    r->tab = table_new();
   if (!r->tab) /* tex_filter only (polygons just marked), or no memory: as before #158 */
     return NULL;
   pres_next();
