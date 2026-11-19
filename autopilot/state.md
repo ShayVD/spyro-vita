@@ -28,21 +28,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "af4c271dab36becb5"
-    },
-    {
-      "issue": 164,
-      "branch": "auto/164-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-164",
-      "pids": [],
-      "started_at": "2026-11-19T19:15:29Z",
-      "files": [
-        "tools/oracle/pads/",
-        "tools/native_draw_ab.sh",
-        "tools/host_checks.sh",
-        "docs/host-build.md",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a855348e48c6c64af"
     }
   ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
@@ -83,14 +68,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 9
+    "count": 10
   },
   "round": {
     "n": 1,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
     "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
     "started_at": "2026-11-19T13:05:58Z",
-    "filed": 9,
+    "filed": 10,
     "investigated": false
   },
   "rounds_without_gain": 0,
@@ -147,3 +132,4 @@ continue.
 - phase 8: workers on #162 (presenter thread with the cache on), #164 (gems pad), #166 (main.c vdm_ring key).
 - 19:26Z phase 8: #166 reported done (reports/166-1.md); gate running (gate.py, four routes).
 - 19:47Z phase 8: merged #166 (every route passes, pictures and counters unchanged). Vita3K: 1 start-up crash (title, MoltenVK device lost at the first acquire; gotchas 24), rerun passed.
+- 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
