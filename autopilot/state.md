@@ -27,7 +27,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/decisions-2.md",
         "docs/presentation.md"
       ],
-      "agent": "af4c271dab36becb5"
+      "agent": "af4c271dab36becb5",
+      "last_commit_at": "2026-11-19T19:33:02+00:00"
     },
     {
       "issue": 167,
@@ -44,7 +45,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/host-build.md",
         "docs/vita-testing.md"
       ],
-      "agent": "a921d4c46ae9921de"
+      "agent": "a921d4c46ae9921de",
+      "last_commit_at": "2026-11-19T19:51:49+00:00"
     }
   ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
