@@ -11,16 +11,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 165,
-      "branch": "auto/165-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-165",
+      "issue": 169,
+      "branch": "auto/169-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-169",
       "pids": [],
-      "started_at": "2026-11-19T23:49:09Z",
+      "started_at": "2026-11-19T23:56:37Z",
       "files": [
-        "docs/host-build.md",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_rt.h",
         "docs/decisions-2.md"
       ],
-      "agent": "ae82a5ee766344247"
+      "agent": "a288dfd2f5e8ddf23"
     }
   ],
   "last_good": "c713ab2a8933bf0f2d8880a266296032c61e0233",
@@ -147,3 +148,4 @@ continue.
 - 23:48Z phase 8: merged #168 (bec34cc; the gems runs shared ./save, so only the first reached the gems; each run now gets its own card and a gems check). Script/docs only.
 - phase 8: worker on #165 (docs for #163), the last open issue.
 - 23:55Z phase 8: merged #165 (docs). Round 1 ended with a gain: wobble60 vc.proj/polys/verts/misses -50% (base-5eb8423, the first wobble60 counters, vs base-bbc36b1), none worse; rounds_without_gain 0. last_good = head (no src/cmake/kit change since bbc36b1, whose gate is the regression run). Round 2 started; first candidate from the counters: redundant GL state calls (programs 105 vs draws 84 per frame).
+- phase 8: removed a stale worker entry for #165 (left after its merge; it made pick skip #169). Worker on #169 (redundant GL state calls).
