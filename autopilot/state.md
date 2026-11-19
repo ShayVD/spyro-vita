@@ -22,7 +22,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/decisions-2.md",
         "docs/host-build.md"
       ],
-      "agent": "a3c19682f5cf2eefb"
+      "agent": "a3c19682f5cf2eefb", "last_commit_at": "2026-11-19T23:12:15+00:00"
     }
   ],
   "last_good": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
