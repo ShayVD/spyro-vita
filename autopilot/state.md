@@ -23,7 +23,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/gte_native.h",
         "docs/decisions-2.md"
       ],
-      "agent": "a8691855df65aa8f1"
+      "agent": "a8691855df65aa8f1", "last_commit_at": "2026-11-19T21:55:09+00:00"
     }
   ],
   "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
