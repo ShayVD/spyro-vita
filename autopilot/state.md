@@ -34,8 +34,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "last_good": "",
   "baselines": {
-    "run_dir": "",
-    "commit": ""
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
+    "commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -58,26 +58,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 3
+    "count": 4
   },
   "round": {
-    "n": 0,
-    "base_run_dir": "",
-    "base_commit": "",
-    "started_at": "",
-    "filed": 0,
+    "n": 1,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
+    "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
+    "started_at": "2026-11-19T13:05:58Z",
+    "filed": 4,
     "investigated": false
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 2,
-    "pid": 82907,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline.log",
-    "started_at": "2026-11-19T12:36:49Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -109,3 +102,4 @@ continue.
 - 11:53Z phase 8: baseline build failed on setup (main checkout's build/vita has a non-Docker CMake cache); rerun into build/vita-ap. Vita3K: none yet.
 - 12:36Z phase 8: the vitasdk/vitasdk image is amd64 (emulated on this arm64 Mac: 76/505 in 42 min); build command switched to the native VitaSDK (docs/vita-testing.md), baseline restarted into build/ap-native. The stopped Docker build's container (elegant_shaw) is left to finish: docker stop was refused by the permission check. Vita3K: none yet.
 - 13:03Z phase 8: baseline f7aeb43 (native build): title pass, pause-ws pass, pause-ws-wobble crashed in Vita3K at vblank ~6300 (host EXC_BAD_ACCESS; game log clean, vcache 99% found); flakiness rerun into pause-ws-wobble-r2. Docker container elegant_shaw stopped on the owner's yes. Vita3K: 1 crash pending check.
+- 13:05Z phase 8: pause-ws-wobble crashed again on the baseline VPK (r2, ~7800): filed #161; it is autopilot's, not a branch's. Baseline base-f7aeb43 set (title, pause-ws pass); last_good stays empty until the wobble route passes. Round 1 started. Vita3K: 2 crashes (wobble route, same VPK).
