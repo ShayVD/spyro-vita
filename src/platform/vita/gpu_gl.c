@@ -203,6 +203,7 @@ static GrVertex s_vbuf[MAX_VERTEX_BUFFER_SIZE];
 static const GrVertex *s_vorig; /* PsyX's own buffer as it was given, or the
                                    render thread's copy of it (D63) */
 static const VCacheVert *s_side; /* g_vcache_side, or the render thread's copy */
+extern unsigned g_vcache_work[4], g_vcache_pres_work[4]; /* vcache.c: the cache's work by thread */
 static int s_nverts;
 
 /* The expanded vertex (D39, D43): PsyX's own vertex, copied whole, then
@@ -4089,6 +4090,22 @@ void gl_report(int vblank) {
                c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
                c->verts ? (unsigned)(100ull * c->other / c->verts) : 0,
                c->verts ? (unsigned)(100ull * c->side_lost / c->verts) : 0);
+    }
+    /* where the cache's work ran since the last line (#162): the game
+     * thread (with its walk: the logic draw, and the presenter inline) and
+     * the presenter's thread; the work counters' vc.* are the first */
+    {
+      static unsigned last[2][4];
+      unsigned d[2][4], t, i;
+      for (t = 0; t < 2; t++)
+        for (i = 0; i < 4; i++) {
+          const unsigned v = (t ? g_vcache_pres_work : g_vcache_work)[i];
+          d[t][i] = v - last[t][i];
+          last[t][i] = v;
+        }
+      vita_log("vcache %d work: the game thread %u projected, %u polygons, %u vertices, %u not "
+               "found; the presenter's thread %u projected, %u polygons, %u vertices, %u not found",
+               vblank, d[0][0], d[0][1], d[0][2], d[0][3], d[1][0], d[1][1], d[1][2], d[1][3]);
     }
     psx_vcache_stats_reset();
   }

@@ -80,12 +80,35 @@ void psx_vcache_frame_use(const PsxVcacheFrame *f);
  * are looked up there, so neither kind of frame finds the other's. walks:
  * 0 when its DrawOTag won't walk or call the done hook (the GPU disabled).
  * Returns the presenter's projection hook (render_ctx.h
- * g_pres_rtp_value_hook), NULL when the cache doesn't record. Inline on
- * the game thread only, after the game's walk is joined (the cache is the
- * game thread's; D126). */
+ * g_pres_rtp_value_hook), NULL when the cache doesn't record. Called on
+ * the game thread, after the game's walk is joined. */
 typedef void (*PsxVcacheValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy,
                                    int sz3);
 PsxVcacheValueHook psx_vcache_pres_begin(int walks);
+
+/* The presenter's frame on its own thread (the Vita's pres_thread=1, D126;
+ * #162), beside the logic draw:
+ *  - psx_vcache_pres_async_ok: it may run there. The cache records, the
+ *    presenter's table is there, and its walk's vertex buffer is known (a
+ *    buffer given to psx_vcache_set_base while one of its frames was drawn
+ *    inline), so its answers can be written from its first polygon;
+ *  - psx_vcache_pres_detach (the game thread, after psx_vcache_pres_begin,
+ *    before the job is posted and the logic draw starts): the frame opened
+ *    becomes the presenter's thread's. A polygon whose vertices aren't in
+ *    the game's walk's buffer is then the presenter's: looked up in its
+ *    table, its answers at its index in its walk's buffer in
+ *    psx_vcache_pres_side (not g_vcache_side), its counters in
+ *    g_vcache_pres_work. The logic draw's polygons and table are as
+ *    without it;
+ *  - psx_vcache_pres_end (the presenter's thread, as its buffer closes,
+ *    after its last polygon): the frame ends (DrawOTag's done hook doesn't
+ *    run for it there). Nothing if no frame was detached;
+ *  - psx_vcache_pres_side: the presenter's answers (NULL until its buffer
+ *    is known), read by its thread as it records its vertex buffer. */
+int psx_vcache_pres_async_ok(void);
+void psx_vcache_pres_detach(void);
+void psx_vcache_pres_end(void);
+const VCacheVert *psx_vcache_pres_side(void);
 
 /* Counters since the last psx_vcache_stats_reset(), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
