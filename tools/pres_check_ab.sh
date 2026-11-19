@@ -27,7 +27,7 @@
 # in place of chk's --pres-check: D128).
 # Stage 7g (D128) adds three scenarios for the gamestates the others don't
 # reach: pause (16:9, the gems script then the pause menu and the
-# inventory, logs/pads/gems-pause-s8d.txt), die (the gems script, then
+# inventory, tools/oracle/pads/gems-pause-s8d.txt), die (the gems script, then
 # Spyro poked under the floor twice: a respawn, then with no lives left a
 # game over; a dragon rescue on the way) and flight (the gems script, then
 # the menu's level warp to Sunny Flight, where Spyro drowns: the flight
@@ -46,16 +46,16 @@ run() { # NAME MODE
   extra="--save $D/save --interp $nd"
   case $n in demo|routeA|wsi|pause) extra="$extra --wav $D/audio.wav";; esac
   case $m in chk) extra="$extra --pres-check ${EXTRA:-}";; m2) extra="$extra ${EXTRA:-}";; esac
-  GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
+  GEMS="--frames 8768 --pad tools/oracle/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
   demo) args="--frames 12000 --shot-every 500";;
   wsi) args="--frames 12000 --shot-every 500 --widescreen --out960";;
   routeA) args="--frames 13000 --pad tools/oracle/pads/newgame_host.txt --tour levels --tour-stay 300 --pad-after tools/oracle/pads/route_portal_exit.txt --shot-every 250";;
   routeB) args="--frames 13000 --pad tools/oracle/pads/newgame_host.txt --tour levels,21 --tour-stay 300 --pad-after tools/oracle/pads/route_vortex_balloon.txt --shot-every 250";;
-  pause) args="--frames 9100 --pad logs/pads/gems-pause-s8d.txt --widescreen --shot-every 100";;
-  flight) args="--frames 11000 --pad logs/pads/gems.txt --shot-every 250 --cheat 7600:warp:15";;
-  die) args="--frames 11000 --pad logs/pads/gems.txt --shot-every 250 --poke 7400:80078a60=00000100 --poke 9000:8007582c=00000000 --poke 9100:80078a60=00000100";;
+  pause) args="--frames 9100 --pad tools/oracle/pads/gems-pause-s8d.txt --widescreen --shot-every 100";;
+  flight) args="--frames 11000 --pad tools/oracle/pads/gems.txt --shot-every 250 --cheat 7600:warp:15";;
+  die) args="--frames 11000 --pad tools/oracle/pads/gems.txt --shot-every 250 --poke 7400:80078a60=00000100 --poke 9000:8007582c=00000000 --poke 9100:80078a60=00000100";;
   whole) args="--frames 100000 --pad tools/oracle/pads/newgame_host.txt --pad-after tools/oracle/pads/fairy_after.txt --shot-every 1000 --tour 11,12,13,14,15,20,21,22,23,24,25,30,31,32,33,34,35,40,41,42,43,44,45,50,51,52,53,54,55,60,61,62,63,end2,64,end3,credits,levels,lives --tour-stay 300";;
   *) echo "unknown scenario $n"; exit 2;;
   esac

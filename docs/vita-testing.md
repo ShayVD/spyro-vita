@@ -797,7 +797,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 ### Quick save (D51, branch `claude/vita-quicksave-a54846`)
 
-The gems script (M2's `run9-gems/replay_pad.txt`), with a state saved at vblank 7000 (Artisans, music playing) and loaded later; host references from the same tree (`--state-hash`: a hash of every chunk at every main loop top; `tools/savestate_compare.py`). Logs in `logs/`:
+The gems script (M2's `run9-gems/replay_pad.txt`, tracked as `tools/oracle/pads/gems.txt`; older entries here and in the decisions name it `logs/pads/gems.txt`), with a state saved at vblank 7000 (Artisans, music playing) and loaded later; host references from the same tree (`--state-hash`: a hash of every chunk at every main loop top; `tools/savestate_compare.py`). Logs in `logs/`:
 
 | Run | What | Result |
 |---|---|---|
