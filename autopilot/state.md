@@ -9,7 +9,22 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 168,
+      "branch": "auto/168-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-168",
+      "pids": [],
+      "started_at": "2026-11-19T22:44:54Z",
+      "files": [
+        "src/platform/linux32/",
+        "tools/fast_render_ab.sh",
+        "docs/decisions-2.md",
+        "docs/host-build.md"
+      ],
+      "agent": "a3c19682f5cf2eefb", "last_commit_at": "2026-11-19T23:12:15+00:00"
+    }
+  ],
   "last_good": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
@@ -130,3 +145,4 @@ continue.
 - 21:30Z phase 8: merged #167 (6a92241; tools/pads/docs only: scope, merge, noassets; worker's host A/B checks all identical). Filed #168 (fast_render_ab gems run loads a vblank late with --prof-draw).
 - 22:37Z phase 8: #159 reported done (reports/159-1.md): same answers (checksums identical over 91 M vertices), divisions/vertex ~1.0 -> ~0.4, table lines -15%. Gate running.
 - 22:44Z phase 8: merged #159 (every route first try, pictures and counters unchanged; same answers with ~60% fewer divisions per vertex). New baseline from the gate; last_good moved. Vita3K: 0 crashes.
+- phase 8: worker on #168 (host determinism with --prof-draw; the profiler is src/platform/linux32/prof_draw.c, not src/game/).
