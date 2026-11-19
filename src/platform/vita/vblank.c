@@ -10,6 +10,7 @@
  * VSync itself are shared with linux32 (common/clock.c, libetc.c, D104).
  * Also PsyX's scene hooks (isbg clears), the same as linux32's. */
 #include "vita.h"
+#include "vita_pc.h"
 #include "vcount.h"
 #include "watchdog.h"
 #include "psx_arena.h"
@@ -91,6 +92,7 @@ static void vblank(void) {
   prof_leave();
   psx_clock_callback();
   prof_vblank();
+  vita_pc_vblank(v); /* the work counters' lines (perfcount.c, D131) */
 
   for (i = 0; i < g_vita_opts.npokes; i++)
     if (g_vita_opts.pokes[i].vblank == v) {

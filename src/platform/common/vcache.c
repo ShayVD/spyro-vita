@@ -138,6 +138,11 @@ void psx_vcache_set_base(const void *vertex_buffer) {
 }
 
 VCacheStats g_vcache_stats[2];
+/* Work since the start, never reset, for the Vita's work counters (issue
+ * #160, D131; src/platform/vita/perfcount.c): projections recorded,
+ * polygons looked up, their vertices, and those not found. The cache is the
+ * game thread's (D126): plain adds. */
+unsigned g_vcache_work[4];
 static int s_pres; /* the presenter's frame: its DrawOTag hasn't returned (psx_vcache_pres_begin) */
 
 void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_stats); }
@@ -271,6 +276,7 @@ static void rtp_point(int kind, const int *proj, int vx, int vy, int vz, uint32_
   float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
   g_vcache_stats[kind].records++;
+  g_vcache_work[0]++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
@@ -344,6 +350,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
 
   st->polys++;
   st->verts += n;
+  g_vcache_work[1]++;
+  g_vcache_work[2] += (unsigned)n;
   if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
     for (i = 0; i < n; i++) {
       uint32_t r = VREF_POLY;
@@ -364,6 +372,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
         st->other++;
     } else {
       persp = 0;
+      g_vcache_work[3]++;
       if (!f)
         st->miss_none++;
       else if (f->state == E_INVALID)

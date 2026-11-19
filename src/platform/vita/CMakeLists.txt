@@ -34,7 +34,9 @@ set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
 add_executable(spyro_vita ${VITA_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c")
+  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c"
+  # the work counters' lines (perfcount.c, D131)
+  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/perfcount/vpk_perfcount.c")
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}

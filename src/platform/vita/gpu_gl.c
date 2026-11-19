@@ -50,6 +50,9 @@
 #include "psx_lean.h"
 #include "psx_vcache.h"
 #include "gpu_rt.h"
+/* the GL calls below count themselves (issue #160, D131) */
+#define VITA_PC_GL
+#include "vita_pc.h"
 
 /* src/game/native_draw.c: direct vertices (D99) */
 extern int g_nd_direct, g_nd_direct_ok;
@@ -3035,6 +3038,8 @@ static void draw_triangles(int start_vertex, int triangles) {
   s_gen++;
   s_st.draws++;
   s_st.tris += triangles;
+  vita_pc(VPC_GR_DRAWS, 1);
+  vita_pc(VPC_GR_TRIS, (unsigned)triangles);
 }
 
 /* gpu_parts=1: each entry point's whole time (D105) */

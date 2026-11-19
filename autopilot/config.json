@@ -73,5 +73,18 @@
     "tol": 0,
     "edge": 0
   },
-  "benchmark": []
+  "benchmark": [
+    {
+      "name": "pause-ws",
+      "route": "pause-ws",
+      "min_frame": 6600,
+      "max_frame": 9000
+    },
+    {
+      "name": "wobble60",
+      "route": "wobble60",
+      "min_frame": 6600,
+      "max_frame": 9000
+    }
+  ]
 }
