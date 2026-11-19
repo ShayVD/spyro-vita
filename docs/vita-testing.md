@@ -325,6 +325,24 @@ The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the p
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
 menu from 8,601.
 
+**When Vita3K crashes (exit 2, D132, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
+address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed
+or not. The place it died is in the macOS crash report (`~/Library/Logs/DiagnosticReports/Vita3K-*.ips`, matched to
+the run by its time; macOS keeps 25). The faulting thread's Vita3K frames are offsets into the binary: name them from
+`nm -n /Applications/Vita3K.app/Contents/MacOS/Vita3K` (the symbol at or below 0x100000000 + offset). On the pause
+routes it has always been Vita3K's render thread running a corrupted command (`process_batch`). Vita3K keeps an
+immediate context's commands in the game's VDM ring buffer and its context object in the game's context host memory,
+so a stray write by the game there would look the same; D132 lists the checks that found none. Before blaming a
+change, run the base VPK as many times on the same route, interleaved: on 2026-11-19 wobble60 passed 1 run in 5 or
+fewer on every build.
+
+**Pass `vdm_ring=1024` on every Vita3K route (D132).** Those corrupted commands are ones the game overwrote in the
+VDM ring before Vita3K's render thread ran them: the game gets ahead of Vita3K's renderer and wraps vitaGL's 128 KB
+ring. `vdm_ring=KB` in `config.txt` sizes the ring (`gpu_gl.c`, before `vglInit*`; no line keeps vitaGL's default,
+which is what the hardware runs). With 1 MB, `wobble60` passed 5 of 5 against 2 of 5 without it, and `title`,
+`pause-ws` and `pause-ws-wobble` passed with pictures identical to the baseline's. `main.c` logs
+`config: unknown key vdm_ring` for it; that is expected.
+
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
 Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
