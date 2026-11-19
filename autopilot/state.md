@@ -11,27 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 162,
-      "branch": "auto/162-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-162",
-      "pids": [],
-      "started_at": "2026-11-19T19:15:29Z",
-      "files": [
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_rt.h",
-        "src/platform/vita/pres_thread.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/pres/pres_draw.c",
-        "docs/decisions-2.md",
-        "docs/presentation.md"
-      ],
-      "agent": "af4c271dab36becb5",
-      "last_commit_at": "2026-11-19T19:33:02+00:00",
-      "reported": true
-    },
-    {
       "issue": 167,
       "branch": "auto/167-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-167",
@@ -50,10 +29,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "last_commit_at": "2026-11-19T19:51:49+00:00"
     }
   ],
-  "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
+  "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5eb8423",
-    "commit": "5eb84234d664763592342c1b91555ed9ab12b6ae"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-a86cab5",
+    "commit": "a86cab56aaea9741264a16e1502d826ee5313bbc"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -105,14 +84,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 162,
-    "step": 1,
-    "pid": 85949,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-162-1.log",
-    "started_at": "2026-11-19T21:12:32Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -167,3 +139,4 @@ continue.
 - 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
 - phase 8: worker on #167 (pad scripts, from auto/164-1).
 - 21:12Z phase 8: #162 reported done (reports/162-1.md): presenter on core 1 with the cache on, pictures identical, game thread's vc.* -50% on wobble60. Gate running. #167's worker stopped on the API weekly limit (resets 21:00 Dublin); its commits are on auto/167-1, to resume by message.
+- 21:21Z phase 8: merged #162 (every route first try, pictures identical, wobble60 vc.* -50% on the game thread). New baseline = the gate's runs; last_good moved. Vita3K: 0 crashes.
