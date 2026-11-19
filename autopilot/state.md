@@ -14,24 +14,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 158,
       "branch": "auto/158-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-158",
-      "pids": [
-        19611,
-        28938,
-        8669,
-        24788,
-        24793,
-        25939,
-        32280,
-        32282,
-        44300,
-        44951,
-        79567,
-        89904,
-        91298,
-        95182,
-        4680,
-        17286
-      ],
+      "pids": [],
       "started_at": "2026-11-19T11:51:30Z",
       "files": [
         "src/game/pres/pres_draw.c",
@@ -46,7 +29,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "a73c23883e2369b4f",
-      "last_commit_at": "2026-11-19T13:59:31+00:00"
+      "last_commit_at": "2026-11-19T13:59:31+00:00",
+      "reported": true
     }
   ],
   "last_good": "",
@@ -87,7 +71,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 158,
+    "step": 1,
+    "pid": 39085,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-158.log",
+    "started_at": "2026-11-19T14:12:19Z"
+  },
   "batch": null
 }
 ```
@@ -120,3 +111,4 @@ continue.
 - 12:36Z phase 8: the vitasdk/vitasdk image is amd64 (emulated on this arm64 Mac: 76/505 in 42 min); build command switched to the native VitaSDK (docs/vita-testing.md), baseline restarted into build/ap-native. The stopped Docker build's container (elegant_shaw) is left to finish: docker stop was refused by the permission check. Vita3K: none yet.
 - 13:03Z phase 8: baseline f7aeb43 (native build): title pass, pause-ws pass, pause-ws-wobble crashed in Vita3K at vblank ~6300 (host EXC_BAD_ACCESS; game log clean, vcache 99% found); flakiness rerun into pause-ws-wobble-r2. Docker container elegant_shaw stopped on the owner's yes. Vita3K: 1 crash pending check.
 - 13:05Z phase 8: pause-ws-wobble crashed again on the baseline VPK (r2, ~7800): filed #161; it is autopilot's, not a branch's. Baseline base-f7aeb43 set (title, pause-ws pass); last_good stays empty until the wobble route passes. Round 1 started. Vita3K: 2 crashes (wobble route, same VPK).
+- 14:12Z phase 8: #158 reported done (report runtime/autopilot/reports/158-1.md): presenter frames 0% -> logic's share found; on Vita3K at 60 fps both kinds had been 100% side_lost since D125. Gate running (runs/gate-158-1). Vita3K (worker's): pause-ws 1 crash, pause-ws-wobble 2 crashes (#161).
