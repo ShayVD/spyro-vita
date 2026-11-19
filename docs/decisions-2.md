@@ -1504,3 +1504,8 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
   - no `--prof-draw`, no `--save`, four more with that card still there: all four identical, and all four stayed on level 0.
   - `--prof-draw` with a fresh `--save` per run: three with `--fast-render 3` and two with `0`, all five reached level 10 at 2108, and all five traces identical (and identical to the first run above).
 - **Chosen:** `tools/fast_render_ab.sh` passes `--save DIR/save` to every run (as `native_draw_ab.sh` does), and keeps `--prof-draw`: it doesn't change a run. For gems and lod, a run whose trace's last row shows fewer than 4 gems prints `FAIL`, and the script exits 1. `docs/host-build.md` says so, and that runs sharing `./save` aren't comparable. No code changed: the host build and the Vita build are the same as before.
+- **Checked** (this branch's build of `2f22813`; the stale `./save` card from the runs above was still in the worktree):
+  - `tools/fast_render_ab.sh i168frN gems`, five times (`logs/i168-fr5x.txt`, `logs/i168frN-gems-f{0,3}`): each pair 19 of 19 files identical, exit 0. All ten traces are identical, Artisans loads at vblank 2108 in each, the last row shows 4 gems, and all ten cards are the same file.
+  - The gems check: a trace ending with 0 gems (`logs/i168-prof-2`) and a missing one each print `FAIL`; a trace ending with 4 passes.
+  - `tools/native_draw_ab.sh i168nd gems vc` (`logs/i168-ndab.txt`), exit 0: gems 19 of 19 and vc 19 of 19 files identical, every native draw check 0 differ; all four traces are the same as the five pairs' above.
+  - `main.c` and the run loop are unchanged, so the attract demos weren't rerun. Nothing reaches the Vita: no VPK, no Vita3K.
