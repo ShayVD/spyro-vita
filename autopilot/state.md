@@ -28,7 +28,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "af4c271dab36becb5",
-      "last_commit_at": "2026-11-19T19:33:02+00:00"
+      "last_commit_at": "2026-11-19T19:33:02+00:00",
+      "reported": true
     },
     {
       "issue": 167,
@@ -70,6 +71,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware check of vdm_ring=1024 (D132) before making it the default",
       "expected": "no fps or picture change, +896 KB RAM; owner-approved run only",
       "issue": 0
+    },
+    {
+      "title": "Hardware A/B for #162 (presenter on core 1 with the cache on)",
+      "expected": "about half of D89's ~4.5 ms/vblank cache work leaves the game thread; s7f3-toasty60-pres + o-toasty + persp=1 subpixel=1, A this path vs B pres_thread=0",
+      "issue": 162
     }
   ],
   "owner_decisions": [
@@ -99,7 +105,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 162,
+    "step": 1,
+    "pid": 85949,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-162-1.log",
+    "started_at": "2026-11-19T21:12:32Z"
+  },
   "batch": null
 }
 ```
@@ -153,3 +166,4 @@ continue.
 - 19:47Z phase 8: merged #166 (every route passes, pictures and counters unchanged). Vita3K: 1 start-up crash (title, MoltenVK device lost at the first acquire; gotchas 24), rerun passed.
 - 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
 - phase 8: worker on #167 (pad scripts, from auto/164-1).
+- 21:12Z phase 8: #162 reported done (reports/162-1.md): presenter on core 1 with the cache on, pictures identical, game thread's vc.* -50% on wobble60. Gate running. #167's worker stopped on the API weekly limit (resets 21:00 Dublin); its commits are on auto/167-1, to resume by message.
