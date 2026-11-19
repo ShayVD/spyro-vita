@@ -44,6 +44,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware cost of the wobble fix at 60 fps after #158",
       "expected": "owner-approved run: fps-runs t1-subpixel-60 style, Toasty, persp=1 subpixel=1 interp on",
       "issue": 0
+    },
+    {
+      "title": "Hardware check of vdm_ring=1024 (D132) before making it the default",
+      "expected": "no fps or picture change, +896 KB RAM; owner-approved run only",
+      "issue": 0
     }
   ],
   "owner_decisions": [
@@ -61,19 +66,26 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 8
+    "count": 9
   },
   "round": {
     "n": 1,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
     "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
     "started_at": "2026-11-19T13:05:58Z",
-    "filed": 8,
+    "filed": 9,
     "investigated": false
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 161,
+    "step": 1,
+    "pid": 78308,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-161-2.log",
+    "started_at": "2026-11-19T19:06:18Z"
+  },
   "batch": null
 }
 ```
@@ -120,3 +132,4 @@ continue.
 - phase 8: #161 attempt 2 started (auto/161-2): diag1 vs clean interleaved, bisect the diag patch, vglSetVDMBufferSize probe; ~20 runs.
 - 18:06Z phase 8: #163 reported done (reports/163-1.md: colima reverse-sshfs drops ld's chmod; link_exec.sh launcher + regex-checked mutants; ctest 29/29). Gate running: merge, VPK build, title and pause-ws only (the change is inside if(linux32), and the wobble routes crash ~80% in Vita3K while #161 needs the runner). Filed #165 (docs for it).
 - 18:18Z phase 8: merged #163 (ad697c3; host-only by construction, title 10/10 same, pause-ws 3 crashes with #161's signature and identical pictures before them). last_good stays 0525e1f: no route can pass reliably in Vita3K until #161. Vita3K: 3 crashes (pause-ws, cache off).
+- 19:06Z phase 8: #161 attempt 2 done (reports/161-2.md): Vita3K's crash is the game wrapping vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; vdm_ring=1024 passed 5/5 vs 2/5. Every route now passes vdm_ring=1024. Gate running (gate.py, all four routes). Filed #166 (main.c unknown-key line).
