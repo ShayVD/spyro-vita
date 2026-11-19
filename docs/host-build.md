@@ -43,6 +43,35 @@ python3 tools/contact_sheet.py logs/runN-x
 - Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`). In place of the buttons, `poke:ADDR=VALUE` (hex) writes a word of PS1 RAM when the line fires and leaves the buttons alone; `capture.lua` reads it the same way.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
 
+## ctest, the mutant tests and the bind mount (D136)
+
+`tools/tc` mounts the worktree at `/work` (`docker run -v`), and with colima that mount is reverse-sshfs. Two things here follow from that, plus one about time.
+
+**The link launcher.** GNU ld makes its output executable only after writing and closing it (a stat, then a chmod). On the mount that chmod is now and then lost, and the binary stays mode 0644; qemu-i386 then refuses to run it (#163: 1 of 60 parallel gcc links). So every linux32 link goes through `cmake/link_exec.sh` (`RULE_LAUNCH_LINK`, set in `CMakeLists.txt` inside `if(SPYRO_HOST STREQUAL "linux32")`; the Vita build never uses it). It runs the link and keeps its exit code. For anything but a `.a`, `.so` or `.so.*` it then checks the execute bit and, if it's gone, sets it again with `chmod +x` (with the umask, as ld does): up to 5 tries, sleeping 1 s after a chmod that errors. A build log line `link_exec.sh: OUT lost its execute bit after the link (try N), setting it` is the race, caught. `still has no execute bit after the link` fails the link (exit 1); build again. Don't add `chmod` steps to targets: the launcher covers every link.
+
+**Mutant tests.** A mutant is a build (or a run) with one deliberate error that its check must catch. Each one is registered with `spyro_mutant_test(NAME REGEX)` (`tests/CMakeLists.txt`), which sets ctest's `PASS_REGULAR_EXPRESSION`: the test passes only if its output matches REGEX, whatever the exit code. Don't use `WILL_FAIL`: it passes on any failure, including a binary that never ran, so the check can't fail (#163's `gte_native_mutant3`). To add one:
+
+```cmake
+add_test(NAME foo_mutant COMMAND test_foo_mutant)
+spyro_mutant_test(foo_mutant "  FIELD: want [0-9A-F]+ got [0-9A-F]+\n.*test_foo: FAILED")
+```
+
+- Call it after `add_test`: it sets a property of a test that must already exist.
+- REGEX names this mutant's own error (the mutated field, the mutant's number, the decision's tag), then the line the check prints with its verdict (`test_gte_native: FAILED`, `(D117, mutant 2)`), so a crash or a different failure doesn't pass. `\n` in the CMake string is a newline and `.*` spans lines, so REGEX may cover several lines of output.
+- No `;` in REGEX (CMake would split it into a list), and CMake's quoting doubles backslashes: `\\(D111\\)` matches `(D111)`.
+- See it pass for the right reason with `tools/tc ctest --test-dir build/linux32 -R '^foo_mutant$' -V` (the output must show the error), and see it fail when the error can't show: after `chmod -x` on its binary, qemu refuses it and the test fails.
+- The 11 in the tree are examples: `gte_native_mutant`, `gte_native_mutant2`, `gte_native_mutant3`, `libgte_mutant1` and `libgte_mutant2` (`tests/gte/CMakeLists.txt`), `walk_synth_mutant1` and `walk_synth_mutant2` (`tests/walk/CMakeLists.txt`), and `fill_mutant`, `lean_mutant`, `spu_native_mutant` and `vcount_mutant`, one each in their folders.
+
+**Run time.** A full `ctest` (29 tests) took about 29 minutes in #163. The three `gte_native` mutants took 200–300 s each: like `gte_native`, each runs a million random register states per opcode under qemu-i386 before it prints its verdict. Run it in the background with its output in a log, and read the log when it ends:
+
+```bash
+tools/tc ctest --test-dir build/linux32 --output-on-failure > logs/runN-ctest.txt 2>&1 &
+```
+
+For quick runs while working, `-E mutant` leaves out every mutant (all their names contain `mutant`) and `-R REGEX` picks tests. A change to a check, or to what it checks, still needs the full run, mutants included.
+
+**A stale view.** The mount can also give ninja an old view of the tree: #163's worker saw "no work to do" right after an `rm` of a build output. If a build should have done something and says it didn't, look at the file from inside the container (`tools/tc ls -l PATH`) and build again. Don't take "no work to do" as proof that an output is current.
+
 ## The Vita's memory model on the host (D97)
 
 `-DSPYRO_ARENA_AT=0x8F000000` (any 16 MB-aligned address above 2 GB other than 0x80000000) builds the host with the Vita's moved arena (D25): the data labels through pointers, the three aliases of PS1 RAM in translated code, and `MIPS_ARENA_TAG` with another top byte. Keep it in its own build folder:
