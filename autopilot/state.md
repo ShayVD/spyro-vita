@@ -9,29 +9,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 161,
-      "branch": "auto/161-2",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-161",
-      "pids": [],
-      "started_at": "2026-11-19T18:04:32Z",
-      "files": [
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "docs/decisions-2.md",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a9f0c514add020e03",
-      "reported": true
-    }
-  ],
-  "last_good": "0525e1f4ce9bba5a8f14cd62c066af6bb42062b7",
+  "workers": [],
+  "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cfe0d45",
-    "commit": "cfe0d45460fc5e50705eef89432ebfc521de7e09"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5eb8423",
+    "commit": "5eb84234d664763592342c1b91555ed9ab12b6ae"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -78,14 +60,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 161,
-    "step": 1,
-    "pid": 78308,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-161-2.log",
-    "started_at": "2026-11-19T19:06:18Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -133,3 +108,4 @@ continue.
 - 18:06Z phase 8: #163 reported done (reports/163-1.md: colima reverse-sshfs drops ld's chmod; link_exec.sh launcher + regex-checked mutants; ctest 29/29). Gate running: merge, VPK build, title and pause-ws only (the change is inside if(linux32), and the wobble routes crash ~80% in Vita3K while #161 needs the runner). Filed #165 (docs for it).
 - 18:18Z phase 8: merged #163 (ad697c3; host-only by construction, title 10/10 same, pause-ws 3 crashes with #161's signature and identical pictures before them). last_good stays 0525e1f: no route can pass reliably in Vita3K until #161. Vita3K: 3 crashes (pause-ws, cache off).
 - 19:06Z phase 8: #161 attempt 2 done (reports/161-2.md): Vita3K's crash is the game wrapping vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; vdm_ring=1024 passed 5/5 vs 2/5. Every route now passes vdm_ring=1024. Gate running (gate.py, all four routes). Filed #166 (main.c unknown-key line).
+- 19:14Z phase 8: merged #161 (5eb8423; every route exit 0 first try with vdm_ring=1024, pictures identical). Baseline base-5eb8423 = the gate's runs, the first with every route complete and counters on all of them; last_good = 5eb8423. Vita3K: 0 crashes.
