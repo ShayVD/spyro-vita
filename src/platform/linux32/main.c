@@ -361,7 +361,8 @@ static void vcache_line(const char *what, const VCacheStats *s) {
 }
 
 /* every frame (the line tools/native_draw_ab.sh reads), then the logic
- * draw's and the presenter's apart (#158): "found in the other's" counts the
+ * draw's and the presenter's apart, each only if it had frames (the script
+ * flags any "vertices found 0.0%"; #158): "found in the other's" counts the
  * vertices found in an entry the other kind of frame's projections made */
 static void vcache_report(void) {
   VCacheStats all;
@@ -372,6 +373,8 @@ static void vcache_report(void) {
   vcache_line("", &all);
   for (k = 0; k < 2; k++) {
     const VCacheStats *s = &g_vcache_stats[k];
+    if (!s->frames)
+      continue;
     vcache_line(k == VC_LOGIC ? " logic" : " presenter", s);
     host_log("vcache %s: vertices found in the other's entries %u (%.2f%% of its vertices)",
              k == VC_LOGIC ? "logic" : "presenter", s->other,
