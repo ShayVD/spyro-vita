@@ -14,7 +14,9 @@
 # distance), routeA/routeB (host_checks.sh's portal/exit and vortex/balloon
 # routes), whole (host_checks.sh's whole-game tour: 100,000 vblanks).
 # Runs one at a time (Docker may have few CPUs); --prof-draw logs the
-# renderers' CPU time in each spyro.log.
+# renderers' CPU time in each spyro.log (it doesn't change the run). Every run
+# has its own card folder, DIR/save (D135). gems and lod fail, and the script
+# exits 1, when a run's last trace row doesn't show the script's 4 gems.
 cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- gems demo wsi lod routeA routeB
@@ -23,12 +25,23 @@ set -f; FAST=${FAST:-0 3}; FA=${FAST% *}; FB=${FAST#* }; set +f
 run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D
-  extra=
-  [ "$f" = "$FB" ] && extra=${EXTRA_B:-}
-  case $n in demo) extra="$extra --wav $D/audio.wav";; routeA|routeB|whole) extra="$extra --save $D/save";; esac
+  # every run its own card folder (D135): without --save every run shares
+  # ./save, and a run after the first finds the card an earlier one wrote,
+  # so the title screen takes the gems script's presses another way
+  extra="--save $D/save"
+  [ "$f" = "$FB" ] && extra="$extra ${EXTRA_B:-}"
+  case $n in demo) extra="$extra --wav $D/audio.wav";; esac
   tools/tc $B --disc $DISC --fast-render $f --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra "$@" > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
+}
+FAIL=0
+# gems, lod: the script's last trace row must show its four gems (D135), so a
+# pair can't match by both runs missing them
+reached() { # NAME DIR
+  g=$(tail -1 $2/trace.tsv 2>/dev/null | cut -f10)
+  [ "${g:-0}" -ge 4 ] 2>/dev/null && return 0
+  echo "  FAIL $1: $2 ends with ${g:-no} gems, not 4 (the script didn't reach them)"; FAIL=1
 }
 scenario() { # NAME args...
   n=$1; shift
@@ -38,6 +51,7 @@ scenario() { # NAME args...
     if cmp -s "$a/$x" "$b/$x"; then same=$((same + 1)); else diff=$((diff + 1)); echo "  DIFF $n $x"; fi
   done
   [ -d "$b" ] && [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
+  case $n in gems|lod) reached $n $a; reached $n $b;; esac
   echo "$n: $same identical, $diff different ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 }
 GEMS="--frames 8768 --pad tools/oracle/pads/gems.txt --shot-every 500"
@@ -56,3 +70,4 @@ for s in "$@"; do
   *) echo "unknown scenario $s"; exit 2 ;;
   esac
 done
+exit $FAIL
