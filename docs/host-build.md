@@ -148,7 +148,7 @@ python3 tools/oracle/trace_diff.py HOST/trace.tsv $D/trace.tsv --key tick --wher
   - `logs/run6-respawn`, `logs/run6-gameover2`: z poked below 1024 → respawn (lives 4→3) or, with 0 lives, game over.
   - `logs/run4-demo`: attract demos with `trace.tsv` (Stone Hill 5 gems, Doctor Shemp 45).
   - `logs/run5-audio/audio.wav`: 120 s of title, intro and Artisans audio.
-  - `logs/run9-gems/steer` (step session steered by `tools/steer.py`; `logs/run9-gems/replay_pad.txt` replays it in `logs/run9-gems/replay`): over the ledge to the waterfall pool, onto the stone platform, four red gems collected (`gems.png`, trace gems 0 → 4).
+  - `logs/run9-gems/steer` (step session steered by `tools/steer.py`; `logs/run9-gems/replay_pad.txt` replays it in `logs/run9-gems/replay`): over the ledge to the waterfall pool, onto the stone platform, four red gems collected (`gems.png`, trace gems 0 → 4). The gems script, from that replay pad, is tracked as `tools/oracle/pads/gems.txt` (the `gems`, `vc` and `lod` scenarios of `tools/native_draw_ab.sh`); older logs and docs name its earlier, untracked copy `logs/pads/gems.txt`.
   - Supercharge isn't part of Artisans: its special surfaces are types 0 and 6 (portals) only, no type 4 (`logs/run9-gems/dump2/mobys-6400.tsv`, `src/special_surfaces.c`).
 - Oracle (PCSX-Redux, `logs/run8-oracle`, emulator version in `EMULATOR.txt`):
   - `cap3`: function samples through boot, title and both attract demos; `replay.txt` 329/329 match.

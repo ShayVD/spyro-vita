@@ -40,7 +40,7 @@ scenario() { # NAME args...
   [ -d "$b" ] && [ "$(cd $b && find . -type f | wc -l)" = "$(cd $a && find . -type f | wc -l)" ] || echo "  $n: file lists differ"
   echo "$n: $same identical, $diff different ($(grep -h '^exit' $a/stdout.txt $b/stdout.txt | tr '\n' ' '))"
 }
-GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
+GEMS="--frames 8768 --pad tools/oracle/pads/gems.txt --shot-every 500"
 for s in "$@"; do
   case $s in
   gems) scenario gems $GEMS --widescreen ;;
