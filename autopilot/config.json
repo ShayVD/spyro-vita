@@ -51,6 +51,20 @@
         "frames=9100"
       ],
       "pad": "tools/vita/hw-routes/pause-ws.pad"
+    },
+    {
+      "name": "wobble60",
+      "timeout": 1200,
+      "config": [
+        "config_version=3",
+        "widescreen=1",
+        "interp=1",
+        "persp=1",
+        "subpixel=1",
+        "shot_every=100",
+        "frames=9100"
+      ],
+      "pad": "tools/vita/hw-routes/pause-ws.pad"
     }
   ],
   "shots": {

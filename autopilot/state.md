@@ -9,30 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 158,
-      "branch": "auto/158-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-158",
-      "pids": [],
-      "started_at": "2026-11-19T11:51:30Z",
-      "files": [
-        "src/game/pres/pres_draw.c",
-        "src/game/render_ctx.c",
-        "src/game/render_ctx.h",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/linux32/main.c",
-        "docs/decisions-2.md",
-        "docs/presentation.md"
-      ],
-      "agent": "a73c23883e2369b4f",
-      "last_commit_at": "2026-11-19T13:59:31+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
@@ -41,8 +18,13 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_runs": [],
   "perf_candidates": [
     {
-      "title": "Presenter thread with the vertex cache on (persp/subpixel force the presenter inline, gpu_thread.c:1301, D126)",
-      "expected": "wobble fix at 60 fps gets the core-1 presenter back; file after #158 merges",
+      "title": "Presenter thread with the vertex cache on",
+      "expected": "in-between frame's cache work off the game thread at 60 fps",
+      "issue": 162
+    },
+    {
+      "title": "Hardware cost of the wobble fix at 60 fps after #158",
+      "expected": "owner-approved run: fps-runs t1-subpixel-60 style, Toasty, persp=1 subpixel=1 interp on",
       "issue": 0
     }
   ],
@@ -59,25 +41,25 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 4
+    "count": 6
   },
   "round": {
     "n": 1,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
     "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
     "started_at": "2026-11-19T13:05:58Z",
-    "filed": 4,
+    "filed": 6,
     "investigated": false
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": {
-    "kind": "gate",
-    "issue": 158,
+    "kind": "baseline",
+    "issue": 0,
     "step": 1,
-    "pid": 39085,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-158.log",
-    "started_at": "2026-11-19T14:12:19Z"
+    "pid": 7740,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-0525e1f/wobble60",
+    "started_at": "2026-11-19T14:22:21Z"
   },
   "batch": null
 }
@@ -112,3 +94,4 @@ continue.
 - 13:03Z phase 8: baseline f7aeb43 (native build): title pass, pause-ws pass, pause-ws-wobble crashed in Vita3K at vblank ~6300 (host EXC_BAD_ACCESS; game log clean, vcache 99% found); flakiness rerun into pause-ws-wobble-r2. Docker container elegant_shaw stopped on the owner's yes. Vita3K: 1 crash pending check.
 - 13:05Z phase 8: pause-ws-wobble crashed again on the baseline VPK (r2, ~7800): filed #161; it is autopilot's, not a branch's. Baseline base-f7aeb43 set (title, pause-ws pass); last_good stays empty until the wobble route passes. Round 1 started. Vita3K: 2 crashes (wobble route, same VPK).
 - 14:12Z phase 8: #158 reported done (report runtime/autopilot/reports/158-1.md): presenter frames 0% -> logic's share found; on Vita3K at 60 fps both kinds had been 100% side_lost since D125. Gate running (runs/gate-158-1). Vita3K (worker's): pause-ws 1 crash, pause-ws-wobble 2 crashes (#161).
+- 14:22Z phase 8: merged #158 (0525e1f; gate all routes pass, shots identical). Added route wobble60 (60 fps with persp+subpixel); baseline base-0525e1f = the gate's runs + wobble60 (running). Filed #162 (presenter thread with the cache on), #163 (ctest exec bits). Vita3K: 2 crashes in the gate (pause-ws, pause-ws-wobble first tries; reruns passed).
