@@ -238,6 +238,10 @@
  *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
+ *       vdm_ring=KB     GXM's VDM ring for vitaGL, in KB (default 0:
+ *                       vitaGL's, 128 KB); Vita3K routes pass 1024 (D132).
+ *                       gpu_gl.c reads it before vglInit*; here it is only
+ *                       accepted
  *       vcount_test=N   tests: the display's 16-bit vblank counter wraps N
  *                       vblanks after start-up, not after up to 18 minutes
  *                       (vblank.c widens it; before D90 the game froze there)
@@ -483,6 +487,8 @@ static void read_config(void) {
       vita_savestate_config(v);
     else if (vita_watchdog_config(line, v))
       ; /* hang_dump=, hang_test= (watchdog.c, D73) */
+    else if (!strcmp(line, "vdm_ring"))
+      ; /* read and applied by gpu_gl.c before vglInit* (vdm_ring_kb, D132) */
     else if (!strcmp(line, "config_version"))
       version = atoi(v);
     else
