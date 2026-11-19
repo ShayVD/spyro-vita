@@ -9,7 +9,46 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 162,
+      "branch": "auto/162-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-162",
+      "pids": [],
+      "started_at": "2026-11-19T19:15:29Z",
+      "files": [
+        "src/platform/vita/gpu_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_rt.h",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/pres/pres_draw.c",
+        "docs/decisions-2.md",
+        "docs/presentation.md"
+      ],
+      "agent": "af4c271dab36becb5",
+      "last_commit_at": "2026-11-19T19:33:02+00:00"
+    },
+    {
+      "issue": 167,
+      "branch": "auto/167-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-167",
+      "pids": [],
+      "started_at": "2026-11-19T19:49:58Z",
+      "files": [
+        "tools/oracle/pads/",
+        "tools/native_draw_ab.sh",
+        "tools/fast_render_ab.sh",
+        "tools/mixer_ab.sh",
+        "tools/pres_check_ab.sh",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a921d4c46ae9921de",
+      "last_commit_at": "2026-11-19T19:51:49+00:00"
+    }
+  ],
   "last_good": "5eb84234d664763592342c1b91555ed9ab12b6ae",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5eb8423",
@@ -48,14 +87,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-19",
     "phase": 8,
-    "count": 9
+    "count": 10
   },
   "round": {
     "n": 1,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-f7aeb43",
     "base_commit": "f7aeb4343248602a2c3797f000b60a436bb62b6f",
     "started_at": "2026-11-19T13:05:58Z",
-    "filed": 9,
+    "filed": 10,
     "investigated": false
   },
   "rounds_without_gain": 0,
@@ -109,3 +148,8 @@ continue.
 - 18:18Z phase 8: merged #163 (ad697c3; host-only by construction, title 10/10 same, pause-ws 3 crashes with #161's signature and identical pictures before them). last_good stays 0525e1f: no route can pass reliably in Vita3K until #161. Vita3K: 3 crashes (pause-ws, cache off).
 - 19:06Z phase 8: #161 attempt 2 done (reports/161-2.md): Vita3K's crash is the game wrapping vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; vdm_ring=1024 passed 5/5 vs 2/5. Every route now passes vdm_ring=1024. Gate running (gate.py, all four routes). Filed #166 (main.c unknown-key line).
 - 19:14Z phase 8: merged #161 (5eb8423; every route exit 0 first try with vdm_ring=1024, pictures identical). Baseline base-5eb8423 = the gate's runs, the first with every route complete and counters on all of them; last_good = 5eb8423. Vita3K: 0 crashes.
+- phase 8: workers on #162 (presenter thread with the cache on), #164 (gems pad), #166 (main.c vdm_ring key).
+- 19:26Z phase 8: #166 reported done (reports/166-1.md); gate running (gate.py, four routes).
+- 19:47Z phase 8: merged #166 (every route passes, pictures and counters unchanged). Vita3K: 1 start-up crash (title, MoltenVK device lost at the first acquire; gotchas 24), rerun passed.
+- 19:49Z phase 8: #164 out of scope (three more scripts and a second pad use logs/pads/): closed without an attempt, branch auto/164-1 kept, continued in a new issue that starts by merging it.
+- phase 8: worker on #167 (pad scripts, from auto/164-1).
