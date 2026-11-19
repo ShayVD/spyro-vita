@@ -311,6 +311,20 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
   brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
   count as game time, so don't take timings from capture runs.
 
+**Work counters (D131):** every 300 vblanks the log has a `vpk-perfcount: w FIRST LAST FRAMES name=total ...`
+line (draws, triangles, uploads, state changes, OT packets, the vertex cache's work, the presenter's frames). They
+count work, not time, so a Vita3K run's lines compare with another run's and with the Vita's. One run's per-frame
+means, or two runs compared (a counter more than 2% higher is worse):
+
+```bash
+python3 third_party/vita-port-kit/vita/tools/perf_report.py RUN/spyro.log --min-frame 6600 --max-frame 9000
+python3 third_party/vita-port-kit/vita/tools/perf_report.py BASE/spyro.log NEW/spyro.log --min-frame 6600 --max-frame 9000
+```
+
+The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the pause route in Artisans, at 30 fps
+(`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
+menu from 8,601.
+
 ### Results so far (2026-10-30, Vita3K on an M3 Mac, firmware installed, NTSC-U disc)
 
 Vita3K v0.2.1 build 4232, Vulkan via MoltenVK. Logs (gitignored) in `logs/`:
