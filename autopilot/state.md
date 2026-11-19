@@ -11,21 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 163,
-      "branch": "auto/163-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-163",
-      "pids": [],
-      "started_at": "2026-11-19T16:11:07Z",
-      "files": [
-        "CMakeLists.txt",
-        "cmake/",
-        "tests/"
-      ],
-      "agent": "a3f59b59b45c5fc1d",
-      "last_commit_at": "2026-11-19T17:32:37+00:00",
-      "reported": true
-    },
-    {
       "issue": 161,
       "branch": "auto/161-2",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-161",
@@ -87,14 +72,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 163,
-    "step": 1,
-    "pid": 35764,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-163.log",
-    "started_at": "2026-11-19T18:06:17Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -140,3 +118,4 @@ continue.
 - 18:04Z phase 8: #161 attempt 1 incomplete (reports/161-1.md): the crash is Vita3K's render thread running corrupted commands; no guest write found; every setting crashes, solo too; #160 cleared; a read-only diagnostic build passed 4/5 (unexplained). Attempt counted, branch auto/161-1 kept for attempt 2. Gate policy meanwhile: a route ending in exit 2 with this signature is Vita3K's; compare pictures up to the crash and run autopilot's VPK interleaved. Vita3K: 21 crashes in the worker's 26 runs.
 - phase 8: #161 attempt 2 started (auto/161-2): diag1 vs clean interleaved, bisect the diag patch, vglSetVDMBufferSize probe; ~20 runs.
 - 18:06Z phase 8: #163 reported done (reports/163-1.md: colima reverse-sshfs drops ld's chmod; link_exec.sh launcher + regex-checked mutants; ctest 29/29). Gate running: merge, VPK build, title and pause-ws only (the change is inside if(linux32), and the wobble routes crash ~80% in Vita3K while #161 needs the runner). Filed #165 (docs for it).
+- 18:18Z phase 8: merged #163 (ad697c3; host-only by construction, title 10/10 same, pause-ws 3 crashes with #161's signature and identical pictures before them). last_good stays 0525e1f: no route can pass reliably in Vita3K until #161. Vita3K: 3 crashes (pause-ws, cache off).
