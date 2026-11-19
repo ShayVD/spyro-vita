@@ -30,4 +30,4 @@ tools/oracle/bin/
 tools/vita/hw.env
 
 # port-autopilot working files (vita-port-kit playbooks/port-autopilot)
-runtime/
+/runtime/
