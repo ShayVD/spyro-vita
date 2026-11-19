@@ -27,7 +27,7 @@ add_test(NAME gte_inline COMMAND test_gte_inline "${CMAKE_SOURCE_DIR}/logs/gte/g
 
 # The native GTE maths (src/game/gte_native.h, fast_render=2, D80) against
 # gte_inline.h on random states and against the same vectors; the mutant
-# build (one deliberate error) must fail.
+# build (one deliberate error) must fail on that error.
 add_executable(test_gte_native test_gte_native.c ${GTE_OPS_SRCS} ${GTE_REGS_SRCS})
 target_include_directories(test_gte_native PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
 target_link_libraries(test_gte_native PRIVATE psycross_ref m)
@@ -36,13 +36,20 @@ target_link_options(test_gte_native PRIVATE -m32 -no-pie)
 add_test(NAME gte_native COMMAND test_gte_native "${CMAKE_SOURCE_DIR}/logs/gte/gte.bin")
 # NGTE_MUTATE 1: RTPS's screen offset; 2: RTPT's middle depth; 3: GPL's MAC2
 # (D98, the shadows', flame's and particles' commands)
+# Each passes only on its own field's mismatch (spyro_mutant_test).
 foreach(m 1 2 3)
   if(m EQUAL 1)
     set(t test_gte_native_mutant)
     set(n gte_native_mutant)
+    set(field "RTPS SXY2")
+  elseif(m EQUAL 2)
+    set(t test_gte_native_mutant${m})
+    set(n gte_native_mutant${m})
+    set(field "RTPT SZ2")
   else()
     set(t test_gte_native_mutant${m})
     set(n gte_native_mutant${m})
+    set(field "col MAC2")
   endif()
   add_executable(${t} test_gte_native.c ${GTE_OPS_SRCS} ${GTE_REGS_SRCS})
   target_include_directories(${t} PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
@@ -51,7 +58,7 @@ foreach(m 1 2 3)
   target_compile_options(${t} PRIVATE ${SPYRO_HOST_FLAGS})
   target_link_options(${t} PRIVATE -m32 -no-pie)
   add_test(NAME ${n} COMMAND ${t})
-  set_tests_properties(${n} PROPERTIES WILL_FAIL TRUE)
+  spyro_mutant_test(${n} "  ${field}: want [0-9A-F]+ got [0-9A-F]+\n.*test_gte_native: FAILED")
 endforeach()
 
 # libgte's six functions and the register moves (src/game/libgte.c,
@@ -73,7 +80,9 @@ foreach(m 0 1 2)
   target_compile_options(${t} PRIVATE ${SPYRO_HOST_FLAGS})
   target_link_options(${t} PRIVATE -m32 -no-pie)
   add_test(NAME ${n} COMMAND ${t})
-  if(m)
-    set_tests_properties(${n} PROPERTIES WILL_FAIL TRUE)
+  if(m EQUAL 1)
+    spyro_mutant_test(${n} "  MulMatrix0?: CP2C 31 want [0-9A-F]+ got [0-9A-F]+\n.*test_libgte: FAILED")
+  elseif(m EQUAL 2)
+    spyro_mutant_test(${n} "  MTC2: CP2D 31 want [0-9A-F]+ got [0-9A-F]+\n.*test_libgte: FAILED")
   endif()
 endforeach()

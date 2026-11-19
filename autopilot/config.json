@@ -24,6 +24,7 @@
       "name": "title",
       "timeout": 300,
       "config": [
+        "vdm_ring=1024",
         "shot=300,900,1500,2100,2640",
         "shot_hd=1",
         "frames=2700"
@@ -34,6 +35,7 @@
       "name": "pause-ws",
       "timeout": 1200,
       "config": [
+        "vdm_ring=1024",
         "widescreen=1",
         "shot_every=100",
         "frames=9100"
@@ -44,6 +46,7 @@
       "name": "pause-ws-wobble",
       "timeout": 1200,
       "config": [
+        "vdm_ring=1024",
         "widescreen=1",
         "persp=1",
         "subpixel=1",
@@ -56,6 +59,7 @@
       "name": "wobble60",
       "timeout": 1200,
       "config": [
+        "vdm_ring=1024",
         "config_version=3",
         "widescreen=1",
         "interp=1",
