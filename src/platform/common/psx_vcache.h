@@ -110,6 +110,25 @@ void psx_vcache_pres_detach(void);
 void psx_vcache_pres_end(void);
 const VCacheVert *psx_vcache_pres_side(void);
 
+/* What the cache's work cost (issue #159), never reset, beside vcache.c's
+ * work counters (g_vcache_work: projections, polygons, vertices, misses):
+ * g_vcache_cost the game thread's, g_vcache_pres_cost the presenter's
+ * thread's (#162), one writer each. Counts that don't depend on timing:
+ * float divisions, the table's slots probed, and the 32-byte lines of the
+ * table touched (a model: the lines the accesses fall in), for the records
+ * (projections) and the lookups (polygon vertices). psx_vcache_stats_sum()
+ * logs them ("vcache cost" lines) since its last call. */
+enum {
+  VCC_REC_DIV,
+  VCC_REC_PROBES,
+  VCC_REC_LINES,
+  VCC_LOOK_DIV,
+  VCC_LOOK_PROBES,
+  VCC_LOOK_LINES,
+  VCC_N
+};
+extern unsigned g_vcache_cost[VCC_N], g_vcache_pres_cost[VCC_N];
+
 /* Counters since the last psx_vcache_stats_reset(), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
@@ -131,7 +150,8 @@ typedef struct {
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
-/* the two kinds' counters added (peak: the larger) */
+/* the two kinds' counters added (peak: the larger); also logs the cost
+ * line (above) since the last call: both reports call it once a report */
 void psx_vcache_stats_sum(VCacheStats *out);
 
 #ifdef __cplusplus
