@@ -349,18 +349,34 @@ static void present_report(void) {
 
 static int s_vcache;
 
-static void vcache_report(void) {
-  const VCacheStats *s = &g_vcache_stats;
+static void vcache_line(const char *what, const VCacheStats *s) {
   unsigned f = s->frames ? s->frames : 1;
-  if (!s_vcache)
-    return;
-  host_log("vcache: %u frames; per frame: %u vertices projected (peak %u entries), "
+  host_log("vcache%s: %u frames; per frame: %u vertices projected (peak %u entries), "
            "%u invalid, %u ambiguous, %u not recorded; polygons %u, all vertices found %u (%.1f%%); "
            "vertices found %.1f%% (not found: no entry %u, invalid %u, ambiguous %u per frame)",
-           s->frames, s->records / f, s->peak, s->invalid / f, s->ambiguous / f, s->full / f,
-           s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
+           what, s->frames, s->records / f, s->peak, s->invalid / f, s->ambiguous / f,
+           s->full / f, s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
            s->verts ? 100.0 * s->hits / s->verts : 0.0, s->miss_none / f, s->miss_invalid / f,
            s->miss_ambiguous / f);
+}
+
+/* every frame (the line tools/native_draw_ab.sh reads), then the logic
+ * draw's and the presenter's apart (#158): "found in the other's" counts the
+ * vertices found in an entry the other kind of frame's projections made */
+static void vcache_report(void) {
+  VCacheStats all;
+  int k;
+  if (!s_vcache)
+    return;
+  psx_vcache_stats_sum(&all);
+  vcache_line("", &all);
+  for (k = 0; k < 2; k++) {
+    const VCacheStats *s = &g_vcache_stats[k];
+    vcache_line(k == VC_LOGIC ? " logic" : " presenter", s);
+    host_log("vcache %s: vertices found in the other's entries %u (%.2f%% of its vertices)",
+             k == VC_LOGIC ? "logic" : "presenter", s->other,
+             s->verts ? 100.0 * s->other / s->verts : 0.0);
+  }
   host_log_flush();
 }
 
@@ -725,6 +741,12 @@ int main(int argc, char **argv) {
   if (g_nd_dcheck && !g_nd_direct_ok) {
     host_log("--nd-direct-check: not with --vcache, --native-draw-check or "
              "--native-draw-parse-check");
+    return 1;
+  }
+  /* the vertex cache is the game thread's, and the presenter's frame in it
+   * ends at its DrawOTag (#158): the presenter must run inline */
+  if (s_vcache && g_pres_check_thread) {
+    host_log("--vcache: not with --pres-check-thread or --pres-check-late");
     return 1;
   }
   if ((g_nd_check || g_nd_pcheck) && !g_walk_ref_built) {

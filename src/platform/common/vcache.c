@@ -84,6 +84,7 @@ typedef struct {
   uint32_t gen; /* frame; an entry from another frame is empty */
   uint8_t state, n;
   uint8_t multi; /* candidates more than a pixel apart: different points */
+  uint8_t src;   /* the kind of frame whose projection made it (VC_LOGIC, VC_PRES) */
   Cand c[VC_CANDS];
 } Entry;
 
@@ -98,9 +99,21 @@ void psx_vcache_set_base(const void *vertex_buffer) { s_base = (const GrVertex *
 static uint32_t s_gen = 1;
 static unsigned s_count; /* entries this frame */
 
-VCacheStats g_vcache_stats;
+VCacheStats g_vcache_stats[2];
+static int s_pres; /* the presenter's frame: its DrawOTag hasn't returned (psx_vcache_pres_begin) */
+static int s_kind; /* the kind of frame recording (the hook's) */
 
-void psx_vcache_stats_reset(void) { memset(&g_vcache_stats, 0, sizeof g_vcache_stats); }
+void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_stats); }
+
+void psx_vcache_stats_sum(VCacheStats *out) {
+  const unsigned *a = (const unsigned *)&g_vcache_stats[0], *b = (const unsigned *)&g_vcache_stats[1];
+  unsigned *o = (unsigned *)out;
+  size_t i;
+  for (i = 0; i < sizeof *out / sizeof(unsigned); i++)
+    o[i] = a[i] + b[i];
+  out->peak = g_vcache_stats[0].peak > g_vcache_stats[1].peak ? g_vcache_stats[0].peak
+                                                               : g_vcache_stats[1].peak;
+}
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
 
@@ -118,6 +131,7 @@ static Entry *find(uint32_t key, int add) {
       e->state = 0;
       e->n = 0;
       e->multi = 0;
+      e->src = (uint8_t)s_kind;
       s_count++;
       return e;
     }
@@ -173,20 +187,20 @@ static void record(uint32_t key, int state, float dx, float dy, float w, float w
   Entry *e = find(key, 1);
   int16_t fx = fix8(dx), fy = fix8(dy);
   if (!e) {
-    g_vcache_stats.full++;
+    g_vcache_stats[s_kind].full++;
     return;
   }
   if (e->state == 0) {
     e->state = state;
     if (state == E_INVALID) {
-      g_vcache_stats.invalid++;
+      g_vcache_stats[s_kind].invalid++;
       return;
     }
   } else if (e->state != state || state != E_VALID) {
     /* a clamped projection and another one under the same key: the prims
      * that use it can't be told apart */
     if (e->state != E_AMBIGUOUS && !(e->state == E_INVALID && state == E_INVALID))
-      g_vcache_stats.ambiguous++;
+      g_vcache_stats[s_kind].ambiguous++;
     if (!(e->state == E_INVALID && state == E_INVALID))
       e->state = E_AMBIGUOUS;
     return;
@@ -195,7 +209,7 @@ static void record(uint32_t key, int state, float dx, float dy, float w, float w
    * several polygons), the same point at another scale, or a different
    * point on the same pixel. Each is a candidate; each polygon picks. */
   if (add_cand(e, fx, fy, w) || (w_alt > 0 && add_cand(e, fx, fy, w_alt))) {
-    g_vcache_stats.ambiguous++;
+    g_vcache_stats[s_kind].ambiguous++;
     e->state = E_AMBIGUOUS;
   }
 }
@@ -215,7 +229,7 @@ static void rtp_point(const int *proj, int vx, int vy, int vz, uint32_t key, int
   int64_t mx, my, mz;
   float x, y, z, r, iz, isz, ox, oy, ex, ey, w_alt = 0;
 
-  g_vcache_stats.records++;
+  g_vcache_stats[s_kind].records++;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
@@ -279,9 +293,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   uint32_t ref[4], persp = VREF_PERSP;
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
   float best = 4.0f; /* a polygon's depths are never 4x apart */
+  VCacheStats *const st = &g_vcache_stats[s_pres];
 
-  g_vcache_stats.polys++;
-  g_vcache_stats.verts += n;
+  st->polys++;
+  st->verts += n;
   if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
     for (i = 0; i < n; i++) {
       uint32_t r = VREF_POLY;
@@ -296,15 +311,17 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     ref[i] = VREF_POLY;
     if (e[i]) {
       ref[i] |= (uint32_t)(f - (s_rtab ? s_rtab : s_tab)) + 1;
-      g_vcache_stats.hits++;
+      st->hits++;
+      if (f->src != s_pres)
+        st->other++;
     } else {
       persp = 0;
       if (!f)
-        g_vcache_stats.miss_none++;
+        st->miss_none++;
       else if (f->state == E_INVALID)
-        g_vcache_stats.miss_invalid++;
+        st->miss_invalid++;
       else
-        g_vcache_stats.miss_ambiguous++;
+        st->miss_ambiguous++;
     }
   }
   /* each candidate of the first vertex against the closest of every
@@ -334,7 +351,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   if (best_c < 0)
     persp = 0;
   if (persp)
-    g_vcache_stats.persp++;
+    st->persp++;
   for (i = 0; i < n; i++) {
     uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
     if (e[i] && e[i]->multi)
@@ -360,15 +377,19 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
+  } else if (s_base) {
+    st->side_lost += n;
   }
 }
 
 static int s_ot_done; /* psx_vcache_enable: mode != 0 */
 
 static void done_hook(void) {
-  g_vcache_stats.frames++;
-  if (s_count > g_vcache_stats.peak)
-    g_vcache_stats.peak = s_count;
+  VCacheStats *const st = &g_vcache_stats[s_pres];
+  s_pres = 0;
+  st->frames++;
+  if (s_count > st->peak)
+    st->peak = s_count;
   s_count = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
     s_tab = s_tab == s_tab0 ? s_tab1 : s_tab0;
@@ -421,3 +442,5 @@ void psx_vcache_ot_done(void) {
   if (s_ot_done)
     done_hook();
 }
+
+void psx_vcache_pres_begin(int walks) { s_pres = s_ot_done && walks; }

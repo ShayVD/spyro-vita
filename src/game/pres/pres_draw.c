@@ -14,6 +14,8 @@
 #endif
 #include "psx_arena.h"
 #include "psx_clock.h"
+#include "psx_gpu.h" /* g_GPUDisabledState */
+#include "psx_vcache.h"
 #include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -227,6 +229,9 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   g_pres_narrow = wide;
   g_pres_rtp_hook = NULL;
   g_pres_rtp_value_hook = NULL;
+  /* the vertex cache: the presenter's frame (present.c's DrawOTag walks
+   * and ends it unless the GPU is disabled) */
+  psx_vcache_pres_begin(!g_GPUDisabledState);
   records_begin();
   lod_begin();
 }

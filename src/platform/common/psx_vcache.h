@@ -41,8 +41,8 @@ void psx_vcache_enable(int mode);
 extern int psx_vcache_polys;
 void psx_vcache_poly(void *vertex, short *const *xy, int n);
 
-/* DrawOTag (libgpu.c) as it returns, drawn or skipped: the next frame's
- * projections begin (nothing with mode 0). */
+/* DrawOTag (libgpu.c, and the presenter's, present.c) as it returns, drawn
+ * or skipped: the next frame's projections begin (nothing with mode 0). */
 void psx_vcache_ot_done(void);
 
 /* The vertex a reference names (1), or 0 if none; valid until the next
@@ -71,7 +71,16 @@ int psx_vcache_double(void); /* 0 = ok */
 void psx_vcache_frame_take(PsxVcacheFrame *f);
 void psx_vcache_frame_use(const PsxVcacheFrame *f);
 
-/* Counters since the last psx_vcache_stats_reset(). */
+/* The presenter's frame (pres_draw.c, D129: every frame the logic draw
+ * doesn't draw): from here to its DrawOTag's psx_vcache_ot_done, its
+ * polygons are the presenter's. walks: 0 when its DrawOTag won't walk or
+ * call the done hook (the GPU disabled). Inline on the game thread only
+ * (the cache is the game thread's; D126). */
+void psx_vcache_pres_begin(int walks);
+
+/* Counters since the last psx_vcache_stats_reset(), by kind of frame:
+ * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
+enum { VC_LOGIC = 0, VC_PRES = 1 };
 typedef struct {
   unsigned frames;    /* DrawOTag calls */
   unsigned records;   /* vertices projected */
@@ -84,9 +93,14 @@ typedef struct {
   unsigned verts;     /* polygon vertices looked up */
   unsigned hits;      /* ... found */
   unsigned miss_none, miss_invalid, miss_ambiguous; /* ... not found, and why */
+  unsigned other;     /* hits on an entry the other kind of frame's projections made */
+  unsigned side_lost; /* polygon vertices whose answer couldn't go to g_vcache_side (not in
+                         a known vertex buffer): the renderer reads another walk's there */
 } VCacheStats;
-extern VCacheStats g_vcache_stats;
+extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
+/* the two kinds' counters added (peak: the larger) */
+void psx_vcache_stats_sum(VCacheStats *out);
 
 #ifdef __cplusplus
 }
