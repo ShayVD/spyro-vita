@@ -3341,15 +3341,38 @@ int __wrap_sceAppMgrGetBudgetInfo(void *info) {
   return (int)0x80800001; /* any error: "not a system app" */
 }
 
+/* config.txt vdm_ring=KB (D132): GXM's VDM ring for vitaGL's immediate
+ * context, in KB (0 or no line: vitaGL's default, SCE_GXM's 128 KB). Read
+ * here, not with main.c's options, since it must be set before vglInit*. */
+static unsigned vdm_ring_kb(void) {
+  char line[96];
+  unsigned kb = 0;
+  FILE *f = fopen(VITA_DATA_DIR "/config.txt", "r");
+  if (!f)
+    return 0;
+  while (fgets(line, sizeof line, f))
+    if (!strncmp(line, "vdm_ring=", 9))
+      kb = (unsigned)strtoul(line + 9, NULL, 10);
+  fclose(f);
+  if (kb > 16384)
+    kb = 16384;
+  return kb & ~3u; /* whole 4 KB pages */
+}
+
 int gl_gpu_init(void) {
   SceKernelFreeMemorySizeInfo mem = {.size = sizeof mem};
   int present_only = 0;
+  unsigned vdm_kb = vdm_ring_kb();
   uint64_t t0;
   sceKernelGetFreeMemorySize(&mem);
   vita_log("gpu: free memory: user %u KB, CDRAM %u KB, phycont %u KB",
            (unsigned)(mem.size_user / 1024), (unsigned)(mem.size_cdram / 1024),
            (unsigned)(mem.size_phycont / 1024));
   vglSetupRuntimeShaderCompiler(SHARK_OPT_DEFAULT, 0, 0, 0); /* exact float maths */
+  if (vdm_kb) {
+    vglSetVDMBufferSize(vdm_kb << 10);
+    vita_log("gpu: VDM ring %u KB (vdm_ring=, D132)", vdm_kb);
+  }
   /* vitaGL's pools: all free RAM but 32 MB (newlib's heap is already
    * reserved), CDRAM and phycont. The installed vitaGL's return value is not
    * success: it is 1 when the resolution had to be clamped to the display's
