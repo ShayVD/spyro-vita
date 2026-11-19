@@ -68,6 +68,9 @@ extern NdCursor g_pres_nd;
 extern NdSide g_pres_nd_side[ND_SIDE_N];
 extern unsigned g_pres_nd_fallback;
 extern int g_pres_narrow;
+/* the vertex cache's hooks on the presenter's projections (pres_draw.c
+ * sets them for its frame, #158: the value hook from psx_vcache_pres_begin,
+ * the register-file one NULL since 7d2; render_ctx_check NULL) */
 extern void (*g_pres_rtp_hook)(int idx, int sf);
 extern void (*g_pres_rtp_value_hook)(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3);
 extern int g_pres_lod_k, g_pres_lod_pass, g_pres_lod_stats;

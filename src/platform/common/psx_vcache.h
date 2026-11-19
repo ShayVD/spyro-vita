@@ -46,15 +46,18 @@ void psx_vcache_poly(void *vertex, short *const *xy, int n);
 void psx_vcache_ot_done(void);
 
 /* The vertex a reference names (1), or 0 if none; valid until the next
- * DrawOTag returns. */
+ * DrawOTag returns. The logic draw's frames only (no caller since D43). */
 int psx_vcache_get(uint32_t ref, VCacheVert *out);
 
-/* PsyX's vertex buffer (the renderer's GR_UpdateVertexBuffer gets it). Once
- * known, each polygon's answer is also written to g_vcache_side at the
- * same index as its vertices, after PsyX's quad split: dx, dy (0 where the
- * position stays integer) and w (1 unless the whole polygon was found), so
- * the renderer reads them in order instead of looking each one up (D43).
- * Valid for the vertices whose reference has VREF_POLY. */
+/* A walk's vertex buffer, as the renderer's GR_UpdateVertexBuffer gets it.
+ * Once known, each polygon's answer is also written to g_vcache_side at the
+ * same index as its vertices in its own walk's buffer, after the quad
+ * split: dx, dy (0 where the position stays integer) and w (1 unless the
+ * whole polygon was found), so the renderer reads them in order instead of
+ * looking each one up (D43). Valid for the vertices whose reference has
+ * VREF_POLY. Up to four buffers are known (the logic draw's walk, the
+ * presenter's; #158); for one seen the first time g_vcache_side is reset
+ * to "not found", since its polygons couldn't be written. */
 void psx_vcache_set_base(const void *vertex_buffer);
 extern VCacheVert g_vcache_side[];
 
@@ -72,11 +75,17 @@ void psx_vcache_frame_take(PsxVcacheFrame *f);
 void psx_vcache_frame_use(const PsxVcacheFrame *f);
 
 /* The presenter's frame (pres_draw.c, D129: every frame the logic draw
- * doesn't draw): from here to its DrawOTag's psx_vcache_ot_done, its
- * polygons are the presenter's. walks: 0 when its DrawOTag won't walk or
- * call the done hook (the GPU disabled). Inline on the game thread only
- * (the cache is the game thread's; D126). */
-void psx_vcache_pres_begin(int walks);
+ * doesn't draw; #158): from here to its DrawOTag's psx_vcache_ot_done, the
+ * presenter's projections record into a table of its own and its polygons
+ * are looked up there, so neither kind of frame finds the other's. walks:
+ * 0 when its DrawOTag won't walk or call the done hook (the GPU disabled).
+ * Returns the presenter's projection hook (render_ctx.h
+ * g_pres_rtp_value_hook), NULL when the cache doesn't record. Inline on
+ * the game thread only, after the game's walk is joined (the cache is the
+ * game thread's; D126). */
+typedef void (*PsxVcacheValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy,
+                                   int sz3);
+PsxVcacheValueHook psx_vcache_pres_begin(int walks);
 
 /* Counters since the last psx_vcache_stats_reset(), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
