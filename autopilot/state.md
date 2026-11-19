@@ -27,6 +27,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a921d4c46ae9921de",
       "last_commit_at": "2026-11-19T19:51:49+00:00"
+    },
+    {
+      "issue": 159,
+      "branch": "auto/159-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-159",
+      "pids": [],
+      "started_at": "2026-11-19T21:21:51Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/gte_ops.c",
+        "src/game/gte_native.h",
+        "docs/decisions-2.md"
+      ],
+      "agent": "a8691855df65aa8f1"
     }
   ],
   "last_good": "a86cab56aaea9741264a16e1502d826ee5313bbc",
@@ -140,3 +155,4 @@ continue.
 - phase 8: worker on #167 (pad scripts, from auto/164-1).
 - 21:12Z phase 8: #162 reported done (reports/162-1.md): presenter on core 1 with the cache on, pictures identical, game thread's vc.* -50% on wobble60. Gate running. #167's worker stopped on the API weekly limit (resets 21:00 Dublin); its commits are on auto/167-1, to resume by message.
 - 21:21Z phase 8: merged #162 (every route first try, pictures identical, wobble60 vc.* -50% on the game thread). New baseline = the gate's runs; last_good moved. Vita3K: 0 crashes.
+- phase 8: worker on #159 (cheaper vertex cache); #167's worker resumed after the API limit.
