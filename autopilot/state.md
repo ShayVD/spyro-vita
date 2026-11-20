@@ -56,6 +56,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Fewer program switches (wobble60 95/frame, all real after #169's dedup)",
       "expected": "needs draw reordering, which changes blending order: not byte-identical; not filed",
       "issue": 0
+    },
+    {
+      "title": "README known issues: the wobble options' cost at 60 fps (after the hardware session)",
+      "expected": "one line once AP1-AP3 are measured; the README already lists both options and their defaults",
+      "issue": 0
     }
   ],
   "owner_decisions": [
@@ -88,14 +93,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 6,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
-    "base_commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
-    "started_at": "2026-11-20T02:20:35Z",
-    "filed": 5,
-    "investigated": true
+    "n": 7,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
+    "base_commit": "ddbb408760d919b658e44525376bd6946c3b7d80",
+    "started_at": "2026-11-20T03:13:45Z",
+    "filed": 0,
+    "investigated": false
   },
-  "rounds_without_gain": 0,
+  "rounds_without_gain": 1,
   "hardware_pending": null,
   "job": null,
   "batch": null
@@ -174,3 +179,4 @@ continue.
 - 02:49Z phase 9: merged #173 (host ./save warning; host only). Filed #174 (host_checks.sh demo run without --save).
 - 02:50Z phase 9: merged #172 (all routes first try, pictures identical, older counters same; new counters). New baseline from its gate; last_good moved. Worker on #174.
 - 03:12Z phase 9: merged #174 (host_checks.sh demo gets its own --save). Filed #175 (needs-owner: colima's sshfs mount loses an execute bit after link_exec.sh's check). No workers running.
+- 03:13Z phase 9: round 6 ended (polish merges #170-#174, no counter better: rounds_without_gain 1 of 3). README checked: it lists PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES with defaults; the 60 fps cost line waits for the hardware session. Round 7 started. Waiting on the owner: hardware session, #175, merging autopilot into main.
