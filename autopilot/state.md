@@ -14,7 +14,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 178,
       "branch": "auto/178-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-178",
-      "pids": [],
+      "pids": [
+        44637
+      ],
       "started_at": "2026-11-20T11:49:41Z",
       "files": [
         "src/platform/common/vcache.c",
@@ -25,7 +27,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/vita_pc.h",
         "autopilot/config.json"
       ],
-      "agent": "afe58dc305ed6a974"
+      "agent": "afe58dc305ed6a974",
+      "last_commit_at": "2026-11-20T12:13:11+00:00"
     }
   ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
@@ -228,3 +231,4 @@ continue.
 - 2026-11-20T11:32Z phase 8: tick - #177 working (no commit yet, running Vita3K routes), baseline re-run queued behind it on the Vita3K lock; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T11:50Z phase 8: #177 reported (code done; gate waits for the re-baseline job), worker #178 started, filed the docs/bench follow-up; Vita3K: 0
 - 2026-11-20T12:00Z phase 8: merged #177 (D173; 5 routes the same against base-3ba4fd2); re-baseline done, pinned routes deterministic (91/91 repeat); worker #178 running; Vita3K: 0
+- 2026-11-20T12:26Z phase 8: tick - #178 committed (clamped vertices drawn at their exact position), running its checks; one worker (other sessions' containers); Vita3K: 0
