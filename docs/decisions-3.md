@@ -486,3 +486,33 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `owner60` (6,600–9,000) against 47e108a: sky 0.97 → 0.53 ms a vblank, the other parts 4.40 → 4.53, sky main 0.46. The main draw is about 87% of the sky.
   - To compare with older logs, old ≈ new `sky` + `sky main`.
 - **Left:** the host's `src/platform/linux32/prof_draw.c` has the same double count.
+
+### D182. With the fix on, the hand renderers hand the cache the vertices they make in screen space (#189)
+
+- **Why:** after D176 the remaining no-entry vertices came from renderers that move or make a vertex after the projection. Tagged on host route A, these were:
+  - moby shadows' nudged corners (33k);
+  - the sky through portals and the portal face (28k);
+  - glow rims (18k);
+  - the world's split midpoints (0.7k).
+- **What:**
+  - **The hook:** `PSX_VC_DERIVE(how, sxy, a, b, p, q)` calls `psx_vc_derive`, which calls `g_psyxRtpDeriveHook`. The hook is NULL unless the cache records. The renderers call a direct function, because `tests/pres/link_check.py` bans indirect calls in presenter code. The presenter's copy is `g_pres_rtp_derive_hook` (`render_ctx_names.h`), set with its value hook by `psx_vcache_pres_begin`.
+  - **Storage:** each table keeps up to 1,024 hand-overs a frame. They're used only for a vertex with no entry, and only after D176's derivation. A key placed differently by two hand-overs is dropped.
+  - **Four forms:**
+    - **alias:** a shadow's nudged corner takes its source's answer;
+    - **offset:** a glow rim is the centre's exact place plus the screen offset, at the centre's depth;
+    - **the 3D point at t:** `SplitMid` (t = ½) and `ClipEdge` give s = ((1−t)·sa·za + t·sb·zb)/((1−t)·za + t·zb), w = (1−t)·za + t·zb;
+    - **a 2D cut:** the sky through portals and the portal face are cut where the exact side crosses the portal edge's line. Depth is 1/w along the side, or the place only (flat F3).
+  - **Sources:** a source is a valid entry. A multi-point key gives its pixel centre and all its depths.
+- **Checked:**
+  - **Same drawing:** every polygon found before keeps its drawing. A host FNV comparison in one binary showed 0 changed and 0 now affine (route A: 6.09 M polygons, 28,484 newly found; route B: 8.96 M, 3,847).
+  - **Host checks:** `--fast-render-check` and `--native-draw-check` give 0 differ on both routes, with `--vcache` so the hooks run.
+  - **Builds and gate:** native build, `noassets`, gate PASS.
+  - **Replay shots:** the same on all five routes against `base-cc65182`.
+  - **`owner60`, 6,900–9,000:** no-entry 102,643 → 8,763; polygons found whole 98.10 → 99.62%; `vc.misses` −93.8% (−92.5% on `wobble60`); `gl.draws` the same; `vc.probe` and `vc.lines` +3–5%.
+  - **GPU picture:** `CAPTURE=1` grabs at 6,900, 7,200, 7,800 and 8,400 change only on shadows, glows and the portal edge, 0.03–0.69% of pixels, with no cracks. At 7,200 the grey sliver and green speck at the portal's edge are gone.
+- **Left:**
+  - 2D polygons (HUD, title, fade) stay as they are, by design.
+  - The portal face's 2D screen corners.
+  - Hand-overs whose source is itself ambiguous or invalid (about 370 on route A).
+  - Not run: the oracle replay (no PCSX-Redux here). `docs/translation-log.md` rows for the five renderers.
+- **Found on the way:** ctest `render_ctx_link` has failed since #180 (D175): `lod_pres.c` names `g_tick60_mode` and `tick60_built`. The gate's `host_tests` command is still a placeholder, so the gate didn't run ctest (#194).
