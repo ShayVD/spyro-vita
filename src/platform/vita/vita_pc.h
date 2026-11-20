@@ -29,7 +29,14 @@ enum {
   VPC_VC_VERTS,      /* ... their vertices */
   VPC_VC_MISSES,     /* ... of those not found */
   VPC_PRES_FRAMES,   /* the presenter's in-between frames (60 fps) */
-  VPC_COUNT
+  VPC_VC_DIV,        /* vertex cache's cost (D134), the game thread's: float divisions, records and
+                        lookups added */
+  VPC_VC_PROBE,      /* ... the table's slots probed */
+  VPC_VC_LINES,      /* ... the table's 32-byte lines touched (a model) */
+  VPC_VCP_DIV,       /* the same three, the presenter's thread's (D133) */
+  VPC_VCP_PROBE,
+  VPC_VCP_LINES,
+  VPC_COUNT          /* at most VPK_PC_MAX (32) */
 };
 extern int g_vpc[VPC_COUNT];
 
