@@ -231,3 +231,4 @@ continue.
 - 2026-11-20T12:52Z phase 8: tick - #178 captures: base done, #178's running; #180 working (no commit yet); Vita3K: 0
 - 2026-11-20T12:54Z phase 8: merged #178 (D174; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
 - 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
+- 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0
