@@ -33,7 +33,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/vita_pc.h",
         "docs/decisions-2.md"
       ],
-      "agent": "a8ec7ff9c8c396114"
+      "agent": "a8ec7ff9c8c396114",
+      "reported": true
     },
     {
       "issue": 173,
@@ -123,7 +124,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 172,
+    "step": 1,
+    "pid": 15291,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-172-1.log",
+    "started_at": "2026-11-20T02:39:48Z"
+  },
   "batch": null
 }
 ```
@@ -195,3 +203,4 @@ continue.
 - 02:20Z phase 8 -> 9: round 5 investigated ot.packets (wobble60 463 = two pictures a tick x 232, the cost of 60 fps itself): nothing filed, third round without a gain: phase 8's exit. Phase 9 started (round 6): filed #170 (hardware run configs for the six pending measurements), #171 (stale comments), #172 (cache cost counters into vpk-perfcount), #173 (host ./save warning).
 - phase 9: workers on #170, #171, #172, #173.
 - 02:36Z phase 9: merged #170 (hardware run configs AP1-AP6b, parsed against hw_mock; no Vita touched). The hardware session is ready when the owner says yes.
+- 02:39Z phase 9: #172 reported done (reports/172-1.md): six vcache cost counters in vpk-perfcount, pictures and older counters unchanged. Gate running.
