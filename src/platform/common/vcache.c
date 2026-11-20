@@ -88,6 +88,18 @@
  * own counters and the presenter's VCacheStats; the logic draw never
  * reads the flag that says a presenter's frame is open.
  *
+ * Vertices the renderer moved after projecting them (#183). The world
+ * renderer's subdivision grids move their inner points on screen
+ * (env_hand.c GridCorrect, the PS1's blend toward its affine look), so the
+ * key such a point is drawn under was never recorded, and every quad using
+ * it fell back to the PS1's drawing: they were most of the vertices with
+ * no entry. A quad with one such vertex finds it again (derive): the grids
+ * are projected in order, so the frame's order of projections (each
+ * table's log) names the projection it was, and it is drawn there with
+ * that depth, the place kept per key for the frame. The renderers' other
+ * screen-space vertices (split midpoints, shadows' nudged corners, glows'
+ * rims, the sky's clipped corners) and 2D polygons are left as they were.
+ *
  * The cost (#159; D89 measured the cache at ~4.5 ms a vblank of the game
  * thread on hardware): every answer is as before, with less work. A record
  * finds its entry before the maths, and an ambiguous key needs none. Depth
@@ -120,6 +132,9 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 #define VC_FAR 1024 /* exact positions out of a candidate's int16 range, per frame (#178) */
 #define FAR_MARK INT16_MIN /* a candidate's dy: dx is the far array's index (fix8 never gives it) */
 #define VREF_CAND_SHIFT 24 /* which of the entry's candidates (VREF bits 24-25) */
+#define VC_DER 512   /* keys a frame's polygons derived (#183) */
+#define VC_LOG 8192  /* projections a frame in the order they came (#183) */
+#define VC_NOSEQ 0xFFFFu
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
 
@@ -148,9 +163,30 @@ typedef struct {
   Cand c[VC_CANDS];
 } Entry;
 
+/* A key with no entry whose position a polygon derived (#183): the same
+ * for every polygon of the frame that uses it, so they don't crack apart.
+ * dx, dy: pixels from the key's pixel centre; slot: the entry + 1 of the
+ * projection it is, or 0 (kept at its key, the polygon's plane depth). */
+typedef struct {
+  uint32_t key, gen;
+  float dx, dy;
+  uint32_t slot;
+} Der;
+
 typedef struct {
   Entry s[VC_SIZE];
   int stale; /* holds frames from before its count came round: cleared before it records */
+  /* the keys the walk of this table's frame derived (#183), written only
+   * by that walk */
+  Der der[VC_DER];
+  /* The frame's projections in the order they came (#183): each one's
+   * entry (log, nlog of them), written as they're recorded. The walk's
+   * first derivation of the frame (idx_gen) indexes them: each entry's
+   * last (last, VC_NOSEQ: none) and the one before it under the same
+   * entry (prev). */
+  unsigned nlog;
+  uint32_t idx_gen;
+  uint16_t log[VC_LOG], prev[VC_LOG], last[VC_SIZE];
   /* the exact positions (pixels from the pixel centre) of this table's
    * frame's candidates that don't fit an int16 (#178): only indexed by the
    * frame's own entries, so never cleared */
@@ -181,6 +217,7 @@ static Table *table_new(void) {
 
 static void table_clear(Table *t) {
   memset(t->s, 0, sizeof t->s);
+  memset(t->der, 0, sizeof t->der);
   t->stale = 0;
 }
 
@@ -264,6 +301,11 @@ void psx_vcache_stats_sum(VCacheStats *out) {
   out->peak = g_vcache_stats[0].peak > g_vcache_stats[1].peak ? g_vcache_stats[0].peak
                                                                : g_vcache_stats[1].peak;
   cost_line();
+  /* #183: the quads' vertices with no entry found again from their polygon */
+  PsyX_Log("vcache derived: %u vertices with no entry drawn with their polygon's depth (%u at the "
+           "projection recorded before the renderer moved them, %u at their key); %u left with no "
+           "entry",
+           out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none);
 }
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
@@ -454,6 +496,11 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   }
   s = &rec->tab->s[i];
   prev = T_STATE(s->tag);
+  if (rec->tab->nlog < VC_LOG) { /* its place in the frame's order (#183) */
+    const unsigned q = rec->tab->nlog++;
+    rec->tab->log[q] = (uint16_t)i;
+    cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
+  }
   if (prev == E_AMBIGUOUS) {
     cost[VCC_REC_LINES] += t.n;
     return;
@@ -582,18 +629,269 @@ static inline int under4(float a, float b) { return a > b ? a < b * 4.0f : b < a
 /* ratio(a, b) < 3.999 or so: the quotient, however rounded, is under 4 */
 static inline int under3999(float a, float b) { return a > b ? a < b * 3.999f : b < a * 3.999f; }
 
+/* The depth choice for the polygon's vertices idx[0..m-1] (all found):
+ * each candidate of the first against the closest of every other's; the
+ * choice whose worst depth ratio is smallest. Candidates of one point at
+ * other scales differ by 4 or 16 times, different points on one pixel by
+ * their distance: a polygon's real depths are much closer. 1 when a choice
+ * under 4 was found (pick[] set for those vertices), else 0.
+ *
+ * The same choice with fewer divisions (#159). A ratio of 4 or more (4b <=
+ * a, exact: b times 4 isn't rounded) can't be a polygon's: if it were the
+ * closest, the worst would be at least 4 and the choice not taken, so such
+ * candidates are passed over without dividing. With one candidate for
+ * the first vertex, only whether each other vertex's closest ratio is
+ * under 4 matters; a vertex with one candidate left is then its own
+ * closest, and it's under 4 without dividing when it's under 3.999 (how
+ * the quotient would round can't reach 4). Every other ratio is divided
+ * as before, so the choice and the depths are the same. */
+static int choose(const Cand *const *e, const unsigned *en, const int *idx, int m, unsigned *cost,
+                  int *pick) {
+  const int f = idx[0];
+  int c, i, j, best_c = -1, try_pick[4] = {0, 0, 0, 0};
+  float best = 4.0f; /* a polygon's depths are never 4x apart */
+  for (c = 0; c < (int)en[f]; c++) {
+    const float w0 = e[f][c].w;
+    float worst = 1;
+    int ok = 1;
+    try_pick[f] = c;
+    for (i = 1; ok && i < m; i++) {
+      const int v = idx[i];
+      float r_best = 1e30f;
+      int left = 0, last = 0;
+      for (j = 0; j < (int)en[v]; j++)
+        if (under4(e[v][j].w, w0)) {
+          left++;
+          last = j;
+        }
+      if (!left) {
+        ok = 0;
+        break;
+      }
+      if (left == 1 && en[f] == 1) {
+        try_pick[v] = last;
+        if (!under3999(e[v][last].w, w0)) {
+          const float r = ratio(e[v][last].w, w0);
+          cost[VCC_LOOK_DIV]++;
+          worst = r > worst ? r : worst;
+        }
+        continue;
+      }
+      for (j = 0; j < (int)en[v]; j++)
+        if (under4(e[v][j].w, w0)) {
+          const float r = ratio(e[v][j].w, w0);
+          cost[VCC_LOOK_DIV]++;
+          if (r < r_best) {
+            r_best = r;
+            try_pick[v] = j;
+          }
+        }
+      worst = r_best > worst ? r_best : worst;
+    }
+    if (ok && worst < best) {
+      best = worst;
+      best_c = c;
+      memcpy(pick, try_pick, sizeof try_pick);
+    }
+  }
+  return best_c >= 0;
+}
+
+/* A quad's vertex with no entry, its three others found (#183). Nearly
+ * all of them are the world renderer's subdivision grids' inner points
+ * (env_hand.c GridCorrect): projected like every other point, then moved
+ * on screen toward the midpoint of two neighbours (the PS1's blend toward
+ * its affine look), so no projection was recorded under the key they end
+ * up with. The vertex is found again from its polygon.
+ *
+ * Its place: the projection recorded before the renderer moved it. The
+ * grids' points are projected one after another in the grid's order (3x3
+ * or 5x5, GridTransform), so with the quad's corners round it (the walk's
+ * order, MakeVertexQuad's 0 1 3 2 of the primitive's), the missing one m,
+ * the one opposite it o and the two beside it a and b, m's place in the
+ * frame's order is a + b - o, as on the grid: a and b are o's neighbours
+ * along the grid, one of them 1 on, the other a row (3 or 5) on. Each
+ * corner's projections are walked (a point shared with a neighbouring grid
+ * was projected once for each); exactly one such place must come out, and
+ * its entry must be valid and a single point, or none is taken. Then the
+ * vertex is drawn there (VREF_CLAMP: even without subpixel, as the quad's
+ * other points are). Not found: it stays at its key.
+ *
+ * The place is decided per key for the frame (Table der): a polygon that
+ * finds nothing takes the place another found, so the polygons sharing
+ * the point don't crack apart (two grids' points moved onto one pixel
+ * each find their own).
+ *
+ * Its depth: the plane's through the other three at that place (1/w is
+ * linear on screen over a plane), or, at the recorded projection, that
+ * projection's own depth at the scale the polygon's others use.
+ *
+ * Returns 1 with the vertex's answer in *out and the others' picks in
+ * pick[]; else 0, the polygon drawn affine as before, *out still holding
+ * the vertex's place (moved when it isn't the key's own). */
+static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
+                  const unsigned *en, int m, unsigned *cost, int *pick, VCacheVert *out,
+                  int *moved, int *snapped) {
+  static const int k_opp[4] = {2, 3, 0, 1};
+  const uint32_t key = (uint16_t)xy[m][0] | (uint32_t)(uint16_t)xy[m][1] << 16;
+  const float kx = xy[m][0] + 0.5f, ky = xy[m][1] + 0.5f;
+  const int o = k_opp[m];
+  int idx[3], ab[2], ni = 0, nab = 0, i, j, have = 0;
+  float sx[4], sy[4], z[4], x, y, w, d, q;
+  uint32_t slot = 0, h, p, slotf[4] = {0, 0, 0, 0};
+  Der *dr = NULL, *hd = NULL;
+  (void)pres;
+  for (i = 0; i < 4; i++)
+    if (i != m) {
+      idx[ni++] = i;
+      if (i != o)
+        ab[nab++] = i;
+      slotf[i] = (uint32_t)(((const char *)e[i] - (const char *)tab->s) / sizeof(Entry));
+    }
+  out->dx = out->dy = 0;
+  out->w = 1;
+  *moved = *snapped = 0;
+  /* the key's place this frame, if a polygon gave it one */
+  h = hash(key) & (VC_DER - 1);
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_DER - 1)) {
+    Der *const t = &tab->der[h];
+    if (t->gen != gen) {
+      dr = t; /* its place, if it gets one */
+      break;
+    }
+    if (t->key == key) {
+      hd = t;
+      have = 1;
+      break;
+    }
+  }
+  {
+    /* the place in the frame's order a + b - o */
+    const uint32_t so0 = slotf[o], sa0 = slotf[ab[0]], sb0 = slotf[ab[1]];
+    unsigned so, sa, sb, no, na, nb, one = VC_NOSEQ;
+    int conflict = 0;
+    if (tab->idx_gen != gen) { /* the frame's order, indexed by entry (once a frame) */
+      unsigned r;
+      for (r = 0; r < tab->nlog; r++)
+        tab->last[tab->log[r]] = VC_NOSEQ;
+      for (r = 0; r < tab->nlog; r++) {
+        tab->prev[r] = tab->last[tab->log[r]];
+        tab->last[tab->log[r]] = (uint16_t)r;
+      }
+      tab->idx_gen = gen;
+      /* a model: the log read twice and prev written in order, an entry's
+       * last word apiece (at most the array) */
+      cost[VCC_LOOK_LINES] += tab->nlog * 6 / 32 + (tab->nlog < 512 ? tab->nlog : 512);
+    }
+    for (so = tab->last[so0], no = 0; so != VC_NOSEQ && no < 8; so = tab->prev[so], no++)
+      for (sa = tab->last[sa0], na = 0; sa != VC_NOSEQ && na < 8; sa = tab->prev[sa], na++) {
+        const unsigned da = sa > so ? sa - so : so - sa;
+        if (da != 1 && da != 3 && da != 5)
+          continue;
+        for (sb = tab->last[sb0], nb = 0; sb != VC_NOSEQ && nb < 8; sb = tab->prev[sb], nb++) {
+          const unsigned db = sb > so ? sb - so : so - sb;
+          unsigned sm;
+          if (!(da == 1 ? db == 3 || db == 5 : db == 1) || sa + sb < so)
+            continue;
+          sm = sa + sb - so;
+          if (sm >= tab->nlog)
+            continue;
+          if (one != VC_NOSEQ && sm != one)
+            conflict = 1; /* two places: none is taken */
+          one = sm;
+        }
+      }
+    if (one != VC_NOSEQ && !conflict) {
+      const uint32_t k2 = tab->log[one], tag = tab->s[k2].tag;
+      if (k2 != so0 && k2 != sa0 && k2 != sb0 && T_STATE(tag) == E_VALID && T_N(tag) &&
+          !(tag & T_MULTI)) {
+        slot = k2 + 1;
+        cand_pos(tab, &tab->s[k2].c[0], &x, &y);
+        out->dx = (short)tab->s[k2].key + 0.5f + x - kx;
+        out->dy = (short)(tab->s[k2].key >> 16) + 0.5f + y - ky;
+      }
+    }
+    if (!slot && have) { /* not found: the place another polygon found */
+      out->dx = hd->dx;
+      out->dy = hd->dy;
+      slot = hd->slot;
+    } else if (slot && dr) { /* for this frame's polygons that find nothing */
+      dr->key = key;
+      dr->gen = gen;
+      dr->dx = out->dx;
+      dr->dy = out->dy;
+      dr->slot = slot;
+    }
+    *moved = out->dx != 0 || out->dy != 0;
+    *snapped = slot != 0;
+  }
+  /* the depth */
+  if (!choose(e, en, idx, 3, cost, pick))
+    return 0;
+  for (i = 0; i < 3; i++) {
+    const int v = idx[i];
+    cand_pos(tab, &e[v][pick[v]], &x, &y);
+    sx[v] = xy[v][0] + 0.5f + x;
+    sy[v] = xy[v][1] + 0.5f + y;
+    z[v] = e[v][pick[v]].w;
+  }
+  x = kx + out->dx;
+  y = ky + out->dy;
+  d = (sx[idx[1]] - sx[idx[0]]) * (sy[idx[2]] - sy[idx[0]]) -
+      (sx[idx[2]] - sx[idx[0]]) * (sy[idx[1]] - sy[idx[0]]);
+  if (!(d > 1e-3f || d < -1e-3f))
+    return 0;
+  {
+    const float q0 = 1 / z[idx[0]], q1 = 1 / z[idx[1]], q2 = 1 / z[idx[2]];
+    q = q0 + ((x - sx[idx[0]]) * ((q1 - q0) * (sy[idx[2]] - sy[idx[0]]) -
+                                  (q2 - q0) * (sy[idx[1]] - sy[idx[0]])) +
+              (y - sy[idx[0]]) * ((q2 - q0) * (sx[idx[1]] - sx[idx[0]]) -
+                                  (q1 - q0) * (sx[idx[2]] - sx[idx[0]]))) /
+                 d;
+    cost[VCC_LOOK_DIV] += 4;
+  }
+  if (!(q > 0))
+    return 0;
+  w = 1 / q;
+  cost[VCC_LOOK_DIV]++;
+  if (slot) { /* the projection's own depth, at the scale the polygon uses */
+    const Entry *const s2 = &tab->s[slot - 1];
+    float bw = 0, br = 2.0f; /* other scales are 4 or 16 times off */
+    for (j = 0; j < (int)T_N(s2->tag); j++) {
+      const float r = ratio(s2->c[j].w, w);
+      cost[VCC_LOOK_DIV]++;
+      if (r <= br) {
+        br = r;
+        bw = s2->c[j].w;
+      }
+    }
+    if (bw > 0)
+      w = bw;
+  }
+  w = flt(w);
+  for (i = 0; i < 3; i++)
+    if (!under4(w, z[idx[i]]))
+      return 0;
+  out->w = w;
+  return 1;
+}
+
 int psx_vcache_polys;
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
+  static const int k_all[4] = {0, 1, 2, 3};
   GrVertex *const vertex = (GrVertex *)vertex_;
   const Cand *e[4];   /* each vertex's candidates, NULL: not found */
   uint32_t et[4];     /* and its slot's tag */
   unsigned en[4];     /* how many */
   uint32_t ref[4], persp = VREF_PERSP;
   const Table *ptab = NULL; /* the table its vertices were looked up in (the same for each) */
-  int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
+  int i, pick[4] = {0, 0, 0, 0};
   int inv = 0, clamp = 0; /* a vertex's key invalid; a clamped vertex found (#178) */
-  float best = 4.0f; /* a polygon's depths are never 4x apart */
+  /* vertices with no entry (#183): the last one, how many; and all not found */
+  int none = -1, nnone = 0, nmiss = 0;
+  int der = 0, der_moved = 0, der_snap = 0; /* the one with no entry derived (#183) */
+  VCacheVert dv = {0, 0, 1};
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
    * frames is open, #162; the logic draw's walk never reads s_pres_async),
@@ -643,77 +941,41 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       et[i] = 0;
       en[i] = 0;
       persp = 0;
-      work[3]++;
-      if (k < 0)
-        st->miss_none++;
-      else if (T_STATE(tag) == E_INVALID) {
+      nmiss++;
+      if (k < 0) {
+        none = i;
+        nnone++;
+      } else if (T_STATE(tag) == E_INVALID) {
+        work[3]++;
         st->miss_invalid++;
         inv = 1;
-      } else
+      } else {
+        work[3]++;
         st->miss_ambiguous++;
+      }
     }
     cost[VCC_LOOK_LINES] += t.n;
   }
-  /* each candidate of the first vertex against the closest of every
-   * other's; the choice whose worst depth ratio is smallest. Candidates of
-   * one point at other scales differ by 4 or 16 times, different points on
-   * one pixel by their distance: a polygon's real depths are much closer.
-   *
-   * The same choice with fewer divisions (#159). A ratio of 4 or more (4b <=
-   * a, exact: b times 4 isn't rounded) can't be a polygon's: if it were the
-   * closest, the worst would be at least 4 and the choice not taken, so such
-   * candidates are passed over without dividing. With one candidate for
-   * the first vertex, only whether each other vertex's closest ratio is
-   * under 4 matters; a vertex with one candidate left is then its own
-   * closest, and it's under 4 without dividing when it's under 3.999 (how
-   * the quotient would round can't reach 4). Every other ratio is divided
-   * as before, so the choice and the depths are the same. */
-  for (c = 0; persp && c < (int)en[0]; c++) {
-    const float w0 = e[0][c].w;
-    float worst = 1;
-    int ok = 1;
-    try_pick[0] = c;
-    for (i = 1; ok && i < n; i++) {
-      float r_best = 1e30f;
-      int left = 0, last = 0;
-      for (j = 0; j < (int)en[i]; j++)
-        if (under4(e[i][j].w, w0)) {
-          left++;
-          last = j;
-        }
-      if (!left) {
-        ok = 0;
-        break;
-      }
-      if (left == 1 && en[0] == 1) {
-        try_pick[i] = last;
-        if (!under3999(e[i][last].w, w0)) {
-          const float r = ratio(e[i][last].w, w0);
-          cost[VCC_LOOK_DIV]++;
-          worst = r > worst ? r : worst;
-        }
-        continue;
-      }
-      for (j = 0; j < (int)en[i]; j++)
-        if (under4(e[i][j].w, w0)) {
-          const float r = ratio(e[i][j].w, w0);
-          cost[VCC_LOOK_DIV]++;
-          if (r < r_best) {
-            r_best = r;
-            try_pick[i] = j;
-          }
-        }
-      worst = r_best > worst ? r_best : worst;
+  if (persp) {
+    if (!choose(e, en, k_all, n, cost, pick)) {
+      st->spread++;
+      persp = 0;
     }
-    if (ok && worst < best) {
-      best = worst;
-      best_c = c;
-      memcpy(pick, try_pick, sizeof pick);
-    }
+  } else if (n == 4 && nnone == 1 && nmiss == 1) {
+    /* a quad with one vertex the renderer moved on screen (#183) */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    der = derive(pres, (Table *)ptab, gen, xy, e, en, none, cost, pick, &dv, &der_moved, &der_snap);
+    if (der) {
+      persp = VREF_PERSP;
+      st->hits++;
+      st->derived++;
+      st->der_snap += der_snap != 0;
+    } else
+      memset(pick, 0, sizeof pick); /* as before: drawn affine */
   }
-  if (persp && best_c < 0) {
-    st->spread++;
-    persp = 0;
+  if (nnone && !der) { /* not found: no entry */
+    st->miss_none += (unsigned)nnone;
+    work[3] += (unsigned)nnone;
   }
   if (persp)
     st->persp++;
@@ -729,7 +991,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
-    if (et[i] & T_CLAMP)
+    if ((et[i] & T_CLAMP) || (i == none && der_moved))
       r |= VREF_CLAMP;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
@@ -752,6 +1014,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
           cand_pos(ptab, &e[i][0], &c[i].dx, &c[i].dy);
         if (persp)
           c[i].w = e[i][pick[i]].w;
+      } else if (i == none && (der || der_moved)) {
+        c[i].dx = dv.dx;
+        c[i].dy = dv.dy;
+        if (der)
+          c[i].w = dv.w;
       }
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
@@ -773,6 +1040,8 @@ static void pres_next(void) {
   Rec *const r = &s_rec[VC_PRES];
   r->count = 0;
   r->nfar = 0;
+  r->tab->nlog = 0;
+  r->tab->idx_gen = 0;
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
     r->gen = 1;
@@ -803,6 +1072,8 @@ static void done_hook(void) {
    * frame's walk may still read it */
   if (r->tab->stale)
     table_clear(r->tab);
+  r->tab->nlog = 0;
+  r->tab->idx_gen = 0;
 }
 
 int psx_vcache_double(void) {
