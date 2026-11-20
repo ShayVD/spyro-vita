@@ -92,6 +92,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-20 13:50: owner: push everything as you go. Push autopilot (PR #176) after every merge and state tick; still never push main, workers still never push.",
     {
       "issue": 0,
       "question": "Where does the autopilot start on spyro-vita?",
