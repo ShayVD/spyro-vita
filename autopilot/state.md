@@ -31,6 +31,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
   "hardware_runs": [
+    {"date": "2026-11-20 13:45", "what": "owner asked for the current build to test by hand: autopilot b604db4 (#177 PSX WOBBLE row, #178 edge vertices) eboot installed, READBACK IDENTICAL (SHA-1 9eb4795b), left on the Vita", "log": "logs/hw-put-b604db4.out"},
     {
       "date": "2026-11-20",
       "commit": "37c3a95",
