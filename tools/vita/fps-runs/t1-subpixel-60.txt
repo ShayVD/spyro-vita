@@ -1,3 +1,7 @@
+# SUPERSEDED (#170, 2026-11-20): kept for D89's record only. Its fast_render=2 and native_draw=0
+# no longer apply (fast_render=3 and native_draw=1 have been the defaults since D124 and D91; #159's
+# report, D134). For the vertex cache's cost at 60 fps run ap2-toasty60-wobble.txt against
+# ap1-toasty60-ref.txt (README, runs AP1-AP6).
 # Run T1 (D89): P7 (p7-nd2-off-60.txt) with SUB-PIXEL VERTICES on, on the Toasty route
 # (hw-routes/o-toasty.cfg and .pad), REALTIME=1: does 60 fps still hold with the vertex cache fed
 # by the hand renderers, in the intro cutscene (gamestate 14) and in Toasty's heavy views? Against
