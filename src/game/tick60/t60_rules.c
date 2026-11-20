@@ -42,7 +42,7 @@ static void (*const k_update_60[])(void) = {
 /* this update's g_DeltaTime, for the 60 Hz classes; the lists split by rate
  * (rebuilt every update: scratch, not state) */
 static int s_t60_delta;
-static Moby *s_t60_list60[1024], *s_t60_list30[1024];
+static Moby *P32 s_t60_list60[1024], *P32 s_t60_list30[1024];
 
 /* A 30 Hz part, on the vblank that starts a tick. */
 #define AT_30(call)                                                            \
@@ -95,8 +95,8 @@ int t60_moby_begin(Moby *pMoby) {
  * (moby_lists_hand.c's Animate: T60_ANIM_LOWER, then T60_ANIM_UPPER; at
  * most one frame a tick, as the original's step); the others the
  * original's step, on the vblank that starts a tick. */
-void t60_moby_animate(Moby **pList) {
-  Moby **a = s_t60_list60, **b = s_t60_list30, *m;
+void t60_moby_animate(Moby *P32 *pList) {
+  Moby *P32 *a = s_t60_list60, *P32 *b = s_t60_list30, *m;
   while ((m = *pList++)) {
     if (t60_class_60(m->m_Class))
       *a++ = m;

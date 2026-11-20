@@ -318,11 +318,11 @@ void func_8003E90C(void);
 void TurnBodyToVelocity(int pMaxTurnSpeed, int pDeadzone);
 void func_8003D92C(int pAddSpeed, int pSubtractSpeed);
 
-extern Moby *D_80075804;           // Moby Spyro turns to face (pete.c)
+extern Moby *P32 D_80075804;           // Moby Spyro turns to face (pete.c)
 extern int D_800756B4;             // Jump held without the button (cutscenes)
 extern u_char D_8006C6F8[12];      // Turn-on-the-spot rate by ticks in state
 
-extern Moby *D_80075790;           // Moby a charge homes in on
+extern Moby *P32 D_80075790;           // Moby a charge homes in on
 
 /* The slope's gravity, written by ApplySlopeGravity (pete.c) over
  * m_TargetSpeedAngle.m_RotY, m_RotX and m_SlopeGravityZ. */

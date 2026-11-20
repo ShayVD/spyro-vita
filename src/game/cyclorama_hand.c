@@ -50,7 +50,7 @@ static_assert(sizeof(PortalEdge) == 0x18, "PortalEdge");
 
 extern char D_8006FCF4[];          /* the renderers' work area */
 extern u_char D_800771C8[];        /* a byte per sector, not 0 when it was visible */
-extern char *D_80075798;           /* the sky renderers' list, D_8006FCF4+0x800 */
+extern char *P32 D_80075798;           /* the sky renderers' list, D_8006FCF4+0x800 */
 extern int D_80075934;             /* the portal's depth, its OT slot */
 extern int D_8007AA00[4];          /* its screen box: top, bottom, right, left, << 16 */
 extern PortalEdge D_80077EA0[];    /* its outline */

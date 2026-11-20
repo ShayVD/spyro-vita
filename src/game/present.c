@@ -622,7 +622,7 @@ static int timed_vsync(int mode) {
 static int poly_space_on(void) { return port_present_active() || g_lod.scale > LOD_ONE; }
 
 void *port_poly_start(void *db_buf) {
-  return poly_space_on() ? g_Buffers.m_LowerPolyBuffer : db_buf;
+  return poly_space_on() ? (void *)g_Buffers.m_LowerPolyBuffer : db_buf; /* cast: p32.h */
 }
 
 #define FAIRY_CARD_BUF 0x600 /* g_Buffers.m_HudOTStart - 0x600, func_800314B4 */

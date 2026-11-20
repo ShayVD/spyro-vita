@@ -11,8 +11,9 @@
 #include <string.h>
 
 /* The pointer words are 4 bytes in the release's tables and in the port's
- * (the decomp's data is PS1-shaped; region_data.h). */
-_Static_assert(sizeof(void *) == 4, "the region tables hold 4-byte pointers");
+ * (the decomp's data is PS1-shaped; region_data.h): on a 64-bit host the
+ * copies they aim at are in the low image (block_alloc, D174). */
+_Static_assert(sizeof(void *) == 4 || SPYRO_P32, "the region tables hold 4-byte pointers");
 
 extern const RegionMap g_RegionMapPal; /* region_map_pal.c */
 
@@ -26,6 +27,26 @@ static struct {
 const RegionMap *region_map(int region) {
   return region == PSX_REGION_PAL ? &g_RegionMapPal : NULL;
 }
+
+#if SPYRO_LOW_IMAGE
+/* The blocks' copies, in the image below 2 GB (D174): their addresses go
+ * into the blocks' 4-byte words and the game's P32 fields. PAL's two blocks
+ * take 68 KB. */
+static unsigned char s_pool[0x20000] __attribute__((aligned(16)));
+static size_t s_pool_used;
+static unsigned char *block_alloc(size_t n) {
+  unsigned char *p = s_pool + s_pool_used;
+  n = (n + 15) & ~(size_t)15;
+  if (n > sizeof s_pool - s_pool_used)
+    return NULL;
+  s_pool_used += n;
+  return p;
+}
+#define block_free(p) (s_pool_used = 0) /* unload frees every block */
+#else
+#define block_alloc malloc
+#define block_free free
+#endif
 
 static int fail(char *err, size_t cap, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
 static int fail(char *err, size_t cap, const char *fmt, ...) {
@@ -56,7 +77,7 @@ static int block_of(const RegionMap *m, uint32_t addr) {
 
 static void unload(void) {
   for (int i = 0; i < MAX_BLOCKS; i++) {
-    free(s_loaded.copy[i]);
+    block_free(s_loaded.copy[i]);
     s_loaded.copy[i] = NULL;
   }
   s_loaded.map = NULL;
@@ -91,7 +112,7 @@ int region_data_load(const RegionMap *m, const unsigned char *exe, int size, int
       return fail(err, cap, "block %s (%08x, %u bytes) is outside the executable", b->name,
                   (unsigned)b->addr, (unsigned)b->size);
     }
-    if (!(s_loaded.copy[i] = malloc(b->size + 1))) {
+    if (!(s_loaded.copy[i] = block_alloc(b->size + 1))) {
       unload();
       return fail(err, cap, "no memory for block %s", b->name);
     }

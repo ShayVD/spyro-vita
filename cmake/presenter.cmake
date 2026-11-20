@@ -78,9 +78,7 @@ target_include_directories(spyro_pres_ovl PRIVATE "${CMAKE_SOURCE_DIR}/src/platf
 target_compile_options(spyro_pres_ovl PRIVATE ${SPYRO_HOST_FLAGS} -fcommon -w
   "SHELL:-include ${PRES_NAMES}")
 add_dependencies(spyro_pres_ovl spyro_game_ovl)
-if(SPYRO_HOST STREQUAL "linux32")
-  set(PRES_LD_FLAGS -m32)
-endif()
+set(PRES_LD_FLAGS ${SPYRO_RELOC_LD_FLAGS}) # -m32 on linux32, the target on linux64
 
 # one relocatable object, the entry its only global definition. LoadImage
 # is renamed here as well as in pres_names.h: libgpu.h #undefs it (a

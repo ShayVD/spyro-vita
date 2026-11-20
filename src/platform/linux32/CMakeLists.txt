@@ -18,7 +18,7 @@ target_link_libraries(spyro PRIVATE spyro_game spyro_platform_linux32
   spyro_platform_common m pthread)
 target_include_directories(spyro PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS})
-target_link_options(spyro PRIVATE -m32 -no-pie)
+target_link_options(spyro PRIVATE ${SPYRO_LINK_FLAGS}) # -m32 -no-pie; linux64: -static -no-pie
 # --prof-draw (prof_draw.c): the renderers GamestateDraw calls, timed
 target_link_options(spyro PRIVATE
   -Wl,--wrap=GamestateUpdate,--wrap=func_800258F0,--wrap=func_8001F158
@@ -37,4 +37,9 @@ if(SPYRO_NATIVE_MEM)
     -Wl,--undefined=func_800208FC,--undefined=func_80020F34,--undefined=func_80022A2C
     -Wl,--undefined=func_80023AC4,--undefined=func_80059F8C,--undefined=func_80059A48
     -Wl,--undefined=func_80058D64,--undefined=func_8004EBA8)
+endif()
+if(SPYRO_LOW_IMAGE)
+  # linux64 (D174): main() is low_image.c's, which checks the low image and
+  # runs this one on the game thread, on a stack in the image.
+  set_source_files_properties(main.c PROPERTIES COMPILE_DEFINITIONS main=spyro_host_main)
 endif()

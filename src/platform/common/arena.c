@@ -51,9 +51,26 @@ static void *map_at_n(uint32_t at, uint32_t len, int prot) {
 static void *map_at(uint32_t at, int prot) { return map_at_n(at, PSX_MEM_SIZE, prot); }
 #endif
 
+#if SPYRO_LOW_IMAGE
+/* The low image (D173, D174): the arena is part of the executable's image,
+ * below 2 GB (low_image.c checks), so P32 fields and the game's u32s hold
+ * its addresses. Room for the presenter's area (render_ctx.h PRES_AREA). */
+#define LOW_ARENA_EXTRA_MAX 0x240000u
+static unsigned char s_low_arena[PSX_MEM_SIZE + LOW_ARENA_EXTRA_MAX]
+    __attribute__((aligned(0x1000)));
+const void *psx_low_arena_end(void) { return s_low_arena + sizeof s_low_arena; }
+#endif
+
 void psx_arena_init(void) {
   void *p;
-#if SPYRO_NATIVE_MEM && !(defined(__linux__) && defined(PSX_ARENA_AT))
+#if SPYRO_LOW_IMAGE
+  if (g_psx_arena_extra > LOW_ARENA_EXTRA_MAX) {
+    fprintf(stderr, "psx_arena_init: 0x%x extra bytes asked, the low image has 0x%x\n",
+            (unsigned)g_psx_arena_extra, LOW_ARENA_EXTRA_MAX);
+    exit(1);
+  }
+  p = s_low_arena;
+#elif SPYRO_NATIVE_MEM && !(defined(__linux__) && defined(PSX_ARENA_AT))
   p = memalign(0x1000, PSX_MEM_SIZE + g_psx_arena_extra);
 #elif defined(__linux__)
   p = map_at(PSX_ARENA_AT, PROT_READ | PROT_WRITE);

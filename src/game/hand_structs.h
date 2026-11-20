@@ -85,14 +85,14 @@ typedef struct {
   int m_NudgeTicks; /* Ticks a nudge found by func_80034480 holds (unk_0xC4) */
   int m_SpyroOffCenterFrames;
   int m_AtDestination; /* The last move reached m_DestinationPosition (unk_0xCC) */
-  Vector3D *m_Focus;
+  Vector3D *P32 m_Focus;
   int m_FocusRotation;
-  SphericalCoordsOffset *m_SphericalPreset;
+  SphericalCoordsOffset *P32 m_SphericalPreset;
   int m_LookYaw;   /* Look mode's stick/d-pad offsets (unk_0xDC) */
   int m_LookPitch; /* (unk_0xE0) */
   int unk_0xE4;
   int m_SimFlipped; /* func_80033F08's result for m_Position (unk_0xE8) */
-  LevelFlyInParameters *unk_0xEC;
+  LevelFlyInParameters *P32 unk_0xEC;
   int m_OnMovingPlatform;
   int unk_0xF4;
   int unk_0xF8;
