@@ -8,14 +8,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
 {
   "version": 1,
   "game": "spyro",
-  "phase": 9,
+  "phase": 8,
   "workers": [],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
     "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
-  "hardware_runs": [],
+  "hardware_runs": [
+    {
+      "date": "2026-11-20",
+      "commit": "37c3a95",
+      "runs": "AP1-AP7 (tools/vita/fps-runs/README.md)",
+      "result": "D172: PAL OK; wobble fix +2.6 ms game thread at 60 fps; presenter on core 1 -35%; GL shadow no time; cheaper cache below noise; vdm_ring=1024 harmless, default off"
+    }
+  ],
   "perf_candidates": [
     {
       "title": "Presenter thread with the vertex cache on",
@@ -79,8 +86,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     {
       "issue": 0,
       "question": "Hardware session for the six pending measurements (configs AP1-AP6b in tools/vita/fps-runs, #170)",
-      "default_taken": "waiting: every hardware run needs the owner's yes",
+      "default_taken": "done 2026-11-20 on the owner's yes (D172); results in hardware_runs",
       "switch": "none"
+    },
+    {
+      "issue": 0,
+      "question": "Restart after D172 (2026-11-20)",
+      "default_taken": "owner: one PSX WOBBLE row, no wobble by default (#177); no wobble at all and no FPS drop (#178, #179, #181); fix draw distance 2x (#180); start the loop again",
+      "switch": "state.phase"
     }
   ],
   "attempts": {
@@ -100,10 +113,13 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "filed": 0,
     "investigated": true
   },
-  "rounds_without_gain": 3,
+  "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": null,
-  "batch": null
+  "batch": null,
+  "lanes": [
+    8
+  ]
 }
 ```
 
@@ -183,3 +199,4 @@ continue.
 - 04:13Z phase 9: round 7 investigated the dead interp_mode key in fps-runs: the s7f*/s7g* files record past hardware runs and keep the lines those runs used; nothing filed. No gain: rounds_without_gain 2 of 3. Round 8 started. #175 unanswered; no owner reply on the hardware session.
 - 05:14Z phase 9: round 8 investigated whether autopilot's changes reach the CI VPK build (.github/workflows build.yml runs tools/ci/build_vpk.sh, unchanged; the new perfcount source goes through the same CMake the native gates built): nothing filed. No gain: rounds_without_gain 3 of 3.
 - 05:15Z phase 9: stop-check printed stop (phase 9, no workers, 3 rounds without a gain, only #175 open and it needs the owner). Final report: autopilot/report.md. Loop ended.
+- 2026-11-20T11:03Z phase 8 again (owner, 2026-11-20, after D172's merge and hardware session): filed #177-#181 (PSX WOBBLE row, clamped vertices, hook cost, draw distance 2x, remaining misses); route and benchmark owner60 added; Vita3K: 0
