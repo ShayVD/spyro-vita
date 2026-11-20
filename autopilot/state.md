@@ -32,7 +32,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "pids": [],
       "started_at": "2026-11-21T00:10:00Z",
       "files": [
-        "src/game/pres/pres_thread.c",
+        "src/platform/vita/pres_thread.c",
         "src/platform/vita/main.c",
         "src/platform/vita/parse.c"
       ],
