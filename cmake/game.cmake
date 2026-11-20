@@ -69,6 +69,7 @@ target_compile_options(spyro_game_data PRIVATE ${SPYRO_ARCH_FLAGS})
 include(cmake/overlays.cmake)
 include(cmake/mips2c.cmake)
 include(cmake/presenter.cmake)
+include(cmake/tick60.cmake) # 60 Hz logic, the update path built again (D130)
 
 # With a moved arena the game's C reads its data labels through arena
 # pointers (D25).
@@ -81,7 +82,8 @@ endif()
 
 add_library(spyro_game STATIC $<TARGET_OBJECTS:spyro_game_main>
   $<TARGET_OBJECTS:spyro_game_data> $<TARGET_OBJECTS:spyro_game_ovl>
-  $<TARGET_OBJECTS:spyro_game_m2c> $<TARGET_OBJECTS:spyro_game_port> ${PRES_GAME_SRCS})
+  $<TARGET_OBJECTS:spyro_game_m2c> $<TARGET_OBJECTS:spyro_game_port> ${PRES_GAME_SRCS}
+  ${T60_GAME_SRCS})
 # The mips2c units call PsyCross's GTE_operator at fast_render=0: the
 # reference library's (cmake/psycross.cmake, D116). Its walk serves the
 # host's walk checks there (src/game/walk_check.c, D117).

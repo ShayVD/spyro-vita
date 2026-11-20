@@ -27,10 +27,11 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **CPU:** ARMv7 Cortex-A9, 4 cores at 333 MHz (444 MHz overclocked), **32-bit**. The game's 32-bit pointers fit as-is. Never assume `sizeof(void*)==8`, and never write code that only works where it's 4: keep the host debug build honest.
 - **GPU:** SGX543MP4+ via vitaGL. Keep draw calls batched. Don't do per-primitive state changes.
 - **Rendering:** PS1 primitives, in the **PS1-native layout** (PsyCross's headers with `USE_EXTENDED_PRIM_POINTERS=0`, `USE_PGXP=0`), go through our own OT walk (`src/platform/common/gpu_walk.c`, D117) into vitaGL. Since stage 8 (D118) the native and Vita builds link no PsyCross code, only its `include/psx` headers (behind `patches/PsyCross`); its GTE and walk stay as the checks' reference library (`psycross_ref`). The game's dynamic RAM is one 2 MB arena at a 16 MB-aligned address (24-bit OT links; see `docs/porting-plan.md` §4). Depth-buffer or perspective-correct improvements come later and must be optional.
-- **Files:** `ux0:data/spyro/`: the user's disc image (`.bin` + `.cue`), read directly (D60), or the files `tools/extract_disc.py` extracts from it (with `manifest.json`, which wins). Saves go to `ux0:data/spyro/save/`.
+- **Files:** `ux0:data/spyro/`: the user's disc image (`.bin` + `.cue`), read directly (D60), or the files `tools/extract_disc.py` extracts from it (with `manifest.json`, which wins), or the PlayStation Store copy's `EBOOT.PBP` copied there (D157; the VPK is a safe app, and only a `-DSPYRO_UNSAFE=ON` build reads it from `ux0:pspemu`). Saves go to `ux0:data/spyro/save/`.
 - **Disc data on the host** (gitignored):
   - `disc/image/` holds the original bin/cue.
   - `disc/files/` holds the extracted files, written by `tools/extract_disc.py`, with a `manifest.json` of each file's LBA, size and type.
+  - `disc/psn/<ID>/EBOOT.PBP` holds the owner's PlayStation Store copies (the PS1 Classics, from the Vita's `ux0:pspemu/PSP/GAME/<ID>/`: NPUI94228 and NPEE00076 are both the USA disc, NPJI00062 the Japanese one), which the port reads in place (D157, D158); `tests/pbp` runs every copy there.
   - The executable on the disc is `SCUS_942.28`. It's the same file the decomp builds as `PSX.EXE` (SHA-1 verified).
   - Level overlays live inside `WAD.WAD`.
   - The `PETEXA*.STR` music streams are XA, stored as 2336-byte sectors (subheader + data).
@@ -47,7 +48,7 @@ A native PS Vita homebrew port of Spyro the Dragon (1998), released as a VPK. It
 - **Code we write** goes in `src/game/` (translated functions, keeping the original `func_XXXXXXXX` names plus a short comment saying where they came from) and in `src/platform/<target>/`.
 - **Every translated function** gets a note in `docs/translation-log.md`: method used, how it was verified, known differences.
 - **Logs and screenshots** from runs go in `logs/runN-*`, the same as the KH ports.
-- **Record decisions** with their reasons in `docs/decisions-2.md` (D103 on; D1–D102 are in `docs/decisions.md`, which is full: the 512 KiB file limit in `tools/check_no_assets.sh`).
+- **Record decisions** with their reasons in `docs/decisions-3.md` (D162 on; D1–D102 are in `docs/decisions.md` and D103–D161 in `docs/decisions-2.md`, both full: the 512 KiB file limit in `tools/check_no_assets.sh`).
 
 ## Reference projects (ours)
 - `~/Projects/kh1-decomp`: decomp layout, host shims, data relocations (`data_relocs.tsv`), overlay handling (`docs/native-overlays.md`), Vita packaging and logging (`tools/vita/build.py`, `host/vita/`; raw sceGxm, not vitaGL).

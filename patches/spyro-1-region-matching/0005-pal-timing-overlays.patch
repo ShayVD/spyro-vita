@@ -1,0 +1,567 @@
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -331,8 +331,8 @@
+         distance = OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x0c));
+         props->m_0x28 = (distance / props->m_0x24) >> 1;
+ 
+-        if (props->m_0x28 >= 0x5B) {
+-          props->m_0x28 = 0x5A;
++        if (props->m_0x28 >= RT(0x5B, 0x4C)) {
++          props->m_0x28 = RT(0x5A, 0x4B);
+         }
+ 
+         moby->m_State = 2;
+@@ -345,7 +345,7 @@
+         if (TICK_TIMER(props->m_0x30)) {
+ 
+           if (props->m_0x20 < props->m_0x24) {
+-            props->m_0x20 += 0xA;
++            props->m_0x20 += RT(0xA, 0xC);
+           }
+ 
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+@@ -396,8 +396,8 @@
+       }
+ 
+       case 3: {
+-        if (props->m_0x20 >= 0x10) {
+-          props->m_0x20 -= 0xF;
++        if (props->m_0x20 >= RT(0x10, 0x13)) {
++          props->m_0x20 -= RT(0xF, 0x12);
+           MobyMove(moby, props->m_0x1c, props->m_0x20, 0, 700, 5);
+         }
+ 
+@@ -927,7 +927,7 @@
+       case 2: {
+         if (props->m_0x14 > 0) {
+           func_80039398(moby, props->m_0x14, 0x300, 0x200, 0x27);
+-          props->m_0x14 -= 8;
++          props->m_0x14 -= RT(8, 10);
+         }
+         if (g_AnimationFinished) {
+           moby->m_Rotation.z += 0x80;
+@@ -958,8 +958,8 @@
+         if (moby->m_AnimationState.m_Frame < 5) {
+           moby->m_Rotation.z += props->m_0x18;
+         }
+-        if (props->m_0x14 >= 0x10) {
+-          props->m_0x14 -= 0xF;
++        if (props->m_0x14 >= RT(0x10, 0x13)) {
++          props->m_0x14 -= RT(0xF, 0x12);
+           MobyMove(moby, props->m_0x10, props->m_0x14, 0, 300, 5);
+         }
+         break;
+@@ -1429,7 +1429,7 @@
+             if (func_80017908(angle, distance) > i &&
+                 DISTANCE_TO_SPYRO(moby) < 0x3000) {
+               result = func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0),
+-                                     0x1800, angle, 5, speed, 0xE, 0x14, 0xFF,
++                                     0x1800, angle, 5, speed, RT(0xE, 0x11), 0x14, 0xFF,
+                                      0xFF, 0, 0, 4);
+             }
+             if (result >= 0x5B) {
+@@ -1443,7 +1443,7 @@
+             } else {
+               MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+             }
+-            if (props->m_0x18 >= 0x1E &&
++            if (props->m_0x18 >= RT(0x1E, 0x19) &&
+                 func_80017908(angle2, ANGLE_TO_SPYRO(moby->m_Position)) >=
+                     0x21) {
+               moby->m_Substate = 1;
+@@ -1658,7 +1658,7 @@
+         }
+         if (props->m_0x20 != 0) {
+           MobyMove(moby, props->m_0x1c, props->m_0x20, 0, 300, 5);
+-          props->m_0x20 -= 0x10;
++          props->m_0x20 -= RT(0x10, 0x13);
+           if (props->m_0x20 < 0) {
+             props->m_0x20 = 0;
+           }
+@@ -1674,7 +1674,7 @@
+       }
+       case 20: {
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+-        if (func_80039E94(moby, props->m_0x00, 0x100, 0xF0, 0, 8, 0x10, 0xFF,
++        if (func_80039E94(moby, props->m_0x00, 0x100, RT(0xF0, 0x120), 0, 8, 0x10, 0xFF,
+                           5) == 0x103) {
+           moby->m_State = 21;
+           continue;
+@@ -1827,13 +1827,13 @@
+           VecCopy(&moby->m_Position, &PATH_CUR_POS(props->m_0x00));
+           MobySnapToGround(moby);
+         }
+-        props->m_0x14 = 0xB4;
++        props->m_0x14 = RT(0xB4, 0xD8);
+         if (PATH_CUR_NODE(props->m_0x00).unk_0xC > 0) {
+           props->m_0x14 = PATH_CUR_NODE(props->m_0x00).unk_0xC;
+         }
+         if (func_80039E94(moby, props->m_0x00, 0x100, props->m_0x14, 0, 8, 0x20,
+                           0xFF, 5) == 0x10B) {
+-          props->m_0x0c = 150;
++          props->m_0x0c = RT(150, 180);
+           moby->m_State = 41;
+           continue;
+         }
+@@ -1852,7 +1852,7 @@
+         angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
+         MobyRotateToAngle(moby, angle, 6, 0, 0);
+         if (distance >= 0x101) {
+-          func_80039398(moby, 150, 0, 0, 1);
++          func_80039398(moby, RT(150, 180), 0, 0, 1);
+         }
+         if (distance < 0x100 && moby->m_Position.z == floorHeight) {
+           if (++props->m_0x00->m_CurrentNode == 0xD) {
+@@ -1863,9 +1863,9 @@
+           break;
+         }
+         moby->m_Position.z += props->m_0x0c;
+-        props->m_0x0c -= 0x14;
+-        if (props->m_0x0c < -200) {
+-          props->m_0x0c = -200;
++        props->m_0x0c -= RT(0x14, 0x18);
++        if (props->m_0x0c < -RT(200, 239)) {
++          props->m_0x0c = -RT(200, 239);
+         }
+         if (moby->m_Position.z + props->m_0x0c <= floorHeight) {
+           moby->m_Position.z = floorHeight;
+@@ -1884,7 +1884,7 @@
+         path = props->m_0x00;
+         heightDelta = g_Spyro.m_Position.z - PATH_NODE_POS(path, 10).z;
+         if (heightDelta < -1500 && DISTANCE_TO_SPYRO(moby) < 0x1800) {
+-          props->m_0x0c = 0x1A4;
++          props->m_0x0c = RT(0x1A4, 0x1F8);
+           props->m_0x00->m_CurrentNode = 9;
+           moby->m_State = 43;
+           continue;
+@@ -1901,7 +1901,7 @@
+         angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
+         MobyRotateToAngle(moby, angle, 6, 0, 0);
+         if (distance >= 0x101) {
+-          func_80039398(moby, 150, 0, 0, 1);
++          func_80039398(moby, RT(150, 180), 0, 0, 1);
+         }
+         if (distance < 0x100 && moby->m_Position.z == floorHeight) {
+           props->m_0x00->m_Reversed = -props->m_0x00->m_Reversed;
+@@ -1910,9 +1910,9 @@
+           continue;
+         }
+         moby->m_Position.z += props->m_0x0c;
+-        props->m_0x0c -= 0x14;
+-        if (props->m_0x0c < -200) {
+-          props->m_0x0c = -200;
++        props->m_0x0c -= RT(0x14, 0x18);
++        if (props->m_0x0c < -RT(200, 239)) {
++          props->m_0x0c = -RT(200, 239);
+         }
+         if (moby->m_Position.z + props->m_0x0c <= floorHeight) {
+           moby->m_Position.z = floorHeight;
+@@ -1921,7 +1921,7 @@
+       }
+       case 44: {
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+-        props->m_0x14 = 200;
++        props->m_0x14 = RT(200, 240);
+         if (moby->m_Position.z < 0x800) {
+           VecCopy(&moby->m_Position, &PATH_CUR_POS(props->m_0x00));
+           MobySnapToGround(moby);
+@@ -1942,7 +1942,7 @@
+         if (DISTANCE_TO_SPYRO(moby) < 0x2000) {
+           angle = (ANGLE_TO_SPYRO(PATH_CUR_POS(props->m_0x00)) + 0x80) & 0xFF;
+           func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0), props->m_0x38,
+-                        angle, 8, props->m_0x14, 0xF, 0x40, 0xFF, 0xFF, 0, 0,
++                        angle, 8, props->m_0x14, RT(0xF, 0x12), 0x40, 0xFF, 0xFF, 0, 0,
+                         0);
+           angle2 = ANGLE_FROM(PATH_CUR_POS(props->m_0x00), moby->m_Position);
+           angle = (angle - angle2) & 0xFF;
+@@ -3870,7 +3870,7 @@
+ 
+         if (props->m_0x10 != 0) {
+           if (moby->m_Substate < 2 && g_Spyro.m_State == 0xE) {
+-            props->m_0x10 += 0x3C;
++            props->m_0x10 += RT(0x3C, 0x32);
+             moby->m_Substate = 2;
+           }
+ 
+@@ -3885,9 +3885,9 @@
+           angle = ANGLE_TO_SPYRO(moby->m_Position);
+           if (func_80017908(moby->m_Rotation.z, angle) < 0x18) {
+             if (moby->m_Substate != 0) {
+-              props->m_0x10 = 0x2C;
++              props->m_0x10 = RT(0x2C, 0x25);
+             } else {
+-              props->m_0x10 = 0x1A;
++              props->m_0x10 = RT(0x1A, 0x16);
+             }
+             moby->m_Substate = 1;
+           } else {
+@@ -3978,7 +3978,7 @@
+ 
+         if (props->m_0x10 != 0) {
+           if (moby->m_Substate < 2 && g_Spyro.m_State == 0xE) {
+-            props->m_0x10 += 0x3C;
++            props->m_0x10 += RT(0x3C, 0x32);
+             moby->m_Substate = 2;
+           }
+ 
+@@ -3993,9 +3993,9 @@
+           angle = ANGLE_TO_SPYRO(moby->m_Position);
+           if (func_80017908(moby->m_Rotation.z, angle) < 0x18) {
+             if (moby->m_Substate != 0) {
+-              props->m_0x10 = 0x2C;
++              props->m_0x10 = RT(0x2C, 0x25);
+             } else {
+-              props->m_0x10 = 0x1A;
++              props->m_0x10 = RT(0x1A, 0x16);
+             }
+             moby->m_Substate = 1;
+           } else {
+@@ -6790,8 +6790,8 @@
+           moby->m_Rotation.z += props->m_0x18;
+         }
+ 
+-        if (props->m_0x14 >= 0x10) {
+-          props->m_0x14 -= 0xF;
++        if (props->m_0x14 >= RT(0x10, 0x13)) {
++          props->m_0x14 -= RT(0xF, 0x12);
+           MobyMove(moby, props->m_0x10, props->m_0x14, 0, 300, 5);
+         }
+ 
+@@ -6809,7 +6809,7 @@
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         func_80039398(moby, props->m_0x14, 0, 300, 5);
+ 
+-        if (moby->m_AnimationState.m_Frame >= 5 && props->m_0x14 > 0x50) {
++        if (moby->m_AnimationState.m_Frame >= 5 && props->m_0x14 > RT(0x50, 0x60)) {
+           props->m_0x14 -= 5;
+         }
+ 
+@@ -6821,10 +6821,10 @@
+             g_Spyro.m_DamageFlags |= 0x80;
+             g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), 150);
+             g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), 150);
+-            g_Spyro.unk_0x208.z = 50;
++            g_Spyro.unk_0x208.z = RT(50, 60);
+           } else if (props->m_0x20 == 1) {
+             props->m_0x20 = 2;
+-            props->m_0x2c = 0x32;
++            props->m_0x2c = RT(0x32, 0x2A);
+             g_Spyro.m_ControlFlags |= 0x80000200;
+             g_Spyro.unk_0x21c = &moby->m_Position;
+             g_Spyro.unk_0x220 = &D_80078668;
+@@ -6968,10 +6968,10 @@
+         moby->m_Position.y += physicsProps->m_Velocity.y;
+ 
+         // Apply gravity to Z velocity
+-        physicsProps->m_Velocity.z -= 6;
+-
+-        if (physicsProps->m_Velocity.z < -0x80) {
+-          physicsProps->m_Velocity.z = -0x80;
++        physicsProps->m_Velocity.z -= RT(6, 7);
++
++        if (physicsProps->m_Velocity.z < -RT(0x80, 0x99)) {
++          physicsProps->m_Velocity.z = -RT(0x80, 0x99);
+         }
+ 
+         moby->m_Position.z += physicsProps->m_Velocity.z;
+@@ -8180,7 +8180,7 @@
+       case 3: {
+         if (moby->m_ScaleOverride >= 0x21) {
+           moby->m_ScaleOverride -= 4;                  // Shrink
+-          moby->m_Rotation.z = moby->m_Rotation.z + 8; // Spin
++          moby->m_Rotation.z = moby->m_Rotation.z + RT(8, 10); // Spin
+         } else {
+           moby->m_State = 4;
+           fairyProps->m_0x08 = 0;
+@@ -8302,7 +8302,7 @@
+       case 6: {
+         if (moby->m_ScaleOverride < 96) {
+           moby->m_ScaleOverride += 4;
+-          moby->m_Rotation.z = moby->m_Rotation.z + 8;
++          moby->m_Rotation.z = moby->m_Rotation.z + RT(8, 10);
+         } else {
+           // Fully shrunk
+           moby->m_RenderRadius = 0;
+@@ -8476,12 +8476,12 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < 10) {
++        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
+           moby->m_Rotation.z += props->m_0x10;
+         }
+ 
+-        if (props->m_0x0c >= 0x1F) {
+-          props->m_0x0c -= 0x1E;
++        if (props->m_0x0c >= RT(0x1F, 0x25)) {
++          props->m_0x0c -= RT(0x1E, 0x24);
+           MobyMove(moby, props->m_0x08, props->m_0x0c, 0, 300, 1);
+         }
+ 
+@@ -8495,9 +8495,9 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= 0x1C) {
++        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+-            moby->m_AnimationState.m_Frame = 0x0F;
++            moby->m_AnimationState.m_Frame = RT(0x0F, 0xD);
+           }
+         }
+ 
+@@ -8975,7 +8975,7 @@
+           MobyMove(moby, props->m_KnockbackAngle, props->m_KnockbackSpeed, 500,
+                    700, 0);
+           // Incrementally reduce knockback speed
+-          props->m_KnockbackSpeed -= 0x10;
++          props->m_KnockbackSpeed -= RT(0x10, 0x13);
+         }
+ 
+         // Wrap up Moby's death
+@@ -9128,7 +9128,7 @@
+ 
+           if (isPickupAnimPhase) {
+             int delta;
+-            if (moby->m_AnimationState.m_NextFrame >= 7) {
++            if (moby->m_AnimationState.m_NextFrame >= RT(7, 6)) {
+               moby->m_Substate++;
+             }
+ 
+@@ -9149,7 +9149,7 @@
+ 
+           if (isPickupAnimPhase == 0) {
+             if (TICK_TIMER(sparxProps->m_Timer) ||
+-                (sparxProps->m_Timer < 80 &&
++                (sparxProps->m_Timer < RT(80, 67) &&
+                  func_80017908((moby->m_Rotation.z + (bp->m_0x00 * 110)) & 0xFF,
+                                ((g_Camera.m_Rotation.z >> 4) + 0x80) & 0xFF) <
+                      8)) {
+@@ -9161,7 +9161,7 @@
+               }
+             }
+           }
+-          targetSpeed = isPickupAnimPhase ? 150 : 130;
++          targetSpeed = isPickupAnimPhase ? RT(150, 180) : RT(130, 156);
+           if (targetSpeed + 5 < dist) {
+             VecScaleToLength(&vec, dist, targetSpeed + 5);
+           } else {
+@@ -9235,9 +9235,9 @@
+             int dcheck = 310;
+ 
+             if (dcheck < dist)
+-              VecScaleToLength(&sparxChaseDelta, dist, 310);
++              VecScaleToLength(&sparxChaseDelta, dist, RT(310, 370));
+             else
+-              VecScaleToLength(&sparxChaseDelta, dist, 290);
++              VecScaleToLength(&sparxChaseDelta, dist, RT(290, 350));
+ 
+             VecAdd(&moby->m_Position, &moby->m_Position, &sparxChaseDelta);
+             MobyRotateToAngle(moby,
+@@ -24173,9 +24173,9 @@
+ 
+         moby->m_Position.x += props->m_Velocity.x;
+         moby->m_Position.y += props->m_Velocity.y;
+-        props->m_Velocity.z -= 6;
+-        if (props->m_Velocity.z < -0x80)
+-          props->m_Velocity.z = -0x80;
++        props->m_Velocity.z -= RT(6, 7);
++        if (props->m_Velocity.z < -RT(0x80, 0x99))
++          props->m_Velocity.z = -RT(0x80, 0x99);
+         moby->m_Position.z += props->m_Velocity.z;
+ 
+         moby->m_Rotation.x += props->m_AngularVelocity.x;
+@@ -25346,7 +25346,7 @@
+         break;
+ 
+       case 1:
+-        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * 35) >> 10) + 300;
++        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * 35) >> 10) + RT(300, 360);
+ 
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x2c + 2);
+ 
+@@ -25362,7 +25362,7 @@
+       case 2:
+         floorZ = MobyFloorHeight(moby);
+         moby->m_Position.z += props->m_0x54;
+-        props->m_0x54 -= 0x32;
++        props->m_0x54 -= RT(0x32, 0x3C);
+ 
+         if (props->m_0x54 < -600) {
+           props->m_0x54 = -600;
+@@ -26058,7 +26058,7 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < 10) {
++        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
+           moby->m_Rotation.z += props->m_0x10;
+         }
+ 
+@@ -26076,7 +26076,7 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= 0x1C) {
++        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+             moby->m_AnimationState.m_Frame = 0x0F;
+           }
+@@ -26572,9 +26572,9 @@
+ 
+         moby->m_Position.x += props->m_Velocity.x;
+         moby->m_Position.y += props->m_Velocity.y;
+-        props->m_Velocity.z -= 6;
+-        if (props->m_Velocity.z < -128) {
+-          props->m_Velocity.z = -128;
++        props->m_Velocity.z -= RT(6, 7);
++        if (props->m_Velocity.z < -RT(128, 153)) {
++          props->m_Velocity.z = -RT(128, 153);
+         }
+         moby->m_Position.z += props->m_Velocity.z;
+         moby->m_Rotation.x += props->m_AngularVelocity.x;
+@@ -27593,7 +27593,7 @@
+       case 0:
+         break;
+       case 1:
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         break;
+       case 2:
+         target.x = D_800757C4 * 50 + 30;
+@@ -27607,7 +27607,7 @@
+                               props->m_0x00.y - moby->m_Position.y, 1);
+         props->m_0x10 = 0x800;
+         moby->m_State = 3;
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         break;
+       case 3:
+         props->m_0x10 -= 0x40;
+@@ -27617,7 +27617,7 @@
+         moby->m_Position.y =
+             props->m_0x00.y +
+             FIXED_MUL(props->m_0x0c, Sin(props->m_0x0e + props->m_0x10));
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         if (props->m_0x10 <= 0) {
+           moby->m_State = 4;
+         }
+@@ -27634,7 +27634,7 @@
+                               props->m_0x00.y - moby->m_Position.y, 1);
+         props->m_0x10 = 0x800;
+         moby->m_State = 6;
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         break;
+       }
+       case 6:
+@@ -27645,7 +27645,7 @@
+         moby->m_Position.y =
+             props->m_0x00.y +
+             FIXED_MUL(props->m_0x0c, Sin(props->m_0x0e + props->m_0x10));
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         if (props->m_0x10 <= 0) {
+           props->m_0x0e =
+               Atan2(moby->m_Position.x - 0x100, moby->m_Position.y - 120, 1);
+@@ -27664,7 +27664,7 @@
+             120 + ((props->m_0x0c *
+                     ((Sin(props->m_0x0e + props->m_0x10) * 5) << 3)) >>
+                    18);
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         if (props->m_0x10 >= 0) {
+           moby->m_State = 4;
+         }
+@@ -27826,10 +27826,10 @@
+           VecSub(&props->m_0x00, &moby->m_Position, &g_Spyro.m_Position);
+           props->m_0x00.z = 0;
+           VecScaleToLength(&props->m_0x00, VecMagnitude(&props->m_0x00, 0),
+-                           0x50);
+-        }
+-
+-        props->m_0x00.z += 0xA0;
++                           RT(0x50, 0x60));
++        }
++
++        props->m_0x00.z += RT(0xA0, 0xC0);
+         props->m_0x0c = 0;
+         moby->m_Substate = 2;
+         moby->m_RenderRadius = 0x20;
+@@ -27843,7 +27843,7 @@
+         props->m_0x0c += g_DeltaTime;
+         moby->m_Rotation.z += g_DeltaTime * 8;
+ 
+-        if (props->m_0x00.z > -160) {
++        if (props->m_0x00.z > -RT(160, 191)) {
+           props->m_0x00.z -= (g_DeltaTime * 5) >> 1;
+         }
+ 
+@@ -27931,7 +27931,7 @@
+         }
+         angle = ANGLE_FROM(PATH_CUR_POS(props->m_0x00), moby->m_Position);
+         func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0), props->m_0x0c,
+-                      angle - 3, 0, props->m_0x06, 0x1E, 0x80, 0xFF, 0xFF, 0, 0,
++                      angle - 3, 0, props->m_0x06, RT(0x1E, 0x24), 0x80, 0xFF, 0xFF, 0, 0,
+                       4);
+         break;
+       }
+@@ -27943,22 +27943,22 @@
+         }
+         moby->m_Rotation.x += props->m_0x0a;
+         moby->m_Rotation.y += props->m_0x0b;
+-        if (props->m_0x06 < -0xB3) {
++        if (props->m_0x06 < -RT(0xB3, 0xD6)) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x20);
+           MobyFree(moby);
+           continue;
+         }
+         moby->m_Position.z += props->m_0x06;
+-        props->m_0x06 -= 0xF;
++        props->m_0x06 -= RT(0xF, 0x12);
+         break;
+       }
+       case 5: {
+         MobyRotateToAngle(moby, g_LevelMobys[props->m_0x10].m_Rotation.z, 0x1E,
+                           0, 0);
+         if (g_AnimationFinished) {
+-          props->m_0x06 = 0xA0;
+-          props->m_0x04 = 0x3C;
++          props->m_0x06 = RT(0xA0, 0xC0);
++          props->m_0x04 = RT(0x3C, 0x32);
+           moby->m_State = 1;
+           MOBY_ANIM_CHANGE(moby, 1);
+           continue;
+@@ -27968,7 +27968,7 @@
+       case 8: {
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         if (g_AnimationFinished) {
+-          props->m_0x20 = 150;
++          props->m_0x20 = RT(150, 125);
+           moby->m_State = 0;
+           MOBY_ANIM_CHANGE(moby, 0);
+           continue;
+@@ -30940,17 +30940,17 @@
+       if (props->m_Lifetime && moby->m_WasDrawn) {
+         moby->m_Position.x += props->m_Velocity.x;
+         moby->m_Position.y += props->m_Velocity.y;
+-        props->m_Velocity.z -= 5;
++        props->m_Velocity.z -= RT(5, 6);
+         if (--props->m_0x0d == 0) {
+           props->m_Velocity.x = 0;
+           props->m_Velocity.y = 0;
+           props->m_Velocity.z = 0;
+         }
+-        if (props->m_Velocity.z < -24) {
+-          props->m_Velocity.z = -24;
++        if (props->m_Velocity.z < -RT(24, 28)) {
++          props->m_Velocity.z = -RT(24, 28);
+         }
+         if (props->m_0x10 == 0) {
+-          moby->m_Rotation.z += 12;
++          moby->m_Rotation.z += RT(12, 15);
+         } else if (props->m_Velocity.z < 0) {
+           if (moby->m_Rotation.y + props->m_0x0e == 32 ||
+               moby->m_Rotation.y + props->m_0x0e == 224) {

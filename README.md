@@ -1,18 +1,20 @@
 # Spyro Vita
 
-A native PlayStation Vita port of *Spyro the Dragon* (1998, PlayStation, USA release SCUS-94228).
+A native PlayStation Vita port of *Spyro the Dragon* (1998, PlayStation): the USA release,
+SCUS-94228, and the European (PAL) release, SCES-01438.
 
 This is not an emulator. The game's own code, from the
 [TheMobyCollective/spyro-1](https://github.com/TheMobyCollective/spyro-1) decompilation, is compiled
 for the Vita's ARM CPU. The port's own code stands in for Sony's PlayStation libraries (written
 against [PsyCross](https://github.com/OpenDriver2/PsyCross)'s headers, parts of it ported from
-PsyCross's code), and the PS1's graphics are drawn by the Vita's GPU (vitaGL). The game logic runs
-at its original ~30 Hz, so it plays exactly as on a PS1, and the picture fills the Vita's 960×544
-screen in 16:9.
+PsyCross's code), and the PS1's graphics are drawn by the Vita's GPU (vitaGL). By default the game's
+logic runs at 60 Hz in play, for 60 pictures a second of its own; the original's ~30 Hz, tick for
+tick as on a PS1, is one option away (the options menu's 60 FPS row). The picture fills the Vita's
+960×544 screen in 16:9.
 
 **You need your own copy of the game.** The VPK contains no game data at all: no code, levels,
-textures, music or logos from the disc. You dump your own *Spyro the Dragon* (USA) disc and copy
-the disc image to your Vita.
+textures, music or logos from the disc. You dump your own *Spyro the Dragon* disc (USA or Europe)
+and copy the disc image to your Vita.
 
 *Spyro the Dragon* and its characters are trademarks and copyrights of their respective owners.
 None of the game is included here. This project is not affiliated with, endorsed by or connected
@@ -22,9 +24,18 @@ to Sony Interactive Entertainment, Insomniac Games, Activision or Universal.
 
 - A PS Vita or PS TV that runs homebrew (HENkaku / Ensō), with
   [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
-- Your own **Spyro the Dragon, USA, SCUS-94228** disc. The PAL and Japanese releases and the demo
-  discs are different builds and won't run (the game checks which one you have).
-- A computer with a CD/DVD drive, to dump the disc.
+- Your own copy of **Spyro the Dragon**, either:
+  - **the disc**, USA (SCUS-94228) or Europe (PAL, SCES-01438, in English, French, German,
+    Spanish and Italian; see [The European disc](#the-european-pal-disc)), and a computer with
+    a CD/DVD drive to dump it (step 1); or
+  - **the digital copy** from the PlayStation Store (the PS1 Classic), installed on the Vita
+    from your account. Nothing to dump: you copy one file on the Vita itself
+    (see [The digital copy](#or-the-digital-copy-from-the-playstation-store)).
+
+  There's nothing to set: the port reads which release it is from the game itself (the
+  executable `SYSTEM.CNF` names, and that file's SHA-1). The Japanese release (SCPS-10083) is a
+  different build: the port recognises it and says it isn't supported yet. Demo discs won't run
+  (the game checks which one you have).
 - `ur0:data/libshacccg.suprx` on the Vita (Sony's shader compiler module; see step 3).
 
 ## 1. Dump your disc to bin/cue
@@ -57,7 +68,7 @@ A CloneCD `.img` (2352-byte sectors) works as it is, and so do images with 2448-
 | `.iso` (2048-byte sectors) | it has lost the XA music; dump the disc as `.bin` + `.cue` instead |
 | `.chd` | compressed; convert it with `chdman` (above) |
 | `.ecm` | compressed; unpack it with `unecm` |
-| PSP `EBOOT.PBP` | converted for the PSP; it has lost the music, so dump the disc instead |
+| PSP `EBOOT.PBP` | a PS1 Classic of Spyro is played from it in place (the PlayStation Store's copy, or one made with PSX2PSP from a good dump, which holds the same disc); any other PBP is refused and says so |
 
 ## 2. Install
 
@@ -65,10 +76,12 @@ A CloneCD `.img` (2352-byte sectors) works as it is, and so do images with 2448-
    and press ✕ on it in VitaShell to install. A bubble called **Spyro Vita** appears.
 2. Make the folder `ux0:data/spyro/` and copy your **`.bin` and `.cue`** into it (or your `.img`,
    or a `.bin` alone). Nothing else is needed: no extracting, no renaming. For example:
-   `ux0:data/spyro/Spyro the Dragon (USA).bin` and `ux0:data/spyro/Spyro the Dragon (USA).cue`.
+   `ux0:data/spyro/Spyro the Dragon (USA).bin` and `ux0:data/spyro/Spyro the Dragon (USA).cue`,
+   or `Spyro the Dragon (Europe).bin` and `.cue`.
 
 The game reads the image directly (decisions D60). If the folder holds more than one image, it
-takes the first `.cue` by name, then the first `.bin` or `.img`, and `spyro.log` says which.
+takes the first `.cue` by name, then the first `.bin` or `.img`, and `spyro.log` says which. To
+switch between your USA and European discs, keep only one image in the folder.
 
 ### Or: extract the files first
 
@@ -82,9 +95,56 @@ python3 -I tools/extract_disc.py "Spyro the Dragon (USA).cue" spyro-files
 
 It takes the `.cue` or the `.bin`, writes every file into `spyro-files/` (about 590 MB; the music
 streams as 2336-byte XA sectors) with a `manifest.json`, and checks every file against the SHA-1 of
-a good dump: `SCUS_942.28` must be `84e3728ab94720d0873e2514adf4aade4935e0c5` and `WAD.WAD` must
-match too. Copy the **contents** of `spyro-files/` to `ux0:data/spyro/` (`manifest.json`
-included, the `.STR` files as they are).
+a good dump of its release:
+
+| Release | Executable | Its SHA-1 | Music |
+|---|---|---|---|
+| USA, SCUS-94228 | `SCUS_942.28` | `84e3728ab94720d0873e2514adf4aade4935e0c5` | `PETEXA0.STR` … `PETEXA5.STR` |
+| Europe, SCES-01438 | `SCES_014.38` | `fdd04c044cd1892ae28c43e9e619dd41a848058a` | `MUSIC1.STR` … `MUSIC6.STR` |
+
+`WAD.WAD` must match too. Copy the **contents** of `spyro-files/` to `ux0:data/spyro/`
+(`manifest.json` included, the `.STR` files as they are).
+
+### Or: the digital copy from the PlayStation Store
+
+If you bought *Spyro the Dragon* on the PlayStation Store (the PS1 Classic; it still works from
+your download list), install it on the Vita as usual: it lands in `ux0:pspemu/PSP/GAME/NPUI94228/`
+(the Americas), `NPEE00076/` (Europe) or `NPJI00062/` (Japan) as a PSP-style `EBOOT.PBP`. With
+VitaShell, **copy that `EBOOT.PBP` into `ux0:data/spyro/`** (about 340 MB; leave the folder
+without a disc image, which would be taken first) and start Spyro Vita: it plays the game from
+that file. Nothing is converted: the PSP format keeps the disc's sectors, music included, and the
+port reads them in place, decoding each block as the game asks for it (the file's header is
+encrypted; the port recovers its key from the file itself, so no licence file is needed). The
+executable and `WAD.WAD` are checked against the same SHA-1s as a dump's (decisions D157, D158):
+
+| Store copy | What it holds | What the port does |
+|---|---|---|
+| Americas, `NPUI94228` | the USA disc, SCUS-94228, byte for byte | plays it |
+| Europe, `NPEE00076` | the USA disc as well (Sony's European release is the NTSC game) | plays it as the USA release; the PAL version, SCES-01438, exists only on disc |
+| Japan, `NPJI00062` | the Japanese disc, SCPS-10083 | recognises it and says it isn't supported yet, as for the disc |
+
+Loading from a copy is slower than from a disc image (every block is decompressed on the Vita's
+CPU: about 2.7 MB/s against 11), and the one-time check of the level data at the first start
+takes about a minute. A disc image in the folder is unaffected by any of this: it loads and plays
+as before.
+
+**Why the copy has to be copied, and the VPK that doesn't need it.** `spyro-vita.vpk` is a *safe*
+homebrew app, like every release before it: it can read `ux0:data/` and its own folders, and not
+`ux0:pspemu`, where the Store installs the game. So it never looks there.
+
+A release also carries **`spyro-vita-unsafe.vpk`**: the same game built as an *unsafe* app
+(`-DSPYRO_UNSAFE=ON`, see [docs/vita-testing.md](docs/vita-testing.md)). It needs **Enable Unsafe
+Homebrew** switched on in HENkaku's settings, and can then read the whole memory card, so it finds
+the copy where the Store put it, with nothing to copy: `ux0:pspemu/PSP/GAME/` first, then
+Adrenaline's memory sticks (`uma0:`, `imc0:`, `xmc0:`, `ur0:`, `grw0:`). Install one VPK or the
+other: they are the same app (`SPYV00001`), so one replaces the other, and settings and saves stay.
+If you play from a disc image, or don't mind copying the `EBOOT.PBP`, take the safe one. With more
+than one copy installed the unsafe build takes a release it runs before one it only recognises,
+then the first folder by name; `spyro.log` lists them all, and
+`disc=ux0:pspemu/PSP/GAME/NPUI94228` in `config.txt` names one.
+
+On a PC, `pbp_extract EBOOT.PBP spyro-files` (`tools/pbp_extract.c`, built with the host build)
+writes the game's files as `extract_disc.py` would, if you want them.
 
 ## 3. Get `libshacccg.suprx`
 
@@ -99,20 +159,27 @@ the same file:
 - **ShaRKF00D**, the older tool, does the same from the *PSM Dev* app if you have it installed.
 
 The port also looks in `ur0:data/external/libshacccg.suprx`. Without the module it still runs, but
-draws on the CPU, which is too slow on a Vita (`spyro.log` says
-`gpu: no ur0:data/libshacccg.suprx ...`).
+draws on the CPU, which is too slow on a Vita: a screen says so at the start (**NO SHADER
+COMPILER**), and `spyro.log` says `gpu: no shader compiler (libshacccg.suprx) could be loaded ...`.
+
+**If you see that screen with the module installed:** on some set-ups `spyro-vita.vpk`, a safe
+app, can't read `ur0:data` (seen on a PS TV; issue #152). Copy the file to
+`ux0:data/spyro/libshacccg.suprx` as well, with VitaShell: the port loads it from there when the
+other two places fail.
 
 ## 4. Play
 
 Start **Spyro Vita**. The first start takes longer: the shaders compile (about 8 seconds), and the
-game checks once that your image is a good dump of SCUS-94228 (it hashes the level data, with a
-progress panel; it remembers the image in `ux0:data/spyro/save/disc-verified.txt`, so later starts
-skip this). The executable is checked on every start, which takes no time.
+game checks once that your image is a good dump of its release (it hashes the level data, with a
+progress panel; it remembers the image in `ux0:data/spyro/save/disc-verified.txt`, or in
+`save/pal/` for the European disc, so later starts skip this). The executable is checked on every
+start, which takes no time.
 
-If the game can't start, a panel says why and what to do, and ✕ quits: no disc image found (it
-names the folder), an `.iso`, `.chd`, `.pbp` or `.ecm`, the wrong disc (another region or release:
-it shows the disc's serial, or the executable's SHA-1), a bad dump, or an image that is cut short
-or can't be read.
+If the game can't start, a panel says why and what to do, and ✕ quits: no disc image and no
+digital copy found (it names the folder), an `.iso`, `.chd`, `.pbp` or `.ecm`, the wrong disc
+(another region or release: it shows the disc's serial, or the executable's SHA-1), a bad dump,
+an image that is cut short or can't be read, or a digital copy that can't be read (a damaged
+download).
 
 ### Controls
 
@@ -124,7 +191,7 @@ or can't be read.
 | ○ | ○ | Flame |
 | △ | △ | Look around |
 | L / R | L1 / R1 | Sidestep |
-| Right stick | (free camera) | Turn and tilt the camera; let go and the game's camera takes over |
+| Right stick | (free camera) | Turn and tilt the camera; let go and the game's camera takes over (with *Camera recentre* off, it stays where you turned it) |
 | START | START | Pause |
 | SELECT | SELECT | Inventory |
 | SELECT + START, or tap the middle of the screen | | **Options menu** |
@@ -142,17 +209,16 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | Section | Rows | Default |
 |---|---|---|
 | PICTURE | Widescreen 16:9 | on |
-| | 60 FPS (experimental) | off |
-| | Texture filter (off / bilinear / 3-point) | off (the PS1's sharp texels) |
+| | 60 FPS (off / interpolated / 60 Hz). 60 Hz runs the game's logic itself at 60 Hz in play, so the game is 60 pictures a second of its own; menus, cutscenes and the attract demos stay at the game's 30 Hz with a blended picture in between. Interpolated keeps the game at 30 Hz and adds that blended picture everywhere. Off is the original 30 fps. 60 Hz starts or stops only when the game starts, so choosing it or leaving it asks whether to restart now or undo; ○ leaves it for the next start, and a 60 HZ LOGIC row says ON/OFF AT RESTART meanwhile | 60 Hz |
 | | Perspective-correct textures | off |
 | | Sub-pixel vertices (no PS1 wobble) | off |
 | | Resolution (native / PS1) | native (960×544) |
-| | Dynamic resolution (off / auto / 88% / 75% / 67%) | off |
 | | Draw distance (experimental: off / 1.5× / 2×) | off |
 | CONTROLS | Analog stick | on |
 | | Free camera (right stick) | on |
 | | Invert camera X / Invert camera Y | on / on |
 | | Camera speed | 100% |
+| | Camera recentre (off: the camera keeps its heading instead of swinging back behind Spyro; flight levels always recentre) | on |
 | | Rear touch L2/R2 | off |
 | | Touch to open menu | on |
 | GAME | Skip intro logos | off |
@@ -166,6 +232,9 @@ Every option, and the extra ones `config.txt` takes, is described in
 
 - **The game's own saves** (save fairies) go to a memory card file,
   `ux0:data/spyro/save/card0`, created the first time the game saves.
+- **The European disc keeps everything in `ux0:data/spyro/save/pal/`**: its own memory card,
+  state slots and disc check. The two releases never share a save: a European save can't be loaded
+  by the USA game or the other way round, as on a PS1.
 - **Quick save:** the menu's SAVE section keeps three state slots. *Save state* saves the whole game
   at that moment and *Load state* puts it back exactly. States are
   `ux0:data/spyro/save/state1.bin` … `state3.bin` (3.8 MB each). They are separate from the memory
@@ -173,12 +242,25 @@ Every option, and the extra ones `config.txt` takes, is described in
   show `OTHER BUILD`. Nothing is saved automatically when you close the app.
 - The log of the last run is `ux0:data/spyro/spyro.log`. Please include it with any bug report.
 
+### The European (PAL) disc
+
+- **Language:** chosen on the title screen, as on a PS1: left/right picks English, French,
+  German, Spanish or Italian, and the game's saves remember it. It can't be changed in game (the original
+  can't either). The options menu stays in English.
+- **Speed:** the European disc runs at the USA release's speed and 60 Hz, with the same 60 FPS
+  row, and not at the 50 Hz of a PAL PlayStation. Its text, voices, cutscenes and its taller
+  256-line picture are the European release's. Its animations, cutscenes and title flyby still play
+  at the speed they have on a PAL PlayStation.
+
 ## Known issues
 
-- **60 fps is still marked experimental** and off by default. On hardware it now holds 60 fps in
-  play in every level measured; the attract demo's flight scenes can still slip below it.
+- **60 FPS's 60 Hz, the default, isn't the PS1's game tick for tick.** Every enemy and object
+  runs at 60 Hz with the original's speeds, but the steps in between are new (`docs/tick60.md`).
+  For the original's timing exactly, choose interpolated (still 60 pictures a second) or off.
+  On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
+  still slip below it.
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
-- **The first time you pick a texture filter, perspective or sub-pixel setting**, the menu pauses
+- **The first time you pick the perspective or sub-pixel setting**, the menu pauses
   for a few seconds while its shaders compile. That happens once per start-up.
 - **Opening the game's pause or inventory screen hitches for a moment.** The game copies the frame
   for the menu's background, and the GPU renderer has to rebuild that copy on the CPU.
@@ -215,7 +297,7 @@ The other builds are for development:
 - **Vita build and testing in Vita3K:** [docs/vita-testing.md](docs/vita-testing.md).
 
 How it works: [docs/porting-plan.md](docs/porting-plan.md), decisions with their reasons in
-[docs/decisions.md](docs/decisions.md) (D1–D102) and [docs/decisions-2.md](docs/decisions-2.md) (D103 on), and every translated function in
+[docs/decisions.md](docs/decisions.md) (D1–D102), [docs/decisions-2.md](docs/decisions-2.md) (D103–D161) and [docs/decisions-3.md](docs/decisions-3.md) (D162 on), and every translated function in
 [docs/translation-log.md](docs/translation-log.md).
 
 ## Licence and credits

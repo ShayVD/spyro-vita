@@ -6,6 +6,7 @@
 #include "vita.h"
 #include "watchdog.h"
 #include "../../game/savestate.h"
+#include "psx_region.h"
 #include "menu_opts.h"
 #include "menu_panel.h"
 #include "psx_state.h"
@@ -152,7 +153,9 @@ static void tick(void) {
 }
 
 void vita_savestate_init(void) {
-  savestate_set_dir(VITA_DATA_DIR "/save");
+  char dir[256];
+  /* the disc's region's folder: save/ for the US disc, save/pal, save/jp (D132) */
+  savestate_set_dir(psx_region_path(dir, sizeof dir, VITA_DATA_DIR "/save", NULL, 1));
   g_savestate_tick_hook = tick;
   if (s_slot < 1 || s_slot > SAVESTATE_SLOTS)
     s_slot = 1;

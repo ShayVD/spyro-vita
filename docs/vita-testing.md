@@ -6,15 +6,18 @@ plays, drawn by the Vita's GPU. Read "What to expect" before you test.
 ## What you need
 
 - A PS Vita or PS TV with HENkaku/Ensō (any firmware that runs homebrew), and VitaShell.
-- Your own copy of *Spyro the Dragon* (USA, SCUS-94228), dumped to a `.bin`/`.cue`
+- Your own copy of *Spyro the Dragon* (USA, SCUS-94228, or Europe, SCES-01438, since D154), dumped to a `.bin`/`.cue`
   (MODE2/2352, one data track). The VPK contains no game data at all.
 - Optionally a computer with Python 3, to extract the files from the dump instead (step 2).
 - **`ur0:data/libshacccg.suprx`, for the GPU renderer.** The GPU renderer (`gpu=1`, the default,
   decisions D35) compiles its shaders on the device with vitaGL, which needs Sony's shader compiler
   module. It's the usual file for vitaGL ports, extracted from your own Vita with ShaRKBR33D.
-  `ur0:data/external/libshacccg.suprx` works too. Without it the app logs
-  `gpu: no ur0:data/libshacccg.suprx ...` and draws on the CPU instead (`gpu=0`, decisions D26):
-  correct, but too slow on hardware.
+  `ur0:data/external/libshacccg.suprx` works too, and so does a copy in the data folder,
+  `ux0:data/spyro/libshacccg.suprx`, for the set-ups where a safe app can't read `ur0:data` (issue
+  #152, D163: the log then says `gpu: shader compiler loaded from ux0:data/spyro/libshacccg.suprx`).
+  Without it the app shows the **NO SHADER COMPILER** screen (X goes on), logs each place's error
+  code and `gpu: no shader compiler (libshacccg.suprx) could be loaded ...`, and draws on the CPU
+  instead (`gpu=0`, decisions D26): correct, but too slow on hardware.
 
 ## 1. Build the VPK (or use one you were given)
 
@@ -27,11 +30,16 @@ cmake --build build/vita
 ```
 
 The result is `build/vita/spyro-vita.vpk` (title "Spyro Vita", title ID `SPYV00001`, version
-01.10). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
+01.22). Besides `eboot.bin` and `param.sfo` it holds the bubble icon and LiveArea (drawn at build
 time by `tools/vita/make_livearea.py`, decisions D55, or, as now, converted from `assets/livearea/` (the committed official art), or from your own art in the gitignored `disc/livearea/` when that holds `icon0.png`, `bg.png` and `startup.png`: `tools/vita/livearea_local.sh LOGO TITLE [GATE]` makes them, then re-run cmake; D59), `README.md` and `licenses/`. CI builds the
 same VPK for every pull request and push to `main` (`.github/workflows/build.yml`; locally:
 `docker run --rm -v "$PWD:/work" -w /work vitasdk/vitasdk:latest tools/ci/build_vpk.sh`, D57). Notes:
 
+- The VPK is a safe app (`-DSPYRO_UNSAFE=OFF`, the default; D157): it plays a disc image, the extracted files, or the
+  PlayStation Store copy's `EBOOT.PBP` from `ux0:data/spyro/`. `-DSPYRO_UNSAFE=ON` (or
+  `SPYRO_CMAKE_ARGS=-DSPYRO_UNSAFE=ON` for `tools/ci/build_vpk.sh`) builds an unsafe app that also looks for the Store
+  copy in `ux0:pspemu`. CI builds that too, as `spyro-vita-unsafe.vpk` (the job `Vita VPK (unsafe)`), and a release
+  carries both (D161).
 - The VPK uses native memory (decisions D106): the game's data labels are ordinary globals and its memory one block
   from the heap. `-DSPYRO_NATIVE_MEM=OFF` (or `SPYRO_CMAKE_ARGS=-DSPYRO_NATIVE_MEM=OFF` for `tools/ci/build_vpk.sh`)
   builds the moved arena of D25 instead, the default before D106.
@@ -62,16 +70,49 @@ spyro-files` (decisions D58) and copy the *contents* of `spyro-files/` to `ux0:d
 (`manifest.json` included, the `.STR` files as they are). When `manifest.json` is there it wins over
 any image (`libcd: extracted files ...` in the log).
 
+**Or the digital copy** (decisions D157, D158): the PlayStation Store's Spyro is installed on the
+Vita as `ux0:pspemu/PSP/GAME/NPUI94228/EBOOT.PBP` (NPEE00076 holds the same USA disc; NPJI00062 is
+the Japanese disc and is refused as not supported yet). Copy that `EBOOT.PBP` into `ux0:data/spyro/`
+with VitaShell, with no image and no `manifest.json` beside it (an image there is taken first):
+the app opens it in place as the disc (`libcd: digital copy ux0:data/spyro/EBOOT.PBP: SCUS94228
+"Spyro the Dragon™", PGD header, 281280 sectors`, then the same `disc:` line as an image's; the
+first start hashes `WAD.WAD` through the decoder, about a minute). This works with
+`spyro-vita.vpk`, which is a safe app.
+
+A safe app can't read `ux0:pspemu`, so it doesn't look there, and its log has no line about it.
+`-DSPYRO_UNSAFE=ON` at configure time (default `OFF`) builds an unsafe app instead
+(`spyro-vita-unsafe.vpk` from CI and in a release, D161): the Vita
+must have unsafe homebrew enabled in HENkaku's settings, the log says `disc: an unsafe build: ...`
+at the start, and with nothing usable in the data folder the app finds the installed copy itself
+(`libcd: ... is SCUS94228` for every copy found, the chosen one first, then `libcd: digital copy
+ux0:pspemu/.../EBOOT.PBP: ...`). `disc=ux0:pspemu/PSP/GAME/NPJI00062` in `config.txt` opens one
+folder's copy instead of the scan's choice (an unsafe build only: a safe one can't open the
+folder and shows `NO DISC IMAGE FOUND` for it). `vpk_pack.py show build/vita/spyro-vita.vpk`
+(`third_party/vita-port-kit/vita/tools/`) prints `eboot safe` or `eboot unsafe` for a VPK.
+
+**What changes with a copy and what doesn't** (D158, D159). With a disc image or the extracted
+files, nothing: the CD worker is on core 1 at priority 0x90 and a CdRead completes inside CdRead,
+as in v1.2.0, and the start-up log has the one `cd:` line it had (`cd: native file reads and the
+XA stream on a worker on core 1, priority 0x90 (cd_native=1, D93)`). With a digital copy open,
+the same line says `core 2, priority 0x88`, a second line says `cd: a CdRead completes at the
+first vblank after the worker is done ... (cd_async=1, D159: the digital copy's default)`, and
+two lines join the `cd:` line every 300 vblanks: `cd: digital copy:` (the decoder's counts) and
+`cd: asynchronous CdReads (D159): N completed at a vblank, ... N waited for in a loop that polls
+without a vblank (CDLoadSync), ...` (where each read was completed; the waits are the game's own
+synchronous loads).
+
 When the game can't start it shows a panel saying why, and X, O or START quits (the same text is in
 `spyro.log`, after `disc:`):
 
 | Panel title | When |
 |---|---|
-| `NO DISC IMAGE FOUND` | no `manifest.json` and no image in the folder |
+| `NO DISC IMAGE FOUND` | no `manifest.json`, no image and no digital copy in the folder (D157); an unsafe build also found no copy installed on the Vita, and its text says so |
 | `AN ISO HAS NO MUSIC` | a 2048-byte `.iso` |
-| `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE USED` | `.chd`, `.ecm`, PSP `EBOOT.PBP` |
-| `WRONG DISC` | no `SCUS_942.28` (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
-| `WRONG VERSION OF THE GAME` | `SCUS_942.28`'s SHA-1 isn't `84e3728a…` |
+| `CONVERT THE CHD FIRST`, `UNPACK THE ECM FIRST`, `A PBP CAN'T BE READ AS A DISC` | `.chd`, `.ecm`, a PSP `EBOOT.PBP` that isn't a PS1 Classic of Spyro |
+| `CAN'T READ THE DIGITAL COPY`, `THE DIGITAL COPY IS DAMAGED` | the digital copy's `EBOOT.PBP` can't be decoded, or its file list can't be read (D157); its executable and `WAD.WAD` get the same `WRONG VERSION OF THE GAME` and `BAD DUMP` checks as an image |
+| `WRONG DISC` | no known release's executable (the serial and region from `SYSTEM.CNF`, e.g. `SCES-00900 (PAL, Europe)`), or no PlayStation file system |
+| `WRONG VERSION OF THE GAME` | the executable's SHA-1 isn't its release's (`SCUS_942.28`: `84e3728a…`; `SCES_014.38`: `fdd04c04…`) |
+| `NOT SUPPORTED YET` | the Japanese release, SCPS-10083 (PAL was refused this way until D154) |
 | `BAD DUMP` | `WAD.WAD`'s SHA-1 isn't `ab680013…` (first start only) |
 | `THE IMAGE IS CUT SHORT`, `THE IMAGE IS DAMAGED`, `CAN'T READ THE IMAGE` | a truncated image, an unreadable file list, an unknown format |
 | `THE .BIN IS MISSING`, `CAN'T READ THE CUE FILE` | a `.cue` naming a file that isn't there, or whose track 1 isn't MODE2 |
@@ -84,6 +125,7 @@ Files the app writes:
 | `ux0:data/spyro/spyro.log` | the log. **Please send it back after a test**, whatever happened |
 | `ux0:data/spyro/save/card0` | memory card 1 (created when the game first saves) |
 | `ux0:data/spyro/save/state1.bin` … `state3.bin` | quick-save states from the menu (3.8 MB each; decisions D51) |
+| `ux0:data/spyro/save/pal/`, `save/jp/` | the PAL and Japanese discs' own cards, states and `disc-verified.txt`, once those discs run (D132); `save/` itself stays the US disc's |
 | `ux0:data/spyro/shots/` | PNGs, only if `config.txt` asks for them |
 
 ## 3. Optional `ux0:data/spyro/config.txt`
@@ -93,6 +135,8 @@ Files the app writes:
 | Key | Meaning |
 |---|---|
 | `disc=PATH` | the disc image or the extracted files are somewhere other than `ux0:data/spyro` |
+| `pal50=1` | developers only: the PAL disc at its own 50 Hz timing (25 Hz logic, as the PS1 runs it; with `interp=1` a frame blended by time for every display vblank, D148), for checks against the PS1. Default 0: the PAL disc runs with US timing at 60 Hz ("PAL 60", D138), the only way players run it since D150, and the `60 FPS` row works on it as on the US disc. No menu row writes it. A `pal60=` line (D148's `PAL 60` row, gone with D150) is no longer read: the log says so and the menu's next save drops it |
+| `region_dev=1` | developers' test runs only (D143): open a release that isn't supported yet (Japan; PAL until D154, which runs without it now) instead of its "NOT SUPPORTED YET" panel, as the host's `--region-dev`. No menu row writes it; the menu's save keeps the line. `DISC=disc/image-pal tools/vita/vita3k_run.sh OUT 400 region_dev=1 frames=4500` runs the PAL disc to its first attract demo |
 | `frames=N` | quit after N vblanks (60 per second); 0, the default, never quits. The render thread is stopped and joined first, with an `exit:` line in the log (D120) |
 | `keep_awake=1` | no standby, no dimming and no screen off while the app runs: unattended runs, where nothing presses a button (`tools/vita/hw_run.sh` writes it; D77). Default 0: the Vita's own power settings |
 | `shot=V1,V2,...` | save a PNG of the picture at these vblanks, in `ux0:data/spyro/shots/` |
@@ -105,10 +149,12 @@ Files the app writes:
 | `cam_invert_x=0`, `cam_invert_y=0` | flip the free camera's left/right and up/down back. Both default to 1 (D53). Invert Y also flips Triangle look mode's up/down: on (the default), up looks up in both; off, up looks down, as in the original's look mode. `tools/vita/vita3k_run.sh` writes all three as 0 so scripted runs match the host |
 | `touch_menu=0` | a tap in the middle of the front touch screen no longer opens the options menu (default 1: it does, as SELECT+START; D46) |
 | `cam_speed=N` | the free camera's turn speed, 50 to 200 percent (default 100: as fast as L2/R2) |
+| `cam_recentre=0` | the camera keeps its heading as Spyro runs instead of swinging back behind him; only the right stick and L2/R2 turn it. Default 1, the original's. Flight levels always recentre (D162) |
 | `realtime=0` | virtual vblanks: every VSync is exactly one vblank however long the frame took (scripted tests; the game runs slow when the CPU can't keep up) |
 | `pad=PATH` | play a pad script (the linux32 host's `--pad` format) on top of the controller |
 | `wav=1` | also write the audio to `ux0:data/spyro/audio.wav` |
 | `gpu=0` | draw on the CPU (the software rasterizer) instead of the GPU; `gpu=1` is the default |
+| `shacc_ur0=0` | tests (D163): `ur0:data` counts as unreadable, as for a safe app on some set-ups (issue #152), so the shader compiler is loaded from `ux0:data/spyro/libshacccg.suprx`, or, with no copy there, the **NO SHADER COMPILER** screen comes up (it leaves by itself after 300 vblanks when `frames=` is set) and the run is `gpu=0` |
 | `res=native` | GPU: the resolution it draws at (decisions D40; also the menu's `RESOLUTION`, D48). `native`, the default: the screen's own pixels (the 4:3 picture is 726×544, 16:9 is 960×544). `ps1` (or `1`): the PS1's 512×240, scaled up when shown, as on a TV (cheapest). `2`…`4` (supersampled) were removed and now give native (D85). `gpu_res=` is the old name |
 | `gpu_time=1` | GPU: one GPU-timed frame per 300 vblanks in the log (see below). Default 0 since D68: its two `glFinish` calls are a hitch every 5 s at 60 fps. `gpu_time=2` also times that frame's scene on its own and counts GL draw calls and vertex uploads: measurement only, for `docs/fps-plan.md`'s Run A; don't combine it with `bench=` |
 | `shot_hd=1` | GPU: each shot also as a 960×544 PNG of the screen (`shot-V-hd.png`; black in Vita3K) |
@@ -118,7 +164,9 @@ Files the app writes:
 | `render_thread=0` | GPU: every GL call on the game thread, as before D63. Default 1 since D68: a render thread of its own on core 2 and the game on core 0; the same pictures, the game thread 23–53% busy at 60 fps on hardware instead of 93% at 30 (C1 run). A `render N:` line every 300 vblanks says how busy that thread was and how long the game waited for it. A `0` here needs `config_version=3` too, as for the next two (D68) |
 | `present_due=1` | With `realtime=1`, `gpu=1` and `render_thread=1`: each 16:9 or 60 fps frame carries the vblank it is due at, the render thread shows it when the display reaches that vblank, and the game thread never waits for a present. A render thread that falls behind skips late frames' draws (in-between frames first; real frames only when a later one is filed or the game waits for the ring or a vertex slab) and keeps their uploads; the `present N:` line counts it (stage 7c, D112). Default 1 since its hardware runs 7C1–7C4 (D112); 0 gives `VSync`'s presents back. `realtime=0` is unchanged either way |
 | `xa_ahead=0` | with `cd_native=0` only (D93): the XA music's sectors read one at a time on the game thread. Default 1 since D68: read ahead of the CD head on core 1 (D64), the same sectors, after level changes too (D78). An `xa N:` line every 300 vblanks; its last field counts the asks for a window that found none to reuse (0, or a few when the reader falls behind; hundreds in a row is a stuck read-ahead) |
-| `cd_native=0` | the disc read through the CD model's sectors, as before D93 (`xa_ahead` then applies). Default 1 since D93: the disc read natively, a CdRead as one read of a file at an offset (from `manifest.json`, or the image's own directory) on a worker thread on core 1, and the XA stream is read ahead from where it starts there, keeping the sectors of the channel that plays, instead of `xa_ahead`'s windows. The same bytes and the same ticks as the sector reads. The `cd:` line's reads and time then are the worker's; its last part, the time the game thread waited for its CdReads, is the load time to compare. The `xa N:` lines count the stream's chunks as windows |
+| `cd_native=0` | the disc read through the CD model's sectors, as before D93 (`xa_ahead` then applies). Default 1 since D93: the disc read natively, a CdRead as one read of a file at an offset (from `manifest.json`, or the image's own directory) on a worker thread on core 1 at priority 0x90, and the XA stream is read ahead from where it starts there, keeping the sectors of the channel that plays, instead of `xa_ahead`'s windows. The same bytes and the same ticks as the sector reads. The `cd:` line's reads and time then are the worker's; its last part, the time the game thread waited for its CdReads, is the load time to compare. The `xa N:` lines count the stream's chunks as windows. With the digital copy (D157) the worker is on core 2 at 0x88 instead (its stream chunks are 50 ms decodes, D158; the start-up `cd:` line names the core and priority either way), and a `cd: digital copy:` line follows: blocks decoded and the time, the file reads, for the game thread's handle and the worker's |
+| `cd_async=0` or `1` | with `cd_native=1`. `0`: a CdRead completes inside CdRead, the loading screen still for the read's time. `1` (D159): it completes at the first vblank (or CdSync poll) after the worker is done, and the loaders, which poll once a frame, animate meanwhile as on the PS1; a loop that waits for a read without a vblank (the game's `CDLoadSync`) sleeps until the worker is done. Not set: `1` with the digital copy (110 ms a read, which froze the loading screens), `0` with a disc image or extracted files (27 ms a read; as before D159). `cd_async=1` with an image is for trying it; no hardware run has measured it there |
+| `cd_helper=0` | with `cd_native=1` and the digital copy: no helper thread. Default 1 (D158): the second half of a long read of the copy (four blocks or more) is decoded by a helper on core 1 (below the walk and the presenter) while the worker, on core 2 below the render thread, decodes the first. With an image or files there is no helper either way |
 | `gpu_opaque=0` | GPU: every atlas triangle drawn with the `discard` shader. Default 1 since D68: with `tex_cache=1`, triangles whose texture has no transparent or semi-transparent texel are drawn by a shader without `discard`, the same pixels (D65). The `atlas N:` lines count them |
 | `gpu_direct=0` | GPU: each widescreen or 60 fps picture copied into its own slot, and the screen cleared under it, as before D69. Default 1: a picture that is one of the game's draw areas whole is shown straight from it, and when the game clears that area for a later frame the slot takes its texture instead of a copy (one full-screen GPU pass fewer per picture, the same pixels). The `gpu N: ... presentation pictures` line every 300 vblanks counts them |
 | `gpu_lean=0` | GPU: the 40-byte vertex everywhere. Default 1 since D74 (hardware logs `hw-main-2a0691c` and `hw-pr49-i1` ran with it, no fault): with `tex_cache=1` or `tex_filter` and neither `persp` nor `subpixel`, a 28-byte vertex instead of 40 (the same pixels), and one atlas lookup for a quad's two triangles (D70). The `gpu_time=2` line's vertex upload KB shows it |
@@ -131,12 +179,12 @@ Files the app writes:
 | `gpu_uber=1` | GPU: with the atlas (`tex_cache=1`), the opaque textured and untextured triangles of a draw in one program, so a draw where they alternate has no program change at each switch (the same pixels; untextured pixels then sample a texel they don't use). Default 0: on a Vita it saves nothing once draws are joined (run I1, D74) |
 | `gpu_fill=1` | GPU, diagnostic: per picture, a `gpu N: gpu_fill=1:` line with the pixels each kind of draw covers (plain atlas, discard, blend, untextured), how many runs of each, and a model of what the GPU shades with its hidden-surface removal; and the game's draws and how many could join (D74). Costs CPU: measurement only |
 | `gpu_bench=1` | GPU, measurement: each 300-vblank window draws with one of D74's five variants in turn (two change the picture on purpose) and times the GPU's scene every 16th picture: `gpu N: gpu_bench=1: VARIANT: the GPU's scene X ms a picture`. Run I1 (`tools/vita/fps-runs/README.md`) |
-| `dynres=1` | GPU: dynamic resolution (D75; also the menu's `DYNAMIC RES`). Default `0`: always native, as before. `1` (auto): the targets drawn at 88%, 75% or 67% of the screen's pixels only while the GPU's time per picture (from vitaGL's scene fences) is over its vblank, back up when it fits again; a `dynres N:` line per report. `88`, `75`, `67`: that scale always. Only at `res=native`. On hardware a lower scale saved little (run J6, D75) |
+| `dynres=1` | GPU: dynamic resolution (D75). A developer's key since D153, when the menu's `DYNAMIC RES` row went: read only with `config_version=5` in the file (the test tools write it); a line from an older file isn't taken, and the menu's next save drops it. Default `0`: always native, as before. `1` (auto): the targets drawn at 88%, 75% or 67% of the screen's pixels only while the GPU's time per picture (from vitaGL's scene fences) is over its vblank, back up when it fits again; a `dynres N:` line per report. `88`, `75`, `67`: that scale always. Only at `res=native`. On hardware a lower scale saved little (run J6, D75) |
 | `gpu_meter=1` | GPU: the GPU time meter (vitaGL's scene fences, D75) with `dynres=0`: a `dynres N:` line and a `gpu meter N:` line per report (the GPU's time per picture by kind of scene: the game's frames, texture decodes, other, the present) |
 | `atlas_cpu=0` | GPU: new texture blocks decoded into the atlas by a GPU pass, as before D79 (each pass a scene over the whole 2048×2048 atlas: ~10.5 ms of GPU on hardware, K3). Default 1: decoded on the CPU straight into the atlas texture's memory, the same texels, no GPU scene; an `atlas N: atlas_cpu=1:` line per report gives the CPU's time per 32×32 block. `atlas_cpu=2`: the GPU pass, then each block it drew compared with the CPU's decode (`atlas N: atlas_cpu=2:` lines; a `glFinish` per pass, for a hardware check only) |
 | `log_sync=1` | the log written by each thread that logs a line, as before D75. Default 0: a writer thread on cores 1–2, so the game thread never waits for the memory card |
 | `widescreen=0` | 4:3 instead of the default 16:9 (a wider view filling the screen; the game itself plays exactly as in 4:3; `docs/presentation.md`) |
-| `interp=1` | experimental 60 fps (default 0: 30 fps; decisions D44): an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). It doesn't fit the Vita's CPU at 16:9 yet, so most ticks fall back to 30 fps. `interp=2`: without animation blending; `interp=3`: camera only. Written by hand, `interp=1` needs a `config_version=2` line too; without one it's taken as the old default an older build's menu wrote, and read as 0 (the menu writes both) |
+| `interp=4` | the menu's `60 FPS` row (decisions D44, D148, D150): `4` 60 HZ, the default since D150, the game's logic itself at 60 Hz in play (D130), read at start, on the US disc and on PAL (US timing, D150); not with `pal50=1` or another disc, where it runs as 1 and the log says so. `1` INTERPOLATED, an extra in-between picture each tick (camera, Spyro, enemies and objects, their animation, particles). `0` OFF, 30 fps. `interp=2` (no animation blending) and `interp=3` (camera only), D44's diagnostic values, are read as 1 since D148 (the log says so; the menu writes the 1 back). A default an older menu wrote is read as today's, 4 (D150, as D68 did for its switches): `interp=0` without `config_version=4` (off was the default from D44 to D149), and `interp=1` without `config_version=2` (on was the default before D44). Written by hand, `interp=0` needs a `config_version=4` line too (the menu writes it) |
 | `widescreen_exact=1` | keep the original 4:3 game logic in normal play too (one extra hidden draw per tick: slower). By default the 16:9 view is drawn once and enemies at its edges act as on-screen ones; attract demos always keep the 4:3 logic |
 | `shot_hold=MS` | after each shot, hold the game until `hold.ack` appears in `ux0:data/spyro/`, at most MS ms (Vita3K window captures) |
 | `hang_dump=0` | no crash dump when the game freezes. Default 1: 20 s after a `hang:` line, if the game is still stuck, the app stops itself so the Vita writes a crash dump (see "If the game freezes", D73) |
@@ -148,7 +196,7 @@ Files the app writes:
 | `menu_test=V1,V2,...` | tests without a controller: open the options menu at these vblanks (up to 4) and press down, right, up, right, circle (60 fps one step on, widescreen toggled, close) |
 | `menu_keys=B1,B2,...` | with `menu_test`: press these instead (`up down left right cross circle triangle start`, one per 4 pictures; end with `circle` unless an action closes the menu), to test any row (D50) |
 | `skip_logos=1` | start at the title: no Sony or Universal logo and no title flythrough (the menu's `SKIP INTRO LOGOS`; everything they load still loads; D50) |
-| `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43; the menu's `TEX FILTER`) |
+| `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43). A developer's key since D153, when the menu's `TEX FILTER` row went: read only with `config_version=5` in the file (the test tools write it); a line from an older file isn't taken (the textures stay sharp), and the menu's next save drops it |
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39; the menu's `PERSPECTIVE TEXTURES`) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39; the menu's `SUB-PIXEL VERTICES`) |
 | `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
@@ -157,7 +205,7 @@ Files the app writes:
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=2`) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS (EXPERIMENTAL)`, off by default) the 60 fps budget, then (D48) `TEX FILTER` (OFF, BILINEAR, `3-POINT (SLOW)`), `PERSPECTIVE TEXTURES`, `SUB-PIXEL VERTICES`, `RESOLUTION` (NATIVE, PS1, 2X–4X) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). The four GPU rows are hidden with `gpu=0`. The first time a filter, perspective or sub-pixel setting is chosen, its shaders compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=5` since D153; 4 since D150) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS`: OFF, INTERPOLATED, 60 HZ; 60 HZ by default since D150, off before; `60 FPS (EXPERIMENTAL)` with ON, NO ANIM and CAMERA until D148; one row for every disc since D150, when D148's `PAL 60` row and `60 HZ LOGIC: US DISC ONLY` went), then (D48) `PERSPECTIVE TEXTURES`, `SUB-PIXEL VERTICES`, `RESOLUTION` (NATIVE, PS1; 2X–4X until D85) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). `TEX FILTER` (D48) and `DYNAMIC RES` (D75) were rows here until D153. The three GPU rows are hidden with `gpu=0`. The first time a perspective or sub-pixel setting is chosen, its shaders compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 **Quick save (the menu's SAVE section, decisions D51):** `STATE SLOT` picks slot 1, 2 or 3; `SAVE STATE` saves the whole game there, `LOAD STATE` (its value names the level the slot holds, or `EMPTY`) puts it back exactly as it was. Choosing either closes the menu; the save or load happens a moment later, at the start of the game's next tick, and a panel says what happened for about 2 seconds (`STATE 1 SAVED`, `STATE 2 LOADED`, `NO STATE IN SLOT 3`). States are separate from the game's own memory-card saves, which work as before; loading a state doesn't change the memory card. A state only loads in the build that made it: after installing a new VPK, old states show `OTHER BUILD` and are refused. There is no automatic save when the app is suspended or closed.
 
@@ -238,12 +286,16 @@ GPU renderer). A PS TV's DualShock has real L2/R2/L3/R3 (decisions D27).
 In the options menu (SELECT+START), CONTROLS:
 - `ANALOG STICK` OFF goes back to the digital pad (the left stick is the d-pad, 8 directions).
 - `FREE CAMERA` ON makes the right stick turn the camera in proportion and tilt it up and down.
-  Let go, and the game's camera swings back behind Spyro as after L2/R2. Look mode, cutscenes and
-  scripted cameras are unchanged (D47).
+  Let go, and the game's camera swings back behind Spyro as after L2/R2 (with the passive camera,
+  the game's default, it first holds still for 90 vblanks, about 1.5 s, as after L2/R2: D162). Look mode, cutscenes
+  and scripted cameras are unchanged (D47).
 - `INVERT CAMERA X` flips the turn. `INVERT CAMERA Y` flips the tilt and Triangle look mode
   together. OFF: up looks down, the game's own way in look mode and flight. ON: up looks up in both.
   Flight itself is unchanged.
 - `CAMERA SPEED` sets the turn speed, 50–200%.
+- `CAMERA RECENTRE` OFF: the camera no longer swings round behind Spyro by itself. It keeps its
+  heading and follows him; the right stick and L2/R2 turn it. Its height and distance are still the
+  game's. Flight levels always recentre (D162).
 - `REAR TOUCH L2/R2` is `reartouch=`.
 - `TOUCH TO OPEN MENU` (on by default): a short tap in the middle of the front touch screen opens
   the menu, and another tap closes it. Swipes, held fingers and touches near the edges don't count.
@@ -298,7 +350,8 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
 
 **With the GPU (`gpu=1`) in Vita3K:**
 
-- `libshacccg.suprx` has to be in Vita3K's `fs/ur0/data/`.
+- `libshacccg.suprx` has to be in Vita3K's `fs/ur0/data/` (or, since D163, in its
+  `fs/ux0/data/spyro/`).
 - Vita3K returns zeros for anything read back from what the GPU drew (`glReadPixels`, so
   `shot_hd=1` and `gpu_readback=0`). The normal shots still work. They come from the readback
   replay, the PS1-exact picture the game sees through `StoreImage`, so they compare byte for byte
@@ -311,7 +364,7 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
   brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
   count as game time, so don't take timings from capture runs.
 
-**Work counters (D131):** every 300 vblanks the log has a `vpk-perfcount: w FIRST LAST FRAMES name=total ...`
+**Work counters (D165):** every 300 vblanks the log has a `vpk-perfcount: w FIRST LAST FRAMES name=total ...`
 line (draws, triangles, uploads, state changes, OT packets, the vertex cache's work, the presenter's frames). They
 count work, not time, so a Vita3K run's lines compare with another run's and with the Vita's. One run's per-frame
 means, or two runs compared (a counter more than 2% higher is worse):
@@ -325,18 +378,18 @@ The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the p
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
 menu from 8,601.
 
-**When Vita3K crashes (exit 2, D132, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
+**When Vita3K crashes (exit 2, D166, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
 address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed
 or not. The place it died is in the macOS crash report (`~/Library/Logs/DiagnosticReports/Vita3K-*.ips`, matched to
 the run by its time; macOS keeps 25). The faulting thread's Vita3K frames are offsets into the binary: name them from
 `nm -n /Applications/Vita3K.app/Contents/MacOS/Vita3K` (the symbol at or below 0x100000000 + offset). On the pause
 routes it has always been Vita3K's render thread running a corrupted command (`process_batch`). Vita3K keeps an
 immediate context's commands in the game's VDM ring buffer and its context object in the game's context host memory,
-so a stray write by the game there would look the same; D132 lists the checks that found none. Before blaming a
+so a stray write by the game there would look the same; D166 lists the checks that found none. Before blaming a
 change, run the base VPK as many times on the same route, interleaved: on 2026-11-19 wobble60 passed 1 run in 5 or
 fewer on every build.
 
-**Pass `vdm_ring=1024` on every Vita3K route (D132).** Those corrupted commands are ones the game overwrote in the
+**Pass `vdm_ring=1024` on every Vita3K route (D166).** Those corrupted commands are ones the game overwrote in the
 VDM ring before Vita3K's render thread ran them: the game gets ahead of Vita3K's renderer and wraps vitaGL's 128 KB
 ring. `vdm_ring=KB` in `config.txt` sizes the ring (`gpu_gl.c`, before `vglInit*`; no line keeps vitaGL's default,
 which is what the hardware runs). With 1 MB, `wobble60` passed 5 of 5 against 2 of 5 without it, and `title`,
@@ -721,10 +774,10 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 **Testing the picture rows and the draw distance** (decisions D48, D49), with the GPU build:
 
 1. `config.txt`: only `stats=1`. Start a game and go to Artisans.
-2. **Picture rows:** open the menu (hold SELECT, press START). Under PICTURE, step `TEX FILTER` to BILINEAR,
-   then `3-POINT (SLOW)`, then OFF; switch `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` on and off;
+2. **Picture rows:** open the menu (hold SELECT, press START). Under PICTURE, switch
+   `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` on and off (`TEX FILTER` was a row here until D153);
    step `RESOLUTION` to PS1 and back to NATIVE. Each change should show behind the menu at once.
-   The first filter, perspective or sub-pixel change pauses a few seconds while its shaders compile; the
+   The first perspective or sub-pixel change pauses a few seconds while its shaders compile; the
    log says `gpu: programs for ... compiled in N ms`. Any `don't compile` line is what to send back.
    Close the menu: the log's `menu: saved ...` line lists the values, and they come back after a restart.
 3. **Draw distance:** set `DRAW DISTANCE (EXP.)` to 2X and close the menu. Walk and glide around Artisans
@@ -775,7 +828,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 **Measuring what 60 fps costs** (`docs/presentation.md` "60 fps on the Vita"):
 
-1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS (EXPERIMENTAL)`: ON; widescreen stays on by default).
+1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS`: INTERPOLATED, `ON` before D148; widescreen stays on by default).
 2. Then two minutes in the same places with `widescreen=0`.
 3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky), next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit).
 

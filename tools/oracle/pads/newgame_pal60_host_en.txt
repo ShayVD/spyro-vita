@@ -1,0 +1,26 @@
+# New game from the PAL disc's title at US timing (PAL 60, the default since
+# D150) on the linux32 host with --region-dev, in English: newgame_pal_host_en.txt
+# (PAL at its own 50 Hz, --pal50) with every vblank x6/5. Needs --save DIR.
+2 none
+2220 down
+2227 none
+2460 up
+2467 none
+2580 cross
+2587 none
+2820 cross
+2827 none
+3060 cross
+3067 none
+3300 cross
+3307 none
+3540 cross
+3547 none
+3780 cross
+3787 none
+4020 cross
+4027 none
+4260 cross
+4267 none
+4500 cross
+4507 none

@@ -50,7 +50,7 @@
 #include "psx_lean.h"
 #include "psx_vcache.h"
 #include "gpu_rt.h"
-/* the GL calls below count themselves (issue #160, D131) */
+/* the GL calls below count themselves (issue #160, D165) */
 #define VITA_PC_GL
 #include "vita_pc.h"
 
@@ -194,7 +194,7 @@ static BlendMode s_blend;
 static GLuint s_bound_fbo = (GLuint)-1;
 static unsigned s_gen, s_use;
 
-/* ---- GL state shadow (issue #169, D137) ----
+/* ---- GL state shadow (issue #169, D171) ----
  *
  * What gpu_gl.c last set, so a call that would set it again is skipped:
  * the program in use, each program's u_xf and u_semi values, the array
@@ -205,7 +205,7 @@ static unsigned s_gen, s_use;
  * draw (and the pixels) is the same. vitaGL itself skips none of these (a
  * glUseProgram or glUniform marks the program's uniforms for a new copy at
  * the next draw; vitaGL.md item 9). Skipped calls aren't made, so the work
- * counters (vita_pc.h, D131) don't count them.
+ * counters (vita_pc.h, D165) don't count them.
  *
  * Every GL call in the port is in this file. What the shadow can't see:
  * vitaGL's own work at the swap (gs_forget after each vglSwapBuffers), a
@@ -645,7 +645,7 @@ static void swap(void) {
   vita_gpu_meter_display(1); /* this scene's time isn't the GPU's work (gpu_meter.c, D75) */
   vglSwapBuffers(GL_FALSE);
   vita_gpu_meter_display(0);
-  gs_forget(); /* vitaGL's own work at the swap (D137) */
+  gs_forget(); /* vitaGL's own work at the swap (D171) */
 }
 
 /* ---- shaders (GLSL ES 1.00, run through vitaGL's translator) ---- */
@@ -2696,8 +2696,6 @@ void gl_vertices(const GrVertex *vertices, const VCacheVert *side, int count,
 void gl_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
   const uint32_t *dr = NULL;
   const int ndr = g_nd_direct ? nd_direct_ranges(&dr) : 0;
-  if (s_vc)
-    psx_vcache_set_base(vertices);
   gl_vertices(vertices, g_vcache_side, count, dr, ndr);
 }
 
@@ -3578,7 +3576,7 @@ int __wrap_sceAppMgrGetBudgetInfo(void *info) {
   return (int)0x80800001; /* any error: "not a system app" */
 }
 
-/* config.txt vdm_ring=KB (D132): GXM's VDM ring for vitaGL's immediate
+/* config.txt vdm_ring=KB (D166): GXM's VDM ring for vitaGL's immediate
  * context, in KB (0 or no line: vitaGL's default, SCE_GXM's 128 KB). Read
  * here, not with main.c's options, since it must be set before vglInit*. */
 static unsigned vdm_ring_kb(void) {
@@ -3608,7 +3606,7 @@ int gl_gpu_init(void) {
   vglSetupRuntimeShaderCompiler(SHARK_OPT_DEFAULT, 0, 0, 0); /* exact float maths */
   if (vdm_kb) {
     vglSetVDMBufferSize(vdm_kb << 10);
-    vita_log("gpu: VDM ring %u KB (vdm_ring=, D132)", vdm_kb);
+    vita_log("gpu: VDM ring %u KB (vdm_ring=, D166)", vdm_kb);
   }
   /* vitaGL's pools: all free RAM but 32 MB (newlib's heap is already
    * reserved), CDRAM and phycont. The installed vitaGL's return value is not
@@ -3665,7 +3663,7 @@ int gl_gpu_init(void) {
   glClearColor(0, 0, 0, 1);
   glClear(GL_COLOR_BUFFER_BIT);
   vglSwapBuffers(GL_FALSE);
-  gs_forget(); /* D137 */
+  gs_forget(); /* D171 */
   if (present_only) {
     vita_log("gpu: the GPU renderer's shaders don't compile: using the software renderer, "
              "shown through vitaGL (as gpu=0)");
@@ -3961,7 +3959,7 @@ void gl_rescale(void) {
     drop_target(0);
   s_cur = NULL; /* the next split finds its target again */
   s_sx = s_sy = 0;
-  gs_forget(); /* the targets' textures are gone (D137) */
+  gs_forget(); /* the targets' textures are gone (D171) */
 }
 
 /* A save state was loaded: the caller overwrote s_vram, so it's newer than
@@ -4033,17 +4031,18 @@ static void present_slot(int slot, int wide) {
     }
   } else {
     const uint16_t *px = port_present_slot_pixels(slot);
-    static uint8_t rgb[PRESENT_W * PRESENT_H * 3];
+    const int ph = port_present_slot_h(slot); /* 256 for PAL's display (D148) */
+    static uint8_t rgb[PRESENT_W * PRESENT_H_MAX * 3];
     int i;
-    for (i = 0; px && i < PRESENT_W * PRESENT_H; i++) {
+    for (i = 0; px && i < PRESENT_W * ph; i++) {
       int r = px[i] & 31, g = (px[i] >> 5) & 31, b = (px[i] >> 10) & 31;
       rgb[i * 3] = (uint8_t)(r << 3 | r >> 2);
       rgb[i * 3 + 1] = (uint8_t)(g << 3 | g >> 2);
       rgb[i * 3 + 2] = (uint8_t)(b << 3 | b >> 2);
     }
     gs_bind_tex(s_rgb_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, PRESENT_H, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
-    src[1] = (float)shown_top(PRESENT_H) / PRESENT_H;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, PRESENT_W, ph, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    src[1] = (float)shown_top(ph) / ph;
     src[3] = 1 - src[1];
   }
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lin ? GL_LINEAR : GL_NEAREST);
@@ -4193,7 +4192,7 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   s_vc = persp || subpixel;
   s_xmode = xmode;
   s_lean = lean;
-  gs_reset(); /* new programs, maybe compiled just now (D137) */
+  gs_reset(); /* new programs, maybe compiled just now (D171) */
   memcpy(s_prog, s_vprog[v], sizeof s_vprog[0]);
   psx_vcache_enable(s_vc ? 2 : filter ? 1 : 0);
   direct_mode();

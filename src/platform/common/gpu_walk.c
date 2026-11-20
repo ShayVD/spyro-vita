@@ -632,7 +632,7 @@ static uintptr_t subst_of(const PsxGpuWalk *w, uintptr_t pk) {
 }
 
 /* OT packets walked since the start, for the Vita's work counters (issue
- * #160, D131; src/platform/vita/perfcount.c): [0] the game thread's walk,
+ * #160, D165; src/platform/vita/perfcount.c): [0] the game thread's walk,
  * [1] the walks of their own (the presenter's, D126). One plain add a walk:
  * each is written by one walk at a time (the presenter's frame is joined
  * before the next), and only read elsewhere. */

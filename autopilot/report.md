@@ -27,17 +27,17 @@ cut the second; its real cost on a Vita is not measured yet.
 
 | Phase | Issue | Merge | What |
 |---|---|---|---|
-| 8 | #158 | `0525e1f` | Wobble fix on every frame: the presenter's in-between frames record and look up their own vertex-cache entries; on the Vita at 60 fps both kinds of frame had lost every answer since D125 (D130) |
-| 8 | #160 | `cfe0d45` | Work counters: `vpk-perfcount` lines (22 counters) and benchmark scenes; vendored kit 4c46886b -> 31295be7 (D131) |
-| 8 | #163 | `ad697c3` | Host ctest: `cmake/link_exec.sh` keeps executables' execute bit on colima's sshfs mount; mutant tests must show their own error (D136) |
-| 8 | #161 | `5eb8423` | Vita3K's crash found: the game wraps vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; `vdm_ring=KB`, off by default; every route passes `vdm_ring=1024` (D132) |
+| 8 | #158 | `0525e1f` | Wobble fix on every frame: the presenter's in-between frames record and look up their own vertex-cache entries; on the Vita at 60 fps both kinds of frame had lost every answer since D125 (D164) |
+| 8 | #160 | `cfe0d45` | Work counters: `vpk-perfcount` lines (22 counters) and benchmark scenes; vendored kit 4c46886b -> 31295be7 (D165) |
+| 8 | #163 | `ad697c3` | Host ctest: `cmake/link_exec.sh` keeps executables' execute bit on colima's sshfs mount; mutant tests must show their own error (D170) |
+| 8 | #161 | `5eb8423` | Vita3K's crash found: the game wraps vitaGL's 128 KB VDM ring over commands Vita3K's render thread hasn't run; `vdm_ring=KB`, off by default; every route passes `vdm_ring=1024` (D166) |
 | 8 | #166 | `f0cf4e6` | `main.c` accepts the `vdm_ring` key |
-| 8 | #162 | `a86cab5` | With the cache on, the presenter runs on core 1 again: game thread's cache work at 60 fps halved (D133) |
+| 8 | #162 | `a86cab5` | With the cache on, the presenter runs on core 1 again: game thread's cache work at 60 fps halved (D167) |
 | 8 | #167 | `6a92241` | Host pad scripts tracked under `tools/oracle/pads/` (with #164's work) |
-| 8 | #159 | `bbc36b1` | Vertex cache: identical answers with ~60% fewer divisions per vertex and ~15% fewer table lines (D134) |
-| 8 | #168 | `bec34cc` | `fast_render_ab.sh` gives every run its own memory card; gems runs must reach the gems (D135) |
-| 8 | #165 | `c713ab2` | Docs for #163 (D136) |
-| 8 | #169 | `9d42dac` | `gpu_gl.c` skips GL calls that set what is already set (D137) |
+| 8 | #159 | `bbc36b1` | Vertex cache: identical answers with ~60% fewer divisions per vertex and ~15% fewer table lines (D168) |
+| 8 | #168 | `bec34cc` | `fast_render_ab.sh` gives every run its own memory card; gems runs must reach the gems (D169) |
+| 8 | #165 | `c713ab2` | Docs for #163 (D170) |
+| 8 | #169 | `9d42dac` | `gpu_gl.c` skips GL calls that set what is already set (D171) |
 | 9 | #170 | `c69544b` | Hardware session prep: run configs AP1-AP6b in `tools/vita/fps-runs/` |
 | 9 | #171 | `6939e26` | Two stale comments (objects byte-identical) |
 | 9 | #173 | `7605bb1` | Host warns when a run without `--save` finds a card in `./save` |
@@ -80,7 +80,7 @@ measurements are ready (#170, `tools/vita/fps-runs/README.md`, "Runs AP1-AP6", a
 ## Vita3K's own failures
 
 41 Vita3K crashes over the session (the Notes in `autopilot/state.md`), 21 of them in #161's experiment. Before
-D132, routes with the wobble options crashed most runs; the cause was Vita3K running half-overwritten commands from
+D166, routes with the wobble options crashed most runs; the cause was Vita3K running half-overwritten commands from
 an overrun VDM ring (#161). Since every route passes `vdm_ring=1024`, one crash: a start-up GPU failure on a loaded
 Mac (`vita/docs/gotchas.md` 24), which passed on its rerun. Another project's autopilot (atv2-vita) ran its own
 Vita3K beside ours much of the time; #161 showed it was not the cause.
@@ -96,13 +96,24 @@ Vita3K beside ours much of the time; #161 showed it was not the cause.
 
 No issue is labelled `blocked`.
 
+## After the stop: main merged in (2026-11-20, D172)
+
+The autopilot had branched from a local `main` 162 commits behind GitHub's (no PAL support, D154; no 1.2.x), so its
+builds refused the owner's PAL disc on the Vita, and the hardware session stopped at its first run. On the owner's
+word `main` (`a9db797`) is merged into `autopilot`:
+
+- The autopilot's decisions are D164-D171 in `docs/decisions-3.md` (main has its own D130-D161); the merge is D172.
+- The vertex cache keeps main's D152 (the walk says where each polygon's answers go) and D164's own table for the
+  in-between frame; D152's `pres_draw_vcache` is gone (D172 says why). D167's presenter on core 1 works on top.
+- The kit stays at 31295be7 (it holds main's 78915280), vendoring both `perfcount` and `vcount`.
+- Vita3K, main against the merge, every picture byte-identical: 303 of 303 over the four routes and two new PAL routes
+  (the owner's 60 HZ, 16:9, wobble-fix settings on the Europe image). On `wobble60` the presenter runs on core 1 (main
+  keeps it inline), 97% of its vertices found, 0% lost, and the `gl.*`/`vc.*` counters equal the pre-merge ones.
+
 ## Before merging `autopilot` into `main`
 
 - `autopilot` holds `autopilot/` (this report, `state.md`, `config.json`) and `.github/ISSUE_TEMPLATE/autopilot.md`,
   and anchors `/runtime/` in `.gitignore`. Keep or drop them as you prefer; the game doesn't use them.
-- The vendored vita-port-kit moved from 4c46886b to 31295be7 (#160): besides `vita/runtime/perfcount` it brought
+- The vendored vita-port-kit moved from 78915280 (main's) to 31295be7: besides `vita/runtime/perfcount` it brought
   newer kit tools and a `vpk_disc_open` that closes an already-open disc first. Every route passed with it.
-- Decisions D130-D137 are new in `docs/decisions-2.md`. #165's worker noticed `docs/decisions-3.md` with a "D163"
-  on the unmerged branches `claude/version-1.2.2` and `claude/shader-probe-152`: that numbering would collide if
-  those branches merge.
 - The main checkout is on `autopilot`. Switch back with `git switch main` when you're done reviewing.

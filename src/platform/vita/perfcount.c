@@ -1,4 +1,4 @@
-/* Work counters (issue #160, D131): vita-port-kit's vita/runtime/perfcount
+/* Work counters (issue #160, D165): vita-port-kit's vita/runtime/perfcount
  * (third_party/vita-port-kit, vendored). One "vpk-perfcount:" line in
  * spyro.log every 300 vblanks, each counter the window's sum, which the
  * kit's vita/tools/perf_report.py reads and compares between two runs.
@@ -10,10 +10,10 @@
  * thread into the kit's counters (vpk_pc_add, ~28 atomic adds a vblank):
  * gpu_gl.c's GL calls and the game's draws there (vita_pc.h, g_vpc_gl), the
  * OT walk's packets (gpu_walk.c, one add a walk), the vertex cache's projections and lookups (vcache.c)
- * and their cost (vcache.c's g_vcache_cost and g_vcache_pres_cost, D134: each thread's divisions,
+ * and their cost (vcache.c's g_vcache_cost and g_vcache_pres_cost, D168: each thread's divisions,
  * probes and table lines, records and lookups added; issue #172) and the presenter's frames (present.c's g_present_stats). The shared code
  * needs nothing of the kit (the host links none), and no hot path has an
- * atomic (D131).
+ * atomic (D165).
  * Keep the names stable: runs compare by name. */
 #include "vita.h"
 #include "vita_pc.h"
@@ -47,7 +47,7 @@ extern unsigned g_vcache_work[4];   /* vcache.c: projections, polygons, vertices
 
 static unsigned s_gl0[VPC_COUNT], s_walk0, s_vc0[4], s_cost0[2][3];
 
-/* one thread's cost counters (D134), records and lookups added: divisions,
+/* one thread's cost counters (D168), records and lookups added: divisions,
  * probes, lines. The presenter's are another thread's plain adds, read as a
  * word each (as gpu_gl.c's); the game thread's are this thread's own. */
 static void pull_cost(const unsigned *c, unsigned *last, int first) {
@@ -69,7 +69,7 @@ void vita_pc_init(void) {
   vpk_pc_init(&c);
   for (i = 0; i < VPC_COUNT; i++)
     g_vpc[i] = vpk_pc_register(k_names[i]);
-  vita_log("perfcount: a vpk-perfcount line every %u vblanks, %d counters (D131)", c.window,
+  vita_log("perfcount: a vpk-perfcount line every %u vblanks, %d counters (D165)", c.window,
            VPC_COUNT);
 }
 

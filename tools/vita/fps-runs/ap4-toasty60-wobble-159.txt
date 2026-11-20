@@ -1,4 +1,4 @@
-# Run AP4 (#170; #159's cheaper vertex cache, D134): AP2's lines exactly, run on two older autopilot
+# Run AP4 (#170; #159's cheaper vertex cache, D168): AP2's lines exactly, run on two older autopilot
 # VPKs, once each:
 #   AP4a on runtime/autopilot/vpk/autopilot-a86cab5.vpk (SHA-1 840eec28...; #162 merged, before #159;
 #        the same game code as 8dab625)
@@ -10,12 +10,14 @@
 #   the same with autopilot-bbc36b1.vpk into logs/hw-ap4b
 # #159 is AP4a against AP4b: tools/vita/hw_cmp.py logs/hw-ap4a/spyro.log logs/hw-ap4b/spyro.log and
 # tools/vita/fps60_summary.py on each (the game thread's and the presenter's thread's time, busy %,
-# late vblanks per 300). perf_report.py AP4a AP4b: vc.* and gl.* the same (same answers, D134).
-# AP4b's "vcache cost" lines (not in AP4a: they came with #159) should read as D134's Vita3K ones.
+# late vblanks per 300). perf_report.py AP4a AP4b: vc.* and gl.* the same (same answers, D168).
+# AP4b's "vcache cost" lines (not in AP4a: they came with #159) should read as D168's Vita3K ones.
 # AP4b against AP2 (9d42dac) is #169 in Toasty: the render thread's ms per picture (hw_cmp.py's
 # render, fps60_summary.py's rend), gl.attribs/gl.uniforms/gl.tex_binds down in perf_report.py.
-config_version=3
+config_version=5
 interp=1
 gpu_meter=1
 persp=1
 subpixel=1
+# the US disc (the routes are US-timed), whatever the owner's config.txt says (D172)
+disc=ux0:data/spyro

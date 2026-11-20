@@ -10,7 +10,7 @@
  *    every returned field against the register it stands for.
  * Built again with NGTE_MUTATE (one deliberate off-by-one in gte_native.h's
  * results: 1 RTPS's screen offset, 2 RTPT's middle depth, 3 GPL's green, D98),
- * whose ctest passes only on its field's mismatch (spyro_mutant_test, D136). */
+ * whose ctest passes only on its field's mismatch (spyro_mutant_test, D170). */
 #if NGTE_MUTATE == 1
 /* The mutation: RTPS's screen offset one pixel off. */
 #define ngte_proj_get ngte_proj_get_real

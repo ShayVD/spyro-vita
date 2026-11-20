@@ -65,9 +65,9 @@
  * (psx_vcache_pres_detach, as it places the job's buffer): from there a
  * polygon is the presenter's when its vertices aren't in the game's walk's
  * buffer (psx_gpu_game_walk, the only buffer the logic draw walks into),
- * and its answers go to a side array of the presenter's own, at its index
- * in the presenter's walk's buffer (learnt from its first frame drawn
- * inline), which travels with its buffer to the render thread. The worker
+ * and its answers go to a side array of the presenter's own (made with its
+ * table, at its first frame, drawn inline), at the index its walk gives
+ * (D152), which travels with its buffer to the render thread. The worker
  * ends the frame as its buffer closes (psx_vcache_pres_end). The
  * presenter's thread touches only its own table, its own side array, its
  * own counters and the presenter's VCacheStats; the logic draw never
@@ -144,8 +144,7 @@ typedef struct {
 } Rec;
 
 static Table s_tab0 __attribute__((aligned(64)));
-static const GrVertex *s_pres_vb; /* the presenter's walk's vertex buffer (its first inline frame) */
-static VCacheVert *s_pres_side;   /* the answers for it, while it runs on its own thread */
+static VCacheVert *s_pres_side; /* the presenter's answers while it runs on its own thread (#162) */
 static Table *s_tab1;                  /* the logic draw's other table (D71) */
 static Rec s_rec[2] = {{&s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
 static const Table *s_rtab;            /* the walk's table and frame, NULL: this one */
@@ -164,15 +163,6 @@ static void table_clear(Table *t) {
 
 VCacheVert g_vcache_side[MAX_VERTEX_BUFFER_SIZE + 6];
 
-/* The vertex buffers the renderer has been given (psx_vcache_set_base):
- * the logic draw's walk's, the presenter's (D125: its own walk) and the
- * check's. A polygon's answer goes to g_vcache_side at its index in its own
- * walk's buffer, whichever buffer the renderer had last (#158: with the two
- * walks taking turns at 60 fps, that was always the other one). */
-#define VC_BASES 4
-static const GrVertex *s_bases[VC_BASES];
-static int s_nbases;
-
 static int s_pres; /* the presenter's frame, inline: its DrawOTag hasn't returned (psx_vcache_pres_begin) */
 /* the presenter's frame on its own thread (#162): from psx_vcache_pres_detach
  * (the game thread, before it posts the job) to psx_vcache_pres_end (the
@@ -180,38 +170,9 @@ static int s_pres; /* the presenter's frame, inline: its DrawOTag hasn't returne
  * walk's buffer */
 static int s_pres_async;
 
-void psx_vcache_set_base(const void *vertex_buffer) {
-  const GrVertex *const b = (const GrVertex *)vertex_buffer;
-  int i;
-  /* the presenter's walk's buffer, from a frame it draws inline: then its
-   * frames may run on its own thread (psx_vcache_pres_async_ok) */
-  if (s_pres && !s_pres_vb && b != psx_gpu_game_walk()->vb) {
-    VCacheVert *const side = malloc(sizeof(VCacheVert) * (MAX_VERTEX_BUFFER_SIZE + 6));
-    if (side) {
-      for (i = 0; i < MAX_VERTEX_BUFFER_SIZE + 6; i++) {
-        side[i].dx = side[i].dy = 0;
-        side[i].w = 1;
-      }
-      s_pres_side = side;
-      s_pres_vb = b;
-    }
-  }
-  for (i = 0; i < s_nbases; i++)
-    if (s_bases[i] == b)
-      return;
-  /* a buffer first seen: its polygons' answers couldn't be written, so this
-   * once it is drawn as not found (integer and affine, as the PS1) */
-  for (i = 0; i < MAX_VERTEX_BUFFER_SIZE + 6; i++) {
-    g_vcache_side[i].dx = g_vcache_side[i].dy = 0;
-    g_vcache_side[i].w = 1;
-  }
-  if (s_nbases < VC_BASES)
-    s_bases[s_nbases++] = b;
-}
-
 VCacheStats g_vcache_stats[2];
 /* Work since the start, never reset, for the Vita's work counters (issue
- * #160, D131; src/platform/vita/perfcount.c): projections recorded,
+ * #160, D165; src/platform/vita/perfcount.c): projections recorded,
  * polygons looked up, their vertices, and those not found. g_vcache_work
  * is the game thread's (and its walk's: the logic draw, and the presenter
  * inline), g_vcache_pres_work the presenter's thread's (#162): one writer
@@ -525,7 +486,7 @@ static inline int under3999(float a, float b) { return a > b ? a < b * 3.999f : 
 
 int psx_vcache_polys;
 
-void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
+void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   GrVertex *const vertex = (GrVertex *)vertex_;
   const Cand *e[4];   /* each vertex's candidates, NULL: not found */
   uint32_t et[4];     /* and its slot's tag */
@@ -533,8 +494,6 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
   uint32_t ref[4], persp = VREF_PERSP;
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
   float best = 4.0f; /* a polygon's depths are never 4x apart */
-  const GrVertex *base;
-  VCacheVert *sides;
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
    * frames is open, #162; the logic draw's walk never reads s_pres_async),
@@ -656,26 +615,17 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
       r |= VREF_NOPOS;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
-  /* the answers' array and the buffer they're indexed from: on its own
-   * thread the presenter's own (#162), else whichever known buffer holds
-   * the vertices */
-  base = NULL;
-  sides = g_vcache_side;
-  if (async) {
-    if (s_pres_side && vertex >= s_pres_vb && vertex - s_pres_vb <= MAX_VERTEX_BUFFER_SIZE - 6)
-      base = s_pres_vb, sides = s_pres_side;
-  } else {
-    for (i = 0; i < s_nbases; i++)
-      if (vertex >= s_bases[i] && vertex - s_bases[i] <= MAX_VERTEX_BUFFER_SIZE - 6) {
-        base = s_bases[i];
-        break;
-      }
-  }
-  if (base) {
+  /* The walk says where the answers go (D152): g_vcache_side at the
+   * polygon's first vertex's index in its own buffer. On its own thread the
+   * presenter's go to its own array at the same index (#162), as the logic
+   * draw's walk fills g_vcache_side beside it. */
+  if (side && async)
+    side = s_pres_side ? s_pres_side + (side - g_vcache_side) : NULL;
+  if (side) {
     /* the walk splits a quad 0 1 2 3 into 0 1 3 / 1 3 2 (TriangulateQuad) */
     static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
     const int *order = n == 4 ? k_quad : k_tri;
-    VCacheVert c[4], *side = sides + (vertex - base);
+    VCacheVert c[4];
     for (i = 0; i < n; i++) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
@@ -690,9 +640,13 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n) {
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
-  } else if (async || s_nbases) {
+  } else if (async) {
     st->side_lost += n;
   }
+}
+
+void psx_vcache_poly_ref(void *vertex, short *const *xy, int n) {
+  psx_vcache_poly(vertex, xy, n, NULL);
 }
 
 static int s_ot_done; /* psx_vcache_enable: mode != 0 */
@@ -780,8 +734,22 @@ PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
   s_pres_async = 0; /* (the last one ended at its buffer's close, before the join) */
   if (!s_ot_done)
     return NULL;
-  if (g_psyxRtpValueHook && !r->tab) /* recording: the presenter's table, once */
+  if (g_psyxRtpValueHook && !r->tab) { /* recording: the presenter's table, once */
     r->tab = table_new();
+    /* and its answers' array for its frames on its own thread (#162),
+     * "not found" where its walk hasn't written (integer, affine) */
+    if (r->tab && !s_pres_side) {
+      VCacheVert *const side = malloc(sizeof(VCacheVert) * (MAX_VERTEX_BUFFER_SIZE + 6));
+      int i;
+      if (side) {
+        for (i = 0; i < MAX_VERTEX_BUFFER_SIZE + 6; i++) {
+          side[i].dx = side[i].dy = 0;
+          side[i].w = 1;
+        }
+        s_pres_side = side;
+      }
+    }
+  }
   if (!r->tab) /* tex_filter only (polygons just marked), or no memory: as before #158 */
     return NULL;
   pres_next();
@@ -791,7 +759,7 @@ PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
 
 /* The presenter's frame on its own thread (#162) */
 int psx_vcache_pres_async_ok(void) {
-  return g_psyxRtpValueHook && s_rec[VC_PRES].tab && s_pres_vb && s_pres_side;
+  return g_psyxRtpValueHook && s_rec[VC_PRES].tab && s_pres_side;
 }
 
 void psx_vcache_pres_detach(void) {

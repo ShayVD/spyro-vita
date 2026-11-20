@@ -1,0 +1,215 @@
+/* 60 Hz logic: the dispatch, on the 30 Hz side (decisions D130; tick60.h,
+ * docs/tick60.md). Compiled once, into every build. The 60 Hz rules
+ * themselves are src/game/tick60/ and the hunks behind SPYRO_TICK60,
+ * built a second time by cmake/tick60.cmake. */
+#include <assert.h> /* PsyCross headers (spyro.h's) use C11 static_assert */
+
+#include "tick60.h"
+#include "present.h"
+#include "psx_state.h"
+
+#include "common.h"
+#include "gamepad.h"
+#include "gamestates/update.h"
+#include "spyro.h"
+
+int g_tick60_mode;
+Tick60State g_t60;
+Tick60Stats g_t60_stats;
+int g_t60_stats_on;
+
+/* draw.c's pacer (`while (pre - post < 2) VSync(0)`): the vblank counts of
+ * this draw and the last flip. "HAS to be local to this file" in the decomp;
+ * it is a label like the others. */
+extern struct {
+  int post;
+  int pre;
+} D_80075950;
+
+#if SPYRO_TICK60_RULES
+void GamestateUpdate_60(void); /* tick60.cmake's object: the update path at 60 Hz */
+int tick60_built(void) { return 1; }
+
+/* The game's own UpdateMoby of every level (tick60/t60_levels.h), which
+ * the 60 Hz rules' copies stand in for: t60_rules.c, where these names are
+ * its copies, compares g_UpdateMoby with these. */
+#define T60_LEVEL(name) void UpdateMoby_##name(void);
+#include "tick60/t60_levels.h"
+#undef T60_LEVEL
+void *tick60_game_update_moby(int pIndex) {
+#define T60_LEVEL(name) UpdateMoby_##name,
+  static void (*const k[])(void) = {
+#include "tick60/t60_levels.h"
+  };
+#undef T60_LEVEL
+  return pIndex >= 0 && pIndex < (int)(sizeof k / sizeof k[0]) ? (void *)k[pIndex] : NULL;
+}
+#else
+int tick60_built(void) { return 0; }
+#endif
+
+/* What a tick's first vblank keeps for its second (t60_rules.c, D160): the
+ * pad's presses and Spyro's damage flags for his transitions, the pad's
+ * lockout, the wall contact. Nothing is kept as a tick starts, nor once
+ * play is left. */
+static void carry_clear(void) {
+  g_t60.pad_down_acc = g_t60.pad_released_acc = 0;
+  g_t60.damage_acc = 0;
+  g_t60.pad_locked = 0;
+  g_t60.wall_acc = 0;
+  g_t60.wall_acc_vec[0] = g_t60.wall_acc_vec[1] = g_t60.wall_acc_vec[2] = 0;
+}
+
+/* An update runs the 60 Hz rules in play, outside the attract demos (they
+ * replay 30 Hz input, §7.2). */
+static int wants_60(void) {
+  return g_tick60_mode && tick60_built() && g_Gamestate == GS_Playing &&
+         g_DemoMode == DEMO_MODE_NONE;
+}
+
+static long long now_us(void) { return g_present_clock_us(); }
+
+void PortPalAnimClock(int d); /* region_game.c: PAL's animation clock (D155) */
+
+void PortGamestateUpdate(void) {
+  long long t = g_t60_stats_on ? now_us() : 0;
+#if SPYRO_TICK60_RULES
+  if (wants_60()) {
+    /* The 30 Hz tick this vblank belongs to: the vblank that starts one
+     * takes its once-a-tick steps (and the 30 Hz parts run, with the
+     * vblanks since the last start as their g_DeltaTime, 2..4); the next
+     * vblank is its second half. A late update (2+ vblanks) ends the tick
+     * it is in, so the next update starts one. */
+    g_t60.active = 1;
+    g_t60.upper = g_t60.acc;
+    g_t60.tick = g_t60.acc == 0;
+    g_t60.since += g_DeltaTime;
+    if (g_t60.tick) {
+      g_t60.tick_delta = g_t60.since < 2 ? 2 : g_t60.since > 4 ? 4 : g_t60.since;
+      g_t60.since = 0;
+    }
+    g_t60.acc += g_DeltaTime;
+    if (g_t60.acc >= 2)
+      g_t60.acc = 0;
+    g_t60_stats.ticks60++;
+    g_t60_stats.half_ticks += g_t60.tick;
+    g_t60_stats.late += g_DeltaTime > 1;
+    g_t60.from0[0] = g_t60.from0[1] = 0;
+    if (g_t60.tick)
+      carry_clear();
+    {
+      const int d = g_DeltaTime; /* the rules set it per class */
+      GamestateUpdate_60();
+      PortPalAnimClock(d);
+    }
+    g_t60.active = 0;
+    if (g_t60.spyro_held && !wants_60()) {
+      /* The tick's first half left play (the portal's gamestate 1, the
+       * pause menu): the 30 Hz update that follows finds Spyro as the
+       * original's tick left him, his script's hold and his lift let go
+       * (t60_rules.c, D141), and the wall contact the tick's, as far as it
+       * got (D160). The transitions of that tick never ran: what its
+       * first vblank kept for them (a press, a one-shot hit) is dropped
+       * with the tick. */
+      g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
+      g_Spyro.m_DamageFlags &= ~0x800;
+      g_t60.spyro_held = 0;
+      g_Spyro.m_againstWall = g_t60.wall_acc;
+      g_Spyro.m_wallAgainstSpyro.x = g_t60.wall_acc_vec[0];
+      g_Spyro.m_wallAgainstSpyro.y = g_t60.wall_acc_vec[1];
+      g_Spyro.m_wallAgainstSpyro.z = g_t60.wall_acc_vec[2];
+      carry_clear();
+    }
+    if (g_t60_stats_on)
+      g_t60_stats.us60 += now_us() - t;
+    return;
+  }
+#endif
+  /* The original's update, at 30 Hz. A save state loaded at the loop top
+   * (savestate_point) may have left a 60 Hz delta for another gamestate. */
+  g_t60.active = 0;
+  g_t60.acc = 0;
+  g_t60.since = 0;
+  g_t60.spyro_carry[0] = g_t60.spyro_carry[1] = g_t60.spyro_carry[2] = 0;
+  carry_clear();
+  g_t60.tick = 1;
+  if (g_DeltaTime < 2)
+    g_DeltaTime = 2;
+  g_t60.tick_delta = g_DeltaTime;
+  g_t60_stats.ticks30++;
+  {
+    int play = g_Gamestate == GS_Playing;
+    const int d = g_DeltaTime;
+    GamestateUpdate();
+    PortPalAnimClock(d);
+    if (g_t60_stats_on) {
+      g_t60_stats.us30 += now_us() - t;
+      if (play) {
+        g_t60_stats.ticks30_play++;
+        g_t60_stats.us30_play += now_us() - t;
+      }
+    }
+  }
+}
+
+/* main.c's clamp: 2..4 vblanks, as the original's, or 1..4 when the next
+ * update is a 60 Hz one; then this tick's draw, which is about to run,
+ * waits one vblank since the last flip instead of two (draw.c's play
+ * pacer, through its count of the last flip: the play draw's only reader
+ * of it, and it sets it again as it flips). The 30 Hz path is the
+ * original's: with the setting off nothing here changes a value. */
+int PortTickDelta(int pUnprocessed) {
+  int lo = 2;
+  g_t60.next = 0;
+  if (wants_60() && !g_StateSwitch) {
+    g_t60.next = 1;
+    lo = 1;
+    D_80075950.post -= 1;
+  }
+  if (pUnprocessed < lo)
+    pUnprocessed = lo;
+  if (pUnprocessed > 4)
+    pUnprocessed = 4;
+  return pUnprocessed;
+}
+
+/* Save states (§7.2): the mode the state was made in, and the half tick.
+ * Game state is in the original's units in either mode, so a state loads
+ * into either rule set; it switches the mode to the one it was made in,
+ * until the next start. */
+void tick60_state(struct PsxStateIO *io) {
+  int mode = g_tick60_mode;
+  psx_state_io(io, &mode, sizeof mode);
+  psx_state_io(io, &g_t60.acc, sizeof g_t60.acc);
+  psx_state_io(io, &g_t60.since, sizeof g_t60.since);
+  psx_state_io(io, g_t60.spyro_carry, sizeof g_t60.spyro_carry);
+  /* the wall contact between a tick's halves (t60_wall_begin/end, D160) */
+  psx_state_io(io, &g_t60.wall_acc, sizeof g_t60.wall_acc);
+  psx_state_io(io, g_t60.wall_acc_vec, sizeof g_t60.wall_acc_vec);
+  psx_state_io(io, &g_t60.wall_pub, sizeof g_t60.wall_pub);
+  psx_state_io(io, g_t60.wall_pub_vec, sizeof g_t60.wall_pub_vec);
+  /* a tick's first vblank's presses and damage flags, for the transitions at its end
+   * (T60_SPYRO_TRANSITIONS, D160), and its pad lockout (T60_PAD_LOCKED) */
+  psx_state_io(io, &g_t60.pad_down_acc, sizeof g_t60.pad_down_acc);
+  psx_state_io(io, &g_t60.pad_released_acc, sizeof g_t60.pad_released_acc);
+  psx_state_io(io, &g_t60.damage_acc, sizeof g_t60.damage_acc);
+  psx_state_io(io, &g_t60.pad_locked, sizeof g_t60.pad_locked);
+  if (io->mode == PSX_STATE_LOAD) {
+    g_tick60_mode = mode;
+    g_t60.spyro_held = 0; /* the state's own bit 31 stands; its tick's end lets it go */
+  }
+}
+
+void tick60_report(void (*log)(const char *fmt, ...)) {
+  const Tick60Stats *s = &g_t60_stats;
+  if (!g_tick60_mode && !g_t60_stats_on)
+    return;
+  log("tick60: %lld updates at 60 Hz (%lld started a 30 Hz tick, %lld late: 2+ vblanks), "
+      "%lld at 30 Hz", s->ticks60, s->half_ticks, s->late, s->ticks30);
+  if (g_t60_stats_on && s->ticks60)
+    log("tick60: update CPU time per update: 60 Hz %lld us, 30 Hz %lld us",
+        s->us60 / s->ticks60, s->ticks30 ? s->us30 / s->ticks30 : 0);
+  if (g_t60_stats_on && s->ticks30_play)
+    log("tick60: update CPU time per 30 Hz update in play: %lld us (%lld updates)",
+        s->us30_play / s->ticks30_play, s->ticks30_play);
+}

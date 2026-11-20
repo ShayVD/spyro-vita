@@ -388,7 +388,7 @@ static void em_prim(Em *e, u32 kind, const u32 *b) {
       short *p[4];
       for (k = 0; k < n; k++)
         p[k] = (short *)(uintptr_t)xy[n == 4 ? k_order[k] : k];
-      psx_vcache_poly(v, p, (int)n);
+      psx_vcache_poly(v, p, (int)n, g_vcache_side + *fill); /* (psx_vcache.h) */
     }
     if (n == 4) {
       /* TriangulateQuad */

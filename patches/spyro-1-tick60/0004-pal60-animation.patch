@@ -1,0 +1,1247 @@
+--- a/include/region.h
++++ b/include/region.h
+@@ -39,6 +39,13 @@
+  * (a path node's speed, a random velocity, a thrown arc's). */
+ #define RT_SPEED(v) (RT(0, 1) ? ((v) * 6 + 3) / 5 : (v))
+ 
++/* A frame number of a model's animation (D155). PAL's models hold 5/6 of
++ * US's frames at any timing, so on the PAL disc the port takes PAL's number
++ * with US timing too ("PAL 60"), where RT() gave US's: a frame past the
++ * animation's end, or a test the animation never reached. The port's only:
++ * the matching builds keep RT() at these sites, the same constant. */
++#define RF(us, pal) RV(us, pal, us)
++
+ /* Code and data only PAL has (D134): a matching build compiles them for PAL
+  * alone, so the US build's SHA-1 doesn't move; the port has them always. */
+ #ifdef REGION
+--- a/src/overlays/moby_spawn.c
++++ b/src/overlays/moby_spawn.c
+@@ -218,7 +218,7 @@
+       moby->m_AnimationState.m_Animation = 3;
+       moby->m_AnimationState.m_NextAnimation = 3;
+       props->m_0x00 = 3;
+-    } else if (pParent->m_AnimationState.m_NextFrame >= RT(6, 5)) {
++    } else if (pParent->m_AnimationState.m_NextFrame >= RF(6, 5)) {
+       moby->m_Position.x += Cos(pParent->m_Rotation.z << 4) >> 2;
+       moby->m_Position.y += Sin(pParent->m_Rotation.z << 4) >> 2;
+       moby->m_Position.z += 300;
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -1009,15 +1009,15 @@
+               g_AnimationFinished = 0;
+               MOBY_ANIM_RESTART(moby, 6);
+             }
+-            moby->m_AnimationState.m_Frame = RT(0x31, 0x29);
+-            moby->m_AnimationState.m_NextFrame = RT(0x32, 0x2A);
++            moby->m_AnimationState.m_Frame = RF(0x31, 0x29);
++            moby->m_AnimationState.m_NextFrame = RF(0x32, 0x2A);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+           continue;
+         }
+         case 6: {
+-          if (moby->m_AnimationState.m_Frame >= RT(44, 37) &&
+-              moby->m_AnimationState.m_Frame < RT(50, 42)) {
++          if (moby->m_AnimationState.m_Frame >= RF(44, 37) &&
++              moby->m_AnimationState.m_Frame < RF(50, 42)) {
+             moby->m_DamageFlags = 0;
+             props->m_0x1c = RT_TIME((rand() & 0x3F) + 0x40);
+             if (moby->m_AnimationState.m_Animation != 5) {
+@@ -2555,7 +2555,7 @@
+       switch (moby->m_State) {
+       case 0: {
+         if (DISTANCE_TO_SPYRO(moby) < 0x200 &&
+-            moby->m_AnimationState.m_Frame >= RT(0x0F, 0xD)) {
++            moby->m_AnimationState.m_Frame >= RF(0x0F, 0xD)) {
+           moby->m_State = 4;
+           MOBY_ANIM_CHANGE(moby, 4);
+           continue;
+@@ -2864,7 +2864,7 @@
+         break;
+       case 1:
+       case 3:
+-        if (moby->m_AnimationState.m_NextFrame < RT(10, 8)) {
++        if (moby->m_AnimationState.m_NextFrame < RF(10, 8)) {
+           attackAngle = moby->m_Rotation.z;
+           if (moby->m_Class == 45) {
+             attackAngle = (attackAngle + 30) & 0xFF;
+@@ -3255,7 +3255,7 @@
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 12);
+ 
+         if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame > 4 &&
+-            moby->m_AnimationState.m_NextFrame < RT(21, 18))) { // 60 Hz: one zap projectile a tick (the frame test holds on both vblanks)
++            moby->m_AnimationState.m_NextFrame < RF(21, 18))) { // 60 Hz: one zap projectile a tick (the frame test holds on both vblanks)
+           projectile = g_SpawnMoby(82, moby);
+           projectileProps = projectile->m_Props;
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+@@ -3307,7 +3307,7 @@
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 13);
+ 
+         if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame > 3 &&
+-            moby->m_AnimationState.m_NextFrame < RT(9, 8) && props->m_0x28 >= RT(7, 6))) { // 60 Hz: tested at tick starts, so the fireball period stays 8 vblanks (6 PAL), not 7
++            moby->m_AnimationState.m_NextFrame < RF(9, 8) && props->m_0x28 >= RT(7, 6))) { // 60 Hz: tested at tick starts, so the fireball period stays 8 vblanks (6 PAL), not 7
+           projectile = g_SpawnMoby(70, moby);
+           VecCopy(&projectile->m_Position, &props->m_0x38);
+           projectileProps = projectile->m_Props;
+@@ -3572,7 +3572,7 @@
+           continue;
+         }
+ 
+-        if (g_IsSpyroHidden && moby->m_AnimationState.m_NextFrame >= RT(0x20, 0x1B)) {
++        if (g_IsSpyroHidden && moby->m_AnimationState.m_NextFrame >= RF(0x20, 0x1B)) {
+           VecSub(&g_Spyro.unk_0x208, &props->m_0x18, &moby->m_Position);
+           VecShiftRight(&g_Spyro.unk_0x208, 4);
+           g_Spyro.m_DamageFlags = 0x80;
+@@ -3582,7 +3582,7 @@
+         }
+ 
+         if (moby->m_Substate == 0) {
+-          if (moby->m_AnimationState.m_NextFrame >= RT(7, 6)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(7, 6)) {
+             if (!g_IsSpyroHidden) {
+               props->m_0x18.x = 0x25F;
+               props->m_0x18.y = 0;
+@@ -3594,7 +3594,7 @@
+             }
+ 
+             VecSub(&delta, &props->m_0x18, &g_Spyro.m_Position);
+-            progress = ((moby->m_AnimationState.m_NextFrame - RT(7, 6)) << 12) / 25;
++            progress = ((moby->m_AnimationState.m_NextFrame - RF(7, 6)) << 12) / 25;
+             VecMult(&delta, &delta, progress);
+             VecShiftRight(&delta, 12);
+             T60_TICK_DO(VecAdd(&g_Spyro.m_portalEndPos, &g_Spyro.m_Position, &delta)); // 60 Hz: the tick's carry point, once a tick (Spyro goes all the way to it in one update; the second vblank leaves him there, as with this class at 30 Hz)
+@@ -3884,7 +3884,7 @@
+           if (g_AnimationFinished) {
+             moby->m_State = 0;
+             MOBY_ANIM_CHANGE(moby, 0);
+-          } else if (moby->m_AnimationState.m_NextFrame >= RT(6, 5) &&
++          } else if (moby->m_AnimationState.m_NextFrame >= RF(6, 5) &&
+                      !props->m_0x00) {
+             func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+             spawn = g_SpawnMoby(55, moby);
+@@ -4957,7 +4957,7 @@
+       func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+ 
+       if (moby->m_AnimationState.m_NextAnimation >= 3 &&
+-          moby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC) &&
++          moby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC) &&
+           moby->m_AnimationState.m_NextAnimation != 0) {
+         g_AnimationFinished = 0;
+         MOBY_ANIM_ADVANCE(moby, 0);
+@@ -5453,14 +5453,14 @@
+         if (distance < 2500 &&
+             moby->m_AnimationState.m_Animation ==
+                 moby->m_AnimationState.m_NextAnimation &&
+-            moby->m_AnimationState.m_NextFrame < RT(0x12, 0xF)) {
+-          moby->m_AnimationState.m_Frame = RT(0x15, 0x12);
+-          moby->m_AnimationState.m_NextFrame = RT(0x16, 0x13);
++            moby->m_AnimationState.m_NextFrame < RF(0x12, 0xF)) {
++          moby->m_AnimationState.m_Frame = RF(0x15, 0x12);
++          moby->m_AnimationState.m_NextFrame = RF(0x16, 0x13);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+-        if (moby->m_AnimationState.m_NextFrame == RT(0x15, 0x12)) {
+-          moby->m_AnimationState.m_Frame = RT(7, 6);
+-          moby->m_AnimationState.m_NextFrame = RT(8, 7);
++        if (moby->m_AnimationState.m_NextFrame == RF(0x15, 0x12)) {
++          moby->m_AnimationState.m_Frame = RF(7, 6);
++          moby->m_AnimationState.m_NextFrame = RF(8, 7);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+         break;
+@@ -5493,8 +5493,8 @@
+         result = MobyMoveWithGravity(moby, &props->m_0x00, props->m_0x04,
+                                      &props->m_0x08, RT(0xC, 0xF), RT(0x10, 0x13));
+         if (props->m_0x10 == 0) {
+-          if (result == 3 && moby->m_AnimationState.m_NextFrame >= RT(11, 9) &&
+-              moby->m_AnimationState.m_NextFrame <= RT(19, 16)) {
++          if (result == 3 && moby->m_AnimationState.m_NextFrame >= RF(11, 9) &&
++              moby->m_AnimationState.m_NextFrame <= RF(19, 16)) {
+             g_AnimationFinished = 0;
+             moby->m_AnimationState.m_FrameProgress = 0x20;
+             moby->m_AnimationState.m_PerFrameProgress = 0x20;
+@@ -5503,12 +5503,12 @@
+             moby->m_AnimationState.m_NextAnimation =
+                 moby->m_AnimationState.m_NextAnimation;
+             moby->m_AnimationState.m_Frame = moby->m_AnimationState.m_NextFrame;
+-            moby->m_AnimationState.m_NextFrame = RT(0x14, 0x11);
++            moby->m_AnimationState.m_NextFrame = RF(0x14, 0x11);
+             func_80037E98(moby);
+           }
+         } else {
+-          if (result == 3 && moby->m_AnimationState.m_NextFrame >= RT(11, 9) &&
+-              moby->m_AnimationState.m_NextFrame <= RT(19, 16)) {
++          if (result == 3 && moby->m_AnimationState.m_NextFrame >= RF(11, 9) &&
++              moby->m_AnimationState.m_NextFrame <= RF(19, 16)) {
+             g_AnimationFinished = 0;
+             moby->m_AnimationState.m_FrameProgress = 0x20;
+             moby->m_AnimationState.m_PerFrameProgress = 0x20;
+@@ -5517,7 +5517,7 @@
+             moby->m_AnimationState.m_NextAnimation =
+                 moby->m_AnimationState.m_NextAnimation;
+             moby->m_AnimationState.m_Frame = moby->m_AnimationState.m_NextFrame;
+-            moby->m_AnimationState.m_NextFrame = RT(0x16, 0x12);
++            moby->m_AnimationState.m_NextFrame = RF(0x16, 0x12);
+             func_80037E98(moby);
+           }
+         }
+@@ -5775,7 +5775,7 @@
+         MobyRotateToSpyro(moby, 8, 0, 0);
+ 
+         if (moby->m_AnimationState.m_NextFrame > 2 &&
+-            moby->m_AnimationState.m_NextFrame < RT(8, 7)) {
++            moby->m_AnimationState.m_NextFrame < RF(8, 7)) {
+           if (props->m_0x40 == nullptr) {
+             props->m_0x40 = g_SpawnMoby(57, moby);
+             props->m_0x40->m_Substate = 0;
+@@ -5788,7 +5788,7 @@
+           angle = ANGLE_TO_SPYRO(props->m_0x40->m_Position);
+           props->m_0x40->m_Rotation.z = angle;
+ 
+-          if (moby->m_AnimationState.m_NextFrame >= RT(0x10, 0xD)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(0x10, 0xD)) {
+             projectileProps = (Moby57Props *)props->m_0x40->m_Props;
+             projectileProps->m_0x0a = 0;
+             projectileProps->m_0x00 =
+@@ -6072,7 +6072,7 @@
+         VecShiftRight(&midpoint, 1);
+         VecCopy(&moby->m_Position, &midpoint);
+ 
+-        if (linkedMoby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC)) {
++        if (linkedMoby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC)) {
+           if (props->m_0x00 != -1) {
+             // This addresses classes 101, 102, 170
+             // Determine common struct
+@@ -6228,8 +6228,8 @@
+         distance = DISTANCE_TO_SPYRO(moby);
+         MobyRotateToSpyro(moby, 6, 0, 0);
+ 
+-        if (moby->m_AnimationState.m_NextFrame > RT(5, 4) &&
+-            moby->m_AnimationState.m_NextFrame < RT(10, 9)) {
++        if (moby->m_AnimationState.m_NextFrame > RF(5, 4) &&
++            moby->m_AnimationState.m_NextFrame < RF(10, 9)) {
+           maxDistance = (moby->m_AnimationState.m_NextFrame - 5) * 1000;
+           if (maxDistance < 1000) {
+             maxDistance = 1000;
+@@ -6325,7 +6325,7 @@
+ 
+         MobyRotateToSpyro(moby, 6, 0, 0);
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(6, 5) &&
++        if (moby->m_AnimationState.m_NextFrame >= RF(6, 5) &&
+             (props->m_0x7c[props->m_0x70] != -1)) {
+           g_LevelMobys[props->m_0x7c[props->m_0x70]].m_Substate = 1;
+           props->m_0x7c[props->m_0x70] = -1;
+@@ -6505,7 +6505,7 @@
+         VecShiftRight(&midpoint, 1);
+         VecCopy(&moby->m_Position, &midpoint);
+ 
+-        if (linkedMoby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC)) {
++        if (linkedMoby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC)) {
+           if (props->m_0x00 != -1) {
+             // This addresses classes 100, 101, 102, 170
+             // Determine common struct
+@@ -8631,7 +8631,7 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
++        if (moby->m_AnimationState.m_Frame < RF(10, 8)) {
+           moby->m_Rotation.z += T60_SHARE(props->m_0x10); // 60 Hz: spin, shared
+         }
+ 
+@@ -8650,9 +8650,9 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
++        if (moby->m_AnimationState.m_Frame >= RF(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+-            moby->m_AnimationState.m_Frame = RT(0x0F, 0xD);
++            moby->m_AnimationState.m_Frame = RF(0x0F, 0xD);
+           }
+         }
+ 
+@@ -9171,7 +9171,7 @@
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 8);
+ 
+           // No Dark Hollow Moby has Animation 13
+-          if (g_AnimFrameFinished && moby->m_AnimationState.m_Frame == RT(8, 7)) {
++          if (g_AnimFrameFinished && moby->m_AnimationState.m_Frame == RF(8, 7)) {
+             g_LevelMobys[props->m_LinkIndex].m_State = 13;
+             g_LevelMobys[props->m_LinkIndex].m_AnimationState.m_Animation = 13;
+             g_LevelMobys[props->m_LinkIndex].m_AnimationState.m_NextAnimation =
+@@ -9289,7 +9289,7 @@
+ 
+           if (isPickupAnimPhase) {
+             int delta;
+-            if (moby->m_AnimationState.m_NextFrame >= RT(7, 6)) {
++            if (moby->m_AnimationState.m_NextFrame >= RF(7, 6)) {
+               moby->m_Substate++;
+             }
+ 
+@@ -10110,17 +10110,17 @@
+         if (distance < 0x6A4 &&
+             moby->m_AnimationState.m_Animation ==
+                 moby->m_AnimationState.m_NextAnimation &&
+-            moby->m_AnimationState.m_NextFrame < RT(0xE, 0xC)) {
+-          moby->m_AnimationState.m_Frame = RT(0x10, 0xD);
+-          moby->m_AnimationState.m_NextFrame = RT(0x11, 0xE);
++            moby->m_AnimationState.m_NextFrame < RF(0xE, 0xC)) {
++          moby->m_AnimationState.m_Frame = RF(0x10, 0xD);
++          moby->m_AnimationState.m_NextFrame = RF(0x11, 0xE);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+-        if (moby->m_AnimationState.m_NextFrame == RT(0xF, 0xD)) {
++        if (moby->m_AnimationState.m_NextFrame == RF(0xF, 0xD)) {
+           moby->m_AnimationState.m_Frame = 5;
+           moby->m_AnimationState.m_NextFrame = 6;
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+-        if (moby->m_AnimationState.m_NextFrame == RT(6, 5)) {
++        if (moby->m_AnimationState.m_NextFrame == RF(6, 5)) {
+           if (IsMobyPlayingSound(moby, g_Models[moby->m_Class]->m_Sounds[0]) ==
+               0) {
+             MobyPlaySound(moby, 0, &props->m_0x68);
+@@ -10155,7 +10155,7 @@
+ 
+         result = MobyMoveWithGravity(moby, &props->m_0x00, props->m_0x04,
+                                      &props->m_0x08, RT(0xC, 0xF), RT(0x10, 0x13));
+-        if (result == 3 && moby->m_AnimationState.m_NextFrame <= RT(9, 7)) {
++        if (result == 3 && moby->m_AnimationState.m_NextFrame <= RF(9, 7)) {
+           g_AnimationFinished = 0;
+           moby->m_AnimationState.m_FrameProgress = 0x10;
+           moby->m_AnimationState.m_PerFrameProgress = 0x10;
+@@ -10164,10 +10164,10 @@
+           moby->m_AnimationState.m_NextAnimation =
+               moby->m_AnimationState.m_NextAnimation;
+           moby->m_AnimationState.m_Frame = moby->m_AnimationState.m_NextFrame;
+-          moby->m_AnimationState.m_NextFrame = RT(0xA, 0x8);
++          moby->m_AnimationState.m_NextFrame = RF(0xA, 0x8);
+           func_80037E98(moby);
+         }
+-        if (result == 0 && moby->m_AnimationState.m_NextFrame == RT(9, 8)) {
++        if (result == 0 && moby->m_AnimationState.m_NextFrame == RF(9, 8)) {
+           g_AnimationFinished = 0;
+           moby->m_AnimationState.m_FrameProgress = 0x10;
+           moby->m_AnimationState.m_PerFrameProgress = 0x10;
+@@ -10333,7 +10333,7 @@
+ 
+       case 2:
+         MobyRotateToSpyro(moby, 8, 0, 0);
+-        if (moby->m_AnimationState.m_NextFrame >= RT(0x1A, 0x16) &&
++        if (moby->m_AnimationState.m_NextFrame >= RF(0x1A, 0x16) &&
+             g_ScreenBorderEnabled == 0 && moby->m_Substate == 0) {
+           Moby135Props *projectileProps;
+           Moby *projectile;
+@@ -11107,7 +11107,7 @@
+ 
+         case 1: {
+           int frameThreshold;
+-          if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame >= RT(6, 5))) { // 60 Hz: the sparkle counter and spawn once a tick
++          if (T60_TICK_AND(moby->m_AnimationState.m_NextFrame >= RF(6, 5))) { // 60 Hz: the sparkle counter and spawn once a tick
+             props->m_0x24++;
+             if (props->m_0x24 == 2 || moby->m_Class == 241) {
+               int offset = RT(320, 384);
+@@ -11131,9 +11131,9 @@
+             MobyPlaySound(moby, 0, 0);
+           }
+ 
+-          frameThreshold = RT(7, 6);
++          frameThreshold = RF(7, 6);
+           if (moby->m_Class == 241) {
+-            frameThreshold = RT(0xE, 0xC);
++            frameThreshold = RF(0xE, 0xC);
+           }
+           if (moby->m_AnimationState.m_NextFrame >= frameThreshold &&
+               g_SpyroFlame.m_FairyKissTimer == 0) {
+@@ -11370,8 +11370,8 @@
+ 
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         props->m_0x14 += g_DeltaTime;
+-        if (moby->m_AnimationState.m_NextFrame > RT(15, 12) &&
+-            moby->m_AnimationState.m_NextFrame < RT(26, 22) && props->m_0x14 >= 4) {
++        if (moby->m_AnimationState.m_NextFrame > RF(15, 12) &&
++            moby->m_AnimationState.m_NextFrame < RF(26, 22) && props->m_0x14 >= 4) {
+           projectile = g_SpawnMoby(156, moby);
+           projectileProps = projectile->m_Props;
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+@@ -12695,7 +12695,7 @@
+         } else if (g_AnimationFinished) {
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 0);
+         }
+-        if (props->m_0x60 == 0 && moby->m_AnimationState.m_NextFrame >= RT(9, 8)) {
++        if (props->m_0x60 == 0 && moby->m_AnimationState.m_NextFrame >= RF(9, 8)) {
+           Moby169Props *projectileProps;
+           Vector3D delta;
+           Vector3D targetPosition;
+@@ -12922,15 +12922,15 @@
+           g_LevelMobys[props->m_0xd4].m_Substate = 1;
+           props->m_0xd4 = -1;
+         }
+-        if (props->m_0xd8 != -1 && moby->m_AnimationState.m_NextFrame >= RT(0xB, 0x9)) {
++        if (props->m_0xd8 != -1 && moby->m_AnimationState.m_NextFrame >= RF(0xB, 0x9)) {
+           g_LevelMobys[props->m_0xd8].m_Substate = 1;
+           props->m_0xd8 = -1;
+         }
+-        if (props->m_0xdc != -1 && moby->m_AnimationState.m_NextFrame >= RT(0x10, 0xE)) {
++        if (props->m_0xdc != -1 && moby->m_AnimationState.m_NextFrame >= RF(0x10, 0xE)) {
+           g_LevelMobys[props->m_0xdc].m_Substate = 1;
+           props->m_0xdc = -1;
+         }
+-        if (g_IsSpyroHidden == 0 && moby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC)) {
++        if (g_IsSpyroHidden == 0 && moby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC)) {
+           Moby *spawned;
+           Moby414Props *spawnedProps;
+           spawned = g_SpawnMoby(414, moby);
+@@ -15198,7 +15198,7 @@
+ 
+         props->m_0x04 = 1;
+         if (g_AnimFrameFinished != 0 &&
+-            moby->m_AnimationState.m_Frame == RT(0x11, 0xE)) {
++            moby->m_AnimationState.m_Frame == RF(0x11, 0xE)) {
+           angle = AngleAdd(moby->m_Rotation.z, 0xFD);
+           projectile = g_SpawnMoby(183, moby);
+           projectileProps = projectile->m_Props;
+@@ -15335,7 +15335,7 @@
+           moby->m_State != 3 &&
+           (moby->m_DamageFlags == MOBY_DAMAGE_CHARGE || moby->m_State != 7 ||
+            moby->m_AnimationState.m_Frame < 4 ||
+-           moby->m_AnimationState.m_Frame >= RT(31, 26))) {
++           moby->m_AnimationState.m_Frame >= RF(31, 26))) {
+         if (moby->m_DamageFlags == MOBY_DAMAGE_CHARGE) {
+           props->m_0x20 = RT(350, 420);
+         } else {
+@@ -15559,19 +15559,19 @@
+         if (props->m_0x14 == 1) {
+           distance = DISTANCE_TO_SPYRO(moby);
+           if (distance > 0x2000 && distance < 0x3c00) {
+-            moby->m_AnimationState.m_Frame = RT(0x12, 0xF);
+-            moby->m_AnimationState.m_NextFrame = RT(0x13, 0x10);
++            moby->m_AnimationState.m_Frame = RF(0x12, 0xF);
++            moby->m_AnimationState.m_NextFrame = RF(0x13, 0x10);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+         }
+ 
+         if (!TICK_TIMER(props->m_0x18)) {
+-          if (moby->m_AnimationState.m_Frame >= RT(0x10, 0xD)) {
++          if (moby->m_AnimationState.m_Frame >= RF(0x10, 0xD)) {
+             moby->m_AnimationState.m_Frame = 5;
+             moby->m_AnimationState.m_NextFrame = 6;
+             moby->m_AnimationState.m_FrameProgress = 0x20;
+           }
+-        } else if (moby->m_AnimationState.m_Frame >= RT(0x12, 0xF)) {
++        } else if (moby->m_AnimationState.m_Frame >= RF(0x12, 0xF)) {
+           props->m_0x18 = RT(0x3C, 0x32);
+           moby->m_State = 2;
+           MOBY_ANIM_RESTART(moby, 2);
+@@ -15590,7 +15590,7 @@
+ 
+       case 11:
+         MobyRotateToSpyro(moby, 6, 0, 0);
+-        if (g_AnimFrameFinished != 0 && moby->m_AnimationState.m_Frame >= RT(9, 8)) {
++        if (g_AnimFrameFinished != 0 && moby->m_AnimationState.m_Frame >= RF(9, 8)) {
+           if (props->m_0x30 != 0) {
+             moby->m_State = 20;
+             continue;
+@@ -16359,7 +16359,7 @@
+         }
+         break;
+       case 2:
+-        if (props->m_0x04 != 0 && moby->m_AnimationState.m_NextFrame >= RT(6, 5)) {
++        if (props->m_0x04 != 0 && moby->m_AnimationState.m_NextFrame >= RF(6, 5)) {
+           short *childProps;
+           childProps = props->m_0x04->m_Props;
+           props->m_0x04->m_Substate = 1;
+@@ -16972,22 +16972,22 @@
+ 
+         if (TICK_TIMER(props->m_0x14) && distance < attackDistance &&
+             SPYRO_BASE_Z_DELTA(moby) < 800 &&
+-            moby->m_AnimationState.m_NextFrame < RT(28, 23)) {
+-          moby->m_AnimationState.m_Frame = RT(31, 26);
+-          moby->m_AnimationState.m_NextFrame = RT(32, 27);
++            moby->m_AnimationState.m_NextFrame < RF(28, 23)) {
++          moby->m_AnimationState.m_Frame = RF(31, 26);
++          moby->m_AnimationState.m_NextFrame = RF(32, 27);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+ 
+-        if (moby->m_AnimationState.m_NextFrame == RT(30, 25)) {
+-          moby->m_AnimationState.m_Frame = RT(10, 8);
+-          moby->m_AnimationState.m_NextFrame = RT(11, 9);
++        if (moby->m_AnimationState.m_NextFrame == RF(30, 25)) {
++          moby->m_AnimationState.m_Frame = RF(10, 8);
++          moby->m_AnimationState.m_NextFrame = RF(11, 9);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+ 
+         if (distance < attackDistance && SPYRO_BASE_Z_DELTA(moby) < 800 &&
+             SPYRO_BASE_Z_DISTANCE(moby) < 800 &&
+-            moby->m_AnimationState.m_NextFrame >= RT(45, 38) &&
+-            moby->m_AnimationState.m_NextFrame <= RT(50, 42)) {
++            moby->m_AnimationState.m_NextFrame >= RF(45, 38) &&
++            moby->m_AnimationState.m_NextFrame <= RF(50, 42)) {
+           g_Spyro.m_DamageFlags |= 0x16;
+         }
+         break;
+@@ -17140,7 +17140,7 @@
+           props->m_0x12c = 2;
+           g_SpawnMoby(38, moby);
+         } else if (props->m_0x12c < RT(60, 50) &&
+-                   moby->m_AnimationState.m_NextFrame >= RT(6, 5)) {
++                   moby->m_AnimationState.m_NextFrame >= RF(6, 5)) {
+           props->m_0x12c = RT(60, 50);
+           g_SpawnMoby(38, moby);
+         }
+@@ -18256,7 +18256,7 @@
+         if (moby->m_AnimationState.m_Animation == 1 &&
+             moby->m_AnimationState.m_NextAnimation == 1 &&
+             g_AnimFrameFinished != 0 &&
+-            moby->m_AnimationState.m_Frame == RT(0x10, 0xD)) {
++            moby->m_AnimationState.m_Frame == RF(0x10, 0xD)) {
+           moby->m_AnimationState.m_Frame = 5;
+           moby->m_AnimationState.m_NextFrame = 6;
+           moby->m_AnimationState.m_FrameProgress = 0;
+@@ -18506,16 +18506,16 @@
+                             ANGLE_FROM_SPYRO(moby->m_Position)) >= 0x17 ||
+               props->m_0x60 != 0) {
+             if (g_AnimFrameFinished != 0 &&
+-                moby->m_AnimationState.m_NextFrame >= RT(0x32, 0x2A)) {
+-              moby->m_AnimationState.m_Frame = RT(0x24, 0x1E);
+-              moby->m_AnimationState.m_NextFrame = RT(0x25, 0x1F);
++                moby->m_AnimationState.m_NextFrame >= RF(0x32, 0x2A)) {
++              moby->m_AnimationState.m_Frame = RF(0x24, 0x1E);
++              moby->m_AnimationState.m_NextFrame = RF(0x25, 0x1F);
+               moby->m_AnimationState.m_FrameProgress = 0;
+             }
+           } else {
+-            if (moby->m_AnimationState.m_NextFrame >= RT(37, 31) &&
+-                moby->m_AnimationState.m_NextFrame < RT(50, 42)) {
+-              moby->m_AnimationState.m_Frame = RT(0x32, 0x2A);
+-              moby->m_AnimationState.m_NextFrame = RT(0x33, 0x2B);
++            if (moby->m_AnimationState.m_NextFrame >= RF(37, 31) &&
++                moby->m_AnimationState.m_NextFrame < RF(50, 42)) {
++              moby->m_AnimationState.m_Frame = RF(0x32, 0x2A);
++              moby->m_AnimationState.m_NextFrame = RF(0x33, 0x2B);
+               moby->m_AnimationState.m_FrameProgress = 0;
+             }
+             if (g_AnimationFinished &&
+@@ -18532,8 +18532,8 @@
+               g_AnimationFinished = 0;
+               MOBY_ANIM_RESTART(moby, 17);
+             }
+-            moby->m_AnimationState.m_Frame = RT(0x16, 0x12);
+-            moby->m_AnimationState.m_NextFrame = RT(0x17, 0x13);
++            moby->m_AnimationState.m_Frame = RF(0x16, 0x12);
++            moby->m_AnimationState.m_NextFrame = RF(0x17, 0x13);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+         }
+@@ -18545,7 +18545,7 @@
+ 
+         linkedMoby = &g_LevelMobys[props->m_0x44];
+ 
+-        if (moby->m_AnimationState.m_NextFrame == RT(0xB, 9)) {
++        if (moby->m_AnimationState.m_NextFrame == RF(0xB, 9)) {
+           moby->m_RenderRadius = 0;
+           moby->m_State = 11;
+           MOBY_ANIM_RESTART(moby, 11);
+@@ -18775,7 +18775,7 @@
+       }
+ 
+       if (moby->m_AnimationState.m_NextAnimation >= 3 &&
+-          moby->m_AnimationState.m_NextFrame >= RT(8, 7) &&
++          moby->m_AnimationState.m_NextFrame >= RF(8, 7) &&
+           moby->m_AnimationState.m_NextAnimation != 0) {
+         g_AnimationFinished = 0;
+         MOBY_ANIM_ADVANCE(moby, 0);
+@@ -18802,7 +18802,7 @@
+ 
+         if (linkedMoby->m_State >= 0x80 ||
+             (linkedMoby->m_AnimationState.m_NextAnimation == 3 &&
+-             linkedMoby->m_AnimationState.m_NextFrame >= RT(0x15, 0x12))) {
++             linkedMoby->m_AnimationState.m_NextFrame >= RF(0x15, 0x12))) {
+           range = 0x4E2;
+           angleWindow = 0x20;
+           angleThreshold = 0x5A;
+@@ -19297,7 +19297,7 @@
+ 
+           if (moby->m_AnimationState.m_Animation == 2 &&
+               g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_Frame == RT(0xF, 0xD)) {
++              moby->m_AnimationState.m_Frame == RF(0xF, 0xD)) {
+             props->m_0x0c--;
+             if (props->m_0x0c > 0) {
+               moby->m_AnimationState.m_Frame = 5;
+@@ -19330,9 +19330,9 @@
+           }
+ 
+           if (moby->m_AnimationState.m_NextAnimation == 2 &&
+-              moby->m_AnimationState.m_NextFrame < RT(0xF, 0xD)) {
+-            moby->m_AnimationState.m_Frame = RT(0xF, 0xD);
+-            moby->m_AnimationState.m_NextFrame = RT(0x10, 0xE);
++              moby->m_AnimationState.m_NextFrame < RF(0xF, 0xD)) {
++            moby->m_AnimationState.m_Frame = RF(0xF, 0xD);
++            moby->m_AnimationState.m_NextFrame = RF(0x10, 0xE);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+ 
+@@ -19589,7 +19589,7 @@
+ 
+         if (g_AnimationFinished == 0 &&
+             moby->m_AnimationState.m_NextAnimation == 1 &&
+-            moby->m_AnimationState.m_NextFrame < RT(0xB, 0x9)) {
++            moby->m_AnimationState.m_NextFrame < RF(0xB, 0x9)) {
+           break;
+         }
+ 
+@@ -20245,7 +20245,7 @@
+ 
+       case 6:
+         if (moby->m_AnimationState.m_Animation == 6 &&
+-            moby->m_AnimationState.m_Frame < RT(8, 7)) {
++            moby->m_AnimationState.m_Frame < RF(8, 7)) {
+           func_80039AA8(moby, &props->m_Wander);
+         }
+ 
+@@ -20454,8 +20454,8 @@
+           if (MobyRotateToAngle(moby, props->m_0x14, 6, 0xA, 1) != 0) {
+             if (props->m_0x34 == 0 && moby->m_AnimationState.m_Animation == 0) {
+               props->m_0x34 = 1;
+-              moby->m_AnimationState.m_Frame = RT(0x15, 0x12);
+-              moby->m_AnimationState.m_NextFrame = RT(0x16, 0x13);
++              moby->m_AnimationState.m_Frame = RF(0x15, 0x12);
++              moby->m_AnimationState.m_NextFrame = RF(0x16, 0x13);
+               moby->m_AnimationState.m_FrameProgress = 0;
+             }
+             if (props->m_0x20 != -1) {
+@@ -20494,8 +20494,8 @@
+           } else if (props->m_0x34 == 0 &&
+                      moby->m_AnimationState.m_Animation == 0) {
+             props->m_0x34 = 1;
+-            moby->m_AnimationState.m_Frame = RT(0x15, 0x12);
+-            moby->m_AnimationState.m_NextFrame = RT(0x16, 0x13);
++            moby->m_AnimationState.m_Frame = RF(0x15, 0x12);
++            moby->m_AnimationState.m_NextFrame = RF(0x16, 0x13);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+           break;
+@@ -20512,8 +20512,8 @@
+           }
+           if (moby->m_AnimationState.m_Animation == 0 && props->m_0x34 == 0) {
+             props->m_0x34 = 1;
+-            moby->m_AnimationState.m_Frame = RT(0x14, 0x11);
+-            moby->m_AnimationState.m_NextFrame = RT(0x15, 0x12);
++            moby->m_AnimationState.m_Frame = RF(0x14, 0x11);
++            moby->m_AnimationState.m_NextFrame = RF(0x15, 0x12);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+           if (DISTANCE_TO_SPYRO(moby) < 0x1800 &&
+@@ -20599,7 +20599,7 @@
+       case 2:
+         if (TICK_TIMER(props->m_0x30)) {
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 9);
+-          if (moby->m_AnimationState.m_NextFrame >= RT(7, 6)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(7, 6)) {
+             moby->m_State = 1;
+             continue;
+           }
+@@ -20655,7 +20655,7 @@
+           }
+           if (moby->m_AnimationState.m_Animation == 6 &&
+               g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_Frame >= RT(0xA, 0x8)) {
++              moby->m_AnimationState.m_Frame >= RF(0xA, 0x8)) {
+             props->m_0x3c = RT_TIME(RandRange(150, 350));
+             props->m_0x28 = 2;
+           }
+@@ -20668,14 +20668,14 @@
+             props->m_0x28 = 3;
+           }
+           if (TICK_TIMER(props->m_0x3c) &&
+-              moby->m_AnimationState.m_Frame >= RT(0x19, 0x15)) {
++              moby->m_AnimationState.m_Frame >= RF(0x19, 0x15)) {
+             props->m_0x28 = 5;
+           }
+           if (distance > 0x1C00) {
+             props->m_0x28 = 4;
+           }
+           if (g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_Frame >= RT(0x1A, 0x16)) {
++              moby->m_AnimationState.m_Frame >= RF(0x1A, 0x16)) {
+             g_AnimationFinished = 0;
+             moby->m_AnimationState.m_FrameProgress = 0x10;
+             moby->m_AnimationState.m_PerFrameProgress = 0x10;
+@@ -20700,7 +20700,7 @@
+             props->m_0x28 = 2;
+             props->m_0x30 = RT(0xB4, 0x96);
+           }
+-          if (moby->m_AnimationState.m_NextFrame < RT(0x1A, 0x16)) {
++          if (moby->m_AnimationState.m_NextFrame < RF(0x1A, 0x16)) {
+             g_AnimationFinished = 0;
+             moby->m_AnimationState.m_FrameProgress = 0x10;
+             moby->m_AnimationState.m_PerFrameProgress = 0x10;
+@@ -20719,8 +20719,8 @@
+                     ->m_ProgressPerTick;
+           }
+           if (g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_NextFrame > RT(36, 30) &&
+-              moby->m_AnimationState.m_NextFrame < RT(41, 34) &&
++              moby->m_AnimationState.m_NextFrame > RF(36, 30) &&
++              moby->m_AnimationState.m_NextFrame < RF(41, 34) &&
+               DISTANCE_TO_SPYRO(moby) < 3800 &&
+               SPYRO_BASE_Z_DISTANCE(moby) < 900) {
+             g_Spyro.m_DamageFlags |= 0x13;
+@@ -20730,7 +20730,7 @@
+         case 4:
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 8);
+           if (g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_NextFrame >= RT(8, 7)) {
++              moby->m_AnimationState.m_NextFrame >= RF(8, 7)) {
+             props->m_0x28 = 0;
+           }
+           break;
+@@ -20738,7 +20738,7 @@
+         case 5:
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 8);
+           if (g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_NextFrame >= RT(8, 7)) {
++              moby->m_AnimationState.m_NextFrame >= RF(8, 7)) {
+             MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 2);
+             props->m_0x28 = 6;
+             props->m_0x3c = RT_TIME(RandRange(0x3C, 0x78));
+@@ -20761,7 +20761,7 @@
+ 
+       case 7:
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 10);
+-        if (props->m_0x24 == 0 && moby->m_AnimationState.m_NextFrame >= RT(6, 5)) {
++        if (props->m_0x24 == 0 && moby->m_AnimationState.m_NextFrame >= RF(6, 5)) {
+           Vector3D delta;
+ 
+           g_Spyro.m_DamageFlags |= 5;
+@@ -20822,7 +20822,7 @@
+ 
+       case 22:
+         if (g_AnimFrameFinished != 0 &&
+-            moby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC)) {
++            moby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC)) {
+           moby->m_State = 1;
+           continue;
+         }
+@@ -21356,7 +21356,7 @@
+           if (moby->m_AnimationState.m_NextAnimation != 6) {
+             g_AnimationFinished = 0;
+             MOBY_ANIM_ADVANCE(moby, 6);
+-            moby->m_AnimationState.m_NextFrame = RandRange(0, RT(0xF, 0xB));
++            moby->m_AnimationState.m_NextFrame = RandRange(0, RF(0xF, 0xB));
+           }
+           if (props->m_0x10 == -1) {
+             props->m_0x10 = moby->m_Rotation.z;
+@@ -21401,7 +21401,7 @@
+             continue;
+           }
+           if (g_AnimFrameFinished &&
+-              moby->m_AnimationState.m_NextFrame == RT(0xE, 0xC)) {
++              moby->m_AnimationState.m_NextFrame == RF(0xE, 0xC)) {
+             Moby *spawned = g_SpawnMoby(315, moby);
+             Moby315Props *spawnedProps = spawned->m_Props;
+ 
+@@ -21447,7 +21447,7 @@
+           }
+ 
+           if (g_AnimFrameFinished &&
+-              moby->m_AnimationState.m_NextFrame == RT(0xE, 0xC)) {
++              moby->m_AnimationState.m_NextFrame == RF(0xE, 0xC)) {
+             Moby *spawned = g_SpawnMoby(315, moby);
+             Moby315Props *spawnedProps = spawned->m_Props;
+ 
+@@ -21555,7 +21555,7 @@
+             }
+ 
+             if (g_AnimFrameFinished &&
+-                moby->m_AnimationState.m_NextFrame == RT(0xE, 0xC)) {
++                moby->m_AnimationState.m_NextFrame == RF(0xE, 0xC)) {
+               Moby *spawned = g_SpawnMoby(315, moby);
+               Moby315Props *spawnedProps = spawned->m_Props;
+ 
+@@ -21758,7 +21758,7 @@
+       case 4:
+         MobyRotateToSpyro(moby, 6, 0, 0);
+         MobySnapToGround(moby);
+-        if (moby->m_AnimationState.m_NextFrame >= RT(0x1C, 0x17)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(0x1C, 0x17)) {
+           if (props->m_0x14 == 2) {
+             moby->m_State = 100;
+           } else {
+@@ -22066,7 +22066,7 @@
+           props->m_0x10 = 2;
+           g_SpawnMoby(38, moby);
+         } else if (props->m_0x10 < RT(0x3C, 0x32) &&
+-                   moby->m_AnimationState.m_NextFrame >= RT(6, 5)) {
++                   moby->m_AnimationState.m_NextFrame >= RF(6, 5)) {
+           props->m_0x10 = RT(0x3C, 0x32);
+           g_SpawnMoby(38, moby);
+         }
+@@ -22510,7 +22510,7 @@
+       case 4:
+         MobyRotateToSpyro(moby, 8, 0x10, 1);
+         if (TICK_TIMER(props->m_0x00) &&
+-            moby->m_AnimationState.m_NextFrame >= RT(7, 6) && props->m_0x04 < 3) {
++            moby->m_AnimationState.m_NextFrame >= RF(7, 6) && props->m_0x04 < 3) {
+           Moby *spawned = g_SpawnMoby(295, moby);
+ 
+           if (DISTANCE_TO_SPYRO(moby) < 0xA00 &&
+@@ -22575,7 +22575,7 @@
+           }
+         }
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(9, 8)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(9, 8)) {
+           Vector3D vector;
+           MATRIX matrix;
+ 
+@@ -25132,7 +25132,7 @@
+ 
+             MobyRotateToAngle(moby, angle, 6, 0, 0);
+             if (TICK_TIMER(props->m_0x00) &&
+-                moby->m_AnimationState.m_NextFrame >= RT(6, 5) && props->m_0x04 < 3) {
++                moby->m_AnimationState.m_NextFrame >= RF(6, 5) && props->m_0x04 < 3) {
+               Moby *spawned = g_SpawnMoby(295, moby);
+               Vector3D targetPosition;
+               Moby295Props *spawnedProps = spawned->m_Props;
+@@ -25221,7 +25221,7 @@
+         }
+ 
+         if (TICK_TIMER(props->m_0x00) &&
+-            moby->m_AnimationState.m_NextFrame >= RT(6, 5) && props->m_0x04 < 3) {
++            moby->m_AnimationState.m_NextFrame >= RF(6, 5) && props->m_0x04 < 3) {
+           Moby *spawned = g_SpawnMoby(295, moby);
+ 
+           if (DISTANCE_TO_SPYRO(moby) < 0xA00 &&
+@@ -25680,15 +25680,15 @@
+             moby->m_Substate = 1;
+           }
+ 
+-          if (moby->m_AnimationState.m_NextFrame < RT(0x0D, 0x0B)) {
+-            moby->m_AnimationState.m_Frame = RT(0x0D, 0x0B);
+-            moby->m_AnimationState.m_NextFrame = RT(0x0E, 0x0C);
++          if (moby->m_AnimationState.m_NextFrame < RF(0x0D, 0x0B)) {
++            moby->m_AnimationState.m_Frame = RF(0x0D, 0x0B);
++            moby->m_AnimationState.m_NextFrame = RF(0x0E, 0x0C);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+ 
+           moby->m_Position.z = floorZ + moby->m_FloorDistance;
+ 
+-          if (moby->m_AnimationState.m_NextFrame >= RT(0x18, 0x14)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(0x18, 0x14)) {
+             if (DISTANCE_TO_SPYRO(moby) < 900) {
+               moby->m_CollisionGroup = 0;
+             }
+@@ -25704,9 +25704,9 @@
+         } else {
+           spyroDist = DISTANCE_TO_SPYRO(moby);
+ 
+-          if (moby->m_AnimationState.m_NextFrame == RT(0x0D, 0x0B)) {
+-            moby->m_AnimationState.m_Frame = RT(8, 7);
+-            moby->m_AnimationState.m_NextFrame = RT(9, 8);
++          if (moby->m_AnimationState.m_NextFrame == RF(0x0D, 0x0B)) {
++            moby->m_AnimationState.m_Frame = RF(8, 7);
++            moby->m_AnimationState.m_NextFrame = RF(9, 8);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+ 
+@@ -25768,7 +25768,7 @@
+         angle = ANGLE_FROM(moby->m_Position, props->m_0x14);
+         MobyRotateToAngle(moby, angle, 7, 0, 0);
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(9, 8)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(9, 8)) {
+           if (moby->m_AnimationState.m_Animation != props->m_0x2c + 1) {
+             g_AnimationFinished = 0;
+             MOBY_ANIM_RESTART(moby, props->m_0x2c + 1);
+@@ -25783,7 +25783,7 @@
+ 
+       case 14:
+       case 15:
+-        if (moby->m_AnimationState.m_NextFrame >= RT(9, 8)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(9, 8)) {
+           if (moby->m_AnimationState.m_Animation != props->m_0x2c + 1) {
+             g_AnimationFinished = 0;
+             MOBY_ANIM_RESTART(moby, props->m_0x2c + 1);
+@@ -26365,7 +26365,7 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
++        if (moby->m_AnimationState.m_Frame < RF(10, 8)) {
+           moby->m_Rotation.z += T60_SHARE(props->m_0x10); // 60 Hz: spin share
+         }
+ 
+@@ -26391,9 +26391,9 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
++        if (moby->m_AnimationState.m_Frame >= RF(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+-            moby->m_AnimationState.m_Frame = RT(0x0F, 0x0D);
++            moby->m_AnimationState.m_Frame = RF(0x0F, 0x0D);
+           }
+         }
+ 
+@@ -27054,7 +27054,7 @@
+         }
+         result = MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c,
+                                      &props->m_0x08, RT(0xC, 0xF), RT(0xC, 0xF));
+-        if (result == 3 && moby->m_AnimationState.m_NextFrame < RT(0xD, 0xB)) {
++        if (result == 3 && moby->m_AnimationState.m_NextFrame < RF(0xD, 0xB)) {
+           g_AnimationFinished = 0;
+           moby->m_AnimationState.m_FrameProgress = 0x10;
+           moby->m_AnimationState.m_PerFrameProgress = 0x10;
+@@ -27262,8 +27262,8 @@
+         moby->m_DamageFlags = 0;
+         angle = ANGLE_TO_SPYRO(moby->m_Position);
+         if (func_80017908(moby->m_Rotation.z, angle) >= ROTDEG8(120) ||
+-            (moby->m_State == 2 && moby->m_AnimationState.m_NextFrame >= RT(0x16, 0x13) &&
+-             moby->m_AnimationState.m_NextFrame < RT(0x30, 0x28))) {
++            (moby->m_State == 2 && moby->m_AnimationState.m_NextFrame >= RF(0x16, 0x13) &&
++             moby->m_AnimationState.m_NextFrame < RF(0x30, 0x28))) {
+           Moby371Props *linkedProps;
+           Moby *linkedMoby;
+           if (props->m_0x1c == 2) {
+@@ -27382,8 +27382,8 @@
+       case 2:
+         MobyRotateToSpyro(moby, 8, 0, 0);
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 0x10);
+-        if (moby->m_AnimationState.m_NextFrame >= RT(0x34, 0x2B) &&
+-            moby->m_AnimationState.m_NextFrame < RT(0x38, 0x2F) &&
++        if (moby->m_AnimationState.m_NextFrame >= RF(0x34, 0x2B) &&
++            moby->m_AnimationState.m_NextFrame < RF(0x38, 0x2F) &&
+             DISTANCE_TO_SPYRO(moby) < 6300) {
+           if (SPYRO_BASE_Z_DELTA(moby) < -300 &&
+               SPYRO_BASE_Z_DISTANCE(moby) < 1500) {
+@@ -27473,7 +27473,7 @@
+         angle = ANGLE_TO_SPYRO(moby->m_Position);
+         if (func_80017908(moby->m_Rotation.z, angle) < 8 &&
+             moby->m_AnimationState.m_NextFrame >= 4 &&
+-            moby->m_AnimationState.m_NextFrame < RT(0xA, 9) &&
++            moby->m_AnimationState.m_NextFrame < RF(0xA, 9) &&
+             DISTANCE_TO_SPYRO(moby) < 0x1194) {
+           if (SPYRO_BASE_Z_DELTA(moby) < -300 &&
+               SPYRO_BASE_Z_DISTANCE(moby) < 1500) {
+@@ -27539,12 +27539,12 @@
+       case 23: {
+         int floorHeight;
+         if (g_AnimationFinished) {
+-          moby->m_AnimationState.m_Frame = RT(0x14, 0x11);
+-          moby->m_AnimationState.m_NextFrame = RT(0x15, 0x12);
++          moby->m_AnimationState.m_Frame = RF(0x14, 0x11);
++          moby->m_AnimationState.m_NextFrame = RF(0x15, 0x12);
+           moby->m_AnimationState.m_FrameProgress = 0;
+           break;
+         }
+-        if (moby->m_AnimationState.m_NextFrame < RT(0x14, 0x11))
++        if (moby->m_AnimationState.m_NextFrame < RF(0x14, 0x11))
+           break;
+         floorHeight =
+             g_Spyro.m_Position.z - ColFindFloor(&g_Spyro.m_Position, 0x1000);
+@@ -27625,7 +27625,7 @@
+         } else {
+           g_ScreenBorderEnabled = 0;
+         }
+-        if (g_AnimationFinished || moby->m_AnimationState.m_NextFrame >= RT(0xE, 0xC)) {
++        if (g_AnimationFinished || moby->m_AnimationState.m_NextFrame >= RF(0xE, 0xC)) {
+           if (TICK_TIMER(props->m_0x44)) {
+             MobyPlaySound(moby, RandRange(0, 2), 0);
+             props->m_0x44 = RT(0x28, 0x21);
+@@ -27645,8 +27645,8 @@
+             g_SpawnParticle(1, 1, &particlePosition, (int)&particleVelocity);
+           }
+           if (g_AnimationFinished) {
+-            moby->m_AnimationState.m_Frame = RT(0xF, 0xD);
+-            moby->m_AnimationState.m_NextFrame = RT(0x10, 0xE);
++            moby->m_AnimationState.m_Frame = RF(0xF, 0xD);
++            moby->m_AnimationState.m_NextFrame = RF(0x10, 0xE);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+           result = func_80039E94(moby, props->m_0x20, RT(0x118, 0x150), RT(0xA0, 0xC0), 0, RT(4, 5), 0x14,
+@@ -27660,8 +27660,8 @@
+       }
+       case 42:
+         if (g_AnimationFinished) {
+-          moby->m_AnimationState.m_Frame = RT(0xF, 0xD);
+-          moby->m_AnimationState.m_NextFrame = RT(0x10, 0xE);
++          moby->m_AnimationState.m_Frame = RF(0xF, 0xD);
++          moby->m_AnimationState.m_NextFrame = RF(0x10, 0xE);
+           moby->m_AnimationState.m_FrameProgress = 0;
+         }
+         if (MobyRotateToSpyro(moby, 6, 0xA, 1) != 0 && g_AnimationFinished) {
+@@ -27753,7 +27753,7 @@
+           MobyRotateToAngle(moby, props->m_0x10, 4, 0, 0);
+           if (moby->m_AnimationState.m_Animation == 2 &&
+               g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_Frame == RT(0xF, 0xD)) {
++              moby->m_AnimationState.m_Frame == RF(0xF, 0xD)) {
+             props->m_0x0c--;
+             if (props->m_0x0c > 0) {
+               moby->m_AnimationState.m_Frame = 5;
+@@ -29673,7 +29673,7 @@
+       }
+ 
+       case 2: {
+-        if (moby->m_AnimationState.m_NextFrame >= RT(6, 5) && props->m_0x08 == 0) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(6, 5) && props->m_0x08 == 0) {
+           EnvAnimSetFlags(props->m_0x00, ENV_ANIM_FLAG_UNPAUSE, 0);
+           props->m_0x08 = RT(100, 83);
+           D_800777C0[props->m_0x00] = 1;
+@@ -29849,7 +29849,7 @@
+           MOBY_ANIM_CHANGE(moby, 3);
+           continue;
+         }
+-        if (moby->m_AnimationState.m_NextFrame >= RT(0xF, 0xD)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(0xF, 0xD)) {
+           moby->m_AnimationState.m_Frame = 0;
+           moby->m_AnimationState.m_NextFrame = 1;
+           moby->m_AnimationState.m_FrameProgress = 0;
+@@ -30003,12 +30003,12 @@
+         MobyRotateToSpyro(moby, 6, 0, 0);
+ 
+         if (props->m_0x38 == 0 && moby->m_AnimationState.m_NextFrame > 1 &&
+-            moby->m_AnimationState.m_NextFrame < RT(28, 23)) {
++            moby->m_AnimationState.m_NextFrame < RF(28, 23)) {
+           props->m_0x38 = g_SpawnMoby(32, moby);
+         }
+ 
+-        if (props->m_0x14 == 0 && moby->m_AnimationState.m_NextFrame > RT(14, 12) &&
+-            moby->m_AnimationState.m_NextFrame < RT(18, 15) &&
++        if (props->m_0x14 == 0 && moby->m_AnimationState.m_NextFrame > RF(14, 12) &&
++            moby->m_AnimationState.m_NextFrame < RF(18, 15) &&
+             DISTANCE_TO_SPYRO(moby) < 4500) {
+           Moby494Props *projectileProps;
+ 
+@@ -30022,7 +30022,7 @@
+           projectileProps->m_0x00 = moby;
+         }
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(28, 23) && props->m_0x14 != 0) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(28, 23) && props->m_0x14 != 0) {
+           props->m_0x14->m_Substate = 1;
+           props->m_0x14 = 0;
+           if (props->m_0x38 != 0) {
+@@ -30140,8 +30140,8 @@
+           continue;
+         }
+ 
+-        if (moby->m_AnimationState.m_NextFrame > RT(7, 6) &&
+-            moby->m_AnimationState.m_NextFrame < RT(15, 13) &&
++        if (moby->m_AnimationState.m_NextFrame > RF(7, 6) &&
++            moby->m_AnimationState.m_NextFrame < RF(15, 13) &&
+             props->m_0x20 < distance) {
+           MobyMove(moby, angle, props->m_0x20, 0, 0, 0);
+         }
+@@ -30289,13 +30289,13 @@
+         if (TICK_TIMER(props->m_0x18)) {
+           if (props->m_0x14 == 0) {
+             if (moby->m_AnimationState.m_NextAnimation == 0 &&
+-                moby->m_AnimationState.m_NextFrame >= RT(0xF, 0xD)) {
++                moby->m_AnimationState.m_NextFrame >= RF(0xF, 0xD)) {
+               moby->m_AnimationState.m_Frame = 0;
+               moby->m_AnimationState.m_NextFrame = 1;
+               moby->m_AnimationState.m_FrameProgress = 0;
+             }
+           } else if (moby->m_AnimationState.m_NextAnimation == 0 &&
+-                     moby->m_AnimationState.m_NextFrame >= RT(0x1C, 0x17)) {
++                     moby->m_AnimationState.m_NextFrame >= RF(0x1C, 0x17)) {
+             g_AnimationFinished = 0;
+             MOBY_ANIM_ADVANCE(moby, 1);
+           }
+@@ -30459,7 +30459,7 @@
+ 
+         g_Spyro.m_ControlFlags = 0x80002000;
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(0xD, 0xB)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(0xD, 0xB)) {
+           g_Spyro.m_Position.x = moby->m_Position.x;
+           g_Spyro.m_Position.y = moby->m_Position.y;
+           g_IsSpyroHidden = 1;
+@@ -30503,7 +30503,7 @@
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 5);
+ 
+         if (g_IsSpyroHidden != 0) {
+-          if (moby->m_AnimationState.m_NextFrame >= RT(0x29, 0x22)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(0x29, 0x22)) {
+             Vector3D velocity;
+             g_IsSpyroHidden = 0;
+             g_Spyro.m_DamageFlags = 0x86;
+@@ -30547,7 +30547,7 @@
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 7);
+ 
+         if (g_IsSpyroHidden != 0) {
+-          if (moby->m_AnimationState.m_NextFrame >= RT(0x10, 0xD)) {
++          if (moby->m_AnimationState.m_NextFrame >= RF(0x10, 0xD)) {
+             g_IsSpyroHidden = 0;
+             g_Spyro.m_DamageFlags = 0x86;
+             g_Spyro.m_Position.x = moby->m_Position.x +
+@@ -30638,7 +30638,7 @@
+           MOBY_ANIM_RESTART(moby, 1);
+         }
+ 
+-        if (moby->m_AnimationState.m_NextFrame >= RT(14, 12)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(14, 12)) {
+           moby->m_State = 2;
+           MOBY_ANIM_RESTART(moby, 2);
+           continue;
+@@ -30647,7 +30647,7 @@
+       }
+ 
+       case 3: {
+-        if (moby->m_AnimationState.m_NextFrame >= RT(19, 16)) {
++        if (moby->m_AnimationState.m_NextFrame >= RF(19, 16)) {
+           moby->m_State = 4;
+           MOBY_ANIM_RESTART(moby, 4);
+           continue;
+--- a/src/overlays/titlescreen.c
++++ b/src/overlays/titlescreen.c
+@@ -112,6 +112,7 @@
+ 
+ #ifdef SPYRO_PORT
+ int PortSkipTitleIntro(void); /* src/game/cheats_port.c, decisions D50 */
++int PortCutsceneTicks(int d);  /* src/game/region_game.c: PAL's 50 Hz vblanks (D150) */
+ #endif
+ 
+ void TitlescreenUpdate(void) {
+@@ -195,16 +196,26 @@
+       }
+     }
+ 
+-    // PAL: the flyby's times for 50 Hz, and the skip is in sub-state 3
+-    g_CutsceneLayout->m_CurrentTick += 2;
++    // PAL: the flyby's times for 50 Hz, and the skip is in sub-state 3.
++    // The port (D155): the flyby counts PAL's 50 Hz vblanks, so at US
++    // timing a tick is 5/3 of them, the remainder carried
++    // (PortCutsceneTicks, as the intro's, D150); at PAL's own timing it is
++    // 2, the original's. The count can then pass 1120 on an odd tick, so
++    // the loop point is tested as passed (the same test while the count is
++    // even), and a loop keeps what the count had past its end.
++    {
++      int before = g_CutsceneLayout->m_CurrentTick;
++      g_CutsceneLayout->m_CurrentTick += PortCutsceneTicks(2);
+ 
+-    if (g_CutsceneLayout->m_CurrentTick < 900) {
+-      g_TitlescreenState.m_Tick = 0;
+-    } else {
+-      if (g_CutsceneLayout->m_CurrentTick == 1120 && (rand() & 3) != 0) {
+-        g_CutsceneLayout->m_CurrentTick = 976;
+-      } else if (g_CutsceneLayout->m_CurrentTick >= 1274) {
+-        g_CutsceneLayout->m_CurrentTick = 976;
++      if (g_CutsceneLayout->m_CurrentTick < 900) {
++        g_TitlescreenState.m_Tick = 0;
++      } else {
++        if (before < 1120 && g_CutsceneLayout->m_CurrentTick >= 1120 &&
++            (rand() & 3) != 0) {
++          g_CutsceneLayout->m_CurrentTick -= 1120 - 976;
++        } else if (g_CutsceneLayout->m_CurrentTick >= 1274) {
++          g_CutsceneLayout->m_CurrentTick -= 1274 - 976;
++        }
+       }
+     }
+   }
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -23,6 +23,13 @@
+ } spyro_AnimationDetails[46]; // Frame details for animations
+ 
+ extern u_char spyro_StateDefaultAnimation[48]; // State to animation
++
++// PAL at US timing (D155): Spyro's PAL model has 5/6 of the US one's frames
++// (spyro_AnimationDetails), made for 50 Hz vblanks, and these steppers run
++// once a 60 Hz vblank there, so each step is 5/6 of its amount, the
++// remainder carried for the part (0 body, 1 head, 2 tail). Otherwise the
++// amount itself (src/game/region_game.c). The port's only.
++int PortSpyroAnimStep(int pAmount, int pPart);
+ extern u_char
+     spyro_FlameBlockedInAnimation[48]; // Is flaming blocked in this animation
+ extern u_char D_8006BC84[45][45];      // Transition types
+@@ -43,7 +50,7 @@
+ /// @brief Increments the body animation
+ /// @param pDeltaTime The delta time
+ void func_8003CB24(int pDeltaTime) {
+-  g_Spyro.m_bodyFrameProgress += pDeltaTime;
++  g_Spyro.m_bodyFrameProgress += PortSpyroAnimStep(pDeltaTime, 0);
+ 
+   if (g_Spyro.m_bodyFrameProgress >= 16) {
+     g_Spyro.m_bodyFrameProgress -= 16;
+@@ -63,7 +70,7 @@
+ 
+ // / @brief Increments the body animation and handles state transitions
+ int func_8003CBB8(int pDeltaTime) {
+-  g_Spyro.m_bodyFrameProgress += pDeltaTime;
++  g_Spyro.m_bodyFrameProgress += PortSpyroAnimStep(pDeltaTime, 0);
+ 
+   if (g_Spyro.m_bodyFrameProgress >= 16) {
+     g_Spyro.m_bodyFrameProgress -= 16;
+@@ -245,7 +252,7 @@
+   case TRANSITION_SLOW_BLEND:
+   case TRANSITION_SLOW_AT_END:
+   case TRANSITION_SLOW_FROM_START:
+-    g_Spyro.m_bodyFrameProgress += 2;
++    g_Spyro.m_bodyFrameProgress += PortSpyroAnimStep(2, 0);
+     if (g_Spyro.m_bodyFrameProgress < 16)
+       break;
+     func_8003CB24(0);
+@@ -253,7 +260,7 @@
+     break;
+ 
+   case TRANSITION_FAST_BLEND:
+-    g_Spyro.m_bodyFrameProgress += 4;
++    g_Spyro.m_bodyFrameProgress += PortSpyroAnimStep(4, 0);
+     if (g_Spyro.m_bodyFrameProgress < 16)
+       break;
+     func_8003CB24(0);
+@@ -285,7 +292,8 @@
+   }
+ 
+   case TRANSITION_HOLD_END:
+-    g_Spyro.m_bodyFrameProgress += g_Spyro.m_bodyAnimationSpeed;
++    g_Spyro.m_bodyFrameProgress +=
++        PortSpyroAnimStep(g_Spyro.m_bodyAnimationSpeed, 0);
+     if (g_Spyro.m_bodyFrameProgress < 16)
+       break;
+     g_Spyro.m_bodyFrameProgress = 0;
+@@ -1606,7 +1614,7 @@
+ 
+ /// @brief Increments the head animation
+ void func_800495D8(int pDeltaTime) {
+-  g_Spyro.m_headFrameProgress += pDeltaTime;
++  g_Spyro.m_headFrameProgress += PortSpyroAnimStep(pDeltaTime, 1);
+ 
+   if (g_Spyro.m_headFrameProgress >= 16) {
+     g_Spyro.m_headFrameProgress -= 16;
+@@ -1669,14 +1677,14 @@
+     }
+     break;
+   case 2:
+-    g_Spyro.m_headFrameProgress += 4;
++    g_Spyro.m_headFrameProgress += PortSpyroAnimStep(4, 1);
+     if (g_Spyro.m_headFrameProgress >= 16) {
+       func_800495D8(0);
+       g_Spyro.unk_0x60 = 0;
+     }
+     break;
+   case 1:
+-    g_Spyro.m_headFrameProgress += 2;
++    g_Spyro.m_headFrameProgress += PortSpyroAnimStep(2, 1);
+     if (g_Spyro.m_headFrameProgress >= 16) {
+       func_800495D8(0);
+       g_Spyro.unk_0x60 = 0;
+@@ -1834,7 +1842,7 @@
+ 
+ /// @brief Updates the tail animation
+ void func_80049DFC(int pAnimationSpeed) {
+-  g_Spyro.m_tailFrameProgress += pAnimationSpeed;
++  g_Spyro.m_tailFrameProgress += PortSpyroAnimStep(pAnimationSpeed, 2);
+ 
+   if (g_Spyro.m_tailFrameProgress >= 16) {
+     g_Spyro.m_tailFrameProgress -= 16;

@@ -41,7 +41,14 @@ STOP = set()
 # translation of a PS1 address (psx_kuseg_host, port.c: PSX_KUSEG), which
 # only PlaySound reaches, through the sound reference it is given, NULL in
 # every call the draws make (the flight results'); --pres-write-check holds
-# that the presenter writes none of the game's memory.
+# that the presenter writes none of the game's memory. Stage R3 (D135)
+# adds g_RegionTiming, the RT() switch that draw.c, hud.c and the rest now
+# read: set once when the disc opens (libcd.c psx_cd_open, cdimage.c),
+# never by the game. Stage R2 (D139) adds PortRegionData, the PAL tables'
+# copy made once from the player's executable before the game's first
+# instruction (region_data.c; its PortFatal only for an unmapped address,
+# which the matching build's per-function proof rules out), and g_Region,
+# g_Language and the screen position, which the draws read for PAL.
 READ_ONLY = r"""
 ^(memcpy|memset|sprintf|snprintf|strcpy|strlen|mips2c_div|__divdi3|__udivdi3|__moddi3|__umoddi3)$
 ^__aeabi_(idiv|uidiv|idivmod|uidivmod|ldivmod|uldivmod)$
@@ -52,6 +59,9 @@ READ_ONLY = r"""
 ^port_ws_(hud_ofx|hud_r11|r1112)$
 ^port_poly_start$
 ^g_present$
+^g_RegionTiming$
+^PortRegionData$
+^(g_Region|g_Language|g_ScreenOffsetX|g_ScreenOffsetY)$
 ^(g_Environment|g_EnvironmentAnimations|g_Models|g_SkipLowPolyWorld|g_Buffers|g_LevelId)$
 ^D_8006[0-9A-F]{4}$
 ^D_80074B84$
@@ -75,7 +85,8 @@ INDIRECT_RE = re.compile(r"\bcall\s+\*|\bblx\s+(?:r\d+|ip|sl|fp|lr)\b")
 # pres_ovl.c returns (pres_names.h maps the game's overlay pointers onto
 # those): draw.c's flight results (D_8007567C), the balloonist's talk
 # (D_800758D8) and the flight results' time (D_800758C4)
-OVL_ROOTS = re.compile(r"^(Flight5_LEVEL_|Flight4_LEVEL_|Balloonist4_LEVEL_)\d+$")
+# D145: and PAL's letter count (g_PalLetterCount, called from Flight5)
+OVL_ROOTS = re.compile(r"^(Flight5_LEVEL_|Flight4_LEVEL_|Balloonist4_LEVEL_|func_pal_80081758_LEVEL_)\d+$")
 INDIRECT_OK = re.compile(r"^(GamestateDraw_pres|func_8001E24C|Flight5_LEVEL_\d+)$")
 
 

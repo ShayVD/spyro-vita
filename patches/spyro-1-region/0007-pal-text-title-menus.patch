@@ -1,0 +1,3678 @@
+--- a/include/loaders.h
++++ b/include/loaders.h
+@@ -25,6 +25,18 @@ typedef struct {
+   u_char _0F;
+ } TransGem;
+ 
++// PAL's level-transition gem (12 bytes; PAL func_8002DA74, D139): the flight
++// is computed from age where the gems are drawn, so no stored offsets.
++typedef struct {
++  short targetX;  // rand() % 320 - 160
++  short targetY;  // (rand() & 63) + 96
++  short unk_0x4;  // (rand() & 0x7FF) - 1024
++  u_char active;  // 0: free, 1: flying
++  u_char age;     // ticks since spawn; done past 128
++  Vector3D8 rot;  // x, y: (rand() & 63) - 32; z: rand(), spun by spin
++  u_char spin;    // (rand() & 15) - 8, added to rot.z each tick
++} TransGemPal;
++
+ extern int g_LevelTransHudActive;     // Show transition text D_800756B0
+ extern int g_LevelTransTicks;         // Ticks in level transition D_800756AC
+ extern TransGem *g_LevelTransGems;    // Up to 64 gems D_8007571C
+--- a/include/titlescreen.h
++++ b/include/titlescreen.h
+@@ -226,13 +226,14 @@ extern u_char g_TitlescreenAnimOut[16];
+ extern int g_TitlescreenSPUOffsets[10 /*?*/];
+ 
+ extern u_long g_TitlescreenSelColors[4]; // P_CODEs;
+-extern struct {
++typedef struct {
+   ushort m_tpage;
+   ushort m_clut;
+   u_char m_w;
+   u_char m_h;
+   u_char m_u;
+   u_char m_v;
+-} g_TitlescreenSprites[64];
++} TitlescreenSpriteDef;
++extern TitlescreenSpriteDef g_TitlescreenSprites[64];
+ 
+ #endif
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -414,6 +414,11 @@ void func_80018880(void) {
+ }
+ 
+ /// @brief Creates the demo mode text
++#if REGION_HAS_PAL
++extern char *g_PalDemoModeText[5]; // PAL 0x80074D88
++extern u_char g_PalDemoModeX[];    // PAL 0x8007B954
++#endif
++
+ void func_80018908(void) {
+   Vector3D position;
+   Vector3D spacing;
+@@ -424,10 +429,23 @@ void func_80018908(void) {
+   spacing.x = 16;
+   spacing.y = 1;
+   spacing.z = 5120;
+-  position.x = 199;
+-  position.y = 200;
+-  position.z = 4352;
+-  func_800181AC("DEMO MODE", &position, &spacing, 18, 2);
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    position.x = PAL_DATA(g_PalDemoModeX, 0x8007B954)[g_Language];
++    position.y = 216;
++    position.z = 4352;
++    func_pal_8001BD5C(PAL_DATA(g_PalDemoModeText, 0x80074D88)[g_Language],
++                      &position, &spacing, 18, 11);
++  } else
++#endif
++  {
++#if REGION_HAS_US
++    position.x = 199;
++    position.y = 200;
++    position.z = 4352;
++    func_800181AC("DEMO MODE", &position, &spacing, 18, 2);
++#endif
++  }
+   mobys--;
+   for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
+     mobys->m_Rotation.z = COSINE_8((g_LevelTicks * 4 + i * 12) & 0xFF) >> 7;
+@@ -616,14 +634,14 @@ void func_80018F30(void) {
+   D_800757B0 = ++bar;
+   bar->tag = PRIM_TAG(POLY_F4);
+   bar->code = PRIM_POLY_F4;
+-  bar->y2 = 240;
+-  bar->y3 = 240;
++  bar->y2 = RV(240, 256, 240); // PAL: its 256 lines (D139)
++  bar->y3 = RV(240, 256, 240);
+   bar->x0 = 0;
+   bar->x1 = 512;
+   bar->x2 = 0;
+   bar->x3 = 512;
+-  bar->y0 = 240 - D_800756C0;
+-  bar->y1 = 240 - D_800756C0;
++  bar->y0 = RV(240, 256, 240) - D_800756C0;
++  bar->y1 = RV(240, 256, 240) - D_800756C0;
+   setRGB0(bar, 0, 0, 0);
+   func_800168DC(bar);
+   D_800757B0 = bar + 1;
+@@ -643,7 +661,16 @@ void func_800190D4(int pMode, int pR, int pG, int pB) {
+   f4->tag = PRIM_TAG(POLY_F4);
+ 
+   setcode(f4, PRIM_STP(PRIM_POLY_F4));
+-  setXYWH(f4, 0, 8, 512, 240 - 16);
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    setXYWH(f4, 0, 0, 512, 256); // PAL: the whole 256-line screen
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) {
++    setXYWH(f4, 0, 8, 512, 240 - 16);
++  }
++#endif
+   setRGB0(f4, pR, pG, pB);
+ 
+   func_800168DC(f4);
+@@ -703,9 +730,19 @@ void func_80019300(void) {
+         sprintf(text, "%d/%d", g_Hud.m_GemCount, g_Hud.m_GemCount);
+         mobys = g_HudMobys;
+         vec.x = 90;
+-        vec.y = 36;
++        vec.y = RV(36, 28, 36);
+         vec.z = 2880;
+-        func_80017FE4(text, &vec, 28, 11);
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          // PAL: by the merged text Mobys, 8 higher
++          func_pal_8001BD5C(text, &vec, nullptr, 28, 11);
++        }
++#endif
++#if REGION_HAS_US
++        if (!REGION_IS(PAL)) {
++          func_80017FE4(text, &vec, 28, 11);
++        }
++#endif
+         mobys--;
+         for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
+           mobys->m_Rotation.z =
+@@ -779,9 +816,233 @@ void func_80019698(void) {
+   func_80058BA8(); // Render glows and sparkles
+ }
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): the transition texts in five languages, the level names
++// (36 a language), the treasure lines' x by language
++extern char *g_PalReturningHomeText[5];  // PAL 0x80074D9C
++extern char *g_PalConfrontingText[5];    // PAL 0x80074DB0
++extern char *g_PalEnteringText[5];       // PAL 0x80074DC4
++extern char *g_PalLevelNames[5 * 36];    // PAL 0x80075468
++extern char *g_PalTreasureFoundText[5];  // PAL 0x80074E28
++extern char *g_PalTotalTreasureText[5];  // PAL 0x80074E3C
++extern u_char g_PalTreasureFoundX[5];    // PAL 0x8007B984
++extern u_char g_PalTotalTreasureX[5];    // PAL 0x8007B98C
++
++// PAL's gem records (include/loaders.h)
++#define PAL_TRANS_GEMS ((TransGemPal *)g_LevelTransGems)
++#endif
++
+ /// @brief Creates the level transition text
+ void func_8001973C(void) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: the language's texts by the merged text Mobys (shade 11), smaller
++    // letters, 384 ticks, the treasure lines 16 lower; the gems' flight is
++    // computed here from their age (PAL's update keeps no offsets)
++    int levelIndex;
++    Moby *mobys;
++    Vector3D vec1;
++    Vector3D vec2;
++    char textbuffer[32];
++    int i;
+ 
++    levelIndex = (g_NextLevelId / 10 - 1) * 6 + (g_NextLevelId % 10);
++    if (g_NextLevelId % 10 == 0) {
++      sprintf(textbuffer,
++              PAL_DATA(g_PalReturningHomeText, 0x80074D9C)[g_Language]);
++    } else if ((g_NextLevelId < 60 && g_NextLevelId % 10 == 4) ||
++               (g_NextLevelId == 63)) {
++      sprintf(textbuffer, PAL_DATA(g_PalRescuedFormat, 0x8007BEDC),
++              PAL_DATA(g_PalConfrontingText, 0x80074DB0)[g_Language],
++              PAL_DATA(g_PalLevelNames,
++                       0x80075468)[g_Language * 36 + levelIndex]);
++    } else {
++      sprintf(textbuffer, PAL_DATA(g_PalRescuedFormat, 0x8007BEDC),
++              PAL_DATA(g_PalEnteringText, 0x80074DC4)[g_Language],
++              PAL_DATA(g_PalLevelNames,
++                       0x80075468)[g_Language * 36 + levelIndex]);
++    }
++
++    vec1.x = 256 - (strlen(textbuffer) - 1) * 7;
++
++    if (g_LevelTransTicks < 32) {
++      vec1.y = (SINE_8(g_LevelTransTicks * 2) >> 7) - 8;
++    } else if (g_LevelTransTicks >= 357) {
++      vec1.y = (SINE_8((384 - g_LevelTransTicks) * 2) >> 7) - 8;
++    } else {
++      vec1.y = 24;
++    }
++    vec1.z = 5120;
++    vec2.x = 14;
++    vec2.y = 1;
++    vec2.z = 5632;
++    mobys = g_HudMobys;
++    func_pal_8001BD5C(textbuffer, &vec1, &vec2, 16, 11);
++    mobys--;
++    for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
++      mobys->m_Rotation.z =
++          COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
++      mobys--;
++    }
++
++    if (g_LevelTransTicks >= 64) {
++      int center_offset, displayed_counter, tally_duration, tally_countdown;
++      int scale;
++      center_offset = 40;
++      for (i = g_GemTotal; i >= 10; i = i / 10) {
++        center_offset -= 10;
++      }
++      if (g_LevelTransTicks < 96) {
++        int a = g_LevelTransTicks - 64;
++        vec1.y = 288 - (SINE_8(a * 2) >> 6);
++      } else if (g_LevelTransTicks < g_LevelTransChestDuration) {
++        vec1.y = 224;
++      } else if (g_LevelTransTicks < g_LevelTransChestDuration + 32) {
++        int a = g_LevelTransTicks - 32;
++        vec1.y = 288 - (SINE_8((g_LevelTransChestDuration - a) * 2) >> 6);
++      } else if (g_LevelTransTicks <= 223) {
++        vec1.y = 288;
++      } else if (g_LevelTransTicks < 0x100) {
++        int a = g_LevelTransTicks - 224;
++        vec1.y = 288 - (SINE_8(a * 2) >> 6);
++      } else if (g_LevelTransTicks < 356) {
++        vec1.y = 224;
++      } else if (g_LevelTransTicks < 384) {
++        vec1.y = 288 - (SINE_8((384 - g_LevelTransTicks) * 2) >> 6);
++      } else {
++        vec1.y = 288;
++      }
++      mobys = g_HudMobys;
++      vec1.y += 2;
++      if (g_LevelTransTicks < 224) {
++        vec1.x =
++            PAL_DATA(g_PalTreasureFoundX, 0x8007B984)[g_Language] + center_offset;
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalTreasureFoundText, 0x80074E28)[g_Language], &vec1,
++            &vec2, 16, 11);
++      } else {
++        vec1.x =
++            PAL_DATA(g_PalTotalTreasureX, 0x8007B98C)[g_Language] + center_offset;
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalTotalTreasureText, 0x80074E3C)[g_Language], &vec1,
++            &vec2, 16, 11);
++      }
++      mobys--;
++      vec1.y -= 2;
++      for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
++        mobys->m_Rotation.z =
++            COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
++        mobys--;
++      }
++      if (g_LevelTransTicks < 128) {
++        displayed_counter = g_LevelGemCount[g_PreviousLevelIndex] - D_8007587C;
++      } else if (g_LevelTransTicks < 224) {
++        tally_duration = (g_NGemsSinceLevelEntry + 1) * 2;
++        if (tally_duration > 64) {
++          tally_duration = 64;
++        }
++        tally_countdown = 128 + tally_duration - g_LevelTransTicks;
++        if (tally_countdown < 0) {
++          tally_countdown = 0;
++        }
++        if (tally_duration < tally_countdown) {
++          tally_countdown = tally_duration;
++        }
++        displayed_counter =
++            ((g_LevelGemCount[g_PreviousLevelIndex] - D_8007587C) *
++             tally_countdown) /
++            tally_duration;
++      } else if (g_LevelTransTicks < 256) {
++        displayed_counter =
++            g_GemTotal - (g_LevelGemCount[g_PreviousLevelIndex] - D_8007587C);
++      } else {
++        tally_duration = (g_NGemsSinceLevelEntry + 1) * 2;
++        if (tally_duration > 64) {
++          tally_duration = 64;
++        }
++        tally_countdown = 256 + tally_duration - g_LevelTransTicks;
++        if (tally_countdown < 0) {
++          tally_countdown = 0;
++        }
++        if (tally_duration < tally_countdown) {
++          tally_countdown = tally_duration;
++        }
++        displayed_counter =
++            g_GemTotal -
++            (((g_LevelGemCount[g_PreviousLevelIndex] - D_8007587C) *
++              tally_countdown) /
++             tally_duration);
++      }
++      vec1.x = 376 + center_offset;
++      vec1.z = 3968;
++      sprintf(textbuffer, "%d", displayed_counter);
++      mobys = g_HudMobys;
++      func_pal_8001BD5C(textbuffer, &vec1, nullptr, 20, 11);
++      mobys--;
++      for (i = 0; (int)g_HudMobys <= (int)mobys; i++) {
++        mobys->m_Rotation.z =
++            COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
++        mobys--;
++      }
++      for (i = 0; i < 32; i++) {
++        if (PAL_TRANS_GEMS[i].active != 0) {
++          // the flight: a sine arc over 128 ticks, scaled up then down
++          scale = (PAL_TRANS_GEMS[i].age >> 1) + 32;
++          if (scale > 64) {
++            scale = 128 - scale;
++          }
++          g_HudMobys--;
++          Memset(g_HudMobys, 0, sizeof(Moby));
++          g_HudMobys->m_Class = g_RecentGemsCollected[i];
++          g_HudMobys->m_Position.x =
++              320 + center_offset +
++              ((PAL_TRANS_GEMS[i].targetX * SINE_8(PAL_TRANS_GEMS[i].age * 2) *
++                scale) >>
++               18);
++          g_HudMobys->m_Position.y =
++              216 -
++              ((PAL_TRANS_GEMS[i].targetY * SINE_8(PAL_TRANS_GEMS[i].age)) >> 12);
++          g_HudMobys->m_Position.z =
++              0x1000 +
++              ((PAL_TRANS_GEMS[i].unk_0x4 * SINE_8(PAL_TRANS_GEMS[i].age * 2) *
++                scale) >>
++               18);
++          g_HudMobys->m_Rotation.x = PAL_TRANS_GEMS[i].rot.x;
++          g_HudMobys->m_Rotation.y = PAL_TRANS_GEMS[i].rot.y;
++          g_HudMobys->m_Rotation.z = PAL_TRANS_GEMS[i].rot.z;
++          g_HudMobys->m_DepthOffset = 0x7F;
++          g_HudMobys->m_SpecularMetalType = g_HudMobys->m_Class - 0x52;
++          g_HudMobys->m_RenderRadius = 0xFF;
++        }
++      }
++      g_HudMobys--;
++      Memset(g_HudMobys, 0, sizeof(Moby));
++      g_HudMobys->m_Class = 473;
++      g_HudMobys->m_Position.x = 320 + center_offset;
++      if (g_LevelTransTicks < 224) {
++        g_HudMobys->m_Position.y = vec1.y + 8;
++        g_HudMobys->m_Position.z = 0x800;
++        g_HudMobys->m_Rotation.x = 6;
++        g_HudMobys->m_Rotation.z = 0xB0;
++      } else {
++        g_HudMobys->m_Position.y = vec1.y + 12;
++        g_HudMobys->m_Position.z = 0x600;
++        g_HudMobys->m_Rotation.x = 6;
++        g_HudMobys->m_Rotation.z = 0xB0;
++      }
++
++      g_HudMobys->m_DepthOffset = 0x7F;
++      g_HudMobys->m_SpecularMetalType = 11;
++      g_HudMobys->m_RenderRadius = 0xFF;
++    }
++    g_SonyImage.m_ShadedMobys[0] = 0;
++    func_80018880();
++    func_80022A2C();
++    return;
++  }
++#endif
++#if REGION_HAS_US
++  {
+   int levelIndex;
+   Moby *mobys;
+   Vector3D vec1;
+@@ -951,6 +1212,8 @@ void func_8001973C(void) {
+   g_SonyImage.m_ShadedMobys[0] = 0;
+   func_80018880();
+   func_80022A2C();
++  }
++#endif
+ }
+ 
+ /// @brief Gamestate 1
+@@ -1034,6 +1297,56 @@ extern int D_8007568C; // Pause menu no button ticks
+ 
+ int CalculateCompletion(void);
+ 
++#if REGION_HAS_PAL
++// PAL's pause and inventory text (D139): five-language string tables
++// (EN, FR, DE, ES, IT) and each item's x per language
++extern char *g_PalPausedText[5];       // PAL 0x80074E50
++extern char *g_PalContinueText[5];     // PAL 0x80074E64
++extern char *g_PalOptionsText[5];      // PAL 0x80074E78
++extern char *g_PalInventoryText[5];    // PAL 0x80074E8C
++extern char *g_PalQuitText[5];         // PAL 0x80074EA0
++extern char *g_PalExitLevelText[5];    // PAL 0x80074EB4
++extern char *g_PalQuitGameText[5];     // PAL 0x80074EC8
++extern char *g_PalSoundEffectsText[5]; // PAL 0x80074EDC
++extern char *g_PalMusicVolumeText[5];  // PAL 0x80074EF0
++extern char *g_PalSpeakerSetupText[5]; // PAL 0x80074F04
++extern char *g_PalVibrationText[5];    // PAL 0x80074F18
++extern char *g_PalCameraText[5];       // PAL 0x80074F2C
++extern char *g_PalScreenAdjustText[5]; // PAL 0x80074F40
++extern char *g_PalHorizontalText[5];   // PAL 0x80074F54
++extern char *g_PalVerticalText[5];     // PAL 0x80074F68
++extern char *g_PalDoneText[5];         // PAL 0x80074F7C
++extern char *g_PalOnText[5];           // PAL 0x80074F90
++extern char *g_PalOffText[5];          // PAL 0x80074FA4
++extern char *g_PalStereoText[5];       // PAL 0x80074FB8
++extern char *g_PalMonoText[5];         // PAL 0x80074FCC
++extern char *g_PalActiveText[5];       // PAL 0x80074FE0
++extern char *g_PalPassiveText[5];      // PAL 0x80074FF4
++extern char *g_PalYesText[5];          // PAL 0x80075008
++extern char *g_PalNoText[5];           // PAL 0x8007501C
++extern char *g_PalHomeworldNames[30]; // PAL 0x800753F0: [language * 6 + world]
++extern char *g_PalLevelNames[180];     // PAL 0x80075468: [language * 36 + level]
++// x per language (unsized, so not $gp-addressed)
++extern u_char g_PalNoX[];           // PAL 0x80075030
++extern u_char g_PalPausedX[];       // PAL 0x8007B9AC
++extern u_char g_PalContinueX[];     // PAL 0x8007B9BC
++extern u_char g_PalOptionsX[];      // PAL 0x8007B9D4
++extern u_char g_PalInventoryX[];    // PAL 0x8007B9E4
++extern u_char g_PalQuitX[];         // PAL 0x8007B9F4
++extern u_char g_PalExitLevelX[];    // PAL 0x8007B9FC
++extern u_char g_PalQuitGameX[];     // PAL 0x8007BA04
++extern u_char g_PalSoundEffectsX[]; // PAL 0x8007BA0C
++extern u_char g_PalMusicVolumeX[];  // PAL 0x8007BA1C
++extern u_char g_PalSpeakerSetupX[]; // PAL 0x8007BA3C
++extern u_char g_PalVibrationX[];    // PAL 0x8007BA44
++extern u_char g_PalCameraX[];       // PAL 0x8007BA6C
++extern u_char g_PalScreenAdjustX[]; // PAL 0x8007BA74
++extern u_char g_PalHorizontalX[];   // PAL 0x8007BA7C
++extern u_char g_PalVerticalX[];     // PAL 0x8007BA84
++extern u_char g_PalDoneX[];         // PAL 0x8007BAAC
++extern u_char g_PalYesX[];          // PAL 0x8007BB14
++#endif
++
+ /// @brief Gamestate 2 & 3
+ void func_8001A40C(void) {
+ 
+@@ -1046,21 +1359,27 @@ void func_8001A40C(void) {
+   RECT rcStore;
+   char szBuf[32];
+   Vector3D position;
++#if REGION_HAS_US
+   Vector3D quitMenuSpacing;
+   Vector3D optionMenuSpacing;
+   Vector3D vec4;
+   RECT rc1;
+   RECT rc2;
+   Vector3D levelNameSpacing;
++#endif
+ 
++#if REGION_HAS_US
+   int worldNameLen;
+   int volumeBarCt;
++#endif
+   Moby *curMoby;
+   Moby *endMoby;
+   u_char mobyCount;
+   int level_y;
+   int world_lt_3_offset;
++#if REGION_HAS_US
+   int levelGemCount;
++#endif
+   u_char act_avail;
+ 
+   if (D_800758B8 == 0) {
+@@ -1077,19 +1396,29 @@ void func_8001A40C(void) {
+     DrawSync(0);
+     VSync(0);
+     PutDispEnv(&g_CurDB->m_DispEnv);
+-    setRECT(&rcStore, 512, 0, 256, 225);
+-    StoreImage(&rcStore, g_Buffers.m_HudOTStart - 0x1c200);
++    // PAL: the 256-line picture (224 -> 256), the HUD buffer 0x4000 lower
++    setRECT(&rcStore, 512, 0, 256, RV(225, 257, 225));
++    StoreImage(&rcStore, g_Buffers.m_HudOTStart - RV(0x1c200, 0x20200, 0x1c200));
+ 
+     for (i = 0; i < 4; ++i) {
+-      setRECT(&rcStore, i * 128, g_CurDB != g_DB ? 248 : 8, 128, 224);
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        setRECT(&rcStore, i * 128, g_CurDB != g_DB ? 256 : 0, 128, 256);
++      } else
++#endif
++      {
++#if REGION_HAS_US
++        setRECT(&rcStore, i * 128, g_CurDB != g_DB ? 248 : 8, 128, 224);
++#endif
++      }
+       StoreImage(&rcStore, g_Buffers.m_LowerPolyBuffer);
+       DrawSync(0);
+-      func_80017E98(g_Buffers.m_LowerPolyBuffer, 0x7000);
+-      setRECT(&rcStore, 512 + i * 64, 0, 64, 224);
++      func_80017E98(g_Buffers.m_LowerPolyBuffer, RV(0x7000, 0x8000, 0x7000));
++      setRECT(&rcStore, 512 + i * 64, 0, 64, RV(224, 256, 224));
+       LoadImage(&rcStore, g_Buffers.m_LowerPolyBuffer);
+     }
+ 
+-    setRECT(&rcStore, 512, 224, 32, 1);
++    setRECT(&rcStore, 512, RV(224, 256, 224), 32, 1);
+     LoadImage(&rcStore, (u_long *)g_GrayscalePalette);
+     DrawSync(0);
+     D_80075950.post = VSync(-1);
+@@ -1103,18 +1432,22 @@ void func_8001A40C(void) {
+     D_800758B0 = 0;
+     D_800757B0 = g_Buffers.m_LowerPolyBuffer;
+     D_80075780 = g_Buffers.m_LowerPolyBuffer + 0x1c000;
+-    g_HudMobys = D_800756FC = g_Buffers.m_HudOTStart - 0x1c200;
++    g_HudMobys = D_800756FC =
++        g_Buffers.m_HudOTStart - RV(0x1c200, 0x20200, 0x1c200);
+ 
+     for (i = 0; i < 4; i++) {
+       ft4 = D_800757B0;
+       ft4->tag = PRIM_TAG(POLY_FT4);
+       ft4->code = PRIM_POLY_FT4;
+       setRGB0(ft4, 0x4C, 0x80, 0x40);
+-      setXY4(ft4, i * 128, 8, ft4->x0 + 128, ft4->y0, ft4->x0,
+-             ft4->y0 + 224 - 1, ft4->x0 + 128, ft4->y0 + 224 - 1);
+-      setUV4(ft4, 0, 0, ft4->u0 + 128, ft4->v0, ft4->u0, ft4->v0 + 224 - 1,
+-             ft4->u0 + 128, ft4->v0 + 224 - 1);
+-      ft4->clut = getClut(512, 224);
++      // PAL: the 256-line picture from the top (y 8 -> 0, 224 -> 256)
++      setXY4(ft4, i * 128, RV(8, 0, 8), ft4->x0 + 128, ft4->y0, ft4->x0,
++             ft4->y0 + RV(224, 256, 224) - 1, ft4->x0 + 128,
++             ft4->y0 + RV(224, 256, 224) - 1);
++      setUV4(ft4, 0, 0, ft4->u0 + 128, ft4->v0, ft4->u0,
++             ft4->v0 + RV(224, 256, 224) - 1, ft4->u0 + 128,
++             ft4->v0 + RV(224, 256, 224) - 1);
++      ft4->clut = getClut(512, RV(224, 256, 224));
+       ft4->tpage = getTPage(1, 0, 512, 0) + i;
+       func_800168DC(ft4);
+       D_800757B0 = ft4 + 1;
+@@ -1123,11 +1456,735 @@ void func_8001A40C(void) {
+     l2 = D_800757B0;
+     l2->tag = PRIM_TAG(LINE_F2);
+     l2->code = PRIM_LINE_F2;
+-    setXY2(l2, 0, 231, 512, 231);
++    setXY2(l2, 0, RV(231, 255, 231), 512, RV(231, 255, 231));
+     setRGB0(l2, 0, 0, 0);
+     func_800168DC(l2);
+     D_800757B0 = l2 + 1;
+ 
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      if (g_Gamestate == 2) {
++        // PAL: the pause menu, a 256-line layout, its text in the language
++        // (each item's text and x from a five-language table), and page 3,
++        // the screen position
++        drm = D_800757B0;
++
++        SetDrawMode(drm, 1, 0, getTPage(0, 2, 0, 0), nullptr);
++        func_800168DC(drm);
++        f4 = (POLY_F4 *)(drm + 1);
++        f4->tag = PRIM_TAG(POLY_F4);
++        f4->code = PRIM_STP(PRIM_POLY_F4);
++        setRGB0(f4, 64, 64, 64);
++        f4->y0 = 76;
++        f4->y1 = 76;
++        if (D_800757C8 == 1 || D_800757C8 == 3) {
++          act_avail = (g_ActAvailable != 0 || D_800757C8 == 3);
++          f4->x0 = 82;
++          f4->x1 = 430;
++          f4->y2 = 188 + act_avail * 18;
++          f4->y3 = 188 + act_avail * 18;
++        } else {
++          act_avail = 1;
++          f4->x0 = 112;
++          f4->x1 = 400;
++          f4->y2 = 185;
++          f4->y3 = 185;
++        }
++        f4->x2 = f4->x0;
++        f4->x3 = f4->x1;
++        func_800168DC(f4);
++        D_800757B0 = f4 + 1;
++
++        if (D_800757C8 == 1 || D_800757C8 == 3) {
++          func_8001844C(82, 76, 430, 76);
++          func_8001844C(430, 76, 430, 188 + act_avail * 18);
++          func_8001844C(430, 188 + act_avail * 18, 82, 188 + act_avail * 18);
++          func_8001844C(82, 188 + act_avail * 18, 82, 76);
++        } else {
++          func_8001844C(224, 106, 288, 106);
++          func_8001844C(112, 76, 400, 76);
++          func_8001844C(400, 76, 400, 167 + act_avail * 18);
++          func_8001844C(400, 167 + act_avail * 18, 112, 167 + act_avail * 18);
++          func_8001844C(112, 167 + act_avail * 18, 112, 76);
++          // "PAUSED" on the main and quit pages only
++          setXYZ(&position, PAL_DATA(g_PalPausedX, 0x8007B9AC)[g_Language],
++                 91, 3072);
++          func_pal_8001BD5C(PAL_DATA(g_PalPausedText, 0x80074E50)[g_Language],
++                            &position, nullptr, 28, 11);
++        }
++
++        // The selected item's Mobys wiggle: PAL counts them as it makes them
++        if (D_800757C8 == 3) {
++          // screen position: "HORIZONTAL" / "VERTICAL" and the offsets
++          Vector3D adjustSpacing;
++          char adjustBuf[8];
++
++          setXYZ(&adjustSpacing, 15, 1, 5632);
++          position.z = 5120;
++          position.y = 88;
++          position.x = PAL_DATA(g_PalScreenAdjustX, 0x8007BA74)[g_Language];
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalScreenAdjustText, 0x80074F40)[g_Language],
++              &position, &adjustSpacing, 16, 11);
++          func_8001844C(146, 98, 366, 98);
++
++          position.x = PAL_DATA(g_PalHorizontalX, 0x8007BA7C)[g_Language];
++          position.y = 130;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalHorizontalText, 0x80074F54)[g_Language],
++              &position, &adjustSpacing, 16, 11);
++          sprintf(adjustBuf, "%d", g_ScreenOffsetX - 16);
++          position.x = 340;
++          if (g_ScreenOffsetX < 16) {
++            position.x = 325;
++          }
++          func_pal_8001BD5C(adjustBuf, &position, &adjustSpacing, 16, 11);
++          if (D_80075720 == 0) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalVerticalX, 0x8007BA84)[g_Language];
++          position.y = 160;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalVerticalText, 0x80074F68)[g_Language],
++                            &position, &adjustSpacing, 16, 11);
++          sprintf(adjustBuf, "%d", g_ScreenOffsetY - 16);
++          position.x = 340;
++          if (g_ScreenOffsetY < 16) {
++            position.x = 325;
++          }
++          func_pal_8001BD5C(adjustBuf, &position, &adjustSpacing, 16, 11);
++          if (D_80075720 == 1) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalDoneX, 0x8007BAAC)[g_Language];
++          position.y = 192;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalDoneText, 0x80074F7C)[g_Language],
++                            &position, &adjustSpacing, 16, 11);
++          if (D_80075720 == 2) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          for (i = 0; i < mobyCount; ++i) {
++            (*curMoby++).m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++          }
++        } else if (D_800757C8 == 2) {
++          // quit menu: "QUIT GAME?", Spanish's opening mark too
++          Vector3D quitSpacing;
++          // 16 bytes in PAL's frame, which its longest (18 with the NUL)
++          // overruns into the next; the port's has room
++#ifdef REGION
++          char quitBuf[16];
++#else
++          char quitBuf[32];
++#endif
++
++          setXYZ(&quitSpacing, 16, 1, 0x1400);
++          setXYZ(&position,
++                 PAL_DATA(g_PalQuitGameX, 0x8007BA04)[g_Language] - 8, 128,
++                 0x1100);
++          if (g_Language == 3) {
++            sprintf(quitBuf, "?%s?",
++                    PAL_DATA(g_PalQuitGameText, 0x80074EC8)[3]);
++            position.x -= 8;
++          } else {
++            sprintf(quitBuf, "%s?",
++                    PAL_DATA(g_PalQuitGameText, 0x80074EC8)[g_Language]);
++          }
++          func_pal_8001BD5C(quitBuf, &position, &quitSpacing, 18, 11);
++
++          setXYZ(&position, PAL_DATA(g_PalYesX, 0x8007BB14)[g_Language], 157,
++                 0x1100);
++          func_pal_8001BD5C(PAL_DATA(g_PalYesText, 0x80075008)[g_Language],
++                            &position, &quitSpacing, 18, 11);
++          if (D_80075720 == 0) {
++            curMoby = g_HudMobys;
++            mobyCount = 3;
++          }
++
++          setXYZ(&position, PAL_DATA(g_PalNoX, 0x80075030)[g_Language] + 256,
++                 157, 0x1100);
++          func_pal_8001BD5C(PAL_DATA(g_PalNoText, 0x8007501C)[g_Language],
++                            &position, &quitSpacing, 18, 11);
++          if (D_80075720 == 1) {
++            curMoby = g_HudMobys;
++            mobyCount = 2;
++          }
++
++          for (i = 0; i < mobyCount; ++i) {
++            (*curMoby++).m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++          }
++        } else if (D_800757C8 == 1) {
++          // options menu, with "SCREEN ADJUST" before "DONE"
++          Vector3D optionSpacing;
++
++          setXYZ(&optionSpacing, 15, 1, 0x1600);
++          position.z = 0x1400;
++          position.x = PAL_DATA(g_PalSoundEffectsX, 0x8007BA0C)[g_Language];
++          position.y = 88;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalSoundEffectsText, 0x80074EDC)[g_Language],
++              &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 0) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalMusicVolumeX, 0x8007BA1C)[g_Language];
++          position.y = 106;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalMusicVolumeText, 0x80074EF0)[g_Language],
++              &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 1) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalSpeakerSetupX, 0x8007BA3C)[g_Language];
++          position.y = 124;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalSpeakerSetupText, 0x80074F04)[g_Language],
++              &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 2) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          if (g_ActAvailable) {
++            position.x = PAL_DATA(g_PalVibrationX, 0x8007BA44)[g_Language];
++            position.y = 142;
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalVibrationText, 0x80074F18)[g_Language],
++                &position, &optionSpacing, 16, 11);
++            if (D_80075720 == 3) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++            }
++          }
++
++          position.x = PAL_DATA(g_PalCameraX, 0x8007BA6C)[g_Language];
++          position.y = act_avail * 18 + 142;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalCameraText, 0x80074F2C)[g_Language],
++                            &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 4) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalScreenAdjustX, 0x8007BA74)[g_Language];
++          position.y = act_avail * 18 + 160;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalScreenAdjustText, 0x80074F40)[g_Language],
++              &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 5) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          position.x = PAL_DATA(g_PalDoneX, 0x8007BAAC)[g_Language];
++          position.y = act_avail * 18 + 178;
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalDoneText, 0x80074F7C)[g_Language],
++                            &position, &optionSpacing, 16, 11);
++          if (D_80075720 == 6) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          for (i = 0; i < mobyCount; ++i) {
++            (*curMoby++).m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++          }
++
++          // sound volume bars
++          if (D_80075754 == 0) {
++            position.x = 324;
++            position.y = 88;
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(PAL_DATA(g_PalOffText, 0x80074FA4)[g_Language],
++                              &position, &optionSpacing, 16, 11);
++            if (D_80075720 == 0) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++              for (i = 0; i < mobyCount; ++i) {
++                (*curMoby++).m_Rotation.z =
++                    COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              }
++            }
++          } else {
++            for (i = 0; i < D_80075754; ++i) {
++              --g_HudMobys;
++              Memset(g_HudMobys, 0, sizeof(Moby));
++              g_HudMobys->m_Class = MOBYCLASS_LETTER_I;
++              g_HudMobys->m_Position.x = 322 + i * 10;
++              g_HudMobys->m_Position.y = 89;
++              g_HudMobys->m_Position.z = 0x1400;
++              if (D_80075720 == 0) {
++                g_HudMobys->m_Rotation.z =
++                    COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              } else {
++                g_HudMobys->m_Rotation.z = 0;
++              }
++              g_HudMobys->m_DepthOffset = 127;
++              g_HudMobys->m_SpecularMetalType = 11;
++              g_HudMobys->m_RenderRadius = 0xFF;
++            }
++          }
++
++          // music volume bars
++          if (D_80075748 == 0) {
++            position.x = 324;
++            position.y = 106;
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(PAL_DATA(g_PalOffText, 0x80074FA4)[g_Language],
++                              &position, &optionSpacing, 16, 11);
++            if (D_80075720 == 1) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++              for (i = 0; i < mobyCount; ++i) {
++                (*curMoby++).m_Rotation.z =
++                    COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              }
++            }
++          } else {
++            for (i = 0; i < D_80075748; ++i) {
++              --g_HudMobys;
++              Memset(g_HudMobys, 0, sizeof(Moby));
++              g_HudMobys->m_Class = MOBYCLASS_LETTER_I;
++              g_HudMobys->m_Position.x = 322 + i * 10;
++              g_HudMobys->m_Position.y = 107;
++              g_HudMobys->m_Position.z = 0x1400;
++              if (D_80075720 == 1) {
++                g_HudMobys->m_Rotation.z =
++                    COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              } else {
++                g_HudMobys->m_Rotation.z = 0;
++              }
++              g_HudMobys->m_DepthOffset = 127;
++              g_HudMobys->m_SpecularMetalType = 11;
++              g_HudMobys->m_RenderRadius = 0xFF;
++            }
++          }
++
++          // audio type
++          endMoby = g_HudMobys;
++          position.x = 324;
++          position.y = 124;
++          if (g_Spu.m_AudioMono != 0) {
++            func_pal_8001BD5C(PAL_DATA(g_PalMonoText, 0x80074FCC)[g_Language],
++                              &position, &optionSpacing, 16, 11);
++          } else {
++            func_pal_8001BD5C(PAL_DATA(g_PalStereoText, 0x80074FB8)[g_Language],
++                              &position, &optionSpacing, 16, 11);
++          }
++          if (D_80075720 == 2) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++            for (i = 0; i < mobyCount; ++i) {
++              (*curMoby++).m_Rotation.z =
++                  COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++            }
++          }
++
++          if (g_ActAvailable) {
++            endMoby = g_HudMobys;
++            position.x = 324;
++            position.y = 142;
++            if (g_ActEnabled != 0) {
++              func_pal_8001BD5C(PAL_DATA(g_PalOnText, 0x80074F90)[g_Language],
++                                &position, &optionSpacing, 16, 11);
++            } else {
++              func_pal_8001BD5C(PAL_DATA(g_PalOffText, 0x80074FA4)[g_Language],
++                                &position, &optionSpacing, 16, 11);
++            }
++            if (D_80075720 == 3) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++              for (i = 0; i < mobyCount; ++i) {
++                (*curMoby++).m_Rotation.z =
++                    COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++              }
++            }
++          }
++
++          position.x = 324;
++          position.y = act_avail * 18 + 142;
++          endMoby = g_HudMobys;
++          if (D_80075914 == 2) {
++            func_pal_8001BD5C(PAL_DATA(g_PalActiveText, 0x80074FE0)[g_Language],
++                              &position, &optionSpacing, 16, 11);
++          } else {
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalPassiveText, 0x80074FF4)[g_Language], &position,
++                &optionSpacing, 16, 11);
++          }
++          if (D_80075720 == 4) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++            for (i = 0; i < mobyCount; ++i) {
++              (*curMoby++).m_Rotation.z =
++                  COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++            }
++          }
++        } else {
++          Vector3D menuSpacing;
++
++          setXYZ(&menuSpacing, 16, 1, 0x1400);
++          setXYZ(&position, PAL_DATA(g_PalContinueX, 0x8007B9BC)[g_Language],
++                 119, 0x1100);
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalContinueText, 0x80074E64)[g_Language],
++                            &position, &menuSpacing, 18, 11);
++          if (D_80075720 == 0) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          setXYZ(&position, PAL_DATA(g_PalOptionsX, 0x8007B9D4)[g_Language],
++                 137, 0x1100);
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(PAL_DATA(g_PalOptionsText, 0x80074E78)[g_Language],
++                            &position, &menuSpacing, 18, 11);
++          if (D_80075720 == 1) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          setXYZ(&position, PAL_DATA(g_PalInventoryX, 0x8007B9E4)[g_Language],
++                 155, 0x1100);
++          endMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalInventoryText, 0x80074E8C)[g_Language], &position,
++              &menuSpacing, 18, 11);
++          if (D_80075720 == 2) {
++            curMoby = g_HudMobys;
++            mobyCount = endMoby - curMoby;
++          }
++
++          if (g_IsFlightLevel != 0) {
++            setXYZ(&position, PAL_DATA(g_PalQuitX, 0x8007B9F4)[g_Language], 173,
++                   0x1100);
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(PAL_DATA(g_PalQuitText, 0x80074EA0)[g_Language],
++                              &position, &menuSpacing, 18, 11);
++            if (D_80075720 == 3) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++            }
++          } else if (g_LevelId != (g_LevelId / 10) * 10) {
++            setXYZ(&position, PAL_DATA(g_PalExitLevelX, 0x8007B9FC)[g_Language],
++                   173, 0x1100);
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalExitLevelText, 0x80074EB4)[g_Language],
++                &position, &menuSpacing, 18, 11);
++            if (D_80075720 == 3) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++            }
++          } else {
++            setXYZ(&position, PAL_DATA(g_PalQuitGameX, 0x8007BA04)[g_Language],
++                   173, 0x1100);
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(
++                PAL_DATA(g_PalQuitGameText, 0x80074EC8)[g_Language],
++                &position, &menuSpacing, 18, 11);
++            if (D_80075720 == 3) {
++              curMoby = g_HudMobys;
++              mobyCount = endMoby - curMoby;
++            }
++          }
++
++          for (i = 0; i < mobyCount; ++i) {
++            (*curMoby++).m_Rotation.z =
++                COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) * 3 >> 9;
++          }
++        }
++      } else if (g_Gamestate == 3) {
++        // PAL: the inventory, its world and level names in the language,
++        // shade 11 for all its text, the columns moved a little
++        RECT eggRect;
++        RECT levelEggRect;
++        Vector3D nameSpacing;
++        int temp;
++        int completion = CalculateCompletion();
++        setXYZ(&position, 440, 44, 0x900);
++        if (completion > 9) {
++          position.x = 406;
++        }
++        if (completion > 99) {
++          position.x -= 34;
++        }
++
++        // completion pct (top right)
++        sprintf(szBuf, "%d", completion);
++        func_pal_8001BD5C(szBuf, &position, nullptr, 34, 11);
++        position.x = 478;
++        szBuf[0] = '%';
++        szBuf[1] = '\0';
++        func_pal_8001BD5C(szBuf, &position, nullptr, 34, 11);
++
++        // gem total (top left)
++        setXYZ(&position, 90, 36, 0xB40);
++        sprintf(szBuf, "%d", g_GemTotal);
++        func_pal_8001BD5C(szBuf, &position, nullptr, 27, 11);
++
++        // dragon total (top center)
++        setXYZ(&position, 333, 36, 0xB40);
++        if (g_DragonTotal > 9)
++          position.x = 306;
++        sprintf(szBuf, "%d", g_DragonTotal);
++        func_pal_8001BD5C(szBuf, &position, nullptr, 27, 11);
++
++        // gem chest icon (top left)
++        --g_HudMobys;
++        Memset(g_HudMobys, 0, sizeof(Moby));
++        g_HudMobys->m_Class = MOBYCLASS_HUD_GEM_CHEST;
++        setXYZ(&g_HudMobys->m_Position, 46, 46, 0xC00);
++        g_HudMobys->m_Rotation.y = COSINE_8(g_Hud.unk_0x3c) >> 9;
++        g_HudMobys->m_Rotation.z = g_Hud.unk_0x3c;
++        g_HudMobys->m_DepthOffset = 127;
++        g_HudMobys->m_SpecularMetalType = 11;
++        g_HudMobys->m_RenderRadius = 0xFF;
++
++        // dragon icon (top center)
++        --g_HudMobys;
++        Memset(g_HudMobys, 0, sizeof(Moby));
++        g_HudMobys->m_Class = MOBYCLASS_HUD_DRAGON;
++        g_HudMobys->m_Position.x = 300;
++        if (g_DragonTotal > 9)
++          g_HudMobys->m_Position.x = 273;
++        g_HudMobys->m_Position.y = 46;
++        g_HudMobys->m_Position.z = 0x780;
++        g_HudMobys->m_Rotation.z = COSINE_8((D_800758B8 * 8) & 0xFF) >> 8;
++        g_HudMobys->m_DepthOffset = 127;
++        g_HudMobys->m_SpecularMetalType = 11;
++        g_HudMobys->m_RenderRadius = 0xFF;
++
++        // egg sprites (top)
++        if (g_EggTotal > 0) {
++          for (i = 0; i < 12; ++i) {
++            setRECT(&eggRect, i * 27 + 24, 50, 24, 16);
++            if (i >= g_EggTotal) {
++              setXYZ(&position, 36 + i * 27, 58, 0x1800);
++              func_pal_8001BD5C("X", &position, nullptr, 0, 11);
++              setXYZ(&position, 32, 32, 32);
++              func_8001919C(&eggRect, &g_Hud.m_OrbAndEggSprite[1],
++                            (ColorInt *)&position);
++            } else {
++              func_8001919C(
++                  &eggRect, &g_Hud.m_OrbAndEggSprite[(g_Hud.unk_0x40 + i) % 9 + 1],
++                  nullptr);
++            }
++          }
++        }
++        func_8001844C(64, 69, 448, 69);
++        drm = D_800757B0;
++        SetDrawMode(drm, 1, 0, getTPage(0, 2, 0, 0), nullptr);
++        func_800168DC(drm);
++
++        f4 = (POLY_F4 *)(drm + 1);
++        f4->tag = PRIM_TAG(POLY_F4);
++        f4->code = PRIM_STP(PRIM_POLY_F4);
++        setRGB0(f4, 96, 96, 96);
++        setXY4(f4, 64, 70, 448, 70, 64, 71, 448, 71);
++        func_800168DC(f4);
++        D_800757B0 = f4 + 1;
++
++        func_8001844C(64, 71, 448, 71);
++        if (D_80075744 >= 1 && g_VisitedFlags[D_80075744 * 6 - 6]) {
++          setXYZ(&position, 40, 72, 0x1100);
++          func_80018534(&position, D_800758B8 * 2, 1);
++        }
++        if (D_80075744 <= 4 && g_VisitedFlags[D_80075744 * 6 + 6]) {
++          setXYZ(&position, 471, 72, 0x1100);
++          func_80018534(&position, D_800758B8 * 2, 0);
++        }
++
++        // world name title (above table), centred: 9 back per capital
++        if (D_80075744 < 3) {
++          world_lt_3_offset = 8;
++        } else {
++          world_lt_3_offset = 0;
++        }
++
++        position.x = D_800757CC + 170;
++        for (i = 0;
++             PAL_DATA(g_PalHomeworldNames, 0x800753F0)[g_Language * 6 + D_80075744][i];
++             i++) {
++          if (PAL_DATA(g_PalHomeworldNames, 0x800753F0)[g_Language * 6 + D_80075744][i] <
++              '[') {
++            position.x -= 9;
++          }
++        }
++        position.y = 92;
++        position.z = 3584;
++        setXYZ(&nameSpacing, 18, 2, 0x1100);
++        endMoby = g_HudMobys;
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalHomeworldNames, 0x800753F0)[g_Language * 6 + D_80075744],
++            &position, &nameSpacing, 21, 11);
++        endMoby--;
++        for (i = 0; (int)g_HudMobys <= (int)endMoby; i++) {
++          endMoby->m_Rotation.z =
++              COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) >> 7;
++          endMoby--;
++        }
++
++        // gem chest (above table)
++        --g_HudMobys;
++        Memset(g_HudMobys, 0, sizeof(Moby));
++        g_HudMobys->m_Class = MOBYCLASS_HUD_GEM_CHEST;
++        temp = world_lt_3_offset + 348;
++        setXYZ(&g_HudMobys->m_Position, D_800757CC + temp, 108, 0xC00);
++        g_HudMobys->m_Rotation.y = COSINE_8(g_Hud.unk_0x3c) >> 9;
++        g_HudMobys->m_Rotation.z = g_Hud.unk_0x3c;
++        g_HudMobys->m_DepthOffset = 127;
++        g_HudMobys->m_SpecularMetalType = 11;
++        g_HudMobys->m_RenderRadius = 0xFF;
++
++        // dragon icon (above table)
++        --g_HudMobys;
++        Memset(g_HudMobys, 0, sizeof(Moby));
++        g_HudMobys->m_Class = MOBYCLASS_HUD_DRAGON;
++        i = 0;
++        setXYZ(&g_HudMobys->m_Position, D_800757CC + 467, 110, 0x780);
++        g_HudMobys->m_Rotation.z = COSINE_8((D_800758B8 * 8) & 0xFF) >> 8;
++        g_HudMobys->m_DepthOffset = 127;
++        g_HudMobys->m_SpecularMetalType = 11;
++        g_HudMobys->m_RenderRadius = 0xFF;
++        level_y = 123;
++        for (i = 0; i < 6; ++i) {
++          if (g_VisitedFlags[D_80075744 * 6 + i]) {
++            // shaded background
++            drm = D_800757B0;
++            SetDrawMode(drm, 1, 0, getTPage(0, 2, 0, 0), nullptr);
++            func_800168DC(drm);
++            f4 = (POLY_F4 *)(drm + 1);
++            f4->tag = PRIM_TAG(POLY_F4);
++            f4->code = PRIM_STP(PRIM_POLY_F4);
++            setRGB0(f4, 40, 40, 40);
++            setXY4(f4, D_800757CC, level_y - 10, D_800757CC + 511, level_y - 10,
++                   D_800757CC, level_y + 9, D_800757CC + 511, level_y + 9);
++            func_800168DC(f4);
++            D_800757B0 = f4 + 1;
++
++            // 3 border lines between level stats
++            func_8001844C(D_800757CC + 112, level_y - 11, D_800757CC + 208,
++                          level_y - 11);
++            func_8001844C(D_800757CC + 316 + world_lt_3_offset, level_y - 11,
++                          D_800757CC + 380 + world_lt_3_offset, level_y - 11);
++            func_8001844C(D_800757CC + 432, level_y - 11, D_800757CC + 496,
++                          level_y - 11);
++
++            // level stats - level name
++            setXYZ(&position, D_800757CC + 26, level_y, 0x1400);
++            setXYZ(&nameSpacing, 14, 1, 0x1600);
++            endMoby = g_HudMobys;
++            func_pal_8001BD5C(PAL_DATA(g_PalLevelNames, 0x80075468)
++                                  [g_Language * 36 + D_80075744 * 6 + i],
++                              &position, &nameSpacing, 16, 11);
++
++            // level stats - gem count
++            position.x = 277 + D_800757CC + world_lt_3_offset;
++
++            if (g_LevelGemCount[D_80075744 * 6 + i] < 1000)
++              position.x += 18;
++            if (g_LevelGemCount[D_80075744 * 6 + i] < 100)
++              position.x += 18;
++            if (g_LevelGemCount[D_80075744 * 6 + i] < 10)
++              position.x += 18;
++            sprintf(szBuf, "%d", g_LevelGemCount[D_80075744 * 6 + i]);
++            func_pal_8001BD5C(szBuf, &position, nullptr, 18, 11);
++            position.x = D_800757CC + 348 + world_lt_3_offset;
++            position.z = 0x1800;
++            func_pal_8001BD5C("/", &position, nullptr, 18, 11);
++            position.x = D_800757CC + 365 + world_lt_3_offset;
++            position.z = 0x1100;
++            sprintf(szBuf, "%d", g_TargetGemCounts[D_80075744 * 6 + i]);
++            func_pal_8001BD5C(szBuf, &position, nullptr, 18, 11);
++
++            // level stats - dragon count
++            if (g_TargetDragonCounts[D_80075744 * 6 + i] != 0) {
++              position.x = D_800757CC + 447;
++
++              sprintf(szBuf, "%d", g_LevelDragonCount[D_80075744 * 6 + i]);
++              func_pal_8001BD5C(szBuf, &position, nullptr, 18, 11);
++              position.x = D_800757CC + 464;
++              position.z = 0x1800;
++              func_pal_8001BD5C("/", &position, nullptr, 18, 11);
++              position.x = D_800757CC + 481;
++              position.z = 0x1100;
++              sprintf(szBuf, "%d", g_TargetDragonCounts[D_80075744 * 6 + i]);
++              func_pal_8001BD5C(szBuf, &position, nullptr, 18, 11);
++            } else {
++              position.x = D_800757CC + 464;
++              position.z = 0x1800;
++              func_pal_8001BD5C("/", &position, nullptr, 18, 11);
++              g_HudMobys->m_Rotation.x = 41;
++            }
++
++            // make the current level title wiggle
++            if (D_80075744 * 6 + i == g_LevelIndex) {
++              int j;
++              endMoby--;
++              for (j = 0; (int)endMoby >= (int)g_HudMobys; ++j) {
++                endMoby->m_Rotation.z =
++                    (COSINE_8((D_800758B8 * 8 + j * 12) & 0xFF) * 3) >> 9;
++                endMoby--;
++              }
++            }
++
++            if (g_EggTotal > 0 && D_80075744 < 3) {
++              int j;
++              for (j = 0; j < g_TargetEggCounts[D_80075744 * 6 + i]; j++) {
++                levelEggRect.x = D_800757CC + 238 + j * 24 +
++                        ((g_TargetEggCounts[D_80075744 * 6 + i] == 1) ? 24 : 0);
++                levelEggRect.y = level_y - 8;
++                levelEggRect.w = 24;
++                levelEggRect.h = 16;
++                if (j >= g_LevelEggCount[D_80075744 * 6 + i]) {
++                  setXYZ(&position, levelEggRect.x + 12, level_y, 0x1800);
++                  func_pal_8001BD5C("X", &position, nullptr, 0, 11);
++                  setXYZ(&position, 32, 32, 32);
++                  func_8001919C(&levelEggRect, &g_Hud.m_OrbAndEggSprite[1],
++                                (ColorInt *)&position);
++                } else {
++                  func_8001919C(
++                      &levelEggRect,
++                      &g_Hud.m_OrbAndEggSprite[(g_Hud.unk_0x40 + i) % 9 + 1],
++                      nullptr);
++                }
++              }
++            }
++            level_y += 19;
++          }
++        }
++        func_8001844C(D_800757CC + 112, level_y - 11, D_800757CC + 208,
++                      level_y - 11);
++        func_8001844C(D_800757CC + 324, level_y - 11, D_800757CC + 388,
++                      level_y - 11);
++        func_8001844C(D_800757CC + 432, level_y - 11, D_800757CC + 496,
++                      level_y - 11);
++      }
++    } else
++#endif
++    {
++#if REGION_HAS_US
+     if (g_Gamestate == 2) {
+ 
+       // pause menu
+@@ -1674,6 +2731,8 @@ void func_8001A40C(void) {
+       func_8001844C(D_800757CC + 430, level_y - 11, D_800757CC + 494,
+                     level_y - 11);
+     }
++#endif
++    }
+ 
+     g_SonyImage.m_ShadedMobys[0] = nullptr;
+     if (g_Gamestate == 2 && !g_IsFlightLevel) {
+@@ -1727,7 +2786,9 @@ void func_8001C694(void) {
+     }
+ 
+     PutDrawEnv(&db->m_DrawEnv);
+-    setRECT(&rc, 512 + D_8007568C, 224, 32 - D_8007568C, 1);
++    // PAL: 256-line frame buffer: the palette row, the quads and the line
++    // move to the PAL screen's size.
++    setRECT(&rc, 512 + D_8007568C, RV(224, 256, 224), 32 - D_8007568C, 1);
+     LoadImage(&rc, (u_long *)g_GrayscalePalette);
+     DrawSync(0);
+ 
+@@ -1740,12 +2801,14 @@ void func_8001C694(void) {
+       f4->code = PRIM_POLY_FT4;
+ 
+       setRGB0(f4, 0x4C, 0x80, 0x40);
+-      setXY4(f4, i << 7, 8, f4->x0 + 0x80, f4->y0, f4->x0, f4->y0 + 0xDF,
+-             f4->x0 + 0x80, f4->y0 + 0xDF);
+-      setUV4(f4, 0, 0, f4->u0 + 0x80, f4->v0, f4->u0, f4->v0 - 0x21,
+-             f4->u0 + 0x80, f4->v0 - 0x21);
+-
+-      f4->clut = getClut(512, 224);
++      setXY4(f4, i << 7, RV(8, 0, 8), f4->x0 + 0x80, f4->y0, f4->x0,
++             f4->y0 + RV(0xDF, 0xFF, 0xDF), f4->x0 + 0x80,
++             f4->y0 + RV(0xDF, 0xFF, 0xDF));
++      setUV4(f4, 0, 0, f4->u0 + 0x80, f4->v0, f4->u0,
++             f4->v0 - RV(0x21, 0x01, 0x21), f4->u0 + 0x80,
++             f4->v0 - RV(0x21, 0x01, 0x21));
++
++      f4->clut = getClut(512, RV(224, 256, 224));
+       f4->tpage = getTPage(1, 0, 512, 0) + i;
+ 
+       // add to OT
+@@ -1760,7 +2823,7 @@ void func_8001C694(void) {
+     l2->tag = PRIM_TAG(LINE_F2);
+     l2->code = PRIM_LINE_F2;
+ 
+-    setXY2(l2, 0, 231, 512, 231);
++    setXY2(l2, 0, RV(231, 255, 231), 512, RV(231, 255, 231));
+     setRGB0(l2, 0, 0, 0);
+ 
+     // add to OT
+@@ -1806,6 +2869,12 @@ void func_8001C694(void) {
+   PutDispEnv(&g_CurDB->m_DispEnv);
+ }
+ 
++#if REGION_HAS_PAL
++extern char *g_PalPressStartText[5]; // PAL 0x80074D24
++extern u_char g_PalPressStartX[5];   // PAL 0x8007B904
++void ClearFrameBuffersPal(void);     // PAL 0x8001BCF0 (initialization.c)
++#endif
++
+ /// @brief Gamestate 4 & 5
+ void func_8001CA38(void) {
+   RECT rc;
+@@ -1826,11 +2895,26 @@ void func_8001CA38(void) {
+       DrawSync(0);
+       VSync(0);
+ 
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        // PAL: the whole 256-line frame buffer
++        short bufY;
++        rc.x = 0;
++        rc.y = bufY = g_CurDB != g_DB ? 256 : 0;
++        rc.w = 512;
++        rc.h = 256;
++        MoveImage(&rc, 0, 256 - bufY);
++      } else
++#endif
++      {
++#if REGION_HAS_US
+       rc.x = 0;
+       rc.y = y = g_CurDB != g_DB ? (256 - 8) : 8;
+       rc.w = 512;
+       rc.h = 224;
+       MoveImage(&rc, 0, 256 - y);
++#endif
++      }
+       DrawSync(0);
+       g_DB[0].m_DrawEnv.isbg = 0;
+       g_DB[1].m_DrawEnv.isbg = 0;
+@@ -1852,8 +2936,17 @@ void func_8001CA38(void) {
+         setRGB0(&g_DB[1].m_DrawEnv, 0, 0, 0);
+         DrawSync(0);
+         VSync(0);
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          ClearFrameBuffersPal(); // PAL: both 512x256 buffers
++        } else
++#endif
++        {
++#if REGION_HAS_US
+         setRECT(&rc, 0, 0, 512, 480);
+         ClearImage(&rc, 0, 0, 0);
++#endif
++        }
+       }
+     }
+   } else if (D_80075940 == 1) {
+@@ -1883,6 +2976,27 @@ void func_8001CA38(void) {
+       }
+ 
+       if (g_LoadStage > 10 && g_GameOverTicks > 420) {
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          // PAL: the language's text and x, 16 lines lower, by the merged
++          // text Mobys; the wiggle walks the letters it made
++          setXYZ(&spacing, 16, 1, 0x1400);
++          setXYZ(&position, PAL_DATA(g_PalPressStartX, 0x8007B904)[g_Language],
++                 224, 0x1100);
++          curMoby = g_HudMobys;
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalPressStartText, 0x80074D24)[g_Language],
++              &position, &spacing, 18, 11);
++          curMoby--;
++          for (i = 0; (int)curMoby >= (int)g_HudMobys; ++i) {
++            curMoby->m_Rotation.z =
++                COSINE_8((g_GameOverTicks * 4 + i * 12) & 0xFF) * 3 >> 9;
++            curMoby--;
++          }
++        } else
++#endif
++        {
++#if REGION_HAS_US
+         setXYZ(&spacing, 16, 1, 0x1400);
+         setXYZ(&position, 174, 208, 0x1100);
+         func_800181AC("PRESS START", &position, &spacing, 18, 11);
+@@ -1891,6 +3005,8 @@ void func_8001CA38(void) {
+           (*curMoby++).m_Rotation.z =
+               COSINE_8((g_GameOverTicks * 4 + i * 12) & 0xFF) * 3 >> 9;
+         }
++#endif
++        }
+       }
+ 
+       g_SonyImage.m_ShadedMobys[0] = nullptr;
+@@ -1919,11 +3035,26 @@ void func_8001CA38(void) {
+     DrawOTag(func_80016784(0x800));
+   } else {
+     if (g_GameOverTicks == 0) {
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        // PAL: the whole 256-line frame buffer
++        short bufY;
++        rc.x = 0;
++        rc.y = bufY = g_CurDB != g_DB ? 256 : 0;
++        rc.w = 512;
++        rc.h = 256;
++        MoveImage(&rc, 0, 256 - bufY);
++      } else
++#endif
++      {
++#if REGION_HAS_US
+       rc.x = 0;
+       rc.y = y = g_CurDB != g_DB ? (256 - 8) : 8;
+       rc.w = 512;
+       rc.h = 224;
+       MoveImage(&rc, 0, 256 - y);
++#endif
++      }
+       DrawSync(0);
+       g_DB[0].m_DrawEnv.isbg = 0;
+       g_DB[1].m_DrawEnv.isbg = 0;
+@@ -1945,8 +3076,17 @@ void func_8001CA38(void) {
+         setRGB0(&g_DB[1].m_DrawEnv, 0, 0, 0);
+         DrawSync(0);
+         VSync(0);
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          ClearFrameBuffersPal(); // PAL: both 512x256 buffers
++        } else
++#endif
++        {
++#if REGION_HAS_US
+         setRECT(&rc, 0, 0, 512, 480);
+         ClearImage(&rc, 0, 0, 0);
++#endif
++        }
+       }
+     }
+   }
+@@ -2193,6 +3333,63 @@ typedef struct {
+ 
+ extern FAIRYRECT g_FairyDialogueBoxSizes[8];
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): Zoe's save menu in five languages. Every line's text, its x
++// in the box (from the box's left), the box's width by page and language.
++extern short g_PalFairyBoxWidths[8][5];   // PAL 0x80074AD0
++extern char *g_PalFairyHiText[5];         // PAL 0x80075038 "HI SPYRO,"
++extern char *g_PalFairySaveText[5];       // PAL 0x8007504C "SAVE GAME"
++extern char *g_PalFairyReplayText[5];     // PAL 0x80075060 "REPLAY DRAGON"
++extern char *g_PalFairyContinueText[5];   // PAL 0x80075074 "CONTINUE"
++extern char *g_PalFairyNoFileText[5];     // PAL 0x80075088 "NO SAVE FILE"
++extern char *g_PalFairyRestartText[5];    // PAL 0x8007509C "PLEASE RESTART WITH"
++extern char *g_PalFairyCardToText[5];     // PAL 0x800750B0 "A MEMORY CARD TO"
++extern char *g_PalFairyEnableText[5];     // PAL 0x800750C4 "ENABLE SAVE GAMES"
++extern char *g_PalFairySavingText[5];     // PAL 0x800750D8 "SAVING..."
++extern char *g_PalFairyNoCardText[5];     // PAL 0x800750EC "NO MEMORY CARD"
++extern char *g_PalFairyReplaceText[5];    // PAL 0x80075100 "PLEASE REPLACE"
++extern char *g_PalFairyTheSpyroText[5];   // PAL 0x80075114 "THE SPYRO"
++extern char *g_PalFairyCardDotText[5];    // PAL 0x80075128 "MEMORY CARD."
++extern char *g_PalFairyErrorText[5];      // PAL 0x8007513C "SAVE ERROR"
++extern char *g_PalFairyCheckText[5];      // PAL 0x80075150 "PLEASE CHECK THAT"
++extern char *g_PalFairyTheCardText[5];    // PAL 0x80075164 "THE MEMORY CARD"
++extern char *g_PalFairyInPlaceText[5];    // PAL 0x80075178 "IS STILL IN PLACE"
++extern char *g_PalFairyFailedText[5];     // PAL 0x8007518C "SAVE FAILED"
++extern char *g_PalFairyRetryText[5];      // PAL 0x800751A0 "RETRY"
++extern char *g_PalFairyAbortText[5];      // PAL 0x800751B4 "ABORT"
++extern char *g_PalFairySavedText[5];      // PAL 0x800751C8 "SAVE SUCCESSFUL"
++extern char *g_PalFairyCard1Text[5];      // PAL 0x800751DC "MEMORY CARD 1"
++extern char *g_PalFairyCard2Text[5];      // PAL 0x800751F0 "MEMORY CARD 2"
++extern short g_PalFairyCard2Width[5];     // PAL 0x80075204
++extern u_char g_PalFairyNoFileX[5];       // PAL 0x8007BB1C
++extern u_char g_PalFairyRestartX[5];      // PAL 0x8007BB24
++extern u_char g_PalFairyCardToX[5];       // PAL 0x8007BB2C
++extern u_char g_PalFairyEnableX[5];       // PAL 0x8007BB34
++extern u_char g_PalFairySavingX[5];       // PAL 0x8007BB3C
++extern u_char g_PalFairyNoCardX[5];       // PAL 0x8007BB44
++extern u_char g_PalFairyReplaceX[5];      // PAL 0x8007BB4C
++extern u_char g_PalFairyTheSpyroX[5];     // PAL 0x8007BB54
++extern u_char g_PalFairyCardDotX[5];      // PAL 0x8007BB5C
++extern u_char g_PalFairyErrorX[5];        // PAL 0x8007BB64
++extern u_char g_PalFairyCheckX[5];        // PAL 0x8007BB6C
++extern u_char g_PalFairyTheCardX[5];      // PAL 0x8007BB74
++extern u_char g_PalFairyInPlaceX[5];      // PAL 0x8007BB7C
++extern u_char g_PalFairyFailedX[5];       // PAL 0x8007BB84
++extern u_char g_PalFairyRetryX[5];        // PAL 0x8007BB94
++extern u_char g_PalFairyAbortX[5];        // PAL 0x8007BBAC
++extern u_char g_PalFairySavedX[5];        // PAL 0x8007BBB4
++extern signed char g_PalFairyNoFile4X[5]; // PAL 0x8007BBBC (page 4's shift)
++extern signed char g_PalFairyPage4X[5];   // PAL 0x8007BBC4 (page 4's shift)
++
++#define PAL_FAIRY_WAVE()                                                       \
++  for (i = 0; i < textLen; i++) {                                              \
++    (curMoby++)->m_Rotation.z =                                                \
++        COSINE_8(((g_FairyCutscene.m_AnimationTimer * 4) + (i * 12)) & 0xFF) * \
++            3 >>                                                               \
++        9;                                                                     \
++  }
++#endif
++
+ /// @brief Gamestate 11
+ void func_8001D718(void) {
+   int i;
+@@ -2202,6 +3399,11 @@ void func_8001D718(void) {
+ 
+   Moby *curMoby;
+   unsigned char textLen;
++#if REGION_HAS_PAL
++  int x0;
++  int x1;
++  Moby *prev;
++#endif
+ 
+   // Dunno what this is about
+   if (D_800756FC == g_Buffers.m_HudOTStart) {
+@@ -2212,6 +3414,244 @@ void func_8001D718(void) {
+     g_HudMobys = D_800756FC;
+   }
+ 
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL) && g_FairyCutscene.m_State == 1) {
++    // PAL: a box sized by page and language, at the left or right edge; every
++    // line in the language at its x in the box, size 16; "MEMORY CARD 1/2"
++    // for "SLOT 1/2"
++    if (g_FairyCutscene.m_MenuOffsetX != 0) {
++      x1 = 492;
++      x0 = x1 - PAL_DATA(g_PalFairyBoxWidths, 0x80074AD0)
++                    [g_FairyCutscene.m_MenuDialoguePage][g_Language];
++    } else {
++      x0 = 20;
++      x1 = PAL_DATA(g_PalFairyBoxWidths, 0x80074AD0)
++               [g_FairyCutscene.m_MenuDialoguePage][g_Language] +
++           20;
++    }
++    func_8001860C(x0, x1, 36, 124);
++
++    spacing.x = 14;
++    spacing.y = 1;
++    spacing.z = 0x1600;
++    position.z = 0x1400;
++
++    switch (g_FairyCutscene.m_MenuDialoguePage) {
++    case 0: // HI SPYRO
++      position.x = x0 + 20;
++      position.y = 50;
++      position.z = 0x1100;
++      spacing.x = 16;
++      spacing.y = 1;
++      spacing.z = 0x1400;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyHiText, 0x80075038)[g_Language],
++                        &position, &spacing, 18, 11);
++
++      spacing.x = 14;
++      spacing.y = 1;
++      spacing.z = 0x1600;
++      position.z = 0x1400;
++      position.x = x0 + 28;
++      position.y += 24;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairySaveText, 0x8007504C)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 19;
++      if (g_FairyCutscene.m_MenuSelectedOption == 0) {
++        curMoby = g_HudMobys;
++        textLen = prev - curMoby;
++      }
++
++      position.x = x0 + 28;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyReplayText, 0x80075060)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 19;
++      if (g_FairyCutscene.m_MenuSelectedOption == 1) {
++        curMoby = g_HudMobys;
++        textLen = prev - curMoby;
++      }
++
++      position.x = x0 + 28;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyContinueText, 0x80075074)[g_Language], &position,
++          &spacing, 16, 11);
++      if (g_FairyCutscene.m_MenuSelectedOption == 2) {
++        curMoby = g_HudMobys;
++        textLen = prev - curMoby;
++      }
++      PAL_FAIRY_WAVE();
++      break;
++    case 1: // NO SAVE FILE
++      position.x = x0 + PAL_DATA(g_PalFairyNoFileX, 0x8007BB1C)[g_Language];
++      position.y = 51;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyNoFileText, 0x80075088)[g_Language],
++                        &position, &spacing, 16, 11);
++      curMoby = g_HudMobys;
++      textLen = prev - curMoby;
++      position.y += 24;
++      PAL_FAIRY_WAVE();
++
++      position.x = x0 + PAL_DATA(g_PalFairyRestartX, 0x8007BB24)[g_Language];
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyRestartText, 0x8007509C)[g_Language], &position,
++          &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyCardToX, 0x8007BB2C)[g_Language];
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyCardToText, 0x800750B0)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyEnableX, 0x8007BB34)[g_Language];
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyEnableText, 0x800750C4)[g_Language],
++                        &position, &spacing, 16, 11);
++      break;
++    case 2: // SAVING...
++      position.x = x0 + PAL_DATA(g_PalFairySavingX, 0x8007BB3C)[g_Language];
++      position.y = 82;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairySavingText, 0x800750D8)[g_Language],
++                        &position, &spacing, 16, 11);
++      curMoby = g_HudMobys;
++      textLen = prev - curMoby;
++      PAL_FAIRY_WAVE();
++      break;
++    case 3: // NO MEMORY CARD
++    case 4: // NO SAVE FILE
++      position.y = 51;
++      prev = g_HudMobys;
++      if (g_FairyCutscene.m_MenuDialoguePage == 3) {
++        position.x = x0 + PAL_DATA(g_PalFairyNoCardX, 0x8007BB44)[g_Language];
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFairyNoCardText, 0x800750EC)[g_Language], &position,
++            &spacing, 16, 11);
++      } else {
++        position.x = x0 + PAL_DATA(g_PalFairyNoFileX, 0x8007BB1C)[g_Language] +
++                     PAL_DATA(g_PalFairyNoFile4X, 0x8007BBBC)[g_Language];
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFairyNoFileText, 0x80075088)[g_Language], &position,
++            &spacing, 16, 11);
++      }
++      curMoby = g_HudMobys;
++      textLen = prev - curMoby;
++      position.y += 24;
++      PAL_FAIRY_WAVE();
++
++      position.x = x0 + PAL_DATA(g_PalFairyReplaceX, 0x8007BB4C)[g_Language];
++      if (g_FairyCutscene.m_MenuDialoguePage == 4) {
++        position.x += PAL_DATA(g_PalFairyPage4X, 0x8007BBC4)[g_Language];
++      }
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyReplaceText, 0x80075100)[g_Language], &position,
++          &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyTheSpyroX, 0x8007BB54)[g_Language];
++      if (g_FairyCutscene.m_MenuDialoguePage == 4) {
++        position.x += PAL_DATA(g_PalFairyPage4X, 0x8007BBC4)[g_Language];
++      }
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyTheSpyroText, 0x80075114)[g_Language], &position,
++          &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyCardDotX, 0x8007BB5C)[g_Language];
++      if (g_FairyCutscene.m_MenuDialoguePage == 4) {
++        position.x += PAL_DATA(g_PalFairyPage4X, 0x8007BBC4)[g_Language];
++      }
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyCardDotText, 0x80075128)[g_Language], &position,
++          &spacing, 16, 11);
++      break;
++    case 5: // SAVE ERROR
++      position.x = x0 + PAL_DATA(g_PalFairyErrorX, 0x8007BB64)[g_Language];
++      position.y = 51;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyErrorText, 0x8007513C)[g_Language],
++                        &position, &spacing, 16, 11);
++      curMoby = g_HudMobys;
++      textLen = prev - curMoby;
++      position.y += 24;
++      PAL_FAIRY_WAVE();
++
++      position.x = x0 + PAL_DATA(g_PalFairyCheckX, 0x8007BB6C)[g_Language];
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyCheckText, 0x80075150)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyTheCardX, 0x8007BB74)[g_Language];
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyTheCardText, 0x80075164)[g_Language], &position,
++          &spacing, 16, 11);
++      position.y += 18;
++      position.x = x0 + PAL_DATA(g_PalFairyInPlaceX, 0x8007BB7C)[g_Language];
++      func_pal_8001BD5C(
++          PAL_DATA(g_PalFairyInPlaceText, 0x80075178)[g_Language], &position,
++          &spacing, 16, 11);
++      break;
++    case 6: // SAVE FAILED
++      position.x = x0 + PAL_DATA(g_PalFairyFailedX, 0x8007BB84)[g_Language];
++      position.y = 53;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyFailedText, 0x8007518C)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 36;
++
++      position.x = x0 + PAL_DATA(g_PalFairyRetryX, 0x8007BB94)[g_Language];
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyRetryText, 0x800751A0)[g_Language],
++                        &position, &spacing, 16, 11);
++      position.y += 20;
++      if (g_FairyCutscene.m_MenuSelectedOption == 0) {
++        curMoby = g_HudMobys;
++        textLen = prev - curMoby;
++      }
++
++      position.x = x0 + PAL_DATA(g_PalFairyAbortX, 0x8007BBAC)[g_Language];
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairyAbortText, 0x800751B4)[g_Language],
++                        &position, &spacing, 16, 11);
++      if (g_FairyCutscene.m_MenuSelectedOption == 1) {
++        curMoby = g_HudMobys;
++        textLen = prev - curMoby;
++      }
++      PAL_FAIRY_WAVE();
++      break;
++    case 7: // GAME SAVED
++      position.x = x0 + PAL_DATA(g_PalFairySavedX, 0x8007BBB4)[g_Language];
++      position.y = 82;
++      prev = g_HudMobys;
++      func_pal_8001BD5C(PAL_DATA(g_PalFairySavedText, 0x800751C8)[g_Language],
++                        &position, &spacing, 16, 11);
++      curMoby = g_HudMobys;
++      textLen = prev - curMoby;
++      PAL_FAIRY_WAVE();
++      break;
++    }
++
++    if (g_FairyCutscene.m_MenuDialoguePage > 1) {
++      // Show the used card
++      spacing.x = 13;
++      spacing.y = 1;
++      spacing.z = 0x1a00;
++
++      position.y = 29;
++      position.z = 0x1600;
++
++      if (g_FairyCutscene.m_MemoryCardSlot == 0) {
++        position.x = x0 + 8;
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFairyCard1Text, 0x800751DC)[g_Language], &position,
++            &spacing, 14, 11);
++      } else {
++        position.x =
++            x1 - PAL_DATA(g_PalFairyCard2Width, 0x80075204)[g_Language] + 10;
++        func_pal_8001BD5C(
++            PAL_DATA(g_PalFairyCard2Text, 0x800751F0)[g_Language], &position,
++            &spacing, 14, 11);
++      }
++    }
++  } else
++#endif
++  {
++#if REGION_HAS_US
+   if (g_FairyCutscene.m_State == 1) {
+     func_8001860C(
+         g_FairyCutscene.m_MenuOffsetX +
+@@ -2463,6 +3903,8 @@ void func_8001D718(void) {
+       }
+     }
+   }
++#endif
++  }
+ 
+   func_800521C0();
+   func_80019698();
+@@ -2498,6 +3940,19 @@ void func_8001D718(void) {
+   DrawOTag(func_80016784(0x800));
+ }
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): the balloon's "entering" lines in five languages
++extern char g_PalEnteringWorldFormat[]; // PAL 0x80014980 ("%s %s %s")
++extern char g_PalStringFormat[];        // PAL 0x8007BF04 ("%s")
++extern char *g_PalEnteringWorldText[5]; // PAL 0x80074DD8
++extern char *g_PalWorldText[5];         // PAL 0x80074DEC
++extern char *g_PalFrenchWorldNames[5];  // PAL 0x80074E00
++extern char *g_PalGnastyWorldText[5];   // PAL 0x80074E14
++extern char *g_PalHomeworldNames[5 * 6]; // PAL 0x800753F0
++extern char *g_PalEnteringText[5];      // PAL 0x80074DC4
++extern char *g_PalLevelNames[5 * 36];   // PAL 0x80075468
++#endif
++
+ /// @brief Gamestate 12, balloon transition and balloonist talk
+ void func_8001E24C(void) {
+   Moby *curMoby;
+@@ -2516,6 +3971,38 @@ void func_8001E24C(void) {
+       *(mobyQueue++) = D_800777E8.m_BalloonMoby;
+       *(mobyQueue++) = (void *)0;
+ 
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        // PAL: the line in the language; French names the world whole
++        if (D_800777E8.m_Homeworld < 5) {
++          if (g_Language == 1) {
++            int homeworld = g_NextLevelId / 10;
++            sprintf(buf, PAL_DATA(g_PalStringFormat, 0x8007BF04),
++                    PAL_DATA(g_PalFrenchWorldNames, 0x80074E00)[homeworld - 1]);
++          } else {
++            int homeworld = g_NextLevelId / 10;
++            sprintf(buf, PAL_DATA(g_PalEnteringWorldFormat, 0x80014980),
++                    PAL_DATA(g_PalEnteringWorldText, 0x80074DD8)[g_Language],
++                    PAL_DATA(g_PalHomeworldNames,
++                             0x800753F0)[g_Language * 6 + homeworld - 1],
++                    PAL_DATA(g_PalWorldText, 0x80074DEC)[g_Language]);
++          }
++        } else if (D_800777E8.m_Homeworld == 5) {
++          sprintf(buf, PAL_DATA(g_PalStringFormat, 0x8007BF04),
++                  PAL_DATA(g_PalGnastyWorldText, 0x80074E14)[g_Language]);
++        } else {
++          int homeworld = g_NextLevelId / 10;
++          int level = g_NextLevelId % 10;
++          sprintf(buf, PAL_DATA(g_PalRescuedFormat, 0x8007BEDC),
++                  PAL_DATA(g_PalEnteringText, 0x80074DC4)[g_Language],
++                  PAL_DATA(g_PalLevelNames,
++                           0x80075468)[g_Language * 36 +
++                                       (homeworld - 1) * 6 + level]);
++        }
++      } else
++#endif
++      {
++#if REGION_HAS_US
+       if (D_800777E8.m_Homeworld < 5) {
+         // Minus one is due to the homeworlds starting at 10
+         int homeworld = g_NextLevelId / 10;
+@@ -2531,6 +4018,8 @@ void func_8001E24C(void) {
+         sprintf(buf, "ENTERING %s",
+                 g_LevelNames[level + ((homeworld - 1) * 6)]);
+       }
++#endif
++      }
+ 
+       // sprintf(buf, fmt, levelName);
+       position.x = 256 - ((strlen(buf) - 1) * 7);
+@@ -2543,7 +4032,16 @@ void func_8001E24C(void) {
+ 
+       curMoby = g_HudMobys;
+ 
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        func_pal_8001BD5C(buf, &position, &spacing, 16, 11); // PAL: shade 11
++      } else
++#endif
++      {
++#if REGION_HAS_US
+       func_800181AC(buf, &position, &spacing, 16, 2);
++#endif
++      }
+ 
+       rotOff = 0;
+       while ((int)(--curMoby) >= (int)g_HudMobys) {
+@@ -2616,17 +4114,34 @@ void func_8001E24C(void) {
+   DrawOTag(func_80016784(0x800));
+ }
+ 
++#if REGION_HAS_PAL
++// PAL's (D139): the title demos' lines in five languages, each with an x and
++// the tick its letters start to appear by language
++extern char *g_PalDragonsText[5];   // PAL 0x80074D38 "IN THE WORLD OF DRAGONS..."
++extern u_char g_PalDragonsX[5];     // PAL 0x8007B90C
++extern u_char g_PalDragonsTick[5];  // PAL 0x8007B914
++extern char *g_PalBeginsText[5];    // PAL 0x80074D4C "THE ADVENTURE BEGINS..."
++extern u_char g_PalBeginsX[5];      // PAL 0x8007B91C
++extern u_char g_PalBeginsTick[5];   // PAL 0x8007B924
++extern char *g_PalContinuesText[5]; // PAL 0x80074D60 "THE ADVENTURE CONTINUES..."
++extern u_char g_PalContinuesX[5];   // PAL 0x8007B92C
++extern u_char g_PalContinuesTick[5]; // PAL 0x8007B934
++extern char *g_PalDemoEnterText[5]; // PAL 0x80074D74 "ENTERING DEMO MODE..."
++extern u_char g_PalDemoEnterX[5];   // PAL 0x8007B93C
++extern u_char g_PalDemoEnterTick[5]; // PAL 0x8007B944
++#endif
++
+ /// @brief Gamestate 13
+ void func_8001E6B8(void) {
+   if (g_TitlescreenState.m_State == TSS_Active &&
+-      g_TitlescreenState.m_Tick > 139) {
++      g_TitlescreenState.m_Tick > RV(139, 131, 139)) {
+     int a, i;
+     Moby *curMoby;
+ 
+     Vector3D position;
+     Vector3D spacing;
+ 
+-    position.y = 120;
++    position.y = RV(120, 128, 120);
+     position.z = 5120;
+ 
+     spacing.x = 14;
+@@ -2635,6 +4150,46 @@ void func_8001E6B8(void) {
+ 
+     curMoby = g_HudMobys;
+ 
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: the language's line, x and start tick, by the merged text Mobys
++      if (g_TitlescreenState.m_DemoType == TSD_Cutscene) {
++        position.x = PAL_DATA(g_PalDragonsX, 0x8007B90C)[g_Language];
++        func_pal_8001BD5C(PAL_DATA(g_PalDragonsText, 0x80074D38)[g_Language],
++                          &position, &spacing, 0x10, 0xB);
++        a = PAL_DATA(g_PalDragonsTick, 0x8007B914)[g_Language];
++      } else if (g_TitlescreenState.m_DemoType == TSD_Level) {
++        if (g_VisitedFlags[0]) {
++          position.x = PAL_DATA(g_PalContinuesX, 0x8007B92C)[g_Language];
++          func_pal_8001BD5C(
++              PAL_DATA(g_PalContinuesText, 0x80074D60)[g_Language], &position,
++              &spacing, 0x10, 0xB);
++          a = PAL_DATA(g_PalContinuesTick, 0x8007B934)[g_Language];
++        } else {
++          position.x = PAL_DATA(g_PalBeginsX, 0x8007B91C)[g_Language];
++          func_pal_8001BD5C(PAL_DATA(g_PalBeginsText, 0x80074D4C)[g_Language],
++                            &position, &spacing, 0x10, 0xB);
++          a = PAL_DATA(g_PalBeginsTick, 0x8007B924)[g_Language];
++        }
++      } else {
++        position.x = PAL_DATA(g_PalDemoEnterX, 0x8007B93C)[g_Language];
++        func_pal_8001BD5C(PAL_DATA(g_PalDemoEnterText, 0x80074D74)[g_Language],
++                          &position, &spacing, 0x10, 0xB);
++        a = PAL_DATA(g_PalDemoEnterTick, 0x8007B944)[g_Language];
++      }
++
++      // PAL: no letters before tick a, then one more every 2 ticks
++      if (a < g_TitlescreenState.m_Tick) {
++        if (curMoby - g_HudMobys > (g_TitlescreenState.m_Tick - a) >> 1) {
++          g_HudMobys = curMoby - ((g_TitlescreenState.m_Tick - a) >> 1);
++        }
++      } else {
++        g_HudMobys = curMoby;
++      }
++    } else
++#endif
++    {
++#if REGION_HAS_US
+     if (g_TitlescreenState.m_DemoType == TSD_Cutscene) {
+       position.x = 92;
+       func_800181AC("IN THE WORLD OF DRAGONS...", &position, &spacing, 0x10,
+@@ -2665,6 +4220,8 @@ void func_8001E6B8(void) {
+     if (a > g_TitlescreenState.m_Tick) {
+       g_HudMobys += (a - g_TitlescreenState.m_Tick) >> 1;
+     }
++#endif
++    }
+ 
+     i = 0;
+     while ((int)(--curMoby) >= (int)g_HudMobys) {
+@@ -2694,8 +4251,9 @@ void func_8001E6B8(void) {
+     func_80023AC4();
+ 
+     // Put the 3D text inside of the world
+-    ((int *)g_WorldOT)[64] = ((int *)g_HudOT)[0];
+-    ((int *)g_WorldOT)[65] = ((int *)g_HudOT)[1];
++    // PAL: two OT entries deeper (128)
++    ((int *)g_WorldOT)[RV(64, 128, 64)] = ((int *)g_HudOT)[0];
++    ((int *)g_WorldOT)[RV(65, 129, 65)] = ((int *)g_HudOT)[1];
+     ((int *)g_HudOT)[0] = 0;
+     ((int *)g_HudOT)[1] = 0;
+   }
+@@ -2751,6 +4309,10 @@ void func_8001E9C8(void) {
+   DrawOTag(func_80016784(0x800));
+ }
+ 
++#if REGION_HAS_PAL
++extern u_char g_PalReturningHomeX[5]; // PAL 0x8007B95C
++#endif
++
+ /// @brief Gamestate 15
+ void func_8001EB80(void) {
+   Vector3D spacing;
+@@ -2758,29 +4320,55 @@ void func_8001EB80(void) {
+   Moby *curMoby;
+   int rotOff;
+ 
+-  spacing.x = 16;
+-  spacing.y = 1;
+-  spacing.z = 5120;
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: the language's text (shade 11 as before), its x from a table
++    spacing.x = 16;
++    spacing.y = 1;
++    spacing.z = 5120;
++    setRGB0(&g_DB[0].m_DrawEnv, 0, 0, 0);
++    setRGB0(&g_DB[1].m_DrawEnv, 0, 0, 0);
++    position.x = PAL_DATA(g_PalReturningHomeX, 0x8007B95C)[g_Language];
++    position.y = 110;
++    position.z = 4352;
++    curMoby = g_HudMobys;
++    func_pal_8001BD5C(PAL_DATA(g_PalReturningHomeText, 0x80074D9C)[g_Language],
++                      &position, &spacing, 18, 11);
++    curMoby--;
++    for (rotOff = 0; (int)g_HudMobys <= (int)curMoby; rotOff++) {
++      curMoby->m_Rotation.z =
++          COSINE_8(((g_CreditsTimer * 2) + rotOff * 12) & 0xFF) >> 7;
++      curMoby--;
++    }
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) {
++    spacing.x = 16;
++    spacing.y = 1;
++    spacing.z = 5120;
+ 
+-  position.x = 118;
+-  position.y = 110;
+-  position.z = 4352;
++    position.x = 118;
++    position.y = 110;
++    position.z = 4352;
+ 
+-  curMoby = g_HudMobys;
++    curMoby = g_HudMobys;
+ 
+-  setRGB0(&g_DB[0].m_DrawEnv, 0, 0, 0);
+-  setRGB0(&g_DB[1].m_DrawEnv, 0, 0, 0);
++    setRGB0(&g_DB[0].m_DrawEnv, 0, 0, 0);
++    setRGB0(&g_DB[1].m_DrawEnv, 0, 0, 0);
+ 
+-  func_800181AC("RETURNING HOME...", &position, &spacing, 18, 11);
++    func_800181AC("RETURNING HOME...", &position, &spacing, 18, 11);
+ 
+-  rotOff = 0;
++    rotOff = 0;
+ 
+-  // Wtf are these int casts?
+-  while ((int)(--curMoby) >= (int)g_HudMobys) {
+-    curMoby->m_Rotation.z =
+-        COSINE_8(((g_CreditsTimer * 2) + rotOff) & 0xFF) >> 7;
+-    rotOff += 12;
+-  };
++    // Wtf are these int casts?
++    while ((int)(--curMoby) >= (int)g_HudMobys) {
++      curMoby->m_Rotation.z =
++          COSINE_8(((g_CreditsTimer * 2) + rotOff) & 0xFF) >> 7;
++      rotOff += 12;
++    };
++  }
++#endif
+ 
+   g_SonyImage.m_ShadedMobys[0] = (void *)0;
+ 
+--- a/src/gamestates/init.c
++++ b/src/gamestates/init.c
+@@ -95,8 +95,9 @@ void func_8002C534(int pResumeMusic) {
+   RECT rect;
+ 
+   // Restores the VRAM that it overwrote for the background
+-  setRECT(&rect, 512, 0, 256, 225);
+-  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - 115200));
++  // PAL: its 256 lines (D139)
++  setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
++  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - RV(115200, 0x20200, 115200)));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+@@ -185,8 +186,9 @@ void func_8002C7BC(void) {
+   RECT rect;
+ 
+   // Restores the VRAM that it overwrote for the background
+-  setRECT(&rect, 512, 0, 256, 225);
+-  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - 115200));
++  // PAL: its 256 lines (D139)
++  setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
++  LoadImage(&rect, (u_long *)((int)g_Buffers.m_HudOTStart - RV(115200, 0x20200, 115200)));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+@@ -486,11 +488,12 @@ void InitFairyCutscene(Moby *pMoby) {
+ 
+   g_FairyCutscene.m_CameraStartDistance = VecMagnitude(&vec, 0);
+ 
+-  // Default menu to right side of screen (offset 0xB0)
+-  g_FairyCutscene.m_MenuOffsetX = 0xB0;
++  // Default menu to right side of screen (offset 0xB0; PAL: 1, its menu's own
++  // layout, D139)
++  g_FairyCutscene.m_MenuOffsetX = RV(0xB0, 1, 0xB0);
+ 
+   // View angle ~45 degrees from spawn direction
+-  angle = (g_FairyCutscene.m_AngleToDragonPad + 0x30B) & 0xFFF;
++  angle = (g_FairyCutscene.m_AngleToDragonPad + RV(0x30B, 0x28A, 0x30B)) & 0xFFF;
+ 
+   g_FairyCutscene.m_CameraStartZ = g_Camera.m_Position.z;
+   g_FairyCutscene.m_CameraViewAngle = angle;
+@@ -499,11 +502,11 @@ void InitFairyCutscene(Moby *pMoby) {
+   if (func_80017928(g_FairyCutscene.m_CameraStartAngle, angle) > 0x400) {
+     g_FairyCutscene.m_MenuOffsetX = 0;
+     g_FairyCutscene.m_CameraViewAngle =
+-        (g_FairyCutscene.m_AngleToDragonPad - 0x30B) & 0xFFF;
++        (g_FairyCutscene.m_AngleToDragonPad - RV(0x30B, 0x28A, 0x30B)) & 0xFFF;
+   }
+ 
+   // Final viewing position for save menu
+-  g_FairyCutscene.m_CameraViewDistance = 0x4C9;
++  g_FairyCutscene.m_CameraViewDistance = RV(0x4C9, 0x4FB, 0x4C9);
+   g_FairyCutscene.m_CameraViewZ = g_Spyro.m_Position.z + 0x56B;
+ }
+ 
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -38,6 +38,65 @@ extern int _stacksize;
+ void func_8002DA74(void) {
+   int i;
+ 
++#if REGION_HAS_PAL
++  // PAL: 12-byte gems (TransGemPal) whose flight is computed where they're
++  // drawn: this only ages them (done past 128), and the transition ends at
++  // 384 (US 416). Spawn: x spread rand() % 320 - 160 (US & 255 - 128), and
++  // a new field, (rand() & 0x7FF) - 1024.
++  if (REGION_IS(PAL)) {
++#define PAL_GEMS ((TransGemPal *)g_LevelTransGems)
++    g_LevelTransGems = (TransGem *)g_SonyImage.unk_0x2800;
++    if (g_LevelTransTicks == 0) {
++      g_LevelTransChestDuration = g_NGemsSinceLevelEntry * 2 + 140;
++      if (g_LevelTransChestDuration > 192) {
++        g_LevelTransChestDuration = 192;
++      }
++      for (i = 0; i < 64; i++) {
++        PAL_GEMS[i].active = 0;
++      }
++    }
++
++    g_LevelTransTicks += g_DeltaTime;
++
++    if (g_LevelTransTicks > 384) {
++      g_LevelTransHudActive = 0;
++    } else if (g_LevelTransTicks >= 128) {
++      for (i = 0; i < 32; i++) {
++        if (i < g_NGemsSinceLevelEntry && (i * 2 + 128) <= g_LevelTransTicks) {
++          if (g_LevelTransTicks < 256) {
++            if (PAL_GEMS[i].active == 0) {
++              PAL_GEMS[i].active = 1;
++              PAL_GEMS[i].age = g_LevelTransTicks - 128 - i * 2 - g_DeltaTime;
++              PAL_GEMS[i].targetX = rand() % 320 - 160;
++              PAL_GEMS[i].targetY = (rand() & 63) + 96;
++              PAL_GEMS[i].unk_0x4 = (rand() & 0x7FF) - 1024;
++              PAL_GEMS[i].rot.x = (rand() & 63) - 32;
++              PAL_GEMS[i].rot.y = (rand() & 63) - 32;
++              PAL_GEMS[i].rot.z = rand();
++              PAL_GEMS[i].spin = (rand() & 15) - 8;
++              if ((g_LevelTransTicks & 7) == 0) {
++                PlaySound(g_Spu.m_SoundTable->gemPickup, 0, 16, 0);
++              }
++            }
++          }
++          if (PAL_GEMS[i].active != 0) {
++            PAL_GEMS[i].age += g_DeltaTime;
++            PAL_GEMS[i].rot.z += PAL_GEMS[i].spin;
++            if (PAL_GEMS[i].age > 128) {
++              PAL_GEMS[i].active = 0;
++              if (i == (i / 3) * 3) {
++                PlaySound(g_Spu.m_SoundTable->pickupDing, 0, 16, 0);
++              }
++            }
++          }
++        }
++      }
++    }
++#undef PAL_GEMS
++    return;
++  }
++#endif
++#if REGION_HAS_US
+   g_LevelTransGems = (TransGem *)g_SonyImage.unk_0x2800;
+   if (g_LevelTransTicks == 0) {
+     g_LevelTransChestDuration = g_NGemsSinceLevelEntry * 2 + 140;
+@@ -116,6 +175,7 @@ void func_8002DA74(void) {
+       }
+     }
+   }
++#endif
+ }
+ 
+ /// @brief Gamestate 1
+@@ -173,6 +233,9 @@ void func_8002E084(void) {
+ extern int D_80075720; // Selected menu item index
+ extern int D_800757C8; // OptionsSubmenuIsOpen
+ extern int D_80075900; // Flight Pause Menu Quit related?
++#if REGION_HAS_PAL
++extern int g_PalCardHeaderDirty; // PAL 0x8007C148 (bss): rewrite the card's header
++#endif
+ 
+ void Terminator_titlescreen_code(void); // Titlescreen terminator
+ 
+@@ -205,6 +268,63 @@ void func_8002E12C(void) {
+     return;
+   }
+ 
++#if REGION_HAS_PAL
++  // PAL: the screen-position page (options row 5): rows 0 (x) and 1 (y)
++  // move the picture with left/right, 0..32 a step, live (both DISPENVs)
++  // and marked for the card's header; row 2 or triangle goes back.
++  if (REGION_IS(PAL) && D_800757C8 == 3) {
++    if ((g_Pad.m_Down & PAD_TRIANGLE) ||
++        (D_80075720 == 2 && (g_Pad.m_Down & PAD_CROSS))) {
++      PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++      D_800757C8 = 1;
++      D_80075720 = 6;
++      return;
++    }
++    if (g_Pad.m_Down & PAD_UP) {
++      PlaySound(g_Spu.m_SoundTable->menuCursor, nullptr, 16, nullptr);
++      D_8007568C = 0;
++      D_80075720--;
++      if (D_80075720 < 0) {
++        D_80075720 = 2;
++      }
++      return;
++    }
++    if (g_Pad.m_Down & PAD_DOWN) {
++      PlaySound(g_Spu.m_SoundTable->menuCursor, nullptr, 16, nullptr);
++      D_8007568C = 0;
++      D_80075720++;
++      if (D_80075720 >= 3) {
++        D_80075720 = 0;
++      }
++      return;
++    }
++    if (D_80075720 == 0) {
++      if ((g_Pad.m_Down & PAD_LEFT) && g_ScreenOffsetX > 0) {
++        PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++        g_PalCardHeaderDirty = 1;
++        g_ScreenOffsetX--;
++      } else if ((g_Pad.m_Down & PAD_RIGHT) && g_ScreenOffsetX < 32) {
++        g_ScreenOffsetX++;
++        PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++        g_PalCardHeaderDirty = 1;
++      }
++      g_DB[0].m_DispEnv.screen.x = g_DB[1].m_DispEnv.screen.x = g_ScreenOffsetX;
++    } else if (D_80075720 == 1) {
++      if ((g_Pad.m_Down & PAD_LEFT) && g_ScreenOffsetY > 0) {
++        g_ScreenOffsetY--;
++        PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++        g_PalCardHeaderDirty = 1;
++      } else if ((g_Pad.m_Down & PAD_RIGHT) && g_ScreenOffsetY < 32) {
++        g_ScreenOffsetY++;
++        PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++        g_PalCardHeaderDirty = 1;
++      }
++      g_DB[0].m_DispEnv.screen.y = g_DB[1].m_DispEnv.screen.y = g_ScreenOffsetY;
++    }
++    return;
++  }
++#endif
++
+   // Quit Game
+   if (D_800757C8 == 2) {
+     if (g_Pad.m_Down & (PAD_LEFT | PAD_RIGHT)) {
+@@ -231,9 +351,16 @@ void func_8002E12C(void) {
+       PlaySound(g_Spu.m_SoundTable->menuCursor, nullptr, 16, nullptr);
+       SpuUpdate();
+ 
+-      setRECT(&fullscreen, 0, 0, 512, 480);
+-      ClearImage(&fullscreen, 0, 0, 0);
+-      DrawSync(0);
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) {
++        ClearFrameBuffersPal(); // PAL: both 512x256 buffers
++      } else
++#endif
++      {
++        setRECT(&fullscreen, 0, 0, 512, 480);
++        ClearImage(&fullscreen, 0, 0, 0);
++        DrawSync(0);
++      }
+ 
+       g_Buffers.m_CopyBuf = Terminator_titlescreen_code;
+       g_Buffers.m_DiscCopyBuf = Terminator_titlescreen_code;
+@@ -264,7 +391,7 @@ void func_8002E12C(void) {
+ 
+       D_80075720++;
+ 
+-      if (D_80075720 >= 6) {
++      if (D_80075720 >= RV(6, 7, 6)) { // PAL: 7 rows (screen position)
+         D_80075720 = 0;
+       } else if (D_80075720 == 3 && g_ActAvailable == 0) {
+         D_80075720++; // Skip vibration when unavailable
+@@ -277,7 +404,7 @@ void func_8002E12C(void) {
+       D_80075720--;
+ 
+       if (D_80075720 < 0) {
+-        D_80075720 = 5;
++        D_80075720 = RV(5, 6, 5);
+       } else if (D_80075720 == 3 && g_ActAvailable == 0) {
+         D_80075720--; // Skip vibration when unavailable
+       }
+@@ -307,9 +434,24 @@ void func_8002E12C(void) {
+ 
+     case 1: // Music volume
+       if ((g_Pad.m_Down & PAD_LEFT) && D_80075748 > 0) {
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          // PAL: the cursor sound plays at the music volume (before the step)
++          g_Spu.m_NextSoundOverrideFlags = 1;
++          g_Spu.m_VolumeOverride.left = g_Spu.m_VolumeOverride.right =
++              (D_80075748 << 13) / 10;
++        }
++#endif
+         PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
+         D_80075748--;
+       } else if ((g_Pad.m_Down & PAD_RIGHT) && D_80075748 < 10) {
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          g_Spu.m_NextSoundOverrideFlags = 1;
++          g_Spu.m_VolumeOverride.left = g_Spu.m_VolumeOverride.right =
++              (D_80075748 << 13) / 10;
++        }
++#endif
+         PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
+         D_80075748++;
+       }
+@@ -366,6 +508,17 @@ void func_8002E12C(void) {
+       return;
+ 
+     case 5: // Exit (handled above by Triangle/Cross check)
++#if REGION_HAS_PAL
++      if (REGION_IS(PAL)) { // PAL: row 5 opens the screen-position page
++        if (g_Pad.m_Down & PAD_CROSS) {
++          PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
++          D_800757C8 = 3;
++          D_80075720 = 0;
++        }
++        return;
++      }
++    case 6: // PAL: Exit
++#endif
+       if (g_Pad.m_Down & PAD_CROSS) {
+         PlaySound(g_Spu.m_SoundTable->menuConfirm, nullptr, 16, nullptr);
+         D_800757C8 = 0;
+@@ -436,6 +589,13 @@ void func_8002E12C(void) {
+         return;
+       }
+       func_8002C618();
++#if REGION_HAS_PAL
++      // PAL: leaving a level with all its gems marks its vortex exit flag
++      if (REGION_IS(PAL) &&
++          g_LevelGemCount[g_LevelIndex] == g_TargetGemCounts[g_LevelIndex]) {
++        g_LevelVortexExitFlags[g_LevelIndex] = 1;
++      }
++#endif
+       return;
+     }
+   }
+@@ -1326,6 +1486,9 @@ extern void Terminator_titlescreen_code(void);
+ int func_800334D4(void) {
+   RECT r;
+   char _pad[8]; // Hmmmm..?
++#if REGION_HAS_PAL
++  RECT palTitleRect;
++#endif
+ 
+   PadDemoUpdate();
+ 
+@@ -1362,12 +1525,19 @@ int func_800334D4(void) {
+     KillSoundsAndMusic(0);
+     SpuUpdate();
+ 
+-    r.x = 0;
+-    r.y = 0;
+-    r.w = 0x200;
+-    r.h = 0x1E0;
+-    ClearImage(&r, 0, 0, 0);
+-    DrawSync(0);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      ClearFrameBuffersPal(); // PAL: both 512x256 buffers
++    } else
++#endif
++    {
++      r.x = 0;
++      r.y = 0;
++      r.w = 0x200;
++      r.h = 0x1E0;
++      ClearImage(&r, 0, 0, 0);
++      DrawSync(0);
++    }
+ 
+     g_Buffers.m_CopyBuf = &Terminator_titlescreen_code;
+     g_Buffers.m_DiscCopyBuf = &Terminator_titlescreen_code;
+@@ -1419,11 +1589,30 @@ int func_800334D4(void) {
+       g_CutsceneLayout->m_CurrentTick = RT(1168, 972);
+     }
+ 
+-    g_TitlescreenState.m_SubState = 1;
++    g_TitlescreenState.m_SubState = RV(1, 2, 1);
+ 
+-    CDLoadAsync(g_CdState.m_WadSector,
+-                (char *)g_Buffers.m_LowerPolyBuffer - 0x40000, 0x40000,
+-                g_WadHeader.m_wad1.m_Offset, 600);
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      // PAL: the title's graphics are loaded here, synchronously: wad1's
++      // first 128 KB goes to VRAM (512,256 256x256), then the rest (400 KB)
++      // below the lower poly buffer; the title resumes at sub-state 2.
++      CDLoadSync(g_CdState.m_WadSector,
++                 (char *)g_Buffers.m_LowerPolyBuffer - 0x22000, 0x20000,
++                 g_WadHeader.m_wad1.m_Offset, 600);
++      setRECT(&palTitleRect, 512, 256, 256, 256);
++      LoadImage(&palTitleRect,
++                (u_long *)((char *)g_Buffers.m_LowerPolyBuffer - 0x22000));
++      DrawSync(0);
++      CDLoadSync(g_CdState.m_WadSector,
++                 (char *)g_Buffers.m_LowerPolyBuffer - 0x66000, 0x64000,
++                 g_WadHeader.m_wad1.m_Offset + 0x20000, 600);
++    } else
++#endif
++    {
++      CDLoadAsync(g_CdState.m_WadSector,
++                  (char *)g_Buffers.m_LowerPolyBuffer - 0x40000, 0x40000,
++                  g_WadHeader.m_wad1.m_Offset, 600);
++    }
+ 
+     g_StateSwitch = 1;
+ 
+--- a/src/hud.c
++++ b/src/hud.c
+@@ -342,7 +342,7 @@ void HudTick(void) {
+         }
+       }
+     } else if (g_Hud.m_EggSteadyTicks == 1) {
+-      setXYZ(&vec, g_Hud.m_EggCount * 324 - 2500, 1008, 4096);
++      setXYZ(&vec, g_Hud.m_EggCount * 324 - 2500, RV(1008, 1208, 1008), 4096); // PAL: lower in its 256 lines (D139)
+       (*g_SpawnParticle)(16, 77, &vec, 0);
+     } else if (g_Hud.m_EggSteadyTicks > 8) {
+       g_Hud.m_EggCount += 1;
+--- a/src/initialization.c
++++ b/src/initialization.c
+@@ -281,6 +281,14 @@ void func_8001277C(void) {
+ 
+ void Terminator_titlescreen_code(void); // Titlescreen terminator
+ 
++// The boot logo's compressed image: PAL's is its own (SCEE's, 12,516 bytes at
++// PAL 0x80076298), read from the player's executable in the port (D139)
++#if REGION_HAS_PAL
++#define SONY_IMAGE (REGION_IS(PAL) ? &PAL_DATA(g_SonyImage, 0x80076298) : &g_SonyImage)
++#else
++#define SONY_IMAGE (&g_SonyImage)
++#endif
++
+ // Init function
+ void Initialize(void) {
+ #if REGION_HAS_US
+@@ -346,7 +354,7 @@ void Initialize(void) {
+ 
+   for (i = 0; i < 8; ++i) {
+     // Decompress the image
+-    func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf,
++    func_80017F24(SONY_IMAGE, g_Buffers.m_CopyBuf,
+                   i * blend_step - blend_start);
+     setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+@@ -395,7 +403,7 @@ void Initialize(void) {
+ 
+   for (j = 0; j < 8; ++j) {
+     // Decompress the image
+-    func_80017F24(&g_SonyImage, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
++    func_80017F24(SONY_IMAGE, g_Buffers.m_CopyBuf, -(j + 1) * blend_step);
+     setRECT(&frameRect, 0, RV(0, 8, 0), rgb24_w, rgb24_h);
+     LoadImage(&frameRect, g_Buffers.m_CopyBuf);
+     DrawSync(0);
+--- a/src/main.c
++++ b/src/main.c
+@@ -13,6 +13,133 @@
+ int g_Language = 0;
+ int g_ScreenOffsetX = 4;
+ int g_ScreenOffsetY = 16;
++int g_PalTitleCardLoad = 0;   // PAL 0x8007BFF0 (bss)
++int g_PalCardHeaderDirty = 0; // PAL 0x8007C148 (bss)
++char *g_PalDemoModeText[5] = {0};
++u_char g_PalDemoModeX[5] = {0};
++
++// draw.c's menu-screen tables (D139): stand-ins, initialised as the build
++// drops common symbols; the port reads the player's executable's (PAL_DATA).
++// g_PalEnteringText and g_PalLevelNames are func_8001973C's (defined there).
++char *g_PalPressStartText[5] = {0};
++u_char g_PalPressStartX[5] = {0};
++char g_PalEnteringWorldFormat[16] = {0};
++char g_PalStringFormat[16] = {0};
++char *g_PalEnteringWorldText[5] = {0};
++char *g_PalWorldText[5] = {0};
++char *g_PalFrenchWorldNames[5] = {0};
++char *g_PalGnastyWorldText[5] = {0};
++char *g_PalHomeworldNames[5 * 6] = {0};
++char *g_PalDragonsText[5] = {0};
++u_char g_PalDragonsX[5] = {0};
++u_char g_PalDragonsTick[5] = {0};
++char *g_PalBeginsText[5] = {0};
++u_char g_PalBeginsX[5] = {0};
++u_char g_PalBeginsTick[5] = {0};
++char *g_PalContinuesText[5] = {0};
++u_char g_PalContinuesX[5] = {0};
++u_char g_PalContinuesTick[5] = {0};
++char *g_PalDemoEnterText[5] = {0};
++u_char g_PalDemoEnterX[5] = {0};
++u_char g_PalDemoEnterTick[5] = {0};
++short g_PalFairyBoxWidths[8][5] = {0};
++char *g_PalFairyHiText[5] = {0};
++char *g_PalFairySaveText[5] = {0};
++char *g_PalFairyReplayText[5] = {0};
++char *g_PalFairyContinueText[5] = {0};
++char *g_PalFairyNoFileText[5] = {0};
++char *g_PalFairyRestartText[5] = {0};
++char *g_PalFairyCardToText[5] = {0};
++char *g_PalFairyEnableText[5] = {0};
++char *g_PalFairySavingText[5] = {0};
++char *g_PalFairyNoCardText[5] = {0};
++char *g_PalFairyReplaceText[5] = {0};
++char *g_PalFairyTheSpyroText[5] = {0};
++char *g_PalFairyCardDotText[5] = {0};
++char *g_PalFairyErrorText[5] = {0};
++char *g_PalFairyCheckText[5] = {0};
++char *g_PalFairyTheCardText[5] = {0};
++char *g_PalFairyInPlaceText[5] = {0};
++char *g_PalFairyFailedText[5] = {0};
++char *g_PalFairyRetryText[5] = {0};
++char *g_PalFairyAbortText[5] = {0};
++char *g_PalFairySavedText[5] = {0};
++char *g_PalFairyCard1Text[5] = {0};
++char *g_PalFairyCard2Text[5] = {0};
++short g_PalFairyCard2Width[5] = {0};
++u_char g_PalFairyNoFileX[5] = {0};
++u_char g_PalFairyRestartX[5] = {0};
++u_char g_PalFairyCardToX[5] = {0};
++u_char g_PalFairyEnableX[5] = {0};
++u_char g_PalFairySavingX[5] = {0};
++u_char g_PalFairyNoCardX[5] = {0};
++u_char g_PalFairyReplaceX[5] = {0};
++u_char g_PalFairyTheSpyroX[5] = {0};
++u_char g_PalFairyCardDotX[5] = {0};
++u_char g_PalFairyErrorX[5] = {0};
++u_char g_PalFairyCheckX[5] = {0};
++u_char g_PalFairyTheCardX[5] = {0};
++u_char g_PalFairyInPlaceX[5] = {0};
++u_char g_PalFairyFailedX[5] = {0};
++u_char g_PalFairyRetryX[5] = {0};
++u_char g_PalFairyAbortX[5] = {0};
++u_char g_PalFairySavedX[5] = {0};
++signed char g_PalFairyNoFile4X[5] = {0};
++signed char g_PalFairyPage4X[5] = {0};
++// stand-ins for PAL's pause and inventory tables (gamestates/draw.c)
++char *g_PalPausedText[5] = {0};
++char *g_PalContinueText[5] = {0};
++char *g_PalOptionsText[5] = {0};
++char *g_PalInventoryText[5] = {0};
++char *g_PalQuitText[5] = {0};
++char *g_PalExitLevelText[5] = {0};
++char *g_PalQuitGameText[5] = {0};
++char *g_PalSoundEffectsText[5] = {0};
++char *g_PalMusicVolumeText[5] = {0};
++char *g_PalSpeakerSetupText[5] = {0};
++char *g_PalVibrationText[5] = {0};
++char *g_PalCameraText[5] = {0};
++char *g_PalScreenAdjustText[5] = {0};
++char *g_PalHorizontalText[5] = {0};
++char *g_PalVerticalText[5] = {0};
++char *g_PalDoneText[5] = {0};
++char *g_PalOnText[5] = {0};
++char *g_PalOffText[5] = {0};
++char *g_PalStereoText[5] = {0};
++char *g_PalMonoText[5] = {0};
++char *g_PalActiveText[5] = {0};
++char *g_PalPassiveText[5] = {0};
++char *g_PalYesText[5] = {0};
++char *g_PalNoText[5] = {0};
++char *g_PalLevelNames[180] = {0};
++u_char g_PalNoX[8] = {0};
++u_char g_PalPausedX[8] = {0};
++u_char g_PalContinueX[8] = {0};
++u_char g_PalOptionsX[8] = {0};
++u_char g_PalInventoryX[8] = {0};
++u_char g_PalQuitX[8] = {0};
++u_char g_PalExitLevelX[8] = {0};
++u_char g_PalQuitGameX[8] = {0};
++u_char g_PalSoundEffectsX[8] = {0};
++u_char g_PalMusicVolumeX[8] = {0};
++u_char g_PalSpeakerSetupX[8] = {0};
++u_char g_PalVibrationX[8] = {0};
++u_char g_PalCameraX[8] = {0};
++u_char g_PalScreenAdjustX[8] = {0};
++u_char g_PalHorizontalX[8] = {0};
++u_char g_PalVerticalX[8] = {0};
++u_char g_PalDoneX[8] = {0};
++u_char g_PalYesX[8] = {0};
++// draw.c's tables (D139): stand-ins, initialised as the build drops common
++// symbols; the port reads the player's executable's (PAL_DATA)
++char *g_PalReturningHomeText[5] = {0};
++char *g_PalConfrontingText[5] = {0};
++char *g_PalEnteringText[5] = {0};
++char *g_PalTreasureFoundText[5] = {0};
++char *g_PalTotalTreasureText[5] = {0};
++u_char g_PalTreasureFoundX[5] = {0};
++u_char g_PalTotalTreasureX[5] = {0};
++u_char g_PalReturningHomeX[5] = {0};
+ #endif
+ 
+ // These ARE in this file!
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -2238,8 +2238,124 @@ INCLUDE_ASM_REORDER_HACK("asm/nonmatchings/moby_helpers", func_8003BFC0);
+   (props)->m_Len = len;                                                        \
+   (props)->m_Index = index
+ 
++#if REGION_HAS_PAL
++extern char *g_PalLevelNames[5 * 36]; // PAL 0x80075468 (36 a language)
++#endif
++
+ // Create portal text
+ void func_8003C358(Moby *pMoby, int pIsLevelName) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: the language's level name; a lowercase 'a'-'e' is an accent
++    // (classes 365-369) over the letter before, so it doesn't count in the
++    // name's length or the letters' index
++    int i;
++    int string_len;
++    char *level_name;
++    u_char z_rot;
++    Moby *char_moby;
++    Vector3D *pos;
++    Vector3D vec1;
++    Vector3D vec2;
++    Vector3D vec3;
++    Vector3D vec4;
++    u_char textBowAngle;
++    int letter_count;
++    int j;
++
++    if (pIsLevelName) {
++      level_name = PAL_DATA(g_PalLevelNames, 0x80075468)
++          [g_Language * 36 + *(int *)(pMoby->m_Props)];
++      z_rot = pMoby->m_Rotation.z;
++    } else {
++      level_name =
++          PAL_DATA(g_PalLevelNames, 0x80075468)[g_Language * 36 + 35];
++      z_rot = Atan2(g_Spyro.m_Position.x - pMoby->m_Position.x,
++                    g_Spyro.m_Position.y - pMoby->m_Position.y, 0);
++    }
++
++    setXYZ(&vec1, Cos(z_rot << 4) * 3 >> 4, Sin(z_rot << 4) * 3 >> 4, 0);
++
++    setXYZ(&vec2, Cos((z_rot + 64) << 4) >> 5, Sin((z_rot + 64) << 4) >> 5,
++           0);
++
++    if (pIsLevelName != 0) {
++      if (pMoby->m_Substate == 0) {
++        z_rot = pMoby->m_Rotation.z + 128;
++      } else {
++        z_rot = pMoby->m_Rotation.z;
++        VecNull(&vec3);
++        VecSub(&vec1, &vec3, &vec1);
++        VecSub(&vec2, &vec3, &vec2);
++      }
++    }
++
++    string_len = 0;
++    letter_count = 0;
++    for (j = 0; level_name[j] != '\0'; j++) {
++      string_len++;
++      if (!(level_name[j] >= 'a' && level_name[j] <= 'z')) {
++        letter_count++;
++      }
++    }
++
++    VecMult(&vec3, &vec2, letter_count - 1);
++
++    VecShiftLeft(&vec2, 1);
++
++    textBowAngle = (letter_count - 1) * 2;
++
++    vec3.z += Cos(textBowAngle << 4) * 3 >> 3;
++
++    setXYZ(&vec4, vec1.x * Cos(textBowAngle << 4),
++           vec1.y * Cos(textBowAngle << 4), 0);
++
++    for (i = 0, j = 0; j < string_len; textBowAngle -= 4, ++j, ++i) {
++      if (level_name[j] != ' ') {
++        if (level_name[j] >= 'A' && level_name[j] <= 'Z') {
++          char_moby = (*g_SpawnMoby)(
++              level_name[j] - 'A' + MOBYCLASS_LETTER_A, pMoby);
++        } else if (level_name[j] >= 'a' && level_name[j] <= 'z') {
++          // over the letter before
++          i--;
++          VecAdd(&vec3, &vec3, &vec2);
++          textBowAngle += 4;
++          char_moby = (*g_SpawnMoby)(level_name[j] + 268, pMoby);
++        } else {
++          char_moby = (*g_SpawnMoby)(MOBYCLASS_LETTER_APOSTROPHE, pMoby);
++        }
++        setMobyLetterProps((MobyLetterProps *)char_moby->m_Props, pMoby, i,
++                           letter_count);
++        pos = &char_moby->m_Position;
++        setXYZ(pos, vec1.x * Cos(textBowAngle << 4),
++               vec1.y * Cos(textBowAngle << 4), 0);
++        VecSub(pos, pos, &vec4);
++
++        VecShiftRight(pos, 10);
++
++        VecAdd(pos, pos, &vec1);
++        VecAdd(pos, pos, &pMoby->m_Position);
++        VecSub(pos, pos, &vec3);
++
++        char_moby->m_Position.z += Cos(textBowAngle << 4) * 3 >> 3;
++
++        if (char_moby->m_Class == MOBYCLASS_LETTER_APOSTROPHE)
++          char_moby->m_Position.z += 256;
++
++        char_moby->m_Rotation.z = z_rot;
++        char_moby->m_FloorDistance = z_rot;
++        char_moby->m_State = pMoby->m_Substate;
++        char_moby->m_Substate = i * 8;
++        char_moby->m_SpecularMetalType = 2;
++      }
++
++      VecSub(&vec3, &vec3, &vec2);
++    }
++    return;
++  }
++#endif
++#if REGION_HAS_US
++  {
+   char const *level_name;
+   Moby *char_moby;
+   Vector3D *pos;
+@@ -2333,6 +2449,8 @@ void func_8003C358(Moby *pMoby, int pIsLevelName) {
+ 
+     VecSub(&vec3, &vec3, &vec2);
+   }
++  }
++#endif
+ }
+ 
+ /// @brief Updates a dragon fragment's animation each frame
+--- a/src/overlays/titlescreen.c
++++ b/src/overlays/titlescreen.c
+@@ -35,6 +35,23 @@ extern struct {
+ extern void CrashDemoLaunch(void);
+ 
+ static const char s_SaveFileName[20] = "BASCUS-94228SPYRO";
++#if REGION_HAS_PAL
++// PAL: its card file (the PAL title overlay's own data, 0x8008142C)
++static const char s_PalSaveFileName[20] = "BESCES-01438SPYRO";
++#define SAVE_FILE_NAME (REGION_IS(PAL) ? s_PalSaveFileName : s_SaveFileName)
++// PAL 0x8007BFF0 (bss): the title's boot read of the card header, 0-6, 7 done
++extern int g_PalTitleCardLoad;
++// PAL 0x8007C148 (bss): the language or screen position changed, so the
++// fairy's save rewrites the card file's header
++extern int g_PalCardHeaderDirty;
++extern u_int D_80077908[36][8]; // the card header is read into it
++extern u_char g_PalMemCardSaveHeader[256]; // PAL 0x80074C24 (exe data)
++#if defined(REGION) && REGION == 1
++u_char g_PalMemCardSaveHeader[256] = {0}; // the PAL build's stand-in
++#endif
++#else
++#define SAVE_FILE_NAME s_SaveFileName
++#endif
+ 
+ #define SWAP_MENU_SELECTION                                                    \
+   g_TitlescreenState.m_SubTick = 16;                                           \
+@@ -97,6 +114,99 @@ void TitlescreenUpdate(void) {
+   int old_state = g_TitlescreenState.m_Mode < 2 ? g_TitlescreenState.m_SubState
+                                                 : g_TitlescreenState.m_State;
+ 
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    // PAL: first read the card file's header from card 1 (else card 2) for
++    // the saved language and screen position; 7 when done
++    if (g_PalTitleCardLoad < 7) {
++      if (g_PalTitleCardLoad == 0) {
++        MemCardStart();
++        MemCardAccept(0);
++        g_PalTitleCardLoad = 1;
++      } else if (g_PalTitleCardLoad == 1) {
++        if (MemCardSync(McSyncMode_Async,
++                        (long *)&g_TitlescreenState.m_CardCompletedFunc,
++                        (long *)&g_TitlescreenState.m_CardResultData)) {
++          if (g_TitlescreenState.m_CardResultData == McErrNone ||
++              g_TitlescreenState.m_CardResultData == McErrNewCard) {
++            MemCardReadFile(0, (char *)SAVE_FILE_NAME, (u_long *)D_80077908, 0,
++                            128);
++            g_PalTitleCardLoad = 2;
++          } else {
++            MemCardAccept(0x10);
++            g_PalTitleCardLoad = 3;
++          }
++        }
++      } else if (g_PalTitleCardLoad == 2) {
++        if (MemCardSync(McSyncMode_Async,
++                        (long *)&g_TitlescreenState.m_CardCompletedFunc,
++                        (long *)&g_TitlescreenState.m_CardResultData)) {
++          if (g_TitlescreenState.m_CardResultData == McErrNone) {
++            g_PalTitleCardLoad = 5;
++          } else {
++            MemCardAccept(0x10);
++            g_PalTitleCardLoad = 3;
++          }
++        }
++      } else if (g_PalTitleCardLoad == 3) {
++        if (MemCardSync(McSyncMode_Async,
++                        (long *)&g_TitlescreenState.m_CardCompletedFunc,
++                        (long *)&g_TitlescreenState.m_CardResultData)) {
++          if (g_TitlescreenState.m_CardResultData == McErrNone ||
++              g_TitlescreenState.m_CardResultData == McErrNewCard) {
++            MemCardReadFile(0x10, (char *)SAVE_FILE_NAME, (u_long *)D_80077908,
++                            0, 128);
++            g_PalTitleCardLoad = 4;
++          } else {
++            g_PalTitleCardLoad = 6;
++          }
++        }
++      } else if (g_PalTitleCardLoad == 4) {
++        if (MemCardSync(McSyncMode_Async,
++                        (long *)&g_TitlescreenState.m_CardCompletedFunc,
++                        (long *)&g_TitlescreenState.m_CardResultData)) {
++          if (g_TitlescreenState.m_CardResultData != McErrNone) {
++            g_PalTitleCardLoad = 6;
++          } else {
++            g_PalTitleCardLoad = 5;
++          }
++        }
++      } else if (g_PalTitleCardLoad == 5) {
++        // the header's halfword at +0x7C: language (bits 0-3), screen x
++        // (bits 4-9), screen y (bits 10-15)
++        u_int hdr = ((u_short *)D_80077908)[0x3E];
++        g_Language = hdr & 0xF;
++        if (g_Language >= 5)
++          g_Language = 0;
++        g_ScreenOffsetX = (hdr & 0x3F0) >> 4;
++        if (g_ScreenOffsetX >= 33)
++          g_ScreenOffsetX = 16;
++        g_ScreenOffsetY = hdr >> 10;
++        if (g_ScreenOffsetY >= 33)
++          g_ScreenOffsetY = 16;
++        g_PalTitleCardLoad = 6;
++      } else {
++        g_PalTitleCardLoad = 7;
++        MemCardStop();
++      }
++    }
++
++    // PAL: the flyby's times for 50 Hz, and the skip is in sub-state 3
++    g_CutsceneLayout->m_CurrentTick += 2;
++
++    if (g_CutsceneLayout->m_CurrentTick < 900) {
++      g_TitlescreenState.m_Tick = 0;
++    } else {
++      if (g_CutsceneLayout->m_CurrentTick == 1120 && (rand() & 3) != 0) {
++        g_CutsceneLayout->m_CurrentTick = 976;
++      } else if (g_CutsceneLayout->m_CurrentTick >= 1274) {
++        g_CutsceneLayout->m_CurrentTick = 976;
++      }
++    }
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) { // the port runs both blocks' code otherwise
+   g_CutsceneLayout->m_CurrentTick += 2;
+ 
+   if (g_CutsceneLayout->m_CurrentTick < 1100) {
+@@ -114,6 +224,8 @@ void TitlescreenUpdate(void) {
+       g_CutsceneLayout->m_CurrentTick = 1172;
+     }
+   }
++  } // the port: not after PAL's
++#endif
+ 
+   if (g_Fade)
+     --g_Fade;
+@@ -121,10 +233,143 @@ void TitlescreenUpdate(void) {
+   func_8002BFE0(g_CutsceneLayout->m_CurrentTick);
+ 
+   g_Camera.m_Rotation.x = 0;
+-  g_Camera.m_Rotation.y += 16;
++  g_Camera.m_Rotation.y += RV(16, 32, 16); // PAL: twice as fast
+ 
+   switch (g_TitlescreenState.m_Mode) {
+   case TSM_Init: {
++#if REGION_HAS_PAL
++    if (REGION_IS(PAL)) {
++      RECT rc;
++      // PAL: sub-states 0-2 load the title data in two parts (the sprite
++      // sheet, then the five languages' 160x256 text strips) and show the
++      // language's strip; 3 the flyby (after the card header is read), 4 the
++      // menu (start / language), 5 out to the card menus, 6 the fade to the
++      // demo, 7 back from the card menus
++      if (g_TitlescreenState.m_SubState < 3) {
++        CDLoadTime();
++        if (g_CdState.m_IsReading != 0 || CdSync(1, 0) != CdlComplete ||
++            (g_CdMusic.m_Flags & 0x40) == 0)
++          break;
++
++        if (g_TitlescreenState.m_SubState == 0) {
++          CDLoadAsync(g_CdState.m_WadSector,
++                      g_Buffers.m_LowerPolyBuffer - 0x22000, 0x20000,
++                      g_WadHeader.m_wad1.m_Offset, 600);
++          g_TitlescreenState.m_SubState = 1;
++        } else if (g_TitlescreenState.m_SubState == 1) {
++          setRECT(&rc, 512, 256, 256, 256);
++          LoadImage(&rc, g_Buffers.m_LowerPolyBuffer - 0x22000);
++          DrawSync(0);
++          CDLoadAsync(g_CdState.m_WadSector,
++                      g_Buffers.m_LowerPolyBuffer - 0x66000, 0x64000,
++                      g_WadHeader.m_wad1.m_Offset + 0x20000, 600);
++          g_TitlescreenState.m_SubState = 2;
++        } else if (g_TitlescreenState.m_SubState == 2) {
++          g_CdMusic.m_CurrentTrack = 28;
++          g_CdMusic.m_EasterEggTicks = 155520000;
++          SetMusicState(28, 1);
++          setRECT(&rc, 768, 256, 160, 256);
++          LoadImage(&rc, g_Buffers.m_LowerPolyBuffer - 0x66000 +
++                             g_Language * 0x14000);
++          g_TitlescreenState.m_SubState = 3;
++        }
++      } else if (g_TitlescreenState.m_SubState == 3) {
++        if (g_PalTitleCardLoad < 7) {
++          g_TitlescreenState.m_SubTick = 0;
++        } else if (g_CutsceneLayout->m_CurrentTick < 973) {
++          g_TitlescreenState.m_SubTick = 0;
++          if (g_CutsceneLayout->m_CurrentTick >= 300 &&
++              g_CutsceneLayout->m_CurrentTick <= 900 &&
++              (g_Pad.m_Held & (PAD_START | PAD_CROSS)) != 0) {
++            StopSound(g_DragonCutscene.m_SoundVoice, 4);
++            g_CutsceneLayout->m_CurrentTick = 974;
++          }
++        } else {
++          if (g_TitlescreenState.m_SubTick == 1) {
++            TitlescreenPlaySound(6);
++          }
++          if (g_TitlescreenState.m_SubTick >= 15) {
++            g_TitlescreenState.m_SubState = 4;
++            g_TitlescreenState.m_OptionSelected = 0;
++          }
++        }
++      } else if (g_TitlescreenState.m_SubState == 4) {
++#ifndef SPYRO_PORT /* the port can't chain-load S0/CRASH.EXE (decisions D11) */
++        if ((g_Pad.m_Held & (PAD_L1 | PAD_TRIANGLE)) ==
++            (PAD_L1 | PAD_TRIANGLE)) {
++          KillSoundsAndMusic(0);
++          TitlescreenPlaySound(9);
++          SpuUpdate();
++          while (g_CdState.m_IsReading != 0 || CdSync(1, 0) != CdlComplete ||
++                 (g_CdMusic.m_Flags & 0x40) == 0) {
++            CDLoadTime();
++            SoundsUpdate();
++            CDMusicUpdate();
++          }
++          CrashDemoLaunch();
++        } else
++#endif
++        if (g_TitlescreenState.m_OptionSelected == 0 &&
++                   (g_Pad.m_Down & (PAD_START | PAD_CROSS))) {
++          g_TitlescreenState.m_SubState = 5;
++          TitlescreenPlaySound(7);
++        } else if (g_Pad.m_Down & (PAD_UP | PAD_DOWN)) {
++          int *option = &g_TitlescreenState.m_OptionSelected;
++          g_TitlescreenState.m_SubTick = 16;
++          *option = 1 - *option;
++          TitlescreenPlaySound(0);
++        } else if (g_TitlescreenState.m_OptionSelected == 1 &&
++                   (g_Pad.m_Down & (PAD_LEFT | PAD_RIGHT))) {
++          // the language: left/right step through the five, and load its
++          // text strip
++          if (g_Pad.m_Down & PAD_LEFT)
++            g_Language = (g_Language + 4) % 5;
++          else
++            g_Language = (g_Language + 1) % 5;
++          g_PalCardHeaderDirty = 1;
++          g_TitlescreenState.m_SubTick = 16;
++          TitlescreenPlaySound(1);
++          setRECT(&rc, 768, 256, 160, 256);
++          LoadImage(&rc, g_Buffers.m_LowerPolyBuffer - 0x66000 +
++                             g_Language * 0x14000);
++        } else if (g_TitlescreenState.m_Tick >= RT(990, 825)) {
++          g_TitlescreenState.m_SubState = 6;
++        }
++      } else if (g_TitlescreenState.m_SubState == 5) {
++        if (g_TitlescreenState.m_SubTick == 16) {
++          TitlescreenPlaySound(8);
++        }
++        if (g_TitlescreenState.m_SubTick >= 31) {
++          g_TitlescreenState.m_Mode = TSM_Menu;
++          g_TitlescreenState.m_SubState = TS_SubState_LoadMemCards;
++          g_TitlescreenState.m_State = 0;
++          MemCardStart();
++        }
++      } else if (g_TitlescreenState.m_SubState == 6) {
++        if (g_TitlescreenState.m_SubTick == 0) {
++          TitlescreenPlaySound(5);
++        }
++        g_Fade = g_TitlescreenState.m_SubTick;
++        if (g_Fade > 15)
++          g_Fade = 15;
++        if (g_TitlescreenState.m_SubTick >= 15) {
++          g_TitlescreenState.m_Mode = TSM_Demo;
++          g_TitlescreenState.m_State = 0;
++          g_TitlescreenState.m_DemoType = 2;
++          ClearFrameBuffersPal();
++        }
++      } else if (g_TitlescreenState.m_SubState == 7) {
++        if (g_TitlescreenState.m_SubTick == 0) {
++          TitlescreenPlaySound(7);
++        }
++        if (g_TitlescreenState.m_SubTick >= 15) {
++          g_TitlescreenState.m_SubState = 3;
++        }
++      }
++      break;
++    }
++#endif
++#if REGION_HAS_US
+     if (g_TitlescreenState.m_SubState < 2) {
+       // Kick out while we're still loading from the CD
+       CDLoadTime();
+@@ -209,6 +454,7 @@ void TitlescreenUpdate(void) {
+         DrawSync(0);
+       }
+     }
++#endif
+     break;
+   }
+   case TSM_Menu: {
+@@ -284,13 +530,13 @@ void TitlescreenUpdate(void) {
+           // Port A is valid, but needs to be formatted, ask if that's ok
+           g_TitlescreenState.m_CardSelected = 0;
+           g_TitlescreenState.m_SubState = TS_SubState_MemCardFormat1;
+-          g_TitlescreenState.m_OptionSelected = 0;
++          g_TitlescreenState.m_OptionSelected = RV(0, 1, 0); // PAL: on "no"
+         } else if (g_TitlescreenState.m_CardStates[1] == McErrNone &&
+                    g_TitlescreenState.m_CardNeedsFormat[1]) {
+           // Port B is valid, but needs to be formatted, ask if that's ok
+           g_TitlescreenState.m_CardSelected = 1;
+           g_TitlescreenState.m_SubState = TS_SubState_MemCardFormat1;
+-          g_TitlescreenState.m_OptionSelected = 0;
++          g_TitlescreenState.m_OptionSelected = RV(0, 1, 0); // PAL: on "no"
+         } else {
+           // No valid cards found
+           g_TitlescreenState.m_CardSelected = -1;
+@@ -310,7 +556,7 @@ void TitlescreenUpdate(void) {
+       if (g_TitlescreenState.m_State == 0) {
+         // Read save file from the selected card
+         MemCardReadFile(g_TitlescreenState.m_CardSelected << 4,
+-                        (char *)s_SaveFileName,
++                        (char *)SAVE_FILE_NAME,
+                         (u_long *)g_TitlescreenState.m_MemCardSave, 0,
+                         sizeof(MemCardSaveFile));
+         g_TitlescreenState.m_State = 1;
+@@ -520,9 +766,19 @@ void TitlescreenUpdate(void) {
+               TitlescreenPlaySound(2);
+             }
+           } else {
++#if REGION_HAS_PAL
++            if (REGION_IS(PAL)) {
++              // PAL: "no" goes back to the card check
++              RELOAD_MEMCARDS
++            }
++#endif
++#if REGION_HAS_US
++            if (!REGION_IS(PAL)) {
+             g_TitlescreenState.m_SubState = TS_SubState_MemCardUnavailable;
+             g_TitlescreenState.m_OptionSelected = 0;
+             TitlescreenPlaySound(3);
++            }
++#endif
+           }
+         }
+       }
+@@ -573,6 +829,12 @@ void TitlescreenUpdate(void) {
+       break;
+     }
+     case TS_SubState_FormatFailed: {
++#if REGION_HAS_PAL
++      // PAL: the message stays 64 ticks before the card check, 72 before the
++      // buttons
++      if (REGION_IS(PAL) && g_TitlescreenState.m_SubTick < 64)
++        break;
++#endif
+       CheckMemcardsExist();
+ 
+       if (g_TitlescreenState.m_CardStates[g_TitlescreenState.m_CardSelected] !=
+@@ -584,11 +846,23 @@ void TitlescreenUpdate(void) {
+         break;
+       }
+ 
+-      if (g_TitlescreenState.m_SubTick >= 8) {
++      if (g_TitlescreenState.m_SubTick >= RV(8, 72, 8)) {
+         if (func_80032AB0()) {
+           // Triangle was pushed, func_80032AB0 already took care of it
+         } else if (g_Pad.m_Down & (PAD_LEFT | PAD_RIGHT)) {
++#if REGION_HAS_PAL
++          if (REGION_IS(PAL)) {
++            g_TitlescreenState.m_SubTick = 80;
++            g_TitlescreenState.m_OptionSelected =
++                1 - g_TitlescreenState.m_OptionSelected;
++            TitlescreenPlaySound(0);
++          }
++#endif
++#if REGION_HAS_US
++          if (!REGION_IS(PAL)) {
+           SWAP_MENU_SELECTION
++          }
++#endif
+         } else if (g_Pad.m_Down & (PAD_CROSS | PAD_START)) {
+           if (g_TitlescreenState.m_OptionSelected == 0) {
+             // retry format
+@@ -654,14 +928,35 @@ void TitlescreenUpdate(void) {
+         if (g_TitlescreenState.m_MemCardTries == 0) {
+           g_TitlescreenState.m_CardResultData =
+               MemCardCreateFile(g_TitlescreenState.m_CardSelected << 4,
+-                                (char *)s_SaveFileName, 1);
++                                (char *)SAVE_FILE_NAME, 1);
+         }
+-        if (g_TitlescreenState.m_CardResultData == McErrNone) {
++        if (g_TitlescreenState.m_CardResultData == McErrNone
++#if REGION_HAS_PAL
++            // PAL: a file already there is taken over
++            || (REGION_IS(PAL) &&
++                g_TitlescreenState.m_CardResultData == McErrAlreadyExist)
++#endif
++        ) {
+           char *mcs = (char *)g_TitlescreenState.m_MemCardSave;
+ 
++#if REGION_HAS_PAL
++          if (REGION_IS(PAL)) {
++            // PAL: a 256-byte header (one icon frame), the rest cleared, and
++            // the language and screen position in its m_Clut[14]
++            Memcpy(g_TitlescreenState.m_MemCardSave,
++                   PAL_DATA(g_PalMemCardSaveHeader, 0x80074C24), 256);
++            Memset(mcs + 256, 0, 256);
++            g_TitlescreenState.m_MemCardSave->m_Header.m_Clut[14] =
++                g_Language + (g_ScreenOffsetX << 4) + (g_ScreenOffsetY << 10);
++          }
++#endif
++#if REGION_HAS_US
++          if (!REGION_IS(PAL)) {
+           // Copy over the header/icons
+           Memcpy(g_TitlescreenState.m_MemCardSave, g_MemCardSaveHeader,
+                  sizeof(g_MemCardSaveHeader));
++          }
++#endif
+ 
+           g_FairyCutscene.unk_0x20 = func_80017FD4();
+           g_TitlescreenState.m_MemCardSave->m_Header.m_Clut[15] =
+@@ -674,7 +969,7 @@ void TitlescreenUpdate(void) {
+             SaveCreate((SaveFile *)(mcs + i * sizeof(SaveFile)));
+           }
+           MemCardWriteFile(g_TitlescreenState.m_CardSelected << 4,
+-                           (char *)s_SaveFileName,
++                           (char *)SAVE_FILE_NAME,
+                            (u_long *)g_TitlescreenState.m_MemCardSave, 0,
+                            sizeof(MemCardSaveFile));
+ 
+@@ -700,7 +995,7 @@ void TitlescreenUpdate(void) {
+         } else {
+           // Save succeeded, let's re-read it off the card
+           MemCardReadFile(g_TitlescreenState.m_CardSelected << 4,
+-                          (char *)s_SaveFileName,
++                          (char *)SAVE_FILE_NAME,
+                           (u_long *)g_TitlescreenState.m_MemCardSave, 0,
+                           sizeof(MemCardSaveFile));
+           g_TitlescreenState.m_State = 3;
+@@ -782,6 +1077,17 @@ void TitlescreenUpdate(void) {
+       break;
+     }
+     case TS_SubState_CantCreateSave: {
++#if REGION_HAS_PAL
++      // PAL: the message stays 64 ticks before the card check, 72 before the
++      // buttons
++      if (REGION_IS(PAL)) {
++        if (g_TitlescreenState.m_SubTick == 0) {
++          TitlescreenPlaySound(4);
++        }
++        if (g_TitlescreenState.m_SubTick < 64)
++          break;
++      }
++#endif
+       CheckMemcardsExist();
+ 
+       if (g_TitlescreenState.m_CardStates[g_TitlescreenState.m_CardSelected] !=
+@@ -793,15 +1099,31 @@ void TitlescreenUpdate(void) {
+         break;
+       }
+ 
++#if REGION_HAS_US
++      if (!REGION_IS(PAL)) {
+       if (g_TitlescreenState.m_SubTick == 0) {
+         TitlescreenPlaySound(4);
+       }
++      }
++#endif
+ 
+-      if (g_TitlescreenState.m_SubTick >= 8) {
++      if (g_TitlescreenState.m_SubTick >= RV(8, 72, 8)) {
+         if (func_80032AB0()) {
+           // Triangle was pushed, func_80032AB0 already took care of it
+         } else if (g_Pad.m_Down & (PAD_LEFT | PAD_RIGHT)) {
++#if REGION_HAS_PAL
++          if (REGION_IS(PAL)) {
++            g_TitlescreenState.m_SubTick = 80;
++            g_TitlescreenState.m_OptionSelected =
++                1 - g_TitlescreenState.m_OptionSelected;
++            TitlescreenPlaySound(0);
++          }
++#endif
++#if REGION_HAS_US
++          if (!REGION_IS(PAL)) {
+           SWAP_MENU_SELECTION
++          }
++#endif
+         } else if (g_Pad.m_Down & (PAD_CROSS | PAD_START)) {
+           if (g_TitlescreenState.m_OptionSelected == 0) {
+             g_TitlescreenState.m_SubState = TS_SubState_CreatingSaveFile;
+@@ -844,7 +1166,7 @@ void TitlescreenUpdate(void) {
+           if (g_TitlescreenState
+                   .m_CardNeedsFormat[g_TitlescreenState.m_OptionSelected]) {
+             g_TitlescreenState.m_SubState = TS_SubState_MemCardFormat1;
+-            g_TitlescreenState.m_OptionSelected = 0;
++            g_TitlescreenState.m_OptionSelected = RV(0, 1, 0); // PAL: on "no"
+           } else {
+             g_TitlescreenState.m_SubState = TS_SubState_ReadSelectedCard;
+             g_TitlescreenState.m_State = 0;
+@@ -1037,6 +1359,16 @@ void TitlescreenUpdate(void) {
+         g_Fade = 15;
+ 
+       if (g_TitlescreenState.m_SubTick >= 16) {
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          MemCardStop();
++          g_TitlescreenState.m_Mode = TSM_Demo;
++          g_TitlescreenState.m_State = 0;
++          ClearFrameBuffersPal(); // PAL: 512x256 twice (D134)
++        }
++#endif
++#if REGION_HAS_US
++        if (!REGION_IS(PAL)) {
+         RECT rc;
+         MemCardStop();
+         g_TitlescreenState.m_Mode = TSM_Demo;
+@@ -1044,6 +1376,8 @@ void TitlescreenUpdate(void) {
+         setRECT(&rc, 0, 0, 512, 480);
+         ClearImage(&rc, 0, 0, 0);
+         DrawSync(0);
++        }
++#endif
+       }
+     }
+     break;
+@@ -1070,6 +1404,24 @@ void TitlescreenUpdate(void) {
+   }
+ }
+ 
++#if REGION_HAS_PAL
++// PAL: its own sprite table, 75 sprites (the texts are cut from the
++// language's strip)
++extern TitlescreenSpriteDef g_PalTitlescreenSprites[75]; // PAL 0x80076018
++#if defined(REGION) && REGION == 1
++TitlescreenSpriteDef g_PalTitlescreenSprites[75] = {0}; // the stand-in
++#endif
++#endif
++#if REGION_HAS_PAL && REGION_HAS_US // the port: the release's at run time
++#define TS_SPRITES                                                             \
++  (REGION_IS(PAL) ? PAL_DATA(g_PalTitlescreenSprites, 0x80076018)              \
++                  : g_TitlescreenSprites)
++#elif REGION_HAS_PAL // a matching build names the array (same code as US)
++#define TS_SPRITES PAL_DATA(g_PalTitlescreenSprites, 0x80076018)
++#else
++#define TS_SPRITES g_TitlescreenSprites
++#endif
++
+ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
+   POLY_FT4 *p;
+   int mirrored = 0;
+@@ -1083,17 +1435,17 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
+   p->tag = PRIM_TAG(POLY_FT4);
+   ((u_long *)p)[1] = g_TitlescreenSelColors[pColorId];
+ 
+-  setXY4(p, pX, pY, g_TitlescreenSprites[pSprite].m_w + pX, pY, pX,
+-         g_TitlescreenSprites[pSprite].m_h + pY,
+-         g_TitlescreenSprites[pSprite].m_w + pX,
+-         g_TitlescreenSprites[pSprite].m_h + pY);
++  setXY4(p, pX, pY, TS_SPRITES[pSprite].m_w + pX, pY, pX,
++         TS_SPRITES[pSprite].m_h + pY,
++         TS_SPRITES[pSprite].m_w + pX,
++         TS_SPRITES[pSprite].m_h + pY);
+ 
+-  setUVWH2(p, g_TitlescreenSprites[pSprite].m_u,
+-           g_TitlescreenSprites[pSprite].m_v, g_TitlescreenSprites[pSprite].m_w,
+-           g_TitlescreenSprites[pSprite].m_h);
++  setUVWH2(p, TS_SPRITES[pSprite].m_u,
++           TS_SPRITES[pSprite].m_v, TS_SPRITES[pSprite].m_w,
++           TS_SPRITES[pSprite].m_h);
+ 
+-  p->tpage = g_TitlescreenSprites[pSprite].m_tpage;
+-  p->clut = g_TitlescreenSprites[pSprite].m_clut;
++  p->tpage = TS_SPRITES[pSprite].m_tpage;
++  p->clut = TS_SPRITES[pSprite].m_clut;
+ 
+   // add to OT
+   func_800168DC(p);
+@@ -1108,8 +1460,348 @@ void TitlescreenDrawSprite(int pX, int pY, int pSprite, int pColorId) {
+   }
+ }
+ 
++#if REGION_HAS_PAL
++// PAL: DRAW_OPTIONS from a later sub-tick (the card errors' 72)
++#define DRAW_OPTIONS_PAL(from, op1, op2)                                       \
++  if (g_TitlescreenState.m_SubTick > (from)) {                                 \
++    TitlescreenDrawSprite(128, 88, op1,                                        \
++                          (g_TitlescreenState.m_OptionSelected == 0 &&         \
++                           ((g_TitlescreenState.m_SubTick & 0xF) < 8))         \
++                              ? TS_Color_Yellow                                \
++                              : TS_Color_Gray);                                \
++    TitlescreenDrawSprite(256, 88, op2,                                        \
++                          (g_TitlescreenState.m_OptionSelected == 1 &&         \
++                           ((g_TitlescreenState.m_SubTick & 0xF) < 8))         \
++                              ? TS_Color_Yellow                                \
++                              : TS_Color_Gray);                                \
++  }
++// PAL's sprites (its own g_TitlescreenSprites, PAL 0x80076018): 0 logo, 1
++// border, 2-7 homeworlds, 8 empty save, 9 save box, 10+lang "overwrite game",
++// 15 arrow, 16+lang the language's name, 21-30 digits, 31 dragon, 39+card "the
++// memory card in slot", 57+card "using the card in slot"; 32-74 the texts,
++// drawn from the language's strip (VRAM x 768); German (2) takes four lines
++// where the others take three.
++#define TS_PAL_USING_CARD 57
++#endif
++
+ void TitlescreenDraw(void) {
++#if REGION_HAS_PAL
++  if (REGION_IS(PAL)) {
++    switch (g_TitlescreenState.m_Mode) {
++    case TSM_Init: {
++      if (g_TitlescreenState.m_SubState == 3) {
++        if (g_CutsceneLayout->m_CurrentTick >= 974)
++          TitlescreenDrawSprite(
++              128, g_TitlescreenAnimIn[g_TitlescreenState.m_SubTick] - 128,
++              0, TS_Color_Gray);
++      } else if (g_TitlescreenState.m_SubState == 4) {
++        // the menu: "press start" and the language, < name > when on it
++        TitlescreenDrawSprite(128, 0, 0, 0);
++        TitlescreenDrawSprite(192, 210, 63,
++                              (g_TitlescreenState.m_OptionSelected == 0 &&
++                               (g_TitlescreenState.m_SubTick & 0xF) < 8) *
++                                  2);
++        TitlescreenDrawSprite(192, 230, g_Language + 16,
++                              (g_TitlescreenState.m_OptionSelected == 1 &&
++                               (g_TitlescreenState.m_SubTick & 0xF) < 8) *
++                                  2);
++        if (g_TitlescreenState.m_OptionSelected == 1) {
++          TitlescreenDrawSprite(192, 230, 15,
++                                (g_TitlescreenState.m_OptionSelected == 1 &&
++                                 (g_TitlescreenState.m_SubTick & 0xF) < 8) *
++                                    2);
++          TitlescreenDrawSprite(304, 230, -15,
++                                (g_TitlescreenState.m_OptionSelected == 1 &&
++                                 (g_TitlescreenState.m_SubTick & 0xF) < 8) *
++                                    2);
++        }
++      } else if (g_TitlescreenState.m_SubState == 5) {
++        if (g_TitlescreenState.m_SubTick < 16) {
++          TitlescreenDrawSprite(
++              128, g_TitlescreenAnimOut[g_TitlescreenState.m_SubTick] - 128,
++              0, TS_Color_Gray);
++        } else {
++          TitlescreenDrawSprite(
++              108,
++              g_TitlescreenAnimIn[g_TitlescreenState.m_SubTick - 16] - 119, 1,
++              TS_Color_Gray);
++          TitlescreenDrawSprite(
++              255,
++              g_TitlescreenAnimIn[g_TitlescreenState.m_SubTick - 16] - 119,
++              -1, TS_Color_Gray);
++        }
++      } else if (g_TitlescreenState.m_SubState == 7) {
++        // back from the card menus: the borders go
++        if (g_TitlescreenState.m_SubTick < 16) {
++          TitlescreenDrawSprite(
++              108, g_TitlescreenAnimOut[g_TitlescreenState.m_SubTick] - 119,
++              1, TS_Color_Gray);
++          TitlescreenDrawSprite(
++              255, g_TitlescreenAnimOut[g_TitlescreenState.m_SubTick] - 119,
++              -1, TS_Color_Gray);
++        }
++      }
++      break;
++    }
++    case TSM_Menu: {
++      TitlescreenDrawSprite(108, 9, 1, TS_Color_Gray);
++      TitlescreenDrawSprite(255, 9, -1, TS_Color_Gray);
+ 
++      switch (g_TitlescreenState.m_SubState) {
++      case TS_SubState_LoadMemCards:
++        TitlescreenDrawSprite(128, 46, 32, TS_Color_Gray);
++        break;
++      case TS_SubState_ReadSelectedCard:
++        TitlescreenDrawSprite(128, 46, 32, TS_Color_Gray);
++        if (g_TitlescreenState.m_OptionSelected != 0) {
++          TitlescreenDrawSprite(128, 106,
++                                g_TitlescreenState.m_CardSelected +
++                                    TS_PAL_USING_CARD,
++                                TS_Color_Gray);
++        }
++        break;
++      case TS_SubState_NoMemoryCard:
++        TitlescreenDrawSprite(128, 46, 33, TS_Color_Gray);
++        DRAW_OPTIONS(64, 65);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_MemCardUnavailable:
++        TitlescreenDrawSprite(128, 46, 34, TS_Color_Gray);
++        DRAW_OPTIONS(64, 65);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_WarningNoSave:
++        if (g_Language != 2) {
++          TitlescreenDrawSprite(128, 22, 35, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 38, 36, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 54, 37, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 70, 38, TS_Color_Gray);
++        } else {
++          TitlescreenDrawSprite(128, 22, 36, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 38, 37, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 54, 38, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 70, 60, TS_Color_Gray);
++        }
++        DRAW_OPTIONS(64, 66);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_MemCardFormat1:
++      case TS_SubState_MemCardFormat2:
++        if (g_TitlescreenState.m_SubState == TS_SubState_MemCardFormat1) {
++          TitlescreenDrawSprite(128, 30, g_TitlescreenState.m_CardSelected + 39,
++                                TS_Color_Gray);
++          TitlescreenDrawSprite(128, 46, 41, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 62, 42, TS_Color_Gray);
++        } else if (g_Language != 2) {
++          TitlescreenDrawSprite(128, 30, 35, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 46, 43, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 62, 44, TS_Color_Gray);
++        } else {
++          TitlescreenDrawSprite(128, 22, 35, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 38, 43, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 54, 44, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 70, 61, TS_Color_Gray);
++        }
++        DRAW_OPTIONS(67, 65);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_MemCardFormatting:
++        TitlescreenDrawSprite(128, 46, 45, TS_Color_Gray);
++        break;
++      case TS_SubState_FormatComplete:
++        TitlescreenDrawSprite(128, 46, 46, TS_Color_Gray);
++        if (g_TitlescreenState.m_SubTick > 7) {
++          TitlescreenDrawSprite(128, 88, 69,
++                                (g_TitlescreenState.m_SubTick & 0xf) < 8
++                                    ? TS_Color_Yellow
++                                    : TS_Color_Gray);
++        }
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_FormatFailed:
++        TitlescreenDrawSprite(128, 46, 47, TS_Color_Gray);
++        DRAW_OPTIONS_PAL(71, 65, 66);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_CreateSaveConfirm:
++        TitlescreenDrawSprite(128, 30, g_TitlescreenState.m_CardSelected + 39,
++                              TS_Color_Gray);
++        TitlescreenDrawSprite(128, 46, 48, TS_Color_Gray);
++        TitlescreenDrawSprite(128, 62, 49, TS_Color_Gray);
++        DRAW_OPTIONS(68, 66);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_CreatingSaveFile:
++        TitlescreenDrawSprite(128, 46, 50, TS_Color_Gray);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_MemCardFull:
++        TitlescreenDrawSprite(128, 30, g_TitlescreenState.m_CardSelected + 39,
++                              TS_Color_Gray);
++        TitlescreenDrawSprite(128, 46, 51, TS_Color_Gray);
++        TitlescreenDrawSprite(128, 62, 52, TS_Color_Gray);
++        if (g_TitlescreenState.m_SubTick > 7) {
++          TitlescreenDrawSprite(128, 88, 69,
++                                (g_TitlescreenState.m_SubTick & 0xF) < 8);
++        }
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_CantCreateSave:
++        if (g_Language != 2) {
++          TitlescreenDrawSprite(128, 46, 53, TS_Color_Gray);
++        } else {
++          TitlescreenDrawSprite(128, 38, 53, TS_Color_Gray);
++          TitlescreenDrawSprite(128, 54, 62, TS_Color_Gray);
++        }
++        DRAW_OPTIONS_PAL(71, 65, 66);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++        break;
++      case TS_SubState_SelectMemCard:
++        TitlescreenDrawSprite(128, 46, 59, TS_Color_Gray);
++        DRAW_OPTIONS(72, 73);
++        break;
++      default:
++        break;
++      }
++      break;
++    }
++    case TSM_Loading: {
++      int i;
++      int j;
++      int dragon_count;
++      if (g_TitlescreenState.m_State < 5) {
++        TitlescreenDrawSprite(108, 9, 1, TS_Color_Gray);
++        TitlescreenDrawSprite(255, 9, -1, TS_Color_Gray);
++        if (g_TitlescreenState.m_State > 0) {
++          for (i = 0; i < 3; ++i) {
++            if (!g_TitlescreenState.m_SaveFiles[i]->m_LevelsVisited[0]) {
++              int color = 0;
++              if ((g_TitlescreenState.m_State < 3 &&
++                   g_TitlescreenState.m_OptionSelected != i) ||
++                  g_TitlescreenState.m_State - 3u < 2) {
++                color = 3;
++              }
++              TitlescreenDrawSprite(140 + 80 * i, 38, 8, color);
++            } else {
++              int color = 0;
++              if ((g_TitlescreenState.m_State < 4 &&
++                   g_TitlescreenState.m_OptionSelected != i) ||
++                  g_TitlescreenState.m_State == 4) {
++                color = 3;
++              }
++              TitlescreenDrawSprite(
++                  140 + 80 * i, 38,
++                  g_TitlescreenState.m_SaveFiles[i]->m_LevelId / 10 - 1 + 2,
++                  color);
++              TitlescreenDrawSprite(184 + 80 * i, 22, 31, color);
++
++              for (j = 0, dragon_count = 0; j < TOTAL_LEVEL_COUNT; ++j) {
++                dragon_count +=
++                    g_TitlescreenState.m_SaveFiles[i]->m_CollectedDragons[j];
++              }
++
++              TitlescreenDrawSprite(168 + 80 * i, 22, dragon_count % 10 + 21,
++                                    color);
++              if (dragon_count > 9) {
++                TitlescreenDrawSprite(152 + 80 * i, 22,
++                                      dragon_count / 10 + 21, color);
++              }
++            }
++          }
++        }
++      } else {
++        TitlescreenDrawSprite(
++            108, g_TitlescreenAnimOut[g_TitlescreenState.m_SubTick] - 119, 1,
++            TS_Color_Gray);
++        TitlescreenDrawSprite(
++            255, g_TitlescreenAnimOut[g_TitlescreenState.m_SubTick] - 119, -1,
++            TS_Color_Gray);
++      }
++
++      if (g_TitlescreenState.m_State == 1) {
++        if ((g_TitlescreenState.m_SubTick & 0xF) < 8) {
++          TitlescreenDrawSprite(g_TitlescreenState.m_OptionSelected * 80 + 140,
++                                38, 9, TS_Color_Gray);
++        }
++        TitlescreenDrawSprite(128, 88, 71, TS_Color_Yellow);
++        TitlescreenDrawSprite(256, 88, 70, TS_Color_Gray);
++        TitlescreenDrawSprite(128, 106, 54, TS_Color_Gray);
++      } else if (g_TitlescreenState.m_State == 2) {
++        TitlescreenDrawSprite(g_TitlescreenState.m_OptionSelected * 80 + 140,
++                              38, g_Language + 10, TS_Color_Gray);
++        TitlescreenDrawSprite(g_TitlescreenState.m_OptionSelected * 80 + 140,
++                              38, 9, TS_Color_Gray);
++        TitlescreenDrawSprite(128, 88, 74,
++                              (g_TitlescreenState.m_0x18 == 0 &&
++                               ((g_TitlescreenState.m_SubTick & 0xF) < 8))
++                                  ? TS_Color_Yellow
++                                  : TS_Color_Gray);
++        TitlescreenDrawSprite(256, 88, 66,
++                              (g_TitlescreenState.m_0x18 == 1 &&
++                               ((g_TitlescreenState.m_SubTick & 0xF) < 8))
++                                  ? TS_Color_Yellow
++                                  : TS_Color_Gray);
++      } else if (g_TitlescreenState.m_State == 3) {
++        if ((g_TitlescreenState.m_SubTick & 0xF) < 8) {
++          TitlescreenDrawSprite(g_TitlescreenState.m_OptionSelected * 80 + 140,
++                                38, 9, TS_Color_Gray);
++        }
++        TitlescreenDrawSprite(128, 88, 71, TS_Color_Gray);
++        TitlescreenDrawSprite(256, 88, 70, TS_Color_Yellow);
++        TitlescreenDrawSprite(128, 106, 55, TS_Color_Gray);
++      } else if (g_TitlescreenState.m_State == 4) {
++        TitlescreenDrawSprite(128, 88, 71,
++                              (g_TitlescreenState.m_OptionSelected == 0 &&
++                               ((g_TitlescreenState.m_SubTick & 0xF) < 8))
++                                  ? TS_Color_Yellow
++                                  : TS_Color_Gray);
++        TitlescreenDrawSprite(256, 88, 70,
++                              (g_TitlescreenState.m_OptionSelected == 1 &&
++                               ((g_TitlescreenState.m_SubTick & 0xF) < 8))
++                                  ? TS_Color_Yellow
++                                  : TS_Color_Gray);
++        TitlescreenDrawSprite(128, 106,
++                              g_TitlescreenState.m_CardSelected +
++                                  TS_PAL_USING_CARD,
++                              TS_Color_Gray);
++      }
++      break;
++    }
++    }
++  }
++#endif
++#if REGION_HAS_US
++  if (!REGION_IS(PAL)) {
+   switch (g_TitlescreenState.m_Mode) {
+   case TSM_Init: {
+ 
+@@ -1408,6 +2100,8 @@ void TitlescreenDraw(void) {
+     break;
+   }
+   }
++  }
++#endif
+ 
+   setRGB0(&g_DB[0].m_DrawEnv, g_Cyclorama.m_BackgroundColor.r,
+           g_Cyclorama.m_BackgroundColor.g, g_Cyclorama.m_BackgroundColor.b);

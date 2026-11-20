@@ -37,6 +37,11 @@
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
+#include "region.h"
+#include "psx_region.h"
+#include "region_data.h" /* PortCutsceneTicks (D150) */
+
+extern int g_PalCardHeaderDirty; /* PAL 0x8007C148: the title or pause menu changed the language or screen position (region_game.c) */
 
 void func_80048D10(int pDeltaTime); /* pete_hand.c */
 int func_8001796C(int pAngle1, int pAngle2); /* math_hand.c */
@@ -304,13 +309,35 @@ static void FairyExit(void) {
   MenuSound(CONFIRM);
 }
 
+/* PAL (PAL 0x800373C8-0x80037470, D139): once a save has been read back
+ * good, if the title screen changed the language or the pause menu the
+ * screen position, the card file's 256-byte header is written again: PAL's
+ * template (0x80074C24, the standard header: "SC", one icon frame, one block)
+ * copied to a buffer (PAL's is 0x80076298), the language and screen position packed
+ * into the halfword at +0x7C (the icon palette's colour 14) and the save's id
+ * into +0x7E (colour 15, the id the read above checks). MemCardSync(0) waits. */
+static void PalCardHeaderWrite(void) {
+  /* PAL's buffer is a global (0x80076298); here a local, as the port's
+   * MemCardWriteFile writes before it returns, so save states have nothing to keep */
+  u_int words[0x100 / 4];
+  u_char *hdr = (u_char *)words;
+  g_PalCardHeaderDirty = 0;
+  Memcpy(hdr, PortRegionData(0x80074C24), 0x100);
+  *(u_short *)(hdr + 0x7C) = g_Language + (g_ScreenOffsetX << 4) + (g_ScreenOffsetY << 10);
+  *(u_short *)(hdr + 0x7E) = fc.unk_0x20;
+  MemCardWriteFile(fc.m_MemoryCardSlot, (char *)psx_region()->card, words, 0, 0x100);
+  MemCardSync(0, &fc.unk_0x24, &fc.unk_0x28);
+}
+
 /* The save itself, a step a tick (m_MenuSelectedOption counts them):
  * open the card, read the save file's header, check it's this game's
  * (the save's id at 0x7E, unk_0x20), write the save, read it back and
  * check its checksum. A failed step shows an error page. MemCardSync's
  * result goes to unk_0x28 (its command to unk_0x24). */
 static void FairySave(void) {
-  static const char name[] = "BASCUS-94228SPYRO";
+  /* the release's card file: BASCUS-94228SPYRO, or PAL's BESCES-01438SPYRO
+   * (PAL 0x800149F0; src/platform/common/region.c) */
+  const char *name = psx_region()->card;
   u_char *save = (u_char *)g_Buffers.m_HudOTStart - 0x600;
   int r, page;
   switch (fc.m_MenuSelectedOption) {
@@ -359,6 +386,8 @@ static void FairySave(void) {
     if (!MemCardSync(1, &fc.unk_0x24, &fc.unk_0x28))
       return;
     page = fc.unk_0x28 == 0 && SaveChecksum(save) == *(int *)(save + 0x58C) ? PAGE_SAVED : 5;
+    if (page == PAGE_SAVED && REGION_IS(PAL) && g_PalCardHeaderDirty)
+      PalCardHeaderWrite();
     break;
   }
   fc.m_MenuDialoguePage = page;
@@ -525,10 +554,20 @@ static void DragonWobble(Moby *dragon, const u_char *steps) {
 static void CutsceneAnimate(Moby *m, int model, int ticks) {
   const AnimationHeader *anim = g_Models[model]->m_Animations[0];
   int p = anim->m_ProgressPerTick, n = p == 0x10 ? 8 : p == 0x15 ? 6 : p == 0x20 ? 4 : 2;
+  const int t6 = PortCutsceneTime6(ticks); /* PAL at US timing: the exact time (D151) */
+  /* PAL (0x80035C08): the dragon's model at 0 ticks per frame holds its
+   * first frame (D139) */
+  if (REGION_IS(PAL) && model == 0x1FF && p == 0)
+    n = 0x100;
   AnimationState *a = &m->m_AnimationState;
-  a->m_Frame = ticks / n;
+  if (t6 >= 0) {
+    a->m_Frame = t6 / (6 * n);
+    a->m_FrameProgress = ((t6 % (6 * n)) << 6) / (6 * n);
+  } else {
+    a->m_Frame = ticks / n;
+    a->m_FrameProgress = ((ticks % n) << 6) / n;
+  }
   a->m_NextFrame = a->m_Frame + 1;
-  a->m_FrameProgress = ((ticks % n) << 6) / n;
   if (a->m_NextFrame >= anim->m_NumFrames) {
     a->m_Frame = anim->m_NumFrames - 1;
     a->m_FrameProgress = 0;
@@ -541,6 +580,24 @@ static void CutsceneCamera(int k) {
   const int *f = (const int *)dc.unk_0x48 + k * 6;
   g_Camera.m_Position.x = f[0], g_Camera.m_Position.y = f[1], g_Camera.m_Position.z = f[2];
   g_Camera.m_Rotation.x = f[3], g_Camera.m_Rotation.y = f[4], g_Camera.m_Rotation.z = f[5];
+}
+
+/* PAL at US timing (D151): the talk at its exact time t6, in sixths of
+ * PAL's 50 Hz vblanks (PortCutsceneTime6), so each 30 Hz tick moves 5/6 of
+ * a 25 Hz sample where its tick moves 2, 2, 1 vblanks (D150): the camera
+ * between its two frames (2 vblanks, 12 sixths, apart), and a moby's frame
+ * and 64ths as CutsceneAnimate gives them, from the time. */
+static void CutsceneCameraAt(int t6) {
+  const int k = t6 / 12;
+  const int *a = (const int *)dc.unk_0x48 + k * 6;
+  const int *b = k + 1 < dc.unk_0x4C ? a + 6 : a;
+  const int f = PortCutsceneCut(a, b) ? 0 : t6 % 12; /* a cut: hold the shot */
+  g_Camera.m_Position.x = a[0] + (b[0] - a[0]) * f / 12;
+  g_Camera.m_Position.y = a[1] + (b[1] - a[1]) * f / 12;
+  g_Camera.m_Position.z = a[2] + (b[2] - a[2]) * f / 12;
+  g_Camera.m_Rotation.x = PortCutsceneAngle(a[3], b[3], f, 12);
+  g_Camera.m_Rotation.y = PortCutsceneAngle(a[4], b[4], f, 12);
+  g_Camera.m_Rotation.z = PortCutsceneAngle(a[5], b[5], f, 12);
 }
 
 /* The HUD's dragon icons (its mobys 5 to 7) back at their places, then
@@ -757,7 +814,10 @@ static void DragonWait(void) {
   dc.m_CutsceneSpyro->m_DepthOffset = 5;
   dc.m_CutsceneSpyro->m_ShadowDistance = -1;
   dc.m_CutsceneSpyro->m_Position.z += 0x400;
-  func_8004DF24(&dc.m_CutsceneSpyro->m_Position);
+  if (REGION_IS(PAL)) /* PAL (0x800355B8): the floor under him kept (D139) */
+    g_CollisionPoint.z = func_8004DF24(&dc.m_CutsceneSpyro->m_Position);
+  else
+    func_8004DF24(&dc.m_CutsceneSpyro->m_Position);
   dc.m_CutsceneSpyro->m_Position.z -= 0x400;
   MobyUpdateShadow(dc.m_CutsceneSpyro);
   MobyUpdateCollision(dc.m_CutsceneSpyro);
@@ -801,11 +861,28 @@ static void DragonAppear(void) {
  * definition, borrowed). X skips it when the dragon allows (props word
  * 13 0), or shows the skip prompt for 0x78 ticks (unk_0x5C). At the end,
  * the level's sounds go back into SPU RAM. */
+/* The tick the dragon's voice starts at: props word 16; PAL (0x80035800,
+ * D139) takes words 17-20 for French, German, Spanish and Italian unless
+ * -1 (each dub's own timing, set by func_8002C924) and scales it to 25 Hz
+ * ticks, (t * 5 + 3) / 6 from 6 on. PAL's talk counts its 50 Hz vblanks at
+ * US timing too (Dragon, PortCutsceneTicks; D150), so the scale is PAL's
+ * whatever the timing (RT, US's in PAL 60, until D150). */
+static int DragonVoiceDelay(Moby *dragon) {
+  int *props = dragon->m_Props, t = props[16];
+  if (REGION_IS(PAL)) {
+    if (g_Language >= 1 && g_Language <= 4 && props[16 + g_Language] != -1)
+      t = props[16 + g_Language];
+    if (t >= 6)
+      t = (t * 5 + 3) / 6;
+  }
+  return t;
+}
+
 static void DragonCutscene(void) {
   Moby *dragon = dc.m_RescuedDragonMoby;
   int skip = 0;
   if (dc.m_CutsceneTicks < dc.unk_0x4C * 2) {
-    if (dc.unk_0x58 == 0 && dc.m_CutsceneTicks >= ((int *)dragon->m_Props)[16]) {
+    if (dc.unk_0x58 == 0 && dc.m_CutsceneTicks >= DragonVoiceDelay(dragon)) {
       SoundDefinition saved, *def;
       Memcpy(&saved, g_Spu.m_SoundDefinitions, sizeof saved);
       def = g_Spu.m_SoundDefinitions;
@@ -824,7 +901,10 @@ static void DragonCutscene(void) {
       Memcpy(g_Spu.m_SoundDefinitions, &saved, sizeof saved);
       dc.unk_0x58 = 1;
     }
-    CutsceneCamera(dc.m_CutsceneTicks >> 1);
+    if (PortCutsceneTime6(dc.m_CutsceneTicks) >= 0)
+      CutsceneCameraAt(PortCutsceneTime6(dc.m_CutsceneTicks)); /* PAL at US timing (D151) */
+    else
+      CutsceneCamera(dc.m_CutsceneTicks >> 1);
     CutsceneAnimate(dc.m_CutsceneSpyro, 0x1FE, dc.m_CutsceneTicks);
     CutsceneAnimate(dc.m_CutsceneDragon, 0x1FF, dc.m_CutsceneTicks);
     if (g_Pad.m_Down & PAD_CROSS) {
@@ -933,7 +1013,11 @@ static void DragonEnd(void) {
 
 static void Dragon(void) {
   Moby *m;
-  dc.m_CutsceneTicks += g_DeltaTime;
+  /* The talk (4) plays PAL's recorded camera and animations, sampled for
+   * its 25 Hz ticks: at US timing it counts PAL's 50 Hz vblanks, so it
+   * keeps time with the dragon's voice (PortCutsceneTicks, D150). The other
+   * stages are the code's own timing. */
+  dc.m_CutsceneTicks += dc.m_State == 4 ? PortCutsceneTicks(g_DeltaTime) : g_DeltaTime;
   dc.unk_0x50 += g_DeltaTime;
   switch (dc.m_State) {
   case DRAGON_FREE:

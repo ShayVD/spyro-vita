@@ -119,7 +119,7 @@ void walk_ref_sync(void) {
   psyx_overrideTextureWidth = ov[1];
   psyx_overrideTextureHeight = ov[2];
   psyx_g_psyxPolyHook =
-      psx_vcache_polys ? (void (*)(GrVertex *, short *const *, int))psx_vcache_poly : NULL;
+      psx_vcache_polys ? (void (*)(GrVertex *, short *const *, int))psx_vcache_poly_ref : NULL;
 }
 
 void walk_ref_parse(u_long *p, int single, PsxGpuNext next) {

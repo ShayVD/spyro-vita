@@ -20,6 +20,7 @@
  * unit instead, linked as <name>_gen, for A/B tests. */
 #include <assert.h> /* PsyCross headers use C11 static_assert */
 
+#include "region.h"
 #include "common.h"
 
 #include "collision.h"
@@ -962,6 +963,8 @@ static void FloorTerrain(int x, int y, int z, int last, int *floor, int camera) 
         continue;
       *floor = height;
       if (camera) {
+        if (REGION_IS(PAL)) /* PAL keeps the floor's normal too (PAL 0x800538B4, D134) */
+          g_CollisionNormal = n;
         D_80075844 = tc->m_TriangleOcclusionAssignment[idx];
         continue;
       }
@@ -1275,13 +1278,20 @@ static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int p
           break;
         }
         }
-        hit = m;
+        /* US records the moby before the pass test, so a pass volume is
+         * still the hit ColMoby returns; PAL records it after (its asm moves
+         * the `addi s2, fp, 0` past the branch, PAL 0x80053CA4 and the three
+         * kinds after it): a pass volume damages but doesn't block (D149). */
+        if (!REGION_IS(PAL))
+          hit = m;
         if (!(word & VOLUME_NO_DAMAGE))
           m->m_DamageFlags |= pApplyingDamage;
         if (pReceivingDamage)
           *pReceivingDamage |= e[-1];
         if (word & VOLUME_PASS)
           continue;
+        if (REGION_IS(PAL))
+          hit = m;
         if (arg5 & 1) {
           MobyPushOut(pPos, v, len2, limit);
           return (int)(uintptr_t)m;

@@ -1,0 +1,567 @@
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -343,8 +343,8 @@
+         distance = OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x0c));
+         props->m_0x28 = (distance / props->m_0x24) >> 1;
+ 
+-        if (props->m_0x28 >= 0x5B) {
+-          props->m_0x28 = 0x5A;
++        if (props->m_0x28 >= RT(0x5B, 0x4C)) {
++          props->m_0x28 = RT(0x5A, 0x4B);
+         }
+ 
+         moby->m_State = 2;
+@@ -357,7 +357,7 @@
+         if (TICK_TIMER(props->m_0x30)) {
+ 
+           if (props->m_0x20 < props->m_0x24) {
+-            T60_TICK_DO(props->m_0x20 += 0xA); // 60 Hz: speed ramp, once a tick
++            T60_TICK_DO(props->m_0x20 += RT(0xA, 0xC)); // 60 Hz: speed ramp, once a tick
+           }
+ 
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+@@ -408,8 +408,8 @@
+       }
+ 
+       case 3: {
+-        if (props->m_0x20 >= 0x10) {
+-          T60_TICK_DO(props->m_0x20 -= 0xF); // 60 Hz: deceleration, once a tick
++        if (props->m_0x20 >= RT(0x10, 0x13)) {
++          T60_TICK_DO(props->m_0x20 -= RT(0xF, 0x12)); // 60 Hz: deceleration, once a tick
+           MobyMove(moby, props->m_0x1c, props->m_0x20, 0, 700, 5);
+         }
+ 
+@@ -946,7 +946,7 @@
+       case 2: {
+         if (props->m_0x14 > 0) {
+           func_80039398(moby, props->m_0x14, 0x300, 0x200, 0x27);
+-          T60_TICK_END_DO(props->m_0x14 -= 8); // 60 Hz: deceleration at the tick's end, after its move
++          T60_TICK_END_DO(props->m_0x14 -= RT(8, 10)); // 60 Hz: deceleration at the tick's end, after its move
+         }
+         if (g_AnimationFinished) {
+           moby->m_Rotation.z += 0x80;
+@@ -977,8 +977,8 @@
+         if (moby->m_AnimationState.m_Frame < 5) {
+           moby->m_Rotation.z += T60_SHARE(props->m_0x18); // 60 Hz: spin share
+         }
+-        if (props->m_0x14 >= 0x10) {
+-          T60_TICK_DO(props->m_0x14 -= 0xF); // 60 Hz: deceleration once a tick
++        if (props->m_0x14 >= RT(0x10, 0x13)) {
++          T60_TICK_DO(props->m_0x14 -= RT(0xF, 0x12)); // 60 Hz: deceleration once a tick
+           MobyMove(moby, props->m_0x10, props->m_0x14, 0, 300, 5);
+         }
+         break;
+@@ -1448,7 +1448,7 @@
+             if (func_80017908(angle, distance) > i &&
+                 DISTANCE_TO_SPYRO(moby) < 0x3000) {
+               result = func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0),
+-                                     0x1800, angle, 5, speed, 0xE, 0x14, 0xFF,
++                                     0x1800, angle, 5, speed, RT(0xE, 0x11), 0x14, 0xFF,
+                                      0xFF, 0, 0, 4);
+             }
+             if (result >= 0x5B) {
+@@ -1462,7 +1462,7 @@
+             } else {
+               MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+             }
+-            if (props->m_0x18 >= 0x1E &&
++            if (props->m_0x18 >= RT(0x1E, 0x19) &&
+                 func_80017908(angle2, ANGLE_TO_SPYRO(moby->m_Position)) >=
+                     0x21) {
+               moby->m_Substate = 1;
+@@ -1677,7 +1677,7 @@
+         }
+         if (props->m_0x20 != 0) {
+           MobyMove(moby, props->m_0x1c, props->m_0x20, 0, 300, 5);
+-          T60_TICK_END_DO(props->m_0x20 -= 0x10); // 60 Hz: knockback drag at the tick's end, after both halves of the move
++          T60_TICK_END_DO(props->m_0x20 -= RT(0x10, 0x13)); // 60 Hz: knockback drag at the tick's end, after both halves of the move
+           if (props->m_0x20 < 0) {
+             props->m_0x20 = 0;
+           }
+@@ -1693,7 +1693,7 @@
+       }
+       case 20: {
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+-        if (func_80039E94(moby, props->m_0x00, 0x100, 0xF0, 0, 8, 0x10, 0xFF,
++        if (func_80039E94(moby, props->m_0x00, 0x100, RT(0xF0, 0x120), 0, 8, 0x10, 0xFF,
+                           5) == 0x103) {
+           moby->m_State = 21;
+           continue;
+@@ -1846,13 +1846,13 @@
+           VecCopy(&moby->m_Position, &PATH_CUR_POS(props->m_0x00));
+           MobySnapToGround(moby);
+         }
+-        props->m_0x14 = 0xB4;
++        props->m_0x14 = RT(0xB4, 0xD8);
+         if (PATH_CUR_NODE(props->m_0x00).unk_0xC > 0) {
+           props->m_0x14 = PATH_CUR_NODE(props->m_0x00).unk_0xC;
+         }
+         if (func_80039E94(moby, props->m_0x00, 0x100, props->m_0x14, 0, 8, 0x20,
+                           0xFF, 5) == 0x10B) {
+-          props->m_0x0c = 150;
++          props->m_0x0c = RT(150, 180);
+           moby->m_State = 41;
+           continue;
+         }
+@@ -1871,7 +1871,7 @@
+         angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
+         MobyRotateToAngle(moby, angle, 6, 0, 0);
+         if (distance >= 0x101) {
+-          func_80039398(moby, 150, 0, 0, 1);
++          func_80039398(moby, RT(150, 180), 0, 0, 1);
+         }
+         if (distance < 0x100 && moby->m_Position.z == floorHeight) {
+           if (++props->m_0x00->m_CurrentNode == 0xD) {
+@@ -1882,9 +1882,9 @@
+           break;
+         }
+         moby->m_Position.z += T60_SHARE(props->m_0x0c); // 60 Hz: a share of the tick's step
+-        T60_TICK_END_DO(props->m_0x0c -= 0x14); // 60 Hz: gravity at the tick's end, after the move
+-        if (props->m_0x0c < -200) {
+-          props->m_0x0c = -200;
++        T60_TICK_END_DO(props->m_0x0c -= RT(0x14, 0x18)); // 60 Hz: gravity at the tick's end, after the move
++        if (props->m_0x0c < -RT(200, 239)) {
++          props->m_0x0c = -RT(200, 239);
+         }
+         if (moby->m_Position.z + props->m_0x0c <= floorHeight) {
+           moby->m_Position.z = floorHeight;
+@@ -1903,7 +1903,7 @@
+         path = props->m_0x00;
+         heightDelta = g_Spyro.m_Position.z - PATH_NODE_POS(path, 10).z;
+         if (heightDelta < -1500 && DISTANCE_TO_SPYRO(moby) < 0x1800) {
+-          props->m_0x0c = 0x1A4;
++          props->m_0x0c = RT(0x1A4, 0x1F8);
+           props->m_0x00->m_CurrentNode = 9;
+           moby->m_State = 43;
+           continue;
+@@ -1920,7 +1920,7 @@
+         angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
+         MobyRotateToAngle(moby, angle, 6, 0, 0);
+         if (distance >= 0x101) {
+-          func_80039398(moby, 150, 0, 0, 1);
++          func_80039398(moby, RT(150, 180), 0, 0, 1);
+         }
+         if (distance < 0x100 && moby->m_Position.z == floorHeight) {
+           props->m_0x00->m_Reversed = -props->m_0x00->m_Reversed;
+@@ -1929,9 +1929,9 @@
+           continue;
+         }
+         moby->m_Position.z += T60_SHARE(props->m_0x0c); // 60 Hz: a share of the tick's step
+-        T60_TICK_END_DO(props->m_0x0c -= 0x14); // 60 Hz: gravity at the tick's end, after the move
+-        if (props->m_0x0c < -200) {
+-          props->m_0x0c = -200;
++        T60_TICK_END_DO(props->m_0x0c -= RT(0x14, 0x18)); // 60 Hz: gravity at the tick's end, after the move
++        if (props->m_0x0c < -RT(200, 239)) {
++          props->m_0x0c = -RT(200, 239);
+         }
+         if (moby->m_Position.z + props->m_0x0c <= floorHeight) {
+           moby->m_Position.z = floorHeight;
+@@ -1940,7 +1940,7 @@
+       }
+       case 44: {
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+-        props->m_0x14 = 200;
++        props->m_0x14 = RT(200, 240);
+         if (moby->m_Position.z < 0x800) {
+           VecCopy(&moby->m_Position, &PATH_CUR_POS(props->m_0x00));
+           MobySnapToGround(moby);
+@@ -1961,7 +1961,7 @@
+         if (DISTANCE_TO_SPYRO(moby) < 0x2000) {
+           angle = (ANGLE_TO_SPYRO(PATH_CUR_POS(props->m_0x00)) + 0x80) & 0xFF;
+           func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0), props->m_0x38,
+-                        angle, 8, props->m_0x14, 0xF, 0x40, 0xFF, 0xFF, 0, 0,
++                        angle, 8, props->m_0x14, RT(0xF, 0x12), 0x40, 0xFF, 0xFF, 0, 0,
+                         0);
+           angle2 = ANGLE_FROM(PATH_CUR_POS(props->m_0x00), moby->m_Position);
+           angle = (angle - angle2) & 0xFF;
+@@ -3889,7 +3889,7 @@
+ 
+         if (props->m_0x10 != 0) {
+           if (moby->m_Substate < 2 && g_Spyro.m_State == 0xE) {
+-            props->m_0x10 += 0x3C;
++            props->m_0x10 += RT(0x3C, 0x32);
+             moby->m_Substate = 2;
+           }
+ 
+@@ -3904,9 +3904,9 @@
+           angle = ANGLE_TO_SPYRO(moby->m_Position);
+           if (func_80017908(moby->m_Rotation.z, angle) < 0x18) {
+             if (moby->m_Substate != 0) {
+-              props->m_0x10 = 0x2C;
++              props->m_0x10 = RT(0x2C, 0x25);
+             } else {
+-              props->m_0x10 = 0x1A;
++              props->m_0x10 = RT(0x1A, 0x16);
+             }
+             moby->m_Substate = 1;
+           } else {
+@@ -3997,7 +3997,7 @@
+ 
+         if (props->m_0x10 != 0) {
+           if (moby->m_Substate < 2 && g_Spyro.m_State == 0xE) {
+-            props->m_0x10 += 0x3C;
++            props->m_0x10 += RT(0x3C, 0x32);
+             moby->m_Substate = 2;
+           }
+ 
+@@ -4012,9 +4012,9 @@
+           angle = ANGLE_TO_SPYRO(moby->m_Position);
+           if (func_80017908(moby->m_Rotation.z, angle) < 0x18) {
+             if (moby->m_Substate != 0) {
+-              props->m_0x10 = 0x2C;
++              props->m_0x10 = RT(0x2C, 0x25);
+             } else {
+-              props->m_0x10 = 0x1A;
++              props->m_0x10 = RT(0x1A, 0x16);
+             }
+             moby->m_Substate = 1;
+           } else {
+@@ -6813,8 +6813,8 @@
+           moby->m_Rotation.z += T60_SHARE(props->m_0x18); // 60 Hz: spin share
+         }
+ 
+-        if (props->m_0x14 >= 0x10) {
+-          T60_TICK_DO(props->m_0x14 -= 0xF); // 60 Hz: deceleration once a tick
++        if (props->m_0x14 >= RT(0x10, 0x13)) {
++          T60_TICK_DO(props->m_0x14 -= RT(0xF, 0x12)); // 60 Hz: deceleration once a tick
+           MobyMove(moby, props->m_0x10, props->m_0x14, 0, 300, 5);
+         }
+ 
+@@ -6832,7 +6832,7 @@
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         func_80039398(moby, props->m_0x14, 0, 300, 5);
+ 
+-        if (moby->m_AnimationState.m_Frame >= 5 && props->m_0x14 > 0x50) {
++        if (moby->m_AnimationState.m_Frame >= 5 && props->m_0x14 > RT(0x50, 0x60)) {
+           T60_TICK_END_DO(props->m_0x14 -= 5); // 60 Hz: deceleration at the tick's end, after its move
+         }
+ 
+@@ -6844,10 +6844,10 @@
+             g_Spyro.m_DamageFlags |= 0x80;
+             g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), 150);
+             g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), 150);
+-            g_Spyro.unk_0x208.z = 50;
++            g_Spyro.unk_0x208.z = RT(50, 60);
+           } else if (T60_TICK_AND(props->m_0x20 == 1)) { // 60 Hz: next step a tick later
+             props->m_0x20 = 2;
+-            props->m_0x2c = 0x32;
++            props->m_0x2c = RT(0x32, 0x2A);
+             g_Spyro.m_ControlFlags |= 0x80000200;
+             g_Spyro.unk_0x21c = &moby->m_Position;
+             g_Spyro.unk_0x220 = &D_80078668;
+@@ -6991,10 +6991,10 @@
+         moby->m_Position.y += T60_SHARE(physicsProps->m_Velocity.y);
+ 
+         // Apply gravity to Z velocity
+-        T60_TICK_DO(physicsProps->m_Velocity.z -= 6);
+-
+-        if (physicsProps->m_Velocity.z < -0x80) {
+-          physicsProps->m_Velocity.z = -0x80;
++        T60_TICK_DO(physicsProps->m_Velocity.z -= RT(6, 7));
++
++        if (physicsProps->m_Velocity.z < -RT(0x80, 0x99)) {
++          physicsProps->m_Velocity.z = -RT(0x80, 0x99);
+         }
+ 
+         moby->m_Position.z += T60_SHARE(physicsProps->m_Velocity.z);
+@@ -8203,7 +8203,7 @@
+       case 3: {
+         if (moby->m_ScaleOverride >= 0x21) {
+           moby->m_ScaleOverride -= T60_SHARE(4);       // Shrink (60 Hz: 2 + 2, still lands on 0x20)
+-          moby->m_Rotation.z = moby->m_Rotation.z + T60_SHARE(8); // Spin (60 Hz: a share)
++          moby->m_Rotation.z = moby->m_Rotation.z + T60_SHARE(RT(8, 10)); // Spin (60 Hz: a share)
+         } else {
+           moby->m_State = 4;
+           fairyProps->m_0x08 = 0;
+@@ -8325,7 +8325,7 @@
+       case 6: {
+         if (moby->m_ScaleOverride < 96) {
+           moby->m_ScaleOverride += T60_SHARE(4); // 60 Hz: 2 + 2, still lands on 96
+-          moby->m_Rotation.z = moby->m_Rotation.z + T60_SHARE(8); // 60 Hz: a share
++          moby->m_Rotation.z = moby->m_Rotation.z + T60_SHARE(RT(8, 10)); // 60 Hz: a share
+         } else {
+           // Fully shrunk
+           moby->m_RenderRadius = 0;
+@@ -8499,12 +8499,12 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < 10) {
++        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
+           moby->m_Rotation.z += T60_SHARE(props->m_0x10); // 60 Hz: spin, shared
+         }
+ 
+-        if (props->m_0x0c >= 0x1F) {
+-          T60_TICK_DO(props->m_0x0c -= 0x1E); // 60 Hz: deceleration, once a tick
++        if (props->m_0x0c >= RT(0x1F, 0x25)) {
++          T60_TICK_DO(props->m_0x0c -= RT(0x1E, 0x24)); // 60 Hz: deceleration, once a tick
+           MobyMove(moby, props->m_0x08, props->m_0x0c, 0, 300, 1);
+         }
+ 
+@@ -8518,9 +8518,9 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= 0x1C) {
++        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+-            moby->m_AnimationState.m_Frame = 0x0F;
++            moby->m_AnimationState.m_Frame = RT(0x0F, 0xD);
+           }
+         }
+ 
+@@ -9002,7 +9002,7 @@
+           MobyMove(moby, props->m_KnockbackAngle, props->m_KnockbackSpeed, 500,
+                    700, 0);
+           // Incrementally reduce knockback speed
+-          T60_TICK_END_DO(props->m_KnockbackSpeed -= 0x10); // 60 Hz: drag at the tick's end, after both halves of the move
++          T60_TICK_END_DO(props->m_KnockbackSpeed -= RT(0x10, 0x13)); // 60 Hz: drag at the tick's end, after both halves of the move
+         }
+ 
+         // Wrap up Moby's death
+@@ -9155,7 +9155,7 @@
+ 
+           if (isPickupAnimPhase) {
+             int delta;
+-            if (moby->m_AnimationState.m_NextFrame >= 7) {
++            if (moby->m_AnimationState.m_NextFrame >= RT(7, 6)) {
+               moby->m_Substate++;
+             }
+ 
+@@ -9176,7 +9176,7 @@
+ 
+           if (isPickupAnimPhase == 0) {
+             if (TICK_TIMER(sparxProps->m_Timer) ||
+-                (sparxProps->m_Timer < 80 &&
++                (sparxProps->m_Timer < RT(80, 67) &&
+                  func_80017908((moby->m_Rotation.z + (bp->m_0x00 * 110)) & 0xFF,
+                                ((g_Camera.m_Rotation.z >> 4) + 0x80) & 0xFF) <
+                      8)) {
+@@ -9188,7 +9188,7 @@
+               }
+             }
+           }
+-          targetSpeed = isPickupAnimPhase ? 150 : 130;
++          targetSpeed = isPickupAnimPhase ? RT(150, 180) : RT(130, 156);
+           if (targetSpeed + 5 < dist) {
+             VecScaleToLength(&vec, dist, T60_SHARE(targetSpeed + 5)); // 60 Hz: step length, shared
+           } else {
+@@ -9262,9 +9262,9 @@
+             int dcheck = 310;
+ 
+             if (dcheck < dist)
+-              VecScaleToLength(&sparxChaseDelta, dist, T60_SHARE(310)); // 60 Hz: step length, shared
++              VecScaleToLength(&sparxChaseDelta, dist, T60_SHARE(RT(310, 370))); // 60 Hz: step length, shared
+             else
+-              VecScaleToLength(&sparxChaseDelta, dist, T60_SHARE(290)); // 60 Hz: step length, shared
++              VecScaleToLength(&sparxChaseDelta, dist, T60_SHARE(RT(290, 350))); // 60 Hz: step length, shared
+ 
+             VecAdd(&moby->m_Position, &moby->m_Position, &sparxChaseDelta);
+             MobyRotateToAngle(moby,
+@@ -24217,9 +24217,9 @@
+ 
+         moby->m_Position.x += T60_SHARE(props->m_Velocity.x); // 60 Hz: shares of the tick's move
+         moby->m_Position.y += T60_SHARE(props->m_Velocity.y);
+-        T60_TICK_DO(props->m_Velocity.z -= 6); // 60 Hz: gravity once a tick, before the z move
+-        if (props->m_Velocity.z < -0x80)
+-          props->m_Velocity.z = -0x80;
++        T60_TICK_DO(props->m_Velocity.z -= RT(6, 7)); // 60 Hz: gravity once a tick, before the z move
++        if (props->m_Velocity.z < -RT(0x80, 0x99))
++          props->m_Velocity.z = -RT(0x80, 0x99);
+         moby->m_Position.z += T60_SHARE(props->m_Velocity.z);
+ 
+         moby->m_Rotation.x += T60_SHARE(props->m_AngularVelocity.x); // 60 Hz: shares (short, signed)
+@@ -25396,7 +25396,7 @@
+         break;
+ 
+       case 1:
+-        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * 35) >> 10) + 300;
++        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * 35) >> 10) + RT(300, 360);
+ 
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x2c + 2);
+ 
+@@ -25412,7 +25412,7 @@
+       case 2:
+         floorZ = MobyFloorHeight(moby);
+         moby->m_Position.z += T60_SHARE(props->m_0x54); // 60 Hz: this vblank's share
+-        T60_TICK_END_DO(props->m_0x54 -= 0x32); // 60 Hz: gravity after the tick's move
++        T60_TICK_END_DO(props->m_0x54 -= RT(0x32, 0x3C)); // 60 Hz: gravity after the tick's move
+ 
+         if (props->m_0x54 < -600) {
+           props->m_0x54 = -600;
+@@ -26108,7 +26108,7 @@
+         break;
+ 
+       case 7:
+-        if (moby->m_AnimationState.m_Frame < 10) {
++        if (moby->m_AnimationState.m_Frame < RT(10, 8)) {
+           moby->m_Rotation.z += T60_SHARE(props->m_0x10); // 60 Hz: spin share
+         }
+ 
+@@ -26126,7 +26126,7 @@
+         break;
+ 
+       case 8:
+-        if (moby->m_AnimationState.m_Frame >= 0x1C) {
++        if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+             moby->m_AnimationState.m_Frame = 0x0F;
+           }
+@@ -26624,9 +26624,9 @@
+ 
+         moby->m_Position.x += T60_SHARE(props->m_Velocity.x); // 60 Hz: shared move
+         moby->m_Position.y += T60_SHARE(props->m_Velocity.y);
+-        T60_TICK_DO(props->m_Velocity.z -= 6); // 60 Hz: gravity, once a tick
+-        if (props->m_Velocity.z < -128) {
+-          props->m_Velocity.z = -128;
++        T60_TICK_DO(props->m_Velocity.z -= RT(6, 7)); // 60 Hz: gravity, once a tick
++        if (props->m_Velocity.z < -RT(128, 153)) {
++          props->m_Velocity.z = -RT(128, 153);
+         }
+         moby->m_Position.z += T60_SHARE(props->m_Velocity.z);
+         moby->m_Rotation.x += T60_SHARE8(props->m_AngularVelocity.x); // 60 Hz: spin
+@@ -27645,7 +27645,7 @@
+       case 0:
+         break;
+       case 1:
+-        moby->m_Rotation.z += T60_SHARE(8); // 60 Hz: spin share
++        moby->m_Rotation.z += T60_SHARE(RT(8, 10)); // 60 Hz: spin share
+         break;
+       case 2:
+         target.x = D_800757C4 * 50 + 30;
+@@ -27659,7 +27659,7 @@
+                               props->m_0x00.y - moby->m_Position.y, 1);
+         props->m_0x10 = 0x800;
+         moby->m_State = 3;
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         break;
+       case 3:
+         props->m_0x10 -= T60_SHARE(0x40); // 60 Hz: phase share
+@@ -27669,7 +27669,7 @@
+         moby->m_Position.y =
+             props->m_0x00.y +
+             FIXED_MUL(props->m_0x0c, Sin(props->m_0x0e + props->m_0x10));
+-        moby->m_Rotation.z += T60_SHARE(8);
++        moby->m_Rotation.z += T60_SHARE(RT(8, 10));
+         if (props->m_0x10 <= 0) {
+           moby->m_State = 4;
+         }
+@@ -27686,7 +27686,7 @@
+                               props->m_0x00.y - moby->m_Position.y, 1);
+         props->m_0x10 = 0x800;
+         moby->m_State = 6;
+-        moby->m_Rotation.z += 8;
++        moby->m_Rotation.z += RT(8, 10);
+         break;
+       }
+       case 6:
+@@ -27697,7 +27697,7 @@
+         moby->m_Position.y =
+             props->m_0x00.y +
+             FIXED_MUL(props->m_0x0c, Sin(props->m_0x0e + props->m_0x10));
+-        moby->m_Rotation.z += T60_SHARE(8);
++        moby->m_Rotation.z += T60_SHARE(RT(8, 10));
+         if (props->m_0x10 <= 0) {
+           props->m_0x0e =
+               Atan2(moby->m_Position.x - 0x100, moby->m_Position.y - 120, 1);
+@@ -27716,7 +27716,7 @@
+             120 + ((props->m_0x0c *
+                     ((Sin(props->m_0x0e + props->m_0x10) * 5) << 3)) >>
+                    18);
+-        moby->m_Rotation.z += T60_SHARE(8);
++        moby->m_Rotation.z += T60_SHARE(RT(8, 10));
+         if (props->m_0x10 >= 0) {
+           moby->m_State = 4;
+         }
+@@ -27882,10 +27882,10 @@
+           VecSub(&props->m_0x00, &moby->m_Position, &g_Spyro.m_Position);
+           props->m_0x00.z = 0;
+           VecScaleToLength(&props->m_0x00, VecMagnitude(&props->m_0x00, 0),
+-                           0x50);
+-        }
+-
+-        props->m_0x00.z += 0xA0;
++                           RT(0x50, 0x60));
++        }
++
++        props->m_0x00.z += RT(0xA0, 0xC0);
+         props->m_0x0c = 0;
+         moby->m_Substate = 2;
+         moby->m_RenderRadius = 0x20;
+@@ -27899,7 +27899,7 @@
+         props->m_0x0c += g_DeltaTime;
+         moby->m_Rotation.z += g_DeltaTime * 8;
+ 
+-        if (props->m_0x00.z > -160) {
++        if (props->m_0x00.z > -RT(160, 191)) {
+ #if SPYRO_TICK60
+           props->m_0x00.z -= g_DeltaTime == 1 ? T60_SHARE(5) : (g_DeltaTime * 5) >> 1; // 60 Hz: 5 a tick split 2 + 3 (the delta form gives 2 + 2)
+ #else
+@@ -27991,7 +27991,7 @@
+         }
+         angle = ANGLE_FROM(PATH_CUR_POS(props->m_0x00), moby->m_Position);
+         func_80038638(moby, &PATH_NODE_POS(props->m_0x00, 0), props->m_0x0c,
+-                      angle - 3, 0, props->m_0x06, 0x1E, 0x80, 0xFF, 0xFF, 0, 0,
++                      angle - 3, 0, props->m_0x06, RT(0x1E, 0x24), 0x80, 0xFF, 0xFF, 0, 0,
+                       4);
+         break;
+       }
+@@ -28003,22 +28003,22 @@
+         }
+         moby->m_Rotation.x += T60_SHARE8(props->m_0x0a); // 60 Hz: u_char spin, signed
+         moby->m_Rotation.y += T60_SHARE8(props->m_0x0b);
+-        if (props->m_0x06 < -0xB3) {
++        if (props->m_0x06 < -RT(0xB3, 0xD6)) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x20);
+           MobyFree(moby);
+           continue;
+         }
+         moby->m_Position.z += T60_SHARE(props->m_0x06); // 60 Hz: fall share
+-        T60_TICK_END_DO(props->m_0x06 -= 0xF); // 60 Hz: gravity at the tick's end, after its move
++        T60_TICK_END_DO(props->m_0x06 -= RT(0xF, 0x12)); // 60 Hz: gravity at the tick's end, after its move
+         break;
+       }
+       case 5: {
+         MobyRotateToAngle(moby, g_LevelMobys[props->m_0x10].m_Rotation.z, 0x1E,
+                           0, 0);
+         if (g_AnimationFinished) {
+-          props->m_0x06 = 0xA0;
+-          props->m_0x04 = 0x3C;
++          props->m_0x06 = RT(0xA0, 0xC0);
++          props->m_0x04 = RT(0x3C, 0x32);
+           moby->m_State = 1;
+           MOBY_ANIM_CHANGE(moby, 1);
+           continue;
+@@ -28028,7 +28028,7 @@
+       case 8: {
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         if (g_AnimationFinished) {
+-          props->m_0x20 = 150;
++          props->m_0x20 = RT(150, 125);
+           moby->m_State = 0;
+           MOBY_ANIM_CHANGE(moby, 0);
+           continue;
+@@ -31000,17 +31000,17 @@
+       if (props->m_Lifetime && moby->m_WasDrawn) {
+         moby->m_Position.x += T60_SHARE(props->m_Velocity.x); // 60 Hz: shares of the tick's move
+         moby->m_Position.y += T60_SHARE(props->m_Velocity.y);
+-        T60_TICK_DO(props->m_Velocity.z -= 5); // 60 Hz: gravity once a tick, before the z move
++        T60_TICK_DO(props->m_Velocity.z -= RT(5, 6)); // 60 Hz: gravity once a tick, before the z move
+         if (T60_TICK_AND(--props->m_0x0d == 0)) { // 60 Hz: a duration, its step and test once a tick
+           props->m_Velocity.x = 0;
+           props->m_Velocity.y = 0;
+           props->m_Velocity.z = 0;
+         }
+-        if (props->m_Velocity.z < -24) {
+-          props->m_Velocity.z = -24;
++        if (props->m_Velocity.z < -RT(24, 28)) {
++          props->m_Velocity.z = -RT(24, 28);
+         }
+         if (props->m_0x10 == 0) {
+-          moby->m_Rotation.z += T60_SHARE(12); // 60 Hz: a share
++          moby->m_Rotation.z += T60_SHARE(RT(12, 15)); // 60 Hz: a share
+         } else if (props->m_Velocity.z < 0) {
+           if (moby->m_Rotation.y + props->m_0x0e == 32 ||
+               moby->m_Rotation.y + props->m_0x0e == 224) {

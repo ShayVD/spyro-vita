@@ -7,10 +7,23 @@
  *                              never in the VPK
  *   ux0:data/spyro/save/disc-verified.txt  the image whose WAD.WAD was
  *                              checked (D60)
- *   ux0:data/spyro/save/       memory cards: card0 (port A), card1 (port B)
+ *   ux0:data/spyro/save/       memory cards: card0 (port A), card1 (port B),
+ *                              and the save states; save/pal/ and save/jp/
+ *                              hold the PAL and JP discs' own (D132)
  *   ux0:data/spyro/spyro.log   the log (send it back after a test)
  *   ux0:data/spyro/config.txt  optional key=value lines:
  *       disc=PATH       the disc image or extracted files somewhere else
+ *       pal50=1         the PAL disc at its own 50 Hz timing, as the PS1
+ *                       runs it (developers' test runs only: no menu row
+ *                       writes it, D150); default 0: PAL with US timing at
+ *                       60 Hz ("PAL 60", D138), the way players run it. A
+ *                       pal60= line (D148's PAL 60 row) is no longer read;
+ *                       the menu's next save drops it
+ *       region_dev=1    open a release that isn't supported yet (JP; PAL
+ *                       runs without it since D154) instead of
+ *                       its "NOT SUPPORTED YET" panel (the host's
+ *                       --region-dev; developers' test runs only: no menu
+ *                       row writes it, D143); default 0
  *       frames=N        exit after N vblanks (default 0: never)
  *       keep_awake=1    no standby, dimming or screen off while it runs
  *                       (tools/vita/hw_run.sh writes it; D77)
@@ -39,13 +52,22 @@
  *                       looks up)
  *       cam_speed=N     the free camera's turn speed, 50..200 percent
  *                       (default 100, L2/R2's)
+ *       cam_recentre=0  the camera keeps its heading as Spyro runs: it no
+ *                       longer swings back behind him; only the right
+ *                       stick and L2/R2 turn it (default 1, as the
+ *                       original; flight levels always recentre; D162)
  *                       (the controls are also in the menu, CONTROLS)
  *       realtime=0      virtual vblanks: VSync(0) is exactly one vblank, as
  *                       on the linux32 host, however long a frame takes (for
  *                       scripted runs compared with the host; D28)
  *       gpu=0           the software rasterizer instead of the GPU renderer
- *                       (gpu=1, the default, needs ur0:data/libshacccg.suprx
- *                       and falls back to gpu=0 without it; D35)
+ *                       (gpu=1, the default, needs Sony's shader compiler,
+ *                       libshacccg.suprx, in ur0:data, ur0:data/external or
+ *                       the data folder, and falls back to gpu=0 without
+ *                       it, after a screen that says so; D35, D163)
+ *       shacc_ur0=0     a test of D163: ur0:data counts as unreadable, as
+ *                       for a safe app on some set-ups (issue #152), so the
+ *                       compiler is looked for in the data folder only
  *       res=native      gpu=1 draws at the screen's resolution (the default:
  *                       the 4:3 picture is 778x544 screen pixels, 16:9 is
  *                       960x544, from the 512x224 the game draws; D67);
@@ -65,16 +87,23 @@
  *                       software rasterizer (default 1)
  *       widescreen=0    4:3 instead of the default 16:9 (a wider view; the
  *                       game logic is unchanged; docs/presentation.md, D30)
- *       interp=1        60 fps, experimental (default 0: 30 fps; D44):
- *                       an in-between frame per tick (camera, Spyro, mobys,
- *                       animation, particles); 2: no animation blending;
- *                       3: camera only. interp=1 needs config_version=2 (or 3) in
- *                       the file too: without it the line is taken as the
- *                       old default the menu used to write, and read as 0
+ *       interp=4        the menu's 60 FPS row (D148, D150): 4 (the
+ *                       default since D150) is 60 HZ, 60 Hz logic in play
+ *                       (D130, docs/tick60.md; the US disc and PAL at US
+ *                       timing), read at start only; 1 INTERPOLATED, an
+ *                       in-between frame per tick (camera, Spyro, mobys,
+ *                       animation, particles); 0 OFF, 30 fps. 2 and 3 (D44's
+ *                       diagnostic modes) are read as 1 (D148). Written as
+ *                       a default, a line is read as today's (D150): an
+ *                       interp=0 without config_version=4 is the old
+ *                       default the menu wrote (off, D44 to D149), and an
+ *                       interp=1 without config_version=2 the one before
+ *                       it; either is read as 4
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=2; D45)
+ *                       with config_version=5 (2 at D45; 3: D68; 4: D150;
+ *                       5: D153, tex_filter= and dynres= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -114,7 +143,18 @@
  *                       CdRead is a read of a file at an offset on a worker
  *                       thread on core 1, and the XA stream is read ahead
  *                       from its start there (instead of xa_ahead's
- *                       windows); the same bytes, the same ticks (D93)
+ *                       windows); the same bytes, the same ticks (D93).
+ *                       With the digital copy the worker is on core 2
+ *                       instead (D158)
+ *       cd_helper=0     with cd_native=1 and the digital copy: no helper
+ *                       thread decoding the second half of a long read
+ *                       (default 1; D158)
+ *       cd_async=0|1    with cd_native=1: 0, a CdRead completes inside
+ *                       CdRead; 1, at the first vblank after the worker is
+ *                       done, so the loaders animate meanwhile (D159). Not
+ *                       set: 1 for the digital copy, whose reads are slow
+ *                       enough to freeze the loading screen, 0 for a disc
+ *                       image or extracted files, as before D159
  *       gpu_opaque=0    every atlas triangle drawn with the discard shader
  *                       (default 1: with gpu=1 and tex_cache=1, triangles
  *                       whose texture blocks have no transparent or
@@ -211,13 +251,15 @@
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
- *                       decisions D39)
+ *                       decisions D39). A developer's key since D153 (the
+ *                       menu's TEX FILTER row is gone): read only with
+ *                       config_version=5 in the file, as dynres= is
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
- *                       (tex_filter, persp, subpixel, res, draw_distance are
- *                       also options menu rows: picture.c, D48)
+ *                       (persp, subpixel, res, draw_distance are also
+ *                       options menu rows: picture.c, D48)
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
@@ -239,7 +281,7 @@
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
  *       vdm_ring=KB     GXM's VDM ring for vitaGL, in KB (default 0:
- *                       vitaGL's, 128 KB); Vita3K routes pass 1024 (D132).
+ *                       vitaGL's, 128 KB); Vita3K routes pass 1024 (D166).
  *                       gpu_gl.c reads it before vglInit*; here it is only
  *                       accepted
  *       vcount_test=N   tests: the display's 16-bit vblank counter wraps N
@@ -262,16 +304,22 @@
 #include "psx_cdimage.h"
 #include "psx_cdnative.h"
 #include "psx_hooks.h"
+#include "psx_clock.h"
+#include "psx_region.h"
+#include "psx_spu.h"
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
 
 #include <SDL2/SDL.h>
+#include <psp2/appmgr.h>
 #include <psp2/display.h>
 #include <psp2/io/stat.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <vitaGL.h>
+#include <vitashark.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -284,7 +332,7 @@ int _newlib_heap_size_user = 128 * 1024 * 1024;
 unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
-                        .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 0,
+                        .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
@@ -294,9 +342,11 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
                         .cd_native = 1, /* D93: on after hardware runs V1/V2 */
+                        .cd_async = -1, /* D159: on for the digital copy only, unless config.txt says */
                         .parse_core = 1, .pres_thread = 1, .pres_core = 1, /* D126 */
+                        .shacc_ur0 = 1, /* D163 */
                         .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1, /* D53 */
-                        .cam_speed = 100, .draw_distance = 100};
+                        .cam_speed = 100, .cam_recentre = 1, .draw_distance = 100};
 
 extern void spyro_main(void);
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
@@ -310,9 +360,52 @@ void nd_init(void (*log)(const char *fmt, ...));
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
 void port_arena_symbols(void (*log)(const char *fmt, ...));
 
-static int file_exists(const char *path) {
-  SceIoStat st;
-  return sceIoGetstat(path, &st) >= 0;
+/* vitaGL's runtime shader compiler, Sony's libshacccg.suprx (D35, D163).
+ * The places: vitaGL's own two in ur0:data, then the data folder, for the
+ * set-ups where a safe app is refused ur0:data (issue #152: a PS TV whose
+ * safe apps get 0x80010002, "no such file", there for a stat and for a
+ * module load alike, with the module installed; the owner's Vita reads it).
+ *   1: in one of vitaGL's places by a stat, as before D163: vitaGL loads it
+ *      at its start and nothing here changes.
+ *   2: loaded here, with the libshark vitaGL links and the allocators
+ *      vitaGL's own start gives it (start_shader_compiler: vglMalloc and
+ *      vglFree, which the compiler calls from the first compile on, after
+ *      vglInit). shark_init does nothing once the module is loaded, so
+ *      vitaGL's start finds the compiler there and loads nothing again.
+ *   0: none. s_shacc_code is then the first place's code, for the screen.
+ * Every refusal goes to the log with its code. */
+static void *shacc_malloc(size_t size) { return vglMalloc(size); }
+static void shacc_free(void *p) { vglFree(p); }
+static int s_shacc_code;
+
+static int shader_compiler(void) {
+  static const char *const paths[3] = {"ur0:data/libshacccg.suprx",
+                                       "ur0:data/external/libshacccg.suprx",
+                                       VITA_DATA_DIR "/libshacccg.suprx"};
+  int first = g_vita_opts.shacc_ur0 ? 0 : 2, i, r;
+  int stat_code[2] = {0, 0};
+  if (!g_vita_opts.shacc_ur0)
+    vita_log("gpu: shacc_ur0=0: ur0:data counts as unreadable (a test of D163)");
+  for (i = first; i < 2; i++) {
+    SceIoStat st;
+    if ((stat_code[i] = sceIoGetstat(paths[i], &st)) >= 0)
+      return 1;
+  }
+  s_shacc_code = 0;
+  for (i = first; i < 3; i++) {
+    shark_set_allocators(shacc_malloc, shacc_free);
+    if ((r = shark_init(paths[i])) >= 0) {
+      vita_log("gpu: shader compiler loaded from %s (D163)", paths[i]);
+      return 2;
+    }
+    if (i < 2)
+      vita_log("gpu: %s: stat %08x, load %08x", paths[i], (unsigned)stat_code[i], (unsigned)r);
+    else
+      vita_log("gpu: %s: load %08x", paths[i], (unsigned)r);
+    if (!s_shacc_code)
+      s_shacc_code = i < 2 ? stat_code[i] : r;
+  }
+  return 0;
 }
 
 static void parse_list(const char *v, int *out, int *n, int max) {
@@ -346,12 +439,24 @@ static void parse_poke(const char *v) {
 /* render_thread=0, xa_ahead=0 and gpu_opaque=0 lines in a file older than
  * config_version=3, not taken (D68): the menu's save drops them (menu.c) */
 const char *g_vita_config_stale[4];
+/* a pal60= line (D148's PAL 60 row, gone with D150): the menu's save drops it */
+int g_vita_config_pal60;
+/* tex_filter= and dynres= lines in a file older than config_version=5: the
+ * rows the menu had until D153 wrote them, so they aren't taken and the
+ * menu's save drops them (NULL-ended) */
+const char *g_vita_config_rows_gone[3];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
 static void read_config(void) {
   char line[512];
   int version = 1, interp_line = 0, i;
+  /* D153: the two keys whose menu rows are gone; taken after the loop, once
+   * the file's version is known */
+  static const char *const k_gone_keys[2] = {"tex_filter", "dynres"};
+  static const char *const k_gone_rows[2] = {"TEX FILTER", "DYNAMIC RES"};
+  int *const gone[2] = {&g_vita_opts.tex_filter, &g_vita_opts.dynres};
+  int gone_line[2] = {0, 0}, gone_value[2] = {0, 0}, ngone = 0;
   /* D68: the three switches' lines; a 0 before config_version=3 was the
    * old default or a test file's (tools/vita/fps-runs) */
   static const char *const k_switch_keys[3] = {"render_thread", "xa_ahead", "gpu_opaque"};
@@ -373,8 +478,19 @@ static void read_config(void) {
       interp_line = 1; /* D44, below */
     if (vita_menu_load(line, v))
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
+    else if (!strcmp(line, "pal50"))
+      g_RegionPal50 = atoi(v) != 0; /* the host's --pal50 (D150) */
+    else if (!strcmp(line, "pal60"))
+      g_vita_config_pal60 = 1; /* D148's PAL 60 row, gone with D150: dropped at the next save */
+    else if (!strcmp(line, k_gone_keys[0]) || !strcmp(line, k_gone_keys[1])) {
+      i = strcmp(line, k_gone_keys[0]) != 0;
+      gone_line[i] = 1;
+      gone_value[i] = atoi(v);
+    }
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
+    else if (!strcmp(line, "region_dev"))
+      g_RegionDev = atoi(v) != 0; /* the host's --region-dev (D133, D143) */
     else if (!strcmp(line, "frames"))
       g_vita_opts.frames = atoi(v);
     else if (!strcmp(line, "keep_awake"))
@@ -397,6 +513,8 @@ static void read_config(void) {
       g_vita_opts.vcount_test = atoi(v);
     else if (!strcmp(line, "gpu"))
       g_vita_opts.gpu = atoi(v);
+    else if (!strcmp(line, "shacc_ur0"))
+      g_vita_opts.shacc_ur0 = atoi(v); /* D163 */
     else if (!strcmp(line, "gpu_res")) /* res='s old name; res= is a menu row */
       g_vita_opts.gpu_res = parse_res(v);
     else if (!strcmp(line, "gpu_time"))
@@ -427,6 +545,10 @@ static void read_config(void) {
       g_vita_opts.xa_ahead = atoi(v), switch_line[1] = 1;
     else if (!strcmp(line, "cd_native"))
       g_vita_opts.cd_native = atoi(v);
+    else if (!strcmp(line, "cd_helper"))
+      g_psx_cdn_helper = atoi(v); /* D158 */
+    else if (!strcmp(line, "cd_async"))
+      g_vita_opts.cd_async = atoi(v); /* D159 */
     else if (!strcmp(line, "gpu_opaque"))
       g_vita_opts.gpu_opaque = atoi(v), switch_line[2] = 1;
     else if (!strcmp(line, "fast_render"))
@@ -488,19 +610,53 @@ static void read_config(void) {
     else if (vita_watchdog_config(line, v))
       ; /* hang_dump=, hang_test= (watchdog.c, D73) */
     else if (!strcmp(line, "vdm_ring"))
-      ; /* read and applied by gpu_gl.c before vglInit* (vdm_ring_kb, D132) */
+      ; /* read and applied by gpu_gl.c before vglInit* (vdm_ring_kb, D166) */
     else if (!strcmp(line, "config_version"))
       version = atoi(v);
     else
       vita_log("config: unknown key %s", line);
   }
   fclose(f);
-  /* Before 60 fps went experimental (D44) it was the default, and the menu
-   * wrote interp=1 on every save whether or not the player chose it. */
-  if (interp_line && g_vita_opts.interp == 1 && version < 2) {
-    g_vita_opts.interp = 0;
-    vita_log("config: interp=1 without config_version=2 is the old default: 60 fps stays off "
-             "(turn it on in the menu, SELECT+START)");
+  /* The menu writes every row's key on every save, so a default it wrote
+   * isn't the player's choice: read as today's default, 60 HZ (D150), as D68
+   * did for its switches. Before 60 fps went experimental (D44) it was the
+   * default, and the menu wrote interp=1 (config_version 1); from D44 to D149
+   * off was, and it wrote interp=0 (config_version 2 and 3). A 1 written
+   * since D44, a 4, or any value with config_version=4 is the player's. */
+  if (interp_line && ((g_vita_opts.interp == 1 && version < 2) ||
+                      (g_vita_opts.interp == 0 && version < 4))) {
+    vita_log("config: interp=%d without config_version=%d is an old default: 60 HZ, the "
+             "default since D150 (interp=4; change it in the menu, SELECT+START)",
+             g_vita_opts.interp, g_vita_opts.interp == 1 ? 2 : 4);
+    g_vita_opts.interp = 4;
+  }
+  if (g_vita_config_pal60)
+    vita_log("config: pal60= is no longer read (D150): the PAL disc runs at US timing, and the "
+             "60 FPS row's 60 HZ is 60 Hz logic on it too");
+  /* The menu's TEX FILTER and DYNAMIC RES rows are gone (D153), and the menu
+   * wrote every row's key at every save: a line from before config_version=5
+   * may be a row's, with no row left to change it, so it isn't taken (both
+   * stay off, the defaults) and goes at the menu's next save. With
+   * config_version=5 the line is a developer's (the test tools write it). */
+  for (i = 0; i < 2; i++) {
+    if (!gone_line[i])
+      continue;
+    if (version >= 5) {
+      *gone[i] = gone_value[i];
+    } else {
+      g_vita_config_rows_gone[ngone++] = k_gone_keys[i];
+      if (gone_value[i] != 0)
+        vita_log("config: %s=%d without config_version=5 is from the menu's %s row, gone "
+                 "since D153: off", k_gone_keys[i], gone_value[i], k_gone_rows[i]);
+    }
+  }
+  /* D44's diagnostic 60 fps values, no animation blending (2) and camera
+   * only (3), left the menu with D148: either is INTERPOLATED now. The menu
+   * writes the 1 back at its next save; nothing else reads a version for it. */
+  if (g_vita_opts.interp == 2 || g_vita_opts.interp == 3) {
+    vita_log("config: interp=%d (%s) is no longer offered (D148): INTERPOLATED (interp=1)",
+             g_vita_opts.interp, g_vita_opts.interp == 2 ? "no animation blending" : "camera only");
+    g_vita_opts.interp = 1;
   }
   /* The render thread, the XA read-ahead and the opaque path were off by
    * default until their hardware run (D63-D66); a 0 written before that
@@ -519,21 +675,76 @@ static void read_config(void) {
   }
 }
 
-void vita_exit(int res) {
+/* The presenter's frame, the render thread and the GPU done (D120). */
+static void stop_threads(const char *why) {
   unsigned long long t0 = sceKernelGetProcessTimeWide();
   int r;
   port_present_pres_join(); /* the presenter's frame first (stage 7f, D126) */
   r = vita_gpu_stop();
   int quiet = vita_gpu_meter_quiet(100000);
-  vita_log("exit: render thread %s, GPU meter %s, in %u ms (D120)",
+  vita_log("%s: render thread %s, GPU meter %s, in %u ms (D120)", why,
            r > 0 ? "stopped" : r < 0 ? "not stopped" : "none", quiet ? "quiet" : "still polling",
            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   if (r < 0)
-    vita_log("exit: sceKernelWaitThreadEnd: %08x", (unsigned)r);
-  vita_pc_flush(); /* the work counters' last window, the render thread's work in it (D131) */
+    vita_log("%s: sceKernelWaitThreadEnd: %08x", why, (unsigned)r);
+  vita_pc_flush(); /* the work counters' last window, the render thread's work in it (D165) */
+}
+
+void vita_exit(int res) {
+  stop_threads("exit");
   sceKernelExitProcess(res);
   for (;;)
     sceKernelDelayThread(1000000);
+}
+
+/* D136: the menu's RESTART NOW. The memory cards' files are written whole
+ * when the game asks (libmcrd.c), a save state at the main loop's top
+ * (D51), and the menu runs in the game's VSync wait: none is half written. */
+void vita_restart(void) {
+  int r;
+  stop_threads("restart");
+  vita_log("restart: loading app0:eboot.bin in this app's place (D136)");
+  vita_log_flush();
+  r = sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
+  /* 0: the system replaces this process when it is ready (Vita3K returns
+   * first); it's given 5 s before an exit */
+  if (r >= 0) {
+    int i;
+    for (i = 0; i < 50; i++)
+      sceKernelDelayThread(100000);
+  }
+  vita_log("restart: sceAppMgrLoadExec: %08x, and this app still runs: exiting instead (start "
+           "it again)", (unsigned)r);
+  sceKernelExitProcess(0); /* the threads are already stopped */
+  for (;;)
+    sceKernelDelayThread(1000000);
+}
+
+/* A boot panel is up (bootscreen.c): wait for a press of X, O or Start, not
+ * a button held since the bubble. 1: pressed; 0: `frames` vblanks went by
+ * without one (frames > 0: a scripted run). */
+static int panel_wait(int frames) {
+  int buttons[] = {SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START};
+  int held = 1, frame = 0, pressed = 0, i;
+  SDL_GameController *c = NULL;
+  for (; !pressed; frame++) {
+    int down = 0;
+    SDL_PumpEvents();
+    if (!c && SDL_NumJoysticks() > 0)
+      c = SDL_GameControllerOpen(0);
+    for (i = 0; c && i < (int)(sizeof buttons / sizeof *buttons); i++)
+      down |= SDL_GameControllerGetButton(c, buttons[i]);
+    pressed = down && !held;
+    held = down;
+    if (pressed)
+      break;
+    sceDisplayWaitVblankStart(); /* the buttons once a vblank, not a spinning core */
+    if (frames > 0 && frame >= frames)
+      break;
+  }
+  if (c)
+    SDL_GameControllerClose(c); /* pad.c opens it again for the game */
+  return pressed;
 }
 
 /* Without a disc there is nothing to run: say why on screen (bootscreen.c)
@@ -542,27 +753,30 @@ void vita_exit(int res) {
  * tests). */
 static void no_disc(void) {
   const PsxCdError *e = psx_cd_error();
-  int buttons[] = {SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START};
-  int held = 1, frame = 0, i;
-  SDL_GameController *c = NULL;
   vita_log("disc: %s: %s", e->title, e->text);
   vita_boot_panel(e->title, e->text, "PRESS X TO EXIT");
-  for (;; frame++) {
-    int down = 0;
-    SDL_PumpEvents();
-    if (!c && SDL_NumJoysticks() > 0)
-      c = SDL_GameControllerOpen(0);
-    for (i = 0; c && i < (int)(sizeof buttons / sizeof *buttons); i++)
-      down |= SDL_GameControllerGetButton(c, buttons[i]);
-    if (down && !held) /* a press, not a button held since the bubble */
-      vita_exit(0);
-    held = down;
-    sceDisplayWaitVblankStart(); /* the buttons once a vblank, not a spinning core */
-    if (g_vita_opts.frames > 0 && frame >= g_vita_opts.frames) {
-      vita_log("frames=%d reached, exiting", g_vita_opts.frames);
-      vita_exit(0);
-    }
-  }
+  if (!panel_wait(g_vita_opts.frames))
+    vita_log("frames=%d reached, exiting", g_vita_opts.frames);
+  vita_exit(0);
+}
+
+/* gpu=1 was wanted and no shader compiler loaded (shader_compiler): the
+ * game runs on the software rasterizer, several times slower, so say so
+ * before it starts instead of only in the log (issue #152, D163). gpu=0 in
+ * config.txt never comes here. A scripted run (frames=) goes on by itself
+ * after 5 s. */
+#define NO_SHACC_FRAMES 300
+static void no_shader_compiler(void) {
+  char text[512];
+  snprintf(text, sizeof text,
+           "The GPU renderer needs Sony's shader compiler, libshacccg.suprx, and it could not "
+           "be loaded (%08X). The game will run on the software renderer, which is much "
+           "slower.\n\nInstall it as the README's step 3 says. If it is already in ur0:data, "
+           "this app can't read it there: copy it to " VITA_DATA_DIR "/ as well.",
+           (unsigned)s_shacc_code);
+  vita_boot_panel("NO SHADER COMPILER", text, "PRESS X TO CONTINUE");
+  if (!panel_wait(g_vita_opts.frames > 0 ? NO_SHACC_FRAMES : 0))
+    vita_log("gpu: the shader compiler's screen left after %d vblanks (frames=)", NO_SHACC_FRAMES);
 }
 
 /* The first start with a disc image hashes WAD.WAD (D60): a few seconds. */
@@ -571,15 +785,16 @@ static void disc_progress(int percent) {
   if (percent % 4)
     return;
   snprintf(text, sizeof text,
-           "First start: checking that your disc image is a good dump of SCUS-94228. This is "
+           "First start: checking that your disc image is a good dump of %s. This is "
            "done once.\n\n%d%%",
-           percent);
+           psx_region()->serial, percent);
   vita_boot_panel("CHECKING THE DISC IMAGE", text, "");
 }
 
 static unsigned long long now_us(void) { return sceKernelGetProcessTimeWide(); }
 
 int main(int argc, char **argv) {
+  int no_shacc = 0;
   (void)argc;
   (void)argv;
   scePowerSetArmClockFrequency(444);
@@ -606,23 +821,25 @@ int main(int argc, char **argv) {
   g_fast_render = 3; /* the default since D124 (the owner, 2026-11-09, after 7D2a/7D2b) */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
-  vita_pc_init(); /* the work counters (perfcount.c, D131) */
+  vita_pc_init(); /* the work counters (perfcount.c, D165) */
   vita_log("fast_render=%d: %s", g_fast_render,
            g_fast_render ? "hand-written renderers as readable C (D124)"
                          : "translated renderers, PsyCross's GTE_operator");
   vita_cores_probe(); /* may a thread of ours run on core 3? (D71) */
   if (g_vita_opts.bench == 1) /* the GPU options measured at 30 fps */
     g_vita_opts.interp = 0;
+  sceIoMkdir(VITA_DATA_DIR, 0777); /* a first start has no data folder yet: made, so the save folder below can be
+                                    * (an unsafe build may start from the installed Store copy alone, D158) */
   sceIoMkdir(VITA_DATA_DIR "/save", 0777);
   if (g_vita_opts.nshots || g_vita_opts.shot_every)
     sceIoMkdir(VITA_DATA_DIR "/shots", 0777);
 
   /* gpu=1 needs vitaGL's runtime shader compiler; without it, gpu=0 */
-  if (g_vita_opts.gpu && !file_exists("ur0:data/libshacccg.suprx") &&
-      !file_exists("ur0:data/external/libshacccg.suprx")) {
-    vita_log("gpu: no ur0:data/libshacccg.suprx, so no shader compiler: "
+  if (g_vita_opts.gpu && !shader_compiler()) {
+    vita_log("gpu: no shader compiler (libshacccg.suprx) could be loaded: "
              "using the software renderer (gpu=0)");
     g_vita_opts.gpu = 0;
+    no_shacc = 1;
   }
   g_vita_gpu = g_vita_opts.gpu != 0;
   vita_log("renderer: %s", g_vita_gpu ? "GPU (vitaGL, gpu=1)" : "software (gpu=0)");
@@ -635,10 +852,19 @@ int main(int argc, char **argv) {
     vita_log("SDL_Init failed: %s", SDL_GetError());
     vita_exit(1);
   }
+  if (no_shacc)
+    no_shader_compiler(); /* needs SDL's pad; before the disc's own screens */
   /* the disc before the renderer: its screens (a first-start check, or why
    * the game can't start) go straight to the display (bootscreen.c, D60) */
   psx_cd_set_verify(VITA_DATA_DIR "/save/disc-verified.txt", disc_progress);
   psx_cd_set_clock(now_us);
+#ifdef SPYRO_UNSAFE
+  /* an unsafe app (-DSPYRO_UNSAFE=ON) can read the PSP emulator's folders: with no image in the
+   * data folder, the PlayStation Store's copy is looked for where it was installed (D157) */
+  psx_cdimage_scan_installed(1);
+  vita_log("disc: an unsafe build: with no image in %s, ux0:pspemu is searched for the digital copy "
+           "(SPYRO_UNSAFE, D157)", g_vita_opts.disc_dir);
+#endif
   {
     unsigned long long t0 = now_us();
     PsxCdIo io;
@@ -650,11 +876,27 @@ int main(int argc, char **argv) {
     vita_log("disc: %s, opened in %u ms (%u reads, %u KB)", psx_cd_source(),
              (unsigned)((now_us() - t0) / 1000), io.reads, io.kbytes);
   }
+  /* the game's vblank rate: 50 Hz for PAL at its own timing, 5 for every 6
+   * of the display's (regions plan §6.3, D138) */
+  psx_clock_set_hz(psx_region_vblank_hz());
+  g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
+  if (g_Region != PSX_REGION_US)
+    vita_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
+             g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
   if (g_vita_opts.cd_native) {
     if (psx_cdn_start() == 0) {
+      int core, priority, copy = psx_cdimage_pbp() != NULL;
+      psx_cdn_where(&core, &priority); /* core 1 at 0x90, or core 2 at 0x88 for the digital copy (D158) */
       vita_watchdog_thread(WD_T_XA, (SceUID)psx_cdn_thread());
-      vita_log("cd: native file reads and the XA stream on a worker on core 1, priority 0x90 "
-               "(cd_native=1, D93)");
+      vita_log("cd: native file reads and the XA stream on a worker on core %d, priority 0x%x "
+               "(cd_native=1, D93)", core, priority);
+      /* asynchronous completion (D159): the digital copy's default, an image's only when asked for */
+      if (g_vita_opts.cd_async < 0 ? copy : g_vita_opts.cd_async) {
+        psx_cd_set_read_async(1);
+        vita_log("cd: a CdRead completes at the first vblank after the worker is done; the loaders "
+                 "animate meanwhile (cd_async=1, D159%s)",
+                 g_vita_opts.cd_async < 0 ? ": the digital copy's default" : "");
+      }
     } else {
       vita_log("cd: no worker thread for cd_native=1: the sector reads as before");
     }
@@ -695,7 +937,12 @@ int main(int argc, char **argv) {
   vita_log("game memory at %p, data labels at %p (native, D106)", (void *)g_psx_arena_base,
            (void *)s1_labels);
 #endif
-  psx_mcrd_set_root(VITA_DATA_DIR "/save");
+  { /* the disc's region's folder (D132): save/ for the US disc, save/pal, save/jp */
+    char dir[256];
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, VITA_DATA_DIR "/save", NULL, 1));
+    vita_log("disc: Spyro the Dragon (%s), %s; saves in %s", psx_region()->area,
+             psx_region()->serial, dir);
+  }
   /* reads complete inside CdRead, as on the linux32 host (D17) */
   psx_cd_set_read_latency(0);
   vita_log("disc %s, frames %d", g_vita_opts.disc_dir, g_vita_opts.frames);

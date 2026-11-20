@@ -14,7 +14,9 @@ done
 n=$(echo $objs | wc -w)
 [ "$n" -ge 8 ] || { echo "render_ctx_link: only $n presenter objects"; exit 1; }
 # read only (each checked: no store through the name in the presenter's code;
-# --render-ctx-check traps any store into the arena)
+# --render-ctx-check traps any store into the arena). g_Region (RV(): the
+# lit mobys' screen centre, D147) is set once, when the disc is opened at
+# start-up (psx_cd_open), before any draw or presenter thread.
 allow='^(g_pres_|pres_)
 ^(memcpy|memset|snprintf|mips2c_div|__divdi3|__udivdi3)$
 ^g_psx_arena_base$
@@ -22,6 +24,7 @@ allow='^(g_pres_|pres_)
 ^port_poly_start$
 ^(g_Camera|g_Cyclorama|g_DeltaTime|g_Environment|g_EnvironmentAnimations|g_Models|g_SkipLowPolyWorld|g_Spyro)$
 ^(g_Buffers|g_CurDB|g_DB|g_LevelId|g_Gamestate)$
+^g_Region$
 ^D_8006(CBF8|CC78|CF48|CF58|CF98|CFC8|D058|D0D8|D0E8|D0F8|D138|D1C8|D378|D388|D3C8|D5C8|D5E4|D614|D808|D908|D94C|DAA8|E1A8|E268|E3D8|E44C)$
 ^D_800(74B84|756F0|76248|76278|770C8|7AA10)$'
 bad=$("$nm" -u $objs | awk 'NF == 2 && $1 == "U" {print $2} NF == 1 && $1 !~ /:$/ {print $1}' | sort -u | grep -v -E "$(echo "$allow" | tr '\n' '|' | sed 's/|$//')")

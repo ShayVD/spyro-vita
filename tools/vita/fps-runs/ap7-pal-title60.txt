@@ -1,0 +1,19 @@
+# Run AP7 (D172): the PAL disc on the merged build, the owner's settings of D152's run (16:9, 60 HZ,
+# persp=1 subpixel=1, tex_filter=0), the title with its in-between frames, virtual vblanks, so the shots
+# compare byte for byte with Vita3K's pal-title60 route (runtime/autopilot/runs/merge-m1/pal-title60).
+# From the main checkout, with the owner's yes for this run:
+#   VPK=$PWD/runtime/autopilot/vpk/merged-final.vpk tools/vita/hw_run.sh logs/hw-ap7 600 @tools/vita/fps-runs/ap7-pal-title60.txt
+# Read: the log's "libcd: ... (Europe)" and "WAD.WAD matches a good dump"; the vcache logic/pres lines
+# (found %, 0% lost) and the pres lines (frames on core 1); shots_cmp.py against Vita3K's run (--max-diff 0).
+config_version=5
+disc=ux0:data/spyro/pal
+widescreen=1
+interp=4
+interp_budget=0
+persp=1
+subpixel=1
+tex_filter=0
+vdm_ring=1024
+shot=600,1200,2100,2101,2700
+shot_hd=1
+frames=2800

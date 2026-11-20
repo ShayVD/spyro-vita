@@ -10,14 +10,28 @@
  *         [--widescreen | --widescreen-exact | --widescreen-logic]
  *         [--interp | --interp-no-anim | --interp-camera]
  *         [--interp-budget US] [--out960 | --present-native]
- *         [--present-stats] [--vcache]
+ *         [--present-stats] [--vcache] [--tick60] [--tick60-stats]
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
+ *         [--no-cam-recentre]
  *         [--state V:save|load:N]... [--state-hash FILE]
  *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --disc: the extracted files (with manifest.json), or a folder holding a
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
  *   WAD.WAD the first time and remember it in FILE, as the Vita does.
+ * --region-dev: open a JP disc, which players get refused as not supported
+ *   yet (D133; PAL needed it until D154). The PAL disc runs with US timing
+ *   at 60 Hz ("PAL 60", D138; the only way players run it since D150). --pal50: PAL at its
+ *   own 50 Hz instead (a VSync is a 50 Hz vblank: 3 CD sectors, 882
+ *   samples), as the PS1 runs it: the PAL attract demos' checks against
+ *   PCSX-Redux need it (D149). --pal60, the default since D150, is still
+ *   taken. --display60 (D148): frames
+ *   due at a 60 Hz display's vblanks, as the Vita's: at 50 Hz, with
+ *   --interp, a frame for each, blended by its time between two ticks
+ *   (one or two a vblank of ours, taken in turn; --present-stats counts
+ *   them). --region-check: with it, load the disc's region
+ *   data (src/game/region_data.c) from its executable, print what it found
+ *   and exit (0 when every pointer to a string lands on one).
  * --replay: replay the oracle's function samples in DIR through the
  *   translated C and compare (src/game/oracle_replay.c); --disc only for
  *   samples that read the CD.
@@ -26,10 +40,16 @@
  * --skip-logos: no Sony and Universal logos at boot (D50).
  * --poke: at vblank V, write a 32-bit word to PS1 RAM (hex ADDR and VALUE),
  *   for test set-ups such as "no lives left".
+ * --hitch: at vblank V, N more vblanks pass before the game's VSync returns:
+ *   its next update is late by N, as when the Vita drops frames (tests of the
+ *   late paths, such as the 60 Hz rules' g_DeltaTime 2+, D160).
  * --peek: log N words of PS1 RAM from hex ADDR with every shot.
  * --tour: after the pad script, visit levels with the level-warp cheat, run
  *   the credits or an ending (src/platform/linux32/tour.c).
  * --trace: one TSV row of game state per vblank (src/game/trace.c).
+ * --cutscene-trace: in gamestate 14 and the title's flyby, the camera and
+ *   the cutscene mobys each vblank (src/game/trace.c, D151).
+ * --anim-trace: in play, Spyro's body animation each vblank (D155).
  * --moby-dump: the level's mobys (class, position) as mobys-V.tsv next to
  *   every shot, and DIR/now.tsv at every --step stop.
  * --step: stop and wait for commands in DIR (src/platform/linux32/step.c).
@@ -46,6 +66,11 @@
  *   Either turns on --out960: pictures at 960x544 (docs/presentation.md).
  *   --present-native: the presentation frames as drawn, 512x240 (to compare
  *   with the Vita's shots).
+ * --tick60: 60 Hz logic in play, the 60 fps option's third value (D130,
+ *   docs/tick60.md): an update in play is one vblank, run by the update
+ *   path's second compile (cmake/tick60.cmake); every other gamestate and
+ *   the attract demos stay at 30 Hz (add --interp for their in-between
+ *   frame). --tick60-stats: the updates' CPU time by rate, logged at exit.
  * --present-stats: time update, draw and the presenter's frames; logged at
  *   exit. (--present-dirty, --present-audit and --present-reads, D30's
  *   pass's and stage 7a's audits of it, went with the pass: D129.)
@@ -53,6 +78,8 @@
  *   the sticks (lx=N ly=N rx=N ry=N, src/platform/linux32/pad.c; D46).
  *   --free-camera: the right stick turns and tilts the camera
  *   (--cam-invert-x, --cam-invert-y, --cam-speed PERCENT; D47).
+ *   --no-cam-recentre: the follow camera keeps its heading instead of
+ *   swinging back behind Spyro; only L2/R2 and the free camera turn it (D162).
  * --vcache: record the GTE's projections in the vertex cache the Vita's
  *   persp=/subpixel= use (decisions D39) and log its counters at exit. The
  *   pictures don't use it here; it is for checking that the game runs the
@@ -148,6 +175,7 @@
 #include "host.h"
 #include "port_controls.h"
 #include "lod.h"
+#include "tick60.h"
 #include "present.h"
 #include "menu_panel.h"
 #include "psx_arena.h"
@@ -156,7 +184,10 @@
 #include "psx_hooks.h"
 #include "psx_vcache.h"
 #include "psx_walk.h"
+#include "region_data.h"
 #include "psx_spu.h"
+#include "psx_clock.h"
+#include "psx_region.h"
 
 extern int g_fast_render; /* src/game/mips2c_rt.h, D72 */
 extern int g_host_prof_draw; /* prof_draw.c */
@@ -180,7 +211,7 @@ void nd_report(int vblank);
 void nd_check_report(void);
 void nd_pcheck_report(void);
 /* src/game/pres/ (stage 7e, D125) */
-extern int g_pres_check, g_pres_audit;
+extern int g_pres_check, g_pres_audit, g_pres_particles_full;
 extern long long g_pres_ovl_unknown; /* pres_draw.c (stage 7g, D128) */
 extern int g_faces_copy; /* src/game/render_ctx.c (stage 7f, D126) */
 extern int g_pres_check_thread, g_faces_race; /* src/game/pres/pres_check.c (D126) */
@@ -240,6 +271,7 @@ static void nd_atexit(void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <dirent.h>
 
@@ -260,9 +292,10 @@ static void mixer_report(void) {
 }
 
 static int s_cd_native; /* --cd-native (D93) */
+static int s_region_check; /* --region-check (D133) */
 static int s_save_given; /* --save */
 
-/* #173 (D135): without --save the memory cards are libmcrd.c's default root
+/* #173 (D169): without --save the memory cards are libmcrd.c's default root
  * (./save), shared by every run in the folder. A run that finds a card there
  * from an earlier run starts from it, not a blank one, and its pad script can
  * fall out of step: say so in one line. Only looks; nothing is changed. */
@@ -294,7 +327,7 @@ static void save_default_warn(void) {
     return;
   host_log("warning: no --save, and %s already holds a memory card (%d file%s%s%s%s): this run "
            "starts from it, not a blank card, so pad scripts may not match; --save DIR gives a "
-           "run its own card (D135)",
+           "run its own card (D169)",
            root, files, files == 1 ? "" : "s", files ? ", first " : "", first, card1);
 }
 
@@ -321,6 +354,13 @@ static void cd_stats_report(void) {
     host_log("cd: the worker %u ms on the CdReads; %u of them after a stream chunk",
              (unsigned)(st.job_us / 1000), st.behind_chunk);
   }
+  { /* the digital copy's decoder (D158) */
+    char line[400];
+    if (psx_cdn_pbp_report(line, sizeof line))
+      host_log("%s", line);
+    if (psx_cd_async_report(line, sizeof line)) /* D159: only with cd_async on */
+      host_log("%s", line);
+  }
   host_log_flush();
 }
 
@@ -331,18 +371,19 @@ static void usage(void) {
           "             [--shot-dir DIR] [--vram-shot] [--dither] "
           "[--pad FILE] [--log FILE]\n"
           "             [--cd-latency TICKS] [--save DIR] [--wav FILE] "
-          "[--serve PORT] [--trace FILE]\n"
-          "             [--step DIR] [--poke V:ADDR=VALUE]... [--moby-dump]\n"
+          "[--serve PORT] [--trace FILE] [--cutscene-trace FILE]\n"
+          "             [--anim-trace FILE]\n"
+          "             [--step DIR] [--poke V:ADDR=VALUE]... [--hitch V:N]... [--moby-dump]\n"
           "             [--tour LIST] [--tour-stay N] [--pad-after FILE]\n"
           "             [--peek ADDR:N]... [--cheat V:NAME]... [--skip-logos]\n"
           "             [--widescreen | --widescreen-exact | --widescreen-logic] "
           "[--interp | --interp-no-anim | --interp-camera] [--interp-budget US]\n"
-          "             [--out960] [--present-stats] [--vcache] [--walk-lazy]\n"
+          "             [--out960] [--present-stats] [--vcache] [--walk-lazy] [--tick60]\n"
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
-          "[--cam-speed PERCENT]\n"
+          "[--cam-speed PERCENT] [--no-cam-recentre]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--gpu-clear] [--prof-draw]\n"
-          "             [--mixer 1|3] [--cd-native] [--cd-stats]\n"
+          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
+          "             [--mixer 1|3] [--cd-native] [--cd-async] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
 }
@@ -366,6 +407,8 @@ static void disc_refused(void) {
   free(rgb);
 }
 
+static int s_display60; /* --display60 (D148) */
+
 static void present_report(void) {
   const PresentStats *s = &g_present_stats;
   long long t = s->ticks ? s->ticks : 1;
@@ -380,9 +423,20 @@ static void present_report(void) {
            s->skipped_interp, s->budget_skips, s->squeezed_2d);
   host_log("present: frames by due vblank (7c, D112): %lld shown late, %lld never shown, "
            "%lld dropped from a full queue", s->due_late, s->due_superseded, s->queue_drops);
+  if (s->time_ticks || s->time_fallbacks)
+    host_log("present: by time (D148): %lld ticks, %lld frames, %lld logic draws hidden, %lld "
+             "ticks shown by their logic draw; %lld display vblanks, %lld of them with no new frame",
+             s->time_ticks, s->time_frames, s->time_hidden, s->time_fallbacks, s->due_units,
+             s->due_held);
   host_log("present: animation tracks blended %lld, kept %lld; particles "
-           "blended %lld; blending %lld us per tick", s->anim_blended,
-           s->anim_kept, s->particles_blended, s->us_blend / t);
+           "blended %lld; blending %lld us per tick; %lld in-between frames with a PAL cutscene's mobys "
+           "at their own time (D156)",
+           s->anim_blended, s->anim_kept, s->particles_blended, s->us_blend / t, s->cut_placed);
+  host_log_flush();
+}
+
+static void tick60_atexit(void) {
+  tick60_report(host_log);
   host_log_flush();
 }
 
@@ -461,6 +515,16 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--disc-marker") == 0) {
       TAKE();
       psx_cd_set_verify(val, NULL);
+    } else if (strcmp(a, "--region-dev") == 0) {
+      g_RegionDev = 1; /* open a release that isn't supported yet (D133) */
+    } else if (strcmp(a, "--pal50") == 0) {
+      g_RegionPal50 = 1; /* PAL at its own 50 Hz (D150) */
+    } else if (strcmp(a, "--pal60") == 0) {
+      g_RegionPal50 = 0; /* PAL 60 (regions plan §7.4, D138), the default since D150 */
+    } else if (strcmp(a, "--display60") == 0) {
+      s_display60 = 1; /* frames due at a 60 Hz display's vblanks (D148) */
+    } else if (strcmp(a, "--region-check") == 0) {
+      g_RegionDev = s_region_check = 1;
     } else if (strcmp(a, "--replay") == 0) {
       TAKE();
       replay = val;
@@ -505,6 +569,18 @@ int main(int argc, char **argv) {
       TAKE();
       if (spyro_trace_open(val) != 0)
         return 1;
+    } else if (strcmp(a, "--cutscene-trace") == 0) {
+      TAKE();
+      if (spyro_cutscene_trace_open(val) != 0) /* the cutscenes' playback (D151) */
+        return 1;
+    } else if (strcmp(a, "--anim-trace") == 0) {
+      TAKE();
+      if (spyro_anim_trace_open(val) != 0) /* Spyro's animation in play (D155) */
+        return 1;
+    } else if (strcmp(a, "--moby-trace") == 0) {
+      TAKE();
+      if (spyro_moby_trace_open(val) != 0) /* 60 Hz logic's statistics (D130) */
+        return 1;
     } else if (strcmp(a, "--wav") == 0) {
       TAKE();
       if (host_audio_wav_open(val) != 0)
@@ -518,6 +594,13 @@ int main(int argc, char **argv) {
       g_host_opts.pokes[g_host_opts.npokes].vblank = (int)v;
       g_host_opts.pokes[g_host_opts.npokes].addr = addr;
       g_host_opts.pokes[g_host_opts.npokes++].value = value;
+    } else if (strcmp(a, "--hitch") == 0) {
+      int v, n;
+      TAKE();
+      if (g_host_opts.nhitches == 16 || sscanf(val, "%d:%d", &v, &n) != 2 || n < 1 || n > 8)
+        usage();
+      g_host_opts.hitches[g_host_opts.nhitches].vblank = v;
+      g_host_opts.hitches[g_host_opts.nhitches++].n = n;
     } else if (strcmp(a, "--cheat") == 0) {
       static const char *const names[] = {"", "lives", "levels", "credits", "warp"};
       char name[16];
@@ -593,6 +676,8 @@ int main(int argc, char **argv) {
       s_pres_watch = 1;
     } else if (strcmp(a, "--faces-race") == 0) {
       g_faces_race = 1; /* D126, diagnostic: the faces in place beside the presenter's thread */
+    } else if (strcmp(a, "--pres-particles-full") == 0) {
+      g_pres_particles_full = 1; /* tests (D136): the copy's particle slots all taken */
     } else if (strcmp(a, "--pres-audit") == 0) {
       g_pres_audit = 1;
       pres_draw_want();
@@ -605,6 +690,10 @@ int main(int argc, char **argv) {
       g_host_opts.out960 = 2;
     } else if (strcmp(a, "--present-stats") == 0) {
       g_present.stats = 1;
+    } else if (strcmp(a, "--tick60") == 0) {
+      g_tick60_mode = 1; /* 60 Hz logic in play (D130, src/game/tick60.c) */
+    } else if (strcmp(a, "--tick60-stats") == 0) {
+      g_t60_stats_on = 1;
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
@@ -688,6 +777,8 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--cam-speed") == 0) {
       TAKE();
       g_port_controls.speed = atoi(val);
+    } else if (strcmp(a, "--no-cam-recentre") == 0) {
+      g_port_controls.no_recentre = 1;
     } else if (strcmp(a, "--pad") == 0) {
       TAKE();
       pad = val;
@@ -700,6 +791,8 @@ int main(int argc, char **argv) {
       s_save_given = 1;
     } else if (strcmp(a, "--cd-native") == 0) {
       s_cd_native = 1;
+    } else if (strcmp(a, "--cd-async") == 0) {
+      psx_cd_set_read_async(1); /* with --cd-native: the Vita's cd_async=1 (D159); not deterministic */
     } else if (strcmp(a, "--cd-stats") == 0) {
       psx_cd_set_clock(now_us);
       atexit(cd_stats_report);
@@ -756,6 +849,7 @@ int main(int argc, char **argv) {
   if (port_present_active() && !g_host_opts.out960)
     g_host_opts.out960 = 1;
   atexit(present_report);
+  atexit(tick60_atexit);
   atexit(vcache_report);
   atexit(host_prof_draw_report);
   atexit(hand_check_report);
@@ -815,6 +909,48 @@ int main(int argc, char **argv) {
     host_log_flush();
     disc_refused();
     return 1;
+  }
+  /* the game's vblank rate: 50 Hz for PAL at its own timing (D138) */
+  psx_clock_set_hz(psx_region_vblank_hz());
+  psx_clock_set_due_display(s_display60);
+  g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
+  if (psx_clock_due_display())
+    host_log("present: frames due at a 60 Hz display's vblanks (--display60, D148)");
+  if (g_Region != PSX_REGION_US)
+    host_log("region: %s, %d Hz vblanks%s", psx_region()->serial, psx_region_vblank_hz(),
+             g_Region == PSX_REGION_PAL ? (g_RegionTiming ? " (PAL timing)" : " (PAL 60)") : "");
+  /* 60 Hz logic: the US disc and PAL at US timing (D150); not PAL at its own
+   * 50 Hz (the rules' shares assume 30 Hz ticks) nor JP, not judged yet */
+  if (g_tick60_mode && !(g_Region == PSX_REGION_US ||
+                         (g_Region == PSX_REGION_PAL && !g_RegionTiming))) {
+    host_log("--tick60: not on %s%s (D150); off", psx_region()->serial,
+             g_RegionTiming ? " at its own timing (--pal50)" : "");
+    g_tick60_mode = 0;
+  }
+  if (s_region_check) { /* the region data loader against the disc's executable, then exit */
+    RegionDataStats st;
+    char err[200];
+    int rc = region_data_load_disc(0, &st, err, sizeof err);
+    if (rc != 0) {
+      fprintf(stderr, "region check: %s: %s\n", psx_region()->serial, err);
+    } else {
+      printf("region check: %s (%s): %d blocks, %d bytes; %d pointers relocated, %d into the "
+             "strings, %d of them at a string that ends in its block; %d words aimed at the "
+             "code left alone; %d tables over US labels (%d bytes) checked, not copied\n",
+             psx_region()->serial, psx_region()->area, st.blocks, st.bytes, st.relocs,
+             st.to_strings, st.strings_ok, st.not_relocated, st.fills, st.fill_bytes);
+      if (st.strings_ok != st.to_strings)
+        rc = 1;
+    }
+    host_log_flush();
+    return rc ? 1 : 0;
+  }
+  if (g_Region != PSX_REGION_US) { /* --save DIR/pal, DIR/jp (D132) */
+    char dir[512];
+    /* both folders now, as the Vita does: the cards make one level and the
+     * save states none (D143) */
+    mkdir(psx_mcrd_root(), 0777);
+    psx_mcrd_set_root(psx_region_path(dir, sizeof dir, psx_mcrd_root(), NULL, 1));
   }
   /* CDLoadSync (cd.c) busy-waits on m_IsReading without VSync: on the PS1
    * the CD interrupt ends it. With no interrupts here, a read completes

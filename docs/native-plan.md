@@ -1065,7 +1065,7 @@ So the logic's time is the number of `PadVSync` calls between two loop tops, cla
 |---|---|---|
 | `VSync(0)` (`PsyX_WaitForTimestep`) | `host_vblank()` once: virtual time, nothing on a timer (D17) | `realtime=1` (the default): waits for the display's next vblank (`sceDisplayWaitVblankStart`) if early; if late, runs every vblank it missed, at most `MAX_CATCH_UP` (8; the rest are dropped, after loads); then `present()` once (D28). `realtime=0`: one vblank and a present, as on the host, for scripted runs. |
 | one vblank (`host_vblank`, `vblank`), in order | pokes, cheats, the pad script, `psx_cd_vblank`, `psx_spu_vblank`, the game's callback, the 960 presentation frame, shots and peeks, the trace | the watchdog, the pad, `psx_cd_vblank`, `vita_mixer_vblank`, the game's callback, profiling, pokes, shots, the stats lines |
-| the clock | the number of calls | `sceDisplayGetVcount`, 16 bits on hardware, widened by `vcount.h` `vita_vcount_widen` (D90). Counted afresh after the options menu and after a save-state load (`s_vcount_synced`). |
+| the clock | the number of calls | `sceDisplayGetVcount`, 16 bits on hardware, widened by vita-port-kit's `vpk_vcount.h` `vpk_vcount_widen` (D90). Counted afresh after the options menu and after a save-state load (`s_vcount_synced`). |
 
 So every callback runs on the game thread inside a `VSync(0)`, in a burst after a late tick, and never asynchronously. That keeps runs reproducible, and it makes the hand-off that `g_PadMutex` guards on the PS1 trivially safe.
 

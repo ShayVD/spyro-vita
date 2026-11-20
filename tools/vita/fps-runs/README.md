@@ -8,8 +8,8 @@ rows (the lines here stay, but the run's picture settings would be the menu's).
 
 All runs use the same VPK, the one from this PR. Since D68 the three switches are on by default
 (`render_thread=1`, `xa_ahead=1`, `gpu_opaque=1`) and `gpu_time` is 0. The files set each switch
-the run needs, and they carry `config_version=3`: without it a `=0` for one of the switches is
-taken as an old file's and ignored (D68). Since D74 `gpu_lean=1` (D70) and `parse_thread=1` (D71)
+the run needs, and they carry `config_version=5`: without it a `=0` for one of the switches is
+taken as an old file's and ignored (D68), and a `tex_filter=` or `dynres=` line as the menu's old row's (D153). Since D74 `gpu_lean=1` (D70) and `parse_thread=1` (D71)
 are on by default too: the files no longer set them, and a file that wants one off says `=0`.
 
 | File | Switches | Do |
@@ -623,23 +623,28 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 - **7G3 against 7G3m:** the 91 shots and the memory card byte-identical (`cmp`).
 - **7G4:** the game thread's busy % in the demos' windows against 7F2's and 7F3's Stone Hill windows, the late vblanks in the flight.
 
-## Runs AP1–AP6: the measurements phase 8 left for hardware (#170; D130, D132–D134, D137)
+## Runs AP1–AP6: the measurements phase 8 left for hardware (#170; D164, D166–D168, D171)
 
 Phase 8's changes were checked on the host and in Vita3K, whose timing isn't evidence (D112); their cost or gain on the Vita needs these runs. Each file's header has its exact command, its VPK and what to compare. **Not run yet**: each run needs the owner's yes first.
 
 | Run | File | VPK (`runtime/autopilot/vpk/`) | Switches | Route | About |
 |---|---|---|---|---|---|
-| AP1 | `ap1-toasty60-ref.txt` | `autopilot-9d42dac.vpk` | 7G1's (60 fps, `gpu_meter=1`, the presenter on its thread), `persp=0 subpixel=0`: the reference | Toasty (`o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1`, `DEVICE_DEFAULTS=1` | 7 min |
-| AP2 | `ap2-toasty60-wobble.txt` | `autopilot-9d42dac.vpk` | AP1 with `persp=1 subpixel=1` (D133's run form) | as AP1 | 7 min |
-| AP3 | `ap3-toasty60-wobble-pt0.txt` | `autopilot-9d42dac.vpk` | AP2 with `pres_thread=0` | as AP1 | 7 min |
+| AP1 | `ap1-toasty60-ref.txt` | `merged-final.vpk` | 7G1's (60 fps, `gpu_meter=1`, the presenter on its thread), `persp=0 subpixel=0`: the reference | Toasty (`o-toasty.pad`, `o-toasty.cfg`), `REALTIME=1`, `DEVICE_DEFAULTS=1` | 7 min |
+| AP2 | `ap2-toasty60-wobble.txt` | `merged-final.vpk` | AP1 with `persp=1 subpixel=1` (D167's run form) | as AP1 | 7 min |
+| AP3 | `ap3-toasty60-wobble-pt0.txt` | `merged-final.vpk` | AP2 with `pres_thread=0` | as AP1 | 7 min |
 | AP4a | `ap4-toasty60-wobble-159.txt` | `autopilot-a86cab5.vpk` | AP2's lines | as AP1 | 7 min |
 | AP4b | `ap4-toasty60-wobble-159.txt` | `autopilot-bbc36b1.vpk` | AP2's lines | as AP1 | 7 min |
 | AP5a | `ap5-pause60-wobble-169.txt` | `autopilot-bbc36b1.vpk` | Vita3K's `wobble60` without `vdm_ring`: 16:9, 60 fps, `interp_budget=0`, `persp=1 subpixel=1` | the pause route (`pause-ws.pad`, `pause-ws.cfg`: a shot every 100), virtual vblanks, no `DEVICE_DEFAULTS` | 3 min |
-| AP5b | `ap5-pause60-wobble-169.txt` | `autopilot-9d42dac.vpk` | as AP5a | as AP5a | 3 min |
-| AP6a | `ap6a-pause60-wobble-ring0.txt` | `autopilot-9d42dac.vpk` | AP5's, `vdm_ring=0` (vitaGL's default ring) | as AP5a | 3 min |
-| AP6b | `ap6b-pause60-wobble-ring1024.txt` | `autopilot-9d42dac.vpk` | AP5's, `vdm_ring=1024` | as AP5a | 3 min |
+| AP5b | `ap5-pause60-wobble-169.txt` | `merged-final.vpk` | as AP5a | as AP5a | 3 min |
+| AP6a | `ap6a-pause60-wobble-ring0.txt` | `merged-final.vpk` | AP5's, `vdm_ring=0` (vitaGL's default ring) | as AP5a | 3 min |
+| AP6b | `ap6b-pause60-wobble-ring1024.txt` | `merged-final.vpk` | AP5's, `vdm_ring=1024` | as AP5a | 3 min |
+
+| AP7 | `ap7-pal-title60.txt` | `merged-final.vpk` | the owner's D152 settings (16:9, `interp=4`, `persp=1 subpixel=1`, `tex_filter=0`), `disc=ux0:data/spyro/pal` | the title, no pad, virtual vblanks | 2 min |
+
+**Since D172** (main merged into `autopilot`): AP1–AP3, AP5b, AP6 and AP7 run on `merged-final.vpk`, the merge's build (with PAL support); AP4 and AP5a keep their older VPKs, which compare #159 and #169 on the code before the merge and refuse a PAL disc. Every AP1–AP6 file says `disc=ux0:data/spyro`: the routes are US-timed, and a `disc=` line in the owner's `config.txt` (kept first by `hw.game`) would otherwise pick the PAL disc. AP5b and AP6a on the merged build compare with AP5a on `bbc36b1` only through their counters and times (main's code is in between); the pictures of AP5b, AP6a and AP6b compare with each other.
 
 **The VPKs** (in the main checkout's `runtime/autopilot/vpk/`, gitignored; SHA-1 by `shasum` on 2026-11-20):
+- `merged-final.vpk`: the merge's build (D172), its SHA-1 in the run's `hw-run.env`.
 - `autopilot-9d42dac.vpk`: `672d3d55065ebd6802e050a9d513d38b4efceea4`. This is `autopilot`'s game code since #169 (`fe6aa2f` changed none).
 - `autopilot-bbc36b1.vpk`: `c1a2889a6308999d6920ef8939681afa76f210ea`. #159 merged, before #169.
 - `autopilot-a86cab5.vpk`: `840eec28d8e3adfa645070e7c11ebe75965739c3`. #162 merged, before #159; the same game code as `8dab625`.
@@ -648,13 +653,13 @@ Phase 8's changes were checked on the host and in Vita3K, whose timing isn't evi
 
 | Measurement | Runs | Tools |
 |---|---|---|
-| The wobble fix's cost at 60 fps (#158, D130) | AP1 → AP2 | `fps60_summary.py` (busy %, late vblanks, `rend`), `hw_cmp.py`, `perf_report.py`; AP2's `vcache N work:` and `vcache cost` lines |
-| The presenter on core 1 with the cache (#162, D133) | AP3 → AP2 | `fps60_summary.py`, `hw_cmp.py`; the `pres` and `vcache N work:` lines; `perf_report.py` (`vc.*` about −50% on the game thread, `gl.*` the same) |
-| The cheaper vertex cache (#159, D134) | AP4a → AP4b | `hw_cmp.py`, `fps60_summary.py`; `perf_report.py` (the same work counters: same answers); AP4b's `vcache cost` lines |
-| The GL state shadow (#169, D137) | AP5a → AP5b, and AP4b → AP2 in Toasty | shots and `save/` identical (`cmp`); `perf_report.py --min-frame 6600 --max-frame 9000` (`gl.attribs`, `gl.uniforms`, `gl.tex_binds` down); `hw_cmp.py`'s render ms |
-| `vdm_ring=1024` as the default (D132) | AP6a → AP6b | no crash; shots and `save/` identical; `vitaGL free KB ... RAM` ~896 KB lower; `hw_cmp.py`, `perf_report.py` the same |
+| The wobble fix's cost at 60 fps (#158, D164) | AP1 → AP2 | `fps60_summary.py` (busy %, late vblanks, `rend`), `hw_cmp.py`, `perf_report.py`; AP2's `vcache N work:` and `vcache cost` lines |
+| The presenter on core 1 with the cache (#162, D167) | AP3 → AP2 | `fps60_summary.py`, `hw_cmp.py`; the `pres` and `vcache N work:` lines; `perf_report.py` (`vc.*` about −50% on the game thread, `gl.*` the same) |
+| The cheaper vertex cache (#159, D168) | AP4a → AP4b | `hw_cmp.py`, `fps60_summary.py`; `perf_report.py` (the same work counters: same answers); AP4b's `vcache cost` lines |
+| The GL state shadow (#169, D171) | AP5a → AP5b, and AP4b → AP2 in Toasty | shots and `save/` identical (`cmp`); `perf_report.py --min-frame 6600 --max-frame 9000` (`gl.attribs`, `gl.uniforms`, `gl.tex_binds` down); `hw_cmp.py`'s render ms |
+| `vdm_ring=1024` as the default (D166) | AP6a → AP6b | no crash; shots and `save/` identical; `vitaGL free KB ... RAM` ~896 KB lower; `hw_cmp.py`, `perf_report.py` the same |
 
-**The order to run them**, the current VPK first, so that if the session ends early the issue's own four comparisons are done:
+**The order to run them** (since D172): 0. AP7, the PAL disc on the merged build; then the merged build first, so that if the session ends early the issue's own four comparisons are done:
 1. AP1 (the reference), 2. AP2, 3. AP3: the wobble cost and #162 on one VPK.
 4. AP6a, 5. AP6b: the ring, on the same VPK.
 6. AP5b, then 7. AP5a (on `bbc36b1`): #169 on the pause route. AP6a has AP5b's lines plus the default `vdm_ring=0`, so if time is short AP6a's log can stand in for AP5b.
@@ -663,15 +668,16 @@ Phase 8's changes were checked on the host and in Vita3K, whose timing isn't evi
 About 50 minutes of runs in all, plus each run's set-up.
 
 **Unattended** (each run needs the owner's yes first; check `~/.cache/vita-port-kit/hw.lock` and that no kh1-decomp run is going; put the Vita's eboot back afterwards and read it back). Run from the main checkout, where `runtime/autopilot/vpk/` is. The commands are in each file's header; with `R=$PWD/runtime/autopilot/vpk`, `T=$PWD/tools/vita/hw-routes/o-toasty.pad` and `P=$PWD/tools/vita/hw-routes/pause-ws.pad`:
-- AP1: `REALTIME=1 VPK=$R/autopilot-9d42dac.vpk PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-ap1 1500 @tools/vita/fps-runs/ap1-toasty60-ref.txt @tools/vita/hw-routes/o-toasty.cfg`
+- AP1: `REALTIME=1 VPK=$R/merged-final.vpk PAD=$T DEVICE_DEFAULTS=1 tools/vita/hw_run.sh logs/hw-ap1 1500 @tools/vita/fps-runs/ap1-toasty60-ref.txt @tools/vita/hw-routes/o-toasty.cfg`
 - AP2, AP3: the same with `ap2-toasty60-wobble.txt`, `ap3-toasty60-wobble-pt0.txt` into `logs/hw-ap2`, `logs/hw-ap3`
 - AP4a, AP4b: the same with `ap4-toasty60-wobble-159.txt` and `VPK=$R/autopilot-a86cab5.vpk` into `logs/hw-ap4a`, `VPK=$R/autopilot-bbc36b1.vpk` into `logs/hw-ap4b`
 - AP5a: `VPK=$R/autopilot-bbc36b1.vpk PAD=$P tools/vita/hw_run.sh logs/hw-ap5a 1500 @tools/vita/fps-runs/ap5-pause60-wobble-169.txt @tools/vita/hw-routes/pause-ws.cfg`
-- AP5b: the same with `VPK=$R/autopilot-9d42dac.vpk` into `logs/hw-ap5b`
+- AP5b: the same with `VPK=$R/merged-final.vpk` into `logs/hw-ap5b`
+- AP7: `VPK=$R/merged-final.vpk tools/vita/hw_run.sh logs/hw-ap7 600 @tools/vita/fps-runs/ap7-pal-title60.txt`
 - AP6a, AP6b: AP5b's command with `ap6a-pause60-wobble-ring0.txt`, `ap6b-pause60-wobble-ring1024.txt` into `logs/hw-ap6a`, `logs/hw-ap6b`
 
 **What to read:**
 - **The Toasty runs** (AP1–AP4): `fps60_summary.py` per level. Artisans is vblanks 900–11,400, before the menu's warp. Take Toasty's play windows from its output: about 13,500 to the game over near 19,500. The route drifts in real time (7C3/7C4), so compare level means, not window by window. `hw_cmp.py` gives the threads' ms per vblank from 900. `perf_report.py` counts work per frame over a range (`--min-frame 900 --max-frame 11400` for Artisans): in AP1 the `vc.*` counters are 0.
 - **The pause runs** (AP5, AP6) take the same 91 shots at the same frames with virtual vblanks, so the pictures compare byte for byte. The shots cost time in every window, so compare those runs' times with each other only. Their `perf_report.py` window, 6,600–9,000, is the autopilot's benchmark scene, so the counters also compare with Vita3K's `wobble60` runs (`runtime/autopilot/runs/gate-169-1`).
-- **A bug would look like:** a crash or hang (`hang:` line, a crash dump), a shot or memory card that differs in AP5 or AP6, `pres` lines with buffers passed by or frames uncaptured, or `config: unknown key` for any line here. (Older files that set `interp_mode`, such as `s7f3-toasty60-pres.txt`, which D133's run form used, get that line on any VPK from D129 on: the key went with D30's pass. These files leave it out.)
-- **Record** the results in `docs/decisions-2.md` (D130/D133/D134/D137/D132's "Hardware" items) and in the autopilot's `hardware_runs`.
+- **A bug would look like:** a crash or hang (`hang:` line, a crash dump), a shot or memory card that differs in AP5 or AP6, `pres` lines with buffers passed by or frames uncaptured, or `config: unknown key` for any line here. (Older files that set `interp_mode`, such as `s7f3-toasty60-pres.txt`, which D167's run form used, get that line on any VPK from D129 on: the key went with D30's pass. These files leave it out.)
+- **Record** the results in `docs/decisions-3.md` (D164/D167/D168/D171/D166's "Hardware" items) and in the autopilot's `hardware_runs`.

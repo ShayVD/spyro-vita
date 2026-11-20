@@ -28,9 +28,12 @@ typedef struct {
   int cam_invert_x;   /* cam_invert_x=1, cam_invert_y=1 (both default): the free camera's axes */
   int cam_invert_y;   /*   flipped; Y also flips Triangle look mode's up/down (D47, D53) */
   int cam_speed;      /* cam_speed=50..200: the free camera's turn speed in % (default 100) */
+  int cam_recentre;   /* cam_recentre=0: the camera keeps its heading, no swing back behind Spyro (D162) */
   int realtime;       /* realtime=0: virtual vblanks (D17) for exact test replays */
   int vcount_test;    /* vcount_test=N: the display's vcount wraps N vblanks in (D90) */
   int gpu;            /* gpu=1 (default): GPU renderer; 0: software rasterizer (D35) */
+  int shacc_ur0;      /* shacc_ur0=0: ur0:data counts as unreadable, a test of the shader
+                         compiler's other place, the data folder (D163; default 1) */
   int gpu_res;        /* res= (gpu_res=): GPU targets at 0 (default, res=native) the
                          screen's pixels; 1 (res=ps1) the PS1's (D40; 2-4 removed, D85) */
   int gpu_time;       /* gpu_time=0: no GPU-timed frame per report (default 1) */
@@ -55,7 +58,8 @@ typedef struct {
   int nmenu_test;
   int mixer;          /* mixer=1 (default): SPU mix on its own thread; 2: lockstep; 0: game thread (D37);
                          3: the native mix on that thread, 4: lockstep (D84) */
-  int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43) */
+  int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43);
+                         a developer's key, no menu row since D153 */
   int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
   int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
@@ -68,6 +72,8 @@ typedef struct {
                          as before */
   int xa_ahead;       /* xa_ahead=1: the XA music's sectors read ahead on core 1 (D64) */
   int cd_native;      /* cd_native=1: CdReads as file reads on a worker, the XA stream read ahead (D93) */
+  int cd_async;       /* cd_async=1: a CdRead completes when the worker is done, the loaders animate meanwhile (D159);
+                         0: inside CdRead; -1 (not set): 1 for the digital copy, 0 for an image or files */
   int gpu_opaque;     /* gpu_opaque=1: textures with no transparent texel drawn without discard (D65) */
   int gpu_direct;     /* gpu_direct=1: presentation pictures shown from the targets, no staging copy (D69) */
   int gpu_lean;       /* gpu_lean=1: a 28-byte vertex without persp/subpixel (D70) */
@@ -80,7 +86,8 @@ typedef struct {
                          thread (stage 7f, D126); 0: on the game thread (7e) */
   int pres_core;      /* pres_core=3: that thread on core 3, if a user thread may run there */
   int dynres;         /* dynres=0 (default): off; 1: auto, a lower render scale only when the GPU
-                         can't keep up; 88, 75, 67: that scale, always (D75) */
+                         can't keep up; 88, 75, 67: that scale, always (D75); a developer's
+                         key, no menu row since D153 */
   int gpu_meter;      /* gpu_meter=1: the GPU time meter and its "dynres" lines with dynres off */
   int log_sync;       /* log_sync=1: each log line written on its own thread, not by the log's (D75) */
   int atlas_cpu;      /* atlas_cpu=1: atlas blocks decoded on the CPU into the texture; 0 the GPU
@@ -128,6 +135,10 @@ int vita_gpu_meter_quiet(unsigned max_us); /* gpu_meter.c: every scene seen done
  * errors): the render thread stopped and the GPU idle first, then
  * sceKernelExitProcess(res) (D120). Not the PS button's close: the system's */
 void vita_exit(int res) __attribute__((noreturn));
+/* main.c: the app started again in its own place (the menu's RESTART NOW,
+ * D136): stopped as for an exit, the log flushed, then app0:eboot.bin
+ * loaded (sceAppMgrLoadExec); if that fails, an exit */
+void vita_restart(void) __attribute__((noreturn));
 
 /* bench.c: bench=1 (D41) */
 void vita_bench_vblank(int v);
@@ -148,7 +159,25 @@ uint16_t vita_menu_filter(uint16_t buttons); /* pad.c: hides the menu's buttons 
 int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused) */
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
 extern const char *g_vita_config_stale[4]; /* main.c: stale switch lines (D68), NULL-ended */
+extern int g_vita_config_pal60; /* main.c: a pal60= line, dropped at the next save (D150) */
+/* main.c: tex_filter= and dynres= lines from the rows gone with D153, dropped too (NULL-ended) */
+extern const char *g_vita_config_rows_gone[3];
 int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
+/* A question over the menu (D136): the text, a blank line, the choices
+ * (UP/DOWN, X answers with the one chosen: 0..nchoice-1; O, START,
+ * TRIANGLE or a tap with -1). From a row's on_change or action: the menu
+ * shows it in place of the rows and calls done(answer) in its loop. */
+typedef struct {
+  const char *title;
+  const char *text[3];   /* lines (at most 33 characters), NULL: fewer */
+  const char *choice[2]; /* labels */
+  const char *hint[2];   /* their values, shown on the right */
+  int nchoice;
+  const char *footer;
+  void (*done)(int answer);
+} VitaMenuAsk;
+void vita_menu_ask(const VitaMenuAsk *ask);
+void vita_menu_restart(void) __attribute__((noreturn)); /* the options saved, then vita_restart */
 
 /* video.c: an RGB panel over the picture (NULL: none), drawn 1:1 in the
  * middle; and a redraw even when the picture didn't change (the menu) */

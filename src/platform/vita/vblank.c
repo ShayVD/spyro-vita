@@ -1,6 +1,6 @@
 /* Vita time (decisions D28). By default the game's vblanks follow the
  * display's own counter (sceDisplayGetVcount, widened from its 16 bits by
- * vcount.h, D90): VSync(0) waits for the next
+ * vita-port-kit's vpk_vcount.h, D90): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
  * would have, so the game's delta time keeps its speed and the audio stays
@@ -9,9 +9,10 @@
  * scripted test runs replay exactly. The clock, its catch-up arithmetic and
  * VSync itself are shared with linux32 (common/clock.c, libetc.c, D104).
  * Also PsyX's scene hooks (isbg clears), the same as linux32's. */
+#include "../../game/tick60.h"
 #include "vita.h"
 #include "vita_pc.h"
-#include "vcount.h"
+#include "vpk_vcount.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
@@ -34,7 +35,7 @@ int host_shot_display(const char *path); /* linux32/png.c */
 
 static SceUInt64 s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
-static VitaVcount s_vc;
+static VpkVcount s_vc;
 static int s_hold; /* shot_hold: a shot's vblank, held at the next present */
 
 int vita_vblank_count(void) { return psx_clock_count(); }
@@ -77,6 +78,13 @@ static void cd_report(void) {
     vita_log("cd: cd_native's worker: %u.%02u ms on the CdReads; %u of them after a stream chunk",
              (unsigned)(st.job_us / 1000), (unsigned)(st.job_us % 1000 / 10), st.behind_chunk);
   }
+  { /* the digital copy's decoder (D158): the game thread's handle and the worker's */
+    char line[400];
+    if (psx_cdn_pbp_report(line, sizeof line))
+      vita_log("%s", line);
+    if (psx_cd_async_report(line, sizeof line)) /* D159: only with cd_async on */
+      vita_log("%s", line);
+  }
 }
 
 static void vblank(void) {
@@ -92,7 +100,7 @@ static void vblank(void) {
   prof_leave();
   psx_clock_callback();
   prof_vblank();
-  vita_pc_vblank(v); /* the work counters' lines (perfcount.c, D131) */
+  vita_pc_vblank(v); /* the work counters' lines (perfcount.c, D165) */
 
   for (i = 0; i < g_vita_opts.npokes; i++)
     if (g_vita_opts.pokes[i].vblank == v) {
@@ -148,6 +156,7 @@ static void vblank(void) {
   if (g_vita_opts.frames > 0 && v >= g_vita_opts.frames) {
     vita_audio_close();
     vita_log("frames=%d reached, exiting", g_vita_opts.frames);
+    tick60_report(vita_log); /* 60 Hz logic's counts (D130) */
     vita_exit(0); /* the render thread first (D120) */
   }
 }
@@ -202,7 +211,7 @@ static int vcount(void) {
     vita_log("vcount_test: the display's 16-bit vcount wraps in %d vblanks (D90)",
              g_vita_opts.vcount_test);
   }
-  return vita_vcount_widen(&s_vc, (raw + s_vc_offset) & 0xffffu); /* 16 bits, as on hardware */
+  return (int)vpk_vcount_widen(&s_vc, (raw + s_vc_offset) & 0xffffu); /* 16 bits, as on hardware */
 }
 
 /* Stage 7c (D112), from any thread: the display against `due`, in our
@@ -220,7 +229,9 @@ int vita_vblank_past_due(int due) {
   if (!psx_clock_display_base(&base))
     return VITA_DUE_UNCOUNTED;
   raw = ((unsigned)sceDisplayGetVcount() + s_vc_offset) & 0xffffu;
-  return (int16_t)(uint16_t)(raw - (unsigned)base - (unsigned)due);
+  /* at 50 Hz (PAL, D138) the display vblank `due` starts at, and ours past it */
+  return psx_clock_display_to_ours(
+      (int16_t)(uint16_t)(raw - (unsigned)psx_clock_display_due(base, due)));
 }
 
 static void wait_display(void) { sceDisplayWaitVblankStart(); }

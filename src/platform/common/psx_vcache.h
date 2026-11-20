@@ -23,11 +23,12 @@ extern "C" {
 #define VREF_SLOT 0x00FFFFFFu  /* entry + 1, or 0: not found or ambiguous */
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
-typedef struct {
+typedef struct VCacheVert {
   int16_t dx, dy; /* exact screen position - (integer SX/SY + 0.5), 1/256 pixel */
   float w;      /* view-space depth (> 0), at the scale the polygon's other
                    vertices use: only ratios within a polygon mean anything */
 } VCacheVert;
+extern VCacheVert g_vcache_side[]; /* a vertex buffer's (psx_vcache_poly, below) */
 
 /* 0: no hooks. 1: polygons are marked VREF_POLY (nothing is found).
  * 2: projections are recorded and looked up too. */
@@ -36,10 +37,29 @@ void psx_vcache_enable(int mode);
 /* The walk's (gpu_walk.c, native_draw.c), when psx_vcache_polys (mode 1 or
  * 2): a polygon's vertices (a GrVertex each, 3 or 4, before a quad is split
  * into triangles) with the primitive's own screen coordinates. It fills
- * each vertex's tcx/tcy/_p0/_p1 and nothing else (PsyCross's poly hook,
- * patch 0007, before D117). */
+ * each vertex's tcx/tcy/_p0/_p1 (PsyCross's poly hook, patch 0007, before
+ * D117) and, at side, the polygon's answers for the renderer (D43), one for
+ * each vertex after the walk's quad split (3 or 6): dx, dy (0 where the
+ * position stays integer) and w (1 unless the whole polygon was found), so
+ * the renderer reads them in order instead of looking each one up. NULL:
+ * no answers (psx_vcache_poly_ref, the form of PsyCross's hook: walk_check's
+ * reference walk).
+ *
+ * g_vcache_side is the answers of the vertex buffer a walk is filling: the
+ * walk gives each polygon g_vcache_side + its first vertex's index
+ * (native_draw.c), whichever walk's buffer it is, and the renderer's
+ * GR_UpdateVertexBuffer reads them at the same indices, for the vertices
+ * whose reference has VREF_POLY. Inline, one array is enough because only
+ * one walk fills a buffer at a time and draws it before another starts:
+ * the game's (on the parse thread too, D71) is joined before the
+ * presenter's runs inline. On its own thread (#162, below) the presenter's
+ * answers go to its own array at the same index instead. Until D152 the
+ * answers were placed by the buffer the renderer had drawn last, so with
+ * two walks taking turns (the presenter's in-between frame, stage 7f)
+ * neither wrote any and both drew with old ones. */
 extern int psx_vcache_polys;
-void psx_vcache_poly(void *vertex, short *const *xy, int n);
+void psx_vcache_poly(void *vertex, short *const *xy, int n, VCacheVert *side);
+void psx_vcache_poly_ref(void *vertex, short *const *xy, int n);
 
 /* DrawOTag (libgpu.c, and the presenter's, present.c) as it returns, drawn
  * or skipped: the next frame's projections begin (nothing with mode 0). */
@@ -48,18 +68,6 @@ void psx_vcache_ot_done(void);
 /* The vertex a reference names (1), or 0 if none; valid until the next
  * DrawOTag returns. The logic draw's frames only (no caller since D43). */
 int psx_vcache_get(uint32_t ref, VCacheVert *out);
-
-/* A walk's vertex buffer, as the renderer's GR_UpdateVertexBuffer gets it.
- * Once known, each polygon's answer is also written to g_vcache_side at the
- * same index as its vertices in its own walk's buffer, after the quad
- * split: dx, dy (0 where the position stays integer) and w (1 unless the
- * whole polygon was found), so the renderer reads them in order instead of
- * looking each one up (D43). Valid for the vertices whose reference has
- * VREF_POLY. Up to four buffers are known (the logic draw's walk, the
- * presenter's; #158); for one seen the first time g_vcache_side is reset
- * to "not found", since its polygons couldn't be written. */
-void psx_vcache_set_base(const void *vertex_buffer);
-extern VCacheVert g_vcache_side[];
 
 /* The OT walked later or on another thread (walk.c, D71): the frame's
  * table, taken as its list is handed over (before DrawOTag's done hook
@@ -88,23 +96,24 @@ PsxVcacheValueHook psx_vcache_pres_begin(int walks);
 
 /* The presenter's frame on its own thread (the Vita's pres_thread=1, D126;
  * #162), beside the logic draw:
- *  - psx_vcache_pres_async_ok: it may run there. The cache records, the
- *    presenter's table is there, and its walk's vertex buffer is known (a
- *    buffer given to psx_vcache_set_base while one of its frames was drawn
- *    inline), so its answers can be written from its first polygon;
+ *  - psx_vcache_pres_async_ok: it may run there. The cache records and
+ *    the presenter's table and answers' array are there (made by its first
+ *    psx_vcache_pres_begin, inline), so its answers can be written from its
+ *    first polygon;
  *  - psx_vcache_pres_detach (the game thread, after psx_vcache_pres_begin,
  *    before the job is posted and the logic draw starts): the frame opened
  *    becomes the presenter's thread's. A polygon whose vertices aren't in
  *    the game's walk's buffer is then the presenter's: looked up in its
- *    table, its answers at its index in its walk's buffer in
+ *    table, its answers at the index the walk gives (D152) but in
  *    psx_vcache_pres_side (not g_vcache_side), its counters in
  *    g_vcache_pres_work. The logic draw's polygons and table are as
  *    without it;
  *  - psx_vcache_pres_end (the presenter's thread, as its buffer closes,
  *    after its last polygon): the frame ends (DrawOTag's done hook doesn't
  *    run for it there). Nothing if no frame was detached;
- *  - psx_vcache_pres_side: the presenter's answers (NULL until its buffer
- *    is known), read by its thread as it records its vertex buffer. */
+ *  - psx_vcache_pres_side: the presenter's answers (NULL until its first
+ *    frame with the cache recording), read by its thread as it records its
+ *    vertex buffer. */
 int psx_vcache_pres_async_ok(void);
 void psx_vcache_pres_detach(void);
 void psx_vcache_pres_end(void);

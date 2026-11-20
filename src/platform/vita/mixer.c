@@ -62,7 +62,7 @@ static volatile int s_phase; /* mixer thread: 0 idle, 1 XA, 2 voices, 3 mix, 4 o
 
 /* Mixer-thread state. */
 static PsxSpuVoice s_voice[PSX_SPU_VOICES];
-static short s_out[PSX_SPU_VBLANK_SAMPLES * 2];
+static short s_out[PSX_SPU_VBLANK_SAMPLES_MAX * 2];
 
 /* Stats for vita_mixer_report (read across threads; only approximate). */
 static volatile uint64_t s_mix_us, s_mix_worst;

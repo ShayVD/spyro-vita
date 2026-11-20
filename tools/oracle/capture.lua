@@ -16,6 +16,9 @@
 -- save the display at those vblanks (shot-V.raw: width, height, bpp words,
 -- then pixels; tools/oracle/shot2png.py) and VRAM (vram-V.bin, 1024x512
 -- 16-bit, the host's --vram-shot format, tools/vram.py).
+-- $ORACLE_REGION=pal (with DISC=disc/image-pal): the PAL disc's addresses for
+-- the trace, the pad's state anchors and the endings (D143); its tour takes
+-- no level numbers (PAL has no warp code).
 --
 -- File layout, little endian: "SPYF", version, function address, sample
 -- index, vblank, then GPR r0..ra,lo,hi (34 words), CP2D (32), CP2C (32),
@@ -38,6 +41,39 @@ local shots, shot_every = {}, tonumber(os.getenv('ORACLE_SHOT_EVERY') or '0')
 for v in (os.getenv('ORACLE_SHOTS') or ''):gmatch('%d+') do shots[tonumber(v)] = true end
 
 local vblank = 0
+
+-- The game's RAM addresses: psx.map's (NTSC-U), or with $ORACLE_REGION=pal
+-- the PAL executable's (SCES-01438 fdd04c04..., placed by
+-- tools/regions/data_map.py; D133, D143). PAL has no level-warp code or
+-- variables (D134), so its tour takes no level numbers; the endings' two
+-- labels data_map can't place were read from PAL's code (D143).
+local region = (os.getenv('ORACLE_REGION') or 'us'):lower()
+local A = {
+  gamestate = 0x800757D8, level = 0x8007596C, tick = 0x8007572C, spyro = 0x80078A58,
+  gems = 0x80075860, dragons = 0x80075750, lives = 0x8007582C, seed = 0x80075AC0,
+  credits_seq = 0x800757AC, cutscene_idx = 0x8007566C, state_switch = 0x8007579C,
+  screen_border = 0x8007570C, spyro_hidden = 0x80075814, cutscene_layout = 0x80075680,
+  level_cheat = 0x80075880, cheat_homeworld = 0x800758EC,
+}
+if region == 'pal' then
+  A = {
+    gamestate = 0x8007C0A4, level = 0x8007C23C, tick = 0x8007BFF8, spyro = 0x8007F3E8,
+    gems = 0x8007C130, dragons = 0x8007C01C, lives = 0x8007C100, seed = 0x8007C390,
+    credits_seq = 0x8007C078, cutscene_idx = 0x8007BF34, state_switch = 0x8007C068,
+    screen_border = 0x8007BFD4, spyro_hidden = 0x8007C0E8, cutscene_layout = 0x8007BF48,
+  }
+elseif region ~= 'us' then
+  error('ORACLE_REGION: us or pal, not ' .. region)
+end
+-- A pad script's poke:ADDR takes the host's (psx.map's) address; on the PAL
+-- disc an address inside g_Spyro is moved to PAL's g_Spyro (the port keeps
+-- the US layout, so one script serves both), anything else is refused.
+function poke_addr(a)
+  if region == 'us' then return a end
+  local us_spyro = 0x80078A58
+  assert(a >= us_spyro and a < us_spyro + 680, string.format('oracle: no PAL address for poke %08X', a))
+  return A.spyro + (a - us_spyro)
+end
 
 local function u32le(v)
   v = bit.band(v, 0xffffffff)
@@ -145,7 +181,8 @@ local function run_pad(st, gs, level)
     if pa then
       local v = tonumber(pv, 16)
       if v >= 0x80000000 then v = v - 0x100000000 end
-      ffi.cast('int32_t*', mem + bit.band(tonumber(pa, 16), 0x1fffff))[0] = v
+      local a = poke_addr(tonumber(pa, 16))
+      ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] = v
       print(string.format('oracle: pad poke %s = %s at vblank %d', pa, pv, vblank))
     else
       setpad(p.spec)
@@ -163,8 +200,8 @@ local function pad_done() return main_st.i > #pad end
 local per_level = os.getenv('ORACLE_PER_LEVEL') == '1'
 local per_state = os.getenv('ORACLE_PER_STATE') == '1'
 local function level_now()
-  local level = ffi.cast('int32_t*', mem + 0x7596C)[0]
-  if per_state then return level * 100 + ffi.cast('int32_t*', mem + 0x757D8)[0] end
+  local level = ffi.cast('int32_t*', mem + bit.band(A.level, 0x1fffff))[0]
+  if per_state then return level * 100 + ffi.cast('int32_t*', mem + bit.band(A.gamestate, 0x1fffff))[0] end
   return level
 end
 
@@ -362,13 +399,15 @@ local tour_i, tour_t0, tour_seq, tour_at, tour_len = 1, nil, nil, nil, 400
 local function w32(a, v) ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] = v end
 local function r32(a) return ffi.cast('int32_t*', mem + bit.band(a, 0x1fffff))[0] end
 local function ending(idx)
-  if idx == 3 then w32(0x80075860, 14000) else w32(0x800757AC, 0) end -- g_GemTotal, g_CreditsSequence
-  w32(0x8007566C, idx) -- g_CutsceneIdx
-  w32(0x800757D8, 14)  -- g_Gamestate = GS_Cutscene
-  w32(0x8007579C, 1)   -- g_StateSwitch
-  w32(0x8007570C, 0)   -- g_ScreenBorderEnabled
-  w32(0x80075814, 0)   -- g_IsSpyroHidden
-  w32(r32(0x80075680), 0) -- g_CutsceneLayout->m_CurrentTick
+  if idx == 3 then w32(A.gems, 14000) else w32(A.credits_seq, 0) end -- g_GemTotal, g_CreditsSequence
+  -- g_CutsceneIdx; PAL's endings are its slots 2 and 3 of the language's
+  -- three (1 + language * 3: D134), language 0 (English) here
+  w32(A.cutscene_idx, idx)
+  w32(A.gamestate, 14)  -- g_Gamestate = GS_Cutscene
+  w32(A.state_switch, 1)   -- g_StateSwitch
+  w32(A.screen_border, 0)   -- g_ScreenBorderEnabled
+  w32(A.spyro_hidden, 0)   -- g_IsSpyroHidden
+  w32(r32(A.cutscene_layout), 0) -- g_CutsceneLayout->m_CurrentTick
   print(string.format('oracle: tour ending %d set up at vblank %d', idx, vblank))
 end
 -- The display as NAME.raw (width, height, bpp words, then pixels;
@@ -395,8 +434,9 @@ local function tour_step(gs, level)
     local t = vblank - tour_at
     local e = tour_seq[t]
     if e == 'cheat' then
-      w32(0x80075880, 1) -- g_LevelCheatActive
-      w32(0x800758EC, 0) -- cheat_HomeworldSelected
+      assert(A.level_cheat, 'oracle: PAL has no level-warp cheat (D134)')
+      w32(A.level_cheat, 1) -- g_LevelCheatActive
+      w32(A.cheat_homeworld, 0) -- cheat_HomeworldSelected
     elseif e == 'end2' or e == 'end3' then
       ending(e == 'end2' and 2 or 3)
     elseif e then
@@ -467,11 +507,11 @@ if trace then
     'gems\tdragons\tlives\trand\n')
 end
 local function trace_row()
-  local spyro = 0x80078A58
+  local spyro = A.spyro
   trace:write(string.format('%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n',
-    vblank, r32(0x800757D8), r32(0x8007596C), r32(0x8007572C), r32(spyro), r32(spyro + 4),
-    r32(spyro + 8), r32(spyro + 0x78), r32(spyro + 0x164), r32(0x80075860), r32(0x80075750),
-    r32(0x8007582C), bit.tohex(r32(0x80075AC0), 8)))
+    vblank, r32(A.gamestate), r32(A.level), r32(A.tick), r32(spyro), r32(spyro + 4),
+    r32(spyro + 8), r32(spyro + 0x78), r32(spyro + 0x164), r32(A.gems), r32(A.dragons),
+    r32(A.lives), bit.tohex(r32(A.seed), 8)))
 end
 
 vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
@@ -485,9 +525,10 @@ vsyncListener = PCSX.Events.createEventListener('GPU::Vsync', function()
       busy[st.cur], st.busy = nil, false
     end
   end
-  pad_step(r32(0x800757D8), r32(0x8007596C))
-  tour_step(r32(0x800757D8), r32(0x8007596C))
-  if pad_done() and tour_done() then run_pad(after_st, r32(0x800757D8), r32(0x8007596C)) end
+  local gs, lv = r32(A.gamestate), r32(A.level)
+  pad_step(gs, lv)
+  tour_step(gs, lv)
+  if pad_done() and tour_done() then run_pad(after_st, gs, lv) end
   if vblank % 600 == 0 then
     local taken = 0
     for _, st in ipairs(state) do taken = taken + st.n end

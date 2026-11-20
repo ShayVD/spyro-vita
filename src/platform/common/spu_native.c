@@ -31,10 +31,11 @@
 #define BLOCK_SAMPLES 28
 #define NBLK (PSX_SPU_RAM_SIZE / 16)
 #define WAYS 2
-#define N PSX_SPU_VBLANK_SAMPLES
-/* A vblank at the highest pitch (4 samples a sample) reads 735 * 4 / 28 =
- * 105 blocks, plus the one it starts in and the one it ends in. */
-#define MAX_BLOCKS (N * 4 / BLOCK_SAMPLES + 3)
+#define N PSX_SPU_VBLANK_SAMPLES        /* this vblank's samples: 735, or 882 at 50 Hz */
+#define NMAX PSX_SPU_VBLANK_SAMPLES_MAX /* arrays */
+/* A vblank at the highest pitch (4 samples a sample) reads 882 * 4 / 28 =
+ * 126 blocks (105 at 60 Hz), plus the one it starts in and the one it ends in. */
+#define MAX_BLOCKS (NMAX * 4 / BLOCK_SAMPLES + 3)
 
 enum { PCM_NONE, PCM_KEYED, PCM_ANY }; /* PCM_ANY: filter 0, no history */
 
@@ -134,7 +135,7 @@ static int vol_q15(short reg) { /* libspu.c's */
 }
 
 static short s_row[1 + MAX_BLOCKS * BLOCK_SAMPLES];
-static int s_acc[2][N];
+static int s_acc[2][NMAX];
 
 /* Samples [0, n) of one voice from its row, added to the sums. The row
  * holds the sample before the first block (prev) and then the blocks, so
@@ -231,8 +232,8 @@ static void mix_voice(PsxSpuVoice *v) {
 }
 
 void psx_spu_mix_native(PsxSpuVoice voice[PSX_SPU_VOICES], const PsxSpuMixRegs *reg,
-                        short out[PSX_SPU_VBLANK_SAMPLES * 2]) {
-  static short cd[N * 2];
+                        short out[PSX_SPU_VBLANK_SAMPLES_MAX * 2]) {
+  static short cd[NMAX * 2];
   const int mvl = vol_q15(reg->mvol_l), mvr = vol_q15(reg->mvol_r);
   const int m0 = reg->cd_matrix[0], m1 = reg->cd_matrix[1], m2 = reg->cd_matrix[2],
             m3 = reg->cd_matrix[3], cvl = reg->cd_vol_l, cvr = reg->cd_vol_r;

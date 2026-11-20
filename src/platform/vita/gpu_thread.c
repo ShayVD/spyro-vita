@@ -292,7 +292,7 @@ static void rt_file(const PresentFrame *f) {
   int i;
   if (f->dropped >= 0) {
     pend_remove(f->dropped);
-    for (i = 0; i < s_npend; i++)
+    for (i = 0; i < s_npend && !f->fixed; i++) /* by time (D148): their own vblanks */
       s_pend[i].due--;
   }
   pend_remove(f->slot);
@@ -895,7 +895,6 @@ void rt_GR_UpdateVertexBuffer(const GrVertex *vertices, int count) {
     game_wait(W_SLAB, K_VERTS, s_verts_posted - NSLAB + 2);
   memcpy(s_slab[slab], vertices, (size_t)count * sizeof *vertices);
   if (side) {
-    psx_vcache_set_base(vertices);
     if (!s_slab_side[slab])
       s_slab_side[slab] = malloc(sizeof(VCacheVert) * (MAX_VERTEX_BUFFER_SIZE + 6));
     if (s_slab_side[slab])
@@ -999,7 +998,7 @@ static void post_present(int slot, int wide) {
   c->slot = slot;
   c->wide = wide;
   c->shot = hd;
-  c->due = psx_clock_count();
+  c->due = psx_clock_due_at(psx_clock_count()); /* as the frames' dues (D148) */
   __atomic_store_n(&s_presents_posted, s_presents_posted + 1, __ATOMIC_SEQ_CST);
   post(&c->hd);
   if (sync)
@@ -1367,7 +1366,12 @@ static int s_due_slot = -1; /* the frame due at the last vblank, -1: the PS1 dis
  * vblank (shot_hd) is of that frame: posted now and written before the game
  * goes on, as before. */
 void vita_gpu_due_vblank(int vblank) {
-  s_due_slot = port_present_frame_due(vblank);
+  /* each due vblank our vblank reaches: ours, or at 50 Hz with dues the
+   * display's (D148) one or two of them */
+  int u = psx_clock_due_at(vblank - 1) + 1;
+  const int last = psx_clock_due_at(vblank);
+  for (; u <= last; u++)
+    s_due_slot = port_present_frame_due(u);
   if (!s_hd_shot)
     return;
   if (s_due_slot >= 0) {

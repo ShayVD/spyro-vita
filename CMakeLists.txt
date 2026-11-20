@@ -33,8 +33,13 @@ else()
 endif()
 
 include(cmake/prepare.cmake)
+# The port's own patches, then the region switches it shares with the
+# matching builds (tools/build_matching.sh REGION=..., D133), then the region
+# edits on lines the port's patches rewrote (the matching builds have theirs
+# in patches/spyro-1-region-matching; D135, tools/regions/retune.py patch),
+# then the 60 Hz rules' class sites written on the region's text (D144).
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
-              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port" S1_DIR)
+              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60" S1_DIR)
 spyro_prepare(PsyCross "${CMAKE_SOURCE_DIR}/third_party/PsyCross"
               "${CMAKE_SOURCE_DIR}/patches/PsyCross" PSYCROSS_DIR)
 
@@ -155,4 +160,5 @@ add_subdirectory(src/platform/${SPYRO_HOST})
 if(SPYRO_HOST STREQUAL "linux32")
   enable_testing()
   add_subdirectory(tests)
+  add_subdirectory(tools) # pbp_extract (D157)
 endif()

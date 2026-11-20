@@ -1,4 +1,4 @@
-/* The Vita's widened vblank counter (src/platform/vita/vcount.h, D90).
+/* The Vita's widened vblank counter (vita-port-kit's vpk_vcount.h, D90).
  *
  * The display's sceDisplayGetVcount counts in 16 bits on hardware. Before
  * D90 vblank.c's PsyX_WaitForTimestep compared it with a 32-bit target, so
@@ -15,13 +15,13 @@
  * build (VCOUNT_MUTANT=1) uses the raw counter, as before D90, and must
  * fail. */
 #include "psx_clock.h"
-#include "vcount.h"
+#include "vpk_vcount.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 static unsigned s_disp; /* the display's vblanks since boot */
-static VitaVcount s_vc;
+static VpkVcount s_vc;
 static int s_waits;
 static int s_fail;
 
@@ -30,7 +30,7 @@ static int vcount(void) {
 #if VCOUNT_MUTANT
   return (int)raw;
 #else
-  return vita_vcount_widen(&s_vc, raw);
+  return (int)vpk_vcount_widen(&s_vc, raw);
 #endif
 }
 
@@ -69,23 +69,24 @@ static void check(int ok, const char *what) {
 
 /* The widener alone. */
 static void widen_cases(void) {
-  VitaVcount v = {0};
-  check(vita_vcount_widen(&v, 0xfffe) == 0xfffe, "first read");
-  check(vita_vcount_widen(&v, 0xffff) == 0xffff, "step to 0xffff");
-  check(vita_vcount_widen(&v, 0) == 0x10000, "0xffff -> 0 is one step");
-  check(vita_vcount_widen(&v, 5) == 0x10005, "steps after the wrap");
-  check(vita_vcount_widen(&v, 5) == 0x10005, "no step");
+  VpkVcount v = {0};
+  check(vpk_vcount_widen(&v, 0xfffe) == 0xfffe, "first read");
+  check(vpk_vcount_widen(&v, 0xffff) == 0xffff, "step to 0xffff");
+  check(vpk_vcount_widen(&v, 0) == 0x10000, "0xffff -> 0 is one step");
+  check(vpk_vcount_widen(&v, 5) == 0x10005, "steps after the wrap");
+  check(vpk_vcount_widen(&v, 5) == 0x10005, "no step");
   v.valid = 0;
-  vita_vcount_widen(&v, 0x12345678u); /* a wider counter: the same steps */
-  check(vita_vcount_widen(&v, 0x12345678u + 1000) == 0x5678 + 1000, "wider counter");
+  vpk_vcount_widen(&v, 0x12345678u); /* a wider counter: the same steps */
+  check(vpk_vcount_widen(&v, 0x12345678u + 1000) == 0x5678 + 1000, "wider counter");
 }
 
 /* A long play from the dump's start, frames 0-3 vblanks, VSync(1) or (2). */
-static int play(unsigned start, int frames, unsigned seed) {
+static int play(unsigned start, int frames, unsigned seed, int hz) {
   int i, jumped = 0, resyncs = 0, lost;
   unsigned disp0, paused = 0;
   s_disp = disp0 = start;
   s_vc.valid = 0;
+  psx_clock_set_hz(hz);
   psx_clock_set(0);
   srand(seed);
   for (i = 0; i < frames; i++) {
@@ -110,23 +111,45 @@ static int play(unsigned start, int frames, unsigned seed) {
   }
   /* every display vblank but the pauses' counted, less a frame's work at
    * each fresh count */
-  lost = (int)(s_disp - disp0 - paused) - (psx_clock_count() - jumped);
+  lost = (int)((long long)(s_disp - disp0 - paused) * hz / 60) - (psx_clock_count() - jumped);
   if (lost < 0 || lost > 3 * (resyncs + 1)) {
     printf("FAIL: start %u: our count %d behind the display's\n", start, lost);
     return -1;
   }
-  printf("ok: start %u, %d frames, %u display vblanks (%u wraps), our vblank %d\n", start,
-         frames, s_disp - disp0, (s_disp >> 16) - (start >> 16), psx_clock_count());
+  printf("ok: %d Hz, start %u, %d frames, %u display vblanks (%u wraps), our vblank %d\n", hz,
+         start, frames, s_disp - disp0, (s_disp >> 16) - (start >> 16), psx_clock_count());
   return 0;
+}
+
+/* PAL's 50 Hz clock (D138): our vblank v starts at the display's
+ * psx_clock_display_due(0, v), and display vblanks past it count as ours. */
+static void rate_cases(void) {
+  int v;
+  psx_clock_set_hz(50);
+  for (v = 0; v < 600; v++) {
+    int d = psx_clock_display_due(0, v);
+    check(d * 50 / 60 == v || (d * 50 / 60 >= v && (d - 1) * 50 / 60 < v), "50 Hz: due at the first display vblank");
+    check((d - 1) * 50 / 60 < v || v == 0, "50 Hz: not before");
+  }
+  check(psx_clock_display_to_ours(6) == 5 && psx_clock_display_to_ours(-1) == -1 &&
+            psx_clock_display_to_ours(0) == 0 && psx_clock_display_to_ours(1) == 0,
+        "50 Hz: display vblanks as ours");
+  psx_clock_set_hz(60);
+  check(psx_clock_display_due(7, 5) == 12 && psx_clock_display_to_ours(-3) == -3, "60 Hz: as before");
 }
 
 int main(void) {
   widen_cases();
-  if (play(2539, 200000, 1) < 0) /* the dump's: wraps at our vblank 62997 */
+  rate_cases();
+  if (play(2539, 200000, 1, 60) < 0) /* the dump's: wraps at our vblank 62997 */
     s_fail = 1;
-  if (play(65530, 200000, 2) < 0) /* a wrap in the first frames */
+  if (play(65530, 200000, 2, 60) < 0) /* a wrap in the first frames */
     s_fail = 1;
-  if (play(0, 200000, 3) < 0)
+  if (play(0, 200000, 3, 60) < 0)
+    s_fail = 1;
+  if (play(2539, 200000, 4, 50) < 0) /* PAL at its own 50 Hz */
+    s_fail = 1;
+  if (play(65530, 200000, 5, 50) < 0)
     s_fail = 1;
   printf(s_fail ? "test_vcount: FAIL\n" : "test_vcount: ok\n");
   return s_fail;

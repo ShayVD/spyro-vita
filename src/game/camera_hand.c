@@ -20,6 +20,9 @@
 #include "variables.h"
 #include "vector.h"
 
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130) */
+#include "region.h"       /* RT(): PAL's 50 Hz retune (regions plan R3, D135) */
+
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
  * -0x7FF..0x800, as the asm does: `andi 0xFFF; slti 0x801; addiu -0x1000`. */
 static inline int AngleDelta(int delta) {
@@ -36,13 +39,19 @@ extern int D_80075894; // Passive camera's hold timer (camera.c)
 extern int D_80075924; // L2/R2 turn speed (camera.c, func_80035F58)
 extern int D_80075938; // Ticks before an auto-centre may end
 
-/* The port's control options (port_controls.h, decisions D47): all off
- * unless the platform turns them on, so the camera is the original's. */
-PortControls g_port_controls = {0, 0, 0, 100};
+/* g_port_controls (port_controls.h, D47) is defined in port.c, not here:
+ * this file is also built into the 60 Hz rules (cmake/tick60.cmake), and
+ * there a definition of its own would be the copy its code reads (D142). */
 
 /* The free camera's elevation bias for this tick's springs (func_80034CE8),
  * set by func_80035FB4 around them; 0 everywhere else. */
 static int s_tilt;
+
+/* The port's camera options read above their definitions (with the free
+ * camera's, near func_80035FB4): the right stick off centre (issue #154),
+ * and no recentring in this camera state (cam_recentre=0). */
+static int FreeCameraHeld(void);
+static int RecentreOff(void);
 
 /* The free camera's elevation limits: the follow preset is 0xA0. */
 #define TILT_ELEVATION_MIN (-0x60)
@@ -213,9 +222,9 @@ void func_80034480(void) {
     if (g_Camera.unk_0xC4 != 0) {
       if (g_Camera.m_State == 0 || g_Camera.m_State == 0x80000009) {
         if (g_Camera.unk_0xE8 != 0)
-          g_Camera.unk_0xC4--;
+          T60_TICK_DO(g_Camera.unk_0xC4--);
       } else {
-        g_Camera.unk_0xC4--;
+        T60_TICK_DO(g_Camera.unk_0xC4--);
       }
     }
 
@@ -223,7 +232,7 @@ void func_80034480(void) {
     if ((int)g_Camera.m_State >= 0) {
       func_80017AA4(&target, &g_Spyro.m_Position);
       if ((u_int)(target.x - 0x21) >= 0x1BF || (u_int)(target.y - 0x19) >= 0xBF || isFar) {
-        g_Camera.m_SpyroOffCenterFrames++;
+        T60_TICK_DO(g_Camera.m_SpyroOffCenterFrames++); /* counts 30 Hz ticks */
         return;
       }
     }
@@ -237,7 +246,7 @@ void func_80034480(void) {
     g_Spyro.m_sortingDepth = 2;
   D_8007AA10.unk_1c = 0;
 
-  if (++g_Camera.m_SpyroOffCenterFrames > 30) {
+  if (T60_TICK_AND(++g_Camera.m_SpyroOffCenterFrames > 30)) {
     for (i = 0; i < 5; i++) {
       g_Camera.m_SphericalPreset = &D_8006CAB4[i];
       func_80034358();
@@ -333,14 +342,16 @@ static void SpringStep(int pComp, int pRow, int pPull, int pError) {
   }
 }
 
-static void ClampSpeed(int pComp, int pLimit) {
+static void ClampSpeedRange(int pComp, int pLow, int pHigh) {
   int *speed = &Components(&g_Cam.m_SphereSpeed)[pComp];
 
-  if (*speed < -pLimit)
-    *speed = -pLimit;
-  if (*speed > pLimit)
-    *speed = pLimit;
+  if (*speed < pLow)
+    *speed = pLow;
+  if (*speed > pHigh)
+    *speed = pHigh;
 }
+
+static void ClampSpeed(int pComp, int pLimit) { ClampSpeedRange(pComp, -pLimit, pLimit); }
 
 /* Move the component by its speed. Angles aren't wrapped here. */
 static void SphereMove(int pComp) {
@@ -363,14 +374,16 @@ void func_80034CE8(int pRow) {
   /* Azimuth: L2/R2 turn it directly; the passive camera lets a slow Spyro
    * jump or fall without swinging round. */
   pull = Spring(SPRING_PULL, SPH_AZIMUTH, pRow);
-  if (g_Cam.m_State == CAM_STATE_3 && pull < 0x400)
-    pull = 0x400;
+  if (g_Cam.m_State == CAM_STATE_3 && pull < RT(0x400, 1475))
+    pull = RT(0x400, 1475);
   if (D_80075924 != 0) {
     error = D_80075924;
+  } else if (RecentreOff()) {
+    error = 0; /* port: the camera keeps its heading (cam_recentre=0) */
   } else if (CAMERA_AUTO() && g_Cam.m_State == CAM_RECENTRE_SLOW && D_800756B8) {
     error = 0;
   } else if (((CAMERA_PASSIVE() && (g_Spyro.m_State == 5 || g_Spyro.m_State == 6)) || D_8007592C) &&
-             g_Spyro.m_Physics.m_SpeedAngle.m_Speed < 0x400 && !g_Cam.m_NudgeTicks &&
+             g_Spyro.m_Physics.m_SpeedAngle.m_Speed < RT(0x400, 1229) && !g_Cam.m_NudgeTicks &&
              !g_Cam.m_OnMovingPlatform) {
     g_Cam.m_SphereSpeed.m_Coords.azimuth = 0;
     error = 0;
@@ -381,8 +394,8 @@ void func_80034CE8(int pRow) {
   }
   SpringStep(SPH_AZIMUTH, pRow, pull, error);
 
-  if (g_Spyro.m_State == 15 && g_Spyro.m_walkingState == 11)
-    ClampSpeed(SPH_AZIMUTH, 0x800);
+  if (g_Spyro.m_State == 15 && g_Spyro.m_walkingState == 11) /* PAL: -2458..2457 */
+    ClampSpeedRange(SPH_AZIMUTH, RT(-0x800, -2458), RT(0x800, 2457));
   if (CAMERA_PASSIVE_40() && !g_Cam.m_NudgeTicks &&
       (g_Cam.m_State == CAM_LOOK || g_Cam.m_State == CAM_STATE_3))
     ClampSpeed(SPH_AZIMUTH, 0x2000);
@@ -447,7 +460,7 @@ static void ResyncSphere(void) {
 
 static void StartRecentre(void) {
   g_Camera.unk_0xC0 = CAM_RECENTRE;
-  D_80075938 = 45;
+  D_80075938 = RT(45, 38);
 }
 
 /* Leave a scripted state once its control flag is cleared; while it's set,
@@ -513,7 +526,7 @@ void func_800357A4(void) {
     if (!((wanted == CAM_FOLLOW || wanted == 4) && D_80075938 > 0))
       g_Camera.unk_0xC0 = wanted;
   } else if (next == CAM_SPEED_CHECK) {
-    if (g_Spyro.m_Physics.m_SpeedAngle.m_Speed > 0x400 || !IsSpyroCentred())
+    if (g_Spyro.m_Physics.m_SpeedAngle.m_Speed > RT(0x400, 1229) || !IsSpyroCentred())
       g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
   } else if (next == CAM_FOLLOW && g_Spyro.unk_0x194 == 0 && (CAMERA_PASSIVE() || D_8007592C) &&
              !g_Camera.m_OnMovingPlatform) {
@@ -533,9 +546,9 @@ switchState:
       (g_Camera.unk_0xC0 == CAM_FOLLOW || g_Camera.unk_0xC0 == CAM_SPEED_CHECK) &&
       g_Camera.m_State != CAM_RECENTRE_SLOW && g_Camera.m_Focus == &g_Spyro.m_Position) {
     /* Passive camera returning to follow: recentre slowly first. */
-    D_80075938 = 8;
+    D_80075938 = RT(8, 7);
     g_Camera.unk_0xC0 = CAM_RECENTRE_SLOW;
-    D_80075894 = 90;
+    D_80075894 = RT(90, 75);
   } else if (g_Camera.m_State == CAM_STATE_2 || g_Camera.m_State == CAM_FLY_IN) {
     ResyncSphere();
   }
@@ -661,7 +674,10 @@ static void LeadSpyro(int pShift) {
  * passive camera instead holds still while D_80075894 runs (see the end of
  * func_80035FB4); the timer restarts at 90 whenever a button is down, Spyro
  * is hidden or the camera rides a platform, and only counts down while the
- * simulated sphere is off the follow preset. */
+ * simulated sphere is off the follow preset. The port's free camera counts
+ * as a button (issue #154): the game's m_NoButtonsDown sees only the left
+ * stick, so steering with the right one alone ran the timer out, stopped
+ * the camera and capped its turn (func_80034CE8's 0x800 clamp). */
 static void UpdateFollow(void) {
   int azimuth, elevation;
 
@@ -674,8 +690,9 @@ static void UpdateFollow(void) {
       ApplySphericalPreset();
   }
 
-  if (!(CAMERA_AUTO() && g_Pad.m_NoButtonsDown && D_800756B8) || g_Cam.m_OnMovingPlatform) {
-    D_80075894 = 90;
+  if (!(CAMERA_AUTO() && g_Pad.m_NoButtonsDown && !FreeCameraHeld() && D_800756B8) ||
+      g_Cam.m_OnMovingPlatform) {
+    D_80075894 = RT(90, 75);
     return;
   }
   if (D_80075894 == 0)
@@ -862,17 +879,17 @@ static void UpdateLook(void) {
   pad = g_PadFrame;
   if (pad->m_Type == CONTROLLER_TYPE_STICK &&
       !(pad->m_Sticks.m_LeftX == 0x7F && pad->m_Sticks.m_LeftY == 0x7F)) {
-    g_Cam.m_LookYaw += (pad->m_Sticks.m_LeftX - 0x7F) >> 1;
-    g_Cam.m_LookPitch += LookInvert((0x7F - pad->m_Sticks.m_LeftY) >> 1);
+    g_Cam.m_LookYaw += T60_SHARE((pad->m_Sticks.m_LeftX - 0x7F) >> 1);
+    g_Cam.m_LookPitch += LookInvert(T60_SHARE((0x7F - pad->m_Sticks.m_LeftY) >> 1));
   } else {
     if (g_Pad.m_Held & PAD_LEFT)
-      g_Cam.m_LookYaw -= 0x30;
+      g_Cam.m_LookYaw -= T60_SHARE(0x30);
     else if (g_Pad.m_Held & PAD_RIGHT)
-      g_Cam.m_LookYaw += 0x30;
+      g_Cam.m_LookYaw += T60_SHARE(0x30);
     if (g_Pad.m_Held & PAD_UP)
-      g_Cam.m_LookPitch += LookInvert(0x30);
+      g_Cam.m_LookPitch += LookInvert(T60_SHARE(0x30));
     else if (g_Pad.m_Held & PAD_DOWN)
-      g_Cam.m_LookPitch -= LookInvert(0x30);
+      g_Cam.m_LookPitch -= LookInvert(T60_SHARE(0x30));
   }
   g_Cam.m_LookYaw = Clamp(g_Cam.m_LookYaw, -0x400, 0x400);
   g_Cam.m_LookPitch = Clamp(g_Cam.m_LookPitch, -0x3D0, 0x500);
@@ -943,9 +960,40 @@ static int FreeCameraOn(void) {
          g_Pad.m_Type == CONTROLLER_TYPE_STICK;
 }
 
+/* The right stick off centre: input, for the passive camera's hold timer
+ * (UpdateFollow), as L2/R2 are. */
+static int FreeCameraHeld(void) {
+  return FreeCameraOn() && (g_Pad.m_Sticks.m_RightX != 0x7F || g_Pad.m_Sticks.m_RightY != 0x7F);
+}
+
+/* No recentring (port, cam_recentre=0, issue #154): in the follow states
+ * the azimuth spring stops pulling the camera round behind Spyro, so it
+ * keeps its heading and follows him; only L2/R2 and the free camera turn
+ * it (they still win, func_80034CE8). The elevation, the radius and every
+ * other state are the game's. Flight levels keep it: the camera swings
+ * with Spyro's turns there (UpdateState5). */
+static int RecentreOff(void) {
+  if (!g_port_controls.no_recentre || !PortControlsLive())
+    return 0;
+  switch (g_Cam.m_State) {
+  case CAM_FOLLOW:
+  case CAM_SPEED_CHECK:
+  case CAM_RECENTRE:
+  case CAM_RECENTRE_SLOW:
+  case CAM_STATE_1:
+  case CAM_STATE_2:
+  case CAM_STATE_4:
+    return 1;
+  case CAM_STATE_5:
+    return !g_Spyro.m_flyingAbility;
+  default:
+    return 0;
+  }
+}
+
 /* Turning: where L2/R2 would (after func_80035F58, which wins when either
  * is held), the stick's X sets the same azimuth push, in proportion: full
- * right is R2 (-0x400) at speed 100%. */
+ * right is R2 (-0x400; PAL's -1229, regions plan R3) at speed 100%. */
 static void FreeCameraTurn(void) {
   int x;
 
@@ -956,7 +1004,7 @@ static void FreeCameraTurn(void) {
   x = g_Pad.m_Sticks.m_RightX - 0x7F;
   if (g_port_controls.invert_x)
     x = -x;
-  D_80075924 = -x * 8 * g_port_controls.speed / 100;
+  D_80075924 = RT(-x * 8 * g_port_controls.speed / 100, -x * 1229 / 128 * g_port_controls.speed / 100);
 }
 
 /* Tilting, in the follow states only: the elevation target moves with the
@@ -1010,10 +1058,10 @@ void func_80035FB4(void) {
     break;
   case CAM_RECENTRE:
     UpdateRecentre();
-    D_80075938--;
+    T60_TICK_DO(D_80075938--);
     break;
   case CAM_RECENTRE_SLOW:
-    D_80075938--;
+    T60_TICK_DO(D_80075938--);
     break;
   case CAM_STATE_1:
     UpdateState1();
@@ -1081,7 +1129,7 @@ void func_80035FB4(void) {
    * passive camera's azimuth while a slow Spyro jumps. */
   g_Cam.m_SimFlipped = func_80033F08(&g_Cam.m_Position);
   if (!(CAMERA_PASSIVE() && g_Spyro.m_State == 5 && !g_Cam.m_OnMovingPlatform &&
-        g_Spyro.m_Physics.m_SpeedAngle.m_Speed < 0x400))
+        g_Spyro.m_Physics.m_SpeedAngle.m_Speed < RT(0x400, 1229)))
     g_Cam.m_Sphere.m_Coords.azimuth = g_Cam.m_Simulation.m_Coords.azimuth;
   g_Cam.m_Sphere.m_Coords.elevation = g_Cam.m_Simulation.m_Coords.elevation;
   g_Cam.m_Sphere.m_Coords.radius = g_Cam.m_Simulation.m_Coords.radius;

@@ -22,7 +22,13 @@ import re
 import sys
 
 FRAME = 4
-PER_VBLANK = 735
+PER_VBLANK = 735  # 44,100 / 60; 882 (44,100 / 50) for the PAL disc at 50 Hz (D138, D143)
+
+
+def per_vblank(log):
+    """The run's audio frames a vblank, from its region line."""
+    with open(log) as f:
+        return 882 if any("50 Hz vblanks" in line for line in f) else 735
 
 
 def hashes(path):
@@ -65,6 +71,7 @@ def wav_data(path):
 def main():
     ref, run = sys.argv[1], sys.argv[2]
     ld = loads(os.path.join(run, "spyro.log"))
+    pv = per_vblank(os.path.join(run, "spyro.log"))
     if len(sys.argv) > 3:
         ld = [tuple(int(x) for x in sys.argv[3].split(":"))]
     if not ld:
@@ -107,9 +114,9 @@ def main():
         ok = False
 
     a, b = wav_data(os.path.join(ref, "audio.wav")), wav_data(os.path.join(run, "audio.wav"))
-    ra, rb = a[to * PER_VBLANK * FRAME:], b[was * PER_VBLANK * FRAME:]
+    ra, rb = a[to * pv * FRAME:], b[was * pv * FRAME:]
     if self_ref:
-        ra = a[to * PER_VBLANK * FRAME:was * PER_VBLANK * FRAME]
+        ra = a[to * pv * FRAME:was * pv * FRAME]
     n = min(len(ra), len(rb))
     if n == 0:
         print("audio: nothing to compare")

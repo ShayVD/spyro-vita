@@ -140,7 +140,13 @@ static uint8_t *ps1_display_rgb(int *pw, int *ph) {
 /* linux32: the presentation frame due at this vblank, shown inline (stage
  * 7c, D112; the Vita takes them when it presents, video.c and
  * gpu_thread.c). */
-void host_present_vblank(void) { (void)port_present_frame_due(psx_clock_count()); }
+void host_present_vblank(void) {
+  /* at 50 Hz with --display60 (D148) the display's vblanks in ours: one or two */
+  const int v = psx_clock_count();
+  int u;
+  for (u = psx_clock_due_at(v - 1) + 1; u <= psx_clock_due_at(v); u++)
+    (void)port_present_frame_due(u);
+}
 
 /* Bilinear scale of src (sw x sh RGB) into the dst rectangle x0..x0+w. */
 static void scale_into(uint8_t *dst, int x0, int w, const uint8_t *src, int sw,
@@ -176,7 +182,7 @@ uint8_t *host_display_rgb(int *pw, int *ph) {
     if (!g_host_opts.out960 || g_host_opts.out960 == 2)
       return ps1_display_rgb(pw, ph);
   if (px) {
-    sw = PRESENT_W, sh = PRESENT_H;
+    sw = PRESENT_W, sh = port_present_shown_h(); /* 256 for PAL's display (D148) */
     src = malloc((size_t)sw * sh * 3);
     for (i = 0; i < sw * sh; i++) {
       src[i * 3 + 0] = c5to8(px[i] & 31);
@@ -196,8 +202,10 @@ uint8_t *host_display_rgb(int *pw, int *ph) {
   i = sh == 240 ? 8 : 0; /* the black lines above and below the drawn 224 */
   if (wide)
     scale_into(out, 0, OUT_W, src + (size_t)i * sw * 3, sw, sh - 2 * i);
-  else /* 4:3 with 224 of 240 lines at 544 is 777 wide */
-    scale_into(out, (OUT_W - 777) / 2, 777, src + (size_t)i * sw * 3, sw, sh - 2 * i);
+  else { /* 4:3 with 224 of 240 lines at 544 is 777 wide; PAL's 256 lines, 725 (D148) */
+    const int w43 = sh == 256 ? 725 : 777;
+    scale_into(out, (OUT_W - w43) / 2, w43, src + (size_t)i * sw * 3, sw, sh - 2 * i);
+  }
   free(src);
   *pw = OUT_W;
   *ph = OUT_H;

@@ -10,8 +10,22 @@ include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
-set(VITA_VERSION "01.10")
+set(VITA_VERSION "01.22")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
+# SPYRO_UNSAFE, off by default: spyro-vita.vpk stays a safe app (CI builds the
+# ON variant beside it as spyro-vita-unsafe.vpk, and a release has both, D161). A safe
+# app plays the PlayStation Store's PS1 Classic of the game (the digital copy,
+# D157) when the player copies its EBOOT.PBP into ux0:data/spyro. ON builds an
+# unsafe app (vita-make-fself without -s; the kit's UNSAFE), which the player
+# must have enabled in HENkaku's settings, and which also looks for the copy
+# where the Store installed it, in ux0:pspemu (cdimage.c's scan, switched on
+# from main.c under this definition).
+option(SPYRO_UNSAFE "Unsafe app: also reads the PSP emulator's folders for the digital copy (D157)" OFF)
+if(SPYRO_UNSAFE)
+  set(VPK_UNSAFE UNSAFE)
+else()
+  set(VPK_UNSAFE "")
+endif()
 
 # The native Vita build compiles no PsyCross code, only its headers (stage
 # 8e, D118). The moved arena's mips2c units (D116) link the reference
@@ -35,10 +49,14 @@ add_executable(spyro_vita ${VITA_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c"
-  # the work counters' lines (perfcount.c, D131)
+  # the work counters' lines (perfcount.c, D165)
   "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/perfcount/vpk_perfcount.c")
+if(SPYRO_UNSAFE)
+  target_compile_definitions(spyro_vita PRIVATE SPYRO_UNSAFE=1)
+endif()
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}")
+  "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}"
+  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/vcount")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
@@ -73,11 +91,13 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules
-# (8-bit indexed, these sizes) before it's packed.
+# (8-bit indexed, these sizes) by vita-port-kit's livearea_png.py before it's
+# packed.
 # The art in SPYRO_LIVEAREA_DIR is converted (D59): disc/livearea (gitignored,
 # tools/vita/livearea_local.sh) when it's there, else assets/livearea, the
 # official art committed at the owner's decision (not under MIT; see its
-# README). With neither, make_livearea.py draws D55's original art.
+# README), by livearea_png.py's `from`. With neither, make_livearea.py draws
+# D55's original art.
 if(EXISTS "${CMAKE_SOURCE_DIR}/disc/livearea/bg.png")
   set(la_default "${CMAKE_SOURCE_DIR}/disc/livearea")
 else()
@@ -89,7 +109,9 @@ set(LA_DIR "${CMAKE_CURRENT_BINARY_DIR}/livearea")
 set(LA_PNGS "${LA_DIR}/icon0.png" "${LA_DIR}/bg.png" "${LA_DIR}/startup.png")
 set(LA_LOCAL "${SPYRO_LIVEAREA_DIR}/icon0.png" "${SPYRO_LIVEAREA_DIR}/bg.png"
   "${SPYRO_LIVEAREA_DIR}/startup.png")
-set(LA_ARGS "${LA_DIR}")
+set(LA_PNG "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/tools/livearea_png.py")
+set(LA_MAKE "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py")
+set(LA_ARGS "${LA_MAKE}" "${LA_DIR}")
 set(LA_DEPS "")
 set(la_have_local ON)
 foreach(f ${LA_LOCAL})
@@ -99,14 +121,14 @@ foreach(f ${LA_LOCAL})
 endforeach()
 if(la_have_local)
   message(STATUS "LiveArea: art from ${SPYRO_LIVEAREA_DIR}")
-  set(LA_ARGS --from "${SPYRO_LIVEAREA_DIR}" "${LA_DIR}")
+  set(LA_ARGS "${LA_PNG}" from "${SPYRO_LIVEAREA_DIR}" "${LA_DIR}")
   set(LA_DEPS ${LA_LOCAL})
 endif()
 add_custom_command(OUTPUT ${LA_PNGS}
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_ARGS}
-  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" --check
+  COMMAND Python3::Interpreter ${LA_ARGS}
+  COMMAND Python3::Interpreter "${LA_PNG}" check
     "${LA_DIR}/icon0.png" 128x128 "${LA_DIR}/bg.png" 840x500 "${LA_DIR}/startup.png" 280x158
-  DEPENDS "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py" ${LA_DEPS}
+  DEPENDS "${LA_MAKE}" "${LA_PNG}" ${LA_DEPS}
   COMMENT "LiveArea art")
 add_custom_target(spyro_vita_livearea DEPENDS ${LA_PNGS})
 set(LA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents")
@@ -122,7 +144,7 @@ endforeach()
 
 # Also refuses a link without _newlib_heap_size_user / sceUserMainThreadStackSize
 # (main.c). The VPK lands at the top of the build tree: build/vita/spyro-vita.vpk.
-vpk_add_app(spyro_vita VPK "${CMAKE_BINARY_DIR}/spyro-vita.vpk"
+vpk_add_app(spyro_vita VPK "${CMAKE_BINARY_DIR}/spyro-vita.vpk" ${VPK_UNSAFE}
   TITLE_ID ${VITA_TITLEID} VERSION ${VITA_VERSION} NAME "${VITA_APP_NAME}"
   FILE "${LA_DIR}/icon0.png" sce_sys/icon0.png
        "${LA_DIR}/bg.png" sce_sys/livearea/contents/bg.png

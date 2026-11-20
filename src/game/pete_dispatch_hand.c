@@ -18,9 +18,12 @@
 #include "math.h"
 #include "overlay_pointers.h"
 #include "rand.h"
+#include "region.h"
 #include "spyro.h"
 #include "variables.h"
 #include "vector.h"
+
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130) */
 
 #if !M2C_func_80047B60
 /* pete.c */
@@ -98,10 +101,10 @@ static void SpawnTrail(Vector3D *pPos) {
 static void FollowFlightCeiling(void) {
   int step = D_800758C0 - g_Spyro.m_highestFlightPoint;
 
-  if (step > 0x40)
-    step = 0x40;
-  if (step < -0x10)
-    step = -0x10;
+  if (step > T60_SHARE(0x40))
+    step = T60_SHARE(0x40);
+  if (step < T60_SHARE(-0x10))
+    step = T60_SHARE(-0x10);
   g_Spyro.m_highestFlightPoint += step;
 }
 
@@ -137,7 +140,7 @@ static void Sink(void) {
 
   if (offset == 0)
     return;
-  offset += 8;
+  offset += T60_SHARE(8);
   g_Spyro.m_drowningOffset = offset;
   g_Spyro.m_Position.z = g_Spyro.m_damagingFloorIndex + 0x164;
   if (g_Spyro.m_health < 0) {
@@ -177,7 +180,7 @@ void func_80047B60(void) {
     UpdateSlopeFloorCollision();
     func_8003E1AC();
     g_Spyro.m_Physics.unk_0x144 = SlopeWalkSpeed();
-    if (g_Spyro.m_State == 3) {
+    if (T60_TICK_AND(g_Spyro.m_State == 3)) { /* dust once a 30 Hz tick */
       VecCopy(&v, &g_Spyro.m_Physics.m_TrueVelocity);
       VecShiftRight(&v, 6);
       g_SpawnParticle(1, 0x21, &v, 0);
@@ -194,7 +197,7 @@ void func_80047B60(void) {
     v.y = 0;
     v.z = 0;
     VecRotateByMatrix(&g_Spyro.m_RotationMatrix, &v, &v);
-    g_SpawnParticle(1, 0x21, &v, 0);
+    T60_TICK_DO(g_SpawnParticle(1, 0x21, &v, 0)); /* dust once a 30 Hz tick */
     break;
 
   case 7: {
@@ -225,7 +228,7 @@ void func_80047B60(void) {
   case 5: case 17:
     func_8003FE40();
     UpdateSlopeFloorCollision();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 6: case 16:
@@ -240,8 +243,14 @@ void func_80047B60(void) {
       else
         UpdateFlightCeiling();
     }
-    CheckWallsUnlessAgainstOne();
-    VecCopy(&g_Spyro.m_Physics.m_Acceleration, &g_Spyro.m_Physics.m_TrueVelocity);
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
+    if (REGION_IS(PAL)) {
+      /* PAL keeps the vertical acceleration (PAL 0x8004D6F0, D134) */
+      g_Spyro.m_Physics.m_Acceleration.x = g_Spyro.m_Physics.m_TrueVelocity.x;
+      g_Spyro.m_Physics.m_Acceleration.y = g_Spyro.m_Physics.m_TrueVelocity.y;
+    } else {
+      VecCopy(&g_Spyro.m_Physics.m_Acceleration, &g_Spyro.m_Physics.m_TrueVelocity);
+    }
     break;
 
   case 23:
@@ -254,7 +263,7 @@ void func_80047B60(void) {
       else
         UpdateFlightCeiling();
     }
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 32: case 33: case 34:
@@ -272,7 +281,7 @@ void func_80047B60(void) {
         UpdateFlightCeiling();
       }
     }
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 15:
@@ -284,7 +293,7 @@ void func_80047B60(void) {
     UpdateSlopeFloorCollision();
     if (g_Spyro.m_flyingAbility)
       UpdateFlightCeiling();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     if ((g_Spyro.m_ControlFlags & CTRL_SKIP_SURFACE_CHECK) && g_Spyro.m_walkingState == 9)
       g_Spyro.m_surfaceBelowSpyro = ColFindFloor(&g_Spyro.m_Position, 0x10000);
     break;
@@ -303,7 +312,7 @@ void func_80047B60(void) {
     func_8003E1AC();
     ApplySlopeGravity();
     AdjustAirCollision();
-    CheckWallsUnlessAgainstOne();
+    T60_TICK_END_DO(CheckWallsUnlessAgainstOne()); /* the wall ray once a tick, at its end (D160) */
     break;
 
   case 19:
@@ -319,7 +328,7 @@ void func_80047B60(void) {
     /* Flying ability and gliding: a trail while diving (bit 0x40). */
     func_8003FE40();
     UpdateSlopeFloorCollision();
-    if (g_Spyro.m_walkingState & 0x40) {
+    if (T60_TICK_AND(g_Spyro.m_walkingState & 0x40)) { /* a trail puff a 30 Hz tick */
       VecCopy(&v, &g_Spyro.m_Position);
       SpawnTrail(&v);
     }
@@ -346,7 +355,7 @@ void func_80047B60(void) {
     ApplySlopeGravity();
     VecCopy(&v, &g_Spyro.m_Position);
     v.z -= 0x164;
-    SpawnTrail(&v);
+    T60_TICK_DO(SpawnTrail(&v)); /* a trail puff a 30 Hz tick */
     break;
   }
 

@@ -276,6 +276,7 @@ int port_present_frame_due(int v) {
   return -1;
 }
 const uint16_t *port_present_shown_pixels(void) { return 0; }
+int port_present_shown_h(void) { return 240; } /* (D148) */
 int port_present_frame_is_wide(void) { return 0; }
 int port_present_ot_pre(u_long *p) { (void)p; return 0; } /* libgpu.c's DrawOTag */
 void port_present_ot_post(u_long *p) { (void)p; }
@@ -295,6 +296,7 @@ void port_lod_report(char *out, unsigned len) {
     out[0] = 0;
 }
 int port_cheat_request(int cheat, int level) { (void)cheat, (void)level; return 0; }
+int port_cheat_pending(void) { return 0; } /* tour.c's PAL warp (D143) */
 #if SPYRO_NATIVE_MEM
 /* src/game/port.c's, with a zeroed stand-in for the labels image (D106):
  * the block starts at main_BSS_END's page, so a label (the pad script reads

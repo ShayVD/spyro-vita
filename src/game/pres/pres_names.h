@@ -15,7 +15,7 @@
  *  - each renderer onto its 7d build (NAME_pres);
  *  - D30's hooks (the pass's until D129): VSync doesn't wait (pres_VSync), and LoadImage,
  *    StoreImage, MoveImage and ClearImage are dropped (pres_*Image), as
- *    D30's freeze dropped them;
+ *    D30's freeze dropped them, and PAL's ClearFrameBuffersPal with them (D139);
  *  - present.c's hooks the draw calls, onto the presenter's own: the
  *    primitive space (PortPolySpace), the 16:9 projection
  *    (PortProjectionHook), and
@@ -82,6 +82,7 @@
 #define StoreImage pres_StoreImage
 #define MoveImage pres_MoveImage
 #define ClearImage pres_ClearImage
+#define ClearFrameBuffersPal pres_ClearFrameBuffersPal
 
 /* present.c's and native_draw.c's, the presenter's own (pres_draw.c) */
 #define PortPolySpace pres_PortPolySpace
@@ -102,6 +103,8 @@
 #define D_8007567C (*pres_flight5())
 #define D_800758C4 (*pres_flight4())
 #define D_800758D8 (*pres_balloon4())
+/* D145: PAL's flight results' letter count, the same way (pres_ovl.c) */
+#define g_PalLetterCount (*pres_letters())
 #define SpuSetVoiceAttr pres_SpuSetVoiceAttr
 #define rand pres_rand
 

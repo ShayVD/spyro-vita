@@ -22,16 +22,24 @@ From the user's real dump (a 2352-byte .bin and its .cue) it makes, in WORK
            track 1 isn't MODE2 (and no image beside it); a damaged
            manifest.json. Each must exit 1
            with its title on stderr; its panel is written as disc-error.png.
+  regions: for each OTHER.cue:OTHER_FILES pair (the PAL and JP dumps, D132):
+           a release the port runs (PAL, D154; tools/extract_disc.py's
+           REGIONS "supported") must open from its .cue and .bin and from
+           its extracted files and run 10 vblanks (exit 0, no panel); one
+           it doesn't (JP) is refused with "NOT SUPPORTED YET" both ways.
+           Either way its image with one byte of the executable changed is
+           "WRONG VERSION OF THE GAME".
 
 The full-size copies (~0.7 GB each) are made one at a time and deleted; the
 refusals that need a whole image are sparse files holding only the
 sectors the check reads. The .bin itself is hard-linked, never copied.
 
-Usage: python3 -I tests/cd/image_variants.py IMAGE.cue FILES_DIR WORK OUT
+Usage: python3 -I tests/cd/image_variants.py IMAGE.cue FILES_DIR WORK OUT [OTHER.cue:OTHER_FILES ...]
   IMAGE.cue  the user's dump (disc/image/...cue)
   FILES_DIR  the extracted files of the same dump (disc/files)
   WORK       scratch folder inside the repo (build/discvar)
   OUT        logs and pictures (logs/runN-variants)
+  OTHER      another region's dump and its files ("disc/image-pal/...cue:disc/files-pal")
 """
 import json
 import os
@@ -39,6 +47,10 @@ import re
 import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "tools"))
+from extract_disc import REGIONS  # noqa: E402  (which releases the port runs)
 
 RAW = 2352
 FRAMES = 1200
@@ -119,9 +131,10 @@ def write(path, data):
 
 
 def main(argv):
-    if len(argv) != 5:
+    if len(argv) < 5:
         sys.exit(__doc__)
-    cue, files, work, out = (os.path.abspath(a) for a in argv[1:])
+    cue, files, work, out = (os.path.abspath(a) for a in argv[1:5])
+    others = [tuple(os.path.abspath(p) for p in a.split(":")) for a in argv[5:]]
     text = open(cue, encoding="latin-1").read()
     binname = re.search(r'FILE\s+"([^"]+)"', text).group(1)
     image = os.path.join(os.path.dirname(cue), binname)
@@ -172,6 +185,19 @@ def main(argv):
                         f"exit {r}: {got_title}: {got_text}".replace("\n", " / ")))
         shutil.rmtree(d)
 
+    def opened(name, make):  # another region's release the port runs (D154)
+        d = fresh(os.path.join(work, name))
+        o = fresh(os.path.join(out, name))
+        make(d)
+        r = tc([SPYRO, "--disc", rel(d), "--frames", "10", "--shot-dir", rel(o)],
+               os.path.join(o, "stdout.txt"))
+        s = open(os.path.join(o, "stdout.txt")).read()
+        ok = r == 0 and not os.path.exists(os.path.join(o, "disc-error.png"))
+        region = re.search(r"libcd: \S+ is Spyro the Dragon .*", s)
+        results.append((name, "ok" if ok else "FAIL",
+                        f"exit {r}" + (f": {region.group(0)}" if region else "")))
+        shutil.rmtree(d)
+
     # ---- good ----
     good("cue", lambda d: (link(image, os.path.join(d, binname)), shutil.copy(cue, d)), "(from ")
     good("bare-bin", lambda d: link(image, os.path.join(d, "spyro.bin")), "spyro.bin, 2352")
@@ -218,7 +244,7 @@ def main(argv):
     refused("chd", lambda d: write(os.path.join(d, "spyro.chd"), b"MComprHD" + bytes(200)),
             "CONVERT THE CHD FIRST")
     refused("pbp", lambda d: write(os.path.join(d, "EBOOT.PBP"), b"\0PBP" + bytes(200)),
-            "A PBP CAN'T BE USED")
+            "A PBP CAN'T BE READ AS A DISC")  # not a PS1 Classic (D157); a real one opens
     refused("ecm", lambda d: write(os.path.join(d, "spyro.bin.ecm"), b"ECM\0" + bytes(200)),
             "UNPACK THE ECM FIRST")
     refused("random", lambda d: write(os.path.join(d, "spyro.bin"), os.urandom(1 << 20)),
@@ -261,6 +287,48 @@ def main(argv):
     refused("no-file-list",
             lambda d: sparse_copy(image, os.path.join(d, "spyro.bin"), set(range(0, 17)), size),
             "THE IMAGE IS DAMAGED")
+
+    # ---- other regions (D132) ----
+    for ocue, ofiles in others:
+        otext = open(ocue, encoding="latin-1").read()
+        obin = re.search(r'FILE\s+"([^"]+)"', otext).group(1)
+        oimage = os.path.join(os.path.dirname(ocue), obin)
+        osize = os.path.getsize(os.path.realpath(oimage))
+        omanifest = json.load(open(os.path.join(ofiles, "manifest.json")))
+        cnf_text = open(os.path.join(ofiles, "SYSTEM.CNF"), encoding="latin-1").read()
+        oexe_name = re.search(r"cdrom:[\\/]*([^;\s]+)", cnf_text).group(1)
+        oexe = next(m for m in omanifest if m["path"] == oexe_name)
+        tag = oexe_name.split("_")[0].lower()
+        runs = any(r["exe"] == oexe_name and r["supported"] for r in REGIONS.values())
+
+        def oimage_link(d):
+            link(oimage, os.path.join(d, obin))
+            shutil.copy(ocue, d)
+
+        def ofiles_copy(d):  # what the check reads: the manifest, SYSTEM.CNF, the executable
+            for name in ("manifest.json", "SYSTEM.CNF", oexe_name):
+                shutil.copy(os.path.join(ofiles, name), d)
+
+        def ofiles_link(d):  # every file, hard-linked: the game reads them all
+            for m in omanifest:
+                dst = os.path.join(d, m["path"])
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                link(os.path.join(ofiles, m["path"]), dst)
+            shutil.copy(os.path.join(ofiles, "manifest.json"), d)
+        if runs:
+            opened(f"{tag}-image", oimage_link)
+            opened(f"{tag}-files", ofiles_link)
+        else:
+            refused(f"{tag}-image", oimage_link, "NOT SUPPORTED YET")
+            refused(f"{tag}-files", ofiles_copy, "NOT SUPPORTED YET")
+
+        def oexe_flip(lba, sec, at=oexe["lba"] + 100):
+            if lba == at:
+                sec[24 + 7] ^= 0xff
+        refused(f"{tag}-wrong-exe",
+                lambda d: sparse_copy(oimage, os.path.join(d, "spyro.bin"),
+                                      small_sectors(omanifest), osize, oexe_flip),
+                "WRONG VERSION OF THE GAME")
 
     width = max(len(r[0]) for r in results)
     lines = [f"{n:<{width}}  {s:<4}  {d}" for n, s, d in results]

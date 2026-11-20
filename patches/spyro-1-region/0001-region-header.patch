@@ -1,0 +1,34 @@
+--- /dev/null
++++ b/include/region.h
+@@ -0,0 +1,31 @@
++#ifndef __REGION_H_
++#define __REGION_H_
++
++/* Spyro Vita (docs/regions-plan.md §6.1, D133): one source for the NTSC-U,
++ * PAL (SCES-01438) and Japanese (SCPS-10083) releases.
++ *   RV(us, pal, jp)  a value that differs by release
++ *   RT(us, pal)      a PAL 50 Hz retune site (speeds x1.2, durations x5/6):
++ *                    US and JP take us; PAL takes pal, or us with "PAL 60"
++ *   REGION_IS(PAL)   code a release adds or drops
++ * A matching build fixes the release at compile time (tools/build_matching.sh
++ * passes -DREGION=0, 1 or 2), so these fold to constants and gcc 2.7.2 emits
++ * that release's code. The port leaves REGION undefined: the release is
++ * g_Region, set once before the game's first instruction, and RT's choice is
++ * g_RegionTiming (src/platform/common/psx_region.h). */
++#define REGION_US 0
++#define REGION_PAL 1
++#define REGION_JP 2
++
++#ifdef REGION
++#define REGION_IS(r) (REGION == REGION_##r)
++#define RV(us, pal, jp) (REGION == REGION_PAL ? (pal) : REGION == REGION_JP ? (jp) : (us))
++#define RT(us, pal) (REGION == REGION_PAL ? (pal) : (us))
++#else
++extern int g_Region;
++extern int g_RegionTiming; /* 1: PAL's own 50 Hz constants (RT's pal) */
++#define REGION_IS(r) (g_Region == REGION_##r)
++#define RV(us, pal, jp) (g_Region == REGION_PAL ? (pal) : g_Region == REGION_JP ? (jp) : (us))
++#define RT(us, pal) (g_RegionTiming ? (pal) : (us))
++#endif
++
++#endif

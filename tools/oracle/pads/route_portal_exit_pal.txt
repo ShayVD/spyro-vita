@@ -1,0 +1,64 @@
+# PAL route A (D143): route_portal_exit.txt through tools/regions/pad_pal.py,
+# then cut by hand: at 50 Hz the scaled walk carries Spyro into the portal
+# 306 vblanks after the anchor (the host, logs/r4/h-pal-routeA), so the
+# walk's lines after +300 (the US route's stop, turn and jump) are gone.
+# The original's comments follow.
+
+# Route A, Artisans: walk into Stone Hill's portal (gamestate 1 with its
+# transition, g_HasLevelTransition = 1), then pause and take EXIT LEVEL
+# (gamestate 10, GS_ExitLevel, and the transition back home). The pad-after
+# script of a new game and `--tour levels` / ORACLE_TOUR=levels (LEVELS OPEN).
+# A poke puts Spyro on the lawn 6,000 units before the portal (Spyro's x, y,
+# z at 0x80078A58; the PS1 runs Artisans at a variable frame time, so a long
+# walk from the start doesn't replay the same in the emulator); from there
+# on he walks and jumps in, and everything is the game's own code.
+# Steered on the host in logs/run9-step-portal, made state-anchored by
+# tools/anchor_pad.py; docs/whole-game-host.md.
+@gs=0,level=10 +44 poke:80078a58=00016f3d
+@gs=0,level=10 +44 poke:80078a5c=0000c829
+@gs=0,level=10 +44 poke:80078a60=00001c20
+@gs=0,level=10 +70 up
+@gs=0,level=10 +72 up+right
+@gs=0,level=10 +80 up
+@gs=0,level=10 +90 up+right
+@gs=0,level=10 +100 up
+@gs=0,level=10 +110 up+right
+@gs=0,level=10 +116 up
+@gs=0,level=10 +122 up+right
+@gs=0,level=10 +132 up
+@gs=0,level=10 +142 up+right
+@gs=0,level=10 +150 up+left
+@gs=0,level=10 +160 up
+@gs=0,level=10 +162 up+right
+@gs=0,level=10 +170 up+left
+@gs=0,level=10 +176 up
+@gs=0,level=10 +216 up+left
+@gs=0,level=10 +220 up
+@gs=0,level=10 +226 up+left
+@gs=0,level=10 +230 up
+@gs=0,level=10 +250 up+left
+@gs=0,level=10 +252 up
+@gs=0,level=10 +260 up+left
+@gs=0,level=10 +262 up
+@gs=0,level=10 +282 up+left
+@gs=0,level=10 +286 up
+@gs=0,level=10 +292 up+left
+@gs=0,level=10 +296 up
+@gs=1,level=10 +0 none
+@gs=1,level=11 +0 none
+@gs=9,level=11 +0 none
+@gs=0,level=11 +0 none
+@gs=0,level=11 +260 start
+@gs=2,level=11 +0 start
+@gs=2,level=11 +4 none
+@gs=2,level=11 +54 down
+@gs=2,level=11 +60 none
+@gs=2,level=11 +70 down
+@gs=2,level=11 +76 none
+@gs=2,level=11 +88 down
+@gs=2,level=11 +92 none
+@gs=2,level=11 +104 cross
+@gs=10,level=11 +0 cross
+@gs=10,level=11 +4 none
+@gs=1,level=11 +0 none
+@gs=1,level=10 +0 none

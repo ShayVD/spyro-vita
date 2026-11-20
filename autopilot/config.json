@@ -60,7 +60,7 @@
       "timeout": 1200,
       "config": [
         "vdm_ring=1024",
-        "config_version=3",
+        "config_version=5",
         "widescreen=1",
         "interp=1",
         "interp_budget=0",

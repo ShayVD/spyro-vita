@@ -1,0 +1,32 @@
+# New game from the PAL disc's title (SCES-01438, 50 Hz) on the linux32 host
+# with --region-dev, in language 2 (DE): DOWN to the title's language
+# row, RIGHT once per language (EN, FR, DE, ES, IT), UP, then CROSS every 200
+# vblanks through the card screens (read, card 1, create the save file, the
+# empty slots) to NEW GAME. R2 part B's title flow (D139); D143.
+2 none
+1850 down
+1856 none
+1900 right
+1906 none
+1950 right
+1956 none
+2050 up
+2056 none
+2150 cross
+2156 none
+2350 cross
+2356 none
+2550 cross
+2556 none
+2750 cross
+2756 none
+2950 cross
+2956 none
+3150 cross
+3156 none
+3350 cross
+3356 none
+3550 cross
+3556 none
+3750 cross
+3756 none

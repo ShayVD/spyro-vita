@@ -33,6 +33,9 @@
 #include "variables.h"
 #include "vector.h"
 
+#include "region.h"       /* RT(): PAL 50 Hz retune (D133) */
+#include "tick60_sites.h" /* 60 Hz logic's sites (D130) */
+
 /* Wrap an angle difference (12-bit angles, 0x1000 a turn) into
  * -0x7FF..0x800, as the asm does: `andi 0xFFF; slti 0x801; addiu -0x1000`. */
 static inline int AngleDelta(int delta) {
@@ -158,9 +161,9 @@ static void EnterRunning(int pNewState) {
 
   g_Spyro.m_walkingState = 0;
   KeepForwardSpeed();
-  if (pNewState == 3 && ph->m_SpeedAngle.m_Speed > 0x1400)
-    ph->m_SpeedAngle.m_Speed = 0x1400;
-  ph->m_gravity = -0xC00;
+  if (pNewState == 3 && ph->m_SpeedAngle.m_Speed > RT(0x1400, 0x1800))
+    ph->m_SpeedAngle.m_Speed = RT(0x1400, 0x1800);
+  ph->m_gravity = RT(-0xC00, -4424);
   func_8003E1AC();
   ph->unk_0x144 = g_Spyro.m_slopeAngle ? SlopeSpeedLimit() : D_8006C5B8;
   g_Spyro.unk_0x15c = 1;
@@ -208,7 +211,7 @@ static void StartFastFlight(void) {
 
   g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z;
   speed = VecMagnitude(&ph->unk_0xe8, 1);
-  ph->m_TargetSpeedAngle.m_Speed = speed < 0x1F80 ? 0x1F80 : speed;
+  ph->m_TargetSpeedAngle.m_Speed = speed < RT(0x1F80, 9677) ? RT(0x1F80, 9677) : speed;
 }
 
 /* State 11: charging (m_walkingState 1, or 0x81 supercharged). */
@@ -224,7 +227,7 @@ static void EnterCharge(void) {
     g_Spyro.m_walkingState = 1;
   }
   ph->m_TurnMomentum = 0;
-  ph->m_gravity = -0x240;
+  ph->m_gravity = RT(-0x240, -829);
   func_8003E1AC();
   ApplySlopeGravity();
   g_Spyro.unk_0x15c = 1;
@@ -250,10 +253,12 @@ static void EnterKnockback(void) {
   VecNull(&ph->unk_0xe8);
   VecSub(&ph->m_Acceleration, &ph->unk_0xe8, &ph->m_Acceleration);
   VecShiftRight(&ph->m_Acceleration, 2);
-  ph->m_gravity = -0x300;
+  ph->m_gravity = RT(-0x300, -1106);
   g_Spyro.unk_0x15c = 1;
   Rumble(&D_8007584C, 0x78);
-  Rumble(&D_800757D0, 0xF);
+  Rumble(&D_800757D0, RT(0xF, 13));
+  if (REGION_IS(PAL)) /* PAL (0x800447D4) adds a sound (D139) */
+    PlaySound(g_Spu.m_SoundTable->sound_0x43, SPYRO_MOBY, 16, NULL);
 }
 
 /* States 7 and 14: hurt. Pushed back against his motion, at most 0x1E00. */
@@ -265,9 +270,9 @@ static void EnterHurt(void) {
   VecNull(&ph->m_Acceleration);
   VecSub(&ph->m_Acceleration, &ph->m_Acceleration, &ph->m_TrueVelocity);
   len = VecMagnitude(&ph->m_Acceleration, 1);
-  if (len > 0x1E00)
-    VecScaleToLength(&ph->m_Acceleration, len, 0x1E00);
-  ph->m_gravity = -0x300;
+  if (len > RT(0x1E00, 0x2400))
+    VecScaleToLength(&ph->m_Acceleration, len, RT(0x1E00, 0x2400));
+  ph->m_gravity = RT(-0x300, -1106);
   if (g_Spyro.m_airTime == 0)
     func_8003E1AC();
   g_Spyro.unk_0x15c = 1;
@@ -293,14 +298,14 @@ static void EnterGlide(void) {
   if (ph->m_TrueVelocity.z > 0)
     ph->m_TrueVelocity.z = 0;
   ph->m_SpeedAngle.m_Speed = VecMagnitude(&ph->m_Acceleration, 0);
-  if (ph->m_SpeedAngle.m_Speed > 0x1900)
-    ph->m_SpeedAngle.m_Speed = 0x1900;
-  if (ph->m_SpeedAngle.m_Speed < 0x780)
-    ph->m_SpeedAngle.m_Speed = 0x780;
+  if (ph->m_SpeedAngle.m_Speed > RT(0x1900, 0x1E00))
+    ph->m_SpeedAngle.m_Speed = RT(0x1900, 0x1E00);
+  if (ph->m_SpeedAngle.m_Speed < RT(0x780, 0x900))
+    ph->m_SpeedAngle.m_Speed = RT(0x780, 0x900);
   if (old != 6 || g_IsFlightLevel || g_Spyro.m_highestFlightPoint < g_Spyro.m_Position.z)
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z;
   g_Spyro.unk_0x254 = ph->m_SpeedAngle.m_RotY > 0x400;
-  ph->m_gravity = -0x80;
+  ph->m_gravity = RT(-0x80, -184);
   g_Spyro.unk_0x15c = 0;
 }
 
@@ -321,7 +326,7 @@ static void EnterWhirlwind(void) {
   } else {
     VecCopy(&ph->m_Acceleration, &ph->m_TrueVelocity);
   }
-  ph->m_gravity = 0x80;
+  ph->m_gravity = RT(0x80, 184);
   g_Spyro.unk_0x15c = 0;
 }
 
@@ -329,7 +334,7 @@ static void EnterWhirlwind(void) {
 static void EnterFall(void) {
   if (g_Spyro.m_floorIdleTime == 0 && g_Spyro.m_slopeAngle < 0x20)
     func_8003E90C();
-  g_Spyro.m_Physics.m_gravity = -0xC0;
+  g_Spyro.m_Physics.m_gravity = RT(-0xC0, -276);
   g_Spyro.m_isGliding = 0;
   g_Spyro.unk_0x15c = 0;
 }
@@ -350,7 +355,7 @@ static void EnterFlyingAbility(void) {
     ph->m_Acceleration.z = 0;
     ph->unk_0xe8.z = 0;
   }
-  ph->m_gravity = -0x240;
+  ph->m_gravity = RT(-0x240, -829);
   g_Spyro.m_isGliding = 0;
   g_Spyro.unk_0x15c = 0;
 }
@@ -364,7 +369,9 @@ static void EnterFlying(void) {
     StartFastFlight();
   g_Spyro.m_walkingState = 0xC0;
   ph->m_TurnMomentum = 0;
-  ph->m_gravity = -0x240;
+  /* PAL (0x800451DC, D139): -3840 when g_LevelId is 43, a release change,
+   * not a retune (PAL 60 keeps it) */
+  ph->m_gravity = REGION_IS(PAL) && g_LevelId == 43 ? -3840 : RT(-0x240, -829);
   func_8003E1AC();
   ApplySlopeGravity();
   g_Spyro.unk_0x15c = 1;
@@ -382,26 +389,26 @@ static void EnterThrown(void) {
   ph->m_Acceleration.y = g_Spyro.unk_0x208.y << 6;
   ph->m_Acceleration.z = g_Spyro.unk_0x208.z ? g_Spyro.unk_0x208.z << 6 : ph->m_TrueVelocity.z;
   (void)Atan2(ph->m_Acceleration.x, ph->m_Acceleration.y, 1); /* result unused in the asm */
-  ph->m_gravity = -0x300;
+  ph->m_gravity = RT(-0x300, -1106);
   if (g_Spyro.m_airTime == 0)
     func_8003E1AC();
   g_Spyro.unk_0x15c = 1;
   g_SpawnParticle(5, 10, NULL, 0);
   PlaySpyroSound(g_Spu.m_SoundTable->flipImpact, &g_Spyro.m_damageSoundChannel);
-  Rumble(&D_80075904, 0xF);
+  Rumble(&D_80075904, RT(0xF, 13));
 }
 
 /* State 29: in water (a splash moby by the surface's param). */
 static void EnterSplash(void) {
   g_Spyro.m_walkingState = 0;
-  g_Spyro.m_Physics.m_gravity = -0x80;
+  g_Spyro.m_Physics.m_gravity = RT(-0x80, -184);
   g_Spyro.unk_0x15c = 1;
   if (g_Spyro.m_invulverabilityTimer == 0)
     g_SpawnParticle(5, 10, NULL, 0);
   g_SpawnMoby(D_8006EA34[D_80075728], NULL);
   PlaySpyroSound(g_Spu.m_SoundTable->waterSplash, &g_Spyro.m_damageSoundChannel);
   PlaySpyroSound(g_Spu.m_SoundTable->spyroStars, &g_Spyro.m_damageSoundChannel);
-  Rumble(&D_80075904, 0xF);
+  Rumble(&D_80075904, RT(0xF, 13));
 }
 
 /* States 30 and 31 (31 with a puff). */
@@ -410,7 +417,7 @@ static void EnterDying(int pPuff) {
 
   g_Spyro.m_walkingState = 0;
   VecCopy(&ph->unk_0xe8, &ph->m_TrueVelocity);
-  ph->m_gravity = -0x300;
+  ph->m_gravity = RT(-0x300, -1106);
   if (g_Spyro.m_airTime == 0)
     func_8003E1AC();
   g_Spyro.unk_0x15c = 1;
@@ -435,7 +442,7 @@ void func_8003EA68(int pNewState) {
   case 0: /* idle: the first idle animation after a random wait */
     g_Spyro.m_walkingState = 0;
     wait = D_80075274[rand() & 7] * spyro_AnimationDetails[0].m_TransitionLastFrame;
-    ph->m_gravity = -0x80;
+    ph->m_gravity = RT(-0x80, -184);
     g_Spyro.unk_0x15c = 1;
     D_80075788 = wait - 2;
     break;
@@ -444,19 +451,21 @@ void func_8003EA68(int pNewState) {
     break;
   case 4: /* turning on the spot */
     g_Spyro.m_walkingState = 0;
-    ph->m_gravity = -0xC00;
+    ph->m_gravity = RT(-0xC00, -4424);
     func_8003E1AC();
     g_Spyro.unk_0x15c = 1;
     break;
   case 5: /* jumping */
     VecCopy(&ph->m_Acceleration, &ph->m_TrueVelocity);
-    ph->unk_0xe8.z = 0xDC0;
-    ph->m_gravity = -0xC0;
+    ph->unk_0xe8.z = RT(0xDC0, 4224);
+    ph->m_gravity = RT(-0xC0, -276);
     g_Spyro.m_walkingState = 0;
     g_Spyro.m_isGliding = 0;
     g_Spyro.unk_0x15c = 0;
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z + (ph->m_Acceleration.z >> 6);
     D_800756B4 = g_Spyro.m_State == 29;
+    if (REGION_IS(PAL)) /* PAL (0x80044328) adds a sound (D139) */
+      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 6:
     g_Spyro.m_walkingState = 0;
@@ -472,22 +481,24 @@ void func_8003EA68(int pNewState) {
     break;
   case 7:
     EnterHurt();
-    Rumble(&D_80075764, 0x2D);
+    Rumble(&D_80075764, RT(0x2D, 38));
     break;
   case 14:
     EnterHurt();
-    Rumble(&D_80075904, 0xF);
+    Rumble(&D_80075904, RT(0xF, 13));
     PlaySpyroSound(g_Spu.m_SoundTable->flipImpact, &g_Spyro.m_damageSoundChannel);
     break;
   case 8:
     g_Spyro.m_walkingState = 0;
     g_Spyro.unk_0x15c = 1;
+    if (REGION_IS(PAL)) /* PAL (0x80044410) adds a sound (D139) */
+      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 9: case 10: /* sidestepping */
     g_Spyro.m_walkingState = 0;
     VecCopy(&ph->unk_0xe8, &ph->m_TrueVelocity);
     ph->m_SpeedAngle.m_Speed = 0;
-    ph->m_gravity = -0xC00;
+    ph->m_gravity = RT(-0xC00, -4424);
     func_8003E1AC();
     g_Spyro.unk_0x15c = 1;
     break;
@@ -498,7 +509,7 @@ void func_8003EA68(int pNewState) {
     EnterKnockback();
     break;
   case 13:
-    ph->m_gravity = -0xC00;
+    ph->m_gravity = RT(-0xC00, -4424);
     g_Spyro.m_walkingState = 0;
     g_Spyro.unk_0x15c = 1;
     break;
@@ -511,7 +522,7 @@ void func_8003EA68(int pNewState) {
   case 18: case 36: case 37: case 38: case 39: case 40: case 41: case 42: case 43:
     /* idle animations; the asm indexes the frame table by state here */
     g_Spyro.m_walkingState = 0;
-    ph->m_gravity = -0xC00;
+    ph->m_gravity = RT(-0xC00, -4424);
     D_80075788 = spyro_AnimationDetails[pNewState].m_TransitionLastFrame << 4;
     break;
   case 19: /* sliding: no upward momentum */
@@ -519,7 +530,7 @@ void func_8003EA68(int pNewState) {
     VecCopy(&ph->unk_0xe8, &ph->m_TrueVelocity);
     if (ph->unk_0xe8.z > 0)
       ph->unk_0xe8.z = 0;
-    ph->m_gravity = -0x200;
+    ph->m_gravity = RT(-0x200, -737);
     func_8003E1AC();
     ApplySlopeGravity();
     g_Spyro.unk_0x15c = 0;
@@ -541,28 +552,28 @@ void func_8003EA68(int pNewState) {
   case 25: /* squashed */
     g_Spyro.m_walkingState = 0;
     VecNull(&ph->m_Acceleration);
-    ph->m_Acceleration.z = -0xC00;
+    ph->m_Acceleration.z = RT(-0xC00, -4424);
     g_Spyro.unk_0x15c = 1;
     g_SpawnParticle(5, 10, NULL, 0);
-    Rumble(&D_80075904, 0xF);
+    Rumble(&D_80075904, RT(0xF, 13));
     PlaySpyroSound(g_Spu.m_SoundTable->splort, &g_Spyro.m_damageSoundChannel);
     break;
   case 26: /* circling m_mobyInUseBySpyro */
     g_Spyro.m_walkingState = 0;
     KeepForwardSpeed();
-    ph->m_gravity = -0xC00;
+    ph->m_gravity = RT(-0xC00, -4424);
     func_8003E1AC();
-    ph->unk_0x144 = 0x280;
+    ph->unk_0x144 = RT(0x280, 0x300);
     D_800758A0 = 0;
     g_Spyro.unk_0x15c = 1;
     break;
   case 27:
     g_Spyro.m_walkingState = 0;
     VecNull(&ph->m_Acceleration);
-    ph->m_gravity = -0x300;
+    ph->m_gravity = RT(-0x300, -1106);
     g_Spyro.unk_0x15c = 1;
     g_SpawnParticle(5, 10, NULL, 0);
-    Rumble(&D_80075904, 0xF);
+    Rumble(&D_80075904, RT(0xF, 13));
     break;
   case 29:
     EnterSplash();
@@ -574,7 +585,7 @@ void func_8003EA68(int pNewState) {
     EnterDying(1);
     break;
   case 35:
-    ph->m_gravity = -0x80;
+    ph->m_gravity = RT(-0x80, -184);
     g_Spyro.m_walkingState = 0;
     g_Spyro.unk_0x15c = 1;
     break;
@@ -646,7 +657,7 @@ static void FollowMoby(int pFlags) {
     if (g_Spyro.m_noGamepadUpdateFrames < 2)
       g_Spyro.m_noGamepadUpdateFrames = 2;
   } else {
-    if (D_80075948 < 30) {
+    if (D_80075948 < RT(30, 25)) {
       D_800758A0 = 0;
       g_Spyro.m_ControlFlags = pFlags | CTRL_PAD_LOCKED;
       if (g_Spyro.m_noGamepadUpdateFrames < 2)
@@ -708,11 +719,11 @@ static void ScriptedControl(void) {
   if (flags & (CTRL_MOVE_X | CTRL_MOVE_Y | CTRL_MOVE_Z)) {
     if (flags & CTRL_MOVE_BY_VELOCITY) {
       if (flags & CTRL_MOVE_X)
-        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.unk_0x208.x);
+        ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, T60_SHARE(g_Spyro.unk_0x208.x));
       if (flags & CTRL_MOVE_Y)
-        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, g_Spyro.unk_0x208.y);
+        ScriptAxis(&ph->m_Velocity.y, &ph->m_Acceleration.y, T60_SHARE(g_Spyro.unk_0x208.y));
       if (flags & CTRL_MOVE_Z)
-        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, g_Spyro.unk_0x208.z);
+        ScriptAxis(&ph->m_Velocity.z, &ph->m_Acceleration.z, T60_SHARE(g_Spyro.unk_0x208.z));
     } else {
       if (flags & CTRL_MOVE_X)
         ScriptAxis(&ph->m_Velocity.x, &ph->m_Acceleration.x, g_Spyro.m_portalEndPos.x - g_Spyro.m_Position.x);
@@ -743,8 +754,16 @@ static void ScriptedControl(void) {
     if (flags & CTRL_CAMERA_FOCUS) {
       g_Camera.m_FocusRotation = 0;
       g_Camera.unk_0xC0 = 0x8000000A;
-      g_Camera.m_Focus = g_Spyro.unk_0x21c;
-      g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
+      /* unk_0x21c/220 are NULL until a moby sets them (func_8004AC24 wipes
+       * g_Spyro). FollowMoby sets this flag without them, so the tick after
+       * a moby lets go of Spyro (the Peace Keepers cannon) reaches here with
+       * both NULL: the original read address 0 and went on; the port would
+       * crash in func_80033F08 (the C2-12828-1 dump, logs/hw-crash). Keep
+       * the focus and preset FollowMoby just set instead. */
+      if (g_Spyro.unk_0x21c)
+        g_Camera.m_Focus = g_Spyro.unk_0x21c;
+      if (g_Spyro.unk_0x220)
+        g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
     } else if (flags & 0x400) {
       g_Camera.unk_0xC0 = 0x8000000B;
     } else if (flags & CTRL_FOLLOW_MOBY) {
@@ -778,7 +797,7 @@ static Moby *CollideMobys(void) {
     hit = ColMobyAt(0x20000, 1);
     if (hit) {
       Rumble(&D_8007584C, 0x64);
-      Rumble(&D_800757D0, 0xC);
+      Rumble(&D_800757D0, RT(0xC, 10));
     }
     return hit;
   }
@@ -900,9 +919,15 @@ void func_8003FE40(void) {
 
   g_Spyro.m_touchingMoby = 0;
   g_Spyro.m_touchingSurface = 0xFF;
+#if SPYRO_TICK60
+  t60_wall_begin(); /* the wall contact is the tick's (D160) */
+#else
   g_Spyro.m_againstWall = 0;
-  g_Spyro.m_floorIdleTime++;
+#endif
+  T60_TICK_INC_FROM0(g_Spyro.m_floorIdleTime, T60_FROM0_FLOOR); /* marked the vblank the floor is left, then 30 Hz ticks (D160) */
+#if !SPYRO_TICK60
   VecNull(&g_Spyro.m_wallAgainstSpyro);
+#endif
   VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_CollisionMovement);
   VecNull(&ph->m_CollisionMovement);
   VecCopy(&g_Spyro.m_previousPosition, &g_Spyro.m_Position);
@@ -912,7 +937,13 @@ void func_8003FE40(void) {
   else
     g_Spyro.m_ControlFlags = 0;
 
+#if SPYRO_TICK60
+  /* 60 Hz logic (D130): the low bits carried to the tick's second half, so
+   * a tick moves him what the original's >> 6 of the two vblanks' sum does */
+  t60_spyro_shift(&ph->m_Velocity);
+#else
   VecShiftRight(&ph->m_Velocity, 6);
+#endif
   if (g_Spyro.m_ControlFlags & CTRL_SKIP_SURFACE_CHECK) {
     VecAdd(&g_Spyro.m_Position, &g_Spyro.m_Position, &ph->m_Velocity);
   } else {
@@ -932,5 +963,8 @@ void func_8003FE40(void) {
   ph->m_TrueVelocity.y /= g_DeltaTime;
   ph->m_TrueVelocity.z /= g_DeltaTime;
   ph->m_TrueSpeed = VecMagnitude(&ph->m_TrueVelocity, 1);
+#if SPYRO_TICK60
+  t60_wall_end();
+#endif
 }
 #endif

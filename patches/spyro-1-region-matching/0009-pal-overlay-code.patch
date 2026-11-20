@@ -1,0 +1,1558 @@
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -605,12 +605,12 @@
+             }
+ 
+             butterflyProps->m_0x11 = AngleAdd(butterflyProps->m_0x11, r);
+-            butterflyProps->m_0x12 = RandRange(60, 140);
++            butterflyProps->m_0x12 = RT_TIME(RandRange(60, 140));
+           }
+ 
+           if (TICK_TIMER(butterflyProps->m_0x13)) {
+             butterflyProps->m_0x10 = RandRangeSigned(10, 25);
+-            butterflyProps->m_0x13 = RandRange(80, 140);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(80, 140));
+           }
+ 
+           if (butterflyProps->m_0x10 >= 128) {
+\ No newline at end of file
+@@ -624,12 +624,12 @@
+ 
+           if (refHeight < 300) {
+             butterflyProps->m_0x10 = RandRange(10, 25);
+-            butterflyProps->m_0x13 = RandRange(80, 140);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(80, 140));
+           }
+ 
+           if (1024 < refHeight && refHeight < 2048) {
+             butterflyProps->m_0x10 = -RandRange(10, 25);
+-            butterflyProps->m_0x13 = RandRange(80, 140);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(80, 140));
+           }
+ 
+           rotated = MobyRotateToAngle(moby, butterflyProps->m_0x11, 4, 0xA, 1);
+\ No newline at end of file
+@@ -638,7 +638,7 @@
+           if (rotated && moved) {
+             butterflyProps->m_0x11 =
+                 AngleAdd(butterflyProps->m_0x11, RandRange(98, 158));
+-            butterflyProps->m_0x12 = RandRange(30, 80);
++            butterflyProps->m_0x12 = RT_TIME(RandRange(30, 80));
+           }
+ 
+           // Check distance to target position
+\ No newline at end of file
+@@ -658,7 +658,7 @@
+         func_80038638(moby, &g_Spyro.m_Position, 800,
+                       AngleAdd(ANGLE_FROM_SPYRO(moby->m_Position),
+                                butterflyProps->m_0x00 * 8),
+-                      8, 0x82, 0xE, 0x80, 0xFF, 0xFF, 0, 0, 0);
++                      8, RT(0x82, 0x9C), RT(0xE, 0x11), 0x80, 0xFF, 0xFF, 0, 0, 0);
+ 
+         // If Sparx is not alive, or is chasing something
+         if (g_Sparx == nullptr || g_Sparx->m_Substate == 99) {
+\ No newline at end of file
+@@ -669,7 +669,7 @@
+           // Timer
+           if (TICK_TIMER(butterflyProps->m_0x13)) {
+             butterflyProps->m_0x10 = RandRangeSigned(5, 20);
+-            butterflyProps->m_0x13 = RandRange(40, 80);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(40, 80));
+           }
+ 
+           if (butterflyProps->m_0x10 >= 128) {
+\ No newline at end of file
+@@ -683,12 +683,12 @@
+ 
+           if (refHeight < 200) {
+             butterflyProps->m_0x10 = RandRange(5, 20);
+-            butterflyProps->m_0x13 = RandRange(40, 80);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(40, 80));
+           }
+ 
+           if (1000 < refHeight && refHeight < 2048) {
+             butterflyProps->m_0x10 = -RandRange(5, 20);
+-            butterflyProps->m_0x13 = RandRange(40, 80);
++            butterflyProps->m_0x13 = RT_TIME(RandRange(40, 80));
+           }
+         }
+         break;
+\ No newline at end of file
+@@ -840,7 +840,7 @@
+           continue;
+         }
+         case 2: {
+-          props->m_0x14 = 100;
++          props->m_0x14 = RT(100, 120);
+           props->m_0x38->m_CurrentNode = 0;
+           moby->m_State = 1;
+           MOBY_ANIM_CHANGE(moby, 1);
+\ No newline at end of file
+@@ -903,7 +903,7 @@
+             if (props->m_0x20 == 0 && DISTANCE_TO_SPYRO(moby) < 0x800 &&
+                 func_80017908(moby->m_Rotation.z,
+                               ANGLE_TO_SPYRO(moby->m_Position)) < 0x40) {
+-              props->m_0x20 = 0x78;
++              props->m_0x20 = RT(0x78, 0x64);
+               props->m_0x44 = 0;
+               MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 8);
+             }
+\ No newline at end of file
+@@ -1234,7 +1234,7 @@
+         int floorHeight;
+ 
+         result = MobyMoveWithGravity(moby, &props->m_0x08, props->m_0x10,
+-                                     &props->m_0x0c, RT(0xC, 0xF), 0x10);
++                                     &props->m_0x0c, RT(0xC, 0xF), RT(0x10, 0x13));
+ 
+         if ((g_SurfaceBelowFlags & 0x3F) == 0) {
+           floorHeight = MobyFloorHeight(moby);
+\ No newline at end of file
+@@ -1309,7 +1309,7 @@
+           continue;
+         }
+ 
+-        moby->m_Position.z -= 100;
++        moby->m_Position.z -= RT(100, 120);
+         break;
+       }
+       }
+\ No newline at end of file
+@@ -1625,7 +1625,7 @@
+         MobyRotateToAngle(moby, angle, 6, 0, 0);
+         if (OctDistance(&moby->m_Position, &PATH_NODE_POS(props->m_0x00, 0)) >
+             0x100) {
+-          func_80039398(moby, 0x82, 0, 0, 1);
++          func_80039398(moby, RT(0x82, 0x9C), 0, 0, 1);
+         }
+         moby->m_Position.z += props->m_0x0c;
+         props->m_0x0c -= 0x14;
+\ No newline at end of file
+@@ -1674,7 +1674,7 @@
+       }
+       case 20: {
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+-        if (func_80039E94(moby, props->m_0x00, 0x100, RT(0xF0, 0x120), 0, 8, 0x10, 0xFF,
++        if (func_80039E94(moby, props->m_0x00, RT(0x100, 0x133), RT(0xF0, 0x120), 0, RT(8, 10), 0x10, 0xFF,
+                           5) == 0x103) {
+           moby->m_State = 21;
+           continue;
+\ No newline at end of file
+@@ -1768,20 +1768,30 @@
+         int nextDiff;
+         int spyroAngle;
+         int i;
+-        speed = 0xCD;
++        speed = RT(0xCD, 0xF6);
++        if (REGION_IS(PAL)) {
++          // PAL's own speeds in two levels (D146)
++          if (g_LevelId == 20) {
++            speed = RT(195, 0xEA);
++          }
++          if (g_LevelId == 21) {
++            speed = RT(200, 0xF0);
++          }
++        }
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 1);
+         if (PATH_CUR_NODE(props->m_0x00).unk_0xC > 0) {
+-          speed = PATH_CUR_NODE(props->m_0x00).unk_0xC;
++          speed = RT_SPEED(PATH_CUR_NODE(props->m_0x00).unk_0xC);
+         }
+-        if (props->m_0x14 < speed) {
+-          props->m_0x14 += 0x1E;
+-          if (props->m_0x14 > speed) {
+-            props->m_0x14 = speed;
++        // PAL scales the speed again where it's used: a node's twice (D146)
++        if (props->m_0x14 < RT_SPEED(speed)) {
++          props->m_0x14 += RT(0x1E, 0x24);
++          if (props->m_0x14 > RT_SPEED(speed)) {
++            props->m_0x14 = RT_SPEED(speed);
+           }
+-        } else if (props->m_0x14 > speed) {
+-          props->m_0x14 -= 0x1E;
+-          if (props->m_0x14 < speed) {
+-            props->m_0x14 = speed;
++        } else if (props->m_0x14 > RT_SPEED(speed)) {
++          props->m_0x14 -= RT(0x1E, 0x24);
++          if (props->m_0x14 < RT_SPEED(speed)) {
++            props->m_0x14 = RT_SPEED(speed);
+           }
+         }
+         nextNode = (props->m_0x00->m_CurrentNode + props->m_0x00->m_Reversed +
+\ No newline at end of file
+@@ -1790,13 +1800,34 @@
+         distance = OctDistance(&moby->m_Position, &PATH_CUR_POS(props->m_0x00));
+         nextDistance = OctDistance(&moby->m_Position,
+                                    &PATH_NODE_POS(props->m_0x00, nextNode));
+-        if (distance >= 0x191 && nextDistance >= 0x191) {
++        if ((REGION_IS(PAL) && props->m_0x30 == 0) ||
++            (distance >= 0x191 && nextDistance >= 0x191)) {
+           angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x00));
+           angle2 = ANGLE_FROM(moby->m_Position,
+                               PATH_NODE_POS(props->m_0x00, nextNode));
+           spyroAngle = ANGLE_TO_SPYRO(moby->m_Position);
+           currentDiff = func_80017908(angle, spyroAngle);
+           nextDiff = func_80017908(angle2, spyroAngle);
++#if REGION_HAS_PAL
++          if (REGION_IS(PAL)) {
++            // PAL: the first turn takes the next node when Spyro is well
++            // off to its side, and the later ones only when he's nearly
++            // ahead of the current one (D146)
++            if (props->m_0x30 == 0 && ABS2(currentDiff - nextDiff) >= 0x1F &&
++                currentDiff < nextDiff) {
++              props->m_0x30 = 1;
++              props->m_0x00->m_Reversed = -props->m_0x00->m_Reversed;
++              props->m_0x00->m_CurrentNode = nextNode;
++            } else if (props->m_0x30 != 0 && currentDiff < nextDiff &&
++                       ABS2(currentDiff - nextDiff) >= 0x1D &&
++                       currentDiff < 0x1E && nextDiff >= 0x3D &&
++                       func_80017908(moby->m_Rotation.z,
++                                     ANGLE_TO_SPYRO(moby->m_Position)) < 0x3C) {
++              props->m_0x00->m_Reversed = -props->m_0x00->m_Reversed;
++              props->m_0x00->m_CurrentNode = nextNode;
++            }
++          } else
++#endif
+           if (props->m_0x30 == 0 && ABS2(currentDiff - nextDiff) < 0x28) {
+             props->m_0x30 = 1;
+             props->m_0x00->m_Reversed = -props->m_0x00->m_Reversed;
+\ No newline at end of file
+@@ -1808,7 +1839,7 @@
+             props->m_0x00->m_CurrentNode = nextNode;
+           }
+         }
+-        result = func_80039E94(moby, props->m_0x00, 0x100, props->m_0x14, 0, 8,
++        result = func_80039E94(moby, props->m_0x00, RV(0x100, 0x200, 0x100), props->m_0x14, 0, RT(8, 10),
+                                0x1E, 0xFF, 5);
+         if ((result & 0x100) != 0) {
+           i = (props->m_0x28 - props->m_0x00->m_Reversed) %
+\ No newline at end of file
+@@ -1829,9 +1860,9 @@
+         }
+         props->m_0x14 = RT(0xB4, 0xD8);
+         if (PATH_CUR_NODE(props->m_0x00).unk_0xC > 0) {
+-          props->m_0x14 = PATH_CUR_NODE(props->m_0x00).unk_0xC;
++          props->m_0x14 = RT_SPEED(PATH_CUR_NODE(props->m_0x00).unk_0xC);
+         }
+-        if (func_80039E94(moby, props->m_0x00, 0x100, props->m_0x14, 0, 8, 0x20,
++        if (func_80039E94(moby, props->m_0x00, RT(0x100, 0x133), props->m_0x14, 0, RT(8, 10), 0x20,
+                           0xFF, 5) == 0x10B) {
+           props->m_0x0c = RT(150, 180);
+           moby->m_State = 41;
+\ No newline at end of file
+@@ -1859,7 +1890,7 @@
+             moby->m_State = 42;
+             continue;
+           }
+-          props->m_0x0c = 150;
++          props->m_0x0c = RT(150, 180);
+           break;
+         }
+         moby->m_Position.z += props->m_0x0c;
+\ No newline at end of file
+@@ -2287,7 +2318,7 @@
+         moby->m_Rotation.x += (u_char)props->m_0x2c;
+         moby->m_Rotation.y += (u_char)props->m_0x2e;
+         if (MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c,
+-                                &props->m_0x14, RT(0xC, 0xF), 0x10) == 3) {
++                                &props->m_0x14, RT(0xC, 0xF), RT(0x10, 0x13)) == 3) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -2810,8 +2841,8 @@
+           if (moby->m_Class == 45) {
+             attackAngle = (attackAngle + 30) & 0xFF;
+           }
+-          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(attackAngle), 80);
+-          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(attackAngle), 80);
++          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(attackAngle), RT(80, 96));
++          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(attackAngle), RT(80, 96));
+           g_Spyro.unk_0x208.z = RT(30, 36);
+         }
+         MobyRotateToSpyro(moby, 7, 5, 0);
+\ No newline at end of file
+@@ -2822,7 +2853,7 @@
+         break;
+       case 4:
+         MobyMoveWithGravity(moby, &props->m_0x08, props->m_0x14, &props->m_0x0c,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX | UPDATE_PROP_COLLISION);
+           MobyCreatePoof(moby, 0x20);
+\ No newline at end of file
+@@ -3316,7 +3347,7 @@
+       }
+ 
+       case 12: {
+-        func_80039E94(moby, props->m_0x04, RT(0x100, 0x133), RT(0x78, 0x90), 0, 3, 5, 0xFF, 5);
++        func_80039E94(moby, props->m_0x04, RT(0x100, 0x133), RT(0x78, 0x90), 0, RT(3, 4), 5, 0xFF, 5);
+         if (TICK_TIMER(props->m_0x0c)) {
+           moby->m_State++;
+           continue;
+\ No newline at end of file
+@@ -3485,7 +3516,7 @@
+             moby->m_Substate = 0;
+             *props->m_0x10 = moby;
+             props->m_0x14 = RT(0x3C, 0x32);
+-            props->m_0x0c = 0x3C;
++            props->m_0x0c = RT(0x3C, 0x32);
+             moby->m_State = 2;
+             MOBY_ANIM_CHANGE(moby, 2);
+             continue;
+\ No newline at end of file
+@@ -3587,7 +3618,7 @@
+               g_LevelMobys[props->m_0x24].m_Substate &= ~4;
+             }
+             moby->m_Substate = 1;
+-            props->m_0x0c = 0xF0;
++            props->m_0x0c = RT(0xF0, 0xC8);
+             break;
+           }
+ 
+\ No newline at end of file
+@@ -3785,7 +3816,7 @@
+           continue;
+         }
+         MobyMoveWithGravity(moby, &props->m_0x2c, props->m_0x28, &props->m_0x30,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         break;
+       }
+ 
+\ No newline at end of file
+@@ -4033,12 +4064,12 @@
+         moby->m_Rotation.y += 4;
+         MobyRotateToAngle(moby, (props->m_0x08 + 0x80) & 0xFF, 0x10, 0x20, 1);
+         MobyMoveWithGravity(moby, &props->m_0x00, props->m_0x08, &props->m_0x04,
+-                            RT(0xC, 0xF), 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         break;
+ 
+       case 3:
+         if (MobyMoveWithGravity(moby, &props->m_0x00, props->m_0x08,
+-                                &props->m_0x04, RT(0xC, 0xF), 0x10) == 3) {
++                                &props->m_0x04, RT(0xC, 0xF), RT(0x10, 0x13)) == 3) {
+           moby->m_State = 4;
+           MOBY_ANIM_CHANGE(moby, 4);
+           continue;
+\ No newline at end of file
+@@ -4486,7 +4517,7 @@
+           continue;
+         }
+         if (MobyMoveWithGravity(moby, &props->m_0x14, props->m_0x10,
+-                                &props->m_0x18, RT(0xC, 0xF), 0x10)) {
++                                &props->m_0x18, RT(0xC, 0xF), RT(0x10, 0x13))) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -5032,7 +5063,11 @@
+         projectileProps->m_0x0c = 0;
+         projectileProps->m_0x00 = 0;
+         projectileProps->m_0x02 = 0;
+-        projectileProps->m_0x04 = props->m_0x28.m_Normal[props->m_0x20];
++        // PAL's rows hold a 25 Hz flight's points, 5/6 as many (D146)
++        projectileProps->m_0x04 =
++            REGION_IS(PAL)
++                ? (TracerPoint *)props->m_0x28.m_Normal + props->m_0x20 * RT(0x91, 0x79)
++                : props->m_0x28.m_Normal[props->m_0x20];
+         projectile->m_RenderRadius = 0;
+         projectile->m_UpdateDistance = 0xFF;
+         bestMoby = 0;
+\ No newline at end of file
+@@ -5165,7 +5200,10 @@
+         projectileProps->m_0x0a =
+             func_8003891C(&projectile->m_Position, &targetPosition, RT(800, 960),
+                           projectileProps->m_0x0e, &flightTime);
+-        projectileProps->m_0x04 = props->m_0x28.m_Targeted[props->m_0x20];
++        projectileProps->m_0x04 =
++            REGION_IS(PAL)
++                ? (TracerPoint *)props->m_0x28.m_Targeted + props->m_0x20 * RT(0x82, 0x6C)
++                : props->m_0x28.m_Targeted[props->m_0x20];
+         velocityZ = projectileProps->m_0x0a;
+         projectileProps->m_0x02 = 1;
+         projectileProps->m_0x00 = flightTime;
+\ No newline at end of file
+@@ -5338,8 +5376,8 @@
+         if (props->m_0x10 == 0) {
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x0c + 2);
+           MobyRotateToSpyro(moby, 6, 0, 0);
+-          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(moby->m_Rotation.z), 140);
+-          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(moby->m_Rotation.z), 140);
++          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(moby->m_Rotation.z), RT(140, 168));
++          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(moby->m_Rotation.z), RT(140, 168));
+           g_Spyro.unk_0x208.z = RT(0x46, 0x54);
+           if (g_AnimationFinished) {
+             props->m_0x14 = RT(0x78, 0x64);
+\ No newline at end of file
+@@ -5700,9 +5738,9 @@
+             projectileProps = (Moby57Props *)props->m_0x40->m_Props;
+             projectileProps->m_0x0a = 0;
+             projectileProps->m_0x00 =
+-                FIXED_MUL(COSINE_8(props->m_0x40->m_Rotation.z), 300);
++                FIXED_MUL(COSINE_8(props->m_0x40->m_Rotation.z), RT(300, 360));
+             projectileProps->m_0x02 =
+-                FIXED_MUL(SINE_8(props->m_0x40->m_Rotation.z), 300);
++                FIXED_MUL(SINE_8(props->m_0x40->m_Rotation.z), RT(300, 360));
+             projectileProps->m_0x04 = 0;
+             props->m_0x40->m_Substate = 1;
+             props->m_0x40 = nullptr;
+\ No newline at end of file
+@@ -5862,8 +5900,8 @@
+             angle = AngleClampDistance(ANGLE_TO_SPYRO(moby->m_Position),
+                                        props->m_0x30, 32);
+             g_Spyro.m_DamageFlags |= 0x86;
+-            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(angle << 4), 110);
+-            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(angle << 4), 110);
++            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(angle << 4), RT(110, 132));
++            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(angle << 4), RT(110, 132));
+             g_Spyro.unk_0x208.z = RT(40, 48);
+             props->m_0x30 = ANGLE_FROM_SPYRO(moby->m_Position);
+             props->m_0x34 = RT(0xDC, 0x108);
+\ No newline at end of file
+@@ -5957,7 +5995,7 @@
+         VecAdd(&midpoint, &pointA, &pointB);
+         VecShiftRight(&midpoint, 1);
+         MobyMoveWithGravity(moby, &props->m_0x34, props->m_0x30, &props->m_0x3c,
+-                            0, 0x10);
++                            0, RT(0x10, 0x13));
+ 
+         if (moby->m_Position.z < midpoint.z) {
+           VecCopy(&moby->m_Position, &midpoint);
+\ No newline at end of file
+@@ -6149,9 +6187,9 @@
+             if (SPYRO_BASE_Z_DELTA(moby) < -200) {
+               g_Spyro.m_DamageFlags |= 0x86;
+               g_Spyro.unk_0x208.x =
+-                  FIXED_MUL(Cos(moby->m_Rotation.z << 4), 140);
++                  FIXED_MUL(Cos(moby->m_Rotation.z << 4), RT(140, 168));
+               g_Spyro.unk_0x208.y =
+-                  FIXED_MUL(Sin(moby->m_Rotation.z << 4), 140);
++                  FIXED_MUL(Sin(moby->m_Rotation.z << 4), RT(140, 168));
+               g_Spyro.unk_0x208.z = RT(70, 84);
+             }
+           }
+\ No newline at end of file
+@@ -6277,8 +6315,8 @@
+           angle = AngleClampDistance(ANGLE_TO_SPYRO(moby->m_Position),
+                                      props->m_0x2c, 32);
+           g_Spyro.m_DamageFlags |= 0x86;
+-          g_Spyro.unk_0x208.x = FIXED_MUL(Cos(angle << 4), 110);
+-          g_Spyro.unk_0x208.y = FIXED_MUL(Sin(angle << 4), 110);
++          g_Spyro.unk_0x208.x = FIXED_MUL(Cos(angle << 4), RT(110, 132));
++          g_Spyro.unk_0x208.y = FIXED_MUL(Sin(angle << 4), RT(110, 132));
+           g_Spyro.unk_0x208.z = RT(40, 48);
+           props->m_0x2c = ANGLE_FROM_SPYRO(moby->m_Position);
+           props->m_0x30 = RT(0xF0, 0x120);
+\ No newline at end of file
+@@ -6389,7 +6427,7 @@
+         VecAdd(&midpoint, &pointA, &pointB);
+         VecShiftRight(&midpoint, 1);
+         MobyMoveWithGravity(moby, &props->m_0x30, props->m_0x2c, &props->m_0x34,
+-                            0, 0x10);
++                            0, RT(0x10, 0x13));
+ 
+         if (moby->m_Position.z < midpoint.z) {
+           VecCopy(&moby->m_Position, &midpoint);
+\ No newline at end of file
+@@ -6480,7 +6518,7 @@
+       if (props->m_0x18 == 0) {
+         props->m_0x18 = 1;
+         *props->m_0x10 = props->m_0x14;
+-        props->m_0x00 *= 60;
++        props->m_0x00 *= RT(60, 50);
+       }
+ 
+       switch (moby->m_State) {
+\ No newline at end of file
+@@ -6560,7 +6598,7 @@
+         }
+ 
+         if (TICK_TIMER(props->m_0x00)) {
+-          props->m_0x00 = *props->m_0x10 * 60;
++          props->m_0x00 = *props->m_0x10 * RT(60, 50);
+           for (i = 0; i < childCount; i++) {
+             MobyFree(props->m_0x24[i]);
+             props->m_0x24[i] = 0;
+\ No newline at end of file
+@@ -6819,8 +6857,8 @@
+               g_Spyro.m_State != 0x14) {
+             props->m_0x20 = 1;
+             g_Spyro.m_DamageFlags |= 0x80;
+-            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), 150);
+-            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), 150);
++            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), RT(150, 180));
++            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), RT(150, 180));
+             g_Spyro.unk_0x208.z = RT(50, 60);
+           } else if (props->m_0x20 == 1) {
+             props->m_0x20 = 2;
+\ No newline at end of file
+@@ -7534,7 +7572,7 @@
+                  0x78) &
+                 0xFF;
+         func_80038638(moby, &g_LevelMobys[props->m_0x00].m_Position, 0x600,
+-                      angle, 0, props->m_0x20, 0x10, 0, 0xFF, 0xFF, 0, 0, 8);
++                      angle, 0, props->m_0x20, RT(0x10, 0x13), 0, 0xFF, 0xFF, 0, 0, 8);
+         moby->m_Position.z += (props->m_0x20 - 0x20) >> 3;
+         props->m_0x20 += g_DeltaTime * 2;
+         if (props->m_0x20 > 0x100) {
+\ No newline at end of file
+@@ -8529,6 +8567,8 @@
+           props->m_0x0c =
+               AngleLerpClamped(ANGLE_FROM_SPYRO(moby->m_Position),
+                                g_Spyro.m_bodyRotation.z, 0x28, 0x80);
++          if (REGION_IS(PAL))
++            moby->m_CollisionRange = 1;
+           moby->m_State = 8;
+           MOBY_ANIM_CHANGE(moby, 8);
+           continue;
+\ No newline at end of file
+@@ -8812,7 +8852,7 @@
+         moby->m_Rotation.y += 4;
+         MobyRotateToAngle(moby, (props->m_0x0c + 0x80) & 0xFF, 0x10, 0x20, 1);
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x14,
+-                            0xC, 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         break;
+       }
+ 
+\ No newline at end of file
+@@ -8825,14 +8865,14 @@
+         }
+ 
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x14,
+-                            0xC, 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         MobyRotateToAngle(moby, (props->m_0x0c + 0x80) & 0xFF, 0x10, 0x20, 1);
+         break;
+       }
+ 
+       case 9: {
+         if (MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c,
+-                                &props->m_0x14, RT(0xC, 0xF), 0x10) == 3) {
++                                &props->m_0x14, RT(0xC, 0xF), RT(0x10, 0x13)) == 3) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x10);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -9010,7 +9050,7 @@
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 8);
+ 
+           // No Dark Hollow Moby has Animation 13
+-          if (g_AnimFrameFinished && moby->m_AnimationState.m_Frame == 8) {
++          if (g_AnimFrameFinished && moby->m_AnimationState.m_Frame == RT(8, 7)) {
+             g_LevelMobys[props->m_LinkIndex].m_State = 13;
+             g_LevelMobys[props->m_LinkIndex].m_AnimationState.m_Animation = 13;
+             g_LevelMobys[props->m_LinkIndex].m_AnimationState.m_NextAnimation =
+\ No newline at end of file
+@@ -9232,7 +9272,7 @@
+           } else {
+             // i don't really get this, we already know dist >= 512
+             // here...maybe some sort of inline
+-            int dcheck = 310;
++            int dcheck = RT(310, 370);
+ 
+             if (dcheck < dist)
+               VecScaleToLength(&sparxChaseDelta, dist, RT(310, 370));
+\ No newline at end of file
+@@ -9859,7 +9899,8 @@
+             moby->m_State = 10;
+             continue;
+           } else {
+-            props->m_0x10 = !props->m_0x10;
++            if (!REGION_IS(PAL))
++              props->m_0x10 = !props->m_0x10;
+             moby->m_ScaleOverride = 0x20;
+             moby->m_State = 20;
+             continue;
+\ No newline at end of file
+@@ -9916,8 +9957,8 @@
+         if (props->m_0x10 == 0) {
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x0c + 2);
+           MobyRotateToSpyro(moby, 6, 0, 0);
+-          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(moby->m_Rotation.z), 140);
+-          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(moby->m_Rotation.z), 140);
++          g_Spyro.unk_0x208.x = FIXED_MUL(COSINE_8(moby->m_Rotation.z), RT(140, 168));
++          g_Spyro.unk_0x208.y = FIXED_MUL(SINE_8(moby->m_Rotation.z), RT(140, 168));
+           g_Spyro.unk_0x208.z = RT(70, 84);
+           if (g_AnimationFinished) {
+             props->m_0x14 = RT(0x78, 0x64);
+\ No newline at end of file
+@@ -10057,7 +10098,7 @@
+         DISTANCE_TO_SPYRO(moby);
+         angle = ANGLE_FROM(moby->m_Position, linkedMoby->m_Position);
+         result = AngleAdd(ANGLE_TO_SPYRO(linkedMoby->m_Position), 0x80);
+-        func_80038638(moby, &linkedMoby->m_Position, 1500, result, 4, RT(0x32, 0x3C), 0xE,
++        func_80038638(moby, &linkedMoby->m_Position, 1500, result, 4, RT(0x32, 0x3C), RT(0xE, 0x11),
+                       0x80, 0xFF, 0xFF, 0, 0, 0xD);
+         MobyRotateToAngle(linkedMoby, angle, 4, 0, 0);
+         break;
+\ No newline at end of file
+@@ -10092,14 +10133,14 @@
+         projectileProps->m_0x07 = 1;
+         projectileProps->m_0x0a = 0;
+         projectileProps->m_0x00 =
+-            FIXED_MUL(COSINE_8((props->m_0x00 - 10) & 0xFF), 300);
++            FIXED_MUL(COSINE_8((props->m_0x00 - 10) & 0xFF), RT(300, 360));
+         projectileProps->m_0x02 =
+-            FIXED_MUL(SINE_8((props->m_0x00 - 10) & 0xFF), 300);
++            FIXED_MUL(SINE_8((props->m_0x00 - 10) & 0xFF), RT(300, 360));
+         projectileProps->m_0x04 = RT(220, 264);
+         projectileProps->m_0x10 = RandRangeSigned(7, 0xF);
+         projectileProps->m_0x11 = RandRangeSigned(7, 0xF);
+         projectileProps->m_0x12 = RandRangeSigned(7, 0xF);
+-        projectileProps->m_0x0c = -0xC;
++        projectileProps->m_0x0c = RT(-0xC, -0xD);
+ 
+         if (props->m_0x0c & 2) {
+           g_LevelMobys[props->m_0x38].m_Substate = 1;
+\ No newline at end of file
+@@ -10177,9 +10218,9 @@
+           projectileProps->m_0x07 = 0;
+           projectileProps->m_0x0a = 0;
+           projectileProps->m_0x00 =
+-              FIXED_MUL(COSINE_8(projectile->m_Rotation.z), 300);
++              FIXED_MUL(COSINE_8(projectile->m_Rotation.z), RT(300, 360));
+           projectileProps->m_0x02 =
+-              FIXED_MUL(SINE_8(projectile->m_Rotation.z), 300);
++              FIXED_MUL(SINE_8(projectile->m_Rotation.z), RT(300, 360));
+           projectileProps->m_0x04 = 0;
+           projectileProps->m_0x10 = RandRangeSigned(7, 0xF);
+           projectileProps->m_0x11 = RandRangeSigned(7, 0xF);
+\ No newline at end of file
+@@ -10693,7 +10734,7 @@
+                                 ANGLE_FROM_SPYRO(moby->m_Position)) >= 0x3D ||
+                   OctDistance(&moby->m_Position, &props->m_0x04) > 0x4000) {
+                 *props->m_0x40 = 0;
+-                props->m_0x2c = 0x78;
++                props->m_0x2c = RT(0x78, 0x64);
+                 moby->m_State = 100;
+                 continue;
+               }
+\ No newline at end of file
+@@ -10736,7 +10777,7 @@
+         MobyRotateToSpyro(moby, 4, 0, 0);
+         if (func_80039398(moby, props->m_0x24, 0, 300, 0x15) == 2) {
+           *props->m_0x40 = 0;
+-          props->m_0x2c = 0x78;
++          props->m_0x2c = RT(0x78, 0x64);
+           moby->m_State = 100;
+           continue;
+         }
+\ No newline at end of file
+@@ -10751,8 +10792,8 @@
+             props->m_0x30 = 1;
+             props->m_0x2c = RT(0xDC, 0xB7);
+             g_Spyro.m_DamageFlags |= 0x86;
+-            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), 135);
+-            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), 135);
++            g_Spyro.unk_0x208.x = FIXED_MUL(Cos(moby->m_Rotation.z << 4), RT(135, 162));
++            g_Spyro.unk_0x208.y = FIXED_MUL(Sin(moby->m_Rotation.z << 4), RT(135, 162));
+             g_Spyro.unk_0x208.z = RT(0x32, 0x3C);
+           } else if (props->m_0x30 == 1) {
+             props->m_0x30 = 2;
+\ No newline at end of file
+@@ -11081,7 +11122,7 @@
+     case 143: { // Gnasty Laser Explosion
+       Moby143Props *props = moby->m_Props;
+ 
+-      props->m_0x00 += g_DeltaTime * 14;
++      props->m_0x00 += g_DeltaTime * RT(14, 17);
+       moby->m_ScaleOverride = 48000 / props->m_0x00;
+       if (moby->m_ScaleOverride < 5) {
+         moby->m_ScaleOverride = 5;
+\ No newline at end of file
+@@ -11165,8 +11206,11 @@
+                 0x28 &&
+             SPYRO_BASE_Z_DELTA(moby) < -200) {
+           if (TICK_TIMER(props->m_0x24)) {
+-            props->m_0x14 = 0;
++            if (!REGION_IS(PAL))
++              props->m_0x14 = 0;
+             props->m_0x10 = RT_TIME(props->m_0x18);
++            if (REGION_IS(PAL))
++              props->m_0x14 = 0;
+             moby->m_State = 3;
+             MOBY_ANIM_CHANGE(moby, 3);
+             continue;
+\ No newline at end of file
+@@ -11228,7 +11272,7 @@
+         Moby *spawned;
+         int floorHeight;
+         MobyMoveWithGravity(moby, &props->m_0x04, props->m_0x08, &props->m_0x0c,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if ((g_SurfaceBelowFlags & 0x3F) == 1 ||
+             (g_SurfaceBelowFlags & 0x3F) == 2) {
+           floorHeight = MobyFloorHeight(moby);
+\ No newline at end of file
+@@ -11262,7 +11306,7 @@
+           MobyFree(moby);
+           continue;
+         }
+-        moby->m_Position.z -= 100;
++        moby->m_Position.z -= RT(100, 120);
+         break;
+       }
+       break;
+\ No newline at end of file
+@@ -11479,7 +11523,7 @@
+             PlaySound(g_Spu.m_SoundTable->waterSplash, moby, 8,
+                       &moby->m_SoundChannel);
+             spawned->m_DepthOffset = 0xFE;
+-            props->m_0x30 = 0xA;
++            props->m_0x30 = RT(0xA, 0x8);
+             moby->m_State = 20;
+             continue;
+           }
+\ No newline at end of file
+@@ -11894,9 +11938,12 @@
+           props->m_0x08->m_Position.z += 0x233;
+           props->m_0x08->m_DamageFlags = moby->m_DamageFlags;
+           props->m_0x08->m_Rotation.y = 0x40;
+-          moby->m_State = 2;
++          if (!REGION_IS(PAL))
++            moby->m_State = 2;
+           moby->m_DamageFlags = 0;
+           moby->m_Substate = 0;
++          if (REGION_IS(PAL))
++            moby->m_State = 2;
+           MOBY_ANIM_RESTART(moby, 2);
+           continue;
+         }
+\ No newline at end of file
+@@ -12257,7 +12304,7 @@
+ 
+       case 2:
+         MobyMoveWithGravity(moby, &props->m_0x18, props->m_0x14, &props->m_0x1c,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x20);
+\ No newline at end of file
+@@ -12532,7 +12579,9 @@
+             projectileProps->m_0x10 = -500;
+           }
+           projectileProps->m_0x00 =
+-              (TracerPoint *)props->m_0xe0[props->m_0x68 % 3];
++              REGION_IS(PAL)
++                  ? (TracerPoint *)props->m_0xe0 + props->m_0x68 % 3 * RT(150, 125)
++                  : (TracerPoint *)props->m_0xe0[props->m_0x68 % 3];
+           projectileProps->m_0x0a = 0;
+           projectileProps->m_0x06 = RT(0xA0, 0x85);
+ 
+\ No newline at end of file
+@@ -13018,7 +13067,7 @@
+         MobyRotateToSpyro(moby, 4, 0, 0);
+ 
+         if (MobyMoveWithGravity(moby, &props->m_0x30, props->m_0x2c,
+-                                &props->m_0x28, RT(0xC, 0xF), 0xC) == 3) {
++                                &props->m_0x28, RT(0xC, 0xF), RT(0xC, 0xF)) == 3) {
+           PlaySound(g_Spu.m_SoundTable->waterSplash, moby, 8,
+                     &moby->m_SoundChannel);
+ 
+\ No newline at end of file
+@@ -13073,7 +13122,7 @@
+         case 2:
+           MobyRotateToSpyro(moby, 4, 0, 0);
+           if (MobyMoveWithGravity(moby, &props->m_0x20, props->m_0x1c,
+-                                  &props->m_0x18, RT(0xC, 0xF), 0xC) == 3) {
++                                  &props->m_0x18, RT(0xC, 0xF), RT(0xC, 0xF)) == 3) {
+             PlaySound(g_Spu.m_SoundTable->waterSplash, moby, 8,
+                       &moby->m_SoundChannel);
+             g_SpawnMoby(400, moby);
+\ No newline at end of file
+@@ -13297,7 +13346,7 @@
+         moby->m_Rotation.y += props->m_0x1e;
+ 
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x14,
+-                            0xc, 0xc);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+ 
+         if (g_AnimationFinished &&
+             moby->m_AnimationState.m_NextAnimation == 2 &&
+\ No newline at end of file
+@@ -13558,7 +13607,7 @@
+           g_Spyro.m_fallingState = 6;
+ 
+           if (D_80075904 < RT(0xf, 0xD)) {
+-            D_80075904 = 0xf;
++            D_80075904 = RT(0xf, 0xD);
+           }
+         }
+         if (g_AnimationFinished) {
+\ No newline at end of file
+@@ -14002,8 +14051,8 @@
+           particleVelocity.x = g_Spyro.m_Position.x - moby->m_Position.x;
+           particleVelocity.y = g_Spyro.m_Position.y - moby->m_Position.y;
+           magnitude = VecMagnitude(&particleVelocity, 0);
+-          particleVelocity.x = particleVelocity.x * 0x78 / magnitude;
+-          particleVelocity.y = particleVelocity.y * 0x78 / magnitude;
++          particleVelocity.x = particleVelocity.x * RT(0x78, 0x90) / magnitude;
++          particleVelocity.y = particleVelocity.y * RT(0x78, 0x90) / magnitude;
+           g_Spyro.unk_0x208.z = RT(0x28, 0x30);
+           g_Spyro.unk_0x208.x = particleVelocity.x;
+           g_Spyro.unk_0x208.y = particleVelocity.y;
+\ No newline at end of file
+@@ -14017,9 +14066,9 @@
+         for (i = 0; i < 42; i++) {
+           angle1 = rand() & 0xFF;
+           angle2 = rand() & 0xFF;
+-          particleVelocity.x = FIXED_MUL(COSINE_8(angle2), 80);
+-          particleVelocity.y = FIXED_MUL(SINE_8(angle2), 80);
+-          particleVelocity.z = FIXED_MUL(SINE_8(angle1), 80);
++          particleVelocity.x = FIXED_MUL(COSINE_8(angle2), RT(80, 96));
++          particleVelocity.y = FIXED_MUL(SINE_8(angle2), RT(80, 96));
++          particleVelocity.z = FIXED_MUL(SINE_8(angle1), RT(80, 96));
+           particleVelocity.x = FIXED_MUL(particleVelocity.x, COSINE_8(angle1));
+           particleVelocity.y = FIXED_MUL(particleVelocity.y, COSINE_8(angle1));
+           VecCopy(&particlePosition, &particleVelocity);
+\ No newline at end of file
+@@ -14406,7 +14455,7 @@
+       }
+       case 1: {
+         if (MobyMoveWithGravity(moby, &props->m_0x18, props->m_0x14,
+-                                &props->m_0x10, RT(0xC, 0xF), 0xC) == 3) {
++                                &props->m_0x10, RT(0xC, 0xF), RT(0xC, 0xF)) == 3) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -14691,7 +14740,7 @@
+               props->m_0x0c = 1;
+             }
+ 
+-            func_80039E94(moby, props->m_0x00, RT(0x200, 0x267), 0xF0, 0, RT(8, 10), 0x1E, 0xFF,
++            func_80039E94(moby, props->m_0x00, RT(0x200, 0x267), RV(0xF0, 0x138, 0xF0), 0, RT(8, 10), 0x1E, 0xFF,
+                           5);
+             break;
+           }
+\ No newline at end of file
+@@ -15368,7 +15417,7 @@
+           distance = DISTANCE_TO_SPYRO(moby);
+           if (distance > 0x2000 && distance < 0x3c00) {
+             moby->m_AnimationState.m_Frame = RT(0x12, 0xF);
+-            moby->m_AnimationState.m_NextFrame = 0x13;
++            moby->m_AnimationState.m_NextFrame = RT(0x13, 0x10);
+             moby->m_AnimationState.m_FrameProgress = 0;
+           }
+         }
+\ No newline at end of file
+@@ -15403,7 +15452,7 @@
+             moby->m_State = 20;
+             continue;
+           }
+-          props->m_0x18 = 0x3C;
++          props->m_0x18 = RT(0x3C, 0x32);
+           moby->m_AnimationState.m_Animation = 7;
+           moby->m_AnimationState.m_NextAnimation = 7;
+           moby->m_AnimationState.m_Frame = 3;
+\ No newline at end of file
+@@ -15467,7 +15516,7 @@
+           D_800758D0[1] = 2;
+         } else {
+           D_800777E8.m_DialogueId = 30;
+-          D_800777E8.m_DialogueTopStr = rand() % 3;
++          D_800777E8.m_DialogueTopStr = rand() % RV(3, 2, 3);
+         }
+       }
+       break;
+\ No newline at end of file
+@@ -15508,7 +15557,7 @@
+           D_800758D0[2] = 2;
+         } else {
+           D_800777E8.m_DialogueId = 30;
+-          D_800777E8.m_DialogueTopStr = rand() % 3;
++          D_800777E8.m_DialogueTopStr = rand() % RV(3, 2, 3);
+         }
+       }
+       break;
+\ No newline at end of file
+@@ -15550,7 +15599,7 @@
+           D_800758D0[3] = 2;
+         } else {
+           D_800777E8.m_DialogueId = 30;
+-          D_800777E8.m_DialogueTopStr = rand() % 3;
++          D_800777E8.m_DialogueTopStr = rand() % RV(3, 2, 3);
+         }
+       }
+       break;
+\ No newline at end of file
+@@ -15593,7 +15642,7 @@
+           D_800758D0[4] = 2;
+         } else {
+           D_800777E8.m_DialogueId = 30;
+-          D_800777E8.m_DialogueTopStr = rand() % 3;
++          D_800777E8.m_DialogueTopStr = rand() % RV(3, 2, 3);
+         }
+       }
+       break;
+\ No newline at end of file
+@@ -15637,7 +15686,7 @@
+           D_800758D0[5] = 2;
+         } else {
+           D_800777E8.m_DialogueId = 30;
+-          D_800777E8.m_DialogueTopStr = rand() % 3;
++          D_800777E8.m_DialogueTopStr = rand() % RV(3, 2, 3);
+         }
+       }
+       break;
+\ No newline at end of file
+@@ -16042,7 +16091,7 @@
+         if (moby->m_DamageFlags & MOBY_DAMAGE_CHARGE) {
+           props->m_0x0c = RT(240, 288);
+         } else {
+-          props->m_0x0c = 120;
++          props->m_0x0c = RT(120, 144);
+         }
+         MobySpawnDrop(moby, DROP_MODE_SCATTER_OR_HOMING, nullptr, nullptr);
+         MobyMarkKilled(moby);
+\ No newline at end of file
+@@ -16102,7 +16151,7 @@
+         break;
+       case 2:
+         MobyMoveWithGravity(moby, &props->m_0x0c, props->m_0x08, &props->m_0x10,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+\ No newline at end of file
+@@ -16180,7 +16229,7 @@
+         break;
+       case 3:
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x14,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x30);
+\ No newline at end of file
+@@ -16368,7 +16417,7 @@
+         break;
+       case 12:
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x14,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x30);
+\ No newline at end of file
+@@ -16464,7 +16513,7 @@
+             frag->m_Position.z += (rand() & 0xFF) + 0x80;
+             dfp->m_Velocity.x = (COSINE_8(i << 6) >> 6) + (rand() & 0x1F) - 0xF;
+             dfp->m_Velocity.y = (SINE_8(i << 6) >> 6) + (rand() & 0x1F) - 0xF;
+-            dfp->m_Velocity.z = (rand() & 0x3F) + 0x18;
++            dfp->m_Velocity.z = RT_SPEED((rand() & 0x3F) + 0x18);
+             frag->m_Rotation.x = rand();
+             frag->m_Rotation.y = rand();
+             frag->m_Rotation.z = rand();
+\ No newline at end of file
+@@ -16485,7 +16534,7 @@
+             frag->m_Position.z += (rand() & 0xFF) + 0x80;
+             dfp->m_Velocity.x = (COSINE_8(i << 6) >> 5) + (rand() & 0x1F) - 0xF;
+             dfp->m_Velocity.y = (SINE_8(i << 6) >> 5) + (rand() & 0x1F) - 0xF;
+-            dfp->m_Velocity.z = (rand() & 0x7F) + 0x30;
++            dfp->m_Velocity.z = RT_SPEED((rand() & 0x7F) + 0x30);
+             frag->m_Rotation.x = rand();
+             frag->m_Rotation.y = rand();
+             frag->m_Rotation.z = rand();
+\ No newline at end of file
+@@ -16543,6 +16592,8 @@
+ 
+         MobyPlaySound(moby, 2, &moby->m_SoundChannel);
+         moby->m_Rotation.x += 6;
++        if (REGION_IS(PAL))
++          moby->m_Rotation.y = 0;
+         floorZ = ColFindFloor(&moby->m_Position, 0x800);
+         if (moby->m_Position.z - floorZ >= 0x181) {
+           props->m_0x0c -= RT(0xA, 0xC);
+\ No newline at end of file
+@@ -16562,7 +16613,7 @@
+           MobyFree(moby);
+           continue;
+         } else {
+-          props->m_0x0c = -0xA;
++          props->m_0x0c = RT(-0xA, -0xC);
+           moby->m_Position.z = floorZ + 0x180;
+         }
+ 
+\ No newline at end of file
+@@ -17186,7 +17237,7 @@
+             frag->m_Position.z += (rand() & 0xFF) + 0x80;
+             dfp->m_Velocity.x = (COSINE_8(i << 6) >> 6) + (rand() & 0x1F) - 0xF;
+             dfp->m_Velocity.y = (SINE_8(i << 6) >> 6) + (rand() & 0x1F) - 0xF;
+-            dfp->m_Velocity.z = (rand() & 0x3F) + 0x18;
++            dfp->m_Velocity.z = RT_SPEED((rand() & 0x3F) + 0x18);
+             frag->m_Rotation.x = rand();
+             frag->m_Rotation.y = rand();
+             frag->m_Rotation.z = rand();
+\ No newline at end of file
+@@ -17207,7 +17258,7 @@
+             frag->m_Position.z += (rand() & 0xFF) + 0x80;
+             dfp->m_Velocity.x = (COSINE_8(i << 6) >> 5) + (rand() & 0x1F) - 0xF;
+             dfp->m_Velocity.y = (SINE_8(i << 6) >> 5) + (rand() & 0x1F) - 0xF;
+-            dfp->m_Velocity.z = (rand() & 0x7F) + 0x30;
++            dfp->m_Velocity.z = RT_SPEED((rand() & 0x7F) + 0x30);
+             frag->m_Rotation.x = rand();
+             frag->m_Rotation.y = rand();
+             frag->m_Rotation.z = rand();
+\ No newline at end of file
+@@ -17316,6 +17367,8 @@
+ 
+         MobyPlaySound(moby, 2, &moby->m_SoundChannel);
+         moby->m_Rotation.x += 6;
++        if (REGION_IS(PAL))
++          moby->m_Rotation.y = 0;
+         floorZ = ColFindFloor(&moby->m_Position, 0x800);
+         if (moby->m_Position.z - floorZ >= 0x181) {
+           props->m_0x0c -= RT(0xA, 0xC);
+\ No newline at end of file
+@@ -17335,7 +17388,7 @@
+           MobyFree(moby);
+           continue;
+         } else {
+-          props->m_0x0c = -0xA;
++          props->m_0x0c = RT(-0xA, -0xC);
+           moby->m_Position.z = floorZ + 0x180;
+         }
+ 
+\ No newline at end of file
+@@ -18039,7 +18092,7 @@
+         angle = ANGLE_FROM(moby->m_Position, linkedMoby->m_Position);
+         result = AngleAdd(ANGLE_TO_SPYRO(linkedMoby->m_Position), 0x80);
+         distance = func_80038638(moby, &linkedMoby->m_Position, 1500, result, 4,
+-                                 RT(0x32, 0x3C), 0xE, 0x80, 0xFF, 0xFF, 0, 0, 0xD);
++                                 RT(0x32, 0x3C), RT(0xE, 0x11), 0x80, 0xFF, 0xFF, 0, 0, 0xD);
+         MobyRotateToAngle(linkedMoby, angle, 4, 0, 0);
+ 
+         if (distance < 10) {
+\ No newline at end of file
+@@ -18052,7 +18105,7 @@
+         if (moby->m_AnimationState.m_Animation == 1 &&
+             moby->m_AnimationState.m_NextAnimation == 1 &&
+             g_AnimFrameFinished != 0 &&
+-            moby->m_AnimationState.m_Frame == 0x10) {
++            moby->m_AnimationState.m_Frame == RT(0x10, 0xD)) {
+           moby->m_AnimationState.m_Frame = 5;
+           moby->m_AnimationState.m_NextFrame = 6;
+           moby->m_AnimationState.m_FrameProgress = 0;
+\ No newline at end of file
+@@ -18104,7 +18157,7 @@
+             projectileProps->m_0x0e = 0;
+             projectileProps->m_0x10 = -1;
+             projectileProps->m_0x14 = 0;
+-            props->m_0x28 = 0xB4;
++            props->m_0x28 = RT(0xB4, 0x96);
+ 
+             if (props->m_0x48 != -1) {
+               Moby *linkedMoby2 = &g_LevelMobys[props->m_0x48];
+\ No newline at end of file
+@@ -18878,7 +18931,7 @@
+       case 5: {
+         int result;
+         result = MobyMoveWithGravity(moby, &props->m_0x08, props->m_0x14,
+-                                     &props->m_0x0c, RT(0xC, 0xF), 0x10);
++                                     &props->m_0x0c, RT(0xC, 0xF), RT(0x10, 0x13));
+ 
+         if (result == 3 && props->m_0x30 == 0) {
+           props->m_0x30 = 1;
+\ No newline at end of file
+@@ -19577,7 +19630,7 @@
+         props->m_KnockbackAngle = g_Spyro.m_bodyRotation.z;
+         props->m_FallKnockbackSpeed = RT(0x80, 0x9A);
+         // Set as knockback speed for use in Knockback state 5
+-        props->m_Scratch = 0x80;
++        props->m_Scratch = RT(0x80, 0x9A);
+         moby->m_DamageFlags = 0;
+         props->m_ChargeCount++;
+         // Failsafe: Kill Gnorc if he's been charged 4 times
+\ No newline at end of file
+@@ -19706,7 +19759,7 @@
+           // anim
+           if (moby->m_AnimationState.m_NextFrame >= 4) {
+             MobyMoveWithGravity(moby, &props->m_Scratch,
+-                                props->m_KnockbackAngle, 0, 8, 0);
++                                props->m_KnockbackAngle, 0, RT(8, 10), 0);
+           } else {
+             MobyMoveWithGravity(moby, &props->m_Scratch,
+                                 props->m_KnockbackAngle, 0, 0, 0);
+\ No newline at end of file
+@@ -19722,6 +19775,8 @@
+           MobyMarkKilled(moby);
+           moby->m_Position.z -= 0x200;
+           props->m_Scratch = 0;
++          if (REGION_IS(PAL))
++            moby->m_DepthOffset = 0xFE;
+           moby->m_State = 6;
+           MOBY_ANIM_CHANGE(moby, 6);
+           continue;
+\ No newline at end of file
+@@ -19795,7 +19850,7 @@
+ 
+       moby->m_Rotation.z += RT(8, 10);
+       if (MobyMoveWithGravity(moby, &props->m_0x08, props->m_0x00,
+-                              &props->m_0x04, RT(0xC, 0xF), 0xC) == 3 ||
++                              &props->m_0x04, RT(0xC, 0xF), RT(0xC, 0xF)) == 3 ||
+           TICK_TIMER(props->m_0x0c)) {
+         MobyFree(moby);
+       }
+\ No newline at end of file
+@@ -20333,7 +20388,7 @@
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 7);
+           if (TICK_TIMER(props->m_0x30) &&
+               (DISTANCE_TO_SPYRO(moby) < 0xC00 ||
+-               func_80039E94(moby, props->m_0x0c, RT(0x100, 0x133), RT(0x5A, 0x6C), 0, 4, 0x40, 0xFF,
++               func_80039E94(moby, props->m_0x0c, RT(0x100, 0x133), RT(0x5A, 0x6C), 0, RT(4, 5), 0x40, 0xFF,
+                              5) == 0x100)) {
+             moby->m_State = 6;
+             continue;
+\ No newline at end of file
+@@ -21193,7 +21248,7 @@
+           }
+ 
+           if (g_AnimFrameFinished &&
+-              moby->m_AnimationState.m_NextFrame == 0xE) {
++              moby->m_AnimationState.m_NextFrame == RT(0xE, 0xC)) {
+             Moby *spawned = g_SpawnMoby(315, moby);
+             Moby315Props *spawnedProps = spawned->m_Props;
+ 
+\ No newline at end of file
+@@ -21202,7 +21257,7 @@
+             spawnedProps->m_Thrower = moby;
+             spawnedProps->m_IsThrown = 1;
+             spawnedProps->m_ThrowAngle = moby->m_Rotation.z;
+-            spawnedProps->m_Lifetime = 30;
++            spawnedProps->m_Lifetime = RT(30, 25);
+             spawnedProps->m_ZVelocity = 80;
+           }
+           break;
+\ No newline at end of file
+@@ -21347,7 +21402,7 @@
+         switch (props->m_0x14) {
+         case 1:
+           if (props->m_0x38 == 0) {
+-            if (func_80039E94(moby, props->m_0x00, RT(0x100, 0x133), RT(0x8C, 0xA8), 0, 0x10, 0x80,
++            if (func_80039E94(moby, props->m_0x00, RT(0x100, 0x133), RT(0x8C, 0xA8), 0, RT(0x10, 0x13), 0x80,
+                               0xFF, 5) == 0x100) {
+               props->m_0x38 = 1;
+               *props->m_0x3c = 1;
+\ No newline at end of file
+@@ -21554,7 +21609,7 @@
+         if (MobyRotateToSpyro(moby, 8, 0x23, 1)) {
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 7);
+           if (g_AnimationFinished) {
+-            props->m_0x44 = 0xB4;
++            props->m_0x44 = RT(0xB4, 0x96);
+             moby->m_State = 2;
+             continue;
+           }
+\ No newline at end of file
+@@ -21581,8 +21636,8 @@
+         }
+ 
+         if (linkedMoby->m_State == 3) {
+-          props->m_0x30 = 200;
+-          props->m_0x18 = 0x190;
++          props->m_0x30 = RT(200, 240);
++          props->m_0x18 = RT(0x190, 0x1E0);
+           props->m_0x1c = ANGLE_FROM_SPYRO(moby->m_Position);
+           moby->m_State = 18;
+           continue;
+\ No newline at end of file
+@@ -22351,7 +22406,7 @@
+ 
+       case 6:
+         MobyMoveWithGravity(moby, &props->m_0x1c, props->m_0x20, &props->m_0x24,
+-                            RT(0xC, 0xF), 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x30);
+\ No newline at end of file
+@@ -22567,7 +22622,7 @@
+         if ((moby->m_DamageFlags & MOBY_DAMAGE_CHARGE) != 0) {
+           props->m_0x0c = RT(0x55, 0x66);
+         }
+-        props->m_0x14 = 0x3C;
++        props->m_0x14 = RT(0x3C, 0x48);
+         props->m_0x10 = AngleLerpClamped(ANGLE_FROM_SPYRO(moby->m_Position),
+                                          g_Spyro.m_bodyRotation.z, 0x20, 0x40);
+         MobySpawnDrop(moby, DROP_MODE_SCATTER_OR_HOMING, nullptr, nullptr);
+\ No newline at end of file
+@@ -22788,7 +22843,7 @@
+ 
+       case 2: {
+         MobyMoveWithGravity(moby, &props->m_0x0c, props->m_0x10, &props->m_0x14,
+-                            RT(0xC, 0xF), 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+\ No newline at end of file
+@@ -22853,8 +22908,8 @@
+             int angle = (moby->m_Rotation.z + RandRange(-7, 7)) & 0xFF;
+             VecCopy(&particle.m_Position, &moby->m_Position);
+             particle.m_Position.z += RandRange(0, 0x14);
+-            particle.m_Velocity.x = FIXED_MUL(COSINE_8(angle), 60);
+-            particle.m_Velocity.y = FIXED_MUL(SINE_8(angle), 60);
++            particle.m_Velocity.x = FIXED_MUL(COSINE_8(angle), RT(60, 72));
++            particle.m_Velocity.y = FIXED_MUL(SINE_8(angle), RT(60, 72));
+             particle.m_Velocity.z = RT(10, 12);
+             VecCopy(&particleOffset, &particle.m_Velocity);
+             particleOffset.z = 2;
+\ No newline at end of file
+@@ -23165,7 +23220,7 @@
+ 
+       case 2:
+         if (MobyMoveWithGravity(moby, &props->m_0x04, props->m_0x0c,
+-                                &props->m_0x08, RT(0xC, 0xF), 0x10)) {
++                                &props->m_0x08, RT(0xC, 0xF), RT(0x10, 0x13))) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x30);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -23180,7 +23235,7 @@
+ 
+       case 3:
+         if (MobyMoveWithGravity(moby, &props->m_0x04, props->m_0x0c,
+-                                &props->m_0x08, RT(0xC, 0xF), 0x10)) {
++                                &props->m_0x08, RT(0xC, 0xF), RT(0x10, 0x13))) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x30);
+           MobyFree(moby);
+\ No newline at end of file
+@@ -23778,7 +23833,7 @@
+ 
+       if ((moby->m_DamageFlags & MOBY_DAMAGE_SUPER) != 0) {
+         if (REGION_IS(PAL)) { // PAL's added sound (D146)
+-          PlaySound(g_Models[moby->m_Class]->m_Sounds[5], moby, 8,
++          PlaySound(g_Models[moby->m_Class]->m_Sounds[1], moby, 8,
+                     &moby->m_SoundChannel);
+         }
+         props->m_0x24 = g_Spyro.m_Physics.m_SpeedAngle.m_RotZ;
+\ No newline at end of file
+@@ -23795,7 +23850,7 @@
+       if (g_Spyro.m_State == 0xE) {
+         if (REGION_IS(PAL) && !(props->m_0x10 & 0x10) &&
+             DISTANCE_TO_SPYRO(moby) < 0xC00) { // PAL's added sound (D146)
+-          PlaySound(g_Models[moby->m_Class]->m_Sounds[4], moby, 8,
++          PlaySound(g_Models[moby->m_Class]->m_Sounds[0], moby, 8,
+                     &moby->m_SoundChannel);
+         }
+         props->m_0x20 = RT(0x78, 0x64);
+\ No newline at end of file
+@@ -23984,7 +24039,7 @@
+                   props->m_0x00->m_CurrentNode--;
+                 } else {
+                   props->m_0x10 = (props->m_0x10 & ~0x80) | 0x40;
+-                  props->m_0x20 = 0x3C;
++                  props->m_0x20 = RT(0x3C, 0x32);
+                 }
+               } else {
+                 if (props->m_0x00->m_CurrentNode >=
+\ No newline at end of file
+@@ -24504,13 +24559,13 @@
+         mobyToTargetAngle = ANGLE_FROM(
+             PATH_NODE_POS(props->m_0x04, props->m_0x10), moby->m_Position);
+ 
+-        sideDistance = props->m_0x10 * 20 + RT(0xB4, 0xD8);
++        sideDistance = props->m_0x10 * RT(20, 24) + RT(0xB4, 0xD8);
+ 
+         angleLimit = moby->m_AnimationState.m_NextAnimation == 0 ? 0x19 : 0x0A;
+ 
+         if (func_80017908(targetToSpyroAngle, mobyToTargetAngle) > angleLimit) {
+           func_80038638(moby, &PATH_NODE_POS(props->m_0x04, props->m_0x10),
+-                        5000, targetToSpyroAngle, 6, sideDistance, 6, 0x14,
++                        5000, targetToSpyroAngle, 6, sideDistance, RT(6, 7), 0x14,
+                         0xFF, 0xFF, 0, 0, 0);
+ 
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x1c + 1);
+\ No newline at end of file
+@@ -25000,7 +25055,7 @@
+         props->m_0x10 = 0;
+         props->m_0x00 = RT(0x3C, 0x32);
+         linkedProps[4] = 0;
+-        linkedProps[6] = 0x3C;
++        linkedProps[6] = RT(0x3C, 0x32);
+         VecCopy(&secondMoby->m_Position, &linkedMoby->m_Position);
+         secondMoby->m_Position.z += 0x200;
+         secondProps[0] = -1;
+\ No newline at end of file
+@@ -25345,7 +25400,9 @@
+       vec.z += 0x400;
+ 
+       if (!ColFindFloor(&vec, 0x1000)) {
+-        MobySpawnDrop(moby, DROP_MODE_HOMING, nullptr, nullptr);
++        if (!REGION_IS(PAL)) { // PAL: no drop when it falls out (D146)
++          MobySpawnDrop(moby, DROP_MODE_HOMING, nullptr, nullptr);
++        }
+         MobyMarkKilled(moby);
+         func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+         MobyCreatePoof(moby, 0x18);
+\ No newline at end of file
+@@ -25375,7 +25432,7 @@
+         break;
+ 
+       case 1:
+-        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * 35) >> 10) + RT(300, 360);
++        props->m_0x54 = ((DISTANCE_TO_SPYRO(moby) * RT(35, 42)) >> 10) + RT(300, 360);
+ 
+         MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, props->m_0x2c + 2);
+ 
+\ No newline at end of file
+@@ -25398,7 +25455,7 @@
+         }
+ 
+         if (g_Spyro.m_State == 0x19) {
+-          props->m_0x5c = 0x1E;
++          props->m_0x5c = RT(0x1E, 0x19);
+         }
+ 
+         if (floorZ + moby->m_FloorDistance >= moby->m_Position.z) {
+\ No newline at end of file
+@@ -25431,7 +25488,7 @@
+         } else {
+           spyroDist = DISTANCE_TO_SPYRO(moby);
+ 
+-          if (moby->m_AnimationState.m_NextFrame == 0x0D) {
++          if (moby->m_AnimationState.m_NextFrame == RT(0x0D, 0x0B)) {
+             moby->m_AnimationState.m_Frame = RT(8, 7);
+             moby->m_AnimationState.m_NextFrame = RT(9, 8);
+             moby->m_AnimationState.m_FrameProgress = 0;
+\ No newline at end of file
+@@ -25950,9 +26007,14 @@
+         props->m_0x08 = AngleLerpClamped(ANGLE_FROM_SPYRO(moby->m_Position),
+                                          g_Spyro.m_bodyRotation.z, 0x20, 0x40);
+         props->m_0x0c = RT(0x190, 0x1E0);
++        if (REGION_IS(PAL)) {
++          // PAL: the knock-back's vertical speed, the word after the US
++          // props (D146)
++          *(int *)(props + 1) = 0x30;
++        }
+ 
+         if (moby->m_DamageFlags & MOBY_DAMAGE_CHARGE) {
+-          props->m_0x0c = 500;
++          props->m_0x0c = RT(500, props->m_0x0c + 0x78);
+         }
+ 
+         props->m_0x10 = RandRange(2, 5);
+\ No newline at end of file
+@@ -26091,6 +26153,14 @@
+           moby->m_Rotation.z += props->m_0x10;
+         }
+ 
++#if REGION_HAS_PAL
++        if (REGION_IS(PAL)) {
++          // PAL: the knock-back falls with gravity; its vertical speed is
++          // the word after the US props (D146)
++          MobyMoveWithGravity(moby, &props->m_0x0c, props->m_0x08,
++                              (int *)(props + 1), RT(0xC, 0xF), RT(0x10, 0x13));
++        } else
++#endif
+         if (props->m_0x0c >= 0x1F) {
+           props->m_0x0c -= 0x1E;
+           MobyMove(moby, props->m_0x08, props->m_0x0c, 0, 300, 1);
+\ No newline at end of file
+@@ -26107,7 +26177,7 @@
+       case 8:
+         if (moby->m_AnimationState.m_Frame >= RT(0x1C, 0x17)) {
+           if (TICK_TIMER(props->m_0x04)) {
+-            moby->m_AnimationState.m_Frame = 0x0F;
++            moby->m_AnimationState.m_Frame = RT(0x0F, 0x0D);
+           }
+         }
+ 
+\ No newline at end of file
+@@ -26378,8 +26448,8 @@
+         }
+ 
+         D_800758F4 += g_DeltaTime;
+-        if (D_800758F4 >= 10 * 60 * 60) { // 10 Minutes
+-          D_800758F4 = 10 * 60 * 60 - 1;  // 9 Minutes 59.98 seconds
++        if (D_800758F4 >= RT(10 * 60 * 60, 10 * 60 * 50)) { // 10 Minutes
++          D_800758F4 = RT(10 * 60 * 60, 10 * 60 * 50) - 1; // 9 Minutes 59.98 seconds
+         }
+       } else {
+         func_8003EA68(0x20);
+\ No newline at end of file
+@@ -26765,7 +26835,7 @@
+           continue;
+         }
+         result = MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c,
+-                                     &props->m_0x08, RT(0xC, 0xF), 0xC);
++                                     &props->m_0x08, RT(0xC, 0xF), RT(0xC, 0xF));
+         if (result == 3 && moby->m_AnimationState.m_NextFrame < RT(0xD, 0xB)) {
+           g_AnimationFinished = 0;
+           moby->m_AnimationState.m_FrameProgress = 0x10;
+\ No newline at end of file
+@@ -26795,7 +26865,7 @@
+         if (moby->m_Position.z - floorHeight > 500) {
+           props->m_0x0c = 0x4D;
+           props->m_0x10 = props->m_0x1c;
+-          if (props->m_0x10 < 0x50)
++          if (props->m_0x10 < RT(0x50, 0x60))
+             props->m_0x10 = RT(0x50, 0x60);
+           props->m_0x08 = 0x28;
+           props->m_0x24 = RT(0x3C, 0x32);
+\ No newline at end of file
+@@ -26913,7 +26983,7 @@
+           moby->m_Substate = 1;
+         }
+         MobyMoveWithGravity(moby, &props->m_0x10, props->m_0x0c, &props->m_0x08,
+-                            RT(0xC, 0xF), 0xC);
++                            RT(0xC, 0xF), RT(0xC, 0xF));
+         break;
+       }
+       case 20: {
+\ No newline at end of file
+@@ -27116,7 +27186,7 @@
+         continue;
+       case 12: {
+         int angle2;
+-        int movement = 0xB4;
++        int movement = RT(0xB4, 0xD8);
+         int pathIndex;
+         int result;
+         pathIndex = props->m_0x28[0];
+\ No newline at end of file
+@@ -27124,11 +27194,11 @@
+         angle2 = ANGLE_FROM(PATH_NODE_POS(props->m_0x20, pathIndex),
+                             moby->m_Position);
+         result = 0xE;
+-        if (moby->m_AnimationState.m_NextAnimation == RT(9, 6))
++        if (moby->m_AnimationState.m_NextAnimation == 9)
+           result = 6;
+         if (func_80017908(angle12, angle2) > result) {
+           func_80038638(moby, &PATH_NODE_POS(props->m_0x20, pathIndex), 3200,
+-                        angle12, 6, movement, 9, 0x14, 0xFF, 0xFF, 0, 0, 0);
++                        angle12, 6, movement, RT(9, 0xB), 0x14, 0xFF, 0xFF, 0, 0, 0);
+           MOBY_ANIM_CHANGE_CLEAR_FINISHED(moby, 9);
+         } else {
+           MobyRotateToSpyro(moby, 6, 0, 0);
+\ No newline at end of file
+@@ -27260,7 +27330,7 @@
+           break;
+         floorHeight =
+             g_Spyro.m_Position.z - ColFindFloor(&g_Spyro.m_Position, 0x1000);
+-        props->m_0x10 += g_DeltaTime * 56;
++        props->m_0x10 += g_DeltaTime * RT(56, 47);
+         moby->m_Rotation.z = moby->m_Substate - (props->m_0x10 >> 4);
+         angle = ANGLE_TO_SPYRO(moby->m_Position);
+         if (func_80017908(moby->m_Rotation.z, angle) < 6 &&
+\ No newline at end of file
+@@ -27268,8 +27338,8 @@
+           if (SPYRO_BASE_Z_DELTA(moby) < -300 &&
+               SPYRO_BASE_Z_DISTANCE(moby) < 1500) {
+             g_Spyro.m_DamageFlags |= 0x107;
+-            g_Spyro.unk_0x208.x = FIXED_MUL(SINE_8(moby->m_Rotation.z), 90);
+-            g_Spyro.unk_0x208.y = FIXED_MUL(COSINE_8(moby->m_Rotation.z), -90);
++            g_Spyro.unk_0x208.x = FIXED_MUL(SINE_8(moby->m_Rotation.z), RT(90, 108));
++            g_Spyro.unk_0x208.y = FIXED_MUL(COSINE_8(moby->m_Rotation.z), RT(-90, -108));
+             g_Spyro.unk_0x208.z = RT(20, 24);
+           }
+         }
+\ No newline at end of file
+@@ -27465,7 +27535,7 @@
+           MobyRotateToAngle(moby, props->m_0x10, 4, 0, 0);
+           if (moby->m_AnimationState.m_Animation == 2 &&
+               g_AnimFrameFinished != 0 &&
+-              moby->m_AnimationState.m_Frame == 0xF) {
++              moby->m_AnimationState.m_Frame == RT(0xF, 0xD)) {
+             props->m_0x0c--;
+             if (props->m_0x0c > 0) {
+               moby->m_AnimationState.m_Frame = 5;
+\ No newline at end of file
+@@ -27536,7 +27606,7 @@
+           g_Spyro.unk_0x208.x = delta.x;
+           g_Spyro.unk_0x208.y = delta.y;
+           props->m_0x1c = RT(40, 33);
+-          props->m_0x20 = 40;
++          props->m_0x20 = RT(40, 33);
+           props->m_0x24 = 4000;
+         }
+         if (g_AnimationFinished) {
+\ No newline at end of file
+@@ -27873,7 +27943,7 @@
+         moby->m_Rotation.z += g_DeltaTime * 8;
+ 
+         if (props->m_0x00.z > -RT(160, 191)) {
+-          props->m_0x00.z -= (g_DeltaTime * 5) >> 1;
++          props->m_0x00.z -= (g_DeltaTime * RT(5, 6)) >> 1;
+         }
+ 
+         for (i = 0; i < g_DeltaTime; i++) {
+\ No newline at end of file
+@@ -28486,7 +28556,7 @@
+         int floorHeight;
+ 
+         MobyMoveWithGravity(moby, &props->m_0x0c, props->m_0x08, &props->m_0x10,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+ 
+         if ((g_SurfaceBelowFlags & 0x3F) == 0) {
+           floorHeight = MobyFloorHeight(moby);
+\ No newline at end of file
+@@ -29191,7 +29261,7 @@
+       case 1: {
+         angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(props->m_0x0c));
+         if (TICK_TIMER(props->m_0x44)) {
+-          props->m_0x44 = (rand() & 0x1F) + 0x50;
++          props->m_0x44 = RT_TIME((rand() & 0x1F) + 0x50);
+           MobyPlaySound(moby, rand() % 3, 0);
+         }
+         if (MobyRotateToAngle(moby, angle, 6, 0x14, 1)) {
+\ No newline at end of file
+@@ -29208,7 +29278,7 @@
+ 
+       case 2: {
+         MobyMoveWithGravity(moby, &props->m_0x14, props->m_0x10, &props->m_0x18,
+-                            RT(0xC, 0xF), 0x10);
++                            RT(0xC, 0xF), RT(0x10, 0x13));
+         if (g_AnimationFinished) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x10);
+\ No newline at end of file
+@@ -29375,7 +29445,7 @@
+         moby->m_Rotation.y += g_DeltaTime * 2;
+         if (TICK_TIMER(props->m_0x1c) ||
+             MobyMoveWithGravity(moby, &props->m_0x14, props->m_0x10,
+-                                &props->m_0x18, RT(0xC, 0xF), 0xC) == 3) {
++                                &props->m_0x18, RT(0xC, 0xF), RT(0xC, 0xF)) == 3) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyCreatePoof(moby, 0x18);
+           moby->m_RenderRadius = 0;
+\ No newline at end of file
+@@ -29824,7 +29894,7 @@
+         }
+ 
+         if (moby->m_AnimationState.m_NextFrame > RT(7, 6) &&
+-            moby->m_AnimationState.m_NextFrame < 15 &&
++            moby->m_AnimationState.m_NextFrame < RT(15, 13) &&
+             props->m_0x20 < distance) {
+           MobyMove(moby, angle, props->m_0x20, 0, 0, 0);
+         }
+\ No newline at end of file
+@@ -29998,7 +30068,7 @@
+             if (SPYRO_BASE_Z_DELTA(moby) > -500 &&
+                 SPYRO_BASE_Z_DISTANCE(moby) < 1400) {
+               *props->m_0x2c = 1;
+-              props->m_0x18 = 0x10;
++              props->m_0x18 = RT(0x10, 0xD);
+               func_800562A4(moby, 1);
+               moby->m_State = 1;
+               continue;
+\ No newline at end of file
+@@ -30712,7 +30782,7 @@
+       case 81: {
+         if (distance < 0x2800 && props->m_0x4c == -1) {
+           if (props->m_0x60 == 0) {
+-            if (func_80039E94(moby, props->m_0x14, RT(0x80, 0x9A), 0xB4, 0, 8, 0x28, 0xFF,
++            if (func_80039E94(moby, props->m_0x14, RT(0x80, 0x9A), RT(0xB4, 0xD8), 0, RT(8, 10), 0x28, 0xFF,
+                               1) != 0) {
+               props->m_0x60 = 1;
+             }
+\ No newline at end of file

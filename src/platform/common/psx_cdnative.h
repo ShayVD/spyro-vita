@@ -32,6 +32,9 @@ void psx_cdn_read_finish(int lba, int count, void *dst);
 /* Waits for a posted read, which then counts as not posted (CdReadBreak,
  * CdInit, save states). */
 void psx_cdn_read_drain(void);
+/* 1 when no posted read is still in progress: the worker finished it, or none
+ * was posted (psx_cdn_read_finish then reads now). Doesn't wait (D159). */
+int psx_cdn_read_done(void);
 
 /* ---- the XA stream ---- */
 /* libcd.c: a ReadS/ReadN stream starts at lba (and after a state load). */
@@ -58,6 +61,27 @@ typedef struct {
   unsigned long long chunk_us, decode_us;
 } PsxCdnStats;
 void psx_cdn_stats(PsxCdnStats *out);
+/* The worker's reads of the digital copy (its own handle; psx_pbp.h, D158). */
+#include "psx_pbp.h"
+#include <stddef.h>
+void psx_cdn_pbp_stats(PsxPbpStats *out);
+/* The "cd: digital copy:" line (both handles' counts) into out; 0 when no copy is open. */
+int psx_cdn_pbp_report(char *out, size_t cap);
+/* Waits until the worker has nothing in flight (a CdRead or a stream chunk),
+ * then drops the worker's and the helper's handles on the copy, their
+ * counts kept: psx_cdimage_close, before the game thread's handle goes. */
+void psx_cdn_quiesce(void);
+void psx_cdn_pbp_drop(void);
+/* A copy is open again (psx_cdimage_open): the worker may clone it. */
+void psx_cdn_pbp_opened(void);
+/* The Vita core and priority psx_cdn_start gave the worker: core 1 at 0x90
+ * for an image or extracted files, as since D93; core 2 at 0x88 when the
+ * digital copy is open (D158). For the log. */
+void psx_cdn_where(int *core, int *priority);
+/* D158, set before psx_cdn_start: 1 (the default) starts a helper thread
+ * that decodes the second half of a long read of the copy on another core;
+ * 0 leaves the worker alone (the Vita's cd_helper=0). */
+extern int g_psx_cdn_helper;
 
 #ifdef __cplusplus
 }

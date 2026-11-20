@@ -1,0 +1,30 @@
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -1940,7 +1940,13 @@
+   func_80049FAC(1);
+   func_80048D10(g_DeltaTime);
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D141): a vortex's or whirlwind's lift (0x800, set by a
++  // moby once a tick) is kept for the tick's second half; the rest goes
++  t60_spyro_damage_end();
++#else
+   g_Spyro.m_DamageFlags = 0;
++#endif
+ 
+   // Death animations
+   if (g_Spyro.m_health < 0) {
+@@ -2033,7 +2039,13 @@
+   g_Spyro.m_LastHeadFrameData =
+       SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame).m_Data;
+ 
++#if SPYRO_TICK60
++  // 60 Hz logic (D141): a script's hold on Spyro (bit 31, set by a moby
++  // once a tick) lasts the whole 30 Hz tick, so let it go at the tick's end
++  t60_spyro_release();
++#else
+   g_Spyro.m_ControlFlags &= 0x7FFFFFFF;
++#endif
+ 
+   if (g_PadSwapFlag) {
+     func_80053708(&g_PadBackup, &g_Pad);

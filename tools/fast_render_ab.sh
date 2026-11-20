@@ -15,7 +15,7 @@
 # routes), whole (host_checks.sh's whole-game tour: 100,000 vblanks).
 # Runs one at a time (Docker may have few CPUs); --prof-draw logs the
 # renderers' CPU time in each spyro.log (it doesn't change the run). Every run
-# has its own card folder, DIR/save (D135). gems and lod fail, and the script
+# has its own card folder, DIR/save (D169). gems and lod fail, and the script
 # exits 1, when a run's last trace row doesn't show the script's 4 gems.
 cd "$(dirname "$0")/.."
 P=$1; shift
@@ -25,7 +25,7 @@ set -f; FAST=${FAST:-0 3}; FA=${FAST% *}; FB=${FAST#* }; set +f
 run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D
-  # every run its own card folder (D135): without --save every run shares
+  # every run its own card folder (D169): without --save every run shares
   # ./save, and a run after the first finds the card an earlier one wrote,
   # so the title screen takes the gems script's presses another way
   extra="--save $D/save"
@@ -36,7 +36,7 @@ run() { # NAME FAST args...
   echo "exit $?" >> $D/stdout.txt
 }
 FAIL=0
-# gems, lod: the script's last trace row must show its four gems (D135), so a
+# gems, lod: the script's last trace row must show its four gems (D169), so a
 # pair can't match by both runs missing them
 reached() { # NAME DIR
   g=$(tail -1 $2/trace.tsv 2>/dev/null | cut -f10)
