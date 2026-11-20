@@ -4310,10 +4310,10 @@ void gl_report(int vblank) {
   if (g_vita_opts.gpu_time)
     s_sample.state = 1;
   if (s_vc) {
-    VCacheStats sum;
+    VCacheStats sum, win[2];
     const VCacheStats *c = &sum;
     unsigned f, k;
-    psx_vcache_stats_sum(&sum);
+    psx_vcache_stats_take(win, &sum); /* since the last report (#181: no reset) */
     f = c->frames ? c->frames : 1;
     vita_log("vcache %d: %u frames; per frame %u projected (peak %u), %u invalid, %u ambiguous, "
              "%u unrecorded; %u polygons, %u%% with every vertex found, %u%% of vertices found; "
@@ -4340,7 +4340,7 @@ void gl_report(int vblank) {
      * the other's entries, and vertices whose answer the renderer couldn't
      * be given (not in a vertex buffer the cache knows) */
     for (k = 0; k < 2; k++) {
-      c = &g_vcache_stats[k];
+      c = &win[k];
       f = c->frames ? c->frames : 1;
       vita_log("vcache %d %s: %u frames; per frame %u projected, %u polygons, %u%% with every "
                "vertex found, %u%% of vertices found, %u%% in the other's entries, %u%% lost",
@@ -4366,7 +4366,6 @@ void gl_report(int vblank) {
                "found; the presenter's thread %u projected, %u polygons, %u vertices, %u not found",
                vblank, d[0][0], d[0][1], d[0][2], d[0][3], d[1][0], d[1][1], d[1][2], d[1][3]);
     }
-    psx_vcache_stats_reset();
   }
   if (s_filter || s_cache) {
     vita_log("atlas %d: %u textured triangles looked up (%u in the map, the rest remembered), "

@@ -23,11 +23,12 @@
  * entry keeps up to four candidates (position and depth): every distinct
  * projection under its key, plus depth / 16 for a vertex that may be a
  * precision one (no translation, every coordinate a multiple of 16 below
- * 4096). psx_vcache_poly then picks, for each polygon, the candidates whose depths
- * have the smallest spread: one point at another scale is 4 or 16 times
- * off, another point on the same pixel is as far off as it is in depth,
- * and a real polygon's depths are much closer. A key with more than four
- * is ambiguous and never used.
+ * 4096, but for the grids' borrow in y, #181). psx_vcache_poly then picks,
+ * for each polygon, the candidates whose depths have the smallest spread:
+ * one point at another scale is 4 or 16 times off, another point on the
+ * same pixel is as far off as it is in depth, and a real polygon's depths
+ * are much closer. A key with more than four is ambiguous (since #181,
+ * resolved from the frame's order where it can be, below).
  *
  * Clamped projections (#178). When the GTE saturated IR1/IR2, SX/SY or
  * SZ3, or its division overflowed (H >= 2 SZ3), the SXY2 the game got isn't
@@ -45,6 +46,15 @@
  * under one key make it ambiguous, never "multi" (T_MULTI's integer
  * position is the clamped one). Still invalid: a depth of 0 or less, and a
  * key that isn't the GTE's answer for these inputs.
+ *
+ * Ambiguous keys (#181). More than four different points under one key
+ * (far mobys and far ground at a long draw distance) made it ambiguous,
+ * never used: every polygon with such a vertex was drawn affine, and as
+ * the camera moved, polygons switched between perspective and affine. The
+ * table keeps the answer of each projection under a key with different
+ * points (lc), so a polygon whose other vertices are found takes, for that
+ * vertex, the depths of the projections under its key near theirs in the
+ * frame's order (resolve), its position the key's integer one.
  *
  * Sub-pixel positions are decided per key, not per polygon: a key that
  * is found gives every polygon using it the same point, and one that isn't
@@ -135,6 +145,8 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 #define VC_DER 512   /* keys a frame's polygons derived (#183) */
 #define VC_LOG 8192  /* projections a frame in the order they came (#183) */
 #define VC_NOSEQ 0xFFFFu
+#define LOG_LC 0x8000u /* a log place's flag: lc holds its answer (#181) */
+#define LOG_E(x) ((x) & 0x1FFFu) /* a log place's entry */
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
 
@@ -187,6 +199,15 @@ typedef struct {
   unsigned nlog;
   uint32_t idx_gen;
   uint16_t log[VC_LOG], prev[VC_LOG], last[VC_SIZE];
+  /* The answer of each projection a key with different points (or one
+   * made ambiguous) had after its first (#181), at its log place, flagged
+   * LOG_LC there: position as a candidate's, w > 0 its depth, w < 0 minus
+   * the depth of a point that may be a precision one (-w / 16 is then a
+   * depth too), 0 none (invalid, clamped or far). A place without the flag
+   * is the entry's first projection or the first's point again: candidate
+   * 0's position at one of the candidates' depths there. */
+  Cand lc[VC_LOG];
+  unsigned lc_line; /* the cost model's: the line of lc last written, + 1 (0: none this frame) */
   /* the exact positions (pixels from the pixel centre) of this table's
    * frame's candidates that don't fit an int16 (#178): only indexed by the
    * frame's own entries, so never cleared */
@@ -292,20 +313,49 @@ static void cost_line(void) {
   }
 }
 
-void psx_vcache_stats_sum(VCacheStats *out) {
-  const unsigned *a = (const unsigned *)&g_vcache_stats[0], *b = (const unsigned *)&g_vcache_stats[1];
+/* the two kinds' counters added (peak: the larger), and the report's lines */
+static void sum_report(const VCacheStats k[2], VCacheStats *out) {
+  const unsigned *a = (const unsigned *)&k[0], *b = (const unsigned *)&k[1];
   unsigned *o = (unsigned *)out;
   size_t i;
   for (i = 0; i < sizeof *out / sizeof(unsigned); i++)
     o[i] = a[i] + b[i];
-  out->peak = g_vcache_stats[0].peak > g_vcache_stats[1].peak ? g_vcache_stats[0].peak
-                                                               : g_vcache_stats[1].peak;
+  out->peak = k[0].peak > k[1].peak ? k[0].peak : k[1].peak;
   cost_line();
   /* #183: the quads' vertices with no entry found again from their polygon */
   PsyX_Log("vcache derived: %u vertices with no entry drawn with their polygon's depth (%u at the "
            "projection recorded before the renderer moved them, %u at their key); %u left with no "
            "entry",
            out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none);
+  /* #181: ambiguous keys' vertices found again from the frame's order */
+  PsyX_Log("vcache resolved: %u vertices with an ambiguous key drawn with a depth from its "
+           "projections near their polygon's others (%u where the order left one point); %u left "
+           "ambiguous",
+           out->resolved, out->res_order, out->miss_ambiguous);
+}
+
+void psx_vcache_stats_sum(VCacheStats *out) { sum_report(g_vcache_stats, out); }
+
+/* #181: the counters are never written by the report's thread (only the
+ * peaks, below), so an add on the walk's thread can't undo a reset */
+void psx_vcache_stats_take(VCacheStats win[2], VCacheStats *sum) {
+  static VCacheStats base[2];
+  size_t k, i;
+  for (k = 0; k < 2; k++) {
+    const volatile unsigned *c = (const volatile unsigned *)&g_vcache_stats[k];
+    unsigned *b = (unsigned *)&base[k], *w = (unsigned *)&win[k];
+    for (i = 0; i < sizeof win[k] / sizeof(unsigned); i++) {
+      const unsigned v = c[i];
+      w[i] = v - b[i];
+      b[i] = v;
+    }
+    /* the largest in the window: started again (a frame's own thread may
+     * store its larger one meanwhile; then it counts in the next) */
+    win[k].peak = g_vcache_stats[k].peak;
+    g_vcache_stats[k].peak = 0;
+    base[k].peak = 0;
+  }
+  sum_report(win, sum);
 }
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
@@ -460,6 +510,25 @@ static int add_cand(Rec *rec, Entry *s, int16_t dx, int16_t dy, float px, float 
 
 static inline void set_state(Entry *s, unsigned state) { s->tag = (s->tag & ~3u) | state; }
 
+/* A projection's own answer at its log place q (Table lc, #181) */
+static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
+                              float w, float w_alt, unsigned *cost) {
+  Cand *const l = &tb->lc[q];
+  tb->log[q] |= LOG_LC;
+  if (state == E_VALID && !clamped) {
+    l->dx = fx;
+    l->dy = fy;
+    l->w = w_alt > 0 ? -w : w;
+  } else {
+    l->dx = l->dy = 0;
+    l->w = 0;
+  }
+  if ((unsigned)q / 4 + 1 != tb->lc_line) { /* a model: written in order, 4 a line */
+    tb->lc_line = (unsigned)q / 4 + 1;
+    cost[VCC_REC_LINES]++;
+  }
+}
+
 /* PsyX_GTE.cpp's VX/VY/VZ for idx 0-2 */
 #define V_X(n) (gteRegs.CP2D.p[(n) << 1].sw.l)
 #define V_Y(n) (gteRegs.CP2D.p[(n) << 1].sw.h)
@@ -482,7 +551,7 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   Entry *s;
   unsigned prev, state = E_INVALID;
   int16_t fx = 0, fy = 0;
-  int i, ix, iy, clamped = 0;
+  int i, ix, iy, clamped = 0, q = -1, amb;
 
   st->records++;
   work[0]++;
@@ -497,14 +566,14 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   s = &rec->tab->s[i];
   prev = T_STATE(s->tag);
   if (rec->tab->nlog < VC_LOG) { /* its place in the frame's order (#183) */
-    const unsigned q = rec->tab->nlog++;
+    q = (int)rec->tab->nlog++;
     rec->tab->log[q] = (uint16_t)i;
     cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
   }
-  if (prev == E_AMBIGUOUS) {
-    cost[VCC_REC_LINES] += t.n;
-    return;
-  }
+  /* A key already ambiguous stays so, but since #181 its projections are
+   * still worked out, for the lookup's log of answers (its counters are
+   * left as they were: only the answer is kept). */
+  amb = prev == E_AMBIGUOUS;
   /* the 44-bit sums the GTE shifts into MAC1-3 */
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
@@ -512,7 +581,7 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   /* Spyro's renderers always set sf. A depth of 0 or less (the GTE's SZ3
    * or the exact one) has no projection. */
   if (!sf || sz <= 0) {
-    st->inv_depth++;
+    st->inv_depth += !amb;
     goto done;
   }
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
@@ -521,7 +590,7 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
   oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
   if (z <= 0) {
-    st->inv_depth++;
+    st->inv_depth += !amb;
     goto done;
   }
   r = (float)h / (z * sz); /* one division for h / sz and h / z */
@@ -542,12 +611,18 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   ex = (gx < -1024 ? -1024 : gx > 1023 ? 1023 : gx) - sx;
   ey = (gy < -1024 ? -1024 : gy > 1023 ? 1023 : gy) - sy;
   if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
-    st->inv_key++;
+    st->inv_key += !amb;
     goto done;
   }
-  if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
-      vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
-    w_alt = flt(z * (1.0f / 16)); /* maybe r_environment's x16 precision path */
+  /* Maybe r_environment's x16 precision path: no translation, every
+   * coordinate times 16 within +-4096. The grids' (env_hand.c GridVertex)
+   * put x << 4 and y << 20 in one word, so a negative x borrows 1 from y:
+   * there VY is 16 y - 1 (#181: until then those points had no second
+   * depth, and their big close quads, mixing scales, were drawn affine). */
+  if (!tr[0] && !tr[1] && !tr[2] && !((vx | vz) & 15) &&
+      ((vy & 15) == 0 || (vx < 0 && (vy & 15) == 15)) && vx >= -4096 && vx < 4096 &&
+      vy >= -4097 && vy < 4096 && vz >= -4096 && vz < 4096)
+    w_alt = flt(z * (1.0f / 16));
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
    * at: unbiased against vertices drawn at their integer position. In 1/256
    * pixel when it fits an int16, else in the far array (#178). */
@@ -564,6 +639,12 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   w = flt(z);
   state = E_VALID;
 done:
+  if (amb) { /* #181: only its answer */
+    if (q >= 0)
+      log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
   if (state == E_INVALID)
     work[VCW_INVALID]++;
   else if (clamped) {
@@ -584,6 +665,8 @@ done:
       st->ambiguous++;
       set_state(s, E_AMBIGUOUS);
     }
+    if (q >= 0) /* #181 */
+      log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
     cost[VCC_REC_LINES] += t.n;
     return;
   }
@@ -597,6 +680,11 @@ done:
     st->ambiguous++;
     set_state(s, E_AMBIGUOUS);
   }
+  /* #181: a key with different points (or none usable) keeps each
+   * projection's own answer after its first; under any other, every
+   * projection is the first's point at one of the candidates' depths */
+  if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
+    log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
   cost[VCC_REC_LINES] += t.n;
 }
 
@@ -697,6 +785,25 @@ static int choose(const Cand *const *e, const unsigned *en, const int *idx, int 
   return best_c >= 0;
 }
 
+/* The frame's order, indexed by entry, once a frame (the walk's first
+ * derive or resolve): each entry's last place in the log (VC_NOSEQ: none)
+ * and, for each place, the one before it under the same entry. */
+static void log_index(Table *tab, uint32_t gen, unsigned *cost) {
+  unsigned r;
+  if (tab->idx_gen == gen)
+    return;
+  for (r = 0; r < tab->nlog; r++)
+    tab->last[LOG_E(tab->log[r])] = VC_NOSEQ;
+  for (r = 0; r < tab->nlog; r++) {
+    tab->prev[r] = tab->last[LOG_E(tab->log[r])];
+    tab->last[LOG_E(tab->log[r])] = (uint16_t)r;
+  }
+  tab->idx_gen = gen;
+  /* a model: the log read twice and prev written in order, an entry's
+   * last word apiece (at most the array) */
+  cost[VCC_LOOK_LINES] += tab->nlog * 6 / 32 + (tab->nlog < 512 ? tab->nlog : 512);
+}
+
 /* A quad's vertex with no entry, its three others found (#183). Nearly
  * all of them are the world renderer's subdivision grids' inner points
  * (env_hand.c GridCorrect): projected like every other point, then moved
@@ -770,19 +877,7 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
     const uint32_t so0 = slotf[o], sa0 = slotf[ab[0]], sb0 = slotf[ab[1]];
     unsigned so, sa, sb, no, na, nb, one = VC_NOSEQ;
     int conflict = 0;
-    if (tab->idx_gen != gen) { /* the frame's order, indexed by entry (once a frame) */
-      unsigned r;
-      for (r = 0; r < tab->nlog; r++)
-        tab->last[tab->log[r]] = VC_NOSEQ;
-      for (r = 0; r < tab->nlog; r++) {
-        tab->prev[r] = tab->last[tab->log[r]];
-        tab->last[tab->log[r]] = (uint16_t)r;
-      }
-      tab->idx_gen = gen;
-      /* a model: the log read twice and prev written in order, an entry's
-       * last word apiece (at most the array) */
-      cost[VCC_LOOK_LINES] += tab->nlog * 6 / 32 + (tab->nlog < 512 ? tab->nlog : 512);
-    }
+    log_index(tab, gen, cost);
     for (so = tab->last[so0], no = 0; so != VC_NOSEQ && no < 8; so = tab->prev[so], no++)
       for (sa = tab->last[sa0], na = 0; sa != VC_NOSEQ && na < 8; sa = tab->prev[sa], na++) {
         const unsigned da = sa > so ? sa - so : so - sa;
@@ -802,7 +897,7 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
         }
       }
     if (one != VC_NOSEQ && !conflict) {
-      const uint32_t k2 = tab->log[one], tag = tab->s[k2].tag;
+      const uint32_t k2 = LOG_E(tab->log[one]), tag = tab->s[k2].tag;
       if (k2 != so0 && k2 != sa0 && k2 != sb0 && T_STATE(tag) == E_VALID && T_N(tag) &&
           !(tag & T_MULTI)) {
         slot = k2 + 1;
@@ -876,6 +971,130 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
   return 1;
 }
 
+/* Ambiguous keys (#181). Different points on one pixel: more than the
+ * entry's four candidates (nearly all of them: far mobys, many of whose
+ * vertices fall on a few pixels, and far ground, at a long draw distance),
+ * so the key was never used and every polygon with such a vertex was drawn
+ * affine. Its projections are all in the frame's log (lc holds the answer
+ * of each made under the key once it had different points; the others are
+ * candidate 0's point at one of its candidates' depths), so a polygon whose
+ * other vertices are found takes, for that vertex, the projections under
+ * its key near theirs in the frame's order: a renderer projects a model's
+ * or a sector's points together and builds its polygons from them, so the
+ * vertex's own projection is within the batch its neighbours' are in. Of
+ * those, the polygon's depth choice (choose) picks as for any key with
+ * several points. The position stays the key's integer one, as for every
+ * key with different points (T_MULTI): the same for every polygon using it.
+ *
+ * Not resolved (the vertex stays ambiguous, the polygon affine): a key a
+ * clamped projection made ambiguous (its point lies far off its pixel), one
+ * with an invalid projection (the prim may be that one), more than RC_MAX
+ * depths, or a frame whose log is full (a projection may be missing).
+ *
+ * Fills rc[v], rn[v] for each vertex v with amb[v] set (its entry ks[v]):
+ * depths only (dx, dy 0). *one: every such vertex had one point near the
+ * others in the order. Returns 1, or 0 not resolved. */
+#define RC_MAX 16
+#define VC_NEAR 256 /* a batch: a sector's or a model's points (up to 255 a sector) */
+static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int n,
+                   Cand rc[4][RC_MAX], unsigned *rn, unsigned *cost, int *one) {
+  unsigned anc[32], na = 0, nq, a;
+  int i;
+  *one = 1;
+  if (tab->nlog >= VC_LOG)
+    return 0;
+  log_index(tab, gen, cost);
+  for (i = 0; i < n; i++) /* the places of the polygon's found vertices */
+    if (!amb[i]) {
+      unsigned r = tab->last[ks[i]], k;
+      for (k = 0; r != VC_NOSEQ && k < 8 && na < 32; r = tab->prev[r], k++)
+        anc[na++] = r;
+    }
+  for (i = 0; i < n; i++) {
+    const Entry *const en = &tab->s[ks[i]];
+    struct {
+      int16_t dx, dy;
+      float w; /* 0: candidate 0's point, at its candidates' depths there */
+      unsigned d;
+      int alt;
+    } p[32];
+    const Cand *const c = en->c;
+    unsigned r = tab->last[ks[i]], np = 0, j, near = 0, pts = 0;
+    float w;
+    if (!amb[i])
+      continue;
+    if ((en->tag & T_CLAMP) || !T_N(en->tag) || c[0].dy == FAR_MARK)
+      return 0;
+    for (nq = 0; r != VC_NOSEQ; r = tab->prev[r], nq++) {
+      int alt = 0;
+      unsigned d = 0;
+      if (nq == 32)
+        return 0;
+      if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
+        p[np].dx = c[0].dx;
+        p[np].dy = c[0].dy;
+        w = 0;
+      } else {
+        const Cand *const l = &tab->lc[r];
+        if (l->w == 0)
+          return 0; /* invalid or clamped: the prim may be that one */
+        alt = l->w < 0;
+        p[np].dx = l->dx;
+        p[np].dy = l->dy;
+        w = alt ? -l->w : l->w;
+      }
+      if (na) {
+        d = ~0u;
+        for (a = 0; a < na; a++) {
+          const unsigned e = r > anc[a] ? r - anc[a] : anc[a] - r;
+          d = e < d ? e : d;
+        }
+      }
+      p[np].w = w;
+      p[np].d = d;
+      p[np].alt = alt;
+      near += d <= VC_NEAR;
+      np++;
+    }
+    cost[VCC_LOOK_LINES] += np; /* a model: a line each */
+    /* the projections near the others in the order (all if none is) */
+    rn[i] = 0;
+    for (j = 0; j < np; j++) {
+      unsigned m, k;
+      if (near && p[j].d > VC_NEAR)
+        continue;
+      for (k = 0; k < j; k++) /* one point (as add_cand) counted once */
+        if ((!near || p[k].d <= VC_NEAR) && p[k].dx - p[j].dx <= 32 && p[j].dx - p[k].dx <= 32 &&
+            p[k].dy - p[j].dy <= 32 && p[j].dy - p[k].dy <= 32)
+          break;
+      pts += k == j;
+      for (m = 0; m < (p[j].w == 0 ? T_N(en->tag) : 1u + (p[j].alt != 0)); m++) {
+        float wd;
+        if (p[j].w == 0) { /* candidate 0's point: the candidates there */
+          if (c[m].dy == FAR_MARK || c[m].dx - c[0].dx > 32 || c[0].dx - c[m].dx > 32 ||
+              c[m].dy - c[0].dy > 32 || c[0].dy - c[m].dy > 32)
+            continue;
+          wd = c[m].w;
+        } else
+          wd = m ? flt(p[j].w * (1.0f / 16)) : p[j].w;
+        for (k = 0; k < rn[i]; k++)
+          if (same_depth(rc[i][k].w, wd, &cost[VCC_LOOK_DIV]))
+            break;
+        if (k < rn[i])
+          continue;
+        if (rn[i] == RC_MAX)
+          return 0;
+        rc[i][rn[i]].dx = rc[i][rn[i]].dy = 0;
+        rc[i][rn[i]].w = wd;
+        rn[i]++;
+      }
+    }
+    if (pts != 1 || !near)
+      *one = 0;
+  }
+  return 1;
+}
+
 int psx_vcache_polys;
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
@@ -891,6 +1110,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   /* vertices with no entry (#183): the last one, how many; and all not found */
   int none = -1, nnone = 0, nmiss = 0;
   int der = 0, der_moved = 0, der_snap = 0; /* the one with no entry derived (#183) */
+  /* vertices whose key is ambiguous (#181): their entries, how many */
+  int ks[4] = {0, 0, 0, 0}, amb[4] = {0, 0, 0, 0}, nambig = 0;
+  Cand rc[4][RC_MAX];
+  unsigned rn[4];
+  int res = 0; /* those resolved */
   VCacheVert dv = {0, 0, 1};
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
@@ -949,14 +1173,53 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         work[3]++;
         st->miss_invalid++;
         inv = 1;
-      } else {
-        work[3]++;
-        st->miss_ambiguous++;
+      } else { /* counted below, if not resolved */
+        ks[i] = k;
+        amb[i] = 1;
+        nambig++;
       }
     }
     cost[VCC_LOOK_LINES] += t.n;
   }
-  if (persp) {
+  if (nambig && nambig == nmiss && !nnone) {
+    /* every vertex not found an ambiguous key's (#181): its depths from
+     * the projections under it near the others' */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    const Cand *e2[4];
+    unsigned en2[4];
+    int one;
+    for (i = 0; i < n; i++)
+      if (!amb[i])
+        ks[i] = (int)((ref[i] & VREF_SLOT) - 1);
+    if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, cost, &one)) {
+      for (i = 0; i < n; i++) {
+        e2[i] = amb[i] ? rc[i] : e[i];
+        en2[i] = amb[i] ? rn[i] : en[i];
+      }
+      if (choose(e2, en2, k_all, n, cost, pick)) {
+        for (i = 0; i < n; i++)
+          if (amb[i]) {
+            e[i] = rc[i];
+            en[i] = rn[i];
+            et[i] = ptab->s[ks[i]].tag | T_MULTI; /* its key's integer position */
+            ref[i] |= (uint32_t)ks[i] + 1;
+          }
+        persp = VREF_PERSP;
+        res = 1;
+        st->hits += (unsigned)nambig;
+        st->resolved += (unsigned)nambig;
+        st->res_order += one ? (unsigned)nambig : 0;
+      } else
+        memset(pick, 0, sizeof pick);
+    }
+  }
+  if (nambig && !res) { /* not found: ambiguous */
+    work[3] += (unsigned)nambig;
+    st->miss_ambiguous += (unsigned)nambig;
+  }
+  if (res) {
+    /* chosen above */
+  } else if (persp) {
     if (!choose(e, en, k_all, n, cost, pick)) {
       st->spread++;
       persp = 0;
@@ -988,7 +1251,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     st->clamp_persp += persp != 0;
   }
   for (i = 0; i < n; i++) {
-    uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
+    /* (a resolved vertex's pick is among its key's projections: not one
+     * of the entry's candidates) */
+    uint32_t r = ref[i] | persp | (uint32_t)(res && amb[i] ? 0 : pick[i]) << VREF_CAND_SHIFT;
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
     if ((et[i] & T_CLAMP) || (i == none && der_moved))
@@ -1042,6 +1307,7 @@ static void pres_next(void) {
   r->nfar = 0;
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
+  r->tab->lc_line = 0;
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
     r->gen = 1;
@@ -1074,6 +1340,7 @@ static void done_hook(void) {
     table_clear(r->tab);
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
+  r->tab->lc_line = 0;
 }
 
 int psx_vcache_double(void) {
