@@ -11,18 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 9,
   "workers": [
     {
-      "issue": 171,
-      "branch": "auto/171-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-171",
-      "pids": [],
-      "started_at": "2026-11-20T02:21:16Z",
-      "files": [
-        "src/game/present.c",
-        "tests/gte/test_gte_native.c"
-      ],
-      "agent": "a5e9ab3cba68d4c7e"
-    },
-    {
       "issue": 172,
       "branch": "auto/172-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-172",
@@ -204,3 +192,4 @@ continue.
 - phase 9: workers on #170, #171, #172, #173.
 - 02:36Z phase 9: merged #170 (hardware run configs AP1-AP6b, parsed against hw_mock; no Vita touched). The hardware session is ready when the owner says yes.
 - 02:39Z phase 9: #172 reported done (reports/172-1.md): six vcache cost counters in vpk-perfcount, pictures and older counters unchanged. Gate running.
+- 02:44Z phase 9: merged #171 (comments only; objects byte-identical).
