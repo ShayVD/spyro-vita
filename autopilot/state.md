@@ -14,9 +14,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 177,
       "branch": "auto/177-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-177",
-      "pids": [
-        33288
-      ],
+      "pids": [],
       "started_at": "2026-11-20T11:05:07Z",
       "files": [
         "src/platform/vita/picture.c",
@@ -28,7 +26,25 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "tools/vita/vita3k_run.sh",
         "README.md"
       ],
-      "agent": "a0ba410fe3b767c58"
+      "agent": "a0ba410fe3b767c58",
+      "reported": true
+    },
+    {
+      "issue": 178,
+      "branch": "auto/178-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-178",
+      "pids": [],
+      "started_at": "2026-11-20T11:49:41Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/gpu_thread.c",
+        "src/platform/vita/perfcount.c",
+        "src/platform/vita/vita_pc.h",
+        "autopilot/config.json"
+      ],
+      "agent": "afe58dc305ed6a974"
     }
   ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
@@ -89,6 +105,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "README known issues: the wobble options' cost at 60 fps (after the hardware session)",
       "expected": "one line once AP1-AP3 are measured; the README already lists both options and their defaults",
       "issue": 0
+    },
+    {
+      "title": "Hardware: start-up shader compile time and the 30/60 fps cost with PSX WOBBLE off (the fix) as the default",
+      "expected": "owner-approved run after #177-#180 merge: AP1/AP2-style Toasty pair plus a cold start",
+      "issue": 177
     }
   ],
   "owner_decisions": [
@@ -231,3 +252,4 @@ continue.
 - 2026-11-20T11:05Z phase 8: round 9 started (owner's issues); baseline job base-3ba4fd2 running; worker #177 started (one worker: other sessions' containers running); Vita3K: 0
 - 2026-11-20T11:27Z phase 8: baseline base-3ba4fd2 built (wobble60 needed a rerun: Vita3K crash); pause-ws-wobble's title shots differed from merge-m1 by interp_budget skips (Vita3K timing, 60 HZ default since D150): title, pause-ws, pause-ws-wobble now pin interp_budget=0, re-running; Vita3K: 1 crash
 - 2026-11-20T11:32Z phase 8: tick - #177 working (no commit yet, running Vita3K routes), baseline re-run queued behind it on the Vita3K lock; one worker (other sessions' containers); Vita3K: 0
+- 2026-11-20T11:50Z phase 8: #177 reported (code done; gate waits for the re-baseline job), worker #178 started, filed the docs/bench follow-up; Vita3K: 0
