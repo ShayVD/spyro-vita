@@ -46,6 +46,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware run for #169 (redundant GL state skipped)",
       "expected": "less render-thread time per picture; pause-ws and wobble60, merged VPK vs autopilot-bbc36b1.vpk",
       "issue": 169
+    },
+    {
+      "title": "Smaller expanded vertex when persp/subpixel are on without tex_filter (drop the UV box)",
+      "expected": "wobble60 vbo.bytes 274 KB -> ~219 KB a frame (~16 -> ~13 MB/s at 60 fps): too small to matter on the Vita's bandwidth; not filed",
+      "issue": 0
     }
   ],
   "owner_decisions": [
@@ -66,14 +71,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 12
   },
   "round": {
-    "n": 3,
+    "n": 4,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
     "base_commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
-    "started_at": "2026-11-20T00:44:03Z",
+    "started_at": "2026-11-20T01:15:43Z",
     "filed": 0,
     "investigated": false
   },
-  "rounds_without_gain": 0,
+  "rounds_without_gain": 1,
   "hardware_pending": null,
   "job": null,
   "batch": null
@@ -142,3 +147,4 @@ continue.
 - phase 8: removed a stale worker entry for #165 (left after its merge; it made pick skip #169). Worker on #169 (redundant GL state calls).
 - 00:33Z phase 8: #169 reported done (reports/169-1.md): wobble60 attribs 421->15, uniforms 187->26, tex_binds 44->2, gl.state 316->243 per frame, draws/tris identical, pictures identical. Gate running.
 - 00:44Z phase 8: merged #169 (9d42dac; every route first try, pictures identical, 5 counters better on both benchmarks). Round 2 ended with a gain (base-bbc36b1 vs base-9d42dac: gl.state/programs/tex_binds/uniforms/attribs better, none worse); rounds_without_gain 0. Round 3 started. Five hardware measurements now wait for the owner (perf_candidates).
+- 01:15Z phase 8: round 3 investigated the benchmarks' upload counters (one VBO upload a frame: pause-ws 96 KB, wobble60 274 KB at ~40 B/vertex; textures 11 KB once): nothing worth filing. Round 3 ended with nothing merged and nothing filed: no gain, rounds_without_gain 1. Round 4 started. The remaining levers need hardware timing (6 candidates wait for the owner).
