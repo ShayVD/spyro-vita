@@ -4328,11 +4328,14 @@ void gl_report(int vblank) {
      * clamped vertex (of those, drawn with perspective) */
     vita_log("vcache %d clamps: %u polygons, %u with every vertex found (%u.%02u%%), %u vertices, "
              "%u found; %u projections clamped, %u invalid keys; %u polygons fell back on an invalid "
-             "key; %u polygons with a clamped vertex, %u of them with every vertex found",
+             "key; %u polygons with a clamped vertex, %u of them with every vertex found; "
+             "vertices not found: %u no entry, %u invalid, %u ambiguous; %u polygons found whole "
+             "with depths 4x apart; invalid projections: %u depth <= 0, %u not the GTE's answer",
              vblank, c->polys, c->persp,
              c->polys ? (unsigned)(10000ull * c->persp / c->polys / 100) : 0,
              c->polys ? (unsigned)(10000ull * c->persp / c->polys % 100) : 0, c->verts, c->hits,
-             c->clamped, c->invalid, c->fallback, c->clamp_polys, c->clamp_persp);
+             c->clamped, c->invalid, c->fallback, c->clamp_polys, c->clamp_persp, c->miss_none,
+             c->miss_invalid, c->miss_ambiguous, c->spread, c->inv_depth, c->inv_key);
     /* the logic draw's frames and the presenter's apart (#158): found in
      * the other's entries, and vertices whose answer the renderer couldn't
      * be given (not in a vertex buffer the cache knows) */

@@ -184,6 +184,9 @@ typedef struct {
   unsigned fallback;    /* polygons drawn affine because a vertex's key was invalid */
   unsigned clamp_polys; /* polygons with a clamped vertex found */
   unsigned clamp_persp; /* ... drawn with every vertex found (perspective) */
+  unsigned spread;      /* polygons with every vertex found, drawn affine: depths 4x apart */
+  unsigned inv_depth;   /* projections invalid: a depth of 0 or less */
+  unsigned inv_key;     /* ... the key isn't the GTE's answer for the inputs */
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

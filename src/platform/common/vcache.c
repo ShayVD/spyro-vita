@@ -464,15 +464,19 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   mz = ((int64_t)tr[2] << 12) + (int64_t)(rm[6] * vx) + (rm[7] * vy) + (rm[8] * vz);
   /* Spyro's renderers always set sf. A depth of 0 or less (the GTE's SZ3
    * or the exact one) has no projection. */
-  if (!sf || sz <= 0)
+  if (!sf || sz <= 0) {
+    st->inv_depth++;
     goto done;
+  }
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
   y = (float)(int32_t)(my >> 12) + (float)(my & 0xFFF) * (1.0f / 4096);
   z = (float)(int32_t)(mz >> 12) + (float)(mz & 0xFFF) * (1.0f / 4096);
   ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
   oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
-  if (z <= 0)
+  if (z <= 0) {
+    st->inv_depth++;
     goto done;
+  }
   r = (float)h / (z * sz); /* one division for h / sz and h / z */
   cost[VCC_REC_DIV]++;
   isz = r * z;
@@ -490,8 +494,10 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
             gx < -1024 || gx >= 1024 || gy < -1024 || gy >= 1024;
   ex = (gx < -1024 ? -1024 : gx > 1023 ? 1023 : gx) - sx;
   ey = (gy < -1024 ? -1024 : gy > 1023 ? 1023 : gy) - sy;
-  if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f)
+  if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f) {
+    st->inv_key++;
     goto done;
+  }
   if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
       vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
     w_alt = flt(z * (1.0f / 16)); /* maybe r_environment's x16 precision path */
@@ -705,8 +711,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       memcpy(pick, try_pick, sizeof pick);
     }
   }
-  if (best_c < 0)
+  if (persp && best_c < 0) {
+    st->spread++;
     persp = 0;
+  }
   if (persp)
     st->persp++;
   else if (inv) {
