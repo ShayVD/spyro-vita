@@ -547,3 +547,21 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checked:**
   - ctest went from 28 passing with `render_ctx_link` failing to 29 passing and 3 skipped (`gte`, `pbp`, `pbp_made`). The gate's own run showed 100% of 32.
   - On Vita3K, all five routes give the same shots and counters as `base-b3b8cd1`, and `owner60`'s lod lines are identical, including the budget's back-offs.
+
+### D185. `vita-testing.md` describes PSX WOBBLE, and the bench measures the default (#182)
+
+- **Why:** #177 (D173) made PSX WOBBLE OFF (`persp=1 subpixel=1`) the default and moved the menu to `config_version=6`. Two things lagged behind:
+  - `vita-testing.md` still described the two old rows and `config_version=5`.
+  - The bench had no set for the default without a filter, so it couldn't measure what players get.
+- **What changed in `vita-testing.md`:**
+  - The `wobble=` row, with `persp=` and `subpixel=` kept as developers' keys.
+  - The rule for old config files. With no `wobble=` line and a `config_version` below 6, an equal `persp`/`subpixel` pair reads as PSX WOBBLE OFF and is dropped at the next save. Any other mix is taken as written.
+  - The test tools write `wobble=1`.
+  - The vcache log lines as they stand after D174–D184: clamps, derived, resolved and hooked, plus D178's per-report counters.
+- **What changed in `bench.c`:**
+  - Two new sets, "4:3 native, persp subpixel" and "16:9 native, persp subpixel", each inside its widescreen group. The other sets are unchanged, so older logs still compare by name.
+  - A run is now 20 × 60 × 12 = 14,400 vblanks from vblank 600, with the final lines at 15,000 (about 250 s; 13,560 before).
+- **Checked:**
+  - The native build, `noassets`, and the gate with the host build and ctest all pass.
+  - Vita3K `title`: shots 10/10, the same as `base-b3b8cd1`.
+  - The bench itself hasn't run; its first hardware run needs the owner's yes.
