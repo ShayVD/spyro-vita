@@ -9,7 +9,56 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 9,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 170,
+      "branch": "auto/170-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-170",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "tools/vita/fps-runs/"
+      ],
+      "agent": "af1cdcb7fd2918b58"
+    },
+    {
+      "issue": 171,
+      "branch": "auto/171-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-171",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "src/game/present.c",
+        "tests/gte/test_gte_native.c"
+      ],
+      "agent": "a5e9ab3cba68d4c7e"
+    },
+    {
+      "issue": 172,
+      "branch": "auto/172-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-172",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "src/platform/vita/perfcount.c",
+        "src/platform/vita/vita_pc.h",
+        "docs/decisions-2.md"
+      ],
+      "agent": "a8ec7ff9c8c396114"
+    },
+    {
+      "issue": 173,
+      "branch": "auto/173-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-173",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "src/platform/linux32/main.c",
+        "docs/host-build.md"
+      ],
+      "agent": "a54e406daa5228561"
+    }
+  ],
   "last_good": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
@@ -155,3 +204,4 @@ continue.
 - 01:15Z phase 8: round 3 investigated the benchmarks' upload counters (one VBO upload a frame: pause-ws 96 KB, wobble60 274 KB at ~40 B/vertex; textures 11 KB once): nothing worth filing. Round 3 ended with nothing merged and nothing filed: no gain, rounds_without_gain 1. Round 4 started. The remaining levers need hardware timing (6 candidates wait for the owner).
 - 01:47Z phase 8: round 4 investigated gl.programs (95/frame on wobble60): every bind already goes through gs_use_program's dedup (#169), so the rest are real switches between joined draws' formats and kinds; cutting them needs reordering draws (blend order): not filed. Round 4 ended without a gain: rounds_without_gain 2 of 3. Round 5 started.
 - 02:20Z phase 8 -> 9: round 5 investigated ot.packets (wobble60 463 = two pictures a tick x 232, the cost of 60 fps itself): nothing filed, third round without a gain: phase 8's exit. Phase 9 started (round 6): filed #170 (hardware run configs for the six pending measurements), #171 (stale comments), #172 (cache cost counters into vpk-perfcount), #173 (host ./save warning).
+- phase 9: workers on #170, #171, #172, #173.
