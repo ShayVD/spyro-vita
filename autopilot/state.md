@@ -9,11 +9,37 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 181,
+      "branch": "auto/181-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-181",
+      "pids": [],
+      "started_at": "2026-11-20T15:40:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/gpu_gl.c"
+      ],
+      "agent": "a1168b65c51ab2c33"
+    },
+    {
+      "issue": 186,
+      "branch": "auto/186-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-186",
+      "pids": [],
+      "started_at": "2026-11-20T15:40:00Z",
+      "files": [
+        "src/game/sky_hand.c",
+        "src/game/native_draw.c"
+      ],
+      "agent": "a2ee302602744fc55"
+    }
+  ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-474d375",
-    "commit": "474d37532a4f2104bf6075d07e8b70e018b2399b"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5cdfccb",
+    "commit": "5cdfccbcc8b6277014254f9212a8ca47ba23fd24"
   },
   "hardware_runs": [
     {
@@ -96,6 +122,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-20 15:40: coordinator: two workers (#181, #186; no shared files) now that other sessions' containers are down to one restarting salsaas container. Baseline 5cdfccb running.",
     "2026-11-20 14:20: coordinator: #183 dispatched before #181 (pick gave #181; both p0 and share vcache.c, #183's no-entry is the larger share of the owner's stretching). Baseline re-run at 474d375 (after #177, #178, #180) into runs/base-474d375.",
     "2026-11-20 13:55: owner (b604db4 on hardware, PAL 60 HZ 16:9 dd200, PSX WOBBLE OFF): still sees textures stretching and changing; eliminate it completely. Log logs/owner-20261120-1349: 90.6-96% of polygons found whole in play, no entry 12-38k and ambiguous up to 24k per 300 vblanks. #181 and #183 raised to p0 (next after #180, before #179), evidence and stronger Done-when on both issues.",
     "2026-11-20 13:50: owner: push everything as you go. Push autopilot (PR #176) after every merge and state tick; still never push main, workers still never push.",
