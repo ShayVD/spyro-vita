@@ -39,7 +39,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "files": [
         "src/game/native_draw.c",
         "src/platform/common/gpu_walk.c",
-        "src/platform/vita/gpu_gl.c"
+        "src/platform/vita/gpu_gl.c",
+        "src/game/savestate.c"
       ],
       "agent": "ac33d2216e3ae333e"
     }
