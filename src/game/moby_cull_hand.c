@@ -300,6 +300,12 @@ static inline __attribute__((always_inline)) int CullMoby(u32 moby, u32 rec, u32
   angles = AT32(m + MOBY_ANGLES);
   detail = PORT_LOD_MOBY_DETAIL(detail);
   detail -= depth;
+  /* pass 2's mobys (beyond the original's draw distance) take the
+   * low-detail model, as the original's own beyond their detail distance:
+   * -1, no fade and no more fog than the longer distance gives (lod.c,
+   * #180) */
+  if (g_lod_pass && (s32)detail > 0)
+    detail = (u32)-1;
   frame = ((anims >> 16) & 0xFF) * 8 + ANIM_FRAMES + anim;
   ds = *HPTR(u8, anim + ANIM_DEPTH_SCALE);
   if (progress) {
