@@ -31,6 +31,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
   "hardware_runs": [
+    {"date": "2026-11-20 13:49", "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt from the Vita (read only)", "log": "logs/owner-20261120-1349/"},
     {"date": "2026-11-20 13:45", "what": "owner asked for the current build to test by hand: autopilot b604db4 (#177 PSX WOBBLE row, #178 edge vertices) eboot installed, READBACK IDENTICAL (SHA-1 9eb4795b), left on the Vita", "log": "logs/hw-put-b604db4.out"},
     {
       "date": "2026-11-20",
@@ -92,6 +93,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-20 13:55: owner (b604db4 on hardware, PAL 60 HZ 16:9 dd200, PSX WOBBLE OFF): still sees textures stretching and changing; eliminate it completely. Log logs/owner-20261120-1349: 90.6-96% of polygons found whole in play, no entry 12-38k and ambiguous up to 24k per 300 vblanks. #181 and #183 raised to p0 (next after #180, before #179), evidence and stronger Done-when on both issues.",
     "2026-11-20 13:50: owner: push everything as you go. Push autopilot (PR #176) after every merge and state tick; still never push main, workers still never push.",
     {
       "issue": 0,
