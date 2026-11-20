@@ -106,9 +106,17 @@
  * no entry. A quad with one such vertex finds it again (derive): the grids
  * are projected in order, so the frame's order of projections (each
  * table's log) names the projection it was, and it is drawn there with
- * that depth, the place kept per key for the frame. The renderers' other
- * screen-space vertices (split midpoints, shadows' nudged corners, glows'
- * rims, the sky's clipped corners) and 2D polygons are left as they were.
+ * that depth, the place kept per key for the frame.
+ *
+ * The renderers' other screen-space vertices (#189): moby shadows' nudged
+ * corners, the sky's portal cuts, glows' rims, the world's split midpoints
+ * and Spyro's floor clip are made from projected points on screen, so they
+ * have no projection either. Their renderers hand them over as they make
+ * them (PSX_VC_DERIVE: an alias, a 2D cut at an outline, an offset, a 3D point between
+ * two), and the cache keeps each one's exact place and depths, from its
+ * sources' entries, in the table's hand-overs (hk). A vertex with no entry
+ * is looked for there; one with an entry keeps it. 2D polygons (the HUD,
+ * the title, fades, the border) stay as they were.
  *
  * The cost (#159; D89 measured the cache at ~4.5 ms a vblank of the game
  * thread on hardware): every answer is as before, with less work. A record
@@ -185,9 +193,22 @@ typedef struct {
   uint32_t slot;
 } Der;
 
+/* A point a renderer handed over (#189, psx_vcache.h PSX_VC_DERIVE): its
+ * key, frame, place (pixels from the key's pixel centre) and depths (c[].w;
+ * their dx, dy unused), the renderer (VCD_SHADOWS...), and dead: placed
+ * differently by two hand-overs, so not used. */
+#define VC_HK 1024 /* hand-overs a frame */
+typedef struct {
+  uint32_t key, gen;
+  float dx, dy;
+  uint8_t n, who, dead, placed; /* n 0: a place only (flat: a portal face's cut) */
+  Cand c[VC_CANDS];
+} Hk;
+
 typedef struct {
   Entry s[VC_SIZE];
   int stale; /* holds frames from before its count came round: cleared before it records */
+  Hk hk[VC_HK]; /* the frame's hand-overs (#189), written by its renderers */
   /* the keys the walk of this table's frame derived (#183), written only
    * by that walk */
   Der der[VC_DER];
@@ -239,6 +260,7 @@ static Table *table_new(void) {
 static void table_clear(Table *t) {
   memset(t->s, 0, sizeof t->s);
   memset(t->der, 0, sizeof t->der);
+  memset(t->hk, 0, sizeof t->hk);
   t->stale = 0;
 }
 
@@ -332,6 +354,15 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "projections near their polygon's others (%u where the order left one point); %u left "
            "ambiguous",
            out->resolved, out->res_order, out->miss_ambiguous);
+  /* #189: the renderers' hand-overs */
+  PsyX_Log("vcache hooked: %u vertices with no entry found from their renderer's hand-over "
+           "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u); %u hand-overs, "
+           "%u kept, %u with a source not usable, %u placed differently, %u not kept (full)",
+           out->hooked[VCD_SHADOWS] + out->hooked[VCD_SKY_CLIP] + out->hooked[VCD_GLOWS] +
+               out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP],
+           out->hooked[VCD_SHADOWS], out->hooked[VCD_SKY_CLIP], out->hooked[VCD_GLOWS],
+           out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hk_calls, out->hk_kept,
+           out->hk_nosrc, out->hk_conflict, out->hk_full);
 }
 
 void psx_vcache_stats_sum(VCacheStats *out) { sum_report(g_vcache_stats, out); }
@@ -717,6 +748,271 @@ static inline int under4(float a, float b) { return a > b ? a < b * 4.0f : b < a
 /* ratio(a, b) < 3.999 or so: the quotient, however rounded, is under 4 */
 static inline int under3999(float a, float b) { return a > b ? a < b * 3.999f : b < a * 3.999f; }
 
+/* ------------------------------------------------------------ hand-overs (#189) */
+
+/* key's hand-over in tab's frame gen, or (add) a free one for it (gen set,
+ * nothing in it); NULL: none, or the probe is exhausted */
+static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *probes, Touch *t) {
+  uint32_t h = hash(key) & (VC_HK - 1), p;
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_HK - 1)) {
+    Hk *const e = &tb->hk[h];
+    ++*probes;
+    touch(t, offsetof(Table, hk) + (size_t)h * sizeof(Hk), 8);
+    if (e->gen != gen) {
+      if (!add)
+        return NULL;
+      e->key = key;
+      e->gen = gen;
+      e->n = e->dead = e->placed = 0;
+      return e;
+    }
+    if (e->key == key)
+      return e;
+  }
+  return NULL;
+}
+
+/* A hand-over's source in rec's frame: its place on screen (pixels) and
+ * depths w[], as a polygon using the key would be given them. A
+ * projection's valid entry (its exact place, or the key's pixel centre for
+ * different points on it, T_MULTI, whose depths each polygon picks from),
+ * or, with no entry, another hand-over (a cut of a cut point; its place,
+ * and its depths if it has any). With flat, a key with neither is a 2D
+ * point at its pixel centre, without depths (the screen's corners of a
+ * portal's face). Returns the depths' count (0: the place only), -1 not
+ * usable; *exact: the place came from a projection. */
+static int hk_src(Rec *rec, int kind, uint32_t key, float *x, float *y, float *w, int flat,
+                  int *exact, unsigned *cost, Touch *t) {
+  Table *const tb = rec->tab;
+  const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
+  const float kx = (short)(key & 0xFFFF) + 0.5f, ky = (short)(key >> 16) + 0.5f;
+  unsigned n, j;
+  *exact = 1;
+  if (i >= 0) {
+    const Entry *const s = &tb->s[i];
+    n = T_N(s->tag);
+    if (T_STATE(s->tag) != E_VALID || !n)
+      return -1;
+    touch(t, (size_t)i * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * n);
+    if (s->tag & T_MULTI) /* different points: drawn at the key, as the source is */
+      *x = *y = 0;
+    else
+      cand_pos(tb, &s->c[0], x, y);
+    for (j = 0; j < n; j++)
+      w[j] = s->c[j].w;
+  } else {
+    const Hk *const h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
+    if (!h || h->dead) {
+      if (!flat || h)
+        return -1;
+      *exact = 0; /* 2D */
+      *x = *y = 0;
+      n = 0;
+    } else {
+      n = h->n;
+      *x = h->dx;
+      *y = h->dy;
+      for (j = 0; j < n; j++)
+        w[j] = h->c[j].w;
+    }
+  }
+  *x += kx;
+  *y += ky;
+  return (int)n;
+}
+
+/* The depths of a point the fraction f of the way from a to b (depths aw,
+ * bw): each of a's with b's nearest (one scale), in 3D (persp) or on
+ * screen (1/w linear); into w (count returned), and the nearest pair's in
+ * *pa, *pb. */
+static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float f, int persp,
+                        float *w, float *pa, float *pb, unsigned *cost) {
+  float best = 4.0f;
+  unsigned n = 0, j;
+  int i, k;
+  for (i = 0; i < na; i++) {
+    float rb = 4.0f, wd;
+    int jb = -1;
+    for (k = 0; k < nb; k++)
+      if (under4(aw[i], bw[k])) {
+        const float r = ratio(aw[i], bw[k]);
+        cost[VCC_REC_DIV]++;
+        if (r < rb) {
+          rb = r;
+          jb = k;
+        }
+      }
+    if (jb < 0)
+      continue;
+    if (persp)
+      wd = flt((1.0f - f) * aw[i] + f * bw[jb]);
+    else {
+      wd = flt(1.0f / ((1.0f - f) / aw[i] + f / bw[jb]));
+      cost[VCC_REC_DIV] += 3;
+    }
+    if (!(wd > 0))
+      continue;
+    for (j = 0; j < n; j++)
+      if (same_depth(w[j], wd, &cost[VCC_REC_DIV]))
+        break;
+    if (j == n)
+      w[n++] = wd;
+    if (rb < best) {
+      best = rb;
+      *pa = aw[i];
+      *pb = bw[jb];
+    }
+  }
+  return n;
+}
+
+/* One hand-over (psx_vcache.h PSX_VC_DERIVE) into rec's frame */
+static void derive_hand(int kind, unsigned *work, int how, uint32_t key, uint32_t a, uint32_t b,
+                        int p, int q) {
+  unsigned *const cost = COST(work);
+  Rec *const rec = &s_rec[kind];
+  VCacheStats *const st = &g_vcache_stats[kind];
+  const int form = how & 15, two = form == VCD_LERP || form == VCD_PERSP, cut = form == VCD_LERP;
+  const unsigned who = (unsigned)how >> 4 < VCD_WHO_N ? (unsigned)how >> 4 : 0;
+  float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], w[VC_CANDS], x, y, dx, dy;
+  float lim = 1024, pa = 0, pb = 0;
+  int na, nb = 0, ea, eb = 0;
+  unsigned n = 0, i, j;
+  Touch t = TOUCH0;
+  Hk *h;
+  if (!rec->tab)
+    return;
+  st->hk_calls++;
+  na = hk_src(rec, kind, a, &ax, &ay, aw, cut, &ea, cost, &t);
+  if (na >= 0 && two)
+    nb = hk_src(rec, kind, b, &bx, &by, bw, cut, &eb, cost, &t);
+  if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb)))
+    goto nosrc;
+  if (form == VCD_LERP) {
+    /* where the side a-b crosses the line through keys p and q (the
+     * portal's outline edge): each end exact where it has a projection */
+    float ex0, ey0, ex1, ey1, ew[VC_CANDS], nx, ny, den, f;
+    int e0, e1;
+    if (hk_src(rec, kind, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, cost, &t) < 0 ||
+        hk_src(rec, kind, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, cost, &t) < 0 ||
+        !(ea | eb | e0 | e1))
+      goto nosrc; /* all four 2D: nothing to place exactly */
+    nx = ey0 - ey1;
+    ny = ex1 - ex0;
+    den = nx * (bx - ax) + ny * (by - ay);
+    if (!(den > 1e-6f || den < -1e-6f))
+      goto nosrc;
+    f = (nx * (ex0 - ax) + ny * (ey0 - ay)) / den;
+    cost[VCC_REC_DIV]++;
+    x = ax + f * (bx - ax);
+    y = ay + f * (by - ay);
+    lim = 8; /* the PS1's cut is within a pixel or two of it */
+    if (na && nb)
+      n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost);
+  } else if (form == VCD_PERSP) {
+    /* the 3D point f of the way: the place from the nearest pair (another
+     * scale's pair gives the same) */
+    const float f = (float)p * (1.0f / 4096);
+    float ka, kb, r;
+    n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost);
+    if (!n)
+      goto nosrc;
+    ka = (1.0f - f) * pa;
+    kb = f * pb;
+    r = 1.0f / (ka + kb);
+    cost[VCC_REC_DIV]++;
+    x = (ax * ka + bx * kb) * r;
+    y = (ay * ka + by * kb) * r;
+  } else { /* one point: its depths, its place (and the offset) */
+    x = ax + (form == VCD_OFFSET ? (float)p : 0.0f);
+    y = ay + (form == VCD_OFFSET ? (float)q : 0.0f);
+    for (i = 0; i < (unsigned)na; i++)
+      w[n++] = aw[i];
+  }
+  dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
+  dy = flt(y - ((short)(key >> 16) + 0.5f));
+  if (!(dx < lim && dx > -lim && dy < lim && dy > -lim)) /* not this key's point */
+    goto nosrc;
+  h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (!h) {
+    st->hk_full++;
+    goto out;
+  }
+  touch(&t, offsetof(Table, hk) + (size_t)(h - rec->tab->hk) * sizeof(Hk), sizeof(Hk));
+  if (h->dead)
+    goto out;
+  if (h->placed) { /* handed over before: the same point (its depths added), or not used */
+    if (!(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
+          h->dy - dy >= -0.125f)) {
+      h->dead = 1;
+      st->hk_conflict++;
+      goto out;
+    }
+  } else {
+    h->dx = dx;
+    h->dy = dy;
+    h->who = (uint8_t)who;
+    h->placed = 1;
+  }
+  for (i = 0; i < n; i++) {
+    for (j = 0; j < h->n; j++)
+      if (same_depth(h->c[j].w, w[i], &cost[VCC_REC_DIV]))
+        break;
+    if (j == h->n && h->n < VC_CANDS) {
+      h->c[h->n].dx = h->c[h->n].dy = 0;
+      h->c[h->n++].w = w[i];
+    }
+  }
+  st->hk_kept++;
+  goto out;
+nosrc:
+  st->hk_nosrc++;
+out:
+  cost[VCC_REC_LINES] += t.n;
+}
+
+PsxVcacheDeriveHook g_psyxRtpDeriveHook;
+static PsxVcacheDeriveHook *s_pres_derive; /* the presenter's (render_ctx.c), set with its frame */
+
+/* the game's renderers' (the logic draw's frame) */
+static void derive_hook(int how, unsigned int sxy, unsigned int a, unsigned int b, int p, int q) {
+  derive_hand(VC_LOGIC, g_vcache_work, how, sxy, a, b, p, q);
+}
+
+/* the presenter's renderers' (render_ctx.c g_pres_rtp_derive_hook): into
+ * its own table, on its own thread or inline, as its projections */
+static void pres_derive_hook(int how, unsigned int sxy, unsigned int a, unsigned int b, int p,
+                             int q) {
+  derive_hand(VC_PRES, s_pres_async ? g_vcache_pres_work : g_vcache_work, how, sxy, a, b, p, q);
+}
+
+void psx_vcache_pres_derive_at(PsxVcacheDeriveHook *hook) { s_pres_derive = hook; }
+
+/* PSX_VC_DERIVE's call (the game's renderers) */
+void psx_vc_derive(int how, unsigned int sxy, unsigned int a, unsigned int b, int p, int q) {
+  g_psyxRtpDeriveHook(how, sxy, a, b, p, q);
+}
+
+/* a polygon vertex with no entry: its hand-over in tab's frame gen, if one
+ * is usable (#189) */
+static const Hk *hk_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *probes, Touch *t) {
+  uint32_t h = hash(key) & (VC_HK - 1), p;
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_HK - 1)) {
+    const Hk *const e = &tb->hk[h];
+    ++*probes;
+    touch(t, offsetof(Table, hk) + (size_t)h * sizeof(Hk), 8);
+    if (e->gen != gen)
+      return NULL;
+    if (e->key == key) {
+      if (e->dead || !e->placed)
+        return NULL;
+      touch(t, offsetof(Table, hk) + (size_t)h * sizeof(Hk), sizeof(Hk));
+      return e;
+    }
+  }
+  return NULL;
+}
+
 /* The depth choice for the polygon's vertices idx[0..m-1] (all found):
  * each candidate of the first against the closest of every other's; the
  * choice whose worst depth ratio is smallest. Candidates of one point at
@@ -1004,14 +1300,14 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
   if (tab->nlog >= VC_LOG)
     return 0;
   log_index(tab, gen, cost);
-  for (i = 0; i < n; i++) /* the places of the polygon's found vertices */
-    if (!amb[i]) {
+  for (i = 0; i < n; i++) /* the places of the polygon's found vertices (#189: not a hand-over's) */
+    if (!amb[i] && ks[i] >= 0) {
       unsigned r = tab->last[ks[i]], k;
       for (k = 0; r != VC_NOSEQ && k < 8 && na < 32; r = tab->prev[r], k++)
         anc[na++] = r;
     }
   for (i = 0; i < n; i++) {
-    const Entry *const en = &tab->s[ks[i]];
+    const Entry *const en = &tab->s[amb[i] ? ks[i] : 0]; /* (#189: a hand-over's ks is -1) */
     struct {
       int16_t dx, dy;
       float w; /* 0: candidate 0's point, at its candidates' depths there */
@@ -1019,10 +1315,11 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
       int alt;
     } p[32];
     const Cand *const c = en->c;
-    unsigned r = tab->last[ks[i]], np = 0, j, near = 0, pts = 0;
+    unsigned r, np = 0, j, near = 0, pts = 0;
     float w;
     if (!amb[i])
       continue;
+    r = tab->last[ks[i]];
     if ((en->tag & T_CLAMP) || !T_N(en->tag) || c[0].dy == FAR_MARK)
       return 0;
     for (nq = 0; r != VC_NOSEQ; r = tab->prev[r], nq++) {
@@ -1116,6 +1413,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   unsigned rn[4];
   int res = 0; /* those resolved */
   VCacheVert dv = {0, 0, 1};
+  /* vertices with no entry their renderer handed over (#189): its
+   * hand-over, and those used */
+  const Hk *hkc[4] = {NULL, NULL, NULL, NULL}, *hk[4] = {NULL, NULL, NULL, NULL};
+  int nflat = 0; /* ... those with a place only */
+  int nhk = 0;
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
    * frames is open, #162; the logic draw's walk never reads s_pres_async),
@@ -1169,6 +1471,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       if (k < 0) {
         none = i;
         nnone++;
+        /* its renderer's hand-over, if any (#189; used below) */
+        hkc[i] = hk_look(tab, pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen,
+                           key, &cost[VCC_LOOK_PROBES], &t);
       } else if (T_STATE(tag) == E_INVALID) {
         work[3]++;
         st->miss_invalid++;
@@ -1181,7 +1486,41 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     }
     cost[VCC_LOOK_LINES] += t.n;
   }
-  if (nambig && nambig == nmiss && !nnone) {
+  if (n == 4 && nnone == 1 && nmiss == 1) {
+    /* a quad with one vertex the renderer moved on screen (#183) */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    der = derive(pres, (Table *)ptab, gen, xy, e, en, none, cost, pick, &dv, &der_moved, &der_snap);
+    if (der) {
+      persp = VREF_PERSP;
+      st->hits++;
+      st->derived++;
+      st->der_snap += der_snap != 0;
+    } else
+      memset(pick, 0, sizeof pick); /* as before: drawn affine */
+  }
+  if (!der && nnone) {
+    /* #189: vertices with no entry that their renderer handed over (after
+     * #183's derivation, which keeps its quads): its place and depths, its
+     * slot 0 */
+    for (i = 0; i < n; i++)
+      if (!e[i] && hkc[i]) {
+        hk[i] = hkc[i];
+        if (hk[i]->n) {
+          e[i] = hk[i]->c;
+          et[i] = 0;
+          en[i] = hk[i]->n;
+        } else
+          nflat++; /* its place only: the polygon stays affine */
+        nhk++;
+        nnone--;
+        nmiss--;
+        st->hits++;
+        st->hooked[hk[i]->who]++;
+      }
+    if (nhk && !nmiss && !nflat)
+      persp = VREF_PERSP;
+  }
+  if (nambig && nambig == nmiss && !nnone && !nflat) {
     /* every vertex not found an ambiguous key's (#181): its depths from
      * the projections under it near the others' */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
@@ -1217,24 +1556,13 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     work[3] += (unsigned)nambig;
     st->miss_ambiguous += (unsigned)nambig;
   }
-  if (res) {
+  if (res || der) {
     /* chosen above */
   } else if (persp) {
     if (!choose(e, en, k_all, n, cost, pick)) {
       st->spread++;
       persp = 0;
     }
-  } else if (n == 4 && nnone == 1 && nmiss == 1) {
-    /* a quad with one vertex the renderer moved on screen (#183) */
-    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
-    der = derive(pres, (Table *)ptab, gen, xy, e, en, none, cost, pick, &dv, &der_moved, &der_snap);
-    if (der) {
-      persp = VREF_PERSP;
-      st->hits++;
-      st->derived++;
-      st->der_snap += der_snap != 0;
-    } else
-      memset(pick, 0, sizeof pick); /* as before: drawn affine */
   }
   if (nnone && !der) { /* not found: no entry */
     st->miss_none += (unsigned)nnone;
@@ -1256,7 +1584,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     uint32_t r = ref[i] | persp | (uint32_t)(res && amb[i] ? 0 : pick[i]) << VREF_CAND_SHIFT;
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
-    if ((et[i] & T_CLAMP) || (i == none && der_moved))
+    if ((et[i] & T_CLAMP) || (i == none && der_moved) || hk[i]) /* (#189: moved by its renderer) */
       r |= VREF_CLAMP;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
@@ -1275,10 +1603,16 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
       if (e[i]) {
-        if (!(et[i] & T_MULTI))
+        if (hk[i]) { /* #189 */
+          c[i].dx = hk[i]->dx;
+          c[i].dy = hk[i]->dy;
+        } else if (!(et[i] & T_MULTI))
           cand_pos(ptab, &e[i][0], &c[i].dx, &c[i].dy);
         if (persp)
           c[i].w = e[i][pick[i]].w;
+      } else if (hk[i]) { /* #189: a place only */
+        c[i].dx = hk[i]->dx;
+        c[i].dy = hk[i]->dy;
       } else if (i == none && (der || der_moved)) {
         c[i].dx = dv.dx;
         c[i].dy = dv.dy;
@@ -1374,6 +1708,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
 void psx_vcache_enable(int mode) {
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
   g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
+  g_psyxRtpDeriveHook = mode >= 2 ? derive_hook : NULL; /* #189 */
   psx_vcache_polys = mode != 0;
   s_ot_done = mode != 0;
 }
@@ -1383,7 +1718,7 @@ void psx_vcache_ot_done(void) {
     done_hook();
 }
 
-PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
+static PsxVcacheValueHook pres_begin(int walks) {
   Rec *const r = &s_rec[VC_PRES];
   s_pres = 0;
   s_pres_async = 0; /* (the last one ended at its buffer's close, before the join) */
@@ -1410,6 +1745,14 @@ PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
   pres_next();
   s_pres = walks != 0;
   return s_pres && g_psyxRtpValueHook ? pres_rtp_value_hook : NULL;
+}
+
+/* the presenter's derive hook (#189) on with its value hook */
+PsxVcacheValueHook psx_vcache_pres_begin(int walks) {
+  const PsxVcacheValueHook h = pres_begin(walks);
+  if (s_pres_derive)
+    *s_pres_derive = h ? pres_derive_hook : NULL;
+  return h;
 }
 
 /* The presenter's frame on its own thread (#162) */

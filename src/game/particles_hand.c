@@ -33,6 +33,7 @@
  * as they are. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#189) */
 
 extern char g_Camera[];
 extern char g_Particles[];     /* the particle list's pointer */
@@ -707,6 +708,9 @@ static void Glows(void) {
       if ((s32)rx <= 0)
         f1 |= 8;
       rim = (rx & 0xFFFFu) | (ry << 16);
+      /* #189: each rim is its centre's exact place plus this offset, at
+       * the centre's depth, for the vertex cache */
+      PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS), rim, centre, 0u, (s32)mx, (s32)my);
       do {
         u32 nx, ny, f2, rim2;
         ps.irw[1] = AT32(vl + 0x0);
@@ -732,6 +736,8 @@ static void Glows(void) {
         if ((s32)nx <= 0)
           f2 |= 8;
         rim2 = (nx & 0xFFFFu) | (ny << 16);
+        PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS), rim2, centre, 0u, (s32)(nx - (u32)sx),
+                      (s32)(ny - (u32)sy));
         AT32(prim + 0x18) = rim2;
         if (!((s32)(f0 & f1 & f2) > 0)) {
           Link(slot, prim, ND_K_G3);

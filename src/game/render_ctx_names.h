@@ -23,7 +23,9 @@
  *    the presenter's buffer and OTs, wherever render_ctx_begin puts them;
  *  - native_draw's record cursor, side table and fallback count, and the
  *    calls that set the cursor on and off (nd_begin, nd_end);
- *  - the vertex cache's two hooks (null unless the presenter sets them);
+ *  - the vertex cache's hooks: the projections' two (null unless the
+ *    presenter sets them) and the renderers' hand-overs (#189: set with the
+ *    value hook by psx_vcache_pres_begin);
  *  - the HUD's 16:9 narrowing switch (g_present_narrow);
  *  - LOD's switches and its renderer hooks (lod.c), on the presenter's own
  *    LOD state (render_ctx.c).
@@ -74,6 +76,8 @@ void pres_CTC2(unsigned int value, int reg);
 unsigned int pres_CFC2(int reg);
 #define g_psyxRtpHook g_pres_rtp_hook
 #define g_psyxRtpValueHook g_pres_rtp_value_hook
+#define g_psyxRtpDeriveHook g_pres_rtp_derive_hook /* #189 */
+#define psx_vc_derive pres_vc_derive
 #define ngte_vcache pres_ngte_vcache
 
 /* the working memory (fast_render=3's, render_hand.h) */
