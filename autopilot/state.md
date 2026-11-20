@@ -26,19 +26,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "reported": true
     },
     {
-      "issue": 182,
-      "branch": "auto/182-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-182",
-      "pids": [],
-      "started_at": "2026-11-20T22:45:00Z",
-      "files": [
-        "docs/vita-testing.md",
-        "src/platform/vita/bench.c"
-      ],
-      "agent": "ab057f1deee4ee655",
-      "reported": true
-    },
-    {
       "issue": 195,
       "branch": "auto/195-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-195",
