@@ -471,3 +471,18 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - render thread 0.10–0.12 ms;
   - the vertex cache is about 0.19 ms across the three, the largest stage (#179, #193).
 - **Expected on hardware:** the owner's heavy 60 HZ Artisans windows at 1x go from about 18 ms a tick on the game thread to about 12, so close to 300 pictures in 300 vblanks (212–266 in the owner's log). Not checked on hardware yet. Host `--walk-lazy` with `--state` not run.
+
+### D181. `prof_draw.c`'s `sky` counts the sky once; the main draw's own time is "sky main" in the line's bracket (#190)
+
+- **Why:** `func_80050BD0` (`cyclorama_hand.c`) calls `func_8004EBA8` (`sky_hand.c`), and the `--wrap` catches that call. Charging both wraps to `sky` counted the main draw twice (D177). So every earlier `sky` figure, hardware and Vita3K, is about 1.85× the real cost. That includes the owner's 2.5–3.3 ms, and D177's and D179's numbers.
+- **What:**
+  - Both wraps stay. The nested call isn't charged to `sky`.
+  - `func_8004EBA8` still counts on its own when `draw.c`, the title or the credits call it directly.
+  - The parts are unchanged and add up.
+  - The main draw's own time (either caller) is `sky main` in the bracket, which `tools/vita`'s parsers cut off at `(`. That's why there's no seventh part.
+  - Docs: `vita-testing.md`, `presentation.md`, `fps-runs/README.md`.
+- **Checked** (Vita3K, `runtime/autopilot/runs/auto-190-1`; native build, `noassets`, gate PASS):
+  - The five routes' shots and every work counter are the same as `base-cc65182`.
+  - `owner60` (6,600–9,000) against 47e108a: sky 0.97 → 0.53 ms a vblank, the other parts 4.40 → 4.53, sky main 0.46. The main draw is about 87% of the sky.
+  - To compare with older logs, old ≈ new `sky` + `sky main`.
+- **Left:** the host's `src/platform/linux32/prof_draw.c` has the same double count.

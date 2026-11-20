@@ -244,7 +244,7 @@ From the hardware benchmark log (`logs/hw-be37191-bench`, main `be37191`, 16:9 n
   - gem script identical;
   - `tests/gte`, `m2c_diff_math` and the rest of ctest pass.
 - **On the Vita:** expect a share of the 6.8 ms render path back (estimate ~1–1.5 ms per frame). It's not measured on hardware; Vita3K's timings vary 3–4× from run to run and can't tell.
-- **Per-renderer timing:** spyro.log now has `draw N:` lines, per vblank: update, env, mobys, spyro, fx, particles, sky (`src/platform/vita/prof_draw.c`). The next hardware run says which renderer to cut.
+- **Per-renderer timing:** spyro.log now has `draw N:` lines, per vblank: update, env, mobys, spyro, fx, particles, sky (`src/platform/vita/prof_draw.c`); the bracket gives the env calls and, since #190 (D181), `sky main`. The next hardware run says which renderer to cut.
 
 **Verdict (estimates from the numbers above, to confirm on hardware):**
 

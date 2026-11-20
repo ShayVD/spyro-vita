@@ -116,7 +116,7 @@ The same VPK for all three. `fast_render=1` was the default from D72 to D81 (2 s
 | `g3-fast-60.txt` | `fast_render=1`, the menu's 60 fps | the same route |
 
 **G1 against G2.** The log's start says which: `fast_render=0: translated renderers, ...` or `fast_render=1: hand-written renderers, ...`.
-- `draw N:` (per vblank). `env`, `mobys`, `spyro` and `sky` should fall. Today in the heavy scene, per tick (twice the per-vblank numbers): env 4.96, mobys 3.06, sky 0.90, spyro 0.60 ms, 9.7 ms with fx and particles (`docs/fps-plan.md`). `sky` now also counts the sky's direct calls (Artisans'), so G1's `sky` is higher than the older runs'.
+- `draw N:` (per vblank). `env`, `mobys`, `spyro` and `sky` should fall. Today in the heavy scene, per tick (twice the per-vblank numbers): env 4.96, mobys 3.06, sky 0.90, spyro 0.60 ms, 9.7 ms with fx and particles (`docs/fps-plan.md`). `sky` now also counts the sky's direct calls (Artisans'), so G1's `sky` is higher than the older runs'. Before #190 (D181) `sky` counted the main sky draw twice (`func_80050BD0` calls `func_8004EBA8`); the bracket's `sky main` is that draw on its own.
 - `update` should fall a little: collision's GTE commands are inline too.
 - `time N:`: `game` falls by what `draw` lost, and `busy %` with it.
 
