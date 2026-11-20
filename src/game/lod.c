@@ -20,7 +20,9 @@
  *    the PS1, then once more over the same list ("pass 2") for the mobys only
  *    the longer box takes in, appending draw records without touching
  *    m_WasDrawn or the shadow lists, and stopping where the record space
- *    ends.
+ *    ends. Pass 2's mobys take the low-detail model (moby_cull_hand.c,
+ *    #180): they are past the original's draw distance, and the high one
+ *    there cost draw calls for no detail that shows.
  *
  * The renderers check no buffer bounds, so more geometry could overrun the
  * primitive buffer (0x1C000 bytes, with the HUD's mobys at its top,
@@ -53,12 +55,14 @@
 #include "buffers.h"
 #include "common.h"
 #include "environment.h"
+#include "gamepad.h"
 #include "graphics.h"
 #include "moby.h"
+#include "tick60.h"
 
 extern char D_8006FCF4[];
 
-LodConfig g_lod = {LOD_ONE, 0, 0};
+LodConfig g_lod = {LOD_ONE, 0, 0, LOD_BUDGET_60};
 int g_lod_k = LOD_ONE; /* this draw's scale */
 int g_lod_pass;        /* r_moby's pass 2 is running */
 int g_lod_stats;       /* this draw collects statistics */
@@ -91,7 +95,7 @@ static u32 s_poly_lo, s_env_limit, s_moby_limit, s_env_last, s_env_end;
 static u32 s_rec2 = ~0u; /* the first draw record pass 2 wrote */
 
 static struct {
-  unsigned draws, cuts, near_full, env_cuts, moby_cuts;
+  unsigned draws, cuts, near_full, env_cuts, moby_cuts, budget_cuts;
   unsigned long long used, k, extra;
   unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
@@ -291,22 +295,42 @@ void port_lod_reset(void) {
   memset(s_ext, 0, sizeof s_ext);
 }
 
+/* This draw follows a 60 Hz update: tick60.c's wants_60 (play, not an
+ * attract demo); elsewhere the logic and its draw keep 30 Hz. */
+static int logic60(void) {
+  return g_tick60_mode && tick60_built() && g_Gamestate == GS_Playing &&
+         g_DemoMode == DEMO_MODE_NONE;
+}
+
 /* The bytes of primitives a draw wrote, against what the buffer holds, or
  * the world's against where its bound would stop it, whichever is fuller:
  * above 80% the extra distance halves, above 90% it goes; under 65% it
- * grows back by 1/32 of 1x per draw. So the bound stays a backstop. */
-static void limit(int used, int cap) {
-  if (used > cap / 10 * 9) {
+ * grows back by 1/32 of 1x per draw. So the bound stays a backstop.
+ *
+ * With 60 Hz logic (in play) a tick's draw has half the time, and the
+ * cost of a draw follows its primitives (the owner's hardware log, #180:
+ * about 0.2 ms of logic draw a KB; every picture shown up to about 47 KB,
+ * pictures lost from about 52 KB). So the longer distance also keeps to a
+ * budget there (g_lod.budget, `work` the bytes the draw wrote): above it
+ * the extra distance halves, above 9/8 of it it goes, and it grows only
+ * under 7/8 of it. Where the original's own draw is over the budget, 2x
+ * draws as 1x: it spends only the time the scene leaves. */
+static void limit(int used, int cap, int work, int budget) {
+  const int over = budget > 0 && work > budget, far_over = over && work > budget + budget / 8;
+  const int room = budget <= 0 || work < budget - budget / 8;
+  if (s_k > LOD_ONE && over && used <= cap / 10 * 8)
+    s_st.budget_cuts++;
+  if (used > cap / 10 * 9 || far_over) {
     s_k = LOD_ONE;
     s_hold = 60;
     s_st.cuts++;
-  } else if (used > cap / 10 * 8) {
+  } else if (used > cap / 10 * 8 || over) {
     s_k = LOD_ONE + (s_k - LOD_ONE) / 2;
     s_hold = 30;
     s_st.cuts++;
   } else if (s_hold > 0) {
     s_hold--;
-  } else if (used < cap / 100 * 65 && s_k < g_lod.scale) {
+  } else if (used < cap / 100 * 65 && room && s_k < g_lod.scale) {
     s_k += LOD_ONE / 32;
   }
 }
@@ -328,7 +352,7 @@ void port_lod_draw_end(int shown) {
     /* the world's share of where its bound is, as a share of the buffer */
     int world = s_env_end > s_poly_lo ? (int)(s_env_end - s_poly_lo) : 0, room = cap - ENV_MARGIN;
     int world_eff = room > 0 ? (int)((long long)world * cap / room) : cap;
-    limit(world_eff > used ? world_eff : used, cap);
+    limit(world_eff > used ? world_eff : used, cap, used, logic60() ? g_lod.budget : 0);
   }
   if (s_env_end && (u32)(uintptr_t)D_800757B0 >= s_env_end &&
       (u32)(uintptr_t)D_800757B0 - s_env_end > s_st.after_env_max)
@@ -351,14 +375,14 @@ void port_lod_report(char *out, unsigned len) {
   if (s_st.draws)
     snprintf(out, len,
              "%u draws at x%u.%02u average (lowest x%u.%02u); primitives %u KB average, "
-             "%u KB peak of %u KB (%u%%); %u back-offs; %u.%u extra mobys per draw; "
+             "%u KB peak of %u KB (%u%%); %u back-offs (%u for the budget); %u.%u extra mobys per draw; "
              "near sectors peak %u of 127 (%u times full); moby records peak %u of 53; "
              "largest sector %u bytes, after the world %u bytes; stopped early: world %u, "
              "mobys %u",
              s_st.draws, (unsigned)(s_st.k / d / 256),
              (unsigned)(s_st.k / d % 256 * 100 / 256), s_st.k_min / 256,
              s_st.k_min % 256 * 100 / 256, (unsigned)(s_st.used / d / 1024),
-             s_st.used_max / 1024, cap / 1024, s_st.used_max * 100 / cap, s_st.cuts,
+             s_st.used_max / 1024, cap / 1024, s_st.used_max * 100 / cap, s_st.cuts, s_st.budget_cuts,
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
              s_st.near_full, s_st.records_max, s_st.sector_max, s_st.after_env_max,
              s_st.env_cuts, s_st.moby_cuts);
