@@ -25,6 +25,7 @@
       "timeout": 300,
       "config": [
         "vdm_ring=1024",
+        "interp_budget=0",
         "shot=300,900,1500,2100,2640",
         "shot_hd=1",
         "frames=2700"
@@ -36,6 +37,7 @@
       "timeout": 1200,
       "config": [
         "vdm_ring=1024",
+        "interp_budget=0",
         "widescreen=1",
         "shot_every=100",
         "frames=9100"
@@ -47,6 +49,7 @@
       "timeout": 1200,
       "config": [
         "vdm_ring=1024",
+        "interp_budget=0",
         "widescreen=1",
         "persp=1",
         "subpixel=1",

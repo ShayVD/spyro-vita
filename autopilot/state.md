@@ -137,10 +137,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": {
     "kind": "baseline",
     "issue": 0,
-    "step": 1,
-    "pid": 52762,
+    "step": 2,
+    "pid": 14975,
     "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
-    "started_at": "2026-11-20T11:04:47Z"
+    "started_at": "2026-11-20T11:27:22Z"
   },
   "batch": null,
   "lanes": [
@@ -227,3 +227,4 @@ continue.
 - 05:15Z phase 9: stop-check printed stop (phase 9, no workers, 3 rounds without a gain, only #175 open and it needs the owner). Final report: autopilot/report.md. Loop ended.
 - 2026-11-20T11:03Z phase 8 again (owner, 2026-11-20, after D172's merge and hardware session): filed #177-#181 (PSX WOBBLE row, clamped vertices, hook cost, draw distance 2x, remaining misses); route and benchmark owner60 added; Vita3K: 0
 - 2026-11-20T11:05Z phase 8: round 9 started (owner's issues); baseline job base-3ba4fd2 running; worker #177 started (one worker: other sessions' containers running); Vita3K: 0
+- 2026-11-20T11:27Z phase 8: baseline base-3ba4fd2 built (wobble60 needed a rerun: Vita3K crash); pause-ws-wobble's title shots differed from merge-m1 by interp_budget skips (Vita3K timing, 60 HZ default since D150): title, pause-ws, pause-ws-wobble now pin interp_budget=0, re-running; Vita3K: 1 crash
