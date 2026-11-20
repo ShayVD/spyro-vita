@@ -28,6 +28,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "afe58dc305ed6a974",
       "last_commit_at": "2026-11-20T12:13:11+00:00",
       "reported": true
+    },
+    {
+      "issue": 180,
+      "branch": "auto/180-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-180",
+      "pids": [],
+      "started_at": "2026-11-20T12:48:10Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/moby_cull_hand.c",
+        "src/platform/vita/picture.c"
+      ],
+      "agent": "a86e929aa0da905c3"
     }
   ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
@@ -239,3 +253,4 @@ continue.
 - 2026-11-20T12:00Z phase 8: merged #177 (D173; 5 routes the same against base-3ba4fd2); re-baseline done, pinned routes deterministic (91/91 repeat); worker #178 running; Vita3K: 0
 - 2026-11-20T12:26Z phase 8: tick - #178 committed (clamped vertices drawn at their exact position), running its checks; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T12:47Z phase 8: #178 reported (clamped vertices exact; owner60 fallbacks 4,068 -> 621, found 93.30 -> 93.36%); gate job: GPU window captures (CAPTURE=1) base vs #178 on wobble60's lines; filed #183 (no-entry vertices, ~75% of misses) and #184 (stats race); Vita3K: 0
+- 2026-11-20T12:48Z phase 8: worker #180 started (draw distance 2x); #178 gate waits for the GPU captures; Vita3K: 0
