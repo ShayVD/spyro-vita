@@ -21,7 +21,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/gpu_rt.h",
         "docs/decisions-2.md"
       ],
-      "agent": "a288dfd2f5e8ddf23"
+      "agent": "a288dfd2f5e8ddf23",
+      "reported": true
     }
   ],
   "last_good": "c713ab2a8933bf0f2d8880a266296032c61e0233",
@@ -55,6 +56,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware run for #159 (cheaper vertex cache)",
       "expected": "less game- and presenter-thread time with persp+subpixel at 60 fps; D133's form on the merged VPK vs 8dab625",
       "issue": 159
+    },
+    {
+      "title": "Hardware run for #169 (redundant GL state skipped)",
+      "expected": "less render-thread time per picture; pause-ws and wobble60, merged VPK vs autopilot-bbc36b1.vpk",
+      "issue": 169
     }
   ],
   "owner_decisions": [
@@ -84,7 +90,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 169,
+    "step": 1,
+    "pid": 7716,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-169-1.log",
+    "started_at": "2026-11-20T00:33:27Z"
+  },
   "batch": null
 }
 ```
@@ -149,3 +162,4 @@ continue.
 - phase 8: worker on #165 (docs for #163), the last open issue.
 - 23:55Z phase 8: merged #165 (docs). Round 1 ended with a gain: wobble60 vc.proj/polys/verts/misses -50% (base-5eb8423, the first wobble60 counters, vs base-bbc36b1), none worse; rounds_without_gain 0. last_good = head (no src/cmake/kit change since bbc36b1, whose gate is the regression run). Round 2 started; first candidate from the counters: redundant GL state calls (programs 105 vs draws 84 per frame).
 - phase 8: removed a stale worker entry for #165 (left after its merge; it made pick skip #169). Worker on #169 (redundant GL state calls).
+- 00:33Z phase 8: #169 reported done (reports/169-1.md): wobble60 attribs 421->15, uniforms 187->26, tex_binds 44->2, gl.state 316->243 per frame, draws/tris identical, pictures identical. Gate running.
