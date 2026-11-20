@@ -532,3 +532,18 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `owner60` with `dd_budget=0` reads "(0 for the budget)" on all 29 lod lines.
   - Against pre-#180 (`base-3ba4fd2`), its shots differ only in the 7 title-flyby shots that pass 2's low-detail mobys changed. Shot 7,700, which the budget had changed, is back.
 - **Left:** `picture.c`'s start-up line and the menu still say "experimental" for 2x. Whether 2x drops that label waits for a hardware run in open levels.
+
+### D184. The presenter's copy of `lod.c` no longer reads tick60's state; the autopilot gate runs the host build and ctest (#194)
+
+- **Why:**
+  - Since #180 (D175), `logic60()` has read the game thread's `g_tick60_mode` and `tick60_built()`.
+  - `lod_pres.c` compiled it into the presenter's object, which breaks D164/D167's split. Since then, ctest `render_ctx_link` has failed.
+  - The gate missed this because `autopilot/config.json`'s `commands.host_tests` was still a placeholder.
+- **What:**
+  - The game's copy decides "60 Hz in play" as each shown draw ends, at the same point as before, and keeps it in `s_logic60`, which is part of `LOD_STATE`. The state is 4 bytes bigger, about 416 of `pres_draw.c`'s 512.
+  - The presenter's build (`RENDER_PRES`) leaves out `logic60()` and `tick60.h`. It only carries the game's last decision, in the state it is handed, and it never runs the limiter.
+  - `host_tests` is now the linux32 build plus ctest. It copies `build/s1-matching` into the worktree when needed and takes about 17 minutes on a quiet machine and 35–50 under load.
+  - `buildlock` (`runtime/autopilot/env.sh`) now keeps its variables local.
+- **Checked:**
+  - ctest went from 28 passing with `render_ctx_link` failing to 29 passing and 3 skipped (`gte`, `pbp`, `pbp_made`). The gate's own run showed 100% of 32.
+  - On Vita3K, all five routes give the same shots and counters as `base-b3b8cd1`, and `owner60`'s lod lines are identical, including the budget's back-offs.
