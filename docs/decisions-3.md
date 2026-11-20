@@ -516,3 +516,19 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Hand-overs whose source is itself ambiguous or invalid (about 370 on route A).
   - Not run: the oracle replay (no PCSX-Redux here). `docs/translation-log.md` rows for the five renderers.
 - **Found on the way:** ctest `render_ctx_link` has failed since #180 (D175): `lod_pres.c` names `g_tick60_mode` and `tick60_built`. The gate's `host_tests` command is still a placeholder, so the gate didn't run ctest (#194).
+
+### D183. Draw distance's 60 Hz budget has an off switch: `dd_budget=0` on the Vita, `--lod-budget 0` on the host (#185)
+
+- **Why:** #180 (D175) added a 60 Hz work budget to the draw-distance limiter. It was on by default, with no switch outside the code. Phase 8's rule is "on by default with an off switch".
+- **What:**
+  - **Vita:** `dd_budget=` in `config.txt`. A non-zero value (the default) sets `g_lod.budget = LOD_BUDGET_60` (48 KB). `0` sets 0, which leaves only the buffer's limits, as before #180.
+  - **No menu row.** A start-up line from `main.c` says which applies.
+  - **Host:** `--lod-budget KB` (default 48; 0 is off).
+  - **Unchanged:** pass 2's low-detail mobys stay either way, and the budget's value and rules are as before.
+  - **Docs:** `presentation.md`, `host-build.md`, `vita-testing.md` and the README describe the budget and the lod line's "N back-offs (M for the budget)".
+- **Checked** (`runtime/autopilot/runs/auto-185-1`):
+  - The native build, `noassets`, the host build and the gate all pass.
+  - With the default, the five routes' shots and counters match `base-cc65182`.
+  - `owner60` with `dd_budget=0` reads "(0 for the budget)" on all 29 lod lines.
+  - Against pre-#180 (`base-3ba4fd2`), its shots differ only in the 7 title-flyby shots that pass 2's low-detail mobys changed. Shot 7,700, which the budget had changed, is back.
+- **Left:** `picture.c`'s start-up line and the menu still say "experimental" for 2x. Whether 2x drops that label waits for a hardware run in open levels.
