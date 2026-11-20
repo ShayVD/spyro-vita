@@ -20,8 +20,9 @@ extern "C" {
 #define VREF_POLY 0x80000000u  /* built by MakeVertexTriangle/Quad */
 #define VREF_PERSP 0x40000000u /* every vertex of its polygon was found */
 #define VREF_NOPOS 0x20000000u /* different points share the key: integer position */
-#define VREF_CLAMP 0x10000000u /* the GTE clamped this projection (#178): its exact
-                                  position is drawn even without subpixel */
+#define VREF_CLAMP 0x10000000u /* the GTE clamped this projection (#178), or the renderer
+                                  moved the vertex after it (#183): its exact position is
+                                  drawn even without subpixel */
 #define VREF_SLOT 0x00FFFFFFu  /* entry + 1, or 0: not found or ambiguous */
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
@@ -187,6 +188,11 @@ typedef struct {
   unsigned spread;      /* polygons with every vertex found, drawn affine: depths 4x apart */
   unsigned inv_depth;   /* projections invalid: a depth of 0 or less */
   unsigned inv_key;     /* ... the key isn't the GTE's answer for the inputs */
+  /* #183: a quad's one vertex with no entry, found again from its polygon
+   * (vcache.c derive), counted in hits (and its polygon in persp), not in
+   * miss_none */
+  unsigned derived;  /* ... drawn with the polygon's depth */
+  unsigned der_snap; /* ... of those at the projection recorded before the renderer moved it */
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
