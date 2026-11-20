@@ -11,24 +11,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 9,
   "workers": [
     {
-      "issue": 172,
-      "branch": "auto/172-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-172",
+      "issue": 174,
+      "branch": "auto/174-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-174",
       "pids": [],
-      "started_at": "2026-11-20T02:21:16Z",
+      "started_at": "2026-11-20T02:50:21Z",
       "files": [
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/vita_pc.h",
-        "docs/decisions-2.md"
+        "tools/host_checks.sh"
       ],
-      "agent": "a8ec7ff9c8c396114",
-      "reported": true
+      "agent": "a60239ecd99a2d7f4"
     }
   ],
-  "last_good": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
+  "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
-    "commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
+    "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -100,14 +97,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 172,
-    "step": 1,
-    "pid": 15291,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-172-1.log",
-    "started_at": "2026-11-20T02:39:48Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -182,3 +172,4 @@ continue.
 - 02:39Z phase 9: #172 reported done (reports/172-1.md): six vcache cost counters in vpk-perfcount, pictures and older counters unchanged. Gate running.
 - 02:44Z phase 9: merged #171 (comments only; objects byte-identical).
 - 02:49Z phase 9: merged #173 (host ./save warning; host only). Filed #174 (host_checks.sh demo run without --save).
+- 02:50Z phase 9: merged #172 (all routes first try, pictures identical, older counters same; new counters). New baseline from its gate; last_good moved. Worker on #174.
