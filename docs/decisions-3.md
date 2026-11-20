@@ -565,3 +565,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The native build, `noassets`, and the gate with the host build and ctest all pass.
   - Vita3K `title`: shots 10/10, the same as `base-b3b8cd1`.
   - The bench itself hasn't run; its first hardware run needs the owner's yes.
+
+### D186. The presenter's thread gets a cheaper vertex cache: its projections are worked out only when an entry is first read, resolve stops scanning early, and each thread's counters have lines of their own (#193)
+
+- **Why:**
+  - At 30 Hz with in-between frames, the presenter's thread saturated in Toasty's heavy opening (D179 AP10: 96%, every in-between buffer passed by).
+  - It shares core 1 with the parse thread, which has the higher priority, and with audio. Its 32 ms job was about 22 ms of its own work plus 9.6 ms of walk N's preemption.
+  - `records_begin`'s join runs on the game thread and costs 0 in those windows.
+- **What:**
+  1. **Deferred projections (`T_PEND`).** The presenter's projections record their entry and log place at once, but keep their inputs on a per-entry list (16 bytes each, registers de-duplicated). The first lookup, hand-over source or derived point works them out in order. 25–35% are never needed. `psx_vcache_set_lazy(0)` turns this off.
+  2. **Early stops in `resolve`.** It only tests whether a projection is near, with an early exit, and stops counting points at two.
+  3. **Separate cache lines.** `g_vcache_ctr[2]` (the game's and the presenter's work and cost counters), `VCacheStats` and `Rec` are each 64-byte aligned. Before, the presenter's cost counters shared a line with the logic draw's on another core.
+  4. The tag's frame number is now 23 bits.
+- **Checked:**
+  - **Same answers:** host per-polygon FNV is identical to b3b8cd1 on routes A (12.25 M polygons) and B (8.98 M), with the deferral on and off. The resolve, derive and hand-over counts are identical.
+  - **Same pictures:** the five routes' shots match. The gate, including the host build and ctest, passes.
+  - **Counters:** `wobble60` `vcp.div` −15%, `vcp.lines` −2.8%.
+  - **Vita3K, Toasty's heavy opening:** the presenter's busy time per job, against the logic draw, fell about 28% (2.11–2.89 → 1.59–1.94); about 18.5 → 10.9 ms a job in one same-session A/B.
+  - The presenter's own invalid, ambiguous and clamped stats now count only the keys that were worked out.
+- **Open:**
+  - the hardware rerun of AP10;
+  - moving the presenter off the parse thread's core, and a `vc_lazy=` key (#195).
