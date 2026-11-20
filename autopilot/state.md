@@ -29,20 +29,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/pete_render_hand.c"
       ],
       "agent": "ad557f7d82874304c"
-    },
-    {
-      "issue": 187,
-      "branch": "auto/187-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-187",
-      "pids": [],
-      "started_at": "2026-11-20T17:42:00Z",
-      "files": [
-        "src/game/native_draw.c",
-        "src/platform/common/gpu_walk.c",
-        "src/platform/vita/gpu_gl.c",
-        "src/game/savestate.c"
-      ],
-      "agent": "ac33d2216e3ae333e"
     }
   ],
   "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
@@ -128,6 +114,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #181 owner60 at dd200 for the owner's 'changing' (ambiguous keys resolved, grid x16 depths)",
       "expected": "owner-approved: fewer perspective/affine flips; vcache clamps found whole ~98%",
       "issue": 181
+    },
+    {
+      "title": "Hardware: #187 OT walk overlap (owner60/AP8 at 60 HZ, plus a heavy Artisans window at 1x)",
+      "expected": "owner-approved: 'waited for the walk' ~0, game thread ~12 ms a tick in heavy windows, ~300 pictures/300",
+      "issue": 187
     }
   ],
   "owner_decisions": [
