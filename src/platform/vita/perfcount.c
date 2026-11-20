@@ -9,7 +9,9 @@
  * add per event (or one per walk), and pulled once a vblank on the game
  * thread into the kit's counters (vpk_pc_add, ~28 atomic adds a vblank):
  * gpu_gl.c's GL calls and the game's draws there (vita_pc.h, g_vpc_gl), the
- * OT walk's packets (gpu_walk.c, one add a walk), the vertex cache's projections and lookups (vcache.c)
+ * OT walk's packets (gpu_walk.c, one add a walk), the vertex cache's projections and lookups (vcache.c;
+ * since #178 also its invalid projections, the polygons they sent back to affine, and the
+ * projections the GTE clamped, the game thread's as the other vc.*)
  * and their cost (vcache.c's g_vcache_cost and g_vcache_pres_cost, D168: each thread's divisions,
  * probes and table lines, records and lookups added; issue #172) and the presenter's frames (present.c's g_present_stats). The shared code
  * needs nothing of the kit (the host links none), and no hot path has an
@@ -38,14 +40,19 @@ static const char *const k_names[VPC_COUNT] = {
     [VPC_VC_DIV] = "vc.div",           [VPC_VC_PROBE] = "vc.probe",
     [VPC_VC_LINES] = "vc.lines",       [VPC_VCP_DIV] = "vcp.div",
     [VPC_VCP_PROBE] = "vcp.probe",     [VPC_VCP_LINES] = "vcp.lines",
+    [VPC_VC_INVALID] = "vc.invalid",   [VPC_VC_FALLBACK] = "vc.fallback",
+    [VPC_VC_CLAMPED] = "vc.clamped",
 };
 _Static_assert(VPC_COUNT <= VPK_PC_MAX, "more counters than the kit's table holds");
 
 /* the shared code's running totals (never reset; wrap-safe differences) */
 extern unsigned g_psx_walk_packets[2]; /* gpu_walk.c: OT packets walked, the game's and its own walks' */
-extern unsigned g_vcache_work[4];   /* vcache.c: projections, polygons, vertices, misses */
+/* vcache.c's g_vcache_work (psx_vcache.h's VCW_*): the game thread's */
+static const int k_vcw[] = {VPC_VC_PROJ,    VPC_VC_POLYS,    VPC_VC_VERTS,  VPC_VC_MISSES,
+                            VPC_VC_INVALID, VPC_VC_FALLBACK, VPC_VC_CLAMPED};
+_Static_assert(sizeof k_vcw / sizeof k_vcw[0] == VCW_N, "a vcache work counter without a name");
 
-static unsigned s_gl0[VPC_COUNT], s_walk0, s_vc0[4], s_cost0[2][3];
+static unsigned s_gl0[VPC_COUNT], s_walk0, s_vc0[VCW_N], s_cost0[2][3];
 
 /* one thread's cost counters (D168), records and lookups added: divisions,
  * probes, lines. The presenter's are another thread's plain adds, read as a
@@ -86,9 +93,9 @@ static void pull(void) {
   }
   vpk_pc_add(g_vpc[VPC_OT_PACKETS], w - s_walk0);
   s_walk0 = w;
-  for (i = 0; i < 4; i++) {
+  for (i = 0; i < VCW_N; i++) {
     unsigned v = g_vcache_work[i];
-    vpk_pc_add(g_vpc[VPC_VC_PROJ + i], v - s_vc0[i]);
+    vpk_pc_add(g_vpc[k_vcw[i]], v - s_vc0[i]);
     s_vc0[i] = v;
   }
   vpk_pc_add(g_vpc[VPC_PRES_FRAMES], (unsigned)(p - s_pres0));

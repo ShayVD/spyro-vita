@@ -11,23 +11,18 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 178,
-      "branch": "auto/178-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-178",
+      "issue": 180,
+      "branch": "auto/180-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-180",
       "pids": [],
-      "started_at": "2026-11-20T11:49:41Z",
+      "started_at": "2026-11-20T12:48:10Z",
       "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/vita_pc.h",
-        "autopilot/config.json"
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/moby_cull_hand.c",
+        "src/platform/vita/picture.c"
       ],
-      "agent": "afe58dc305ed6a974",
-      "last_commit_at": "2026-11-20T12:13:11+00:00",
-      "reported": true
+      "agent": "a86e929aa0da905c3"
     }
   ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
@@ -36,6 +31,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
   "hardware_runs": [
+    {"date": "2026-11-20 13:49", "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt from the Vita (read only)", "log": "logs/owner-20261120-1349/"},
+    {"date": "2026-11-20 13:45", "what": "owner asked for the current build to test by hand: autopilot b604db4 (#177 PSX WOBBLE row, #178 edge vertices) eboot installed, READBACK IDENTICAL (SHA-1 9eb4795b), left on the Vita", "log": "logs/hw-put-b604db4.out"},
     {
       "date": "2026-11-20",
       "commit": "37c3a95",
@@ -96,6 +93,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-20 13:55: owner (b604db4 on hardware, PAL 60 HZ 16:9 dd200, PSX WOBBLE OFF): still sees textures stretching and changing; eliminate it completely. Log logs/owner-20261120-1349: 90.6-96% of polygons found whole in play, no entry 12-38k and ambiguous up to 24k per 300 vblanks. #181 and #183 raised to p0 (next after #180, before #179), evidence and stronger Done-when on both issues.",
+    "2026-11-20 13:50: owner: push everything as you go. Push autopilot (PR #176) after every merge and state tick; still never push main, workers still never push.",
     {
       "issue": 0,
       "question": "Where does the autopilot start on spyro-vita?",
@@ -140,14 +139,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 178,
-    "step": 4,
-    "pid": 44343,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/auto-178-1/capture",
-    "started_at": "2026-11-20T12:47:22Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -239,3 +231,8 @@ continue.
 - 2026-11-20T12:00Z phase 8: merged #177 (D173; 5 routes the same against base-3ba4fd2); re-baseline done, pinned routes deterministic (91/91 repeat); worker #178 running; Vita3K: 0
 - 2026-11-20T12:26Z phase 8: tick - #178 committed (clamped vertices drawn at their exact position), running its checks; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T12:47Z phase 8: #178 reported (clamped vertices exact; owner60 fallbacks 4,068 -> 621, found 93.30 -> 93.36%); gate job: GPU window captures (CAPTURE=1) base vs #178 on wobble60's lines; filed #183 (no-entry vertices, ~75% of misses) and #184 (stats race); Vita3K: 0
+- 2026-11-20T12:48Z phase 8: worker #180 started (draw distance 2x); #178 gate waits for the GPU captures; Vita3K: 0
+- 2026-11-20T12:52Z phase 8: tick - #178 captures: base done, #178's running; #180 working (no commit yet); Vita3K: 0
+- 2026-11-20T12:54Z phase 8: merged #178 (D174; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
+- 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
+- 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0

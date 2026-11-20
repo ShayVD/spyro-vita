@@ -36,6 +36,9 @@ enum {
   VPC_VCP_DIV,       /* the same three, the presenter's thread's (D167) */
   VPC_VCP_PROBE,
   VPC_VCP_LINES,
+  VPC_VC_INVALID,    /* vertex cache, the game thread's (#178): projections recorded invalid */
+  VPC_VC_FALLBACK,   /* ... polygons drawn affine because a vertex's key was invalid */
+  VPC_VC_CLAMPED,    /* ... projections the GTE clamped, recorded at their exact position */
   VPC_COUNT          /* at most VPK_PC_MAX (32) */
 };
 extern int g_vpc[VPC_COUNT];
