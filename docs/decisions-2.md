@@ -1526,3 +1526,35 @@ Decisions from D103 on; D1–D102 are in [decisions.md](decisions.md). Record ea
 - **Not taken** (both would fix the mount rather than work around it; left to the owner):
   - colima's virtiofs mount type: changing it rebuilds the colima VM, which other projects on this Mac share.
   - `build/` on a Docker volume instead of the bind mount: the build would no longer go through sshfs, but that changes `tools/tc` and where every worktree's build lives.
+
+## 2026-11-20 — GL state shadow in gpu_gl.c (#169)
+
+### D137. `gpu_gl.c` keeps a shadow of the GL state it last set and skips calls that would set the same thing again: the program in use, each program's `u_xf` and `u_semi`, the array buffer, the attribute arrays' enables and VBO pointers, the active texture unit, the texture bound to each unit, and the blend enable, equation and function. Per frame on `wobble60`, `gl.attribs` falls from 421.5 to 14.5, `gl.uniforms` from 186.7 to 25.9, `gl.tex_binds` from 43.7 to 2.0, `gl.programs` from 105.0 to 94.9 and `gl.state` from 316.4 to 242.7. Draws, triangles and every picture are unchanged
+- **Why** (issue #169): the D131 counters showed more GL state calls than draws on every benchmark route. `batch_issue` sets the program, `u_xf`, the VBO, 3–7 attribute arrays and their pointers, the VRAM texture and the blend state for every joined draw. `draw` sets the program and both uniforms again for each run, though nearly all of them are the same from one batch to the next. vitaGL doesn't skip these. Any `glUniform*` or `glUseProgram` makes it copy the program's whole uniform buffer at the next draw (`vita-port-kit` `vita/docs/vitagl.md`, item 9). A changed blend factor re-patches the fragment program.
+- **What** (`src/platform/vita/gpu_gl.c`, the `gs_*` functions after `Prog`): every program, uniform, buffer, attribute, texture-unit and blend call in the file goes through a `gs_*` function. That function makes the GL call only when the value differs from what was last set, so the call order and the state at each draw are the same as before. Nothing is reordered. A skipped call isn't made, so the `VITA_PC_GL` macros (`vita_pc.h`) never see it: the counters count calls made, and `vita_pc.h` is unchanged.
+  - **Uniforms** are cached per GL program name, not per `Prog`. `s_prog` is a copy of one `s_vprog` row, so one program has two `Prog`s. Location -1 isn't called at all, since GL ignores it.
+  - **Attribute pointers** are cached only for VBOs. vitaGL resolves a VBO pointer at the draw, so a `glBufferData` into the same buffer needs no new pointer. Pointers into client memory (the quads, the atlas decode) are always set, because their arrays are on the stack.
+  - The array buffer is bound only when a pointer or `glBufferData` needs it. In `batch_issue`, the explicit bind of `s_vbo_side` became part of setting attributes 4 and 6.
+  - **Not cached:** viewport, scissor and the scissor enable. vitaGL works out the viewport from the framebuffer bound when `glViewport` is called, and `glEnable(GL_SCISSOR_TEST)` re-marks the scissor for the next draw. Texture parameters were already cached for the atlas (`s_alin`). FBO binds were already cached (`bind_fbo`).
+- **When it's forgotten:** every GL call in the port is in `gpu_gl.c`, so the only state the shadow can't see is vitaGL's own work and names that die.
+  - `gs_forget` (bindings, enables, the active unit, blend) runs after every `vglSwapBuffers`: `swap()`, and the first swap in `gl_gpu_init`. The options panel's overlay is drawn right before the swap, through the same functions. It also runs in `gl_rescale` (widescreen, resolution and save states drop every target).
+  - `gs_reset` also forgets the programs' uniform values, and runs in `gl_set_options` (options that compile programs).
+  - `gs_tex_deleted` forgets a unit that held a texture just deleted (targets, spares, the read-back texture, presentation slots), since its name can come back from `glGenTextures`.
+  - There is one vitaGL context. The render thread and the game thread never hold it at once (`vita_pc.h`, as `s_st`), so no context change happens.
+- **Checked** (`runtime/autopilot/runs/auto-169-1`, VPK SHA-1 `32be7f26…`; all with `vdm_ring=1024`; each passed on its first try, exit 0):
+  - **Pictures:** `shots_cmp.py --max-diff 0 --tol 0 --edge 0` against `base-bbc36b1` gives `title` 10/10 same, `pause-ws` 91/91, `pause-ws-wobble` 91/91 and `wobble60` 91/91. `pause-ws` with `tex_filter=1` and with `res=ps1` (they switch programs) gave 91/91 each against the same settings run on `autopilot-bbc36b1.vpk` (`base-pause-ws-texf`, `base-pause-ws-ps1`).
+  - **Counters,** `perf_report.py --noise 0.02` over vblanks 6,600–9,000 (`perf-*.txt`), per frame, before → after:
+
+    | route | gl.state | gl.programs | gl.tex_binds | gl.uniforms | gl.attribs |
+    |---|---|---|---|---|---|
+    | `wobble60` | 316.4 → 242.7 (−23%) | 105.0 → 94.9 (−10%) | 43.7 → 2.0 (−95%) | 186.7 → 25.9 (−86%) | 421.5 → 14.5 (−97%) |
+    | `pause-ws` | 158.5 → 122.3 (−23%) | 52.6 → 47.5 (−10%) | 21.8 → 1.5 (−93%) | 93.4 → 10.2 (−89%) | 226.0 → 12.0 (−95%) |
+    | `pause-ws-wobble` | 158.5 → 122.2 | 52.6 → 47.5 | 21.8 → 1.5 | 93.4 → 10.2 | 211.7 → 11.5 |
+    | `pause-ws`, `tex_filter=1` | 170.2 → 127.3 | 48.2 → 36.5 (−24%) | 21.8 → 1.5 | 84.8 → 9.8 | 226.0 → 12.0 |
+    | `pause-ws`, `res=ps1` | 158.5 → 122.3 | 52.6 → 47.5 | 21.8 → 1.5 | 93.5 → 10.2 | 226.1 → 12.0 |
+
+    `title` over the whole run (its 2,700 vblanks end before 6,600): `gl.uniforms` 27.9 → 0.007 and `gl.attribs` 11.9 → 10.1.
+    - `gl.draws`, `gl.tris` and every other counter are the same on `pause-ws` and `wobble60`, exactly.
+    - On `pause-ws-wobble` and the two runs against the autopilot VPK, `gr.draws` (the game's draws, counted before any GL) is 0.1% apart in the window. Over the whole run, `gl.draws`, `gl.tris`, `gr.draws` and `vbo.uploads` are identical: a frame landed in another window in Vita3K.
+  - **Build and assets:** the native VitaSDK VPK build exits 0 with no warning in `gpu_gl.c`, and `noassets` exits 0.
+- **What's left:** `gl.programs` remains about one per draw run plus the present's quads. Those are real program changes: the joined draws alternate formats and kinds. The calls skipped here are CPU work on the render thread: vitaGL's per-call work, and uniform copies at the next draw. Only an owner-approved hardware run can show whether render-thread time or frame rate moves (the counters say nothing about time).
