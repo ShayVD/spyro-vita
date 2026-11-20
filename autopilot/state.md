@@ -27,6 +27,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "README.md"
       ],
       "agent": "a1c3f87f2fd16bfc1"
+    },
+    {
+      "issue": 193,
+      "branch": "auto/193-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-193",
+      "pids": [],
+      "started_at": "2026-11-20T20:20:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/pres/pres_draw.c",
+        "src/game/present.c"
+      ],
+      "agent": "a49b6c8d3d051dccb"
     }
   ],
   "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
