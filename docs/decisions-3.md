@@ -436,3 +436,53 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Left:**
   - 1,144 (route A) and 866 (route B) ambiguous vertices: clamped or invalid projections sharing the key, more than 32 projections under a key, or the polygon also has a no-entry vertex.
   - Among same-batch points on one pixel (a far moby), the depth choice decides and can't be proven right. Those polygons are mostly under 8 px.
+
+### D179. Hardware session 3: #180, #183 and #186 on the Vita (2026-11-20)
+
+- **Run:** with the owner's yes, AP8–AP10 (`tools/vita/fps-runs/ap8-owner60-hw.txt`, `ap9-owner60-hd.txt`, `ap2-toasty60-wobble.txt`; `runtime/autopilot/hw-session3.sh`, logs `logs/hw-ap8a`–`hw-ap10`). Builds: `autopilot-b604db4.vpk` (before) and `autopilot-ca4450e.vpk` (with #180, #183 and #186; not #181), US disc.
+- **AP8 (owner60's lines; 16:9, 60 HZ, wobble fix on, `draw_distance=200`), b604db4 → ca4450e, vblanks 2,400–9,000:**
+  - sky 1.54 → 1.03 ms a vblank (−33%, D177; both figures double-counted, #190); env, mobys and spyro the same;
+  - polygons found whole 96.36 → 98.20%, no-entry vertices 318,585 → 162,858 (D176);
+  - 0 late vblanks in both. This route stays in light Artisans scenes, so #180's budget backed off only twice.
+- **AP9 (GPU pictures, `shot_hd=1`, at 6,900, 7,200, 7,800 and 8,400):**
+  - the software shots are identical;
+  - the HD pictures differ in 1.3–20.6% of pixels, only on the close subdivided walls and ground, as in Vita3K's `CAPTURE` grabs (D176), with no cracks.
+- **AP10 (the Toasty route at 30 Hz with in-between frames, wobble fix on), against AP2 (D172, the same morning):**
+  - the logic draw got cheaper (9.7 → 8.5 ms a tick in Toasty), and Artisans' late vblanks per 300 went 25.4 → 19.8;
+  - but the presenter thread rose 8.63 → 9.11 ms a vblank and saturates in Toasty's heavy opening (96%). There it misses every in-between frame for about 25 s, so Toasty's late vblanks per 300 went 1.2 → 30.7 (#193). The owner's 60 HZ settings don't use the presenter in play.
+- **Left on the Vita:** ca4450e's eboot (SHA-1 54c274d0, READBACK IDENTICAL).
+
+### D180. On the Vita the OT walk overlaps the game thread: `savestate_point` joins it only for a pending save or load (#187)
+
+- **Why:**
+  - Heavy scenes lose frames with 60 Hz logic even at 1x.
+  - `savestate_point` (present.c's `PortPresentBeforeUpdate`, at every main loop top) joined the walk when `s_req_slot || g_savestate_tick_hook`. The Vita always sets the hook (`savestate_vita.c`, `vita_savestate_init`). So since D71, every tick joined about 50 µs after its `DrawOTag`'s handover, and the game thread waited for the whole walk.
+  - A diagnostic build traced 300 of 300 waiting joins to `savestate_point`.
+  - Hardware shows the wait equal to the walk's busy time: 5.71 against 5.62 ms a vblank in the owner's 60 HZ Artisans log (`logs/owner-20261120-1056`, 6,900), and 10.55 against 10.46 in AP8b (D179).
+  - On the host the hook is only set with `--state`, so D71's `--walk-lazy` checks never saw it.
+- **What:** the walk is joined there only for a pending save or load. The hook's own GPU calls join where they post (`vita_video_overlay` → `call()` → `env_sync` → `psx_walk_join`). A request it makes (`state_test`) is serviced the next tick, with the join. With 60 HZ logic the walk now runs beside the next tick and is joined at `DrawSync`, as D71 meant.
+- **Checked** (Vita3K, `runtime/autopilot/runs/auto-187-1/final`; native build, `noassets`, gate PASS):
+  - the five routes' shots are the same as `base-cc65182`, and every work counter is the same;
+  - `owner60`'s wait for the walk went 6.1–7.6 → 0.00–0.06 ms a vblank (6,900–7,500), and `ot` 6.2–7.6 → 0.04–0.13. Vita3K's timing is only relative.
+  - At 30 Hz with in-between frames the join moves to the presenter's `records_begin`, about 1 ms after the handover, so the gain there is small (#193).
+- **Stage split on hardware** (Artisans, 60 HZ, wobble fix on), per KB of primitives:
+  - hand renderers 0.15–0.18 ms;
+  - walk 0.10–0.14 ms;
+  - render thread 0.10–0.12 ms;
+  - the vertex cache is about 0.19 ms across the three, the largest stage (#179, #193).
+- **Expected on hardware:** the owner's heavy 60 HZ Artisans windows at 1x go from about 18 ms a tick on the game thread to about 12, so close to 300 pictures in 300 vblanks (212–266 in the owner's log). Not checked on hardware yet. Host `--walk-lazy` with `--state` not run.
+
+### D181. `prof_draw.c`'s `sky` counts the sky once; the main draw's own time is "sky main" in the line's bracket (#190)
+
+- **Why:** `func_80050BD0` (`cyclorama_hand.c`) calls `func_8004EBA8` (`sky_hand.c`), and the `--wrap` catches that call. Charging both wraps to `sky` counted the main draw twice (D177). So every earlier `sky` figure, hardware and Vita3K, is about 1.85× the real cost. That includes the owner's 2.5–3.3 ms, and D177's and D179's numbers.
+- **What:**
+  - Both wraps stay. The nested call isn't charged to `sky`.
+  - `func_8004EBA8` still counts on its own when `draw.c`, the title or the credits call it directly.
+  - The parts are unchanged and add up.
+  - The main draw's own time (either caller) is `sky main` in the bracket, which `tools/vita`'s parsers cut off at `(`. That's why there's no seventh part.
+  - Docs: `vita-testing.md`, `presentation.md`, `fps-runs/README.md`.
+- **Checked** (Vita3K, `runtime/autopilot/runs/auto-190-1`; native build, `noassets`, gate PASS):
+  - The five routes' shots and every work counter are the same as `base-cc65182`.
+  - `owner60` (6,600–9,000) against 47e108a: sky 0.97 → 0.53 ms a vblank, the other parts 4.40 → 4.53, sky main 0.46. The main draw is about 87% of the sky.
+  - To compare with older logs, old ≈ new `sky` + `sky main`.
+- **Left:** the host's `src/platform/linux32/prof_draw.c` has the same double count.

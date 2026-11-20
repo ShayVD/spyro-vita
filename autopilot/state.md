@@ -9,13 +9,57 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
-  "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
+  "workers": [
+    {
+      "issue": 189,
+      "branch": "auto/189-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-189",
+      "pids": [],
+      "started_at": "2026-11-20T17:35:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/gte_ops.c",
+        "src/game/render_ctx.c",
+        "src/game/render_ctx_names.h",
+        "src/game/shadows_hand.c",
+        "src/game/sky_clip_hand.c",
+        "src/game/particles_hand.c",
+        "src/game/env_hand.c",
+        "src/game/pete_render_hand.c"
+      ],
+      "agent": "ad557f7d82874304c"
+    },
+    {
+      "issue": 185,
+      "branch": "auto/185-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-185",
+      "pids": [],
+      "started_at": "2026-11-20T20:45:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "src/platform/linux32/main.c",
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "docs/presentation.md",
+        "docs/host-build.md",
+        "docs/vita-testing.md",
+        "README.md"
+      ],
+      "agent": "a1c3f87f2fd16bfc1"
+    }
+  ],
+  "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5cdfccb",
-    "commit": "5cdfccbcc8b6277014254f9212a8ca47ba23fd24"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cc65182",
+    "commit": "cc651823c9e8c042be2d96a13f52b0cc55962437"
   },
   "hardware_runs": [
+    {
+      "date": "2026-11-20 17:15-17:36",
+      "what": "session 3 (owner's yes): AP8a/b owner60 b604db4 vs ca4450e (sky 1.54->1.03 ms, found whole 96.36->98.20%, 0 late both), AP9a/b shot_hd (changes only on close walls/ground), AP10 Toasty vs AP2 (presenter saturates in Toasty: late/300 1.2->30.7, #193); ca4450e left on the Vita (READBACK IDENTICAL)",
+      "log": "logs/hw-ap8a..hw-ap10, D179"
+    },
     {
       "date": "2026-11-20 13:49",
       "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt from the Vita (read only)",
@@ -85,24 +129,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 177
     },
     {
-      "title": "Hardware: #180's 2x budget on the owner's settings (PAL, 60 HZ, 16:9, dd200)",
-      "expected": "owner-approved run: windows that dropped (x1.1-1.5, 55-68 KB) held at 1x; fewer late vblanks than logs/owner-20261120-1056",
-      "issue": 180
-    },
-    {
-      "title": "Hardware: #183 GPU check of the world grids' derived points (shot_hd=1 at owner60's holds)",
-      "expected": "owner-approved: close walls/ground drawn perspective-correct where the GPU capture changed",
-      "issue": 183
-    },
-    {
-      "title": "Hardware: #186 sky time with the wobble fix on (expect -25-40%; prof_draw's sky double-counts until #190)",
-      "expected": "owner-approved Toasty/owner60-style run vs hw-ap2",
-      "issue": 186
-    },
-    {
       "title": "Hardware: #181 owner60 at dd200 for the owner's 'changing' (ambiguous keys resolved, grid x16 depths)",
       "expected": "owner-approved: fewer perspective/affine flips; vcache clamps found whole ~98%",
       "issue": 181
+    },
+    {
+      "title": "Hardware: #187 OT walk overlap (owner60/AP8 at 60 HZ, plus a heavy Artisans window at 1x)",
+      "expected": "owner-approved: 'waited for the walk' ~0, game thread ~12 ms a tick in heavy windows, ~300 pictures/300",
+      "issue": 187
     }
   ],
   "owner_decisions": [
@@ -150,7 +184,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 11,
+    "filed": 12,
     "investigated": true
   },
   "rounds_without_gain": 0,

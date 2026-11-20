@@ -830,7 +830,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS`: INTERPOLATED, `ON` before D148; widescreen stays on by default).
 2. Then two minutes in the same places with `widescreen=0`.
-3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky), next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit).
+3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky); `sky` is the whole sky, counted once since #190 (D181), and the bracket's `sky main` is its main draw (`func_8004EBA8`) on its own. `sky` figures from before #190 counted the main draw twice, next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit).
 
 **Testing the render resolution** (`res=`, decisions D40), with the GPU build:
 
