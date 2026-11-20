@@ -197,15 +197,20 @@ Files the app writes:
 | `menu_keys=B1,B2,...` | with `menu_test`: press these instead (`up down left right cross circle triangle start`, one per 4 pictures; end with `circle` unless an action closes the menu), to test any row (D50) |
 | `skip_logos=1` | start at the title: no Sony or Universal logo and no title flythrough (the menu's `SKIP INTRO LOGOS`; everything they load still loads; D50) |
 | `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43). A developer's key since D153, when the menu's `TEX FILTER` row went: read only with `config_version=5` in the file (the test tools write it); a line from an older file isn't taken (the textures stay sharp), and the menu's next save drops it |
-| `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39; the menu's `PERSPECTIVE TEXTURES`) |
-| `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39; the menu's `SUB-PIXEL VERTICES`) |
+| `wobble=1` | GPU: the PS1's wobble, its texture warping and whole-pixel vertices (`persp=0 subpixel=0`; the menu's `PSX WOBBLE` ON). Default `0` since #177 (D173, the owner's decision): the fix on, both halves (`persp=1 subpixel=1`), which runs the vertex cache (see `vcache` below). The test tools write `wobble=1` (see "Config files from before PSX WOBBLE" below) |
+| `persp=0`, `subpixel=0` | GPU: developers' keys since #177 (D173), on by default with `wobble=0`. `persp`: perspective-correct textures on 3D polygons (no PS1 texture warping; D39). `subpixel`: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39). A line wins over `wobble=` for its own half, wherever it is in the file; when the two halves agree, the menu's row shows them. The menu's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` until #177 |
 | `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
+| `dd_budget=0` | with a longer draw distance and 60 Hz logic in play: no work budget, only the buffer's limits, as before #180. Default 1: the limiter also keeps each draw under 48 KB of primitives, so the longer distance gives way where the scene is already heavy (D175; `docs/presentation.md` "Draw distance"). The start of the log says which (`picture: draw distance ... (dd_budget=N, D175)`); the `lod` lines count the budget's back-offs. No menu row |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=5` since D153; 4 since D150) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS`: OFF, INTERPOLATED, 60 HZ; 60 HZ by default since D150, off before; `60 FPS (EXPERIMENTAL)` with ON, NO ANIM and CAMERA until D148; one row for every disc since D150, when D148's `PAL 60` row and `60 HZ LOGIC: US DISC ONLY` went), then (D48) `PERSPECTIVE TEXTURES`, `SUB-PIXEL VERTICES`, `RESOLUTION` (NATIVE, PS1; 2X–4X until D85) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). `TEX FILTER` (D48) and `DYNAMIC RES` (D75) were rows here until D153. The three GPU rows are hidden with `gpu=0`. The first time a perspective or sub-pixel setting is chosen, its shaders compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=6` since #177, D173; 5 since D153; 4 since D150) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS`: OFF, INTERPOLATED, 60 HZ; 60 HZ by default since D150, off before; `60 FPS (EXPERIMENTAL)` with ON, NO ANIM and CAMERA until D148; one row for every disc since D150, when D148's `PAL 60` row and `60 HZ LOGIC: US DISC ONLY` went), then `PSX WOBBLE` (OFF, the default: the fix on, no wobble; ON: the PS1's look; `wobble=`, D173), `RESOLUTION` (NATIVE, PS1; 2X–4X until D85) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). `PSX WOBBLE` replaced D48's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` rows with #177; `TEX FILTER` (D48) and `DYNAMIC RES` (D75) were rows here until D153. The three GPU rows are hidden with `gpu=0`. The default's shader programs compile at start-up; the first time a setting needing others is chosen (`PSX WOBBLE` ON, say), they compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+
+**Config files from before PSX WOBBLE (#177, D173; `main.c`'s `read_config`):** an old menu's file has no `wobble=` line and every `config_version` line in it below 6, and has both `persp=` and `subpixel=` lines, as the old menu wrote every row. There `persp=1 subpixel=1` (the fix) and `persp=0 subpixel=0` (the old default) both read as today's default, `PSX WOBBLE` OFF, with a `config: persp=N subpixel=N without config_version=6 ...` line in the log, and the pair goes at the menu's next save. Any other mix in an old file (one line alone, or a 1 and a 0) is a developer's and is taken as written. Here the highest `config_version` line decides, not the last one (D68's, D150's and D153's checks still use the last): the test tools write `config_version=6` first, and a run file's own later `config_version=5` must not make it read as an old player file. With a `wobble=` line or `config_version=6`, `persp=` and `subpixel=` lines are always taken.
+
+**The test tools keep the PS1's wobble, so runs compare with the host:** `tools/vita/hw.game`'s `hw_config_base` writes `config_version=6` and, with the host's lines, `wobble=1` (not with `DEVICE_DEFAULTS=1`, which gives the device's defaults: the fix on); its `v3k_config_base`, for the kit's `v3k_run.sh` (the autopilot's Vita3K routes), writes `realtime=0` and `wobble=1` (the same `REALTIME=1` and `DEVICE_DEFAULTS=1` exceptions); `tools/vita/vita3k_run.sh` writes `config_version=6` and `wobble=1` with its other host lines. A run's own `persp=1 subpixel=1` after them still turns the fix on (as `pause-ws-wobble`, `wobble60` and `owner60` do).
 
 **Quick save (the menu's SAVE section, decisions D51):** `STATE SLOT` picks slot 1, 2 or 3; `SAVE STATE` saves the whole game there, `LOAD STATE` (its value names the level the slot holds, or `EMPTY`) puts it back exactly as it was. Choosing either closes the menu; the save or load happens a moment later, at the start of the game's next tick, and a panel says what happened for about 2 seconds (`STATE 1 SAVED`, `STATE 2 LOADED`, `NO STATE IN SLOT 3`). States are separate from the game's own memory-card saves, which work as before; loading a state doesn't change the memory card. A state only loads in the build that made it: after installing a new VPK, old states show `OTHER BUILD` and are refused. There is no automatic save when the app is suspended or closed.
 
@@ -239,11 +244,31 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
 - With `widescreen=1` or `interp=1`, also `present N: T ticks; per tick us: logic draw …, passes
   …, snapshot …, blend …; I in-between frames, S skipped for the budget, O otherwise`. I/T is
   how often the 60 fps picture made it; S counts ticks the budget turned it off.
-- With `tex_filter`, `persp` or `subpixel`, also `vcache N: … per frame P projected …, Q polygons,
-  A% with every vertex found, B% of vertices found; expand E ms`. A is the share of 3D polygons
-  drawn perspective-correct (the rest are drawn as on the PS1); E is the CPU time spent preparing
-  the vertices over the 300 vblanks. `0 projected` means the renderers aren't feeding the cache
-  and the options draw as off (main from D72 until D89).
+- With `persp` or `subpixel` (the wobble fix: the default since #177, D173; not with `wobble=1`),
+  also `vcache N: … per frame P projected …, Q polygons, A% with every vertex found, B% of vertices
+  found; expand E ms`. A is the share of 3D polygons drawn with the fix (the rest are drawn as on
+  the PS1); E is the CPU time spent preparing the vertices over the 300 vblanks. `0 projected`
+  means the renderers aren't feeding the cache and the options draw as off (main from D72 until
+  D89). The fix has found more vertices since: a vertex the GTE clamped is drawn at its exact
+  place (D174), a world grid's moved inner point is derived from its quad (D176), an ambiguous
+  key's vertex takes a depth from the frame's order (D178), and the hand renderers hand over the
+  vertices they make in screen space (D182). On `owner60` that took polygons found whole from
+  93.30% to 99.62%. Lines with each report:
+  - `vcache N clamps:` the totals behind A and B, projections clamped (and drawn exactly),
+    polygons that fell back on an invalid key, and the vertices not found split by reason (no
+    entry, invalid, ambiguous) (D174).
+  - `vcache N logic:` and `vcache N pres:` the logic draw's frames and the presenter's apart;
+    `vcache N work:` where the cache's work ran (game thread, presenter's thread).
+  - `vcache cost (the game thread):` and `(the presenter's thread):` divisions, probes and table
+    lines per projection and per vertex looked up.
+  - `vcache derived:` no-entry vertices drawn with their polygon's depth, at the projection before
+    the renderer moved them or at their key, and those left with no entry (D176).
+  - `vcache resolved:` ambiguous keys' vertices given a depth from the frame's order, and those
+    left ambiguous (D178).
+  - `vcache hooked:` no-entry vertices found from a renderer's hand-over, by renderer, and the
+    hand-overs kept or dropped (D182).
+  Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
+  instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
   mismatches; audio queue dry D, cut C` is the sound mixer's own core (D37). X is its time per
   vblank (not counted in `time`'s `spu`, which is now only what the game thread spends on the CD
@@ -749,22 +774,28 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 1. `config.txt`: just `bench=1` (keep `gpu=1`, the default). Start the game, don't touch the controller, and
    leave it about 4 minutes: it plays the title intro, the title and both attract demos while
-   18 option sets take turns, at 4:3 and 16:9, native and PS1 resolution, and the draw distance
+   20 option sets take turns, at 4:3 and 16:9, native and PS1 resolution, and the draw distance
    at 1.5× and 2× (D49), at 30 fps (`bench=2` keeps your 60 fps setting).
-2. Send `spyro.log` back. The `bench final:` lines (at vblank 13560, about 3.8 minutes in) give
-   each option set's pictures per second and its GPU-timed frame and tail; `bench round N:` lines
-   come every 4 rounds in case the run stops early. The `tex_cache=0` / `tex_cache=1` pairs are
-   the default picture before and after the decoded-texture atlas.
+2. Send `spyro.log` back. The `bench final:` lines (at vblank 15000, about 4.2 minutes in; 13560
+   with the 18 sets before #182) give each option set's pictures per second and its GPU-timed
+   frame and tail; `bench round N:` lines come every 4 rounds in case the run stops early. The
+   `all off` sets are `PSX WOBBLE` ON (`persp=0 subpixel=0`), and the `tex_cache=0` /
+   `tex_cache=1` pairs are that picture before and after the decoded-texture atlas. `4:3 native,
+   persp subpixel` and `16:9 native, persp subpixel` (#182) are today's default, `PSX WOBBLE` OFF
+   with no texture filter: what players get. The other sets are as before, so older bench logs
+   compare set by set (by name).
 3. After the bench the configured options are back: you can then play a minute with
-   `tex_filter=1 persp=1 subpixel=1` (no `bench=`) and note any glitches (what, where, which
-   option), ideally with a photo.
+   `tex_filter=1` (no `bench=`) and note any glitches (what, where, which option), ideally with a
+   photo.
 
-**Testing texture filtering and perspective** (decisions D39, D41, all off by default), with the GPU build:
+**Testing texture filtering and perspective** (decisions D39, D41; `persp` and `subpixel` on by default since #177, D173, the texture filter off), with the GPU build:
 
-1. Play a minute of Artisans as usual, then again with `tex_filter=1`, `persp=1` and `subpixel=1`
-   in `config.txt` (then `tex_filter=2` once, if there is time).
+1. Play a minute of Artisans with `wobble=1` in `config.txt` (the PS1's look), then again with
+   neither `wobble=` nor `persp=`/`subpixel=` lines (the default), then with `tex_filter=1` added
+   (then `tex_filter=2` once, if there is time).
 2. In the log: `gpu: tex_filter=1 persp=1 subpixel=1 (D39)`, no shader errors, and `vcache N:`
-   lines (the share of polygons with every vertex found should be about 80%).
+   lines (the share of polygons with every vertex found was about 80% at D39; 99.6% on `owner60`
+   in Vita3K since D182).
 3. Compare the runs' `time N:` lines (game and ot columns: the cost of persp and subpixel) and
    pictures per 300 vblanks (the GPU cost of the filter shows as fewer pictures and more wait).
 4. Look for textures swimming or warping on the ground near Spyro (gone with `persp=1`), for
@@ -775,9 +806,10 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 1. `config.txt`: only `stats=1`. Start a game and go to Artisans.
 2. **Picture rows:** open the menu (hold SELECT, press START). Under PICTURE, switch
-   `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` on and off (`TEX FILTER` was a row here until D153);
-   step `RESOLUTION` to PS1 and back to NATIVE. Each change should show behind the menu at once.
-   The first perspective or sub-pixel change pauses a few seconds while its shaders compile; the
+   `PSX WOBBLE` on and off (it replaced `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` with #177;
+   `TEX FILTER` was a row here until D153); step `RESOLUTION` to PS1 and back to NATIVE. Each change
+   should show behind the menu at once. The first change to programs not compiled yet (`PSX WOBBLE`
+   ON, the first time) pauses a few seconds while its shaders compile; the
    log says `gpu: programs for ... compiled in N ms`. Any `don't compile` line is what to send back.
    Close the menu: the log's `menu: saved ...` line lists the values, and they come back after a restart.
 3. **Draw distance:** set `DRAW DISTANCE (EXP.)` to 2X and close the menu. Walk and glide around Artisans
@@ -788,6 +820,8 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 4. In the log, `lod N:` lines every 5 seconds:
    - `x2.00 average` means the full distance held. Lower means the limiter backed off; it starts again
      at 1x at each new level.
+   - `N back-offs (M for the budget)`: how many draws the limiter backed off after, and how many of
+     those only the 60 Hz budget caused (with 60 HZ in play; always 0 with `dd_budget=0` or at 30 Hz).
    - `primitives ... peak ... of 110 KB`: how full the game's primitive buffer got.
    - `stopped early: world W, mobys M`: how often a hard bound stopped a loop.
    - Compare the `vblank N: ... P pictures` and `time N:` lines with the same walk at OFF. The cost is

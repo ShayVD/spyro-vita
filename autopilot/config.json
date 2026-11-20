@@ -12,7 +12,7 @@
   "build_mode": "per_branch",
   "commands": {
     "build": "cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_TOOLCHAIN_FILE=/usr/local/vitasdk/share/vita.toolchain.cmake -DPython3_EXECUTABLE=/usr/bin/python3 && cmake --build build/vita",
-    "host_tests": "{{the host test command: a linux32 build plus ctest (docs/host-build.md)}}",
+    "host_tests": "mkdir -p build && { [ -d build/s1-matching ] || cp -R $MAIN/build/s1-matching build/; } && tools/tc cmake -S . -B build/linux32 -G Ninja -DSPYRO_HOST=linux32 -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake && tools/tc cmake --build build/linux32 && tools/tc ctest --test-dir build/linux32 --output-on-failure",
     "quick_check": "{{build_mode batched only}}",
     "vpk_version": "{{the command that prints the next free VPK version}}",
     "phase_gates": {

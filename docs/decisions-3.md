@@ -516,3 +516,52 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Hand-overs whose source is itself ambiguous or invalid (about 370 on route A).
   - Not run: the oracle replay (no PCSX-Redux here). `docs/translation-log.md` rows for the five renderers.
 - **Found on the way:** ctest `render_ctx_link` has failed since #180 (D175): `lod_pres.c` names `g_tick60_mode` and `tick60_built`. The gate's `host_tests` command is still a placeholder, so the gate didn't run ctest (#194).
+
+### D183. Draw distance's 60 Hz budget has an off switch: `dd_budget=0` on the Vita, `--lod-budget 0` on the host (#185)
+
+- **Why:** #180 (D175) added a 60 Hz work budget to the draw-distance limiter. It was on by default, with no switch outside the code. Phase 8's rule is "on by default with an off switch".
+- **What:**
+  - **Vita:** `dd_budget=` in `config.txt`. A non-zero value (the default) sets `g_lod.budget = LOD_BUDGET_60` (48 KB). `0` sets 0, which leaves only the buffer's limits, as before #180.
+  - **No menu row.** A start-up line from `main.c` says which applies.
+  - **Host:** `--lod-budget KB` (default 48; 0 is off).
+  - **Unchanged:** pass 2's low-detail mobys stay either way, and the budget's value and rules are as before.
+  - **Docs:** `presentation.md`, `host-build.md`, `vita-testing.md` and the README describe the budget and the lod line's "N back-offs (M for the budget)".
+- **Checked** (`runtime/autopilot/runs/auto-185-1`):
+  - The native build, `noassets`, the host build and the gate all pass.
+  - With the default, the five routes' shots and counters match `base-cc65182`.
+  - `owner60` with `dd_budget=0` reads "(0 for the budget)" on all 29 lod lines.
+  - Against pre-#180 (`base-3ba4fd2`), its shots differ only in the 7 title-flyby shots that pass 2's low-detail mobys changed. Shot 7,700, which the budget had changed, is back.
+- **Left:** `picture.c`'s start-up line and the menu still say "experimental" for 2x. Whether 2x drops that label waits for a hardware run in open levels.
+
+### D184. The presenter's copy of `lod.c` no longer reads tick60's state; the autopilot gate runs the host build and ctest (#194)
+
+- **Why:**
+  - Since #180 (D175), `logic60()` has read the game thread's `g_tick60_mode` and `tick60_built()`.
+  - `lod_pres.c` compiled it into the presenter's object, which breaks D164/D167's split. Since then, ctest `render_ctx_link` has failed.
+  - The gate missed this because `autopilot/config.json`'s `commands.host_tests` was still a placeholder.
+- **What:**
+  - The game's copy decides "60 Hz in play" as each shown draw ends, at the same point as before, and keeps it in `s_logic60`, which is part of `LOD_STATE`. The state is 4 bytes bigger, about 416 of `pres_draw.c`'s 512.
+  - The presenter's build (`RENDER_PRES`) leaves out `logic60()` and `tick60.h`. It only carries the game's last decision, in the state it is handed, and it never runs the limiter.
+  - `host_tests` is now the linux32 build plus ctest. It copies `build/s1-matching` into the worktree when needed and takes about 17 minutes on a quiet machine and 35–50 under load.
+  - `buildlock` (`runtime/autopilot/env.sh`) now keeps its variables local.
+- **Checked:**
+  - ctest went from 28 passing with `render_ctx_link` failing to 29 passing and 3 skipped (`gte`, `pbp`, `pbp_made`). The gate's own run showed 100% of 32.
+  - On Vita3K, all five routes give the same shots and counters as `base-b3b8cd1`, and `owner60`'s lod lines are identical, including the budget's back-offs.
+
+### D185. `vita-testing.md` describes PSX WOBBLE, and the bench measures the default (#182)
+
+- **Why:** #177 (D173) made PSX WOBBLE OFF (`persp=1 subpixel=1`) the default and moved the menu to `config_version=6`. Two things lagged behind:
+  - `vita-testing.md` still described the two old rows and `config_version=5`.
+  - The bench had no set for the default without a filter, so it couldn't measure what players get.
+- **What changed in `vita-testing.md`:**
+  - The `wobble=` row, with `persp=` and `subpixel=` kept as developers' keys.
+  - The rule for old config files. With no `wobble=` line and a `config_version` below 6, an equal `persp`/`subpixel` pair reads as PSX WOBBLE OFF and is dropped at the next save. Any other mix is taken as written.
+  - The test tools write `wobble=1`.
+  - The vcache log lines as they stand after D174–D184: clamps, derived, resolved and hooked, plus D178's per-report counters.
+- **What changed in `bench.c`:**
+  - Two new sets, "4:3 native, persp subpixel" and "16:9 native, persp subpixel", each inside its widescreen group. The other sets are unchanged, so older logs still compare by name.
+  - A run is now 20 × 60 × 12 = 14,400 vblanks from vblank 600, with the final lines at 15,000 (about 250 s; 13,560 before).
+- **Checked:**
+  - The native build, `noassets`, and the gate with the host build and ctest all pass.
+  - Vita3K `title`: shots 10/10, the same as `base-b3b8cd1`.
+  - The bench itself hasn't run; its first hardware run needs the owner's yes.

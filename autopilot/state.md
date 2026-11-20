@@ -11,28 +11,51 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 185,
-      "branch": "auto/185-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-185",
+      "issue": 193,
+      "branch": "auto/193-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-193",
       "pids": [],
-      "started_at": "2026-11-20T20:45:00Z",
+      "started_at": "2026-11-20T20:20:00Z",
       "files": [
-        "src/platform/vita/main.c",
-        "src/platform/linux32/main.c",
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "docs/presentation.md",
-        "docs/host-build.md",
-        "docs/vita-testing.md",
-        "README.md"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/pres/pres_draw.c",
+        "src/game/present.c"
       ],
-      "agent": "a1c3f87f2fd16bfc1"
+      "agent": "a49b6c8d3d051dccb",
+      "reported": true
+    },
+    {
+      "issue": 182,
+      "branch": "auto/182-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-182",
+      "pids": [],
+      "started_at": "2026-11-20T22:45:00Z",
+      "files": [
+        "docs/vita-testing.md",
+        "src/platform/vita/bench.c"
+      ],
+      "agent": "ab057f1deee4ee655",
+      "reported": true
+    },
+    {
+      "issue": 195,
+      "branch": "auto/195-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-195",
+      "pids": [],
+      "started_at": "2026-11-21T00:10:00Z",
+      "files": [
+        "src/game/pres/pres_thread.c",
+        "src/platform/vita/main.c",
+        "src/platform/vita/parse.c"
+      ],
+      "agent": "ab8df585f3af87abe"
     }
   ],
   "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cc65182",
-    "commit": "cc651823c9e8c042be2d96a13f52b0cc55962437"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-b3b8cd1",
+    "commit": "b3b8cd101f6c2d4dc4ac6e4d526662d518864161"
   },
   "hardware_runs": [
     {
@@ -122,6 +145,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #189/#181 pictures and cost (shot_hd at owner60 holds; vc.probe/lines +3-5%) on the owner's settings",
       "expected": "owner-approved: shadows/glows/portal edge drawn exactly; found whole ~99.6%",
       "issue": 189
+    },
+    {
+      "title": "Hardware: AP10 rerun (Toasty 30 Hz + in-between) after #193 and #195",
+      "expected": "owner-approved: pres busy down, passed-by ~0, Toasty late/300 back toward AP2's ~1",
+      "issue": 193
     }
   ],
   "owner_decisions": [
@@ -169,7 +197,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 13,
+    "filed": 14,
     "investigated": true
   },
   "rounds_without_gain": 0,

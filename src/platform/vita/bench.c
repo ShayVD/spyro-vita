@@ -9,7 +9,17 @@
  * count: a resolution or widescreen change redraws every target. bench=1
  * runs at 30 fps (interp=0); bench=2 keeps interp=. The sets choose
  * widescreen themselves, and two the longer draw distance (D49). The game
- * itself runs as always: only the picture changes. */
+ * itself runs as always: only the picture changes.
+ *
+ * How long: NSETS (20) sets x BENCH_SLOT (60) vblanks x BENCH_CYCLES (12)
+ * rounds = 14,400 vblanks from BENCH_START, so the "bench final" lines come
+ * at vblank BENCH_END = 15,000: about 250 s (4 min 10 s) after start at 60
+ * vblanks a second (18 sets, until #182: 13,560, about 3.8 min).
+ *
+ * Only a non-zero bench= enters it: g_vita_opts.bench is 0 by default (main.c's
+ * g_vita_opts sets no .bench; read_config takes it only from a bench= line),
+ * vita_bench_vblank returns at once while it is 0, and vita_bench_present
+ * returns while no set has started (s_cur < 0). */
 #include "vita.h"
 
 #include <stdio.h>
@@ -28,8 +38,10 @@ typedef struct {
 /* grouped by widescreen and resolution, so those (which redraw every
  * target) change four times a round. "all off" is the menu's PSX WOBBLE ON
  * (persp=0 subpixel=0); its default since #177, PSX WOBBLE OFF, is persp=1
- * subpixel=1 (the sets with both). The sets are kept as they were, so bench
- * logs compare across builds; the configured options come back at the end. */
+ * subpixel=1 (the sets with both). "persp subpixel" with no filter is that
+ * default as players get it, at 4:3 and 16:9 (#182, D173); the other sets
+ * are kept as they were, so bench logs compare across builds by set name;
+ * the configured options come back at the end. */
 static const BenchSet k_sets[] = {
     {"4:3 native, all off, tex_cache=0", 0, 0, 0, 0, 0, 0},
     {"4:3 native, all off (tex_cache=1)", 0, 0, 0, 0, 0, 1},
@@ -39,12 +51,14 @@ static const BenchSet k_sets[] = {
     {"4:3 native, subpixel=1", 0, 0, 0, 0, 1, 1},
     {"4:3 native, tex_filter=1 persp subpixel", 0, 0, 1, 1, 1, 1},
     {"4:3 native, tex_filter=2 persp subpixel", 0, 0, 2, 1, 1, 1},
+    {"4:3 native, persp subpixel", 0, 0, 0, 1, 1, 1}, /* the default (#182) */
     {"4:3 ps1, all off, tex_cache=0", 0, 1, 0, 0, 0, 0},
     {"4:3 ps1, all off (tex_cache=1)", 0, 1, 0, 0, 0, 1},
     {"4:3 ps1, tex_filter=1 persp subpixel", 0, 1, 1, 1, 1, 1},
     {"16:9 native, all off, tex_cache=0", 1, 0, 0, 0, 0, 0},
     {"16:9 native, all off (tex_cache=1)", 1, 0, 0, 0, 0, 1},
     {"16:9 native, tex_filter=1 persp subpixel", 1, 0, 1, 1, 1, 1},
+    {"16:9 native, persp subpixel", 1, 0, 0, 1, 1, 1}, /* the default (#182) */
     {"16:9 native, draw_distance=150", 1, 0, 0, 0, 0, 1, 150},
     {"16:9 native, draw_distance=200", 1, 0, 0, 0, 0, 1, 200},
     {"16:9 ps1, all off, tex_cache=0", 1, 1, 0, 0, 0, 0},
