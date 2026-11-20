@@ -436,3 +436,18 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Left:**
   - 1,144 (route A) and 866 (route B) ambiguous vertices: clamped or invalid projections sharing the key, more than 32 projections under a key, or the polygon also has a no-entry vertex.
   - Among same-batch points on one pixel (a far moby), the depth choice decides and can't be proven right. Those polygons are mostly under 8 px.
+
+### D179. Hardware session 3: #180, #183 and #186 on the Vita (2026-11-20)
+
+- **Run:** with the owner's yes, AP8–AP10 (`tools/vita/fps-runs/ap8-owner60-hw.txt`, `ap9-owner60-hd.txt`, `ap2-toasty60-wobble.txt`; `runtime/autopilot/hw-session3.sh`, logs `logs/hw-ap8a`–`hw-ap10`). Builds: `autopilot-b604db4.vpk` (before) and `autopilot-ca4450e.vpk` (with #180, #183 and #186; not #181), US disc.
+- **AP8 (owner60's lines; 16:9, 60 HZ, wobble fix on, `draw_distance=200`), b604db4 → ca4450e, vblanks 2,400–9,000:**
+  - sky 1.54 → 1.03 ms a vblank (−33%, D177; both figures double-counted, #190); env, mobys and spyro the same;
+  - polygons found whole 96.36 → 98.20%, no-entry vertices 318,585 → 162,858 (D176);
+  - 0 late vblanks in both. This route stays in light Artisans scenes, so #180's budget backed off only twice.
+- **AP9 (GPU pictures, `shot_hd=1`, at 6,900, 7,200, 7,800 and 8,400):**
+  - the software shots are identical;
+  - the HD pictures differ in 1.3–20.6% of pixels, only on the close subdivided walls and ground, as in Vita3K's `CAPTURE` grabs (D176), with no cracks.
+- **AP10 (the Toasty route at 30 Hz with in-between frames, wobble fix on), against AP2 (D172, the same morning):**
+  - the logic draw got cheaper (9.7 → 8.5 ms a tick in Toasty), and Artisans' late vblanks per 300 went 25.4 → 19.8;
+  - but the presenter thread rose 8.63 → 9.11 ms a vblank and saturates in Toasty's heavy opening (96%). There it misses every in-between frame for about 25 s, so Toasty's late vblanks per 300 went 1.2 → 30.7 (#193). The owner's 60 HZ settings don't use the presenter in play.
+- **Left on the Vita:** ca4450e's eboot (SHA-1 54c274d0, READBACK IDENTICAL).
