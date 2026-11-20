@@ -415,3 +415,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `owner60` (6,600–9,000): vc.proj −6.4%, vc.div −4.1%, vc.probe −3.9%, vc.lines −3.8%; nothing worse.
   - The sky's Vita3K time is about −35% (two pairs of timing runs; 1.59–1.68 → 1.05–1.09 ms, still double-counted).
 - **Open:** a hardware run, and fixing the double count in `prof_draw.c`. The vertex cache's per-record cost is most of every renderer's cost with the fix on: env 0.81 → 2.07 ms on hardware (ap1/ap2).
+
+### D178. With the fix on, an ambiguous key's vertex takes its depth from the projections under it near its polygon's others in the frame's order; the world grids' ×16 points get their true-scale depth; the Vita's vcache report no longer resets counters another thread adds to (#181)
+
+- **Why:**
+  - The owner saw textures "stretching and changing" (`logs/owner-20261120-1349`). Polygons switched between perspective and affine when a vertex's key held more than four points: far mobys and far ground at `draw_distance=200`.
+  - Big close grid quads were drawn affine as "depths 4× apart".
+  - The 44% scene in `logs/owner-20261120-1056` (vblank 3,600) was the report's `memset` reset racing the parse thread's walk. A lost reset carried 422,855 polygons into the next window.
+- **What:**
+  - Each table logs the answer of every projection under a key with different points (`lc`, `LOG_LC`). `resolve` takes the ambiguous vertex's projections within 256 log places of its polygon's found vertices, then the usual depth choice (`choose`). The position stays the key's integer one, so no cracks. Keys with a clamped or invalid projection, more than 32 projections, or a full log stay unresolved.
+  - The ×16 precision candidate also accepts VY ≡ 15 (mod 16) when VX < 0. That's `GridVertex`'s borrow: x << 4 and y << 20 share one word.
+  - `psx_vcache_stats_take` gives each report the counters since its last call, replacing the Vita's reset (also #184).
+  - New counters `resolved` and `res_order`, and a `vcache resolved:` line.
+- **Checked:**
+  - **Host:** every polygon found before keeps its drawing, except 25 (route A) and 22 (route B) whose vertex or derived point gained its true-scale depth through the borrow rule; nothing found before became affine.
+  - **Flips:** perspective/affine flips for polygons at the same coordinates in consecutive frames went 1,736 → 108 (A) and 512 → 10 (B). Frames with identical projections change no answer.
+  - **Vita3K:** the five routes' replay shots are the same as `base-5cdfccb`; the gate passes.
+  - **`owner60`, 6,900–9,000:** ambiguous vertices 77,583 → 851, polygons found whole 96.10 → 98.10%, depths 4× apart 8,561 → 827. `vc.misses` −39.1% (−20.5% on `wobble60`); `vc.div` and `vc.lines` +2–4%; GL counters the same.
+  - **GPU picture:** `CAPTURE=1` grabs at 6,900, 7,200, 7,800 and 8,400 (`runtime/autopilot/runs/auto-181-1/capture`) change only on close ground and walls, with no cracks.
+- **Left:**
+  - 1,144 (route A) and 866 (route B) ambiguous vertices: clamped or invalid projections sharing the key, more than 32 projections under a key, or the polygon also has a no-entry vertex.
+  - Among same-batch points on one pixel (a far moby), the depth choice decides and can't be proven right. Those polygons are mostly under 8 px.
