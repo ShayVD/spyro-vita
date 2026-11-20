@@ -1,0 +1,17 @@
+# Run AP8 (#180, #183, #186; the owner's yes 2026-11-20 "yes on the vita runs, its available now"):
+# the Vita3K route owner60's lines on hardware, the owner's settings on the US disc: 16:9, 60 HZ
+# (interp=4), the wobble fix on (persp/subpixel -> PSX WOBBLE OFF), DRAW DISTANCE 2x. Pad
+# tools/vita/hw-routes/pause-ws.pad with pause-ws.cfg (frames=9100, shot_every=100).
+# Run on autopilot-b604db4.vpk (before #180/#183/#186) as AP8a and on the head as AP8b; compare with
+# tools/vita/fps60_summary.py (late vblanks per 300, game thread busy), the "draw N" lines (sky,
+# env, mobys; prof_draw's sky counts SkyDraw twice, #190), the "lod" lines (#180's budget
+# back-offs) and the "vcache N clamps" lines (#183).
+config_version=5
+widescreen=1
+interp=4
+interp_budget=0
+gpu_meter=1
+persp=1
+subpixel=1
+draw_distance=200
+disc=ux0:data/spyro

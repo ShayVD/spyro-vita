@@ -115,6 +115,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
     "2026-11-20 15:40: coordinator: two workers (#181, #186; no shared files) now that other sessions' containers are down to one restarting salsaas container. Baseline 5cdfccb running.",
     "2026-11-20 14:20: coordinator: #183 dispatched before #181 (pick gave #181; both p0 and share vcache.c, #183's no-entry is the larger share of the owner's stretching). Baseline re-run at 474d375 (after #177, #178, #180) into runs/base-474d375.",
     "2026-11-20 13:55: owner (b604db4 on hardware, PAL 60 HZ 16:9 dd200, PSX WOBBLE OFF): still sees textures stretching and changing; eliminate it completely. Log logs/owner-20261120-1349: 90.6-96% of polygons found whole in play, no entry 12-38k and ambiguous up to 24k per 300 vblanks. #181 and #183 raised to p0 (next after #180, before #179), evidence and stronger Done-when on both issues.",
