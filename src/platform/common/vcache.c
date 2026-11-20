@@ -174,8 +174,10 @@ typedef struct {
 #define T_MULTI 0x20u              /* candidates more than 1/8 pixel apart: different points */
 #define T_SRC 0x40u                /* made by the presenter's projections (VC_PRES) */
 #define T_CLAMP 0x80u              /* a projection under it was clamped by the GTE (#178) */
-#define T_GEN(t) ((t) >> 8)
-#define VC_GEN_END (1u << 24)      /* a table's frames count 1 to this, then from 1 again */
+#define T_PEND 0x100u              /* projections waiting to be worked out (the presenter's, #193) */
+#define T_GEN_SHIFT 9
+#define T_GEN(t) ((t) >> T_GEN_SHIFT)
+#define VC_GEN_END (1u << 23)      /* a table's frames count 1 to this, then from 1 again */
 
 typedef struct {
   uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
@@ -236,13 +238,15 @@ typedef struct {
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
- * record into their own, so each frame looks up only its own (#158) */
+ * record into their own, so each frame looks up only its own (#158). Each
+ * on a line of its own (#193): the logic draw's count moves on core 0 while
+ * the presenter's does on core 1. */
 typedef struct {
   Table *tab;     /* the table recording */
   uint32_t gen;   /* its frame */
   unsigned count; /* entries this frame */
   unsigned nfar;  /* the table's far positions this frame (#178) */
-} Rec;
+} __attribute__((aligned(64))) Rec;
 
 static Table s_tab0 __attribute__((aligned(64)));
 static VCacheVert *s_pres_side; /* the presenter's answers while it runs on its own thread (#162) */
@@ -280,12 +284,11 @@ VCacheStats g_vcache_stats[2];
  * is the game thread's (and its walk's: the logic draw, and the presenter
  * inline), g_vcache_pres_work the presenter's thread's (#162): one writer
  * each, plain adds. */
-unsigned g_vcache_work[VCW_N], g_vcache_pres_work[VCW_N];
+VCacheCounters g_vcache_ctr[2]; /* each thread's on lines of its own (#193) */
 /* What that work cost (issue #159), the same way, counts that don't depend
  * on timing: float divisions, the table's slots a record's or a lookup's
  * probe examined, and the 32-byte lines of the table each touched (a model:
  * the lines its accesses fall in, from a line-aligned table). */
-unsigned g_vcache_cost[VCC_N], g_vcache_pres_cost[VCC_N];
 #define COST(work) ((work) == g_vcache_work ? g_vcache_cost : g_vcache_pres_cost)
 
 /* The distinct lines one record or lookup touches (it reads upwards). */
@@ -404,7 +407,7 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
       if (!add || r->count >= VC_MAX)
         return -1;
       s[i].key = key;
-      s[i].tag = gen << 8 | (kind == VC_PRES ? T_SRC : 0);
+      s[i].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
       r->count++;
       return (int)i;
     }
@@ -569,8 +572,12 @@ static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int
  * the registers it read, proj = R11-R33, TRX-TRZ, OFX, OFY, H (PROJ_*). */
 enum { PROJ_TR = 9, PROJ_OFX = 12, PROJ_OFY = 13, PROJ_H = 14, PROJ_N = 15 };
 
-static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy, int vz,
-                      uint32_t key, int sz, int sf) {
+/* The projection's work once its entry (slot i) and its place in the
+ * frame's order (q, -1: none) are known: the exact point, and the entry's
+ * candidates and state (rtp_point, or for the presenter lz_flush, #193).
+ * tp: the lines it touches, which the caller adds to the cost. */
+static void rtp_apply(int kind, unsigned *work, const int *proj, int vx, int vy, int vz,
+                      uint32_t key, int sz, int sf, int i, int q, Touch *tp) {
   unsigned *const cost = COST(work);
   Rec *const rec = &s_rec[kind];
   VCacheStats *const st = &g_vcache_stats[kind];
@@ -578,29 +585,12 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   const int *rm = proj, *tr = proj + PROJ_TR;
   int64_t mx, my, mz;
   float x, y, z, r, iz, isz, ox, oy, ex, ey, gx, gy, qd, px = 0, py = 0, w = 0, w_alt = 0;
-  Touch t = TOUCH0;
-  Entry *s;
-  unsigned prev, state = E_INVALID;
+  Entry *const s = &rec->tab->s[i];
+  const unsigned prev = T_STATE(s->tag);
+  unsigned state = E_INVALID;
   int16_t fx = 0, fy = 0;
-  int i, ix, iy, clamped = 0, q = -1, amb;
+  int ix, iy, clamped = 0, amb;
 
-  st->records++;
-  work[0]++;
-  /* The entry first (made if it's new): a key already ambiguous stays so,
-   * whatever this projection is, so it needs none of the maths below. */
-  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
-  if (i < 0) {
-    st->full++;
-    cost[VCC_REC_LINES] += t.n;
-    return;
-  }
-  s = &rec->tab->s[i];
-  prev = T_STATE(s->tag);
-  if (rec->tab->nlog < VC_LOG) { /* its place in the frame's order (#183) */
-    q = (int)rec->tab->nlog++;
-    rec->tab->log[q] = (uint16_t)i;
-    cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
-  }
   /* A key already ambiguous stays so, but since #181 its projections are
    * still worked out, for the lookup's log of answers (its counters are
    * left as they were: only the answer is kept). */
@@ -673,7 +663,6 @@ done:
   if (amb) { /* #181: only its answer */
     if (q >= 0)
       log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
-    cost[VCC_REC_LINES] += t.n;
     return;
   }
   if (state == E_INVALID)
@@ -686,7 +675,6 @@ done:
     set_state(s, state);
     if (state == E_INVALID) {
       st->invalid++;
-      cost[VCC_REC_LINES] += t.n;
       return;
     }
   } else if (prev != state || state != E_VALID) {
@@ -698,16 +686,15 @@ done:
     }
     if (q >= 0) /* #181 */
       log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
-    cost[VCC_REC_LINES] += t.n;
     return;
   }
   /* Another projection under this key: the same point again (shared by
    * several polygons), the same point at another scale, or a different
    * point on the same pixel. Each is a candidate; each polygon picks. */
-  touch(&t, (size_t)i * sizeof(Entry) + offsetof(Entry, c),
+  touch(tp, (size_t)i * sizeof(Entry) + offsetof(Entry, c),
         sizeof(Cand) * (T_N(s->tag) < VC_CANDS ? T_N(s->tag) + 1u : VC_CANDS));
-  if (add_cand(rec, s, fx, fy, px, py, w, clamped, cost, &t) ||
-      (w_alt > 0 && add_cand(rec, s, fx, fy, px, py, w_alt, clamped, cost, &t))) {
+  if (add_cand(rec, s, fx, fy, px, py, w, clamped, cost, tp) ||
+      (w_alt > 0 && add_cand(rec, s, fx, fy, px, py, w_alt, clamped, cost, tp))) {
     st->ambiguous++;
     set_state(s, E_AMBIGUOUS);
   }
@@ -716,6 +703,156 @@ done:
    * projection is the first's point at one of the candidates' depths */
   if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
     log_answer(rec->tab, q, state, clamped, fx, fy, w, w_alt, cost);
+}
+
+/* The presenter's projections worked out when they're needed (#193).
+ *
+ * On Toasty's heavy opening the presenter's thread had no time left at 30 Hz
+ * with in-between frames (D179's AP10). Of its projections, a quarter to a
+ * third are under keys none of its polygons looks up (backfaces, culled
+ * sectors, points a renderer projects and never draws): on Vita3K, 25-34%
+ * a 300-vblank window in Artisans (wobble60), 26-35% in Toasty's heavy
+ * opening. Their maths and their entries' updates were the presenter's
+ * thread's work for nothing.
+ *
+ * So the presenter's frame records each projection's entry and place in
+ * the frame's order at once, as before (the table's count and VC_MAX, the
+ * log that derive and resolve read), and keeps its inputs on the entry's
+ * list (T_PEND). Whatever reads the entry first works out its list, in the
+ * order the projections came: a polygon's lookup, a hand-over's source
+ * (hk_src) and a derived point's projection (derive). Every key's
+ * candidates and state come out of the same projections in the same order,
+ * so every answer is the one the projections would have given at once. The
+ * far array's slots go in another order: the places they hold are the same.
+ * The presenter's counters of what its projections were (invalid,
+ * ambiguous, clamped) count only those worked out.
+ *
+ * A projection is worked out at once, after its entry's list, when the
+ * frame's order or this store is full. The logic draw's frame works its
+ * projections out at once: its lookups run on the parse thread, on the
+ * presenter's core. psx_vcache_set_lazy(0) turns it off. */
+typedef struct {
+  int16_t vx, vy, vz; /* the GTE's V0: 16 bits */
+  uint16_t sz;        /* SZ3: 16 bits */
+  uint16_t q;         /* its place in the frame's order */
+  uint16_t next;      /* the next one of the entry's, + 1 (0: the last) */
+  uint16_t proj;      /* its registers (Lazy proj), LZ_SF: sf set */
+  uint16_t pad;
+} LzRec; /* 16 bytes */
+#define LZ_SF 0x8000u
+#define LZ_PROJ 1024 /* different registers a frame: models, sectors, the sky */
+typedef struct {
+  LzRec rec[VC_LOG];
+  unsigned n, nproj;
+  int proj[LZ_PROJ][PROJ_N];
+  uint16_t head[VC_SIZE], tail[VC_SIZE]; /* each pending entry's list, + 1 */
+} Lazy;
+static Lazy *s_lz;     /* the presenter's (pres_begin makes it with its table) */
+static int s_lazy = 1; /* psx_vcache_set_lazy */
+
+void psx_vcache_set_lazy(int on) { s_lazy = on != 0; }
+
+/* the registers the last projection kept had (a model's or a sector's:
+ * the translation differs first) */
+static inline int same_proj(const int *a, const int *b) {
+  int k;
+  if (a[PROJ_TR] != b[PROJ_TR] || a[PROJ_TR + 1] != b[PROJ_TR + 1] || a[PROJ_TR + 2] != b[PROJ_TR + 2])
+    return 0;
+  for (k = 0; k < PROJ_N; k++)
+    if (a[k] != b[k])
+      return 0;
+  return 1;
+}
+
+/* the projection kept on slot i's list: 0 when there's no room */
+static int lz_add(int i, int q, const int *proj, int vx, int vy, int vz, int sz, int sf) {
+  Lazy *const lz = s_lz;
+  Entry *const s = &s_rec[VC_PRES].tab->s[i];
+  LzRec *r;
+  unsigned p;
+  if (q < 0 || lz->n >= VC_LOG || vx != (int16_t)vx || vy != (int16_t)vy || vz != (int16_t)vz ||
+      sz != (uint16_t)sz)
+    return 0; /* (each fits: the GTE's registers) */
+  p = lz->nproj;
+  if (p && same_proj(lz->proj[p - 1], proj))
+    p--;
+  else if (p < LZ_PROJ)
+    memcpy(lz->proj[lz->nproj++], proj, sizeof lz->proj[0]);
+  else
+    return 0;
+  r = &lz->rec[lz->n];
+  r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
+  r->sz = (uint16_t)sz;
+  r->q = (uint16_t)q;
+  r->next = 0;
+  r->proj = (uint16_t)(p | (sf ? LZ_SF : 0));
+  lz->n++;
+  if (s->tag & T_PEND)
+    lz->rec[lz->tail[i] - 1].next = (uint16_t)lz->n;
+  else {
+    lz->head[i] = (uint16_t)lz->n;
+    s->tag |= T_PEND;
+  }
+  lz->tail[i] = (uint16_t)lz->n;
+  return 1;
+}
+
+/* slot i's projections worked out, in their order (the presenter's table;
+ * work: the thread's counters, as their records' were). The reader has
+ * just found the entry, so its first line isn't counted again. */
+static void lz_flush(unsigned *work, int i) {
+  Lazy *const lz = s_lz;
+  Entry *const s = &s_rec[VC_PRES].tab->s[i];
+  unsigned r = lz->head[i];
+  Touch t = {(uint32_t)((size_t)i * sizeof(Entry) / 32), 0};
+  s->tag &= ~T_PEND;
+  while (r) {
+    const LzRec *const z = &lz->rec[r - 1];
+    rtp_apply(VC_PRES, work, lz->proj[z->proj & ~LZ_SF], z->vx, z->vy, z->vz, s->key, z->sz,
+              (z->proj & LZ_SF) != 0, i, z->q, &t);
+    r = z->next;
+  }
+  COST(work)[VCC_REC_LINES] += t.n;
+}
+
+/* entry k of table tab, read next: the presenter's pending projections
+ * first */
+static inline void lz_need(const Table *tab, unsigned *work, int k) {
+  if (__builtin_expect((tab->s[k].tag & T_PEND) != 0, 0))
+    lz_flush(work, k);
+}
+
+static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy, int vz,
+                      uint32_t key, int sz, int sf) {
+  unsigned *const cost = COST(work);
+  Rec *const rec = &s_rec[kind];
+  VCacheStats *const st = &g_vcache_stats[kind];
+  Touch t = TOUCH0;
+  int i, q = -1;
+
+  st->records++;
+  work[0]++;
+  /* The entry first (made if it's new): a key already ambiguous stays so,
+   * whatever this projection is, so it needs none of the maths below. */
+  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (i < 0) {
+    st->full++;
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
+  if (rec->tab->nlog < VC_LOG) { /* its place in the frame's order (#183) */
+    q = (int)rec->tab->nlog++;
+    rec->tab->log[q] = (uint16_t)i;
+    cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
+  }
+  if (kind == VC_PRES && s_lz && s_lazy) { /* #193 */
+    if (lz_add(i, q, proj, vx, vy, vz, sz, sf)) {
+      cost[VCC_REC_LINES] += t.n;
+      return;
+    }
+    lz_need(rec->tab, work, i); /* no room: the entry's list first, then this one */
+  }
+  rtp_apply(kind, work, proj, vx, vy, vz, key, sz, sf, i, q, &t);
   cost[VCC_REC_LINES] += t.n;
 }
 
@@ -781,8 +918,8 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
  * point at its pixel centre, without depths (the screen's corners of a
  * portal's face). Returns the depths' count (0: the place only), -1 not
  * usable; *exact: the place came from a projection. */
-static int hk_src(Rec *rec, int kind, uint32_t key, float *x, float *y, float *w, int flat,
-                  int *exact, unsigned *cost, Touch *t) {
+static int hk_src(Rec *rec, int kind, unsigned *work, uint32_t key, float *x, float *y, float *w,
+                  int flat, int *exact, unsigned *cost, Touch *t) {
   Table *const tb = rec->tab;
   const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
   const float kx = (short)(key & 0xFFFF) + 0.5f, ky = (short)(key >> 16) + 0.5f;
@@ -790,6 +927,7 @@ static int hk_src(Rec *rec, int kind, uint32_t key, float *x, float *y, float *w
   *exact = 1;
   if (i >= 0) {
     const Entry *const s = &tb->s[i];
+    lz_need(tb, work, i); /* #193 */
     n = T_N(s->tag);
     if (T_STATE(s->tag) != E_VALID || !n)
       return -1;
@@ -883,9 +1021,9 @@ static void derive_hand(int kind, unsigned *work, int how, uint32_t key, uint32_
   if (!rec->tab)
     return;
   st->hk_calls++;
-  na = hk_src(rec, kind, a, &ax, &ay, aw, cut, &ea, cost, &t);
+  na = hk_src(rec, kind, work, a, &ax, &ay, aw, cut, &ea, cost, &t);
   if (na >= 0 && two)
-    nb = hk_src(rec, kind, b, &bx, &by, bw, cut, &eb, cost, &t);
+    nb = hk_src(rec, kind, work, b, &bx, &by, bw, cut, &eb, cost, &t);
   if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb)))
     goto nosrc;
   if (form == VCD_LERP) {
@@ -893,8 +1031,8 @@ static void derive_hand(int kind, unsigned *work, int how, uint32_t key, uint32_
      * portal's outline edge): each end exact where it has a projection */
     float ex0, ey0, ex1, ey1, ew[VC_CANDS], nx, ny, den, f;
     int e0, e1;
-    if (hk_src(rec, kind, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, cost, &t) < 0 ||
-        hk_src(rec, kind, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, cost, &t) < 0 ||
+    if (hk_src(rec, kind, work, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, cost, &t) < 0 ||
+        hk_src(rec, kind, work, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, cost, &t) < 0 ||
         !(ea | eb | e0 | e1))
       goto nosrc; /* all four 2D: nothing to place exactly */
     nx = ey0 - ey1;
@@ -1133,8 +1271,8 @@ static void log_index(Table *tab, uint32_t gen, unsigned *cost) {
  * pick[]; else 0, the polygon drawn affine as before, *out still holding
  * the vertex's place (moved when it isn't the key's own). */
 static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
-                  const unsigned *en, int m, unsigned *cost, int *pick, VCacheVert *out,
-                  int *moved, int *snapped) {
+                  const unsigned *en, int m, unsigned *work, unsigned *cost, int *pick,
+                  VCacheVert *out, int *moved, int *snapped) {
   static const int k_opp[4] = {2, 3, 0, 1};
   const uint32_t key = (uint16_t)xy[m][0] | (uint32_t)(uint16_t)xy[m][1] << 16;
   const float kx = xy[m][0] + 0.5f, ky = xy[m][1] + 0.5f;
@@ -1193,7 +1331,10 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
         }
       }
     if (one != VC_NOSEQ && !conflict) {
-      const uint32_t k2 = LOG_E(tab->log[one]), tag = tab->s[k2].tag;
+      const uint32_t k2 = LOG_E(tab->log[one]);
+      uint32_t tag;
+      lz_need(tab, work, (int)k2); /* #193 */
+      tag = tab->s[k2].tag;
       if (k2 != so0 && k2 != sa0 && k2 != sb0 && T_STATE(tag) == E_VALID && T_N(tag) &&
           !(tag & T_MULTI)) {
         slot = k2 + 1;
@@ -1340,12 +1481,13 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
         p[np].dy = l->dy;
         w = alt ? -l->w : l->w;
       }
-      if (na) {
-        d = ~0u;
-        for (a = 0; a < na; a++) {
-          const unsigned e = r > anc[a] ? r - anc[a] : anc[a] - r;
-          d = e < d ? e : d;
-        }
+      if (na) { /* only whether one is near counts (#193: not the nearest) */
+        d = VC_NEAR + 1;
+        for (a = 0; a < na; a++)
+          if (r + VC_NEAR - anc[a] <= 2 * VC_NEAR) { /* |r - anc[a]| <= VC_NEAR */
+            d = 0;
+            break;
+          }
       }
       p[np].w = w;
       p[np].d = d;
@@ -1360,11 +1502,13 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
       unsigned m, k;
       if (near && p[j].d > VC_NEAR)
         continue;
-      for (k = 0; k < j; k++) /* one point (as add_cand) counted once */
-        if ((!near || p[k].d <= VC_NEAR) && p[k].dx - p[j].dx <= 32 && p[j].dx - p[k].dx <= 32 &&
-            p[k].dy - p[j].dy <= 32 && p[j].dy - p[k].dy <= 32)
-          break;
-      pts += k == j;
+      if (pts < 2) { /* (#193: past two, only that it isn't one counts) */
+        for (k = 0; k < j; k++) /* one point (as add_cand) counted once */
+          if ((!near || p[k].d <= VC_NEAR) && p[k].dx - p[j].dx <= 32 && p[j].dx - p[k].dx <= 32 &&
+              p[k].dy - p[j].dy <= 32 && p[j].dy - p[k].dy <= 32)
+            break;
+        pts += k == j;
+      }
       for (m = 0; m < (p[j].w == 0 ? T_N(en->tag) : 1u + (p[j].alt != 0)); m++) {
         float wd;
         if (p[j].w == 0) { /* candidate 0's point: the candidates there */
@@ -1446,7 +1590,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     Touch t = TOUCH0;
     const Table *tab;
     const int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
-    const uint32_t tag = k >= 0 ? tab->s[k].tag : 0;
+    uint32_t tag;
+    if (k >= 0)
+      lz_need(tab, work, k); /* the presenter's projections under it (#193) */
+    tag = k >= 0 ? tab->s[k].tag : 0;
     ptab = tab;
     ref[i] = VREF_POLY;
     if (k >= 0 && T_STATE(tag) == E_VALID && T_N(tag)) {
@@ -1489,7 +1636,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   if (n == 4 && nnone == 1 && nmiss == 1) {
     /* a quad with one vertex the renderer moved on screen (#183) */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
-    der = derive(pres, (Table *)ptab, gen, xy, e, en, none, cost, pick, &dv, &der_moved, &der_snap);
+    der = derive(pres, (Table *)ptab, gen, xy, e, en, none, work, cost, pick, &dv, &der_moved,
+                 &der_snap);
     if (der) {
       persp = VREF_PERSP;
       st->hits++;
@@ -1642,6 +1790,8 @@ static void pres_next(void) {
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
+  if (s_lz) /* #193 */
+    s_lz->n = s_lz->nproj = 0;
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
     r->gen = 1;
@@ -1726,6 +1876,8 @@ static PsxVcacheValueHook pres_begin(int walks) {
     return NULL;
   if (g_psyxRtpValueHook && !r->tab) { /* recording: the presenter's table, once */
     r->tab = table_new();
+    if (r->tab) /* its projections' store (#193); without it they're worked out at once */
+      s_lz = malloc(sizeof *s_lz);
     /* and its answers' array for its frames on its own thread (#162),
      * "not found" where its walk hasn't written (integer, affine) */
     if (r->tab && !s_pres_side) {
