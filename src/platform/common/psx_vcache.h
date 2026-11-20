@@ -42,6 +42,54 @@ extern VCacheVert g_vcache_side[]; /* a vertex buffer's (psx_vcache_poly, below)
  * 2: projections are recorded and looked up too. */
 void psx_vcache_enable(int mode);
 
+/* Points a renderer makes or moves on screen after the projection (#189):
+ * a hand renderer tells the cache "this screen key derives from these
+ * keys", and the cache records the derived point's exact place and depths
+ * from the sources' entries in the frame being recorded. A key with an
+ * entry of its own (a projection under it) keeps that entry: the hand-over
+ * is used only for a vertex that would otherwise have none. Forms (how's
+ * low 4 bits; p and q as below):
+ *  - VCD_ALIAS: sxy is a's point (a moby shadow's corner nudged a line);
+ *  - VCD_LERP: sxy is where the side a-b crosses the line through keys p
+ *    and q, cut in 2D (the sky's and a portal face's clip at the portal's
+ *    outline): the place from the four's exact places (a key with no entry
+ *    there is a 2D point at its pixel centre: the face's screen corners),
+ *    the depth the side's there (1/w is linear on screen) when a and b have
+ *    depths, else the place only (the polygon stays affine: flat, so only
+ *    the place shows);
+ *  - VCD_OFFSET: sxy = a + (p, q) pixels (a glow's rim round its projected
+ *    centre): a's exact place plus the offset, at a's depth;
+ *  - VCD_PERSP: the 3D point p / 4096 of the way from a to b (the world's
+ *    split midpoints, p 2048; Spyro clipped at the floor): place
+ *    ((1 - t) sa za + t sb zb) / ((1 - t) za + t zb), depth (1 - t) za + t zb.
+ * how's bits 4-7: the renderer (VCD_SHADOWS...), for the counters. A
+ * source with no usable entry (none, ambiguous, invalid, different points
+ * under its key), or two hand-overs placing one key differently, leave the
+ * key without one, as before. The hook reads only its arguments and writes
+ * only the cache's table: nothing the game reads changes. NULL unless the
+ * cache records; the presenter's renderers call their own copy
+ * (render_ctx_names.h g_pres_rtp_derive_hook, which render_ctx.c hands to
+ * psx_vcache_pres_derive_at and psx_vcache_pres_begin sets with its value
+ * hook). */
+enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
+enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_WHO_N };
+#define VCD(form, who) ((form) | (who) << 4)
+typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
+                                    int p, int q);
+extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
+void psx_vcache_pres_derive_at(PsxVcacheDeriveHook *hook);
+/* A renderer's call, nothing when the cache doesn't record. The call
+ * through the pointer is in psx_vc_derive (vcache.c; the presenter's
+ * render_ctx.c pres_vc_derive), as gte_native.h's projections call
+ * ngte_vcache: the renderers themselves call no function pointer (the
+ * presenter's tests/pres/link_check.py). */
+void psx_vc_derive(int how, unsigned int sxy, unsigned int a, unsigned int b, int p, int q);
+#define PSX_VC_DERIVE(how, sxy, a, b, p, q)                                                    \
+  do {                                                                                         \
+    if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0))                                         \
+      psx_vc_derive((how), (sxy), (a), (b), (p), (q));                                         \
+  } while (0)
+
 /* The walk's (gpu_walk.c, native_draw.c), when psx_vcache_polys (mode 1 or
  * 2): a polygon's vertices (a GrVertex each, 3 or 4, before a quad is split
  * into triangles) with the primitive's own screen coordinates. It fills
@@ -200,6 +248,14 @@ typedef struct {
    * their polygon in persp), not in miss_ambiguous */
   unsigned resolved;
   unsigned res_order; /* ... of those where the order left one point */
+  /* #189: vertices with no entry found from their renderer's hand-over
+   * (PSX_VC_DERIVE), by renderer, counted in hits (and their polygon in
+   * persp when every vertex is found), not in miss_none */
+  unsigned hooked[VCD_WHO_N];
+  /* ... the hand-overs: made, kept (a place for their key), a source not
+   * usable, a key placed differently by another (left with none), the
+   * frame's table of them full */
+  unsigned hk_calls, hk_kept, hk_nosrc, hk_conflict, hk_full;
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

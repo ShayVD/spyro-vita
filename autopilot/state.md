@@ -11,24 +11,36 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 189,
-      "branch": "auto/189-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-189",
+      "issue": 185,
+      "branch": "auto/185-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-185",
       "pids": [],
-      "started_at": "2026-11-20T17:35:00Z",
+      "started_at": "2026-11-20T20:45:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "src/platform/linux32/main.c",
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "docs/presentation.md",
+        "docs/host-build.md",
+        "docs/vita-testing.md",
+        "README.md"
+      ],
+      "agent": "a1c3f87f2fd16bfc1"
+    },
+    {
+      "issue": 193,
+      "branch": "auto/193-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-193",
+      "pids": [],
+      "started_at": "2026-11-20T20:20:00Z",
       "files": [
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h",
-        "src/game/gte_ops.c",
-        "src/game/render_ctx.c",
-        "src/game/render_ctx_names.h",
-        "src/game/shadows_hand.c",
-        "src/game/sky_clip_hand.c",
-        "src/game/particles_hand.c",
-        "src/game/env_hand.c",
-        "src/game/pete_render_hand.c"
+        "src/game/pres/pres_draw.c",
+        "src/game/present.c"
       ],
-      "agent": "ad557f7d82874304c"
+      "agent": "a49b6c8d3d051dccb"
     }
   ],
   "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
@@ -119,6 +131,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #187 OT walk overlap (owner60/AP8 at 60 HZ, plus a heavy Artisans window at 1x)",
       "expected": "owner-approved: 'waited for the walk' ~0, game thread ~12 ms a tick in heavy windows, ~300 pictures/300",
       "issue": 187
+    },
+    {
+      "title": "Hardware: #189/#181 pictures and cost (shot_hd at owner60 holds; vc.probe/lines +3-5%) on the owner's settings",
+      "expected": "owner-approved: shadows/glows/portal edge drawn exactly; found whole ~99.6%",
+      "issue": 189
     }
   ],
   "owner_decisions": [
@@ -166,7 +183,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 12,
+    "filed": 13,
     "investigated": true
   },
   "rounds_without_gain": 0,
