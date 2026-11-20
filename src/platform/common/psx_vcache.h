@@ -42,6 +42,11 @@ extern VCacheVert g_vcache_side[]; /* a vertex buffer's (psx_vcache_poly, below)
  * 2: projections are recorded and looked up too. */
 void psx_vcache_enable(int mode);
 
+/* The presenter's projections worked out only when a lookup, a hand-over
+ * or a derived point first reads their entry (#193, vcache.c; the same
+ * answers). 1 (the default) or 0: each one at once, as before #193. */
+void psx_vcache_set_lazy(int on);
+
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
  * keys", and the cache records the derived point's exact place and depths
@@ -192,7 +197,6 @@ enum {
   VCC_LOOK_LINES,
   VCC_N
 };
-extern unsigned g_vcache_cost[VCC_N], g_vcache_pres_cost[VCC_N];
 
 /* The cache's work (issue #160, D165), never reset, one writer each:
  * g_vcache_work the game thread's (and its walk's), g_vcache_pres_work the
@@ -208,7 +212,20 @@ enum {
   VCW_CLAMPED,  /* projections the GTE clamped, recorded at their exact position (#178) */
   VCW_N
 };
-extern unsigned g_vcache_work[VCW_N], g_vcache_pres_work[VCW_N];
+/* Each thread's counters on cache lines of their own (#193): [0] the game
+ * thread's (g_vcache_work, g_vcache_cost), [1] the presenter's thread's
+ * (g_vcache_pres_work, g_vcache_pres_cost). Until #193 the four arrays were
+ * packed together, so the presenter's adds on core 1 and the logic draw's
+ * on core 0 wrote the same 32-byte lines while both draws ran. */
+typedef struct {
+  unsigned work[VCW_N];
+  unsigned cost[VCC_N];
+} __attribute__((aligned(64))) VCacheCounters;
+extern VCacheCounters g_vcache_ctr[2];
+#define g_vcache_work (g_vcache_ctr[0].work)
+#define g_vcache_pres_work (g_vcache_ctr[1].work)
+#define g_vcache_cost (g_vcache_ctr[0].cost)
+#define g_vcache_pres_cost (g_vcache_ctr[1].cost)
 
 /* Counters since the start or the last psx_vcache_stats_reset() (the Vita
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
@@ -256,7 +273,7 @@ typedef struct {
    * usable, a key placed differently by another (left with none), the
    * frame's table of them full */
   unsigned hk_calls, hk_kept, hk_nosrc, hk_conflict, hk_full;
-} VCacheStats;
+} __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
 /* the two kinds' counters added (peak: the larger); also logs the cost
