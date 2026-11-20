@@ -93,14 +93,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 7,
+    "n": 8,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
     "base_commit": "ddbb408760d919b658e44525376bd6946c3b7d80",
-    "started_at": "2026-11-20T03:13:45Z",
+    "started_at": "2026-11-20T04:13:52Z",
     "filed": 0,
     "investigated": false
   },
-  "rounds_without_gain": 1,
+  "rounds_without_gain": 2,
   "hardware_pending": null,
   "job": null,
   "batch": null
@@ -180,3 +180,4 @@ continue.
 - 02:50Z phase 9: merged #172 (all routes first try, pictures identical, older counters same; new counters). New baseline from its gate; last_good moved. Worker on #174.
 - 03:12Z phase 9: merged #174 (host_checks.sh demo gets its own --save). Filed #175 (needs-owner: colima's sshfs mount loses an execute bit after link_exec.sh's check). No workers running.
 - 03:13Z phase 9: round 6 ended (polish merges #170-#174, no counter better: rounds_without_gain 1 of 3). README checked: it lists PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES with defaults; the 60 fps cost line waits for the hardware session. Round 7 started. Waiting on the owner: hardware session, #175, merging autopilot into main.
+- 04:13Z phase 9: round 7 investigated the dead interp_mode key in fps-runs: the s7f*/s7g* files record past hardware runs and keep the lines those runs used; nothing filed. No gain: rounds_without_gain 2 of 3. Round 8 started. #175 unanswered; no owner reply on the hardware session.
