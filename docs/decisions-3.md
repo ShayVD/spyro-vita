@@ -367,3 +367,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Counters:** `vc.invalid` (projections recorded invalid), `vc.fallback` (polygons drawn affine because of one), `vc.clamped` (clamped projections recorded exactly); the `vcache N clamps` log line splits the misses by reason.
 - **Checked** (Vita3K, `runtime/autopilot/runs/auto-178-1`; native VitaSDK builds exit 0; `noassets`): the five routes' replay shots the same as `base-3ba4fd2` (10/10, 91/91 ×4); the GPU's own picture (`CAPTURE=1` window grabs on `wobble60`'s lines at 3,000, 6,000, 7,200, 7,201, 8,400, `auto-178-1/capture`) byte-identical to the baseline VPK's, so the new vertex layout and shader draw what the old did. Vblanks 6,900–9,000: `owner60` invalid-key fallbacks 4,068 → 621, polygons with every vertex found 93.30 → 93.36%, `vc.misses` −1.9%; `wobble60` fallbacks 293 → 0. The invalid projections left are all behind the eye and unused.
 - **What it showed:** clamps were a small part of the misses. On `owner60` 168,525 vertices had no cache entry at all and 101,465 were ambiguous, against 934 invalid (#183, #181); the edge stretching is more likely the no-entry vertices. Hardware pictures (`shot_hd=1`) are queued.
+
+### D175. Draw distance 2x keeps to a 60 Hz work budget, and pass 2's mobys use the low-detail model (#180)
+
+- **Why:** the owner plays at 2x with 60 Hz logic and loses frames. Their hardware log (`logs/owner-20261120-1056`) shows the logic draw tracking primitive bytes at about 0.2 ms a KB: every picture shown up to about 47 KB, pictures lost from about 52 KB. The drops fall where the limiter swings between x1.1 and x1.5 over scenes already heavy at 1x.
+- **Measured** (Vita3K, `owner60`, vblanks 6,600–9,000, against `draw_distance=100`; `runtime/autopilot/runs/auto-180-1`):
+  - 2x added gr.draws +8.5%, ot.packets +5%, vc.proj +2.9%, triangles +2.3%.
+  - Almost all of it is `moby_cull_hand.c`'s pass 2: 1–8 extra mobys a draw, many draw calls each. Terrain's scaled LOD adds about 1.8 points of draw calls; the sky nothing.
+  - Every pass-2 moby is at least 4 PS1 px in radius on screen, so a screen-size cull would remove visible objects.
+- **Chosen:**
+  1. Pass 2's mobys take the low-detail model: the record's detail is −1 where it would be positive, with no fade and no extra fog. That is the original's look past its detail distance, applied only beyond the original's draw distance.
+  2. After a 60 Hz update in play (tick60's `wants_60`), the limiter also keeps the draw's primitives under a 48 KB budget (`g_lod.budget`, `LOD_BUDGET_60`): it halves the extra distance above it, drops it above 9/8 of it, and lets it grow again only under 7/8. Elsewhere (the title, attract demos, 30 Hz) only the buffer limits apply. A first try that applied the budget at the title too held the flyby at 1x and cost 5–14% more projections there.
+  3. The lod log line reads "N back-offs (M for the budget)".
+- **Checked** (native VitaSDK build exit 0; `noassets`; gate PASS):
+  - `draw_distance=100` is unchanged: shots identical on title (10/10), pause-ws, pause-ws-wobble, wobble60 and `owner60` at 100 (91/91 each), counters identical.
+  - `owner60` at 2x, vblanks 6,600–9,000: gl.draws −6.0%, gr.draws −5.5%, gl.programs −5.6%, gl.state −2.8%, vc.misses −11.1%, nothing worse.
+  - `owner60`'s shots differ in 8 of 91, only in the far band: rows 8–60 at 7,700 (the far hedge and castle), and the distant terrain in the title flyby (600–1,200). The LOD boundary sits at a different distance; no near geometry changes.
+- **Open:** not checked on hardware yet. The budget has no off switch outside the code yet (#185). Scenes already over about 52 KB at 1x still drop frames with 60 Hz logic (#187); the sky costs 2.5–3.3 ms a vblank (#186).
