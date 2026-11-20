@@ -9,19 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 9,
-  "workers": [
-    {
-      "issue": 174,
-      "branch": "auto/174-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-174",
-      "pids": [],
-      "started_at": "2026-11-20T02:50:21Z",
-      "files": [
-        "tools/host_checks.sh"
-      ],
-      "agent": "a60239ecd99a2d7f4"
-    }
-  ],
+  "workers": [],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
@@ -76,6 +64,18 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "Where does the autopilot start on spyro-vita?",
       "default_taken": "phase 8 (owner, 2026-11-19: the port is basically done, look for optimisations; wobble removal as a menu option)",
       "switch": "state.phase"
+    },
+    {
+      "issue": 175,
+      "question": "colima's sshfs mount loses execute bits after the link: keep the launcher, re-check in the run tools, build/ on a Docker volume, or colima virtiofs?",
+      "default_taken": "none started; pick is option 2 (re-check in the tools that run binaries), waiting for the owner",
+      "switch": "none"
+    },
+    {
+      "issue": 0,
+      "question": "Hardware session for the six pending measurements (configs AP1-AP6b in tools/vita/fps-runs, #170)",
+      "default_taken": "waiting: every hardware run needs the owner's yes",
+      "switch": "none"
     }
   ],
   "attempts": {
@@ -85,7 +85,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-20",
     "phase": 9,
-    "count": 5
+    "count": 6
   },
   "round": {
     "n": 6,
@@ -173,3 +173,4 @@ continue.
 - 02:44Z phase 9: merged #171 (comments only; objects byte-identical).
 - 02:49Z phase 9: merged #173 (host ./save warning; host only). Filed #174 (host_checks.sh demo run without --save).
 - 02:50Z phase 9: merged #172 (all routes first try, pictures identical, older counters same; new counters). New baseline from its gate; last_good moved. Worker on #174.
+- 03:12Z phase 9: merged #174 (host_checks.sh demo gets its own --save). Filed #175 (needs-owner: colima's sshfs mount loses an execute bit after link_exec.sh's check). No workers running.
