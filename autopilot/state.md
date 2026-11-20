@@ -9,21 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 181,
-      "branch": "auto/181-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-181",
-      "pids": [],
-      "started_at": "2026-11-20T15:40:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/gpu_gl.c"
-      ],
-      "agent": "a1168b65c51ab2c33"
-    }
-  ],
+  "workers": [],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5cdfccb",
@@ -112,6 +98,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #186 sky time with the wobble fix on (expect -25-40%; prof_draw's sky double-counts until #190)",
       "expected": "owner-approved Toasty/owner60-style run vs hw-ap2",
       "issue": 186
+    },
+    {
+      "title": "Hardware: #181 owner60 at dd200 for the owner's 'changing' (ambiguous keys resolved, grid x16 depths)",
+      "expected": "owner-approved: fewer perspective/affine flips; vcache clamps found whole ~98%",
+      "issue": 181
     }
   ],
   "owner_decisions": [
@@ -159,7 +150,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 10,
+    "filed": 11,
     "investigated": true
   },
   "rounds_without_gain": 0,
