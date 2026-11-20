@@ -98,9 +98,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_commit": "ddbb408760d919b658e44525376bd6946c3b7d80",
     "started_at": "2026-11-20T04:13:52Z",
     "filed": 0,
-    "investigated": false
+    "investigated": true
   },
-  "rounds_without_gain": 2,
+  "rounds_without_gain": 3,
   "hardware_pending": null,
   "job": null,
   "batch": null
@@ -181,3 +181,5 @@ continue.
 - 03:12Z phase 9: merged #174 (host_checks.sh demo gets its own --save). Filed #175 (needs-owner: colima's sshfs mount loses an execute bit after link_exec.sh's check). No workers running.
 - 03:13Z phase 9: round 6 ended (polish merges #170-#174, no counter better: rounds_without_gain 1 of 3). README checked: it lists PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES with defaults; the 60 fps cost line waits for the hardware session. Round 7 started. Waiting on the owner: hardware session, #175, merging autopilot into main.
 - 04:13Z phase 9: round 7 investigated the dead interp_mode key in fps-runs: the s7f*/s7g* files record past hardware runs and keep the lines those runs used; nothing filed. No gain: rounds_without_gain 2 of 3. Round 8 started. #175 unanswered; no owner reply on the hardware session.
+- 05:14Z phase 9: round 8 investigated whether autopilot's changes reach the CI VPK build (.github/workflows build.yml runs tools/ci/build_vpk.sh, unchanged; the new perfcount source goes through the same CMake the native gates built): nothing filed. No gain: rounds_without_gain 3 of 3.
+- 05:15Z phase 9: stop-check printed stop (phase 9, no workers, 3 rounds without a gain, only #175 open and it needs the owner). Final report: autopilot/report.md. Loop ended.
