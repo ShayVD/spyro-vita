@@ -210,8 +210,7 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 |---|---|---|
 | PICTURE | Widescreen 16:9 | on |
 | | 60 FPS (off / interpolated / 60 Hz). 60 Hz runs the game's logic itself at 60 Hz in play, so the game is 60 pictures a second of its own; menus, cutscenes and the attract demos stay at the game's 30 Hz with a blended picture in between. Interpolated keeps the game at 30 Hz and adds that blended picture everywhere. Off is the original 30 fps. 60 Hz starts or stops only when the game starts, so choosing it or leaving it asks whether to restart now or undo; ○ leaves it for the next start, and a 60 HZ LOGIC row says ON/OFF AT RESTART meanwhile | 60 Hz |
-| | Perspective-correct textures | off |
-| | Sub-pixel vertices (no PS1 wobble) | off |
+| | PSX wobble (on: the PS1's warping textures and jittering vertices; off: perspective-correct textures and sub-pixel vertices) | off |
 | | Resolution (native / PS1) | native (960×544) |
 | | Draw distance (experimental: off / 1.5× / 2×) | off |
 | CONTROLS | Analog stick | on |
@@ -260,11 +259,13 @@ Every option, and the extra ones `config.txt` takes, is described in
   On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
   still slip below it.
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
-- **Perspective-correct textures and sub-pixel vertices cost frames at 60 fps.** With both on
-  (interpolated, measured on hardware) quiet levels such as Toasty and the title still hold 60 fps,
-  but busy ones drop frames: in Stone Hill about one vblank in six is late.
-- **The first time you pick the perspective or sub-pixel setting**, the menu pauses
-  for a few seconds while its shaders compile. That happens once per start-up.
+- **PSX WOBBLE OFF, the default, costs frames at 60 fps.** Its perspective-correct textures and
+  sub-pixel vertices (measured on hardware, interpolated) still hold 60 fps in quiet levels such as
+  Toasty and the title, but busy ones drop frames: in Stone Hill about one vblank in six is late.
+  Turning PSX WOBBLE on gives those frames back, with the PS1's wobble.
+- **The first start-up takes a few seconds longer** while the GPU's shader programs compile,
+  since the wobble fix is on from the start. Turning PSX WOBBLE on for the first time in a
+  session pauses the menu for a moment while its programs compile, once per start-up.
 - **Opening the game's pause or inventory screen hitches for a moment.** The game copies the frame
   for the menu's background, and the GPU renderer has to rebuild that copy on the CPU.
 - Not yet tested on every Vita model and firmware. Report what you find with `spyro.log`.

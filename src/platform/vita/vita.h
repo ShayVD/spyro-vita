@@ -60,8 +60,12 @@ typedef struct {
                          3: the native mix on that thread, 4: lockstep (D84) */
   int tex_filter;     /* tex_filter=1: bilinear, 2: 3-point texture filtering (gpu=1, D39, D43);
                          a developer's key, no menu row since D153 */
-  int persp;          /* persp=1: perspective-correct textures (gpu=1, D39) */
-  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39) */
+  int persp;          /* persp=1: perspective-correct textures (gpu=1, D39); on by default since
+                         #177, with subpixel, as the menu's PSX WOBBLE OFF; a developer's key */
+  int subpixel;       /* subpixel=1: sub-pixel vertex positions (gpu=1, D39); as persp */
+  int wobble;         /* wobble=1: the PS1's wobble, persp and subpixel off (the menu's PSX
+                         WOBBLE row, #177; default 0: both on). A persp= or subpixel= line wins
+                         for its own half (main.c, read_config) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
   int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
@@ -160,8 +164,9 @@ int vita_menu_service(void); /* vblank.c: 1 if the menu ran (the game was paused
 int vita_menu_load(const char *key, const char *v); /* main.c: 1 if a menu row's key */
 extern const char *g_vita_config_stale[4]; /* main.c: stale switch lines (D68), NULL-ended */
 extern int g_vita_config_pal60; /* main.c: a pal60= line, dropped at the next save (D150) */
-/* main.c: tex_filter= and dynres= lines from the rows gone with D153, dropped too (NULL-ended) */
-extern const char *g_vita_config_rows_gone[3];
+/* main.c: tex_filter= and dynres= lines from the rows gone with D153, and persp= and subpixel=
+ * lines from the rows PSX WOBBLE replaced (#177), dropped too (NULL-ended) */
+extern const char *g_vita_config_rows_gone[5];
 int vita_menu_test_keys(const char *list); /* main.c: menu_keys= for menu_test; 0 = ok */
 /* A question over the menu (D136): the text, a blank line, the choices
  * (UP/DOWN, X answers with the one chosen: 0..nchoice-1; O, START,
