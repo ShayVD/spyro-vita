@@ -451,3 +451,23 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - the logic draw got cheaper (9.7 → 8.5 ms a tick in Toasty), and Artisans' late vblanks per 300 went 25.4 → 19.8;
   - but the presenter thread rose 8.63 → 9.11 ms a vblank and saturates in Toasty's heavy opening (96%). There it misses every in-between frame for about 25 s, so Toasty's late vblanks per 300 went 1.2 → 30.7 (#193). The owner's 60 HZ settings don't use the presenter in play.
 - **Left on the Vita:** ca4450e's eboot (SHA-1 54c274d0, READBACK IDENTICAL).
+
+### D180. On the Vita the OT walk overlaps the game thread: `savestate_point` joins it only for a pending save or load (#187)
+
+- **Why:**
+  - Heavy scenes lose frames with 60 Hz logic even at 1x.
+  - `savestate_point` (present.c's `PortPresentBeforeUpdate`, at every main loop top) joined the walk when `s_req_slot || g_savestate_tick_hook`. The Vita always sets the hook (`savestate_vita.c`, `vita_savestate_init`). So since D71, every tick joined about 50 µs after its `DrawOTag`'s handover, and the game thread waited for the whole walk.
+  - A diagnostic build traced 300 of 300 waiting joins to `savestate_point`.
+  - Hardware shows the wait equal to the walk's busy time: 5.71 against 5.62 ms a vblank in the owner's 60 HZ Artisans log (`logs/owner-20261120-1056`, 6,900), and 10.55 against 10.46 in AP8b (D179).
+  - On the host the hook is only set with `--state`, so D71's `--walk-lazy` checks never saw it.
+- **What:** the walk is joined there only for a pending save or load. The hook's own GPU calls join where they post (`vita_video_overlay` → `call()` → `env_sync` → `psx_walk_join`). A request it makes (`state_test`) is serviced the next tick, with the join. With 60 HZ logic the walk now runs beside the next tick and is joined at `DrawSync`, as D71 meant.
+- **Checked** (Vita3K, `runtime/autopilot/runs/auto-187-1/final`; native build, `noassets`, gate PASS):
+  - the five routes' shots are the same as `base-cc65182`, and every work counter is the same;
+  - `owner60`'s wait for the walk went 6.1–7.6 → 0.00–0.06 ms a vblank (6,900–7,500), and `ot` 6.2–7.6 → 0.04–0.13. Vita3K's timing is only relative.
+  - At 30 Hz with in-between frames the join moves to the presenter's `records_begin`, about 1 ms after the handover, so the gain there is small (#193).
+- **Stage split on hardware** (Artisans, 60 HZ, wobble fix on), per KB of primitives:
+  - hand renderers 0.15–0.18 ms;
+  - walk 0.10–0.14 ms;
+  - render thread 0.10–0.12 ms;
+  - the vertex cache is about 0.19 ms across the three, the largest stage (#179, #193).
+- **Expected on hardware:** the owner's heavy 60 HZ Artisans windows at 1x go from about 18 ms a tick on the game thread to about 12, so close to 300 pictures in 300 vblanks (212–266 in the owner's log). Not checked on hardware yet. Host `--walk-lazy` with `--state` not run.
