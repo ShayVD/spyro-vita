@@ -9,7 +9,22 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 183,
+      "branch": "auto/183-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-183",
+      "pids": [],
+      "started_at": "2026-11-20T14:20:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/native_draw.c",
+        "src/platform/common/gpu_walk.c"
+      ],
+      "agent": "a31862ab0ded20c7c"
+    }
+  ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
@@ -83,9 +98,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: start-up shader compile time and the 30/60 fps cost with PSX WOBBLE off (the fix) as the default",
       "expected": "owner-approved run after #177-#180 merge: AP1/AP2-style Toasty pair plus a cold start",
       "issue": 177
+    },
+    {
+      "title": "Hardware: #180's 2x budget on the owner's settings (PAL, 60 HZ, 16:9, dd200)",
+      "expected": "owner-approved run: windows that dropped (x1.1-1.5, 55-68 KB) held at 1x; fewer late vblanks than logs/owner-20261120-1056",
+      "issue": 180
     }
   ],
   "owner_decisions": [
+    "2026-11-20 14:20: coordinator: #183 dispatched before #181 (pick gave #181; both p0 and share vcache.c, #183's no-entry is the larger share of the owner's stretching). Baseline re-run at 474d375 (after #177, #178, #180) into runs/base-474d375.",
     "2026-11-20 13:55: owner (b604db4 on hardware, PAL 60 HZ 16:9 dd200, PSX WOBBLE OFF): still sees textures stretching and changing; eliminate it completely. Log logs/owner-20261120-1349: 90.6-96% of polygons found whole in play, no entry 12-38k and ambiguous up to 24k per 300 vblanks. #181 and #183 raised to p0 (next after #180, before #179), evidence and stronger Done-when on both issues.",
     "2026-11-20 13:50: owner: push everything as you go. Push autopilot (PR #176) after every merge and state tick; still never push main, workers still never push.",
     {
