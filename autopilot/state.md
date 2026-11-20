@@ -23,18 +23,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a8ec7ff9c8c396114",
       "reported": true
-    },
-    {
-      "issue": 173,
-      "branch": "auto/173-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-173",
-      "pids": [],
-      "started_at": "2026-11-20T02:21:16Z",
-      "files": [
-        "src/platform/linux32/main.c",
-        "docs/host-build.md"
-      ],
-      "agent": "a54e406daa5228561"
     }
   ],
   "last_good": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
@@ -100,14 +88,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "issues_filed": {
     "date": "2026-11-20",
     "phase": 9,
-    "count": 4
+    "count": 5
   },
   "round": {
     "n": 6,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
     "base_commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
     "started_at": "2026-11-20T02:20:35Z",
-    "filed": 4,
+    "filed": 5,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -193,3 +181,4 @@ continue.
 - 02:36Z phase 9: merged #170 (hardware run configs AP1-AP6b, parsed against hw_mock; no Vita touched). The hardware session is ready when the owner says yes.
 - 02:39Z phase 9: #172 reported done (reports/172-1.md): six vcache cost counters in vpk-perfcount, pictures and older counters unchanged. Gate running.
 - 02:44Z phase 9: merged #171 (comments only; objects byte-identical).
+- 02:49Z phase 9: merged #173 (host ./save warning; host only). Filed #174 (host_checks.sh demo run without --save).
