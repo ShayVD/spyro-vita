@@ -26,7 +26,10 @@ typedef struct {
 } BenchSet;
 
 /* grouped by widescreen and resolution, so those (which redraw every
- * target) change four times a round */
+ * target) change four times a round. "all off" is the menu's PSX WOBBLE ON
+ * (persp=0 subpixel=0); its default since #177, PSX WOBBLE OFF, is persp=1
+ * subpixel=1 (the sets with both). The sets are kept as they were, so bench
+ * logs compare across builds; the configured options come back at the end. */
 static const BenchSet k_sets[] = {
     {"4:3 native, all off, tex_cache=0", 0, 0, 0, 0, 0, 0},
     {"4:3 native, all off (tex_cache=1)", 0, 0, 0, 0, 0, 1},

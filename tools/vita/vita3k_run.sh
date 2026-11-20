@@ -101,10 +101,11 @@ fi
 [ "${REALTIME:-0}" = 1 ] || echo "realtime=0" >> "$data/config.txt"
 # Scripted runs compare with the host: the original 4:3, 30 fps picture
 # and the host's camera controls (D53: the Vita defaults to the free camera
-# and both inverts) unless a config line given here turns them on (later
-# lines win; config_version=5 so a given interp=1, or a 0 for the D68
-# switches, counts: main.c).
-printf 'config_version=5\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n' >> "$data/config.txt"
+# and both inverts), and the PS1's wobble (wobble=1: the Vita's default has
+# been the fix since #177; a given persp=1 subpixel=1 turns it on) unless a
+# config line given here turns them on (later lines win; config_version=6 so
+# a given interp=1, or a 0 for the D68 switches, counts: main.c).
+printf 'config_version=6\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\nwobble=1\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
 rm -rf "$data/shots" "$data/spyro.log" "$data/spyro-prev.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"
 mkdir -p "$data/save"
