@@ -435,21 +435,25 @@ static GrVertex s_vbuf[MAX_VERTEX_BUFFER_SIZE];
 static const GrVertex *s_vorig; /* PsyX's own buffer as it was given, or the
                                    render thread's copy of it (D63) */
 static const VCacheVert *s_side; /* g_vcache_side, or the render thread's copy */
-extern unsigned g_vcache_work[4], g_vcache_pres_work[4]; /* vcache.c: the cache's work by thread */
 static int s_nverts;
 
 /* The expanded vertex (D39, D43): PsyX's own vertex, copied whole, then
  * what the options add. g.tcx/g.tcy (the vcache's bytes in PsyX's buffer)
  * become "filtered from the atlas" and "wraps within its tile". dxy and w
- * are the vcache's sub-pixel offset (1/256 pixel) and depth: the GPU
- * divides by w when it interpolates (w = 1 is the PS1's affine mapping). */
+ * are the vcache's offset from the integer position (pixels) and depth:
+ * the GPU divides by w when it interpolates (w = 1 is the PS1's affine
+ * mapping). Since #178 dxy are floats, as a clamped vertex's exact position
+ * can be far off the screen, and the box is in bytes (texels 0..255, as
+ * gpu_lean's), so the vertex is still 40 bytes; the sub-pixel offsets are
+ * the same values (multiples of 1/256) the shader made of int16 before. */
 typedef struct {
   GrVertex g;
-  int16_t box[4]; /* u0, v0, u1, v1: page texels the filter may read */
+  uint8_t box[4]; /* u0, v0, u1, v1: page texels the filter may read */
   int16_t off[2]; /* atlas texel minus page texel, for the triangle (D41) */
-  int16_t dxy[2];
+  float dxy[2];   /* then w: one attribute (a_qw) */
   float w;
 } XVertex;
+_Static_assert(sizeof(XVertex) == 40, "XVertex grew");
 static XVertex s_xbuf[MAX_VERTEX_BUFFER_SIZE];
 /* gpu_lean=1 (D70): XVertex without what only persp and subpixel use (dxy,
  * w) and with the box in bytes (texels 0..255): 28 bytes, not 40. Drawn by
@@ -687,11 +691,9 @@ static const char k_vs_prim_x[] =
     "attribute vec4 a_tex;\n"   /* u, v, bright, dither (bytes) */
     "attribute vec4 a_col;\n"
     "attribute vec4 a_box;\n"   /* u0, v0, u1, v1: page texels the filter may read */
-    "#ifdef LEAN\n"
     "attribute vec2 a_offd;\n"  /* atlas minus page texel */
-    "#else\n"
-    "attribute vec4 a_offd;\n"  /* atlas minus page texel; sub-pixel offset (1/256) */
-    "attribute float a_w;\n"
+    "#ifndef LEAN\n"
+    "attribute vec3 a_qw;\n"    /* offset from the integer position (pixels), w */
     "#endif\n"
     "attribute vec2 a_flags;\n" /* filtered from the atlas, wraps (bytes) */
     "uniform vec4 u_xf;\n"
@@ -706,8 +708,8 @@ static const char k_vs_prim_x[] =
     "#ifdef LEAN\n"
     "  gl_Position = vec4((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0, 0.0, 1.0);\n"
     "#else\n"
-    "  vec2 qxy = a_pos.xy + a_offd.zw * (1.0 / 256.0);\n"
-    "  gl_Position = vec4(((qxy + u_xf.xy) * u_xf.zw - 1.0) * a_w, 0.0, a_w);\n"
+    "  vec2 qxy = a_pos.xy + a_qw.xy;\n"
+    "  gl_Position = vec4(((qxy + u_xf.xy) * u_xf.zw - 1.0) * a_qw.z, 0.0, a_qw.z);\n"
     "#endif\n"
     "  v_uv = a_tex.xy;\n"
     "  v_filt = a_flags;\n"
@@ -1050,7 +1052,7 @@ static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, 
       glBindAttribLocation(p->prog, 3, "a_box");
       glBindAttribLocation(p->prog, 4, "a_offd");
       if (nvs == 1)
-        glBindAttribLocation(p->prog, 5, "a_w");
+        glBindAttribLocation(p->prog, 5, "a_qw");
       glBindAttribLocation(p->prog, 6, "a_flags");
     }
   }
@@ -2295,10 +2297,8 @@ static void expand(int count) {
     }
     s_tkind[i / 3] = (uint8_t)kind;
     {
-      /* the triangle's tail (box, off, no sub-pixel offset), then each
-       * vertex: PsyX's vertex whole, its vcache bytes replaced */
-      const int16_t tail[6] = {(int16_t)u0, (int16_t)v0, (int16_t)u1, (int16_t)v1,
-                               (int16_t)du, (int16_t)dv};
+      /* each vertex: PsyX's vertex whole, its vcache bytes replaced, then
+       * the triangle's box and atlas offset, no offset from its position */
       for (k = 0; s_lean && k < n; k++) {
         LVertex *l = s_lbuf + i + k;
         l->g = v[k];
@@ -2316,7 +2316,12 @@ static void expand(int count) {
         x->g = v[k];
         x->g.tcx = (char)(v[0].bright == 2 ? filt : 2);
         x->g.tcy = (char)(wrap && filt);
-        memcpy(x->box, tail, sizeof tail);
+        x->box[0] = (uint8_t)u0;
+        x->box[1] = (uint8_t)v0;
+        x->box[2] = (uint8_t)u1;
+        x->box[3] = (uint8_t)v1;
+        x->off[0] = (int16_t)du;
+        x->off[1] = (int16_t)dv;
         x->dxy[0] = x->dxy[1] = 0;
         x->w = 1;
       }
@@ -2329,7 +2334,8 @@ static void expand(int count) {
         memcpy(&ref, &v[k].tcx, sizeof ref);
         if (!(ref & VREF_POLY))
           continue;
-        if (s_subpixel) {
+        /* a vertex the GTE clamped is drawn at its exact position (#178) */
+        if (s_subpixel || (ref & VREF_CLAMP)) {
           x->dxy[0] = c->dx;
           x->dxy[1] = c->dy;
         }
@@ -3091,9 +3097,9 @@ static void batch_issue(const Batch *b) {
     gs_attr_ptr(0, s_vbo, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, g.x));
     gs_attr_ptr(1, s_vbo, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, g.u));
     gs_attr_ptr(2, s_vbo, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(XVertex), (void *)offsetof(XVertex, g.r));
-    gs_attr_ptr(3, s_vbo, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
-    gs_attr_ptr(4, s_vbo, 4, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, off));
-    gs_attr_ptr(5, s_vbo, 1, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, w));
+    gs_attr_ptr(3, s_vbo, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, box));
+    gs_attr_ptr(4, s_vbo, 2, GL_SHORT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, off));
+    gs_attr_ptr(5, s_vbo, 3, GL_FLOAT, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, dxy));
     gs_attr_ptr(6, s_vbo, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(XVertex), (void *)offsetof(XVertex, g.tcx));
     if ((s_filter || s_cache) && s_texmode != P_UNTEX) {
       gs_active(1);
@@ -4316,6 +4322,17 @@ void gl_report(int vblank) {
              c->full / f, c->polys / f, c->polys ? (unsigned)(100ull * c->persp / c->polys) : 0,
              c->verts ? (unsigned)(100ull * c->hits / c->verts) : 0,
              (unsigned)(s_st.expand_us / 1000), (unsigned)(s_st.expand_us % 1000 / 10));
+    /* #178: the totals, finer than the line's percentages; projections the
+     * GTE clamped (now drawn at their exact position), polygons drawn
+     * affine because a vertex's key was invalid, and polygons with a
+     * clamped vertex (of those, drawn with perspective) */
+    vita_log("vcache %d clamps: %u polygons, %u with every vertex found (%u.%02u%%), %u vertices, "
+             "%u found; %u projections clamped, %u invalid keys; %u polygons fell back on an invalid "
+             "key; %u polygons with a clamped vertex, %u of them with every vertex found",
+             vblank, c->polys, c->persp,
+             c->polys ? (unsigned)(10000ull * c->persp / c->polys / 100) : 0,
+             c->polys ? (unsigned)(10000ull * c->persp / c->polys % 100) : 0, c->verts, c->hits,
+             c->clamped, c->invalid, c->fallback, c->clamp_polys, c->clamp_persp);
     /* the logic draw's frames and the presenter's apart (#158): found in
      * the other's entries, and vertices whose answer the renderer couldn't
      * be given (not in a vertex buffer the cache knows) */

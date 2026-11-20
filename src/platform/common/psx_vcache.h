@@ -20,11 +20,18 @@ extern "C" {
 #define VREF_POLY 0x80000000u  /* built by MakeVertexTriangle/Quad */
 #define VREF_PERSP 0x40000000u /* every vertex of its polygon was found */
 #define VREF_NOPOS 0x20000000u /* different points share the key: integer position */
+#define VREF_CLAMP 0x10000000u /* the GTE clamped this projection (#178): its exact
+                                  position is drawn even without subpixel */
 #define VREF_SLOT 0x00FFFFFFu  /* entry + 1, or 0: not found or ambiguous */
 /* bits 24-25: which of the entry's depths this polygon uses (vcache.c) */
 
+/* dx, dy: floats since #178. A vertex the GTE clamped (IR1/IR2 or SX/SY
+ * saturated, divide overflow) is answered with its exact position, which
+ * can lie far outside the screen; an int16 in 1/256 pixel held +-128
+ * pixels. Every other answer is still a multiple of 1/256 pixel within
+ * that range, the same value as before. 12 bytes a vertex (was 8). */
 typedef struct VCacheVert {
-  int16_t dx, dy; /* exact screen position - (integer SX/SY + 0.5), 1/256 pixel */
+  float dx, dy; /* exact screen position - (integer SX/SY + 0.5), pixels */
   float w;      /* view-space depth (> 0), at the scale the polygon's other
                    vertices use: only ratios within a polygon mean anything */
 } VCacheVert;
@@ -138,6 +145,22 @@ enum {
 };
 extern unsigned g_vcache_cost[VCC_N], g_vcache_pres_cost[VCC_N];
 
+/* The cache's work (issue #160, D165), never reset, one writer each:
+ * g_vcache_work the game thread's (and its walk's), g_vcache_pres_work the
+ * presenter's thread's (#162). The Vita's work counters (perfcount.c, vc.*)
+ * are the game thread's. */
+enum {
+  VCW_PROJ,     /* projections recorded */
+  VCW_POLYS,    /* polygons looked up */
+  VCW_VERTS,    /* ... their vertices */
+  VCW_MISSES,   /* ... of those not found */
+  VCW_INVALID,  /* projections recorded as invalid: never used (#178) */
+  VCW_FALLBACK, /* polygons drawn affine because a vertex's key was invalid (#178) */
+  VCW_CLAMPED,  /* projections the GTE clamped, recorded at their exact position (#178) */
+  VCW_N
+};
+extern unsigned g_vcache_work[VCW_N], g_vcache_pres_work[VCW_N];
+
 /* Counters since the last psx_vcache_stats_reset(), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
@@ -156,6 +179,11 @@ typedef struct {
   unsigned other;     /* hits on an entry the other kind of frame's projections made */
   unsigned side_lost; /* polygon vertices whose answer couldn't go to g_vcache_side (not in
                          a known vertex buffer): the renderer reads another walk's there */
+  /* #178 */
+  unsigned clamped;     /* projections the GTE clamped, recorded at their exact position */
+  unsigned fallback;    /* polygons drawn affine because a vertex's key was invalid */
+  unsigned clamp_polys; /* polygons with a clamped vertex found */
+  unsigned clamp_persp; /* ... drawn with every vertex found (perspective) */
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

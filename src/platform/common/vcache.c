@@ -27,9 +27,24 @@
  * have the smallest spread: one point at another scale is 4 or 16 times
  * off, another point on the same pixel is as far off as it is in depth,
  * and a real polygon's depths are much closer. A key with more than four
- * is ambiguous and never used. Vertices whose projection the GTE clamped
- * (IR or SX/SY saturated, divide overflow) are recorded as invalid, so a
- * polygon using them falls back too.
+ * is ambiguous and never used.
+ *
+ * Clamped projections (#178). When the GTE saturated IR1/IR2, SX/SY or
+ * SZ3, or its division overflowed (H >= 2 SZ3), the SXY2 the game got isn't
+ * the vertex's projection: at 16:9 the sides show large, close polygons
+ * that cross the edge of the screen the 4:3 projection was made for. Until
+ * #178 such a vertex was invalid and its polygons fell back (affine, the
+ * clamped point pulled in). The hook checks the key against the GTE's own
+ * answer from the same inputs, with its clamps, and records the exact,
+ * unclamped position and depth under it, which the renderer draws even
+ * without subpixel (VREF_CLAMP). Such a position can lie far outside the
+ * screen: one that doesn't fit a candidate's int16 (1/256 pixel, +-128
+ * pixels) goes to the table's far array (VC_FAR floats a frame), and the
+ * candidate holds its index (dy FAR_MARK). Saturated keys collide (one
+ * SX = 1023 for many points), so a clamped projection and another point
+ * under one key make it ambiguous, never "multi" (T_MULTI's integer
+ * position is the clamped one). Still invalid: a depth of 0 or less, and a
+ * key that isn't the GTE's answer for these inputs.
  *
  * Sub-pixel positions are decided per key, not per polygon: a key that
  * is found gives every polygon using it the same point, and one that isn't
@@ -102,6 +117,8 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 #define VC_PROBE 32
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
 #define VC_CANDS 4
+#define VC_FAR 1024 /* exact positions out of a candidate's int16 range, per frame (#178) */
+#define FAR_MARK INT16_MIN /* a candidate's dy: dx is the far array's index (fix8 never gives it) */
 #define VREF_CAND_SHIFT 24 /* which of the entry's candidates (VREF bits 24-25) */
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
@@ -121,6 +138,7 @@ typedef struct {
 #define T_N(t) (((t) >> 2) & 7u)   /* candidates */
 #define T_MULTI 0x20u              /* candidates more than 1/8 pixel apart: different points */
 #define T_SRC 0x40u                /* made by the presenter's projections (VC_PRES) */
+#define T_CLAMP 0x80u              /* a projection under it was clamped by the GTE (#178) */
 #define T_GEN(t) ((t) >> 8)
 #define VC_GEN_END (1u << 24)      /* a table's frames count 1 to this, then from 1 again */
 
@@ -133,6 +151,10 @@ typedef struct {
 typedef struct {
   Entry s[VC_SIZE];
   int stale; /* holds frames from before its count came round: cleared before it records */
+  /* the exact positions (pixels from the pixel centre) of this table's
+   * frame's candidates that don't fit an int16 (#178): only indexed by the
+   * frame's own entries, so never cleared */
+  float far[VC_FAR][2];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -141,12 +163,13 @@ typedef struct {
   Table *tab;     /* the table recording */
   uint32_t gen;   /* its frame */
   unsigned count; /* entries this frame */
+  unsigned nfar;  /* the table's far positions this frame (#178) */
 } Rec;
 
 static Table s_tab0 __attribute__((aligned(64)));
 static VCacheVert *s_pres_side; /* the presenter's answers while it runs on its own thread (#162) */
 static Table *s_tab1;                  /* the logic draw's other table (D71) */
-static Rec s_rec[2] = {{&s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
+static Rec s_rec[2] = {{&s_tab0, 1, 0, 0}, {NULL, 1, 0, 0}}; /* the presenter's: psx_vcache_pres_begin */
 static const Table *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
 
@@ -177,7 +200,7 @@ VCacheStats g_vcache_stats[2];
  * is the game thread's (and its walk's: the logic draw, and the presenter
  * inline), g_vcache_pres_work the presenter's thread's (#162): one writer
  * each, plain adds. */
-unsigned g_vcache_work[4], g_vcache_pres_work[4];
+unsigned g_vcache_work[VCW_N], g_vcache_pres_work[VCW_N];
 /* What that work cost (issue #159), the same way, counts that don't depend
  * on timing: float divisions, the table's slots a record's or a lookup's
  * probe examined, and the 32-byte lines of the table each touched (a model:
@@ -323,25 +346,73 @@ static inline int same_depth(float a, float b, unsigned *div) {
   return ratio(a, b) <= 1.02f;
 }
 
-/* One more projection under slot s's key (its candidates c): 0 = kept (or
- * already there), -1 = no room. The same point at the same depth is kept
- * once. */
-static int add_cand(Entry *s, Cand *c, int16_t dx, int16_t dy, float w, unsigned *cost) {
+/* candidate c's position in table t, pixels from the pixel centre */
+static inline void cand_pos(const Table *t, const Cand *c, float *x, float *y) {
+  if (c->dy == FAR_MARK) {
+    *x = t->far[(uint16_t)c->dx][0];
+    *y = t->far[(uint16_t)c->dx][1];
+  } else {
+    *x = c->dx * (1.0f / 256);
+    *y = c->dy * (1.0f / 256);
+  }
+}
+
+/* One more projection under slot s's key in rec's table: 0 = kept (or
+ * already there), -1 = no room, or the key can't be used (#178: a clamped
+ * projection and another point under it). The same point at the same depth
+ * is kept once. Its position: dx, dy (1/256 pixel), or dy FAR_MARK and the
+ * exact px, py (pixels), which go to the far array when kept. */
+static int add_cand(Rec *rec, Entry *s, int16_t dx, int16_t dy, float px, float py, float w,
+                    int clamped, unsigned *cost, Touch *t) {
+  Cand *const c = s->c;
   const unsigned n = T_N(s->tag);
+  const int far = dy == FAR_MARK;
+  int reuse = -1; /* a far candidate at this position: its index */
   unsigned j;
+  if (clamped && (s->tag & T_MULTI))
+    return -1; /* different points already share the key */
   for (j = 0; j < n; j++) {
-    int ddx = c[j].dx - dx, ddy = c[j].dy - dy;
-    if (ddx > 32 || ddx < -32 || ddy > 32 || ddy < -32)
-      s->tag |= T_MULTI; /* more than 1/8 pixel apart: not one point */
-    else if (same_depth(w, c[j].w, &cost[VCC_REC_DIV]))
+    int differ;
+    if (!far && c[j].dy != FAR_MARK) {
+      int ddx = c[j].dx - dx, ddy = c[j].dy - dy;
+      differ = ddx > 32 || ddx < -32 || ddy > 32 || ddy < -32;
+    } else {
+      float ax, ay;
+      cand_pos(rec->tab, &c[j], &ax, &ay);
+      if (c[j].dy == FAR_MARK)
+        touch(t, offsetof(Table, far) + (size_t)(uint16_t)c[j].dx * sizeof rec->tab->far[0],
+              sizeof rec->tab->far[0]);
+      differ = !(ax - px <= 0.125f && ax - px >= -0.125f && ay - py <= 0.125f && ay - py >= -0.125f);
+      if (!differ && far && c[j].dy == FAR_MARK)
+        reuse = (uint16_t)c[j].dx;
+    }
+    if (differ) { /* more than 1/8 pixel apart: not one point */
+      if (clamped || (s->tag & T_CLAMP))
+        return -1; /* a clamped point's key: the prims can't be told apart (#178) */
+      s->tag |= T_MULTI;
+    } else if (same_depth(w, c[j].w, &cost[VCC_REC_DIV])) {
+      if (clamped)
+        s->tag |= T_CLAMP;
       return 0;
+    }
   }
   if (n == VC_CANDS)
     return -1;
-  c[n].dx = dx;
+  if (far && reuse < 0) {
+    if (rec->nfar >= VC_FAR)
+      return -1;
+    reuse = (int)rec->nfar++;
+    rec->tab->far[reuse][0] = px;
+    rec->tab->far[reuse][1] = py;
+    touch(t, offsetof(Table, far) + (size_t)reuse * sizeof rec->tab->far[0],
+          sizeof rec->tab->far[0]);
+  }
+  c[n].dx = far ? (int16_t)reuse : dx;
   c[n].dy = dy;
   c[n].w = w;
   s->tag += 1u << 2; /* n + 1 */
+  if (clamped)
+    s->tag |= T_CLAMP;
   return 0;
 }
 
@@ -364,13 +435,12 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = proj[PROJ_H];
   const int *rm = proj, *tr = proj + PROJ_TR;
   int64_t mx, my, mz;
-  float x, y, z, r, iz, isz, ox, oy, ex, ey, w = 0, w_alt = 0;
+  float x, y, z, r, iz, isz, ox, oy, ex, ey, gx, gy, qd, px = 0, py = 0, w = 0, w_alt = 0;
   Touch t = TOUCH0;
   Entry *s;
-  Cand *c;
   unsigned prev, state = E_INVALID;
   int16_t fx = 0, fy = 0;
-  int i;
+  int i, ix, iy, clamped = 0;
 
   st->records++;
   work[0]++;
@@ -383,7 +453,6 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
     return;
   }
   s = &rec->tab->s[i];
-  c = s->c;
   prev = T_STATE(s->tag);
   if (prev == E_AMBIGUOUS) {
     cost[VCC_REC_LINES] += t.n;
@@ -393,11 +462,9 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
   my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
   mz = ((int64_t)tr[2] << 12) + (int64_t)(rm[6] * vx) + (rm[7] * vy) + (rm[8] * vz);
-  /* Spyro's renderers always set sf; IR1/IR2 saturated (|MAC| > 0x7FFF)
-   * or a divide overflow (H >= 2 SZ3) means the GTE's answer isn't the
-   * projection of this vertex. */
-  if (!sf || sz <= 0 || h >= 2 * sz || (mx >> 12) > 0x7FFF || (mx >> 12) < -0x8000 ||
-      (my >> 12) > 0x7FFF || (my >> 12) < -0x8000)
+  /* Spyro's renderers always set sf. A depth of 0 or less (the GTE's SZ3
+   * or the exact one) has no projection. */
+  if (!sf || sz <= 0)
     goto done;
   x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
   y = (float)(int32_t)(my >> 12) + (float)(my & 0xFFF) * (1.0f / 4096);
@@ -410,22 +477,46 @@ static void rtp_point(int kind, unsigned *work, const int *proj, int vx, int vy,
   cost[VCC_REC_DIV]++;
   isz = r * z;
   iz = r * sz;
-  /* Check against the GTE's own model (truncated x, y and SZ3): off by more
-   * than its rounding means SX/SY saturated. */
-  ex = ox + (float)(int32_t)(mx >> 12) * isz - sx;
-  ey = oy + (float)(int32_t)(my >> 12) * isz - sy;
+  /* The GTE's own answer from the same inputs (truncated x, y and SZ3) and
+   * its clamps (#178): IR1/IR2 saturated to 16 bits, the quotient to
+   * 0x1FFFF (divide overflow, H >= 2 SZ3), SX/SY to 11 bits. Off by more
+   * than its rounding: the key isn't this projection's. */
+  ix = (mx >> 12) > 0x7FFF ? 0x7FFF : (mx >> 12) < -0x8000 ? -0x8000 : (int)(mx >> 12);
+  iy = (my >> 12) > 0x7FFF ? 0x7FFF : (my >> 12) < -0x8000 ? -0x8000 : (int)(my >> 12);
+  qd = h >= 2 * sz ? (float)0x1FFFF * (1.0f / 65536) : isz;
+  gx = ox + (float)ix * qd;
+  gy = oy + (float)iy * qd;
+  clamped = ix != (mx >> 12) || iy != (my >> 12) || h >= 2 * sz || (mz >> 12) > 0xFFFF ||
+            gx < -1024 || gx >= 1024 || gy < -1024 || gy >= 1024;
+  ex = (gx < -1024 ? -1024 : gx > 1023 ? 1023 : gx) - sx;
+  ey = (gy < -1024 ? -1024 : gy > 1023 ? 1023 : gy) - sy;
   if (ex < -1.5f || ex > 2.5f || ey < -1.5f || ey > 2.5f)
     goto done;
   if (!tr[0] && !tr[1] && !tr[2] && !((vx | vy | vz) & 15) && vx >= -4096 && vx < 4096 &&
       vy >= -4096 && vy < 4096 && vz >= -4096 && vz < 4096)
     w_alt = flt(z * (1.0f / 16)); /* maybe r_environment's x16 precision path */
   /* The exact point, relative to the pixel centre the PS1 draws the vertex
-   * at: unbiased against vertices drawn at their integer position. */
-  fx = fix8(flt(ox + x * iz - sx - 0.5f));
-  fy = fix8(flt(oy + y * iz - sy - 0.5f));
+   * at: unbiased against vertices drawn at their integer position. In 1/256
+   * pixel when it fits an int16, else in the far array (#178). */
+  px = flt(ox + x * iz - sx - 0.5f);
+  py = flt(oy + y * iz - sy - 0.5f);
+  if (px * 256.0f > 32767.0f || px * 256.0f < -32767.0f || py * 256.0f > 32767.0f ||
+      py * 256.0f < -32767.0f) {
+    fy = FAR_MARK;
+    clamped = 1; /* the key is that far from the point: the GTE's answer was clamped */
+  } else {
+    fx = fix8(px);
+    fy = fix8(py);
+  }
   w = flt(z);
   state = E_VALID;
 done:
+  if (state == E_INVALID)
+    work[VCW_INVALID]++;
+  else if (clamped) {
+    work[VCW_CLAMPED]++;
+    st->clamped++;
+  }
   if (prev == 0) {
     set_state(s, state);
     if (state == E_INVALID) {
@@ -448,11 +539,12 @@ done:
    * point on the same pixel. Each is a candidate; each polygon picks. */
   touch(&t, (size_t)i * sizeof(Entry) + offsetof(Entry, c),
         sizeof(Cand) * (T_N(s->tag) < VC_CANDS ? T_N(s->tag) + 1u : VC_CANDS));
-  cost[VCC_REC_LINES] += t.n;
-  if (add_cand(s, c, fx, fy, w, cost) || (w_alt > 0 && add_cand(s, c, fx, fy, w_alt, cost))) {
+  if (add_cand(rec, s, fx, fy, px, py, w, clamped, cost, &t) ||
+      (w_alt > 0 && add_cand(rec, s, fx, fy, px, py, w_alt, clamped, cost, &t))) {
     st->ambiguous++;
     set_state(s, E_AMBIGUOUS);
   }
+  cost[VCC_REC_LINES] += t.n;
 }
 
 /* RTPS/RTPT on the register file: PsyCross's GTE_operator (fast_render=0)
@@ -492,7 +584,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   uint32_t et[4];     /* and its slot's tag */
   unsigned en[4];     /* how many */
   uint32_t ref[4], persp = VREF_PERSP;
+  const Table *ptab = NULL; /* the table its vertices were looked up in (the same for each) */
   int i, j, c, best_c = -1, pick[4] = {0, 0, 0, 0}, try_pick[4] = {0, 0, 0, 0};
+  int inv = 0, clamp = 0; /* a vertex's key invalid; a clamped vertex found (#178) */
   float best = 4.0f; /* a polygon's depths are never 4x apart */
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
@@ -523,9 +617,14 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     const Table *tab;
     const int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
     const uint32_t tag = k >= 0 ? tab->s[k].tag : 0;
+    ptab = tab;
     ref[i] = VREF_POLY;
     if (k >= 0 && T_STATE(tag) == E_VALID && T_N(tag)) {
       touch(&t, (size_t)k * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * T_N(tag));
+      if (tab->s[k].c[0].dy == FAR_MARK && !(tag & T_MULTI)) /* its position, below */
+        touch(&t, offsetof(Table, far) + (size_t)(uint16_t)tab->s[k].c[0].dx * sizeof tab->far[0],
+              sizeof tab->far[0]);
+      clamp |= (tag & T_CLAMP) != 0;
       e[i] = tab->s[k].c;
       et[i] = tag;
       en[i] = T_N(tag);
@@ -541,9 +640,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       work[3]++;
       if (k < 0)
         st->miss_none++;
-      else if (T_STATE(tag) == E_INVALID)
+      else if (T_STATE(tag) == E_INVALID) {
         st->miss_invalid++;
-      else
+        inv = 1;
+      } else
         st->miss_ambiguous++;
     }
     cost[VCC_LOOK_LINES] += t.n;
@@ -609,10 +709,20 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     persp = 0;
   if (persp)
     st->persp++;
+  else if (inv) {
+    st->fallback++;
+    work[VCW_FALLBACK]++;
+  }
+  if (clamp) {
+    st->clamp_polys++;
+    st->clamp_persp += persp != 0;
+  }
   for (i = 0; i < n; i++) {
     uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
+    if (et[i] & T_CLAMP)
+      r |= VREF_CLAMP;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
   /* The walk says where the answers go (D152): g_vcache_side at the
@@ -630,10 +740,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
       if (e[i]) {
-        if (!(et[i] & T_MULTI)) {
-          c[i].dx = e[i][0].dx;
-          c[i].dy = e[i][0].dy;
-        }
+        if (!(et[i] & T_MULTI))
+          cand_pos(ptab, &e[i][0], &c[i].dx, &c[i].dy);
         if (persp)
           c[i].w = e[i][pick[i]].w;
       }
@@ -656,6 +764,7 @@ static int s_ot_done; /* psx_vcache_enable: mode != 0 */
 static void pres_next(void) {
   Rec *const r = &s_rec[VC_PRES];
   r->count = 0;
+  r->nfar = 0;
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
     r->gen = 1;
@@ -673,6 +782,7 @@ static void done_hook(void) {
     return;
   }
   r->count = 0;
+  r->nfar = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
     r->tab = r->tab == &s_tab0 ? s_tab1 : &s_tab0;
   if (++r->gen == VC_GEN_END) { /* came round: no old entry may look current */
@@ -710,8 +820,7 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
     return 0;
   if (d >= T_N(t->s[slot - 1].tag))
     d = 0;
-  out->dx = t->s[slot - 1].c[0].dx; /* the same for every polygon */
-  out->dy = t->s[slot - 1].c[0].dy;
+  cand_pos(t, &t->s[slot - 1].c[0], &out->dx, &out->dy); /* the same for every polygon */
   out->w = t->s[slot - 1].c[d].w;
   return 1;
 }
