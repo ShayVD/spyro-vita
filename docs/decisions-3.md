@@ -396,3 +396,22 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **The GPU's own picture** (`CAPTURE=1`, `owner60`'s lines at 6,900, 7,200, 7,800 and 8,400; `runtime/autopilot/runs/auto-183-1/capture`) changes only on the close subdivided walls and ground, with no cracks.
   - **`owner60`, vblanks 6,900–9,000:** no-entry 201,814 → 129,236; polygons found whole 93.95 → 96.10%; `vc.misses` −26.3% (−25.5% on `wobble60`). `gl.draws` is the same; `vc.lines` +9–10% and `vc.div` +3–4%.
 - **Left:** moby shadows' nudged corners (~33k on the host route), the sky's portal clipping (~28k), glow rims (~18k) and the world's split midpoints (~500) are each moved in screen space by their renderer, which has to hand over the derived point (#189). 2D polygons stay as they are. A by-construction path, where each renderer hands every vertex to its primitive with no lookup, would be about 15 files and 2–3 weeks; it waits for the owner.
+
+### D177. The sky gives the vertex cache only the vertices its drawn triangles use (#186)
+
+- **Why:** the owner's 60 Hz hardware log shows the sky at 2.5–3.3 ms a vblank. That figure counts `SkyDraw` twice: `prof_draw.c` charges `sky` for both `func_80050BD0` and `func_8004EBA8`, which the first calls. The cost comes from the wobble fix: the hardware runs ap1 and ap2 (D172) give 0.46 → 1.21 ms with it on.
+- **Measured** (Vita3K, `owner60`, a temporary timing build):
+  - Projecting with the vertex-cache hook is 87% of `SkyDraw`, and the hook's record is about 94% of that: 18–33 µs a call for the projection alone against 367–665 µs with the hook.
+  - Primitive building is 3%. The GL side is one native chain of untextured F3/G3 records, so it stays as it is.
+- **Chosen:**
+  - Pass 2 projects without the hook.
+  - After the drop test, it records only the vertices used by triangles not wholly off one side. They go in vertex order, through `g_psyxRtpValueHook`, with the register array built once a draw.
+  - Records of dropped sectors and of vertices used only by culled triangles were never looked up.
+  - Pass 1's sector-centre records stay. Dropping them changed 9 lookups on the host route, where world vertices matched a centre's key.
+- **Checked:**
+  - Native build, `noassets` and the gate pass.
+  - The five routes' replay shots are the same as `base-5cdfccb`, and seven `CAPTURE=1` window grabs on `owner60` are byte-identical.
+  - On the host route, every lookup count is the same, and `--fast-render-check` and `--native-draw-check` show 0 differ.
+  - `owner60` (6,600–9,000): vc.proj −6.4%, vc.div −4.1%, vc.probe −3.9%, vc.lines −3.8%; nothing worse.
+  - The sky's Vita3K time is about −35% (two pairs of timing runs; 1.59–1.68 → 1.05–1.09 ms, still double-counted).
+- **Open:** a hardware run, and fixing the double count in `prof_draw.c`. The vertex cache's per-record cost is most of every renderer's cost with the fix on: env 0.81 → 2.07 ms on hardware (ap1/ap2).
