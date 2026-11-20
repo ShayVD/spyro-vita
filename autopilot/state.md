@@ -254,3 +254,4 @@ continue.
 - 2026-11-20T12:26Z phase 8: tick - #178 committed (clamped vertices drawn at their exact position), running its checks; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T12:47Z phase 8: #178 reported (clamped vertices exact; owner60 fallbacks 4,068 -> 621, found 93.30 -> 93.36%); gate job: GPU window captures (CAPTURE=1) base vs #178 on wobble60's lines; filed #183 (no-entry vertices, ~75% of misses) and #184 (stats race); Vita3K: 0
 - 2026-11-20T12:48Z phase 8: worker #180 started (draw distance 2x); #178 gate waits for the GPU captures; Vita3K: 0
+- 2026-11-20T12:52Z phase 8: tick - #178 captures: base done, #178's running; #180 working (no commit yet); Vita3K: 0
