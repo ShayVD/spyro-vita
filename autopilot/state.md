@@ -14,7 +14,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 177,
       "branch": "auto/177-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-177",
-      "pids": [],
+      "pids": [
+        33288
+      ],
       "started_at": "2026-11-20T11:05:07Z",
       "files": [
         "src/platform/vita/picture.c",
@@ -228,3 +230,4 @@ continue.
 - 2026-11-20T11:03Z phase 8 again (owner, 2026-11-20, after D172's merge and hardware session): filed #177-#181 (PSX WOBBLE row, clamped vertices, hook cost, draw distance 2x, remaining misses); route and benchmark owner60 added; Vita3K: 0
 - 2026-11-20T11:05Z phase 8: round 9 started (owner's issues); baseline job base-3ba4fd2 running; worker #177 started (one worker: other sessions' containers running); Vita3K: 0
 - 2026-11-20T11:27Z phase 8: baseline base-3ba4fd2 built (wobble60 needed a rerun: Vita3K crash); pause-ws-wobble's title shots differed from merge-m1 by interp_budget skips (Vita3K timing, 60 HZ default since D150): title, pause-ws, pause-ws-wobble now pin interp_budget=0, re-running; Vita3K: 1 crash
+- 2026-11-20T11:32Z phase 8: tick - #177 working (no commit yet, running Vita3K routes), baseline re-run queued behind it on the Vita3K lock; one worker (other sessions' containers); Vita3K: 0
