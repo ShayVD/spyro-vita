@@ -9,30 +9,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 180,
-      "branch": "auto/180-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-180",
-      "pids": [],
-      "started_at": "2026-11-20T12:48:10Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/moby_cull_hand.c",
-        "src/platform/vita/picture.c"
-      ],
-      "agent": "a86e929aa0da905c3"
-    }
-  ],
+  "workers": [],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
     "commit": "ddbb408760d919b658e44525376bd6946c3b7d80"
   },
   "hardware_runs": [
-    {"date": "2026-11-20 13:49", "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt from the Vita (read only)", "log": "logs/owner-20261120-1349/"},
-    {"date": "2026-11-20 13:45", "what": "owner asked for the current build to test by hand: autopilot b604db4 (#177 PSX WOBBLE row, #178 edge vertices) eboot installed, READBACK IDENTICAL (SHA-1 9eb4795b), left on the Vita", "log": "logs/hw-put-b604db4.out"},
+    {
+      "date": "2026-11-20 13:49",
+      "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt from the Vita (read only)",
+      "log": "logs/owner-20261120-1349/"
+    },
+    {
+      "date": "2026-11-20 13:45",
+      "what": "owner asked for the current build to test by hand: autopilot b604db4 (#177 PSX WOBBLE row, #178 edge vertices) eboot installed, READBACK IDENTICAL (SHA-1 9eb4795b), left on the Vita",
+      "log": "logs/hw-put-b604db4.out"
+    },
     {
       "date": "2026-11-20",
       "commit": "37c3a95",
@@ -134,7 +127,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 5,
+    "filed": 8,
     "investigated": true
   },
   "rounds_without_gain": 0,
