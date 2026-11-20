@@ -479,8 +479,10 @@ static void service(void) {
 
 void savestate_point(void) {
   /* a state holds PsyCross's GPU state: an OT walk still running finishes
-   * first (D71) */
-  if (s_req_slot || g_savestate_tick_hook)
+   * first (D71). Only for a save or load: the tick hook's own GPU calls
+   * join where they post (gpu_thread.c's reserve), and joining every tick
+   * here, right after the last tick's DrawOTag, left the walk no overlap */
+  if (s_req_slot)
     psx_walk_join();
   service();
   if (g_savestate_tick_hook)
