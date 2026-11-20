@@ -9,7 +9,26 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 177,
+      "branch": "auto/177-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-177",
+      "pids": [],
+      "started_at": "2026-11-20T11:05:07Z",
+      "files": [
+        "src/platform/vita/picture.c",
+        "src/platform/vita/main.c",
+        "src/platform/vita/vita.h",
+        "src/platform/vita/menu.c",
+        "src/platform/vita/bench.c",
+        "tools/vita/hw.game",
+        "tools/vita/vita3k_run.sh",
+        "README.md"
+      ],
+      "agent": "a0ba410fe3b767c58"
+    }
+  ],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
@@ -106,16 +125,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 8,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ddbb408",
-    "base_commit": "ddbb408760d919b658e44525376bd6946c3b7d80",
-    "started_at": "2026-11-20T04:13:52Z",
-    "filed": 0,
+    "n": 9,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
+    "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
+    "started_at": "2026-11-20T11:05:39Z",
+    "filed": 5,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "baseline",
+    "issue": 0,
+    "step": 1,
+    "pid": 52762,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
+    "started_at": "2026-11-20T11:04:47Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -200,3 +226,4 @@ continue.
 - 05:14Z phase 9: round 8 investigated whether autopilot's changes reach the CI VPK build (.github/workflows build.yml runs tools/ci/build_vpk.sh, unchanged; the new perfcount source goes through the same CMake the native gates built): nothing filed. No gain: rounds_without_gain 3 of 3.
 - 05:15Z phase 9: stop-check printed stop (phase 9, no workers, 3 rounds without a gain, only #175 open and it needs the owner). Final report: autopilot/report.md. Loop ended.
 - 2026-11-20T11:03Z phase 8 again (owner, 2026-11-20, after D172's merge and hardware session): filed #177-#181 (PSX WOBBLE row, clamped vertices, hook cost, draw distance 2x, remaining misses); route and benchmark owner60 added; Vita3K: 0
+- 2026-11-20T11:05Z phase 8: round 9 started (owner's issues); baseline job base-3ba4fd2 running; worker #177 started (one worker: other sessions' containers running); Vita3K: 0
