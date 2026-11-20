@@ -62,7 +62,7 @@ For comparison, the offset model below has to change every use of the 114 pointe
 Each one is done only as its checks say. Every run on a PS4 or PS5 needs the owner's explicit yes first, as on the Vita.
 
 - **P0 (this, done):** measure, research, decide (D173).
-- **P1: linux64 host build.** An x86-64 Linux host build with clang, run under `qemu-x86_64` in the host container, as linux32 runs under `qemu-i386` (new packages in `tools/docker/host.Dockerfile`: clang, the amd64 libc cross, `qemu-user`'s x86-64). `P32` everywhere, the arena and game stack in `.bss`, the trial's errors fixed, the region tables 64-bit clean. **Done when** `tools/host_checks.sh` on linux64 and linux32 (native-mem) gives byte-identical traces, shots, audio and memory cards over the whole-game tour and routes A and B, and linux32's and the Vita's binaries are unchanged.
+- **P1: linux64 host build (done, D174).** An x86-64 Linux host build with clang, run under `qemu-x86_64` in the host container, as linux32 runs under `qemu-i386` (new packages in `tools/docker/host.Dockerfile`: clang, the amd64 libc cross, `qemu-user`'s x86-64). `P32` everywhere, the arena and game stack in `.bss`, the trial's errors fixed, the region tables 64-bit clean. **Done when** `tools/host_checks.sh` on linux64 and linux32 (native-mem) gives byte-identical traces, shots, audio and memory cards over the whole-game tour and routes A and B, and linux32's and the Vita's binaries are unchanged.
 - **P2: PS4 toolchain and a hardware spike.** OpenOrbis on the Mac (or its Docker set-up on Linux), a test fpkg that prints where its image, `.bss`, a `.bss` array and a thread's `.bss` stack are, and tries `sceKernelMapFlexibleMemory` at 0x80000000 for the record. Needs the owner's PS4 (model, firmware, HEN) and a yes. **Done when** the addresses are logged from hardware.
 - **P3: PS4 platform layer.** `src/platform/ps4/`: Piglet GLES2 for the renderer (`gpu_gl.c`'s vitaGL calls to plain GLES2 + EGL; shaders compiled offline if a compiler we may use exists, else the player's own Piglet modules, as 2Ship does), `scePad` and `sceAudioOut`, the disc image or Store copy from `/data/spyro/`, saves next to it. Boots to the title in an emulator first if one is good enough (shadPS4 runs homebrew fpkgs?), then on hardware.
 - **P4: whole game on hardware**, at 60 fps interpolated, 1080p 16:9, the options menu working with the DualShock 4.
@@ -73,4 +73,4 @@ Each one is done only as its checks say. Every run on a PS4 or PS5 needs the own
 
 - The PS4 and PS5 to test on: model, firmware, HEN (GoldHEN version; etaHEN on the PS5).
 - A title ID for the fpkg, and which icon and background art we may use.
-- Whether P1's Docker packages (clang, the amd64 libc cross, `qemu-x86_64`) are fine to add.
+- ~~Whether P1's Docker packages (clang, the amd64 libc cross, `qemu-x86_64`) are fine to add.~~ Approved 2026-11-20 (D174).

@@ -35,7 +35,7 @@
 
 extern char D_8006FCF4[];   /* ColSphere's contact list (a shared work area) */
 extern int D_80075774;      /* Contacts in that list after the last ColSphere */
-extern Moby *D_800757E4;    /* The moby hit last, NULL for the terrain */
+extern Moby *P32 D_800757E4;    /* The moby hit last, NULL for the terrain */
 extern Vector3D D_80077858; /* The point ColSphere pushed away from */
 
 /* The mips2c unit's entries, linked as <name>_gen for A/B tests and the
@@ -228,7 +228,7 @@ static inline int AxisOf(const Vector3D *v, int axis) { return axis == 0 ? v->x 
 #define MAX_CHAINS 4
 
 static int NearMobyChains(int x, int y, Moby **heads) {
-  Moby **grid = (Moby **)((u_char *)g_MobyCollisionChain + 0x1000);
+  Moby *P32 *grid = (Moby *P32 *)((u_char *)g_MobyCollisionChain + 0x1000);
   int cell = ((u_int)x >> 13) + (((u_int)y >> 13) << 5);
   int dx = x & 0x1000 ? 1 : -1, dy, n = 0;
   if (grid[cell])
@@ -1182,7 +1182,7 @@ static void MobyPushOut(Vector3D *pos, Vector3D d, int dist2, int limit) {
 #if !M2C_ColMoby
 static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int pApplyingDamage, Moby *pIgnoreMoby,
             int arg5) {
-  Moby **grid = (Moby **)g_MobyCollisionChain, **slots[MAX_CHAINS];
+  Moby *P32 *grid = (Moby *P32 *)g_MobyCollisionChain, *P32 *slots[MAX_CHAINS];
   Moby *hit = NULL;
   int x = pPos->x, y = pPos->y, nslots = 0, col, row, ncol, nrow, i;
   if ((x | y | pPos->z) < 0)

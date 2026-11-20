@@ -1,4 +1,4 @@
-# Host debug build (linux32)
+# Host debug build (linux32, and linux64)
 
 The 32-bit Linux build runs the whole game headless in Docker: virtual vblanks, a pad script, PNG screenshots, gdb. Decisions D14–D19 explain the choices.
 
@@ -77,6 +77,29 @@ BIN=build/linux32-native/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 Its runs must give the default build's files byte for byte. `-DSPYRO_ARENA_AT=0x52F81000` (any page) puts the block at that address instead of the heap's. `--poke`, `--peek` and pad-script `poke:` still take PS1 addresses, in the labels or overlay space. `--replay` and `--fast-render 0` need the default build. Native save states are format 2 (D106).
 
 `-DSPYRO_MEM_AUDIT=ON` (on the default build) lists, at exit, every site that decoded a packed address (an OT link, a frame pointer, a subdivision header) outside overlay space, with the PS1 addresses it found: the things the native block would have to hold. Over the host checks it finds only the OT terminator, 0x8006BBE0 (D106).
+
+## linux64: the PS4's data model on the host (D173, D174)
+
+`-DSPYRO_HOST=linux64` builds the same headless host (`src/platform/linux32`) for x86-64 with clang 19, the low-image model of `docs/ps4-plan.md` (P1): the decomp's pointer fields and pointer labels are `P32` (`__ptr32 __uptr`, `src/compat/p32.h`, forced into every unit), so the game's memory keeps its PS1 layout; the arena (`arena.c`) and the game thread's stack (`low_image.c`) are `.bss` arrays of a static, non-PIE executable at 0x400000, all below 2 GB. Native memory is on (and required). The binary runs under `qemu-x86_64` (the host image's `qemu-user`); `tools/host_checks.sh` sees an x86-64 binary and runs it so:
+
+```bash
+tools/tc cmake -S . -B build/linux64 -G Ninja -DSPYRO_HOST=linux64 -DCMAKE_TOOLCHAIN_FILE=cmake/linux64.toolchain.cmake
+tools/tc cmake --build build/linux64 --target spyro
+tools/tc qemu-x86_64 build/linux64/src/platform/linux32/spyro --disc disc/files --frames 2600 --shot-every 60 --shot-dir logs/runN-x
+BIN=build/linux64/src/platform/linux32/spyro tools/host_checks.sh PREFIX
+```
+
+Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. At start-up it refuses to run if the image, the arena or the game stack is above 2 GB (`SPYRO_LOW_IMAGE_REPORT=1` prints where they are). Nothing of the host's may be below 4 GB, so a host pointer that reaches a `P32` field or a `u32` crashes instead of aliasing: a constructor reserves every free page below 4 GB, and `malloc` and its family are `low_image.c`'s, one `mmap` per block (static glibc's own heap starts after the image, low, before any constructor runs).
+
+What the 64-bit text needs, and the checks for it:
+
+- `patches/spyro-1-ptr32/0001` is generated, never edited: `python3 tools/ps4/p32_patch.py build/<dir>/patched/spyro-1 --out patches/spyro-1-ptr32/0001-p32-pointer-fields.patch`, run on a tree patched with every folder before it (`--list` prints each change). It marks pointer fields, pointer labels and the decomp's `T **`, turns PsyQ's 32-bit `long`/`u_long` data into `int`/`u_int`, and writes the address-initialised tables as `P32_INIT` (clang 19 crashes on a `__ptr32` static initializer). It never adds a line before the end of a file, so the 32-bit builds' code doesn't move. `0002` is by hand (`PATCH_POINTER`'s cast).
+- The overlays' 13 function pointers (`overlay_pointers.h`) are linux64's own 8-byte globals (`src/game/p32_fnptrs.c`; their PS1 slots renamed by `data2s.py --host-label`): a call through a `__ptr32` function pointer miscompiles.
+- `python3 tools/ps4/p32_lint.py tools/layout/psx.map src/game src/platform build/linux64/patched/spyro-1`: every pointer declared at file scope with a PS1 label's name has `P32` (0 found).
+- `tools/ps4/layout64.py`: every struct in both builds' DWARF has the same size and member offsets, but the host's own, listed with a reason in `tools/ps4/layout64_host_only.txt`:
+  `tools/tc sh -c 'i686-linux-gnu-readelf --debug-dump=info build/linux32-native/src/platform/linux32/spyro > build/layout64/l32n.txt; x86_64-linux-gnu-readelf --debug-dump=info build/linux64/src/platform/linux32/spyro > build/layout64/l64.txt'`, then `python3 tools/ps4/layout64.py build/layout64/l32n.txt build/layout64/l64.txt --host-only tools/ps4/layout64_host_only.txt`.
+- `tools/tc python3 tools/ps4/cast_audit.py build/linux64` (configured with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`) lists every pointer/integer cast, to read: exact for the game's addresses, wrong only for the host's.
+- clang 19 bugs to keep away from: a call through a `__ptr32` function pointer (wrong code or a crash), a `?:` mixing a `P32` and a normal pointer (it hangs: compiles run under `timeout 300`), a `P32` static initializer with an address (a crash).
 
 ## Draw distance (D49)
 

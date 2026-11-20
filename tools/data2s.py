@@ -52,6 +52,7 @@ psx_addr = {}    # --map: symbol -> PS1 address
 psx_images = []  # (PS1 address, image label, end label, PS1 span)
 psx_labels = itertools.count()
 image_chunks = []  # --image: (PS1 address, label, lines)
+host_labels = set()  # --image --host-label: slots renamed p32slot_NAME (D174)
 
 
 def convert(path, root, allow, problems, only=None, image=False):
@@ -85,7 +86,8 @@ def convert(path, root, allow, problems, only=None, image=False):
                     continue
                 if label not in psx_addr:
                     raise SystemExit(f"{path}: {label} is not in the map")
-                full = out = [f".globl {label}", f".type {label}, %object", f"{label}:"]
+                name = "p32slot_" + label if label in host_labels else label
+                full = out = [f".globl {name}", f".type {name}, %object", f"{name}:"]
                 image_chunks.append((psx_addr[label], label, out))
                 continue
             close_image()
@@ -205,8 +207,12 @@ def main():
                     help="--image: where the image ends (main_BSS_END)")
     ap.add_argument("--extra", action="append", default=[],
                     help="--image: NAME=ADDR, a symbol at a PS1 address in a hole")
+    ap.add_argument("--host-label", action="append", default=[],
+                    help="--image: NAME's slot is renamed p32slot_NAME and NAME is the C's own "
+                         "(linux64's function pointers, D174)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
+    host_labels.update(a.host_label)
     allow = set()
     if a.allow:
         for line in open(a.allow):

@@ -47,6 +47,16 @@ if(SPYRO_NATIVE_MEM)
   # seed named in its hole (rand_psyq.c).
   set(S1_DATA_LAYOUT --map "${SPYRO_PSX_MAP}" --image --extra D_80075AC0=0x80075AC0)
   set(S1_DATA_LAYOUT_DEPS "${SPYRO_PSX_MAP}")
+  # linux64 (D174): the overlays' function pointers (overlay_pointers.h) are
+  # the C's own 8-byte globals (src/game/p32_fnptrs.c), not their 4-byte
+  # slots: a call through a __ptr32 function pointer miscompiles.
+  if(SPYRO_HOST STREQUAL "linux64")
+    foreach(n g_SpawnMoby g_UpdateMoby g_FlightResultsUpdate D_8007567C g_SpawnParticle
+              g_UpdateParticle D_800757A0 D_800758A8 D_8007574C D_800758D8 D_80075694
+              D_800757A8 D_800758C4)
+      list(APPEND S1_DATA_LAYOUT --host-label ${n})
+    endforeach()
+  endif()
 elseif(SPYRO_PSX_LAYOUT)
   set(S1_DATA_LAYOUT --map "${SPYRO_PSX_MAP}")
   set(S1_DATA_LAYOUT_DEPS "${SPYRO_PSX_MAP}")

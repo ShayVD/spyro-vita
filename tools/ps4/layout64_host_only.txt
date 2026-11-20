@@ -1,0 +1,72 @@
+# Types whose layout may differ between linux32 and linux64 (tools/ps4/layout64.py,
+# D174): the host's own, which hold host pointers and never lie in the game's
+# memory. Name, then why. Anything else must match byte for byte.
+# hand C working state (locals of the renderers and collision code)
+Faces          pete_render_hand.c: the face loop's state (colour table pointer)
+LitCtx         moby_hand.c: the lit face loop's state (matrix pointer)
+RecState       moby_hand.c: a record's set-up (anim/frame pointers)
+Stream         pete_render_hand.c: a vertex stream cursor
+VtxStream      moby_hand.c: a vertex stream cursor
+SphereQuery    collision_hand.c: ColSphere's query (position pointer)
+FaceCtx        moby_hand.c: the face loop's state (table pointers)
+Em             native_draw.c: the walk's state while it emits
+Tick60State    tick60: the 60 Hz rules' own state (host pointers)
+# checks and the presenter's bookkeeping (src/game/pres, *_check.c)
+Frame          pres_check.c: a recorded frame's word buffer
+Seq            native_draw_check.c: a packet sequence
+Walked         native_draw_check.c: a walk's vertices
+PresJob        present.c: the presenter's job
+PresSnapLabel  pres: the snapshot's label table
+PresentCapture present.c: capture hooks
+PresentPresOut present.c: the presenter's output hooks
+NdCursor       native_draw.c: a pool cursor
+NdPool         native_draw.c: a pool (host buffer)
+# the platform layer
+HostOpts       linux32 main.c: options
+Area           linux32 pres_watch.c: a watched area (host copies)
+CdFile         libcd.c: an open file (FILE pointer)
+Collect        pbp.c: the directory walk's collector
+Deferred       walk.c: a deferred call (function pointer)
+PadScript      linux32 pad.c: the pad script
+Inflate        png/zlib reader
+Lzrc           pbp.c: the Store copy's decompressor
+PsxCdIo        libcd: I/O hooks
+PsxCdLoc       libcd: an open file's place
+PsxCdXaLoc     libcd: an XA stream's place
+PsxCdnStats    cdnative.c: statistics
+PsxGpuCheck    gpu_walk: check hooks
+PsxGpuOut      gpu_walk: output hooks
+PsxGpuSplit    gpu_walk: a draw split (debug text pointer)
+PsxGpuSplitState gpu_walk: a split's saved state
+PsxGpuSubst    gpu_walk: substitutions
+PsxGpuWalk     gpu_walk: the walker's state
+PsxPbp         pbp.c: the Store copy
+PsxPbpStats    pbp.c: statistics
+PsxRegion      psx_region.h: a release's description (strings)
+PsxStateIO     save states: I/O buffer
+PsxVcacheFrame vcache.c: a cached frame
+PsxWalkStats   walk.c: statistics
+PsxWalkThread  walk.c: the walk thread
+RegionBlock    region_data.h: the map's blocks (host tables)
+RegionFill     region_data.h: the map's fills
+RegionMap      region_data.h: the map
+Table          cdimage.c: the directory table
+VpkDisc        vita-port-kit: the disc image
+VpkDiscEntry   vita-port-kit: a directory entry
+VpkDiscSearch  vita-port-kit: a search
+VpkMenuRow     vita-port-kit: a menu row
+VpkSha1        vita-port-kit: SHA-1 state
+# libc
+_IO_FILE       libc
+FILE           libc
+__pthread_mutex_s libc
+__sigval_t     libc
+dirent         libc
+pthread_attr_t libc
+pthread_mutex_t libc
+sem_t          libc
+sigaction      libc
+siginfo_t      libc
+sigval         libc
+stat           libc
+timespec       libc
