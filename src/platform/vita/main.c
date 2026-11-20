@@ -102,8 +102,9 @@
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=5 (2 at D45; 3: D68; 4: D150;
- *                       5: D153, tex_filter= and dynres= below))
+ *                       with config_version=6 (2 at D45; 3: D68; 4: D150;
+ *                       5: D153, tex_filter= and dynres= below; 6: #177,
+ *                       wobble= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -254,12 +255,25 @@
  *                       decisions D39). A developer's key since D153 (the
  *                       menu's TEX FILTER row is gone): read only with
  *                       config_version=5 in the file, as dynres= is
+ *       wobble=1        with gpu=1, the PS1's wobble: persp and subpixel
+ *                       below both off. Default 0 (#177, the owner's
+ *                       decision): both on, no wobble. The menu's PSX WOBBLE
+ *                       row, which replaced their two rows (picture.c)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
- *                       (persp, subpixel, res, draw_distance are also
- *                       options menu rows: picture.c, D48)
+ *                       (both on by default since #177; developers' keys
+ *                       since then: a line wins over wobble= for its own
+ *                       half. An old menu's file, below config_version=6
+ *                       with no wobble= line, has both: persp=1 subpixel=1
+ *                       is read as wobble off, and persp=0 subpixel=0, the
+ *                       old default the menu wrote, as today's default,
+ *                       wobble off too; neither pair is taken, and the
+ *                       menu's next save drops it. Any other mix there is a
+ *                       developer's and is taken as written)
+ *                       (wobble, res, draw_distance are also options menu
+ *                       rows: picture.c, D48)
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
@@ -333,6 +347,7 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
+                        .persp = 1, .subpixel = 1, .wobble = 0, /* #177: PSX WOBBLE off, the fix on */
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
@@ -443,14 +458,17 @@ const char *g_vita_config_stale[4];
 int g_vita_config_pal60;
 /* tex_filter= and dynres= lines in a file older than config_version=5: the
  * rows the menu had until D153 wrote them, so they aren't taken and the
- * menu's save drops them (NULL-ended) */
-const char *g_vita_config_rows_gone[3];
+ * menu's save drops them; and an old menu's persp= and subpixel= lines,
+ * the rows PSX WOBBLE replaced (#177) (NULL-ended) */
+const char *g_vita_config_rows_gone[5];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
 static void read_config(void) {
   char line[512];
-  int version = 1, interp_line = 0, i;
+  int version = 1, version_max = 1, interp_line = 0, wobble_line = 0, i;
+  /* #177: persp= and subpixel= lines, taken after the loop over wobble= */
+  int pic_line[2] = {0, 0}, pic_value[2] = {0, 0};
   /* D153: the two keys whose menu rows are gone; taken after the loop, once
    * the file's version is known */
   static const char *const k_gone_keys[2] = {"tex_filter", "dynres"};
@@ -476,6 +494,8 @@ static void read_config(void) {
       *--e = 0;
     if (!strcmp(line, "interp"))
       interp_line = 1; /* D44, below */
+    if (!strcmp(line, "wobble"))
+      wobble_line = 1; /* #177, below */
     if (vita_menu_load(line, v))
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
     else if (!strcmp(line, "pal50"))
@@ -486,6 +506,11 @@ static void read_config(void) {
       i = strcmp(line, k_gone_keys[0]) != 0;
       gone_line[i] = 1;
       gone_value[i] = atoi(v);
+    }
+    else if (!strcmp(line, "persp") || !strcmp(line, "subpixel")) {
+      i = strcmp(line, "persp") != 0;
+      pic_line[i] = 1;
+      pic_value[i] = atoi(v) != 0;
     }
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
@@ -611,8 +636,11 @@ static void read_config(void) {
       ; /* hang_dump=, hang_test= (watchdog.c, D73) */
     else if (!strcmp(line, "vdm_ring"))
       ; /* read and applied by gpu_gl.c before vglInit* (vdm_ring_kb, D166) */
-    else if (!strcmp(line, "config_version"))
+    else if (!strcmp(line, "config_version")) {
       version = atoi(v);
+      if (version > version_max)
+        version_max = version; /* #177, below */
+    }
     else
       vita_log("config: unknown key %s", line);
   }
@@ -649,6 +677,36 @@ static void read_config(void) {
         vita_log("config: %s=%d without config_version=5 is from the menu's %s row, gone "
                  "since D153: off", k_gone_keys[i], gone_value[i], k_gone_rows[i]);
     }
+  }
+  /* PSX WOBBLE (#177): one row for the PS1's wobble, perspective-correct
+   * textures and sub-pixel vertices together, off by default (both on).
+   * wobble=1 is the PS1's look, both off. persp= and subpixel= stay as
+   * developers' keys (the test tools and fps-runs files write them): a line
+   * wins over wobble= for its own half, wherever it is in the file. An old
+   * menu's file (config_version below 6 in every config_version line, and no
+   * wobble= line: the tools write config_version=6 or wobble=1 in their base
+   * lines, so a run file's own config_version=5 after them doesn't count)
+   * has both lines, as the menu wrote every row: persp=1 subpixel=1 is the
+   * fix, wobble off, and persp=0 subpixel=0 was the default before #177, so
+   * it is read as today's, wobble off too. Either pair isn't taken and goes
+   * at the menu's next save. Any other mix in an old file (one line, or 1 and
+   * 0) is a developer's: kept, taken as written. */
+  g_vita_opts.persp = g_vita_opts.subpixel = !g_vita_opts.wobble;
+  if (!wobble_line && version_max < 6 && pic_line[0] && pic_line[1] &&
+      pic_value[0] == pic_value[1]) {
+    g_vita_config_rows_gone[ngone++] = "persp";
+    g_vita_config_rows_gone[ngone++] = "subpixel";
+    vita_log("config: persp=%d subpixel=%d without config_version=6 is from the menu's two rows "
+             "before PSX WOBBLE (#177): %s",
+             pic_value[0], pic_value[1],
+             pic_value[0] ? "PSX WOBBLE OFF" : "the old default, read as today's: PSX WOBBLE OFF");
+  } else {
+    if (pic_line[0])
+      g_vita_opts.persp = pic_value[0];
+    if (pic_line[1])
+      g_vita_opts.subpixel = pic_value[1];
+    if (g_vita_opts.persp == g_vita_opts.subpixel)
+      g_vita_opts.wobble = !g_vita_opts.persp; /* the row shows what is drawn */
   }
   /* D44's diagnostic 60 fps values, no animation blending (2) and camera
    * only (3), left the menu with D148: either is INTERPOLATED now. The menu
