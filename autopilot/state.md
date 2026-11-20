@@ -23,20 +23,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/present.c"
       ],
       "agent": "a49b6c8d3d051dccb"
-    },
-    {
-      "issue": 194,
-      "branch": "auto/194-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-194",
-      "pids": [],
-      "started_at": "2026-11-20T21:00:00Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/render_ctx_names.h",
-        "src/game/render_ctx.c"
-      ],
-      "agent": "acfc0b389626d8ea7"
     }
   ],
   "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
