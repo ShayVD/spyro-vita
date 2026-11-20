@@ -11,17 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 9,
   "workers": [
     {
-      "issue": 170,
-      "branch": "auto/170-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-170",
-      "pids": [],
-      "started_at": "2026-11-20T02:21:16Z",
-      "files": [
-        "tools/vita/fps-runs/"
-      ],
-      "agent": "af1cdcb7fd2918b58"
-    },
-    {
       "issue": 171,
       "branch": "auto/171-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-171",
@@ -205,3 +194,4 @@ continue.
 - 01:47Z phase 8: round 4 investigated gl.programs (95/frame on wobble60): every bind already goes through gs_use_program's dedup (#169), so the rest are real switches between joined draws' formats and kinds; cutting them needs reordering draws (blend order): not filed. Round 4 ended without a gain: rounds_without_gain 2 of 3. Round 5 started.
 - 02:20Z phase 8 -> 9: round 5 investigated ot.packets (wobble60 463 = two pictures a tick x 232, the cost of 60 fps itself): nothing filed, third round without a gain: phase 8's exit. Phase 9 started (round 6): filed #170 (hardware run configs for the six pending measurements), #171 (stale comments), #172 (cache cost counters into vpk-perfcount), #173 (host ./save warning).
 - phase 9: workers on #170, #171, #172, #173.
+- 02:36Z phase 9: merged #170 (hardware run configs AP1-AP6b, parsed against hw_mock; no Vita touched). The hardware session is ready when the owner says yes.
