@@ -9,26 +9,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 169,
-      "branch": "auto/169-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-169",
-      "pids": [],
-      "started_at": "2026-11-19T23:56:37Z",
-      "files": [
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_rt.h",
-        "docs/decisions-2.md"
-      ],
-      "agent": "a288dfd2f5e8ddf23",
-      "reported": true
-    }
-  ],
-  "last_good": "c713ab2a8933bf0f2d8880a266296032c61e0233",
+  "workers": [],
+  "last_good": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
-    "commit": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
+    "commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4"
   },
   "hardware_runs": [],
   "perf_candidates": [
@@ -81,23 +66,16 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 12
   },
   "round": {
-    "n": 2,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-bbc36b1",
-    "base_commit": "bbc36b13e6e2608bdbe098c66255ed2ac6c877ce",
-    "started_at": "2026-11-19T23:55:09Z",
-    "filed": 1,
+    "n": 3,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
+    "base_commit": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
+    "started_at": "2026-11-20T00:44:03Z",
+    "filed": 0,
     "investigated": false
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 169,
-    "step": 1,
-    "pid": 7716,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-169-1.log",
-    "started_at": "2026-11-20T00:33:27Z"
-  },
+  "job": null,
   "batch": null
 }
 ```
@@ -163,3 +141,4 @@ continue.
 - 23:55Z phase 8: merged #165 (docs). Round 1 ended with a gain: wobble60 vc.proj/polys/verts/misses -50% (base-5eb8423, the first wobble60 counters, vs base-bbc36b1), none worse; rounds_without_gain 0. last_good = head (no src/cmake/kit change since bbc36b1, whose gate is the regression run). Round 2 started; first candidate from the counters: redundant GL state calls (programs 105 vs draws 84 per frame).
 - phase 8: removed a stale worker entry for #165 (left after its merge; it made pick skip #169). Worker on #169 (redundant GL state calls).
 - 00:33Z phase 8: #169 reported done (reports/169-1.md): wobble60 attribs 421->15, uniforms 187->26, tex_binds 44->2, gl.state 316->243 per frame, draws/tris identical, pictures identical. Gate running.
+- 00:44Z phase 8: merged #169 (9d42dac; every route first try, pictures identical, 5 counters better on both benchmarks). Round 2 ended with a gain (base-bbc36b1 vs base-9d42dac: gl.state/programs/tex_binds/uniforms/attribs better, none worse); rounds_without_gain 0. Round 3 started. Five hardware measurements now wait for the owner (perf_candidates).
