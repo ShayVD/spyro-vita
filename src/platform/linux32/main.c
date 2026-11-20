@@ -14,7 +14,7 @@
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--no-cam-recentre]
  *         [--state V:save|load:N]... [--state-hash FILE]
- *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
+ *         [--draw-distance X] [--lod-budget KB] [--lod-stats N] [--disc-marker FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --disc: the extracted files (with manifest.json), or a folder holding a
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
@@ -97,6 +97,9 @@
  *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
+ *   --lod-budget KB: with --tick60, in play, the limiter keeps each draw
+ *   under KB of primitives (default 48, LOD_BUDGET_60; D175); 0: no budget,
+ *   only the buffer's limits, as before #180 (the Vita's dd_budget=0).
  * --fast-render 3 (the default since D127): the hand-written renderers as
  *   readable C (stage 7d2, D124: no GTE data registers, scratchpad, spill
  *   area or hand stack); 0 (the arena build): the renderers' mips2c units
@@ -382,7 +385,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT] [--no-cam-recentre]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-budget KB] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-async] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -697,6 +700,9 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
+    } else if (strcmp(a, "--lod-budget") == 0) {
+      TAKE();
+      g_lod.budget = to_int(val) * 1024; /* 0: no 60 Hz budget (D175, #185) */
     } else if (strcmp(a, "--lod-guards-only") == 0) {
       g_lod.guards_only = 1; /* tests: only the hard bounds (lod.c) */
     } else if (strcmp(a, "--lod-stats") == 0) {

@@ -258,7 +258,12 @@ Every option, and the extra ones `config.txt` takes, is described in
   For the original's timing exactly, choose interpolated (still 60 pictures a second) or off.
   On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
   still slip below it.
-- **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
+- **2× draw distance is still experimental.** It reaches further only where the scene leaves room:
+  with 60 Hz in play, each picture keeps under a work budget, so where a scene is already heavy at the
+  original distance, 2× draws as 1× there instead of losing frames. Objects past the original
+  distance use their low-detail models. Scenes that drop frames at 60 Hz with the draw distance off
+  still drop them, and at 30 Hz or interpolated 2× can drop frames in big open levels. `dd_budget=0`
+  in `config.txt` turns the budget off (further, but more dropped frames). 1.5× costs less.
 - **PSX WOBBLE OFF, the default, costs frames at 60 fps.** Its perspective-correct textures and
   sub-pixel vertices (measured on hardware, interpolated) still hold 60 fps in quiet levels such as
   Toasty and the title, but busy ones drop frames: in Stone Hill about one vblank in six is late.

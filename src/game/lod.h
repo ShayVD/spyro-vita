@@ -19,7 +19,8 @@ typedef struct {
                       hard bounds keep the buffer (host --lod-guards-only) */
   int budget; /* with 60 Hz logic: the bytes of primitives a draw may reach
                  before the longer distance backs off (0: no budget, only
-                 the buffer's limits) */
+                 the buffer's limits; the Vita's dd_budget=0, the host's
+                 --lod-budget 0, #185) */
 } LodConfig;
 
 #define LOD_BUDGET_60 0xC000 /* 48 KB: the default budget (lod.c, #180) */
