@@ -9,7 +9,34 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 9,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 172,
+      "branch": "auto/172-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-172",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "src/platform/vita/perfcount.c",
+        "src/platform/vita/vita_pc.h",
+        "docs/decisions-2.md"
+      ],
+      "agent": "a8ec7ff9c8c396114",
+      "reported": true
+    },
+    {
+      "issue": 173,
+      "branch": "auto/173-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-173",
+      "pids": [],
+      "started_at": "2026-11-20T02:21:16Z",
+      "files": [
+        "src/platform/linux32/main.c",
+        "docs/host-build.md"
+      ],
+      "agent": "a54e406daa5228561"
+    }
+  ],
   "last_good": "9d42dacb3cc71e9645d6b09f29a78c323b76fbd4",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-9d42dac",
@@ -85,7 +112,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 172,
+    "step": 1,
+    "pid": 15291,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/gate-172-1.log",
+    "started_at": "2026-11-20T02:39:48Z"
+  },
   "batch": null
 }
 ```
@@ -155,3 +189,7 @@ continue.
 - 01:15Z phase 8: round 3 investigated the benchmarks' upload counters (one VBO upload a frame: pause-ws 96 KB, wobble60 274 KB at ~40 B/vertex; textures 11 KB once): nothing worth filing. Round 3 ended with nothing merged and nothing filed: no gain, rounds_without_gain 1. Round 4 started. The remaining levers need hardware timing (6 candidates wait for the owner).
 - 01:47Z phase 8: round 4 investigated gl.programs (95/frame on wobble60): every bind already goes through gs_use_program's dedup (#169), so the rest are real switches between joined draws' formats and kinds; cutting them needs reordering draws (blend order): not filed. Round 4 ended without a gain: rounds_without_gain 2 of 3. Round 5 started.
 - 02:20Z phase 8 -> 9: round 5 investigated ot.packets (wobble60 463 = two pictures a tick x 232, the cost of 60 fps itself): nothing filed, third round without a gain: phase 8's exit. Phase 9 started (round 6): filed #170 (hardware run configs for the six pending measurements), #171 (stale comments), #172 (cache cost counters into vpk-perfcount), #173 (host ./save warning).
+- phase 9: workers on #170, #171, #172, #173.
+- 02:36Z phase 9: merged #170 (hardware run configs AP1-AP6b, parsed against hw_mock; no Vita touched). The hardware session is ready when the owner says yes.
+- 02:39Z phase 9: #172 reported done (reports/172-1.md): six vcache cost counters in vpk-perfcount, pictures and older counters unchanged. Gate running.
+- 02:44Z phase 9: merged #171 (comments only; objects byte-identical).

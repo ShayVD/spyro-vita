@@ -1,0 +1,19 @@
+# Run AP1 (#170; wobble cost after #158, D130): the reference. 7G1's Toasty route at 60 fps (the
+# presenter on its thread, the only way since D129), the wobble options off (persp=0 subpixel=0), on the
+# current autopilot VPK runtime/autopilot/vpk/autopilot-9d42dac.vpk (SHA-1 672d3d55...). AP2 is
+# the same with persp=1 subpixel=1: AP2 against AP1 is what the wobble fix costs at 60 fps.
+# From the main checkout (runtime/ is there), with the owner's yes for this run:
+#   REALTIME=1 VPK=$PWD/runtime/autopilot/vpk/autopilot-9d42dac.vpk \
+#     PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-ap1 1500 @tools/vita/fps-runs/ap1-toasty60-ref.txt @tools/vita/hw-routes/o-toasty.cfg
+# Read: tools/vita/fps60_summary.py logs/hw-ap1/spyro.log (per level: late vblanks, rend, busy %),
+# tools/vita/hw_cmp.py logs/hw-ap1/spyro.log logs/hw-ap2/spyro.log (time, parse and render ms per
+# vblank from 900), tools/vita/time_summary.py for the whole run, and
+# third_party/vita-port-kit/vita/tools/perf_report.py logs/hw-ap1/spyro.log logs/hw-ap2/spyro.log
+# --min-frame 900 --max-frame 11400 (Artisans, before the warp), then over the Toasty windows
+# fps60_summary.py lists.
+config_version=3
+interp=1
+gpu_meter=1
+persp=0
+subpixel=0

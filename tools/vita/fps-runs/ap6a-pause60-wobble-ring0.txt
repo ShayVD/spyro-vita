@@ -1,0 +1,14 @@
+# Run AP6a (#170; vdm_ring, D132): AP5's settings with vitaGL's default VDM ring (vdm_ring=0 said
+# outright: GXM's 128 KB), on the current autopilot VPK runtime/autopilot/vpk/autopilot-9d42dac.vpk
+# (SHA-1 672d3d55...). The "without" side of AP6b. (Its lines are AP5's plus vdm_ring=0, the default:
+# an AP5b log from the same session can stand in for it.)
+# From the main checkout, with the owner's yes for this run:
+#   VPK=$PWD/runtime/autopilot/vpk/autopilot-9d42dac.vpk PAD=$PWD/tools/vita/hw-routes/pause-ws.pad \
+#     tools/vita/hw_run.sh logs/hw-ap6a 1500 @tools/vita/fps-runs/ap6a-pause60-wobble-ring0.txt @tools/vita/hw-routes/pause-ws.cfg
+# Compare with AP6b as AP6b's header says.
+config_version=3
+interp=1
+interp_budget=0
+persp=1
+subpixel=1
+vdm_ring=0

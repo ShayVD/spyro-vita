@@ -1229,8 +1229,8 @@ void pres_DrawOTag(u_long *p) {
   s_pw.nd = g_pres_walk_nd;
   psx_gpu_walk_own(&s_pw, p);
   pres_capture(s_pw_env.ofs[1]);
-  if (!j->out)
-    psx_vcache_ot_done(); /* inline: as DrawOTag's (the worker never has the vertex cache) */
+  if (!j->out) /* inline: as DrawOTag's. On its thread the presenter has */
+    psx_vcache_ot_done(); /* the cache too, its frame ended by pb_close (D133) */
 }
 
 /* the job: the presenter's draw, on the worker or inline */
