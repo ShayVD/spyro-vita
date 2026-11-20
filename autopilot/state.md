@@ -44,10 +44,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "ac33d2216e3ae333e"
     }
   ],
-  "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
+  "last_good": "cc651823c9e8c042be2d96a13f52b0cc55962437",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-5cdfccb",
-    "commit": "5cdfccbcc8b6277014254f9212a8ca47ba23fd24"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-cc65182",
+    "commit": "cc651823c9e8c042be2d96a13f52b0cc55962437"
   },
   "hardware_runs": [
     {
