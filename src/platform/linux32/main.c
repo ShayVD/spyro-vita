@@ -241,8 +241,10 @@ static void nd_atexit(void) {
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 
 extern void spyro_main(void);
+const char *psx_mcrd_root(void); /* src/platform/common/libmcrd.c: the cards' folder */
 void port_arena_symbols(void (*log)(const char *fmt, ...)); /* src/game/port.c */
 /* libcd (PsyQ signatures) and the game's read callback (cd.c) */
 typedef void (*CdlCB)(unsigned char, unsigned char *);
@@ -258,6 +260,43 @@ static void mixer_report(void) {
 }
 
 static int s_cd_native; /* --cd-native (D93) */
+static int s_save_given; /* --save */
+
+/* #173 (D135): without --save the memory cards are libmcrd.c's default root
+ * (./save), shared by every run in the folder. A run that finds a card there
+ * from an earlier run starts from it, not a blank one, and its pad script can
+ * fall out of step: say so in one line. Only looks; nothing is changed. */
+static void save_default_warn(void) {
+  const char *root = psx_mcrd_root();
+  char first[600] = "", card1[600] = "";
+  int card, files = 0, have_card1 = 0;
+  for (card = 0; card < 2; card++) {
+    char d[600];
+    DIR *dir;
+    struct dirent *e;
+    snprintf(d, sizeof d, "%s/card%d", root, card);
+    dir = opendir(d);
+    if (!dir)
+      continue;
+    if (card == 1) { /* port B has a card only if its folder exists */
+      have_card1 = 1;
+      snprintf(card1, sizeof card1, "; %s exists, so port B has a card", d);
+    }
+    while ((e = readdir(dir)) != NULL) {
+      if (e->d_name[0] == '.')
+        continue;
+      if (files++ == 0)
+        snprintf(first, sizeof first, "%s/%s", d, e->d_name);
+    }
+    closedir(dir);
+  }
+  if (files == 0 && !have_card1)
+    return;
+  host_log("warning: no --save, and %s already holds a memory card (%d file%s%s%s%s): this run "
+           "starts from it, not a blank card, so pad scripts may not match; --save DIR gives a "
+           "run its own card (D135)",
+           root, files, files == 1 ? "" : "s", files ? ", first " : "", first, card1);
+}
 
 static unsigned long long now_us(void) {
   struct timespec ts;
@@ -658,6 +697,7 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--save") == 0) {
       TAKE();
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
+      s_save_given = 1;
     } else if (strcmp(a, "--cd-native") == 0) {
       s_cd_native = 1;
     } else if (strcmp(a, "--cd-stats") == 0) {
@@ -782,6 +822,8 @@ int main(int argc, char **argv) {
   psx_cd_set_read_latency(cd_latency);
   host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
            g_host_opts.frames, cd_latency);
+  if (!s_save_given)
+    save_default_warn();
   if (s_cd_native && psx_cdn_start() == 0)
     host_log("cd: native file reads on a worker thread (--cd-native, D93)");
   port_cheats_set_log(host_log);
