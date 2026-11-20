@@ -162,7 +162,8 @@ enum {
 };
 extern unsigned g_vcache_work[VCW_N], g_vcache_pres_work[VCW_N];
 
-/* Counters since the last psx_vcache_stats_reset(), by kind of frame:
+/* Counters since the start or the last psx_vcache_stats_reset() (the Vita
+ * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
 typedef struct {
@@ -193,12 +194,25 @@ typedef struct {
    * miss_none */
   unsigned derived;  /* ... drawn with the polygon's depth */
   unsigned der_snap; /* ... of those at the projection recorded before the renderer moved it */
+  /* #181: vertices whose key is ambiguous (different points on its pixel)
+   * drawn with a depth from the projections under it near the polygon's
+   * others in the frame's order (vcache.c resolve), counted in hits (and
+   * their polygon in persp), not in miss_ambiguous */
+  unsigned resolved;
+  unsigned res_order; /* ... of those where the order left one point */
 } VCacheStats;
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
 /* the two kinds' counters added (peak: the larger); also logs the cost
  * line (above) since the last call: both reports call it once a report */
 void psx_vcache_stats_sum(VCacheStats *out);
+/* The Vita's report (#181), from another thread than the walks': each
+ * kind's counters since its last call (win) and their sum, with the same
+ * lines as psx_vcache_stats_sum. It writes none of them but the peaks: a
+ * reset (psx_vcache_stats_reset) from there raced the walk's adds, and a
+ * lost one carried a whole report's polygons into the next (the 44% of
+ * logs/owner-20261120-1056 at vblank 3,600). */
+void psx_vcache_stats_take(VCacheStats win[2], VCacheStats *sum);
 
 #ifdef __cplusplus
 }
