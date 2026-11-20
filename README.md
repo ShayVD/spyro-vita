@@ -260,6 +260,9 @@ Every option, and the extra ones `config.txt` takes, is described in
   On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
   still slip below it.
 - **2× draw distance is experimental** and drops frames in big open levels. 1.5× costs less.
+- **Perspective-correct textures and sub-pixel vertices cost frames at 60 fps.** With both on
+  (interpolated, measured on hardware) quiet levels such as Toasty and the title still hold 60 fps,
+  but busy ones drop frames: in Stone Hill about one vblank in six is late.
 - **The first time you pick the perspective or sub-pixel setting**, the menu pauses
   for a few seconds while its shaders compile. That happens once per start-up.
 - **Opening the game's pause or inventory screen hitches for a moment.** The game copies the frame

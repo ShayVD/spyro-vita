@@ -13,7 +13,7 @@ out there to remove the PS1 wobble, so maybe we could do that and have it as an 
 The wobble fix was already there: the options menu's PICTURE section has PERSPECTIVE TEXTURES (`persp=1`, affine
 texture warping) and SUB-PIXEL VERTICES (`subpixel=1`, whole-pixel vertex snapping), from D39, both off by default.
 At 60 fps it was mostly broken, and it was too costly for the heavy levels (D89). This session fixed the first and
-cut the second; its real cost on a Vita is not measured yet.
+cut the second; on a Vita it costs 2.6 ms a vblank of the game thread at 60 fps (D172, "Hardware runs" below).
 
 ## Phases
 
@@ -68,14 +68,22 @@ Draws, triangles, uploads and every picture are unchanged. These are counts of w
 
 ## Hardware runs
 
-None. Every hardware run needs the owner's yes, and none was asked for this session. The configs for the pending
-measurements are ready (#170, `tools/vita/fps-runs/README.md`, "Runs AP1-AP6", about 50 minutes):
+Run on 2026-11-20 after the merge with main (D172 has every number), on the owner's yes, AP1-AP7 of
+`tools/vita/fps-runs/README.md`, every run to its end with no crash:
 
-- AP1 against AP2: the wobble fix's cost on Toasty at 60 fps.
-- AP3 against AP2: #162, the presenter on core 1.
-- AP4a against AP4b: #159, the cheaper cache.
-- AP5a against AP5b: #169, the GL-state cache.
-- AP6a against AP6b: whether `vdm_ring=1024` is harmless enough to be the default.
+- **PAL (AP7):** the owner's Europe disc and settings on the merged build: verified, its pictures identical to
+  Vita3K's, the GPU's in-between frame clean (no seams), the presenter on core 1, 98% of vertices found.
+- **The wobble fix at 60 fps (AP1 -> AP2):** the game thread 3.4 -> 6.0 ms a vblank; quiet levels hold 60 fps,
+  busy ones don't (Stone Hill ~50 late vblanks in 300). Now in the README's known issues.
+- **The presenter on core 1 (AP3 -> AP2, #162):** the game thread 9.2 -> 6.0 ms a vblank (-35%); the title's and
+  Toasty's late vblanks 12 -> 0.3 and 21 -> 1.2 per 300.
+- **The cheaper cache (AP4, #159):** the cache's own time -8%; no frame-rate gain measurable above run-to-run noise.
+- **The GL state shadow (AP5, #169):** the calls cut as in Vita3K (attribs 421 -> 15 a frame), the render thread's
+  time the same: fewer calls, no time.
+- **`vdm_ring=1024` (AP6):** harmless (same pictures, card, counters, time) but 896 KB less CDRAM; only Vita3K
+  needs it, so the default stays off.
+
+The merged build is left installed on the Vita (eboot read back identical).
 
 ## Vita3K's own failures
 
@@ -90,9 +98,8 @@ Vita3K beside ours much of the time; #161 showed it was not the cause.
 - **#175 (needs-owner)**: colima's sshfs mount still loses an execute bit now and then, after `link_exec.sh`'s check.
   Options: keep the launcher only; re-check in the tools that run binaries (the autopilot's pick); `build/` on a
   Docker volume; colima with `mountType: virtiofs` (rebuilds the VM other projects share). Nothing started.
-- **The hardware session** above.
-- **Not blocked, no issue open**: the README's known issues should state the wobble options' cost at 60 fps once
-  AP1-AP3 have run; `vdm_ring`'s default after AP6.
+- Done since the stop: the hardware session (above), the README's line on the wobble options' cost at 60 fps, and
+  `vdm_ring`'s default (stays off).
 
 No issue is labelled `blocked`.
 

@@ -625,7 +625,7 @@ Y6 and Y8 again (the shipped `nd_direct=1`), on D111's VPK, each pair differing 
 
 ## Runs AP1–AP6: the measurements phase 8 left for hardware (#170; D164, D166–D168, D171)
 
-Phase 8's changes were checked on the host and in Vita3K, whose timing isn't evidence (D112); their cost or gain on the Vita needs these runs. Each file's header has its exact command, its VPK and what to compare. **Not run yet**: each run needs the owner's yes first.
+Phase 8's changes were checked on the host and in Vita3K, whose timing isn't evidence (D112); their cost or gain on the Vita needs these runs. Each file's header has its exact command, its VPK and what to compare. **Run on 2026-11-20** (the owner's yes; the results are D172's, `docs/decisions-3.md`); a rerun needs the owner's yes first.
 
 | Run | File | VPK (`runtime/autopilot/vpk/`) | Switches | Route | About |
 |---|---|---|---|---|---|
