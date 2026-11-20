@@ -9,22 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 183,
-      "branch": "auto/183-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-183",
-      "pids": [],
-      "started_at": "2026-11-20T14:20:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/native_draw.c",
-        "src/platform/common/gpu_walk.c"
-      ],
-      "agent": "a31862ab0ded20c7c"
-    }
-  ],
+  "workers": [],
   "last_good": "ddbb408760d919b658e44525376bd6946c3b7d80",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-474d375",
@@ -103,6 +88,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #180's 2x budget on the owner's settings (PAL, 60 HZ, 16:9, dd200)",
       "expected": "owner-approved run: windows that dropped (x1.1-1.5, 55-68 KB) held at 1x; fewer late vblanks than logs/owner-20261120-1056",
       "issue": 180
+    },
+    {
+      "title": "Hardware: #183 GPU check of the world grids' derived points (shot_hd=1 at owner60's holds)",
+      "expected": "owner-approved: close walls/ground drawn perspective-correct where the GPU capture changed",
+      "issue": 183
     }
   ],
   "owner_decisions": [
@@ -148,7 +138,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 8,
+    "filed": 9,
     "investigated": true
   },
   "rounds_without_gain": 0,
