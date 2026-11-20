@@ -358,7 +358,8 @@ With widescreen on, players see scenery and objects appear at a distance, most v
   - mobys pass 1 drew are skipped, and their `m_WasDrawn` (which the loop clears at each moby) is put back to 1;
   - the others get draw records but keep `m_WasDrawn` 0 and add no shadow;
   - pass 2 stops where the record space ends;
-  - a port-side bit per moby gives pass-2 mobys the same grace the game gives its own.
+  - a port-side bit per moby gives pass-2 mobys the same grace the game gives its own;
+  - pass 2's mobys take the low-detail model (their record's detail is −1 where it would be positive, with no fade and no extra fog): the original's look past its detail distance, only for mobys past its draw distance (`moby_cull_hand.c`, D175).
 
 **Safety.** The renderers have no bounds checks, and more geometry can overrun the primitive buffer (`0x1C000` bytes, `0x13000` in reduced-space levels, with the HUD's mobys at the top; `draw.c` `GamestateDraw`). The original game already fills it to 85–91% in places (Artisans' entrance, the intro cutscene). With the option on:
 
@@ -367,11 +368,14 @@ With widescreen on, players see scenery and objects appear at a distance, most v
   - the record-draw loops (`func_8001F798`, `func_80020F34`) and the lit loop's pass 2 stop at pass 2's mobys once the buffer is 60% full;
   - the near list stops taking sectors one entry before the next list.
 - **A limiter.** After each shown draw it measures the bytes used, and how close the world came to its bound, and takes the fuller of the two. Over 80% it halves the extra distance, over 90% it drops to 1×, and under 65% it grows back by 1/32 per draw. So the bound stays a backstop rather than a regular cut.
+- **A 60 Hz work budget** (D175, #180; on by default). With 60 Hz logic in play (tick60's `wants_60`: not the title, the attract demos or 30 Hz), a tick's draw has half the time, and on the Vita the logic draw's cost follows its primitives (about 0.2 ms a KB in the owner's hardware log; pictures lost from about 52 KB). So the limiter also keeps the bytes the draw wrote under `g_lod.budget` (`LOD_BUDGET_60`, 48 KB): above it the extra distance halves, above 9/8 of it it drops to 1×, and it grows again only under 7/8 of it. Where the original's own draw is over the budget, 2× draws as 1×. `dd_budget=0` (Vita) or `--lod-budget 0` (host) turns it off, leaving only the buffer's limits, as before #180 (#185); pass 2's low-detail mobys stay either way.
 - **Each new level or gamestate starts at 1×.** A loaded save state (D51, `port_lod_reset()`) instead goes straight to the chosen scale, with the limiter backing off after one draw if the spot is heavy.
 
 The first whole-game run had only the limiter, and it crashed entering level 40 at 2×: one frame wrote past the second buffer into the world OT (`logs/run4-whole-dd2`, core read with gdb: `fp = 0x801BFDA4`, past `0x801BFBB0`).
 
 Only drawn pictures use the longer distances. The hidden 4:3 logic draw of attract demos (D30) keeps the original ones.
+
+**The `lod` line** (the Vita's `stats=1` with the option on, every 300 vblanks; the host's `--lod-stats N`): `lod V: D draws at xA average (lowest xL); primitives P KB average, K KB peak of C KB (U%); N back-offs (M for the budget); E extra mobys per draw; near sectors peak ...; moby records peak ...; largest sector ..., after the world ...; stopped early: world W, mobys B`. A back-off is a draw after which the limiter halved the extra distance or dropped it to 1×. M of the N are the budget's alone: draws above 1× that went over the budget while the buffer (or the world's bound) was at most 80% full, so only the budget made the limiter back off. With `dd_budget=0`, or at 30 Hz, M is always 0.
 
 ### Measured (host and Vita3K; hardware not yet)
 
@@ -386,6 +390,7 @@ Only drawn pictures use the longer distances. The hidden 4:3 logic draw of attra
   - Whole tour at 2× with only the hard bounds (`--lod-guards-only`, no limiter; `logs/run19-whole-guards`): no crash in 100,000 vblanks. The world bound stopped a loop 125,760 times and the near list filled 55 times; the peak stayed at 95 KB of 110.5.
   - With the limiter (`logs/run19-whole-dd2`), the bound never fired. The scale averaged ×1.23 over the tour and was at least ×1.5 in 30 of 132 five-second windows: the limiter is cautious, by choice.
 - **Cost:** see D49. More primitives (+35% at 1.5×, +49% at 2× where it holds) mean more OT walk and GPU submission on the Vita's CPU. Expect fewer than 30 pictures a second in open areas at 2×; `bench=1` measures it.
+- **With 60 Hz logic** (D175, Vita3K `owner60`, vblanks 6,600–9,000): the budget and pass 2's low-detail mobys took 2×'s GL draw calls down 6%; the pictures differ only in the far band. On hardware (D179, Artisans) `owner60`'s route had no late vblank; the budget backed off twice. Scenes over about 52 KB at 1× still lose frames with 60 Hz logic whatever the draw distance.
 
 ## Follow-ups
 

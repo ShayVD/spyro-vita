@@ -200,6 +200,7 @@ Files the app writes:
 | `persp=1` | GPU: perspective-correct textures on 3D polygons (no PS1 texture warping; D39; the menu's `PERSPECTIVE TEXTURES`) |
 | `subpixel=1` | GPU: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39; the menu's `SUB-PIXEL VERTICES`) |
 | `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
+| `dd_budget=0` | with a longer draw distance and 60 Hz logic in play: no work budget, only the buffer's limits, as before #180. Default 1: the limiter also keeps each draw under 48 KB of primitives, so the longer distance gives way where the scene is already heavy (D175; `docs/presentation.md` "Draw distance"). The start of the log says which (`picture: draw distance ... (dd_budget=N, D175)`); the `lod` lines count the budget's back-offs. No menu row |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
@@ -788,6 +789,8 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 4. In the log, `lod N:` lines every 5 seconds:
    - `x2.00 average` means the full distance held. Lower means the limiter backed off; it starts again
      at 1x at each new level.
+   - `N back-offs (M for the budget)`: how many draws the limiter backed off after, and how many of
+     those only the 60 Hz budget caused (with 60 HZ in play; always 0 with `dd_budget=0` or at 30 Hz).
    - `primitives ... peak ... of 110 KB`: how full the game's primitive buffer got.
    - `stopped early: world W, mobys M`: how often a hard bound stopped a loop.
    - Compare the `vblank N: ... P pictures` and `time N:` lines with the same walk at OFF. The cost is

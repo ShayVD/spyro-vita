@@ -35,7 +35,9 @@
  *    buffer is MOBY_SHARE% full; the near list stops taking sectors one short
  *    of its end;
  *  - a limiter: after every shown draw the bytes used are measured and the
- *    scale backs off before the buffer gets close to full;
+ *    scale backs off before the buffer gets close to full, and with 60 Hz
+ *    logic in play before the draw passes a work budget (g_lod.budget,
+ *    #180; off with the Vita's dd_budget=0 or the host's --lod-budget 0);
  *  - a new level or gamestate starts again at 1x, then grows.
  * (The first whole-game run had only the limiter and crashed entering
  * level 40 at 2x: one frame went past the buffer into the world OT.) Since

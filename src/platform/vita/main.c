@@ -277,6 +277,10 @@
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
+ *       dd_budget=0     with 60 Hz logic in play, no work budget for the
+ *                       longer draw distance: only the buffer's limits, as
+ *                       before #180 (default 1: each draw keeps under
+ *                       LOD_BUDGET_60, 48 KB of primitives; D175, #185)
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
@@ -323,6 +327,7 @@
 #include "psx_spu.h"
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
+#include "../../game/lod.h"     /* dd_budget= (D175, #185) */
 
 #include <SDL2/SDL.h>
 #include <psp2/appmgr.h>
@@ -630,6 +635,8 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
+    else if (!strcmp(line, "dd_budget"))
+      g_lod.budget = atoi(v) ? LOD_BUDGET_60 : 0; /* the 60 Hz work budget (D175, #185) */
     else if (!strcmp(line, "state_test"))
       vita_savestate_config(v);
     else if (vita_watchdog_config(line, v))
@@ -983,6 +990,12 @@ int main(int argc, char **argv) {
                               : "the clears pixel by pixel");
   vita_present_init();
   vita_picture_init();
+  if (g_lod.budget)
+    vita_log("picture: draw distance with 60 Hz logic in play keeps each draw under %d KB of "
+             "primitives (dd_budget=1, D175)", g_lod.budget / 1024);
+  else
+    vita_log("picture: draw distance with no 60 Hz budget, only the buffer's limits "
+             "(dd_budget=0, D175)");
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     vita_exit(1);
