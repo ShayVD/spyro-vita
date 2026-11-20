@@ -44,6 +44,7 @@
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 #include "native_draw.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#189) */
 
 extern char g_Camera[];
 extern char g_Environment[];
@@ -2093,11 +2094,17 @@ static inline u32 ScreenFlags(u32 sxy) {
   return f;
 }
 
-/* Grid points here: SXY (+0), colour (+4), UV (+8, half), flags (+0xF). */
+/* Grid points here: SXY (+0), colour (+4), UV (+8, half), flags (+0xF).
+ * #189: the midpoint's texture coordinates are the corners' halfway, which
+ * belong to the 3D midpoint; the vertex cache is told so and draws the
+ * vertex there. */
 static inline void SplitMid(u32 k, u32 xya, u32 xyb, u32 ca, u32 cb) {
-  GRID_C(k, 0) = (u16)Mid((u32)(s32)(s16)xya, (u32)(s32)(s16)xyb);
-  GRID_C(k, 1) = (u16)Mid((u32)((s32)xya >> 16), (u32)((s32)xyb >> 16));
+  const u16 mx = (u16)Mid((u32)(s32)(s16)xya, (u32)(s32)(s16)xyb);
+  const u16 my = (u16)Mid((u32)((s32)xya >> 16), (u32)((s32)xyb >> 16));
+  GRID_C(k, 0) = mx;
+  GRID_C(k, 1) = my;
   AT32(GRID(k) + 4) = CMid(ca & COLOUR_HALF_MASK, cb & COLOUR_HALF_MASK);
+  PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT), (u32)mx | (u32)my << 16, xya, xyb, 2048, 0);
 }
 static inline void SplitMidUV(u32 k, u32 ua, u32 ub) {
   AT16(GRID(k) + 8) = (u16)(((ua & 0xFF00) + (ub & 0xFF00)) >> 1);

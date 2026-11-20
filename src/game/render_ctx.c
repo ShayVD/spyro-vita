@@ -7,6 +7,7 @@
 #include "render_ctx.h"
 #include "gte_native.h"
 #include "psx_arena.h"
+#include "psx_vcache.h" /* the derive hook (#189) */
 
 #include <stdint.h>
 #include <string.h>
@@ -32,9 +33,20 @@ NdSide g_pres_nd_side[ND_SIDE_N];
 unsigned g_pres_nd_fallback;
 int g_pres_narrow;
 
-/* Nothing to set up since 7d2 (D124): the subdivision tables are read as
- * offsets into the working memory. Kept for the callers. */
-void render_ctx_init(void) {}
+/* the renderers' hand-overs of the points they make on screen (#189;
+ * psx_vcache.h PSX_VC_DERIVE): the presenter's own, into its own table */
+PsxVcacheDeriveHook g_pres_rtp_derive_hook;
+
+/* Since 7d2 (D124) the subdivision tables are read as offsets into the
+ * working memory. #189: the vertex cache sets the presenter's derive hook
+ * with its value hook at each of its frames (psx_vcache_pres_begin). */
+void render_ctx_init(void) { psx_vcache_pres_derive_at(&g_pres_rtp_derive_hook); }
+
+/* psx_vcache.h PSX_VC_DERIVE's call, on the presenter's hook (#189) */
+void pres_vc_derive(int how, unsigned int sxy, unsigned int a, unsigned int b, int p, int q);
+void pres_vc_derive(int how, unsigned int sxy, unsigned int a, unsigned int b, int p, int q) {
+  g_pres_rtp_derive_hook(how, sxy, a, b, p, q);
+}
 
 /* The vertex cache's hook on a native projection (gte_ops.c's ngte_vcache,
  * on the presenter's hook) */
