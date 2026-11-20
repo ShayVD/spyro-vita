@@ -11,25 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 178,
-      "branch": "auto/178-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-178",
-      "pids": [],
-      "started_at": "2026-11-20T11:49:41Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/gpu_thread.c",
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/vita_pc.h",
-        "autopilot/config.json"
-      ],
-      "agent": "afe58dc305ed6a974",
-      "last_commit_at": "2026-11-20T12:13:11+00:00",
-      "reported": true
-    },
-    {
       "issue": 180,
       "branch": "auto/180-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-180",
@@ -154,14 +135,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 178,
-    "step": 4,
-    "pid": 44343,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/auto-178-1/capture",
-    "started_at": "2026-11-20T12:47:22Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -255,3 +229,4 @@ continue.
 - 2026-11-20T12:47Z phase 8: #178 reported (clamped vertices exact; owner60 fallbacks 4,068 -> 621, found 93.30 -> 93.36%); gate job: GPU window captures (CAPTURE=1) base vs #178 on wobble60's lines; filed #183 (no-entry vertices, ~75% of misses) and #184 (stats race); Vita3K: 0
 - 2026-11-20T12:48Z phase 8: worker #180 started (draw distance 2x); #178 gate waits for the GPU captures; Vita3K: 0
 - 2026-11-20T12:52Z phase 8: tick - #178 captures: base done, #178's running; #180 working (no commit yet); Vita3K: 0
+- 2026-11-20T12:54Z phase 8: merged #178 (D174; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
