@@ -17,7 +17,22 @@ file(GLOB PS4_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 # (gpu_gles.c), D194.
 set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/src/platform/vita/gpu_soft_names.h")
-add_library(spyro_platform_ps4 STATIC ${PS4_SRCS}
+# The GLES2 renderer's pre-compiled shaders (D194, the owner's option C):
+# the binaries a run with the player's Piglet pair saved (shader_dump=1),
+# fetched from the PS4 into this folder, become a C table; on a PS4 without
+# the pair the firmware's own Piglet loads them with glShaderBinary. Local
+# and gitignored (disc/) until the owner decides how they ship (P5).
+set(SPYRO_PS4_SHADERS "${CMAKE_SOURCE_DIR}/disc/ps4-shaders" CACHE PATH
+  "The PS4 renderer's pre-compiled shader binaries (NAME-vs|fs-HASH.bin)")
+file(GLOB PS4_SHADER_BINS CONFIGURE_DEPENDS "${SPYRO_PS4_SHADERS}/*.bin")
+set(PS4_SHADERS_C "${CMAKE_CURRENT_BINARY_DIR}/ps4_shaders.c")
+add_custom_command(OUTPUT "${PS4_SHADERS_C}"
+  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/shaders_c.py"
+    "${SPYRO_PS4_SHADERS}" "${PS4_SHADERS_C}"
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/ps4/shaders_c.py" ${PS4_SHADER_BINS}
+  COMMENT "PS4: the pre-compiled shaders (${SPYRO_PS4_SHADERS})"
+  VERBATIM)
+add_library(spyro_platform_ps4 STATIC ${PS4_SRCS} "${PS4_SHADERS_C}"
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c")
 target_include_directories(spyro_platform_ps4 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${LINUX32_DIR}" "${CMAKE_SOURCE_DIR}/src/platform/common" "${CMAKE_SOURCE_DIR}/src/game")

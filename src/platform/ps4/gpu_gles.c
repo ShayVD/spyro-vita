@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <orbis/libkernel.h>
 #include <orbis/Pigletv2VSH.h> /* EGL and GLES2 too */
@@ -77,31 +78,77 @@ int g_ps4_gpu;
 
 static int s_piglet = -1, s_shacc = -1;
 
+/* How the shaders come (D194): compiled from our GLSL by the player's
+ * Piglet pair, or the pre-compiled binaries (ps4_shaders.c, from a run
+ * with shader_dump=1) on the firmware's own Piglet: what every player has,
+ * the owner's option C. */
+enum { SH_NONE, SH_COMPILE, SH_BINARY };
+static int s_shader_mode;
+
+typedef struct {
+  const char *name;
+  int fragment;
+  uint32_t hash;
+  uint32_t format; /* glShaderBinary's, as glPigletGetShaderBinarySCE reported it */
+  const unsigned char *data;
+  size_t size;
+} Ps4ShaderBlob;
+extern const Ps4ShaderBlob g_ps4_shader_blobs[]; /* ps4_shaders.c (tools/ps4/shaders_c.py) */
+
+static int blob_count(void) {
+  int n = 0;
+  while (g_ps4_shader_blobs[n].name)
+    n++;
+  return n;
+}
+
 /* ---- the modules ---- */
 
-static int load(const char *name, int *handle, char *why, int whylen) {
-  char path[256];
-  int start = 0, h;
-  snprintf(path, sizeof path, LIB_DIR "/%s", name);
-  h = sceKernelLoadStartModule(path, 0, NULL, 0, NULL, &start);
+static int load_path(const char *path, int *handle) {
+  int start = 0, h = sceKernelLoadStartModule(path, 0, NULL, 0, NULL, &start);
   host_log("gpu: sceKernelLoadStartModule(%s): 0x%x, module_start %d", path, (unsigned)h, start);
   host_log_flush();
-  if (h < 0) {
-    snprintf(why, (size_t)whylen, "%s %s (0x%x); see the README for the GPU renderer",
-             (unsigned)h == 0x80020002u ? "no" : "can't load", path, (unsigned)h);
-    return -1;
-  }
+  if (h < 0)
+    return h;
   *handle = h;
   return 0;
 }
 
+/* The player's pair first (the compiler: shader_dump=1 saves binaries);
+ * else the firmware's Piglet, if this build has the binaries for it. */
 int ps4_gpu_load(char *why, int whylen) {
-  if (s_piglet >= 0)
+  int rc, nblobs = blob_count();
+  char path[256];
+  if (s_shader_mode != SH_NONE)
     return 0;
-  if (load("libScePigletv2VSH.sprx", &s_piglet, why, whylen) != 0)
+  rc = load_path(LIB_DIR "/libScePigletv2VSH.sprx", &s_piglet);
+  if (rc == 0) {
+    rc = load_path(LIB_DIR "/libSceShaccVSH.sprx", &s_shacc);
+    if (rc != 0) { /* a Piglet without its compiler: only binaries work */
+      host_log("gpu: the player's Piglet without libSceShaccVSH.sprx (0x%x)", (unsigned)rc);
+      s_shader_mode = nblobs ? SH_BINARY : SH_NONE;
+    } else
+      s_shader_mode = SH_COMPILE;
+  } else if (nblobs) {
+    const char *word = sceKernelGetFsSandboxRandomWord();
+    snprintf(path, sizeof path, "/%s/common/lib/libScePigletv2VSH.sprx", word ? word : "system");
+    rc = load_path(path, &s_piglet);
+    if (rc == 0)
+      s_shader_mode = SH_BINARY;
+  }
+  if (s_shader_mode == SH_NONE) {
+    if (nblobs)
+      snprintf(why, (size_t)whylen, "the system's Piglet didn't load (0x%x)", (unsigned)rc);
+    else
+      snprintf(why, (size_t)whylen,
+               "this build has no pre-compiled shaders and " LIB_DIR
+               "/libScePigletv2VSH.sprx can't be loaded (0x%x)", (unsigned)rc);
     return -1;
-  if (load("libSceShaccVSH.sprx", &s_shacc, why, whylen) != 0)
-    return -1;
+  }
+  host_log("gpu: shaders %s (%d pre-compiled in this build)",
+           s_shader_mode == SH_COMPILE ? "compiled by the player's Piglet pair"
+                                       : "pre-compiled, on the firmware's Piglet",
+           nblobs);
   return 0;
 }
 
@@ -290,25 +337,115 @@ static void gl_check(const char *where) {
   s_st.last_error = e;
 }
 
-static GLuint compile(GLenum type, const char *src, const char *what) {
+/* FNV-1a of a shader's source: the binaries are filed under it */
+static uint32_t src_hash(const char *src) {
+  uint32_t h = 2166136261u;
+  while (*src)
+    h = (h ^ (unsigned char)*src++) * 16777619u;
+  return h;
+}
+
+/* Compiled by the player's pair: a compiled shader as the binary the firmware's Piglet
+ * takes back (Piglet's own container: the GLSL and its machine code),
+ * through Piglet's undocumented glPigletGetShaderBinarySCE (resolved by
+ * eglGetProcAddress, per shader, as ioQuake3-PS4 captures its shaders), to
+ * /data/spyro/shaders/NAME-vs|fs-HASH.bin (once: a file already there is
+ * kept; shader_dump=0 saves none): glShaderBinary's format in 4
+ * little-endian bytes, then the binary (tools/ps4/shaders_c.py reads them). */
+typedef void (*PigletGetShaderBinary)(GLuint shader, GLsizei size, GLsizei *length,
+                                      GLenum *format, void *binary);
+
+static void dump_shader(GLuint s, const char *name, int fragment, uint32_t hash) {
+  static PigletGetShaderBinary get;
+  static unsigned char buf[1 << 18];
+  char path[256];
+  GLsizei len = 0;
+  GLenum fmt = 0;
+  FILE *f;
+  if (!get)
+    get = (PigletGetShaderBinary)eglGetProcAddress("glPigletGetShaderBinarySCE");
+  if (!get) {
+    host_log("gpu: shader_dump: no glPigletGetShaderBinarySCE");
+    return;
+  }
+  get(s, (GLsizei)sizeof buf, &len, &fmt, buf);
+  if (len <= 0 || (size_t)len > sizeof buf) {
+    host_log("gpu: shader_dump: %s %s: length %d", name, fragment ? "fs" : "vs", (int)len);
+    return;
+  }
+  mkdir(PS4_DATA_DIR "/shaders", 0777);
+  snprintf(path, sizeof path, PS4_DATA_DIR "/shaders/%s-%s-%08x.bin", name,
+           fragment ? "fs" : "vs", (unsigned)hash);
+  if ((f = fopen(path, "rb")) != NULL) { /* saved by an earlier run */
+    fclose(f);
+    return;
+  }
+  f = fopen(path, "wb");
+  if (!f) {
+    host_log("gpu: shader_dump: can't write %s", path);
+    return;
+  }
+  {
+    uint32_t le = (uint32_t)fmt;
+    unsigned char h[4] = {(unsigned char)le, (unsigned char)(le >> 8), (unsigned char)(le >> 16),
+                          (unsigned char)(le >> 24)};
+    fwrite(h, 1, 4, f);
+  }
+  fwrite(buf, 1, (size_t)len, f);
+  fclose(f);
+  host_log("gpu: shader_dump: %s (%d bytes, format 0x%x)", path, (int)len, (unsigned)fmt);
+}
+
+static GLuint compile(GLenum type, const char *src, const char *name) {
+  int fragment = type == GL_FRAGMENT_SHADER;
+  uint32_t hash = src_hash(src);
   GLuint s = glCreateShader(type);
   GLint ok = 0;
+  if (s_shader_mode == SH_BINARY) {
+    const Ps4ShaderBlob *b;
+    GLenum e;
+    for (b = g_ps4_shader_blobs; b->name; b++)
+      if (!strcmp(b->name, name) && b->fragment == fragment && b->hash == hash)
+        break;
+    if (!b->name) {
+      host_log("gpu: no pre-compiled %s %s shader for this source (%08x)", name,
+               fragment ? "fragment" : "vertex", (unsigned)hash);
+      glDeleteShader(s);
+      return 0;
+    }
+    while (glGetError() != GL_NO_ERROR)
+      ;
+    glShaderBinary(1, &s, (GLenum)b->format, b->data, (GLsizei)b->size);
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok); /* Piglet marks a loaded binary compiled */
+    if ((e = glGetError()) != GL_NO_ERROR || !ok) {
+      host_log("gpu: glShaderBinary(%s %s, %zu bytes, format 0x%x): error 0x%x, status %d", name,
+               fragment ? "fs" : "vs", b->size, (unsigned)b->format, (unsigned)e, ok);
+      glDeleteShader(s);
+      return 0;
+    }
+    return s;
+  }
   glShaderSource(s, 1, &src, NULL);
   glCompileShader(s);
   glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
   if (!ok) {
     char log[1024] = "";
     glGetShaderInfoLog(s, sizeof log, NULL, log);
-    host_log("gpu: %s didn't compile: %s", what, log);
+    host_log("gpu: %s %s didn't compile: %s", name, fragment ? "fs" : "vs", log);
     glDeleteShader(s);
     return 0;
   }
+  if (g_ps4_opts.shader_dump)
+    dump_shader(s, name, fragment, hash);
   return s;
 }
 
-static int link(Prog *p, const char *vs, const char *fs, int quad, const char *what) {
+/* what: the program's name, also its fragment shader's in the binaries;
+ * vs_name: its vertex shader's (two programs share one) */
+static int link(Prog *p, const char *vs, const char *vs_name, const char *fs, int quad,
+                const char *what) {
   unsigned long long t0 = ps4_now_us();
-  GLuint v = compile(GL_VERTEX_SHADER, vs, what), f = v ? compile(GL_FRAGMENT_SHADER, fs, what) : 0;
+  GLuint v = compile(GL_VERTEX_SHADER, vs, vs_name), f = v ? compile(GL_FRAGMENT_SHADER, fs, what) : 0;
   GLint ok = 0;
   if (!v || !f)
     return -1;
@@ -1104,10 +1241,10 @@ static void egl_down(void) {
 
 int ps4_gpu_init(void) {
   unsigned long long t0 = ps4_now_us();
-  if (egl_up() != 0 || link(&s_prog[P_UNTEX], k_vs_prim, k_fs_untex, 0, "untextured") != 0 ||
-      link(&s_prog[P_TEX], k_vs_prim, k_fs_tex, 0, "textured") != 0 ||
-      link(&s_prog[P_VRAM], k_vs_quad, k_fs_vram, 1, "VRAM copy") != 0 ||
-      link(&s_prog[P_BLIT], k_vs_quad, k_fs_blit, 1, "blit") != 0) {
+  if (egl_up() != 0 || link(&s_prog[P_UNTEX], k_vs_prim, "prim", k_fs_untex, 0, "untex") != 0 ||
+      link(&s_prog[P_TEX], k_vs_prim, "prim", k_fs_tex, 0, "tex") != 0 ||
+      link(&s_prog[P_VRAM], k_vs_quad, "quad", k_fs_vram, 1, "vram") != 0 ||
+      link(&s_prog[P_BLIT], k_vs_quad, "quad", k_fs_blit, 1, "blit") != 0) {
     host_log("gpu: the GLES2 renderer couldn't start");
     egl_down();
     return -1;

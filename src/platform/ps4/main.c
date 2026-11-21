@@ -65,7 +65,7 @@ static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
                       .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
                       .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
-                      .gpu_vsync = 1};
+                      .gpu_vsync = 1, .shader_dump = 1};
 int g_ps4_user = -1;
 
 unsigned long long ps4_now_us(void) { return sceKernelGetProcessTime(); }
@@ -165,6 +165,8 @@ static void read_config(void) {
       g_ps4_opts.interp_budget = n;
     else if (!strcmp(key, "gpu"))
       g_ps4_opts.gpu = n;
+    else if (!strcmp(key, "shader_dump"))
+      g_ps4_opts.shader_dump = n;
     else if (!strcmp(key, "gpu_vsync"))
       g_ps4_opts.gpu_vsync = n;
     else if (!strcmp(key, "menu_test"))
