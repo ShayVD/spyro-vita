@@ -50,7 +50,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/gte_ops.c",
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h",
-        "src/platform/common/render_ctx_names.h"
+        "src/game/render_ctx_names.h"
       ],
       "agent": "ad72b45d7f42b21a4"
     }
@@ -343,3 +343,4 @@ continue.
 - 14:33Z phase 8: workers started for #201, #203, #205
 - 15:04Z phase 8: #201 #203 #205 running, no commits yet; pick empty; #208 unanswered
 - 15:35Z phase 8: #201 #203 #205 still running (long host/Vita3K runs), no commits yet; #203 ran up to 4 host runs at once (flagged, benign: own processes only)
+- 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
