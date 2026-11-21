@@ -23,7 +23,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h",
         "src/game/render_ctx_names.h"
       ],
-      "agent": "ad72b45d7f42b21a4"
+      "agent": "ad72b45d7f42b21a4",
+      "reported": true
     },
     {
       "issue": 207,
@@ -36,7 +37,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/prof_draw.c",
         "docs/vita-testing.md"
       ],
-      "agent": "a9fc200ddb53a9efe"
+      "agent": "a9fc200ddb53a9efe",
+      "reported": true
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -340,3 +342,4 @@ continue.
 - 17:10Z phase 8: merged #201 (D200)
 - 17:11Z phase 8: gate #203 running; worker #207 started
 - 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)
+- 18:11Z phase 8: #205 gate running; #207 reported, gate queued
