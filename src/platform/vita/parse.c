@@ -12,7 +12,7 @@
  * in-between frames, the title, the attract demos) is walked on the game
  * thread at once, from the same copy, so that walk doesn't preempt the
  * presenter on core 1. There the game thread joins the presenter and then
- * the walk right after the handover anyway (D180), so it waited for the
+ * the walk right after the handover anyway (D196), so it waited for the
  * whole walk or more. Every other list goes to the thread as with 1. The
  * same walk either way, the same commands.
  *

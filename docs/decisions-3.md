@@ -346,7 +346,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ## 2026-11-20 — one PSX WOBBLE row, no wobble by default (#177)
 
-### D173. The options menu's PICTURE section has one row, PSX WOBBLE (OFF / ON, `wobble=`), in place of PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES; OFF, the default, is the fix (both on)
+### D194. The options menu's PICTURE section has one row, PSX WOBBLE (OFF / ON, `wobble=`), in place of PERSPECTIVE TEXTURES and SUB-PIXEL VERTICES; OFF, the default, is the fix (both on)
 
 - **Why:** the owner (2026-11-20): one switch, and no wobble by default. Players didn't know the fix needs both rows on, and both were off by default.
 - **What:** ON is the PS1's look (`persp=0 subpixel=0`), OFF has both on. The menu writes `config_version=6`. `persp=` and `subpixel=` stay as developer keys (as D153 kept `tex_filter=`/`dynres=`): a line wins over `wobble=` for its own half; when the halves agree the row shows it.
@@ -359,7 +359,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ## 2026-11-20 — clamped vertices drawn at their exact position (#178)
 
-### D174. With the fix on, a vertex whose projection the GTE clamped is recorded at its exact position and depth and drawn there, not marked invalid
+### D195. With the fix on, a vertex whose projection the GTE clamped is recorded at its exact position and depth and drawn there, not marked invalid
 
 - **Why:** the owner sees textures stretching at the 16:9 screen edges. A vertex whose projection the GTE clamped (IR1/IR2 saturated, the quotient at 0x1FFFF, SX/SY at 11 bits, SZ3) was recorded invalid, and every polygon using it fell back to the PS1's drawing. In 16:9 the sides show more than the 4:3 projection was made for, so big close polygons crossing the edge clamp.
 - **What:** `rtp_point` rebuilds the GTE's own answer from the inputs with every clamp; when it is the game's key, the unclamped point is kept under it, flagged `T_CLAMP`. A position beyond a candidate's int16 range (±128 px) goes to a per-table float array (1,024 a frame), so an entry stays 40 bytes. A clamped point that shares a key with another point makes the key ambiguous, never used (saturated keys collide). The renderer draws a clamped vertex at its exact position even with `subpixel` off (`VREF_CLAMP`); positions stay per key, so polygons sharing a vertex don't crack. Culling still uses the integer coordinates.
@@ -452,7 +452,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - but the presenter thread rose 8.63 → 9.11 ms a vblank and saturates in Toasty's heavy opening (96%). There it misses every in-between frame for about 25 s, so Toasty's late vblanks per 300 went 1.2 → 30.7 (#193). The owner's 60 HZ settings don't use the presenter in play.
 - **Left on the Vita:** ca4450e's eboot (SHA-1 54c274d0, READBACK IDENTICAL).
 
-### D180. On the Vita the OT walk overlaps the game thread: `savestate_point` joins it only for a pending save or load (#187)
+### D196. On the Vita the OT walk overlaps the game thread: `savestate_point` joins it only for a pending save or load (#187)
 
 - **Why:**
   - Heavy scenes lose frames with 60 Hz logic even at 1x.
@@ -550,14 +550,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ### D185. `vita-testing.md` describes PSX WOBBLE, and the bench measures the default (#182)
 
-- **Why:** #177 (D173) made PSX WOBBLE OFF (`persp=1 subpixel=1`) the default and moved the menu to `config_version=6`. Two things lagged behind:
+- **Why:** #177 (D194) made PSX WOBBLE OFF (`persp=1 subpixel=1`) the default and moved the menu to `config_version=6`. Two things lagged behind:
   - `vita-testing.md` still described the two old rows and `config_version=5`.
   - The bench had no set for the default without a filter, so it couldn't measure what players get.
 - **What changed in `vita-testing.md`:**
   - The `wobble=` row, with `persp=` and `subpixel=` kept as developers' keys.
   - The rule for old config files. With no `wobble=` line and a `config_version` below 6, an equal `persp`/`subpixel` pair reads as PSX WOBBLE OFF and is dropped at the next save. Any other mix is taken as written.
   - The test tools write `wobble=1`.
-  - The vcache log lines as they stand after D174–D184: clamps, derived, resolved and hooked, plus D178's per-report counters.
+  - The vcache log lines as they stand after D195–D184: clamps, derived, resolved and hooked, plus D178's per-report counters.
 - **What changed in `bench.c`:**
   - Two new sets, "4:3 native, persp subpixel" and "16:9 native, persp subpixel", each inside its widescreen group. The other sets are unchanged, so older logs still compare by name.
   - A run is now 20 × 60 × 12 = 14,400 vblanks from vblank 600, with the final lines at 15,000 (about 250 s; 13,560 before).
@@ -623,7 +623,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ### D188. The logic draw's projections are worked out by its walk while the walk has time (#179)
 
-- **Why:** with the wobble fix on, the vertex cache's per-projection record is most of the hand renderers' cost on the game thread. That is about 5.9 ms a tick in heavy 60 HZ Artisans on hardware (D180's split), and the game thread is the bottleneck at 60 HZ logic.
+- **Why:** with the wobble fix on, the vertex cache's per-projection record is most of the hand renderers' cost on the game thread. That is about 5.9 ms a tick in heavy 60 HZ Artisans on hardware (D196's split), and the game thread is the bottleneck at 60 HZ logic.
 - **What:**
   - **Deferral at 60 Hz.** With 60 Hz logic the game thread finds the entry, logs its place and keeps the projection's inputs (D186's `T_PEND` store, now one per table) instead of doing the maths. The walk works them out at a polygon's first lookup, at a hand-over source, or at a derived point.
     - Each logic table has its own store and far count, so the walk can finish frame N while the game records N+1.
@@ -673,8 +673,8 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **What:**
   - `resolve` walks the whole chain under the key, keeping only the projections it takes and only to count points.
   - An invalid projection, including a first one, blocks the vertex only when it is among the near ones.
-  - Each clamped projection's own exact place now goes into the log (`LOG_CL`). Places beyond int16 go to a new per-projection array, `lfar` (1,024 a frame per table). D174's per-key `far` is untouched, so D188's slot order and answers stay the same.
-  - When the near projections are all one point (within 1/8 px), a clamped vertex is drawn at that point's oldest projection's place (`VREF_CLAMP`), as D174 does for found clamped keys.
+  - Each clamped projection's own exact place now goes into the log (`LOG_CL`). Places beyond int16 go to a new per-projection array, `lfar` (1,024 a frame per table). D195's per-key `far` is untouched, so D188's slot order and answers stay the same.
+  - When the near projections are all one point (within 1/8 px), a clamped vertex is drawn at that point's oldest projection's place (`VREF_CLAMP`), as D195 does for found clamped keys.
   - A clamped point among several near ones stays ambiguous.
 - **Checked:**
   - **Host FNV.** One binary with a run-time switch; its old path is byte-identical to a 35121cb base. Every polygon found before keeps its drawing: 6.13 M on A, 8.98 M on B, with 262 and 250 newly found. The dumps are identical with `vc_lazy=0`, with lazy logic forced, and with `--walk-lazy`.
@@ -718,10 +718,10 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ### D192. Hardware session 4: round 9's build (63d80f4) on the Vita (2026-11-21)
 
-- **Run:** with the owner's yes ("vita is available for you, go"), AP11–AP14 (`runtime/autopilot/hw-session4.sh`, logs `logs/hw-ap11`–`hw-ap14b`). Builds: `autopilot-ca4450e.vpk` (D179's) and `autopilot-63d80f4.vpk` (D180–D191), US disc. New run file `tools/vita/fps-runs/ap14-owner60-toasty.txt`: the owner's settings (16:9, 60 HZ, the wobble fix on, `draw_distance=200`) on the Toasty route in real time.
+- **Run:** with the owner's yes ("vita is available for you, go"), AP11–AP14 (`runtime/autopilot/hw-session4.sh`, logs `logs/hw-ap11`–`hw-ap14b`). Builds: `autopilot-ca4450e.vpk` (D179's) and `autopilot-63d80f4.vpk` (D196–D191), US disc. New run file `tools/vita/fps-runs/ap14-owner60-toasty.txt`: the owner's settings (16:9, 60 HZ, the wobble fix on, `draw_distance=200`) on the Toasty route in real time.
 - **AP14 (owner's settings, Toasty route), ca4450e → 63d80f4, play windows 11,700–18,000:**
   - late vblanks per 300 in Toasty's heavy opening (12,000–12,600): 78 → 0; over 13,500–15,300: 5–51 → 0;
-  - game thread busy 99% → 63–95%. This is D180's walk overlap at 60 HZ, as expected there.
+  - game thread busy 99% → 63–95%. This is D196's walk overlap at 60 HZ, as expected there.
   - Artisans before the warp (11,100–11,400): late 106–109 → 2–3 per 300.
   - The run is in real time, so the two builds' play splits after 15,000 (63d80f4 reaches game over at 18,008; ca4450e doesn't).
 - **AP11 (AP8's owner60 lines on the pause route) against AP8b:** polygons found whole 98.63 → 99.27%, the game thread's vertices not found 5,585 → 2,920; game thread busy 60.4 → 52.9% (worst 96 → 81); 0 late vblanks in both.
@@ -730,7 +730,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Regression (#198):** on the game-over screen in Artisans (gamestate 5, reached at ~19,350 by both AP10 and AP13), the new build settles from 20,100 into exactly 60 late vblanks per 300. The render thread takes 16.65 ms a picture, of which 11.5 ms is its present; it skips the draws of ~180 in-between frames per 300. The presenter is busy 91% (7.45 → 15.4 ms a vblank) for the same work counters, and drops ~200 game-thread frames from a full queue. ca4450e (AP10) holds 0 late on the same screen. AP14b shows the same lock after its own game over (19,500–21,000, 60 late per 300). For a short stretch in Toasty (13,200–15,000) AP14b's render thread also runs at 16 ms a picture, without late vblanks. The work counters don't change, so this looks like a pacing lock between the presenter, its buffers and the render thread's present rather than more work. Suspects: D187's `parse_thread=2`, D186's lazy presenter. Not bisected: each run needs the owner's yes.
 - **Left on the Vita:** 63d80f4's eboot (SHA-1 f102a69c, READBACK IDENTICAL).
 
-### D193. The presenter's projections are worked out as it makes them again (`vc_lazy=0` by default); the logic draw's deferral no longer needs `vc_lazy` (#198)
+### D197. The presenter's projections are worked out as it makes them again (`vc_lazy=0` by default); the logic draw's deferral no longer needs `vc_lazy` (#198)
 
 - **Why:** D192's regression, bisected on hardware with the owner's yes ("sure run them"; `runtime/autopilot/hw-session5.sh`, `tools/vita/fps-runs/ap15-*.txt`, logs `logs/hw-ap15a`–`c`). These are AP13 (Toasty at 30 Hz with in-between frames, the wobble fix on) on `autopilot-63d80f4.vpk`, each with one switch changed:
 

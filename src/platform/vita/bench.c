@@ -39,7 +39,7 @@ typedef struct {
  * target) change four times a round. "all off" is the menu's PSX WOBBLE ON
  * (persp=0 subpixel=0); its default since #177, PSX WOBBLE OFF, is persp=1
  * subpixel=1 (the sets with both). "persp subpixel" with no filter is that
- * default as players get it, at 4:3 and 16:9 (#182, D173); the other sets
+ * default as players get it, at 4:3 and 16:9 (#182, D194); the other sets
  * are kept as they were, so bench logs compare across builds by set name;
  * the configured options come back at the end. */
 static const BenchSet k_sets[] = {

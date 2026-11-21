@@ -23,12 +23,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     },
     {
       "date": "2026-11-21 ~10:05",
-      "what": "owner's yes ('Yes, install it'): b1a41ac (D193, vc_lazy=0 default) eboot installed, READBACK IDENTICAL (SHA-1 a9cb468c), left on the Vita",
+      "what": "owner's yes ('Yes, install it'): b1a41ac (D197, vc_lazy=0 default) eboot installed, READBACK IDENTICAL (SHA-1 a9cb468c), left on the Vita",
       "log": "logs/hw-put-b1a41ac.out"
     },
     {
       "date": "2026-11-21 09:35-09:55",
-      "what": "session 5 (owner's yes 'sure run them'): #198 bisect AP15a parse_thread=1 / AP15b vc_lazy=0 / AP15c vc_lazy_logic=0; only vc_lazy=0 clears the game-over lock (0 late/300), D193",
+      "what": "session 5 (owner's yes 'sure run them'): #198 bisect AP15a parse_thread=1 / AP15b vc_lazy=0 / AP15c vc_lazy_logic=0; only vc_lazy=0 clears the game-over lock (0 late/300), D197",
       "log": "logs/hw-ap15a..c"
     },
     {
@@ -136,7 +136,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
-    "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D173-D191). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
+    "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D175-D197 (with D194, D195, D196)). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
     "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
     "2026-11-20 15:40: coordinator: two workers (#181, #186; no shared files) now that other sessions' containers are down to one restarting salsaas container. Baseline 5cdfccb running.",
@@ -276,11 +276,11 @@ continue.
 - 2026-11-20T11:27Z phase 8: baseline base-3ba4fd2 built (wobble60 needed a rerun: Vita3K crash); pause-ws-wobble's title shots differed from merge-m1 by interp_budget skips (Vita3K timing, 60 HZ default since D150): title, pause-ws, pause-ws-wobble now pin interp_budget=0, re-running; Vita3K: 1 crash
 - 2026-11-20T11:32Z phase 8: tick - #177 working (no commit yet, running Vita3K routes), baseline re-run queued behind it on the Vita3K lock; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T11:50Z phase 8: #177 reported (code done; gate waits for the re-baseline job), worker #178 started, filed the docs/bench follow-up; Vita3K: 0
-- 2026-11-20T12:00Z phase 8: merged #177 (D173; 5 routes the same against base-3ba4fd2); re-baseline done, pinned routes deterministic (91/91 repeat); worker #178 running; Vita3K: 0
+- 2026-11-20T12:00Z phase 8: merged #177 (D194; 5 routes the same against base-3ba4fd2); re-baseline done, pinned routes deterministic (91/91 repeat); worker #178 running; Vita3K: 0
 - 2026-11-20T12:26Z phase 8: tick - #178 committed (clamped vertices drawn at their exact position), running its checks; one worker (other sessions' containers); Vita3K: 0
 - 2026-11-20T12:47Z phase 8: #178 reported (clamped vertices exact; owner60 fallbacks 4,068 -> 621, found 93.30 -> 93.36%); gate job: GPU window captures (CAPTURE=1) base vs #178 on wobble60's lines; filed #183 (no-entry vertices, ~75% of misses) and #184 (stats race); Vita3K: 0
 - 2026-11-20T12:48Z phase 8: worker #180 started (draw distance 2x); #178 gate waits for the GPU captures; Vita3K: 0
 - 2026-11-20T12:52Z phase 8: tick - #178 captures: base done, #178's running; #180 working (no commit yet); Vita3K: 0
-- 2026-11-20T12:54Z phase 8: merged #178 (D174; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
+- 2026-11-20T12:54Z phase 8: merged #178 (D195; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
 - 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
 - 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0

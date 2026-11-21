@@ -1,4 +1,4 @@
-# Run AP14 (#187, D180's expected gain; the owner's yes 2026-11-21 "vita is available for you, go"):
+# Run AP14 (#187, D196's expected gain; the owner's yes 2026-11-21 "vita is available for you, go"):
 # the owner's settings (AP8's: 16:9, 60 HZ, the wobble fix on, DRAW DISTANCE 2x) on the Toasty
 # route, the heaviest views, in real time. Run on autopilot-ca4450e.vpk (AP14a, before #187 and the
 # rest of round 9) and autopilot-63d80f4.vpk (AP14b) and compare with tools/vita/fps60_summary.py:

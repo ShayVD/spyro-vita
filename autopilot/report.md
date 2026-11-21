@@ -117,7 +117,7 @@ word `main` (`a9db797`) is merged into `autopilot`:
   (the owner's 60 HZ, 16:9, wobble-fix settings on the Europe image). On `wobble60` the presenter runs on core 1 (main
   keeps it inline), 97% of its vertices found, 0% lost, and the `gl.*`/`vc.*` counters equal the pre-merge ones.
 
-## Phase 8 again: the owner's 2026-11-20 issues (round 9, D173-D191)
+## Phase 8 again: the owner's 2026-11-20 issues (round 9, D175-D197 (with D194, D195, D196))
 
 The owner asked for one PSX WOBBLE row with no wobble by default, no wobble at all (textures stretching and changing at
 the 16:9 edges), the wobble fix's cost at 60 fps, and 2x draw distance's frame drops. Merged into `autopilot`, each
@@ -125,13 +125,13 @@ through the gate (from #194 on with the host build and ctest):
 
 | Issue | Decision | What |
 |---|---|---|
-| #177 | D173 | one PSX WOBBLE row, off (no wobble) by default, `config_version=6` |
-| #178 | D174 | clamped edge vertices drawn at their exact place |
+| #177 | D194 | one PSX WOBBLE row, off (no wobble) by default, `config_version=6` |
+| #178 | D195 | clamped edge vertices drawn at their exact place |
 | #180 | D175 | 2x draw distance: low-detail far mobys, a 48 KB budget at 60 Hz logic |
 | #183 | D176 | world grids' moved points found again from their quad |
 | #186 | D177 | the sky records only its drawn triangles' vertices |
 | #181, #184 | D178 | ambiguous keys from the frame's order; grid x16 depths; race-free stats (the "44% scene") |
-| #187 | D180 | the OT walk overlaps the game thread again (a save-state join blocked it every tick since D71) |
+| #187 | D196 | the OT walk overlaps the game thread again (a save-state join blocked it every tick since D71) |
 | #190 | D181 | `prof_draw`'s sky counted once |
 | #189 | D182 | renderers hand over their screen-space vertices (shadows, glows, sky cuts, splits) |
 | #185 | D183 | `dd_budget=0` / `--lod-budget 0` off switch |
@@ -151,7 +151,7 @@ Hardware session 3 (D179, owner's yes) measured #180/#183/#186 on the Vita: sky 
 with the PS1's wobble: from ~6% to ~0.4%, mostly 2D by design), `gl.draws` -6.0%, `vc.proj` -7.2%; `vc.lines` +13.5%
 (the lookups that now find those vertices). Every replay shot of the five routes is unchanged. By the phase's rule (a
 counter worse) this round counts as no gain: `rounds_without_gain` 1 of 3. FPS isn't judged in Vita3K; the
-game-thread and presenter changes (D180, D186-D188) need a hardware run, which waits for the owner's yes.
+game-thread and presenter changes (D196, D186-D188) need a hardware run, which waits for the owner's yes.
 
 **Open for the owner:** the hardware run (the new build isn't on the Vita: it has `ca4450e`); raising the vendored
 kit's `VPK_PC_MAX` (a `../vita-port-kit` change); whether ambiguous portal outline keys should be cut at their pixel

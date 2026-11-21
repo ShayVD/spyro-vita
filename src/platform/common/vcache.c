@@ -326,7 +326,7 @@ VCacheCounters g_vcache_ctr[2]; /* each thread's on lines of its own (#193) */
  * each added to g_vcache_ctr[0] and g_vcache_stats[VC_LOGIC] once a frame
  * by its own thread (done_hook; the walk's end, psx_vcache_frame_use), with
  * atomic adds. Until #179 every record added to the lines the walk's
- * lookups add to, from the other core on the Vita (D71, D180): those lines
+ * lookups add to, from the other core on the Vita (D71, D196): those lines
  * moved between the cores for each projection. The walk's lookups still add
  * to their own words (polygons, vertices, misses...) directly: no word has a
  * plain add on one thread and any add on another. */
@@ -843,9 +843,9 @@ done:
  * count only those worked out.
  *
  * The logic draw's frames too (#179), with 60 Hz logic: there the game
- * thread is the bottleneck (D180) and the vertex cache's maths was most of
+ * thread is the bottleneck (D196) and the vertex cache's maths was most of
  * the hand renderers' cost with the fix on (D177, ~0.094 ms per KB of
- * primitives on hardware, D180). The game thread now only finds the entry,
+ * primitives on hardware, D196). The game thread now only finds the entry,
  * logs the place and keeps the inputs; the walk (the parse thread on the
  * Vita, core 1, D71) works them out as it looks the polygons up, and a
  * quarter to a third never are. Each logic table has its own store, so the
@@ -862,7 +862,7 @@ done:
  * D164, D167) the logic draw's frames work theirs out at once, as before:
  * there the walk shares core 1 with the presenter's thread, which was the
  * one short of time (D186), and the game thread waits for the walk at the
- * presenter's records_begin anyway (D180). psx_vcache_set_lazy_logic.
+ * presenter's records_begin anyway (D196). psx_vcache_set_lazy_logic.
  *
  * A projection is worked out at once, after its entry's list, when the
  * frame's order or its table's store is full. psx_vcache_set_lazy(0) turns
@@ -2084,7 +2084,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         (unsigned)nambig;
   }
   for (i = 0; i < n; i++) /* #192: a clamped point the order named is drawn at its place, as a
-                             found clamped key's is (D174), even with the polygon affine */
+                             found clamped key's is (D195), even with the polygon affine */
     if (rx[i])
       clamp = 1;
   if (res || der) {
