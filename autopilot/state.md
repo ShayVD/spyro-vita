@@ -10,10 +10,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "game": "spyro",
   "phase": 8,
   "workers": [],
-  "last_good": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b",
+  "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-c489090",
-    "commit": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
+    "commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc"
   },
   "hardware_runs": [
     {
@@ -116,6 +116,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D173-D191). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
     "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
     "2026-11-20 15:40: coordinator: two workers (#181, #186; no shared files) now that other sessions' containers are down to one restarting salsaas container. Baseline 5cdfccb running.",
@@ -157,14 +158,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 9,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
-    "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
-    "started_at": "2026-11-20T11:05:39Z",
-    "filed": 16,
-    "investigated": true
+    "n": 10,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
+    "base_commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
+    "started_at": "2026-11-21T07:05:00Z",
+    "filed": 0,
+    "investigated": false
   },
-  "rounds_without_gain": 0,
+  "rounds_without_gain": 1,
   "hardware_pending": null,
   "job": null,
   "batch": null,
