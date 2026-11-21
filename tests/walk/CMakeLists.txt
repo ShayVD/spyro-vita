@@ -11,6 +11,7 @@ if(NOT SPYRO_NATIVE_MEM)
   foreach(m 1 2)
     add_test(NAME walk_synth_mutant${m} COMMAND spyro ${walk_args}
       --log "${CMAKE_CURRENT_BINARY_DIR}/walk_synth_mutant${m}.log")
-    set_tests_properties(walk_synth_mutant${m} PROPERTIES ENVIRONMENT WALK_MUTATE=${m} WILL_FAIL TRUE)
+    set_tests_properties(walk_synth_mutant${m} PROPERTIES ENVIRONMENT WALK_MUTATE=${m})
+    spyro_mutant_test(walk_synth_mutant${m} "walk check: packet [0-9]+ \\(len .*walk check: [0-9]+ packets through both walks .*, [1-9][0-9]* differ. .*\\(D117, mutant ${m}\\)")
   endforeach()
 endif()

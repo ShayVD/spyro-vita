@@ -1,7 +1,7 @@
 /* Where the game's own CPU time goes on the Vita ("draw" lines in spyro.log,
  * every 300 vblanks, next to prof.c's "time" lines): the update, and each of
  * the renderers GamestateDraw calls (environment, mobys, Spyro, shadows and
- * effects, particles, sky). They are wrapped at link time
+ * effects, particles, sky; each counted once). They are wrapped at link time
  * (-Wl,--wrap=NAME, src/platform/vita/CMakeLists.txt); only calls from the
  * decomp's C are seen, which is every top-level call. Presentation passes
  * (src/game/present.c) run the same renderers, so an in-between frame shows
@@ -58,9 +58,44 @@ WRAP_M2C(D_FX, func_80059A48)     /* r_shadows: Spyro's shadow */
 WRAP_M2C(D_FX, func_80058D64)     /* r_flame */
 WRAP_M2C(D_FX, func_80058BA8)     /* r_particles: glows and sparkles */
 WRAP_M2C(D_PARTICLES, func_800573C8) /* r_particles */
-WRAP_M2C(D_SKY, func_80050BD0)    /* cyclorama set-up and r_cyclorama */
-WRAP_M2C(D_SKY, func_8004EBA8)    /* r_cyclorama: the sky, from draw.c (func_80050BD0
-                                     calls its register entry, not this) */
+/* The sky (#190). func_80050BD0 (cyclorama_hand.c: the portals, then the
+ * level's sky) calls func_8004EBA8 (sky_hand.c), and the wrap catches that
+ * call too, so charging both counted the main draw twice (D177). `sky` is the
+ * whole sky once: func_80050BD0 with what it calls, plus func_8004EBA8 when
+ * draw.c, the title screen or the credits call it on their own. The main
+ * draw's own time, from either caller, is "sky main" in the line's
+ * parenthetical, outside the parts (the scripts in tools/vita cut the line at
+ * "("). */
+static int s_in_cyclorama;
+static uint64_t s_skymain;
+
+uint32_t __real_func_80050BD0(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                              uint32_t, uint32_t, uint32_t);
+uint32_t __wrap_func_80050BD0(uint32_t a0, uint32_t a1, uint32_t a2,
+                              uint32_t a3, uint32_t a4, uint32_t a5,
+                              uint32_t a6, uint32_t a7) {
+  uint64_t t = now_us();
+  uint32_t r;
+  s_in_cyclorama++;
+  r = __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
+  s_in_cyclorama--;
+  charge(D_SKY, now_us() - t);
+  return r;
+}
+
+uint32_t __real_func_8004EBA8(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                              uint32_t, uint32_t, uint32_t);
+uint32_t __wrap_func_8004EBA8(uint32_t a0, uint32_t a1, uint32_t a2,
+                              uint32_t a3, uint32_t a4, uint32_t a5,
+                              uint32_t a6, uint32_t a7) {
+  uint64_t t = now_us(), us;
+  uint32_t r = __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
+  us = now_us() - t;
+  s_skymain += us;
+  if (!s_in_cyclorama)
+    charge(D_SKY, us);
+  return r;
+}
 
 void __real_GamestateUpdate(void);
 void __wrap_GamestateUpdate(void) {
@@ -80,9 +115,12 @@ void prof_draw_report(int vblank, int vblanks) {
     n += snprintf(buf + n, sizeof buf - n, " %s %u.%02u", k_names[i],
                   (unsigned)(s_acc[i] / vblanks / 1000),
                   (unsigned)(s_acc[i] / vblanks % 1000 / 10));
-  snprintf(buf + n, sizeof buf - n, " (env calls %u)", s_calls[D_ENV]);
+  snprintf(buf + n, sizeof buf - n, " (env calls %u; sky main %u.%02u)",
+           s_calls[D_ENV], (unsigned)(s_skymain / vblanks / 1000),
+           (unsigned)(s_skymain / vblanks % 1000 / 10));
   vita_log("%s", buf);
   memset(s_acc, 0, sizeof s_acc);
+  s_skymain = 0;
   memset(s_calls, 0, sizeof s_calls);
   {
     /* "draw ab": per variant, the lists counted and each part's whole us

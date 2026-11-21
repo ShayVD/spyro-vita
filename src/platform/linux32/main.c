@@ -14,7 +14,7 @@
  *         [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] [--cam-speed PERCENT]
  *         [--no-cam-recentre]
  *         [--state V:save|load:N]... [--state-hash FILE]
- *         [--draw-distance X] [--lod-stats N] [--disc-marker FILE]
+ *         [--draw-distance X] [--lod-budget KB] [--lod-stats N] [--disc-marker FILE]
  *   spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]
  * --disc: the extracted files (with manifest.json), or a folder holding a
  *   disc image (.cue/.bin/.img; decisions D60). --disc-marker: also check
@@ -97,6 +97,9 @@
  *   src/game/lod.c, decisions D49). --lod-stats N: a "lod" line every N
  *   vblanks (primitive buffer use, scale, extra mobys), also with it off.
  *   --lod-guards-only (tests): no limiter, only the hard buffer bounds.
+ *   --lod-budget KB: with --tick60, in play, the limiter keeps each draw
+ *   under KB of primitives (default 48, LOD_BUDGET_60; D175); 0: no budget,
+ *   only the buffer's limits, as before #180 (the Vita's dd_budget=0).
  * --fast-render 3 (the default since D127): the hand-written renderers as
  *   readable C (stage 7d2, D124: no GTE data registers, scratchpad, spill
  *   area or hand stack); 0 (the arena build): the renderers' mips2c units
@@ -273,8 +276,10 @@ static void nd_atexit(void) {
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <dirent.h>
 
 extern void spyro_main(void);
+const char *psx_mcrd_root(void); /* src/platform/common/libmcrd.c: the cards' folder */
 void port_arena_symbols(void (*log)(const char *fmt, ...)); /* src/game/port.c */
 /* libcd (PsyQ signatures) and the game's read callback (cd.c) */
 typedef void (*CdlCB)(unsigned char, unsigned char *);
@@ -291,6 +296,43 @@ static void mixer_report(void) {
 
 static int s_cd_native; /* --cd-native (D93) */
 static int s_region_check; /* --region-check (D133) */
+static int s_save_given; /* --save */
+
+/* #173 (D169): without --save the memory cards are libmcrd.c's default root
+ * (./save), shared by every run in the folder. A run that finds a card there
+ * from an earlier run starts from it, not a blank one, and its pad script can
+ * fall out of step: say so in one line. Only looks; nothing is changed. */
+static void save_default_warn(void) {
+  const char *root = psx_mcrd_root();
+  char first[600] = "", card1[600] = "";
+  int card, files = 0, have_card1 = 0;
+  for (card = 0; card < 2; card++) {
+    char d[600];
+    DIR *dir;
+    struct dirent *e;
+    snprintf(d, sizeof d, "%s/card%d", root, card);
+    dir = opendir(d);
+    if (!dir)
+      continue;
+    if (card == 1) { /* port B has a card only if its folder exists */
+      have_card1 = 1;
+      snprintf(card1, sizeof card1, "; %s exists, so port B has a card", d);
+    }
+    while ((e = readdir(dir)) != NULL) {
+      if (e->d_name[0] == '.')
+        continue;
+      if (files++ == 0)
+        snprintf(first, sizeof first, "%s/%s", d, e->d_name);
+    }
+    closedir(dir);
+  }
+  if (files == 0 && !have_card1)
+    return;
+  host_log("warning: no --save, and %s already holds a memory card (%d file%s%s%s%s): this run "
+           "starts from it, not a blank card, so pad scripts may not match; --save DIR gives a "
+           "run its own card (D169)",
+           root, files, files == 1 ? "" : "s", files ? ", first " : "", first, card1);
+}
 
 static unsigned long long now_us(void) {
   struct timespec ts;
@@ -343,7 +385,7 @@ static void usage(void) {
           "             [--analog] [--free-camera] [--cam-invert-x] [--cam-invert-y] "
           "[--cam-speed PERCENT] [--no-cam-recentre]\n"
           "             [--state V:save|load:N]... [--state-hash FILE]\n"
-          "             [--draw-distance X] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
+          "             [--draw-distance X] [--lod-budget KB] [--lod-stats N] [--disc-marker FILE] [--region-dev] [--pal50] [--display60] [--region-check] [--fast-render 0|3] [--fast-render-check [--particle-sweep]] [--native-draw[-check]] [--native-draw-parse[-check]] [--nd-fast 0|1] [--nd-ab] [--nd-direct[-check]] [--walk-check] [--walk-check-synth N] [--render-ctx-check] [--pres-check] [--pres-check-thread [--faces-race]] [--pres-check-late] [--pres-write-check] [--faces-copy] [--pres-audit] [--pres-particles-full] [--gpu-clear] [--prof-draw]\n"
           "             [--mixer 1|3] [--cd-native] [--cd-async] [--cd-stats]\n"
           "       spyro --replay DIR [--only NAME] [--ignore FILE] [--fnmap FILE] [--disc DIR]\n");
   exit(2);
@@ -403,18 +445,37 @@ static void tick60_atexit(void) {
 
 static int s_vcache;
 
-static void vcache_report(void) {
-  const VCacheStats *s = &g_vcache_stats;
+static void vcache_line(const char *what, const VCacheStats *s) {
   unsigned f = s->frames ? s->frames : 1;
-  if (!s_vcache)
-    return;
-  host_log("vcache: %u frames; per frame: %u vertices projected (peak %u entries), "
+  host_log("vcache%s: %u frames; per frame: %u vertices projected (peak %u entries), "
            "%u invalid, %u ambiguous, %u not recorded; polygons %u, all vertices found %u (%.1f%%); "
            "vertices found %.1f%% (not found: no entry %u, invalid %u, ambiguous %u per frame)",
-           s->frames, s->records / f, s->peak, s->invalid / f, s->ambiguous / f, s->full / f,
-           s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
+           what, s->frames, s->records / f, s->peak, s->invalid / f, s->ambiguous / f,
+           s->full / f, s->polys / f, s->persp / f, s->polys ? 100.0 * s->persp / s->polys : 0.0,
            s->verts ? 100.0 * s->hits / s->verts : 0.0, s->miss_none / f, s->miss_invalid / f,
            s->miss_ambiguous / f);
+}
+
+/* every frame (the line tools/native_draw_ab.sh reads), then the logic
+ * draw's and the presenter's apart, each only if it had frames (the script
+ * flags any "vertices found 0.0%"; #158): "found in the other's" counts the
+ * vertices found in an entry the other kind of frame's projections made */
+static void vcache_report(void) {
+  VCacheStats all;
+  int k;
+  if (!s_vcache)
+    return;
+  psx_vcache_stats_sum(&all);
+  vcache_line("", &all);
+  for (k = 0; k < 2; k++) {
+    const VCacheStats *s = &g_vcache_stats[k];
+    if (!s->frames)
+      continue;
+    vcache_line(k == VC_LOGIC ? " logic" : " presenter", s);
+    host_log("vcache %s: vertices found in the other's entries %u (%.2f%% of its vertices)",
+             k == VC_LOGIC ? "logic" : "presenter", s->other,
+             s->verts ? 100.0 * s->other / s->verts : 0.0);
+  }
   host_log_flush();
 }
 
@@ -639,6 +700,9 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--draw-distance") == 0) {
       TAKE();
       g_lod.scale = (int)(atof(val) * LOD_ONE + 0.5);
+    } else if (strcmp(a, "--lod-budget") == 0) {
+      TAKE();
+      g_lod.budget = to_int(val) * 1024; /* 0: no 60 Hz budget (D175, #185) */
     } else if (strcmp(a, "--lod-guards-only") == 0) {
       g_lod.guards_only = 1; /* tests: only the hard bounds (lod.c) */
     } else if (strcmp(a, "--lod-stats") == 0) {
@@ -730,6 +794,7 @@ int main(int argc, char **argv) {
     } else if (strcmp(a, "--save") == 0) {
       TAKE();
       psx_mcrd_set_root(val); /* memory cards: DIR/card0, DIR/card1 */
+      s_save_given = 1;
     } else if (strcmp(a, "--cd-native") == 0) {
       s_cd_native = 1;
     } else if (strcmp(a, "--cd-async") == 0) {
@@ -821,6 +886,12 @@ int main(int argc, char **argv) {
              "--native-draw-parse-check");
     return 1;
   }
+  /* the vertex cache is the game thread's, and the presenter's frame in it
+   * ends at its DrawOTag (#158): the presenter must run inline */
+  if (s_vcache && g_pres_check_thread) {
+    host_log("--vcache: not with --pres-check-thread or --pres-check-late");
+    return 1;
+  }
   if ((g_nd_check || g_nd_pcheck) && !g_walk_ref_built) {
     host_log("--native-draw-check and --native-draw-parse-check compare with PsyCross's walk: "
              "the reference build only (SPYRO_PSYCROSS_REF)");
@@ -893,6 +964,8 @@ int main(int argc, char **argv) {
   psx_cd_set_read_latency(cd_latency);
   host_log("disc %s, frames %d, cd latency %d", g_host_opts.disc_dir,
            g_host_opts.frames, cd_latency);
+  if (!s_save_given)
+    save_default_warn();
   if (s_cd_native && psx_cdn_start() == 0)
     host_log("cd: native file reads on a worker thread (--cd-native, D93)");
   port_cheats_set_log(host_log);

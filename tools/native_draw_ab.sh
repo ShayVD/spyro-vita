@@ -68,7 +68,7 @@ run() { # NAME MODE
   wc1d) extra="$extra --native-draw --nd-direct --walk-check ${ND_ARGS:-}";;
   wc2) extra="$extra --native-draw-parse --walk-check ${ND_ARGS:-}";;
   wc2d) extra="$extra --native-draw-parse --nd-direct --walk-check ${ND_ARGS:-}";; esac
-  GEMS="--frames 8768 --pad logs/pads/gems.txt --shot-every 500"
+  GEMS="--frames 8768 --pad tools/oracle/pads/gems.txt --shot-every 500"
   case $n in
   gems) args="$GEMS --widescreen";;
   demo) args="--frames 12000 --shot-every 500";;

@@ -14,6 +14,8 @@
 #endif
 #include "psx_arena.h"
 #include "psx_clock.h"
+#include "psx_gpu.h" /* g_GPUDisabledState */
+#include "psx_vcache.h"
 #include "psx_walk.h"
 
 #include <assert.h> /* PsyCross headers use C11 static_assert */
@@ -229,22 +231,18 @@ static void context(int wide, const uint8_t *flags, const uint32_t *caches, int 
   g_pres_mips_sp = render_ctx_stack_top();
 #endif
   g_pres_narrow = wide;
-  g_pres_rtp_hook = NULL;
-  g_pres_rtp_value_hook = NULL;
+  g_pres_rtp_hook = NULL; /* (7d2's readable renderers have no register file) */
   records_begin();
+  /* The vertex cache (persp, subpixel; #158): the presenter's frame, its
+   * projections into its own table, its polygons looked up there (its
+   * DrawOTag walks and ends it unless the GPU is disabled). After
+   * records_begin: the game's walk, which looks up the logic draw's, is
+   * joined. On the Vita's presenter thread the frame is handed to it as
+   * its buffer is placed (gpu_thread.c pres_submit, #162) and ends as the
+   * buffer closes. */
+  g_pres_rtp_value_hook = psx_vcache_pres_begin(!g_GPUDisabledState);
   lod_begin();
 }
-
-/* The vertex cache (persp, subpixel) records the draw's projections as it
- * records the game's (D152): its tables are the game thread's, so only for
- * a draw that runs inline, set after pres_draw_prepare and before
- * GamestateDraw_pres. The presenter's renderers are the native ones, which
- * give the cache values (pres_ngte_vcache); nothing of it runs the register
- * file's RTPS, whose hook reads the game's registers, so that one stays
- * off. Without this its polygons found nothing (the hooks were null since
- * 7e) and an in-between frame was drawn at integer positions with affine
- * textures between two frames that weren't. */
-void pres_draw_vcache(void) { g_pres_rtp_value_hook = g_psyxRtpValueHook; }
 
 /* The overlay functions the game would call through its pointers, as
  * indices the presenter's pres_flight5, pres_flight4 and pres_balloon4

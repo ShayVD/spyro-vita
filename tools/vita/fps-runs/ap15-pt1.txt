@@ -1,0 +1,3 @@
+# #198 bisect (the owner's yes 2026-11-21 "sure run them"): AP13 (ap2-toasty60-wobble.txt) with parse_thread=1, on autopilot-63d80f4.vpk.
+# Read the game-over windows (20,100-21,000) against AP13.
+parse_thread=1

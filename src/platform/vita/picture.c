@@ -1,11 +1,14 @@
-/* The options menu's picture rows (decisions D48, D49): the GPU renderer's
- * perspective, sub-pixel vertices and resolution (D39-D43), and the longer
+/* The options menu's picture rows (decisions D48, D49): the PS1's wobble
+ * (perspective-correct textures and sub-pixel vertices, D39, as one row
+ * since #177), the GPU renderer's resolution (D39-D43), and the longer
  * draw distance (src/game/lod.c). All change at once. The GPU rows are
  * hidden with the software renderer (gpu=0, or the GPU's shaders failed),
  * where they do nothing; their keys are still read and saved.
  * The texture filter (TEX FILTER, D48) and the dynamic resolution (DYNAMIC
  * RES, D75) had rows until D153: tex_filter= and dynres= are developers'
- * config.txt keys now (main.c, read_config). */
+ * config.txt keys now (main.c, read_config). So are persp= and subpixel=
+ * since #177, when PSX WOBBLE replaced PERSPECTIVE TEXTURES and SUB-PIXEL
+ * VERTICES: players didn't know the fix needs both. */
 #include "vita.h"
 #include "../../game/lod.h"
 #include "menu_opts.h"
@@ -15,9 +18,12 @@ static int gpu_shown(void) { return g_vita_gpu; }
 /* The options the GPU draws with now: a set whose shaders don't compile
  * (vita_gpu_set_options) puts the menu's value back. (tex_filter is the
  * config's, a developer's key since D153: it goes with the set.) */
-static int s_filter, s_persp, s_subpixel;
+static int s_filter, s_persp, s_subpixel, s_wobble;
 
-static void gpu_changed(void) {
+/* PSX WOBBLE (#177): ON is the PS1's look, both halves off; OFF (the
+ * default) both on. */
+static void wobble_changed(void) {
+  g_vita_opts.persp = g_vita_opts.subpixel = !g_vita_opts.wobble;
   if (!g_vita_gpu)
     return;
   if (vita_gpu_set_options(g_vita_opts.gpu_res, g_vita_opts.tex_filter, g_vita_opts.persp,
@@ -25,11 +31,13 @@ static void gpu_changed(void) {
     g_vita_opts.tex_filter = s_filter;
     g_vita_opts.persp = s_persp;
     g_vita_opts.subpixel = s_subpixel;
+    g_vita_opts.wobble = s_wobble;
     return;
   }
   s_filter = g_vita_opts.tex_filter;
   s_persp = g_vita_opts.persp;
   s_subpixel = g_vita_opts.subpixel;
+  s_wobble = g_vita_opts.wobble;
 }
 
 /* The menu already wrote gpu_res, so set_options sees no change: every
@@ -56,6 +64,7 @@ void vita_picture_init(void) {
   s_filter = g_vita_opts.tex_filter;
   s_persp = g_vita_opts.persp;
   s_subpixel = g_vita_opts.subpixel;
+  s_wobble = g_vita_opts.wobble;
   vita_picture_apply();
   if (g_lod.scale > LOD_ONE)
     vita_log("picture: draw distance %d%% (experimental, D49)", g_vita_opts.draw_distance);
@@ -78,12 +87,9 @@ static const int k_dd_values[] = {100, 150, 200};
 /* Labels and values fit the 640-pixel panel with "< >" round the value
  * (18 pixels a letter: at most 31 letters together). */
 static const MenuOption k_rows[] = {
-    {.section = MENU_PICTURE, .label = "PERSPECTIVE TEXTURES", .key = "persp",
-     .value = &g_vita_opts.persp, .names = g_menu_off_on, .count = 2,
-     .on_change = gpu_changed, .visible = gpu_shown},
-    {.section = MENU_PICTURE, .label = "SUB-PIXEL VERTICES", .key = "subpixel",
-     .value = &g_vita_opts.subpixel, .names = g_menu_off_on, .count = 2,
-     .on_change = gpu_changed, .visible = gpu_shown},
+    {.section = MENU_PICTURE, .label = "PSX WOBBLE", .key = "wobble",
+     .value = &g_vita_opts.wobble, .names = g_menu_off_on, .count = 2,
+     .on_change = wobble_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
      .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "DRAW DISTANCE (EXP.)", .key = "draw_distance",

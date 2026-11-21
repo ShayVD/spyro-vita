@@ -631,10 +631,18 @@ static uintptr_t subst_of(const PsxGpuWalk *w, uintptr_t pk) {
   return pk;
 }
 
+/* OT packets walked since the start, for the Vita's work counters (issue
+ * #160, D165; src/platform/vita/perfcount.c): [0] the game thread's walk,
+ * [1] the walks of their own (the presenter's, D126). One plain add a walk:
+ * each is written by one walk at a time (the presenter's frame is joined
+ * before the next), and only read elsewhere. */
+unsigned g_psx_walk_packets[2];
+
 void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
   /* the check's hooks are the game thread's walk's (D126) */
   const PsxGpuCheck *const chk = w->own ? NULL : g_psx_gpu_check;
   uintptr_t pk;
+  unsigned packets = 0;
   if (!p)
     return;
   w->prim_mode = single;
@@ -648,11 +656,13 @@ void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
     close_split(w);
     if (chk)
       chk->post((uintptr_t)p, 1);
+    g_psx_walk_packets[w->own != 0]++;
     return;
   }
   for (pk = (uintptr_t)p;; pk = next ? next(pk) : (uintptr_t)nextPrim(pk)) {
     const int len = (int)getlen(pk);
     if (len > 0) {
+      packets++;
       /* the words parsed: the packet's, or the ones w->subst has for it
        * (its tag the same); the list goes on from the packet's own link */
       const uintptr_t q = w->subst ? subst_of(w, pk) : pk;
@@ -673,6 +683,7 @@ void psx_gpu_walk_in(PsxGpuWalk *w, u_long *p, int single, PsxGpuNext next) {
     if (isendprim(pk))
       break;
   }
+  g_psx_walk_packets[w->own != 0] += packets;
 }
 
 void psx_gpu_walk(u_long *p, int single, PsxGpuNext next) { psx_gpu_walk_in(&s_game, p, single, next); }

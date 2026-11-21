@@ -21,14 +21,27 @@ HW_SAVE_DIR=save
 
 # The run's first config.txt lines: the owner's disc= kept; virtual vblanks unless REALTIME=1; as vita3k_run.sh,
 # the host's picture and camera so runs compare with it, unless DEVICE_DEFAULTS=1 (later lines win;
-# config_version=5: main.c); no standby, dimming or screen off while it runs (vblank.c).
+# config_version=6: main.c); no standby, dimming or screen off while it runs (vblank.c). The host's picture
+# includes the PS1's wobble (wobble=1, #177: the device's default is off); a run's persp=1 subpixel=1 after it
+# still turns the fix on, as before.
 hw_config_base() {
   [ -n "$1" ] && grep -E '^disc=' "$1" || true
   [ "${REALTIME:-0}" = 1 ] || echo "realtime=0"
-  echo "config_version=5" # the run's lines are its own, a developer's tex_filter= or dynres= too (D153)
+  # the run's lines are its own: a developer's tex_filter= or dynres= (D153), persp= or subpixel= (#177),
+  # even after a run file's own config_version=5
+  echo "config_version=6"
   [ "${DEVICE_DEFAULTS:-0}" = 1 ] ||
-    printf 'widescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\n'
+    printf 'widescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\nwobble=1\n'
   echo "keep_awake=1"
+}
+
+# vita-port-kit's v3k_run.sh (the autopilot's Vita3K routes): virtual vblanks unless REALTIME=1, and the PS1's
+# wobble (wobble=1) unless DEVICE_DEFAULTS=1, so the routes keep the pictures they had before #177 made the fix
+# the default; a route's persp=1 subpixel=1 still turns it on. Nothing else: the routes' other settings are the
+# device's, as before.
+v3k_config_base() {
+  [ "${REALTIME:-0}" = 1 ] || echo "realtime=0"
+  [ "${DEVICE_DEFAULTS:-0}" = 1 ] || echo "wobble=1"
 }
 
 # the disc image's one-time check (D60) isn't done again for every run
