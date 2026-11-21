@@ -690,3 +690,28 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
     - On A these are far points at 2x draw distance whose depth saturated SZ3, and 314 of the 337 polygons have no found vertex to order by.
     - On B they are edge-saturated keys with 2–3 clamped points in one batch, up to 13,858 px off the key. A wrong pick would draw a long spike and neighbours could crack, so these keep the PS1's drawing.
   - **Polygons with both an ambiguous and a no-entry vertex** (90 / 77): `resolve` only runs when every missing vertex is ambiguous (#197).
+
+### D191. With the fix on, a quad's one vertex with no entry and its ambiguous ones are found together (#197)
+
+- **Why:** after D190, `resolve` ran only when every missing vertex was ambiguous. Polygons that also had a vertex with no entry kept the PS1's drawing: 90 on host route A and 77 on route B.
+- **What:**
+  - **Which quads:** one vertex has no entry and no hand-over, and the other missing vertices are ambiguous.
+  - **Place:** the quad first gets derive's place. The a + b − o search walks an ambiguous corner's projections too. The projection that place names counts as one of the polygon's places for `resolve`.
+  - **Depth:** `resolve`'s depths are then the third corner of derive's plane.
+  - **Keeping it:** the key's place for the frame is kept only when both steps succeed.
+  - **Code:** `derive` is split into `derive_place` and `derive_depth`, with the same arithmetic.
+  - **Log:** the `vcache resolved:` line gives the vertices left ambiguous, by reason (`res_der`, `res_why`).
+- **Checked:**
+  - **Host FNV** against c737af2, using one binary with a run-time switch whose old path is byte-identical.
+    - Every polygon found before keeps its drawing, and no polygon still affine changes: 6.11 M polygons on A, 8.97 M on B.
+    - Newly found: 27 on A, 61 on B.
+    - The dumps are the same with `vc_lazy=0`, with lazy logic forced and with `--walk-lazy`.
+  - **Cracks:** no new derived vertex is placed elsewhere in its frame. One is left at its key ahead of later polygons, which D176 allows.
+  - **Pictures:** the five routes' shots are the same. The `CAPTURE=1` grabs at 6,900–8,400 are byte-identical; no fixed polygon falls on those frames.
+  - **Builds:** the gate passes (host build and ctest), plus the native build and `noassets`.
+  - **Host ambiguous left:** 447 → 420 on A, 239 → 178 on B.
+- **Left:**
+  - **Hand-overs dropped because their source is ambiguous:** 63 vertices on A, 16 on B.
+    - Glow rims round an ambiguous centre would draw the same either way.
+    - A world split or sky cut from an ambiguous end would be placed by each polygon's own depth for that end, so neighbours could crack.
+  - **Ambiguous portal outline keys:** taking one at its pixel centre exactly places 354 more sky-clip vertices on A, but moves 281 polygons that stay affine. That picture change is the owner's call.
