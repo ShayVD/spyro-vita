@@ -17,6 +17,16 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "hardware_runs": [
     {
+      "date": "2026-11-21 ~10:05",
+      "what": "owner's yes ('Yes, install it'): b1a41ac (D193, vc_lazy=0 default) eboot installed, READBACK IDENTICAL (SHA-1 a9cb468c), left on the Vita",
+      "log": "logs/hw-put-b1a41ac.out"
+    },
+    {
+      "date": "2026-11-21 09:35-09:55",
+      "what": "session 5 (owner's yes 'sure run them'): #198 bisect AP15a parse_thread=1 / AP15b vc_lazy=0 / AP15c vc_lazy_logic=0; only vc_lazy=0 clears the game-over lock (0 late/300), D193",
+      "log": "logs/hw-ap15a..c"
+    },
+    {
       "date": "2026-11-21 09:03-09:30",
       "what": "session 4 (owner's yes 'vita is available for you, go'): AP11 owner60 on 63d80f4 (found whole 98.63->99.27%, busy 60->53%, 0 late), AP12 shot_hd (close walls/ground only), AP13 Toasty 30 Hz (Toasty late/300 30.7->3.5), AP14a/b owner60 on Toasty ca4450e vs 63d80f4 (opening 78->0 late/300); regression on the game-over screen at 30 Hz: 0 -> 60 late/300 (#198); 63d80f4 left on the Vita (READBACK IDENTICAL, SHA-1 f102a69c)",
       "log": "logs/hw-ap11..hw-ap14b, D192"
@@ -171,9 +181,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 1,
-  "hardware_pending": [
-    "#198 bisect on hardware (parse_thread=1, vc_lazy=0, vc_lazy_logic=0) needs the owner's yes"
-  ],
+  "hardware_pending": [],
   "job": null,
   "batch": null,
   "lanes": [
