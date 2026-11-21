@@ -37,6 +37,8 @@ are on by default too: the files no longer set them, and a file that wants one o
 
 The lines are every 300 vblanks (5 s). Compare windows of the same place on the route.
 
+**Any run with a longer draw distance** (AP8, AP14, the owner's 60 HZ settings): the `lod N:` line's `xA average` is the distance drawn, and `N back-offs (M for the budget, of them H held at 1x)` says why it is lower than the menu's. M of the N are the 60 Hz budget's (D175), and H of those were already at 1x: the scene's own 1x draw is over the budget's 48 KB, so 2x draws as 1x there (#200). In the owner's Stone Hill at 2x, H is close to the window's draws. Logs from before #200 left those draws out of M (`(0 for the budget)` beside 240–300 back-offs at `x1.00`).
+
 **A1 against A2: the render thread and the read-ahead at 30 fps.**
 - `time N:` (the game thread). `raster` should fall from ~4.8 ms per vblank to almost nothing, `ot` by about `expand()`'s share (the `atlas` line's expand ms divided by 300), and `spu` by most of the file-system time. `busy %` should fall from 93–94% to about 50–60% in the heavy windows (*estimate*). In A2 the game's waits for the render thread are inside `wait`.
 - `render N:` (A2 only). The render thread's busy ms per vblank and per picture, and the game thread's waits by reason. "previous frame not shown yet" is the time the game waited because the GL thread or the GPU was behind. "sync calls" should be small, except around loads and the pause menu.
