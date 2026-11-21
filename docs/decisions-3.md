@@ -666,3 +666,27 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `vc.div` is 6.6% lower with the default.
 - **Not built:** a batch hook for RTPT's three vertices. RTPT is only used by particles, shadows and flames. The upper bound is about 0.38 ms a vblank and the realistic saving under 0.04 ms. Batching the env and moby `ngte_rtps_run` loops would be the place, at about 0.25–0.35 ms at best.
 - **Left for the owner:** raising the vendored kit's `VPK_PC_MAX` (32 → 48), so the vc counters can join the main line. That's a change in `../vita-port-kit` plus a re-vendor.
+
+### D190. With the fix on, an ambiguous key resolves however many projections it has, an invalid projection counts only when it is near the polygon's others, and a clamped point the frame's order names alone is drawn at its own place (#192)
+
+- **Why:** after D178, about 1% of ambiguous vertices stayed unresolved. Re-measured on the host after D182, D186 and D188, that was 1,104 on route A and 490 on route B. Most were keys with more than 32 projections (593 on A) or keys made ambiguous by a clamped projection (336 on A, 355 on B).
+- **What:**
+  - `resolve` walks the whole chain under the key, keeping only the projections it takes and only to count points.
+  - An invalid projection, including a first one, blocks the vertex only when it is among the near ones.
+  - Each clamped projection's own exact place now goes into the log (`LOG_CL`). Places beyond int16 go to a new per-projection array, `lfar` (1,024 a frame per table). D174's per-key `far` is untouched, so D188's slot order and answers stay the same.
+  - When the near projections are all one point (within 1/8 px), a clamped vertex is drawn at that point's oldest projection's place (`VREF_CLAMP`), as D174 does for found clamped keys.
+  - A clamped point among several near ones stays ambiguous.
+- **Checked:**
+  - **Host FNV.** One binary with a run-time switch; its old path is byte-identical to a 35121cb base. Every polygon found before keeps its drawing: 6.13 M on A, 8.98 M on B, with 262 and 250 newly found. The dumps are identical with `vc_lazy=0`, with lazy logic forced, and with `--walk-lazy`.
+  - **Ambiguous on the host:** 1,104 → 447 on A, 490 → 239 on B.
+  - **Cracks:** of 113 frame-keys with a placed clamped point, none was left unplaced or placed elsewhere in the same frame.
+  - **Vita3K:** the five routes' shots are the same, and the gate (host build and ctest) passes.
+  - **Vita3K counters:**
+    - `owner60` (6,900–9,000): ambiguous 785 → 190, `vc.misses` −7.6%, `vc.div` +0.3%.
+    - `wobble60`: ambiguous 245 → 129, every counter the same.
+  - **GPU picture (`CAPTURE=1`):** identical at 7,200, 7,800 and 8,400. At 6,900 only the texturing inside the wall and water polygons by the waterfall changes (1.29% of pixels), with no cracks.
+- **Left:**
+  - **A clamped point among several near ones:** 337 on A, 124 on B.
+    - On A these are far points at 2x draw distance whose depth saturated SZ3, and 314 of the 337 polygons have no found vertex to order by.
+    - On B they are edge-saturated keys with 2–3 clamped points in one batch, up to 13,858 px off the key. A wrong pick would draw a long spike and neighbours could crack, so these keep the PS1's drawing.
+  - **Polygons with both an ambiguous and a no-entry vertex** (90 / 77): `resolve` only runs when every missing vertex is ambiguous (#197).
