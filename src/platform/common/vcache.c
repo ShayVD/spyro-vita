@@ -133,7 +133,17 @@
  * ratios are compared without dividing unless the quotient's rounding
  * could decide the comparison (same_depth, under4, under3999). An entry is
  * 40 bytes, not 44. The g_vcache_cost counters count the divisions, probes
- * and table lines. */
+ * and table lines.
+ *
+ * A cheaper record (#205; D199 put the record at 85% of the logic draw's
+ * non-raster time on the host): the hand renderers' native projections
+ * call the record by name (ngte_vcache, pres_vcache_ngte) with their
+ * registers by pointer and the sums and SZ3 the GTE emulation worked out,
+ * so the record neither copies 15 registers a vertex for the value hook nor
+ * multiplies them again (Pt), and a kept projection's registers are
+ * compared with the last ones kept by their generation (gte_native.h
+ * NgteProj gen), not word by word. The same sums, the same registers kept:
+ * every answer is as before. */
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
@@ -145,6 +155,7 @@
 #include "psx_gpu.h"
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
+#include "../../game/gte_native.h" /* NgteProj, NgteRtp: the native projections' record (#205) */
 
 void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 
@@ -685,18 +696,50 @@ static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int
  * the registers it read, proj = R11-R33, TRX-TRZ, OFX, OFY, H (PROJ_*). */
 enum { PROJ_TR = 9, PROJ_OFX = 12, PROJ_OFY = 13, PROJ_H = 14, PROJ_N = 15 };
 
+/* What a projection's maths reads (#205): the 44-bit sums the GTE shifts
+ * into MAC1-3, the vertex (for the x16 precision test), whether there is a
+ * translation, and OFX, OFY and H. A native projection's sums are the GTE
+ * emulation's own (gte_native.h NgteRtp m1-m3), with its registers read
+ * where they are (pt_ngte); until #205 its 15 registers were copied for the
+ * value hook and its sums worked out again here. The register file's, the
+ * sky's and a kept projection's are summed from their words (pt_words), in
+ * the GTE's own expression: the same sums. */
+typedef struct {
+  int64_t mx, my, mz;
+  int vx, vy, vz;
+  int tr; /* the translation isn't 0 */
+  int ofx, ofy, h;
+} Pt;
+
+static inline void pt_words(Pt *a, const int *proj, int vx, int vy, int vz) {
+  const int *rm = proj, *tr = proj + PROJ_TR;
+  a->mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
+  a->my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
+  a->mz = ((int64_t)tr[2] << 12) + (int64_t)(rm[6] * vx) + (rm[7] * vy) + (rm[8] * vz);
+  a->vx = vx, a->vy = vy, a->vz = vz;
+  a->tr = tr[0] || tr[1] || tr[2];
+  a->ofx = proj[PROJ_OFX], a->ofy = proj[PROJ_OFY], a->h = proj[PROJ_H];
+}
+
+static inline void pt_ngte(Pt *a, const NgteProj *p, const NgteRtp *o, int vx, int vy, int vz) {
+  a->mx = o->m1, a->my = o->m2, a->mz = o->m3;
+  a->vx = vx, a->vy = vy, a->vz = vz;
+  a->tr = p->trx || p->try_ || p->trz;
+  a->ofx = p->ofx, a->ofy = p->ofy, a->h = p->h;
+}
+
 /* The projection's work once its entry (slot i of table tb) and its place
  * in the frame's order (q, -1: none) are known: the exact point, and the
  * entry's candidates and state (rtp_point, or lz_flush, #193, #179). k: where
  * its counts go. tp: the lines it touches, which the caller adds to the
  * cost. */
-static void rtp_apply(Table *tb, const Sink *k, const int *proj, int vx, int vy, int vz,
-                      uint32_t key, int sz, int sf, int i, int q, Touch *tp) {
+static void rtp_apply(Table *tb, const Sink *k, const Pt *a, uint32_t key, int sz, int sf, int i,
+                      int q, Touch *tp) {
   unsigned *const cost = k->cost, *const work = k->work;
   VCacheStats *const st = k->st;
-  const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = proj[PROJ_H];
-  const int *rm = proj, *tr = proj + PROJ_TR;
-  int64_t mx, my, mz;
+  const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = a->h;
+  const int vx = a->vx, vy = a->vy, vz = a->vz;
+  const int64_t mx = a->mx, my = a->my, mz = a->mz; /* the 44-bit sums (Pt) */
   float x, y, z, r, iz, isz, ox, oy, ex, ey, gx, gy, qd, px = 0, py = 0, w = 0, w_alt = 0;
   Entry *const s = &tb->s[i];
   const unsigned prev = T_STATE(s->tag);
@@ -710,21 +753,19 @@ static void rtp_apply(Table *tb, const Sink *k, const int *proj, int vx, int vy,
   amb = prev == E_AMBIGUOUS;
   if (k->rec)
     k->rec[VCR_WORKED]++;
-  /* the 44-bit sums the GTE shifts into MAC1-3 */
-  mx = ((int64_t)tr[0] << 12) + (int64_t)(rm[0] * vx) + (rm[1] * vy) + (rm[2] * vz);
-  my = ((int64_t)tr[1] << 12) + (int64_t)(rm[3] * vx) + (rm[4] * vy) + (rm[5] * vz);
-  mz = ((int64_t)tr[2] << 12) + (int64_t)(rm[6] * vx) + (rm[7] * vy) + (rm[8] * vz);
   /* Spyro's renderers always set sf. A depth of 0 or less (the GTE's SZ3
    * or the exact one) has no projection. */
   if (!sf || sz <= 0) {
     st->inv_depth += !amb;
     goto done;
   }
-  x = (float)(int32_t)(mx >> 12) + (float)(mx & 0xFFF) * (1.0f / 4096);
-  y = (float)(int32_t)(my >> 12) + (float)(my & 0xFFF) * (1.0f / 4096);
-  z = (float)(int32_t)(mz >> 12) + (float)(mz & 0xFFF) * (1.0f / 4096);
-  ox = (float)proj[PROJ_OFX] * (1.0f / 65536);
-  oy = (float)proj[PROJ_OFY] * (1.0f / 65536);
+  /* (the 12 low bits as an int: the same value, and no 64-bit
+   * conversion, a library call on the A9) */
+  x = (float)(int32_t)(mx >> 12) + (float)(int32_t)(mx & 0xFFF) * (1.0f / 4096);
+  y = (float)(int32_t)(my >> 12) + (float)(int32_t)(my & 0xFFF) * (1.0f / 4096);
+  z = (float)(int32_t)(mz >> 12) + (float)(int32_t)(mz & 0xFFF) * (1.0f / 4096);
+  ox = (float)a->ofx * (1.0f / 65536);
+  oy = (float)a->ofy * (1.0f / 65536);
   if (z <= 0) {
     st->inv_depth += !amb;
     goto done;
@@ -755,7 +796,7 @@ static void rtp_apply(Table *tb, const Sink *k, const int *proj, int vx, int vy,
    * put x << 4 and y << 20 in one word, so a negative x borrows 1 from y:
    * there VY is 16 y - 1 (#181: until then those points had no second
    * depth, and their big close quads, mixing scales, were drawn affine). */
-  if (!tr[0] && !tr[1] && !tr[2] && !((vx | vz) & 15) &&
+  if (!a->tr && !((vx | vz) & 15) &&
       ((vy & 15) == 0 || (vx < 0 && (vy & 15) == 15)) && vx >= -4096 && vx < 4096 &&
       vy >= -4097 && vy < 4096 && vz >= -4096 && vz < 4096)
     w_alt = flt(z * (1.0f / 16));
@@ -878,10 +919,14 @@ typedef struct {
 } LzRec; /* 16 bytes */
 #define LZ_SF 0x8000u
 #define LZ_PROJ 1024 /* different registers a frame: models, sectors, the sky */
+/* a kept projection's registers: their words (PROJ_*) and, last, their
+ * generation (gte_native.h NgteProj gen, #205; 0: none), 64 bytes */
+#define PROJ_GEN PROJ_N
+#define PROJ_ROW (PROJ_N + 1)
 typedef struct Lazy {
   LzRec rec[VC_LOG];
   unsigned n, nproj;
-  int proj[LZ_PROJ][PROJ_N];
+  int proj[LZ_PROJ][PROJ_ROW];
   uint16_t head[VC_SIZE]; /* each pending entry's list (its newest), + 1 */
 } Lazy;
 static int s_lazy = 1;       /* psx_vcache_set_lazy */
@@ -923,11 +968,29 @@ static inline int same_proj(const int *a, const int *b) {
   return a[PROJ_OFX] == b[PROJ_OFX] && a[PROJ_OFY] == b[PROJ_OFY] && a[PROJ_H] == b[PROJ_H];
 }
 
-/* the projection kept on tb's slot i's list: 0 when there's no room.
+/* A native projection's registers (np) are the last ones kept (w), by
+ * their generation (#205): one compare where same_proj made up to 15. A
+ * generation not seen yet (or none) compares the words once, and when they
+ * are the same takes the generation, so the projections after it compare
+ * that alone. Which registers are kept, and where, are as with same_proj. */
+static inline int same_ngte(int *w, const NgteProj *np) {
+  if (np->gen && (unsigned)w[PROJ_GEN] == np->gen)
+    return 1;
+  if (w[PROJ_TR] != np->trx || w[PROJ_TR + 1] != np->try_ || w[PROJ_TR + 2] != np->trz ||
+      w[0] != np->r11 || w[1] != np->r12 || w[2] != np->r13 || w[3] != np->r21 ||
+      w[4] != np->r22 || w[5] != np->r23 || w[6] != np->r31 || w[7] != np->r32 ||
+      w[8] != np->r33 || w[PROJ_OFX] != np->ofx || w[PROJ_OFY] != np->ofy || w[PROJ_H] != np->h)
+    return 0;
+  w[PROJ_GEN] = (int)np->gen;
+  return 1;
+}
+
+/* the projection kept on tb's slot i's list: 0 when there's no room. Its
+ * registers: proj's words, or np's (a native projection, #205; proj NULL).
  * *lines: the store's lines it wrote (a model: the record's, a line each
  * two in order; the registers' two when new; the list's head) */
-static int lz_add(Table *tb, int i, int q, const int *proj, int vx, int vy, int vz, int sz, int sf,
-                  unsigned *lines) {
+static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, int vx, int vy,
+                  int vz, int sz, int sf, unsigned *lines) {
   Lazy *const lz = tb->lz;
   Entry *const s = &tb->s[i];
   LzRec *r;
@@ -936,10 +999,21 @@ static int lz_add(Table *tb, int i, int q, const int *proj, int vx, int vy, int 
       sz != (uint16_t)sz)
     return 0; /* (each fits: the GTE's registers) */
   p = lz->nproj;
-  if (p && same_proj(lz->proj[p - 1], proj))
+  if (p && (np ? same_ngte(lz->proj[p - 1], np) : same_proj(lz->proj[p - 1], proj)))
     p--;
   else if (p < LZ_PROJ) {
-    memcpy(lz->proj[lz->nproj++], proj, sizeof lz->proj[0]);
+    int *const w = lz->proj[lz->nproj++];
+    if (np) {
+      w[0] = np->r11, w[1] = np->r12, w[2] = np->r13;
+      w[3] = np->r21, w[4] = np->r22, w[5] = np->r23;
+      w[6] = np->r31, w[7] = np->r32, w[8] = np->r33;
+      w[PROJ_TR] = np->trx, w[PROJ_TR + 1] = np->try_, w[PROJ_TR + 2] = np->trz;
+      w[PROJ_OFX] = np->ofx, w[PROJ_OFY] = np->ofy, w[PROJ_H] = np->h;
+      w[PROJ_GEN] = (int)np->gen;
+    } else {
+      memcpy(w, proj, sizeof(int) * PROJ_N);
+      w[PROJ_GEN] = 0;
+    }
     *lines += 2;
   } else
     return 0;
@@ -976,8 +1050,9 @@ static void lz_flush(Table *tb, const Sink *k, int i) {
   r = o;
   while (r) {
     const LzRec *const z = &lz->rec[r - 1];
-    rtp_apply(tb, k, lz->proj[z->proj & ~LZ_SF], z->vx, z->vy, z->vz, s->key, z->sz,
-              (z->proj & LZ_SF) != 0, i, z->q, &t);
+    Pt a;
+    pt_words(&a, lz->proj[z->proj & ~LZ_SF], z->vx, z->vy, z->vz);
+    rtp_apply(tb, k, &a, s->key, z->sz, (z->proj & LZ_SF) != 0, i, z->q, &t);
     r = z->next;
   }
   k->cost[VCC_REC_LINES] += t.n;
@@ -989,8 +1064,13 @@ static inline void lz_need(const Table *tab, const Sink *k, int e) {
     lz_flush((Table *)tab, k, e);
 }
 
-static void rtp_point(int kind, const Sink *k, const int *proj, int vx, int vy, int vz,
-                      uint32_t key, int sz, int sf) {
+/* One projection recorded: its registers as words (proj), or a native
+ * projection's registers by pointer (np) with the GTE's own sums (o) (#205;
+ * proj NULL). Inlined into each caller, so each keeps only its own form. */
+static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink *k,
+                                                           const int *proj, const NgteProj *np,
+                                                           const NgteRtp *o, int vx, int vy,
+                                                           int vz, uint32_t key, int sz, int sf) {
   unsigned *const cost = k->cost;
   Rec *const rec = &s_rec[kind];
   Table *const tb = rec->tab;
@@ -1017,7 +1097,7 @@ static void rtp_point(int kind, const Sink *k, const int *proj, int vx, int vy, 
    * thread short of time, so the game thread works them out itself */
   if (tb->lazy && (kind == VC_PRES || !__atomic_load_n(&s_walk.busy, __ATOMIC_RELAXED))) {
     unsigned lines = 0;
-    if (lz_add(tb, i, q, proj, vx, vy, vz, sz, sf, &lines)) {
+    if (lz_add(tb, i, q, proj, np, vx, vy, vz, sz, sf, &lines)) {
       cost[VCC_REC_LINES] += t.n; /* (the table's: the store's apart, #179) */
       if (k->rec) {
         k->rec[VCR_KEPT]++;
@@ -1029,7 +1109,14 @@ static void rtp_point(int kind, const Sink *k, const int *proj, int vx, int vy, 
   }
   if (k->rec)
     k->rec[VCR_ONCE]++;
-  rtp_apply(tb, k, proj, vx, vy, vz, key, sz, sf, i, q, &t);
+  {
+    Pt a;
+    if (np)
+      pt_ngte(&a, np, o, vx, vy, vz);
+    else
+      pt_words(&a, proj, vx, vy, vz);
+    rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
+  }
   cost[VCC_REC_LINES] += t.n;
 }
 
@@ -1042,14 +1129,31 @@ static const Sink k_game = SINK_ACC(0);
 static void rtp_hook(int idx, int sf) {
   const int proj[PROJ_N] = {C2_R11, C2_R12, C2_R13, C2_R21, C2_R22, C2_R23, C2_R31, C2_R32, C2_R33,
                             C2_TRX, C2_TRY, C2_TRZ, C2_OFX, C2_OFY, (unsigned short)C2_H};
-  rtp_point(VC_LOGIC, &k_game, proj, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2,
+  rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2,
             (unsigned short)C2_SZ3, sf);
 }
 
-/* The hand renderers' native RTPS (gte_native.h, fast_render=2, D80, D89):
- * the same projection, given as values. */
+/* The same projection given as values (D89): the sky's records
+ * (sky_hand.c), and whatever calls the value hook; since #205 gte_native.h's
+ * RTPS and RTPT call ngte_vcache (below) instead. */
 static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
-  rtp_point(VC_LOGIC, &k_game, proj, vx, vy, vz, sxy, sz3, 1);
+  rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1);
+}
+
+/* The registers' generations (gte_native.h NgteProj gen, #205): the game's
+ * renderers' and the presenter's build's (render_ctx_names.h), each counted
+ * on its own thread. */
+unsigned g_ngte_gen;
+unsigned g_pres_ngte_gen;
+
+/* The hand renderers' native RTPS and RTPT (gte_native.h, fast_render=2,
+ * D80, D89; #205): the registers by pointer and the sums and SZ3 the GTE
+ * emulation worked out, where gte_ops.c copied 15 registers into the value
+ * hook's form for each vertex. Called only while the value hook is set,
+ * which is rtp_value_hook then (psx_vcache_enable): the same record. */
+void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
+  rtp_point(VC_LOGIC, &k_game, NULL, p, o, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), o->sxy,
+            (int)o->sz3, 1);
 }
 
 /* the presenter's counts: its thread's, or the game thread's inline */
@@ -1066,7 +1170,18 @@ static void pres_sink(Sink *k) {
 static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
   Sink k;
   pres_sink(&k);
-  rtp_point(VC_PRES, &k, proj, vx, vy, vz, sxy, sz3, 1);
+  rtp_point(VC_PRES, &k, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1);
+}
+
+/* The presenter's renderers' native RTPS and RTPT (its build's ngte_vcache,
+ * render_ctx_names.h; #205), as ngte_vcache above into its own table. Called
+ * only while g_pres_rtp_value_hook is set, which is pres_rtp_value_hook then
+ * (psx_vcache_pres_begin): the same record. */
+void pres_vcache_ngte(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
+  Sink k;
+  pres_sink(&k);
+  rtp_point(VC_PRES, &k, NULL, p, o, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), o->sxy,
+            (int)o->sz3, 1);
 }
 
 /* ratio(a, b) < 4, exactly (depths > 0; times 4 isn't rounded) */
