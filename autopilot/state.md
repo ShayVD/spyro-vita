@@ -39,6 +39,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/render_ctx_names.h"
       ],
       "agent": "ad72b45d7f42b21a4"
+    },
+    {
+      "issue": 207,
+      "branch": "auto/207-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-207",
+      "pids": [],
+      "started_at": "2026-11-21T17:11:26Z",
+      "files": [
+        "docs/host-build.md",
+        "src/platform/vita/prof_draw.c",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a9fc200ddb53a9efe"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -332,3 +345,4 @@ continue.
 - 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
 - 16:37Z phase 8: stall check flagged #201 #203 #205 (no commit in 2 h) but all three are alive with in-scope edits; asked each for a WIP commit instead of stopping them
 - 17:10Z phase 8: merged #201 (D200)
+- 17:11Z phase 8: gate #203 running; worker #207 started
