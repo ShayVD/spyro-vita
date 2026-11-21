@@ -206,6 +206,7 @@ Files the app writes:
 | `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
 | `dd_budget=0` | with a longer draw distance and 60 Hz logic in play: no work budget, only the buffer's limits, as before #180. Default 1: the limiter also keeps each draw under 48 KB of primitives, so the longer distance gives way where the scene is already heavy (D175; `docs/presentation.md` "Draw distance"). The start of the log says which (`picture: draw distance ... (dd_budget=N, D175)`); the `lod` lines count the budget's back-offs, and how many of them held the draw at 1x (#200). No menu row |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
+| `shader_cache=0` | GPU: compile every shader program at each start, as before #201. Default 1: a program compiled once is kept in `ux0:data/spyro/shader_cache/` (one `.bin` a program, from vitaGL's `glGetProgramBinary`; the installed vitaGL has no `HAVE_SHADER_CACHE`) and later starts load it instead of compiling (10 s of start-up on hardware before). A binary's key covers its sources and attribute bindings, the compiler's options, the vitaGL and vitashark libraries linked and the `libshacccg.suprx` found; the folder's `stamp` file holds the last three, and a different one empties the folder. A file that doesn't match or link is removed and the program compiled. The log: `gpu: shader cache ... stamp ...`, a `gpu: program N (...): loaded from the shader cache (hit)` or `compiled (cache miss)` line a program with its time, and the `gpu: shaders compiled in N ms: P programs, H from the shader cache ...` total. Deleting the folder is safe: the next start compiles and writes it again |
 | `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
@@ -392,6 +393,10 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
   host in 4 KB blocks, so a log line can show up long after the game wrote it.) A failed grab
   brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
   count as game time, so don't take timings from capture runs.
+- The shader cache (`shader_cache=1`, #201) lives in Vita3K's `fs/ux0/data/spyro/shader_cache/` and
+  stays between runs (`v3k_run.sh` leaves files of other names alone), so only a VPK's first run
+  with a new vitaGL, compiler or shader compiles; delete the folder to time a first start. Vita3K's
+  compile and load times aren't the Vita's: from Vita3K take only the hit and miss counts.
 
 **Work counters (D165):** every 300 vblanks the log has a `vpk-perfcount: w FIRST LAST FRAMES name=total ...`
 line (draws, triangles, uploads, state changes, OT packets, the vertex cache's work, the presenter's frames). They

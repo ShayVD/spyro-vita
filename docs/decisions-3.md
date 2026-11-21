@@ -882,3 +882,65 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The five routes' shots are the same as `base-63d80f4`.
   - Counters are the same, except `owner60`'s timing-dependent kept/once split.
   - Native build, host ctest 32/32, `noassets`, and gate PASS.
+
+## 2026-11-21 — a shader cache for start-up (#201)
+
+### D200. The start-up's shaders go through a program cache in `ux0:data/spyro/shader_cache/` (`shader_cache=0` turns it off) (#201)
+
+- **Why:**
+  - Every boot logged `gpu: shaders compiled in` 10,035–10,211 ms (13 hardware logs, 2026-11-20/21), behind a black screen.
+  - The installed vitaGL is built without `HAVE_SHADER_CACHE`: its `vglSetShaderCachePath` is a bare `bx lr`.
+- **What:**
+  - **Save and load:** `gpu_gl.c`'s `link()` saves each linked program with `glGetProgramBinary` to `shader_cache/<key>.bin`. The file has a header with a magic number, version, key, length and FNV-1a checksum, and is written as `.tmp` and then renamed. Later boots load it with `glProgramBinary`, with no compile.
+  - **Key:** a 64-bit FNV of:
+    - the program's sources and attribute bindings;
+    - the format version and the compiler options;
+    - the SHA-1 of `libvitaGL.a` and `libvitashark.a` (CMake, at configure time);
+    - each `libshacccg.suprx` found (size and date).
+  - **Stale and bad files:** a `stamp` file empties the folder when the libraries or the compiler change. A file that fails its checks or its link is removed, and the program is compiled.
+  - **Log:** one line per program (hit or miss, with its time). The start-up line now gives the totals.
+- **Measured** (Vita3K, `runtime/autopilot/runs/auto-201-1`; counts only, since Vita3K's compile times aren't the Vita's):
+
+  | Run | Compiled | From the cache | Start-up line |
+  |---|---|---|---|
+  | First boot | 15 programs (17 asked for, 2 repeats) | – | 10,771 ms |
+  | Second boot | 0 | 17 of 17 | 17 ms |
+  | `shader_cache=0` | 17 | 0 | 6,969 ms |
+
+- **Checked:**
+  - The five routes' shots are the same as `base-63d80f4`.
+  - `CAPTURE=1` window grabs are the same from the cache and from compiling.
+  - Counters are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Not checked on hardware:** the black-screen time, and 17 cache hits on the second boot.
+
+## 2026-11-21 — draw distance's room is the D54 span (#203)
+
+### D201. Draw distance's world bound and limiter take the D54 span as the room (#203)
+
+- **Why:**
+  - With the option on, every draw spans both primitive buffers (D54, D61), but `lod.c` kept one buffer's size.
+  - Stone Hill's world alone (52 KB at 1x) was 78% of the 66 KB its bound left. So 2x stayed at x1.00 even with the budget off (D199).
+- **What:**
+  - `draw_room()` is the span when the option is on: 0x37A00, or 0x25A00 in reduced-space levels. With the option off (statistics only) it stays one buffer, so baseline `lod` lines don't change.
+  - The world's loops stop `ENV_MARGIN` (0xB000) under its top. The tour re-measured what the margin must cover: at most 30,852 bytes drawn after the world, and a largest sector of 5,776 bytes.
+  - The limiter measures used bytes against the span, and the world's bytes against the span less the margin. The thresholds are unchanged.
+  - Pass 2's moby share stays at 60% of one buffer, and the 60 Hz budget is unchanged.
+  - The `lod` line reads `of 222 KB` (150 KB in a reduced-space level).
+- **Checked** (`runtime/autopilot/reports/203-1.md`, runs in `runtime/autopilot/runs/auto-203-1`):
+  - **Host whole-game tour** at `--widescreen --draw-distance 2`, 100,000 vblanks: no crash, and traces and memory card identical to the build before.
+
+    | | Before | After |
+    |---|---|---|
+    | Average scale | x1.23 | x1.81 |
+    | Back-offs | 25,400 | 0 |
+    | Peak | – | 149 KB of 222 |
+
+    `--lod-guards-only` (2x throughout) also ran to the end.
+  - **Host Stone Hill:** with `--lod-budget 0`, x1.00 → x2.00, with no loop stopped. With the default budget it is unchanged and the trace is byte-identical.
+  - **Vita3K `owner60` at 60 Hz:** shots and counters are the same. With `dd_budget=0`, 6,900–7,800 draw at x2.00.
+  - **Pictures that changed:** where 2x has no budget (the title flyby, 600–1,200, and the 30 Hz Artisans attract demo, 3,200–5,900), it now reaches x2.00. 31 of `owner60`'s 91 shots differ there. The other four routes are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Open:**
+  - On hardware, check that 30 Hz holds where 2x now draws more (title, attract demos). If it doesn't, give 30 Hz a budget.
+  - The near list peaked at 125 of 127 in the tour.

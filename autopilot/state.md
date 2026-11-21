@@ -9,7 +9,36 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 205,
+      "branch": "auto/205-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-205",
+      "pids": [],
+      "started_at": "2026-11-21T14:32:43Z",
+      "files": [
+        "src/game/gte_native.h",
+        "src/game/gte_ops.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/render_ctx_names.h"
+      ],
+      "agent": "ad72b45d7f42b21a4"
+    },
+    {
+      "issue": 207,
+      "branch": "auto/207-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-207",
+      "pids": [],
+      "started_at": "2026-11-21T17:11:26Z",
+      "files": [
+        "docs/host-build.md",
+        "src/platform/vita/prof_draw.c",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a9fc200ddb53a9efe"
+    }
+  ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -133,6 +162,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #179 logic-frame deferral at 60 HZ (owner60-like heavy Artisans: game thread vs walk balance)",
       "expected": "owner-approved: logic draw ~2 ms a tick lower in heavy windows; walk takes it while idle",
       "issue": 179
+    },
+    {
+      "issue": 203,
+      "what": "hardware: 30 Hz still holds where 2x now draws more (title flyby, attract demos); if not, give 30 Hz a budget (D201)"
+    },
+    {
+      "issue": 201,
+      "what": "hardware: second boot reads 17 shader-cache hits; black-screen time (D200)"
     }
   ],
   "owner_decisions": [
@@ -295,3 +332,11 @@ continue.
 - 13:30Z phase 8: #200 worker committed the lod-line fix (680ad01), profiling continues; pick empty
 - 14:01Z phase 8: #200 worker still profiling (host runs live); pick empty
 - 14:31Z phase 8: merged #200 (D199); filed #203-#207, #208 needs-owner
+- 14:33Z phase 8: workers started for #201, #203, #205
+- 15:04Z phase 8: #201 #203 #205 running, no commits yet; pick empty; #208 unanswered
+- 15:35Z phase 8: #201 #203 #205 still running (long host/Vita3K runs), no commits yet; #203 ran up to 4 host runs at once (flagged, benign: own processes only)
+- 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
+- 16:37Z phase 8: stall check flagged #201 #203 #205 (no commit in 2 h) but all three are alive with in-scope edits; asked each for a WIP commit instead of stopping them
+- 17:10Z phase 8: merged #201 (D200)
+- 17:11Z phase 8: gate #203 running; worker #207 started
+- 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)

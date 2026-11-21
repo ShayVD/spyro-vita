@@ -67,6 +67,23 @@ target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common
   SceGxm_stub SceCommonDialog_stub SceAppMgr_stub SceAppUtil_stub SceTouch_stub
   SceHid_stub SceMotion_stub ScePower_stub SceProcessmgr_stub SceIme_stub
   SceKernelDmacMgr_stub SceIofilemgr_stub SceLibKernel_stub stdc++ pthread m)
+# gpu_gl.c's shader cache (#201) keys its binaries on the vitaGL and vitashark
+# libraries linked: their SHA-1 here, and a new library re-runs CMake.
+set(SPYRO_VGL_ID "")
+foreach(lib vitaGL vitashark)
+  find_library(SPYRO_LIB_${lib} ${lib})
+  if(SPYRO_LIB_${lib})
+    file(SHA1 "${SPYRO_LIB_${lib}}" sha)
+    string(SUBSTRING "${sha}" 0 16 sha)
+    string(APPEND SPYRO_VGL_ID "${lib}-${sha};")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SPYRO_LIB_${lib}}")
+  endif()
+endforeach()
+string(REPLACE ";" " " SPYRO_VGL_ID "${SPYRO_VGL_ID}")
+string(STRIP "${SPYRO_VGL_ID}" SPYRO_VGL_ID)
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/gpu_gl.c" PROPERTIES
+  COMPILE_DEFINITIONS "SPYRO_VGL_ID=\"${SPYRO_VGL_ID}\"")
+message(STATUS "shader cache key: ${SPYRO_VGL_ID}")
 target_link_options(spyro_vita PRIVATE -Wl,-q
   # vita-elf-create appends its SCE data (~3 KB) after the text segment, and
   # the data segment starts at the next 64 KiB boundary: keep 16 KiB free
