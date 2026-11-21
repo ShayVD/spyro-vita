@@ -1189,6 +1189,50 @@ static inline int under4(float a, float b) { return a > b ? a < b * 4.0f : b < a
 /* ratio(a, b) < 3.999 or so: the quotient, however rounded, is under 4 */
 static inline int under3999(float a, float b) { return a > b ? a < b * 3.999f : b < a * 3.999f; }
 
+/* The same two tests on the depths' bits (#206), for the walk's choice. A
+ * positive normal float's bits grow with it, and times 4 adds 2 to its
+ * exponent exactly: for depths in W_LO..W_HI (4 times one is still normal)
+ * a < 4b is ua < ub + 4 << 22, with no float compare (a library call's
+ * worth on the host's emulated x87, a VFP compare and a flag move on the
+ * A9). Bits apart by less than 0x00FE0000 are at most 3.96875 times apart,
+ * so under 3.999 however the product is rounded; past that the float test
+ * decides, as before. Any other value takes the float tests. */
+#define W_LO 0x00800000u
+#define W_HI 0x7E800000u
+static inline uint32_t w_bits(const float *w) {
+  uint32_t u;
+  memcpy(&u, w, sizeof u);
+  return u;
+}
+static inline int w_normal(uint32_t u) { return u - W_LO < W_HI - W_LO; }
+static inline int under4b(const float *a, const float *b) {
+  const uint32_t ua = w_bits(a), ub = w_bits(b);
+  if (__builtin_expect(w_normal(ua) && w_normal(ub), 1))
+    return (ua > ub ? ua - ub : ub - ua) < 0x01000000u;
+  return under4(*a, *b);
+}
+/* same_depth on the bits (#206, resolve's): bits apart by at most 0x28000
+ * are at most 1.01954 times apart (inside 1.0199), by 0x53000 or more at
+ * least 1.02068 (past 1.0201); between, the float test as before */
+static inline int same_depthb(const float *a, const float *b, unsigned *div) {
+  const uint32_t ua = w_bits(a), ub = w_bits(b);
+  if (__builtin_expect(w_normal(ua) && w_normal(ub), 1)) {
+    const uint32_t d = ua > ub ? ua - ub : ub - ua;
+    if (d <= 0x28000u)
+      return 1;
+    if (d >= 0x53000u)
+      return 0;
+  }
+  return same_depth(*a, *b, div);
+}
+static inline int under3999b(const float *a, const float *b) {
+  const uint32_t ua = w_bits(a), ub = w_bits(b);
+  if (__builtin_expect(w_normal(ua) && w_normal(ub), 1) &&
+      (ua > ub ? ua - ub : ub - ua) < 0x00FE0000u)
+    return 1;
+  return under3999(*a, *b);
+}
+
 /* ------------------------------------------------------------ hand-overs (#189) */
 
 /* key's hand-over in tab's frame gen, or (add) a free one for it (gen set,
@@ -1487,10 +1531,12 @@ static int choose(const Cand *const *e, const unsigned *en, const int *idx, int 
       const int v = idx[i];
       float r_best = 1e30f;
       int left = 0, last = 0;
+      unsigned u4 = 0; /* #206: which are under 4, tested once */
       for (j = 0; j < (int)en[v]; j++)
-        if (under4(e[v][j].w, w0)) {
+        if (under4b(&e[v][j].w, &w0)) {
           left++;
           last = j;
+          u4 |= 1u << j;
         }
       if (!left) {
         ok = 0;
@@ -1498,7 +1544,7 @@ static int choose(const Cand *const *e, const unsigned *en, const int *idx, int 
       }
       if (left == 1 && en[f] == 1) {
         try_pick[v] = last;
-        if (!under3999(e[v][last].w, w0)) {
+        if (!under3999b(&e[v][last].w, &w0)) {
           const float r = ratio(e[v][last].w, w0);
           cost[VCC_LOOK_DIV]++;
           worst = r > worst ? r : worst;
@@ -1506,7 +1552,7 @@ static int choose(const Cand *const *e, const unsigned *en, const int *idx, int 
         continue;
       }
       for (j = 0; j < (int)en[v]; j++)
-        if (under4(e[v][j].w, w0)) {
+        if (u4 & 1u << j) {
           const float r = ratio(e[v][j].w, w0);
           cost[VCC_LOOK_DIV]++;
           if (r < r_best) {
@@ -1853,8 +1899,12 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
   for (i = 0; i < n; i++) /* the places of the polygon's found vertices (#189: not a hand-over's) */
     if (!amb[i] && ks[i] >= 0) {
       unsigned r = tab->last[ks[i]], k;
-      for (k = 0; r != VC_NOSEQ && k < 8 && na < 32; r = tab->prev[r], k++)
-        anc[na++] = r;
+      for (k = 0; r != VC_NOSEQ && k < 8 && na < 32; r = tab->prev[r], k++) {
+        /* #206: kept largest first, for the walk below */
+        for (a = na++; a && anc[a - 1] < r; a--)
+          anc[a] = anc[a - 1];
+        anc[a] = r;
+      }
     }
   for (i = 0; i < n; i++) {
     const Entry *const en = &tab->s[amb[i] ? ks[i] : 0]; /* (#189: a hand-over's ks is -1) */
@@ -1873,13 +1923,19 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
       rn[i] = nk = nsel = pts = 0;
       cl = 0;
       onept = 1;
+      a = 0;
       for (r = tab->last[ks[i]]; r != VC_NOSEQ; r = tab->prev[r]) {
         seen++;
         if (!pass && na) { /* only whether one is near counts (#193: not the nearest) */
-          for (a = 0; a < na; a++)
-            if (r + VC_NEAR - anc[a] <= 2 * VC_NEAR) /* |r - anc[a]| <= VC_NEAR */
-              break;
+          /* |r - anc[a]| <= VC_NEAR for some a. #206: the chain's places
+           * fall and the anchors are largest first, so one walk of both:
+           * an anchor past r + VC_NEAR is past every later r too, and the
+           * first one left is the nearest above r - VC_NEAR if any is */
+          while (a < na && anc[a] > r + VC_NEAR)
+            a++;
           if (a == na)
+            break; /* (none near the rest of the chain either) */
+          if (anc[a] + VC_NEAR < r)
             continue;
         }
         near += !pass;
@@ -1919,7 +1975,7 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
           } else
             wd = m ? flt(w * (1.0f / 16)) : w;
           for (j = 0; j < rn[i]; j++)
-            if (same_depth(rc[i][j].w, wd, &cost[VCC_LOOK_DIV]))
+            if (same_depthb(&rc[i][j].w, &wd, &cost[VCC_LOOK_DIV]))
               break;
           if (j < rn[i])
             continue;
@@ -1953,6 +2009,7 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
   }
   return 1;
 }
+
 
 int psx_vcache_polys;
 
@@ -1988,8 +2045,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
    * own thread (a vertex outside the game's walk's buffer while one of its
    * frames is open, #162; the logic draw's walk never reads s_pres_async),
    * or the logic draw's */
-  const int async = !s_pres && !(vertex >= psx_gpu_game_walk()->vb &&
-                                 vertex < psx_gpu_game_walk()->vb + MAX_VERTEX_BUFFER_SIZE) &&
+  const GrVertex *const gvb = s_pres ? NULL : psx_gpu_game_walk()->vb; /* (#206: asked once) */
+  const int async = !s_pres && !(vertex >= gvb && vertex < gvb + MAX_VERTEX_BUFFER_SIZE) &&
                     s_pres_async;
   const int pres = s_pres || async;
   VCacheStats *const st = &g_vcache_stats[pres];
