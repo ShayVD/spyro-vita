@@ -78,7 +78,12 @@ unsigned int pres_CFC2(int reg);
 #define g_psyxRtpValueHook g_pres_rtp_value_hook
 #define g_psyxRtpDeriveHook g_pres_rtp_derive_hook /* #189 */
 #define psx_vc_derive pres_vc_derive
-#define ngte_vcache pres_ngte_vcache
+/* #205: the native projections' record, called by name with the registers
+ * by pointer (vcache.c's presenter entry; render_ctx.c's pres_ngte_vcache,
+ * which copied the 15 registers for the value hook, is no longer called),
+ * and the registers' generations, a count of the presenter's own */
+#define ngte_vcache pres_vcache_ngte
+#define g_ngte_gen g_pres_ngte_gen
 
 /* the working memory (fast_render=3's, render_hand.h) */
 #define g_render_work g_pres_scratch

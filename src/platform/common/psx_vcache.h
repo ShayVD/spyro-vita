@@ -160,6 +160,22 @@ typedef void (*PsxVcacheValueHook)(const int *proj, int vx, int vy, int vz, unsi
                                    int sz3);
 PsxVcacheValueHook psx_vcache_pres_begin(int walks);
 
+/* The native projections' record (#205): gte_native.h's RTPS and RTPT, while
+ * the hook above (or the game's g_psyxRtpValueHook) is set, call the cache
+ * by name with the registers by pointer, their generation (NgteProj gen:
+ * the same generation, the same registers) and the sums and SZ3 the GTE
+ * emulation worked out (NgteRtp), instead of copying 15 registers into the
+ * hook's form for each vertex and summing again here. ngte_vcache
+ * (declared in gte_native.h) records the game's into the logic draw's
+ * table, pres_vcache_ngte (the presenter's build's ngte_vcache,
+ * render_ctx_names.h) the presenter's into its own; each is what the hook
+ * set then does with the same projection. g_ngte_gen and g_pres_ngte_gen
+ * (gte_native.h) count the two builds' generations. */
+struct NgteProj;
+struct NgteRtp;
+void pres_vcache_ngte(const struct NgteProj *p, unsigned int vxy, unsigned int vz,
+                      const struct NgteRtp *o);
+
 /* The presenter's frame on its own thread (the Vita's pres_thread=1, D126;
  * #162), beside the logic draw:
  *  - psx_vcache_pres_async_ok: it may run there. The cache records and

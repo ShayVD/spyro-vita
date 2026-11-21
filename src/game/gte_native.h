@@ -32,14 +32,42 @@
 #define NGTE_B31 (1u << 31)
 
 /* The projection: rotation, translation, screen offset, H and the depth
- * cue, as RTPS reads them. */
-typedef struct {
+ * cue, as RTPS reads them.
+ *
+ * gen (#205): the registers' generation, for the vertex cache's record
+ * (vcache.c), which keeps a projection's registers for later and used to
+ * compare all 15 words with the last ones kept, a projection at a time.
+ * While the cache records, ngte_proj_get, ngte_proj_rot and ngte_proj_tr
+ * each take a new one, so two NgteProj with the same gen (copies of one)
+ * hold the same registers, and the record compares the gen alone. 0: no
+ * generation (nothing recorded when it was taken); the record compares the
+ * words. A renderer that sets a field itself keeps the generation, which
+ * is safe while no projection has used it (math_hand.c's Project sets the
+ * camera's matrix before its one projection); otherwise it must take a new
+ * one (ngte_proj_regen). The arithmetic never reads gen. */
+typedef struct NgteProj {
   int r11, r12, r13, r21, r22, r23, r31, r32, r33;
   int trx, try_, trz;
   int ofx, ofy;
   unsigned short h;
   int dqa, dqb;
+  unsigned gen;
 } NgteProj;
+
+/* The generations' count (vcache.c; the presenter's build has its own,
+ * render_ctx_names.h). Weak: the GTE's tests link the native maths without
+ * the vertex cache, and never record. */
+extern unsigned g_ngte_gen __attribute__((weak));
+
+/* a new generation while the cache records, else 0 */
+NGTE_INL unsigned ngte_gen_new(void) {
+  if (__builtin_expect(g_psyxRtpValueHook == 0, 1))
+    return 0;
+  if (++g_ngte_gen == 0) /* (came round: 0 is no generation) */
+    g_ngte_gen = 1;
+  return g_ngte_gen;
+}
+NGTE_INL void ngte_proj_regen(NgteProj *p) { p->gen = ngte_gen_new(); }
 
 NGTE_INL NgteProj ngte_proj_get(void) {
   NgteProj p;
@@ -50,6 +78,7 @@ NGTE_INL NgteProj ngte_proj_get(void) {
   p.ofx = C2_OFX, p.ofy = C2_OFY;
   p.h = (unsigned short)C2_H;
   p.dqa = C2_DQA, p.dqb = C2_DQB;
+  p.gen = ngte_gen_new();
   return p;
 }
 
@@ -60,9 +89,11 @@ NGTE_INL void ngte_proj_rot(NgteProj *p, unsigned int r0, unsigned int r1, unsig
   p->r11 = (short)r0, p->r12 = (short)(r0 >> 16), p->r13 = (short)r1;
   p->r21 = (short)(r1 >> 16), p->r22 = (short)r2, p->r23 = (short)(r2 >> 16);
   p->r31 = (short)r3, p->r32 = (short)(r3 >> 16), p->r33 = (short)r4;
+  ngte_proj_regen(p);
 }
 NGTE_INL void ngte_proj_tr(NgteProj *p, unsigned int x, unsigned int y, unsigned int z) {
   p->trx = (int)x, p->try_ = (int)y, p->trz = (int)z;
+  ngte_proj_regen(p);
 }
 
 /* A vertex as V0 holds it: VX0 and VY0 are the halves of VXY0, VZ0 the low
@@ -133,13 +164,15 @@ NGTE_INL int ngte_g(long long a, unsigned int bits, unsigned int *flag) {
 /* RTPS (0x180001: sf 1, lm 0)                                            */
 /* ===================================================================== */
 
-typedef struct {
+typedef struct NgteRtp {
   int mac1, mac2, mac3;
   int ir1, ir2, ir3;
   unsigned int sz3;  /* the new SZ3, 0..0xFFFF */
   unsigned int sxy;  /* the new SXY2: x | y << 16 */
   int mac0, ir0;     /* the depth cue */
   unsigned int flag;
+  long long m1, m2, m3; /* the 44-bit sums shifted into MAC1-3, for the vertex cache's
+                           record (#205: it no longer works them out again) */
 } NgteRtp;
 
 /* One vertex of RTPS/RTPT (gte_inline.h's gtei_rtp): MAC1-3, IR1-3, SZ3,
@@ -151,9 +184,12 @@ NGTE_INL NgteRtp ngte_rtp_v(const NgteProj *p, int vx, int vy, int vz, unsigned 
   unsigned int flag = *flagp, hs;
   long long s3, f;
   int v12, sx, sy;
-  o.mac1 = NGTE_A1((long long)((long long)p->trx << 12) + (p->r11 * vx) + (p->r12 * vy) + (p->r13 * vz), &flag, 1);
-  o.mac2 = NGTE_A2((long long)((long long)p->try_ << 12) + (p->r21 * vx) + (p->r22 * vy) + (p->r23 * vz), &flag, 1);
+  o.m1 = (long long)((long long)p->trx << 12) + (p->r11 * vx) + (p->r12 * vy) + (p->r13 * vz);
+  o.m2 = (long long)((long long)p->try_ << 12) + (p->r21 * vx) + (p->r22 * vy) + (p->r23 * vz);
   s3 = (long long)((long long)p->trz << 12) + (p->r31 * vx) + (p->r32 * vy) + (p->r33 * vz);
+  o.m3 = s3;
+  o.mac1 = NGTE_A1(o.m1, &flag, 1);
+  o.mac2 = NGTE_A2(o.m2, &flag, 1);
   o.mac3 = NGTE_A3(s3, &flag, 1);
   o.ir1 = NGTE_B1(o.mac1, &flag, 0);
   o.ir2 = NGTE_B2(o.mac2, &flag, 0);
@@ -203,8 +239,14 @@ NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
 
 /* The vertex cache (D39) while it records (subpixel, persp): every native
  * RTPS gives it the projection as values, as the register file's RTPS
- * gives it the registers (gte_ops.c, D89). */
-void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o);
+ * gives it the registers (D89). Since #205 the record is called by name
+ * (vcache.c; the presenter's build: pres_vcache_ngte, render_ctx_names.h)
+ * with the registers by pointer and their generation (NgteProj gen), and
+ * the sums and SZ3 the projection worked out (NgteRtp m1-m3, sz3), not
+ * through the value hook with a copy of 15 registers; the hook being set
+ * still says whether the cache records. Weak, as g_ngte_gen. */
+void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o)
+    __attribute__((weak));
 
 /* RTPS on V0 as the words MTC2 puts there (VXY0, VZ0). */
 NGTE_INL NgteRtp ngte_rtps_w(const NgteProj *p, unsigned int vxy, unsigned int vz) {
