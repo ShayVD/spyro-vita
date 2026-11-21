@@ -23,7 +23,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/CMakeLists.txt",
         "docs/vita-testing.md"
       ],
-      "agent": "ab622b9820c2dd7f5"
+      "agent": "ab622b9820c2dd7f5",
+      "reported": true
     },
     {
       "issue": 203,
@@ -37,7 +38,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/lod_pres.c",
         "docs/presentation.md"
       ],
-      "agent": "ad9f042356afbd9cf"
+      "agent": "ad9f042356afbd9cf",
+      "reported": true
     },
     {
       "issue": 205,
