@@ -174,6 +174,7 @@ Files the app writes:
 | `pres_core=2` or `3` | The presenter's thread (`pres_thread=1`): `2` on core 2, behind the render thread; `3` on core 3 if the start-up `cores` line allows it. Default 1, core 1 (D126, D187) |
 | `pres_prio=N` | The presenter thread's priority, 0x40 to 0xBF (default 0x9A, behind the parse thread's 0x98; 0x96 puts it ahead) (D187) |
 | `vc_lazy=0` | With the wobble fix on: the presenter's projections worked out as it makes them, as before #193. Default 1: each one worked out when first read, the same pictures (D186, D187) |
+| `vc_lazy_logic=0` or `2` | With the wobble fix on and `vc_lazy=1`: the logic draw's projections. `0`: each one worked out at once on the game thread, as before #179. `2`: every one kept for the OT walk to work out. Default 1: kept only while the previous frame's walk was idle, and only at 60 Hz logic or 30 fps (at 30 Hz with in-between frames the walk shares core 1 with the presenter). The same pictures either way; the `threads:` start-up line logs it, and the `vcache records:` line and `vpk-perfcount-vc` count what was kept (D188, #196) |
 | `fast_render=0` | The arena build only (`-DSPYRO_NATIVE_MEM=OFF`): the renderers as translated from the asm, on PsyCross's GTE decoder. Default 3, and the only choice in the native build: the renderers as readable C (D124, the Vita's default since the owner's decision of 2026-11-09), no GTE data registers or commands, no PS1 scratchpad, spill area or hand stack; on hardware (7D2a/7D2b, `tools/vita/fps-runs/README.md`) 5% lighter than the register-file build of `fast_render=2`, which went in D127 with `1` and `ngte_fx` (any other value is taken as 3). The log's start says which (`fast_render=N: ...`) |
 | `native_draw=0` | The hand renderers' primitives as PS1 primitives that PsyCross's OT walk parses. Default 1 since D91: the primitives (the environment, the sky, the regular, lit and specular mobys, Spyro) reach the walk as native draw lists, records of their words that the walk turns into the vertices PsyCross would make of them (D82, D86, D91; the same triangles in the same order). A `native draw N:` line every 300 vblanks counts the primitives walked, the markers in the OT, the records' KB and the packets the walk still parses itself |
 | `nd_ab=1` | With `native_draw=1`, a timing run: `native_draw` 0 and 1 take turns by blocks of 8 lists (the first 2 of each not counted), and the `draw ab N:` and `parse ab N:` lines give each one's renderer, walk and wait microseconds. `tools/vita/nd_ab_summary.py spyro.log` sums them (D91) |
@@ -401,6 +402,31 @@ means, or two runs compared (a counter more than 2% higher is worse):
 python3 third_party/vita-port-kit/vita/tools/perf_report.py RUN/spyro.log --min-frame 6600 --max-frame 9000
 python3 third_party/vita-port-kit/vita/tools/perf_report.py BASE/spyro.log NEW/spyro.log --min-frame 6600 --max-frame 9000
 ```
+
+**The vertex cache's second line (D188, #179):** the kit's table holds 32 counters, so the vertex cache's record
+split and what its lookups found again go on a `vpk-perfcount-vc: w FIRST LAST FRAMES name=total ...` line of their
+own, in the same format and windows (`src/platform/vita/perfcount.c`). Without the wobble fix its counters are 0:
+
+- `vc.rec.kept`, `vc.rec.once`, `vc.rec.game`: the logic draw's projections the game thread kept for the walk, worked
+  out at once, and worked out in all (kept ones the walk needed are in `vc.walk.rec`, not here);
+- `vc.rec.div`, `vc.rec.probe`, `vc.rec.lines`: what the game thread's records cost, the record part of `vc.div`,
+  `vc.probe` and `vc.lines`; `vc.rec.store`: the store lines the kept ones were written to (not in `vc.lines`);
+- `vc.walk.rec`, `vc.walk.div`, `vc.walk.lines`: the kept projections the walk worked out and their cost (on the walk's
+  thread, not the game's). `vc.rec.kept` minus `vc.walk.rec` is the kept ones no lookup needed;
+- `vc.resolved`, `vc.derived`, `vc.hooked`: the logic draw's vertices found again from the frame's order (#181), from
+  their polygon (#183) and from their renderer's hand-over (#189); `vcp.resolved`, `vcp.derived`, `vcp.hooked`: the
+  presenter's frames'.
+
+Read it as the main line, with `--prefix`:
+
+```bash
+python3 third_party/vita-port-kit/vita/tools/perf_report.py RUN/spyro.log --prefix vpk-perfcount-vc --min-frame 6600 --max-frame 9000
+python3 third_party/vita-port-kit/vita/tools/perf_report.py BASE/spyro.log NEW/spyro.log --prefix vpk-perfcount-vc --min-frame 6600 --max-frame 9000
+```
+
+With `vc_lazy_logic=0` (or `vc_lazy=0`) `vc.rec.kept` and the `vc.walk.*` counters are 0 and `vc.rec.once` is
+`vc.rec.game`. A higher `vc.rec.kept` is the game thread's gain; a high `vc.walk.*` with a long `parse N:` join means
+the walk took more than it had time for. The `vcache records:` line every 300 vblanks gives the same split in words.
 
 The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the pause route in Artisans, at 30 fps
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause

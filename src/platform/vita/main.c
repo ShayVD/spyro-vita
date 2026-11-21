@@ -264,6 +264,11 @@
  *       vc_lazy=0       with persp or subpixel, the presenter's projections
  *                       worked out as it makes them (default 1: when first
  *                       read, #193; the same pictures; #195)
+ *       vc_lazy_logic=N with persp or subpixel and vc_lazy=1, the logic
+ *                       draw's projections: 0 each one at once on the game
+ *                       thread, 2 always kept for the walk, 1 (default)
+ *                       kept while the walk has time (D188; the same
+ *                       pictures; #196)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -394,6 +399,7 @@ extern int g_nd_direct; /* D99 */
 extern int g_gpu_clear; /* gpu_soft.c, D111 */
 extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
 static int s_vc_lazy = 1;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193) */
+static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -636,6 +642,10 @@ static void read_config(void) {
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
+    else if (!strcmp(line, "vc_lazy_logic")) { /* #196: 0, 1 or 2 */
+      const int m = atoi(v);
+      s_vc_lazy_logic = m < 0 ? 0 : m > 2 ? 2 : m;
+    }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
@@ -997,10 +1007,12 @@ int main(int argc, char **argv) {
   vita_parse_init(); /* after the render thread (D71) */
   vita_pres_init();  /* stage 7f (D126) */
   psx_vcache_set_lazy(s_vc_lazy);
-  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d: the "
-           "presenter's placement and its projections' deferral (#195, #193)",
+  psx_vcache_set_lazy_logic(s_vc_lazy_logic);
+  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
+           "vc_lazy_logic=%d: the presenter's placement and the projections' deferral (#195, "
+           "#193, D188)",
            g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
-           (unsigned)g_vita_pres_prio, s_vc_lazy);
+           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,
