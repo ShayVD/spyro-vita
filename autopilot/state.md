@@ -9,7 +9,25 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 200,
+      "branch": "auto/200-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-200",
+      "pids": [],
+      "started_at": "2026-11-21T12:32:56Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
+        "src/platform/linux32/prof_draw.c",
+        "docs/vita-testing.md",
+        "docs/presentation.md",
+        "tools/vita/fps-runs/README.md"
+      ],
+      "agent": "afd829baf77f28b01"
+    }
+  ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -178,11 +196,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 10,
+    "n": 11,
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
-    "base_commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
-    "started_at": "2026-11-21T07:05:00Z",
-    "filed": 1,
+    "base_commit": "765a1681b8075cacae836b04bcfdeb40e1b01411",
+    "started_at": "2026-11-21T12:33:53Z",
+    "filed": 3,
     "investigated": true
   },
   "rounds_without_gain": 1,
@@ -284,3 +302,4 @@ continue.
 - 2026-11-20T12:54Z phase 8: merged #178 (D195; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
 - 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
 - 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0
+- 12:33Z phase 8: round 11 started (owner 2026-11-21: flawless and fully optimized); #200-#202 rewritten as tasks; worker #200 started (others wait: other sessions' containers running)
