@@ -11,20 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 207,
-      "branch": "auto/207-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-207",
-      "pids": [],
-      "started_at": "2026-11-21T17:11:26Z",
-      "files": [
-        "docs/host-build.md",
-        "src/platform/vita/prof_draw.c",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a9fc200ddb53a9efe",
-      "reported": true
-    },
-    {
       "issue": 206,
       "branch": "auto/206-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-206",
@@ -340,3 +326,4 @@ continue.
 - 18:11Z phase 8: #205 gate running; #207 reported, gate queued
 - 18:19Z phase 8: merged #205 (D202)
 - 18:20Z phase 8: gate #207 running; worker #206 started (#202, #204 wait: docs/vita-testing.md with #207, vcache.c with #206)
+- 19:05Z phase 8: merged #207 (D203)
