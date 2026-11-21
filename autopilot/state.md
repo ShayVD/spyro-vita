@@ -339,3 +339,4 @@ continue.
 - 21:57Z phase 8: worker #202 started; #204 waits on vcache.c
 - 22:29Z phase 8: #202 running (no commit yet, started 21:55Z); #204 waits
 - 22:59Z phase 8: #202 WIP commit 3ad4e46 (sky clip cuts merged at one edge pixel; temporary diagnostics, uncommitted linux32 diag edits outside Files to be removed); #204 waits
+- 23:31Z phase 8: #202 still investigating (WIP 3ad4e46); #204 waits
