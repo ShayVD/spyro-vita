@@ -84,7 +84,7 @@ typedef struct {
   int gpu_fused;      /* gpu_fused=1: gpu_lean's vertices in one pass, programs per run, untextured
                          subtract draws joined (D92) */
   int gpu_parts;      /* gpu_parts=1: time the GL side's parts, the "gpu parts" line (D99) */
-  int parse_thread;   /* parse_thread=1: PsyCross's OT walk on its own thread, from a copy (D71) */
+  int parse_thread;   /* 1: the OT walk on its own thread, from a copy (D71); 2 (default): also on the game thread while a presenter job is pending (D187) */
   int parse_core;     /* parse_core=3: that thread on core 3, if a user thread may run there (D71) */
   int pres_thread;    /* pres_thread=1 (default): the presenter's in-between frame on its own
                          thread (stage 7f, D126); 0: on the game thread (7e) */
