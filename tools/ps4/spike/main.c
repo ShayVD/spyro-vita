@@ -314,6 +314,15 @@ int main(void) {
       s_log ? "" : " (COULD NOT OPEN: errno set)");
   if (!s_log)
     out("fopen errno %d\n", errno);
+  {
+    OrbisKernelSwVersion v;
+    memset(&v, 0, sizeof v);
+    v.Size = sizeof v;
+    if (sceKernelGetSystemSwVersion(&v) == 0)
+      out("firmware: %.28s (0x%08x)\n", v.VersionString, v.Version);
+    else
+      out("firmware: sceKernelGetSystemSwVersion failed\n");
+  }
 
   out("\nimage (link.x / lld symbols):\n");
   need("__text_start (image start)", __text_start, 1);
