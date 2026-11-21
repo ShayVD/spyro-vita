@@ -649,3 +649,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The far array's slots are taken in another order, so a frame with more than 1,024 far positions could choose differently.
   - Store lines are kept out of `vc.lines`.
 - **Open:** a hardware run, and a `vc_lazy_logic=` key for its A/B (#196).
+
+### D189. A `vc_lazy_logic=` key for D188's logic-frame deferral, and the `vpk-perfcount-vc` line documented (#196)
+
+- **Why:** D188 had no config key for `psx_vcache_set_lazy_logic`, so its hardware A/B couldn't be run. Its separate counter line wasn't in the docs either.
+- **What:**
+  - `vc_lazy_logic=0|1|2` in `main.c`'s `read_config`: default 1, clamped. It is set next to `vc_lazy=` and logged on the `threads:` start-up line.
+  - `vita-testing.md` now has the key, plus a note on `vpk-perfcount-vc`: its counters, and reading it with `perf_report.py --prefix vpk-perfcount-vc`.
+- **Checked:**
+  - Vita3K `owner60` with `vc_lazy_logic=0`: the `vcache records:` lines keep 0, and the 91 shots match the default run's.
+  - The five routes' shots are the same as `base-c489090`.
+  - The native build, the gate (host build and ctest) and `noassets` pass.
+- **Counters** (`owner60`, 6,600–9,000, per vblank):
+  - default: the game thread works out 1,894, keeps 1,320, and the walk works out 888;
+  - `vc_lazy_logic=0`: the game thread works out 3,205;
+  - `vc.div` is 6.6% lower with the default.
+- **Not built:** a batch hook for RTPT's three vertices. RTPT is only used by particles, shadows and flames. The upper bound is about 0.38 ms a vblank and the realistic saving under 0.04 ms. Batching the env and moby `ngte_rtps_run` loops would be the place, at about 0.25–0.35 ms at best.
+- **Left for the owner:** raising the vendored kit's `VPK_PC_MAX` (32 → 48), so the vc counters can join the main line. That's a change in `../vita-port-kit` plus a re-vendor.

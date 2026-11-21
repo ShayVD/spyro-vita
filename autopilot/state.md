@@ -9,7 +9,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 192,
+      "branch": "auto/192-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-192",
+      "pids": [],
+      "started_at": "2026-11-21T02:45:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "aaffa55df2602225a"
+    }
+  ],
   "last_good": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-c489090",
@@ -116,6 +129,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
     "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
     "2026-11-20 15:40: coordinator: two workers (#181, #186; no shared files) now that other sessions' containers are down to one restarting salsaas container. Baseline 5cdfccb running.",
     "2026-11-20 14:20: coordinator: #183 dispatched before #181 (pick gave #181; both p0 and share vcache.c, #183's no-entry is the larger share of the owner's stretching). Baseline re-run at 474d375 (after #177, #178, #180) into runs/base-474d375.",
