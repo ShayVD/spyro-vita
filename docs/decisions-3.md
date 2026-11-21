@@ -913,3 +913,60 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Counters are the same.
   - Native build, host ctest 32/32, `noassets`, and gate PASS.
 - **Not checked on hardware:** the black-screen time, and 17 cache hits on the second boot.
+
+## 2026-11-21 — draw distance's room is the D54 span (#203)
+
+### D201. Draw distance's world bound and limiter take the D54 span as the room (#203)
+
+- **Why:**
+  - With the option on, every draw spans both primitive buffers (D54, D61), but `lod.c` kept one buffer's size.
+  - Stone Hill's world alone (52 KB at 1x) was 78% of the 66 KB its bound left. So 2x stayed at x1.00 even with the budget off (D199).
+- **What:**
+  - `draw_room()` is the span when the option is on: 0x37A00, or 0x25A00 in reduced-space levels. With the option off (statistics only) it stays one buffer, so baseline `lod` lines don't change.
+  - The world's loops stop `ENV_MARGIN` (0xB000) under its top. The tour re-measured what the margin must cover: at most 30,852 bytes drawn after the world, and a largest sector of 5,776 bytes.
+  - The limiter measures used bytes against the span, and the world's bytes against the span less the margin. The thresholds are unchanged.
+  - Pass 2's moby share stays at 60% of one buffer, and the 60 Hz budget is unchanged.
+  - The `lod` line reads `of 222 KB` (150 KB in a reduced-space level).
+- **Checked** (`runtime/autopilot/reports/203-1.md`, runs in `runtime/autopilot/runs/auto-203-1`):
+  - **Host whole-game tour** at `--widescreen --draw-distance 2`, 100,000 vblanks: no crash, and traces and memory card identical to the build before.
+
+    | | Before | After |
+    |---|---|---|
+    | Average scale | x1.23 | x1.81 |
+    | Back-offs | 25,400 | 0 |
+    | Peak | – | 149 KB of 222 |
+
+    `--lod-guards-only` (2x throughout) also ran to the end.
+  - **Host Stone Hill:** with `--lod-budget 0`, x1.00 → x2.00, with no loop stopped. With the default budget it is unchanged and the trace is byte-identical.
+  - **Vita3K `owner60` at 60 Hz:** shots and counters are the same. With `dd_budget=0`, 6,900–7,800 draw at x2.00.
+  - **Pictures that changed:** where 2x has no budget (the title flyby, 600–1,200, and the 30 Hz Artisans attract demo, 3,200–5,900), it now reaches x2.00. 31 of `owner60`'s 91 shots differ there. The other four routes are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Open:**
+  - On hardware, check that 30 Hz holds where 2x now draws more (title, attract demos). If it doesn't, give 30 Hz a budget.
+  - The near list peaked at 125 of 127 in the tour.
+
+## 2026-11-21 — a cheaper vertex-cache record (#205)
+
+### D202. The vertex cache's record takes the GTE's own sums and the registers by pointer; kept registers are compared by generation (#205)
+
+- **Why:**
+  - D199 put the record at 85% of the 60 Hz logic draw's non-raster host time.
+  - Each native projection copied 15 registers into the value hook's form, then `rtp_apply` multiplied them again.
+  - `same_proj` compared 15 words for each kept projection.
+- **What:**
+  - **Direct call:** `gte_native.h`'s RTPS and RTPT call the record by name, `ngte_vcache` in `vcache.c` (the presenter's build calls `pres_vcache_ngte`). They pass the `NgteProj *` and an `NgteRtp` with new fields `m1`–`m3`, the 44-bit sums `ngte_rtp_v` already worked out. MAC1-3 come from the same expressions, so no GTE result changes.
+  - **Generation number:** `NgteProj.gen` is a new number at every `ngte_proj_get`/`rot`/`tr` while the cache records, and 0 otherwise. `lz_add` compares a kept projection's registers by that one word. A new generation is compared word by word once, then adopted, so the store keeps the same registers in the same places.
+  - **Smaller cuts:** `rtp_apply` converts the 12 low bits as an int.
+  - **Weak symbols:** `g_ngte_gen` and `ngte_vcache` are weak, so the GTE tests link without the cache.
+  - **Unchanged path:** the sky's records and the register file's still go through the hooks.
+  - **Rule for renderers:** a renderer that changes `NgteProj` fields itself after a projection must call `ngte_proj_regen`. None does today.
+- **Checked** (`runtime/autopilot/reports/205-1.md`):
+  - **Same answers:** host FNV dumps per polygon are byte-identical. Route A (6.13M polygons) was run with deferral auto, off and forced, and with `--walk-lazy`. Route B (8.98M polygons) was run with auto, forced, and the presenter's `VC_LAZY=0`. Memory cards are identical too.
+  - **Pictures and counters:** the five routes' shots are the same, and so are every `vc.*`, GL and ot counter.
+  - **Host cost:** gprof shows the record's functions 21–34% cheaper (qemu).
+  - **Vita code:** on ARM, `rtp_apply` loses 9 multiplies (737 → 681 instructions). The 15-word copy, the indirect call and `rtp_value_hook` are gone.
+  - **Builds:** native build, host ctest 32/32 (`pres_link`, `render_ctx_link`, `savestate_globals`, `gte_native` and its mutants), `noassets`, and gate PASS.
+  - **Not checked on hardware.**
+- **Left:**
+  - `render_ctx.c`'s `pres_ngte_vcache` and its copy are now dead code.
+  - Storing the sums for the walk, which needs a 32-byte store record, is a trade-off for hardware to judge.
