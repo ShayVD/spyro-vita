@@ -9,20 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 192,
-      "branch": "auto/192-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-192",
-      "pids": [],
-      "started_at": "2026-11-21T02:45:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "aaffa55df2602225a"
-    }
-  ],
+  "workers": [],
   "last_good": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-c489090",
@@ -174,7 +161,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 15,
+    "filed": 16,
     "investigated": true
   },
   "rounds_without_gain": 0,
