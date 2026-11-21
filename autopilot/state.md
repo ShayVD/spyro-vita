@@ -9,21 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 206,
-      "branch": "auto/206-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-206",
-      "pids": [],
-      "started_at": "2026-11-21T18:20:25Z",
-      "files": [
-        "src/platform/common/vcache.c"
-      ],
-      "agent": "a96b14272344e4b07",
-      "last_commit_at": "2026-11-21T19:39:03+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -334,3 +320,4 @@ continue.
 - 20:39Z phase 8: #206 still running its checks (last commit 19:39Z); #202 #204 wait
 - 21:10Z phase 8: #206 still running its checks; #202 #204 wait
 - 21:41Z phase 8: stall check flagged #206 (last commit 19:39Z) but it is alive in its final checks (Vita build done, routes owner60/pause-ws running, ctest log present): not stopped
+- 21:56Z phase 8: merged #206 (D204)

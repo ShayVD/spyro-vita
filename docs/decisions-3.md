@@ -987,3 +987,34 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `owner60`'s shots are the same as `base-63d80f4`.
   - `fps60_summary.py`, `native_share.py` and `hw_cmp.py` still read the log.
   - Native build, host ctest 32/32, `noassets`, and gate PASS.
+
+## 2026-11-21 — cheaper walk lookups (#206)
+
+### D204. The walk's lookups compare depths on their bits and find a key's near projections in one walk (#206)
+
+- **Why:** this is #200's cut 4 (D199). The walk's `psx_vcache_poly`, `choose`, `resolve` and `res_place` run on core 1. That core is 68% busy in the owner's Stone Hill window, and `resolve` grows at 2x. A cheaper walk gives #204's quota more room.
+- **What** (`src/platform/common/vcache.c` only):
+  - **Depth tests on the bits.** `choose` and `resolve` test depth ratios against 4, 3.999 and 1.02 on the depths' integer bits, where that is exact (positive normal floats; multiplying by 4 adds 2 to the exponent). Between the bounds, and for other values, the float tests decide as before. Checked against the float tests: 0 differences in 197.7M pairs (arm64) and 19.8M (i686 x87).
+  - **One test per candidate.** `choose` tests each candidate against 4 once, keeping a bitmask.
+  - **One walk in `resolve`.** It keeps its anchors (at most 32) sorted largest first and walks them alongside its falling chain, stopping when none is left. That is O(chain + anchors) where it was O(chain × anchors).
+  - **One mode check.** `psx_vcache_poly` asks `psx_gpu_game_walk()` once a polygon.
+  - D202's record side is untouched. `add_cand` keeps the float test.
+- **Checked** (`runtime/autopilot/reports/206-1.md`):
+  - **Same answers.** Host FNV dumps per polygon are byte-identical in all 10 pairs:
+    - route A: 1x; dd2 with auto, off, forced and `--walk-lazy`; forced 2x;
+    - route B: auto, forced, `VC_LAZY=0`;
+    - Stone Hill at 60 Hz, forced 2x (20.1M polygons).
+  - **Less work.** Host gprof, scaled against the unchanged raster time:
+
+    | Route | Scale | Lookup cost |
+    |---|---|---|
+    | A | 1x | −28% |
+    | A | forced 2x | −21% |
+    | Stone Hill | 1x | −19% |
+    | Stone Hill | forced 2x | −21% |
+
+    `choose` falls 46–54%. Divisions and probes per vertex are unchanged by construction; table lines fall 0.05–1.1%.
+  - **Pictures.** The five routes' shots are the same. `owner60` was checked against #203's run, because D201 changed its 30 Hz shots.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+  - Not checked on hardware. The host's gain is weighted by qemu's emulated x87, so the Vita's will be smaller.
+- **Left:** dividing in `choose`'s multi-candidate path (`ratio`), and `res_place`/`near8` compared as integers.
