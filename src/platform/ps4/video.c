@@ -1,19 +1,27 @@
-/* The PS4's display through sceVideoOut (docs/ps4-plan.md P3, D193): the
- * software rasterizer's VRAM (linux32's gpu_soft.c) scaled into a 1920x1080
- * linear A8R8G8B8 framebuffer on the CPU, as OpenOrbis's own graphics sample
- * draws (samples/_common/graphics.cpp: direct memory, two buffers, a flip
- * event queue). No GPU, no Piglet, no shader: it runs on every PS4 without
- * Sony modules. The GLES2 renderer replaces it when the player has given us
- * Piglet's modules (D193).
+/* The PS4's display through sceVideoOut (docs/ps4-plan.md P3-P4, D193,
+ * D194): the software path's picture scaled into a 1920x1080 linear
+ * A8R8G8B8 framebuffer on the CPU, as OpenOrbis's own graphics sample draws
+ * (samples/_common/graphics.cpp: direct memory, two buffers, a flip event
+ * queue). No GPU, no Piglet, no shader: it runs on every PS4 without Sony
+ * modules. With the GLES2 renderer (gpu_gles.c, the player's Piglet) Piglet
+ * owns the display and this file only gives the vblank count.
  *
- * The PS1 display rect fills a 4:3 1440x1080 box in the middle (the 224 lines
- * the game draws of an NTSC 240, as png.c's 960x544 shots), black bars at the
- * sides. Nearest-neighbour: each source row is built once in cached memory
- * and written to every framebuffer row it covers. The framebuffer is
+ * The picture is a presenter frame when there is one (present_ps4.c:
+ * widescreen, 60 fps; 512 x 240 PS1 15-bit, the Vita's gpu=0 path,
+ * vita/video.c), else the PS1 display rect. Its drawn lines (224 of NTSC's
+ * 240, all of PAL's 256) fill the height: 16:9 frames the whole width, 4:3
+ * ones a box in the middle (240 lines: 1080 * 4/3 * 240/224 = 1543, as the
+ * Vita's 778 of 960; PAL's 256: 1440), black bars at the sides.
+ * Nearest-neighbour: each source row is built once in cached memory and
+ * written to every framebuffer row it covers. The framebuffer is
  * write-combined: never read it (hardware run 2: copying repeated rows
- * from the row above cost most of a frame). */
+ * from the row above cost most of a frame).
+ *
+ * The overlay (the options menu, a save state's notice) is an RGB panel
+ * drawn at twice its size in the middle, over the picture. */
 #include "ps4.h"
 #include "host.h"
+#include "../../game/present.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdio.h>
@@ -28,11 +36,12 @@
 
 #define FB_W 1920
 #define FB_H 1080
-#define BOX_W 1440 /* 4:3 at 1080 lines */
-#define BOX_X ((FB_W - BOX_W) / 2)
 #define NBUF 2
 #define FB_BYTES ((size_t)FB_W * FB_H * 4)
 #define DMEM_ALIGN 0x200000u
+#define OVL_SCALE 2
+#define OVL_MAX_W (FB_W / OVL_SCALE)
+#define OVL_MAX_H (FB_H / OVL_SCALE)
 
 extern DISPENV currentDispEnv; /* libgpu.c: what the PS1 scans out */
 extern int g_GPUDisabledState;
@@ -56,13 +65,29 @@ int32_t ps4_vo_wait_vblank(int32_t handle) __asm__("sceVideoOutWaitVblank");
 static int s_handle = -1;
 static OrbisKernelEqueue s_flip_q;
 static uint32_t *s_fb[NBUF];
-static int s_cur; /* the buffer drawn next */
-static int s_xmap[BOX_W], s_xmap_w = -1;
-static uint32_t s_row[BOX_W]; /* one row of the box, in cached memory */
+static int s_fb_box[NBUF][2]; /* the box each buffer's bars were cleared for: x, w */
+static int s_cur;             /* the buffer drawn next */
+static int s_xmap[FB_W], s_xmap_key = -1;
+static uint32_t s_row[FB_W]; /* one row of the box, in cached memory */
 static unsigned long long s_draw_us, s_wait_us;
-static unsigned s_shown, s_flip_err;
+static unsigned s_shown, s_flip_err, s_present_frames;
+
+/* the overlay: its RGB (OVL_MAX_W x OVL_MAX_H at most), 0 x 0 when none */
+static uint8_t s_ovl[OVL_MAX_W * OVL_MAX_H * 3];
+static int s_ovl_w, s_ovl_h;
 
 int ps4_video_handle(void) { return s_handle; }
+
+/* The display, for the vblank count and the flips. With the GPU path,
+ * Piglet opens its own (gpu_gles.c) and this handle is the count's only. */
+static int open_display(void) {
+  s_handle = sceVideoOutOpen(ORBIS_VIDEO_USER_MAIN, ORBIS_VIDEO_OUT_BUS_MAIN, 0, NULL);
+  if (s_handle < 0) {
+    host_log("video: sceVideoOutOpen failed: 0x%x", (unsigned)s_handle);
+    return -1;
+  }
+  return 0;
+}
 
 int ps4_video_init(void) {
   OrbisVideoOutBufferAttribute attr;
@@ -70,11 +95,13 @@ int ps4_video_init(void) {
   void *mem = NULL;
   size_t size = (FB_BYTES * NBUF + DMEM_ALIGN - 1) & ~(size_t)(DMEM_ALIGN - 1);
   int rc, i;
-  s_handle = sceVideoOutOpen(ORBIS_VIDEO_USER_MAIN, ORBIS_VIDEO_OUT_BUS_MAIN, 0, NULL);
-  if (s_handle < 0) {
-    host_log("video: sceVideoOutOpen failed: 0x%x", (unsigned)s_handle);
-    return -1;
+  if (g_ps4_gpu) { /* Piglet shows the pictures; the vblank count comes from here */
+    if (open_display() != 0) /* (then ps4_video_vcount is a 60 Hz clock) */
+      host_log("video: no sceVideoOut handle beside Piglet's: the vblanks follow a 60 Hz clock");
+    return 0;
   }
+  if (open_display() != 0)
+    return -1;
   if ((rc = sceKernelCreateEqueue(&s_flip_q, "spyro flip")) < 0 ||
       (rc = sceVideoOutAddFlipEvent(s_flip_q, s_handle, NULL)) < 0) {
     host_log("video: flip event queue: 0x%x", (unsigned)rc);
@@ -90,6 +117,7 @@ int ps4_video_init(void) {
   for (i = 0; i < NBUF; i++) {
     s_fb[i] = (uint32_t *)((char *)mem + FB_BYTES * i);
     memset(s_fb[i], 0, FB_BYTES); /* opaque black, alpha 0 is shown as black too */
+    s_fb_box[i][0] = 0, s_fb_box[i][1] = FB_W;
   }
   /* 0x80000000: A8R8G8B8 sRGB; tiling 1: linear; aspect 0: 16:9 */
   sceVideoOutSetBufferAttribute(&attr, 0x80000000u, 1, 0, FB_W, FB_H, FB_W);
@@ -115,6 +143,20 @@ void ps4_video_wait_vblank(void) {
     sceKernelUsleep(1000);
 }
 
+void ps4_video_overlay(const uint8_t *rgb, int w, int h) {
+  if (g_ps4_gpu) {
+    ps4_gpu_overlay(rgb, w, h);
+    return;
+  }
+  if (!rgb || w <= 0 || h <= 0 || w > OVL_MAX_W || h > OVL_MAX_H) {
+    s_ovl_w = s_ovl_h = 0;
+    return;
+  }
+  memcpy(s_ovl, rgb, (size_t)w * h * 3);
+  s_ovl_w = w;
+  s_ovl_h = h;
+}
+
 static inline uint32_t argb555(uint16_t p) {
   uint32_t r = p & 31, g = (p >> 5) & 31, b = (p >> 10) & 31;
   r = r << 3 | r >> 2;
@@ -123,47 +165,129 @@ static inline uint32_t argb555(uint16_t p) {
   return 0xFF000000u | r << 16 | g << 8 | b;
 }
 
-/* the PS1 display rect into buffer fb's box */
-static void draw(uint32_t *fb) {
-  const DISPENV *d = &currentDispEnv;
-  const uint16_t *vram = host_vram();
-  int w = d->disp.w > 0 ? d->disp.w : 320, h = d->disp.h > 0 ? d->disp.h : 240;
-  int top = h == 240 ? 8 : 0, lines = h - 2 * top, y, x, prev = -1;
-  if (d->disp.w <= 0 || g_GPUDisabledState) {
-    for (y = 0; y < FB_H; y++)
-      memset(fb + (size_t)y * FB_W + BOX_X, 0, BOX_W * 4);
+/* What a picture's rows come from: the PS1 display rect, or a presenter
+ * frame. row() builds source row sy (of the drawn lines) box_w wide. */
+typedef struct {
+  const uint16_t *px; /* a presenter frame: PRESENT_W wide; NULL: the display */
+  int src_w, top, lines, box_w;
+  const DISPENV *d;
+} Pic;
+
+static void xmap(int box_w, int src_w) {
+  int key = box_w * 2048 + src_w, x;
+  if (key == s_xmap_key)
+    return;
+  for (x = 0; x < box_w; x++)
+    s_xmap[x] = x * src_w / box_w;
+  s_xmap_key = key;
+}
+
+static void build_row(const Pic *p, int sy, uint32_t *o) {
+  int x;
+  if (p->px) {
+    const uint16_t *row = p->px + (size_t)(p->top + sy) * PRESENT_W;
+    for (x = 0; x < p->box_w; x++)
+      o[x] = argb555(row[s_xmap[x]]);
     return;
   }
-  if (s_xmap_w != w * 2 + d->isrgb24) {
-    for (x = 0; x < BOX_W; x++)
-      s_xmap[x] = x * w / BOX_W;
-    s_xmap_w = w * 2 + d->isrgb24;
+  {
+    const DISPENV *d = p->d;
+    const uint16_t *vram = host_vram();
+    int vy = (d->disp.y + p->top + sy) & 511;
+    const uint16_t *row = vram + (size_t)vy * 1024;
+    if (d->isrgb24) { /* the movies' 24-bit mode: 3 bytes a pixel */
+      const uint8_t *b = (const uint8_t *)row;
+      for (x = 0; x < p->box_w; x++) {
+        int off = d->disp.x * 2 + s_xmap[x] * 3;
+        o[x] = 0xFF000000u | (uint32_t)b[off & 2047] << 16 | (uint32_t)b[(off + 1) & 2047] << 8 |
+               b[(off + 2) & 2047];
+      }
+    } else {
+      for (x = 0; x < p->box_w; x++)
+        o[x] = argb555(row[(d->disp.x + s_xmap[x]) & 1023]);
+    }
+  }
+}
+
+/* the 4:3 box for a picture of `lines` drawn lines of `h` */
+static int box43(int h) { return h == 256 ? 1440 : 1542; }
+
+/* The overlay's part of framebuffer row y, if any, over s_row (whose x 0 is
+ * the box's left edge, box_x in the framebuffer): written into the
+ * framebuffer after the row (so only writes reach it). */
+static void overlay_row(uint32_t *fbrow, int y) {
+  int oy, ox0, x;
+  uint32_t line[OVL_MAX_W * OVL_SCALE];
+  const uint8_t *s;
+  if (!s_ovl_w)
+    return;
+  oy = y - (FB_H - s_ovl_h * OVL_SCALE) / 2;
+  if (oy < 0 || oy >= s_ovl_h * OVL_SCALE)
+    return;
+  s = s_ovl + (size_t)(oy / OVL_SCALE) * s_ovl_w * 3;
+  ox0 = (FB_W - s_ovl_w * OVL_SCALE) / 2;
+  for (x = 0; x < s_ovl_w; x++, s += 3) {
+    uint32_t c = 0xFF000000u | (uint32_t)s[0] << 16 | (uint32_t)s[1] << 8 | s[2];
+    line[x * 2] = line[x * 2 + 1] = c;
+  }
+  memcpy(fbrow + ox0, line, (size_t)s_ovl_w * OVL_SCALE * 4);
+}
+
+static void draw(uint32_t *fb, int buf, const Pic *p) {
+  int box_x = (FB_W - p->box_w) / 2, y, prev = -1;
+  if (s_fb_box[buf][0] != box_x || s_fb_box[buf][1] != p->box_w) { /* the bars, black */
+    for (y = 0; y < FB_H; y++) {
+      memset(fb + (size_t)y * FB_W, 0, (size_t)box_x * 4);
+      memset(fb + (size_t)y * FB_W + box_x + p->box_w, 0, (size_t)(FB_W - box_x - p->box_w) * 4);
+    }
+    s_fb_box[buf][0] = box_x;
+    s_fb_box[buf][1] = p->box_w;
   }
   for (y = 0; y < FB_H; y++) {
-    int sy = top + y * lines / FB_H;
-    uint32_t *o = s_row;
-    if (sy == prev) {
-      memcpy(fb + (size_t)y * FB_W + BOX_X, s_row, BOX_W * 4);
-      continue;
+    int sy = y * p->lines / FB_H;
+    uint32_t *fbrow = fb + (size_t)y * FB_W;
+    if (sy != prev) {
+      build_row(p, sy, s_row);
+      prev = sy;
     }
-    prev = sy;
-    {
-      int vy = (d->disp.y + sy) & 511;
-      const uint16_t *row = vram + (size_t)vy * 1024;
-      if (d->isrgb24) { /* the movies' 24-bit mode: 3 bytes a pixel */
-        const uint8_t *b = (const uint8_t *)row;
-        for (x = 0; x < BOX_W; x++) {
-          int off = d->disp.x * 2 + s_xmap[x] * 3;
-          o[x] = 0xFF000000u | (uint32_t)b[off & 2047] << 16 | (uint32_t)b[(off + 1) & 2047] << 8 |
-                 b[(off + 2) & 2047];
-        }
-      } else {
-        for (x = 0; x < BOX_W; x++)
-          o[x] = argb555(row[(d->disp.x + s_xmap[x]) & 1023]);
-      }
-    }
-    memcpy(fb + (size_t)y * FB_W + BOX_X, s_row, BOX_W * 4);
+    memcpy(fbrow + box_x, s_row, (size_t)p->box_w * 4);
+    overlay_row(fbrow, y);
   }
+}
+
+static void draw_black(uint32_t *fb, int buf) {
+  int y;
+  for (y = 0; y < FB_H; y++) {
+    memset(fb + (size_t)y * FB_W, 0, FB_W * 4);
+    overlay_row(fb + (size_t)y * FB_W, y);
+  }
+  s_fb_box[buf][0] = 0, s_fb_box[buf][1] = FB_W;
+}
+
+/* the picture this present shows */
+static int pick(Pic *p) {
+  int slot = port_present_frame_slot();
+  memset(p, 0, sizeof *p);
+  if (slot >= 0 && (p->px = port_present_slot_pixels(slot)) != NULL) {
+    int h = port_present_slot_h(slot); /* 256 for PAL's display (D148) */
+    p->src_w = PRESENT_W;
+    p->top = h == 240 ? 8 : 0;
+    p->lines = h - 2 * p->top;
+    p->box_w = port_present_frame_is_wide() ? FB_W : box43(h);
+    s_present_frames++;
+    return 1;
+  }
+  p->d = &currentDispEnv;
+  if (p->d->disp.w <= 0 || g_GPUDisabledState)
+    return 0;
+  {
+    int h = p->d->disp.h > 0 ? p->d->disp.h : 240;
+    p->src_w = p->d->disp.w;
+    p->top = h == 240 ? 8 : 0;
+    p->lines = h - 2 * p->top;
+    p->box_w = box43(h);
+  }
+  return 1;
 }
 
 /* the buffer we draw next must not be on screen or waiting to be */
@@ -178,13 +302,21 @@ static void wait_flip_done(void) {
 
 int ps4_video_present(void) {
   int rc;
+  Pic p;
+  if (g_ps4_gpu)
+    return ps4_gpu_present();
   if (s_handle < 0)
     return 0;
   {
     unsigned long long t0 = ps4_now_us(), t1;
+    int have = pick(&p);
     wait_flip_done();
     t1 = ps4_now_us();
-    draw(s_fb[s_cur]);
+    if (have) {
+      xmap(p.box_w, p.px ? PRESENT_W : p.src_w);
+      draw(s_fb[s_cur], s_cur, &p);
+    } else
+      draw_black(s_fb[s_cur], s_cur);
     s_wait_us += t1 - t0;
     s_draw_us += ps4_now_us() - t1;
   }
@@ -200,10 +332,17 @@ int ps4_video_present(void) {
 
 void ps4_video_report(int vblank) {
   static unsigned last;
-  unsigned n = s_shown - last ? s_shown - last : 1;
-  host_log("video %d: %u pictures flipped, %u flip errors, display vcount %llu; per picture %llu us "
-           "scaling, %llu us waiting for the flip", vblank, s_shown, s_flip_err,
+  unsigned n;
+  if (g_ps4_gpu) {
+    ps4_gpu_report(vblank);
+    return;
+  }
+  n = s_shown - last ? s_shown - last : 1;
+  host_log("video %d: %u pictures flipped (%u presenter frames), %u flip errors, display vcount "
+           "%llu; per picture %llu us scaling, %llu us waiting for the flip",
+           vblank, s_shown - last, s_present_frames, s_flip_err,
            (unsigned long long)ps4_video_vcount(), s_draw_us / n, s_wait_us / n);
   last = s_shown;
+  s_present_frames = 0;
   s_draw_us = s_wait_us = 0;
 }

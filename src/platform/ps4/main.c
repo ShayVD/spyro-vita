@@ -17,7 +17,10 @@
  * sceSysmoduleLoadModuleInternal before anything calls it.
  *
  * Options (/data/spyro/config.txt, key=value lines): frames=N, stats=0|1|2,
- * realtime=0|1, analog=0|1, shot=V. Everything else is the game's defaults. */
+ * realtime=0|1, shot=V, shot_every=N, interp_budget=0|1, gpu=0|1,
+ * menu_test=V,..., and the options menu's rows, which it writes back when
+ * it closes (widescreen, interp, analog, free_camera, cam_*, touch_menu,
+ * skip_logos, state_slot; ps4.h). */
 #include "ps4.h"
 #include "host.h"
 #include "../../game/present.h"
@@ -57,7 +60,12 @@ extern int g_nd_direct_ok;
  * (D180, tools/ps4/oelf_check.py runs after every link). */
 static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 
-Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1};
+/* the Vita's defaults (vita/main.c): 16:9, 60 Hz logic in play (D150), the
+ * free camera (D53); the GLES2 renderer when the player's Piglet loads */
+Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
+                      .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
+                      .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
+                      .gpu_vsync = 1};
 int g_ps4_user = -1;
 
 unsigned long long ps4_now_us(void) { return sceKernelGetProcessTime(); }
@@ -123,29 +131,51 @@ static int pie_fixups(void) {
   return n;
 }
 
+static void parse_list(const char *v, int *out, int *n, int max) {
+  char buf[256], *tok, *save = NULL;
+  snprintf(buf, sizeof buf, "%s", v);
+  for (tok = strtok_r(buf, ",", &save); tok && *n < max; tok = strtok_r(NULL, ",", &save))
+    out[(*n)++] = atoi(tok);
+}
+
+/* config.txt: key=value lines. The menu's rows (present_ps4.c, pad.c,
+ * menu_game.c, savestate_ps4.c) take their own keys; the rest are here. */
 static void read_config(void) {
   char line[256];
   FILE *f = fopen(PS4_DATA_DIR "/config.txt", "r");
   if (!f)
     return;
   while (fgets(line, sizeof line, f)) {
-    char key[64];
-    int v;
-    if (line[0] == '#' || sscanf(line, " %63[a-z_] = %d", key, &v) != 2)
+    char key[64], v[160];
+    int n;
+    if (line[0] == '#' || sscanf(line, " %63[a-z_0-9] = %159[^\r\n]", key, v) != 2)
       continue;
+    n = atoi(v);
     if (!strcmp(key, "frames"))
-      g_ps4_opts.frames = v;
+      g_ps4_opts.frames = n;
     else if (!strcmp(key, "stats"))
-      g_ps4_opts.stats = v;
+      g_ps4_opts.stats = n;
     else if (!strcmp(key, "realtime"))
-      g_ps4_opts.realtime = v;
-    else if (!strcmp(key, "analog"))
-      g_ps4_opts.analog = v;
+      g_ps4_opts.realtime = n;
     else if (!strcmp(key, "shot"))
-      g_ps4_opts.shot_at = v;
-    else
+      g_ps4_opts.shot_at = n;
+    else if (!strcmp(key, "shot_every"))
+      g_ps4_opts.shot_every = n;
+    else if (!strcmp(key, "interp_budget"))
+      g_ps4_opts.interp_budget = n;
+    else if (!strcmp(key, "gpu"))
+      g_ps4_opts.gpu = n;
+    else if (!strcmp(key, "gpu_vsync"))
+      g_ps4_opts.gpu_vsync = n;
+    else if (!strcmp(key, "menu_test"))
+      parse_list(v, g_ps4_opts.menu_test, &g_ps4_opts.nmenu_test, PS4_MAX_MENU_TEST);
+    else if (!strcmp(key, "config_version"))
       continue;
-    host_log("config: %s=%d", key, v);
+    else if (!ps4_menu_load(key, v)) {
+      host_log("config: %s: not a key of ours", key);
+      continue;
+    }
+    host_log("config: %s=%s", key, v);
   }
   fclose(f);
 }
@@ -202,6 +232,24 @@ static void *game_thread(void *arg) {
 
   host_log("user 0x%x", (unsigned)g_ps4_user);
   host_log_flush();
+  /* the GLES2 renderer needs the player's own Piglet and shader compiler
+   * (D193, D194); without them, the software renderer, and a notification
+   * saying why (as the Vita's D163 screen) */
+  if (g_ps4_opts.gpu) {
+    char why[256] = "";
+    if (ps4_gpu_load(why, sizeof why) == 0 && ps4_gpu_init() == 0)
+      g_ps4_gpu = 1;
+    else {
+      if (!why[0])
+        snprintf(why, sizeof why, "the GLES2 renderer couldn't start (see spyro.log)");
+      host_log("renderer: software: %s", why);
+      ps4_notify("Spyro: the software renderer: %s", why);
+    }
+  } else
+    host_log("renderer: software (gpu=0)");
+  if (g_ps4_gpu)
+    host_log("renderer: GLES2 on Piglet (gpu=1)");
+  host_log_flush();
   if (ps4_video_init() != 0) {
     ps4_notify("Spyro: no display (sceVideoOut). See spyro.log.");
     ps4_exit(1);
@@ -216,6 +264,7 @@ static void *game_thread(void *arg) {
   g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
   if (g_Region != PSX_REGION_US)
     host_log("region: %s, %d Hz vblanks", psx_region()->serial, psx_region_vblank_hz());
+  ps4_present_init(); /* after the region's clock (60 Hz logic, PAL's rates) */
   nd_init(host_log);
   if (ps4_pad_init() != 0)
     ps4_notify("Spyro: no controller (scePad). See spyro.log.");
@@ -229,7 +278,8 @@ static void *game_thread(void *arg) {
              psx_region()->serial, dir);
   }
   psx_cd_set_read_latency(0); /* reads complete inside CdRead (D17) */
-  port_cheats_set_log(host_log);
+  port_cheats_set_log(host_log); /* menu_game.c's cheats (D50) */
+  ps4_savestate_init();
   host_log_flush();
   ps4_notify("Spyro PS4: starting (%s)", psx_region()->serial);
   spyro_main(); /* never returns */
