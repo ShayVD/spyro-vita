@@ -14,7 +14,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "issue": 200,
       "branch": "auto/200-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-200",
-      "pids": [],
+      "pids": [
+        34773,
+        37726,
+        48159
+      ],
       "started_at": "2026-11-21T12:32:56Z",
       "files": [
         "src/game/lod.c",
@@ -303,3 +307,4 @@ continue.
 - 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
 - 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0
 - 12:33Z phase 8: round 11 started (owner 2026-11-21: flawless and fully optimized); #200-#202 rewritten as tasks; worker #200 started (others wait: other sessions' containers running)
+- 12:59Z phase 8: worker #200 running (no commit yet); PR #176 merge checks green (vita, linux32 32/32, linux64, noassets; CI pass); pick empty (other sessions' containers)
