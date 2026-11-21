@@ -620,3 +620,32 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Toasty's game thread takes about 24 ms a tick.
   - The in-between frames should be back on time. That's borderline-likely, not certain.
   - For an A/B: `parse_thread=1`, `vc_lazy=0`. Not run on hardware yet.
+
+### D188. The logic draw's projections are worked out by its walk while the walk has time (#179)
+
+- **Why:** with the wobble fix on, the vertex cache's per-projection record is most of the hand renderers' cost on the game thread. That is about 5.9 ms a tick in heavy 60 HZ Artisans on hardware (D180's split), and the game thread is the bottleneck at 60 HZ logic.
+- **What:**
+  - **Deferral at 60 Hz.** With 60 Hz logic the game thread finds the entry, logs its place and keeps the projection's inputs (D186's `T_PEND` store, now one per table) instead of doing the maths. The walk works them out at a polygon's first lookup, at a hand-over source, or at a derived point.
+    - Each logic table has its own store and far count, so the walk can finish frame N while the game records N+1.
+  - **Adaptive.** A projection is kept only while the previous frame's walk is idle. The walk sets a flag on its own cache line. Otherwise the game thread works it out itself, so the walk takes only what it has time for.
+    - Keeping every projection overloaded the walk. On Vita3K `owner60` at 6,900, parse went 3.4 → 7.5 ms a vblank with a 5.7 ms join, and the tick got worse.
+    - Which projections are kept never changes an answer.
+  - **30 Hz with in-between frames.** The logic frames work out at once, as before, because the walk shares core 1 with the presenter (D186, D187).
+  - **Switches.** `psx_vcache_set_lazy_logic` takes 0 (never), 1 (auto, the default) or 2 (always). `vc_lazy=0` turns off both deferrals.
+  - **Per-thread counters.** The logic draw's record counts and the walk's deferred maths go to per-thread blocks, added to the shared counters once a frame with atomic adds. Records no longer write the walk's cache lines from the other core.
+  - **New counters.** `g_vcache_rec`, the `vcache records:` line, and a `vpk-perfcount-vc` line holding `vc.rec.*`, `vc.walk.*`, `vc.resolved`, `vc.derived` and `vc.hooked` (the kit's 32 main counters are taken). Read it with `perf_report.py --prefix vpk-perfcount-vc`.
+- **Checked:**
+  - **Host answers:** per-polygon FNV is identical to 7df4b85 on routes A and B, with deferral off, auto, forced and `--walk-lazy`. `--fast-render-check` and `--native-draw-check` are unchanged.
+  - **Pictures:** the five routes' shots are the same.
+  - **Gate:** PASS, including the host build and ctest.
+  - **Counters (`owner60`, 6,900–9,000):**
+    - projections worked out on the game thread: 3,663 → about 2,350 a vblank (−36%);
+    - divisions: 3,448 → 2,232;
+    - the walk works out about 890 a vblank, and about 31% of the kept projections are never needed;
+    - `vc.div` −5.3%; `vc.proj`, `vc.polys` and `vc.misses` are the same.
+  - **Vita3K timing (same-session pairs):** the logic draw per tick is 15–20% lower, with the join at 0.03–0.2 ms.
+- **Known:**
+  - The invalid, ambiguous and clamped stats count only the projections that were worked out.
+  - The far array's slots are taken in another order, so a frame with more than 1,024 far positions could choose differently.
+  - Store lines are kept out of `vc.lines`.
+- **Open:** a hardware run, and a `vc_lazy_logic=` key for its A/B (#196).
