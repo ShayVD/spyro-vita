@@ -1,9 +1,17 @@
 /* The presenter's thread (stage 7f, decisions D126): the in-between frame
  * (in every gamestate since 7g, D128) is drawn here, on a core of its own, beside the
  * logic draw on the game thread (src/game/present.c's presenter, recording
- * into gpu_thread.c's buffers). Core 1 (the mixer's, the XA reader's and
- * the parse thread's, behind them), or core 3 with pres_core=3 when the
- * start-up check (parse.c, D71) found a thread of ours may run there.
+ * into gpu_thread.c's buffers). Where (#195):
+ *  - pres_core=1 (default): core 1, the mixer's, the XA reader's and the
+ *    parse thread's, behind them all (pres_prio=, default 0x9A, below the
+ *    parse thread's 0x98). There the logic walk N (parse.c) preempts it,
+ *    unless parse_thread=2 walks that list on the game thread while this
+ *    thread's job is posted and not joined (parse.c);
+ *  - pres_core=2: core 2, behind the render thread (0x80);
+ *  - pres_core=3: core 3 when the start-up check (parse.c, D71) found a
+ *    thread of ours may run there.
+ * pres_prio=N (0x40 to 0xBF) sets its priority on any of them: 0x96 puts
+ * it ahead of the parse thread on core 1.
  *
  * The game thread hands it one job a tick (vita_pres_post) and joins it
  * before the next update (vita_pres_wait, from port_present_pres_join). */
@@ -17,9 +25,12 @@
 #define PRIORITY 0x9A /* behind the parse thread (0x98): the logic's list first */
 #define STACK (256 << 10)
 
+int g_vita_pres_prio = PRIORITY; /* config.txt pres_prio= (main.c, #195) */
+
 static SceUID s_th = -1, s_go, s_done;
-static int s_core;
+static int s_core, s_prio = PRIORITY;
 static void (*volatile s_fn)(void);
+static int s_pending; /* game thread: a job posted, not joined (parse.c's parse_thread=2 asks) */
 static volatile uint32_t s_busy_us, s_jobs; /* counted up; the report takes the differences */
 extern unsigned g_faces_in_place; /* src/game/render_ctx.c (moby_hand.c) */
 
@@ -42,8 +53,12 @@ static int pres_main(SceSize args, void *argp) {
 
 int vita_pres_thread_up(void) { return s_th >= 0; }
 
+/* The game thread: 1 from a job's post to its join */
+int vita_pres_pending(void) { return s_pending; }
+
 void vita_pres_post(void (*fn)(void)) {
   s_fn = fn;
+  s_pending = 1;
   sceKernelSignalSema(s_go, 1);
 }
 
@@ -57,6 +72,7 @@ void vita_pres_wait(void) {
     vita_log("pres: still waiting for the presenter's frame after %u s",
              (unsigned)((now_us() - t0) / 1000000));
   }
+  s_pending = 0;
   prof_leave();
 }
 
@@ -74,17 +90,27 @@ void vita_pres_init(void) {
     return;
   }
   s_core = 1;
-  if (g_vita_opts.pres_core == 3) {
+  if (g_vita_opts.pres_core == 2) {
+    mask = SCE_KERNEL_CPU_MASK_USER_2; /* the render thread's (#195) */
+    s_core = 2;
+  } else if (g_vita_opts.pres_core == 3) {
     if (vita_core3_ok()) {
       mask = SCE_KERNEL_CPU_MASK_SYSTEM;
       s_core = 3;
     } else {
       vita_log("pres: pres_core=3, but core 3 isn't usable (the cores line): core 1");
     }
+  } else if (g_vita_opts.pres_core != 1) {
+    vita_log("pres: pres_core=%d isn't 1, 2 or 3: core 1", g_vita_opts.pres_core);
   }
+  s_prio = PRIORITY;
+  if (g_vita_pres_prio >= 0x40 && g_vita_pres_prio <= 0xBF)
+    s_prio = g_vita_pres_prio;
+  else
+    vita_log("pres: pres_prio=0x%x isn't 0x40 to 0xBF: 0x%x", (unsigned)g_vita_pres_prio, PRIORITY);
   s_go = sceKernelCreateSema("spyro_pres_go", 0, 0, 1, NULL);
   s_done = sceKernelCreateSema("spyro_pres_done", 0, 0, 1, NULL);
-  th = sceKernelCreateThread("spyro_pres", pres_main, PRIORITY, STACK, 0, (int)mask, NULL);
+  th = sceKernelCreateThread("spyro_pres", pres_main, s_prio, STACK, 0, (int)mask, NULL);
   if (s_go < 0 || s_done < 0 || th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {
     vita_log("pres: no thread (%08x): the presenter draws on the game thread", (unsigned)th);
     g_present_pres = NULL;
@@ -92,8 +118,9 @@ void vita_pres_init(void) {
   }
   s_th = th;
   vita_log("pres: the presenter draws the in-between frame on its own thread, core %d, "
-           "priority 0x%x, beside the logic draw (stage 7f, D126; every gamestate, D128)",
-           s_core, PRIORITY);
+           "priority 0x%x, beside the logic draw (stage 7f, D126; every gamestate, D128; "
+           "pres_core=, pres_prio=, #195)",
+           s_core, s_prio);
 }
 
 /* "pres" line: the presenter's frames, its thread's time, the game
