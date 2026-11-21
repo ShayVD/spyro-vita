@@ -9,30 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 200,
-      "branch": "auto/200-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-200",
-      "pids": [
-        7666,
-        8709
-      ],
-      "started_at": "2026-11-21T12:32:56Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/lod_pres.c",
-        "src/platform/linux32/prof_draw.c",
-        "docs/vita-testing.md",
-        "docs/presentation.md",
-        "tools/vita/fps-runs/README.md"
-      ],
-      "agent": "afd829baf77f28b01",
-      "last_commit_at": "2026-11-21T13:11:00+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -317,3 +294,4 @@ continue.
 - 12:59Z phase 8: worker #200 running (no commit yet); PR #176 merge checks green (vita, linux32 32/32, linux64, noassets; CI pass); pick empty (other sessions' containers)
 - 13:30Z phase 8: #200 worker committed the lod-line fix (680ad01), profiling continues; pick empty
 - 14:01Z phase 8: #200 worker still profiling (host runs live); pick empty
+- 14:31Z phase 8: merged #200 (D199); filed #203-#207, #208 needs-owner

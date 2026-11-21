@@ -851,3 +851,34 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `CMakeLists.txt`: main's `SPYRO_HOST_DIR` (linux64 builds from `src/platform/linux32`), with the autopilot branch's link launcher (D170) still for linux32 only.
   - `tools/host_checks.sh`: main's `EMU` (qemu-x86_64 for a linux64 binary), with the autopilot branch's `--save` on the demo run.
 - **Next free number:** D199.
+
+## 2026-11-21 — the 60 Hz logic draw's profile (#200)
+
+### D199. The lod line names the budget's back-offs at 1x, and the 60 Hz logic draw's cost is mostly the vertex cache (#200)
+
+- **Why:**
+  - In the owner's play log on b1a41ac (`logs/owner-20261121-1200`), 2x drew as 1x in Artisans and Stone Hill.
+  - The line said `(0 for the budget)`, because `budget_cuts` counted only above 1x.
+- **What:**
+  - `lod.c` counts a budget back-off at any scale. The line reads `N back-offs (B for the budget, of them H held at 1x)`, on the Vita and the host.
+  - The host's `prof_draw.c` charges the sky once (D181's fix) and gives each part's KB of primitives.
+- **Found** (`runtime/autopilot/reports/200-1.md`, runs in `runtime/autopilot/runs/auto-200-1`):
+  - **The budget isn't the only limit.** With the budget off (`--lod-budget 0` on the host in Stone Hill, `dd_budget=0` in Vita3K's `owner60` at 6,900–7,500), the scale stays at x1.00. The limiter measures the world against its bound (`ENV_MARGIN`, 44 KB, with 13–17 KB measured after the world), and that sits between 65% and 80%, so the scale never grows back (#203).
+  - **Forced 2x:** the world's loops stop early 5 times a draw, and pass 2's 41 mobys a draw double the moby part.
+  - **The vertex cache is most of the cost.**
+    - On the host it is 85% of the logic draw's non-raster function time: `rtp_apply` 42%, `choose` 15%, `psx_vcache_poly` 13.5%.
+    - In Vita3K `owner60` the logic draw is 7.04 ms a vblank, against 1.78 with `wobble=1`, and 9.18 with `vc_lazy_logic=0`.
+    - Estimate for the owner's Stone Hill window: about 6.8 of the game thread's 14.84 ms (hardware ratios from D196 and AP1/AP2; not measured).
+  - **`expand` is not on the game thread.** The `expand 772 ms` on the `vcache` line is the atlas's expand on the render thread.
+- **Filed:**
+  - #203: the world's bound;
+  - #204: a quota of kept projections for the walk;
+  - #205: a cheaper record;
+  - #206: the walk's lookups;
+  - #207: docs, and KB per part on the Vita;
+  - #208: the owner's call on far mobys at 2x.
+  - The sky's records (about −0.3 to −0.5 ms, with a picture risk) aren't filed yet.
+- **Checked:**
+  - The five routes' shots are the same as `base-63d80f4`.
+  - Counters are the same, except `owner60`'s timing-dependent kept/once split.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
