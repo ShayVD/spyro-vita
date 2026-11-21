@@ -82,9 +82,16 @@ elseif(SPYRO_HOST STREQUAL "ps4")
   # a PIE (OpenOrbis's link.x; the PS4 loads it at 0x400000, D180), so the
   # code is -fPIE, not -fno-pic.
   set(SPYRO_ARCH_FLAGS --target=x86_64-pc-freebsd12-elf --sysroot=${OO_PS4_TOOLCHAIN}
-      -isystem ${OO_PS4_TOOLCHAIN}/include -fms-extensions -fPIE)
-  set(SPYRO_OPT_FLAGS -O2 -g -Wno-error=implicit-function-declaration -Wno-error=implicit-int
-      -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
+      -isystem ${OO_PS4_TOOLCHAIN}/include -fms-extensions -fPIE -march=btver2)
+  # No instruction that faults on a misaligned address: the decomp's arrays
+  # sit at their PS1 addresses, but clang takes a global array of 16 bytes
+  # or more as 16-aligned (tools/ps4/cc_unaligned.py; hardware run 2).
+  set(CMAKE_C_COMPILER_LAUNCHER "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/ps4/cc_unaligned.py")
+  # -fno-vectorize: with AVX, clang 18's loop vectorizer turns P32_INIT's
+  # copy loops into a vector addrspacecast its backend can't select
+  # ("Cannot select: v4i32 = addrspacecast", a fourth __ptr32 bug, D193).
+  set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
+      -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
   set(SPYRO_PIC_FLAGS -fPIE)
 elseif(SPYRO_HOST STREQUAL "linux64")
   # --target here too: the overlays' preprocessing and the relocatable links
