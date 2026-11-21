@@ -68,6 +68,8 @@ typedef struct {
                          for its own half (main.c, read_config) */
   int bench;          /* bench=1: cycle the GPU picture options and time each (D41) */
   int tex_cache;      /* tex_cache=1: textures sampled from the decoded atlas (gpu=1, D41) */
+  int shader_cache;   /* shader_cache=1: linked GPU programs kept in ux0:data/spyro/shader_cache
+                         and loaded from there at the next start (gpu_gl.c, #201); 0: always compiled */
   int draw_distance;  /* draw_distance=150|200: longer draw distance, percent (D49); 100 off */
   int render_thread;  /* render_thread=1: the GPU renderer's GL calls on their own core (D63) */
   int present_due;    /* present_due=1: with realtime=1 and the render thread, the render thread

@@ -41,6 +41,9 @@
 #include <vitaGL.h>
 #include <vitashark.h>
 #include <psp2/gxm.h>
+#include <psp2/io/dirent.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 
@@ -1027,43 +1030,313 @@ static GLuint compile(GLenum type, const char *const *src, int n, const char *wh
   return s;
 }
 
+/* ---- the program cache (#201) ----
+ * Compiling is what the start-up's seconds are (10 s on hardware for the
+ * default's programs): vitaGL's runtime compiler, libshacccg, runs for every
+ * shader. The installed vitaGL is built without HAVE_SHADER_CACHE (its
+ * vglSetShaderCachePath is an empty function), but it has program binaries:
+ * glGetProgramBinary gives a linked program's GXP code, uniforms' matrix
+ * list and attribute bindings, and glProgramBinary links a program from
+ * them without the compiler. So each program linked here is written to
+ * ux0:data/spyro/shader_cache/KEY.bin and read back at later starts.
+ * KEY hashes everything the binary depends on: the program's sources and
+ * attribute bindings, and the stamp: this format's version, the compiler's
+ * options, the vitaGL and vitashark libraries linked (their SHA-1 at
+ * configure time, SPYRO_VGL_ID from CMakeLists.txt) and the compiler module
+ * found (size and date of each libshacccg.suprx place). The stamp is also
+ * in the folder's "stamp" file: a different one (a new vitaGL, compiler or
+ * format) empties the folder first, so old binaries never pile up. Each
+ * file carries its key, length and a checksum; one that doesn't match, or
+ * doesn't link, is removed and the program compiled. shader_cache=0: no
+ * cache, everything compiled, as before. */
+#ifndef SPYRO_VGL_ID
+#define SPYRO_VGL_ID "unknown"
+#endif
+#define SC_DIR VITA_DATA_DIR "/shader_cache"
+#define SC_MAGIC 0x43535053u /* "SPSC" */
+#define SC_VERSION 1u
+#define SC_MAX_BYTES (1u << 20)
+/* vglSetupRuntimeShaderCompiler's arguments: exact float maths (D65) */
+#define SC_OPT SHARK_OPT_DEFAULT
+#define SC_FASTMATH 0
+#define SC_FASTPREC 0
+#define SC_FASTINT 0
+
+typedef struct {
+  uint32_t magic, version;
+  uint64_t key;
+  uint32_t len, sum; /* payload bytes, FNV-1a 32 of them */
+} ScHead;
+
+typedef struct {
+  GLuint index;
+  const char *name;
+} Bind;
+
+static int s_sc_on;
+static uint64_t s_sc_stamp;
+static struct {
+  int programs, hits, misses, written, dropped, write_fail;
+  uint64_t hit_us, miss_us;
+} s_sc;
+
+static uint64_t sc_fnv64(uint64_t h, const void *p, size_t n) {
+  const uint8_t *b = p;
+  while (n--) {
+    h ^= *b++;
+    h *= 0x100000001b3ull;
+  }
+  return h;
+}
+
+static uint32_t sc_fnv32(const void *p, size_t n) {
+  const uint8_t *b = p;
+  uint32_t h = 0x811c9dc5u;
+  while (n--) {
+    h ^= *b++;
+    h *= 0x01000193u;
+  }
+  return h;
+}
+
+static uint64_t sc_str(uint64_t h, const char *s) { return sc_fnv64(h, s, strlen(s) + 1); }
+
+static void sc_path(char *out, size_t n, uint64_t key, const char *ext) {
+  snprintf(out, n, SC_DIR "/%016llx.%s", (unsigned long long)key, ext);
+}
+
+/* Once, before the first program: the stamp, and the folder emptied when
+ * its stamp file names another. */
+static void sc_init(void) {
+  static const char *const shacc[3] = {"ur0:data/libshacccg.suprx",
+                                       "ur0:data/external/libshacccg.suprx",
+                                       VITA_DATA_DIR "/libshacccg.suprx"};
+  const uint32_t opts[5] = {SC_VERSION, SC_OPT, SC_FASTMATH, SC_FASTPREC, SC_FASTINT};
+  uint64_t h = 0xcbf29ce484222325ull;
+  char line[32] = "", buf[64];
+  int i, removed = 0;
+  SceUID fd;
+  if (!g_vita_opts.shader_cache) {
+    vita_log("gpu: shader cache off (shader_cache=0): every program compiled (#201)");
+    return;
+  }
+  h = sc_fnv64(h, opts, sizeof opts);
+  h = sc_str(h, SPYRO_VGL_ID);
+  for (i = 0; i < 3; i++) {
+    SceIoStat st;
+    int32_t ok = sceIoGetstat(shacc[i], &st) >= 0;
+    h = sc_fnv64(h, &ok, sizeof ok);
+    if (ok) {
+      h = sc_fnv64(h, &st.st_size, sizeof st.st_size);
+      h = sc_fnv64(h, &st.st_mtime, sizeof st.st_mtime);
+    }
+  }
+  s_sc_stamp = h;
+  sceIoMkdir(SC_DIR, 0777);
+  if ((fd = sceIoOpen(SC_DIR "/stamp", SCE_O_RDONLY, 0)) >= 0) {
+    int n = sceIoRead(fd, line, sizeof line - 1);
+    line[n > 0 ? n : 0] = 0;
+    sceIoClose(fd);
+  }
+  snprintf(buf, sizeof buf, "%016llx\n", (unsigned long long)h);
+  if (strcmp(line, buf)) {
+    SceUID d = sceIoDopen(SC_DIR);
+    if (d >= 0) {
+      SceIoDirent e;
+      while (sceIoDread(d, &e) > 0) {
+        size_t n = strlen(e.d_name);
+        char path[300];
+        if (n > 4 && (!strcmp(e.d_name + n - 4, ".bin") || !strcmp(e.d_name + n - 4, ".tmp"))) {
+          snprintf(path, sizeof path, SC_DIR "/%s", e.d_name);
+          if (sceIoRemove(path) >= 0)
+            removed++;
+        }
+      }
+      sceIoDclose(d);
+    }
+    if ((fd = sceIoOpen(SC_DIR "/stamp", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777)) < 0 ||
+        sceIoWrite(fd, buf, (SceSize)strlen(buf)) != (int)strlen(buf)) {
+      vita_log("gpu: shader cache: %s/stamp can't be written (%08x): cache off", SC_DIR,
+               (unsigned)fd);
+      if (fd >= 0)
+        sceIoClose(fd);
+      return;
+    }
+    sceIoClose(fd);
+    vita_log("gpu: shader cache %s, stamp %016llx: new (%s; %d old files removed) (#201)", SC_DIR,
+             (unsigned long long)h, line[0] ? "the vitaGL, compiler or format changed" : "none before",
+             removed);
+  } else {
+    vita_log("gpu: shader cache %s, stamp %016llx (#201)", SC_DIR, (unsigned long long)h);
+  }
+  s_sc_on = 1;
+}
+
+static uint64_t sc_key(const char *const *vs, int nvs, const char *const *fs, int nfs,
+                       const Bind *b, int nb) {
+  uint64_t h = s_sc_stamp;
+  int i;
+  for (i = 0; i < nvs; i++)
+    h = sc_str(h, vs[i]);
+  h = sc_str(h, "\x01fragment");
+  for (i = 0; i < nfs; i++)
+    h = sc_str(h, fs[i]);
+  h = sc_str(h, "\x01bindings");
+  for (i = 0; i < nb; i++) {
+    h = sc_fnv64(h, &b[i].index, sizeof b[i].index);
+    h = sc_str(h, b[i].name);
+  }
+  return h;
+}
+
+/* The program from the cache: 1 = linked, 0 = not there (or dropped). */
+static int sc_load(Prog *p, uint64_t key) {
+  char path[128];
+  ScHead hd;
+  uint8_t *buf;
+  GLint ok = 0;
+  SceUID fd;
+  int r;
+  sc_path(path, sizeof path, key, "bin");
+  if ((fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0)
+    return 0;
+  r = sceIoRead(fd, &hd, sizeof hd);
+  if (r != (int)sizeof hd || hd.magic != SC_MAGIC || hd.version != SC_VERSION || hd.key != key ||
+      hd.len == 0 || hd.len > SC_MAX_BYTES) {
+    sceIoClose(fd);
+    goto drop;
+  }
+  buf = malloc(hd.len);
+  r = buf ? sceIoRead(fd, buf, hd.len) : -1;
+  sceIoClose(fd);
+  if (r != (int)hd.len || sc_fnv32(buf, hd.len) != hd.sum) {
+    free(buf);
+    goto drop;
+  }
+  p->prog = glCreateProgram();
+  glProgramBinary(p->prog, 0, buf, (GLsizei)hd.len);
+  free(buf);
+  glGetProgramiv(p->prog, GL_LINK_STATUS, &ok);
+  if (ok)
+    return 1;
+  glDeleteProgram(p->prog);
+  p->prog = 0;
+drop:
+  vita_log("gpu: shader cache: %s doesn't match or link: removed, compiling", path);
+  sceIoRemove(path);
+  s_sc.dropped++;
+  return 0;
+}
+
+/* A program just linked, to the cache (written to .tmp, then renamed, so a
+ * file cut off by a power-off is never a .bin); the bytes written, or 0. */
+static unsigned sc_save(GLuint prog, uint64_t key) {
+  char path[128], tmp[128];
+  GLint len = 0;
+  GLsizei got = 0;
+  GLenum fmt = 0;
+  ScHead hd = {SC_MAGIC, SC_VERSION, key, 0, 0};
+  uint8_t *buf;
+  SceUID fd;
+  int ok;
+  glGetProgramiv(prog, GL_PROGRAM_BINARY_LENGTH, &len);
+  if (len <= 0 || (unsigned)len > SC_MAX_BYTES)
+    goto fail;
+  /* glGetProgramBinary doesn't check bufSize: room past the length it gave */
+  if (!(buf = malloc((size_t)len + 4096)))
+    goto fail;
+  glGetProgramBinary(prog, len, &got, &fmt, buf);
+  if (got <= 0 || got > len) {
+    free(buf);
+    goto fail;
+  }
+  hd.len = (uint32_t)got;
+  hd.sum = sc_fnv32(buf, (size_t)got);
+  sc_path(path, sizeof path, key, "bin");
+  sc_path(tmp, sizeof tmp, key, "tmp");
+  fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  ok = fd >= 0 && sceIoWrite(fd, &hd, sizeof hd) == (int)sizeof hd &&
+       sceIoWrite(fd, buf, (SceSize)got) == (int)got;
+  if (fd >= 0)
+    sceIoClose(fd);
+  free(buf);
+  if (!ok || sceIoRename(tmp, path) < 0) {
+    sceIoRemove(tmp);
+    goto fail;
+  }
+  s_sc.written++;
+  return (unsigned)(sizeof hd + (unsigned)got);
+fail:
+  if (!s_sc.write_fail++)
+    vita_log("gpu: shader cache: a program can't be written to %s (length %d)", SC_DIR, (int)len);
+  return 0;
+}
+
 static int link(Prog *p, const char *const *vs, int nvs, const char *const *fs, int nfs,
                 int quad, const char *what) {
-  GLuint v = compile(GL_VERTEX_SHADER, vs, nvs, what);
-  GLuint f = compile(GL_FRAGMENT_SHADER, fs, nfs, what);
+  Bind b[8];
+  int nb = 0, i, hit = 0;
+  unsigned bytes = 0;
+  uint64_t key = 0, t0 = now_us(), us;
   GLint ok = 0;
-  if (!v || !f)
-    return -1;
-  p->prog = glCreateProgram();
-  glAttachShader(p->prog, v);
-  glAttachShader(p->prog, f);
   if (quad) {
-    glBindAttribLocation(p->prog, 0, "a_ndc");
-    glBindAttribLocation(p->prog, 1, "a_src");
+    b[nb++] = (Bind){0, "a_ndc"};
+    b[nb++] = (Bind){1, "a_src"};
     if (vs[0] == k_vs_decode) {
-      glBindAttribLocation(p->prog, 3, "a_pc");
-      glBindAttribLocation(p->prog, 4, "a_org");
+      b[nb++] = (Bind){3, "a_pc"};
+      b[nb++] = (Bind){4, "a_org"};
     }
   } else {
-    glBindAttribLocation(p->prog, 0, "a_pos");
-    glBindAttribLocation(p->prog, 1, "a_tex");
-    glBindAttribLocation(p->prog, 2, "a_col");
+    b[nb++] = (Bind){0, "a_pos"};
+    b[nb++] = (Bind){1, "a_tex"};
+    b[nb++] = (Bind){2, "a_col"};
     if (vs[nvs - 1] == k_vs_prim_x) {
-      glBindAttribLocation(p->prog, 3, "a_box");
-      glBindAttribLocation(p->prog, 4, "a_offd");
+      b[nb++] = (Bind){3, "a_box"};
+      b[nb++] = (Bind){4, "a_offd"};
       if (nvs == 1)
-        glBindAttribLocation(p->prog, 5, "a_qw");
-      glBindAttribLocation(p->prog, 6, "a_flags");
+        b[nb++] = (Bind){5, "a_qw"};
+      b[nb++] = (Bind){6, "a_flags"};
     }
   }
-  glLinkProgram(p->prog);
-  glGetProgramiv(p->prog, GL_LINK_STATUS, &ok);
-  if (!ok) {
-    char info[1024] = "";
-    glGetProgramInfoLog(p->prog, sizeof info, NULL, info);
-    vita_log("gpu: %s program does not link: %s", what, info);
-    return -1;
+  if (s_sc_on) {
+    key = sc_key(vs, nvs, fs, nfs, b, nb);
+    hit = sc_load(p, key);
   }
+  if (!hit) {
+    GLuint v = compile(GL_VERTEX_SHADER, vs, nvs, what);
+    GLuint f = compile(GL_FRAGMENT_SHADER, fs, nfs, what);
+    if (!v || !f)
+      return -1;
+    p->prog = glCreateProgram();
+    glAttachShader(p->prog, v);
+    glAttachShader(p->prog, f);
+    for (i = 0; i < nb; i++)
+      glBindAttribLocation(p->prog, b[i].index, b[i].name);
+    glLinkProgram(p->prog);
+    glGetProgramiv(p->prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+      char info[1024] = "";
+      glGetProgramInfoLog(p->prog, sizeof info, NULL, info);
+      vita_log("gpu: %s program does not link: %s", what, info);
+      return -1;
+    }
+    if (s_sc_on)
+      bytes = sc_save(p->prog, key);
+  }
+  us = now_us() - t0;
+  s_sc.programs++;
+  if (hit) {
+    s_sc.hits++;
+    s_sc.hit_us += us;
+  } else {
+    s_sc.misses += s_sc_on;
+    s_sc.miss_us += us;
+  }
+  /* one line a program: which take the time (#201) */
+  vita_log("gpu: program %d (%s): %s in %u.%03u ms%s", s_sc.programs, what,
+           hit ? "loaded from the shader cache (hit)" : s_sc_on ? "compiled (cache miss)" : "compiled",
+           (unsigned)(us / 1000), (unsigned)(us % 1000),
+           bytes ? ", written to the cache" : "");
   p->xf = glGetUniformLocation(p->prog, "u_xf");
   p->semi = glGetUniformLocation(p->prog, "u_semi");
   p->vram = glGetUniformLocation(p->prog, "s_vram");
@@ -3609,7 +3882,7 @@ int gl_gpu_init(void) {
   vita_log("gpu: free memory: user %u KB, CDRAM %u KB, phycont %u KB",
            (unsigned)(mem.size_user / 1024), (unsigned)(mem.size_cdram / 1024),
            (unsigned)(mem.size_phycont / 1024));
-  vglSetupRuntimeShaderCompiler(SHARK_OPT_DEFAULT, 0, 0, 0); /* exact float maths */
+  vglSetupRuntimeShaderCompiler(SC_OPT, SC_FASTMATH, SC_FASTPREC, SC_FASTINT); /* exact float maths */
   if (vdm_kb) {
     vglSetVDMBufferSize(vdm_kb << 10);
     vita_log("gpu: VDM ring %u KB (vdm_ring=, D166)", vdm_kb);
@@ -3637,10 +3910,16 @@ int gl_gpu_init(void) {
   s_lean = lean_for(s_xmode, s_vc);
   s_vprog = s_lean ? s_vprog_l : s_vprog_x;
   t0 = now_us();
+  sc_init();
   if (build_programs(&present_only) != 0)
     return -1;
-  /* seconds on hardware: libshacccg compiles every program here */
-  vita_log("gpu: shaders compiled in %u ms", (unsigned)((now_us() - t0) / 1000));
+  /* seconds on hardware: libshacccg compiles every program here, unless the
+   * shader cache has it (#201) */
+  vita_log("gpu: shaders compiled in %u ms: %d programs, %d from the shader cache (hit, %u ms), "
+           "%d compiled (%s, %u ms) (#201)",
+           (unsigned)((now_us() - t0) / 1000), s_sc.programs, s_sc.hits,
+           (unsigned)(s_sc.hit_us / 1000), s_sc.programs - s_sc.hits,
+           s_sc_on ? "cache miss" : "shader_cache=0", (unsigned)(s_sc.miss_us / 1000));
   if ((s_xmode || g_vita_opts.bench) && present_only) {
     vita_log("gpu: the shaders for tex_filter/persp/subpixel don't compile: drawing without them");
     s_xmode = s_filter = s_persp = s_subpixel = s_cache = s_vc = s_lean = 0;
@@ -4180,6 +4459,7 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
   s_vprog = lean ? s_vprog_l : s_vprog_x; /* the set build_variant fills */
   if (!s_vprog[v][P_UNTEX].prog || *fail) {
     uint64_t t0 = now_us();
+    int progs0 = s_sc.programs, hits0 = s_sc.hits;
     if (*fail || build_variant(v)) {
       *fail = 1;
       s_vprog = was;
@@ -4187,9 +4467,10 @@ int gl_set_options(int res, int filter, int persp, int subpixel, int cache) {
                "options unchanged", filter, persp, subpixel);
       return -1;
     }
-    vita_log("gpu: programs for tex_filter=%d persp=%d subpixel=%d tex_cache=%d compiled in %u ms",
-             filter, persp, subpixel, cache,
-             (unsigned)((now_us() - t0) / 1000));
+    vita_log("gpu: programs for tex_filter=%d persp=%d subpixel=%d tex_cache=%d compiled in %u ms "
+             "(%d programs, %d from the shader cache; #201)",
+             filter, persp, subpixel, cache, (unsigned)((now_us() - t0) / 1000),
+             s_sc.programs - progs0, s_sc.hits - hits0);
   }
   s_filter = filter;
   s_persp = persp;
