@@ -17,6 +17,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "hardware_runs": [
     {
+      "date": "2026-11-21 12:00",
+      "what": "owner OK: pulled spyro.log, spyro-prev.log, config.txt (read only); owner's play on b1a41ac, PAL, 60 HZ 2x: late/300 Artisans 19.6->1.4, Stone Hill 20.6->1.2 vs b604db4; 2x held at 1x by the 60 Hz budget (#200); shaders 10 s a boot (#201); wobble 99.8% whole in Stone Hill (#202)",
+      "log": "logs/owner-20261121-1200/"
+    },
+    {
       "date": "2026-11-21 ~10:05",
       "what": "owner's yes ('Yes, install it'): b1a41ac (D193, vc_lazy=0 default) eboot installed, READBACK IDENTICAL (SHA-1 a9cb468c), left on the Vita",
       "log": "logs/hw-put-b1a41ac.out"
