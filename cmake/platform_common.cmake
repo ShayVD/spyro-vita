@@ -25,4 +25,4 @@ target_include_directories(spyro_platform_common PUBLIC
   "${CMAKE_SOURCE_DIR}/src/platform/common")
 target_link_libraries(spyro_platform_common PUBLIC psycross_headers)
 target_compile_options(spyro_platform_common PRIVATE
-  ${SPYRO_ARCH_FLAGS} ${SPYRO_OPT_FLAGS} -fno-pic -fno-stack-protector ${SPYRO_GUARD_FLAGS})
+  ${SPYRO_ARCH_FLAGS} ${SPYRO_OPT_FLAGS} ${SPYRO_PIC_FLAGS} -fno-stack-protector ${SPYRO_GUARD_FLAGS})
