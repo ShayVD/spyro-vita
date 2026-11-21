@@ -9,28 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 179,
-      "branch": "auto/179-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-179",
-      "pids": [],
-      "started_at": "2026-11-21T00:15:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/render_ctx.c",
-        "src/game/render_ctx.h",
-        "src/game/gte_native.h",
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/vita_pc.h",
-        "src/game/env_hand.c",
-        "src/game/moby_hand.c",
-        "src/game/sky_clip_hand.c"
-      ],
-      "agent": "af116f97245117224"
-    }
-  ],
+  "workers": [],
   "last_good": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-c489090",
@@ -129,6 +108,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: AP10 rerun (Toasty 30 Hz + in-between) after #193 and #195",
       "expected": "owner-approved: pres busy down, passed-by ~0, Toasty late/300 back toward AP2's ~1",
       "issue": 193
+    },
+    {
+      "title": "Hardware: #179 logic-frame deferral at 60 HZ (owner60-like heavy Artisans: game thread vs walk balance)",
+      "expected": "owner-approved: logic draw ~2 ms a tick lower in heavy windows; walk takes it while idle",
+      "issue": 179
     }
   ],
   "owner_decisions": [
@@ -176,7 +160,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-3ba4fd2",
     "base_commit": "3ba4fd2aa83e89ea7f032a00ae8c0049add75e24",
     "started_at": "2026-11-20T11:05:39Z",
-    "filed": 14,
+    "filed": 15,
     "investigated": true
   },
   "rounds_without_gain": 0,
