@@ -2,7 +2,8 @@
  * Vita's "draw" lines (src/platform/vita/prof_draw.c) but in total over the
  * run, logged at exit. Under qemu-i386 these are only relative numbers: for
  * comparing two builds or fast_render=0 against 1 on the same script
- * (decisions D72). The functions are wrapped at link time (CMakeLists.txt). */
+ * (decisions D72). The functions are wrapped at link time (CMakeLists.txt).
+ * Each part counts its time once (the sky: D181). */
 #include "host.h"
 
 #include <stdint.h>
@@ -51,9 +52,55 @@ WRAP_M2C(D_FX, func_80059A48)     /* r_shadows: Spyro's shadow */
 WRAP_M2C(D_FX, func_80058D64)     /* r_flame */
 WRAP_M2C(D_FX, func_80058BA8)     /* r_particles: glows and sparkles */
 WRAP_M2C(D_PARTICLES, func_800573C8) /* r_particles */
-WRAP_M2C(D_SKY, func_80050BD0)    /* cyclorama set-up and r_cyclorama */
-WRAP_M2C(D_SKY, func_8004EBA8)    /* r_cyclorama: the sky, from draw.c (func_80050BD0
-                                     calls its register entry, not this) */
+/* The sky (D181, #200; as src/platform/vita/prof_draw.c). func_80050BD0
+ * (cyclorama_hand.c: the portals, then the level's sky) calls func_8004EBA8
+ * (sky_hand.c), and the wrap catches that call too, so charging both counted
+ * the main draw twice. `sky` is the whole sky once: func_80050BD0 with what
+ * it calls, plus func_8004EBA8 when draw.c, the title screen or the credits
+ * call it on their own. The main draw's own time, from either caller, is
+ * "sky main", on its own line, outside the parts and the renderers' sum. */
+static int s_in_cyclorama;
+static uint64_t s_skymain;
+static unsigned s_skymain_calls;
+
+uint32_t __real_func_80050BD0(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                              uint32_t, uint32_t, uint32_t);
+uint32_t __wrap_func_80050BD0(uint32_t a0, uint32_t a1, uint32_t a2,
+                              uint32_t a3, uint32_t a4, uint32_t a5,
+                              uint32_t a6, uint32_t a7) {
+  uint64_t t;
+  uint32_t r;
+  if (!g_host_prof_draw)
+    return __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
+  t = now_ns();
+  s_in_cyclorama++;
+  r = __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
+  s_in_cyclorama--;
+  s_acc[D_SKY] += now_ns() - t;
+  s_calls[D_SKY]++;
+  return r;
+}
+
+uint32_t __real_func_8004EBA8(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                              uint32_t, uint32_t, uint32_t);
+uint32_t __wrap_func_8004EBA8(uint32_t a0, uint32_t a1, uint32_t a2,
+                              uint32_t a3, uint32_t a4, uint32_t a5,
+                              uint32_t a6, uint32_t a7) {
+  uint64_t t, ns;
+  uint32_t r;
+  if (!g_host_prof_draw)
+    return __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
+  t = now_ns();
+  r = __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
+  ns = now_ns() - t;
+  s_skymain += ns;
+  s_skymain_calls++;
+  if (!s_in_cyclorama) {
+    s_acc[D_SKY] += ns;
+    s_calls[D_SKY]++;
+  }
+  return r;
+}
 
 void __real_GamestateUpdate(void);
 void __wrap_GamestateUpdate(void) {
@@ -79,4 +126,6 @@ void host_prof_draw_report(void) {
   for (i = 0; i < D_COUNT; i++)
     host_log("prof draw: %-9s %9.1f ms in %6u calls", k_names[i], s_acc[i] / 1e6, s_calls[i]);
   host_log("prof draw: renderers %9.1f ms", all / 1e6);
+  host_log("prof draw: (sky main %9.1f ms in %6u calls, part of sky)", s_skymain / 1e6,
+           s_skymain_calls);
 }
