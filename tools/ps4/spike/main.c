@@ -69,14 +69,17 @@ static char s_summary[900];
 
 static void out(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void out(const char *fmt, ...) {
+  char line[512];
   va_list ap;
   va_start(ap, fmt);
-  vprintf(fmt, ap);
+  vsnprintf(line, sizeof line, fmt, ap);
   va_end(ap);
+  /* the kernel's debug output: GoldHEN's klog (port 3232) shows it even
+   * when its TTY redirect (stdout) is off */
+  sceKernelDebugOutText(0, "%s", line);
+  fputs(line, stdout);
   if (s_log) {
-    va_start(ap, fmt);
-    vfprintf(s_log, fmt, ap);
-    va_end(ap);
+    fputs(line, s_log);
     fflush(s_log);
   }
 }
@@ -305,8 +308,10 @@ static void p32_probe(void) {
 }
 
 int main(void) {
-  int local;
-  mkdir(LOG_DIR, 0777);
+  int local, mk, mk_errno;
+  sceKernelDebugOutText(0, "spike: main entered\n");
+  mk = mkdir(LOG_DIR, 0777);
+  mk_errno = errno;
   s_log = fopen(LOG_PATH, "w");
   setvbuf(stdout, NULL, _IONBF, 0);
   notify("Spyro PS4 spike: measuring memory layout...");
@@ -314,6 +319,7 @@ int main(void) {
       s_log ? "" : " (COULD NOT OPEN: errno set)");
   if (!s_log)
     out("fopen errno %d\n", errno);
+  out("mkdir %s -> %d (errno %d)\n", LOG_DIR, mk, mk ? mk_errno : 0);
   {
     OrbisKernelSwVersion v;
     memset(&v, 0, sizeof v);

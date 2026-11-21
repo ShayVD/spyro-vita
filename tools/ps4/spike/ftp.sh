@@ -5,14 +5,14 @@
 #   PS4_IP=192.168.x.y tools/ps4/spike/ftp.sh upload [PKG]   → /data/pkg/
 #   PS4_IP=192.168.x.y tools/ps4/spike/ftp.sh log [OUTDIR]   ← /data/spyro-spike/spike.log
 set -euo pipefail
-: "${PS4_IP:?set PS4_IP to the PS4's address}"
+: "${PS4_IP:?set PS4_IP to the address of the PS4}"
 port=${PS4_FTP_PORT:-2121}
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 case "${1:-}" in
 upload)
   pkg=${2:-$root/build/ps4-spike/IV0000-SPYT00001_00-SPYROP2SPIKE0000.pkg}
   curl -fS --ftp-create-dirs -T "$pkg" "ftp://$PS4_IP:$port/data/pkg/"
-  echo "uploaded $(basename "$pkg") to /data/pkg/; install it with GoldHEN's Package Installer"
+  echo "uploaded ${pkg##*/} to /data/pkg/; install it with the GoldHEN Package Installer"
   ;;
 log)
   dir=${2:-$root/logs/p2/hw}
