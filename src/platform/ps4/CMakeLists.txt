@@ -39,7 +39,7 @@ add_custom_command(OUTPUT "${PS4_ELF}"
     ${PS4_UNDEF} "-L${OO}/lib" "${OO}/lib/crt1.o"
     --start-group "$<TARGET_FILE:spyro_platform_ps4>" "$<TARGET_FILE:spyro_game>"
       "$<TARGET_FILE:spyro_platform_common>" --end-group
-    -lc -lm -lkernel -lSceVideoOut -lScePad -lSceUserService -lSceAudioOut
+    -lc -lm -lkernel -lSceSysmodule -lSceVideoOut -lScePad -lSceUserService -lSceAudioOut
     -o "${PS4_ELF}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/oelf_check.py" "${PS4_ELF}"
   DEPENDS spyro_platform_ps4 spyro_game spyro_platform_common

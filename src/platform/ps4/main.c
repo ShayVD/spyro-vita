@@ -11,6 +11,11 @@
  * Before anything reads the game's data image, the 32-bit words a PIE can't
  * relocate get their addresses (s1_pie_words, tools/data2s.py --pie).
  *
+ * The system libraries the eboot imports beyond libkernel aren't loaded by
+ * the PS4 for a fake PKG (hardware run 1: a call into libSceUserService
+ * found it missing, PRX_NOT_RESOLVED_FUNCTION): main() loads each through
+ * sceSysmoduleLoadModuleInternal before anything calls it.
+ *
  * Options (/data/spyro/config.txt, key=value lines): frames=N, stats=0|1|2,
  * realtime=0|1, analog=0|1, shot=V. Everything else is the game's defaults. */
 #include "ps4.h"
@@ -33,6 +38,7 @@
 #include <sys/stat.h>
 
 #include <orbis/libkernel.h>
+#include <orbis/Sysmodule.h>
 #include <orbis/UserService.h>
 
 #define LOW_LIMIT 0x80000000ull /* the game's addresses: below 2 GB */
@@ -88,6 +94,19 @@ static void klog(const char *fmt, ...) {
   va_end(ap);
   sceKernelDebugOutText(0, "%s", line);
 }
+
+/* the system libraries we call, loaded by hand (see the top) */
+static const struct {
+  OrbisSysModuleInternal id;
+  const char *name;
+} k_modules[] = {
+    {ORBIS_SYSMODULE_INTERNAL_USER_SERVICE, "libSceUserService"},
+    {ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT, "libSceVideoOut"},
+    {ORBIS_SYSMODULE_INTERNAL_PAD, "libScePad"},
+    {ORBIS_SYSMODULE_INTERNAL_AUDIOOUT, "libSceAudioOut"},
+};
+#define N_MODULES (int)(sizeof k_modules / sizeof k_modules[0])
+static uint32_t s_module_rc[N_MODULES];
 
 static int low(const void *p, size_t len) { return (uintptr_t)p + len <= LOW_LIMIT; }
 
@@ -152,12 +171,17 @@ static void *game_thread(void *arg) {
   host_log("Spyro PS4 (" __DATE__ " " __TIME__ "): image %p-%p, arena end %p, game stack %p-%p",
            (void *)__text_start, (void *)_end, psx_low_arena_end(), (void *)s_game_stack,
            (void *)(s_game_stack + GAME_STACK));
+  for (int i = 0; i < N_MODULES; i++)
+    host_log("module %s: sceSysmoduleLoadModuleInternal 0x%x", k_modules[i].name,
+             (unsigned)s_module_rc[i]);
+  host_log_flush();
   fixed = pie_fixups();
   if (fixed < 0) {
     host_log("pie: a data word's slot or target is above 2 GB");
     ps4_exit(1);
   }
   host_log("pie: %d data words given their addresses", fixed);
+  host_log_flush(); /* a crash loses what isn't written (hardware run 1) */
   read_config();
   if (g_ps4_opts.shot_at)
     mkdir(PS4_DATA_DIR "/shots", 0777);
@@ -176,6 +200,8 @@ static void *game_thread(void *arg) {
   psx_arena_init();
   g_nd_direct_ok = 1; /* the software rasterizer takes direct vertices (D99) */
 
+  host_log("user 0x%x", (unsigned)g_ps4_user);
+  host_log_flush();
   if (ps4_video_init() != 0) {
     ps4_notify("Spyro: no display (sceVideoOut). See spyro.log.");
     ps4_exit(1);
@@ -185,6 +211,7 @@ static void *game_thread(void *arg) {
   if (psx_cd_open(PS4_DATA_DIR) != 0)
     no_disc();
   host_log("disc: %s", psx_cd_source());
+  host_log_flush(); /* a crash loses what isn't written (hardware run 1) */
   psx_clock_set_hz(psx_region_vblank_hz());
   g_psx_spu_vblank_samples = PSX_SPU_RATE / psx_region_vblank_hz();
   if (g_Region != PSX_REGION_US)
@@ -194,6 +221,7 @@ static void *game_thread(void *arg) {
     ps4_notify("Spyro: no controller (scePad). See spyro.log.");
   if (ps4_audio_init() != 0)
     host_log("audio: off");
+  host_log_flush(); /* a crash loses what isn't written (hardware run 1) */
   {
     char dir[256];
     psx_mcrd_set_root(psx_region_path(dir, sizeof dir, PS4_DATA_DIR "/save", NULL, 1));
@@ -221,6 +249,10 @@ int main(void) {
                "it can't run.", (void *)__text_start, (void *)_end, arena_end,
                (void *)s_game_stack);
     return 1;
+  }
+  for (int i = 0; i < N_MODULES; i++) {
+    s_module_rc[i] = sceSysmoduleLoadModuleInternal(k_modules[i].id);
+    klog("spyro: %s: 0x%x\n", k_modules[i].name, (unsigned)s_module_rc[i]);
   }
   if ((e = scePthreadAttrInit(&attr)) != 0 ||
       (e = scePthreadAttrSetstack(&attr, s_game_stack, GAME_STACK)) != 0 ||
