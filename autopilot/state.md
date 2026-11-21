@@ -20,7 +20,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/vcache.c"
       ],
       "agent": "a96b14272344e4b07",
-      "last_commit_at": "2026-11-21T19:39:03+00:00"
+      "last_commit_at": "2026-11-21T19:39:03+00:00",
+      "reported": true
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
