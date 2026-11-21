@@ -25,26 +25,32 @@
  *    there cost draw calls for no detail that shows.
  *
  * The renderers check no buffer bounds, so more geometry could overrun the
- * primitive buffer (0x1C000 bytes, with the HUD's mobys at its top,
- * draw.c GamestateDraw) or the near-sector list (128 entries before the
- * next list, D_8006FCF4+0x1C00). Three guards, all only with the option on:
+ * primitive space or the near-sector list (128 entries before the next list,
+ * D_8006FCF4+0x1C00). With the option on, every draw starts at the lower
+ * buffer and spans both, up to 0x600 under the HUD OT, where the HUD's
+ * mobys and the sky and particle limit are (D54, D61, present.c
+ * PortPolySpace): 0x37A00 bytes, 0x25A00 in reduced-space levels
+ * (draw_room). Three guards, all only with the option on:
  *  - hard bounds: r_environment's six sector-list loops end their list early
- *    once the primitive pointer is within ENV_MARGIN of the buffer's end
- *    (a frame may then lack some scenery, never write past the buffer), and
- *    r_moby's draw loops stop at the first record pass 2 added once the
- *    buffer is MOBY_SHARE% full; the near list stops taking sectors one short
- *    of its end;
+ *    once the primitive pointer is within ENV_MARGIN of that top (a frame
+ *    may then lack some scenery, never write past it), and r_moby's draw
+ *    loops stop at the first record pass 2 added once the original's one
+ *    buffer is MOBY_SHARE% full (the mobys draw before the world, which
+ *    keeps the rest); the near list stops taking sectors one short of its
+ *    end;
  *  - a limiter: after every shown draw the bytes used are measured and the
- *    scale backs off before the buffer gets close to full, and with 60 Hz
- *    logic in play before the draw passes a work budget (g_lod.budget,
- *    #180; off with the Vita's dd_budget=0 or the host's --lod-budget 0);
+ *    scale backs off before the span or the world's bound gets close, and
+ *    with 60 Hz logic in play before the draw passes a work budget
+ *    (g_lod.budget, #180; off with the Vita's dd_budget=0 or the host's
+ *    --lod-budget 0);
  *  - a new level or gamestate starts again at 1x, then grows.
  * (The first whole-game run had only the limiter and crashed entering
- * level 40 at 2x: one frame went past the buffer into the world OT.) Since
- * D54 a draw with the option on starts at the lower buffer and spans both
- * (present.c PortPolySpace); the bounds still keep to one buffer's size. Only
- * drawn pictures use the longer distances: the hidden 4:3 logic draw of
- * attract demos keeps the original ones. */
+ * level 40 at 2x: one frame went past the buffer into the world OT.) Until
+ * #203 the bound and the limiter kept to one buffer's size, as before D54:
+ * a world over 65% of that bound's room (Stone Hill's 52 KB of 66) held 2x
+ * at 1x even with the budget off. Only drawn pictures use the longer
+ * distances: the hidden 4:3 logic draw of attract demos keeps the original
+ * ones. */
 #include "lod.h"
 
 #include "mips2c_rt.h"
@@ -76,15 +82,17 @@ int g_lod_stats;       /* this draw collects statistics */
 #define POLY_TOP 0x1BA00 /* the HUD's mobys above (draw.c func_8001A40C...) */
 #define NEAR_LIST 0x1C00
 #define NEAR_END 0x1E00
-/* Room left at the end of the buffer when r_environment stops: one near
+/* Room left under the span's top when r_environment stops: one near
  * sector's primitives (5,868 bytes at most) plus everything drawn
  * after the world (the sky, particles, HUD: 31,604 at most), both measured
  * over the whole-game tour at 2x (port_lod_report "largest sector", "after
- * the world"; D49), and about 7.5 KB to spare. The far (low-poly) loop's
- * sectors can be far bigger (57 KB for a background sector at 1x), but
- * with the option on it writes only less than at 1x: polygons inside the
- * longer distance are skipped, and sectors wholly inside it aren't listed. */
+ * the world"; D49, measured again with the span as the room, #203), and
+ * about 7.5 KB to spare. The far (low-poly) loop's sectors can be far
+ * bigger (57 KB for a background sector at 1x), but with the option on it
+ * writes only less than at 1x: polygons inside the longer distance are
+ * skipped, and sectors wholly inside it aren't listed. */
 #define ENV_MARGIN 0xB000
+#define FAIRY_CARD_BUF 0x600 /* the span's top under the HUD OT: present.c PortPolySpace (D61) */
 #define MOBY_SHARE 60 /* pass 2's mobys are drawn while the buffer is under this % */
 
 static int s_k = LOD_ONE; /* the limiter's scale for the next draw */
@@ -109,6 +117,19 @@ static struct {
 static int buffer_cap(void) {
   int cap = (int)((char *)g_Buffers.m_HigherPolyBuffer - (char *)g_Buffers.m_LowerPolyBuffer);
   return cap <= 0 || cap > POLY_TOP ? POLY_TOP : cap;
+}
+
+/* The room a draw starting at lo has. With the option on, PortPolySpace
+ * (D54) starts every draw at the lower buffer and lets it run to 0x600 under
+ * the HUD OT: 0x37A00 bytes, 0x25A00 in reduced-space levels, the real
+ * buffer (#203). With it off (statistics only) the draw's own buffer, as
+ * before. */
+static int draw_room(u32 lo) {
+  const u32 top = (u32)(uintptr_t)g_Buffers.m_HudOTStart - FAIRY_CARD_BUF;
+  const int cap = buffer_cap();
+  if (g_lod.scale <= LOD_ONE || top <= lo || top - lo < (u32)cap || top - lo > 2 * 0x1C000)
+    return cap;
+  return (int)(top - lo);
 }
 
 static int cull_distance(void) {
@@ -264,12 +285,12 @@ void port_lod_env_lists(u32 t7) {
 void port_lod_draw_begin(int shown) {
   const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
   u32 lo = (u32)(uintptr_t)port_poly_start(db->m_PolyBuf); /* D54 */
-  int cap = buffer_cap();
+  int cap = buffer_cap(), room = draw_room(lo);
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
   g_lod_stats = shown && g_lod.stats;
   s_poly_lo = lo;
-  s_env_limit = lo + (u32)cap - ENV_MARGIN;
+  s_env_limit = lo + (u32)room - ENV_MARGIN;
   s_moby_limit = lo + (u32)(cap / 100 * MOBY_SHARE);
   s_env_last = 0; /* the world's first loop head starts the measure */
   s_env_end = 0;
@@ -314,10 +335,14 @@ static int logic60(void) {
 }
 #endif
 
-/* The bytes of primitives a draw wrote, against what the buffer holds, or
- * the world's against where its bound would stop it, whichever is fuller:
- * above 80% the extra distance halves, above 90% it goes; under 65% it
- * grows back by 1/32 of 1x per draw. So the bound stays a backstop.
+/* The bytes of primitives a draw wrote, against the room it has (the span,
+ * draw_room), or the world's against the room its bound leaves it (the
+ * span less ENV_MARGIN: what is drawn after the world, one sector and some
+ * to spare), whichever is fuller: above 80% the extra distance halves,
+ * above 90% it goes; under 65% it grows back by 1/32 of 1x per draw. So the
+ * bound stays a backstop. (Until #203 both were one buffer's: Stone Hill's
+ * world alone, 52 KB at 1x, was 78% of its bound's 66 KB, and 2x never grew
+ * there even with the budget off.)
  *
  * With 60 Hz logic (in play) a tick's draw has half the time, and the
  * cost of a draw follows its primitives (the owner's hardware log, #180:
@@ -364,11 +389,11 @@ void port_lod_draw_end(int shown) {
     return;
   s_ext_cur ^= 1;
   used = (int)((u32)(uintptr_t)D_800757B0 - s_poly_lo);
-  cap = buffer_cap();
+  cap = draw_room(s_poly_lo); /* the span with the option on (#203) */
   if (used < 0 || used > 0x100000)
     return;
   if (on) {
-    /* the world's share of where its bound is, as a share of the buffer */
+    /* the world's share of the room its bound leaves, as a share of the span */
     int world = s_env_end > s_poly_lo ? (int)(s_env_end - s_poly_lo) : 0, room = cap - ENV_MARGIN;
     int world_eff = room > 0 ? (int)((long long)world * cap / room) : cap;
 #ifndef RENDER_PRES
