@@ -23,6 +23,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a9fc200ddb53a9efe",
       "reported": true
+    },
+    {
+      "issue": 206,
+      "branch": "auto/206-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-206",
+      "pids": [],
+      "started_at": "2026-11-21T18:20:25Z",
+      "files": [
+        "src/platform/common/vcache.c"
+      ],
+      "agent": "a96b14272344e4b07"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -328,3 +339,4 @@ continue.
 - 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)
 - 18:11Z phase 8: #205 gate running; #207 reported, gate queued
 - 18:19Z phase 8: merged #205 (D202)
+- 18:20Z phase 8: gate #207 running; worker #206 started (#202, #204 wait: docs/vita-testing.md with #207, vcache.c with #206)
