@@ -35,7 +35,7 @@ typedef struct {
   int cam_invert_y;
   int cam_speed;    /* cam_speed=50..200 (default 100) */
   int cam_recentre; /* cam_recentre=0: no swing back behind Spyro (D162) */
-  int touch_menu;   /* touch_menu=1: a tap on the touch pad opens the menu (D194) */
+  int touch_menu;   /* touch_menu=1 (default): a tap on the touch pad opens the menu too (D194) */
   int gpu;          /* gpu=1 (default): the GLES2 renderer if Piglet's modules load; 0: software */
   int shader_dump;  /* shader_dump=1 (default): with the player's Piglet pair, each compiled
                        shader saved once to shaders/ (D194: the binaries the firmware's

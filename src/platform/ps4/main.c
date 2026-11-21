@@ -65,7 +65,8 @@ static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
                       .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
                       .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
-                      .gpu_vsync = 1, .shader_dump = 1};
+                      .gpu_vsync = 1, .shader_dump = 1,
+                      .touch_menu = 1 /* the owner's choice, 2026-11-21 (D194) */};
 int g_ps4_user = -1;
 
 unsigned long long ps4_now_us(void) { return sceKernelGetProcessTime(); }
