@@ -586,3 +586,37 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Open:**
   - the hardware rerun of AP10;
   - moving the presenter off the parse thread's core, and a `vc_lazy=` key (#195).
+
+### D187. At 30 Hz with in-between frames, the logic walk runs on the game thread while a presenter job is pending (`parse_thread=2`, the default) (#195)
+
+- **Why:**
+  - AP10 (D179) at Toasty 12,000 showed the presenter's 32 ms job on core 1. About 9.6 ms of that was preemption by walk N: the parse thread runs at 0x98, ahead of the presenter at 0x9A. Meanwhile the game thread waited about 19 ms a tick.
+  - At 30 Hz with the presenter, the game thread joins the presenter and then the walk right after the handover anyway. In AP10's Artisans window, `ot` was 3.71 against the walk's 3.52 ms busy a vblank. In Toasty, the walk was done while the game thread waited 9.45 ms for the presenter. So the walk's own thread gives no overlap there.
+- **What:**
+  - **`parse_thread=2`:** a list handed over while a presenter job is posted and not yet joined (`vita_pres_pending`) is walked on the game thread at once, from the same copy, and the join finds it done.
+  - **Walker flag:** meanwhile the game thread counts as the walker (`vita_parse_on_walker`, by its stack below the handover), so `reserve` and `env_sync` don't join.
+  - **Other lists** go to the thread, as with `parse_thread=1`, which is the old placement. In the owner's 60 HZ play there is no presenter job, so `2` behaves as `1`.
+  - **Logging:** the `parse N:` line gives those walks separately.
+  - **New keys:** `pres_core=2` (core 2), `pres_prio=` (0x40–0xBF) and `vc_lazy=` (D186's switch). All are logged on a `threads:` start-up line.
+  - **Docs:** `vita-testing.md`'s key table and `vita.h`'s comment.
+- **Compared** (Vita3K, in the same session against #193's VPK; presenter busy per logic draw):
+
+  | Setting | Toasty 11,100–13,200 | `wobble60` |
+  |---|---|---|
+  | before | 1.87 | 1.60 |
+  | `pres_core=2` | 1.73 | 1.64 |
+  | `pres_prio=0x96` | 1.79 | 1.59 |
+  | `parse_thread=2` | 1.49 (−20%) | 1.42 (−11%) |
+  | `parse_thread=0` | 1.52 | 1.56 |
+
+  - `pres_core=2` was not chosen: on hardware, the render thread's 4.74 ms a vblank runs in the same window as walk N's 4.82.
+  - `pres_prio` only reorders a full core 1.
+- **Checked:**
+  - The five routes' shots are the same as `base-b3b8cd1`, and so are all six placements' `wobble60` shots.
+  - The counters are the same apart from D186's `vcp.*`, and `vc_lazy=0` restores those.
+  - Native build, gate with host build and ctest (32, 0 failed), and `noassets` all pass.
+- **Expected on hardware:**
+  - The presenter's job goes from about 32 to about 17 ms, and core 1 runs at about 55%.
+  - Toasty's game thread takes about 24 ms a tick.
+  - The in-between frames should be back on time. That's borderline-likely, not certain.
+  - For an A/B: `parse_thread=1`, `vc_lazy=0`. Not run on hardware yet.
