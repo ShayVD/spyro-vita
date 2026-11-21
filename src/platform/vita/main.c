@@ -305,6 +305,10 @@
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
+ *       shader_cache=0  with gpu=1, compile every shader program at each start
+ *                       (default 1: a program compiled once is kept in
+ *                       ux0:data/spyro/shader_cache and loaded from there
+ *                       at later starts; gpu_gl.c, #201)
  *       bench=1         with gpu=1, leave the game alone (no input): from
  *                       vblank 600 it cycles res, tex_filter, persp and
  *                       subpixel through the intro, title and attract demos
@@ -376,6 +380,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
                         .persp = 1, .subpixel = 1, .wobble = 0, /* #177: PSX WOBBLE off, the fix on */
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
+                        .shader_cache = 1, /* #201 */
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
                         .present_due = 1, /* D112: the default after hardware runs 7C1-7C4 */
@@ -669,6 +674,8 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
+    else if (!strcmp(line, "shader_cache"))
+      g_vita_opts.shader_cache = atoi(v); /* gpu_gl.c's program cache (#201) */
     else if (!strcmp(line, "dd_budget"))
       g_lod.budget = atoi(v) ? LOD_BUDGET_60 : 0; /* the 60 Hz work budget (D175, #185) */
     else if (!strcmp(line, "state_test"))
