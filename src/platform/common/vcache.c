@@ -143,7 +143,17 @@
  * multiplies them again (Pt), and a kept projection's registers are
  * compared with the last ones kept by their generation (gte_native.h
  * NgteProj gen), not word by word. The same sums, the same registers kept:
- * every answer is as before. */
+ * every answer is as before.
+ *
+ * Cheaper walk lookups (#206; D199 put psx_vcache_poly and choose at about
+ * 30% of the logic draw's non-raster host time, and resolve grows at
+ * 2x): the polygon's depth choice and resolve's depth list test
+ * ratios against 4, 3.999 and 1.02 on the depths' bits where that is exact
+ * (under4b, under3999b, same_depthb), the float tests deciding otherwise;
+ * choose tests each candidate against 4 once; and resolve finds a key's
+ * projections near the polygon's others by walking its chain and the
+ * anchors, sorted, together, not each place against every anchor. Every
+ * answer is as before. */
 #include "psx_vcache.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
