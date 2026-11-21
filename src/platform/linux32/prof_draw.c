@@ -3,7 +3,8 @@
  * run, logged at exit. Under qemu-i386 these are only relative numbers: for
  * comparing two builds or fast_render=0 against 1 on the same script
  * (decisions D72). The functions are wrapped at link time (CMakeLists.txt).
- * Each part counts its time once (the sky: D181). */
+ * Each part counts its time once (the sky: D181), and since #200 the bytes
+ * of primitives it wrote, so its cost per KB can be read off. */
 #include "host.h"
 
 #include <stdint.h>
@@ -12,11 +13,20 @@
 
 int g_host_prof_draw;
 
+extern char D_800757B0[]; /* the primitive buffer's next free byte (a word) */
+
 enum { D_UPDATE, D_ENV, D_MOBYS, D_PETE, D_FX, D_PARTICLES, D_SKY, D_COUNT };
 static const char *const k_names[D_COUNT] = {"update", "env", "mobys", "spyro",
                                              "fx", "particles", "sky"};
 static uint64_t s_acc[D_COUNT];
 static unsigned s_calls[D_COUNT];
+/* #200: each part's primitives, the bytes the primitive pointer moved on */
+static uint64_t s_bytes[D_COUNT];
+
+typedef struct {
+  uint64_t t;
+  uint32_t prim;
+} Mark;
 
 static uint64_t now_ns(void) {
   struct timespec t;
@@ -24,19 +34,34 @@ static uint64_t now_ns(void) {
   return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
 }
 
+static Mark mark(void) {
+  Mark m;
+  m.prim = *(uint32_t *)D_800757B0;
+  m.t = now_ns();
+  return m;
+}
+
+static void charge(int part, const Mark *m) {
+  const uint64_t t = now_ns();
+  const uint32_t prim = *(uint32_t *)D_800757B0 - m->prim;
+  s_acc[part] += t - m->t;
+  s_calls[part]++;
+  if (prim < 0x100000) /* the HUD's mobys are drawn from the buffer's top */
+    s_bytes[part] += prim;
+}
+
 #define WRAP_M2C(part, name)                                                   \
   uint32_t __real_##name(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,      \
                          uint32_t, uint32_t, uint32_t);                        \
   uint32_t __wrap_##name(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,    \
                          uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7) { \
-    uint64_t t;                                                                \
+    Mark m;                                                                    \
     uint32_t r;                                                                \
     if (!g_host_prof_draw)                                                     \
       return __real_##name(a0, a1, a2, a3, a4, a5, a6, a7);                    \
-    t = now_ns();                                                              \
+    m = mark();                                                                \
     r = __real_##name(a0, a1, a2, a3, a4, a5, a6, a7);                         \
-    s_acc[part] += now_ns() - t;                                               \
-    s_calls[part]++;                                                           \
+    charge(part, &m);                                                          \
     return r;                                                                  \
   }
 
@@ -68,16 +93,15 @@ uint32_t __real_func_80050BD0(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
 uint32_t __wrap_func_80050BD0(uint32_t a0, uint32_t a1, uint32_t a2,
                               uint32_t a3, uint32_t a4, uint32_t a5,
                               uint32_t a6, uint32_t a7) {
-  uint64_t t;
+  Mark m;
   uint32_t r;
   if (!g_host_prof_draw)
     return __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
-  t = now_ns();
+  m = mark();
   s_in_cyclorama++;
   r = __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
   s_in_cyclorama--;
-  s_acc[D_SKY] += now_ns() - t;
-  s_calls[D_SKY]++;
+  charge(D_SKY, &m);
   return r;
 }
 
@@ -86,19 +110,18 @@ uint32_t __real_func_8004EBA8(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
 uint32_t __wrap_func_8004EBA8(uint32_t a0, uint32_t a1, uint32_t a2,
                               uint32_t a3, uint32_t a4, uint32_t a5,
                               uint32_t a6, uint32_t a7) {
-  uint64_t t, ns;
+  Mark m;
   uint32_t r;
+  uint64_t t;
   if (!g_host_prof_draw)
     return __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
-  t = now_ns();
+  m = mark();
   r = __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
-  ns = now_ns() - t;
-  s_skymain += ns;
+  t = now_ns();
+  s_skymain += t - m.t;
   s_skymain_calls++;
-  if (!s_in_cyclorama) {
-    s_acc[D_SKY] += ns;
-    s_calls[D_SKY]++;
-  }
+  if (!s_in_cyclorama)
+    charge(D_SKY, &m);
   return r;
 }
 
@@ -124,7 +147,8 @@ void host_prof_draw_report(void) {
   for (i = D_ENV; i < D_COUNT; i++)
     all += s_acc[i];
   for (i = 0; i < D_COUNT; i++)
-    host_log("prof draw: %-9s %9.1f ms in %6u calls", k_names[i], s_acc[i] / 1e6, s_calls[i]);
+    host_log("prof draw: %-9s %9.1f ms in %6u calls; %8llu KB of primitives", k_names[i],
+             s_acc[i] / 1e6, s_calls[i], (unsigned long long)(s_bytes[i] / 1024));
   host_log("prof draw: renderers %9.1f ms", all / 1e6);
   host_log("prof draw: (sky main %9.1f ms in %6u calls, part of sky)", s_skymain / 1e6,
            s_skymain_calls);
