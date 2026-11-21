@@ -21,18 +21,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "aaffa55df2602225a"
-    },
-    {
-      "issue": 196,
-      "branch": "auto/196-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-196",
-      "pids": [],
-      "started_at": "2026-11-21T02:45:00Z",
-      "files": [
-        "src/platform/vita/main.c",
-        "docs/vita-testing.md"
-      ],
-      "agent": "ae130dc21e64db23f"
     }
   ],
   "last_good": "c489090ca0c1ad8d1b4ceec71bf0fccfa3db5d4b",
