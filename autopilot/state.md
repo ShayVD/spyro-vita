@@ -162,6 +162,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #179 logic-frame deferral at 60 HZ (owner60-like heavy Artisans: game thread vs walk balance)",
       "expected": "owner-approved: logic draw ~2 ms a tick lower in heavy windows; walk takes it while idle",
       "issue": 179
+    },
+    {
+      "issue": 203,
+      "what": "hardware: 30 Hz still holds where 2x now draws more (title flyby, attract demos); if not, give 30 Hz a budget (D201)"
+    },
+    {
+      "issue": 201,
+      "what": "hardware: second boot reads 17 shader-cache hits; black-screen time (D200)"
     }
   ],
   "owner_decisions": [
