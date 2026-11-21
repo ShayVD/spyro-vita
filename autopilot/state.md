@@ -332,3 +332,4 @@ continue.
 - 20:08Z phase 8: #206 committed 69fafd6, running its checks; #202 #204 wait
 - 20:39Z phase 8: #206 still running its checks (last commit 19:39Z); #202 #204 wait
 - 21:10Z phase 8: #206 still running its checks; #202 #204 wait
+- 21:41Z phase 8: stall check flagged #206 (last commit 19:39Z) but it is alive in its final checks (Vita build done, routes owner60/pause-ws running, ctest log present): not stopped
