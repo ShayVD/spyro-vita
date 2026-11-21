@@ -944,3 +944,29 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Open:**
   - On hardware, check that 30 Hz holds where 2x now draws more (title, attract demos). If it doesn't, give 30 Hz a budget.
   - The near list peaked at 125 of 127 in the tour.
+
+## 2026-11-21 — a cheaper vertex-cache record (#205)
+
+### D202. The vertex cache's record takes the GTE's own sums and the registers by pointer; kept registers are compared by generation (#205)
+
+- **Why:**
+  - D199 put the record at 85% of the 60 Hz logic draw's non-raster host time.
+  - Each native projection copied 15 registers into the value hook's form, then `rtp_apply` multiplied them again.
+  - `same_proj` compared 15 words for each kept projection.
+- **What:**
+  - **Direct call:** `gte_native.h`'s RTPS and RTPT call the record by name, `ngte_vcache` in `vcache.c` (the presenter's build calls `pres_vcache_ngte`). They pass the `NgteProj *` and an `NgteRtp` with new fields `m1`–`m3`, the 44-bit sums `ngte_rtp_v` already worked out. MAC1-3 come from the same expressions, so no GTE result changes.
+  - **Generation number:** `NgteProj.gen` is a new number at every `ngte_proj_get`/`rot`/`tr` while the cache records, and 0 otherwise. `lz_add` compares a kept projection's registers by that one word. A new generation is compared word by word once, then adopted, so the store keeps the same registers in the same places.
+  - **Smaller cuts:** `rtp_apply` converts the 12 low bits as an int.
+  - **Weak symbols:** `g_ngte_gen` and `ngte_vcache` are weak, so the GTE tests link without the cache.
+  - **Unchanged path:** the sky's records and the register file's still go through the hooks.
+  - **Rule for renderers:** a renderer that changes `NgteProj` fields itself after a projection must call `ngte_proj_regen`. None does today.
+- **Checked** (`runtime/autopilot/reports/205-1.md`):
+  - **Same answers:** host FNV dumps per polygon are byte-identical. Route A (6.13M polygons) was run with deferral auto, off and forced, and with `--walk-lazy`. Route B (8.98M polygons) was run with auto, forced, and the presenter's `VC_LAZY=0`. Memory cards are identical too.
+  - **Pictures and counters:** the five routes' shots are the same, and so are every `vc.*`, GL and ot counter.
+  - **Host cost:** gprof shows the record's functions 21–34% cheaper (qemu).
+  - **Vita code:** on ARM, `rtp_apply` loses 9 multiplies (737 → 681 instructions). The 15-word copy, the indirect call and `rtp_value_hook` are gone.
+  - **Builds:** native build, host ctest 32/32 (`pres_link`, `render_ctx_link`, `savestate_globals`, `gte_native` and its mutants), `noassets`, and gate PASS.
+  - **Not checked on hardware.**
+- **Left:**
+  - `render_ctx.c`'s `pres_ngte_vcache` and its copy are now dead code.
+  - Storing the sums for the walk, which needs a 32-byte store record, is a trade-off for hardware to judge.

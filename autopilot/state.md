@@ -11,22 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 205,
-      "branch": "auto/205-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-205",
-      "pids": [],
-      "started_at": "2026-11-21T14:32:43Z",
-      "files": [
-        "src/game/gte_native.h",
-        "src/game/gte_ops.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/render_ctx_names.h"
-      ],
-      "agent": "ad72b45d7f42b21a4",
-      "reported": true
-    },
-    {
       "issue": 207,
       "branch": "auto/207-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-207",
@@ -343,3 +327,4 @@ continue.
 - 17:11Z phase 8: gate #203 running; worker #207 started
 - 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)
 - 18:11Z phase 8: #205 gate running; #207 reported, gate queued
+- 18:19Z phase 8: merged #205 (D202)
