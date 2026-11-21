@@ -331,3 +331,4 @@ continue.
 - 19:37Z phase 8: #206 running (WIP commit 2e1cfb3); #202 #204 wait on vcache.c
 - 20:08Z phase 8: #206 committed 69fafd6, running its checks; #202 #204 wait
 - 20:39Z phase 8: #206 still running its checks (last commit 19:39Z); #202 #204 wait
+- 21:10Z phase 8: #206 still running its checks; #202 #204 wait
