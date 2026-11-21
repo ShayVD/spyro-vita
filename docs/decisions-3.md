@@ -547,3 +547,42 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checked:**
   - ctest went from 28 passing with `render_ctx_link` failing to 29 passing and 3 skipped (`gte`, `pbp`, `pbp_made`). The gate's own run showed 100% of 32.
   - On Vita3K, all five routes give the same shots and counters as `base-b3b8cd1`, and `owner60`'s lod lines are identical, including the budget's back-offs.
+
+### D185. `vita-testing.md` describes PSX WOBBLE, and the bench measures the default (#182)
+
+- **Why:** #177 (D173) made PSX WOBBLE OFF (`persp=1 subpixel=1`) the default and moved the menu to `config_version=6`. Two things lagged behind:
+  - `vita-testing.md` still described the two old rows and `config_version=5`.
+  - The bench had no set for the default without a filter, so it couldn't measure what players get.
+- **What changed in `vita-testing.md`:**
+  - The `wobble=` row, with `persp=` and `subpixel=` kept as developers' keys.
+  - The rule for old config files. With no `wobble=` line and a `config_version` below 6, an equal `persp`/`subpixel` pair reads as PSX WOBBLE OFF and is dropped at the next save. Any other mix is taken as written.
+  - The test tools write `wobble=1`.
+  - The vcache log lines as they stand after D174–D184: clamps, derived, resolved and hooked, plus D178's per-report counters.
+- **What changed in `bench.c`:**
+  - Two new sets, "4:3 native, persp subpixel" and "16:9 native, persp subpixel", each inside its widescreen group. The other sets are unchanged, so older logs still compare by name.
+  - A run is now 20 × 60 × 12 = 14,400 vblanks from vblank 600, with the final lines at 15,000 (about 250 s; 13,560 before).
+- **Checked:**
+  - The native build, `noassets`, and the gate with the host build and ctest all pass.
+  - Vita3K `title`: shots 10/10, the same as `base-b3b8cd1`.
+  - The bench itself hasn't run; its first hardware run needs the owner's yes.
+
+### D186. The presenter's thread gets a cheaper vertex cache: its projections are worked out only when an entry is first read, resolve stops scanning early, and each thread's counters have lines of their own (#193)
+
+- **Why:**
+  - At 30 Hz with in-between frames, the presenter's thread saturated in Toasty's heavy opening (D179 AP10: 96%, every in-between buffer passed by).
+  - It shares core 1 with the parse thread, which has the higher priority, and with audio. Its 32 ms job was about 22 ms of its own work plus 9.6 ms of walk N's preemption.
+  - `records_begin`'s join runs on the game thread and costs 0 in those windows.
+- **What:**
+  1. **Deferred projections (`T_PEND`).** The presenter's projections record their entry and log place at once, but keep their inputs on a per-entry list (16 bytes each, registers de-duplicated). The first lookup, hand-over source or derived point works them out in order. 25–35% are never needed. `psx_vcache_set_lazy(0)` turns this off.
+  2. **Early stops in `resolve`.** It only tests whether a projection is near, with an early exit, and stops counting points at two.
+  3. **Separate cache lines.** `g_vcache_ctr[2]` (the game's and the presenter's work and cost counters), `VCacheStats` and `Rec` are each 64-byte aligned. Before, the presenter's cost counters shared a line with the logic draw's on another core.
+  4. The tag's frame number is now 23 bits.
+- **Checked:**
+  - **Same answers:** host per-polygon FNV is identical to b3b8cd1 on routes A (12.25 M polygons) and B (8.98 M), with the deferral on and off. The resolve, derive and hand-over counts are identical.
+  - **Same pictures:** the five routes' shots match. The gate, including the host build and ctest, passes.
+  - **Counters:** `wobble60` `vcp.div` −15%, `vcp.lines` −2.8%.
+  - **Vita3K, Toasty's heavy opening:** the presenter's busy time per job, against the logic draw, fell about 28% (2.11–2.89 → 1.59–1.94); about 18.5 → 10.9 ms a job in one same-session A/B.
+  - The presenter's own invalid, ambiguous and clamped stats now count only the keys that were worked out.
+- **Open:**
+  - the hardware rerun of AP10;
+  - moving the presenter off the parse thread's core, and a `vc_lazy=` key (#195).
