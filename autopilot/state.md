@@ -328,3 +328,4 @@ continue.
 - 18:20Z phase 8: gate #207 running; worker #206 started (#202, #204 wait: docs/vita-testing.md with #207, vcache.c with #206)
 - 19:05Z phase 8: merged #207 (D203)
 - 19:37Z phase 8: #206 running (WIP commit 2e1cfb3); #202 #204 wait on vcache.c
+- 20:08Z phase 8: #206 committed 69fafd6, running its checks; #202 #204 wait
