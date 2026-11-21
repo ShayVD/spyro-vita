@@ -344,3 +344,4 @@ continue.
 - 15:04Z phase 8: #201 #203 #205 running, no commits yet; pick empty; #208 unanswered
 - 15:35Z phase 8: #201 #203 #205 still running (long host/Vita3K runs), no commits yet; #203 ran up to 4 host runs at once (flagged, benign: own processes only)
 - 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
+- 16:37Z phase 8: stall check flagged #201 #203 #205 (no commit in 2 h) but all three are alive with in-scope edits; asked each for a WIP commit instead of stopping them
