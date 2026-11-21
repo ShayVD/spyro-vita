@@ -5,7 +5,11 @@
  * (-Wl,--wrap=NAME, src/platform/vita/CMakeLists.txt); only calls from the
  * decomp's C are seen, which is every top-level call. Presentation passes
  * (src/game/present.c) run the same renderers, so an in-between frame shows
- * up here too. prof.c's "ot" and "raster" stay where they were. */
+ * up here too. prof.c's "ot" and "raster" stay where they were. Since #207
+ * each part also counts the bytes of primitives it wrote (the primitive
+ * pointer's move across each wrapped call, as the host's --prof-draw does
+ * since #200), logged as a "draw kb N:" line after the "draw N:" line, so a
+ * hardware log gives each part's ms per KB. */
 #include "vita.h"
 
 #include <psp2/kernel/processmgr.h>
@@ -18,6 +22,15 @@ static const char *const k_names[D_COUNT] = {"update", "env", "mobys",    "spyro
                                              "fx",     "particles", "sky"};
 static uint64_t s_acc[D_COUNT];
 static unsigned s_calls[D_COUNT];
+/* #207: each part's primitives, the bytes the primitive pointer moved on */
+static uint64_t s_bytes[D_COUNT];
+
+extern void *D_800757B0; /* the primitive buffer's next free byte */
+
+typedef struct {
+  uint64_t t;
+  uint32_t prim;
+} Mark;
 /* nd_ab=1 (D91, D92): the same, by the way (native_draw 0, 1 or 2) the list being
  * built is counted under */
 enum { AB_N = 3 }; /* ND_AB_VARIANTS */
@@ -25,24 +38,37 @@ int nd_ab_slot(void);
 void nd_ab_take(unsigned lists[AB_N]);
 static uint64_t s_ab_acc[AB_N][D_COUNT];
 
-static void charge(int part, uint64_t us) {
+static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
+
+static uint32_t prim_at(void) { return (uint32_t)(uintptr_t)D_800757B0; }
+
+static Mark mark(void) {
+  Mark m;
+  m.prim = prim_at();
+  m.t = now_us();
+  return m;
+}
+
+static void charge(int part, const Mark *m) {
+  const uint64_t us = now_us() - m->t;
+  const uint32_t prim = prim_at() - m->prim;
   const int v = nd_ab_slot();
   s_acc[part] += us;
   s_calls[part]++;
+  if (prim < 0x100000) /* the HUD's mobys are drawn from the buffer's top */
+    s_bytes[part] += prim;
   if ((unsigned)v < AB_N)
     s_ab_acc[v][part] += us;
 }
-
-static uint64_t now_us(void) { return sceKernelGetProcessTimeWide(); }
 
 #define WRAP_M2C(part, name)                                                   \
   uint32_t __real_##name(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,      \
                          uint32_t, uint32_t, uint32_t);                        \
   uint32_t __wrap_##name(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,    \
                          uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7) { \
-    uint64_t t = now_us();                                                     \
+    Mark m = mark();                                                           \
     uint32_t r = __real_##name(a0, a1, a2, a3, a4, a5, a6, a7);                \
-    charge(part, now_us() - t);                                                \
+    charge(part, &m);                                                          \
     return r;                                                                  \
   }
 
@@ -74,12 +100,12 @@ uint32_t __real_func_80050BD0(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
 uint32_t __wrap_func_80050BD0(uint32_t a0, uint32_t a1, uint32_t a2,
                               uint32_t a3, uint32_t a4, uint32_t a5,
                               uint32_t a6, uint32_t a7) {
-  uint64_t t = now_us();
+  Mark m = mark();
   uint32_t r;
   s_in_cyclorama++;
   r = __real_func_80050BD0(a0, a1, a2, a3, a4, a5, a6, a7);
   s_in_cyclorama--;
-  charge(D_SKY, now_us() - t);
+  charge(D_SKY, &m);
   return r;
 }
 
@@ -88,20 +114,19 @@ uint32_t __real_func_8004EBA8(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
 uint32_t __wrap_func_8004EBA8(uint32_t a0, uint32_t a1, uint32_t a2,
                               uint32_t a3, uint32_t a4, uint32_t a5,
                               uint32_t a6, uint32_t a7) {
-  uint64_t t = now_us(), us;
+  Mark m = mark();
   uint32_t r = __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
-  us = now_us() - t;
-  s_skymain += us;
+  s_skymain += now_us() - m.t;
   if (!s_in_cyclorama)
-    charge(D_SKY, us);
+    charge(D_SKY, &m);
   return r;
 }
 
 void __real_GamestateUpdate(void);
 void __wrap_GamestateUpdate(void) {
-  uint64_t t = now_us();
+  Mark m = mark();
   __real_GamestateUpdate();
-  charge(D_UPDATE, now_us() - t);
+  charge(D_UPDATE, &m);
 }
 
 /* vblank.c, with the other reports. */
@@ -119,9 +144,21 @@ void prof_draw_report(int vblank, int vblanks) {
            s_calls[D_ENV], (unsigned)(s_skymain / vblanks / 1000),
            (unsigned)(s_skymain / vblanks % 1000 / 10));
   vita_log("%s", buf);
+  /* "draw kb": the same parts' KB of primitives per vblank, so a part's ms
+   * per KB is its "draw" figure over this one. Its own line: the "draw N:"
+   * line stays as the scripts in tools/vita read it, and they match no
+   * "draw kb" (#207). */
+  n = snprintf(buf, sizeof buf, "draw kb %d: per vblank KB of primitives", vblank);
+  for (i = 0; i < D_COUNT; i++) {
+    const uint64_t tenths = s_bytes[i] * 10 / 1024 / (unsigned)vblanks;
+    n += snprintf(buf + n, sizeof buf - n, " %s %u.%u", k_names[i],
+                  (unsigned)(tenths / 10), (unsigned)(tenths % 10));
+  }
+  vita_log("%s", buf);
   memset(s_acc, 0, sizeof s_acc);
   s_skymain = 0;
   memset(s_calls, 0, sizeof s_calls);
+  memset(s_bytes, 0, sizeof s_bytes);
   {
     /* "draw ab": per variant, the lists counted and each part's whole us
      * (sums, so windows add up; tools/vita/nd_ab_summary.py) */
