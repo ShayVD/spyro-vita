@@ -169,6 +169,120 @@
 
 void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 
+/* TEMP202 diag: renderer ranges, classes of what is left, per-polygon dump */
+#include <stdio.h>
+#include "psx_arena.h"
+static int s_dg_init, s_dg_old;
+static FILE *s_dg_dump;
+#define DGR_N 4096
+static struct {
+  const char *name;
+  uint32_t lo, hi;
+} s_dgr[2][DGR_N];
+static int s_dgrn[2];
+static uint32_t s_dg_rgen(void);
+void vcdiag_range(const char *name, uint32_t lo, uint32_t hi);
+void vcdiag_range(const char *name, uint32_t lo, uint32_t hi) {
+  const int b = (int)(s_dg_rgen() & 1);
+  if (s_dgrn[b] < DGR_N && hi > lo && hi - lo < 0x100000u) {
+    const uint32_t hl = (uint32_t)g_psx_arena_base + (lo & 0x1FFFFFu);
+    s_dgr[b][s_dgrn[b]].name = name;
+    s_dgr[b][s_dgrn[b]].lo = hl;
+    s_dgr[b][s_dgrn[b]].hi = hl + (hi - lo);
+    s_dgrn[b]++;
+  }
+}
+static const char *dg_name(int pres, uint32_t gen, uintptr_t p) {
+  const char *best = "other";
+  uint32_t bl = 0xFFFFFFFFu;
+  const int b = (int)(gen & 1);
+  int i;
+  if (pres)
+    return "pres";
+  {
+    static int dbg;
+    if (dbg < 8 && s_dgrn[b] && gen > 3000 && (gen % 500) == 0) {
+      dbg++;
+      PsyX_Log("VCDBG p %08x ranges %d: %s %08x-%08x, %s %08x-%08x", (unsigned)p, s_dgrn[b],
+               s_dgr[b][0].name, s_dgr[b][0].lo, s_dgr[b][0].hi, s_dgr[b][s_dgrn[b] - 1].name,
+               s_dgr[b][s_dgrn[b] - 1].lo, s_dgr[b][s_dgrn[b] - 1].hi);
+    }
+  }
+  for (i = 0; i < s_dgrn[b]; i++)
+    if ((uint32_t)p >= s_dgr[b][i].lo && (uint32_t)p < s_dgr[b][i].hi &&
+        s_dgr[b][i].hi - s_dgr[b][i].lo < bl) {
+      bl = s_dgr[b][i].hi - s_dgr[b][i].lo;
+      best = s_dgr[b][i].name;
+    }
+  return best;
+}
+static int dg_gs(void) { return (int)*(uint32_t *)PSX_ARENA(0x800757D8u); }
+#define DGC_N 512
+static struct {
+  const char *name;
+  int gs;
+  unsigned code;
+  unsigned v, p;
+} s_dgc[DGC_N];
+static int s_dgcn;
+static void dg_count(const char *name, int gs, unsigned code, unsigned v) {
+  int i;
+  for (i = 0; i < s_dgcn; i++)
+    if (s_dgc[i].name == name && s_dgc[i].gs == gs && s_dgc[i].code == code)
+      break;
+  if (i == s_dgcn) {
+    if (i == DGC_N)
+      i = DGC_N - 1;
+    else
+      s_dgcn++;
+    s_dgc[i].name = name, s_dgc[i].gs = gs, s_dgc[i].code = code;
+  }
+  s_dgc[i].v += v;
+  s_dgc[i].p++;
+}
+/* why a hand-over found no source (per key and frame) */
+static int s_dg_hkwhy;
+static struct {
+  const void *t;
+  uint32_t gen, key;
+  int why, how;
+} s_dgh[4096];
+static void dgh_put(const void *t, uint32_t gen, uint32_t key, int why, int how) {
+  const uint32_t h = (key * 0x9E3779B1u) >> 20;
+  s_dgh[h].t = t, s_dgh[h].gen = gen, s_dgh[h].key = key, s_dgh[h].why = why, s_dgh[h].how = how;
+}
+static int dgh_get(const void *t, uint32_t gen, uint32_t key, int *how) {
+  const uint32_t h = (key * 0x9E3779B1u) >> 20;
+  if (s_dgh[h].t == t && s_dgh[h].gen == gen && s_dgh[h].key == key) {
+    *how = s_dgh[h].how;
+    return s_dgh[h].why;
+  }
+  return 0;
+}
+static int s_dg_der; /* derive's failure (1 no place, 2 two places, 3 its entry, 4 choose, 5 flat, 6 q, 7 under 4) */
+static unsigned s_dg_samples;
+static void dg_init(void) {
+  if (s_dg_init)
+    return;
+  s_dg_init = 1;
+  s_dg_old = getenv("VC202_OLD") != NULL;
+  if (getenv("VC_DUMP"))
+    s_dg_dump = fopen(getenv("VC_DUMP"), "wb");
+}
+static void dg_report(void) {
+  int i;
+  for (i = 0; i < s_dgcn; i++) {
+    const unsigned c = s_dgc[i].code;
+    PsyX_Log("VCD202 %s %-12s gs %2d n%u found%u none%u amb%u hk%u flat%u inv%u d%u: %u vertices, "
+             "%u polygons",
+             c & 1 ? "amb " : "none", s_dgc[i].name, s_dgc[i].gs, c >> 1 & 7, c >> 4 & 7,
+             c >> 7 & 7, c >> 10 & 7, c >> 13 & 7, c >> 16 & 7, c >> 19 & 1, c >> 20, s_dgc[i].v,
+             s_dgc[i].p);
+  }
+  if (s_dg_dump)
+    fflush(s_dg_dump);
+}
+
 /* 8192 entries (320 KB) stay in the A9's L2; a frame projects up to ~4100
  * distinct points (logs/run6-host-demo-vcache2), and recording stops at
  * 3/4 full rather than probe far */
@@ -232,11 +346,13 @@ typedef struct {
  * their dx, dy unused), the renderer (VCD_SHADOWS...), and dead: placed
  * differently by two hand-overs, so not used. */
 #define VC_HK 1024 /* hand-overs a frame */
+#define HK_MERGE 2.0f /* #202: cuts at one edge's pixel this close share a place */
 typedef struct {
   uint32_t key, gen;
   float dx, dy;
   uint8_t n, who, dead, placed; /* n 0: a place only (flat: a portal face's cut) */
   Cand c[VC_CANDS];
+  float sx, sy; /* #202: the places merged on one edge, added (placed: how many) */
 } Hk;
 
 struct Lazy; /* the projections kept for later (#193, #179; below) */
@@ -301,6 +417,7 @@ static Table *s_tab1;                  /* the logic draw's other table (D71) */
 static Rec s_rec[2] = {{&s_tab0, 1, 0}, {NULL, 1, 0}}; /* the presenter's: psx_vcache_pres_begin */
 static const Table *s_rtab;            /* the walk's table and frame, NULL: this one */
 static uint32_t s_rgen;
+static uint32_t s_dg_rgen(void) { return s_rec[VC_LOGIC].gen; } /* TEMP202 */
 
 /* a table on the heap, line-aligned like s_tab0 (never freed) */
 static Table *table_new(void) {
@@ -458,6 +575,7 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   for (i = 0; i < sizeof *out / sizeof(unsigned); i++)
     o[i] = a[i] + b[i];
   out->peak = k[0].peak > k[1].peak ? k[0].peak : k[1].peak;
+  dg_report(); /* TEMP202 */
   cost_line();
   /* #183: the quads' vertices with no entry found again from their polygon */
   PsyX_Log("vcache derived: %u vertices with no entry drawn with their polygon's depth (%u at the "
@@ -477,12 +595,13 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   /* #189: the renderers' hand-overs */
   PsyX_Log("vcache hooked: %u vertices with no entry found from their renderer's hand-over "
            "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u); %u hand-overs, "
-           "%u kept, %u with a source not usable, %u placed differently, %u not kept (full)",
+           "%u kept, %u with a source not usable, %u placed differently, %u not kept (full); %u "
+           "merged with another cut at their edge's pixel (#202)",
            out->hooked[VCD_SHADOWS] + out->hooked[VCD_SKY_CLIP] + out->hooked[VCD_GLOWS] +
                out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP],
            out->hooked[VCD_SHADOWS], out->hooked[VCD_SKY_CLIP], out->hooked[VCD_GLOWS],
            out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hk_calls, out->hk_kept,
-           out->hk_nosrc, out->hk_conflict, out->hk_full);
+           out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1287,8 +1406,10 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
     const Entry *const s = &tb->s[i];
     lz_need(tb, k, i); /* #193 */
     n = T_N(s->tag);
-    if (T_STATE(s->tag) != E_VALID || !n)
+    if (T_STATE(s->tag) != E_VALID || !n) {
+      s_dg_hkwhy = T_STATE(s->tag) == E_AMBIGUOUS ? 2 : T_STATE(s->tag) == E_INVALID ? 3 : 4; /* TEMP202 */
       return -1;
+    }
     touch(t, (size_t)i * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * n);
     if (s->tag & T_MULTI) /* different points: drawn at the key, as the source is */
       *x = *y = 0;
@@ -1299,8 +1420,10 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
   } else {
     const Hk *const h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
     if (!h || h->dead) {
-      if (!flat || h)
+      if (!flat || h) {
+        s_dg_hkwhy = h ? 5 : 1; /* TEMP202 */
         return -1;
+      }
       *exact = 0; /* 2D */
       *x = *y = 0;
       n = 0;
@@ -1379,11 +1502,14 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   if (!rec->tab)
     return;
   st->hk_calls++;
+  s_dg_hkwhy = 0; /* TEMP202 */
   na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, cost, &t);
   if (na >= 0 && two)
     nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, cost, &t);
-  if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb)))
+  if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb))) {
+    if (!s_dg_hkwhy) s_dg_hkwhy = 7; /* TEMP202 */
     goto nosrc;
+  }
   if (form == VCD_LERP) {
     /* where the side a-b crosses the line through keys p and q (the
      * portal's outline edge): each end exact where it has a projection */
@@ -1391,13 +1517,17 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     int e0, e1;
     if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, cost, &t) < 0 ||
         hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, cost, &t) < 0 ||
-        !(ea | eb | e0 | e1))
+        !(ea | eb | e0 | e1)) {
+      s_dg_hkwhy = 8 + (s_dg_hkwhy ? 16 * s_dg_hkwhy : 0); /* TEMP202 */
       goto nosrc; /* all four 2D: nothing to place exactly */
+    }
     nx = ey0 - ey1;
     ny = ex1 - ex0;
     den = nx * (bx - ax) + ny * (by - ay);
-    if (!(den > 1e-6f || den < -1e-6f))
+    if (!(den > 1e-6f || den < -1e-6f)) {
+      s_dg_hkwhy = 9; /* TEMP202 */
       goto nosrc;
+    }
     f = (nx * (ex0 - ax) + ny * (ey0 - ay)) / den;
     cost[VCC_REC_DIV]++;
     x = ax + f * (bx - ax);
@@ -1411,8 +1541,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     const float f = (float)p * (1.0f / 4096);
     float ka, kb, r;
     n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost);
-    if (!n)
+    if (!n) {
+      s_dg_hkwhy = 10; /* TEMP202 */
       goto nosrc;
+    }
     ka = (1.0f - f) * pa;
     kb = f * pb;
     r = 1.0f / (ka + kb);
@@ -1427,8 +1559,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   }
   dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
   dy = flt(y - ((short)(key >> 16) + 0.5f));
-  if (!(dx < lim && dx > -lim && dy < lim && dy > -lim)) /* not this key's point */
+  if (!(dx < lim && dx > -lim && dy < lim && dy > -lim)) { /* not this key's point */
+    s_dg_hkwhy = 6; /* TEMP202 */
     goto nosrc;
+  }
   h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
   if (!h) {
     st->hk_full++;
@@ -1440,16 +1574,41 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   if (h->placed) { /* handed over before: the same point (its depths added), or not used */
     if (!(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
           h->dy - dy >= -0.125f)) {
+      if (!s_dg_old && form == VCD_LERP && h->who == who && h->placed < 255 &&
+          h->dx - dx <= HK_MERGE && dx - h->dx <= HK_MERGE && h->dy - dy <= HK_MERGE &&
+          dy - h->dy <= HK_MERGE) {
+        /* #202: another cut at the same edge's pixel: one place, their mean */
+        h->sx += dx;
+        h->sy += dy;
+        h->placed++;
+        h->dx = flt(h->sx / h->placed);
+        h->dy = flt(h->sy / h->placed);
+        cost[VCC_REC_DIV] += 2;
+        st->hk_merged++;
+        goto depths;
+      }
       h->dead = 1;
       st->hk_conflict++;
+      { /* TEMP202 */
+        static unsigned ns;
+        if (getenv("VC_CSAMP") && ns < 300 && rec->gen > 5700) {
+          ns++;
+          PsyX_Log("VCC202 g%u key %d,%d had %.3f,%.3f (who %u) now %.3f,%.3f form %d a %d,%d b %d,%d "
+                   "p %d,%d q %d,%d ea %d eb %d na %d nb %d w %g", rec->gen, (short)key, (short)(key >> 16),
+                   h->dx, h->dy, h->who, dx, dy, form, (short)a, (short)(a >> 16), (short)b,
+                   (short)(b >> 16), (short)p, (short)((unsigned)p >> 16), (short)q,
+                   (short)((unsigned)q >> 16), ea, eb, na, nb, n ? w[0] : 0.0f);
+        }
+      }
       goto out;
     }
   } else {
-    h->dx = dx;
-    h->dy = dy;
+    h->dx = h->sx = dx;
+    h->dy = h->sy = dy;
     h->who = (uint8_t)who;
     h->placed = 1;
   }
+depths:
   for (i = 0; i < n; i++) {
     for (j = 0; j < h->n; j++)
       if (same_depth(h->c[j].w, w[i], &cost[VCC_REC_DIV]))
@@ -1463,6 +1622,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   goto out;
 nosrc:
   st->hk_nosrc++;
+  dgh_put(rec->tab, rec->gen, key, s_dg_hkwhy ? s_dg_hkwhy : 15, how); /* TEMP202 */
 out:
   cost[VCC_REC_LINES] += t.n;
 }
@@ -1692,6 +1852,7 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
           one = sm;
         }
       }
+    s_dg_der = one == VC_NOSEQ ? 1 : conflict ? 2 : 3; /* TEMP202 */
     if (one != VC_NOSEQ && !conflict) {
       const uint32_t k2 = LOG_E(tab->log[one]);
       uint32_t tag;
@@ -1700,6 +1861,7 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
       if (k2 != so0 && k2 != sa0 && k2 != sb0 && T_STATE(tag) == E_VALID && T_N(tag) &&
           !(tag & T_MULTI)) {
         slot = k2 + 1;
+        s_dg_der = 0; /* TEMP202 */
         cand_pos(tab, &tab->s[k2].c[0], &x, &y);
         out->dx = (short)tab->s[k2].key + 0.5f + x - kx;
         out->dy = (short)(tab->s[k2].key >> 16) + 0.5f + y - ky;
@@ -1744,8 +1906,10 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
   for (i = 0; i < 4; i++)
     if (i != m)
       idx[ni++] = i;
-  if (!choose(e, en, idx, 3, cost, pick))
+  if (!choose(e, en, idx, 3, cost, pick)) {
+    s_dg_der = 4 | s_dg_der << 3; /* TEMP202 */
     return 0;
+  }
   for (i = 0; i < 3; i++) {
     const int v = idx[i];
     if (ov && ov[v][2] != 0) {
@@ -1761,8 +1925,10 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
   y = ky + out->dy;
   d = (sx[idx[1]] - sx[idx[0]]) * (sy[idx[2]] - sy[idx[0]]) -
       (sx[idx[2]] - sx[idx[0]]) * (sy[idx[1]] - sy[idx[0]]);
-  if (!(d > 1e-3f || d < -1e-3f))
+  if (!(d > 1e-3f || d < -1e-3f)) {
+    s_dg_der = 5 | s_dg_der << 3; /* TEMP202 */
     return 0;
+  }
   {
     const float q0 = 1 / z[idx[0]], q1 = 1 / z[idx[1]], q2 = 1 / z[idx[2]];
     q = q0 + ((x - sx[idx[0]]) * ((q1 - q0) * (sy[idx[2]] - sy[idx[0]]) -
@@ -1772,8 +1938,10 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
                  d;
     cost[VCC_LOOK_DIV] += 4;
   }
-  if (!(q > 0))
+  if (!(q > 0)) {
+    s_dg_der = 6 | s_dg_der << 3; /* TEMP202 */
     return 0;
+  }
   w = 1 / q;
   cost[VCC_LOOK_DIV]++;
   if (slot) { /* the projection's own depth, at the scale the polygon uses */
@@ -1792,8 +1960,10 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
   }
   w = flt(w);
   for (i = 0; i < 3; i++)
-    if (!under4(w, z[idx[i]]))
+    if (!under4(w, z[idx[i]])) {
+      s_dg_der = 7 | s_dg_der << 3; /* TEMP202 */
       return 0;
+    }
   out->w = w;
   return 1;
 }
@@ -2068,6 +2238,17 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   const Sink lk = pres ? (Sink){work, cost, st, NULL}
                        : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
 
+  int dg_none = 0; /* TEMP202 */
+  dg_init();
+  s_dg_der = 0;
+  {
+    static int lgs = -1, llv = -1;
+    const int gs = dg_gs(), lv = (int)*(uint32_t *)PSX_ARENA(0x8007596Cu);
+    if (gs != lgs || lv != llv) {
+      PsyX_Log("VCW202 gen %u: level %d gamestate %d", s_rec[VC_LOGIC].gen, lv, gs);
+      lgs = gs, llv = lv;
+    }
+  }
   st->polys++;
   st->verts += n;
   work[1]++;
@@ -2112,6 +2293,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       if (k < 0) {
         none = i;
         nnone++;
+        dg_none |= 1 << i; /* TEMP202 */
         /* its renderer's hand-over, if any (#189; used below) */
         hkc[i] = hk_look(tab, pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen,
                            key, &cost[VCC_LOOK_PROBES], &t);
@@ -2306,6 +2488,65 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
    * polygon's first vertex's index in its own buffer. On its own thread the
    * presenter's go to its own array at the same index (#162), as the logic
    * draw's walk fills g_vcache_side beside it. */
+  if (nmiss || nambig) { /* TEMP202: what is left, by renderer and why */
+    const uint32_t g = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    unsigned codes[4], cv[4];
+    int nc = 0, nf = 0, nln = 0, nla = 0, j;
+    const char *nm = dg_name(pres, g, (uintptr_t)xy[0]);
+    for (i = 0; i < n; i++) {
+      nf += e[i] != NULL || (i == none && der);
+      nln += (dg_none >> i & 1) && !hk[i] && !(i == none && der);
+      nla += amb[i] && !res;
+    }
+    for (i = 0; i < n; i++) {
+      const int lnone = (dg_none >> i & 1) && !hk[i] && !(i == none && der);
+      const int lamb = amb[i] && !res;
+      unsigned code, det = 0;
+      if (!lnone && !lamb)
+        continue;
+      if (lnone) {
+        int how = 0, why;
+        const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+        uint32_t h = hash(key) & (VC_HK - 1), pp;
+        int dead = 0;
+        for (pp = 0; pp < 8; pp++, h = (h + 1) & (VC_HK - 1)) {
+          const Hk *const he = &ptab->hk[h];
+          if (he->gen != g)
+            break;
+          if (he->key == key) {
+            dead = he->dead ? 1 : !he->placed ? 2 : 3;
+            break;
+          }
+        }
+        why = dgh_get(ptab, g, key, &how);
+        det = (unsigned)(i == none ? s_dg_der : 0) + 64u * (unsigned)(dead ? dead : why ? 3 + why : 0);
+      } else
+        det = (unsigned)(rwhy + 1);
+      code = (unsigned)lamb | (unsigned)n << 1 | (unsigned)nf << 4 | (unsigned)nln << 7 |
+             (unsigned)nla << 10 | (unsigned)(nhk - nflat) << 13 | (unsigned)nflat << 16 |
+             (unsigned)(inv != 0) << 19 | det << 20;
+      for (j = 0; j < nc; j++)
+        if (codes[j] == code)
+          break;
+      if (j == nc) {
+        codes[nc] = code;
+        cv[nc++] = 0;
+      }
+      cv[j]++;
+      if (s_dg_samples < 400 && (getenv("VC_SAMPLES") != NULL)) {
+        s_dg_samples++;
+        PsyX_Log("VCS202 g%u gs%d %s %s n%d v%d key %d,%d code %08x others: %d,%d %d,%d %d,%d %d,%d "
+                 "e%d%d%d%d amb%d%d%d%d hk%d%d%d%d",
+                 g, dg_gs(), nm, lamb ? "amb" : "none", n, i, xy[i][0], xy[i][1], code, xy[0][0],
+                 xy[0][1], xy[1][0], xy[1][1], xy[2][0], xy[2][1], n == 4 ? xy[3][0] : 0,
+                 n == 4 ? xy[3][1] : 0, e[0] != NULL, e[1] != NULL, e[2] != NULL,
+                 n == 4 && e[3] != NULL, amb[0], amb[1], amb[2], amb[3], hk[0] != NULL,
+                 hk[1] != NULL, hk[2] != NULL, hk[3] != NULL);
+      }
+    }
+    for (j = 0; j < nc; j++)
+      dg_count(nm, dg_gs(), codes[j], cv[j]);
+  }
   if (side && async)
     side = s_pres_side ? s_pres_side + (side - g_vcache_side) : NULL;
   if (side) {
@@ -2342,6 +2583,26 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       side[i] = c[order[i]];
   } else if (async) {
     st->side_lost += n;
+  }
+  if (s_dg_dump && side) { /* TEMP202: FNV of refs + answers, flags (#189's) */
+    uint32_t hsh = 2166136261u, r0;
+    unsigned char rec[5];
+    const unsigned char *b;
+    size_t z;
+    for (i = 0; i < n; i++) {
+      uint32_t r;
+      memcpy(&r, &vertex[i].tcx, sizeof r);
+      b = (const unsigned char *)&r;
+      for (z = 0; z < 4; z++)
+        hsh = (hsh ^ b[z]) * 16777619u;
+    }
+    b = (const unsigned char *)side;
+    for (z = 0; z < sizeof(VCacheVert) * (n == 4 ? 6 : 3); z++)
+      hsh = (hsh ^ b[z]) * 16777619u;
+    memcpy(&r0, &vertex[0].tcx, sizeof r0);
+    memcpy(rec, &hsh, 4);
+    rec[4] = (unsigned char)(((r0 & VREF_PERSP) ? 1 : 0) | n << 4);
+    fwrite(rec, 1, 5, s_dg_dump);
   }
 }
 
@@ -2383,6 +2644,7 @@ static void done_hook(void) {
   r->count = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
     r->tab = r->tab == &s_tab0 ? s_tab1 : &s_tab0;
+  s_dgrn[(r->gen + 1) & 1] = 0; /* TEMP202 */
   if (++r->gen == VC_GEN_END) { /* came round: no old entry may look current */
     s_tab0.stale = 1;
     if (s_tab1)

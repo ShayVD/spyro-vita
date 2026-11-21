@@ -322,6 +322,9 @@ typedef struct {
    * why (RW_*) */
   unsigned res_der;
   unsigned res_why[RW_N];
+  /* #202: hand-overs cut at an edge's pixel another cut had placed
+   * differently, merged into one place (their mean) */
+  unsigned hk_merged;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
