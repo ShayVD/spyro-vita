@@ -94,3 +94,48 @@ Decisions from D162 on; D1–D102 are in [decisions.md](decisions.md), D103–D1
   - Mapping low works, against the research's "nobody has shown it": `sceKernelMapFlexibleMemory` at 0x80000000 and 0x40000000 returns that address with and without `MAP_FIXED` (`MAP_FIXED|MAP_NO_OVERWRITE`, 0x10|0x80), and `sceKernelMapDirectMemory` at 0x80000000 too (under the Piglet auth info). The low-image model doesn't need it; it is a fallback if the image ever has to shrink.
   - The `sceKernelDebugOutText` mirror showed only the first line in the klog; the file log has everything.
 - **Not verified:** a PS5; other firmware; the spike under the default auth info (it always ran with Piglet's).
+
+### D193. The PS4 platform layer: the game's fpkg runs on a PS4, software-rendered to sceVideoOut first; Piglet with the player's own modules next (PS4 plan P3, 2026-11-21)
+
+- **Asked:** P3 of `docs/ps4-plan.md` (the session that ran P1 and P2). Numbered D193, not D181: the autopilot branch's `decisions-3.md` already reaches D192.
+- **The owner's choices** (2026-11-21):
+  - **Renderer:** "B + soft fallback". The GLES2 renderer on Piglet compiles our GLSL at boot with the player's own `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx` in `/data/self/system/common/lib/`, as 2Ship2Harkinian-PS4 and Ship of Harkinian do, and as our Vita build asks for `libshacccg.suprx` (D163). Without them the software rasterizer draws. The software path came first.
+  - **Testing:** hardware only, no emulator.
+  - **Research** (a subagent, 2026-11-21) found no shader compiler we may legally use offline:
+    - ioQuake3-PS4 and PacBrew's SDL-PS4 ship blobs dumped on a console with `glPigletGetShaderBinarySCE`, compiled by Sony's compiler (option C, not taken).
+    - `sleirsgoevy/piglet-shaders` is a 2022 Mesa proof of concept with no licence that compiles fragment shaders only.
+    - OpenOrbis's Piglet sample uses the firmware's WebKit shaders (`libScePrecompiledShaders.sprx`), which can't draw PS1 primitives.
+    - shadPS4 has no Piglet, and its macOS build needs macOS 26 (this Mac runs 14).
+  - The two modules weren't on the owner's PS4 (an FTP listing, 2026-11-21): the owner will copy them.
+- **Built** (`-DSPYRO_HOST=ps4`, `cmake/ps4.toolchain.cmake`, `docs/ps4-build.md`):
+  - **Toolchain and memory:** OpenOrbis v0.5.4 and clang 18.1.8 on the Mac; `-fms-extensions`, `P32`, `SPYRO_NATIVE_MEM` and `SPYRO_LOW_IMAGE`; `-O2 -march=btver2 -fPIE`. The eboot is a PIE linked by ld.lld with OpenOrbis's `link.x`, which the PS4 loads at 0x400000 (D180). The arena and an 8 MB game stack are `.bss` arrays, the stack set with `scePthreadAttrSetstack`. `main()` refuses to run unless the image, the arena and the stack are below 2 GB. `oelf_check.py` runs after every link.
+  - **The fpkg:** `tools/ps4/pkg.sh` is the spike's steps for the game: title ID `SPYT00002`, "Spyro PS4 (test)", the grey placeholder icon, the Piglet sample's PAID and auth info.
+  - **`src/platform/ps4/` files:**
+    - `main.c`: start-up, the module loads, `config.txt` (frames, stats, realtime, analog, shot).
+    - `vblank.c`: the Vita's real-time clock over `sceVideoOutGetVblankStatus` and `sceVideoOutWaitVblank`.
+    - `video.c`: linux32's software rasterizer's display scaled 4:3 into a 1920×1080 `sceVideoOut` framebuffer on the CPU, as OpenOrbis's graphics sample draws.
+    - `pad.c`: `scePad`. The PS4's bits are the PS1's; OPTIONS is START, the touch pad's click is SELECT; analog with the free camera by default.
+    - `audio.c`: the SPU's 44.1 kHz resampled to 48 kHz for `sceAudioOut` on a thread.
+  - linux32's `gpu_soft.c`, `png.c`, `log.c` and `savestate_host.c` are reused unchanged. Disc data comes from `/data/spyro/` (image, extracted files or the Store copy's `EBOOT.PBP`, `cdimage.c` as on the Vita); saves go to `/data/spyro/save/`.
+- **What a PIE and a real Jaguar needed, PS4 only:**
+  - **Data words:** the data image's 32-bit address words (67) can't be relocated in a PIE (no `R_X86_64_32`). `tools/data2s.py --pie` writes them as 0 plus an `s1_pie_words` table of {slot, target} pairs that `main()` stores before anything reads them.
+  - **The presenter's commons:** llvm-objcopy's `--keep-global-symbol` also localizes common symbols, and a local common is an absolute symbol at its alignment. The presenter's `pres_draw.o` would have read the decomp's `-fcommon` globals at address 4. `tools/ps4/keep_commons.py` keeps them global; GNU objcopy never localized them.
+  - **tick60's link check:** `tick60_link.py` takes `.data.rel.ro` (a PIE's constant address tables) as read-only.
+  - **System modules:** the system libraries beyond libkernel aren't loaded for the eboot. Hardware run 1 crashed calling into `libSceUserService` (`PRX_NOT_RESOLVED_FUNCTION`). `main()` now loads UserService, VideoOut, Pad and AudioOut with `sceSysmoduleLoadModuleInternal`. The P2 spike only used libkernel.
+  - **Misaligned arrays:** clang takes every global array of 16 bytes or more as 16-byte aligned (x86-64's large-array rule, `extern` declarations and commons included), but the decomp's arrays sit at their PS1 addresses. Hardware run 2 crashed starting a game on `movaps` to `g_FlightCourseRecords`, which is 8-aligned (qemu-x86_64, linux64's checker, doesn't enforce SSE alignment). No clang or LLVM option, and no `#pragma clang attribute`, lowers it. `tools/ps4/cc_unaligned.py`, the compiler launcher, compiles each C unit with VEX SSE (`-march=btver2`), rewrites `vmovaps`/`vmovapd`/`vmovdqa` to their unaligned forms, and fails on a non-temporal or non-VEX aligned move. Only musl's own vararg saves keep aligned moves.
+  - **A fourth `__ptr32` bug in clang 18:** with AVX the loop vectorizer turns `P32_INIT`'s copy loops into a vector `addrspacecast` the backend can't select ("Cannot select: v4i32 = addrspacecast"). The PS4 builds with `-fno-vectorize`.
+  - **Audio's user:** `sceAudioOutOpen` refuses the game's user (0x809b0001) and opens as the system user (0xFF), as SDL-PS4 does.
+- **On hardware** (the owner's PS4 Slim, firmware 13.04, GoldHEN; FTP 192.168.1.26:2121; the owner said yes to each upload and installed and ran each build; the owner's disc image uploaded to `/data/spyro/` with the owner's yes; logs gitignored in `logs/p3/hw-run{1,2,3}/`):
+  - **Run 1 (9f6312b):** the module crash above.
+  - **Run 2 (d58b0cb):** the title screen, the controller working ("it responded"), ~7.5 pictures a second (the framebuffer was read back: write-combined memory, now never read), no audio (0x809b0001). Starting a game crashed (the alignment above).
+  - **Run 3 (8c6673b):** the game starts and runs ("the game starts and runs"). 60 vblanks a second, 0 late, a picture each vblank. Per VSync: the game ~5 ms, scaling the picture 4.3 ms, the rest waiting for the display. Audio plays (80 dry grains since the start, none dropped).
+- **Unchanged elsewhere** (13c58f4 against 8c6673b, built from the same worktree path and build folders; `logs/p3/sha/result.txt`):
+  - linux32 (SHA-1 `4fb114f5…`) and linux64 (`6fb54da5…`) are byte-identical.
+  - The Vita's `.text`, `.data` and `.bss` are identical; its `.rodata` differs only by the version stamp (`v1.2.2-…-g<commit>`) and `__TIME__`.
+  - `tools/host_checks.sh` on linux32 from both commits gives byte-identical traces, shots, audio and cards: demo 28, whole-game tour 143, routes A and B 58 files each, every run exit 0 (`logs/p3-l32-{base,head}-*`).
+- **Not done or not verified:**
+  - The GLES2 renderer on Piglet. It waits for the owner's modules and moves to P4 with 60 fps and widescreen, which need it.
+  - Whole-game play, saves and the Store copy on the PS4 (P4).
+  - The PS5.
+  - The module load's need on other firmware.
+  - Why `sceKernelDebugOutText` lines don't reach the klog. The file log has everything.

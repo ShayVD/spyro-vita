@@ -1,6 +1,6 @@
 # PS4 build (plan P2 on; D180)
 
-The PS4 fpkg is planned in `docs/ps4-plan.md`. Today this builds only the **P2 spike**: a test fpkg, not the game, that reports where the PS4 puts what the low-image model (D173, D174) needs. The game's own PS4 platform layer is P3.
+The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3, D193: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
 
 ## The toolchain
 
@@ -36,6 +36,46 @@ tools/ps4/tc <command>
 ```
 
 Ubuntu 24.04 arm64 with clang-18/lld-18, the same OpenOrbis tarball, `create-fself` and `create-gp4` built for arm64 from the pinned commits, and PkgTool.Core's framework-dependent build on Ubuntu's arm64 .NET 8 runtime. `--platform` matters: a cached amd64 `ubuntu:24.04` otherwise gets used under emulation.
+
+## The game (P3, D193)
+
+```bash
+eval "$(tools/ps4/sdk.sh --env)"
+cmake -S . -B build/ps4 -G Ninja -DSPYRO_HOST=ps4 -DCMAKE_TOOLCHAIN_FILE=cmake/ps4.toolchain.cmake \
+    -DPython3_EXECUTABLE=/usr/bin/python3        # a Python with PyYAML
+cmake --build build/ps4    # → build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg
+```
+
+Only on the Mac so far; the Docker image has the same tools. CMake builds the static libraries (the game, `src/platform/common`, `src/platform/ps4` with linux32's software rasterizer, PNG writer, log and save-state glue). `src/platform/ps4/CMakeLists.txt` then does three things:
+- links `spyro.elf` with ld.lld and OpenOrbis's `link.x` (a PIE, as the spike);
+- runs `oelf_check.py`;
+- packs the fpkg with `tools/ps4/pkg.sh` (the spike's steps: the Piglet sample's PAID and auth info, the grey placeholder icon, no LiveArea or Vita art).
+
+What the PS4 build does differently (all of it PS4 only; linux32, linux64 and the Vita don't change):
+- **`-fPIE`, and `data2s --pie`:** a PIE can't hold a relocated address in 32 bits, so the data image's address words start as 0, and `main()` fills them from the `s1_pie_words` table.
+- **`-march=btver2` and `tools/ps4/cc_unaligned.py`** (the C compiler's launcher): clang takes global arrays of 16 bytes or more as 16-byte aligned, and the decomp's sit at their PS1 addresses. Every C unit goes through assembly, with the aligned SSE moves rewritten to unaligned ones. Without this, starting a game crashed on hardware; qemu doesn't check it.
+- **`-fno-vectorize`:** a fourth clang 18 `__ptr32` bug, a vector `addrspacecast` in `P32_INIT`'s loops under AVX.
+- **The presenter's object:** `tools/ps4/keep_commons.py` keeps its common symbols global (llvm-objcopy would localize them into absolute symbols).
+- **`main()` loads `libSceUserService`, `libSceVideoOut`, `libScePad` and `libSceAudioOut`** with `sceSysmoduleLoadModuleInternal`. The PS4 doesn't load them for the eboot.
+
+On the PS4 (the owner's yes first, every time): the disc image (`.bin` + `.cue`), the files `tools/extract_disc.py` writes, or the Store copy's `EBOOT.PBP` go in `/data/spyro/`. Saves go to `/data/spyro/save/`, and the log to `/data/spyro/spyro.log`. Options go in `/data/spyro/config.txt`, one `key=value` a line: `frames=N`, `stats=0|1|2`, `realtime=0|1`, `analog=0|1`, `shot=V`.
+
+```bash
+curl -T build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg ftp://$PS4_IP:2121/data/pkg/
+curl -o logs/…/spyro.log ftp://$PS4_IP:2121/data/spyro/spyro.log
+```
+
+Install the pkg with GoldHEN's Package Installer and run "Spyro PS4 (test)". To catch a crash, record GoldHEN's klog first (`nc $PS4_IP 3232 > logs/…/klog.txt`, then stop it by its PID). The crash report gives the faulting `rip` and backtrace at the eboot's base, 0x400000; `llvm-symbolizer --obj=build/ps4/spyro.elf ADDR-0x400000` names the function.
+
+Drawing is linux32's software rasterizer, scaled 4:3 into a 1920×1080 `sceVideoOut` framebuffer on the CPU (`video.c`). The GLES2 renderer on Piglet (P4) needs the player's own `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx` in `/data/self/system/common/lib/` (D193).
+
+Hardware runs (2026-11-21, `logs/p3/hw-run{1,2,3}/`):
+
+| run | commit | result |
+|---|---|---|
+| 1 | 9f6312b | crash at the first call into `libSceUserService` (not loaded) |
+| 2 | d58b0cb | title screen, controller works, ~7.5 pictures/s, no audio; starting a game crashed (`movaps` on an 8-aligned array) |
+| 3 | 8c6673b | the game starts and runs: 60 vblanks/s, 0 late, audio; per VSync the game ~5 ms, scaling 4.3 ms |
 
 ## The spike
 
