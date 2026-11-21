@@ -8,7 +8,10 @@
  *
  * The PS1 display rect fills a 4:3 1440x1080 box in the middle (the 224 lines
  * the game draws of an NTSC 240, as png.c's 960x544 shots), black bars at the
- * sides. Nearest-neighbour: a row the box repeats is copied, not built again. */
+ * sides. Nearest-neighbour: each source row is built once in cached memory
+ * and written to every framebuffer row it covers. The framebuffer is
+ * write-combined: never read it (hardware run 2: copying repeated rows
+ * from the row above cost most of a frame). */
 #include "ps4.h"
 #include "host.h"
 
@@ -55,6 +58,8 @@ static OrbisKernelEqueue s_flip_q;
 static uint32_t *s_fb[NBUF];
 static int s_cur; /* the buffer drawn next */
 static int s_xmap[BOX_W], s_xmap_w = -1;
+static uint32_t s_row[BOX_W]; /* one row of the box, in cached memory */
+static unsigned long long s_draw_us, s_wait_us;
 static unsigned s_shown, s_flip_err;
 
 int ps4_video_handle(void) { return s_handle; }
@@ -136,9 +141,9 @@ static void draw(uint32_t *fb) {
   }
   for (y = 0; y < FB_H; y++) {
     int sy = top + y * lines / FB_H;
-    uint32_t *o = fb + (size_t)y * FB_W + BOX_X;
+    uint32_t *o = s_row;
     if (sy == prev) {
-      memcpy(o, o - FB_W, BOX_W * 4);
+      memcpy(fb + (size_t)y * FB_W + BOX_X, s_row, BOX_W * 4);
       continue;
     }
     prev = sy;
@@ -157,6 +162,7 @@ static void draw(uint32_t *fb) {
           o[x] = argb555(row[(d->disp.x + s_xmap[x]) & 1023]);
       }
     }
+    memcpy(fb + (size_t)y * FB_W + BOX_X, s_row, BOX_W * 4);
   }
 }
 
@@ -174,8 +180,14 @@ int ps4_video_present(void) {
   int rc;
   if (s_handle < 0)
     return 0;
-  wait_flip_done();
-  draw(s_fb[s_cur]);
+  {
+    unsigned long long t0 = ps4_now_us(), t1;
+    wait_flip_done();
+    t1 = ps4_now_us();
+    draw(s_fb[s_cur]);
+    s_wait_us += t1 - t0;
+    s_draw_us += ps4_now_us() - t1;
+  }
   rc = sceVideoOutSubmitFlip(s_handle, s_cur, ORBIS_VIDEO_OUT_FLIP_VSYNC, (int64_t)s_shown);
   if (rc < 0) {
     s_flip_err++;
@@ -187,6 +199,11 @@ int ps4_video_present(void) {
 }
 
 void ps4_video_report(int vblank) {
-  host_log("video %d: %u pictures flipped, %u flip errors, display vcount %llu", vblank, s_shown,
-           s_flip_err, (unsigned long long)ps4_video_vcount());
+  static unsigned last;
+  unsigned n = s_shown - last ? s_shown - last : 1;
+  host_log("video %d: %u pictures flipped, %u flip errors, display vcount %llu; per picture %llu us "
+           "scaling, %llu us waiting for the flip", vblank, s_shown, s_flip_err,
+           (unsigned long long)ps4_video_vcount(), s_draw_us / n, s_wait_us / n);
+  last = s_shown;
+  s_draw_us = s_wait_us = 0;
 }

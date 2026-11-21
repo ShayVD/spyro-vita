@@ -78,14 +78,23 @@ static void *audio_thread(void *arg) {
 int ps4_audio_init(void) {
   pthread_t th;
   int rc = sceAudioOutInit();
+  host_log("audio: sceAudioOutInit 0x%x", (unsigned)rc);
   if (rc < 0 && rc != (int)0x8026000Fu) { /* ...0F: already initialised */
     host_log("audio: sceAudioOutInit failed: 0x%x", (unsigned)rc);
     return -1;
   }
+  /* the user who started the game, as OpenOrbis's audio-wav sample; hardware
+   * run 2 got 0x809b0001 for it, so then the system user (0xFF), as SDL-PS4 opens */
   s_port = sceAudioOutOpen(g_ps4_user, ORBIS_AUDIO_OUT_PORT_TYPE_MAIN, 0, GRAIN, OUT_RATE,
                            ORBIS_AUDIO_OUT_PARAM_FORMAT_S16_STEREO);
   if (s_port < 0) {
-    host_log("audio: sceAudioOutOpen failed: 0x%x", (unsigned)s_port);
+    host_log("audio: sceAudioOutOpen(user 0x%x) failed: 0x%x", (unsigned)g_ps4_user,
+             (unsigned)s_port);
+    s_port = sceAudioOutOpen(0xFF, ORBIS_AUDIO_OUT_PORT_TYPE_MAIN, 0, GRAIN, OUT_RATE,
+                             ORBIS_AUDIO_OUT_PARAM_FORMAT_S16_STEREO);
+  }
+  if (s_port < 0) {
+    host_log("audio: sceAudioOutOpen(system user) failed: 0x%x", (unsigned)s_port);
     return -1;
   }
   if ((rc = pthread_create(&th, NULL, audio_thread, NULL)) != 0) {

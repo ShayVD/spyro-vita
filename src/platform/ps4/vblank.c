@@ -28,6 +28,8 @@ void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 static unsigned long long s_stat_t0;
 static int s_stat_v0, s_stat_shown, s_stat_late;
 
+static void time_report(int v);
+
 static void vblank(void) {
   int v = psx_clock_tick();
   unsigned long long now;
@@ -53,6 +55,7 @@ static void vblank(void) {
     host_log("vblank %d: %d vblanks in %u ms (%u.%u per second), %d pictures, %d vblanks late", v,
              v - s_stat_v0, us / 1000, (v - s_stat_v0) * 1000000u / us,
              (v - s_stat_v0) * 10000000u / us % 10, s_stat_shown, s_stat_late);
+    time_report(v);
     ps4_video_report(v);
     ps4_audio_report(v);
     host_log_flush();
@@ -68,18 +71,43 @@ static void vblank(void) {
 
 static int vcount(void) { return (int)ps4_video_vcount(); }
 
+/* where a frame's time goes: the game's own work between VSync calls (its
+ * update and draws, the software rasterizer), the vblanks VSync runs, the
+ * picture's scaling and flip, the wait for the display */
+static unsigned long long s_t_game, s_t_vblanks, s_t_present, s_t_wait, s_t_last;
+static unsigned s_t_calls;
+
 void psx_platform_vsync(void) {
   int n, late;
+  unsigned long long t0 = ps4_now_us(), t1, t2;
+  if (s_t_last)
+    s_t_game += t0 - s_t_last;
+  s_t_calls++;
   if (!g_ps4_opts.realtime) {
-    vblank();
-    s_stat_shown += ps4_video_present();
-    return;
+    n = 1;
+    late = 0;
+  } else {
+    n = psx_clock_due(1, vcount, ps4_video_wait_vblank, &late);
   }
-  n = psx_clock_due(1, vcount, ps4_video_wait_vblank, &late);
+  t1 = ps4_now_us();
+  s_t_wait += t1 - t0;
   s_stat_late += late;
   while (n-- > 0)
     vblank();
+  t2 = ps4_now_us();
+  s_t_vblanks += t2 - t1;
   s_stat_shown += ps4_video_present();
+  s_t_last = ps4_now_us();
+  s_t_present += s_t_last - t2;
+}
+
+static void time_report(int v) {
+  unsigned n = s_t_calls ? s_t_calls : 1;
+  host_log("time %d: per VSync (%u calls) game %llu us, vblanks %llu us, present %llu us, "
+           "waiting %llu us",
+           v, s_t_calls, s_t_game / n, s_t_vblanks / n, s_t_present / n, s_t_wait / n);
+  s_t_game = s_t_vblanks = s_t_present = s_t_wait = 0;
+  s_t_calls = 0;
 }
 
 void PsyX_UpdateInput(void) {}
