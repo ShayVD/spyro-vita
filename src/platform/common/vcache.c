@@ -353,6 +353,7 @@ typedef struct {
   uint8_t n, who, dead, placed; /* n 0: a place only (flat: a portal face's cut) */
   Cand c[VC_CANDS];
   float sx, sy; /* #202: the places merged on one edge, added (placed: how many) */
+  uint8_t taint; /* #202: made from a merged place (only where nothing else placed the key) */
 } Hk;
 
 struct Lazy; /* the projections kept for later (#193, #179; below) */
@@ -594,13 +595,15 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->res_why[RW_FULL]);
   /* #189: the renderers' hand-overs */
   PsyX_Log("vcache hooked: %u vertices with no entry found from their renderer's hand-over "
-           "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u); %u hand-overs, "
+           "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u, particles %u); %u "
+           "hand-overs, "
            "%u kept, %u with a source not usable, %u placed differently, %u not kept (full); %u "
            "merged with another cut at their edge's pixel (#202)",
            out->hooked[VCD_SHADOWS] + out->hooked[VCD_SKY_CLIP] + out->hooked[VCD_GLOWS] +
-               out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP],
+               out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP] + out->hooked[VCD_PARTICLES],
            out->hooked[VCD_SHADOWS], out->hooked[VCD_SKY_CLIP], out->hooked[VCD_GLOWS],
-           out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hk_calls, out->hk_kept,
+           out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hooked[VCD_PARTICLES],
+           out->hk_calls, out->hk_kept,
            out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged);
 }
 
@@ -1377,7 +1380,7 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
         return NULL;
       e->key = key;
       e->gen = gen;
-      e->n = e->dead = e->placed = 0;
+      e->n = e->dead = e->placed = e->taint = 0;
       return e;
     }
     if (e->key == key)
@@ -1396,7 +1399,7 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
  * portal's face). Returns the depths' count (0: the place only), -1 not
  * usable; *exact: the place came from a projection. */
 static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
-                  int flat, int *exact, unsigned *cost, Touch *t) {
+                  int flat, int *exact, int *taint, unsigned *cost, Touch *t) {
   Table *const tb = rec->tab;
   const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
   const float kx = (short)(key & 0xFFFF) + 0.5f, ky = (short)(key >> 16) + 0.5f;
@@ -1418,8 +1421,13 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
     for (j = 0; j < n; j++)
       w[j] = s->c[j].w;
   } else {
-    const Hk *const h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
-    if (!h || h->dead) {
+    const Hk *h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
+    int gone = h && h->dead;
+    if (h && !taint && h->taint)
+      h = NULL; /* #202: placed only from a merged place: as if not there */
+    else if (h && !taint && h->placed > 1)
+      gone = 1; /* #202: merged: as before, when two places left it unused */
+    if (!h || gone) {
       if (!flat || h) {
         s_dg_hkwhy = h ? 5 : 1; /* TEMP202 */
         return -1;
@@ -1431,6 +1439,8 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
       n = h->n;
       *x = h->dx;
       *y = h->dy;
+      if (taint) /* #202 (NULL: neither, above) */
+        *taint |= h->placed > 1 || h->taint;
       for (j = 0; j < n; j++)
         w[j] = h->c[j].w;
     }
@@ -1486,47 +1496,44 @@ static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float 
 }
 
 /* One hand-over (psx_vcache.h PSX_VC_DERIVE) into rec's frame */
-static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t a, uint32_t b,
-                        int p, int q) {
-  unsigned *const cost = k->cost;
-  Rec *const rec = &s_rec[kind];
-  VCacheStats *const st = k->st;
+/* A hand-over's place (pixels from its key's pixel centre) and depths w
+ * (*no of them) from its sources: 0, or -1 when no source is usable.
+ * taint (#202) NULL: the sources as they were before #202 (a merged place
+ * not usable, a place made from one not there); else any, and *taint set
+ * when a merged place, or one made from it, was read. */
+static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, uint32_t a,
+                    uint32_t b, int p, int q, int *taint, float *dxo, float *dyo, float *w,
+                    unsigned *no, unsigned *cost, Touch *t) {
   const int form = how & 15, two = form == VCD_LERP || form == VCD_PERSP, cut = form == VCD_LERP;
-  const unsigned who = (unsigned)how >> 4 < VCD_WHO_N ? (unsigned)how >> 4 : 0;
-  float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], w[VC_CANDS], x, y, dx, dy;
+  float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], x, y, dx, dy;
   float lim = 1024, pa = 0, pb = 0;
   int na, nb = 0, ea, eb = 0;
-  unsigned n = 0, i, j;
-  Touch t = TOUCH0;
-  Hk *h;
-  if (!rec->tab)
-    return;
-  st->hk_calls++;
+  unsigned n = 0, i;
   s_dg_hkwhy = 0; /* TEMP202 */
-  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, cost, &t);
+  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t);
   if (na >= 0 && two)
-    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, cost, &t);
+    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, taint, cost, t);
   if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb))) {
     if (!s_dg_hkwhy) s_dg_hkwhy = 7; /* TEMP202 */
-    goto nosrc;
+    return -1;
   }
   if (form == VCD_LERP) {
     /* where the side a-b crosses the line through keys p and q (the
      * portal's outline edge): each end exact where it has a projection */
     float ex0, ey0, ex1, ey1, ew[VC_CANDS], nx, ny, den, f;
     int e0, e1;
-    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, cost, &t) < 0 ||
-        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, cost, &t) < 0 ||
+    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, taint, cost, t) < 0 ||
+        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, taint, cost, t) < 0 ||
         !(ea | eb | e0 | e1)) {
       s_dg_hkwhy = 8 + (s_dg_hkwhy ? 16 * s_dg_hkwhy : 0); /* TEMP202 */
-      goto nosrc; /* all four 2D: nothing to place exactly */
+      return -1; /* all four 2D: nothing to place exactly */
     }
     nx = ey0 - ey1;
     ny = ex1 - ex0;
     den = nx * (bx - ax) + ny * (by - ay);
     if (!(den > 1e-6f || den < -1e-6f)) {
       s_dg_hkwhy = 9; /* TEMP202 */
-      goto nosrc;
+      return -1;
     }
     f = (nx * (ex0 - ax) + ny * (ey0 - ay)) / den;
     cost[VCC_REC_DIV]++;
@@ -1543,7 +1550,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost);
     if (!n) {
       s_dg_hkwhy = 10; /* TEMP202 */
-      goto nosrc;
+      return -1;
     }
     ka = (1.0f - f) * pa;
     kb = f * pb;
@@ -1561,14 +1568,52 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   dy = flt(y - ((short)(key >> 16) + 0.5f));
   if (!(dx < lim && dx > -lim && dy < lim && dy > -lim)) { /* not this key's point */
     s_dg_hkwhy = 6; /* TEMP202 */
-    goto nosrc;
+    return -1;
   }
+  *dxo = dx;
+  *dyo = dy;
+  *no = n;
+  return 0;
+}
+
+static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t a, uint32_t b,
+                        int p, int q) {
+  unsigned *const cost = k->cost;
+  Rec *const rec = &s_rec[kind];
+  VCacheStats *const st = k->st;
+  const int form = how & 15;
+  const unsigned who = (unsigned)how >> 4 < VCD_WHO_N ? (unsigned)how >> 4 : 0;
+  float w[VC_CANDS], dx, dy;
+  int taint = 0;
+  unsigned n = 0, i, j;
+  Touch t = TOUCH0;
+  Hk *h;
+  if (!rec->tab)
+    return;
+  st->hk_calls++;
+  /* #202: the sources as before first; a merged place only where they
+   * give none */
+  if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t) < 0 &&
+      (s_dg_old ||
+       hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t) < 0))
+    goto nosrc;
   h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
   if (!h) {
     st->hk_full++;
     goto out;
   }
   touch(&t, offsetof(Table, hk) + (size_t)(h - rec->tab->hk) * sizeof(Hk), sizeof(Hk));
+  /* #202: a hand-over made from a merged place counts only where nothing
+   * else placed the key, and gives way to one that isn't (whatever
+   * merged places come to, every point placed without them stays as it
+   * was) */
+  if (h->placed && taint && !h->taint) {
+    st->hk_kept++;
+    goto out;
+  }
+  if (h->placed && !taint && h->taint) {
+    h->n = h->dead = h->placed = h->taint = 0;
+  }
   if (h->dead)
     goto out;
   if (h->placed) { /* handed over before: the same point (its depths added), or not used */
@@ -1594,10 +1639,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
         if (getenv("VC_CSAMP") && ns < 300 && rec->gen > 5700) {
           ns++;
           PsyX_Log("VCC202 g%u key %d,%d had %.3f,%.3f (who %u) now %.3f,%.3f form %d a %d,%d b %d,%d "
-                   "p %d,%d q %d,%d ea %d eb %d na %d nb %d w %g", rec->gen, (short)key, (short)(key >> 16),
+                   "p %d,%d q %d,%d w %g", rec->gen, (short)key, (short)(key >> 16),
                    h->dx, h->dy, h->who, dx, dy, form, (short)a, (short)(a >> 16), (short)b,
                    (short)(b >> 16), (short)p, (short)((unsigned)p >> 16), (short)q,
-                   (short)((unsigned)q >> 16), ea, eb, na, nb, n ? w[0] : 0.0f);
+                   (short)((unsigned)q >> 16), n ? w[0] : 0.0f);
         }
       }
       goto out;
@@ -1607,6 +1652,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     h->dy = h->sy = dy;
     h->who = (uint8_t)who;
     h->placed = 1;
+    h->taint = (uint8_t)taint;
   }
 depths:
   for (i = 0; i < n; i++) {
@@ -2239,6 +2285,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
                        : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
 
   int dg_none = 0; /* TEMP202 */
+  VCacheVert c_dbg[4] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
   dg_init();
   s_dg_der = 0;
   {
@@ -2581,6 +2628,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
+    memcpy(c_dbg, c, sizeof c); /* TEMP202 */
   } else if (async) {
     st->side_lost += n;
   }
@@ -2603,6 +2651,28 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     memcpy(rec, &hsh, 4);
     rec[4] = (unsigned char)(((r0 & VREF_PERSP) ? 1 : 0) | n << 4);
     fwrite(rec, 1, 5, s_dg_dump);
+    {
+      static long pidx = -1, plo = -2, pn;
+      pidx++;
+      if (plo == -2) {
+        plo = getenv("VC_PIDX") ? atol(getenv("VC_PIDX")) : -1;
+        pn = getenv("VC_PIDN") ? atol(getenv("VC_PIDN")) : 0;
+      }
+      if (plo >= 0 && pidx >= plo && pidx < plo + pn) {
+        const uint32_t g = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+        PsyX_Log("VCP202 #%ld g%u gs%d %s n%d persp%d hsh %08x", pidx, g, dg_gs(),
+                 dg_name(pres, g, (uintptr_t)xy[0]), n, (r0 & VREF_PERSP) != 0, hsh);
+        for (i = 0; i < n; i++)
+          PsyX_Log("VCP202   v%d key %d,%d e%d amb%d hk%d side %.4f,%.4f w %g%s", i, xy[i][0], xy[i][1],
+                   e[i] != NULL, amb[i], hk[i] != NULL, c_dbg[i].dx, c_dbg[i].dy, c_dbg[i].w,
+                   hk[i] ? "" : "");
+        for (i = 0; i < n; i++)
+          if (hk[i])
+            PsyX_Log("VCP202   hk v%d place %.4f,%.4f n%u placed%u taint%u who%u w0 %g", i, hk[i]->dx,
+                     hk[i]->dy, hk[i]->n, hk[i]->placed, hk[i]->taint, hk[i]->who,
+                     hk[i]->n ? hk[i]->c[0].w : 0.0f);
+      }
+    }
   }
 }
 
