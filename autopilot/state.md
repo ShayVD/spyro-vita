@@ -11,18 +11,16 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 207,
-      "branch": "auto/207-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-207",
+      "issue": 206,
+      "branch": "auto/206-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-206",
       "pids": [],
-      "started_at": "2026-11-21T17:11:26Z",
+      "started_at": "2026-11-21T18:20:25Z",
       "files": [
-        "docs/host-build.md",
-        "src/platform/vita/prof_draw.c",
-        "docs/vita-testing.md"
+        "src/platform/common/vcache.c"
       ],
-      "agent": "a9fc200ddb53a9efe",
-      "reported": true
+      "agent": "a96b14272344e4b07",
+      "last_commit_at": "2026-11-21T19:39:03+00:00"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -328,3 +326,10 @@ continue.
 - 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)
 - 18:11Z phase 8: #205 gate running; #207 reported, gate queued
 - 18:19Z phase 8: merged #205 (D202)
+- 18:20Z phase 8: gate #207 running; worker #206 started (#202, #204 wait: docs/vita-testing.md with #207, vcache.c with #206)
+- 19:05Z phase 8: merged #207 (D203)
+- 19:37Z phase 8: #206 running (WIP commit 2e1cfb3); #202 #204 wait on vcache.c
+- 20:08Z phase 8: #206 committed 69fafd6, running its checks; #202 #204 wait
+- 20:39Z phase 8: #206 still running its checks (last commit 19:39Z); #202 #204 wait
+- 21:10Z phase 8: #206 still running its checks; #202 #204 wait
+- 21:41Z phase 8: stall check flagged #206 (last commit 19:39Z) but it is alive in its final checks (Vita build done, routes owner60/pause-ws running, ctest log present): not stopped

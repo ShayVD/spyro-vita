@@ -970,3 +970,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Left:**
   - `render_ctx.c`'s `pres_ngte_vcache` and its copy are now dead code.
   - Storing the sums for the walk, which needs a 32-byte store record, is a trade-off for hardware to judge.
+
+## 2026-11-21 — KB of primitives per draw part on the Vita (#207)
+
+### D203. The Vita's draw profile gives each part's KB of primitives; `host-build.md` describes D199's lines (#207)
+
+- **Why:** to get each part's cost per KB from a hardware log directly (D199's estimates came from ratios). `host-build.md` still described the old `--lod-stats` and `--prof-draw` formats.
+- **What:**
+  - `src/platform/vita/prof_draw.c` counts, per part, how far the primitive pointer (`D_800757B0`) moved across each wrapped call. That's the same count as the host's `--prof-draw` (D199).
+    - Moves of 0x100000 or more are left out (the HUD's mobys draw from the top).
+    - The sky main counts only outside the cyclorama, as its time does.
+  - A new line follows each `draw N:` line: `draw kb N: per vblank KB of primitives update U env E mobys M spyro S fx F particles P sky K`. The `draw N:` line and its parsers are unchanged.
+  - Docs: `host-build.md` describes D199's `lod` back-offs, plus the `--prof-draw` KB, `renderers` and `sky main` lines. `vita-testing.md` documents `draw kb`.
+- **Checked** (`runtime/autopilot/reports/207-1.md`):
+  - In Vita3K `owner60`, the parts add up to the `lod` line's averages: 67.7 against 67 KB at 7,200, and 37.9 against 38 at 8,400.
+  - `owner60`'s shots are the same as `base-63d80f4`.
+  - `fps60_summary.py`, `native_share.py` and `hw_cmp.py` still read the log.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
