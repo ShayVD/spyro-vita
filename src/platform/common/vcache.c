@@ -44,8 +44,9 @@
  * candidate holds its index (dy FAR_MARK). Saturated keys collide (one
  * SX = 1023 for many points), so a clamped projection and another point
  * under one key make it ambiguous, never "multi" (T_MULTI's integer
- * position is the clamped one). Still invalid: a depth of 0 or less, and a
- * key that isn't the GTE's answer for these inputs.
+ * position is the clamped one); since #192 the frame's order can name the
+ * clamped point for a polygon (resolve, below). Still invalid: a depth of 0
+ * or less, and a key that isn't the GTE's answer for these inputs.
  *
  * Ambiguous keys (#181). More than four different points under one key
  * (far mobys and far ground at a long draw distance) made it ambiguous,
@@ -54,7 +55,8 @@
  * table keeps the answer of each projection under a key with different
  * points (lc), so a polygon whose other vertices are found takes, for that
  * vertex, the depths of the projections under its key near theirs in the
- * frame's order (resolve), its position the key's integer one.
+ * frame's order (resolve), its position the key's integer one (#192: a
+ * clamped point's own place, when the order names it alone).
  *
  * Sub-pixel positions are decided per key, not per polygon: a key that
  * is found gives every polygon using it the same point, and one that isn't
@@ -154,6 +156,8 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 #define VC_LOG 8192  /* projections a frame in the order they came (#183) */
 #define VC_NOSEQ 0xFFFFu
 #define LOG_LC 0x8000u /* a log place's flag: lc holds its answer (#181) */
+#define LOG_CL 0x4000u /* ... a clamped projection's (#192: its own place, in lc or lfar) */
+#define VC_LFAR 1024   /* those places out of a candidate's int16 range, per frame (#192) */
 #define LOG_E(x) ((x) & 0x1FFFu) /* a log place's entry */
 
 enum { E_VALID = 1, E_INVALID = 2, E_AMBIGUOUS = 3 };
@@ -245,6 +249,12 @@ typedef struct {
   int lazy, lz_tried;
   struct Lazy *lz;
   unsigned nfar;
+  /* #192: the exact positions of the clamped projections lc holds that
+   * don't fit an int16, one per projection (far is one per key's
+   * candidate), nlfar of them this frame; only indexed by the frame's own
+   * lc, so never cleared */
+  unsigned nlfar;
+  float lfar[VC_LFAR][2];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -623,12 +633,24 @@ static int add_cand(Table *tb, Entry *s, int16_t dx, int16_t dy, float px, float
 
 static inline void set_state(Entry *s, unsigned state) { s->tag = (s->tag & ~3u) | state; }
 
-/* A projection's own answer at its log place q (Table lc, #181) */
+/* A projection's own answer at its log place q (Table lc, #181). A clamped
+ * one's too (#192), flagged LOG_CL: its exact position as a candidate's, or
+ * dy FAR_MARK and dx its index in lfar (px, py), so resolve can tell it
+ * from the key's other points by the frame's order (w 0 when lfar is
+ * full). */
 static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
-                              float w, float w_alt, unsigned *cost) {
+                              float px, float py, float w, float w_alt, unsigned *cost) {
   Cand *const l = &tb->lc[q];
   tb->log[q] |= LOG_LC;
-  if (state == E_VALID && !clamped) {
+  if (state == E_VALID && (fy != FAR_MARK || tb->nlfar < VC_LFAR)) {
+    if (clamped)
+      tb->log[q] |= LOG_CL;
+    if (fy == FAR_MARK) {
+      tb->lfar[tb->nlfar][0] = px;
+      tb->lfar[tb->nlfar][1] = py;
+      fx = (int16_t)tb->nlfar++;
+      cost[VCC_REC_LINES]++; /* a model: a line each */
+    }
     l->dx = fx;
     l->dy = fy;
     l->w = w_alt > 0 ? -w : w;
@@ -743,7 +765,7 @@ static void rtp_apply(Table *tb, const Sink *k, const int *proj, int vx, int vy,
 done:
   if (amb) { /* #181: only its answer */
     if (q >= 0)
-      log_answer(tb, q, state, clamped, fx, fy, w, w_alt, cost);
+      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
     return;
   }
   if (state == E_INVALID)
@@ -766,7 +788,7 @@ done:
       set_state(s, E_AMBIGUOUS);
     }
     if (q >= 0) /* #181 */
-      log_answer(tb, q, state, clamped, fx, fy, w, w_alt, cost);
+      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
     return;
   }
   /* Another projection under this key: the same point again (shared by
@@ -783,7 +805,7 @@ done:
    * projection's own answer after its first; under any other, every
    * projection is the first's point at one of the candidates' depths */
   if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
-    log_answer(tb, q, state, clamped, fx, fy, w, w_alt, cost);
+    log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
 }
 
 /* Projections worked out when they're needed (#193, #179).
@@ -1580,19 +1602,72 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
  * several points. The position stays the key's integer one, as for every
  * key with different points (T_MULTI): the same for every polygon using it.
  *
- * Not resolved (the vertex stays ambiguous, the polygon affine): a key a
- * clamped projection made ambiguous (its point lies far off its pixel), one
- * with an invalid projection (the prim may be that one), more than RC_MAX
- * depths, or a frame whose log is full (a projection may be missing).
+ * Clamped points (#192). A clamped projection's point lies off its pixel
+ * (the GTE's saturated SXY: one key for many points), so it can't be drawn
+ * at the key. lc holds its own exact place too (LOG_CL; lfar when it
+ * doesn't fit a candidate), and when the projections near the polygon's
+ * others are all of one point (within 1/8 pixel of each other), the vertex
+ * is drawn at that point's place: its oldest projection's, the same for
+ * every polygon whose order names it (rx[v], rp[v]). With a clamped point
+ * among several near ones it stays ambiguous: no place can be told.
+ *
+ * Not resolved (the vertex stays ambiguous, the polygon affine): an
+ * invalid projection among those near the others (the prim may be that
+ * one; #192: one elsewhere in the frame doesn't count), a clamped point
+ * among several near ones, more than RC_MAX depths, or a frame whose log is
+ * full (a projection may be missing). Until #192 a key with more than 32
+ * projections, any clamped or invalid one among them, or a clamped first
+ * point stayed ambiguous too.
  *
  * Fills rc[v], rn[v] for each vertex v with amb[v] set (its entry ks[v]):
- * depths only (dx, dy 0). *one: every such vertex had one point near the
- * others in the order. Returns 1, or 0 not resolved. */
+ * depths only (dx, dy 0), and rx[v] 1 with its place in rp[v] (pixels from
+ * the pixel centre) for a clamped point, else 0 (the key's integer
+ * position). *one: every such vertex had one point near the others in the
+ * order. Returns 1, or 0 not resolved. */
 #define RC_MAX 16
 #define VC_NEAR 256 /* a batch: a sector's or a model's points (up to 255 a sector) */
+#define RC_PTS 32   /* the near points kept to count them (#192: not a limit on projections) */
+
+/* within 1/8 pixel (a candidate's 32/256: exact for those, as add_cand's) */
+static inline int near8(float ax, float ay, float bx, float by) {
+  return ax - bx <= 0.125f && bx - ax <= 0.125f && ay - by <= 0.125f && by - ay <= 0.125f;
+}
+
+/* Log place r under entry en: its point (pixels from the pixel centre), its
+ * depth (0: candidate 0's point, at its candidates' depths there), alt (a
+ * maybe-precision depth: w / 16 too) and clamped. 0: no usable answer (an
+ * invalid projection, or a first one with no candidate). */
+static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, float *y, float *w,
+                     int *alt, int *cl) {
+  if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
+    if (!T_N(en->tag))
+      return 0;
+    cand_pos(tab, &en->c[0], x, y);
+    *w = 0;
+    *alt = 0;
+    *cl = (en->tag & T_CLAMP) != 0;
+  } else {
+    const Cand *const l = &tab->lc[r];
+    if (l->w == 0)
+      return 0;
+    *alt = l->w < 0;
+    *w = *alt ? -l->w : l->w;
+    if (l->dy == FAR_MARK) {
+      *x = tab->lfar[(uint16_t)l->dx][0];
+      *y = tab->lfar[(uint16_t)l->dx][1];
+    } else {
+      *x = l->dx * (1.0f / 256);
+      *y = l->dy * (1.0f / 256);
+    }
+    *cl = (tab->log[r] & LOG_CL) != 0;
+  }
+  return 1;
+}
+
 static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int n,
-                   Cand rc[4][RC_MAX], unsigned *rn, unsigned *cost, int *one) {
-  unsigned anc[32], na = 0, nq, a;
+                   Cand rc[4][RC_MAX], unsigned *rn, float rp[4][2], int *rx, unsigned *cost,
+                   int *one) {
+  unsigned anc[32], na = 0, a;
   int i;
   *one = 1;
   if (tab->nlog >= VC_LOG)
@@ -1606,89 +1681,94 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
     }
   for (i = 0; i < n; i++) {
     const Entry *const en = &tab->s[amb[i] ? ks[i] : 0]; /* (#189: a hand-over's ks is -1) */
-    struct {
-      int16_t dx, dy;
-      float w; /* 0: candidate 0's point, at its candidates' depths there */
-      unsigned d;
-      int alt;
-    } p[32];
     const Cand *const c = en->c;
-    unsigned r, np = 0, j, near = 0, pts = 0;
-    float w;
+    const unsigned nc = T_N(en->tag);
+    float kx[RC_PTS], ky[RC_PTS], fx = 0, fy = 0, x, y, w;
+    unsigned r, j, k, m, nk, nsel, pts, near = 0, seen = 0;
+    int pass, alt, ccl, cl, onept;
     if (!amb[i])
       continue;
-    r = tab->last[ks[i]];
-    if ((en->tag & T_CLAMP) || !T_N(en->tag) || c[0].dy == FAR_MARK)
-      return 0;
-    for (nq = 0; r != VC_NOSEQ; r = tab->prev[r], nq++) {
-      int alt = 0;
-      unsigned d = 0;
-      if (nq == 32)
-        return 0;
-      if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
-        p[np].dx = c[0].dx;
-        p[np].dy = c[0].dy;
-        w = 0;
-      } else {
-        const Cand *const l = &tab->lc[r];
-        if (l->w == 0)
-          return 0; /* invalid or clamped: the prim may be that one */
-        alt = l->w < 0;
-        p[np].dx = l->dx;
-        p[np].dy = l->dy;
-        w = alt ? -l->w : l->w;
-      }
-      if (na) { /* only whether one is near counts (#193: not the nearest) */
-        d = VC_NEAR + 1;
-        for (a = 0; a < na; a++)
-          if (r + VC_NEAR - anc[a] <= 2 * VC_NEAR) { /* |r - anc[a]| <= VC_NEAR */
-            d = 0;
-            break;
-          }
-      }
-      p[np].w = w;
-      p[np].d = d;
-      p[np].alt = alt;
-      near += d <= VC_NEAR;
-      np++;
-    }
-    cost[VCC_LOOK_LINES] += np; /* a model: a line each */
-    /* the projections near the others in the order (all if none is) */
-    rn[i] = 0;
-    for (j = 0; j < np; j++) {
-      unsigned m, k;
-      if (near && p[j].d > VC_NEAR)
-        continue;
-      if (pts < 2) { /* (#193: past two, only that it isn't one counts) */
-        for (k = 0; k < j; k++) /* one point (as add_cand) counted once */
-          if ((!near || p[k].d <= VC_NEAR) && p[k].dx - p[j].dx <= 32 && p[j].dx - p[k].dx <= 32 &&
-              p[k].dy - p[j].dy <= 32 && p[j].dy - p[k].dy <= 32)
-            break;
-        pts += k == j;
-      }
-      for (m = 0; m < (p[j].w == 0 ? T_N(en->tag) : 1u + (p[j].alt != 0)); m++) {
-        float wd;
-        if (p[j].w == 0) { /* candidate 0's point: the candidates there */
-          if (c[m].dy == FAR_MARK || c[m].dx - c[0].dx > 32 || c[0].dx - c[m].dx > 32 ||
-              c[m].dy - c[0].dy > 32 || c[0].dy - c[m].dy > 32)
+    rx[i] = 0;
+    /* The projections near the others in the order, or all of them if none
+     * is (a second pass). #192: the whole chain, however long; only those
+     * taken are kept, and only to count the points. */
+    for (pass = 0;; pass++) {
+      rn[i] = nk = nsel = pts = 0;
+      cl = 0;
+      onept = 1;
+      for (r = tab->last[ks[i]]; r != VC_NOSEQ; r = tab->prev[r]) {
+        seen++;
+        if (!pass && na) { /* only whether one is near counts (#193: not the nearest) */
+          for (a = 0; a < na; a++)
+            if (r + VC_NEAR - anc[a] <= 2 * VC_NEAR) /* |r - anc[a]| <= VC_NEAR */
+              break;
+          if (a == na)
             continue;
-          wd = c[m].w;
-        } else
-          wd = m ? flt(p[j].w * (1.0f / 16)) : p[j].w;
-        for (k = 0; k < rn[i]; k++)
-          if (same_depth(rc[i][k].w, wd, &cost[VCC_LOOK_DIV]))
-            break;
-        if (k < rn[i])
-          continue;
-        if (rn[i] == RC_MAX)
-          return 0;
-        rc[i][rn[i]].dx = rc[i][rn[i]].dy = 0;
-        rc[i][rn[i]].w = wd;
-        rn[i]++;
+        }
+        near += !pass;
+        if (!res_place(tab, en, r, &x, &y, &w, &alt, &ccl))
+          return 0; /* invalid: the prim may be that one */
+        if (!nsel++) {
+          fx = x;
+          fy = y;
+        } else if (!near8(fx, fy, x, y))
+          onept = 0;
+        cl |= ccl;
+        if (pts < 2) { /* one point (as add_cand) counted once (#193: past two, only that it isn't one) */
+          for (k = 0; k < nk; k++)
+            if (near8(kx[k], ky[k], x, y))
+              break;
+          pts += k == nk;
+          if (nk < RC_PTS) {
+            kx[nk] = x;
+            ky[nk] = y;
+            nk++;
+          }
+        }
+        for (m = 0; m < (w == 0 ? nc : 1u + (alt != 0)); m++) {
+          float wd;
+          if (w == 0) { /* candidate 0's point: the candidates there */
+            if (c[m].dy == FAR_MARK || c[0].dy == FAR_MARK) {
+              float cx, cy;
+              cand_pos(tab, &c[m], &cx, &cy);
+              if (!near8(cx, cy, x, y))
+                continue;
+            } else if (c[m].dx - c[0].dx > 32 || c[0].dx - c[m].dx > 32 ||
+                       c[m].dy - c[0].dy > 32 || c[0].dy - c[m].dy > 32)
+              continue;
+            wd = c[m].w;
+          } else
+            wd = m ? flt(w * (1.0f / 16)) : w;
+          for (j = 0; j < rn[i]; j++)
+            if (same_depth(rc[i][j].w, wd, &cost[VCC_LOOK_DIV]))
+              break;
+          if (j < rn[i])
+            continue;
+          if (rn[i] == RC_MAX)
+            return 0;
+          rc[i][rn[i]].dx = rc[i][rn[i]].dy = 0;
+          rc[i][rn[i]].w = wd;
+          rn[i]++;
+        }
       }
+      if (pass || !na || near)
+        break;
     }
     if (pts != 1 || !near)
       *one = 0;
+    if (cl) { /* a clamped point near: drawn at its place, if the order names it alone */
+      if (!onept)
+        return 0;
+      rx[i] = 1;
+      rp[i][0] = fx;
+      rp[i][1] = fy;
+      for (r = tab->last[ks[i]]; r != VC_NOSEQ; r = tab->prev[r], seen++) /* its oldest */
+        if (res_place(tab, en, r, &x, &y, &w, &alt, &ccl) && near8(fx, fy, x, y)) {
+          rp[i][0] = x;
+          rp[i][1] = y;
+        }
+    }
+    cost[VCC_LOOK_LINES] += seen; /* a model: a line each */
   }
   return 1;
 }
@@ -1713,6 +1793,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   Cand rc[4][RC_MAX];
   unsigned rn[4];
   int res = 0; /* those resolved */
+  /* ... those whose order named a clamped point alone, and its place (#192) */
+  float rp[4][2];
+  int rx[4] = {0, 0, 0, 0};
   VCacheVert dv = {0, 0, 1};
   /* vertices with no entry their renderer handed over (#189): its
    * hand-over, and those used */
@@ -1840,7 +1923,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     for (i = 0; i < n; i++)
       if (!amb[i])
         ks[i] = (int)((ref[i] & VREF_SLOT) - 1);
-    if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, cost, &one)) {
+    if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one)) {
       for (i = 0; i < n; i++) {
         e2[i] = amb[i] ? rc[i] : e[i];
         en2[i] = amb[i] ? rn[i] : en[i];
@@ -1850,7 +1933,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
           if (amb[i]) {
             e[i] = rc[i];
             en[i] = rn[i];
-            et[i] = ptab->s[ks[i]].tag | T_MULTI; /* its key's integer position */
+            /* its key's integer position, or a clamped point's own (#192) */
+            et[i] = rx[i] ? (ptab->s[ks[i]].tag & ~T_MULTI) | T_CLAMP
+                          : (ptab->s[ks[i]].tag | T_MULTI) & ~T_CLAMP;
             ref[i] |= (uint32_t)ks[i] + 1;
           }
         persp = VREF_PERSP;
@@ -1866,6 +1951,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     work[3] += (unsigned)nambig;
     st->miss_ambiguous += (unsigned)nambig;
   }
+  for (i = 0; i < n; i++) /* #192: a clamped point the order named is drawn at its place, as a
+                             found clamped key's is (D174), even with the polygon affine */
+    if (rx[i])
+      clamp = 1;
   if (res || der) {
     /* chosen above */
   } else if (persp) {
@@ -1894,7 +1983,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     uint32_t r = ref[i] | persp | (uint32_t)(res && amb[i] ? 0 : pick[i]) << VREF_CAND_SHIFT;
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
-    if ((et[i] & T_CLAMP) || (i == none && der_moved) || hk[i]) /* (#189: moved by its renderer) */
+    /* (#189: moved by its renderer; #192: a clamped point the order named) */
+    if ((et[i] & T_CLAMP) || (i == none && der_moved) || hk[i] || rx[i])
       r |= VREF_CLAMP;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
@@ -1912,11 +2002,15 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     for (i = 0; i < n; i++) {
       c[i].dx = c[i].dy = 0;
       c[i].w = 1;
+      if (rx[i]) { /* #192 */
+        c[i].dx = rp[i][0];
+        c[i].dy = rp[i][1];
+      }
       if (e[i]) {
         if (hk[i]) { /* #189 */
           c[i].dx = hk[i]->dx;
           c[i].dy = hk[i]->dy;
-        } else if (!(et[i] & T_MULTI))
+        } else if (!(et[i] & T_MULTI) && !rx[i])
           cand_pos(ptab, &e[i][0], &c[i].dx, &c[i].dy);
         if (persp)
           c[i].w = e[i][pick[i]].w;
@@ -1949,6 +2043,7 @@ static void pres_next(void) {
   Rec *const r = &s_rec[VC_PRES];
   r->count = 0;
   r->tab->nfar = 0;
+  r->tab->nlfar = 0;
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
@@ -1985,6 +2080,7 @@ static void done_hook(void) {
   if (r->tab->stale)
     table_clear(r->tab);
   r->tab->nfar = 0;
+  r->tab->nlfar = 0;
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;

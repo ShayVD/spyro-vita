@@ -278,7 +278,9 @@ typedef struct {
   /* #181: vertices whose key is ambiguous (different points on its pixel)
    * drawn with a depth from the projections under it near the polygon's
    * others in the frame's order (vcache.c resolve), counted in hits (and
-   * their polygon in persp), not in miss_ambiguous */
+   * their polygon in persp), not in miss_ambiguous; #192: a clamped point
+   * the order names alone at its own place (counted in clamp_polys too),
+   * and keys with more than 32 projections */
   unsigned resolved;
   unsigned res_order; /* ... of those where the order left one point */
   /* #189: vertices with no entry found from their renderer's hand-over
