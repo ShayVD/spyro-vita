@@ -48,9 +48,12 @@ extern char __text_start[];
 extern char __bss_start[];
 extern char _end[];
 
+/* Small alignment on purpose: create-fself maps .bss as if it began right
+ * after the data, so a 16 KB-aligned array here cut its end off and the PS4
+ * refused the eboot (run 1, 2; tools/ps4/oelf_check.py). */
 static unsigned char g_arena[ARENA_SIZE] __attribute__((aligned(64)));
-static unsigned char g_sce_stack[STACK_SIZE] __attribute__((aligned(16384)));
-static unsigned char g_posix_stack[STACK_SIZE] __attribute__((aligned(16384)));
+static unsigned char g_sce_stack[STACK_SIZE] __attribute__((aligned(64)));
+static unsigned char g_posix_stack[STACK_SIZE] __attribute__((aligned(64)));
 static int g_data_word = 0x5350; /* .data */
 static const char g_rodata[] = "rodata";
 

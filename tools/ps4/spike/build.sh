@@ -39,6 +39,7 @@ cflags=(--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -fms-extensions -
 "$PS4_LD" -m elf_x86_64 -pie --script "$OO/link.x" --eh-frame-hdr --build-id=none \
   "--defsym=__bss_start=ADDR(.bss)" "--defsym=_end=ADDR(.bss)+SIZEOF(.bss)" \
   -L"$OO/lib" -lc -lkernel "$OO/lib/crt1.o" "$out/main.o" -o "$out/spike.elf"
+python3 "$root/tools/ps4/oelf_check.py" "$out/spike.elf"
 
 stage=$out/stage
 rm -rf "$stage" && mkdir -p "$stage/sce_sys/about" "$stage/sce_module"
