@@ -882,3 +882,34 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The five routes' shots are the same as `base-63d80f4`.
   - Counters are the same, except `owner60`'s timing-dependent kept/once split.
   - Native build, host ctest 32/32, `noassets`, and gate PASS.
+
+## 2026-11-21 — a shader cache for start-up (#201)
+
+### D200. The start-up's shaders go through a program cache in `ux0:data/spyro/shader_cache/` (`shader_cache=0` turns it off) (#201)
+
+- **Why:**
+  - Every boot logged `gpu: shaders compiled in` 10,035–10,211 ms (13 hardware logs, 2026-11-20/21), behind a black screen.
+  - The installed vitaGL is built without `HAVE_SHADER_CACHE`: its `vglSetShaderCachePath` is a bare `bx lr`.
+- **What:**
+  - **Save and load:** `gpu_gl.c`'s `link()` saves each linked program with `glGetProgramBinary` to `shader_cache/<key>.bin`. The file has a header with a magic number, version, key, length and FNV-1a checksum, and is written as `.tmp` and then renamed. Later boots load it with `glProgramBinary`, with no compile.
+  - **Key:** a 64-bit FNV of:
+    - the program's sources and attribute bindings;
+    - the format version and the compiler options;
+    - the SHA-1 of `libvitaGL.a` and `libvitashark.a` (CMake, at configure time);
+    - each `libshacccg.suprx` found (size and date).
+  - **Stale and bad files:** a `stamp` file empties the folder when the libraries or the compiler change. A file that fails its checks or its link is removed, and the program is compiled.
+  - **Log:** one line per program (hit or miss, with its time). The start-up line now gives the totals.
+- **Measured** (Vita3K, `runtime/autopilot/runs/auto-201-1`; counts only, since Vita3K's compile times aren't the Vita's):
+
+  | Run | Compiled | From the cache | Start-up line |
+  |---|---|---|---|
+  | First boot | 15 programs (17 asked for, 2 repeats) | – | 10,771 ms |
+  | Second boot | 0 | 17 of 17 | 17 ms |
+  | `shader_cache=0` | 17 | 0 | 6,969 ms |
+
+- **Checked:**
+  - The five routes' shots are the same as `base-63d80f4`.
+  - `CAPTURE=1` window grabs are the same from the cache and from compiling.
+  - Counters are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Not checked on hardware:** the black-screen time, and 17 cache hits on the second boot.
