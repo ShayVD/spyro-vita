@@ -261,10 +261,11 @@
  *       pres_prio=N     that thread's priority, 0x40 to 0xBF (default 0x9A,
  *                       behind the parse thread's 0x98; 0x96 is ahead of
  *                       it; #195)
- *       vc_lazy=0       with persp or subpixel, the presenter's projections
- *                       worked out as it makes them (default 1: when first
- *                       read, #193; the same pictures; #195)
- *       vc_lazy_logic=N with persp or subpixel and vc_lazy=1, the logic
+ *       vc_lazy=1       with persp or subpixel, the presenter's projections
+ *                       worked out when first read (#193, #195; the same
+ *                       pictures). Default 0 (#198): as it makes them; the
+ *                       lazy form locked the game-over screen at 60 late a 300
+ *       vc_lazy_logic=N with persp or subpixel, the logic
  *                       draw's projections: 0 each one at once on the game
  *                       thread, 2 always kept for the walk, 1 (default)
  *                       kept while the walk has time (D188; the same
@@ -398,7 +399,7 @@ extern int g_nd_ab; /* D91 */
 extern int g_nd_direct; /* D99 */
 extern int g_gpu_clear; /* gpu_soft.c, D111 */
 extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
-static int s_vc_lazy = 1;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193) */
+static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off since #198 */
 static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
 void nd_init(void (*log)(const char *fmt, ...));
 

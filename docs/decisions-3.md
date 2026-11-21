@@ -729,3 +729,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **AP13 (Toasty at 30 Hz with in-between frames) against AP10 (D179):** Toasty's late vblanks per 300 30.7 → 3.5 (#193, #195). The presenter still runs at 95% in Toasty's opening (12,000–12,600) but no longer misses frames.
 - **Regression (#198):** on the game-over screen in Artisans (gamestate 5, reached at ~19,350 by both AP10 and AP13), the new build settles from 20,100 into exactly 60 late vblanks per 300. The render thread takes 16.65 ms a picture, of which 11.5 ms is its present; it skips the draws of ~180 in-between frames per 300. The presenter is busy 91% (7.45 → 15.4 ms a vblank) for the same work counters, and drops ~200 game-thread frames from a full queue. ca4450e (AP10) holds 0 late on the same screen. AP14b shows the same lock after its own game over (19,500–21,000, 60 late per 300). For a short stretch in Toasty (13,200–15,000) AP14b's render thread also runs at 16 ms a picture, without late vblanks. The work counters don't change, so this looks like a pacing lock between the presenter, its buffers and the render thread's present rather than more work. Suspects: D187's `parse_thread=2`, D186's lazy presenter. Not bisected: each run needs the owner's yes.
 - **Left on the Vita:** 63d80f4's eboot (SHA-1 f102a69c, READBACK IDENTICAL).
+
+### D193. The presenter's projections are worked out as it makes them again (`vc_lazy=0` by default); the logic draw's deferral no longer needs `vc_lazy` (#198)
+
+- **Why:** D192's regression, bisected on hardware with the owner's yes ("sure run them"; `runtime/autopilot/hw-session5.sh`, `tools/vita/fps-runs/ap15-*.txt`, logs `logs/hw-ap15a`–`c`). These are AP13 (Toasty at 30 Hz with in-between frames, the wobble fix on) on `autopilot-63d80f4.vpk`, each with one switch changed:
+
+  | Run | Game-over screen, late per 300 (20,100–21,000) | Toasty, late per 300 | Toasty opening, presenter busy |
+  |---|---|---|---|
+  | AP13 (defaults) | 53–61 | 3.5 | 95% |
+  | AP15a `parse_thread=1` | 86 | 62.2 | – |
+  | AP15b `vc_lazy=0` | **0** | **2.8** | 89% |
+  | AP15c `vc_lazy_logic=0` | 60–62 | 7.3 | – |
+
+  D186's lazy presenter is what locks the game-over screen: the same work counters, but the presenter takes twice as long a frame. On hardware it gains nothing in Toasty either: D186's gain was measured in Vita3K. D187's `parse_thread=2` is right; `parse_thread=1` is much worse.
+- **What:**
+  - The Vita's `vc_lazy` default is 0. `vc_lazy=1` keeps D186's form for A/B.
+  - `vcache.c`'s logic-frame deferral (D188, `vc_lazy_logic`) no longer requires `vc_lazy`, so the owner's 60 HZ settings keep it (AP11's `vc.rec.kept`). The host never sets either switch, so its defaults are unchanged.
+  - Docs: `vita-testing.md`'s two rows and its `vpk-perfcount-vc` note, `main.c`'s key list.
+- **Checked:**
+  - AP15b is this default on hardware, except that it has no logic deferral, which `vc_lazy=0` turned off until now.
+  - Vita3K `wobble60` and `owner60`: 91 of 91 shots the same as `base-63d80f4` each (`runtime/autopilot/runs/auto-198`); `owner60` keeps the logic deferral (`vc.rec.kept` 39,795 against 40,542 at 8,701–9,000). Host build and ctest: 32 of 32 (`runtime/autopilot/host-198.log`).
+  - Not rerun on hardware: the game-over screen with this exact build.

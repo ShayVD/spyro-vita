@@ -2220,7 +2220,7 @@ static void done_hook(void) {
    * in-between frames */
   if (s_since_pres < 255)
     s_since_pres++;
-  lz_next(r->tab, s_lazy && (s_lazy_logic == 2 || (s_lazy_logic == 1 && s_since_pres > LZ_QUIET)));
+  lz_next(r->tab, (s_lazy_logic == 2 || /* not tied to s_lazy (#198) */ (s_lazy_logic == 1 && s_since_pres > LZ_QUIET)));
 }
 
 int psx_vcache_double(void) {
