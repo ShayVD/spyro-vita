@@ -39,7 +39,8 @@ enum {
   VPC_VC_INVALID,    /* vertex cache, the game thread's (#178): projections recorded invalid */
   VPC_VC_FALLBACK,   /* ... polygons drawn affine because a vertex's key was invalid */
   VPC_VC_CLAMPED,    /* ... projections the GTE clamped, recorded at their exact position */
-  VPC_COUNT          /* at most VPK_PC_MAX (32) */
+  VPC_COUNT          /* at most VPK_PC_MAX (32); #179's vertex cache counters are on a line of
+                        their own (perfcount.c, vpk-perfcount-vc) */
 };
 extern int g_vpc[VPC_COUNT];
 

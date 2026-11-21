@@ -16,7 +16,26 @@
  * probes and table lines, records and lookups added; issue #172) and the presenter's frames (present.c's g_present_stats). The shared code
  * needs nothing of the kit (the host links none), and no hot path has an
  * atomic (D165).
- * Keep the names stable: runs compare by name. */
+ * Keep the names stable: runs compare by name.
+ *
+ * #179: the vertex cache's record split and what its lookups found again
+ * go on a line of their own, "vpk-perfcount-vc:" in the kit's format and
+ * windows (perf_report.py --prefix vpk-perfcount-vc), since the kit's
+ * table holds 32 counters and 31 are taken (vpk_perfcount.h VPK_PC_MAX):
+ *  - vc.rec.kept, vc.rec.once, vc.rec.game: the logic draw's projections
+ *    the game thread kept for its walk, worked out at once, and worked out
+ *    in all (vcache.c g_vcache_rec[0]); vc.rec.div, vc.rec.probe,
+ *    vc.rec.lines: what the game thread's records cost (the record part of
+ *    vc.div, vc.probe, vc.lines), vc.rec.store: the lines of the store the
+ *    kept ones were written to (not in vc.lines);
+ *  - vc.walk.rec, vc.walk.div, vc.walk.lines: the projections its walk
+ *    worked out and their cost (g_vcache_rec[1]);
+ *  - vc.resolved, vc.derived, vc.hooked: the logic draw's frames' vertices
+ *    found again from the frame's order (#181), from their polygon (#183)
+ *    and from their renderer's hand-over (#189); vcp.*: the presenter's
+ *    frames'. */
+#include <stdio.h>
+
 #include "vita.h"
 #include "vita_pc.h"
 #include "../../game/present.h"
@@ -70,12 +89,78 @@ static void pull_cost(const unsigned *c, unsigned *last, int first) {
 }
 static long long s_pres0;
 
+/* #179's line (above) */
+enum {
+  VC2_KEPT, VC2_ONCE, VC2_GAME, VC2_DIV, VC2_PROBE, VC2_LINES, VC2_STORE, VC2_WALK, VC2_WDIV, VC2_WLINES,
+  VC2_RESOLVED, VC2_DERIVED, VC2_HOOKED, VC2_PRESOLVED, VC2_PDERIVED, VC2_PHOOKED, VC2_N
+};
+static const char *const k_vc2[VC2_N] = {
+    "vc.rec.kept", "vc.rec.once", "vc.rec.game", "vc.rec.div",  "vc.rec.probe",
+    "vc.rec.lines", "vc.rec.store", "vc.walk.rec", "vc.walk.div", "vc.walk.lines", "vc.resolved",
+    "vc.derived",  "vc.hooked",   "vcp.resolved", "vcp.derived", "vcp.hooked"};
+static unsigned s_vc2[VC2_N], s_vc2_0[VC2_N], s_vc2_first, s_vc2_last, s_vc2_frames;
+
+/* the running totals, read as a word each (other threads add) */
+static void vc2_now(unsigned *v) {
+  static const int rec[7] = {VCR_KEPT, VCR_ONCE, VCR_WORKED, VCR_DIV, VCR_PROBES, VCR_LINES, VCR_STORE};
+  int i, k;
+  for (i = 0; i < 7; i++)
+    v[VC2_KEPT + i] = __atomic_load_n(&g_vcache_rec[0][rec[i]], __ATOMIC_RELAXED);
+  v[VC2_WALK] = __atomic_load_n(&g_vcache_rec[1][VCR_WORKED], __ATOMIC_RELAXED);
+  v[VC2_WDIV] = __atomic_load_n(&g_vcache_rec[1][VCR_DIV], __ATOMIC_RELAXED);
+  v[VC2_WLINES] = __atomic_load_n(&g_vcache_rec[1][VCR_LINES], __ATOMIC_RELAXED);
+  for (k = 0; k < 2; k++) {
+    const VCacheStats *const st = &g_vcache_stats[k];
+    unsigned h = 0;
+    for (i = 0; i < VCD_WHO_N; i++)
+      h += __atomic_load_n(&st->hooked[i], __ATOMIC_RELAXED);
+    v[(k ? VC2_PRESOLVED : VC2_RESOLVED)] = __atomic_load_n(&st->resolved, __ATOMIC_RELAXED);
+    v[(k ? VC2_PDERIVED : VC2_DERIVED)] = __atomic_load_n(&st->derived, __ATOMIC_RELAXED);
+    v[(k ? VC2_PHOOKED : VC2_HOOKED)] = h;
+  }
+}
+
+static void vc2_emit(void) {
+  char line[VC2_N * 32 + 64];
+  int n = snprintf(line, sizeof line, "vpk-perfcount-vc: w %u %u %u", s_vc2_first, s_vc2_last,
+                   s_vc2_frames), i;
+  for (i = 0; i < VC2_N; i++) {
+    if (n > 0 && (size_t)n < sizeof line)
+      n += snprintf(line + n, sizeof line - (size_t)n, " %s=%u", k_vc2[i], s_vc2[i]);
+    s_vc2[i] = 0;
+  }
+  vita_log("%s", line);
+  s_vc2_frames = 0;
+}
+
+/* a vblank's increase, and the line every window (the kit's: 300) */
+static void vc2_vblank(unsigned vblank, int flush) {
+  unsigned v[VC2_N];
+  int i;
+  vc2_now(v);
+  for (i = 0; i < VC2_N; i++) {
+    s_vc2[i] += v[i] - s_vc2_0[i];
+    s_vc2_0[i] = v[i];
+  }
+  if (flush) {
+    if (s_vc2_frames)
+      vc2_emit();
+    return;
+  }
+  if (s_vc2_frames == 0)
+    s_vc2_first = vblank;
+  s_vc2_last = vblank;
+  if (++s_vc2_frames >= 300)
+    vc2_emit();
+}
+
 void vita_pc_init(void) {
   VpkPerfcountConfig c = {300, "vpk-perfcount", vita_log};
   int i;
   vpk_pc_init(&c);
   for (i = 0; i < VPC_COUNT; i++)
     g_vpc[i] = vpk_pc_register(k_names[i]);
+  vc2_now(s_vc2_0); /* (#179's line: from here) */
   vita_log("perfcount: a vpk-perfcount line every %u vblanks, %d counters (D165)", c.window,
            VPC_COUNT);
 }
@@ -107,9 +192,11 @@ static void pull(void) {
 void vita_pc_vblank(int vblank) {
   pull();
   vpk_pc_frame((unsigned)vblank);
+  vc2_vblank((unsigned)vblank, 0);
 }
 
 void vita_pc_flush(void) {
   pull();
   vpk_pc_flush();
+  vc2_vblank(0, 1);
 }

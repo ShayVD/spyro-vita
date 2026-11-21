@@ -44,8 +44,13 @@ void psx_vcache_enable(int mode);
 
 /* The presenter's projections worked out only when a lookup, a hand-over
  * or a derived point first reads their entry (#193, vcache.c; the same
- * answers). 1 (the default) or 0: each one at once, as before #193. */
+ * answers). 1 (the default) or 0: each one at once, as before #193 (and the
+ * logic draw's, below). */
 void psx_vcache_set_lazy(int on);
+/* The logic draw's too (#179), worked out by its walk: 1 (the default)
+ * while the presenter draws no in-between frames (60 Hz logic, or 30 fps),
+ * 2 always, 0 never (each one at once on the game thread, as before). */
+void psx_vcache_set_lazy_logic(int mode);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
@@ -226,6 +231,17 @@ extern VCacheCounters g_vcache_ctr[2];
 #define g_vcache_pres_work (g_vcache_ctr[1].work)
 #define g_vcache_cost (g_vcache_ctr[0].cost)
 #define g_vcache_pres_cost (g_vcache_ctr[1].cost)
+
+/* The logic draw's records by thread (#179), never reset: [0] the game
+ * thread's, [1] its walk's (the parse thread on the Vita, D71): projections
+ * kept for later (the game thread's only), worked out at once as they came
+ * (likewise), worked out in all, and the divisions, probes and table lines
+ * that cost (the records' part of g_vcache_cost, which has both), and the
+ * 32-byte lines of the store the kept ones were written to (a model, as the
+ * table's; not in g_vcache_cost, as #193 left the presenter's). Each thread
+ * adds its own once a frame. */
+enum { VCR_KEPT, VCR_ONCE, VCR_WORKED, VCR_DIV, VCR_PROBES, VCR_LINES, VCR_STORE, VCR_N };
+extern unsigned g_vcache_rec[2][VCR_N];
 
 /* Counters since the start or the last psx_vcache_stats_reset() (the Vita
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
