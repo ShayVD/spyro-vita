@@ -29,7 +29,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "tools/vita/fps-runs/README.md"
       ],
       "agent": "afd829baf77f28b01",
-      "last_commit_at": "2026-11-21T13:11:00+00:00"
+      "last_commit_at": "2026-11-21T13:11:00+00:00",
+      "reported": true
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -188,6 +189,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "Restart after D172 (2026-11-20)",
       "default_taken": "owner: one PSX WOBBLE row, no wobble by default (#177); no wobble at all and no FPS drop (#178, #179, #181); fix draw distance 2x (#180); start the loop again",
       "switch": "state.phase"
+    },
+    {
+      "issue": 208,
+      "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
+      "default": "keep the wobble fix on far mobys (no change)",
+      "status": "open"
     }
   ],
   "attempts": {
