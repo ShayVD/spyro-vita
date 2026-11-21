@@ -113,6 +113,7 @@ static const struct {
     {ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT, "libSceVideoOut"},
     {ORBIS_SYSMODULE_INTERNAL_PAD, "libScePad"},
     {ORBIS_SYSMODULE_INTERNAL_AUDIOOUT, "libSceAudioOut"},
+    {ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE, "libSceSystemService"}, /* Piglet's samples link it */
 };
 #define N_MODULES (int)(sizeof k_modules / sizeof k_modules[0])
 static uint32_t s_module_rc[N_MODULES];

@@ -172,6 +172,9 @@ int ps4_menu_service(void) {
   host_log("menu: open%s", test ? " (menu_test)" : "");
   while (open) {
     uint16_t m, pressed;
+    /* a tap closes it, but not in its first 300 ms (GPU run 1: the menu a
+     * tap opened closed 47 ms later) */
+    int tap = ps4_pad_take_tap() && ps4_now_us() - t0 > 300000;
     m = ps4_pad_read();
     if (test) {
       m = step / 4 < NTEST && step % 4 < 2 ? k_test[step / 4] : 0;
@@ -188,7 +191,7 @@ int ps4_menu_service(void) {
         dirty = 1;
       if (pressed & B_CROSS)
         answer = s_ask_sel;
-      if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || ps4_pad_take_tap())
+      if ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || tap)
         answer = -1;
       if (answer != -2) {
         const Ps4MenuAsk *a = s_ask;
@@ -215,7 +218,7 @@ int ps4_menu_service(void) {
       lines = n < MENU_PANEL_LINES ? n : MENU_PANEL_LINES;
       h = menu_panel_height(lines);
     }
-    if (!s_ask && ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || ps4_pad_take_tap()))
+    if (!s_ask && ((pressed & (B_CIRCLE | B_START | B_TRIANGLE)) || tap))
       open = 0;
     if (dirty && open && s_ask) {
       ps4_video_overlay(panel, MENU_PANEL_W, ask_draw(panel));

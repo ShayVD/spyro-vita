@@ -1142,14 +1142,22 @@ void ps4_gpu_report(int vblank) {
 
 /* ---- set-up ---- */
 
-/* Piglet's memory (2Ship2Harkinian-PS4's candidates, the first one that
- * eglGetDisplay accepts; MiB): system shared, video shared, flexible,
- * command buffer, LCUE buffer. A configuration Piglet can't satisfy shows
- * up as eglGetDisplay's failure. */
+/* Piglet's memory (2Ship2Harkinian-PS4's candidates; MiB): system shared,
+ * video shared, flexible, command buffer, LCUE buffer. Piglet takes its
+ * configuration once: GPU run 1 tried all six in turn and eglGetDisplay
+ * refused each (no EGL error), the first (236 MiB of flexible memory, more
+ * than our image leaves of the app's) having stuck. So the first that
+ * fits the memory free now is chosen, and set once. */
 static const unsigned k_mem[][5] = {
     {128, 512, 236, 4, 4}, {128, 512, 208, 4, 4}, {128, 512, 208, 1, 1},
     {64, 128, 208, 1, 1},  {64, 128, 176, 1, 1},  {64, 128, 64, 1, 1},
 };
+#define FLEX_SPARE (32u << 20) /* flexible memory left for malloc and the libraries */
+
+/* OpenOrbis's libkernel.h passes the outputs by value: our own prototypes */
+int32_t ps4_avail_flex(size_t *size) __asm__("sceKernelAvailableFlexibleMemorySize");
+int32_t ps4_avail_direct(off_t start, off_t end, size_t align, off_t *phys, size_t *size)
+    __asm__("sceKernelAvailableDirectMemorySize");
 
 static int egl_up(void) {
   OrbisPglConfig cfg;
@@ -1163,32 +1171,42 @@ static int egl_up(void) {
                                  EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_NONE};
   static const EGLint ctx_attrs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
   static const EGLint win_attrs[] = {EGL_RENDER_BUFFER, EGL_BACK_BUFFER, EGL_NONE};
-  size_t i;
+  size_t i, flex = 0, direct = 0;
+  off_t phys = 0;
+  int rf = ps4_avail_flex(&flex);
+  int rd = ps4_avail_direct(0, (off_t)sceKernelGetDirectMemorySize(), 0, &phys, &direct);
+  host_log("gpu: memory free: flexible %zu MiB (0x%x), direct %zu MiB in one block (0x%x) of "
+           "%zu MiB", flex >> 20, (unsigned)rf, direct >> 20, (unsigned)rd,
+           (size_t)sceKernelGetDirectMemorySize() >> 20);
   for (i = 0; i < sizeof k_mem / sizeof k_mem[0]; i++) {
-    memset(&cfg, 0, sizeof cfg);
-    cfg.size = sizeof cfg;
-    cfg.flags = ORBIS_PGL_FLAGS_USE_COMPOSITE_EXT | ORBIS_PGL_FLAGS_USE_FLEXIBLE_MEMORY | 0x60;
-    cfg.processOrder = 1;
-    cfg.systemSharedMemorySize = (uint64_t)k_mem[i][0] << 20;
-    cfg.videoSharedMemorySize = (uint64_t)k_mem[i][1] << 20;
-    cfg.maxMappedFlexibleMemory = (uint64_t)k_mem[i][2] << 20;
-    cfg.drawCommandBufferSize = k_mem[i][3] << 20;
-    cfg.lcueResourceBufferSize = k_mem[i][4] << 20;
-    cfg.dbgPosCmd_0x40 = SCREEN_W;
-    cfg.dbgPosCmd_0x44 = SCREEN_H;
-    cfg.unk_0x5C = 2;
-    if (!scePigletSetConfigurationVSH(&cfg)) {
-      host_log("gpu: scePigletSetConfigurationVSH refused memory set %zu", i);
-      continue;
-    }
-    s_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (s_dpy != EGL_NO_DISPLAY) {
-      host_log("gpu: Piglet memory %u/%u/%u/%u/%u MiB (system, video, flexible, commands, LCUE)",
-               k_mem[i][0], k_mem[i][1], k_mem[i][2], k_mem[i][3], k_mem[i][4]);
+    size_t want_flex = ((size_t)k_mem[i][2] << 20) + FLEX_SPARE;
+    size_t want_direct = (size_t)(k_mem[i][0] + k_mem[i][1] + k_mem[i][3] + k_mem[i][4]) << 20;
+    if ((rf < 0 || flex >= want_flex) && (rd < 0 || direct >= want_direct))
       break;
-    }
-    host_log("gpu: eglGetDisplay refused memory set %zu: 0x%x", i, (unsigned)eglGetError());
   }
+  if (i == sizeof k_mem / sizeof k_mem[0])
+    i--; /* the smallest, whatever was measured */
+  memset(&cfg, 0, sizeof cfg);
+  cfg.size = sizeof cfg;
+  cfg.flags = ORBIS_PGL_FLAGS_USE_COMPOSITE_EXT | ORBIS_PGL_FLAGS_USE_FLEXIBLE_MEMORY | 0x60;
+  cfg.processOrder = 1;
+  cfg.systemSharedMemorySize = (uint64_t)k_mem[i][0] << 20;
+  cfg.videoSharedMemorySize = (uint64_t)k_mem[i][1] << 20;
+  cfg.maxMappedFlexibleMemory = (uint64_t)k_mem[i][2] << 20;
+  cfg.drawCommandBufferSize = k_mem[i][3] << 20;
+  cfg.lcueResourceBufferSize = k_mem[i][4] << 20;
+  cfg.dbgPosCmd_0x40 = SCREEN_W;
+  cfg.dbgPosCmd_0x44 = SCREEN_H;
+  cfg.unk_0x5C = 2;
+  host_log("gpu: Piglet memory %u/%u/%u/%u/%u MiB (system, video, flexible, commands, LCUE)",
+           k_mem[i][0], k_mem[i][1], k_mem[i][2], k_mem[i][3], k_mem[i][4]);
+  if (!scePigletSetConfigurationVSH(&cfg)) {
+    host_log("gpu: scePigletSetConfigurationVSH refused it");
+    return -1;
+  }
+  s_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if (s_dpy == EGL_NO_DISPLAY)
+    host_log("gpu: eglGetDisplay refused it: 0x%x", (unsigned)eglGetError());
   if (s_dpy == EGL_NO_DISPLAY)
     return -1;
   if (!eglInitialize(s_dpy, &major, &minor) || !eglBindAPI(EGL_OPENGL_ES_API)) {
