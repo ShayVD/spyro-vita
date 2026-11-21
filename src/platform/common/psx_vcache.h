@@ -247,6 +247,15 @@ extern unsigned g_vcache_rec[2][VCR_N];
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
+/* Why an ambiguous vertex was left ambiguous (#197, VCacheStats res_why):
+ * its polygon also has a vertex with no entry that nothing finds (not a
+ * quad's only one, or none of its corners' order names it: no hand-over
+ * either), an invalid vertex, or a vertex handed over as a place only
+ * (flat); an invalid projection under its key near the polygon's others;
+ * a clamped point among several near ones; no depth choice under 4
+ * (depths 4x apart, or the derived vertex's plane); the frame's log full or
+ * too many depths */
+enum { RW_NONE, RW_INVALID, RW_FLAT, RW_INV_NEAR, RW_CLAMP_SEV, RW_SPREAD, RW_FULL, RW_N };
 typedef struct {
   unsigned frames;    /* DrawOTag calls */
   unsigned records;   /* vertices projected */
@@ -291,6 +300,12 @@ typedef struct {
    * usable, a key placed differently by another (left with none), the
    * frame's table of them full */
   unsigned hk_calls, hk_kept, hk_nosrc, hk_conflict, hk_full;
+  /* #197: ambiguous vertices found again together with their polygon's one
+   * vertex with no entry (a quad's: resolved, then derived; counted in
+   * resolved and derived too), and those left ambiguous (miss_ambiguous) by
+   * why (RW_*) */
+  unsigned res_der;
+  unsigned res_why[RW_N];
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

@@ -120,6 +120,13 @@
  * is looked for there; one with an entry keeps it. 2D polygons (the HUD,
  * the title, fades, the border) stay as they were.
  *
+ * Both at once (#197): a quad whose one vertex with no entry the order
+ * names (derive) and whose other missing ones are ambiguous keys (resolve)
+ * gets both: the projection derive names is one more of the polygon's
+ * places in the order for resolve, and the depths resolve gives are the
+ * third corner derive's plane needs. A vertex whose hand-over was dropped
+ * because its source was ambiguous still has none.
+ *
  * The cost (#159; D89 measured the cache at ~4.5 ms a vblank of the game
  * thread on hardware): every answer is as before, with less work. A record
  * finds its entry before the maths, and an ambiguous key needs none. Depth
@@ -438,9 +445,14 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none);
   /* #181: ambiguous keys' vertices found again from the frame's order */
   PsyX_Log("vcache resolved: %u vertices with an ambiguous key drawn with a depth from its "
-           "projections near their polygon's others (%u where the order left one point); %u left "
-           "ambiguous",
-           out->resolved, out->res_order, out->miss_ambiguous);
+           "projections near their polygon's others (%u where the order left one point, %u with "
+           "their quad's vertex with no entry derived); %u left ambiguous: %u with a vertex with "
+           "no entry, %u with an invalid vertex, %u with a place-only hand-over, %u an invalid "
+           "projection near, %u a clamped point among several, %u depths 4x apart, %u log full",
+           out->resolved, out->res_order, out->res_der, out->miss_ambiguous,
+           out->res_why[RW_NONE], out->res_why[RW_INVALID], out->res_why[RW_FLAT],
+           out->res_why[RW_INV_NEAR], out->res_why[RW_CLAMP_SEV], out->res_why[RW_SPREAD],
+           out->res_why[RW_FULL]);
   /* #189: the renderers' hand-overs */
   PsyX_Log("vcache hooked: %u vertices with no entry found from their renderer's hand-over "
            "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u); %u hand-overs, "
@@ -1449,28 +1461,28 @@ static void log_index(Table *tab, uint32_t gen, unsigned *cost) {
  * Returns 1 with the vertex's answer in *out and the others' picks in
  * pick[]; else 0, the polygon drawn affine as before, *out still holding
  * the vertex's place (moved when it isn't the key's own). */
-static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
-                  const unsigned *en, int m, const Sink *lk, unsigned *cost, int *pick,
-                  VCacheVert *out, int *moved, int *snapped) {
+/* derive's place (above): the corners' entries slotf[] (each found or,
+ * #197, an ambiguous key's), the vertex's place in *out and the projection
+ * it is (*slot, entry + 1, 0: none). The key's place for the frame's other
+ * polygons goes to *dr when it should be kept there: at once with commit,
+ * else the caller keeps it (der_keep) once the polygon is drawn so. */
+static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint32_t *slotf, int m,
+                         const Sink *lk, unsigned *cost, VCacheVert *out, uint32_t *slot_out,
+                         Der **dr_out, int commit) {
   static const int k_opp[4] = {2, 3, 0, 1};
   const uint32_t key = (uint16_t)xy[m][0] | (uint32_t)(uint16_t)xy[m][1] << 16;
   const float kx = xy[m][0] + 0.5f, ky = xy[m][1] + 0.5f;
   const int o = k_opp[m];
-  int idx[3], ab[2], ni = 0, nab = 0, i, j, have = 0;
-  float sx[4], sy[4], z[4], x, y, w, d, q;
-  uint32_t slot = 0, h, p, slotf[4] = {0, 0, 0, 0};
+  int ab[2], nab = 0, i, have = 0;
+  float x, y;
+  uint32_t slot = 0, h, p;
   Der *dr = NULL, *hd = NULL;
-  (void)pres;
   for (i = 0; i < 4; i++)
-    if (i != m) {
-      idx[ni++] = i;
-      if (i != o)
-        ab[nab++] = i;
-      slotf[i] = (uint32_t)(((const char *)e[i] - (const char *)tab->s) / sizeof(Entry));
-    }
+    if (i != m && i != o)
+      ab[nab++] = i;
   out->dx = out->dy = 0;
   out->w = 1;
-  *moved = *snapped = 0;
+  *dr_out = NULL;
   /* the key's place this frame, if a polygon gave it one */
   h = hash(key) & (VC_DER - 1);
   for (p = 0; p < 8; p++, h = (h + 1) & (VC_DER - 1)) {
@@ -1532,16 +1544,44 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
       dr->dx = out->dx;
       dr->dy = out->dy;
       dr->slot = slot;
+      if (!commit) { /* (#197: kept by the caller) */
+        dr->gen = gen - 1;
+        *dr_out = dr;
+      }
     }
-    *moved = out->dx != 0 || out->dy != 0;
-    *snapped = slot != 0;
   }
-  /* the depth */
+  *slot_out = slot;
+}
+
+/* the key's place derive_place left to the caller (#197), now kept */
+static inline void der_keep(Der *dr, uint32_t gen) {
+  if (dr)
+    dr->gen = gen;
+}
+
+/* derive's depth (above), at the place derive_place gave (*out, slot): the
+ * other corners' candidates e[], en[]; ov (#197, NULL: none) a corner's
+ * place (pixels from its pixel centre) where ov[v][2] is set, in place of
+ * its candidate's: a resolved vertex is drawn at its key, or at a clamped
+ * point's own place */
+static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, const unsigned *en,
+                        int m, uint32_t slot, const float (*ov)[3], unsigned *cost, int *pick,
+                        VCacheVert *out) {
+  const float kx = xy[m][0] + 0.5f, ky = xy[m][1] + 0.5f;
+  int idx[3], ni = 0, i, j;
+  float sx[4], sy[4], z[4], x, y, w, d, q;
+  for (i = 0; i < 4; i++)
+    if (i != m)
+      idx[ni++] = i;
   if (!choose(e, en, idx, 3, cost, pick))
     return 0;
   for (i = 0; i < 3; i++) {
     const int v = idx[i];
-    cand_pos(tab, &e[v][pick[v]], &x, &y);
+    if (ov && ov[v][2] != 0) {
+      x = ov[v][0];
+      y = ov[v][1];
+    } else
+      cand_pos(tab, &e[v][pick[v]], &x, &y);
     sx[v] = xy[v][0] + 0.5f + x;
     sy[v] = xy[v][1] + 0.5f + y;
     z[v] = e[v][pick[v]].w;
@@ -1587,6 +1627,23 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
   return 1;
 }
 
+/* derive (above): its place, then its depth, the others all found */
+static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
+                  const unsigned *en, int m, const Sink *lk, unsigned *cost, int *pick,
+                  VCacheVert *out, int *moved, int *snapped) {
+  uint32_t slotf[4] = {0, 0, 0, 0}, slot;
+  Der *dr;
+  int i;
+  (void)pres;
+  for (i = 0; i < 4; i++)
+    if (i != m)
+      slotf[i] = (uint32_t)(((const char *)e[i] - (const char *)tab->s) / sizeof(Entry));
+  derive_place(tab, gen, xy, slotf, m, lk, cost, out, &slot, &dr, 1);
+  *moved = out->dx != 0 || out->dy != 0;
+  *snapped = slot != 0;
+  return derive_depth(tab, xy, e, en, m, slot, NULL, cost, pick, out);
+}
+
 /* Ambiguous keys (#181). Different points on one pixel: more than the
  * entry's four candidates (nearly all of them: far mobys, many of whose
  * vertices fall on a few pixels, and far ground, at a long draw distance),
@@ -1611,6 +1668,10 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
  * every polygon whose order names it (rx[v], rp[v]). With a clamped point
  * among several near ones it stays ambiguous: no place can be told.
  *
+ * With a quad's vertex with no entry (#197, psx_vcache_poly), the
+ * projection derive names for it counts as one of the polygon's found
+ * vertices' places.
+ *
  * Not resolved (the vertex stays ambiguous, the polygon affine): an
  * invalid projection among those near the others (the prim may be that
  * one; #192: one elsewhere in the frame doesn't count), a clamped point
@@ -1623,7 +1684,7 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
  * depths only (dx, dy 0), and rx[v] 1 with its place in rp[v] (pixels from
  * the pixel centre) for a clamped point, else 0 (the key's integer
  * position). *one: every such vertex had one point near the others in the
- * order. Returns 1, or 0 not resolved. */
+ * order. Returns 1, or 0 not resolved, with *why (RW_*, #197). */
 #define RC_MAX 16
 #define VC_NEAR 256 /* a batch: a sector's or a model's points (up to 255 a sector) */
 #define RC_PTS 32   /* the near points kept to count them (#192: not a limit on projections) */
@@ -1666,10 +1727,11 @@ static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, fl
 
 static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int n,
                    Cand rc[4][RC_MAX], unsigned *rn, float rp[4][2], int *rx, unsigned *cost,
-                   int *one) {
+                   int *one, int *why) {
   unsigned anc[32], na = 0, a;
   int i;
   *one = 1;
+  *why = RW_FULL;
   if (tab->nlog >= VC_LOG)
     return 0;
   log_index(tab, gen, cost);
@@ -1706,8 +1768,10 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
             continue;
         }
         near += !pass;
-        if (!res_place(tab, en, r, &x, &y, &w, &alt, &ccl))
+        if (!res_place(tab, en, r, &x, &y, &w, &alt, &ccl)) {
+          *why = RW_INV_NEAR;
           return 0; /* invalid: the prim may be that one */
+        }
         if (!nsel++) {
           fx = x;
           fy = y;
@@ -1757,8 +1821,10 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
     if (pts != 1 || !near)
       *one = 0;
     if (cl) { /* a clamped point near: drawn at its place, if the order names it alone */
-      if (!onept)
+      if (!onept) {
+        *why = RW_CLAMP_SEV;
         return 0;
+      }
       rx[i] = 1;
       rp[i][0] = fx;
       rp[i][1] = fy;
@@ -1793,6 +1859,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   Cand rc[4][RC_MAX];
   unsigned rn[4];
   int res = 0; /* those resolved */
+  int rwhy = -1; /* ... why not, when resolve ran (#197, RW_*) */
   /* ... those whose order named a clamped point alone, and its place (#192) */
   float rp[4][2];
   int rx[4] = {0, 0, 0, 0};
@@ -1913,7 +1980,68 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     if (nhk && !nmiss && !nflat)
       persp = VREF_PERSP;
   }
-  if (nambig && nambig == nmiss && !nnone && !nflat) {
+  if (n == 4 && nambig && nnone == 1 && !nhk && !inv && nmiss == nambig + 1) {
+    /* #197: a quad's one vertex with no entry and its ambiguous ones, the
+     * rest found. derive's place first (an ambiguous corner's projections
+     * are in the order too): the projection it names is one more of the
+     * polygon's places in the order for resolve. Then the ambiguous ones'
+     * depths (resolve), which give derive's depth its third corner. Kept
+     * only when both are found: the place for the frame's other polygons
+     * too (der_keep). */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    Table *const tab = (Table *)ptab;
+    const Cand *e2[4];
+    unsigned en2[4];
+    uint32_t slotf[4], slot;
+    float ov[4][3];
+    VCacheVert pv;
+    Der *dr;
+    int one, ok = 0;
+    for (i = 0; i < n; i++) {
+      if (!amb[i] && i != none)
+        ks[i] = (int)((ref[i] & VREF_SLOT) - 1);
+      slotf[i] = i == none ? 0 : (uint32_t)ks[i];
+    }
+    derive_place(tab, gen, xy, slotf, none, &lk, cost, &pv, &slot, &dr, 0);
+    ks[none] = slot ? (int)slot - 1 : -1; /* its projection's places: one more of the polygon's */
+    if (resolve(tab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one, &rwhy)) {
+      rwhy = RW_SPREAD;
+      for (i = 0; i < n; i++) {
+        e2[i] = amb[i] ? rc[i] : e[i];
+        en2[i] = amb[i] ? rn[i] : en[i];
+        ov[i][0] = amb[i] && rx[i] ? rp[i][0] : 0;
+        ov[i][1] = amb[i] && rx[i] ? rp[i][1] : 0;
+        ov[i][2] = amb[i] ? 1.0f : 0.0f; /* drawn at its key, or a clamped point's place */
+      }
+      ok = derive_depth(tab, xy, e2, en2, none, slot, (const float(*)[3])ov, cost, pick, &pv);
+    }
+    if (ok) {
+      der_keep(dr, gen);
+      dv = pv;
+      der = 1;
+      der_moved = pv.dx != 0 || pv.dy != 0;
+      der_snap = slot != 0;
+      for (i = 0; i < n; i++)
+        if (amb[i]) {
+          e[i] = rc[i];
+          en[i] = rn[i];
+          et[i] = rx[i] ? (ptab->s[ks[i]].tag & ~T_MULTI) | T_CLAMP
+                        : (ptab->s[ks[i]].tag | T_MULTI) & ~T_CLAMP;
+          ref[i] |= (uint32_t)ks[i] + 1;
+        }
+      persp = VREF_PERSP;
+      res = 1;
+      st->hits += (unsigned)nambig + 1;
+      st->resolved += (unsigned)nambig;
+      st->res_order += one ? (unsigned)nambig : 0;
+      st->res_der += (unsigned)nambig;
+      st->derived++;
+      st->der_snap += der_snap != 0;
+    } else {
+      memset(pick, 0, sizeof pick);
+      memset(rx, 0, sizeof rx); /* as before: drawn affine, each vertex at its key */
+    }
+  } else if (nambig && nambig == nmiss && !nnone && !nflat) {
     /* every vertex not found an ambiguous key's (#181): its depths from
      * the projections under it near the others' */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
@@ -1923,7 +2051,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     for (i = 0; i < n; i++)
       if (!amb[i])
         ks[i] = (int)((ref[i] & VREF_SLOT) - 1);
-    if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one)) {
+    if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one, &rwhy)) {
+      rwhy = RW_SPREAD;
       for (i = 0; i < n; i++) {
         e2[i] = amb[i] ? rc[i] : e[i];
         en2[i] = amb[i] ? rn[i] : en[i];
@@ -1950,6 +2079,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   if (nambig && !res) { /* not found: ambiguous */
     work[3] += (unsigned)nambig;
     st->miss_ambiguous += (unsigned)nambig;
+    /* and why (#197): resolve's, or what kept it from running */
+    st->res_why[rwhy >= 0 ? rwhy : nnone ? RW_NONE : inv ? RW_INVALID : RW_FLAT] +=
+        (unsigned)nambig;
   }
   for (i = 0; i < n; i++) /* #192: a clamped point the order named is drawn at its place, as a
                              found clamped key's is (D174), even with the polygon affine */
