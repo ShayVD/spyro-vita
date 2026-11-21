@@ -336,3 +336,4 @@ continue.
 - 21:41Z phase 8: stall check flagged #206 (last commit 19:39Z) but it is alive in its final checks (Vita build done, routes owner60/pause-ws running, ctest log present): not stopped
 - 21:56Z phase 8: merged #206 (D204)
 - 21:57Z phase 8: worker #202 started; #204 waits on vcache.c
+- 22:29Z phase 8: #202 running (no commit yet, started 21:55Z); #204 waits
