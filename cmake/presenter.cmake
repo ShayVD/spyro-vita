@@ -78,20 +78,28 @@ target_include_directories(spyro_pres_ovl PRIVATE "${CMAKE_SOURCE_DIR}/src/platf
 target_compile_options(spyro_pres_ovl PRIVATE ${SPYRO_HOST_FLAGS} -fcommon -w
   "SHELL:-include ${PRES_NAMES}")
 add_dependencies(spyro_pres_ovl spyro_game_ovl)
-if(SPYRO_HOST STREQUAL "linux32")
-  set(PRES_LD_FLAGS -m32)
-endif()
+set(PRES_LD_FLAGS ${SPYRO_RELOC_LD_FLAGS}) # -m32 on linux32, the target on linux64
 
 # one relocatable object, the entry its only global definition. LoadImage
 # is renamed here as well as in pres_names.h: libgpu.h #undefs it (a
 # Windows guard), so the pause screens' calls in draw.c keep the game's
 # name (stage 7g, D128)
 set(PRES_OBJ "${CMAKE_BINARY_DIR}/pres_draw.o")
+# The PS4's llvm-objcopy would localize the common symbols too (D193):
+# tools/ps4/keep_commons.py lists them to stay global.
+set(PRES_KEEP_COMMONS)
+set(PRES_KEEP_ARGS)
+if(SPYRO_HOST STREQUAL "ps4")
+  set(PRES_KEEP_COMMONS COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/keep_commons.py"
+    "${CMAKE_NM}" "${PRES_OBJ}.r" "${PRES_OBJ}.commons")
+  set(PRES_KEEP_ARGS "--keep-global-symbols=${PRES_OBJ}.commons")
+endif()
 add_custom_command(OUTPUT "${PRES_OBJ}"
   COMMAND "${CMAKE_C_COMPILER}" ${PRES_LD_FLAGS} -r -nostdlib -o "${PRES_OBJ}.r"
     "$<JOIN:$<TARGET_OBJECTS:spyro_pres_decomp>,;>" "$<JOIN:$<TARGET_OBJECTS:spyro_pres_port>,;>"
     "$<JOIN:$<TARGET_OBJECTS:spyro_pres_ovl>,;>"
-  COMMAND "${CMAKE_OBJCOPY}" --keep-global-symbol=GamestateDraw_pres
+  ${PRES_KEEP_COMMONS}
+  COMMAND "${CMAKE_OBJCOPY}" --keep-global-symbol=GamestateDraw_pres ${PRES_KEEP_ARGS}
     --redefine-sym LoadImage=pres_LoadImage "${PRES_OBJ}.r" "${PRES_OBJ}"
   DEPENDS spyro_pres_decomp spyro_pres_port spyro_pres_ovl $<TARGET_OBJECTS:spyro_pres_decomp>
           $<TARGET_OBJECTS:spyro_pres_port> $<TARGET_OBJECTS:spyro_pres_ovl>

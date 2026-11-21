@@ -10,7 +10,18 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 
-set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32 or vita")
+set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, vita or ps4")
+# linux64 (docs/ps4-plan.md P1, decisions D174): the headless host of
+# src/platform/linux32 built for x86-64 with clang, the PS4's data model, in
+# the low-image model (D173): pointer fields P32 (src/compat/p32.h), the
+# arena and the game thread's stack in the image, below 2 GB.
+if(SPYRO_HOST STREQUAL "linux32" OR SPYRO_HOST STREQUAL "linux64")
+  set(SPYRO_HOST_LINUX ON)
+  set(SPYRO_HOST_DIR linux32)
+else()
+  set(SPYRO_HOST_LINUX OFF)
+  set(SPYRO_HOST_DIR ${SPYRO_HOST})
+endif()
 set(SPYRO_MATCHING_DIR "${CMAKE_SOURCE_DIR}/build/s1-matching" CACHE PATH
     "tools/build_matching.sh output (psx.map, psx.elf, wad/*.ovl)")
 
@@ -39,7 +50,7 @@ include(cmake/prepare.cmake)
 # in patches/spyro-1-region-matching; D135, tools/regions/retune.py patch),
 # then the 60 Hz rules' class sites written on the region's text (D144).
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
-              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60" S1_DIR)
+              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60;${CMAKE_SOURCE_DIR}/patches/spyro-1-ptr32" S1_DIR)
 spyro_prepare(PsyCross "${CMAKE_SOURCE_DIR}/third_party/PsyCross"
               "${CMAKE_SOURCE_DIR}/patches/PsyCross" PSYCROSS_DIR)
 
@@ -48,6 +59,10 @@ file(MAKE_DIRECTORY "${GEN_DIR}")
 
 # Flags that guard behaviour on every target (decisions D6).
 set(SPYRO_GUARD_FLAGS -funsigned-char -fno-strict-aliasing -ffp-contract=off)
+# P32 (32-bit pointer fields on x86-64, empty elsewhere) in every C and C++
+# unit, and in the overlays' preprocessing (cmake/overlays.cmake; D174).
+set(SPYRO_P32_H "${CMAKE_SOURCE_DIR}/src/compat/p32.h")
+add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:SHELL:-include ${SPYRO_P32_H}>")
 # Code generation per host: the linux32 debug build is -m32 -O1; the Vita's
 # toolchain file picks the CPU (decisions D25).
 if(SPYRO_HOST STREQUAL "vita")
@@ -60,9 +75,52 @@ if(SPYRO_HOST STREQUAL "vita")
       # save_file.c's SaveCreate writes past m_CollectedEggs as the original
       # does; at -O2 GCC would otherwise rewrite the loop around that UB.
       -fno-aggressive-loop-optimizations)
+elseif(SPYRO_HOST STREQUAL "ps4")
+  # The PS4 (docs/ps4-plan.md P3, D193): linux64's flags for OpenOrbis's
+  # FreeBSD target (cmake/ps4.toolchain.cmake), the sysroot spelt out for the
+  # overlays' preprocessing, which calls the compiler directly. The eboot is
+  # a PIE (OpenOrbis's link.x; the PS4 loads it at 0x400000, D180), so the
+  # code is -fPIE, not -fno-pic.
+  set(SPYRO_ARCH_FLAGS --target=x86_64-pc-freebsd12-elf --sysroot=${OO_PS4_TOOLCHAIN}
+      -isystem ${OO_PS4_TOOLCHAIN}/include -fms-extensions -fPIE -march=btver2)
+  # No instruction that faults on a misaligned address: the decomp's arrays
+  # sit at their PS1 addresses, but clang takes a global array of 16 bytes
+  # or more as 16-aligned (tools/ps4/cc_unaligned.py; hardware run 2).
+  set(CMAKE_C_COMPILER_LAUNCHER "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/ps4/cc_unaligned.py")
+  # -fno-vectorize: with AVX, clang 18's loop vectorizer turns P32_INIT's
+  # copy loops into a vector addrspacecast its backend can't select
+  # ("Cannot select: v4i32 = addrspacecast", a fourth __ptr32 bug, D193).
+  set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
+      -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
+  set(SPYRO_PIC_FLAGS -fPIE)
+elseif(SPYRO_HOST STREQUAL "linux64")
+  # --target here too: the overlays' preprocessing and the relocatable links
+  # (cmake/overlays.cmake, presenter.cmake, tick60.cmake) call the compiler
+  # directly. -fms-extensions: __ptr32 (src/compat/p32.h). clang makes these
+  # errors; GCC (linux32) takes them as warnings, and they don't depend on
+  # the pointer's size. int-conversion stays an error: those sites are read.
+  set(SPYRO_ARCH_FLAGS --target=x86_64-linux-gnu -fms-extensions)
+  set(SPYRO_OPT_FLAGS -O1 -g -Wno-error=implicit-function-declaration -Wno-error=implicit-int
+      -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
 else()
   set(SPYRO_ARCH_FLAGS -m32)
   set(SPYRO_OPT_FLAGS -O1 -g)
+endif()
+if(NOT DEFINED SPYRO_PIC_FLAGS)
+  set(SPYRO_PIC_FLAGS -fno-pic)
+endif()
+# The executable's link: static and non-PIE at 0x400000 on linux64, so the
+# whole image is low (D174); -m32 -no-pie on linux32.
+if(SPYRO_HOST STREQUAL "linux64")
+  set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static) # static: non-PIE (objects -fno-pic)
+  set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
+elseif(SPYRO_HOST STREQUAL "ps4")
+  # the presenter's and tick60's relocatable links (the eboot's own link is
+  # src/platform/ps4's, ld.lld with OpenOrbis's link.x)
+  set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS} -fuse-ld=${PS4_LD})
+elseif(SPYRO_HOST STREQUAL "linux32")
+  set(SPYRO_LINK_FLAGS -m32 -no-pie)
+  set(SPYRO_RELOC_LD_FLAGS -m32)
 endif()
 
 # Where the PS1 RAM arena sits (docs/porting-plan.md §4.3, decisions D25,
@@ -81,7 +139,7 @@ endif()
 # block from the heap (D106). The Vita's default since D106's hardware run
 # (-DSPYRO_NATIVE_MEM=OFF: the moved arena); linux32's stays the arena build,
 # the oracle replay's.
-if(SPYRO_HOST STREQUAL "vita")
+if(SPYRO_HOST STREQUAL "vita" OR SPYRO_HOST STREQUAL "linux64" OR SPYRO_HOST STREQUAL "ps4")
   set(native_mem_default ON)
 else()
   set(native_mem_default OFF)
@@ -130,6 +188,19 @@ endif()
 if(SPYRO_NATIVE_MEM)
   add_compile_definitions(SPYRO_NATIVE_MEM=1)
 endif()
+# The low image (D173, D174): the arena and the game thread's stack are
+# .bss arrays in the executable, which must lie below 2 GB (the decomp's
+# (int) casts sign-extend); a start-up check refuses to run otherwise.
+# linux64 (D174) and the PS4 (D193).
+if(SPYRO_HOST STREQUAL "linux64" OR SPYRO_HOST STREQUAL "ps4")
+  if(NOT SPYRO_NATIVE_MEM)
+    message(FATAL_ERROR "${SPYRO_HOST} needs SPYRO_NATIVE_MEM=ON (the low image, D174)")
+  endif()
+  set(SPYRO_LOW_IMAGE ON)
+  add_compile_definitions(SPYRO_LOW_IMAGE=1)
+else()
+  set(SPYRO_LOW_IMAGE OFF)
+endif()
 # Debug: list the translated and hand C's accesses through an alias of PS1
 # RAM (mips2c_rt.h MIPS_KUSEG; decisions D100).
 # Debug: list the decodes of packed addresses (OT links, frame pointers)
@@ -155,7 +226,7 @@ if(SPYRO_HOST STREQUAL "linux32")
     "sh ${CMAKE_SOURCE_DIR}/cmake/link_exec.sh <TARGET> --")
 endif()
 
-add_subdirectory(src/platform/${SPYRO_HOST})
+add_subdirectory(src/platform/${SPYRO_HOST_DIR})
 
 if(SPYRO_HOST STREQUAL "linux32")
   enable_testing()

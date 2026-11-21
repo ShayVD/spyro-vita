@@ -109,9 +109,7 @@ add_library(spyro_t60_ovl OBJECT ${T60_OVL_SRCS})
 target_include_directories(spyro_t60_ovl PRIVATE "${CMAKE_SOURCE_DIR}/src/platform/common")
 target_compile_options(spyro_t60_ovl PRIVATE ${SPYRO_HOST_FLAGS} -fcommon -w)
 
-if(SPYRO_HOST STREQUAL "linux32")
-  set(T60_LD_FLAGS -m32)
-endif()
+set(T60_LD_FLAGS ${SPYRO_RELOC_LD_FLAGS}) # -m32 on linux32, the target on linux64
 set(T60_OBJ "${CMAKE_BINARY_DIR}/tick60_update.o")
 add_custom_command(OUTPUT "${T60_OBJ}"
   COMMAND "${CMAKE_C_COMPILER}" ${T60_LD_FLAGS} -r -nostdlib -o "${T60_OBJ}.r"

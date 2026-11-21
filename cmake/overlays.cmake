@@ -17,7 +17,7 @@ set(OVL_CPP_FLAGS ${SPYRO_ARCH_FLAGS} -E -std=gnu11 ${SPYRO_GUARD_FLAGS}
   -DUSE_EXTENDED_PRIM_POINTERS=0 -DUSE_PGXP=0
   -I${CMAKE_SOURCE_DIR}/src/compat -I${S1_DIR}/include
   -I${PSYCROSS_DIR}/include -I${PSYCROSS_DIR}/include/psx
-  -include ${CMAKE_SOURCE_DIR}/src/compat/port_prefix.h)
+  -include ${SPYRO_P32_H} -include ${CMAKE_SOURCE_DIR}/src/compat/port_prefix.h)
 
 set(OVL_SRCS)
 string(REPLACE "\n" ";" ovl_rows "${ovl_rows}")

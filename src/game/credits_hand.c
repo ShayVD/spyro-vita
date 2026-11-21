@@ -65,7 +65,7 @@ enum { LETTER_FREE, LETTER_IN, LETTER_PLACED, LETTER_OUT, LETTER_GONE };
 
 /* A line of the credits (D_80075708, from the part's data). */
 typedef struct {
-  char *m_Text;
+  char *P32 m_Text;
   short m_Y;
   short m_ShowTimer; /* until it leaves */
   short m_NextTimer; /* until the next line is spelt */
@@ -98,10 +98,10 @@ static_assert(offsetof(__typeof__(g_Spu), m_SoundDefinitions) == 0x2C8 &&
 static_assert(offsetof(__typeof__(g_WadHeader), m_Credits1Data) == 0x290, "g_WadHeader");
 static_assert(offsetof(CdState, m_IsReading) == 0x28, "CdState");
 
-extern CreditsLetter *D_8007589C; /* the letters */
+extern CreditsLetter *P32 D_8007589C; /* the letters */
 extern int D_800756E4;            /* letters in use */
-extern CreditsLine *D_80075708;   /* the lines */
-extern char *D_800757EC;          /* where the next part loads */
+extern CreditsLine *P32 D_80075708; /* the lines */
+extern char *P32 D_800757EC;        /* where the next part loads */
 extern int D_80075958;            /* its data and scene's size */
 extern int D_80075950[2];         /* the vblank count at the last two frames */
 extern void *Terminator_credits;  /* the overlay's end (gen/ovl_table.c, D20) */

@@ -30,6 +30,13 @@ host maps a PS1 address in that range to `s1_labels + (address - first)`;
 `--extra NAME=ADDR` names a word in a hole (PsyQ's rand seed). The image
 starts at s1_labels and ends at s1_labels_end.
 
+PIE (--pie, the PS4's eboot, decisions D193): a 32-bit word can't hold a
+relocated address in a position-independent executable (no R_X86_64_32), so
+every symbolic word is emitted as 0 and listed in `s1_pie_words`, pairs of
+8-byte {slot, target} ending in {0, 0}, which start-up stores before
+anything reads them (src/platform/ps4/main.c). The PS4 loads the image below
+2 GB (D180), so each address fits its 32 bits.
+
 abscheck: a raw `.word` whose value lies in PS1 main RAM (0x80000000-0x801FFFFF)
 may be an unrelocated pointer. Each one must be listed in --allow (one
 `SYMBOL+0xOFFSET` per line, # comments) or the conversion fails.
@@ -52,6 +59,18 @@ psx_addr = {}    # --map: symbol -> PS1 address
 psx_images = []  # (PS1 address, image label, end label, PS1 span)
 psx_labels = itertools.count()
 image_chunks = []  # --image: (PS1 address, label, lines)
+host_labels = set()  # --image --host-label: slots renamed p32slot_NAME (D174)
+pie_words = []  # --pie: (slot label, target) for each symbolic word (D193)
+pie_mode = [False]
+
+
+def word(w):
+    """A .long for w; under --pie a symbolic w becomes 0 and a pie_words entry."""
+    if not pie_mode[0] or re.match(r"^-?(0x[0-9A-Fa-f]+|\d+)$", w):
+        return f".long {w}"
+    slot = f".Ls1pw{len(pie_words)}"
+    pie_words.append((slot, w))
+    return f"{slot}: .long 0"
 
 
 def convert(path, root, allow, problems, only=None, image=False):
@@ -85,7 +104,8 @@ def convert(path, root, allow, problems, only=None, image=False):
                     continue
                 if label not in psx_addr:
                     raise SystemExit(f"{path}: {label} is not in the map")
-                full = out = [f".globl {label}", f".type {label}, %object", f"{label}:"]
+                name = "p32slot_" + label if label in host_labels else label
+                full = out = [f".globl {name}", f".type {name}, %object", f"{name}:"]
                 image_chunks.append((psx_addr[label], label, out))
                 continue
             close_image()
@@ -137,7 +157,7 @@ def convert(path, root, allow, problems, only=None, image=False):
                         key = f"{label}+0x{offset:X}"
                         if key not in allow and out is full:
                             problems.append(f"{os.path.relpath(path, root)}: {key} = 0x{v:08X}")
-                out.append(f".long {w}")
+                out.append(word(w))
                 offset += 4
         elif op in (".short", ".half"):
             n = len(args.split(","))
@@ -205,8 +225,15 @@ def main():
                     help="--image: where the image ends (main_BSS_END)")
     ap.add_argument("--extra", action="append", default=[],
                     help="--image: NAME=ADDR, a symbol at a PS1 address in a hole")
+    ap.add_argument("--host-label", action="append", default=[],
+                    help="--image: NAME's slot is renamed p32slot_NAME and NAME is the C's own "
+                         "(linux64's function pointers, D174)")
+    ap.add_argument("--pie", action="store_true",
+                    help="symbolic words as 0 and an s1_pie_words table (the PS4, D193)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
+    pie_mode[0] = a.pie
+    host_labels.update(a.host_label)
     allow = set()
     if a.allow:
         for line in open(a.allow):
@@ -234,7 +261,13 @@ def main():
         lines += image_section(min(c[0] for c in image_chunks), a.image_end, extra)
     # Start-up code (src/game/port.c) rebases these onto the port's scratchpad.
     lines += [".data", ".balign 4", ".globl s1_scratch_relocs", "s1_scratch_relocs:"]
-    lines += [f".long {r}" for r in scratch_relocs] + [".long 0"]
+    lines += [word(r) for r in scratch_relocs] + [".long 0"]
+    if a.pie:
+        lines += [".data", ".balign 8", ".globl s1_pie_words", "s1_pie_words:"]
+        # only the words emitted (a FILE.s:LABEL filter drops the rest)
+        emitted = {l.split(":", 1)[0] for l in lines if l.startswith(".Ls1pw")}
+        lines += [f".quad {slot}, {target}" for slot, target in pie_words if slot in emitted]
+        lines += [".quad 0, 0"]
     if a.map and not a.image:
         # Bytes to copy: the image's own span, but never past the next label's
         # PS1 address (host and PS1 alignment padding can differ).

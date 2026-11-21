@@ -50,6 +50,18 @@ def nm(tool, obj):
     return syms
 
 
+def relro_names(tool, obj):
+    """Names defined in a .data.rel.ro section (nm's System V format)."""
+    out = subprocess.run([tool, "--format=sysv", obj], check=True, stdout=subprocess.PIPE,
+                         universal_newlines=True).stdout
+    names = set()
+    for line in out.splitlines():
+        f = [x.strip() for x in line.split("|")]
+        if len(f) >= 7 and f[6].startswith(".data.rel.ro"):
+            names.add(f[0])
+    return names
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--nm", required=True)
@@ -85,6 +97,11 @@ def main():
     bad = [n for n in own if not any(p.search(n) for p in allowed)]
     # local labels the compiler makes for its own constants are read-only
     bad = [n for n in bad if not re.match(r"^\.L|^\$", n)]
+    if bad:
+        # a PIE's constant tables of addresses (the PS4's -fPIE, D193) sit in
+        # .data.rel.ro: written only by the loader's relocations, read-only after
+        relro = relro_names(a.nm, a.inp)
+        bad = [n for n in bad if n not in relro]
     if bad:
         sys.exit("tick60_link: writable data of the 60 Hz rules' own, which would split the "
                  "game's state: " + ", ".join(sorted(bad)))

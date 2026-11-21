@@ -316,6 +316,7 @@ static void FairyExit(void) {
  * copied to a buffer (PAL's is 0x80076298), the language and screen position packed
  * into the halfword at +0x7C (the icon palette's colour 14) and the save's id
  * into +0x7E (colour 15, the id the read above checks). MemCardSync(0) waits. */
+void *PortRegionData(unsigned pal_addr); /* region.h's, which needs SPYRO_PORT */
 static void PalCardHeaderWrite(void) {
   /* PAL's buffer is a global (0x80076298); here a local, as the port's
    * MemCardWriteFile writes before it returns, so save states have nothing to keep */
@@ -484,7 +485,7 @@ static void FairyMenu(void) {
 }
 
 static void Fairy(void) {
-  Moby **list = (Moby **)(D_8006FCF4 + 0x400);
+  Moby *P32 *list = (Moby *P32 *)(D_8006FCF4 + 0x400);
   fc.m_AnimationTimer += g_DeltaTime;
   SpecularUpdate(3);
   list[1] = NULL;

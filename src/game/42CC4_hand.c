@@ -196,7 +196,7 @@ static u_int FuzzRand(void) {
 /* The moby collision grid: g_MobyCollisionChain points at its heads, one
  * per 8192-unit cell (32 per row), then a second grid 0x400 entries on;
  * each list runs through m_CollisionChainNext. */
-static inline Moby **MobyChain(int region) { return (Moby **)g_MobyCollisionChain + region; }
+static inline Moby *P32 *MobyChain(int region) { return (Moby *P32 *)g_MobyCollisionChain + region; }
 
 /* A moby's cell: x and y >> 13 (as unsigned), 32 cells to a row. */
 static inline int MobyCell(const Moby *m) {
@@ -206,7 +206,7 @@ static inline int MobyCell(const Moby *m) {
 /* Takes m out of its cell's list (the asm walks it to m's link; m must be
  * on it). */
 static void ChainUnlink(Moby *m, int region) {
-  Moby **link = MobyChain(region);
+  Moby *P32 *link = MobyChain(region);
   while (*link != m)
     link = &(*link)->m_CollisionChainNext;
   *link = m->m_CollisionChainNext;
@@ -214,7 +214,7 @@ static void ChainUnlink(Moby *m, int region) {
 
 /* Puts m at the head of a cell's list. */
 static void ChainLink(Moby *m, int region) {
-  Moby **head = MobyChain(region);
+  Moby *P32 *head = MobyChain(region);
   Moby *next = *head;
   *head = m;
   m->m_CollisionChainNext = next;
