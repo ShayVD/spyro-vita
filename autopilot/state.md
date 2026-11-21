@@ -17,6 +17,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "hardware_runs": [
     {
+      "date": "2026-11-21 09:03-09:30",
+      "what": "session 4 (owner's yes 'vita is available for you, go'): AP11 owner60 on 63d80f4 (found whole 98.63->99.27%, busy 60->53%, 0 late), AP12 shot_hd (close walls/ground only), AP13 Toasty 30 Hz (Toasty late/300 30.7->3.5), AP14a/b owner60 on Toasty ca4450e vs 63d80f4 (opening 78->0 late/300); regression on the game-over screen at 30 Hz: 0 -> 60 late/300 (#198); 63d80f4 left on the Vita (READBACK IDENTICAL, SHA-1 f102a69c)",
+      "log": "logs/hw-ap11..hw-ap14b, D192"
+    },
+    {
       "date": "2026-11-20 17:15-17:36",
       "what": "session 3 (owner's yes): AP8a/b owner60 b604db4 vs ca4450e (sky 1.54->1.03 ms, found whole 96.36->98.20%, 0 late both), AP9a/b shot_hd (changes only on close walls/ground), AP10 Toasty vs AP2 (presenter saturates in Toasty: late/300 1.2->30.7, #193); ca4450e left on the Vita (READBACK IDENTICAL)",
       "log": "logs/hw-ap8a..hw-ap10, D179"
@@ -162,11 +167,13 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
     "base_commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
     "started_at": "2026-11-21T07:05:00Z",
-    "filed": 0,
-    "investigated": false
+    "filed": 1,
+    "investigated": true
   },
   "rounds_without_gain": 1,
-  "hardware_pending": null,
+  "hardware_pending": [
+    "#198 bisect on hardware (parse_thread=1, vc_lazy=0, vc_lazy_logic=0) needs the owner's yes"
+  ],
   "job": null,
   "batch": null,
   "lanes": [

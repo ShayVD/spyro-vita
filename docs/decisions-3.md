@@ -715,3 +715,17 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
     - Glow rims round an ambiguous centre would draw the same either way.
     - A world split or sky cut from an ambiguous end would be placed by each polygon's own depth for that end, so neighbours could crack.
   - **Ambiguous portal outline keys:** taking one at its pixel centre exactly places 354 more sky-clip vertices on A, but moves 281 polygons that stay affine. That picture change is the owner's call.
+
+### D192. Hardware session 4: round 9's build (63d80f4) on the Vita (2026-11-21)
+
+- **Run:** with the owner's yes ("vita is available for you, go"), AP11–AP14 (`runtime/autopilot/hw-session4.sh`, logs `logs/hw-ap11`–`hw-ap14b`). Builds: `autopilot-ca4450e.vpk` (D179's) and `autopilot-63d80f4.vpk` (D180–D191), US disc. New run file `tools/vita/fps-runs/ap14-owner60-toasty.txt`: the owner's settings (16:9, 60 HZ, the wobble fix on, `draw_distance=200`) on the Toasty route in real time.
+- **AP14 (owner's settings, Toasty route), ca4450e → 63d80f4, play windows 11,700–18,000:**
+  - late vblanks per 300 in Toasty's heavy opening (12,000–12,600): 78 → 0; over 13,500–15,300: 5–51 → 0;
+  - game thread busy 99% → 63–95%. This is D180's walk overlap at 60 HZ, as expected there.
+  - Artisans before the warp (11,100–11,400): late 106–109 → 2–3 per 300.
+  - The run is in real time, so the two builds' play splits after 15,000 (63d80f4 reaches game over at 18,008; ca4450e doesn't).
+- **AP11 (AP8's owner60 lines on the pause route) against AP8b:** polygons found whole 98.63 → 99.27%, the game thread's vertices not found 5,585 → 2,920; game thread busy 60.4 → 52.9% (worst 96 → 81); 0 late vblanks in both.
+- **AP12 (`shot_hd=1`) against AP9b:** the software shots are identical. The GPU pictures differ in 0.9–4.0% of pixels, only on the close walls and the ground beside them (D190, D191); no cracks.
+- **AP13 (Toasty at 30 Hz with in-between frames) against AP10 (D179):** Toasty's late vblanks per 300 30.7 → 3.5 (#193, #195). The presenter still runs at 95% in Toasty's opening (12,000–12,600) but no longer misses frames.
+- **Regression (#198):** on the game-over screen in Artisans (gamestate 5, reached at ~19,350 by both AP10 and AP13), the new build settles from 20,100 into exactly 60 late vblanks per 300. The render thread takes 16.65 ms a picture, of which 11.5 ms is its present; it skips the draws of ~180 in-between frames per 300. The presenter is busy 91% (7.45 → 15.4 ms a vblank) for the same work counters, and drops ~200 game-thread frames from a full queue. ca4450e (AP10) holds 0 late on the same screen. AP14b shows the same lock after its own game over (19,500–21,000, 60 late per 300). For a short stretch in Toasty (13,200–15,000) AP14b's render thread also runs at 16 ms a picture, without late vblanks. The work counters don't change, so this looks like a pacing lock between the presenter, its buffers and the render thread's present rather than more work. Suspects: D187's `parse_thread=2`, D186's lazy presenter. Not bisected: each run needs the owner's yes.
+- **Left on the Vita:** 63d80f4's eboot (SHA-1 f102a69c, READBACK IDENTICAL).
