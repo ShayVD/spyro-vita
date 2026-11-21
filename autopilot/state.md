@@ -9,7 +9,52 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 201,
+      "branch": "auto/201-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-201",
+      "pids": [],
+      "started_at": "2026-11-21T14:32:31Z",
+      "files": [
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/main.c",
+        "src/platform/vita/vita.h",
+        "src/platform/vita/CMakeLists.txt",
+        "docs/vita-testing.md"
+      ],
+      "agent": "ab622b9820c2dd7f5"
+    },
+    {
+      "issue": 203,
+      "branch": "auto/203-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-203",
+      "pids": [],
+      "started_at": "2026-11-21T14:32:37Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
+        "docs/presentation.md"
+      ],
+      "agent": "ad9f042356afbd9cf"
+    },
+    {
+      "issue": 205,
+      "branch": "auto/205-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-205",
+      "pids": [],
+      "started_at": "2026-11-21T14:32:43Z",
+      "files": [
+        "src/game/gte_native.h",
+        "src/game/gte_ops.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/render_ctx_names.h"
+      ],
+      "agent": "ad72b45d7f42b21a4"
+    }
+  ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -295,3 +340,8 @@ continue.
 - 13:30Z phase 8: #200 worker committed the lod-line fix (680ad01), profiling continues; pick empty
 - 14:01Z phase 8: #200 worker still profiling (host runs live); pick empty
 - 14:31Z phase 8: merged #200 (D199); filed #203-#207, #208 needs-owner
+- 14:33Z phase 8: workers started for #201, #203, #205
+- 15:04Z phase 8: #201 #203 #205 running, no commits yet; pick empty; #208 unanswered
+- 15:35Z phase 8: #201 #203 #205 still running (long host/Vita3K runs), no commits yet; #203 ran up to 4 host runs at once (flagged, benign: own processes only)
+- 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
+- 16:37Z phase 8: stall check flagged #201 #203 #205 (no commit in 2 h) but all three are alive with in-scope edits; asked each for a WIP commit instead of stopping them
