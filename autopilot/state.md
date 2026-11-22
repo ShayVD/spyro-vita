@@ -25,7 +25,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md",
         "docs/presentation.md"
       ],
-      "agent": "a3771a64a270509bb"
+      "agent": "a3771a64a270509bb",
+      "last_commit_at": "2026-11-22T20:45:07+00:00"
     },
     {
       "issue": 215,
@@ -39,7 +40,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/sky_clip_hand.c",
         "src/game/cyclorama_hand.c"
       ],
-      "agent": "af67e7ad917c15959"
+      "agent": "af67e7ad917c15959",
+      "last_commit_at": "2026-11-22T20:45:09+00:00"
     },
     {
       "issue": 220,
@@ -52,7 +54,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/present.h",
         "src/platform/vita/pres_thread.c"
       ],
-      "agent": "a94cfc04aa1f1e269"
+      "agent": "a94cfc04aa1f1e269",
+      "last_commit_at": "2026-11-22T20:45:05+00:00"
     }
   ],
   "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
@@ -413,3 +416,4 @@ continue.
 - 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
 - 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
 - 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
+- 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
