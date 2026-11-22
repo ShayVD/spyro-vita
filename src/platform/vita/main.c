@@ -299,10 +299,17 @@
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
- *       dd_budget=0     with 60 Hz logic in play, no work budget for the
- *                       longer draw distance: only the buffer's limits, as
- *                       before #180 (default 1: each draw keeps under
- *                       LOD_BUDGET_60, 48 KB of primitives; D175, #185)
+ *       dd_budget=auto  with 60 Hz logic in play, the longer draw
+ *                       distance's work budget follows the game thread's
+ *                       measured time per logic frame (the default, #212;
+ *                       lod_time.c): 14.5 ms of the 16.7, from 48 KB of
+ *                       primitives up to the draw's span; needs stats=1,
+ *                       else a fixed 48 KB.
+ *                       dd_budget=0: no work budget, only the buffer's
+ *                       limits, as before #180 (#185). dd_budget=1: each
+ *                       draw keeps under LOD_BUDGET_60, 48 KB of primitives,
+ *                       as the default was until #212 (D175); dd_budget=N
+ *                       (2-1024): under N KB
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
@@ -355,6 +362,9 @@
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
 #include "../../game/lod.h"     /* dd_budget= (D175, #185) */
+/* lod_time.c: dd_budget=auto (#212) */
+void vita_lod_time_set_auto(int on);
+void vita_lod_time_init(void);
 
 #include <SDL2/SDL.h>
 #include <psp2/appmgr.h>
@@ -677,8 +687,13 @@ static void read_config(void) {
       g_vita_opts.tex_cache = atoi(v);
     else if (!strcmp(line, "shader_cache"))
       g_vita_opts.shader_cache = atoi(v); /* gpu_gl.c's program cache (#201) */
-    else if (!strcmp(line, "dd_budget"))
-      g_lod.budget = atoi(v) ? LOD_BUDGET_60 : 0; /* the 60 Hz work budget (D175, #185) */
+    else if (!strcmp(line, "dd_budget")) { /* the 60 Hz work budget (D175, #185, #212) */
+      const int kb = atoi(v);
+      vita_lod_time_set_auto(!strcmp(v, "auto")); /* sized from the frame's time (lod_time.c) */
+      g_lod.budget = !strcmp(v, "auto") || kb == 1 ? LOD_BUDGET_60 /* where auto starts; 1: D175's */
+                     : kb > 0                      ? (kb > 1024 ? 1024 : kb) * 1024
+                                                   : 0;
+    }
     else if (!strcmp(line, "state_test"))
       vita_savestate_config(v);
     else if (vita_watchdog_config(line, v))
@@ -1039,12 +1054,7 @@ int main(int argc, char **argv) {
                               : "the clears pixel by pixel");
   vita_present_init();
   vita_picture_init();
-  if (g_lod.budget)
-    vita_log("picture: draw distance with 60 Hz logic in play keeps each draw under %d KB of "
-             "primitives (dd_budget=1, D175)", g_lod.budget / 1024);
-  else
-    vita_log("picture: draw distance with no 60 Hz budget, only the buffer's limits "
-             "(dd_budget=0, D175)");
+  vita_lod_time_init(); /* the 60 Hz budget's line (dd_budget=, lod_time.c) */
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     vita_exit(1);
