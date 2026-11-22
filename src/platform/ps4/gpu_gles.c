@@ -1121,16 +1121,28 @@ int ps4_gpu_present(void) {
     st[0] = 0, st[1] = 0, st[2] = 1, st[3] = 1;
     quad(dst, st);
   }
-  t1 = ps4_now_us();
-  g_ps4_where = "eglSwapBuffers";
-  eglSwapBuffers(s_dpy, s_surf);
-  g_ps4_where = "the present";
-  s_st.swap_us += ps4_now_us() - t1;
   {
     static unsigned first;
-    if (first < 3) { /* the first pictures, flushed (GPU run 3 hung before any) */
-      host_log("gpu: picture %u: %llu us building, %llu us in eglSwapBuffers", first,
-               t1 - t0, ps4_now_us() - t1);
+    unsigned long long tf = 0;
+    if (first < 3) { /* the first pictures: the GL work finished apart from the
+                      * swap, each step flushed (GPU runs 3-5 hung in the first swap) */
+      GLenum e = glGetError();
+      host_log("gpu: picture %u built in %llu us (GL error 0x%x); glFinish", first,
+               ps4_now_us() - t0, (unsigned)e);
+      host_log_flush();
+      g_ps4_where = "glFinish";
+      tf = ps4_now_us();
+      glFinish();
+      tf = ps4_now_us() - tf;
+    }
+    t1 = ps4_now_us();
+    g_ps4_where = "eglSwapBuffers";
+    eglSwapBuffers(s_dpy, s_surf);
+    g_ps4_where = "the present";
+    s_st.swap_us += ps4_now_us() - t1;
+    if (first < 3) {
+      host_log("gpu: picture %u: %llu us in glFinish, %llu us in eglSwapBuffers", first, tf,
+               ps4_now_us() - t1);
       host_log_flush();
       first++;
     }
@@ -1301,6 +1313,29 @@ int ps4_gpu_init(void) {
   glDisable(GL_DITHER);
   s_dx0 = 0, s_dy0 = 0, s_dx1 = VW - 1, s_dy1 = VH - 1; /* the first draw uploads it all */
   gl_check("init");
+  { /* a bare clear and swap before any of the game's work, each step logged
+     * (GPU runs 3-5 hung in their first eglSwapBuffers) */
+    unsigned long long t;
+    int k;
+    for (k = 0; k < 2; k++) {
+      glClearColor(0, 0, 0, 1);
+      glClear(GL_COLOR_BUFFER_BIT);
+      host_log("gpu: start-up swap %d (interval %d): glFinish", k, g_ps4_opts.gpu_vsync);
+      host_log_flush();
+      g_ps4_where = "glFinish (start-up)";
+      t = ps4_now_us();
+      glFinish();
+      host_log("gpu: start-up swap %d: glFinish %llu us; eglSwapBuffers", k, ps4_now_us() - t);
+      host_log_flush();
+      g_ps4_where = "eglSwapBuffers (start-up)";
+      t = ps4_now_us();
+      if (!eglSwapBuffers(s_dpy, s_surf))
+        host_log("gpu: start-up swap %d: eglSwapBuffers: 0x%x", k, (unsigned)eglGetError());
+      host_log("gpu: start-up swap %d: eglSwapBuffers %llu us", k, ps4_now_us() - t);
+      host_log_flush();
+    }
+    g_ps4_where = "starting";
+  }
   host_log("gpu: the GLES2 renderer is up in %llu ms (1080p targets, the software rasterizer "
            "keeping VRAM)", (ps4_now_us() - t0) / 1000);
   return 0;

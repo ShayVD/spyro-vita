@@ -85,7 +85,7 @@ static void *watchdog(void *arg) {
       told = 1;
       host_log("watchdog: the game thread has been at \"%s\" for %u s (VSync %u)", where,
                still / 2, last);
-      if (!strcmp(where, "eglSwapBuffers") && g_ps4_opts.gpu_vsync) {
+      if (!strncmp(where, "eglSwapBuffers", 14) && g_ps4_opts.gpu_vsync) {
         FILE *f = fopen(PS4_NOVSYNC, "w");
         if (f) { /* the build's stamp first: another build tries VSync again */
           fprintf(f, "%s\neglSwapBuffers blocked with swap interval 1; delete this file to "
@@ -106,7 +106,9 @@ static void *watchdog(void *arg) {
 Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
                       .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
                       .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
-                      .gpu_vsync = 1, .shader_dump = 1,
+                      /* swap interval 0, as OpenOrbis's Piglet sample: with 1
+                       * the first eglSwapBuffers never returned (GPU runs 3-5) */
+                      .gpu_vsync = 0, .shader_dump = 1,
                       .touch_menu = 1 /* the owner's choice, 2026-11-21 (D194) */};
 int g_ps4_user = -1;
 
