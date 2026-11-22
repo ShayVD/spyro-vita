@@ -25,6 +25,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "af67e7ad917c15959",
       "last_commit_at": "2026-11-22T21:43:35+00:00",
       "reported": true
+    },
+    {
+      "issue": 223,
+      "branch": "auto/223-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-223",
+      "pids": [],
+      "started_at": "2026-11-22T23:25:33Z",
+      "files": [
+        "src/platform/vita/prof_draw.c",
+        "src/platform/vita/CMakeLists.txt",
+        "src/platform/vita/picture.c",
+        "docs/vita-testing.md"
+      ],
+      "agent": "a38d43540aa2da0cd"
     }
   ],
   "last_good": "a15f2abc097a66c3c569e8e69ec4ec6f6c9f35d8",
@@ -229,7 +243,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 12,
+    "filed": 13,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -399,3 +413,4 @@ continue.
 - 2026-11-22T23:11:40Z phase 8: merged #220 (D211), Vita3K: none
 - 2026-11-22T23:20:09Z phase 8: #215 reported done (PortalSkyPlain S/P 1,230 -> 0); gate after #212, Vita3K: none
 - 2026-11-22T23:24:37Z phase 8: merged #212 (D212; pictures change in 60 Hz windows: baseline rebuild after #215), gating #215, Vita3K: none
+- 2026-11-22T23:25:53Z phase 8: filed #223, started #223; #215 gating, Vita3K: none
