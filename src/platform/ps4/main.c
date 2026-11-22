@@ -61,8 +61,7 @@ extern int g_nd_direct_ok;
  * (D180, tools/ps4/oelf_check.py runs after every link). */
 static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 
-/* the Vita's defaults (vita/main.c): 16:9, 60 Hz logic in play (D150), the
- * free camera (D53); the GLES2 renderer when the player's Piglet loads */
+static const char k_build[] = __DATE__ " " __TIME__; /* stamps the gpu_novsync marker */
 const char *volatile g_ps4_where = "starting";
 volatile unsigned g_ps4_beat;
 
@@ -88,8 +87,9 @@ static void *watchdog(void *arg) {
                still / 2, last);
       if (!strcmp(where, "eglSwapBuffers") && g_ps4_opts.gpu_vsync) {
         FILE *f = fopen(PS4_NOVSYNC, "w");
-        if (f) {
-          fputs("eglSwapBuffers blocked with swap interval 1; delete this file to try again\n", f);
+        if (f) { /* the build's stamp first: another build tries VSync again */
+          fprintf(f, "%s\neglSwapBuffers blocked with swap interval 1; delete this file to "
+                     "try again\n", k_build);
           fclose(f);
         }
         host_log("watchdog: wrote " PS4_NOVSYNC ": the next start swaps with interval 0");
@@ -101,6 +101,8 @@ static void *watchdog(void *arg) {
   return NULL;
 }
 
+/* the Vita's defaults (vita/main.c): 16:9, 60 Hz logic in play (D150), the
+ * free camera (D53); the GLES2 renderer when the player's Piglet loads */
 Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
                       .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
                       .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
@@ -259,9 +261,18 @@ static void *game_thread(void *arg) {
   {
     FILE *f = fopen(PS4_NOVSYNC, "r");
     if (f) { /* the watchdog saw eglSwapBuffers stuck with interval 1 */
+      char line[64] = "";
+      if (!fgets(line, sizeof line, f))
+        line[0] = 0;
       fclose(f);
-      g_ps4_opts.gpu_vsync = 0;
-      host_log("gpu: " PS4_NOVSYNC " is there: swap interval 0");
+      line[strcspn(line, "\n")] = 0;
+      if (!strcmp(line, k_build)) {
+        g_ps4_opts.gpu_vsync = 0;
+        host_log("gpu: " PS4_NOVSYNC " is there: swap interval 0");
+      } else { /* written by another build (GPU run 4's second display handle) */
+        remove(PS4_NOVSYNC);
+        host_log("gpu: " PS4_NOVSYNC " from another build (%s) removed: swap interval 1", line);
+      }
     }
   }
   {

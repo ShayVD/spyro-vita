@@ -78,8 +78,8 @@ static int s_ovl_w, s_ovl_h;
 
 int ps4_video_handle(void) { return s_handle; }
 
-/* The display, for the vblank count and the flips. With the GPU path,
- * Piglet opens its own (gpu_gles.c) and this handle is the count's only. */
+/* The display, for the vblank count and the flips (the software path only:
+ * with the GPU's, Piglet holds it). */
 static int open_display(void) {
   s_handle = sceVideoOutOpen(ORBIS_VIDEO_USER_MAIN, ORBIS_VIDEO_OUT_BUS_MAIN, 0, NULL);
   if (s_handle < 0) {
@@ -95,23 +95,13 @@ int ps4_video_init(void) {
   void *mem = NULL;
   size_t size = (FB_BYTES * NBUF + DMEM_ALIGN - 1) & ~(size_t)(DMEM_ALIGN - 1);
   int rc, i;
-  if (g_ps4_gpu) { /* Piglet shows the pictures; the vblank count comes from here */
-    uint64_t c0;
-    if (open_display() != 0) { /* (then ps4_video_vcount is a 60 Hz clock) */
-      host_log("video: no sceVideoOut handle beside Piglet's: the vblanks follow a 60 Hz clock");
-      return 0;
-    }
-    /* a handle with no buffers of its own may never count (GPU run 3 hung
-     * at its first VSync): it must, within 50 ms, or the clock is a timer */
-    c0 = ps4_video_vcount();
-    sceKernelUsleep(50000);
-    if (ps4_video_vcount() == c0) {
-      host_log("video: the sceVideoOut handle beside Piglet's doesn't count vblanks (%llu): the "
-               "vblanks follow a 60 Hz clock", (unsigned long long)c0);
-      sceVideoOutClose(s_handle);
-      s_handle = -1;
-    } else
-      host_log("video: vblanks counted on a sceVideoOut handle beside Piglet's");
+  if (g_ps4_gpu) {
+    /* Piglet shows the pictures and opens the display itself, at its first
+     * eglSwapBuffers: a handle of ours on the main bus (opened after the
+     * surface, which doesn't hold one yet) left that swap waiting for good
+     * (GPU runs 3 and 4). So none here: ps4_video_vcount is a 60 Hz clock
+     * and the swap's VSync keeps the pictures on the display's vblanks. */
+    host_log("video: the vblanks follow a 60 Hz clock (Piglet holds the display)");
     return 0;
   }
   if (open_display() != 0)
