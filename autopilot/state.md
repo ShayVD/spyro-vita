@@ -43,24 +43,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "af67e7ad917c15959",
       "last_commit_at": "2026-11-22T21:43:35+00:00"
-    },
-    {
-      "issue": 220,
-      "branch": "auto/220-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-220",
-      "pids": [],
-      "started_at": "2026-11-22T19:42:07Z",
-      "files": [
-        "src/game/present.c",
-        "src/game/present.h",
-        "src/platform/vita/pres_thread.c"
-      ],
-      "agent": "a94cfc04aa1f1e269",
-      "last_commit_at": "2026-11-22T20:45:05+00:00",
-      "reported": true
     }
   ],
-  "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
+  "last_good": "c6947cbc4c1cf0ef30f70eef6d0400ce96a7fc49",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
@@ -267,14 +252,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 220,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-220.gate.log",
-    "started_at": "2026-11-22T22:35:16Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -429,3 +407,4 @@ continue.
 - 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
 - 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
 - 2026-11-22T23:02:47Z phase 8: #212 reported done (Vita3K stone60 x1.00 -> x1.82-2.00); gate waits for #220 gate, Vita3K: none
+- 2026-11-22T23:11:40Z phase 8: merged #220 (D211), Vita3K: none
