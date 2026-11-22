@@ -325,6 +325,10 @@ typedef struct {
   /* #202: hand-overs cut at an edge's pixel another cut had placed
    * differently, merged into one place (their mean) */
   unsigned hk_merged;
+  /* #202: derived vertices at the projection the order named whose depth
+   * is that projection's own, chosen with the polygon's others, where the
+   * plane through those gave none (counted in derived too) */
+  unsigned der_own;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

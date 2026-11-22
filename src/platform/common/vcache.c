@@ -581,8 +581,8 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   /* #183: the quads' vertices with no entry found again from their polygon */
   PsyX_Log("vcache derived: %u vertices with no entry drawn with their polygon's depth (%u at the "
            "projection recorded before the renderer moved them, %u at their key); %u left with no "
-           "entry",
-           out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none);
+           "entry; %u at that projection with its own depth, the plane giving none (#202)",
+           out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none, out->der_own);
   /* #181: ambiguous keys' vertices found again from the frame's order */
   PsyX_Log("vcache resolved: %u vertices with an ambiguous key drawn with a depth from its "
            "projections near their polygon's others (%u where the order left one point, %u with "
@@ -2014,7 +2014,8 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
   return 1;
 }
 
-/* derive (above): its place, then its depth, the others all found */
+/* derive (above): its place, then its depth, the others all found.
+ * Returns 1, 2 (#202: the depth the projection's own), or 0. */
 static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
                   const unsigned *en, int m, const Sink *lk, unsigned *cost, int *pick,
                   VCacheVert *out, int *moved, int *snapped) {
@@ -2028,7 +2029,32 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
   derive_place(tab, gen, xy, slotf, m, lk, cost, out, &slot, &dr, 1);
   *moved = out->dx != 0 || out->dy != 0;
   *snapped = slot != 0;
-  return derive_depth(tab, xy, e, en, m, slot, NULL, cost, pick, out);
+  if (derive_depth(tab, xy, e, en, m, slot, NULL, cost, pick, out))
+    return 1;
+  if (slot && !s_dg_old) {
+    /* #202: at the projection the order named, but the plane through the
+     * other three gives no depth there (behind the eye, or past 4 times
+     * theirs: big close quads whose corners the grid moved): that
+     * projection's own candidates, chosen with the others' as for any
+     * polygon whose every vertex was found */
+    static const int k_all4[4] = {0, 1, 2, 3};
+    const Cand *e2[4];
+    unsigned en2[4];
+    const Entry *const s2 = &tab->s[slot - 1];
+    for (i = 0; i < 4; i++) {
+      e2[i] = e[i];
+      en2[i] = en[i];
+    }
+    e2[m] = s2->c;
+    en2[m] = T_N(s2->tag);
+    memset(pick, 0, sizeof(int) * 4);
+    if (choose(e2, en2, k_all4, 4, cost, pick)) {
+      out->w = flt(e2[m][pick[m]].w);
+      pick[m] = 0;
+      return 2;
+    }
+  }
+  return 0;
 }
 
 /* Ambiguous keys (#181). Different points on one pixel: more than the
@@ -2362,6 +2388,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     der = derive(pres, (Table *)ptab, gen, xy, e, en, none, &lk, cost, pick, &dv, &der_moved,
                  &der_snap);
     if (der) {
+      st->der_own += der == 2; /* #202 */
+      der = 1;
       persp = VREF_PERSP;
       st->hits++;
       st->derived++;
