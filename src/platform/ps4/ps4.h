@@ -118,6 +118,10 @@ void ps4_menu_quit(void) __attribute__((noreturn)); /* the options saved, then t
 /* savestate_ps4.c: the menu's SAVE rows */
 void ps4_savestate_init(void);
 
+/* raster_mt.c: the software rasterizer's draws on several threads */
+int ps4_raster_init(void); /* 0 = the workers are up */
+void ps4_raster_report(int vblank);
+
 /* vblank.c */
 int ps4_vblank_count(void);
 

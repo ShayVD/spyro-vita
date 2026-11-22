@@ -269,6 +269,7 @@ static void *game_thread(void *arg) {
   if (g_Region != PSX_REGION_US)
     host_log("region: %s, %d Hz vblanks", psx_region()->serial, psx_region_vblank_hz());
   ps4_present_init(); /* after the region's clock (60 Hz logic, PAL's rates) */
+  ps4_raster_init();  /* the software rasterizer's threads (raster_mt.c) */
   nd_init(host_log);
   if (ps4_pad_init() != 0)
     ps4_notify("Spyro: no controller (scePad). See spyro.log.");

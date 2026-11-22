@@ -572,7 +572,7 @@ static void flush(void);
 
 /* the VRAM texture gets the dirty rows */
 static void upload(void) {
-  const uint16_t *v = soft_host_vram();
+  const uint16_t *v = host_vram(); /* (the rasterizer's threads done first) */
   if (s_dx0 > s_dx1)
     return;
   flush();
@@ -1205,8 +1205,21 @@ static int egl_up(void) {
     return -1;
   }
   s_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-  if (s_dpy == EGL_NO_DISPLAY)
+  if (s_dpy == EGL_NO_DISPLAY) {
+    OrbisPglConfig got;
+    memset(&got, 0, sizeof got);
+    got.size = sizeof got;
     host_log("gpu: eglGetDisplay refused it: 0x%x", (unsigned)eglGetError());
+    if (scePigletGetConfigurationVSH(&got))
+      host_log("gpu: Piglet's configuration now: size 0x%x flags 0x%x order %u system %llu MiB "
+               "video %llu MiB flexible %llu MiB commands %u KiB LCUE %u KiB", got.size, got.flags,
+               got.processOrder, (unsigned long long)(got.systemSharedMemorySize >> 20),
+               (unsigned long long)(got.videoSharedMemorySize >> 20),
+               (unsigned long long)(got.maxMappedFlexibleMemory >> 20),
+               got.drawCommandBufferSize >> 10, got.lcueResourceBufferSize >> 10);
+    else
+      host_log("gpu: scePigletGetConfigurationVSH failed too");
+  }
   if (s_dpy == EGL_NO_DISPLAY)
     return -1;
   if (!eglInitialize(s_dpy, &major, &minor) || !eglBindAPI(EGL_OPENGL_ES_API)) {

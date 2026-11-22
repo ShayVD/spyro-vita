@@ -63,6 +63,7 @@ static void vblank(void) {
     ps4_video_report(v);
     ps4_audio_report(v);
     ps4_present_report(v);
+    ps4_raster_report(v);
     host_log_flush();
     s_stat_t0 = now;
     s_stat_v0 = v;
