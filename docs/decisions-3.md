@@ -850,4 +850,31 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - This file keeps both branches' decisions, in number order, each with its date heading.
   - `CMakeLists.txt`: main's `SPYRO_HOST_DIR` (linux64 builds from `src/platform/linux32`), with the autopilot branch's link launcher (D170) still for linux32 only.
   - `tools/host_checks.sh`: main's `EMU` (qemu-x86_64 for a linux64 binary), with the autopilot branch's `--save` on the demo run.
-- **Next free number:** D199.
+- **Next free number:** D199 (taken by the PS4's P4, below).
+
+## 2026-11-22 — the PS4's GLES2 renderer and options menu (PS4 plan P4)
+
+### D199. The PS4 draws with GLES2 on the firmware's Piglet from shader binaries captured once and shipped in the release fpkg (the owner's option C); the options menu has the Vita's rows (PS4 plan P4, 2026-11-21/22)
+
+- **Asked:** P4 of `docs/ps4-plan.md` (the session that ran P3). Numbered D199: main took D194–D198 with PR #176's merge while this branch called it D194, and every reference here was renumbered.
+- **The owner's choices:**
+  - **Shaders, option C** (2026-11-21): players install only the pkg and give their `.cue`/`.bin`. Piglet is in every PS4's firmware; its compiler (`libSceShaccVSH.sprx`) isn't. So the shaders are compiled once on a PS4 with the Piglet pair (`shader_compile=1`; `glPigletGetShaderBinarySCE` saves each to `/data/spyro/shaders/NAME-vs|fs-HASH.bin`), copied to the gitignored `disc/ps4-shaders/`, and embedded by `tools/ps4/shaders_c.py`; at start the firmware's Piglet (`/<sandbox word>/common/lib/`) loads them with `glShaderBinary`.
+  - **The binaries are never committed** (2026-11-22): they go only into the packaged release fpkg. The pair may be linked to ([sm64-ps4-osirizx](https://github.com/mindfreakdev/sm64-ps4-osirizx)); this repo never fetches or ships it.
+  - **The pkg uses its own shaders** even with the pair installed (2026-11-22); the pair only when the build has none, when `shader_compile=1`, or when the shipped ones fail (then a `shader_compile` marker makes the next start use it).
+  - **Touch pad tap opens the menu** by default (`touch_menu=1`, 2026-11-21).
+  - **One PSX WOBBLE row** (2026-11-22) for perspective + sub-pixel: the Vita's row (D194), same key and default (OFF: the fix on).
+- **Built** (`src/platform/ps4/`):
+  - `gpu_gles.c`: the Vita's renderer design on GLES2/EGL. The software rasterizer still draws every split into the CPU's VRAM, so the game's VRAM reads stay exact with no readback; the GPU redraws the same splits into 1080p targets (8, LRU), samples VRAM from a texture uploaded by dirty rows, blends as the PS1 (two passes for subtract), and keeps the presenter's frames in slot textures. The PICTURE rows: PSX WOBBLE (the vertex cache's dx, dy, w as a second vertex stream, `w` times the clip coordinates), RESOLUTION (1080p or the PS1's pixels), DRAW DISTANCE (`lod.c`, both renderers).
+  - `raster_mt.c`: the software rasterizer on 4 threads (rows by `(y>>2)%4`); `tests/ps4_raster` checks it against `gpu_soft.c`, 0 differing words. The software path went from ~33 to 60 fps with 60 FPS on.
+  - `menu.c`, `pad.c`, `menu_game.c`, `present_ps4.c`, `picture_ps4.c`, `savestate_ps4.c`: the Vita's menu and rows on the DualShock 4 (REAR TOUCH L2/R2 left out: the DS4 has them). `config.txt` keeps unknown lines.
+  - `main.c`: a watchdog thread logs where the game thread stalls; markers (`gpu_novsync`, `shader_compile`) carry the build's stamp, so another build tries again.
+  - Shared: the presenter's snapshot externs of PS1 labels and its `g_Buffers` field copy are `P32` (`pres_draw.c`, `pres_snap.c`, `render_ctx_check.c`). An 8-byte host pointer copied over a 4-byte field zeroed the next one (`m_HudOTStart`): the pause screen crashed on PS4 GPU run 1 and on linux64.
+- **What Piglet needed:**
+  - `param.sfo` CATEGORY `gde`, FORMAT `obs` (as OpenOrbis's sample): with `gd`, `eglGetDisplay` returned `EGL_NO_DISPLAY` and no error.
+  - Swap interval 0 (the sample's): with 1 the first `eglSwapBuffers` never returned (GPU runs 3–5). Without a `sceVideoOut` handle of our own (Piglet opens the display), the vblank count is a 60 Hz clock, and the wait sleeps to its next tick.
+  - The movies' 24-bit frames decoded from VRAM into RGBA at their own size: through `host_display_rgb` and a 1024×512 `GL_RGB` texture they took 58 ms a picture; now 0.8 ms.
+- **Checked:**
+  - **Hardware** (`logs/p4/gpu-run{1..9}/`, `docs/ps4-build.md`'s table): run 6 the GPU picture at 60.0 vblanks/s, 0 late, no GL errors; run 8 the firmware's Piglet with the embedded binaries, renderer up in 324 ms; run 9 the menu opened, changed and saved with no crash, 3 late vblanks in the run.
+  - **Unchanged elsewhere** (base `5c6021c`, the three shared files swapped back, the same build directories): linux32's and the Vita's code and data sections are the base's byte for byte; the whole files differ only in DWARF declaration columns (inserting `P32 ` moves a name) and linux32's build ID, which hashes them (stripped of debug info and the build ID, linux32 `072975…` both, the Vita `bbcaf5…` both). linux64 changes: the fix.
+  - **linux32 against linux64 with the presenter** (`--widescreen --interp --tick60`, `tools/host_checks.sh`, `logs/p4pres-*`): demo 24, routeA 53, routeB 54 shots and the traces the same.
+- **Still to do for P4:** the whole game played on hardware (saves, the Store copy's `EBOOT.PBP`, both endings, the credits).
