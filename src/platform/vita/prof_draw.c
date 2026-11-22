@@ -9,7 +9,8 @@
  * each part also counts the bytes of primitives it wrote (the primitive
  * pointer's move across each wrapped call, as the host's --prof-draw does
  * since #200), logged as a "draw kb N:" line after the "draw N:" line, so a
- * hardware log gives each part's ms per KB. */
+ * hardware log gives each part's ms per KB. With 60 Hz logic the update is
+ * GamestateUpdate_60, wrapped too since #223 (below). */
 #include "vita.h"
 
 #include <psp2/kernel/processmgr.h>
@@ -128,6 +129,21 @@ void __wrap_GamestateUpdate(void) {
   __real_GamestateUpdate();
   charge(D_UPDATE, &m);
 }
+
+#ifdef SPYRO_PROF_TICK60
+/* With 60 Hz logic in play the update is GamestateUpdate_60 (tick60.c's
+ * PortGamestateUpdate calls it instead of GamestateUpdate; the update path
+ * built again, cmake/tick60.cmake), so until #223 the "update" column read
+ * 0.00 in 60 Hz windows. The same column: each PortGamestateUpdate runs one
+ * or the other, and tick60_update.o's calls inside itself go to its own
+ * copies, so the GamestateUpdate wrap never sees one of them. */
+void __real_GamestateUpdate_60(void);
+void __wrap_GamestateUpdate_60(void) {
+  Mark m = mark();
+  __real_GamestateUpdate_60();
+  charge(D_UPDATE, &m);
+}
+#endif
 
 /* vblank.c, with the other reports. */
 void prof_draw_report(int vblank, int vblanks) {
