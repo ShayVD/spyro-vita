@@ -55,7 +55,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/pres_thread.c"
       ],
       "agent": "a94cfc04aa1f1e269",
-      "last_commit_at": "2026-11-22T20:45:05+00:00"
+      "last_commit_at": "2026-11-22T20:45:05+00:00",
+      "reported": true
     }
   ],
   "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
@@ -265,7 +266,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 220,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-220.gate.log",
+    "started_at": "2026-11-22T22:35:16Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -418,3 +426,4 @@ continue.
 - 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
 - 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
 - 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
+- 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
