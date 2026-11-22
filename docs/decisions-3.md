@@ -1196,3 +1196,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - #217: EnvDraw.
   - #221: SkyDraw.
   - #222: 1,086 "outside" textured-quad vertices whose polygon has a placed vertex, to settle so that missed 0 really means no wobble.
+
+### D211. The attract demos' 16:9 frames run on the presenter's worker (#220, 2026-11-22)
+
+- **Why:** on hardware, Stone Hill's attract demo dropped about 177 vblanks in every 300 on the owner's settings (D209). The 16:9 real frame and the in-between frame both ran inline on the game thread, at 32 ms a tick. D128 had tied them there for two reasons:
+  - the real frame's due vblank is only known after the logic draw;
+  - the 16:9 visibility hand-off.
+- **How** (`src/game/present.c`):
+  - `presenter_pass(..., file_late)` runs the real frame on the worker with `submit(NULL)`, so its buffer files no frame. The game thread puts the frame's `C_BEGIN` in the ring before the buffer. After the hidden 4:3 logic draw, `PortPresentDraw` joins the job and `push_capture` files the frame, with the same `reserve()`, due vblank and `C_COMMIT` as the inline path.
+  - The visibility hand-off is split. `wide_state_out` runs when the job starts, which is exact because the presenter writes no game memory (0 bytes in 4,338 frames, `--pres-write-check`). `pres_draw_visibility` (now `job_vis()`) runs at the join, and the next pass joins before it reads.
+  - The in-between frame is still waited for before the real frame starts (one snapshot), so only the real frame overlaps the logic draw.
+- **Checks:**
+  - **Host:** FNV per polygon identical on all 9,124,329 polygons (title and attract demos to 7,000, `--interp`, 16:9, 2×). `--pres-check-thread` matches on 3,475 of 3,475 frames. ctest passes 32 of 32. The native build exits 0.
+  - **Vita3K:** shots identical on eight routes, including new `demo60` and `demo30` runs of the attract demos (66 of 66 each). In the demo windows (4,200–5,700), frames on core 1 went from 0–31 per 300 to 280–300, and inline frames from 262–300 to 0. The game thread's presenter time per tick fell from 52–74 ms to 10–17 ms; Vita3K timing is relative only.
+  - Logs: `runs/auto-220-1`.
+- **Left:**
+  - Measure FPS on hardware: the Toasty route's demo windows, 4,200–6,300.
+  - If the wait on the in-between frame shows there, try that frame inline and keep only the real frame on the worker.
