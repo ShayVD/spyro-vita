@@ -7,6 +7,15 @@
  * Needs the render thread (D63): the walk's GR_* calls are commands there,
  * so no GL call runs here.
  *
+ * parse_thread=2 (#195): a list handed over while a job of the presenter's
+ * thread (pres_thread.c, D126) is posted and not yet joined (30 Hz with
+ * in-between frames, the title, the attract demos) is walked on the game
+ * thread at once, from the same copy, so that walk doesn't preempt the
+ * presenter on core 1. There the game thread joins the presenter and then
+ * the walk right after the handover anyway (D196), so it waited for the
+ * whole walk or more. Every other list goes to the thread as with 1. The
+ * same walk either way, the same commands.
+ *
  * Also the start-up check of core 3, the core the Vita keeps for the system
  * (SCE_KERNEL_CPU_MASK_SYSTEM): whether a thread of ours is let run there,
  * and how much of it it gets. parse_core=3 uses it only if so. */
@@ -95,6 +104,12 @@ int vita_core3_ok(void) { return s_core3_ok; }
 static SceUID s_th = -1, s_go, s_done;
 static int s_core;
 static uintptr_t s_stack_lo, s_stack_hi; /* the parse thread's stack */
+/* parse_thread=2: the game thread walking a list itself, and the part of its
+ * stack below the handover the walk runs in */
+static volatile int s_inline;
+static uintptr_t s_inline_lo, s_inline_hi;
+static unsigned s_inline_walks, s_inline_us;
+int vita_pres_pending(void); /* pres_thread.c (#195) */
 
 static int parse_main(SceSize args, void *argp) {
   uintptr_t top = (uintptr_t)&args;
@@ -112,7 +127,22 @@ static int parse_main(SceSize args, void *argp) {
   return 0;
 }
 
-static void post(void) { sceKernelSignalSema(s_go, 1); }
+static void post(void) {
+  if (g_vita_opts.parse_thread == 2 && vita_pres_pending()) {
+    uintptr_t sp = (uintptr_t)&sp;
+    unsigned long long t0 = now_us();
+    s_inline_hi = sp;
+    s_inline_lo = sp - STACK; /* the walk needs no more than the thread's own stack */
+    s_inline = 1;
+    psx_walk_run();
+    s_inline = 0;
+    s_inline_walks++;
+    s_inline_us += (unsigned)(now_us() - t0);
+    sceKernelSignalSema(s_done, 1); /* the join finds it done */
+    return;
+  }
+  sceKernelSignalSema(s_go, 1);
+}
 
 /* the game thread: until the walk handed over has run (charged to "ot",
  * where the walk itself was before) */
@@ -130,10 +160,12 @@ static void wait_done(void) {
 }
 
 /* Called for every command and every profiled GR_* call: a stack address
- * tells the threads apart without a kernel call. */
+ * tells the threads apart without a kernel call. With parse_thread=2 the game
+ * thread is the walker while it walks a list itself (post). */
 int vita_parse_on_walker(void) {
   uintptr_t sp = (uintptr_t)&sp;
-  return sp - s_stack_lo < s_stack_hi - s_stack_lo;
+  return sp - s_stack_lo < s_stack_hi - s_stack_lo ||
+         (s_inline && sp - s_inline_lo < s_inline_hi - s_inline_lo);
 }
 
 static const PsxWalkThread s_thr = {post, wait_done, vita_parse_on_walker, vita_gpu_walk_submitted};
@@ -181,8 +213,12 @@ void vita_parse_init(void) {
     return;
   }
   vita_log("parse: OT walk on its own thread, core %d, priority 0x%x, from a copy of the "
-           "primitives (parse_thread=1, D71)",
-           s_core, PRIORITY);
+           "primitives (parse_thread=%d, D71%s)",
+           s_core, PRIORITY, g_vita_opts.parse_thread,
+           g_vita_opts.parse_thread == 2 ? "; a list handed over while a job of the "
+                                           "presenter's thread is pending is walked on the "
+                                           "game thread, #195"
+                                         : "");
 }
 
 /* "parse" line: the walks, the copies, and how long the game thread waited */
@@ -196,17 +232,22 @@ void vita_parse_report(int vblank) {
   psx_walk_stats_take(&w);
   if (t0 && vblank > v0) {
     unsigned n = (unsigned)(vblank - v0), wall = (unsigned)(t - t0);
+    /* the thread's own: parse_thread=2's walks on the game thread are counted apart */
+    unsigned long long own = w.walk_us > s_inline_us ? w.walk_us - s_inline_us : 0;
     vita_log("parse %d: %u lists walked on core %d (%u in place), busy %u.%02u ms per vblank "
              "(%u%%); copied %llu KB in %u.%02u ms per vblank on the game thread; it waited for "
              "the walk %u.%02u ms per vblank in %u joins; %u packets outside the copy (last at "
-             "%08x); %u calls deferred",
-             vblank, w.walks, s_core, w.in_place, (unsigned)(w.walk_us / n / 1000),
-             (unsigned)(w.walk_us / n % 1000 / 10),
-             wall ? (unsigned)(w.walk_us * 100 / wall) : 0, w.copied / 1024,
+             "%08x); %u calls deferred; %u lists walked on the game thread beside the "
+             "presenter, %u.%02u ms per vblank there (parse_thread=2)",
+             vblank, w.walks - s_inline_walks, s_core, w.in_place, (unsigned)(own / n / 1000),
+             (unsigned)(own / n % 1000 / 10),
+             wall ? (unsigned)(own * 100 / wall) : 0, w.copied / 1024,
              (unsigned)(w.copy_us / n / 1000), (unsigned)(w.copy_us / n % 1000 / 10),
              (unsigned)(w.wait_us / n / 1000), (unsigned)(w.wait_us / n % 1000 / 10), w.joins,
-             w.foreign, (unsigned)w.foreign_at, w.deferred);
+             w.foreign, (unsigned)w.foreign_at, w.deferred, s_inline_walks,
+             s_inline_us / n / 1000, s_inline_us / n % 1000 / 10);
   }
+  s_inline_walks = s_inline_us = 0;
   {
     /* nd_ab=1 (D91): walks, walk us and the game thread's wait us by way */
     char buf[320];

@@ -34,6 +34,7 @@
  * clipped the same way, without colours, the halves in a queue. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#189) */
 
 #include <stdint.h>
 
@@ -369,8 +370,12 @@ static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb) {
     const NgteCol p = ngte_gpl1((s32)x0, (s32)y0, 0, (s16)dx, (s16)dy, 0, ir0, 0);
     const NgteCol c = ngte_dpcs(rgbc, ir0, (int)((fc & 0xFF) << 4), (int)(((fc >> 8) & 0xFF) << 4),
                                 (int)(((fc >> 16) & 0xFF) << 4));
+    const u32 q = ((u32)p.mac2 << 16) | ((u32)p.mac1 & 0xFFFF);
     *rgb = 0x30000000u | c.rgb2;
-    return ((u32)p.mac2 << 16) | ((u32)p.mac1 & 0xFFFF);
+    /* #189: the vertex cache places the cut where the exact side crosses
+     * the edge's line through its exact ends (the portal's points) */
+    PSX_VC_DERIVE(VCD(VCD_LERP, VCD_SKY_CLIP), q, from, to, (int)e[EDGE_XY0], (int)e[EDGE_XY1]);
+    return q;
   }
 }
 

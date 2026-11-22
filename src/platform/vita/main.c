@@ -102,8 +102,9 @@
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=5 (2 at D45; 3: D68; 4: D150;
- *                       5: D153, tex_filter= and dynres= below))
+ *                       with config_version=6 (2 at D45; 3: D68; 4: D150;
+ *                       5: D153, tex_filter= and dynres= below; 6: #177,
+ *                       wobble= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -201,10 +202,18 @@
  *       gpu_bench=1     with gpu=1, each 300-vblank window draws with one of
  *                       D74's variants in turn (two of them change the
  *                       picture) and logs the GPU's time for the scene
- *       parse_thread=0  PsyCross's OT walk on the game thread (default 1:
- *                       with gpu=1 and render_thread=1, the walk on a thread
- *                       of its own, core 1, walking a copy of the frame's
- *                       primitives while the game goes on; D71, D74)
+ *       parse_thread=0  PsyCross's OT walk on the game thread. 1: with
+ *                       gpu=1 and render_thread=1, the walk on a thread of
+ *                       its own, core 1, walking a copy of the frame's
+ *                       primitives while the game goes on (D71, D74; the
+ *                       default until #195). 2 (the default since #195): as
+ *                       1, but a list handed over while a job of the
+ *                       presenter's thread is pending (30 Hz with
+ *                       in-between frames, the title, the attract demos) is
+ *                       walked on the game thread from the copy, so it
+ *                       doesn't preempt the presenter on core 1; the same
+ *                       commands. The owner's 60 HZ play has no presenter
+ *                       job, so there 2 is 1
  *       native_draw=0   the hand renderers' primitives parsed by
  *                       PsyCross's OT walk (default 1 since D91: with
  *                       fast_render=2 they reach the walk as native draw
@@ -247,22 +256,52 @@
  *                       subpixel on (the vertex cache) the frame is drawn
  *                       on the game thread anyway
  *       pres_core=3     that thread on core 3 if the start-up check allows
- *                       it; else core 1 (default 1; D126)
+ *                       it; else core 1 (default 1; D126). 2: core 2,
+ *                       behind the render thread (#195)
+ *       pres_prio=N     that thread's priority, 0x40 to 0xBF (default 0x9A,
+ *                       behind the parse thread's 0x98; 0x96 is ahead of
+ *                       it; #195)
+ *       vc_lazy=1       with persp or subpixel, the presenter's projections
+ *                       worked out when first read (#193, #195; the same
+ *                       pictures). Default 0 (#198): as it makes them; the
+ *                       lazy form locked the game-over screen at 60 late a 300
+ *       vc_lazy_logic=N with persp or subpixel, the logic
+ *                       draw's projections: 0 each one at once on the game
+ *                       thread, 2 always kept for the walk, 1 (default)
+ *                       kept while the walk has time (D188; the same
+ *                       pictures; #196)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
  *                       decisions D39). A developer's key since D153 (the
  *                       menu's TEX FILTER row is gone): read only with
  *                       config_version=5 in the file, as dynres= is
+ *       wobble=1        with gpu=1, the PS1's wobble: persp and subpixel
+ *                       below both off. Default 0 (#177, the owner's
+ *                       decision): both on, no wobble. The menu's PSX WOBBLE
+ *                       row, which replaced their two rows (picture.c)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
  *                       sub-pixel positions (D39)
- *                       (persp, subpixel, res, draw_distance are also
- *                       options menu rows: picture.c, D48)
+ *                       (both on by default since #177; developers' keys
+ *                       since then: a line wins over wobble= for its own
+ *                       half. An old menu's file, below config_version=6
+ *                       with no wobble= line, has both: persp=1 subpixel=1
+ *                       is read as wobble off, and persp=0 subpixel=0, the
+ *                       old default the menu wrote, as today's default,
+ *                       wobble off too; neither pair is taken, and the
+ *                       menu's next save drops it. Any other mix there is a
+ *                       developer's and is taken as written)
+ *                       (wobble, res, draw_distance are also options menu
+ *                       rows: picture.c, D48)
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
+ *       dd_budget=0     with 60 Hz logic in play, no work budget for the
+ *                       longer draw distance: only the buffer's limits, as
+ *                       before #180 (default 1: each draw keeps under
+ *                       LOD_BUDGET_60, 48 KB of primitives; D175, #185)
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
@@ -280,6 +319,10 @@
  *                       (default 1: 20 s after its "hang:" line; watchdog.c, D73)
  *       hang_test=V     tests: the game thread spins from vblank V
  *                       (hang_test=V,wait: blocks on a semaphore)
+ *       vdm_ring=KB     GXM's VDM ring for vitaGL, in KB (default 0:
+ *                       vitaGL's, 128 KB); Vita3K routes pass 1024 (D166).
+ *                       gpu_gl.c reads it before vglInit*; here it is only
+ *                       accepted
  *       vcount_test=N   tests: the display's 16-bit vblank counter wraps N
  *                       vblanks after start-up, not after up to 18 minutes
  *                       (vblank.c widens it; before D90 the game froze there)
@@ -294,6 +337,7 @@
  */
 #define SDL_MAIN_HANDLED
 #include "vita.h"
+#include "vita_pc.h"
 #include "watchdog.h"
 #include "psx_arena.h"
 #include "psx_cdimage.h"
@@ -302,8 +346,10 @@
 #include "psx_clock.h"
 #include "psx_region.h"
 #include "psx_spu.h"
+#include "psx_vcache.h" /* vc_lazy= (#195) */
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
+#include "../../game/lod.h"     /* dd_budget= (D175, #185) */
 
 #include <SDL2/SDL.h>
 #include <psp2/appmgr.h>
@@ -328,11 +374,13 @@ unsigned int sceUserMainThreadStackSize = 4 * 1024 * 1024;
 
 VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .realtime = 1,
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
+                        .persp = 1, .subpixel = 1, .wobble = 0, /* #177: PSX WOBBLE off, the fix on */
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
                         .present_due = 1, /* D112: the default after hardware runs 7C1-7C4 */
-                        .gpu_join = 1, .gpu_lean = 1, .parse_thread = 1, /* D74 */
+                        .gpu_join = 1, .gpu_lean = 1, /* D74 */
+                        .parse_thread = 2, /* #195: 1 since D74 */
                         .dynres = 0, /* D75: off by default after hardware run J6 */
                         .atlas_cpu = 1, /* D79 */
                         .gpu_fused = 1, /* D92 */
@@ -350,6 +398,9 @@ extern int g_nd_fast;     /* D92 */
 extern int g_nd_ab; /* D91 */
 extern int g_nd_direct; /* D99 */
 extern int g_gpu_clear; /* gpu_soft.c, D111 */
+extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
+static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off since #198 */
+static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -438,14 +489,17 @@ const char *g_vita_config_stale[4];
 int g_vita_config_pal60;
 /* tex_filter= and dynres= lines in a file older than config_version=5: the
  * rows the menu had until D153 wrote them, so they aren't taken and the
- * menu's save drops them (NULL-ended) */
-const char *g_vita_config_rows_gone[3];
+ * menu's save drops them; and an old menu's persp= and subpixel= lines,
+ * the rows PSX WOBBLE replaced (#177) (NULL-ended) */
+const char *g_vita_config_rows_gone[5];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
 
 static void read_config(void) {
   char line[512];
-  int version = 1, interp_line = 0, i;
+  int version = 1, version_max = 1, interp_line = 0, wobble_line = 0, i;
+  /* #177: persp= and subpixel= lines, taken after the loop over wobble= */
+  int pic_line[2] = {0, 0}, pic_value[2] = {0, 0};
   /* D153: the two keys whose menu rows are gone; taken after the loop, once
    * the file's version is known */
   static const char *const k_gone_keys[2] = {"tex_filter", "dynres"};
@@ -471,6 +525,8 @@ static void read_config(void) {
       *--e = 0;
     if (!strcmp(line, "interp"))
       interp_line = 1; /* D44, below */
+    if (!strcmp(line, "wobble"))
+      wobble_line = 1; /* #177, below */
     if (vita_menu_load(line, v))
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
     else if (!strcmp(line, "pal50"))
@@ -481,6 +537,11 @@ static void read_config(void) {
       i = strcmp(line, k_gone_keys[0]) != 0;
       gone_line[i] = 1;
       gone_value[i] = atoi(v);
+    }
+    else if (!strcmp(line, "persp") || !strcmp(line, "subpixel")) {
+      i = strcmp(line, "persp") != 0;
+      pic_line[i] = 1;
+      pic_value[i] = atoi(v) != 0;
     }
     else if (!strcmp(line, "disc"))
       snprintf(g_vita_opts.disc_dir, sizeof g_vita_opts.disc_dir, "%s", v);
@@ -578,6 +639,14 @@ static void read_config(void) {
       g_vita_opts.pres_thread = atoi(v);
     else if (!strcmp(line, "pres_core"))
       g_vita_opts.pres_core = atoi(v);
+    else if (!strcmp(line, "pres_prio")) /* #195 */
+      g_vita_pres_prio = (int)strtol(v, NULL, 0);
+    else if (!strcmp(line, "vc_lazy")) /* #195 */
+      s_vc_lazy = atoi(v) != 0;
+    else if (!strcmp(line, "vc_lazy_logic")) { /* #196: 0, 1 or 2 */
+      const int m = atoi(v);
+      s_vc_lazy_logic = m < 0 ? 0 : m > 2 ? 2 : m;
+    }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
@@ -600,12 +669,19 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
+    else if (!strcmp(line, "dd_budget"))
+      g_lod.budget = atoi(v) ? LOD_BUDGET_60 : 0; /* the 60 Hz work budget (D175, #185) */
     else if (!strcmp(line, "state_test"))
       vita_savestate_config(v);
     else if (vita_watchdog_config(line, v))
       ; /* hang_dump=, hang_test= (watchdog.c, D73) */
-    else if (!strcmp(line, "config_version"))
+    else if (!strcmp(line, "vdm_ring"))
+      ; /* read and applied by gpu_gl.c before vglInit* (vdm_ring_kb, D166) */
+    else if (!strcmp(line, "config_version")) {
       version = atoi(v);
+      if (version > version_max)
+        version_max = version; /* #177, below */
+    }
     else
       vita_log("config: unknown key %s", line);
   }
@@ -642,6 +718,36 @@ static void read_config(void) {
         vita_log("config: %s=%d without config_version=5 is from the menu's %s row, gone "
                  "since D153: off", k_gone_keys[i], gone_value[i], k_gone_rows[i]);
     }
+  }
+  /* PSX WOBBLE (#177): one row for the PS1's wobble, perspective-correct
+   * textures and sub-pixel vertices together, off by default (both on).
+   * wobble=1 is the PS1's look, both off. persp= and subpixel= stay as
+   * developers' keys (the test tools and fps-runs files write them): a line
+   * wins over wobble= for its own half, wherever it is in the file. An old
+   * menu's file (config_version below 6 in every config_version line, and no
+   * wobble= line: the tools write config_version=6 or wobble=1 in their base
+   * lines, so a run file's own config_version=5 after them doesn't count)
+   * has both lines, as the menu wrote every row: persp=1 subpixel=1 is the
+   * fix, wobble off, and persp=0 subpixel=0 was the default before #177, so
+   * it is read as today's, wobble off too. Either pair isn't taken and goes
+   * at the menu's next save. Any other mix in an old file (one line, or 1 and
+   * 0) is a developer's: kept, taken as written. */
+  g_vita_opts.persp = g_vita_opts.subpixel = !g_vita_opts.wobble;
+  if (!wobble_line && version_max < 6 && pic_line[0] && pic_line[1] &&
+      pic_value[0] == pic_value[1]) {
+    g_vita_config_rows_gone[ngone++] = "persp";
+    g_vita_config_rows_gone[ngone++] = "subpixel";
+    vita_log("config: persp=%d subpixel=%d without config_version=6 is from the menu's two rows "
+             "before PSX WOBBLE (#177): %s",
+             pic_value[0], pic_value[1],
+             pic_value[0] ? "PSX WOBBLE OFF" : "the old default, read as today's: PSX WOBBLE OFF");
+  } else {
+    if (pic_line[0])
+      g_vita_opts.persp = pic_value[0];
+    if (pic_line[1])
+      g_vita_opts.subpixel = pic_value[1];
+    if (g_vita_opts.persp == g_vita_opts.subpixel)
+      g_vita_opts.wobble = !g_vita_opts.persp; /* the row shows what is drawn */
   }
   /* D44's diagnostic 60 fps values, no animation blending (2) and camera
    * only (3), left the menu with D148: either is INTERPOLATED now. The menu
@@ -680,6 +786,7 @@ static void stop_threads(const char *why) {
            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
   if (r < 0)
     vita_log("%s: sceKernelWaitThreadEnd: %08x", why, (unsigned)r);
+  vita_pc_flush(); /* the work counters' last window, the render thread's work in it (D165) */
 }
 
 void vita_exit(int res) {
@@ -813,6 +920,7 @@ int main(int argc, char **argv) {
   g_fast_render = 3; /* the default since D124 (the owner, 2026-11-09, after 7D2a/7D2b) */
   read_config();
   vita_log_start(g_vita_opts.log_sync);
+  vita_pc_init(); /* the work counters (perfcount.c, D165) */
   vita_log("fast_render=%d: %s", g_fast_render,
            g_fast_render ? "hand-written renderers as readable C (D124)"
                          : "translated renderers, PsyCross's GTE_operator");
@@ -899,6 +1007,13 @@ int main(int argc, char **argv) {
   }
   vita_parse_init(); /* after the render thread (D71) */
   vita_pres_init();  /* stage 7f (D126) */
+  psx_vcache_set_lazy(s_vc_lazy);
+  psx_vcache_set_lazy_logic(s_vc_lazy_logic);
+  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
+           "vc_lazy_logic=%d: the presenter's placement and the projections' deferral (#195, "
+           "#193, D188)",
+           g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
+           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,
@@ -916,6 +1031,12 @@ int main(int argc, char **argv) {
                               : "the clears pixel by pixel");
   vita_present_init();
   vita_picture_init();
+  if (g_lod.budget)
+    vita_log("picture: draw distance with 60 Hz logic in play keeps each draw under %d KB of "
+             "primitives (dd_budget=1, D175)", g_lod.budget / 1024);
+  else
+    vita_log("picture: draw distance with no 60 Hz budget, only the buffer's limits "
+             "(dd_budget=0, D175)");
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     vita_exit(1);

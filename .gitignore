@@ -28,3 +28,6 @@ tools/oracle/bin/
 
 # the Vita's address for tools/vita/hw_run.sh (D77)
 tools/vita/hw.env
+
+# port-autopilot working files (vita-port-kit playbooks/port-autopilot)
+/runtime/

@@ -1,0 +1,24 @@
+# Run AP5 (#170; #169's GL state shadow, D171): the autopilot's wobble60 benchmark on the Vita: the
+# pause route at 16:9 and 60 fps with persp=1 subpixel=1, every tick's in-between frame
+# (interp_budget=0), virtual vblanks and a shot every 100 (pause-ws.cfg), as Vita3K's wobble60 route
+# but without its vdm_ring line (hardware's default ring). Run once on each VPK:
+#   AP5a on runtime/autopilot/vpk/autopilot-bbc36b1.vpk (SHA-1 c1a2889a...; before #169)
+#   AP5b on runtime/autopilot/vpk/autopilot-9d42dac.vpk (SHA-1 672d3d55...; #169 merged)
+# No DEVICE_DEFAULTS, so the base lines are the host's picture and camera, as vita3k_run.sh's.
+# From the main checkout, with the owner's yes for each run:
+#   VPK=$PWD/runtime/autopilot/vpk/autopilot-bbc36b1.vpk PAD=$PWD/tools/vita/hw-routes/pause-ws.pad \
+#     tools/vita/hw_run.sh logs/hw-ap5a 1500 @tools/vita/fps-runs/ap5-pause60-wobble-169.txt @tools/vita/hw-routes/pause-ws.cfg
+#   the same with autopilot-9d42dac.vpk into logs/hw-ap5b
+# Compare AP5a against AP5b: the 91 shots and save/ byte-identical (cmp, or
+# vita-port-kit shots_cmp.py DIR_A DIR_B --max-diff 0 --tol 0 --edge 0); perf_report.py AP5a AP5b
+# --min-frame 6600 --max-frame 9000 (D171 on Vita3K: gl.attribs 421.5 -> 14.5, gl.uniforms 186.7 ->
+# 25.9, gl.tex_binds 43.7 -> 2.0 a frame; gl.draws, gl.tris the same); tools/vita/hw_cmp.py AP5a
+# AP5b for the render thread's ms (both runs take the same shots in the same windows, so compare
+# them with each other only, never with a run without shots).
+config_version=5
+interp=1
+interp_budget=0
+persp=1
+subpixel=1
+# the US disc (the routes are US-timed), whatever the owner's config.txt says (D172)
+disc=ux0:data/spyro

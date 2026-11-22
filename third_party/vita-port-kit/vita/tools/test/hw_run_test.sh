@@ -2,7 +2,7 @@
 # hw_run.sh and hw_check.sh against hw_mock.py (a pretend Vita on localhost), for vitacompanion 1.08 and 1.05:
 # a run to frames= with a pad script and owner files that must come back untouched, the build's SHA-1s in the
 # run's account, a hang with a crash dump (its ELF kept, HW_KEEP_APP putting the eboot.bin back), --restore
-# after a run killed with SIGKILL and after a cut-off eboot.bin upload, --put-eboot, and the lock: hw_ftp.py
+# after a run killed with SIGKILL and after a cut-off eboot.bin upload, --put-eboot, HW_NO_INSTALL=1, and the lock: hw_ftp.py
 # and hw_check.sh while another live PID holds it, a lock wait that times out, a stale lock. Needs python3,
 # unzip, zip, shasum.
 #   vita/tools/test/hw_run_test.sh
@@ -119,6 +119,24 @@ for ver in 1.08 1.05; do
   check "--put-eboot refuses a VPK without an eboot.bin, nothing changed" \
     "[ $rc != 0 ] && grep -q 'no eboot.bin in' '$w/put-bad-$ver/hw-run.txt' && [ \"\$(cat '$appd/eboot.bin')\" = 'raw eboot' ]"
 
+  # HW_NO_INSTALL=1: the owner installs; the run checks the installed eboot.bin and installs nothing
+  echo 'owner build' > "$appd/eboot.bin"
+  rc=0; HW_NO_INSTALL=1 "$tools/hw_run.sh" "$w/noinst-bad-$ver" 30 frames=1200 > "$w/noinst-bad-$ver.txt" 2>&1 || rc=$?
+  check "HW_NO_INSTALL: another build installed: NOT RUN, nothing changed, not launched" \
+    "[ $rc = 1 ] && grep -q '^hw_run: NOT RUN: HW_NO_INSTALL=1: the installed eboot.bin (SHA-1 $(sha "$appd/eboot.bin"))' '$w/noinst-bad-$ver/hw-run.txt' && [ \"\$(cat '$appd/eboot.bin')\" = 'owner build' ] && ! grep -q 'launch:' '$w/noinst-bad-$ver/hw-run.txt' && [ ! -e '$w/state/hw.lock' ]"
+  cp "$w/vpk/eboot.bin" "$appd/eboot.bin" # the owner installs test.vpk
+  echo half > "$appd/eboot.bin.hw-new"
+  rc=0; HW_NO_INSTALL=1 HW_KEEP_APP=1 "$tools/hw_run.sh" "$w/noinst-$ver" 30 frames=1200 > "$w/noinst-$ver.txt" 2>&1 || rc=$?
+  check "HW_NO_INSTALL: the VPK's build installed: runs to frames=, installs nothing" \
+    "[ $rc = 0 ] && grep -q 'frames= reached' '$w/noinst-$ver/hw-run.txt' && grep -q 'HW_NO_INSTALL: nothing installed' '$w/noinst-$ver/hw-run.txt' && cmp -s '$w/vpk/eboot.bin' '$appd/eboot.bin' && cmp -s '$w/vpk/eboot.bin' '$w/noinst-$ver/eboot-installed.bin'"
+  check "HW_NO_INSTALL: a cut-off upload left alone, HW_KEEP_APP ignored" \
+    "[ \"\$(cat '$appd/eboot.bin.hw-new')\" = half ] && grep -q 'HW_KEEP_APP ignored' '$w/noinst-$ver/hw-run.txt' && [ ! -e '$w/noinst-$ver/eboot-before.bin' ]"
+  rm "$appd/eboot.bin.hw-new"
+  check "HW_NO_INSTALL: the owner's files back" "grep -q '^volume=40' '$data/config.txt' && ! ls '$data' | grep -q 'hw-backup'"
+  rc=0; (unset VPK; HW_NO_INSTALL=1 HW_EBOOT_SHA1=$(sha "$w/vpk/eboot.bin") HW_VPK=missing.vpk "$tools/hw_run.sh" "$w/noinst-sha-$ver" 30 frames=1200) > "$w/noinst-sha-$ver.txt" 2>&1 || rc=$?
+  check "HW_NO_INSTALL with HW_EBOOT_SHA1 and no VPK file: runs" "[ $rc = 0 ] && grep -q \"HW_EBOOT_SHA1's\" '$w/noinst-sha-$ver/hw-run.txt'"
+  rc=0; HW_NO_INSTALL=1 "$tools/hw_run.sh" --put-eboot "$w/put.vpk" "$w/noinst-put-$ver" > "$w/noinst-put-$ver.txt" 2>&1 || rc=$?
+  check "HW_NO_INSTALL: --put-eboot refused, nothing changed" "[ $rc = 1 ] && grep -q 'refused: HW_NO_INSTALL' '$w/noinst-put-$ver.txt' && cmp -s '$w/vpk/eboot.bin' '$appd/eboot.bin'"
   check "hw_ftp refuses writes outside the game's folders" "! ftp put '$w/pad.txt' ux0:data/other.txt 2> /dev/null"
   echo a > "$data/a"; echo b > "$data/b"
   check "the mock, like the Vita, won't rename onto a name that is there" "! ftp mv ux0:data/testgame/a ux0:data/testgame/b 2> /dev/null && [ \"\$(cat '$data/b')\" = b ]"

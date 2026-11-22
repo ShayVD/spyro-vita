@@ -117,8 +117,9 @@ typedef struct { Cmd hd; int due, interp; } CBegin;
  * the display state env (what the presenter's draws leave) */
 typedef struct { Cmd hd; uint32_t job; int has_frame, due, slot; GlEnv env; } CBuf;
 /* in a presenter's buffer: count vertices at voff in its own vertex area,
- * + ndr direct ranges (D99) */
-typedef struct { Cmd hd; int count, voff, ndr; } CPVerts;
+ * + ndr direct ranges (D99); side: their vertex cache answers at voff in
+ * its side area (#162) */
+typedef struct { Cmd hd; int count, voff, ndr, side; } CPVerts;
 
 static uint8_t *s_ring;
 static uint32_t s_w;              /* game thread: bytes recorded */
@@ -364,6 +365,7 @@ typedef struct {
   uint8_t *cmd;
   uint32_t used;
   GrVertex *verts;
+  VCacheVert *side; /* the vertex cache's answers for verts (#162; with the cache, once) */
   uint32_t nverts;
   volatile uint32_t ready; /* the job closed in it (counted from 1) */
   int overflow;
@@ -542,7 +544,8 @@ static void run(const Cmd *c) {
     const CPVerts *k = (const CPVerts *)c;
     s_verts_skipped = s_skip != 0;
     if (!s_skip && s_pb_running)
-      gl_vertices(s_pb_running->verts + k->voff, g_vcache_side, k->count,
+      gl_vertices(s_pb_running->verts + k->voff,
+                  k->side ? s_pb_running->side + k->voff : g_vcache_side, k->count,
                   (const uint32_t *)(k + 1), k->ndr);
     break; /* no K_VERTS: the slabs are the game thread's */
   }
@@ -1139,6 +1142,9 @@ static void pres_submit(const PresentFrame *f) {
   sent_valid = 1;
   s_pw_job = c->job; /* the worker reads it after post()'s semaphore */
   post(&c->hd);
+  /* the vertex cache's presenter frame (opened by pres_draw.c's context)
+   * is the worker's from here, before the logic draw starts (#162) */
+  psx_vcache_pres_detach();
 }
 
 /* ---- the worker's recording (PresentPresOut's and PsxGpuOut's) ---- */
@@ -1174,6 +1180,7 @@ static void pb_verts(const PsxGpuWalk *w) {
   PBuf *const b = s_pw_buf;
   const int ndr = g_nd_direct ? (int)w->ndr : 0; /* the walk's direct triangles (D99) */
   int count = w->nv < 0 ? 0 : w->nv > MAX_VERTEX_BUFFER_SIZE ? MAX_VERTEX_BUFFER_SIZE : w->nv;
+  const VCacheVert *side = gl_vcache_side_used() ? psx_vcache_pres_side() : NULL;
   CPVerts *c;
   if (b->nverts + (uint32_t)count > MAX_VERTEX_BUFFER_SIZE) {
     b->overflow = 1;
@@ -1182,9 +1189,14 @@ static void pb_verts(const PsxGpuWalk *w) {
   if (!(c = PB_RESERVE(CPVerts, C_PVERTS, (uint32_t)ndr * 8)))
     return;
   memcpy(b->verts + b->nverts, w->vb, (size_t)count * sizeof(GrVertex));
+  /* persp, subpixel: the vertex cache's answers for them, at the same
+   * index in the presenter's side array as in its walk's buffer (#162) */
+  if (side && b->side)
+    memcpy(b->side + b->nverts, side, (size_t)count * sizeof(VCacheVert));
   c->count = count;
   c->voff = (int)b->nverts;
   c->ndr = ndr;
+  c->side = side && b->side;
   if (ndr)
     memcpy(c + 1, w->dr, (size_t)ndr * 8);
   b->nverts += (uint32_t)count;
@@ -1282,6 +1294,7 @@ static void pb_commit(const PresentFrame *f) {
  * empty (its frame never filed, counted). */
 static void pb_close(void) {
   PBuf *const b = s_pw_buf;
+  psx_vcache_pres_end(); /* its last polygon was looked up (#162) */
   if (b->overflow) {
     b->used = 0;
     s_pb_overflows++;
@@ -1294,11 +1307,33 @@ static void pb_close(void) {
     sceKernelSignalSema(s_rt_sema, 1);
 }
 
+/* With persp or subpixel, each buffer's side area (once, the game thread):
+ * 0 without memory */
+static int pbuf_side_alloc(void) {
+  static int failed;
+  int i;
+  if (s_pb[PBUF_N - 1].side)
+    return 1;
+  if (failed)
+    return 0;
+  for (i = 0; i < PBUF_N; i++)
+    if (!s_pb[i].side && !(s_pb[i].side = malloc(sizeof(VCacheVert) * MAX_VERTEX_BUFFER_SIZE))) {
+      failed = 1;
+      vita_log("pres: no memory for the vertex cache's answers: the presenter draws inline");
+      return 0;
+    }
+  return 1;
+}
+
 /* the worker can draw the frame: the render thread and the buffers are
- * there, and no vertex cache (its tables are the game thread's) */
+ * there; with the vertex cache (persp, subpixel), the presenter's own table
+ * and answers too (#162: before, its tables were the game thread's, D126),
+ * which needs a frame of the presenter's drawn inline first (its walk's
+ * buffer). With tex_filter only (polygons only marked) it stays inline. */
 static int pb_usable(void) {
-  return g_rt_active && g_vita_gpu && s_pb_ok && vita_pres_thread_up() && !gl_vcache_side_used() &&
-         !psx_vcache_polys;
+  return g_rt_active && g_vita_gpu && s_pb_ok && vita_pres_thread_up() &&
+         (!psx_vcache_polys || (gl_vcache_side_used() && psx_vcache_pres_async_ok() &&
+                                pbuf_side_alloc()));
 }
 
 static const PresentPresOut s_pres_out = {pb_usable,  pres_submit, vita_pres_post, vita_pres_wait,

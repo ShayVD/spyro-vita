@@ -1,0 +1,23 @@
+# Run AP3 (#170; #162's A/B, D167): AP2 with pres_thread=0, the presenter's in-between frame on the
+# game thread with the vertex cache, the code path before #162. On the current autopilot VPK
+# runtime/autopilot/vpk/autopilot-9d42dac.vpk (SHA-1 672d3d55...): the pair differs by that switch
+# alone. (D167's logs/hw-162b.)
+# From the main checkout, with the owner's yes for this run:
+#   REALTIME=1 VPK=$PWD/runtime/autopilot/vpk/autopilot-9d42dac.vpk \
+#     PAD=$PWD/tools/vita/hw-routes/o-toasty.pad DEVICE_DEFAULTS=1 \
+#     tools/vita/hw_run.sh logs/hw-ap3 1500 @tools/vita/fps-runs/ap3-toasty60-wobble-pt0.txt @tools/vita/hw-routes/o-toasty.cfg
+# Compare AP2 (pres_thread=1) against AP3 with tools/vita/fps60_summary.py on each log and
+# tools/vita/hw_cmp.py logs/hw-ap3/spyro.log logs/hw-ap2/spyro.log: the game thread's busy % and
+# ms per vblank, late vblanks per 300; the "pres" lines (frames on core 1 in AP2, inline in AP3;
+# the join's wait, buffers passed by) and "vcache N work:" (AP2: two threads about equal; AP3: all
+# on the game thread). perf_report.py AP3 AP2: vc.* about -50% (the presenter's half counted on
+# its own thread), every gl.* the same. Expected: about half of D89's ~4.5 ms/vblank leaves the
+# game thread.
+config_version=5
+interp=1
+gpu_meter=1
+persp=1
+subpixel=1
+pres_thread=0
+# the US disc (the routes are US-timed), whatever the owner's config.txt says (D172)
+disc=ux0:data/spyro

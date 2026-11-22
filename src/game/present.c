@@ -1308,8 +1308,8 @@ void pres_DrawOTag(u_long *p) {
   s_pw.nd = g_pres_walk_nd;
   psx_gpu_walk_own(&s_pw, p);
   pres_capture(s_pw_env.ofs[1]);
-  if (!j->out)
-    psx_vcache_ot_done(); /* inline: as DrawOTag's (the worker never has the vertex cache) */
+  if (!j->out) /* inline: as DrawOTag's. On its thread the presenter has */
+    psx_vcache_ot_done(); /* the cache too, its frame ended by pb_close (D167) */
 }
 
 /* the job: the presenter's draw, on the worker or inline */
@@ -1458,8 +1458,6 @@ static int presenter_pass(int wide, int own_state, int blend, int check) {
     g_nd_ranges_walk = &s_pw; /* the Vita's vertex buffers: the presenter's direct ranges */
     if (g_present_pres_watch)
       g_present_pres_watch(0);
-    if (!check) /* inline, and drawn: its polygons find their vertices (D152) */
-      pres_draw_vcache();
     job_run();
     if (g_present_pres_watch)
       g_present_pres_watch(1);

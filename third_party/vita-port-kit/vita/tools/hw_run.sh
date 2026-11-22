@@ -15,6 +15,11 @@
 # --put-eboot FILE (a VPK or an eboot.bin) stops the app and installs FILE's eboot.bin as a run would, reads
 # it back and prints both SHA-1s and READBACK IDENTICAL (exit 0) or READBACK DIFFERS (exit 1); its account
 # goes to OUT_DIR/hw-run.txt (default $HW_STATE/put-eboot-TITLEID). It takes the lock like a run.
+# HW_NO_INSTALL=1 is for an owner who installs every VPK themselves: the run installs nothing (no eboot.bin,
+# no promote, no finishing a cut-off upload; --put-eboot refuses). It fetches the installed eboot.bin
+# (OUT_DIR/eboot-installed.bin) and runs only when its SHA-1 is the VPK's eboot.bin's (VPK= or HW_VPK) or
+# HW_EBOOT_SHA1's; otherwise "hw_run: NOT RUN: ..." and exit 1. The owner's files are set aside and put back
+# as in any run: the owner's yes for the run still covers that. HW_KEEP_APP is ignored.
 # The Vita: VITA_IP, or the game's tools/vita/hw.env (gitignored; VITA_IP=192.168.1.23), with vitacompanion
 # running (FTP on 1337, commands on 1338): 1.05 (user module only) or 1.06 and later; which commands it has is
 # read from its help. Each run uploads the VPK's eboot.bin to ux0:app/TITLEID/. When the VPK's sce_sys/
@@ -42,11 +47,11 @@ kit=$(cd "$(dirname "$0")" && pwd)
 HW_GAME=$(cd "$(dirname "$HW_GAME")" && pwd)/$(basename "$HW_GAME")
 groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$HW_GAME")/../.." && pwd)) # the game file is ROOT/tools/vita/hw.game
 HW_NAMES=() HW_COLLECT=() HW_HANG_RE= HW_SAVE_DIR= HW_QUIET_S=0 HW_POLL_S=3 HW_TIMEOUT=600 HW_PAD_NAME=pad.txt
-env_elf=${HW_ELF:-} env_keep=${HW_KEEP_APP:-} # given in the environment: wins over the game file
-HW_ELF= HW_KEEP_APP=0
+env_elf=${HW_ELF:-} env_keep=${HW_KEEP_APP:-} env_noinst=${HW_NO_INSTALL:-} # the environment wins over the game file
+HW_ELF= HW_KEEP_APP=0 HW_NO_INSTALL=0
 # shellcheck source=/dev/null
 . "$HW_GAME"
-HW_ELF=${env_elf:-$HW_ELF} HW_KEEP_APP=${env_keep:-$HW_KEEP_APP}
+HW_ELF=${env_elf:-$HW_ELF} HW_KEEP_APP=${env_keep:-$HW_KEEP_APP} HW_NO_INSTALL=${env_noinst:-$HW_NO_INSTALL}
 : "${HW_TITLE_ID:?HW_TITLE_ID missing in $HW_GAME}" "${HW_DATA:?}" "${HW_LOG:?}" "${HW_STOP_RE:?}" "${HW_VPK:?}"
 export HW_GAME HW_TITLE_ID HW_DATA
 # shellcheck source=/dev/null
@@ -57,6 +62,9 @@ state=${HW_STATE:-$HOME/.cache/vita-port-kit}
 restore_only=0
 [ "${1:-}" = --restore ] && { restore_only=1; set -- "$state/restore-$HW_TITLE_ID"; }
 put_file=
+if [ "${1:-}" = --put-eboot ] && [ "$HW_NO_INSTALL" = 1 ]; then
+  echo "hw_run: --put-eboot refused: HW_NO_INSTALL=1 (the owner installs every build)" >&2; exit 1
+fi
 if [ "${1:-}" = --put-eboot ]; then
   [ -f "${2:-}" ] || { echo "usage: hw_run.sh --put-eboot FILE.vpk|eboot.bin [OUT_DIR] (no file ${2:-})" >&2; exit 1; }
   put_file=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
@@ -299,64 +307,92 @@ say "vitacompanion: $(has version && v cmd version || echo "1.05-style, no versi
 v cmd "$quit" "$HW_TITLE_ID" > /dev/null 2>&1 || true # an error reply when it isn't running
 sleep 2
 recover
-recover_eboot
+if [ "$HW_NO_INSTALL" = 1 ]; then
+  if v size "$app/eboot.bin.hw-new" > /dev/null 2>&1; then say "HW_NO_INSTALL: $app/eboot.bin.hw-new (a cut-off upload) left as it is"; fi
+else
+  recover_eboot
+fi
 [ $restore_only = 1 ] && exit 0
 if [ -n "$put_file" ]; then
   put_checked "$tmp/put.bin" "$put_file"
   exit # put_checked's status
 fi
 
-# The app: its eboot.bin every run; installed whole (promote) when it isn't there or sce_sys/ changed, or
-# without promote, copied whole over FTP.
-[ -f "$vpk" ] || { say "no $vpk"; exit 1; }
-vpk=$(cd "$(dirname "$vpk")" && pwd)/$(basename "$vpk")
-mkdir -p "$tmp/vpk"
-(cd "$tmp/vpk" && unzip -q "$vpk")
-sys=$(cd "$tmp/vpk" && find sce_sys -type f | LC_ALL=C sort | xargs shasum | shasum | cut -c1-40)
-sysfile=$state/sce_sys-$HW_TITLE_ID-$VITA_IP
-stage=$data/hw-promote
-installed=1; v size "$app/eboot.bin" > /dev/null || installed=0
-if [ "$HW_KEEP_APP" = 1 ]; then
-  if [ $installed = 1 ]; then
-    v get "$app/eboot.bin" "$out/eboot-before.bin"
-    kept=1
-    say "HW_KEEP_APP: the Vita's eboot.bin before the run is eboot-before.bin ($(bytes "$out/eboot-before.bin") bytes, SHA-1 $(sha1 "$out/eboot-before.bin")); it goes back when the run ends"
+if [ "$HW_NO_INSTALL" = 1 ]; then
+  # Nothing installed: the installed eboot.bin must be the expected build's.
+  if [ -n "${HW_EBOOT_SHA1:-}" ]; then
+    want=$HW_EBOOT_SHA1 from=HW_EBOOT_SHA1
   else
-    say "HW_KEEP_APP: no $app/eboot.bin before the run: nothing to put back"
+    [ -f "$vpk" ] || { say "NOT RUN: HW_NO_INSTALL=1 needs the installed build's VPK ($vpk) or HW_EBOOT_SHA1 to check against"; exit 1; }
+    vpk=$(cd "$(dirname "$vpk")" && pwd)/$(basename "$vpk")
+    unzip -p "$vpk" eboot.bin > "$tmp/want.bin" 2>/dev/null || true
+    [ -s "$tmp/want.bin" ] || { say "NOT RUN: no eboot.bin in $vpk"; exit 1; }
+    want=$(sha1 "$tmp/want.bin") from=$vpk
+  fi
+  if ! v get "$app/eboot.bin" "$out/eboot-installed.bin" 2>/dev/null; then
+    say "NOT RUN: HW_NO_INSTALL=1 and no $app/eboot.bin: the owner installs the VPK first"; exit 1
+  fi
+  eboot=$out/eboot-installed.bin
+  have=$(sha1 "$eboot")
+  if [ "$have" != "$want" ]; then
+    say "NOT RUN: HW_NO_INSTALL=1: the installed eboot.bin (SHA-1 $have) is not $from's ($want): the owner installs it, then run again"
+    exit 1
+  fi
+  say "HW_NO_INSTALL: nothing installed; the installed eboot.bin is $from's (SHA-1 $have)"
+  if [ "$HW_KEEP_APP" = 1 ]; then say "HW_KEEP_APP ignored: HW_NO_INSTALL installs nothing"; fi
+else
+  # The app: its eboot.bin every run; installed whole (promote) when it isn't there or sce_sys/ changed, or
+  # without promote, copied whole over FTP.
+  [ -f "$vpk" ] || { say "no $vpk"; exit 1; }
+  vpk=$(cd "$(dirname "$vpk")" && pwd)/$(basename "$vpk")
+  mkdir -p "$tmp/vpk"
+  (cd "$tmp/vpk" && unzip -q "$vpk")
+  sys=$(cd "$tmp/vpk" && find sce_sys -type f | LC_ALL=C sort | xargs shasum | shasum | cut -c1-40)
+  sysfile=$state/sce_sys-$HW_TITLE_ID-$VITA_IP
+  stage=$data/hw-promote
+  installed=1; v size "$app/eboot.bin" > /dev/null || installed=0
+  if [ "$HW_KEEP_APP" = 1 ]; then
+    if [ $installed = 1 ]; then
+      v get "$app/eboot.bin" "$out/eboot-before.bin"
+      kept=1
+      say "HW_KEEP_APP: the Vita's eboot.bin before the run is eboot-before.bin ($(bytes "$out/eboot-before.bin") bytes, SHA-1 $(sha1 "$out/eboot-before.bin")); it goes back when the run ends"
+    else
+      say "HW_KEEP_APP: no $app/eboot.bin before the run: nothing to put back"
+    fi
+  fi
+  eboot=$tmp/vpk/eboot.bin
+  uploaded=1
+  if [ $promote = 0 ] && [ $installed = 0 ]; then
+    say "$HW_TITLE_ID isn't installed, and this vitacompanion has no promote: install $vpk once with VitaShell"; exit 1
+  elif [ $promote = 0 ] && [ "$(cat "$sysfile" 2>/dev/null)" != "$sys" ]; then
+    say "sce_sys/ changed since the last run to $VITA_IP (or there was none): uploading the whole app over FTP"
+    mv "$eboot" "$tmp/eboot.bin"; eboot=$tmp/eboot.bin # the rest first, then the eboot.bin safely
+    v putdir "$tmp/vpk" "$app"
+    put_eboot "$eboot" || exit 1
+    echo "$sys" > "$sysfile"
+    say "a changed bubble or LiveArea shows after VitaShell's \"Refresh LiveArea\" (or a reinstall)"
+  elif [ $installed = 0 ] || [ "$(cat "$sysfile" 2>/dev/null)" != "$sys" ]; then
+    say "not installed, or sce_sys/ changed since the last run to $VITA_IP: installing the whole app (promote)"
+    relist
+    [ -z "$(kind hw-promote)" ] || v rmtree "$stage" # a run's own, left by a failed promote
+    v putdir "$tmp/vpk" "$stage"
+    reply=$(VITA_CMD_WAIT=180 v cmd promote "$stage")
+    say "promote: $reply"
+    relist
+    [ -z "$(kind hw-promote)" ] || v rmtree "$stage"
+    [ "$reply" = Promoted. ] || exit 1
+    t=0
+    until [ "$(v size "$app/eboot.bin" 2>/dev/null)" = "$(bytes "$eboot")" ]; do
+      [ $t -ge 60 ] && { say "promoted, but $app/eboot.bin isn't the VPK's after 60 s"; exit 1; }
+      sleep 3; t=$((t + 3))
+    done
+    echo "$sys" > "$sysfile"
+  else
+    put_eboot "$eboot" || exit 1
   fi
 fi
-eboot=$tmp/vpk/eboot.bin
-uploaded=1
-if [ $promote = 0 ] && [ $installed = 0 ]; then
-  say "$HW_TITLE_ID isn't installed, and this vitacompanion has no promote: install $vpk once with VitaShell"; exit 1
-elif [ $promote = 0 ] && [ "$(cat "$sysfile" 2>/dev/null)" != "$sys" ]; then
-  say "sce_sys/ changed since the last run to $VITA_IP (or there was none): uploading the whole app over FTP"
-  mv "$eboot" "$tmp/eboot.bin"; eboot=$tmp/eboot.bin # the rest first, then the eboot.bin safely
-  v putdir "$tmp/vpk" "$app"
-  put_eboot "$eboot" || exit 1
-  echo "$sys" > "$sysfile"
-  say "a changed bubble or LiveArea shows after VitaShell's \"Refresh LiveArea\" (or a reinstall)"
-elif [ $installed = 0 ] || [ "$(cat "$sysfile" 2>/dev/null)" != "$sys" ]; then
-  say "not installed, or sce_sys/ changed since the last run to $VITA_IP: installing the whole app (promote)"
-  relist
-  [ -z "$(kind hw-promote)" ] || v rmtree "$stage" # a run's own, left by a failed promote
-  v putdir "$tmp/vpk" "$stage"
-  reply=$(VITA_CMD_WAIT=180 v cmd promote "$stage")
-  say "promote: $reply"
-  relist
-  [ -z "$(kind hw-promote)" ] || v rmtree "$stage"
-  [ "$reply" = Promoted. ] || exit 1
-  t=0
-  until [ "$(v size "$app/eboot.bin" 2>/dev/null)" = "$(bytes "$eboot")" ]; do
-    [ $t -ge 60 ] && { say "promoted, but $app/eboot.bin isn't the VPK's after 60 s"; exit 1; }
-    sleep 3; t=$((t + 3))
-  done
-  echo "$sys" > "$sysfile"
-else
-  put_eboot "$eboot" || exit 1
-fi
 head=$(git -C "$groot" rev-parse HEAD 2>/dev/null || true)
-esha=$(sha1 "$eboot") vsha=$(sha1 "$vpk")
+esha=$(sha1 "$eboot") vsha=-; [ -f "$vpk" ] && vsha=$(sha1 "$vpk")
 say "app: eboot.bin ($(bytes "$eboot") bytes, $(basename "$vpk"), $(git -C "$groot" rev-parse --short HEAD 2>/dev/null || echo '?'), eboot SHA-1 $esha, VPK $vpk, VPK SHA-1 $vsha)"
 printf 'VPK=%q\nVPK_SHA1=%s\nEBOOT_SHA1=%s\nHEAD=%s\n' "$vpk" "$vsha" "$esha" "$head" > "$out/hw-run.env"
 

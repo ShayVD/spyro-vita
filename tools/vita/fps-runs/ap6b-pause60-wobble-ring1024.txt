@@ -1,0 +1,20 @@
+# Run AP6b (#170; vdm_ring, D166): AP6a with a 1 MB VDM ring (vdm_ring=1024, what every Vita3K route
+# passes), on the current autopilot VPK runtime/autopilot/vpk/autopilot-9d42dac.vpk (SHA-1
+# 672d3d55...). Is it harmless enough to be the default on the Vita?
+# From the main checkout, with the owner's yes for this run:
+#   VPK=$PWD/runtime/autopilot/vpk/autopilot-9d42dac.vpk PAD=$PWD/tools/vita/hw-routes/pause-ws.pad \
+#     tools/vita/hw_run.sh logs/hw-ap6b 1500 @tools/vita/fps-runs/ap6b-pause60-wobble-ring1024.txt @tools/vita/hw-routes/pause-ws.cfg
+# Compare AP6a against AP6b: the log's start has "gpu: VDM ring 1024 KB" in AP6b only; both reach
+# frames= with no crash dump; the 91 shots and save/ byte-identical (cmp, or vita-port-kit
+# shots_cmp.py DIR_A DIR_B --max-diff 0 --tol 0 --edge 0); the gpu lines' "vitaGL free KB: ... RAM"
+# ~896 KB lower in AP6b and nothing else; tools/vita/hw_cmp.py logs/hw-ap6a/spyro.log
+# logs/hw-ap6b/spyro.log (game, render ms) and perf_report.py AP6a AP6b --min-frame 6600
+# --max-frame 9000 the same within noise.
+config_version=5
+interp=1
+interp_budget=0
+persp=1
+subpixel=1
+vdm_ring=1024
+# the US disc (the routes are US-timed), whatever the owner's config.txt says (D172)
+disc=ux0:data/spyro

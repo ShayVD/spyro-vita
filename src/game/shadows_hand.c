@@ -35,6 +35,7 @@
  * its bucket's tail. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#189) */
 
 extern char g_Spyro[];      /* Spyro's moby */
 extern char g_Camera[];     /* the view matrix (+0x00), the camera position (+0x28) */
@@ -554,7 +555,8 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         v = scr2 + 0x30;
         w = v + 0x10;
         /* near the camera, nudge each corner a line up or down by its
-         * depth against the centre's */
+         * depth against the centre's (#189: the vertex cache is told the
+         * nudged corner is the projected one, which it then draws) */
         q = CFC2(7);
         if ((s32)(q + 0xFFFFFC00u) > 0) {
           u32 c = v;
@@ -568,8 +570,10 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
             c += 4;
             if ((s32)zc < 0) {
               AT32(c - 4) = xy + 0x10000u;
+              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS), xy + 0x10000u, xy, 0u, 0, 0);
             } else if (zc != 0) {
               AT32(c - 4) = xy - 0x10000u;
+              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS), xy - 0x10000u, xy, 0u, 0, 0);
             }
           }
         }

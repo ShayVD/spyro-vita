@@ -19,7 +19,15 @@
  *
  * Both passes set their matrix and project natively (gte_native.h; D80,
  * D124), and the clip words go to the renderers' working memory
- * (SCRATCH_BASE). */
+ * (SCRATCH_BASE).
+ *
+ * The vertex cache (D39, recording with persp or subpixel) takes pass 2's
+ * projections of the vertices a drawn triangle uses, and only those (#186):
+ * a sector dropped whole, and a vertex only culled triangles use, draw
+ * nothing, so their records were work the walk never looked up. They were
+ * most of the sky's cost on the Vita. The records keep their order (the
+ * vertex order within a sector), and pass 1's sphere centres keep theirs,
+ * so every polygon finds what it found before. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
@@ -74,6 +82,38 @@ static inline void VertexWords(u32 w, s32 ox, s32 oy, s32 oz, u32 *vxy, u32 *vz)
   u32 y = (u32)oy - (w & 0x3FF);
   *vz = z;
   *vxy = x + (y << 16);
+}
+
+/* A triangle word's vertex: its byte offset into the clip words, as the
+ * asm's lw takes it, as an index. */
+static inline u32 TriVertex0(u32 w) { return w >> 22; }
+static inline u32 TriVertex1(u32 w) { return (w >> 12) & 0xFF; }
+static inline u32 TriVertex2(u32 w) { return (w >> 2) & 0xFF; }
+
+/* The vertex cache's records of a kept sector (#186): its vertices that a
+ * triangle not wholly off one side uses, in vertex order, each as
+ * ngte_rtps_w would have given it (the screen word is the clip word >> 5).
+ * proj: the hook's registers (gte_ops.c ngte_vcache's), set once a draw. */
+static void SkyRecord(const int *proj, const u32 *vert, u32 n, s32 ox, s32 oy, s32 oz,
+                      const u32 *clip, const u16 *sz3, const u32 *tri, const u32 *tri_end) {
+  u8 used[1024]; /* a triangle word's first index has 10 bits */
+  const u32 *t;
+  u32 i;
+  memset(used, 0, n);
+  for (t = tri; t != tri_end; t += 2) {
+    const u32 a = TriVertex0(t[0]), b = TriVertex1(t[0]), c = TriVertex2(t[0]);
+    if ((s32)(clip[a] & clip[b] & clip[c] & 0x1F) > 0)
+      continue; /* not drawn: all three off the same side */
+    used[a] = used[b] = used[c] = 1;
+  }
+  for (i = 0; i != n; i++) {
+    u32 vxy, vz;
+    if (!used[i])
+      continue;
+    VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
+    g_psyxRtpValueHook(proj, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), (u32)((s32)clip[i] >> 5),
+                       (int)sz3[i]);
+  }
 }
 
 /* Pass 1: the sectors whose sphere is in front of the camera. */
@@ -134,8 +174,10 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   NgteSync sync;
   NgteProj P;
   NdChain ch = {0, 0};
-  int nd;
+  int nd, rec;
   u32 *r;
+  u16 sz3[256]; /* each vertex's SZ3, for the vertex cache's records */
+  int rec_proj[15];
   (void)a3;
 
   nd_begin();
@@ -149,6 +191,12 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   CTC2(proj[4], 4);
   P = ngte_proj_get();
   ngte_sync_init(&sync);
+  rec = __builtin_expect(g_psyxRtpValueHook != 0, 0);
+  if (rec) {
+    const int pr[15] = {P.r11, P.r12, P.r13, P.r21, P.r22, P.r23, P.r31, P.r32, P.r33,
+                        P.trx, P.try_, P.trz, P.ofx, P.ofy, P.h};
+    memcpy(rec_proj, pr, sizeof rec_proj);
+  }
   prim = *(u32 *)D_800757B0 + 4; /* the first primitive's tag follows a word */
   first = prim;
   prev_tag = prim - 4;
@@ -168,18 +216,20 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     packed = sector[SEC_TRIANGLES];
     vert = sector + SEC_VERTICES;
 
-    /* Transform the vertices. The asm overlaps each RTPS with loading the
-     * next vertex, so the GTE's V0 ends up holding the vertex after the
-     * last (vert[n]); this does the same. A sector has at least one. */
+    /* Transform the vertices (the vertex cache's records come below). A
+     * sector has at least one, and at most the working memory's 256. */
     {
       u32 vxy, vz;
       i = 0;
       do {
         u32 flags;
+        NgteRtp o;
         VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
-        flags = ClipFlags(ngte_rtps_w(&P, vxy, vz).sxy);
+        o = ngte_rtps(&P, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz));
+        flags = ClipFlags(o.sxy);
         all_out &= flags;
         scratch[i] = flags;
+        sz3[i] = (u16)o.sz3;
       } while (++i != n);
     }
     if (all_out & 0xF)
@@ -188,6 +238,8 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     colours = vert + n;
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     tri_end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
+    if (rec)
+      SkyRecord(rec_proj, vert, n, ox, oy, oz, scratch, sz3, tri, tri_end);
     for (; tri != tri_end; tri += 2) {
       u32 f0, f1, f2, c0, c1, c2, xy0, xy1, xy2;
       if ((s32)(limit - prim) <= 0) {

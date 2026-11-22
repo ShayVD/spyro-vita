@@ -1,0 +1,15 @@
+# Run AP9 (#183; the owner's yes as AP8): AP8's settings with four GPU pictures (shot_hd=1) at
+# owner60's holds, on autopilot-b604db4.vpk (AP9a) and the head (AP9b). The GPU's own picture should
+# change only on the close subdivided walls and ground (D176; the Vita3K CAPTURE grabs in
+# runtime/autopilot/runs/auto-183-1/capture), and the sky not at all (D177). Pad pause-ws.pad, no cfg.
+config_version=5
+widescreen=1
+interp=4
+interp_budget=0
+persp=1
+subpixel=1
+draw_distance=200
+shot=6900,7200,7800,8400
+shot_hd=1
+frames=8500
+disc=ux0:data/spyro

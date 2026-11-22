@@ -38,6 +38,7 @@
  * the depth parameters) moved as the asm moves them, and nothing else. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#189) */
 
 extern char g_Spyro[];
 extern char g_Models[];     /* the model table's address */
@@ -700,7 +701,14 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
     AT32(out + 0x4) = (((m3 << 8) + m2) << 8) + m1;
     o = ngte_intpl((s16)SRA(xyp << 16, 16), (s16)SRA(xyp, 16), 0, ir0, (int)SRA(xyq << 16, 16),
                    (int)SRA(xyq, 16), 0, 0);
-    AT32(out + 0x8) = ((u32)o.mac1 & 0xFFFF) + ((u32)o.mac2 << 16);
+    {
+      const u32 xy = ((u32)o.mac1 & 0xFFFF) + ((u32)o.mac2 << 16);
+      AT32(out + 0x8) = xy;
+      /* #189: the point is the 3D one the fraction of the way along, as
+       * its colour and texture coordinates are; the vertex cache draws it
+       * there */
+      PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP), xy, xyp, xyq, ir0, 0);
+    }
     o = ngte_intpl((s16)(uvp & 0xFF), (s16)((uvp >> 8) & 0xFF), 0, ir0, (int)(uvq & 0xFF),
                    (int)((uvq >> 8) & 0xFF), 0, 0);
     AT16(out + 0xC) = (u16)((u32)o.mac1 + ((u32)o.mac2 << 8));
