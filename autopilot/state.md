@@ -9,23 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 209,
-      "branch": "auto/209-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-209",
-      "pids": [],
-      "started_at": "2026-11-22T03:42:22Z",
-      "files": [
-        "src/game/particles_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "a31c889587c857146",
-      "last_commit_at": "2026-11-22T04:34:24+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -357,3 +341,4 @@ continue.
 - 03:42Z phase 8: worker #209 started
 - 04:13Z phase 8: #209 committed 5e3c295 (particles hand-over), checks running
 - 04:44Z phase 8: #209 second commit 9eec614 (a particle corner gives way to other hand-overs), checks running
+- 05:19Z phase 8: merged #209 (D207); vita-testing.md particles line updated

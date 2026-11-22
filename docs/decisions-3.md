@@ -1086,3 +1086,30 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **`wobble60`:** unaffected by design (30 Hz logic, D188).
   - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS. The Vita build was redone with the clamp raised to 3.
 - **Open:** a hardware A/B of `vc_lazy_logic=1` against `3` in the owner's 60 HZ Stone Hill and Artisans windows. If 3 wins, make it the default.
+
+## 2026-11-22 — particle quads in the vertex cache (#209)
+
+### D207. With the fix on, the particles' screen-facing quads hand their corners to the vertex cache, and a particle corner gives way to every other renderer's hand-over (#209)
+
+- **Why:** #202 (D205) found that ParticlesDraw case 3's quads are Stone Hill's largest class of no-entry vertices.
+- **What:**
+  - **The hand-over** (`particles_hand.c`): case 3 hands over each of its 4 corners as `VCD_OFFSET` from the projected centre `sxy`, after `AT32(prim + 0x8) = v0 - a3 - a2;`. The offsets are read from the corner words as the GPU reads them (signed low half for x, signed high half for y), so an x borrowing from y gives the y drawn. The call is direct; the presenter's build remaps it.
+  - **Priority** (`vcache.c`, `psx_vcache.h`):
+    - A particle corner (`Hk.low`) counts only where no other renderer placed the key, dead keys included.
+    - Any other renderer's hand-over replaces it.
+    - It is never a source for another hand-over.
+    - Without this rule, the presenter's frames lost 3 shadow polygons on host route S.
+  - **Docs:** the `particles` counter in `vita-testing.md`.
+- **Checked** (`runtime/autopilot/reports/209-1.md`):
+  - **Host FNV per polygon, 6 pairs:** 0 polygons found before changed. The pairs were S at 30 Hz, S with `--interp`, S with `--tick60 --interp`, P, and P with flame.
+
+    | Route | No-entry vertices | `particles` | Newly found polygons (all particle quads) |
+    |---|---|---|---|
+    | S | 25,048 → 21,401 | 3,647 | 889 |
+    | S with `--interp` | 50,039 → 42,732 | – | 1,781 |
+
+  - **Vita3K:** the five routes' shots and counters are the same. No Vita3K route draws a case-3 quad (#210).
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS.
+- **Left:**
+  - A Vita3K route through Stone Hill with particles on screen (#210).
+  - Watch `hk_full` (1,024 hand-overs a frame) in busy particle scenes.
