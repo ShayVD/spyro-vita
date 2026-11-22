@@ -194,7 +194,14 @@ static GLuint s_vram_tex, s_vbo, s_qbo, s_sbo, s_ovl_tex;
 /* persp=1, subpixel=1 (the PICTURE rows, the Vita's D39): polygons' vertex
  * cache answers (psx_vcache.h), a side stream: dx, dy (1/256 pixel) and w */
 static int s_persp, s_subpixel, s_vc, s_side_ok;
-static VCacheVert s_side[MAX_VERTEX_BUFFER_SIZE + 6];
+/* dx, dy in 1/256 pixel (k_vs_prim's a_off, as the Vita's int16 answers
+ * were), as floats: since main's #178 the cache answers in float pixels and
+ * a vertex the GTE clamped can lie far off screen. GPU run 10 read main's
+ * 12-byte VCacheVert as two shorts: every polygon broken. */
+typedef struct {
+  float dx, dy, w;
+} SideVert;
+static SideVert s_side[MAX_VERTEX_BUFFER_SIZE + 6];
 static int s_ovl_w, s_ovl_h;
 static Target s_t[MAX_TARGETS];
 static int s_nt;
@@ -792,12 +799,14 @@ void gles_GR_UpdateVertexBuffer(const GrVertex *v, int count) {
     int i;
     for (i = 0; i < count; i++) {
       uint32_t ref;
-      VCacheVert *o = &s_side[i];
+      SideVert *o = &s_side[i];
       memcpy(&ref, &v[i].tcx, sizeof ref);
       if (ref & VREF_POLY) {
         const VCacheVert *c = &g_vcache_side[i];
-        o->dx = s_subpixel ? c->dx : 0;
-        o->dy = s_subpixel ? c->dy : 0;
+        /* a vertex the GTE clamped is drawn at its exact position (#178) */
+        int exact = s_subpixel || (ref & VREF_CLAMP);
+        o->dx = exact ? c->dx * 256.0f : 0;
+        o->dy = exact ? c->dy * 256.0f : 0;
         o->w = s_persp && c->w > 0 ? c->w : 1.0f;
       } else {
         o->dx = o->dy = 0;
@@ -805,7 +814,7 @@ void gles_GR_UpdateVertexBuffer(const GrVertex *v, int count) {
       }
     }
     glBindBuffer(GL_ARRAY_BUFFER, s_sbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(VCacheVert), s_side,
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(SideVert), s_side,
                  GL_STREAM_DRAW);
     s_side_ok = 1;
   }
@@ -868,8 +877,8 @@ static void prim_attribs(void) {
     glBindBuffer(GL_ARRAY_BUFFER, s_sbo);
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(VCacheVert), (const void *)0);
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(VCacheVert), (const void *)4);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(SideVert), (const void *)0);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(SideVert), (const void *)8);
   } else { /* no answers: the integer position, w 1 */
     glDisableVertexAttribArray(3);
     glDisableVertexAttribArray(4);

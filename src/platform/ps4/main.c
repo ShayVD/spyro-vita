@@ -22,6 +22,7 @@
  * it closes (widescreen, interp, analog, free_camera, cam_*, touch_menu,
  * skip_logos, state_slot; ps4.h). */
 #include "ps4.h"
+#include "psx_vcache.h"
 #include "host.h"
 #include "../../game/present.h"
 #include "cheats_port.h"
@@ -350,6 +351,10 @@ static void *game_thread(void *arg) {
     host_log("region: %s, %d Hz vblanks", psx_region()->serial, psx_region_vblank_hz());
   ps4_present_init(); /* after the region's clock (60 Hz logic, PAL's rates) */
   ps4_raster_init();  /* the software rasterizer's threads (raster_mt.c) */
+  /* the vertex cache's modes as the Vita's defaults (vita/main.c: vc_lazy=0
+   * since D197, vc_lazy_logic=1) */
+  psx_vcache_set_lazy(0);
+  psx_vcache_set_lazy_logic(1);
   ps4_picture_init(); /* the PICTURE rows: the GPU's options, the draw distance */
   nd_init(host_log);
   if (ps4_pad_init() != 0)
