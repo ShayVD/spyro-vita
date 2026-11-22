@@ -22,7 +22,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a31c889587c857146",
-      "last_commit_at": "2026-11-22T04:34:24+00:00"
+      "last_commit_at": "2026-11-22T04:34:24+00:00",
+      "reported": true
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
