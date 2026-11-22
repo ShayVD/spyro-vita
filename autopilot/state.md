@@ -342,3 +342,4 @@ continue.
 - 23:31Z phase 8: #202 still investigating (WIP 3ad4e46); #204 waits
 - 00:02Z phase 8: #202 second WIP 878f25c (merged cuts never move a point placed without them); #204 waits
 - 00:33Z phase 8: #202 final commit 0137ab6 (last misses in a portal fly-in and Stone Hill), running its checks; #204 waits
+- 01:04Z phase 8: #202 checks running (final 0137ab6); #204 waits
