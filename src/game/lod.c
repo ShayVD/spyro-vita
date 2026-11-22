@@ -487,11 +487,12 @@ static void budget_report(char *out, unsigned len) {
 
 void port_lod_report(char *out, unsigned len) {
   unsigned d = s_st.draws ? s_st.draws : 1, cap = s_st.cap ? s_st.cap : 1;
+  int n = 0;
   if (!len)
     return;
   out[0] = 0;
   if (s_st.draws)
-    snprintf(out, len,
+    n = snprintf(out, len,
              "%u draws at x%u.%02u average (lowest x%u.%02u); primitives %u KB average, "
              "%u KB peak of %u KB (%u%%); %u back-offs (%u for the budget, of them %u held at 1x); "
              "%u.%u extra mobys per draw; "
@@ -505,11 +506,8 @@ void port_lod_report(char *out, unsigned len) {
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
              s_st.near_full, s_st.records_max, s_st.sector_max, s_st.after_env_max,
              s_st.env_cuts, s_st.moby_cuts);
-  if (s_st.draws && s_bt.n) {
-    const size_t n = strlen(out);
-    if (n + 1 < len)
-      budget_report(out + n, len - (unsigned)n);
-  }
+  if (s_bt.n && n > 0 && (unsigned)n + 1 < len) /* (no strlen: render_ctx_link) */
+    budget_report(out + n, len - (unsigned)n);
   memset(&s_st, 0, sizeof s_st);
   memset(&s_bt, 0, sizeof s_bt);
 }

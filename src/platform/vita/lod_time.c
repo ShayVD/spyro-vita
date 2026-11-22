@@ -53,6 +53,8 @@
 static int s_auto = 1; /* dd_budget=auto */
 static int s_room;     /* frames with room in a row */
 
+static void frame(void);
+
 /* main.c's config.txt: dd_budget=auto (1) or a fixed budget (0) */
 void vita_lod_time_set_auto(int on) { s_auto = on != 0; }
 
