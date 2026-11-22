@@ -44,6 +44,9 @@ typedef struct {
   int shader_dump;  /* shader_dump=1 (default): with the player's Piglet pair, each compiled
                        shader saved once to shaders/ (D194: the binaries the firmware's
                        Piglet loads); 0: none */
+  int shader_compile; /* shader_compile=1: the player's Piglet pair compiles the shaders
+                         (shader_dump saves them) even when this build has binaries;
+                         default 0: the build's own on the firmware's Piglet (D194) */
   int gpu_vsync;    /* gpu_vsync=1: eglSwapInterval 1 (default 0: with 1 Piglet's first
                        swap never returned, GPU runs 3-5) */
   int menu_test[PS4_MAX_MENU_TEST]; /* menu_test=V1,...: the menu opened at these vblanks,
@@ -142,6 +145,8 @@ int ps4_vblank_count(void);
 extern const char *volatile g_ps4_where;
 extern volatile unsigned g_ps4_beat;
 #define PS4_NOVSYNC PS4_DATA_DIR "/gpu_novsync"
+#define PS4_SHADER_COMPILE PS4_DATA_DIR "/shader_compile" /* the shipped shaders failed */
+void ps4_marker_write(const char *path, const char *why); /* main.c: this build's stamp */
 
 /* the user who started the game (main.c) */
 extern int g_ps4_user;

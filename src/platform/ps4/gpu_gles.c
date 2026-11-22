@@ -81,6 +81,7 @@ uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 int g_ps4_gpu;
 
 static int s_piglet = -1, s_shacc = -1;
+static int s_firmware; /* the Piglet loaded is the firmware's (not the player's pair) */
 
 /* How the shaders come (D194): compiled from our GLSL by the player's
  * Piglet pair, or the pre-compiled binaries (ps4_shaders.c, from a run
@@ -118,27 +119,39 @@ static int load_path(const char *path, int *handle) {
   return 0;
 }
 
-/* The player's pair first (the compiler: shader_dump=1 saves binaries);
- * else the firmware's Piglet, if this build has the binaries for it. */
-int ps4_gpu_load(char *why, int whylen) {
-  int rc, nblobs = blob_count();
+/* The firmware's Piglet and this build's own shaders first, what every
+ * player has (the owner's choice: the pkg uses its own shaders, even with
+ * the pair installed); the player's pair when the build has none, when
+ * shader_compile=1 (capturing new binaries: shader_dump saves them), or
+ * when the firmware's doesn't load. */
+static int load_firmware(void) {
   char path[256];
+  const char *word = sceKernelGetFsSandboxRandomWord();
+  snprintf(path, sizeof path, "/%s/common/lib/libScePigletv2VSH.sprx", word ? word : "system");
+  if (load_path(path, &s_piglet) != 0)
+    return -1;
+  s_firmware = 1;
+  s_shader_mode = SH_BINARY;
+  return 0;
+}
+
+int ps4_gpu_load(char *why, int whylen) {
+  int rc = 0, nblobs = blob_count(), want_binary = nblobs && !g_ps4_opts.shader_compile;
   if (s_shader_mode != SH_NONE)
     return 0;
-  rc = load_path(LIB_DIR "/libScePigletv2VSH.sprx", &s_piglet);
-  if (rc == 0) {
-    rc = load_path(LIB_DIR "/libSceShaccVSH.sprx", &s_shacc);
-    if (rc != 0) { /* a Piglet without its compiler: only binaries work */
-      host_log("gpu: the player's Piglet without libSceShaccVSH.sprx (0x%x)", (unsigned)rc);
-      s_shader_mode = nblobs ? SH_BINARY : SH_NONE;
-    } else
-      s_shader_mode = SH_COMPILE;
-  } else if (nblobs) {
-    const char *word = sceKernelGetFsSandboxRandomWord();
-    snprintf(path, sizeof path, "/%s/common/lib/libScePigletv2VSH.sprx", word ? word : "system");
-    rc = load_path(path, &s_piglet);
-    if (rc == 0)
-      s_shader_mode = SH_BINARY;
+  if (want_binary)
+    load_firmware();
+  if (s_shader_mode == SH_NONE) {
+    rc = load_path(LIB_DIR "/libScePigletv2VSH.sprx", &s_piglet);
+    if (rc == 0) {
+      rc = load_path(LIB_DIR "/libSceShaccVSH.sprx", &s_shacc);
+      if (rc != 0) { /* a Piglet without its compiler: only binaries work */
+        host_log("gpu: the player's Piglet without libSceShaccVSH.sprx (0x%x)", (unsigned)rc);
+        s_shader_mode = nblobs ? SH_BINARY : SH_NONE;
+      } else
+        s_shader_mode = SH_COMPILE;
+    } else if (nblobs && !want_binary)
+      load_firmware();
   }
   if (s_shader_mode == SH_NONE) {
     if (nblobs)
@@ -151,7 +164,8 @@ int ps4_gpu_load(char *why, int whylen) {
   }
   host_log("gpu: shaders %s (%d pre-compiled in this build)",
            s_shader_mode == SH_COMPILE ? "compiled by the player's Piglet pair"
-                                       : "pre-compiled, on the firmware's Piglet",
+           : s_firmware                ? "pre-compiled, on the firmware's Piglet"
+                                       : "pre-compiled, on the player's Piglet",
            nblobs);
   return 0;
 }
@@ -1355,6 +1369,13 @@ int ps4_gpu_init(void) {
       link(&s_prog[P_VRAM], k_vs_quad, "quad", k_fs_vram, 1, "vram") != 0 ||
       link(&s_prog[P_BLIT], k_vs_quad, "quad", k_fs_blit, 1, "blit") != 0) {
     host_log("gpu: the GLES2 renderer couldn't start");
+    if (s_shader_mode == SH_BINARY && !g_ps4_opts.shader_compile) {
+      /* the shipped binaries don't suit this firmware's Piglet: the next
+       * start compiles with the player's pair, if they have it */
+      ps4_marker_write(PS4_SHADER_COMPILE, "the shipped shaders failed on this Piglet");
+      host_log("gpu: wrote " PS4_SHADER_COMPILE ": the next start compiles with the player's "
+               "Piglet pair (" LIB_DIR ")");
+    }
     egl_down();
     return -1;
   }

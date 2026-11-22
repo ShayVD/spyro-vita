@@ -61,7 +61,33 @@ extern int g_nd_direct_ok;
  * (D180, tools/ps4/oelf_check.py runs after every link). */
 static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 
-static const char k_build[] = __DATE__ " " __TIME__; /* stamps the gpu_novsync marker */
+static const char k_build[] = __DATE__ " " __TIME__; /* stamps the markers below */
+
+/* A marker file (gpu_novsync, shader_compile): this build's stamp on its
+ * first line, then why. Another build's is removed: it tries again. */
+void ps4_marker_write(const char *path, const char *why) {
+  FILE *f = fopen(path, "w");
+  if (f) {
+    fprintf(f, "%s\n%s; delete this file to try again\n", k_build, why);
+    fclose(f);
+  }
+}
+
+static int marker_ours(const char *path) {
+  char line[64] = "";
+  FILE *f = fopen(path, "r");
+  if (!f)
+    return 0;
+  if (!fgets(line, sizeof line, f))
+    line[0] = 0;
+  fclose(f);
+  line[strcspn(line, "\n")] = 0;
+  if (!strcmp(line, k_build))
+    return 1;
+  remove(path);
+  host_log("%s from another build (%s) removed", path, line);
+  return 0;
+}
 const char *volatile g_ps4_where = "starting";
 volatile unsigned g_ps4_beat;
 
@@ -86,12 +112,7 @@ static void *watchdog(void *arg) {
       host_log("watchdog: the game thread has been at \"%s\" for %u s (VSync %u)", where,
                still / 2, last);
       if (!strncmp(where, "eglSwapBuffers", 14) && g_ps4_opts.gpu_vsync) {
-        FILE *f = fopen(PS4_NOVSYNC, "w");
-        if (f) { /* the build's stamp first: another build tries VSync again */
-          fprintf(f, "%s\neglSwapBuffers blocked with swap interval 1; delete this file to "
-                     "try again\n", k_build);
-          fclose(f);
-        }
+        ps4_marker_write(PS4_NOVSYNC, "eglSwapBuffers blocked with swap interval 1");
         host_log("watchdog: wrote " PS4_NOVSYNC ": the next start swaps with interval 0");
         ps4_notify("Spyro: the GPU's swap is stuck. Close the game and start it again.");
       }
@@ -213,6 +234,8 @@ static void read_config(void) {
       g_ps4_opts.gpu = n;
     else if (!strcmp(key, "shader_dump"))
       g_ps4_opts.shader_dump = n;
+    else if (!strcmp(key, "shader_compile"))
+      g_ps4_opts.shader_compile = n;
     else if (!strcmp(key, "gpu_vsync"))
       g_ps4_opts.gpu_vsync = n;
     else if (!strcmp(key, "menu_test"))
@@ -261,22 +284,13 @@ static void *game_thread(void *arg) {
   host_log("pie: %d data words given their addresses", fixed);
   host_log_flush(); /* a crash loses what isn't written (hardware run 1) */
   read_config();
-  {
-    FILE *f = fopen(PS4_NOVSYNC, "r");
-    if (f) { /* the watchdog saw eglSwapBuffers stuck with interval 1 */
-      char line[64] = "";
-      if (!fgets(line, sizeof line, f))
-        line[0] = 0;
-      fclose(f);
-      line[strcspn(line, "\n")] = 0;
-      if (!strcmp(line, k_build)) {
-        g_ps4_opts.gpu_vsync = 0;
-        host_log("gpu: " PS4_NOVSYNC " is there: swap interval 0");
-      } else { /* written by another build (GPU run 4's second display handle) */
-        remove(PS4_NOVSYNC);
-        host_log("gpu: " PS4_NOVSYNC " from another build (%s) removed: swap interval 1", line);
-      }
-    }
+  if (marker_ours(PS4_NOVSYNC)) { /* the watchdog saw eglSwapBuffers stuck with interval 1 */
+    g_ps4_opts.gpu_vsync = 0;
+    host_log("gpu: " PS4_NOVSYNC " is there: swap interval 0");
+  }
+  if (marker_ours(PS4_SHADER_COMPILE)) { /* the shipped shaders failed (gpu_gles.c) */
+    g_ps4_opts.shader_compile = 1;
+    host_log("gpu: " PS4_SHADER_COMPILE " is there: the player's Piglet pair compiles the shaders");
   }
   {
     pthread_t th;
