@@ -145,9 +145,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     {
       "issue": 204,
       "what": "hardware A/B: vc_lazy_logic=1 vs 3 in the owner 60 HZ Stone Hill and Artisans windows; if 3 wins make it the default (D206)"
+    },
+    {
+      "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
+      "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
+      "issue": 212
     }
   ],
   "owner_decisions": [
+    "2026-11-22: owner asked to fix the known wobble-fix and draw-distance issues and loop until fully fixed; filed #211-#219 (phase-8). Done = missed (non-exempt) wobble vertices at 0 on host routes S/P/Pf, 2x holding at 60 Hz on the owner's settings on hardware.",
     "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D175-D197 (with D194, D195, D196)). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
     "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
@@ -200,7 +206,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 0,
+    "filed": 9,
     "investigated": false
   },
   "rounds_without_gain": 2,
@@ -350,3 +356,4 @@ continue.
 - 06:40Z phase 8: merged #210 (D208): stone60 route, baseline base-bac5699/stone60
 - 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
 - 06:56Z phase 8: round 11 ended (D199-D208, 10 merges). base-63d80f4 -> base-85a7b2c: vc.misses -15.5% (wobble60) / -21.6% (owner60) better; vcp.div +4.6..+17.7% worse (D197: presenter eager, deliberate); stone60 vc.invalid/clamped/div move as timing noise (D208). Shots same except owner60 30 Hz 2x (D201). Rule: no gain -> rounds_without_gain 2. The round s speed-ups (D202, D204, D206) cut cost per operation, invisible to Vita3K counters: round 12 waits for a hardware run (owner yes)
+- 2026-11-22T08:30Z phase 8: filed #211-#219 (owner: wobble and draw distance until fully fixed), Vita3K: none
