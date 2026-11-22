@@ -9,23 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 202,
-      "branch": "auto/202-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-202",
-      "pids": [],
-      "started_at": "2026-11-21T21:57:40Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a878266ae0b9d45ed",
-      "last_commit_at": "2026-11-22T00:30:28+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -345,3 +329,4 @@ continue.
 - 00:33Z phase 8: #202 final commit 0137ab6 (last misses in a portal fly-in and Stone Hill), running its checks; #204 waits
 - 01:04Z phase 8: #202 checks running (final 0137ab6); #204 waits
 - 01:35Z phase 8: #202 still in final checks (0137ab6); #204 waits
+- 02:01Z phase 8: merged #202 (D205); filed #209 (particles hand-over)

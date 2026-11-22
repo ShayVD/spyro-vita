@@ -1018,3 +1018,37 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Native build, host ctest 32/32, `noassets`, and gate PASS.
   - Not checked on hardware. The host's gain is weighted by qemu's emulated x87, so the Vita's will be smaller.
 - **Left:** dividing in `choose`'s multi-candidate path (`ratio`), and `res_place`/`near8` compared as integers.
+
+## 2026-11-22 — the last wobble in the portal fly-in and Stone Hill (#202)
+
+### D205. With the fix on, sky cuts at one portal edge's pixel share their mean place; a derived grid point the plane gives no depth takes its projection's own; a shadow's or glow's ambiguous source is resolved from the frame's order (#202)
+
+- **Why:**
+  - The owner's log `logs/owner-20261121-1200` (PAL, 60 HZ, 2x) shows 96.60% of polygons found whole in the 7,800 window and 99.76–99.93% in Stone Hill.
+  - Tagged by renderer on host routes (`runtime/autopilot/reports/202-1.md`):
+    - **Gamestates 1 and 9 lose nothing.** The 7,800 window's losses are the portal fly-in in Artisans (gamestate 0, just before 1), where the sky through the portal fills the screen. There, PortalSkyPlain's cuts were dropped when two cuts placed one key differently: about 89k vertices on host route P.
+    - **Stone Hill's losses** are mostly the particles' screen-facing quads (ParticlesDraw case 3, about 6.6k of 7.4k on route S).
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - **Sky cuts:** cuts from one renderer within 2 px at one key share their mean place, which lies on the edge (`HK_MERGE`). A hand-over first takes its sources exactly as before. A place read from a merged one is tainted: it counts only where nothing else placed the key, and gives way to any untainted place.
+  - **Derived grid points:** a derived grid point at the projection the frame's order named, where the plane through the other corners gives no depth, takes that projection's own depth.
+  - **Ambiguous sources:** a shadow corner (alias) or glow rim (offset) whose source key is ambiguous is resolved from the frame's order, like an ambiguous vertex, and drawn at its own integer key.
+  - **New counters:** `der_own` on the `derived` line; `hk_merged`, `hk_ambsrc`, `res_alias` and `particles` on the `hooked` line. `VCD_PARTICLES` is reserved for #209.
+- **Checked:**
+  - **Host FNV per polygon:** 0 polygons found before changed, and 0 became affine, in 8 pairs (routes P, S, A, B; lazy logic 0 and 2; `VC_LAZY=0`; no lazy walk).
+  - **Host routes, old path against new:**
+
+    | Route | No-entry vertices | Logic polygons whole |
+    |---|---|---|
+    | P | 133,758 → 40,789 | 99.1% → 99.7% (69,574 polygons newly found) |
+    | S | 35,713 → 35,375 | – |
+
+  - **Vita3K:** `owner60` whole 99.569% → 99.576%, `vc.misses` −21.6%. `wobble60` `vc.misses` −15.5%. No Vita3K route flies through a portal.
+  - **Pictures:** the five routes' shots and the `CAPTURE=1` grabs are the same. `owner60` was checked against #206's run.
+  - **Builds:** native build, host ctest 32/32, `noassets`, and gate PASS.
+  - **Not run:** hardware, and the PAL disc on the host.
+- **Left:**
+  - The particles' quads (#209: a hand-over in `particles_hand.c`).
+  - 2D polygons, by design.
+  - Far mobys' clamped points among several (D190).
+  - Sky cuts more than 8 px from their key or from an ambiguous end: a crack risk.
+  - Cuts more than 2 px apart.
