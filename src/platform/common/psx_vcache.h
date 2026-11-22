@@ -90,7 +90,9 @@ void psx_vcache_set_lazy_logic(int mode);
 enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
 /* (VCD_PARTICLES: the particles' screen-facing quads, reserved by #202;
  * since #209 ParticlesDraw hands over their corners, VCD_OFFSET from the
- * projected centre) */
+ * projected centre. A particle corner counts only where no other renderer
+ * placed the key, gives way to any other's, and is no source for another
+ * hand-over, so every point placed before stays as it was.) */
 enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
