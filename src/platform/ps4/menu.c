@@ -4,7 +4,8 @@
  * touch pad. The game stops where it is (the menu runs inside its VSync
  * wait, vblank.c) and the panel (vita-port-kit's vpk_menu_panel, through
  * src/platform/common/menu_panel.h) is shown over the last picture. The
- * rows are the common table (menu_opts.h): present_ps4.c's PICTURE rows,
+ * rows are the common table (menu_opts.h): present_ps4.c's and picture_ps4.c's
+ * PICTURE rows,
  * pad.c's CONTROLS, menu_game.c's GAME, savestate_ps4.c's SAVE. Changes
  * apply at once and closing saves every row's key to config.txt, keeping
  * the file's other lines. The game's code never sees the menu's buttons. */
@@ -53,11 +54,12 @@ uint16_t ps4_menu_filter(uint16_t m) {
  * references, not the Vita's weak ones: an undefined weak symbol becomes an
  * import create-fself refuses (D180). */
 extern const MenuOptionList g_menu_present;  /* present_ps4.c */
+extern const MenuOptionList g_menu_picture;  /* picture_ps4.c */
 extern const MenuOptionList g_menu_controls; /* pad.c */
 extern const MenuOptionList g_menu_game;     /* menu_game.c */
 extern const MenuOptionList g_menu_save;     /* savestate_ps4.c */
 static const MenuOptionList *const k_lists[] = {
-    &g_menu_present, &g_menu_controls, &g_menu_game, &g_menu_save,
+    &g_menu_present, &g_menu_picture, &g_menu_controls, &g_menu_game, &g_menu_save,
 };
 #define NLISTS (int)(sizeof k_lists / sizeof k_lists[0])
 #define MAX_LINES 64

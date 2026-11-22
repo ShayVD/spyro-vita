@@ -109,6 +109,7 @@ Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .
                       /* swap interval 0, as OpenOrbis's Piglet sample: with 1
                        * the first eglSwapBuffers never returned (GPU runs 3-5) */
                       .gpu_vsync = 0, .shader_dump = 1,
+                      .draw_distance = 100,
                       .touch_menu = 1 /* the owner's choice, 2026-11-21 (D194) */};
 int g_ps4_user = -1;
 
@@ -335,6 +336,7 @@ static void *game_thread(void *arg) {
     host_log("region: %s, %d Hz vblanks", psx_region()->serial, psx_region_vblank_hz());
   ps4_present_init(); /* after the region's clock (60 Hz logic, PAL's rates) */
   ps4_raster_init();  /* the software rasterizer's threads (raster_mt.c) */
+  ps4_picture_init(); /* the PICTURE rows: the GPU's options, the draw distance */
   nd_init(host_log);
   if (ps4_pad_init() != 0)
     ps4_notify("Spyro: no controller (scePad). See spyro.log.");

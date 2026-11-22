@@ -57,14 +57,18 @@
 #include <orbis/Pigletv2VSH.h> /* EGL and GLES2 too */
 
 #include "psx_gpu.h"
+#include "psx_vcache.h"
 
 #define LIB_DIR "/data/self/system/common/lib"
 #define VW 1024
 #define VH 512
 #define SCREEN_W 1920
 #define SCREEN_H 1080
-#define SX (1920.0f / 512.0f)
-#define SY (1080.0f / 224.0f)
+/* VRAM pixels to target pixels: 1080p (res=native) or 1 (res=ps1, the
+ * PICTURE row; ps4_gpu_set_res) */
+#define SX s_sx
+#define SY s_sy
+static float s_sx = 1920.0f / 512.0f, s_sy = 1080.0f / 224.0f;
 #define MAX_TARGETS 8
 #define NSLOTS (PRESENT_SLOTS + 1) /* the slots and the staging texture */
 #define STAGE PRESENT_SLOTS
@@ -172,7 +176,11 @@ static EGLDisplay s_dpy = EGL_NO_DISPLAY;
 static EGLSurface s_surf = EGL_NO_SURFACE;
 static EGLContext s_ctx = EGL_NO_CONTEXT;
 static Prog s_prog[NPROG];
-static GLuint s_vram_tex, s_vbo, s_qbo, s_ovl_tex;
+static GLuint s_vram_tex, s_vbo, s_qbo, s_sbo, s_ovl_tex;
+/* persp=1, subpixel=1 (the PICTURE rows, the Vita's D39): polygons' vertex
+ * cache answers (psx_vcache.h), a side stream: dx, dy (1/256 pixel) and w */
+static int s_persp, s_subpixel, s_vc, s_side_ok;
+static VCacheVert s_side[MAX_VERTEX_BUFFER_SIZE + 6];
 static int s_ovl_w, s_ovl_h;
 static Target s_t[MAX_TARGETS];
 static int s_nt;
@@ -220,10 +228,15 @@ static struct {
 #define GLSL_MD                                                                \
   "float md(float qv, float qn, float qinv) { return qv - qn * floor(qv * qinv); }\n"
 
+/* a_off and a_w: the vertex cache's answer (persp, subpixel; else 0 and 1,
+ * the same picture): clip coordinates times w give perspective-correct
+ * varyings, as the Vita's k_vs_prim_x */
 static const char k_vs_prim[] =
     "attribute vec4 a_pos;\n" /* x, y, tpage, clut (shorts) */
     "attribute vec4 a_tex;\n" /* u, v, bright, dither (bytes) */
     "attribute vec4 a_col;\n" /* r, g, b, a (normalised) */
+    "attribute vec2 a_off;\n" /* sub-pixel offset (1/256 pixel) */
+    "attribute float a_w;\n"  /* view depth (1: none) */
     "uniform vec4 u_xf;\n"    /* xy: VRAM offset into the target, zw: 2 * scale / size */
     "varying vec2 v_uv;\n"
     "varying vec4 v_col;\n"
@@ -231,7 +244,8 @@ static const char k_vs_prim[] =
     "varying float v_fmt;\n"
     GLSL_MD
     "void main() {\n"
-    "  gl_Position = vec4((a_pos.xy + u_xf.xy) * u_xf.zw - 1.0, 0.0, 1.0);\n"
+    "  vec2 qxy = a_pos.xy + a_off * (1.0 / 256.0);\n"
+    "  gl_Position = vec4(((qxy + u_xf.xy) * u_xf.zw - 1.0) * a_w, 0.0, a_w);\n"
     "  v_uv = a_tex.xy;\n"
     "  v_col = a_col;\n"
     "  float qpage = md(a_pos.z, 65536.0, 1.0 / 65536.0);\n"
@@ -459,6 +473,8 @@ static int link(Prog *p, const char *vs, const char *vs_name, const char *fs, in
     glBindAttribLocation(p->prog, 0, "a_pos");
     glBindAttribLocation(p->prog, 1, "a_tex");
     glBindAttribLocation(p->prog, 2, "a_col");
+    glBindAttribLocation(p->prog, 3, "a_off");
+    glBindAttribLocation(p->prog, 4, "a_w");
   }
   glLinkProgram(p->prog);
   glGetProgramiv(p->prog, GL_LINK_STATUS, &ok);
@@ -533,6 +549,8 @@ static void quad(const float dst[4], const float st[4]) {
   glEnableVertexAttribArray(0);
   glEnableVertexAttribArray(1);
   glDisableVertexAttribArray(2);
+  glDisableVertexAttribArray(3);
+  glDisableVertexAttribArray(4);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (const void *)0);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (const void *)8);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -746,6 +764,30 @@ void gles_GR_UpdateVertexBuffer(const GrVertex *v, int count) {
   glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(GrVertex), v, GL_STREAM_DRAW);
   s_vbo_ok = 0;
+  s_side_ok = 0;
+  if (s_vc && count <= MAX_VERTEX_BUFFER_SIZE + 6) {
+    /* a polygon's vertices (VREF_POLY in their last 4 bytes) have the walk's
+     * answers at the same indices in g_vcache_side; the others none */
+    int i;
+    for (i = 0; i < count; i++) {
+      uint32_t ref;
+      VCacheVert *o = &s_side[i];
+      memcpy(&ref, &v[i].tcx, sizeof ref);
+      if (ref & VREF_POLY) {
+        const VCacheVert *c = &g_vcache_side[i];
+        o->dx = s_subpixel ? c->dx : 0;
+        o->dy = s_subpixel ? c->dy : 0;
+        o->w = s_persp && c->w > 0 ? c->w : 1.0f;
+      } else {
+        o->dx = o->dy = 0;
+        o->w = 1.0f;
+      }
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, s_sbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)count * sizeof(VCacheVert), s_side,
+                 GL_STREAM_DRAW);
+    s_side_ok = 1;
+  }
 }
 
 void gles_GR_ClearVRAM(int x, int y, int w, int h, unsigned char r, unsigned char g,
@@ -801,6 +843,18 @@ static void prim_attribs(void) {
   glVertexAttribPointer(0, 4, GL_SHORT, GL_FALSE, sizeof(GrVertex), (const void *)0);
   glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(GrVertex), (const void *)8);
   glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GrVertex), (const void *)12);
+  if (s_side_ok) {
+    glBindBuffer(GL_ARRAY_BUFFER, s_sbo);
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(3, 2, GL_SHORT, GL_FALSE, sizeof(VCacheVert), (const void *)0);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(VCacheVert), (const void *)4);
+  } else { /* no answers: the integer position, w 1 */
+    glDisableVertexAttribArray(3);
+    glDisableVertexAttribArray(4);
+    glVertexAttrib2f(3, 0, 0);
+    glVertexAttrib1f(4, 1);
+  }
   s_vbo_ok = 1;
 }
 
@@ -929,7 +983,7 @@ static void slots_alloc(int pw, int ph) {
       if (s_bound_fbo == s_slot_fbo[i])
         s_bound_fbo = (GLuint)-1;
     }
-    s_slot_tex[i] = new_tex(pw, ph, GL_RGBA, 1);
+    s_slot_tex[i] = new_tex(pw, ph, GL_RGBA, SX > 1.5f); /* res=ps1: the PS1's pixels, sharp */
     s_slot_fbo[i] = new_fbo(s_slot_tex[i]);
     s_slot_valid[i] = 0;
   }
@@ -1308,6 +1362,7 @@ int ps4_gpu_init(void) {
   s_vram_tex = new_tex(VW / 2, VH, GL_RGBA, 0);
   glGenBuffers(1, &s_vbo);
   glGenBuffers(1, &s_qbo);
+  glGenBuffers(1, &s_sbo);
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glDisable(GL_DITHER);
@@ -1339,6 +1394,42 @@ int ps4_gpu_init(void) {
   host_log("gpu: the GLES2 renderer is up in %llu ms (1080p targets, the software rasterizer "
            "keeping VRAM)", (ps4_now_us() - t0) / 1000);
   return 0;
+}
+
+/* The PICTURE rows (picture_ps4.c). persp, subpixel: the vertex cache
+ * records the GTE's projections (mode 2) and the walk leaves each polygon's
+ * answers (psx_vcache.h); the walk's direct vertices (D99) skip it, so
+ * they're off meanwhile. From the next vertex buffer on. */
+void ps4_gpu_set_options(int persp, int subpixel) {
+  extern int g_nd_direct_ok;
+  if (!g_ps4_gpu)
+    return;
+  flush();
+  s_persp = persp != 0;
+  s_subpixel = subpixel != 0;
+  s_vc = s_persp || s_subpixel;
+  psx_vcache_enable(s_vc ? 2 : 0);
+  g_nd_direct_ok = !s_vc;
+  s_side_ok = 0;
+  s_vbo_ok = 0;
+  host_log("gpu: persp=%d subpixel=%d (the vertex cache %s)", s_persp, s_subpixel,
+           s_vc ? "on" : "off");
+}
+
+/* res: 0 (native) the targets at 1080p, 1 (ps1) at the PS1's own pixels;
+ * every target is made again at the new size from VRAM (which the software
+ * rasterizer keeps), and the presentation textures with the next capture */
+void ps4_gpu_set_res(int res) {
+  float sx = res ? 1.0f : 1920.0f / 512.0f, sy = res ? 1.0f : 1080.0f / 224.0f;
+  int had = s_cur != NULL;
+  if (!g_ps4_gpu || (sx == s_sx && sy == s_sy))
+    return;
+  flush();
+  while (s_nt)
+    target_free(&s_t[0]);
+  s_sx = sx, s_sy = sy;
+  s_cur = had ? target_for(s_cx0, s_cy0, s_cx1 - s_cx0 + 1, s_cy1 - s_cy0 + 1) : NULL;
+  host_log("gpu: res=%s: targets at %.2fx%.2f a VRAM pixel", res ? "ps1" : "native", s_sx, s_sy);
 }
 
 /* a save state was loaded: VRAM is all new, every target is remade */
