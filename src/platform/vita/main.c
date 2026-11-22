@@ -269,7 +269,8 @@
  *                       draw's projections: 0 each one at once on the game
  *                       thread, 2 always kept for the walk, 1 (default)
  *                       kept while the walk has time (D188; the same
- *                       pictures; #196)
+ *                       pictures; #196), 3 also a quota kept while the
+ *                       walk runs, sized from its idle time (#204)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -648,9 +649,9 @@ static void read_config(void) {
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
-    else if (!strcmp(line, "vc_lazy_logic")) { /* #196: 0, 1 or 2 */
+    else if (!strcmp(line, "vc_lazy_logic")) { /* #196, #204: 0 to 3 */
       const int m = atoi(v);
-      s_vc_lazy_logic = m < 0 ? 0 : m > 2 ? 2 : m;
+      s_vc_lazy_logic = m < 0 ? 0 : m > 3 ? 3 : m;
     }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);

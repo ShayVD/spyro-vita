@@ -9,23 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 204,
-      "branch": "auto/204-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-204",
-      "pids": [],
-      "started_at": "2026-11-22T02:02:30Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a18a6850b31b7b436",
-      "last_commit_at": "2026-11-22T02:44:44+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -157,6 +141,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     {
       "issue": 201,
       "what": "hardware: second boot reads 17 shader-cache hits; black-screen time (D200)"
+    },
+    {
+      "issue": 204,
+      "what": "hardware A/B: vc_lazy_logic=1 vs 3 in the owner 60 HZ Stone Hill and Artisans windows; if 3 wins make it the default (D206)"
     }
   ],
   "owner_decisions": [
@@ -349,3 +337,4 @@ continue.
 - 02:02Z phase 8: worker #204 started; #209 waits on vcache.c
 - 02:34Z phase 8: #204 running (no commit yet, started ~02:04Z); #209 waits
 - 03:05Z phase 8: #204 WIP ec05cb8 (vc_lazy_logic=3, a quota sized from the walk idle time); #209 waits
+- 03:41Z phase 8: merged #204 (D206); coordinator raised main.c vc_lazy_logic clamp to 3

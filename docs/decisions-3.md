@@ -1052,3 +1052,37 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Far mobys' clamped points among several (D190).
   - Sky cuts more than 8 px from their key or from an ambiguous end: a crack risk.
   - Cuts more than 2 px apart.
+
+## 2026-11-22 — a quota of kept projections for the walk (#204)
+
+### D206. A `vc_lazy_logic=3` quota: the logic draw also keeps a frame's first q projections while the walk still runs, with q sized from the walk's idle time (#204)
+
+- **Why:**
+  - #200's cut 1 (D199). With the idle rule (mode 1, D188), a projection is kept only while the previous frame's walk is idle at that moment, so the walk's slack after it ends goes unused.
+  - In the owner's Stone Hill window, 76% of projections were worked out at once on the game thread.
+  - Keeping everything (mode 2) overloaded the walk (D188).
+- **What** (`vcache.c`, `psx_vcache.h`; coordinator: `main.c`'s key clamp raised to 3):
+  - **What mode 3 keeps:** everything mode 1 keeps, plus the frame's first q projections while the walk still runs. Past q, the entry's kept list is worked out first, so the order and the answers don't change.
+  - **Measuring the walk:** the walk's thread stamps its start and end. The game thread stamps the clock every 128 records.
+  - **Sizing q:**
+    - Idle time is the walk's end to the game thread's last stamp; the vblank wait after the join is left out on purpose.
+    - Headroom is an eighth of the walk's window, at least 250 µs.
+    - q grows by the smaller of the last two frames' surplus, at 1 µs a projection.
+    - It falls by the shortfall, at most a quarter a frame, and is capped at the frame's records + 256.
+  - **No walk thread:** with the walk in place, mode 3 keeps all, as mode 1 does.
+  - **Log line:** the new `vcache quota:` line appears only in mode 3.
+  - **Default:** stays 1.
+- **Checked** (`runtime/autopilot/reports/204-1.md`):
+  - **Same answers:** host FNV dumps per polygon are byte-identical in 10 dumps. They cover modes 0, 1 and 3; a fixed and a random quota; a simulated walk-busy split (kept 14.2M / at once 4.0M, and 5.0M / 13.2M); `--walk-lazy`; and `--tick60`.
+  - **Pictures:** the five routes' shots are the same.
+  - **Vita3K `owner60`**, same session, 6,900–9,000. These are relative timings, inside Vita3K's noise:
+
+    | `owner60` | Mode 3 against mode 1 |
+    |---|---|
+    | Logic draw | −8% |
+    | Kept projections | +10% |
+    | Join wait | 0.25 → 0.17 ms a vblank |
+
+  - **`wobble60`:** unaffected by design (30 Hz logic, D188).
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS. The Vita build was redone with the clamp raised to 3.
+- **Open:** a hardware A/B of `vc_lazy_logic=1` against `3` in the owner's 60 HZ Stone Hill and Artisans windows. If 3 wins, make it the default.
