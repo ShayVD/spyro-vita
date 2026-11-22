@@ -1,6 +1,6 @@
 # PS4 build (plan P2 on; D180)
 
-The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3, D193: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
+The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3–P4, D193, D199: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
 
 ## The toolchain
 
@@ -37,7 +37,7 @@ tools/ps4/tc <command>
 
 Ubuntu 24.04 arm64 with clang-18/lld-18, the same OpenOrbis tarball, `create-fself` and `create-gp4` built for arm64 from the pinned commits, and PkgTool.Core's framework-dependent build on Ubuntu's arm64 .NET 8 runtime. `--platform` matters: a cached amd64 `ubuntu:24.04` otherwise gets used under emulation.
 
-## The game (P3, D193)
+## The game (P3–P4, D193, D199)
 
 ```bash
 eval "$(tools/ps4/sdk.sh --env)"
@@ -56,18 +56,34 @@ What the PS4 build does differently (all of it PS4 only; linux32, linux64 and th
 - **`-march=btver2` and `tools/ps4/cc_unaligned.py`** (the C compiler's launcher): clang takes global arrays of 16 bytes or more as 16-byte aligned, and the decomp's sit at their PS1 addresses. Every C unit goes through assembly, with the aligned SSE moves rewritten to unaligned ones. Without this, starting a game crashed on hardware; qemu doesn't check it.
 - **`-fno-vectorize`:** a fourth clang 18 `__ptr32` bug, a vector `addrspacecast` in `P32_INIT`'s loops under AVX.
 - **The presenter's object:** `tools/ps4/keep_commons.py` keeps its common symbols global (llvm-objcopy would localize them into absolute symbols).
-- **`main()` loads `libSceUserService`, `libSceVideoOut`, `libScePad` and `libSceAudioOut`** with `sceSysmoduleLoadModuleInternal`. The PS4 doesn't load them for the eboot.
+- **`main()` loads `libSceUserService`, `libSceVideoOut`, `libScePad`, `libSceAudioOut` and `libSceSystemService`** with `sceSysmoduleLoadModuleInternal`. The PS4 doesn't load them for the eboot.
+- **`param.sfo` has CATEGORY `gde` and FORMAT `obs`**, as OpenOrbis's Piglet sample: with `gd`, Piglet's `eglGetDisplay` returned `EGL_NO_DISPLAY` with no error (GPU runs 1–2, D199).
 
-On the PS4 (the owner's yes first, every time): the disc image (`.bin` + `.cue`), the files `tools/extract_disc.py` writes, or the Store copy's `EBOOT.PBP` go in `/data/spyro/`. Saves go to `/data/spyro/save/`, and the log to `/data/spyro/spyro.log`. Options go in `/data/spyro/config.txt`, one `key=value` a line: `frames=N`, `stats=0|1|2`, `realtime=0|1`, `analog=0|1`, `shot=V`.
+On the PS4 (the owner's yes first, every time): the disc image (`.bin` + `.cue`), the files `tools/extract_disc.py` writes, or the Store copy's `EBOOT.PBP` go in `/data/spyro/`. Saves go to `/data/spyro/save/`, and the log to `/data/spyro/spyro.log`.
+
+**Options** go in `/data/spyro/config.txt`, one `key=value` a line. The options menu writes its rows' keys there and keeps the other lines:
+- the menu's (the Vita's keys and defaults): `widescreen`, `interp` (0, 1, 4), `wobble` (PSX WOBBLE, 0 the default: the fix on), `res` (0 native 1080p, 1 the PS1's pixels), `draw_distance` (100, 150, 200), `analog`, `free_camera`, `cam_invert_x`, `cam_invert_y`, `cam_speed`, `cam_recentre`, `touch_menu`, `skip_logos`, `state_slot`;
+- developers': `frames=N`, `stats=0|1|2`, `realtime=0|1`, `shot=V`, `shot_every=N`, `interp_budget=0|1`, `gpu=0` (the software renderer), `gpu_vsync=1` (swap interval 1: blocked Piglet's first swap, D199), `shader_compile=1` (the player's Piglet pair compiles the shaders), `shader_dump=0`, `menu_test=V1,...`.
+
+**The options menu:** hold the touch pad's click (the PS1's SELECT) and press OPTIONS, or tap the touch pad (`touch_menu=1`, the default). PICTURE: WIDESCREEN, 60 FPS, PSX WOBBLE, RESOLUTION, DRAW DISTANCE; CONTROLS; GAME (logos, cheats); SAVE (save states in `/data/spyro/save/`).
 
 ```bash
 curl -T build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg ftp://$PS4_IP:2121/data/pkg/
 curl -o logs/…/spyro.log ftp://$PS4_IP:2121/data/spyro/spyro.log
 ```
 
-Install the pkg with GoldHEN's Package Installer and run "Spyro PS4 (test)". To catch a crash, record GoldHEN's klog first (`nc $PS4_IP 3232 > logs/…/klog.txt`, then stop it by its PID). The crash report gives the faulting `rip` and backtrace at the eboot's base, 0x400000; `llvm-symbolizer --obj=build/ps4/spyro.elf ADDR-0x400000` names the function.
+Install the pkg with GoldHEN's Package Installer and run "Spyro PS4 (test)". To catch a crash, record GoldHEN's klog first (`nc $PS4_IP 3232 > logs/…/klog.txt`, then stop it by its PID). The crash report gives the faulting `rip` and backtrace at the eboot's base, 0x400000; `llvm-symbolizer --obj=build/ps4/spyro.elf ADDR-0x400000` (or `nm -n`) names the function. A watchdog thread logs where the game thread is if it stops for 3 s.
 
-Drawing is linux32's software rasterizer, scaled 4:3 into a 1920×1080 `sceVideoOut` framebuffer on the CPU (`video.c`). The GLES2 renderer on Piglet (P4) needs the player's own `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx` in `/data/self/system/common/lib/` (D193).
+### The renderers (P4, D199)
+
+**GLES2 on Piglet** (`gpu_gles.c`), the default: the PS1 picture drawn by the GPU at 1080p, 16:9, 60 fps (60 Hz logic in play, D150). The software rasterizer still draws every split into the CPU's VRAM (on 4 threads, `raster_mt.c`; `tests/ps4_raster` checks it against `gpu_soft.c`), so VRAM reads stay exact with no readback; the GPU redraws the same splits into 1080p targets and samples VRAM from a texture uploaded by rows. Presenter frames are kept on the GPU. Swap interval 0, as the Piglet sample (with 1 the first `eglSwapBuffers` never returned); the game's own 60 Hz clock paces it.
+
+**The shaders (the owner's option C):** Piglet ships in every PS4's firmware, but its GLSL compiler (`libSceShaccVSH.sprx`) doesn't, and there's none we may use offline. So the game embeds **pre-compiled shader binaries**, made once on a PS4 that has the compiler, and loads them with `glShaderBinary` on the firmware's own Piglet: players need only the pkg and their disc image.
+- **Capturing them:** a PS4 with the Piglet pair (`libScePigletv2VSH.sprx`, `libSceShaccVSH.sprx`) in `/data/self/system/common/lib/` ([sm64-ps4-osirizx](https://github.com/mindfreakdev/sm64-ps4-osirizx) says where they come from; this repo never fetches or ships them), `shader_compile=1` in `config.txt`: the game compiles its GLSL and saves each shader (`shader_dump=1`) to `/data/spyro/shaders/NAME-vs|fs-HASH.bin`, the hash being the source's FNV-1a. Copy them into `disc/ps4-shaders/` (gitignored; `-DSPYRO_PS4_SHADERS=` for another folder) and build: `tools/ps4/shaders_c.py` makes them a C table.
+- **The binaries are not committed** (the owner's decision): they go only into the release fpkg. A build without them needs the Piglet pair on the PS4.
+- **At start:** with binaries for every shader, the firmware's Piglet (`/<sandbox word>/common/lib/libScePigletv2VSH.sprx`); else, or with `shader_compile=1`, the player's pair. A shader whose source changed has no binary (its hash differs): the build logs it and, the binaries failing, writes `/data/spyro/shader_compile`, so the next start compiles with the pair.
+
+**The software renderer** (`gpu=0`, or Piglet not starting; a notification says why): linux32's rasterizer scaled into a 1920×1080 `sceVideoOut` framebuffer on the CPU (`video.c`), 4:3 or 16:9.
 
 Hardware runs (2026-11-21, `logs/p3/hw-run{1,2,3}/`):
 
@@ -76,6 +92,19 @@ Hardware runs (2026-11-21, `logs/p3/hw-run{1,2,3}/`):
 | 1 | 9f6312b | crash at the first call into `libSceUserService` (not loaded) |
 | 2 | d58b0cb | title screen, controller works, ~7.5 pictures/s, no audio; starting a game crashed (`movaps` on an 8-aligned array) |
 | 3 | 8c6673b | the game starts and runs: 60 vblanks/s, 0 late, audio; per VSync the game ~5 ms, scaling 4.3 ms |
+
+GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..9}/`, each with its `spyro.elf` and `commit.txt`):
+
+| run | commit | result |
+|---|---|---|
+| 1 | a3ed0c4 | `eglGetDisplay` refused (software fallback); crash in the pause screen (P32 labels in the presenter's snapshot, fixed in ac7a6ee) |
+| 2 | ac7a6ee | still refused; software path ~33 fps with 60 fps on |
+| 3 | 148be51 | `param.sfo` `gde`/`obs`: Piglet up, shaders compiled and dumped; hung at the first picture |
+| 4–5 | 9c4ac7b, bbf17ae | the watchdog: stuck in the first `eglSwapBuffers` (a second `sceVideoOut` handle wasn't the cause) |
+| 6 | 5457cc4 | swap interval 0: **the GPU picture**, 60.0 vblanks/s, 0 late, no GL errors |
+| 7 | 8f357a9 | the PICTURE rows (perspective, sub-pixel, resolution, draw distance) live; the new shader dumped |
+| 8 | a457303 | **the firmware's Piglet with the embedded binaries**, no pair needed (up in 324 ms); closing the menu crashed (a drop list without NULL) |
+| 9 | e99b16a | menu fixed, PSX WOBBLE row; the movies' 24-bit frames 0.8 ms (58 ms before); 3 late vblanks in the run |
 
 ## The spike
 
