@@ -112,6 +112,15 @@ static struct {
   unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
 
+/* dd_budget=auto (#212): the last shown draw, for the platform
+ * (lod_last_draw), and the budgets it set since the last report with the
+ * frame times they came from (lod_set_budget). Empty on the host. */
+static int s_last_bytes, s_last_60;
+static struct {
+  unsigned n, over, target;
+  unsigned long long used, budget;
+} s_bt;
+
 /* The game's primitive buffer: 0x1C000 bytes (0x13000 in reduced-space
  * levels), up to where the HUD's mobys start. */
 static int buffer_cap(void) {
@@ -282,6 +291,11 @@ void port_lod_env_lists(u32 t7) {
 
 /* ---- around each draw (present.c) ---- */
 
+#ifndef RENDER_PRES
+static void (*s_budget_hook)(void); /* lod_set_budget_hook (#212) */
+void lod_set_budget_hook(void (*fn)(void)) { s_budget_hook = fn; }
+#endif
+
 void port_lod_draw_begin(int shown) {
   const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
   u32 lo = (u32)(uintptr_t)port_poly_start(db->m_PolyBuf); /* D54 */
@@ -295,6 +309,10 @@ void port_lod_draw_begin(int shown) {
   s_env_last = 0; /* the world's first loop head starts the measure */
   s_env_end = 0;
   s_rec2 = ~0u;
+#ifndef RENDER_PRES
+  if (s_budget_hook && shown && g_lod.scale > LOD_ONE)
+    s_budget_hook(); /* the Vita's dd_budget=auto (lod_time.c, #212) */
+#endif
   if (g_lod.scale <= LOD_ONE || !shown)
     return;
   if (g_lod.guards_only || s_loaded) {
@@ -351,7 +369,10 @@ static int logic60(void) {
  * budget there (g_lod.budget, `work` the bytes the draw wrote): above it
  * the extra distance halves, above 9/8 of it it goes, and it grows only
  * under 7/8 of it. Where the original's own draw is over the budget, 2x
- * draws as 1x: it spends only the time the scene leaves. */
+ * draws as 1x: it spends only the time the scene leaves. The host's budget
+ * is fixed (--lod-budget); the Vita's dd_budget=auto (#212) moves it every
+ * logic frame from the game thread's measured time (lod_time.c, through
+ * lod_set_budget), and the rule here stays the same. */
 static void limit(int used, int cap, int work, int budget) {
   const int over = budget > 0 && work > budget, far_over = over && work > budget + budget / 8;
   const int room = budget <= 0 || work < budget - budget / 8;
@@ -385,6 +406,7 @@ void port_lod_draw_end(int shown) {
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
   g_lod_stats = 0;
+  s_last_60 = 0;
   if (!shown || !g_CurDB || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
@@ -400,6 +422,8 @@ void port_lod_draw_end(int shown) {
     s_logic60 = logic60();
 #endif
     limit(world_eff > used ? world_eff : used, cap, used, s_logic60 ? g_lod.budget : 0);
+    s_last_bytes = used;
+    s_last_60 = s_logic60 && g_lod.budget > 0;
   }
   if (s_env_end && (u32)(uintptr_t)D_800757B0 >= s_env_end &&
       (u32)(uintptr_t)D_800757B0 - s_env_end > s_st.after_env_max)
@@ -414,13 +438,61 @@ void port_lod_draw_end(int shown) {
     s_st.k_min = (unsigned)k;
 }
 
+#ifndef RENDER_PRES
+int lod_last_draw(int *bytes, int *budget) {
+  *bytes = s_last_bytes;
+  *budget = g_lod.budget;
+  return s_last_60;
+}
+
+/* The platform's budget (dd_budget=auto, #212): never under the fixed
+ * default, never over the room the draw has (the limiter backs off at 80%
+ * of it anyway). */
+int lod_set_budget(int bytes, int used_us, int target_us) {
+  const int top = draw_room(s_poly_lo);
+  if (bytes > top)
+    bytes = top;
+  if (bytes < LOD_BUDGET_60)
+    bytes = LOD_BUDGET_60;
+  g_lod.budget = bytes;
+  if (used_us < 0)
+    used_us = 0;
+  s_bt.n++;
+  s_bt.over += used_us > target_us;
+  s_bt.used += (unsigned)used_us;
+  s_bt.target = (unsigned)target_us;
+  s_bt.budget += (unsigned)bytes;
+  return bytes;
+}
+#endif
+
+/* tenths of a millisecond, as "12.4" */
+#define MS10(us) (unsigned)((us) / 1000), (unsigned)((us) % 1000 / 100)
+
+/* The auto budget's part of the lod line (#212): why it backed off and what
+ * the budget was, short (the Vita's line buffer is 400 bytes and the rest of
+ * the line takes up to about 350). Held at 1x for most draws: the window's
+ * average frame time against the target; otherwise the average budget, the
+ * time left under the target (or over it), and the frames over it, each of
+ * which cut the budget at once. */
+static void budget_report(char *out, unsigned len) {
+  const unsigned n = s_bt.n, avg = (unsigned)(s_bt.used / n), t = s_bt.target;
+  if (s_st.budget_held * 2 > s_st.draws)
+    snprintf(out, len, "; budget held at 1x: %u.%u ms used of %u.%u", MS10(avg), MS10(t));
+  else
+    snprintf(out, len, "; budget %u KB (auto, %u.%u ms %s; %u over)",
+             (unsigned)(s_bt.budget / n / 1024), MS10(avg > t ? avg - t : t - avg),
+             avg > t ? "over" : "left", s_bt.over);
+}
+
 void port_lod_report(char *out, unsigned len) {
   unsigned d = s_st.draws ? s_st.draws : 1, cap = s_st.cap ? s_st.cap : 1;
+  int n = 0;
   if (!len)
     return;
   out[0] = 0;
   if (s_st.draws)
-    snprintf(out, len,
+    n = snprintf(out, len,
              "%u draws at x%u.%02u average (lowest x%u.%02u); primitives %u KB average, "
              "%u KB peak of %u KB (%u%%); %u back-offs (%u for the budget, of them %u held at 1x); "
              "%u.%u extra mobys per draw; "
@@ -434,7 +506,10 @@ void port_lod_report(char *out, unsigned len) {
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
              s_st.near_full, s_st.records_max, s_st.sector_max, s_st.after_env_max,
              s_st.env_cuts, s_st.moby_cuts);
+  if (s_bt.n && n > 0 && (unsigned)n + 1 < len) /* (no strlen: render_ctx_link) */
+    budget_report(out + n, len - (unsigned)n);
   memset(&s_st, 0, sizeof s_st);
+  memset(&s_bt, 0, sizeof s_bt);
 }
 
 /* ---- the presenter's copy (lod_pres.c, stage 7d, D123) ----
@@ -445,7 +520,7 @@ void port_lod_report(char *out, unsigned len) {
   X(g_lod) X(g_lod_k) X(g_lod_pass) X(g_lod_stats) X(s_k) X(s_hold) X(s_ext)   \
   X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_poly_lo)              \
   X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end) X(s_rec2) X(s_st) \
-  X(s_logic60)
+  X(s_logic60) X(s_last_bytes) X(s_last_60) X(s_bt)
 #define LOD_SIZE(v) + sizeof v
 #define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
 #define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;
