@@ -1,5 +1,6 @@
 /* The presenter's thread (stage 7f, decisions D126): the in-between frame
- * (in every gamestate since 7g, D128) is drawn here, on a core of its own, beside the
+ * (in every gamestate since 7g, D128) and the attract demos' 16:9 real
+ * frame (#220) are drawn here, on a core of its own, beside the
  * logic draw on the game thread (src/game/present.c's presenter, recording
  * into gpu_thread.c's buffers). Where (#195):
  *  - pres_core=1 (default): core 1, the mixer's, the XA reader's and the
@@ -14,7 +15,10 @@
  * it ahead of the parse thread on core 1.
  *
  * The game thread hands it one job a tick (vita_pres_post) and joins it
- * before the next update (vita_pres_wait, from port_present_pres_join). */
+ * before the next update (vita_pres_wait, from port_present_pres_join).
+ * In an attract demo at 16:9 it hands it two (#220): the in-between frame,
+ * joined before the 16:9 real frame starts, and the real frame, joined
+ * after the logic draw. */
 #include "vita.h"
 #include "../../game/present.h"
 
@@ -119,7 +123,7 @@ void vita_pres_init(void) {
   s_th = th;
   vita_log("pres: the presenter draws the in-between frame on its own thread, core %d, "
            "priority 0x%x, beside the logic draw (stage 7f, D126; every gamestate, D128; "
-           "pres_core=, pres_prio=, #195)",
+           "pres_core=, pres_prio=, #195), and the attract demos' 16:9 frames (#220)",
            s_core, s_prio);
 }
 
