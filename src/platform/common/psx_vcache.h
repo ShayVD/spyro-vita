@@ -48,8 +48,12 @@ void psx_vcache_enable(int mode);
  * logic draw's, below). */
 void psx_vcache_set_lazy(int on);
 /* The logic draw's too (#179), worked out by its walk: 1 (the default)
- * while the presenter draws no in-between frames (60 Hz logic, or 30 fps),
- * 2 always, 0 never (each one at once on the game thread, as before). */
+ * while the presenter draws no in-between frames (60 Hz logic, or 30 fps)
+ * and the last frame's walk has ended, 2 always, 0 never (each one at
+ * once on the game thread, as before). 3 (#204): as 1, but a quota of each
+ * frame's first projections, sized from the walk's idle time before the
+ * game thread's last projections in recent frames (vcache.c LZ_QUOTA); a
+ * `vcache quota:` line with the cost lines. The same answers in each. */
 void psx_vcache_set_lazy_logic(int mode);
 
 /* Points a renderer makes or moves on screen after the projection (#189):

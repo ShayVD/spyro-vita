@@ -183,6 +183,10 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* #204: the quota's clock */
+#ifdef __vita__
+#include <psp2/kernel/processmgr.h>
+#endif
 
 #include "psx_gpu.h"
 #include "psx/gtereg.h"
@@ -431,6 +435,8 @@ static inline void touch(Touch *t, size_t at, size_t len) {
 
 void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_stats); }
 
+static void qt_line(void);
+
 /* the cost line, since the last one */
 static void cost_line(void) {
   static unsigned last[2][VCC_N], wlast[2][4];
@@ -475,6 +481,7 @@ static void cost_line(void) {
              r[0][VCR_LINES], r[0][VCR_STORE], r[1][VCR_WORKED], r[1][VCR_DIV], r[1][VCR_LINES],
              r[0][VCR_KEPT] + r[0][VCR_ONCE] - r[0][VCR_WORKED] - r[1][VCR_WORKED]);
   }
+  qt_line(); /* #204 */
 }
 
 /* the two kinds' counters added (peak: the larger), and the report's lines */
@@ -980,11 +987,162 @@ static unsigned s_since_pres = 255;
  * records; a line of its own */
 static struct {
   int busy;
+  /* #204: when the last walk began and ended by the walk's clock, and how
+   * many have ended (written by the walk, read by the game thread at its
+   * frame's end) */
+  unsigned ends;
+  uint32_t start_us, end_us;
 } __attribute__((aligned(64))) s_walk;
 #define LZ_QUIET 2 /* ... more than this: no in-between frames */
 
+/* A quota of the logic draw's projections kept for its walk
+ * (vc_lazy_logic=3, #204).
+ *
+ * The idle rule (1, D188) keeps a projection only while the last frame's
+ * walk has ended. The walk of frame N runs through the first part of frame
+ * N + 1's records, so the walk's time after it ends, up to the game
+ * thread's join, is left: in the owner's Stone Hill window the walk was
+ * 68% busy and 76% of the projections were still worked out at once on
+ * the game thread (D199). Keeping every one (2) overloaded the walk (D188).
+ *
+ * So the game thread also keeps a frame's first q projections while the
+ * walk is still running: kept, then (past q, the walk still running)
+ * worked out at once, the entry's kept ones first (lz_need: the same
+ * order, so the same answers), then kept again once the walk has ended,
+ * as the idle rule does. q comes from the walk's idle time in recent
+ * frames: the walk's thread stamps its start and end
+ * (psx_vcache_frame_use), the game thread stamps every QT_EVERY records,
+ * and at a frame's end (done_hook) the walk that ran beside it was idle
+ *   idle = the frame's last stamp - the walk's end
+ * before the game thread's last projections. Those come just before its
+ * DrawSync, where it joins the walk (D196), so this is the time the walk
+ * could still have taken without the game thread waiting; the wait for the
+ * vblank after the join isn't counted (a walk running into it would hold
+ * the game thread at the join, the `parse N:` line's wait). The idle is
+ * kept at a headroom of an eighth of the walk's window (its start to that
+ * stamp), at least QT_HEAD_MIN us:
+ *  - past the headroom in each of the last QT_HIST frames: q grows by the
+ *    lesser over QT_US_UP us a projection (about the walk's maths for a
+ *    kept one in Vita3K, 1-1.5 us, a third of them never needed), at most
+ *    by half again plus QT_SLACK;
+ *  - under it: q falls by the shortfall over QT_US_DOWN us, at most by a
+ *    quarter (a late frame, which Vita3K's timing gives one in ten
+ *    frames, doesn't empty it).
+ * q is held to the frame's records plus QT_SLACK, so a light stretch
+ * doesn't leave a quota that overloads the next heavy frame. With no walk
+ * on its own thread (in place: the host without --walk-lazy,
+ * parse_thread=0) every projection is kept, as the idle rule keeps them
+ * there. Which are kept never changes an answer. */
+#define LZ_QUOTA 3
+#define QT_EVERY 128 /* records a stamp */
+#define QT_HIST 2
+#define QT_HEAD_MIN 250
+#define QT_US_UP 1
+#define QT_US_DOWN 1
+#define QT_SLACK 256
+#define QT_START 256
+static inline uint32_t qt_now(void) {
+#ifdef __vita__
+  return (uint32_t)sceKernelGetProcessTimeLow();
+#elif defined(CLOCK_MONOTONIC)
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint32_t)t.tv_sec * 1000000u + (uint32_t)(t.tv_nsec / 1000);
+#else
+  return 0; /* no clock: q only falls */
+#endif
+}
+/* the game thread's */
+static struct {
+  unsigned q;            /* this frame's quota */
+  unsigned n;            /* this frame's records (a stamp every QT_EVERY) */
+  uint32_t last;         /* the last stamp */
+  unsigned ends;         /* s_walk.ends at the last frame's end */
+  int hist[QT_HIST], nh; /* the last frames' idle past the headroom, us */
+} s_qt = {QT_START, 0, 0, 0, {0}, 0};
+/* What it did, never reset (the game thread adds, the report reads): the
+ * frames measured, the sum of their next quotas, their idle us (ended
+ * before the last stamp, and after it), the walk still running at the last
+ * stamp, the frames with no walk on its own thread. */
+enum { QS_FRAMES, QS_Q, QS_IDLE_POS, QS_IDLE_NEG, QS_LATE, QS_NOWALK, QS_N };
+static unsigned s_qstat[QS_N];
+
 void psx_vcache_set_lazy(int on) { s_lazy = on != 0; }
-void psx_vcache_set_lazy_logic(int mode) { s_lazy_logic = mode < 0 ? 0 : mode > 2 ? 2 : mode; }
+void psx_vcache_set_lazy_logic(int mode) { s_lazy_logic = mode < 0 ? 0 : mode > 3 ? 3 : mode; }
+
+/* The game thread, at the end of a frame that kept (done_hook, records:
+ * its projections): the next frame's quota, from the walk that ran beside
+ * this frame */
+static void qt_frame_end(unsigned records) {
+  const unsigned ends = __atomic_load_n(&s_walk.ends, __ATOMIC_ACQUIRE);
+  unsigned q = s_qt.q, i;
+  int idle, window, head, e, emin;
+  if (ends == s_qt.ends) { /* no walk ended on its thread: it runs in place */
+    s_qt.q = VC_LOG;
+    s_qt.nh = 0;
+    __atomic_fetch_add(&s_qstat[QS_NOWALK], 1, __ATOMIC_RELAXED);
+    return;
+  }
+  s_qt.ends = ends;
+  if (s_qt.n < QT_EVERY) /* no stamp to place the walk's end against */
+    return;
+  idle = (int)(s_qt.last - s_walk.end_us);
+  window = (int)(s_qt.last - s_walk.start_us);
+  head = window / 8 > QT_HEAD_MIN ? window / 8 : QT_HEAD_MIN;
+  e = idle - head;
+  for (i = QT_HIST - 1; i > 0; i--)
+    s_qt.hist[i] = s_qt.hist[i - 1];
+  s_qt.hist[0] = e;
+  if (s_qt.nh < QT_HIST)
+    s_qt.nh++;
+  emin = e;
+  for (i = 1; i < (unsigned)s_qt.nh; i++)
+    if (s_qt.hist[i] < emin)
+      emin = s_qt.hist[i];
+  if (q > records + QT_SLACK) /* (a light frame's: the quota didn't bind) */
+    q = records + QT_SLACK;
+  if (e < 0) {
+    unsigned down = (unsigned)(-e) / QT_US_DOWN;
+    if (down > q / 4) /* (a late frame, as Vita3K has now and then: a quarter at most) */
+      down = q / 4;
+    q -= down;
+  } else if (emin > 0 && s_qt.nh == QT_HIST) {
+    unsigned up = (unsigned)emin / QT_US_UP;
+    if (up > q / 2 + QT_SLACK)
+      up = q / 2 + QT_SLACK;
+    q += up;
+  }
+  s_qt.q = q < VC_LOG ? q : VC_LOG;
+  __atomic_fetch_add(&s_qstat[QS_FRAMES], 1, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&s_qstat[QS_Q], s_qt.q, __ATOMIC_RELAXED);
+  if (idle >= 0)
+    __atomic_fetch_add(&s_qstat[QS_IDLE_POS], (unsigned)idle, __ATOMIC_RELAXED);
+  else {
+    __atomic_fetch_add(&s_qstat[QS_IDLE_NEG], (unsigned)-idle, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&s_qstat[QS_LATE], 1, __ATOMIC_RELAXED);
+  }
+}
+
+/* the quota's line (#204), since the last one: with the cost lines */
+static void qt_line(void) {
+  if (s_lazy_logic == LZ_QUOTA) {
+    static unsigned ql[QS_N];
+    unsigned d[QS_N], f, i;
+    for (i = 0; i < QS_N; i++) {
+      const unsigned v = __atomic_load_n(&s_qstat[i], __ATOMIC_RELAXED);
+      d[i] = v - ql[i];
+      ql[i] = v;
+    }
+    f = d[QS_FRAMES];
+    PsyX_Log("vcache quota: %u frames measured, a quota of %u projections a frame on average kept "
+             "while the walk still runs; the "
+             "walk ended %u us before the game thread's last projections on average (%u frames "
+             "still running then, %u us after on average); %u frames with the walk in place "
+             "(vc_lazy_logic=3, #204)",
+             f, f ? d[QS_Q] / f : 0, f > d[QS_LATE] ? d[QS_IDLE_POS] / (f - d[QS_LATE]) : 0,
+             d[QS_LATE], d[QS_LATE] ? d[QS_IDLE_NEG] / d[QS_LATE] : 0, d[QS_NOWALK]);
+  }
+}
 
 /* tb's next frame: kept for later or worked out at once (each frame
  * decided as it starts) */
@@ -1136,18 +1294,34 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   }
   /* #193, #179: the logic draw's kept for its walk only while the walk is
    * idle: with the last frame's walk still running, the walk is the
-   * thread short of time, so the game thread works them out itself */
-  if (tb->lazy && (kind == VC_PRES || !__atomic_load_n(&s_walk.busy, __ATOMIC_RELAXED))) {
-    unsigned lines = 0;
-    if (lz_add(tb, i, q, proj, np, vx, vy, vz, sz, sf, &lines)) {
-      cost[VCC_REC_LINES] += t.n; /* (the table's: the store's apart, #179) */
-      if (k->rec) {
-        k->rec[VCR_KEPT]++;
-        k->rec[VCR_STORE] += lines;
+   * thread short of time, so the game thread works them out itself.
+   * #204: and (vc_lazy_logic=3) the frame's first s_qt.q, whatever the
+   * walk is doing */
+  if (tb->lazy) {
+    int keep;
+    if (kind == VC_PRES)
+      keep = 1;
+    else if (s_lazy_logic == LZ_QUOTA) {
+      keep = tb->lz->n < s_qt.q || !__atomic_load_n(&s_walk.busy, __ATOMIC_RELAXED);
+      if ((++s_qt.n & (QT_EVERY - 1)) == 0)
+        s_qt.last = qt_now();
+    } else
+      keep = !__atomic_load_n(&s_walk.busy, __ATOMIC_RELAXED);
+    if (keep) {
+      unsigned lines = 0;
+      if (lz_add(tb, i, q, proj, np, vx, vy, vz, sz, sf, &lines)) {
+        cost[VCC_REC_LINES] += t.n; /* (the table's: the store's apart, #179) */
+        if (k->rec) {
+          k->rec[VCR_KEPT]++;
+          k->rec[VCR_STORE] += lines;
+        }
+        return;
       }
-      return;
     }
-    lz_need(tb, k, i); /* no room: the entry's list first, then this one */
+    /* no room, or past the quota: the entry's list first, then this one
+     * (the idle rule alone never has one here: the walk only ends in a
+     * frame, so its kept ones come after) */
+    lz_need(tb, k, i);
   }
   if (k->rec)
     k->rec[VCR_ONCE]++;
@@ -2584,6 +2758,16 @@ static void done_hook(void) {
     return;
   }
   acc_publish(0); /* the game thread's counts of this frame (#179) */
+  if (s_lazy_logic == LZ_QUOTA) { /* #204: the next frame's quota */
+    if (r->tab->lazy)
+      qt_frame_end(s_qt.n);
+    else { /* (beside in-between frames: worked out at once) */
+      s_qt.q = QT_START;
+      s_qt.nh = 0;
+      s_qt.ends = __atomic_load_n(&s_walk.ends, __ATOMIC_ACQUIRE);
+    }
+    s_qt.n = 0;
+  }
   r->count = 0;
   if (s_tab1) /* the other table records the next frame (D71) */
     r->tab = r->tab == &s_tab0 ? s_tab1 : &s_tab0;
@@ -2606,7 +2790,8 @@ static void done_hook(void) {
    * in-between frames */
   if (s_since_pres < 255)
     s_since_pres++;
-  lz_next(r->tab, (s_lazy_logic == 2 || /* not tied to s_lazy (#198) */ (s_lazy_logic == 1 && s_since_pres > LZ_QUIET)));
+  lz_next(r->tab, (s_lazy_logic == 2 || /* not tied to s_lazy (#198) */
+                   ((s_lazy_logic == 1 || s_lazy_logic == LZ_QUOTA) && s_since_pres > LZ_QUIET)));
 }
 
 int psx_vcache_double(void) {
@@ -2624,6 +2809,14 @@ void psx_vcache_frame_use(const PsxVcacheFrame *f) {
   if (!f && s_rtab)
     acc_publish(1); /* the walk's end: its counts (#179) */
   s_rtab = f ? (const Table *)f->tab : NULL;
+  if (s_lazy_logic == LZ_QUOTA) { /* #204: the quota's clock, on the walk's thread */
+    if (f)
+      s_walk.start_us = qt_now();
+    else {
+      s_walk.end_us = qt_now();
+      __atomic_fetch_add(&s_walk.ends, 1, __ATOMIC_RELEASE);
+    }
+  }
   __atomic_store_n(&s_walk.busy, f != NULL, __ATOMIC_RELAXED); /* #179 */
   s_rgen = f ? f->gen : 0;
 }
