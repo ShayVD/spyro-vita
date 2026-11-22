@@ -9,24 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 210,
-      "branch": "auto/210-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-210",
-      "pids": [],
-      "started_at": "2026-11-22T05:19:51Z",
-      "files": [
-        "tools/oracle/pads/",
-        "tools/vita/hw-routes/",
-        "autopilot/config.json",
-        "docs/vita-testing.md"
-      ],
-      "agent": "af7995eee795c5996",
-      "last_commit_at": "2026-11-22T06:19:34+00:00",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
@@ -362,3 +345,4 @@ continue.
 - 05:20Z phase 8: worker #210 started (stone60 Vita3K route)
 - 05:51Z phase 8: #210 running (no commit yet)
 - 06:22Z phase 8: #210 committed 628469d (stone60 route, host pads S/P/Pf) and 53c9fa0 (docs); finishing checks
+- 06:40Z phase 8: merged #210 (D208): stone60 route, baseline base-bac5699/stone60

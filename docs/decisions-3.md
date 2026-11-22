@@ -1113,3 +1113,30 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Left:**
   - A Vita3K route through Stone Hill with particles on screen (#210).
   - Watch `hk_full` (1,024 hand-overs a frame) in busy particle scenes.
+
+## 2026-11-22 — a Vita3K route through Stone Hill (#210)
+
+### D208. The Vita3K route `stone60` covers a portal fly-in and Stone Hill play with the owner's settings; the host route pads are checked in (#210)
+
+- **Why:** none of the five Vita3K routes reached Stone Hill, a portal fly-in, or the particles' case-3 quads. So D205's and D207's fixes couldn't be measured or regression-checked on the Vita build. #202's host route pads were also lost when its worktree went.
+- **What:**
+  - **The route:** `tools/vita/hw-routes/stone60.pad` and `.cfg`, with the owner's settings (16:9, `interp=4`, wobble fix on, `draw_distance=200`, frames 9,500). It is an absolute pad, steered on the host at `--tick60`, with no pokes:
+    - from New Game, a walk and jump into Stone Hill's portal (fly-in 6,805–7,225; play from 7,293);
+    - a ram's butt for the particles' star quads (about 7,780);
+    - then #209's route S actions (run, flame, charge, jump, glide) to 9,349.
+  - **Autopilot config:** `stone60` is in `autopilot/config.json`'s routes, and its benchmark window is 7,300–9,400. The baseline is `runtime/autopilot/runs/base-bac5699/stone60`.
+  - **Host pads:** S, P and Pf are checked in as `tools/oracle/pads/route_stone_s.txt`, `route_portal_p.txt` and `route_portal_pf.txt`. Each header gives its command line.
+  - **Docs:** `vita-testing.md`.
+- **Checked** (`runtime/autopilot/reports/210-1.md`):
+  - **Coverage:** on #209's VPK the route counts `particles` 2,161 and `hk_merged` 6,599. The host counts the same with the same pad.
+  - **Determinism:** three Vita3K runs (about 160 s each) gave 95 of 95 shots the same.
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS.
+- **Timing-dependent counters:** these move between identical runs on this route, as on `owner60` (D188):
+
+  | Counter | Spread between identical runs |
+  |---|---|
+  | `vc.invalid` | up to 31% |
+  | `vc.clamped` | up to 27% |
+  | `vc.rec.*`, `vc.walk.*` | up to 14% |
+
+  Gates must read them as noise on `stone60`.
