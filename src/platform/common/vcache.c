@@ -279,6 +279,7 @@ typedef struct {
  * may read a copy in another 16 MB window, walk.c) when w24, else a record
  * pool's whole addresses (native_draw) */
 #define VC_CX 128 /* ranges a frame */
+#define VC_FR 256 /* #215: cuts a frame placed at their own fraction (frac_hand) */
 typedef struct {
   uintptr_t lo, hi;
   uint8_t cx, w24;
@@ -333,6 +334,10 @@ typedef struct {
   uint32_t cx_gen;
   unsigned ncx;
   Cx cx[VC_CX];
+  /* #215 (last, as above): the cuts placed at their own fraction in this
+   * table's frame (VCD_T, frac_hand), apart from hk: no hand-over reads
+   * them */
+  Hk fr[VC_FR];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -362,6 +367,7 @@ static void table_clear(Table *t) {
   memset(t->s, 0, sizeof t->s);
   memset(t->der, 0, sizeof t->der);
   memset(t->hk, 0, sizeof t->hk);
+  memset(t->fr, 0, sizeof t->fr); /* #215 */
   t->cx_gen = 0;
   t->ncx = 0;
   t->stale = 0;
@@ -549,6 +555,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->hk_calls, out->hk_kept,
            out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged,
            out->hk_ambsrc, out->res_alias);
+  /* #215 */
+  PsyX_Log("vcache cut fraction: %u vertices with no entry found at their cut's own fraction; "
+           "%u cuts placed so, %u with an end not usable or more than 8 pixels off (#215)",
+           out->hk_frac, out->fr_kept, out->fr_nosrc);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1675,6 +1685,188 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
   return 0;
 }
 
+/* #215: a cut placed at its own fraction (psx_vcache.h VCD_T), kept in the
+ * frame's fr, apart from the hand-overs (hk). The PS1 cuts a portal sky
+ * triangle's side where it crosses the portal outline's edge, from integer
+ * ends. Where the cut through the exact edge's line leaves the key with no
+ * place, the side's own fraction still gives one. Tagged on host route P,
+ * those keys were:
+ *  - the cut far from its key (8 to 64 pixels, half of them past the side's
+ *    ends): the outline is an arc of edges a few pixels long, nearly in
+ *    line, so a cut on one edge's line just past its end is still inside
+ *    the next, and the exact ends' line, extended, runs pixels away from
+ *    the integer one;
+ *  - the side's outer end an ambiguous key (sky sectors' copies of a
+ *    border vertex, a fraction of a pixel apart);
+ *  - two cuts at one key more than HK_MERGE apart.
+ * t of the way between the side's exact ends is on the side the
+ * neighbouring sky triangles draw, within a pixel or so of the PS1's cut
+ * (the ends are each within half a pixel of their keys), and needs no edge.
+ * So that every polygon found before stays as it was, such a place is no
+ * source for a hand-over (hk_src never reads fr), is made only where the
+ * hand-overs leave the key with none, and a polygon takes it only for a
+ * vertex nothing else finds (psx_vcache_poly). */
+
+#define FR_NEAR 256 /* the log places an ambiguous end is looked for in: a sector's (resolve's VC_NEAR) */
+
+/* key's place in tab's frame gen, or (add) a free one for it */
+static Hk *fr_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *probes, Touch *t) {
+  uint32_t h = hash(key) & (VC_FR - 1), p;
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_FR - 1)) {
+    Hk *const e = &tb->fr[h];
+    ++*probes;
+    touch(t, offsetof(Table, fr) + (size_t)h * sizeof(Hk), 8);
+    if (e->gen != gen) {
+      if (!add)
+        return NULL;
+      e->key = key;
+      e->gen = gen;
+      e->n = e->dead = e->placed = e->taint = e->low = 0;
+      e->asrc = 0;
+      return e;
+    }
+    if (e->key == key)
+      return e;
+  }
+  return NULL;
+}
+
+static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, float *y, float *w,
+                     int *alt, int *cl);
+
+/* A cut's end in rec's frame: its place on screen (pixels) and depths, as
+ * the walk would draw the key. A valid entry (as hk_src); an ambiguous
+ * key's last projection in the frame's order (the sky's clipper cuts a
+ * sector's triangles right after projecting its vertices, so the last
+ * projection under the key is this sector's own); with no entry, the
+ * hand-over the walk takes for the key, else this frame's fr place.
+ * Returns the depths' count, 0 or less: not usable. */
+static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
+                  unsigned *cost, Touch *t) {
+  Table *const tb = rec->tab;
+  const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
+  unsigned n = 0, j;
+  if (i >= 0) {
+    const Entry *const s = &tb->s[i];
+    lz_need(tb, k, i);
+    n = T_N(s->tag);
+    touch(t, (size_t)i * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * (n ? n : 1));
+    if (T_STATE(s->tag) == E_VALID && n) {
+      if (s->tag & T_MULTI)
+        *x = *y = 0;
+      else
+        cand_pos(tb, &s->c[0], x, y);
+      for (j = 0; j < n; j++)
+        w[j] = s->c[j].w;
+    } else if (T_STATE(s->tag) == E_AMBIGUOUS && tb->nlog && tb->nlog < VC_LOG) {
+      const unsigned lo = tb->nlog > FR_NEAR ? tb->nlog - FR_NEAR : 0;
+      unsigned r = tb->nlog;
+      float wv;
+      int alt, cl;
+      while (r > lo && LOG_E(tb->log[--r]) != (unsigned)i)
+        ;
+      cost[VCC_REC_LINES] += (tb->nlog - r) / 16 + 1; /* a model: the log read backwards */
+      if (LOG_E(tb->log[r]) != (unsigned)i || !res_place(tb, s, r, x, y, &wv, &alt, &cl) || cl)
+        return -1;
+      if (wv > 0) { /* its own answer */
+        n = 0;
+        w[n++] = wv;
+        if (alt)
+          w[n++] = flt(wv * (1.0f / 16));
+      } else /* the first projection's point: at its candidates' depths */
+        for (j = 0; j < n; j++)
+          w[j] = s->c[j].w;
+    } else
+      return -1;
+  } else {
+    const Hk *h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
+    if (!h || h->dead || !h->placed) /* the walk's next look (psx_vcache_poly) */
+      h = fr_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
+    if (!h || h->dead || !h->placed || h->asrc || h->low || !h->n)
+      return -1;
+    n = h->n;
+    *x = h->dx;
+    *y = h->dy;
+    for (j = 0; j < n; j++)
+      w[j] = h->c[j].w;
+  }
+  *x += (short)(key & 0xFFFF) + 0.5f;
+  *y += (short)(key >> 16) + 0.5f;
+  return (int)n;
+}
+
+/* A VCD_LERP cut at its own fraction t / 4096 from a to b, into rec's fr
+ * (derive_hand, where the hand-overs leave key with no place): both ends
+ * need depths; the depth there is 1/w's on screen (hk_pair). Two places at
+ * one key: as hand-overs, the same point (depths added), within HK_MERGE
+ * their mean, else neither. */
+static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint32_t a, uint32_t b,
+                      int tf) {
+  unsigned *const cost = k->cost;
+  Rec *const rec = &s_rec[kind];
+  VCacheStats *const st = k->st;
+  float ax, ay, bx, by, aw[VC_CANDS], bw[VC_CANDS], w[VC_CANDS], pa = 0, pb = 0, f, dx, dy;
+  int na, nb;
+  unsigned n, i, j;
+  Touch t = TOUCH0;
+  Hk *h;
+  na = fr_src(rec, kind, k, a, &ax, &ay, aw, cost, &t);
+  nb = na > 0 ? fr_src(rec, kind, k, b, &bx, &by, bw, cost, &t) : 0;
+  if (na <= 0 || nb <= 0)
+    goto nosrc;
+  f = (float)tf * (1.0f / 4096);
+  n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost);
+  dx = flt(flt(ax + f * (bx - ax)) - ((short)(key & 0xFFFF) + 0.5f));
+  dy = flt(flt(ay + f * (by - ay)) - ((short)(key >> 16) + 0.5f));
+  if (!n || !(dx < 8 && dx > -8 && dy < 8 && dy > -8))
+    goto nosrc;
+  h = fr_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (!h) {
+    st->hk_full++;
+    goto out;
+  }
+  touch(&t, offsetof(Table, fr) + (size_t)(h - rec->tab->fr) * sizeof(Hk), sizeof(Hk));
+  if (h->dead)
+    goto out;
+  if (h->placed) {
+    if (!(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
+          h->dy - dy >= -0.125f)) {
+      if (h->placed < 255 && h->dx - dx <= HK_MERGE && dx - h->dx <= HK_MERGE &&
+          h->dy - dy <= HK_MERGE && dy - h->dy <= HK_MERGE) {
+        h->sx += dx;
+        h->sy += dy;
+        h->placed++;
+        h->dx = flt(h->sx / h->placed);
+        h->dy = flt(h->sy / h->placed);
+        cost[VCC_REC_DIV] += 2;
+      } else {
+        h->dead = 1;
+        goto out;
+      }
+    }
+  } else {
+    h->dx = h->sx = dx;
+    h->dy = h->sy = dy;
+    h->who = (uint8_t)who;
+    h->placed = 1;
+  }
+  for (i = 0; i < n; i++) {
+    for (j = 0; j < h->n; j++)
+      if (same_depth(h->c[j].w, w[i], &cost[VCC_REC_DIV]))
+        break;
+    if (j == h->n && h->n < VC_CANDS) {
+      h->c[h->n].dx = h->c[h->n].dy = 0;
+      h->c[h->n++].w = w[i];
+    }
+  }
+  st->fr_kept++;
+  goto out;
+nosrc:
+  st->fr_nosrc++;
+out:
+  cost[VCC_REC_LINES] += t.n;
+}
+
 /* One hand-over (psx_vcache.h PSX_VC_DERIVE) into rec's frame */
 static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t a, uint32_t b,
                         int p, int q) {
@@ -1682,10 +1874,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   Rec *const rec = &s_rec[kind];
   VCacheStats *const st = k->st;
   const int form = how & 15;
-  const unsigned who = (unsigned)how >> 4 < VCD_WHO_N ? (unsigned)how >> 4 : 0;
+  const unsigned who = ((unsigned)how >> 4 & 15) < VCD_WHO_N ? (unsigned)how >> 4 & 15 : 0;
   const int low = who == VCD_PARTICLES; /* #209: gives way to every other renderer's */
   float w[VC_CANDS], dx, dy;
-  int taint = 0;
+  int taint = 0, left = 0; /* left (#215): the key has no usable place after this call */
   unsigned n = 0, i, j;
   Touch t = TOUCH0;
   Hk *h;
@@ -1738,6 +1930,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
   if (!h) {
     st->hk_full++;
+    left = 1;
     goto out;
   }
   touch(&t, offsetof(Table, hk) + (size_t)(h - rec->tab->hk) * sizeof(Hk), sizeof(Hk));
@@ -1764,8 +1957,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     h->n = h->dead = h->placed = h->taint = 0;
     h->asrc = 0;
   }
-  if (h->dead)
+  if (h->dead) {
+    left = 1;
     goto out;
+  }
   if (h->placed) { /* handed over before: the same point (its depths added), or not used */
     if (!(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
           h->dy - dy >= -0.125f)) {
@@ -1784,6 +1979,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
       }
       h->dead = 1;
       st->hk_conflict++;
+      left = 1;
       goto out;
     }
   } else {
@@ -1808,8 +2004,11 @@ depths:
   goto out;
 nosrc:
   st->hk_nosrc++;
+  left = 1;
 out:
   cost[VCC_REC_LINES] += t.n;
+  if (left && form == VCD_LERP && VCD_HAS_T(how)) /* #215 */
+    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how));
 }
 
 PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -1977,6 +2176,25 @@ static const Hk *hk_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *
       if (e->dead || !e->placed)
         return NULL;
       touch(t, offsetof(Table, hk) + (size_t)h * sizeof(Hk), sizeof(Hk));
+      return e;
+    }
+  }
+  return NULL;
+}
+
+/* #215: ... else its cut's place at its own fraction (frac_hand) */
+static const Hk *fr_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *probes, Touch *t) {
+  uint32_t h = hash(key) & (VC_FR - 1), p;
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_FR - 1)) {
+    const Hk *const e = &tb->fr[h];
+    ++*probes;
+    touch(t, offsetof(Table, fr) + (size_t)h * sizeof(Hk), 8);
+    if (e->gen != gen)
+      return NULL;
+    if (e->key == key) {
+      if (e->dead || !e->placed)
+        return NULL;
+      touch(t, offsetof(Table, fr) + (size_t)h * sizeof(Hk), sizeof(Hk));
       return e;
     }
   }
@@ -2547,6 +2765,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   /* vertices with no entry their renderer handed over (#189): its
    * hand-over, and those used */
   const Hk *hkc[4] = {NULL, NULL, NULL, NULL}, *hk[4] = {NULL, NULL, NULL, NULL};
+  int hkfr[4] = {0, 0, 0, 0}; /* #215: hkc is a cut's place at its own fraction */
   int nflat = 0; /* ... those with a place only */
   int nhk = 0;
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
@@ -2610,9 +2829,12 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       if (k < 0) {
         none = i;
         nnone++;
-        /* its renderer's hand-over, if any (#189; used below) */
-        hkc[i] = hk_look(tab, pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen,
-                           key, &cost[VCC_LOOK_PROBES], &t);
+        /* its renderer's hand-over, if any (#189; used below); else its
+         * cut's place at its own fraction (#215, fr: hkfr) */
+        const uint32_t hgen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+        hkc[i] = hk_look(tab, hgen, key, &cost[VCC_LOOK_PROBES], &t);
+        if (!hkc[i] && (hkc[i] = fr_look(tab, hgen, key, &cost[VCC_LOOK_PROBES], &t)) != NULL)
+          hkfr[i] = 1;
       } else if (T_STATE(tag) == E_INVALID) {
         work[3]++;
         st->miss_invalid++;
@@ -2644,21 +2866,32 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     /* #189: vertices with no entry that their renderer handed over (after
      * #183's derivation, which keeps its quads): its place and depths, its
      * slot 0 */
-    for (i = 0; i < n; i++)
-      if (!e[i] && hkc[i] && !hkc[i]->asrc) {
-        hk[i] = hkc[i];
-        if (hk[i]->n) {
-          e[i] = hk[i]->c;
-          et[i] = 0;
-          en[i] = hk[i]->n;
-        } else
-          nflat++; /* its place only: the polygon stays affine */
-        nhk++;
-        nnone--;
-        nmiss--;
-        st->hits++;
-        st->hooked[hk[i]->who]++;
-      }
+    int pass;
+    for (pass = 0; pass < 2; pass++) {
+      /* #215: a cut's place at its own fraction after the hand-overs, and
+       * only where #197 below wouldn't take the polygon (its one vertex
+       * with no entry and its ambiguous ones): every polygon found before
+       * is found as it was */
+      if (pass && (!nnone || (n == 4 && nambig && nnone == 1 && !nhk && !inv &&
+                              nmiss == nambig + 1)))
+        break;
+      for (i = 0; i < n; i++)
+        if (!e[i] && hkc[i] && !hkc[i]->asrc && hkfr[i] == pass) {
+          hk[i] = hkc[i];
+          if (hk[i]->n) {
+            e[i] = hk[i]->c;
+            et[i] = 0;
+            en[i] = hk[i]->n;
+          } else
+            nflat++; /* its place only: the polygon stays affine */
+          nhk++;
+          nnone--;
+          nmiss--;
+          st->hits++;
+          st->hooked[hk[i]->who]++;
+          st->hk_frac += (unsigned)pass;
+        }
+    }
     if (nhk && !nmiss && !nflat)
       persp = VREF_PERSP;
   }
