@@ -42,7 +42,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/cyclorama_hand.c"
       ],
       "agent": "af67e7ad917c15959",
-      "last_commit_at": "2026-11-22T21:43:35+00:00"
+      "last_commit_at": "2026-11-22T21:43:35+00:00",
+      "reported": true
     }
   ],
   "last_good": "c6947cbc4c1cf0ef30f70eef6d0400ce96a7fc49",
@@ -252,7 +253,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 212,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-212.gate.log",
+    "started_at": "2026-11-22T23:12:02Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -408,3 +416,4 @@ continue.
 - 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
 - 2026-11-22T23:02:47Z phase 8: #212 reported done (Vita3K stone60 x1.00 -> x1.82-2.00); gate waits for #220 gate, Vita3K: none
 - 2026-11-22T23:11:40Z phase 8: merged #220 (D211), Vita3K: none
+- 2026-11-22T23:20:09Z phase 8: #215 reported done (PortalSkyPlain S/P 1,230 -> 0); gate after #212, Vita3K: none
