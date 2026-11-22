@@ -1140,3 +1140,27 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   | `vc.rec.*`, `vc.walk.*` | up to 14% |
 
   Gates must read them as noise on `stone60`.
+
+## 2026-11-22
+
+### D209. Hardware session 6: round 11's build (85a7b2c) on the Vita (2026-11-22)
+
+- **Run:** with the owner's yes ("the vita is free for hw runs"), AP16a–AP16d and AP16t (`runtime/autopilot/hw-session6.sh`, logs `logs/hw-ap16a`–`hw-ap16t`). Builds: `autopilot-85a7b2c.vpk` (SHA-1 0c08196c, D199–D208) and `autopilot-63d80f4.vpk` (round 10's, D192), US disc. New run files `tools/vita/fps-runs/ap16-stone60.txt` and `ap16-ll3.txt`: the stone60 route (#210) with the owner's settings (16:9, 60 HZ, the wobble fix on, `draw_distance=200`) and virtual vblanks, as AP8.
+- **Shader cache (#201, D200):**
+
+  | Boot | Shader time |
+  |---|---|
+  | 63d80f4 (no cache) | 10,281 ms, every boot |
+  | 85a7b2c, first boot | 9,604 ms (15 compiled, 2 hits) |
+  | 85a7b2c, second boot | 135 ms (17 of 17 from the cache) |
+
+- **Stone Hill play on the stone60 route, 7,300–9,400 (AP16b against AP16c):**
+  - The game thread was busy 73.2% → 71.5% on average, with a worst of 87% → 85%. Virtual vblanks, so 0 late by construction; busy % is the measure.
+  - The draws are identical in both builds. Since D201 the 48 KB budget, not the world bound, is what holds 2× back. The lod lines show x1.00 at 8,400–9,400, with 271–300 back-offs per 300, all for the budget and held at 1×. The thread still had 15–28% to spare there, so the fixed byte budget is too careful (#212).
+- **`vc_lazy_logic=3` (#204, D204), AP16d against AP16b:** busy 71.7% against 71.5%, with the same worst. That's no gain on hardware, so the default stays 1.
+- **Toasty route, real time (AP16t against AP14b, D192):**
+  - Artisans: late vblanks per 300 went from 16.5 to 0.5, and in-between frames skipped from 1,026 to 0.
+  - Toasty: late per 300 went from 0.3 to 0.2, and the render thread from 9.61 to 6.08 ms a picture.
+  - Stone Hill's attract demo at the title (4,200–6,300) is at about 177 late per 300 in both builds. The presenter's frames all run inline on the game thread (`0 frames on core 1, 150–216 inline`, 32 ms a tick): the attract demos' 16:9 real frame runs inline by design (D128). Filed as #220.
+- **Left on the Vita:** 85a7b2c's eboot (SHA-1 57e00232, READBACK IDENTICAL).
+- **Plan:** #212 (a time-based 60 Hz budget) is now backed by hardware numbers, and #220 is filed. A scene under 60 resets `rounds_without_gain` to 0. The next session is the #212 A/B: auto against 48 KB, on stone60 and owner60-style runs.

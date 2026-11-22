@@ -9,7 +9,24 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 211,
+      "branch": "auto/211-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-211",
+      "pids": [],
+      "started_at": "2026-11-22T17:24:36Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "docs/vita-testing.md",
+        "docs/host-build.md"
+      ],
+      "agent": "a550cc1fdff3d888d",
+      "last_commit_at": "2026-11-22T17:47:15+00:00"
+    }
+  ],
   "last_good": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
@@ -56,6 +73,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "37c3a95",
       "runs": "AP1-AP7 (tools/vita/fps-runs/README.md)",
       "result": "D172: PAL OK; wobble fix +2.6 ms game thread at 60 fps; presenter on core 1 -35%; GL shadow no time; cheaper cache below noise; vdm_ring=1024 harmless, default off"
+    },
+    {
+      "date": "2026-11-22",
+      "commit": "85a7b2c",
+      "runs": "AP16a-d, AP16t (runtime/autopilot/hw-session6.sh)",
+      "result": "D209: shader cache 10.3 s -> 0.14 s second boot; Stone Hill play busy 73.2 -> 71.5% but 48 KB budget holds 1x with 15-28% spare (#212); vc_lazy_logic=3 no gain; Artisans late 16.5 -> 0.5/300; attract demo ~177 late/300 inline presenter (#220)"
     }
   ],
   "perf_candidates": [
@@ -206,13 +229,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 9,
-    "investigated": false
+    "filed": 10,
+    "investigated": true
   },
-  "rounds_without_gain": 2,
-  "hardware_pending": [
-    "round 12 investigation: hardware session on 85a7b2c (shader cache boot, owner60/stone60-style 60 HZ 2x old vs new, vc_lazy_logic 1 vs 3, 30 Hz title flyby at 2x) needs the owner yes"
-  ],
+  "rounds_without_gain": 0,
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
@@ -357,3 +378,6 @@ continue.
 - 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
 - 06:56Z phase 8: round 11 ended (D199-D208, 10 merges). base-63d80f4 -> base-85a7b2c: vc.misses -15.5% (wobble60) / -21.6% (owner60) better; vcp.div +4.6..+17.7% worse (D197: presenter eager, deliberate); stone60 vc.invalid/clamped/div move as timing noise (D208). Shots same except owner60 30 Hz 2x (D201). Rule: no gain -> rounds_without_gain 2. The round s speed-ups (D202, D204, D206) cut cost per operation, invisible to Vita3K counters: round 12 waits for a hardware run (owner yes)
 - 2026-11-22T08:30Z phase 8: filed #211-#219 (owner: wobble and draw distance until fully fixed), Vita3K: none
+- 2026-11-22T17:24:53Z phase 8: started #211 (missed/exempt split); #212-#219 wait on its files; hardware session (hw-session5.sh) waits for the owner, Vita3K: none
+- 2026-11-22T17:56:19Z phase 8: #211 committed 85dbac2, running its Vita3K routes; nothing else pickable (files overlap), Vita3K: none
+- 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none

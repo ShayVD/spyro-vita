@@ -1,0 +1,4 @@
+# Run AP16d (round 12; the owner's yes 2026-11-22): AP16's stone60 run on autopilot-85a7b2c.vpk with
+# vc_lazy_logic=3 (#204, D204: the walk's quota) against AP16b (the default, 1). Use with
+# @tools/vita/fps-runs/ap16-stone60.txt @tools/vita/hw-routes/stone60.cfg.
+vc_lazy_logic=3
