@@ -1164,3 +1164,35 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Stone Hill's attract demo at the title (4,200–6,300) is at about 177 late per 300 in both builds. The presenter's frames all run inline on the game thread (`0 frames on core 1, 150–216 inline`, 32 ms a tick): the attract demos' 16:9 real frame runs inline by design (D128). Filed as #220.
 - **Left on the Vita:** 85a7b2c's eboot (SHA-1 57e00232, READBACK IDENTICAL).
 - **Plan:** #212 (a time-based 60 Hz budget) is now backed by hardware numbers, and #220 is filed. A scene under 60 resets `rounds_without_gain` to 0. The next session is the #212 A/B: auto against 48 KB, on stone60 and owner60-style runs.
+
+### D210. The vertex cache sorts the vertices it leaves unplaced into missed and exempt, by renderer (#211, 2026-11-22)
+
+- **Why:** the old count of vertices with no entry mixed two kinds. Some are 3D vertices the wobble fix should place; others are 2D by design (fades, HUD text, the portals' flat faces) and never had an entry. With both in one number, it couldn't say when the wobble fix is finished.
+- **How:** as each renderer returns (`HAND_RENDERER`/`HAND_UNIT_FN_RC` in `src/game/render_hand.h`), it gives the frame's table its range of primitives and of `native_draw` records (`psx_vc_ctx`, and `pres_vc_ctx` for the presenter), named by its hand C. At the `miss_none` spot, the walk files each vertex with no entry under the smallest range that holds the polygon:
+  - **missed:** a 3D renderer's vertex, named, e.g. PortalSkyPlain;
+  - **exempt:** a portal's face, or no renderer at all;
+  - **unmarked:** a frame with no ranges.
+
+  The class comes from what the frame recorded, not from the walk's timing. The `vcache derived:` line now carries `missed N (top: ...)`, and the wobble fix is finished where missed is 0. The `render_hand.h` hook was outside the issue's first file list; the worker left a checked patch, and the coordinator widened the Files and applied it.
+- **Measured (host, 2×, 16:9):**
+
+  | Route | No entry | Missed | Biggest class |
+  |---|---|---|---|
+  | S, 30 Hz | 21,401 | 1,870 | PortalSkyPlain 1,230 |
+  | S, `--interp` | 42,732 | 3,725 | PortalSkyPlain 2,440 |
+  | P, 30 Hz | 20,843 | 1,312 | PortalSkyPlain 1,230 |
+  | P, `--interp` | 41,616 | 2,609 | PortalSkyPlain 2,440 |
+  | Pf, 30 Hz | 19,076 | 718 | PortalSkyPlain 660 |
+  | Pf, `--interp` | 38,099 | 1,457 | PortalSkyPlain 1,329 |
+
+  Next after PortalSkyPlain come EnvDraw (Stone Hill, 451 / 883), SkyDraw (111 / 244), and GlowsAndSparkles and MobyShadows. More than 90% of what's left with no entry is exempt. In Vita3K owner60 the line reads `missed 8 (MobyShadows 6, GlowsAndSparkles 2)` at 8,700.
+- **Checks:**
+  - Counters only: the host's per-polygon FNV is identical on six route pairs.
+  - With the hook, the Vita build exits 0 (VPK 54d28d20). All six routes exit 0 on the first try, with shots identical to `base-85a7b2c` (10, 91, 91, 91, 91 and 95 same). Counters are the same on all four benchmark scenes (`vc.invalid` and `vc.clamped` ignored as timing noise). Logs: `runs/auto-211-1`, `runs/auto-211-2`.
+  - Host ctest passes 32 of 32.
+- **Follow-ups:**
+  - #215: PortalSkyPlain.
+  - #216: glows and shadows.
+  - #217: EnvDraw.
+  - #221: SkyDraw.
+  - #222: 1,086 "outside" textured-quad vertices whose polygon has a placed vertex, to settle so that missed 0 really means no wobble.
