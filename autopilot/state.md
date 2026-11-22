@@ -9,27 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 211,
-      "branch": "auto/211-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-211",
-      "pids": [],
-      "started_at": "2026-11-22T17:24:36Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/prof_draw.c",
-        "docs/vita-testing.md",
-        "docs/host-build.md",
-        "src/game/render_hand.h"
-      ],
-      "agent": "a550cc1fdff3d888d",
-      "last_commit_at": "2026-11-22T17:47:15+00:00",
-      "reported": true
-    }
-  ],
-  "last_good": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
+  "workers": [],
+  "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
@@ -236,14 +217,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 211,
-    "step": 3,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/check-211.log",
-    "started_at": "2026-11-22T19:25:00Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -392,3 +366,4 @@ continue.
 - 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none
 - 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
 - 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
+- 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
