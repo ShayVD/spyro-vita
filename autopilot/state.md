@@ -239,10 +239,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": {
     "kind": "gate",
     "issue": 211,
-    "step": 1,
+    "step": 3,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-211.gate.log",
-    "started_at": "2026-11-22T19:11:00Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/check-211.log",
+    "started_at": "2026-11-22T19:25:00Z"
   },
   "batch": null,
   "lanes": [
@@ -391,3 +391,4 @@ continue.
 - 2026-11-22T17:56:19Z phase 8: #211 committed 85dbac2, running its Vita3K routes; nothing else pickable (files overlap), Vita3K: none
 - 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none
 - 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
+- 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
