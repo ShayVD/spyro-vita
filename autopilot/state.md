@@ -21,10 +21,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h",
         "src/platform/vita/prof_draw.c",
         "docs/vita-testing.md",
-        "docs/host-build.md"
+        "docs/host-build.md",
+        "src/game/render_hand.h"
       ],
       "agent": "a550cc1fdff3d888d",
-      "last_commit_at": "2026-11-22T17:47:15+00:00"
+      "last_commit_at": "2026-11-22T17:47:15+00:00",
+      "reported": true
     }
   ],
   "last_good": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
@@ -229,12 +231,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 10,
+    "filed": 12,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 211,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-211.gate.log",
+    "started_at": "2026-11-22T19:11:00Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -381,3 +390,4 @@ continue.
 - 2026-11-22T17:24:53Z phase 8: started #211 (missed/exempt split); #212-#219 wait on its files; hardware session (hw-session5.sh) waits for the owner, Vita3K: none
 - 2026-11-22T17:56:19Z phase 8: #211 committed 85dbac2, running its Vita3K routes; nothing else pickable (files overlap), Vita3K: none
 - 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none
+- 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
