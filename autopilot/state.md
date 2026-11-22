@@ -227,7 +227,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 2,
   "hardware_pending": [
-    "round 12 investigation: hardware session on 85a7b2c (shader cache boot, owner60/stone60-style 60 HZ 2x old vs new, vc_lazy_logic 1 vs 3, 30 Hz title flyby at 2x) needs the owner yes"
+    "round 12: owner (2026-11-22) says wait until #212 (dd_budget=auto) merges, then one session: shader cache boot, owner60/stone60-style 60 HZ 2x auto vs 48 KB vs 85a7b2c, vc_lazy_logic 1 vs 3, 30 Hz title flyby at 2x; write hw-session6.sh then and ask for the yes"
   ],
   "job": null,
   "batch": null,
