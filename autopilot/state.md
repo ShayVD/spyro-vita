@@ -345,3 +345,4 @@ continue.
 - 01:35Z phase 8: #202 still in final checks (0137ab6); #204 waits
 - 02:01Z phase 8: merged #202 (D205); filed #209 (particles hand-over)
 - 02:02Z phase 8: worker #204 started; #209 waits on vcache.c
+- 02:34Z phase 8: #204 running (no commit yet, started ~02:04Z); #209 waits
