@@ -270,6 +270,57 @@ extern VCacheCounters g_vcache_ctr[2];
 enum { VCR_KEPT, VCR_ONCE, VCR_WORKED, VCR_DIV, VCR_PROBES, VCR_LINES, VCR_STORE, VCR_N };
 extern unsigned g_vcache_rec[2][VCR_N];
 
+/* Renderer contexts (#211): which renderer wrote a polygon, so a vertex
+ * left with no entry can be told apart: missed (a 3D renderer's vertex the
+ * cache should have placed) or exempt (drawn in screen space on purpose).
+ * A renderer, as it returns, tells the cache the primitives it wrote in the
+ * frame being recorded: the primitive buffer's pointer before and after
+ * (p0, p1) and native_draw's record cursor before and after (n0, n1; nb the
+ * record pool's start after, for a pool begun in the call). The name is its
+ * hand C's (render_hand.h HAND_RENDERER's hand: "EnvDraw"...). The walk
+ * then finds the polygon's primitive (or record) among the frame's ranges,
+ * the smallest that holds it, a copy's (walk.c, D71) by its offset in its
+ * 16 MB window. So the class comes from what the frame recorded, not from
+ * the walk's timing. Classes:
+ *  - a known renderer's (VCX_ENV...VCX_PORTAL_SKY_FOG) or another marked
+ *    one's (VCX_OTHER): missed;
+ *  - VCX_PORTAL_FACE (a portal's face: screen corners clipped flat at the
+ *    portal's outline, place-only hand-overs) and VCX_OUTSIDE (in no
+ *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
+ *    the game's own C): exempt;
+ *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
+ *    cache), so nothing says which.
+ * psx_vc_ctx is the logic draw's, pres_vc_ctx the presenter build's (its
+ * objects may call only pres_ names, tests/render_ctx/link_check.sh); both
+ * do nothing when the cache doesn't record. Only for the counters: no
+ * answer changes. */
+enum {
+  VCX_ENV,             /* EnvDraw */
+  VCX_MOBY,            /* MobyDraw */
+  VCX_LIT,             /* LitDraw */
+  VCX_SPEC,            /* SpecDraw */
+  VCX_SPYRO,           /* SpyroDraw */
+  VCX_SPYRO_SHADOW,    /* SpyroShadow */
+  VCX_MOBY_SHADOWS,    /* MobyShadows */
+  VCX_FLAME,           /* FlameDraw */
+  VCX_PARTICLES,       /* ParticlesDraw */
+  VCX_GLOWS,           /* GlowsAndSparkles */
+  VCX_RING,            /* DragonRing */
+  VCX_SKY,             /* SkyDraw */
+  VCX_FOG_SKY,         /* FogSky */
+  VCX_PORTAL_SKY,      /* PortalSkyPlain */
+  VCX_PORTAL_SKY_FOG,  /* PortalSkyFog */
+  VCX_PORTAL_FACE,     /* PortalFace (exempt) */
+  VCX_OTHER,           /* a marked renderer with another name */
+  VCX_OUTSIDE,         /* in no renderer's range (exempt) */
+  VCX_UNMARKED,        /* the frame has no ranges */
+  VCX_N
+};
+void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                uintptr_t nb);
+void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                 uintptr_t nb);
+
 /* Counters since the start or the last psx_vcache_stats_reset() (the Vita
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
@@ -344,6 +395,10 @@ typedef struct {
    * ambiguous, kept as that key's; and the vertices found so, resolved
    * from the frame's order (counted in hits, not in hooked or resolved) */
   unsigned hk_ambsrc, res_alias;
+  /* #211: the vertices left with no entry (miss_none), by the renderer
+   * context whose primitive their polygon is (VCX_*, above): their sum is
+   * miss_none */
+  unsigned ne[VCX_N];
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
