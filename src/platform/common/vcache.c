@@ -182,6 +182,7 @@
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h> /* #211: snprintf */
 #include <stdlib.h>
 #include <string.h>
 #include <time.h> /* #204: the quota's clock */
@@ -273,6 +274,16 @@ typedef struct {
                 * source for one (as if not there for every other hand-over) */
 } Hk;
 
+/* A renderer context's primitives in a frame (#211, psx_vcache.h VCX_*):
+ * [lo, hi), the low 24 bits of the primitive buffer's addresses (the walk
+ * may read a copy in another 16 MB window, walk.c) when w24, else a record
+ * pool's whole addresses (native_draw) */
+#define VC_CX 128 /* ranges a frame */
+typedef struct {
+  uintptr_t lo, hi;
+  uint8_t cx, w24;
+} Cx;
+
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
@@ -317,6 +328,11 @@ typedef struct {
    * lc, so never cleared */
   unsigned nlfar;
   float lfar[VC_LFAR][2];
+  /* #211 (last, as above): the primitives each renderer wrote in this
+   * table's frame (cx_gen; psx_vc_ctx), ncx of them */
+  uint32_t cx_gen;
+  unsigned ncx;
+  Cx cx[VC_CX];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -346,6 +362,8 @@ static void table_clear(Table *t) {
   memset(t->s, 0, sizeof t->s);
   memset(t->der, 0, sizeof t->der);
   memset(t->hk, 0, sizeof t->hk);
+  t->cx_gen = 0;
+  t->ncx = 0;
   t->stale = 0;
 }
 
@@ -487,20 +505,26 @@ static void cost_line(void) {
   qt_line(); /* #204 */
 }
 
+static void cx_text(const VCacheStats *s, char *buf, size_t size); /* #211, below */
+
 /* the two kinds' counters added (peak: the larger), and the report's lines */
 static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   const unsigned *a = (const unsigned *)&k[0], *b = (const unsigned *)&k[1];
   unsigned *o = (unsigned *)out;
+  char cx[256];
   size_t i;
   for (i = 0; i < sizeof *out / sizeof(unsigned); i++)
     o[i] = a[i] + b[i];
   out->peak = k[0].peak > k[1].peak ? k[0].peak : k[1].peak;
   cost_line();
-  /* #183: the quads' vertices with no entry found again from their polygon */
+  cx_text(out, cx, sizeof cx);
+  /* #183: the quads' vertices with no entry found again from their polygon;
+   * #211: those left, missed or exempt by their renderer context */
   PsyX_Log("vcache derived: %u vertices with no entry drawn with their polygon's depth (%u at the "
            "projection recorded before the renderer moved them, %u at their key); %u left with no "
-           "entry; %u at that projection with its own depth, the plane giving none (#202)",
-           out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none, out->der_own);
+           "entry (%s); %u at that projection with its own depth, the plane giving none (#202)",
+           out->derived, out->der_snap, out->derived - out->der_snap, out->miss_none, cx,
+           out->der_own);
   /* #181: ambiguous keys' vertices found again from the frame's order */
   PsyX_Log("vcache resolved: %u vertices with an ambiguous key drawn with a depth from its "
            "projections near their polygon's others (%u where the order left one point, %u with "
@@ -1812,6 +1836,133 @@ void psx_vc_derive(int how, unsigned int sxy, unsigned int a, unsigned int b, in
   g_psyxRtpDeriveHook(how, sxy, a, b, p, q);
 }
 
+/* #211: the renderer contexts (psx_vcache.h VCX_*), by their hand C's name */
+static const char *const k_cx_names[VCX_N] = {
+    "EnvDraw",     "MobyDraw",      "LitDraw",          "SpecDraw",   "SpyroDraw",
+    "SpyroShadow", "MobyShadows",   "FlameDraw",        "ParticlesDraw", "GlowsAndSparkles",
+    "DragonRing",  "SkyDraw",       "FogSky",           "PortalSkyPlain", "PortalSkyFog",
+    "PortalFace",  "other",         "outside",          "unmarked"};
+#define CX_EXEMPT(c) ((c) == VCX_PORTAL_FACE || (c) == VCX_OUTSIDE)
+
+/* name's context: the last pointers seen first (each kind's, written only
+ * by the thread its renderers run on), then the names */
+static int cx_of_name(int kind, const char *name) {
+  static const char *seen[2][VCX_OTHER];
+  int i;
+  for (i = 0; i < VCX_OTHER; i++)
+    if (seen[kind][i] == name)
+      return i;
+  for (i = 0; i < VCX_OTHER; i++)
+    if (!strcmp(k_cx_names[i], name)) {
+      seen[kind][i] = name;
+      return i;
+    }
+  return VCX_OTHER;
+}
+
+static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24) {
+  if (t->ncx < VC_CX) {
+    Cx *const c = &t->cx[t->ncx++];
+    c->lo = lo;
+    c->hi = hi;
+    c->cx = (uint8_t)cx;
+    c->w24 = (uint8_t)w24;
+  }
+}
+
+/* a renderer's primitives in the frame kind records (psx_vc_ctx) */
+static void vc_ctx(int kind, const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0,
+                   uintptr_t n1, uintptr_t nb) {
+  Rec *const r = &s_rec[kind];
+  Table *const t = r->tab;
+  int cx;
+  if (!t)
+    return;
+  if (t->cx_gen != r->gen) {
+    t->cx_gen = r->gen;
+    t->ncx = 0;
+  }
+  cx = cx_of_name(kind, name);
+  /* the primitive buffer, by its addresses' offsets in their 16 MB window
+   * (the HUD's mobys are drawn from the buffer's top: no forward move) */
+  if (p1 > p0 && p1 - p0 < 0x100000u && (p0 >> 24) == ((p1 - 1) >> 24))
+    cx_add(t, cx, p0 & 0xFFFFFFu, ((p1 - 1) & 0xFFFFFFu) + 1, 1);
+  /* native_draw's records: the cursor's move, or from the start of a pool
+   * begun in the call */
+  if (n1 > n0 && n1 - n0 < 0x1000000u)
+    cx_add(t, cx, n0, n1, 0);
+  else if (n1 != n0 && nb && n1 > nb)
+    cx_add(t, cx, nb, n1, 0);
+}
+
+void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                uintptr_t nb) {
+  if (g_psyxRtpDeriveHook)
+    vc_ctx(VC_LOGIC, name, p0, p1, n0, n1, nb);
+}
+
+void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                 uintptr_t nb) {
+  vc_ctx(VC_PRES, name, p0, p1, n0, n1, nb);
+}
+
+/* the context of the polygon whose first vertex's x is at p, in tab's
+ * frame gen: the smallest range holding it, a record pool's before the
+ * primitive buffer's */
+static int cx_find(const Table *tab, uint32_t gen, const void *p) {
+  const uintptr_t a = (uintptr_t)p, a24 = a & 0xFFFFFFu;
+  uintptr_t best = ~(uintptr_t)0;
+  int cx = VCX_OUTSIDE, rank = 2; /* the best hit's w24 (a pool's, 0, first) */
+  unsigned i;
+  if (!tab || tab->cx_gen != gen || !tab->ncx)
+    return VCX_UNMARKED;
+  for (i = 0; i < tab->ncx; i++) {
+    const Cx *const c = &tab->cx[i];
+    const uintptr_t x = c->w24 ? a24 : a;
+    if (x >= c->lo && x < c->hi &&
+        (c->w24 < rank || (c->w24 == rank && c->hi - c->lo < best))) {
+      best = c->hi - c->lo;
+      cx = c->cx;
+      rank = c->w24;
+    }
+  }
+  return cx;
+}
+
+/* the report's words for the vertices left with no entry (#211): "missed
+ * N (top: <ctx> n, <ctx> n, <ctx> n), exempt E (outside the renderers O,
+ * portal faces F), unmarked U" */
+static void cx_text(const VCacheStats *s, char *buf, size_t size) {
+  unsigned missed = 0, top[3] = {0, 0, 0};
+  int topc[3] = {-1, -1, -1}, c, j, n;
+  for (c = 0; c < VCX_N; c++) {
+    unsigned v = s->ne[c];
+    if (CX_EXEMPT(c) || c == VCX_UNMARKED || !v)
+      continue;
+    missed += v;
+    for (j = 0; j < 3; j++)
+      if (v > top[j]) {
+        int k;
+        for (k = 2; k > j; k--) {
+          top[k] = top[k - 1];
+          topc[k] = topc[k - 1];
+        }
+        top[j] = v;
+        topc[j] = c;
+        break;
+      }
+  }
+  n = snprintf(buf, size, "missed %u (top:", missed);
+  for (j = 0; j < 3 && topc[j] >= 0 && n > 0 && (size_t)n < size; j++)
+    n += snprintf(buf + n, size - (size_t)n, "%s %s %u", j ? "," : "", k_cx_names[topc[j]],
+                  top[j]);
+  if (n > 0 && (size_t)n < size)
+    snprintf(buf + n, size - (size_t)n,
+             "%s), exempt %u (outside the renderers %u, portal faces %u), unmarked %u",
+             topc[0] < 0 ? " none" : "", s->ne[VCX_OUTSIDE] + s->ne[VCX_PORTAL_FACE],
+             s->ne[VCX_OUTSIDE], s->ne[VCX_PORTAL_FACE], s->ne[VCX_UNMARKED]);
+}
+
 /* a polygon vertex with no entry: its hand-over in tab's frame gen, if one
  * is usable (#189) */
 static const Hk *hk_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *probes, Touch *t) {
@@ -2682,7 +2833,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     }
   }
   if (nnone && !der) { /* not found: no entry */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     st->miss_none += (unsigned)nnone;
+    st->ne[cx_find(ptab, gen, xy[0])] += (unsigned)nnone; /* #211: whose polygon */
     work[3] += (unsigned)nnone;
   }
   if (persp)

@@ -269,7 +269,17 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   - `vcache derived:` no-entry vertices drawn with their polygon's depth, at the projection before
     the renderer moved them or at their key, and those left with no entry (D176). Since #202 the
     last figure counts those at that projection with its own depth, where the plane through the
-    quad's other corners gave none (big close grid quads).
+    quad's other corners gave none (big close grid quads). Since #211 the bracket after "left with
+    no entry" splits them by the renderer whose primitive the polygon is: `missed N (top: <ctx> n,
+    <ctx> n, <ctx> n)` are a 3D renderer's vertices the cache should have placed (the wobble fix's
+    target is 0), named by the renderer's hand C (`EnvDraw`, `MobyDraw`, `SkyDraw`,
+    `PortalSkyPlain`...; `other` for one not in the list); `exempt E` are drawn in screen space on
+    purpose: outside every renderer (the HUD's text and boxes, fades, borders: the game's own C) or
+    a portal's face (screen corners clipped flat at the portal's outline); `unmarked U` are in
+    frames where no renderer told the cache its primitives (`psx_vc_ctx`, `psx_vcache.h`), so
+    nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
+    each renderer wrote in the frame, not from the walk's timing; the classes add up to the "left
+    with no entry" figure.
   - `vcache resolved:` ambiguous keys' vertices given a depth from the frame's order, and those
     left ambiguous (D178).
   - `vcache hooked:` no-entry vertices found from a renderer's hand-over, by renderer, and the
