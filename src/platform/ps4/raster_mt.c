@@ -315,6 +315,7 @@ void ps4_raster_sync(void) {
   if (!n)
     return;
   t0 = ps4_now_us();
+  g_ps4_where = "the rasterizer's threads";
   pthread_mutex_lock(&s_mu);
   s_batch_n = n;
   s_pending = NTHREADS - 1;
@@ -328,6 +329,7 @@ void ps4_raster_sync(void) {
     pthread_cond_wait(&s_done, &s_mu);
   pthread_mutex_unlock(&s_mu);
   s_nrec = 0;
+  g_ps4_where = "the game";
   s_batches++;
   s_us_draw += t1 - t0;
   s_us_wait += ps4_now_us() - t1;

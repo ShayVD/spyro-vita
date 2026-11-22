@@ -572,9 +572,10 @@ static void flush(void);
 
 /* the VRAM texture gets the dirty rows */
 static void upload(void) {
-  const uint16_t *v = host_vram(); /* (the rasterizer's threads done first) */
+  const uint16_t *v;
   if (s_dx0 > s_dx1)
     return;
+  v = host_vram(); /* (the rasterizer's threads done first) */
   flush();
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, s_vram_tex);
@@ -1121,8 +1122,19 @@ int ps4_gpu_present(void) {
     quad(dst, st);
   }
   t1 = ps4_now_us();
+  g_ps4_where = "eglSwapBuffers";
   eglSwapBuffers(s_dpy, s_surf);
+  g_ps4_where = "the present";
   s_st.swap_us += ps4_now_us() - t1;
+  {
+    static unsigned first;
+    if (first < 3) { /* the first pictures, flushed (GPU run 3 hung before any) */
+      host_log("gpu: picture %u: %llu us building, %llu us in eglSwapBuffers", first,
+               t1 - t0, ps4_now_us() - t1);
+      host_log_flush();
+      first++;
+    }
+  }
   s_st.present_us += t1 - t0;
   s_st.presents++;
   gl_check("present");

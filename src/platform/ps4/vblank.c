@@ -86,6 +86,8 @@ static unsigned s_t_calls;
 void psx_platform_vsync(void) {
   int n, late;
   unsigned long long t0, t1, t2;
+  g_ps4_beat++;
+  g_ps4_where = "VSync";
   if (ps4_menu_service()) { /* the game was paused: count again, no catch-up */
     psx_clock_resync();
     s_t_last = 0;
@@ -107,7 +109,9 @@ void psx_platform_vsync(void) {
     vblank();
   t2 = ps4_now_us();
   s_t_vblanks += t2 - t1;
+  g_ps4_where = "the present";
   s_stat_shown += ps4_video_present();
+  g_ps4_where = "the game";
   s_t_last = ps4_now_us();
   s_t_present += s_t_last - t2;
 }

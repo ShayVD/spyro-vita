@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <sys/stat.h>
 
 #include <orbis/libkernel.h>
@@ -62,6 +63,44 @@ static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(64)));
 
 /* the Vita's defaults (vita/main.c): 16:9, 60 Hz logic in play (D150), the
  * free camera (D53); the GLES2 renderer when the player's Piglet loads */
+const char *volatile g_ps4_where = "starting";
+volatile unsigned g_ps4_beat;
+
+/* The watchdog: every 500 ms, whether the game thread's VSync count moved.
+ * After 3 s without, one log line naming where it is, flushed (GPU run 3
+ * hung with nothing in the log after start-up). */
+static void *watchdog(void *arg) {
+  unsigned last = g_ps4_beat, still = 0, told = 0;
+  (void)arg;
+  for (;;) {
+    sceKernelUsleep(500000);
+    if (g_ps4_beat != last) {
+      last = g_ps4_beat;
+      if (told)
+        host_log("watchdog: the game thread moves again (after %u.%u s)", still / 2, still % 2 * 5);
+      still = told = 0;
+      continue;
+    }
+    if (++still == 6 || (told && still % 20 == 0)) {
+      const char *where = g_ps4_where;
+      told = 1;
+      host_log("watchdog: the game thread has been at \"%s\" for %u s (VSync %u)", where,
+               still / 2, last);
+      if (!strcmp(where, "eglSwapBuffers") && g_ps4_opts.gpu_vsync) {
+        FILE *f = fopen(PS4_NOVSYNC, "w");
+        if (f) {
+          fputs("eglSwapBuffers blocked with swap interval 1; delete this file to try again\n", f);
+          fclose(f);
+        }
+        host_log("watchdog: wrote " PS4_NOVSYNC ": the next start swaps with interval 0");
+        ps4_notify("Spyro: the GPU's swap is stuck. Close the game and start it again.");
+      }
+      host_log_flush();
+    }
+  }
+  return NULL;
+}
+
 Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .interp = 4,
                       .interp_budget = 1, .free_camera = 1, .cam_invert_x = 1,
                       .cam_invert_y = 1, .cam_speed = 100, .cam_recentre = 1, .gpu = 1,
@@ -217,6 +256,19 @@ static void *game_thread(void *arg) {
   host_log("pie: %d data words given their addresses", fixed);
   host_log_flush(); /* a crash loses what isn't written (hardware run 1) */
   read_config();
+  {
+    FILE *f = fopen(PS4_NOVSYNC, "r");
+    if (f) { /* the watchdog saw eglSwapBuffers stuck with interval 1 */
+      fclose(f);
+      g_ps4_opts.gpu_vsync = 0;
+      host_log("gpu: " PS4_NOVSYNC " is there: swap interval 0");
+    }
+  }
+  {
+    pthread_t th;
+    if (pthread_create(&th, NULL, watchdog, NULL) != 0)
+      host_log("watchdog: didn't start");
+  }
   if (g_ps4_opts.shot_at)
     mkdir(PS4_DATA_DIR "/shots", 0777);
 
@@ -287,6 +339,7 @@ static void *game_thread(void *arg) {
   ps4_savestate_init();
   host_log_flush();
   ps4_notify("Spyro PS4: starting (%s)", psx_region()->serial);
+  g_ps4_where = "the game";
   spyro_main(); /* never returns */
   return NULL;
 }

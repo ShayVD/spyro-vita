@@ -125,6 +125,14 @@ void ps4_raster_report(int vblank);
 /* vblank.c */
 int ps4_vblank_count(void);
 
+/* main.c: the watchdog (D194): the game thread says where it is and counts
+ * its VSyncs; a stall of 3 s is logged with the place (and the log flushed).
+ * A stall in eglSwapBuffers writes gpu_novsync: the next start swaps with
+ * interval 0. */
+extern const char *volatile g_ps4_where;
+extern volatile unsigned g_ps4_beat;
+#define PS4_NOVSYNC PS4_DATA_DIR "/gpu_novsync"
+
 /* the user who started the game (main.c) */
 extern int g_ps4_user;
 

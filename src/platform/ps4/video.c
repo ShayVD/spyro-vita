@@ -96,8 +96,22 @@ int ps4_video_init(void) {
   size_t size = (FB_BYTES * NBUF + DMEM_ALIGN - 1) & ~(size_t)(DMEM_ALIGN - 1);
   int rc, i;
   if (g_ps4_gpu) { /* Piglet shows the pictures; the vblank count comes from here */
-    if (open_display() != 0) /* (then ps4_video_vcount is a 60 Hz clock) */
+    uint64_t c0;
+    if (open_display() != 0) { /* (then ps4_video_vcount is a 60 Hz clock) */
       host_log("video: no sceVideoOut handle beside Piglet's: the vblanks follow a 60 Hz clock");
+      return 0;
+    }
+    /* a handle with no buffers of its own may never count (GPU run 3 hung
+     * at its first VSync): it must, within 50 ms, or the clock is a timer */
+    c0 = ps4_video_vcount();
+    sceKernelUsleep(50000);
+    if (ps4_video_vcount() == c0) {
+      host_log("video: the sceVideoOut handle beside Piglet's doesn't count vblanks (%llu): the "
+               "vblanks follow a 60 Hz clock", (unsigned long long)c0);
+      sceVideoOutClose(s_handle);
+      s_handle = -1;
+    } else
+      host_log("video: vblanks counted on a sceVideoOut handle beside Piglet's");
     return 0;
   }
   if (open_display() != 0)
@@ -139,6 +153,7 @@ uint64_t ps4_video_vcount(void) {
 }
 
 void ps4_video_wait_vblank(void) {
+  g_ps4_where = "waiting for a vblank";
   if (s_handle < 0 || ps4_vo_wait_vblank(s_handle) < 0)
     sceKernelUsleep(1000);
 }
