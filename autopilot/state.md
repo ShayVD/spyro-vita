@@ -358,3 +358,4 @@ continue.
 - 04:44Z phase 8: #209 second commit 9eec614 (a particle corner gives way to other hand-overs), checks running
 - 05:19Z phase 8: merged #209 (D207); vita-testing.md particles line updated
 - 05:20Z phase 8: worker #210 started (stone60 Vita3K route)
+- 05:51Z phase 8: #210 running (no commit yet)
