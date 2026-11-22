@@ -454,6 +454,19 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       AT32(prim + 0x18) = v0 - a2;
       AT32(prim + 0x10) = v0 - a3;
       AT32(prim + 0x8) = v0 - a3 - a2;
+      /* #209: each corner is the centre's exact place plus its offset from
+       * the centre, at the centre's depth, for the vertex cache. The
+       * offsets come from the corner words as the GPU reads them (x the
+       * low half, y the high half, each signed), so a corner whose x
+       * borrowed from its y is placed at the y drawn. */
+#define PART_HO(c)                                                                                 \
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES), (c), sxy, 0u, (s32)(s16)(c) - (s32)(s16)sxy,     \
+                ((s32)(c) >> 16) - ((s32)sxy >> 16))
+      PART_HO(v0);
+      PART_HO(v0 - a2);
+      PART_HO(v0 - a3);
+      PART_HO(v0 - a3 - a2);
+#undef PART_HO
       QuadUVs(prim, x0, x1);
       AT32(prim + 0x0) = 0x9000000u; /* POLY_FT4 */
       Link((v1 << 3) + ot, prim, ND_K_FT4);

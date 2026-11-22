@@ -163,9 +163,10 @@
  *    ambiguous is kept as that key's (asrc), and a polygon whose vertices
  *    with no entry are all such is resolved from the frame's order, each
  *    drawn at its own key, as an ambiguous vertex is.
- * Left: the particles' screen-facing quads (their renderer would hand
- * them over, VCD_PARTICLES), 2D polygons, far mobys' clamped points among
- * several, sky cuts too far from their key or from an ambiguous end.
+ * Left: 2D polygons, far mobys' clamped points among several, sky cuts
+ * too far from their key or from an ambiguous end. (The particles'
+ * screen-facing quads: since #209 their renderer hands over each corner
+ * as an offset from the projected centre, VCD_PARTICLES.)
  *
  * Cheaper walk lookups (#206; D199 put psx_vcache_poly and choose at about
  * 30% of the logic draw's non-raster host time, and resolve grows at

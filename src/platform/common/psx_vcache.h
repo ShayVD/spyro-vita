@@ -88,8 +88,9 @@ void psx_vcache_set_lazy_logic(int mode);
  * psx_vcache_pres_derive_at and psx_vcache_pres_begin sets with its value
  * hook). */
 enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
-/* (VCD_PARTICLES: the particles' screen-facing quads, #202: no renderer
- * hands them over yet) */
+/* (VCD_PARTICLES: the particles' screen-facing quads, reserved by #202;
+ * since #209 ParticlesDraw hands over their corners, VCD_OFFSET from the
+ * projected centre) */
 enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
