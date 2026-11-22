@@ -22,7 +22,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a31c889587c857146",
-      "last_commit_at": "2026-11-22T03:47:30+00:00"
+      "last_commit_at": "2026-11-22T04:34:24+00:00"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -355,3 +355,4 @@ continue.
 - 03:41Z phase 8: merged #204 (D206); coordinator raised main.c vc_lazy_logic clamp to 3
 - 03:42Z phase 8: worker #209 started
 - 04:13Z phase 8: #209 committed 5e3c295 (particles hand-over), checks running
+- 04:44Z phase 8: #209 second commit 9eec614 (a particle corner gives way to other hand-overs), checks running
