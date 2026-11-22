@@ -205,7 +205,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 1,
   "hardware_pending": [],
-  "job": null,
+  "job": {
+    "kind": "round",
+    "issue": 0,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r11.log",
+    "started_at": "2026-11-22T06:41:06Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -346,3 +353,4 @@ continue.
 - 05:51Z phase 8: #210 running (no commit yet)
 - 06:22Z phase 8: #210 committed 628469d (stone60 route, host pads S/P/Pf) and 53c9fa0 (docs); finishing checks
 - 06:40Z phase 8: merged #210 (D208): stone60 route, baseline base-bac5699/stone60
+- 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
