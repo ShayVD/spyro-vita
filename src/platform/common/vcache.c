@@ -266,6 +266,10 @@ static void dg_init(void) {
     return;
   s_dg_init = 1;
   s_dg_old = getenv("VC202_OLD") != NULL;
+  if (getenv("VC_LAZY"))
+    psx_vcache_set_lazy(atoi(getenv("VC_LAZY")));
+  if (getenv("VC_LAZY_LOGIC"))
+    psx_vcache_set_lazy_logic(atoi(getenv("VC_LAZY_LOGIC")));
   if (getenv("VC_DUMP"))
     s_dg_dump = fopen(getenv("VC_DUMP"), "wb");
 }
@@ -354,6 +358,7 @@ typedef struct {
   Cand c[VC_CANDS];
   float sx, sy; /* #202: the places merged on one edge, added (placed: how many) */
   uint8_t taint; /* #202: made from a merged place (only where nothing else placed the key) */
+  uint16_t asrc; /* #202: an alias or offset of an ambiguous key: its entry + 1 (taint set, no place) */
 } Hk;
 
 struct Lazy; /* the projections kept for later (#193, #179; below) */
@@ -598,13 +603,15 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u, particles %u); %u "
            "hand-overs, "
            "%u kept, %u with a source not usable, %u placed differently, %u not kept (full); %u "
-           "merged with another cut at their edge's pixel (#202)",
+           "merged with another cut at their edge's pixel, %u an ambiguous key's alias or offset "
+           "(%u vertices found so, from the frame's order) (#202)",
            out->hooked[VCD_SHADOWS] + out->hooked[VCD_SKY_CLIP] + out->hooked[VCD_GLOWS] +
                out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP] + out->hooked[VCD_PARTICLES],
            out->hooked[VCD_SHADOWS], out->hooked[VCD_SKY_CLIP], out->hooked[VCD_GLOWS],
            out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hooked[VCD_PARTICLES],
            out->hk_calls, out->hk_kept,
-           out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged);
+           out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged,
+           out->hk_ambsrc, out->res_alias);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1381,6 +1388,7 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
       e->key = key;
       e->gen = gen;
       e->n = e->dead = e->placed = e->taint = 0;
+      e->asrc = 0;
       return e;
     }
     if (e->key == key)
@@ -1423,8 +1431,8 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
   } else {
     const Hk *h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
     int gone = h && h->dead;
-    if (h && !taint && h->taint)
-      h = NULL; /* #202: placed only from a merged place: as if not there */
+    if (h && (h->asrc || (!taint && h->taint)))
+      h = NULL; /* #202: placed only from a merged place, or no place: as if not there */
     else if (h && !taint && h->placed > 1)
       gone = 1; /* #202: merged: as before, when two places left it unused */
     if (!h || gone) {
@@ -1595,8 +1603,39 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
    * give none */
   if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t) < 0 &&
       (s_dg_old ||
-       hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t) < 0))
+       hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t) < 0)) {
+    if (!s_dg_old && (form == VCD_ALIAS || form == VCD_OFFSET)) {
+      /* #202: one point's alias or offset whose source key is ambiguous:
+       * kept as that key's, for a polygon that finds nothing else to
+       * resolve it from the frame's order as an ambiguous vertex of its
+       * own (drawn at its own key) */
+      const int i0 = find(rec, kind, a, 0, &cost[VCC_REC_PROBES], &t);
+      if (i0 >= 0) {
+        lz_need(rec->tab, k, i0);
+        if (T_STATE(rec->tab->s[i0].tag) == E_AMBIGUOUS) {
+          h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
+          if (!h) {
+            st->hk_full++;
+            goto out;
+          }
+          if (!h->placed) {
+            h->placed = 1;
+            h->taint = 1;
+            h->asrc = (uint16_t)(i0 + 1);
+            h->n = 0;
+            h->dx = h->dy = h->sx = h->sy = 0;
+            h->who = (uint8_t)who;
+            st->hk_ambsrc++;
+            goto out;
+          }
+          if (h->asrc && h->asrc != (uint16_t)(i0 + 1))
+            h->dead = 1; /* two keys: neither */
+          goto out;
+        }
+      }
+    }
     goto nosrc;
+  }
   h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
   if (!h) {
     st->hk_full++;
@@ -1611,8 +1650,9 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     st->hk_kept++;
     goto out;
   }
-  if (h->placed && !taint && h->taint) {
+  if (h->placed && (h->asrc || (!taint && h->taint))) {
     h->n = h->dead = h->placed = h->taint = 0;
+    h->asrc = 0;
   }
   if (h->dead)
     goto out;
@@ -2402,7 +2442,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
      * #183's derivation, which keeps its quads): its place and depths, its
      * slot 0 */
     for (i = 0; i < n; i++)
-      if (!e[i] && hkc[i]) {
+      if (!e[i] && hkc[i] && !hkc[i]->asrc) {
         hk[i] = hkc[i];
         if (hk[i]->n) {
           e[i] = hk[i]->c;
@@ -2513,6 +2553,61 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         st->res_order += one ? (unsigned)nambig : 0;
       } else
         memset(pick, 0, sizeof pick);
+    }
+  }
+  if (!s_dg_old && !res && !der && nnone && !inv && !nflat) {
+    /* #202: the vertices with no entry all an ambiguous key's alias or
+     * offset (a shadow's nudged corner, a glow's rim): each resolved as
+     * an ambiguous vertex under its source's key, drawn at its own key */
+    int na = 0, aal[4] = {0, 0, 0, 0};
+    for (i = 0; i < n; i++)
+      if (!e[i] && !amb[i] && !hk[i] && hkc[i] && hkc[i]->asrc)
+        aal[i] = 1, na++;
+    if (na == nnone && nambig + na == nmiss) {
+      const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+      const Cand *e2[4];
+      unsigned en2[4];
+      int one, ok = 0, why2 = -1;
+      for (i = 0; i < n; i++) {
+        if (aal[i]) {
+          amb[i] = 1;
+          ks[i] = (int)hkc[i]->asrc - 1;
+        } else if (!amb[i])
+          ks[i] = e[i] && !hk[i] ? (int)((ref[i] & VREF_SLOT) - 1) : -1;
+      }
+      if (resolve((Table *)ptab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one, &why2)) {
+        for (i = 0; i < n; i++) {
+          e2[i] = amb[i] ? rc[i] : e[i];
+          en2[i] = amb[i] ? rn[i] : en[i];
+          if (aal[i] && rx[i])
+            break; /* a clamped point's own place: not this vertex's */
+        }
+        ok = i == n && choose(e2, en2, k_all, n, cost, pick);
+      }
+      if (ok) {
+        for (i = 0; i < n; i++)
+          if (amb[i]) {
+            e[i] = rc[i];
+            en[i] = rn[i];
+            et[i] = rx[i] ? (ptab->s[ks[i]].tag & ~T_MULTI) | T_CLAMP
+                          : (ptab->s[ks[i]].tag | T_MULTI) & ~T_CLAMP;
+            ref[i] |= (uint32_t)ks[i] + 1;
+          }
+        persp = VREF_PERSP;
+        res = 1;
+        st->hits += (unsigned)(nambig + na);
+        st->resolved += (unsigned)nambig;
+        st->res_order += one ? (unsigned)nambig : 0;
+        st->res_alias += (unsigned)na;
+        nnone = 0;
+        none = -1;
+      } else {
+        for (i = 0; i < n; i++)
+          if (aal[i])
+            amb[i] = 0;
+        memset(pick, 0, sizeof pick);
+        memset(rx, 0, sizeof rx);
+      }
     }
   }
   if (nambig && !res) { /* not found: ambiguous */

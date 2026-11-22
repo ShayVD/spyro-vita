@@ -329,6 +329,10 @@ typedef struct {
    * is that projection's own, chosen with the polygon's others, where the
    * plane through those gave none (counted in derived too) */
   unsigned der_own;
+  /* #202: hand-overs of one point (an alias, an offset) whose source key is
+   * ambiguous, kept as that key's; and the vertices found so, resolved
+   * from the frame's order (counted in hits, not in hooked or resolved) */
+  unsigned hk_ambsrc, res_alias;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
