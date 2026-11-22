@@ -23,6 +23,22 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md"
       ],
       "agent": "a38d43540aa2da0cd"
+    },
+    {
+      "issue": 213,
+      "branch": "auto/213-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-213",
+      "pids": [],
+      "started_at": "2026-11-22T23:57:03Z",
+      "files": [
+        "src/game/sky_hand.c",
+        "src/game/cyclorama_hand.c",
+        "src/game/sky_clip_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/gte_native.h"
+      ],
+      "agent": "a08d754a6dd2f45b9"
     }
   ],
   "last_good": "2199042edf8a14c89c366258ddf6867cf7a228ef",
@@ -399,3 +415,4 @@ continue.
 - 2026-11-22T23:24:37Z phase 8: merged #212 (D212; pictures change in 60 Hz windows: baseline rebuild after #215), gating #215, Vita3K: none
 - 2026-11-22T23:25:53Z phase 8: filed #223, started #223; #215 gating, Vita3K: none
 - 2026-11-22T23:55:19Z phase 8: merged #215 (D213), Vita3K: none
+- 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
