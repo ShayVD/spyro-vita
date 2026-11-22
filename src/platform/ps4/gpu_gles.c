@@ -48,6 +48,7 @@
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -201,6 +202,11 @@ static int s_persp, s_subpixel, s_vc, s_side_ok;
 typedef struct {
   float dx, dy, w;
 } SideVert;
+/* the cache's answers as this file reads them: a change to VCacheVert must
+ * come here too (GPU run 10 drew garbage when #178 changed it) */
+_Static_assert(sizeof(VCacheVert) == 12 && offsetof(VCacheVert, dx) == 0 &&
+                   offsetof(VCacheVert, dy) == 4 && offsetof(VCacheVert, w) == 8,
+               "VCacheVert changed: update gpu_gles.c's side stream");
 static SideVert s_side[MAX_VERTEX_BUFFER_SIZE + 6];
 static int s_ovl_w, s_ovl_h;
 static Target s_t[MAX_TARGETS];
