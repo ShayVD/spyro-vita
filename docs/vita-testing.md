@@ -279,6 +279,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     corner or a glow's rim whose source key is ambiguous, with the vertices then found from the
     frame's order (drawn at their own key). `particles`: the particles' screen-facing quads'
     corners (#209, D207); a particle corner counts only where no other renderer placed the key.
+    Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
+    butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
+    (the windows to 6,600 and 6,900).
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
@@ -445,6 +448,27 @@ projections, with a `parse N:` join well above 0, means the quota took more than
 The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the pause route in Artisans, at 30 fps
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
 menu from 8,601.
+
+**`stone60` (#210): the owner's settings through the portal into Stone Hill.** The settings of `owner60`
+(`logs/owner-20261121-1200`: 16:9, `interp=4` 60 HZ, the wobble fix on, `draw_distance=200`; `stone60.cfg`) on
+its own pad, `tools/vita/hw-routes/stone60.pad`: the pause route's boot and New Game, then from 6,422 a walk across
+Artisans' lawn and a jump into Stone Hill's portal (gamestate 1, the fly-in, from 6,805; the entrance animation from
+7,225), Stone Hill play from 7,293: up the hill into the ram, whose butt (about 7,780) puts the stars round Spyro,
+particle case-3 quads; round the stone block, then run, flame, charge, jump and glide twice (#209's route S's
+actions) to 9,349; a shot every 100 vblanks to 9,500 (about 160 s in Vita3K). It is the only route that draws the
+particles' screen-facing quads (`particles` on the `vcache hooked:` line, 754 and 1,407 in the windows to 7,800 and
+8,100) and the portal sky's merged cuts (`merged with another cut`, 6,599 in the windows to 6,600 and 6,900; how they
+split between the two moved by 25 from run to run); the linux32 host, with the same pad
+(`--tick60 --widescreen --draw-distance 2 --vcache`, the line in the pad's header), counts 2,161 and 6,600 by 9,500.
+The pad is absolute vblanks with no pokes, steered on the host at 60 Hz logic (`--step`, `tools/steer.py`), so it
+plays the same with virtual vblanks, the same as `pause-ws.pad`: three runs of one VPK gave the same 95 shots. Its
+benchmark window is Stone Hill play, 7,300–9,400. In that window, between runs of one VPK, `vc.invalid` and
+`vc.clamped` moved by up to 31% and 27%, and the lazy records' split (`vc.rec.kept`, `vc.rec.once`, `vc.rec.game`,
+`vc.rec.div`, `vc.rec.store`, `vc.walk.*`) by up to 14%: they depend on the threads' timing, so a change is judged
+on the other counters there (#210's runs a, b and the baseline). Its baseline, of the autopilot's head bac5699 (#209's VPK), is
+`runtime/autopilot/runs/base-bac5699/stone60`. The host's own Stone Hill routes, S (`route_stone_s.txt`, 30 Hz
+particles) and P (`route_portal_p.txt`, the portal fly-in; Pf, `route_portal_pf.txt`, with flame), are in
+`tools/oracle/pads/` with their command lines.
 
 **When Vita3K crashes (exit 2, D166, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
 address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed

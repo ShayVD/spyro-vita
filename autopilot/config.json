@@ -90,6 +90,23 @@
         "shot_every=100",
         "frames=9100"
       ]
+    },
+    {
+      "name": "stone60",
+      "pad": "tools/vita/hw-routes/stone60.pad",
+      "timeout": 1500,
+      "config": [
+        "vdm_ring=1024",
+        "config_version=5",
+        "widescreen=1",
+        "interp=4",
+        "interp_budget=0",
+        "persp=1",
+        "subpixel=1",
+        "draw_distance=200",
+        "shot_every=100",
+        "frames=9500"
+      ]
     }
   ],
   "shots": {
@@ -115,6 +132,12 @@
       "route": "owner60",
       "min_frame": 6600,
       "max_frame": 9000
+    },
+    {
+      "name": "stone60",
+      "route": "stone60",
+      "min_frame": 7300,
+      "max_frame": 9400
     }
   ]
 }
