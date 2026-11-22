@@ -21,7 +21,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h",
         "docs/vita-testing.md"
       ],
-      "agent": "a18a6850b31b7b436"
+      "agent": "a18a6850b31b7b436",
+      "last_commit_at": "2026-11-22T02:44:44+00:00"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -346,3 +347,4 @@ continue.
 - 02:01Z phase 8: merged #202 (D205); filed #209 (particles hand-over)
 - 02:02Z phase 8: worker #204 started; #209 waits on vcache.c
 - 02:34Z phase 8: #204 running (no commit yet, started ~02:04Z); #209 waits
+- 03:05Z phase 8: #204 WIP ec05cb8 (vc_lazy_logic=3, a quota sized from the walk idle time); #209 waits
