@@ -22,7 +22,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md"
       ],
       "agent": "a878266ae0b9d45ed",
-      "last_commit_at": "2026-11-22T00:30:28+00:00"
+      "last_commit_at": "2026-11-22T00:30:28+00:00",
+      "reported": true
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
