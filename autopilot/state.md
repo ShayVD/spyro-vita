@@ -232,7 +232,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "baseline",
+    "issue": 0,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ed4a4eb",
+    "started_at": "2026-11-22T23:56:13Z"
+  },
   "batch": null,
   "lanes": [
     8
