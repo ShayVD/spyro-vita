@@ -36,8 +36,9 @@ typedef struct {
   int cam_speed;    /* cam_speed=50..200 (default 100) */
   int cam_recentre; /* cam_recentre=0: no swing back behind Spyro (D162) */
   int touch_menu;   /* touch_menu=1 (default): a tap on the touch pad opens the menu too (D194) */
-  int persp;        /* persp=1: perspective-correct textures (the GPU's, the Vita's D39) */
-  int subpixel;     /* subpixel=1: polygons' vertices at their exact positions (the GPU's) */
+  int wobble;       /* wobble=1 (default): the PS1's wobble; 0: the GPU draws polygons with
+                       perspective-correct textures at their exact vertex positions (the
+                       Vita's persp=1 subpixel=1, D39) */
   int gpu_res;      /* res=native (0, default): the GPU draws at 1080p; res=ps1 (1): 512x240 */
   int draw_distance; /* draw_distance=100 (default, off), 150, 200 (D49, experimental) */
   int gpu;          /* gpu=1 (default): the GLES2 renderer if Piglet's modules load; 0: software */

@@ -69,7 +69,10 @@ int ps4_menu_load(const char *key, const char *v) {
 }
 
 static void save(void) {
-  const char *drop[1] = {"config_version"};
+  /* NULL-terminated (vpk_config_rewrite): drop[1] with no NULL had it
+   * read past the array, a crash closing the menu (GPU run 8); persp= and
+   * subpixel=, the rows before PS1 WOBBLE, go too */
+  static const char *const drop[] = {"config_version", "persp", "subpixel", NULL};
   char line[512] = "";
   size_t n = 0;
   int l, i;

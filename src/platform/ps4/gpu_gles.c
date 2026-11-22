@@ -203,6 +203,8 @@ static GLuint s_slot_tex[NSLOTS], s_slot_fbo[NSLOTS];
 static int s_slot_lines[NSLOTS], s_slot_w[NSLOTS], s_slot_valid[NSLOTS];
 static int s_slot_pw, s_slot_ph; /* the slot textures' size */
 static GLuint s_disp_tex;        /* the 24-bit display, converted on the CPU */
+static int s_disp_w, s_disp_h;   /* its size */
+static uint32_t s_disp_px[640 * 512]; /* RGBA, the movies' frame */
 static GLuint s_bound_fbo = (GLuint)-1;
 static int s_cur_prog = -1;
 
@@ -226,7 +228,8 @@ static struct {
 
 static struct {
   unsigned splits, draws, uploads, upload_rows, inits, copies, clears, captures, presents;
-  unsigned long long swap_us, present_us;
+  unsigned long long swap_us, present_us, upload_us, disp24_us;
+  unsigned disp24;
   unsigned errors, last_error;
 } s_st;
 
@@ -611,8 +614,12 @@ static void upload(void) {
   flush();
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, s_vram_tex);
-  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, s_dy0, VW / 2, s_dy1 - s_dy0 + 1, GL_RGBA, GL_UNSIGNED_BYTE,
-                  v + (size_t)s_dy0 * VW);
+  {
+    unsigned long long t0 = ps4_now_us();
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, s_dy0, VW / 2, s_dy1 - s_dy0 + 1, GL_RGBA,
+                    GL_UNSIGNED_BYTE, v + (size_t)s_dy0 * VW);
+    s_st.upload_us += ps4_now_us() - t0;
+  }
   s_st.uploads++;
   s_st.upload_rows += (unsigned)(s_dy1 - s_dy0 + 1);
   s_dx0 = 1, s_dx1 = 0;
@@ -1111,24 +1118,36 @@ static void show_display(void) {
     return;
   screen_clip((SCREEN_W - bw) / 2, 0, bw, SCREEN_H, dst);
   if (d->isrgb24) {
-    int pw, ph;
-    uint8_t *rgb = host_display_rgb(&pw, &ph);
-    if (!rgb)
-      return;
-    if (!s_disp_tex)
-      s_disp_tex = new_tex(1024, 512, GL_RGB, 1);
+    /* the movies' 24-bit mode: 3 bytes a pixel, decoded from VRAM into
+     * RGBA (video.c's way) and uploaded at its own size. GPU runs 6-8 took
+     * ~58 ms a picture here, through host_display_rgb's malloc'd copy and a
+     * 1024x512 GL_RGB texture. */
+    unsigned long long t0 = ps4_now_us();
+    const uint8_t *vb = (const uint8_t *)host_vram();
+    int pw = w > 640 ? 640 : w, ph = lines, yy, xx;
+    for (yy = 0; yy < ph; yy++) {
+      const uint8_t *b = vb + (size_t)((y + yy) & 511) * 2048;
+      uint32_t *o = s_disp_px + (size_t)yy * pw;
+      int off = x * 2;
+      for (xx = 0; xx < pw; xx++, off += 3)
+        o[xx] = 0xFF000000u | (uint32_t)b[(off + 2) & 2047] << 16 |
+                (uint32_t)b[(off + 1) & 2047] << 8 | b[off & 2047];
+    }
     glActiveTexture(GL_TEXTURE1);
+    if (!s_disp_tex || s_disp_w != pw || s_disp_h != ph) {
+      if (s_disp_tex)
+        glDeleteTextures(1, &s_disp_tex);
+      s_disp_tex = new_tex(pw, ph, GL_RGBA, 1);
+      s_disp_w = pw, s_disp_h = ph;
+    }
     glBindTexture(GL_TEXTURE_2D, s_disp_tex);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pw > 1024 ? 1024 : pw, ph > 512 ? 512 : ph, GL_RGB,
-                    GL_UNSIGNED_BYTE, rgb);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    free(rgb);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE, s_disp_px);
     use(P_BLIT);
-    st[0] = 0, st[1] = (float)shown_top(ph) / 512, st[2] = (float)pw / 1024;
-    st[3] = (float)(ph - shown_top(ph)) / 512;
+    st[0] = 0, st[1] = 0, st[2] = 1, st[3] = 1;
     quad(dst, st);
     glActiveTexture(GL_TEXTURE0);
+    s_st.disp24_us += ps4_now_us() - t0;
+    s_st.disp24++;
     return;
   }
   for (i = 0; i < s_nt && !t; i++)
@@ -1225,10 +1244,12 @@ void ps4_gpu_report(int vblank) {
   unsigned n = s_st.presents ? s_st.presents : 1;
   host_log("gpu %d: %u pictures, %u splits in %u draws, %u uploads (%u rows), %u target copies, "
            "%u clears, %u targets made, %u captures; per picture %llu us building, %llu us in "
-           "eglSwapBuffers; %u GL errors (last 0x%x)",
+           "eglSwapBuffers; %u GL errors (last 0x%x); uploads %llu us; %u 24-bit pictures, %llu us "
+           "each",
            vblank, s_st.presents, s_st.splits, s_st.draws, s_st.uploads, s_st.upload_rows,
            s_st.copies, s_st.clears, s_st.inits, s_st.captures, s_st.present_us / n,
-           s_st.swap_us / n, s_st.errors, s_st.last_error);
+           s_st.swap_us / n, s_st.errors, s_st.last_error, s_st.upload_us,
+           s_st.disp24, s_st.disp24 ? s_st.disp24_us / s_st.disp24 : 0);
   memset(&s_st, 0, sizeof s_st);
 }
 

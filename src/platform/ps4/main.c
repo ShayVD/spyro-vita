@@ -130,7 +130,7 @@ Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .
                       /* swap interval 0, as OpenOrbis's Piglet sample: with 1
                        * the first eglSwapBuffers never returned (GPU runs 3-5) */
                       .gpu_vsync = 0, .shader_dump = 1,
-                      .draw_distance = 100,
+                      .draw_distance = 100, .wobble = 1,
                       .touch_menu = 1 /* the owner's choice, 2026-11-21 (D194) */};
 int g_ps4_user = -1;
 
