@@ -22,7 +22,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md"
       ],
       "agent": "a878266ae0b9d45ed",
-      "last_commit_at": "2026-11-21T23:52:13+00:00"
+      "last_commit_at": "2026-11-22T00:30:28+00:00"
     }
   ],
   "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
@@ -341,3 +341,4 @@ continue.
 - 22:59Z phase 8: #202 WIP commit 3ad4e46 (sky clip cuts merged at one edge pixel; temporary diagnostics, uncommitted linux32 diag edits outside Files to be removed); #204 waits
 - 23:31Z phase 8: #202 still investigating (WIP 3ad4e46); #204 waits
 - 00:02Z phase 8: #202 second WIP 878f25c (merged cuts never move a point placed without them); #204 waits
+- 00:33Z phase 8: #202 final commit 0137ab6 (last misses in a portal fly-in and Stone Hill), running its checks; #204 waits
