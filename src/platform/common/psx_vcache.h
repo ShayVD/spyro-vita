@@ -95,6 +95,19 @@ enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
  * hand-over, so every point placed before stays as it was.) */
 enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
+/* #215: a VCD_LERP cut's own fraction, or'ed into how: t / 4096 of the way
+ * from a to b, as the clipper moved its integer ends (the sky through a
+ * portal: sky_clip_hand.c CutSide's IR0). Where the cut through the edge's
+ * line leaves its key with no place (more than 8 pixels off, an ambiguous
+ * end, two cuts placed apart), the cache places it t of the way between
+ * a's and b's exact places instead (an ambiguous end: its last projection
+ * in the frame's order), at the depth there; both ends need depths. Such a
+ * place is kept apart from the hand-overs: it is no source for another,
+ * and a polygon takes it only for a vertex nothing else finds (vcache.c
+ * frac_hand). how's bit 8 says t is there, its high half is t. */
+#define VCD_T(t) ((int)(0x100u | (unsigned)(unsigned short)(t) << 16))
+#define VCD_HAS_T(how) (((unsigned)(how) & 0x100u) != 0)
+#define VCD_T_OF(how) ((int)(short)((unsigned)(how) >> 16))
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -399,6 +412,10 @@ typedef struct {
    * context whose primitive their polygon is (VCX_*, above): their sum is
    * miss_none */
   unsigned ne[VCX_N];
+  /* #215: vertices with no entry found at their cut's own fraction (VCD_T;
+   * counted in hits and hooked too); the cuts placed so, and those with an
+   * end not usable or more than 8 pixels from their key */
+  unsigned hk_frac, fr_kept, fr_nosrc;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
