@@ -98,7 +98,8 @@ typedef struct PresentCapture {
 extern const PresentCapture *g_present_capture;
 
 /* Stage 7f (D126): a platform that runs the presenter's in-between frame
- * on a core of its own (the Vita). The presenter records the frame into a
+ * (and since #220 the attract demos' 16:9 frames) on a core of its own
+ * (the Vita). The presenter records the frame into a
  * buffer of its own, which the render thread runs whole where the game
  * thread placed it in the command ring: before the logic draw's commands.
  * Without it (the host) the presenter runs inline, on the game thread, at
@@ -106,7 +107,9 @@ extern const PresentCapture *g_present_capture;
  *  - usable: the worker can draw the frame now (its thread is up; no
  *    vertex cache, whose tables are the game thread's);
  *  - submit (game thread): the buffer's place in the ring; f: the frame it
- *    files (its slot reserved), NULL: none;
+ *    files (its slot reserved), NULL: none (the attract demos' 16:9 real
+ *    frame: its capture is in the buffer, and the game thread files it
+ *    after the logic draw through PresentCapture's commit, #220);
  *  - post (game thread): fn on the worker; wait: until it has returned;
  *  - on the worker, between open and close: gpu (the walk's draws), env
  *    (the display state its draws see), begin, capture and commit (as
