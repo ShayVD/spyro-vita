@@ -1,5 +1,5 @@
 /* Widescreen and 60 fps on the PS4 (docs/presentation.md, decisions D30,
- * D194), the Vita's present_vita.c: config.txt keys into
+ * D199), the Vita's present_vita.c: config.txt keys into
  * src/game/present.c's switches, the platform clock for the game thread's
  * safety net (interp_budget), the menu's PICTURE rows and a log line with
  * every stats report. The pictures are shown by video.c (the software

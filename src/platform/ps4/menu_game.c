@@ -1,4 +1,4 @@
-/* The options menu's GAME rows on the PS4 (D194: the Vita's menu_game.c;
+/* The options menu's GAME rows on the PS4 (D199: the Vita's menu_game.c;
  * decisions D45, D50): skipping the intro logos, and the game's own
  * cheats (src/game/cheats_port.c). Cheats are actions, never saved: ✕ once
  * asks, ✕ again applies and closes the menu, and the game then takes the

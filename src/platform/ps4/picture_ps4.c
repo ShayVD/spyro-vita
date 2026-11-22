@@ -1,7 +1,7 @@
-/* The options menu's other PICTURE rows on the PS4 (D194; the Vita's
- * picture.c, decisions D39, D48, D49): the GLES2 renderer's PS1 WOBBLE
- * (off: the Vita's perspective-correct textures and sub-pixel vertices
- * together, one row as the owner asked) and resolution, and the longer
+/* The options menu's other PICTURE rows on the PS4 (D199; the Vita's
+ * picture.c, decisions D39, D48, D49, D194): the GLES2 renderer's PSX
+ * WOBBLE (ON: the PS1's look; OFF, the default as on the Vita: perspective-
+ * correct textures and sub-pixel vertices together) and resolution, and the longer
  * draw distance (src/game/lod.c), which both renderers draw. The GPU rows
  * are hidden with the software renderer, where they do nothing; their keys
  * are still read and saved. */
@@ -62,7 +62,7 @@ static const char *const k_res_names[] = {"NATIVE", "PS1"};
 static const char *const k_dd_names[] = {"OFF", "1.5X", "2X"};
 static const int k_dd_values[] = {100, 150, 200};
 static const MenuOption k_rows[] = {
-    {.section = MENU_PICTURE, .label = "PS1 WOBBLE", .key = "wobble",
+    {.section = MENU_PICTURE, .label = "PSX WOBBLE", .key = "wobble",
      .value = &g_ps4_opts.wobble, .names = g_menu_off_on, .count = 2,
      .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_ps4_opts.gpu_res,

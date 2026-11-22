@@ -1,4 +1,4 @@
-/* The port's options menu on the PS4 (decisions D30, D45, D194), the
+/* The port's options menu on the PS4 (decisions D30, D45, D199), the
  * Vita's menu.c with the DualShock 4: hold the touch pad's click (the PS1's
  * SELECT, pad.c) and press OPTIONS (START), or, with touch_menu=1, tap the
  * touch pad. The game stops where it is (the menu runs inside its VSync
@@ -71,7 +71,7 @@ int ps4_menu_load(const char *key, const char *v) {
 static void save(void) {
   /* NULL-terminated (vpk_config_rewrite): drop[1] with no NULL had it
    * read past the array, a crash closing the menu (GPU run 8); persp= and
-   * subpixel=, the rows before PS1 WOBBLE, go too */
+   * subpixel=, the rows before PSX WOBBLE, go too */
   static const char *const drop[] = {"config_version", "persp", "subpixel", NULL};
   char line[512] = "";
   size_t n = 0;

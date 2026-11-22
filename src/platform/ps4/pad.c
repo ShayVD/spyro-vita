@@ -1,4 +1,4 @@
-/* The DualShock 4 as the PS1's pad (docs/ps4-plan.md P3-P4, D193, D194):
+/* The DualShock 4 as the PS1's pad (docs/ps4-plan.md P3-P4, D193, D199):
  * scePad, read once a vblank, into the buffers our libpad hands us
  * (psx_pad.h, D114), as the Vita's pad.c fills them from SDL. The PS4's
  * button bits are the PS1's (OPTIONS is START); SELECT is the touch pad's

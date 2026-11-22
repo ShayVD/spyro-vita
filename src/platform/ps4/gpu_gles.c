@@ -1,5 +1,5 @@
 /* The GLES2 renderer on Piglet (docs/ps4-plan.md P4, decisions D193,
- * D194): the PS1 picture drawn by the GPU at 1080p.
+ * D199): the PS1 picture drawn by the GPU at 1080p.
  *
  * The modules. The player's own libScePigletv2VSH.sprx and
  * libSceShaccVSH.sprx, copied to /data/self/system/common/lib/ (the retail
@@ -83,7 +83,7 @@ int g_ps4_gpu;
 static int s_piglet = -1, s_shacc = -1;
 static int s_firmware; /* the Piglet loaded is the firmware's (not the player's pair) */
 
-/* How the shaders come (D194): compiled from our GLSL by the player's
+/* How the shaders come (D199): compiled from our GLSL by the player's
  * Piglet pair, or the pre-compiled binaries (ps4_shaders.c, from a run
  * with shader_dump=1) on the firmware's own Piglet: what every player has,
  * the owner's option C. */

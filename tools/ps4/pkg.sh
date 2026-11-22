@@ -7,7 +7,7 @@
 # icon0.png (no LiveArea or Vita art: its licence covers the Vita release
 # only). The PS4's sce_module PRXs come from OpenOrbis's Piglet sample, and
 # param.sfo's CATEGORY gde and FORMAT obs from its Makefile (2Ship2Harkinian-
-# PS4 sets the same; with gd, Piglet's eglGetDisplay refused us, D194).
+# PS4 sets the same; with gd, Piglet's eglGetDisplay refused us, D199).
 # The tools come from PS4_OOBIN and OO_PS4_TOOLCHAIN (sdk.sh --env, or the
 # Docker image).
 set -euo pipefail

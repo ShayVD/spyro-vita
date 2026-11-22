@@ -1,4 +1,4 @@
-/* PS4 platform layer (docs/ps4-plan.md P3-P4, decisions D193, D194): the
+/* PS4 platform layer (docs/ps4-plan.md P3-P4, decisions D193, D199): the
  * calls between its parts. The game data comes from /data/spyro/ (the
  * player's disc image, the files tools/extract_disc.py writes, or the
  * PlayStation Store copy's EBOOT.PBP), as on the Vita from ux0:data/spyro/;
@@ -6,7 +6,7 @@
  * image, the arena and the game thread's stack lie below 2 GB (main.c
  * checks).
  *
- * Two renderers (D193, D194): the GLES2 renderer on Piglet (gpu_gles.c),
+ * Two renderers (D193, D199): the GLES2 renderer on Piglet (gpu_gles.c),
  * with the player's own Piglet and shader compiler modules, and linux32's
  * software rasterizer (gpu_soft.c) when they're missing, its picture
  * scaled into a sceVideoOut framebuffer (video.c). Both show the
@@ -26,7 +26,7 @@ typedef struct {
   int realtime; /* realtime=0: virtual vblanks (D17), one per VSync(0) */
   int analog;   /* analog=1 (default): a DualShock with real sticks; 0: digital */
   int shot_at;  /* shot=V: a PNG of the picture in shots/ at vblank V (0: none) */
-  /* the menu's rows (D194; the Vita's keys and defaults) */
+  /* the menu's rows (D199; the Vita's keys and defaults) */
   int widescreen;   /* widescreen=1 (default): 16:9 */
   int interp;       /* interp=4 (default, 60 Hz logic in play), 1 (interpolated), 0 (off) */
   int interp_budget; /* interp_budget=0: no safety net (default 1, D75) */
@@ -35,19 +35,19 @@ typedef struct {
   int cam_invert_y;
   int cam_speed;    /* cam_speed=50..200 (default 100) */
   int cam_recentre; /* cam_recentre=0: no swing back behind Spyro (D162) */
-  int touch_menu;   /* touch_menu=1 (default): a tap on the touch pad opens the menu too (D194) */
-  int wobble;       /* wobble=1 (default): the PS1's wobble; 0: the GPU draws polygons with
-                       perspective-correct textures at their exact vertex positions (the
-                       Vita's persp=1 subpixel=1, D39) */
+  int touch_menu;   /* touch_menu=1 (default): a tap on the touch pad opens the menu too (D199) */
+  int wobble;       /* wobble=0 (default, as the Vita's D194): the GPU draws polygons with
+                       perspective-correct textures at their exact vertex positions (persp=1
+                       subpixel=1, D39); 1: the PS1's wobble */
   int gpu_res;      /* res=native (0, default): the GPU draws at 1080p; res=ps1 (1): 512x240 */
   int draw_distance; /* draw_distance=100 (default, off), 150, 200 (D49, experimental) */
   int gpu;          /* gpu=1 (default): the GLES2 renderer if Piglet's modules load; 0: software */
   int shader_dump;  /* shader_dump=1 (default): with the player's Piglet pair, each compiled
-                       shader saved once to shaders/ (D194: the binaries the firmware's
+                       shader saved once to shaders/ (D199: the binaries the firmware's
                        Piglet loads); 0: none */
   int shader_compile; /* shader_compile=1: the player's Piglet pair compiles the shaders
                          (shader_dump saves them) even when this build has binaries;
-                         default 0: the build's own on the firmware's Piglet (D194) */
+                         default 0: the build's own on the firmware's Piglet (D199) */
   int gpu_vsync;    /* gpu_vsync=1: eglSwapInterval 1 (default 0: with 1 Piglet's first
                        swap never returned, GPU runs 3-5) */
   int menu_test[PS4_MAX_MENU_TEST]; /* menu_test=V1,...: the menu opened at these vblanks,
@@ -77,7 +77,7 @@ void ps4_video_report(int vblank);
  * the middle (the menu, the save states' notices) */
 void ps4_video_overlay(const uint8_t *rgb, int w, int h);
 
-/* gpu_gles.c: the GLES2 renderer on Piglet (D194) */
+/* gpu_gles.c: the GLES2 renderer on Piglet (D199) */
 extern int g_ps4_gpu; /* 1: the GR_* calls draw on the GPU, which presents */
 int ps4_gpu_load(char *why, int whylen); /* the player's modules; 0 = loaded */
 int ps4_gpu_init(void);                  /* after ps4_gpu_load; 0 = ok */
@@ -139,7 +139,7 @@ void ps4_raster_report(int vblank);
 /* vblank.c */
 int ps4_vblank_count(void);
 
-/* main.c: the watchdog (D194): the game thread says where it is and counts
+/* main.c: the watchdog (D199): the game thread says where it is and counts
  * its VSyncs; a stall of 3 s is logged with the place (and the log flushed).
  * A stall in eglSwapBuffers writes gpu_novsync: the next start swaps with
  * interval 0. */
