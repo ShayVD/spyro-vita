@@ -9,7 +9,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 211,
+      "branch": "auto/211-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-211",
+      "pids": [],
+      "started_at": "2026-11-22T17:24:36Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "docs/vita-testing.md",
+        "docs/host-build.md"
+      ],
+      "agent": "a550cc1fdff3d888d"
+    }
+  ],
   "last_good": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
@@ -357,3 +373,4 @@ continue.
 - 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
 - 06:56Z phase 8: round 11 ended (D199-D208, 10 merges). base-63d80f4 -> base-85a7b2c: vc.misses -15.5% (wobble60) / -21.6% (owner60) better; vcp.div +4.6..+17.7% worse (D197: presenter eager, deliberate); stone60 vc.invalid/clamped/div move as timing noise (D208). Shots same except owner60 30 Hz 2x (D201). Rule: no gain -> rounds_without_gain 2. The round s speed-ups (D202, D204, D206) cut cost per operation, invisible to Vita3K counters: round 12 waits for a hardware run (owner yes)
 - 2026-11-22T08:30Z phase 8: filed #211-#219 (owner: wobble and draw distance until fully fixed), Vita3K: none
+- 2026-11-22T17:24:53Z phase 8: started #211 (missed/exempt split); #212-#219 wait on its files; hardware session (hw-session5.sh) waits for the owner, Vita3K: none
