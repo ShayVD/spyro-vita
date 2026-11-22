@@ -26,7 +26,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "a3771a64a270509bb",
-      "last_commit_at": "2026-11-22T22:04:47+00:00"
+      "last_commit_at": "2026-11-22T22:04:47+00:00",
+      "reported": true
     },
     {
       "issue": 215,
@@ -427,3 +428,4 @@ continue.
 - 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
 - 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
 - 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
+- 2026-11-22T23:02:47Z phase 8: #212 reported done (Vita3K stone60 x1.00 -> x1.82-2.00); gate waits for #220 gate, Vita3K: none
