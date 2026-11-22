@@ -73,6 +73,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "37c3a95",
       "runs": "AP1-AP7 (tools/vita/fps-runs/README.md)",
       "result": "D172: PAL OK; wobble fix +2.6 ms game thread at 60 fps; presenter on core 1 -35%; GL shadow no time; cheaper cache below noise; vdm_ring=1024 harmless, default off"
+    },
+    {
+      "date": "2026-11-22",
+      "commit": "85a7b2c",
+      "runs": "AP16a-d, AP16t (runtime/autopilot/hw-session6.sh)",
+      "result": "D209: shader cache 10.3 s -> 0.14 s second boot; Stone Hill play busy 73.2 -> 71.5% but 48 KB budget holds 1x with 15-28% spare (#212); vc_lazy_logic=3 no gain; Artisans late 16.5 -> 0.5/300; attract demo ~177 late/300 inline presenter (#220)"
     }
   ],
   "perf_candidates": [
@@ -223,16 +229,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 9,
-    "investigated": false
+    "filed": 10,
+    "investigated": true
   },
-  "rounds_without_gain": 2,
-  "hardware_pending": {
-    "since": "2026-11-22T18:39:46Z",
-    "commit": "62151199928c353e89241268939ee743126e5650",
-    "step": "run",
-    "session": "runtime/autopilot/hw-session6.sh: AP16a/b stone60 85a7b2c first/second boot, AP16c stone60 63d80f4, AP16d vc_lazy_logic=3, AP16t toasty owner60 85a7b2c vs hw-ap14b, put-eboot 85a7b2c; owner yes 2026-11-22"
-  },
+  "rounds_without_gain": 0,
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
@@ -379,3 +380,4 @@ continue.
 - 2026-11-22T08:30Z phase 8: filed #211-#219 (owner: wobble and draw distance until fully fixed), Vita3K: none
 - 2026-11-22T17:24:53Z phase 8: started #211 (missed/exempt split); #212-#219 wait on its files; hardware session (hw-session5.sh) waits for the owner, Vita3K: none
 - 2026-11-22T17:56:19Z phase 8: #211 committed 85dbac2, running its Vita3K routes; nothing else pickable (files overlap), Vita3K: none
+- 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none
