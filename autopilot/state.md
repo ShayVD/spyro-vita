@@ -10,10 +10,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "game": "spyro",
   "phase": 8,
   "workers": [],
-  "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
+  "last_good": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
-    "commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
+    "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
   },
   "hardware_runs": [
     {
@@ -196,23 +196,18 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 11,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
-    "base_commit": "765a1681b8075cacae836b04bcfdeb40e1b01411",
-    "started_at": "2026-11-21T12:33:53Z",
-    "filed": 3,
-    "investigated": true
+    "n": 12,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
+    "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
+    "started_at": "2026-11-22T06:56:29Z",
+    "filed": 0,
+    "investigated": false
   },
-  "rounds_without_gain": 1,
-  "hardware_pending": [],
-  "job": {
-    "kind": "round",
-    "issue": 0,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r11.log",
-    "started_at": "2026-11-22T06:41:06Z"
-  },
+  "rounds_without_gain": 2,
+  "hardware_pending": [
+    "round 12 investigation: hardware session on 85a7b2c (shader cache boot, owner60/stone60-style 60 HZ 2x old vs new, vc_lazy_logic 1 vs 3, 30 Hz title flyby at 2x) needs the owner yes"
+  ],
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -354,3 +349,4 @@ continue.
 - 06:22Z phase 8: #210 committed 628469d (stone60 route, host pads S/P/Pf) and 53c9fa0 (docs); finishing checks
 - 06:40Z phase 8: merged #210 (D208): stone60 route, baseline base-bac5699/stone60
 - 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
+- 06:56Z phase 8: round 11 ended (D199-D208, 10 merges). base-63d80f4 -> base-85a7b2c: vc.misses -15.5% (wobble60) / -21.6% (owner60) better; vcp.div +4.6..+17.7% worse (D197: presenter eager, deliberate); stone60 vc.invalid/clamped/div move as timing noise (D208). Shots same except owner60 30 Hz 2x (D201). Rule: no gain -> rounds_without_gain 2. The round s speed-ups (D202, D204, D206) cut cost per operation, invisible to Vita3K counters: round 12 waits for a hardware run (owner yes)
