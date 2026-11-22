@@ -9,8 +9,25 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
-  "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
+  "workers": [
+    {
+      "issue": 215,
+      "branch": "auto/215-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-215",
+      "pids": [],
+      "started_at": "2026-11-22T19:41:59Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/sky_clip_hand.c",
+        "src/game/cyclorama_hand.c"
+      ],
+      "agent": "af67e7ad917c15959",
+      "last_commit_at": "2026-11-22T21:43:35+00:00",
+      "reported": true
+    }
+  ],
+  "last_good": "a15f2abc097a66c3c569e8e69ec4ec6f6c9f35d8",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
@@ -217,7 +234,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 215,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-215.gate.log",
+    "started_at": "2026-11-22T23:24:37Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -367,3 +391,11 @@ continue.
 - 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
 - 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
 - 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
+- 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
+- 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
+- 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
+- 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
+- 2026-11-22T23:02:47Z phase 8: #212 reported done (Vita3K stone60 x1.00 -> x1.82-2.00); gate waits for #220 gate, Vita3K: none
+- 2026-11-22T23:11:40Z phase 8: merged #220 (D211), Vita3K: none
+- 2026-11-22T23:20:09Z phase 8: #215 reported done (PortalSkyPlain S/P 1,230 -> 0); gate after #212, Vita3K: none
+- 2026-11-22T23:24:37Z phase 8: merged #212 (D212; pictures change in 60 Hz windows: baseline rebuild after #215), gating #215, Vita3K: none

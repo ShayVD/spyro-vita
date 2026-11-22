@@ -1196,3 +1196,42 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - #217: EnvDraw.
   - #221: SkyDraw.
   - #222: 1,086 "outside" textured-quad vertices whose polygon has a placed vertex, to settle so that missed 0 really means no wobble.
+
+### D211. The attract demos' 16:9 frames run on the presenter's worker (#220, 2026-11-22)
+
+- **Why:** on hardware, Stone Hill's attract demo dropped about 177 vblanks in every 300 on the owner's settings (D209). The 16:9 real frame and the in-between frame both ran inline on the game thread, at 32 ms a tick. D128 had tied them there for two reasons:
+  - the real frame's due vblank is only known after the logic draw;
+  - the 16:9 visibility hand-off.
+- **How** (`src/game/present.c`):
+  - `presenter_pass(..., file_late)` runs the real frame on the worker with `submit(NULL)`, so its buffer files no frame. The game thread puts the frame's `C_BEGIN` in the ring before the buffer. After the hidden 4:3 logic draw, `PortPresentDraw` joins the job and `push_capture` files the frame, with the same `reserve()`, due vblank and `C_COMMIT` as the inline path.
+  - The visibility hand-off is split. `wide_state_out` runs when the job starts, which is exact because the presenter writes no game memory (0 bytes in 4,338 frames, `--pres-write-check`). `pres_draw_visibility` (now `job_vis()`) runs at the join, and the next pass joins before it reads.
+  - The in-between frame is still waited for before the real frame starts (one snapshot), so only the real frame overlaps the logic draw.
+- **Checks:**
+  - **Host:** FNV per polygon identical on all 9,124,329 polygons (title and attract demos to 7,000, `--interp`, 16:9, 2×). `--pres-check-thread` matches on 3,475 of 3,475 frames. ctest passes 32 of 32. The native build exits 0.
+  - **Vita3K:** shots identical on eight routes, including new `demo60` and `demo30` runs of the attract demos (66 of 66 each). In the demo windows (4,200–5,700), frames on core 1 went from 0–31 per 300 to 280–300, and inline frames from 262–300 to 0. The game thread's presenter time per tick fell from 52–74 ms to 10–17 ms; Vita3K timing is relative only.
+  - Logs: `runs/auto-220-1`.
+- **Left:**
+  - Measure FPS on hardware: the Toasty route's demo windows, 4,200–6,300.
+  - If the wait on the in-between frame shows there, try that frame inline and keep only the real frame on the worker.
+
+### D212. The Vita sizes the 60 Hz draw-distance budget from measured time (`dd_budget=auto`, the default; #212, 2026-11-22)
+
+- **Why:** the fixed 48 KB byte budget (`LOD_BUDGET_60`, #180) couldn't see that D202, D204 and D206 made each draw cheaper. On hardware, Stone Hill at 2× held at 1× with the game thread busy only 71.5% (D209).
+- **How:**
+  - `lod.c` gains `lod_set_budget()`, `lod_last_draw()` and `lod_set_budget_hook()`. The hook is called at the start of each shown draw. A `GamestateUpdate` wrap would miss `GamestateUpdate_60`, which 60 Hz logic uses.
+  - The Vita's `src/platform/vita/lod_time.c` measures the game thread's work for the frame just done from `g_present_stats` (update plus logic draw, VSync waits left out, the walk join included; needs `stats=1`, the default), and compares it with a target of 14.5 ms of the 16.68 ms frame.
+    - A frame over the target cuts the budget at once to bytes × target / used.
+    - After 8 frames in a row each at least 1 ms under the target, the budget grows 2 KB per frame, up to 1.25 × the draw + 8 KB.
+  - `lod.c` clamps the budget between 48 KB and `draw_room`, and stays the only place that limits.
+  - Config: `dd_budget=auto` is the default, `1` the old fixed 48 KB, `N` (2–1024) a fixed N KB, `0` off.
+  - The lod line ends in `budget N KB (auto, X ms left; K over)`, or `budget held at 1x: U ms used of 14.5`.
+  - The host keeps the fixed budget.
+- **Measured (Vita3K, relative timing):**
+  - stone60's Stone Hill play went from x1.00 (271–300 budget back-offs per 300) to x1.82–2.00, with the budget at 87–119 KB.
+  - owner60 at 6,900–7,800 went from x1.00 to x1.67–1.92.
+  - 2× costs GL work as it should: stone60 `gl.draws` +40%.
+- **Checks:**
+  - Shots differ only in the 60 Hz windows where 2× now holds longer. A `dd_budget=1` run of stone60 is 95 of 95 identical to base.
+  - Host logs, traces and saves are byte-identical, on route S at 30 Hz and with `--tick60`. The host per-polygon FNV wasn't run: no writer is in the tree, and on the host the hook is never set.
+  - ctest passes 32 of 32. Logs: `runs/auto-212-1`.
+- **Left:** the hardware A/B, auto against `dd_budget=1`, on stone60 (`ap16-stone60.txt`) and owner60-style runs.
