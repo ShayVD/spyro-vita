@@ -75,13 +75,17 @@ void psx_vcache_set_lazy_logic(int mode);
  * how's bits 4-7: the renderer (VCD_SHADOWS...), for the counters. A
  * source with no usable entry (none, ambiguous, invalid, different points
  * under its key), or two hand-overs placing one key differently, leave the
- * key without one, as before. The hook reads only its arguments and writes
+ * key without one, as before; since #202 two cuts at one key within 2
+ * pixels share their mean place, and an alias or offset of an ambiguous
+ * key is resolved with it from the frame's order (vcache.c). The hook reads only its arguments and writes
  * only the cache's table: nothing the game reads changes. NULL unless the
  * cache records; the presenter's renderers call their own copy
  * (render_ctx_names.h g_pres_rtp_derive_hook, which render_ctx.c hands to
  * psx_vcache_pres_derive_at and psx_vcache_pres_begin sets with its value
  * hook). */
 enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
+/* (VCD_PARTICLES: the particles' screen-facing quads, #202: no renderer
+ * hands them over yet) */
 enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
