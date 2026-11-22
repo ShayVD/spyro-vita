@@ -26,7 +26,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "a3771a64a270509bb",
-      "last_commit_at": "2026-11-22T20:45:07+00:00"
+      "last_commit_at": "2026-11-22T22:04:47+00:00"
     },
     {
       "issue": 215,
@@ -41,7 +41,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/cyclorama_hand.c"
       ],
       "agent": "af67e7ad917c15959",
-      "last_commit_at": "2026-11-22T20:45:09+00:00"
+      "last_commit_at": "2026-11-22T21:43:35+00:00"
     },
     {
       "issue": 220,
@@ -417,3 +417,4 @@ continue.
 - 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
 - 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
 - 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
+- 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
