@@ -9,7 +9,52 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 212,
+      "branch": "auto/212-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-212",
+      "pids": [],
+      "started_at": "2026-11-22T19:41:51Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/platform/vita/main.c",
+        "src/platform/vita/lod_time.c",
+        "src/platform/vita/prof_draw.c",
+        "docs/vita-testing.md",
+        "docs/presentation.md"
+      ],
+      "agent": "a3771a64a270509bb"
+    },
+    {
+      "issue": 215,
+      "branch": "auto/215-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-215",
+      "pids": [],
+      "started_at": "2026-11-22T19:41:59Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/sky_clip_hand.c",
+        "src/game/cyclorama_hand.c"
+      ],
+      "agent": "af67e7ad917c15959"
+    },
+    {
+      "issue": 220,
+      "branch": "auto/220-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-220",
+      "pids": [],
+      "started_at": "2026-11-22T19:42:07Z",
+      "files": [
+        "src/game/present.c",
+        "src/game/present.h",
+        "src/platform/vita/pres_thread.c"
+      ],
+      "agent": "a94cfc04aa1f1e269"
+    }
+  ],
   "last_good": "b9e9b43a18a83f4afd6acbb932c5842ca2f91095",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
@@ -367,3 +412,4 @@ continue.
 - 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
 - 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
 - 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
+- 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
