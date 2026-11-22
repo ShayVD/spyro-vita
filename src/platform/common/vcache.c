@@ -163,9 +163,10 @@
  *    ambiguous is kept as that key's (asrc), and a polygon whose vertices
  *    with no entry are all such is resolved from the frame's order, each
  *    drawn at its own key, as an ambiguous vertex is.
- * Left: the particles' screen-facing quads (their renderer would hand
- * them over, VCD_PARTICLES), 2D polygons, far mobys' clamped points among
- * several, sky cuts too far from their key or from an ambiguous end.
+ * Left: 2D polygons, far mobys' clamped points among several, sky cuts
+ * too far from their key or from an ambiguous end. (The particles'
+ * screen-facing quads: since #209 their renderer hands over each corner
+ * as an offset from the projected centre, VCD_PARTICLES.)
  *
  * Cheaper walk lookups (#206; D199 put psx_vcache_poly and choose at about
  * 30% of the logic draw's non-raster host time, and resolve grows at
@@ -268,6 +269,8 @@ typedef struct {
   float sx, sy; /* #202: the places merged on one edge, added (placed: how many) */
   uint8_t taint; /* #202: made from a merged place (only where nothing else placed the key) */
   uint16_t asrc; /* #202: an alias or offset of an ambiguous key: its entry + 1 (taint set, no place) */
+  uint8_t low; /* #209: a particle quad's corner: gives way to any other renderer's, and is no
+                * source for one (as if not there for every other hand-over) */
 } Hk;
 
 struct Lazy; /* the projections kept for later (#193, #179; below) */
@@ -1464,7 +1467,7 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
         return NULL;
       e->key = key;
       e->gen = gen;
-      e->n = e->dead = e->placed = e->taint = 0;
+      e->n = e->dead = e->placed = e->taint = e->low = 0;
       e->asrc = 0;
       return e;
     }
@@ -1505,7 +1508,10 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
       w[j] = s->c[j].w;
   } else {
     const Hk *h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
-    int gone = h && h->dead;
+    int gone;
+    if (h && h->low)
+      h = NULL; /* #209: a particle quad's corner: as if not there */
+    gone = h && h->dead;
     if (h && (h->asrc || (!taint && h->taint)))
       h = NULL; /* #202: placed only from a merged place, or no place: as if not there */
     else if (h && !taint && h->placed > 1)
@@ -1653,6 +1659,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   VCacheStats *const st = k->st;
   const int form = how & 15;
   const unsigned who = (unsigned)how >> 4 < VCD_WHO_N ? (unsigned)how >> 4 : 0;
+  const int low = who == VCD_PARTICLES; /* #209: gives way to every other renderer's */
   float w[VC_CANDS], dx, dy;
   int taint = 0;
   unsigned n = 0, i, j;
@@ -1679,9 +1686,16 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
             st->hk_full++;
             goto out;
           }
+          if (h->placed && h->low != low) { /* #209: a particle's gives way */
+            if (low)
+              goto out;
+            h->n = h->dead = h->placed = h->taint = h->low = 0;
+            h->asrc = 0;
+          }
           if (!h->placed) {
             h->placed = 1;
             h->taint = 1;
+            h->low = (uint8_t)low;
             h->asrc = (uint16_t)(i0 + 1);
             h->n = 0;
             h->dx = h->dy = h->sx = h->sy = 0;
@@ -1703,6 +1717,17 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     goto out;
   }
   touch(&t, offsetof(Table, hk) + (size_t)(h - rec->tab->hk) * sizeof(Hk), sizeof(Hk));
+  /* #209: a particle quad's corner counts only where no other renderer
+   * placed the key (even placed it differently, dead), and gives way to
+   * any other's: every point placed before #209 stays as it was */
+  if (h->placed && h->low != low) {
+    if (low) {
+      st->hk_kept++;
+      goto out;
+    }
+    h->n = h->dead = h->placed = h->taint = h->low = 0;
+    h->asrc = 0;
+  }
   /* #202: a hand-over made from a merged place counts only where nothing
    * else placed the key, and gives way to one that isn't (whatever
    * merged places come to, every point placed without them stays as it
@@ -1743,6 +1768,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     h->who = (uint8_t)who;
     h->placed = 1;
     h->taint = (uint8_t)taint;
+    h->low = (uint8_t)low;
   }
 depths:
   for (i = 0; i < n; i++) {
