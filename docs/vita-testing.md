@@ -457,11 +457,15 @@ Artisans' lawn and a jump into Stone Hill's portal (gamestate 1, the fly-in, fro
 particle case-3 quads; round the stone block, then run, flame, charge, jump and glide twice (#209's route S's
 actions) to 9,349; a shot every 100 vblanks to 9,500 (about 160 s in Vita3K). It is the only route that draws the
 particles' screen-facing quads (`particles` on the `vcache hooked:` line, 754 and 1,407 in the windows to 7,800 and
-8,100) and the portal sky's merged cuts (`merged with another cut`, 1,953 and 4,646 to 6,600 and 6,900); the linux32
-host gives the same totals with the same pad (`--tick60 --widescreen --draw-distance 2 --vcache`, the line in the
-pad's header). The pad is absolute vblanks with no pokes, steered on the host at 60 Hz logic (`--step`,
-`tools/steer.py`), so it plays the same with virtual vblanks, the same as `pause-ws.pad`. Its benchmark window is
-Stone Hill play, 7,300–9,400. Its baseline, of the autopilot's head bac5699 (#209's VPK), is
+8,100) and the portal sky's merged cuts (`merged with another cut`, 6,599 in the windows to 6,600 and 6,900; how they
+split between the two moved by 25 from run to run); the linux32 host, with the same pad
+(`--tick60 --widescreen --draw-distance 2 --vcache`, the line in the pad's header), counts 2,161 and 6,600 by 9,500.
+The pad is absolute vblanks with no pokes, steered on the host at 60 Hz logic (`--step`, `tools/steer.py`), so it
+plays the same with virtual vblanks, the same as `pause-ws.pad`: three runs of one VPK gave the same 95 shots. Its
+benchmark window is Stone Hill play, 7,300–9,400. In that window, between runs of one VPK, `vc.invalid` and
+`vc.clamped` moved by up to 31% and 27%, and the lazy records' split (`vc.rec.kept`, `vc.rec.once`, `vc.rec.game`,
+`vc.rec.div`, `vc.rec.store`, `vc.walk.*`) by up to 14%: they depend on the threads' timing, so a change is judged
+on the other counters there (#210's runs a, b and the baseline). Its baseline, of the autopilot's head bac5699 (#209's VPK), is
 `runtime/autopilot/runs/base-bac5699/stone60`. The host's own Stone Hill routes, S (`route_stone_s.txt`, 30 Hz
 particles) and P (`route_portal_p.txt`, the portal fly-in; Pf, `route_portal_pf.txt`, with flame), are in
 `tools/oracle/pads/` with their command lines.
