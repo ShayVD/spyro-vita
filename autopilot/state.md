@@ -227,9 +227,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": false
   },
   "rounds_without_gain": 2,
-  "hardware_pending": [
-    "round 12: owner (2026-11-22) says wait until #212 (dd_budget=auto) merges, then one session: shader cache boot, owner60/stone60-style 60 HZ 2x auto vs 48 KB vs 85a7b2c, vc_lazy_logic 1 vs 3, 30 Hz title flyby at 2x; write hw-session6.sh then and ask for the yes"
-  ],
+  "hardware_pending": {
+    "since": "2026-11-22T18:39:46Z",
+    "commit": "62151199928c353e89241268939ee743126e5650",
+    "step": "run",
+    "session": "runtime/autopilot/hw-session6.sh: AP16a/b stone60 85a7b2c first/second boot, AP16c stone60 63d80f4, AP16d vc_lazy_logic=3, AP16t toasty owner60 85a7b2c vs hw-ap14b, put-eboot 85a7b2c; owner yes 2026-11-22"
+  },
   "job": null,
   "batch": null,
   "lanes": [
