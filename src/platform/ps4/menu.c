@@ -237,6 +237,8 @@ int ps4_menu_service(void) {
       dirty = 0;
     }
     if (open) {
+      g_ps4_beat++; /* the game thread is in the menu, not stuck (main.c's watchdog) */
+      g_ps4_where = "the options menu";
       ps4_video_present(); /* the software path waits for the last flip: the display's pace */
       if (g_ps4_gpu)
         ps4_video_wait_vblank();

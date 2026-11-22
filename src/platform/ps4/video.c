@@ -144,8 +144,13 @@ uint64_t ps4_video_vcount(void) {
 
 void ps4_video_wait_vblank(void) {
   g_ps4_where = "waiting for a vblank";
-  if (s_handle < 0 || ps4_vo_wait_vblank(s_handle) < 0)
-    sceKernelUsleep(1000);
+  if (s_handle < 0 || ps4_vo_wait_vblank(s_handle) < 0) {
+    /* no display handle (the GPU path: Piglet holds it): until the 60 Hz
+     * clock's next tick, which ps4_video_vcount counts (1 ms polls had the
+     * open menu presenting a thousand pictures a second, GPU run 7) */
+    unsigned long long now = ps4_now_us(), next = (now * 60 / 1000000 + 1) * 1000000 / 60 + 1;
+    sceKernelUsleep((unsigned)(next - now));
+  }
 }
 
 void ps4_video_overlay(const uint8_t *rgb, int w, int h) {
