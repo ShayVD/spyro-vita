@@ -267,11 +267,18 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   - `vcache cost (the game thread):` and `(the presenter's thread):` divisions, probes and table
     lines per projection and per vertex looked up.
   - `vcache derived:` no-entry vertices drawn with their polygon's depth, at the projection before
-    the renderer moved them or at their key, and those left with no entry (D176).
+    the renderer moved them or at their key, and those left with no entry (D176). Since #202 the
+    last figure counts those at that projection with its own depth, where the plane through the
+    quad's other corners gave none (big close grid quads).
   - `vcache resolved:` ambiguous keys' vertices given a depth from the frame's order, and those
     left ambiguous (D178).
   - `vcache hooked:` no-entry vertices found from a renderer's hand-over, by renderer, and the
-    hand-overs kept or dropped (D182).
+    hand-overs kept or dropped (D182). Since #202 also: cuts at a portal edge's pixel that another
+    cut placed up to 2 px away, merged into one place (their mean, on the edge; before, the key
+    was dropped: most of the misses as Spyro flies into a portal), and hand-overs of a shadow's
+    corner or a glow's rim whose source key is ambiguous, with the vertices then found from the
+    frame's order (drawn at their own key). `particles` stays 0 until the particle renderer hands
+    over its screen-facing quads' corners.
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position

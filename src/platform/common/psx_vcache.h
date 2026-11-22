@@ -75,14 +75,18 @@ void psx_vcache_set_lazy_logic(int mode);
  * how's bits 4-7: the renderer (VCD_SHADOWS...), for the counters. A
  * source with no usable entry (none, ambiguous, invalid, different points
  * under its key), or two hand-overs placing one key differently, leave the
- * key without one, as before. The hook reads only its arguments and writes
+ * key without one, as before; since #202 two cuts at one key within 2
+ * pixels share their mean place, and an alias or offset of an ambiguous
+ * key is resolved with it from the frame's order (vcache.c). The hook reads only its arguments and writes
  * only the cache's table: nothing the game reads changes. NULL unless the
  * cache records; the presenter's renderers call their own copy
  * (render_ctx_names.h g_pres_rtp_derive_hook, which render_ctx.c hands to
  * psx_vcache_pres_derive_at and psx_vcache_pres_begin sets with its value
  * hook). */
 enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
-enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_WHO_N };
+/* (VCD_PARTICLES: the particles' screen-facing quads, #202: no renderer
+ * hands them over yet) */
+enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
@@ -322,6 +326,17 @@ typedef struct {
    * why (RW_*) */
   unsigned res_der;
   unsigned res_why[RW_N];
+  /* #202: hand-overs cut at an edge's pixel another cut had placed
+   * differently, merged into one place (their mean) */
+  unsigned hk_merged;
+  /* #202: derived vertices at the projection the order named whose depth
+   * is that projection's own, chosen with the polygon's others, where the
+   * plane through those gave none (counted in derived too) */
+  unsigned der_own;
+  /* #202: hand-overs of one point (an alias, an offset) whose source key is
+   * ambiguous, kept as that key's; and the vertices found so, resolved
+   * from the frame's order (counted in hits, not in hooked or resolved) */
+  unsigned hk_ambsrc, res_alias;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
