@@ -63,3 +63,7 @@ Cross-compiled in the same image with llvm-mingw (clang, the UCRT): one static `
 - **Every file binary** (`_set_fmode(_O_BINARY)`): the common code opens the disc with `open`/`fopen` as on POSIX. `pread` is a positional `ReadFile`; `mkdir` has no mode; `etext`/`_end` (a save state's layout stamp) are marks in the image.
 
 To try it on the Mac: `docker build` an image `FROM spyro-pc` with Debian's `wine` and run `wine build/pc-win/spyro.exe --disc 'Z:\work\disc\image'` under `tools/pc/xrun.sh` (Wine's GL is Mesa's llvmpipe there).
+
+### macOS (not built)
+
+No Mac build yet. An Apple Silicon (ARM64) build can't use the model: clang's `__ptr32` exists only for x86 targets (on AArch64 it is accepted and ignored: a "P32" pointer is 8 bytes). An x86-64 Mac build, run under Rosetta 2 on Apple Silicon, could: a non-PIE image at 0x400000 with a small `__PAGEZERO` (`-pagezero_size`, `-no_pie`; both deprecated by Apple's linker), the reservation below 4 GB as on Linux, and GL 4.1 core (which runs the 3.3 shaders' `#version 330` as `#version 410` would). It needs the macOS SDK and a Mac to sign and test on; Rosetta's future (Apple has said it is for the transition) makes it a poor bet for a store release. The other way is the offset model of `lp64/docs/low-image.md` (32-bit offsets from a base, every target), a much larger change.
