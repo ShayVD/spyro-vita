@@ -152,6 +152,36 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
 #define VCD_ENDS_A(how) (((unsigned)(how) >> 16) & 15u)
 #define VCD_ENDS_B(how) (((unsigned)(how) >> 20) & 15u)
 #define VCD_CORNER(anchor, i) ((unsigned)(anchor) ^ (unsigned)(i) << 28)
+/* #229: where two split points of different pieces fall on one pixel (the
+ * integer midpoints of clamped corners) the key names no single point, and
+ * D182 drops both. So each split point is also kept as its piece's own,
+ * apart from the hand-overs: its place and depths under its key and the
+ * anchor VCD_CORNER(piece's anchor, VCD_EDGE(ia, ib)), which each GT3 that
+ * SplitLast emits moves to VCD_CORNER(its own anchor, its vertex number) as
+ * it does its corners (VCD_SELF with VCD_OWN; p 1 for a split point), so a
+ * GT3 queued again finds its ends there too. Where its ends' keys give no
+ * place, it is made from the piece's own ends, paired however far apart
+ * their depths are (a polygon found so whose depths no choice brings under
+ * 4 times apart is drawn affine, as any such polygon is). A
+ * piece's corner the grid moved off its projection (GridCorrect: no entry,
+ * or another point's) is kept the same way, at the projection that made it
+ * (VCD_SELF names it). The walk's own-point step takes these only for a
+ * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
+#define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
+/* #229: a world piece's anchor (above, and #217's corners') is all its
+ * corners' keys and texture coordinates mixed, not its first vertex's key
+ * alone: GT3s of one piece that start at one point and have two different
+ * corners on one clamped key at one vertex number (or two split points on
+ * one pixel) named both under one anchor, so neither was kept. Each vertex's
+ * term: its key xy, its u/v (the low half of the primitive's word after
+ * xy), and its place in the primitive (0..3); the anchor is the terms xored. */
+#define VCD_PIECE_V(xy, uv, i)                                                                 \
+  (((unsigned)(xy) ^ (unsigned)(unsigned short)(uv) * 0x9E3779B1u) *                          \
+   (0x85EBCA77u + 0x40000000u * (unsigned)(i)))
+/* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
+ * once for every piece of its grid: a world quad drawn at once (not split)
+ * finds its moved corner there */
+#define VCD_MOVED 0xFFFFFFFFu
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -489,6 +519,18 @@ typedef struct {
    * (behind the eye), marked so their vertices count as exempt
    * (VCX_NO_PROJ) */
   unsigned hk_noproj;
+  /* #229: world points kept as their piece's own (psx_vcache.h VCD_EDGE):
+   * vertices found from one (counted in hits and own_found too), the
+   * records made (split points, the moves to each GT3, moved corners), not
+   * kept (full), the split points among them placed only by pairing ends
+   * whose depths are 4x apart or more, and the corners the grid moved; and
+   * the world polygons found from their own points whose depths no choice
+   * brings under 4x apart, drawn affine (counted in spread too); and the
+   * ambiguous corners of world quads found so, resolved from the frame's
+   * order near their moved corner's own projection (counted in resolved),
+   * and the moved corners found where those weren't (their polygon drawn
+   * affine, its ambiguous corners left as they were) */
+  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread, sp_res, sp_part;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
