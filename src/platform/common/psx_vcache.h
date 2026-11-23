@@ -55,6 +55,11 @@ void psx_vcache_set_lazy(int on);
  * game thread's last projections in recent frames (vcache.c LZ_QUOTA); a
  * `vcache quota:` line with the cost lines. The same answers in each. */
 void psx_vcache_set_lazy_logic(int mode);
+/* #233: the walk's lookup of a polygon whose vertices are all found takes a
+ * short path of its own (psx_vcache_poly), the rest the whole one as
+ * before: 1 (the default) or 0, every polygon the whole path. The same
+ * answers either way. */
+void psx_vcache_set_found_fast(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these

@@ -1,0 +1,30 @@
+# Route T (#233): the pad-after script of a new game and `--tour 14` (the level-warp cheat from
+# Artisans to Toasty, level 14), then Toasty play at 60 Hz logic: tools/vita/hw-routes/o-toasty.pad's
+# walk from the start, its vblanks counted from Toasty's first play vblank (o-toasty's 11,700 is +0, its 12,600 +900
+# here), the camera turned all the way round both ways so the castle and the fields come into the
+# picture. The hardware's walk-bound scene (D219, logs/hw-ap18t: the walk on core 1 93% busy from
+# 11,700 to 12,600, Toasty's opening view). Used as (60 Hz logic with in-between frames, the owner's
+# settings as the host has them; the host keeps the fixed 48 KB budget, the Vita's dd_budget=1):
+#   spyro --disc disc/files --pad tools/oracle/pads/newgame_host.txt --tour 14 --tour-stay 300 \
+#     --pad-after tools/oracle/pads/route_toasty.txt --tick60 --interp --frames 9000 --vcache \
+#     --widescreen --draw-distance 2 --log DIR/spyro.log --save DIR/save [--prof-draw]
+# The Vita3K route (toasty60) plays o-toasty.pad itself with o-toasty.cfg's menu warp.
+@gs=0,level=14 +900 r1
+@gs=0,level=14 +1300 none
+@gs=0,level=14 +1400 up
+@gs=0,level=14 +1700 none
+@gs=0,level=14 +1800 l1
+@gs=0,level=14 +2200 none
+@gs=0,level=14 +2300 up+right
+@gs=0,level=14 +2450 up
+@gs=0,level=14 +2900 none
+@gs=0,level=14 +3000 r1
+@gs=0,level=14 +3400 none
+@gs=0,level=14 +3500 up+left
+@gs=0,level=14 +3650 up
+@gs=0,level=14 +4100 none
+@gs=0,level=14 +4200 l1
+@gs=0,level=14 +4600 none
+@gs=0,level=14 +4700 up+right
+@gs=0,level=14 +4900 up
+@gs=0,level=14 +5400 none
