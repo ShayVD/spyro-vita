@@ -1298,3 +1298,28 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Host logs, traces, saves and per-polygon FNV are identical: 13,206,877 polygons at 30 Hz and 21,665,448 with `--tick60 --interp`.
   - ctest passes 32 of 32, and the native build exits 0.
   - Logs: `runs/auto-224-1`.
+
+### D216. The sky's vertex-cache records go by name, and the portal sky's projections take one generation per draw (#213, #200 cut 5; 2026-11-23)
+
+- **What:**
+  - `sky_hand.c` `SkyRecord` calls `ngte_vcache` with the draw's `NgteProj`, its generation, SXY2 and SZ3. Before, it called the value hook with the 15 registers as words, which the record compared word by word with the last ones kept.
+  - It passes no sums (`NGTE_NO_SUMS` in `gte_native.h`, a FLAG bit the GTE never sets). The record works them out from the `NgteProj` (`pt_np` in `vcache.c`) only for a projection it works out at once, exactly as it used to from the words. A kept projection compares one generation word (`same_ngte`).
+  - Keeping D202's sums per projected vertex cost more in SkyDraw's loop than it saved: route P's host SkyDraw self time went 0.63 → 1.02 s with it. So the sky passes none.
+  - `sky_clip_hand.c` (`FogSky`, `PortalSky`) reads the `NgteProj` once per draw; between sectors only the far colour changes.
+  - Only the register file's records (`rtp_hook`) still pass words. `cyclorama_hand.c` records nothing itself.
+- **Checked:**
+  - Host FNV per polygon is byte-identical on routes A, B and P with deferral auto, forced and off (9 pairs; 6.2 M, 12.4 M and 14.1 M polygons).
+  - Vita3K shots are identical on all seven routes, demo60 included (owner60 and stone60 with `dd_budget=1`). The counters are the same apart from the timing-dependent split.
+  - Host gprof (qemu, relative), sky record per projection:
+
+    | Route | Before | After |
+    |---|---|---|
+    | A | 294 ns | 277 ns |
+    | P | 249 ns | 208 ns |
+    | Presenter, route B | 236 ns | 183 ns |
+
+  - ctest passes 32 of 32. Not checked on hardware.
+  - Logs: `runs/auto-213-1`.
+- **Found:**
+  - `rtp_value_hook` and `pres_rtp_value_hook` now only flag that the cache is recording (added to #219).
+  - The `ngte_proj_regen` audit covered only the sky files (added to #218).
