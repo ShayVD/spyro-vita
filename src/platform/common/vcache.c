@@ -583,11 +583,16 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "%u cuts placed so, %u with an end not usable or more than 8 pixels off (#215)",
            out->hk_frac, out->fr_kept, out->fr_nosrc);
   /* #216 */
-  PsyX_Log("vcache own points: %u vertices found from their glow's or shadow's own point (%u "
+  PsyX_Log("vcache own points: %u vertices found from their renderer's own point (%u "
            "of them at an ambiguous key, and %u found ones of their polygons drawn at theirs); "
            "%u own points kept, %u with no source, %u not kept (full) (#216)",
            out->own_found, out->own_amb, out->own_over, out->own_kept, out->own_nosrc,
            out->own_full);
+  /* #217 */
+  PsyX_Log("vcache world: %u derived vertices at their key with a depth the order's projections "
+           "named, the plane giving none; %u world splits placed from their ends' own points "
+           "(#217)",
+           out->der_named, out->hk_own);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1565,8 +1570,8 @@ static Hk *hk_slot(Table *tb, uint32_t gen, uint32_t key, int add, unsigned *pro
  * point at its pixel centre, without depths (the screen's corners of a
  * portal's face). Returns the depths' count (0: the place only), -1 not
  * usable; *exact: the place came from a projection. */
-static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
-                  int flat, int *exact, int *taint, unsigned *cost, Touch *t) {
+static int hk_src0(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
+                   int flat, int *exact, int *taint, unsigned *cost, Touch *t) {
   Table *const tb = rec->tab;
   const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
   const float kx = (short)(key & 0xFFFF) + 0.5f, ky = (short)(key >> 16) + 0.5f;
@@ -1614,6 +1619,76 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
   *x += kx;
   *y += ky;
   return (int)n;
+}
+
+static Ow *own_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int add,
+                    unsigned *probes, Touch *t);
+static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, float *y, float *w,
+                     int *alt, int *cl);
+static inline int near8(float ax, float ay, float bx, float by);
+
+/* #217: a 3D point's end by its own point under anchor (psx_vcache.h
+ * VCD_OWN on VCD_PERSP; the world's pieces split on the last list name
+ * their corners as they project them): that projection's own place on
+ * screen (pixels; a clamped one's exact place, as a found clamped key is
+ * drawn) and depths. Returns the depths' count, -1 none usable. */
+static int own_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float *x, float *y,
+                   float *w, unsigned *cost, Touch *t) {
+  Table *const tb = rec->tab;
+  const Ow *const o = own_slot(tb, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
+  const Entry *en;
+  float px, py, wv;
+  int e, alt, cl, rk;
+  unsigned m, n = 0;
+  if (!o || !o->placed || o->dead || o->r >= tb->nlog)
+    return -1;
+  e = (int)LOG_E(tb->log[o->r]);
+  en = &tb->s[e];
+  lz_need(tb, k, e);
+  touch(t, (size_t)e * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * VC_CANDS);
+  rk = res_place(tb, en, o->r, &px, &py, &wv, &alt, &cl);
+  if (!rk)
+    return -1;
+  if (rk == 2) { /* candidate 0's point: the candidates there (resolve's) */
+    for (m = 0; m < T_N(en->tag); m++) {
+      const Cand *const cm = &en->c[m];
+      if (cm->dy == FAR_MARK || en->c[0].dy == FAR_MARK) {
+        float cx, cy;
+        cand_pos(tb, cm, &cx, &cy);
+        if (!near8(cx, cy, px, py))
+          continue;
+      } else if (cm->dx - en->c[0].dx > 32 || en->c[0].dx - cm->dx > 32 ||
+                 cm->dy - en->c[0].dy > 32 || en->c[0].dy - cm->dy > 32)
+        continue;
+      w[n++] = cm->w;
+    }
+  } else {
+    w[n++] = wv;
+    if (alt)
+      w[n++] = flt(wv * (1.0f / 16));
+  }
+  if (!n)
+    return -1;
+  *x = flt(px + ((short)(en->key & 0xFFFF) + 0.5f) + (float)o->ox);
+  *y = flt(py + ((short)(en->key >> 16) + 0.5f) + (float)o->oy);
+  return (int)n;
+}
+
+/* hk_src0 (above); #217: with anchor, an end it can't use (an ambiguous or
+ * invalid key, or none with no hand-over) by its own point under anchor
+ * (own_end), which taints what is made from it */
+static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
+                  int flat, int *exact, int *taint, unsigned *cost, Touch *t, uint32_t anchor) {
+  int n = hk_src0(rec, kind, k, key, x, y, w, flat, exact, taint, cost, t);
+  if (n >= 0 || !anchor)
+    return n;
+  n = own_end(rec, k, key, anchor, x, y, w, cost, t);
+  if (n > 0) {
+    *exact = 1;
+    if (taint)
+      *taint = 1;
+  }
+  return n > 0 ? n : -1;
 }
 
 /* The depths of a point the fraction f of the way from a to b (depths aw,
@@ -1665,18 +1740,19 @@ static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float 
  * (*no of them) from its sources: 0, or -1 when no source is usable.
  * taint (#202) NULL: the sources as they were before #202 (a merged place
  * not usable, a place made from one not there); else any, and *taint set
- * when a merged place, or one made from it, was read. */
+ * when a merged place, or one made from it, was read. anchor (#217, 0:
+ * none): a's and b's own points under it, for an end hk_src0 can't use. */
 static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, uint32_t a,
                     uint32_t b, int p, int q, int *taint, float *dxo, float *dyo, float *w,
-                    unsigned *no, unsigned *cost, Touch *t) {
+                    unsigned *no, unsigned *cost, Touch *t, uint32_t anchor) {
   const int form = how & 15, two = form == VCD_LERP || form == VCD_PERSP, cut = form == VCD_LERP;
   float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], x, y, dx, dy;
   float lim = 1024, pa = 0, pb = 0;
   int na, nb = 0, ea, eb = 0;
   unsigned n = 0, i;
-  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t);
+  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t, anchor);
   if (na >= 0 && two)
-    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, taint, cost, t);
+    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, taint, cost, t, anchor);
   if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb)))
     return -1;
   if (form == VCD_LERP) {
@@ -1684,8 +1760,8 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
      * portal's outline edge): each end exact where it has a projection */
     float ex0, ey0, ex1, ey1, ew[VC_CANDS], nx, ny, den, f;
     int e0, e1;
-    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, taint, cost, t) < 0 ||
-        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, taint, cost, t) < 0 ||
+    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, taint, cost, t, 0) < 0 ||
+        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, taint, cost, t, 0) < 0 ||
         !(ea | eb | e0 | e1))
       return -1; /* all four 2D: nothing to place exactly */
     nx = ey0 - ey1;
@@ -2040,6 +2116,26 @@ static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a
   k->cost[VCC_REC_LINES] += t.n;
 }
 
+/* #217: VCD_SELF with VCD_OWN: key's own point under anchor old, if it
+ * has one, is its own point under anchor too (a piece the world's last
+ * list split again names the corners it keeps by its own first vertex) */
+static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uint32_t old) {
+  Rec *const rec = &s_rec[kind];
+  Touch t = TOUCH0;
+  const Ow *const o = own_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
+  if (o && o->placed && !o->dead)
+    own_put(kind, k, key, anchor, o->r, o->ox, o->oy, &t);
+  k->cost[VCC_REC_LINES] += t.n;
+}
+
+/* #217: a 3D point placed from its ends' own points (derive_hand): counted,
+ * and tainted */
+static inline int own_taken(VCacheStats *st, int *taint) {
+  st->hk_own++;
+  *taint = 1;
+  return 1;
+}
+
 /* One hand-over (psx_vcache.h PSX_VC_DERIVE) into rec's frame */
 static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t a, uint32_t b,
                         int p, int q) {
@@ -2056,15 +2152,24 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   Hk *h;
   if (!rec->tab)
     return;
-  if (how & VCD_SELF) { /* #216: an own point only */
-    own_self(kind, k, key, b, p);
+  if (how & VCD_SELF) { /* #216: an own point only; #217: or one moved to another anchor */
+    if (how & VCD_OWN)
+      own_move(kind, k, key, b, (uint32_t)q);
+    else
+      own_self(kind, k, key, b, p);
     return;
   }
   st->hk_calls++;
   /* #202: the sources as before first; a merged place only where they
-   * give none */
-  if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t) < 0 &&
-      hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t) < 0) {
+   * give none; #217: then a 3D point's ends' own points, where neither
+   * gives one (tainted, as a merged place: it counts only where nothing
+   * else placed the key) */
+  if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
+      hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
+      !(form == VCD_PERSP && (how & VCD_OWN) &&
+        hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t,
+                 (uint32_t)q) == 0 &&
+        own_taken(st, &taint))) {
     if (form == VCD_ALIAS || form == VCD_OFFSET) {
       /* #202: one point's alias or offset whose source key is ambiguous:
        * kept as that key's, for a polygon that finds nothing else to
@@ -2186,7 +2291,7 @@ out:
   cost[VCC_REC_LINES] += t.n;
   if (left && form == VCD_LERP && VCD_HAS_T(how)) /* #215 */
     frac_hand(kind, k, who, key, a, b, VCD_T_OF(how));
-  if (how & VCD_OWN) /* #216 */
+  if ((how & VCD_OWN) && form != VCD_PERSP) /* #216 (#217: a 3D point's q is its ends' anchor) */
     own_hand(kind, k, form, key, a, b, p, q);
 }
 
@@ -2680,7 +2785,7 @@ static void log_index(Table *tab, uint32_t gen, unsigned *cost) {
  * else the caller keeps it (der_keep) once the polygon is drawn so. */
 static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint32_t *slotf, int m,
                          const Sink *lk, unsigned *cost, VCacheVert *out, uint32_t *slot_out,
-                         Der **dr_out, int commit) {
+                         Der **dr_out, int commit, unsigned *named, unsigned *nnamed) {
   static const int k_opp[4] = {2, 3, 0, 1};
   const uint32_t key = (uint16_t)xy[m][0] | (uint32_t)(uint16_t)xy[m][1] << 16;
   const float kx = xy[m][0] + 0.5f, ky = xy[m][1] + 0.5f;
@@ -2695,6 +2800,8 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
   out->dx = out->dy = 0;
   out->w = 1;
   *dr_out = NULL;
+  if (nnamed)
+    *nnamed = 0;
   /* the key's place this frame, if a polygon gave it one */
   h = hash(key) & (VC_DER - 1);
   for (p = 0; p < 8; p++, h = (h + 1) & (VC_DER - 1)) {
@@ -2731,6 +2838,13 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
           if (one != VC_NOSEQ && sm != one)
             conflict = 1; /* two places: none is taken */
           one = sm;
+          if (nnamed && *nnamed < 4) { /* #217: each place the order names, once */
+            unsigned j;
+            for (j = 0; j < *nnamed && named[j] != sm; j++)
+              ;
+            if (j == *nnamed)
+              named[(*nnamed)++] = sm;
+          }
         }
       }
     if (one != VC_NOSEQ && !conflict) {
@@ -2738,6 +2852,8 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
       uint32_t tag;
       lz_need(tab, lk, (int)k2); /* #193 */
       tag = tab->s[k2].tag;
+      if (nnamed && (k2 == so0 || k2 == sa0 || k2 == sb0 || T_STATE(tag) != E_VALID))
+        *nnamed = 0; /* #217: a corner's own projection, or not a usable one */
       if (k2 != so0 && k2 != sa0 && k2 != sb0 && T_STATE(tag) == E_VALID && T_N(tag) &&
           !(tag & T_MULTI)) {
         slot = k2 + 1;
@@ -2840,18 +2956,20 @@ static int derive_depth(Table *tab, short *const *xy, const Cand *const *e, cons
 }
 
 /* derive (above): its place, then its depth, the others all found.
- * Returns 1, 2 (#202: the depth the projection's own), or 0. */
+ * Returns 1, 2 (#202: the depth the projection's own), 3 (#217: no projection
+ * taken, the depth a named one's), or 0. */
 static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Cand *const *e,
                   const unsigned *en, int m, const Sink *lk, unsigned *cost, int *pick,
                   VCacheVert *out, int *moved, int *snapped) {
   uint32_t slotf[4] = {0, 0, 0, 0}, slot;
+  unsigned named[4], nnamed;
   Der *dr;
   int i;
   (void)pres;
   for (i = 0; i < 4; i++)
     if (i != m)
       slotf[i] = (uint32_t)(((const char *)e[i] - (const char *)tab->s) / sizeof(Entry));
-  derive_place(tab, gen, xy, slotf, m, lk, cost, out, &slot, &dr, 1);
+  derive_place(tab, gen, xy, slotf, m, lk, cost, out, &slot, &dr, 1, named, &nnamed);
   *moved = out->dx != 0 || out->dy != 0;
   *snapped = slot != 0;
   if (derive_depth(tab, xy, e, en, m, slot, NULL, cost, pick, out))
@@ -2877,6 +2995,71 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
       out->w = flt(e2[m][pick[m]].w);
       pick[m] = 0;
       return 2;
+    }
+  } else if (nnamed) {
+    /* #217: the order named projections but none was taken (two places, or
+     * one under a key with different points: the grid's point moved onto
+     * another's pixel), and the plane through the other three gives no
+     * depth at the key (they lie on one line on screen: an edge-on piece;
+     * or behind the eye, or past 4 times theirs). The vertex stays at the
+     * place it has (the key's, or the one another polygon found, as its
+     * neighbours draw it); its depth is a named projection's own, chosen
+     * with the others' */
+    static const int k_all4[4] = {0, 1, 2, 3};
+    const Cand *e2[4];
+    unsigned en2[4], nc = 0, j, q;
+    Cand c[VC_CANDS];
+    for (j = 0; j < nnamed; j++) {
+      const unsigned r = named[j], k2 = LOG_E(tab->log[r]);
+      const Entry *const s2 = &tab->s[k2];
+      float x, y, w;
+      int alt, cl, rk;
+      if (k2 == slotf[(m + 2) & 3] || k2 == slotf[(m + 1) & 3] || k2 == slotf[(m + 3) & 3])
+        continue; /* a corner's own projection */
+      lz_need(tab, lk, (int)k2);
+      if (T_STATE(s2->tag) != E_VALID && T_STATE(s2->tag) != E_AMBIGUOUS)
+        continue;
+      rk = res_place(tab, s2, r, &x, &y, &w, &alt, &cl);
+      if (!rk)
+        continue;
+      for (q = 0; q < (rk == 2 ? T_N(s2->tag) : 1u + (alt != 0)); q++) {
+        float wd;
+        unsigned d;
+        if (rk == 2) { /* candidate 0's point: the candidates there (resolve's) */
+          const Cand *const cm = &s2->c[q];
+          if (cm->dy == FAR_MARK || s2->c[0].dy == FAR_MARK) {
+            float cx, cy;
+            cand_pos(tab, cm, &cx, &cy);
+            if (!near8(cx, cy, x, y))
+              continue;
+          } else if (cm->dx - s2->c[0].dx > 32 || s2->c[0].dx - cm->dx > 32 ||
+                     cm->dy - s2->c[0].dy > 32 || s2->c[0].dy - cm->dy > 32)
+            continue;
+          wd = cm->w;
+        } else
+          wd = q ? flt(w * (1.0f / 16)) : w;
+        for (d = 0; d < nc; d++)
+          if (same_depthb(&c[d].w, &wd, &cost[VCC_LOOK_DIV]))
+            break;
+        if (d == nc && nc < VC_CANDS) {
+          c[nc].dx = c[nc].dy = 0;
+          c[nc++].w = wd;
+        }
+      }
+    }
+    if (nc) {
+      for (i = 0; i < 4; i++) {
+        e2[i] = e[i];
+        en2[i] = en[i];
+      }
+      e2[m] = c;
+      en2[m] = nc;
+      memset(pick, 0, sizeof(int) * 4);
+      if (choose(e2, en2, k_all4, 4, cost, pick)) {
+        out->w = flt(c[pick[m]].w);
+        pick[m] = 0;
+        return 3;
+      }
     }
   }
   return 0;
@@ -3292,6 +3475,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
                  &der_snap);
     if (der) {
       st->der_own += der == 2; /* #202 */
+      st->der_named += der == 3; /* #217 */
       der = 1;
       persp = VREF_PERSP;
       st->hits++;
@@ -3365,7 +3549,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         ks[i] = (int)((ref[i] & VREF_SLOT) - 1);
       slotf[i] = i == none ? 0 : (uint32_t)ks[i];
     }
-    derive_place(tab, gen, xy, slotf, none, &lk, cost, &pv, &slot, &dr, 0);
+    derive_place(tab, gen, xy, slotf, none, &lk, cost, &pv, &slot, &dr, 0, NULL, NULL);
     ks[none] = slot ? (int)slot - 1 : -1; /* its projection's places: one more of the polygon's */
     if (resolve(tab, gen, ks, amb, n, rc, rn, rp, rx, cost, &one, &rwhy)) {
       rwhy = RW_SPREAD;
@@ -3500,10 +3684,13 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
      * own point, from the projection that made it, under the polygon's
      * first vertex's key; only when every one has one. Its found vertices
      * with one take theirs too (ow 2), so the depths are all the
-     * renderer's own projections'; if those choose none, as found. */
+     * renderer's own projections'; if those choose none, as found.
+     * #217: a world piece's too (the last list's, whose corners the
+     * renderer named: a corner the GTE clamped onto a key other points
+     * share). */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find(ptab, gen, xy[0]);
-    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS) {
+    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV) { /* (#217: a split piece's) */
       const uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
       const Cand *e2[4];
       unsigned en2[4], eo[4];

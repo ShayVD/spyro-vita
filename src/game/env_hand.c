@@ -1833,6 +1833,18 @@ static inline int QueueLast(u32 fp, u32 zs) {
   return 1;
 }
 
+/* #217: a piece queued for the last list names each corner for the vertex
+ * cache by the projection that made it, P projections back (its grid's
+ * points are projected in order and nothing is projected after them before
+ * the piece is queued), under the piece's first vertex's key (psx_vcache.h
+ * VCD_SELF). SplitMid's points then still find their ends where a corner's
+ * key names no single point: the GTE clamps a corner far off screen to the
+ * screen's limit, a key other clamped points share. Nothing the game reads
+ * changes. */
+static inline void NameCorner(u32 xy, u32 anchor, u32 p) {
+  PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF, xy, xy, anchor, (int)p, 0);
+}
+
 static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h, u32 hqtex) {
   const u32 w0 = AT32(poly), w1 = AT32(poly + 4);
   u32 v0, v1, v2, v3, w2, w3, code, c0, c1, c2, c3, cc, m, pf, mask, tex, e, k;
@@ -1945,6 +1957,13 @@ static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
       if (small ? !zs : !QueueLast(fp, zs))
         continue;
     }
+    if (!small) { /* #217: its corners, grid points gi, gi + 1, gi + 5, gi + 6 of 25 */
+      const u32 gi = (g - GRID(0)) >> 4;
+      NameCorner(xy0, xy0, 24 - gi);
+      NameCorner(xy1, xy0, 23 - gi);
+      NameCorner(xy2, xy0, 19 - gi);
+      NameCorner(xy3, xy0, 18 - gi);
+    }
     AT32(fp) = 0xC000000;
     /* a piece on the last list stays a primitive: SplitLast reads it back */
     if (small)
@@ -2049,6 +2068,11 @@ static u32 Subdiv4x4Tri(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h
       if (small ? !zs : !QueueLast(fp, zs))
         continue;
     }
+    if (!small) { /* #217: its corners, of the grid's 15 points */
+      NameCorner(xya, xya, 14 - ((pa - GRID(0)) >> 4));
+      NameCorner(xyb, xya, 14 - ((pb - GRID(0)) >> 4));
+      NameCorner(xyc, xya, 14 - ((pc - GRID(0)) >> 4));
+    }
     AT32(fp) = 0x9000000;
     if (small)
       ND_OT(gt3, ot + PieceSlot(zs, w3), fp);
@@ -2097,14 +2121,16 @@ static inline u32 ScreenFlags(u32 sxy) {
 /* Grid points here: SXY (+0), colour (+4), UV (+8, half), flags (+0xF).
  * #189: the midpoint's texture coordinates are the corners' halfway, which
  * belong to the 3D midpoint; the vertex cache is told so and draws the
- * vertex there. */
-static inline void SplitMid(u32 k, u32 xya, u32 xyb, u32 ca, u32 cb) {
+ * vertex there. #217: ANCHOR, the primitive's first vertex's key, under
+ * which its corners were named (NameCorner; VCD_OWN). */
+static inline void SplitMid(u32 k, u32 xya, u32 xyb, u32 ca, u32 cb, u32 anchor) {
   const u16 mx = (u16)Mid((u32)(s32)(s16)xya, (u32)(s32)(s16)xyb);
   const u16 my = (u16)Mid((u32)((s32)xya >> 16), (u32)((s32)xyb >> 16));
   GRID_C(k, 0) = mx;
   GRID_C(k, 1) = my;
   AT32(GRID(k) + 4) = CMid(ca & COLOUR_HALF_MASK, cb & COLOUR_HALF_MASK);
-  PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT), (u32)mx | (u32)my << 16, xya, xyb, 2048, 0);
+  PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_OWN, (u32)mx | (u32)my << 16, xya, xyb, 2048,
+                (int)anchor);
 }
 static inline void SplitMidUV(u32 k, u32 ua, u32 ub) {
   AT16(GRID(k) + 8) = (u16)(((ua & 0xFF00) + (ub & 0xFF00)) >> 1);
@@ -2115,6 +2141,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
   u32 list = LIST_LOW, end = AT32(SC(SC_LAST_END));
   for (;;) {
     u32 graw, p, t3raw, t4, tbl, tend, clut, tpage, k, n;
+    u32 anchor, corners; /* #217: its first vertex's key; the grid's points that are its corners */
     s32 len;
     if (PORT_LOD_ENV_FULL(fp, 1))
       end = list;
@@ -2131,11 +2158,13 @@ static u32 SplitLast(u32 fp, u32 ot) {
       const u32 c0 = AT32(p + 0x4) - 0x8000000, c1 = AT32(p + 0x10) - 0x8000000;
       const u32 c2 = AT32(p + 0x1C) - 0x8000000, c3 = AT32(p + 0x28) - 0x8000000;
       const u32 u0 = AT32(p + 0xC), u1 = AT32(p + 0x18), u2 = AT32(p + 0x24), u3 = AT32(p + 0x30);
-      SplitMid(1, xy0, xy1, c0, c1);
-      SplitMid(3, xy0, xy2, c0, c2);
-      SplitMid(4, xy1, xy2, c1, c2);
-      SplitMid(5, xy1, xy3, c1, c3);
-      SplitMid(7, xy2, xy3, c2, c3);
+      anchor = xy0;
+      corners = 1u << 0 | 1u << 2 | 1u << 6 | 1u << 8;
+      SplitMid(1, xy0, xy1, c0, c1, anchor);
+      SplitMid(3, xy0, xy2, c0, c2, anchor);
+      SplitMid(4, xy1, xy2, c1, c2, anchor);
+      SplitMid(5, xy1, xy3, c1, c3, anchor);
+      SplitMid(7, xy2, xy3, c2, c3, anchor);
       AT32(GRID(0)) = xy0;
       AT32(GRID(2)) = xy1;
       AT32(GRID(6)) = xy2;
@@ -2163,9 +2192,11 @@ static u32 SplitLast(u32 fp, u32 ot) {
       const u32 xy0 = AT32(p + 0x8), xy1 = AT32(p + 0x14), xy2 = AT32(p + 0x20);
       const u32 c0 = AT32(p + 0x4), c1 = AT32(p + 0x10), c2 = AT32(p + 0x1C);
       const u32 u0 = AT32(p + 0xC), u1 = AT32(p + 0x18), u2 = AT32(p + 0x24);
-      SplitMid(1, xy0, xy1, c0, c1);
-      SplitMid(3, xy0, xy2, c0, c2);
-      SplitMid(4, xy1, xy2, c1, c2);
+      anchor = xy0;
+      corners = 1u << 0 | 1u << 2 | 1u << 5;
+      SplitMid(1, xy0, xy1, c0, c1, anchor);
+      SplitMid(3, xy0, xy2, c0, c2, anchor);
+      SplitMid(4, xy1, xy2, c1, c2, anchor);
       AT32(GRID(0)) = xy0;
       AT32(GRID(2)) = xy1;
       AT32(GRID(5)) = xy2;
@@ -2216,6 +2247,20 @@ static u32 SplitLast(u32 fp, u32 ot) {
       AT32(fp + 0x8) = AT32(a);
       AT32(fp + 0x14) = AT32(b);
       AT32(fp + 0x20) = AT32(c);
+      { /* #217: the corners it keeps named under its own first vertex too, for
+         * its split (queued) or its drawing (the cache's walk) */
+        const u32 xya = AT32(a), sa = (a - GRID(0)) >> 4, sb = (b - GRID(0)) >> 4,
+                  sc = (c - GRID(0)) >> 4;
+        if (corners >> sa & 1)
+          PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF | VCD_OWN, xya, xya, xya, 0,
+                        (int)anchor);
+        if (corners >> sb & 1)
+          PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF | VCD_OWN, AT32(b), AT32(b), xya,
+                        0, (int)anchor);
+        if (corners >> sc & 1)
+          PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF | VCD_OWN, AT32(c), AT32(c), xya,
+                        0, (int)anchor);
+      }
       if (!(g_nd.on && !queued && nd_gt3_chained(fp)))
         AT32(fp) = 0x9000000;
       t3 = MIPS_KUSEG(t3raw);

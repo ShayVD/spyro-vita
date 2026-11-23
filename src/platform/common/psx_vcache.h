@@ -126,7 +126,20 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * #181's, #197's and #202's resolution), every vertex not found having one
  * (vcache.c own_look): every polygon found before is found as it was. A
  * point whose projection the GTE could not give (behind the eye) is drawn
- * as the PS1 draws it, and its vertex is counted exempt (VCX_NO_PROJ). */
+ * as the PS1 draws it, and its vertex is counted exempt (VCX_NO_PROJ).
+ *
+ * #217: the world's pieces split on the last list (env_hand.c SplitLast).
+ * A piece queued there names its corners (VCD_SELF) under its first
+ * vertex's key; each split point's VCD_PERSP hand-over adds VCD_OWN with q
+ * that anchor (p stays its fraction). Where an end's key gives no source
+ * (an ambiguous or invalid key: a corner the GTE clamped to the screen's
+ * limit, which other clamped points share), the end is taken at its own
+ * point, after the hand-over's two passes (#202) fail; a place made so is
+ * tainted (#202: it counts only where nothing else placed the key). A
+ * piece the split queues again, or draws, names the corners it keeps
+ * under its own first vertex (VCD_SELF with VCD_OWN: sxy's own point under
+ * q, if any, becomes its own point under b), and the walk's own-point step
+ * above takes a world piece's too. */
 #define VCD_OWN 0x200
 #define VCD_SELF 0x400
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
@@ -452,6 +465,15 @@ typedef struct {
    * made (no source, or the projection named is not the key's, or two
    * different under one key), and not kept (full) */
   unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
+  /* #217: the world's split points (VCD_PERSP with VCD_OWN) placed from
+   * their ends' own points, where an end's key gave none (an ambiguous or
+   * invalid key: corners the GTE clamped to the screen's limit) */
+  unsigned hk_own;
+  /* #217: quads' vertices with no entry derived at their place with a
+   * depth from a projection the frame's order named but derive couldn't
+   * take (two places, or a key with different points), where the plane
+   * through the others gave none (counted in derived too) */
+  unsigned der_named;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
