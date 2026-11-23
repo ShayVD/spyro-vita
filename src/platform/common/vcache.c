@@ -4412,8 +4412,24 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     /* where the kept projections' maths goes: poly_full's lk */
     const Sink lk = pres ? (Sink){work, cost, st, NULL}
                          : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
+    uint32_t keys[4];
+    {
+      /* each vertex's first probe read up front, so the polygon's misses
+       * on the table (another core wrote it, a frame ago) overlap instead
+       * of each waiting for the one before; nothing is decided here */
+      const Table *const lt = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].tab : s_rtab;
+      uint32_t w0 = 0, w1 = 0, w2 = 0, w3 = 0;
+      for (i = 0; i < n; i++)
+        keys[i] = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+      w0 = lt->s[hash(keys[0])].tag;
+      w1 = lt->s[hash(keys[1])].tag;
+      w2 = lt->s[hash(keys[2])].tag;
+      if (n == 4)
+        w3 = lt->s[hash(keys[3])].tag;
+      __asm__ volatile("" : : "r"(w0), "r"(w1), "r"(w2), "r"(w3));
+    }
     for (i = 0; i < n; i++) {
-      const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+      const uint32_t key = keys[i];
       Touch t = TOUCH0;
       const int k = look(pres, key, &probes, &t, &tab);
       uint32_t tag;
