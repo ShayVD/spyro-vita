@@ -114,10 +114,12 @@ static struct {
 
 /* dd_budget=auto (#212): the last shown draw, for the platform
  * (lod_last_draw), and the budgets it set since the last report with the
- * frame times they came from (lod_set_budget). Empty on the host. */
+ * frame times they came from (lod_set_budget): their sums, the frames over
+ * the target, and (#224) the lowest and highest budget and the longest frame.
+ * Empty on the host. */
 static int s_last_bytes, s_last_60;
 static struct {
-  unsigned n, over, target;
+  unsigned n, over, target, lo, hi, worst;
   unsigned long long used, budget;
 } s_bt;
 
@@ -462,6 +464,12 @@ int lod_set_budget(int bytes, int used_us, int target_us) {
   s_bt.used += (unsigned)used_us;
   s_bt.target = (unsigned)target_us;
   s_bt.budget += (unsigned)bytes;
+  if (s_bt.n == 1 || (unsigned)bytes < s_bt.lo)
+    s_bt.lo = (unsigned)bytes;
+  if ((unsigned)bytes > s_bt.hi)
+    s_bt.hi = (unsigned)bytes;
+  if ((unsigned)used_us > s_bt.worst)
+    s_bt.worst = (unsigned)used_us;
   return bytes;
 }
 #endif
@@ -470,19 +478,24 @@ int lod_set_budget(int bytes, int used_us, int target_us) {
 #define MS10(us) (unsigned)((us) / 1000), (unsigned)((us) % 1000 / 100)
 
 /* The auto budget's part of the lod line (#212): why it backed off and what
- * the budget was, short (the Vita's line buffer is 400 bytes and the rest of
- * the line takes up to about 350). Held at 1x for most draws: the window's
- * average frame time against the target; otherwise the average budget, the
- * time left under the target (or over it), and the frames over it, each of
- * which cut the budget at once. */
+ * the budget was. The Vita's line buffer (picture.c) is 640 bytes since #223
+ * (D214); the rest of the line takes up to about 350 and this part up to
+ * about 110, so the line stays under 600 (#224). Held at 1x for most draws:
+ * the window's average frame time against the target, its longest frame, and
+ * the budget's range; otherwise the average budget, its range (lowest to
+ * highest, #224), the longest frame, the time the average frame left under
+ * the target (or over it), and the frames over it, each of which cut the
+ * budget at once. */
 static void budget_report(char *out, unsigned len) {
   const unsigned n = s_bt.n, avg = (unsigned)(s_bt.used / n), t = s_bt.target;
   if (s_st.budget_held * 2 > s_st.draws)
-    snprintf(out, len, "; budget held at 1x: %u.%u ms used of %u.%u", MS10(avg), MS10(t));
+    snprintf(out, len, "; budget held at 1x: %u.%u ms used of %u.%u, worst %u.%u ms (%u-%u KB)",
+             MS10(avg), MS10(t), MS10(s_bt.worst), s_bt.lo / 1024, s_bt.hi / 1024);
   else
-    snprintf(out, len, "; budget %u KB (auto, %u.%u ms %s; %u over)",
-             (unsigned)(s_bt.budget / n / 1024), MS10(avg > t ? avg - t : t - avg),
-             avg > t ? "over" : "left", s_bt.over);
+    snprintf(out, len, "; budget %u KB (auto, %u-%u KB, worst %u.%u ms, %u.%u ms %s; %u over)",
+             (unsigned)(s_bt.budget / n / 1024), s_bt.lo / 1024, s_bt.hi / 1024,
+             MS10(s_bt.worst), MS10(avg > t ? avg - t : t - avg), avg > t ? "over" : "left",
+             s_bt.over);
 }
 
 void port_lod_report(char *out, unsigned len) {
