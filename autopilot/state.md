@@ -9,7 +9,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 216,
+      "branch": "auto/216-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-216",
+      "pids": [],
+      "started_at": "2026-11-23T05:13:41Z",
+      "files": [
+        "src/game/particles_hand.c",
+        "src/game/particle_slots_hand.c",
+        "src/game/shadows_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a24f6c11c8a8abb15"
+    }
+  ],
   "last_good": "22037cbccfbbaa4faecd304d0f09bfe073a2c052",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
@@ -392,3 +408,4 @@ continue.
 - 2026-11-23T03:48:37Z phase 8: started #214, Vita3K: none
 - 2026-11-23T05:03:11Z phase 8: #214 reported done (host lookup divisions -92..94%, vc.div -41..43%); gating, Vita3K: none
 - 2026-11-23T05:13:01Z phase 8: merged #214 (D217), filed #225, Vita3K: none
+- 2026-11-23T05:13:53Z phase 8: started #216, Vita3K: none
