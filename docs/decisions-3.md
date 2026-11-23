@@ -1344,3 +1344,36 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Left:**
   - `derive_depth`'s and `same_depthb`'s divisions, and `near8`'s float compare (#225).
   - A tooling trap: under `tools/tc`, swapping a source file in can leave a stale object. Base/fix scripts must delete the object or check the binary's hash.
+
+### D218. With the fix on, glows and moby shadows name their screen points by the projection that made them (#216, 2026-11-23)
+
+- **Why:** after D213, GlowsAndSparkles had 36–86 missed vertices and MobyShadows 16–49 on the host routes (D210's classes). Tagged:
+  - glow rims whose key a portal sky cut also placed at another point, so neither was kept;
+  - two mobys' shadow corners nudged onto one pixel;
+  - rims and corners of an ambiguous source that #202's order-based resolution couldn't give a depth;
+  - the rims of a glow whose centre is behind the eye (SZ3 0, MAC3 < 0), which the PS1 still draws.
+- **What:**
+  - `Glows` (`particles_hand.c`) names its centre (`VCD_SELF`) right after the centre's RTPS. `MobyShadows` (`shadows_hand.c`) names its centre and four corners the same way, by how many projections back each was made.
+  - Rims and nudged corners add `VCD_OWN`: the source's own point plus the offset, anchored on the fan's centre. `hk_place` ignores the anchor, so the existing hand-overs are unchanged.
+  - Own points are kept per key and anchor in a per-table `ow[2048]` that no hand-over reads; two different points under one key and anchor are dropped.
+  - The walk takes own points only for a GlowsAndSparkles or MobyShadows polygon that every earlier step (#183, #189, #215, #181, #197, #202) left unfound, and only when every unfound vertex has one. Then that polygon's found vertices use theirs too, so all its depths come from one projection. They are drawn at their exact place (`VREF_CLAMP`).
+  - A vertex whose own projection has no answer is exempt, in a new class `VCX_NO_PROJ` ("no projection").
+  - New counters `own_*` and a `vcache own points:` line.
+  - D182, D207, D213 and D215's rules are unchanged.
+- **Measured (host, 2×, 16:9, missed before → after):**
+
+  | Route | Missed (30 Hz) | Missed (`--interp`) |
+  |---|---|---|
+  | P | 87 → 25 | 178 → 51 |
+  | S | 645 → 581 | 1,294 → 1,166 |
+  | Pf | 72 → 36 | 151 → 68 |
+
+  - GlowsAndSparkles is 0 on all six. MobyShadows is 0 except on S (4 at 30 Hz, 5 with `--interp`).
+  - "No projection": 32 at 30 Hz, 64 with `--interp`.
+  - In Vita3K, stone60's `vc.misses` is −50.7%. owner60's `vc.rec.probe` is +2.4%, the cost of the own-point records.
+- **Checks:**
+  - Host FNV per polygon: 0 changed in 6 pairs, with 8–112 polygons newly found. `hk_full` and `own_full` are 0 on every route.
+  - Vita3K: shots identical on all seven routes (owner60 and stone60 with `dd_budget=1`).
+  - ctest passes 32 of 32. The native and Vita builds exit 0.
+  - Logs: `runs/auto-216-1`.
+- **Left:** MobyShadows on S (4/5), and docs for the new class and line (#226).
