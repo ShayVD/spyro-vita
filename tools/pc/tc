@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run a command inside the spyro-pc container (tools/docker/pc.Dockerfile, an
+# amd64 image) with the repo mounted at /work and the same relative working
+# directory, as tools/tc does for the host image. disc/ may be a symlink to
+# the main checkout's disc/, so that is mounted too (read-only).
+#   tools/pc/tc cmake --build build/pc-linux
+# On an Apple Silicon Mac, run it against a Docker VM with Rosetta for amd64
+# (colima start --vm-type vz --vz-rosetta): DOCKER_HOST picks it.
+# PC_X=1 runs the command under a virtual X display (Xvfb, Mesa's llvmpipe
+# for GL): tools/pc/xrun.sh.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+rel=${PWD#"$root"}
+[[ "$rel" == "$PWD" ]] && rel=""
+mounts=(-v "$root:/work")
+if [ -L "$root/disc" ]; then
+  mounts+=(-v "$(cd "$root/disc" && pwd -P):/work/disc:ro")
+fi
+tty=()
+[ -t 0 ] && [ -t 1 ] && tty=(-it)
+pre=()
+if [ -n "${PC_X:-}" ]; then
+  pre=(/work/tools/pc/xrun.sh)
+fi
+exec docker run --rm ${tty[@]+"${tty[@]}"} --platform linux/amd64 \
+  -e HOME=/work/build/pc-home -e XDG_DATA_HOME=/work/build/pc-home/.local/share \
+  "${mounts[@]}" -w "/work$rel" spyro-pc ${pre[@]+"${pre[@]}"} "$@"

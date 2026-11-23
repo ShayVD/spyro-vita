@@ -1,0 +1,48 @@
+# PC build (Linux, Windows; D240)
+
+**Status (2026-11-23):** Linux builds and plays (US disc, boot to Artisans; CI builds it and starts it without a disc). Windows is next (below), then the GPU renderer at the window's resolution.
+
+A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **SDL3** (window, input, audio) and **OpenGL 3.3 core** (the picture).
+
+## How it works
+
+### 64-bit, with 4-byte pointers: the low image
+
+Spyro was written for a 32-bit machine. Its structures hold 4-byte pointers, and the decomp keeps the PS1's layouts byte for byte, so the game's memory can't simply be rebuilt with 8-byte pointers. The PC build uses the low-image model that linux64 and the PS4 build use (`docs/ps4-plan.md`, D173, D174):
+
+- every pointer field the game stores in its own memory is a 32-bit pointer (`P32`: clang's `__ptr32 __uptr`, `src/compat/p32.h`; the generated `patches/spyro-1-ptr32`). Only clang has `__ptr32`, and only for x86 targets: there is no ARM64 build (Apple Silicon Macs, ARM Linux) with this model.
+- everything the game can point at lies below 2 GB, so those 32 bits hold the whole address: the executable sits at 0x400000 (non-PIE on Linux, a fixed base on Windows), the 2 MB of PS1 RAM is a `.bss` array in it (`arena.c`), and the game runs on a thread whose stack is in the image too (the hand C takes addresses of locals). `main()` checks all three and refuses to run otherwise.
+- **Linux:** nothing of the host's may be below 4 GB, so a host pointer cut to 32 bits by mistake crashes instead of quietly aliasing the game's memory. `low_linux.c` reserves every free page from 64 KiB to 4 GB (`PROT_NONE`) from `.preinit_array`, which the dynamic loader runs before any shared library starts. glibc's malloc, SDL, the X11/Wayland and GL drivers and every thread stack then land above 4 GB. (The headless linux64 build is static and needs its own malloc; this one doesn't.) `SPYRO_LOW_TRAP=0` turns the reservation off.
+- **Windows** (next): the executable is not large-address-aware, so Windows keeps the whole process below 2 GB: every address fits 32 bits and nothing can be cut (`low_win.c`).
+
+### Two threads
+
+- The **main thread** owns SDL: the window, its GL context, the keyboard and gamepads. At every display refresh it shows the newest frame that is due.
+- The **game thread** runs the game, the software rasterizer (linux32's `gpu_soft.c`, the PS1's exact pixels) and the SPU, paced by a 60 Hz clock of real time (`vblank.c`), the same catch-up model as the Vita and the PS4 (`common/clock.c`): if a tick runs late, the vblanks it missed run at once, so the game keeps its speed and the audio its continuity.
+
+Frames go from one to the other with the vblank they are due at (`frames.c`), as the Vita's render thread shows them (stage 7c, D112): the presenter's in-between frame (60 fps) and its widescreen frame are filed as they are drawn, a vblank ahead; at a vblank with none (boot logos, loading screens) the PS1 display is filed as it is. The game thread never waits for the display, and the display can run at any rate (60, 75, 144 Hz, variable refresh): each refresh shows the frame due by then.
+
+### Picture, input, sound
+
+- **Picture** (`video.c`): one texture, one quad: 4:3, or 16:9 for the presenter's widescreen frames, as large as the window allows, black bars around. `filter=1` scales linearly, `filter=0` by nearest neighbour. F11 or Alt+Enter toggles (borderless) fullscreen; the window resizes freely. The frames are the PS1's resolution (512×240, the 224 lines the game draws shown): the GPU renderer at the window's resolution is the next step.
+- **Input** (`input.c`, `pad.c`): SDL3's gamepad API (XInput, DualShock 4, DualSense, Switch Pro, …) as an analog DualShock: face buttons by position, triggers as L2/R2, the right stick the free camera (the Vita's defaults). Keyboard: arrows or WASD the d-pad, K/Space Cross, L Circle, J/Left Shift Square, I Triangle, Q/E L1/R1, 1/3 L2/R2, Enter START, Backspace/Tab SELECT.
+- **Sound** (`audio.c`): the SPU's 44.1 kHz stereo into an SDL3 audio stream, which converts it for the device.
+
+## Files
+
+| what | where |
+|---|---|
+| the disc: a `.bin` + `.cue` image, `tools/extract_disc.py`'s files, or the Store copy's `EBOOT.PBP` | `--disc DIR`, else a `disc` folder beside the executable, else the user folder |
+| saves (`save/`), `spyro.log`, `config.txt`, `shots/` | the user folder: `~/.local/share/spyro-vita/Spyro/` on Linux, `%APPDATA%\spyro-vita\Spyro\` on Windows |
+
+`config.txt` takes `key=value` lines, and the command line takes the same keys as `--key value` (it wins): `fullscreen`, `window=WxH`, `widescreen`, `interp`, `vsync`, `filter`, `analog`, `stats`, and for tests `frames=N` (exit after N vblanks) and `shot=V1,V2` (a PNG of the window at those vblanks).
+
+## Building
+
+```bash
+docker build --platform linux/amd64 -t spyro-pc -f tools/docker/pc.Dockerfile tools/docker
+tools/pc/tc cmake -S . -B build/pc-linux -G Ninja -DSPYRO_HOST=pc -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux.toolchain.cmake
+tools/pc/tc cmake --build build/pc-linux        # -> build/pc-linux/spyro
+```
+
+The image is amd64 (Debian 12, clang 19, SDL 3.4.18 built static). On an Apple Silicon Mac, point `DOCKER_HOST` at a Docker VM with Rosetta (`colima start --vm-type vz --vz-rosetta`): the build and the game then run at near-native speed. `PC_X=1 tools/pc/tc build/pc-linux/spyro --disc disc/image --frames 3000 --shot 600,2400` runs it under a virtual X display (Xvfb, Mesa's llvmpipe), which is how CI and a Mac check it.
