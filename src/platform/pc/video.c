@@ -82,7 +82,7 @@ static PcFrame s_cur; /* the frame on screen (its pixels uploaded) */
 static int s_have;
 static SDL_Mutex *s_shot_mu;
 static char s_shot_path[1200];
-static unsigned s_refreshes, s_new_frames, s_uploads;
+static unsigned s_refreshes, s_new_frames;
 static unsigned long long s_upload_us, s_swap_us;
 static int s_vsync_on;
 
@@ -199,6 +199,11 @@ void pc_video_close(void) {
   s_win = NULL;
 }
 
+/* the mouse pointer: shown when it moves, hidden after CURSOR_IDLE_MS still */
+#define CURSOR_IDLE_MS 2000
+static Uint64 s_mouse_moved_ms;
+static int s_cursor_shown = 1;
+
 static void toggle_fullscreen(void) {
   int fs = (SDL_GetWindowFlags(s_win) & SDL_WINDOW_FULLSCREEN) != 0;
   SDL_SetWindowFullscreen(s_win, !fs);
@@ -206,10 +211,26 @@ static void toggle_fullscreen(void) {
     SDL_ShowCursor();
   else
     SDL_HideCursor();
+  s_cursor_shown = fs;
+  s_mouse_moved_ms = SDL_GetTicks();
+}
+
+static void cursor_idle(void) {
+  if (s_cursor_shown && SDL_GetTicks() - s_mouse_moved_ms > CURSOR_IDLE_MS) {
+    SDL_HideCursor();
+    s_cursor_shown = 0;
+  }
 }
 
 void pc_video_event(const void *e_) {
   const SDL_Event *e = e_;
+  if (e->type == SDL_EVENT_MOUSE_MOTION) {
+    s_mouse_moved_ms = SDL_GetTicks();
+    if (!s_cursor_shown && !(SDL_GetWindowFlags(s_win) & SDL_WINDOW_FULLSCREEN)) {
+      SDL_ShowCursor();
+      s_cursor_shown = 1;
+    }
+  }
   if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat &&
       (e->key.key == SDLK_F11 || (e->key.key == SDLK_RETURN && (e->key.mod & SDL_KMOD_ALT))))
     toggle_fullscreen();
@@ -262,7 +283,6 @@ void pc_video_frame(void) {
     s_cur.rgba = NULL;
     s_have = 1;
     s_new_frames++;
-    s_uploads++;
   }
   t1 = pc_now_us();
   s_upload_us += t1 - t0;
@@ -292,6 +312,7 @@ void pc_video_frame(void) {
   }
   if (s_shot_path[0])
     take_shot(ww, wh);
+  cursor_idle();
   SDL_GL_SwapWindow(s_win);
   s_swap_us += pc_now_us() - t1;
   s_refreshes++;

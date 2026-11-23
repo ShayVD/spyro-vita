@@ -6,7 +6,9 @@
  * casts, and a host pointer cut to 32 bits by mistake is still the same
  * address: no trap is needed, and none is possible (nothing is above 4 GB).
  * The price is a 2 GB address space for everything, drivers included, which
- * the game (2 MB of PS1 RAM, a 1 MB VRAM, a few MB of frames) never nears. */
+ * the game (2 MB of PS1 RAM, a 1 MB VRAM, a few MB of frames) never nears.
+ * pc_low_report says where the host's memory lands ("all below 2 GB: yes"
+ * on Windows; Wine doesn't apply the limit to 64-bit programs). */
 #if defined(_WIN32)
 #include <fcntl.h>
 #include <io.h>
@@ -50,12 +52,19 @@ ssize_t pread(int fd, void *buf, size_t n, off_t off) {
 }
 
 const char *pc_low_report(void) {
-  SYSTEM_INFO si;
-  GetSystemInfo(&si);
-  /* Windows: 0x7FFEFFFF for a program that isn't large-address-aware (Wine
-   * doesn't apply that limit to 64-bit programs) */
-  snprintf(s_report, sizeof s_report, "image at %p, arena end %p, addresses up to %p",
-           (void *)&__ImageBase, psx_low_arena_end(), si.lpMaximumApplicationAddress);
+  /* where Windows puts the host's memory now: a heap block, a fresh mapping
+   * and this thread's stack, all below 2 GB for a program that isn't
+   * large-address-aware (GetSystemInfo's maximum address is the system's,
+   * 128 TB, either way; Wine doesn't apply the limit) */
+  void *heap = malloc(64), *map = VirtualAlloc(NULL, 1 << 20, MEM_RESERVE, PAGE_NOACCESS);
+  int here, all = (uintptr_t)heap < 0x80000000u && map && (uintptr_t)map < 0x80000000u &&
+                  (uintptr_t)&here < 0x80000000u;
+  snprintf(s_report, sizeof s_report,
+           "image at %p, arena end %p; heap %p, a fresh mapping %p, stack %p: all below 2 GB: %s",
+           (void *)&__ImageBase, psx_low_arena_end(), heap, map, (void *)&here, all ? "yes" : "no");
+  free(heap);
+  if (map)
+    VirtualFree(map, 0, MEM_RELEASE);
   return s_report;
 }
 #endif

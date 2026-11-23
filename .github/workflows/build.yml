@@ -176,8 +176,9 @@ jobs:
           path: build/pc-win/spyro.exe
           if-no-files-found: error
 
-  # The Windows build on Windows: it loads at its fixed base, its low image's
-  # checks pass, SDL opens a window with a GL 3.3 context (Mesa's llvmpipe
+  # The Windows build on Windows: it loads at its fixed base, the host's
+  # memory (heap, a fresh mapping, a stack) lands below 2 GB as a program
+  # that isn't large-address-aware should, SDL opens a window with a GL 3.3 context (Mesa's llvmpipe
   # opengl32.dll beside it: the runner has no GPU), and it stops for the
   # missing disc with exit code 1.
   pc-windows-smoke:
@@ -203,7 +204,7 @@ jobs:
                  -RedirectStandardError smoke.log -NoNewWindow -PassThru -Wait
           Get-Content smoke.log
           if ($p.ExitCode -ne 1) { throw "exit code $($p.ExitCode), expected 1" }
-          if (-not (Select-String -Path smoke.log -Pattern 'addresses up to 0x7ffeffff|addresses up to 000000007FFEFFFF' -Quiet)) { throw "not below 2 GB" }
+          if (-not (Select-String -Path smoke.log -Pattern 'all below 2 GB: yes' -Quiet)) { throw "host memory not below 2 GB" }
           if (-not (Select-String -Path smoke.log -Pattern 'video: windows, llvmpipe' -Quiet)) { throw "no GL 3.3 window" }
           if (-not (Select-String -Path smoke.log -Pattern 'No Spyro the Dragon disc data was found' -Quiet)) { throw "no disc message" }
 
