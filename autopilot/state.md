@@ -9,7 +9,24 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 228,
+      "branch": "auto/228-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-228",
+      "pids": [],
+      "started_at": "2026-11-23T12:41:35Z",
+      "files": [
+        "src/game/env_hand.c",
+        "src/game/sky_hand.c",
+        "src/game/sky_clip_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/lod_time.c",
+        "docs/presentation.md"
+      ],
+      "agent": "a963c41320b37045c"
+    }
+  ],
   "last_good": "3df96bc23254ed27c979d732faf21e1dc2d08ed8",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
