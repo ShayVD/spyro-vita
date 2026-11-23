@@ -9,26 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 216,
-      "branch": "auto/216-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-216",
-      "pids": [],
-      "started_at": "2026-11-23T05:13:41Z",
-      "files": [
-        "src/game/particles_hand.c",
-        "src/game/particle_slots_hand.c",
-        "src/game/shadows_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "a24f6c11c8a8abb15",
-      "last_commit_at": "2026-11-23T08:19:33+00:00",
-      "reported": true
-    }
-  ],
-  "last_good": "22037cbccfbbaa4faecd304d0f09bfe073a2c052",
+  "workers": [],
+  "last_good": "8ad4fc4e168dee2e4ad12ec3f3e9d5c07638f68d",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -230,19 +212,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 15,
+    "filed": 16,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 216,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-216.gate.log",
-    "started_at": "2026-11-23T08:20:36Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -421,3 +396,4 @@ continue.
 - 2026-11-23T06:16:43Z phase 8: #216 WIP c675447 (glows and moby shadows hand over their own points); checking, Vita3K: none
 - 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
 - 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
+- 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
