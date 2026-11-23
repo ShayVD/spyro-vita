@@ -24,7 +24,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a24f6c11c8a8abb15",
-      "last_commit_at": "2026-11-23T05:59:53+00:00"
+      "last_commit_at": "2026-11-23T07:48:55+00:00"
     }
   ],
   "last_good": "22037cbccfbbaa4faecd304d0f09bfe073a2c052",
@@ -411,3 +411,4 @@ continue.
 - 2026-11-23T05:13:01Z phase 8: merged #214 (D217), filed #225, Vita3K: none
 - 2026-11-23T05:13:53Z phase 8: started #216, Vita3K: none
 - 2026-11-23T06:16:43Z phase 8: #216 WIP c675447 (glows and moby shadows hand over their own points); checking, Vita3K: none
+- 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
