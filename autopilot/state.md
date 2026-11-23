@@ -24,7 +24,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a24f6c11c8a8abb15",
-      "last_commit_at": "2026-11-23T07:48:55+00:00"
+      "last_commit_at": "2026-11-23T08:19:33+00:00",
+      "reported": true
     }
   ],
   "last_good": "22037cbccfbbaa4faecd304d0f09bfe073a2c052",
@@ -234,7 +235,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 216,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-216.gate.log",
+    "started_at": "2026-11-23T08:20:36Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -412,3 +420,4 @@ continue.
 - 2026-11-23T05:13:53Z phase 8: started #216, Vita3K: none
 - 2026-11-23T06:16:43Z phase 8: #216 WIP c675447 (glows and moby shadows hand over their own points); checking, Vita3K: none
 - 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
+- 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
