@@ -9,7 +9,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 217,
+      "branch": "auto/217-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-217",
+      "pids": [],
+      "started_at": "2026-11-23T08:27:25Z",
+      "files": [
+        "src/game/env_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a6ff69b122f235949"
+    }
+  ],
   "last_good": "8ad4fc4e168dee2e4ad12ec3f3e9d5c07638f68d",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
@@ -397,3 +411,4 @@ continue.
 - 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
 - 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
 - 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
+- 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
