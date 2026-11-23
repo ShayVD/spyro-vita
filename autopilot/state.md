@@ -9,27 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 213,
-      "branch": "auto/213-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-213",
-      "pids": [],
-      "started_at": "2026-11-22T23:57:03Z",
-      "files": [
-        "src/game/sky_hand.c",
-        "src/game/cyclorama_hand.c",
-        "src/game/sky_clip_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/gte_native.h"
-      ],
-      "agent": "a08d754a6dd2f45b9",
-      "last_commit_at": "2026-11-23T02:26:21+00:00",
-      "reported": true
-    }
-  ],
-  "last_good": "485a87de7413dd8a181f948d753f667cfe9578c0",
+  "workers": [],
+  "last_good": "f11f4ec8d0a48d2003ed6b664ddbe2ea9ccc4acb",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -236,14 +217,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 213,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-213.gate.log",
-    "started_at": "2026-11-23T03:38:36Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -414,3 +388,4 @@ continue.
 - 2026-11-23T03:33:15Z phase 8: merged #224 (D215); presentation.md lod text updated, Vita3K: none
 - 2026-11-23T03:34:11Z phase 8: hw-session7 VPK rebuilt as autopilot-53a6a5d (with D214, D215 lod text); waits for the owner yes, Vita3K: none
 - 2026-11-23T03:38:46Z phase 8: #213 reported done (sky records by name; host gprof sky record -6..-22%); gating, Vita3K: none
+- 2026-11-23T03:47:48Z phase 8: merged #213 (D216), Vita3K: none
