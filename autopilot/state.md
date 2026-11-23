@@ -9,7 +9,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 214,
+      "branch": "auto/214-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-214",
+      "pids": [],
+      "started_at": "2026-11-23T03:48:22Z",
+      "files": [
+        "src/platform/common/vcache.c"
+      ],
+      "agent": "a1cdafe944d764d5e"
+    }
+  ],
   "last_good": "f11f4ec8d0a48d2003ed6b664ddbe2ea9ccc4acb",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
@@ -389,3 +401,4 @@ continue.
 - 2026-11-23T03:34:11Z phase 8: hw-session7 VPK rebuilt as autopilot-53a6a5d (with D214, D215 lod text); waits for the owner yes, Vita3K: none
 - 2026-11-23T03:38:46Z phase 8: #213 reported done (sky records by name; host gprof sky record -6..-22%); gating, Vita3K: none
 - 2026-11-23T03:47:48Z phase 8: merged #213 (D216), Vita3K: none
+- 2026-11-23T03:48:37Z phase 8: started #214, Vita3K: none
