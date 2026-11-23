@@ -23,6 +23,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "tools/oracle/pads/route_toasty.txt"
       ],
       "agent": "aa37b4f4f296ba0b7"
+    },
+    {
+      "issue": 236,
+      "branch": "auto/236-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-236",
+      "pids": [],
+      "started_at": "2026-11-23T20:31:09Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c"
+      ],
+      "agent": "ac082c915c3fe5f62"
     }
   ],
   "last_good": "f87f2ebdf1bdb2afc28d2ffc59eed18b1ba313b8",
