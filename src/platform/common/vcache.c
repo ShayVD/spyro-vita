@@ -2236,9 +2236,13 @@ static const Hk *fr_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *
  * under 4 matters; a vertex with one candidate left is then its own
  * closest, and it's under 4 without dividing when it's under 3.999 (how
  * the quotient would round can't reach 4). Every other ratio is divided
- * as before, so the choice and the depths are the same. */
-static int choose(const Cand *const *e, const unsigned *en, const int *idx, int m, unsigned *cost,
-                  int *pick) {
+ * as before, so the choice and the depths are the same.
+ *
+ * Since #214 that division is only the fallback (choose_f below, for
+ * depths that aren't positive normal floats); choose compares the ratios
+ * without dividing (Ratio). */
+static int choose_f(const Cand *const *e, const unsigned *en, const int *idx, int m,
+                    unsigned *cost, int *pick) {
   const int f = idx[0];
   int c, i, j, best_c = -1, try_pick[4] = {0, 0, 0, 0};
   float best = 4.0f; /* a polygon's depths are never 4x apart */
@@ -2284,6 +2288,172 @@ static int choose(const Cand *const *e, const unsigned *en, const int *idx, int 
     }
     if (ok && worst < best) {
       best = worst;
+      best_c = c;
+      memcpy(pick, try_pick, sizeof try_pick);
+    }
+  }
+  return best_c >= 0;
+}
+
+/* The polygon's depth choice without dividing (#214). choose_f's ratios
+ * are only compared with each other, with 1 and with 4, so each is kept as
+ * its two depths' significands and exponents: the larger depth n over the
+ * smaller d (choose_f's ratio(a, b), either order). Two ratios compare
+ * exactly by cross-multiplying, in 64 bits (24-bit significands). A float
+ * quotient is the real one rounded, and rounding keeps order, so the real
+ * order is the floats' unless they would round to one value: when the two
+ * are within 2^-22 of each other (relative; the floats' half-ulps add up
+ * to under 2^-23 of the larger), they are divided and compared as
+ * choose_f does. Equal reals are equal floats. Against 4: the float
+ * quotient is under 4 exactly when n/d < 4 - 2^-23 (from there it rounds to
+ * 4: the tie goes to 4's even significand), an integer test. Against 1:
+ * every ratio's float is 1 or more, so the first vertex's ratio is the
+ * worst so far without a test. With one candidate for the first vertex
+ * (en[f] 1), only whether every vertex's closest ratio is under 4 counts,
+ * as choose_f's best stays 4: the choice fails at the first that isn't.
+ * Depths that aren't positive normal floats (W_LO..W_HI): choose_f. */
+typedef struct {
+  float n, d;      /* the larger depth and the smaller */
+  uint32_t mn, md; /* their significands, the leading 1 set */
+  int e;           /* exponent(n) - exponent(d) */
+} Ratio;
+
+/* the ratio of two positive normal depths' bits ua, ub (and the floats) */
+static inline void rat_make(Ratio *r, uint32_t ua, uint32_t ub, float a, float b) {
+  const uint32_t un = ua > ub ? ua : ub, ud = ua > ub ? ub : ua;
+  r->n = ua > ub ? a : b;
+  r->d = ua > ub ? b : a;
+  r->mn = (un & 0x7FFFFFu) | 0x800000u;
+  r->md = (ud & 0x7FFFFFu) | 0x800000u;
+  r->e = (int)(un >> 23) - (int)(ud >> 23);
+}
+
+/* The host's x87 (i686, no SSE; see flt): choose_f's quotients stay on the
+ * x87 stack at 64-bit precision (its compiled code compares them there,
+ * never stored as floats), where two different ones never round to one
+ * value (24-bit significands: they differ by 2^-50 of themselves or more)
+ * and one under 4 stays under. There the answers are the real order. */
+#if defined(__i386__) && !defined(__SSE_MATH__)
+#define RAT_REAL 1
+#else
+#define RAT_REAL 0
+#endif
+
+/* choose_f's ratio of a < ratio of b, divided as choose_f does */
+static int rat_lt_div(const Ratio *a, const Ratio *b, unsigned *cost) {
+  const float ra = a->n / a->d, rb = b->n / b->d;
+  cost[VCC_LOOK_DIV] += 2;
+  return ra < rb;
+}
+
+static inline int rat_lt(const Ratio *a, const Ratio *b, unsigned *cost) {
+  uint64_t p = (uint64_t)a->mn * b->md, q = (uint64_t)b->mn * a->md;
+  const int s = a->e - b->e;
+  if (s > 8 || s < -8) /* (a ratio under 4 has e 0..2) */
+    return rat_lt_div(a, b, cost);
+  if (s >= 0)
+    p <<= s;
+  else
+    q <<= -s;
+  if (RAT_REAL)
+    return p < q;
+  if (p < q) {
+    if (q - p > q >> 22)
+      return 1;
+  } else if (p > q) {
+    if (p - q > p >> 22)
+      return 0;
+  } else
+    return 0;
+  return rat_lt_div(a, b, cost);
+}
+
+/* the quotient n / d as choose_f has it is under 4: as a float, n/d <
+ * (2^25 - 1) / 2^23; on the x87, n/d < 4 */
+static inline int rat_under4(const Ratio *r) {
+  if (r->e > 8)
+    return 0;
+  if (RAT_REAL)
+    return ((uint64_t)r->mn << r->e) < ((uint64_t)r->md << 2);
+  return ((uint64_t)r->mn << (r->e + 23)) < (uint64_t)r->md * ((1u << 25) - 1);
+}
+
+static int choose(const Cand *const *e, const unsigned *en, const int *idx, int m, unsigned *cost,
+                  int *pick) {
+  const int f = idx[0];
+  int c, i, j, best_c = -1, hb = 0, try_pick[4] = {0, 0, 0, 0};
+  Ratio best;
+  for (c = 0; c < (int)en[f]; c++) {
+    const float w0 = e[f][c].w;
+    const uint32_t u0 = w_bits(&w0);
+    Ratio worst;
+    int ok = 1, hw = 0;
+    try_pick[f] = c;
+    for (i = 1; ok && i < m; i++) {
+      const int v = idx[i];
+      Ratio rb;
+      int left = 0, last = 0, have = 0;
+      unsigned u4 = 0; /* #206: which are under 4, tested once */
+      for (j = 0; j < (int)en[v]; j++)
+        if (under4b(&e[v][j].w, &w0)) {
+          left++;
+          last = j;
+          u4 |= 1u << j;
+        }
+      if (!left) {
+        ok = 0;
+        break;
+      }
+      if (!w_normal(u0))
+        return choose_f(e, en, idx, m, cost, pick);
+      if (left == 1 && en[f] == 1) {
+        try_pick[v] = last;
+        if (!under3999b(&e[v][last].w, &w0)) {
+          const uint32_t ua = w_bits(&e[v][last].w);
+          if (!w_normal(ua))
+            return choose_f(e, en, idx, m, cost, pick);
+          rat_make(&rb, ua, u0, e[v][last].w, w0);
+          if (!rat_under4(&rb)) {
+            ok = 0;
+            break;
+          }
+        }
+        continue;
+      }
+      for (j = 0; j < (int)en[v]; j++)
+        if (u4 & 1u << j) {
+          const uint32_t ua = w_bits(&e[v][j].w);
+          Ratio r;
+          if (!w_normal(ua))
+            return choose_f(e, en, idx, m, cost, pick);
+          rat_make(&r, ua, u0, e[v][j].w, w0);
+          if (!have || rat_lt(&r, &rb, cost)) {
+            rb = r;
+            have = 1;
+            try_pick[v] = j;
+          }
+        }
+      if (en[f] == 1) {
+        if (!rat_under4(&rb)) {
+          ok = 0;
+          break;
+        }
+      } else if (!hw || rat_lt(&worst, &rb, cost)) {
+        worst = rb;
+        hw = 1;
+      }
+    }
+    if (!ok)
+      continue;
+    if (en[f] == 1 || !hw) { /* worst under 4 (1 with none) */
+      best_c = c;
+      memcpy(pick, try_pick, sizeof try_pick);
+      /* (en[f] > 1 and none: m 1, worst 1, smaller than any other) */
+      if (!hw)
+        break;
+    } else if (hb ? rat_lt(&worst, &best, cost) : rat_under4(&worst)) {
+      best = worst;
+      hb = 1;
       best_c = c;
       memcpy(pick, try_pick, sizeof try_pick);
     }
@@ -2604,7 +2774,12 @@ static inline int near8(float ax, float ay, float bx, float by) {
 /* Log place r under entry en: its point (pixels from the pixel centre), its
  * depth (0: candidate 0's point, at its candidates' depths there), alt (a
  * maybe-precision depth: w / 16 too) and clamped. 0: no usable answer (an
- * invalid projection, or a first one with no candidate). */
+ * invalid projection, or a first one with no candidate); 2: candidate 0's
+ * point (w 0, #214: so the caller needn't compare w), else 1.
+ *
+ * #214: lc's depth is tested on its bits when it is a normal float (its
+ * sign is alt, the rest its size: the float tests' answers), as the
+ * float tests before for any other value (0, subnormal, infinite, NaN). */
 static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, float *y, float *w,
                      int *alt, int *cl) {
   if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
@@ -2614,12 +2789,19 @@ static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, fl
     *w = 0;
     *alt = 0;
     *cl = (en->tag & T_CLAMP) != 0;
+    return 2;
   } else {
     const Cand *const l = &tab->lc[r];
-    if (l->w == 0)
-      return 0;
-    *alt = l->w < 0;
-    *w = *alt ? -l->w : l->w;
+    const uint32_t u = w_bits(&l->w), mag = u & 0x7FFFFFFFu;
+    if (__builtin_expect(mag - W_LO < 0x7F800000u - W_LO, 1)) {
+      *alt = (int)(u >> 31);
+      memcpy(w, &mag, sizeof mag);
+    } else {
+      if (l->w == 0)
+        return 0;
+      *alt = l->w < 0;
+      *w = *alt ? -l->w : l->w;
+    }
     if (l->dy == FAR_MARK) {
       *x = tab->lfar[(uint16_t)l->dx][0];
       *y = tab->lfar[(uint16_t)l->dx][1];
@@ -2658,7 +2840,7 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
     const unsigned nc = T_N(en->tag);
     float kx[RC_PTS], ky[RC_PTS], fx = 0, fy = 0, x, y, w;
     unsigned r, j, k, m, nk, nsel, pts, near = 0, seen = 0;
-    int pass, alt, ccl, cl, onept;
+    int pass, alt, ccl, cl, onept, rk;
     if (!amb[i])
       continue;
     rx[i] = 0;
@@ -2685,7 +2867,7 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
             continue;
         }
         near += !pass;
-        if (!res_place(tab, en, r, &x, &y, &w, &alt, &ccl)) {
+        if (!(rk = res_place(tab, en, r, &x, &y, &w, &alt, &ccl))) {
           *why = RW_INV_NEAR;
           return 0; /* invalid: the prim may be that one */
         }
@@ -2706,9 +2888,9 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
             nk++;
           }
         }
-        for (m = 0; m < (w == 0 ? nc : 1u + (alt != 0)); m++) {
+        for (m = 0; m < (rk == 2 ? nc : 1u + (alt != 0)); m++) { /* (#214: rk 2, w 0) */
           float wd;
-          if (w == 0) { /* candidate 0's point: the candidates there */
+          if (rk == 2) { /* candidate 0's point: the candidates there */
             if (c[m].dy == FAR_MARK || c[0].dy == FAR_MARK) {
               float cx, cy;
               cand_pos(tab, &c[m], &cx, &cy);
