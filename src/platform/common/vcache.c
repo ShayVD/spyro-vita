@@ -322,6 +322,22 @@ typedef struct {
   uint16_t clamped;
 } Rp;
 
+/* #229: a world point kept as its piece's own (psx_vcache.h VCD_EDGE): a
+ * split point under its piece's anchor and edge, moved to each GT3 that
+ * keeps it, or a corner the grid moved, under its piece's anchor and corner
+ * number. Its place (pixels from its key's pixel centre) and depths, worked
+ * out when it is made; dead: two different points under one key and
+ * anchor. No hand-over reads these (hk stays as it was): only the walk's
+ * own-point step, for a world polygon nothing else finds, and a split
+ * point's end here (sp_place). */
+#define VC_SP 2048
+typedef struct {
+  uint32_t key, anchor, gen;
+  float dx, dy;
+  float w[VC_CANDS];
+  uint8_t n, dead, placed, pad;
+} Sp;
+
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
@@ -382,6 +398,8 @@ typedef struct {
   /* #228 (last, as above): each entry's last projection worked out at once,
    * by the slot (Rp) */
   Rp rp[VC_SIZE];
+  /* #229 (last, as above): the world's points kept as their piece's own */
+  Sp sp[VC_SP];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -413,6 +431,7 @@ static void table_clear(Table *t) {
   memset(t->hk, 0, sizeof t->hk);
   memset(t->fr, 0, sizeof t->fr); /* #215 */
   memset(t->ow, 0, sizeof t->ow); /* #216 */
+  memset(t->sp, 0, sizeof t->sp); /* #229 */
   t->cx_gen = 0;
   t->ncx = 0;
   t->stale = 0;
@@ -638,6 +657,11 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "named, the plane giving none; %u world splits placed from their ends' own points, "
            "%u not placed with an end behind the eye (#217)",
            out->der_named, out->hk_own, out->hk_noproj);
+  /* #229 */
+  PsyX_Log("vcache world own: %u vertices found from their piece's own split point or moved "
+           "corner; %u kept, %u not kept (full); %u split points paired across 4x depths, %u "
+           "corners the grid moved (#229)",
+           out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1739,21 +1763,30 @@ static inline int near8(float ax, float ay, float bx, float by);
  * their corners as they project them): that projection's own place on
  * screen (pixels; a clamped one's exact place, as a found clamped key is
  * drawn) and depths. Returns the depths' count, -1 none usable. */
+static int log_point(Table *tb, const Sink *k, unsigned r, int ox, int oy, float *x, float *y,
+                     float *w, Touch *t);
 static int own_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float *x, float *y,
                    float *w, unsigned *cost, Touch *t) {
   Table *const tb = rec->tab;
   const Ow *const o = own_slot(tb, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
+  if (!o || !o->placed || o->dead || o->r >= tb->nlog)
+    return -1;
+  return log_point(tb, k, o->r, o->ox, o->oy, x, y, w, t);
+}
+
+/* #217 (own_end's, #229: and a moved corner's): log place r's own place on
+ * screen (pixels), offset (ox, oy), and depths; -1 none usable */
+static int log_point(Table *tb, const Sink *k, unsigned r, int ox, int oy, float *x, float *y,
+                     float *w, Touch *t) {
   const Entry *en;
   float px, py, wv;
   int e, alt, cl, rk;
   unsigned m, n = 0;
-  if (!o || !o->placed || o->dead || o->r >= tb->nlog)
-    return -1;
-  e = (int)LOG_E(tb->log[o->r]);
+  e = (int)LOG_E(tb->log[r]);
   en = &tb->s[e];
   lz_need(tb, k, e);
   touch(t, (size_t)e * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * VC_CANDS);
-  rk = res_place(tb, en, o->r, &px, &py, &wv, &alt, &cl);
+  rk = res_place(tb, en, r, &px, &py, &wv, &alt, &cl);
   if (!rk)
     return -1;
   if (rk == 2) { /* candidate 0's point: the candidates there (resolve's) */
@@ -1776,14 +1809,90 @@ static int own_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float
   }
   if (!n)
     return -1;
-  *x = flt(px + ((short)(en->key & 0xFFFF) + 0.5f) + (float)o->ox);
-  *y = flt(py + ((short)(en->key >> 16) + 0.5f) + (float)o->oy);
+  *x = flt(px + ((short)(en->key & 0xFFFF) + 0.5f) + (float)ox);
+  *y = flt(py + ((short)(en->key >> 16) + 0.5f) + (float)oy);
   return (int)n;
+}
+
+/* #229: (key, anchor)'s world point kept as its piece's own in tb's frame
+ * gen, or (add) a free one for it */
+static Sp *sp_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int add,
+                   unsigned *probes, Touch *t) {
+  uint32_t h = (key * 0x9E3779B1u ^ anchor * 0x85EBCA77u) >> 21 & (VC_SP - 1), pr;
+  for (pr = 0; pr < 8; pr++, h = (h + 1) & (VC_SP - 1)) {
+    Sp *const o = &tb->sp[h];
+    ++*probes;
+    touch(t, offsetof(Table, sp) + (size_t)h * sizeof(Sp), sizeof(Sp));
+    if (o->gen != gen) {
+      if (!add)
+        return NULL;
+      o->key = key;
+      o->anchor = anchor;
+      o->gen = gen;
+      o->n = o->dead = o->placed = 0;
+      return o;
+    }
+    if (o->key == key && o->anchor == anchor)
+      return o;
+  }
+  return NULL;
+}
+
+/* #229: keep key's point under anchor (place dx, dy from its pixel centre,
+ * depths w): a second, different one leaves neither; the same one adds its
+ * depths */
+static void sp_put(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float dx, float dy,
+                   const float *w, unsigned n, Touch *t) {
+  Sp *const o = sp_slot(rec->tab, rec->gen, key, anchor, 1, &k->cost[VCC_REC_PROBES], t);
+  unsigned i, j;
+  if (!o) {
+    k->st->sp_full++;
+    return;
+  }
+  if (o->placed) {
+    if (o->dead)
+      return;
+    if (!(o->dx - dx <= 0.125f && o->dx - dx >= -0.125f && o->dy - dy <= 0.125f &&
+          o->dy - dy >= -0.125f)) {
+      o->dead = 1;
+      return;
+    }
+  } else {
+    o->dx = dx;
+    o->dy = dy;
+    o->placed = 1;
+    k->st->sp_kept++;
+  }
+  for (i = 0; i < n; i++) {
+    for (j = 0; j < o->n; j++)
+      if (same_depth(o->w[j], w[i], &k->cost[VCC_REC_DIV]))
+        break;
+    if (j == o->n && o->n < VC_CANDS)
+      o->w[o->n++] = w[i];
+  }
+}
+
+/* #229: a split point's end by its piece's own point kept here (a split
+ * point of the piece it was split from, or a corner the grid moved): its
+ * place on screen (pixels) and depths; -1 none usable */
+static int sp_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float *x, float *y,
+                  float *w, unsigned *cost, Touch *t) {
+  const Sp *const o = sp_slot(rec->tab, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
+  unsigned j;
+  (void)k;
+  if (!o || !o->placed || o->dead || !o->n)
+    return -1;
+  *x = flt(o->dx + ((short)(key & 0xFFFF) + 0.5f));
+  *y = flt(o->dy + ((short)(key >> 16) + 0.5f));
+  for (j = 0; j < o->n; j++)
+    w[j] = o->w[j];
+  return (int)o->n;
 }
 
 /* hk_src0 (above); #217: with own, an end it can't use (an ambiguous or
  * invalid key, or none with no hand-over) by its own point under anchor
- * (own_end), which taints what is made from it */
+ * (own_end), which taints what is made from it; #229: own 2, else by its
+ * piece's own point kept apart (sp_end) */
 static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
                   int flat, int *exact, int *taint, unsigned *cost, Touch *t, int own,
                   uint32_t anchor) {
@@ -1791,6 +1900,8 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
   if (n >= 0 || !own)
     return n;
   n = own_end(rec, k, key, anchor, x, y, w, cost, t);
+  if (n <= 0 && own == 2)
+    n = sp_end(rec, k, key, anchor, x, y, w, cost, t);
   if (n > 0) {
     *exact = 1;
     if (taint)
@@ -1804,7 +1915,7 @@ static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
  * screen (1/w linear); into w (count returned), and the nearest pair's in
  * *pa, *pb. */
 static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float f, int persp,
-                        float *w, float *pa, float *pb, unsigned *cost) {
+                        float *w, float *pa, float *pb, unsigned *cost, int *wide) {
   float best = 4.0f;
   unsigned n = 0, j;
   int i, k;
@@ -1841,6 +1952,29 @@ static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float 
       *pb = bw[jb];
     }
   }
+  if (!n && wide && persp) {
+    /* #229 (a split point kept as its piece's own only): no pair under 4
+     * times apart, the nearest pair however far (a piece from near the
+     * eye to far off: each end's one depth) */
+    float bwd = 0;
+    int ib = -1, kb = -1;
+    for (i = 0; i < na; i++)
+      for (k = 0; k < nb; k++) {
+        const float r = ratio(aw[i], bw[k]);
+        cost[VCC_REC_DIV]++;
+        if (ib < 0 || r < bwd) {
+          bwd = r;
+          ib = i;
+          kb = k;
+        }
+      }
+    if (ib >= 0 && aw[ib] > 0 && bw[kb] > 0) {
+      w[n++] = flt((1.0f - f) * aw[ib] + f * bw[kb]);
+      *pa = aw[ib];
+      *pb = bw[kb];
+      *wide = 1;
+    }
+  }
   return n;
 }
 
@@ -1850,14 +1984,17 @@ static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float 
  * not usable, a place made from one not there); else any, and *taint set
  * when a merged place, or one made from it, was read. own (#217): a's and
  * b's own points, under q's corners numbered in how (psx_vcache.h
- * VCD_ENDS), for an end hk_src0 can't use. */
+ * VCD_ENDS), for an end hk_src0 can't use; #229: own 2, else by its
+ * piece's own point kept apart (sp_end), and a 3D point's ends paired
+ * however far apart their depths are (*widep set when so; only for the
+ * point kept as its piece's own, never for hk). */
 static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, uint32_t a,
                     uint32_t b, int p, int q, int *taint, float *dxo, float *dyo, float *w,
-                    unsigned *no, unsigned *cost, Touch *t, int own) {
+                    unsigned *no, unsigned *cost, Touch *t, int own, int *widep) {
   const int form = how & 15, two = form == VCD_LERP || form == VCD_PERSP, cut = form == VCD_LERP;
   float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], x, y, dx, dy;
   float lim = 1024, pa = 0, pb = 0;
-  int na, nb = 0, ea, eb = 0;
+  int na, nb = 0, ea, eb = 0, wide = 0;
   unsigned n = 0, i;
   na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t, own,
               VCD_CORNER(q, VCD_ENDS_A(how)));
@@ -1886,13 +2023,13 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
     y = ay + f * (by - ay);
     lim = 8; /* the PS1's cut is within a pixel or two of it */
     if (na && nb)
-      n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost);
+      n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost, NULL);
   } else if (form == VCD_PERSP) {
     /* the 3D point f of the way: the place from the nearest pair (another
      * scale's pair gives the same) */
     const float f = (float)p * (1.0f / 4096);
     float ka, kb, r;
-    n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost);
+    n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost, own == 2 ? &wide : NULL);
     if (!n)
       return -1;
     ka = (1.0f - f) * pa;
@@ -1919,6 +2056,8 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
   *dxo = dx;
   *dyo = dy;
   *no = n;
+  if (widep)
+    *widep = wide;
   return 0;
 }
 
@@ -2052,7 +2191,7 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
   if (na <= 0 || nb <= 0)
     goto nosrc;
   f = (float)tf * (1.0f / 4096);
-  n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost);
+  n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost, NULL);
   dx = flt(flt(ax + f * (bx - ax)) - ((short)(key & 0xFFFF) + 0.5f));
   dy = flt(flt(ay + f * (by - ay)) - ((short)(key >> 16) + 0.5f));
   if (!n || !(dx < 8 && dx > -8 && dy < 8 && dy > -8))
@@ -2203,8 +2342,11 @@ static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigne
 }
 
 /* VCD_SELF: key is the projection made p back (0: the last), by its place
- * in the frame's order */
-static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int p) {
+ * in the frame's order. #229: world (a world piece's corner) where that
+ * projection is not key's (the grid moved the point after it: no entry at
+ * key, or another point's), its place and depths are kept as the piece's
+ * own (Sp), apart from the own points, which stay as they were */
+static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int p, int world) {
   Rec *const rec = &s_rec[kind];
   Table *const tb = rec->tab;
   Touch t = TOUCH0;
@@ -2212,8 +2354,19 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
   if (i >= 0 && p >= 0 && (unsigned)p < tb->nlog &&
       LOG_E(tb->log[tb->nlog - 1u - (unsigned)p]) == (unsigned)i)
     own_put(kind, k, key, anchor, tb->nlog - 1u - (unsigned)p, 0, 0, &t);
-  else
+  else {
     k->st->own_nosrc++;
+    if (world && p >= 0 && (unsigned)p < tb->nlog && tb->nlog < VC_LOG) {
+      float x, y, w[VC_CANDS], dx, dy;
+      const int n = log_point(tb, k, tb->nlog - 1u - (unsigned)p, 0, 0, &x, &y, w, &t);
+      dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
+      dy = flt(y - ((short)(key >> 16) + 0.5f));
+      if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
+        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, &t);
+        k->st->sp_moved++;
+      }
+    }
+  }
   k->cost[VCC_REC_LINES] += t.n;
 }
 
@@ -2234,13 +2387,23 @@ static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a
 
 /* #217: VCD_SELF with VCD_OWN: key's own point under anchor old, if it
  * has one, is its own point under anchor too (a piece the world's last
- * list split again names the corners it keeps by its own first vertex) */
-static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uint32_t old) {
+ * list split again names the corners it keeps by its own first vertex).
+ * #229: else (and always for a split point: split) its world point kept
+ * under old (Sp), under anchor too */
+static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uint32_t old,
+                     int split) {
   Rec *const rec = &s_rec[kind];
   Touch t = TOUCH0;
-  const Ow *const o = own_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
-  if (o && o->placed && !o->dead)
-    own_put(kind, k, key, anchor, o->r, o->ox, o->oy, &t);
+  const Ow *const o =
+      split ? NULL : own_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
+  if (o && o->placed) {
+    if (!o->dead)
+      own_put(kind, k, key, anchor, o->r, o->ox, o->oy, &t);
+  } else {
+    const Sp *const sp = sp_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
+    if (sp && sp->placed && !sp->dead)
+      sp_put(rec, k, key, anchor, sp->dx, sp->dy, sp->w, sp->n, &t);
+  }
   k->cost[VCC_REC_LINES] += t.n;
 }
 
@@ -2290,6 +2453,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   const int low = who == VCD_PARTICLES; /* #209: gives way to every other renderer's */
   float w[VC_CANDS], dx, dy;
   int taint = 0, left = 0; /* left (#215): the key has no usable place after this call */
+  int first, placed;
   unsigned n = 0, i, j;
   Touch t = TOUCH0;
   Hk *h;
@@ -2297,9 +2461,9 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     return;
   if (how & VCD_SELF) { /* #216: an own point only; #217: or one moved to another anchor */
     if (how & VCD_OWN)
-      own_move(kind, k, key, b, (uint32_t)q);
+      own_move(kind, k, key, b, (uint32_t)q, p); /* (#229: p 1, a split point) */
     else
-      own_self(kind, k, key, b, p);
+      own_self(kind, k, key, b, p, who == VCD_ENV_SPLIT);
     return;
   }
   st->hk_calls++;
@@ -2307,11 +2471,36 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
    * give none; #217: then a 3D point's ends' own points, where neither
    * gives one (tainted, as a merged place: it counts only where nothing
    * else placed the key) */
-  if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
-      hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
-      !(form == VCD_PERSP && (how & VCD_OWN) &&
-        hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 1) == 0 &&
-        own_taken(st, &taint))) {
+  first = hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t, 0, NULL) == 0;
+  placed = first ||
+           hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 0,
+                    NULL) == 0 ||
+           (form == VCD_PERSP && (how & VCD_OWN) &&
+            hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 1,
+                     NULL) == 0 &&
+            own_taken(st, &taint));
+  if (form == VCD_PERSP && (how & VCD_OWN)) {
+    /* #229: the world's split point kept as its piece's own too, under the
+     * piece's anchor and edge (psx_vcache.h VCD_EDGE), apart from hk: from
+     * its ends' keys where both give one at once (as hk has it), else from
+     * the piece's own ends (a corner's own point, or a split point or moved
+     * corner kept so), paired however far apart their depths are, else as
+     * hk has it */
+    const uint32_t an = VCD_CORNER(q, VCD_EDGE(VCD_ENDS_A(how), VCD_ENDS_B(how)));
+    float sw[VC_CANDS], sdx, sdy;
+    unsigned sn = 0;
+    int st2 = 0, wide = 0;
+    if (first)
+      sp_put(rec, k, key, an, dx, dy, w, n, &t);
+    else if (hk_place(rec, kind, k, how, key, a, b, p, q, &st2, &sdx, &sdy, sw, &sn, cost, &t, 2,
+                      &wide) == 0 &&
+             sn) {
+      sp_put(rec, k, key, an, sdx, sdy, sw, sn, &t);
+      st->sp_wide += (unsigned)wide;
+    } else if (placed)
+      sp_put(rec, k, key, an, dx, dy, w, n, &t);
+  }
+  if (!placed) {
     if (form == VCD_ALIAS || form == VCD_OFFSET) {
       /* #202: one point's alias or offset whose source key is ambiguous:
        * kept as that key's, for a polygon that finds nothing else to
@@ -3522,6 +3711,35 @@ static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key,
   return 1;
 }
 
+/* #229: (key, anchor)'s world point kept as its piece's own (Sp) in tab's
+ * frame gen: its place (pixels from key's pixel centre) and depths into c:
+ * 1; -1 none usable (none, or two different points) */
+static int sp_point(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, float *dx,
+                    float *dy, Cand *c, unsigned *nc, unsigned *probes, Touch *t) {
+  uint32_t h = (key * 0x9E3779B1u ^ anchor * 0x85EBCA77u) >> 21 & (VC_SP - 1), pr;
+  unsigned j;
+  for (pr = 0; pr < 8; pr++, h = (h + 1) & (VC_SP - 1)) {
+    const Sp *const o = &tb->sp[h];
+    ++*probes;
+    touch(t, offsetof(Table, sp) + (size_t)h * sizeof(Sp), sizeof(Sp));
+    if (o->gen != gen)
+      return -1;
+    if (o->key == key && o->anchor == anchor) {
+      if (!o->placed || o->dead || !o->n)
+        return -1;
+      *dx = o->dx;
+      *dy = o->dy;
+      for (j = 0; j < o->n; j++) {
+        c[j].dx = c[j].dy = 0;
+        c[j].w = o->w[j];
+      }
+      *nc = o->n;
+      return 1;
+    }
+  }
+  return -1;
+}
+
 int psx_vcache_polys;
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
@@ -3865,7 +4083,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       const uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
       const Cand *e2[4];
       unsigned en2[4], eo[4];
-      int m = 0, all = !inv, ok = 0;
+      int m = 0, all = !inv, ok = 0, spv[4] = {0, 0, 0, 0};
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -3880,6 +4098,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
                      &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i]) : -1;
+        if (!o && cx == VCX_ENV) { /* #229: its piece's split point or moved corner */
+          r = sp_point(ptab, gen, key, VCD_CORNER(anchor, i), &owp[i][0], &owp[i][1], oc[i],
+                       &eo[i], &cost[VCC_LOOK_PROBES], &t);
+          spv[i] = r == 1;
+        }
         cost[VCC_LOOK_LINES] += t.n;
         if (r == 1) {
           ow[i] = e[i] ? 2 : 1;
@@ -3924,6 +4147,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
             nmiss--;
             st->hits++;
             st->own_found++;
+            st->sp_found += (unsigned)spv[i];
           }
         persp = VREF_PERSP;
         res = 1;

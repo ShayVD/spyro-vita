@@ -1840,7 +1840,9 @@ static inline int QueueLast(u32 fp, u32 zs) {
  * and I (psx_vcache.h VCD_SELF, VCD_CORNER). SplitMid's points then still
  * find their ends where a corner's key names no single point: the GTE
  * clamps a corner far off screen to the screen's limit, a key other
- * clamped points share. Nothing the game reads changes. */
+ * clamped points share. #229: a corner GridCorrect moved (no entry at its
+ * key, or another point's) is named by that projection too, apart from the
+ * hand-overs (psx_vcache.h VCD_EDGE). Nothing the game reads changes. */
 static inline void NameCorner(u32 xy, u32 anchor, u32 i, u32 p) {
   PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF, xy, xy, VCD_CORNER(anchor, i), (int)p, 0);
 }
@@ -2138,9 +2140,11 @@ static inline void SplitMidUV(u32 k, u32 ua, u32 ub) {
   AT8(GRID(k) + 8) = (u8)(((ua & 0xFF) + (ub & 0xFF)) >> 1);
 }
 
-/* #217: a split primitive's grid points' corner numbers (0xFF: a split point) */
-static const u8 k_corner4[9] = {0, 0xFF, 1, 0xFF, 0xFF, 0xFF, 2, 0xFF, 3};
-static const u8 k_corner3[6] = {0, 0xFF, 1, 0xFF, 0xFF, 2};
+/* #217: a split primitive's grid points' corner numbers; #229: a split
+ * point's its edge's (VCD_EDGE: 4 and up), as SplitMid passes them */
+static const u8 k_corner4[9] = {0, VCD_EDGE(0, 1), 1, VCD_EDGE(0, 2), VCD_EDGE(1, 2),
+                                VCD_EDGE(1, 3), 2, VCD_EDGE(2, 3), 3};
+static const u8 k_corner3[6] = {0, VCD_EDGE(0, 1), 1, VCD_EDGE(0, 2), VCD_EDGE(1, 2), 2};
 
 static u32 SplitLast(u32 fp, u32 ot) {
   u32 list = LIST_LOW, end = AT32(SC(SC_LAST_END));
@@ -2254,14 +2258,14 @@ static u32 SplitLast(u32 fp, u32 ot) {
       AT32(fp + 0x14) = AT32(b);
       AT32(fp + 0x20) = AT32(c);
       { /* #217: the corners it keeps named under its own first vertex too, for
-         * its split (queued) or its drawing (the cache's walk) */
+         * its split (queued) or its drawing (the cache's walk); #229: and its
+         * split points (p 1) */
         const u32 g3[3] = {a, b, c}, xya = AT32(a);
         u32 v;
         for (v = 0; v < 3; v++) {
           const u32 cn = corner[(g3[v] - GRID(0)) >> 4];
-          if (cn != 0xFF)
-            PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF | VCD_OWN, AT32(g3[v]),
-                          AT32(g3[v]), VCD_CORNER(xya, v), 0, (int)VCD_CORNER(anchor, cn));
+          PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF | VCD_OWN, AT32(g3[v]),
+                        AT32(g3[v]), VCD_CORNER(xya, v), cn >= 4, (int)VCD_CORNER(anchor, cn));
         }
       }
       if (!(g_nd.on && !queued && nd_gt3_chained(fp)))

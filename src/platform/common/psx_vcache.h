@@ -152,6 +152,19 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
 #define VCD_ENDS_A(how) (((unsigned)(how) >> 16) & 15u)
 #define VCD_ENDS_B(how) (((unsigned)(how) >> 20) & 15u)
 #define VCD_CORNER(anchor, i) ((unsigned)(anchor) ^ (unsigned)(i) << 28)
+/* #229: where two split points of different pieces fall on one pixel (the
+ * integer midpoints of clamped corners) the key names no single point, and
+ * D182 drops both. So each split point is also kept as its piece's own,
+ * apart from the hand-overs: its place and depths under its key and the
+ * anchor VCD_CORNER(piece's first vertex's key, VCD_EDGE(ia, ib)), which
+ * each GT3 that SplitLast emits moves to VCD_CORNER(its own first vertex's
+ * key, its vertex number) as it does its corners (VCD_SELF with VCD_OWN; p
+ * 1 for a split point), so a GT3 queued again finds its ends there too. A
+ * piece's corner the grid moved off its projection (GridCorrect: no entry,
+ * or another point's) is kept the same way, at the projection that made it
+ * (VCD_SELF names it). The walk's own-point step takes these only for a
+ * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
+#define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -489,6 +502,12 @@ typedef struct {
    * (behind the eye), marked so their vertices count as exempt
    * (VCX_NO_PROJ) */
   unsigned hk_noproj;
+  /* #229: world points kept as their piece's own (psx_vcache.h VCD_EDGE):
+   * vertices found from one (counted in hits and own_found too), the
+   * records made (split points, the moves to each GT3, moved corners), not
+   * kept (full), the split points among them placed only by pairing ends
+   * whose depths are 4x apart or more, and the corners the grid moved */
+  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
