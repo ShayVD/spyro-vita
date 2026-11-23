@@ -289,6 +289,20 @@ typedef struct {
   uint8_t cx, w24;
 } Cx;
 
+/* #216: a glow's or moby shadow's own point (psx_vcache.h VCD_OWN,
+ * VCD_SELF): its key and its polygon's first vertex's (anchor), its frame,
+ * the projection it comes from (r, its place in the frame's order) and its
+ * offset in pixels from that projection's place; dead: two different
+ * points under one key and anchor. The place is worked out by the walk,
+ * and only for a polygon nothing else finds (own_point). */
+#define VC_OW 2048
+typedef struct {
+  uint32_t key, anchor, gen;
+  uint16_t r;
+  uint8_t dead, placed;
+  int32_t ox, oy;
+} Ow;
+
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
@@ -342,6 +356,10 @@ typedef struct {
    * table's frame (VCD_T, frac_hand), apart from hk: no hand-over reads
    * them */
   Hk fr[VC_FR];
+  /* #216 (last, as above): the glows' and moby shadows' own points in this
+   * table's frame (VCD_OWN, VCD_SELF), apart from hk: no hand-over reads
+   * them */
+  Ow ow[VC_OW];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -372,6 +390,7 @@ static void table_clear(Table *t) {
   memset(t->der, 0, sizeof t->der);
   memset(t->hk, 0, sizeof t->hk);
   memset(t->fr, 0, sizeof t->fr); /* #215 */
+  memset(t->ow, 0, sizeof t->ow); /* #216 */
   t->cx_gen = 0;
   t->ncx = 0;
   t->stale = 0;
@@ -563,6 +582,11 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   PsyX_Log("vcache cut fraction: %u vertices with no entry found at their cut's own fraction; "
            "%u cuts placed so, %u with an end not usable or more than 8 pixels off (#215)",
            out->hk_frac, out->fr_kept, out->fr_nosrc);
+  /* #216 */
+  PsyX_Log("vcache own points: %u vertices found from their glow's or shadow's own point (%u "
+           "of them at an ambiguous key); %u own points kept, %u with no source, %u not kept "
+           "(full) (#216)",
+           out->own_found, out->own_amb, out->own_kept, out->own_nosrc, out->own_full);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1887,6 +1911,133 @@ out:
   cost[VCC_REC_LINES] += t.n;
 }
 
+/* ------------------------------------------------------------ own points (#216) */
+
+/* A glow's or moby shadow's own point (psx_vcache.h VCD_OWN, VCD_SELF).
+ * Tagged on host routes S, P and Pf (both draws), the glows' and shadows'
+ * vertices left with no entry were:
+ *  - a rim or nudged corner whose key another hand-over placed differently,
+ *    so neither was kept: a portal sky cut at a glow's rim pixel, or two
+ *    mobys' shadow corners nudged onto one pixel;
+ *  - a rim or corner whose source key is ambiguous, where #202's
+ *    resolution from the frame's order finds no depth (too many under the
+ *    key, or 4 times apart);
+ *  - a glow behind the eye: its centre's projection is invalid (SZ3 0, the
+ *    PS1's place clamped to the screen's limit), so nothing could find it.
+ * Each is one point the renderer made from a projection it had just made.
+ * So it names that projection by its place in the frame's order (the
+ * fan's centre's, a shadow's corner's), and the point is kept under its
+ * key and its polygon's first vertex's (the centre, the walk's anchor):
+ * another renderer's point, or another moby's, at its pixel is under
+ * another anchor. */
+
+/* (key, anchor)'s own point in tab's frame gen, or (add) a free one for it */
+static Ow *own_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int add,
+                    unsigned *probes, Touch *t) {
+  uint32_t h = (key * 0x9E3779B1u ^ anchor * 0x85EBCA77u) >> 21 & (VC_OW - 1), pr;
+  for (pr = 0; pr < 8; pr++, h = (h + 1) & (VC_OW - 1)) {
+    Ow *const o = &tb->ow[h];
+    ++*probes;
+    touch(t, offsetof(Table, ow) + (size_t)h * sizeof(Ow), sizeof(Ow));
+    if (o->gen != gen) {
+      if (!add)
+        return NULL;
+      o->key = key;
+      o->anchor = anchor;
+      o->gen = gen;
+      o->dead = o->placed = 0;
+      return o;
+    }
+    if (o->key == key && o->anchor == anchor)
+      return o;
+  }
+  return NULL;
+}
+
+/* key's own point under anchor: from projection r (its place in the
+ * frame's order), offset (ox, oy) pixels from it; a second, different one
+ * leaves the key with neither */
+static void own_put(int kind, const Sink *k, uint32_t key, uint32_t anchor, unsigned r, int ox,
+                    int oy, Touch *t) {
+  Rec *const rec = &s_rec[kind];
+  Ow *const o = own_slot(rec->tab, rec->gen, key, anchor, 1, &k->cost[VCC_REC_PROBES], t);
+  if (!o) {
+    k->st->own_full++;
+    return;
+  }
+  if (o->placed) {
+    if (o->r != r || o->ox != ox || o->oy != oy)
+      o->dead = 1;
+    return;
+  }
+  o->r = (uint16_t)r;
+  o->ox = ox;
+  o->oy = oy;
+  o->placed = 1;
+  k->st->own_kept++;
+}
+
+/* The projection a's point comes from under anchor: its own point's (and
+ * offset), else a's last projection in the frame's order (the renderer's
+ * own, made just before); 0, or -1 when none is usable */
+static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigned *r, int *ox,
+                   int *oy, Touch *t) {
+  Rec *const rec = &s_rec[kind];
+  Table *const tb = rec->tab;
+  const Ow *const o = own_slot(tb, rec->gen, a, anchor, 0, &k->cost[VCC_REC_PROBES], t);
+  int i;
+  unsigned q, lo;
+  if (o && o->placed) {
+    if (o->dead)
+      return -1;
+    *r = o->r;
+    *ox = o->ox;
+    *oy = o->oy;
+    return 0;
+  }
+  i = find(rec, kind, a, 0, &k->cost[VCC_REC_PROBES], t);
+  if (i < 0 || !tb->nlog)
+    return -1;
+  lo = tb->nlog > FR_NEAR ? tb->nlog - FR_NEAR : 0;
+  for (q = tb->nlog; q > lo;)
+    if (LOG_E(tb->log[--q]) == (unsigned)i) {
+      k->cost[VCC_REC_LINES] += (tb->nlog - q) / 16 + 1; /* a model: the log read backwards */
+      *r = q;
+      *ox = *oy = 0;
+      return 0;
+    }
+  return -1;
+}
+
+/* VCD_SELF: key is the projection made p back (0: the last), by its place
+ * in the frame's order */
+static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int p) {
+  Rec *const rec = &s_rec[kind];
+  Table *const tb = rec->tab;
+  Touch t = TOUCH0;
+  const int i = find(rec, kind, key, 0, &k->cost[VCC_REC_PROBES], &t);
+  if (i >= 0 && p >= 0 && (unsigned)p < tb->nlog &&
+      LOG_E(tb->log[tb->nlog - 1u - (unsigned)p]) == (unsigned)i)
+    own_put(kind, k, key, anchor, tb->nlog - 1u - (unsigned)p, 0, 0, &t);
+  else
+    k->st->own_nosrc++;
+  k->cost[VCC_REC_LINES] += t.n;
+}
+
+/* VCD_OWN with an alias or offset: its source's own point, offset */
+static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a, uint32_t anchor,
+                     int p, int q) {
+  Touch t = TOUCH0;
+  unsigned r;
+  int ox, oy;
+  if ((form == VCD_ALIAS || form == VCD_OFFSET) && own_src(kind, k, a, anchor, &r, &ox, &oy, &t) == 0)
+    own_put(kind, k, key, anchor, r, ox + (form == VCD_OFFSET ? p : 0),
+            oy + (form == VCD_OFFSET ? q : 0), &t);
+  else
+    k->st->own_nosrc++;
+  k->cost[VCC_REC_LINES] += t.n;
+}
+
 /* One hand-over (psx_vcache.h PSX_VC_DERIVE) into rec's frame */
 static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t a, uint32_t b,
                         int p, int q) {
@@ -1903,6 +2054,10 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   Hk *h;
   if (!rec->tab)
     return;
+  if (how & VCD_SELF) { /* #216: an own point only */
+    own_self(kind, k, key, b, p);
+    return;
+  }
   st->hk_calls++;
   /* #202: the sources as before first; a merged place only where they
    * give none */
@@ -2029,6 +2184,8 @@ out:
   cost[VCC_REC_LINES] += t.n;
   if (left && form == VCD_LERP && VCD_HAS_T(how)) /* #215 */
     frac_hand(kind, k, who, key, a, b, VCD_T_OF(how));
+  if (how & VCD_OWN) /* #216 */
+    own_hand(kind, k, form, key, a, b, p, q);
 }
 
 PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -2060,8 +2217,8 @@ static const char *const k_cx_names[VCX_N] = {
     "EnvDraw",     "MobyDraw",      "LitDraw",          "SpecDraw",   "SpyroDraw",
     "SpyroShadow", "MobyShadows",   "FlameDraw",        "ParticlesDraw", "GlowsAndSparkles",
     "DragonRing",  "SkyDraw",       "FogSky",           "PortalSkyPlain", "PortalSkyFog",
-    "PortalFace",  "other",         "outside",          "unmarked"};
-#define CX_EXEMPT(c) ((c) == VCX_PORTAL_FACE || (c) == VCX_OUTSIDE)
+    "PortalFace",  "other",         "outside",          "unmarked",   "no projection"};
+#define CX_EXEMPT(c) ((c) == VCX_PORTAL_FACE || (c) == VCX_OUTSIDE || (c) == VCX_NO_PROJ)
 
 /* name's context: the last pointers seen first (each kind's, written only
  * by the thread its renderers run on), then the names */
@@ -2177,9 +2334,11 @@ static void cx_text(const VCacheStats *s, char *buf, size_t size) {
                   top[j]);
   if (n > 0 && (size_t)n < size)
     snprintf(buf + n, size - (size_t)n,
-             "%s), exempt %u (outside the renderers %u, portal faces %u), unmarked %u",
-             topc[0] < 0 ? " none" : "", s->ne[VCX_OUTSIDE] + s->ne[VCX_PORTAL_FACE],
-             s->ne[VCX_OUTSIDE], s->ne[VCX_PORTAL_FACE], s->ne[VCX_UNMARKED]);
+             "%s), exempt %u (outside the renderers %u, portal faces %u, no projection %u), "
+             "unmarked %u",
+             topc[0] < 0 ? " none" : "",
+             s->ne[VCX_OUTSIDE] + s->ne[VCX_PORTAL_FACE] + s->ne[VCX_NO_PROJ], s->ne[VCX_OUTSIDE],
+             s->ne[VCX_PORTAL_FACE], s->ne[VCX_NO_PROJ], s->ne[VCX_UNMARKED]);
 }
 
 /* a polygon vertex with no entry: its hand-over in tab's frame gen, if one
@@ -2939,6 +3098,74 @@ static int resolve(Table *tab, uint32_t gen, const int *ks, const int *amb, int 
 }
 
 
+/* #216: (key, anchor)'s own point in tab's frame gen, if placed */
+static const Ow *own_look(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor,
+                          unsigned *probes, Touch *t) {
+  uint32_t h = (key * 0x9E3779B1u ^ anchor * 0x85EBCA77u) >> 21 & (VC_OW - 1), pr;
+  for (pr = 0; pr < 8; pr++, h = (h + 1) & (VC_OW - 1)) {
+    const Ow *const o = &tb->ow[h];
+    ++*probes;
+    touch(t, offsetof(Table, ow) + (size_t)h * sizeof(Ow), sizeof(Ow));
+    if (o->gen != gen)
+      return NULL;
+    if (o->key == key && o->anchor == anchor)
+      return o->placed ? o : NULL;
+  }
+  return NULL;
+}
+
+/* #216: an own point's place (pixels from key's pixel centre) and depths,
+ * from the projection it names, as resolve reads a log place: 1; 0 that
+ * projection has no answer (the GTE could not give it: behind the eye);
+ * -1 not usable (two points, or far from its key) */
+static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key, float *dx,
+                     float *dy, Cand *c, unsigned *nc) {
+  const Entry *en;
+  float x, y, w;
+  int e, alt, cl, rk;
+  unsigned m, n = 0;
+  if (o->dead || o->r >= tab->nlog)
+    return -1;
+  e = (int)LOG_E(tab->log[o->r]);
+  en = &tab->s[e];
+  lz_need(tab, k, e);
+  rk = res_place(tab, en, o->r, &x, &y, &w, &alt, &cl);
+  if (!rk)
+    return 0;
+  if (rk == 2) { /* candidate 0's point: the candidates there (resolve's) */
+    for (m = 0; m < T_N(en->tag); m++) {
+      const Cand *const cm = &en->c[m];
+      if (cm->dy == FAR_MARK || en->c[0].dy == FAR_MARK) {
+        float cx, cy;
+        cand_pos(tab, cm, &cx, &cy);
+        if (!near8(cx, cy, x, y))
+          continue;
+      } else if (cm->dx - en->c[0].dx > 32 || en->c[0].dx - cm->dx > 32 ||
+                 cm->dy - en->c[0].dy > 32 || en->c[0].dy - cm->dy > 32)
+        continue;
+      c[n].dx = c[n].dy = 0;
+      c[n++].w = cm->w;
+    }
+  } else {
+    c[n].dx = c[n].dy = 0;
+    c[n++].w = w;
+    if (alt) {
+      c[n].dx = c[n].dy = 0;
+      c[n++].w = flt(w * (1.0f / 16));
+    }
+  }
+  if (!n)
+    return 0;
+  x = flt(x + ((short)(en->key & 0xFFFF) + 0.5f) + (float)o->ox - ((short)(key & 0xFFFF) + 0.5f));
+  y = flt(y + ((short)(en->key >> 16) + 0.5f) + (float)o->oy - ((short)(key >> 16) + 0.5f));
+  if (!(x < 1024 && x > -1024 && y < 1024 && y > -1024))
+    return -1;
+  *dx = x;
+  *dy = y;
+  *nc = n;
+  return 1;
+}
+
 int psx_vcache_polys;
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
@@ -2970,6 +3197,12 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   int hkfr[4] = {0, 0, 0, 0}; /* #215: hkc is a cut's place at its own fraction */
   int nflat = 0; /* ... those with a place only */
   int nhk = 0;
+  /* #216: vertices with no entry; those found from their renderer's own
+   * point, its place and depths; and those whose own point has no
+   * projection (exempt) */
+  int noent[4] = {0, 0, 0, 0}, ow[4] = {0, 0, 0, 0}, nnp = 0;
+  float owp[4][2];
+  Cand oc[4][VC_CANDS];
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
    * own thread (a vertex outside the game's walk's buffer while one of its
    * frames is open, #162; the logic draw's walk never reads s_pres_async),
@@ -3031,6 +3264,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       if (k < 0) {
         none = i;
         nnone++;
+        noent[i] = 1; /* #216 */
         /* its renderer's hand-over, if any (#189; used below); else its
          * cut's place at its own fraction (#215, fr: hkfr) */
         const uint32_t hgen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
@@ -3258,6 +3492,68 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       }
     }
   }
+  if (!res && !der && (nnone || nambig) && !nflat) {
+    /* #216: a glow's or moby shadow's polygon nothing above found: each
+     * vertex not found (no entry, or an ambiguous key) at its renderer's
+     * own point, from the projection that made it, under the polygon's
+     * first vertex's key; only when every one has one */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    const int cx = cx_find(ptab, gen, xy[0]);
+    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS) {
+      const uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
+      const Cand *e2[4];
+      unsigned en2[4];
+      int m = 0, all = !inv;
+      for (i = 0; i < n; i++) {
+        const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+        Touch t = TOUCH0;
+        const Ow *o;
+        int r;
+        e2[i] = e[i];
+        en2[i] = en[i];
+        if (e[i])
+          continue;
+        if (!noent[i] && !amb[i]) { /* invalid */
+          all = 0;
+          continue;
+        }
+        o = own_look(ptab, gen, key, anchor, &cost[VCC_LOOK_PROBES], &t);
+        r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &en2[i]) : -1;
+        cost[VCC_LOOK_LINES] += t.n;
+        if (r == 1) {
+          ow[i] = 1;
+          e2[i] = oc[i];
+          m++;
+        } else {
+          all = 0;
+          nnp += r == 0 && noent[i];
+        }
+      }
+      if (all && m && choose(e2, en2, k_all, n, cost, pick)) {
+        for (i = 0; i < n; i++)
+          if (ow[i]) {
+            e[i] = oc[i];
+            en[i] = en2[i];
+            et[i] = 0;
+            if (amb[i]) {
+              amb[i] = 0;
+              nambig--;
+              st->own_amb++;
+            } else
+              nnone--;
+            nmiss--;
+            st->hits++;
+            st->own_found++;
+          }
+        persp = VREF_PERSP;
+        res = 1;
+        none = -1;
+      } else {
+        memset(ow, 0, sizeof ow);
+        memset(pick, 0, sizeof pick);
+      }
+    }
+  }
   if (nambig && !res) { /* not found: ambiguous */
     work[3] += (unsigned)nambig;
     st->miss_ambiguous += (unsigned)nambig;
@@ -3280,7 +3576,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   if (nnone && !der) { /* not found: no entry */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     st->miss_none += (unsigned)nnone;
-    st->ne[cx_find(ptab, gen, xy[0])] += (unsigned)nnone; /* #211: whose polygon */
+    /* #211: whose polygon; #216: a glow's or shadow's point with no projection, exempt */
+    st->ne[cx_find(ptab, gen, xy[0])] += (unsigned)(nnone - nnp);
+    st->ne[VCX_NO_PROJ] += (unsigned)nnp;
     work[3] += (unsigned)nnone;
   }
   if (persp)
@@ -3300,7 +3598,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     if (et[i] & T_MULTI)
       r |= VREF_NOPOS;
     /* (#189: moved by its renderer; #192: a clamped point the order named) */
-    if ((et[i] & T_CLAMP) || (i == none && der_moved) || hk[i] || rx[i])
+    if ((et[i] & T_CLAMP) || (i == none && der_moved) || hk[i] || rx[i] || ow[i]) /* (#216) */
       r |= VREF_CLAMP;
     memcpy(&vertex[i].tcx, &r, sizeof r);
   }
@@ -3323,7 +3621,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         c[i].dy = rp[i][1];
       }
       if (e[i]) {
-        if (hk[i]) { /* #189 */
+        if (ow[i]) { /* #216 */
+          c[i].dx = owp[i][0];
+          c[i].dy = owp[i][1];
+        } else if (hk[i]) { /* #189 */
           c[i].dx = hk[i]->dx;
           c[i].dy = hk[i]->dy;
         } else if (!(et[i] & T_MULTI) && !rx[i])
