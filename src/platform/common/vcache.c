@@ -335,8 +335,10 @@ typedef struct {
   uint32_t key, anchor, gen;
   float dx, dy;
   float w[VC_CANDS];
-  uint8_t n, dead, placed, pad;
+  uint8_t n, dead, placed;
+  uint16_t r; /* a moved corner's projection, its place in the frame's order (SP_NOR: a split point) */
 } Sp;
+#define SP_NOR 0xFFFFu
 
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
@@ -661,8 +663,9 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   PsyX_Log("vcache world own: %u vertices found from their piece's own split point or moved "
            "corner; %u kept, %u not kept (full); %u split points paired across 4x depths, %u "
            "corners the grid moved; %u world polygons found from their own points drawn affine, "
-           "their depths 4x apart (#229)",
-           out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread);
+           "their depths 4x apart; %u ambiguous corners resolved with them (#229)",
+           out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
+           out->sp_res);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1843,7 +1846,7 @@ static Sp *sp_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int a
  * depths w): a second, different one leaves neither; the same one adds its
  * depths */
 static void sp_put(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float dx, float dy,
-                   const float *w, unsigned n, Touch *t) {
+                   const float *w, unsigned n, unsigned r, Touch *t) {
   Sp *const o = sp_slot(rec->tab, rec->gen, key, anchor, 1, &k->cost[VCC_REC_PROBES], t);
   unsigned i, j;
   if (!o) {
@@ -1861,6 +1864,7 @@ static void sp_put(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float
   } else {
     o->dx = dx;
     o->dy = dy;
+    o->r = (uint16_t)r;
     o->placed = 1;
     k->st->sp_kept++;
   }
@@ -2363,7 +2367,7 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
       dy = flt(y - ((short)(key >> 16) + 0.5f));
       if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
-        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, &t);
+        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t);
         k->st->sp_moved++;
       }
     }
@@ -2403,7 +2407,7 @@ static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uin
   } else {
     const Sp *const sp = sp_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
     if (sp && sp->placed && !sp->dead)
-      sp_put(rec, k, key, anchor, sp->dx, sp->dy, sp->w, sp->n, &t);
+      sp_put(rec, k, key, anchor, sp->dx, sp->dy, sp->w, sp->n, sp->r, &t);
   }
   k->cost[VCC_REC_LINES] += t.n;
 }
@@ -2492,14 +2496,14 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     unsigned sn = 0;
     int st2 = 0, wide = 0;
     if (first)
-      sp_put(rec, k, key, an, dx, dy, w, n, &t);
+      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t);
     else if (hk_place(rec, kind, k, how, key, a, b, p, q, &st2, &sdx, &sdy, sw, &sn, cost, &t, 2,
                       &wide) == 0 &&
              sn) {
-      sp_put(rec, k, key, an, sdx, sdy, sw, sn, &t);
+      sp_put(rec, k, key, an, sdx, sdy, sw, sn, SP_NOR, &t);
       st->sp_wide += (unsigned)wide;
     } else if (placed)
-      sp_put(rec, k, key, an, dx, dy, w, n, &t);
+      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t);
   }
   if (!placed) {
     if (form == VCD_ALIAS || form == VCD_OFFSET) {
@@ -3718,7 +3722,7 @@ static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key,
  * frame gen: its place (pixels from key's pixel centre) and depths into c:
  * 1; -1 none usable (none, or two different points) */
 static int sp_point(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, float *dx,
-                    float *dy, Cand *c, unsigned *nc, unsigned *probes, Touch *t) {
+                    float *dy, Cand *c, unsigned *nc, int *ent, unsigned *probes, Touch *t) {
   uint32_t h = (key * 0x9E3779B1u ^ anchor * 0x85EBCA77u) >> 21 & (VC_SP - 1), pr;
   unsigned j;
   for (pr = 0; pr < 8; pr++, h = (h + 1) & (VC_SP - 1)) {
@@ -3732,6 +3736,7 @@ static int sp_point(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor
         return -1;
       *dx = o->dx;
       *dy = o->dy;
+      *ent = o->r != SP_NOR && o->r < tb->nlog ? (int)LOG_E(tb->log[o->r]) : -1;
       for (j = 0; j < o->n; j++) {
         c[j].dx = c[j].dy = 0;
         c[j].w = o->w[j];
@@ -4087,6 +4092,10 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       const Cand *e2[4];
       unsigned en2[4], eo[4];
       int m = 0, all = !inv, ok = 0, spv[4] = {0, 0, 0, 0};
+      /* #229: each own point's projection's entry (-1: none named); a world
+       * quad's ambiguous corners with none, resolved from the frame's order
+       * near the rest (ares) */
+      int oent[4] = {-1, -1, -1, -1}, ares[4] = {0, 0, 0, 0}, nares = 0;
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -4103,12 +4112,14 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
                           cx == VCX_ENV ? 16384.0f : 1024.0f)
               : -1;
+        if (o && o->r < ptab->nlog)
+          oent[i] = (int)LOG_E(ptab->log[o->r]);
         if (!o && cx == VCX_ENV) { /* #229: its piece's split point or moved corner */
           r = sp_point(ptab, gen, key, VCD_CORNER(anchor, i), &owp[i][0], &owp[i][1], oc[i],
-                       &eo[i], &cost[VCC_LOOK_PROBES], &t);
+                       &eo[i], &oent[i], &cost[VCC_LOOK_PROBES], &t);
           if (r != 1 && !e[i] && noent[i]) /* ... or its grid's moved point */
             r = sp_point(ptab, gen, key, VCD_MOVED, &owp[i][0], &owp[i][1], oc[i], &eo[i],
-                         &cost[VCC_LOOK_PROBES], &t);
+                         &oent[i], &cost[VCC_LOOK_PROBES], &t);
           spv[i] = r == 1;
         }
         cost[VCC_LOOK_LINES] += t.n;
@@ -4118,11 +4129,36 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
           en2[i] = eo[i];
           m += !e[i];
         } else if (!e[i]) {
+          if (r == -1 && amb[i] && cx == VCX_ENV) {
+            ares[i] = 1; /* #229: resolved below, if the rest are found */
+            nares++;
+            continue;
+          }
           all = 0;
           if (r == 0 && noent[i])
             npv[i] = 1, nnp++;
         }
       }
+      if (all && m && nares) {
+        /* #229: a world quad's corner the grid moved (its own point) and its
+         * ambiguous ones (none): those resolved from the frame's order near
+         * the polygon's other places, as #197 does with derive's guess, here
+         * with the moved corner's own projection */
+        int ks2[4], one, why2;
+        for (i = 0; i < n; i++)
+          ks2[i] = ares[i] ? ks[i] : ow[i] ? oent[i] : e[i] && !hk[i] ? (int)((ref[i] & VREF_SLOT) - 1) : -1;
+        if (resolve((Table *)ptab, gen, ks2, ares, n, rc, rn, rp, rx, cost, &one, &why2)) {
+          for (i = 0; i < n; i++)
+            if (ares[i]) {
+              e2[i] = rc[i];
+              en2[i] = rn[i];
+            }
+        } else {
+          all = 0;
+          memset(rx, 0, sizeof rx);
+        }
+      } else if (nares)
+        all = 0;
       if (all && m) {
         ok = choose(e2, en2, k_all, n, cost, pick);
         if (!ok) { /* as found, the rest at their own points */
@@ -4144,6 +4180,20 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         }
       }
       if (ok) {
+        for (i = 0; i < n; i++)
+          if (ares[i]) { /* #229 (as #197's) */
+            e[i] = rc[i];
+            en[i] = rn[i];
+            et[i] = rx[i] ? (ptab->s[ks[i]].tag & ~T_MULTI) | T_CLAMP
+                          : (ptab->s[ks[i]].tag | T_MULTI) & ~T_CLAMP;
+            ref[i] |= (uint32_t)ks[i] + 1;
+            amb[i] = 0;
+            nambig--;
+            nmiss--;
+            st->hits++;
+            st->resolved++;
+            st->sp_res++;
+          }
         for (i = 0; i < n; i++)
           if (ow[i]) {
             e[i] = oc[i];
@@ -4173,6 +4223,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       } else {
         memset(ow, 0, sizeof ow);
         memset(pick, 0, sizeof pick);
+        if (nares)
+          memset(rx, 0, sizeof rx);
       }
     }
   }
