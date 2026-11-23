@@ -25,7 +25,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/gte_native.h"
       ],
       "agent": "a08d754a6dd2f45b9",
-      "last_commit_at": "2026-11-23T00:14:48+00:00"
+      "last_commit_at": "2026-11-23T02:26:21+00:00"
     },
     {
       "issue": 224,
@@ -38,7 +38,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/lod.h",
         "docs/vita-testing.md"
       ],
-      "agent": "aef7a59ffc4c212ed"
+      "agent": "aef7a59ffc4c212ed",
+      "last_commit_at": "2026-11-23T02:00:10+00:00"
     }
   ],
   "last_good": "ca05137195ed414febfe39a6e97aa157a29fc09a",
@@ -414,3 +415,4 @@ continue.
 - 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
 - 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
 - 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
+- 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
