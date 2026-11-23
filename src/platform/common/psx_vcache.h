@@ -139,9 +139,16 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * piece the split queues again, or draws, names the corners it keeps
  * under its own first vertex (VCD_SELF with VCD_OWN: sxy's own point under
  * q, if any, becomes its own point under b), and the walk's own-point step
- * above takes a world piece's too. */
+ * above takes a world piece's too. Each corner is named under the anchor
+ * VCD_CORNER(first vertex's key, its corner number), so two corners on one
+ * key (both clamped to one screen corner) stay apart; the VCD_PERSP
+ * hand-over gives its ends' corner numbers in how (VCD_ENDS). */
 #define VCD_OWN 0x200
 #define VCD_SELF 0x400
+#define VCD_ENDS(ia, ib) ((int)((unsigned)(ia) << 16 | (unsigned)(ib) << 20)) /* #217 (VCD_PERSP) */
+#define VCD_ENDS_A(how) (((unsigned)(how) >> 16) & 15u)
+#define VCD_ENDS_B(how) (((unsigned)(how) >> 20) & 15u)
+#define VCD_CORNER(anchor, i) ((unsigned)(anchor) ^ (unsigned)(i) << 28)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -341,7 +348,8 @@ extern unsigned g_vcache_rec[2][VCR_N];
  *  - VCX_NO_PROJ (#216): a glow's or moby shadow's vertex whose own point
  *    (VCD_OWN) comes from a projection the GTE could not give (a glow
  *    behind the eye, its centre clamped to the screen's limit): drawn as
- *    the PS1 draws it, exempt.
+ *    the PS1 draws it, exempt; #217: a world split point whose end has no
+ *    projection (behind the eye) too.
  * psx_vc_ctx is the logic draw's, pres_vc_ctx the presenter build's (its
  * objects may call only pres_ names, tests/render_ctx/link_check.sh); both
  * do nothing when the cache doesn't record. Only for the counters: no
@@ -474,6 +482,10 @@ typedef struct {
    * take (two places, or a key with different points), where the plane
    * through the others gave none (counted in derived too) */
   unsigned der_named;
+  /* #217: world split points not placed because an end has no projection
+   * (behind the eye), marked so their vertices count as exempt
+   * (VCX_NO_PROJ) */
+  unsigned hk_noproj;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

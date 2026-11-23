@@ -277,6 +277,11 @@ typedef struct {
   uint8_t low; /* #209: a particle quad's corner: gives way to any other renderer's, and is no
                 * source for one (as if not there for every other hand-over) */
 } Hk;
+/* #217: a world split point one of whose ends has no projection (behind the
+ * eye): not placed, low set, so no hand-over reads it, and the next that
+ * places the key overwrites it as an empty slot; its vertex is exempt
+ * (VCX_NO_PROJ) */
+#define HK_NOPROJ(h) (!(h)->placed && (h)->low && !(h)->dead)
 
 /* A renderer context's primitives in a frame (#211, psx_vcache.h VCX_*):
  * [lo, hi), the low 24 bits of the primitive buffer's addresses (the walk
@@ -590,9 +595,9 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->own_full);
   /* #217 */
   PsyX_Log("vcache world: %u derived vertices at their key with a depth the order's projections "
-           "named, the plane giving none; %u world splits placed from their ends' own points "
-           "(#217)",
-           out->der_named, out->hk_own);
+           "named, the plane giving none; %u world splits placed from their ends' own points, "
+           "%u not placed with an end behind the eye (#217)",
+           out->der_named, out->hk_own, out->hk_noproj);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1674,13 +1679,14 @@ static int own_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float
   return (int)n;
 }
 
-/* hk_src0 (above); #217: with anchor, an end it can't use (an ambiguous or
+/* hk_src0 (above); #217: with own, an end it can't use (an ambiguous or
  * invalid key, or none with no hand-over) by its own point under anchor
  * (own_end), which taints what is made from it */
 static int hk_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
-                  int flat, int *exact, int *taint, unsigned *cost, Touch *t, uint32_t anchor) {
+                  int flat, int *exact, int *taint, unsigned *cost, Touch *t, int own,
+                  uint32_t anchor) {
   int n = hk_src0(rec, kind, k, key, x, y, w, flat, exact, taint, cost, t);
-  if (n >= 0 || !anchor)
+  if (n >= 0 || !own)
     return n;
   n = own_end(rec, k, key, anchor, x, y, w, cost, t);
   if (n > 0) {
@@ -1740,19 +1746,22 @@ static unsigned hk_pair(const float *aw, int na, const float *bw, int nb, float 
  * (*no of them) from its sources: 0, or -1 when no source is usable.
  * taint (#202) NULL: the sources as they were before #202 (a merged place
  * not usable, a place made from one not there); else any, and *taint set
- * when a merged place, or one made from it, was read. anchor (#217, 0:
- * none): a's and b's own points under it, for an end hk_src0 can't use. */
+ * when a merged place, or one made from it, was read. own (#217): a's and
+ * b's own points, under q's corners numbered in how (psx_vcache.h
+ * VCD_ENDS), for an end hk_src0 can't use. */
 static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, uint32_t a,
                     uint32_t b, int p, int q, int *taint, float *dxo, float *dyo, float *w,
-                    unsigned *no, unsigned *cost, Touch *t, uint32_t anchor) {
+                    unsigned *no, unsigned *cost, Touch *t, int own) {
   const int form = how & 15, two = form == VCD_LERP || form == VCD_PERSP, cut = form == VCD_LERP;
   float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], x, y, dx, dy;
   float lim = 1024, pa = 0, pb = 0;
   int na, nb = 0, ea, eb = 0;
   unsigned n = 0, i;
-  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t, anchor);
+  na = hk_src(rec, kind, k, a, &ax, &ay, aw, cut, &ea, taint, cost, t, own,
+              VCD_CORNER(q, VCD_ENDS_A(how)));
   if (na >= 0 && two)
-    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, taint, cost, t, anchor);
+    nb = hk_src(rec, kind, k, b, &bx, &by, bw, cut, &eb, taint, cost, t, own,
+                VCD_CORNER(q, VCD_ENDS_B(how)));
   if (na < 0 || nb < 0 || (form == VCD_PERSP && (!na || !nb)))
     return -1;
   if (form == VCD_LERP) {
@@ -1760,8 +1769,8 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
      * portal's outline edge): each end exact where it has a projection */
     float ex0, ey0, ex1, ey1, ew[VC_CANDS], nx, ny, den, f;
     int e0, e1;
-    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, taint, cost, t, 0) < 0 ||
-        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, taint, cost, t, 0) < 0 ||
+    if (hk_src(rec, kind, k, (uint32_t)p, &ex0, &ey0, ew, 1, &e0, taint, cost, t, 0, 0) < 0 ||
+        hk_src(rec, kind, k, (uint32_t)q, &ex1, &ey1, ew, 1, &e1, taint, cost, t, 0, 0) < 0 ||
         !(ea | eb | e0 | e1))
       return -1; /* all four 2D: nothing to place exactly */
     nx = ey0 - ey1;
@@ -1790,6 +1799,9 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
     cost[VCC_REC_DIV]++;
     x = (ax * ka + bx * kb) * r;
     y = (ay * ka + by * kb) * r;
+    if (own) /* #217: ends named by their projections: a clamped end's exact place may lie
+                   far off the screen, and so may the 3D point, far from the PS1's key */
+      lim = 16384;
   } else { /* one point: its depths, its place (and the offset) */
     x = ax + (form == VCD_OFFSET ? (float)p : 0.0f);
     y = ay + (form == VCD_OFFSET ? (float)q : 0.0f);
@@ -2128,6 +2140,33 @@ static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uin
   k->cost[VCC_REC_LINES] += t.n;
 }
 
+/* #217: a world split point's end with no projection: its key's only
+ * projections invalid (behind the eye: the GTE's SXY is the screen's limit,
+ * and there is no depth), or its own point's projection invalid, or itself
+ * a split point with no projection (below) */
+static int end_noproj(Rec *rec, int kind, const Sink *k, uint32_t key, uint32_t anchor,
+                      unsigned *cost, Touch *t) {
+  Table *const tb = rec->tab;
+  const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
+  const Ow *o;
+  if (i < 0) {
+    const Hk *const h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
+    return h && HK_NOPROJ(h);
+  }
+  lz_need(tb, k, i);
+  if (T_STATE(tb->s[i].tag) == E_INVALID)
+    return 1;
+  o = own_slot(tb, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
+  if (o && o->placed && !o->dead && o->r < tb->nlog) {
+    const int e = (int)LOG_E(tb->log[o->r]);
+    float x, y, w;
+    int alt, cl;
+    lz_need(tb, k, e);
+    return !res_place(tb, &tb->s[e], o->r, &x, &y, &w, &alt, &cl);
+  }
+  return 0;
+}
+
 /* #217: a 3D point placed from its ends' own points (derive_hand): counted,
  * and tainted */
 static inline int own_taken(VCacheStats *st, int *taint) {
@@ -2167,8 +2206,7 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   if (hk_place(rec, kind, k, how, key, a, b, p, q, NULL, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
       hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 0) < 0 &&
       !(form == VCD_PERSP && (how & VCD_OWN) &&
-        hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t,
-                 (uint32_t)q) == 0 &&
+        hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 1) == 0 &&
         own_taken(st, &taint))) {
     if (form == VCD_ALIAS || form == VCD_OFFSET) {
       /* #202: one point's alias or offset whose source key is ambiguous:
@@ -2205,6 +2243,19 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
             h->dead = 1; /* two keys: neither */
           goto out;
         }
+      }
+    }
+    if (form == VCD_PERSP && (how & VCD_OWN) &&
+        (end_noproj(rec, kind, k, a, VCD_CORNER(q, VCD_ENDS_A(how)), cost, &t) ||
+         end_noproj(rec, kind, k, b, VCD_CORNER(q, VCD_ENDS_B(how)), cost, &t))) {
+      /* #217: an end with no projection: the key is marked so (no place;
+       * any hand-over that places it replaces the mark), and its vertex is
+       * exempt */
+      h = hk_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
+      if (h && !h->placed && !h->dead) {
+        h->low = 1;
+        h->who = (uint8_t)who;
+        st->hk_noproj++;
       }
     }
     goto nosrc;
@@ -2466,6 +2517,22 @@ static const Hk *hk_look(const Table *tb, uint32_t gen, uint32_t key, unsigned *
     }
   }
   return NULL;
+}
+
+/* #217: key marked as a world split point with an end behind the eye
+ * (HK_NOPROJ) in tb's frame gen */
+static int hk_noproj(const Table *tb, uint32_t gen, uint32_t key, unsigned *probes, Touch *t) {
+  uint32_t h = hash(key) & (VC_HK - 1), p;
+  for (p = 0; p < 8; p++, h = (h + 1) & (VC_HK - 1)) {
+    const Hk *const e = &tb->hk[h];
+    ++*probes;
+    touch(t, offsetof(Table, hk) + (size_t)h * sizeof(Hk), sizeof(Hk));
+    if (e->gen != gen)
+      return 0;
+    if (e->key == key)
+      return HK_NOPROJ(e);
+  }
+  return 0;
 }
 
 /* #215: ... else its cut's place at its own fraction (frac_hand) */
@@ -3385,7 +3452,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   /* #216: vertices with no entry; those found from their renderer's own
    * point, its place and depths; and those whose own point has no
    * projection (exempt) */
-  int noent[4] = {0, 0, 0, 0}, ow[4] = {0, 0, 0, 0}, nnp = 0;
+  int noent[4] = {0, 0, 0, 0}, ow[4] = {0, 0, 0, 0}, nnp = 0, npv[4] = {0, 0, 0, 0};
   float owp[4][2];
   Cand oc[4][VC_CANDS];
   /* Whose polygon: the presenter's inline (s_pres), the presenter's on its
@@ -3706,7 +3773,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
           all = 0;
           continue;
         }
-        o = own_look(ptab, gen, key, anchor, &cost[VCC_LOOK_PROBES], &t);
+        o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
+                     &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i]) : -1;
         cost[VCC_LOOK_LINES] += t.n;
         if (r == 1) {
@@ -3716,7 +3784,8 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
           m += !e[i];
         } else if (!e[i]) {
           all = 0;
-          nnp += r == 0 && noent[i];
+          if (r == 0 && noent[i])
+            npv[i] = 1, nnp++;
         }
       }
       if (all && m) {
@@ -3782,9 +3851,19 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   }
   if (nnone && !der) { /* not found: no entry */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    const int cx = cx_find(ptab, gen, xy[0]);
     st->miss_none += (unsigned)nnone;
+    if (cx == VCX_ENV) /* #217: a world split point with an end behind the eye, exempt too */
+      for (i = 0; i < n; i++)
+        if (noent[i] && !e[i] && !hk[i] && !hkc[i] && !npv[i]) {
+          const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+          Touch t = TOUCH0;
+          if (hk_noproj(ptab, gen, key, &cost[VCC_LOOK_PROBES], &t))
+            nnp++;
+          cost[VCC_LOOK_LINES] += t.n;
+        }
     /* #211: whose polygon; #216: a glow's or shadow's point with no projection, exempt */
-    st->ne[cx_find(ptab, gen, xy[0])] += (unsigned)(nnone - nnp);
+    st->ne[cx] += (unsigned)(nnone - nnp);
     st->ne[VCX_NO_PROJ] += (unsigned)nnp;
     work[3] += (unsigned)nnone;
   }
