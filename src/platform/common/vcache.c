@@ -308,6 +308,20 @@ typedef struct {
   int32_t ox, oy;
 } Ow;
 
+/* #228: the last projection each entry's maths was worked out for at once
+ * this frame (rtp_point): its registers' generation (gte_native.h NgteProj
+ * gen; 0: none, or the entry made since) and vertex, and whether it was
+ * clamped. A projection the same in each (an exact repeat: a point two
+ * sectors share, a grid's corner projected again) has the same answer; while
+ * its entry is valid with one point, that answer is already among its
+ * candidates and is logged nowhere, so the repeat changes nothing and its
+ * maths is skipped. 12 bytes an entry, apart from the 40 the probe reads. */
+typedef struct {
+  uint32_t g;
+  int16_t vx, vy, vz;
+  uint16_t clamped;
+} Rp;
+
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
@@ -365,6 +379,9 @@ typedef struct {
    * table's frame (VCD_OWN, VCD_SELF), apart from hk: no hand-over reads
    * them */
   Ow ow[VC_OW];
+  /* #228 (last, as above): each entry's last projection worked out at once,
+   * by the slot (Rp) */
+  Rp rp[VC_SIZE];
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -492,6 +509,11 @@ void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_st
 
 static void qt_line(void);
 
+static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
+/* #228: the exact repeats whose maths was skipped, per kind of frame (each
+ * added by the one thread recording that kind; the report reads) */
+static unsigned s_rp_hits[2], s_rp_tried[2];
+
 /* the cost line, since the last one */
 static void cost_line(void) {
   static unsigned last[2][VCC_N], wlast[2][4];
@@ -535,6 +557,20 @@ static void cost_line(void) {
              r[0][VCR_KEPT], r[0][VCR_ONCE], r[0][VCR_WORKED], r[0][VCR_DIV], r[0][VCR_PROBES],
              r[0][VCR_LINES], r[0][VCR_STORE], r[1][VCR_WORKED], r[1][VCR_DIV], r[1][VCR_LINES],
              r[0][VCR_KEPT] + r[0][VCR_ONCE] - r[0][VCR_WORKED] - r[1][VCR_WORKED]);
+  }
+  { /* #228: the exact repeats skipped, since the last line */
+    static unsigned hl[2], tl[2];
+    unsigned h[2], n[2];
+    for (t = 0; t < 2; t++) {
+      const unsigned hv = __atomic_load_n(&s_rp_hits[t], __ATOMIC_RELAXED),
+                     tv = __atomic_load_n(&s_rp_tried[t], __ATOMIC_RELAXED);
+      h[t] = hv - hl[t], n[t] = tv - tl[t];
+      hl[t] = hv, tl[t] = tv;
+    }
+    PsyX_Log("vcache repeats: the logic draw's %u of %u projections worked out at once by name "
+             "were exact repeats of their entry's last, their maths skipped; the presenter's %u "
+             "of %u (rp=%d, #228)",
+             h[0], n[0], h[1], n[1], s_repeat);
   }
   qt_line(); /* #204 */
 }
@@ -646,6 +682,7 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
         return -1;
       s[i].key = key;
       s[i].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
+      r->tab->rp[i].g = 0; /* #228: no projection worked out under it yet */
       r->count++;
       return (int)i;
     }
@@ -868,9 +905,10 @@ static inline void pt_ngte(Pt *a, const NgteProj *p, const NgteRtp *o, int vx, i
  * in the frame's order (q, -1: none) are known: the exact point, and the
  * entry's candidates and state (rtp_point, or lz_flush, #193, #179). k: where
  * its counts go. tp: the lines it touches, which the caller adds to the
- * cost. */
-static void rtp_apply(Table *tb, const Sink *k, const Pt *a, uint32_t key, int sz, int sf, int i,
-                      int q, Touch *tp) {
+ * cost. Returns whether the projection was clamped (its answer's, for the
+ * repeat's record, #228). */
+static int rtp_apply(Table *tb, const Sink *k, const Pt *a, uint32_t key, int sz, int sf, int i,
+                     int q, Touch *tp) {
   unsigned *const cost = k->cost, *const work = k->work;
   VCacheStats *const st = k->st;
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = a->h;
@@ -955,7 +993,7 @@ done:
   if (amb) { /* #181: only its answer */
     if (q >= 0)
       log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
-    return;
+    return clamped;
   }
   if (state == E_INVALID)
     work[VCW_INVALID]++;
@@ -967,7 +1005,7 @@ done:
     set_state(s, state);
     if (state == E_INVALID) {
       st->invalid++;
-      return;
+      return clamped;
     }
   } else if (prev != state || state != E_VALID) {
     /* a clamped projection and another one under the same key: the prims
@@ -978,7 +1016,7 @@ done:
     }
     if (q >= 0) /* #181 */
       log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
-    return;
+    return clamped;
   }
   /* Another projection under this key: the same point again (shared by
    * several polygons), the same point at another scale, or a different
@@ -995,6 +1033,7 @@ done:
    * projection is the first's point at one of the candidates' depths */
   if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
     log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
+  return clamped;
 }
 
 /* Projections worked out when they're needed (#193, #179).
@@ -1155,6 +1194,9 @@ enum { QS_FRAMES, QS_Q, QS_IDLE_POS, QS_IDLE_NEG, QS_LATE, QS_NOWALK, QS_N };
 static unsigned s_qstat[QS_N];
 
 void psx_vcache_set_lazy(int on) { s_lazy = on != 0; }
+/* #228: skip an exact repeat's maths (on by default; 0 works every one out) */
+void psx_vcache_set_repeat(int on);
+void psx_vcache_set_repeat(int on) { s_repeat = on != 0; }
 void psx_vcache_set_lazy_logic(int mode) { s_lazy_logic = mode < 0 ? 0 : mode > 3 ? 3 : mode; }
 
 /* The game thread, at the end of a frame that kept (done_hook, records:
@@ -1414,15 +1456,47 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   }
   if (k->rec)
     k->rec[VCR_ONCE]++;
+  /* #228: an exact repeat of the entry's last projection worked out at once
+   * (the same registers by generation, the same vertex; so the same key, SZ3
+   * and answer). While the entry is valid with one point, that answer is
+   * among its candidates (one point: every candidate before it was at its
+   * place at another depth, so the repeat stops at the same one), the entry
+   * keeps no answer per projection (#181's log is for keys with different
+   * points), and so the repeat would change nothing: only its counts. Its
+   * registers are kept by generation as the store's (same_ngte, #205). */
+  if (np && np->gen && s_repeat) {
+    Rp *const r = &tb->rp[i];
+    const uint32_t tag = tb->s[i].tag;
+    s_rp_tried[kind]++;
+    if (r->g == np->gen && r->vx == vx && r->vy == vy && r->vz == vz &&
+        T_STATE(tag) == E_VALID && !(tag & (T_MULTI | T_PEND))) {
+      s_rp_hits[kind]++;
+      if (k->rec)
+        k->rec[VCR_WORKED]++;
+      if (r->clamped) {
+        k->work[VCW_CLAMPED]++;
+        k->st->clamped++;
+      }
+      cost[VCC_REC_LINES] += t.n;
+      return;
+    }
+  }
   {
     Pt a;
+    int clamped;
     if (np && o)
       pt_ngte(&a, np, o, vx, vy, vz);
     else if (np)
       pt_np(&a, np, vx, vy, vz);
     else
       pt_words(&a, proj, vx, vy, vz);
-    rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
+    clamped = rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
+    if (np && s_repeat) { /* #228: the entry's last, for a repeat */
+      Rp *const r = &tb->rp[i];
+      r->g = np->gen;
+      r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
+      r->clamped = (uint16_t)clamped;
+    }
   }
   cost[VCC_REC_LINES] += t.n;
 }
