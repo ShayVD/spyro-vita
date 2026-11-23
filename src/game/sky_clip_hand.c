@@ -155,18 +155,23 @@ static NgteRtp ProjectVertex(const NgteProj *P, u32 w, s32 ox, s32 oy, s32 oz) {
   return ngte_rtps_w(P, x + (y << 16), z);
 }
 
-/* A sector's vertices projected, each one's clip word into the scratchpad;
- * the flags they all share. As in sky_hand.c, each RTPS overlaps loading
- * the next vertex, so V0 ends up holding vert[n]. */
-static u32 ProjectSector(const u32 *sector, const Box *box) {
+/* A sector's vertices projected with P, each one's clip word into the
+ * scratchpad; the flags they all share. As in sky_hand.c, each RTPS
+ * overlaps loading the next vertex, so V0 ends up holding vert[n].
+ *
+ * P is the caller's, read once a draw (#213): between the sectors only the
+ * far colour changes (FogColours, CutSide), never the projection's
+ * registers, so every sector's projections are the same; and the vertex
+ * cache's record sees one generation a draw (gte_native.h NgteProj gen,
+ * D202), where a new one each sector made it compare the words again. */
+static u32 ProjectSector(const NgteProj *P, const u32 *sector, const Box *box) {
   const s32 ox = (s16)sector[SEC_ORIGIN_XY], oy = (s32)sector[SEC_ORIGIN_XY] >> 16;
   const s32 oz = (s32)sector[SEC_ORIGIN_Z] >> 16;
   const u32 n = sector[SEC_ORIGIN_Z] & 0xFFFF;
   const u32 *vert = sector + SEC_VERTICES;
   u32 *scratch = (u32 *)SCRATCH_BASE, all = ~0u, i = 0;
-  const NgteProj P = ngte_proj_get();
   do {
-    const u32 flags = ClipFlags(ProjectVertex(&P, vert[i], ox, oy, oz).sxy, box);
+    const u32 flags = ClipFlags(ProjectVertex(P, vert[i], ox, oy, oz).sxy, box);
     all &= flags;
     scratch[i] = flags;
   } while (++i != n);
@@ -278,10 +283,12 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
   const u32 limit = *(u32 *)D_80075780 - 0x400;
   u32 *const scratch = (u32 *)SCRATCH_BASE;
   Chain ch;
+  NgteProj P;
   (void)a0, (void)a1, (void)a2, (void)a3;
 
   SectorsInFront((const u32 *)(g_Camera + 0x14), cyc[0], cyc[1]);
   SetRotation((const u32 *)g_Camera);
+  P = ngte_proj_get();
   ChainBegin(&ch);
   for (;;) {
     const u32 *sector, *colours, *tri, *end;
@@ -293,7 +300,7 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
     packed = sector[SEC_TRIANGLES];
     colours = sector + SEC_VERTICES + (sector[SEC_ORIGIN_Z] & 0xFFFF);
     FogColours(colours, packed >> 14);
-    if (ProjectSector(sector, &SCREEN) & 0xF)
+    if (ProjectSector(&P, sector, &SCREEN) & 0xF)
       continue; /* every vertex off the same side */
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
@@ -534,9 +541,11 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
   u32 list = SEEN_SECTORS;
   Portal o;
   Box b;
+  NgteProj P;
 
   SectorsInFront(HPTR(const u32, view), s[0], s[1]);
   SetRotation(HPTR(const u32, proj));
+  P = ngte_proj_get();
   ChainBegin(&o.ch);
   b.top = box[0], b.bottom = box[1], b.right = box[2], b.left = box[3];
   o.box.a2 = b.left, o.box.a3 = b.top, o.bottom = b.bottom;
@@ -554,7 +563,7 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
       FogColours(colours, packed >> 14);
     /* the cuts change a2, a3 and t0, but put them back after each one */
     b.left = o.box.a2, b.top = o.box.a3, b.bottom = o.bottom;
-    if (ProjectSector(sector, &b) & 0xF)
+    if (ProjectSector(&P, sector, &b) & 0xF)
       continue;
     table = fog ? (const u8 *)FOG_COLOURS : (const u8 *)colours;
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));

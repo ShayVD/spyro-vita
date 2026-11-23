@@ -143,7 +143,10 @@
  * multiplies them again (Pt), and a kept projection's registers are
  * compared with the last ones kept by their generation (gte_native.h
  * NgteProj gen), not word by word. The same sums, the same registers kept:
- * every answer is as before.
+ * every answer is as before. Since #213 the sky's records (sky_hand.c) come
+ * the same way, with the sums its projections kept, and the portal sky's
+ * (sky_clip_hand.c) take one generation a draw, not one a sector; only the
+ * register file's (rtp_hook) still pass words.
  *
  * The last misses (#202), tagged by renderer on host routes through
  * Artisans, its portal into Stone Hill and Stone Hill at 2x:
@@ -1386,9 +1389,10 @@ static void rtp_hook(int idx, int sf) {
             (unsigned short)C2_SZ3, sf);
 }
 
-/* The same projection given as values (D89): the sky's records
- * (sky_hand.c), and whatever calls the value hook; since #205 gte_native.h's
- * RTPS and RTPT call ngte_vcache (below) instead. */
+/* The same projection given as values (D89), for whatever calls the value
+ * hook. Since #205 gte_native.h's RTPS and RTPT, and since #213 the sky's
+ * records (sky_hand.c), call ngte_vcache (below) instead; the hook being
+ * set still says that the cache records. */
 static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
   rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1);
 }

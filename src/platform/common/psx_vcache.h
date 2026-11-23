@@ -184,7 +184,8 @@ typedef void (*PsxVcacheValueHook)(const int *proj, int vx, int vy, int vz, unsi
                                    int sz3);
 PsxVcacheValueHook psx_vcache_pres_begin(int walks);
 
-/* The native projections' record (#205): gte_native.h's RTPS and RTPT, while
+/* The native projections' record (#205; the sky's records too since #213,
+ * sky_hand.c): gte_native.h's RTPS and RTPT, while
  * the hook above (or the game's g_psyxRtpValueHook) is set, call the cache
  * by name with the registers by pointer, their generation (NgteProj gen:
  * the same generation, the same registers) and the sums and SZ3 the GTE
