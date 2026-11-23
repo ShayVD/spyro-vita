@@ -1284,3 +1284,17 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - ctest passes 32 of 32.
   - Logs: `runs/auto-223-1`.
 - **Left:** `lod.c`'s budget text can now carry the worst frame time and the budget's range (#224).
+
+### D215. With `dd_budget=auto`, the Vita's lod line gives the budget's range and the worst frame time (#224, 2026-11-23)
+
+- **Why:** an average alone can't tell apart a window that swung between the 48 KB floor and a long distance and one that held steady, nor one long frame and a scene that is over the target.
+- **How:** `lod_set_budget` keeps the window's lowest and highest budget and its longest measured game-thread frame (`s_bt.lo`, `.hi`, `.worst`, in `LOD_STATE`). `budget_report` prints them as `budget 61 KB (auto, 48-96 KB, worst 15.9 ms, 2.1 ms left; 3 over)`, or `budget held at 1x: U ms used of 14.5, worst W ms (LO-HI KB)`. This uses D214's 640-byte line; the longest line seen is 433 bytes. It is logging only: the budget is chosen as in D212.
+- **Measured (Vita3K, default auto, relative timing):**
+  - owner60 at 6,900–9,000: `126 KB (auto, 126-126 KB, worst 3.8–11.4 ms, 0 over)`.
+  - stone60 at 7,800–9,300: 112–135 KB, worst 5.9–12.1 ms, 0 over.
+  - The level entries show a 72–82 ms worst frame.
+- **Checks:**
+  - With `dd_budget=1`, owner60 and stone60 shots are identical to `base-278ebf8`, and the deterministic counters are equal.
+  - Host logs, traces, saves and per-polygon FNV are identical: 13,206,877 polygons at 30 Hz and 21,665,448 with `--tick60 --interp`.
+  - ctest passes 32 of 32, and the native build exits 0.
+  - Logs: `runs/auto-224-1`.
