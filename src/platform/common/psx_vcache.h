@@ -165,6 +165,10 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * (VCD_SELF names it). The walk's own-point step takes these only for a
  * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
 #define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
+/* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
+ * once for every piece of its grid: a world quad drawn at once (not split)
+ * finds its moved corner there */
+#define VCD_MOVED 0xFFFFFFFFu
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;

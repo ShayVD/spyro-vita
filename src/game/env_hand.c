@@ -1475,15 +1475,29 @@ static void GridCorrect(u32 g, u32 w_out, u32 w_in, u32 pa_addr, u32 pb_addr) {
   AT32(g) = (x & 0xFFFF) + (y << 16);
 }
 
+/* #229: grid point G, which GridCorrect moved from OLD, named for the
+ * vertex cache by the projection that made it, P projections back (nothing
+ * is projected between GridTransform and the correction), under VCD_MOVED
+ * (psx_vcache.h): a quad drawn with it then still finds its corner where
+ * the order names no single projection for it. Nothing the game reads
+ * changes. */
+static inline void NameMoved(u32 g, u32 old, u32 p) {
+  const u32 xy = AT32(g);
+  if (xy != old)
+    PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF, xy, xy, VCD_MOVED, (int)p, 0);
+}
+
 /* The 3x3 grid's centre, when the centre is within 0x700..0x800 deep */
 static void Grid3x3Centre(void) {
-  u32 f = AT32(GRID(4) + 4), z;
+  u32 f = AT32(GRID(4) + 4), z, old;
   if (f & 0xF000)
     return;
   z = (f & 0xFFF) - 0x700;
   if ((s32)z <= 0)
     return;
+  old = AT32(GRID(4));
   GridCorrect(GRID(4), 0x100 - z, z >> 1, GRID(2), GRID(6));
+  NameMoved(GRID(4), old, 8 - 4); /* (#229: 9 points) */
 }
 
 /* The 5x5 grid's four inner points, by the nearest corner's depth */
@@ -1500,10 +1514,12 @@ static void Grid5x5Inner(void) {
   if ((s32)(d - m) < 0)
     m = d;
   for (k = 0; k < 16; k += 4) {
-    u32 g = SC_TABLE(AT32(ADDR(D_8006D0D8) + k));
+    u32 g = SC_TABLE(AT32(ADDR(D_8006D0D8) + k)), old;
     if (AT32(g + 4) & 0xF000)
       continue;
+    old = AT32(g);
     GridCorrect(g, 0x100 - m, m >> 1, g - 0x40, g + 0x40);
+    NameMoved(g, old, 24 - ((g - GRID(0)) >> 4)); /* (#229: 25 points) */
   }
 }
 

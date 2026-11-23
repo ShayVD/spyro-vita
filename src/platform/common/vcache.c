@@ -4101,6 +4101,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         if (!o && cx == VCX_ENV) { /* #229: its piece's split point or moved corner */
           r = sp_point(ptab, gen, key, VCD_CORNER(anchor, i), &owp[i][0], &owp[i][1], oc[i],
                        &eo[i], &cost[VCC_LOOK_PROBES], &t);
+          if (r != 1 && !e[i] && noent[i]) /* ... or its grid's moved point */
+            r = sp_point(ptab, gen, key, VCD_MOVED, &owp[i][0], &owp[i][1], oc[i], &eo[i],
+                         &cost[VCC_LOOK_PROBES], &t);
           spv[i] = r == 1;
         }
         cost[VCC_LOOK_LINES] += t.n;
