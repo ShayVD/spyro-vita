@@ -22,7 +22,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/picture.c",
         "docs/vita-testing.md"
       ],
-      "agent": "a38d43540aa2da0cd"
+      "agent": "a38d43540aa2da0cd",
+      "last_commit_at": "2026-11-22T23:35:59+00:00",
+      "reported": true
     },
     {
       "issue": 213,
@@ -38,7 +40,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h",
         "src/game/gte_native.h"
       ],
-      "agent": "a08d754a6dd2f45b9"
+      "agent": "a08d754a6dd2f45b9",
+      "last_commit_at": "2026-11-23T00:14:48+00:00"
     }
   ],
   "last_good": "2199042edf8a14c89c366258ddf6867cf7a228ef",
@@ -417,3 +420,4 @@ continue.
 - 2026-11-22T23:55:19Z phase 8: merged #215 (D213), Vita3K: none
 - 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
 - 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
+- 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
