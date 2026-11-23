@@ -1462,3 +1462,27 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Vita3K `demo60`, base and fix twice each, interleaved: the game thread's presenter waits fall from 11.3–13.9 ms a tick to under 0.05 ms; the inline frame takes 11–12 ms a tick in their place; wall time per 300 vblanks stays within the noise (5,809–6,247 ms against 5,819–6,581). Vita3K's routes use virtual vblanks, so ticks per 300 can't move there.
   - Host FNV per polygon identical on all 9,124,329 polygons (title and demos to 7,000, `--vcache --widescreen --interp --draw-distance 2`); `--pres-check-thread` matches 3,475 of 3,475 frames; the seven routes' shots identical to `base-278ebf8`; host ctest 32 of 32; Vita build; `noassets`. Logs: `runs/auto-227-1`.
 - **Limit:** the two presenter frames still run one after the other, so on hardware a demo tick still costs the update plus two ~24 ms frames, over 33 ms. Little change in late vblanks is expected; the next hardware session judges it (Toasty route, 4,200–6,300). The real gain needs fewer or cheaper presenter frames in the demos (#234). The `pres_demo_inline` config key and `pres_thread.c`'s stale comment are outside the issue's files (#232).
+
+### D223. With the fix on, a world split point and a corner the grid moved are kept as their piece's own, and a world piece's anchor mixes its corners' keys and u/v (#229, 2026-11-23)
+
+- **Why:** after D220, EnvDraw kept 30 missed vertices on host route S (60 with `--interp`) and 4 (8) on P and Pf. #217's tags (`runs/auto-217-1/host/reasons_2x.txt`): two split points of different pieces on one pixel, which D182 drops (4 / 8); split ends 4× apart in depth (9 / 13); quads whose moved corner derive couldn't place (8 / 24); own points dead under a shared first-vertex anchor (8 / 12). The last was also Vita3K stone60's 100 at window 6,600.
+- **How** (`src/game/env_hand.c`, `src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A per-table `Sp` store (1,024 records of 44 bytes, about 45 KB a table), apart from hk, keeps each `SplitMid` point with its place and depths under its piece and edge (`VCD_CORNER(anchor, VCD_EDGE(ia, ib))`). Each GT3 that `SplitLast` emits moves it to its own anchor (`own_move` with p = 1, falling back to `Sp`), and a re-split GT3 finds its ends there (`sp_end`). The value is the key-sourced pass 1's when that succeeds; otherwise it's made from the piece's own ends (`own_end`, then `sp_end`), paired even across 4× depths (`hk_pair`'s `wide`, for this record only). No hand-over reads `Sp`, so hk is unchanged.
+  - GridCorrect's moved points are named once at their pre-move projection (`NameMoved` in `Grid5x5Inner`/`Grid3x3Centre`, `VCD_MOVED`), and a moved queued corner is also kept in `Sp` under its piece.
+  - The piece anchor (`PieceAnchor`, `VCD_PIECE_V`) is all its corners' keys plus their u/v, not the first vertex's key: two GT3s of one piece that start at one point, with two corners clamped onto one key, had named both under one anchor and killed both.
+  - In the walk, for EnvDraw polygons nothing else found: a corner's own point may lie up to 2^20 px off its key (a clamped corner nearly level with the eye projects far off screen); a polygon whose own-point depths no choice brings under 4× apart is found and drawn affine (`spread`); a quad's ambiguous corner is resolved with its moved corner's own projection, or the moved corner alone is found and the polygon stays affine (`sp_part`).
+  - New counters and a `vcache world own:` line (`sp_found`, `sp_kept`, `sp_full`, `sp_wide`, `sp_moved`, `sp_spread`, `sp_res`, `sp_part`). D182, D205, D213, D218 and D221 are unchanged.
+- **Measured (host, 2×, 16:9, base 8bdf7d4):**
+
+  | Route | EnvDraw missed | All missed |
+  |---|---|---|
+  | S | 30 → 6 | 160 → 136 |
+  | S `--interp` | 60 → 6 | 343 → 289 |
+  | P | 4 → 0 | 9 → 5 |
+  | P `--interp` | 8 → 0 | 24 → 16 |
+  | Pf | 4 → 0 | 18 → 14 |
+  | Pf `--interp` | 8 → 0 | 36 → 28 |
+
+  #217's four reasons all go to 0 except "own point not named or dead" (8 → 6, 12 → 6). Vita3K EnvDraw missed: owner60 6 and 12 → 0, stone60 100 → 0; `vc.probe` +0.2%, `vc.lines` +0.3–0.4%, `vc.div` +0.2–0.6%; draws, triangles, `vc.proj`, `vc.polys`, `vc.verts` unchanged. `Sp` held at most 5,214 records a 300-vblank window and never filled (`sp_full` 0).
+- **Checks:** host FNV per polygon, 6 pairs from freshly built objects: same polygon counts, 0 found-before changed, 0 became affine (4–39 newly found). Vita3K shots identical to `base-278ebf8` on all seven routes. Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-229-1`.
+- **Left:** the 6 on S and S `--interp` are all in one frame (g6742) whose order log is full (`VC_LOG`, 8,192 projections), so the cache never named those projections. Vita3K never fills the log. Raising `VC_LOG` to 16,384 fixes them but changes 50 / 124 found-before polygons in that frame and costs about 224 KB a table (#237). Relaxing hk's own 4× rule for split points changed no found-before polygon on S in an experiment, but isn't adopted. Docs for the `vcache world own:` line go with #226.
