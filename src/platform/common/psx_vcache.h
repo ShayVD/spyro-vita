@@ -108,6 +108,27 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
 #define VCD_T(t) ((int)(0x100u | (unsigned)(unsigned short)(t) << 16))
 #define VCD_HAS_T(how) (((unsigned)(how) & 0x100u) != 0)
 #define VCD_T_OF(how) ((int)(short)((unsigned)(how) >> 16))
+/* #216: a glow's or a moby shadow's own points, kept apart from the
+ * hand-overs (hk) by the projection that made them. A key holds whatever
+ * projected or was handed over at its pixel, so where another point shares
+ * it (another renderer's cut, another moby's shadow corner, the world's
+ * vertex) the key names no single point and the hand-over leaves the
+ * vertex with none. Those renderers also name their points by the call
+ * that made them, under (sxy, b), b the key of their polygons' first
+ * vertex (the fan's centre, which the walk reads from the polygon):
+ *  - VCD_SELF (alone: no hand-over): sxy is the projection the renderer
+ *    made p projections back (0: its last), named by its place in the
+ *    frame's order;
+ *  - VCD_OWN (with an alias or offset hand-over, as before): the point is
+ *    also its source's own point (a's under (a, b), else a's last
+ *    projection in the frame's order) plus the offset.
+ * A polygon of theirs takes these only where nothing else finds it (after
+ * #181's, #197's and #202's resolution), every vertex not found having one
+ * (vcache.c own_look): every polygon found before is found as it was. A
+ * point whose projection the GTE could not give (behind the eye) is drawn
+ * as the PS1 draws it, and its vertex is counted exempt (VCX_NO_PROJ). */
+#define VCD_OWN 0x200
+#define VCD_SELF 0x400
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -303,7 +324,11 @@ extern unsigned g_vcache_rec[2][VCR_N];
  *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
  *    the game's own C): exempt;
  *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
- *    cache), so nothing says which.
+ *    cache), so nothing says which;
+ *  - VCX_NO_PROJ (#216): a glow's or moby shadow's vertex whose own point
+ *    (VCD_OWN) comes from a projection the GTE could not give (a glow
+ *    behind the eye, its centre clamped to the screen's limit): drawn as
+ *    the PS1 draws it, exempt.
  * psx_vc_ctx is the logic draw's, pres_vc_ctx the presenter build's (its
  * objects may call only pres_ names, tests/render_ctx/link_check.sh); both
  * do nothing when the cache doesn't record. Only for the counters: no
@@ -328,6 +353,8 @@ enum {
   VCX_OTHER,           /* a marked renderer with another name */
   VCX_OUTSIDE,         /* in no renderer's range (exempt) */
   VCX_UNMARKED,        /* the frame has no ranges */
+  VCX_NO_PROJ,         /* #216: a glow's or shadow's point made from a projection the GTE could
+                          not give (behind the eye): the PS1's place (exempt) */
   VCX_N
 };
 void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
@@ -417,6 +444,14 @@ typedef struct {
    * counted in hits and hooked too); the cuts placed so, and those with an
    * end not usable or more than 8 pixels from their key */
   unsigned hk_frac, fr_kept, fr_nosrc;
+  /* #216: vertices found from their renderer's own point (VCD_OWN,
+   * VCD_SELF; counted in hits, not in hooked), those of them whose key was
+   * ambiguous (not counted in resolved), the vertices of their polygons
+   * found otherwise but drawn at their own point too (one projection's
+   * depths for the whole polygon), and the own points kept, not usable when
+   * made (no source, or the projection named is not the key's, or two
+   * different under one key), and not kept (full) */
+  unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
