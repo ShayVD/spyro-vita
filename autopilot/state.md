@@ -19,7 +19,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "files": [
         "src/platform/common/vcache.c"
       ],
-      "agent": "a1cdafe944d764d5e"
+      "agent": "a1cdafe944d764d5e",
+      "last_commit_at": "2026-11-23T03:57:33+00:00",
+      "reported": true
     }
   ],
   "last_good": "f11f4ec8d0a48d2003ed6b664ddbe2ea9ccc4acb",
@@ -229,7 +231,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 214,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-214.gate.log",
+    "started_at": "2026-11-23T05:03:02Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -402,3 +411,4 @@ continue.
 - 2026-11-23T03:38:46Z phase 8: #213 reported done (sky records by name; host gprof sky record -6..-22%); gating, Vita3K: none
 - 2026-11-23T03:47:48Z phase 8: merged #213 (D216), Vita3K: none
 - 2026-11-23T03:48:37Z phase 8: started #214, Vita3K: none
+- 2026-11-23T05:03:11Z phase 8: #214 reported done (host lookup divisions -92..94%, vc.div -41..43%); gating, Vita3K: none
