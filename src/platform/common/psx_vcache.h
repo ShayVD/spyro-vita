@@ -169,12 +169,15 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
 #define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
 /* #229: a world piece's anchor (above, and #217's corners') is all its
- * corners' keys mixed, not its first vertex's alone: two GT3s of one piece
- * that start at one point and have two different corners on one clamped key
- * at one vertex number named both under one anchor, so neither was kept */
-#define VCD_PIECE3(a, b, c)                                                                    \
-  ((unsigned)(a) ^ (unsigned)(b) * 0x9E3779B1u ^ (unsigned)(c) * 0x85EBCA77u)
-#define VCD_PIECE4(a, b, c, d) (VCD_PIECE3(a, b, c) ^ (unsigned)(d) * 0xC2B2AE35u)
+ * corners' keys and texture coordinates mixed, not its first vertex's key
+ * alone: GT3s of one piece that start at one point and have two different
+ * corners on one clamped key at one vertex number (or two split points on
+ * one pixel) named both under one anchor, so neither was kept. Each vertex's
+ * term: its key xy, its u/v (the low half of the primitive's word after
+ * xy), and its place in the primitive (0..3); the anchor is the terms xored. */
+#define VCD_PIECE_V(xy, uv, i)                                                                 \
+  (((unsigned)(xy) ^ (unsigned)(unsigned short)(uv) * 0x9E3779B1u) *                          \
+   (0x85EBCA77u + 0x40000000u * (unsigned)(i)))
 /* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
  * once for every piece of its grid: a world quad drawn at once (not split)
  * finds its moved corner there */
