@@ -1268,3 +1268,19 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - ctest passes 32 of 32.
   - Logs: `runs/auto-215-1`.
 - **Found:** on the Vita build, the portal sky's unplaced vertices are filed as "outside the renderers" (exempt) rather than under PortalSkyPlain or PortalSkyFog. On the Vita, D210's missed count under-reports them; added to #222.
+
+### D214. The Vita's `draw N:` lines time the 60 Hz update, and the lod line gets a 640-byte buffer (#223, 2026-11-23)
+
+- **Why:**
+  - With 60 Hz logic the update is `GamestateUpdate_60` (`tick60.c`). The `GamestateUpdate` link wrap in `prof_draw.c` never saw it, so `update` read 0.00 in every 60 Hz window of the hardware logs.
+  - `picture.c`'s 400-byte line buffer made D212 keep its budget text short. The line already reaches 385 bytes.
+- **How:**
+  - The Vita link wraps `GamestateUpdate_60` too, under `SPYRO_TICK60` (the moved-arena build has no 60 Hz path). It is charged to the same `update` column; `PortGamestateUpdate` runs exactly one of the two, so nothing is counted twice.
+  - The line buffer is now 640 bytes; `vita_log`'s own buffer is 1,024. The line formats are unchanged, so the parsers need nothing.
+- **Checks (logging only):**
+  - Vita3K, with `dd_budget=1`: owner60's `update` in 6,900–8,700 reads 0.27–0.70 ms where base read 0.00, and stone60's 0.33–0.54.
+  - Shots are identical on six routes.
+  - The deterministic counters are identical. owner60's timing-dependent vc counters moved past two base runs' spread under machine load.
+  - ctest passes 32 of 32.
+  - Logs: `runs/auto-223-1`.
+- **Left:** `lod.c`'s budget text can now carry the worst frame time and the budget's range (#224).
