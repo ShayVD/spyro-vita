@@ -130,6 +130,43 @@ jobs:
             cmake --build build/linux32
             ctest --test-dir build/linux32 --output-on-failure'
 
+  # The PC build for Linux (docs/pc-build.md, D240): the amd64 toolchain
+  # image, the build, and a start without a disc under a virtual X display
+  # (Mesa's llvmpipe): the low image's checks pass, SDL opens a window with a
+  # GL 3.3 context, and the game reports the missing disc and exits 1.
+  pc-linux:
+    name: PC (Linux x86-64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Build the PC image
+        run: docker build --platform linux/amd64 -t spyro-pc -f tools/docker/pc.Dockerfile tools/docker
+      - name: Build
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work spyro-pc sh -ec '
+            cmake -S . -B build/pc-linux -G Ninja -DSPYRO_HOST=pc \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux.toolchain.cmake
+            cmake --build build/pc-linux'
+      - name: Starts, opens a GL 3.3 window, and stops for the missing disc
+        run: |
+          mkdir -p build/no-disc
+          set +e
+          docker run --rm -v "$PWD:/work" -w /work -e HOME=/work/build/pc-home spyro-pc \
+            tools/pc/xrun.sh build/pc-linux/spyro --disc build/no-disc --frames 120 > build/pc-smoke.log 2>&1
+          rc=$?
+          set -e
+          cat build/pc-smoke.log
+          test $rc -eq 1
+          grep -q "video: x11, llvmpipe" build/pc-smoke.log
+          grep -q "No Spyro the Dragon disc data was found" build/pc-smoke.log
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spyro-pc-linux
+          path: build/pc-linux/spyro
+          if-no-files-found: error
+
   draft-release:
     name: Draft release
     needs: [no-game-data, vita, vita-unsafe, host-tests]

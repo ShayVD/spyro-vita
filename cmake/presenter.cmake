@@ -85,11 +85,11 @@ set(PRES_LD_FLAGS ${SPYRO_RELOC_LD_FLAGS}) # -m32 on linux32, the target on linu
 # Windows guard), so the pause screens' calls in draw.c keep the game's
 # name (stage 7g, D128)
 set(PRES_OBJ "${CMAKE_BINARY_DIR}/pres_draw.o")
-# The PS4's llvm-objcopy would localize the common symbols too (D193):
-# tools/ps4/keep_commons.py lists them to stay global.
+# llvm-objcopy (the PS4's, D193; the PC's, D240) would localize the common
+# symbols too: tools/ps4/keep_commons.py lists them to stay global.
 set(PRES_KEEP_COMMONS)
 set(PRES_KEEP_ARGS)
-if(SPYRO_HOST STREQUAL "ps4")
+if(SPYRO_HOST STREQUAL "ps4" OR CMAKE_OBJCOPY MATCHES "llvm-objcopy")
   set(PRES_KEEP_COMMONS COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/keep_commons.py"
     "${CMAKE_NM}" "${PRES_OBJ}.r" "${PRES_OBJ}.commons")
   set(PRES_KEEP_ARGS "--keep-global-symbols=${PRES_OBJ}.commons")

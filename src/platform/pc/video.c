@@ -1,0 +1,310 @@
+/* The window and the picture (docs/pc-build.md, D240): SDL3 and OpenGL 3.3
+ * core, on the main thread.
+ *
+ * At every display refresh (vsync=1; the swap waits for it) the newest frame
+ * the game thread filed whose due vblank the game's clock has reached
+ * (frames.c) is uploaded to one texture and drawn as a single quad: 4:3, or
+ * 16:9 for the presenter's widescreen frames (512 pixels drawn for the wider
+ * view, docs/presentation.md), as large as the window allows, centred, black
+ * bars around. filter=1 scales it linearly, filter=0 by nearest neighbour.
+ * F11 or Alt+Enter switches between the window and (borderless, the
+ * desktop's own mode) fullscreen; the window can be resized freely. */
+#include "pc.h"
+#include "host.h"
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_opengl.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* the GL calls used here, all from SDL_GL_GetProcAddress: the executable
+ * links no GL library (SDL loads it), GL 1.1's included */
+typedef const GLubyte *(APIENTRY *PFN_GetString)(GLenum);
+typedef void(APIENTRY *PFN_GenTextures)(GLsizei, GLuint *);
+typedef void(APIENTRY *PFN_BindTexture)(GLenum, GLuint);
+typedef void(APIENTRY *PFN_TexParameteri)(GLenum, GLenum, GLint);
+typedef void(APIENTRY *PFN_PixelStorei)(GLenum, GLint);
+typedef void(APIENTRY *PFN_TexImage2D)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,
+                                       const void *);
+typedef void(APIENTRY *PFN_TexSubImage2D)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum,
+                                          GLenum, const void *);
+typedef void(APIENTRY *PFN_Viewport)(GLint, GLint, GLsizei, GLsizei);
+typedef void(APIENTRY *PFN_ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
+typedef void(APIENTRY *PFN_Clear)(GLbitfield);
+typedef void(APIENTRY *PFN_DrawArrays)(GLenum, GLint, GLsizei);
+typedef void(APIENTRY *PFN_ReadPixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *);
+#define GL_FUNCS(X)                                                                         \
+  X(PFNGLGENVERTEXARRAYSPROC, glGenVertexArrays)                                            \
+  X(PFNGLBINDVERTEXARRAYPROC, glBindVertexArray)                                            \
+  X(PFNGLCREATESHADERPROC, glCreateShader)                                                  \
+  X(PFNGLSHADERSOURCEPROC, glShaderSource)                                                  \
+  X(PFNGLCOMPILESHADERPROC, glCompileShader)                                                \
+  X(PFNGLGETSHADERIVPROC, glGetShaderiv)                                                    \
+  X(PFNGLGETSHADERINFOLOGPROC, glGetShaderInfoLog)                                          \
+  X(PFNGLCREATEPROGRAMPROC, glCreateProgram)                                                \
+  X(PFNGLATTACHSHADERPROC, glAttachShader)                                                  \
+  X(PFNGLLINKPROGRAMPROC, glLinkProgram)                                                    \
+  X(PFNGLGETPROGRAMIVPROC, glGetProgramiv)                                                  \
+  X(PFNGLGETPROGRAMINFOLOGPROC, glGetProgramInfoLog)                                        \
+  X(PFNGLUSEPROGRAMPROC, glUseProgram)                                                      \
+  X(PFNGLGETUNIFORMLOCATIONPROC, glGetUniformLocation)                                      \
+  X(PFNGLUNIFORM1IPROC, glUniform1i)                                                        \
+  X(PFNGLUNIFORM4FPROC, glUniform4f)                                                        \
+  X(PFNGLACTIVETEXTUREPROC, glActiveTexture)                                                \
+  X(PFN_GetString, glGetString)                                                             \
+  X(PFN_GenTextures, glGenTextures)                                                         \
+  X(PFN_BindTexture, glBindTexture)                                                         \
+  X(PFN_TexParameteri, glTexParameteri)                                                     \
+  X(PFN_PixelStorei, glPixelStorei)                                                         \
+  X(PFN_TexImage2D, glTexImage2D)                                                           \
+  X(PFN_TexSubImage2D, glTexSubImage2D)                                                     \
+  X(PFN_Viewport, glViewport)                                                               \
+  X(PFN_ClearColor, glClearColor)                                                           \
+  X(PFN_Clear, glClear)                                                                     \
+  X(PFN_DrawArrays, glDrawArrays)                                                           \
+  X(PFN_ReadPixels, glReadPixels)
+#define PC_GL_DECL(type, name) static type p_##name;
+GL_FUNCS(PC_GL_DECL)
+#define PC_GL_LOAD(type, name)                                                                 \
+  if (!(p_##name = (type)SDL_GL_GetProcAddress(#name))) {                                   \
+    host_log("video: no %s", #name);                                                        \
+    return -1;                                                                              \
+  }
+
+static SDL_Window *s_win;
+static SDL_GLContext s_gl;
+static GLuint s_prog, s_tex, s_vao;
+static GLint s_u_rect, s_u_uv;
+static int s_tex_w, s_tex_h, s_filter = -1;
+static PcFrame s_cur; /* the frame on screen (its pixels uploaded) */
+static int s_have;
+static SDL_Mutex *s_shot_mu;
+static char s_shot_path[1200];
+static unsigned s_refreshes, s_new_frames, s_uploads;
+static unsigned long long s_upload_us, s_swap_us;
+static int s_vsync_on;
+
+static const char *k_vs =
+    "#version 330 core\n"
+    "uniform vec4 u_rect;\n" /* the quad in clip space: x0, y0, x1, y1 */
+    "uniform vec4 u_uv;\n"   /* its texture coordinates: u1, v1 (the frame in the texture) */
+    "out vec2 v_uv;\n"
+    "void main() {\n"
+    "  vec2 c = vec2(gl_VertexID & 1, gl_VertexID >> 1);\n"
+    "  gl_Position = vec4(mix(u_rect.xy, u_rect.zw, c), 0.0, 1.0);\n"
+    "  v_uv = vec2(c.x, 1.0 - c.y) * u_uv.xy;\n"
+    "}\n";
+static const char *k_fs =
+    "#version 330 core\n"
+    "uniform sampler2D s_pic;\n"
+    "in vec2 v_uv;\n"
+    "out vec4 o_col;\n"
+    "void main() { o_col = vec4(texture(s_pic, v_uv).rgb, 1.0); }\n";
+
+static GLuint shader(GLenum kind, const char *src) {
+  GLuint s = p_glCreateShader(kind);
+  GLint ok = 0;
+  p_glShaderSource(s, 1, &src, NULL);
+  p_glCompileShader(s);
+  p_glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+  if (!ok) {
+    char log[1024];
+    p_glGetShaderInfoLog(s, sizeof log, NULL, log);
+    host_log("video: shader: %s", log);
+    return 0;
+  }
+  return s;
+}
+
+static int gl_setup(void) {
+  GLuint vs, fs;
+  GLint ok = 0;
+  GL_FUNCS(PC_GL_LOAD)
+  if (!(vs = shader(GL_VERTEX_SHADER, k_vs)) || !(fs = shader(GL_FRAGMENT_SHADER, k_fs)))
+    return -1;
+  s_prog = p_glCreateProgram();
+  p_glAttachShader(s_prog, vs);
+  p_glAttachShader(s_prog, fs);
+  p_glLinkProgram(s_prog);
+  p_glGetProgramiv(s_prog, GL_LINK_STATUS, &ok);
+  if (!ok) {
+    char log[1024];
+    p_glGetProgramInfoLog(s_prog, sizeof log, NULL, log);
+    host_log("video: program: %s", log);
+    return -1;
+  }
+  p_glUseProgram(s_prog);
+  s_u_rect = p_glGetUniformLocation(s_prog, "u_rect");
+  s_u_uv = p_glGetUniformLocation(s_prog, "u_uv");
+  p_glUniform1i(p_glGetUniformLocation(s_prog, "s_pic"), 0);
+  p_glGenVertexArrays(1, &s_vao); /* core profile: a draw needs one bound, empty is fine */
+  p_glBindVertexArray(s_vao);
+  p_glGenTextures(1, &s_tex);
+  p_glActiveTexture(GL_TEXTURE0);
+  p_glBindTexture(GL_TEXTURE_2D, s_tex);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  p_glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  p_glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  return 0;
+}
+
+int pc_video_init(void) {
+  SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+  s_shot_mu = SDL_CreateMutex();
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+  if (g_pc_opts.fullscreen)
+    flags |= SDL_WINDOW_FULLSCREEN;
+  s_win = SDL_CreateWindow("Spyro the Dragon", g_pc_opts.win_w, g_pc_opts.win_h, flags);
+  if (!s_win) {
+    host_log("video: SDL_CreateWindow: %s", SDL_GetError());
+    return -1;
+  }
+  SDL_SetWindowMinimumSize(s_win, 320, 240);
+  if (!(s_gl = SDL_GL_CreateContext(s_win))) {
+    host_log("video: SDL_GL_CreateContext (3.3 core): %s", SDL_GetError());
+    return -1;
+  }
+  if (gl_setup() != 0)
+    return -1;
+  s_vsync_on = g_pc_opts.vsync && SDL_GL_SetSwapInterval(1);
+  if (!g_pc_opts.vsync)
+    SDL_GL_SetSwapInterval(0);
+  if (g_pc_opts.fullscreen)
+    SDL_HideCursor();
+  {
+    const SDL_DisplayMode *m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(s_win));
+    host_log("video: %s, %s; GL %s; window %dx%d%s, display %dx%d at %.2f Hz, vsync %s",
+             SDL_GetCurrentVideoDriver(), (const char *)p_glGetString(GL_RENDERER),
+             (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
+             g_pc_opts.fullscreen ? " (fullscreen)" : "", m ? m->w : 0, m ? m->h : 0,
+             m ? m->refresh_rate : 0.0f, s_vsync_on ? "on" : "off");
+  }
+  return 0;
+}
+
+void pc_video_close(void) {
+  if (s_gl)
+    SDL_GL_DestroyContext(s_gl);
+  if (s_win)
+    SDL_DestroyWindow(s_win);
+  s_gl = NULL;
+  s_win = NULL;
+}
+
+static void toggle_fullscreen(void) {
+  int fs = (SDL_GetWindowFlags(s_win) & SDL_WINDOW_FULLSCREEN) != 0;
+  SDL_SetWindowFullscreen(s_win, !fs);
+  if (fs)
+    SDL_ShowCursor();
+  else
+    SDL_HideCursor();
+}
+
+void pc_video_event(const void *e_) {
+  const SDL_Event *e = e_;
+  if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat &&
+      (e->key.key == SDLK_F11 || (e->key.key == SDLK_RETURN && (e->key.mod & SDL_KMOD_ALT))))
+    toggle_fullscreen();
+}
+
+void pc_video_shot(const char *path) {
+  SDL_LockMutex(s_shot_mu);
+  snprintf(s_shot_path, sizeof s_shot_path, "%s", path);
+  SDL_UnlockMutex(s_shot_mu);
+}
+
+/* the window's pixels as a PNG (after the draw, before the swap) */
+static void take_shot(int w, int h) {
+  char path[1200];
+  uint8_t *rgb;
+  SDL_LockMutex(s_shot_mu);
+  snprintf(path, sizeof path, "%s", s_shot_path);
+  s_shot_path[0] = 0;
+  SDL_UnlockMutex(s_shot_mu);
+  if (!path[0] || !(rgb = malloc((size_t)w * h * 3)))
+    return;
+  p_glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+  for (int y = 0; y < h / 2; y++) { /* GL's rows go up */
+    uint8_t *a = rgb + (size_t)y * w * 3, *b = rgb + (size_t)(h - 1 - y) * w * 3;
+    for (int i = 0; i < w * 3; i++) {
+      uint8_t t = a[i];
+      a[i] = b[i];
+      b[i] = t;
+    }
+  }
+  if (host_png_write(path, rgb, w, h) == 0)
+    host_log("shot %s (%dx%d)", path, w, h);
+  free(rgb);
+}
+
+void pc_video_frame(void) {
+  int ww, wh, now = pc_vblank_now();
+  PcFrame f;
+  unsigned long long t0 = pc_now_us(), t1;
+  if (pc_frames_take(now, &f)) {
+    /* upload it now; the slot goes back at once */
+    if (f.w > s_tex_w || f.h > s_tex_h) {
+      s_tex_w = f.w > s_tex_w ? (f.w > 512 ? 1024 : 512) : s_tex_w;
+      s_tex_h = f.h > s_tex_h ? 512 : s_tex_h;
+      p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_tex_w, s_tex_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+    p_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RGBA, GL_UNSIGNED_BYTE, f.rgba);
+    pc_frames_release();
+    s_cur = f;
+    s_cur.rgba = NULL;
+    s_have = 1;
+    s_new_frames++;
+    s_uploads++;
+  }
+  t1 = pc_now_us();
+  s_upload_us += t1 - t0;
+  if (s_filter != g_pc_opts.filter) {
+    GLint m = g_pc_opts.filter ? GL_LINEAR : GL_NEAREST;
+    s_filter = g_pc_opts.filter;
+    p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, m);
+    p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, m);
+  }
+  SDL_GetWindowSizeInPixels(s_win, &ww, &wh);
+  p_glViewport(0, 0, ww, wh);
+  p_glClearColor(0, 0, 0, 1);
+  p_glClear(GL_COLOR_BUFFER_BIT);
+  if (s_have && ww > 0 && wh > 0) {
+    /* the largest 4:3 (or 16:9) box in the window */
+    float aspect = s_cur.wide ? 16.0f / 9.0f : 4.0f / 3.0f, bw = (float)ww, bh = bw / aspect;
+    if (bh > wh) {
+      bh = (float)wh;
+      bw = bh * aspect;
+    }
+    {
+      float x0 = -bw / ww, y0 = -bh / wh;
+      p_glUniform4f(s_u_rect, x0, y0, -x0, -y0);
+      p_glUniform4f(s_u_uv, (float)s_cur.w / s_tex_w, (float)s_cur.h / s_tex_h, 0, 0);
+      p_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
+  }
+  if (s_shot_path[0])
+    take_shot(ww, wh);
+  SDL_GL_SwapWindow(s_win);
+  s_swap_us += pc_now_us() - t1;
+  s_refreshes++;
+  if (!s_vsync_on)
+    SDL_DelayPrecise(1000000); /* no vsync: about 1000 pictures a second at most */
+}
+
+void pc_video_report(int vblank) {
+  static unsigned r0, n0;
+  unsigned r = s_refreshes - r0 ? s_refreshes - r0 : 1;
+  host_log("video %d: %u refreshes, %u new frames; per refresh %llu us upload, %llu us draw+swap",
+           vblank, s_refreshes - r0, s_new_frames - n0, s_upload_us / r, s_swap_us / r);
+  r0 = s_refreshes;
+  n0 = s_new_frames;
+  s_upload_us = s_swap_us = 0;
+}
