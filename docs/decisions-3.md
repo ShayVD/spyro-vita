@@ -1498,3 +1498,13 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Result:** no code change; `docs/presentation.md` records why the demos draw at 1× and the numbers. All Vita3K shots identical (demo60 66/66, owner60 91/91, stone60 95/95).
 - **Option for the owner (not implemented):** skip the in-between frame in a demo tick when two presenter frames and the update don't fit the tick. On hardware a tick would then be ~1 ms plus max(logic draw 9–13, real frame 19–28) ≈ 21–29 ms, so the demos would play at the original speed (about 150 ticks per 300, against 85–124 now) at 30 fps. It would be on for the whole Stone Hill demo on hardware and never in Vita3K. Asked in #235.
 - **Left:** the next hardware session sizes the vertex cache's share of a demo frame (Toasty route, 4,200–6,300, owner's settings against `persp=0 subpixel=0`). Making the demos' 1× an explicit rule in `lod.c`, so a later limiter fix can't quietly move them to 2×, is #236.
+
+### D225. The attract demos' presenter frames draw at 1× by an explicit rule in `lod.c` (#236, 2026-11-23)
+
+- **Why:** D224 found the demos' 16:9 presenter frames at 1× only because the game's hold (60, from the last shown draw's level reset) never counts down while the logic draws are hidden. A later limiter fix could quietly move them to 2×, about +18% a demo frame (D224), on frames already over the tick on hardware.
+- **How (`src/game/lod.c`, comment in `lod.h`):**
+  - `s_demo_shown` (part of `LOD_STATE`, so `lod_begin`'s save and restore and `--render-ctx-check` carry it) is "the game's last draw was a shown attract-demo draw", set in `port_lod_draw_end`, which only `game_draw` calls.
+  - In the game's `port_lod_draw_begin` (`#ifndef RENDER_PRES`), after the existing clamp: an attract demo draws at 1× until the game's last draw is one of the demo's own shown draws. That covers the presenter frames of 16:9 demos, including the first tick, whose 16:9 frame runs before its first hidden logic draw (a "last draw hidden" rule missed that one frame at 3,931). Demos whose logic draw is shown (4:3, `ws_logic`, no presenter) keep the limiter.
+- **Checked:**
+  - With 2× forced in front of the rule (temporary `T236` build), Vita3K `demo60` reads 1× in every window from 4,080 to 5,580, and its shots are 66/66 identical to base.
+  - Final build: shots identical to `base-278ebf8` on all seven routes; owner60, stone60 and demo60 lod lines byte-identical (`dd_budget=1`); demo60's counters all the same against a same-code head build run twice. Host ctest 32 of 32, Vita build, `noassets`. Logs: `runs/auto-236-1`.
