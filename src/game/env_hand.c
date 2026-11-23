@@ -2168,7 +2168,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
   for (;;) {
     u32 graw, p, t3raw, t4, tbl, tend, clut, tpage, k, n;
     u32 anchor; /* #217: its first vertex's key; #229: its corners' keys mixed (VCD_PIECE3/4) */
-    const u8 *corner; /* #217: each grid point's corner number, 0xFF: a split point */
+    const u8 *corner; /* #217: each grid point's corner number (#229: a split point's edge's) */
     s32 len;
     if (PORT_LOD_ENV_FULL(fp, 1))
       end = list;
@@ -2274,8 +2274,8 @@ static u32 SplitLast(u32 fp, u32 ot) {
       AT32(fp + 0x8) = AT32(a);
       AT32(fp + 0x14) = AT32(b);
       AT32(fp + 0x20) = AT32(c);
-      { /* #217: the corners it keeps named under its own first vertex too, for
-         * its split (queued) or its drawing (the cache's walk); #229: and its
+      { /* #217: the corners it keeps named under its own anchor too, for its
+         * split (queued) or its drawing (the cache's walk); #229: and its
          * split points (p 1) */
         const u32 g3[3] = {a, b, c}, xya = VCD_PIECE3(AT32(a), AT32(b), AT32(c)); /* (#229) */
         u32 v;

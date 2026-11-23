@@ -330,7 +330,7 @@ typedef struct {
  * anchor. No hand-over reads these (hk stays as it was): only the walk's
  * own-point step, for a world polygon nothing else finds, and a split
  * point's end here (sp_place). */
-#define VC_SP 2048
+#define VC_SP 1024 /* (as hk: a frame's split points, their moves and moved corners; sp_full counts any not kept) */
 typedef struct {
   uint32_t key, anchor, gen;
   float dx, dy;
