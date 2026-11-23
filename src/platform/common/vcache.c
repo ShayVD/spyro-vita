@@ -660,8 +660,9 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   /* #229 */
   PsyX_Log("vcache world own: %u vertices found from their piece's own split point or moved "
            "corner; %u kept, %u not kept (full); %u split points paired across 4x depths, %u "
-           "corners the grid moved (#229)",
-           out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved);
+           "corners the grid moved; %u world polygons found from their own points drawn affine, "
+           "their depths 4x apart (#229)",
+           out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -4129,6 +4130,14 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
             }
           ok = choose(e2, en2, k_all, n, cost, pick);
         }
+        if (!ok && cx == VCX_ENV) {
+          /* #229: a world piece whose depths no choice brings under 4 times
+           * apart (a split point between ends 4 times apart or more, kept
+           * as its piece's own): found, and drawn affine at those places, as
+           * any polygon found whole whose depths are so far apart (spread) */
+          memset(pick, 0, sizeof pick);
+          ok = 2;
+        }
       }
       if (ok) {
         for (i = 0; i < n; i++)
@@ -4152,7 +4161,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
             st->own_found++;
             st->sp_found += (unsigned)spv[i];
           }
-        persp = VREF_PERSP;
+        persp = ok == 2 ? 0 : VREF_PERSP; /* (#229: spread, drawn affine) */
+        st->spread += ok == 2;
+        st->sp_spread += ok == 2;
         res = 1;
         none = -1;
       } else {

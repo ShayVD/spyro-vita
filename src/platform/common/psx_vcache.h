@@ -510,8 +510,10 @@ typedef struct {
    * vertices found from one (counted in hits and own_found too), the
    * records made (split points, the moves to each GT3, moved corners), not
    * kept (full), the split points among them placed only by pairing ends
-   * whose depths are 4x apart or more, and the corners the grid moved */
-  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved;
+   * whose depths are 4x apart or more, and the corners the grid moved; and
+   * the world polygons found from their own points whose depths no choice
+   * brings under 4x apart, drawn affine (counted in spread too) */
+  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
