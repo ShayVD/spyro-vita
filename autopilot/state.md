@@ -11,19 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 229,
-      "branch": "auto/229-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-229",
-      "pids": [],
-      "started_at": "2026-11-23T15:16:13Z",
-      "files": [
-        "src/game/env_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "a9e17d2e81f3b419a"
-    },
-    {
       "issue": 234,
       "branch": "auto/234-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-234",
@@ -39,7 +26,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "ae7fafa49d8036819"
     }
   ],
-  "last_good": "0d9b795f4285565c1ddb78606e1932fadfe928bf",
+  "last_good": "449c171c0cf9760ea86b880c8b97c731248a6535",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -247,7 +234,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 24,
+    "filed": 27,
     "investigated": true
   },
   "rounds_without_gain": 0,
