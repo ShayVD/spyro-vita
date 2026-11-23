@@ -1,143 +1,162 @@
 {
-  "limits": {
-    "workers": 5,
-    "stall_hours": 2,
-    "max_attempts": 2,
-    "max_issues_per_day": 20,
-    "stop_rounds": 3,
-    "noise": 0.02,
-    "target_fps": 60
+ "limits": {
+  "workers": 5,
+  "stall_hours": 2,
+  "max_attempts": 2,
+  "max_issues_per_day": 20,
+  "stop_rounds": 3,
+  "noise": 0.02,
+  "target_fps": 60
+ },
+ "hw_game": "tools/vita/hw.game",
+ "build_mode": "per_branch",
+ "commands": {
+  "build": "cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_TOOLCHAIN_FILE=/usr/local/vitasdk/share/vita.toolchain.cmake -DPython3_EXECUTABLE=/usr/bin/python3 && cmake --build build/vita",
+  "host_tests": "mkdir -p build && { [ -d build/s1-matching ] || cp -R $MAIN/build/s1-matching build/; } && tools/tc cmake -S . -B build/linux32 -G Ninja -DSPYRO_HOST=linux32 -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake && tools/tc cmake --build build/linux32 && tools/tc ctest --test-dir build/linux32 --output-on-failure",
+  "quick_check": "{{build_mode batched only}}",
+  "vpk_version": "{{the command that prints the next free VPK version}}",
+  "phase_gates": {
+   "1": "tools/build_matching.sh"
+  }
+ },
+ "routes": [
+  {
+   "name": "title",
+   "timeout": 300,
+   "config": [
+    "vdm_ring=1024",
+    "interp_budget=0",
+    "shot=300,900,1500,2100,2640",
+    "shot_hd=1",
+    "frames=2700"
+   ],
+   "pad": null
   },
-  "hw_game": "tools/vita/hw.game",
-  "build_mode": "per_branch",
-  "commands": {
-    "build": "cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita -DCMAKE_TOOLCHAIN_FILE=/usr/local/vitasdk/share/vita.toolchain.cmake -DPython3_EXECUTABLE=/usr/bin/python3 && cmake --build build/vita",
-    "host_tests": "mkdir -p build && { [ -d build/s1-matching ] || cp -R $MAIN/build/s1-matching build/; } && tools/tc cmake -S . -B build/linux32 -G Ninja -DSPYRO_HOST=linux32 -DCMAKE_TOOLCHAIN_FILE=cmake/linux32.toolchain.cmake && tools/tc cmake --build build/linux32 && tools/tc ctest --test-dir build/linux32 --output-on-failure",
-    "quick_check": "{{build_mode batched only}}",
-    "vpk_version": "{{the command that prints the next free VPK version}}",
-    "phase_gates": {
-      "1": "tools/build_matching.sh"
-    }
+  {
+   "name": "pause-ws",
+   "timeout": 1200,
+   "config": [
+    "vdm_ring=1024",
+    "interp_budget=0",
+    "widescreen=1",
+    "shot_every=100",
+    "frames=9100"
+   ],
+   "pad": "tools/vita/hw-routes/pause-ws.pad"
   },
-  "routes": [
-    {
-      "name": "title",
-      "timeout": 300,
-      "config": [
-        "vdm_ring=1024",
-        "interp_budget=0",
-        "shot=300,900,1500,2100,2640",
-        "shot_hd=1",
-        "frames=2700"
-      ],
-      "pad": null
-    },
-    {
-      "name": "pause-ws",
-      "timeout": 1200,
-      "config": [
-        "vdm_ring=1024",
-        "interp_budget=0",
-        "widescreen=1",
-        "shot_every=100",
-        "frames=9100"
-      ],
-      "pad": "tools/vita/hw-routes/pause-ws.pad"
-    },
-    {
-      "name": "pause-ws-wobble",
-      "timeout": 1200,
-      "config": [
-        "vdm_ring=1024",
-        "interp_budget=0",
-        "widescreen=1",
-        "persp=1",
-        "subpixel=1",
-        "shot_every=100",
-        "frames=9100"
-      ],
-      "pad": "tools/vita/hw-routes/pause-ws.pad"
-    },
-    {
-      "name": "wobble60",
-      "timeout": 1200,
-      "config": [
-        "vdm_ring=1024",
-        "config_version=5",
-        "widescreen=1",
-        "interp=1",
-        "interp_budget=0",
-        "persp=1",
-        "subpixel=1",
-        "shot_every=100",
-        "frames=9100"
-      ],
-      "pad": "tools/vita/hw-routes/pause-ws.pad"
-    },
-    {
-      "name": "owner60",
-      "pad": "tools/vita/hw-routes/pause-ws.pad",
-      "timeout": 1500,
-      "config": [
-        "vdm_ring=1024",
-        "config_version=5",
-        "widescreen=1",
-        "interp=4",
-        "interp_budget=0",
-        "persp=1",
-        "subpixel=1",
-        "draw_distance=200",
-        "shot_every=100",
-        "frames=9100"
-      ]
-    },
-    {
-      "name": "stone60",
-      "pad": "tools/vita/hw-routes/stone60.pad",
-      "timeout": 1500,
-      "config": [
-        "vdm_ring=1024",
-        "config_version=5",
-        "widescreen=1",
-        "interp=4",
-        "interp_budget=0",
-        "persp=1",
-        "subpixel=1",
-        "draw_distance=200",
-        "shot_every=100",
-        "frames=9500"
-      ]
-    }
-  ],
-  "shots": {
-    "max_diff": 0.0,
-    "tol": 0,
-    "edge": 0
+  {
+   "name": "pause-ws-wobble",
+   "timeout": 1200,
+   "config": [
+    "vdm_ring=1024",
+    "interp_budget=0",
+    "widescreen=1",
+    "persp=1",
+    "subpixel=1",
+    "shot_every=100",
+    "frames=9100"
+   ],
+   "pad": "tools/vita/hw-routes/pause-ws.pad"
   },
-  "benchmark": [
-    {
-      "name": "pause-ws",
-      "route": "pause-ws",
-      "min_frame": 6600,
-      "max_frame": 9000
-    },
-    {
-      "name": "wobble60",
-      "route": "wobble60",
-      "min_frame": 6600,
-      "max_frame": 9000
-    },
-    {
-      "name": "owner60",
-      "route": "owner60",
-      "min_frame": 6600,
-      "max_frame": 9000
-    },
-    {
-      "name": "stone60",
-      "route": "stone60",
-      "min_frame": 7300,
-      "max_frame": 9400
-    }
-  ]
+  {
+   "name": "wobble60",
+   "timeout": 1200,
+   "config": [
+    "vdm_ring=1024",
+    "config_version=5",
+    "widescreen=1",
+    "interp=1",
+    "interp_budget=0",
+    "persp=1",
+    "subpixel=1",
+    "shot_every=100",
+    "frames=9100"
+   ],
+   "pad": "tools/vita/hw-routes/pause-ws.pad"
+  },
+  {
+   "name": "owner60",
+   "pad": "tools/vita/hw-routes/pause-ws.pad",
+   "timeout": 1500,
+   "config": [
+    "vdm_ring=1024",
+    "config_version=5",
+    "widescreen=1",
+    "interp=4",
+    "interp_budget=0",
+    "persp=1",
+    "subpixel=1",
+    "draw_distance=200",
+    "dd_budget=1",
+    "shot_every=100",
+    "frames=9100"
+   ]
+  },
+  {
+   "name": "stone60",
+   "pad": "tools/vita/hw-routes/stone60.pad",
+   "timeout": 1500,
+   "config": [
+    "vdm_ring=1024",
+    "config_version=5",
+    "widescreen=1",
+    "interp=4",
+    "interp_budget=0",
+    "persp=1",
+    "subpixel=1",
+    "draw_distance=200",
+    "dd_budget=1",
+    "shot_every=100",
+    "frames=9500"
+   ]
+  },
+  {
+   "name": "demo60",
+   "pad": null,
+   "timeout": 1200,
+   "config": [
+    "vdm_ring=1024",
+    "config_version=5",
+    "widescreen=1",
+    "interp=4",
+    "interp_budget=0",
+    "persp=1",
+    "subpixel=1",
+    "draw_distance=200",
+    "shot_every=100",
+    "frames=6600"
+   ]
+  }
+ ],
+ "shots": {
+  "max_diff": 0.0,
+  "tol": 0,
+  "edge": 0
+ },
+ "benchmark": [
+  {
+   "name": "pause-ws",
+   "route": "pause-ws",
+   "min_frame": 6600,
+   "max_frame": 9000
+  },
+  {
+   "name": "wobble60",
+   "route": "wobble60",
+   "min_frame": 6600,
+   "max_frame": 9000
+  },
+  {
+   "name": "owner60",
+   "route": "owner60",
+   "min_frame": 6600,
+   "max_frame": 9000
+  },
+  {
+   "name": "stone60",
+   "route": "stone60",
+   "min_frame": 7300,
+   "max_frame": 9400
+  }
+ ]
 }

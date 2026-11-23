@@ -1235,3 +1235,36 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Host logs, traces and saves are byte-identical, on route S at 30 Hz and with `--tick60`. The host per-polygon FNV wasn't run: no writer is in the tree, and on the host the hook is never set.
   - ctest passes 32 of 32. Logs: `runs/auto-212-1`.
 - **Left:** the hardware A/B, auto against `dd_budget=1`, on stone60 (`ap16-stone60.txt`) and owner60-style runs.
+
+### D213. With the wobble fix on, a portal sky cut that the hand-overs leave unplaced takes its own fraction of the side (#215, 2026-11-22)
+
+- **Why:** PortalSkyPlain topped the missed list on every route (D210): 1,230 on routes S and P at 30 Hz, 2,440 with `--interp`. Tagged on route P:
+  - **Cuts 8–64 px from their key (660).** The portal outline is an arc of edges a few pixels long and nearly in line. Sutherland–Hodgman cuts against each edge's whole line, so a side often crosses an edge's line just past the edge's end. The line through the exact ends, extended, then runs pixels away from the integer one.
+  - **An ambiguous outer end (378).**
+  - **Two cuts at one key more than 2 px apart (185).**
+- **How:**
+  - `sky_clip_hand.c` `CutSide` hands the sky side's own fraction (IR0) to the vertex cache with `VCD_T`, for `ClipSky`'s cuts only.
+  - Where the hand-overs leave the key with no place, `frac_hand` (`vcache.c`) places the cut t of the way between the side's exact ends, at 1/w-linear depth, within 8 px. An ambiguous end is its last projection in the frame's order, through `res_place`.
+  - The places sit in a per-table `fr[256]` that no hand-over reads.
+  - The walk takes one only for a vertex nothing else finds, not where #197 would take the polygon, and only in a PortalSkyPlain, PortalSkyFog or unnamed polygon. Without that renderer gate, a glow's vertex at a cut's pixel took the cut's place.
+  - New counters `hk_frac`, `fr_kept` and `fr_nosrc`, on a new `vcache cut fraction:` line.
+  - D182's hand-over rules and D205's merge order are unchanged; the fraction comes after both.
+- **Measured (host, 2×, 16:9):**
+
+  | Route | Missed | PortalSkyPlain |
+  |---|---|---|
+  | S, 30 Hz | 1,870 → 645 | 1,230 → 0 |
+  | S, `--interp` | 3,725 → 1,294 | 2,440 → 0 |
+  | P, 30 Hz | 1,312 → 87 | 1,230 → 0 |
+  | P, `--interp` | 2,609 → 178 | 2,440 → 0 |
+  | Pf, 30 Hz | 718 → 72 | 660 → 14 |
+  | Pf, `--interp` | 1,457 → 151 | 1,329 → 28 |
+
+  What's left is EnvDraw, SkyDraw, GlowsAndSparkles and MobyShadows.
+- **Checks:**
+  - Host FNV per polygon: 0 changed in 6 pairs, with 564 to 2,121 polygons newly found.
+  - Vita3K: shots identical on six routes.
+  - `CAPTURE=1` at stone60's worst fly-in frames: only the portal sky's horizon inside the portal changes (0.008% and 0.028% of pixels). It is straightened, and no gaps open.
+  - ctest passes 32 of 32.
+  - Logs: `runs/auto-215-1`.
+- **Found:** on the Vita build, the portal sky's unplaced vertices are filed as "outside the renderers" (exempt) rather than under PortalSkyPlain or PortalSkyFog. On the Vita, D210's missed count under-reports them; added to #222.
