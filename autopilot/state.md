@@ -26,24 +26,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a08d754a6dd2f45b9",
       "last_commit_at": "2026-11-23T02:26:21+00:00"
-    },
-    {
-      "issue": 224,
-      "branch": "auto/224-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-224",
-      "pids": [],
-      "started_at": "2026-11-23T01:49:53Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "docs/vita-testing.md"
-      ],
-      "agent": "aef7a59ffc4c212ed",
-      "last_commit_at": "2026-11-23T02:00:10+00:00",
-      "reported": true
     }
   ],
-  "last_good": "ca05137195ed414febfe39a6e97aa157a29fc09a",
+  "last_good": "485a87de7413dd8a181f948d753f667cfe9578c0",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -250,14 +235,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 224,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-224.gate.log",
-    "started_at": "2026-11-23T03:10:44Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -425,3 +403,4 @@ continue.
 - 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
 - 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
 - 2026-11-23T03:10:52Z phase 8: #224 reported done; gating, Vita3K: none
+- 2026-11-23T03:33:15Z phase 8: merged #224 (D215); presentation.md lod text updated, Vita3K: none
