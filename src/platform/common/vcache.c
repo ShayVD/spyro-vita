@@ -663,9 +663,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   PsyX_Log("vcache world own: %u vertices found from their piece's own split point or moved "
            "corner; %u kept, %u not kept (full); %u split points paired across 4x depths, %u "
            "corners the grid moved; %u world polygons found from their own points drawn affine, "
-           "their depths 4x apart; %u ambiguous corners resolved with them (#229)",
+           "their depths 4x apart; %u ambiguous corners resolved with them, %u moved corners "
+           "found where they weren't (the polygon affine) (#229)",
            out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
-           out->sp_res);
+           out->sp_res, out->sp_part);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -4105,7 +4106,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       /* #229: each own point's projection's entry (-1: none named); a world
        * quad's ambiguous corners with none, resolved from the frame's order
        * near the rest (ares) */
-      int oent[4] = {-1, -1, -1, -1}, ares[4] = {0, 0, 0, 0}, nares = 0;
+      int oent[4] = {-1, -1, -1, -1}, ares[4] = {0, 0, 0, 0}, nares = 0, part = 0;
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -4164,7 +4165,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
               en2[i] = rn[i];
             }
         } else {
+          /* none: the moved corner is still found at its own point, and the
+           * polygon drawn affine with its ambiguous corners at their keys
+           * (as any polygon with an ambiguous vertex left) */
           all = 0;
+          part = 1;
           memset(rx, 0, sizeof rx);
         }
       } else if (nares)
@@ -4230,6 +4235,26 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         st->sp_spread += ok == 2;
         res = 1;
         none = -1;
+      } else if (part) { /* #229 (above) */
+        for (i = 0; i < n; i++)
+          if (ow[i] == 1) {
+            e[i] = oc[i];
+            en[i] = eo[i];
+            et[i] = 0;
+            if (amb[i]) {
+              amb[i] = 0;
+              nambig--;
+              st->own_amb++;
+            } else
+              nnone--;
+            nmiss--;
+            st->hits++;
+            st->own_found++;
+            st->sp_found += (unsigned)spv[i];
+            st->sp_part++;
+          } else
+            ow[i] = 0;
+        memset(pick, 0, sizeof pick);
       } else {
         memset(ow, 0, sizeof ow);
         memset(pick, 0, sizeof pick);

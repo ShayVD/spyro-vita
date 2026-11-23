@@ -527,8 +527,10 @@ typedef struct {
    * the world polygons found from their own points whose depths no choice
    * brings under 4x apart, drawn affine (counted in spread too); and the
    * ambiguous corners of world quads found so, resolved from the frame's
-   * order near their moved corner's own projection (counted in resolved) */
-  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread, sp_res;
+   * order near their moved corner's own projection (counted in resolved),
+   * and the moved corners found where those weren't (their polygon drawn
+   * affine, its ambiguous corners left as they were) */
+  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread, sp_res, sp_part;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
