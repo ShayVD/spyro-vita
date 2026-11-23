@@ -43,8 +43,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "last_good": "2199042edf8a14c89c366258ddf6867cf7a228ef",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
-    "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
+    "commit": "278ebf8"
   },
   "hardware_runs": [
     {
@@ -251,10 +251,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": {
     "kind": "baseline",
     "issue": 0,
-    "step": 1,
+    "step": 2,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ed4a4eb",
-    "started_at": "2026-11-22T23:56:13Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/rebase-278.log",
+    "started_at": "2026-11-23T00:24:06Z"
   },
   "batch": null,
   "lanes": [
@@ -416,3 +416,4 @@ continue.
 - 2026-11-22T23:25:53Z phase 8: filed #223, started #223; #215 gating, Vita3K: none
 - 2026-11-22T23:55:19Z phase 8: merged #215 (D213), Vita3K: none
 - 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
+- 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
