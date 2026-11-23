@@ -57,9 +57,10 @@ void psx_vcache_set_lazy(int on);
 void psx_vcache_set_lazy_logic(int mode);
 /* #233: the walk's lookup of a polygon whose vertices are all found takes a
  * short path of its own (psx_vcache_poly), the rest the whole one as
- * before: 1 (the default) or 0, every polygon the whole path. The same
- * answers either way. */
-void psx_vcache_set_found_fast(int on);
+ * before: 2 (the default) that path, reading the polygon's first probes
+ * up front; 1 that path without; 0 every polygon the whole path. The same
+ * answers in each. */
+void psx_vcache_set_found_fast(int mode);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these

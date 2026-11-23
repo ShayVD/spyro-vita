@@ -4374,8 +4374,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
  * poly_full counts each lookup as before. A polygon found whole is then
  * finished as poly_full finishes one: the depth choice, its counts, the
  * vertices' references and the answers at side. */
-static int s_found_fast = 1; /* psx_vcache_set_found_fast */
-void psx_vcache_set_found_fast(int on) { s_found_fast = on != 0; }
+static int s_found_fast = 2; /* psx_vcache_set_found_fast */
+void psx_vcache_set_found_fast(int mode) { s_found_fast = mode < 0 ? 0 : mode > 2 ? 2 : mode; }
 
 void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   static const int k_all[4] = {0, 1, 2, 3};
@@ -4413,14 +4413,16 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     const Sink lk = pres ? (Sink){work, cost, st, NULL}
                          : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
     uint32_t keys[4];
-    {
-      /* each vertex's first probe read up front, so the polygon's misses
-       * on the table (another core wrote it, a frame ago) overlap instead
-       * of each waiting for the one before; nothing is decided here */
+    for (i = 0; i < n; i++)
+      keys[i] = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+    if (s_found_fast == 2) {
+      /* each vertex's first probe read up front (n is 3 or 4), so a
+       * polygon's misses on the table (another core wrote it, a frame ago)
+       * can overlap on the A9 instead of each waiting for the one before;
+       * nothing is decided here. Vita3K shows no change (#233): only the
+       * hardware can tell, hence mode 1 without it. */
       const Table *const lt = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].tab : s_rtab;
-      uint32_t w0 = 0, w1 = 0, w2 = 0, w3 = 0;
-      for (i = 0; i < n; i++)
-        keys[i] = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+      uint32_t w0, w1, w2, w3 = 0;
       w0 = lt->s[hash(keys[0])].tag;
       w1 = lt->s[hash(keys[1])].tag;
       w2 = lt->s[hash(keys[2])].tag;
