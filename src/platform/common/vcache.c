@@ -144,7 +144,8 @@
  * compared with the last ones kept by their generation (gte_native.h
  * NgteProj gen), not word by word. The same sums, the same registers kept:
  * every answer is as before. Since #213 the sky's records (sky_hand.c) come
- * the same way, with the sums its projections kept, and the portal sky's
+ * the same way, with no sums (NGTE_NO_SUMS: summed from the registers when
+ * worked out at once, as from the words before), and the portal sky's
  * (sky_clip_hand.c) take one generation a draw, not one a sector; only the
  * register file's (rtp_hook) still pass words.
  *
@@ -810,6 +811,17 @@ static inline void pt_words(Pt *a, const int *proj, int vx, int vy, int vz) {
   a->ofx = proj[PROJ_OFX], a->ofy = proj[PROJ_OFY], a->h = proj[PROJ_H];
 }
 
+/* a native projection's sums from its registers, as pt_words from the
+ * words: a record that passed none (NGTE_NO_SUMS, the sky's, #213) */
+static inline void pt_np(Pt *a, const NgteProj *p, int vx, int vy, int vz) {
+  a->mx = ((int64_t)p->trx << 12) + (int64_t)(p->r11 * vx) + (p->r12 * vy) + (p->r13 * vz);
+  a->my = ((int64_t)p->try_ << 12) + (int64_t)(p->r21 * vx) + (p->r22 * vy) + (p->r23 * vz);
+  a->mz = ((int64_t)p->trz << 12) + (int64_t)(p->r31 * vx) + (p->r32 * vy) + (p->r33 * vz);
+  a->vx = vx, a->vy = vy, a->vz = vz;
+  a->tr = p->trx || p->try_ || p->trz;
+  a->ofx = p->ofx, a->ofy = p->ofy, a->h = p->h;
+}
+
 static inline void pt_ngte(Pt *a, const NgteProj *p, const NgteRtp *o, int vx, int vy, int vz) {
   a->mx = o->m1, a->my = o->m2, a->mz = o->m3;
   a->vx = vx, a->vy = vy, a->vz = vz;
@@ -1306,7 +1318,9 @@ static inline void lz_need(const Table *tab, const Sink *k, int e) {
 
 /* One projection recorded: its registers as words (proj), or a native
  * projection's registers by pointer (np) with the GTE's own sums (o) (#205;
- * proj NULL). Inlined into each caller, so each keeps only its own form. */
+ * proj NULL), or with none (o NULL: the sky's, #213, summed here from np
+ * when worked out at once). Inlined into each caller, so each keeps only
+ * its own forms. */
 static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink *k,
                                                            const int *proj, const NgteProj *np,
                                                            const NgteRtp *o, int vx, int vy,
@@ -1367,8 +1381,10 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
     k->rec[VCR_ONCE]++;
   {
     Pt a;
-    if (np)
+    if (np && o)
       pt_ngte(&a, np, o, vx, vy, vz);
+    else if (np)
+      pt_np(&a, np, vx, vy, vz);
     else
       pt_words(&a, proj, vx, vy, vz);
     rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
@@ -1409,8 +1425,8 @@ unsigned g_pres_ngte_gen;
  * hook's form for each vertex. Called only while the value hook is set,
  * which is rtp_value_hook then (psx_vcache_enable): the same record. */
 void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
-  rtp_point(VC_LOGIC, &k_game, NULL, p, o, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), o->sxy,
-            (int)o->sz3, 1);
+  rtp_point(VC_LOGIC, &k_game, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
+            ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
 }
 
 /* the presenter's counts: its thread's, or the game thread's inline */
@@ -1437,8 +1453,8 @@ static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigne
 void pres_vcache_ngte(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
   Sink k;
   pres_sink(&k);
-  rtp_point(VC_PRES, &k, NULL, p, o, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), o->sxy,
-            (int)o->sz3, 1);
+  rtp_point(VC_PRES, &k, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
+            ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
 }
 
 /* ratio(a, b) < 4, exactly (depths > 0; times 4 isn't rounded) */
