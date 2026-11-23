@@ -3668,8 +3668,8 @@ static const Ow *own_look(const Table *tb, uint32_t gen, uint32_t key, uint32_t 
  * from the projection it names, as resolve reads a log place: 1; 0 that
  * projection has no answer (the GTE could not give it: behind the eye);
  * -1 not usable (two points, or farther than lim from its key: 1024; #229:
- * 16384 for a world piece's corner, whose clamped projection's own place
- * lies far off the screen, as a split point made from it may) */
+ * 1048576 for a world piece's corner, whose clamped projection's own place
+ * may lie far off the screen: a corner nearly level with the eye) */
 static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key, float *dx,
                      float *dy, Cand *c, unsigned *nc, float lim) {
   const Entry *en;
@@ -4120,7 +4120,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
                      &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
-                          cx == VCX_ENV ? 16384.0f : 1024.0f)
+                          cx == VCX_ENV ? 1048576.0f : 1024.0f)
               : -1;
         if (o && o->r < ptab->nlog)
           oent[i] = (int)LOG_E(ptab->log[o->r]);
