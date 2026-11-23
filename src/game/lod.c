@@ -50,7 +50,8 @@
  * a world over 65% of that bound's room (Stone Hill's 52 KB of 66) held 2x
  * at 1x even with the budget off. Only drawn pictures use the longer
  * distances: the hidden 4:3 logic draw of attract demos keeps the original
- * ones. */
+ * ones, and so do the presenter's 16:9 frames of those demos (the demo
+ * rule in port_lod_draw_begin, D224, #236). */
 #include "lod.h"
 
 #include "mips2c_rt.h"
@@ -101,6 +102,8 @@ static uint32_t s_ext[2][MAX_EXT / 32]; /* level mobys drawn by pass 2 */
 static int s_ext_cur;
 static int s_level = -1, s_gamestate = -1;
 static int s_loaded; /* a save state was loaded: the next draw at full scale */
+static int s_demo_shown; /* the game's last draw was a shown attract-demo draw
+                            (port_lod_draw_end): the limiter measures the demo */
 
 /* this draw's primitive buffer (draw_begin) */
 static u32 s_poly_lo, s_env_limit, s_moby_limit, s_env_last, s_env_end;
@@ -331,6 +334,24 @@ void port_lod_draw_begin(int shown) {
   }
   if (s_k > g_lod.scale || s_k < LOD_ONE)
     s_k = s_k < LOD_ONE ? LOD_ONE : g_lod.scale;
+#ifndef RENDER_PRES
+  /* The demo rule (D224, #236): an attract demo at 16:9 draws its
+   * presenter frames at 1x. There the game's own draws are the hidden 4:3
+   * logic draws, so the limiter never measures a draw and can't keep these
+   * frames within the buffer or the time a tick has; 2x would cost about
+   * 18% more a demo frame (D224), on frames already over the tick on the
+   * hardware. The presenter takes this state through pres_draw.c lod_begin
+   * (port_lod_draw_begin(1), then the game's state put back). Until #236 the
+   * 1x came only from the hold the last shown draw left (a new level's 60),
+   * which nothing counts down while the draws are hidden. So in a demo every
+   * draw is at 1x until the game's last draw is one of the demo's own shown
+   * draws: also the demo's first tick, whose 16:9 frame comes before its
+   * first (hidden) logic draw. A demo whose logic draw is shown (4:3,
+   * ws_logic, no presenter) keeps the limiter after that first draw, which
+   * a new gamestate puts at 1x anyway. */
+  if (g_DemoMode != DEMO_MODE_NONE && !s_demo_shown)
+    s_k = LOD_ONE;
+#endif
   g_lod_k = s_k;
   memset(s_ext[s_ext_cur], 0, sizeof s_ext[0]);
 }
@@ -409,6 +430,8 @@ void port_lod_draw_end(int shown) {
   g_lod_k = LOD_ONE;
   g_lod_stats = 0;
   s_last_60 = 0;
+  s_demo_shown = shown && g_DemoMode != DEMO_MODE_NONE; /* the game's draws only:
+                                     the presenter's never end here */
   if (!shown || !g_CurDB || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
@@ -531,9 +554,9 @@ void port_lod_report(char *out, unsigned len) {
  * compares after. All of this file's state, in one block. */
 #define LOD_STATE(X)                                                           \
   X(g_lod) X(g_lod_k) X(g_lod_pass) X(g_lod_stats) X(s_k) X(s_hold) X(s_ext)   \
-  X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_poly_lo)              \
-  X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end) X(s_rec2) X(s_st) \
-  X(s_logic60) X(s_last_bytes) X(s_last_60) X(s_bt)
+  X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_demo_shown)        \
+  X(s_poly_lo) X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end)      \
+  X(s_rec2) X(s_st) X(s_logic60) X(s_last_bytes) X(s_last_60) X(s_bt)
 #define LOD_SIZE(v) + sizeof v
 #define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
 #define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;

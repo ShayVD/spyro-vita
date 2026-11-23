@@ -51,7 +51,11 @@ int lod_set_budget(int bytes, int used_us, int target_us);
 void lod_set_budget_hook(void (*fn)(void));
 
 /* present.c, around every GamestateDraw: shown = its picture is shown (not
- * the hidden 4:3 logic draw of attract demos). */
+ * the hidden 4:3 logic draw of attract demos). pres_draw.c's lod_begin calls
+ * port_lod_draw_begin(1) for each presenter frame and puts the state back.
+ * In an attract demo every draw is at 1x until the game's last draw is one
+ * of the demo's own shown draws, so the demos' 16:9 presenter frames, whose
+ * logic draws are hidden, are at 1x (the demo rule, D224, #236). */
 void port_lod_draw_begin(int shown);
 void port_lod_draw_end(int shown);
 
