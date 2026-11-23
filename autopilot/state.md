@@ -252,12 +252,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 2,
+    "kind": "gate",
+    "issue": 223,
+    "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/rebase-278.log",
-    "started_at": "2026-11-23T00:24:06Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-223.gate.log",
+    "started_at": "2026-11-23T00:54:09Z"
   },
   "batch": null,
   "lanes": [
@@ -421,3 +421,4 @@ continue.
 - 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
 - 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
 - 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
+- 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
