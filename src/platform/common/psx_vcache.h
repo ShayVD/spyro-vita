@@ -135,7 +135,10 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * (an ambiguous or invalid key: a corner the GTE clamped to the screen's
  * limit, which other clamped points share), the end is taken at its own
  * point, after the hand-over's two passes (#202) fail; a place made so is
- * tainted (#202: it counts only where nothing else placed the key). A
+ * tainted (#202: it counts only where nothing else placed the key), and
+ * may lie far from the PS1's key (a clamped end's exact place: within
+ * 16384 pixels, not 1024). An end with no projection (behind the eye)
+ * leaves the key with none, its vertex exempt (VCX_NO_PROJ). A
  * piece the split queues again, or draws, names the corners it keeps
  * under its own first vertex (VCD_SELF with VCD_OWN: sxy's own point under
  * q, if any, becomes its own point under b), and the walk's own-point step

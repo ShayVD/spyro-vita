@@ -1799,8 +1799,10 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
     cost[VCC_REC_DIV]++;
     x = (ax * ka + bx * kb) * r;
     y = (ay * ka + by * kb) * r;
-    if (own) /* #217: ends named by their projections: a clamped end's exact place may lie
-                   far off the screen, and so may the 3D point, far from the PS1's key */
+    /* #217: ends named by their projections: a clamped end's exact place
+     * may lie far off the screen, and so may the 3D point, far from the
+     * PS1's key */
+    if (own)
       lim = 16384;
   } else { /* one point: its depths, its place (and the offset) */
     x = ax + (form == VCD_OFFSET ? (float)p : 0.0f);

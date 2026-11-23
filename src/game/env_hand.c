@@ -1833,14 +1833,14 @@ static inline int QueueLast(u32 fp, u32 zs) {
   return 1;
 }
 
-/* #217: a piece queued for the last list names each corner for the vertex
- * cache by the projection that made it, P projections back (its grid's
- * points are projected in order and nothing is projected after them before
- * the piece is queued), under the piece's first vertex's key and the
- * corner's number (psx_vcache.h VCD_SELF, VCD_CORNER). SplitMid's points then still find their ends where a corner's
- * key names no single point: the GTE clamps a corner far off screen to the
- * screen's limit, a key other clamped points share. Nothing the game reads
- * changes. */
+/* #217: a piece queued for the last list names each corner I for the
+ * vertex cache by the projection that made it, P projections back (its
+ * grid's points are projected in order, and nothing is projected after
+ * them before the piece is queued), under the piece's first vertex's key
+ * and I (psx_vcache.h VCD_SELF, VCD_CORNER). SplitMid's points then still
+ * find their ends where a corner's key names no single point: the GTE
+ * clamps a corner far off screen to the screen's limit, a key other
+ * clamped points share. Nothing the game reads changes. */
 static inline void NameCorner(u32 xy, u32 anchor, u32 i, u32 p) {
   PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_ENV_SPLIT) | VCD_SELF, xy, xy, VCD_CORNER(anchor, i), (int)p, 0);
 }
