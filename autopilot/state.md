@@ -11,22 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 223,
-      "branch": "auto/223-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-223",
-      "pids": [],
-      "started_at": "2026-11-22T23:25:33Z",
-      "files": [
-        "src/platform/vita/prof_draw.c",
-        "src/platform/vita/CMakeLists.txt",
-        "src/platform/vita/picture.c",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a38d43540aa2da0cd",
-      "last_commit_at": "2026-11-22T23:35:59+00:00",
-      "reported": true
-    },
-    {
       "issue": 213,
       "branch": "auto/213-1",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-213",
@@ -44,7 +28,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "last_commit_at": "2026-11-23T00:14:48+00:00"
     }
   ],
-  "last_good": "2199042edf8a14c89c366258ddf6867cf7a228ef",
+  "last_good": "ca05137195ed414febfe39a6e97aa157a29fc09a",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -246,19 +230,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 13,
+    "filed": 14,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 223,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-auto-223.gate.log",
-    "started_at": "2026-11-23T00:54:09Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -422,3 +399,4 @@ continue.
 - 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
 - 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
 - 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
+- 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
