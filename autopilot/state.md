@@ -24,6 +24,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md"
       ],
       "agent": "ae7fafa49d8036819"
+    },
+    {
+      "issue": 233,
+      "branch": "auto/233-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-233",
+      "pids": [],
+      "started_at": "2026-11-23T20:26:46Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/common/gpu_walk.c",
+        "tools/oracle/pads/route_toasty.txt"
+      ],
+      "agent": "aa37b4f4f296ba0b7"
     }
   ],
   "last_good": "449c171c0cf9760ea86b880c8b97c731248a6535",
