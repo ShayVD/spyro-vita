@@ -25,9 +25,11 @@ foreach(f func_80050BD0 func_800258F0 func_8001F158 func_8001F798 func_800208FC 
 endforeach()
 if(WIN32)
   # A fixed base of 0x400000, no ASLR, and not large-address-aware: the whole
-  # process below 2 GB (low_win.c). A console program too, for the log on stderr.
+  # process below 2 GB (low_win.c). A GUI program (no console window): the
+  # log is spyro.log in the user folder, and stderr still reaches a redirect.
   target_link_options(spyro PRIVATE -Wl,--image-base,0x400000 -Wl,--disable-dynamicbase
-    -Wl,--disable-high-entropy-va -Wl,--disable-large-address-aware -static)
+    -Wl,--disable-high-entropy-va "-Wl,-Xlink=-largeaddressaware:no" -static -mwindows)
+  target_link_libraries(spyro PRIVATE pthread) # winpthreads (cdnative.c's worker, semaphores)
 else()
   # non-PIE at 0x400000; the C++ runtime static (SDL's HIDAPI is C++-free,
   # the rest of the game C): only glibc, libm and libdl from the system

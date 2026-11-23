@@ -25,6 +25,7 @@
 #include "region_data.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h> /* Windows: WinMain for the GUI subsystem, calling main() below */
 
 #include <stdarg.h>
 #include <stdint.h>

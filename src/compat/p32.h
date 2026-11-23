@@ -31,6 +31,17 @@
 #define SPYRO_P32_H
 
 #if defined(__x86_64__) && defined(__clang__)
+#if defined(_WIN32)
+/* mingw's _mingw.h defines __ptr32 and __ptr64 as empty macros (MSVC's
+ * keywords, for other compilers); once any system header is in, every P32
+ * field would silently be 8 bytes (the PC's Windows build, D241). Take
+ * _mingw.h now (it is guarded, so it never defines them again) and drop the
+ * two: clang's own keywords remain. */
+#include <_mingw.h>
+#undef __ptr32
+#undef __ptr64
+#include "pc_win.h" /* the BSD type names glibc has and mingw lacks */
+#endif
 #define SPYRO_P32 1
 #define P32 __ptr32 __uptr
 #define P32_INIT(name) name##_p32init

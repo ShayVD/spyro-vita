@@ -130,12 +130,13 @@ jobs:
             cmake --build build/linux32
             ctest --test-dir build/linux32 --output-on-failure'
 
-  # The PC build for Linux (docs/pc-build.md, D240): the amd64 toolchain
-  # image, the build, and a start without a disc under a virtual X display
-  # (Mesa's llvmpipe): the low image's checks pass, SDL opens a window with a
-  # GL 3.3 context, and the game reports the missing disc and exits 1.
-  pc-linux:
-    name: PC (Linux x86-64)
+  # The PC build (docs/pc-build.md, D240, D241): the amd64 toolchain image,
+  # Linux and Windows (llvm-mingw) from it, and a start of the Linux build
+  # without a disc under a virtual X display (Mesa's llvmpipe): the low
+  # image's checks pass, SDL opens a window with a GL 3.3 context, and the
+  # game reports the missing disc and exits 1.
+  pc:
+    name: PC (Linux and Windows x86-64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -143,13 +144,16 @@ jobs:
           submodules: true
       - name: Build the PC image
         run: docker build --platform linux/amd64 -t spyro-pc -f tools/docker/pc.Dockerfile tools/docker
-      - name: Build
+      - name: Build for Linux and Windows
         run: |
           docker run --rm -v "$PWD:/work" -w /work spyro-pc sh -ec '
             cmake -S . -B build/pc-linux -G Ninja -DSPYRO_HOST=pc \
               -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux.toolchain.cmake
-            cmake --build build/pc-linux'
-      - name: Starts, opens a GL 3.3 window, and stops for the missing disc
+            cmake --build build/pc-linux
+            cmake -S . -B build/pc-win -G Ninja -DSPYRO_HOST=pc \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/pc-windows.toolchain.cmake
+            cmake --build build/pc-win'
+      - name: Linux starts, opens a GL 3.3 window, and stops for the missing disc
         run: |
           set +e
           docker run --rm -v "$PWD:/work" -w /work -e HOME=/work/build/pc-home spyro-pc sh -c '
@@ -166,6 +170,43 @@ jobs:
           name: spyro-pc-linux
           path: build/pc-linux/spyro
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spyro-pc-windows
+          path: build/pc-win/spyro.exe
+          if-no-files-found: error
+
+  # The Windows build on Windows: it loads at its fixed base, the host's
+  # memory (heap, a fresh mapping, a stack) lands below 2 GB as a program
+  # that isn't large-address-aware should, SDL opens a window with a GL 3.3 context (Mesa's llvmpipe
+  # opengl32.dll beside it: the runner has no GPU), and it stops for the
+  # missing disc with exit code 1.
+  pc-windows-smoke:
+    name: PC (Windows) starts
+    needs: pc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: spyro-pc-windows
+          path: run
+      - name: Mesa's llvmpipe for GL (mesa-dist-win 26.2.6, MIT)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/pal1000/mesa-dist-win/releases/download/26.2.6/mesa3d-26.2.6-release-mingw.7z -OutFile mesa.7z
+          7z x mesa.7z -omesa x64 | Out-Null
+          Copy-Item mesa/x64/*.dll run/
+      - name: Start without a disc
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force no-disc | Out-Null
+          $p = Start-Process -FilePath run/spyro.exe -ArgumentList '--disc','no-disc','--frames','120' `
+                 -RedirectStandardError smoke.log -NoNewWindow -PassThru -Wait
+          Get-Content smoke.log
+          if ($p.ExitCode -ne 1) { throw "exit code $($p.ExitCode), expected 1" }
+          if (-not (Select-String -Path smoke.log -Pattern 'all below 2 GB: yes' -Quiet)) { throw "host memory not below 2 GB" }
+          if (-not (Select-String -Path smoke.log -Pattern 'video: windows, llvmpipe' -Quiet)) { throw "no GL 3.3 window" }
+          if (-not (Select-String -Path smoke.log -Pattern 'No Spyro the Dragon disc data was found' -Quiet)) { throw "no disc message" }
 
   draft-release:
     name: Draft release
