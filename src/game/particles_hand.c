@@ -753,8 +753,8 @@ static void Glows(void) {
         if ((s32)nx <= 0)
           f2 |= 8;
         rim2 = (nx & 0xFFFFu) | (ny << 16);
-        PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS) | VCD_OWN, rim2, centre, centre, (s32)(nx - (u32)sx),
-                      (s32)(ny - (u32)sy));
+        PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS) | VCD_OWN, rim2, centre, centre,
+                      (s32)(nx - (u32)sx), (s32)(ny - (u32)sy));
         AT32(prim + 0x18) = rim2;
         if (!((s32)(f0 & f1 & f2) > 0)) {
           Link(slot, prim, ND_K_G3);

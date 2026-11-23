@@ -2031,7 +2031,8 @@ static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a
   Touch t = TOUCH0;
   unsigned r;
   int ox, oy;
-  if ((form == VCD_ALIAS || form == VCD_OFFSET) && own_src(kind, k, a, anchor, &r, &ox, &oy, &t) == 0)
+  if ((form == VCD_ALIAS || form == VCD_OFFSET) &&
+      own_src(kind, k, a, anchor, &r, &ox, &oy, &t) == 0)
     own_put(kind, k, key, anchor, r, ox + (form == VCD_OFFSET ? p : 0),
             oy + (form == VCD_OFFSET ? q : 0), &t);
   else
