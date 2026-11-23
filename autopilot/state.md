@@ -26,6 +26,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a08d754a6dd2f45b9",
       "last_commit_at": "2026-11-23T00:14:48+00:00"
+    },
+    {
+      "issue": 224,
+      "branch": "auto/224-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-224",
+      "pids": [],
+      "started_at": "2026-11-23T01:49:53Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "docs/vita-testing.md"
+      ],
+      "agent": "aef7a59ffc4c212ed"
     }
   ],
   "last_good": "ca05137195ed414febfe39a6e97aa157a29fc09a",
@@ -400,3 +413,4 @@ continue.
 - 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
 - 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
 - 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
+- 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
