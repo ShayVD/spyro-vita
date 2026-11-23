@@ -1,6 +1,6 @@
-# PC build (Linux, Windows; D240)
+# PC build (Linux, Windows; D240, D241)
 
-**Status (2026-11-23):** Linux builds and plays (US disc, boot to Artisans; CI builds it and starts it without a disc). Windows is next (below), then the GPU renderer at the window's resolution.
+**Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). Next: the GPU renderer at the window's resolution, and a person with a real GPU and gamepad.
 
 A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **SDL3** (window, input, audio) and **OpenGL 3.3 core** (the picture).
 
@@ -13,7 +13,7 @@ Spyro was written for a 32-bit machine. Its structures hold 4-byte pointers, and
 - every pointer field the game stores in its own memory is a 32-bit pointer (`P32`: clang's `__ptr32 __uptr`, `src/compat/p32.h`; the generated `patches/spyro-1-ptr32`). Only clang has `__ptr32`, and only for x86 targets: there is no ARM64 build (Apple Silicon Macs, ARM Linux) with this model.
 - everything the game can point at lies below 2 GB, so those 32 bits hold the whole address: the executable sits at 0x400000 (non-PIE on Linux, a fixed base on Windows), the 2 MB of PS1 RAM is a `.bss` array in it (`arena.c`), and the game runs on a thread whose stack is in the image too (the hand C takes addresses of locals). `main()` checks all three and refuses to run otherwise.
 - **Linux:** nothing of the host's may be below 4 GB, so a host pointer cut to 32 bits by mistake crashes instead of quietly aliasing the game's memory. `low_linux.c` reserves every free page from 64 KiB to 4 GB (`PROT_NONE`) from `.preinit_array`, which the dynamic loader runs before any shared library starts. glibc's malloc, SDL, the X11/Wayland and GL drivers and every thread stack then land above 4 GB. (The headless linux64 build is static and needs its own malloc; this one doesn't.) `SPYRO_LOW_TRAP=0` turns the reservation off.
-- **Windows** (next): the executable is not large-address-aware, so Windows keeps the whole process below 2 GB: every address fits 32 bits and nothing can be cut (`low_win.c`).
+- **Windows:** the executable has a fixed base of 0x400000 (no ASLR) and is not large-address-aware, so Windows keeps the whole process below 2 GB: every address fits 32 bits and nothing can be cut (`low_win.c`). The game thread is an ordinary thread there (its stack is below 2 GB too; `main.c` checks). Wine doesn't apply that 2 GB limit to 64-bit programs; the game's own memory is low there anyway (the image and its `.bss`).
 
 ### Two threads
 
@@ -46,3 +46,20 @@ tools/pc/tc cmake --build build/pc-linux        # -> build/pc-linux/spyro
 ```
 
 The image is amd64 (Debian 12, clang 19, SDL 3.4.18 built static). On an Apple Silicon Mac, point `DOCKER_HOST` at a Docker VM with Rosetta (`colima start --vm-type vz --vz-rosetta`): the build and the game then run at near-native speed. `PC_X=1 tools/pc/tc build/pc-linux/spyro --disc disc/image --frames 3000 --shot 600,2400` runs it under a virtual X display (Xvfb, Mesa's llvmpipe), which is how CI and a Mac check it.
+
+### Windows
+
+```bash
+tools/pc/tc cmake -S . -B build/pc-win -G Ninja -DSPYRO_HOST=pc -DCMAKE_TOOLCHAIN_FILE=cmake/pc-windows.toolchain.cmake
+tools/pc/tc cmake --build build/pc-win          # -> build/pc-win/spyro.exe
+```
+
+Cross-compiled in the same image with llvm-mingw (clang, the UCRT): one static `spyro.exe` that needs only Windows' own DLLs (Windows 10 and later have the UCRT). What Windows needed beyond Linux (D241):
+
+- **`__ptr32` survives mingw's headers:** `_mingw.h` defines `__ptr32` and `__ptr64` as empty macros (MSVC's keywords, for other compilers), which silently made every `P32` field 8 bytes once any system header was in (the hand C's layout asserts caught it). `src/compat/p32.h` takes `_mingw.h` first and drops the two macros; clang's keywords remain.
+- **The GNU bitfield layout** (`-mno-ms-bitfields`), so the PS1's structs keep their offsets; the BSD type names (`u_char`, `u_int`, …) from `src/compat/pc_win.h`; `long *` for `int *` a warning (Windows' `long` is 32 bits, as PsyQ's).
+- **COFF assembly:** `tools/data2s.py --coff` and `pres_snap_syms.py --coff` (no `.type`/`.size`, COFF section flags, no GNU-stack note).
+- **Relocatable links with GNU ld:** lld's MinGW driver can't do `-r`, which the presenter and the 60 Hz update are linked into; `binutils-mingw-w64`'s `ld` and `objcopy` do those, lld the executable.
+- **Every file binary** (`_set_fmode(_O_BINARY)`): the common code opens the disc with `open`/`fopen` as on POSIX. `pread` is a positional `ReadFile`; `mkdir` has no mode; `etext`/`_end` (a save state's layout stamp) are marks in the image.
+
+To try it on the Mac: `docker build` an image `FROM spyro-pc` with Debian's `wine` and run `wine build/pc-win/spyro.exe --disc 'Z:\work\disc\image'` under `tools/pc/xrun.sh` (Wine's GL is Mesa's llvmpipe there).

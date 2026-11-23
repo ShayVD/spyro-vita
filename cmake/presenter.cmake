@@ -113,7 +113,7 @@ set(PRES_TABLE_C "${GEN_DIR}/pres_snap_table.c")
 add_custom_command(OUTPUT "${PRES_SYMS_S}" "${PRES_TABLE_C}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py"
     --map "${SPYRO_PSX_MAP}" --names "${PRES_DIR}/pres_snap_names.h" --names "${PRES_NAMES}"
-    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}"
+    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}" ${SPYRO_COFF_ARG}
   DEPENDS "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py" "${PRES_DIR}/pres_snap_names.h" "${PRES_NAMES}" "${SPYRO_PSX_MAP}"
   COMMENT "presenter: the snapshot's labels (pres_snap_syms.S)")
 add_library(spyro_pres_snap OBJECT "${PRES_SYMS_S}" "${PRES_TABLE_C}")

@@ -100,8 +100,18 @@ elseif(SPYRO_HOST STREQUAL "pc")
   # the PS4's clang 18 vectorized P32_INIT's loops into an addrspacecast its
   # backend can't select (D193); kept off for every clang here.
   set(SPYRO_ARCH_FLAGS --target=${SPYRO_PC_TARGET} -fms-extensions)
+  if(SPYRO_PC_TARGET MATCHES "mingw")
+    # Windows (D241): the GNU bitfield layout, not Microsoft's (the PS1's
+    # structs keep their offsets); src/compat/p32.h brings pc_win.h
+    list(APPEND SPYRO_ARCH_FLAGS -mno-ms-bitfields)
+    set(SPYRO_COFF_ARG --coff) # tools/data2s.py, pres_snap_syms.py
+    # PsyQ's long is Windows' long (32 bits), but clang won't take a long *
+    # for an int * as an error there: the same bytes, a warning
+    set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
+  endif()
   set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
-      -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
+      -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type
+      ${SPYRO_PC_EXTRA_FLAGS})
 elseif(SPYRO_HOST STREQUAL "linux64")
   # --target here too: the overlays' preprocessing and the relocatable links
   # (cmake/overlays.cmake, presenter.cmake, tick60.cmake) call the compiler

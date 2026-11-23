@@ -8,6 +8,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32 /* the PC's Windows build (D241): mkdir takes no mode there */
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#endif
 
 int g_Region = PSX_REGION_US;
 int g_RegionTiming;

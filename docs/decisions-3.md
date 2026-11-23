@@ -874,3 +874,16 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not possible:** an ARM64 build (Apple Silicon, ARM Linux): clang's `__ptr32` is an x86 feature, and the model rests on it.
 - **Next:** Windows (cross-built with llvm-mingw, not large-address-aware so the whole process lies below 2 GB), CI for both, then the GPU renderer at the window's resolution.
 - **Next free number (this branch):** D241.
+
+### D241. The PC build for Windows: cross-compiled with llvm-mingw, a fixed base and not large-address-aware
+
+- **Why:** D240's next step. No Windows machine here: the build is cross-compiled in the PC image, checked under Wine, and gated in CI on a real Windows runner.
+- **What:** `cmake/pc-windows.toolchain.cmake` (llvm-mingw 20261104, clang for `x86_64-w64-mingw32`, the UCRT), SDL3 for Windows built static in the image; one static `spyro.exe` that needs only Windows' own DLLs. `docs/pc-build.md` "Windows" has the list; in short:
+  - **The low image:** a fixed base of 0x400000, no ASLR, **not large-address-aware**: Windows keeps the whole process below 2 GB, so every address fits a `P32` field and nothing is cut. No reservation is needed (or possible). The game thread is an ordinary thread (SDL's, 8 MB), its stack below 2 GB like everything else; `main.c` checks it.
+  - **mingw's `_mingw.h` defines `__ptr32` and `__ptr64` as empty macros.** Every `P32` field silently became 8 bytes once any system header was in; the hand C's `static_assert`s on `Moby` (104 bytes, not 88) caught it. `src/compat/p32.h` includes `_mingw.h` first and undefines the two (it is guarded, so it never defines them again): clang's keywords remain. Only `_mingw.h`: the overlays are preprocessed and compiled again with `p32.h` forced in, and a second copy of `<sys/types.h>`'s structs is an error.
+  - `-mno-ms-bitfields` (the PS1's structs keep their GNU layout), `src/compat/pc_win.h` (the BSD type names), `-Wno-error=incompatible-pointer-types` (Windows' `long *` for an `int *`: the same 32 bits).
+  - `tools/data2s.py --coff`, `pres_snap_syms.py --coff`: COFF assembly. The relocatable links (`-r`, the presenter and the 60 Hz update) through GNU ld for PE, which lld's MinGW driver can't do; GNU objcopy edits them.
+  - `_set_fmode(_O_BINARY)` (the disc's bytes untouched by text mode), `pread` as a positional `ReadFile`, `mkdir` without a mode, `etext`/`_end` as marks (a save state's layout stamp), winpthreads.
+- **Checked:** `llvm-readobj`: base 0x400000, no `DYNAMIC_BASE`, `HIGH_ENTROPY_VA` or `LARGE_ADDRESS_AWARE`; imports Windows' DLLs and the UCRT only. Under Wine 8 (amd64 Docker under Rosetta, Xvfb, llvmpipe): the US disc to the 16:9 title at 60.0 vblanks a second, and the play route (`logs/pcw-run2.log`). CI: the `pc` job builds both; `pc-windows-smoke` runs `spyro.exe` on `windows-latest` with Mesa's llvmpipe `opengl32.dll` beside it, which must report addresses up to 0x7FFEFFFF, a GL 3.3 window and the missing disc.
+- **Not checked:** Windows itself with a GPU, a sound card and a gamepad.
+- **Next free number (this branch):** D242.
