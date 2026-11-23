@@ -584,9 +584,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->hk_frac, out->fr_kept, out->fr_nosrc);
   /* #216 */
   PsyX_Log("vcache own points: %u vertices found from their glow's or shadow's own point (%u "
-           "of them at an ambiguous key); %u own points kept, %u with no source, %u not kept "
-           "(full) (#216)",
-           out->own_found, out->own_amb, out->own_kept, out->own_nosrc, out->own_full);
+           "of them at an ambiguous key, and %u found ones of their polygons drawn at theirs); "
+           "%u own points kept, %u with no source, %u not kept (full) (#216)",
+           out->own_found, out->own_amb, out->own_over, out->own_kept, out->own_nosrc,
+           out->own_full);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -3496,14 +3497,16 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     /* #216: a glow's or moby shadow's polygon nothing above found: each
      * vertex not found (no entry, or an ambiguous key) at its renderer's
      * own point, from the projection that made it, under the polygon's
-     * first vertex's key; only when every one has one */
+     * first vertex's key; only when every one has one. Its found vertices
+     * with one take theirs too (ow 2), so the depths are all the
+     * renderer's own projections'; if those choose none, as found. */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find(ptab, gen, xy[0]);
     if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS) {
       const uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
       const Cand *e2[4];
-      unsigned en2[4];
-      int m = 0, all = !inv;
+      unsigned en2[4], eo[4];
+      int m = 0, all = !inv, ok = 0;
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -3511,30 +3514,46 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         int r;
         e2[i] = e[i];
         en2[i] = en[i];
-        if (e[i])
-          continue;
-        if (!noent[i] && !amb[i]) { /* invalid */
+        if (!e[i] && !noent[i] && !amb[i]) { /* invalid */
           all = 0;
           continue;
         }
         o = own_look(ptab, gen, key, anchor, &cost[VCC_LOOK_PROBES], &t);
-        r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &en2[i]) : -1;
+        r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i]) : -1;
         cost[VCC_LOOK_LINES] += t.n;
         if (r == 1) {
-          ow[i] = 1;
+          ow[i] = e[i] ? 2 : 1;
           e2[i] = oc[i];
-          m++;
-        } else {
+          en2[i] = eo[i];
+          m += !e[i];
+        } else if (!e[i]) {
           all = 0;
           nnp += r == 0 && noent[i];
         }
       }
-      if (all && m && choose(e2, en2, k_all, n, cost, pick)) {
+      if (all && m) {
+        ok = choose(e2, en2, k_all, n, cost, pick);
+        if (!ok) { /* as found, the rest at their own points */
+          for (i = 0; i < n; i++)
+            if (ow[i] == 2) {
+              ow[i] = 0;
+              e2[i] = e[i];
+              en2[i] = en[i];
+            }
+          ok = choose(e2, en2, k_all, n, cost, pick);
+        }
+      }
+      if (ok) {
         for (i = 0; i < n; i++)
           if (ow[i]) {
             e[i] = oc[i];
-            en[i] = en2[i];
+            en[i] = eo[i];
             et[i] = 0;
+            if (ow[i] == 2) {
+              hk[i] = NULL;
+              st->own_over++;
+              continue;
+            }
             if (amb[i]) {
               amb[i] = 0;
               nambig--;

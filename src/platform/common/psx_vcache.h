@@ -446,10 +446,12 @@ typedef struct {
   unsigned hk_frac, fr_kept, fr_nosrc;
   /* #216: vertices found from their renderer's own point (VCD_OWN,
    * VCD_SELF; counted in hits, not in hooked), those of them whose key was
-   * ambiguous (not counted in resolved), and the own points kept, not
-   * usable when made (no source, or the projection named is not the
-   * key's), and not kept (full) */
-  unsigned own_found, own_amb, own_kept, own_nosrc, own_full;
+   * ambiguous (not counted in resolved), the vertices of their polygons
+   * found otherwise but drawn at their own point too (one projection's
+   * depths for the whole polygon), and the own points kept, not usable when
+   * made (no source, or the projection named is not the key's, or two
+   * different under one key), and not kept (full) */
+  unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
