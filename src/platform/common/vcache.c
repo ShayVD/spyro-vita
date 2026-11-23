@@ -4088,7 +4088,14 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find(ptab, gen, xy[0]);
     if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV) { /* (#217: a split piece's) */
-      const uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
+      const uint32_t k0 = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
+      const uint32_t k1 = (uint16_t)xy[1][0] | (uint32_t)(uint16_t)xy[1][1] << 16;
+      const uint32_t k2 = (uint16_t)xy[2][0] | (uint32_t)(uint16_t)xy[2][1] << 16;
+      /* (#229: a world piece's, its corners' keys mixed) */
+      const uint32_t anchor =
+          cx != VCX_ENV ? k0
+          : n == 4 ? VCD_PIECE4(k0, k1, k2, (uint16_t)xy[3][0] | (uint32_t)(uint16_t)xy[3][1] << 16)
+                   : VCD_PIECE3(k0, k1, k2);
       const Cand *e2[4];
       unsigned en2[4], eo[4];
       int m = 0, all = !inv, ok = 0, spv[4] = {0, 0, 0, 0};

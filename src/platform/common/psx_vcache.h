@@ -165,6 +165,13 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * (VCD_SELF names it). The walk's own-point step takes these only for a
  * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
 #define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
+/* #229: a world piece's anchor is all its corners' keys mixed, not its first
+ * vertex's alone: two GT3s of one piece that start at one point and have
+ * two different corners on one clamped key at one vertex number named both
+ * under one anchor, so neither was kept */
+#define VCD_PIECE3(a, b, c)                                                                    \
+  ((unsigned)(a) ^ (unsigned)(b) * 0x9E3779B1u ^ (unsigned)(c) * 0x85EBCA77u)
+#define VCD_PIECE4(a, b, c, d) (VCD_PIECE3(a, b, c) ^ (unsigned)(d) * 0xC2B2AE35u)
 /* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
  * once for every piece of its grid: a world quad drawn at once (not split)
  * finds its moved corner there */

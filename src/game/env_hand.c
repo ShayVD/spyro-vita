@@ -1976,11 +1976,11 @@ static u32 Subdiv4x4Quad(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *
         continue;
     }
     if (!small) { /* #217: its corners, grid points gi, gi + 1, gi + 5, gi + 6 of 25 */
-      const u32 gi = (g - GRID(0)) >> 4;
-      NameCorner(xy0, xy0, 0, 24 - gi);
-      NameCorner(xy1, xy0, 1, 23 - gi);
-      NameCorner(xy2, xy0, 2, 19 - gi);
-      NameCorner(xy3, xy0, 3, 18 - gi);
+      const u32 gi = (g - GRID(0)) >> 4, an = VCD_PIECE4(xy0, xy1, xy2, xy3); /* (#229) */
+      NameCorner(xy0, an, 0, 24 - gi);
+      NameCorner(xy1, an, 1, 23 - gi);
+      NameCorner(xy2, an, 2, 19 - gi);
+      NameCorner(xy3, an, 3, 18 - gi);
     }
     AT32(fp) = 0xC000000;
     /* a piece on the last list stays a primitive: SplitLast reads it back */
@@ -2087,9 +2087,10 @@ static u32 Subdiv4x4Tri(u32 fp, u32 ot, u32 poly, u32 err, const SubdivSector *h
         continue;
     }
     if (!small) { /* #217: its corners, of the grid's 15 points */
-      NameCorner(xya, xya, 0, 14 - ((pa - GRID(0)) >> 4));
-      NameCorner(xyb, xya, 1, 14 - ((pb - GRID(0)) >> 4));
-      NameCorner(xyc, xya, 2, 14 - ((pc - GRID(0)) >> 4));
+      const u32 an = VCD_PIECE3(xya, xyb, xyc); /* (#229) */
+      NameCorner(xya, an, 0, 14 - ((pa - GRID(0)) >> 4));
+      NameCorner(xyb, an, 1, 14 - ((pb - GRID(0)) >> 4));
+      NameCorner(xyc, an, 2, 14 - ((pc - GRID(0)) >> 4));
     }
     AT32(fp) = 0x9000000;
     if (small)
@@ -2166,7 +2167,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
   u32 list = LIST_LOW, end = AT32(SC(SC_LAST_END));
   for (;;) {
     u32 graw, p, t3raw, t4, tbl, tend, clut, tpage, k, n;
-    u32 anchor; /* #217: its first vertex's key */
+    u32 anchor; /* #217: its first vertex's key; #229: its corners' keys mixed (VCD_PIECE3/4) */
     const u8 *corner; /* #217: each grid point's corner number, 0xFF: a split point */
     s32 len;
     if (PORT_LOD_ENV_FULL(fp, 1))
@@ -2184,7 +2185,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
       const u32 c0 = AT32(p + 0x4) - 0x8000000, c1 = AT32(p + 0x10) - 0x8000000;
       const u32 c2 = AT32(p + 0x1C) - 0x8000000, c3 = AT32(p + 0x28) - 0x8000000;
       const u32 u0 = AT32(p + 0xC), u1 = AT32(p + 0x18), u2 = AT32(p + 0x24), u3 = AT32(p + 0x30);
-      anchor = xy0;
+      anchor = VCD_PIECE4(xy0, xy1, xy2, xy3); /* (#229) */
       corner = k_corner4;
       SplitMid(1, xy0, xy1, c0, c1, anchor, 0, 1);
       SplitMid(3, xy0, xy2, c0, c2, anchor, 0, 2);
@@ -2218,7 +2219,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
       const u32 xy0 = AT32(p + 0x8), xy1 = AT32(p + 0x14), xy2 = AT32(p + 0x20);
       const u32 c0 = AT32(p + 0x4), c1 = AT32(p + 0x10), c2 = AT32(p + 0x1C);
       const u32 u0 = AT32(p + 0xC), u1 = AT32(p + 0x18), u2 = AT32(p + 0x24);
-      anchor = xy0;
+      anchor = VCD_PIECE3(xy0, xy1, xy2); /* (#229) */
       corner = k_corner3;
       SplitMid(1, xy0, xy1, c0, c1, anchor, 0, 1);
       SplitMid(3, xy0, xy2, c0, c2, anchor, 0, 2);
@@ -2276,7 +2277,7 @@ static u32 SplitLast(u32 fp, u32 ot) {
       { /* #217: the corners it keeps named under its own first vertex too, for
          * its split (queued) or its drawing (the cache's walk); #229: and its
          * split points (p 1) */
-        const u32 g3[3] = {a, b, c}, xya = AT32(a);
+        const u32 g3[3] = {a, b, c}, xya = VCD_PIECE3(AT32(a), AT32(b), AT32(c)); /* (#229) */
         u32 v;
         for (v = 0; v < 3; v++) {
           const u32 cn = corner[(g3[v] - GRID(0)) >> 4];
