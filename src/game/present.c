@@ -1130,6 +1130,11 @@ static void wide_state_out(void) {
 
 const PresentPresOut *g_present_pres;
 void (*g_present_pres_watch)(int after);
+/* #227: in an attract demo at 16:9, the in-between frame inline on the game
+ * thread and only the 16:9 real frame on the presenter's worker, beside the
+ * logic draw; 0: both on the worker (D211), the in-between frame waited for
+ * before the real frame starts */
+int g_present_demo_inline = 1;
 
 #if SPYRO_PRESENTER
 /* ---------- the presenter (stage 7e, D125; on its own core, 7f, D126) ----------
@@ -1154,11 +1159,14 @@ void (*g_present_pres_watch)(int after);
  *  - the game thread joins it before update N+1 (port_present_pres_join):
  *    the update changes the level's data the presenter reads (the
  *    animated bytes), and the wait keeps its frame exact without a copy.
- *    In an attract demo at 16:9 (#220) both of a tick's frames go to the
- *    worker: the in-between frame, joined by the 16:9 real frame's pass
- *    (it starts from the visibility state the first leaves), and the real
- *    frame, beside the hidden 4:3 logic draw, joined after it for its
- *    capture, which the game thread files there as inline (D128).
+ *    In an attract demo at 16:9 the 16:9 real frame goes to the worker
+ *    (#220), beside the hidden 4:3 logic draw, joined after it for its
+ *    capture, which the game thread files there as inline (D128). The
+ *    in-between frame before it runs inline (#227,
+ *    g_present_demo_inline): the presenter has one snapshot, so the real
+ *    frame can't start before it ends (it starts from the visibility
+ *    state the in-between frame leaves), and on the worker the game
+ *    thread only waited for it there (D211; 0 puts it back).
  * libgpu's currentDispEnv: the presenter's PutDispEnv left it set to its
  * environment for the logic draw's (7e, D125). The game thread puts the
  * same value itself when it starts the job (the DB the draw goes to, the
@@ -1426,16 +1434,20 @@ static int files_a_frame(void) { return !(g_Gamestate == GS_Credits && g_Credits
  * logic draw's waits decide its due vblank, D128): on the worker its
  * buffer files no frame, and the join gives the caller its capture.
  * check: --pres-check, its list recorded for the compare and not drawn
- * (since D129 the snapshot unblended, against the logic draw). Returns 0
+ * (since D129 the snapshot unblended, against the logic draw).
+ * no_worker: inline even with a worker (#227: the attract demos'
+ * in-between frame, before the 16:9 real frame goes there). Returns 0
  * if no frame (the camera jumped); else 1 inline (its frame captured, for
  * the caller to queue) or 2 on the worker (its frame queued already, or
  * with file_late, for push_capture to queue after the join). */
-static int presenter_pass(int wide, int own_state, int blend, int check, int file_late) {
+static int presenter_pass(int wide, int own_state, int blend, int check, int file_late,
+                          int no_worker) {
   long long t = now_us();
   const PresentPresOut *const w = g_present_pres;
   /* on the worker in every gamestate that files a frame, the attract
-   * demos' 16:9 frames too since #220 (until then inline: D128) */
-  const int worker = !check && w && w->usable() && files_a_frame();
+   * demos' 16:9 real frame too since #220 (until then inline: D128);
+   * no_worker: inline all the same (the in-between frame before it, #227) */
+  const int worker = !check && !no_worker && w && w->usable() && files_a_frame();
   /* --pres-check-thread: the check's presenter on a thread beside the
    * logic draw (its list only recorded, never drawn); --pres-check-late:
    * at the join, after it */
@@ -1570,7 +1582,7 @@ static int time_frame(const TimePlan *p, int i, int wide_pass) {
   s_wn = wn;
   s_wd = p->span;
   s_due_for = u;
-  r = presenter_pass(g_present.widescreen, wide_pass, wn != 0, 0, 0);
+  r = presenter_pass(g_present.widescreen, wide_pass, wn != 0, 0, 0, 0);
   if (r == 1)
     push_capture(g_present.widescreen, wn != 0);
   s_wn = 1;
@@ -1707,13 +1719,16 @@ void PortPresentDraw(void) {
   s_prev_interp = interp;
 #if SPYRO_PRESENTER
   /* The in-between frame: the presenter's (stage 7e, D125; every gamestate
-   * since 7g, D128); by time (D148), the tick's first frame */
+   * since 7g, D128); by time (D148), the tick's first frame. Before the
+   * attract demos' 16:9 real frame, inline (#227): that frame's pass would
+   * wait for it on the worker anyway */
   if (interp) {
     long long tp0 = now_us();
     int r;
     t_interp = tp0;
     r = tp.n ? time_frame(&tp, 0, wide_pass)
-             : presenter_pass(g_present.widescreen, wide_pass, 1, 0, 0);
+             : presenter_pass(g_present.widescreen, wide_pass, 1, 0, 0,
+                              wide_pass && g_present_demo_inline);
     if (r) {
       if (r == 1 && !tp.n) /* inline: its capture; on the worker it was filed already */
         push_capture(g_present.widescreen, 1); /* shown before this tick's frame */
@@ -1733,14 +1748,14 @@ void PortPresentDraw(void) {
    * the frames blended by time are the picture: D148); on the worker
    * beside the logic draw (#220) */
   if (wide_pass && !tp.n)
-    presenter_pass(1, 1, 0, 0, 1);
+    presenter_pass(1, 1, 0, 0, 1, 0);
   /* --pres-check (stage 7e, D125; since D129): the presenter's frame from
    * the same snapshot unblended against the logic draw's own list, record
    * for record, with the logic draw's projection and visibility state */
   if (g_pres_check) {
     if (!pres)
       pres_check_skip(4);
-    else if (presenter_pass(logic_wide, 0, 0, 1, 0))
+    else if (presenter_pass(logic_wide, 0, 0, 1, 0, 0))
       s_pres_record = 2; /* the logic pass below records its list too */
     else
       pres_check_skip(1);

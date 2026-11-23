@@ -9,8 +9,37 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
-  "last_good": "e5b507ab582879ba8e8b60e9634b8061e4d6d93e",
+  "workers": [
+    {
+      "issue": 229,
+      "branch": "auto/229-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-229",
+      "pids": [],
+      "started_at": "2026-11-23T15:16:13Z",
+      "files": [
+        "src/game/env_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a9e17d2e81f3b419a"
+    },
+    {
+      "issue": 234,
+      "branch": "auto/234-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-234",
+      "pids": [],
+      "started_at": "2026-11-23T18:47:37Z",
+      "files": [
+        "src/game/present.c",
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
+        "docs/presentation.md"
+      ],
+      "agent": "ae7fafa49d8036819"
+    }
+  ],
+  "last_good": "0d9b795f4285565c1ddb78606e1932fadfe928bf",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -218,7 +247,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 23,
+    "filed": 24,
     "investigated": true
   },
   "rounds_without_gain": 0,
