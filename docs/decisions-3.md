@@ -1323,3 +1323,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Found:**
   - `rtp_value_hook` and `pres_rtp_value_hook` now only flag that the cache is recording (added to #219).
   - The `ngte_proj_regen` audit covered only the sky files (added to #218).
+
+### D217. The walk's depth choice compares ratios without dividing, and `res_place` tests depths on their bits (#214, 2026-11-23)
+
+- **Why:** these were D206's leftovers. `choose`'s ratio path divided and `res_place` compared in float, on core 1. With 60 Hz logic the walk's join is on the game thread's critical path.
+- **What** (`src/platform/common/vcache.c` only):
+  - **`choose` without dividing:** `choose` keeps each ratio as its two depths' 24-bit significands and their exponent difference, and compares two ratios by cross-multiplying in 64 bits. The tests against 4 and 1 are integer tests: a float quotient is under 4 exactly when n/d < (2^25−1)/2^23.
+  - **Float platforms (the Vita, arm64):** two ratios within 2^-22 of each other are still divided as before (`rat_lt_div`), because their floats could round to one value.
+  - **The host's x87:** the old code compared the quotients on the x87 stack at 64-bit precision, which is the real order. There the real order is the answer (`RAT_REAL`), and nothing divides.
+  - **Odd depths:** depths that aren't positive normal floats use the old function (`choose_f`). It ran 0 times in the profiled runs.
+  - **`res_place`:** it reads lc's depth from its bits when it is a normal float, and uses the old float tests otherwise, which keeps the Vita's flush-to-zero behaviour. It returns 2 for candidate 0's point, so `resolve` no longer compares `w` with 0.
+- **Checked:**
+  - **Against the old code:** 0 mismatches in 400 M polygons on arm64 and 60 M on i686, in every `res_place` bit pattern on arm64, and in 200 M on i686. The harness was confirmed to fail when it should.
+  - **Host FNV per polygon:** byte-identical on A 1×, A 2×, B, and Stone Hill forced 2× at 60 Hz (19.0 M polygons).
+  - **Fewer divisions:** host lookup divisions fall 92–94% (Stone Hill 0.50 → 0.03 per vertex). In Vita3K, `vc.div` falls 41–43% on the busy routes.
+  - **Host gprof (normalised):** `choose` −13% (A 2×) and −22% (Stone Hill); `res_place` −26% and −40%; `resolve` −5% and −12%.
+  - **Vita3K:** shots identical on all seven routes.
+  - **Builds:** ctest passes 32 of 32. Not checked on hardware.
+  - Logs: `runs/auto-214-1`.
+- **Left:**
+  - `derive_depth`'s and `same_depthb`'s divisions, and `near8`'s float compare (#225).
+  - A tooling trap: under `tools/tc`, swapping a source file in can leave a stale object. Base/fix scripts must delete the object or check the binary's hash.
