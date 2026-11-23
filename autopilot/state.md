@@ -39,7 +39,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md"
       ],
       "agent": "aef7a59ffc4c212ed",
-      "last_commit_at": "2026-11-23T02:00:10+00:00"
+      "last_commit_at": "2026-11-23T02:00:10+00:00",
+      "reported": true
     }
   ],
   "last_good": "ca05137195ed414febfe39a6e97aa157a29fc09a",
@@ -249,7 +250,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 224,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-auto-224.gate.log",
+    "started_at": "2026-11-23T03:10:44Z"
+  },
   "batch": null,
   "lanes": [
     8
@@ -416,3 +424,4 @@ continue.
 - 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
 - 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
 - 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
+- 2026-11-23T03:10:52Z phase 8: #224 reported done; gating, Vita3K: none
