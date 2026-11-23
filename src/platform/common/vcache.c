@@ -3663,9 +3663,11 @@ static const Ow *own_look(const Table *tb, uint32_t gen, uint32_t key, uint32_t 
 /* #216: an own point's place (pixels from key's pixel centre) and depths,
  * from the projection it names, as resolve reads a log place: 1; 0 that
  * projection has no answer (the GTE could not give it: behind the eye);
- * -1 not usable (two points, or far from its key) */
+ * -1 not usable (two points, or farther than lim from its key: 1024; #229:
+ * 16384 for a world piece's corner, whose clamped projection's own place
+ * lies far off the screen, as a split point made from it may) */
 static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key, float *dx,
-                     float *dy, Cand *c, unsigned *nc) {
+                     float *dy, Cand *c, unsigned *nc, float lim) {
   const Entry *en;
   float x, y, w;
   int e, alt, cl, rk;
@@ -3704,7 +3706,7 @@ static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key,
     return 0;
   x = flt(x + ((short)(en->key & 0xFFFF) + 0.5f) + (float)o->ox - ((short)(key & 0xFFFF) + 0.5f));
   y = flt(y + ((short)(en->key >> 16) + 0.5f) + (float)o->oy - ((short)(key >> 16) + 0.5f));
-  if (!(x < 1024 && x > -1024 && y < 1024 && y > -1024))
+  if (!(x < lim && x > -lim && y < lim && y > -lim))
     return -1;
   *dx = x;
   *dy = y;
@@ -4098,7 +4100,9 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         }
         o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
                      &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
-        r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i]) : -1;
+        r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
+                          cx == VCX_ENV ? 16384.0f : 1024.0f)
+              : -1;
         if (!o && cx == VCX_ENV) { /* #229: its piece's split point or moved corner */
           r = sp_point(ptab, gen, key, VCD_CORNER(anchor, i), &owp[i][0], &owp[i][1], oc[i],
                        &eo[i], &cost[VCC_LOOK_PROBES], &t);
