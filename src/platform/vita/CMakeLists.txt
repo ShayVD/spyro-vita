@@ -105,6 +105,15 @@ target_link_options(spyro_vita PRIVATE -Wl,-q
   -Wl,--wrap=sceAppMgrGetBudgetInfo
   # gpu_meter.c: each GXM scene's fence and submit time (D75)
   -Wl,--wrap=sceGxmEndScene,--wrap=sceGxmBeginScene,--wrap=sceKernelExitProcess)
+# With 60 Hz logic the update is GamestateUpdate_60 (tick60.c, the update
+# path built again: cmake/tick60.cmake), which the GamestateUpdate wrap
+# never sees: prof_draw.c times it too, as the same "update" (#223). Only
+# where the 60 Hz path is built (not with the moved arena).
+if(SPYRO_TICK60)
+  target_link_options(spyro_vita PRIVATE -Wl,--wrap=GamestateUpdate_60)
+  set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/prof_draw.c" PROPERTIES
+    COMPILE_DEFINITIONS "SPYRO_PROF_TICK60=1")
+endif()
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules

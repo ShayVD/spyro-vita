@@ -1268,3 +1268,33 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - ctest passes 32 of 32.
   - Logs: `runs/auto-215-1`.
 - **Found:** on the Vita build, the portal sky's unplaced vertices are filed as "outside the renderers" (exempt) rather than under PortalSkyPlain or PortalSkyFog. On the Vita, D210's missed count under-reports them; added to #222.
+
+### D214. The Vita's `draw N:` lines time the 60 Hz update, and the lod line gets a 640-byte buffer (#223, 2026-11-23)
+
+- **Why:**
+  - With 60 Hz logic the update is `GamestateUpdate_60` (`tick60.c`). The `GamestateUpdate` link wrap in `prof_draw.c` never saw it, so `update` read 0.00 in every 60 Hz window of the hardware logs.
+  - `picture.c`'s 400-byte line buffer made D212 keep its budget text short. The line already reaches 385 bytes.
+- **How:**
+  - The Vita link wraps `GamestateUpdate_60` too, under `SPYRO_TICK60` (the moved-arena build has no 60 Hz path). It is charged to the same `update` column; `PortGamestateUpdate` runs exactly one of the two, so nothing is counted twice.
+  - The line buffer is now 640 bytes; `vita_log`'s own buffer is 1,024. The line formats are unchanged, so the parsers need nothing.
+- **Checks (logging only):**
+  - Vita3K, with `dd_budget=1`: owner60's `update` in 6,900–8,700 reads 0.27–0.70 ms where base read 0.00, and stone60's 0.33–0.54.
+  - Shots are identical on six routes.
+  - The deterministic counters are identical. owner60's timing-dependent vc counters moved past two base runs' spread under machine load.
+  - ctest passes 32 of 32.
+  - Logs: `runs/auto-223-1`.
+- **Left:** `lod.c`'s budget text can now carry the worst frame time and the budget's range (#224).
+
+### D215. With `dd_budget=auto`, the Vita's lod line gives the budget's range and the worst frame time (#224, 2026-11-23)
+
+- **Why:** an average alone can't tell apart a window that swung between the 48 KB floor and a long distance and one that held steady, nor one long frame and a scene that is over the target.
+- **How:** `lod_set_budget` keeps the window's lowest and highest budget and its longest measured game-thread frame (`s_bt.lo`, `.hi`, `.worst`, in `LOD_STATE`). `budget_report` prints them as `budget 61 KB (auto, 48-96 KB, worst 15.9 ms, 2.1 ms left; 3 over)`, or `budget held at 1x: U ms used of 14.5, worst W ms (LO-HI KB)`. This uses D214's 640-byte line; the longest line seen is 433 bytes. It is logging only: the budget is chosen as in D212.
+- **Measured (Vita3K, default auto, relative timing):**
+  - owner60 at 6,900–9,000: `126 KB (auto, 126-126 KB, worst 3.8–11.4 ms, 0 over)`.
+  - stone60 at 7,800–9,300: 112–135 KB, worst 5.9–12.1 ms, 0 over.
+  - The level entries show a 72–82 ms worst frame.
+- **Checks:**
+  - With `dd_budget=1`, owner60 and stone60 shots are identical to `base-278ebf8`, and the deterministic counters are equal.
+  - Host logs, traces, saves and per-polygon FNV are identical: 13,206,877 polygons at 30 Hz and 21,665,448 with `--tick60 --interp`.
+  - ctest passes 32 of 32, and the native build exits 0.
+  - Logs: `runs/auto-224-1`.

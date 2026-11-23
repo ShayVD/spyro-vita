@@ -87,6 +87,7 @@
     "persp=1",
     "subpixel=1",
     "draw_distance=200",
+    "dd_budget=1",
     "shot_every=100",
     "frames=9100"
    ]
@@ -104,6 +105,7 @@
     "persp=1",
     "subpixel=1",
     "draw_distance=200",
+    "dd_budget=1",
     "shot_every=100",
     "frames=9500"
    ]

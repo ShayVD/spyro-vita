@@ -11,24 +11,27 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 223,
-      "branch": "auto/223-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-223",
+      "issue": 213,
+      "branch": "auto/213-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-213",
       "pids": [],
-      "started_at": "2026-11-22T23:25:33Z",
+      "started_at": "2026-11-22T23:57:03Z",
       "files": [
-        "src/platform/vita/prof_draw.c",
-        "src/platform/vita/CMakeLists.txt",
-        "src/platform/vita/picture.c",
-        "docs/vita-testing.md"
+        "src/game/sky_hand.c",
+        "src/game/cyclorama_hand.c",
+        "src/game/sky_clip_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/gte_native.h"
       ],
-      "agent": "a38d43540aa2da0cd"
+      "agent": "a08d754a6dd2f45b9",
+      "last_commit_at": "2026-11-23T02:26:21+00:00"
     }
   ],
-  "last_good": "2199042edf8a14c89c366258ddf6867cf7a228ef",
+  "last_good": "485a87de7413dd8a181f948d753f667cfe9578c0",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
-    "commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
+    "commit": "278ebf8"
   },
   "hardware_runs": [
     {
@@ -227,19 +230,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 13,
+    "filed": 14,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-ed4a4eb",
-    "started_at": "2026-11-22T23:56:13Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     8
@@ -399,3 +395,13 @@ continue.
 - 2026-11-22T23:24:37Z phase 8: merged #212 (D212; pictures change in 60 Hz windows: baseline rebuild after #215), gating #215, Vita3K: none
 - 2026-11-22T23:25:53Z phase 8: filed #223, started #223; #215 gating, Vita3K: none
 - 2026-11-22T23:55:19Z phase 8: merged #215 (D213), Vita3K: none
+- 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
+- 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
+- 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
+- 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
+- 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
+- 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
+- 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
+- 2026-11-23T03:10:52Z phase 8: #224 reported done; gating, Vita3K: none
+- 2026-11-23T03:33:15Z phase 8: merged #224 (D215); presentation.md lod text updated, Vita3K: none
+- 2026-11-23T03:34:11Z phase 8: hw-session7 VPK rebuilt as autopilot-53a6a5d (with D214, D215 lod text); waits for the owner yes, Vita3K: none
