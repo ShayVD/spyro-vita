@@ -27,7 +27,17 @@
  * nothing, so their records were work the walk never looked up. They were
  * most of the sky's cost on the Vita. The records keep their order (the
  * vertex order within a sector), and pass 1's sphere centres keep theirs,
- * so every polygon finds what it found before. */
+ * so every polygon finds what it found before.
+ *
+ * Since #213 the records go to the cache by name (gte_native.h
+ * ngte_vcache, as the native RTPS's since #205, D202): the draw's registers
+ * by pointer with their generation, where they went through the value hook
+ * as 15 words, which the record compared word by word with the last ones
+ * kept. They pass no sums (NGTE_NO_SUMS): the record works them out from
+ * the registers only for a projection it works out at once, as it did
+ * from the words, and keeping them here for every vertex pass 2 projects
+ * cost more than that (#213's host profile). The same projections, the
+ * same values. */
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 
@@ -92,9 +102,9 @@ static inline u32 TriVertex2(u32 w) { return (w >> 2) & 0xFF; }
 
 /* The vertex cache's records of a kept sector (#186): its vertices that a
  * triangle not wholly off one side uses, in vertex order, each as
- * ngte_rtps_w would have given it (the screen word is the clip word >> 5).
- * proj: the hook's registers (gte_ops.c ngte_vcache's), set once a draw. */
-static void SkyRecord(const int *proj, const u32 *vert, u32 n, s32 ox, s32 oy, s32 oz,
+ * ngte_rtps_w would have given it (the screen word is the clip word >> 5),
+ * by name with P, the draw's registers (#213). */
+static void SkyRecord(const NgteProj *P, const u32 *vert, u32 n, s32 ox, s32 oy, s32 oz,
                       const u32 *clip, const u16 *sz3, const u32 *tri, const u32 *tri_end) {
   u8 used[1024]; /* a triangle word's first index has 10 bits */
   const u32 *t;
@@ -108,11 +118,14 @@ static void SkyRecord(const int *proj, const u32 *vert, u32 n, s32 ox, s32 oy, s
   }
   for (i = 0; i != n; i++) {
     u32 vxy, vz;
+    NgteRtp o; /* (the record reads only these, and no sums) */
     if (!used[i])
       continue;
     VertexWords(vert[i], ox, oy, oz, &vxy, &vz);
-    g_psyxRtpValueHook(proj, ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), (u32)((s32)clip[i] >> 5),
-                       (int)sz3[i]);
+    o.sz3 = sz3[i];
+    o.sxy = (u32)((s32)clip[i] >> 5);
+    o.flag = NGTE_NO_SUMS;
+    ngte_vcache(P, vxy, vz, &o);
   }
 }
 
@@ -177,7 +190,6 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   int nd, rec;
   u32 *r;
   u16 sz3[256]; /* each vertex's SZ3, for the vertex cache's records */
-  int rec_proj[15];
   (void)a3;
 
   nd_begin();
@@ -192,11 +204,6 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   P = ngte_proj_get();
   ngte_sync_init(&sync);
   rec = __builtin_expect(g_psyxRtpValueHook != 0, 0);
-  if (rec) {
-    const int pr[15] = {P.r11, P.r12, P.r13, P.r21, P.r22, P.r23, P.r31, P.r32, P.r33,
-                        P.trx, P.try_, P.trz, P.ofx, P.ofy, P.h};
-    memcpy(rec_proj, pr, sizeof rec_proj);
-  }
   prim = *(u32 *)D_800757B0 + 4; /* the first primitive's tag follows a word */
   first = prim;
   prev_tag = prim - 4;
@@ -239,7 +246,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     tri_end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
     if (rec)
-      SkyRecord(rec_proj, vert, n, ox, oy, oz, scratch, sz3, tri, tri_end);
+      SkyRecord(&P, vert, n, ox, oy, oz, scratch, sz3, tri, tri_end);
     for (; tri != tri_end; tri += 2) {
       u32 f0, f1, f2, c0, c1, c2, xy0, xy1, xy2;
       if ((s32)(limit - prim) <= 0) {

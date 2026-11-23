@@ -244,9 +244,15 @@ NGTE_INL NgteRtp ngte_rtps(const NgteProj *p, int vx, int vy, int vz) {
  * with the registers by pointer and their generation (NgteProj gen), and
  * the sums and SZ3 the projection worked out (NgteRtp m1-m3, sz3), not
  * through the value hook with a copy of 15 registers; the hook being set
- * still says whether the cache records. Weak, as g_ngte_gen. */
+ * still says whether the cache records. The sky (sky_hand.c) calls it
+ * itself for the vertices its triangles use (#213), with SXY2 and SZ3 and
+ * NGTE_NO_SUMS in flag: no m1-m3, which the record then works out from
+ * the registers, and only for a projection it works out at once. Weak, as
+ * g_ngte_gen. */
 void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o)
     __attribute__((weak));
+/* (the GTE's FLAG never has bits 0-11 set: no projection's flag has it) */
+#define NGTE_NO_SUMS 1u
 
 /* RTPS on V0 as the words MTC2 puts there (VXY0, VZ0). */
 NGTE_INL NgteRtp ngte_rtps_w(const NgteProj *p, unsigned int vxy, unsigned int vz) {
