@@ -31,8 +31,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "started_at": "2026-11-23T18:47:37Z",
       "files": [
         "src/game/present.c",
-        "src/platform/common/lod.c",
-        "src/platform/common/lod.h",
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
         "docs/presentation.md"
       ],
       "agent": "ae7fafa49d8036819"
