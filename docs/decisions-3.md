@@ -1377,3 +1377,25 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - ctest passes 32 of 32. The native and Vita builds exit 0.
   - Logs: `runs/auto-216-1`.
 - **Left:** MobyShadows on S (4/5), and docs for the new class and line (#226).
+
+### D219. Hardware session 7: autopilot 687ca1d on the Vita, `dd_budget=auto` and the attract demos (2026-11-23)
+
+- **Run:** with the owner's yes ("vita is free if you want to test on it"), AP18a–AP18c, AP18o and AP18t (`runtime/autopilot/hw-session7b.sh`, logs `logs/hw-ap18a`–`hw-ap18t`). Builds: `autopilot-687ca1d.vpk` (SHA-1 173ae0fb, D210–D218) and, for an A/B, `autopilot-53a6a5d.vpk` (933abfe9, D210–D215). US disc. Stone Hill runs use `ap16-stone60.txt` with virtual vblanks, so busy % is the measure there.
+- **`dd_budget=auto` against the fixed 48 KB (AP18a against AP18b), Stone Hill play, 7,500–9,500:**
+  - Busy 69.1% against 68.3%; worst 88% against 87%.
+  - Auto reaches x1.03–x1.41 where 48 KB stays at x1.00–x1.31. Most windows still hold at 1×, now with a measured reason on the lod line: `budget held at 1x: 15.2 ms used of 14.5, worst 22.3 ms`. So the byte budget was not the only limit: the frame itself is near the target at 1×.
+- **D216–D218's cost (AP18a against AP18o, 53a6a5d):** busy 69.1% against 68.6%, sky 0.50–1.05 ms against 0.51–1.01 ms per vblank. Nothing measurable.
+- **AP18c (real time, stone60) isn't usable:** the route saves a shot every 100 frames, which costs about 9 late vblanks each in real time (27 per 300 even on the title screen), and the pad drifted before Stone Hill. Real-time checks use the Toasty route, which takes no shots.
+- **Toasty route, real time, owner's settings (AP18t against AP16t, D209):**
+
+  | Level | Late per 300, session 6 | Session 7 | Busy % |
+  |---|---|---|---|
+  | Title screen | 0.0 | 0.2 | 48.9 |
+  | Stone Hill attract demo | 177.4 | 166.3 | 28.1 (was 89.0) |
+  | Artisans | 0.5 | 2.5 | 56.6 |
+  | Toasty | 0.2 | 0.9 | 64.5 |
+
+  - **Attract demo:** D211 took the 16:9 real frame off the game thread (busy 99% → 28%), but the game thread now waits 11.8–12.0 ms a vblank for the presenter's worker (`the presenter on this thread` 20.5–26.8 ms per tick), and ticks per 300 are still 92–119 instead of 150. Filed as #227.
+  - **60 Hz play:** in Artisans play (11,100) the game thread takes 15.93 ms a vblank at 1× (env 7.80, mobys 4.20, sky 1.77), with 14 late. In Toasty it's 11.6–13.8 ms. `dd_budget=auto` holds at 1× there (`16.4–17.4 ms used of 14.5`), reaches x2.00 where the frame is light (18,300–20,400), and backs off as designed elsewhere. Artisans' sky went from 1.20 to 1.77 ms between sessions, most likely D213. Filed as #228.
+- **Left on the Vita:** 687ca1d's eboot (SHA-1 7ad9cdc5, READBACK IDENTICAL).
+- **Goal 2 (phase 8):** draw distance doesn't hold at 2× on the owner's settings. The lod line now shows the measured reason (the 60 Hz frame is over 14.5 ms at 1× in Artisans and Toasty), but late vblanks remain, so goal 2 stays open on #227 and #228. A scene under 60 resets `rounds_without_gain` to 0.

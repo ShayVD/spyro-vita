@@ -9,7 +9,22 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 217,
+      "branch": "auto/217-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-217",
+      "pids": [],
+      "started_at": "2026-11-23T08:27:25Z",
+      "files": [
+        "src/game/env_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a6ff69b122f235949",
+      "last_commit_at": "2026-11-23T08:57:02+00:00"
+    }
+  ],
   "last_good": "8ad4fc4e168dee2e4ad12ec3f3e9d5c07638f68d",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
@@ -62,6 +77,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "85a7b2c",
       "runs": "AP16a-d, AP16t (runtime/autopilot/hw-session6.sh)",
       "result": "D209: shader cache 10.3 s -> 0.14 s second boot; Stone Hill play busy 73.2 -> 71.5% but 48 KB budget holds 1x with 15-28% spare (#212); vc_lazy_logic=3 no gain; Artisans late 16.5 -> 0.5/300; attract demo ~177 late/300 inline presenter (#220)"
+    },
+    {
+      "date": "2026-11-23",
+      "commit": "687ca1d",
+      "runs": "AP18a-c, AP18o, AP18t (runtime/autopilot/hw-session7b.sh)",
+      "result": "D219: dd_budget=auto x1.03-1.41 vs 48 KB x1.00-1.31, held at 1x by measured time (15.2 ms of 14.5); D216-D218 cost nothing; attract demo 166 late/300, game waits 12 ms/vblank on presenter worker (#227); 60 Hz Artisans/Toasty over 14.5 ms at 1x, Artisans sky +0.5 ms, late 2.5/0.9 per 300 (#228)"
     }
   ],
   "perf_candidates": [
@@ -212,7 +233,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 16,
+    "filed": 18,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -397,3 +418,4 @@ continue.
 - 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
 - 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
 - 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
+- 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
