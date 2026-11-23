@@ -1399,3 +1399,41 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **60 Hz play:** in Artisans play (11,100) the game thread takes 15.93 ms a vblank at 1× (env 7.80, mobys 4.20, sky 1.77), with 14 late. In Toasty it's 11.6–13.8 ms. `dd_budget=auto` holds at 1× there (`16.4–17.4 ms used of 14.5`), reaches x2.00 where the frame is light (18,300–20,400), and backs off as designed elsewhere. Artisans' sky went from 1.20 to 1.77 ms between sessions, most likely D213. Filed as #228.
 - **Left on the Vita:** 687ca1d's eboot (SHA-1 7ad9cdc5, READBACK IDENTICAL).
 - **Goal 2 (phase 8):** draw distance doesn't hold at 2× on the owner's settings. The lod line now shows the measured reason (the 60 Hz frame is over 14.5 ms at 1× in Artisans and Toasty), but late vblanks remain, so goal 2 stays open on #227 and #228. A scene under 60 resets `rounds_without_gain` to 0.
+
+### D220. With the fix on, the world's split pieces name their corners by the projections that made them; a split point with an end behind the eye is exempt (#217, 2026-11-23)
+
+- **Why:** after D218, EnvDraw had the most missed vertices: 451 on route S at 30 Hz and 883 with `--interp`, and 20–40 on P and Pf. A temporary tag (`runs/auto-217-1/host/diag217.py`) sorted them:
+  - Almost all were `SplitLast`'s split points (`SplitMid`, a `VCD_PERSP` hand-over) on a piece corner the GTE had clamped to the screen's limit, e.g. (1023,-1024). Other clamped points share that key, so the hand-over had no single source, and the split points made from those had none either: 341 of 447 on S at 2×.
+  - 39 had a corner behind the eye, so there was no projection at all.
+  - 58 were quads whose derive (#183) took no place and whose plane gave no depth.
+  - "Source evicted" never happened (`hk full 0`).
+- **How** (`src/game/env_hand.c`, `src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A piece queued for the last list (`Subdiv4x4Quad`/`Tri`) names each corner (`VCD_SELF`, p = 24 − grid index for a quad, 14 − grid index for a tri) under the anchor `VCD_CORNER(first vertex's key, corner number)`, so two corners on one clamped key stay apart. `SplitMid` passes `VCD_OWN | VCD_ENDS(ia, ib)` with that anchor, and each GT3 that `SplitLast` emits re-names the corners it keeps under its own anchor (`own_move`).
+  - A third pass in `derive_hand`, only after the hand-over's two passes (#202) fail, takes an unusable end at its own point: the projection's exact place, at most 16,384 px off (a clamped end's true point lies far off screen). The result is tainted, so it counts only where nothing else placed the key.
+  - A split point with an end that has no projection marks its key `HK_NOPROJ` (an Hk slot not placed, `low` set). No hand-over reads it, the next one that places the key overwrites it, and the walk counts the vertex as `VCX_NO_PROJ`, exempt.
+  - The walk's own-point step (D218) takes EnvDraw polygons too.
+  - Where derive took no place and the plane gives none, the vertex keeps its place and takes a named projection's own depth (`der_named`).
+  - New counters `hk_own`, `der_named`, `hk_noproj` and a `vcache world:` line. D182's hand-over rules, D205's pass order, D213's `fr` store and D218's `ow` store are unchanged.
+- **Measured (host, 16:9, 2×, base 272fb7e):**
+
+  | Route | Missed, all renderers | EnvDraw missed | No projection (exempt) |
+  |---|---|---|---|
+  | S | 581 → 160 | 451 → 30 | 32 → 90 |
+  | S `--interp` | 1,166 → 343 | 883 → 60 | 64 → 187 |
+  | P | 25 → 9 | 20 → 4 | 32 → 32 |
+  | P `--interp` | 51 → 24 | 35 → 8 | 64 → 64 |
+  | Pf | 36 → 18 | 22 → 4 | 32 → 32 |
+  | Pf `--interp` | 68 → 36 | 40 → 8 | 64 → 64 |
+
+  Vita3K stone60 at 6,600: EnvDraw missed 771 → 100, with 564 vertices now exempt. owner60: 32 → 6 at 6,600.
+- **Checks:**
+  - Host FNV per polygon (D168), six pairs from freshly built objects: same polygon counts, 0 found-before polygons changed, 0 became affine; 13–487 newly found per route.
+  - Vita3K: all seven routes exit 0 on the first try, with shots identical to `base-278ebf8` (owner60 and stone60 with `dd_budget=1`). Draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.probe` and `vc.lines` unchanged; only the timing counters move, as much as two runs of one VPK do.
+  - Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-217-1`.
+- **Left:** EnvDraw keeps 29–30 on S (59–60 with `--interp`) and 4/8 on P and Pf:
+  - two split points of different pieces on one pixel, 600–1,300 px apart, which D182 drops (all of P's and Pf's);
+  - split ends whose depths are 4× apart (`hk_pair`'s rule);
+  - quads on the #197 path, and named projections `choose` rejects;
+  - own points not named or dead (two corners of one piece on one key).
+  
+  Filed as #229. The `vcache world:` line and the wider "no projection" class go into #226's docs.
