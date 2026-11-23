@@ -1437,3 +1437,18 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - own points not named or dead (two corners of one piece on one key).
   
   Filed as #229. The `vcache world:` line and the wider "no projection" class go into #226's docs.
+
+### D221. The vertex cache skips an exact repeat's maths; the main sky's rise between hardware sessions 6 and 7 is not in its code (#228, 2026-11-23)
+
+- **Why:** in hardware session 7 (D219), Artisans play at 60 Hz and 1× took 15.9 ms a vblank on the game thread, over the auto budget's 14.5 ms target, and the sky rose from 1.20 to 1.77 ms. Host gprof on an owner60-like route at 60 Hz (`runs/auto-228-1/host`) puts the record's maths first: `rtp_apply` 18.2% self, `psx_vcache_poly` 6.1%, `choose` 1.5%, `add_cand` 1.4%; the renderers' own code is small. About a fifth of the projections the record works out are exact repeats (same register generation, same vertex, same key in one frame): 4.3 M of 17.3 M on that route, e.g. a point two sky sectors share or a world corner projected again.
+- **How (`src/platform/common/vcache.c`):**
+  - Each table keeps, per entry, the last projection worked out (`Rp`: generation, vertex, clamped; 12 bytes, `rp[VC_SIZE]`), cleared when `find` makes the entry.
+  - While the entry is valid with one point (`E_VALID`, not `T_MULTI`, not `T_PEND`), a repeat changes nothing: its answer is already among the candidates, `add_cand` stops at the same one, and nothing is logged (#181 logs only keys with different points). So only its counts are kept (`VCR_WORKED`, clamped) and its maths is skipped, both for projections worked out at once (`rtp_point`) and for kept ones as `lz_flush` works them out. `rtp_apply` returns its clamped flag.
+  - A `vcache repeats:` line reports the skips; `psx_vcache_set_repeat(0)` turns it off. The `vc_repeat=` config key needs `src/platform/vita/main.c`, outside the issue's files (#232).
+- **The sky:** the rise is the main sky (`SkyDraw`, `sky main` 1.07 → 1.63 ms); the portal sky's part, D213's, stayed at 0.13–0.14 ms. `SkyDraw`'s path is unchanged since 85a7b2c apart from D216's cheaper `pt_np`; its time is the same on the host side by side (3,878 against 3,855 ms) and in Vita3K, and its per-frame work on hardware is equal (`vc.proj` 5,672 against 5,678 a frame). So it's a hardware timing or memory effect, or one-run spread: nothing to remove. Session 7 against 6 is +15–52% in Artisans windows but −14% to +14% in Toasty.
+- **Measured:**
+  - Host, base and fix side by side at 60 Hz (relative): env −22%, sky −19%, renderers −13%; record divisions 14.07 M → 11.12 M.
+  - Vita3K owner60, `dd_budget=1`, 6,900–8,700, two runs each (relative only): game thread 4.09–4.17 → 3.94–3.98 ms a vblank, env 1.41–1.47 → 1.27–1.29; `vc.div` −15.7% against two head runs (spread 0.1%), every other counter the same.
+  - Missed counts on host S, P and Pf unchanged (160, 9, 18).
+- **Checks:** host FNV per polygon identical on 7 pairs (O60, S, Si, P, Pi, Pf, Pfi; 136 M polygons); Vita3K shots identical to `base-278ebf8` on all seven routes; host ctest 32 of 32; Vita build; `noassets`. Logs: `runs/auto-228-1`.
+- **Left:** the hardware A/B, since the 96 KB of `Rp` per table adds a memory access per record on the A9 (#232, with the key). Toasty is walk-bound in session 7 (the game thread's join wait 1.71 → 2.51 ms, the walk on core 1 93% busy) and has no Vita3K or host route (#233). The sky's run-to-run spread on hardware goes in the next session: two runs of one VPK.
