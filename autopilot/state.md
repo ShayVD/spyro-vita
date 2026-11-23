@@ -404,3 +404,4 @@ continue.
 - 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
 - 2026-11-23T03:10:52Z phase 8: #224 reported done; gating, Vita3K: none
 - 2026-11-23T03:33:15Z phase 8: merged #224 (D215); presentation.md lod text updated, Vita3K: none
+- 2026-11-23T03:34:11Z phase 8: hw-session7 VPK rebuilt as autopilot-53a6a5d (with D214, D215 lod text); waits for the owner yes, Vita3K: none
