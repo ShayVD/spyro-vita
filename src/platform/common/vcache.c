@@ -513,6 +513,7 @@ static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
 /* #228: the exact repeats whose maths was skipped, per kind of frame (each
  * added by the one thread recording that kind; the report reads) */
 static unsigned s_rp_hits[2], s_rp_tried[2];
+static unsigned s_rp_lz_hits; /* ... of the kept ones, as they're worked out (either thread) */
 
 /* the cost line, since the last one */
 static void cost_line(void) {
@@ -567,10 +568,13 @@ static void cost_line(void) {
       h[t] = hv - hl[t], n[t] = tv - tl[t];
       hl[t] = hv, tl[t] = tv;
     }
+    static unsigned zl;
+    const unsigned zv = __atomic_load_n(&s_rp_lz_hits, __ATOMIC_RELAXED);
     PsyX_Log("vcache repeats: the logic draw's %u of %u projections worked out at once by name "
              "were exact repeats of their entry's last, their maths skipped; the presenter's %u "
-             "of %u (rp=%d, #228)",
-             h[0], n[0], h[1], n[1], s_repeat);
+             "of %u; %u kept ones as they were worked out (rp=%d, #228)",
+             h[0], n[0], h[1], n[1], zv - zl, s_repeat);
+    zl = zv;
   }
   qt_line(); /* #204 */
 }
@@ -1360,6 +1364,32 @@ static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, 
   return 1;
 }
 
+/* #228: slot i's projection with registers of generation g (sf set) and
+ * vertex vx, vy, vz is an exact repeat of the last one worked out under it
+ * (Rp) while the entry is valid with one point: then it would change
+ * nothing (rtp_point's note), and only its counts are kept. 1: skipped. */
+static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, int vy, int vz) {
+  const Rp *const r = &tb->rp[i];
+  const uint32_t tag = tb->s[i].tag;
+  if (!g || r->g != g || r->vx != vx || r->vy != vy || r->vz != vz ||
+      T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)))
+    return 0;
+  if (k->rec)
+    k->rec[VCR_WORKED]++;
+  if (r->clamped) {
+    k->work[VCW_CLAMPED]++;
+    k->st->clamped++;
+  }
+  return 1;
+}
+/* ... and the one worked out, for the next */
+static inline void rp_keep(Table *tb, int i, uint32_t g, int vx, int vy, int vz, int clamped) {
+  Rp *const r = &tb->rp[i];
+  r->g = g;
+  r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
+  r->clamped = (uint16_t)clamped;
+}
+
 /* tb's slot i's projections worked out, in their order (k: where their
  * counts go). The reader has just found the entry, so its first line isn't
  * counted again. */
@@ -1379,9 +1409,20 @@ static void lz_flush(Table *tb, const Sink *k, int i) {
   r = o;
   while (r) {
     const LzRec *const z = &lz->rec[r - 1];
-    Pt a;
-    pt_words(&a, lz->proj[z->proj & ~LZ_SF], z->vx, z->vy, z->vz);
-    rtp_apply(tb, k, &a, s->key, z->sz, (z->proj & LZ_SF) != 0, i, z->q, &t);
+    const int *const w = lz->proj[z->proj & ~LZ_SF];
+    /* #228: a native projection's registers kept by generation (lz_add,
+     * same_ngte: the words are that generation's); 0 for the words' */
+    const uint32_t g = s_repeat && (z->proj & LZ_SF) ? (uint32_t)w[PROJ_GEN] : 0;
+    if (g && rp_skip(tb, k, i, g, z->vx, z->vy, z->vz))
+      __atomic_fetch_add(&s_rp_lz_hits, 1, __ATOMIC_RELAXED);
+    else {
+      Pt a;
+      int clamped;
+      pt_words(&a, w, z->vx, z->vy, z->vz);
+      clamped = rtp_apply(tb, k, &a, s->key, z->sz, (z->proj & LZ_SF) != 0, i, z->q, &t);
+      if (g)
+        rp_keep(tb, i, g, z->vx, z->vy, z->vz, clamped);
+    }
     r = z->next;
   }
   k->cost[VCC_REC_LINES] += t.n;
@@ -1465,18 +1506,9 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
    * points), and so the repeat would change nothing: only its counts. Its
    * registers are kept by generation as the store's (same_ngte, #205). */
   if (np && np->gen && s_repeat) {
-    Rp *const r = &tb->rp[i];
-    const uint32_t tag = tb->s[i].tag;
     s_rp_tried[kind]++;
-    if (r->g == np->gen && r->vx == vx && r->vy == vy && r->vz == vz &&
-        T_STATE(tag) == E_VALID && !(tag & (T_MULTI | T_PEND))) {
+    if (rp_skip(tb, k, i, np->gen, vx, vy, vz)) {
       s_rp_hits[kind]++;
-      if (k->rec)
-        k->rec[VCR_WORKED]++;
-      if (r->clamped) {
-        k->work[VCW_CLAMPED]++;
-        k->st->clamped++;
-      }
       cost[VCC_REC_LINES] += t.n;
       return;
     }
@@ -1491,12 +1523,8 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
     else
       pt_words(&a, proj, vx, vy, vz);
     clamped = rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
-    if (np && s_repeat) { /* #228: the entry's last, for a repeat */
-      Rp *const r = &tb->rp[i];
-      r->g = np->gen;
-      r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
-      r->clamped = (uint16_t)clamped;
-    }
+    if (np && s_repeat) /* #228: the entry's last, for a repeat */
+      rp_keep(tb, i, np->gen, vx, vy, vz, clamped);
   }
   cost[VCC_REC_LINES] += t.n;
 }
