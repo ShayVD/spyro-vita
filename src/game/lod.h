@@ -38,7 +38,8 @@ extern LodConfig g_lod;
  *    (what the budget is compared with) and the budget it had;
  *  - lod_set_budget: the budget for the next draws, clamped here between
  *    LOD_BUDGET_60 and the span the draw has (draw_room), with the frame's
- *    time it was sized from (used_us of target_us) for the lod line. Returns
+ *    time it was sized from (used_us of target_us) for the lod line (its
+ *    average, its longest and the budget's range per window, #224). Returns
  *    the budget as clamped. The host never calls it: its budget stays the
  *    fixed one (--lod-budget). */
 int lod_last_draw(int *bytes, int *budget);
