@@ -1,6 +1,6 @@
 /* The game's time on PC (docs/pc-build.md): the Vita's and the PS4's model
  * (vita/vblank.c, ps4/vblank.c; D28, D90), counted against a 60 Hz clock of
- * real time (Encore's enc_time_us and enc_sleep_us, D245) instead of a
+ * real time (Encore's enc_time_us and enc_sleep_us, D247) instead of a
  * display's vcount, since a PC's display may run at
  * any rate (60, 75, 144 Hz, variable). VSync(0) waits for the clock if the
  * game is early and, if it is late, runs every vblank it missed (pad, CD,
@@ -31,7 +31,7 @@ int host_vblank_count(void) { return psx_clock_count(); }
 void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 
 #define HZ 60
-static uint64_t s_t0_us; /* the clock's vblank 0 (enc_time_us, D245) */
+static uint64_t s_t0_us; /* the clock's vblank 0 (enc_time_us, D247) */
 
 /* virtual=1 (tests): the clock counts the game's own vblanks, one per
  * vblank it waits for, so a run is never late and sees the same frames at

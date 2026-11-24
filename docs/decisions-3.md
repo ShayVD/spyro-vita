@@ -1684,7 +1684,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ### D246. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
 
-(D245 is the PC build's move onto Encore's platform interface, in another session.)
+(D247 is the PC build's move onto Encore's platform interface, in another session.)
 
 - **Why:** the owner wants to play the port natively on an M-series Mac. The 64-bit builds (linux64, PC, PS4) keep the PS1's layouts with the low-image model (D173, D174, D240, D241): every pointer the game stores in its own memory is `P32`, clang's `__ptr32 __uptr`. That keyword exists only for x86. On AArch64 clang accepts it and does nothing, so every `P32` field is 8 bytes (Encore `lp64/docs/clang-bugs.md`). Running x86-64 under Rosetta was turned down: it rests on deprecated linker flags (`-no_pie`, `-pagezero_size`) and on Rosetta itself. Encore's PC backend (`targets/pc/encore/enc_pc.c`, SDL3) already runs on macOS arm64. The platform layer isn't what stops it; the pointer model is.
 - **The model** (Encore `lp64/docs/low-image.md`, "Why not the other models": the fallback it names). Every `P32` slot holds a 32-bit **offset** from one base. The base is the start of the executable's image. Everything the game points at is in the image: the `.bss` arena, the game thread's `.bss` stack, the data labels and string literals. Offset 0 is NULL. The source spells each kind of site with a macro, and `src/compat/p32.h` grows a third model:
@@ -1731,7 +1731,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **O4. macOS arm64.**
     - `cmake/pc-macos.toolchain.cmake`: Apple clang, the macOS SDK, SDL3 static (built from the same 3.4.18 source as the PC image).
     - A mac low-image runtime in Encore, `lp64/runtime/low_image`: the base symbol, the image under 4 GB, the game stack in `.bss`, the checks at start.
-    - The PC platform layer on Encore's backend as D245 leaves it.
+    - The PC platform layer on Encore's backend as D247 leaves it.
     - GL 4.1 core (macOS's last; it takes the `#version 330` shaders of D243).
     - An `.app` bundle, ad-hoc signed.
     - Gate: the O3 checks, run natively on the Mac.
@@ -1750,7 +1750,8 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
 
-### D245. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
+### D247. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
+- **Number:** named D245 while it was written; `main`'s D245 (the PS4's P4, PR #250) and `develop`'s D246 (the ARM64 plan, PR #249) came first, so this is D247. Logs in `logs/pc-encore/` predate the renumber.
 - **Why:** Encore's roadmap v0.4.0, "first game on the platform interface" (step P1). The PC layer (`src/platform/pc/`, D240–D243) called SDL3 directly everywhere. On `encore/platform.h` the same game code is one backend away from any target Encore has, and every place the interface falls short is now written down as a gap with the smallest addition that would close it.
 - **What:**
   - **Vendoring:** `third_party/encore` refreshed from Encore 0e77e93 with `tools/vendor.sh`, adding `core/` and `targets/pc/encore/` beside `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. The two existing paths changed only in READMEs and tests. `.gitignore`'s `core` (core dumps) now spares `third_party/encore/core/`. No vendored file was edited.
@@ -1776,7 +1777,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
     - the backend's own `log/spyro.log` beside the game's.
 - **Encore needs no change for this PR.** The gaps are additions for the owner to weigh as Encore PRs. The largest are G6 (`EncGpu.gl_create_shared` / `gl_make_current`), G7 (`enc_pc_set_keymap`), G12 (`EncGpu.vsync`) and G13 (`EncThreadConfig.stack_mem`).
 - **Found and fixed on the way (G12):**
-  - Mesa under Xvfb refuses the GL swap interval. Before D245 the PC then ran without vsync (1 ms sleeps).
+  - Mesa under Xvfb refuses the GL swap interval. Before D247 the PC then ran without vsync (1 ms sleeps).
   - The backend instead paces every present to a 60 Hz clock of its own. With llvmpipe's slow pictures the window fell behind the frames due, and every pause-route shot caught a later frame.
   - `video.c` now asks (`pc_gap_gl_swap_interval_on`) and opens the video again without vsync when the interval was refused.
 - **Checked** (amd64 Docker under Rosetta on the Mac, Xvfb, Mesa llvmpipe; logs in `logs/pc-encore/`, local):
@@ -1793,4 +1794,4 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
 - **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
 - **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (issue VITA_ISSUE).
-- **Next free number:** D247 (D246 is PR #249's ARM64 plan).
+- **Next free number:** D248 (D245 is main's PS4 P4, PR #250; D246 the ARM64 plan, PR #249).

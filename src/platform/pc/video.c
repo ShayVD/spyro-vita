@@ -1,6 +1,6 @@
 /* The window and the picture (docs/pc-build.md, D240): Encore's GPU mode
  * with GL 3.3 core (enc_video_open with ENC_GFX_GL, enc_video_gpu_begin /
- * _present: the backend owns the window, the context, the swap; D245), on
+ * _present: the backend owns the window, the context, the swap; D247), on
  * the main thread.
  *
  * At every display refresh (vsync=1; the swap waits for it) the newest frame
@@ -183,7 +183,7 @@ int pc_video_init(void) {
   }
   /* G12: a driver that refuses the swap interval (Mesa under Xvfb) would have
    * the backend pace every present to a 60 Hz clock of its own, and a slow
-   * picture then falls behind the frames due. Before D245 the PC ran without
+   * picture then falls behind the frames due. Before D247 the PC ran without
    * vsync there; reopen so it still does. */
   if (vsync && !pc_gap_gl_swap_interval_on()) {
     enc_video_close();

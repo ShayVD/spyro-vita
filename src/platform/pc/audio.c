@@ -1,11 +1,11 @@
 /* Audio out on PC (docs/pc-build.md): the SPU mix (psx_spu_vblank on the
  * game thread) pushes 44.1 kHz s16 stereo through psx_audio_out into
- * Encore's audio (enc_audio_push, D245; an SDL3 audio stream underneath,
+ * Encore's audio (enc_audio_push, D247; an SDL3 audio stream underneath,
  * which converts it to the device's format and rate and plays it on SDL's
  * own thread). When more than LAG_MAX is queued (the game caught up after a
  * stall: up to 8 vblanks' audio at once) new audio is dropped until the
  * queue is down to LAG_KEEP, so the sound never trails the picture by much;
- * when it runs dry the device plays silence. Before D245 the oldest was
+ * when it runs dry the device plays silence. Before D247 the oldest was
  * dropped at once; the interface has no call that drops queued audio, so
  * the newest goes instead and the lag comes down over LAG_MAX - LAG_KEEP of
  * playing (gap G9). */

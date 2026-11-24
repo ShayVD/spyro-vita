@@ -1,5 +1,5 @@
 /* The GL 3.3 core calls of the GPU renderer (gpu_gl.c, D243), all from
- * the platform's loader (EncGpu.get_proc, D245; SDL_GL_GetProcAddress
+ * the platform's loader (EncGpu.get_proc, D247; SDL_GL_GetProcAddress
  * underneath): the executable links no GL library (SDL loads it).
  * Including this file renames glFoo to the pointer pc_glFoo, so gpu_gl.c
  * reads as plain GL. The pointers are the same for both of the build's
@@ -8,7 +8,7 @@
 #define SPYRO_PC_GL_H
 
 #define GL_GLEXT_PROTOTYPES 1 /* the prototypes, for __typeof__ (never called by name) */
-#include <SDL3/SDL_opengl.h> /* the GL types and prototypes only: no SDL call (D245, gap G10) */
+#include <SDL3/SDL_opengl.h> /* the GL types and prototypes only: no SDL call (D247, gap G10) */
 
 #define PC_GL_FUNCS(X)                                                                         \
   X(glGetString) X(glGetError) X(glGenTextures) X(glDeleteTextures) X(glBindTexture)           \

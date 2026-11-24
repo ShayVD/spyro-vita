@@ -1,5 +1,5 @@
 /* Keyboard and gamepads (docs/pc-build.md): Encore's pads (enc_input_poll,
- * enc_pad_read; D245) on the main thread into one PS1 pad state, which the
+ * enc_pad_read; D247) on the main thread into one PS1 pad state, which the
  * game thread reads each vblank (pad.c).
  *
  * Gamepads through Encore's PC backend (SDL3's gamepad API underneath: any
@@ -45,7 +45,7 @@ static const struct {
     {ENC_BTN_LEFT, PSX_LEFT},       {ENC_BTN_RIGHT, PSX_RIGHT},
 };
 
-#define TRIGGER_ON 125   /* of 255: SDL's 16000 of 32767 before D245 */
+#define TRIGGER_ON 125   /* of 255: SDL's 16000 of 32767 before D247 */
 #define STICK_DEAD 12000 /* digital mode: a stick as the d-pad */
 
 static EncMutex *s_mu;

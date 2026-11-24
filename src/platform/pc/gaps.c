@@ -1,4 +1,4 @@
-/* The PC layer's last direct SDL3 calls (gaps.h, D245): what Encore's
+/* The PC layer's last direct SDL3 calls (gaps.h, D247): what Encore's
  * platform interface can't express yet. Each block names its gap; the PR
  * that added this file and docs/pc-build.md list the interface addition
  * that would retire it. Nothing else in src/platform/pc includes SDL but
@@ -67,7 +67,7 @@ void pc_gap_window_setup(void *w, const char *title, int fullscreen) {
   s_moved_ms = SDL_GetTicks();
 }
 
-/* as video.c did before D245: hidden in fullscreen, shown when it moves in a
+/* as video.c did before D247: hidden in fullscreen, shown when it moves in a
  * window, hidden again after CURSOR_IDLE_MS still. The backend takes every
  * event, so a move is a new position. */
 void pc_gap_cursor_update(void *w) {

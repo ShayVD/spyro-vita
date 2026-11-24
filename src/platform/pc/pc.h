@@ -1,6 +1,6 @@
 /* PC platform layer (docs/pc-build.md): Linux and Windows desktop builds on
  * Encore's platform interface (encore/platform.h, its SDL3 PC backend,
- * D245: window, GL context, input, audio, time, threads, folders) and
+ * D247: window, GL context, input, audio, time, threads, folders) and
  * OpenGL 3.3 (the picture), in the low-image
  * model of linux64 and the PS4 (D173, D174): the image, the arena and the
  * game thread's stack lie below 2 GB.

@@ -1,6 +1,6 @@
 # PC build (docs/pc-build.md, D240): the same game and src/platform/common
 # as the other hosts, this platform layer (on Encore's platform interface
-# and its SDL3 PC backend, D245; OpenGL 3.3), and linux32's
+# and its SDL3 PC backend, D247; OpenGL 3.3), and linux32's
 # software rasterizer, PNG writer, log and save-state glue, as the PS4's.
 #   tools/pc/tc cmake -S . -B build/pc-linux -G Ninja -DSPYRO_HOST=pc \
 #       -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux.toolchain.cmake
@@ -12,7 +12,7 @@ file(GLOB PC_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 set(ENCORE_DIR "${CMAKE_SOURCE_DIR}/third_party/encore")
 set(LOW_IMAGE_DIR "${ENCORE_DIR}/lp64/runtime/low_image")
 set(WINPOSIX_DIR "${ENCORE_DIR}/targets/pc/runtime/winposix")
-# Encore's platform interface and its PC backend (D245), a library of its
+# Encore's platform interface and its PC backend (D247), a library of its
 # own: plain C with Encore's flags, not the game's (no -fno-builtin, no
 # -funsigned-char), so it is built as Encore's own tests build it
 set(ENCORE_CORE_DIR "${ENCORE_DIR}/core")

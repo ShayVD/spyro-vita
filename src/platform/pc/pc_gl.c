@@ -1,5 +1,5 @@
 /* pc_gl.h's pointers, loaded through the platform's GL loader (EncGpu.get_proc,
- * D245; SDL_GL_GetProcAddress underneath) (D243). */
+ * D247; SDL_GL_GetProcAddress underneath) (D243). */
 #define PC_GL_NO_RENAME
 #include "pc_gl.h"
 #include "host.h"

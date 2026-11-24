@@ -11,7 +11,7 @@
  * the whole process is below 2 GB (not large-address-aware; low.c).
  *
  * The main thread owns the platform (Encore's platform interface over its
- * SDL3 PC backend, D245: window, GL, events) and shows the frames; the game
+ * SDL3 PC backend, D247: window, GL, events) and shows the frames; the game
  * thread runs the game (pc.h). */
 #include "pc.h"
 #include "host.h"

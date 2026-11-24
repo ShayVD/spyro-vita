@@ -1,5 +1,5 @@
 /* What Encore's platform interface (encore/platform.h, API 2) can't say yet,
- * D245. The PC layer runs on the interface and its PC backend
+ * D247. The PC layer runs on the interface and its PC backend
  * (third_party/encore/targets/pc/encore/enc_pc.c); these few calls are the
  * only ones left that reach SDL3 directly, all in gaps.c, each with the
  * smallest addition to the interface that would retire it. */
