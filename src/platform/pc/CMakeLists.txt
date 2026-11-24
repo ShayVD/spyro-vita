@@ -11,6 +11,10 @@ add_executable(spyro ${PC_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
   "${LINUX32_DIR}/savestate_host.c")
 set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+# gpu=0's software rasterizer next to the GPU renderer (D242): its GR_*
+# entry points renamed soft_*, as in the Vita build (gpu.c dispatches)
+set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
+  COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/src/platform/vita/gpu_soft_names.h")
 target_include_directories(spyro PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${LINUX32_DIR}" "${CMAKE_SOURCE_DIR}/src/platform/common" "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS} -Wall -Wno-unused-function)

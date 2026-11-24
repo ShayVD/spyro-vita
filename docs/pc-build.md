@@ -1,6 +1,6 @@
-# PC build (Linux, Windows; D240, D241)
+# PC build (Linux, Windows; D240, D241, D242)
 
-**Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). Next: the GPU renderer at the window's resolution, and a person with a real GPU and gamepad.
+**Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D242); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
 
 A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **SDL3** (window, input, audio) and **OpenGL 3.3 core** (the picture).
 
@@ -18,13 +18,13 @@ Spyro was written for a 32-bit machine. Its structures hold 4-byte pointers, and
 ### Two threads
 
 - The **main thread** owns SDL: the window, its GL context, the keyboard and gamepads. At every display refresh it shows the newest frame that is due.
-- The **game thread** runs the game, the software rasterizer (linux32's `gpu_soft.c`, the PS1's exact pixels) and the SPU, paced by a 60 Hz clock of real time (`vblank.c`), the same catch-up model as the Vita and the PS4 (`common/clock.c`): if a tick runs late, the vblanks it missed run at once, so the game keeps its speed and the audio its continuity.
+- The **game thread** runs the game, the renderer (the GPU renderer on a GL context of its own, or the software rasterizer, below) and the SPU, paced by a 60 Hz clock of real time (`vblank.c`), the same catch-up model as the Vita and the PS4 (`common/clock.c`): if a tick runs late, the vblanks it missed run at once, so the game keeps its speed and the audio its continuity.
 
 Frames go from one to the other with the vblank they are due at (`frames.c`), as the Vita's render thread shows them (stage 7c, D112): the presenter's in-between frame (60 fps) and its widescreen frame are filed as they are drawn, a vblank ahead; at a vblank with none (boot logos, loading screens) the PS1 display is filed as it is. The game thread never waits for the display, and the display can run at any rate (60, 75, 144 Hz, variable refresh): each refresh shows the frame due by then.
 
 ### Picture, input, sound
 
-- **Picture** (`video.c`): one texture, one quad: 4:3, or 16:9 for the presenter's widescreen frames, as large as the window allows, black bars around. `filter=1` scales linearly, `filter=0` by nearest neighbour. F11 or Alt+Enter toggles (borderless) fullscreen; the window resizes freely. The frames are the PS1's resolution (512×240, the 224 lines the game draws shown): the GPU renderer at the window's resolution is the next step.
+- **Picture** (`video.c`): one texture, one quad: 4:3, or 16:9 for the presenter's widescreen frames, as large as the window allows, black bars around. `filter=1` scales linearly, `filter=0` by nearest neighbour. F11 or Alt+Enter toggles (borderless) fullscreen; the window resizes freely. With `gpu=1` the texture is the GPU renderer's picture, already at the window's size; with `gpu=0` it is the software rasterizer's frame at the PS1's (512×240, the 224 lines the game draws shown), scaled up.
 - **Input** (`input.c`, `pad.c`): SDL3's gamepad API (XInput, DualShock 4, DualSense, Switch Pro, …) as an analog DualShock: face buttons by position, triggers as L2/R2, the right stick the free camera (the Vita's defaults). Keyboard: arrows or WASD the d-pad, K/Space Cross, L Circle, J/Left Shift Square, I Triangle, Q/E L1/R1, 1/3 L2/R2, Enter START, Backspace/Tab SELECT.
 - **Sound** (`audio.c`): the SPU's 44.1 kHz stereo into an SDL3 audio stream, which converts it for the device.
 
@@ -35,7 +35,19 @@ Frames go from one to the other with the vblank they are due at (`frames.c`), as
 | the disc: a `.bin` + `.cue` image, `tools/extract_disc.py`'s files, or the Store copy's `EBOOT.PBP` | `--disc DIR`, else a `disc` folder beside the executable, else the user folder |
 | saves (`save/`), `spyro.log`, `config.txt`, `shots/` | the user folder: `~/.local/share/spyro-vita/Spyro/` on Linux, `%APPDATA%\spyro-vita\Spyro\` on Windows |
 
-`config.txt` takes `key=value` lines, and the command line takes the same keys as `--key value` (it wins): `fullscreen`, `window=WxH`, `widescreen`, `interp`, `vsync`, `filter`, `analog`, `stats`, and for tests `frames=N` (exit after N vblanks) and `shot=V1,V2` (a PNG of the window at those vblanks).
+`config.txt` takes `key=value` lines, and the command line takes the same keys as `--key value` (it wins): `fullscreen`, `window=WxH`, `widescreen`, `interp`, `vsync`, `filter`, `analog`, `stats`, `gpu`, `persp`, `subpixel`, `res` (the renderer, below), and for tests `frames=N` (exit after N vblanks), `shot=V1,V2` (a PNG of the window at those vblanks) and `virtual=1` (below).
+
+## The GPU renderer (`gpu=1`, D242)
+
+The game is drawn by the GPU at the window's resolution: `src/platform/pc/gpu_gl.c`, a trimmed copy of the Vita's renderer (`src/platform/vita/gpu_gl.c`, D35 and on), with the same model and the same shaders.
+
+- **The model:** PS1 VRAM stays a CPU array, and it is also the texture every textured primitive samples: the shaders decode 4-bit, 8-bit and 15-bit texels and the CLUTs themselves, texel 0 transparent, STP for semi-transparency. Each draw area the game draws into (Spyro's two 512×224 buffers) is a *target*, an FBO covering that VRAM rect at the window's scale. When something reads VRAM back (the pause and inventory backgrounds are StoreImage copies of the last frame), the target's pixels come back by replaying a log of what was drawn into it through the software rasterizer: the PS1's exact pixels, with no GPU read-back.
+- **The shaders** are the Vita's GLSL ES 1.00 text. `glsl330()` adds `#version 330 core` and swaps the old words as whole words (`attribute`/`varying` to `in`/`out`, `texture2D` to `texture`, `gl_FragColor` to an `out` variable). Vertices go through VBOs and VAOs (the core profile has no client-side arrays).
+- **Threads:** the game thread draws, on a second GL context that `video.c` makes beside the main thread's and shares with it (textures, sync objects). The presenter's 16:9 and 60 fps frames reach it through `PresentCapture`, as on the Vita. `capture()` draws the presentation pass's VRAM rect from the targets into a *picture*, one texture per slot of `frames.c`'s ring, and `commit()` files the slot with its due vblank. At a vblank with no presenter frame, the PS1 display is drawn into a picture the same way (VRAM under the targets). Each picture is fenced. The main thread waits on the fence, draws the picture into the window and fences its own draw, so the game thread doesn't draw that slot again before the main thread is done with it. A 24-bit display (the boot logos) is still converted on the CPU.
+- **Options:** `persp=1` and `subpixel=1` (both on by default, the Vita's defaults, D39 and #177/#178) use the vertex cache's exact projections: perspective-correct textures and sub-pixel vertices. `res=N` draws the targets at N times the PS1's pixels instead of the window's size (`res=1` is the PS1's own resolution). Resizing the window or going fullscreen makes the targets again at the new size (at most every quarter second while a window is dragged).
+- **Left out of the Vita's file:** the decoded-texture atlas (`tex_cache`, `tex_filter`), the 28-byte vertex, the fused and direct paths, draw joining, `gpu_opaque` and `gpu_uber`, dynamic resolution, the GL state shadow, the render thread and the Vita's meters. These exist for the Vita's GPU and CPU budget; a desktop GPU doesn't need them. `tex_filter` (filtered textures) is the one with a visible effect, and needs the atlas.
+- **gpu=0** is the reference: linux32's software rasterizer as before, compiled with the Vita's `gpu_soft_names.h` (its entry points renamed `soft_*`); `gpu.c` dispatches between the two, as the Vita's `gpu.c` does. If the GPU renderer can't start (no shared context, a shader that won't compile), the log says so and the software rasterizer draws.
+- **`virtual=1`** (tests): the clock counts the game's own vblanks, one for each vblank it waits for, so a run is never late. It shows the same frames at the same vblanks however fast the machine draws. A real-time run that falls behind (llvmpipe drawing `gpu=1` at 1280×720) reaches a pad script's presses at other moments, so two renderers can't be compared without it.
 
 ## Building
 

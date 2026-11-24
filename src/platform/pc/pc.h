@@ -26,6 +26,7 @@
 #define PC_MAX_SHOTS 16
 
 typedef struct {
+  int virt;        /* virtual=1 (tests): vblanks by the game's ticks, never late (vblank.c) */
   int frames;      /* frames=N, --frames N: exit after N vblanks; 0 = never */
   int stats;       /* stats=0|1|2: the line every 5 s of vblanks (default 1) */
   int analog;      /* analog=1 (default): a DualShock's sticks; 0: digital */
@@ -35,6 +36,10 @@ typedef struct {
   int widescreen;  /* widescreen=1 (default): 16:9 (docs/presentation.md) */
   int interp;      /* interp=1 (default): 60 fps in-between frames; 0: off */
   int win_w, win_h; /* window=WxH: the window's first size (default 1280x720) */
+  int gpu;         /* gpu=1 (default): the GPU renderer (D242); 0: the software one */
+  int persp;       /* persp=1 (default, gpu=1): perspective-correct textures (D39) */
+  int subpixel;    /* subpixel=1 (default, gpu=1): sub-pixel vertices (D39) */
+  int res;         /* res=N (gpu=1): targets at N times the PS1's pixels; 0 (default): the window's */
   int shots[PC_MAX_SHOTS]; /* shot=V1,V2,...: a PNG of the window at these vblanks */
   int nshots;
   char disc[1024]; /* --disc PATH: the game data's folder */
@@ -61,7 +66,9 @@ void pc_frames_install_capture(void);
 /* main thread: the newest frame due by `now` (our vblanks, see vblank.c);
  * 1 and *out filled if it is newer than the one last taken */
 typedef struct {
-  const uint32_t *rgba; /* w x h, 0xAABBGGRR as bytes R, G, B, A */
+  const uint32_t *rgba; /* w x h, 0xAABBGGRR as bytes R, G, B, A; NULL: a GPU
+                           picture, gpu_gl.c's texture for ring slot `slot` */
+  int slot;
   int w, h;
   int wide;             /* 16:9 (the presenter's widescreen frame) */
   int due;
@@ -71,15 +78,31 @@ int pc_frames_take(int now, PcFrame *out);
 void pc_frames_release(void); /* main thread: done with the frame taken */
 void pc_frames_report(int vblank);
 
+/* gpu.c, gpu_gl.c (D242): the GPU renderer, on the game thread's own GL
+ * context (shared with the main thread's, video.c) */
+extern int g_pc_gpu;
+extern volatile int g_pc_draw_w, g_pc_draw_h; /* the window's pixels (video.c) */
+int pc_gpu_init(void); /* game thread, its context current: 0 = ok */
+void pc_gpu_capture(int slot, int x, int y, int w, int h, int *pw, int *ph);
+int pc_gpu_display(int slot, int *pw, int *ph); /* -1: a 24-bit display (CPU) */
+void pc_gpu_sync_display(void);
+void pc_gpu_picture_end(void);
+unsigned pc_gpu_picture_tex(int slot, int *tw, int *th); /* main thread */
+void pc_gpu_picture_shown(int slot);                     /* main thread */
+void pc_gpu_report(int vblank);
+
 /* vblank.c: the game's clock, at 60 Hz of real time */
 int pc_vblank_now(void); /* any thread: our vblank due now by the clock */
 extern volatile int g_pc_quit;
 
 /* video.c (main thread) */
 int pc_video_init(void); /* 0 = ok */
+int pc_video_game_context(void); /* game thread: its own shared GL context current; 0 = ok */
 void pc_video_frame(void); /* show the newest due frame, swap */
 void pc_video_event(const void *sdl_event);
-void pc_video_shot(const char *path); /* the window's next picture as a PNG */
+/* the window as a PNG, at the first picture shown whose frame is due at
+ * `due` or later (so two runs' shots are of the same frame) */
+void pc_video_shot(const char *path, int due);
 void pc_video_report(int vblank);
 void pc_video_close(void);
 

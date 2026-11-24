@@ -4,7 +4,8 @@
  * Vita's render thread takes them with present_due=1 (stage 7c, D112):
  *  - with the presenter on (widescreen, 60 fps), present.c's frames, through
  *    a platform capture (PresentCapture): capture() copies the VRAM rect the
- *    software rasterizer just drew, commit() files it with its due vblank,
+ *    software rasterizer just drew (gpu=1: the GPU renderer draws it into
+ *    this slot's picture texture, gpu_gl.c), commit() files it with its due vblank,
  *    before that vblank comes (the in-between frame a vblank ahead of the
  *    real one);
  *  - at a vblank where present.c has no frame (boot logos, loading, the
@@ -35,6 +36,7 @@ extern int g_GPUDisabledState;
 typedef struct {
   uint32_t *rgba;
   int w, h, wide, due;
+  int gpu;      /* a GPU picture (gpu_gl.c's texture for this slot), not rgba */
   unsigned seq; /* 0: empty */
 } Slot;
 
@@ -118,34 +120,60 @@ static void copy_display(uint32_t *dst, int *ow, int *oh) {
   }
 }
 
-/* game thread: src (w x h, wide) filed as due */
-static void post(const uint32_t *src, int w, int h, int wide, int due) {
+static int s_pend_slot = -1; /* gpu=1: the ring slot a capture drew, not yet filed */
+
+/* game thread: a slot to write (the oldest the main thread doesn't hold,
+ * and not a capture's waiting for its commit), empty while it's written:
+ * the main thread skips it */
+static int acquire(void) {
   int i, best = -1;
   SDL_LockMutex(s_mu);
-  /* the oldest slot the main thread doesn't hold */
   for (i = 0; i < RING; i++) {
-    if (i == s_held)
+    if (i == s_held || i == s_pend_slot)
       continue;
     if (best < 0 || s_ring[i].seq < s_ring[best].seq)
       best = i;
   }
-  s_ring[best].seq = 0; /* empty while it's written: the main thread skips it */
+  s_ring[best].seq = 0;
   SDL_UnlockMutex(s_mu);
-  memcpy(s_ring[best].rgba, src, (size_t)w * h * 4);
+  return best;
+}
+
+/* game thread: slot i (written) filed as due */
+static void publish(int i, int w, int h, int wide, int gpu, int due) {
   SDL_LockMutex(s_mu);
-  s_ring[best].w = w;
-  s_ring[best].h = h;
-  s_ring[best].wide = wide;
-  s_ring[best].due = due;
-  s_ring[best].seq = ++s_seq;
+  s_ring[i].w = w;
+  s_ring[i].h = h;
+  s_ring[i].wide = wide;
+  s_ring[i].gpu = gpu;
+  s_ring[i].due = due;
+  s_ring[i].seq = ++s_seq;
   if (due > s_last_due)
     s_last_due = due;
   s_posted++;
   SDL_UnlockMutex(s_mu);
 }
 
+/* game thread: src (w x h, wide) filed as due */
+static void post(const uint32_t *src, int w, int h, int wide, int due) {
+  int i = acquire();
+  memcpy(s_ring[i].rgba, src, (size_t)w * h * 4);
+  publish(i, w, h, wide, 0, due);
+}
+
 void pc_frames_post_display(int due) {
   int w, h;
+  if (g_pc_gpu) {
+    int i = acquire();
+    if (pc_gpu_display(i, &w, &h) == 0) {
+      s_display_posts++;
+      publish(i, w, h, 0, 1, due);
+      pc_gpu_picture_end();
+      return;
+    }
+    s_ring[i].seq = 0; /* unused: the oldest, taken again below */
+    pc_gpu_sync_display(); /* a 24-bit display: from VRAM, on the CPU */
+  }
   copy_display(s_pending, &w, &h);
   s_display_posts++;
   post(s_pending, w, h, 0, due);
@@ -153,10 +181,26 @@ void pc_frames_post_display(int due) {
 
 /* present.c's platform capture (present.h PresentCapture) */
 static void cap_capture(int x, int y, int w, int h) {
+  if (g_pc_gpu) {
+    if (s_pend_slot < 0)
+      s_pend_slot = acquire();
+    pc_gpu_capture(s_pend_slot, x, y, w, h, &s_pend_w, &s_pend_h);
+    return;
+  }
   copy_rect(s_pending, x, y, w, h, &s_pend_w, &s_pend_h);
 }
 
-static void cap_commit(const PresentFrame *f) { post(s_pending, s_pend_w, s_pend_h, f->wide, f->due); }
+static void cap_commit(const PresentFrame *f) {
+  if (g_pc_gpu) {
+    if (s_pend_slot < 0)
+      return;
+    publish(s_pend_slot, s_pend_w, s_pend_h, f->wide, 1, f->due);
+    s_pend_slot = -1;
+    pc_gpu_picture_end();
+    return;
+  }
+  post(s_pending, s_pend_w, s_pend_h, f->wide, f->due);
+}
 
 static const PresentCapture k_capture = {cap_capture, cap_commit, NULL};
 
@@ -183,7 +227,8 @@ int pc_frames_take(int now, PcFrame *out) {
     s_superseded += s_ring[best].seq - s_taken_seq - 1;
   s_taken_seq = s_ring[best].seq;
   s_held = best;
-  out->rgba = s_ring[best].rgba;
+  out->rgba = s_ring[best].gpu ? NULL : s_ring[best].rgba;
+  out->slot = best;
   out->w = s_ring[best].w;
   out->h = s_ring[best].h;
   out->wide = s_ring[best].wide;
