@@ -126,6 +126,26 @@
     "shot_every=100",
     "frames=6600"
    ]
+  },
+  {
+   "name": "toasty60",
+   "pad": "tools/vita/hw-routes/o-toasty.pad",
+   "timeout": 2400,
+   "config": [
+    "vdm_ring=1024",
+    "config_version=5",
+    "widescreen=1",
+    "interp=4",
+    "interp_budget=0",
+    "persp=1",
+    "subpixel=1",
+    "draw_distance=200",
+    "dd_budget=1",
+    "menu_test=11400",
+    "menu_keys=up,up,up,up,up,right,right,right,right,down,cross,cross",
+    "shot_every=100",
+    "frames=15000"
+   ]
   }
  ],
  "shots": {
