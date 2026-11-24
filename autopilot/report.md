@@ -164,3 +164,15 @@ centre (354 more exact sky-clip vertices, 281 affine polygons move; D191).
 - The vendored vita-port-kit moved from 78915280 (main's) to 31295be7: besides `vita/runtime/perfcount` it brought
   newer kit tools and a `vpk_disc_open` that closes an already-open disc first. Every route passed with it.
 - The main checkout is on `autopilot`. Switch back with `git switch main` when you're done reviewing.
+
+## Resumed under Encore and stopped again (2026-11-24)
+
+- **Resumed** at 11:1x UTC with the coordinator from Encore (`../encore`, `playbooks/port-autopilot`).
+  - `autopilot.py migrate` renamed the integration branch `autopilot` to `develop` and moved the state to per-target tracks: shared phase 5, vita at phase 8, round 12.
+  - The config gained `branches`, `targets` (`["vita"]`) and `platforms.source = "ps1"`.
+  - `origin/autopilot` was left in place; `develop` is pushed.
+- **Merged:** #226 (D244). A moby shadow's centre is also named under an anchor of its own, and `own_nosrc` counts only own points with no source. MobyShadows missed is 0 on every host route. Host FNV per polygon: 0 found-before changed in 157 M polygons. Vita3K shots identical on 8 routes.
+- **Filed:** #247 (the `missed` bracket lists only its top three classes). Commented on #237 (the log-full own points).
+- **Stopped** at about 14:15 UTC on the owner's word, while #230's first attempt was in its first diagnostics. That attempt had no commits and no edits, so its worktree and branch were removed and no attempt was counted.
+- **Open for the loop:** #219, #225, #230, #231, #232, #237, #243, #244, #245 and #247, plus #175 (`needs-owner`). Eight of them need `src/platform/common/vcache.c`, so only one worker can run at a time. Splitting that file per vertex class would let several run in parallel; it is a large restructure and waits for the owner's word.
+- **Vita3K:** 8 worker runs, 0 of Vita3K's own failures. **Hardware:** none.
