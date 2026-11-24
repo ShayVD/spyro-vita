@@ -1679,3 +1679,73 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-226-1`.
   - Not run: the PC build (the `spyro-pc` image isn't on this machine). The change is plain unsigned arithmetic in common code.
 - **Left:** the log-full own points go with #237. The `missed` bracket should list every non-zero class, not the top three (filed).
+
+## 2026-11-24 — an ARM64 build (Apple Silicon first)
+
+### D246. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
+
+(D245 is the PC build's move onto Encore's platform interface, in another session.)
+
+- **Why:** the owner wants to play the port natively on an M-series Mac. The 64-bit builds (linux64, PC, PS4) keep the PS1's layouts with the low-image model (D173, D174, D240, D241): every pointer the game stores in its own memory is `P32`, clang's `__ptr32 __uptr`. That keyword exists only for x86. On AArch64 clang accepts it and does nothing, so every `P32` field is 8 bytes (Encore `lp64/docs/clang-bugs.md`). Running x86-64 under Rosetta was turned down: it rests on deprecated linker flags (`-no_pie`, `-pagezero_size`) and on Rosetta itself. Encore's PC backend (`targets/pc/encore/enc_pc.c`, SDL3) already runs on macOS arm64. The platform layer isn't what stops it; the pointer model is.
+- **The model** (Encore `lp64/docs/low-image.md`, "Why not the other models": the fallback it names). Every `P32` slot holds a 32-bit **offset** from one base. The base is the start of the executable's image. Everything the game points at is in the image: the `.bss` arena, the game thread's `.bss` stack, the data labels and string literals. Offset 0 is NULL. The source spells each kind of site with a macro, and `src/compat/p32.h` grows a third model:
+
+  | | 32-bit (Vita, linux32) | x86-64 low image (linux64, PC, PS4) | offset model (ARM64) |
+  |---|---|---|---|
+  | field `P32F(T *) m_X` | `T *` | `T *__ptr32 __uptr` | `u32` |
+  | read `P32_GET(T *, x)` | `(x)` | `(x)`, with a type check that `x` is a `P32` lvalue | `x ? base + x : NULL` |
+  | write `P32_SET(x, v)` | `x = v` | `x = v` | `x = v ? v - base : 0` |
+  | `(int)p`, `(T *)i` | as now | as now | encode, decode |
+
+  - On the 32-bit targets every macro expands to the text that is there today, so the code is the same byte for byte. Only debug-info columns move, as with `P32` in D174. The x86-64 builds keep `__ptr32` and gain a compile-time check that each `P32_GET`/`P32_SET` really names a `P32` lvalue. That check finds a missed or extra site as a compile error, before any ARM64 run.
+  - **Measured cost on arm64** (Apple clang 16, `-O2`): a decode is one `add` of a base kept in a register for the whole function. Where the result is dereferenced, clang drops the NULL test. A list walk `m = P32_GET(Moby *, m->m_Next)` is `ldp; add; add; cbnz`. Not measured in the game yet: that is the O3 gate below.
+  - Linux on ARM can link the image low and non-PIE, so the base is the constant 0 and a decode is only the zero-extending 32-bit load. macOS keeps a 4 GB `__PAGEZERO` for arm64, so its base is a symbol, `_mh_execute_header`.
+- **Measured** (this PR; `tools/ps4/offset_census.py` and `tools/ps4/trial_arm64.py`, on a linux64 build of `develop` @ aa3a44e):
+  - **Sites to rewrite** (clang 19's AST of all 353 linux64 units, each source location counted once, overlays' preprocessed text mapped back to `src/overlays/`):
+
+    | | P32 loads | stores | `+=` `++` etc. | pointer→int | int→pointer |
+    |---|---|---|---|---|---|
+    | decomp (patched `spyro-1`) | 5,561 | 632 | 65 | 201 | 51 |
+    | port's own C (`src/`) | 406 | 88 | 10 | 123 | 174 |
+    | **total** | **5,967** | **720** | **75** | **324** | **226** (4 in `gen/`) |
+
+    That is about 7,300 sites in about 100 files. `src/overlays/moby_update.c` alone has 4,600 (the overlays' giant update function). Only 99 sites lie inside a `#define`; the rest are plain source text. Low-image.md's "~14,500 uses" was a grep of `->m_X`/`.m_X` and also counted non-pointer fields.
+  - **Declarations:** 516 lines of `patches/spyro-1-ptr32/0001` and 54 `P32` tokens in the port's own C (`hand_structs.h`, `moby_lists_hand.c`, `collision_hand.c`, `t60_rules.c` and others). `tools/ps4/p32_patch.py` already finds each of them. Emitting `P32F(T *) name` instead of `T *P32 name` is a small change to the generator.
+  - **ARM64 today** (`trial_arm64.py`, Apple clang 16 for `arm64-apple-macos13`, the 165 non-overlay units): 18 units fail, all 52 failures being layout `static_assert`s in the port's own C. That is the same count as D173's plain-LP64 x86 trial. The decomp's C compiles with 8-byte fields and says nothing; the asserts are what catch it. There are also 126 pointer→int and 41 int→pointer warnings.
+  - **Not affected:** the overlays' 13 function pointers. They are already 8-byte globals off the 64-bit targets' slots (`src/game/p32_fnptrs.c`), and ARM64 takes the same path. The disc's data loaders (`PATCH_POINTER`) write through the same accessors. The PS1 data image already has the `--pie` path (`tools/data2s.py`, `s1_pie_words`, D193): ARM64 stores offsets there instead of addresses.
+- **How the uses get rewritten:** by a tool, not by hand. `p32_offset_rewrite.py` (new) reads clang's JSON AST of the linux64 build, where `P32` types are visible, and wraps each site's source range in `P32_GET`/`P32_SET`/`P32_ADD`/`P32_ENC`/`P32_DEC`. Its output is a new patch folder after `spyro-1-ptr32` (`patches/spyro-1-p32off`), plus edits to `src/`. It never adds or removes a line. The 99 macro sites and the 40 token-paste sites (`<scratch space>`) are done by hand and listed. The census's site list is the tool's checklist: every site is either rewritten or listed.
+- **Order and gates** (each step its own PR into `develop`, each step's gates on top of the ones before):
+  - **O1. Declarations.** Add `P32F`; the generator emits it; regenerate `spyro-1-ptr32`; convert the port's 54 hand tokens.
+    - Gate: Vita `.text`/`.data`/`.bss` byte-identical, and linux32 sections and labels identical, built from before and after (D174's method).
+    - Gate: linux64, PC (Linux and Windows) and PS4 binaries identical.
+    - Gate: `p32_lint.py` reports 0; `check_no_assets.sh`.
+  - **O2. Uses.** The rewriter, the new patch and the hand edits.
+    - Gate: the x86-64 type check compiles the whole of linux64 and the PC build with 0 errors.
+    - Gate: the same byte-identical checks as O1.
+    - Gate: linux64's `host_checks.sh` identical to linux32: demo, the 100,000-vblank tour, routes.
+  - **O3. A headless offset-model host, `linuxa64`.** The linux32 host built for aarch64 Linux, native in the arm64 Docker image (no qemu).
+    - The base and offsets; the data image's offsets; the game stack in `.bss`.
+    - A checking build where every encode traps if its pointer lies outside the image. That catches a host pointer at the store, better than the low image's reservation does.
+    - `cast_audit.py`'s 260 sites read again for ARM64.
+    - Gate: `host_checks.sh` byte-identical to linux32: traces, shots, WAV and memory cards over the demo, the tour and the routes.
+    - Gate: a timing comparison against linux32 on the same machine.
+  - **O4. macOS arm64.**
+    - `cmake/pc-macos.toolchain.cmake`: Apple clang, the macOS SDK, SDL3 static (built from the same 3.4.18 source as the PC image).
+    - A mac low-image runtime in Encore, `lp64/runtime/low_image`: the base symbol, the image under 4 GB, the game stack in `.bss`, the checks at start.
+    - The PC platform layer on Encore's backend as D245 leaves it.
+    - GL 4.1 core (macOS's last; it takes the `#version 330` shaders of D243).
+    - An `.app` bundle, ad-hoc signed.
+    - Gate: the O3 checks, run natively on the Mac.
+    - Gate: the PC build's play route, run by the owner on the M-series Mac.
+  - **O5. Linux on ARM** (the same host as O3 with SDL3, base 0), and later Windows on ARM if anyone asks.
+- **Risks:**
+  - **Size.** About 7,300 rewritten sites in code checked byte for byte. The tool and O2's type check carry it; a hand rewrite would not be reviewable.
+  - **Readability.** Readability of `moby_update.c` and the other decomp files goes down (`P32_GET(Moby *, m->m_Parent)` everywhere). That is the price of one source for all three models.
+  - **Upstream.** Upstream decomp changes to a patched file mean re-running the rewriter, as with `p32_patch.py` today.
+  - **Host pointers.** A host pointer that reaches the game's memory (the CD buffers, the presenter's copies) has to move into the image, as on linux64. O3's checking build finds the ones the audit missed.
+- **Not chosen:**
+  - x86-64 under Rosetta (above).
+  - A patched clang with 32-bit address spaces on AArch64: a compiler fork for every contributor, and Encore notes a narrow-store miscompile there (llvm-project #228782).
+  - Compiling the decomp as C++ with a `p32<T>` class that converts implicitly: it would touch the same code through C/C++ differences instead, and break the matching sources' C.
+  - watchOS's `arm64_32` and Linux's AArch64 ILP32: they can't run Mac or ordinary Linux programs.
+- **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
+- **Next free number (this branch):** D247.
