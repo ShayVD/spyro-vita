@@ -412,14 +412,21 @@ extern unsigned g_vcache_rec[2][VCR_N];
  * hand C's (render_hand.h HAND_RENDERER's hand: "EnvDraw"...). The walk
  * then finds the polygon's primitive (or record) among the frame's ranges,
  * the smallest that holds it, a copy's (walk.c, D71) by its offset in its
- * 16 MB window. So the class comes from what the frame recorded, not from
- * the walk's timing. Classes:
+ * 16 MB window. #222: for the counters, by its offset in the game's memory
+ * (psx_arena.h), the copy's too: the native build's (the Vita's) blocks
+ * aren't 16 MB-aligned, so there a primitive the walk read from the copy
+ * (the portals' sky) was filed outside. The placement's renderer gates
+ * (#215, #217, #221, #227) still compare the low 24 bits. So the class
+ * comes from what the frame recorded, not from the walk's timing. Classes:
  *  - a known renderer's (VCX_ENV...VCX_PORTAL_SKY_FOG) or another marked
  *    one's (VCX_OTHER): missed;
  *  - VCX_PORTAL_FACE (a portal's face: screen corners clipped flat at the
  *    portal's outline, place-only hand-overs) and VCX_OUTSIDE (in no
  *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
- *    the game's own C): exempt;
+ *    the game's own C into the HUD OT, order_table.c func_800168DC; #222:
+ *    in some a vertex shares a pixel with a projection and is found, e.g.
+ *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene):
+ *    exempt;
  *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
  *    cache), so nothing says which;
  *  - VCX_NO_PROJ (#216): a glow's or moby shadow's vertex whose own point

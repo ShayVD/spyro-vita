@@ -194,6 +194,7 @@
 #include <psp2/kernel/processmgr.h>
 #endif
 
+#include "psx_arena.h" /* #222: g_psx_arena_base, PSX_MEM_SIZE (cx_ofs) */
 #include "psx_gpu.h"
 #include "psx/gtereg.h"
 #include "psx/libgpu.h"
@@ -289,12 +290,16 @@ typedef struct {
 /* A renderer context's primitives in a frame (#211, psx_vcache.h VCX_*):
  * [lo, hi), the low 24 bits of the primitive buffer's addresses (the walk
  * may read a copy in another 16 MB window, walk.c) when w24, else a record
- * pool's whole addresses (native_draw) */
+ * pool's whole addresses (native_draw). #222: the counters' form, olo (for
+ * hi - lo bytes, if ok): a w24 range's offset in the game's memory
+ * (cx_ofs), which the native build's copy keeps where its low 24 bits
+ * don't (neither block is 16 MB-aligned there); the placement's gates keep
+ * lo/hi, as before */
 #define VC_CX 128 /* ranges a frame */
 #define VC_FR 256 /* #215: cuts a frame placed at their own fraction (frac_hand) */
 typedef struct {
-  uintptr_t lo, hi;
-  uint8_t cx, w24;
+  uintptr_t lo, hi, olo;
+  uint8_t cx, w24, ok;
 } Cx;
 
 /* #216: a glow's or moby shadow's own point (psx_vcache.h VCD_OWN,
@@ -3024,13 +3029,33 @@ unsigned psx_vcache_gen_stale(int kind, int cx) {
 }
 #endif
 
-static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24) {
+/* #222: where the counters look for a primitive at a: its offset in the
+ * game's memory (psx_arena.h), whether the walk reads it there or in
+ * walk.c's copy (copy, the game walk's; 0: none); anything else (present.c's
+ * narrowed HUD copies, a buffer of the presenter's own) by its low 24 bits,
+ * apart from those (CX_FAR). In the arena build both blocks are 16 MB-
+ * aligned, so an offset is the low 24 bits, as before; in the native build
+ * (the Vita's) neither is, so only the offset finds a primitive the walk
+ * reads from the copy (the PS1 primitives: the portals' sky and faces). */
+#define CX_FAR ((uintptr_t)1 << 31)
+static uintptr_t cx_ofs(uintptr_t a, uintptr_t copy) {
+  if (a - g_psx_arena_base < PSX_MEM_SIZE)
+    return a - g_psx_arena_base;
+  if (copy && a - copy < PSX_MEM_SIZE)
+    return a - copy;
+  return (a & 0xFFFFFFu) | CX_FAR;
+}
+
+static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24, uintptr_t olo,
+                   int ok) {
   if (t->ncx < VC_CX) {
     Cx *const c = &t->cx[t->ncx++];
     c->lo = lo;
     c->hi = hi;
+    c->olo = olo;
     c->cx = (uint8_t)cx;
     c->w24 = (uint8_t)w24;
+    c->ok = (uint8_t)ok;
   }
 }
 
@@ -3052,14 +3077,19 @@ static void vc_ctx(int kind, const char *name, uintptr_t p0, uintptr_t p1, uintp
   cx = cx_of_name(kind, name);
   /* the primitive buffer, by its addresses' offsets in their 16 MB window
    * (the HUD's mobys are drawn from the buffer's top: no forward move) */
-  if (p1 > p0 && p1 - p0 < 0x100000u && (p0 >> 24) == ((p1 - 1) >> 24))
-    cx_add(t, cx, p0 & 0xFFFFFFu, ((p1 - 1) & 0xFFFFFFu) + 1, 1);
+  if (p1 > p0 && p1 - p0 < 0x100000u && (p0 >> 24) == ((p1 - 1) >> 24)) {
+    /* #222: and by its offset in the game's memory, if both ends are in
+     * one block (cx_ofs) */
+    const uintptr_t o0 = cx_ofs(p0, 0);
+    cx_add(t, cx, p0 & 0xFFFFFFu, ((p1 - 1) & 0xFFFFFFu) + 1, 1, o0,
+           cx_ofs(p1 - 1, 0) - o0 == p1 - 1 - p0);
+  }
   /* native_draw's records: the cursor's move, or from the start of a pool
    * begun in the call */
   if (n1 > n0 && n1 - n0 < 0x1000000u)
-    cx_add(t, cx, n0, n1, 0);
+    cx_add(t, cx, n0, n1, 0, n0, 1);
   else if (n1 != n0 && nb && n1 > nb)
-    cx_add(t, cx, nb, n1, 0);
+    cx_add(t, cx, nb, n1, 0, nb, 1);
 }
 
 void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
@@ -3075,9 +3105,13 @@ void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uin
 
 /* the context of the polygon whose first vertex's x is at p, in tab's
  * frame gen: the smallest range holding it, a record pool's before the
- * primitive buffer's */
-static int cx_find(const Table *tab, uint32_t gen, const void *p) {
-  const uintptr_t a = (uintptr_t)p, a24 = a & 0xFFFFFFu;
+ * primitive buffer's. ofs (#222, the counters'): the primitive buffer's
+ * ranges by their offsets in the game's memory, the polygon's in the game
+ * walk's copy too (cx_ofs); 0 (the placement's gates, cx_find): by their
+ * low 24 bits, as before #222 */
+static int cx_find_(const Table *tab, uint32_t gen, const void *p, int ofs) {
+  const uintptr_t a = (uintptr_t)p;
+  const uintptr_t a24 = ofs ? cx_ofs(a, psx_gpu_game_walk()->copy) : a & 0xFFFFFFu;
   uintptr_t best = ~(uintptr_t)0;
   int cx = VCX_OUTSIDE, rank = 2; /* the best hit's w24 (a pool's, 0, first) */
   unsigned i;
@@ -3085,8 +3119,10 @@ static int cx_find(const Table *tab, uint32_t gen, const void *p) {
     return VCX_UNMARKED;
   for (i = 0; i < tab->ncx; i++) {
     const Cx *const c = &tab->cx[i];
-    const uintptr_t x = c->w24 ? a24 : a;
-    if (x >= c->lo && x < c->hi &&
+    const uintptr_t x = c->w24 ? a24 : a, lo = ofs ? c->olo : c->lo, hi = lo + (c->hi - c->lo);
+    if (ofs && !c->ok)
+      continue;
+    if (x >= lo && x < hi &&
         (c->w24 < rank || (c->w24 == rank && c->hi - c->lo < best))) {
       best = c->hi - c->lo;
       cx = c->cx;
@@ -3094,6 +3130,9 @@ static int cx_find(const Table *tab, uint32_t gen, const void *p) {
     }
   }
   return cx;
+}
+static int cx_find(const Table *tab, uint32_t gen, const void *p) {
+  return cx_find_(tab, gen, p, 0);
 }
 
 /* the report's words for the vertices left with no entry (#211): "missed
@@ -4717,7 +4756,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
   }
   if (nnone && !der) { /* not found: no entry */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
-    const int cx = cx_find(ptab, gen, xy[0]);
+    const int cx = cx_find_(ptab, gen, xy[0], 1); /* (#222: by offset, the copy's too) */
     st->miss_none += (unsigned)nnone;
     if (cx == VCX_ENV) /* #217: a world split point with an end behind the eye, exempt too */
       for (i = 0; i < n; i++)
