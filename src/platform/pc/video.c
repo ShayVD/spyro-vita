@@ -163,7 +163,7 @@ static int gl_setup(void) {
 int pc_video_init(void) {
   const EncPlatformInfo *info = enc_platform_info();
   /* headless (SDL's dummy or offscreen driver) has no display to wait for:
-   * no vsync there, as before D245 when the swap interval was refused */
+   * no vsync there, nor where the swap interval is refused (below) */
   int vsync = g_pc_opts.vsync && !(info->caps & ENC_CAP_HEADLESS);
   /* refresh_hz is the display's, so the backend never paces the swap to a
    * 60 Hz clock of its own: the picture goes out at every display refresh
@@ -180,6 +180,18 @@ int pc_video_init(void) {
   if ((rc = enc_video_open(&vc)) != ENC_OK || (rc = enc_video_gpu(&s_gpu)) != ENC_OK) {
     host_log("video: enc_video_open (GL 3.3 core): %s", enc_error_name(rc));
     return -1;
+  }
+  /* G12: a driver that refuses the swap interval (Mesa under Xvfb) would have
+   * the backend pace every present to a 60 Hz clock of its own, and a slow
+   * picture then falls behind the frames due. Before D245 the PC ran without
+   * vsync there; reopen so it still does. */
+  if (vsync && !pc_gap_gl_swap_interval_on()) {
+    enc_video_close();
+    vc.vsync = vsync = 0;
+    if ((rc = enc_video_open(&vc)) != ENC_OK || (rc = enc_video_gpu(&s_gpu)) != ENC_OK) {
+      host_log("video: enc_video_open (GL 3.3 core, no vsync): %s", enc_error_name(rc));
+      return -1;
+    }
   }
   g_pc_gl_proc = s_gpu.get_proc;
   pc_gap_window_setup(s_gpu.window, "Spyro the Dragon", g_pc_opts.fullscreen);

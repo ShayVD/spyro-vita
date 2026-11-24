@@ -132,6 +132,11 @@ int pc_gap_gl_make_current(void *w, void *ctx) {
   return 0;
 }
 
+int pc_gap_gl_swap_interval_on(void) {
+  int i = 0;
+  return SDL_GL_GetSwapInterval(&i) && i != 0;
+}
+
 /* ---- G7: the keyboard as spyro's map ------------------------------------------------------------------------------ */
 
 static const struct {

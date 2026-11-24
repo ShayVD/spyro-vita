@@ -30,6 +30,9 @@ const char *pc_gap_video_driver(void);
  * current on the calling thread. */
 void *pc_gap_gl_shared_context(void *sdl_window, void *main_context);
 int pc_gap_gl_make_current(void *sdl_window, void *context);
+/* G12 video: whether the window's GL swap really waits for the display (the
+ * swap interval took), on the thread with the window's context current. */
+int pc_gap_gl_swap_interval_on(void);
 /* G7 input: the keyboard as spyro's own map (input.c's table: WASD, K L J I,
  * Space...) in PS1 pad bits, and the ENC_BTN_ bits the backend's built-in
  * map (arrows, Z X A S, Q W, 1 3, Enter, Right Shift, Esc) put on pad 0 from
