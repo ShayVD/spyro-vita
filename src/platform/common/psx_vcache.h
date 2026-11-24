@@ -69,8 +69,8 @@ void psx_vcache_set_found_fast(int mode);
  * overflow entry takes no place in the frame's order, is worked out at
  * once, is no hand-over's source, and is read only for a SkyDraw polygon's
  * vertex with no entry in the slots, so every other polygon is found as
- * before. Host builds read VC_LONG_PROBE=0 from the environment too. */
-void psx_vcache_set_long_probe(int on);
+ * before. Host builds read VC_OVERFLOW=0 from the environment too. */
+void psx_vcache_set_overflow(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
@@ -601,7 +601,7 @@ typedef struct {
   /* #221: projections recorded in the overflow, their probe past VC_PROBE
    * (32) slots (none recorded before: counted in full then); and the
    * vertices of SkyDraw polygons found there (the only ones that look) */
-  unsigned probe_long, far_found;
+  unsigned ov_kept, ov_found;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
