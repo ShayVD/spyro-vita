@@ -127,6 +127,13 @@ GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..11}/`, each with its `spyro.elf
 | 10 | 65b6dc6 | after merging `main`: every polygon broken (main's #178 made `VCacheVert` floats; the PS4 still read `int16`) |
 | 11 | 3358e30 | the float layout read (guarded by a `_Static_assert` since b00630e): the picture right, 11,400 vblanks, 15 late, no GL errors; menu saved; memory card written |
 
+Release runs (P5, 2026-11-24, `logs/p5/hw-run{1,2}/`):
+
+| run | commit | result |
+|---|---|---|
+| 1 | 91dcaf4 | `release.sh`'s archived pkg: installs, icon shown; the `pic1.png` background stayed over the game all run (the game ran behind it: Piglet with the embedded binaries, 59.9 vblanks/s, 0 GL errors) |
+| 2 | 0c082af | no background: the game shows and plays; 16,200 vblanks, 14 late, 0 GL errors, no crash; draw distance 2× at x2.00 in play |
+
 ## The spike
 
 ```bash
