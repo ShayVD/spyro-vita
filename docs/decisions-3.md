@@ -1790,8 +1790,9 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **`gpu=1`:** develop and the branch were both killed (exit 137) before 9,100 vblanks. Each GPU picture takes about 4.6 s under llvmpipe and Rosetta, so the GPU renderer's A/B wasn't possible on this machine.
   - **Windows** (llvm-mingw cross-build): `spyro.exe` builds. `vcache.c` (unchanged) hit the 300 s compile timeout three times while the A/B ran, then built. One warning, in an unchanged line (`main.c` `here`). Not run under Wine.
   - **Vita:** the ELF built from `develop` and from the branch in same-length worktree paths has identical `.text` and `.data`. `.rodata` differs in 13 bytes: the build time and the commit ID.
-  - **linux32 and PS4:** LINUX32_PS4_RESULT
+  - **linux32 and PS4:** both build from this branch (linux32 673 of 673 targets; the PS4 fpkg `IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg`). Neither compiles a changed file: the vendored `low_image` and `winposix` changed only in READMEs and tests. linux32 ctest: still running when the PR opened, the result to follow.
   - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
+  - **No-disc start-up** (CI's check, `logs/pc-encore/smoke.log`): exit code 1, `video: x11, llvmpipe`, "No Spyro the Dragon disc data was found".
 - **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
-- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (issue VITA_ISSUE).
+- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
 - **Next free number:** D248 (D245 is main's PS4 P4, PR #250; D246 the ARM64 plan, PR #249).
