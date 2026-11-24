@@ -32,9 +32,21 @@ void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 #define HZ 60
 static Uint64 s_t0_ns; /* the clock's vblank 0 */
 
+/* virtual=1 (tests): the clock counts the game's own vblanks, one per
+ * vblank it waits for, so a run is never late and sees the same frames at
+ * the same vblanks however fast the machine draws (D243: the renderers'
+ * comparison under llvmpipe, where gpu=1 is slower than real time). It
+ * still waits for real time when early. */
+static volatile int s_virt;
+
 /* the clock's vblanks (the "display" psx_clock_due counts against) */
 static int vcount(void) {
   Uint64 now = SDL_GetTicksNS();
+  if (g_pc_opts.virt) {
+    if (!s_t0_ns)
+      s_t0_ns = now;
+    return s_virt;
+  }
   if (!s_t0_ns)
     s_t0_ns = now;
   return (int)((now - s_t0_ns) * HZ / 1000000000ull);
@@ -42,6 +54,13 @@ static int vcount(void) {
 
 /* until the clock's next vblank */
 static void wait_vblank(void) {
+  if (g_pc_opts.virt) {
+    Uint64 due = ((Uint64)s_virt + 1) * 1000000000ull / HZ + s_t0_ns, now = SDL_GetTicksNS();
+    if (due > now)
+      SDL_DelayPrecise(due - now);
+    s_virt++;
+    return;
+  }
   Uint64 next = ((Uint64)vcount() + 1) * 1000000000ull / HZ + s_t0_ns, now = SDL_GetTicksNS();
   if (next > now)
     SDL_DelayPrecise(next - now);
@@ -71,7 +90,7 @@ static void shots(int v) {
     if (g_pc_opts.shots[i] == v) {
       char path[1200];
       snprintf(path, sizeof path, "%sshots/shot-%d.png", g_pc_user_dir, v);
-      pc_video_shot(path);
+      pc_video_shot(path, psx_clock_due_at(v));
     }
 }
 
@@ -107,6 +126,8 @@ static void vblank(void) {
                s_t_calls, s_t_game / n, s_t_vblanks / n, s_t_wait / n);
       pc_frames_report(v);
       pc_video_report(v);
+      if (g_pc_gpu)
+        pc_gpu_report(v);
       pc_audio_report(v);
       host_log_flush();
       s_t_game = s_t_vblanks = s_t_wait = 0;

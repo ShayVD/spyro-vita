@@ -74,14 +74,16 @@ GL_FUNCS(PC_GL_DECL)
   }
 
 static SDL_Window *s_win;
-static SDL_GLContext s_gl;
+static SDL_GLContext s_gl, s_game_gl; /* s_game_gl: the GPU renderer's (gpu=1, D243) */
+volatile int g_pc_draw_w, g_pc_draw_h;
 static GLuint s_prog, s_tex, s_vao;
 static GLint s_u_rect, s_u_uv;
-static int s_tex_w, s_tex_h, s_filter = -1;
+static int s_tex_w, s_tex_h;
 static PcFrame s_cur; /* the frame on screen (its pixels uploaded) */
-static int s_have;
+static int s_have, s_cur_gpu;
 static SDL_Mutex *s_shot_mu;
 static char s_shot_path[1200];
+static int s_shot_due;
 static unsigned s_refreshes, s_new_frames;
 static unsigned long long s_upload_us, s_swap_us;
 static int s_vsync_on;
@@ -174,6 +176,20 @@ int pc_video_init(void) {
   }
   if (gl_setup() != 0)
     return -1;
+  if (g_pc_opts.gpu) {
+    /* the game thread's context (gpu_gl.c draws on it), sharing textures
+     * and sync objects with this one; made here, on the main thread, and
+     * made current on the game thread (pc_video_game_context) */
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+    s_game_gl = SDL_GL_CreateContext(s_win);
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+    if (!s_game_gl)
+      host_log("video: the GPU renderer's shared context: %s", SDL_GetError());
+    if (!SDL_GL_MakeCurrent(s_win, s_gl)) {
+      host_log("video: SDL_GL_MakeCurrent: %s", SDL_GetError());
+      return -1;
+    }
+  }
   s_vsync_on = g_pc_opts.vsync && SDL_GL_SetSwapInterval(1);
   if (!g_pc_opts.vsync)
     SDL_GL_SetSwapInterval(0);
@@ -186,6 +202,14 @@ int pc_video_init(void) {
              (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
              g_pc_opts.fullscreen ? " (fullscreen)" : "", m ? m->w : 0, m ? m->h : 0,
              m ? m->refresh_rate : 0.0f, s_vsync_on ? "on" : "off");
+  }
+  return 0;
+}
+
+int pc_video_game_context(void) {
+  if (!s_game_gl || !SDL_GL_MakeCurrent(s_win, s_game_gl)) {
+    host_log("video: no GL context for the game thread: %s", s_game_gl ? SDL_GetError() : "none");
+    return -1;
   }
   return 0;
 }
@@ -236,9 +260,10 @@ void pc_video_event(const void *e_) {
     toggle_fullscreen();
 }
 
-void pc_video_shot(const char *path) {
+void pc_video_shot(const char *path, int due) {
   SDL_LockMutex(s_shot_mu);
   snprintf(s_shot_path, sizeof s_shot_path, "%s", path);
+  s_shot_due = due;
   SDL_UnlockMutex(s_shot_mu);
 }
 
@@ -271,28 +296,30 @@ void pc_video_frame(void) {
   PcFrame f;
   unsigned long long t0 = pc_now_us(), t1;
   if (pc_frames_take(now, &f)) {
-    /* upload it now; the slot goes back at once */
-    if (f.w > s_tex_w || f.h > s_tex_h) {
-      s_tex_w = f.w > s_tex_w ? (f.w > 512 ? 1024 : 512) : s_tex_w;
-      s_tex_h = f.h > s_tex_h ? 512 : s_tex_h;
-      p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_tex_w, s_tex_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    if (f.rgba) {
+      /* upload it now; the slot goes back at once */
+      p_glBindTexture(GL_TEXTURE_2D, s_tex);
+      if (f.w > s_tex_w || f.h > s_tex_h) {
+        s_tex_w = f.w > s_tex_w ? (f.w > 512 ? 1024 : 512) : s_tex_w;
+        s_tex_h = f.h > s_tex_h ? 512 : s_tex_h;
+        p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_tex_w, s_tex_h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                       NULL);
+      }
+      p_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RGBA, GL_UNSIGNED_BYTE, f.rgba);
+      pc_frames_release();
     }
-    p_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RGBA, GL_UNSIGNED_BYTE, f.rgba);
-    pc_frames_release();
+    /* a GPU picture (gpu_gl.c) stays in its slot, held, while it is shown */
     s_cur = f;
     s_cur.rgba = NULL;
+    s_cur_gpu = f.rgba == NULL;
     s_have = 1;
     s_new_frames++;
   }
   t1 = pc_now_us();
   s_upload_us += t1 - t0;
-  if (s_filter != g_pc_opts.filter) {
-    GLint m = g_pc_opts.filter ? GL_LINEAR : GL_NEAREST;
-    s_filter = g_pc_opts.filter;
-    p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, m);
-    p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, m);
-  }
   SDL_GetWindowSizeInPixels(s_win, &ww, &wh);
+  g_pc_draw_w = ww;
+  g_pc_draw_h = wh;
   p_glViewport(0, 0, ww, wh);
   p_glClearColor(0, 0, 0, 1);
   p_glClear(GL_COLOR_BUFFER_BIT);
@@ -304,13 +331,28 @@ void pc_video_frame(void) {
       bw = bh * aspect;
     }
     {
-      float x0 = -bw / ww, y0 = -bh / wh;
+      float x0 = -bw / ww, y0 = -bh / wh, u1, v1;
+      GLint m = g_pc_opts.filter ? GL_LINEAR : GL_NEAREST;
+      if (s_cur_gpu) {
+        int tw, th;
+        p_glBindTexture(GL_TEXTURE_2D, pc_gpu_picture_tex(s_cur.slot, &tw, &th));
+        u1 = (float)s_cur.w / tw;
+        v1 = (float)s_cur.h / th;
+      } else {
+        p_glBindTexture(GL_TEXTURE_2D, s_tex);
+        u1 = (float)s_cur.w / s_tex_w;
+        v1 = (float)s_cur.h / s_tex_h;
+      }
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, m);
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, m);
       p_glUniform4f(s_u_rect, x0, y0, -x0, -y0);
-      p_glUniform4f(s_u_uv, (float)s_cur.w / s_tex_w, (float)s_cur.h / s_tex_h, 0, 0);
+      p_glUniform4f(s_u_uv, u1, v1, 0, 0);
       p_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+      if (s_cur_gpu)
+        pc_gpu_picture_shown(s_cur.slot);
     }
   }
-  if (s_shot_path[0])
+  if (s_shot_path[0] && s_have && s_cur.due >= s_shot_due)
     take_shot(ww, wh);
   cursor_idle();
   SDL_GL_SwapWindow(s_win);

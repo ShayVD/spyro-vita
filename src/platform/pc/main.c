@@ -55,7 +55,8 @@ const char *pc_low_report(void);    /* the same: what lies where */
 static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(4096)));
 
 PcOpts g_pc_opts = {.stats = 1, .analog = 1, .vsync = 1, .filter = 1, .widescreen = 1,
-                    .interp = 1, .win_w = 1280, .win_h = 720};
+                    .interp = 1, .win_w = 1280, .win_h = 720,
+                    .gpu = 1, .persp = 1, .subpixel = 1}; /* D243 */
 char g_pc_user_dir[1024];
 static char s_disc_dir[1024];
 volatile int g_pc_quit;
@@ -98,6 +99,19 @@ static int set_opt(const char *key, const char *v) {
     g_pc_opts.widescreen = n;
   else if (!strcmp(key, "interp"))
     g_pc_opts.interp = n;
+  else if (!strcmp(key, "virtual"))
+    g_pc_opts.virt = n;
+  else if (!strcmp(key, "gpu"))
+    g_pc_opts.gpu = n;
+  else if (!strcmp(key, "persp"))
+    g_pc_opts.persp = n;
+  else if (!strcmp(key, "subpixel"))
+    g_pc_opts.subpixel = n;
+  else if (!strcmp(key, "res")) {
+    if (n < 0 || n > 8)
+      return -1;
+    g_pc_opts.res = n;
+  }
   else if (!strcmp(key, "window")) {
     int w, h;
     if (sscanf(v, "%dx%d", &w, &h) != 2 || w < 320 || h < 240)
@@ -145,6 +159,7 @@ static void usage(void) {
           "usage: spyro [--disc DIR] [--fullscreen] [--window WxH] [--widescreen 0|1]\n"
           "             [--interp 0|1] [--vsync 0|1] [--filter 0|1] [--analog 0|1]\n"
           "             [--frames N] [--shot V1,V2,...] [--stats 0|1|2] [--pad FILE]\n"
+          "             [--gpu 0|1] [--persp 0|1] [--subpixel 0|1] [--res 0..8] [--virtual 0|1]\n"
           "DIR holds the disc image (.bin + .cue), the extracted files or EBOOT.PBP.\n");
 }
 
@@ -226,10 +241,18 @@ static int game_thread(void *arg) {
     host_log("the game thread isn't on a low stack (%p)", (void *)&here);
     pc_exit(1);
   }
+  /* the GPU renderer (D243) on this thread's own GL context, before the
+   * game's first draw; if it can't start, the software rasterizer draws */
+  if (g_pc_opts.gpu) {
+    if (pc_video_game_context() == 0 && pc_gpu_init() == 0)
+      g_pc_gpu = 1;
+    else
+      host_log("gpu: the GPU renderer can't start: the software rasterizer draws (as gpu=0)");
+  }
   /* the arena first, the presenter's area after it (as the Vita, D51, D129) */
   pres_draw_want();
   psx_arena_init();
-  g_nd_direct_ok = 1; /* the software rasterizer takes direct vertices (D99) */
+  g_nd_direct_ok = !g_pc_gpu; /* the software rasterizer takes direct vertices (D99) */
 
   snprintf(dir, sizeof dir, "%ssave", g_pc_user_dir);
   pc_mkdir(dir);
