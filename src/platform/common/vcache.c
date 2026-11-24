@@ -4219,6 +4219,10 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
        * quad's ambiguous corners with none, resolved from the frame's order
        * near the rest (ares) */
       int oent[4] = {-1, -1, -1, -1}, ares[4] = {0, 0, 0, 0}, nares = 0, part = 0;
+      /* #242: a found vertex's own point from own_corner (read only after the
+       * rest fail), and those whose own point was taken first (ow 2) */
+      const Ow *o2[4] = {NULL, NULL, NULL, NULL};
+      int had[4] = {0, 0, 0, 0};
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -4232,8 +4236,10 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         }
         o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
                      &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
-        if (o && o->placed == 2 && e[i])
-          o = NULL; /* #242: own_corner's, for a vertex not found only */
+        if (o && o->placed == 2 && e[i]) { /* #242: own_corner's: a vertex not found's first */
+          o2[i] = o;
+          o = NULL;
+        }
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
                           cx == VCX_ENV ? 1048576.0f : 1024.0f)
               : -1;
@@ -4294,10 +4300,35 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
           for (i = 0; i < n; i++)
             if (ow[i] == 2) {
               ow[i] = 0;
+              had[i] = 1;
               e2[i] = e[i];
               en2[i] = en[i];
             }
           ok = choose(e2, en2, k_all, n, cost, pick);
+        }
+        if (!ok && cx == VCX_MOBY_SHADOWS) {
+          /* #242: then every found vertex at its own point, own_corner's
+           * too (two nudged corners of one far shadow from one key: one found
+           * at another point's key); only a polygon found no other way */
+          int any = 0;
+          for (i = 0; i < n; i++)
+            if (had[i] ||
+                (o2[i] && own_point(ptab, &lk, o2[i],
+                                    (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16,
+                                    &owp[i][0], &owp[i][1], oc[i], &eo[i], 1024.0f) == 1)) {
+              ow[i] = 2;
+              e2[i] = oc[i];
+              en2[i] = eo[i];
+              any |= o2[i] != NULL;
+            }
+          ok = any && choose(e2, en2, k_all, n, cost, pick);
+          if (!ok)
+            for (i = 0; i < n; i++)
+              if (ow[i] == 2) {
+                ow[i] = 0;
+                e2[i] = e[i];
+                en2[i] = en[i];
+              }
         }
         if (!ok && cx == VCX_ENV) {
           /* #229: a world piece whose depths no choice brings under 4 times
