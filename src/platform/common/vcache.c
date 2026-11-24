@@ -2341,7 +2341,8 @@ static Ow *own_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int 
 
 /* key's own point under anchor: from projection r (its place in the
  * frame's order), offset (ox, oy) pixels from it; a second, different one
- * leaves the key with neither */
+ * leaves the key with neither. #242: one own_corner gave (placed 2) is as if
+ * not there */
 static void own_put(int kind, const Sink *k, uint32_t key, uint32_t anchor, unsigned r, int ox,
                     int oy, Touch *t) {
   Rec *const rec = &s_rec[kind];
@@ -2350,11 +2351,12 @@ static void own_put(int kind, const Sink *k, uint32_t key, uint32_t anchor, unsi
     k->st->own_full++;
     return;
   }
-  if (o->placed) {
+  if (o->placed == 1) {
     if (o->r != r || o->ox != ox || o->oy != oy)
       o->dead = 1;
     return;
   }
+  o->dead = 0;
   o->r = (uint16_t)r;
   o->ox = ox;
   o->oy = oy;
@@ -2372,7 +2374,7 @@ static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigne
   const Ow *const o = own_slot(tb, rec->gen, a, anchor, 0, &k->cost[VCC_REC_PROBES], t);
   int i;
   unsigned q, lo;
-  if (o && o->placed) {
+  if (o && o->placed == 1) { /* (#242: not own_corner's) */
     if (o->dead)
       return -1;
     *r = o->r;
@@ -2394,6 +2396,29 @@ static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigne
   return -1;
 }
 
+/* #242: a nudged corner's own point from own_corner (placed 2): kept apart
+ * from every other, so every own point kept before is as it was: it gives
+ * way to any other own point under key and anchor (own_put replaces it, and
+ * it is never put where one is), two different ones leave neither, and no
+ * hand-over's source (own_src) nor a found vertex (the walk) reads it */
+static void own_put2(int kind, const Sink *k, uint32_t key, uint32_t anchor, unsigned r, Touch *t) {
+  Rec *const rec = &s_rec[kind];
+  Ow *const o = own_slot(rec->tab, rec->gen, key, anchor, 1, &k->cost[VCC_REC_PROBES], t);
+  if (!o) {
+    k->st->own_full++;
+    return;
+  }
+  if (o->placed) {
+    if (o->placed == 2 && o->r != r)
+      o->dead = 1;
+    return;
+  }
+  o->r = (uint16_t)r;
+  o->ox = o->oy = 0;
+  o->placed = 2;
+  k->st->own_corner++;
+}
+
 /* #242: a's own point under anchor dead (two different points), and the
  * projection q - 1 back a's: that one's place in the frame's order (*r) */
 static int own_corner(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigned q, unsigned *r,
@@ -2402,7 +2427,7 @@ static int own_corner(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsi
   Table *const tb = rec->tab;
   const Ow *const o = own_slot(tb, rec->gen, a, anchor, 0, &k->cost[VCC_REC_PROBES], t);
   int i;
-  if (!o || !o->placed || !o->dead || q > tb->nlog)
+  if (!o || o->placed != 1 || !o->dead || q > tb->nlog)
     return 0;
   i = find(rec, kind, a, 0, &k->cost[VCC_REC_PROBES], t);
   if (i < 0 || LOG_E(tb->log[tb->nlog - q]) != (unsigned)i)
@@ -2453,10 +2478,9 @@ static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a
       own_src(kind, k, a, anchor, &r, &ox, &oy, &t) == 0)
     own_put(kind, k, key, anchor, r, ox + (form == VCD_OFFSET ? p : 0),
             oy + (form == VCD_OFFSET ? q : 0), &t);
-  else if (form == VCD_ALIAS && q > 0 && own_corner(kind, k, a, anchor, (unsigned)q, &r, &t)) {
-    own_put(kind, k, key, anchor, r, 0, 0, &t);
-    k->st->own_corner++;
-  } else
+  else if (form == VCD_ALIAS && q > 0 && own_corner(kind, k, a, anchor, (unsigned)q, &r, &t))
+    own_put2(kind, k, key, anchor, r, &t);
+  else
     k->st->own_nosrc++;
   k->cost[VCC_REC_LINES] += t.n;
 }
@@ -4208,6 +4232,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         }
         o = own_look(ptab, gen, key, cx == VCX_ENV ? VCD_CORNER(anchor, i) : anchor,
                      &cost[VCC_LOOK_PROBES], &t); /* (#217: a world piece's corner i) */
+        if (o && o->placed == 2 && e[i])
+          o = NULL; /* #242: own_corner's, for a vertex not found only */
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
                           cx == VCX_ENV ? 1048576.0f : 1024.0f)
               : -1;
