@@ -10,8 +10,9 @@
  * cut to 32 bits crashes instead of aliasing the game's memory; on Windows
  * the whole process is below 2 GB (not large-address-aware; low.c).
  *
- * The main thread owns SDL (window, GL, events) and shows the frames; the
- * game thread runs the game (pc.h). */
+ * The main thread owns the platform (Encore's platform interface over its
+ * SDL3 PC backend, D245: window, GL, events) and shows the frames; the game
+ * thread runs the game (pc.h). */
 #include "pc.h"
 #include "host.h"
 #include "../../game/present.h"
@@ -24,8 +25,9 @@
 #include "psx_spu.h"
 #include "region_data.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h> /* Windows: WinMain for the GUI subsystem, calling main() below */
+#include "gaps.h"
+
+#include "encore/platform.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -61,13 +63,13 @@ char g_pc_user_dir[1024];
 static char s_disc_dir[1024];
 volatile int g_pc_quit;
 
-unsigned long long pc_now_us(void) { return SDL_GetTicksNS() / 1000; }
+unsigned long long pc_now_us(void) { return enc_time_us(); }
 
 void pc_message(const char *title, const char *text) {
   host_log("%s: %s", title, text);
   host_log_flush();
   if (!g_pc_opts.frames) /* frames= is an unattended run (tests, CI): no dialog to wait on */
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, text, NULL);
+    pc_gap_message_box(title, text);
 }
 
 void pc_exit(int code) {
@@ -196,14 +198,14 @@ static int dir_exists(const char *p) {
 /* where the disc is: --disc, a "disc" folder beside the executable, or the
  * user folder */
 static void find_disc_dir(void) {
-  const char *base = SDL_GetBasePath();
+  const char *base = pc_gap_base_dir();
   char beside[1100];
   if (g_pc_opts.disc[0]) {
     snprintf(s_disc_dir, sizeof s_disc_dir, "%s", g_pc_opts.disc);
     return;
   }
-  snprintf(beside, sizeof beside, "%sdisc", base ? base : "");
-  if (base && dir_exists(beside)) {
+  snprintf(beside, sizeof beside, "%sdisc", base);
+  if (base[0] && dir_exists(beside)) {
     snprintf(s_disc_dir, sizeof s_disc_dir, "%s", beside);
     return;
   }
@@ -254,9 +256,11 @@ static int game_thread(void *arg) {
   psx_arena_init();
   g_nd_direct_ok = !g_pc_gpu; /* the software rasterizer takes direct vertices (D99) */
 
-  snprintf(dir, sizeof dir, "%ssave", g_pc_user_dir);
-  pc_mkdir(dir);
-  snprintf(dir, sizeof dir, "%ssave/disc-verified.txt", g_pc_user_dir);
+  /* the save folder: the user folder's save/ (gaps.c G1 makes it the backend's root) */
+  if (enc_path(ENC_DIR_SAVE, "disc-verified.txt", dir, sizeof dir) != ENC_OK) {
+    host_log("no save folder in %s", g_pc_user_dir);
+    pc_exit(1);
+  }
   psx_cd_set_verify(dir, NULL);
   psx_cd_set_clock(pc_now_us);
   if (psx_cd_open(s_disc_dir) != 0)
@@ -272,7 +276,7 @@ static int game_thread(void *arg) {
     host_log("audio: off");
   {
     char saves[1100];
-    snprintf(dir, sizeof dir, "%ssave", g_pc_user_dir);
+    enc_path(ENC_DIR_SAVE, "", dir, sizeof dir);
     psx_mcrd_set_root(psx_region_path(saves, sizeof saves, dir, NULL, 1));
     host_log("disc: Spyro the Dragon (%s), %s; saves in %s", psx_region()->area,
              psx_region()->serial, saves);
@@ -296,25 +300,23 @@ static void *game_thread_posix(void *arg) {
   game_thread(arg);
   return NULL;
 }
+#else
+static void game_thread_enc(void *arg) { game_thread(arg); }
 #endif
 
 static int start_game_thread(void) {
 #ifdef _WIN32
   /* low.c: the process is not large-address-aware, so every thread's
-   * stack is below 2 GB (game_thread checks); s_game_stack goes unused */
-  SDL_PropertiesID p = SDL_CreateProperties();
-  SDL_Thread *th;
+   * stack is below 2 GB (game_thread checks); s_game_stack goes unused.
+   * Never joined: the process ends with it (pc_exit, or main's return). */
+  const EncThreadConfig cfg = {"spyro game", GAME_STACK, ENC_PRIO_NORMAL, -1};
+  EncThread *th;
+  int rc;
   (void)s_game_stack;
-  SDL_SetPointerProperty(p, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER, (void *)game_thread);
-  SDL_SetStringProperty(p, SDL_PROP_THREAD_CREATE_NAME_STRING, "spyro game");
-  SDL_SetNumberProperty(p, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, GAME_STACK);
-  th = SDL_CreateThreadWithProperties(p);
-  SDL_DestroyProperties(p);
-  if (!th) {
-    host_log("the game thread: %s", SDL_GetError());
+  if ((rc = enc_thread_start(&th, &cfg, game_thread_enc, NULL)) != ENC_OK) {
+    host_log("the game thread: %s", enc_error_name(rc));
     return -1;
   }
-  SDL_DetachThread(th);
   return 0;
 #else
   pthread_attr_t attr;
@@ -332,7 +334,8 @@ static int start_game_thread(void) {
 
 int main(int argc, char **argv) {
   const void *arena_end = psx_low_arena_end();
-  const char *pref;
+  EncPlatformConfig pcfg = {"spyro", "Spyro the Dragon", argc, argv};
+  int rc;
   if (!low(arena_end, 0) || !low(s_game_stack, GAME_STACK) || !low((void *)&pc_exit, 0)) {
     fprintf(stderr, "spyro: the game's memory must lie below 2 GB (the low image, D174): %s\n",
             pc_low_report());
@@ -341,26 +344,30 @@ int main(int argc, char **argv) {
   if (parse_args(argc, argv) != 0)
     return 2;
   pc_crash_init();
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
-    fprintf(stderr, "spyro: SDL_Init: %s\n", SDL_GetError());
-    return 1;
-  }
-  pref = SDL_GetPrefPath("spyro-vita", "Spyro");
-  snprintf(g_pc_user_dir, sizeof g_pc_user_dir, "%s", pref ? pref : "./");
+  pc_gap_user_dir(g_pc_user_dir, sizeof g_pc_user_dir); /* and the backend's root (G1) */
   {
     char log[1100];
     snprintf(log, sizeof log, "%sspyro.log", g_pc_user_dir);
     host_log_open(log);
   }
-  host_log("Spyro PC (" __DATE__ " " __TIME__ "), SDL %d.%d.%d on %s; %s, %d pages below 4 GB "
-           "reserved",
-           SDL_VERSIONNUM_MAJOR(SDL_GetVersion()), SDL_VERSIONNUM_MINOR(SDL_GetVersion()),
-           SDL_VERSIONNUM_MICRO(SDL_GetVersion()), SDL_GetPlatform(), pc_low_report(),
-           pc_low_reserved_pages());
   host_log("user folder %s", g_pc_user_dir);
   read_config();
   if (parse_args(argc, argv) != 0) /* again: the command line wins */
     return 2;
+  pc_gap_window_size(g_pc_opts.win_w, g_pc_opts.win_h); /* G3 */
+  if ((rc = enc_platform_init(&pcfg)) != ENC_OK) {
+    fprintf(stderr, "spyro: enc_platform_init: %s\n", enc_error_name(rc));
+    host_log("enc_platform_init: %s", enc_error_name(rc));
+    host_log_flush();
+    return 1;
+  }
+  {
+    const EncPlatformInfo *info = enc_platform_info();
+    host_log("Spyro PC (" __DATE__ " " __TIME__ "), Encore platform API %d (%s, %d cores); %s, %d pages "
+             "below 4 GB reserved",
+             ENC_PLATFORM_API, info->target, info->cpu_cores, pc_low_report(),
+             pc_low_reserved_pages());
+  }
   find_disc_dir();
   host_log("disc folder %s", s_disc_dir);
   if (g_pc_opts.nshots) {
@@ -379,26 +386,24 @@ int main(int argc, char **argv) {
   if (start_game_thread() != 0)
     return 1;
   while (!g_pc_quit) {
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-      if (ev.type == SDL_EVENT_QUIT) {
+    EncEvent ev;
+    enc_input_poll(); /* the backend's events: F11, resizes, pads, the close button */
+    while (enc_event_poll(&ev)) /* focus and resizes need nothing here */
+      if (ev.type == ENC_EVENT_QUIT)
         g_pc_quit = 1;
-        break;
-      }
-      pc_video_event(&ev);
-      pc_input_event(&ev);
-    }
-    if (g_pc_quit)
+    if (g_pc_quit || enc_platform_should_quit())
       break;
+    pc_input_update();
     pc_video_frame();
   }
+  g_pc_quit = 1;
   /* the game thread exits at its next vblank (vblank.c); if it is stuck
    * (a load), go anyway */
   host_log("window closed");
-  SDL_Delay(500);
+  enc_sleep_us(500000);
   host_log_flush();
   pc_audio_close();
   pc_video_close();
-  SDL_Quit();
+  enc_platform_shutdown();
   return 0;
 }

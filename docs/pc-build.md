@@ -2,7 +2,7 @@
 
 **Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D243); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
 
-A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **SDL3** (window, input, audio) and **OpenGL 3.3 core** (the picture).
+A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **Encore's platform interface** (`encore/platform.h`, API 2, and its SDL3 PC backend `targets/pc/encore/enc_pc.c`, vendored; D245: window, GL context, input, audio, time, threads, folders) and **OpenGL 3.3 core** (the picture). What the interface can't say yet goes through `gaps.c`, the only file left that calls SDL ([below](#on-encores-platform-interface-d245)).
 
 ## How it works
 
@@ -17,7 +17,7 @@ Spyro was written for a 32-bit machine. Its structures hold 4-byte pointers, and
 
 ### Two threads
 
-- The **main thread** owns SDL: the window, its GL context, the keyboard and gamepads. At every display refresh it shows the newest frame that is due.
+- The **main thread** owns the platform (Encore's PC backend, SDL underneath): the window, its GL context (Encore's GPU mode), the keyboard and gamepads. At every display refresh it shows the newest frame that is due.
 - The **game thread** runs the game, the renderer (the GPU renderer on a GL context of its own, or the software rasterizer, below) and the SPU, paced by a 60 Hz clock of real time (`vblank.c`), the same catch-up model as the Vita and the PS4 (`common/clock.c`): if a tick runs late, the vblanks it missed run at once, so the game keeps its speed and the audio its continuity.
 
 Frames go from one to the other with the vblank they are due at (`frames.c`), as the Vita's render thread shows them (stage 7c, D112): the presenter's in-between frame (60 fps) and its widescreen frame are filed as they are drawn, a vblank ahead; at a vblank with none (boot logos, loading screens) the PS1 display is filed as it is. The game thread never waits for the display, and the display can run at any rate (60, 75, 144 Hz, variable refresh): each refresh shows the frame due by then.
@@ -25,8 +25,8 @@ Frames go from one to the other with the vblank they are due at (`frames.c`), as
 ### Picture, input, sound
 
 - **Picture** (`video.c`): one texture, one quad: 4:3, or 16:9 for the presenter's widescreen frames, as large as the window allows, black bars around. `filter=1` scales linearly, `filter=0` by nearest neighbour. F11 or Alt+Enter toggles (borderless) fullscreen; the window resizes freely. With `gpu=1` the texture is the GPU renderer's picture, already at the window's size; with `gpu=0` it is the software rasterizer's frame at the PS1's (512×240, the 224 lines the game draws shown), scaled up.
-- **Input** (`input.c`, `pad.c`): SDL3's gamepad API (XInput, DualShock 4, DualSense, Switch Pro, …) as an analog DualShock: face buttons by position, triggers as L2/R2, the right stick the free camera (the Vita's defaults). Keyboard: arrows or WASD the d-pad, K/Space Cross, L Circle, J/Left Shift Square, I Triangle, Q/E L1/R1, 1/3 L2/R2, Enter START, Backspace/Tab SELECT.
-- **Sound** (`audio.c`): the SPU's 44.1 kHz stereo into an SDL3 audio stream, which converts it for the device.
+- **Input** (`input.c`, `pad.c`): Encore's pads (`enc_pad_read`: SDL3's gamepad API underneath, XInput, DualShock 4, DualSense, Switch Pro, …, up to 4) as an analog DualShock: face buttons by position, triggers as L2/R2 from half way, the right stick the free camera (the Vita's defaults). Keyboard: arrows or WASD the d-pad, K/Space Cross, L Circle, J/Left Shift Square, I Triangle, Q/E L1/R1, 1/3 L2/R2, Enter START, Backspace/Tab SELECT.
+- **Sound** (`audio.c`): the SPU's 44.1 kHz stereo into Encore's audio (`enc_audio_push`; an SDL3 audio stream underneath), which converts it for the device. Over 250 ms queued, new audio is dropped until 80 ms is left.
 
 ## Files
 
@@ -82,4 +82,27 @@ No Mac build yet. An Apple Silicon (ARM64) build can't use the model: clang's `_
 
 ## Encore
 
-The game-free pieces of this build live in Encore (`ShayVD/encore`, PR #64: `targets/pc/`, `lp64/runtime/low_image`). The low image's two desktop variants and the Windows shims are vendored back here in `third_party/encore` (`tools/vendor.sh --dir third_party/encore`; `VENDORED` names the commit): never edit them here, change Encore and re-vendor. Encore's PC backend of its platform interface (`targets/pc/encore/enc_pc.c`) is the same SDL3 and GL code in the interface's shape; this game keeps its own platform layer, whose picture path (frames filed by due vblank, the presenter's 16:9 and 60 fps frames) is the game's.
+The game-free pieces of this build live in Encore (`ShayVD/encore`, PR #64: `targets/pc/`, `lp64/runtime/low_image`). The low image's two desktop variants and the Windows shims are vendored back here in `third_party/encore` (`tools/vendor.sh --dir third_party/encore`; `VENDORED` names the commit): never edit them here, change Encore and re-vendor. Since D245 `core/` and `targets/pc/encore/` are vendored too, and the platform layer runs on the interface (below); its picture path (frames filed by due vblank, the presenter's 16:9 and 60 fps frames) stays the game's.
+
+### On Encore's platform interface (D245)
+
+`src/platform/pc/` calls `enc_` for everything the interface has: `enc_platform_init` and the user folder's `save/` (`enc_path`), the window and the GL 3.3 core context (`enc_video_open` with `ENC_GFX_GL`, `enc_video_gpu`, `_begin`, `_present`; the GL loader is `EncGpu.get_proc`), events and pads (`enc_input_poll`, `enc_event_poll`, `enc_pad_read`), sound (`enc_audio_*`), time (`enc_time_us`, `enc_sleep_us`), mutexes, and the game thread on Windows (`enc_thread_start`). Encore's library (`encore_pc` in `src/platform/pc/CMakeLists.txt`) is built with plain flags, as Encore's own tests build it. The rest goes through `gaps.c` and `gaps.h`, each a gap in the interface with the smallest addition that would retire it:
+
+| | What the PC layer needs | The shim in `gaps.c` (or elsewhere) | The smallest addition to `platform.h` / `enc_pc.h` |
+|---|---|---|---|
+| G1 | the user folder players already have (`spyro-vita/Spyro`, D240), not the backend's `encore/spyro` | `SDL_GetPrefPath`, handed to the backend as `ENC_PC_ROOT` (so `enc_path(ENC_DIR_SAVE)` is the old `save/`) | `EncPlatformConfig.org` (the vendor folder; NULL = `encore`) |
+| G2 | the executable's folder (`disc/` beside it) | `SDL_GetBasePath` | an `ENC_DIR_APP` (the install folder, read only) |
+| G3 | the first window size (`window=WxH`) | `ENC_PC_WINDOW`, set before init | `EncVideoConfig.window_w`, `window_h` (0 = the backend's) |
+| G4 | the title, a 320×240 minimum, fullscreen at start, the mouse pointer hidden when idle or in fullscreen | `SDL_SetWindowTitle`, `SDL_SetWindowMinimumSize`, `SDL_SetWindowFullscreen`, `SDL_Show/HideCursor`, `SDL_GetMouseState` | the backend uses `EncPlatformConfig.title` (a fix, no API change); `EncVideoConfig.fullscreen`; the idle pointer as the PC backend's own behaviour |
+| G5 | the video driver's name in the log (CI looks for `video: x11, llvmpipe`) | `SDL_GetCurrentVideoDriver` | `EncPlatformInfo.driver` (or `enc_pc_video_driver()` in `enc_pc.h`) |
+| G6 | a second GL context, shared with the window's, current on the game thread (the GPU renderer, D243) | `SDL_GL_CreateContext` with `SDL_GL_SHARE_WITH_CURRENT_CONTEXT`, `SDL_GL_MakeCurrent` | `EncGpu.gl_create_shared()` and `gl_make_current(ctx)` (GL only) |
+| G7 | spyro's keyboard map (WASD, K L J I, Space …), not the backend's fixed one on pad 0 (Z X A S, Q W …), which clashes (A, S, W, Q) | `SDL_GetKeyboardState`, and the backend's map's bits taken back out of pad 0 | `enc_pc_set_keymap(table, n)` in `enc_pc.h` (NULL: no keyboard on pad 0) |
+| G8 | a message box (no disc, no display) | `SDL_ShowSimpleMessageBox` | `enc_message(title, text)` (blocking; `ENC_ERR_UNSUPPORTED` headless) |
+| G9 | dropping the oldest queued sound after a stall | none: the newest is dropped instead until the queue is down to 80 ms (`audio.c`) | `enc_audio_drop(int keep_frames)` |
+| G10 | GL's types and prototypes | `<SDL3/SDL_opengl.h>` (a header: no SDL call) in `video.c`, `pc_gl.h` | an `encore/gl.h` with the core profile's declarations |
+| G11 | a swap at every display refresh, never paced to the source's 60 Hz (`frames.c` picks the frame due) | `EncVideoConfig.refresh_hz` set to the display's (`enc_platform_info()->refresh_hz`), so the backend never paces | `refresh_hz = 0`: the display's rate, never paced |
+| G12 | whether the swap really waits for the display (the log's `vsync on`; no wait means pace yourself) | `vsync` off on a headless driver; with a real one, if the driver refuses the swap interval the backend paces at the display's rate (before D245: 1 ms sleeps) | `EncGpu.vsync` (1 when the display paces the swap) |
+| G13 | the game thread on a stack in the image (Linux, the low image) | `pthread_attr_setstack` (POSIX, not SDL; Windows uses `enc_thread_start`) | `EncThreadConfig.stack_mem` |
+| G14 | one log: the backend writes its own `log/spyro.log` and stderr beside the game's `spyro.log` | none | `enc_log_set_sink(fn)` |
+
+Other differences from the SDL layer before D245: the backend lets gamepads work while the window is in the background and installs no SDL signal handlers (Ctrl+C ends the process at once); it opens up to 4 gamepads (8 before); the triggers count as L2/R2 from 125 of 255 (16,000 of 32,767 before: the same to within one step); it makes a hidden window at start to see that GL 3.3 works; the window's GL surface has the driver's default depth buffer (the picture draws without one).

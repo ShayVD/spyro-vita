@@ -1,6 +1,7 @@
 /* The game's time on PC (docs/pc-build.md): the Vita's and the PS4's model
  * (vita/vblank.c, ps4/vblank.c; D28, D90), counted against a 60 Hz clock of
- * real time instead of a display's vcount, since a PC's display may run at
+ * real time (Encore's enc_time_us and enc_sleep_us, D245) instead of a
+ * display's vcount, since a PC's display may run at
  * any rate (60, 75, 144 Hz, variable). VSync(0) waits for the clock if the
  * game is early and, if it is late, runs every vblank it missed (pad, CD,
  * SPU, the game's callback), so the game keeps its speed and the audio
@@ -14,7 +15,7 @@
 #include "psx_clock.h"
 #include "psx_hooks.h"
 
-#include <SDL3/SDL.h>
+#include "encore/platform.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <limits.h>
@@ -30,7 +31,7 @@ int host_vblank_count(void) { return psx_clock_count(); }
 void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 
 #define HZ 60
-static Uint64 s_t0_ns; /* the clock's vblank 0 */
+static uint64_t s_t0_us; /* the clock's vblank 0 (enc_time_us, D245) */
 
 /* virtual=1 (tests): the clock counts the game's own vblanks, one per
  * vblank it waits for, so a run is never late and sees the same frames at
@@ -41,34 +42,34 @@ static volatile int s_virt;
 
 /* the clock's vblanks (the "display" psx_clock_due counts against) */
 static int vcount(void) {
-  Uint64 now = SDL_GetTicksNS();
+  uint64_t now = enc_time_us();
   if (g_pc_opts.virt) {
-    if (!s_t0_ns)
-      s_t0_ns = now;
+    if (!s_t0_us)
+      s_t0_us = now;
     return s_virt;
   }
-  if (!s_t0_ns)
-    s_t0_ns = now;
-  return (int)((now - s_t0_ns) * HZ / 1000000000ull);
+  if (!s_t0_us)
+    s_t0_us = now;
+  return (int)((now - s_t0_us) * HZ / 1000000ull);
 }
 
 /* until the clock's next vblank */
 static void wait_vblank(void) {
   if (g_pc_opts.virt) {
-    Uint64 due = ((Uint64)s_virt + 1) * 1000000000ull / HZ + s_t0_ns, now = SDL_GetTicksNS();
+    uint64_t due = ((uint64_t)s_virt + 1) * 1000000ull / HZ + s_t0_us, now = enc_time_us();
     if (due > now)
-      SDL_DelayPrecise(due - now);
+      enc_sleep_us(due - now);
     s_virt++;
     return;
   }
-  Uint64 next = ((Uint64)vcount() + 1) * 1000000000ull / HZ + s_t0_ns, now = SDL_GetTicksNS();
+  uint64_t next = ((uint64_t)vcount() + 1) * 1000000ull / HZ + s_t0_us, now = enc_time_us();
   if (next > now)
-    SDL_DelayPrecise(next - now);
+    enc_sleep_us(next - now);
 }
 
 int pc_vblank_now(void) {
   int base;
-  if (!s_t0_ns || !psx_clock_display_base(&base))
+  if (!s_t0_us || !psx_clock_display_base(&base))
     return INT_MAX; /* not counted yet: show the newest */
   return vcount() - base;
 }
@@ -82,7 +83,7 @@ static void park(void) {
   host_log("the game thread stops (the window closed)");
   host_log_flush();
   for (;;)
-    SDL_Delay(1000);
+    enc_sleep_us(1000000);
 }
 
 static void shots(int v) {
@@ -139,13 +140,9 @@ static void vblank(void) {
   }
   if (g_pc_opts.frames > 0 && v >= g_pc_opts.frames) {
     host_log("frames=%d reached, exiting", g_pc_opts.frames);
-    SDL_Delay(100); /* the last shot's picture */
+    enc_sleep_us(100000); /* the last shot's picture */
     host_log_flush();
-    g_pc_quit = 1;
-    SDL_Event q;
-    SDL_zero(q);
-    q.type = SDL_EVENT_QUIT;
-    SDL_PushEvent(&q);
+    g_pc_quit = 1; /* main.c's loop ends at its next pass */
     park();
   }
 }

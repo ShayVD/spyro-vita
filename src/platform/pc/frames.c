@@ -17,7 +17,7 @@
 #include "host.h"
 #include "../../game/present.h"
 
-#include <SDL3/SDL.h>
+#include "encore/platform.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <stdlib.h>
@@ -41,7 +41,7 @@ typedef struct {
 } Slot;
 
 static Slot s_ring[RING];
-static SDL_Mutex *s_mu;
+static EncMutex *s_mu;
 static unsigned s_seq;          /* the last filed */
 static int s_held = -1;         /* the slot the main thread holds */
 static unsigned s_taken_seq;    /* the newest the main thread took */
@@ -60,7 +60,7 @@ static inline uint32_t rgba555(uint16_t p) {
 }
 
 void pc_frames_init(void) {
-  s_mu = SDL_CreateMutex();
+  enc_mutex_create(&s_mu);
   for (int i = 0; i < RING; i++)
     s_ring[i].rgba = calloc((size_t)MAX_W * MAX_H, 4);
   s_pending = calloc((size_t)MAX_W * MAX_H, 4);
@@ -127,7 +127,7 @@ static int s_pend_slot = -1; /* gpu=1: the ring slot a capture drew, not yet fil
  * the main thread skips it */
 static int acquire(void) {
   int i, best = -1;
-  SDL_LockMutex(s_mu);
+  enc_mutex_lock(s_mu);
   for (i = 0; i < RING; i++) {
     if (i == s_held || i == s_pend_slot)
       continue;
@@ -135,13 +135,13 @@ static int acquire(void) {
       best = i;
   }
   s_ring[best].seq = 0;
-  SDL_UnlockMutex(s_mu);
+  enc_mutex_unlock(s_mu);
   return best;
 }
 
 /* game thread: slot i (written) filed as due */
 static void publish(int i, int w, int h, int wide, int gpu, int due) {
-  SDL_LockMutex(s_mu);
+  enc_mutex_lock(s_mu);
   s_ring[i].w = w;
   s_ring[i].h = h;
   s_ring[i].wide = wide;
@@ -151,7 +151,7 @@ static void publish(int i, int w, int h, int wide, int gpu, int due) {
   if (due > s_last_due)
     s_last_due = due;
   s_posted++;
-  SDL_UnlockMutex(s_mu);
+  enc_mutex_unlock(s_mu);
 }
 
 /* game thread: src (w x h, wide) filed as due */
@@ -208,7 +208,7 @@ void pc_frames_install_capture(void) { g_present_capture = &k_capture; }
 
 int pc_frames_take(int now, PcFrame *out) {
   int i, best = -1;
-  SDL_LockMutex(s_mu);
+  enc_mutex_lock(s_mu);
   /* the newest filed frame due by now: by due, then by filing order (a
    * display post and a presenter frame due at the same vblank: the later) */
   for (i = 0; i < RING; i++) {
@@ -220,7 +220,7 @@ int pc_frames_take(int now, PcFrame *out) {
       best = i;
   }
   if (best < 0 || s_ring[best].seq <= s_taken_seq) {
-    SDL_UnlockMutex(s_mu);
+    enc_mutex_unlock(s_mu);
     return 0;
   }
   if (s_taken_seq && s_ring[best].seq > s_taken_seq + 1)
@@ -235,14 +235,14 @@ int pc_frames_take(int now, PcFrame *out) {
   out->due = s_ring[best].due;
   out->seq = s_ring[best].seq;
   s_shown++;
-  SDL_UnlockMutex(s_mu);
+  enc_mutex_unlock(s_mu);
   return 1;
 }
 
 void pc_frames_release(void) {
-  SDL_LockMutex(s_mu);
+  enc_mutex_lock(s_mu);
   s_held = -1;
-  SDL_UnlockMutex(s_mu);
+  enc_mutex_unlock(s_mu);
 }
 
 void pc_frames_report(int vblank) {
