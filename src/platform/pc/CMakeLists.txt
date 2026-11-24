@@ -7,7 +7,16 @@
 find_package(SDL3 REQUIRED CONFIG COMPONENTS SDL3-static)
 set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 file(GLOB PC_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
-add_executable(spyro ${PC_SRCS}
+# Encore's low image and Windows shims, vendored (third_party/encore, D242)
+set(ENCORE_DIR "${CMAKE_SOURCE_DIR}/third_party/encore")
+set(LOW_IMAGE_DIR "${ENCORE_DIR}/lp64/runtime/low_image")
+set(WINPOSIX_DIR "${ENCORE_DIR}/targets/pc/runtime/winposix")
+if(WIN32)
+  set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_win.c" "${WINPOSIX_DIR}/enc_winposix.c")
+else()
+  set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_dyn.c")
+endif()
+add_executable(spyro ${PC_SRCS} ${PC_ENCORE_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
   "${LINUX32_DIR}/savestate_host.c")
 set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -15,7 +24,7 @@ set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_
 # entry points renamed soft_*, as in the Vita build (gpu.c dispatches)
 set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/src/platform/vita/gpu_soft_names.h")
-target_include_directories(spyro PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+target_include_directories(spyro PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${LOW_IMAGE_DIR}" "${WINPOSIX_DIR}"
   "${LINUX32_DIR}" "${CMAKE_SOURCE_DIR}/src/platform/common" "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS} -Wall -Wno-unused-function)
 target_link_libraries(spyro PRIVATE spyro_game spyro_platform_common psycross_headers
@@ -29,7 +38,7 @@ foreach(f func_80050BD0 func_800258F0 func_8001F158 func_8001F798 func_800208FC 
 endforeach()
 if(WIN32)
   # A fixed base of 0x400000, no ASLR, and not large-address-aware: the whole
-  # process below 2 GB (low_win.c). A GUI program (no console window): the
+  # process below 2 GB (low.c, Encore's lp64_low_image_win.c). A GUI program (no console window): the
   # log is spyro.log in the user folder, and stderr still reaches a redirect.
   target_link_options(spyro PRIVATE -Wl,--image-base,0x400000 -Wl,--disable-dynamicbase
     -Wl,--disable-high-entropy-va "-Wl,-Xlink=-largeaddressaware:no" -static -mwindows)

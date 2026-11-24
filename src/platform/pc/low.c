@@ -1,0 +1,40 @@
+/* The low image on PC (docs/pc-build.md, D240, D241, D242): Encore's lp64 low image, vendored
+ * (third_party/encore/lp64/runtime/low_image):
+ *  - Linux: lp64_low_image_dyn.c reserves every free page below 4 GB from .preinit_array, before any shared
+ *    library runs, so glibc's malloc, SDL and the drivers land above 4 GB and a host pointer cut to 32 bits
+ *    crashes. LP64_LOW_TRAP=0 in the environment skips it.
+ *  - Windows: the executable is not large-address-aware (CMakeLists.txt), so the whole process lies below 2 GB;
+ *    lp64_low_image_win.c's probe says where memory lands. The disc's binary reads and pread come from
+ *    third_party/encore/targets/pc/runtime/winposix.
+ * main.c checks the image, the arena and the game stack against 2 GB; this file reports where things are. */
+#include "pc.h"
+#include "lp64_low_image.h"
+
+#include <stdint.h>
+#include <stdio.h>
+
+extern const void *psx_low_arena_end(void);
+static char s_report[320];
+
+int pc_low_reserved_pages(void) { return lp64_reserved_pages(); }
+
+#if defined(_WIN32)
+/* ELF's linker symbols, which savestate.c stamps a save state's layout with (the build's own identity): a PE has
+ * none, so marks in the image */
+char etext[1], _edata[1], _end[1];
+
+const char *pc_low_report(void) {
+  char probe[256];
+  lp64_win_low_probe(probe, sizeof probe);
+  snprintf(s_report, sizeof s_report, "arena end %p; %s", psx_low_arena_end(), probe);
+  return s_report;
+}
+#else
+extern char __executable_start[], _end[];
+
+const char *pc_low_report(void) {
+  snprintf(s_report, sizeof s_report, "image %p-%p, arena end %p", (void *)__executable_start, (void *)_end,
+           psx_low_arena_end());
+  return s_report;
+}
+#endif

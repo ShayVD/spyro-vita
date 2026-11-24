@@ -888,6 +888,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not checked:** Windows itself with a GPU, a sound card and a gamepad.
 - **Next free number (this branch):** D242.
 
+### D242. The PC build's low image and Windows shims come from Encore, vendored
+
+- **Why:** the task's phase 2: once Encore's rename had landed, the PC build's game-free pieces went to the kit (`ShayVD/encore` #64: the SDL3 backend of its platform interface, lp64's low image for a dynamic Linux executable and for Windows, the Windows POSIX shims), and come back here vendored, so the two never drift.
+- **What:** `third_party/encore` (`tools/vendor.sh --dir third_party/encore`, Encore f505f2e): `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. `src/platform/pc/low_linux.c` and `low_win.c` are gone; `low.c` reports, and the build links `lp64_low_image_dyn.c` (Linux) or `lp64_low_image_win.c` and `enc_winposix.c` (Windows). The environment switch is now Encore's `LP64_LOW_TRAP=0` (was `SPYRO_LOW_TRAP=0`).
+- **Fixed on the way:** Windows moves a CRT descriptor's file pointer even for a positional `ReadFile`, so D241's `pread` changed the offset; Encore's puts it back (its test caught it under Wine). Spyro reads the disc only through `pread` on its descriptor, so nothing here had gone wrong yet.
+- **Checked:** the Linux build and the Windows build, and the play route on each (Linux under Xvfb, Windows under Wine), as D240 and D241 (`logs/pc-vendor-*`).
+- **Next free number (this branch):** D243.
+
 ### D243. The PC build's GPU renderer: a trimmed copy of the Vita's, on a second GL context the game thread owns
 
 - **Why:** D240's picture was the software rasterizer's 512×240 frame scaled up to the window. A PC can draw the game at its own resolution, and the Vita's renderer already does that on vitaGL (D35 and on): its shaders are GLSL ES 1.00, which desktop GL 3.3 core takes once it is given a version line and the old words are swapped.
