@@ -15,7 +15,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "feat/226-wobble-fix-mobyshadows-last-missed",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-226",
       "pids": [
-        60072
+        45157,
+        51767
       ],
       "started_at": "2026-11-24T11:17:20Z",
       "files": [
@@ -26,7 +27,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/host-build.md"
       ],
       "agent": "a521ed6a5579ec4f0",
-      "last_commit_at": "2026-11-24T11:58:28Z"
+      "last_commit_at": "2026-11-24T12:27:29Z"
     }
   ],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
@@ -436,3 +437,4 @@ continue.
 - 2026-11-24T11:17:45Z shared 5, vita 8: resumed under Encore (KIT=../encore); migrated autopilot -> develop, per-target state, source ps1; started #226 (vcache.c holds #219/#225/#230/#231/#237/#243; #244/#245 have no Files:), Vita3K: none, hardware: none
 - 2026-11-24T11:49:23Z shared 5, vita 8: #226 WIP 2eacdce (docs), worker busy; pick empty (vcache.c held), Vita3K: none
 - 2026-11-24T12:20:13Z shared 5, vita 8: #226 WIP f07763b (moby shadow centre own anchor), checking; Vita3K: none
+- 2026-11-24T12:51:14Z shared 5, vita 8: #226 WIP 3069180 (own_nosrc split), checking; Vita3K: none
