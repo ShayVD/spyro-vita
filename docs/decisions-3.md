@@ -1543,3 +1543,29 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **How** (`src/platform/common/vcache.c`, `psx_vcache.h`; comment in `src/game/gte_native.h`): in host builds only, with `VC_CHECK_GEN=1` or `psx_vcache_set_check_gen(1)`, `ngte_vcache` and `pres_vcache_ngte` (every native projection reaches the record through them, so `rp_skip` and every later reuse are covered too) keep each generation's 17 fields (r11–r33, tr, ofx, ofy, h, dqa, dqb) as its first projection had them, for the last 8,192 generations per kind. Every later projection of that generation is compared word by word; each that differs counts as `gen_stale` under the renderer context that returns next (#211's names), and the first 16 are logged with the field, old and new value and the caller's address. A `vcache gen check:` line comes with each report while it's on. Generation 0 is skipped. Off by default, one load and branch a projection when off, and compiled out of the Vita build (`#ifndef __vita__`). ctest `vcache_gen` covers it.
 - **Result:** `gen_stale` 0 on 36 host runs: S, P, Pf, T, O60 and the title and attract demos, each at 30 Hz, `--interp` and `--tick60 --interp`, at 1× and 2× (up to 54 M logic and 38 M presenter projections compared a run). Missed counts with the check on match D227 exactly. No renderer needs a follow-up.
 - **Checks:** the Vita ELF's `.text` and `.data` are byte-identical to the head's (only the build-date string in `.rodata` differs); Vita3K shots identical on all eight routes; host ctest 33 of 33; native build; `noassets`. Logs: `runs/auto-218-1`.
+
+### D229. With the fix on, a record whose probe runs out makes its entry in an overflow apart from the table's slots, read only for SkyDraw polygons (#221, 2026-11-24)
+
+- **Why:** SkyDraw's missed vertices (D210: 111 on host S at 30 Hz, 244 with `--interp`, 2 on Pi) all had one cause, "no record" (tagged with `runs/auto-221-1/host/diag221.py`, `classify221.py`). Late in a busy Stone Hill frame at 2× (about 4,000–5,000 keys in 8,192 slots), the record's linear probe met `VC_PROBE` = 32 taken slots in a row and gave up, counted only in `full`. The main sky records last, so now and then one fan-centre vertex had no entry, and each of its 4–9 triangles was missed; the rim vertices were found through neighbouring sectors. `sky_hand.c` was already correct.
+- **How** (`src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A record whose 32-slot probe fails makes its entry in a 64-entry overflow after the table's slots in the same array (`ov_find`; `Entry s[VC_SIZE + VC_OV]`, with `last`, `rp` and the lazy store's `head` widened to match).
+  - The slots hold exactly what they held before, so every key's probe ends where it did. An overflow entry gets no place in the frame's order (`VC_NOSEQ`), is worked out at once and never kept for the walk, and is no hand-over's source (sources are still looked up with the 32-slot `find`).
+  - The walk reads the overflow only for a vertex not found in the slots in a polygon `cx_find` names SkyDraw, and only in a frame whose records made one (`Table.ov_gen`). `psx_vcache_get`'s bound includes the overflow.
+  - Probing on to the first free slot instead (two earlier versions) changed 116–122 found-before polygons on S: an entry in the free slot after a full run displaces later keys, and the slot number is part of a vertex's ref.
+  - Off switch `psx_vcache_set_overflow(0)` / `VC_OVERFLOW=0` on the host (on S it gives back the head's numbers exactly: missed 136, SkyDraw 111, 45 not recorded). New counters `ov_kept`, `ov_found` on a `vcache overflow:` line. D182, D205, D213, D216, D218, D220, D223, D227 and D228 are unchanged.
+- **Measured (host, 2×, 16:9, base b17a0de):**
+
+  | Route | Missed | SkyDraw | Overflow records / SkyDraw vertices found there |
+  |---|---|---|---|
+  | S | 136 → 25 (ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5) | 111 → 0 | 45 / 111 |
+  | S `--interp` | 288 → 44 (ParticlesDraw 20, PortalSkyPlain 14, EnvDraw 6) | 244 → 0 | 99 / 244 |
+  | P | 5 → 5 | 0 | 0 / 0 |
+  | P `--interp` | 16 → 14 | 2 → 0 | 1 / 2 |
+  | Pf | 14 → 14 | 0 | 1 / 0 |
+  | Pf `--interp` | 28 → 28 | 0 | 1 / 0 |
+  | T | 2 → 2 | 0 | 0 / 0 |
+  | O60 | 0 → 0 | 0 | 0 / 0 |
+
+  Vita3K demo60/toasty60's SkyDraw 6 and 4 (windows 4,200 and 5,400) → 0; owner60, stone60 and wobble60 make no overflow records. At most 3 overflow records were seen in one frame.
+- **Checks:** host FNV per polygon on 8 pairs (151 M polygons), base and fix from clean objects: 0 found-before changed, 0 became affine (111 / 244 / 2 newly found). Vita3K shots identical on all eight routes. `CAPTURE=1` grabs at the only Vita3K frames that make overflow records (demo60 3,952–3,954 and 5,175–5,177, presenter frames, sky in view) are byte-identical to fix-off: no cracks. Counters the same against a second head run apart from timing ones inside the head's own spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-221-1`.
+- **Left:** on S, 19 of the 45 overflow records are other renderers' keys, unread under the SkyDraw-only rule; whether any of S's remaining ParticlesDraw 10 / EnvDraw 6 come from them is noted on #231 and #237. A better hash or bigger table would shorten probe runs (the multiplicative hash on y<<16|x clusters at 60% load), but every slot would change. Docs for the new line go with #226.
