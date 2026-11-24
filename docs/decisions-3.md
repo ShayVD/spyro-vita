@@ -888,7 +888,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not checked:** Windows itself with a GPU, a sound card and a gamepad.
 - **Next free number (this branch):** D242.
 
-### D242. The PC build's GPU renderer: a trimmed copy of the Vita's, on a second GL context the game thread owns
+### D243. The PC build's GPU renderer: a trimmed copy of the Vita's, on a second GL context the game thread owns
 
 - **Why:** D240's picture was the software rasterizer's 512×240 frame scaled up to the window. A PC can draw the game at its own resolution, and the Vita's renderer already does that on vitaGL (D35 and on): its shaders are GLSL ES 1.00, which desktop GL 3.3 core takes once it is given a version line and the old words are swapped.
 - **What:** `gpu=1`, the default; `gpu=0` is the software rasterizer, as before. `docs/pc-build.md` "The GPU renderer" has the details.
@@ -905,4 +905,4 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Found, not fixed (before this change):** pausing with the presenter on crashes the PC build. `origin/main`'s binary, alone and in real time on `pause.pad`, faults at vblank 14,202 in `Memset` from `func_80017FE4` (the pause's "PAUSED" letters, `g_HudMobys - 1` at 0xfffe3da8) inside the presenter's pass (`job_run` → `func_8001A40C`); this branch does the same with `gpu=0` and with `gpu=1`. With `widescreen=0 interp=0` the pause and inventory work. A separate fix.
 - **Not checked:** a real GPU, so 60 fps at 1080p is unverified (llvmpipe under Rosetta, 4 shared cores, takes 100–150 ms for a 1280×720 picture: the GPU renderer's per-pixel VRAM decode is the costliest part for a CPU rasterizer, and the cheapest for a GPU). A real driver's behaviour with the shared context (NVIDIA, AMD, Intel; Wayland's EGL). Windows on real hardware.
 - **Next:** a person with a GPU runs `--window 1920x1080 --fullscreen` and reads the `video` and `gpu` lines (refreshes, new frames, the game thread's time per picture); `tex_filter` (needs the atlas); the pause crash above.
-- **Next free number (this branch):** D243.
+- **Next free number (this branch):** D244.

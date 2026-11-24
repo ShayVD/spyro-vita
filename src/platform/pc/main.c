@@ -56,7 +56,7 @@ static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(4096)));
 
 PcOpts g_pc_opts = {.stats = 1, .analog = 1, .vsync = 1, .filter = 1, .widescreen = 1,
                     .interp = 1, .win_w = 1280, .win_h = 720,
-                    .gpu = 1, .persp = 1, .subpixel = 1}; /* D242 */
+                    .gpu = 1, .persp = 1, .subpixel = 1}; /* D243 */
 char g_pc_user_dir[1024];
 static char s_disc_dir[1024];
 volatile int g_pc_quit;
@@ -241,7 +241,7 @@ static int game_thread(void *arg) {
     host_log("the game thread isn't on a low stack (%p)", (void *)&here);
     pc_exit(1);
   }
-  /* the GPU renderer (D242) on this thread's own GL context, before the
+  /* the GPU renderer (D243) on this thread's own GL context, before the
    * game's first draw; if it can't start, the software rasterizer draws */
   if (g_pc_opts.gpu) {
     if (pc_video_game_context() == 0 && pc_gpu_init() == 0)

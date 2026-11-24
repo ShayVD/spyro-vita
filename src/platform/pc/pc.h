@@ -36,7 +36,7 @@ typedef struct {
   int widescreen;  /* widescreen=1 (default): 16:9 (docs/presentation.md) */
   int interp;      /* interp=1 (default): 60 fps in-between frames; 0: off */
   int win_w, win_h; /* window=WxH: the window's first size (default 1280x720) */
-  int gpu;         /* gpu=1 (default): the GPU renderer (D242); 0: the software one */
+  int gpu;         /* gpu=1 (default): the GPU renderer (D243); 0: the software one */
   int persp;       /* persp=1 (default, gpu=1): perspective-correct textures (D39) */
   int subpixel;    /* subpixel=1 (default, gpu=1): sub-pixel vertices (D39) */
   int res;         /* res=N (gpu=1): targets at N times the PS1's pixels; 0 (default): the window's */
@@ -78,7 +78,7 @@ int pc_frames_take(int now, PcFrame *out);
 void pc_frames_release(void); /* main thread: done with the frame taken */
 void pc_frames_report(int vblank);
 
-/* gpu.c, gpu_gl.c (D242): the GPU renderer, on the game thread's own GL
+/* gpu.c, gpu_gl.c (D243): the GPU renderer, on the game thread's own GL
  * context (shared with the main thread's, video.c) */
 extern int g_pc_gpu;
 extern volatile int g_pc_draw_w, g_pc_draw_h; /* the window's pixels (video.c) */

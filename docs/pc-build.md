@@ -1,6 +1,6 @@
-# PC build (Linux, Windows; D240, D241, D242)
+# PC build (Linux, Windows; D240, D241, D243)
 
-**Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D242); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
+**Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D243); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
 
 A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **SDL3** (window, input, audio) and **OpenGL 3.3 core** (the picture).
 
@@ -37,7 +37,7 @@ Frames go from one to the other with the vblank they are due at (`frames.c`), as
 
 `config.txt` takes `key=value` lines, and the command line takes the same keys as `--key value` (it wins): `fullscreen`, `window=WxH`, `widescreen`, `interp`, `vsync`, `filter`, `analog`, `stats`, `gpu`, `persp`, `subpixel`, `res` (the renderer, below), and for tests `frames=N` (exit after N vblanks), `shot=V1,V2` (a PNG of the window at those vblanks) and `virtual=1` (below).
 
-## The GPU renderer (`gpu=1`, D242)
+## The GPU renderer (`gpu=1`, D243)
 
 The game is drawn by the GPU at the window's resolution: `src/platform/pc/gpu_gl.c`, a trimmed copy of the Vita's renderer (`src/platform/vita/gpu_gl.c`, D35 and on), with the same model and the same shaders.
 

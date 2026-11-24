@@ -74,7 +74,7 @@ GL_FUNCS(PC_GL_DECL)
   }
 
 static SDL_Window *s_win;
-static SDL_GLContext s_gl, s_game_gl; /* s_game_gl: the GPU renderer's (gpu=1, D242) */
+static SDL_GLContext s_gl, s_game_gl; /* s_game_gl: the GPU renderer's (gpu=1, D243) */
 volatile int g_pc_draw_w, g_pc_draw_h;
 static GLuint s_prog, s_tex, s_vao;
 static GLint s_u_rect, s_u_uv;

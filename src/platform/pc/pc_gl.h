@@ -1,4 +1,4 @@
-/* The GL 3.3 core calls of the GPU renderer (gpu_gl.c, D242), all from
+/* The GL 3.3 core calls of the GPU renderer (gpu_gl.c, D243), all from
  * SDL_GL_GetProcAddress: the executable links no GL library (SDL loads it).
  * Including this file renames glFoo to the pointer pc_glFoo, so gpu_gl.c
  * reads as plain GL. The pointers are the same for both of the build's

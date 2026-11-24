@@ -1,10 +1,10 @@
-/* PC GPU renderer (gpu=1, the default; decisions D242): PsyCross's GR_*
+/* PC GPU renderer (gpu=1, the default; decisions D243): PsyCross's GR_*
  * interface on OpenGL 3.3 core, drawn at the window's resolution.
  *
  * A trimmed copy of the Vita's src/platform/vita/gpu_gl.c (D35 and on): the
  * same model, the same shaders (GLSL ES 1.00, turned into GLSL 3.30 by
  * glsl330() below), the same targets, logs and replays. The Vita's file is
- * untouched; what is left out of this copy, and why, is in D242:
+ * untouched; what is left out of this copy, and why, is in D243:
  *   - vitaGL, sce*, CDRAM, the GXM meters, gpu_parts/gpu_time/gpu_bench/
  *     gpu_fill: the Vita's own tools;
  *   - the render thread (gpu_thread.c): here the game thread draws, on a GL
@@ -1507,7 +1507,7 @@ int pc_gpu_init(void) {
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glDisable(GL_STENCIL_TEST);
-  host_log("gpu: GPU renderer ready (gpu=1), persp=%d subpixel=%d, res=%s%d (D242)", s_persp,
+  host_log("gpu: GPU renderer ready (gpu=1), persp=%d subpixel=%d, res=%s%d (D243)", s_persp,
            s_subpixel, s_res ? "" : "window", s_res);
   return 0;
 }

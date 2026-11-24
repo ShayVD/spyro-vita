@@ -34,7 +34,7 @@ static Uint64 s_t0_ns; /* the clock's vblank 0 */
 
 /* virtual=1 (tests): the clock counts the game's own vblanks, one per
  * vblank it waits for, so a run is never late and sees the same frames at
- * the same vblanks however fast the machine draws (D242: the renderers'
+ * the same vblanks however fast the machine draws (D243: the renderers'
  * comparison under llvmpipe, where gpu=1 is slower than real time). It
  * still waits for real time when early. */
 static volatile int s_virt;

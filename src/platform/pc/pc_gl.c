@@ -1,4 +1,4 @@
-/* pc_gl.h's pointers, loaded from SDL_GL_GetProcAddress (D242). */
+/* pc_gl.h's pointers, loaded from SDL_GL_GetProcAddress (D243). */
 #define PC_GL_NO_RENAME
 #include "pc_gl.h"
 #include "host.h"

@@ -1,4 +1,4 @@
-# The PC renderers' comparison route (docs/pc-build.md, D242): play.pad, then the pause menu (Start),
+# The PC renderers' comparison route (docs/pc-build.md, D243): play.pad, then the pause menu (Start),
 # down twice and Cross into the inventory, Triangle back and Start out: the two screens that read VRAM
 # back (StoreImage) for their backgrounds. Real time, so the timings have slack.
 2 none

@@ -1,4 +1,4 @@
-/* The GR_* names PsyCross calls (D242), as the Vita's gpu.c (D35): gpu=1
+/* The GR_* names PsyCross calls (D243), as the Vita's gpu.c (D35): gpu=1
  * (the default) sends them to the GPU renderer (gpu_gl.c), gpu=0 to the
  * software rasterizer (linux32's gpu_soft.c, compiled with the Vita's
  * gpu_soft_names.h, so its names are soft_*). */
