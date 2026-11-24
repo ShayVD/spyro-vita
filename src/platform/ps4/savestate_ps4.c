@@ -1,4 +1,4 @@
-/* Save states on the PS4 (src/game/savestate.c, decisions D51, D199): the
+/* Save states on the PS4 (src/game/savestate.c, decisions D51, D245): the
  * menu's SAVE rows (slot, save, load) and the short notice shown after a
  * save or load, as the Vita's savestate_vita.c, and the platform hooks
  * (linux32's savestate_host.c's: the SPU mixes on the game thread here too;

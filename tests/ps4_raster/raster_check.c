@@ -1,4 +1,4 @@
-/* raster_mt.c (the PS4's software rasterizer on several threads, D199)
+/* raster_mt.c (the PS4's software rasterizer on several threads, D245)
  * against gpu_soft.c (linux32's, one thread): the same random splits from
  * the same VRAM must leave the same VRAM, byte for byte. Textured (4, 8 and
  * 15-bit pages, random CLUTs, at x >= 512 as the game's) and untextured

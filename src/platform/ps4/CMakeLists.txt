@@ -1,4 +1,4 @@
-# PS4 build (docs/ps4-plan.md P3-P4, decisions D193, D199): the same game
+# PS4 build (docs/ps4-plan.md P3-P4, decisions D193, D245): the same game
 # and src/platform/common as the other hosts, this platform layer (the
 # GLES2 renderer on the player's Piglet among it), and linux32's software
 # rasterizer, PNG writer and log. Packed as a fake PKG. libScePigletv2VSH is
@@ -14,10 +14,10 @@ set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 file(GLOB PS4_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 # The software rasterizer's GR_* names get a soft_ prefix (the Vita's
 # gpu_soft_names.h, D35): gr_ps4.c calls it and then the GLES2 renderer
-# (gpu_gles.c), D199.
+# (gpu_gles.c), D245.
 set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/src/platform/vita/gpu_soft_names.h")
-# The GLES2 renderer's pre-compiled shaders (D199, the owner's option C):
+# The GLES2 renderer's pre-compiled shaders (D245, the owner's option C):
 # the binaries a run with the player's Piglet pair saved (shader_dump=1),
 # fetched from the PS4 into this folder, become a C table; on a PS4 without
 # the pair the firmware's own Piglet loads them with glShaderBinary. Local

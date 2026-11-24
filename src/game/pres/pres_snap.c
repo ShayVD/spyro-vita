@@ -63,10 +63,10 @@ static_assert(offsetof(__typeof__(g_DragonCutscene), m_CutsceneSpyro) == 0x88 &&
                   offsetof(__typeof__(g_DragonCutscene), m_RescuedDragonMoby) == 0x90,
               "g_DragonCutscene's mobys");
 extern Spyro g_pres_snap_g_Spyro;
-extern Moby *P32 g_pres_snap_g_LevelMobys; /* PS1 labels: P32 on a 64-bit host (D199) */
+extern Moby *P32 g_pres_snap_g_LevelMobys; /* PS1 labels: P32 on a 64-bit host (D245) */
 extern DB *P32 g_pres_snap_g_CurDB;
 extern DB g_pres_snap_g_DB[2];
-extern Moby *P32 g_pres_level_mobys; /* lod_pres.c: P32 (D199) */
+extern Moby *P32 g_pres_level_mobys; /* lod_pres.c: P32 (D245) */
 extern unsigned char g_pres_snap_g_Buffers[]; /* g_Buffers' copy (stage 7g) */
 extern char D_8006FCF4[], D_80077DD8[];
 
@@ -323,7 +323,7 @@ int pres_snap_take(int blend) {
         offsetof(__typeof__(g_Buffers), m_ParticleSpaceStart)};
     size_t k;
     for (k = 0; k < sizeof fields / sizeof fields[0]; k++) {
-      void *P32 p; /* the field's 4 bytes (a host pointer zeroed the next field, D199) */
+      void *P32 p; /* the field's 4 bytes (a host pointer zeroed the next field, D245) */
       memcpy(&p, g_pres_snap_g_Buffers + fields[k], sizeof p);
       REBASE_PTR(p);
       memcpy(g_pres_snap_g_Buffers + fields[k], &p, sizeof p);

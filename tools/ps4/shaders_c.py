@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The PS4 GLES2 renderer's pre-compiled shaders as C (decisions D199).
+"""The PS4 GLES2 renderer's pre-compiled shaders as C (decisions D245).
 
     tools/ps4/shaders_c.py DIR OUT.c
 

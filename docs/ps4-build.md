@@ -1,6 +1,6 @@
 # PS4 build (plan P2 on; D180)
 
-The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3–P4, D193, D199: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
+The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3–P4, D193, D245: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
 
 ## The toolchain
 
@@ -37,7 +37,7 @@ tools/ps4/tc <command>
 
 Ubuntu 24.04 arm64 with clang-18/lld-18, the same OpenOrbis tarball, `create-fself` and `create-gp4` built for arm64 from the pinned commits, and PkgTool.Core's framework-dependent build on Ubuntu's arm64 .NET 8 runtime. `--platform` matters: a cached amd64 `ubuntu:24.04` otherwise gets used under emulation.
 
-## The game (P3–P4, D193, D199)
+## The game (P3–P4, D193, D245)
 
 ```bash
 eval "$(tools/ps4/sdk.sh --env)"
@@ -57,13 +57,13 @@ What the PS4 build does differently (all of it PS4 only; linux32, linux64 and th
 - **`-fno-vectorize`:** a fourth clang 18 `__ptr32` bug, a vector `addrspacecast` in `P32_INIT`'s loops under AVX.
 - **The presenter's object:** `tools/ps4/keep_commons.py` keeps its common symbols global (llvm-objcopy would localize them into absolute symbols).
 - **`main()` loads `libSceUserService`, `libSceVideoOut`, `libScePad`, `libSceAudioOut` and `libSceSystemService`** with `sceSysmoduleLoadModuleInternal`. The PS4 doesn't load them for the eboot.
-- **`param.sfo` has CATEGORY `gde` and FORMAT `obs`**, as OpenOrbis's Piglet sample: with `gd`, Piglet's `eglGetDisplay` returned `EGL_NO_DISPLAY` with no error (GPU runs 1–2, D199).
+- **`param.sfo` has CATEGORY `gde` and FORMAT `obs`**, as OpenOrbis's Piglet sample: with `gd`, Piglet's `eglGetDisplay` returned `EGL_NO_DISPLAY` with no error (GPU runs 1–2, D245).
 
 On the PS4 (the owner's yes first, every time): the disc image (`.bin` + `.cue`), the files `tools/extract_disc.py` writes, or the Store copy's `EBOOT.PBP` go in `/data/spyro/`. Saves go to `/data/spyro/save/`, and the log to `/data/spyro/spyro.log`.
 
 **Options** go in `/data/spyro/config.txt`, one `key=value` a line. The options menu writes its rows' keys there and keeps the other lines:
 - the menu's (the Vita's keys and defaults): `widescreen`, `interp` (0, 1, 4), `wobble` (PSX WOBBLE, 0 the default: the fix on), `res` (0 native 1080p, 1 the PS1's pixels), `draw_distance` (100, 150, 200), `analog`, `free_camera`, `cam_invert_x`, `cam_invert_y`, `cam_speed`, `cam_recentre`, `touch_menu`, `skip_logos`, `state_slot`;
-- developers': `frames=N`, `stats=0|1|2`, `realtime=0|1`, `shot=V`, `shot_every=N`, `interp_budget=0|1`, `gpu=0` (the software renderer), `gpu_vsync=1` (swap interval 1: blocked Piglet's first swap, D199), `shader_compile=1` (the player's Piglet pair compiles the shaders), `shader_dump=0`, `menu_test=V1,...`.
+- developers': `frames=N`, `stats=0|1|2`, `realtime=0|1`, `shot=V`, `shot_every=N`, `interp_budget=0|1`, `gpu=0` (the software renderer), `gpu_vsync=1` (swap interval 1: blocked Piglet's first swap, D245), `shader_compile=1` (the player's Piglet pair compiles the shaders), `shader_dump=0`, `menu_test=V1,...`.
 
 **The options menu:** hold the touch pad's click (the PS1's SELECT) and press OPTIONS, or tap the touch pad (`touch_menu=1`, the default). PICTURE: WIDESCREEN, 60 FPS, PSX WOBBLE, RESOLUTION, DRAW DISTANCE; CONTROLS; GAME (logos, cheats); SAVE (save states in `/data/spyro/save/`).
 
@@ -74,7 +74,7 @@ curl -o logs/…/spyro.log ftp://$PS4_IP:2121/data/spyro/spyro.log
 
 Install the pkg with GoldHEN's Package Installer and run "Spyro PS4 (test)". To catch a crash, record GoldHEN's klog first (`nc $PS4_IP 3232 > logs/…/klog.txt`, then stop it by its PID). The crash report gives the faulting `rip` and backtrace at the eboot's base, 0x400000; `llvm-symbolizer --obj=build/ps4/spyro.elf ADDR-0x400000` (or `nm -n`) names the function. A watchdog thread logs where the game thread is if it stops for 3 s.
 
-### The renderers (P4, D199)
+### The renderers (P4, D245)
 
 **GLES2 on Piglet** (`gpu_gles.c`), the default: the PS1 picture drawn by the GPU at 1080p, 16:9, 60 fps (60 Hz logic in play, D150). The software rasterizer still draws every split into the CPU's VRAM (on 4 threads, `raster_mt.c`; `tests/ps4_raster` checks it against `gpu_soft.c`), so VRAM reads stay exact with no readback; the GPU redraws the same splits into 1080p targets and samples VRAM from a texture uploaded by rows. Presenter frames are kept on the GPU. Swap interval 0, as the Piglet sample (with 1 the first `eglSwapBuffers` never returned); the game's own 60 Hz clock paces it.
 

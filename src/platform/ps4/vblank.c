@@ -1,4 +1,4 @@
-/* PS4 time (docs/ps4-plan.md P3-P4, D193, D199), the Vita's model (vita/vblank.c,
+/* PS4 time (docs/ps4-plan.md P3-P4, D193, D245), the Vita's model (vita/vblank.c,
  * D28, D90): the game's vblanks follow the display's own count
  * (sceVideoOutGetVblankStatus). VSync(0) waits for the next real vblank if
  * the game is early, and if it is late runs every vblank it missed (pad, CD,

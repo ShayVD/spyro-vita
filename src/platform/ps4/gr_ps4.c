@@ -1,4 +1,4 @@
-/* The GR_* names the OT walk calls (psx_gpu.h; decisions D35, D199): on the
+/* The GR_* names the OT walk calls (psx_gpu.h; decisions D35, D245): on the
  * PS4 every call reaches the software rasterizer (linux32's gpu_soft.c,
  * compiled with the Vita's gpu_soft_names.h: soft_ names), which keeps the
  * CPU's VRAM exact, and then, with the GLES2 renderer up (g_ps4_gpu), the
@@ -19,7 +19,7 @@ TextureID g_whiteTexture = 1;
 TextureID g_vramTexture = 2;
 int g_cfg_bilinearFiltering = 0;
 
-/* raster_mt.c: the software rasterizer's draws on several threads (D199) */
+/* raster_mt.c: the software rasterizer's draws on several threads (D245) */
 void ps4_raster_clip(const RECT16 *rect, int enable);
 void ps4_raster_texture(TextureID tex);
 void ps4_raster_blend(BlendMode m);

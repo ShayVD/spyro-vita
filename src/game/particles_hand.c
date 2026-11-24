@@ -454,6 +454,19 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       AT32(prim + 0x18) = v0 - a2;
       AT32(prim + 0x10) = v0 - a3;
       AT32(prim + 0x8) = v0 - a3 - a2;
+      /* #209: each corner is the centre's exact place plus its offset from
+       * the centre, at the centre's depth, for the vertex cache. The
+       * offsets come from the corner words as the GPU reads them (x the
+       * low half, y the high half, each signed), so a corner whose x
+       * borrowed from its y is placed at the y drawn. */
+#define PART_HO(c)                                                                                 \
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES), (c), sxy, 0u, (s32)(s16)(c) - (s32)(s16)sxy,     \
+                ((s32)(c) >> 16) - ((s32)sxy >> 16))
+      PART_HO(v0);
+      PART_HO(v0 - a2);
+      PART_HO(v0 - a3);
+      PART_HO(v0 - a3 - a2);
+#undef PART_HO
       QuadUVs(prim, x0, x1);
       AT32(prim + 0x0) = 0x9000000u; /* POLY_FT4 */
       Link((v1 << 3) + ot, prim, ND_K_FT4);
@@ -658,6 +671,9 @@ static void Glows(void) {
       centre = o.sxy;
       sz = (u32)o.mac3;
     }
+    /* #216: the centre is this projection, whatever else shares its pixel:
+     * the fan's own point, under the centre (its triangles' first vertex) */
+    PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_GLOWS) | VCD_SELF, centre, centre, centre, 0, 0);
     AT32(prim + 0x0) = 0x2000000u;
     AT32(prim + 0x4) = 0xE1000220u; /* draw mode: additive, tpage 0x220 */
     AT32(prim + 0x8) = 0u;
@@ -709,8 +725,9 @@ static void Glows(void) {
         f1 |= 8;
       rim = (rx & 0xFFFFu) | (ry << 16);
       /* #189: each rim is its centre's exact place plus this offset, at
-       * the centre's depth, for the vertex cache */
-      PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS), rim, centre, 0u, (s32)mx, (s32)my);
+       * the centre's depth, for the vertex cache; #216: and the centre's
+       * own projection's place plus it, under the centre */
+      PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS) | VCD_OWN, rim, centre, centre, (s32)mx, (s32)my);
       do {
         u32 nx, ny, f2, rim2;
         ps.irw[1] = AT32(vl + 0x0);
@@ -736,8 +753,8 @@ static void Glows(void) {
         if ((s32)nx <= 0)
           f2 |= 8;
         rim2 = (nx & 0xFFFFu) | (ny << 16);
-        PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS), rim2, centre, 0u, (s32)(nx - (u32)sx),
-                      (s32)(ny - (u32)sy));
+        PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_GLOWS) | VCD_OWN, rim2, centre, centre,
+                      (s32)(nx - (u32)sx), (s32)(ny - (u32)sy));
         AT32(prim + 0x18) = rim2;
         if (!((s32)(f0 & f1 & f2) > 0)) {
           Link(slot, prim, ND_K_G3);

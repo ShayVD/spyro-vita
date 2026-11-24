@@ -1,4 +1,4 @@
-/* The software rasterizer on several cores (decisions D199): linux32's
+/* The software rasterizer on several cores (decisions D245): linux32's
  * gpu_soft.c rasterizer (PS1 rules: integer vertices, top-left fill, affine
  * UVs, 4/8/16 bpp + CLUT, texel*colour/128, texel 0 transparent, STP
  * semi-transparency, draw-area clip) copied with its state in a record, so
@@ -302,7 +302,7 @@ int ps4_raster_init(void) {
     }
   }
   s_on = 1;
-  host_log("raster: the software rasterizer on %d threads (D199)", NTHREADS);
+  host_log("raster: the software rasterizer on %d threads (D245)", NTHREADS);
   return 0;
 }
 

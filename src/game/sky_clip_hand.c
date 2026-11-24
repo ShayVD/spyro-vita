@@ -155,18 +155,23 @@ static NgteRtp ProjectVertex(const NgteProj *P, u32 w, s32 ox, s32 oy, s32 oz) {
   return ngte_rtps_w(P, x + (y << 16), z);
 }
 
-/* A sector's vertices projected, each one's clip word into the scratchpad;
- * the flags they all share. As in sky_hand.c, each RTPS overlaps loading
- * the next vertex, so V0 ends up holding vert[n]. */
-static u32 ProjectSector(const u32 *sector, const Box *box) {
+/* A sector's vertices projected with P, each one's clip word into the
+ * scratchpad; the flags they all share. As in sky_hand.c, each RTPS
+ * overlaps loading the next vertex, so V0 ends up holding vert[n].
+ *
+ * P is the caller's, read once a draw (#213): between the sectors only the
+ * far colour changes (FogColours, CutSide), never the projection's
+ * registers, so every sector's projections are the same; and the vertex
+ * cache's record sees one generation a draw (gte_native.h NgteProj gen,
+ * D202), where a new one each sector made it compare the words again. */
+static u32 ProjectSector(const NgteProj *P, const u32 *sector, const Box *box) {
   const s32 ox = (s16)sector[SEC_ORIGIN_XY], oy = (s32)sector[SEC_ORIGIN_XY] >> 16;
   const s32 oz = (s32)sector[SEC_ORIGIN_Z] >> 16;
   const u32 n = sector[SEC_ORIGIN_Z] & 0xFFFF;
   const u32 *vert = sector + SEC_VERTICES;
   u32 *scratch = (u32 *)SCRATCH_BASE, all = ~0u, i = 0;
-  const NgteProj P = ngte_proj_get();
   do {
-    const u32 flags = ClipFlags(ProjectVertex(&P, vert[i], ox, oy, oz).sxy, box);
+    const u32 flags = ClipFlags(ProjectVertex(P, vert[i], ox, oy, oz).sxy, box);
     all &= flags;
     scratch[i] = flags;
   } while (++i != n);
@@ -278,10 +283,12 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
   const u32 limit = *(u32 *)D_80075780 - 0x400;
   u32 *const scratch = (u32 *)SCRATCH_BASE;
   Chain ch;
+  NgteProj P;
   (void)a0, (void)a1, (void)a2, (void)a3;
 
   SectorsInFront((const u32 *)(g_Camera + 0x14), cyc[0], cyc[1]);
   SetRotation((const u32 *)g_Camera);
+  P = ngte_proj_get();
   ChainBegin(&ch);
   for (;;) {
     const u32 *sector, *colours, *tri, *end;
@@ -293,7 +300,7 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
     packed = sector[SEC_TRIANGLES];
     colours = sector + SEC_VERTICES + (sector[SEC_ORIGIN_Z] & 0xFFFF);
     FogColours(colours, packed >> 14);
-    if (ProjectSector(sector, &SCREEN) & 0xF)
+    if (ProjectSector(&P, sector, &SCREEN) & 0xF)
       continue; /* every vertex off the same side */
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
@@ -342,8 +349,10 @@ static s32 Quotient(s32 n, s32 d) { return n == INT32_MIN && d == -1 ? n : n / d
  * way (A·from + B·from + C over A·d + B·d, as 1.12 with rounding), then
  * GPL moves `from` by t·d and DPCS moves the colour by t. Returns the point;
  * *rgb gets the colour, with POLY_G3's command byte. A side parallel to the
- * line (a 0 divisor) returns from's x and junk, as the asm does. */
-static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb) {
+ * line (a 0 divisor) returns from's x and junk, as the asm does. `sky`: a
+ * sky triangle's side (func_8004F7E8), whose fraction goes to the vertex
+ * cache too (#215); 0 for the face's (func_8004FF90). */
+static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb, int sky) {
   const u32 *e = HPTR(const u32, edge);
   const u32 x0 = (u32)(s32)(s16)from, y0 = (u32)((s32)from >> 16);
   const u32 dx = (u32)(s32)(s16)to - x0, dy = (u32)((s32)to >> 16) - y0;
@@ -373,8 +382,11 @@ static u32 CutSide(u32 from, u32 to, CutRegs *r, u32 edge, u32 *rgb) {
     const u32 q = ((u32)p.mac2 << 16) | ((u32)p.mac1 & 0xFFFF);
     *rgb = 0x30000000u | c.rgb2;
     /* #189: the vertex cache places the cut where the exact side crosses
-     * the edge's line through its exact ends (the portal's points) */
-    PSX_VC_DERIVE(VCD(VCD_LERP, VCD_SKY_CLIP), q, from, to, (int)e[EDGE_XY0], (int)e[EDGE_XY1]);
+     * the edge's line through its exact ends (the portal's points); #215:
+     * a sky side's own fraction (IR0, the GPL's) too, for a cut that line
+     * leaves with no place */
+    PSX_VC_DERIVE(VCD(VCD_LERP, VCD_SKY_CLIP) | (sky ? VCD_T(ir0) : 0), q, from, to, (int)e[EDGE_XY0],
+                  (int)e[EDGE_XY1]);
     return q;
   }
 }
@@ -455,53 +467,53 @@ static void ClipSky(Portal *o, Tri t, u32 edge, u32 ra) {
       switch (out) {
       case 0x08: /* corner 0 off: (q0, p1, p2) goes on, (q1, q0, p2) waits */
         r.a2 = c1, r.a3 = c0;
-        q0 = CutSide(p1, p0, &r, edge, &r0);
+        q0 = CutSide(p1, p0, &r, edge, &r0, 1);
         sp[SPILL_AT] = q0;
         r.a2 = c2, r.a3 = c0;
-        q1 = CutSide(p2, p0, &r, edge, &r1);
+        q1 = CutSide(p2, p0, &r, edge, &r1, 1);
         Push(q1, q0, p2, r1, r0, c2, edge);
         t = (Tri){{q0, p1, p2}, {r0, c1, c2}};
         break;
       case 0x10: /* corner 1 off: (p0, q0, p2) goes on, (q1, q0, p0) waits */
         r.a2 = c2, r.a3 = c1;
-        q0 = CutSide(p2, p1, &r, edge, &r0);
+        q0 = CutSide(p2, p1, &r, edge, &r0, 1);
         sp[SPILL_V0] = q0;
         r.a2 = c0, r.a3 = c1;
-        q1 = CutSide(p0, p1, &r, edge, &r1);
+        q1 = CutSide(p0, p1, &r, edge, &r1, 1);
         Push(q1, q0, p0, r1, r0, c0, edge);
         t = (Tri){{p0, q0, p2}, {c0, r0, c2}};
         break;
       case 0x18: /* corners 0, 1 off: (q0, q1, p2) */
         r.a2 = c2, r.a3 = c0;
-        q0 = CutSide(p2, p0, &r, edge, &r0);
+        q0 = CutSide(p2, p0, &r, edge, &r0, 1);
         sp[SPILL_AT] = q0;
         r.a2 = c2, r.a3 = c1;
-        q1 = CutSide(p2, p1, &r, edge, &r1);
+        q1 = CutSide(p2, p1, &r, edge, &r1, 1);
         t = (Tri){{q0, q1, p2}, {r0, r1, c2}};
         break;
       case 0x20: /* corner 2 off: (p0, p1, q0) goes on, (q1, q0, p1) waits */
         r.a2 = c0, r.a3 = c2;
-        q0 = CutSide(p0, p2, &r, edge, &r0);
+        q0 = CutSide(p0, p2, &r, edge, &r0, 1);
         sp[SPILL_V1] = q0;
         r.a2 = c1, r.a3 = c2;
-        q1 = CutSide(p1, p2, &r, edge, &r1);
+        q1 = CutSide(p1, p2, &r, edge, &r1, 1);
         Push(q1, q0, p1, r1, r0, c1, edge);
         t = (Tri){{p0, p1, q0}, {c0, c1, r0}};
         break;
       case 0x28: /* corners 0, 2 off: (q0, p1, q1) */
         r.a2 = c1, r.a3 = c0;
-        q0 = CutSide(p1, p0, &r, edge, &r0);
+        q0 = CutSide(p1, p0, &r, edge, &r0, 1);
         sp[SPILL_AT] = q0;
         r.a2 = c1, r.a3 = c2;
-        q1 = CutSide(p1, p2, &r, edge, &r1);
+        q1 = CutSide(p1, p2, &r, edge, &r1, 1);
         t = (Tri){{q0, p1, q1}, {r0, c1, r1}};
         break;
       default: /* 0x30, corners 1, 2 off: (p0, q0, q1) */
         r.a2 = c0, r.a3 = c1;
-        q0 = CutSide(p0, p1, &r, edge, &r0);
+        q0 = CutSide(p0, p1, &r, edge, &r0, 1);
         sp[SPILL_V0] = q0;
         r.a2 = c0, r.a3 = c2;
-        q1 = CutSide(p0, p2, &r, edge, &r1);
+        q1 = CutSide(p0, p2, &r, edge, &r1, 1);
         t = (Tri){{p0, q0, q1}, {c0, r0, r1}};
         break;
       }
@@ -529,9 +541,11 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
   u32 list = SEEN_SECTORS;
   Portal o;
   Box b;
+  NgteProj P;
 
   SectorsInFront(HPTR(const u32, view), s[0], s[1]);
   SetRotation(HPTR(const u32, proj));
+  P = ngte_proj_get();
   ChainBegin(&o.ch);
   b.top = box[0], b.bottom = box[1], b.right = box[2], b.left = box[3];
   o.box.a2 = b.left, o.box.a3 = b.top, o.bottom = b.bottom;
@@ -549,7 +563,7 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
       FogColours(colours, packed >> 14);
     /* the cuts change a2, a3 and t0, but put them back after each one */
     b.left = o.box.a2, b.top = o.box.a3, b.bottom = o.bottom;
-    if (ProjectSector(sector, &b) & 0xF)
+    if (ProjectSector(&P, sector, &b) & 0xF)
       continue;
     table = fog ? (const u8 *)FOG_COLOURS : (const u8 *)colours;
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
@@ -648,36 +662,36 @@ static void ClipFace(Face *f, u32 p0, u32 p1, u32 p2, u32 edge) {
     case 0x00:
       break;
     case 0x08: /* (q0, p1, p2) goes on, (q0, p2, q1) waits */
-      q0 = CutSide(p1, p0, &f->r, edge, &junk);
-      q1 = CutSide(p2, p0, &f->r, edge, &junk);
+      q0 = CutSide(p1, p0, &f->r, edge, &junk, 0);
+      q1 = CutSide(p2, p0, &f->r, edge, &junk, 0);
       Queue(f, q0, p2, q1, edge + EDGE_SIZE);
       p0 = q0;
       break;
     case 0x10: /* (p0, q0, p2) goes on, (q0, q1, p2) waits */
-      q0 = CutSide(p0, p1, &f->r, edge, &junk);
-      q1 = CutSide(p2, p1, &f->r, edge, &junk);
+      q0 = CutSide(p0, p1, &f->r, edge, &junk, 0);
+      q1 = CutSide(p2, p1, &f->r, edge, &junk, 0);
       Queue(f, q0, q1, p2, edge + EDGE_SIZE);
       p1 = q0;
       break;
     case 0x18: /* (q0, q1, p2) */
-      q0 = CutSide(p2, p0, &f->r, edge, &junk);
-      q1 = CutSide(p2, p1, &f->r, edge, &junk);
+      q0 = CutSide(p2, p0, &f->r, edge, &junk, 0);
+      q1 = CutSide(p2, p1, &f->r, edge, &junk, 0);
       p0 = q0, p1 = q1;
       break;
     case 0x20: /* (p0, p1, q0) goes on, (q0, p1, q1) waits */
-      q0 = CutSide(p0, p2, &f->r, edge, &junk);
-      q1 = CutSide(p1, p2, &f->r, edge, &junk);
+      q0 = CutSide(p0, p2, &f->r, edge, &junk, 0);
+      q1 = CutSide(p1, p2, &f->r, edge, &junk, 0);
       Queue(f, q0, p1, q1, edge + EDGE_SIZE);
       p2 = q0;
       break;
     case 0x28: /* (q0, p1, q1) */
-      q0 = CutSide(p1, p0, &f->r, edge, &junk);
-      q1 = CutSide(p1, p2, &f->r, edge, &junk);
+      q0 = CutSide(p1, p0, &f->r, edge, &junk, 0);
+      q1 = CutSide(p1, p2, &f->r, edge, &junk, 0);
       p0 = q0, p2 = q1;
       break;
     case 0x30: /* (p0, q0, q1) */
-      q0 = CutSide(p0, p1, &f->r, edge, &junk);
-      q1 = CutSide(p0, p2, &f->r, edge, &junk);
+      q0 = CutSide(p0, p1, &f->r, edge, &junk, 0);
+      q1 = CutSide(p0, p2, &f->r, edge, &junk, 0);
       p1 = q0, p2 = q1;
       break;
     default: /* every corner off */

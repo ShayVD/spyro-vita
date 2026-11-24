@@ -1,5 +1,5 @@
 /* The PS4's display through sceVideoOut (docs/ps4-plan.md P3-P4, D193,
- * D199): the software path's picture scaled into a 1920x1080 linear
+ * D245): the software path's picture scaled into a 1920x1080 linear
  * A8R8G8B8 framebuffer on the CPU, as OpenOrbis's own graphics sample draws
  * (samples/_common/graphics.cpp: direct memory, two buffers, a flip event
  * queue). No GPU, no Piglet, no shader: it runs on every PS4 without Sony

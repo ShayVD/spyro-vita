@@ -85,11 +85,11 @@ set(PRES_LD_FLAGS ${SPYRO_RELOC_LD_FLAGS}) # -m32 on linux32, the target on linu
 # Windows guard), so the pause screens' calls in draw.c keep the game's
 # name (stage 7g, D128)
 set(PRES_OBJ "${CMAKE_BINARY_DIR}/pres_draw.o")
-# The PS4's llvm-objcopy would localize the common symbols too (D193):
-# tools/ps4/keep_commons.py lists them to stay global.
+# llvm-objcopy (the PS4's, D193; the PC's, D240) would localize the common
+# symbols too: tools/ps4/keep_commons.py lists them to stay global.
 set(PRES_KEEP_COMMONS)
 set(PRES_KEEP_ARGS)
-if(SPYRO_HOST STREQUAL "ps4")
+if(SPYRO_HOST STREQUAL "ps4" OR CMAKE_OBJCOPY MATCHES "llvm-objcopy")
   set(PRES_KEEP_COMMONS COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/keep_commons.py"
     "${CMAKE_NM}" "${PRES_OBJ}.r" "${PRES_OBJ}.commons")
   set(PRES_KEEP_ARGS "--keep-global-symbols=${PRES_OBJ}.commons")
@@ -113,7 +113,7 @@ set(PRES_TABLE_C "${GEN_DIR}/pres_snap_table.c")
 add_custom_command(OUTPUT "${PRES_SYMS_S}" "${PRES_TABLE_C}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py"
     --map "${SPYRO_PSX_MAP}" --names "${PRES_DIR}/pres_snap_names.h" --names "${PRES_NAMES}"
-    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}"
+    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}" ${SPYRO_COFF_ARG}
   DEPENDS "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py" "${PRES_DIR}/pres_snap_names.h" "${PRES_NAMES}" "${SPYRO_PSX_MAP}"
   COMMENT "presenter: the snapshot's labels (pres_snap_syms.S)")
 add_library(spyro_pres_snap OBJECT "${PRES_SYMS_S}" "${PRES_TABLE_C}")

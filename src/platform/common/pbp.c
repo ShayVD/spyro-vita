@@ -47,6 +47,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef _WIN32 /* the PC's Windows build (D241): mkdir takes no mode there */
+#include <direct.h>
+#define mkdir(path, mode) _mkdir(path)
+#endif
 #endif
 
 #define BLOCK_BYTES (PSX_PBP_SECTOR * PSX_PBP_BLOCK_SECTORS) /* 0x9300 */

@@ -1,4 +1,4 @@
-/* The options menu's other PICTURE rows on the PS4 (D199; the Vita's
+/* The options menu's other PICTURE rows on the PS4 (D245; the Vita's
  * picture.c, decisions D39, D48, D49, D194): the GLES2 renderer's PSX
  * WOBBLE (ON: the PS1's look; OFF, the default as on the Vita: perspective-
  * correct textures and sub-pixel vertices together) and resolution, and the longer

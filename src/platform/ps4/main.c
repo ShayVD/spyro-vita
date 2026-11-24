@@ -132,7 +132,7 @@ Ps4Opts g_ps4_opts = {.stats = 1, .realtime = 1, .analog = 1, .widescreen = 1, .
                        * the first eglSwapBuffers never returned (GPU runs 3-5) */
                       .gpu_vsync = 0, .shader_dump = 1,
                       .draw_distance = 100, .wobble = 0 /* the fix on, as the Vita (D194) */,
-                      .touch_menu = 1 /* the owner's choice, 2026-11-21 (D199) */};
+                      .touch_menu = 1 /* the owner's choice, 2026-11-21 (D245) */};
 int g_ps4_user = -1;
 
 unsigned long long ps4_now_us(void) { return sceKernelGetProcessTime(); }
@@ -318,7 +318,7 @@ static void *game_thread(void *arg) {
   host_log("user 0x%x", (unsigned)g_ps4_user);
   host_log_flush();
   /* the GLES2 renderer needs the player's own Piglet and shader compiler
-   * (D193, D199); without them, the software renderer, and a notification
+   * (D193, D245); without them, the software renderer, and a notification
    * saying why (as the Vita's D163 screen) */
   if (g_ps4_opts.gpu) {
     char why[256] = "";

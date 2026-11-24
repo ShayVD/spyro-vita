@@ -1,0 +1,12 @@
+# Run AP16 (round 12; the owner's yes 2026-11-22 "the vita is free for hw runs"): the stone60 route
+# (#210: Artisans, the walk into Stone Hill's portal and its fly-in, Stone Hill play with a ram's butt)
+# on the owner's settings (16:9, 60 HZ, the wobble fix on, DRAW DISTANCE 2x), virtual vblanks as AP8.
+# AP16a/b: autopilot-85a7b2c.vpk, first boot after install (shader cache empty, #201) then second
+# boot (cache hits); AP16c: autopilot-63d80f4.vpk (round 10's build, before D199-D208).
+#   VPK=... PAD=$PWD/tools/vita/hw-routes/stone60.pad tools/vita/hw_run.sh logs/hw-ap16a 1500 \
+#     @tools/vita/fps-runs/ap16-stone60.txt @tools/vita/hw-routes/stone60.cfg
+# Compare with tools/vita/fps60_summary.py, the "lod" lines (2x held or the budget's reason, D199)
+# and the start-up line's shader totals (#201).
+interp_budget=0
+gpu_meter=1
+disc=ux0:data/spyro
