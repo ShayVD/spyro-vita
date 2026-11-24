@@ -8,13 +8,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
 {
   "version": 1,
   "game": "spyro",
-  "phase": 8,
+  "phase": 5,
   "workers": [],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
-  "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
-    "commit": "278ebf8"
-  },
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -226,8 +222,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": null,
   "batch": null,
   "lanes": [
-    8
-  ]
+    5
+  ],
+  "targets": {
+    "vita": {
+      "phase": 8,
+      "lanes": [
+        8
+      ],
+      "baselines": {
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
+        "commit": "278ebf8"
+      }
+    }
+  }
 }
 ```
 
@@ -405,3 +413,12 @@ continue.
 - 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
 - 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
 - 2026-11-24T10:34:33Z phase 8: merged #222 (D230), filed #244, #245; owner asked to stop the loop after this and open a PR. Vita3K: 9 runs (worker's), hardware: none
+- 2026-11-24T10:49:10Z phase 8: owner decided #208 no and #235 no (closed); PR #246 merged into main; loop stays stopped. Vita3K: none, hardware: none
+- 2026-11-24T11:17:45Z shared 5, vita 8: resumed under Encore (KIT=../encore); migrated autopilot -> develop, per-target state, source ps1; started #226 (vcache.c holds #219/#225/#230/#231/#237/#243; #244/#245 have no Files:), Vita3K: none, hardware: none
+- 2026-11-24T11:49:23Z shared 5, vita 8: #226 WIP 2eacdce (docs), worker busy; pick empty (vcache.c held), Vita3K: none
+- 2026-11-24T12:20:13Z shared 5, vita 8: #226 WIP f07763b (moby shadow centre own anchor), checking; Vita3K: none
+- 2026-11-24T12:51:14Z shared 5, vita 8: #226 WIP 3069180 (own_nosrc split), checking; Vita3K: none
+- 2026-11-24T13:22:13Z shared 5, vita 8: #226 in a long check (PID 45157, 54 min), docs edits; Vita3K: none
+- 2026-11-24T13:53:14Z shared 5, vita 8: #226 alive (new vcache.c edits, fresh PID), last commit 12:27; Vita3K: none
+- 2026-11-24T14:10:06Z shared 5, vita 8: merged #226 (D244), filed #247, commented #237, started #230; vcache.c still holds the queue (8 issues). Vita3K: 8 runs (worker's, 0 own failures), hardware: none
+- 2026-11-24T14:14:43Z shared 5, vita 8: owner said stop; #230's attempt 1 stopped before any commit (worktree and branch removed, no attempt counted, its 4 host containers stopped); loop ended; Vita3K: none, hardware: none

@@ -226,6 +226,15 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
 #define VCD_PETE_ENDS(ja, jb) ((int)((unsigned)(ja) << 16 | (unsigned)(jb) << 24)) /* (0..255) */
 #define VCD_PETE_ENDS_A(how) (((unsigned)(how) >> 16) & 255u)
 #define VCD_PETE_ENDS_B(how) (((unsigned)(how) >> 24) & 255u)
+/* #226: a moby shadow's centre is also named (VCD_SELF) under this anchor of
+ * its own. A shadow seen nearly edge-on has a corner on its centre's pixel,
+ * and that corner's own point is under (centre, centre) too, so the
+ * centre's there is dead. The walk reads this one only for a shadow polygon's
+ * first vertex (its centre) that nothing found and whose own point under
+ * (centre, centre) is missing or dead: a polygon every earlier step, #216's
+ * own points included, leaves unfound. (y's top nibble flipped: no
+ * screen key's, which lie within -1024..1023.) */
+#define VCD_CENTRE(c) VCD_CORNER(c, 15u)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -571,8 +580,10 @@ typedef struct {
    * ambiguous (not counted in resolved), the vertices of their polygons
    * found otherwise but drawn at their own point too (one projection's
    * depths for the whole polygon), and the own points kept, not usable when
-   * made (no source, or the projection named is not the key's, or two
-   * different under one key), and not kept (full) */
+   * made (no source, or the projection named is not the key's; #226: not
+   * counting a world corner the grid moved, kept as its piece's own instead,
+   * sp_moved; two different points under one key are not counted here),
+   * and not kept (full) */
   unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
   /* #217: the world's split points (VCD_PERSP with VCD_OWN) placed from
    * their ends' own points, where an end's key gave none (an ambiguous or
@@ -609,6 +620,10 @@ typedef struct {
    * (32) slots (none recorded before: counted in full then); and the
    * vertices of SkyDraw polygons found there (the only ones that look) */
   unsigned ov_kept, ov_found;
+  /* #226: moby shadows' centres not found whose own point under (centre,
+   * centre) was missing or dead, taken under VCD_CENTRE (counted in hits
+   * and own_found too, when their polygon is found so) */
+  unsigned own_centre;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

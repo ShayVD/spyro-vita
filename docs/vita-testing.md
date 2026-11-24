@@ -273,11 +273,21 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     no entry" splits them by the renderer whose primitive the polygon is: `missed N (top: <ctx> n,
     <ctx> n, <ctx> n)` are a 3D renderer's vertices the cache should have placed (the wobble fix's
     target is 0), named by the renderer's hand C (`EnvDraw`, `MobyDraw`, `SkyDraw`,
-    `PortalSkyPlain`...; `other` for one not in the list); `exempt E` are drawn in screen space on
-    purpose: outside every renderer (the HUD's text and boxes, fades, borders: the game's own C) or
-    a portal's face (screen corners clipped flat at the portal's outline); `unmarked U` are in
-    frames where no renderer told the cache its primitives (`psx_vc_ctx`, `psx_vcache.h`), so
-    nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
+    `PortalSkyPlain`...; `other` for one not in the list). N is every renderer's sum, but the
+    bracket names only the three biggest, so a small class can hide behind them. Before #226,
+    host route S's `missed 25 (top: ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5)` named only 21;
+    the other 4 were MobyShadows'. `exempt E
+    (outside the renderers O, portal faces F, no projection P)` are vertices nothing should place:
+    - outside every renderer (the HUD's text and boxes, fades, borders: the game's own C);
+    - a portal's face (screen corners clipped flat at the portal's outline);
+    - no projection (`VCX_NO_PROJ`, #216, D218): a point the PS1 draws from a projection the GTE
+      couldn't give, because it's behind the eye (SZ3 0, MAC3 below 0). These are a glow's rim or a
+      moby shadow's corner whose own point names such a projection, and since #217 (D220) a world
+      split point with an end behind the eye (its key marked `HK_NOPROJ`). The PS1 still draws them
+      (a glow's centre clamped to x = −1024), so they're drawn as the PS1 draws them.
+
+    `unmarked U` are in frames where no renderer told the cache its primitives (`psx_vc_ctx`,
+    `psx_vcache.h`), so nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
     each renderer wrote in the frame, not from the walk's timing; the classes add up to the "left
     with no entry" figure.
   - `vcache resolved:` ambiguous keys' vertices given a depth from the frame's order, and those
@@ -292,6 +302,106 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
     butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
     (the windows to 6,600 and 6,900).
+
+  The next lines count the renderers' own points. These are the wobble fix's later steps. Each
+  one runs only for a polygon that every earlier step left unfound, so every polygon found
+  before keeps its drawing. No hand-over reads their stores. A `full` count above 0 means a
+  store ran out in some frame; it has been 0 on every route.
+  - `vcache own points:` (#216, D218) `<own_found> vertices found from their renderer's own point
+    (<own_amb> of them at an ambiguous key, and <own_over> found ones of their polygons drawn at
+    theirs); <own_kept> own points kept, <own_nosrc> with no source, <own_full> not kept (full)`.
+    - **How it works:** glows and moby shadows name each screen point by the projection that made
+      it (`VCD_SELF`, or `VCD_OWN` on a hand-over: the source's own point plus the offset). Since
+      #217 (D220) the world's split pieces name their corners the same way. The points are kept
+      per key and anchor (the polygon's first vertex; a world piece's corner number) in a
+      per-table store. Two different points under one key and anchor leave neither (dead).
+    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows or EnvDraw polygon found from
+      them. These count in the hits, not in `hooked`.
+    - `own_amb`: those of them whose key was ambiguous. They aren't counted in `resolved`.
+    - `own_over`: that polygon's vertices that were already found but were drawn at their own
+      point too, so all of its depths come from one projection.
+    - `own_kept`: own points stored.
+    - `own_nosrc`: namings that couldn't be kept, because the projection named isn't the key's or
+      the hand-over's source has no usable own point. #226 tagged them:
+      - **Moved world corners, no longer counted.** Up to #226 the count also held every world
+        corner that GridCorrect moved after its projection: 99% of it, about 60,000 a route on the
+        host routes. Those corners are kept as their piece's own instead (`sp_moved` below), so
+        #226 stopped counting them here.
+      - **What's left (#226's tags):** only world corners named in a frame whose order log is full
+        (`VC_LOG`, 8,192 projections). The cache can't name a projection the log never took. That
+        is 28 on host S (74 with `--interp`), in the vblanks 13,128–13,142 and 14,150–14,158, and 0
+        on P, Pf and T, at 30 Hz and with `--interp`. It's the same log-full limit that leaves
+        EnvDraw's 6 missed on S (D223, #237). Vita3K never fills the log.
+      - **Shadow fans, fixed.** A moby shadow's fan closes on a fifth corner word that repeats
+        the first corner. Its nudged copy named the projection 0 back instead of 3 back, so it found
+        nothing (62 on S, 591 on T). That never mattered, because the first corner's call holds
+        the same point. Since #226 it names the right projection and finds it.
+    - `own_full`: not kept because the store was full.
+  - `vcache world:` (#217, D220) `<der_named> derived vertices at their key with a depth the
+    order's projections named, the plane giving none; <hk_own> world splits placed from their ends'
+    own points, <hk_noproj> not placed with an end behind the eye`.
+    - `der_named`: a quad's vertex with no entry whose derive (#183) took no place and whose plane
+      gave no depth. It keeps its key's place and takes a named projection's depth. It counts in
+      `derived` too.
+    - `hk_own`: `SplitLast`'s split points whose ends' keys gave no source (a corner the GTE
+      clamped onto the screen's limit, which other clamped points share). They are placed from
+      the ends' own points instead, after the hand-over's two passes fail. Such a place counts only
+      where nothing else placed the key.
+    - `hk_noproj`: split points with an end behind the eye. Their key is marked `HK_NOPROJ`, and
+      their vertices are counted as exempt "no projection".
+  - `vcache world own:` (#229, D223) `<sp_found> vertices found from their piece's own split point
+    or moved corner; <sp_kept> kept, <sp_full> not kept (full); <sp_wide> split points paired
+    across 4x depths, <sp_moved> corners the grid moved; <sp_spread> world polygons found from
+    their own points drawn affine, their depths 4x apart; <sp_res> ambiguous corners resolved with
+    them, <sp_part> moved corners found where they weren't (the polygon affine)`.
+    - **How it works:** a world split point and a corner that GridCorrect moved are kept, with
+      their place and depths, as their piece's own (the `Sp` store, 1,024 records a table). They're
+      kept under the piece's anchor, which is all its corners' keys and u/v mixed (`VCD_PIECE_V`).
+    - `sp_found`: vertices found from them. They count in `own_found` too.
+    - `sp_kept`: records made: split points, their moves to each emitted GT3, and moved corners.
+    - `sp_full`: records not kept because the store was full.
+    - `sp_wide`: split points placed only by pairing ends whose depths are 4x apart or more.
+    - `sp_moved`: corners the grid moved off their projection, kept at the projection that made
+      them.
+    - `sp_spread`: world polygons found from their own points whose depths no choice brings under
+      4x apart. They're found and drawn affine, as any polygon found whole with depths that far
+      apart is, and count in the `spread` figure too.
+    - `sp_res`: a world quad's ambiguous corners resolved from the frame's order near its moved
+      corner's own projection. They count in `resolved` too.
+    - `sp_part`: moved corners found where those corners weren't. The polygon stays affine.
+  - `vcache overflow:` (#221, D229) `<ov_kept> projections recorded in the overflow, their probe
+    past 32 slots (none recorded before); <ov_found> vertices of SkyDraw polygons found there;
+    <full> not recorded (table and overflow full) (ov=<0|1>)`.
+    - **How it works:** a record whose 32-slot probe runs out makes its entry in a 64-entry
+      overflow beside the table's slots. It isn't in the frame's order, it's worked out at once,
+      and it's no hand-over's source.
+    - `ov_found`: vertices that the walk found there. It reads the overflow only for a SkyDraw
+      polygon's vertex not found in the slots.
+    - `full`: projections with no entry at all.
+    - `ov=0`: `psx_vcache_set_overflow(0)` (the host's `VC_OVERFLOW=0`) turns it off.
+  - `vcache Spyro and shadows own:` (#242, D227) `<pk_found> vertices found from their polygon's
+    own clip point of Spyro's; <pk_kept> kept, <pk_full> not kept (full); <own_corner> shadow
+    corners' own points from their corner's projection, the source's dead; <own_centre> shadow
+    centres found from their own point under their own anchor, their own under the centre's
+    dead`.
+    - **How it works:** while Spyro is clipped at the floor, his clip points and drawn vertices
+      are kept as their primitive's own (`VCD_KEEP`, in the `Sp` store).
+    - `pk_found`: a SpyroDraw polygon's vertices found from them. They count in `own_found` too.
+    - `pk_kept`: records made.
+    - `pk_full`: records not kept because the store was full.
+    - `own_corner`: a far moby shadow's nudged corners whose source key holds two of its corners,
+      so the source's own point is dead. They're kept from the corner's own projection instead.
+      That point gives way to every other own point and is no hand-over's source.
+    - `own_centre` (#226): moby shadows' centres found from their own point under their own
+      anchor.
+      - **The problem:** a moby shadow seen nearly edge-on has a corner on its centre's pixel.
+        That corner's own point shares (centre, centre) with the centre's own point, so the pair is
+        dead and the centre's key is ambiguous. This is what left MobyShadows' last 4 missed
+        vertices on host S and Si.
+      - **The fix:** the renderer also names the centre under an anchor of its own
+        (`VCD_CENTRE`). The walk takes that point only for a shadow polygon whose centre nothing
+        found and whose (centre, centre) point is missing or dead. Every earlier step, #216's own
+        points included, leaves such a polygon unfound.
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
@@ -477,8 +587,10 @@ benchmark window is Stone Hill play, 7,300–9,400. In that window, between runs
 `vc.rec.div`, `vc.rec.store`, `vc.walk.*`) by up to 14%: they depend on the threads' timing, so a change is judged
 on the other counters there (#210's runs a, b and the baseline). Its baseline, of the autopilot's head bac5699 (#209's VPK), is
 `runtime/autopilot/runs/base-bac5699/stone60`. The host's own Stone Hill routes, S (`route_stone_s.txt`, 30 Hz
-particles) and P (`route_portal_p.txt`, the portal fly-in; Pf, `route_portal_pf.txt`, with flame), are in
-`tools/oracle/pads/` with their command lines.
+particles) and P (`route_portal_p.txt`, the portal fly-in; Pf, `route_portal_pf.txt`, with flame), run 16,500
+frames, at 30 Hz and with `--interp`. Beside them, host route T (`route_toasty.txt`, D226: Toasty at `--tick60
+--interp`, 10,000 frames) is the host's side of the Vita3K route `toasty60` (`o-toasty.pad`, `autopilot/config.json`). All four are in `tools/oracle/pads/` with their command lines, and
+they are the routes the wobble issues measure `missed` on and run the host FNV pairs (D168) on (`docs/host-build.md`).
 
 **When Vita3K crashes (exit 2, D166, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
 address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed

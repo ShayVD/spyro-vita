@@ -716,8 +716,9 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   /* #242 */
   PsyX_Log("vcache Spyro and shadows own: %u vertices found from their polygon's own clip point "
            "of Spyro's; %u kept, %u not kept (full); %u shadow corners' own points from their "
-           "corner's projection, the source's dead (#242)",
-           out->pk_found, out->pk_kept, out->pk_full, out->own_corner);
+           "corner's projection, the source's dead (#242); %u shadow centres found from their "
+           "own point under their own anchor, their own under the centre's dead (#226)",
+           out->pk_found, out->pk_kept, out->pk_full, out->own_corner, out->own_centre);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -2536,7 +2537,9 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       LOG_E(tb->log[tb->nlog - 1u - (unsigned)p]) == (unsigned)i)
     own_put(kind, k, key, anchor, tb->nlog - 1u - (unsigned)p, 0, 0, &t);
   else {
-    k->st->own_nosrc++;
+    /* #226: counted with no source only where it isn't kept as a moved
+     * corner instead (sp_moved): before, those were 99% of own_nosrc */
+    int moved = 0;
     if (world && p >= 0 && (unsigned)p < tb->nlog && tb->nlog < VC_LOG) {
       float x, y, w[VC_CANDS], dx, dy;
       const int n = log_point(tb, k, tb->nlog - 1u - (unsigned)p, 0, 0, &x, &y, w, &t);
@@ -2545,8 +2548,10 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
         sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t, 0);
         k->st->sp_moved++;
+        moved = 1;
       }
     }
+    k->st->own_nosrc += (unsigned)!moved;
   }
   k->cost[VCC_REC_LINES] += t.n;
 }
@@ -4488,6 +4493,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
        * rest fail), and those whose own point was taken first (ow 2) */
       const Ow *o2[4] = {NULL, NULL, NULL, NULL};
       int had[4] = {0, 0, 0, 0};
+      int cen = 0; /* #226: the centre's own point taken under VCD_CENTRE */
       for (i = 0; i < n; i++) {
         const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
         Touch t = TOUCH0;
@@ -4504,6 +4510,17 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         if (o && o->placed == 2 && e[i]) { /* #242: own_corner's: a vertex not found's first */
           o2[i] = o;
           o = NULL;
+        }
+        if (cx == VCX_MOBY_SHADOWS && i == 0 && !e[i] && (!o || o->dead)) {
+          /* #226: a shadow's centre not found whose own point under (centre,
+           * centre) a corner on its pixel killed: its own under VCD_CENTRE
+           * (at base such a polygon was never found here: all 0) */
+          const Ow *const c0 =
+              own_look(ptab, gen, key, VCD_CENTRE(anchor), &cost[VCC_LOOK_PROBES], &t);
+          if (c0) {
+            o = c0;
+            cen = 1;
+          }
         }
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
                           cx == VCX_ENV ? 1048576.0f : 1024.0f)
@@ -4639,6 +4656,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
             st->hits++;
             st->own_found++;
             st->sp_found += (unsigned)spv[i];
+            st->own_centre += (unsigned)(i == 0 && cen); /* #226 */
           }
         persp = ok == 2 ? 0 : VREF_PERSP; /* (#229: spread, drawn affine) */
         st->spread += ok == 2;
