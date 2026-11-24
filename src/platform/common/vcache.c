@@ -2537,7 +2537,9 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       LOG_E(tb->log[tb->nlog - 1u - (unsigned)p]) == (unsigned)i)
     own_put(kind, k, key, anchor, tb->nlog - 1u - (unsigned)p, 0, 0, &t);
   else {
-    k->st->own_nosrc++;
+    /* #226: counted with no source only where it isn't kept as a moved
+     * corner instead (sp_moved): before, those were 99% of own_nosrc */
+    int moved = 0;
     if (world && p >= 0 && (unsigned)p < tb->nlog && tb->nlog < VC_LOG) {
       float x, y, w[VC_CANDS], dx, dy;
       const int n = log_point(tb, k, tb->nlog - 1u - (unsigned)p, 0, 0, &x, &y, w, &t);
@@ -2546,8 +2548,10 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
         sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t, 0);
         k->st->sp_moved++;
+        moved = 1;
       }
     }
+    k->st->own_nosrc += (unsigned)!moved;
   }
   k->cost[VCC_REC_LINES] += t.n;
 }

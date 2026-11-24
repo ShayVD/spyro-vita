@@ -580,8 +580,10 @@ typedef struct {
    * ambiguous (not counted in resolved), the vertices of their polygons
    * found otherwise but drawn at their own point too (one projection's
    * depths for the whole polygon), and the own points kept, not usable when
-   * made (no source, or the projection named is not the key's, or two
-   * different under one key), and not kept (full) */
+   * made (no source, or the projection named is not the key's; #226: not
+   * counting a world corner the grid moved, kept as its piece's own instead,
+   * sp_moved; two different points under one key are not counted here),
+   * and not kept (full) */
   unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
   /* #217: the world's split points (VCD_PERSP with VCD_OWN) placed from
    * their ends' own points, where an end's key gave none (an ambiguous or
