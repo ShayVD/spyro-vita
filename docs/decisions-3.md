@@ -1569,3 +1569,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   Vita3K demo60/toasty60's SkyDraw 6 and 4 (windows 4,200 and 5,400) → 0; owner60, stone60 and wobble60 make no overflow records. At most 3 overflow records were seen in one frame.
 - **Checks:** host FNV per polygon on 8 pairs (151 M polygons), base and fix from clean objects: 0 found-before changed, 0 became affine (111 / 244 / 2 newly found). Vita3K shots identical on all eight routes. `CAPTURE=1` grabs at the only Vita3K frames that make overflow records (demo60 3,952–3,954 and 5,175–5,177, presenter frames, sky in view) are byte-identical to fix-off: no cracks. Counters the same against a second head run apart from timing ones inside the head's own spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-221-1`.
 - **Left:** on S, 19 of the 45 overflow records are other renderers' keys, unread under the SkyDraw-only rule; whether any of S's remaining ParticlesDraw 10 / EnvDraw 6 come from them is noted on #231 and #237. A better hash or bigger table would shorten probe runs (the multiplicative hash on y<<16|x clusters at 60% load), but every slot would change. Docs for the new line go with #226.
+
+### D230: the vertex cache's counters find a renderer's primitives by their offset in the game's memory, the walk's copy's too (#222)
+- **Why:** D210 filed 1,086 code-2c vertices on host S (2,175 with `--interp`) as outside although their polygon had a placed vertex. #222 traced every one. All are 2D, drawn by the game's C into the HUD OT (`func_800168DC`):
+  - the title menu's border and menu sprites (`TitlescreenDrawSprite`), read from present.c's narrowed copies;
+  - the screen copy (`func_8001A40C`).
+
+  One corner of each shares an integer pixel with a 3D projection behind it, so they stay exempt. No renderer range was dropped and `VC_CX` was never full on S, Si, P, Pi, Pf, Pfi or a 60 Hz stone60 host route.
+- **The Vita gap (D213):** on the native build the walk reads PS1 primitives (portal sky, portal faces) from walk.c's malloc'd copy, and neither that copy nor the game's block is 16 MB-aligned. So the low-24-bit compare filed them as outside, and D210's missed count under-reported the portal sky on the Vita.
+- **How:** `cx_ofs()` maps an address to its offset in the game's memory; a polygon in the walk's copy (`psx_gpu_game_walk()->copy`) maps to the same offset. Other addresses keep their low 24 bits, tagged so they can't match. Each `Cx` keeps both forms. Only the counter's lookup at `miss_none` uses the offset form (`cx_find_(…, 1)`); the placement gates (#215, #217/#229, #221, #227) still compare the low 24 bits.
+- **Measured (Vita3K, head → fix, run totals):**
+
+  | Route | Missed | Outside | Portal faces |
+  |---|---|---|---|
+  | stone60 | 8 → 46 | 23,176 → 22,925 | 0 → 213 |
+  | owner60 | 0 → 0 | 31,350 → 30,681 | 0 → 669 |
+  | wobble60 | 0 → 0 | 31,348 → 30,677 | 648 → 1,319 |
+  | pause-ws-wobble | 0 → 0 | 31,236 → 30,681 | 0 → 555 |
+
+  stone60 window 6,600 now reads `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`, the same as the host's 60 Hz stone60 route; host O60's outside and portal faces now equal Vita owner60's. Title, pause-ws, demo60 and toasty60 are unchanged.
+- **Checks:** host FNV per polygon on 8 pairs: 0 changed, and every host `vcache derived:` line identical. Vita3K shots identical on all eight routes. Counters against the head's run the same apart from timing ones inside their spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-222-1`.
+- **Left:** the Vita's placement gates still use the low-24 compare (filed); the portal sky misses now visible on the Vita go to #230; HUD sprites with a found corner take a 3D projection's sub-pixel place (filed).
