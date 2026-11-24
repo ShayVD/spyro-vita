@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 
-set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, vita or ps4")
+set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, vita, ps4 or pc")
 # linux64 (docs/ps4-plan.md P1, decisions D174): the headless host of
 # src/platform/linux32 built for x86-64 with clang, the PS4's data model, in
 # the low-image model (D173): pointer fields P32 (src/compat/p32.h), the
@@ -93,6 +93,25 @@ elseif(SPYRO_HOST STREQUAL "ps4")
   set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
       -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
   set(SPYRO_PIC_FLAGS -fPIE)
+elseif(SPYRO_HOST STREQUAL "pc")
+  # The desktop build (docs/pc-build.md, D2xx): linux64's model and flags for
+  # x86-64 Linux or Windows (cmake/pc-linux.toolchain.cmake,
+  # pc-windows.toolchain.cmake set SPYRO_PC_TARGET), optimised. -fno-vectorize:
+  # the PS4's clang 18 vectorized P32_INIT's loops into an addrspacecast its
+  # backend can't select (D193); kept off for every clang here.
+  set(SPYRO_ARCH_FLAGS --target=${SPYRO_PC_TARGET} -fms-extensions)
+  if(SPYRO_PC_TARGET MATCHES "mingw")
+    # Windows (D241): the GNU bitfield layout, not Microsoft's (the PS1's
+    # structs keep their offsets); src/compat/p32.h brings pc_win.h
+    list(APPEND SPYRO_ARCH_FLAGS -mno-ms-bitfields)
+    set(SPYRO_COFF_ARG --coff) # tools/data2s.py, pres_snap_syms.py
+    # PsyQ's long is Windows' long (32 bits), but clang won't take a long *
+    # for an int * as an error there: the same bytes, a warning
+    set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
+  endif()
+  set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
+      -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type
+      ${SPYRO_PC_EXTRA_FLAGS})
 elseif(SPYRO_HOST STREQUAL "linux64")
   # --target here too: the overlays' preprocessing and the relocatable links
   # (cmake/overlays.cmake, presenter.cmake, tick60.cmake) call the compiler
@@ -114,6 +133,12 @@ endif()
 if(SPYRO_HOST STREQUAL "linux64")
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static) # static: non-PIE (objects -fno-pic)
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
+elseif(SPYRO_HOST STREQUAL "pc")
+  # dynamic (SDL loads the system's display, GL and sound libraries) and
+  # non-PIE at 0x400000 on Linux; a fixed base of 0x400000 on Windows
+  # (src/platform/pc/CMakeLists.txt)
+  set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS})
+  set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS} ${SPYRO_PC_RELOC_LD_FLAGS})
 elseif(SPYRO_HOST STREQUAL "ps4")
   # the presenter's and tick60's relocatable links (the eboot's own link is
   # src/platform/ps4's, ld.lld with OpenOrbis's link.x)
@@ -139,7 +164,7 @@ endif()
 # block from the heap (D106). The Vita's default since D106's hardware run
 # (-DSPYRO_NATIVE_MEM=OFF: the moved arena); linux32's stays the arena build,
 # the oracle replay's.
-if(SPYRO_HOST STREQUAL "vita" OR SPYRO_HOST STREQUAL "linux64" OR SPYRO_HOST STREQUAL "ps4")
+if(SPYRO_HOST MATCHES "^(vita|linux64|ps4|pc)$")
   set(native_mem_default ON)
 else()
   set(native_mem_default OFF)
@@ -191,8 +216,8 @@ endif()
 # The low image (D173, D174): the arena and the game thread's stack are
 # .bss arrays in the executable, which must lie below 2 GB (the decomp's
 # (int) casts sign-extend); a start-up check refuses to run otherwise.
-# linux64 (D174) and the PS4 (D193).
-if(SPYRO_HOST STREQUAL "linux64" OR SPYRO_HOST STREQUAL "ps4")
+# linux64 (D174), the PS4 (D193) and the PC (D2xx).
+if(SPYRO_HOST MATCHES "^(linux64|ps4|pc)$")
   if(NOT SPYRO_NATIVE_MEM)
     message(FATAL_ERROR "${SPYRO_HOST} needs SPYRO_NATIVE_MEM=ON (the low image, D174)")
   endif()

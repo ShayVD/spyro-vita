@@ -203,6 +203,22 @@ def image_section(lo, hi, extra):
     return lines
 
 
+def coff(lines):
+    """The same assembly for COFF (Windows, the PC build, D241): ELF's symbol
+    types and sizes go, the sections get COFF's flags."""
+    out = []
+    for line in lines:
+        t = line.strip()
+        if t.startswith(".type ") or t.startswith(".size ") or "GNU-stack" in t:
+            continue
+        if t == ".section .rodata":
+            line = '.section .rdata,"dr"'
+        elif t.startswith(".section ") and ',"aw",%progbits' in t:
+            line = t.replace(',"aw",%progbits', ',"dw"')
+        out.append(line)
+    return out
+
+
 def read_map(path):
     """Symbol definitions in a GNU ld map: '   0x8006fcf4   D_8006FCF4'."""
     syms = {}
@@ -230,6 +246,9 @@ def main():
                          "(linux64's function pointers, D174)")
     ap.add_argument("--pie", action="store_true",
                     help="symbolic words as 0 and an s1_pie_words table (the PS4, D193)")
+    ap.add_argument("--coff", action="store_true",
+                    help="COFF assembly for Windows (the PC build, D241): no .type/.size or "
+                         "GNU-stack note, COFF section flags")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
     pie_mode[0] = a.pie
@@ -278,6 +297,8 @@ def main():
             lines.append(f".long 0x{addr:08X}, {start}, {end} - {start}, 0x{nxt - addr:X}")
         lines.append(".long 0, 0, 0, 0")
     lines.append('.section .note.GNU-stack,"",%progbits')
+    if a.coff:
+        lines = coff(lines)
     with open(a.out, "w") as f:
         f.write("\n".join(lines) + "\n")
     return 0
