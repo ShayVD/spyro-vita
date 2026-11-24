@@ -206,7 +206,7 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
  * 3/4 full rather than probe far */
 #define VC_BITS 13
 #define VC_SIZE (1u << VC_BITS)
-#define VC_PROBE 32 /* a probe's slots before #221; with s_long_probe (the default) the first free slot ends it */
+#define VC_PROBE 32 /* a probe's slots (#221: a record's and the walk's go on to the first free one, s_probe) */
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
 #define VC_CANDS 4
 #define VC_FAR 1024 /* exact positions out of a candidate's int16 range, per frame (#178) */
@@ -543,14 +543,20 @@ static void gc_line(void);
 
 static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
 
-/* #221: a probe's slots: all of them (the default), or VC_PROBE as before.
- * At ~60% of the slots late in a busy frame (Stone Hill at 2x draw
- * distance, ~5,000 keys), a run of 32 taken slots is common enough that the
- * main sky's records, which come last, made no entry for a vertex now and
- * then. The table takes at most VC_MAX (3/4) of its slots a frame, so a
- * free slot always ends the probe. A key found within 32 slots is found
- * where it was, and a key with no entry still has none: only the keys
- * whose records made none before have an entry now. */
+/* #221: a record's probe and the walk's lookup go on to the first free
+ * slot (the default), or stop at VC_PROBE as before. At ~60% of the slots
+ * late in a busy frame (Stone Hill at 2x draw distance, ~5,000 keys), a run
+ * of 32 taken slots is common enough that the main sky's records, which
+ * come last, made no entry for a vertex now and then: every polygon of its
+ * fan was missed. The table takes at most VC_MAX (3/4) of its slots a
+ * frame, so a free slot always ends the probe. A key found within 32 slots
+ * is found where it was, and a key with no entry still has none. An entry
+ * made past the 32nd slot (far_slot) is one no record made before, and so
+ * that nothing else sees what it didn't before, it takes no place in the
+ * frame's order (#183), no hand-over reads it as a source (those lookups
+ * stop at 32), and the walk uses it only for a SkyDraw polygon (the sky's
+ * records are its own exact projections); any other polygon finds no
+ * entry there, as before. */
 static uint32_t s_probe = VC_SIZE;
 void psx_vcache_set_long_probe(int on) { s_probe = on ? VC_SIZE : VC_PROBE; }
 /* #228: the exact repeats whose maths was skipped, per kind of frame (each
@@ -693,9 +699,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
            out->sp_res, out->sp_part);
   /* #221 */
-  PsyX_Log("vcache long probes: %u records made their entry past the probe's first %u slots, "
-           "none made before; %u not recorded (table full) (lp=%d, #221)",
-           out->probe_long, VC_PROBE, out->full, s_probe != VC_PROBE);
+  PsyX_Log("vcache long probes: %u projections recorded under an entry past the probe's first %u "
+           "slots, which none made before; %u vertices of SkyDraw polygons found there; %u not "
+           "recorded (table full) (lp=%d, #221)",
+           out->probe_long, VC_PROBE, out->far_found, out->full, s_probe != VC_PROBE);
   /* #242 */
   PsyX_Log("vcache Spyro and shadows own: %u vertices found from their polygon's own clip point "
            "of Spyro's; %u kept, %u not kept (full); %u shadow corners' own points from their "
@@ -735,13 +742,20 @@ void psx_vcache_stats_take(VCacheStats win[2], VCacheStats *sum) {
 
 static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - VC_BITS); }
 
+/* #221: slot i is past key's first VC_PROBE slots: an entry no record
+ * made before */
+static inline int far_slot(uint32_t key, int i) {
+  return (((uint32_t)i - hash(key)) & (VC_SIZE - 1)) >= VC_PROBE;
+}
+
 /* The entry for key in r's frame, or a free one for it (gen set, state 0),
- * or -1 when the probe is exhausted. */
-static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch *t) {
+ * or -1 when the probe (lim slots) is exhausted. */
+static int find_lim(Rec *r, int kind, uint32_t key, int add, uint32_t lim, unsigned *probes,
+                    Touch *t) {
   Entry *const s = r->tab->s;
   const uint32_t gen = r->gen;
   uint32_t i = hash(key), n;
-  for (n = 0; n < s_probe; n++, i = (i + 1) & (VC_SIZE - 1)) {
+  for (n = 0; n < lim; n++, i = (i + 1) & (VC_SIZE - 1)) {
     ++*probes;
     touch(t, i * sizeof(Entry), 8); /* key, tag */
     if (T_GEN(s[i].tag) != gen) {
@@ -759,6 +773,12 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
   return -1;
 }
 
+/* a record's (add: to the first free slot, #221) or a hand-over source's
+ * (VC_PROBE slots, as before) */
+static inline int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch *t) {
+  return find_lim(r, kind, key, add, add ? s_probe : VC_PROBE, probes, t);
+}
+
 /* psx_vcache_poly's lookup: the entry for key in the frame being walked
  * (pres: the presenter's own, in its frame), and its table */
 static inline __attribute__((always_inline)) int look(int pres, uint32_t key, unsigned *probes,
@@ -767,7 +787,7 @@ static inline __attribute__((always_inline)) int look(int pres, uint32_t key, un
   if (pres || !s_rtab) {
     Rec *const r = &s_rec[pres ? VC_PRES : VC_LOGIC];
     *tab = r->tab;
-    return find(r, pres ? VC_PRES : VC_LOGIC, key, 0, probes, t);
+    return find_lim(r, pres ? VC_PRES : VC_LOGIC, key, 0, s_probe, probes, t);
   }
   *tab = s_rtab;
   for (n = 0; n < s_probe; n++, i = (i + 1) & (VC_SIZE - 1)) {
@@ -1511,24 +1531,23 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   Rec *const rec = &s_rec[kind];
   Table *const tb = rec->tab;
   Touch t = TOUCH0;
-  int i, q = -1;
+  int i, q = -1, far = 0;
 
   k->st->records++;
   k->work[VCW_PROJ]++;
   /* The entry first (made if it's new): a key already ambiguous stays so,
    * whatever this projection is, so it needs none of the maths below. */
-  {
-    const unsigned p0 = cost[VCC_REC_PROBES];
-    i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
-    if (i >= 0 && cost[VCC_REC_PROBES] - p0 > VC_PROBE) /* #221: none made before */
-      k->st->probe_long++;
+  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (i >= 0 && far_slot(key, i)) { /* #221: an entry none made before; no place in the order */
+    k->st->probe_long++;
+    far = 1;
   }
   if (i < 0) {
     k->st->full++;
     cost[VCC_REC_LINES] += t.n;
     return;
   }
-  if (tb->nlog < VC_LOG) { /* its place in the frame's order (#183) */
+  if (!far && tb->nlog < VC_LOG) { /* its place in the frame's order (#183) */
     q = (int)tb->nlog++;
     tb->log[q] = (uint16_t)i;
     cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
@@ -4059,6 +4078,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
   const Table *ptab = NULL; /* the table its vertices were looked up in (the same for each) */
   int i, pick[4] = {0, 0, 0, 0};
   int inv = 0, clamp = 0; /* a vertex's key invalid; a clamped vertex found (#178) */
+  int sky = -1; /* #221: a SkyDraw polygon (-1: not asked yet) */
   /* vertices with no entry (#183): the last one, how many; and all not found */
   int none = -1, nnone = 0, nmiss = 0;
   int der = 0, der_moved = 0, der_snap = 0; /* the one with no entry derived (#183) */
@@ -4105,8 +4125,19 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
     Touch t = TOUCH0;
     const Table *tab;
-    const int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
+    int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
     uint32_t tag;
+    if (k >= 0 && far_slot(key, k)) {
+      /* #221: an entry made past the probe's 32nd slot, which no record
+       * made before: a SkyDraw polygon's only; any other's finds none */
+      if (sky < 0)
+        sky = cx_find(tab, pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen,
+                      xy[0]) == VCX_SKY;
+      if (!sky)
+        k = -1;
+      else
+        st->far_found++;
+    }
     if (k >= 0)
       lz_need(tab, &lk, k); /* the projections kept under it (#193, #179) */
     tag = k >= 0 ? tab->s[k].tag : 0;
@@ -4824,7 +4855,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
       Touch t = TOUCH0;
       const int k = look(pres, key, &probes, &t, &tab);
       uint32_t tag;
-      if (k < 0) {
+      if (k < 0 || far_slot(key, k)) { /* (#221: poly_full says whose it is) */
         poly_full(vertex_, xy, n, side);
         return;
       }
