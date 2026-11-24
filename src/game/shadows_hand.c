@@ -439,6 +439,10 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       /* #216: the fan's centre is this projection, whatever else shares its
        * pixel: its own point, under the centre (its triangles' first vertex) */
       PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_SELF, c.sxy, c.sxy, c.sxy, 0, 0);
+      /* #226: and under an anchor of its own, which no corner shares (a
+       * corner on the centre's pixel, the shadow nearly edge-on, leaves
+       * (centre, centre) with two points) */
+      PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_SELF, c.sxy, c.sxy, VCD_CENTRE(c.sxy), 0, 0);
     }
     /* the rotation tilted by the slope: about one axis, then the other */
     {
@@ -568,7 +572,8 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
          * and the corner's own projection, under the centre; #242: which,
          * where two corners share the source's key, is the corner's own
          * projection, 5 - (c - v) / 4 - 1 back: the RTPT's three, then the
-         * fourth corner's RTPS, nothing projected since) */
+         * fourth corner's RTPS, nothing projected since; #226: the fifth
+         * word, +0x40, is the first corner again, 3 back as the first's) */
         q = CFC2(7);
         if ((s32)(q + 0xFFFFFC00u) > 0) {
           u32 c = v;
@@ -583,11 +588,11 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
             if ((s32)zc < 0) {
               AT32(c - 4) = xy + 0x10000u;
               PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy + 0x10000u, xy, csxy, 0,
-                            (int)(5u - (c - v) / 4u));
+                            (int)(c - v == 0x14u ? 4u : 5u - (c - v) / 4u));
             } else if (zc != 0) {
               AT32(c - 4) = xy - 0x10000u;
               PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy - 0x10000u, xy, csxy, 0,
-                            (int)(5u - (c - v) / 4u));
+                            (int)(c - v == 0x14u ? 4u : 5u - (c - v) / 4u));
             }
           }
         }
