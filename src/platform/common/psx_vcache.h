@@ -61,6 +61,16 @@ void psx_vcache_set_lazy_logic(int mode);
  * up front; 1 that path without; 0 every polygon the whole path. The same
  * answers in each. */
 void psx_vcache_set_found_fast(int mode);
+/* #221: a record whose probe runs out (VC_PROBE, 32 slots of the frame's
+ * other keys; late in a busy frame, as the main sky's records come) makes
+ * its entry in a small overflow apart from the table's slots, where before
+ * it made none and every polygon of its vertex's fan was missed (1, the
+ * default; 0: none, as before). The slots hold what they held before; an
+ * overflow entry takes no place in the frame's order, is worked out at
+ * once, is no hand-over's source, and is read only for a SkyDraw polygon's
+ * vertex with no entry in the slots, so every other polygon is found as
+ * before. Host builds read VC_OVERFLOW=0 from the environment too. */
+void psx_vcache_set_overflow(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
@@ -588,6 +598,10 @@ typedef struct {
    * corners whose own point was taken from their corner's projection (the
    * source key's own point dead) */
   unsigned pk_found, pk_kept, pk_full, own_corner;
+  /* #221: projections recorded in the overflow, their probe past VC_PROBE
+   * (32) slots (none recorded before: counted in full then); and the
+   * vertices of SkyDraw polygons found there (the only ones that look) */
+  unsigned ov_kept, ov_found;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

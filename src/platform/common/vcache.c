@@ -207,6 +207,9 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
 #define VC_BITS 13
 #define VC_SIZE (1u << VC_BITS)
 #define VC_PROBE 32
+/* #221: entries a frame for records whose probe ran out, apart from the
+ * table's slots (s[VC_SIZE...]; ov_find) */
+#define VC_OV 64
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
 #define VC_CANDS 4
 #define VC_FAR 1024 /* exact positions out of a candidate's int16 range, per frame (#178) */
@@ -343,7 +346,7 @@ typedef struct {
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
-  Entry s[VC_SIZE];
+  Entry s[VC_SIZE + VC_OV]; /* (#221: the overflow's after the slots) */
   int stale; /* holds frames from before its count came round: cleared before it records */
   Hk hk[VC_HK]; /* the frame's hand-overs (#189), written by its renderers */
   /* the keys the walk of this table's frame derived (#183), written only
@@ -356,7 +359,7 @@ typedef struct {
    * entry (prev). */
   unsigned nlog;
   uint32_t idx_gen;
-  uint16_t log[VC_LOG], prev[VC_LOG], last[VC_SIZE];
+  uint16_t log[VC_LOG], prev[VC_LOG], last[VC_SIZE + VC_OV];
   /* The answer of each projection a key with different points (or one
    * made ambiguous) had after its first (#181), at its log place, flagged
    * LOG_LC there: position as a candidate's, w > 0 its depth, w < 0 minus
@@ -399,9 +402,12 @@ typedef struct {
   Ow ow[VC_OW];
   /* #228 (last, as above): each entry's last projection worked out at once,
    * by the slot (Rp) */
-  Rp rp[VC_SIZE];
+  Rp rp[VC_SIZE + VC_OV];
   /* #229 (last, as above): the world's points kept as their piece's own */
   Sp sp[VC_SP];
+  /* #221 (last, as above): the frame whose records last made an overflow
+   * entry (the walk looks there only in that frame; 0: none) */
+  uint32_t ov_gen;
 } Table;
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -434,6 +440,7 @@ static void table_clear(Table *t) {
   memset(t->fr, 0, sizeof t->fr); /* #215 */
   memset(t->ow, 0, sizeof t->ow); /* #216 */
   memset(t->sp, 0, sizeof t->sp); /* #229 */
+  t->ov_gen = 0; /* #221 */
   t->cx_gen = 0;
   t->ncx = 0;
   t->stale = 0;
@@ -542,6 +549,21 @@ static void gc_line(void);
 #endif
 
 static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
+
+/* #221: the overflow (VC_OV entries after the table's slots, ov_find): on
+ * by default. At ~60% of the slots late in a busy frame (Stone Hill at 2x
+ * draw distance, ~5,000 keys), a run of VC_PROBE (32) taken slots is common
+ * enough that a record's probe runs out: the main sky's records, which come
+ * last, made no entry for a vertex now and then, and every polygon of its
+ * fan was missed. Such a record now makes its entry in the overflow, apart
+ * from the slots, so every slot holds what it held before (a later key's
+ * probe ends where it did). An overflow entry takes no place in the frame's
+ * order (#183), is worked out at once (not kept, #179), is no hand-over's
+ * source (those look in the slots), and the walk looks there only for a
+ * SkyDraw polygon's vertex with no entry (the sky's records are its own
+ * exact projections): every other polygon finds what it found before. */
+static int s_ov = 1;
+void psx_vcache_set_overflow(int on) { s_ov = on != 0; }
 /* #228: the exact repeats whose maths was skipped, per kind of frame (each
  * added by the one thread recording that kind; the report reads) */
 static unsigned s_rp_hits[2], s_rp_tried[2];
@@ -681,6 +703,11 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "found where they weren't (the polygon affine) (#229)",
            out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
            out->sp_res, out->sp_part);
+  /* #221 */
+  PsyX_Log("vcache overflow: %u projections recorded in the overflow, their probe past %u slots "
+           "(none recorded before); %u vertices of SkyDraw polygons found there; %u not recorded "
+           "(table and overflow full) (ov=%d, #221)",
+           out->ov_kept, VC_PROBE, out->ov_found, out->full, s_ov);
   /* #242 */
   PsyX_Log("vcache Spyro and shadows own: %u vertices found from their polygon's own clip point "
            "of Spyro's; %u kept, %u not kept (full); %u shadow corners' own points from their "
@@ -742,6 +769,31 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
       return (int)i;
   }
   return -1;
+}
+
+/* #221: key's entry in tb's frame gen in the overflow (s[VC_SIZE...]), or
+ * (add, kind) a free one made for it, or -1. Only a record whose probe ran
+ * out makes one, and only the walk's lookup of a SkyDraw polygon's vertex
+ * reads one, so a scan of the few each frame. Its last (#183) is VC_NOSEQ:
+ * no place in the frame's order. */
+static int ov_find(Table *tb, uint32_t gen, uint32_t key, int add, int kind, unsigned *probes) {
+  int i, fr = -1;
+  for (i = VC_SIZE; i < (int)(VC_SIZE + VC_OV); i++) {
+    ++*probes;
+    if (T_GEN(tb->s[i].tag) != gen) {
+      if (fr < 0)
+        fr = i;
+    } else if (tb->s[i].key == key)
+      return i;
+  }
+  if (!add || fr < 0)
+    return -1;
+  tb->s[fr].key = key;
+  tb->s[fr].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
+  tb->rp[fr].g = 0;
+  tb->last[fr] = VC_NOSEQ;
+  tb->ov_gen = gen;
+  return fr;
 }
 
 /* psx_vcache_poly's lookup: the entry for key in the frame being walked
@@ -1155,7 +1207,7 @@ typedef struct Lazy {
   LzRec rec[VC_LOG];
   unsigned n, nproj;
   int proj[LZ_PROJ][PROJ_ROW];
-  uint16_t head[VC_SIZE]; /* each pending entry's list (its newest), + 1 */
+  uint16_t head[VC_SIZE + VC_OV]; /* each pending entry's list (its newest), + 1 */
 } Lazy;
 static int s_lazy = 1;       /* psx_vcache_set_lazy */
 static int s_lazy_logic = 1; /* psx_vcache_set_lazy_logic */
@@ -1496,19 +1548,26 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   Rec *const rec = &s_rec[kind];
   Table *const tb = rec->tab;
   Touch t = TOUCH0;
-  int i, q = -1;
+  int i, q = -1, ov = 0;
 
   k->st->records++;
   k->work[VCW_PROJ]++;
   /* The entry first (made if it's new): a key already ambiguous stays so,
    * whatever this projection is, so it needs none of the maths below. */
   i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  if (i < 0 && s_ov && rec->count < VC_MAX &&
+      (i = ov_find(tb, rec->gen, key, 1, kind, &cost[VCC_REC_PROBES])) >= 0) {
+    /* #221: the probe ran out; its entry in the overflow, worked out at
+     * once, with no place in the frame's order */
+    k->st->ov_kept++;
+    ov = 1;
+  }
   if (i < 0) {
     k->st->full++;
     cost[VCC_REC_LINES] += t.n;
     return;
   }
-  if (tb->nlog < VC_LOG) { /* its place in the frame's order (#183) */
+  if (!ov && tb->nlog < VC_LOG) { /* its place in the frame's order (#183) */
     q = (int)tb->nlog++;
     tb->log[q] = (uint16_t)i;
     cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
@@ -1518,7 +1577,7 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
    * thread short of time, so the game thread works them out itself.
    * #204: and (vc_lazy_logic=3) the frame's first s_qt.q, whatever the
    * walk is doing */
-  if (tb->lazy) {
+  if (tb->lazy && !ov) { /* (#221: the overflow's at once) */
     int keep;
     if (kind == VC_PRES)
       keep = 1;
@@ -4039,6 +4098,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
   const Table *ptab = NULL; /* the table its vertices were looked up in (the same for each) */
   int i, pick[4] = {0, 0, 0, 0};
   int inv = 0, clamp = 0; /* a vertex's key invalid; a clamped vertex found (#178) */
+  int sky = -1; /* #221: a SkyDraw polygon (-1: not asked yet) */
   /* vertices with no entry (#183): the last one, how many; and all not found */
   int none = -1, nnone = 0, nmiss = 0;
   int der = 0, der_moved = 0, der_snap = 0; /* the one with no entry derived (#183) */
@@ -4085,8 +4145,19 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
     Touch t = TOUCH0;
     const Table *tab;
-    const int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
+    int k = look(pres, key, &cost[VCC_LOOK_PROBES], &t, &tab);
     uint32_t tag;
+    if (k < 0 && s_ov &&
+        tab->ov_gen == (pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen)) {
+      /* #221: a SkyDraw polygon's vertex with no entry in the slots: its
+       * record's in the overflow if its probe ran out (only this reads it,
+       * and only in a frame whose records made one) */
+      const uint32_t g = tab->ov_gen;
+      if (sky < 0)
+        sky = cx_find(tab, g, xy[0]) == VCX_SKY;
+      if (sky && (k = ov_find((Table *)tab, g, key, 0, 0, &cost[VCC_LOOK_PROBES])) >= 0)
+        st->ov_found++;
+    }
     if (k >= 0)
       lz_need(tab, &lk, k); /* the projections kept under it (#193, #179) */
     tag = k >= 0 ? tab->s[k].tag : 0;
@@ -4972,7 +5043,7 @@ void psx_vcache_frame_use(const PsxVcacheFrame *f) {
 int psx_vcache_get(uint32_t ref, VCacheVert *out) {
   uint32_t slot = ref & VREF_SLOT, d = (ref >> VREF_CAND_SHIFT) & 3;
   const Table *t = s_rec[VC_LOGIC].tab;
-  if (!slot || slot > VC_SIZE)
+  if (!slot || slot > VC_SIZE + VC_OV) /* (#221: the overflow's too) */
     return 0;
   if (d >= T_N(t->s[slot - 1].tag))
     d = 0;
@@ -4982,6 +5053,13 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
 }
 
 void psx_vcache_enable(int mode) {
+#ifndef __vita__
+  { /* #221: VC_OVERFLOW=0, the probe's 32 slots as before (host builds) */
+    const char *const v = getenv("VC_OVERFLOW");
+    if (v && v[0] == '0')
+      psx_vcache_set_overflow(0);
+  }
+#endif
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
   g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
   g_psyxRtpDeriveHook = mode >= 2 ? derive_hook : NULL; /* #189 */
