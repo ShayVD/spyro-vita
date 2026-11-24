@@ -1,11 +1,14 @@
 /* PC platform layer (docs/pc-build.md): Linux and Windows desktop builds on
- * SDL3 (window, input, audio) and OpenGL 3.3 (the picture), in the low-image
+ * Encore's platform interface (encore/platform.h, its SDL3 PC backend,
+ * D247: window, GL context, input, audio, time, threads, folders) and
+ * OpenGL 3.3 (the picture), in the low-image
  * model of linux64 and the PS4 (D173, D174): the image, the arena and the
  * game thread's stack lie below 2 GB.
  *
  * Two threads:
- *  - the main thread owns SDL: the window, its GL context, events, the
- *    keyboard and gamepads. It shows a picture at every display refresh:
+ *  - the main thread owns the platform (Encore's PC backend, which is SDL
+ *    underneath): the window, its GL context, events, the keyboard and
+ *    gamepads. It shows a picture at every display refresh:
  *    the newest frame whose due vblank the game's clock has reached
  *    (frames.c), as the Vita's render thread does with present_due=1 (D112).
  *  - the game thread (its stack a .bss array, main.c) runs the game, the
@@ -17,13 +20,22 @@
  * tools/extract_disc.py writes, or the PlayStation Store copy's EBOOT.PBP,
  * in the data folder (pc_data_dir: --disc, else a "disc" folder beside the
  * executable, else the user folder). Saves, the log, config.txt and
- * screenshots go in the user folder (SDL_GetPrefPath). */
+ * screenshots go in the user folder (spyro-vita/Spyro in the OS's per-user
+ * data folder, gaps.c's G1). */
 #ifndef SPYRO_PC_H
 #define SPYRO_PC_H
 
 #include <stdint.h>
 
 #define PC_MAX_SHOTS 16
+
+/* the PS1 pad's bits (input.c, gaps.c) */
+enum {
+  PSX_SELECT = 0x0001, PSX_L3 = 0x0002, PSX_R3 = 0x0004, PSX_START = 0x0008,
+  PSX_UP = 0x0010, PSX_RIGHT = 0x0020, PSX_DOWN = 0x0040, PSX_LEFT = 0x0080,
+  PSX_L2 = 0x0100, PSX_R2 = 0x0200, PSX_L1 = 0x0400, PSX_R1 = 0x0800,
+  PSX_TRIANGLE = 0x1000, PSX_CIRCLE = 0x2000, PSX_CROSS = 0x4000, PSX_SQUARE = 0x8000,
+};
 
 typedef struct {
   int virt;        /* virtual=1 (tests): vblanks by the game's ticks, never late (vblank.c) */
@@ -51,7 +63,7 @@ extern char g_pc_user_dir[1024]; /* saves, log, config.txt, shots (ends in '/') 
 
 /* main.c */
 void pc_exit(int code) __attribute__((noreturn)); /* from the game thread */
-unsigned long long pc_now_us(void);
+unsigned long long pc_now_us(void); /* enc_time_us */
 void pc_message(const char *title, const char *text); /* a message box, and the log */
 
 /* crash.c: a fault's address and backtrace in the log (each thread calls it) */
@@ -99,16 +111,18 @@ extern volatile int g_pc_quit;
 int pc_video_init(void); /* 0 = ok */
 int pc_video_game_context(void); /* game thread: its own shared GL context current; 0 = ok */
 void pc_video_frame(void); /* show the newest due frame, swap */
-void pc_video_event(const void *sdl_event);
+/* the GL loader (EncGpu.get_proc), set by pc_video_init (pc_gl.c reads it) */
+extern void *(*g_pc_gl_proc)(const char *name);
 /* the window as a PNG, at the first picture shown whose frame is due at
  * `due` or later (so two runs' shots are of the same frame) */
 void pc_video_shot(const char *path, int due);
 void pc_video_report(int vblank);
 void pc_video_close(void);
 
-/* input.c: SDL events (main thread) -> the PS1 pad (game thread) */
+/* input.c: the platform's pads and keyboard (main thread) -> the PS1 pad
+ * (game thread) */
 void pc_input_init(void);
-void pc_input_event(const void *sdl_event);
+void pc_input_update(void); /* main thread, after enc_input_poll */
 void pc_input_read(uint16_t *buttons, unsigned char sticks[4]); /* any thread */
 
 /* pad.c (game thread) */

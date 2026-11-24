@@ -2,7 +2,7 @@
  * .bss stack has its locals there; glibc's malloc (small and large blocks), a fresh mapping, a default thread's stack
  * and a shared library's code (libc's) lie above 4 GB; pages below 4 GB are reserved. The mutant
  * (LP64_LOW_IMAGE_MUTANT=1 in the environment: no reservation) must fail.
- *   low_image_dyn_test      (targets/pc/encore/build_conformance.sh builds and runs it, and its mutant) */
+ *   low_image_dyn_test      (targets/pc/test/desktop_runtime_tests.sh builds and runs it, and its mutant) */
 #include "lp64_low_image.h"
 
 #include <pthread.h>

@@ -1684,7 +1684,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 
 ### D246. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
 
-(D245 is the PC build's move onto Encore's platform interface, in another session.)
+(D247 is the PC build's move onto Encore's platform interface, in another session.)
 
 - **Why:** the owner wants to play the port natively on an M-series Mac. The 64-bit builds (linux64, PC, PS4) keep the PS1's layouts with the low-image model (D173, D174, D240, D241): every pointer the game stores in its own memory is `P32`, clang's `__ptr32 __uptr`. That keyword exists only for x86. On AArch64 clang accepts it and does nothing, so every `P32` field is 8 bytes (Encore `lp64/docs/clang-bugs.md`). Running x86-64 under Rosetta was turned down: it rests on deprecated linker flags (`-no_pie`, `-pagezero_size`) and on Rosetta itself. Encore's PC backend (`targets/pc/encore/enc_pc.c`, SDL3) already runs on macOS arm64. The platform layer isn't what stops it; the pointer model is.
 - **The model** (Encore `lp64/docs/low-image.md`, "Why not the other models": the fallback it names). Every `P32` slot holds a 32-bit **offset** from one base. The base is the start of the executable's image. Everything the game points at is in the image: the `.bss` arena, the game thread's `.bss` stack, the data labels and string literals. Offset 0 is NULL. The source spells each kind of site with a macro, and `src/compat/p32.h` grows a third model:
@@ -1731,7 +1731,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **O4. macOS arm64.**
     - `cmake/pc-macos.toolchain.cmake`: Apple clang, the macOS SDK, SDL3 static (built from the same 3.4.18 source as the PC image).
     - A mac low-image runtime in Encore, `lp64/runtime/low_image`: the base symbol, the image under 4 GB, the game stack in `.bss`, the checks at start.
-    - The PC platform layer on Encore's backend as D245 leaves it.
+    - The PC platform layer on Encore's backend as D247 leaves it.
     - GL 4.1 core (macOS's last; it takes the `#version 330` shaders of D243).
     - An `.app` bundle, ad-hoc signed.
     - Gate: the O3 checks, run natively on the Mac.
@@ -1749,3 +1749,50 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - watchOS's `arm64_32` and Linux's AArch64 ILP32: they can't run Mac or ordinary Linux programs.
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
+
+### D247. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
+- **Number:** named D245 while it was written; `main`'s D245 (the PS4's P4, PR #250) and `develop`'s D246 (the ARM64 plan, PR #249) came first, so this is D247. Logs in `logs/pc-encore/` predate the renumber.
+- **Why:** Encore's roadmap v0.4.0, "first game on the platform interface" (step P1). The PC layer (`src/platform/pc/`, D240–D243) called SDL3 directly everywhere. On `encore/platform.h` the same game code is one backend away from any target Encore has, and every place the interface falls short is now written down as a gap with the smallest addition that would close it.
+- **What:**
+  - **Vendoring:** `third_party/encore` refreshed from Encore 0e77e93 with `tools/vendor.sh`, adding `core/` and `targets/pc/encore/` beside `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. The two existing paths changed only in READMEs and tests. `.gitignore`'s `core` (core dumps) now spares `third_party/encore/core/`. No vendored file was edited.
+  - **Build:** `src/platform/pc/CMakeLists.txt` builds Encore's PC backend (`enc_pc.c`, `enc_common.c`, `enc_blit.c`, `enc_event.c`, and `enc_co.c` or `enc_co_win.c`) as `encore_pc`, with plain flags, and links it.
+  - **Through the interface:**
+    - start-up and shutdown (`enc_platform_init`);
+    - the window and the GL 3.3 core context (`ENC_GFX_GL`; `enc_video_gpu_begin` / `_present`; GL loaded through `EncGpu.get_proc`);
+    - events and pads (`enc_input_poll`, `enc_event_poll`, `enc_pad_read`, mapped to PS1 bits in `input.c`);
+    - sound (`enc_audio_*`);
+    - time (`enc_time_us`, `enc_sleep_us`);
+    - mutexes, the Windows game thread (`enc_thread_start`), and the save folder (`enc_path`).
+  - **Unchanged:** the picture path (frames filed by due vblank, the presenter, the aspect box, both renderers).
+  - **Gaps:** `gaps.c` is the only file that still calls SDL (`video.c` and `pc_gl.h` still include `SDL_opengl.h` for GL's types only). It holds gaps G1–G14, each with its shim and the smallest addition to `platform.h` that would retire it; the table is in `docs/pc-build.md`, "On Encore's platform interface".
+    - Folders and window: G1 the user folder's vendor name, G2 the executable's folder, G3 the first window size, G4 the title, fullscreen at start and the idle mouse pointer, G5 the driver's name.
+    - GL and input: G6 a shared GL context for the game thread, G7 spyro's keyboard map, G8 a message box.
+    - Sound, timing and the rest: G9 trimming queued sound, G10 GL's types, G11 never pacing the swap, G12 whether the swap interval took, G13 a thread stack in the image, G14 one log.
+  - **Behaviour that differs** (`docs/pc-build.md`):
+    - gamepads work in the background;
+    - no SDL signal handlers;
+    - 4 pads, not 8;
+    - the trigger threshold is 125 of 255;
+    - a hidden GL probe window at start;
+    - the backend's own `log/spyro.log` beside the game's.
+- **Encore needs no change for this PR.** The gaps are additions for the owner to weigh as Encore PRs. The largest are G6 (`EncGpu.gl_create_shared` / `gl_make_current`), G7 (`enc_pc_set_keymap`), G12 (`EncGpu.vsync`) and G13 (`EncThreadConfig.stack_mem`).
+- **Found and fixed on the way (G12):**
+  - Mesa under Xvfb refuses the GL swap interval. Before D247 the PC then ran without vsync (1 ms sleeps).
+  - The backend instead paces every present to a 60 Hz clock of its own. With llvmpipe's slow pictures the window fell behind the frames due, and every pause-route shot caught a later frame.
+  - `video.c` now asks (`pc_gap_gl_swap_interval_on`) and opens the video again without vsync when the interval was refused.
+- **Checked** (amd64 Docker under Rosetta on the Mac, Xvfb, Mesa llvmpipe; logs in `logs/pc-encore/`, local):
+  - **PC Linux:** `develop` and the branch built from clean. Both builds' first tries hit Python segfaults in overlay preprocessing (Rosetta), at different files; both built on the next try. No warnings in `src/platform/pc` or the vendored backend.
+  - **Pause route** (`tools/pc/routes/pause.pad`, `virtual=1`, 9,100 vblanks, shots at 2,400 / 5,900 / 6,950 / 9,000; `gpu=0`):
+    - The save folder (`save/card0/BASCUS-94228SPYRO`, `disc-verified.txt`) is byte-identical in all four runs (develop ×2, branch ×2).
+    - The shots are not exact on `develop` either. Its two runs differ at 2,400 (1.1% of pixels), 5,900 (74%) and 6,950 (3.6%): a shot is the first picture shown whose frame is due at its vblank, so under load it can be a neighbouring frame.
+    - The branch's 2,400 and 5,900 shots are byte-identical to one of `develop`'s runs. At 6,950 and 9,000 they differ (5.3%, 78%), and the 9,000 shot is the same Artisans cutscene moment a frame or so later.
+    - So no picture difference beyond `develop`'s own run-to-run spread was seen, but the pictures aren't proven identical. Exact shots need the shot taken from the game thread's frame, not the window (a separate change).
+  - **`gpu=1`:** develop and the branch were both killed (exit 137) before 9,100 vblanks. Each GPU picture takes about 4.6 s under llvmpipe and Rosetta, so the GPU renderer's A/B wasn't possible on this machine.
+  - **Windows** (llvm-mingw cross-build): `spyro.exe` builds. `vcache.c` (unchanged) hit the 300 s compile timeout three times while the A/B ran, then built. One warning, in an unchanged line (`main.c` `here`). Not run under Wine.
+  - **Vita:** the ELF built from `develop` and from the branch in same-length worktree paths has identical `.text` and `.data`. `.rodata` differs in 13 bytes: the build time and the commit ID.
+  - **linux32 and PS4:** both build from this branch (linux32 673 of 673 targets; the PS4 fpkg `IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg`). Neither compiles a changed file: the vendored `low_image` and `winposix` changed only in READMEs and tests. linux32 ctest: still running when the PR opened, the result to follow.
+  - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
+  - **No-disc start-up** (CI's check, `logs/pc-encore/smoke.log`): exit code 1, `video: x11, llvmpipe`, "No Spyro the Dragon disc data was found".
+- **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
+- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
+- **Next free number:** D248 (D245 is main's PS4 P4, PR #250; D246 the ARM64 plan, PR #249).

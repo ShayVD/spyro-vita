@@ -42,7 +42,7 @@
 #include "host.h"
 #include "pc_gl.h"
 
-#include <SDL3/SDL.h>
+#include "encore/platform.h"
 
 #include <assert.h> /* PsyCross headers use static_assert */
 #include <math.h>
@@ -179,7 +179,7 @@ static struct {
   uint64_t upload_us, readback_us, picture_us;
 } s_st;
 
-static uint64_t now_us(void) { return SDL_GetTicksNS() / 1000; }
+static uint64_t now_us(void) { return enc_time_us(); }
 
 /* ---- shaders: the Vita's GLSL ES 1.00, made GLSL 3.30 core by glsl330() ---- */
 
