@@ -11,22 +11,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 226,
-      "branch": "feat/226-wobble-fix-mobyshadows-last-missed",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-226",
-      "pids": [
-        23067
-      ],
-      "started_at": "2026-11-24T11:17:20Z",
+      "issue": 230,
+      "branch": "feat/230-wobble-fix-portalskyplain-s-last-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-230",
+      "pids": [],
+      "started_at": "2026-11-24T14:09:51Z",
       "files": [
-        "src/game/shadows_hand.c",
+        "src/game/sky_clip_hand.c",
         "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "docs/vita-testing.md",
-        "docs/host-build.md"
+        "src/platform/common/psx_vcache.h"
       ],
-      "agent": "a521ed6a5579ec4f0",
-      "last_commit_at": "2026-11-24T12:27:29Z"
+      "agent": "a23cf9bd53d96c9bc"
     }
   ],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
@@ -439,3 +434,4 @@ continue.
 - 2026-11-24T12:51:14Z shared 5, vita 8: #226 WIP 3069180 (own_nosrc split), checking; Vita3K: none
 - 2026-11-24T13:22:13Z shared 5, vita 8: #226 in a long check (PID 45157, 54 min), docs edits; Vita3K: none
 - 2026-11-24T13:53:14Z shared 5, vita 8: #226 alive (new vcache.c edits, fresh PID), last commit 12:27; Vita3K: none
+- 2026-11-24T14:10:06Z shared 5, vita 8: merged #226 (D244), filed #247, commented #237, started #230; vcache.c still holds the queue (8 issues). Vita3K: 8 runs (worker's, 0 own failures), hardware: none
