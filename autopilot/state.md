@@ -9,7 +9,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 230,
+      "branch": "feat/230-wobble-fix-portalskyplain-s-last-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-230",
+      "pids": [],
+      "started_at": "2026-11-24T23:12:28Z",
+      "files": [
+        "src/game/sky_clip_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a113d98ec6f463c4a"
+    }
+  ],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
   "hardware_runs": [
     {
@@ -430,3 +444,4 @@ continue.
 - 2026-11-24T13:53:14Z shared 5, vita 8: #226 alive (new vcache.c edits, fresh PID), last commit 12:27; Vita3K: none
 - 2026-11-24T14:10:06Z shared 5, vita 8: merged #226 (D244), filed #247, commented #237, started #230; vcache.c still holds the queue (8 issues). Vita3K: 8 runs (worker's, 0 own failures), hardware: none
 - 2026-11-24T14:14:43Z shared 5, vita 8: owner said stop; #230's attempt 1 stopped before any commit (worktree and branch removed, no attempt counted, its 4 host containers stopped); loop ended; Vita3K: none, hardware: none
+- 2026-11-24T23:13:52Z shared 5, vita 8: resumed (owner: finish wobble and draw distance until no misses); develop fast-forwarded to origin fc5bf71 (#252 PC on Encore D247, #253 docker queue); #251 labelled phase-8 needs-owner (Vita on Encore, out of this loop's scope); started #230 attempt 1 (vcache.c holds the other 8), Vita3K: none, hardware: none
