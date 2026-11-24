@@ -297,6 +297,16 @@ static inline void DecodeB(Stream *st) {
  * step of the first run transforms whatever V0 held; the run ends at FP ==
  * STOP, and the asm then runs again from the same slot to the end
  * (`mflo`, the end kept in LO), so the first slot is written twice. */
+/* #242: while Spyro is clipped at the floor, each vertex's projection (the
+ * last made) named for the vertex cache under its index (psx_vcache.h
+ * VCD_PETE_V): an edge's end whose key names no single point is then still
+ * found. Only a slot's last projection is named (each part's first run
+ * writes its first slot again). */
+static inline void NameVertex(u32 sxy, u32 fp) {
+  PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP) | VCD_SELF, sxy, sxy,
+                VCD_PETE_V((fp - 4 - SCRATCH_BASE) >> 2), 0, 0);
+}
+
 /* PartVertices, native: the same steps and stores; V0 is a pair of locals,
  * starting from what the GTE held, and each part's last RTPS and INTPL go
  * back to the register file before the next part's matrix does. */
@@ -308,12 +318,15 @@ static void PartVertices(u32 floor) {
    * a slot the run then writes again (a part 0 of two vertices aside,
    * which Spyro's models don't have); here it is skipped (dead) */
   u32 cxy = 0, cz = 0, dead = 1;
+  /* #242: name the projections (Spyro clipped, the cache recording) */
+  const int name = floor && __builtin_expect(g_psyxRtpDeriveHook != 0, 0);
   NgteSync sync;
   ngte_sync_init(&sync);
 
   do {
     Stream a, b;
     u32 blend, last, stop;
+    int again = 0, made; /* #242: the part's run again from its first slot; a projection made */
     NgteProj P;
     NgteRtp t;
     CTC2(rec[PR_TR], 5);
@@ -329,7 +342,8 @@ static void PartVertices(u32 floor) {
     if (!blend) {
       for (;;) {
         do {
-          if (dead && last != stop)
+          made = !(dead && last != stop);
+          if (!made)
             t.sxy = t.sz3 = 0;
           else
           t = ngte_rtps_w(&P, cxy, cz);
@@ -346,12 +360,15 @@ static void PartVertices(u32 floor) {
           cxy = (a.y << 16) + a.x;
           cz = a.z;
           AT32(fp - 4) = t.sxy;
+          if (name && made && (again || last == stop))
+            NameVertex(t.sxy, fp);
         } while (fp != stop);
         if (last == stop)
           break;
         stop = last;
         sp -= 0x10;
         fp -= 4;
+        again = 1;
       }
     } else {
       const int ir0 = (s16)blend;
@@ -360,7 +377,8 @@ static void PartVertices(u32 floor) {
       for (;;) {
         do {
           NgteCol o;
-          if (dead && last != stop)
+          made = !(dead && last != stop);
+          if (!made)
             t.sxy = t.sz3 = 0;
           else
           t = ngte_rtps_w(&P, cxy, cz);
@@ -380,12 +398,15 @@ static void PartVertices(u32 floor) {
           }
           cz = (u32)o.mac1;
           cxy = (u32)o.mac2 + ((u32)o.mac3 << 16);
+          if (name && made && (again || last == stop))
+            NameVertex(t.sxy, fp);
         } while (fp != stop);
         if (last == stop)
           break;
         stop = last;
         sp -= 0x10;
         fp -= 4;
+        again = 1;
       }
     }
     /* asm 80024A14: the part's last vertex */
@@ -401,6 +422,8 @@ static void PartVertices(u32 floor) {
       AT32(sp - 0xC) = cxy;
       AT32(sp - 0x8) = (u32)(s32)(s16)cz;
     }
+    if (name)
+      NameVertex(t.sxy, fp);
     ngte_flush(&sync);
   } while (info != 0);
 }
@@ -682,11 +705,12 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
   ngte_flush(&sync);
 }
 
-/* #189, #242: a clip point for the vertex cache: its screen word, the
- * edge's ends, the fraction (IR0) and its place in the points ClipTriangle
- * appends (0..3) */
+/* #189, #242: a point of a clipped primitive for the vertex cache, by its
+ * place in the points ClipTriangle appends (0..3): its screen word; a clip
+ * point's edge's ends (their screen words and vertex indices) and fraction
+ * (IR0), or a drawn vertex's index (clip 0) */
 typedef struct {
-  u32 xy, xyp, xyq, slot;
+  u32 xy, xyp, xyq, ja, jb, clip;
   int t;
 } ClipPt;
 
@@ -718,6 +742,7 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
       pt->xyp = xyp;
       pt->xyq = xyq;
       pt->t = ir0;
+      pt->clip = 1;
     }
     o = ngte_intpl((s16)(uvp & 0xFF), (s16)((uvp >> 8) & 0xFF), 0, ir0, (int)(uvq & 0xFF),
                    (int)((uvq >> 8) & 0xFF), 0, 0);
@@ -738,16 +763,19 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
  * last two points are swapped into strip order), since two clip points of
  * different edges often fall on one pixel. Handed over in the order
  * ClipEdge made them, with nothing projected or handed over between. */
-static void ClipHand(u32 prim, u32 n, const ClipPt *pt, int np) {
+static void ClipHand(u32 prim, u32 n, const ClipPt *pt) {
   if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0)) {
     u32 an = 0, i;
-    int j;
     for (i = 0; i < n; i++)
       an ^= VCD_PIECE_V(AT32(prim + 0x8 + 0xC * i), AT16(prim + 0xC + 0xC * i), i);
-    for (j = 0; j < np; j++) {
-      const u32 slot = n == 4 && pt[j].slot >= 2 ? pt[j].slot ^ 1u : pt[j].slot;
-      PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP) | VCD_KEEP, pt[j].xy, pt[j].xyp, pt[j].xyq,
-                    pt[j].t, (int)VCD_CORNER(an, slot));
+    for (i = 0; i < n; i++) {
+      const u32 corner = VCD_CORNER(an, n == 4 && i >= 2 ? i ^ 1u : i);
+      if (pt[i].clip)
+        PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP) | VCD_KEEP | VCD_PETE_ENDS(pt[i].ja, pt[i].jb),
+                      pt[i].xy, pt[i].xyp, pt[i].xyq, pt[i].t, (int)corner);
+      else /* a drawn vertex: kept at its own projection */
+        PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP) | VCD_SELF | VCD_KEEP, pt[i].xy, pt[i].xy,
+                      VCD_PETE_V(pt[i].ja), 0, (int)corner);
     }
   }
 }
@@ -766,8 +794,8 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
   const u32 prim = f->prim;
   const u32 h0 = AT32(r0 + 4), h1 = AT32(r1 + 4), h2 = AT32(r2 + 4);
   u32 sum, z1, z2, xy0, xy1, xy2, col0, col1, col2, bucket, tail, out;
-  ClipPt pt[3]; /* #242 (a triangle crosses the floor on two edges) */
-  int np = 0;
+  ClipPt pt[4]; /* #242: the points appended, by place */
+  u32 np = 0;
 
   if ((s32)(h0 & h1 & h2) < 0)
     return;
@@ -821,9 +849,13 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(out + 0x8) = xy0;
     AT16(out + 0xC) = (u16)uv0;
     out += 0xC;
+    pt[np].xy = xy0;
+    pt[np].ja = v0 >> 4;
+    pt[np++].clip = 0;
   }
   if ((s32)(h0 ^ h1) < 0) {
-    pt[np].slot = (out - prim) / 0xC;
+    pt[np].ja = v0 >> 4;
+    pt[np].jb = v1 >> 4;
     out = ClipEdge(out, h0, h1, col0, col1, xy0, xy1, uv0, uv1, &pt[np]);
     np++;
   }
@@ -832,9 +864,13 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(out + 0x8) = xy1;
     AT16(out + 0xC) = (u16)uv1;
     out += 0xC;
+    pt[np].xy = xy1;
+    pt[np].ja = v1 >> 4;
+    pt[np++].clip = 0;
   }
   if ((s32)(h1 ^ h2) < 0) {
-    pt[np].slot = (out - prim) / 0xC;
+    pt[np].ja = v1 >> 4;
+    pt[np].jb = v2 >> 4;
     out = ClipEdge(out, h1, h2, col1, col2, xy1, xy2, uv1, uv2, &pt[np]);
     np++;
   }
@@ -843,9 +879,13 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(out + 0x8) = xy2;
     AT16(out + 0xC) = (u16)uv2;
     out += 0xC;
+    pt[np].xy = xy2;
+    pt[np].ja = v2 >> 4;
+    pt[np++].clip = 0;
   }
   if ((s32)(h2 ^ h0) < 0) {
-    pt[np].slot = (out - prim) / 0xC;
+    pt[np].ja = v2 >> 4;
+    pt[np].jb = v0 >> 4;
     out = ClipEdge(out, h2, h0, col2, col0, xy2, xy0, uv2, uv0, &pt[np]);
     np++;
   }
@@ -854,7 +894,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     /* three points: POLY_GT3 */
     AT8(prim + 7) = 0x34;
     AT32(prim) = TAG_GT3;
-    ClipHand(prim, 3, pt, np);
+    ClipHand(prim, 3, pt);
     LinkPrim(f, bucket, tail, 0x28, ND_K_GT3);
   } else {
     /* four: POLY_GT4, the last two points swapped into strip order */
@@ -868,7 +908,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(prim + 0x30) = c;
     AT8(prim + 7) = 0x3C;
     AT32(prim) = TAG_GT4;
-    ClipHand(prim, 4, pt, np);
+    ClipHand(prim, 4, pt);
     LinkPrim(f, bucket, tail, 0x34, ND_K_GT4);
   }
 }

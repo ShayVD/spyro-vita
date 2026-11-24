@@ -2079,6 +2079,41 @@ static int hk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, ui
   return 0;
 }
 
+/* #242: Spyro's clip point (VCD_KEEP) where hk_place's sources give none:
+ * an end hk_src0 can't use (two of his vertices on one key) at its own
+ * projection, named under VCD_PETE_V(its index, in how's VCD_PETE_ENDS);
+ * the 3D point p / 4096 of the way, as hk_place's. 0, or -1 none usable */
+static int pk_place(Rec *rec, int kind, const Sink *k, int how, uint32_t key, uint32_t a,
+                    uint32_t b, int p, float *dxo, float *dyo, float *w, unsigned *no,
+                    unsigned *cost, Touch *t) {
+  const float f = (float)p * (1.0f / 4096);
+  float ax, ay, bx = 0, by = 0, aw[VC_CANDS], bw[VC_CANDS], pa = 0, pb = 0, ka, kb, r, dx, dy;
+  int na, nb = -1, ea, eb, taint = 0;
+  unsigned n;
+  na = hk_src(rec, kind, k, a, &ax, &ay, aw, 0, &ea, &taint, cost, t, 1,
+              VCD_PETE_V(VCD_PETE_ENDS_A(how)));
+  if (na > 0)
+    nb = hk_src(rec, kind, k, b, &bx, &by, bw, 0, &eb, &taint, cost, t, 1,
+                VCD_PETE_V(VCD_PETE_ENDS_B(how)));
+  if (na <= 0 || nb <= 0)
+    return -1;
+  n = hk_pair(aw, na, bw, nb, f, 1, w, &pa, &pb, cost, NULL);
+  if (!n)
+    return -1;
+  ka = (1.0f - f) * pa;
+  kb = f * pb;
+  r = 1.0f / (ka + kb);
+  cost[VCC_REC_DIV]++;
+  dx = flt((ax * ka + bx * kb) * r - ((short)(key & 0xFFFF) + 0.5f));
+  dy = flt((ay * ka + by * kb) * r - ((short)(key >> 16) + 0.5f));
+  if (!(dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024))
+    return -1;
+  *dxo = dx;
+  *dyo = dy;
+  *no = n;
+  return 0;
+}
+
 /* #215: a cut placed at its own fraction (psx_vcache.h VCD_T), kept in the
  * frame's fr, apart from the hand-overs (hk). The PS1 cuts a portal sky
  * triangle's side where it crosses the portal outline's edge, from integer
@@ -2500,6 +2535,20 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   Hk *h;
   if (!rec->tab)
     return;
+  if ((how & (VCD_SELF | VCD_KEEP)) == (VCD_SELF | VCD_KEEP)) {
+    /* #242: a drawn vertex of Spyro's clipped primitive kept as its own
+     * (under q) at its own projection (named under b) */
+    float x, y;
+    const int nn = own_end(rec, k, key, b, &x, &y, w, cost, &t);
+    if (nn > 0) {
+      dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
+      dy = flt(y - ((short)(key >> 16) + 0.5f));
+      if (dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024)
+        sp_put(rec, k, key, (uint32_t)q, dx, dy, w, (unsigned)nn, SP_NOR, &t, 1);
+    }
+    cost[VCC_REC_LINES] += t.n;
+    return;
+  }
   if (how & VCD_SELF) { /* #216: an own point only; #217: or one moved to another anchor */
     if (how & VCD_OWN)
       own_move(kind, k, key, b, (uint32_t)q, p); /* (#229: p 1, a split point) */
@@ -2520,11 +2569,18 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
             hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 1,
                      NULL) == 0 &&
             own_taken(st, &taint));
-  if (form == VCD_PERSP && (how & VCD_KEEP) && placed && n)
+  if (form == VCD_PERSP && (how & VCD_KEEP)) {
     /* #242: Spyro's clip point kept as its polygon's own too, under q (its
      * primitive's anchor and its place in it), apart from hk: as hk has it,
-     * so two clip points on one pixel, each its own polygon's, stay apart */
-    sp_put(rec, k, key, (uint32_t)q, dx, dy, w, n, SP_NOR, &t, 1);
+     * so two clip points on one pixel, each its own polygon's, stay apart;
+     * where hk's sources give none, from its ends' own projections */
+    float kw[VC_CANDS], kdx, kdy;
+    unsigned kn = 0;
+    if (placed && n)
+      sp_put(rec, k, key, (uint32_t)q, dx, dy, w, n, SP_NOR, &t, 1);
+    else if (pk_place(rec, kind, k, how, key, a, b, p, &kdx, &kdy, kw, &kn, cost, &t) == 0 && kn)
+      sp_put(rec, k, key, (uint32_t)q, kdx, kdy, kw, kn, SP_NOR, &t, 1);
+  }
   if (form == VCD_PERSP && (how & VCD_OWN)) {
     /* #229: the world's split point kept as its piece's own too, under the
      * piece's anchor and edge (psx_vcache.h VCD_EDGE), apart from hk: from
@@ -4295,13 +4351,14 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
       }
     }
   }
-  if (!res && !der && nnone && !nambig && !inv && !nflat) {
-    /* #242: a SpyroDraw polygon nothing above found: each vertex with no
-     * entry at its polygon's own clip point (VCD_KEEP: two clip points on one
-     * pixel, so the hand-over left the key with none), under the anchor its
-     * renderer gave (its vertices' keys and u/v, as #229's world pieces;
-     * psx_vcache.h VCD_PIECE_V) and its place in the primitive; only when
-     * every one has one. Its found vertices stay as they are. */
+  if (!res && !der && (nnone || nambig) && !inv && !nflat) {
+    /* #242: a SpyroDraw polygon nothing above found: each vertex not found
+     * (no entry, or an ambiguous key) at its polygon's own point (VCD_KEEP:
+     * two clip points on one pixel, so the hand-over left the key with none;
+     * two of his vertices on one pixel), under the anchor its renderer gave
+     * (its vertices' keys and u/v, as #229's world pieces; psx_vcache.h
+     * VCD_PIECE_V) and its place in the primitive; only when every one has
+     * one. Its found vertices stay as they are. */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     if (cx_find(ptab, gen, xy[0]) == VCX_SPYRO) {
       static const int k_prim[2][4] = {{0, 1, 2, 3}, {0, 1, 3, 2}};
@@ -4319,7 +4376,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         en2[i] = en[i];
         if (e[i])
           continue;
-        if (sp_point(ptab, gen, key, VCD_CORNER(anchor, k_prim[n == 4][i]), &owp[i][0], &owp[i][1],
+        if ((noent[i] || amb[i]) &&
+            sp_point(ptab, gen, key, VCD_CORNER(anchor, k_prim[n == 4][i]), &owp[i][0], &owp[i][1],
                      oc[i], &eo[i], &ent, &cost[VCC_LOOK_PROBES], &t) == 1) {
           ow[i] = 1;
           e2[i] = oc[i];
@@ -4335,7 +4393,12 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
             e[i] = oc[i];
             en[i] = eo[i];
             et[i] = 0;
-            nnone--;
+            if (amb[i]) {
+              amb[i] = 0;
+              nambig--;
+              st->own_amb++;
+            } else
+              nnone--;
             nmiss--;
             st->hits++;
             st->own_found++;

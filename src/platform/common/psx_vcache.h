@@ -196,7 +196,15 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * points), under q: VCD_CORNER(the drawn primitive's anchor, the point's place
  * in it), the anchor VCD_PIECE_V's terms of all its vertices xored. The
  * hand-over itself (hk) is as before. The walk takes these only for a
- * SpyroDraw polygon nothing else finds.
+ * SpyroDraw polygon nothing else finds, for each of its vertices not found.
+ * An edge's end whose key names no single point (two of Spyro's vertices on
+ * one pixel) is taken at its own projection: while Spyro is clipped, his
+ * renderer names each vertex's projection (VCD_SELF) under VCD_PETE_V(its
+ * index), and the clip point's hand-over gives its ends' indices in how
+ * (VCD_PETE_ENDS). A drawn vertex of a clipped primitive (VCD_SELF with
+ * VCD_KEEP, b its VCD_PETE_V) is kept the same way under q, at its own
+ * projection, so a vertex of his whose key names no single point is found
+ * there too. None of these touch the hand-overs (hk).
  * #242: a moby shadow's nudged corner (VCD_ALIAS with VCD_OWN) whose source
  * key holds two of its shadow's corners (a far shadow, a few pixels wide)
  * has no own point there (two under one key and anchor: dead). With q
@@ -204,6 +212,10 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * VCD_SELF names one; it is taken only where the source's own point is dead,
  * so every own point kept before is kept as it was. */
 #define VCD_KEEP 0x800
+#define VCD_PETE_V(j) (0x7FFF0000u | (unsigned)(j)) /* (y 32767: no screen key's) */
+#define VCD_PETE_ENDS(ja, jb) ((int)((unsigned)(ja) << 16 | (unsigned)(jb) << 24)) /* (0..255) */
+#define VCD_PETE_ENDS_A(how) (((unsigned)(how) >> 16) & 255u)
+#define VCD_PETE_ENDS_B(how) (((unsigned)(how) >> 24) & 255u)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
