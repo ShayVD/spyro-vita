@@ -11,6 +11,11 @@ vita-port-kit's `livearea_png.py from` and checks them with its `check`
 | `startup.png` | 280×158 | the same logo, cropped to its middle band |
 | `bg.png` | 840×500 | concept art by Simon Kopp (2017/18) for *Spyro Reignited Trilogy*, Airborn Studios, scaled whole with the signature kept |
 
+**The PS4 release fpkg uses them too** (the owner's decision, 2026-11-24, D246): `tools/ps4/art.py`
+rescales `icon0.png` to the PS4's 512×512 icon and `bg.png` to its 1920×1080 background
+(`pic1.png`, the whole painting fitted to the height, the sides filled with its edge colour). The
+gitignored `disc/livearea/` copy, when present, is the better source and is used first.
+
 **Not ours, and not under the MIT licence.** Spyro and Spyro the Dragon are trademarks of
 Activision Publishing, Inc. The background painting is © its artist and rights holders. No licence
 has been obtained; they're included at the project owner's decision, and will be replaced on
