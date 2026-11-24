@@ -887,3 +887,11 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checked:** `llvm-readobj`: base 0x400000, no `DYNAMIC_BASE`, `HIGH_ENTROPY_VA` or `LARGE_ADDRESS_AWARE`; imports Windows' DLLs and the UCRT only. Under Wine 8 (amd64 Docker under Rosetta, Xvfb, llvmpipe): the US disc to the 16:9 title at 60.0 vblanks a second, and the play route (`logs/pcw-run2.log`). CI: the `pc` job builds both; `pc-windows-smoke` runs `spyro.exe` on `windows-latest` with Mesa's llvmpipe `opengl32.dll` beside it, which must report its heap, a fresh mapping and its stack below 2 GB, a GL 3.3 window and the missing disc. (`GetSystemInfo`'s maximum address is the system's, 128 TB, whatever the program: the first CI run showed it.)
 - **Not checked:** Windows itself with a GPU, a sound card and a gamepad.
 - **Next free number (this branch):** D242.
+
+### D242. The PC build's low image and Windows shims come from Encore, vendored
+
+- **Why:** the task's phase 2: once Encore's rename had landed, the PC build's game-free pieces went to the kit (`ShayVD/encore` #64: the SDL3 backend of its platform interface, lp64's low image for a dynamic Linux executable and for Windows, the Windows POSIX shims), and come back here vendored, so the two never drift.
+- **What:** `third_party/encore` (`tools/vendor.sh --dir third_party/encore`, Encore f505f2e): `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. `src/platform/pc/low_linux.c` and `low_win.c` are gone; `low.c` reports, and the build links `lp64_low_image_dyn.c` (Linux) or `lp64_low_image_win.c` and `enc_winposix.c` (Windows). The environment switch is now Encore's `LP64_LOW_TRAP=0` (was `SPYRO_LOW_TRAP=0`).
+- **Fixed on the way:** Windows moves a CRT descriptor's file pointer even for a positional `ReadFile`, so D241's `pread` changed the offset; Encore's puts it back (its test caught it under Wine). Spyro reads the disc only through `pread` on its descriptor, so nothing here had gone wrong yet.
+- **Checked:** the Linux build and the Windows build, and the play route on each (Linux under Xvfb, Windows under Wine), as D240 and D241 (`logs/pc-vendor-*`).
+- **Next free number (this branch):** D243.
