@@ -454,6 +454,23 @@ void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uin
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
+
+#ifndef __vita__
+/* #218, host builds only (not in the Vita's): the record compares a native
+ * projection's registers by their generation (gte_native.h NgteProj gen,
+ * #205), so a renderer that changes a field after a projection without
+ * ngte_proj_regen would get another projection's answers. With the check on
+ * (VC_CHECK_GEN=1 in the environment, read at the first native projection,
+ * or psx_vcache_set_check_gen(1); off by default), each generation's fields
+ * as its first projection had them are compared word by word with every
+ * later projection of that generation, and each that differs counts as
+ * gen_stale under the renderer context that returns next (VCX_*), with a
+ * `vcache gen check:` line in each report. psx_vcache_gen_stale: kind's
+ * count in context cx, -1 for all, VCX_N for those no renderer has named
+ * yet. Counts only: no answer changes. */
+void psx_vcache_set_check_gen(int on);
+unsigned psx_vcache_gen_stale(int kind, int cx);
+#endif
 /* Why an ambiguous vertex was left ambiguous (#197, VCacheStats res_why):
  * its polygon also has a vertex with no entry that nothing finds (not a
  * quad's only one, or none of its corners' order names it: no hand-over
