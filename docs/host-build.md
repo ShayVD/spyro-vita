@@ -52,6 +52,23 @@ python3 tools/contact_sheet.py logs/runN-x
 - Pad scripts may also have state-anchored lines, `@gs=G,level=L +N buttons`, with the same meaning as in the oracle's (`src/platform/linux32/pad.c`). In place of the buttons, `poke:ADDR=VALUE` (hex) writes a word of PS1 RAM when the line fires and leaves the buttons alone; `capture.lua` reads it the same way.
 - Crash backtrace: `tools/tc tools/gdb_run.sh "" -- --disc disc/files --frames N` (add `GDB_AFTER="frame 1;x/8wx \$sp"` for more). A guest crash under plain `tools/tc` leaves the container idle in `sigsuspend` while qemu writes `qemu_spyro_*.core` into the worktree; `gdb-multiarch` with `core FILE` reads it.
 
+## Which Docker VM, and the queue
+
+`tools/tc`, `tools/pc/tc` and `tools/ps4/tc` start their container through `tools/docker/run.sh`, which does two things:
+
+- **The VM.** It runs on colima's `kh1fast` profile (4 CPUs, 6 GB, Rosetta for the amd64 `spyro-pc` image) whenever
+  its socket exists and every mount is under `~/Projects`, the only folder that profile mounts; otherwise on
+  `DOCKER_HOST`. `SPYRO_DOCKER_HOST=unix://...` picks one by hand. Nothing is pulled (`--pull never`), so the images
+  must be on that VM: build them there with `DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker build ...`,
+  or copy one from the other VM with `docker save IMAGE | DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker load`.
+- **The queue.** One spyro container runs at a time on the machine; the next waits (and says who it waits for)
+  instead of sharing the CPUs, which made two builds on the old 2-CPU VM take hours. The lock is
+  `~/.cache/spyro-vita/docker.lock`, held until the docker client exits. `SPYRO_DQ=0` skips it for a quick look
+  inside a container; a `TC_PORT` run (`--serve`) skips it too, since a second container talks to it.
+
+Run builds through these wrappers, not a bare `docker run`: a bare one skips both. On `kh1fast` the mount is
+virtiofs rather than the reverse-sshfs the next section describes; the link launcher stays, as it costs nothing.
+
 ## ctest, the mutant tests and the bind mount (D170)
 
 `tools/tc` mounts the worktree at `/work` (`docker run -v`), and with colima that mount is reverse-sshfs. Two things here follow from that, plus one about time.

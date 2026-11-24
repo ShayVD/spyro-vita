@@ -22,6 +22,6 @@ pre=()
 if [ -n "${PC_X:-}" ]; then
   pre=(/work/tools/pc/xrun.sh)
 fi
-exec docker run --rm ${tty[@]+"${tty[@]}"} --platform linux/amd64 \
+exec "$root/tools/docker/run.sh" --rm ${tty[@]+"${tty[@]}"} --platform linux/amd64 \
   -e HOME=/work/build/pc-home -e XDG_DATA_HOME=/work/build/pc-home/.local/share \
   "${mounts[@]}" -w "/work$rel" spyro-pc ${pre[@]+"${pre[@]}"} "$@"
