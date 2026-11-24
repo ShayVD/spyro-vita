@@ -1653,3 +1653,29 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not checked:** a real GPU, so 60 fps at 1080p is unverified (llvmpipe under Rosetta, 4 shared cores, takes 100–150 ms for a 1280×720 picture: the GPU renderer's per-pixel VRAM decode is the costliest part for a CPU rasterizer, and the cheapest for a GPU). A real driver's behaviour with the shared context (NVIDIA, AMD, Intel; Wayland's EGL). Windows on real hardware.
 - **Next:** a person with a GPU runs `--window 1920x1080 --fullscreen` and reads the `video` and `gpu` lines (refreshes, new frames, the game thread's time per picture); `tex_filter` (needs the atlas); the pause crash above.
 - **Next free number (this branch):** D244.
+
+### D244. A moby shadow's centre is also named under an anchor of its own, and `own_nosrc` counts only own points that truly have no source (#226, 2026-11-24)
+- **Why:** after D227, MobyShadows kept 4 missed vertices on host S and on Si. The `missed` bracket names only its top three classes, so they didn't show (S: `missed 25 (top: ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5)`). #226 tagged them: all were logic frames, two shadows, at vblanks 14,152 and 14,156.
+  - A shadow seen nearly edge-on has a corner (RTPT) on its centre's pixel. That corner's own point is named under (key, anchor) = (centre, centre), the same pair as the centre's.
+  - D218 drops two different points under one pair, so the centre's own point died and its key stayed ambiguous. The walk's own-point step needs every unfound vertex to have an own point, so the polygon stayed unfound.
+  - `own_nosrc` (about 60,000 a route) was 99% world corners that GridCorrect moved and that D223 already keeps in `Sp`. The rest was the shadow fan's fifth corner word, which repeats corner 0 but named its projection 0 back instead of 3 back.
+- **What** (`shadows_hand.c`, `vcache.c`, `psx_vcache.h`):
+  - `MobyShadows` also names its centre (`VCD_SELF`) under `VCD_CENTRE(c) = VCD_CORNER(c, 15)`. That flips y's top nibble, so the anchor matches no screen key.
+  - The walk takes that point only for a shadow polygon's centre that nothing found and whose (centre, centre) point is missing or dead. Every earlier step left such a polygon unfound, so no polygon found before can change. New counter `own_centre`, at the end of the `vcache Spyro and shadows own:` line.
+  - The fan's fifth word passes q = 4, as corner 0 does. This is state-identical; it only removes `own_nosrc` counts.
+  - A moved world corner kept in `Sp` no longer counts in `own_nosrc`. What's left is world corners named in frames whose order log is full (`VC_LOG` 8,192): S 28, Si 74, 0 on every other route. That is #237's limit.
+  - Docs (`vita-testing.md`, `host-build.md`):
+    - the "no projection" exempt class (`VCX_NO_PROJ`, `HK_NOPROJ`);
+    - every field of the `vcache own points:`, `world:`, `world own:`, `overflow:` and `Spyro and shadows own:` lines;
+    - `VC_OVERFLOW=0`;
+    - host route T beside S/P/Pf.
+- **Measured** (host, 2×, base 33a9992 → fix):
+  - MobyShadows missed: S 4 → 0, Si 4 → 0, 0 on P, Pi, Pf, Pfi, T and O60.
+  - Total missed: S 25 → 21, Si 44 → 40, unchanged elsewhere.
+  - `own_nosrc`: S 60,348 → 28, Si 120,612 → 74, others 0.
+- **Checks:**
+  - Host FNV per polygon on 8 pairs (T, O60, S, Si, P, Pi, Pf, Pfi; 157 M polygons): 0 found-before polygons changed; 23 newly found on S, 47 on Si.
+  - Vita3K: shots identical on all eight routes (toasty60 against `auto-233-1/fix-toasty60`). Counters are the same apart from `vc.probe` +0.1% and `vc.rec.probe` +0.1–0.2% (the extra naming), and timing-dependent ones.
+  - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-226-1`.
+  - Not run: the PC build (the `spyro-pc` image isn't on this machine). The change is plain unsigned arithmetic in common code.
+- **Left:** the log-full own points go with #237. The `missed` bracket should list every non-zero class, not the top three (filed).
