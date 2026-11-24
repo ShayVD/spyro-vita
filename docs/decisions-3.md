@@ -1570,7 +1570,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checks:** host FNV per polygon on 8 pairs (151 M polygons), base and fix from clean objects: 0 found-before changed, 0 became affine (111 / 244 / 2 newly found). Vita3K shots identical on all eight routes. `CAPTURE=1` grabs at the only Vita3K frames that make overflow records (demo60 3,952–3,954 and 5,175–5,177, presenter frames, sky in view) are byte-identical to fix-off: no cracks. Counters the same against a second head run apart from timing ones inside the head's own spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-221-1`.
 - **Left:** on S, 19 of the 45 overflow records are other renderers' keys, unread under the SkyDraw-only rule; whether any of S's remaining ParticlesDraw 10 / EnvDraw 6 come from them is noted on #231 and #237. A better hash or bigger table would shorten probe runs (the multiplicative hash on y<<16|x clusters at 60% load), but every slot would change. Docs for the new line go with #226.
 
-### D230: the vertex cache's counters find a renderer's primitives by their offset in the game's memory, the walk's copy's too (#222)
+### D230. The vertex cache's counters find a renderer's primitives by their offset in the game's memory, the walk's copy's too (#222, 2026-11-24)
 - **Why:** D210 filed 1,086 code-2c vertices on host S (2,175 with `--interp`) as outside although their polygon had a placed vertex. #222 traced every one. All are 2D, drawn by the game's C into the HUD OT (`func_800168DC`):
   - the title menu's border and menu sprites (`TitlescreenDrawSprite`), read from present.c's narrowed copies;
   - the screen copy (`func_8001A40C`).
