@@ -18,5 +18,5 @@ if [ -n "${TC_PORT:-}" ]; then
 fi
 tty=()
 [ -t 0 ] && [ -t 1 ] && tty=(-it)
-exec docker run --rm ${tty[@]+"${tty[@]}"} --security-opt seccomp=unconfined \
+exec "$root/tools/docker/run.sh" --rm ${tty[@]+"${tty[@]}"} --security-opt seccomp=unconfined \
   "${mounts[@]}" -w "/work$rel" spyro-host "$@"

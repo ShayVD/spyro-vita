@@ -9,5 +9,5 @@ rel=${PWD#"$root"}
 [[ "$rel" == "$PWD" ]] && rel=""
 tty=()
 [ -t 0 ] && [ -t 1 ] && tty=(-it)
-exec docker run --rm ${tty[@]+"${tty[@]}"} --platform linux/arm64 \
+exec "$root/tools/docker/run.sh" --rm ${tty[@]+"${tty[@]}"} --platform linux/arm64 \
   -v "$root:/work" -w "/work$rel" spyro-ps4 "$@"
