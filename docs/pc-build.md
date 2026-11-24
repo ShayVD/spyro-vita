@@ -1,4 +1,4 @@
-# PC build (Linux, Windows; D240, D241)
+# PC build (Linux, Windows; D240, D241, D242)
 
 **Status (2026-11-23):** Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). Next: the GPU renderer at the window's resolution, and a person with a real GPU and gamepad.
 
@@ -12,8 +12,8 @@ Spyro was written for a 32-bit machine. Its structures hold 4-byte pointers, and
 
 - every pointer field the game stores in its own memory is a 32-bit pointer (`P32`: clang's `__ptr32 __uptr`, `src/compat/p32.h`; the generated `patches/spyro-1-ptr32`). Only clang has `__ptr32`, and only for x86 targets: there is no ARM64 build (Apple Silicon Macs, ARM Linux) with this model.
 - everything the game can point at lies below 2 GB, so those 32 bits hold the whole address: the executable sits at 0x400000 (non-PIE on Linux, a fixed base on Windows), the 2 MB of PS1 RAM is a `.bss` array in it (`arena.c`), and the game runs on a thread whose stack is in the image too (the hand C takes addresses of locals). `main()` checks all three and refuses to run otherwise.
-- **Linux:** nothing of the host's may be below 4 GB, so a host pointer cut to 32 bits by mistake crashes instead of quietly aliasing the game's memory. `low_linux.c` reserves every free page from 64 KiB to 4 GB (`PROT_NONE`) from `.preinit_array`, which the dynamic loader runs before any shared library starts. glibc's malloc, SDL, the X11/Wayland and GL drivers and every thread stack then land above 4 GB. (The headless linux64 build is static and needs its own malloc; this one doesn't.) `SPYRO_LOW_TRAP=0` turns the reservation off.
-- **Windows:** the executable has a fixed base of 0x400000 (no ASLR) and is not large-address-aware, so Windows keeps the whole process below 2 GB: every address fits 32 bits and nothing can be cut (`low_win.c`). The game thread is an ordinary thread there (its stack is below 2 GB too; `main.c` checks). Wine doesn't apply that 2 GB limit to 64-bit programs; the game's own memory is low there anyway (the image and its `.bss`).
+- **Linux:** nothing of the host's may be below 4 GB, so a host pointer cut to 32 bits by mistake crashes instead of quietly aliasing the game's memory. Encore's `lp64_low_image_dyn.c` (vendored in `third_party/encore`, D242) reserves every free page from 64 KiB to 4 GB (`PROT_NONE`) from `.preinit_array`, which the dynamic loader runs before any shared library starts. glibc's malloc, SDL, the X11/Wayland and GL drivers and every thread stack then land above 4 GB. (The headless linux64 build is static and needs its own malloc; this one doesn't.) `LP64_LOW_TRAP=0` turns the reservation off.
+- **Windows:** the executable has a fixed base of 0x400000 (no ASLR) and is not large-address-aware, so Windows keeps the whole process below 2 GB: every address fits 32 bits and nothing can be cut (`low.c`, Encore's `lp64_low_image_win.c` probes where memory lands). The game thread is an ordinary thread there (its stack is below 2 GB too; `main.c` checks). Wine doesn't apply that 2 GB limit to 64-bit programs; the game's own memory is low there anyway (the image and its `.bss`).
 
 ### Two threads
 
@@ -60,10 +60,14 @@ Cross-compiled in the same image with llvm-mingw (clang, the UCRT): one static `
 - **The GNU bitfield layout** (`-mno-ms-bitfields`), so the PS1's structs keep their offsets; the BSD type names (`u_char`, `u_int`, …) from `src/compat/pc_win.h`; `long *` for `int *` a warning (Windows' `long` is 32 bits, as PsyQ's).
 - **COFF assembly:** `tools/data2s.py --coff` and `pres_snap_syms.py --coff` (no `.type`/`.size`, COFF section flags, no GNU-stack note).
 - **Relocatable links with GNU ld:** lld's MinGW driver can't do `-r`, which the presenter and the 60 Hz update are linked into; `binutils-mingw-w64`'s `ld` and `objcopy` do those, lld the executable.
-- **Every file binary** (`_set_fmode(_O_BINARY)`): the common code opens the disc with `open`/`fopen` as on POSIX. `pread` is a positional `ReadFile`; `mkdir` has no mode; `etext`/`_end` (a save state's layout stamp) are marks in the image.
+- **Every file binary** (`_set_fmode(_O_BINARY)`): the common code opens the disc with `open`/`fopen` as on POSIX. `pread` is a positional `ReadFile` that puts the descriptor's offset back (Windows moves it even for a positional read; D242). Both come from Encore's `targets/pc/runtime/winposix`, vendored. `mkdir` has no mode; `etext`/`_end` (a save state's layout stamp) are marks in the image.
 
 To try it on the Mac: `docker build` an image `FROM spyro-pc` with Debian's `wine` and run `wine build/pc-win/spyro.exe --disc 'Z:\work\disc\image'` under `tools/pc/xrun.sh` (Wine's GL is Mesa's llvmpipe there).
 
 ### macOS (not built)
 
 No Mac build yet. An Apple Silicon (ARM64) build can't use the model: clang's `__ptr32` exists only for x86 targets (on AArch64 it is accepted and ignored: a "P32" pointer is 8 bytes). An x86-64 Mac build, run under Rosetta 2 on Apple Silicon, could: a non-PIE image at 0x400000 with a small `__PAGEZERO` (`-pagezero_size`, `-no_pie`; both deprecated by Apple's linker), the reservation below 4 GB as on Linux, and GL 4.1 core (which takes the `#version 330` shaders as they are). It needs the macOS SDK and a Mac to sign and test on; Rosetta's future (Apple has said it is for the transition) makes it a poor bet for a store release. The other way is the offset model of `lp64/docs/low-image.md` (32-bit offsets from a base, every target), a much larger change.
+
+## Encore
+
+The game-free pieces of this build live in Encore (`ShayVD/encore`, PR #64: `targets/pc/`, `lp64/runtime/low_image`). The low image's two desktop variants and the Windows shims are vendored back here in `third_party/encore` (`tools/vendor.sh --dir third_party/encore`; `VENDORED` names the commit): never edit them here, change Encore and re-vendor. Encore's PC backend of its platform interface (`targets/pc/encore/enc_pc.c`) is the same SDL3 and GL code in the interface's shape; this game keeps its own platform layer, whose picture path (frames filed by due vblank, the presenter's 16:9 and 60 fps frames) is the game's.
