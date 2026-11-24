@@ -70,9 +70,11 @@ void vita_picture_init(void) {
     vita_log("picture: draw distance %d%% (experimental, D49)", g_vita_opts.draw_distance);
 }
 
-/* One "lod" line per stats report while the draw distance is longer. */
+/* One "lod" line per stats report while the draw distance is longer. The
+ * line's counts take about 342 bytes before #212's budget text: 640 (#223)
+ * leaves the budget text room to grow (vita_log's own buffer is 1024). */
 void vita_picture_report(int vblank) {
-  char line[400];
+  char line[640];
   if (!g_lod.stats)
     return;
   port_lod_report(line, sizeof line);

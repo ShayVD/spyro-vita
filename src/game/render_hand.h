@@ -154,9 +154,34 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
  * build (NAME_hand_pres.c, D123) it is NAME_pres. With both
  * --fast-render-check and --render-ctx-check the hand check's call of the
  * hand C is itself the presenter check (NAME_rcx), so one run does both. */
+/* #211: a renderer's primitives in the frame, for the vertex cache's
+ * counters (psx_vcache.h psx_vc_ctx): HAND as it returns, with the
+ * primitive pointer's and native_draw's record cursor's moves */
+#include "psx_vcache.h"
+/* the primitive pointer's word under another C name (headers declare
+ * D_800757B0 with other types), the presenter's by its renaming */
+#define HAND_CX_STR_(x) #x
+#define HAND_CX_STR(x) HAND_CX_STR_(x)
+extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
+#if RENDER_PRES
+#define HAND_VC_CTX pres_vc_ctx
+#else
+#define HAND_VC_CTX psx_vc_ctx
+#endif
+#define HAND_CX(hand)                                                          \
+  static u32 hand##_cx(u32 a0, u32 a1, u32 a2, u32 a3) {                       \
+    const uintptr_t p0_ = *(u32 *)hand_cx_prim_, n0_ = (uintptr_t)g_nd.wp;        \
+    const u32 r_ = hand(a0, a1, a2, a3);                                       \
+    if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0))                         \
+      HAND_VC_CTX(#hand, p0_, *(u32 *)hand_cx_prim_, n0_, (uintptr_t)g_nd.wp,     \
+                  (uintptr_t)g_nd.base);                                       \
+    return r_;                                                                 \
+  }
+
 #if RENDER_PRES
 #define HAND_RENDERER(name, hand)                                              \
-  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+  HAND_CX(hand)                                                                \
+  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand##_cx(a0, a1, a2, a3); }
 #elif SPYRO_NATIVE_MEM
 /* The native build (D100) links no mips2c unit: the hand C always, and no
  * stack arguments (only the units read them). */
@@ -165,10 +190,11 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
    : g_render_ctx_check ? render_ctx_check(#name, hand, name##_pres, a0, a1, a2, a3) \
                         : hand(a0, a1, a2, a3))
 #define HAND_RENDERER(name, hand)                                              \
+  HAND_CX(hand)                                                                \
   u32 name##_pres(u32, u32, u32, u32);                                         \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
-    return HAND_PICK(name, hand, a0, a1, a2, a3);                              \
+    return HAND_PICK(name, hand##_cx, a0, a1, a2, a3);                              \
   }
 #else
 #define HAND_PICK(name, hand, a0, a1, a2, a3)                                  \
@@ -178,7 +204,9 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
    : g_nd_check         ? nd_check(#name, hand, a0, a1, a2, a3)                \
    : g_render_ctx_check ? render_ctx_check(#name, hand, name##_pres, a0, a1, a2, a3) \
                         : hand(a0, a1, a2, a3))
-#define HAND_RENDERER(name, hand)                                              \
+#define HAND_RENDERER(name, hand) HAND_RENDERER_(name, hand##_cx, hand)
+#define HAND_RENDERER_(name, hand, hand0)                                      \
+  HAND_CX(hand0)                                                               \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
   u32 name##_gen__m2c(u32, u32, u32, u32);                                     \
   u32 name##_pres(u32, u32, u32, u32);                                         \
@@ -218,14 +246,15 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
 #if RENDER_PRES
 #define HAND_UNIT_FN_(name, hand, check) /* not in the presenter's builds */
 #define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
-  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand(a0, a1, a2, a3); }
+  HAND_CX(hand)                                                                \
+  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand##_cx(a0, a1, a2, a3); }
 #elif SPYRO_NATIVE_MEM
 #define HAND_UNIT_FN_(name, hand, check)                                       \
   u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
     return hand(a0, a1, a2, a3);                                               \
   }
-#define HAND_UNIT_FN_RC_(name, hand, v0) HAND_UNIT_FN_(name, hand, 0)
+#define HAND_UNIT_FN_RC_(name, hand, v0) HAND_CX(hand) HAND_UNIT_FN_(name, hand##_cx, 0)
 #else
 #define HAND_UNIT_FN_ENTRIES(name, pick)                                       \
   u32 name##_gen(u32, u32, u32, u32, u32, u32, u32, u32);                      \
@@ -247,7 +276,9 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
 #define HAND_UNIT_FN_(name, hand, check)                                       \
   HAND_UNIT_FN_ENTRIES(name, g_hand_check ? check(#name, name##_gen__m2c, hand, a0, a1, a2, a3) \
                                           : hand(a0, a1, a2, a3))
-#define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
+#define HAND_UNIT_FN_RC_(name, hand, v0) HAND_UNIT_FN_RC__(name, hand##_cx, v0, hand)
+#define HAND_UNIT_FN_RC__(name, hand, v0, hand0)                               \
+  HAND_CX(hand0)                                                               \
   HAND_UNIT_FN_ENTRIES(name,                                                   \
     g_render_shadow ? (v0 ? render_shadow_v0 : render_shadow)(#name, name##_gen__m2c, hand, a0, a1, a2, a3) \
     : g_hand_check  ? (v0 ? hand_check_rc_v0 : hand_check_rc)(#name, name##_gen__m2c, hand, a0, a1, a2, a3) \

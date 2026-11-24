@@ -269,7 +269,8 @@
  *                       draw's projections: 0 each one at once on the game
  *                       thread, 2 always kept for the walk, 1 (default)
  *                       kept while the walk has time (D188; the same
- *                       pictures; #196)
+ *                       pictures; #196), 3 also a quota kept while the
+ *                       walk runs, sized from its idle time (#204)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -298,13 +299,24 @@
  *       draw_distance=N longer draw distance, percent: 150 or 200 (default
  *                       100: the original; experimental, D49): the world's
  *                       detail and the mobys, picture only (src/game/lod.c)
- *       dd_budget=0     with 60 Hz logic in play, no work budget for the
- *                       longer draw distance: only the buffer's limits, as
- *                       before #180 (default 1: each draw keeps under
- *                       LOD_BUDGET_60, 48 KB of primitives; D175, #185)
+ *       dd_budget=auto  with 60 Hz logic in play, the longer draw
+ *                       distance's work budget follows the game thread's
+ *                       measured time per logic frame (the default, #212;
+ *                       lod_time.c): 14.5 ms of the 16.7, from 48 KB of
+ *                       primitives up to the draw's span; needs stats=1,
+ *                       else a fixed 48 KB.
+ *                       dd_budget=0: no work budget, only the buffer's
+ *                       limits, as before #180 (#185). dd_budget=1: each
+ *                       draw keeps under LOD_BUDGET_60, 48 KB of primitives,
+ *                       as the default was until #212 (D175); dd_budget=N
+ *                       (2-1024): under N KB
  *       tex_cache=0     with gpu=1, sample textures from VRAM with the
  *                       palette lookup per pixel instead of the decoded
  *                       atlas (default 1; the same pixels; D41)
+ *       shader_cache=0  with gpu=1, compile every shader program at each start
+ *                       (default 1: a program compiled once is kept in
+ *                       ux0:data/spyro/shader_cache and loaded from there
+ *                       at later starts; gpu_gl.c, #201)
  *       bench=1         with gpu=1, leave the game alone (no input): from
  *                       vblank 600 it cycles res, tex_filter, persp and
  *                       subpixel through the intro, title and attract demos
@@ -350,6 +362,9 @@
 #include "../../game/cheats_port.h"
 #include "../../game/present.h" /* port_present_pres_join (D126) */
 #include "../../game/lod.h"     /* dd_budget= (D175, #185) */
+/* lod_time.c: dd_budget=auto (#212) */
+void vita_lod_time_set_auto(int on);
+void vita_lod_time_init(void);
 
 #include <SDL2/SDL.h>
 #include <psp2/appmgr.h>
@@ -376,6 +391,7 @@ VitaOpts g_vita_opts = {.disc_dir = VITA_DATA_DIR, .stats = 1, .filter = 1, .rea
                         .gpu = 1, .gpu_readback = 1, .gpu_time = 0, .widescreen = 1, .interp = 4 /* D150 */,
                         .persp = 1, .subpixel = 1, .wobble = 0, /* #177: PSX WOBBLE off, the fix on */
                         .interp_budget = 1, .mixer = 3, .tex_cache = 1, .analog = 1,
+                        .shader_cache = 1, /* #201 */
                         .render_thread = 1, .xa_ahead = 1, .gpu_opaque = 1, /* D68 */
                         .gpu_direct = 1, /* D69 */
                         .present_due = 1, /* D112: the default after hardware runs 7C1-7C4 */
@@ -643,9 +659,9 @@ static void read_config(void) {
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
-    else if (!strcmp(line, "vc_lazy_logic")) { /* #196: 0, 1 or 2 */
+    else if (!strcmp(line, "vc_lazy_logic")) { /* #196, #204: 0 to 3 */
       const int m = atoi(v);
-      s_vc_lazy_logic = m < 0 ? 0 : m > 2 ? 2 : m;
+      s_vc_lazy_logic = m < 0 ? 0 : m > 3 ? 3 : m;
     }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
@@ -669,8 +685,15 @@ static void read_config(void) {
       g_vita_opts.bench = atoi(v);
     else if (!strcmp(line, "tex_cache"))
       g_vita_opts.tex_cache = atoi(v);
-    else if (!strcmp(line, "dd_budget"))
-      g_lod.budget = atoi(v) ? LOD_BUDGET_60 : 0; /* the 60 Hz work budget (D175, #185) */
+    else if (!strcmp(line, "shader_cache"))
+      g_vita_opts.shader_cache = atoi(v); /* gpu_gl.c's program cache (#201) */
+    else if (!strcmp(line, "dd_budget")) { /* the 60 Hz work budget (D175, #185, #212) */
+      const int kb = atoi(v);
+      vita_lod_time_set_auto(!strcmp(v, "auto")); /* sized from the frame's time (lod_time.c) */
+      g_lod.budget = !strcmp(v, "auto") || kb == 1 ? LOD_BUDGET_60 /* where auto starts; 1: D175's */
+                     : kb > 0                      ? (kb > 1024 ? 1024 : kb) * 1024
+                                                   : 0;
+    }
     else if (!strcmp(line, "state_test"))
       vita_savestate_config(v);
     else if (vita_watchdog_config(line, v))
@@ -1031,12 +1054,7 @@ int main(int argc, char **argv) {
                               : "the clears pixel by pixel");
   vita_present_init();
   vita_picture_init();
-  if (g_lod.budget)
-    vita_log("picture: draw distance with 60 Hz logic in play keeps each draw under %d KB of "
-             "primitives (dd_budget=1, D175)", g_lod.budget / 1024);
-  else
-    vita_log("picture: draw distance with no 60 Hz budget, only the buffer's limits "
-             "(dd_budget=0, D175)");
+  vita_lod_time_init(); /* the 60 Hz budget's line (dd_budget=, lod_time.c) */
   vita_pad_init();
   if (g_vita_opts.pad[0] && vita_pad_load(g_vita_opts.pad) != 0)
     vita_exit(1);

@@ -852,6 +852,745 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `tools/host_checks.sh`: main's `EMU` (qemu-x86_64 for a linux64 binary), with the autopilot branch's `--save` on the demo run.
 - **Next free number:** D199.
 
+## 2026-11-21 — the 60 Hz logic draw's profile (#200)
+
+### D199. The lod line names the budget's back-offs at 1x, and the 60 Hz logic draw's cost is mostly the vertex cache (#200)
+
+- **Why:**
+  - In the owner's play log on b1a41ac (`logs/owner-20261121-1200`), 2x drew as 1x in Artisans and Stone Hill.
+  - The line said `(0 for the budget)`, because `budget_cuts` counted only above 1x.
+- **What:**
+  - `lod.c` counts a budget back-off at any scale. The line reads `N back-offs (B for the budget, of them H held at 1x)`, on the Vita and the host.
+  - The host's `prof_draw.c` charges the sky once (D181's fix) and gives each part's KB of primitives.
+- **Found** (`runtime/autopilot/reports/200-1.md`, runs in `runtime/autopilot/runs/auto-200-1`):
+  - **The budget isn't the only limit.** With the budget off (`--lod-budget 0` on the host in Stone Hill, `dd_budget=0` in Vita3K's `owner60` at 6,900–7,500), the scale stays at x1.00. The limiter measures the world against its bound (`ENV_MARGIN`, 44 KB, with 13–17 KB measured after the world), and that sits between 65% and 80%, so the scale never grows back (#203).
+  - **Forced 2x:** the world's loops stop early 5 times a draw, and pass 2's 41 mobys a draw double the moby part.
+  - **The vertex cache is most of the cost.**
+    - On the host it is 85% of the logic draw's non-raster function time: `rtp_apply` 42%, `choose` 15%, `psx_vcache_poly` 13.5%.
+    - In Vita3K `owner60` the logic draw is 7.04 ms a vblank, against 1.78 with `wobble=1`, and 9.18 with `vc_lazy_logic=0`.
+    - Estimate for the owner's Stone Hill window: about 6.8 of the game thread's 14.84 ms (hardware ratios from D196 and AP1/AP2; not measured).
+  - **`expand` is not on the game thread.** The `expand 772 ms` on the `vcache` line is the atlas's expand on the render thread.
+- **Filed:**
+  - #203: the world's bound;
+  - #204: a quota of kept projections for the walk;
+  - #205: a cheaper record;
+  - #206: the walk's lookups;
+  - #207: docs, and KB per part on the Vita;
+  - #208: the owner's call on far mobys at 2x.
+  - The sky's records (about −0.3 to −0.5 ms, with a picture risk) aren't filed yet.
+- **Checked:**
+  - The five routes' shots are the same as `base-63d80f4`.
+  - Counters are the same, except `owner60`'s timing-dependent kept/once split.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+
+## 2026-11-21 — a shader cache for start-up (#201)
+
+### D200. The start-up's shaders go through a program cache in `ux0:data/spyro/shader_cache/` (`shader_cache=0` turns it off) (#201)
+
+- **Why:**
+  - Every boot logged `gpu: shaders compiled in` 10,035–10,211 ms (13 hardware logs, 2026-11-20/21), behind a black screen.
+  - The installed vitaGL is built without `HAVE_SHADER_CACHE`: its `vglSetShaderCachePath` is a bare `bx lr`.
+- **What:**
+  - **Save and load:** `gpu_gl.c`'s `link()` saves each linked program with `glGetProgramBinary` to `shader_cache/<key>.bin`. The file has a header with a magic number, version, key, length and FNV-1a checksum, and is written as `.tmp` and then renamed. Later boots load it with `glProgramBinary`, with no compile.
+  - **Key:** a 64-bit FNV of:
+    - the program's sources and attribute bindings;
+    - the format version and the compiler options;
+    - the SHA-1 of `libvitaGL.a` and `libvitashark.a` (CMake, at configure time);
+    - each `libshacccg.suprx` found (size and date).
+  - **Stale and bad files:** a `stamp` file empties the folder when the libraries or the compiler change. A file that fails its checks or its link is removed, and the program is compiled.
+  - **Log:** one line per program (hit or miss, with its time). The start-up line now gives the totals.
+- **Measured** (Vita3K, `runtime/autopilot/runs/auto-201-1`; counts only, since Vita3K's compile times aren't the Vita's):
+
+  | Run | Compiled | From the cache | Start-up line |
+  |---|---|---|---|
+  | First boot | 15 programs (17 asked for, 2 repeats) | – | 10,771 ms |
+  | Second boot | 0 | 17 of 17 | 17 ms |
+  | `shader_cache=0` | 17 | 0 | 6,969 ms |
+
+- **Checked:**
+  - The five routes' shots are the same as `base-63d80f4`.
+  - `CAPTURE=1` window grabs are the same from the cache and from compiling.
+  - Counters are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Not checked on hardware:** the black-screen time, and 17 cache hits on the second boot.
+
+## 2026-11-21 — draw distance's room is the D54 span (#203)
+
+### D201. Draw distance's world bound and limiter take the D54 span as the room (#203)
+
+- **Why:**
+  - With the option on, every draw spans both primitive buffers (D54, D61), but `lod.c` kept one buffer's size.
+  - Stone Hill's world alone (52 KB at 1x) was 78% of the 66 KB its bound left. So 2x stayed at x1.00 even with the budget off (D199).
+- **What:**
+  - `draw_room()` is the span when the option is on: 0x37A00, or 0x25A00 in reduced-space levels. With the option off (statistics only) it stays one buffer, so baseline `lod` lines don't change.
+  - The world's loops stop `ENV_MARGIN` (0xB000) under its top. The tour re-measured what the margin must cover: at most 30,852 bytes drawn after the world, and a largest sector of 5,776 bytes.
+  - The limiter measures used bytes against the span, and the world's bytes against the span less the margin. The thresholds are unchanged.
+  - Pass 2's moby share stays at 60% of one buffer, and the 60 Hz budget is unchanged.
+  - The `lod` line reads `of 222 KB` (150 KB in a reduced-space level).
+- **Checked** (`runtime/autopilot/reports/203-1.md`, runs in `runtime/autopilot/runs/auto-203-1`):
+  - **Host whole-game tour** at `--widescreen --draw-distance 2`, 100,000 vblanks: no crash, and traces and memory card identical to the build before.
+
+    | | Before | After |
+    |---|---|---|
+    | Average scale | x1.23 | x1.81 |
+    | Back-offs | 25,400 | 0 |
+    | Peak | – | 149 KB of 222 |
+
+    `--lod-guards-only` (2x throughout) also ran to the end.
+  - **Host Stone Hill:** with `--lod-budget 0`, x1.00 → x2.00, with no loop stopped. With the default budget it is unchanged and the trace is byte-identical.
+  - **Vita3K `owner60` at 60 Hz:** shots and counters are the same. With `dd_budget=0`, 6,900–7,800 draw at x2.00.
+  - **Pictures that changed:** where 2x has no budget (the title flyby, 600–1,200, and the 30 Hz Artisans attract demo, 3,200–5,900), it now reaches x2.00. 31 of `owner60`'s 91 shots differ there. The other four routes are the same.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+- **Open:**
+  - On hardware, check that 30 Hz holds where 2x now draws more (title, attract demos). If it doesn't, give 30 Hz a budget.
+  - The near list peaked at 125 of 127 in the tour.
+
+## 2026-11-21 — a cheaper vertex-cache record (#205)
+
+### D202. The vertex cache's record takes the GTE's own sums and the registers by pointer; kept registers are compared by generation (#205)
+
+- **Why:**
+  - D199 put the record at 85% of the 60 Hz logic draw's non-raster host time.
+  - Each native projection copied 15 registers into the value hook's form, then `rtp_apply` multiplied them again.
+  - `same_proj` compared 15 words for each kept projection.
+- **What:**
+  - **Direct call:** `gte_native.h`'s RTPS and RTPT call the record by name, `ngte_vcache` in `vcache.c` (the presenter's build calls `pres_vcache_ngte`). They pass the `NgteProj *` and an `NgteRtp` with new fields `m1`–`m3`, the 44-bit sums `ngte_rtp_v` already worked out. MAC1-3 come from the same expressions, so no GTE result changes.
+  - **Generation number:** `NgteProj.gen` is a new number at every `ngte_proj_get`/`rot`/`tr` while the cache records, and 0 otherwise. `lz_add` compares a kept projection's registers by that one word. A new generation is compared word by word once, then adopted, so the store keeps the same registers in the same places.
+  - **Smaller cuts:** `rtp_apply` converts the 12 low bits as an int.
+  - **Weak symbols:** `g_ngte_gen` and `ngte_vcache` are weak, so the GTE tests link without the cache.
+  - **Unchanged path:** the sky's records and the register file's still go through the hooks.
+  - **Rule for renderers:** a renderer that changes `NgteProj` fields itself after a projection must call `ngte_proj_regen`. None does today.
+- **Checked** (`runtime/autopilot/reports/205-1.md`):
+  - **Same answers:** host FNV dumps per polygon are byte-identical. Route A (6.13M polygons) was run with deferral auto, off and forced, and with `--walk-lazy`. Route B (8.98M polygons) was run with auto, forced, and the presenter's `VC_LAZY=0`. Memory cards are identical too.
+  - **Pictures and counters:** the five routes' shots are the same, and so are every `vc.*`, GL and ot counter.
+  - **Host cost:** gprof shows the record's functions 21–34% cheaper (qemu).
+  - **Vita code:** on ARM, `rtp_apply` loses 9 multiplies (737 → 681 instructions). The 15-word copy, the indirect call and `rtp_value_hook` are gone.
+  - **Builds:** native build, host ctest 32/32 (`pres_link`, `render_ctx_link`, `savestate_globals`, `gte_native` and its mutants), `noassets`, and gate PASS.
+  - **Not checked on hardware.**
+- **Left:**
+  - `render_ctx.c`'s `pres_ngte_vcache` and its copy are now dead code.
+  - Storing the sums for the walk, which needs a 32-byte store record, is a trade-off for hardware to judge.
+
+## 2026-11-21 — KB of primitives per draw part on the Vita (#207)
+
+### D203. The Vita's draw profile gives each part's KB of primitives; `host-build.md` describes D199's lines (#207)
+
+- **Why:** to get each part's cost per KB from a hardware log directly (D199's estimates came from ratios). `host-build.md` still described the old `--lod-stats` and `--prof-draw` formats.
+- **What:**
+  - `src/platform/vita/prof_draw.c` counts, per part, how far the primitive pointer (`D_800757B0`) moved across each wrapped call. That's the same count as the host's `--prof-draw` (D199).
+    - Moves of 0x100000 or more are left out (the HUD's mobys draw from the top).
+    - The sky main counts only outside the cyclorama, as its time does.
+  - A new line follows each `draw N:` line: `draw kb N: per vblank KB of primitives update U env E mobys M spyro S fx F particles P sky K`. The `draw N:` line and its parsers are unchanged.
+  - Docs: `host-build.md` describes D199's `lod` back-offs, plus the `--prof-draw` KB, `renderers` and `sky main` lines. `vita-testing.md` documents `draw kb`.
+- **Checked** (`runtime/autopilot/reports/207-1.md`):
+  - In Vita3K `owner60`, the parts add up to the `lod` line's averages: 67.7 against 67 KB at 7,200, and 37.9 against 38 at 8,400.
+  - `owner60`'s shots are the same as `base-63d80f4`.
+  - `fps60_summary.py`, `native_share.py` and `hw_cmp.py` still read the log.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+
+## 2026-11-21 — cheaper walk lookups (#206)
+
+### D204. The walk's lookups compare depths on their bits and find a key's near projections in one walk (#206)
+
+- **Why:** this is #200's cut 4 (D199). The walk's `psx_vcache_poly`, `choose`, `resolve` and `res_place` run on core 1. That core is 68% busy in the owner's Stone Hill window, and `resolve` grows at 2x. A cheaper walk gives #204's quota more room.
+- **What** (`src/platform/common/vcache.c` only):
+  - **Depth tests on the bits.** `choose` and `resolve` test depth ratios against 4, 3.999 and 1.02 on the depths' integer bits, where that is exact (positive normal floats; multiplying by 4 adds 2 to the exponent). Between the bounds, and for other values, the float tests decide as before. Checked against the float tests: 0 differences in 197.7M pairs (arm64) and 19.8M (i686 x87).
+  - **One test per candidate.** `choose` tests each candidate against 4 once, keeping a bitmask.
+  - **One walk in `resolve`.** It keeps its anchors (at most 32) sorted largest first and walks them alongside its falling chain, stopping when none is left. That is O(chain + anchors) where it was O(chain × anchors).
+  - **One mode check.** `psx_vcache_poly` asks `psx_gpu_game_walk()` once a polygon.
+  - D202's record side is untouched. `add_cand` keeps the float test.
+- **Checked** (`runtime/autopilot/reports/206-1.md`):
+  - **Same answers.** Host FNV dumps per polygon are byte-identical in all 10 pairs:
+    - route A: 1x; dd2 with auto, off, forced and `--walk-lazy`; forced 2x;
+    - route B: auto, forced, `VC_LAZY=0`;
+    - Stone Hill at 60 Hz, forced 2x (20.1M polygons).
+  - **Less work.** Host gprof, scaled against the unchanged raster time:
+
+    | Route | Scale | Lookup cost |
+    |---|---|---|
+    | A | 1x | −28% |
+    | A | forced 2x | −21% |
+    | Stone Hill | 1x | −19% |
+    | Stone Hill | forced 2x | −21% |
+
+    `choose` falls 46–54%. Divisions and probes per vertex are unchanged by construction; table lines fall 0.05–1.1%.
+  - **Pictures.** The five routes' shots are the same. `owner60` was checked against #203's run, because D201 changed its 30 Hz shots.
+  - Native build, host ctest 32/32, `noassets`, and gate PASS.
+  - Not checked on hardware. The host's gain is weighted by qemu's emulated x87, so the Vita's will be smaller.
+- **Left:** dividing in `choose`'s multi-candidate path (`ratio`), and `res_place`/`near8` compared as integers.
+
+## 2026-11-22 — the last wobble in the portal fly-in and Stone Hill (#202)
+
+### D205. With the fix on, sky cuts at one portal edge's pixel share their mean place; a derived grid point the plane gives no depth takes its projection's own; a shadow's or glow's ambiguous source is resolved from the frame's order (#202)
+
+- **Why:**
+  - The owner's log `logs/owner-20261121-1200` (PAL, 60 HZ, 2x) shows 96.60% of polygons found whole in the 7,800 window and 99.76–99.93% in Stone Hill.
+  - Tagged by renderer on host routes (`runtime/autopilot/reports/202-1.md`):
+    - **Gamestates 1 and 9 lose nothing.** The 7,800 window's losses are the portal fly-in in Artisans (gamestate 0, just before 1), where the sky through the portal fills the screen. There, PortalSkyPlain's cuts were dropped when two cuts placed one key differently: about 89k vertices on host route P.
+    - **Stone Hill's losses** are mostly the particles' screen-facing quads (ParticlesDraw case 3, about 6.6k of 7.4k on route S).
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - **Sky cuts:** cuts from one renderer within 2 px at one key share their mean place, which lies on the edge (`HK_MERGE`). A hand-over first takes its sources exactly as before. A place read from a merged one is tainted: it counts only where nothing else placed the key, and gives way to any untainted place.
+  - **Derived grid points:** a derived grid point at the projection the frame's order named, where the plane through the other corners gives no depth, takes that projection's own depth.
+  - **Ambiguous sources:** a shadow corner (alias) or glow rim (offset) whose source key is ambiguous is resolved from the frame's order, like an ambiguous vertex, and drawn at its own integer key.
+  - **New counters:** `der_own` on the `derived` line; `hk_merged`, `hk_ambsrc`, `res_alias` and `particles` on the `hooked` line. `VCD_PARTICLES` is reserved for #209.
+- **Checked:**
+  - **Host FNV per polygon:** 0 polygons found before changed, and 0 became affine, in 8 pairs (routes P, S, A, B; lazy logic 0 and 2; `VC_LAZY=0`; no lazy walk).
+  - **Host routes, old path against new:**
+
+    | Route | No-entry vertices | Logic polygons whole |
+    |---|---|---|
+    | P | 133,758 → 40,789 | 99.1% → 99.7% (69,574 polygons newly found) |
+    | S | 35,713 → 35,375 | – |
+
+  - **Vita3K:** `owner60` whole 99.569% → 99.576%, `vc.misses` −21.6%. `wobble60` `vc.misses` −15.5%. No Vita3K route flies through a portal.
+  - **Pictures:** the five routes' shots and the `CAPTURE=1` grabs are the same. `owner60` was checked against #206's run.
+  - **Builds:** native build, host ctest 32/32, `noassets`, and gate PASS.
+  - **Not run:** hardware, and the PAL disc on the host.
+- **Left:**
+  - The particles' quads (#209: a hand-over in `particles_hand.c`).
+  - 2D polygons, by design.
+  - Far mobys' clamped points among several (D190).
+  - Sky cuts more than 8 px from their key or from an ambiguous end: a crack risk.
+  - Cuts more than 2 px apart.
+
+## 2026-11-22 — a quota of kept projections for the walk (#204)
+
+### D206. A `vc_lazy_logic=3` quota: the logic draw also keeps a frame's first q projections while the walk still runs, with q sized from the walk's idle time (#204)
+
+- **Why:**
+  - #200's cut 1 (D199). With the idle rule (mode 1, D188), a projection is kept only while the previous frame's walk is idle at that moment, so the walk's slack after it ends goes unused.
+  - In the owner's Stone Hill window, 76% of projections were worked out at once on the game thread.
+  - Keeping everything (mode 2) overloaded the walk (D188).
+- **What** (`vcache.c`, `psx_vcache.h`; coordinator: `main.c`'s key clamp raised to 3):
+  - **What mode 3 keeps:** everything mode 1 keeps, plus the frame's first q projections while the walk still runs. Past q, the entry's kept list is worked out first, so the order and the answers don't change.
+  - **Measuring the walk:** the walk's thread stamps its start and end. The game thread stamps the clock every 128 records.
+  - **Sizing q:**
+    - Idle time is the walk's end to the game thread's last stamp; the vblank wait after the join is left out on purpose.
+    - Headroom is an eighth of the walk's window, at least 250 µs.
+    - q grows by the smaller of the last two frames' surplus, at 1 µs a projection.
+    - It falls by the shortfall, at most a quarter a frame, and is capped at the frame's records + 256.
+  - **No walk thread:** with the walk in place, mode 3 keeps all, as mode 1 does.
+  - **Log line:** the new `vcache quota:` line appears only in mode 3.
+  - **Default:** stays 1.
+- **Checked** (`runtime/autopilot/reports/204-1.md`):
+  - **Same answers:** host FNV dumps per polygon are byte-identical in 10 dumps. They cover modes 0, 1 and 3; a fixed and a random quota; a simulated walk-busy split (kept 14.2M / at once 4.0M, and 5.0M / 13.2M); `--walk-lazy`; and `--tick60`.
+  - **Pictures:** the five routes' shots are the same.
+  - **Vita3K `owner60`**, same session, 6,900–9,000. These are relative timings, inside Vita3K's noise:
+
+    | `owner60` | Mode 3 against mode 1 |
+    |---|---|
+    | Logic draw | −8% |
+    | Kept projections | +10% |
+    | Join wait | 0.25 → 0.17 ms a vblank |
+
+  - **`wobble60`:** unaffected by design (30 Hz logic, D188).
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS. The Vita build was redone with the clamp raised to 3.
+- **Open:** a hardware A/B of `vc_lazy_logic=1` against `3` in the owner's 60 HZ Stone Hill and Artisans windows. If 3 wins, make it the default.
+
+## 2026-11-22 — particle quads in the vertex cache (#209)
+
+### D207. With the fix on, the particles' screen-facing quads hand their corners to the vertex cache, and a particle corner gives way to every other renderer's hand-over (#209)
+
+- **Why:** #202 (D205) found that ParticlesDraw case 3's quads are Stone Hill's largest class of no-entry vertices.
+- **What:**
+  - **The hand-over** (`particles_hand.c`): case 3 hands over each of its 4 corners as `VCD_OFFSET` from the projected centre `sxy`, after `AT32(prim + 0x8) = v0 - a3 - a2;`. The offsets are read from the corner words as the GPU reads them (signed low half for x, signed high half for y), so an x borrowing from y gives the y drawn. The call is direct; the presenter's build remaps it.
+  - **Priority** (`vcache.c`, `psx_vcache.h`):
+    - A particle corner (`Hk.low`) counts only where no other renderer placed the key, dead keys included.
+    - Any other renderer's hand-over replaces it.
+    - It is never a source for another hand-over.
+    - Without this rule, the presenter's frames lost 3 shadow polygons on host route S.
+  - **Docs:** the `particles` counter in `vita-testing.md`.
+- **Checked** (`runtime/autopilot/reports/209-1.md`):
+  - **Host FNV per polygon, 6 pairs:** 0 polygons found before changed. The pairs were S at 30 Hz, S with `--interp`, S with `--tick60 --interp`, P, and P with flame.
+
+    | Route | No-entry vertices | `particles` | Newly found polygons (all particle quads) |
+    |---|---|---|---|
+    | S | 25,048 → 21,401 | 3,647 | 889 |
+    | S with `--interp` | 50,039 → 42,732 | – | 1,781 |
+
+  - **Vita3K:** the five routes' shots and counters are the same. No Vita3K route draws a case-3 quad (#210).
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS.
+- **Left:**
+  - A Vita3K route through Stone Hill with particles on screen (#210).
+  - Watch `hk_full` (1,024 hand-overs a frame) in busy particle scenes.
+
+## 2026-11-22 — a Vita3K route through Stone Hill (#210)
+
+### D208. The Vita3K route `stone60` covers a portal fly-in and Stone Hill play with the owner's settings; the host route pads are checked in (#210)
+
+- **Why:** none of the five Vita3K routes reached Stone Hill, a portal fly-in, or the particles' case-3 quads. So D205's and D207's fixes couldn't be measured or regression-checked on the Vita build. #202's host route pads were also lost when its worktree went.
+- **What:**
+  - **The route:** `tools/vita/hw-routes/stone60.pad` and `.cfg`, with the owner's settings (16:9, `interp=4`, wobble fix on, `draw_distance=200`, frames 9,500). It is an absolute pad, steered on the host at `--tick60`, with no pokes:
+    - from New Game, a walk and jump into Stone Hill's portal (fly-in 6,805–7,225; play from 7,293);
+    - a ram's butt for the particles' star quads (about 7,780);
+    - then #209's route S actions (run, flame, charge, jump, glide) to 9,349.
+  - **Autopilot config:** `stone60` is in `autopilot/config.json`'s routes, and its benchmark window is 7,300–9,400. The baseline is `runtime/autopilot/runs/base-bac5699/stone60`.
+  - **Host pads:** S, P and Pf are checked in as `tools/oracle/pads/route_stone_s.txt`, `route_portal_p.txt` and `route_portal_pf.txt`. Each header gives its command line.
+  - **Docs:** `vita-testing.md`.
+- **Checked** (`runtime/autopilot/reports/210-1.md`):
+  - **Coverage:** on #209's VPK the route counts `particles` 2,161 and `hk_merged` 6,599. The host counts the same with the same pad.
+  - **Determinism:** three Vita3K runs (about 160 s each) gave 95 of 95 shots the same.
+  - **Builds:** native build, host ctest 32/32, `noassets`, gate PASS.
+- **Timing-dependent counters:** these move between identical runs on this route, as on `owner60` (D188):
+
+  | Counter | Spread between identical runs |
+  |---|---|
+  | `vc.invalid` | up to 31% |
+  | `vc.clamped` | up to 27% |
+  | `vc.rec.*`, `vc.walk.*` | up to 14% |
+
+  Gates must read them as noise on `stone60`.
+
+## 2026-11-22
+
+### D209. Hardware session 6: round 11's build (85a7b2c) on the Vita (2026-11-22)
+
+- **Run:** with the owner's yes ("the vita is free for hw runs"), AP16a–AP16d and AP16t (`runtime/autopilot/hw-session6.sh`, logs `logs/hw-ap16a`–`hw-ap16t`). Builds: `autopilot-85a7b2c.vpk` (SHA-1 0c08196c, D199–D208) and `autopilot-63d80f4.vpk` (round 10's, D192), US disc. New run files `tools/vita/fps-runs/ap16-stone60.txt` and `ap16-ll3.txt`: the stone60 route (#210) with the owner's settings (16:9, 60 HZ, the wobble fix on, `draw_distance=200`) and virtual vblanks, as AP8.
+- **Shader cache (#201, D200):**
+
+  | Boot | Shader time |
+  |---|---|
+  | 63d80f4 (no cache) | 10,281 ms, every boot |
+  | 85a7b2c, first boot | 9,604 ms (15 compiled, 2 hits) |
+  | 85a7b2c, second boot | 135 ms (17 of 17 from the cache) |
+
+- **Stone Hill play on the stone60 route, 7,300–9,400 (AP16b against AP16c):**
+  - The game thread was busy 73.2% → 71.5% on average, with a worst of 87% → 85%. Virtual vblanks, so 0 late by construction; busy % is the measure.
+  - The draws are identical in both builds. Since D201 the 48 KB budget, not the world bound, is what holds 2× back. The lod lines show x1.00 at 8,400–9,400, with 271–300 back-offs per 300, all for the budget and held at 1×. The thread still had 15–28% to spare there, so the fixed byte budget is too careful (#212).
+- **`vc_lazy_logic=3` (#204, D204), AP16d against AP16b:** busy 71.7% against 71.5%, with the same worst. That's no gain on hardware, so the default stays 1.
+- **Toasty route, real time (AP16t against AP14b, D192):**
+  - Artisans: late vblanks per 300 went from 16.5 to 0.5, and in-between frames skipped from 1,026 to 0.
+  - Toasty: late per 300 went from 0.3 to 0.2, and the render thread from 9.61 to 6.08 ms a picture.
+  - Stone Hill's attract demo at the title (4,200–6,300) is at about 177 late per 300 in both builds. The presenter's frames all run inline on the game thread (`0 frames on core 1, 150–216 inline`, 32 ms a tick): the attract demos' 16:9 real frame runs inline by design (D128). Filed as #220.
+- **Left on the Vita:** 85a7b2c's eboot (SHA-1 57e00232, READBACK IDENTICAL).
+- **Plan:** #212 (a time-based 60 Hz budget) is now backed by hardware numbers, and #220 is filed. A scene under 60 resets `rounds_without_gain` to 0. The next session is the #212 A/B: auto against 48 KB, on stone60 and owner60-style runs.
+
+### D210. The vertex cache sorts the vertices it leaves unplaced into missed and exempt, by renderer (#211, 2026-11-22)
+
+- **Why:** the old count of vertices with no entry mixed two kinds. Some are 3D vertices the wobble fix should place; others are 2D by design (fades, HUD text, the portals' flat faces) and never had an entry. With both in one number, it couldn't say when the wobble fix is finished.
+- **How:** as each renderer returns (`HAND_RENDERER`/`HAND_UNIT_FN_RC` in `src/game/render_hand.h`), it gives the frame's table its range of primitives and of `native_draw` records (`psx_vc_ctx`, and `pres_vc_ctx` for the presenter), named by its hand C. At the `miss_none` spot, the walk files each vertex with no entry under the smallest range that holds the polygon:
+  - **missed:** a 3D renderer's vertex, named, e.g. PortalSkyPlain;
+  - **exempt:** a portal's face, or no renderer at all;
+  - **unmarked:** a frame with no ranges.
+
+  The class comes from what the frame recorded, not from the walk's timing. The `vcache derived:` line now carries `missed N (top: ...)`, and the wobble fix is finished where missed is 0. The `render_hand.h` hook was outside the issue's first file list; the worker left a checked patch, and the coordinator widened the Files and applied it.
+- **Measured (host, 2×, 16:9):**
+
+  | Route | No entry | Missed | Biggest class |
+  |---|---|---|---|
+  | S, 30 Hz | 21,401 | 1,870 | PortalSkyPlain 1,230 |
+  | S, `--interp` | 42,732 | 3,725 | PortalSkyPlain 2,440 |
+  | P, 30 Hz | 20,843 | 1,312 | PortalSkyPlain 1,230 |
+  | P, `--interp` | 41,616 | 2,609 | PortalSkyPlain 2,440 |
+  | Pf, 30 Hz | 19,076 | 718 | PortalSkyPlain 660 |
+  | Pf, `--interp` | 38,099 | 1,457 | PortalSkyPlain 1,329 |
+
+  Next after PortalSkyPlain come EnvDraw (Stone Hill, 451 / 883), SkyDraw (111 / 244), and GlowsAndSparkles and MobyShadows. More than 90% of what's left with no entry is exempt. In Vita3K owner60 the line reads `missed 8 (MobyShadows 6, GlowsAndSparkles 2)` at 8,700.
+- **Checks:**
+  - Counters only: the host's per-polygon FNV is identical on six route pairs.
+  - With the hook, the Vita build exits 0 (VPK 54d28d20). All six routes exit 0 on the first try, with shots identical to `base-85a7b2c` (10, 91, 91, 91, 91 and 95 same). Counters are the same on all four benchmark scenes (`vc.invalid` and `vc.clamped` ignored as timing noise). Logs: `runs/auto-211-1`, `runs/auto-211-2`.
+  - Host ctest passes 32 of 32.
+- **Follow-ups:**
+  - #215: PortalSkyPlain.
+  - #216: glows and shadows.
+  - #217: EnvDraw.
+  - #221: SkyDraw.
+  - #222: 1,086 "outside" textured-quad vertices whose polygon has a placed vertex, to settle so that missed 0 really means no wobble.
+
+### D211. The attract demos' 16:9 frames run on the presenter's worker (#220, 2026-11-22)
+
+- **Why:** on hardware, Stone Hill's attract demo dropped about 177 vblanks in every 300 on the owner's settings (D209). The 16:9 real frame and the in-between frame both ran inline on the game thread, at 32 ms a tick. D128 had tied them there for two reasons:
+  - the real frame's due vblank is only known after the logic draw;
+  - the 16:9 visibility hand-off.
+- **How** (`src/game/present.c`):
+  - `presenter_pass(..., file_late)` runs the real frame on the worker with `submit(NULL)`, so its buffer files no frame. The game thread puts the frame's `C_BEGIN` in the ring before the buffer. After the hidden 4:3 logic draw, `PortPresentDraw` joins the job and `push_capture` files the frame, with the same `reserve()`, due vblank and `C_COMMIT` as the inline path.
+  - The visibility hand-off is split. `wide_state_out` runs when the job starts, which is exact because the presenter writes no game memory (0 bytes in 4,338 frames, `--pres-write-check`). `pres_draw_visibility` (now `job_vis()`) runs at the join, and the next pass joins before it reads.
+  - The in-between frame is still waited for before the real frame starts (one snapshot), so only the real frame overlaps the logic draw.
+- **Checks:**
+  - **Host:** FNV per polygon identical on all 9,124,329 polygons (title and attract demos to 7,000, `--interp`, 16:9, 2×). `--pres-check-thread` matches on 3,475 of 3,475 frames. ctest passes 32 of 32. The native build exits 0.
+  - **Vita3K:** shots identical on eight routes, including new `demo60` and `demo30` runs of the attract demos (66 of 66 each). In the demo windows (4,200–5,700), frames on core 1 went from 0–31 per 300 to 280–300, and inline frames from 262–300 to 0. The game thread's presenter time per tick fell from 52–74 ms to 10–17 ms; Vita3K timing is relative only.
+  - Logs: `runs/auto-220-1`.
+- **Left:**
+  - Measure FPS on hardware: the Toasty route's demo windows, 4,200–6,300.
+  - If the wait on the in-between frame shows there, try that frame inline and keep only the real frame on the worker.
+
+### D212. The Vita sizes the 60 Hz draw-distance budget from measured time (`dd_budget=auto`, the default; #212, 2026-11-22)
+
+- **Why:** the fixed 48 KB byte budget (`LOD_BUDGET_60`, #180) couldn't see that D202, D204 and D206 made each draw cheaper. On hardware, Stone Hill at 2× held at 1× with the game thread busy only 71.5% (D209).
+- **How:**
+  - `lod.c` gains `lod_set_budget()`, `lod_last_draw()` and `lod_set_budget_hook()`. The hook is called at the start of each shown draw. A `GamestateUpdate` wrap would miss `GamestateUpdate_60`, which 60 Hz logic uses.
+  - The Vita's `src/platform/vita/lod_time.c` measures the game thread's work for the frame just done from `g_present_stats` (update plus logic draw, VSync waits left out, the walk join included; needs `stats=1`, the default), and compares it with a target of 14.5 ms of the 16.68 ms frame.
+    - A frame over the target cuts the budget at once to bytes × target / used.
+    - After 8 frames in a row each at least 1 ms under the target, the budget grows 2 KB per frame, up to 1.25 × the draw + 8 KB.
+  - `lod.c` clamps the budget between 48 KB and `draw_room`, and stays the only place that limits.
+  - Config: `dd_budget=auto` is the default, `1` the old fixed 48 KB, `N` (2–1024) a fixed N KB, `0` off.
+  - The lod line ends in `budget N KB (auto, X ms left; K over)`, or `budget held at 1x: U ms used of 14.5`.
+  - The host keeps the fixed budget.
+- **Measured (Vita3K, relative timing):**
+  - stone60's Stone Hill play went from x1.00 (271–300 budget back-offs per 300) to x1.82–2.00, with the budget at 87–119 KB.
+  - owner60 at 6,900–7,800 went from x1.00 to x1.67–1.92.
+  - 2× costs GL work as it should: stone60 `gl.draws` +40%.
+- **Checks:**
+  - Shots differ only in the 60 Hz windows where 2× now holds longer. A `dd_budget=1` run of stone60 is 95 of 95 identical to base.
+  - Host logs, traces and saves are byte-identical, on route S at 30 Hz and with `--tick60`. The host per-polygon FNV wasn't run: no writer is in the tree, and on the host the hook is never set.
+  - ctest passes 32 of 32. Logs: `runs/auto-212-1`.
+- **Left:** the hardware A/B, auto against `dd_budget=1`, on stone60 (`ap16-stone60.txt`) and owner60-style runs.
+
+### D213. With the wobble fix on, a portal sky cut that the hand-overs leave unplaced takes its own fraction of the side (#215, 2026-11-22)
+
+- **Why:** PortalSkyPlain topped the missed list on every route (D210): 1,230 on routes S and P at 30 Hz, 2,440 with `--interp`. Tagged on route P:
+  - **Cuts 8–64 px from their key (660).** The portal outline is an arc of edges a few pixels long and nearly in line. Sutherland–Hodgman cuts against each edge's whole line, so a side often crosses an edge's line just past the edge's end. The line through the exact ends, extended, then runs pixels away from the integer one.
+  - **An ambiguous outer end (378).**
+  - **Two cuts at one key more than 2 px apart (185).**
+- **How:**
+  - `sky_clip_hand.c` `CutSide` hands the sky side's own fraction (IR0) to the vertex cache with `VCD_T`, for `ClipSky`'s cuts only.
+  - Where the hand-overs leave the key with no place, `frac_hand` (`vcache.c`) places the cut t of the way between the side's exact ends, at 1/w-linear depth, within 8 px. An ambiguous end is its last projection in the frame's order, through `res_place`.
+  - The places sit in a per-table `fr[256]` that no hand-over reads.
+  - The walk takes one only for a vertex nothing else finds, not where #197 would take the polygon, and only in a PortalSkyPlain, PortalSkyFog or unnamed polygon. Without that renderer gate, a glow's vertex at a cut's pixel took the cut's place.
+  - New counters `hk_frac`, `fr_kept` and `fr_nosrc`, on a new `vcache cut fraction:` line.
+  - D182's hand-over rules and D205's merge order are unchanged; the fraction comes after both.
+- **Measured (host, 2×, 16:9):**
+
+  | Route | Missed | PortalSkyPlain |
+  |---|---|---|
+  | S, 30 Hz | 1,870 → 645 | 1,230 → 0 |
+  | S, `--interp` | 3,725 → 1,294 | 2,440 → 0 |
+  | P, 30 Hz | 1,312 → 87 | 1,230 → 0 |
+  | P, `--interp` | 2,609 → 178 | 2,440 → 0 |
+  | Pf, 30 Hz | 718 → 72 | 660 → 14 |
+  | Pf, `--interp` | 1,457 → 151 | 1,329 → 28 |
+
+  What's left is EnvDraw, SkyDraw, GlowsAndSparkles and MobyShadows.
+- **Checks:**
+  - Host FNV per polygon: 0 changed in 6 pairs, with 564 to 2,121 polygons newly found.
+  - Vita3K: shots identical on six routes.
+  - `CAPTURE=1` at stone60's worst fly-in frames: only the portal sky's horizon inside the portal changes (0.008% and 0.028% of pixels). It is straightened, and no gaps open.
+  - ctest passes 32 of 32.
+  - Logs: `runs/auto-215-1`.
+- **Found:** on the Vita build, the portal sky's unplaced vertices are filed as "outside the renderers" (exempt) rather than under PortalSkyPlain or PortalSkyFog. On the Vita, D210's missed count under-reports them; added to #222.
+
+### D214. The Vita's `draw N:` lines time the 60 Hz update, and the lod line gets a 640-byte buffer (#223, 2026-11-23)
+
+- **Why:**
+  - With 60 Hz logic the update is `GamestateUpdate_60` (`tick60.c`). The `GamestateUpdate` link wrap in `prof_draw.c` never saw it, so `update` read 0.00 in every 60 Hz window of the hardware logs.
+  - `picture.c`'s 400-byte line buffer made D212 keep its budget text short. The line already reaches 385 bytes.
+- **How:**
+  - The Vita link wraps `GamestateUpdate_60` too, under `SPYRO_TICK60` (the moved-arena build has no 60 Hz path). It is charged to the same `update` column; `PortGamestateUpdate` runs exactly one of the two, so nothing is counted twice.
+  - The line buffer is now 640 bytes; `vita_log`'s own buffer is 1,024. The line formats are unchanged, so the parsers need nothing.
+- **Checks (logging only):**
+  - Vita3K, with `dd_budget=1`: owner60's `update` in 6,900–8,700 reads 0.27–0.70 ms where base read 0.00, and stone60's 0.33–0.54.
+  - Shots are identical on six routes.
+  - The deterministic counters are identical. owner60's timing-dependent vc counters moved past two base runs' spread under machine load.
+  - ctest passes 32 of 32.
+  - Logs: `runs/auto-223-1`.
+- **Left:** `lod.c`'s budget text can now carry the worst frame time and the budget's range (#224).
+
+### D215. With `dd_budget=auto`, the Vita's lod line gives the budget's range and the worst frame time (#224, 2026-11-23)
+
+- **Why:** an average alone can't tell apart a window that swung between the 48 KB floor and a long distance and one that held steady, nor one long frame and a scene that is over the target.
+- **How:** `lod_set_budget` keeps the window's lowest and highest budget and its longest measured game-thread frame (`s_bt.lo`, `.hi`, `.worst`, in `LOD_STATE`). `budget_report` prints them as `budget 61 KB (auto, 48-96 KB, worst 15.9 ms, 2.1 ms left; 3 over)`, or `budget held at 1x: U ms used of 14.5, worst W ms (LO-HI KB)`. This uses D214's 640-byte line; the longest line seen is 433 bytes. It is logging only: the budget is chosen as in D212.
+- **Measured (Vita3K, default auto, relative timing):**
+  - owner60 at 6,900–9,000: `126 KB (auto, 126-126 KB, worst 3.8–11.4 ms, 0 over)`.
+  - stone60 at 7,800–9,300: 112–135 KB, worst 5.9–12.1 ms, 0 over.
+  - The level entries show a 72–82 ms worst frame.
+- **Checks:**
+  - With `dd_budget=1`, owner60 and stone60 shots are identical to `base-278ebf8`, and the deterministic counters are equal.
+  - Host logs, traces, saves and per-polygon FNV are identical: 13,206,877 polygons at 30 Hz and 21,665,448 with `--tick60 --interp`.
+  - ctest passes 32 of 32, and the native build exits 0.
+  - Logs: `runs/auto-224-1`.
+
+### D216. The sky's vertex-cache records go by name, and the portal sky's projections take one generation per draw (#213, #200 cut 5; 2026-11-23)
+
+- **What:**
+  - `sky_hand.c` `SkyRecord` calls `ngte_vcache` with the draw's `NgteProj`, its generation, SXY2 and SZ3. Before, it called the value hook with the 15 registers as words, which the record compared word by word with the last ones kept.
+  - It passes no sums (`NGTE_NO_SUMS` in `gte_native.h`, a FLAG bit the GTE never sets). The record works them out from the `NgteProj` (`pt_np` in `vcache.c`) only for a projection it works out at once, exactly as it used to from the words. A kept projection compares one generation word (`same_ngte`).
+  - Keeping D202's sums per projected vertex cost more in SkyDraw's loop than it saved: route P's host SkyDraw self time went 0.63 → 1.02 s with it. So the sky passes none.
+  - `sky_clip_hand.c` (`FogSky`, `PortalSky`) reads the `NgteProj` once per draw; between sectors only the far colour changes.
+  - Only the register file's records (`rtp_hook`) still pass words. `cyclorama_hand.c` records nothing itself.
+- **Checked:**
+  - Host FNV per polygon is byte-identical on routes A, B and P with deferral auto, forced and off (9 pairs; 6.2 M, 12.4 M and 14.1 M polygons).
+  - Vita3K shots are identical on all seven routes, demo60 included (owner60 and stone60 with `dd_budget=1`). The counters are the same apart from the timing-dependent split.
+  - Host gprof (qemu, relative), sky record per projection:
+
+    | Route | Before | After |
+    |---|---|---|
+    | A | 294 ns | 277 ns |
+    | P | 249 ns | 208 ns |
+    | Presenter, route B | 236 ns | 183 ns |
+
+  - ctest passes 32 of 32. Not checked on hardware.
+  - Logs: `runs/auto-213-1`.
+- **Found:**
+  - `rtp_value_hook` and `pres_rtp_value_hook` now only flag that the cache is recording (added to #219).
+  - The `ngte_proj_regen` audit covered only the sky files (added to #218).
+
+### D217. The walk's depth choice compares ratios without dividing, and `res_place` tests depths on their bits (#214, 2026-11-23)
+
+- **Why:** these were D206's leftovers. `choose`'s ratio path divided and `res_place` compared in float, on core 1. With 60 Hz logic the walk's join is on the game thread's critical path.
+- **What** (`src/platform/common/vcache.c` only):
+  - **`choose` without dividing:** `choose` keeps each ratio as its two depths' 24-bit significands and their exponent difference, and compares two ratios by cross-multiplying in 64 bits. The tests against 4 and 1 are integer tests: a float quotient is under 4 exactly when n/d < (2^25−1)/2^23.
+  - **Float platforms (the Vita, arm64):** two ratios within 2^-22 of each other are still divided as before (`rat_lt_div`), because their floats could round to one value.
+  - **The host's x87:** the old code compared the quotients on the x87 stack at 64-bit precision, which is the real order. There the real order is the answer (`RAT_REAL`), and nothing divides.
+  - **Odd depths:** depths that aren't positive normal floats use the old function (`choose_f`). It ran 0 times in the profiled runs.
+  - **`res_place`:** it reads lc's depth from its bits when it is a normal float, and uses the old float tests otherwise, which keeps the Vita's flush-to-zero behaviour. It returns 2 for candidate 0's point, so `resolve` no longer compares `w` with 0.
+- **Checked:**
+  - **Against the old code:** 0 mismatches in 400 M polygons on arm64 and 60 M on i686, in every `res_place` bit pattern on arm64, and in 200 M on i686. The harness was confirmed to fail when it should.
+  - **Host FNV per polygon:** byte-identical on A 1×, A 2×, B, and Stone Hill forced 2× at 60 Hz (19.0 M polygons).
+  - **Fewer divisions:** host lookup divisions fall 92–94% (Stone Hill 0.50 → 0.03 per vertex). In Vita3K, `vc.div` falls 41–43% on the busy routes.
+  - **Host gprof (normalised):** `choose` −13% (A 2×) and −22% (Stone Hill); `res_place` −26% and −40%; `resolve` −5% and −12%.
+  - **Vita3K:** shots identical on all seven routes.
+  - **Builds:** ctest passes 32 of 32. Not checked on hardware.
+  - Logs: `runs/auto-214-1`.
+- **Left:**
+  - `derive_depth`'s and `same_depthb`'s divisions, and `near8`'s float compare (#225).
+  - A tooling trap: under `tools/tc`, swapping a source file in can leave a stale object. Base/fix scripts must delete the object or check the binary's hash.
+
+### D218. With the fix on, glows and moby shadows name their screen points by the projection that made them (#216, 2026-11-23)
+
+- **Why:** after D213, GlowsAndSparkles had 36–86 missed vertices and MobyShadows 16–49 on the host routes (D210's classes). Tagged:
+  - glow rims whose key a portal sky cut also placed at another point, so neither was kept;
+  - two mobys' shadow corners nudged onto one pixel;
+  - rims and corners of an ambiguous source that #202's order-based resolution couldn't give a depth;
+  - the rims of a glow whose centre is behind the eye (SZ3 0, MAC3 < 0), which the PS1 still draws.
+- **What:**
+  - `Glows` (`particles_hand.c`) names its centre (`VCD_SELF`) right after the centre's RTPS. `MobyShadows` (`shadows_hand.c`) names its centre and four corners the same way, by how many projections back each was made.
+  - Rims and nudged corners add `VCD_OWN`: the source's own point plus the offset, anchored on the fan's centre. `hk_place` ignores the anchor, so the existing hand-overs are unchanged.
+  - Own points are kept per key and anchor in a per-table `ow[2048]` that no hand-over reads; two different points under one key and anchor are dropped.
+  - The walk takes own points only for a GlowsAndSparkles or MobyShadows polygon that every earlier step (#183, #189, #215, #181, #197, #202) left unfound, and only when every unfound vertex has one. Then that polygon's found vertices use theirs too, so all its depths come from one projection. They are drawn at their exact place (`VREF_CLAMP`).
+  - A vertex whose own projection has no answer is exempt, in a new class `VCX_NO_PROJ` ("no projection").
+  - New counters `own_*` and a `vcache own points:` line.
+  - D182, D207, D213 and D215's rules are unchanged.
+- **Measured (host, 2×, 16:9, missed before → after):**
+
+  | Route | Missed (30 Hz) | Missed (`--interp`) |
+  |---|---|---|
+  | P | 87 → 25 | 178 → 51 |
+  | S | 645 → 581 | 1,294 → 1,166 |
+  | Pf | 72 → 36 | 151 → 68 |
+
+  - GlowsAndSparkles is 0 on all six. MobyShadows is 0 except on S (4 at 30 Hz, 5 with `--interp`).
+  - "No projection": 32 at 30 Hz, 64 with `--interp`.
+  - In Vita3K, stone60's `vc.misses` is −50.7%. owner60's `vc.rec.probe` is +2.4%, the cost of the own-point records.
+- **Checks:**
+  - Host FNV per polygon: 0 changed in 6 pairs, with 8–112 polygons newly found. `hk_full` and `own_full` are 0 on every route.
+  - Vita3K: shots identical on all seven routes (owner60 and stone60 with `dd_budget=1`).
+  - ctest passes 32 of 32. The native and Vita builds exit 0.
+  - Logs: `runs/auto-216-1`.
+- **Left:** MobyShadows on S (4/5), and docs for the new class and line (#226).
+
+### D219. Hardware session 7: autopilot 687ca1d on the Vita, `dd_budget=auto` and the attract demos (2026-11-23)
+
+- **Run:** with the owner's yes ("vita is free if you want to test on it"), AP18a–AP18c, AP18o and AP18t (`runtime/autopilot/hw-session7b.sh`, logs `logs/hw-ap18a`–`hw-ap18t`). Builds: `autopilot-687ca1d.vpk` (SHA-1 173ae0fb, D210–D218) and, for an A/B, `autopilot-53a6a5d.vpk` (933abfe9, D210–D215). US disc. Stone Hill runs use `ap16-stone60.txt` with virtual vblanks, so busy % is the measure there.
+- **`dd_budget=auto` against the fixed 48 KB (AP18a against AP18b), Stone Hill play, 7,500–9,500:**
+  - Busy 69.1% against 68.3%; worst 88% against 87%.
+  - Auto reaches x1.03–x1.41 where 48 KB stays at x1.00–x1.31. Most windows still hold at 1×, now with a measured reason on the lod line: `budget held at 1x: 15.2 ms used of 14.5, worst 22.3 ms`. So the byte budget was not the only limit: the frame itself is near the target at 1×.
+- **D216–D218's cost (AP18a against AP18o, 53a6a5d):** busy 69.1% against 68.6%, sky 0.50–1.05 ms against 0.51–1.01 ms per vblank. Nothing measurable.
+- **AP18c (real time, stone60) isn't usable:** the route saves a shot every 100 frames, which costs about 9 late vblanks each in real time (27 per 300 even on the title screen), and the pad drifted before Stone Hill. Real-time checks use the Toasty route, which takes no shots.
+- **Toasty route, real time, owner's settings (AP18t against AP16t, D209):**
+
+  | Level | Late per 300, session 6 | Session 7 | Busy % |
+  |---|---|---|---|
+  | Title screen | 0.0 | 0.2 | 48.9 |
+  | Stone Hill attract demo | 177.4 | 166.3 | 28.1 (was 89.0) |
+  | Artisans | 0.5 | 2.5 | 56.6 |
+  | Toasty | 0.2 | 0.9 | 64.5 |
+
+  - **Attract demo:** D211 took the 16:9 real frame off the game thread (busy 99% → 28%), but the game thread now waits 11.8–12.0 ms a vblank for the presenter's worker (`the presenter on this thread` 20.5–26.8 ms per tick), and ticks per 300 are still 92–119 instead of 150. Filed as #227.
+  - **60 Hz play:** in Artisans play (11,100) the game thread takes 15.93 ms a vblank at 1× (env 7.80, mobys 4.20, sky 1.77), with 14 late. In Toasty it's 11.6–13.8 ms. `dd_budget=auto` holds at 1× there (`16.4–17.4 ms used of 14.5`), reaches x2.00 where the frame is light (18,300–20,400), and backs off as designed elsewhere. Artisans' sky went from 1.20 to 1.77 ms between sessions, most likely D213. Filed as #228.
+- **Left on the Vita:** 687ca1d's eboot (SHA-1 7ad9cdc5, READBACK IDENTICAL).
+- **Goal 2 (phase 8):** draw distance doesn't hold at 2× on the owner's settings. The lod line now shows the measured reason (the 60 Hz frame is over 14.5 ms at 1× in Artisans and Toasty), but late vblanks remain, so goal 2 stays open on #227 and #228. A scene under 60 resets `rounds_without_gain` to 0.
+
+### D220. With the fix on, the world's split pieces name their corners by the projections that made them; a split point with an end behind the eye is exempt (#217, 2026-11-23)
+
+- **Why:** after D218, EnvDraw had the most missed vertices: 451 on route S at 30 Hz and 883 with `--interp`, and 20–40 on P and Pf. A temporary tag (`runs/auto-217-1/host/diag217.py`) sorted them:
+  - Almost all were `SplitLast`'s split points (`SplitMid`, a `VCD_PERSP` hand-over) on a piece corner the GTE had clamped to the screen's limit, e.g. (1023,-1024). Other clamped points share that key, so the hand-over had no single source, and the split points made from those had none either: 341 of 447 on S at 2×.
+  - 39 had a corner behind the eye, so there was no projection at all.
+  - 58 were quads whose derive (#183) took no place and whose plane gave no depth.
+  - "Source evicted" never happened (`hk full 0`).
+- **How** (`src/game/env_hand.c`, `src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A piece queued for the last list (`Subdiv4x4Quad`/`Tri`) names each corner (`VCD_SELF`, p = 24 − grid index for a quad, 14 − grid index for a tri) under the anchor `VCD_CORNER(first vertex's key, corner number)`, so two corners on one clamped key stay apart. `SplitMid` passes `VCD_OWN | VCD_ENDS(ia, ib)` with that anchor, and each GT3 that `SplitLast` emits re-names the corners it keeps under its own anchor (`own_move`).
+  - A third pass in `derive_hand`, only after the hand-over's two passes (#202) fail, takes an unusable end at its own point: the projection's exact place, at most 16,384 px off (a clamped end's true point lies far off screen). The result is tainted, so it counts only where nothing else placed the key.
+  - A split point with an end that has no projection marks its key `HK_NOPROJ` (an Hk slot not placed, `low` set). No hand-over reads it, the next one that places the key overwrites it, and the walk counts the vertex as `VCX_NO_PROJ`, exempt.
+  - The walk's own-point step (D218) takes EnvDraw polygons too.
+  - Where derive took no place and the plane gives none, the vertex keeps its place and takes a named projection's own depth (`der_named`).
+  - New counters `hk_own`, `der_named`, `hk_noproj` and a `vcache world:` line. D182's hand-over rules, D205's pass order, D213's `fr` store and D218's `ow` store are unchanged.
+- **Measured (host, 16:9, 2×, base 272fb7e):**
+
+  | Route | Missed, all renderers | EnvDraw missed | No projection (exempt) |
+  |---|---|---|---|
+  | S | 581 → 160 | 451 → 30 | 32 → 90 |
+  | S `--interp` | 1,166 → 343 | 883 → 60 | 64 → 187 |
+  | P | 25 → 9 | 20 → 4 | 32 → 32 |
+  | P `--interp` | 51 → 24 | 35 → 8 | 64 → 64 |
+  | Pf | 36 → 18 | 22 → 4 | 32 → 32 |
+  | Pf `--interp` | 68 → 36 | 40 → 8 | 64 → 64 |
+
+  Vita3K stone60 at 6,600: EnvDraw missed 771 → 100, with 564 vertices now exempt. owner60: 32 → 6 at 6,600.
+- **Checks:**
+  - Host FNV per polygon (D168), six pairs from freshly built objects: same polygon counts, 0 found-before polygons changed, 0 became affine; 13–487 newly found per route.
+  - Vita3K: all seven routes exit 0 on the first try, with shots identical to `base-278ebf8` (owner60 and stone60 with `dd_budget=1`). Draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.probe` and `vc.lines` unchanged; only the timing counters move, as much as two runs of one VPK do.
+  - Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-217-1`.
+- **Left:** EnvDraw keeps 29–30 on S (59–60 with `--interp`) and 4/8 on P and Pf:
+  - two split points of different pieces on one pixel, 600–1,300 px apart, which D182 drops (all of P's and Pf's);
+  - split ends whose depths are 4× apart (`hk_pair`'s rule);
+  - quads on the #197 path, and named projections `choose` rejects;
+  - own points not named or dead (two corners of one piece on one key).
+  
+  Filed as #229. The `vcache world:` line and the wider "no projection" class go into #226's docs.
+
+### D221. The vertex cache skips an exact repeat's maths; the main sky's rise between hardware sessions 6 and 7 is not in its code (#228, 2026-11-23)
+
+- **Why:** in hardware session 7 (D219), Artisans play at 60 Hz and 1× took 15.9 ms a vblank on the game thread, over the auto budget's 14.5 ms target, and the sky rose from 1.20 to 1.77 ms. Host gprof on an owner60-like route at 60 Hz (`runs/auto-228-1/host`) puts the record's maths first: `rtp_apply` 18.2% self, `psx_vcache_poly` 6.1%, `choose` 1.5%, `add_cand` 1.4%; the renderers' own code is small. About a fifth of the projections the record works out are exact repeats (same register generation, same vertex, same key in one frame): 4.3 M of 17.3 M on that route, e.g. a point two sky sectors share or a world corner projected again.
+- **How (`src/platform/common/vcache.c`):**
+  - Each table keeps, per entry, the last projection worked out (`Rp`: generation, vertex, clamped; 12 bytes, `rp[VC_SIZE]`), cleared when `find` makes the entry.
+  - While the entry is valid with one point (`E_VALID`, not `T_MULTI`, not `T_PEND`), a repeat changes nothing: its answer is already among the candidates, `add_cand` stops at the same one, and nothing is logged (#181 logs only keys with different points). So only its counts are kept (`VCR_WORKED`, clamped) and its maths is skipped, both for projections worked out at once (`rtp_point`) and for kept ones as `lz_flush` works them out. `rtp_apply` returns its clamped flag.
+  - A `vcache repeats:` line reports the skips; `psx_vcache_set_repeat(0)` turns it off. The `vc_repeat=` config key needs `src/platform/vita/main.c`, outside the issue's files (#232).
+- **The sky:** the rise is the main sky (`SkyDraw`, `sky main` 1.07 → 1.63 ms); the portal sky's part, D213's, stayed at 0.13–0.14 ms. `SkyDraw`'s path is unchanged since 85a7b2c apart from D216's cheaper `pt_np`; its time is the same on the host side by side (3,878 against 3,855 ms) and in Vita3K, and its per-frame work on hardware is equal (`vc.proj` 5,672 against 5,678 a frame). So it's a hardware timing or memory effect, or one-run spread: nothing to remove. Session 7 against 6 is +15–52% in Artisans windows but −14% to +14% in Toasty.
+- **Measured:**
+  - Host, base and fix side by side at 60 Hz (relative): env −22%, sky −19%, renderers −13%; record divisions 14.07 M → 11.12 M.
+  - Vita3K owner60, `dd_budget=1`, 6,900–8,700, two runs each (relative only): game thread 4.09–4.17 → 3.94–3.98 ms a vblank, env 1.41–1.47 → 1.27–1.29; `vc.div` −15.7% against two head runs (spread 0.1%), every other counter the same.
+  - Missed counts on host S, P and Pf unchanged (160, 9, 18).
+- **Checks:** host FNV per polygon identical on 7 pairs (O60, S, Si, P, Pi, Pf, Pfi; 136 M polygons); Vita3K shots identical to `base-278ebf8` on all seven routes; host ctest 32 of 32; Vita build; `noassets`. Logs: `runs/auto-228-1`.
+- **Left:** the hardware A/B, since the 96 KB of `Rp` per table adds a memory access per record on the A9 (#232, with the key). Toasty is walk-bound in session 7 (the game thread's join wait 1.71 → 2.51 ms, the walk on core 1 93% busy) and has no Vita3K or host route (#233). The sky's run-to-run spread on hardware goes in the next session: two runs of one VPK.
+
+### D222. In an attract demo at 16:9 the in-between frame runs inline, and only the real frame goes to the presenter's worker (#227, 2026-11-23)
+
+- **Why:** on hardware (D219) the game thread waited 11.8–12.0 ms a vblank for the presenter's worker in the attract demos, and they still ran 166 late vblanks in 300.
+- **Measured:** a temporary per-job split in `present.c` (Vita3K `demo60`, three base runs; host `--pres-check-thread`) shows the wait is the **in-between frame's job**: the real frame's pass joins it before it can start, because the presenter has one snapshot and the real frame starts from the visibility state the in-between frame leaves (13.5–13.9 ms of 14.4–14.8 ms "on this thread" per tick). The real frame's own join after the hidden logic draw is ~0 in Vita3K. On hardware (`logs/hw-ap18t`, 4,500 window) a demo presenter frame takes about 24 ms: the worker ran 200 jobs at 16.06 ms a vblank (95% busy), the game thread waited ~25 ms a tick for the in-between frame and ~11 ms after the logic draw for the real one.
+- **How (`src/game/present.c`):** `presenter_pass` gets `no_worker`; with `g_present_demo_inline` (1, the default) the in-between frame of an attract demo at 16:9 runs inline before the real frame goes to the worker. 0 gives D211's order back. `docs/presentation.md` describes it.
+- **Result:**
+  - Vita3K `demo60`, base and fix twice each, interleaved: the game thread's presenter waits fall from 11.3–13.9 ms a tick to under 0.05 ms; the inline frame takes 11–12 ms a tick in their place; wall time per 300 vblanks stays within the noise (5,809–6,247 ms against 5,819–6,581). Vita3K's routes use virtual vblanks, so ticks per 300 can't move there.
+  - Host FNV per polygon identical on all 9,124,329 polygons (title and demos to 7,000, `--vcache --widescreen --interp --draw-distance 2`); `--pres-check-thread` matches 3,475 of 3,475 frames; the seven routes' shots identical to `base-278ebf8`; host ctest 32 of 32; Vita build; `noassets`. Logs: `runs/auto-227-1`.
+- **Limit:** the two presenter frames still run one after the other, so on hardware a demo tick still costs the update plus two ~24 ms frames, over 33 ms. Little change in late vblanks is expected; the next hardware session judges it (Toasty route, 4,200–6,300). The real gain needs fewer or cheaper presenter frames in the demos (#234). The `pres_demo_inline` config key and `pres_thread.c`'s stale comment are outside the issue's files (#232).
+
+### D223. With the fix on, a world split point and a corner the grid moved are kept as their piece's own, and a world piece's anchor mixes its corners' keys and u/v (#229, 2026-11-23)
+
+- **Why:** after D220, EnvDraw kept 30 missed vertices on host route S (60 with `--interp`) and 4 (8) on P and Pf. #217's tags (`runs/auto-217-1/host/reasons_2x.txt`): two split points of different pieces on one pixel, which D182 drops (4 / 8); split ends 4× apart in depth (9 / 13); quads whose moved corner derive couldn't place (8 / 24); own points dead under a shared first-vertex anchor (8 / 12). The last was also Vita3K stone60's 100 at window 6,600.
+- **How** (`src/game/env_hand.c`, `src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A per-table `Sp` store (1,024 records of 44 bytes, about 45 KB a table), apart from hk, keeps each `SplitMid` point with its place and depths under its piece and edge (`VCD_CORNER(anchor, VCD_EDGE(ia, ib))`). Each GT3 that `SplitLast` emits moves it to its own anchor (`own_move` with p = 1, falling back to `Sp`), and a re-split GT3 finds its ends there (`sp_end`). The value is the key-sourced pass 1's when that succeeds; otherwise it's made from the piece's own ends (`own_end`, then `sp_end`), paired even across 4× depths (`hk_pair`'s `wide`, for this record only). No hand-over reads `Sp`, so hk is unchanged.
+  - GridCorrect's moved points are named once at their pre-move projection (`NameMoved` in `Grid5x5Inner`/`Grid3x3Centre`, `VCD_MOVED`), and a moved queued corner is also kept in `Sp` under its piece.
+  - The piece anchor (`PieceAnchor`, `VCD_PIECE_V`) is all its corners' keys plus their u/v, not the first vertex's key: two GT3s of one piece that start at one point, with two corners clamped onto one key, had named both under one anchor and killed both.
+  - In the walk, for EnvDraw polygons nothing else found: a corner's own point may lie up to 2^20 px off its key (a clamped corner nearly level with the eye projects far off screen); a polygon whose own-point depths no choice brings under 4× apart is found and drawn affine (`spread`); a quad's ambiguous corner is resolved with its moved corner's own projection, or the moved corner alone is found and the polygon stays affine (`sp_part`).
+  - New counters and a `vcache world own:` line (`sp_found`, `sp_kept`, `sp_full`, `sp_wide`, `sp_moved`, `sp_spread`, `sp_res`, `sp_part`). D182, D205, D213, D218 and D221 are unchanged.
+- **Measured (host, 2×, 16:9, base 8bdf7d4):**
+
+  | Route | EnvDraw missed | All missed |
+  |---|---|---|
+  | S | 30 → 6 | 160 → 136 |
+  | S `--interp` | 60 → 6 | 343 → 289 |
+  | P | 4 → 0 | 9 → 5 |
+  | P `--interp` | 8 → 0 | 24 → 16 |
+  | Pf | 4 → 0 | 18 → 14 |
+  | Pf `--interp` | 8 → 0 | 36 → 28 |
+
+  #217's four reasons all go to 0 except "own point not named or dead" (8 → 6, 12 → 6). Vita3K EnvDraw missed: owner60 6 and 12 → 0, stone60 100 → 0; `vc.probe` +0.2%, `vc.lines` +0.3–0.4%, `vc.div` +0.2–0.6%; draws, triangles, `vc.proj`, `vc.polys`, `vc.verts` unchanged. `Sp` held at most 5,214 records a 300-vblank window and never filled (`sp_full` 0).
+- **Checks:** host FNV per polygon, 6 pairs from freshly built objects: same polygon counts, 0 found-before changed, 0 became affine (4–39 newly found). Vita3K shots identical to `base-278ebf8` on all seven routes. Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-229-1`.
+- **Left:** the 6 on S and S `--interp` are all in one frame (g6742) whose order log is full (`VC_LOG`, 8,192 projections), so the cache never named those projections. Vita3K never fills the log. Raising `VC_LOG` to 16,384 fixes them but changes 50 / 124 found-before polygons in that frame and costs about 224 KB a table (#237). Relaxing hk's own 4× rule for split points changed no found-before polygon on S in an experiment, but isn't adopted. Docs for the `vcache world own:` line go with #226.
+
+### D224. The attract demos' presenter frames already draw at 1× whatever the draw distance, so a demo draw-distance budget has nothing to cut (#234, 2026-11-23)
+
+- **Why:** #227 (D222) put a demo presenter frame at about 24 ms on hardware and supposed it drew 16:9 at 2×.
+- **Measured:**
+  - The presenter's frames take the game's lod state through `pres_draw.c` `lod_begin` (`port_lod_draw_begin(1)`, result kept for the presenter, the game's state put back). In a demo the game's own draws are the hidden 4:3 logic draws (`shown` 0), so the game's limiter (`port_lod_draw_end` → `limit`) never runs, and the hold of 60 that the last shown draw before the demo set (level 11's reset to 1×) never counts down. A temporary `T234` line read scale 256 (1×) with the hold at 60 in every window from 4,080 to 5,580, on the host and in Vita3K.
+  - So hardware's 19–28 ms a demo presenter frame (`logs/hw-ap18t`, 4,500–6,000, worker busy × 300 / jobs) is 16:9 at 1×.
+  - Forcing 2× in the demos (a temporary build, measurement only): Vita3K `demo60` GL draws +34%, triangles +15%, presenter projections 4,398 → 5,185 a frame, in-between frame 7.9 → 8.3–10.0 ms; on the host about +18% a demo frame.
+  - With the vertex cache off (`persp=0 subpixel=0`), Vita3K's demo frames fall about 70%: in-between 7.9 → 2.5 ms, real frame 7.3 → 2.0, hidden logic draw 4.8 → 1.2. Its share on the A9 is unmeasured.
+- **Result:** no code change; `docs/presentation.md` records why the demos draw at 1× and the numbers. All Vita3K shots identical (demo60 66/66, owner60 91/91, stone60 95/95).
+- **Option for the owner (not implemented):** skip the in-between frame in a demo tick when two presenter frames and the update don't fit the tick. On hardware a tick would then be ~1 ms plus max(logic draw 9–13, real frame 19–28) ≈ 21–29 ms, so the demos would play at the original speed (about 150 ticks per 300, against 85–124 now) at 30 fps. It would be on for the whole Stone Hill demo on hardware and never in Vita3K. Asked in #235.
+- **Left:** the next hardware session sizes the vertex cache's share of a demo frame (Toasty route, 4,200–6,300, owner's settings against `persp=0 subpixel=0`). Making the demos' 1× an explicit rule in `lod.c`, so a later limiter fix can't quietly move them to 2×, is #236.
+
+### D225. The attract demos' presenter frames draw at 1× by an explicit rule in `lod.c` (#236, 2026-11-23)
+
+- **Why:** D224 found the demos' 16:9 presenter frames at 1× only because the game's hold (60, from the last shown draw's level reset) never counts down while the logic draws are hidden. A later limiter fix could quietly move them to 2×, about +18% a demo frame (D224), on frames already over the tick on hardware.
+- **How (`src/game/lod.c`, comment in `lod.h`):**
+  - `s_demo_shown` (part of `LOD_STATE`, so `lod_begin`'s save and restore and `--render-ctx-check` carry it) is "the game's last draw was a shown attract-demo draw", set in `port_lod_draw_end`, which only `game_draw` calls.
+  - In the game's `port_lod_draw_begin` (`#ifndef RENDER_PRES`), after the existing clamp: an attract demo draws at 1× until the game's last draw is one of the demo's own shown draws. That covers the presenter frames of 16:9 demos, including the first tick, whose 16:9 frame runs before its first hidden logic draw (a "last draw hidden" rule missed that one frame at 3,931). Demos whose logic draw is shown (4:3, `ws_logic`, no presenter) keep the limiter.
+- **Checked:**
+  - With 2× forced in front of the rule (temporary `T236` build), Vita3K `demo60` reads 1× in every window from 4,080 to 5,580, and its shots are 66/66 identical to base.
+  - Final build: shots identical to `base-278ebf8` on all seven routes; owner60, stone60 and demo60 lod lines byte-identical (`dd_budget=1`); demo60's counters all the same against a same-code head build run twice. Host ctest 32 of 32, Vita build, `noassets`. Logs: `runs/auto-236-1`.
+
+### D226. The walk's lookup of a polygon found whole takes a short path of its own; Toasty gets a host route and a Vita3K route (#233, 2026-11-24)
+
+- **Why:** in hardware session 7 (D219) Toasty at 60 Hz was walk-bound: the walk on core 1 93% busy, the game thread's join wait 2.51 ms a vblank. Neither the host nor Vita3K had a route there.
+- **Routes:**
+  - Host route T: `--pad tools/oracle/pads/newgame_host.txt --tour 14 --tour-stay 300 --pad-after tools/oracle/pads/route_toasty.txt --tick60 --interp --frames 10000 --vcache --widescreen --draw-distance 2` (Toasty play anchored at 7,049).
+  - Vita3K `toasty60` (added to `autopilot/config.json`): `o-toasty.pad` with `o-toasty.cfg`'s menu warp, the owner's settings with `dd_budget=1`, `shot_every=100` to 15,000. Artisans play from 10,648, the warp at 11,400, Toasty play from 11,440; 1,821 polygons a frame against 1,824 on hardware. Timing windows 11,700–12,600. Picture baseline: `runs/auto-233-1/fix-toasty60` (150/150 identical to its base).
+- **Found** (Vita3K Toasty, 11,700–12,600, `vc_lazy_logic=0` so the walk only looks up, as on hardware; relative): the walk 3.7–4.1 ms a vblank against 0.7 with `persp=0`. The vertex cache's lookup is about 80% of it (about 2.4 ms the lookups, 0.5–1 ms the choice and answers); conversion, splits and GR calls about 0.7 ms. `gpu_walk.c`'s own code is small.
+- **How** (`src/platform/common/vcache.c`, `psx_vcache.h`): `psx_vcache_poly` does the lookups (`look`, `lz_need`) and, when every vertex is found valid (99% in Toasty), finishes the polygon on a short path (choice, counts, references, side answers); anything else goes to `poly_full`, the old body, which looks up again with the first pass's counts dropped. `poly_full` had set up about 1.4 KB of stack and ~30 stores a polygon. Mode 2 (default) also reads each vertex's first probe up front so a polygon's table misses can overlap on the A9. `psx_vcache_set_found_fast(0|1|2)`; the config key is #232.
+- **Measured:** host gprof walk functions −5.5% (63.0 → 59.6 s, route T). Vita3K within its noise (base 2.82–4.06 ms, fix 3.21–3.93).
+- **Checks:** host FNV per polygon identical on 8 pairs (T, O60, S, Si, P, Pi, Pf, Pfi; 150 M polygons); host logs identical apart from timing lines; missed counts unchanged; shots identical on the seven routes and on `toasty60`; host ctest 32 of 32; Vita build; `noassets`. Logs: `runs/auto-233-1`.
+- **Left:** a hardware A/B of `found_fast` 0/1/2 on the Toasty route (#232 adds the key). Route T's missed line reads 1,203 (SpyroDraw 981, MobyShadows 220), a class S, P and Pf never showed: #242. A key/tag array apart from the candidates would cut table lines per lookup from ~2.45 to 2, but it's a large `Entry` change and isn't filed yet.
+
+### D227. With the fix on, Spyro's clip points are kept as their polygon's own, and a far moby shadow's nudged corner takes its corner's own projection (#242, 2026-11-24)
+
+- **Why:** host route T (Toasty, 60 Hz, D226) read `missed 1203 (SpyroDraw 981, MobyShadows 220, EnvDraw 2)`, a class S, P and Pf never showed. Tagged (`runs/auto-242-1/host/diag242.py`, `classify242.py`):
+  - Spyro partly under the floor (`ClipTriangle`): two clip points of different edges round to one pixel at different exact places, so D182 drops both (951); and clip edges whose end key holds two of his vertices (30).
+  - Shadows a few pixels wide with two corners on one key: the nudged corner's alias was dead or ambiguous (175 / 45), and #216's fallback had nothing, because the own point under (source key, centre) held two corners.
+  - All in the logic frames, none in the presenter.
+- **How** (`src/game/pete_render_hand.c`, `shadows_hand.c`, `src/platform/common/vcache.c`, `psx_vcache.h`):
+  - `ClipTriangle` hands its clip points over once the primitive is whole, in the same order with nothing between, so hk sees exactly what it saw. With `VCD_KEEP` each is also kept in D223's `Sp` store under `VCD_CORNER(the primitive's VCD_PIECE_V anchor, its place)`; where hk's sources give no place, `pk_place` takes the ends from their own projections (end indices in `VCD_PETE_ENDS`).
+  - While Spyro is clipped and the cache records, `PartVertices` names each vertex slot's final projection (`VCD_SELF`) under `VCD_PETE_V(index)` (anchor y = 32767, which no screen key has); a clipped primitive's real vertices are kept in `Sp` the same way.
+  - The walk takes these only for a SpyroDraw polygon nothing else found, for each vertex with no entry or an ambiguous key, and only when every such vertex has one.
+  - A shadow's nudge passes its corner's projection count back (`VCD_ALIAS|VCD_OWN`, q = 5 − (c − v)/4). Where the source's own point is dead, `own_corner` keeps that projection (key-checked) as a separate class (`placed = 2`) that gives way to every other own point, is no hand-over's source, leaves neither when two differ under one key and anchor, and serves a found vertex only after #216's two tries fail.
+  - New counters `pk_found`, `pk_kept`, `pk_full`, `own_corner` and a `vcache Spyro and shadows own:` line. hk is unchanged; D182, D205, D213, D218, D220, D221, D223 and D226 are kept.
+- **Measured (host, 2×, 16:9):** T 1,203 → 2 (EnvDraw 2); SpyroDraw and MobyShadows 0 on every route; S 136, Si 289 → 288, P 5, Pi 16, Pf 14, Pfi 28, O60 0. `own_full`, `sp_full`, `pk_full` 0 everywhere. Vita3K `toasty60`: SpyroDraw and MobyShadows windows read 0; `vc.misses` −54%; `vc.rec.probe` +0.6% (about 31 probes a frame; two runs of the base VPK differ by 0.0%), `vc.probe`/`vc.lines` +0.3%; draws and triangles the same.
+- **Checks:** host FNV per polygon on 8 pairs (T, O60, S, Si, P, Pi, Pf, Pfi; 157 M polygons), base and fix from clean objects: 0 found-before changed, 0 became affine (1,151 newly found on T). Vita3K shots identical on all eight routes (toasty60 150/150 against `auto-233-1/fix-toasty60`). Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-242-1`.
+- **Left:** toasty60's attract-demo windows (4,200–5,700) show MobyDraw 2,508, ParticlesDraw 239 and 146, SkyDraw 6 missed, untagged and unchanged here (#243). Docs for the new line go with #226.
+
+### D228. Host builds can check that every change to an NgteProj after use takes a new generation (`VC_CHECK_GEN=1`, `gen_stale`) (#218, 2026-11-24)
+
+- **Why:** since D202 the record treats two projections with the same generation as having the same registers (`same_ngte`, and `rp_skip` since D221). A renderer that changed a field without `ngte_proj_regen` would place vertices wrongly, and FNV dumps only catch that on a route that happens to draw it.
+- **How** (`src/platform/common/vcache.c`, `psx_vcache.h`; comment in `src/game/gte_native.h`): in host builds only, with `VC_CHECK_GEN=1` or `psx_vcache_set_check_gen(1)`, `ngte_vcache` and `pres_vcache_ngte` (every native projection reaches the record through them, so `rp_skip` and every later reuse are covered too) keep each generation's 17 fields (r11–r33, tr, ofx, ofy, h, dqa, dqb) as its first projection had them, for the last 8,192 generations per kind. Every later projection of that generation is compared word by word; each that differs counts as `gen_stale` under the renderer context that returns next (#211's names), and the first 16 are logged with the field, old and new value and the caller's address. A `vcache gen check:` line comes with each report while it's on. Generation 0 is skipped. Off by default, one load and branch a projection when off, and compiled out of the Vita build (`#ifndef __vita__`). ctest `vcache_gen` covers it.
+- **Result:** `gen_stale` 0 on 36 host runs: S, P, Pf, T, O60 and the title and attract demos, each at 30 Hz, `--interp` and `--tick60 --interp`, at 1× and 2× (up to 54 M logic and 38 M presenter projections compared a run). Missed counts with the check on match D227 exactly. No renderer needs a follow-up.
+- **Checks:** the Vita ELF's `.text` and `.data` are byte-identical to the head's (only the build-date string in `.rodata` differs); Vita3K shots identical on all eight routes; host ctest 33 of 33; native build; `noassets`. Logs: `runs/auto-218-1`.
+
+### D229. With the fix on, a record whose probe runs out makes its entry in an overflow apart from the table's slots, read only for SkyDraw polygons (#221, 2026-11-24)
+
+- **Why:** SkyDraw's missed vertices (D210: 111 on host S at 30 Hz, 244 with `--interp`, 2 on Pi) all had one cause, "no record" (tagged with `runs/auto-221-1/host/diag221.py`, `classify221.py`). Late in a busy Stone Hill frame at 2× (about 4,000–5,000 keys in 8,192 slots), the record's linear probe met `VC_PROBE` = 32 taken slots in a row and gave up, counted only in `full`. The main sky records last, so now and then one fan-centre vertex had no entry, and each of its 4–9 triangles was missed; the rim vertices were found through neighbouring sectors. `sky_hand.c` was already correct.
+- **How** (`src/platform/common/vcache.c`, `psx_vcache.h`):
+  - A record whose 32-slot probe fails makes its entry in a 64-entry overflow after the table's slots in the same array (`ov_find`; `Entry s[VC_SIZE + VC_OV]`, with `last`, `rp` and the lazy store's `head` widened to match).
+  - The slots hold exactly what they held before, so every key's probe ends where it did. An overflow entry gets no place in the frame's order (`VC_NOSEQ`), is worked out at once and never kept for the walk, and is no hand-over's source (sources are still looked up with the 32-slot `find`).
+  - The walk reads the overflow only for a vertex not found in the slots in a polygon `cx_find` names SkyDraw, and only in a frame whose records made one (`Table.ov_gen`). `psx_vcache_get`'s bound includes the overflow.
+  - Probing on to the first free slot instead (two earlier versions) changed 116–122 found-before polygons on S: an entry in the free slot after a full run displaces later keys, and the slot number is part of a vertex's ref.
+  - Off switch `psx_vcache_set_overflow(0)` / `VC_OVERFLOW=0` on the host (on S it gives back the head's numbers exactly: missed 136, SkyDraw 111, 45 not recorded). New counters `ov_kept`, `ov_found` on a `vcache overflow:` line. D182, D205, D213, D216, D218, D220, D223, D227 and D228 are unchanged.
+- **Measured (host, 2×, 16:9, base b17a0de):**
+
+  | Route | Missed | SkyDraw | Overflow records / SkyDraw vertices found there |
+  |---|---|---|---|
+  | S | 136 → 25 (ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5) | 111 → 0 | 45 / 111 |
+  | S `--interp` | 288 → 44 (ParticlesDraw 20, PortalSkyPlain 14, EnvDraw 6) | 244 → 0 | 99 / 244 |
+  | P | 5 → 5 | 0 | 0 / 0 |
+  | P `--interp` | 16 → 14 | 2 → 0 | 1 / 2 |
+  | Pf | 14 → 14 | 0 | 1 / 0 |
+  | Pf `--interp` | 28 → 28 | 0 | 1 / 0 |
+  | T | 2 → 2 | 0 | 0 / 0 |
+  | O60 | 0 → 0 | 0 | 0 / 0 |
+
+  Vita3K demo60/toasty60's SkyDraw 6 and 4 (windows 4,200 and 5,400) → 0; owner60, stone60 and wobble60 make no overflow records. At most 3 overflow records were seen in one frame.
+- **Checks:** host FNV per polygon on 8 pairs (151 M polygons), base and fix from clean objects: 0 found-before changed, 0 became affine (111 / 244 / 2 newly found). Vita3K shots identical on all eight routes. `CAPTURE=1` grabs at the only Vita3K frames that make overflow records (demo60 3,952–3,954 and 5,175–5,177, presenter frames, sky in view) are byte-identical to fix-off: no cracks. Counters the same against a second head run apart from timing ones inside the head's own spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-221-1`.
+- **Left:** on S, 19 of the 45 overflow records are other renderers' keys, unread under the SkyDraw-only rule; whether any of S's remaining ParticlesDraw 10 / EnvDraw 6 come from them is noted on #231 and #237. A better hash or bigger table would shorten probe runs (the multiplicative hash on y<<16|x clusters at 60% load), but every slot would change. Docs for the new line go with #226.
+
+### D230. The vertex cache's counters find a renderer's primitives by their offset in the game's memory, the walk's copy's too (#222, 2026-11-24)
+- **Why:** D210 filed 1,086 code-2c vertices on host S (2,175 with `--interp`) as outside although their polygon had a placed vertex. #222 traced every one. All are 2D, drawn by the game's C into the HUD OT (`func_800168DC`):
+  - the title menu's border and menu sprites (`TitlescreenDrawSprite`), read from present.c's narrowed copies;
+  - the screen copy (`func_8001A40C`).
+
+  One corner of each shares an integer pixel with a 3D projection behind it, so they stay exempt. No renderer range was dropped and `VC_CX` was never full on S, Si, P, Pi, Pf, Pfi or a 60 Hz stone60 host route.
+- **The Vita gap (D213):** on the native build the walk reads PS1 primitives (portal sky, portal faces) from walk.c's malloc'd copy, and neither that copy nor the game's block is 16 MB-aligned. So the low-24-bit compare filed them as outside, and D210's missed count under-reported the portal sky on the Vita.
+- **How:** `cx_ofs()` maps an address to its offset in the game's memory; a polygon in the walk's copy (`psx_gpu_game_walk()->copy`) maps to the same offset. Other addresses keep their low 24 bits, tagged so they can't match. Each `Cx` keeps both forms. Only the counter's lookup at `miss_none` uses the offset form (`cx_find_(…, 1)`); the placement gates (#215, #217/#229, #221, #227) still compare the low 24 bits.
+- **Measured (Vita3K, head → fix, run totals):**
+
+  | Route | Missed | Outside | Portal faces |
+  |---|---|---|---|
+  | stone60 | 8 → 46 | 23,176 → 22,925 | 0 → 213 |
+  | owner60 | 0 → 0 | 31,350 → 30,681 | 0 → 669 |
+  | wobble60 | 0 → 0 | 31,348 → 30,677 | 648 → 1,319 |
+  | pause-ws-wobble | 0 → 0 | 31,236 → 30,681 | 0 → 555 |
+
+  stone60 window 6,600 now reads `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`, the same as the host's 60 Hz stone60 route; host O60's outside and portal faces now equal Vita owner60's. Title, pause-ws, demo60 and toasty60 are unchanged.
+- **Checks:** host FNV per polygon on 8 pairs: 0 changed, and every host `vcache derived:` line identical. Vita3K shots identical on all eight routes. Counters against the head's run the same apart from timing ones inside their spread. Host ctest 33 of 33, native and Vita builds, `noassets`. Logs: `runs/auto-222-1`.
+- **Left:** the Vita's placement gates still use the low-24 compare (filed); the portal sky misses now visible on the Vita go to #230; HUD sprites with a found corner take a 3D projection's sub-pixel place (filed).
+
 ## 2026-11-23 — the PC build (Linux; Windows to follow)
 
 ### D240. A native desktop build: SDL3 for the window, input and sound, OpenGL 3.3 core for the picture, in the low-image model

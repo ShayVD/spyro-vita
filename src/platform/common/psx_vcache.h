@@ -48,9 +48,29 @@ void psx_vcache_enable(int mode);
  * logic draw's, below). */
 void psx_vcache_set_lazy(int on);
 /* The logic draw's too (#179), worked out by its walk: 1 (the default)
- * while the presenter draws no in-between frames (60 Hz logic, or 30 fps),
- * 2 always, 0 never (each one at once on the game thread, as before). */
+ * while the presenter draws no in-between frames (60 Hz logic, or 30 fps)
+ * and the last frame's walk has ended, 2 always, 0 never (each one at
+ * once on the game thread, as before). 3 (#204): as 1, but a quota of each
+ * frame's first projections, sized from the walk's idle time before the
+ * game thread's last projections in recent frames (vcache.c LZ_QUOTA); a
+ * `vcache quota:` line with the cost lines. The same answers in each. */
 void psx_vcache_set_lazy_logic(int mode);
+/* #233: the walk's lookup of a polygon whose vertices are all found takes a
+ * short path of its own (psx_vcache_poly), the rest the whole one as
+ * before: 2 (the default) that path, reading the polygon's first probes
+ * up front; 1 that path without; 0 every polygon the whole path. The same
+ * answers in each. */
+void psx_vcache_set_found_fast(int mode);
+/* #221: a record whose probe runs out (VC_PROBE, 32 slots of the frame's
+ * other keys; late in a busy frame, as the main sky's records come) makes
+ * its entry in a small overflow apart from the table's slots, where before
+ * it made none and every polygon of its vertex's fan was missed (1, the
+ * default; 0: none, as before). The slots hold what they held before; an
+ * overflow entry takes no place in the frame's order, is worked out at
+ * once, is no hand-over's source, and is read only for a SkyDraw polygon's
+ * vertex with no entry in the slots, so every other polygon is found as
+ * before. Host builds read VC_OVERFLOW=0 from the environment too. */
+void psx_vcache_set_overflow(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
@@ -75,15 +95,137 @@ void psx_vcache_set_lazy_logic(int mode);
  * how's bits 4-7: the renderer (VCD_SHADOWS...), for the counters. A
  * source with no usable entry (none, ambiguous, invalid, different points
  * under its key), or two hand-overs placing one key differently, leave the
- * key without one, as before. The hook reads only its arguments and writes
+ * key without one, as before; since #202 two cuts at one key within 2
+ * pixels share their mean place, and an alias or offset of an ambiguous
+ * key is resolved with it from the frame's order (vcache.c). The hook reads only its arguments and writes
  * only the cache's table: nothing the game reads changes. NULL unless the
  * cache records; the presenter's renderers call their own copy
  * (render_ctx_names.h g_pres_rtp_derive_hook, which render_ctx.c hands to
  * psx_vcache_pres_derive_at and psx_vcache_pres_begin sets with its value
  * hook). */
 enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
-enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_WHO_N };
+/* (VCD_PARTICLES: the particles' screen-facing quads, reserved by #202;
+ * since #209 ParticlesDraw hands over their corners, VCD_OFFSET from the
+ * projected centre. A particle corner counts only where no other renderer
+ * placed the key, gives way to any other's, and is no source for another
+ * hand-over, so every point placed before stays as it was.) */
+enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
+/* #215: a VCD_LERP cut's own fraction, or'ed into how: t / 4096 of the way
+ * from a to b, as the clipper moved its integer ends (the sky through a
+ * portal: sky_clip_hand.c CutSide's IR0). Where the cut through the edge's
+ * line leaves its key with no place (more than 8 pixels off, an ambiguous
+ * end, two cuts placed apart), the cache places it t of the way between
+ * a's and b's exact places instead (an ambiguous end: its last projection
+ * in the frame's order), at the depth there; both ends need depths. Such a
+ * place is kept apart from the hand-overs: it is no source for another,
+ * and a polygon takes it only for a vertex nothing else finds (vcache.c
+ * frac_hand). how's bit 8 says t is there, its high half is t. */
+#define VCD_T(t) ((int)(0x100u | (unsigned)(unsigned short)(t) << 16))
+#define VCD_HAS_T(how) (((unsigned)(how) & 0x100u) != 0)
+#define VCD_T_OF(how) ((int)(short)((unsigned)(how) >> 16))
+/* #216: a glow's or a moby shadow's own points, kept apart from the
+ * hand-overs (hk) by the projection that made them. A key holds whatever
+ * projected or was handed over at its pixel, so where another point shares
+ * it (another renderer's cut, another moby's shadow corner, the world's
+ * vertex) the key names no single point and the hand-over leaves the
+ * vertex with none. Those renderers also name their points by the call
+ * that made them, under (sxy, b), b the key of their polygons' first
+ * vertex (the fan's centre, which the walk reads from the polygon):
+ *  - VCD_SELF (alone: no hand-over): sxy is the projection the renderer
+ *    made p projections back (0: its last), named by its place in the
+ *    frame's order;
+ *  - VCD_OWN (with an alias or offset hand-over, as before): the point is
+ *    also its source's own point (a's under (a, b), else a's last
+ *    projection in the frame's order) plus the offset.
+ * A polygon of theirs takes these only where nothing else finds it (after
+ * #181's, #197's and #202's resolution), every vertex not found having one
+ * (vcache.c own_look): every polygon found before is found as it was. A
+ * point whose projection the GTE could not give (behind the eye) is drawn
+ * as the PS1 draws it, and its vertex is counted exempt (VCX_NO_PROJ).
+ *
+ * #217: the world's pieces split on the last list (env_hand.c SplitLast).
+ * A piece queued there names its corners (VCD_SELF) under its first
+ * vertex's key; each split point's VCD_PERSP hand-over adds VCD_OWN with q
+ * that anchor (p stays its fraction). Where an end's key gives no source
+ * (an ambiguous or invalid key: a corner the GTE clamped to the screen's
+ * limit, which other clamped points share), the end is taken at its own
+ * point, after the hand-over's two passes (#202) fail; a place made so is
+ * tainted (#202: it counts only where nothing else placed the key), and
+ * may lie far from the PS1's key (a clamped end's exact place: within
+ * 16384 pixels, not 1024). An end with no projection (behind the eye)
+ * leaves the key with none, its vertex exempt (VCX_NO_PROJ). A
+ * piece the split queues again, or draws, names the corners it keeps
+ * under its own first vertex (VCD_SELF with VCD_OWN: sxy's own point under
+ * q, if any, becomes its own point under b), and the walk's own-point step
+ * above takes a world piece's too. Each corner is named under the anchor
+ * VCD_CORNER(first vertex's key, its corner number), so two corners on one
+ * key (both clamped to one screen corner) stay apart; the VCD_PERSP
+ * hand-over gives its ends' corner numbers in how (VCD_ENDS). */
+#define VCD_OWN 0x200
+#define VCD_SELF 0x400
+#define VCD_ENDS(ia, ib) ((int)((unsigned)(ia) << 16 | (unsigned)(ib) << 20)) /* #217 (VCD_PERSP) */
+#define VCD_ENDS_A(how) (((unsigned)(how) >> 16) & 15u)
+#define VCD_ENDS_B(how) (((unsigned)(how) >> 20) & 15u)
+#define VCD_CORNER(anchor, i) ((unsigned)(anchor) ^ (unsigned)(i) << 28)
+/* #229: where two split points of different pieces fall on one pixel (the
+ * integer midpoints of clamped corners) the key names no single point, and
+ * D182 drops both. So each split point is also kept as its piece's own,
+ * apart from the hand-overs: its place and depths under its key and the
+ * anchor VCD_CORNER(piece's anchor, VCD_EDGE(ia, ib)), which each GT3 that
+ * SplitLast emits moves to VCD_CORNER(its own anchor, its vertex number) as
+ * it does its corners (VCD_SELF with VCD_OWN; p 1 for a split point), so a
+ * GT3 queued again finds its ends there too. Where its ends' keys give no
+ * place, it is made from the piece's own ends, paired however far apart
+ * their depths are (a polygon found so whose depths no choice brings under
+ * 4 times apart is drawn affine, as any such polygon is). A
+ * piece's corner the grid moved off its projection (GridCorrect: no entry,
+ * or another point's) is kept the same way, at the projection that made it
+ * (VCD_SELF names it). The walk's own-point step takes these only for a
+ * world polygon nothing else finds; no hand-over reads them (vcache.c Sp). */
+#define VCD_EDGE(ia, ib) (4u + 4u * (unsigned)(ia) + (unsigned)(ib)) /* ia < ib: 5..15 */
+/* #229: a world piece's anchor (above, and #217's corners') is all its
+ * corners' keys and texture coordinates mixed, not its first vertex's key
+ * alone: GT3s of one piece that start at one point and have two different
+ * corners on one clamped key at one vertex number (or two split points on
+ * one pixel) named both under one anchor, so neither was kept. Each vertex's
+ * term: its key xy, its u/v (the low half of the primitive's word after
+ * xy), and its place in the primitive (0..3); the anchor is the terms xored. */
+#define VCD_PIECE_V(xy, uv, i)                                                                 \
+  (((unsigned)(xy) ^ (unsigned)(unsigned short)(uv) * 0x9E3779B1u) *                          \
+   (0x85EBCA77u + 0x40000000u * (unsigned)(i)))
+/* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
+ * once for every piece of its grid: a world quad drawn at once (not split)
+ * finds its moved corner there */
+#define VCD_MOVED 0xFFFFFFFFu
+/* #242: Spyro clipped at the floor (pete_render_hand.c ClipTriangle). Where
+ * two of his edges cross the floor at one pixel (they crowd along the floor's
+ * line on screen), the two clip points are different points under one key,
+ * and D182 drops both. So with VCD_KEEP or'ed into a VCD_PERSP hand-over,
+ * the point is also kept as its polygon's own (vcache.c Sp, as #229's world
+ * points), under q: VCD_CORNER(the drawn primitive's anchor, the point's place
+ * in it), the anchor VCD_PIECE_V's terms of all its vertices xored. The
+ * hand-over itself (hk) is as before. The walk takes these only for a
+ * SpyroDraw polygon nothing else finds, for each of its vertices not found.
+ * An edge's end whose key names no single point (two of Spyro's vertices on
+ * one pixel) is taken at its own projection: while Spyro is clipped, his
+ * renderer names each vertex's projection (VCD_SELF) under VCD_PETE_V(its
+ * index), and the clip point's hand-over gives its ends' indices in how
+ * (VCD_PETE_ENDS). A drawn vertex of a clipped primitive (VCD_SELF with
+ * VCD_KEEP, b its VCD_PETE_V) is kept the same way under q, at its own
+ * projection, so a vertex of his whose key names no single point is found
+ * there too. None of these touch the hand-overs (hk).
+ * #242: a moby shadow's nudged corner (VCD_ALIAS with VCD_OWN) whose source
+ * key holds two of its shadow's corners (a far shadow, a few pixels wide)
+ * has no own point there (two under one key and anchor: dead). With q
+ * non-zero, that corner is the projection q - 1 back (0: the last), as
+ * VCD_SELF names one; it is taken only where the source's own point is dead,
+ * so every own point kept before is kept as it was. */
+#define VCD_KEEP 0x800
+#define VCD_PETE_V(j) (0x7FFF0000u | (unsigned)(j)) /* (y 32767: no screen key's) */
+#define VCD_PETE_ENDS(ja, jb) ((int)((unsigned)(ja) << 16 | (unsigned)(jb) << 24)) /* (0..255) */
+#define VCD_PETE_ENDS_A(how) (((unsigned)(how) >> 16) & 255u)
+#define VCD_PETE_ENDS_B(how) (((unsigned)(how) >> 24) & 255u)
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -159,6 +301,23 @@ void psx_vcache_frame_use(const PsxVcacheFrame *f);
 typedef void (*PsxVcacheValueHook)(const int *proj, int vx, int vy, int vz, unsigned int sxy,
                                    int sz3);
 PsxVcacheValueHook psx_vcache_pres_begin(int walks);
+
+/* The native projections' record (#205; the sky's records too since #213,
+ * sky_hand.c): gte_native.h's RTPS and RTPT, while
+ * the hook above (or the game's g_psyxRtpValueHook) is set, call the cache
+ * by name with the registers by pointer, their generation (NgteProj gen:
+ * the same generation, the same registers) and the sums and SZ3 the GTE
+ * emulation worked out (NgteRtp), instead of copying 15 registers into the
+ * hook's form for each vertex and summing again here. ngte_vcache
+ * (declared in gte_native.h) records the game's into the logic draw's
+ * table, pres_vcache_ngte (the presenter's build's ngte_vcache,
+ * render_ctx_names.h) the presenter's into its own; each is what the hook
+ * set then does with the same projection. g_ngte_gen and g_pres_ngte_gen
+ * (gte_native.h) count the two builds' generations. */
+struct NgteProj;
+struct NgteRtp;
+void pres_vcache_ngte(const struct NgteProj *p, unsigned int vxy, unsigned int vz,
+                      const struct NgteRtp *o);
 
 /* The presenter's frame on its own thread (the Vita's pres_thread=1, D126;
  * #162), beside the logic draw:
@@ -243,10 +402,92 @@ extern VCacheCounters g_vcache_ctr[2];
 enum { VCR_KEPT, VCR_ONCE, VCR_WORKED, VCR_DIV, VCR_PROBES, VCR_LINES, VCR_STORE, VCR_N };
 extern unsigned g_vcache_rec[2][VCR_N];
 
+/* Renderer contexts (#211): which renderer wrote a polygon, so a vertex
+ * left with no entry can be told apart: missed (a 3D renderer's vertex the
+ * cache should have placed) or exempt (drawn in screen space on purpose).
+ * A renderer, as it returns, tells the cache the primitives it wrote in the
+ * frame being recorded: the primitive buffer's pointer before and after
+ * (p0, p1) and native_draw's record cursor before and after (n0, n1; nb the
+ * record pool's start after, for a pool begun in the call). The name is its
+ * hand C's (render_hand.h HAND_RENDERER's hand: "EnvDraw"...). The walk
+ * then finds the polygon's primitive (or record) among the frame's ranges,
+ * the smallest that holds it, a copy's (walk.c, D71) by its offset in its
+ * 16 MB window. #222: for the counters, by its offset in the game's memory
+ * (psx_arena.h), the copy's too: the native build's (the Vita's) blocks
+ * aren't 16 MB-aligned, so there a primitive the walk read from the copy
+ * (the portals' sky) was filed outside. The placement's renderer gates
+ * (#215, #217, #221, #227) still compare the low 24 bits. So the class
+ * comes from what the frame recorded, not from the walk's timing. Classes:
+ *  - a known renderer's (VCX_ENV...VCX_PORTAL_SKY_FOG) or another marked
+ *    one's (VCX_OTHER): missed;
+ *  - VCX_PORTAL_FACE (a portal's face: screen corners clipped flat at the
+ *    portal's outline, place-only hand-overs) and VCX_OUTSIDE (in no
+ *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
+ *    the game's own C into the HUD OT, order_table.c func_800168DC; #222:
+ *    in some a vertex shares a pixel with a projection and is found, e.g.
+ *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene):
+ *    exempt;
+ *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
+ *    cache), so nothing says which;
+ *  - VCX_NO_PROJ (#216): a glow's or moby shadow's vertex whose own point
+ *    (VCD_OWN) comes from a projection the GTE could not give (a glow
+ *    behind the eye, its centre clamped to the screen's limit): drawn as
+ *    the PS1 draws it, exempt; #217: a world split point whose end has no
+ *    projection (behind the eye) too.
+ * psx_vc_ctx is the logic draw's, pres_vc_ctx the presenter build's (its
+ * objects may call only pres_ names, tests/render_ctx/link_check.sh); both
+ * do nothing when the cache doesn't record. Only for the counters: no
+ * answer changes. */
+enum {
+  VCX_ENV,             /* EnvDraw */
+  VCX_MOBY,            /* MobyDraw */
+  VCX_LIT,             /* LitDraw */
+  VCX_SPEC,            /* SpecDraw */
+  VCX_SPYRO,           /* SpyroDraw */
+  VCX_SPYRO_SHADOW,    /* SpyroShadow */
+  VCX_MOBY_SHADOWS,    /* MobyShadows */
+  VCX_FLAME,           /* FlameDraw */
+  VCX_PARTICLES,       /* ParticlesDraw */
+  VCX_GLOWS,           /* GlowsAndSparkles */
+  VCX_RING,            /* DragonRing */
+  VCX_SKY,             /* SkyDraw */
+  VCX_FOG_SKY,         /* FogSky */
+  VCX_PORTAL_SKY,      /* PortalSkyPlain */
+  VCX_PORTAL_SKY_FOG,  /* PortalSkyFog */
+  VCX_PORTAL_FACE,     /* PortalFace (exempt) */
+  VCX_OTHER,           /* a marked renderer with another name */
+  VCX_OUTSIDE,         /* in no renderer's range (exempt) */
+  VCX_UNMARKED,        /* the frame has no ranges */
+  VCX_NO_PROJ,         /* #216: a glow's or shadow's point made from a projection the GTE could
+                          not give (behind the eye): the PS1's place (exempt) */
+  VCX_N
+};
+void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                uintptr_t nb);
+void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
+                 uintptr_t nb);
+
 /* Counters since the start or the last psx_vcache_stats_reset() (the Vita
  * takes them with psx_vcache_stats_take instead, #181), by kind of frame:
  * [VC_LOGIC] the logic draw's, [VC_PRES] the presenter's. */
 enum { VC_LOGIC = 0, VC_PRES = 1 };
+
+#ifndef __vita__
+/* #218, host builds only (not in the Vita's): the record compares a native
+ * projection's registers by their generation (gte_native.h NgteProj gen,
+ * #205), so a renderer that changes a field after a projection without
+ * ngte_proj_regen would get another projection's answers. With the check on
+ * (VC_CHECK_GEN=1 in the environment, read at the first native projection,
+ * or psx_vcache_set_check_gen(1); off by default), each generation's fields
+ * as its first projection had them are compared word by word with every
+ * later projection of that generation, and each that differs counts as
+ * gen_stale under the renderer context that returns next (VCX_*), with a
+ * `vcache gen check:` line in each report. psx_vcache_gen_stale: kind's
+ * count in context cx, -1 for all, VCX_N for those no renderer has named
+ * yet. Counts only: no answer changes. */
+void psx_vcache_set_check_gen(int on);
+unsigned psx_vcache_gen_stale(int kind, int cx);
+#endif
 /* Why an ambiguous vertex was left ambiguous (#197, VCacheStats res_why):
  * its polygon also has a vertex with no entry that nothing finds (not a
  * quad's only one, or none of its corners' order names it: no hand-over
@@ -306,6 +547,68 @@ typedef struct {
    * why (RW_*) */
   unsigned res_der;
   unsigned res_why[RW_N];
+  /* #202: hand-overs cut at an edge's pixel another cut had placed
+   * differently, merged into one place (their mean) */
+  unsigned hk_merged;
+  /* #202: derived vertices at the projection the order named whose depth
+   * is that projection's own, chosen with the polygon's others, where the
+   * plane through those gave none (counted in derived too) */
+  unsigned der_own;
+  /* #202: hand-overs of one point (an alias, an offset) whose source key is
+   * ambiguous, kept as that key's; and the vertices found so, resolved
+   * from the frame's order (counted in hits, not in hooked or resolved) */
+  unsigned hk_ambsrc, res_alias;
+  /* #211: the vertices left with no entry (miss_none), by the renderer
+   * context whose primitive their polygon is (VCX_*, above): their sum is
+   * miss_none */
+  unsigned ne[VCX_N];
+  /* #215: vertices with no entry found at their cut's own fraction (VCD_T;
+   * counted in hits and hooked too); the cuts placed so, and those with an
+   * end not usable or more than 8 pixels from their key */
+  unsigned hk_frac, fr_kept, fr_nosrc;
+  /* #216: vertices found from their renderer's own point (VCD_OWN,
+   * VCD_SELF; counted in hits, not in hooked), those of them whose key was
+   * ambiguous (not counted in resolved), the vertices of their polygons
+   * found otherwise but drawn at their own point too (one projection's
+   * depths for the whole polygon), and the own points kept, not usable when
+   * made (no source, or the projection named is not the key's, or two
+   * different under one key), and not kept (full) */
+  unsigned own_found, own_amb, own_over, own_kept, own_nosrc, own_full;
+  /* #217: the world's split points (VCD_PERSP with VCD_OWN) placed from
+   * their ends' own points, where an end's key gave none (an ambiguous or
+   * invalid key: corners the GTE clamped to the screen's limit) */
+  unsigned hk_own;
+  /* #217: quads' vertices with no entry derived at their place with a
+   * depth from a projection the frame's order named but derive couldn't
+   * take (two places, or a key with different points), where the plane
+   * through the others gave none (counted in derived too) */
+  unsigned der_named;
+  /* #217: world split points not placed because an end has no projection
+   * (behind the eye), marked so their vertices count as exempt
+   * (VCX_NO_PROJ) */
+  unsigned hk_noproj;
+  /* #229: world points kept as their piece's own (psx_vcache.h VCD_EDGE):
+   * vertices found from one (counted in hits and own_found too), the
+   * records made (split points, the moves to each GT3, moved corners), not
+   * kept (full), the split points among them placed only by pairing ends
+   * whose depths are 4x apart or more, and the corners the grid moved; and
+   * the world polygons found from their own points whose depths no choice
+   * brings under 4x apart, drawn affine (counted in spread too); and the
+   * ambiguous corners of world quads found so, resolved from the frame's
+   * order near their moved corner's own projection (counted in resolved),
+   * and the moved corners found where those weren't (their polygon drawn
+   * affine, its ambiguous corners left as they were) */
+  unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread, sp_res, sp_part;
+  /* #242: Spyro's clip points (VCD_KEEP): vertices found from their
+   * polygon's own one (counted in hits and own_found too), the records made
+   * and not kept (full: they share #229's store); moby shadows' nudged
+   * corners whose own point was taken from their corner's projection (the
+   * source key's own point dead) */
+  unsigned pk_found, pk_kept, pk_full, own_corner;
+  /* #221: projections recorded in the overflow, their probe past VC_PROBE
+   * (32) slots (none recorded before: counted in full then); and the
+   * vertices of SkyDraw polygons found there (the only ones that look) */
+  unsigned ov_kept, ov_found;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

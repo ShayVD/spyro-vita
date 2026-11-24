@@ -10,10 +10,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "game": "spyro",
   "phase": 8,
   "workers": [],
-  "last_good": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
+  "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
   "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
-    "commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc"
+    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
+    "commit": "278ebf8"
   },
   "hardware_runs": [
     {
@@ -56,6 +56,18 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "37c3a95",
       "runs": "AP1-AP7 (tools/vita/fps-runs/README.md)",
       "result": "D172: PAL OK; wobble fix +2.6 ms game thread at 60 fps; presenter on core 1 -35%; GL shadow no time; cheaper cache below noise; vdm_ring=1024 harmless, default off"
+    },
+    {
+      "date": "2026-11-22",
+      "commit": "85a7b2c",
+      "runs": "AP16a-d, AP16t (runtime/autopilot/hw-session6.sh)",
+      "result": "D209: shader cache 10.3 s -> 0.14 s second boot; Stone Hill play busy 73.2 -> 71.5% but 48 KB budget holds 1x with 15-28% spare (#212); vc_lazy_logic=3 no gain; Artisans late 16.5 -> 0.5/300; attract demo ~177 late/300 inline presenter (#220)"
+    },
+    {
+      "date": "2026-11-23",
+      "commit": "687ca1d",
+      "runs": "AP18a-c, AP18o, AP18t (runtime/autopilot/hw-session7b.sh)",
+      "result": "D219: dd_budget=auto x1.03-1.41 vs 48 KB x1.00-1.31, held at 1x by measured time (15.2 ms of 14.5); D216-D218 cost nothing; attract demo 166 late/300, game waits 12 ms/vblank on presenter worker (#227); 60 Hz Artisans/Toasty over 14.5 ms at 1x, Artisans sky +0.5 ms, late 2.5/0.9 per 300 (#228)"
     }
   ],
   "perf_candidates": [
@@ -133,9 +145,27 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware: #179 logic-frame deferral at 60 HZ (owner60-like heavy Artisans: game thread vs walk balance)",
       "expected": "owner-approved: logic draw ~2 ms a tick lower in heavy windows; walk takes it while idle",
       "issue": 179
+    },
+    {
+      "issue": 203,
+      "what": "hardware: 30 Hz still holds where 2x now draws more (title flyby, attract demos); if not, give 30 Hz a budget (D201)"
+    },
+    {
+      "issue": 201,
+      "what": "hardware: second boot reads 17 shader-cache hits; black-screen time (D200)"
+    },
+    {
+      "issue": 204,
+      "what": "hardware A/B: vc_lazy_logic=1 vs 3 in the owner 60 HZ Stone Hill and Artisans windows; if 3 wins make it the default (D206)"
+    },
+    {
+      "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
+      "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
+      "issue": 212
     }
   ],
   "owner_decisions": [
+    "2026-11-22: owner asked to fix the known wobble-fix and draw-distance issues and loop until fully fixed; filed #211-#219 (phase-8). Done = missed (non-exempt) wobble vertices at 0 on host routes S/P/Pf, 2x holding at 60 Hz on the owner's settings on hardware.",
     "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D175-D197 (with D194, D195, D196)). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
     "2026-11-20 16:55: owner said yes to the Vita runs, then 'actually ask me again when you have the builds ready'. Session 3 (runtime/autopilot/hw-session3.sh: AP8a/b owner60 on hardware b604db4 vs ca4450e, AP9a/b shot_hd pictures, AP10 Toasty vs hw-ap2, then put-eboot ca4450e) is prepared and NOT run; ask again before running.",
@@ -166,6 +196,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "Restart after D172 (2026-11-20)",
       "default_taken": "owner: one PSX WOBBLE row, no wobble by default (#177); no wobble at all and no FPS drop (#178, #179, #181); fix draw distance 2x (#180); start the loop again",
       "switch": "state.phase"
+    },
+    {
+      "issue": 208,
+      "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
+      "default": "keep the wobble fix on far mobys (no change)",
+      "status": "open"
     }
   ],
   "attempts": {
@@ -178,15 +214,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 10,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-63d80f4",
-    "base_commit": "63d80f4c28a1c048f5ae84c0fcd582a3149f0fcc",
-    "started_at": "2026-11-21T07:05:00Z",
-    "filed": 1,
+    "n": 12,
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
+    "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
+    "started_at": "2026-11-22T06:56:29Z",
+    "filed": 31,
     "investigated": true
   },
-  "rounds_without_gain": 1,
-  "hardware_pending": [],
+  "rounds_without_gain": 0,
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
@@ -284,3 +320,88 @@ continue.
 - 2026-11-20T12:54Z phase 8: merged #178 (D195; GPU window grabs identical to the baseline's); #180 running; Vita3K: 0
 - 2026-11-20T13:10Z phase 8: #180's worker drew a security warning (interfere with workloads); its 32 commands checked: reads, two buildlock builds, Vita3K route runs under perl alarm waiting for the lock; no kill, no docker, no Vita; it goes on; Vita3K: 0
 - 2026-11-20T13:18Z phase 8: tick - #180 running experiments (no commit yet); 6 containers of other sessions: one worker; queued #179, #182, #183, #181, #184; Vita3K: 0
+- 12:33Z phase 8: round 11 started (owner 2026-11-21: flawless and fully optimized); #200-#202 rewritten as tasks; worker #200 started (others wait: other sessions' containers running)
+- 12:59Z phase 8: worker #200 running (no commit yet); PR #176 merge checks green (vita, linux32 32/32, linux64, noassets; CI pass); pick empty (other sessions' containers)
+- 13:30Z phase 8: #200 worker committed the lod-line fix (680ad01), profiling continues; pick empty
+- 14:01Z phase 8: #200 worker still profiling (host runs live); pick empty
+- 14:31Z phase 8: merged #200 (D199); filed #203-#207, #208 needs-owner
+- 14:33Z phase 8: workers started for #201, #203, #205
+- 15:04Z phase 8: #201 #203 #205 running, no commits yet; pick empty; #208 unanswered
+- 15:35Z phase 8: #201 #203 #205 still running (long host/Vita3K runs), no commits yet; #203 ran up to 4 host runs at once (flagged, benign: own processes only)
+- 16:06Z phase 8: #201 #203 #205 have uncommitted edits in scope; #205 Files path corrected (src/game/render_ctx_names.h)
+- 16:37Z phase 8: stall check flagged #201 #203 #205 (no commit in 2 h) but all three are alive with in-scope edits; asked each for a WIP commit instead of stopping them
+- 17:10Z phase 8: merged #201 (D200)
+- 17:11Z phase 8: gate #203 running; worker #207 started
+- 17:39Z phase 8: merged #203 (D201); owner60 30 Hz shots changed as expected (2x now grows there)
+- 18:11Z phase 8: #205 gate running; #207 reported, gate queued
+- 18:19Z phase 8: merged #205 (D202)
+- 18:20Z phase 8: gate #207 running; worker #206 started (#202, #204 wait: docs/vita-testing.md with #207, vcache.c with #206)
+- 19:05Z phase 8: merged #207 (D203)
+- 19:37Z phase 8: #206 running (WIP commit 2e1cfb3); #202 #204 wait on vcache.c
+- 20:08Z phase 8: #206 committed 69fafd6, running its checks; #202 #204 wait
+- 20:39Z phase 8: #206 still running its checks (last commit 19:39Z); #202 #204 wait
+- 21:10Z phase 8: #206 still running its checks; #202 #204 wait
+- 21:41Z phase 8: stall check flagged #206 (last commit 19:39Z) but it is alive in its final checks (Vita build done, routes owner60/pause-ws running, ctest log present): not stopped
+- 21:56Z phase 8: merged #206 (D204)
+- 21:57Z phase 8: worker #202 started; #204 waits on vcache.c
+- 22:29Z phase 8: #202 running (no commit yet, started 21:55Z); #204 waits
+- 22:59Z phase 8: #202 WIP commit 3ad4e46 (sky clip cuts merged at one edge pixel; temporary diagnostics, uncommitted linux32 diag edits outside Files to be removed); #204 waits
+- 23:31Z phase 8: #202 still investigating (WIP 3ad4e46); #204 waits
+- 00:02Z phase 8: #202 second WIP 878f25c (merged cuts never move a point placed without them); #204 waits
+- 00:33Z phase 8: #202 final commit 0137ab6 (last misses in a portal fly-in and Stone Hill), running its checks; #204 waits
+- 01:04Z phase 8: #202 checks running (final 0137ab6); #204 waits
+- 01:35Z phase 8: #202 still in final checks (0137ab6); #204 waits
+- 02:01Z phase 8: merged #202 (D205); filed #209 (particles hand-over)
+- 02:02Z phase 8: worker #204 started; #209 waits on vcache.c
+- 02:34Z phase 8: #204 running (no commit yet, started ~02:04Z); #209 waits
+- 03:05Z phase 8: #204 WIP ec05cb8 (vc_lazy_logic=3, a quota sized from the walk idle time); #209 waits
+- 03:41Z phase 8: merged #204 (D206); coordinator raised main.c vc_lazy_logic clamp to 3
+- 03:42Z phase 8: worker #209 started
+- 04:13Z phase 8: #209 committed 5e3c295 (particles hand-over), checks running
+- 04:44Z phase 8: #209 second commit 9eec614 (a particle corner gives way to other hand-overs), checks running
+- 05:19Z phase 8: merged #209 (D207); vita-testing.md particles line updated
+- 05:20Z phase 8: worker #210 started (stone60 Vita3K route)
+- 05:51Z phase 8: #210 running (no commit yet)
+- 06:22Z phase 8: #210 committed 628469d (stone60 route, host pads S/P/Pf) and 53c9fa0 (docs); finishing checks
+- 06:40Z phase 8: merged #210 (D208): stone60 route, baseline base-bac5699/stone60
+- 06:41Z phase 8: round 11 backlog done (D199-D208); round-end baseline running
+- 06:56Z phase 8: round 11 ended (D199-D208, 10 merges). base-63d80f4 -> base-85a7b2c: vc.misses -15.5% (wobble60) / -21.6% (owner60) better; vcp.div +4.6..+17.7% worse (D197: presenter eager, deliberate); stone60 vc.invalid/clamped/div move as timing noise (D208). Shots same except owner60 30 Hz 2x (D201). Rule: no gain -> rounds_without_gain 2. The round s speed-ups (D202, D204, D206) cut cost per operation, invisible to Vita3K counters: round 12 waits for a hardware run (owner yes)
+- 2026-11-22T08:30Z phase 8: filed #211-#219 (owner: wobble and draw distance until fully fixed), Vita3K: none
+- 2026-11-22T17:24:53Z phase 8: started #211 (missed/exempt split); #212-#219 wait on its files; hardware session (hw-session5.sh) waits for the owner, Vita3K: none
+- 2026-11-22T17:56:19Z phase 8: #211 committed 85dbac2, running its Vita3K routes; nothing else pickable (files overlap), Vita3K: none
+- 2026-11-22T19:04:52Z phase 8: hardware session 6 recorded (D209), filed #220, rounds_without_gain 0, Vita3K: none
+- 2026-11-22T19:11:37Z phase 8: #211 reported (incomplete: hook outside Files); coordinator widened Files, applied the hook (429ac24), gate running; filed #221, #222, Vita3K: none
+- 2026-11-22T19:25:00Z phase 8: #211 scripted gate PASS; Vita build + routes with the hook running (check-211.sh), Vita3K: none yet
+- 2026-11-22T19:40:55Z phase 8: merged #211 (D210), Vita3K: none
+- 2026-11-22T19:42:42Z phase 8: started #212, #215, #220, Vita3K: none
+- 2026-11-22T20:45:41Z phase 8: WIP commits on #212, #215, #220; all still checking, Vita3K: none
+- 2026-11-22T22:12:21Z phase 8: #212 and #215 committed more; #220 still on its WIP; all checking, Vita3K: none
+- 2026-11-22T22:35:26Z phase 8: #220 reported done; gate running, Vita3K: none
+- 2026-11-22T23:02:47Z phase 8: #212 reported done (Vita3K stone60 x1.00 -> x1.82-2.00); gate waits for #220 gate, Vita3K: none
+- 2026-11-22T23:11:40Z phase 8: merged #220 (D211), Vita3K: none
+- 2026-11-22T23:20:09Z phase 8: #215 reported done (PortalSkyPlain S/P 1,230 -> 0); gate after #212, Vita3K: none
+- 2026-11-22T23:24:37Z phase 8: merged #212 (D212; pictures change in 60 Hz windows: baseline rebuild after #215), gating #215, Vita3K: none
+- 2026-11-22T23:25:53Z phase 8: filed #223, started #223; #215 gating, Vita3K: none
+- 2026-11-22T23:55:19Z phase 8: merged #215 (D213), Vita3K: none
+- 2026-11-22T23:57:48Z phase 8: started #213; baseline base-278ebf8 building; hw-session7.sh written (needs the owner yes), Vita3K: none
+- 2026-11-23T00:24:06Z phase 8: baseline base-278ebf8 built (title, pause-ws, pause-ws-wobble, wobble60 = base-85a7b2c; demo60 new); owner60/stone60 pinned to dd_budget=1 (auto varies run to run in Vita3K) and rerunning, Vita3K: none
+- 2026-11-23T00:34:50Z phase 8: #223 reported done; gate waits for the baseline rerun job, Vita3K: none
+- 2026-11-23T00:54:10Z phase 8: base-278ebf8 complete (owner60/stone60 dd_budget=1 = base-85a7b2c); gating #223, Vita3K: none
+- 2026-11-23T01:49:13Z phase 8: merged #223 (D214), filed #224, Vita3K: none
+- 2026-11-23T01:50:06Z phase 8: started #224, Vita3K: none
+- 2026-11-23T02:30:25Z phase 8: #213 committed (ae5cdfe, 53f4ddd) after the stall nudge; #224 checking, Vita3K: none
+- 2026-11-23T03:10:52Z phase 8: #224 reported done; gating, Vita3K: none
+- 2026-11-23T03:33:15Z phase 8: merged #224 (D215); presentation.md lod text updated, Vita3K: none
+- 2026-11-23T03:34:11Z phase 8: hw-session7 VPK rebuilt as autopilot-53a6a5d (with D214, D215 lod text); waits for the owner yes, Vita3K: none
+- 2026-11-23T03:38:46Z phase 8: #213 reported done (sky records by name; host gprof sky record -6..-22%); gating, Vita3K: none
+- 2026-11-23T03:47:48Z phase 8: merged #213 (D216), Vita3K: none
+- 2026-11-23T03:48:37Z phase 8: started #214, Vita3K: none
+- 2026-11-23T05:03:11Z phase 8: #214 reported done (host lookup divisions -92..94%, vc.div -41..43%); gating, Vita3K: none
+- 2026-11-23T05:13:01Z phase 8: merged #214 (D217), filed #225, Vita3K: none
+- 2026-11-23T05:13:53Z phase 8: started #216, Vita3K: none
+- 2026-11-23T06:16:43Z phase 8: #216 WIP c675447 (glows and moby shadows hand over their own points); checking, Vita3K: none
+- 2026-11-23T07:49:39Z phase 8: #216 WIP a884349 (an unfound glow/shadow polygon's found vertices take their own point too); checking, Vita3K: none
+- 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
+- 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
+- 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
+- 2026-11-24T10:34:33Z phase 8: merged #222 (D230), filed #244, #245; owner asked to stop the loop after this and open a PR. Vita3K: 9 runs (worker's), hardware: none

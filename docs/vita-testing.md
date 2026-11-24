@@ -174,7 +174,7 @@ Files the app writes:
 | `pres_core=2` or `3` | The presenter's thread (`pres_thread=1`): `2` on core 2, behind the render thread; `3` on core 3 if the start-up `cores` line allows it. Default 1, core 1 (D126, D187) |
 | `pres_prio=N` | The presenter thread's priority, 0x40 to 0xBF (default 0x9A, behind the parse thread's 0x98; 0x96 puts it ahead) (D187) |
 | `vc_lazy=1` | With the wobble fix on: the presenter's projections each worked out when first read (#193), the same pictures. Default 0 since #198: worked out as the presenter makes them; on hardware the lazy form locked the game-over screen at 60 late vblanks a 300 and gained nothing in Toasty (D186, D187, D197) |
-| `vc_lazy_logic=0` or `2` | With the wobble fix on (whatever `vc_lazy` says, since #198): the logic draw's projections. `0`: each one worked out at once on the game thread, as before #179. `2`: every one kept for the OT walk to work out. Default 1: kept only while the previous frame's walk was idle, and only at 60 Hz logic or 30 fps (at 30 Hz with in-between frames the walk shares core 1 with the presenter). The same pictures either way; the `threads:` start-up line logs it, and the `vcache records:` line and `vpk-perfcount-vc` count what was kept (D188, #196) |
+| `vc_lazy_logic=0`, `2` or `3` | With the wobble fix on (whatever `vc_lazy` says, since #198): the logic draw's projections. `0`: each one worked out at once on the game thread, as before #179. `2`: every one kept for the OT walk to work out. Default 1: kept only while the previous frame's walk was idle, and only at 60 Hz logic or 30 fps (at 30 Hz with in-between frames the walk shares core 1 with the presenter). `3` (#204): as 1, and also a quota of each frame's first projections kept while the walk is still running, sized from the walk's idle time before the game thread's last projections in recent frames, with an eighth of the walk's window as headroom; a `vcache quota:` line every 300 vblanks gives the average quota, how long before the game thread's last projections the walk ended, and the frames it was still running then. The same pictures either way; the `threads:` start-up line logs it, and the `vcache records:` line and `vpk-perfcount-vc` count what was kept (D188, #196) |
 | `fast_render=0` | The arena build only (`-DSPYRO_NATIVE_MEM=OFF`): the renderers as translated from the asm, on PsyCross's GTE decoder. Default 3, and the only choice in the native build: the renderers as readable C (D124, the Vita's default since the owner's decision of 2026-11-09), no GTE data registers or commands, no PS1 scratchpad, spill area or hand stack; on hardware (7D2a/7D2b, `tools/vita/fps-runs/README.md`) 5% lighter than the register-file build of `fast_render=2`, which went in D127 with `1` and `ngte_fx` (any other value is taken as 3). The log's start says which (`fast_render=N: ...`) |
 | `native_draw=0` | The hand renderers' primitives as PS1 primitives that PsyCross's OT walk parses. Default 1 since D91: the primitives (the environment, the sky, the regular, lit and specular mobys, Spyro) reach the walk as native draw lists, records of their words that the walk turns into the vertices PsyCross would make of them (D82, D86, D91; the same triangles in the same order). A `native draw N:` line every 300 vblanks counts the primitives walked, the markers in the OT, the records' KB and the packets the walk still parses itself |
 | `nd_ab=1` | With `native_draw=1`, a timing run: `native_draw` 0 and 1 take turns by blocks of 8 lists (the first 2 of each not counted), and the `draw ab N:` and `parse ab N:` lines give each one's renderer, walk and wait microseconds. `tools/vita/nd_ab_summary.py spyro.log` sums them (D91) |
@@ -204,8 +204,9 @@ Files the app writes:
 | `wobble=1` | GPU: the PS1's wobble, its texture warping and whole-pixel vertices (`persp=0 subpixel=0`; the menu's `PSX WOBBLE` ON). Default `0` since #177 (D194, the owner's decision): the fix on, both halves (`persp=1 subpixel=1`), which runs the vertex cache (see `vcache` below). The test tools write `wobble=1` (see "Config files from before PSX WOBBLE" below) |
 | `persp=0`, `subpixel=0` | GPU: developers' keys since #177 (D194), on by default with `wobble=0`. `persp`: perspective-correct textures on 3D polygons (no PS1 texture warping; D39). `subpixel`: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39). A line wins over `wobble=` for its own half, wherever it is in the file; when the two halves agree, the menu's row shows them. The menu's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` until #177 |
 | `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
-| `dd_budget=0` | with a longer draw distance and 60 Hz logic in play: no work budget, only the buffer's limits, as before #180. Default 1: the limiter also keeps each draw under 48 KB of primitives, so the longer distance gives way where the scene is already heavy (D175; `docs/presentation.md` "Draw distance"). The start of the log says which (`picture: draw distance ... (dd_budget=N, D175)`); the `lod` lines count the budget's back-offs. No menu row |
+| `dd_budget=auto` | with a longer draw distance and 60 Hz logic in play: the limiter keeps each draw under a work budget sized from the game thread's measured time per logic frame (the default since #212; `src/platform/vita/lod_time.c`). The time is the update plus the logic draw without its VSync waits (the walk's join included), against a target of 14.5 ms of the 16.7 ms frame; a frame over it cuts the budget at once, eight frames with 1 ms or more to spare let it grow 2 KB a frame, between 48 KB and the span the draw has. Needs `stats=1` (the default; else a fixed 48 KB). `dd_budget=1`: a fixed 48 KB of primitives, the default until #212 (D175). `dd_budget=N` (2-1024): a fixed N KB. `dd_budget=0`: no work budget, only the buffer's limits, as before #180. The start of the log says which (`picture: draw distance ... (dd_budget=...)`); the `lod` lines count the budget's back-offs, how many held the draw at 1x (#200), and with auto the budget and the time (`budget 61 KB (auto, 48-96 KB, worst 15.9 ms, 2.1 ms left; 3 over)` or `budget held at 1x: 15.2 ms used of 14.5, worst 17.0 ms (48-52 KB)`; the range and the worst frame since #224). No menu row |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
+| `shader_cache=0` | GPU: compile every shader program at each start, as before #201. Default 1: a program compiled once is kept in `ux0:data/spyro/shader_cache/` (one `.bin` a program, from vitaGL's `glGetProgramBinary`; the installed vitaGL has no `HAVE_SHADER_CACHE`) and later starts load it instead of compiling (10 s of start-up on hardware before). A binary's key covers its sources and attribute bindings, the compiler's options, the vitaGL and vitashark libraries linked and the `libshacccg.suprx` found; the folder's `stamp` file holds the last three, and a different one empties the folder. A file that doesn't match or link is removed and the program compiled. The log: `gpu: shader cache ... stamp ...`, a `gpu: program N (...): loaded from the shader cache (hit)` or `compiled (cache miss)` line a program with its time, and the `gpu: shaders compiled in N ms: P programs, H from the shader cache ...` total. Deleting the folder is safe: the next start compiles and writes it again |
 | `state_slot=N` | the menu's state slot, 1–3 (the menu writes it) |
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
@@ -266,11 +267,31 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
   - `vcache cost (the game thread):` and `(the presenter's thread):` divisions, probes and table
     lines per projection and per vertex looked up.
   - `vcache derived:` no-entry vertices drawn with their polygon's depth, at the projection before
-    the renderer moved them or at their key, and those left with no entry (D176).
+    the renderer moved them or at their key, and those left with no entry (D176). Since #202 the
+    last figure counts those at that projection with its own depth, where the plane through the
+    quad's other corners gave none (big close grid quads). Since #211 the bracket after "left with
+    no entry" splits them by the renderer whose primitive the polygon is: `missed N (top: <ctx> n,
+    <ctx> n, <ctx> n)` are a 3D renderer's vertices the cache should have placed (the wobble fix's
+    target is 0), named by the renderer's hand C (`EnvDraw`, `MobyDraw`, `SkyDraw`,
+    `PortalSkyPlain`...; `other` for one not in the list); `exempt E` are drawn in screen space on
+    purpose: outside every renderer (the HUD's text and boxes, fades, borders: the game's own C) or
+    a portal's face (screen corners clipped flat at the portal's outline); `unmarked U` are in
+    frames where no renderer told the cache its primitives (`psx_vc_ctx`, `psx_vcache.h`), so
+    nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
+    each renderer wrote in the frame, not from the walk's timing; the classes add up to the "left
+    with no entry" figure.
   - `vcache resolved:` ambiguous keys' vertices given a depth from the frame's order, and those
     left ambiguous (D178).
   - `vcache hooked:` no-entry vertices found from a renderer's hand-over, by renderer, and the
-    hand-overs kept or dropped (D182).
+    hand-overs kept or dropped (D182). Since #202 also: cuts at a portal edge's pixel that another
+    cut placed up to 2 px away, merged into one place (their mean, on the edge; before, the key
+    was dropped: most of the misses as Spyro flies into a portal), and hand-overs of a shadow's
+    corner or a glow's rim whose source key is ambiguous, with the vertices then found from the
+    frame's order (drawn at their own key). `particles`: the particles' screen-facing quads'
+    corners (#209, D207); a particle corner counts only where no other renderer placed the key.
+    Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
+    butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
+    (the windows to 6,600 and 6,900).
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
@@ -392,6 +413,10 @@ DISC=disc/image tools/vita/vita3k_run.sh logs/run2-vita-image 400 shot_every=600
   host in 4 KB blocks, so a log line can show up long after the game wrote it.) A failed grab
   brings that Vita3K to the front and tries once more; failures go to `capture.log`. The holds
   count as game time, so don't take timings from capture runs.
+- The shader cache (`shader_cache=1`, #201) lives in Vita3K's `fs/ux0/data/spyro/shader_cache/` and
+  stays between runs (`v3k_run.sh` leaves files of other names alone), so only a VPK's first run
+  with a new vitaGL, compiler or shader compiles; delete the folder to time a first start. Vita3K's
+  compile and load times aren't the Vita's: from Vita3K take only the hit and miss counts.
 
 **Work counters (D165):** every 300 vblanks the log has a `vpk-perfcount: w FIRST LAST FRAMES name=total ...`
 line (draws, triangles, uploads, state changes, OT packets, the vertex cache's work, the presenter's frames). They
@@ -427,10 +452,33 @@ python3 third_party/vita-port-kit/vita/tools/perf_report.py BASE/spyro.log NEW/s
 With `vc_lazy_logic=0` `vc.rec.kept` and the `vc.walk.*` counters are 0 and `vc.rec.once` is
 `vc.rec.game`. A higher `vc.rec.kept` is the game thread's gain; a high `vc.walk.*` with a long `parse N:` join means
 the walk took more than it had time for. The `vcache records:` line every 300 vblanks gives the same split in words.
+With `vc_lazy_logic=3` the `vcache quota:` line follows it: a walk often still running at the game thread's last
+projections, with a `parse N:` join well above 0, means the quota took more than the walk had time for.
 
 The autopilot's benchmark scenes (`autopilot/config.json` `benchmark`) are the pause route in Artisans, at 30 fps
 (`pause-ws`) and at 60 fps with the vertex cache (`wobble60`), vblanks 6,600–9,000: play from 6,349, the pause
 menu from 8,601.
+
+**`stone60` (#210): the owner's settings through the portal into Stone Hill.** The settings of `owner60`
+(`logs/owner-20261121-1200`: 16:9, `interp=4` 60 HZ, the wobble fix on, `draw_distance=200`; `stone60.cfg`) on
+its own pad, `tools/vita/hw-routes/stone60.pad`: the pause route's boot and New Game, then from 6,422 a walk across
+Artisans' lawn and a jump into Stone Hill's portal (gamestate 1, the fly-in, from 6,805; the entrance animation from
+7,225), Stone Hill play from 7,293: up the hill into the ram, whose butt (about 7,780) puts the stars round Spyro,
+particle case-3 quads; round the stone block, then run, flame, charge, jump and glide twice (#209's route S's
+actions) to 9,349; a shot every 100 vblanks to 9,500 (about 160 s in Vita3K). It is the only route that draws the
+particles' screen-facing quads (`particles` on the `vcache hooked:` line, 754 and 1,407 in the windows to 7,800 and
+8,100) and the portal sky's merged cuts (`merged with another cut`, 6,599 in the windows to 6,600 and 6,900; how they
+split between the two moved by 25 from run to run); the linux32 host, with the same pad
+(`--tick60 --widescreen --draw-distance 2 --vcache`, the line in the pad's header), counts 2,161 and 6,600 by 9,500.
+The pad is absolute vblanks with no pokes, steered on the host at 60 Hz logic (`--step`, `tools/steer.py`), so it
+plays the same with virtual vblanks, the same as `pause-ws.pad`: three runs of one VPK gave the same 95 shots. Its
+benchmark window is Stone Hill play, 7,300–9,400. In that window, between runs of one VPK, `vc.invalid` and
+`vc.clamped` moved by up to 31% and 27%, and the lazy records' split (`vc.rec.kept`, `vc.rec.once`, `vc.rec.game`,
+`vc.rec.div`, `vc.rec.store`, `vc.walk.*`) by up to 14%: they depend on the threads' timing, so a change is judged
+on the other counters there (#210's runs a, b and the baseline). Its baseline, of the autopilot's head bac5699 (#209's VPK), is
+`runtime/autopilot/runs/base-bac5699/stone60`. The host's own Stone Hill routes, S (`route_stone_s.txt`, 30 Hz
+particles) and P (`route_portal_p.txt`, the portal fly-in; Pf, `route_portal_pf.txt`, with flame), are in
+`tools/oracle/pads/` with their command lines.
 
 **When Vita3K crashes (exit 2, D166, issue #161):** the `Unhandled access to 0x…` line in `vita3k.txt` is a host
 address, not the game's, and `Unhandled write protected region was valid. Address=…` lines are in every run, crashed
@@ -849,8 +897,20 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 4. In the log, `lod N:` lines every 5 seconds:
    - `x2.00 average` means the full distance held. Lower means the limiter backed off; it starts again
      at 1x at each new level.
-   - `N back-offs (M for the budget)`: how many draws the limiter backed off after, and how many of
-     those only the 60 Hz budget caused (with 60 HZ in play; always 0 with `dd_budget=0` or at 30 Hz).
+   - `N back-offs (M for the budget, of them H held at 1x)`: how many draws the limiter backed off
+     after, how many of those only the 60 Hz budget caused (with 60 HZ in play; always 0 with
+     `dd_budget=0` or at 30 Hz), and how many of those the budget held at 1x: the scene's own 1x draw
+     is over the budget, so 2x draws as 1x there (#200). Before #200 the M left out draws at 1x.
+   - With `dd_budget=auto` (the default since #212), the line ends with the budget and why:
+     `budget B KB (auto, LO-HI KB, worst W ms, L ms left; O over)`: B the window's average budget,
+     LO and HI its lowest and highest, W the longest frame measured in the window (the game thread's
+     work per logic frame: update plus logic draw, VSync waits left out), L what the average frame
+     left of the 14.5 ms target (`ms over` past it), O the frames over the target, each of which cut
+     the budget at once. Where the budget held most draws at 1x: `budget held at 1x: U ms used of
+     14.5, worst W ms (LO-HI KB)`, U the average work: the scene's own 1x frame leaves no time for
+     more. The range and W are there since #224: a window with a 48-120 KB range swung between the
+     floor and a long distance, and a W well past 14.5 next to a small O is one long frame, not a
+     scene that is over. Vita3K's times are relative only: judge U, W and the scale on hardware.
    - `primitives ... peak ... of 110 KB`: how full the game's primitive buffer got.
    - `stopped early: world W, mobys M`: how often a hard bound stopped a loop.
    - Compare the `vblank N: ... P pictures` and `time N:` lines with the same walk at OFF. The cost is
@@ -893,7 +953,7 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
 
 1. Play two minutes of Artisans free roam with 60 fps on (the menu's `60 FPS`: INTERPOLATED, `ON` before D148; widescreen stays on by default).
 2. Then two minutes in the same places with `widescreen=0`.
-3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky); `sky` is the whole sky, counted once since #190 (D181), and the bracket's `sky main` is its main draw (`func_8004EBA8`) on its own. `sky` figures from before #190 counted the main draw twice, next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit).
+3. Send `spyro.log`. Its `draw N:` lines split the game's CPU time per renderer (update, env, mobys, spyro, fx, particles, sky); `sky` is the whole sky, counted once since #190 (D181), and the bracket's `sky main` is its main draw (`func_8004EBA8`) on its own. `sky` figures from before #190 counted the main draw twice. `update` is the game's update; with 60 Hz logic in play that is `GamestateUpdate_60` (`tick60.c`), timed in the same column since #223: before #223 `update` read 0.00 in 60 Hz windows. These lines sit next to the `time` lines (ot, raster) and the `present` lines (how many in-between frames fit). Since #207 a `draw kb N:` line follows each `draw N:` line: `draw kb N: per vblank KB of primitives update U env E mobys M spyro S fx F particles P sky K`, the bytes of primitives each part wrote (the primitive pointer `D_800757B0`'s move across its calls, as the host's `--prof-draw` counts them; the HUD's mobys, drawn from the buffer's top, aren't counted). A part's ms per KB is its `draw` figure over its `draw kb` figure. The scripts in `tools/vita` that read `draw N:` lines don't match `draw kb`.
 
 **Testing the render resolution** (`res=`, decisions D40), with the GPU build:
 

@@ -1,0 +1,4 @@
+# Run AP17b (round 12; #212, D212): AP16's stone60 run with the old fixed 48 KB budget
+# (dd_budget=1), against AP17a (dd_budget=auto, the default). Use with
+# @tools/vita/fps-runs/ap16-stone60.txt @tools/vita/hw-routes/stone60.cfg.
+dd_budget=1
