@@ -87,8 +87,8 @@ The eboot also imports the console's system libraries through OpenOrbis's stubs 
 and `sce_sys/about/right.sprx` as OpenOrbis's Piglet sample does (copied from its `samples/piglet/`,
 where OpenOrbis distributes them; their own licence isn't stated there). The renderer's shaders are
 this repository's GLSL (MIT), pre-compiled once with Piglet's compiler on a PS4 (D245); the
-compiler itself is not in the package. The icon (`icon0.png`) and background (`pic1.png`) are the
-LiveArea images above, rescaled, under the same terms (the owner's decision, D246).
+compiler itself is not in the package. The icon (`icon0.png`) is the LiveArea icon above, rescaled,
+under the same terms (the owner's decision, D246).
 
 **`crt1.o` is GPL-3.0 with no linking exception found, so the fpkg is offered under GPL-3.0 as a
 whole** (the owner's decision, D246). This repository's own code stays under the MIT licence, which

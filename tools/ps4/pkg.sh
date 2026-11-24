@@ -7,9 +7,9 @@
 # - A test build: title ID SPYT00002, "Spyro PS4 (test)", a plain grey
 #   icon0.png.
 # - The release (PS4_RELEASE=1, D246): title ID SPYP00001, "Spyro PS4",
-#   APP_VER PS4_APP_VER (cmake/version.cmake), icon0.png and pic1.png from
-#   PS4_ART (tools/ps4/art.py: the Vita's LiveArea images, the owner's
-#   decision, D246), and the licence texts in PS4_LICENSES (a folder) as
+#   APP_VER PS4_APP_VER (cmake/version.cmake), icon0.png from PS4_ART
+#   (tools/ps4/art.py: the Vita's LiveArea icon, the owner's decision; no
+#   pic1.png background: it stayed over the game's picture, D246), and the licence texts in PS4_LICENSES (a folder) as
 #   licenses/ in the package: the eboot links OpenOrbis's GPL-3.0 crt1.o, so
 #   the fpkg is offered under GPL-3.0 as a whole (D246).
 # The PS4's sce_module PRXs come from OpenOrbis's Piglet sample, and
@@ -59,8 +59,7 @@ cp "$OO/samples/piglet/sce_sys/about/right.sprx" sce_sys/about/
 cp "$OO/samples/piglet/sce_module/libc.prx" "$OO/samples/piglet/sce_module/libSceFios2.prx" sce_module/
 files="eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx"
 if [ "${PS4_RELEASE:-0}" = 1 ]; then
-  cp "$PS4_ART/icon0.png" "$PS4_ART/pic1.png" sce_sys/
-  files="$files sce_sys/pic1.png"
+  cp "$PS4_ART/icon0.png" sce_sys/
   mkdir -p licenses
   for f in "$PS4_LICENSES"/*; do
     cp "$f" licenses/

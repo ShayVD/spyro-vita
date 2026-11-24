@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""The release fpkg's sce_sys art from the Vita's LiveArea images (PS4 plan P5, D246).
+"""The release fpkg's icon from the Vita's LiveArea icon (PS4 plan P5, D246).
 
     tools/ps4/art.py SRC_DIR OUT_DIR
 
-SRC_DIR/icon0.png (square) becomes OUT_DIR/icon0.png at 512x512, and SRC_DIR/bg.png becomes OUT_DIR/pic1.png
-at 1920x1080, the PS4's home-screen background: scaled whole to fit the height (the painting's signature stays
-in), the sides filled with the colour of its outer columns. 8-bit RGB PNGs, the same bytes on every run. The
+SRC_DIR/icon0.png (square) becomes OUT_DIR/icon0.png at 512x512, an 8-bit RGB PNG, the same bytes on every run.
+No background (pic1.png): on the owner's PS4 it stayed over the game's GPU picture (release run 1, D246). The
 input is 8-bit RGB, RGBA or palette, not interlaced: assets/livearea/ (committed, indexed) or the gitignored
 disc/livearea/ (RGB, the better source), as the Vita build picks it (src/platform/vita/CMakeLists.txt). Which
 images may be used is the owner's decision (assets/livearea/README.md, D59, D246); this only rescales them.
@@ -123,11 +122,6 @@ def resize(w, h, rows, nw, nh):
     return out
 
 
-def edge_colour(rows, x):
-    n = len(rows)
-    return bytes(sum(r[x * 3 + c] for r in rows) // n for c in range(3))
-
-
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
@@ -137,16 +131,7 @@ def main():
     if w != h:
         raise SystemExit(f"{src}/icon0.png: {w}x{h}, not square")
     write_png(os.path.join(out, "icon0.png"), 512, 512, resize(w, h, rows, 512, 512))
-    w, h, rows = read_png(os.path.join(src, "bg.png"))
-    nh = 1080
-    nw = min(1920, (w * nh + h // 2) // h)
-    pic = resize(w, h, rows, nw, nh)
-    left = (1920 - nw) // 2
-    right = 1920 - nw - left
-    lc, rc = edge_colour(pic, 0) * left, edge_colour(pic, nw - 1) * right
-    write_png(os.path.join(out, "pic1.png"), 1920, 1080, [lc + r + rc for r in pic])
-    print(f"art: icon0.png 512x512, pic1.png 1920x1080 ({nw}x{nh} picture) from {src}")
-
+    print(f"art: icon0.png 512x512 from {src}")
 
 if __name__ == "__main__":
     main()

@@ -9,8 +9,8 @@
 #
 # 1. Refuses a tree with uncommitted changes (the pkg must be the commit's).
 # 2. Configures build/ps4-release with -DSPYRO_PS4_RELEASE=ON: title ID
-#    SPYP00001, APP_VER from cmake/version.cmake, the icon and background from
-#    the Vita's LiveArea images, the licence texts in licenses/; the build
+#    SPYP00001, APP_VER from cmake/version.cmake, the icon from the Vita's
+#    LiveArea icon (no background, D246), the licence texts in licenses/; the build
 #    stops unless every shader has a binary for its current source.
 # 3. Builds it twice from clean (SOURCE_DATE_EPOCH the commit's time, for
 #    __DATE__ and __TIME__) and compares every SHA-256 (the ELF, eboot.bin,
@@ -23,7 +23,7 @@
 #    never published here: the owner reviews and publishes.
 #
 # --shaders defaults to disc/ps4-shaders, --art to disc/livearea if it has
-# bg.png, else assets/livearea (as the Vita picks its art). Run
+# icon0.png, else assets/livearea (as the Vita picks its art). Run
 # `eval "$(tools/ps4/sdk.sh --env)"` first.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
 done
 : "${OO_PS4_TOOLCHAIN:?eval \"\$(tools/ps4/sdk.sh --env)\" first}"
 if [ -z "$art" ]; then
-  if [ -f disc/livearea/bg.png ]; then art=$root/disc/livearea; else art=$root/assets/livearea; fi
+  if [ -f disc/livearea/icon0.png ]; then art=$root/disc/livearea; else art=$root/assets/livearea; fi
 fi
 
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
