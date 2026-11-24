@@ -1486,3 +1486,25 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   #217's four reasons all go to 0 except "own point not named or dead" (8 → 6, 12 → 6). Vita3K EnvDraw missed: owner60 6 and 12 → 0, stone60 100 → 0; `vc.probe` +0.2%, `vc.lines` +0.3–0.4%, `vc.div` +0.2–0.6%; draws, triangles, `vc.proj`, `vc.polys`, `vc.verts` unchanged. `Sp` held at most 5,214 records a 300-vblank window and never filled (`sp_full` 0).
 - **Checks:** host FNV per polygon, 6 pairs from freshly built objects: same polygon counts, 0 found-before changed, 0 became affine (4–39 newly found). Vita3K shots identical to `base-278ebf8` on all seven routes. Host ctest 32 of 32, native and Vita builds, `noassets`. Logs: `runs/auto-229-1`.
 - **Left:** the 6 on S and S `--interp` are all in one frame (g6742) whose order log is full (`VC_LOG`, 8,192 projections), so the cache never named those projections. Vita3K never fills the log. Raising `VC_LOG` to 16,384 fixes them but changes 50 / 124 found-before polygons in that frame and costs about 224 KB a table (#237). Relaxing hk's own 4× rule for split points changed no found-before polygon on S in an experiment, but isn't adopted. Docs for the `vcache world own:` line go with #226.
+
+### D224. The attract demos' presenter frames already draw at 1× whatever the draw distance, so a demo draw-distance budget has nothing to cut (#234, 2026-11-23)
+
+- **Why:** #227 (D222) put a demo presenter frame at about 24 ms on hardware and supposed it drew 16:9 at 2×.
+- **Measured:**
+  - The presenter's frames take the game's lod state through `pres_draw.c` `lod_begin` (`port_lod_draw_begin(1)`, result kept for the presenter, the game's state put back). In a demo the game's own draws are the hidden 4:3 logic draws (`shown` 0), so the game's limiter (`port_lod_draw_end` → `limit`) never runs, and the hold of 60 that the last shown draw before the demo set (level 11's reset to 1×) never counts down. A temporary `T234` line read scale 256 (1×) with the hold at 60 in every window from 4,080 to 5,580, on the host and in Vita3K.
+  - So hardware's 19–28 ms a demo presenter frame (`logs/hw-ap18t`, 4,500–6,000, worker busy × 300 / jobs) is 16:9 at 1×.
+  - Forcing 2× in the demos (a temporary build, measurement only): Vita3K `demo60` GL draws +34%, triangles +15%, presenter projections 4,398 → 5,185 a frame, in-between frame 7.9 → 8.3–10.0 ms; on the host about +18% a demo frame.
+  - With the vertex cache off (`persp=0 subpixel=0`), Vita3K's demo frames fall about 70%: in-between 7.9 → 2.5 ms, real frame 7.3 → 2.0, hidden logic draw 4.8 → 1.2. Its share on the A9 is unmeasured.
+- **Result:** no code change; `docs/presentation.md` records why the demos draw at 1× and the numbers. All Vita3K shots identical (demo60 66/66, owner60 91/91, stone60 95/95).
+- **Option for the owner (not implemented):** skip the in-between frame in a demo tick when two presenter frames and the update don't fit the tick. On hardware a tick would then be ~1 ms plus max(logic draw 9–13, real frame 19–28) ≈ 21–29 ms, so the demos would play at the original speed (about 150 ticks per 300, against 85–124 now) at 30 fps. It would be on for the whole Stone Hill demo on hardware and never in Vita3K. Asked in #235.
+- **Left:** the next hardware session sizes the vertex cache's share of a demo frame (Toasty route, 4,200–6,300, owner's settings against `persp=0 subpixel=0`). Making the demos' 1× an explicit rule in `lod.c`, so a later limiter fix can't quietly move them to 2×, is #236.
+
+### D225. The attract demos' presenter frames draw at 1× by an explicit rule in `lod.c` (#236, 2026-11-23)
+
+- **Why:** D224 found the demos' 16:9 presenter frames at 1× only because the game's hold (60, from the last shown draw's level reset) never counts down while the logic draws are hidden. A later limiter fix could quietly move them to 2×, about +18% a demo frame (D224), on frames already over the tick on hardware.
+- **How (`src/game/lod.c`, comment in `lod.h`):**
+  - `s_demo_shown` (part of `LOD_STATE`, so `lod_begin`'s save and restore and `--render-ctx-check` carry it) is "the game's last draw was a shown attract-demo draw", set in `port_lod_draw_end`, which only `game_draw` calls.
+  - In the game's `port_lod_draw_begin` (`#ifndef RENDER_PRES`), after the existing clamp: an attract demo draws at 1× until the game's last draw is one of the demo's own shown draws. That covers the presenter frames of 16:9 demos, including the first tick, whose 16:9 frame runs before its first hidden logic draw (a "last draw hidden" rule missed that one frame at 3,931). Demos whose logic draw is shown (4:3, `ws_logic`, no presenter) keep the limiter.
+- **Checked:**
+  - With 2× forced in front of the rule (temporary `T236` build), Vita3K `demo60` reads 1× in every window from 4,080 to 5,580, and its shots are 66/66 identical to base.
+  - Final build: shots identical to `base-278ebf8` on all seven routes; owner60, stone60 and demo60 lod lines byte-identical (`dd_budget=1`); demo60's counters all the same against a same-code head build run twice. Host ctest 32 of 32, Vita build, `noassets`. Logs: `runs/auto-236-1`.

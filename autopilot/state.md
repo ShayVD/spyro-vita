@@ -11,22 +11,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 8,
   "workers": [
     {
-      "issue": 234,
-      "branch": "auto/234-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-234",
+      "issue": 233,
+      "branch": "auto/233-1",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-233",
       "pids": [],
-      "started_at": "2026-11-23T18:47:37Z",
+      "started_at": "2026-11-23T20:26:46Z",
       "files": [
-        "src/game/present.c",
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/lod_pres.c",
-        "docs/presentation.md"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/common/gpu_walk.c",
+        "tools/oracle/pads/route_toasty.txt"
       ],
-      "agent": "ae7fafa49d8036819"
+      "agent": "aa37b4f4f296ba0b7"
     }
   ],
-  "last_good": "449c171c0cf9760ea86b880c8b97c731248a6535",
+  "last_good": "899fdfea64ea8d3419bca1367c8a173278305f7c",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
