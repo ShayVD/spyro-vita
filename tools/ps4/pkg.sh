@@ -5,7 +5,9 @@
 # ELF → eboot.bin (create-fself, the Piglet sample's PAID and auth info) → a
 # fake PKG (create-gp4, PkgTool). Throwaway title ID SPYT00002, a plain grey
 # icon0.png (no LiveArea or Vita art: its licence covers the Vita release
-# only). The PS4's sce_module PRXs come from OpenOrbis's Piglet sample.
+# only). The PS4's sce_module PRXs come from OpenOrbis's Piglet sample, and
+# param.sfo's CATEGORY gde and FORMAT obs from its Makefile (2Ship2Harkinian-
+# PS4 sets the same; with gd, Piglet's eglGetDisplay refused us, D245).
 # The tools come from PS4_OOBIN and OO_PS4_TOOLCHAIN (sdk.sh --env, or the
 # Docker image).
 set -euo pipefail
@@ -47,7 +49,8 @@ sfo=sce_sys/param.sfo
   "$P" sfo_setentry $sfo APP_TYPE --type Integer --maxsize 4 --value 1
   "$P" sfo_setentry $sfo APP_VER --type Utf8 --maxsize 8 --value "$VERSION"
   "$P" sfo_setentry $sfo ATTRIBUTE --type Integer --maxsize 4 --value 0
-  "$P" sfo_setentry $sfo CATEGORY --type Utf8 --maxsize 4 --value gd
+  "$P" sfo_setentry $sfo CATEGORY --type Utf8 --maxsize 4 --value gde
+  "$P" sfo_setentry $sfo FORMAT --type Utf8 --maxsize 4 --value obs
   "$P" sfo_setentry $sfo CONTENT_ID --type Utf8 --maxsize 48 --value "$CONTENT_ID"
   "$P" sfo_setentry $sfo DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
   "$P" sfo_setentry $sfo SYSTEM_VER --type Integer --maxsize 4 --value 0

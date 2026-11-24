@@ -1,7 +1,8 @@
-# PS4 build (docs/ps4-plan.md P3, decisions D193): the same game and
-# src/platform/common as the other hosts, this platform layer, and linux32's
-# software rasterizer, PNG writer, log and save-state glue. Packed as a fake
-# PKG.
+# PS4 build (docs/ps4-plan.md P3-P4, decisions D193, D245): the same game
+# and src/platform/common as the other hosts, this platform layer (the
+# GLES2 renderer on the player's Piglet among it), and linux32's software
+# rasterizer, PNG writer and log. Packed as a fake PKG. libScePigletv2VSH is
+# OpenOrbis's stub: its imports bind to the copy gpu_gles.c loads.
 #   eval "$(tools/ps4/sdk.sh --env)"
 #   cmake -S . -B build/ps4 -G Ninja -DSPYRO_HOST=ps4 \
 #       -DCMAKE_TOOLCHAIN_FILE=cmake/ps4.toolchain.cmake
@@ -11,9 +12,28 @@
 # 0x400000.
 set(LINUX32_DIR "${CMAKE_SOURCE_DIR}/src/platform/linux32")
 file(GLOB PS4_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
-add_library(spyro_platform_ps4 STATIC ${PS4_SRCS}
-  "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
-  "${LINUX32_DIR}/savestate_host.c")
+# The software rasterizer's GR_* names get a soft_ prefix (the Vita's
+# gpu_soft_names.h, D35): gr_ps4.c calls it and then the GLES2 renderer
+# (gpu_gles.c), D245.
+set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
+  COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/src/platform/vita/gpu_soft_names.h")
+# The GLES2 renderer's pre-compiled shaders (D245, the owner's option C):
+# the binaries a run with the player's Piglet pair saved (shader_dump=1),
+# fetched from the PS4 into this folder, become a C table; on a PS4 without
+# the pair the firmware's own Piglet loads them with glShaderBinary. Local
+# and gitignored (disc/) until the owner decides how they ship (P5).
+set(SPYRO_PS4_SHADERS "${CMAKE_SOURCE_DIR}/disc/ps4-shaders" CACHE PATH
+  "The PS4 renderer's pre-compiled shader binaries (NAME-vs|fs-HASH.bin)")
+file(GLOB PS4_SHADER_BINS CONFIGURE_DEPENDS "${SPYRO_PS4_SHADERS}/*.bin")
+set(PS4_SHADERS_C "${CMAKE_CURRENT_BINARY_DIR}/ps4_shaders.c")
+add_custom_command(OUTPUT "${PS4_SHADERS_C}"
+  COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/shaders_c.py"
+    "${SPYRO_PS4_SHADERS}" "${PS4_SHADERS_C}"
+  DEPENDS "${CMAKE_SOURCE_DIR}/tools/ps4/shaders_c.py" ${PS4_SHADER_BINS}
+  COMMENT "PS4: the pre-compiled shaders (${SPYRO_PS4_SHADERS})"
+  VERBATIM)
+add_library(spyro_platform_ps4 STATIC ${PS4_SRCS} "${PS4_SHADERS_C}"
+  "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c")
 target_include_directories(spyro_platform_ps4 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${LINUX32_DIR}" "${CMAKE_SOURCE_DIR}/src/platform/common" "${CMAKE_SOURCE_DIR}/src/game")
 target_link_libraries(spyro_platform_ps4 PRIVATE psycross_headers)
@@ -40,6 +60,7 @@ add_custom_command(OUTPUT "${PS4_ELF}"
     --start-group "$<TARGET_FILE:spyro_platform_ps4>" "$<TARGET_FILE:spyro_game>"
       "$<TARGET_FILE:spyro_platform_common>" --end-group
     -lc -lm -lkernel -lSceSysmodule -lSceVideoOut -lScePad -lSceUserService -lSceAudioOut
+    -lScePigletv2VSH
     -o "${PS4_ELF}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/oelf_check.py" "${PS4_ELF}"
   DEPENDS spyro_platform_ps4 spyro_game spyro_platform_common
