@@ -6,9 +6,9 @@
  * array (arena.c) and the game runs on a thread whose stack is a .bss array,
  * since the hand C takes the addresses of locals. main() checks all three
  * and refuses to run otherwise. On Linux nothing of the host's lies below
- * 4 GB (low_linux.c reserves it before any library runs), so a host pointer
+ * 4 GB (Encore's lp64_low_image_dyn.c reserves it before any library runs; low.c), so a host pointer
  * cut to 32 bits crashes instead of aliasing the game's memory; on Windows
- * the whole process is below 2 GB (not large-address-aware: low_win.c).
+ * the whole process is below 2 GB (not large-address-aware; low.c).
  *
  * The main thread owns SDL (window, GL, events) and shows the frames; the
  * game thread runs the game (pc.h). */
@@ -49,7 +49,7 @@ extern void spyro_main(void);
 void pres_draw_want(void);                       /* src/game/pres/pres_draw.c */
 void nd_init(void (*log)(const char *fmt, ...)); /* src/game/native_draw.c */
 extern int g_nd_direct_ok;
-int pc_low_reserved_pages(void);    /* low_linux.c, low_win.c */
+int pc_low_reserved_pages(void);    /* low.c */
 const char *pc_low_report(void);    /* the same: what lies where */
 
 static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(4096)));
@@ -277,7 +277,7 @@ static void *game_thread_posix(void *arg) {
 
 static int start_game_thread(void) {
 #ifdef _WIN32
-  /* low_win.c: the process is not large-address-aware, so every thread's
+  /* low.c: the process is not large-address-aware, so every thread's
    * stack is below 2 GB (game_thread checks); s_game_stack goes unused */
   SDL_PropertiesID p = SDL_CreateProperties();
   SDL_Thread *th;
