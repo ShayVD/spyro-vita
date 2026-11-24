@@ -9,23 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 233,
-      "branch": "auto/233-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-233",
-      "pids": [],
-      "started_at": "2026-11-23T20:26:46Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/common/gpu_walk.c",
-        "tools/oracle/pads/route_toasty.txt"
-      ],
-      "agent": "aa37b4f4f296ba0b7"
-    }
-  ],
-  "last_good": "899fdfea64ea8d3419bca1367c8a173278305f7c",
+  "workers": [],
+  "last_good": "a66f2dd1b998f529da335afe79d4dd98290ce16f",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -233,7 +218,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 27,
+    "filed": 28,
     "investigated": true
   },
   "rounds_without_gain": 0,
