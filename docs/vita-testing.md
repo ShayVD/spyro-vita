@@ -274,8 +274,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     <ctx> n, <ctx> n)` are a 3D renderer's vertices the cache should have placed (the wobble fix's
     target is 0), named by the renderer's hand C (`EnvDraw`, `MobyDraw`, `SkyDraw`,
     `PortalSkyPlain`...; `other` for one not in the list). N is every renderer's sum, but the
-    bracket names only the three biggest, so a small class can hide behind them (host route S's
-    `missed 25 (top: ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5)` names 21; #226). `exempt E
+    bracket names only the three biggest, so a small class can hide behind them. Before #226,
+    host route S's `missed 25 (top: ParticlesDraw 10, EnvDraw 6, PortalSkyPlain 5)` named only 21;
+    the other 4 were MobyShadows'. `exempt E
     (outside the renderers O, portal faces F, no projection P)` are vertices nothing should place:
     - outside every renderer (the HUD's text and boxes, fades, borders: the game's own C);
     - a portal's face (screen corners clipped flat at the portal's outline);
@@ -321,7 +322,20 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       point too, so all of its depths come from one projection.
     - `own_kept`: own points stored.
     - `own_nosrc`: namings that couldn't be kept, because the projection named isn't the key's or
-      the hand-over's source has no usable own point. TODO226
+      the hand-over's source has no usable own point. #226 tagged them:
+      - **Moved world corners, no longer counted.** Up to #226 the count also held every world
+        corner that GridCorrect moved after its projection: 99% of it, about 60,000 a route on the
+        host routes. Those corners are kept as their piece's own instead (`sp_moved` below), so
+        #226 stopped counting them here.
+      - **What's left (#226's tags):** only world corners named in a frame whose order log is full
+        (`VC_LOG`, 8,192 projections). The cache can't name a projection the log never took. That
+        is 28 on host S (74 with `--interp`), in the vblanks 13,128–13,142 and 14,150–14,158, and 0
+        on P, Pf and T, at 30 Hz and with `--interp`. It's the same log-full limit that leaves
+        EnvDraw's 6 missed on S (D223, #237). Vita3K never fills the log.
+      - **Shadow fans, fixed.** A moby shadow's fan closes on a fifth corner word that repeats
+        the first corner. Its nudged copy named the projection 0 back instead of 3 back, so it found
+        nothing (62 on S, 591 on T). That never mattered, because the first corner's call holds
+        the same point. Since #226 it names the right projection and finds it.
     - `own_full`: not kept because the store was full.
   - `vcache world:` (#217, D220) `<der_named> derived vertices at their key with a depth the
     order's projections named, the plane giving none; <hk_own> world splits placed from their ends'
@@ -367,7 +381,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     - `ov=0`: `psx_vcache_set_overflow(0)` (the host's `VC_OVERFLOW=0`) turns it off.
   - `vcache Spyro and shadows own:` (#242, D227) `<pk_found> vertices found from their polygon's
     own clip point of Spyro's; <pk_kept> kept, <pk_full> not kept (full); <own_corner> shadow
-    corners' own points from their corner's projection, the source's dead`.
+    corners' own points from their corner's projection, the source's dead; <own_centre> shadow
+    centres found from their own point under their own anchor, their own under the centre's
+    dead`.
     - **How it works:** while Spyro is clipped at the floor, his clip points and drawn vertices
       are kept as their primitive's own (`VCD_KEEP`, in the `Sp` store).
     - `pk_found`: a SpyroDraw polygon's vertices found from them. They count in `own_found` too.
@@ -376,6 +392,16 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     - `own_corner`: a far moby shadow's nudged corners whose source key holds two of its corners,
       so the source's own point is dead. They're kept from the corner's own projection instead.
       That point gives way to every other own point and is no hand-over's source.
+    - `own_centre` (#226): moby shadows' centres found from their own point under their own
+      anchor.
+      - **The problem:** a moby shadow seen nearly edge-on has a corner on its centre's pixel.
+        That corner's own point shares (centre, centre) with the centre's own point, so the pair is
+        dead and the centre's key is ambiguous. This is what left MobyShadows' last 4 missed
+        vertices on host S and Si.
+      - **The fix:** the renderer also names the centre under an anchor of its own
+        (`VCD_CENTRE`). The walk takes that point only for a shadow polygon whose centre nothing
+        found and whose (centre, centre) point is missing or dead. Every earlier step, #216's own
+        points included, leaves such a polygon unfound.
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position

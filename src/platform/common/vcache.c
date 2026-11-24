@@ -4515,7 +4515,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
           /* #226: a shadow's centre not found whose own point under (centre,
            * centre) a corner on its pixel killed: its own under VCD_CENTRE
            * (at base such a polygon was never found here: all 0) */
-          const Ow *const c0 = own_look(ptab, gen, key, VCD_CENTRE(anchor), &cost[VCC_LOOK_PROBES], &t);
+          const Ow *const c0 =
+              own_look(ptab, gen, key, VCD_CENTRE(anchor), &cost[VCC_LOOK_PROBES], &t);
           if (c0) {
             o = c0;
             cen = 1;
