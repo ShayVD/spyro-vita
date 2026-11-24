@@ -8,13 +8,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
 {
   "version": 1,
   "game": "spyro",
-  "phase": 8,
+  "phase": 5,
   "workers": [],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
-  "baselines": {
-    "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
-    "commit": "278ebf8"
-  },
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -226,8 +222,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": null,
   "batch": null,
   "lanes": [
-    8
-  ]
+    5
+  ],
+  "targets": {
+    "vita": {
+      "phase": 8,
+      "lanes": [
+        8
+      ],
+      "baselines": {
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
+        "commit": "278ebf8"
+      }
+    }
+  }
 }
 ```
 

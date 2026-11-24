@@ -178,5 +178,16 @@
    "min_frame": 7300,
    "max_frame": 9400
   }
- ]
+ ],
+ "branches": {
+  "integration": "develop",
+  "worker": "{type}/{issue}-{slug}",
+  "batch": "batch/{n}"
+ },
+ "targets": [
+  "vita"
+ ],
+ "platforms": {
+  "source": "ps1"
+ }
 }
