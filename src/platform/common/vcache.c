@@ -206,7 +206,7 @@ void PsyX_Log(const char *fmt, ...); /* the platform's log (gpu_walk.c's too) */
  * 3/4 full rather than probe far */
 #define VC_BITS 13
 #define VC_SIZE (1u << VC_BITS)
-#define VC_PROBE 32
+#define VC_PROBE 32 /* a probe's slots before #221; with s_long_probe (the default) the first free slot ends it */
 #define VC_MAX (VC_SIZE * 3 / 4) /* entries per frame before recording stops */
 #define VC_CANDS 4
 #define VC_FAR 1024 /* exact positions out of a candidate's int16 range, per frame (#178) */
@@ -542,6 +542,17 @@ static void gc_line(void);
 #endif
 
 static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
+
+/* #221: a probe's slots: all of them (the default), or VC_PROBE as before.
+ * At ~60% of the slots late in a busy frame (Stone Hill at 2x draw
+ * distance, ~5,000 keys), a run of 32 taken slots is common enough that the
+ * main sky's records, which come last, made no entry for a vertex now and
+ * then. The table takes at most VC_MAX (3/4) of its slots a frame, so a
+ * free slot always ends the probe. A key found within 32 slots is found
+ * where it was, and a key with no entry still has none: only the keys
+ * whose records made none before have an entry now. */
+static uint32_t s_probe = VC_SIZE;
+void psx_vcache_set_long_probe(int on) { s_probe = on ? VC_SIZE : VC_PROBE; }
 /* #228: the exact repeats whose maths was skipped, per kind of frame (each
  * added by the one thread recording that kind; the report reads) */
 static unsigned s_rp_hits[2], s_rp_tried[2];
@@ -681,6 +692,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "found where they weren't (the polygon affine) (#229)",
            out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
            out->sp_res, out->sp_part);
+  /* #221 */
+  PsyX_Log("vcache long probes: %u records made their entry past the probe's first %u slots, "
+           "none made before; %u not recorded (table full) (lp=%d, #221)",
+           out->probe_long, VC_PROBE, out->full, s_probe != VC_PROBE);
   /* #242 */
   PsyX_Log("vcache Spyro and shadows own: %u vertices found from their polygon's own clip point "
            "of Spyro's; %u kept, %u not kept (full); %u shadow corners' own points from their "
@@ -726,7 +741,7 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
   Entry *const s = r->tab->s;
   const uint32_t gen = r->gen;
   uint32_t i = hash(key), n;
-  for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
+  for (n = 0; n < s_probe; n++, i = (i + 1) & (VC_SIZE - 1)) {
     ++*probes;
     touch(t, i * sizeof(Entry), 8); /* key, tag */
     if (T_GEN(s[i].tag) != gen) {
@@ -755,7 +770,7 @@ static inline __attribute__((always_inline)) int look(int pres, uint32_t key, un
     return find(r, pres ? VC_PRES : VC_LOGIC, key, 0, probes, t);
   }
   *tab = s_rtab;
-  for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
+  for (n = 0; n < s_probe; n++, i = (i + 1) & (VC_SIZE - 1)) {
     const Entry *const e = &s_rtab->s[i];
     ++*probes;
     touch(t, i * sizeof(Entry), 8); /* key, tag */
@@ -1502,7 +1517,12 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   k->work[VCW_PROJ]++;
   /* The entry first (made if it's new): a key already ambiguous stays so,
    * whatever this projection is, so it needs none of the maths below. */
-  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  {
+    const unsigned p0 = cost[VCC_REC_PROBES];
+    i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+    if (i >= 0 && cost[VCC_REC_PROBES] - p0 > VC_PROBE) /* #221: none made before */
+      k->st->probe_long++;
+  }
   if (i < 0) {
     k->st->full++;
     cost[VCC_REC_LINES] += t.n;
@@ -4982,6 +5002,13 @@ int psx_vcache_get(uint32_t ref, VCacheVert *out) {
 }
 
 void psx_vcache_enable(int mode) {
+#ifndef __vita__
+  { /* #221: VC_LONG_PROBE=0, the probe's 32 slots as before (host builds) */
+    const char *const v = getenv("VC_LONG_PROBE");
+    if (v && v[0] == '0')
+      psx_vcache_set_long_probe(0);
+  }
+#endif
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;
   g_psyxRtpValueHook = mode >= 2 ? rtp_value_hook : NULL;
   g_psyxRtpDeriveHook = mode >= 2 ? derive_hook : NULL; /* #189 */

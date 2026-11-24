@@ -61,6 +61,14 @@ void psx_vcache_set_lazy_logic(int mode);
  * up front; 1 that path without; 0 every polygon the whole path. The same
  * answers in each. */
 void psx_vcache_set_found_fast(int mode);
+/* #221: a record whose key's probe passes VC_PROBE (32) slots of the
+ * frame's other keys goes on to the first free slot, as the walk's lookup
+ * does, so its entry is made (1, the default; a free slot is always there,
+ * the table taking at most 3/4 of its slots a frame). 0: both stop at 32 as
+ * before, and such a record makes no entry (counted full): late in a busy
+ * frame, as the main sky's records come, a vertex every polygon of its fan
+ * missed. Host builds read VC_LONG_PROBE=0 from the environment too. */
+void psx_vcache_set_long_probe(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
  * a hand renderer tells the cache "this screen key derives from these
@@ -588,6 +596,9 @@ typedef struct {
    * corners whose own point was taken from their corner's projection (the
    * source key's own point dead) */
   unsigned pk_found, pk_kept, pk_full, own_corner;
+  /* #221: records whose entry was made past the probe's first VC_PROBE (32)
+   * slots, which made none before (counted in full then) */
+  unsigned probe_long;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
