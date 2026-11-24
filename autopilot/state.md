@@ -9,22 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 8,
-  "workers": [
-    {
-      "issue": 222,
-      "branch": "auto/222-1",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-auto-222",
-      "pids": [],
-      "started_at": "2026-11-24T08:48:11Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/render_hand.h"
-      ],
-      "agent": "af99a7fbceb9d1271"
-    }
-  ],
-  "last_good": "11e36e6a3279bc1e98547c36d70ce984d94e2de5",
+  "workers": [],
+  "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
   "baselines": {
     "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
     "commit": "278ebf8"
@@ -232,7 +218,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
     "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
     "started_at": "2026-11-22T06:56:29Z",
-    "filed": 29,
+    "filed": 31,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -418,3 +404,4 @@ continue.
 - 2026-11-23T08:20:41Z phase 8: #216 reported done (GlowsAndSparkles 0 on all routes; MobyShadows 0 except S 4/5); gating, Vita3K: none
 - 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
 - 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
+- 2026-11-24T10:34:33Z phase 8: merged #222 (D230), filed #244, #245; owner asked to stop the loop after this and open a PR. Vita3K: 9 runs (worker's), hardware: none
