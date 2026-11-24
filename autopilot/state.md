@@ -15,7 +15,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "feat/226-wobble-fix-mobyshadows-last-missed",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-226",
       "pids": [
-        45157
+        23067
       ],
       "started_at": "2026-11-24T11:17:20Z",
       "files": [
@@ -438,3 +438,4 @@ continue.
 - 2026-11-24T12:20:13Z shared 5, vita 8: #226 WIP f07763b (moby shadow centre own anchor), checking; Vita3K: none
 - 2026-11-24T12:51:14Z shared 5, vita 8: #226 WIP 3069180 (own_nosrc split), checking; Vita3K: none
 - 2026-11-24T13:22:13Z shared 5, vita 8: #226 in a long check (PID 45157, 54 min), docs edits; Vita3K: none
+- 2026-11-24T13:53:14Z shared 5, vita 8: #226 alive (new vcache.c edits, fresh PID), last commit 12:27; Vita3K: none
