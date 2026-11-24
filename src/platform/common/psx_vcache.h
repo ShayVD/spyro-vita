@@ -188,6 +188,22 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
  * once for every piece of its grid: a world quad drawn at once (not split)
  * finds its moved corner there */
 #define VCD_MOVED 0xFFFFFFFFu
+/* #242: Spyro clipped at the floor (pete_render_hand.c ClipTriangle). Where
+ * two of his edges cross the floor at one pixel (they crowd along the floor's
+ * line on screen), the two clip points are different points under one key,
+ * and D182 drops both. So with VCD_KEEP or'ed into a VCD_PERSP hand-over,
+ * the point is also kept as its polygon's own (vcache.c Sp, as #229's world
+ * points), under q: VCD_CORNER(the drawn primitive's anchor, the point's place
+ * in it), the anchor VCD_PIECE_V's terms of all its vertices xored. The
+ * hand-over itself (hk) is as before. The walk takes these only for a
+ * SpyroDraw polygon nothing else finds.
+ * #242: a moby shadow's nudged corner (VCD_ALIAS with VCD_OWN) whose source
+ * key holds two of its shadow's corners (a far shadow, a few pixels wide)
+ * has no own point there (two under one key and anchor: dead). With q
+ * non-zero, that corner is the projection q - 1 back (0: the last), as
+ * VCD_SELF names one; it is taken only where the source's own point is dead,
+ * so every own point kept before is kept as it was. */
+#define VCD_KEEP 0x800
 typedef void (*PsxVcacheDeriveHook)(int how, unsigned int sxy, unsigned int a, unsigned int b,
                                     int p, int q);
 extern PsxVcacheDeriveHook g_psyxRtpDeriveHook;
@@ -537,6 +553,12 @@ typedef struct {
    * and the moved corners found where those weren't (their polygon drawn
    * affine, its ambiguous corners left as they were) */
   unsigned sp_found, sp_kept, sp_full, sp_wide, sp_moved, sp_spread, sp_res, sp_part;
+  /* #242: Spyro's clip points (VCD_KEEP): vertices found from their
+   * polygon's own one (counted in hits and own_found too), the records made
+   * and not kept (full: they share #229's store); moby shadows' nudged
+   * corners whose own point was taken from their corner's projection (the
+   * source key's own point dead) */
+  unsigned pk_found, pk_kept, pk_full, own_corner;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

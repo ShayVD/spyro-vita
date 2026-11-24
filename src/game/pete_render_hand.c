@@ -682,12 +682,22 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
   ngte_flush(&sync);
 }
 
+/* #189, #242: a clip point for the vertex cache: its screen word, the
+ * edge's ends, the fraction (IR0) and its place in the points ClipTriangle
+ * appends (0..3) */
+typedef struct {
+  u32 xy, xyp, xyq, slot;
+  int t;
+} ClipPt;
+
 /* asm 80025310..80025430 (and its two copies): the point where edge P-Q
  * crosses the floor (P's height HP, Q's HQ, opposite signs), its colour,
  * screen position and texture coordinates interpolated by INTPL at
- * HP / (HP - HQ), appended at OUT (colour, position, uv halfword). */
+ * HP / (HP - HQ), appended at OUT (colour, position, uv halfword). CP
+ * (#242): the point for the vertex cache, handed over by ClipTriangle once
+ * the primitive is whole. */
 static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u32 uvp,
-                    u32 uvq) {
+                    u32 uvq, ClipPt *pt) {
   u32 hi, lo, m1, m2, m3;
   mips2c_div(hp << 12, hp - hq, &hi, &lo);
   (void)hi;
@@ -704,10 +714,10 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
     {
       const u32 xy = ((u32)o.mac1 & 0xFFFF) + ((u32)o.mac2 << 16);
       AT32(out + 0x8) = xy;
-      /* #189: the point is the 3D one the fraction of the way along, as
-       * its colour and texture coordinates are; the vertex cache draws it
-       * there */
-      PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP), xy, xyp, xyq, ir0, 0);
+      pt->xy = xy;
+      pt->xyp = xyp;
+      pt->xyq = xyq;
+      pt->t = ir0;
     }
     o = ngte_intpl((s16)(uvp & 0xFF), (s16)((uvp >> 8) & 0xFF), 0, ir0, (int)(uvq & 0xFF),
                    (int)((uvq >> 8) & 0xFF), 0, 0);
@@ -718,6 +728,28 @@ static u32 ClipEdge(u32 out, u32 hp, u32 hq, u32 cp, u32 cq, u32 xyp, u32 xyq, u
     CTC2((cq >> 16) & 0xFF, 23);
   }
   return out + 0xC;
+}
+
+/* #189: each clip point is the 3D one the fraction of the way along its
+ * edge, as its colour and texture coordinates are; the vertex cache draws it
+ * there. #242: and it is kept as this primitive's own (psx_vcache.h
+ * VCD_KEEP), under the primitive's anchor (each vertex's key, u/v and place,
+ * as the walk reads them: VCD_PIECE_V) and the point's place in it (a GT4's
+ * last two points are swapped into strip order), since two clip points of
+ * different edges often fall on one pixel. Handed over in the order
+ * ClipEdge made them, with nothing projected or handed over between. */
+static void ClipHand(u32 prim, u32 n, const ClipPt *pt, int np) {
+  if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0)) {
+    u32 an = 0, i;
+    int j;
+    for (i = 0; i < n; i++)
+      an ^= VCD_PIECE_V(AT32(prim + 0x8 + 0xC * i), AT16(prim + 0xC + 0xC * i), i);
+    for (j = 0; j < np; j++) {
+      const u32 slot = n == 4 && pt[j].slot >= 2 ? pt[j].slot ^ 1u : pt[j].slot;
+      PSX_VC_DERIVE(VCD(VCD_PERSP, VCD_PETE_CLIP) | VCD_KEEP, pt[j].xy, pt[j].xyp, pt[j].xyq,
+                    pt[j].t, (int)VCD_CORNER(an, slot));
+    }
+  }
 }
 
 /* asm 80025140-8002579C: one triangle when Spyro is partly under the floor.
@@ -734,6 +766,8 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
   const u32 prim = f->prim;
   const u32 h0 = AT32(r0 + 4), h1 = AT32(r1 + 4), h2 = AT32(r2 + 4);
   u32 sum, z1, z2, xy0, xy1, xy2, col0, col1, col2, bucket, tail, out;
+  ClipPt pt[3]; /* #242 (a triangle crosses the floor on two edges) */
+  int np = 0;
 
   if ((s32)(h0 & h1 & h2) < 0)
     return;
@@ -788,29 +822,39 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT16(out + 0xC) = (u16)uv0;
     out += 0xC;
   }
-  if ((s32)(h0 ^ h1) < 0)
-    out = ClipEdge(out, h0, h1, col0, col1, xy0, xy1, uv0, uv1);
+  if ((s32)(h0 ^ h1) < 0) {
+    pt[np].slot = (out - prim) / 0xC;
+    out = ClipEdge(out, h0, h1, col0, col1, xy0, xy1, uv0, uv1, &pt[np]);
+    np++;
+  }
   if ((s32)h1 >= 0) {
     AT32(out + 0x4) = col1;
     AT32(out + 0x8) = xy1;
     AT16(out + 0xC) = (u16)uv1;
     out += 0xC;
   }
-  if ((s32)(h1 ^ h2) < 0)
-    out = ClipEdge(out, h1, h2, col1, col2, xy1, xy2, uv1, uv2);
+  if ((s32)(h1 ^ h2) < 0) {
+    pt[np].slot = (out - prim) / 0xC;
+    out = ClipEdge(out, h1, h2, col1, col2, xy1, xy2, uv1, uv2, &pt[np]);
+    np++;
+  }
   if ((s32)h2 >= 0) {
     AT32(out + 0x4) = col2;
     AT32(out + 0x8) = xy2;
     AT16(out + 0xC) = (u16)uv2;
     out += 0xC;
   }
-  if ((s32)(h2 ^ h0) < 0)
-    out = ClipEdge(out, h2, h0, col2, col0, xy2, xy0, uv2, uv0);
+  if ((s32)(h2 ^ h0) < 0) {
+    pt[np].slot = (out - prim) / 0xC;
+    out = ClipEdge(out, h2, h0, col2, col0, xy2, xy0, uv2, uv0, &pt[np]);
+    np++;
+  }
   tail = AT32(bucket);
   if (out - prim - 0x30 != 0) {
     /* three points: POLY_GT3 */
     AT8(prim + 7) = 0x34;
     AT32(prim) = TAG_GT3;
+    ClipHand(prim, 3, pt, np);
     LinkPrim(f, bucket, tail, 0x28, ND_K_GT3);
   } else {
     /* four: POLY_GT4, the last two points swapped into strip order */
@@ -824,6 +868,7 @@ static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u3
     AT32(prim + 0x30) = c;
     AT8(prim + 7) = 0x3C;
     AT32(prim) = TAG_GT4;
+    ClipHand(prim, 4, pt, np);
     LinkPrim(f, bucket, tail, 0x34, ND_K_GT4);
   }
 }

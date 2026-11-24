@@ -565,7 +565,10 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
         /* near the camera, nudge each corner a line up or down by its
          * depth against the centre's (#189: the vertex cache is told the
          * nudged corner is the projected one, which it then draws; #216:
-         * and the corner's own projection, under the centre) */
+         * and the corner's own projection, under the centre; #242: which,
+         * where two corners share the source's key, is the corner's own
+         * projection, 5 - (c - v) / 4 - 1 back: the RTPT's three, then the
+         * fourth corner's RTPS, nothing projected since) */
         q = CFC2(7);
         if ((s32)(q + 0xFFFFFC00u) > 0) {
           u32 c = v;
@@ -579,10 +582,12 @@ static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
             c += 4;
             if ((s32)zc < 0) {
               AT32(c - 4) = xy + 0x10000u;
-              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy + 0x10000u, xy, csxy, 0, 0);
+              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy + 0x10000u, xy, csxy, 0,
+                            (int)(5u - (c - v) / 4u));
             } else if (zc != 0) {
               AT32(c - 4) = xy - 0x10000u;
-              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy - 0x10000u, xy, csxy, 0, 0);
+              PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_SHADOWS) | VCD_OWN, xy - 0x10000u, xy, csxy, 0,
+                            (int)(5u - (c - v) / 4u));
             }
           }
         }

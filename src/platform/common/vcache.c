@@ -667,6 +667,11 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "found where they weren't (the polygon affine) (#229)",
            out->sp_found, out->sp_kept, out->sp_full, out->sp_wide, out->sp_moved, out->sp_spread,
            out->sp_res, out->sp_part);
+  /* #242 */
+  PsyX_Log("vcache Spyro and shadows own: %u vertices found from their polygon's own clip point "
+           "of Spyro's; %u kept, %u not kept (full); %u shadow corners' own points from their "
+           "corner's projection, the source's dead (#242)",
+           out->pk_found, out->pk_kept, out->pk_full, out->own_corner);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -1846,13 +1851,16 @@ static Sp *sp_slot(Table *tb, uint32_t gen, uint32_t key, uint32_t anchor, int a
 
 /* #229: keep key's point under anchor (place dx, dy from its pixel centre,
  * depths w): a second, different one leaves neither; the same one adds its
- * depths */
+ * depths. #242: pk, Spyro's clip point (counted apart) */
 static void sp_put(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float dx, float dy,
-                   const float *w, unsigned n, unsigned r, Touch *t) {
+                   const float *w, unsigned n, unsigned r, Touch *t, int pk) {
   Sp *const o = sp_slot(rec->tab, rec->gen, key, anchor, 1, &k->cost[VCC_REC_PROBES], t);
   unsigned i, j;
   if (!o) {
-    k->st->sp_full++;
+    if (pk)
+      k->st->pk_full++;
+    else
+      k->st->sp_full++;
     return;
   }
   if (o->placed) {
@@ -1868,7 +1876,10 @@ static void sp_put(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float
     o->dy = dy;
     o->r = (uint16_t)r;
     o->placed = 1;
-    k->st->sp_kept++;
+    if (pk)
+      k->st->pk_kept++;
+    else
+      k->st->sp_kept++;
   }
   for (i = 0; i < n; i++) {
     for (j = 0; j < o->n; j++)
@@ -2348,6 +2359,23 @@ static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigne
   return -1;
 }
 
+/* #242: a's own point under anchor dead (two different points), and the
+ * projection q - 1 back a's: that one's place in the frame's order (*r) */
+static int own_corner(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigned q, unsigned *r,
+                      Touch *t) {
+  Rec *const rec = &s_rec[kind];
+  Table *const tb = rec->tab;
+  const Ow *const o = own_slot(tb, rec->gen, a, anchor, 0, &k->cost[VCC_REC_PROBES], t);
+  int i;
+  if (!o || !o->placed || !o->dead || q > tb->nlog)
+    return 0;
+  i = find(rec, kind, a, 0, &k->cost[VCC_REC_PROBES], t);
+  if (i < 0 || LOG_E(tb->log[tb->nlog - q]) != (unsigned)i)
+    return 0;
+  *r = tb->nlog - q;
+  return 1;
+}
+
 /* VCD_SELF: key is the projection made p back (0: the last), by its place
  * in the frame's order. #229: world (a world piece's corner) where that
  * projection is not key's (the grid moved the point after it: no entry at
@@ -2369,7 +2397,7 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
       dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
       dy = flt(y - ((short)(key >> 16) + 0.5f));
       if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
-        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t);
+        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t, 0);
         k->st->sp_moved++;
       }
     }
@@ -2377,7 +2405,10 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
   k->cost[VCC_REC_LINES] += t.n;
 }
 
-/* VCD_OWN with an alias or offset: its source's own point, offset */
+/* VCD_OWN with an alias or offset: its source's own point, offset. #242:
+ * an alias with q non-zero (a moby shadow's nudged corner) whose source's own
+ * point is dead (two of its shadow's corners on one key) is the projection
+ * q - 1 back, where that projection is the source key's */
 static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a, uint32_t anchor,
                      int p, int q) {
   Touch t = TOUCH0;
@@ -2387,7 +2418,10 @@ static void own_hand(int kind, const Sink *k, int form, uint32_t key, uint32_t a
       own_src(kind, k, a, anchor, &r, &ox, &oy, &t) == 0)
     own_put(kind, k, key, anchor, r, ox + (form == VCD_OFFSET ? p : 0),
             oy + (form == VCD_OFFSET ? q : 0), &t);
-  else
+  else if (form == VCD_ALIAS && q > 0 && own_corner(kind, k, a, anchor, (unsigned)q, &r, &t)) {
+    own_put(kind, k, key, anchor, r, 0, 0, &t);
+    k->st->own_corner++;
+  } else
     k->st->own_nosrc++;
   k->cost[VCC_REC_LINES] += t.n;
 }
@@ -2409,7 +2443,7 @@ static void own_move(int kind, const Sink *k, uint32_t key, uint32_t anchor, uin
   } else {
     const Sp *const sp = sp_slot(rec->tab, rec->gen, key, old, 0, &k->cost[VCC_REC_PROBES], &t);
     if (sp && sp->placed && !sp->dead)
-      sp_put(rec, k, key, anchor, sp->dx, sp->dy, sp->w, sp->n, sp->r, &t);
+      sp_put(rec, k, key, anchor, sp->dx, sp->dy, sp->w, sp->n, sp->r, &t, 0);
   }
   k->cost[VCC_REC_LINES] += t.n;
 }
@@ -2486,6 +2520,11 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
             hk_place(rec, kind, k, how, key, a, b, p, q, &taint, &dx, &dy, w, &n, cost, &t, 1,
                      NULL) == 0 &&
             own_taken(st, &taint));
+  if (form == VCD_PERSP && (how & VCD_KEEP) && placed && n)
+    /* #242: Spyro's clip point kept as its polygon's own too, under q (its
+     * primitive's anchor and its place in it), apart from hk: as hk has it,
+     * so two clip points on one pixel, each its own polygon's, stay apart */
+    sp_put(rec, k, key, (uint32_t)q, dx, dy, w, n, SP_NOR, &t, 1);
   if (form == VCD_PERSP && (how & VCD_OWN)) {
     /* #229: the world's split point kept as its piece's own too, under the
      * piece's anchor and edge (psx_vcache.h VCD_EDGE), apart from hk: from
@@ -2498,14 +2537,14 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
     unsigned sn = 0;
     int st2 = 0, wide = 0;
     if (first)
-      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t);
+      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t, 0);
     else if (hk_place(rec, kind, k, how, key, a, b, p, q, &st2, &sdx, &sdy, sw, &sn, cost, &t, 2,
                       &wide) == 0 &&
              sn) {
-      sp_put(rec, k, key, an, sdx, sdy, sw, sn, SP_NOR, &t);
+      sp_put(rec, k, key, an, sdx, sdy, sw, sn, SP_NOR, &t, 0);
       st->sp_wide += (unsigned)wide;
     } else if (placed)
-      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t);
+      sp_put(rec, k, key, an, dx, dy, w, n, SP_NOR, &t, 0);
   }
   if (!placed) {
     if (form == VCD_ALIAS || form == VCD_OFFSET) {
@@ -4253,6 +4292,61 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         memset(pick, 0, sizeof pick);
         if (nares)
           memset(rx, 0, sizeof rx);
+      }
+    }
+  }
+  if (!res && !der && nnone && !nambig && !inv && !nflat) {
+    /* #242: a SpyroDraw polygon nothing above found: each vertex with no
+     * entry at its polygon's own clip point (VCD_KEEP: two clip points on one
+     * pixel, so the hand-over left the key with none), under the anchor its
+     * renderer gave (its vertices' keys and u/v, as #229's world pieces;
+     * psx_vcache.h VCD_PIECE_V) and its place in the primitive; only when
+     * every one has one. Its found vertices stay as they are. */
+    const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
+    if (cx_find(ptab, gen, xy[0]) == VCX_SPYRO) {
+      static const int k_prim[2][4] = {{0, 1, 2, 3}, {0, 1, 3, 2}};
+      const Cand *e2[4];
+      unsigned en2[4], eo[4];
+      uint32_t anchor = 0;
+      int m = 0, all = 1, ent;
+      for (i = 0; i < n; i++)
+        anchor ^= VCD_PIECE_V((uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16, xy[i][2],
+                              k_prim[n == 4][i]);
+      for (i = 0; i < n && all; i++) {
+        const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+        Touch t = TOUCH0;
+        e2[i] = e[i];
+        en2[i] = en[i];
+        if (e[i])
+          continue;
+        if (sp_point(ptab, gen, key, VCD_CORNER(anchor, k_prim[n == 4][i]), &owp[i][0], &owp[i][1],
+                     oc[i], &eo[i], &ent, &cost[VCC_LOOK_PROBES], &t) == 1) {
+          ow[i] = 1;
+          e2[i] = oc[i];
+          en2[i] = eo[i];
+          m++;
+        } else
+          all = 0;
+        cost[VCC_LOOK_LINES] += t.n;
+      }
+      if (all && m && choose(e2, en2, k_all, n, cost, pick)) {
+        for (i = 0; i < n; i++)
+          if (ow[i]) {
+            e[i] = oc[i];
+            en[i] = eo[i];
+            et[i] = 0;
+            nnone--;
+            nmiss--;
+            st->hits++;
+            st->own_found++;
+            st->pk_found++;
+          }
+        persp = VREF_PERSP;
+        res = 1;
+        none = -1;
+      } else {
+        memset(ow, 0, sizeof ow);
+        memset(pick, 0, sizeof pick);
       }
     }
   }
