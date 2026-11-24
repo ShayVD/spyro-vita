@@ -93,7 +93,7 @@ Hardware runs (2026-11-21, `logs/p3/hw-run{1,2,3}/`):
 | 2 | d58b0cb | title screen, controller works, ~7.5 pictures/s, no audio; starting a game crashed (`movaps` on an 8-aligned array) |
 | 3 | 8c6673b | the game starts and runs: 60 vblanks/s, 0 late, audio; per VSync the game ~5 ms, scaling 4.3 ms |
 
-GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..9}/`, each with its `spyro.elf` and `commit.txt`):
+GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..11}/`, each with its `spyro.elf` and `commit.txt`):
 
 | run | commit | result |
 |---|---|---|
@@ -105,6 +105,8 @@ GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..9}/`, each with its `spyro.elf`
 | 7 | 8f357a9 | the PICTURE rows (perspective, sub-pixel, resolution, draw distance) live; the new shader dumped |
 | 8 | a457303 | **the firmware's Piglet with the embedded binaries**, no pair needed (up in 324 ms); closing the menu crashed (a drop list without NULL) |
 | 9 | e99b16a | menu fixed, PSX WOBBLE row; the movies' 24-bit frames 0.8 ms (58 ms before); 3 late vblanks in the run |
+| 10 | 65b6dc6 | after merging `main`: every polygon broken (main's #178 made `VCacheVert` floats; the PS4 still read `int16`) |
+| 11 | 3358e30 | the float layout read (guarded by a `_Static_assert` since b00630e): the picture right, 11,400 vblanks, 15 late, no GL errors; menu saved; memory card written |
 
 ## The spike
 
