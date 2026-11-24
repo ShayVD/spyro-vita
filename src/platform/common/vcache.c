@@ -530,6 +530,17 @@ void psx_vcache_stats_reset(void) { memset(g_vcache_stats, 0, sizeof g_vcache_st
 
 static void qt_line(void);
 
+/* #218: the generations' check (below, by the renderer contexts), in host
+ * builds only: compiled out of the Vita's */
+#ifndef __vita__
+#define VC_GEN_CHECK 1
+static int s_gc = -1; /* 1: on, 0: off, -1: VC_CHECK_GEN not read yet */
+static void gc_check(int kind, const NgteProj *p, unsigned vxy, unsigned vz, const void *from);
+static void gc_line(void);
+#else
+#define VC_GEN_CHECK 0
+#endif
+
 static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
 /* #228: the exact repeats whose maths was skipped, per kind of frame (each
  * added by the one thread recording that kind; the report reads) */
@@ -598,6 +609,9 @@ static void cost_line(void) {
     zl = zv;
   }
   qt_line(); /* #204 */
+#if VC_GEN_CHECK
+  gc_line(); /* #218 */
+#endif
 }
 
 static void cx_text(const VCacheStats *s, char *buf, size_t size); /* #211, below */
@@ -1597,6 +1611,10 @@ unsigned g_pres_ngte_gen;
  * hook's form for each vertex. Called only while the value hook is set,
  * which is rtp_value_hook then (psx_vcache_enable): the same record. */
 void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
+#if VC_GEN_CHECK /* #218 (host builds) */
+  if (__builtin_expect(s_gc != 0, 0))
+    gc_check(VC_LOGIC, p, vxy, vz, __builtin_return_address(0));
+#endif
   rtp_point(VC_LOGIC, &k_game, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
             ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
 }
@@ -1624,6 +1642,10 @@ static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigne
  * (psx_vcache_pres_begin): the same record. */
 void pres_vcache_ngte(const NgteProj *p, unsigned int vxy, unsigned int vz, const NgteRtp *o) {
   Sink k;
+#if VC_GEN_CHECK /* #218 (host builds) */
+  if (__builtin_expect(s_gc != 0, 0))
+    gc_check(VC_PRES, p, vxy, vz, __builtin_return_address(0));
+#endif
   pres_sink(&k);
   rtp_point(VC_PRES, &k, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
             ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
@@ -2813,6 +2835,136 @@ static int cx_of_name(int kind, const char *name) {
   return VCX_OTHER;
 }
 
+#if VC_GEN_CHECK
+/* #218: the generations' check, host builds only (VC_CHECK_GEN=1 in the
+ * environment, or psx_vcache_set_check_gen). The record takes a native
+ * projection's registers as the same when their generation is (same_ngte,
+ * #205; rp_skip, #228), which holds only while every renderer that changes
+ * an NgteProj field after a projection takes a new generation (gte_native.h
+ * ngte_proj_regen). Every native projection reaches the record through
+ * ngte_vcache or pres_vcache_ngte, so the check sits there: it keeps each
+ * generation's fields (all but gen) as its first projection had them, a
+ * slot for each of the last GC_N generations, and compares every later
+ * projection of that generation with them word by word. Each projection
+ * whose fields differ counts once (gen_stale), under the renderer context
+ * that returns next (psx_vc_ctx: a renderer's projections come before its
+ * return), or "not named" if none has by the report; the first GC_LOG are
+ * logged with the field and the caller's address (addr2line gives the
+ * renderer's line). Each kind (VC_LOGIC, VC_PRES) has its own generations
+ * (g_ngte_gen, g_pres_ngte_gen) and slots, written only by the thread its
+ * renderers run on. Counts only: no answer changes. */
+#define GC_N 8192u
+#define GC_W 17
+#define GC_LOG 16
+typedef struct {
+  uint32_t gen;
+  int w[GC_W];
+} Gc;
+static Gc *s_gc_tab[2];
+/* per kind: generations seen, projections compared, stale ones not named
+ * yet, and the stale ones by context */
+static unsigned s_gc_seen[2], s_gc_cmp[2], s_gc_pend[2], s_gc_stale[2][VCX_N];
+static unsigned s_gc_logged;
+static const char *const k_gc_field[GC_W] = {"r11", "r12", "r13", "r21", "r22", "r23",
+                                             "r31", "r32", "r33", "trx", "try", "trz",
+                                             "ofx", "ofy", "h",   "dqa", "dqb"};
+
+static void gc_words(const NgteProj *p, int *w) {
+  w[0] = p->r11, w[1] = p->r12, w[2] = p->r13;
+  w[3] = p->r21, w[4] = p->r22, w[5] = p->r23;
+  w[6] = p->r31, w[7] = p->r32, w[8] = p->r33;
+  w[9] = p->trx, w[10] = p->try_, w[11] = p->trz;
+  w[12] = p->ofx, w[13] = p->ofy, w[14] = p->h;
+  w[15] = p->dqa, w[16] = p->dqb;
+}
+
+static __attribute__((noinline)) void gc_check(int kind, const NgteProj *p, unsigned vxy,
+                                               unsigned vz, const void *from) {
+  Gc *t, *e;
+  int w[GC_W], f;
+  if (s_gc < 0) { /* the environment's, once (before either thread records) */
+    const char *const v = getenv("VC_CHECK_GEN");
+    s_gc = v && atoi(v) > 0;
+  }
+  if (!s_gc || !p->gen)
+    return; /* (0: no generation, the words compared each time) */
+  t = s_gc_tab[kind];
+  if (!t && !(t = s_gc_tab[kind] = calloc(GC_N, sizeof(Gc))))
+    return;
+  e = &t[p->gen & (GC_N - 1)];
+  gc_words(p, w);
+  if (e->gen != p->gen) { /* its first projection (or its slot's older one gone) */
+    e->gen = p->gen;
+    memcpy(e->w, w, sizeof w);
+    s_gc_seen[kind]++;
+    return;
+  }
+  s_gc_cmp[kind]++;
+  for (f = 0; f < GC_W && e->w[f] == w[f]; f++)
+    ;
+  if (f == GC_W)
+    return;
+  s_gc_pend[kind]++;
+  if (__atomic_fetch_add(&s_gc_logged, 1, __ATOMIC_RELAXED) < GC_LOG)
+    PsyX_Log("vcache gen check: stale generation %u (%s): %s was %d, now %d; vertex %d %d %d; "
+             "called from %p (#218)",
+             p->gen, kind == VC_PRES ? "the presenter's" : "the logic draw's", k_gc_field[f],
+             e->w[f], w[f], ngte_vx(vxy), ngte_vy(vxy), ngte_vz(vz), from);
+}
+
+/* the stale ones since the last renderer returned, under name's context */
+static inline void gc_name(int kind, const char *name) {
+  if (__builtin_expect(s_gc_pend[kind] != 0, 0)) {
+    s_gc_stale[kind][cx_of_name(kind, name)] += s_gc_pend[kind];
+    s_gc_pend[kind] = 0;
+  }
+}
+
+/* each kind's count, by context (-1: all; VCX_N: not named yet) */
+static unsigned gc_count(int kind, int cx) {
+  unsigned n = 0;
+  int c;
+  if (cx >= 0)
+    return __atomic_load_n(cx == VCX_N ? &s_gc_pend[kind] : &s_gc_stale[kind][cx],
+                           __ATOMIC_RELAXED);
+  for (c = 0; c <= VCX_N; c++)
+    n += gc_count(kind, c);
+  return n;
+}
+
+/* the report's line, the totals since the start (only while the check is on) */
+static void gc_line(void) {
+  char b[2][256];
+  int k, c, n, first;
+  if (s_gc <= 0)
+    return;
+  for (k = 0; k < 2; k++) {
+    const unsigned all = gc_count(k, -1);
+    n = snprintf(b[k], sizeof b[k], "gen_stale %u", all);
+    for (c = 0, first = 1; c <= VCX_N && all && n > 0 && (size_t)n < sizeof b[k]; c++) {
+      const unsigned v = gc_count(k, c);
+      if (v) {
+        n += snprintf(b[k] + n, sizeof b[k] - (size_t)n, "%s%s %u", first ? " (" : ", ",
+                      c == VCX_N ? "not named" : k_cx_names[c], v);
+        first = 0;
+      }
+    }
+    if (all && n > 0 && (size_t)n < sizeof b[k])
+      snprintf(b[k] + n, sizeof b[k] - (size_t)n, ")");
+  }
+  PsyX_Log("vcache gen check: the logic draw's %u generations, %u projections compared with "
+           "their generation's first, %s; the presenter's %u, %u, %s (VC_CHECK_GEN=1, #218)",
+           s_gc_seen[0], s_gc_cmp[0], b[0], __atomic_load_n(&s_gc_seen[1], __ATOMIC_RELAXED),
+           __atomic_load_n(&s_gc_cmp[1], __ATOMIC_RELAXED), b[1]);
+}
+
+void psx_vcache_set_check_gen(int on) { s_gc = on != 0; }
+
+unsigned psx_vcache_gen_stale(int kind, int cx) {
+  return kind == VC_LOGIC || kind == VC_PRES ? gc_count(kind, cx) : 0;
+}
+#endif
+
 static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24) {
   if (t->ncx < VC_CX) {
     Cx *const c = &t->cx[t->ncx++];
@@ -2829,6 +2981,9 @@ static void vc_ctx(int kind, const char *name, uintptr_t p0, uintptr_t p1, uintp
   Rec *const r = &s_rec[kind];
   Table *const t = r->tab;
   int cx;
+#if VC_GEN_CHECK
+  gc_name(kind, name); /* #218 */
+#endif
   if (!t)
     return;
   if (t->cx_gen != r->gen) {

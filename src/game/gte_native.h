@@ -44,7 +44,9 @@
  * words. A renderer that sets a field itself keeps the generation, which
  * is safe while no projection has used it (math_hand.c's Project sets the
  * camera's matrix before its one projection); otherwise it must take a new
- * one (ngte_proj_regen). The arithmetic never reads gen. */
+ * one (ngte_proj_regen). The arithmetic never reads gen. Host builds check
+ * the rule with VC_CHECK_GEN=1 (#218, vcache.c gc_check: every projection
+ * of a generation compared with its first, word by word; gen_stale). */
 typedef struct NgteProj {
   int r11, r12, r13, r21, r22, r23, r31, r32, r33;
   int trx, try_, trz;
