@@ -405,3 +405,4 @@ continue.
 - 2026-11-23T08:26:57Z phase 8: merged #216 (D218), filed #226, Vita3K: none
 - 2026-11-23T08:27:34Z phase 8: started #217, Vita3K: none
 - 2026-11-24T10:34:33Z phase 8: merged #222 (D230), filed #244, #245; owner asked to stop the loop after this and open a PR. Vita3K: 9 runs (worker's), hardware: none
+- 2026-11-24T10:49:10Z phase 8: owner decided #208 no and #235 no (closed); PR #246 merged into main; loop stays stopped. Vita3K: none, hardware: none
