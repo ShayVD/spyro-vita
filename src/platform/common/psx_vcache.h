@@ -61,16 +61,15 @@ void psx_vcache_set_lazy_logic(int mode);
  * up front; 1 that path without; 0 every polygon the whole path. The same
  * answers in each. */
 void psx_vcache_set_found_fast(int mode);
-/* #221: a record whose key's probe passes VC_PROBE (32) slots of the
- * frame's other keys goes on to the first free slot, as the walk's lookup
- * does, so its entry is made (1, the default; a free slot is always there,
- * the table taking at most 3/4 of its slots a frame). 0: both stop at 32 as
- * before, and such a record makes no entry (counted full): late in a busy
- * frame, as the main sky's records come, a vertex every polygon of its fan
- * missed. Such an entry takes no place in the frame's order, is no
- * hand-over's source, and is used by the walk for SkyDraw polygons only, so
- * every other polygon is found as before. Host builds read VC_LONG_PROBE=0
- * from the environment too. */
+/* #221: a record whose probe runs out (VC_PROBE, 32 slots of the frame's
+ * other keys; late in a busy frame, as the main sky's records come) makes
+ * its entry in a small overflow apart from the table's slots, where before
+ * it made none and every polygon of its vertex's fan was missed (1, the
+ * default; 0: none, as before). The slots hold what they held before; an
+ * overflow entry takes no place in the frame's order, is worked out at
+ * once, is no hand-over's source, and is read only for a SkyDraw polygon's
+ * vertex with no entry in the slots, so every other polygon is found as
+ * before. Host builds read VC_LONG_PROBE=0 from the environment too. */
 void psx_vcache_set_long_probe(int on);
 
 /* Points a renderer makes or moves on screen after the projection (#189):
@@ -599,10 +598,9 @@ typedef struct {
    * corners whose own point was taken from their corner's projection (the
    * source key's own point dead) */
   unsigned pk_found, pk_kept, pk_full, own_corner;
-  /* #221: projections recorded under an entry past the probe's first
-   * VC_PROBE (32) slots, which made none before (counted in full then); and
-   * the vertices of SkyDraw polygons found in such an entry (the only
-   * polygons that use them) */
+  /* #221: projections recorded in the overflow, their probe past VC_PROBE
+   * (32) slots (none recorded before: counted in full then); and the
+   * vertices of SkyDraw polygons found there (the only ones that look) */
   unsigned probe_long, far_found;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
