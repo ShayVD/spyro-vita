@@ -10,7 +10,8 @@ include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
-set(VITA_VERSION "01.22")
+include("${CMAKE_SOURCE_DIR}/cmake/version.cmake")
+set(VITA_VERSION "${SPYRO_APP_VER}")
 # vpk_add_app always sets ATTRIBUTE2=12, the extended memory for the app (D7).
 # SPYRO_UNSAFE, off by default: spyro-vita.vpk stays a safe app (CI builds the
 # ON variant beside it as spyro-vita-unsafe.vpk, and a release has both, D161). A safe

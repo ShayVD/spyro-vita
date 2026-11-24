@@ -61,6 +61,7 @@ add_custom_command(OUTPUT "${PS4_ELF}"
       "$<TARGET_FILE:spyro_platform_common>" --end-group
     -lc -lm -lkernel -lSceSysmodule -lSceVideoOut -lScePad -lSceUserService -lSceAudioOut
     -lScePigletv2VSH
+    -Map "${CMAKE_BINARY_DIR}/spyro.map"
     -o "${PS4_ELF}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/oelf_check.py" "${PS4_ELF}"
   DEPENDS spyro_platform_ps4 spyro_game spyro_platform_common
@@ -68,12 +69,71 @@ add_custom_command(OUTPUT "${PS4_ELF}"
     "$<TARGET_FILE:spyro_platform_common>" "${CMAKE_SOURCE_DIR}/tools/ps4/oelf_check.py"
   COMMENT "PS4: linking spyro.elf (ld.lld, OpenOrbis link.x)"
   VERBATIM)
-set(PS4_PKG "${CMAKE_BINARY_DIR}/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg")
+# The release fpkg (SPYRO_PS4_RELEASE=ON, docs/ps4-plan.md P5, D246): built
+# on the owner's Mac by tools/ps4/release.sh, never by CI (the shader
+# binaries aren't in the repo). It refuses to package unless every shader has
+# a binary for its current source (tools/ps4/shader_check.py), takes the
+# version from cmake/version.cmake, the icon from the Vita's LiveArea icon
+# (tools/ps4/art.py; the owner's decision; no background, D246), and ships
+# the licence texts in licenses/ (the fpkg is GPL-3.0 as a whole: OpenOrbis's
+# crt1.o).
+option(SPYRO_PS4_RELEASE "Build the PS4 release fpkg (title ID SPYP00001)" OFF)
+set(PS4_PKG_DEPS)
+set(PS4_PKG_ENV)
+if(SPYRO_PS4_RELEASE)
+  include("${CMAKE_SOURCE_DIR}/cmake/version.cmake")
+  if(EXISTS "${CMAKE_SOURCE_DIR}/disc/livearea/icon0.png")
+    set(ps4_art_default "${CMAKE_SOURCE_DIR}/disc/livearea")
+  else()
+    set(ps4_art_default "${CMAKE_SOURCE_DIR}/assets/livearea")
+  endif()
+  set(SPYRO_PS4_ART_SRC "${ps4_art_default}" CACHE PATH
+    "icon0.png for the release fpkg's icon0.png (D246)")
+  set(PS4_ART "${CMAKE_BINARY_DIR}/ps4-art")
+  add_custom_command(OUTPUT "${PS4_ART}/icon0.png"
+    COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/art.py" "${SPYRO_PS4_ART_SRC}" "${PS4_ART}"
+    DEPENDS "${CMAKE_SOURCE_DIR}/tools/ps4/art.py" "${SPYRO_PS4_ART_SRC}/icon0.png"
+    COMMENT "PS4: icon0.png from ${SPYRO_PS4_ART_SRC}"
+    VERBATIM)
+  set(PS4_LICENSES "${CMAKE_BINARY_DIR}/ps4-licenses")
+  set(ps4_lic_in "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    "${CMAKE_SOURCE_DIR}/licenses/GPL-3.0.txt" "${CMAKE_SOURCE_DIR}/licenses/CC0-1.0.txt"
+    "${CMAKE_SOURCE_DIR}/assets/livearea/README.md")
+  add_custom_command(OUTPUT "${PS4_LICENSES}.stamp"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PS4_LICENSES}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PS4_LICENSES}"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/LICENSE" "${PS4_LICENSES}/LICENSE-MIT.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${PS4_LICENSES}/THIRD_PARTY_NOTICES.md"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/licenses/GPL-3.0.txt" "${PS4_LICENSES}/GPL-3.0.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/licenses/CC0-1.0.txt" "${PS4_LICENSES}/CC0-1.0.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/assets/livearea/README.md" "${PS4_LICENSES}/ART.md"
+    COMMAND ${CMAKE_COMMAND} -E touch "${PS4_LICENSES}.stamp"
+    DEPENDS ${ps4_lic_in}
+    COMMENT "PS4: the licence texts for the release fpkg"
+    VERBATIM)
+  set(PS4_SHADER_CHECK "${CMAKE_BINARY_DIR}/ps4-shader-check.txt")
+  add_custom_command(OUTPUT "${PS4_SHADER_CHECK}"
+    COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/ps4/shader_check.py"
+      "${CMAKE_CURRENT_SOURCE_DIR}/gpu_gles.c" "${SPYRO_PS4_SHADERS}" --cc "${PS4_CC}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${PS4_SHADER_CHECK}"
+    DEPENDS "${CMAKE_SOURCE_DIR}/tools/ps4/shader_check.py" "${CMAKE_CURRENT_SOURCE_DIR}/gpu_gles.c"
+      ${PS4_SHADER_BINS}
+    COMMENT "PS4: every shader has a pre-compiled binary for its source (release)"
+    VERBATIM)
+  set(PS4_PKG "${CMAKE_BINARY_DIR}/pkg/IV0000-SPYP00001_00-SPYROPS4RELEASE0.pkg")
+  list(APPEND PS4_PKG_DEPS "${PS4_ART}/icon0.png" "${PS4_LICENSES}.stamp"
+    "${PS4_SHADER_CHECK}")
+  set(PS4_PKG_ENV "PS4_RELEASE=1" "PS4_APP_VER=${SPYRO_APP_VER}" "PS4_ART=${PS4_ART}"
+    "PS4_LICENSES=${PS4_LICENSES}")
+else()
+  set(PS4_PKG "${CMAKE_BINARY_DIR}/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg")
+endif()
 add_custom_command(OUTPUT "${PS4_PKG}"
   COMMAND ${CMAKE_COMMAND} -E env "OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN}" "PS4_OOBIN=${PS4_OOBIN}"
+    ${PS4_PKG_ENV}
     bash "${CMAKE_SOURCE_DIR}/tools/ps4/pkg.sh" "${PS4_ELF}" "${CMAKE_BINARY_DIR}/pkg"
   DEPENDS "${PS4_ELF}" "${CMAKE_SOURCE_DIR}/tools/ps4/pkg.sh"
-    "${CMAKE_SOURCE_DIR}/tools/ps4/spike/icon.py"
+    "${CMAKE_SOURCE_DIR}/tools/ps4/spike/icon.py" ${PS4_PKG_DEPS}
   COMMENT "PS4: eboot.bin and the fpkg (create-fself, create-gp4, PkgTool)"
   VERBATIM)
 add_custom_target(spyro_ps4 ALL DEPENDS "${PS4_PKG}")

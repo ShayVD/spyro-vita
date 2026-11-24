@@ -69,6 +69,37 @@ port. The port's code is MIT, which GPL-3.0 allows, so publishing the source of 
 covers this case as well. This is upstream's to clarify. It is noted here so that releases keep
 their source available.
 
+## The PS4 fpkg (GPL-3.0 as a whole)
+
+The PS4 release fpkg (`spyro-ps4-*.pkg`, title ID `SPYP00001`, D246) is the same game code built
+with the [OpenOrbis PS4 Toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) v0.5.4. Its
+link map (`spyro.map`) shows two archives adding code beside this repository's:
+
+| Component | Version | Licence | Text |
+|---|---|---|---|
+| OpenOrbis's `crt1.o` (start-up code) | v0.5.4 | GPL-3.0 | [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt) |
+| [musl](https://musl.libc.org) (OpenOrbis's fork, its `libc.a`) | in OpenOrbis v0.5.4 | MIT | below |
+| [TheMobyCollective/spyro-1](https://github.com/TheMobyCollective/spyro-1), [PsyCross](https://github.com/OpenDriver2/PsyCross)'s headers | as in the VPK | CC0 1.0, MIT | as above |
+
+The eboot also imports the console's system libraries through OpenOrbis's stubs (`libkernel`,
+`libSceVideoOut`, `libScePad`, `libSceAudioOut`, `libSceUserService`, `libSceSysmodule`,
+`libScePigletv2VSH`), and the package carries `sce_module/libc.prx`, `sce_module/libSceFios2.prx`
+and `sce_sys/about/right.sprx` as OpenOrbis's Piglet sample does (copied from its `samples/piglet/`,
+where OpenOrbis distributes them; their own licence isn't stated there). The renderer's shaders are
+this repository's GLSL (MIT), pre-compiled once with Piglet's compiler on a PS4 (D245); the
+compiler itself is not in the package. The icon (`icon0.png`) is the LiveArea icon above, rescaled,
+under the same terms (the owner's decision, D246).
+
+**`crt1.o` is GPL-3.0 with no linking exception found, so the fpkg is offered under GPL-3.0 as a
+whole** (the owner's decision, D246). This repository's own code stays under the MIT licence, which
+GPL-3.0 allows inside a GPL-3.0 work; the decomp is CC0. The Corresponding Source of each released
+fpkg is this repository at the commit its release names (`tools/ps4/release.sh` records it in
+`manifest.txt`), OpenOrbis v0.5.4 at the link above, and the build steps in
+[docs/ps4-build.md](docs/ps4-build.md). The pre-compiled shader binaries are compiler output from
+that GLSL source and are not in the repository; `tools/ps4/shader_check.py` names the source each
+one comes from. The package carries this file, `LICENSE-MIT.txt`, `GPL-3.0.txt`, `CC0-1.0.txt` and
+the art's notice (`ART.md`) in its `licenses/` folder. Written by an agent, not a lawyer.
+
 ## Notices
 
 ### PsyCross
@@ -276,6 +307,33 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 SDL2's `SDL_malloc.c` is Doug Lea's malloc, public domain.
+
+### musl
+
+OpenOrbis's `libc.a` in the PS4 fpkg.
+
+```
+Copyright © 2005-2020 Rich Felker, et al.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
 
 ### newlib
 

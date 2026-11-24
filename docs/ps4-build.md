@@ -1,6 +1,6 @@
 # PS4 build (plan P2 on; D180)
 
-The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3–P4, D193, D245: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
+The PS4 fpkg is planned in `docs/ps4-plan.md`. This builds **the game** (P3–P4, D193, D245: `src/platform/ps4/`, a test fpkg with title ID `SPYT00002`), **the release fpkg** (P5, D246: title ID `SPYP00001`, below) and the **P2 spike** (D180), a test fpkg that reports where the PS4 puts what the low-image model (D173, D174) needs.
 
 ## The toolchain
 
@@ -46,7 +46,7 @@ cmake -S . -B build/ps4 -G Ninja -DSPYRO_HOST=ps4 -DCMAKE_TOOLCHAIN_FILE=cmake/p
 cmake --build build/ps4    # → build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg
 ```
 
-Only on the Mac so far; the Docker image has the same tools. CMake builds the static libraries (the game, `src/platform/common`, `src/platform/ps4` with linux32's software rasterizer, PNG writer, log and save-state glue). `src/platform/ps4/CMakeLists.txt` then does three things:
+On the Mac, or in the Docker image (CI's `ps4` job builds it there, D246). CMake builds the static libraries (the game, `src/platform/common`, `src/platform/ps4` with linux32's software rasterizer, PNG writer, log and save-state glue). `src/platform/ps4/CMakeLists.txt` then does three things:
 - links `spyro.elf` with ld.lld and OpenOrbis's `link.x` (a PIE, as the spike);
 - runs `oelf_check.py`;
 - packs the fpkg with `tools/ps4/pkg.sh` (the spike's steps: the Piglet sample's PAID and auth info, the grey placeholder icon, no LiveArea or Vita art).
@@ -73,6 +73,25 @@ curl -o logs/…/spyro.log ftp://$PS4_IP:2121/data/spyro/spyro.log
 ```
 
 Install the pkg with GoldHEN's Package Installer and run "Spyro PS4 (test)". To catch a crash, record GoldHEN's klog first (`nc $PS4_IP 3232 > logs/…/klog.txt`, then stop it by its PID). The crash report gives the faulting `rip` and backtrace at the eboot's base, 0x400000; `llvm-symbolizer --obj=build/ps4/spyro.elf ADDR-0x400000` (or `nm -n`) names the function. A watchdog thread logs where the game thread is if it stops for 3 s.
+
+### The release fpkg (P5, D246)
+
+```bash
+eval "$(tools/ps4/sdk.sh --env)"
+tools/ps4/release.sh                 # → build/release-ps4/<APP_VER>-<commit>/spyro-ps4-<APP_VER>.pkg
+tools/ps4/release.sh --upload v1.3.0 # the same, then attached to that tag's DRAFT release
+```
+
+Built on the owner's Mac, never by CI: the shader binaries (`disc/ps4-shaders/`) are never committed (D245). CI's `ps4` job builds the test fpkg without them on every pull request, as a check, and keeps it only as a CI artifact. `release.sh`:
+- refuses uncommitted changes, configures `build/ps4-release` with `-DSPYRO_PS4_RELEASE=ON` and builds it **twice from clean**: every SHA-256 (the ELF, `eboot.bin`, `param.sfo`, the pkg) must match. `SOURCE_DATE_EPOCH` is the commit's time, so `__DATE__`/`__TIME__` (`main.c`'s build stamp, the save states' header) don't differ: without it the two builds' ELFs did;
+- with `SPYRO_PS4_RELEASE`, the build stops unless every shader has a binary for its current GLSL (`tools/ps4/shader_check.py` preprocesses `gpu_gles.c`'s shader block, hashes each source as `src_hash()` does and looks for `NAME-vs|fs-HASH.bin`), so a stale binary can't ship and leave players on the software renderer;
+- `param.sfo`: TITLE `Spyro PS4`, TITLE_ID `SPYP00001`, CONTENT_ID `IV0000-SPYP00001_00-SPYROPS4RELEASE0`, APP_VER and VERSION from `cmake/version.cmake` (the Vita's too: tag vX.Y.Z is `0X.YZ`), CATEGORY `gde`, FORMAT `obs` (Piglet needs them, D245);
+- `sce_sys/icon0.png` (512×512) from the Vita's LiveArea icon (the owner's decision, D246) by `tools/ps4/art.py`, plain Python, the same bytes every run; `disc/livearea/` (RGB) when present, else `assets/livearea/`. **No `pic1.png`:** release run 1 had the Vita's background as `pic1.png`, and it stayed on screen over the game's Piglet picture the whole run while the game ran (60 vblanks/s, 0 GL errors), so the owner had it removed;
+- `licenses/` in the package: `LICENSE-MIT.txt`, `THIRD_PARTY_NOTICES.md`, `GPL-3.0.txt`, `CC0-1.0.txt`, `ART.md`. The fpkg is GPL-3.0 as a whole (OpenOrbis's `crt1.o`; D246);
+- archives `build/release-ps4/<APP_VER>-<commit>/`: the pkg, its `.sha256`, `SHA256SUMS`, the unstripped `spyro.elf` and `spyro.map` (for crash reports, never attached) and `manifest.txt` (commit, versions, toolchain, the shaders by name and hash, `runtime_validation`). An existing folder is refused;
+- `--upload vX.Y.Z`: HEAD must be that tag and its release a draft (CI's tag run makes it); it attaches the pkg and `.sha256` and never publishes.
+
+The release and test fpkgs have different title IDs, so both can be installed; they share `/data/spyro/`. A release goes the Vita's way (encore-playbooks `vita-release`): a version-bump PR changing `cmake/version.cmake`, an annotated tag, CI's draft release with the VPKs, `release.sh --upload` for the fpkg, the owner installs that exact file and plays it, then publishes.
 
 ### The renderers (P4, D245)
 
@@ -107,6 +126,13 @@ GPU runs (P4, 2026-11-21/22, `logs/p4/gpu-run{1..11}/`, each with its `spyro.elf
 | 9 | e99b16a | menu fixed, PSX WOBBLE row; the movies' 24-bit frames 0.8 ms (58 ms before); 3 late vblanks in the run |
 | 10 | 65b6dc6 | after merging `main`: every polygon broken (main's #178 made `VCacheVert` floats; the PS4 still read `int16`) |
 | 11 | 3358e30 | the float layout read (guarded by a `_Static_assert` since b00630e): the picture right, 11,400 vblanks, 15 late, no GL errors; menu saved; memory card written |
+
+Release runs (P5, 2026-11-24, `logs/p5/hw-run{1,2}/`):
+
+| run | commit | result |
+|---|---|---|
+| 1 | 91dcaf4 | `release.sh`'s archived pkg: installs, icon shown; the `pic1.png` background stayed over the game all run (the game ran behind it: Piglet with the embedded binaries, 59.9 vblanks/s, 0 GL errors) |
+| 2 | 0c082af | no background: the game shows and plays; 16,200 vblanks, 14 late, 0 GL errors, no crash; draw distance 2× at x2.00 in play |
 
 ## The spike
 
