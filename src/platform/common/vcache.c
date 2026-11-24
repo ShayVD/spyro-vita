@@ -727,7 +727,8 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
 
 /* psx_vcache_poly's lookup: the entry for key in the frame being walked
  * (pres: the presenter's own, in its frame), and its table */
-static int look(int pres, uint32_t key, unsigned *probes, Touch *t, const Table **tab) {
+static inline __attribute__((always_inline)) int look(int pres, uint32_t key, unsigned *probes,
+                                                      Touch *t, const Table **tab) {
   uint32_t i = hash(key), n;
   if (pres || !s_rtab) {
     Rec *const r = &s_rec[pres ? VC_PRES : VC_LOGIC];
@@ -3751,7 +3752,10 @@ static int sp_point(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor
 
 int psx_vcache_polys;
 
-void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
+/* The whole lookup (psx_vcache_poly's counts of the polygon already made):
+ * every polygon until #233; since, those found_fast doesn't take (below) */
+static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy, int n,
+                                                VCacheVert *side) {
   static const int k_all[4] = {0, 1, 2, 3};
   GrVertex *const vertex = (GrVertex *)vertex_;
   const Cand *e[4];   /* each vertex's candidates, NULL: not found */
@@ -3803,17 +3807,6 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   const Sink lk = pres ? (Sink){work, cost, st, NULL}
                        : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
 
-  st->polys++;
-  st->verts += n;
-  work[1]++;
-  work[2] += (unsigned)n;
-  if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
-    for (i = 0; i < n; i++) {
-      uint32_t r = VREF_POLY;
-      memcpy(&vertex[i].tcx, &r, sizeof r);
-    }
-    return;
-  }
   for (i = 0; i < n; i++) {
     uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
     Touch t = TOUCH0;
@@ -4359,6 +4352,148 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         if (der)
           c[i].w = dv.w;
       }
+    }
+    for (i = 0; i < (n == 4 ? 6 : 3); i++)
+      side[i] = c[order[i]];
+  } else if (async) {
+    st->side_lost += n;
+  }
+}
+
+/* #233: the walk's lookup of a polygon whose vertices are all found (99% of
+ * them: hardware session 7's Toasty, logs/hw-ap18t), on a short path of its
+ * own. poly_full keeps every case's state (the hand-overs, derived and
+ * ambiguous vertices, own points: some 1.4 KB of stack, set up for each
+ * polygon), so on the A9 its found polygons paid that set-up and the tests
+ * for each case. Here the lookups come first, as poly_full's loop makes
+ * them (look, then the entry's kept projections, lz_need); the first
+ * vertex not found valid hands the polygon to poly_full, which looks every
+ * vertex up again: the kept projections are worked out once (an entry's
+ * list is emptied as it's worked out, and working one entry's out changes
+ * no other entry), and the probes and lines counted here are dropped, so
+ * poly_full counts each lookup as before. A polygon found whole is then
+ * finished as poly_full finishes one: the depth choice, its counts, the
+ * vertices' references and the answers at side. */
+static int s_found_fast = 2; /* psx_vcache_set_found_fast */
+void psx_vcache_set_found_fast(int mode) { s_found_fast = mode < 0 ? 0 : mode > 2 ? 2 : mode; }
+
+void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
+  static const int k_all[4] = {0, 1, 2, 3};
+  GrVertex *const vertex = (GrVertex *)vertex_;
+  const GrVertex *const gvb = s_pres ? NULL : psx_gpu_game_walk()->vb; /* (as poly_full's) */
+  const int async = !s_pres && !(vertex >= gvb && vertex < gvb + MAX_VERTEX_BUFFER_SIZE) &&
+                    s_pres_async;
+  const int pres = s_pres || async;
+  VCacheStats *const st = &g_vcache_stats[pres];
+  unsigned *const work = async ? g_vcache_pres_work : g_vcache_work;
+  unsigned *const cost = COST(work);
+  const Cand *e[4];
+  uint32_t et[4], ref[4], persp = VREF_PERSP;
+  unsigned en[4], probes = 0, lines = 0, other = 0;
+  const Table *tab = NULL;
+  int i, pick[4] = {0, 0, 0, 0}, clamp = 0;
+
+  st->polys++;
+  st->verts += n;
+  work[1]++;
+  work[2] += (unsigned)n;
+  if (!g_psyxRtpHook) { /* tex_filter only: polygons are just marked */
+    for (i = 0; i < n; i++) {
+      uint32_t r = VREF_POLY;
+      memcpy(&vertex[i].tcx, &r, sizeof r);
+    }
+    return;
+  }
+  if (!s_found_fast) {
+    poly_full(vertex_, xy, n, side);
+    return;
+  }
+  {
+    /* where the kept projections' maths goes: poly_full's lk */
+    const Sink lk = pres ? (Sink){work, cost, st, NULL}
+                         : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
+    uint32_t keys[4];
+    for (i = 0; i < n; i++)
+      keys[i] = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+    if (s_found_fast == 2) {
+      /* each vertex's first probe read up front (n is 3 or 4), so a
+       * polygon's misses on the table (another core wrote it, a frame ago)
+       * can overlap on the A9 instead of each waiting for the one before;
+       * nothing is decided here. Vita3K shows no change (#233): only the
+       * hardware can tell, hence mode 1 without it. */
+      const Table *const lt = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].tab : s_rtab;
+      uint32_t w0, w1, w2, w3 = 0;
+      w0 = lt->s[hash(keys[0])].tag;
+      w1 = lt->s[hash(keys[1])].tag;
+      w2 = lt->s[hash(keys[2])].tag;
+      if (n == 4)
+        w3 = lt->s[hash(keys[3])].tag;
+      __asm__ volatile("" : : "r"(w0), "r"(w1), "r"(w2), "r"(w3));
+    }
+    for (i = 0; i < n; i++) {
+      const uint32_t key = keys[i];
+      Touch t = TOUCH0;
+      const int k = look(pres, key, &probes, &t, &tab);
+      uint32_t tag;
+      if (k < 0) {
+        poly_full(vertex_, xy, n, side);
+        return;
+      }
+      lz_need(tab, &lk, k); /* (#193, #179) */
+      tag = tab->s[k].tag;
+      if (T_STATE(tag) != E_VALID || !T_N(tag)) {
+        poly_full(vertex_, xy, n, side);
+        return;
+      }
+      touch(&t, (size_t)k * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * T_N(tag));
+      if (tab->s[k].c[0].dy == FAR_MARK && !(tag & T_MULTI))
+        touch(&t, offsetof(Table, far) + (size_t)(uint16_t)tab->s[k].c[0].dx * sizeof tab->far[0],
+              sizeof tab->far[0]);
+      clamp |= (tag & T_CLAMP) != 0;
+      e[i] = tab->s[k].c;
+      et[i] = tag;
+      en[i] = T_N(tag);
+      ref[i] = VREF_POLY | ((uint32_t)k + 1);
+      other += !(tag & T_SRC) != !pres;
+      lines += t.n;
+    }
+  }
+  /* found whole: poly_full's counts and its end for such a polygon */
+  cost[VCC_LOOK_PROBES] += probes;
+  cost[VCC_LOOK_LINES] += lines;
+  st->hits += (unsigned)n;
+  st->other += other;
+  if (!choose(e, en, k_all, n, cost, pick)) {
+    st->spread++;
+    persp = 0;
+  }
+  if (persp)
+    st->persp++;
+  if (clamp) {
+    st->clamp_polys++;
+    st->clamp_persp += persp != 0;
+  }
+  for (i = 0; i < n; i++) {
+    uint32_t r = ref[i] | persp | (uint32_t)pick[i] << VREF_CAND_SHIFT;
+    if (et[i] & T_MULTI)
+      r |= VREF_NOPOS;
+    if (et[i] & T_CLAMP)
+      r |= VREF_CLAMP;
+    memcpy(&vertex[i].tcx, &r, sizeof r);
+  }
+  if (side && async)
+    side = s_pres_side ? s_pres_side + (side - g_vcache_side) : NULL;
+  if (side) {
+    static const int k_quad[6] = {0, 1, 3, 1, 3, 2}, k_tri[3] = {0, 1, 2};
+    const int *order = n == 4 ? k_quad : k_tri;
+    VCacheVert c[4];
+    for (i = 0; i < n; i++) {
+      c[i].dx = c[i].dy = 0;
+      c[i].w = 1;
+      if (!(et[i] & T_MULTI))
+        cand_pos(tab, &e[i][0], &c[i].dx, &c[i].dy);
+      if (persp)
+        c[i].w = e[i][pick[i]].w;
     }
     for (i = 0; i < (n == 4 ? 6 : 3); i++)
       side[i] = c[order[i]];
