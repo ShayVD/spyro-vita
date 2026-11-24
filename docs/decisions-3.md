@@ -1707,4 +1707,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **Unchanged elsewhere** (base `5c6021c`, the three shared files swapped back, the same build directories): linux32's and the Vita's code and data sections are the base's byte for byte; the whole files differ only in DWARF declaration columns (inserting `P32 ` moves a name) and linux32's build ID, which hashes them (stripped of debug info and the build ID, linux32 `072975…` both, the Vita `bbcaf5…` both). linux64 changes: the fix.
   - **linux32 against linux64 with the presenter** (`--widescreen --interp --tick60`, `tools/host_checks.sh`, `logs/p4pres-*`): demo 24, routeA 53, routeB 54 shots and the traces the same.
 - **Still to do for P4:** the whole game played to the end on hardware (both endings, the credits). The owner skipped the Store copy's `EBOOT.PBP` for now.
-- **Next free number:** D246.
+- **Next free number:** D246 (taken by P5, below).
+
+### D246. The PS4 release fpkg: title ID SPYP00001, built on the owner's Mac by `tools/ps4/release.sh`, CI builds the test fpkg without shader binaries as a check; the Vita's LiveArea images on the PS4; the fpkg GPL-3.0 as a whole (PS4 plan P5, 2026-11-24)
+
+- **Asked:** P5 of `docs/ps4-plan.md` (the session that ran P4).
+- **The owner's choices (2026-11-24):**
+  - **Art: the Vita's LiveArea images** (the Spyro logo and Simon Kopp's Reignited concept art) on the PS4 too, extending D59's exception; they stay outside the MIT licence (`assets/livearea/README.md`).
+  - **Workflow: a local release script and a CI build check.** The shader binaries (D245) are never committed, so CI can't build the release; it builds the test fpkg without them on every pull request and keeps it as a CI artifact, never attached to a release.
+  - **Licence: the fpkg is GPL-3.0 as a whole** (D180's open question). The repository stays MIT.
+  - **PS5: later.** The owner has one; its etaHEN test isn't in this milestone.
+- **Chosen here:** title ID `SPYP00001` (P for PS4; `SPYT00001`/`SPYT00002` stay the spike's and the test build's, so a test fpkg and the release install side by side and share `/data/spyro/`), TITLE `Spyro PS4`, CONTENT_ID `IV0000-SPYP00001_00-SPYROPS4RELEASE0`; APP_VER and VERSION from `cmake/version.cmake`, which the Vita now reads too (`01.22`, its VPK unchanged), so one version-bump PR sets both; CATEGORY `gde` and FORMAT `obs` kept (Piglet, D245).
+- **Built:**
+  - `SPYRO_PS4_RELEASE` (`src/platform/ps4/CMakeLists.txt`): the release's identity, `sce_sys/icon0.png` (512×512) and `sce_sys/pic1.png` (1920×1080) by `tools/ps4/art.py` (plain Python, Catmull-Rom, the painting fitted to the height with its signature, the sides its edge colour; the same bytes every run), `licenses/` in the package (`LICENSE-MIT.txt`, `THIRD_PARTY_NOTICES.md`, `GPL-3.0.txt`, `CC0-1.0.txt`, `ART.md`; `pkg.sh` adds the folder to `create-gp4`'s fixed `<rootdir>`, or PkgTool throws "Sequence contains no elements").
+  - `tools/ps4/shader_check.py`: preprocesses `gpu_gles.c`'s shader block with the compiler, evaluates each `k_vs_*`/`k_fs_*` string, hashes it as `src_hash()` does, and fails the release build unless `NAME-vs|fs-HASH.bin` exists for every shader `link()` uses. Its hashes match the six the PS4 computed (GPU run 8's binaries).
+  - `tools/ps4/release.sh`: a clean tree, two clean builds with every SHA-256 compared, `build/release-ps4/<APP_VER>-<commit>/` (the pkg, `.sha256`, `SHA256SUMS`, the unstripped `spyro.elf` and `spyro.map`, `manifest.txt`; never overwritten), `--upload vX.Y.Z` to a draft release only.
+  - CI's `ps4` job: the arm64 OpenOrbis image on `ubuntu-24.04-arm` (the repository is public); the image gains cmake, ninja and PyYAML, and `PS4_CC`/`PS4_LD` point into `/usr/lib/llvm-18/bin`, where Ubuntu keeps `llvm-ar` and `clang++` (the toolchain file looks beside `PS4_CC`). It checks that `shader_check.py` refuses a folder without binaries.
+  - The PS4 link writes `spyro.map`: code comes only from this repository, OpenOrbis's `crt1.o` (GPL-3.0) and its musl `libc.a` (MIT, 116 objects); the rest are import stubs. `THIRD_PARTY_NOTICES.md` has the PS4 section and musl's notice; the package also carries `libc.prx`, `libSceFios2.prx` and `right.sprx` from OpenOrbis's Piglet sample, whose own licence OpenOrbis doesn't state (noted there, as for the test builds since P3).
+  - README: "On a PS4" (GoldHEN's Package Installer, the `.cue`/`.bin` in `/data/spyro/`, controls, the menu, saves, the Piglet pair linked only as sm64-ps4-osirizx, PS5 untested, the licence).
+- **Checked:** [[filled in after the owner's run]]
+- **Unchanged elsewhere:** the Vita's CMake reads the same `01.22` from `cmake/version.cmake`; linux32, linux64 and the Vita build no PS4 file. [[filled in]]
+- **Next free number:** D247.

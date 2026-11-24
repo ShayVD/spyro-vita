@@ -12,7 +12,8 @@
 #    SPYP00001, APP_VER from cmake/version.cmake, the icon and background from
 #    the Vita's LiveArea images, the licence texts in licenses/; the build
 #    stops unless every shader has a binary for its current source.
-# 3. Builds it twice from clean and compares every SHA-256 (eboot.bin,
+# 3. Builds it twice from clean (SOURCE_DATE_EPOCH the commit's time, for
+#    __DATE__ and __TIME__) and compares every SHA-256 (the ELF, eboot.bin,
 #    param.sfo, the pkg): a release must reproduce.
 # 4. Archives build/release-ps4/<APP_VER>-<commit>/: spyro-ps4-<APP_VER>.pkg,
 #    SHA256SUMS, the unstripped spyro.elf and spyro.map (crash reports; never
@@ -35,7 +36,7 @@ while [ $# -gt 0 ]; do
     --shaders) shaders=$(cd "$2" && pwd); shift 2 ;;
     --art) art=$(cd "$2" && pwd); shift 2 ;;
     --upload) tag=$2; shift 2 ;;
-    *) sed -n '2,26p' "$0"; exit 2 ;;
+    *) sed -n '2,27p' "$0"; exit 2 ;;
   esac
 done
 : "${OO_PS4_TOOLCHAIN:?eval \"\$(tools/ps4/sdk.sh --env)\" first}"
@@ -72,6 +73,10 @@ cmake -S . -B "$bdir" -G Ninja -DSPYRO_HOST=ps4 -DCMAKE_TOOLCHAIN_FILE=cmake/ps4
   -DSPYRO_PS4_SHADERS="$shaders" -DSPYRO_PS4_ART_SRC="$art" > "$bdir.configure.log" 2>&1 \
   || { tail -20 "$bdir.configure.log"; exit 1; }
 pkg=IV0000-SPYP00001_00-SPYROPS4RELEASE0.pkg
+# __DATE__ and __TIME__ (main.c's build stamp, the save states' header) as the
+# commit's time: clang honours SOURCE_DATE_EPOCH, so both builds match
+export SOURCE_DATE_EPOCH
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 for pass in 1 2; do
   cmake --build "$bdir" --target clean > /dev/null
   rm -rf "$bdir/pkg" "$bdir/ps4-art" "$bdir/ps4-licenses" "$bdir/ps4-licenses.stamp" "$bdir/ps4-shader-check.txt"
