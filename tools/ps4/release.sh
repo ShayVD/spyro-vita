@@ -61,7 +61,12 @@ arch=$root/build/release-ps4/$ver-$short
 [ -e "$arch" ] && { echo "release.sh: $arch exists; releases are archived, never overwritten" >&2; exit 1; }
 
 bdir=$root/build/ps4-release
-python3=$(command -v python3)
+# a Python with PyYAML (the overlay tools need it): $PYTHON, /usr/bin/python3, python3
+python3=
+for p in ${PYTHON:-} /usr/bin/python3 "$(command -v python3)"; do
+  if [ -x "$p" ] && "$p" -c 'import yaml' 2>/dev/null; then python3=$p; break; fi
+done
+[ -n "$python3" ] || { echo "release.sh: no python3 with PyYAML (set PYTHON)" >&2; exit 1; }
 cmake -S . -B "$bdir" -G Ninja -DSPYRO_HOST=ps4 -DCMAKE_TOOLCHAIN_FILE=cmake/ps4.toolchain.cmake \
   -DPython3_EXECUTABLE="$python3" -DSPYRO_PS4_RELEASE=ON \
   -DSPYRO_PS4_SHADERS="$shaders" -DSPYRO_PS4_ART_SRC="$art" > "$bdir.configure.log" 2>&1 \
