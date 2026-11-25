@@ -296,9 +296,11 @@
  *                       developer's and is taken as written)
  *                       (wobble, res, draw_distance are also options menu
  *                       rows: picture.c, D48)
- *       draw_distance=N longer draw distance, percent: 150 or 200 (default
- *                       100: the original; experimental, D49): the world's
- *                       detail and the mobys, picture only (src/game/lod.c)
+ *       draw_distance=N the draw distance, percent: 100 (the default,
+ *                       the original; the menu's NORMAL) or 200 (MAX
+ *                       (ADAPTIVE), #260; 150 is still read): the world's
+ *                       detail and the mobys, picture only (src/game/lod.c,
+ *                       D49)
  *       dd_budget=auto  with 60 Hz logic in play, the longer draw
  *                       distance's work budget follows the game thread's
  *                       measured time per logic frame (the default, #212;

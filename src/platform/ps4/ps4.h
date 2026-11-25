@@ -40,7 +40,8 @@ typedef struct {
                        perspective-correct textures at their exact vertex positions (persp=1
                        subpixel=1, D39); 1: the PS1's wobble */
   int gpu_res;      /* res=native (0, default): the GPU draws at 1080p; res=ps1 (1): 512x240 */
-  int draw_distance; /* draw_distance=100 (default, off), 150, 200 (D49, experimental) */
+  int draw_distance; /* draw_distance=100 (default, the menu's NORMAL), 200 (MAX (ADAPTIVE),
+                        #260); 150 still read (D49) */
   int gpu;          /* gpu=1 (default): the GLES2 renderer if Piglet's modules load; 0: software */
   int shader_dump;  /* shader_dump=1 (default): with the player's Piglet pair, each compiled
                        shader saved once to shaders/ (D245: the binaries the firmware's
