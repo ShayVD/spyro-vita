@@ -1903,6 +1903,33 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
 
+## 2026-11-25 — phase 8: ParticlesDraw's missed vertices
+
+### D251. With the fix on, a particle's screen-facing quad names its points by the projection that made them, and a quad's own points find what nothing else does (#231, 2026-11-25)
+- **Why:** after D248, ParticlesDraw kept 10 missed vertices on host S, 20 on Si and 8 on S60. #231 tagged every one (`diag231.py`, `classify231.py`, head 8a97c8d): two case-3 quads side by side (a ram's stars) share a corner's pixel. Each hands that corner over (VCD_OFFSET, D209) at its own centre's exact place plus an integer offset; the two places are 0.2–0.5 px apart, so the key is placed twice and D182 drops it. None were records whose probe ran out or `full` records, so #221's overflow isn't read for this renderer.
+- **What (D218's own-point pattern):**
+  - `particles_hand.c`, case 3: the quad names its centre `VCD(VCD_ALIAS, VCD_PARTICLES) | VCD_SELF` (the last projection, p 0) under the anchor of its first corner's key (`v0 - a3 - a2`, the walk's `xy[0]`); its four corner hand-overs add `VCD_OWN` with that anchor. `hk_place` ignores the anchor for an offset, so hk is as before.
+  - `vcache.c`: the walk's own-point step (#216) also takes `VCX_PARTICLES` polygons. It runs only for a polygon every earlier step left unfound, so no polygon found before can change. `psx_vcache.h`: a comment.
+  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244, D248.
+- **Measured (host, 2x, 16:9; base 8a97c8d, fix 6d200a3):**
+
+  | Route | Missed before | Missed after | own_found | own_nosrc |
+  |---|---|---|---|---|
+  | S | 16 (ParticlesDraw 10, EnvDraw 6) | 6 (EnvDraw 6) | 133 → 143 | 28 → 618 |
+  | Si | 26 (ParticlesDraw 20, EnvDraw 6) | 6 (EnvDraw 6) | 264 → 284 | 74 → 1,214 |
+  | S60 | 8 (ParticlesDraw 8) | 0 | 215 → 223 | 0 → 16 |
+  | T | 2 (EnvDraw 2) | 2 | 3,514 | 0 → 16 |
+  | P, Pi, Pf, Pfi, O60 | 0 | 0 | same | 0 |
+
+  - `own_nosrc` rises by particle quads drawn in frames whose order log is full (`nlog` 8,192, #237's limit): on S all 590 (118 centres, 472 corners). On S60 and T, 16 each are quads whose centre's own point is dead because two quads share a corner-0 pixel; hk found those polygons as before.
+  - The attract demos (#243): Vita3K demo60 ParticlesDraw 142 / 239 → 0 / 3 (windows 5,400 / 5,700); host D60 381 → 3. The last 3 are two quads of different sizes with one first-corner key (0064002f).
+- **Checked** (`runtime/autopilot/runs/vita/issue-231-1/`):
+  - Host FNV per polygon (D168), base and fix from clean objects, 9 pairs: fnvcmp exit 0 on all; 0 polygons found before changed, 0 became affine; newly found S 9, Si 15, S60 8.
+  - Vita build exit 0 (`spyro-vita-231-fix1.vpk`, SHA-1 517827cf). Vita3K 8 routes exit 0 first try; shots identical to `base-29d857a` (title 10, pause-ws 91, pause-ws-wobble 91, wobble60 91, owner60 91, stone60 95, demo60 66, toasty60 150), checked again by the coordinator. stone60's window 8,100: `missed 8` → `missed 0`.
+  - Counters against `base-29d857a` and a second base run: draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.fallback` the same; `vc.misses` stone60 −6%; `vc.rec.probe`, `vc.lines` +0.1%. The timing-dependent `vc.invalid` and `vc.clamped` moved past the second base's spread (stone60 +25% / +21%): kept + once is the same 4,323 a frame, but 5% moved from kept to once (the hand-overs' extra calls shift the game thread's timing, as in D218).
+  - Gate: host build and ctest 33/33 (the first gate run timed out waiting in the Docker queue; the rerun passed), native linux32 build, noassets. Not run: the PC build. Vita hardware not touched.
+- **Left:** EnvDraw's 6 on S and Si and 2 on T (#237); #243's last 3 demo quads (an anchor mixing all four corner keys); docs for the `own_*` fields (#262).
+
 ## 2026-11-25 — hardware session 8
 
 ### D252. Hardware session 8: develop's 80b8450 on the Vita; the wobble fixes since session 7 cost nothing measurable, and 2x still holds at 1x in Artisans (2026-11-25)
@@ -1913,4 +1940,4 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Attract demo:** 162.6 late per 300 (166.3): 117 ticks of 150, the presenter on the game thread 17.7 ms a tick. The owner wants the in-between frame kept and made to fit (#235); #232's `pres_demo_inline` key is the next A/B.
 - **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
 - **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
-- **Next free number:** D253 (D251 is #231's).
+- **Next free number:** D253.
