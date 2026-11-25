@@ -32,7 +32,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/vita-testing.md"
       ],
       "agent": "ac32ce0b6bf3102a1",
-      "last_commit_at": "2026-11-25T18:45:00Z"
+      "last_commit_at": "2026-11-25T20:06:50Z"
     },
     {
       "issue": 266,
@@ -542,3 +542,4 @@ continue.
 - 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
 - 2026-11-25T19:30:00Z merged #237 (D253): gate PASS (ctest 33/33); host missed 0 on every route but T (2 EnvDraw, #266); baseline base-4c8a009 (issue-237-1/fix1); next #266
 - 2026-11-25T19:35:00Z started #266 (T's 2 EnvDraw, the last host misses; decision D257) beside #261
+- 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
