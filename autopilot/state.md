@@ -45,7 +45,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a0e592d88af82426e",
-      "last_commit_at": "2026-11-25T19:35:00Z"
+      "last_commit_at": "2026-11-25T19:35:00Z",
+      "nudged_at": "2026-11-25T21:46:00Z"
     }
   ],
   "last_good": "4c8a009927d5bec754c74f56162f3f22572a19f5",
@@ -544,3 +545,4 @@ continue.
 - 2026-11-25T19:35:00Z started #266 (T's 2 EnvDraw, the last host misses; decision D257) beside #261
 - 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
 - 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
+- 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
