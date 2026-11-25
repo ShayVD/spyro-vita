@@ -11,20 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 237,
-      "branch": "feat/237-wobble-fix-a-frame-whose-order-log-is",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-237",
-      "pids": [],
-      "started_at": "2026-11-25T13:45:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "ae351bab01fd52e24",
-      "last_commit_at": "2026-11-25T14:03:23Z",
-      "nudged_at": "2026-11-25T16:08:00Z"
-    },
-    {
       "issue": 261,
       "branch": "perf/261-draw-distance-max-adaptive-go-past-2x",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-261",
@@ -49,7 +35,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "last_commit_at": "2026-11-25T18:45:00Z"
     }
   ],
-  "last_good": "77242551a3ed4c4655575af8a46fbe73a48f88fb",
+  "last_good": "4c8a009927d5bec754c74f56162f3f22572a19f5",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -267,7 +253,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "237": 1,
     "261": 1
   },
   "blocked": [],
@@ -298,8 +283,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-7724255",
-        "commit": "77242551a3ed4c4655575af8a46fbe73a48f88fb"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-4c8a009",
+        "commit": "4c8a009927d5bec754c74f56162f3f22572a19f5"
       }
     }
   },
@@ -541,3 +526,4 @@ continue.
 - 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
 - 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
 - 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
+- 2026-11-25T19:30:00Z merged #237 (D253): gate PASS (ctest 33/33); host missed 0 on every route but T (2 EnvDraw, #266); baseline base-4c8a009 (issue-237-1/fix1); next #266
