@@ -33,6 +33,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "ac32ce0b6bf3102a1",
       "last_commit_at": "2026-11-25T18:45:00Z"
+    },
+    {
+      "issue": 266,
+      "branch": "feat/266-wobble-fix-toasty-s-2-envdraw-missed-a",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-266",
+      "pids": [],
+      "started_at": "2026-11-25T19:35:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a0e592d88af82426e",
+      "last_commit_at": "2026-11-25T19:35:00Z"
     }
   ],
   "last_good": "4c8a009927d5bec754c74f56162f3f22572a19f5",
@@ -253,7 +266,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "261": 1
+    "261": 1,
+    "266": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -527,3 +541,4 @@ continue.
 - 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
 - 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
 - 2026-11-25T19:30:00Z merged #237 (D253): gate PASS (ctest 33/33); host missed 0 on every route but T (2 EnvDraw, #266); baseline base-4c8a009 (issue-237-1/fix1); next #266
+- 2026-11-25T19:35:00Z started #266 (T's 2 EnvDraw, the last host misses; decision D257) beside #261
