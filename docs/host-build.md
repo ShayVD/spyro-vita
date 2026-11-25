@@ -54,7 +54,7 @@ python3 tools/contact_sheet.py logs/runN-x
 
 ## Which Docker VM, and the queue
 
-`tools/tc`, `tools/pc/tc` and `tools/ps4/tc` start their container through `tools/docker/run.sh`. Since D253 that is
+`tools/tc`, `tools/pc/tc` and `tools/ps4/tc` start their container through `tools/docker/run.sh`. Since D254 that is
 a shim over Encore's machine-wide Docker queue, vendored in `third_party/encore-docker` (`VENDORED` names the commit;
 never edit it here, change Encore and re-vendor). Its
 [README](../third_party/encore-docker/tools/docker/README.md) has the details and every setting. In short:

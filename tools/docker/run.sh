@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docker run for tools/tc, tools/pc/tc and tools/ps4/tc, through Encore's one Docker queue per machine (D253): one
+# docker run for tools/tc, tools/pc/tc and tools/ps4/tc, through Encore's one Docker queue per machine (D254): one
 # container at a time across every port, first come, first served, on the fastest Docker VM that can see the mounts.
 # Takes `docker run`'s arguments. The queue and the VM choice are Encore's tools/docker, vendored in
 # third_party/encore-docker (its README.md has the settings); this shim only maps spyro's old switches:
