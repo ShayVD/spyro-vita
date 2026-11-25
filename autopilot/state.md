@@ -239,7 +239,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "target": "vita",
     "since": "2026-11-25T10:05:00Z",
     "commit": "80b8450",
-    "step": "ask"
+    "step": "run"
   },
   "job": null,
   "batch": null,
@@ -482,3 +482,4 @@ continue.
 - 2026-11-25T09:05:00Z retro 8 (interim, owner asked): +6 entries, 0 bumped, 0 signatures, coverage n/a, branch retro/spyro-vita-phase-8 (encore draft PR #92); main PR #258 (release/phase8-portal-sky-d248) open; #231 still in its FNV compare
 - 2026-11-25T09:26:00Z shared 5, vita 8: #231 no commit 2 h 48 but alive (S60 FNV pair writing), nudged; PR #258 open; Vita3K: none new, hardware: none
 - 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
+- 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
