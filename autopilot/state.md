@@ -255,6 +255,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "Draw distance option after D252 (2x held at 1x in heavy scenes)",
       "default_taken": "owner 2026-11-25: keep it; the row is DRAW DISTANCE with NORMAL / MAX (ADAPTIVE)",
       "switch": "draw_distance="
+    },
+    {
+      "issue": 261,
+      "question": "Should MAX (ADAPTIVE) draw past 2x?",
+      "default_taken": "owner 2026-11-25: yes, up to the most it can measure and keep 60 fps stable; after #260",
+      "switch": "draw_distance="
     }
   ],
   "attempts": {
@@ -521,3 +527,4 @@ continue.
 - 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
 - 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
 - 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
+- 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
