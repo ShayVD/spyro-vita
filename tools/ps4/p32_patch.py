@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mark the decomp's pointer fields and pointer globals `P32F` (D173, D174, D246).
+"""Mark the decomp's pointer fields and pointer globals `P32F` (D173, D174, D250).
 
     python3 tools/ps4/p32_patch.py TREE [--out PATCH] [--list]
 
@@ -23,7 +23,7 @@ include/*.h and src/**/*.c:
     are 32 bits, LP64's 64; they become `int` and `u_int` (the same type on
     the 32-bit targets). A `(u_long *)` that only passes a pointer to the
     PsyQ API (LoadImage) stays.
-Each level is first marked `T *P32` and then spelled `P32F(T *)` (D246, O1):
+Each level is first marked `T *P32` and then spelled `P32F(T *)` (D250, O1):
 src/compat/p32.h makes P32F `T *` on the 32-bit targets, `T *__ptr32 __uptr`
 on x86-64 and a 32-bit offset on ARM64, where no qualifier can do it.
 Function pointers (`T (*name)(...)`) are never touched: a call through a
@@ -229,7 +229,7 @@ def rewrite_ptrptr(text):
     return "".join(out), changes
 
 
-# `T *P32 name` -> `P32F(T *) name` (D246 O1): the declarator's P32 levels
+# `T *P32 name` -> `P32F(T *) name` (D250 O1): the declarator's P32 levels
 # wrapped around the type, so that the offset model can make each one a u32.
 # `T *P32 *P32 name` -> `P32F(P32F(T *) *) name`; `(T *P32 *)` ->
 # `(P32F(T *) *)`. The type is the specifiers right before the stars (storage

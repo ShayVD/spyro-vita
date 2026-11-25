@@ -10,11 +10,11 @@
  * nothing is lost. On every other target P32F(T *) is T * and the text
  * compiles as it always has: linux32 and the Vita don't change.
  *
- * A P32 pointer is spelled P32F(T *) (D246 O1): `P32F(Moby *) m_Next;`,
+ * A P32 pointer is spelled P32F(T *) (D250 O1): `P32F(Moby *) m_Next;`,
  * `P32F(P32F(Moby *) *) m_List;` (two levels), `(P32F(Moby *) *)p` (a
  * pointer to such a slot). The type is the macro's argument so that an
  * ARM64 build, where __ptr32 does nothing, can make each one a 32-bit
- * offset (the offset model, D246). There is no bare P32 any more: a
+ * offset (the offset model, D250). There is no bare P32 any more: a
  * declaration in the old form, `T *P32 name`, fails to compile everywhere.
  *
  * Function pointers stored in the game's memory can't be P32: clang 19

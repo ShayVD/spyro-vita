@@ -1,4 +1,4 @@
-/* PS4 time (docs/ps4-plan.md P3, D193), the Vita's model (vita/vblank.c,
+/* PS4 time (docs/ps4-plan.md P3-P4, D193, D245), the Vita's model (vita/vblank.c,
  * D28, D90): the game's vblanks follow the display's own count
  * (sceVideoOutGetVblankStatus). VSync(0) waits for the next real vblank if
  * the game is early, and if it is late runs every vblank it missed (pad, CD,
@@ -6,7 +6,9 @@
  * continuous; the picture is shown once per VSync call. realtime=0: the
  * linux32 host's virtual time (D17). The clock and its catch-up are shared
  * (common/clock.c, libetc.c, D104). Also PsyX's scene hooks (isbg clears),
- * the same as linux32's. */
+ * the same as linux32's. The options menu runs inside VSync (menu.c): the
+ * game is paused while it's open, and the clock starts counting afresh
+ * after it (no catch-up). */
 #include "ps4.h"
 #include "host.h"
 #include "psx_arena.h"
@@ -23,6 +25,7 @@
 HostOpts g_host_opts = {.shot_dir = PS4_DATA_DIR "/shots"}; /* linux32's gpu_soft.c, png.c */
 
 int host_vblank_count(void) { return psx_clock_count(); }
+int ps4_vblank_count(void) { return psx_clock_count(); }
 void host_set_vblank(int vblank) { psx_clock_set(vblank); }
 
 static unsigned long long s_stat_t0;
@@ -39,7 +42,8 @@ static void vblank(void) {
   psx_spu_vblank();
   psx_clock_callback();
 
-  if (g_ps4_opts.shot_at && v == g_ps4_opts.shot_at) {
+  if ((g_ps4_opts.shot_at && v == g_ps4_opts.shot_at) ||
+      (g_ps4_opts.shot_every > 0 && v % g_ps4_opts.shot_every == 0)) {
     char path[256];
     snprintf(path, sizeof path, PS4_DATA_DIR "/shots/shot-%d.png", v);
     if (host_shot_display(path) == 0)
@@ -58,6 +62,9 @@ static void vblank(void) {
     time_report(v);
     ps4_video_report(v);
     ps4_audio_report(v);
+    ps4_present_report(v);
+    ps4_raster_report(v);
+    ps4_picture_report(v);
     host_log_flush();
     s_stat_t0 = now;
     s_stat_v0 = v;
@@ -79,7 +86,14 @@ static unsigned s_t_calls;
 
 void psx_platform_vsync(void) {
   int n, late;
-  unsigned long long t0 = ps4_now_us(), t1, t2;
+  unsigned long long t0, t1, t2;
+  g_ps4_beat++;
+  g_ps4_where = "VSync";
+  if (ps4_menu_service()) { /* the game was paused: count again, no catch-up */
+    psx_clock_resync();
+    s_t_last = 0;
+  }
+  t0 = ps4_now_us();
   if (s_t_last)
     s_t_game += t0 - s_t_last;
   s_t_calls++;
@@ -96,7 +110,9 @@ void psx_platform_vsync(void) {
     vblank();
   t2 = ps4_now_us();
   s_t_vblanks += t2 - t1;
+  g_ps4_where = "the present";
   s_stat_shown += ps4_video_present();
+  g_ps4_where = "the game";
   s_t_last = ps4_now_us();
   s_t_present += s_t_last - t2;
 }

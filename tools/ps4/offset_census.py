@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Count what the offset model would rewrite (D246): every source site where
+"""Count what the offset model would rewrite (D250): every source site where
 a P32 pointer is read, written or decoded, from clang's AST of the linux64
 build, where P32 is `__ptr32 __uptr` and so visible in every type.
 
