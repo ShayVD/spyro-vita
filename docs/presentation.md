@@ -62,7 +62,7 @@ D2 planned to scale X in RTPS/RTPT. The prototype found a better place: the proj
 
 A 16:9 draw writes more primitives than the original 4:3 one: more sectors and mobys pass the wider frustum. The game's primitive buffers are fixed (`AllocateBuffers`: lower, upper, then the HUD OT and the world OT), 0x1C000 bytes each, or 0x13000 in reduced-space levels. Only the sky and particle renderers stop at a limit (`D_80075780 - 0x400`, buffer + 0x1BC00). The world and moby renderers check none. The original 4:3 view fits, but only just: in ending 3 (level 64, reduced space) it reaches 73 KB of 76 (`logs/run6-state-43` in the fix's worktree). With one-draw widescreen the upper buffer overran by 124 bytes into the HUD OT and the first world-OT buckets, and linking the OT crashed (`func_80016784`, core in `logs/run1-ws`).
 
-The port's `DrawOTag` uses up the primitives before it returns (D51), so neither buffer holds anything once a draw is done. With any presentation option or draw distance on, `PortPolySpace()` (from `GamestateDraw`, `patches/spyro-1-port/0010`) starts every draw at the lower buffer and lets it span both. The HUD's mobys and the sky and particle limit go to the top, 0x600 below the HUD OT. That gives 0x37A00 bytes, or 0x25A00 in a reduced-space level, about twice the original's room. The game's own limits move with it. The pause and exit-level screens already draw from the lower buffer (`func_8001A40C`, `func_8001C694`). The 0x600 bytes under the HUD OT are the save fairy's card buffer: `func_800314B4` reads the save's header there and builds the save there. The original's fairy draw keeps them free by moving the HUD mobys down to +0x1BA00 (`func_8001D718`), but only when the top is the HUD OT itself, so the port keeps them free in every draw (D61). D54's first top, 0x200 below the HUD OT, let the fairy's text land on the header it had just read, and saving said NO SAVE FILE. `lod.c` measures from the same start. Until #203 its bounds and limiter kept one buffer's size (D49); since then they take this span as the room ([Draw distance](#draw-distance-d49-experimental-off-by-default), "Safety"). With everything off, nothing changes.
+The port's `DrawOTag` uses up the primitives before it returns (D51), so neither buffer holds anything once a draw is done. With any presentation option or draw distance on, `PortPolySpace()` (from `GamestateDraw`, `patches/spyro-1-port/0010`) starts every draw at the lower buffer and lets it span both. The HUD's mobys and the sky and particle limit go to the top, 0x600 below the HUD OT. That gives 0x37A00 bytes, or 0x25A00 in a reduced-space level, about twice the original's room. The game's own limits move with it. The pause and exit-level screens already draw from the lower buffer (`func_8001A40C`, `func_8001C694`). The 0x600 bytes under the HUD OT are the save fairy's card buffer: `func_800314B4` reads the save's header there and builds the save there. The original's fairy draw keeps them free by moving the HUD mobys down to +0x1BA00 (`func_8001D718`), but only when the top is the HUD OT itself, so the port keeps them free in every draw (D61). D54's first top, 0x200 below the HUD OT, let the fairy's text land on the header it had just read, and saving said NO SAVE FILE. `lod.c` measures from the same start. Until #203 its bounds and limiter kept one buffer's size (D49); since then they take this span as the room ([Draw distance](#draw-distance-d49-off-by-default), "Safety"). With everything off, nothing changes.
 
 ### Output
 
@@ -330,9 +330,11 @@ Checked in Vita3K (not hardware):
 
 **Not yet seen:** the GPU-path picture itself. Vita3K returns zeros for anything read back from the GPU, and `shot_hd=1` only works on hardware. So orientation, edges and the HUD under `gpu=1` wait for the hardware test in `docs/vita-testing.md`. The software path's frames are the host's, byte for byte.
 
-## Draw distance (D49, experimental, off by default)
+## Draw distance (D49, off by default)
 
 With widescreen on, players see scenery and objects appear at a distance, most visibly at the sides. This option draws them further out. It changes only what is drawn: the game logic sees exactly what it sees with the option off.
+
+**The menu row (#260, the owner's decision of 2026-11-25):** `DRAW DISTANCE` with `NORMAL` (`draw_distance=100`, the original) and `MAX (ADAPTIVE)` (`200` for now: `DD_MAX_PCT` in `picture.c` and `picture_ps4.c`, also the most `draw_distance=` gives; #261 may raise it), on the Vita and the PS4. Until #260 it was `DRAW DISTANCE (EXP.)` with three values (100, 150, 200). "Adaptive" is the limiter below: MAX's full scale where the picture leaves room, less or the original where it doesn't. On the Vita, with 60 Hz logic in play, the budget follows the game thread's measured time (D212, `dd_budget=auto`); hardware session 8 (D252) saw ×2.00 in Toasty and 1× held in Artisans, with 60 fps kept. The PS4 has no timed budget (`lod_time.c` is the Vita's): its limiter keeps the buffer's limits and, with 60 Hz logic, the fixed 48 KB work budget (`LOD_BUDGET_60`, #180). `config.txt` keeps the percent, so `draw_distance=150` (1.5×, as `bench.c` sets) still works: the row then shows `150%`, and left or right goes to the nearer value, `NORMAL` on a tie; the file keeps 150 until the row is changed.
 
 ### How Spyro decides what to draw at a distance
 
@@ -354,7 +356,7 @@ With widescreen on, players see scenery and objects appear at a distance, most v
 
 ### What the option changes (`src/game/lod.c`, `tools/mips2c/hints.yaml`)
 
-`draw_distance=150|200` (Vita, and the menu's `DRAW DISTANCE (EXP.)`) or `--draw-distance 1.5|2` (host) scales three things:
+`draw_distance=150|200` (Vita and PS4; the menu's `DRAW DISTANCE`, `MAX (ADAPTIVE)` for 200) or `--draw-distance 1.5|2` (host) scales three things:
 
 - **World detail:** the three reads of `m_LodDistance` (`PORT_LOD_ENV`). It's capped at `m_CullingDistance`, so near geometry is never deeper than the game already draws.
 - **Moby detail:** `(m_Renderer & 0x3F) << 8` as it goes into the record, capped to fit the record's 16 bits.
