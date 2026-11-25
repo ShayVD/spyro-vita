@@ -22,7 +22,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a113d98ec6f463c4a",
-      "nudged_at": "2026-11-25T01:22:34Z"
+      "nudged_at": "2026-11-25T01:22:34Z",
+      "last_commit_at": "2026-11-25T01:53:19Z"
     }
   ],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
@@ -450,3 +451,4 @@ continue.
 - 2026-11-25T00:20:18Z shared 5, vita 8: #230 alive (tagging runs on head diag binaries, docker queue its own), no commit yet; Vita3K: none, hardware: none
 - 2026-11-25T00:51:33Z shared 5, vita 8: #230 alive (tagging run 5 of its head-diag batch, dh-S60), no edits or commit yet at 96 min; Vita3K: none, hardware: none
 - 2026-11-25T01:22:35Z shared 5, vita 8: #230 flagged by stall check (2 h 05, no commit) but alive (tagging batch on dh-Si, live PID 31969); nudged for a WIP commit, nothing stopped; Vita3K: none, hardware: none
+- 2026-11-25T02:01:19Z shared 5, vita 8: #230 WIP fa63379, 33da221 (portal sky cut fallback place and depths), building fix2 for checks; Vita3K: none, hardware: none
