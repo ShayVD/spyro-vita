@@ -466,3 +466,4 @@ continue.
 - 2026-11-25T06:55:13Z shared 5, vita 8: #231 WIP 6d200a3 (particle quads name their points by the projection that made them); checking fix1b on S, S60; Vita3K: none, hardware: none
 - 2026-11-25T07:26:19Z shared 5, vita 8: #231 Vita build and Vita3K routes on fix1 done (run folder fix1), FNV compare running (Si, Pi done; S60, T, O60 next); last commit 06:36; Vita3K: worker's runs
 - 2026-11-25T07:57:14Z shared 5, vita 8: #231 FNV compare continuing (S, Pfi now), perf reports written; last commit 06:36; Vita3K: none new, hardware: none
+- 2026-11-25T08:28:16Z shared 5, vita 8: #231 FNV compare on its last routes (P now; 1 h 16 in one container), clean tree, last commit 06:36; Vita3K: none new, hardware: none
