@@ -41,7 +41,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "ae351bab01fd52e24",
-      "last_commit_at": "2026-11-25T13:45:00Z"
+      "last_commit_at": "2026-11-25T14:03:23Z"
     }
   ],
   "last_good": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114",
@@ -529,3 +529,4 @@ continue.
 - 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
 - 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
 - 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
+- 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
