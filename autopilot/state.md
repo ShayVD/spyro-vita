@@ -22,7 +22,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "a113d98ec6f463c4a",
-      "nudged_at": "2026-11-25T01:22:34Z",
+      "nudged_at": "2026-11-25T04:05:25Z",
       "last_commit_at": "2026-11-25T01:53:19Z"
     }
   ],
@@ -455,3 +455,4 @@ continue.
 - 2026-11-25T02:32:24Z shared 5, vita 8: #230 checking fix2 diag on host routes (d2-O60 newest), last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T03:03:24Z shared 5, vita 8: #230 building its FNV base binary (docker queue held by the arm64 session's PC build since 02:38), new vcache.c edits uncommitted, last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T03:34:23Z shared 5, vita 8: #230 running its per-polygon FNV compare (base vs fix2) on host routes, last commit 01:53; Vita3K: none, hardware: none
+- 2026-11-25T04:05:25Z shared 5, vita 8: #230 flagged by stall check (last commit 01:53) but alive in its FNV compare (fnv-S60, clean tree); nudged, nothing stopped; Vita3K: none, hardware: none
