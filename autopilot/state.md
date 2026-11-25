@@ -11,23 +11,41 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 231,
-      "branch": "feat/231-wobble-fix-particlesdraw-s-missed",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-231",
+      "issue": 260,
+      "branch": "feat/260-options-menu-draw-distance-with-normal",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-260",
       "pids": [],
-      "started_at": "2026-11-25T05:15:21Z",
+      "started_at": "2026-11-25T11:10:00Z",
       "files": [
-        "src/game/particles_hand.c",
-        "src/game/particle_slots_hand.c",
+        "src/platform/vita/picture.c",
+        "src/platform/vita/vita.h",
+        "src/platform/vita/main.c",
+        "src/platform/ps4/picture_ps4.c",
+        "src/platform/ps4/ps4.h",
+        "docs/presentation.md",
+        "docs/ps4-build.md",
+        "docs/vita-testing.md",
+        "README.md"
+      ],
+      "agent": "a68f8cfb2027b43fd",
+      "last_commit_at": "2026-11-25T12:20:37Z",
+      "nudged_at": "2026-11-25T15:12:00Z"
+    },
+    {
+      "issue": 237,
+      "branch": "feat/237-wobble-fix-a-frame-whose-order-log-is",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-237",
+      "pids": [],
+      "started_at": "2026-11-25T13:45:00Z",
+      "files": [
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h"
       ],
-      "agent": "aa6c03cf1d320f4e7",
-      "last_commit_at": "2026-11-25T06:36:13Z",
-      "nudged_at": "2026-11-25T09:26:00Z"
+      "agent": "ae351bab01fd52e24",
+      "last_commit_at": "2026-11-25T14:03:23Z"
     }
   ],
-  "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
+  "last_good": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -229,10 +247,24 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
       "default": "keep the wobble fix on far mobys (no change)",
       "status": "open"
+    },
+    {
+      "issue": 260,
+      "question": "Draw distance option after D252 (2x held at 1x in heavy scenes)",
+      "default_taken": "owner 2026-11-25: keep it; the row is DRAW DISTANCE with NORMAL / MAX (ADAPTIVE)",
+      "switch": "draw_distance="
+    },
+    {
+      "issue": 261,
+      "question": "Should MAX (ADAPTIVE) draw past 2x?",
+      "default_taken": "owner 2026-11-25: yes, up to the most it can measure and keep 60 fps stable; after #260",
+      "switch": "draw_distance="
     }
   ],
   "attempts": {
-    "161": 1
+    "161": 1,
+    "260": 1,
+    "237": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -262,8 +294,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-29d857a",
-        "commit": "29d857aebaad17fe28639c43b54a89f2086b74e5"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-44e82e8",
+        "commit": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114"
       }
     }
   },
@@ -493,3 +525,10 @@ continue.
 - 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
 - 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
 - 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
+- 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
+- 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
+- 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
+- 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
+- 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
+- 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
+- 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
