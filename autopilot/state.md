@@ -461,3 +461,4 @@ continue.
 - 2026-11-25T05:15:56Z shared 5, vita 8: started #231 (ParticlesDraw, vcache.c) and #257 (docs); others held on vcache.c; Vita3K: none, hardware: none
 - 2026-11-25T05:21:33Z shared 5, vita 8: merged #257 (docs, cut fraction line; host test step skipped: docs only); fa_seed note added to #247; #231 running; Vita3K: none, hardware: none
 - 2026-11-25T05:53:11Z shared 5, vita 8: #231 tagging runs on head diag binaries (S, Si, S60, P in one container), no commit yet at ~40 min; Vita3K: none, hardware: none
+- 2026-11-25T06:24:13Z shared 5, vita 8: #231 testing a first fix (fix1 diag on S, Si, S60, Pf; edits in particles_hand.c, vcache.c, psx_vcache.h uncommitted), ~70 min in; Vita3K: none, hardware: none
