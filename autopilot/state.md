@@ -540,3 +540,4 @@ continue.
 - 2026-11-25T16:08:00Z #237 no commit 2 h 05, alive (host base build queued behind the ARM64 session), nudged; #260 gate queued for ctest
 - 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
 - 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
+- 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
