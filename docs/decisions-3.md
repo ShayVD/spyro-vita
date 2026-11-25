@@ -1734,3 +1734,171 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **The owner's questions on run 2, for later:** some wobble is still visible with PSX WOBBLE off (the fix is on and is the Vita's code; what remains wasn't identified from the log); and whether the PS4 can draw further than 2× (the limits are the game's PS1-sized buffers, not the PS4: 222 KB of primitive space, the near-sector list's 127, 53 moby records, and the 60 Hz work budget tuned for the Vita).
 - **Not done here:** the PS5 test (the owner: later); the release itself (a version-bump PR, the tag, CI's draft release, `release.sh --upload`, the owner's run of that file, publishing).
 - **Next free number:** D247.
+
+## 2026-11-24 — the PC build on Encore's platform interface
+
+### D247. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
+- **Number:** named D245 while it was written; `main`'s D245 (the PS4's P4, PR #250) and `develop`'s ARM64 plan (PR #249; D246 then, D250 now) came first, so this is D247. Logs in `logs/pc-encore/` predate the renumber.
+- **Why:** Encore's roadmap v0.4.0, "first game on the platform interface" (step P1). The PC layer (`src/platform/pc/`, D240–D243) called SDL3 directly everywhere. On `encore/platform.h` the same game code is one backend away from any target Encore has, and every place the interface falls short is now written down as a gap with the smallest addition that would close it.
+- **What:**
+  - **Vendoring:** `third_party/encore` refreshed from Encore 0e77e93 with `tools/vendor.sh`, adding `core/` and `targets/pc/encore/` beside `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. The two existing paths changed only in READMEs and tests. `.gitignore`'s `core` (core dumps) now spares `third_party/encore/core/`. No vendored file was edited.
+  - **Build:** `src/platform/pc/CMakeLists.txt` builds Encore's PC backend (`enc_pc.c`, `enc_common.c`, `enc_blit.c`, `enc_event.c`, and `enc_co.c` or `enc_co_win.c`) as `encore_pc`, with plain flags, and links it.
+  - **Through the interface:**
+    - start-up and shutdown (`enc_platform_init`);
+    - the window and the GL 3.3 core context (`ENC_GFX_GL`; `enc_video_gpu_begin` / `_present`; GL loaded through `EncGpu.get_proc`);
+    - events and pads (`enc_input_poll`, `enc_event_poll`, `enc_pad_read`, mapped to PS1 bits in `input.c`);
+    - sound (`enc_audio_*`);
+    - time (`enc_time_us`, `enc_sleep_us`);
+    - mutexes, the Windows game thread (`enc_thread_start`), and the save folder (`enc_path`).
+  - **Unchanged:** the picture path (frames filed by due vblank, the presenter, the aspect box, both renderers).
+  - **Gaps:** `gaps.c` is the only file that still calls SDL (`video.c` and `pc_gl.h` still include `SDL_opengl.h` for GL's types only). It holds gaps G1–G14, each with its shim and the smallest addition to `platform.h` that would retire it; the table is in `docs/pc-build.md`, "On Encore's platform interface".
+    - Folders and window: G1 the user folder's vendor name, G2 the executable's folder, G3 the first window size, G4 the title, fullscreen at start and the idle mouse pointer, G5 the driver's name.
+    - GL and input: G6 a shared GL context for the game thread, G7 spyro's keyboard map, G8 a message box.
+    - Sound, timing and the rest: G9 trimming queued sound, G10 GL's types, G11 never pacing the swap, G12 whether the swap interval took, G13 a thread stack in the image, G14 one log.
+  - **Behaviour that differs** (`docs/pc-build.md`):
+    - gamepads work in the background;
+    - no SDL signal handlers;
+    - 4 pads, not 8;
+    - the trigger threshold is 125 of 255;
+    - a hidden GL probe window at start;
+    - the backend's own `log/spyro.log` beside the game's.
+- **Encore needs no change for this PR.** The gaps are additions for the owner to weigh as Encore PRs. The largest are G6 (`EncGpu.gl_create_shared` / `gl_make_current`), G7 (`enc_pc_set_keymap`), G12 (`EncGpu.vsync`) and G13 (`EncThreadConfig.stack_mem`).
+- **Found and fixed on the way (G12):**
+  - Mesa under Xvfb refuses the GL swap interval. Before D247 the PC then ran without vsync (1 ms sleeps).
+  - The backend instead paces every present to a 60 Hz clock of its own. With llvmpipe's slow pictures the window fell behind the frames due, and every pause-route shot caught a later frame.
+  - `video.c` now asks (`pc_gap_gl_swap_interval_on`) and opens the video again without vsync when the interval was refused.
+- **Checked** (amd64 Docker under Rosetta on the Mac, Xvfb, Mesa llvmpipe; logs in `logs/pc-encore/`, local):
+  - **PC Linux:** `develop` and the branch built from clean. Both builds' first tries hit Python segfaults in overlay preprocessing (Rosetta), at different files; both built on the next try. No warnings in `src/platform/pc` or the vendored backend.
+  - **Pause route** (`tools/pc/routes/pause.pad`, `virtual=1`, 9,100 vblanks, shots at 2,400 / 5,900 / 6,950 / 9,000; `gpu=0`):
+    - The save folder (`save/card0/BASCUS-94228SPYRO`, `disc-verified.txt`) is byte-identical in all four runs (develop ×2, branch ×2).
+    - The shots are not exact on `develop` either. Its two runs differ at 2,400 (1.1% of pixels), 5,900 (74%) and 6,950 (3.6%): a shot is the first picture shown whose frame is due at its vblank, so under load it can be a neighbouring frame.
+    - The branch's 2,400 and 5,900 shots are byte-identical to one of `develop`'s runs. At 6,950 and 9,000 they differ (5.3%, 78%), and the 9,000 shot is the same Artisans cutscene moment a frame or so later.
+    - So no picture difference beyond `develop`'s own run-to-run spread was seen, but the pictures aren't proven identical. Exact shots need the shot taken from the game thread's frame, not the window (a separate change).
+  - **`gpu=1`:** develop and the branch were both killed (exit 137) before 9,100 vblanks. Each GPU picture takes about 4.6 s under llvmpipe and Rosetta, so the GPU renderer's A/B wasn't possible on this machine.
+  - **Windows** (llvm-mingw cross-build): `spyro.exe` builds. `vcache.c` (unchanged) hit the 300 s compile timeout three times while the A/B ran, then built. One warning, in an unchanged line (`main.c` `here`). Not run under Wine.
+  - **Vita:** the ELF built from `develop` and from the branch in same-length worktree paths has identical `.text` and `.data`. `.rodata` differs in 13 bytes: the build time and the commit ID.
+  - **linux32 and PS4:** both build from this branch (linux32 673 of 673 targets; the PS4 fpkg `IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg`). Neither compiles a changed file: the vendored `low_image` and `winposix` changed only in READMEs and tests. linux32 ctest: still running when the PR opened, the result to follow.
+  - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
+  - **No-disc start-up** (CI's check, `logs/pc-encore/smoke.log`): exit code 1, `video: x11, llvmpipe`, "No Spyro the Dragon disc data was found".
+- **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
+- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
+- **Next free number:** D248 (D245 is main's PS4 P4, PR #250; the ARM64 plan, PR #249, then D246, now D250).
+
+## 2026-11-25 — phase 8: the wobble fix's last misses
+
+### D248. A portal sky cut that hk and fr leave unplaced takes a fallback place: hk's place for a cut of a cut on one pixel, and the nearer of two fractions fr drops (#230, 2026-11-25)
+- **Why:** after D213, PortalSkyPlain kept 5 / 14 missed vertices on host P and S (30 Hz / `--interp`), 14 / 28 on Pf, and 23 plus 15 PortalSkyFog on the 60 Hz stone60 route (Vita3K's window 6,600 the same: `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`). #230 tagged every one:
+  - Most were a **cut of a cut on one pixel**. A triangle cut on one portal-outline edge is cut again on the next edge, a fraction of a pixel from the first cut (t 48–112/4096). The PS1 draws both at one integer point, but the second cut's exact place on the next edge's line lies 3–6 px away, so hk dropped the key, and the second cut's own fraction had no end, because that end is the key hk just dropped.
+  - On stone60 also: cuts made from such a key (6); two own fractions more than HK_MERGE (2 px) apart on sides from a far sky vertex (12); an end hk placed with no depths (2); ends 4× or more apart in depth (1).
+  - The issue's guessed reasons (an ambiguous outer end, a cut more than 8 px from its key) never occurred.
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - A per-key fallback place in the `fr[256]` table under `FR_ALT(key) = VCD_CORNER(key, 15)`: y's top nibble flipped, as D244's `VCD_CENTRE`, so it matches no screen key. Two fallback places at one key: the same point adds depths, within HK_MERGE the mean, otherwise the one nearer the key's pixel centre. It is never dropped.
+  - Its sources: hk's old place when a sky cut (`VCD_HAS_T`) whose end is its own key kills it (`derive_hand`); fractions made from a fallback end (`fr_src`); both places when fr drops two, or the slot is dead; the nearest depth pair where none is under 4× (`frac_hand`); and the nearest pair's depth at hk's place for a place-only hk sky cut.
+  - hk's and fr's own places are unchanged, and no hand-over reads the fallback. The walk takes it only in #215's pass 1, after D213's renderer gate and the #197 gate, for a vertex hk and fr both leave with nothing, so no polygon found before can change.
+  - New counters `fa_kept`, `fa_seed`, `fa_found` on the `vcache cut fraction:` line; `fr_nosrc` no longer counts the place-only calls.
+  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244.
+- **Measured** (host, 2×, 16:9, base fc5bf71 → fix):
+  - PortalSkyPlain and PortalSkyFog missed 0 on S, Si, P, Pi, Pf, Pfi and the 60 Hz stone60 route (S60).
+  - Total missed: S 21 → 16, Si 40 → 26, P 5 → 0, Pi 14 → 0, Pf 14 → 0, Pfi 28 → 0, S60 46 → 8; T 2 and O60 0 unchanged. What is left is ParticlesDraw (S 10, Si 20, S60 8; #231) and EnvDraw (S/Si 6, the order-log-full frame of #237; T 2).
+  - Vita3K stone60 window 6,600: `missed 38` → `missed 0, exempt 852`.
+- **Checks:**
+  - Host FNV per polygon on 9 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60; 164 M polygons): 0 found-before polygons changed, 0 became affine; 4–23 newly found per route.
+  - Vita3K: shots identical on all eight routes (toasty60 against `auto-233-1/fix-toasty60`; re-checked by the coordinator). Counters the same (draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.misses`, `vc.probe`; `vc.lines` within −0.1%), apart from the timing-dependent `vc.div`, `vc.invalid`, `vc.clamped`.
+  - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-230-1`.
+  - Not run: the PC build. The change is plain integer arithmetic in common code.
+- **Left:** the `vcache cut fraction:` line's fields (D213's and the `fa_*` ones) are not described in `docs/host-build.md` or `docs/vita-testing.md` (filed).
+
+### D249. ARM64 step O1: every P32 slot is spelled `P32F(T *)`, a macro that can later become an offset; no binary changes (2026-11-25)
+
+- **What:** the first step of D250's plan, declarations only. Nothing reads or writes a pointer differently yet.
+  - `src/compat/p32.h` defines `P32F(T)`:
+    - `T` on the 32-bit targets (Vita, linux32);
+    - `T __ptr32 __uptr` on x86-64 (linux64, PS4, PC);
+    - on ARM64 it is still left out: O2 makes it `u32` once the uses go through accessors.
+  - The bare `P32` qualifier is gone. A slot is `P32F(Moby *) m_X;`, a pointer to slots `P32F(Moby *) *`, two levels `P32F(P32F(T *) *)`.
+- **The decomp:** `tools/ps4/p32_patch.py` emits the new spelling (`to_p32f`: each `*P32` level wraps what is to its left) and `patches/spyro-1-ptr32/0001-p32-pointer-fields.patch` is regenerated from it. Before the change the script reproduced the committed patch byte for byte, so only the spelling moved: 508 rewrites, no bare `P32` left. `0002-p32-hand-fixes.patch` has no `P32` and is unchanged.
+- **The port's own code:** 15 files in `src/game` (and `tick60/`) and `src/platform/vita/prof_draw.c`, converted with the same function.
+- **A trap for later steps:** `P32F(T *)` expands to `T *`, so in a declaration with several declarators the macro's `*` belongs to the first one only. `P32F(Moby *) *a, *b;` makes `b` a plain `Moby *`, and `static P32F(Moby *) x[N], y[N];` makes `y` an array of `Moby`. Four of the port's lines had two P32 declarators; each now holds separate declarations on the same line, so no line number moves. A declarator that had no `P32` (`*m`) keeps the plain base type, as before. The generated patch has none of these: its only multi-declarator hit is a parameter list.
+- **Checks:**
+  - **Method:** each target was built from `develop` at 016d26f and from the branch, in the same build directories, and its loaded sections compared (ELF `SHF_ALLOC`, PE non-debug).
+  - **linux32, linux32 native-mem, linux64, PC Linux, PC Windows:** identical except the `__DATE__`/`__TIME__` strings (`savestate.c`, the PC's banner), checked byte by byte.
+  - **Vita and PS4 needed a pinned date and commit:** with the real date, each linker placed its merged strings differently once one string changed, so `.text` and `.data` differed too.
+    - Rebuilt with `SOURCE_DATE_EPOCH=1764000000` and a `git` on `PATH` whose `describe` prints a fixed string (`SPYRO_BUILD_ID`, `cmake/mips2c.cmake`).
+    - Vita `spyro_vita.velf` (50 sections) and PS4 `spyro.elf` (26): every section identical.
+  - `p32_lint.py tools/layout/psx.map src/game src/platform build/linux64/patched/spyro-1`: 0 found (the one hit, `prof_draw.c`'s `D_800757B0`, was there before O1: a Vita-only file).
+  - `tools/check_no_assets.sh`: passes.
+  - After rebasing onto `develop` (PC on Encore, #252; the Docker queue, #253): see the PR for the PC Linux build. None of the files #252 changed uses `P32`.
+  - No hardware run.
+- **Next:** O2, the AST-driven rewriter of uses (D250), with the owner's go-ahead.
+- **Next free number:** D251 (D250 is the ARM64 plan, renumbered from D246).
+
+## 2026-11-24 — an ARM64 build (Apple Silicon first)
+
+### D250. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
+- **Number:** D246 when PR #249 merged it into `develop`; `main`'s D246 (the PS4 release fpkg, PR #254) reached `main` first, so it is D250 since 2026-11-25 (the merge for PR #258). The code comments and tools say D250.
+
+(D247 is the PC build's move onto Encore's platform interface, in another session.)
+
+- **Why:** the owner wants to play the port natively on an M-series Mac. The 64-bit builds (linux64, PC, PS4) keep the PS1's layouts with the low-image model (D173, D174, D240, D241): every pointer the game stores in its own memory is `P32`, clang's `__ptr32 __uptr`. That keyword exists only for x86. On AArch64 clang accepts it and does nothing, so every `P32` field is 8 bytes (Encore `lp64/docs/clang-bugs.md`). Running x86-64 under Rosetta was turned down: it rests on deprecated linker flags (`-no_pie`, `-pagezero_size`) and on Rosetta itself. Encore's PC backend (`targets/pc/encore/enc_pc.c`, SDL3) already runs on macOS arm64. The platform layer isn't what stops it; the pointer model is.
+- **The model** (Encore `lp64/docs/low-image.md`, "Why not the other models": the fallback it names). Every `P32` slot holds a 32-bit **offset** from one base. The base is the start of the executable's image. Everything the game points at is in the image: the `.bss` arena, the game thread's `.bss` stack, the data labels and string literals. Offset 0 is NULL. The source spells each kind of site with a macro, and `src/compat/p32.h` grows a third model:
+
+  | | 32-bit (Vita, linux32) | x86-64 low image (linux64, PC, PS4) | offset model (ARM64) |
+  |---|---|---|---|
+  | field `P32F(T *) m_X` | `T *` | `T *__ptr32 __uptr` | `u32` |
+  | read `P32_GET(T *, x)` | `(x)` | `(x)`, with a type check that `x` is a `P32` lvalue | `x ? base + x : NULL` |
+  | write `P32_SET(x, v)` | `x = v` | `x = v` | `x = v ? v - base : 0` |
+  | `(int)p`, `(T *)i` | as now | as now | encode, decode |
+
+  - On the 32-bit targets every macro expands to the text that is there today, so the code is the same byte for byte. Only debug-info columns move, as with `P32` in D174. The x86-64 builds keep `__ptr32` and gain a compile-time check that each `P32_GET`/`P32_SET` really names a `P32` lvalue. That check finds a missed or extra site as a compile error, before any ARM64 run.
+  - **Measured cost on arm64** (Apple clang 16, `-O2`): a decode is one `add` of a base kept in a register for the whole function. Where the result is dereferenced, clang drops the NULL test. A list walk `m = P32_GET(Moby *, m->m_Next)` is `ldp; add; add; cbnz`. Not measured in the game yet: that is the O3 gate below.
+  - Linux on ARM can link the image low and non-PIE, so the base is the constant 0 and a decode is only the zero-extending 32-bit load. macOS keeps a 4 GB `__PAGEZERO` for arm64, so its base is a symbol, `_mh_execute_header`.
+- **Measured** (this PR; `tools/ps4/offset_census.py` and `tools/ps4/trial_arm64.py`, on a linux64 build of `develop` @ aa3a44e):
+  - **Sites to rewrite** (clang 19's AST of all 353 linux64 units, each source location counted once, overlays' preprocessed text mapped back to `src/overlays/`):
+
+    | | P32 loads | stores | `+=` `++` etc. | pointer→int | int→pointer |
+    |---|---|---|---|---|---|
+    | decomp (patched `spyro-1`) | 5,561 | 632 | 65 | 201 | 51 |
+    | port's own C (`src/`) | 406 | 88 | 10 | 123 | 174 |
+    | **total** | **5,967** | **720** | **75** | **324** | **226** (4 in `gen/`) |
+
+    That is about 7,300 sites in about 100 files. `src/overlays/moby_update.c` alone has 4,600 (the overlays' giant update function). Only 99 sites lie inside a `#define`; the rest are plain source text. Low-image.md's "~14,500 uses" was a grep of `->m_X`/`.m_X` and also counted non-pointer fields.
+  - **Declarations:** 516 lines of `patches/spyro-1-ptr32/0001` and 54 `P32` tokens in the port's own C (`hand_structs.h`, `moby_lists_hand.c`, `collision_hand.c`, `t60_rules.c` and others). `tools/ps4/p32_patch.py` already finds each of them. Emitting `P32F(T *) name` instead of `T *P32 name` is a small change to the generator.
+  - **ARM64 today** (`trial_arm64.py`, Apple clang 16 for `arm64-apple-macos13`, the 165 non-overlay units): 18 units fail, all 52 failures being layout `static_assert`s in the port's own C. That is the same count as D173's plain-LP64 x86 trial. The decomp's C compiles with 8-byte fields and says nothing; the asserts are what catch it. There are also 126 pointer→int and 41 int→pointer warnings.
+  - **Not affected:** the overlays' 13 function pointers. They are already 8-byte globals off the 64-bit targets' slots (`src/game/p32_fnptrs.c`), and ARM64 takes the same path. The disc's data loaders (`PATCH_POINTER`) write through the same accessors. The PS1 data image already has the `--pie` path (`tools/data2s.py`, `s1_pie_words`, D193): ARM64 stores offsets there instead of addresses.
+- **How the uses get rewritten:** by a tool, not by hand. `p32_offset_rewrite.py` (new) reads clang's JSON AST of the linux64 build, where `P32` types are visible, and wraps each site's source range in `P32_GET`/`P32_SET`/`P32_ADD`/`P32_ENC`/`P32_DEC`. Its output is a new patch folder after `spyro-1-ptr32` (`patches/spyro-1-p32off`), plus edits to `src/`. It never adds or removes a line. The 99 macro sites and the 40 token-paste sites (`<scratch space>`) are done by hand and listed. The census's site list is the tool's checklist: every site is either rewritten or listed.
+- **Order and gates** (each step its own PR into `develop`, each step's gates on top of the ones before):
+  - **O1. Declarations.** Add `P32F`; the generator emits it; regenerate `spyro-1-ptr32`; convert the port's 54 hand tokens.
+    - Gate: Vita `.text`/`.data`/`.bss` byte-identical, and linux32 sections and labels identical, built from before and after (D174's method).
+    - Gate: linux64, PC (Linux and Windows) and PS4 binaries identical.
+    - Gate: `p32_lint.py` reports 0; `check_no_assets.sh`.
+  - **O2. Uses.** The rewriter, the new patch and the hand edits.
+    - Gate: the x86-64 type check compiles the whole of linux64 and the PC build with 0 errors.
+    - Gate: the same byte-identical checks as O1.
+    - Gate: linux64's `host_checks.sh` identical to linux32: demo, the 100,000-vblank tour, routes.
+  - **O3. A headless offset-model host, `linuxa64`.** The linux32 host built for aarch64 Linux, native in the arm64 Docker image (no qemu).
+    - The base and offsets; the data image's offsets; the game stack in `.bss`.
+    - A checking build where every encode traps if its pointer lies outside the image. That catches a host pointer at the store, better than the low image's reservation does.
+    - `cast_audit.py`'s 260 sites read again for ARM64.
+    - Gate: `host_checks.sh` byte-identical to linux32: traces, shots, WAV and memory cards over the demo, the tour and the routes.
+    - Gate: a timing comparison against linux32 on the same machine.
+  - **O4. macOS arm64.**
+    - `cmake/pc-macos.toolchain.cmake`: Apple clang, the macOS SDK, SDL3 static (built from the same 3.4.18 source as the PC image).
+    - A mac low-image runtime in Encore, `lp64/runtime/low_image`: the base symbol, the image under 4 GB, the game stack in `.bss`, the checks at start.
+    - The PC platform layer on Encore's backend as D247 leaves it.
+    - GL 4.1 core (macOS's last; it takes the `#version 330` shaders of D243).
+    - An `.app` bundle, ad-hoc signed.
+    - Gate: the O3 checks, run natively on the Mac.
+    - Gate: the PC build's play route, run by the owner on the M-series Mac.
+  - **O5. Linux on ARM** (the same host as O3 with SDL3, base 0), and later Windows on ARM if anyone asks.
+- **Risks:**
+  - **Size.** About 7,300 rewritten sites in code checked byte for byte. The tool and O2's type check carry it; a hand rewrite would not be reviewable.
+  - **Readability.** Readability of `moby_update.c` and the other decomp files goes down (`P32_GET(Moby *, m->m_Parent)` everywhere). That is the price of one source for all three models.
+  - **Upstream.** Upstream decomp changes to a patched file mean re-running the rewriter, as with `p32_patch.py` today.
+  - **Host pointers.** A host pointer that reaches the game's memory (the CD buffers, the presenter's copies) has to move into the image, as on linux64. O3's checking build finds the ones the audit missed.
+- **Not chosen:**
+  - x86-64 under Rosetta (above).
+  - A patched clang with 32-bit address spaces on AArch64: a compiler fork for every contributor, and Encore notes a narrow-store miscompile there (llvm-project #228782).
+  - Compiling the decomp as C++ with a `p32<T>` class that converts implicitly: it would touch the same code through C/C++ differences instead, and break the matching sources' C.
+  - watchOS's `arm64_32` and Linux's AArch64 ILP32: they can't run Mac or ordinary Linux programs.
+- **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
+- **Next free number (this branch):** D247.

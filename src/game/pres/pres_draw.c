@@ -44,7 +44,8 @@ void GamestateDraw_pres(void) {}
 #define FAIRY_CARD_BUF 0x600 /* present.c PortPolySpace */
 
 extern char D_80077DD8[], D_8006FCF4[], D_800771C8[];
-extern void *P32 g_pres_snap_D_800756FC, *P32 g_pres_snap_g_HudMobys; /* PS1 labels: P32 (D245) */
+extern P32F(void *) g_pres_snap_D_800756FC;
+extern P32F(void *) g_pres_snap_g_HudMobys; /* PS1 labels: P32 (D245) */
 unsigned pres_lod_state_size(void);
 void pres_lod_state_set(const unsigned char *p);
 

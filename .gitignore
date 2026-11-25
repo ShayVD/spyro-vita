@@ -16,8 +16,9 @@ logs/
 *.self
 *.velf
 
-# qemu/gdb leftovers
+# qemu/gdb leftovers (core dumps; not Encore's vendored core/ directory)
 core
+!third_party/encore/core/
 *.core
 __pycache__/
 /save/

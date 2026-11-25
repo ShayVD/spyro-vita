@@ -1,7 +1,7 @@
 /* lp64_low_image_win on 64-bit Windows, linked with the flags in lp64_low_image_win.c: the image at 0x400000, and
  * the probe's heap block, fresh mapping and stack all below 2 GB, a thread's too. Run on Windows itself (CI's Windows
  * runner): Wine doesn't apply the 2 GB limit, so it proves nothing there.
- *   low_image_win_test.exe      (targets/pc/encore/build_conformance.sh builds it) */
+ *   low_image_win_test.exe      (targets/pc/test/desktop_runtime_tests.sh builds it) */
 #include "lp64_low_image.h"
 
 #include <stdint.h>

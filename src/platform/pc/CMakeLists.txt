@@ -1,5 +1,6 @@
 # PC build (docs/pc-build.md, D240): the same game and src/platform/common
-# as the other hosts, this platform layer (SDL3, OpenGL 3.3), and linux32's
+# as the other hosts, this platform layer (on Encore's platform interface
+# and its SDL3 PC backend, D247; OpenGL 3.3), and linux32's
 # software rasterizer, PNG writer, log and save-state glue, as the PS4's.
 #   tools/pc/tc cmake -S . -B build/pc-linux -G Ninja -DSPYRO_HOST=pc \
 #       -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux.toolchain.cmake
@@ -11,6 +12,21 @@ file(GLOB PC_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 set(ENCORE_DIR "${CMAKE_SOURCE_DIR}/third_party/encore")
 set(LOW_IMAGE_DIR "${ENCORE_DIR}/lp64/runtime/low_image")
 set(WINPOSIX_DIR "${ENCORE_DIR}/targets/pc/runtime/winposix")
+# Encore's platform interface and its PC backend (D247), a library of its
+# own: plain C with Encore's flags, not the game's (no -fno-builtin, no
+# -funsigned-char), so it is built as Encore's own tests build it
+set(ENCORE_CORE_DIR "${ENCORE_DIR}/core")
+set(ENCORE_PC_DIR "${ENCORE_DIR}/targets/pc/encore")
+add_library(encore_pc STATIC "${ENCORE_PC_DIR}/enc_pc.c" "${ENCORE_CORE_DIR}/src/enc_common.c"
+  "${ENCORE_CORE_DIR}/src/enc_blit.c" "${ENCORE_CORE_DIR}/src/enc_event.c")
+if(WIN32)
+  target_sources(encore_pc PRIVATE "${ENCORE_PC_DIR}/enc_co_win.c")
+else()
+  target_sources(encore_pc PRIVATE "${ENCORE_CORE_DIR}/src/enc_co.c")
+endif()
+target_include_directories(encore_pc PUBLIC "${ENCORE_CORE_DIR}/include" "${ENCORE_PC_DIR}")
+target_compile_options(encore_pc PRIVATE -O2 -Wall)
+target_link_libraries(encore_pc PUBLIC SDL3::SDL3-static)
 if(WIN32)
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_win.c" "${WINPOSIX_DIR}/enc_winposix.c")
 else()
@@ -28,7 +44,7 @@ target_include_directories(spyro PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${LOW_IM
   "${LINUX32_DIR}" "${CMAKE_SOURCE_DIR}/src/platform/common" "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS} -Wall -Wno-unused-function)
 target_link_libraries(spyro PRIVATE spyro_game spyro_platform_common psycross_headers
-  SDL3::SDL3-static)
+  encore_pc SDL3::SDL3-static)
 target_link_options(spyro PRIVATE ${SPYRO_LINK_FLAGS})
 # The renderers' hand C is reached only through linux32's wrappers, so its
 # entries are pulled in by name (src/platform/linux32/CMakeLists.txt).

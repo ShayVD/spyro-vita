@@ -52,7 +52,7 @@ Two more files, for the PC target (`targets/pc/`); link one of the three:
   `.preinit_array`, which the dynamic loader runs before any shared library's constructor, so glibc's own malloc, the
   libraries and every thread stack land above 4 GB. No `main()` and no malloc family: the game keeps its own and runs
   on a `.bss` stack itself (`pthread_attr_setstack`). `LP64_LOW_TRAP=0` skips the reservation.
-  **Test:** `test/low_image_dyn_test.c` (`targets/pc/encore/build_conformance.sh` runs it, and its mutant).
+  **Test:** `test/low_image_dyn_test.c` (`targets/pc/test/desktop_runtime_tests.sh` runs it, and its mutant).
 - **`lp64_low_image_win.c`**: 64-bit Windows, linked with a fixed base of 0x400000, no ASLR and not
   large-address-aware (the flags are in its comment): Windows keeps the whole process below 2 GB, so nothing needs
   reserving. `lp64_win_low_probe` says where a heap block, a fresh mapping and the stack land (`GetSystemInfo`'s

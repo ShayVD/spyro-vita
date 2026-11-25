@@ -1,7 +1,7 @@
 /* enc_winposix on Windows (run under Wine or on Windows): a file with CR LF bytes written and read back with open()
  * and fopen() without "b" keeps them; pread reads at offsets without moving the descriptor. The mutant
  * (ENC_WINPOSIX_MUTANT: the module not linked, text mode) must fail.
- *   winposix_test.exe     (targets/pc/encore/build_conformance.sh builds both) */
+ *   winposix_test.exe     (targets/pc/test/desktop_runtime_tests.sh builds both) */
 #include "enc_winposix.h"
 
 #include <fcntl.h>

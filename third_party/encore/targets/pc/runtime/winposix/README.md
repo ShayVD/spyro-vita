@@ -10,7 +10,7 @@
 `mkdir` takes no mode on Windows: `#include <direct.h>` and `#define mkdir(path, mode) _mkdir(path)` at the call
 sites, after the system headers (a macro defined first would break mingw's own declaration).
 
-**Test:** [`test/winposix_test.c`](test/winposix_test.c), built by `targets/pc/encore/build_conformance.sh`, run on
+**Test:** [`test/winposix_test.c`](test/winposix_test.c), built by `targets/pc/test/desktop_runtime_tests.sh`, run on
 Windows (CI) or under Wine; its mutant (text mode, a seek-and-read `pread`) must fail.
 
 From spyro-vita `src/platform/pc/low_win.c` (its D241), with the offset fix. MIT.

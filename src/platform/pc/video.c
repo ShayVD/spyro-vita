@@ -1,5 +1,7 @@
-/* The window and the picture (docs/pc-build.md, D240): SDL3 and OpenGL 3.3
- * core, on the main thread.
+/* The window and the picture (docs/pc-build.md, D240): Encore's GPU mode
+ * with GL 3.3 core (enc_video_open with ENC_GFX_GL, enc_video_gpu_begin /
+ * _present: the backend owns the window, the context, the swap; D247), on
+ * the main thread.
  *
  * At every display refresh (vsync=1; the swap waits for it) the newest frame
  * the game thread filed whose due vblank the game's clock has reached
@@ -8,19 +10,23 @@
  * view, docs/presentation.md), as large as the window allows, centred, black
  * bars around. filter=1 scales it linearly, filter=0 by nearest neighbour.
  * F11 or Alt+Enter switches between the window and (borderless, the
- * desktop's own mode) fullscreen; the window can be resized freely. */
+ * desktop's own mode) fullscreen (the backend's); the window can be resized
+ * freely. The title, the minimum size, fullscreen at start, the idle mouse
+ * pointer and the game thread's shared context are gaps.c's (G4, G6). */
 #include "pc.h"
+#include "gaps.h"
 #include "host.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
+#include "encore/platform.h"
+
+#include <SDL3/SDL_opengl.h> /* the GL types only (gap G10) */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* the GL calls used here, all from SDL_GL_GetProcAddress: the executable
- * links no GL library (SDL loads it), GL 1.1's included */
+/* the GL calls used here, all from the platform's loader (EncGpu.get_proc):
+ * the executable links no GL library (SDL loads it), GL 1.1's included */
 typedef const GLubyte *(APIENTRY *PFN_GetString)(GLenum);
 typedef void(APIENTRY *PFN_GenTextures)(GLsizei, GLuint *);
 typedef void(APIENTRY *PFN_BindTexture)(GLenum, GLuint);
@@ -68,20 +74,21 @@ typedef void(APIENTRY *PFN_ReadPixels)(GLint, GLint, GLsizei, GLsizei, GLenum, G
 #define PC_GL_DECL(type, name) static type p_##name;
 GL_FUNCS(PC_GL_DECL)
 #define PC_GL_LOAD(type, name)                                                                 \
-  if (!(p_##name = (type)SDL_GL_GetProcAddress(#name))) {                                   \
+  if (!(p_##name = (type)s_gpu.get_proc(#name))) {                                          \
     host_log("video: no %s", #name);                                                        \
     return -1;                                                                              \
   }
 
-static SDL_Window *s_win;
-static SDL_GLContext s_gl, s_game_gl; /* s_game_gl: the GPU renderer's (gpu=1, D243) */
+static EncGpu s_gpu;  /* the window, the context and the loader (the backend's) */
+static void *s_game_gl; /* the GPU renderer's shared context (gpu=1, D243; gaps.c G6) */
+void *(*g_pc_gl_proc)(const char *name);
 volatile int g_pc_draw_w, g_pc_draw_h;
 static GLuint s_prog, s_tex, s_vao;
 static GLint s_u_rect, s_u_uv;
 static int s_tex_w, s_tex_h;
 static PcFrame s_cur; /* the frame on screen (its pixels uploaded) */
 static int s_have, s_cur_gpu;
-static SDL_Mutex *s_shot_mu;
+static EncMutex *s_shot_mu;
 static char s_shot_path[1200];
 static int s_shot_due;
 static unsigned s_refreshes, s_new_frames;
@@ -154,127 +161,73 @@ static int gl_setup(void) {
 }
 
 int pc_video_init(void) {
-  SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-  s_shot_mu = SDL_CreateMutex();
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
-  if (g_pc_opts.fullscreen)
-    flags |= SDL_WINDOW_FULLSCREEN;
-  s_win = SDL_CreateWindow("Spyro the Dragon", g_pc_opts.win_w, g_pc_opts.win_h, flags);
-  if (!s_win) {
-    host_log("video: SDL_CreateWindow: %s", SDL_GetError());
+  const EncPlatformInfo *info = enc_platform_info();
+  /* headless (SDL's dummy or offscreen driver) has no display to wait for:
+   * no vsync there, nor where the swap interval is refused (below) */
+  int vsync = g_pc_opts.vsync && !(info->caps & ENC_CAP_HEADLESS);
+  /* refresh_hz is the display's, so the backend never paces the swap to a
+   * 60 Hz clock of its own: the picture goes out at every display refresh
+   * and frames.c picks the newest frame due (gap G11) */
+  EncVideoConfig vc = {.source_width = 640, .source_height = 480, .refresh_hz = info->refresh_hz,
+                       .aspect = ENC_ASPECT_4_3, .vsync = vsync, .smooth = g_pc_opts.filter,
+                       .gfx = ENC_GFX_GL, .gfx_major = 3, .gfx_minor = 3};
+  int rc;
+  enc_mutex_create(&s_shot_mu);
+  if (!(info->gfx_apis & (1u << ENC_GFX_GL))) {
+    host_log("video: no GL 3.3 core context on this machine (%s)", pc_gap_video_driver());
     return -1;
   }
-  SDL_SetWindowMinimumSize(s_win, 320, 240);
-  if (!(s_gl = SDL_GL_CreateContext(s_win))) {
-    host_log("video: SDL_GL_CreateContext (3.3 core): %s", SDL_GetError());
+  if ((rc = enc_video_open(&vc)) != ENC_OK || (rc = enc_video_gpu(&s_gpu)) != ENC_OK) {
+    host_log("video: enc_video_open (GL 3.3 core): %s", enc_error_name(rc));
     return -1;
   }
-  if (gl_setup() != 0)
-    return -1;
-  if (g_pc_opts.gpu) {
-    /* the game thread's context (gpu_gl.c draws on it), sharing textures
-     * and sync objects with this one; made here, on the main thread, and
-     * made current on the game thread (pc_video_game_context) */
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    s_game_gl = SDL_GL_CreateContext(s_win);
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
-    if (!s_game_gl)
-      host_log("video: the GPU renderer's shared context: %s", SDL_GetError());
-    if (!SDL_GL_MakeCurrent(s_win, s_gl)) {
-      host_log("video: SDL_GL_MakeCurrent: %s", SDL_GetError());
+  /* G12: a driver that refuses the swap interval (Mesa under Xvfb) would have
+   * the backend pace every present to a 60 Hz clock of its own, and a slow
+   * picture then falls behind the frames due. Before D247 the PC ran without
+   * vsync there; reopen so it still does. */
+  if (vsync && !pc_gap_gl_swap_interval_on()) {
+    enc_video_close();
+    vc.vsync = vsync = 0;
+    if ((rc = enc_video_open(&vc)) != ENC_OK || (rc = enc_video_gpu(&s_gpu)) != ENC_OK) {
+      host_log("video: enc_video_open (GL 3.3 core, no vsync): %s", enc_error_name(rc));
       return -1;
     }
   }
-  s_vsync_on = g_pc_opts.vsync && SDL_GL_SetSwapInterval(1);
-  if (!g_pc_opts.vsync)
-    SDL_GL_SetSwapInterval(0);
-  if (g_pc_opts.fullscreen)
-    SDL_HideCursor();
-  {
-    const SDL_DisplayMode *m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(s_win));
-    host_log("video: %s, %s; GL %s; window %dx%d%s, display %dx%d at %.2f Hz, vsync %s",
-             SDL_GetCurrentVideoDriver(), (const char *)p_glGetString(GL_RENDERER),
-             (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
-             g_pc_opts.fullscreen ? " (fullscreen)" : "", m ? m->w : 0, m ? m->h : 0,
-             m ? m->refresh_rate : 0.0f, s_vsync_on ? "on" : "off");
-  }
-  return 0;
-}
-
-int pc_video_game_context(void) {
-  if (!s_game_gl || !SDL_GL_MakeCurrent(s_win, s_game_gl)) {
-    host_log("video: no GL context for the game thread: %s", s_game_gl ? SDL_GetError() : "none");
+  g_pc_gl_proc = s_gpu.get_proc;
+  pc_gap_window_setup(s_gpu.window, "Spyro the Dragon", g_pc_opts.fullscreen);
+  if (gl_setup() != 0)
     return -1;
-  }
+  if (g_pc_opts.gpu) /* the game thread's context (gpu_gl.c draws on it), sharing textures
+                      * and sync objects with this one; made here, on the main thread, and
+                      * made current on the game thread (pc_video_game_context) */
+    s_game_gl = pc_gap_gl_shared_context(s_gpu.window, s_gpu.context);
+  s_vsync_on = vsync;
+  host_log("video: %s, %s; GL %s; window %dx%d%s, display at %d Hz, vsync %s",
+           pc_gap_video_driver(), (const char *)p_glGetString(GL_RENDERER),
+           (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
+           g_pc_opts.fullscreen ? " (fullscreen)" : "", info->refresh_hz, s_vsync_on ? "on" : "off");
   return 0;
 }
 
-void pc_video_close(void) {
-  if (s_gl)
-    SDL_GL_DestroyContext(s_gl);
-  if (s_win)
-    SDL_DestroyWindow(s_win);
-  s_gl = NULL;
-  s_win = NULL;
-}
+int pc_video_game_context(void) { return pc_gap_gl_make_current(s_gpu.window, s_game_gl); }
 
-/* the mouse pointer: shown when it moves, hidden after CURSOR_IDLE_MS still */
-#define CURSOR_IDLE_MS 2000
-static Uint64 s_mouse_moved_ms;
-static int s_cursor_shown = 1;
-
-static void toggle_fullscreen(void) {
-  int fs = (SDL_GetWindowFlags(s_win) & SDL_WINDOW_FULLSCREEN) != 0;
-  SDL_SetWindowFullscreen(s_win, !fs);
-  if (fs)
-    SDL_ShowCursor();
-  else
-    SDL_HideCursor();
-  s_cursor_shown = fs;
-  s_mouse_moved_ms = SDL_GetTicks();
-}
-
-static void cursor_idle(void) {
-  if (s_cursor_shown && SDL_GetTicks() - s_mouse_moved_ms > CURSOR_IDLE_MS) {
-    SDL_HideCursor();
-    s_cursor_shown = 0;
-  }
-}
-
-void pc_video_event(const void *e_) {
-  const SDL_Event *e = e_;
-  if (e->type == SDL_EVENT_MOUSE_MOTION) {
-    s_mouse_moved_ms = SDL_GetTicks();
-    if (!s_cursor_shown && !(SDL_GetWindowFlags(s_win) & SDL_WINDOW_FULLSCREEN)) {
-      SDL_ShowCursor();
-      s_cursor_shown = 1;
-    }
-  }
-  if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat &&
-      (e->key.key == SDLK_F11 || (e->key.key == SDLK_RETURN && (e->key.mod & SDL_KMOD_ALT))))
-    toggle_fullscreen();
-}
+void pc_video_close(void) { enc_video_close(); }
 
 void pc_video_shot(const char *path, int due) {
-  SDL_LockMutex(s_shot_mu);
+  enc_mutex_lock(s_shot_mu);
   snprintf(s_shot_path, sizeof s_shot_path, "%s", path);
   s_shot_due = due;
-  SDL_UnlockMutex(s_shot_mu);
+  enc_mutex_unlock(s_shot_mu);
 }
 
 /* the window's pixels as a PNG (after the draw, before the swap) */
 static void take_shot(int w, int h) {
   char path[1200];
   uint8_t *rgb;
-  SDL_LockMutex(s_shot_mu);
+  enc_mutex_lock(s_shot_mu);
   snprintf(path, sizeof path, "%s", s_shot_path);
   s_shot_path[0] = 0;
-  SDL_UnlockMutex(s_shot_mu);
+  enc_mutex_unlock(s_shot_mu);
   if (!path[0] || !(rgb = malloc((size_t)w * h * 3)))
     return;
   p_glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
@@ -294,7 +247,10 @@ static void take_shot(int w, int h) {
 void pc_video_frame(void) {
   int ww, wh, now = pc_vblank_now();
   PcFrame f;
+  EncGpuFrame gf;
   unsigned long long t0 = pc_now_us(), t1;
+  if (enc_video_gpu_begin(&gf) != ENC_OK) /* the main context current, the drawable's size */
+    return;
   if (pc_frames_take(now, &f)) {
     if (f.rgba) {
       /* upload it now; the slot goes back at once */
@@ -317,7 +273,8 @@ void pc_video_frame(void) {
   }
   t1 = pc_now_us();
   s_upload_us += t1 - t0;
-  SDL_GetWindowSizeInPixels(s_win, &ww, &wh);
+  ww = gf.width;
+  wh = gf.height;
   g_pc_draw_w = ww;
   g_pc_draw_h = wh;
   p_glViewport(0, 0, ww, wh);
@@ -354,12 +311,12 @@ void pc_video_frame(void) {
   }
   if (s_shot_path[0] && s_have && s_cur.due >= s_shot_due)
     take_shot(ww, wh);
-  cursor_idle();
-  SDL_GL_SwapWindow(s_win);
+  pc_gap_cursor_update(s_gpu.window);
+  enc_video_gpu_present(); /* swaps; never paced (refresh_hz is the display's) */
   s_swap_us += pc_now_us() - t1;
   s_refreshes++;
   if (!s_vsync_on)
-    SDL_DelayPrecise(1000000); /* no vsync: about 1000 pictures a second at most */
+    enc_sleep_us(1000); /* no vsync: about 1000 pictures a second at most */
 }
 
 void pc_video_report(int vblank) {

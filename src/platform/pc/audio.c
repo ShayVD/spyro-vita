@@ -1,65 +1,69 @@
 /* Audio out on PC (docs/pc-build.md): the SPU mix (psx_spu_vblank on the
- * game thread) pushes 44.1 kHz s16 stereo through psx_audio_out into an
- * SDL3 audio stream, which converts it to the device's format and rate and
- * plays it on SDL's own thread. When more than LAG_MAX is queued (the game
- * caught up after a stall: up to 8 vblanks' audio at once) the oldest is
- * dropped down to LAG_KEEP, so the sound never trails the picture by much;
- * when it runs dry SDL plays silence. */
+ * game thread) pushes 44.1 kHz s16 stereo through psx_audio_out into
+ * Encore's audio (enc_audio_push, D247; an SDL3 audio stream underneath,
+ * which converts it to the device's format and rate and plays it on SDL's
+ * own thread). When more than LAG_MAX is queued (the game caught up after a
+ * stall: up to 8 vblanks' audio at once) new audio is dropped until the
+ * queue is down to LAG_KEEP, so the sound never trails the picture by much;
+ * when it runs dry the device plays silence. Before D247 the oldest was
+ * dropped at once; the interface has no call that drops queued audio, so
+ * the newest goes instead and the lag comes down over LAG_MAX - LAG_KEEP of
+ * playing (gap G9). */
 #include "pc.h"
 #include "host.h"
 #include "psx_spu.h"
 
-#include <SDL3/SDL.h>
+#include "encore/platform.h"
 
 #define IN_RATE 44100
-#define BYTES_MS (IN_RATE * 4 / 1000)
-#define LAG_MAX (250 * BYTES_MS)  /* bytes queued at most: 250 ms */
-#define LAG_KEEP (80 * BYTES_MS)  /* what a trim leaves */
+#define FRAMES_MS (IN_RATE / 1000.0)
+#define LAG_MAX (int)(250 * FRAMES_MS)  /* frames queued at most: 250 ms */
+#define LAG_KEEP (int)(80 * FRAMES_MS)  /* what a trim leaves */
+#define QUEUE_MS 250                    /* the backend's queue: twice this */
 
-static SDL_AudioStream *s_stream;
+static int s_open, s_trimming;
 static unsigned long long s_frames_in, s_trims, s_trimmed;
-static char s_drop[LAG_MAX];
 
 void psx_audio_out(const short *pcm, int frames) {
-  if (!s_stream)
+  int q;
+  if (!s_open)
     return;
-  {
-    int q = SDL_GetAudioStreamQueued(s_stream);
-    if (q > LAG_MAX) { /* the oldest goes: whole frames */
-      int n = (q - LAG_KEEP) & ~3;
-      if (n > (int)sizeof s_drop)
-        n = sizeof s_drop;
-      n = SDL_GetAudioStreamData(s_stream, s_drop, n);
-      s_trims++;
-      s_trimmed += n > 0 ? (unsigned)n / 4 : 0;
-    }
+  q = enc_audio_queued();
+  if (!s_trimming && q > LAG_MAX) {
+    s_trimming = 1;
+    s_trims++;
   }
-  SDL_PutAudioStreamData(s_stream, pcm, frames * 4);
+  if (s_trimming) {
+    if (q > LAG_KEEP) {
+      s_trimmed += (unsigned)frames;
+      return;
+    }
+    s_trimming = 0;
+  }
+  enc_audio_push(pcm, frames);
   s_frames_in += (unsigned)frames;
 }
 
 int pc_audio_init(void) {
-  const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, IN_RATE};
-  s_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-  if (!s_stream) {
-    host_log("audio: SDL_OpenAudioDeviceStream: %s", SDL_GetError());
+  const EncAudioConfig cfg = {IN_RATE, 2, QUEUE_MS};
+  int rc = enc_audio_open(&cfg);
+  if (rc != ENC_OK) {
+    host_log("audio: enc_audio_open: %s", enc_error_name(rc));
     return -1;
   }
-  SDL_ResumeAudioStreamDevice(s_stream);
-  host_log("audio: %s, %d Hz s16 stereo in (SDL converts to the device's)",
-           SDL_GetCurrentAudioDriver(), IN_RATE);
+  s_open = 1;
+  host_log("audio: %d Hz s16 stereo in (Encore's PC backend converts to the device's)", IN_RATE);
   return 0;
 }
 
 void pc_audio_close(void) {
-  if (s_stream)
-    SDL_DestroyAudioStream(s_stream);
-  s_stream = NULL;
+  s_open = 0;
+  enc_audio_close();
 }
 
 void pc_audio_report(int vblank) {
-  if (!s_stream)
+  if (!s_open)
     return;
   host_log("audio %d: %llu frames in, %d bytes queued, %llu trims (%llu frames dropped)", vblank,
-           s_frames_in, SDL_GetAudioStreamQueued(s_stream), s_trims, s_trimmed);
+           s_frames_in, enc_audio_queued() * 4, s_trims, s_trimmed);
 }

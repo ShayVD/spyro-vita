@@ -86,7 +86,7 @@ extern char g_SpyroFlame[], g_Hud[];
 unsigned pres_lod_state_size(void);
 void pres_lod_state_get(unsigned char *p);
 void pres_lod_state_set(const unsigned char *p);
-extern Moby *P32 g_pres_level_mobys; /* lod_pres.c: P32 (D245) */
+extern P32F(Moby *) g_pres_level_mobys; /* lod_pres.c: P32 (D245) */
 
 enum { MAX_NAMES = 16, SHOW = 6, MAX_MOBYS = 1024, PARTICLE_SPACE = 0x2000, OT_BYTES = 0x4000 };
 /* the presenter's GTE data half and its working memory at each call (D124) */
