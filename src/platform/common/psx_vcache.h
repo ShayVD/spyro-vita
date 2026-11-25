@@ -575,6 +575,11 @@ typedef struct {
    * counted in hits and hooked too); the cuts placed so, and those with an
    * end not usable or more than 8 pixels from their key */
   unsigned hk_frac, fr_kept, fr_nosrc;
+  /* #230: a cut's fallback places kept (vcache.c fa_put: a cut of a cut on
+   * one pixel, a cut made from such a key, two own fractions fr drops, ends
+   * 4 times apart), those seeded with hk's place for a cut of a cut, and
+   * the vertices found from them (counted in hk_frac, hits and hooked too) */
+  unsigned fa_kept, fa_seed, fa_found;
   /* #216: vertices found from their renderer's own point (VCD_OWN,
    * VCD_SELF; counted in hits, not in hooked), those of them whose key was
    * ambiguous (not counted in resolved), the vertices of their polygons

@@ -297,6 +297,9 @@ typedef struct {
  * lo/hi, as before */
 #define VC_CX 128 /* ranges a frame */
 #define VC_FR 256 /* #215: cuts a frame placed at their own fraction (frac_hand) */
+/* #230: a cut's fallback place, in fr under its key with y's top nibble
+ * flipped (as VCD_CENTRE), which no screen key has (fa_put) */
+#define FR_ALT(key) VCD_CORNER(key, 15u)
 typedef struct {
   uintptr_t lo, hi, olo;
   uint8_t cx, w24, ok;
@@ -687,8 +690,9 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->hk_ambsrc, out->res_alias);
   /* #215 */
   PsyX_Log("vcache cut fraction: %u vertices with no entry found at their cut's own fraction; "
-           "%u cuts placed so, %u with an end not usable or more than 8 pixels off (#215)",
-           out->hk_frac, out->fr_kept, out->fr_nosrc);
+           "%u cuts placed so, %u with an end not usable or more than 8 pixels off (#215); "
+           "fallbacks: %u places kept, %u from a cut of a cut, %u vertices found so (#230)",
+           out->hk_frac, out->fr_kept, out->fr_nosrc, out->fa_kept, out->fa_seed, out->fa_found);
   /* #216 */
   PsyX_Log("vcache own points: %u vertices found from their renderer's own point (%u "
            "of them at an ambiguous key, and %u found ones of their polygons drawn at theirs); "
@@ -2255,10 +2259,11 @@ static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, fl
  * key's last projection in the frame's order (the sky's clipper cuts a
  * sector's triangles right after projecting its vertices, so the last
  * projection under the key is this sector's own); with no entry, the
- * hand-over the walk takes for the key, else this frame's fr place.
+ * hand-over the walk takes for the key, else this frame's fr place, else
+ * (#230) its fallback place (*alt set).
  * Returns the depths' count, 0 or less: not usable. */
 static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, float *y, float *w,
-                  unsigned *cost, Touch *t) {
+                  unsigned *cost, Touch *t, int *alt) {
   Table *const tb = rec->tab;
   const int i = find(rec, kind, key, 0, &cost[VCC_REC_PROBES], t);
   unsigned n = 0, j;
@@ -2298,8 +2303,14 @@ static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
     const Hk *h = hk_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
     if (!h || h->dead || !h->placed) /* the walk's next look (psx_vcache_poly) */
       h = fr_slot(tb, rec->gen, key, 0, &cost[VCC_REC_PROBES], t);
-    if (!h || h->dead || !h->placed || h->asrc || h->low || !h->n)
-      return -1;
+    if (!h || h->dead || !h->placed || h->asrc || h->low || !h->n) {
+      /* #230: else its fallback place (fa_put), which makes what is made
+       * from it a fallback too */
+      h = fr_slot(tb, rec->gen, FR_ALT(key), 0, &cost[VCC_REC_PROBES], t);
+      if (!h || !h->placed || !h->n)
+        return -1;
+      *alt = 1;
+    }
     n = h->n;
     *x = h->dx;
     *y = h->dy;
@@ -2311,13 +2322,85 @@ static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
   return (int)n;
 }
 
+/* #230: a cut's fallback place, in fr under FR_ALT(key), apart from its
+ * fr place: the walk takes it only where hk and fr give the key none, for
+ * the same polygons as an fr place (psx_vcache_poly). Tagged on host
+ * routes P, Pf, S and the 60 Hz stone60 route, the portal sky's vertices
+ * that D213 left were:
+ *  - a cut of a cut on one pixel: a triangle cut on one outline edge is cut
+ *    again on the next, a fraction of a pixel from the first cut, whose
+ *    point is the side's end. The PS1 draws both at one integer point, but
+ *    the second's exact place (the next edge's line, nearly along the side)
+ *    lies pixels from the first's, so hk drops both, and the second's own
+ *    fraction has no end: that end is the key hk has just dropped. So the
+ *    place hk held is the key's fallback (fa_seed, derive_hand), and the
+ *    cut's own fraction from it is too;
+ *  - a cut whose end is such a key (its fraction made from the fallback);
+ *  - two cuts' own fractions more than HK_MERGE apart, on sides from a
+ *    far sky vertex (the fraction's error grows with the side): fr drops
+ *    both, as before, and the fallback keeps the one nearer the key's
+ *    pixel, since the PS1 rounded each to that pixel;
+ *  - ends whose depths are 4 times apart or more: the nearest pair; and a
+ *    cut hk placed with no depths so is a fallback end at hk's place with
+ *    the nearest pair's depth (derive_hand), for a cut made from it.
+ * Every place hk and fr held before stays as it was: the fallback is no
+ * hand-over's source, fr's own places are made exactly as before, and the
+ * walk reads it only for a vertex they leave with none. Two places at one
+ * key: the same point (depths added), within HK_MERGE their mean, else the
+ * one nearer the key's pixel centre (never neither). */
+static void fa_put(Rec *rec, VCacheStats *st, uint32_t key, float dx, float dy, const float *w,
+                   unsigned n, unsigned *cost, Touch *t) {
+  Hk *const h = fr_slot(rec->tab, rec->gen, FR_ALT(key), 1, &cost[VCC_REC_PROBES], t);
+  unsigned i, j;
+  if (!h) {
+    st->hk_full++;
+    return;
+  }
+  touch(t, offsetof(Table, fr) + (size_t)(h - rec->tab->fr) * sizeof(Hk), sizeof(Hk));
+  if (h->placed && !(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
+                     h->dy - dy >= -0.125f)) {
+    if (h->placed < 255 && h->dx - dx <= HK_MERGE && dx - h->dx <= HK_MERGE &&
+        h->dy - dy <= HK_MERGE && dy - h->dy <= HK_MERGE) {
+      h->sx += dx;
+      h->sy += dy;
+      h->placed++;
+      h->dx = flt(h->sx / h->placed);
+      h->dy = flt(h->sy / h->placed);
+      cost[VCC_REC_DIV] += 2;
+    } else if (dx * dx + dy * dy < h->dx * h->dx + h->dy * h->dy)
+      h->placed = h->n = 0; /* the nearer: this one, alone */
+    else
+      return;
+  }
+  if (!h->placed) {
+    h->dx = h->sx = dx;
+    h->dy = h->sy = dy;
+    h->who = VCD_SKY_CLIP;
+    h->placed = 1;
+    h->n = 0;
+  }
+  for (i = 0; i < n; i++) {
+    for (j = 0; j < h->n; j++)
+      if (same_depth(h->c[j].w, w[i], &cost[VCC_REC_DIV]))
+        break;
+    if (j == h->n && h->n < VC_CANDS) {
+      h->c[h->n].dx = h->c[h->n].dy = 0;
+      h->c[h->n++].w = w[i];
+    }
+  }
+  st->fa_kept++;
+}
+
 /* A VCD_LERP cut at its own fraction t / 4096 from a to b, into rec's fr
  * (derive_hand, where the hand-overs leave key with no place): both ends
  * need depths; the depth there is 1/w's on screen (hk_pair). Two places at
  * one key: as hand-overs, the same point (depths added), within HK_MERGE
- * their mean, else neither. */
+ * their mean, else neither. #230: a place made from an end's fallback, or
+ * with no depth pair under 4 times apart, or that fr drops, goes to the
+ * key's fallback instead (fa_put); at (not NULL): hk placed the key with no
+ * depths, at that place: its depths, at it, go to the fallback only. */
 static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint32_t a, uint32_t b,
-                      int tf) {
+                      int tf, const float *at) {
   unsigned *const cost = k->cost;
   Rec *const rec = &s_rec[kind];
   VCacheStats *const st = k->st;
@@ -2326,24 +2409,57 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
   unsigned n, i, j;
   Touch t = TOUCH0;
   Hk *h;
-  na = fr_src(rec, kind, k, a, &ax, &ay, aw, cost, &t);
-  nb = na > 0 ? fr_src(rec, kind, k, b, &bx, &by, bw, cost, &t) : 0;
+  int alt = 0; /* #230 */
+  na = fr_src(rec, kind, k, a, &ax, &ay, aw, cost, &t, &alt);
+  nb = na > 0 ? fr_src(rec, kind, k, b, &bx, &by, bw, cost, &t, &alt) : 0;
   if (na <= 0 || nb <= 0)
     goto nosrc;
   f = (float)tf * (1.0f / 4096);
   n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost, NULL);
   dx = flt(flt(ax + f * (bx - ax)) - ((short)(key & 0xFFFF) + 0.5f));
   dy = flt(flt(ay + f * (by - ay)) - ((short)(key >> 16) + 0.5f));
-  if (!n || !(dx < 8 && dx > -8 && dy < 8 && dy > -8))
+  if (at) { /* #230 */
+    dx = at[0];
+    dy = at[1];
+    alt = 1;
+  }
+  if (!(dx < 8 && dx > -8 && dy < 8 && dy > -8))
     goto nosrc;
+  if (!n) {
+    /* #230: ends 4 times apart or more: the nearest pair, as a fallback */
+    float bd = 0;
+    int ib = -1, jb = -1, ii, jj;
+    for (ii = 0; ii < na; ii++)
+      for (jj = 0; jj < nb; jj++)
+        if (aw[ii] > 0 && bw[jj] > 0) {
+          const float r = ratio(aw[ii], bw[jj]);
+          cost[VCC_REC_DIV]++;
+          if (ib < 0 || r < bd)
+            bd = r, ib = ii, jb = jj;
+        }
+    if (ib < 0)
+      goto nosrc;
+    w[0] = flt(1.0f / ((1.0f - f) / aw[ib] + f / bw[jb]));
+    cost[VCC_REC_DIV] += 3;
+    if (!(w[0] > 0))
+      goto nosrc;
+    n = 1;
+    alt = 1;
+  }
+  if (alt) { /* #230 */
+    fa_put(rec, st, key, dx, dy, w, n, cost, &t);
+    goto out;
+  }
   h = fr_slot(rec->tab, rec->gen, key, 1, &cost[VCC_REC_PROBES], &t);
   if (!h) {
     st->hk_full++;
     goto out;
   }
   touch(&t, offsetof(Table, fr) + (size_t)(h - rec->tab->fr) * sizeof(Hk), sizeof(Hk));
-  if (h->dead)
+  if (h->dead) {
+    fa_put(rec, st, key, dx, dy, w, n, cost, &t); /* #230 */
     goto out;
+  }
   if (h->placed) {
     if (!(h->dx - dx <= 0.125f && h->dx - dx >= -0.125f && h->dy - dy <= 0.125f &&
           h->dy - dy >= -0.125f)) {
@@ -2356,7 +2472,13 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
         h->dy = flt(h->sy / h->placed);
         cost[VCC_REC_DIV] += 2;
       } else {
+        /* #230: both into the fallback, which keeps the nearer */
+        float hw[VC_CANDS];
+        for (i = 0; i < h->n; i++)
+          hw[i] = h->c[i].w;
         h->dead = 1;
+        fa_put(rec, st, key, h->dx, h->dy, hw, h->n, cost, &t);
+        fa_put(rec, st, key, dx, dy, w, n, cost, &t);
         goto out;
       }
     }
@@ -2378,7 +2500,7 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
   st->fr_kept++;
   goto out;
 nosrc:
-  st->fr_nosrc++;
+  st->fr_nosrc += (unsigned)!at;
 out:
   cost[VCC_REC_LINES] += t.n;
 }
@@ -2820,6 +2942,16 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
         st->hk_merged++;
         goto depths;
       }
+      if (form == VCD_LERP && VCD_HAS_T(how) && (a == key || b == key) && h->who == who &&
+          !h->taint && !h->low && !h->asrc && h->n) {
+        /* #230: a cut of a cut on one pixel (fa_put): the place hk held is
+         * the key's fallback, the cut's own fraction's end */
+        float hw[VC_CANDS];
+        for (i = 0; i < h->n; i++)
+          hw[i] = h->c[i].w;
+        fa_put(rec, st, key, h->dx, h->dy, hw, h->n, cost, &t);
+        st->fa_seed++;
+      }
       h->dead = 1;
       st->hk_conflict++;
       left = 1;
@@ -2851,7 +2983,16 @@ nosrc:
 out:
   cost[VCC_REC_LINES] += t.n;
   if (left && form == VCD_LERP && VCD_HAS_T(how)) /* #215 */
-    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how));
+    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how), NULL);
+  else if (!left && placed && form == VCD_LERP && VCD_HAS_T(how) && !h->dead && h->placed &&
+           !h->n && !h->asrc && !h->low) {
+    /* #230: hk placed the cut with no depths (its ends' 4 times apart or
+     * more): the depths at hk's place, the nearest pair's, as the key's
+     * fallback, for a cut made from it (fr_src); the walk still takes hk's
+     * place alone */
+    const float at[2] = {h->dx, h->dy};
+    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how), at);
+  }
   if ((how & VCD_OWN) && form != VCD_PERSP) /* #216 (#217: a 3D point's q is its ends' anchor) */
     own_hand(kind, k, form, key, a, b, p, q);
 }
@@ -4286,6 +4427,20 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         if (cx != VCX_PORTAL_SKY && cx != VCX_PORTAL_SKY_FOG && cx != VCX_OUTSIDE &&
             cx != VCX_UNMARKED)
           break;
+        /* #230: a vertex hk and fr leave with none: its cut's fallback */
+        for (i = 0; i < n; i++)
+          if (!e[i] && noent[i] && !hkc[i]) {
+            const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
+            Touch t = TOUCH0;
+            hkc[i] = fr_look(ptab,
+                             pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen,
+                             FR_ALT(key), &cost[VCC_LOOK_PROBES], &t);
+            if (hkc[i]) {
+              hkfr[i] = 1;
+              st->fa_found++;
+            }
+            cost[VCC_LOOK_LINES] += t.n;
+          }
       }
       for (i = 0; i < n; i++)
         if (!e[i] && hkc[i] && !hkc[i]->asrc && hkfr[i] == pass) {
