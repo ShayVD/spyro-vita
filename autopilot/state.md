@@ -28,7 +28,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "README.md"
       ],
       "agent": "a68f8cfb2027b43fd",
-      "last_commit_at": "2026-11-25T12:20:37Z"
+      "last_commit_at": "2026-11-25T12:20:37Z",
+      "nudged_at": "2026-11-25T15:12:00Z"
     },
     {
       "issue": 237,
@@ -530,3 +531,4 @@ continue.
 - 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
 - 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
 - 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
+- 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
