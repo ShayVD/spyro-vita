@@ -1902,3 +1902,15 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - watchOS's `arm64_32` and Linux's AArch64 ILP32: they can't run Mac or ordinary Linux programs.
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
+
+## 2026-11-25 — hardware session 8
+
+### D252. Hardware session 8: develop's 80b8450 on the Vita; the wobble fixes since session 7 cost nothing measurable, and 2x still holds at 1x in Artisans (2026-11-25)
+- **Run:** with the owner's yes ("vita is free for hw tests too", then "Yes, run it" for exactly `runtime/autopilot/hw-session8.sh`), ap19a, ap19b and ap19t on `80b8450.vpk` (SHA-1 0a83b443: D220–D230, D244, D248 since session 7's 687ca1d, plus main's PS4 P4/P5 and D247, D249). US disc, the owner's settings (16:9, 60 HZ, wobble fix on, draw distance 200%). Results in `runtime/hw-80b8450/RESULTS.md`; logs `logs/hw-ap19a`, `hw-ap19b`, `hw-ap19t` (gitignored).
+- **The wobble fixes' cost (ap19a against D219's AP18a, Stone Hill play 7,300–9,400, virtual vblanks):** busy 69.0% against 69.1%, worst 88% both. Nothing measurable.
+- **Toasty route, real time (ap19t against AP18t):** late per 300: title 0.0 (0.2), Artisans 1.0 (2.5), Toasty 0.2 (0.9). 60 fps holds in play.
+- **Draw distance 2x:** still held at 1x in Artisans (10,500–13,000: `15.1–16.3 ms used of 14.5`). At 11,400 the game thread takes 15.84 ms a vblank (env 7.91, mobys 4.49, sky 1.15) and the vertex cache's expand about 3.6 ms a frame. Toasty reaches x2.00 where the frame is light. Filed as #259.
+- **Attract demo:** 162.6 late per 300 (166.3): 117 ticks of 150, the presenter on the game thread 17.7 ms a tick. The owner wants the in-between frame kept and made to fit (#235); #232's `pres_demo_inline` key is the next A/B.
+- **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
+- **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
+- **Next free number:** D253 (D251 is #231's).

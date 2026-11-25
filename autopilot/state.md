@@ -81,6 +81,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "687ca1d",
       "runs": "AP18a-c, AP18o, AP18t (runtime/autopilot/hw-session7b.sh)",
       "result": "D219: dd_budget=auto x1.03-1.41 vs 48 KB x1.00-1.31, held at 1x by measured time (15.2 ms of 14.5); D216-D218 cost nothing; attract demo 166 late/300, game waits 12 ms/vblank on presenter worker (#227); 60 Hz Artisans/Toasty over 14.5 ms at 1x, Artisans sky +0.5 ms, late 2.5/0.9 per 300 (#228)"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-25",
+      "vpk": "runtime/autopilot/artifacts/vita/80b8450.vpk",
+      "sha1": "0a83b44352b88915627b76a5dcb87573cdbcc32c",
+      "commit": "80b8450",
+      "runs": "ap19a, ap19b, ap19t (runtime/autopilot/hw-session8.sh)",
+      "fps": {
+        "artisans_late_per_300": 1.0,
+        "toasty_late_per_300": 0.2,
+        "attract_demo_late_per_300": 162.6
+      },
+      "result": "D252: wobble fixes since 687ca1d cost nothing (busy 69.0 vs 69.1%); 2x held at 1x in Artisans (15.1-16.3 ms of 14.5) -> #259; attract demo 162.6 late -> #232"
     }
   ],
   "perf_candidates": [
@@ -235,12 +249,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": {
-    "target": "vita",
-    "since": "2026-11-25T10:05:00Z",
-    "commit": "80b8450",
-    "step": "run"
-  },
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
@@ -483,3 +492,4 @@ continue.
 - 2026-11-25T09:26:00Z shared 5, vita 8: #231 no commit 2 h 48 but alive (S60 FNV pair writing), nudged; PR #258 open; Vita3K: none new, hardware: none
 - 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
 - 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
+- 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
