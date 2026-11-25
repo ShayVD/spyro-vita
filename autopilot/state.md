@@ -447,3 +447,4 @@ continue.
 - 2026-11-24T23:13:52Z shared 5, vita 8: resumed (owner: finish wobble and draw distance until no misses); develop fast-forwarded to origin fc5bf71 (#252 PC on Encore D247, #253 docker queue); #251 labelled phase-8 needs-owner (Vita on Encore, out of this loop's scope); started #230 attempt 1 (vcache.c holds the other 8), Vita3K: none, hardware: none
 - 2026-11-24T23:49:28Z shared 5, vita 8: #230 alive (base host ctest in its background job; docker queue held by the arm64 session), no commit yet; Vita3K: none, hardware: none
 - 2026-11-25T00:20:18Z shared 5, vita 8: #230 alive (tagging runs on head diag binaries, docker queue its own), no commit yet; Vita3K: none, hardware: none
+- 2026-11-25T00:51:33Z shared 5, vita 8: #230 alive (tagging run 5 of its head-diag batch, dh-S60), no edits or commit yet at 96 min; Vita3K: none, hardware: none
