@@ -1796,3 +1796,27 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
 - **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
 - **Next free number:** D248 (D245 is main's PS4 P4, PR #250; D246 the ARM64 plan, PR #249).
+
+## 2026-11-25 — phase 8: the wobble fix's last misses
+
+### D248. A portal sky cut that hk and fr leave unplaced takes a fallback place: hk's place for a cut of a cut on one pixel, and the nearer of two fractions fr drops (#230, 2026-11-25)
+- **Why:** after D213, PortalSkyPlain kept 5 / 14 missed vertices on host P and S (30 Hz / `--interp`), 14 / 28 on Pf, and 23 plus 15 PortalSkyFog on the 60 Hz stone60 route (Vita3K's window 6,600 the same: `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`). #230 tagged every one:
+  - Most were a **cut of a cut on one pixel**. A triangle cut on one portal-outline edge is cut again on the next edge, a fraction of a pixel from the first cut (t 48–112/4096). The PS1 draws both at one integer point, but the second cut's exact place on the next edge's line lies 3–6 px away, so hk dropped the key, and the second cut's own fraction had no end, because that end is the key hk just dropped.
+  - On stone60 also: cuts made from such a key (6); two own fractions more than HK_MERGE (2 px) apart on sides from a far sky vertex (12); an end hk placed with no depths (2); ends 4× or more apart in depth (1).
+  - The issue's guessed reasons (an ambiguous outer end, a cut more than 8 px from its key) never occurred.
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - A per-key fallback place in the `fr[256]` table under `FR_ALT(key) = VCD_CORNER(key, 15)`: y's top nibble flipped, as D244's `VCD_CENTRE`, so it matches no screen key. Two fallback places at one key: the same point adds depths, within HK_MERGE the mean, otherwise the one nearer the key's pixel centre. It is never dropped.
+  - Its sources: hk's old place when a sky cut (`VCD_HAS_T`) whose end is its own key kills it (`derive_hand`); fractions made from a fallback end (`fr_src`); both places when fr drops two, or the slot is dead; the nearest depth pair where none is under 4× (`frac_hand`); and the nearest pair's depth at hk's place for a place-only hk sky cut.
+  - hk's and fr's own places are unchanged, and no hand-over reads the fallback. The walk takes it only in #215's pass 1, after D213's renderer gate and the #197 gate, for a vertex hk and fr both leave with nothing, so no polygon found before can change.
+  - New counters `fa_kept`, `fa_seed`, `fa_found` on the `vcache cut fraction:` line; `fr_nosrc` no longer counts the place-only calls.
+  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244.
+- **Measured** (host, 2×, 16:9, base fc5bf71 → fix):
+  - PortalSkyPlain and PortalSkyFog missed 0 on S, Si, P, Pi, Pf, Pfi and the 60 Hz stone60 route (S60).
+  - Total missed: S 21 → 16, Si 40 → 26, P 5 → 0, Pi 14 → 0, Pf 14 → 0, Pfi 28 → 0, S60 46 → 8; T 2 and O60 0 unchanged. What is left is ParticlesDraw (S 10, Si 20, S60 8; #231) and EnvDraw (S/Si 6, the order-log-full frame of #237; T 2).
+  - Vita3K stone60 window 6,600: `missed 38` → `missed 0, exempt 852`.
+- **Checks:**
+  - Host FNV per polygon on 9 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60; 164 M polygons): 0 found-before polygons changed, 0 became affine; 4–23 newly found per route.
+  - Vita3K: shots identical on all eight routes (toasty60 against `auto-233-1/fix-toasty60`; re-checked by the coordinator). Counters the same (draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.misses`, `vc.probe`; `vc.lines` within −0.1%), apart from the timing-dependent `vc.div`, `vc.invalid`, `vc.clamped`.
+  - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-230-1`.
+  - Not run: the PC build. The change is plain integer arithmetic in common code.
+- **Left:** the `vcache cut fraction:` line's fields (D213's and the `fa_*` ones) are not described in `docs/host-build.md` or `docs/vita-testing.md` (filed).
