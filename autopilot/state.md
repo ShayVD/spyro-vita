@@ -11,27 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 260,
-      "branch": "feat/260-options-menu-draw-distance-with-normal",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-260",
-      "pids": [],
-      "started_at": "2026-11-25T11:10:00Z",
-      "files": [
-        "src/platform/vita/picture.c",
-        "src/platform/vita/vita.h",
-        "src/platform/vita/main.c",
-        "src/platform/ps4/picture_ps4.c",
-        "src/platform/ps4/ps4.h",
-        "docs/presentation.md",
-        "docs/ps4-build.md",
-        "docs/vita-testing.md",
-        "README.md"
-      ],
-      "agent": "a68f8cfb2027b43fd",
-      "last_commit_at": "2026-11-25T12:20:37Z",
-      "nudged_at": "2026-11-25T15:12:00Z"
-    },
-    {
       "issue": 237,
       "branch": "feat/237-wobble-fix-a-frame-whose-order-log-is",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-237",
@@ -46,7 +25,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "nudged_at": "2026-11-25T16:08:00Z"
     }
   ],
-  "last_good": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114",
+  "last_good": "77242551a3ed4c4655575af8a46fbe73a48f88fb",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -264,7 +243,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "260": 1,
     "237": 1
   },
   "blocked": [],
@@ -295,8 +273,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-44e82e8",
-        "commit": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-7724255",
+        "commit": "77242551a3ed4c4655575af8a46fbe73a48f88fb"
       }
     }
   },
@@ -535,3 +513,4 @@ continue.
 - 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
 - 2026-11-25T15:30:00Z #260 reported done (host ctest never ran: queue timeouts); shots identical vs base-44e82e8 (checked); gate running with --timeout 10800; decision D255 (D253 #237, D254 PR #263); filed #264 (stale spyro-ps4 image)
 - 2026-11-25T16:08:00Z #237 no commit 2 h 05, alive (host base build queued behind the ARM64 session), nudged; #260 gate queued for ctest
+- 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
