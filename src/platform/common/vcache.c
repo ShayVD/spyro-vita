@@ -4622,10 +4622,12 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
      * renderer's own projections'; if those choose none, as found.
      * #217: a world piece's too (the last list's, whose corners the
      * renderer named: a corner the GTE clamped onto a key other points
-     * share). */
+     * share). #231: a particle's screen-facing quad's too (two quads side by
+     * side share a corner's pixel, each at its own place). */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find(ptab, gen, xy[0]);
-    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV) { /* (#217: a split piece's) */
+    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV ||
+        cx == VCX_PARTICLES) { /* (#217: a split piece's) */
       /* (#229: a world piece's, its corners' keys and u/v mixed, as
        * env_hand.c PieceAnchor: each u/v the primitive's halfword after its
        * x/y; a quad's vertices here are its primitive's 0 1 3 2) */
