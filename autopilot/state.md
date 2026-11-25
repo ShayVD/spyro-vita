@@ -454,3 +454,4 @@ continue.
 - 2026-11-25T02:01:19Z shared 5, vita 8: #230 WIP fa63379, 33da221 (portal sky cut fallback place and depths), building fix2 for checks; Vita3K: none, hardware: none
 - 2026-11-25T02:32:24Z shared 5, vita 8: #230 checking fix2 diag on host routes (d2-O60 newest), last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T03:03:24Z shared 5, vita 8: #230 building its FNV base binary (docker queue held by the arm64 session's PC build since 02:38), new vcache.c edits uncommitted, last commit 01:53; Vita3K: none, hardware: none
+- 2026-11-25T03:34:23Z shared 5, vita 8: #230 running its per-polygon FNV compare (base vs fix2) on host routes, last commit 01:53; Vita3K: none, hardware: none
