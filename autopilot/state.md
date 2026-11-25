@@ -11,27 +11,45 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 260,
-      "branch": "feat/260-options-menu-draw-distance-with-normal",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-260",
+      "issue": 237,
+      "branch": "feat/237-wobble-fix-a-frame-whose-order-log-is",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-237",
       "pids": [],
-      "started_at": "2026-11-25T11:10:00Z",
+      "started_at": "2026-11-25T13:45:00Z",
       "files": [
-        "src/platform/vita/picture.c",
-        "src/platform/vita/vita.h",
-        "src/platform/vita/main.c",
-        "src/platform/ps4/picture_ps4.c",
-        "src/platform/ps4/ps4.h",
-        "docs/presentation.md",
-        "docs/ps4-build.md",
-        "docs/vita-testing.md",
-        "README.md"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
       ],
-      "agent": "a68f8cfb2027b43fd",
-      "last_commit_at": "2026-11-25T12:20:37Z"
+      "agent": "ae351bab01fd52e24",
+      "last_commit_at": "2026-11-25T14:03:23Z",
+      "nudged_at": "2026-11-25T16:08:00Z"
+    },
+    {
+      "issue": 261,
+      "branch": "perf/261-draw-distance-max-adaptive-go-past-2x",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-261",
+      "pids": [],
+      "started_at": "2026-11-25T18:45:00Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
+        "src/game/moby_cull_hand.c",
+        "src/game/mips2c_rt.h",
+        "tools/mips2c/hints.yaml",
+        "src/platform/vita/picture.c",
+        "src/platform/vita/lod_time.c",
+        "src/platform/ps4/picture_ps4.c",
+        "src/platform/linux32/main.c",
+        "docs/presentation.md",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "ac32ce0b6bf3102a1",
+      "last_commit_at": "2026-11-25T18:45:00Z"
     }
   ],
-  "last_good": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114",
+  "last_good": "77242551a3ed4c4655575af8a46fbe73a48f88fb",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -249,7 +267,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "260": 1
+    "237": 1,
+    "261": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -279,8 +298,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-44e82e8",
-        "commit": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-7724255",
+        "commit": "77242551a3ed4c4655575af8a46fbe73a48f88fb"
       }
     }
   },
@@ -514,3 +533,10 @@ continue.
 - 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
 - 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
 - 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
+- 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
+- 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
+- 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
+- 2026-11-25T15:30:00Z #260 reported done (host ctest never ran: queue timeouts); shots identical vs base-44e82e8 (checked); gate running with --timeout 10800; decision D255 (D253 #237, D254 PR #263); filed #264 (stale spyro-ps4 image)
+- 2026-11-25T16:08:00Z #237 no commit 2 h 05, alive (host base build queued behind the ARM64 session), nudged; #260 gate queued for ctest
+- 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
+- 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes

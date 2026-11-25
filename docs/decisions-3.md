@@ -1941,3 +1941,26 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
 - **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
 - **Next free number:** D253.
+
+## 2026-11-25 — the Docker queue moves to Encore
+
+### D254. `tools/docker/run.sh` becomes a shim over Encore's machine-wide Docker queue (2026-11-25)
+- **What:** Encore PR #101 (ShayVD/encore, merged at c17d2d4) moved this repo's queue (PRs #253, #255) into the kit as `tools/docker/run.sh` and `tools/docker/queue.py`, game-neutral, so kh1-vita and atv2-vita join the same queue. It is vendored in `third_party/encore-docker` (`tools/vendor.sh --dir third_party/encore-docker`, Encore c17d2d4), and `tools/docker/run.sh` now maps spyro's switches and execs the kit's copy: `SPYRO_DQ=0` or a `TC_PORT` → `ENCORE_DQ=0`, `SPYRO_DOCKER_HOST` → `ENCORE_DOCKER_HOST`, and `ENCORE_COLIMA_PROFILE=kh1fast` when neither the environment nor `~/.config/encore/docker.env` names a profile. `tools/tc`, `tools/pc/tc` and `tools/ps4/tc` are unchanged.
+- **Why its own directory:** `third_party/encore` (Encore 0e77e93) and `third_party/vita-port-kit` (31295be7) each pin one commit for every path they hold. Vendoring `tools/docker` into either would refresh `core/`, the PC backend or the Vita runtime modules too, an unrelated change with its own checks.
+- **What changes:** the lock is `~/.cache/encore/docker.lock` (tickets in `docker.lock.q/`), shared by every port on the machine. Until no spyro checkout has the old `run.sh`, the kit also queues for and holds the old `~/.cache/spyro-vita/docker.lock` (its `ENCORE_DOCKER_ALSO_LOCK` default), so an old worktree mid-run and a new one never run side by side. The VM choice reads the profile's mounts from its `colima.yaml` instead of assuming `~/Projects`, and understands `--volume=` and `--mount` as well as `-v`. Waiters print `encore docker queue:` instead of `spyro docker queue:`.
+- **Gone:** `SPYRO_DQ_LOCK`; a private lock is `ENCORE_DOCKER_LOCK`.
+- **Fallback, not `:=`:** the shim sets `kh1fast` only when the settings file doesn't name a profile, since the kit lets the environment win over the file; `: "${ENCORE_COLIMA_PROFILE:=kh1fast}"` would override a machine whose file names another profile.
+- **Next free number:** D255 (D253 is the autopilot's #237 worker).
+
+## 2026-11-25 — the options menu's draw distance row
+
+### D255. The options menu's draw distance row is DRAW DISTANCE with NORMAL and MAX (ADAPTIVE), on the Vita and the PS4 (#260, the owner's decision, 2026-11-25)
+- **Why:** hardware session 8 (D252) showed 200% reaching x2.00 where the 60 Hz frame is light and holding at 1x where it isn't (Artisans, #259), with 60 fps kept. "2X" promised more than it gives, and 1.5X adds nothing now that the budget adapts (D212). The owner: "the mod menu option should be draw distance; normal or max (adaptive)".
+- **How:**
+  - `picture.c` and `picture_ps4.c` replace `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X) with `DRAW DISTANCE`: NORMAL (100) and MAX (ADAPTIVE) (`DD_MAX_PCT`, 200). `DD_MAX_PCT` is one `#define` per target, used by the row and by the apply clamp, so #261 (MAX past 2x, the owner's request) raises it in one place.
+  - `draw_distance=` stays a percent. A loaded 150 (`bench.c`) shows `150%`; left or right goes to the nearest value, NORMAL on the tie (the kit's `vpk_menu_opt_change`), and the file keeps 150 until the row changes.
+  - The startup line drops "(experimental, D49)"; no user-facing text names 2X. Docs: README, `presentation.md`, `ps4-build.md`, `vita-testing.md`.
+  - The row fits the panel exactly: 31 characters, 552 of 592 pixels (rendered with the kit's `vpk_menu_panel_draw`).
+- **PS4:** MAX adapts only through `lod.c`'s limiter (the buffers' limits and, with 60 Hz logic, the fixed 48 KB `LOD_BUDGET_60`); the timed budget (`lod_time.c`, D212) is the Vita's. The label is kept, as the owner asked for both targets.
+- **Checked** (`runtime/autopilot/runs/vita/issue-260-1/`): Vita build; PS4 build through the Mac SDK (the Docker `spyro-ps4` image is stale, #264); Vita3K 8 routes, 694 shots identical to `base-44e82e8` (checked by the coordinator); five menu runs with 100, 150 and 200 behave as above; counters within the same-VPK spread; gate host ctest 33/33 and `noassets`.
+
