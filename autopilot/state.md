@@ -24,7 +24,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "aa6c03cf1d320f4e7",
       "last_commit_at": "2026-11-25T06:36:13Z",
-      "nudged_at": "2026-11-25T09:26:00Z"
+      "nudged_at": "2026-11-25T09:26:00Z",
+      "reported_at": "2026-11-25T11:45:00Z"
     },
     {
       "issue": 260,
@@ -528,3 +529,4 @@ continue.
 - 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
 - 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
 - 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
+- 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
