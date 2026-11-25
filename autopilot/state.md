@@ -23,7 +23,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "aa6c03cf1d320f4e7",
-      "last_commit_at": "2026-11-25T06:36:13Z"
+      "last_commit_at": "2026-11-25T06:36:13Z",
+      "nudged_at": "2026-11-25T09:26:00Z"
     }
   ],
   "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
@@ -474,3 +475,4 @@ continue.
 - 2026-11-25T07:57:14Z shared 5, vita 8: #231 FNV compare continuing (S, Pfi now), perf reports written; last commit 06:36; Vita3K: none new, hardware: none
 - 2026-11-25T08:28:16Z shared 5, vita 8: #231 FNV compare on its last routes (P now; 1 h 16 in one container), clean tree, last commit 06:36; Vita3K: none new, hardware: none
 - 2026-11-25T09:05:00Z retro 8 (interim, owner asked): +6 entries, 0 bumped, 0 signatures, coverage n/a, branch retro/spyro-vita-phase-8 (encore draft PR #92); main PR #258 (release/phase8-portal-sky-d248) open; #231 still in its FNV compare
+- 2026-11-25T09:26:00Z shared 5, vita 8: #231 no commit 2 h 48 but alive (S60 FNV pair writing), nudged; PR #258 open; Vita3K: none new, hardware: none
