@@ -1951,3 +1951,16 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Gone:** `SPYRO_DQ_LOCK`; a private lock is `ENCORE_DOCKER_LOCK`.
 - **Fallback, not `:=`:** the shim sets `kh1fast` only when the settings file doesn't name a profile, since the kit lets the environment win over the file; `: "${ENCORE_COLIMA_PROFILE:=kh1fast}"` would override a machine whose file names another profile.
 - **Next free number:** D255 (D253 is the autopilot's #237 worker).
+
+## 2026-11-25 — the options menu's draw distance row
+
+### D255. The options menu's draw distance row is DRAW DISTANCE with NORMAL and MAX (ADAPTIVE), on the Vita and the PS4 (#260, the owner's decision, 2026-11-25)
+- **Why:** hardware session 8 (D252) showed 200% reaching x2.00 where the 60 Hz frame is light and holding at 1x where it isn't (Artisans, #259), with 60 fps kept. "2X" promised more than it gives, and 1.5X adds nothing now that the budget adapts (D212). The owner: "the mod menu option should be draw distance; normal or max (adaptive)".
+- **How:**
+  - `picture.c` and `picture_ps4.c` replace `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X) with `DRAW DISTANCE`: NORMAL (100) and MAX (ADAPTIVE) (`DD_MAX_PCT`, 200). `DD_MAX_PCT` is one `#define` per target, used by the row and by the apply clamp, so #261 (MAX past 2x, the owner's request) raises it in one place.
+  - `draw_distance=` stays a percent. A loaded 150 (`bench.c`) shows `150%`; left or right goes to the nearest value, NORMAL on the tie (the kit's `vpk_menu_opt_change`), and the file keeps 150 until the row changes.
+  - The startup line drops "(experimental, D49)"; no user-facing text names 2X. Docs: README, `presentation.md`, `ps4-build.md`, `vita-testing.md`.
+  - The row fits the panel exactly: 31 characters, 552 of 592 pixels (rendered with the kit's `vpk_menu_panel_draw`).
+- **PS4:** MAX adapts only through `lod.c`'s limiter (the buffers' limits and, with 60 Hz logic, the fixed 48 KB `LOD_BUDGET_60`); the timed budget (`lod_time.c`, D212) is the Vita's. The label is kept, as the owner asked for both targets.
+- **Checked** (`runtime/autopilot/runs/vita/issue-260-1/`): Vita build; PS4 build through the Mac SDK (the Docker `spyro-ps4` image is stale, #264); Vita3K 8 routes, 694 shots identical to `base-44e82e8` (checked by the coordinator); five menu runs with 100, 150 and 200 behave as above; counters within the same-VPK spread; gate host ctest 33/33 and `noassets`.
+
