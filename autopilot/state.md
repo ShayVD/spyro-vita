@@ -239,7 +239,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "target": "vita",
     "since": "2026-11-25T10:05:00Z",
     "commit": "80b8450",
-    "step": "build"
+    "step": "ask"
   },
   "job": null,
   "batch": null,
