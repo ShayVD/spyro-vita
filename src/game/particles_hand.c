@@ -458,10 +458,17 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
        * the centre, at the centre's depth, for the vertex cache. The
        * offsets come from the corner words as the GPU reads them (x the
        * low half, y the high half, each signed), so a corner whose x
-       * borrowed from its y is placed at the y drawn. */
+       * borrowed from its y is placed at the y drawn.
+       * #231: two quads side by side (a ram's stars) share a corner's
+       * pixel, each at its own place, so the hand-over leaves that key with
+       * none. So the quad also names its points by the projection that made
+       * them (as the glows, D218), under its first corner's key (the walk's
+       * anchor): the centre (VCD_SELF, the last projection), and each corner
+       * its offset from it (VCD_OWN). */
+      PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_PARTICLES) | VCD_SELF, sxy, sxy, v0 - a3 - a2, 0, 0);
 #define PART_HO(c)                                                                                 \
-  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES), (c), sxy, 0u, (s32)(s16)(c) - (s32)(s16)sxy,     \
-                ((s32)(c) >> 16) - ((s32)sxy >> 16))
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES) | VCD_OWN, (c), sxy, v0 - a3 - a2,                \
+                (s32)(s16)(c) - (s32)(s16)sxy, ((s32)(c) >> 16) - ((s32)sxy >> 16))
       PART_HO(v0);
       PART_HO(v0 - a2);
       PART_HO(v0 - a3);

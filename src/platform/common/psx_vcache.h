@@ -108,7 +108,12 @@ enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
  * since #209 ParticlesDraw hands over their corners, VCD_OFFSET from the
  * projected centre. A particle corner counts only where no other renderer
  * placed the key, gives way to any other's, and is no source for another
- * hand-over, so every point placed before stays as it was.) */
+ * hand-over, so every point placed before stays as it was. #231: two quads
+ * side by side share a corner's pixel, each at its own place, and the
+ * hand-over leaves that key with none; so the quad also names its centre
+ * (VCD_SELF) and its corners (VCD_OWN, the offset) under its first
+ * corner's key, as the glows do (#216, below), and the walk's own-point
+ * step takes a particle quad nothing else finds.) */
 enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 /* #215: a VCD_LERP cut's own fraction, or'ed into how: t / 4096 of the way
