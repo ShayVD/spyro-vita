@@ -738,6 +738,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "named, the plane giving none; %u world splits placed from their ends' own points, "
            "%u not placed with an end behind the eye (#217)",
            out->der_named, out->hk_own, out->hk_noproj);
+  /* #266 */
+  PsyX_Log("vcache world no projection: %u vertices with no entry exempt because their world "
+           "polygon has a corner with no projection (drawn affine at its keys) (#266)",
+           out->np_poly);
   /* #229 */
   PsyX_Log("vcache world own: %u vertices found from their piece's own split point or moved "
            "corner; %u kept, %u not kept (full); %u split points paired across 4x depths, %u "
@@ -5074,15 +5078,26 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find_(ptab, gen, xy[0], 1); /* (#222: by offset, the copy's too) */
     st->miss_none += (unsigned)nnone;
-    if (cx == VCX_ENV) /* #217: a world split point with an end behind the eye, exempt too */
+    if (cx == VCX_ENV) { /* #217: a world split point with an end behind the eye, exempt too */
       for (i = 0; i < n; i++)
         if (noent[i] && !e[i] && !hk[i] && !hkc[i] && !npv[i]) {
           const uint32_t key = (uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16;
           Touch t = TOUCH0;
           if (hk_noproj(ptab, gen, key, &cost[VCC_LOOK_PROBES], &t))
-            nnp++;
+            npv[i] = 1, nnp++;
           cost[VCC_LOOK_LINES] += t.n;
         }
+      if (nnp)
+        /* #266: and the other vertices with no entry of a world polygon
+         * with such a corner: it has no depth there, so it is drawn affine
+         * at its keys, as the PS1 draws it, whatever the others find (Toasty's
+         * split point whose Sp record lies 2,641 px off its key) */
+        for (i = 0; i < n; i++)
+          if (noent[i] && !e[i] && !hk[i] && !npv[i]) {
+            nnp++;
+            st->np_poly++;
+          }
+    }
     /* #211: whose polygon; #216: a glow's or shadow's point with no projection, exempt */
     st->ne[cx] += (unsigned)(nnone - nnp);
     st->ne[VCX_NO_PROJ] += (unsigned)nnp;
