@@ -22,7 +22,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h"
       ],
-      "agent": "aa6c03cf1d320f4e7"
+      "agent": "aa6c03cf1d320f4e7",
+      "last_commit_at": "2026-11-25T06:36:13Z"
     }
   ],
   "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
@@ -462,3 +463,4 @@ continue.
 - 2026-11-25T05:21:33Z shared 5, vita 8: merged #257 (docs, cut fraction line; host test step skipped: docs only); fa_seed note added to #247; #231 running; Vita3K: none, hardware: none
 - 2026-11-25T05:53:11Z shared 5, vita 8: #231 tagging runs on head diag binaries (S, Si, S60, P in one container), no commit yet at ~40 min; Vita3K: none, hardware: none
 - 2026-11-25T06:24:13Z shared 5, vita 8: #231 testing a first fix (fix1 diag on S, Si, S60, Pf; edits in particles_hand.c, vcache.c, psx_vcache.h uncommitted), ~70 min in; Vita3K: none, hardware: none
+- 2026-11-25T06:55:13Z shared 5, vita 8: #231 WIP 6d200a3 (particle quads name their points by the projection that made them); checking fix1b on S, S60; Vita3K: none, hardware: none
