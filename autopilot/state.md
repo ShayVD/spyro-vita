@@ -456,3 +456,4 @@ continue.
 - 2026-11-25T03:03:24Z shared 5, vita 8: #230 building its FNV base binary (docker queue held by the arm64 session's PC build since 02:38), new vcache.c edits uncommitted, last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T03:34:23Z shared 5, vita 8: #230 running its per-polygon FNV compare (base vs fix2) on host routes, last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T04:05:25Z shared 5, vita 8: #230 flagged by stall check (last commit 01:53) but alive in its FNV compare (fnv-S60, clean tree); nudged, nothing stopped; Vita3K: none, hardware: none
+- 2026-11-25T04:39:20Z shared 5, vita 8: #230 Vita build and Vita3K routes done on fix2 (run folder fix2, perf reports for owner60/stone60/toasty60), FNV compare finishing (S, P); last commit 01:53; Vita3K: worker's runs
