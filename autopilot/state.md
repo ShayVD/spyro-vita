@@ -532,3 +532,4 @@ continue.
 - 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
 - 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
 - 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
+- 2026-11-25T15:30:00Z #260 reported done (host ctest never ran: queue timeouts); shots identical vs base-44e82e8 (checked); gate running with --timeout 10800; decision D255 (D253 #237, D254 PR #263); filed #264 (stale spyro-ps4 image)
