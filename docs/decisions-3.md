@@ -1952,6 +1952,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Fallback, not `:=`:** the shim sets `kh1fast` only when the settings file doesn't name a profile, since the kit lets the environment win over the file; `: "${ENCORE_COLIMA_PROFILE:=kh1fast}"` would override a machine whose file names another profile.
 - **Next free number:** D255 (D253 is the autopilot's #237 worker).
 
+## 2026-11-25 — phase 8: frames whose order log is full
+
+### D253. With the fix on, a frame whose order log is full keeps placing its later projections past the log, for the own points' names only (#237, 2026-11-25)
+- **Why:** after D244 and D251, host S and Si kept 6 EnvDraw missed vertices each, all in frame g6742, where `nlog` reached `VC_LOG` (8,192). Projections after that had no order place (q = -1), so no own point could name them: world corners (S 28, #226's) and particle quads (S 590, Si 1,214, D251's) counted in `own_nosrc`. #229's `VC_LOG` 16,384 experiment fixed them but changed 50 / 124 found-before polygons, because derive's order and resolve then saw the later projections.
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - An `Xlog` store per table (its own `log[8192]`, `lc[8192]`, `lfar[512]`; 84 KB) is malloc'd the first time that table's log fills. Later non-overflow projections take places `VC_LOG + n` there (`xlog_put`), with their answers in Xlog's own `lc`/`lfar` (`xlog_answer`), and are worked out at once as before. With both stores full or no memory, a projection counts in `nlost`.
+  - Only the names read it (`ord_n()`, `ord_w()`; `res_place` hands places >= VC_LOG to `xres_place`): `own_end`, `log_point`, `own_src`, `own_corner`, `own_self` (its moved-corner branch now needs `!nlost` instead of a log not full), `end_noproj`, `own_point`, `sp_point` and the walk's own entries.
+  - Unchanged: `log_index`, `derive_place` and its named list, `resolve` (still RW_FULL on such frames) and `fr_src` read the log alone, so every answer the log gave is the same.
+  - New counters `ord_x`, `ord_lost` on a `vcache order past the log:` line. Static table +24 bytes.
+  - Kept: D182, D205, D213, D218, D221, D223, D251.
+- **Measured (host, 2x, 16:9; base 8812a8a, fix e2f2c41):** missed S 6 → 0, Si 6 → 0; `own_nosrc` S 618 → 0, Si 1,214 → 0; projections past the log S 9,991, Si 19,896, none lost. P, Pi, Pf, Pfi, S60 and O60 unchanged at 0 missed. T keeps 2 EnvDraw: not log-full (world GT3s with one corner behind the eye, exempt, and one with an Sp record; #266).
+- **Checked** (`runtime/autopilot/runs/vita/issue-237-1/`): host FNV per polygon (D168) on 9 pairs, 0 found-before changed, 0 became affine, newly found S 4, Si 4; Vita build; Vita3K 8 routes, shots identical to `base-7724255` (checked by the coordinator; toasty60 aborted once inside Vita3K at 14 s, the rerun passed); Vita3K never fills the log, free RAM unchanged (`user 242688 KB`); counters the same apart from the timing-dependent ones; gate host ctest 33/33, native build, `noassets`.
+- **Host missed after this:** 0 on every route but T (2, #266).
+
 ## 2026-11-25 — the options menu's draw distance row
 
 ### D255. The options menu's draw distance row is DRAW DISTANCE with NORMAL and MAX (ADAPTIVE), on the Vita and the PS4 (#260, the owner's decision, 2026-11-25)
