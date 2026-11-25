@@ -25,6 +25,26 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "aa6c03cf1d320f4e7",
       "last_commit_at": "2026-11-25T06:36:13Z",
       "nudged_at": "2026-11-25T09:26:00Z"
+    },
+    {
+      "issue": 260,
+      "branch": "feat/260-options-menu-draw-distance-with-normal",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-260",
+      "pids": [],
+      "started_at": "2026-11-25T11:10:00Z",
+      "files": [
+        "src/platform/vita/picture.c",
+        "src/platform/vita/vita.h",
+        "src/platform/vita/main.c",
+        "src/platform/ps4/picture_ps4.c",
+        "src/platform/ps4/ps4.h",
+        "docs/presentation.md",
+        "docs/ps4-build.md",
+        "docs/vita-testing.md",
+        "README.md"
+      ],
+      "agent": "a68f8cfb2027b43fd",
+      "last_commit_at": "2026-11-25T11:10:00Z"
     }
   ],
   "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
@@ -229,10 +249,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
       "default": "keep the wobble fix on far mobys (no change)",
       "status": "open"
+    },
+    {
+      "issue": 260,
+      "question": "Draw distance option after D252 (2x held at 1x in heavy scenes)",
+      "default_taken": "owner 2026-11-25: keep it; the row is DRAW DISTANCE with NORMAL / MAX (ADAPTIVE)",
+      "switch": "draw_distance="
     }
   ],
   "attempts": {
-    "161": 1
+    "161": 1,
+    "260": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -493,3 +520,4 @@ continue.
 - 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
 - 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
 - 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
+- 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
