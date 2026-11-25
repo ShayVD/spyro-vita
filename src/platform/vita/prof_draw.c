@@ -26,7 +26,7 @@ static unsigned s_calls[D_COUNT];
 /* #207: each part's primitives, the bytes the primitive pointer moved on */
 static uint64_t s_bytes[D_COUNT];
 
-extern void *D_800757B0; /* the primitive buffer's next free byte */
+extern P32F(void *) D_800757B0; /* the primitive buffer's next free byte */
 
 typedef struct {
   uint64_t t;

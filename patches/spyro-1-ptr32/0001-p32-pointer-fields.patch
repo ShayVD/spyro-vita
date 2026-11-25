@@ -4,8 +4,8 @@
    int unk_0x5C[2];
 -  Moby *m_BalloonistMoby;
 -  Moby *m_BalloonMoby;
-+  Moby *P32 m_BalloonistMoby;
-+  Moby *P32 m_BalloonMoby;
++  P32F(Moby *) m_BalloonistMoby;
++  P32F(Moby *) m_BalloonMoby;
  } D_800777E8;
 --- a/include/buffers.h
 +++ b/include/buffers.h
@@ -21,46 +21,46 @@
 -  void *m_WorldOTStart;
 -  void *m_ParticleSpaceStart;
 -  void *m_SharedAnimations;
-+  void *P32 m_CopyBuf;
-+  void *P32 m_DiscCopyBuf;
-+  void *P32 m_ModelData;
-+  void *P32 m_LevelScene;
-+  void *P32 m_LowerPolyBuffer;
-+  void *P32 m_HigherPolyBuffer;
-+  void *P32 m_HudOTStart;
-+  void *P32 m_WorldOTStart;
-+  void *P32 m_ParticleSpaceStart;
-+  void *P32 m_SharedAnimations;
++  P32F(void *) m_CopyBuf;
++  P32F(void *) m_DiscCopyBuf;
++  P32F(void *) m_ModelData;
++  P32F(void *) m_LevelScene;
++  P32F(void *) m_LowerPolyBuffer;
++  P32F(void *) m_HigherPolyBuffer;
++  P32F(void *) m_HudOTStart;
++  P32F(void *) m_WorldOTStart;
++  P32F(void *) m_ParticleSpaceStart;
++  P32F(void *) m_SharedAnimations;
    int m_LevelSceneOffset; // Bwahaha
 @@ -18,5 +18,5 @@
  
 -extern void *D_80075780; // Something skybox related
-+extern void *P32 D_80075780; // Something skybox related
++extern P32F(void *) D_80075780; // Something skybox related
  
 -extern void *g_OverlaySpacePointer; // Pointer to overlay space
-+extern void *P32 g_OverlaySpacePointer; // Pointer to overlay space
++extern P32F(void *) g_OverlaySpacePointer; // Pointer to overlay space
  
 --- a/include/camera.h
 +++ b/include/camera.h
 @@ -52,5 +52,5 @@
    int unk_0xCC; // Flag: set to 1 when camera forced to destination
 -  Vector3D *m_Focus;
-+  Vector3D *P32 m_Focus;
++  P32F(Vector3D *) m_Focus;
    int m_FocusRotation;
 -  SphericalCoordsOffset *m_SphericalPreset;
-+  SphericalCoordsOffset *P32 m_SphericalPreset;
++  P32F(SphericalCoordsOffset *) m_SphericalPreset;
    int unk_0xDC;
 @@ -59,3 +59,3 @@
    int unk_0xE8; // Result of func_80033F08: whether azimuth changed
 -  LevelFlyInParameters *unk_0xEC;
-+  LevelFlyInParameters *P32 unk_0xEC;
++  P32F(LevelFlyInParameters *) unk_0xEC;
    int m_OnMovingPlatform;
 --- a/include/cd.h
 +++ b/include/cd.h
 @@ -17,3 +17,3 @@
    CdlLOC m_ReadLoc;
 -  void *m_OutBuf;
-+  void *P32 m_OutBuf;
++  P32F(void *) m_OutBuf;
  
 --- a/include/cutscene.h
 +++ b/include/cutscene.h
@@ -68,59 +68,59 @@
    int m_MobyCount;
 -  CutsceneCameraData *m_CameraData;
 -  CutsceneMobyData *m_MobyData[1]; // Variable length array, size m_MobyCount
-+  CutsceneCameraData *P32 m_CameraData;
-+  CutsceneMobyData *P32 m_MobyData[1]; // Variable length array, size m_MobyCount
++  P32F(CutsceneCameraData *) m_CameraData;
++  P32F(CutsceneMobyData *) m_MobyData[1]; // Variable length array, size m_MobyCount
  } CutsceneLayout;
 @@ -31,3 +31,3 @@
  /// for camera and mobys. Loaded from level data in LoadCutscene().
 -extern CutsceneLayout *g_CutsceneLayout;
-+extern CutsceneLayout *P32 g_CutsceneLayout;
++extern P32F(CutsceneLayout *) g_CutsceneLayout;
  
 --- a/include/cyclorama.h
 +++ b/include/cyclorama.h
 @@ -10,5 +10,5 @@
    int m_SectorCount;
 -  void *m_Sectors; // TODO: Type
-+  void *P32 m_Sectors; // TODO: Type
++  P32F(void *) m_Sectors; // TODO: Type
    int m_OcclusionGroupsCount;
 -  void *m_OcclusionGroups; // TODO: Type
-+  void *P32 m_OcclusionGroups; // TODO: Type
++  P32F(void *) m_OcclusionGroups; // TODO: Type
    Color m_BackgroundColor;
 @@ -25,3 +25,3 @@
    int copySectorCount;
 -  void *copySectors;
-+  void *P32 copySectors;
++  P32F(void *) copySectors;
    int zero;
 @@ -32,3 +32,3 @@
    uint m_SectorCount;
 -  void *m_Sectors[1];
-+  void *P32 m_Sectors[1];
++  P32F(void *) m_Sectors[1];
  } PortalDataSky;
 @@ -36,3 +36,3 @@
  typedef struct {
 -  PortalDataSky *m_Skybox; // This one is difficult to type,
-+  PortalDataSky *P32 m_Skybox; // This one is difficult to type,
++  P32F(PortalDataSky *) m_Skybox; // This one is difficult to type,
                             // because it refers to the last (missing) point
 @@ -50,3 +50,3 @@
  
 -extern Portal *g_Portals[6]; // Pointers for each possible portal
-+extern Portal *P32 g_Portals[6]; // Pointers for each possible portal
++extern P32F(Portal *) g_Portals[6]; // Pointers for each possible portal
  extern int g_PortalCount;    // Portal count
 --- a/include/dragon.h
 +++ b/include/dragon.h
 @@ -26,3 +26,3 @@
    int m_Fade;     //
 -  void *unk_0x48; // Camera data
-+  void *P32 unk_0x48; // Camera data
++  P32F(void *) unk_0x48; // Camera data
    int unk_0x4C;   // Camera length
 @@ -47,5 +47,5 @@
    // The Moby pointers
 -  Moby *m_CutsceneSpyro;     // Cutscene dragon
 -  Moby *m_CutsceneDragon;    // Cutscene Spyro
 -  Moby *m_RescuedDragonMoby; // The dragon Moby being rescued
-+  Moby *P32 m_CutsceneSpyro;     // Cutscene dragon
-+  Moby *P32 m_CutsceneDragon;    // Cutscene Spyro
-+  Moby *P32 m_RescuedDragonMoby; // The dragon Moby being rescued
++  P32F(Moby *) m_CutsceneSpyro;     // Cutscene dragon
++  P32F(Moby *) m_CutsceneDragon;    // Cutscene Spyro
++  P32F(Moby *) m_RescuedDragonMoby; // The dragon Moby being rescued
    int padding;
 --- a/include/environment.h
 +++ b/include/environment.h
@@ -131,277 +131,277 @@
 -  void *m_Triangles;
 -  u_char *m_TriangleOcclusionAssignment;
 -  u_char *m_Flags;
-+  u_short *P32 m_BlockTree;
-+  u_short *P32 m_Blocks;
-+  void *P32 m_Triangles;
-+  u_char *P32 m_TriangleOcclusionAssignment;
-+  u_char *P32 m_Flags;
++  P32F(u_short *) m_BlockTree;
++  P32F(u_short *) m_Blocks;
++  P32F(void *) m_Triangles;
++  P32F(u_char *) m_TriangleOcclusionAssignment;
++  P32F(u_char *) m_Flags;
  } TerrainCollision;
 @@ -28,3 +28,3 @@
    int m_TextureAnimationCount;
 -  void *m_TextureAnimations;
-+  void *P32 m_TextureAnimations;
++  P32F(void *) m_TextureAnimations;
  
 @@ -33,3 +33,3 @@
    int m_ScrollingTextureCount;
 -  void *m_ScrollingTextures;
-+  void *P32 m_ScrollingTextures;
++  P32F(void *) m_ScrollingTextures;
  
 @@ -38,9 +38,9 @@
    int m_LowPolyAnimationCount;
 -  void *m_LowPolyAnimations;
-+  void *P32 m_LowPolyAnimations;
++  P32F(void *) m_LowPolyAnimations;
    int m_LowColorAnimationCount;
 -  void *m_LowColorAnimations;
-+  void *P32 m_LowColorAnimations;
++  P32F(void *) m_LowColorAnimations;
    int m_HighPolyAnimationCount;
 -  void *m_HighPolyAnimations;
-+  void *P32 m_HighPolyAnimations;
++  P32F(void *) m_HighPolyAnimations;
    int m_HighColorAnimationCount;
 -  void *m_HighColorAnimations;
-+  void *P32 m_HighColorAnimations;
++  P32F(void *) m_HighColorAnimations;
  
 @@ -48,5 +48,5 @@
    int section7Count;
 -  void *section7;
-+  void *P32 section7;
++  P32F(void *) section7;
    int section8Count;
 -  void *section8;
-+  void *P32 section8;
++  P32F(void *) section8;
  
 @@ -54,3 +54,3 @@
    int m_CollisionAnimationCount;
 -  void *m_CollisionAnimations;
-+  void *P32 m_CollisionAnimations;
++  P32F(void *) m_CollisionAnimations;
  } EnvironmentAnimations;
 @@ -60,10 +60,10 @@
  typedef struct {
 -  void *m_SectorPointer; // TODO: Type
-+  void *P32 m_SectorPointer; // TODO: Type
++  P32F(void *) m_SectorPointer; // TODO: Type
    int m_SectorCount;
 -  void *m_OcclusionGroups; // TODO: Type
-+  void *P32 m_OcclusionGroups; // TODO: Type
++  P32F(void *) m_OcclusionGroups; // TODO: Type
    int m_OcclusionGroupCount;
 -  SpecialSurface **m_SurfaceData;
-+  SpecialSurface *P32 *P32 m_SurfaceData;
++  P32F(P32F(SpecialSurface *) *) m_SurfaceData;
    int m_SurfaceCount;
 -  void *m_LQTexturePointer; // TODO: Type
 -  void *m_HQTexturePointer; // TODO: Type
-+  void *P32 m_LQTexturePointer; // TODO: Type
-+  void *P32 m_HQTexturePointer; // TODO: Type
++  P32F(void *) m_LQTexturePointer; // TODO: Type
++  P32F(void *) m_HQTexturePointer; // TODO: Type
    int m_TextureCount;
 @@ -71,3 +71,3 @@
    int m_CullingDistance;
 -  TerrainCollision *m_TerrainCollision;
-+  TerrainCollision *P32 m_TerrainCollision;
++  P32F(TerrainCollision *) m_TerrainCollision;
  } Environment;
 --- a/include/fairy.h
 +++ b/include/fairy.h
 @@ -98,3 +98,3 @@
    /** @brief Pointer to the fairy moby that triggered the cutscene */
 -  Moby *m_CutsceneFairy;
-+  Moby *P32 m_CutsceneFairy;
++  P32F(Moby *) m_CutsceneFairy;
  } g_FairyCutscene;
 --- a/include/gamepad.h
 +++ b/include/gamepad.h
 @@ -95,3 +95,3 @@
  extern Gamepad g_PadBackup;  // Backup gamepad state for cutscenes/portals
 -extern Gamepad *g_ActivePad; // Active input pointer, selects a frame of
-+extern Gamepad *P32 g_ActivePad; // Active input pointer, selects a frame of
++extern P32F(Gamepad *) g_ActivePad; // Active input pointer, selects a frame of
                               // g_Pad.m_BufferedInputs[] for input consumers
 @@ -114,3 +114,3 @@
  extern int D_80075784; // Extra VSync for DEMO mode
 -extern int *g_DemoDataPtr; // Pointer to the current demo input
-+extern int *P32 g_DemoDataPtr; // Pointer to the current demo input
++extern P32F(int *) g_DemoDataPtr; // Pointer to the current demo input
  
 --- a/include/graphics.h
 +++ b/include/graphics.h
 @@ -19,6 +19,6 @@
    // Pointer to the
 -  void *m_PolyBuf;
-+  void *P32 m_PolyBuf;
++  P32F(void *) m_PolyBuf;
  
 -  void *m_WorldOT;
 -  void *m_HudOT;
-+  void *P32 m_WorldOT;
-+  void *P32 m_HudOT;
++  P32F(void *) m_WorldOT;
++  P32F(void *) m_HudOT;
  
 @@ -30,3 +30,3 @@
  
 -extern DB *g_CurDB; // Current DB
-+extern DB *P32 g_CurDB; // Current DB
++extern P32F(DB *) g_CurDB; // Current DB
  
 @@ -34,8 +34,8 @@
  
 -extern void *D_800757B0; // Pointer to poly buffer
 -extern void *D_800756FC; // End of poly buffer
-+extern void *P32 D_800757B0; // Pointer to poly buffer
-+extern void *P32 D_800756FC; // End of poly buffer
++extern P32F(void *) D_800757B0; // Pointer to poly buffer
++extern P32F(void *) D_800756FC; // End of poly buffer
  
  // ????
 -extern void *g_HudOT;   // HUD OT
 -extern void *g_WorldOT; // World OT
-+extern void *P32 g_HudOT;   // HUD OT
-+extern void *P32 g_WorldOT; // World OT
++extern P32F(void *) g_HudOT;   // HUD OT
++extern P32F(void *) g_WorldOT; // World OT
  
 @@ -63,3 +63,3 @@
  extern int g_TracerPointCount[4];
 -extern TracerPoint *g_TracerLists[4];
-+extern TracerPoint *P32 g_TracerLists[4];
++extern P32F(TracerPoint *) g_TracerLists[4];
  
 @@ -67,4 +67,4 @@
    int m_VertexCount;
 -  Vector2D *m_Vertices;
 -  Vector3D *m_MobyPos;
-+  Vector2D *P32 m_Vertices;
-+  Vector3D *P32 m_MobyPos;
++  P32F(Vector2D *) m_Vertices;
++  P32F(Vector3D *) m_MobyPos;
    Color m_GlowColor;
 --- a/include/loaders.h
 +++ b/include/loaders.h
 @@ -41,3 +41,3 @@
  extern int g_LevelTransTicks;         // Ticks in level transition D_800756AC
 -extern TransGem *g_LevelTransGems;    // Up to 64 gems D_8007571C
-+extern TransGem *P32 g_LevelTransGems;    // Up to 64 gems D_8007571C
++extern P32F(TransGem *) g_LevelTransGems;    // Up to 64 gems D_8007571C
  extern int g_LevelTransChestDuration; // Duration for initial chest popup
 --- a/include/moby.h
 +++ b/include/moby.h
 @@ -51,9 +51,9 @@
    /// @brief Specifies the properties of the moby, which is class specific
 -  void *m_Props;
-+  void *P32 m_Props;
++  P32F(void *) m_Props;
  
    /// @brief The next moby in the collision chain that this Moby is a part of
 -  struct Moby *m_CollisionChainNext;
-+  struct Moby *P32 m_CollisionChainNext;
++  P32F(struct Moby *) m_CollisionChainNext;
  
    /// @brief This Moby's active collision group (Which is part of it's model)
 -  void *m_CollisionGroup;
-+  void *P32 m_CollisionGroup;
++  P32F(void *) m_CollisionGroup;
  
 @@ -222,8 +222,8 @@
  
 -  void *m_AnimationVertices; // Used when m_IsSpyroAnimation is set, otherwise
-+  void *P32 m_AnimationVertices; // Used when m_IsSpyroAnimation is set, otherwise
++  P32F(void *) m_AnimationVertices; // Used when m_IsSpyroAnimation is set, otherwise
                               // matches m_faces
 -  void *m_Faces;
 -  void *m_Colors;
 -  void *m_LpFaces;
 -  void *m_LpColors;
-+  void *P32 m_Faces;
-+  void *P32 m_Colors;
-+  void *P32 m_LpFaces;
-+  void *P32 m_LpColors;
++  P32F(void *) m_Faces;
++  P32F(void *) m_Colors;
++  P32F(void *) m_LpFaces;
++  P32F(void *) m_LpColors;
    AnimationFrame m_Frames[1]; // To the size of frameCount
 @@ -234,6 +234,6 @@
    u_char m_Sounds[16];
 -  void *m_CollisionModels[8];
 -  void *m_Data; // offset from this to the data, used to offset pointers inside
-+  void *P32 m_CollisionModels[8];
-+  void *P32 m_Data; // offset from this to the data, used to offset pointers inside
++  P32F(void *) m_CollisionModels[8];
++  P32F(void *) m_Data; // offset from this to the data, used to offset pointers inside
                  // animations
 -  AnimationHeader *m_Animations[1];
-+  AnimationHeader *P32 m_Animations[1];
++  P32F(AnimationHeader *) m_Animations[1];
  } Model;
 @@ -242,3 +242,3 @@
  
 -extern Model *g_Models[MODEL_COUNT];
-+extern Model *P32 g_Models[MODEL_COUNT];
++extern P32F(Model *) g_Models[MODEL_COUNT];
  
 @@ -248,5 +248,5 @@
    int m_NumAnimations; // < 0 == SimpleModel (always -1 in reality)
 -  void *m_Verts;
 -  void *m_Colors;
 -  void *m_Faces;
-+  void *P32 m_Verts;
-+  void *P32 m_Colors;
-+  void *P32 m_Faces;
++  P32F(void *) m_Verts;
++  P32F(void *) m_Colors;
++  P32F(void *) m_Faces;
  } SimpleModel;
 @@ -488,3 +488,3 @@
  typedef struct {
 -  Moby *m_Parent;
-+  Moby *P32 m_Parent;
++  P32F(Moby *) m_Parent;
    short m_Len;
 @@ -502,3 +502,3 @@
    Vector3D m_RespawnPosition;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -560,3 +560,3 @@
    int m_0x34;
 -  PathData *m_0x38;
-+  PathData *P32 m_0x38;
++  P32F(PathData *) m_0x38;
    int m_0x3c;
 @@ -567,3 +567,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -579,3 +579,3 @@
  typedef struct {
 -  Moby *m_Parent;
-+  Moby *P32 m_Parent;
++  P32F(Moby *) m_Parent;
  } Moby32Props;
 @@ -583,4 +583,4 @@
  typedef struct {
 -  PathData *m_0x00;
 -  Moby *m_0x04;
-+  PathData *P32 m_0x00;
-+  Moby *P32 m_0x04;
++  P32F(PathData *) m_0x00;
++  P32F(Moby *) m_0x04;
    int m_0x08;
 @@ -605,3 +605,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    Vector3D16 m_0x04;
 @@ -621,3 +621,3 @@
    int m_0x18;
 -  PathData *m_0x1c;
-+  PathData *P32 m_0x1c;
++  P32F(PathData *) m_0x1c;
    int m_0x20;
 @@ -633,3 +633,3 @@
    Vector3D m_RespawnPosition;
 -  PathData *m_Path;
-+  PathData *P32 m_Path;
++  P32F(PathData *) m_Path;
    int m_IsLoopPath;
 @@ -638,3 +638,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    short m_0x04;
 @@ -643,3 +643,3 @@
    short m_0x0a;
 -  Moby *m_0x0c;
-+  Moby *P32 m_0x0c;
++  P32F(Moby *) m_0x0c;
    u_char m_0x10;
 @@ -653,3 +653,3 @@
    int m_0x00;
 -  Moby *m_0x04;
-+  Moby *P32 m_0x04;
++  P32F(Moby *) m_0x04;
    int m_0x08;
 @@ -687,3 +687,3 @@
    short m_0x0a;
 -  Moby *m_0x0c;
-+  Moby *P32 m_0x0c;
++  P32F(Moby *) m_0x0c;
  } Moby47Props;
 @@ -692,3 +692,3 @@
    int m_0x00;
 -  PathData *m_0x04;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x04;
    int m_0x08;
 @@ -716,3 +716,3 @@
    int m_0x0c;
 -  Moby **m_0x10;
-+  Moby *P32 *P32 m_0x10;
++  P32F(P32F(Moby *) *) m_0x10;
    int m_0x14;
 @@ -725,3 +725,3 @@
    int m_0x0c;
 -  Moby **m_0x10;
-+  Moby *P32 *P32 m_0x10;
++  P32F(P32F(Moby *) *) m_0x10;
    int m_0x14;
 @@ -787,3 +787,3 @@
    int m_0x18;
 -  PathData *m_0x1c;
-+  PathData *P32 m_0x1c;
++  P32F(PathData *) m_0x1c;
    int m_0x20;
 @@ -798,8 +798,8 @@
    int m_0x08[2];
@@ -411,52 +411,52 @@
 -  int m_0x1c;
 -  int m_0x20;
 -  Moby *m_0x24[4];
-+  int *P32 m_0x10;
++  P32F(int *) m_0x10;
 +  int m_0x14;
 +  int m_0x18;
 +  int m_0x1c;
 +  int m_0x20;
-+  Moby *P32 m_0x24[4];
++  P32F(Moby *) m_0x24[4];
  } Moby65Props;
 @@ -841,3 +841,3 @@
    int m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x08;
    Vector3D m_0x0c;
 @@ -876,3 +876,3 @@
    int m_0x2c;
 -  PathData *m_0x30;
-+  PathData *P32 m_0x30;
++  P32F(PathData *) m_0x30;
    int m_0x34;
 @@ -897,3 +897,3 @@
    int m_0x18[3];
 -  PathData *m_0x24;
-+  PathData *P32 m_0x24;
++  P32F(PathData *) m_0x24;
    int m_0x28;
 @@ -904,3 +904,3 @@
    int m_0x3c;
 -  Moby *m_0x40;
-+  Moby *P32 m_0x40;
++  P32F(Moby *) m_0x40;
    int m_0x44;
 @@ -916,3 +916,3 @@
    int m_0x88;
 -  int *m_0x8c;
-+  int *P32 m_0x8c;
++  P32F(int *) m_0x8c;
    int m_0x90;
 @@ -935,3 +935,3 @@
    int m_0x34;
 -  PathData *m_0x38;
-+  PathData *P32 m_0x38;
++  P32F(PathData *) m_0x38;
    Vector3D m_0x3c;
 @@ -945,3 +945,3 @@
    int m_0x84;
 -  int *m_0x88;
-+  int *P32 m_0x88;
++  P32F(int *) m_0x88;
    int m_0x8c;
 @@ -953,3 +953,3 @@
    short m_0x02;
 -  TracerPoint *m_0x04;
-+  TracerPoint *P32 m_0x04;
++  P32F(TracerPoint *) m_0x04;
    short m_0x08;
 @@ -965,7 +965,7 @@
    int m_0x00;
@@ -465,158 +465,158 @@
 -  PathData *m_0x0c;
 -  PathData *m_0x10;
 -  PathData *m_0x14;
-+  PathData *P32 m_0x04;
-+  PathData *P32 m_0x08;
-+  PathData *P32 m_0x0c;
-+  PathData *P32 m_0x10;
-+  PathData *P32 m_0x14;
++  P32F(PathData *) m_0x04;
++  P32F(PathData *) m_0x08;
++  P32F(PathData *) m_0x0c;
++  P32F(PathData *) m_0x10;
++  P32F(PathData *) m_0x14;
    Vector3D m_0x18;
 @@ -996,3 +996,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1015,4 +1015,4 @@
    Vector3D16 m_SpyroOffset;
 -  Glow *m_Glow;
 -  Moby *m_Target;
-+  Glow *P32 m_Glow;
-+  Moby *P32 m_Target;
++  P32F(Glow *) m_Glow;
++  P32F(Moby *) m_Target;
  } MobySparxProps;
 @@ -1030,3 +1030,3 @@
    int m_0x2c;
 -  int *m_0x30;
-+  int *P32 m_0x30;
++  P32F(int *) m_0x30;
  } Moby121Props;
 @@ -1036,3 +1036,3 @@
    int m_0x04;
 -  Glow *m_0x08;
-+  Glow *P32 m_0x08;
++  P32F(Glow *) m_0x08;
    Vector3D m_0x0c;
 @@ -1042,3 +1042,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
  } Moby124Props;
 @@ -1048,3 +1048,3 @@
    int m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x08;
    int m_0x0c;
 @@ -1081,3 +1081,3 @@
    int m_0x2c;
 -  PathData *m_0x30;
-+  PathData *P32 m_0x30;
++  P32F(PathData *) m_0x30;
    int m_0x34;
 @@ -1108,3 +1108,3 @@
    int m_0x30;
 -  PathData *m_0x34;
-+  PathData *P32 m_0x34;
++  P32F(PathData *) m_0x34;
    int m_0x38;
 @@ -1131,3 +1131,3 @@
  typedef struct {
 -  Moby *m_0x00[4];
-+  Moby *P32 m_0x00[4];
++  P32F(Moby *) m_0x00[4];
    int m_0x10;
 @@ -1142,3 +1142,3 @@
    int m_0x14;
 -  PathData *m_0x18;
-+  PathData *P32 m_0x18;
++  P32F(PathData *) m_0x18;
    int m_0x1c;
 @@ -1152,3 +1152,3 @@
    int m_0x3c;
 -  int *m_0x40;
-+  int *P32 m_0x40;
++  P32F(int *) m_0x40;
    int m_0x44;
 @@ -1170,3 +1170,3 @@
    int m_0x24;
 -  PathData *m_0x28;
-+  PathData *P32 m_0x28;
++  P32F(PathData *) m_0x28;
    int m_0x2c;
 @@ -1190,3 +1190,3 @@
    int m_0x18;
 -  PathData *m_0x1c;
-+  PathData *P32 m_0x1c;
++  P32F(PathData *) m_0x1c;
    int m_0x20;
 @@ -1205,3 +1205,3 @@
    int m_0x00;
 -  PathData *m_0x04;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x04;
    int m_0x08;
 @@ -1228,7 +1228,7 @@
    Vector3D m_0x10[2];
 -  PathData *m_0x28;
 -  PathData *m_0x2c;
-+  PathData *P32 m_0x28;
-+  PathData *P32 m_0x2c;
++  P32F(PathData *) m_0x28;
++  P32F(PathData *) m_0x2c;
    int m_0x30;
    int m_0x34;
 -  Moby *m_0x38;
-+  Moby *P32 m_0x38;
++  P32F(Moby *) m_0x38;
    int m_0x3c;
 @@ -1240,3 +1240,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    char m_0x04[8];
 @@ -1249,5 +1249,5 @@
    int m_0x38;
 -  Moby *m_0x3c;
-+  Moby *P32 m_0x3c;
++  P32F(Moby *) m_0x3c;
    int m_0x40;
 -  Moby *m_0x44;
-+  Moby *P32 m_0x44;
++  P32F(Moby *) m_0x44;
    int m_0x48;
 @@ -1267,3 +1267,3 @@
    int m_0x04;
 -  Moby *m_0x08;
-+  Moby *P32 m_0x08;
++  P32F(Moby *) m_0x08;
    int m_0x0c;
 @@ -1286,3 +1286,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1311,5 +1311,5 @@
  typedef struct {
 -  PathData *m_0x00;
 -  PathData *m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x00;
-+  PathData *P32 m_0x04;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x00;
++  P32F(PathData *) m_0x04;
++  P32F(PathData *) m_0x08;
    int m_0x0c;
 @@ -1338,3 +1338,3 @@
    int m_0xc4;
 -  PathData *m_0xc8;
-+  PathData *P32 m_0xc8;
++  P32F(PathData *) m_0xc8;
    int m_0xcc;
 @@ -1348,4 +1348,4 @@
  typedef struct {
 -  PathData *m_0x00;
 -  PathData *m_0x04[4];
-+  PathData *P32 m_0x00;
-+  PathData *P32 m_0x04[4];
++  P32F(PathData *) m_0x00;
++  P32F(PathData *) m_0x04[4];
    int m_0x14;
 @@ -1375,3 +1375,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1390,3 +1390,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1398,3 +1398,3 @@
  typedef struct {
 -  TracerPoint *m_0x00;
-+  TracerPoint *P32 m_0x00;
++  P32F(TracerPoint *) m_0x00;
    short m_0x04;
 @@ -1440,3 +1440,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1451,6 +1451,6 @@
    int m_0x30;
@@ -624,146 +624,146 @@
 -  PathData *m_0x38;
 -  PathData *m_0x3c;
 -  PathData *m_0x40;
-+  PathData *P32 m_0x34;
-+  PathData *P32 m_0x38;
-+  PathData *P32 m_0x3c;
-+  PathData *P32 m_0x40;
++  P32F(PathData *) m_0x34;
++  P32F(PathData *) m_0x38;
++  P32F(PathData *) m_0x3c;
++  P32F(PathData *) m_0x40;
    int m_0x44;
 @@ -1459,3 +1459,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1506,3 +1506,3 @@
    Vector3D m_0x00;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -1572,3 +1572,3 @@
    int m_0x00;
 -  Moby *m_0x04;
-+  Moby *P32 m_0x04;
++  P32F(Moby *) m_0x04;
    int m_0x08;
 @@ -1591,3 +1591,3 @@
    short m_0x02;
 -  Moby *m_0x04;
-+  Moby *P32 m_0x04;
++  P32F(Moby *) m_0x04;
    int m_0x08;
 @@ -1601,3 +1601,3 @@
    int m_0x08;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -1608,3 +1608,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04[7];
 @@ -1631,3 +1631,3 @@
    short m_0x02;
 -  Moby *m_0x04;
-+  Moby *P32 m_0x04;
++  P32F(Moby *) m_0x04;
    int m_0x08;
 @@ -1657,3 +1657,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1682,3 +1682,3 @@
    MobyWanderState m_Wander;
 -  PathData *m_0x20;
-+  PathData *P32 m_0x20;
++  P32F(PathData *) m_0x20;
    int m_0x24;
 @@ -1710,3 +1710,3 @@
    int m_0x1c;
 -  PathData *m_0x20;
-+  PathData *P32 m_0x20;
++  P32F(PathData *) m_0x20;
    int m_0x24;
 @@ -1737,3 +1737,3 @@
    int m_0x08;
 -  Moby *m_0x0c;
-+  Moby *P32 m_0x0c;
++  P32F(Moby *) m_0x0c;
    int m_0x10;
 @@ -1759,4 +1759,4 @@
  typedef struct {
 -  PathData *m_0x00;
 -  PathData *m_0x04;
-+  PathData *P32 m_0x00;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x00;
++  P32F(PathData *) m_0x04;
    int m_0x08;
 @@ -1800,3 +1800,3 @@
    int m_0x2c;
 -  int *m_0x30;
-+  int *P32 m_0x30;
++  P32F(int *) m_0x30;
    int m_0x34;
 @@ -1826,3 +1826,3 @@
    int m_0x24;
 -  int *m_0x28;
-+  int *P32 m_0x28;
++  P32F(int *) m_0x28;
    int m_0x2c;
 @@ -1871,3 +1871,3 @@
    Vector3D m_0x00;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -1887,3 +1887,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1912,3 +1912,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    Vector3D m_0x04;
 @@ -1925,3 +1925,3 @@
    int m_0x38;
 -  int *m_0x3c;
-+  int *P32 m_0x3c;
++  P32F(int *) m_0x3c;
    int m_0x40;
 @@ -1932,3 +1932,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -1958,3 +1958,3 @@
    int m_0x08;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -1970,3 +1970,3 @@
    int m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x08;
    int m_0x0c;
 @@ -1995,4 +1995,4 @@
    int m_0x00;
 -  PathData *m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x04;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x04;
++  P32F(PathData *) m_0x08;
    int m_0x0c;
 @@ -2015,3 +2015,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    int m_0x04;
 @@ -2058,3 +2058,3 @@
    int m_0x04;
 -  void *m_0x08;
-+  void *P32 m_0x08;
++  P32F(void *) m_0x08;
    int m_0x0c;
 @@ -2065,3 +2065,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -2073,4 +2073,4 @@
  typedef struct {
 -  PathData *m_0x00;
 -  Moby *m_0x04;
-+  PathData *P32 m_0x00;
-+  Moby *P32 m_0x04;
++  P32F(PathData *) m_0x00;
++  P32F(Moby *) m_0x04;
    Vector3D m_0x08;
 @@ -2080,6 +2080,6 @@
  typedef struct {
@@ -771,117 +771,117 @@
 -  PathData *m_0x04;
 -  PathData *m_0x08;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x00;
-+  PathData *P32 m_0x04;
-+  PathData *P32 m_0x08;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x00;
++  P32F(PathData *) m_0x04;
++  P32F(PathData *) m_0x08;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -2094,3 +2094,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -2116,4 +2116,4 @@
  typedef struct {
 -  PathData *m_0x00;
 -  PathData *m_0x04;
-+  PathData *P32 m_0x00;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x00;
++  P32F(PathData *) m_0x04;
    int m_0x08[2];
 @@ -2130,3 +2130,3 @@
  typedef struct {
 -  Moby *m_Thrower;
-+  Moby *P32 m_Thrower;
++  P32F(Moby *) m_Thrower;
    int m_IsThrown;
 @@ -2152,3 +2152,3 @@
    int m_0x08;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -2170,3 +2170,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    int m_0x04;
 @@ -2184,3 +2184,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    int m_0x04;
 @@ -2196,3 +2196,3 @@
    int m_0x3c;
 -  int *m_0x40;
-+  int *P32 m_0x40;
++  P32F(int *) m_0x40;
    int m_0x44;
 @@ -2209,3 +2209,3 @@
    int m_0x04;
 -  PathData *m_0x08;
-+  PathData *P32 m_0x08;
++  P32F(PathData *) m_0x08;
    int m_0x0c;
 @@ -2218,3 +2218,3 @@
    Plane m_CollectionPlane;
 -  Moby *m_TimeRewardMoby;
-+  Moby *P32 m_TimeRewardMoby;
++  P32F(Moby *) m_TimeRewardMoby;
    int m_TimeRewardMobyIndex;
 @@ -2224,3 +2224,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    int m_0x04;
 @@ -2258,3 +2258,3 @@
    Plane m_CollectionPlane;
 -  Moby *m_0x10;
-+  Moby *P32 m_0x10;
++  P32F(Moby *) m_0x10;
    int m_0x14;
 @@ -2265,9 +2265,9 @@
    int m_0x00;
 -  Moby *m_0x04[8];
 -  Moby *m_0x24[8];
 -  Moby *m_0x44[8];
-+  Moby *P32 m_0x04[8];
-+  Moby *P32 m_0x24[8];
-+  Moby *P32 m_0x44[8];
++  P32F(Moby *) m_0x04[8];
++  P32F(Moby *) m_0x24[8];
++  P32F(Moby *) m_0x44[8];
    union {
 -    Moby *m_ResultMobys[8];
-+    Moby *P32 m_ResultMobys[8];
++    P32F(Moby *) m_ResultMobys[8];
      struct {
 -      Moby *m_CategoryMobys[4];
-+      Moby *P32 m_CategoryMobys[4];
++      P32F(Moby *) m_CategoryMobys[4];
        int m_ObjectiveClasses[4];
 @@ -2295,5 +2295,5 @@
    int m_0x30;
 -  PathData *m_0x34;
-+  PathData *P32 m_0x34;
++  P32F(PathData *) m_0x34;
    int m_0x38;
 -  PathData *m_0x3c;
-+  PathData *P32 m_0x3c;
++  P32F(PathData *) m_0x3c;
    Vector3D m_0x40[2][2];
 @@ -2310,4 +2310,4 @@
    int m_0x1c;
 -  PathData *m_0x20;
 -  PathData *m_0x24;
-+  PathData *P32 m_0x20;
-+  PathData *P32 m_0x24;
++  P32F(PathData *) m_0x20;
++  P32F(PathData *) m_0x24;
    int m_0x28[3];
 @@ -2363,3 +2363,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    int m_0x04;
 @@ -2382,3 +2382,3 @@
  typedef struct {
 -  PathData *m_0x00;
-+  PathData *P32 m_0x00;
++  P32F(PathData *) m_0x00;
    short m_0x04;
 @@ -2402,3 +2402,3 @@
  typedef struct {
 -  PathData *m_Path;
-+  PathData *P32 m_Path;
++  P32F(PathData *) m_Path;
    Vector3D m_0x04;
 @@ -2421,3 +2421,3 @@
    int m_0x10;
 -  PathData *m_0x14;
-+  PathData *P32 m_0x14;
++  P32F(PathData *) m_0x14;
    int m_0x18;
 @@ -2427,10 +2427,10 @@
    int m_0x00;
@@ -893,44 +893,44 @@
 -  int m_0x18;
 -  int m_0x1c;
 -  Moby *m_0x20;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x04;
 +  int m_0x08;
 +  int m_0x0c;
 +  int m_0x10;
 +  int m_0x14;
 +  int m_0x18;
 +  int m_0x1c;
-+  Moby *P32 m_0x20;
++  P32F(Moby *) m_0x20;
    int m_0x24;
 @@ -2445,3 +2445,3 @@
  typedef struct {
 -  PathData *m_Path;
-+  PathData *P32 m_Path;
++  P32F(PathData *) m_Path;
    int m_0x04;
 @@ -2452,3 +2452,3 @@
  typedef struct {
 -  PathData *m_Path;
-+  PathData *P32 m_Path;
++  P32F(PathData *) m_Path;
    int m_0x04;
 @@ -2475,3 +2475,3 @@
  typedef struct {
 -  Moby *m_Target;
-+  Moby *P32 m_Target;
++  P32F(Moby *) m_Target;
  } Moby414Props;
 @@ -2488,3 +2488,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    int m_0x04;
 @@ -2498,3 +2498,3 @@
    Vector3D m_RespawnPosition;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -2524,3 +2524,3 @@
    Vector3D m_RespawnPosition;
 -  PathData *m_0x0c;
-+  PathData *P32 m_0x0c;
++  P32F(PathData *) m_0x0c;
    int m_0x10;
 @@ -2539,14 +2539,14 @@
    int m_0x00;
@@ -946,33 +946,33 @@
 -  int m_0x28;
 -  Moby *m_0x2c[3];
 -  Moby *m_0x38;
-+  PathData *P32 m_0x04;
++  P32F(PathData *) m_0x04;
 +  int m_0x08;
 +  int m_0x0c;
 +  int m_0x10;
-+  Moby *P32 m_0x14;
++  P32F(Moby *) m_0x14;
 +  int m_0x18;
 +  int m_0x1c;
 +  int m_0x20;
 +  int m_0x24;
 +  int m_0x28;
-+  Moby *P32 m_0x2c[3];
-+  Moby *P32 m_0x38;
++  P32F(Moby *) m_0x2c[3];
++  P32F(Moby *) m_0x38;
  } Moby467Props;
 @@ -2563,3 +2563,3 @@
    int m_0x28;
 -  int *m_0x2c;
-+  int *P32 m_0x2c;
++  P32F(int *) m_0x2c;
    int m_0x30;
 @@ -2570,3 +2570,3 @@
  typedef struct {
 -  Moby *m_0x00;
-+  Moby *P32 m_0x00;
++  P32F(Moby *) m_0x00;
    Vector3D m_0x04;
 @@ -2579,12 +2579,12 @@
    int m_0x10;
 -  PathData *m_0x14;
-+  PathData *P32 m_0x14;
++  P32F(PathData *) m_0x14;
    Vector3D m_0x18;
    Vector3D m_0x24;
 -  PathData *m_0x30;
@@ -980,112 +980,112 @@
 -  PathData *m_0x38;
 -  PathData *m_0x3c;
 -  PathData *m_0x40;
-+  PathData *P32 m_0x30;
-+  PathData *P32 m_0x34;
-+  PathData *P32 m_0x38;
-+  PathData *P32 m_0x3c;
-+  PathData *P32 m_0x40;
++  P32F(PathData *) m_0x30;
++  P32F(PathData *) m_0x34;
++  P32F(PathData *) m_0x38;
++  P32F(PathData *) m_0x3c;
++  P32F(PathData *) m_0x40;
    int m_0x44;
 -  Moby *m_0x48;
-+  Moby *P32 m_0x48;
++  P32F(Moby *) m_0x48;
    int m_0x4c;
 @@ -2619,3 +2619,3 @@
  
 -extern Moby *g_Sparx;
-+extern Moby *P32 g_Sparx;
++extern P32F(Moby *) g_Sparx;
  
 @@ -2625,3 +2625,3 @@
    Tiledef shadow;
 -  int *shadow_list; // shadow queue?
-+  int *P32 shadow_list; // shadow queue?
++  P32F(int *) shadow_list; // shadow queue?
  } MobyShadow;
 @@ -2636,3 +2636,3 @@
  
 -extern u_short **g_MobyPods; // Pointer to the Moby pods data, the last Moby
-+extern u_short *P32 *P32 g_MobyPods; // Pointer to the Moby pods data, the last Moby
++extern P32F(P32F(u_short *) *) g_MobyPods; // Pointer to the Moby pods data, the last Moby
                               // in the list has the top bit set.
 @@ -2640,17 +2640,17 @@
  
 -extern Moby *g_KeyMoby; // Pointer to the key Moby for this level
 -
 -extern Moby *g_LevelMobys; // The Mobys in the current level
-+extern Moby *P32 g_KeyMoby; // Pointer to the key Moby for this level
++extern P32F(Moby *) g_KeyMoby; // Pointer to the key Moby for this level
 +
-+extern Moby *P32 g_LevelMobys; // The Mobys in the current level
++extern P32F(Moby *) g_LevelMobys; // The Mobys in the current level
  
  /// @brief Pointer to space for the Moby collision chain
 -extern void *g_MobyCollisionChain;
-+extern void *P32 g_MobyCollisionChain;
++extern P32F(void *) g_MobyCollisionChain;
  
  /// @brief Moby allocation pointer
 -extern Moby *g_MobyAllocPtr;
-+extern Moby *P32 g_MobyAllocPtr;
++extern P32F(Moby *) g_MobyAllocPtr;
  
  /// @brief Props allocation pointer
 -extern void *g_PropsAllocPtr;
-+extern void *P32 g_PropsAllocPtr;
++extern P32F(void *) g_PropsAllocPtr;
  
  /// @brief Start of the Mobys that are dynamically allocated
 -extern Moby *g_DynMobys;
-+extern Moby *P32 g_DynMobys;
++extern P32F(Moby *) g_DynMobys;
  
 @@ -2663,3 +2663,3 @@
  /// @brief The end of dynamic Moby space (= start + max * (sizeof(Moby) + 24))
 -extern void *g_DynMobySpaceEnd;
-+extern void *P32 g_DynMobySpaceEnd;
++extern P32F(void *) g_DynMobySpaceEnd;
  
 @@ -2667,3 +2667,3 @@
  
 -extern Moby *g_HudMobys; // HUD Mobys
-+extern Moby *P32 g_HudMobys; // HUD Mobys
++extern P32F(Moby *) g_HudMobys; // HUD Mobys
  
 --- a/include/moby_lists.h
 +++ b/include/moby_lists.h
 @@ -12,3 +12,3 @@
  /// @brief Updates the Mobys' animations
 -void func_800522C0(Moby **pMobyList, u_int pSpeedDiv);
-+void func_800522C0(Moby *P32 *pMobyList, u_int pSpeedDiv);
++void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv);
  
 --- a/include/renderers.h
 +++ b/include/renderers.h
 @@ -31,3 +31,3 @@
  
 -extern ParticleTexture *D_80076278[32];
-+extern ParticleTexture *P32 D_80076278[32];
++extern P32F(ParticleTexture *) D_80076278[32];
  
 @@ -95,3 +95,3 @@
  // Particle array
 -extern Particle *g_Particles;
-+extern Particle *P32 g_Particles;
++extern P32F(Particle *) g_Particles;
  
 @@ -100,3 +100,3 @@
  // allocated, then wraps around to the beginning when it reaches the end
 -extern Particle *g_ParticleAllocPtr;
-+extern Particle *P32 g_ParticleAllocPtr;
++extern P32F(Particle *) g_ParticleAllocPtr;
  
 --- a/include/sony_image.h
 +++ b/include/sony_image.h
 @@ -12,3 +12,3 @@
  typedef struct {
 -  Moby *m_Moby[0x240];     // 0x900
-+  Moby *P32 m_Moby[0x240];     // 0x900
++  P32F(Moby *) m_Moby[0x240];     // 0x900
    u_char unk_0x900[0xD00]; //??
 @@ -28,3 +28,3 @@
    u_int m_WorldFarQueued[256];
 -  Moby *m_ShadedMobys[256];
-+  Moby *P32 m_ShadedMobys[256];
++  P32F(Moby *) m_ShadedMobys[256];
    char unk_0x2800[2464];
 --- a/include/spu.h
 +++ b/include/spu.h
 @@ -13,3 +13,3 @@
  typedef struct {
 -  Moby *m_Moby;
-+  Moby *P32 m_Moby;
++  P32F(Moby *) m_Moby;
  
 @@ -28,3 +28,3 @@
  
 -  u_char *m_SoundRefPtr; // Pointer to a flag that is set when the sound is
-+  u_char *P32 m_SoundRefPtr; // Pointer to a flag that is set when the sound is
++  P32F(u_char *) m_SoundRefPtr; // Pointer to a flag that is set when the sound is
                           // done playing
 @@ -33,4 +33,4 @@
  typedef struct {
@@ -1098,35 +1098,35 @@
  
 -  SoundDefinition *m_SoundDefinitions;
 -  SoundTable *m_SoundTable;
-+  SoundDefinition *P32 m_SoundDefinitions;
-+  SoundTable *P32 m_SoundTable;
++  P32F(SoundDefinition *) m_SoundDefinitions;
++  P32F(SoundTable *) m_SoundTable;
  
 --- a/include/spyro.h
 +++ b/include/spyro.h
 @@ -198,3 +198,3 @@
    int m_damagingFloorIndex;
 -  int *m_damagingFloorFlags;
-+  int *P32 m_damagingFloorFlags;
++  P32F(int *) m_damagingFloorFlags;
    Vector3D unk_0x17c;
 @@ -236,10 +236,10 @@
    int m_fallingState; // Not sure
 -  Vector3D *unk_0x21c;
 -  SphericalCoordsOffset *unk_0x220;
-+  Vector3D *P32 unk_0x21c;
-+  SphericalCoordsOffset *P32 unk_0x220;
++  P32F(Vector3D *) unk_0x21c;
++  P32F(SphericalCoordsOffset *) unk_0x220;
  
    // Used for the cannon, and whirlwinds, camera related
 -  Moby *m_mobyInUseBySpyro;
-+  Moby *P32 m_mobyInUseBySpyro;
++  P32F(Moby *) m_mobyInUseBySpyro;
    u_char unk_0x228[24]; // Fuck knows, no XREFs, considering the rest of this
                          // section it's probably moby related though
 -  PathData *unk_0x240;
-+  PathData *P32 unk_0x240;
++  P32F(PathData *) unk_0x240;
    int unk_0x244;       // Path moby related
 @@ -262,3 +262,3 @@
    } m_collisionTriangleUnpacked;
 -  int *m_floorFlagsPointer;
-+  int *P32 m_floorFlagsPointer;
++  P32F(int *) m_floorFlagsPointer;
    u_char m_damageSoundChannel;
 --- a/include/strings.h
 +++ b/include/strings.h
@@ -1134,18 +1134,18 @@
  
 -extern char *g_DragonNames[80];
 -extern char *g_HomeworldNames[7];
-+extern char *P32 g_DragonNames[80];
-+extern char *P32 g_HomeworldNames[7];
++extern P32F(char *) g_DragonNames[80];
++extern P32F(char *) g_HomeworldNames[7];
  extern char g_HomeworldNamesLength[7];
 -extern char *g_LevelNames[37];
-+extern char *P32 g_LevelNames[37];
++extern P32F(char *) g_LevelNames[37];
  
  // Balloonist stuff
 -extern char *g_BalloonistNames[6];
-+extern char *P32 g_BalloonistNames[6];
++extern P32F(char *) g_BalloonistNames[6];
  extern char g_BalloonistDialogueIndices[40];
 -extern char *g_BalloonistDialogue[];
-+extern char *P32 g_BalloonistDialogue[];
++extern P32F(char *) g_BalloonistDialogue[];
  
 --- a/include/titlescreen.h
 +++ b/include/titlescreen.h
@@ -1153,8 +1153,8 @@
  
 -  MemCardSaveFile *m_MemCardSave;
 -  SaveFile *m_SaveFiles[3];
-+  MemCardSaveFile *P32 m_MemCardSave;
-+  SaveFile *P32 m_SaveFiles[3];
++  P32F(MemCardSaveFile *) m_MemCardSave;
++  P32F(SaveFile *) m_SaveFiles[3];
  } g_TitlescreenState; // 0x5C in size
 @@ -227,3 +227,3 @@
  
@@ -1166,33 +1166,33 @@
 @@ -317,5 +317,5 @@
  // PAL's (D139): "RESCUED" in five languages, "%s %s", the dragons' names
 -extern char *g_PalRescuedText[5];   // PAL 0x8007529C
-+extern char *P32 g_PalRescuedText[5];   // PAL 0x8007529C
++extern P32F(char *) g_PalRescuedText[5];   // PAL 0x8007529C
  extern char g_PalRescuedFormat[];   // PAL 0x8007BEDC
 -extern char *g_PalDragonNames[80];  // PAL 0x800752B0
-+extern char *P32 g_PalDragonNames[80];  // PAL 0x800752B0
++extern P32F(char *) g_PalDragonNames[80];  // PAL 0x800752B0
  #if defined(REGION) && REGION == REGION_PAL
 @@ -323,5 +323,5 @@
  // longer than -G8's 8 bytes, so it isn't $gp-addressed as PAL's isn't
 -char *g_PalRescuedText[5] = {0};
-+char *P32 g_PalRescuedText[5] = {0};
++P32F(char *) g_PalRescuedText[5] = {0};
  char g_PalRescuedFormat[16] = {0};
 -char *g_PalDragonNames[80] = {0};
-+char *P32 g_PalDragonNames[80] = {0};
++P32F(char *) g_PalDragonNames[80] = {0};
  #endif
 @@ -397,3 +397,3 @@
  void func_80018880(void) {
 -  Moby **currentMoby = g_SonyImage.m_ShadedMobys;
-+  Moby *P32 *currentMoby = g_SonyImage.m_ShadedMobys;
++  P32F(Moby *) *currentMoby = g_SonyImage.m_ShadedMobys;
  
 @@ -417,3 +417,3 @@
  #if REGION_HAS_PAL
 -extern char *g_PalDemoModeText[5]; // PAL 0x80074D88
-+extern char *P32 g_PalDemoModeText[5]; // PAL 0x80074D88
++extern P32F(char *) g_PalDemoModeText[5]; // PAL 0x80074D88
  extern u_char g_PalDemoModeX[];    // PAL 0x8007B954
 @@ -713,3 +713,3 @@
    Moby *mobys;
 -  Moby **shaded_mobys;
-+  Moby *P32 *shaded_mobys;
++  P32F(Moby *) *shaded_mobys;
  
 @@ -821,8 +821,8 @@
  // (36 a language), the treasure lines' x by language
@@ -1202,12 +1202,12 @@
 -extern char *g_PalLevelNames[5 * 36];    // PAL 0x80075468
 -extern char *g_PalTreasureFoundText[5];  // PAL 0x80074E28
 -extern char *g_PalTotalTreasureText[5];  // PAL 0x80074E3C
-+extern char *P32 g_PalReturningHomeText[5];  // PAL 0x80074D9C
-+extern char *P32 g_PalConfrontingText[5];    // PAL 0x80074DB0
-+extern char *P32 g_PalEnteringText[5];       // PAL 0x80074DC4
-+extern char *P32 g_PalLevelNames[5 * 36];    // PAL 0x80075468
-+extern char *P32 g_PalTreasureFoundText[5];  // PAL 0x80074E28
-+extern char *P32 g_PalTotalTreasureText[5];  // PAL 0x80074E3C
++extern P32F(char *) g_PalReturningHomeText[5];  // PAL 0x80074D9C
++extern P32F(char *) g_PalConfrontingText[5];    // PAL 0x80074DB0
++extern P32F(char *) g_PalEnteringText[5];       // PAL 0x80074DC4
++extern P32F(char *) g_PalLevelNames[5 * 36];    // PAL 0x80075468
++extern P32F(char *) g_PalTreasureFoundText[5];  // PAL 0x80074E28
++extern P32F(char *) g_PalTotalTreasureText[5];  // PAL 0x80074E3C
  extern u_char g_PalTreasureFoundX[5];    // PAL 0x8007B984
 @@ -1309,28 +1309,28 @@
  // (EN, FR, DE, ES, IT) and each item's x per language
@@ -1237,77 +1237,77 @@
 -extern char *g_PalNoText[5];           // PAL 0x8007501C
 -extern char *g_PalHomeworldNames[30]; // PAL 0x800753F0: [language * 6 + world]
 -extern char *g_PalLevelNames[180];     // PAL 0x80075468: [language * 36 + level]
-+extern char *P32 g_PalPausedText[5];       // PAL 0x80074E50
-+extern char *P32 g_PalContinueText[5];     // PAL 0x80074E64
-+extern char *P32 g_PalOptionsText[5];      // PAL 0x80074E78
-+extern char *P32 g_PalInventoryText[5];    // PAL 0x80074E8C
-+extern char *P32 g_PalQuitText[5];         // PAL 0x80074EA0
-+extern char *P32 g_PalExitLevelText[5];    // PAL 0x80074EB4
-+extern char *P32 g_PalQuitGameText[5];     // PAL 0x80074EC8
-+extern char *P32 g_PalSoundEffectsText[5]; // PAL 0x80074EDC
-+extern char *P32 g_PalMusicVolumeText[5];  // PAL 0x80074EF0
-+extern char *P32 g_PalSpeakerSetupText[5]; // PAL 0x80074F04
-+extern char *P32 g_PalVibrationText[5];    // PAL 0x80074F18
-+extern char *P32 g_PalCameraText[5];       // PAL 0x80074F2C
-+extern char *P32 g_PalScreenAdjustText[5]; // PAL 0x80074F40
-+extern char *P32 g_PalHorizontalText[5];   // PAL 0x80074F54
-+extern char *P32 g_PalVerticalText[5];     // PAL 0x80074F68
-+extern char *P32 g_PalDoneText[5];         // PAL 0x80074F7C
-+extern char *P32 g_PalOnText[5];           // PAL 0x80074F90
-+extern char *P32 g_PalOffText[5];          // PAL 0x80074FA4
-+extern char *P32 g_PalStereoText[5];       // PAL 0x80074FB8
-+extern char *P32 g_PalMonoText[5];         // PAL 0x80074FCC
-+extern char *P32 g_PalActiveText[5];       // PAL 0x80074FE0
-+extern char *P32 g_PalPassiveText[5];      // PAL 0x80074FF4
-+extern char *P32 g_PalYesText[5];          // PAL 0x80075008
-+extern char *P32 g_PalNoText[5];           // PAL 0x8007501C
-+extern char *P32 g_PalHomeworldNames[30]; // PAL 0x800753F0: [language * 6 + world]
-+extern char *P32 g_PalLevelNames[180];     // PAL 0x80075468: [language * 36 + level]
++extern P32F(char *) g_PalPausedText[5];       // PAL 0x80074E50
++extern P32F(char *) g_PalContinueText[5];     // PAL 0x80074E64
++extern P32F(char *) g_PalOptionsText[5];      // PAL 0x80074E78
++extern P32F(char *) g_PalInventoryText[5];    // PAL 0x80074E8C
++extern P32F(char *) g_PalQuitText[5];         // PAL 0x80074EA0
++extern P32F(char *) g_PalExitLevelText[5];    // PAL 0x80074EB4
++extern P32F(char *) g_PalQuitGameText[5];     // PAL 0x80074EC8
++extern P32F(char *) g_PalSoundEffectsText[5]; // PAL 0x80074EDC
++extern P32F(char *) g_PalMusicVolumeText[5];  // PAL 0x80074EF0
++extern P32F(char *) g_PalSpeakerSetupText[5]; // PAL 0x80074F04
++extern P32F(char *) g_PalVibrationText[5];    // PAL 0x80074F18
++extern P32F(char *) g_PalCameraText[5];       // PAL 0x80074F2C
++extern P32F(char *) g_PalScreenAdjustText[5]; // PAL 0x80074F40
++extern P32F(char *) g_PalHorizontalText[5];   // PAL 0x80074F54
++extern P32F(char *) g_PalVerticalText[5];     // PAL 0x80074F68
++extern P32F(char *) g_PalDoneText[5];         // PAL 0x80074F7C
++extern P32F(char *) g_PalOnText[5];           // PAL 0x80074F90
++extern P32F(char *) g_PalOffText[5];          // PAL 0x80074FA4
++extern P32F(char *) g_PalStereoText[5];       // PAL 0x80074FB8
++extern P32F(char *) g_PalMonoText[5];         // PAL 0x80074FCC
++extern P32F(char *) g_PalActiveText[5];       // PAL 0x80074FE0
++extern P32F(char *) g_PalPassiveText[5];      // PAL 0x80074FF4
++extern P32F(char *) g_PalYesText[5];          // PAL 0x80075008
++extern P32F(char *) g_PalNoText[5];           // PAL 0x8007501C
++extern P32F(char *) g_PalHomeworldNames[30]; // PAL 0x800753F0: [language * 6 + world]
++extern P32F(char *) g_PalLevelNames[180];     // PAL 0x80075468: [language * 36 + level]
  // x per language (unsized, so not $gp-addressed)
 @@ -2879,3 +2879,3 @@
  #if REGION_HAS_PAL
 -extern char *g_PalPressStartText[5]; // PAL 0x80074D24
-+extern char *P32 g_PalPressStartText[5]; // PAL 0x80074D24
++extern P32F(char *) g_PalPressStartText[5]; // PAL 0x80074D24
  extern u_char g_PalPressStartX[5];   // PAL 0x8007B904
 @@ -3130,3 +3130,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
-+      Moby *P32 *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
++      P32F(Moby *) *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
        if (g_DragonCutscene.m_RescuedDragonMoby->m_State < 0x80)
 @@ -3140,3 +3140,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.m_ShadedMobys;
-+      Moby *P32 *mobyBuf = g_SonyImage.m_ShadedMobys;
++      P32F(Moby *) *mobyBuf = g_SonyImage.m_ShadedMobys;
        Moby *lvlMoby;
 @@ -3174,3 +3174,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
-+      Moby *P32 *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
++      P32F(Moby *) *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
        *mobyBuf++ = g_DragonCutscene.m_CutsceneSpyro;
 @@ -3181,3 +3181,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.m_ShadedMobys;
-+      Moby *P32 *mobyBuf = g_SonyImage.m_ShadedMobys;
++      P32F(Moby *) *mobyBuf = g_SonyImage.m_ShadedMobys;
        Moby *lvlMoby;
 @@ -3211,3 +3211,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
-+      Moby *P32 *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
++      P32F(Moby *) *mobyBuf = g_SonyImage.u.m_Draw.m_Moby;
        *mobyBuf++ = g_DragonCutscene.m_CutsceneSpyro;
 @@ -3218,3 +3218,3 @@
      {
 -      Moby **mobyBuf = g_SonyImage.m_ShadedMobys;
-+      Moby *P32 *mobyBuf = g_SonyImage.m_ShadedMobys;
++      P32F(Moby *) *mobyBuf = g_SonyImage.m_ShadedMobys;
        int i;
 @@ -3260,3 +3260,3 @@
      int i;
 -    Moby **mobyBuf = g_SonyImage.m_ShadedMobys;
-+    Moby *P32 *mobyBuf = g_SonyImage.m_ShadedMobys;
++    P32F(Moby *) *mobyBuf = g_SonyImage.m_ShadedMobys;
      for (i = 0; i < 3; ++i) {
 @@ -3280,3 +3280,3 @@
      if (g_DragonCutscene.m_CutsceneTicks < 16) {
 -      Moby **mobyBuf = g_SonyImage.m_ShadedMobys;
-+      Moby *P32 *mobyBuf = g_SonyImage.m_ShadedMobys;
++      P32F(Moby *) *mobyBuf = g_SonyImage.m_ShadedMobys;
        for (i = 0; i < 3; ++i) {
 @@ -3346,25 +3346,25 @@
  extern short g_PalFairyBoxWidths[8][5];   // PAL 0x80074AD0
@@ -1334,29 +1334,29 @@
 -extern char *g_PalFairySavedText[5];      // PAL 0x800751C8 "SAVE SUCCESSFUL"
 -extern char *g_PalFairyCard1Text[5];      // PAL 0x800751DC "MEMORY CARD 1"
 -extern char *g_PalFairyCard2Text[5];      // PAL 0x800751F0 "MEMORY CARD 2"
-+extern char *P32 g_PalFairyHiText[5];         // PAL 0x80075038 "HI SPYRO,"
-+extern char *P32 g_PalFairySaveText[5];       // PAL 0x8007504C "SAVE GAME"
-+extern char *P32 g_PalFairyReplayText[5];     // PAL 0x80075060 "REPLAY DRAGON"
-+extern char *P32 g_PalFairyContinueText[5];   // PAL 0x80075074 "CONTINUE"
-+extern char *P32 g_PalFairyNoFileText[5];     // PAL 0x80075088 "NO SAVE FILE"
-+extern char *P32 g_PalFairyRestartText[5];    // PAL 0x8007509C "PLEASE RESTART WITH"
-+extern char *P32 g_PalFairyCardToText[5];     // PAL 0x800750B0 "A MEMORY CARD TO"
-+extern char *P32 g_PalFairyEnableText[5];     // PAL 0x800750C4 "ENABLE SAVE GAMES"
-+extern char *P32 g_PalFairySavingText[5];     // PAL 0x800750D8 "SAVING..."
-+extern char *P32 g_PalFairyNoCardText[5];     // PAL 0x800750EC "NO MEMORY CARD"
-+extern char *P32 g_PalFairyReplaceText[5];    // PAL 0x80075100 "PLEASE REPLACE"
-+extern char *P32 g_PalFairyTheSpyroText[5];   // PAL 0x80075114 "THE SPYRO"
-+extern char *P32 g_PalFairyCardDotText[5];    // PAL 0x80075128 "MEMORY CARD."
-+extern char *P32 g_PalFairyErrorText[5];      // PAL 0x8007513C "SAVE ERROR"
-+extern char *P32 g_PalFairyCheckText[5];      // PAL 0x80075150 "PLEASE CHECK THAT"
-+extern char *P32 g_PalFairyTheCardText[5];    // PAL 0x80075164 "THE MEMORY CARD"
-+extern char *P32 g_PalFairyInPlaceText[5];    // PAL 0x80075178 "IS STILL IN PLACE"
-+extern char *P32 g_PalFairyFailedText[5];     // PAL 0x8007518C "SAVE FAILED"
-+extern char *P32 g_PalFairyRetryText[5];      // PAL 0x800751A0 "RETRY"
-+extern char *P32 g_PalFairyAbortText[5];      // PAL 0x800751B4 "ABORT"
-+extern char *P32 g_PalFairySavedText[5];      // PAL 0x800751C8 "SAVE SUCCESSFUL"
-+extern char *P32 g_PalFairyCard1Text[5];      // PAL 0x800751DC "MEMORY CARD 1"
-+extern char *P32 g_PalFairyCard2Text[5];      // PAL 0x800751F0 "MEMORY CARD 2"
++extern P32F(char *) g_PalFairyHiText[5];         // PAL 0x80075038 "HI SPYRO,"
++extern P32F(char *) g_PalFairySaveText[5];       // PAL 0x8007504C "SAVE GAME"
++extern P32F(char *) g_PalFairyReplayText[5];     // PAL 0x80075060 "REPLAY DRAGON"
++extern P32F(char *) g_PalFairyContinueText[5];   // PAL 0x80075074 "CONTINUE"
++extern P32F(char *) g_PalFairyNoFileText[5];     // PAL 0x80075088 "NO SAVE FILE"
++extern P32F(char *) g_PalFairyRestartText[5];    // PAL 0x8007509C "PLEASE RESTART WITH"
++extern P32F(char *) g_PalFairyCardToText[5];     // PAL 0x800750B0 "A MEMORY CARD TO"
++extern P32F(char *) g_PalFairyEnableText[5];     // PAL 0x800750C4 "ENABLE SAVE GAMES"
++extern P32F(char *) g_PalFairySavingText[5];     // PAL 0x800750D8 "SAVING..."
++extern P32F(char *) g_PalFairyNoCardText[5];     // PAL 0x800750EC "NO MEMORY CARD"
++extern P32F(char *) g_PalFairyReplaceText[5];    // PAL 0x80075100 "PLEASE REPLACE"
++extern P32F(char *) g_PalFairyTheSpyroText[5];   // PAL 0x80075114 "THE SPYRO"
++extern P32F(char *) g_PalFairyCardDotText[5];    // PAL 0x80075128 "MEMORY CARD."
++extern P32F(char *) g_PalFairyErrorText[5];      // PAL 0x8007513C "SAVE ERROR"
++extern P32F(char *) g_PalFairyCheckText[5];      // PAL 0x80075150 "PLEASE CHECK THAT"
++extern P32F(char *) g_PalFairyTheCardText[5];    // PAL 0x80075164 "THE MEMORY CARD"
++extern P32F(char *) g_PalFairyInPlaceText[5];    // PAL 0x80075178 "IS STILL IN PLACE"
++extern P32F(char *) g_PalFairyFailedText[5];     // PAL 0x8007518C "SAVE FAILED"
++extern P32F(char *) g_PalFairyRetryText[5];      // PAL 0x800751A0 "RETRY"
++extern P32F(char *) g_PalFairyAbortText[5];      // PAL 0x800751B4 "ABORT"
++extern P32F(char *) g_PalFairySavedText[5];      // PAL 0x800751C8 "SAVE SUCCESSFUL"
++extern P32F(char *) g_PalFairyCard1Text[5];      // PAL 0x800751DC "MEMORY CARD 1"
++extern P32F(char *) g_PalFairyCard2Text[5];      // PAL 0x800751F0 "MEMORY CARD 2"
  extern short g_PalFairyCard2Width[5];     // PAL 0x80075204
 @@ -3953,9 +3953,9 @@
  extern char g_PalStringFormat[];        // PAL 0x8007BF04 ("%s")
@@ -1367,74 +1367,74 @@
 -extern char *g_PalHomeworldNames[5 * 6]; // PAL 0x800753F0
 -extern char *g_PalEnteringText[5];      // PAL 0x80074DC4
 -extern char *g_PalLevelNames[5 * 36];   // PAL 0x80075468
-+extern char *P32 g_PalEnteringWorldText[5]; // PAL 0x80074DD8
-+extern char *P32 g_PalWorldText[5];         // PAL 0x80074DEC
-+extern char *P32 g_PalFrenchWorldNames[5];  // PAL 0x80074E00
-+extern char *P32 g_PalGnastyWorldText[5];   // PAL 0x80074E14
-+extern char *P32 g_PalHomeworldNames[5 * 6]; // PAL 0x800753F0
-+extern char *P32 g_PalEnteringText[5];      // PAL 0x80074DC4
-+extern char *P32 g_PalLevelNames[5 * 36];   // PAL 0x80075468
++extern P32F(char *) g_PalEnteringWorldText[5]; // PAL 0x80074DD8
++extern P32F(char *) g_PalWorldText[5];         // PAL 0x80074DEC
++extern P32F(char *) g_PalFrenchWorldNames[5];  // PAL 0x80074E00
++extern P32F(char *) g_PalGnastyWorldText[5];   // PAL 0x80074E14
++extern P32F(char *) g_PalHomeworldNames[5 * 6]; // PAL 0x800753F0
++extern P32F(char *) g_PalEnteringText[5];      // PAL 0x80074DC4
++extern P32F(char *) g_PalLevelNames[5 * 36];   // PAL 0x80075468
  #endif
 @@ -3975,3 +3975,3 @@
      if (D_800777E8.m_State < 6) {
 -      Moby **mobyQueue = (void *)g_SonyImage.u.m_Buf;
-+      Moby *P32 *mobyQueue = (void *)g_SonyImage.u.m_Buf;
++      P32F(Moby *) *mobyQueue = (void *)g_SonyImage.u.m_Buf;
  
 @@ -4126,12 +4126,12 @@
  // the tick its letters start to appear by language
 -extern char *g_PalDragonsText[5];   // PAL 0x80074D38 "IN THE WORLD OF DRAGONS..."
-+extern char *P32 g_PalDragonsText[5];   // PAL 0x80074D38 "IN THE WORLD OF DRAGONS..."
++extern P32F(char *) g_PalDragonsText[5];   // PAL 0x80074D38 "IN THE WORLD OF DRAGONS..."
  extern u_char g_PalDragonsX[5];     // PAL 0x8007B90C
  extern u_char g_PalDragonsTick[5];  // PAL 0x8007B914
 -extern char *g_PalBeginsText[5];    // PAL 0x80074D4C "THE ADVENTURE BEGINS..."
-+extern char *P32 g_PalBeginsText[5];    // PAL 0x80074D4C "THE ADVENTURE BEGINS..."
++extern P32F(char *) g_PalBeginsText[5];    // PAL 0x80074D4C "THE ADVENTURE BEGINS..."
  extern u_char g_PalBeginsX[5];      // PAL 0x8007B91C
  extern u_char g_PalBeginsTick[5];   // PAL 0x8007B924
 -extern char *g_PalContinuesText[5]; // PAL 0x80074D60 "THE ADVENTURE CONTINUES..."
-+extern char *P32 g_PalContinuesText[5]; // PAL 0x80074D60 "THE ADVENTURE CONTINUES..."
++extern P32F(char *) g_PalContinuesText[5]; // PAL 0x80074D60 "THE ADVENTURE CONTINUES..."
  extern u_char g_PalContinuesX[5];   // PAL 0x8007B92C
  extern u_char g_PalContinuesTick[5]; // PAL 0x8007B934
 -extern char *g_PalDemoEnterText[5]; // PAL 0x80074D74 "ENTERING DEMO MODE..."
-+extern char *P32 g_PalDemoEnterText[5]; // PAL 0x80074D74 "ENTERING DEMO MODE..."
++extern P32F(char *) g_PalDemoEnterText[5]; // PAL 0x80074D74 "ENTERING DEMO MODE..."
  extern u_char g_PalDemoEnterX[5];   // PAL 0x8007B93C
 --- a/src/loaders.c
 +++ b/src/loaders.c
 @@ -94,3 +94,3 @@
    g_Environment.m_SectorCount = READ_I32(pData);
 -  g_Environment.m_SectorPointer = (void **)pData;
-+  g_Environment.m_SectorPointer = (void *P32 *)pData;
++  g_Environment.m_SectorPointer = (P32F(void *) *)pData;
  
 @@ -145,3 +145,3 @@
      g_Environment.m_SurfaceCount = READ_I32(pData);
 -    g_Environment.m_SurfaceData = (SpecialSurface **)pData;
-+    g_Environment.m_SurfaceData = (SpecialSurface *P32 *)pData;
++    g_Environment.m_SurfaceData = (P32F(SpecialSurface *) *)pData;
  
 @@ -681,3 +681,3 @@
    g_MobyPodCount = READ_I32(data);
 -  g_MobyPods = (u_short **)data;
-+  g_MobyPods = (u_short *P32 *)data;
++  g_MobyPods = (P32F(u_short *) *)data;
    for (i = g_MobyPodCount - 1; i >= 0; i--) {
 @@ -1394,3 +1394,3 @@
        g_Cyclorama.m_SectorCount = *dest++;
 -      g_Cyclorama.m_Sectors = (void **)dest;
-+      g_Cyclorama.m_Sectors = (void *P32 *)dest;
++      g_Cyclorama.m_Sectors = (P32F(void *) *)dest;
  
 @@ -1415,3 +1415,3 @@
        g_Cyclorama.m_SectorCount = *dest++;
 -      g_Cyclorama.m_Sectors = (void **)dest;
-+      g_Cyclorama.m_Sectors = (void *P32 *)dest;
++      g_Cyclorama.m_Sectors = (P32F(void *) *)dest;
  
 --- a/src/main.c
 +++ b/src/main.c
 @@ -17,3 +17,3 @@
  int g_PalCardHeaderDirty = 0; // PAL 0x8007C148 (bss)
 -char *g_PalDemoModeText[5] = {0};
-+char *P32 g_PalDemoModeText[5] = {0};
++P32F(char *) g_PalDemoModeText[5] = {0};
  u_char g_PalDemoModeX[5] = {0};
 @@ -23,3 +23,3 @@
  // g_PalEnteringText and g_PalLevelNames are func_8001973C's (defined there).
 -char *g_PalPressStartText[5] = {0};
-+char *P32 g_PalPressStartText[5] = {0};
++P32F(char *) g_PalPressStartText[5] = {0};
  u_char g_PalPressStartX[5] = {0};
 @@ -27,17 +27,17 @@
  char g_PalStringFormat[16] = {0};
@@ -1444,24 +1444,24 @@
 -char *g_PalGnastyWorldText[5] = {0};
 -char *g_PalHomeworldNames[5 * 6] = {0};
 -char *g_PalDragonsText[5] = {0};
-+char *P32 g_PalEnteringWorldText[5] = {0};
-+char *P32 g_PalWorldText[5] = {0};
-+char *P32 g_PalFrenchWorldNames[5] = {0};
-+char *P32 g_PalGnastyWorldText[5] = {0};
-+char *P32 g_PalHomeworldNames[5 * 6] = {0};
-+char *P32 g_PalDragonsText[5] = {0};
++P32F(char *) g_PalEnteringWorldText[5] = {0};
++P32F(char *) g_PalWorldText[5] = {0};
++P32F(char *) g_PalFrenchWorldNames[5] = {0};
++P32F(char *) g_PalGnastyWorldText[5] = {0};
++P32F(char *) g_PalHomeworldNames[5 * 6] = {0};
++P32F(char *) g_PalDragonsText[5] = {0};
  u_char g_PalDragonsX[5] = {0};
  u_char g_PalDragonsTick[5] = {0};
 -char *g_PalBeginsText[5] = {0};
-+char *P32 g_PalBeginsText[5] = {0};
++P32F(char *) g_PalBeginsText[5] = {0};
  u_char g_PalBeginsX[5] = {0};
  u_char g_PalBeginsTick[5] = {0};
 -char *g_PalContinuesText[5] = {0};
-+char *P32 g_PalContinuesText[5] = {0};
++P32F(char *) g_PalContinuesText[5] = {0};
  u_char g_PalContinuesX[5] = {0};
  u_char g_PalContinuesTick[5] = {0};
 -char *g_PalDemoEnterText[5] = {0};
-+char *P32 g_PalDemoEnterText[5] = {0};
++P32F(char *) g_PalDemoEnterText[5] = {0};
  u_char g_PalDemoEnterX[5] = {0};
 @@ -45,25 +45,25 @@
  short g_PalFairyBoxWidths[8][5] = {0};
@@ -1488,29 +1488,29 @@
 -char *g_PalFairySavedText[5] = {0};
 -char *g_PalFairyCard1Text[5] = {0};
 -char *g_PalFairyCard2Text[5] = {0};
-+char *P32 g_PalFairyHiText[5] = {0};
-+char *P32 g_PalFairySaveText[5] = {0};
-+char *P32 g_PalFairyReplayText[5] = {0};
-+char *P32 g_PalFairyContinueText[5] = {0};
-+char *P32 g_PalFairyNoFileText[5] = {0};
-+char *P32 g_PalFairyRestartText[5] = {0};
-+char *P32 g_PalFairyCardToText[5] = {0};
-+char *P32 g_PalFairyEnableText[5] = {0};
-+char *P32 g_PalFairySavingText[5] = {0};
-+char *P32 g_PalFairyNoCardText[5] = {0};
-+char *P32 g_PalFairyReplaceText[5] = {0};
-+char *P32 g_PalFairyTheSpyroText[5] = {0};
-+char *P32 g_PalFairyCardDotText[5] = {0};
-+char *P32 g_PalFairyErrorText[5] = {0};
-+char *P32 g_PalFairyCheckText[5] = {0};
-+char *P32 g_PalFairyTheCardText[5] = {0};
-+char *P32 g_PalFairyInPlaceText[5] = {0};
-+char *P32 g_PalFairyFailedText[5] = {0};
-+char *P32 g_PalFairyRetryText[5] = {0};
-+char *P32 g_PalFairyAbortText[5] = {0};
-+char *P32 g_PalFairySavedText[5] = {0};
-+char *P32 g_PalFairyCard1Text[5] = {0};
-+char *P32 g_PalFairyCard2Text[5] = {0};
++P32F(char *) g_PalFairyHiText[5] = {0};
++P32F(char *) g_PalFairySaveText[5] = {0};
++P32F(char *) g_PalFairyReplayText[5] = {0};
++P32F(char *) g_PalFairyContinueText[5] = {0};
++P32F(char *) g_PalFairyNoFileText[5] = {0};
++P32F(char *) g_PalFairyRestartText[5] = {0};
++P32F(char *) g_PalFairyCardToText[5] = {0};
++P32F(char *) g_PalFairyEnableText[5] = {0};
++P32F(char *) g_PalFairySavingText[5] = {0};
++P32F(char *) g_PalFairyNoCardText[5] = {0};
++P32F(char *) g_PalFairyReplaceText[5] = {0};
++P32F(char *) g_PalFairyTheSpyroText[5] = {0};
++P32F(char *) g_PalFairyCardDotText[5] = {0};
++P32F(char *) g_PalFairyErrorText[5] = {0};
++P32F(char *) g_PalFairyCheckText[5] = {0};
++P32F(char *) g_PalFairyTheCardText[5] = {0};
++P32F(char *) g_PalFairyInPlaceText[5] = {0};
++P32F(char *) g_PalFairyFailedText[5] = {0};
++P32F(char *) g_PalFairyRetryText[5] = {0};
++P32F(char *) g_PalFairyAbortText[5] = {0};
++P32F(char *) g_PalFairySavedText[5] = {0};
++P32F(char *) g_PalFairyCard1Text[5] = {0};
++P32F(char *) g_PalFairyCard2Text[5] = {0};
  short g_PalFairyCard2Width[5] = {0};
 @@ -89,27 +89,27 @@
  // stand-ins for PAL's pause and inventory tables (gamestates/draw.c)
@@ -1539,31 +1539,31 @@
 -char *g_PalYesText[5] = {0};
 -char *g_PalNoText[5] = {0};
 -char *g_PalLevelNames[180] = {0};
-+char *P32 g_PalPausedText[5] = {0};
-+char *P32 g_PalContinueText[5] = {0};
-+char *P32 g_PalOptionsText[5] = {0};
-+char *P32 g_PalInventoryText[5] = {0};
-+char *P32 g_PalQuitText[5] = {0};
-+char *P32 g_PalExitLevelText[5] = {0};
-+char *P32 g_PalQuitGameText[5] = {0};
-+char *P32 g_PalSoundEffectsText[5] = {0};
-+char *P32 g_PalMusicVolumeText[5] = {0};
-+char *P32 g_PalSpeakerSetupText[5] = {0};
-+char *P32 g_PalVibrationText[5] = {0};
-+char *P32 g_PalCameraText[5] = {0};
-+char *P32 g_PalScreenAdjustText[5] = {0};
-+char *P32 g_PalHorizontalText[5] = {0};
-+char *P32 g_PalVerticalText[5] = {0};
-+char *P32 g_PalDoneText[5] = {0};
-+char *P32 g_PalOnText[5] = {0};
-+char *P32 g_PalOffText[5] = {0};
-+char *P32 g_PalStereoText[5] = {0};
-+char *P32 g_PalMonoText[5] = {0};
-+char *P32 g_PalActiveText[5] = {0};
-+char *P32 g_PalPassiveText[5] = {0};
-+char *P32 g_PalYesText[5] = {0};
-+char *P32 g_PalNoText[5] = {0};
-+char *P32 g_PalLevelNames[180] = {0};
++P32F(char *) g_PalPausedText[5] = {0};
++P32F(char *) g_PalContinueText[5] = {0};
++P32F(char *) g_PalOptionsText[5] = {0};
++P32F(char *) g_PalInventoryText[5] = {0};
++P32F(char *) g_PalQuitText[5] = {0};
++P32F(char *) g_PalExitLevelText[5] = {0};
++P32F(char *) g_PalQuitGameText[5] = {0};
++P32F(char *) g_PalSoundEffectsText[5] = {0};
++P32F(char *) g_PalMusicVolumeText[5] = {0};
++P32F(char *) g_PalSpeakerSetupText[5] = {0};
++P32F(char *) g_PalVibrationText[5] = {0};
++P32F(char *) g_PalCameraText[5] = {0};
++P32F(char *) g_PalScreenAdjustText[5] = {0};
++P32F(char *) g_PalHorizontalText[5] = {0};
++P32F(char *) g_PalVerticalText[5] = {0};
++P32F(char *) g_PalDoneText[5] = {0};
++P32F(char *) g_PalOnText[5] = {0};
++P32F(char *) g_PalOffText[5] = {0};
++P32F(char *) g_PalStereoText[5] = {0};
++P32F(char *) g_PalMonoText[5] = {0};
++P32F(char *) g_PalActiveText[5] = {0};
++P32F(char *) g_PalPassiveText[5] = {0};
++P32F(char *) g_PalYesText[5] = {0};
++P32F(char *) g_PalNoText[5] = {0};
++P32F(char *) g_PalLevelNames[180] = {0};
  u_char g_PalNoX[8] = {0};
 @@ -134,7 +134,7 @@
  // symbols; the port reads the player's executable's (PAL_DATA)
@@ -1572,11 +1572,11 @@
 -char *g_PalEnteringText[5] = {0};
 -char *g_PalTreasureFoundText[5] = {0};
 -char *g_PalTotalTreasureText[5] = {0};
-+char *P32 g_PalReturningHomeText[5] = {0};
-+char *P32 g_PalConfrontingText[5] = {0};
-+char *P32 g_PalEnteringText[5] = {0};
-+char *P32 g_PalTreasureFoundText[5] = {0};
-+char *P32 g_PalTotalTreasureText[5] = {0};
++P32F(char *) g_PalReturningHomeText[5] = {0};
++P32F(char *) g_PalConfrontingText[5] = {0};
++P32F(char *) g_PalEnteringText[5] = {0};
++P32F(char *) g_PalTreasureFoundText[5] = {0};
++P32F(char *) g_PalTotalTreasureText[5] = {0};
  u_char g_PalTreasureFoundX[5] = {0};
 @@ -144,27 +144,27 @@
  // initialised, since the build drops common symbols
@@ -1596,22 +1596,22 @@
 -char *g_PalFlightAllInOneText[5] = {0};
 -char *g_PalFlightTotalText[5] = {0};
 -char *g_PalFlightPressText[5] = {0};
-+char *P32 g_PalBalloonistNames[6] = {0};
-+char *P32 g_PalTheBalloonistText[5] = {0};
-+char *P32 g_PalHopOnText[5] = {0};
-+char *P32 g_PalNeedALiftText[5] = {0};
-+char *P32 g_PalReadyToGoText[5] = {0};
-+char *P32 g_PalLikeToGoText[5] = {0};
-+char *P32 g_PalGoToText[5] = {0};
-+char *P32 g_PalStayHereText[5] = {0};
-+char *P32 g_PalBalloonistDialogue[36 * 15] = {0};
-+char *P32 g_PalFlightCompletedText[5] = {0};
-+char *P32 g_PalFlightQuitText[5] = {0};
-+char *P32 g_PalFlightTimeUpText[5] = {0};
-+char *P32 g_PalFlightCrashedText[5] = {0};
-+char *P32 g_PalFlightAllInOneText[5] = {0};
-+char *P32 g_PalFlightTotalText[5] = {0};
-+char *P32 g_PalFlightPressText[5] = {0};
++P32F(char *) g_PalBalloonistNames[6] = {0};
++P32F(char *) g_PalTheBalloonistText[5] = {0};
++P32F(char *) g_PalHopOnText[5] = {0};
++P32F(char *) g_PalNeedALiftText[5] = {0};
++P32F(char *) g_PalReadyToGoText[5] = {0};
++P32F(char *) g_PalLikeToGoText[5] = {0};
++P32F(char *) g_PalGoToText[5] = {0};
++P32F(char *) g_PalStayHereText[5] = {0};
++P32F(char *) g_PalBalloonistDialogue[36 * 15] = {0};
++P32F(char *) g_PalFlightCompletedText[5] = {0};
++P32F(char *) g_PalFlightQuitText[5] = {0};
++P32F(char *) g_PalFlightTimeUpText[5] = {0};
++P32F(char *) g_PalFlightCrashedText[5] = {0};
++P32F(char *) g_PalFlightAllInOneText[5] = {0};
++P32F(char *) g_PalFlightTotalText[5] = {0};
++P32F(char *) g_PalFlightPressText[5] = {0};
  int g_PalFlightPressButtonAt[5] = {0};
 -char *g_PalFlightTryAgainText[5] = {0};
 -char *g_PalFlightYesText[5] = {0};
@@ -1621,43 +1621,43 @@
 -char *g_PalFlightYourTimeText[5] = {0};
 -char *g_PalFlightNewRecordText[5] = {0};
 -char *g_PalFlightObjectiveNames[6][5][4] = {{{0}}};
-+char *P32 g_PalFlightTryAgainText[5] = {0};
-+char *P32 g_PalFlightYesText[5] = {0};
-+char *P32 g_PalFlightNoText[5] = {0};
-+char *P32 g_PalFlightTimeAttackText[5] = {0};
-+char *P32 g_PalFlightBestTimeText[5] = {0};
-+char *P32 g_PalFlightYourTimeText[5] = {0};
-+char *P32 g_PalFlightNewRecordText[5] = {0};
-+char *P32 g_PalFlightObjectiveNames[6][5][4] = {{{0}}};
++P32F(char *) g_PalFlightTryAgainText[5] = {0};
++P32F(char *) g_PalFlightYesText[5] = {0};
++P32F(char *) g_PalFlightNoText[5] = {0};
++P32F(char *) g_PalFlightTimeAttackText[5] = {0};
++P32F(char *) g_PalFlightBestTimeText[5] = {0};
++P32F(char *) g_PalFlightYourTimeText[5] = {0};
++P32F(char *) g_PalFlightNewRecordText[5] = {0};
++P32F(char *) g_PalFlightObjectiveNames[6][5][4] = {{{0}}};
  // PAL bss: the flight overlays' letter counter (SetOverlayPointers sets it)
 --- a/src/moby_helpers.c
 +++ b/src/moby_helpers.c
 @@ -1109,3 +1109,3 @@
    int dy;
 -  Moby **pWaitList;
-+  Moby *P32 *pWaitList;
++  P32F(Moby *) *pWaitList;
    Moby *pOther;
 @@ -1166,3 +1166,3 @@
      // on-screen and active is still busy.
 -    pWaitList = (Moby **)(&g_SonyImage.u.m_Buf[0x400]);
-+    pWaitList = (Moby *P32 *)(&g_SonyImage.u.m_Buf[0x400]);
++    pWaitList = (P32F(Moby *) *)(&g_SonyImage.u.m_Buf[0x400]);
      pOther = *pWaitList++;
 @@ -2321,3 +2321,3 @@
  #if REGION_HAS_PAL
 -extern char *g_PalLevelNames[5 * 36]; // PAL 0x80075468 (36 a language)
-+extern char *P32 g_PalLevelNames[5 * 36]; // PAL 0x80075468 (36 a language)
++extern P32F(char *) g_PalLevelNames[5 * 36]; // PAL 0x80075468 (36 a language)
  #endif
 --- a/src/overlay_pointers.c
 +++ b/src/overlay_pointers.c
 @@ -8,3 +8,3 @@
  
 -extern void *main_BSS_END;
-+extern void *P32 main_BSS_END;
++extern P32F(void *) main_BSS_END;
  
 @@ -13,3 +13,3 @@
  #ifdef SPYRO_PORT
 -void *g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
-+void *P32 g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
++P32F(void *) g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
  #else
 --- a/src/overlays/balloonist.c
 +++ b/src/overlays/balloonist.c
@@ -1674,45 +1674,45 @@
 -extern char *g_PalHomeworldNames[5 * 6];    // PAL 0x800753F0, [language][world]
 -extern char *g_PalLevelNames[5 * 36];       // PAL 0x80075468, [language][level]
 -extern char *g_PalBalloonistDialogue[36 * 15]; // PAL 0x80075750, [id][language][line]
-+extern char *P32 g_PalBalloonistNames[6];       // PAL 0x80075738
-+extern char *P32 g_PalTheBalloonistText[5];     // PAL 0x80075210
-+extern char *P32 g_PalHopOnText[5];             // PAL 0x80075224 "WHERE TO, SPYRO?"
-+extern char *P32 g_PalNeedALiftText[5];         // PAL 0x80075238
-+extern char *P32 g_PalReadyToGoText[5];         // PAL 0x8007524C
-+extern char *P32 g_PalLikeToGoText[5];          // PAL 0x80075260
-+extern char *P32 g_PalGoToText[5];              // PAL 0x80075274 "GO TO "
-+extern char *P32 g_PalStayHereText[5];          // PAL 0x80075288
-+extern char *P32 g_PalHomeworldNames[5 * 6];    // PAL 0x800753F0, [language][world]
-+extern char *P32 g_PalLevelNames[5 * 36];       // PAL 0x80075468, [language][level]
-+extern char *P32 g_PalBalloonistDialogue[36 * 15]; // PAL 0x80075750, [id][language][line]
++extern P32F(char *) g_PalBalloonistNames[6];       // PAL 0x80075738
++extern P32F(char *) g_PalTheBalloonistText[5];     // PAL 0x80075210
++extern P32F(char *) g_PalHopOnText[5];             // PAL 0x80075224 "WHERE TO, SPYRO?"
++extern P32F(char *) g_PalNeedALiftText[5];         // PAL 0x80075238
++extern P32F(char *) g_PalReadyToGoText[5];         // PAL 0x8007524C
++extern P32F(char *) g_PalLikeToGoText[5];          // PAL 0x80075260
++extern P32F(char *) g_PalGoToText[5];              // PAL 0x80075274 "GO TO "
++extern P32F(char *) g_PalStayHereText[5];          // PAL 0x80075288
++extern P32F(char *) g_PalHomeworldNames[5 * 6];    // PAL 0x800753F0, [language][world]
++extern P32F(char *) g_PalLevelNames[5 * 36];       // PAL 0x80075468, [language][level]
++extern P32F(char *) g_PalBalloonistDialogue[36 * 15]; // PAL 0x80075750, [id][language][line]
  #endif
 @@ -93,3 +93,3 @@
    if (D_800777E8.m_State < 4) {
 -    Moby **mobyList = (Moby **)&g_SonyImage.u.m_Buf[0x400];
-+    Moby *P32 *mobyList = (Moby *P32 *)&g_SonyImage.u.m_Buf[0x400];
++    P32F(Moby *) *mobyList = (P32F(Moby *) *)&g_SonyImage.u.m_Buf[0x400];
      mobyList[0] = D_800777E8.m_BalloonistMoby;
 @@ -1031,5 +1031,5 @@
      } else {
 -      Moby **ptr;
-+      Moby *P32 *ptr;
++      P32F(Moby *) *ptr;
        func_800521C0();
 -      ptr = (Moby **)&g_SonyImage.u.m_Buf[0];
-+      ptr = (Moby *P32 *)&g_SonyImage.u.m_Buf[0];
++      ptr = (P32F(Moby *) *)&g_SonyImage.u.m_Buf[0];
        while (*ptr)
 @@ -1238,5 +1238,5 @@
    } else {
 -    Moby **ptr;
-+    Moby *P32 *ptr;
++    P32F(Moby *) *ptr;
      func_800521C0();
 -    ptr = (Moby **)&g_SonyImage.u.m_Buf[0];
-+    ptr = (Moby *P32 *)&g_SonyImage.u.m_Buf[0];
++    ptr = (P32F(Moby *) *)&g_SonyImage.u.m_Buf[0];
      while (*ptr)
 --- a/src/overlays/flight.c
 +++ b/src/overlays/flight.c
 @@ -49,3 +49,3 @@
  // look into defining
 -extern char *D_8006E8C0[6][4];
-+extern char *P32 D_8006E8C0[6][4];
++extern P32F(char *) D_8006E8C0[6][4];
  
 @@ -58,18 +58,18 @@
  extern int (*g_PalLetterCount)(char *pText); // PAL 0x8007C0B8 (bss)
@@ -1723,13 +1723,13 @@
 -extern char *g_PalFlightAllInOneText[5];     // PAL 0x80073D84
 -extern char *g_PalFlightTotalText[5];        // PAL 0x80073D98
 -extern char *g_PalFlightPressText[5];        // PAL 0x80073DAC "PRESS   BUTTON"
-+extern char *P32 g_PalFlightCompletedText[5];    // PAL 0x80073D34
-+extern char *P32 g_PalFlightQuitText[5];         // PAL 0x80073D48
-+extern char *P32 g_PalFlightTimeUpText[5];       // PAL 0x80073D5C
-+extern char *P32 g_PalFlightCrashedText[5];      // PAL 0x80073D70
-+extern char *P32 g_PalFlightAllInOneText[5];     // PAL 0x80073D84
-+extern char *P32 g_PalFlightTotalText[5];        // PAL 0x80073D98
-+extern char *P32 g_PalFlightPressText[5];        // PAL 0x80073DAC "PRESS   BUTTON"
++extern P32F(char *) g_PalFlightCompletedText[5];    // PAL 0x80073D34
++extern P32F(char *) g_PalFlightQuitText[5];         // PAL 0x80073D48
++extern P32F(char *) g_PalFlightTimeUpText[5];       // PAL 0x80073D5C
++extern P32F(char *) g_PalFlightCrashedText[5];      // PAL 0x80073D70
++extern P32F(char *) g_PalFlightAllInOneText[5];     // PAL 0x80073D84
++extern P32F(char *) g_PalFlightTotalText[5];        // PAL 0x80073D98
++extern P32F(char *) g_PalFlightPressText[5];        // PAL 0x80073DAC "PRESS   BUTTON"
  extern int g_PalFlightPressButtonAt[5];      // PAL 0x80073DC0, the X's letter
 -extern char *g_PalFlightTryAgainText[5];     // PAL 0x80073DD4
 -extern char *g_PalFlightYesText[5];          // PAL 0x80073DE8
@@ -1739,24 +1739,24 @@
 -extern char *g_PalFlightYourTimeText[5];     // PAL 0x80073E38
 -extern char *g_PalFlightNewRecordText[5];    // PAL 0x80073E4C
 -extern char *g_PalFlightObjectiveNames[6][5][4]; // PAL 0x80073E60, [world][language]
-+extern char *P32 g_PalFlightTryAgainText[5];     // PAL 0x80073DD4
-+extern char *P32 g_PalFlightYesText[5];          // PAL 0x80073DE8
-+extern char *P32 g_PalFlightNoText[5];           // PAL 0x80073DFC
-+extern char *P32 g_PalFlightTimeAttackText[5];   // PAL 0x80073E10
-+extern char *P32 g_PalFlightBestTimeText[5];     // PAL 0x80073E24
-+extern char *P32 g_PalFlightYourTimeText[5];     // PAL 0x80073E38
-+extern char *P32 g_PalFlightNewRecordText[5];    // PAL 0x80073E4C
-+extern char *P32 g_PalFlightObjectiveNames[6][5][4]; // PAL 0x80073E60, [world][language]
++extern P32F(char *) g_PalFlightTryAgainText[5];     // PAL 0x80073DD4
++extern P32F(char *) g_PalFlightYesText[5];          // PAL 0x80073DE8
++extern P32F(char *) g_PalFlightNoText[5];           // PAL 0x80073DFC
++extern P32F(char *) g_PalFlightTimeAttackText[5];   // PAL 0x80073E10
++extern P32F(char *) g_PalFlightBestTimeText[5];     // PAL 0x80073E24
++extern P32F(char *) g_PalFlightYourTimeText[5];     // PAL 0x80073E38
++extern P32F(char *) g_PalFlightNewRecordText[5];    // PAL 0x80073E4C
++extern P32F(char *) g_PalFlightObjectiveNames[6][5][4]; // PAL 0x80073E60, [world][language]
  
 @@ -292,3 +292,3 @@
      Moby *mobys;
 -    Moby **mobyBuf;
-+    Moby *P32 *mobyBuf;
++    P32F(Moby *) *mobyBuf;
  
 @@ -732,3 +732,3 @@
    Moby *mobys;
 -  Moby **mobyBuf;
-+  Moby *P32 *mobyBuf;
++  P32F(Moby *) *mobyBuf;
  
 --- a/src/overlays/moby_spawn.c
 +++ b/src/overlays/moby_spawn.c
@@ -1770,123 +1770,123 @@
 @@ -80,3 +80,3 @@
  
 -  Moby **mobyList;
-+  Moby *P32 *mobyList;
++  P32F(Moby *) *mobyList;
    Moby *moby;
 @@ -88,8 +88,8 @@
    // 60 Hz logic (D130): each class's animation step at its rate
 -  t60_moby_animate((Moby **)(g_SonyImage.u.m_Buf + 0x400));
-+  t60_moby_animate((Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400));
++  t60_moby_animate((P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400));
  #else
 -  func_800522C0((Moby **)(g_SonyImage.u.m_Buf + 0x400), 0);
-+  func_800522C0((Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400), 0);
++  func_800522C0((P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400), 0);
  
    if (g_DeltaTime > 2) {
 -    func_800522C0((Moby **)(g_SonyImage.u.m_Buf + 0x400),
-+    func_800522C0((Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400),
++    func_800522C0((P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400),
                    g_DeltaTime == 3 ? 0x80000001 : 0x80000000);
 @@ -98,3 +98,3 @@
  
 -  mobyList = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+  mobyList = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++  mobyList = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
  
 @@ -279,3 +279,3 @@
            if (moby->m_Pod != 0xFF) {
 -            Moby **scan = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+            Moby *P32 *scan = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++            P32F(Moby *) *scan = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
              Moby *other;
 @@ -1374,3 +1374,3 @@
          props->m_0x04->m_DepthOffset = 0;
 -        *(Moby **)props->m_0x04->m_Props = moby;
-+        *(Moby *P32 *)props->m_0x04->m_Props = moby;
++        *(P32F(Moby *) *)props->m_0x04->m_Props = moby;
        }
 @@ -5929,3 +5929,3 @@
          Vector3D oldPosition;
 -        Moby **scan;
-+        Moby *P32 *scan;
++        P32F(Moby *) *scan;
          Moby *other;
 @@ -5979,3 +5979,3 @@
  
 -        scan = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+        scan = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++        scan = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
          while ((other = *scan++) != nullptr) {
 @@ -6345,3 +6345,3 @@
          Vector3D oldPosition;
 -        Moby **scan;
-+        Moby *P32 *scan;
++        P32F(Moby *) *scan;
          Moby *other;
 @@ -6393,3 +6393,3 @@
  
 -        scan = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+        scan = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++        scan = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
          while ((other = *scan++) != nullptr) {
 @@ -10518,3 +10518,3 @@
        Moby136Props *props = moby->m_Props;
 -      Moby **child;
-+      Moby *P32 *child;
++      P32F(Moby *) *child;
        int i;
 @@ -10650,3 +10650,3 @@
        int i;
 -      Moby **scan;
-+      Moby *P32 *scan;
++      P32F(Moby *) *scan;
        Moby *other;
 @@ -10817,3 +10817,3 @@
              if (props->m_0x4c != 0) {
 -              scan = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+              scan = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++              scan = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
                while ((other = *scan++) != nullptr) {
 @@ -23485,3 +23485,3 @@
          // TODO: Hack
 -        Model **models;
-+        Model *P32 *models;
++        P32F(Model *) *models;
  
 @@ -30333,3 +30333,3 @@
        case 1: {
 -        Moby **scan;
-+        Moby *P32 *scan;
++        P32F(Moby *) *scan;
          Moby *other;
 @@ -30355,3 +30355,3 @@
  
 -          scan = (Moby **)(g_SonyImage.u.m_Buf + 0x400);
-+          scan = (Moby *P32 *)(g_SonyImage.u.m_Buf + 0x400);
++          scan = (P32F(Moby *) *)(g_SonyImage.u.m_Buf + 0x400);
  
 --- a/src/overlays/particle_spawn.c
 +++ b/src/overlays/particle_spawn.c
 @@ -181,3 +181,3 @@
  
 -      *(Vector3D **)&particle->m_Data.m_Raw[20] =
-+      *(Vector3D *P32 *)&particle->m_Data.m_Raw[20] =
++      *(P32F(Vector3D *) *)&particle->m_Data.m_Raw[20] =
            &((Moby *)spawnParam)->m_Position;
 @@ -1073,3 +1073,3 @@
  
 -      *(PathData **)&particle->m_Data.m_Raw[20] = (PathData *)extraParam;
-+      *(PathData *P32 *)&particle->m_Data.m_Raw[20] = (PathData *)extraParam;
++      *(P32F(PathData *) *)&particle->m_Data.m_Raw[20] = (PathData *)extraParam;
        *(int *)&particle->m_Data.m_Raw[24] = 0;
 --- a/src/overlays/particle_update.c
 +++ b/src/overlays/particle_update.c
 @@ -157,3 +157,3 @@
        } else {
 -        VecCopy(&delta, &(*(Moby **)&particle->m_Data.m_Raw[20])->m_Position);
-+        VecCopy(&delta, &(*(Moby *P32 *)&particle->m_Data.m_Raw[20])->m_Position);
++        VecCopy(&delta, &(*(P32F(Moby *) *)&particle->m_Data.m_Raw[20])->m_Position);
  
 @@ -170,3 +170,3 @@
  
 -          props = (*(Moby **)&particle->m_Data.m_Raw[20])->m_Props;
-+          props = (*(Moby *P32 *)&particle->m_Data.m_Raw[20])->m_Props;
++          props = (*(P32F(Moby *) *)&particle->m_Data.m_Raw[20])->m_Props;
  
 @@ -179,3 +179,3 @@
            func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
 -                        &(*(Moby **)&particle->m_Data.m_Raw[20])->m_Position);
-+                        &(*(Moby *P32 *)&particle->m_Data.m_Raw[20])->m_Position);
++                        &(*(P32F(Moby *) *)&particle->m_Data.m_Raw[20])->m_Position);
            *(short *)&particle->m_Data.m_Raw[24] += rand() & 127;
 @@ -249,3 +249,3 @@
  
 -      VecCopy(&position, *(Vector3D **)&particle->m_Data.m_Raw[20]);
-+      VecCopy(&position, *(Vector3D *P32 *)&particle->m_Data.m_Raw[20]);
++      VecCopy(&position, *(P32F(Vector3D *) *)&particle->m_Data.m_Raw[20]);
  
 @@ -1078,3 +1078,3 @@
  
 -      pathData = *(PathData **)&particle->m_Data.m_Raw[20];
-+      pathData = *(PathData *P32 *)&particle->m_Data.m_Raw[20];
++      pathData = *(P32F(PathData *) *)&particle->m_Data.m_Raw[20];
  
 --- a/src/overlays/titlescreen.c
 +++ b/src/overlays/titlescreen.c
@@ -1900,7 +1900,7 @@
 @@ -45,3 +45,3 @@
  // Part of this file (gp_rel)
 -Moby *D_80075804;
-+Moby *P32 D_80075804;
++P32F(Moby *) D_80075804;
  
 --- a/src/special_surfaces.c
 +++ b/src/special_surfaces.c
@@ -1908,8 +1908,8 @@
    int pathMoby;
 -  Portal **pportal2;
 -  Portal **pportal;
-+  Portal *P32 *pportal2;
-+  Portal *P32 *pportal;
++  P32F(Portal *) *pportal2;
++  P32F(Portal *) *pportal;
    int sidedness;
 --- a/src/strings.c
 +++ b/src/strings.c
