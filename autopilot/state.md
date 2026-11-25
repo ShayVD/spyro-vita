@@ -257,7 +257,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "release/encore-resume-d244",
       "commit": "7b6e66da036fe5639009c4a0b6f6b318387d9262",
       "pr": 248,
-      "merged_at": null
+      "merged_at": "2026-11-24T14:17:12Z"
     }
   ]
 }
