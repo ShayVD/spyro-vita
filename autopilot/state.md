@@ -29,6 +29,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a68f8cfb2027b43fd",
       "last_commit_at": "2026-11-25T12:20:37Z"
+    },
+    {
+      "issue": 237,
+      "branch": "feat/237-wobble-fix-a-frame-whose-order-log-is",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-237",
+      "pids": [],
+      "started_at": "2026-11-25T13:45:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "ae351bab01fd52e24",
+      "last_commit_at": "2026-11-25T13:45:00Z"
     }
   ],
   "last_good": "44e82e81c84b38431adc48b6ea1d4c8a90a9d114",
@@ -249,7 +262,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "260": 1
+    "260": 1,
+    "237": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -514,3 +528,4 @@ continue.
 - 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
 - 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
 - 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
+- 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
