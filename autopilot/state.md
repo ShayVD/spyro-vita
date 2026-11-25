@@ -23,18 +23,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/psx_vcache.h"
       ],
       "agent": "aa6c03cf1d320f4e7"
-    },
-    {
-      "issue": 257,
-      "branch": "docs/257-describe-the-vcache-cut-fraction-line-s",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-257",
-      "pids": [],
-      "started_at": "2026-11-25T05:15:21Z",
-      "files": [
-        "docs/host-build.md",
-        "docs/vita-testing.md"
-      ],
-      "agent": "a7f79747a8823bbc6"
     }
   ],
   "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
@@ -471,3 +459,4 @@ continue.
 - 2026-11-25T05:01:30Z shared 5, vita 8: #230 reported done (PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0, FNV 0 changed, shots identical 8/8 re-checked by coordinator); scripted gate running; Vita3K: 8 runs (worker's, 0 own failures)
 - 2026-11-25T05:14:51Z shared 5, vita 8: merged #230 (D248): PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0; regression = the worker's 8-route run (code identical to head 29d857a): last_good and vita baseline -> base-29d857a; filed #257 (docs); Vita3K: 8 runs (worker's, 0 own failures), hardware: none
 - 2026-11-25T05:15:56Z shared 5, vita 8: started #231 (ParticlesDraw, vcache.c) and #257 (docs); others held on vcache.c; Vita3K: none, hardware: none
+- 2026-11-25T05:21:33Z shared 5, vita 8: merged #257 (docs, cut fraction line; host test step skipped: docs only); fa_seed note added to #247; #231 running; Vita3K: none, hardware: none
