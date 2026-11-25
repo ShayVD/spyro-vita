@@ -63,7 +63,8 @@ python3 tools/contact_sheet.py logs/runN-x
   or copy one from the other VM with `docker save IMAGE | DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker load`.
 - **The queue.** One spyro container runs at a time on the machine; the next waits (and says who it waits for)
   instead of sharing the CPUs, which made two builds on the old 2-CPU VM take hours. The lock is
-  `~/.cache/spyro-vita/docker.lock`, held until the docker client exits. `SPYRO_DQ=0` skips it for a quick look
+  `~/.cache/spyro-vita/docker.lock`, held until the docker client exits. It is first come, first served: each waiter
+  leaves a ticket in `docker.lock.q/`, so a session that starts builds back to back cannot keep jumping a waiting one. `SPYRO_DQ=0` skips it for a quick look
   inside a container; a `TC_PORT` run (`--serve`) skips it too, since a second container talks to it.
 
 Run builds through these wrappers, not a bare `docker run`: a bare one skips both. On `kh1fast` the mount is
