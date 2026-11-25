@@ -113,10 +113,10 @@ static void LeaveState(int pOldState) {
     g_Spyro.m_colorFilter.m_interpolation = 0;
     /* fall through */
   case 14: case 22: case 27: case 28:
-    PlaySpyroSound(g_Spu.m_SoundTable->spyroStars, &g_Spyro.m_damageSoundChannel);
+    PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->spyroStars, &g_Spyro.m_damageSoundChannel);
     break;
   case 25:
-    PlaySpyroSound(g_Spu.m_SoundTable->spyroUnsquish, &g_Spyro.m_damageSoundChannel);
+    PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->spyroUnsquish, &g_Spyro.m_damageSoundChannel);
     break;
   }
 }
@@ -183,11 +183,11 @@ static void FindChargeTarget(void) {
   Moby *moby;
   int best = 30000, off, dist;
 
-  D_80075790 = NULL;
+  P32_SET(D_80075790 , NULL);
   if (Abs(AngleDelta(ph->m_SpeedAngle.m_RotZ - g_Camera.m_Rotation.z)) <= 0x200)
     return;
-  for (moby = g_LevelMobys; moby < g_DynMobys; moby++) {
-    if (moby->m_State >= 0x7F || moby->m_CollisionGroup == NULL)
+  for (moby = P32_GET(g_LevelMobys); moby < P32_GET(g_DynMobys); moby++) {
+    if (moby->m_State >= 0x7F || P32_GET(moby->m_CollisionGroup) == NULL)
       continue;
     VecSub(&toMoby, &moby->m_Position, &g_Spyro.m_Position);
     off = Abs(AngleDelta(Atan2(toMoby.x, toMoby.y, 1) - ph->m_SpeedAngle.m_RotZ));
@@ -199,7 +199,7 @@ static void FindChargeTarget(void) {
     dist += off * 4;
     if (dist < best) {
       best = dist;
-      D_80075790 = moby;
+      P32_SET(D_80075790 , moby);
     }
   }
 }
@@ -231,7 +231,7 @@ static void EnterCharge(void) {
   func_8003E1AC();
   ApplySlopeGravity();
   g_Spyro.unk_0x15c = 1;
-  PlaySpyroSound(g_Spu.m_SoundTable->spyroCharge, &g_Spyro.m_chargeSoundChannel);
+  PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->spyroCharge, &g_Spyro.m_chargeSoundChannel);
   FindChargeTarget();
 }
 
@@ -258,7 +258,7 @@ static void EnterKnockback(void) {
   Rumble(&D_8007584C, 0x78);
   Rumble(&D_800757D0, RT(0xF, 13));
   if (REGION_IS(PAL)) /* PAL (0x800447D4) adds a sound (D139) */
-    PlaySound(g_Spu.m_SoundTable->sound_0x43, SPYRO_MOBY, 16, NULL);
+    PlaySound(P32_GET(g_Spu.m_SoundTable)->sound_0x43, SPYRO_MOBY, 16, NULL);
 }
 
 /* States 7 and 14: hurt. Pushed back against his motion, at most 0x1E00. */
@@ -315,14 +315,14 @@ static void EnterWhirlwind(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
   int turns;
 
-  if (g_Spyro.m_mobyInUseBySpyro) {
+  if (P32_GET(g_Spyro.m_mobyInUseBySpyro)) {
     VecNull(&ph->m_Acceleration);
     g_Spyro.m_highestFlightPoint = g_Spyro.m_portalEndPos.z;
     D_80075724 = g_Spyro.m_portalEndPos.z - g_Spyro.m_Position.z - 0x800;
     D_80075668 = g_Spyro.m_Position.z;
     D_8007578C = ph->m_SpeedAngle.m_RotZ;
     turns = ((D_80075724 << 10) >> 10) + 0x400; /* low 22 bits, signed */
-    D_800757F0 = AngleDelta((g_Spyro.m_mobyInUseBySpyro->m_Rotation.z << 4) - ph->m_SpeedAngle.m_RotZ - turns);
+    D_800757F0 = AngleDelta((P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Rotation.z << 4) - ph->m_SpeedAngle.m_RotZ - turns);
   } else {
     VecCopy(&ph->m_Acceleration, &ph->m_TrueVelocity);
   }
@@ -376,7 +376,7 @@ static void EnterFlying(void) {
   ApplySlopeGravity();
   g_Spyro.unk_0x15c = 1;
   D_80075700 = 0;
-  PlaySpyroSound(g_Spu.m_SoundTable->superCharge, &g_Spyro.m_chargeSoundChannel);
+  PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->superCharge, &g_Spyro.m_chargeSoundChannel);
 }
 
 /* States 22 and 28: thrown by a scripted velocity (unk_0x208, per tick;
@@ -394,7 +394,7 @@ static void EnterThrown(void) {
     func_8003E1AC();
   g_Spyro.unk_0x15c = 1;
   g_SpawnParticle(5, 10, NULL, 0);
-  PlaySpyroSound(g_Spu.m_SoundTable->flipImpact, &g_Spyro.m_damageSoundChannel);
+  PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->flipImpact, &g_Spyro.m_damageSoundChannel);
   Rumble(&D_80075904, RT(0xF, 13));
 }
 
@@ -406,8 +406,8 @@ static void EnterSplash(void) {
   if (g_Spyro.m_invulverabilityTimer == 0)
     g_SpawnParticle(5, 10, NULL, 0);
   g_SpawnMoby(D_8006EA34[D_80075728], NULL);
-  PlaySpyroSound(g_Spu.m_SoundTable->waterSplash, &g_Spyro.m_damageSoundChannel);
-  PlaySpyroSound(g_Spu.m_SoundTable->spyroStars, &g_Spyro.m_damageSoundChannel);
+  PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->waterSplash, &g_Spyro.m_damageSoundChannel);
+  PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->spyroStars, &g_Spyro.m_damageSoundChannel);
   Rumble(&D_80075904, RT(0xF, 13));
 }
 
@@ -465,7 +465,7 @@ void func_8003EA68(int pNewState) {
     g_Spyro.m_highestFlightPoint = g_Spyro.m_Position.z + (ph->m_Acceleration.z >> 6);
     D_800756B4 = g_Spyro.m_State == 29;
     if (REGION_IS(PAL)) /* PAL (0x80044328) adds a sound (D139) */
-      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
+      PlaySound(P32_GET(g_Spu.m_SoundTable)->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 6:
     g_Spyro.m_walkingState = 0;
@@ -486,13 +486,13 @@ void func_8003EA68(int pNewState) {
   case 14:
     EnterHurt();
     Rumble(&D_80075904, RT(0xF, 13));
-    PlaySpyroSound(g_Spu.m_SoundTable->flipImpact, &g_Spyro.m_damageSoundChannel);
+    PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->flipImpact, &g_Spyro.m_damageSoundChannel);
     break;
   case 8:
     g_Spyro.m_walkingState = 0;
     g_Spyro.unk_0x15c = 1;
     if (REGION_IS(PAL)) /* PAL (0x80044410) adds a sound (D139) */
-      PlaySound(g_Spu.m_SoundTable->sound_0x42, SPYRO_MOBY, 16, NULL);
+      PlaySound(P32_GET(g_Spu.m_SoundTable)->sound_0x42, SPYRO_MOBY, 16, NULL);
     break;
   case 9: case 10: /* sidestepping */
     g_Spyro.m_walkingState = 0;
@@ -556,7 +556,7 @@ void func_8003EA68(int pNewState) {
     g_Spyro.unk_0x15c = 1;
     g_SpawnParticle(5, 10, NULL, 0);
     Rumble(&D_80075904, RT(0xF, 13));
-    PlaySpyroSound(g_Spu.m_SoundTable->splort, &g_Spyro.m_damageSoundChannel);
+    PlaySpyroSound(P32_GET(g_Spu.m_SoundTable)->splort, &g_Spyro.m_damageSoundChannel);
     break;
   case 26: /* circling m_mobyInUseBySpyro */
     g_Spyro.m_walkingState = 0;
@@ -647,7 +647,7 @@ static void FollowMoby(int pFlags) {
   int targetRotZ = ph->m_TargetSpeedAngle.m_RotZ;
   int rel, limit, left, heading;
 
-  rel = (g_Spyro.m_mobyInUseBySpyro->m_Rotation.z - (g_Camera.m_Rotation.z >> 4)) & 0xFF;
+  rel = (P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Rotation.z - (g_Camera.m_Rotation.z >> 4)) & 0xFF;
   if (rel > 0x80)
     rel -= 0x100;
 
@@ -667,8 +667,8 @@ static void FollowMoby(int pFlags) {
       if (ph->m_TargetSpeedAngle.m_Speed == 0) {
         D_800758A0 = 0;
       } else {
-        VecSub(&d, &g_Spyro.m_Position, &g_Spyro.m_mobyInUseBySpyro->m_Position);
-        rel = (Atan2(d.x, d.y, 0) - g_Spyro.m_mobyInUseBySpyro->m_Rotation.z + 0x80) & 0xFF;
+        VecSub(&d, &g_Spyro.m_Position, &P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Position);
+        rel = (Atan2(d.x, d.y, 0) - P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Rotation.z + 0x80) & 0xFF;
         if (rel > 0x80)
           rel -= 0x100;
         if (g_LevelId == 20)
@@ -678,8 +678,8 @@ static void FollowMoby(int pFlags) {
         if (Abs(rel) >= limit) {
           D_800758A0 = 0;
         } else {
-          VecSub(&d, &g_Spyro.m_mobyInUseBySpyro->m_Position, &g_Spyro.m_Position);
-          heading = g_Spyro.m_mobyInUseBySpyro->m_Rotation.z;
+          VecSub(&d, &P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Position, &g_Spyro.m_Position);
+          heading = P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Rotation.z;
           left = ((Atan2(d.x, d.y, 1) - (heading << 4)) & 0xFFF) < 0x800;
           heading += left ? 0x40 : -0x40;
           if (Abs(AngleDelta((heading << 4) - ph->m_TargetSpeedAngle.m_RotZ)) < 0x200) {
@@ -694,14 +694,14 @@ static void FollowMoby(int pFlags) {
     D_80075948 += g_DeltaTime;
   }
 
-  g_Camera.m_Focus = &D_80077798;
-  VecCopy(&D_80077798, &g_Spyro.m_mobyInUseBySpyro->m_Position);
+  P32_SET(g_Camera.m_Focus , &D_80077798);
+  VecCopy(&D_80077798, &P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Position);
   D_80077798.z += 0x200;
-  g_Camera.m_SphericalPreset = &D_8006CB2C;
+  P32_SET(g_Camera.m_SphericalPreset , &D_8006CB2C);
   g_Camera.unk_0xC0 = 0x8000000A;
   ph->m_TargetSpeedAngle.m_RotZ = targetRotZ;
   g_Spyro.m_ControlFlags |= CTRL_CAMERA_FOCUS;
-  g_Camera.m_FocusRotation = g_Spyro.m_mobyInUseBySpyro->m_Rotation.z << 4;
+  g_Camera.m_FocusRotation = P32_GET(g_Spyro.m_mobyInUseBySpyro)->m_Rotation.z << 4;
 }
 
 /* m_ControlFlags bit 31: a script moves Spyro (portals, cutscenes, mobys
@@ -760,10 +760,10 @@ static void ScriptedControl(void) {
        * both NULL: the original read address 0 and went on; the port would
        * crash in func_80033F08 (the C2-12828-1 dump, logs/hw-crash). Keep
        * the focus and preset FollowMoby just set instead. */
-      if (g_Spyro.unk_0x21c)
-        g_Camera.m_Focus = g_Spyro.unk_0x21c;
-      if (g_Spyro.unk_0x220)
-        g_Camera.m_SphericalPreset = g_Spyro.unk_0x220;
+      if (P32_GET(g_Spyro.unk_0x21c))
+        P32_SET(g_Camera.m_Focus , P32_GET(g_Spyro.unk_0x21c));
+      if (P32_GET(g_Spyro.unk_0x220))
+        P32_SET(g_Camera.m_SphericalPreset , P32_GET(g_Spyro.unk_0x220));
     } else if (flags & 0x400) {
       g_Camera.unk_0xC0 = 0x8000000B;
     } else if (flags & CTRL_FOLLOW_MOBY) {
@@ -851,7 +851,7 @@ static void HitTerrain(void) {
   steep = (signed char)Atan2(g_CollisionNormal.z, VecMagnitude(&g_CollisionNormal, 0), 0);
   if (steep >= 0x17) {
     surface = g_SurfaceBelowFlags & 0x3F;
-    type = surface == 0x3F ? 0 : g_Environment.m_SurfaceData[surface]->m_Type;
+    type = surface == 0x3F ? 0 : P32_GET(P32_GET(g_Environment.m_SurfaceData)[surface])->m_Type;
     if (type != 6) {
       g_Spyro.m_againstWall = 1;
       func_80017330(&g_CollisionNormal, 0x400);
@@ -885,7 +885,7 @@ static void CollisionStep(void) {
   for (tries = 0; tries < 6; tries++) {
     hit = CollideMobys();
     if (hit) {
-      D_80075804 = hit;
+      P32_SET(D_80075804 , hit);
       g_Spyro.m_touchingMoby = 1;
       LimitPush(&ph->m_TrueVelocity);
     }

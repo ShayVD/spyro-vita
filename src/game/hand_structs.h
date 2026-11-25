@@ -60,7 +60,7 @@ typedef struct {
   GamepadSticks m_Sticks;
 } PadFrame;
 
-#define g_PadFrame ((PadFrame *)g_ActivePad)
+#define g_PadFrame ((PadFrame *)P32_GET(g_ActivePad))
 
 /* Camera (camera.h): the same fields, with names for the unk_ ones the
  * hand-written camera functions use (src/game/camera_hand.c). The camera

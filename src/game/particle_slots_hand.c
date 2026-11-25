@@ -58,7 +58,7 @@ static u32 AllocGlow(u32 a0, u32 a1, u32 a2, u32 a3) {
     Glow *glow = &g_Glows[i];
     if (glow->m_VertexCount == 0) {
       glow->m_VertexCount = GLOW_DEFAULT_VERTS;
-      glow->m_Vertices = g_DefaultGlowVerts;
+      P32_SET(glow->m_Vertices , g_DefaultGlowVerts);
       glow->m_OtOffset = 0;
       return PSX_ADDR(glow);
     }

@@ -1,0 +1,248 @@
+--- a/include/moby_lists.h
++++ b/include/moby_lists.h
+@@ -10,6 +10,6 @@
+ void func_800521C0(void);
+ 
+ /// @brief Updates the Mobys' animations
+-void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv);
++typedef P32F(Moby *) MobyListSlot; void func_800522C0(MobyListSlot *pMobyList, u_int pSpeedDiv);
+ 
+ #endif // __MOBY_LISTS_H
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -1332,7 +1332,7 @@
+ extern P32F(char *) g_PalYesText[5];          // PAL 0x80075008
+ extern P32F(char *) g_PalNoText[5];           // PAL 0x8007501C
+ extern P32F(char *) g_PalHomeworldNames[30]; // PAL 0x800753F0: [language * 6 + world]
+-extern P32F(char *) g_PalLevelNames[180];     // PAL 0x80075468: [language * 36 + level]
++extern __typeof__(g_PalLevelNames) g_PalLevelNames;     // PAL 0x80075468: [language * 36 + level]
+ // x per language (unsized, so not $gp-addressed)
+ extern u_char g_PalNoX[];           // PAL 0x80075030
+ extern u_char g_PalPausedX[];       // PAL 0x8007B9AC
+@@ -3955,9 +3955,9 @@
+ extern P32F(char *) g_PalWorldText[5];         // PAL 0x80074DEC
+ extern P32F(char *) g_PalFrenchWorldNames[5];  // PAL 0x80074E00
+ extern P32F(char *) g_PalGnastyWorldText[5];   // PAL 0x80074E14
+-extern P32F(char *) g_PalHomeworldNames[5 * 6]; // PAL 0x800753F0
+-extern P32F(char *) g_PalEnteringText[5];      // PAL 0x80074DC4
+-extern P32F(char *) g_PalLevelNames[5 * 36];   // PAL 0x80075468
++extern __typeof__(g_PalHomeworldNames) g_PalHomeworldNames; // PAL 0x800753F0
++extern __typeof__(g_PalEnteringText) g_PalEnteringText;      // PAL 0x80074DC4
++extern __typeof__(g_PalLevelNames) g_PalLevelNames;   // PAL 0x80075468
+ #endif
+ 
+ /// @brief Gamestate 12, balloon transition and balloonist talk
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -157,12 +157,12 @@
+     P32_SET(g_Environment.m_TerrainCollision , (TerrainCollision *)pData);
+ 
+     // Fix up all internal TerrainCollision pointers
+-    PATCH_POINTER(P32_GET(g_Environment.m_TerrainCollision)->m_BlockTree, pData);
+-    PATCH_POINTER(P32_GET(g_Environment.m_TerrainCollision)->m_Blocks, pData);
+-    PATCH_POINTER(P32_GET(g_Environment.m_TerrainCollision)->m_Triangles, pData);
+-    PATCH_POINTER(
++    P32_PATCH(P32_GET(g_Environment.m_TerrainCollision)->m_BlockTree, pData);
++    P32_PATCH(P32_GET(g_Environment.m_TerrainCollision)->m_Blocks, pData);
++    P32_PATCH(P32_GET(g_Environment.m_TerrainCollision)->m_Triangles, pData);
++    P32_PATCH(
+         P32_GET(g_Environment.m_TerrainCollision)->m_TriangleOcclusionAssignment, pData);
+-    PATCH_POINTER(P32_GET(g_Environment.m_TerrainCollision)->m_Flags, pData);
++    P32_PATCH(P32_GET(g_Environment.m_TerrainCollision)->m_Flags, pData);
+ 
+     COMPONENT_END(pData); //! Collision data
+   }
+@@ -270,19 +270,19 @@
+     data = ((char *)data + 4);
+     P32_SET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index] , data);
+ 
+-    P32_GET(PATCH_POINTER(SPYRO_MODEL->m_Animations[animation_index]->m_Faces,
+-                  SPYRO_MODEL->m_Data));
+-    P32_GET(PATCH_POINTER(SPYRO_MODEL->m_Animations[animation_index]->m_Colors,
+-                  SPYRO_MODEL->m_Data));
++    P32_PATCH(P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_Faces,
++                  P32_GET(P32_GET(SPYRO_MODEL)->m_Data));
++    P32_PATCH(P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_Colors,
++                  P32_GET(P32_GET(SPYRO_MODEL)->m_Data));
+ 
+     frame_data_size = P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_NumFrames *
+                       sizeof(SpyroAnimationFrame);
+     past_frame_data =
+         (int)((AnimationHeader *)data)->m_Frames + frame_data_size;
+ 
+-    P32_GET(PATCH_POINTER(
+-        SPYRO_MODEL->m_Animations[animation_index]->m_AnimationVertices,
+-        past_frame_data));
++    P32_PATCH(
++        P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_AnimationVertices,
++        past_frame_data);
+ 
+     frame = (SpyroAnimationFrame *)P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])
+                 ->m_Frames;
+@@ -309,9 +309,9 @@
+   Model *m = pModel;
+ 
+   if (m->m_NumAnimations < 0) {
+-    PATCH_POINTER2(((SimpleModel *)m)->m_Verts, m);
+-    PATCH_POINTER2(((SimpleModel *)m)->m_Colors, m);
+-    PATCH_POINTER2(((SimpleModel *)m)->m_Faces, m);
++    P32_PATCH2(((SimpleModel *)m)->m_Verts, m);
++    P32_PATCH2(((SimpleModel *)m)->m_Colors, m);
++    P32_PATCH2(((SimpleModel *)m)->m_Faces, m);
+ #if SPYRO_NATIVE_MEM
+     // Spyro port (D100): the tag is bit 0, which a model's address never
+     // has (psx_mem.h MEM_MODEL_SIMPLE), not bit 31
+@@ -345,25 +345,25 @@
+     }
+   }
+ 
+-  PATCH_POINTER(m->m_Data, pModel);
++  P32_PATCH(m->m_Data, pModel);
+ 
+   for (i = 0; i < m->m_NumAnimations; ++i) {
+     if ((int)P32_GET(m->m_Animations[i]) == -1) {
+       continue;
+     }
+ 
+-    PATCH_POINTER(m->m_Animations[i], pModel);
+-    PATCH_POINTER(P32_GET(m->m_Animations[i])->m_Faces, m->m_Data);
+-    PATCH_POINTER(P32_GET(m->m_Animations[i])->m_Colors, m->m_Data);
++    P32_PATCH(m->m_Animations[i], pModel);
++    P32_PATCH(P32_GET(m->m_Animations[i])->m_Faces, P32_GET(m->m_Data));
++    P32_PATCH(P32_GET(m->m_Animations[i])->m_Colors, P32_GET(m->m_Data));
+ 
+     if (P32_GET(P32_GET(m->m_Animations[i])->m_LpFaces) != 0) {
+-      PATCH_POINTER(P32_GET(m->m_Animations[i])->m_LpFaces, m->m_Data);
+-      PATCH_POINTER(P32_GET(m->m_Animations[i])->m_LpColors, m->m_Data);
++      P32_PATCH(P32_GET(m->m_Animations[i])->m_LpFaces, P32_GET(m->m_Data));
++      P32_PATCH(P32_GET(m->m_Animations[i])->m_LpColors, P32_GET(m->m_Data));
+     }
+ 
+     // Used for Spyro's model in PETE.WAD
+     if (P32_GET(m->m_Animations[i])->m_IsSpyroAnimation != 0) {
+-      PATCH_POINTER(P32_GET(m->m_Animations[i])->m_AnimationVertices, m->m_Data);
++      P32_PATCH(P32_GET(m->m_Animations[i])->m_AnimationVertices, P32_GET(m->m_Data));
+       p = (u_int *)&(P32_GET(m->m_Animations[i])->m_Frames[0]);
+       for (k = 0; k < P32_GET(m->m_Animations[i])->m_NumFrames; ++k, ++p) {
+         lower = *p & 0x1fffff;
+@@ -681,7 +681,7 @@
+   g_MobyPodCount = READ_I32(data);
+   P32_SET(g_MobyPods , (P32F(u_short *) *)data);
+   for (i = g_MobyPodCount - 1; i >= 0; i--) {
+-    PATCH_POINTER2(P32_GET(g_MobyPods)[i], componentStart);
++    P32_PATCH2(P32_GET(g_MobyPods)[i], componentStart);
+   }
+   COMPONENT_END(data); //! Moby pods
+ 
+@@ -989,11 +989,11 @@
+     P32_SET(g_CutsceneLayout , P32_GET(g_Buffers.m_LevelScene));
+ 
+     // While in WAD it's an offset, now we turn it into a pointer
+-    PATCH_POINTER(P32_GET(g_CutsceneLayout)->m_CameraData, g_CutsceneLayout);
++    P32_PATCH(P32_GET(g_CutsceneLayout)->m_CameraData, P32_GET(g_CutsceneLayout));
+ 
+     // Ditto for the Moby data
+     for (j = 0; j < P32_GET(g_CutsceneLayout)->m_MobyCount; ++j) {
+-      PATCH_POINTER(P32_GET(g_CutsceneLayout)->m_MobyData[j], g_Buffers.m_LevelScene);
++      P32_PATCH(P32_GET(g_CutsceneLayout)->m_MobyData[j], P32_GET(g_Buffers.m_LevelScene));
+     }
+ 
+     // Set the Moby pointer to the empty space after the cutscene data
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -2314,7 +2314,7 @@
+ INCLUDE_ASM_REORDER_HACK("asm/nonmatchings/moby_helpers", func_8003BFC0);
+ 
+ #define setMobyLetterProps(props, parent, index, len)                          \
+-  (props)->m_Parent = parent;                                                  \
++  P32_SET((props)->m_Parent, parent);                                         \
+   (props)->m_Len = len;                                                        \
+   (props)->m_Index = index
+ 
+--- a/src/overlay_pointers.c
++++ b/src/overlay_pointers.c
+@@ -11,7 +11,7 @@
+ // This is placed into sdata, but I think this is cleaner than having an
+ // assembly file
+ #ifdef SPYRO_PORT
+-P32F(void *) g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
++__typeof__(g_OverlaySpacePointer) g_OverlaySpacePointer; // PSX_ADDR(main_BSS_END), set by psx_overlays_init()
+ #else
+ void *g_OverlaySpacePointer = &main_BSS_END;
+ #endif
+@@ -394,7 +394,7 @@
+ 
+ #define LEVEL_CASE(pLevel)                                                     \
+   case pLevel:                                                                 \
+-    g_Buffers.m_CopyBuf = Terminator_LEVEL_##pLevel;                           \
++    P32_SET(g_Buffers.m_CopyBuf, Terminator_LEVEL_##pLevel);                   \
+     g_SpawnMoby = SpawnMoby_LEVEL_##pLevel;                                    \
+     g_UpdateMoby = UpdateMoby_LEVEL_##pLevel;                                  \
+     g_SpawnParticle = SpawnParticle_LEVEL_##pLevel;                            \
+@@ -403,7 +403,7 @@
+ 
+ #define LEVEL_CASE_BALLOON(pLevel)                                             \
+   case pLevel:                                                                 \
+-    g_Buffers.m_CopyBuf = Terminator_LEVEL_##pLevel;                           \
++    P32_SET(g_Buffers.m_CopyBuf, Terminator_LEVEL_##pLevel);                   \
+     g_SpawnMoby = SpawnMoby_LEVEL_##pLevel;                                    \
+     g_UpdateMoby = UpdateMoby_LEVEL_##pLevel;                                  \
+     g_SpawnParticle = SpawnParticle_LEVEL_##pLevel;                            \
+@@ -427,7 +427,7 @@
+ 
+ #define LEVEL_CASE_FLIGHT(pLevel)                                              \
+   case pLevel:                                                                 \
+-    g_Buffers.m_CopyBuf = Terminator_LEVEL_##pLevel;                           \
++    P32_SET(g_Buffers.m_CopyBuf, Terminator_LEVEL_##pLevel);                   \
+     g_SpawnMoby = SpawnMoby_LEVEL_##pLevel;                                    \
+     g_UpdateMoby = UpdateMoby_LEVEL_##pLevel;                                  \
+     g_SpawnParticle = SpawnParticle_LEVEL_##pLevel;                            \
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -2017,39 +2017,39 @@
+   // Spyro animation sound triggers
+ 
+ #define SPYRO_FRAME(anim, frame)                                               \
+-  ((SpyroAnimationFrame *)SPYRO_MODEL->m_Animations[anim]->m_Frames)[frame]
++  ((SpyroAnimationFrame *)P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[anim])->m_Frames)[frame]
+ 
+   // Body
+   soundId[0] =
+-      P32_GET(SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame))
++      SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame)
+           .m_Props.soundForFrame;
+ 
+   if (soundId[0] != 0xFF) {
+     if (g_Spyro.m_LastBodyFrameData !=
+-        P32_GET(SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame))
++        SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame)
+             .m_Data) {
+       PlaySound(soundId[0], (Moby *)&g_Spyro, 4, &g_Spyro.m_damageSoundChannel);
+     }
+   }
+ 
+   g_Spyro.m_LastBodyFrameData =
+-      P32_GET(SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame)).m_Data;
++      SPYRO_FRAME(g_Spyro.m_bodyAnimation, g_Spyro.m_bodyAnimationFrame).m_Data;
+ 
+   // Head
+   soundId[1] =
+-      P32_GET(SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame))
++      SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame)
+           .m_Props.soundForFrame;
+ 
+   if (soundId[1] != 0xFF && soundId[0] != soundId[1]) {
+     if (g_Spyro.m_LastHeadFrameData !=
+-        P32_GET(SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame))
++        SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame)
+             .m_Data) {
+       PlaySound(soundId[1], (Moby *)&g_Spyro, 4, &g_Spyro.m_damageSoundChannel);
+     }
+   }
+ 
+   g_Spyro.m_LastHeadFrameData =
+-      P32_GET(SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame)).m_Data;
++      SPYRO_FRAME(g_Spyro.m_headAnimation, g_Spyro.m_headAnimationFrame).m_Data;
+ 
+ #if SPYRO_TICK60
+   // 60 Hz logic (D141): a script's hold on Spyro (bit 31, set by a moby

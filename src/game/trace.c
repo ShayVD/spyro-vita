@@ -66,10 +66,10 @@ int spyro_moby_trace_open(const char *path) {
 
 static void moby_trace_vblank(int vblank) {
   int i;
-  if (!s_moby_trace || g_Gamestate != GS_Playing || g_LoadStage >= 0 || !g_LevelMobys)
+  if (!s_moby_trace || g_Gamestate != GS_Playing || g_LoadStage >= 0 || !P32_GET(g_LevelMobys))
     return;
-  for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++) {
-    const Moby *m = &g_LevelMobys[i];
+  for (i = 0; P32_GET(g_LevelMobys)[i].m_State != 0xff && i < 4096; i++) {
+    const Moby *m = &P32_GET(g_LevelMobys)[i];
     int dx = m->m_Position.x - g_Spyro.m_Position.x, dy = m->m_Position.y - g_Spyro.m_Position.y;
     if (m->m_State >= 0x80 || dx < -0x8000 || dx > 0x8000 || dy < -0x8000 || dy > 0x8000)
       continue;
@@ -128,9 +128,9 @@ int spyro_cutscene_trace_open(const char *path) {
  * row traced: is each one's origin its path's point at its pose's time? */
 void spyro_cutscene_trace_mid(const Moby *mobys, int n) {
   int i;
-  if (!s_cut_mid || g_Gamestate != GS_Cutscene || !g_CutsceneLayout || g_LoadStage < 10)
+  if (!s_cut_mid || g_Gamestate != GS_Cutscene || !P32_GET(g_CutsceneLayout) || g_LoadStage < 10)
     return;
-  for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < 16 && i < n; i++)
+  for (i = 0; i < P32_GET(g_CutsceneLayout)->m_MobyCount && i < 16 && i < n; i++)
     fprintf(s_cut_mid, "%d\t%d\t%d\t%d\t%d\t%d\t%d\n", s_cut_vblank, i, mobys[i].m_Position.x,
             mobys[i].m_Position.y, mobys[i].m_Position.z,
             mobys[i].m_AnimationState.m_Animation * 64 + mobys[i].m_AnimationState.m_Frame,
@@ -142,7 +142,7 @@ static void cutscene_trace_vblank(int vblank) {
   s_cut_vblank = vblank;
   if (s_cut_trace && g_Gamestate == GS_Dragon && g_DragonCutscene.m_State == 4) {
     /* a dragon's talk: slot -1 the camera, 0 and 1 its two mobys */
-    Moby *const m2[2] = {g_DragonCutscene.m_CutsceneSpyro, g_DragonCutscene.m_CutsceneDragon};
+    Moby *const m2[2] = {P32_GET(g_DragonCutscene.m_CutsceneSpyro), P32_GET(g_DragonCutscene.m_CutsceneDragon)};
     fprintf(s_cut_trace, "%d\t%d\t-1\t%d\t%d\t%d\t%d\t%d\t%d\t0\t0\n", vblank,
             g_DragonCutscene.m_CutsceneTicks, g_Camera.m_Position.x, g_Camera.m_Position.y,
             g_Camera.m_Position.z, g_Camera.m_Rotation.x, g_Camera.m_Rotation.y,
@@ -160,24 +160,24 @@ static void cutscene_trace_vblank(int vblank) {
    * Gamestate 13 is also the load after a cutscene, where the layout's
    * buffer is being written over: only a layout that reads as one */
   if (!s_cut_trace || (g_Gamestate != GS_Cutscene && g_Gamestate != GS_TitleScreen) ||
-      !g_CutsceneLayout || (g_Gamestate == GS_Cutscene && g_LoadStage < 10))
+      !P32_GET(g_CutsceneLayout) || (g_Gamestate == GS_Cutscene && g_LoadStage < 10))
     return;
   if (g_Gamestate == GS_TitleScreen &&
-      ((unsigned)g_CutsceneLayout->m_MobyCount > 16 || (unsigned)g_CutsceneLayout->m_Duration - 1 > 4094 ||
-       (unsigned)g_CutsceneLayout->m_CurrentTick > 2u * (unsigned)g_CutsceneLayout->m_Duration))
+      ((unsigned)P32_GET(g_CutsceneLayout)->m_MobyCount > 16 || (unsigned)P32_GET(g_CutsceneLayout)->m_Duration - 1 > 4094 ||
+       (unsigned)P32_GET(g_CutsceneLayout)->m_CurrentTick > 2u * (unsigned)P32_GET(g_CutsceneLayout)->m_Duration))
     return;
   if (s_cut_keys && g_Gamestate == GS_Cutscene) {
     /* FILE.keys, once (D156): the first cutscene's models as the disc has
      * them, the first four vertex words (z, x, y packed) of every frame of
      * every animation: how a release's keyframes move from one to the next */
     fprintf(s_cut_keys, "slot\tanim\tframe\tspeed\tv0\tv1\tv2\tv3\n");
-    for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < 16; i++) {
-      const Model *model = g_Models[1 + i];
+    for (i = 0; i < P32_GET(g_CutsceneLayout)->m_MobyCount && i < 16; i++) {
+      const Model *model = P32_GET(g_Models[1 + i]);
       int k, f;
       if ((int)(uintptr_t)model >= 0)
         continue;
       for (k = 0; k < model->m_NumAnimations; k++) {
-        const AnimationHeader *anim = model->m_Animations[k];
+        const AnimationHeader *anim = P32_GET(model->m_Animations[k]);
         for (f = 0; f < anim->m_NumFrames; f++) {
           const u_int *v = (const u_int *)MEM_ANIM21(anim->m_Frames[f].m.m_Data);
           fprintf(s_cut_keys, "%d\t%d\t%d\t%d\t%08x\t%08x\t%08x\t%08x\n", i, k, f,
@@ -189,12 +189,12 @@ static void cutscene_trace_vblank(int vblank) {
     s_cut_keys = NULL;
   }
   fprintf(s_cut_trace, "%d\t%d\t-1\t%d\t%d\t%d\t%d\t%d\t%d\t0\t0\n", vblank,
-          g_CutsceneLayout->m_CurrentTick, g_Camera.m_Position.x, g_Camera.m_Position.y,
+          P32_GET(g_CutsceneLayout)->m_CurrentTick, g_Camera.m_Position.x, g_Camera.m_Position.y,
           g_Camera.m_Position.z, g_Camera.m_Rotation.x, g_Camera.m_Rotation.y, g_Camera.m_Rotation.z);
-  for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < 16; i++) {
-    const Moby *m = &g_LevelMobys[i];
+  for (i = 0; i < P32_GET(g_CutsceneLayout)->m_MobyCount && i < 16; i++) {
+    const Moby *m = &P32_GET(g_LevelMobys)[i];
     fprintf(s_cut_trace, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", vblank,
-            g_CutsceneLayout->m_CurrentTick, i, m->m_Position.x, m->m_Position.y,
+            P32_GET(g_CutsceneLayout)->m_CurrentTick, i, m->m_Position.x, m->m_Position.y,
             m->m_Position.z, m->m_Rotation.x, m->m_Rotation.y, m->m_Rotation.z,
             m->m_AnimationState.m_Animation * 64 + m->m_AnimationState.m_Frame,
             m->m_AnimationState.m_FrameProgress);
@@ -229,33 +229,33 @@ void spyro_trace_close(void) {
 void spyro_moby_dump(const char *path) {
   FILE *f;
   int i;
-  if (g_Gamestate >= GS_TitleScreen || g_LoadStage >= 0 || !g_LevelMobys ||
+  if (g_Gamestate >= GS_TitleScreen || g_LoadStage >= 0 || !P32_GET(g_LevelMobys) ||
       !(f = fopen(path, "w")))
     return;
   fprintf(f, "index\tclass\tx\ty\tz\tstate\tspyro_x\tspyro_y\tspyro_z\tgems\trot_z\n");
-  for (i = 0; g_LevelMobys[i].m_State != 0xff && i < 4096; i++)
-    fprintf(f, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", i, g_LevelMobys[i].m_Class,
-            g_LevelMobys[i].m_Position.x, g_LevelMobys[i].m_Position.y, g_LevelMobys[i].m_Position.z,
-            g_LevelMobys[i].m_State, g_Spyro.m_Position.x, g_Spyro.m_Position.y, g_Spyro.m_Position.z,
-            g_GemTotal, g_LevelMobys[i].m_Rotation.z);
-  for (i = 0; i < g_Environment.m_SurfaceCount && g_Environment.m_SurfaceData; i++)
-    fprintf(f, "# surface %d type %d\n", i, g_Environment.m_SurfaceData[i]->m_Type);
+  for (i = 0; P32_GET(g_LevelMobys)[i].m_State != 0xff && i < 4096; i++)
+    fprintf(f, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", i, P32_GET(g_LevelMobys)[i].m_Class,
+            P32_GET(g_LevelMobys)[i].m_Position.x, P32_GET(g_LevelMobys)[i].m_Position.y, P32_GET(g_LevelMobys)[i].m_Position.z,
+            P32_GET(g_LevelMobys)[i].m_State, g_Spyro.m_Position.x, g_Spyro.m_Position.y, g_Spyro.m_Position.z,
+            g_GemTotal, P32_GET(g_LevelMobys)[i].m_Rotation.z);
+  for (i = 0; i < g_Environment.m_SurfaceCount && P32_GET(g_Environment.m_SurfaceData); i++)
+    fprintf(f, "# surface %d type %d\n", i, P32_GET(P32_GET(g_Environment.m_SurfaceData)[i])->m_Type);
   /* each model's animations: frames and progress a tick (64 a frame) */
   for (i = 1; i < MODEL_COUNT; i++) {
-    const Model *model = g_Models[i];
+    const Model *model = P32_GET(g_Models[i]);
     int k;
     if ((int)(uintptr_t)model >= 0 || model->m_NumAnimations <= 0)
       continue; /* none, or a SimpleModel (its word has bit 31 cleared) */
     fprintf(f, "# model %d anims %d:", i, model->m_NumAnimations);
     for (k = 0; k < model->m_NumAnimations && k < 64; k++)
-      if (model->m_Animations[k])
-        fprintf(f, " %d/%d", model->m_Animations[k]->m_NumFrames, model->m_Animations[k]->m_ProgressPerTick);
+      if (P32_GET(model->m_Animations[k]))
+        fprintf(f, " %d/%d", P32_GET(model->m_Animations[k])->m_NumFrames, P32_GET(model->m_Animations[k])->m_ProgressPerTick);
     fprintf(f, "\n");
   }
-  for (i = 0; i < g_PortalCount && i < 6 && g_Portals[i]; i++)
+  for (i = 0; i < g_PortalCount && i < 6 && P32_GET(g_Portals[i]); i++)
     fprintf(f, "# portal %d level %d center %d %d %d point0 %d %d %d path_moby %d\n", i,
-            g_Portals[i]->m_LevelId, g_Portals[i]->m_Center.x, g_Portals[i]->m_Center.y,
-            g_Portals[i]->m_Center.z, g_Portals[i]->m_Points[0].x, g_Portals[i]->m_Points[0].y,
-            g_Portals[i]->m_Points[0].z, g_Portals[i]->m_PathMoby);
+            P32_GET(g_Portals[i])->m_LevelId, P32_GET(g_Portals[i])->m_Center.x, P32_GET(g_Portals[i])->m_Center.y,
+            P32_GET(g_Portals[i])->m_Center.z, P32_GET(g_Portals[i])->m_Points[0].x, P32_GET(g_Portals[i])->m_Points[0].y,
+            P32_GET(g_Portals[i])->m_Points[0].z, P32_GET(g_Portals[i])->m_PathMoby);
   fclose(f);
 }

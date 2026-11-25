@@ -97,7 +97,7 @@ int func_80033F08(Vector3D *pVec) {
   SphericalCoordinates *sim = &g_Camera.m_Simulation.m_Coords;
   int groundDistance, azimuth, turn, turnFlipped, flipped;
 
-  VecSub(&fromFocus, pVec, g_Camera.m_Focus);
+  VecSub(&fromFocus, pVec, P32_GET(g_Camera.m_Focus));
 
   sim->radius = VecMagnitude(&fromFocus, 1);
   sim->radius = VecRefineMagnitude(&fromFocus, sim->radius, 1);
@@ -248,7 +248,7 @@ void func_80034480(void) {
 
   if (T60_TICK_AND(++g_Camera.m_SpyroOffCenterFrames > 30)) {
     for (i = 0; i < 5; i++) {
-      g_Camera.m_SphericalPreset = &D_8006CAB4[i];
+      P32_SET(g_Camera.m_SphericalPreset , &D_8006CAB4[i]);
       func_80034358();
       if (IsGoodSpot(&g_Camera.m_DestinationPosition, &target))
         return;
@@ -270,7 +270,7 @@ void func_80034480(void) {
       g_Camera.m_Sphere.m_Coords.radius =
           g_Camera.m_Simulation.m_Coords.radius + D_8006C82C[i].m_Coords.radius * scale;
       func_80034204(&g_Camera.m_DestinationPosition);
-      VecAdd(&g_Camera.m_DestinationPosition, &g_Camera.m_DestinationPosition, g_Camera.m_Focus);
+      VecAdd(&g_Camera.m_DestinationPosition, &g_Camera.m_DestinationPosition, P32_GET(g_Camera.m_Focus));
       if (ColSphere(&g_Camera.m_DestinationPosition, 0x100, 0x100))
         continue;
       if (scale == 1)
@@ -468,7 +468,7 @@ static void StartRecentre(void) {
 static void UpdateScripted(u_int pState, int pFlag) {
   if (!(g_Spyro.m_ControlFlags & pFlag)) {
     g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
-    g_Camera.m_Focus = &g_Spyro.m_Position;
+    P32_SET(g_Camera.m_Focus , &g_Spyro.m_Position);
   } else if (g_Camera.m_State == pState) {
     return;
   }
@@ -500,7 +500,7 @@ void func_800357A4(void) {
   } else if (next == CAM_SCRIPT_0200) {
     if (!(g_Spyro.m_ControlFlags & CTRL_CAMERA_0200)) {
       g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
-      g_Camera.m_Focus = &g_Spyro.m_Position;
+      P32_SET(g_Camera.m_Focus , &g_Spyro.m_Position);
       ResyncSphere();
       if ((CAMERA_PASSIVE() || D_8007592C) && g_Camera.unk_0xC0 == CAM_FOLLOW &&
           !g_Camera.m_OnMovingPlatform)
@@ -515,10 +515,10 @@ void func_800357A4(void) {
   } else if (next == CAM_PATH) {
     if (!(g_Spyro.m_ControlFlags & CTRL_CAMERA_0400)) {
       g_Camera.unk_0xC0 = SPYRO_CAMERA_STATE();
-      g_Camera.m_Focus = &g_Spyro.m_Position;
+      P32_SET(g_Camera.m_Focus , &g_Spyro.m_Position);
     } else if (g_Camera.m_State != CAM_PATH) {
       /* Entering: start the path at the end Spyro travels from. */
-      g_Spyro.unk_0x240->m_CurrentNode = g_Spyro.unk_0x248 ? g_Spyro.unk_0x240->m_NodeCount - 1 : 0;
+      P32_GET(g_Spyro.unk_0x240)->m_CurrentNode = g_Spyro.unk_0x248 ? P32_GET(g_Spyro.unk_0x240)->m_NodeCount - 1 : 0;
     }
   } else if (next == CAM_RECENTRE || next == CAM_RECENTRE_SLOW) {
     /* Recentring runs out its time unless Spyro asks for another state. */
@@ -533,8 +533,8 @@ void func_800357A4(void) {
     /* Passive camera: recentre when Spyro drifts off the middle. */
     if (!IsSpyroCentred())
       StartRecentre();
-  } else if (g_Camera.m_Focus != &g_Spyro.m_Position && g_Camera.m_State != CAM_STATE_6) {
-    g_Camera.m_Focus = &g_Spyro.m_Position;
+  } else if (P32_GET(g_Camera.m_Focus) != &g_Spyro.m_Position && g_Camera.m_State != CAM_STATE_6) {
+    P32_SET(g_Camera.m_Focus , &g_Spyro.m_Position);
     ResyncSphere();
   }
 
@@ -544,7 +544,7 @@ switchState:
 
   if ((CAMERA_PASSIVE() || D_8007592C) && g_Spyro.unk_0x194 == 0 && !g_Camera.m_OnMovingPlatform &&
       (g_Camera.unk_0xC0 == CAM_FOLLOW || g_Camera.unk_0xC0 == CAM_SPEED_CHECK) &&
-      g_Camera.m_State != CAM_RECENTRE_SLOW && g_Camera.m_Focus == &g_Spyro.m_Position) {
+      g_Camera.m_State != CAM_RECENTRE_SLOW && P32_GET(g_Camera.m_Focus) == &g_Spyro.m_Position) {
     /* Passive camera returning to follow: recentre slowly first. */
     D_80075938 = RT(8, 7);
     g_Camera.unk_0xC0 = CAM_RECENTRE_SLOW;
@@ -633,7 +633,7 @@ static void TakeSimulatedSphere(void) {
 }
 
 static void FocusOnSpyro(void) {
-  g_Cam.m_Focus = &g_Spyro.m_Position;
+  P32_SET(g_Cam.m_Focus , &g_Spyro.m_Position);
   g_Cam.m_FocusRotation = g_Spyro.m_Physics.m_SpeedAngle.m_RotZ;
 }
 
@@ -683,7 +683,7 @@ static void UpdateFollow(void) {
 
   if (!(CAMERA_PASSIVE() && !g_Cam.m_OnMovingPlatform && D_80075924 == 0 && !g_Cam.m_NudgeTicks &&
         (D_80075894 != 0 || g_Spyro.m_State == 27))) {
-    g_Cam.m_SphericalPreset = &D_8006C8D4;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C8D4);
     FocusOnSpyro();
     SyncSphere(SYNC_AZIMUTH);
     if (!g_Cam.m_NudgeTicks || g_GameTick < 120)
@@ -712,7 +712,7 @@ static void UpdateFollow(void) {
 
 /* 0x80000010: recentre behind Spyro with the follow preset. */
 static void UpdateRecentre(void) {
-  g_Cam.m_SphericalPreset = &D_8006C8D4;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006C8D4);
   FocusOnSpyro();
   SyncSphere(SYNC_AZIMUTH);
   if (!g_Cam.m_NudgeTicks)
@@ -724,9 +724,9 @@ static void UpdateState1(void) {
   if (g_Cam.m_NudgeTicks)
     return;
   if (IsSpyroTurnedToCamera()) {
-    g_Cam.m_SphericalPreset = &D_8006C964;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C964);
   } else {
-    g_Cam.m_SphericalPreset = &D_8006C934;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C934);
     if (!CAMERA_PASSIVE_40())
       SyncSphere(SYNC_AZIMUTH);
   }
@@ -740,13 +740,13 @@ static void UpdateState2(void) {
     TakeSimulatedSphere();
     return;
   }
-  g_Cam.m_SphericalPreset = IsSpyroTurnedToCamera() ? &D_8006C964 : &D_8006C934;
+  P32_SET(g_Cam.m_SphericalPreset , IsSpyroTurnedToCamera() ? &D_8006C964 : &D_8006C934);
   ApplySphericalPreset();
 }
 
 /* State 3: the yaw offset leans with Spyro's turn. */
 static void UpdateState3(void) {
-  g_Cam.m_SphericalPreset = &D_8006C994;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006C994);
   FocusOnSpyro();
   SyncSphere(SYNC_AZIMUTH);
   if (g_Cam.m_NudgeTicks) {
@@ -764,9 +764,9 @@ static void UpdateState4(void) {
     return;
   }
   if (IsSpyroTurnedToCamera()) {
-    g_Cam.m_SphericalPreset = &D_8006C9DC;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C9DC);
   } else {
-    g_Cam.m_SphericalPreset = &D_8006C9AC;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C9AC);
     if (!CAMERA_PASSIVE_40())
       SyncSphere(SYNC_AZIMUTH);
   }
@@ -786,7 +786,7 @@ static void UpdateState5(void) {
 
   if (g_Spyro.m_flyingAbility) {
     if (g_Spyro.m_walkingState == 2) {
-      g_Cam.m_SphericalPreset = SpyroTurn() > 0 ? &D_8006C94C : &D_8006C97C;
+      P32_SET(g_Cam.m_SphericalPreset , SpyroTurn() > 0 ? &D_8006C94C : &D_8006C97C);
       g_Cam.m_FocusRotation = (g_Spyro.m_Physics.m_SpeedAngle.m_RotZ + 0x800) & 0xFFF;
       SyncSphere(SYNC_AZIMUTH);
       ApplySphericalPreset();
@@ -796,20 +796,20 @@ static void UpdateState5(void) {
       /* Only the preset changes; the target stays as it is. */
       turn = SpyroTurn();
       if (turn > 0x100)
-        g_Cam.m_SphericalPreset = &D_8006C94C;
+        P32_SET(g_Cam.m_SphericalPreset , &D_8006C94C);
       else if (turn < -0x100)
-        g_Cam.m_SphericalPreset = &D_8006C97C;
+        P32_SET(g_Cam.m_SphericalPreset , &D_8006C97C);
       else
-        g_Cam.m_SphericalPreset = &D_8006C934;
+        P32_SET(g_Cam.m_SphericalPreset , &D_8006C934);
       SyncSphere(SYNC_AZIMUTH);
       return;
     }
-    g_Cam.m_SphericalPreset = &D_8006C934;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C934);
     SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION);
   } else if (g_Spyro.m_walkingState != 11 && IsSpyroTurnedToCamera()) {
-    g_Cam.m_SphericalPreset = &D_8006C964;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C964);
   } else {
-    g_Cam.m_SphericalPreset = &D_8006C934;
+    P32_SET(g_Cam.m_SphericalPreset , &D_8006C934);
     SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION);
   }
   ApplySphericalPreset();
@@ -823,9 +823,9 @@ static void UpdateHeld(void) {
   SphericalCoordsOffset *speed = &g_Cam.m_SphereSpeed;
   int i;
 
-  if (g_Cam.m_Focus != &D_80077798) {
-    VecCopy(&D_80077798, g_Cam.m_Focus);
-    g_Cam.m_Focus = &D_80077798;
+  if (P32_GET(g_Cam.m_Focus) != &D_80077798) {
+    VecCopy(&D_80077798, P32_GET(g_Cam.m_Focus));
+    P32_SET(g_Cam.m_Focus , &D_80077798);
   }
   D_80075924 = 0;
 
@@ -835,7 +835,7 @@ static void UpdateHeld(void) {
     for (i = 0; i < g_DeltaTime; i++)
       func_80034CE8(0);
     func_80034204(&g_Cam.m_DestinationPosition);
-    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, g_Cam.m_Focus);
+    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, P32_GET(g_Cam.m_Focus));
     CameraForceToDestination();
     func_800342F8();
   }
@@ -846,7 +846,7 @@ static void UpdateHeld(void) {
 /* State 15 (Spyro in a portal): the follow preset; the elevation stays
  * the sphere's. */
 static void UpdateState15(void) {
-  g_Cam.m_SphericalPreset = &D_8006C8D4;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006C8D4);
   FocusOnSpyro();
   SyncSphere(SYNC_AZIMUTH | SYNC_RADIUS);
   if (g_Cam.m_NudgeTicks)
@@ -869,7 +869,7 @@ static int LookInvert(int pPitch) {
 static void UpdateLook(void) {
   PadFrame *pad;
 
-  g_Cam.m_SphericalPreset = &D_8006CA0C;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006CA0C);
   FocusOnSpyro();
   SyncSphere(SYNC_AZIMUTH | SYNC_ELEVATION | SYNC_RADIUS);
   if (g_Cam.m_NudgeTicks)
@@ -910,10 +910,10 @@ static void UpdateLook(void) {
 /* 0x80000007 (CTRL_CAMERA_8000): beside the moby Spyro uses, at Spyro's
  * height, facing the way the moby does. */
 static void UpdateBesideMoby(void) {
-  Moby *moby = g_Spyro.m_mobyInUseBySpyro;
+  Moby *moby = P32_GET(g_Spyro.m_mobyInUseBySpyro);
 
-  g_Cam.m_SphericalPreset = &D_8006CB5C;
-  g_Cam.m_Focus = &g_Cam.m_MobyFocus;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006CB5C);
+  P32_SET(g_Cam.m_Focus , &g_Cam.m_MobyFocus);
   g_Cam.m_MobyFocus.x = moby->m_Position.x;
   g_Cam.m_MobyFocus.z = g_Spyro.m_Position.z;
   g_Cam.m_MobyFocus.y = moby->m_Position.y;
@@ -925,14 +925,14 @@ static void UpdateBesideMoby(void) {
 /* 0x8000000C (CTRL_CAMERA_10000): on Spyro, turned to face from him
  * towards the moby he uses. */
 static void UpdateFacingMoby(void) {
-  Moby *moby = g_Spyro.m_mobyInUseBySpyro;
+  Moby *moby = P32_GET(g_Spyro.m_mobyInUseBySpyro);
 
-  g_Cam.m_Focus = &g_Spyro.m_Position;
+  P32_SET(g_Cam.m_Focus , &g_Spyro.m_Position);
   g_Cam.m_FocusRotation = Atan2(moby->m_Position.x - g_Spyro.m_Position.x,
                                 moby->m_Position.y - g_Spyro.m_Position.y, 1);
   if (g_Cam.m_NudgeTicks)
     return;
-  g_Cam.m_SphericalPreset = &D_8006CB74;
+  P32_SET(g_Cam.m_SphericalPreset , &D_8006CB74);
   SyncSphere(0);
   ApplySphericalPreset();
 }
@@ -1119,7 +1119,7 @@ void func_80035FB4(void) {
     for (i = 0; i < g_DeltaTime; i++)
       func_80034CE8(row);
     func_80034204(&g_Cam.m_DestinationPosition);
-    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, g_Cam.m_Focus);
+    VecAdd(&g_Cam.m_DestinationPosition, &g_Cam.m_DestinationPosition, P32_GET(g_Cam.m_Focus));
     func_80034480();
     func_800342F8();
   }
