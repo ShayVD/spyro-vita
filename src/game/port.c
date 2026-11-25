@@ -23,7 +23,7 @@ void PortFatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 
 extern void psx_overlays_init(void);
 extern uint32_t g_mips_sp;
 extern char D_8006BBE0[];               /* OT terminator primitive (order_table.c) */
-extern uint32_t *P32 s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xxxx */
+extern P32F(uint32_t *) s1_scratch_relocs[]; /* tools/data2s.py: words holding 0x1F80xxxx */
 void render_ctx_init(void);            /* render_ctx.c (stage 7d, D123) */
 
 #define EMU_STACK_TOP 0x80020000u /* free on the host: part of the PS1 exe image */
@@ -32,7 +32,7 @@ void render_ctx_init(void);            /* render_ctx.c (stage 7d, D123) */
  * the first KB of the arena (MIPS_SCRATCH_HI in mips2c_rt.h), or in the
  * native build g_psx_scratch (D106). */
 static void scratch_relocs(void) {
-  uint32_t *P32 *r;
+  P32F(uint32_t *) *r;
   for (r = s1_scratch_relocs; *r; r++)
 #if SPYRO_NATIVE_MEM
     **r = (uint32_t)(uintptr_t)(g_psx_scratch + (**r & 0x3FFu));

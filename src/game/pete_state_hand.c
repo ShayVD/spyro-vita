@@ -83,7 +83,7 @@ extern u_char spyro_StateDefaultAnimation[48]; // pete.c
 
 extern u_char D_80075274[8]; // Idle: wait multiplier by rand() & 7 (with D_80075278)
 extern int D_800756B4;       // Jump held without the button (cutscenes)
-extern Moby *P32 D_80075790;     // Moby a charge homes in on
+extern P32F(Moby *) D_80075790;     // Moby a charge homes in on
 extern int D_80075728;       // Special surface's param 1 (special_surfaces.c)
 extern int D_8006EA34[];     // Splash moby class by D_80075728
 extern int D_80075668;       // Whirlwind: bottom height
@@ -605,7 +605,7 @@ void func_8003EA68(int pNewState) {
 
 /* ------------------------------------------------------------------------ */
 #if !M2C_func_8003FE40
-extern Moby *P32 D_80075804;                 // Moby Spyro last touched (pete.c)
+extern P32F(Moby *) D_80075804;                 // Moby Spyro last touched (pete.c)
 extern int D_800758A0;                   // Circling speed around m_mobyInUseBySpyro
 extern int D_80075948;                   // Ticks the camera has been behind the moby (0x1000)
 extern Vector3D D_80077798;              // Camera focus above the moby (0x1000)

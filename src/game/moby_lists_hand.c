@@ -49,10 +49,10 @@ extern u_char D_800771C8[]; /* a byte per sector, not 0 when it was visible */
 u_int func_80051FEC_gen(), func_800521C0_gen(), func_800522C0_gen();
 
 /* The lists in D_8006FCF4, each ended by 0. */
-#define UPDATE_LIST ((Moby *P32 *)(D_8006FCF4 + 0x400))
-#define DRAW_LIST ((Moby *P32 *)(D_8006FCF4))          /* the shaded renderer */
-#define SHINY_LIST ((Moby *P32 *)(D_8006FCF4 + 0x2200)) /* the shiny renderer */
-#define LIT_LIST ((Moby *P32 *)(D_8006FCF4 + 0x2400))   /* renderer byte 0 (func_80022A2C) */
+#define UPDATE_LIST ((P32F(Moby *) *)(D_8006FCF4 + 0x400))
+#define DRAW_LIST ((P32F(Moby *) *)(D_8006FCF4))          /* the shaded renderer */
+#define SHINY_LIST ((P32F(Moby *) *)(D_8006FCF4 + 0x2200)) /* the shiny renderer */
+#define LIT_LIST ((P32F(Moby *) *)(D_8006FCF4 + 0x2400))   /* renderer byte 0 (func_80022A2C) */
 /* The animation step's sound queue: (sound, moby) pairs. */
 #define SOUND_QUEUE ((u_int *)(D_8006FCF4))
 
@@ -90,7 +90,7 @@ static int NearSpyro(const Moby *m) {
 }
 
 static void UpdateList(void) {
-  Moby *P32 *out = UPDATE_LIST, *m;
+  P32F(Moby *) *out = UPDATE_LIST, *m;
   int pod;
   memset(D_80077868, 0, sizeof D_80077868);
   /* The level's mobys drawn last frame or near Spyro. One in a pod isn't
@@ -159,7 +159,7 @@ void func_80051FEC(void) {
 void func_800521C0(void) { func_800521C0_gen(); }
 #else
 static void DrawLists(void) {
-  Moby *P32 *shaded = DRAW_LIST, *P32 *shiny = SHINY_LIST, *P32 *lit = LIT_LIST, *P32 **list, *m;
+  P32F(Moby *) *shaded = DRAW_LIST; P32F(Moby *) *shiny = SHINY_LIST; P32F(Moby *) *lit = LIT_LIST; P32F(Moby *) **list; Moby *m;
   for (m = g_LevelMobys;; m++) {
     int sector;
     if (MobyState(m) < 0) {
@@ -213,7 +213,7 @@ void func_800521C0(void) {
 #endif
 
 #if M2C_func_800522C0
-void func_800522C0(Moby *P32 *pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyList, pSpeedDiv); }
+void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyList, pSpeedDiv); }
 #else
 /* One moby's animation step. pSpeedDiv's low 5 bits shift the frame speed
  * down; negative is a catch-up step (a tick of more than two vblanks): it
@@ -290,7 +290,7 @@ static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
   return queue;
 }
 
-static void AnimateList(Moby *P32 *list, int speedDiv) {
+static void AnimateList(P32F(Moby *) *list, int speedDiv) {
   u_int *queue = SOUND_QUEUE, *q;
   Moby *m;
   while ((m = *list++))
@@ -308,9 +308,9 @@ static void AnimateList(Moby *P32 *list, int speedDiv) {
  * speed, flags and next frame (within its animation) at random, the next
  * animation a random one of its model's a third of the time. The unit
  * runs in a child, as for the shadow. */
-static void FuzzAnimate(Moby *P32 *list) {
+static void FuzzAnimate(P32F(Moby *) *list) {
   int n = HandFuzzBegin("func_800522C0", (u_int)(uintptr_t)list[0] ^ g_DeltaTime), k;
-  Moby *P32 *l, *m;
+  P32F(Moby *) *l, *m;
   for (k = 0; k < n; k++) {
     u_int div = HandFuzzRand() % 3 | (k & 1 ? 0x80000000u : 0);
     for (l = list; (m = *l); l++) {
@@ -334,7 +334,7 @@ static void FuzzAnimate(Moby *P32 *list) {
 #endif
 
 /* The animation step of every moby on pMobyList. */
-void func_800522C0(Moby *P32 *pMobyList, u_int pSpeedDiv) {
+void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv) {
 #if HAND_SHADOW
   FuzzAnimate(pMobyList);
 #endif
