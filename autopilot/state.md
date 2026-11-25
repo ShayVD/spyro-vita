@@ -23,6 +23,30 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "ae351bab01fd52e24",
       "last_commit_at": "2026-11-25T14:03:23Z",
       "nudged_at": "2026-11-25T16:08:00Z"
+    },
+    {
+      "issue": 261,
+      "branch": "perf/261-draw-distance-max-adaptive-go-past-2x",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-261",
+      "pids": [],
+      "started_at": "2026-11-25T18:45:00Z",
+      "files": [
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/game/lod_pres.c",
+        "src/game/moby_cull_hand.c",
+        "src/game/mips2c_rt.h",
+        "tools/mips2c/hints.yaml",
+        "src/platform/vita/picture.c",
+        "src/platform/vita/lod_time.c",
+        "src/platform/ps4/picture_ps4.c",
+        "src/platform/linux32/main.c",
+        "docs/presentation.md",
+        "docs/host-build.md",
+        "docs/vita-testing.md"
+      ],
+      "agent": "ac32ce0b6bf3102a1",
+      "last_commit_at": "2026-11-25T18:45:00Z"
     }
   ],
   "last_good": "77242551a3ed4c4655575af8a46fbe73a48f88fb",
@@ -243,7 +267,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "237": 1
+    "237": 1,
+    "261": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -514,3 +539,4 @@ continue.
 - 2026-11-25T15:30:00Z #260 reported done (host ctest never ran: queue timeouts); shots identical vs base-44e82e8 (checked); gate running with --timeout 10800; decision D255 (D253 #237, D254 PR #263); filed #264 (stale spyro-ps4 image)
 - 2026-11-25T16:08:00Z #237 no commit 2 h 05, alive (host base build queued behind the ARM64 session), nudged; #260 gate queued for ctest
 - 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
+- 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
