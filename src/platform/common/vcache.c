@@ -2340,7 +2340,9 @@ static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
  *    far sky vertex (the fraction's error grows with the side): fr drops
  *    both, as before, and the fallback keeps the one nearer the key's
  *    pixel, since the PS1 rounded each to that pixel;
- *  - ends whose depths are 4 times apart or more: the nearest pair.
+ *  - ends whose depths are 4 times apart or more: the nearest pair; and a
+ *    cut hk placed with no depths so is a fallback end at hk's place with
+ *    the nearest pair's depth (derive_hand), for a cut made from it.
  * Every place hk and fr held before stays as it was: the fallback is no
  * hand-over's source, fr's own places are made exactly as before, and the
  * walk reads it only for a vertex they leave with none. Two places at one
@@ -2395,9 +2397,10 @@ static void fa_put(Rec *rec, VCacheStats *st, uint32_t key, float dx, float dy, 
  * one key: as hand-overs, the same point (depths added), within HK_MERGE
  * their mean, else neither. #230: a place made from an end's fallback, or
  * with no depth pair under 4 times apart, or that fr drops, goes to the
- * key's fallback instead (fa_put). */
+ * key's fallback instead (fa_put); at (not NULL): hk placed the key with no
+ * depths, at that place: its depths, at it, go to the fallback only. */
 static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint32_t a, uint32_t b,
-                      int tf) {
+                      int tf, const float *at) {
   unsigned *const cost = k->cost;
   Rec *const rec = &s_rec[kind];
   VCacheStats *const st = k->st;
@@ -2415,6 +2418,11 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
   n = hk_pair(aw, na, bw, nb, f, 0, w, &pa, &pb, cost, NULL);
   dx = flt(flt(ax + f * (bx - ax)) - ((short)(key & 0xFFFF) + 0.5f));
   dy = flt(flt(ay + f * (by - ay)) - ((short)(key >> 16) + 0.5f));
+  if (at) { /* #230 */
+    dx = at[0];
+    dy = at[1];
+    alt = 1;
+  }
   if (!(dx < 8 && dx > -8 && dy < 8 && dy > -8))
     goto nosrc;
   if (!n) {
@@ -2492,7 +2500,7 @@ static void frac_hand(int kind, const Sink *k, unsigned who, uint32_t key, uint3
   st->fr_kept++;
   goto out;
 nosrc:
-  st->fr_nosrc++;
+  st->fr_nosrc += (unsigned)!at;
 out:
   cost[VCC_REC_LINES] += t.n;
 }
@@ -2975,7 +2983,16 @@ nosrc:
 out:
   cost[VCC_REC_LINES] += t.n;
   if (left && form == VCD_LERP && VCD_HAS_T(how)) /* #215 */
-    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how));
+    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how), NULL);
+  else if (!left && placed && form == VCD_LERP && VCD_HAS_T(how) && !h->dead && h->placed &&
+           !h->n && !h->asrc && !h->low) {
+    /* #230: hk placed the cut with no depths (its ends' 4 times apart or
+     * more): the depths at hk's place, the nearest pair's, as the key's
+     * fallback, for a cut made from it (fr_src); the walk still takes hk's
+     * place alone */
+    const float at[2] = {h->dx, h->dy};
+    frac_hand(kind, k, who, key, a, b, VCD_T_OF(how), at);
+  }
   if ((how & VCD_OWN) && form != VCD_PERSP) /* #216 (#217: a 3D point's q is its ends' anchor) */
     own_hand(kind, k, form, key, a, b, p, q);
 }
