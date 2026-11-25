@@ -9,7 +9,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 230,
+      "branch": "feat/230-wobble-fix-portalskyplain-s-last-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-230",
+      "pids": [],
+      "started_at": "2026-11-24T23:12:28Z",
+      "files": [
+        "src/game/sky_clip_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "a113d98ec6f463c4a",
+      "nudged_at": "2026-11-25T04:05:25Z",
+      "last_commit_at": "2026-11-25T01:53:19Z"
+    }
+  ],
   "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
   "hardware_runs": [
     {
@@ -430,3 +446,14 @@ continue.
 - 2026-11-24T13:53:14Z shared 5, vita 8: #226 alive (new vcache.c edits, fresh PID), last commit 12:27; Vita3K: none
 - 2026-11-24T14:10:06Z shared 5, vita 8: merged #226 (D244), filed #247, commented #237, started #230; vcache.c still holds the queue (8 issues). Vita3K: 8 runs (worker's, 0 own failures), hardware: none
 - 2026-11-24T14:14:43Z shared 5, vita 8: owner said stop; #230's attempt 1 stopped before any commit (worktree and branch removed, no attempt counted, its 4 host containers stopped); loop ended; Vita3K: none, hardware: none
+- 2026-11-24T23:13:52Z shared 5, vita 8: resumed (owner: finish wobble and draw distance until no misses); develop fast-forwarded to origin fc5bf71 (#252 PC on Encore D247, #253 docker queue); #251 labelled phase-8 needs-owner (Vita on Encore, out of this loop's scope); started #230 attempt 1 (vcache.c holds the other 8), Vita3K: none, hardware: none
+- 2026-11-24T23:49:28Z shared 5, vita 8: #230 alive (base host ctest in its background job; docker queue held by the arm64 session), no commit yet; Vita3K: none, hardware: none
+- 2026-11-25T00:20:18Z shared 5, vita 8: #230 alive (tagging runs on head diag binaries, docker queue its own), no commit yet; Vita3K: none, hardware: none
+- 2026-11-25T00:51:33Z shared 5, vita 8: #230 alive (tagging run 5 of its head-diag batch, dh-S60), no edits or commit yet at 96 min; Vita3K: none, hardware: none
+- 2026-11-25T01:22:35Z shared 5, vita 8: #230 flagged by stall check (2 h 05, no commit) but alive (tagging batch on dh-Si, live PID 31969); nudged for a WIP commit, nothing stopped; Vita3K: none, hardware: none
+- 2026-11-25T02:01:19Z shared 5, vita 8: #230 WIP fa63379, 33da221 (portal sky cut fallback place and depths), building fix2 for checks; Vita3K: none, hardware: none
+- 2026-11-25T02:32:24Z shared 5, vita 8: #230 checking fix2 diag on host routes (d2-O60 newest), last commit 01:53; Vita3K: none, hardware: none
+- 2026-11-25T03:03:24Z shared 5, vita 8: #230 building its FNV base binary (docker queue held by the arm64 session's PC build since 02:38), new vcache.c edits uncommitted, last commit 01:53; Vita3K: none, hardware: none
+- 2026-11-25T03:34:23Z shared 5, vita 8: #230 running its per-polygon FNV compare (base vs fix2) on host routes, last commit 01:53; Vita3K: none, hardware: none
+- 2026-11-25T04:05:25Z shared 5, vita 8: #230 flagged by stall check (last commit 01:53) but alive in its FNV compare (fnv-S60, clean tree); nudged, nothing stopped; Vita3K: none, hardware: none
+- 2026-11-25T04:39:20Z shared 5, vita 8: #230 Vita build and Vita3K routes done on fix2 (run folder fix2, perf reports for owner60/stone60/toasty60), FNV compare finishing (S, P); last commit 01:53; Vita3K: worker's runs
