@@ -1820,3 +1820,27 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-230-1`.
   - Not run: the PC build. The change is plain integer arithmetic in common code.
 - **Left:** the `vcache cut fraction:` line's fields (D213's and the `fa_*` ones) are not described in `docs/host-build.md` or `docs/vita-testing.md` (filed).
+
+### D249. ARM64 step O1: every P32 slot is spelled `P32F(T *)`, a macro that can later become an offset; no binary changes (2026-11-25)
+
+- **What:** the first step of D246's plan, declarations only. Nothing reads or writes a pointer differently yet.
+  - `src/compat/p32.h` defines `P32F(T)`:
+    - `T` on the 32-bit targets (Vita, linux32);
+    - `T __ptr32 __uptr` on x86-64 (linux64, PS4, PC);
+    - on ARM64 it is still left out: O2 makes it `u32` once the uses go through accessors.
+  - The bare `P32` qualifier is gone. A slot is `P32F(Moby *) m_X;`, a pointer to slots `P32F(Moby *) *`, two levels `P32F(P32F(T *) *)`.
+- **The decomp:** `tools/ps4/p32_patch.py` emits the new spelling (`to_p32f`: each `*P32` level wraps what is to its left) and `patches/spyro-1-ptr32/0001-p32-pointer-fields.patch` is regenerated from it. Before the change the script reproduced the committed patch byte for byte, so only the spelling moved: 508 rewrites, no bare `P32` left. `0002-p32-hand-fixes.patch` has no `P32` and is unchanged.
+- **The port's own code:** 15 files in `src/game` (and `tick60/`) and `src/platform/vita/prof_draw.c`, converted with the same function.
+- **A trap for later steps:** `P32F(T *)` expands to `T *`, so in a declaration with several declarators the macro's `*` belongs to the first one only. `P32F(Moby *) *a, *b;` makes `b` a plain `Moby *`, and `static P32F(Moby *) x[N], y[N];` makes `y` an array of `Moby`. Four of the port's lines had two P32 declarators; each now holds separate declarations on the same line, so no line number moves. A declarator that had no `P32` (`*m`) keeps the plain base type, as before. The generated patch has none of these: its only multi-declarator hit is a parameter list.
+- **Checks:**
+  - **Method:** each target was built from `develop` at 016d26f and from the branch, in the same build directories, and its loaded sections compared (ELF `SHF_ALLOC`, PE non-debug).
+  - **linux32, linux32 native-mem, linux64, PC Linux, PC Windows:** identical except the `__DATE__`/`__TIME__` strings (`savestate.c`, the PC's banner), checked byte by byte.
+  - **Vita and PS4 needed a pinned date and commit:** with the real date, each linker placed its merged strings differently once one string changed, so `.text` and `.data` differed too.
+    - Rebuilt with `SOURCE_DATE_EPOCH=1764000000` and a `git` on `PATH` whose `describe` prints a fixed string (`SPYRO_BUILD_ID`, `cmake/mips2c.cmake`).
+    - Vita `spyro_vita.velf` (50 sections) and PS4 `spyro.elf` (26): every section identical.
+  - `p32_lint.py tools/layout/psx.map src/game src/platform build/linux64/patched/spyro-1`: 0 found (the one hit, `prof_draw.c`'s `D_800757B0`, was there before O1: a Vita-only file).
+  - `tools/check_no_assets.sh`: passes.
+  - After rebasing onto `develop` (PC on Encore, #252; the Docker queue, #253): see the PR for the PC Linux build. None of the files #252 changed uses `P32`.
+  - No hardware run.
+- **Next:** O2, the AST-driven rewriter of uses (D246), with the owner's go-ahead.
+- **Next free number:** D250.

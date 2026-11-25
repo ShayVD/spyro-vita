@@ -485,7 +485,7 @@ static void FairyMenu(void) {
 }
 
 static void Fairy(void) {
-  Moby *P32 *list = (Moby *P32 *)(D_8006FCF4 + 0x400);
+  P32F(Moby *) *list = (P32F(Moby *) *)(D_8006FCF4 + 0x400);
   fc.m_AnimationTimer += g_DeltaTime;
   SpecularUpdate(3);
   list[1] = NULL;
