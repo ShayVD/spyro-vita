@@ -302,6 +302,43 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
     butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
     (the windows to 6,600 and 6,900).
+  - `vcache cut fraction:` (#215, D213; fallbacks #230, D248) `<hk_frac> vertices with no entry
+    found at their cut's own fraction; <fr_kept> cuts placed so, <fr_nosrc> with an end not usable
+    or more than 8 pixels off (#215); fallbacks: <fa_kept> places kept, <fa_seed> from a cut of a
+    cut, <fa_found> vertices found so (#230)`.
+    - **How it works:** `ClipSky`'s cuts on the portal outline hand over their side's own fraction
+      (`VCD_T`). Where the hand-overs leave the key with no place, `frac_hand` places the cut that
+      fraction of the way between the side's ends, at 1/w-linear depth, within 8 px, in a per-table
+      `fr[256]` store. Since #230 a key that hk and fr both leave with nothing can also have a
+      fallback place in the same store (`FR_ALT(key)`, which matches no screen key). No hand-over
+      reads either. The walk takes them after the hand-overs, only in a PortalSkyPlain,
+      PortalSkyFog, outside or unmarked polygon, and not where #197 would take the polygon.
+    - `hk_frac`: vertices found from an fr place or a fallback. They count in the hits and in
+      `hooked` too.
+    - `fr_kept`: cuts placed at their own fraction, or merged with another place at their key
+      within 2 px (their mean). Two places further apart are both dropped (to the fallback since
+      #230).
+    - `fr_nosrc`: cuts not placed: an end with no usable place or depth, no depth pair at all, or
+      a place more than 8 px from the key. Since #230 it doesn't count the place-only calls (below).
+    - `fa_kept` (#230): fallback places stored or merged. Their sources:
+      - a cut of a cut on one pixel: hk's old place, when the second cut kills the key (`fa_seed`);
+      - a cut made from a fallback end;
+      - both places when fr drops two more than 2 px apart, or a place at a dead fr slot;
+      - a cut whose ends' depths are 4x apart or more, with the nearest pair's depth;
+      - hk's place for a place-only sky cut (hk placed it with no depths), with the nearest pair's
+        depth, so a cut made from it has an end.
+
+      Two fallback places at one key: the same point adds depths, within 2 px their mean,
+      otherwise the one nearer the key's pixel centre. A fallback is never dropped.
+    - `fa_seed` (#230): cuts of a cut on one pixel whose key hk dropped, with hk's place offered as
+      the key's fallback. Each offer is counted, kept or not: one the fallback doesn't keep (a
+      nearer place is there, or the store is full) is in `fa_seed` but not in `fa_kept`.
+    - `fa_found` (#230): vertices found from a fallback. They count in `hk_frac` too, and in
+      `hooked` as `sky clip`.
+    - A full fr store counts in the `vcache hooked:` line's `not kept (full)`, not here.
+    - Since D248 every PortalSkyPlain and PortalSkyFog vertex is found on the host routes and on
+      `stone60`. Its window to 6,600 reads `310 ... 277 ... 0 ...; fallbacks: 209 ..., 12 ...,
+      38 ...` (#230's run).
 
   The next lines count the renderers' own points. These are the wobble fix's later steps. Each
   one runs only for a polygon that every earlier step left unfound, so every polygon found
