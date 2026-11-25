@@ -1941,3 +1941,13 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
 - **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
 - **Next free number:** D253.
+
+## 2026-11-25 — the Docker queue moves to Encore
+
+### D254. `tools/docker/run.sh` becomes a shim over Encore's machine-wide Docker queue (2026-11-25)
+- **What:** Encore PR #101 (ShayVD/encore, merged at c17d2d4) moved this repo's queue (PRs #253, #255) into the kit as `tools/docker/run.sh` and `tools/docker/queue.py`, game-neutral, so kh1-vita and atv2-vita join the same queue. It is vendored in `third_party/encore-docker` (`tools/vendor.sh --dir third_party/encore-docker`, Encore c17d2d4), and `tools/docker/run.sh` now maps spyro's switches and execs the kit's copy: `SPYRO_DQ=0` or a `TC_PORT` → `ENCORE_DQ=0`, `SPYRO_DOCKER_HOST` → `ENCORE_DOCKER_HOST`, and `ENCORE_COLIMA_PROFILE=kh1fast` when neither the environment nor `~/.config/encore/docker.env` names a profile. `tools/tc`, `tools/pc/tc` and `tools/ps4/tc` are unchanged.
+- **Why its own directory:** `third_party/encore` (Encore 0e77e93) and `third_party/vita-port-kit` (31295be7) each pin one commit for every path they hold. Vendoring `tools/docker` into either would refresh `core/`, the PC backend or the Vita runtime modules too, an unrelated change with its own checks.
+- **What changes:** the lock is `~/.cache/encore/docker.lock` (tickets in `docker.lock.q/`), shared by every port on the machine. Until no spyro checkout has the old `run.sh`, the kit also queues for and holds the old `~/.cache/spyro-vita/docker.lock` (its `ENCORE_DOCKER_ALSO_LOCK` default), so an old worktree mid-run and a new one never run side by side. The VM choice reads the profile's mounts from its `colima.yaml` instead of assuming `~/Projects`, and understands `--volume=` and `--mount` as well as `-v`. Waiters print `encore docker queue:` instead of `spyro docker queue:`.
+- **Gone:** `SPYRO_DQ_LOCK`; a private lock is `ENCORE_DOCKER_LOCK`.
+- **Fallback, not `:=`:** the shim sets `kh1fast` only when the settings file doesn't name a profile, since the kit lets the environment win over the file; `: "${ENCORE_COLIMA_PROFILE:=kh1fast}"` would override a machine whose file names another profile.
+- **Next free number:** D255 (D253 is the autopilot's #237 worker).

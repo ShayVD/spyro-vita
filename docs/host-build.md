@@ -54,18 +54,26 @@ python3 tools/contact_sheet.py logs/runN-x
 
 ## Which Docker VM, and the queue
 
-`tools/tc`, `tools/pc/tc` and `tools/ps4/tc` start their container through `tools/docker/run.sh`, which does two things:
+`tools/tc`, `tools/pc/tc` and `tools/ps4/tc` start their container through `tools/docker/run.sh`. Since D254 that is
+a shim over Encore's machine-wide Docker queue, vendored in `third_party/encore-docker` (`VENDORED` names the commit;
+never edit it here, change Encore and re-vendor). Its
+[README](../third_party/encore-docker/tools/docker/README.md) has the details and every setting. In short:
 
-- **The VM.** It runs on colima's `kh1fast` profile (4 CPUs, 6 GB, Rosetta for the amd64 `spyro-pc` image) whenever
-  its socket exists and every mount is under `~/Projects`, the only folder that profile mounts; otherwise on
-  `DOCKER_HOST`. `SPYRO_DOCKER_HOST=unix://...` picks one by hand. Nothing is pulled (`--pull never`), so the images
-  must be on that VM: build them there with `DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker build ...`,
-  or copy one from the other VM with `docker save IMAGE | DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker load`.
-- **The queue.** One spyro container runs at a time on the machine; the next waits (and says who it waits for)
-  instead of sharing the CPUs, which made two builds on the old 2-CPU VM take hours. The lock is
-  `~/.cache/spyro-vita/docker.lock`, held until the docker client exits. It is first come, first served: each waiter
-  leaves a ticket in `docker.lock.q/`, so a session that starts builds back to back cannot keep jumping a waiting one. `SPYRO_DQ=0` skips it for a quick look
-  inside a container; a `TC_PORT` run (`--serve`) skips it too, since a second container talks to it.
+- **The VM.** It runs on the colima profile `ENCORE_COLIMA_PROFILE` (this Mac's `~/.config/encore/docker.env` says
+  `kh1fast`: 4 CPUs, 6 GB, Rosetta for the amd64 `spyro-pc` image) whenever its socket exists and every bind mount
+  is inside a folder the profile mounts (`~/Projects` for `kh1fast`); otherwise on `DOCKER_HOST`, with a line saying
+  why. The shim falls back to `kh1fast` when neither the environment nor that file names a profile.
+  `SPYRO_DOCKER_HOST=unix://...` (or Encore's `ENCORE_DOCKER_HOST`) picks one by hand. Nothing is pulled
+  (`--pull never`), so the images must be on that VM: build them there with
+  `DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker build ...`, or copy one from the other VM with
+  `docker save IMAGE | DOCKER_HOST=unix://$HOME/.colima/kh1fast/docker.sock docker load`.
+- **The queue.** One container runs at a time on the machine, whichever port started it (spyro-vita, kh1-vita,
+  atv2-vita); the next waits (and says who it waits for) instead of sharing the CPUs, which made two builds on the
+  old 2-CPU VM take hours. The lock is `~/.cache/encore/docker.lock`, held until the docker client exits, first
+  come, first served (tickets in `docker.lock.q/`). While the ports switch over it also holds spyro's old
+  `~/.cache/spyro-vita/docker.lock`, so a checkout still on the old `run.sh` never runs beside it. `SPYRO_DQ=0` (or
+  `ENCORE_DQ=0`) skips the queue for a quick look inside a container; a `TC_PORT` run (`--serve`) skips it too, since
+  a second container talks to it. `SPYRO_DQ_LOCK` is gone: a private lock is `ENCORE_DOCKER_LOCK`.
 
 Run builds through these wrappers, not a bare `docker run`: a bare one skips both. On `kh1fast` the mount is
 virtiofs rather than the reverse-sshfs the next section describes; the link launcher stays, as it costs nothing.
