@@ -258,6 +258,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "7b6e66da036fe5639009c4a0b6f6b318387d9262",
       "pr": 248,
       "merged_at": "2026-11-24T14:17:12Z"
+    },
+    {
+      "branch": "release/phase8-portal-sky-d248",
+      "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
+      "pr": 258,
+      "merged_at": null
     }
   ]
 }
