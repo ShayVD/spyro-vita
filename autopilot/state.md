@@ -464,3 +464,4 @@ continue.
 - 2026-11-25T05:53:11Z shared 5, vita 8: #231 tagging runs on head diag binaries (S, Si, S60, P in one container), no commit yet at ~40 min; Vita3K: none, hardware: none
 - 2026-11-25T06:24:13Z shared 5, vita 8: #231 testing a first fix (fix1 diag on S, Si, S60, Pf; edits in particles_hand.c, vcache.c, psx_vcache.h uncommitted), ~70 min in; Vita3K: none, hardware: none
 - 2026-11-25T06:55:13Z shared 5, vita 8: #231 WIP 6d200a3 (particle quads name their points by the projection that made them); checking fix1b on S, S60; Vita3K: none, hardware: none
+- 2026-11-25T07:26:19Z shared 5, vita 8: #231 Vita build and Vita3K routes on fix1 done (run folder fix1), FNV compare running (Si, Pi done; S60, T, O60 next); last commit 06:36; Vita3K: worker's runs
