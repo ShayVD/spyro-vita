@@ -9,24 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 230,
-      "branch": "feat/230-wobble-fix-portalskyplain-s-last-missed",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-230",
-      "pids": [],
-      "started_at": "2026-11-24T23:12:28Z",
-      "files": [
-        "src/game/sky_clip_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "a113d98ec6f463c4a",
-      "nudged_at": "2026-11-25T04:05:25Z",
-      "last_commit_at": "2026-11-25T01:53:19Z"
-    }
-  ],
-  "last_good": "9b4f687308e404874177c65976dcfef9ca9b57fc",
+  "workers": [],
+  "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -247,8 +231,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-278ebf8",
-        "commit": "278ebf8"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-29d857a",
+        "commit": "29d857aebaad17fe28639c43b54a89f2086b74e5"
       }
     }
   },
@@ -457,3 +441,5 @@ continue.
 - 2026-11-25T03:34:23Z shared 5, vita 8: #230 running its per-polygon FNV compare (base vs fix2) on host routes, last commit 01:53; Vita3K: none, hardware: none
 - 2026-11-25T04:05:25Z shared 5, vita 8: #230 flagged by stall check (last commit 01:53) but alive in its FNV compare (fnv-S60, clean tree); nudged, nothing stopped; Vita3K: none, hardware: none
 - 2026-11-25T04:39:20Z shared 5, vita 8: #230 Vita build and Vita3K routes done on fix2 (run folder fix2, perf reports for owner60/stone60/toasty60), FNV compare finishing (S, P); last commit 01:53; Vita3K: worker's runs
+- 2026-11-25T05:01:30Z shared 5, vita 8: #230 reported done (PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0, FNV 0 changed, shots identical 8/8 re-checked by coordinator); scripted gate running; Vita3K: 8 runs (worker's, 0 own failures)
+- 2026-11-25T05:14:51Z shared 5, vita 8: merged #230 (D248): PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0; regression = the worker's 8-route run (code identical to head 29d857a): last_good and vita baseline -> base-29d857a; filed #257 (docs); Vita3K: 8 runs (worker's, 0 own failures), hardware: none
