@@ -452,3 +452,4 @@ continue.
 - 2026-11-25T00:51:33Z shared 5, vita 8: #230 alive (tagging run 5 of its head-diag batch, dh-S60), no edits or commit yet at 96 min; Vita3K: none, hardware: none
 - 2026-11-25T01:22:35Z shared 5, vita 8: #230 flagged by stall check (2 h 05, no commit) but alive (tagging batch on dh-Si, live PID 31969); nudged for a WIP commit, nothing stopped; Vita3K: none, hardware: none
 - 2026-11-25T02:01:19Z shared 5, vita 8: #230 WIP fa63379, 33da221 (portal sky cut fallback place and depths), building fix2 for checks; Vita3K: none, hardware: none
+- 2026-11-25T02:32:24Z shared 5, vita 8: #230 checking fix2 diag on host routes (d2-O60 newest), last commit 01:53; Vita3K: none, hardware: none
