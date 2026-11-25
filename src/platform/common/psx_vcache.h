@@ -634,6 +634,11 @@ typedef struct {
    * centre) was missing or dead, taken under VCD_CENTRE (counted in hits
    * and own_found too, when their polygon is found so) */
   unsigned own_centre;
+  /* #237: projections of frames whose order log was full (8,192) placed
+   * past it (vcache.c Xlog: read only by the own points and their names,
+   * not by derive's order or resolve), and those that got no place there
+   * either (that store full too, or no memory for it) */
+  unsigned ord_x, ord_lost;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

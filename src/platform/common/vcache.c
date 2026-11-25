@@ -351,6 +351,24 @@ typedef struct {
 } Sp;
 #define SP_NOR 0xFFFFu
 
+/* #237: a frame's order past its log. A frame whose log is full (VC_LOG
+ * projections: only the host's 2x Stone Hill has had one) keeps placing its
+ * later projections here, at places VC_LOG on, with their own answers
+ * (lc's, #181) and far places (lfar's, #192), apart from the log. Only the
+ * names read them (the own points, #216, a moved corner's place, #229, and
+ * the walk's own-point step): derive's order and resolve (log_index's
+ * last/prev chains, idx_gen) read the log alone, as before, and resolve
+ * still gives up on such a frame (RW_FULL), so every answer the log gave is
+ * the same. Made the first time a table's log fills (malloc, as the lazy
+ * store): a table that never fills one gains nothing. */
+#define VC_XLOG 8192
+#define VC_XLFAR 512
+typedef struct {
+  uint16_t log[VC_XLOG]; /* as Table log: the entry, LOG_LC, LOG_CL */
+  Cand lc[VC_XLOG];
+  float lfar[VC_XLFAR][2];
+} Xlog;
+
 struct Lazy; /* the projections kept for later (#193, #179; below) */
 
 typedef struct {
@@ -361,7 +379,8 @@ typedef struct {
    * by that walk */
   Der der[VC_DER];
   /* The frame's projections in the order they came (#183): each one's
-   * entry (log, nlog of them), written as they're recorded. The walk's
+   * entry (log, nlog of them; #237: then xl's, nx of them), written as
+   * they're recorded. The walk's
    * first derivation of the frame (idx_gen) indexes them: each entry's
    * last (last, VC_NOSEQ: none) and the one before it under the same
    * entry (prev). */
@@ -416,7 +435,22 @@ typedef struct {
   /* #221 (last, as above): the frame whose records last made an overflow
    * entry (the walk looks there only in that frame; 0: none) */
   uint32_t ov_gen;
+  /* #237 (last, as above): the frame's places past the log (Xlog, above),
+   * nx of them; the projections that got no place (nlost: both full, or no
+   * Xlog), after which "p back" in the order names no projection; the
+   * cost model's line of xl's lc last written, + 1; xl's far places */
+  unsigned nx, nlost, xlc_line, nxlfar;
+  Xlog *xl;
+  int xl_tried;
 } Table;
+
+/* #237: the frame's order, the places past the log too: how many, and
+ * place r's word (the entry and LOG_LC, LOG_CL). Only nx > 0 has places
+ * past VC_LOG, and only with xl. */
+static inline unsigned ord_n(const Table *tb) { return tb->nlog + tb->nx; }
+static inline unsigned ord_w(const Table *tb, unsigned r) {
+  return __builtin_expect(r < VC_LOG, 1) ? tb->log[r] : tb->xl->log[r - VC_LOG];
+}
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
  * record into their own, so each frame looks up only its own (#158). Each
@@ -723,6 +757,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            "corner's projection, the source's dead (#242); %u shadow centres found from their "
            "own point under their own anchor, their own under the centre's dead (#226)",
            out->pk_found, out->pk_kept, out->pk_full, out->own_corner, out->own_centre);
+  /* #237 */
+  PsyX_Log("vcache order past the log: %u projections of frames whose order log was full "
+           "(%u) placed past it, for the own points' names only; %u with no place (#237)",
+           out->ord_x, VC_LOG, out->ord_lost);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -938,9 +976,16 @@ static inline void set_state(Entry *s, unsigned state) { s->tag = (s->tag & ~3u)
  * dy FAR_MARK and dx its index in lfar (px, py), so resolve can tell it
  * from the key's other points by the frame's order (w 0 when lfar is
  * full). */
+static void xlog_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
+                        float px, float py, float w, float w_alt, unsigned *cost);
 static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
                               float px, float py, float w, float w_alt, unsigned *cost) {
-  Cand *const l = &tb->lc[q];
+  Cand *l;
+  if (__builtin_expect(q >= (int)VC_LOG, 0)) { /* #237: a place past the log */
+    xlog_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
+    return;
+  }
+  l = &tb->lc[q];
   tb->log[q] |= LOG_LC;
   if (state == E_VALID && (fy != FAR_MARK || tb->nlfar < VC_LFAR)) {
     if (clamped)
@@ -962,6 +1007,56 @@ static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int
     tb->lc_line = (unsigned)q / 4 + 1;
     cost[VCC_REC_LINES]++;
   }
+}
+
+/* #237: log_answer at a place past the log, in xl: its own lc and far
+ * places, so the log's (and lfar's, whatever order the lazy store works
+ * them out in) are as they were */
+static void xlog_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
+                        float px, float py, float w, float w_alt, unsigned *cost) {
+  Xlog *const x = tb->xl;
+  const unsigned r = (unsigned)q - VC_LOG;
+  Cand *const l = &x->lc[r];
+  x->log[r] |= LOG_LC;
+  if (state == E_VALID && (fy != FAR_MARK || tb->nxlfar < VC_XLFAR)) {
+    if (clamped)
+      x->log[r] |= LOG_CL;
+    if (fy == FAR_MARK) {
+      x->lfar[tb->nxlfar][0] = px;
+      x->lfar[tb->nxlfar][1] = py;
+      fx = (int16_t)tb->nxlfar++;
+      cost[VCC_REC_LINES]++;
+    }
+    l->dx = fx;
+    l->dy = fy;
+    l->w = w_alt > 0 ? -w : w;
+  } else {
+    l->dx = l->dy = 0;
+    l->w = 0;
+  }
+  if (r / 4 + 1 != tb->xlc_line) {
+    tb->xlc_line = r / 4 + 1;
+    cost[VCC_REC_LINES]++;
+  }
+}
+
+/* #237: entry i's projection a place past the log (Xlog), made the first
+ * time the table's log fills; -1 none (both full, or no memory: counted in
+ * nlost, as every projection past a full log was before) */
+static int xlog_put(Table *tb, int i, unsigned *cost) {
+  unsigned r;
+  if (!tb->xl && !tb->xl_tried) {
+    tb->xl_tried = 1;
+    tb->xl = malloc(sizeof *tb->xl);
+  }
+  if (!tb->xl || tb->nx >= VC_XLOG) {
+    tb->nlost++;
+    return -1;
+  }
+  r = tb->nx++;
+  tb->xl->log[r] = (uint16_t)i;
+  cost[VCC_REC_LINES] += (r & 15) == 0; /* written in order: a line every 16 */
+  return (int)(VC_LOG + r);
 }
 
 /* PsyX_GTE.cpp's VX/VY/VZ for idx 0-2 */
@@ -1581,6 +1676,12 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
     q = (int)tb->nlog++;
     tb->log[q] = (uint16_t)i;
     cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
+  } else if (!ov) { /* #237: the log full, a place past it (worked out at once, as before) */
+    q = xlog_put(tb, i, cost);
+    if (q >= 0)
+      k->st->ord_x++;
+    else
+      k->st->ord_lost++;
   }
   /* #193, #179: the logic draw's kept for its walk only while the walk is
    * idle: with the last frame's walk still running, the walk is the
@@ -1599,7 +1700,7 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
       keep = !__atomic_load_n(&s_walk.busy, __ATOMIC_RELAXED);
     if (keep) {
       unsigned lines = 0;
-      if (lz_add(tb, i, q, proj, np, vx, vy, vz, sz, sf, &lines)) {
+      if (lz_add(tb, i, q < (int)VC_LOG ? q : -1, proj, np, vx, vy, vz, sz, sf, &lines)) {
         cost[VCC_REC_LINES] += t.n; /* (the table's: the store's apart, #179) */
         if (k->rec) {
           k->rec[VCR_KEPT]++;
@@ -1871,7 +1972,7 @@ static int own_end(Rec *rec, const Sink *k, uint32_t key, uint32_t anchor, float
                    float *w, unsigned *cost, Touch *t) {
   Table *const tb = rec->tab;
   const Ow *const o = own_slot(tb, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
-  if (!o || !o->placed || o->dead || o->r >= tb->nlog)
+  if (!o || !o->placed || o->dead || o->r >= ord_n(tb)) /* (#237: past the log too) */
     return -1;
   return log_point(tb, k, o->r, o->ox, o->oy, x, y, w, t);
 }
@@ -1884,7 +1985,7 @@ static int log_point(Table *tb, const Sink *k, unsigned r, int ox, int oy, float
   float px, py, wv;
   int e, alt, cl, rk;
   unsigned m, n = 0;
-  e = (int)LOG_E(tb->log[r]);
+  e = (int)LOG_E(ord_w(tb, r)); /* (#237) */
   en = &tb->s[e];
   lz_need(tb, k, e);
   touch(t, (size_t)e * sizeof(Entry) + offsetof(Entry, c), sizeof(Cand) * VC_CANDS);
@@ -2592,12 +2693,12 @@ static int own_src(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsigne
     return 0;
   }
   i = find(rec, kind, a, 0, &k->cost[VCC_REC_PROBES], t);
-  if (i < 0 || !tb->nlog)
+  if (i < 0 || !ord_n(tb)) /* (#237: the order past the log too) */
     return -1;
-  lo = tb->nlog > FR_NEAR ? tb->nlog - FR_NEAR : 0;
-  for (q = tb->nlog; q > lo;)
-    if (LOG_E(tb->log[--q]) == (unsigned)i) {
-      k->cost[VCC_REC_LINES] += (tb->nlog - q) / 16 + 1; /* a model: the log read backwards */
+  lo = ord_n(tb) > FR_NEAR ? ord_n(tb) - FR_NEAR : 0;
+  for (q = ord_n(tb); q > lo;)
+    if (LOG_E(ord_w(tb, --q)) == (unsigned)i) {
+      k->cost[VCC_REC_LINES] += (ord_n(tb) - q) / 16 + 1; /* a model: the log read backwards */
       *r = q;
       *ox = *oy = 0;
       return 0;
@@ -2636,12 +2737,12 @@ static int own_corner(int kind, const Sink *k, uint32_t a, uint32_t anchor, unsi
   Table *const tb = rec->tab;
   const Ow *const o = own_slot(tb, rec->gen, a, anchor, 0, &k->cost[VCC_REC_PROBES], t);
   int i;
-  if (!o || o->placed != 1 || !o->dead || q > tb->nlog)
+  if (!o || o->placed != 1 || !o->dead || q > ord_n(tb)) /* (#237: past the log too) */
     return 0;
   i = find(rec, kind, a, 0, &k->cost[VCC_REC_PROBES], t);
-  if (i < 0 || LOG_E(tb->log[tb->nlog - q]) != (unsigned)i)
+  if (i < 0 || LOG_E(ord_w(tb, ord_n(tb) - q)) != (unsigned)i)
     return 0;
-  *r = tb->nlog - q;
+  *r = ord_n(tb) - q;
   return 1;
 }
 
@@ -2655,20 +2756,20 @@ static void own_self(int kind, const Sink *k, uint32_t key, uint32_t anchor, int
   Table *const tb = rec->tab;
   Touch t = TOUCH0;
   const int i = find(rec, kind, key, 0, &k->cost[VCC_REC_PROBES], &t);
-  if (i >= 0 && p >= 0 && (unsigned)p < tb->nlog &&
-      LOG_E(tb->log[tb->nlog - 1u - (unsigned)p]) == (unsigned)i)
-    own_put(kind, k, key, anchor, tb->nlog - 1u - (unsigned)p, 0, 0, &t);
+  const unsigned no = ord_n(tb); /* #237: the order past the log too */
+  if (i >= 0 && p >= 0 && (unsigned)p < no && LOG_E(ord_w(tb, no - 1u - (unsigned)p)) == (unsigned)i)
+    own_put(kind, k, key, anchor, no - 1u - (unsigned)p, 0, 0, &t);
   else {
     /* #226: counted with no source only where it isn't kept as a moved
      * corner instead (sp_moved): before, those were 99% of own_nosrc */
     int moved = 0;
-    if (world && p >= 0 && (unsigned)p < tb->nlog && tb->nlog < VC_LOG) {
+    if (world && p >= 0 && (unsigned)p < no && !tb->nlost) { /* (#237: was nlog < VC_LOG) */
       float x, y, w[VC_CANDS], dx, dy;
-      const int n = log_point(tb, k, tb->nlog - 1u - (unsigned)p, 0, 0, &x, &y, w, &t);
+      const int n = log_point(tb, k, no - 1u - (unsigned)p, 0, 0, &x, &y, w, &t);
       dx = flt(x - ((short)(key & 0xFFFF) + 0.5f));
       dy = flt(y - ((short)(key >> 16) + 0.5f));
       if (n > 0 && dx < 1024 && dx > -1024 && dy < 1024 && dy > -1024) {
-        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, tb->nlog - 1u - (unsigned)p, &t, 0);
+        sp_put(rec, k, key, anchor, dx, dy, w, (unsigned)n, no - 1u - (unsigned)p, &t, 0);
         k->st->sp_moved++;
         moved = 1;
       }
@@ -2737,8 +2838,8 @@ static int end_noproj(Rec *rec, int kind, const Sink *k, uint32_t key, uint32_t 
   if (T_STATE(tb->s[i].tag) == E_INVALID)
     return 1;
   o = own_slot(tb, rec->gen, key, anchor, 0, &cost[VCC_REC_PROBES], t);
-  if (o && o->placed && !o->dead && o->r < tb->nlog) {
-    const int e = (int)LOG_E(tb->log[o->r]);
+  if (o && o->placed && !o->dead && o->r < ord_n(tb)) { /* (#237: past the log too) */
+    const int e = (int)LOG_E(ord_w(tb, o->r));
     float x, y, w;
     int alt, cl;
     lz_need(tb, k, e);
@@ -4000,6 +4101,44 @@ static inline int near8(float ax, float ay, float bx, float by) {
   return ax - bx <= 0.125f && bx - ax <= 0.125f && ay - by <= 0.125f && by - ay <= 0.125f;
 }
 
+/* #237: res_place (below) at a place past the log, from xl: the same
+ * answers from its own lc and far places */
+static __attribute__((noinline)) int xres_place(const Table *tab, const Entry *en, unsigned r,
+                                                float *x, float *y, float *w, int *alt, int *cl) {
+  const Xlog *const xl = tab->xl;
+  const unsigned xr = r - VC_LOG;
+  if (!(xl->log[xr] & LOG_LC)) {
+    if (!T_N(en->tag))
+      return 0;
+    cand_pos(tab, &en->c[0], x, y);
+    *w = 0;
+    *alt = 0;
+    *cl = (en->tag & T_CLAMP) != 0;
+    return 2;
+  } else {
+    const Cand *const l = &xl->lc[xr];
+    const uint32_t u = w_bits(&l->w), mag = u & 0x7FFFFFFFu;
+    if (mag - W_LO < 0x7F800000u - W_LO) {
+      *alt = (int)(u >> 31);
+      memcpy(w, &mag, sizeof mag);
+    } else {
+      if (l->w == 0)
+        return 0;
+      *alt = l->w < 0;
+      *w = *alt ? -l->w : l->w;
+    }
+    if (l->dy == FAR_MARK) {
+      *x = xl->lfar[(uint16_t)l->dx][0];
+      *y = xl->lfar[(uint16_t)l->dx][1];
+    } else {
+      *x = l->dx * (1.0f / 256);
+      *y = l->dy * (1.0f / 256);
+    }
+    *cl = (xl->log[xr] & LOG_CL) != 0;
+  }
+  return 1;
+}
+
 /* Log place r under entry en: its point (pixels from the pixel centre), its
  * depth (0: candidate 0's point, at its candidates' depths there), alt (a
  * maybe-precision depth: w / 16 too) and clamped. 0: no usable answer (an
@@ -4011,6 +4150,8 @@ static inline int near8(float ax, float ay, float bx, float by) {
  * float tests before for any other value (0, subnormal, infinite, NaN). */
 static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, float *y, float *w,
                      int *alt, int *cl) {
+  if (__builtin_expect(r >= VC_LOG, 0)) /* #237: a place past the log: xl's */
+    return xres_place(tab, en, r, x, y, w, alt, cl);
   if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
     if (!T_N(en->tag))
       return 0;
@@ -4196,9 +4337,9 @@ static int own_point(const Table *tab, const Sink *k, const Ow *o, uint32_t key,
   float x, y, w;
   int e, alt, cl, rk;
   unsigned m, n = 0;
-  if (o->dead || o->r >= tab->nlog)
+  if (o->dead || o->r >= ord_n(tab)) /* (#237: past the log too) */
     return -1;
-  e = (int)LOG_E(tab->log[o->r]);
+  e = (int)LOG_E(ord_w(tab, o->r));
   en = &tab->s[e];
   lz_need(tab, k, e);
   rk = res_place(tab, en, o->r, &x, &y, &w, &alt, &cl);
@@ -4256,7 +4397,7 @@ static int sp_point(const Table *tb, uint32_t gen, uint32_t key, uint32_t anchor
         return -1;
       *dx = o->dx;
       *dy = o->dy;
-      *ent = o->r != SP_NOR && o->r < tb->nlog ? (int)LOG_E(tb->log[o->r]) : -1;
+      *ent = o->r != SP_NOR && o->r < ord_n(tb) ? (int)LOG_E(ord_w(tb, o->r)) : -1; /* (#237) */
       for (j = 0; j < o->n; j++) {
         c[j].dx = c[j].dy = 0;
         c[j].w = o->w[j];
@@ -4682,8 +4823,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
         r = o ? own_point(ptab, &lk, o, key, &owp[i][0], &owp[i][1], oc[i], &eo[i],
                           cx == VCX_ENV ? 1048576.0f : 1024.0f)
               : -1;
-        if (o && o->r < ptab->nlog)
-          oent[i] = (int)LOG_E(ptab->log[o->r]);
+        if (o && o->r < ord_n(ptab)) /* (#237: past the log too) */
+          oent[i] = (int)LOG_E(ord_w(ptab, o->r));
         if (!o && cx == VCX_ENV) { /* #229: its piece's split point or moved corner */
           r = sp_point(ptab, gen, key, VCD_CORNER(anchor, i), &owp[i][0], &owp[i][1], oc[i],
                        &eo[i], &oent[i], &cost[VCC_LOOK_PROBES], &t);
@@ -5172,6 +5313,7 @@ static void pres_next(void) {
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
+  r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   lz_next(r->tab, s_lazy); /* #193 */
   s_since_pres = 0;        /* (#179: the logic draw's then work theirs out at once) */
   if (++r->gen == VC_GEN_END) {
@@ -5219,6 +5361,7 @@ static void done_hook(void) {
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
+  r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   /* its projections kept for its walk (#179), unless the presenter draws
    * in-between frames */
   if (s_since_pres < 255)
