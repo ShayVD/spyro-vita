@@ -158,9 +158,9 @@ static void pair(const void *lo, u32 len, const void *to) {
 
 static int count_mobys(void) {
   int n = 0;
-  if (!g_LevelMobys)
+  if (!P32_GET(g_LevelMobys))
     return 0;
-  while (n < MAX_MOBYS && (signed char)g_LevelMobys[n].m_State != -1)
+  while (n < MAX_MOBYS && (signed char)P32_GET(g_LevelMobys)[n].m_State != -1)
     n++;
   return n;
 }
@@ -175,12 +175,12 @@ static int in_arena_ptr(const void *p, u32 len) {
 static int s_env_call;
 static int sector_count(void) {
   const int n = g_Environment.m_SectorCount;
-  if (!s_env_call || n <= 0 || !in_arena_ptr(g_Environment.m_SectorPointer, (u32)(n < PRES_SEEN ? n : PRES_SEEN) * 4u))
+  if (!s_env_call || n <= 0 || !in_arena_ptr(P32_GET(g_Environment.m_SectorPointer), (u32)(n < PRES_SEEN ? n : PRES_SEEN) * 4u))
     return 0;
   return n < PRES_SEEN ? n : PRES_SEEN;
 }
 static u32 sector_anims(int i) {
-  const u32 sec = MIPS_KUSEG(((const u32 *)g_Environment.m_SectorPointer)[i]);
+  const u32 sec = MIPS_KUSEG(((const u32 *)P32_GET(g_Environment.m_SectorPointer))[i]);
   return in_arena_ptr((const void *)(uintptr_t)(sec + 0x18u), 4) ? *(const u32 *)(uintptr_t)(sec + 0x18u) : 0;
 }
 
@@ -192,17 +192,17 @@ static void set_pairs(void) {
   s_sec_pair0 = MAX_PAIRS;
   s_delta = (u32)(m - g_psx_arena_base);
   s_buf_lo = s_buf_hi = 0;
-  if (in_arena_ptr(g_Buffers.m_LowerPolyBuffer, 1) && in_arena_ptr(g_Buffers.m_WorldOTStart, OT_BYTES)) {
-    s_buf_lo = (u32)(uintptr_t)g_Buffers.m_LowerPolyBuffer;
-    s_buf_hi = (u32)(uintptr_t)g_Buffers.m_WorldOTStart + OT_BYTES;
+  if (in_arena_ptr(P32_GET(g_Buffers.m_LowerPolyBuffer), 1) && in_arena_ptr(P32_GET(g_Buffers.m_WorldOTStart), OT_BYTES)) {
+    s_buf_lo = (u32)(uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer);
+    s_buf_hi = (u32)(uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) + OT_BYTES;
     pair((void *)(uintptr_t)s_buf_lo, s_buf_hi - s_buf_lo, (void *)(uintptr_t)(s_buf_lo + s_delta));
   }
-  if (g_LevelMobys && in_arena_ptr(g_LevelMobys, 1)) {
+  if (P32_GET(g_LevelMobys) && in_arena_ptr(P32_GET(g_LevelMobys), 1)) {
     const u32 len = (u32)(count_mobys() + 1) * sizeof(Moby);
-    pair(g_LevelMobys, len, (char *)g_LevelMobys + s_delta);
+    pair(P32_GET(g_LevelMobys), len, (char *)P32_GET(g_LevelMobys) + s_delta);
   }
-  if (in_arena_ptr(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE))
-    pair(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE, (char *)g_Buffers.m_ParticleSpaceStart + s_delta);
+  if (in_arena_ptr(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE))
+    pair(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE, (char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + s_delta);
   s_mirror_pairs = s_npairs;
   /* the labels the presenter has its own of */
 #if !SPYRO_NATIVE_MEM
@@ -455,11 +455,11 @@ static void set_presenter(void) {
     memcpy((void *)(uintptr_t)s_pairs[i].to, (void *)(uintptr_t)s_pairs[i].lo, s_pairs[i].len);
   /* and the word past the particle space: the -1 loaders.c puts in a 257th
    * slot, where the particles' walk stops when all 256 are in use (D136) */
-  if (in_arena_ptr(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE + 4))
-    memcpy((char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE + s_delta,
-           (char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE, 4);
+  if (in_arena_ptr(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE + 4))
+    memcpy((char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + PARTICLE_SPACE + s_delta,
+           (char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + PARTICLE_SPACE, 4);
   if (s_buf_hi) {
-    u32 *ot = (u32 *)(uintptr_t)((u32)(uintptr_t)g_Buffers.m_HudOTStart + s_delta);
+    u32 *ot = (u32 *)(uintptr_t)((u32)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) + s_delta);
     for (i = 0; i < (8 + OT_BYTES) / 4; i++)
       ot[i] = reloc(ot[i]);
   }
@@ -522,7 +522,7 @@ static void set_presenter(void) {
     memcpy(s_lod_pres + i, &w, 4);
   }
   pres_lod_state_set(s_lod_pres);
-  g_pres_level_mobys = g_LevelMobys ? (Moby *)(uintptr_t)reloc((u32)(uintptr_t)g_LevelMobys) : NULL;
+  P32_SET(g_pres_level_mobys, P32_GET(g_LevelMobys) ? (Moby *)(uintptr_t)reloc((u32)(uintptr_t)P32_GET(g_LevelMobys)) : NULL);
 }
 
 static void compare(int k, u32 rp, u32 rg) {

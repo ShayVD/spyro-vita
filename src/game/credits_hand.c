@@ -125,57 +125,57 @@ static void FirstPart(void) {
   int i;
   if (!g_CreditsBuffer) {
     char *end = Terminator_credits;
-    D_8007589C = (CreditsLetter *)end;
+    P32_SET(D_8007589C , (CreditsLetter *)end);
     D_800756E4 = 0;
     for (i = 0; i < LETTER_SLOTS; i++)
-      D_8007589C[i].m_State = LETTER_FREE;
-    D_80075708 = (CreditsLine *)(end + 0xAF0);
+      P32_GET(D_8007589C)[i].m_State = LETTER_FREE;
+    P32_SET(D_80075708 , (CreditsLine *)(end + 0xAF0));
     g_CreditsBuffer = (int)(uintptr_t)(end + 0x2800);
-    g_Buffers.m_CopyBuf = g_Buffers.m_DiscCopyBuf = (void *)(uintptr_t)g_CreditsBuffer;
+    P32_SET(g_Buffers.m_CopyBuf , P32_SET(g_Buffers.m_DiscCopyBuf , (void *)(uintptr_t)g_CreditsBuffer));
   }
-  CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, 0x800, PART_OFFSET, CD_TIME);
-  LEVEL_HEADER_COPY(g_Buffers.m_DiscCopyBuf); /* PAL: its 656-byte header (D139) */
-  CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, 0x60000, g_LevelHeader.m_VramSramOffset + PART_OFFSET,
+  CDLoadSync(g_CdState.m_WadSector, P32_GET(g_Buffers.m_DiscCopyBuf), 0x800, PART_OFFSET, CD_TIME);
+  LEVEL_HEADER_COPY(P32_GET(g_Buffers.m_DiscCopyBuf)); /* PAL: its 656-byte header (D139) */
+  CDLoadSync(g_CdState.m_WadSector, P32_GET(g_Buffers.m_DiscCopyBuf), 0x60000, g_LevelHeader.m_VramSramOffset + PART_OFFSET,
              CD_TIME);
   setRECT(&rect, 0x200, 0, 0x200, 0x180);
-  LoadImage(&rect, g_Buffers.m_DiscCopyBuf);
-  CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, g_LevelHeader.m_VramSramSize - 0x60000,
+  LoadImage(&rect, P32_GET(g_Buffers.m_DiscCopyBuf));
+  CDLoadSync(g_CdState.m_WadSector, P32_GET(g_Buffers.m_DiscCopyBuf), g_LevelHeader.m_VramSramSize - 0x60000,
              g_LevelHeader.m_VramSramOffset + PART_OFFSET + 0x60000, CD_TIME);
   SpuSetTransferStartAddr(0x1010);
-  SpuWrite(g_Buffers.m_DiscCopyBuf, 0x7EFF0);
+  SpuWrite(P32_GET(g_Buffers.m_DiscCopyBuf), 0x7EFF0);
   while (!SpuIsTransferCompleted(SPU_TRANSFER_PEEK))
     ;
-  CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_DiscCopyBuf, g_LevelHeader.m_DataSize,
+  CDLoadSync(g_CdState.m_WadSector, P32_GET(g_Buffers.m_DiscCopyBuf), g_LevelHeader.m_DataSize,
              g_LevelHeader.m_DataOffset + PART_OFFSET, CD_TIME);
-  g_Buffers.m_ModelData = LoadLevelData(g_Buffers.m_DiscCopyBuf, 1);
-  g_Buffers.m_LevelScene = g_Buffers.m_ModelData;
+  P32_SET(g_Buffers.m_ModelData , LoadLevelData(P32_GET(g_Buffers.m_DiscCopyBuf), 1));
+  P32_SET(g_Buffers.m_LevelScene , P32_GET(g_Buffers.m_ModelData));
   g_Cyclorama = g_NewCyclorama;
   g_Buffers.m_LevelSceneOffset = g_LevelHeader.m_SceneOffset;
   g_Buffers.m_LevelSceneSize = g_LevelHeader.m_SceneSize;
   g_PortalCount = 0;
-  CDLoadSync(g_CdState.m_WadSector, g_Buffers.m_LevelScene, g_Buffers.m_LevelSceneSize,
+  CDLoadSync(g_CdState.m_WadSector, P32_GET(g_Buffers.m_LevelScene), g_Buffers.m_LevelSceneSize,
              g_LevelHeader.m_SceneOffset + PART_OFFSET, CD_TIME);
   /* The music: one sound at 0x1010 in SPU RAM, full volume. */
-  g_Spu.m_SoundDefinitions = &g_CutsceneSoundDef;
-  g_Spu.m_SoundDefinitions->m_Addr = 0x1010;
-  g_Spu.m_SoundDefinitions->m_LoopAddr = -1;
-  g_Spu.m_SoundDefinitions->unk_0x8 = 0x50;
-  g_Spu.m_SoundDefinitions->m_Pitch = 0x659;
-  g_Spu.m_SoundDefinitions->m_PitchVariance = 0;
-  g_Spu.m_SoundDefinitions->m_PitchMultiplier = 0;
-  g_CreditsDataPtr = (int)(uintptr_t)g_Buffers.m_LevelScene;
-  g_Spu.m_SoundDefinitions->m_VarianceType = 0;
+  P32_SET(g_Spu.m_SoundDefinitions , &g_CutsceneSoundDef);
+  P32_GET(g_Spu.m_SoundDefinitions)->m_Addr = 0x1010;
+  P32_GET(g_Spu.m_SoundDefinitions)->m_LoopAddr = -1;
+  P32_GET(g_Spu.m_SoundDefinitions)->unk_0x8 = 0x50;
+  P32_GET(g_Spu.m_SoundDefinitions)->m_Pitch = 0x659;
+  P32_GET(g_Spu.m_SoundDefinitions)->m_PitchVariance = 0;
+  P32_GET(g_Spu.m_SoundDefinitions)->m_PitchMultiplier = 0;
+  g_CreditsDataPtr = (int)(uintptr_t)P32_GET(g_Buffers.m_LevelScene);
+  P32_GET(g_Spu.m_SoundDefinitions)->m_VarianceType = 0;
   g_Spu.m_NextSoundOverrideFlags = 1;
   g_Spu.m_VolumeOverride.left = g_Spu.m_VolumeOverride.right = 0x3FFF;
   PlaySound(0, NULL, 0x10, NULL);
   /* The lines, with their text pointers made absolute. */
-  blob = (char *)g_Buffers.m_LevelScene + ((CreditsPath *)(uintptr_t)g_CreditsDataPtr)->m_LinesOffset;
-  D_800757EC = blob;
+  blob = (char *)P32_GET(g_Buffers.m_LevelScene) + ((CreditsPath *)(uintptr_t)g_CreditsDataPtr)->m_LinesOffset;
+  P32_SET(D_800757EC , blob);
   g_CreditsTotalEntries = ((int *)blob)[2];
-  text = (char *)D_80075708 + ((int *)blob)[1] - 0xC;
-  Memcpy(D_80075708, blob + 0xC, ((int *)blob)[0] - 0xC);
+  text = (char *)P32_GET(D_80075708) + ((int *)blob)[1] - 0xC;
+  Memcpy(P32_GET(D_80075708), blob + 0xC, ((int *)blob)[0] - 0xC);
   for (i = 0; i < g_CreditsTotalEntries; i++)
-    D_80075708[i].m_Text += (uintptr_t)text;
+    P32_ADD(P32_GET(D_80075708)[i].m_Text , (uintptr_t)text);
   g_CreditsStage = 0;
   g_CreditsSequence++;
 }
@@ -212,10 +212,10 @@ static void CameraPath(void) {
 static void FadeOut(void) {
   if (D_800756E4 || g_CreditsEntryIndex < g_CreditsTotalEntries)
     return;
-  g_Spu.m_SoundDefinitions->unk_0x8 -= 10;
+  P32_GET(g_Spu.m_SoundDefinitions)->unk_0x8 -= 10;
   g_CreditsTimer += g_DeltaTime;
-  if (g_Spu.m_SoundDefinitions->unk_0x8 < 0)
-    g_Spu.m_SoundDefinitions->unk_0x8 = 0;
+  if (P32_GET(g_Spu.m_SoundDefinitions)->unk_0x8 < 0)
+    P32_GET(g_Spu.m_SoundDefinitions)->unk_0x8 = 0;
   g_Fade = g_CreditsTimer;
   if (g_Fade >= 16)
     g_Fade = 15;
@@ -228,11 +228,11 @@ static void FadeOut(void) {
 static CreditsLetter *TakeLetter(int *from) {
   int i;
   for (i = *from; i < D_800756E4; i++)
-    if (D_8007589C[i].m_State == LETTER_FREE) {
+    if (P32_GET(D_8007589C)[i].m_State == LETTER_FREE) {
       *from = i;
-      return &D_8007589C[i];
+      return &P32_GET(D_8007589C)[i];
     }
-  return &D_8007589C[D_800756E4++];
+  return &P32_GET(D_8007589C)[D_800756E4++];
 }
 
 static inline int IsDigit(int c) { return (u_int)(c - '0') < 10; }
@@ -251,7 +251,7 @@ typedef struct {
  * big: the last letter was a capital or a digit (or a space), which sets
  * the next one's gap; it carries over from line to line. */
 static void SpellLine(int s, int *big) {
-  CreditsLine *line = &D_80075708[s];
+  CreditsLine *line = &P32_GET(D_80075708)[s];
   const char *c;
   int from = 0, colon = 0, half, i, ticks = RT(30, 25);
   Pen pen;
@@ -261,7 +261,7 @@ static void SpellLine(int s, int *big) {
   if (g_CreditsTotalEntries < g_CreditsDisplayedCount)
     g_CreditsDisplayedCount = g_CreditsTotalEntries;
   pen.x = 0x100, pen.y = line->m_Y, pen.z = 0x12B3, pen.gap = 0xE, pen.drop = 1, pen.lowerZ = 0x1600;
-  for (c = line->m_Text; *c; c++) {
+  for (c = P32_GET(line->m_Text); *c; c++) {
     CreditsLetter *l;
     if (*c == ' ') {
       pen.x += pen.gap * 3 / 4;
@@ -322,7 +322,7 @@ static void SpellLine(int s, int *big) {
    * 25, and the spins and the fall below x1.2, its 50 Hz retune, D139). */
   half = (pen.x - 0x100) >> 1;
   for (i = 0; i < D_800756E4; i++) {
-    CreditsLetter *l = &D_8007589C[i];
+    CreditsLetter *l = &P32_GET(D_8007589C)[i];
     int x;
     if (l->m_Line != s)
       continue;
@@ -348,7 +348,7 @@ static void Lines(void) {
   int last = g_CreditsDisplayedCount, s, big = 1, spell;
   SpecularUpdate(3);
   for (s = g_CreditsEntryIndex; s <= last; s++) {
-    CreditsLine *line = &D_80075708[s];
+    CreditsLine *line = &P32_GET(D_80075708)[s];
     spell = -1;
     if (func_80037F90(&line->m_ShowTimer, sizeof(short))) {
       line->m_State = LINE_LEAVING;
@@ -356,7 +356,7 @@ static void Lines(void) {
         g_CreditsEntryIndex = s + 1;
     }
     /* Before anything is spelt, the first line. */
-    if (D_80075708[0].m_State == LINE_WAITING)
+    if (P32_GET(D_80075708)[0].m_State == LINE_WAITING)
       spell = 0;
     else if (func_80037F90(&line->m_NextTimer, sizeof(short)) && line[1].m_State == LINE_WAITING &&
              s < g_CreditsTotalEntries - 1)
@@ -373,8 +373,8 @@ static void Letters(void) {
   CreditsLetter *l;
   int i;
   for (i = 0; i < D_800756E4; i++) {
-    l = &D_8007589C[i];
-    if (D_80075708[l->m_Line].m_State != LINE_LEAVING)
+    l = &P32_GET(D_8007589C)[i];
+    if (P32_GET(D_80075708)[l->m_Line].m_State != LINE_LEAVING)
       continue;
     if (l->m_State == LETTER_PLACED)
       l->m_State = LETTER_OUT;
@@ -382,7 +382,7 @@ static void Letters(void) {
       l->m_State = LETTER_FREE;
   }
   for (i = 0; i < D_800756E4; i++) {
-    l = &D_8007589C[i];
+    l = &P32_GET(D_8007589C)[i];
     if (l->m_State == LETTER_IN) {
       l->m_Pos[0] += l->m_Vel[0];
       l->m_Angle[0] += l->m_Spin[0];
@@ -413,7 +413,7 @@ static void Letters(void) {
         l->m_State = LETTER_GONE;
     }
   }
-  while (D_800756E4 > 0 && D_8007589C[D_800756E4 - 1].m_State == LETTER_FREE)
+  while (D_800756E4 > 0 && P32_GET(D_8007589C)[D_800756E4 - 1].m_State == LETTER_FREE)
     D_800756E4--;
 }
 
@@ -433,21 +433,21 @@ static void NextPart(void) {
   }
   switch (g_CreditsStage) {
   case 0:
-    CDLoadAsync(g_CdState.m_WadSector, D_800757EC, 0x800, PART_OFFSET, CD_TIME);
+    CDLoadAsync(g_CdState.m_WadSector, P32_GET(D_800757EC), 0x800, PART_OFFSET, CD_TIME);
     g_CreditsStage++;
     break;
   case 1:
-    LEVEL_HEADER_COPY(D_800757EC); /* PAL: its 656-byte header (D139) */
-    CDLoadAsync(g_CdState.m_WadSector, D_800757EC, 0x20000, g_LevelHeader.m_VramSramOffset + PART_OFFSET, CD_TIME);
+    LEVEL_HEADER_COPY(P32_GET(D_800757EC)); /* PAL: its 656-byte header (D139) */
+    CDLoadAsync(g_CdState.m_WadSector, P32_GET(D_800757EC), 0x20000, g_LevelHeader.m_VramSramOffset + PART_OFFSET, CD_TIME);
     g_CreditsStage++;
     break;
   case 2:
     setRECT(&rect, 0x200, 0x180, 0x200, 0x80);
     DrawSync(0);
-    LoadImage(&rect, (u_long *)D_800757EC);
+    LoadImage(&rect, (u_long *)P32_GET(D_800757EC));
     DrawSync(0);
     D_80075958 = g_LevelHeader.m_DataSize + g_LevelHeader.m_SceneSize + 0x40000;
-    CDLoadAsync(g_CdState.m_WadSector, D_800757EC, D_80075958, g_LevelHeader.m_VramSramOffset + PART_OFFSET + 0x20000,
+    CDLoadAsync(g_CdState.m_WadSector, P32_GET(D_800757EC), D_80075958, g_LevelHeader.m_VramSramOffset + PART_OFFSET + 0x20000,
                 CD_TIME);
     g_CreditsStage++;
     break;
@@ -456,18 +456,18 @@ static void NextPart(void) {
     break;
   case 4:
     setRECT(&rect, 0x200, 0x80, 0x200, 0x100);
-    g_Buffers.m_CopyBuf = g_Buffers.m_DiscCopyBuf = (void *)(uintptr_t)g_CreditsBuffer;
+    P32_SET(g_Buffers.m_CopyBuf , P32_SET(g_Buffers.m_DiscCopyBuf , (void *)(uintptr_t)g_CreditsBuffer));
     DrawSync(0);
-    LoadImage(&rect, (u_long *)D_800757EC);
+    LoadImage(&rect, (u_long *)P32_GET(D_800757EC));
     setRECT(&rect, 0x200, 0x180, 0x200, 0x80);
     MoveImage(&rect, 0x200, 0);
     DrawSync(0);
-    Memcpy((void *)(uintptr_t)g_CreditsBuffer, D_800757EC + 0x40000, D_80075958 - 0x40000);
-    D_800757EC = (char *)(uintptr_t)g_CreditsBuffer + D_80075958 - 0x40000;
-    g_Buffers.m_ModelData = LoadLevelData(g_Buffers.m_DiscCopyBuf, 1);
+    Memcpy((void *)(uintptr_t)g_CreditsBuffer, P32_GET(D_800757EC) + 0x40000, D_80075958 - 0x40000);
+    P32_SET(D_800757EC , (char *)(uintptr_t)g_CreditsBuffer + D_80075958 - 0x40000);
+    P32_SET(g_Buffers.m_ModelData , LoadLevelData(P32_GET(g_Buffers.m_DiscCopyBuf), 1));
     g_Cyclorama = g_NewCyclorama;
-    g_Buffers.m_LevelScene = (char *)g_Buffers.m_DiscCopyBuf + g_LevelHeader.m_DataSize;
-    g_CreditsDataPtr = (int)(uintptr_t)g_Buffers.m_LevelScene;
+    P32_SET(g_Buffers.m_LevelScene , (char *)P32_GET(g_Buffers.m_DiscCopyBuf) + g_LevelHeader.m_DataSize);
+    g_CreditsDataPtr = (int)(uintptr_t)P32_GET(g_Buffers.m_LevelScene);
     g_Buffers.m_LevelSceneSize = g_LevelHeader.m_SceneSize;
     g_Buffers.m_LevelSceneOffset = g_LevelHeader.m_SceneOffset;
     g_CreditsStage = g_CreditsSequence % 10 < 9 ? 0 : 3;
@@ -508,10 +508,10 @@ static void Draw(void) {
     VSync(0);
     if (REGION_IS(PAL)) {
       /* PAL (its overlay's 0x800829E8): the whole 512x256 buffer (D139) */
-      y = g_CurDB == &g_DB[0] ? 0 : 0x100;
+      y = P32_GET(g_CurDB) == &g_DB[0] ? 0 : 0x100;
       setRECT(&rect, 0, y, 0x200, 0x100);
     } else {
-      y = g_CurDB == &g_DB[0] ? 8 : 0xF8;
+      y = P32_GET(g_CurDB) == &g_DB[0] ? 8 : 0xF8;
       setRECT(&rect, 0, y, 0x200, 0xE0);
     }
     MoveImage(&rect, 0, 0x100 - y);
@@ -522,8 +522,8 @@ static void Draw(void) {
   g_DB[0].m_DrawEnv.g0 = g_DB[1].m_DrawEnv.g0 = g_Cyclorama.m_BackgroundColor.g;
   g_DB[0].m_DrawEnv.b0 = g_DB[1].m_DrawEnv.b0 = g_Cyclorama.m_BackgroundColor.b;
   for (i = 0; i < D_800756E4; i++) {
-    const CreditsLetter *l = &D_8007589C[i];
-    Moby *m = --g_HudMobys;
+    const CreditsLetter *l = &P32_GET(D_8007589C)[i];
+    Moby *m = P32_PREDEC(g_HudMobys);
     Memset(m, 0, sizeof *m);
     m->m_Position.x = l->m_Pos[0];
     m->m_Position.y = l->m_Pos[1];
@@ -543,7 +543,7 @@ static void Draw(void) {
   }
   if (g_Fade)
     func_800190D4(2, g_Fade << 4, g_Fade << 4, g_Fade << 4);
-  g_SonyImage.m_ShadedMobys[0] = NULL; /* D_8006FCF4+0x2400, the lit list */
+  P32_SET(g_SonyImage.m_ShadedMobys[0] , NULL); /* D_8006FCF4+0x2400, the lit list */
   func_80018880();
   Memset(&g_SonyImage, 0, 0x900);
   func_80022A2C();
@@ -557,8 +557,8 @@ static void Draw(void) {
   for (D_80075950[1] = VSync(-1); D_80075950[1] - D_80075950[0] < 2; D_80075950[1] = VSync(-1))
     VSync(0);
   D_80075950[0] = VSync(-1);
-  PutDispEnv(&g_CurDB->m_DispEnv);
-  PutDrawEnv(&g_CurDB->m_DrawEnv);
+  PutDispEnv(&P32_GET(g_CurDB)->m_DispEnv);
+  PutDrawEnv(&P32_GET(g_CurDB)->m_DrawEnv);
   DrawOTag(func_80016784(0x800));
 }
 

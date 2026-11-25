@@ -17,4 +17,4 @@
 #define port_lod_state_set pres_lod_state_set
 #include "lod.c"
 
-P32F(Moby *) g_pres_level_mobys;
+__typeof__(g_pres_level_mobys) g_pres_level_mobys;

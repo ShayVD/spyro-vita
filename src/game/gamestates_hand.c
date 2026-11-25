@@ -76,8 +76,8 @@ static_assert(offsetof(__typeof__(g_FairyCutscene), unk_0x1c) == 0x1C &&
 
 /* The menu's sounds, 2D. */
 static inline void MenuSound(int sound) { PlaySound(sound, NULL, 0x10, NULL); }
-#define CURSOR (g_Spu.m_SoundTable->menuCursor)
-#define CONFIRM (g_Spu.m_SoundTable->menuConfirm)
+#define CURSOR (P32_GET(g_Spu.m_SoundTable)->menuCursor)
+#define CONFIRM (P32_GET(g_Spu.m_SoundTable)->menuConfirm)
 
 /* Shadow runs (host builds with the mips2c units linked, cmake
  * SPYRO_M2C_REF; decisions D87): with g_gs_shadow set (SPYRO_SHADOW=gs),
@@ -225,12 +225,12 @@ enum {
  * all eased by a half sine. Then the scene is placed where it ends and the
  * menu (state 1) starts. */
 static void FairyFlyIn(void) {
-  Moby *fairy = fc.m_CutsceneFairy;
+  Moby *fairy = P32_GET(fc.m_CutsceneFairy);
   Vector3D look;
   int t = fc.m_AnimationTimer;
   if (t < 0x40) {
     int ease = Sin((t << 5) - 0x400) + 0x1000, angle, distance;
-    Moby *sign = &g_LevelMobys[((int *)fairy->m_Props)[1]];
+    Moby *sign = &P32_GET(g_LevelMobys)[((int *)P32_GET(fairy->m_Props))[1]];
     /* The moby it came from (props word 1) finishes its animation. */
     if (sign->m_State == 2) {
       sign->m_Substate += g_DeltaTime;
@@ -246,10 +246,10 @@ static void FairyFlyIn(void) {
     MobyRotateToSpyro(fairy, 3, 0, 0);
     ColFindFloor(&fairy->m_Position, 0x1000);
     MobyUpdateShadow(fairy);
-    if (g_Sparx) {
+    if (P32_GET(g_Sparx)) {
       angle = EaseAngle(fc.m_CameraTargetAngle, fc.m_CameraEndAngle, ease);
       distance = EaseValue(fc.m_CameraTargetDistance, fc.m_CameraEndDistance, ease);
-      AroundSpyro(&g_Sparx->m_Position, angle, distance);
+      AroundSpyro(&P32_GET(g_Sparx)->m_Position, angle, distance);
     }
     angle = EaseAngle(fc.m_CameraStartAngle, fc.m_CameraViewAngle, ease);
     distance = EaseValue(fc.m_CameraStartDistance, fc.m_CameraViewDistance, ease);
@@ -285,8 +285,8 @@ static void FairyFlyIn(void) {
   AroundSpyro(&fairy->m_Position, fc.m_CameraInitAngle, fc.m_CameraInitDistance);
   fairy->m_Position.z = fc.m_CameraTargetZ;
   fairy->m_Rotation.z = Atan2(g_Spyro.m_Position.x - fairy->m_Position.x, g_Spyro.m_Position.y - fairy->m_Position.y, 0);
-  if (g_Sparx)
-    AroundSpyro(&g_Sparx->m_Position, fc.m_CameraEndAngle, fc.m_CameraEndDistance);
+  if (P32_GET(g_Sparx))
+    AroundSpyro(&P32_GET(g_Sparx)->m_Position, fc.m_CameraEndAngle, fc.m_CameraEndDistance);
   {
     int c = Cos(fc.m_CameraViewAngle), s;
     g_Camera.m_Position.x = g_Spyro.m_Position.x + ((c * fc.m_CameraViewDistance) >> 12);
@@ -339,7 +339,7 @@ static void FairySave(void) {
   /* the release's card file: BASCUS-94228SPYRO, or PAL's BESCES-01438SPYRO
    * (PAL 0x800149F0; src/platform/common/region.c) */
   const char *name = psx_region()->card;
-  u_char *save = (u_char *)g_Buffers.m_HudOTStart - 0x600;
+  u_char *save = (u_char *)P32_GET(g_Buffers.m_HudOTStart) - 0x600;
   int r, page;
   switch (fc.m_MenuSelectedOption) {
   case 0:
@@ -422,13 +422,13 @@ static void FairyMenu(void) {
     } else if (fc.m_MenuSelectedOption == 1) {
       /* Replay the level's last dragon: if the dragon (props word 0) has
        * been freed and can be again, put it back. */
-      Moby *dragon = &g_LevelMobys[*(int *)fc.m_CutsceneFairy->m_Props];
-      int *props = dragon->m_Props;
+      Moby *dragon = &P32_GET(g_LevelMobys)[*(int *)P32_GET(P32_GET(fc.m_CutsceneFairy)->m_Props)];
+      int *props = P32_GET(dragon->m_Props);
       if (props[9] != -1 || props[6] == -1)
         return;
       func_8002D02C();
       dragon->m_State = 2;
-      dragon->m_CollisionGroup = NULL;
+      P32_SET(dragon->m_CollisionGroup , NULL);
       dragon->m_CollisionRegion = -1;
       func_8002C924(dragon);
       g_DragonTotal--;
@@ -488,8 +488,8 @@ static void Fairy(void) {
   P32F(Moby *) *list = (P32F(Moby *) *)(D_8006FCF4 + 0x400);
   fc.m_AnimationTimer += g_DeltaTime;
   SpecularUpdate(3);
-  list[1] = NULL;
-  list[0] = fc.m_CutsceneFairy;
+  P32_SET(list[1] , NULL);
+  P32_SET(list[0] , P32_GET(fc.m_CutsceneFairy));
   func_800522C0(list, 0);
   if (fc.m_State == 0)
     FairyFlyIn();
@@ -553,7 +553,7 @@ static void DragonWobble(Moby *dragon, const u_char *steps) {
  * animation's ticks per frame give (0x10: 8 ticks a frame, 0x15: 6, 0x20:
  * 4, else 2), held on the last frame. */
 static void CutsceneAnimate(Moby *m, int model, int ticks) {
-  const AnimationHeader *anim = g_Models[model]->m_Animations[0];
+  const AnimationHeader *anim = P32_GET(P32_GET(g_Models[model])->m_Animations[0]);
   int p = anim->m_ProgressPerTick, n = p == 0x10 ? 8 : p == 0x15 ? 6 : p == 0x20 ? 4 : 2;
   const int t6 = PortCutsceneTime6(ticks); /* PAL at US timing: the exact time (D151) */
   /* PAL (0x80035C08): the dragon's model at 0 ticks per frame holds its
@@ -578,7 +578,7 @@ static void CutsceneAnimate(Moby *m, int model, int ticks) {
 /* The cutscene camera's frame k (unk_0x48: per two ticks a position and
  * three angles, as words). */
 static void CutsceneCamera(int k) {
-  const int *f = (const int *)dc.unk_0x48 + k * 6;
+  const int *f = (const int *)P32_GET(dc.unk_0x48) + k * 6;
   g_Camera.m_Position.x = f[0], g_Camera.m_Position.y = f[1], g_Camera.m_Position.z = f[2];
   g_Camera.m_Rotation.x = f[3], g_Camera.m_Rotation.y = f[4], g_Camera.m_Rotation.z = f[5];
 }
@@ -590,7 +590,7 @@ static void CutsceneCamera(int k) {
  * and 64ths as CutsceneAnimate gives them, from the time. */
 static void CutsceneCameraAt(int t6) {
   const int k = t6 / 12;
-  const int *a = (const int *)dc.unk_0x48 + k * 6;
+  const int *a = (const int *)P32_GET(dc.unk_0x48) + k * 6;
   const int *b = k + 1 < dc.unk_0x4C ? a + 6 : a;
   const int f = PortCutsceneCut(a, b) ? 0 : t6 % 12; /* a cut: hold the shot */
   g_Camera.m_Position.x = a[0] + (b[0] - a[0]) * f / 12;
@@ -617,7 +617,7 @@ static void DragonSound(int sound) { PlaySound(sound, NULL, 0x10, (u_char *)&dc.
  * where Spyro, the camera and the dragon's pad (its props: a position, the
  * walk's end angle and distance, ...) are. */
 static void DragonFree(void) {
-  Moby *dragon = dc.m_RescuedDragonMoby;
+  Moby *dragon = P32_GET(dc.m_RescuedDragonMoby);
   Vector3D v, *pad;
   int t;
   g_GameTick++;
@@ -641,13 +641,13 @@ static void DragonFree(void) {
   dc.unk_0x60 = Atan2(g_Spyro.m_Position.x - dragon->m_Position.x, g_Spyro.m_Position.y - dragon->m_Position.y, 1);
   VecSub(&v, &g_Spyro.m_Position, &dragon->m_Position);
   dc.unk_0x64 = VecMagnitude(&v, 0);
-  dc.unk_0x68 = ((int *)dragon->m_Props)[10];
-  dc.unk_0x6C = ((int *)dragon->m_Props)[11];
+  dc.unk_0x68 = ((int *)P32_GET(dragon->m_Props))[10];
+  dc.unk_0x6C = ((int *)P32_GET(dragon->m_Props))[11];
   dc.unk_0x70 = Atan2(g_Camera.m_Position.x - dragon->m_Position.x, g_Camera.m_Position.y - dragon->m_Position.y, 1);
   VecSub(&v, &g_Camera.m_Position, &dragon->m_Position);
   dc.unk_0x74 = VecMagnitude(&v, 0);
   dc.unk_0x78 = g_Camera.m_Position.z;
-  pad = (Vector3D *)dragon->m_Props;
+  pad = (Vector3D *)P32_GET(dragon->m_Props);
   dc.unk_0x7C = Atan2(pad->x - dragon->m_Position.x, pad->y - dragon->m_Position.y, 1);
   VecSub(&v, pad, &dragon->m_Position);
   dc.unk_0x80 = VecMagnitude(&v, 0);
@@ -665,17 +665,17 @@ static void DragonFree(void) {
   g_Spyro.m_nextBodyAnimationFrame = 1;
   g_Spyro.m_bodyAnimationFrame = 0;
   g_Spyro.m_bodyFrameProgress = 0;
-  g_ParticleAllocPtr = g_Particles;
-  g_Particles->m_RenderType = 0xFF;
+  P32_SET(g_ParticleAllocPtr , P32_GET(g_Particles));
+  P32_GET(g_Particles)->m_RenderType = 0xFF;
   KillSoundsAndMusic(1 << dragon->m_SoundChannel);
-  DragonSound(g_Spu.m_SoundTable->dragonRumbleBreaking);
+  DragonSound(P32_GET(g_Spu.m_SoundTable)->dragonRumbleBreaking);
 }
 
 /* DRAGON_WALK_UP: Spyro walks round to the dragon (unk_0x40 ticks), the
  * camera to the pad; then turns to face it (0x20 ticks). Spyro's tilt
  * follows the ground. */
 static void DragonWalkUp(void) {
-  Moby *dragon = dc.m_RescuedDragonMoby;
+  Moby *dragon = P32_GET(dc.m_RescuedDragonMoby);
   int t = dc.m_CutsceneTicks, len = dc.unk_0x40;
   Vector3D v;
   if (t < 0x20)
@@ -728,7 +728,7 @@ static void DragonWalkUp(void) {
       dc.unk_0x60 = g_Spyro.m_bodyRotation.z << 4;
       dc.unk_0x68 = (dc.unk_0x68 + 0x800) & 0xFFF;
       g_Spyro.m_Position.y = dragon->m_Position.y + ((s * dc.unk_0x6C) >> 12);
-      VecCopy(&g_Camera.m_Position, (Vector3D *)dragon->m_Props);
+      VecCopy(&g_Camera.m_Position, (Vector3D *)P32_GET(dragon->m_Props));
     }
     d = func_80017928(dc.unk_0x68, dc.unk_0x60) * (dc.m_CutsceneTicks - dc.unk_0x40) / 32;
     a = ((dc.unk_0x68 - dc.unk_0x60) & 0xFFF) < 0x801 ? dc.unk_0x60 + d : dc.unk_0x60 - d;
@@ -762,7 +762,7 @@ static void DragonWalkUp(void) {
       g_Camera.m_Rotation.y = Atan2(VecMagnitude(&v, 0), -v.z, 1);
       g_Camera.m_Rotation.z = Atan2(v.x, v.y, 1);
     } else {
-      const int *props = dragon->m_Props;
+      const int *props = P32_GET(dragon->m_Props);
       LookAngles(&v, ang);
       g_Camera.m_Rotation.x = TurnTowards((u_short)ang[0], props[3], dc.m_CutsceneTicks - dc.unk_0x40 + 0x20, 6);
       g_Camera.m_Rotation.y = TurnTowards((u_short)ang[1], props[4], dc.m_CutsceneTicks - dc.unk_0x40 + 0x20, 6);
@@ -793,7 +793,7 @@ static void DragonWalkUp(void) {
  * least 0x10 ticks; then the crystal shatters, the cutscene's dragon and
  * Spyro mobys replace the level's, and the dragon's line plays. */
 static void DragonWait(void) {
-  Moby *dragon = dc.m_RescuedDragonMoby, *m;
+  Moby *dragon = P32_GET(dc.m_RescuedDragonMoby), *m;
   int i;
   DragonWobble(dragon, D_8006F398);
   if (dc.m_CutsceneTicks < 0x10 || dc.m_Stage < 3) {
@@ -803,57 +803,57 @@ static void DragonWait(void) {
   dc.m_State = 3;
   dc.m_CutsceneTicks = 0;
   for (i = 0; i < 0x20; i++)
-    g_SpawnMoby(0xFB, dc.m_RescuedDragonMoby);
+    g_SpawnMoby(0xFB, P32_GET(dc.m_RescuedDragonMoby));
   /* The decomp's names are the wrong way round: m_CutsceneSpyro is the
    * cutscene's dragon (class 0x1FE), m_CutsceneDragon its Spyro (0x1FF). */
-  m = dc.m_CutsceneSpyro = MobyAlloc();
+  m = P32_SET(dc.m_CutsceneSpyro , MobyAlloc());
   func_8003A720(m);
-  dc.m_CutsceneSpyro->m_Class = 0x1FE;
-  VecCopy(&dc.m_CutsceneSpyro->m_Position, &dc.m_RescuedDragonMoby->m_Position);
-  dc.m_CutsceneSpyro->m_Rotation.z = dc.m_RescuedDragonMoby->m_Rotation.z;
-  dc.m_CutsceneSpyro->m_ScaleOverride = 0x60;
-  dc.m_CutsceneSpyro->m_DepthOffset = 5;
-  dc.m_CutsceneSpyro->m_ShadowDistance = -1;
-  dc.m_CutsceneSpyro->m_Position.z += 0x400;
+  P32_GET(dc.m_CutsceneSpyro)->m_Class = 0x1FE;
+  VecCopy(&P32_GET(dc.m_CutsceneSpyro)->m_Position, &P32_GET(dc.m_RescuedDragonMoby)->m_Position);
+  P32_GET(dc.m_CutsceneSpyro)->m_Rotation.z = P32_GET(dc.m_RescuedDragonMoby)->m_Rotation.z;
+  P32_GET(dc.m_CutsceneSpyro)->m_ScaleOverride = 0x60;
+  P32_GET(dc.m_CutsceneSpyro)->m_DepthOffset = 5;
+  P32_GET(dc.m_CutsceneSpyro)->m_ShadowDistance = -1;
+  P32_GET(dc.m_CutsceneSpyro)->m_Position.z += 0x400;
   if (REGION_IS(PAL)) /* PAL (0x800355B8): the floor under him kept (D139) */
-    g_CollisionPoint.z = func_8004DF24(&dc.m_CutsceneSpyro->m_Position);
+    g_CollisionPoint.z = func_8004DF24(&P32_GET(dc.m_CutsceneSpyro)->m_Position);
   else
-    func_8004DF24(&dc.m_CutsceneSpyro->m_Position);
-  dc.m_CutsceneSpyro->m_Position.z -= 0x400;
-  MobyUpdateShadow(dc.m_CutsceneSpyro);
-  MobyUpdateCollision(dc.m_CutsceneSpyro);
+    func_8004DF24(&P32_GET(dc.m_CutsceneSpyro)->m_Position);
+  P32_GET(dc.m_CutsceneSpyro)->m_Position.z -= 0x400;
+  MobyUpdateShadow(P32_GET(dc.m_CutsceneSpyro));
+  MobyUpdateCollision(P32_GET(dc.m_CutsceneSpyro));
   m = MobyAlloc();
-  dc.m_CutsceneDragon = m;
+  P32_SET(dc.m_CutsceneDragon , m);
   func_8003A720(m);
-  dc.m_CutsceneDragon->m_Class = 0x1FF;
-  VecCopy(&dc.m_CutsceneDragon->m_Position, &g_Spyro.m_Position);
-  dc.m_CutsceneDragon->m_DepthOffset = 5;
-  MobyUpdateCollision(dc.m_CutsceneDragon);
+  P32_GET(dc.m_CutsceneDragon)->m_Class = 0x1FF;
+  VecCopy(&P32_GET(dc.m_CutsceneDragon)->m_Position, &g_Spyro.m_Position);
+  P32_GET(dc.m_CutsceneDragon)->m_DepthOffset = 5;
+  MobyUpdateCollision(P32_GET(dc.m_CutsceneDragon));
   StopSound(dc.m_SoundVoice, 4);
-  DragonSound(g_Spu.m_SoundTable->dragonBreak);
-  dc.m_RescuedDragonMoby->m_Position.z += 0x78;
-  MobyFree(dc.m_RescuedDragonMoby);
+  DragonSound(P32_GET(g_Spu.m_SoundTable)->dragonBreak);
+  P32_GET(dc.m_RescuedDragonMoby)->m_Position.z += 0x78;
+  MobyFree(P32_GET(dc.m_RescuedDragonMoby));
 }
 
 /* 3: the cutscene dragon grows to its size and turns to its angle (props
  * word 12) over 0x18 ticks. */
 static void DragonAppear(void) {
-  Moby *dragon = dc.m_RescuedDragonMoby;
+  Moby *dragon = P32_GET(dc.m_RescuedDragonMoby);
   int t = dc.m_CutsceneTicks;
   if (t < 0x18) {
     int d;
-    dc.m_CutsceneSpyro->m_ScaleOverride = 0x60 - t * 3;
-    d = func_80017948(((int *)dragon->m_Props)[12] >> 4, dragon->m_Rotation.z);
-    dc.m_CutsceneSpyro->m_Rotation.z = dragon->m_Rotation.z + d * dc.m_CutsceneTicks / 24;
+    P32_GET(dc.m_CutsceneSpyro)->m_ScaleOverride = 0x60 - t * 3;
+    d = func_80017948(((int *)P32_GET(dragon->m_Props))[12] >> 4, dragon->m_Rotation.z);
+    P32_GET(dc.m_CutsceneSpyro)->m_Rotation.z = dragon->m_Rotation.z + d * dc.m_CutsceneTicks / 24;
     return;
   }
   dc.m_State = 4;
   dc.m_CutsceneTicks = 0;
-  dc.m_CutsceneSpyro->m_Rotation.z = ((int *)dragon->m_Props)[12] >> 4;
-  dc.m_CutsceneSpyro->m_ScaleOverride = 0;
-  dc.m_CutsceneDragon->m_Rotation.x = g_Spyro.m_bodyRotation.x;
-  dc.m_CutsceneDragon->m_Rotation.y = g_Spyro.m_bodyRotation.y;
-  dc.m_CutsceneDragon->m_Rotation.z = g_Spyro.m_bodyRotation.z;
+  P32_GET(dc.m_CutsceneSpyro)->m_Rotation.z = ((int *)P32_GET(dragon->m_Props))[12] >> 4;
+  P32_GET(dc.m_CutsceneSpyro)->m_ScaleOverride = 0;
+  P32_GET(dc.m_CutsceneDragon)->m_Rotation.x = g_Spyro.m_bodyRotation.x;
+  P32_GET(dc.m_CutsceneDragon)->m_Rotation.y = g_Spyro.m_bodyRotation.y;
+  P32_GET(dc.m_CutsceneDragon)->m_Rotation.z = g_Spyro.m_bodyRotation.z;
 }
 
 /* 4: the cutscene proper. The camera and both mobys' frames follow the
@@ -869,7 +869,7 @@ static void DragonAppear(void) {
  * US timing too (Dragon, PortCutsceneTicks; D150), so the scale is PAL's
  * whatever the timing (RT, US's in PAL 60, until D150). */
 static int DragonVoiceDelay(Moby *dragon) {
-  int *props = dragon->m_Props, t = props[16];
+  int *props = P32_GET(dragon->m_Props), t = props[16];
   if (REGION_IS(PAL)) {
     if (g_Language >= 1 && g_Language <= 4 && props[16 + g_Language] != -1)
       t = props[16 + g_Language];
@@ -880,17 +880,17 @@ static int DragonVoiceDelay(Moby *dragon) {
 }
 
 static void DragonCutscene(void) {
-  Moby *dragon = dc.m_RescuedDragonMoby;
+  Moby *dragon = P32_GET(dc.m_RescuedDragonMoby);
   int skip = 0;
   if (dc.m_CutsceneTicks < dc.unk_0x4C * 2) {
     if (dc.unk_0x58 == 0 && dc.m_CutsceneTicks >= DragonVoiceDelay(dragon)) {
       SoundDefinition saved, *def;
-      Memcpy(&saved, g_Spu.m_SoundDefinitions, sizeof saved);
-      def = g_Spu.m_SoundDefinitions;
+      Memcpy(&saved, P32_GET(g_Spu.m_SoundDefinitions), sizeof saved);
+      def = P32_GET(g_Spu.m_SoundDefinitions);
       def->m_Addr = 0x80000 - dc.m_Header.m_SpuData.m_Length;
       def->m_LoopAddr = -1;
       def->unk_0x8 = 0x32;
-      def->m_Pitch = (((int *)dragon->m_Props)[15] << 10) / 11025;
+      def->m_Pitch = (((int *)P32_GET(dragon->m_Props))[15] << 10) / 11025;
       def->m_PitchVariance = 0;
       def->m_PitchMultiplier = 0;
       def->m_VarianceType = 0;
@@ -899,17 +899,17 @@ static void DragonCutscene(void) {
       g_Spu.m_VolumeOverride.right = 0x3FFF;
       StopSound(dc.m_SoundVoice, 4);
       DragonSound(0);
-      Memcpy(g_Spu.m_SoundDefinitions, &saved, sizeof saved);
+      Memcpy(P32_GET(g_Spu.m_SoundDefinitions), &saved, sizeof saved);
       dc.unk_0x58 = 1;
     }
     if (PortCutsceneTime6(dc.m_CutsceneTicks) >= 0)
       CutsceneCameraAt(PortCutsceneTime6(dc.m_CutsceneTicks)); /* PAL at US timing (D151) */
     else
       CutsceneCamera(dc.m_CutsceneTicks >> 1);
-    CutsceneAnimate(dc.m_CutsceneSpyro, 0x1FE, dc.m_CutsceneTicks);
-    CutsceneAnimate(dc.m_CutsceneDragon, 0x1FF, dc.m_CutsceneTicks);
+    CutsceneAnimate(P32_GET(dc.m_CutsceneSpyro), 0x1FE, dc.m_CutsceneTicks);
+    CutsceneAnimate(P32_GET(dc.m_CutsceneDragon), 0x1FF, dc.m_CutsceneTicks);
     if (g_Pad.m_Down & PAD_CROSS) {
-      if (((int *)dragon->m_Props)[13] == 0)
+      if (((int *)P32_GET(dragon->m_Props))[13] == 0)
         skip = 1;
       else if (dc.unk_0x5C == 0)
         dc.unk_0x5C = 1;
@@ -919,10 +919,10 @@ static void DragonCutscene(void) {
     dc.m_State = 5;
     dc.m_CutsceneTicks = 0;
     CutsceneCamera(dc.unk_0x4C - 1);
-    dc.m_CutsceneSpyro->m_AnimationState.m_Frame = (u_char)g_Models[0x1FE]->m_Animations[0]->m_NumFrames - 1;
-    dc.m_CutsceneSpyro->m_AnimationState.m_FrameProgress = 0;
-    dc.m_CutsceneDragon->m_AnimationState.m_Frame = (u_char)g_Models[0x1FF]->m_Animations[0]->m_NumFrames - 1;
-    dc.m_CutsceneDragon->m_AnimationState.m_FrameProgress = 0;
+    P32_GET(dc.m_CutsceneSpyro)->m_AnimationState.m_Frame = (u_char)P32_GET(P32_GET(g_Models[0x1FE])->m_Animations[0])->m_NumFrames - 1;
+    P32_GET(dc.m_CutsceneSpyro)->m_AnimationState.m_FrameProgress = 0;
+    P32_GET(dc.m_CutsceneDragon)->m_AnimationState.m_Frame = (u_char)P32_GET(P32_GET(g_Models[0x1FF])->m_Animations[0])->m_NumFrames - 1;
+    P32_GET(dc.m_CutsceneDragon)->m_AnimationState.m_FrameProgress = 0;
     g_Spyro.m_bodyAnimation = 0;
     g_Spyro.m_nextBodyAnimation = 0;
     g_Spyro.m_bodyAnimationFrame = 0;
@@ -935,7 +935,7 @@ static void DragonCutscene(void) {
     SpuUpdate();
     if (!dc.m_HasOverflow) {
       SpuSetTransferStartAddr(0x80000 - dc.m_Header.m_SpuData.m_Length);
-      SpuWrite((u_char *)g_Buffers.m_ModelData + dc.m_Header.m_SpuData.m_Offset, dc.m_Header.m_SpuData.m_Length);
+      SpuWrite((u_char *)P32_GET(g_Buffers.m_ModelData) + dc.m_Header.m_SpuData.m_Offset, dc.m_Header.m_SpuData.m_Length);
       while (!SpuIsTransferCompleted(0))
         ;
     }
@@ -951,11 +951,11 @@ static void DragonCutscene(void) {
  * the HUD's dragon counter slides in; at 0x19 ticks the dragon vanishes in
  * a burst and both cutscene mobys go. */
 static void DragonVanish(void) {
-  AnimationHeader *anim = g_Models[0x1FE]->m_Animations[0];
+  AnimationHeader *anim = P32_GET(P32_GET(g_Models[0x1FE])->m_Animations[0]);
   Vector3D v;
   int i;
   for (i = 0; i < (short)anim->m_NumColors; i++)
-    ((int *)anim->m_Colors)[i] = ColorLerp(((int *)anim->m_Colors)[i], 0xFFFFFF, 0x200);
+    ((int *)P32_GET(anim->m_Colors))[i] = ColorLerp(((int *)P32_GET(anim->m_Colors))[i], 0xFFFFFF, 0x200);
   SpyroAnimate();
   HudDragonMobys(((dc.m_CutsceneTicks < 0x19 ? g_HudOpeningOffsets[dc.m_CutsceneTicks >> 1] : g_HudOpeningOffsets[12]) * 3) >> 1);
   if (dc.m_CutsceneTicks < 0x19)
@@ -963,13 +963,13 @@ static void DragonVanish(void) {
   dc.m_State = 6;
   dc.m_CutsceneTicks = 0;
   g_Hud.m_DragonProgress = 0;
-  VecCopy(&v, &dc.m_CutsceneSpyro->m_Position);
+  VecCopy(&v, &P32_GET(dc.m_CutsceneSpyro)->m_Position);
   v.z += 0x40;
   g_SpawnParticle(0x20, 0x18, &v, 0);
   VecCopy(&D_80076248.vec_0x04, &v);
-  MobyFree(dc.m_CutsceneSpyro);
-  MobyFree(dc.m_CutsceneDragon);
-  DragonSound(g_Spu.m_SoundTable->dragonCounter);
+  MobyFree(P32_GET(dc.m_CutsceneSpyro));
+  MobyFree(P32_GET(dc.m_CutsceneDragon));
+  DragonSound(P32_GET(g_Spu.m_SoundTable)->dragonCounter);
 }
 
 /* 6: the HUD's dragon count goes up (its icon spins once, 0x10 a tick,
@@ -985,15 +985,15 @@ static void DragonCount(void) {
     if (g_Hud.m_DragonProgress == 0xC0)
       g_Hud.m_DragonCount++;
     if (g_Hud.m_DragonProgress == 0)
-      DragonSound(g_Spu.m_SoundTable->dragonCounterBam);
+      DragonSound(P32_GET(g_Spu.m_SoundTable)->dragonCounterBam);
   }
   if (dc.m_CutsceneTicks < 0x60 || dc.m_Stage != 6)
     return;
   dc.m_State = DRAGON_END;
   dc.m_CutsceneTicks = 0;
-  g_ParticleAllocPtr = g_Particles;
-  g_Particles->m_RenderType = 0xFF;
-  DragonSound(g_Spu.m_SoundTable->dragonFlash);
+  P32_SET(g_ParticleAllocPtr , P32_GET(g_Particles));
+  P32_GET(g_Particles)->m_RenderType = 0xFF;
+  DragonSound(P32_GET(g_Spu.m_SoundTable)->dragonFlash);
 }
 
 /* DRAGON_END: the HUD's icons drop back for 0x10 ticks; the flash fades
@@ -1050,7 +1050,7 @@ static void Dragon(void) {
   if (dc.m_State > 0)
     LoadDragonCutscene();
   /* The crystal's pieces still flying. */
-  for (m = g_LevelMobys; m->m_State != 0xFF; m++)
+  for (m = P32_GET(g_LevelMobys); m->m_State != 0xFF; m++)
     if (m->m_Class == 0xFB && m->m_State < 0x80)
       MobyUpdateDragonFragment(m);
 }

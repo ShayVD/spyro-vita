@@ -33,9 +33,9 @@ void render_ctx_init(void);            /* render_ctx.c (stage 7d, D123) */
  * native build g_psx_scratch (D106). */
 static void scratch_relocs(void) {
   P32F(uint32_t *) *r;
-  for (r = s1_scratch_relocs; *r; r++)
+  for (r = s1_scratch_relocs; P32_GET(*r); r++)
 #if SPYRO_NATIVE_MEM
-    **r = (uint32_t)(uintptr_t)(g_psx_scratch + (**r & 0x3FFu));
+    *P32_GET(*r) = (uint32_t)(uintptr_t)(g_psx_scratch + (*P32_GET(*r) & 0x3FFu));
 #else
     **r = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (**r & 0x3FFu));
 #endif

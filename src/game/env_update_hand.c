@@ -181,8 +181,8 @@ static void UpdateCollision(u32 anim_addr, const u8 *anim, const u8 *e) {
   const u32 tris = *(const u32 *)(anim + 4);
   const u32 size = (tris & 0xFFFF) * 12;
   const u32 data = *(const u32 *)(anim + 8) + anim_addr;
-  const TerrainCollision *coll = HPTR(const TerrainCollision, PSX_ADDR(g_Environment.m_TerrainCollision));
-  const u32 dst = (tris >> 16) * 12 + PSX_ADDR(coll->m_Triangles);
+  const TerrainCollision *coll = HPTR(const TerrainCollision, PSX_ADDR(P32_GET(g_Environment.m_TerrainCollision)));
+  const u32 dst = (tris >> 16) * 12 + PSX_ADDR(P32_GET(coll->m_Triangles));
   const u32 src_a = data + size * frame_a;
   if (weight > 0)
     BlendCollision(dst, src_a, data + size * frame_b, src_a + size, 0x1000 - (weight << 4), weight << 4);
@@ -235,7 +235,7 @@ static u32 UpdateAnimations(u32 a0, u32 a1, u32 a2, u32 a3) {
     for (i = 0; i != (u32)list->m_Count; i++) {
       u8 *anim = Anim(list, i, &addr);
       if (StepBig(anim, dt)) {
-        const u32 *sectors = HPTR(const u32, PSX_ADDR(g_Environment.m_SectorPointer));
+        const u32 *sectors = HPTR(const u32, PSX_ADDR(P32_GET(g_Environment.m_SectorPointer)));
         HPTR(u8, sectors[*(const u16 *)(anim + 4)])[0x18 + (list - &lists[LIST_LOW_POLY])] = (u8)i;
       }
     }

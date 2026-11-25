@@ -50,7 +50,7 @@ include(cmake/prepare.cmake)
 # in patches/spyro-1-region-matching; D135, tools/regions/retune.py patch),
 # then the 60 Hz rules' class sites written on the region's text (D144).
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
-              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60;${CMAKE_SOURCE_DIR}/patches/spyro-1-ptr32" S1_DIR)
+              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60;${CMAKE_SOURCE_DIR}/patches/spyro-1-ptr32;${CMAKE_SOURCE_DIR}/patches/spyro-1-p32off" S1_DIR)
 spyro_prepare(PsyCross "${CMAKE_SOURCE_DIR}/third_party/PsyCross"
               "${CMAKE_SOURCE_DIR}/patches/PsyCross" PSYCROSS_DIR)
 
