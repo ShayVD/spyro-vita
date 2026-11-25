@@ -208,6 +208,47 @@ jobs:
           if (-not (Select-String -Path smoke.log -Pattern 'video: windows, llvmpipe' -Quiet)) { throw "no GL 3.3 window" }
           if (-not (Select-String -Path smoke.log -Pattern 'No Spyro the Dragon disc data was found' -Quiet)) { throw "no disc message" }
 
+  # The PS4 fpkg as a build check (docs/ps4-build.md, D246): the arm64 OpenOrbis
+  # image on an arm64 runner, the test fpkg (SPYT00002) with NO pre-compiled
+  # shaders (they are never in the repo, D245): it falls back to the player's
+  # Piglet pair or the software renderer. The release fpkg is built on the
+  # owner's Mac with tools/ps4/release.sh and attached to the draft release
+  # there; this job's pkg is a CI artifact only, never attached to a release.
+  ps4:
+    name: PS4 fpkg (build check, no shader binaries)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0 # git describe names the build (save states, D51)
+      - name: Build the PS4 image
+        run: docker build --platform linux/arm64 -t spyro-ps4 -f tools/docker/ps4.Dockerfile tools/docker
+      - name: Build the test fpkg
+        run: |
+          docker run --rm --platform linux/arm64 -v "$PWD:/work" -w /work spyro-ps4 sh -ec '
+            git config --global --add safe.directory /work
+            cmake -S . -B build/ps4 -G Ninja -DSPYRO_HOST=ps4 \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/ps4.toolchain.cmake \
+              -DSPYRO_PS4_SHADERS=/work/build/no-shaders
+            cmake --build build/ps4' | tee ps4-build.log
+          grep -q "shaders_c: 0 pre-compiled shaders" ps4-build.log
+          test -s build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg
+      - name: The release check refuses a build without the shader binaries
+        run: |
+          set +e
+          docker run --rm --platform linux/arm64 -v "$PWD:/work" -w /work spyro-ps4 \
+            python3 tools/ps4/shader_check.py src/platform/ps4/gpu_gles.c build/no-shaders \
+              --cc /usr/lib/llvm-18/bin/clang
+          rc=$?
+          set -e
+          test $rc -eq 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spyro-ps4-test-pkg
+          path: build/ps4/pkg/IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg
+          if-no-files-found: error
+
   draft-release:
     name: Draft release
     needs: [no-game-data, vita, vita-unsafe, host-tests]

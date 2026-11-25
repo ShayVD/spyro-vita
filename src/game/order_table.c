@@ -12,8 +12,8 @@
 
 typedef uint32_t u32;
 
-extern u32 *P32 g_WorldOT;
-extern u32 *P32 g_HudOT;
+extern P32F(u32 *) g_WorldOT;
+extern P32F(u32 *) g_HudOT;
 
 #define OT_TERMINATOR ((u32 *)PSX_OT_TERMINATOR)
 

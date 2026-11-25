@@ -29,7 +29,7 @@ struct Moby;
 void t60_update_moby(void);       /* the level's mobys: 60 Hz classes and the rest at 30 Hz */
 void t60_update_particles(void);  /* the particles, at 30 Hz */
 int t60_moby_begin(struct Moby *pMoby); /* UpdateMoby's loop: 0 skips a 30 Hz class between ticks */
-void t60_moby_animate(struct Moby *P32 *pList); /* UpdateMoby's animation step, by class rate */
+void t60_moby_animate(P32F(struct Moby *) *pList); /* UpdateMoby's animation step, by class rate */
 int t60_class_60(int pClass);     /* a class judged for 60 Hz (t60_classes.c) */
 void t60_hud_tick(void);          /* the HUD, at 30 Hz */
 struct Vector3D;

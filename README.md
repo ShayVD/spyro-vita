@@ -12,6 +12,9 @@ logic runs at 60 Hz in play, for 60 pictures a second of its own; the original's
 tick as on a PS1, is one option away (the options menu's 60 FPS row). The picture fills the Vita's
 960×544 screen in 16:9.
 
+There is also a **PS4 build** (a fake PKG for jailbroken PS4s, at 1080p and 60 fps): see
+[On a PS4](#on-a-ps4).
+
 **You need your own copy of the game.** The VPK contains no game data at all: no code, levels,
 textures, music or logos from the disc. You dump your own *Spyro the Dragon* disc (USA or Europe)
 and copy the disc image to your Vita.
@@ -251,6 +254,53 @@ Every option, and the extra ones `config.txt` takes, is described in
   256-line picture are the European release's. Its animations, cutscenes and title flyby still play
   at the speed they have on a PAL PlayStation.
 
+## On a PS4
+
+The same port as a fake PKG (fpkg) for a jailbroken PS4: the game's code compiled for the PS4's
+CPU, drawn by its GPU at 1080p in 16:9, 60 pictures a second, with the DualShock 4. Like the VPK it
+contains no game data: you give it your own disc image.
+
+**What you need**
+
+- A PS4 that runs [GoldHEN](https://github.com/GoldHEN/GoldHEN), with its FTP server (or a USB
+  stick) to copy files. Tested on a PS4 Slim on firmware 13.04.
+- `spyro-ps4-*.pkg` from the [releases](https://github.com/ShayVD/spyro-vita/releases).
+- Your own *Spyro the Dragon* disc dumped to `.bin` + `.cue`, as in
+  [step 1](#1-dump-your-disc-to-bincue). The same formats work and are refused as on the Vita.
+
+Nothing else: the renderer's shaders come pre-compiled in the pkg and run on the Piglet library
+every PS4's firmware has. (Building the pkg yourself without them? Then the game needs the Piglet
+pair `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx` in `/data/self/system/common/lib/`;
+[sm64-ps4-osirizx](https://github.com/mindfreakdev/sm64-ps4-osirizx) explains where they come from.
+Without either, it draws with its software renderer.)
+
+**Install and play**
+
+1. Copy the pkg to the PS4 (for example to `/data/pkg/` over FTP, port 2121) and install it with
+   GoldHEN's **Package Installer** (Settings → Debug Settings → Game → Package Installer on some
+   set-ups).
+2. Copy your `.cue` and `.bin` into `/data/spyro/` (create the folder). The digital copy's
+   `EBOOT.PBP` (not yet tested on a PS4) or the files `tools/extract_disc.py` writes work there
+   too.
+3. Start **Spyro PS4** from the home screen.
+
+Saves (the memory card and save states) go to `/data/spyro/save/`, settings to
+`/data/spyro/config.txt`, and a log to `/data/spyro/spyro.log`. A missing or unusable disc image is
+reported on screen.
+
+**Controls:** as on a PS1. OPTIONS is START and a click of the touch pad is SELECT. The left stick
+moves Spyro (analog), the right stick turns the free camera, L2/R2 turn it 90° as on the PS1.
+**Options menu:** tap the touch pad, or hold its click and press OPTIONS. It has the Vita's rows
+(widescreen, 60 FPS, PSX wobble, resolution, draw distance, controls, cheats, save states) except
+the Vita's rear-touch row.
+
+**PS5:** a jailbroken PS5 runs PS4 fpkgs through etaHEN. The PS5 has not been tested yet.
+
+**Licence:** the fpkg links OpenOrbis's GPL-3.0 start-up code, so it is offered under GPL-3.0 as a
+whole; its source is this repository at the release's commit. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#the-ps4-fpkg-gpl-30-as-a-whole) (also in the pkg,
+in `licenses/`). Building it: [docs/ps4-build.md](docs/ps4-build.md).
+
 ## Known issues
 
 - **60 FPS's 60 Hz, the default, isn't the PS1's game tick for tick.** Every enemy and object
@@ -304,6 +354,8 @@ The other builds are for development:
 - **Host debug build:** 32-bit Linux in Docker, headless, with pad scripts and screenshots:
   [docs/host-build.md](docs/host-build.md).
 - **Vita build and testing in Vita3K:** [docs/vita-testing.md](docs/vita-testing.md).
+- **PS4 fpkg** (OpenOrbis, 64-bit): [docs/ps4-build.md](docs/ps4-build.md). CI builds it without
+  the pre-compiled shaders as a check; the release fpkg is built with `tools/ps4/release.sh`.
 
 How it works: [docs/porting-plan.md](docs/porting-plan.md), decisions with their reasons in
 [docs/decisions.md](docs/decisions.md) (D1–D102), [docs/decisions-2.md](docs/decisions-2.md) (D103–D161) and [docs/decisions-3.md](docs/decisions-3.md) (D162 on), and every translated function in

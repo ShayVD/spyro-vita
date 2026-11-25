@@ -1680,9 +1680,162 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Not run: the PC build (the `spyro-pc` image isn't on this machine). The change is plain unsigned arithmetic in common code.
 - **Left:** the log-full own points go with #237. The `missed` bracket should list every non-zero class, not the top three (filed).
 
+## 2026-11-22 — the PS4's GLES2 renderer and options menu (PS4 plan P4)
+
+### D245. The PS4 draws with GLES2 on the firmware's Piglet from shader binaries captured once and shipped in the release fpkg (the owner's option C); the options menu has the Vita's rows (PS4 plan P4, 2026-11-21/22)
+
+- **Asked:** P4 of `docs/ps4-plan.md` (the session that ran P3). Numbered D245: this branch called it D194, then D199, and main took both (D194–D198 with PR #176's merge, D199–D244 by 2026-11-24); every reference to it was renumbered when main was merged in.
+- **The owner's choices:**
+  - **Shaders, option C** (2026-11-21): players install only the pkg and give their `.cue`/`.bin`. Piglet is in every PS4's firmware; its compiler (`libSceShaccVSH.sprx`) isn't. So the shaders are compiled once on a PS4 with the Piglet pair (`shader_compile=1`; `glPigletGetShaderBinarySCE` saves each to `/data/spyro/shaders/NAME-vs|fs-HASH.bin`), copied to the gitignored `disc/ps4-shaders/`, and embedded by `tools/ps4/shaders_c.py`; at start the firmware's Piglet (`/<sandbox word>/common/lib/`) loads them with `glShaderBinary`.
+  - **The binaries are never committed** (2026-11-22): they go only into the packaged release fpkg. The pair may be linked to ([sm64-ps4-osirizx](https://github.com/mindfreakdev/sm64-ps4-osirizx)); this repo never fetches or ships it.
+  - **The pkg uses its own shaders** even with the pair installed (2026-11-22); the pair only when the build has none, when `shader_compile=1`, or when the shipped ones fail (then a `shader_compile` marker makes the next start use it).
+  - **Touch pad tap opens the menu** by default (`touch_menu=1`, 2026-11-21).
+  - **One PSX WOBBLE row** (2026-11-22) for perspective + sub-pixel: the Vita's row (D194), same key and default (OFF: the fix on).
+- **Built** (`src/platform/ps4/`):
+  - `gpu_gles.c`: the Vita's renderer design on GLES2/EGL. The software rasterizer still draws every split into the CPU's VRAM, so the game's VRAM reads stay exact with no readback; the GPU redraws the same splits into 1080p targets (8, LRU), samples VRAM from a texture uploaded by dirty rows, blends as the PS1 (two passes for subtract), and keeps the presenter's frames in slot textures. The PICTURE rows: PSX WOBBLE (the vertex cache's dx, dy, w as a second vertex stream, `w` times the clip coordinates), RESOLUTION (1080p or the PS1's pixels), DRAW DISTANCE (`lod.c`, both renderers).
+  - `raster_mt.c`: the software rasterizer on 4 threads (rows by `(y>>2)%4`); `tests/ps4_raster` checks it against `gpu_soft.c`, 0 differing words. The software path went from ~33 to 60 fps with 60 FPS on.
+  - `menu.c`, `pad.c`, `menu_game.c`, `present_ps4.c`, `picture_ps4.c`, `savestate_ps4.c`: the Vita's menu and rows on the DualShock 4 (REAR TOUCH L2/R2 left out: the DS4 has them). `config.txt` keeps unknown lines.
+  - `main.c`: a watchdog thread logs where the game thread stalls; markers (`gpu_novsync`, `shader_compile`) carry the build's stamp, so another build tries again.
+  - Shared: the presenter's snapshot externs of PS1 labels and its `g_Buffers` field copy are `P32` (`pres_draw.c`, `pres_snap.c`, `render_ctx_check.c`). An 8-byte host pointer copied over a 4-byte field zeroed the next one (`m_HudOTStart`): the pause screen crashed on PS4 GPU run 1 and on linux64.
+- **What Piglet needed:**
+  - `param.sfo` CATEGORY `gde`, FORMAT `obs` (as OpenOrbis's sample): with `gd`, `eglGetDisplay` returned `EGL_NO_DISPLAY` and no error.
+  - Swap interval 0 (the sample's): with 1 the first `eglSwapBuffers` never returned (GPU runs 3–5). Without a `sceVideoOut` handle of our own (Piglet opens the display), the vblank count is a 60 Hz clock, and the wait sleeps to its next tick.
+  - The movies' 24-bit frames decoded from VRAM into RGBA at their own size: through `host_display_rgb` and a 1024×512 `GL_RGB` texture they took 58 ms a picture; now 0.8 ms.
+- **Checked:**
+  - **Hardware** (`logs/p4/gpu-run{1..11}/`, `docs/ps4-build.md`'s table): run 6 the GPU picture at 60.0 vblanks/s, 0 late, no GL errors; run 8 the firmware's Piglet with the embedded binaries, renderer up in 324 ms; run 9 the menu opened, changed and saved with no crash, 3 late vblanks in the run; run 11, after merging `main` (#178's float `VCacheVert`, now read as floats and checked by a `_Static_assert`), the picture right, 11,400 vblanks, 15 late, a memory card save written.
+  - **The endings on the host** (linux32, base and branch, `--tick60`, `logs/p4end-*`): ending 2 plays into the credits, 30 of 30 shots the same.
+  - **Unchanged elsewhere** (base `5c6021c`, the three shared files swapped back, the same build directories): linux32's and the Vita's code and data sections are the base's byte for byte; the whole files differ only in DWARF declaration columns (inserting `P32 ` moves a name) and linux32's build ID, which hashes them (stripped of debug info and the build ID, linux32 `072975…` both, the Vita `bbcaf5…` both). linux64 changes: the fix.
+  - **linux32 against linux64 with the presenter** (`--widescreen --interp --tick60`, `tools/host_checks.sh`, `logs/p4pres-*`): demo 24, routeA 53, routeB 54 shots and the traces the same.
+- **Still to do for P4:** the whole game played to the end on hardware (both endings, the credits). The owner skipped the Store copy's `EBOOT.PBP` for now.
+- **Next free number:** D246 (taken by P5, below).
+
+### D246. The PS4 release fpkg: title ID SPYP00001, built on the owner's Mac by `tools/ps4/release.sh`, CI builds the test fpkg without shader binaries as a check; the Vita's LiveArea images on the PS4; the fpkg GPL-3.0 as a whole (PS4 plan P5, 2026-11-24)
+
+- **Asked:** P5 of `docs/ps4-plan.md` (the session that ran P4).
+- **The owner's choices (2026-11-24):**
+  - **Art: the Vita's LiveArea images** (the Spyro logo and Simon Kopp's Reignited concept art) on the PS4 too, extending D59's exception; they stay outside the MIT licence (`assets/livearea/README.md`). **Then, after release run 1: no background at all.** The painting as `sce_sys/pic1.png` stayed on screen over the game the whole run, so the owner had it removed; the package keeps only the icon.
+  - **Workflow: a local release script and a CI build check.** The shader binaries (D245) are never committed, so CI can't build the release; it builds the test fpkg without them on every pull request and keeps it as a CI artifact, never attached to a release.
+  - **Licence: the fpkg is GPL-3.0 as a whole** (D180's open question). The repository stays MIT.
+  - **PS5: later.** The owner has one; its etaHEN test isn't in this milestone.
+- **Chosen here:** title ID `SPYP00001` (P for PS4; `SPYT00001`/`SPYT00002` stay the spike's and the test build's, so a test fpkg and the release install side by side and share `/data/spyro/`), TITLE `Spyro PS4`, CONTENT_ID `IV0000-SPYP00001_00-SPYROPS4RELEASE0`; APP_VER and VERSION from `cmake/version.cmake`, which the Vita now reads too (`01.22`, its VPK unchanged), so one version-bump PR sets both; CATEGORY `gde` and FORMAT `obs` kept (Piglet, D245).
+- **Built:**
+  - `SPYRO_PS4_RELEASE` (`src/platform/ps4/CMakeLists.txt`): the release's identity, `sce_sys/icon0.png` (512×512) by `tools/ps4/art.py` (plain Python, Catmull-Rom; the same bytes every run), `licenses/` in the package (`LICENSE-MIT.txt`, `THIRD_PARTY_NOTICES.md`, `GPL-3.0.txt`, `CC0-1.0.txt`, `ART.md`; `pkg.sh` adds the folder to `create-gp4`'s fixed `<rootdir>`, or PkgTool throws "Sequence contains no elements").
+  - `tools/ps4/shader_check.py`: preprocesses `gpu_gles.c`'s shader block with the compiler, evaluates each `k_vs_*`/`k_fs_*` string, hashes it as `src_hash()` does, and fails the release build unless `NAME-vs|fs-HASH.bin` exists for every shader `link()` uses. Its hashes match the six the PS4 computed (GPU run 8's binaries).
+  - `tools/ps4/release.sh`: a clean tree, two clean builds with every SHA-256 compared (`SOURCE_DATE_EPOCH` the commit's time: `__DATE__`/`__TIME__` in `main.c` and `savestate.c` made the first two builds' ELFs differ), `build/release-ps4/<APP_VER>-<commit>/` (the pkg, `.sha256`, `SHA256SUMS`, the unstripped `spyro.elf` and `spyro.map`, `manifest.txt`; never overwritten), `--upload vX.Y.Z` to a draft release only.
+  - CI's `ps4` job: the arm64 OpenOrbis image on `ubuntu-24.04-arm` (the repository is public); the image gains cmake, ninja and PyYAML, and `PS4_CC`/`PS4_LD` point into `/usr/lib/llvm-18/bin`, where Ubuntu keeps `llvm-ar` and `clang++` (the toolchain file looks beside `PS4_CC`). It checks that `shader_check.py` refuses a folder without binaries.
+  - The PS4 link writes `spyro.map`: code comes only from this repository, OpenOrbis's `crt1.o` (GPL-3.0) and its musl `libc.a` (MIT, 116 objects); the rest are import stubs. `THIRD_PARTY_NOTICES.md` has the PS4 section and musl's notice; the package also carries `libc.prx`, `libSceFios2.prx` and `right.sprx` from OpenOrbis's Piglet sample, whose own licence OpenOrbis doesn't state (noted there, as for the test builds since P3).
+  - README: "On a PS4" (GoldHEN's Package Installer, the `.cue`/`.bin` in `/data/spyro/`, controls, the menu, saves, the Piglet pair linked only as sm64-ps4-osirizx, PS5 untested, the licence).
+- **Checked:**
+  - **Reproducible:** `release.sh` at `91dcaf4`: two clean builds, every SHA-256 the same (pkg `23a3aafd…`). Before `SOURCE_DATE_EPOCH` (at `b417b64`) the ELFs differed and the script refused, as it should.
+  - **`shader_check.py`** finds all six shaders in `disc/ps4-shaders/` (its hashes are the ones the PS4 computed); CI checks that it fails on an empty folder.
+  - **Release run 1** (owner's PS4 Slim, firmware 13.04, `91dcaf4`'s archived pkg, `logs/p5/hw-run1/`): installed with Package Installer, the icon showed; the `pic1.png` background stayed on screen over the game the whole run, while the log shows the game running behind it (the firmware's Piglet with the six embedded binaries, 59.9 vblanks a second, 0 GL errors). The owner had the background removed.
+  - **Release run 2** (`0c082af`, one release build, at the owner's word; `logs/p5/hw-run2/`, with its `spyro.elf`): reinstalled over run 1, the game shows and plays ("works", the owner). 16,200 vblanks (~4.5 minutes, title, levels, the menu), 14 late in all, 0 GL errors, no crash in the klog; audio opens on the fallback (the user handle's `sceAudioOutOpen` refuses with 0x809b0001, the system user's works, as on the P3/P4 runs); draw distance 2× held x2.00 in play with peaks of 35% of the primitive space and 89 of 127 near sectors, backing off for the 60 Hz budget in one busy stretch (40 back-offs, 34 held at 1×).
+- **Unchanged elsewhere:** the Vita's CMake reads `01.22` from `cmake/version.cmake` (a configure gives `APP_VER=01.22` as before); linux32, linux64 and the Vita build no PS4 file; the PS4 test build (`SPYT00002`) changes only by writing `spyro.map`.
+- **The owner's questions on run 2, for later:** some wobble is still visible with PSX WOBBLE off (the fix is on and is the Vita's code; what remains wasn't identified from the log); and whether the PS4 can draw further than 2× (the limits are the game's PS1-sized buffers, not the PS4: 222 KB of primitive space, the near-sector list's 127, 53 moby records, and the 60 Hz work budget tuned for the Vita).
+- **Not done here:** the PS5 test (the owner: later); the release itself (a version-bump PR, the tag, CI's draft release, `release.sh --upload`, the owner's run of that file, publishing).
+- **Next free number:** D247.
+
+## 2026-11-24 — the PC build on Encore's platform interface
+
+### D247. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
+- **Number:** named D245 while it was written; `main`'s D245 (the PS4's P4, PR #250) and `develop`'s ARM64 plan (PR #249; D246 then, D250 now) came first, so this is D247. Logs in `logs/pc-encore/` predate the renumber.
+- **Why:** Encore's roadmap v0.4.0, "first game on the platform interface" (step P1). The PC layer (`src/platform/pc/`, D240–D243) called SDL3 directly everywhere. On `encore/platform.h` the same game code is one backend away from any target Encore has, and every place the interface falls short is now written down as a gap with the smallest addition that would close it.
+- **What:**
+  - **Vendoring:** `third_party/encore` refreshed from Encore 0e77e93 with `tools/vendor.sh`, adding `core/` and `targets/pc/encore/` beside `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. The two existing paths changed only in READMEs and tests. `.gitignore`'s `core` (core dumps) now spares `third_party/encore/core/`. No vendored file was edited.
+  - **Build:** `src/platform/pc/CMakeLists.txt` builds Encore's PC backend (`enc_pc.c`, `enc_common.c`, `enc_blit.c`, `enc_event.c`, and `enc_co.c` or `enc_co_win.c`) as `encore_pc`, with plain flags, and links it.
+  - **Through the interface:**
+    - start-up and shutdown (`enc_platform_init`);
+    - the window and the GL 3.3 core context (`ENC_GFX_GL`; `enc_video_gpu_begin` / `_present`; GL loaded through `EncGpu.get_proc`);
+    - events and pads (`enc_input_poll`, `enc_event_poll`, `enc_pad_read`, mapped to PS1 bits in `input.c`);
+    - sound (`enc_audio_*`);
+    - time (`enc_time_us`, `enc_sleep_us`);
+    - mutexes, the Windows game thread (`enc_thread_start`), and the save folder (`enc_path`).
+  - **Unchanged:** the picture path (frames filed by due vblank, the presenter, the aspect box, both renderers).
+  - **Gaps:** `gaps.c` is the only file that still calls SDL (`video.c` and `pc_gl.h` still include `SDL_opengl.h` for GL's types only). It holds gaps G1–G14, each with its shim and the smallest addition to `platform.h` that would retire it; the table is in `docs/pc-build.md`, "On Encore's platform interface".
+    - Folders and window: G1 the user folder's vendor name, G2 the executable's folder, G3 the first window size, G4 the title, fullscreen at start and the idle mouse pointer, G5 the driver's name.
+    - GL and input: G6 a shared GL context for the game thread, G7 spyro's keyboard map, G8 a message box.
+    - Sound, timing and the rest: G9 trimming queued sound, G10 GL's types, G11 never pacing the swap, G12 whether the swap interval took, G13 a thread stack in the image, G14 one log.
+  - **Behaviour that differs** (`docs/pc-build.md`):
+    - gamepads work in the background;
+    - no SDL signal handlers;
+    - 4 pads, not 8;
+    - the trigger threshold is 125 of 255;
+    - a hidden GL probe window at start;
+    - the backend's own `log/spyro.log` beside the game's.
+- **Encore needs no change for this PR.** The gaps are additions for the owner to weigh as Encore PRs. The largest are G6 (`EncGpu.gl_create_shared` / `gl_make_current`), G7 (`enc_pc_set_keymap`), G12 (`EncGpu.vsync`) and G13 (`EncThreadConfig.stack_mem`).
+- **Found and fixed on the way (G12):**
+  - Mesa under Xvfb refuses the GL swap interval. Before D247 the PC then ran without vsync (1 ms sleeps).
+  - The backend instead paces every present to a 60 Hz clock of its own. With llvmpipe's slow pictures the window fell behind the frames due, and every pause-route shot caught a later frame.
+  - `video.c` now asks (`pc_gap_gl_swap_interval_on`) and opens the video again without vsync when the interval was refused.
+- **Checked** (amd64 Docker under Rosetta on the Mac, Xvfb, Mesa llvmpipe; logs in `logs/pc-encore/`, local):
+  - **PC Linux:** `develop` and the branch built from clean. Both builds' first tries hit Python segfaults in overlay preprocessing (Rosetta), at different files; both built on the next try. No warnings in `src/platform/pc` or the vendored backend.
+  - **Pause route** (`tools/pc/routes/pause.pad`, `virtual=1`, 9,100 vblanks, shots at 2,400 / 5,900 / 6,950 / 9,000; `gpu=0`):
+    - The save folder (`save/card0/BASCUS-94228SPYRO`, `disc-verified.txt`) is byte-identical in all four runs (develop ×2, branch ×2).
+    - The shots are not exact on `develop` either. Its two runs differ at 2,400 (1.1% of pixels), 5,900 (74%) and 6,950 (3.6%): a shot is the first picture shown whose frame is due at its vblank, so under load it can be a neighbouring frame.
+    - The branch's 2,400 and 5,900 shots are byte-identical to one of `develop`'s runs. At 6,950 and 9,000 they differ (5.3%, 78%), and the 9,000 shot is the same Artisans cutscene moment a frame or so later.
+    - So no picture difference beyond `develop`'s own run-to-run spread was seen, but the pictures aren't proven identical. Exact shots need the shot taken from the game thread's frame, not the window (a separate change).
+  - **`gpu=1`:** develop and the branch were both killed (exit 137) before 9,100 vblanks. Each GPU picture takes about 4.6 s under llvmpipe and Rosetta, so the GPU renderer's A/B wasn't possible on this machine.
+  - **Windows** (llvm-mingw cross-build): `spyro.exe` builds. `vcache.c` (unchanged) hit the 300 s compile timeout three times while the A/B ran, then built. One warning, in an unchanged line (`main.c` `here`). Not run under Wine.
+  - **Vita:** the ELF built from `develop` and from the branch in same-length worktree paths has identical `.text` and `.data`. `.rodata` differs in 13 bytes: the build time and the commit ID.
+  - **linux32 and PS4:** both build from this branch (linux32 673 of 673 targets; the PS4 fpkg `IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg`). Neither compiles a changed file: the vendored `low_image` and `winposix` changed only in READMEs and tests. linux32 ctest: still running when the PR opened, the result to follow.
+  - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
+  - **No-disc start-up** (CI's check, `logs/pc-encore/smoke.log`): exit code 1, `video: x11, llvmpipe`, "No Spyro the Dragon disc data was found".
+- **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
+- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
+- **Next free number:** D248 (D245 is main's PS4 P4, PR #250; the ARM64 plan, PR #249, then D246, now D250).
+
+## 2026-11-25 — phase 8: the wobble fix's last misses
+
+### D248. A portal sky cut that hk and fr leave unplaced takes a fallback place: hk's place for a cut of a cut on one pixel, and the nearer of two fractions fr drops (#230, 2026-11-25)
+- **Why:** after D213, PortalSkyPlain kept 5 / 14 missed vertices on host P and S (30 Hz / `--interp`), 14 / 28 on Pf, and 23 plus 15 PortalSkyFog on the 60 Hz stone60 route (Vita3K's window 6,600 the same: `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`). #230 tagged every one:
+  - Most were a **cut of a cut on one pixel**. A triangle cut on one portal-outline edge is cut again on the next edge, a fraction of a pixel from the first cut (t 48–112/4096). The PS1 draws both at one integer point, but the second cut's exact place on the next edge's line lies 3–6 px away, so hk dropped the key, and the second cut's own fraction had no end, because that end is the key hk just dropped.
+  - On stone60 also: cuts made from such a key (6); two own fractions more than HK_MERGE (2 px) apart on sides from a far sky vertex (12); an end hk placed with no depths (2); ends 4× or more apart in depth (1).
+  - The issue's guessed reasons (an ambiguous outer end, a cut more than 8 px from its key) never occurred.
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - A per-key fallback place in the `fr[256]` table under `FR_ALT(key) = VCD_CORNER(key, 15)`: y's top nibble flipped, as D244's `VCD_CENTRE`, so it matches no screen key. Two fallback places at one key: the same point adds depths, within HK_MERGE the mean, otherwise the one nearer the key's pixel centre. It is never dropped.
+  - Its sources: hk's old place when a sky cut (`VCD_HAS_T`) whose end is its own key kills it (`derive_hand`); fractions made from a fallback end (`fr_src`); both places when fr drops two, or the slot is dead; the nearest depth pair where none is under 4× (`frac_hand`); and the nearest pair's depth at hk's place for a place-only hk sky cut.
+  - hk's and fr's own places are unchanged, and no hand-over reads the fallback. The walk takes it only in #215's pass 1, after D213's renderer gate and the #197 gate, for a vertex hk and fr both leave with nothing, so no polygon found before can change.
+  - New counters `fa_kept`, `fa_seed`, `fa_found` on the `vcache cut fraction:` line; `fr_nosrc` no longer counts the place-only calls.
+  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244.
+- **Measured** (host, 2×, 16:9, base fc5bf71 → fix):
+  - PortalSkyPlain and PortalSkyFog missed 0 on S, Si, P, Pi, Pf, Pfi and the 60 Hz stone60 route (S60).
+  - Total missed: S 21 → 16, Si 40 → 26, P 5 → 0, Pi 14 → 0, Pf 14 → 0, Pfi 28 → 0, S60 46 → 8; T 2 and O60 0 unchanged. What is left is ParticlesDraw (S 10, Si 20, S60 8; #231) and EnvDraw (S/Si 6, the order-log-full frame of #237; T 2).
+  - Vita3K stone60 window 6,600: `missed 38` → `missed 0, exempt 852`.
+- **Checks:**
+  - Host FNV per polygon on 9 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60; 164 M polygons): 0 found-before polygons changed, 0 became affine; 4–23 newly found per route.
+  - Vita3K: shots identical on all eight routes (toasty60 against `auto-233-1/fix-toasty60`; re-checked by the coordinator). Counters the same (draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.misses`, `vc.probe`; `vc.lines` within −0.1%), apart from the timing-dependent `vc.div`, `vc.invalid`, `vc.clamped`.
+  - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-230-1`.
+  - Not run: the PC build. The change is plain integer arithmetic in common code.
+- **Left:** the `vcache cut fraction:` line's fields (D213's and the `fa_*` ones) are not described in `docs/host-build.md` or `docs/vita-testing.md` (filed).
+
+### D249. ARM64 step O1: every P32 slot is spelled `P32F(T *)`, a macro that can later become an offset; no binary changes (2026-11-25)
+
+- **What:** the first step of D250's plan, declarations only. Nothing reads or writes a pointer differently yet.
+  - `src/compat/p32.h` defines `P32F(T)`:
+    - `T` on the 32-bit targets (Vita, linux32);
+    - `T __ptr32 __uptr` on x86-64 (linux64, PS4, PC);
+    - on ARM64 it is still left out: O2 makes it `u32` once the uses go through accessors.
+  - The bare `P32` qualifier is gone. A slot is `P32F(Moby *) m_X;`, a pointer to slots `P32F(Moby *) *`, two levels `P32F(P32F(T *) *)`.
+- **The decomp:** `tools/ps4/p32_patch.py` emits the new spelling (`to_p32f`: each `*P32` level wraps what is to its left) and `patches/spyro-1-ptr32/0001-p32-pointer-fields.patch` is regenerated from it. Before the change the script reproduced the committed patch byte for byte, so only the spelling moved: 508 rewrites, no bare `P32` left. `0002-p32-hand-fixes.patch` has no `P32` and is unchanged.
+- **The port's own code:** 15 files in `src/game` (and `tick60/`) and `src/platform/vita/prof_draw.c`, converted with the same function.
+- **A trap for later steps:** `P32F(T *)` expands to `T *`, so in a declaration with several declarators the macro's `*` belongs to the first one only. `P32F(Moby *) *a, *b;` makes `b` a plain `Moby *`, and `static P32F(Moby *) x[N], y[N];` makes `y` an array of `Moby`. Four of the port's lines had two P32 declarators; each now holds separate declarations on the same line, so no line number moves. A declarator that had no `P32` (`*m`) keeps the plain base type, as before. The generated patch has none of these: its only multi-declarator hit is a parameter list.
+- **Checks:**
+  - **Method:** each target was built from `develop` at 016d26f and from the branch, in the same build directories, and its loaded sections compared (ELF `SHF_ALLOC`, PE non-debug).
+  - **linux32, linux32 native-mem, linux64, PC Linux, PC Windows:** identical except the `__DATE__`/`__TIME__` strings (`savestate.c`, the PC's banner), checked byte by byte.
+  - **Vita and PS4 needed a pinned date and commit:** with the real date, each linker placed its merged strings differently once one string changed, so `.text` and `.data` differed too.
+    - Rebuilt with `SOURCE_DATE_EPOCH=1764000000` and a `git` on `PATH` whose `describe` prints a fixed string (`SPYRO_BUILD_ID`, `cmake/mips2c.cmake`).
+    - Vita `spyro_vita.velf` (50 sections) and PS4 `spyro.elf` (26): every section identical.
+  - `p32_lint.py tools/layout/psx.map src/game src/platform build/linux64/patched/spyro-1`: 0 found (the one hit, `prof_draw.c`'s `D_800757B0`, was there before O1: a Vita-only file).
+  - `tools/check_no_assets.sh`: passes.
+  - After rebasing onto `develop` (PC on Encore, #252; the Docker queue, #253): see the PR for the PC Linux build. None of the files #252 changed uses `P32`.
+  - No hardware run.
+- **Next:** O2, the AST-driven rewriter of uses (D250), with the owner's go-ahead.
+- **Next free number:** D251 (D250 is the ARM64 plan, renumbered from D246).
+
 ## 2026-11-24 — an ARM64 build (Apple Silicon first)
 
-### D246. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
+### D250. An ARM64 build needs the offset model: P32 fields become 32-bit offsets from a base, written through accessors that are plain pointers on the 32-bit targets. A plan and the measurements; not started
+- **Number:** D246 when PR #249 merged it into `develop`; `main`'s D246 (the PS4 release fpkg, PR #254) reached `main` first, so it is D250 since 2026-11-25 (the merge for PR #258). The code comments and tools say D250.
 
 (D247 is the PC build's move onto Encore's platform interface, in another session.)
 
@@ -1750,73 +1903,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
 
-### D247. The PC build runs on Encore's platform interface (API 2) and its PC backend; what the interface can't say yet is in one shim file (2026-11-24)
-- **Number:** named D245 while it was written; `main`'s D245 (the PS4's P4, PR #250) and `develop`'s D246 (the ARM64 plan, PR #249) came first, so this is D247. Logs in `logs/pc-encore/` predate the renumber.
-- **Why:** Encore's roadmap v0.4.0, "first game on the platform interface" (step P1). The PC layer (`src/platform/pc/`, D240–D243) called SDL3 directly everywhere. On `encore/platform.h` the same game code is one backend away from any target Encore has, and every place the interface falls short is now written down as a gap with the smallest addition that would close it.
-- **What:**
-  - **Vendoring:** `third_party/encore` refreshed from Encore 0e77e93 with `tools/vendor.sh`, adding `core/` and `targets/pc/encore/` beside `lp64/runtime/low_image` and `targets/pc/runtime/winposix`. The two existing paths changed only in READMEs and tests. `.gitignore`'s `core` (core dumps) now spares `third_party/encore/core/`. No vendored file was edited.
-  - **Build:** `src/platform/pc/CMakeLists.txt` builds Encore's PC backend (`enc_pc.c`, `enc_common.c`, `enc_blit.c`, `enc_event.c`, and `enc_co.c` or `enc_co_win.c`) as `encore_pc`, with plain flags, and links it.
-  - **Through the interface:**
-    - start-up and shutdown (`enc_platform_init`);
-    - the window and the GL 3.3 core context (`ENC_GFX_GL`; `enc_video_gpu_begin` / `_present`; GL loaded through `EncGpu.get_proc`);
-    - events and pads (`enc_input_poll`, `enc_event_poll`, `enc_pad_read`, mapped to PS1 bits in `input.c`);
-    - sound (`enc_audio_*`);
-    - time (`enc_time_us`, `enc_sleep_us`);
-    - mutexes, the Windows game thread (`enc_thread_start`), and the save folder (`enc_path`).
-  - **Unchanged:** the picture path (frames filed by due vblank, the presenter, the aspect box, both renderers).
-  - **Gaps:** `gaps.c` is the only file that still calls SDL (`video.c` and `pc_gl.h` still include `SDL_opengl.h` for GL's types only). It holds gaps G1–G14, each with its shim and the smallest addition to `platform.h` that would retire it; the table is in `docs/pc-build.md`, "On Encore's platform interface".
-    - Folders and window: G1 the user folder's vendor name, G2 the executable's folder, G3 the first window size, G4 the title, fullscreen at start and the idle mouse pointer, G5 the driver's name.
-    - GL and input: G6 a shared GL context for the game thread, G7 spyro's keyboard map, G8 a message box.
-    - Sound, timing and the rest: G9 trimming queued sound, G10 GL's types, G11 never pacing the swap, G12 whether the swap interval took, G13 a thread stack in the image, G14 one log.
-  - **Behaviour that differs** (`docs/pc-build.md`):
-    - gamepads work in the background;
-    - no SDL signal handlers;
-    - 4 pads, not 8;
-    - the trigger threshold is 125 of 255;
-    - a hidden GL probe window at start;
-    - the backend's own `log/spyro.log` beside the game's.
-- **Encore needs no change for this PR.** The gaps are additions for the owner to weigh as Encore PRs. The largest are G6 (`EncGpu.gl_create_shared` / `gl_make_current`), G7 (`enc_pc_set_keymap`), G12 (`EncGpu.vsync`) and G13 (`EncThreadConfig.stack_mem`).
-- **Found and fixed on the way (G12):**
-  - Mesa under Xvfb refuses the GL swap interval. Before D247 the PC then ran without vsync (1 ms sleeps).
-  - The backend instead paces every present to a 60 Hz clock of its own. With llvmpipe's slow pictures the window fell behind the frames due, and every pause-route shot caught a later frame.
-  - `video.c` now asks (`pc_gap_gl_swap_interval_on`) and opens the video again without vsync when the interval was refused.
-- **Checked** (amd64 Docker under Rosetta on the Mac, Xvfb, Mesa llvmpipe; logs in `logs/pc-encore/`, local):
-  - **PC Linux:** `develop` and the branch built from clean. Both builds' first tries hit Python segfaults in overlay preprocessing (Rosetta), at different files; both built on the next try. No warnings in `src/platform/pc` or the vendored backend.
-  - **Pause route** (`tools/pc/routes/pause.pad`, `virtual=1`, 9,100 vblanks, shots at 2,400 / 5,900 / 6,950 / 9,000; `gpu=0`):
-    - The save folder (`save/card0/BASCUS-94228SPYRO`, `disc-verified.txt`) is byte-identical in all four runs (develop ×2, branch ×2).
-    - The shots are not exact on `develop` either. Its two runs differ at 2,400 (1.1% of pixels), 5,900 (74%) and 6,950 (3.6%): a shot is the first picture shown whose frame is due at its vblank, so under load it can be a neighbouring frame.
-    - The branch's 2,400 and 5,900 shots are byte-identical to one of `develop`'s runs. At 6,950 and 9,000 they differ (5.3%, 78%), and the 9,000 shot is the same Artisans cutscene moment a frame or so later.
-    - So no picture difference beyond `develop`'s own run-to-run spread was seen, but the pictures aren't proven identical. Exact shots need the shot taken from the game thread's frame, not the window (a separate change).
-  - **`gpu=1`:** develop and the branch were both killed (exit 137) before 9,100 vblanks. Each GPU picture takes about 4.6 s under llvmpipe and Rosetta, so the GPU renderer's A/B wasn't possible on this machine.
-  - **Windows** (llvm-mingw cross-build): `spyro.exe` builds. `vcache.c` (unchanged) hit the 300 s compile timeout three times while the A/B ran, then built. One warning, in an unchanged line (`main.c` `here`). Not run under Wine.
-  - **Vita:** the ELF built from `develop` and from the branch in same-length worktree paths has identical `.text` and `.data`. `.rodata` differs in 13 bytes: the build time and the commit ID.
-  - **linux32 and PS4:** both build from this branch (linux32 673 of 673 targets; the PS4 fpkg `IV0000-SPYT00002_00-SPYROPS4GAME0000.pkg`). Neither compiles a changed file: the vendored `low_image` and `winposix` changed only in READMEs and tests. linux32 ctest: still running when the PR opened, the result to follow.
-  - `tools/check_no_assets.sh`, `tools/vendor.sh --check`: both pass ("Encore 0e77e936, unedited"); the diff has no binary file.
-  - **No-disc start-up** (CI's check, `logs/pc-encore/smoke.log`): exit code 1, `video: x11, llvmpipe`, "No Spyro the Dragon disc data was found".
-- **Not checked:** a real GPU, sound card or gamepad; Windows itself; the new pad and keyboard path with real input (`pad.c` ORs the pad script onto `pc_input_read`, which in these runs read no key and no gamepad).
-- **Next:** Encore PRs for the gaps, the owner's choice of which; the Vita build onto the interface (#251).
-- **Next free number:** D248 (D245 is main's PS4 P4, PR #250; D246 the ARM64 plan, PR #249).
+## 2026-11-25 — hardware session 8
 
-## 2026-11-25 — phase 8: the wobble fix's last misses
-
-### D248. A portal sky cut that hk and fr leave unplaced takes a fallback place: hk's place for a cut of a cut on one pixel, and the nearer of two fractions fr drops (#230, 2026-11-25)
-- **Why:** after D213, PortalSkyPlain kept 5 / 14 missed vertices on host P and S (30 Hz / `--interp`), 14 / 28 on Pf, and 23 plus 15 PortalSkyFog on the 60 Hz stone60 route (Vita3K's window 6,600 the same: `missed 38 (PortalSkyPlain 23, PortalSkyFog 15)`). #230 tagged every one:
-  - Most were a **cut of a cut on one pixel**. A triangle cut on one portal-outline edge is cut again on the next edge, a fraction of a pixel from the first cut (t 48–112/4096). The PS1 draws both at one integer point, but the second cut's exact place on the next edge's line lies 3–6 px away, so hk dropped the key, and the second cut's own fraction had no end, because that end is the key hk just dropped.
-  - On stone60 also: cuts made from such a key (6); two own fractions more than HK_MERGE (2 px) apart on sides from a far sky vertex (12); an end hk placed with no depths (2); ends 4× or more apart in depth (1).
-  - The issue's guessed reasons (an ambiguous outer end, a cut more than 8 px from its key) never occurred.
-- **What** (`vcache.c`, `psx_vcache.h`):
-  - A per-key fallback place in the `fr[256]` table under `FR_ALT(key) = VCD_CORNER(key, 15)`: y's top nibble flipped, as D244's `VCD_CENTRE`, so it matches no screen key. Two fallback places at one key: the same point adds depths, within HK_MERGE the mean, otherwise the one nearer the key's pixel centre. It is never dropped.
-  - Its sources: hk's old place when a sky cut (`VCD_HAS_T`) whose end is its own key kills it (`derive_hand`); fractions made from a fallback end (`fr_src`); both places when fr drops two, or the slot is dead; the nearest depth pair where none is under 4× (`frac_hand`); and the nearest pair's depth at hk's place for a place-only hk sky cut.
-  - hk's and fr's own places are unchanged, and no hand-over reads the fallback. The walk takes it only in #215's pass 1, after D213's renderer gate and the #197 gate, for a vertex hk and fr both leave with nothing, so no polygon found before can change.
-  - New counters `fa_kept`, `fa_seed`, `fa_found` on the `vcache cut fraction:` line; `fr_nosrc` no longer counts the place-only calls.
-  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244.
-- **Measured** (host, 2×, 16:9, base fc5bf71 → fix):
-  - PortalSkyPlain and PortalSkyFog missed 0 on S, Si, P, Pi, Pf, Pfi and the 60 Hz stone60 route (S60).
-  - Total missed: S 21 → 16, Si 40 → 26, P 5 → 0, Pi 14 → 0, Pf 14 → 0, Pfi 28 → 0, S60 46 → 8; T 2 and O60 0 unchanged. What is left is ParticlesDraw (S 10, Si 20, S60 8; #231) and EnvDraw (S/Si 6, the order-log-full frame of #237; T 2).
-  - Vita3K stone60 window 6,600: `missed 38` → `missed 0, exempt 852`.
-- **Checks:**
-  - Host FNV per polygon on 9 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60; 164 M polygons): 0 found-before polygons changed, 0 became affine; 4–23 newly found per route.
-  - Vita3K: shots identical on all eight routes (toasty60 against `auto-233-1/fix-toasty60`; re-checked by the coordinator). Counters the same (draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.misses`, `vc.probe`; `vc.lines` within −0.1%), apart from the timing-dependent `vc.div`, `vc.invalid`, `vc.clamped`.
-  - Host ctest 33 of 33, native and Vita builds, `noassets`, the coordinator's gate. Logs: `runs/vita/issue-230-1`.
-  - Not run: the PC build. The change is plain integer arithmetic in common code.
-- **Left:** the `vcache cut fraction:` line's fields (D213's and the `fa_*` ones) are not described in `docs/host-build.md` or `docs/vita-testing.md` (filed).
+### D252. Hardware session 8: develop's 80b8450 on the Vita; the wobble fixes since session 7 cost nothing measurable, and 2x still holds at 1x in Artisans (2026-11-25)
+- **Run:** with the owner's yes ("vita is free for hw tests too", then "Yes, run it" for exactly `runtime/autopilot/hw-session8.sh`), ap19a, ap19b and ap19t on `80b8450.vpk` (SHA-1 0a83b443: D220–D230, D244, D248 since session 7's 687ca1d, plus main's PS4 P4/P5 and D247, D249). US disc, the owner's settings (16:9, 60 HZ, wobble fix on, draw distance 200%). Results in `runtime/hw-80b8450/RESULTS.md`; logs `logs/hw-ap19a`, `hw-ap19b`, `hw-ap19t` (gitignored).
+- **The wobble fixes' cost (ap19a against D219's AP18a, Stone Hill play 7,300–9,400, virtual vblanks):** busy 69.0% against 69.1%, worst 88% both. Nothing measurable.
+- **Toasty route, real time (ap19t against AP18t):** late per 300: title 0.0 (0.2), Artisans 1.0 (2.5), Toasty 0.2 (0.9). 60 fps holds in play.
+- **Draw distance 2x:** still held at 1x in Artisans (10,500–13,000: `15.1–16.3 ms used of 14.5`). At 11,400 the game thread takes 15.84 ms a vblank (env 7.91, mobys 4.49, sky 1.15) and the vertex cache's expand about 3.6 ms a frame. Toasty reaches x2.00 where the frame is light. Filed as #259.
+- **Attract demo:** 162.6 late per 300 (166.3): 117 ticks of 150, the presenter on the game thread 17.7 ms a tick. The owner wants the in-between frame kept and made to fit (#235); #232's `pres_demo_inline` key is the next A/B.
+- **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
+- **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
+- **Next free number:** D253 (D251 is #231's).

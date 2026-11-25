@@ -34,19 +34,53 @@ fi
 
 lock=${SPYRO_DQ_LOCK:-$HOME/.cache/spyro-vita/docker.lock}
 mkdir -p "$(dirname "$lock")"
-# flock in Python (macOS has no flock(1)); the lock's descriptor survives the exec into docker, so it is released
-# exactly when the docker client exits.
+# First come, first served: each waiter leaves a ticket (its start time and PID) in LOCK.q/ and takes the lock only
+# when its ticket is the oldest live one, so a session that starts builds back to back cannot keep jumping ahead of
+# one that is waiting (flock alone wakes waiters in no order). Tickets of dead PIDs are dropped. The lock itself is
+# flock in Python (macOS has no flock(1)); its descriptor survives the exec into docker, so it is released exactly
+# when the docker client exits.
 exec python3 -I -c '
 import fcntl, os, sys, time
 path, argv = sys.argv[1], sys.argv[2:]
 fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-try:
-    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except BlockingIOError:
-    held = os.pread(fd, 400, 0).decode("utf-8", "replace").strip()
-    sys.stderr.write("spyro docker queue: waiting for %s\n" % (held or "the container ahead"))
-    fcntl.flock(fd, fcntl.LOCK_EX)
+q = path + ".q"
+os.makedirs(q, exist_ok=True)
+me = "%020d-%d" % (time.time_ns(), os.getpid())
+open(os.path.join(q, me), "w").close()
+def live():
+    out = []
+    for n in sorted(os.listdir(q)):
+        try:
+            pid = int(n.split("-")[1])
+            os.kill(pid, 0)
+        except PermissionError:
+            pass
+        except (ValueError, IndexError, ProcessLookupError):
+            try:
+                os.remove(os.path.join(q, n))
+            except OSError:
+                pass
+            continue
+        out.append(n)
+    return out
+said = None
+while True:
+    ahead = live()
+    if ahead and ahead[0] == me:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            pass
+    n = ahead.index(me) if me in ahead else 0
+    if said != n:
+        held = os.pread(fd, 400, 0).decode("utf-8", "replace").strip()
+        sys.stderr.write("spyro docker queue: %d waiting ahead; running: %s\n" % (n, held or "nothing yet"))
+        said = n
+    time.sleep(1)
+if said is not None:
     sys.stderr.write("spyro docker queue: running\n")
+os.remove(os.path.join(q, me))
 os.ftruncate(fd, 0)
 os.pwrite(fd, ("pid %d since %s in %s: %s\n" % (os.getpid(), time.strftime("%H:%M:%S"), os.getcwd(),
                                                   " ".join(argv[-6:])[:200])).encode(), 0)

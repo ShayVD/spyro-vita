@@ -9,7 +9,44 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 231,
+      "branch": "feat/231-wobble-fix-particlesdraw-s-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-231",
+      "pids": [],
+      "started_at": "2026-11-25T05:15:21Z",
+      "files": [
+        "src/game/particles_hand.c",
+        "src/game/particle_slots_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "aa6c03cf1d320f4e7",
+      "last_commit_at": "2026-11-25T06:36:13Z",
+      "nudged_at": "2026-11-25T09:26:00Z"
+    },
+    {
+      "issue": 260,
+      "branch": "feat/260-options-menu-draw-distance-with-normal",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-260",
+      "pids": [],
+      "started_at": "2026-11-25T11:10:00Z",
+      "files": [
+        "src/platform/vita/picture.c",
+        "src/platform/vita/vita.h",
+        "src/platform/vita/main.c",
+        "src/platform/ps4/picture_ps4.c",
+        "src/platform/ps4/ps4.h",
+        "docs/presentation.md",
+        "docs/ps4-build.md",
+        "docs/vita-testing.md",
+        "README.md"
+      ],
+      "agent": "a68f8cfb2027b43fd",
+      "last_commit_at": "2026-11-25T11:10:00Z"
+    }
+  ],
   "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
   "hardware_runs": [
     {
@@ -64,6 +101,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "687ca1d",
       "runs": "AP18a-c, AP18o, AP18t (runtime/autopilot/hw-session7b.sh)",
       "result": "D219: dd_budget=auto x1.03-1.41 vs 48 KB x1.00-1.31, held at 1x by measured time (15.2 ms of 14.5); D216-D218 cost nothing; attract demo 166 late/300, game waits 12 ms/vblank on presenter worker (#227); 60 Hz Artisans/Toasty over 14.5 ms at 1x, Artisans sky +0.5 ms, late 2.5/0.9 per 300 (#228)"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-25",
+      "vpk": "runtime/autopilot/artifacts/vita/80b8450.vpk",
+      "sha1": "0a83b44352b88915627b76a5dcb87573cdbcc32c",
+      "commit": "80b8450",
+      "runs": "ap19a, ap19b, ap19t (runtime/autopilot/hw-session8.sh)",
+      "fps": {
+        "artisans_late_per_300": 1.0,
+        "toasty_late_per_300": 0.2,
+        "attract_demo_late_per_300": 162.6
+      },
+      "result": "D252: wobble fixes since 687ca1d cost nothing (busy 69.0 vs 69.1%); 2x held at 1x in Artisans (15.1-16.3 ms of 14.5) -> #259; attract demo 162.6 late -> #232"
     }
   ],
   "perf_candidates": [
@@ -198,10 +249,23 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
       "default": "keep the wobble fix on far mobys (no change)",
       "status": "open"
+    },
+    {
+      "issue": 260,
+      "question": "Draw distance option after D252 (2x held at 1x in heavy scenes)",
+      "default_taken": "owner 2026-11-25: keep it; the row is DRAW DISTANCE with NORMAL / MAX (ADAPTIVE)",
+      "switch": "draw_distance="
+    },
+    {
+      "issue": 261,
+      "question": "Should MAX (ADAPTIVE) draw past 2x?",
+      "default_taken": "owner 2026-11-25: yes, up to the most it can measure and keep 60 fps stable; after #260",
+      "switch": "draw_distance="
     }
   ],
   "attempts": {
-    "161": 1
+    "161": 1,
+    "260": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -241,7 +305,13 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "release/encore-resume-d244",
       "commit": "7b6e66da036fe5639009c4a0b6f6b318387d9262",
       "pr": 248,
-      "merged_at": null
+      "merged_at": "2026-11-24T14:17:12Z"
+    },
+    {
+      "branch": "release/phase8-portal-sky-d248",
+      "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
+      "pr": 258,
+      "merged_at": "2026-11-25T09:43:35Z"
     }
   ]
 }
@@ -443,3 +513,18 @@ continue.
 - 2026-11-25T04:39:20Z shared 5, vita 8: #230 Vita build and Vita3K routes done on fix2 (run folder fix2, perf reports for owner60/stone60/toasty60), FNV compare finishing (S, P); last commit 01:53; Vita3K: worker's runs
 - 2026-11-25T05:01:30Z shared 5, vita 8: #230 reported done (PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0, FNV 0 changed, shots identical 8/8 re-checked by coordinator); scripted gate running; Vita3K: 8 runs (worker's, 0 own failures)
 - 2026-11-25T05:14:51Z shared 5, vita 8: merged #230 (D248): PortalSkyPlain/Fog 0 on host S/P/Pf/S60, stone60 window 6600 missed 38->0; regression = the worker's 8-route run (code identical to head 29d857a): last_good and vita baseline -> base-29d857a; filed #257 (docs); Vita3K: 8 runs (worker's, 0 own failures), hardware: none
+- 2026-11-25T05:15:56Z shared 5, vita 8: started #231 (ParticlesDraw, vcache.c) and #257 (docs); others held on vcache.c; Vita3K: none, hardware: none
+- 2026-11-25T05:21:33Z shared 5, vita 8: merged #257 (docs, cut fraction line; host test step skipped: docs only); fa_seed note added to #247; #231 running; Vita3K: none, hardware: none
+- 2026-11-25T05:53:11Z shared 5, vita 8: #231 tagging runs on head diag binaries (S, Si, S60, P in one container), no commit yet at ~40 min; Vita3K: none, hardware: none
+- 2026-11-25T06:24:13Z shared 5, vita 8: #231 testing a first fix (fix1 diag on S, Si, S60, Pf; edits in particles_hand.c, vcache.c, psx_vcache.h uncommitted), ~70 min in; Vita3K: none, hardware: none
+- 2026-11-25T06:55:13Z shared 5, vita 8: #231 WIP 6d200a3 (particle quads name their points by the projection that made them); checking fix1b on S, S60; Vita3K: none, hardware: none
+- 2026-11-25T07:26:19Z shared 5, vita 8: #231 Vita build and Vita3K routes on fix1 done (run folder fix1), FNV compare running (Si, Pi done; S60, T, O60 next); last commit 06:36; Vita3K: worker's runs
+- 2026-11-25T07:57:14Z shared 5, vita 8: #231 FNV compare continuing (S, Pfi now), perf reports written; last commit 06:36; Vita3K: none new, hardware: none
+- 2026-11-25T08:28:16Z shared 5, vita 8: #231 FNV compare on its last routes (P now; 1 h 16 in one container), clean tree, last commit 06:36; Vita3K: none new, hardware: none
+- 2026-11-25T09:05:00Z retro 8 (interim, owner asked): +6 entries, 0 bumped, 0 signatures, coverage n/a, branch retro/spyro-vita-phase-8 (encore draft PR #92); main PR #258 (release/phase8-portal-sky-d248) open; #231 still in its FNV compare
+- 2026-11-25T09:26:00Z shared 5, vita 8: #231 no commit 2 h 48 but alive (S60 FNV pair writing), nudged; PR #258 open; Vita3K: none new, hardware: none
+- 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
+- 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
+- 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
+- 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
+- 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant

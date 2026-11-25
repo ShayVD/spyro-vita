@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mark the decomp's pointer fields and pointer globals `P32` (D173, D174).
+"""Mark the decomp's pointer fields and pointer globals `P32F` (D173, D174, D250).
 
     python3 tools/ps4/p32_patch.py TREE [--out PATCH] [--list]
 
@@ -7,22 +7,25 @@ TREE is a patched copy of the decomp (build/<dir>/patched/spyro-1, made with
 every patch folder before patches/spyro-1-ptr32). The script rewrites, in
 include/*.h and src/**/*.c:
   - every pointer field in a struct or union body: `T *name;`, `T **name;`,
-    `T *name[N];` get `P32` on every level of indirection (`T *P32 *P32 name`),
-    since the memory each level points at is the game's, laid out as on the
-    PS1;
+    `T *name[N];` get `P32` on every level of indirection (`P32F(P32F(T *) *)
+    name`), since the memory each level points at is the game's, laid out as
+    on the PS1;
   - every pointer variable declared at file scope that is `extern` or a
     tentative definition (no initialiser): the data labels the port lays out
     as PS1 RAM (tools/data2s.py), 4 bytes each.
   - every other `T **` (locals, parameters, casts such as
     `*(Vector3D **)&particle->m_Data.m_Raw[20]`): in the decomp's code a
     pointer to a pointer always points into the game's memory, whose
-    pointers are 4 bytes, so it becomes `T *P32 *` (T a type: a builtin, or
+    pointers are 4 bytes, so it becomes `P32F(T *) *` (T a type: a builtin, or
     a name that starts with a capital letter, or `struct X`).
   - `long` and `u_long` as the type of a declaration (a field, a label, a
     local) or of a store through a cast (`((u_long *)p)[1] = ...`): PsyQ's
     are 32 bits, LP64's 64; they become `int` and `u_int` (the same type on
     the 32-bit targets). A `(u_long *)` that only passes a pointer to the
     PsyQ API (LoadImage) stays.
+Each level is first marked `T *P32` and then spelled `P32F(T *)` (D250, O1):
+src/compat/p32.h makes P32F `T *` on the 32-bit targets, `T *__ptr32 __uptr`
+on x86-64 and a 32-bit offset on ARM64, where no qualifier can do it.
 Function pointers (`T (*name)(...)`) are never touched: a call through a
 `__ptr32` function pointer miscompiles (D174); those go through
 P32_FNPTR/P32_FNCALL by hand. Lines are never added or removed, so the
@@ -226,6 +229,43 @@ def rewrite_ptrptr(text):
     return "".join(out), changes
 
 
+# `T *P32 name` -> `P32F(T *) name` (D250 O1): the declarator's P32 levels
+# wrapped around the type, so that the offset model can make each one a u32.
+# `T *P32 *P32 name` -> `P32F(P32F(T *) *) name`; `(T *P32 *)` ->
+# `(P32F(T *) *)`. The type is the specifiers right before the stars (storage
+# classes stay outside); a second declarator (`, *P32 b`) has none, so it is
+# left for the reviewer: P32_LEFT finds what remains.
+P32F_DECL = re.compile(r"(?<![\w])(?P<spec>(?:(?:const|volatile|struct|union|enum|unsigned|signed)[ \t]+)*"
+                       r"(?!(?:extern|static|typedef|return|const|volatile|struct|union|enum|unsigned|signed)\b)"
+                       r"[A-Za-z_]\w*(?:[ \t]+(?:int|char|short|long))?)"
+                       r"(?P<stars>[ \t]*\*(?:[ \t]*(?:\*|P32\b))*)")
+P32_LEFT = re.compile(r"\bP32\b")
+
+
+def to_p32f(text):
+    clean, _ = brace_kinds(text)
+    out, pos, changes = [], 0, []
+    for m in P32F_DECL.finditer(clean):
+        if text[m.start():m.end()] != m.group(0) or not re.search(r"\bP32\b", m.group("stars")):
+            continue
+        cur = m.group("spec")
+        trail = ""
+        for tok in re.findall(r"\*|P32", m.group("stars")):
+            if tok == "*":
+                cur = cur + trail + " *"
+                trail = ""
+            else:
+                cur = "P32F(" + cur + ")"
+        new = cur  # what followed the stars (` name`, `)`) stays as it was
+        out.append(text[pos:m.start()])
+        out.append(new)
+        pos = m.end()
+        line = text.count("\n", 0, m.start()) + 1
+        changes.append((f"line {line}: {m.group(0).strip()}", new.strip(), "p32f"))
+    out.append(text[pos:])
+    return "".join(out), changes
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tree")
@@ -238,7 +278,7 @@ def main():
             for f in sorted(fs):
                 if f.endswith((".h", ".c")):
                     files.append(os.path.join(dp, f))
-    diff, total = [], {"field": 0, "global": 0, "ptrptr": 0, "init": 0, "long": 0}
+    diff, total = [], {"field": 0, "global": 0, "ptrptr": 0, "init": 0, "long": 0, "p32f": 0}
     for p in sorted(files):
         rel = os.path.relpath(p, a.tree)
         old = open(p, encoding="latin-1").read()
@@ -250,6 +290,11 @@ def main():
         if rel.endswith(".c"):
             new, ch3 = rewrite_initdefs(new)
             ch += ch3
+        new, ch5 = to_p32f(new)
+        ch += ch5
+        for ln in new.split("\n"):
+            if P32_LEFT.search(ln) and not ln.lstrip().startswith(("//", "/*", "*")):
+                print(f"{rel}: P32 left: {ln.strip()}", file=sys.stderr)
         if not ch:
             continue
         # lines only ever added at a file's end (P32_INIT_*)
@@ -261,7 +306,7 @@ def main():
         diff += difflib.unified_diff(old.splitlines(True), new.splitlines(True),
                                      "a/" + rel, "b/" + rel, n=1)
     print(f"P32: {total['field']} fields, {total['global']} globals, {total['ptrptr']} other T **, "
-          f"{total['init']} address-initialised (P32_INIT), {total['long']} PsyQ longs",
+          f"{total['init']} address-initialised (P32_INIT), {total['long']} PsyQ longs, {total['p32f']} P32F",
           file=sys.stderr)
     if a.out:
         open(a.out, "w", encoding="latin-1").writelines(diff)

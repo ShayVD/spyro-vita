@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ARM64 trial compile (D246): the linux64 build's units, with the Mac's own
+"""ARM64 trial compile (D250): the linux64 build's units, with the Mac's own
 clang for arm64-apple-macos, syntax only. Shows what an Apple Silicon build
 meets before any change: P32 is empty there (src/compat/p32.h; `__ptr32`
 does nothing on AArch64), so every pointer field is 8 bytes and the port's
