@@ -88,7 +88,9 @@ int g_lod_stats;       /* this draw collects statistics */
  * after the world (the sky, particles, HUD: 31,604 at most), both measured
  * over the whole-game tour at 2x (port_lod_report "largest sector", "after
  * the world"; D49, measured again with the span as the room, #203), and
- * about 7.5 KB to spare. The far (low-poly) loop's sectors can be far
+ * about 7.5 KB to spare. At 4x throughout (#261, --lod-guards-only) the
+ * largest sector was 6,008 bytes and the most after the world 30,852: 8 KB
+ * to spare. The far (low-poly) loop's sectors can be far
  * bigger (57 KB for a background sector at 1x), but with the option on it
  * writes only less than at 1x: polygons inside the longer distance are
  * skipped, and sectors wholly inside it aren't listed. */
