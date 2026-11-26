@@ -9,8 +9,26 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
-  "last_good": "a1c8d8bfa79550bfc12ae8e2c4e7298eae19bc61",
+  "workers": [
+    {
+      "issue": 259,
+      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
+      "pids": [],
+      "started_at": "2026-11-26T03:55:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "src/platform/linux32/prof_draw.c",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md"
+      ],
+      "agent": "a986f5e471a4bb9db",
+      "last_commit_at": "2026-11-26T03:55:00Z"
+    }
+  ],
+  "last_good": "4947d649c52b5fffbf150f8cdd75e45b16d8cc3b",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -234,7 +252,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "267": 1,
     "262": 1,
     "268": 1,
-    "269": 1
+    "269": 1,
+    "259": 1,
+    "270": 1
   },
   "blocked": [],
   "issues_filed": {
