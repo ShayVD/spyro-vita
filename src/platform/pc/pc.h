@@ -54,6 +54,11 @@ typedef struct {
   int res;         /* res=N (gpu=1): targets at N times the PS1's pixels; 0 (default): the window's */
   int shots[PC_MAX_SHOTS]; /* shot=V1,V2,...: a PNG of the window at these vblanks */
   int nshots;
+  int draw_distance; /* draw_distance=100..400 (%): the menu's DRAW DISTANCE (D266) */
+  int free_camera, cam_invert_x, cam_invert_y, cam_speed, cam_recentre; /* the CONTROLS rows */
+  int menu_test[PC_MAX_SHOTS]; /* menu_test=V1,...: the menu opened at these vblanks and
+                                  driven by menu.c's script, a shot at each step (tests) */
+  int nmenu_test;
   char disc[1024]; /* --disc PATH: the game data's folder */
   char pad[1024];  /* pad=FILE: a pad script, ORed with the controls (pad.c) */
 } PcOpts;
@@ -65,6 +70,12 @@ extern char g_pc_user_dir[1024]; /* saves, log, config.txt, shots (ends in '/') 
 void pc_exit(int code) __attribute__((noreturn)); /* from the game thread */
 unsigned long long pc_now_us(void); /* enc_time_us */
 void pc_message(const char *title, const char *text); /* a message box, and the log */
+
+/* menu.c: the options menu (D266), on the game thread */
+int pc_menu_service(void); /* vblank.c, at each VSync: 1 if it ran (the game paused) */
+uint16_t pc_menu_filter(uint16_t m, int menu_key); /* pad.c: the pad the game sees */
+int pc_menu_load(const char *key, const char *v); /* main.c's config: 1 a row took it */
+void pc_menu_init(void); /* game thread, before the game: the rows' settings applied */
 
 /* crash.c: a fault's address and backtrace in the log (each thread calls it) */
 void pc_crash_init(void);
@@ -102,6 +113,11 @@ void pc_gpu_picture_end(void);
 unsigned pc_gpu_picture_tex(int slot, int *tw, int *th); /* main thread */
 void pc_gpu_picture_shown(int slot);                     /* main thread */
 void pc_gpu_report(int vblank);
+/* game thread (the menu, D266): perspective and sub-pixel at once (1), or
+ * only at the next start (0: the GPU renderer started with both off); the
+ * targets' scale (res=N) at once */
+int pc_gpu_set_options(int persp, int subpixel);
+void pc_gpu_set_res(int res);
 
 /* vblank.c: the game's clock, at 60 Hz of real time */
 int pc_vblank_now(void); /* any thread: our vblank due now by the clock */
@@ -117,6 +133,13 @@ extern void *(*g_pc_gl_proc)(const char *name);
  * `due` or later (so two runs' shots are of the same frame) */
 void pc_video_shot(const char *path, int due);
 void pc_video_report(int vblank);
+/* the menu (D266), any thread: an RGB panel (w x h, 3 bytes a pixel) shown
+ * over the picture, or none (rgb NULL); fullscreen and vsync as the menu
+ * set them, applied at the main thread's next picture */
+void pc_video_overlay(const uint8_t *rgb, int w, int h);
+void pc_video_want(int fullscreen, int vsync);
+int pc_video_fullscreen(void); /* the window as it is now (F11 included) */
+int pc_video_shot_pending(void);
 void pc_video_close(void);
 
 /* input.c: the platform's pads and keyboard (main thread) -> the PS1 pad
@@ -124,11 +147,13 @@ void pc_video_close(void);
 void pc_input_init(void);
 void pc_input_update(void); /* main thread, after enc_input_poll */
 void pc_input_read(uint16_t *buttons, unsigned char sticks[4]); /* any thread */
+int pc_input_menu_key(void); /* any thread: Esc, F1 or a pad's guide button held (D266) */
 
 /* pad.c (game thread) */
 void pc_pad_init(void);
 void pc_pad_vblank(void);
 int pc_pad_load(const char *path); /* 0 = ok */
+void pc_pad_controls_apply(void); /* the CONTROLS rows into the game's camera (D266) */
 
 /* audio.c */
 int pc_audio_init(void); /* 0 = ok */

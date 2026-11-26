@@ -12,7 +12,12 @@
  * F11 or Alt+Enter switches between the window and (borderless, the
  * desktop's own mode) fullscreen (the backend's); the window can be resized
  * freely. The title, the minimum size, fullscreen at start, the idle mouse
- * pointer and the game thread's shared context are gaps.c's (G4, G6). */
+ * pointer and the game thread's shared context are gaps.c's (G4, G6).
+ *
+ * The options menu (menu.c, D266) hands an RGB panel (pc_video_overlay),
+ * drawn in the middle over the picture, at the largest whole multiple of
+ * its size that fits (or smaller, scaled, in a small window). Its FULLSCREEN
+ * and VSYNC rows are applied here, on the main thread (pc_video_want). */
 #include "pc.h"
 #include "gaps.h"
 #include "host.h"
@@ -94,6 +99,21 @@ static int s_shot_due;
 static unsigned s_refreshes, s_new_frames;
 static unsigned long long s_upload_us, s_swap_us;
 static int s_vsync_on;
+/* the menu's panel (game thread -> main thread) and its texture */
+#define OVL_W 640
+#define OVL_H 512
+static EncMutex *s_ovl_mu;
+static uint8_t s_ovl[OVL_W * OVL_H * 3];
+static int s_ovl_w, s_ovl_h;
+static volatile unsigned s_ovl_serial, s_ovl_shown; /* set, and uploaded */
+static GLuint s_ovl_tex;
+static int s_ovl_tex_w, s_ovl_tex_h;
+static unsigned s_shot_ovl; /* a shot waits for the panel set before it */
+/* the menu's FULLSCREEN and VSYNC (pc_video_want), and the window's now */
+static volatile int s_want_fs, s_want_vsync;
+static volatile unsigned s_want_serial;
+static unsigned s_want_done;
+static volatile int s_fs_now;
 
 static const char *k_vs =
     "#version 330 core\n"
@@ -173,6 +193,7 @@ int pc_video_init(void) {
                        .gfx = ENC_GFX_GL, .gfx_major = 3, .gfx_minor = 3};
   int rc;
   enc_mutex_create(&s_shot_mu);
+  enc_mutex_create(&s_ovl_mu);
   if (!(info->gfx_apis & (1u << ENC_GFX_GL))) {
     host_log("video: no GL 3.3 core context on this machine (%s)", pc_gap_video_driver());
     return -1;
@@ -202,6 +223,7 @@ int pc_video_init(void) {
                       * made current on the game thread (pc_video_game_context) */
     s_game_gl = pc_gap_gl_shared_context(s_gpu.window, s_gpu.context);
   s_vsync_on = vsync;
+  s_fs_now = g_pc_opts.fullscreen != 0;
   host_log("video: %s, %s; GL %s; window %dx%d%s, display at %d Hz, vsync %s",
            pc_gap_video_driver(), (const char *)p_glGetString(GL_RENDERER),
            (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
@@ -217,7 +239,99 @@ void pc_video_shot(const char *path, int due) {
   enc_mutex_lock(s_shot_mu);
   snprintf(s_shot_path, sizeof s_shot_path, "%s", path);
   s_shot_due = due;
+  s_shot_ovl = s_ovl_serial;
   enc_mutex_unlock(s_shot_mu);
+}
+
+int pc_video_shot_pending(void) {
+  int p;
+  enc_mutex_lock(s_shot_mu);
+  p = s_shot_path[0] != 0;
+  enc_mutex_unlock(s_shot_mu);
+  return p;
+}
+
+void pc_video_overlay(const uint8_t *rgb, int w, int h) {
+  enc_mutex_lock(s_ovl_mu);
+  if (rgb && w > 0 && h > 0 && w <= OVL_W && h <= OVL_H) {
+    memcpy(s_ovl, rgb, (size_t)w * h * 3);
+    s_ovl_w = w;
+    s_ovl_h = h;
+  } else
+    s_ovl_w = s_ovl_h = 0;
+  s_ovl_serial++;
+  enc_mutex_unlock(s_ovl_mu);
+}
+
+void pc_video_want(int fullscreen, int vsync) {
+  s_want_fs = fullscreen != 0;
+  s_want_vsync = vsync != 0;
+  s_want_serial++;
+}
+
+int pc_video_fullscreen(void) { return s_fs_now; }
+
+/* main thread: the menu's FULLSCREEN and VSYNC rows, when they changed */
+static void apply_wants(void) {
+  const EncPlatformInfo *info = enc_platform_info();
+  unsigned w = s_want_serial;
+  if (w == s_want_done)
+    return;
+  s_want_done = w;
+  if (s_want_fs != pc_gap_is_fullscreen(s_gpu.window))
+    pc_gap_set_fullscreen(s_gpu.window, s_want_fs);
+  if (s_want_vsync != s_vsync_on && !(info->caps & ENC_CAP_HEADLESS)) {
+    if (pc_gap_gl_set_swap_interval(s_want_vsync))
+      s_vsync_on = s_want_vsync && pc_gap_gl_swap_interval_on();
+    host_log("video: vsync %s", s_vsync_on ? "on" : "off");
+  }
+}
+
+/* main thread: the panel's texture up to date; 1 if there is one */
+static int overlay_upload(void) {
+  unsigned serial;
+  int have;
+  enc_mutex_lock(s_ovl_mu);
+  serial = s_ovl_serial;
+  have = s_ovl_w > 0;
+  if (serial != s_ovl_shown && have) {
+    if (!s_ovl_tex) {
+      p_glGenTextures(1, &s_ovl_tex);
+      p_glBindTexture(GL_TEXTURE_2D, s_ovl_tex);
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    p_glBindTexture(GL_TEXTURE_2D, s_ovl_tex);
+    if (s_ovl_w > s_ovl_tex_w || s_ovl_h > s_ovl_tex_h) {
+      s_ovl_tex_w = OVL_W;
+      s_ovl_tex_h = OVL_H;
+      p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, s_ovl_tex_w, s_ovl_tex_h, 0, GL_RGB,
+                     GL_UNSIGNED_BYTE, NULL);
+    }
+    p_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    p_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, s_ovl_w, s_ovl_h, GL_RGB, GL_UNSIGNED_BYTE, s_ovl);
+    p_glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  }
+  s_ovl_shown = serial;
+  enc_mutex_unlock(s_ovl_mu);
+  return have;
+}
+
+/* main thread: the panel in the middle of the window */
+static void overlay_draw(int ww, int wh) {
+  float k = (float)ww * 0.95f / s_ovl_w, kh = (float)wh * 0.95f / s_ovl_h, x0, y0;
+  if (kh < k)
+    k = kh;
+  if (k >= 1)
+    k = (float)(int)k; /* whole multiples: the font's pixels stay sharp */
+  x0 = -(s_ovl_w * k) / ww;
+  y0 = -(s_ovl_h * k) / wh;
+  p_glBindTexture(GL_TEXTURE_2D, s_ovl_tex);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, k >= 1 ? GL_NEAREST : GL_LINEAR);
+  p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, k >= 1 ? GL_NEAREST : GL_LINEAR);
+  p_glUniform4f(s_u_rect, x0, y0, -x0, -y0);
+  p_glUniform4f(s_u_uv, (float)s_ovl_w / s_ovl_tex_w, (float)s_ovl_h / s_ovl_tex_h, 0, 0);
+  p_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 /* the window's pixels as a PNG (after the draw, before the swap) */
@@ -251,6 +365,8 @@ void pc_video_frame(void) {
   unsigned long long t0 = pc_now_us(), t1;
   if (enc_video_gpu_begin(&gf) != ENC_OK) /* the main context current, the drawable's size */
     return;
+  apply_wants();
+  s_fs_now = pc_gap_is_fullscreen(s_gpu.window);
   if (pc_frames_take(now, &f)) {
     if (f.rgba) {
       /* upload it now; the slot goes back at once */
@@ -309,7 +425,9 @@ void pc_video_frame(void) {
         pc_gpu_picture_shown(s_cur.slot);
     }
   }
-  if (s_shot_path[0] && s_have && s_cur.due >= s_shot_due)
+  if (overlay_upload() && ww > 0 && wh > 0)
+    overlay_draw(ww, wh);
+  if (s_shot_path[0] && s_have && s_cur.due >= s_shot_due && (int)(s_ovl_shown - s_shot_ovl) >= 0)
     take_shot(ww, wh);
   pc_gap_cursor_update(s_gpu.window);
   enc_video_gpu_present(); /* swaps; never paced (refresh_hz is the display's) */

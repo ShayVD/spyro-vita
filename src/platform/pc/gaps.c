@@ -189,6 +189,32 @@ uint32_t pc_gap_backend_keyboard_bits(void) {
   return m;
 }
 
+/* ---- G13, G14: the options menu's key, fullscreen and vsync (D266) ------------------------------------------------ */
+
+int pc_gap_menu_key(void) {
+  const bool *keys = SDL_GetKeyboardState(NULL);
+  return keys[SDL_SCANCODE_ESCAPE] || keys[SDL_SCANCODE_F1];
+}
+
+/* the backend keeps its own idea of fullscreen for F11 (as with --fullscreen,
+ * G4): after a change here F11 may take two presses */
+void pc_gap_set_fullscreen(void *w, int on) {
+  if (!SDL_SetWindowFullscreen((SDL_Window *)w, on != 0))
+    host_log("video: fullscreen %d: %s", on, SDL_GetError());
+}
+
+int pc_gap_is_fullscreen(void *w) {
+  return (SDL_GetWindowFlags((SDL_Window *)w) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+int pc_gap_gl_set_swap_interval(int on) {
+  if (!SDL_GL_SetSwapInterval(on ? 1 : 0)) {
+    host_log("video: swap interval %d: %s", on, SDL_GetError());
+    return 0;
+  }
+  return 1;
+}
+
 /* ---- G8: a message box -------------------------------------------------------------------------------------------- */
 
 void pc_gap_message_box(const char *title, const char *text) {

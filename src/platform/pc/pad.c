@@ -101,11 +101,26 @@ static unsigned char *s_buf[2];
 static uint16_t s_last;
 static int s_settle = 4; /* vblanks of centred sticks first (the game calibrates on its first read) */
 
+/* the CONTROLS rows (menu.c, D266) into the game's camera controls: the
+ * Vita's defaults (vita.h) unless config.txt or the menu says otherwise */
+void pc_pad_controls_apply(void) {
+  static int analog = -1;
+  if (analog == 0 && g_pc_opts.analog)
+    s_settle = 4; /* turned on in the menu: centred sticks first, as at start */
+  analog = g_pc_opts.analog;
+  if (g_pc_opts.cam_speed < 50 || g_pc_opts.cam_speed > 200) /* config.txt by hand */
+    g_pc_opts.cam_speed = g_pc_opts.cam_speed < 50 ? 50 : 200;
+  g_port_controls.free_camera = g_pc_opts.analog && g_pc_opts.free_camera;
+  g_port_controls.invert_x = g_pc_opts.cam_invert_x;
+  g_port_controls.invert_y = g_pc_opts.cam_invert_y;
+  g_port_controls.speed = g_pc_opts.cam_speed;
+  g_port_controls.no_recentre = !g_pc_opts.cam_recentre;
+}
+
 void pc_pad_init(void) {
-  g_port_controls.free_camera = g_pc_opts.analog; /* the Vita's defaults (vita.h) */
-  g_port_controls.invert_x = g_port_controls.invert_y = 1;
-  g_port_controls.speed = 100;
-  host_log("pad: %s", g_pc_opts.analog ? "analog, free camera" : "digital");
+  pc_pad_controls_apply();
+  host_log("pad: %s", g_pc_opts.analog ? (g_pc_opts.free_camera ? "analog, free camera" : "analog")
+                                       : "digital");
   if (g_pc_opts.pad[0] && pc_pad_load(g_pc_opts.pad) != 0)
     pc_exit(1);
 }
@@ -139,6 +154,7 @@ void pc_pad_vblank(void) {
   for (int i = 0; i < 4; i++)
     if (s_script_sticks[i] != 0x80)
       sticks[i] = s_script_sticks[i];
+  m = pc_menu_filter(m, pc_input_menu_key()); /* the menu's buttons never reach the game */
   if (s_settle) {
     s_settle--;
     memset(sticks, 0x80, 4);
