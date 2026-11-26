@@ -464,10 +464,15 @@ static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
        * none. So the quad also names its points by the projection that made
        * them (as the glows, D218), under its first corner's key (the walk's
        * anchor): the centre (VCD_SELF, the last projection), and each corner
-       * its offset from it (VCD_OWN). */
-      PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_PARTICLES) | VCD_SELF, sxy, sxy, v0 - a3 - a2, 0, 0);
+       * its offset from it (VCD_OWN).
+       * #243: under all four corners' keys mixed (VCD_QUAD_ANCHOR): two
+       * quads of different sizes with one first corner's key had named
+       * both under one anchor, and neither was kept. */
+      PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_PARTICLES) | VCD_SELF, sxy, sxy,
+                    VCD_QUAD_ANCHOR(v0 - a3 - a2, v0 - a3, v0 - a2, v0), 0, 0);
 #define PART_HO(c)                                                                                 \
-  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES) | VCD_OWN, (c), sxy, v0 - a3 - a2,                \
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_PARTICLES) | VCD_OWN, (c), sxy,                               \
+                VCD_QUAD_ANCHOR(v0 - a3 - a2, v0 - a3, v0 - a2, v0),                              \
                 (s32)(s16)(c) - (s32)(s16)sxy, ((s32)(c) >> 16) - ((s32)sxy >> 16))
       PART_HO(v0);
       PART_HO(v0 - a2);

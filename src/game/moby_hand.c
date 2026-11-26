@@ -30,6 +30,7 @@
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 #include "region.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#243: the sprites) */
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
 extern char D_800757B0[];       /* the primitive buffer's next free byte */
@@ -269,6 +270,9 @@ typedef struct {
   const u8 *xy;      /* sp: the screen positions or clip words */
   int clip;          /* s7's sign */
   NgteSync *sync;    /* native GTE commands pending, or 0: the register file */
+  /* #243, for the vertex cache: the record's vertices (each projected once,
+   * in order, before the faces) and the sprites' projections since */
+  u32 nvert, nspr;
 } FaceCtx;
 
 /* Put the next primitive (size bytes, an ND_K_* kind) at the end of a
@@ -561,6 +565,7 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
     const NgteProj P = ngte_proj_get();
     const NgteRtp o = ngte_rtps_w(&P, c->sync->v0xy, c->sync->v0z);
     NgteCol g;
+    c->nspr++; /* (#243: a projection the vertex cache counts) */
     col = COLOUR(c, (cw >> 17) & 0x7FC);
     d = (z << 2) + (fw & FACE_HIDDEN) - c->bias;
     if ((s32)d <= 0)
@@ -589,6 +594,29 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
   AT16(p + 0x1A) = (u16)yb;
   AT16(p + 0x20) = (u16)xr;
   AT16(p + 0x22) = (u16)yb;
+  /* #243: for the vertex cache, as ParticlesDraw's screen-facing quads
+   * (#209, #231): each corner is the centre's exact place plus its offset
+   * from it, at the centre's depth (VCD_OFFSET; a sprite's corner gives way
+   * to every other renderer's). The quad names its centre by the
+   * projection that made it (VCD_SELF: the record's projection of its first
+   * vertex, nvert - 1 - i0 / 4 vertices and nspr sprites back) and its
+   * corners as its own (VCD_OWN), under all four corners' keys mixed. */
+  if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0)) {
+    const u32 k0 = (u16)(xr - w) | (u32)(u16)(yb - h) << 16, k1 = (u16)xr | (u32)(u16)(yb - h) << 16;
+    const u32 k2 = (u16)(xr - w) | (u32)(u16)yb << 16, k3 = (u16)xr | (u32)(u16)yb << 16;
+    const u32 an = VCD_QUAD_ANCHOR(k0, k1, k2, k3);
+    const s32 cxs = (s16)x, cys = (s16)y;
+    PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_MOBY_SPRITE) | VCD_SELF, xy, xy, an,
+                  (int)(c->nvert - 1u - (i0 >> 2) + c->nspr), 0);
+#define SPRITE_HO(k)                                                                               \
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_MOBY_SPRITE) | VCD_OWN, (k), xy, an,                          \
+                (s32)(s16)(k) - cxs, (s32)(s16)((k) >> 16) - cys)
+    SPRITE_HO(k0);
+    SPRITE_HO(k1);
+    SPRITE_HO(k2);
+    SPRITE_HO(k3);
+#undef SPRITE_HO
+  }
   AT32(p) = 0x09000000u;
   Link(c, bucket, 0x28, ND_K_FT4);
   return next;
@@ -915,6 +943,7 @@ static inline void FaceCtxBegin(FaceCtx *c, const RecState *s, u32 prim) {
   }
   c->lowest = c->buckets + 0x900;
   c->highest = c->buckets;
+  c->nspr = 0;
 }
 
 /* Draw one moby; returns the primitive pointer after it. */
@@ -951,6 +980,7 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
 
   faces = PickFaces(&s, &c);
   FaceCtxBegin(&c, &s, prim);
+  c.nvert = n;
   c.depth = (const u8 *)depth;
   c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
@@ -2251,6 +2281,7 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
   if (spec >> 24)
     spec = MetalBegin(spec);
   FaceCtxBegin(&c, &s, prim);
+  c.nvert = n;
   c.depth = (const u8 *)ent;
   c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);

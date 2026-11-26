@@ -710,15 +710,18 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
            out->res_why[RW_FULL]);
   /* #189: the renderers' hand-overs */
   PsyX_Log("vcache hooked: %u vertices with no entry found from their renderer's hand-over "
-           "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u, particles %u); %u "
+           "(shadows %u, sky clip %u, glows %u, world splits %u, Spyro's clip %u, particles %u, moby "
+           "sprites %u); %u "
            "hand-overs, "
            "%u kept, %u with a source not usable, %u placed differently, %u not kept (full); %u "
            "merged with another cut at their edge's pixel, %u an ambiguous key's alias or offset "
            "(%u vertices found so, from the frame's order) (#202)",
            out->hooked[VCD_SHADOWS] + out->hooked[VCD_SKY_CLIP] + out->hooked[VCD_GLOWS] +
-               out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP] + out->hooked[VCD_PARTICLES],
+               out->hooked[VCD_ENV_SPLIT] + out->hooked[VCD_PETE_CLIP] + out->hooked[VCD_PARTICLES] +
+               out->hooked[VCD_MOBY_SPRITE],
            out->hooked[VCD_SHADOWS], out->hooked[VCD_SKY_CLIP], out->hooked[VCD_GLOWS],
            out->hooked[VCD_ENV_SPLIT], out->hooked[VCD_PETE_CLIP], out->hooked[VCD_PARTICLES],
+           out->hooked[VCD_MOBY_SPRITE],
            out->hk_calls, out->hk_kept,
            out->hk_nosrc, out->hk_conflict, out->hk_full, out->hk_merged,
            out->hk_ambsrc, out->res_alias);
@@ -2868,7 +2871,8 @@ static void derive_hand(int kind, const Sink *k, int how, uint32_t key, uint32_t
   VCacheStats *const st = k->st;
   const int form = how & 15;
   const unsigned who = ((unsigned)how >> 4 & 15) < VCD_WHO_N ? (unsigned)how >> 4 & 15 : 0;
-  const int low = who == VCD_PARTICLES; /* #209: gives way to every other renderer's */
+  /* #209: gives way to every other renderer's; #243: a moby's sprite's too */
+  const int low = who == VCD_PARTICLES || who == VCD_MOBY_SPRITE;
   float w[VC_CANDS], dx, dy;
   int taint = 0, left = 0; /* left (#215): the key has no usable place after this call */
   int first, placed;
@@ -4554,7 +4558,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
     /* #189: vertices with no entry that their renderer handed over (after
      * #183's derivation, which keeps its quads): its place and depths, its
      * slot 0 */
-    int pass;
+    int pass, spr = -1; /* #243: a moby sprite's corners usable here (-1: not asked yet) */
     for (pass = 0; pass < 2; pass++) {
       /* #215: a cut's place at its own fraction after the hand-overs, and
        * only where #197 below wouldn't take the polygon (its one vertex
@@ -4589,6 +4593,21 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
       }
       for (i = 0; i < n; i++)
         if (!e[i] && hkc[i] && !hkc[i]->asrc && hkfr[i] == pass) {
+          if (hkc[i]->who == VCD_MOBY_SPRITE && !hkfr[i]) {
+            /* #243: a moby sprite's corner only for a MobyDraw or SpecDraw
+             * polygon, and not where #197 below would take the polygon
+             * (its one vertex with no entry and its ambiguous ones: a
+             * sprite a pixel high, found so before): every polygon found
+             * before is found as it was */
+            if (spr < 0) {
+              const int cx = cx_find(
+                  ptab, pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen, xy[0]);
+              spr = (cx == VCX_MOBY || cx == VCX_SPEC) &&
+                    !(n == 4 && nambig && nnone == 1 && !nhk && !inv && nmiss == nambig + 1);
+            }
+            if (!spr)
+              continue;
+          }
           hk[i] = hkc[i];
           if (hk[i]->n) {
             e[i] = hk[i]->c;
@@ -4768,21 +4787,29 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
      * #217: a world piece's too (the last list's, whose corners the
      * renderer named: a corner the GTE clamped onto a key other points
      * share). #231: a particle's screen-facing quad's too (two quads side by
-     * side share a corner's pixel, each at its own place). */
+     * side share a corner's pixel, each at its own place). #243: a moby's
+     * screen-facing square's too (MobyDraw's and SpecDraw's sprites). */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
     const int cx = cx_find(ptab, gen, xy[0]);
-    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV ||
-        cx == VCX_PARTICLES) { /* (#217: a split piece's) */
+    if (cx == VCX_GLOWS || cx == VCX_MOBY_SHADOWS || cx == VCX_ENV || cx == VCX_PARTICLES ||
+        ((cx == VCX_MOBY || cx == VCX_SPEC) && n == 4)) { /* (#217: a split piece's) */
       /* (#229: a world piece's, its corners' keys and u/v mixed, as
        * env_hand.c PieceAnchor: each u/v the primitive's halfword after its
-       * x/y; a quad's vertices here are its primitive's 0 1 3 2) */
+       * x/y; a quad's vertices here are its primitive's 0 1 3 2. #243: a
+       * particle's or moby sprite's quad, its corners' keys mixed, as
+       * psx_vcache.h VCD_QUAD_ANCHOR) */
+      static const int k_prim[2][4] = {{0, 1, 2, 3}, {0, 1, 3, 2}};
       uint32_t anchor = (uint16_t)xy[0][0] | (uint32_t)(uint16_t)xy[0][1] << 16;
       if (cx == VCX_ENV) {
-        static const int k_prim[2][4] = {{0, 1, 2, 3}, {0, 1, 3, 2}};
         anchor = 0;
         for (i = 0; i < n; i++)
           anchor ^= VCD_PIECE_V((uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16, xy[i][2],
                                 k_prim[n == 4][i]);
+      } else if (n == 4 && cx != VCX_GLOWS && cx != VCX_MOBY_SHADOWS) {
+        anchor = 0;
+        for (i = 0; i < n; i++)
+          anchor ^= VCD_PIECE_V((uint16_t)xy[i][0] | (uint32_t)(uint16_t)xy[i][1] << 16, 0,
+                                k_prim[1][i]);
       }
       const Cand *e2[4];
       unsigned en2[4], eo[4];
