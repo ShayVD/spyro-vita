@@ -189,6 +189,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     }
   ],
   "owner_decisions": [
+    "2026-11-26: owner answered the open decisions before the next loop: #271 MAX is at least 1x and draws farther wherever it can, so grow where the extra distance costs nothing even when 1x is over budget (default on as MAX's behaviour, off switch dd_free=0, hardware A/B for the owner's yes); #272 yes, design issue first (claim protocol + host race test) then implement; #251 yes, in this loop, one area per PR in the PC's order; #175 option 2 (re-check the execute bit in the tools that run binaries). Loop to run all remaining issues; #264, #276, #279-#281 go to their own sessions.",
     "2026-11-22: owner asked to fix the known wobble-fix and draw-distance issues and loop until fully fixed; filed #211-#219 (phase-8). Done = missed (non-exempt) wobble vertices at 0 on host routes S/P/Pf, 2x holding at 60 Hz on the owner's settings on hardware.",
     "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D175-D197 (with D194, D195, D196)). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
@@ -206,7 +207,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     {
       "issue": 175,
       "question": "colima's sshfs mount loses execute bits after the link: keep the launcher, re-check in the run tools, build/ on a Docker volume, or colima virtiofs?",
-      "default_taken": "none started; pick is option 2 (re-check in the tools that run binaries), waiting for the owner",
+      "default_taken": "owner 2026-11-26: option 2 (re-check in the tools that run binaries)",
       "switch": "none"
     },
     {
