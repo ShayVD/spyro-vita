@@ -9,7 +9,52 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 243,
+      "branch": "feat/243-wobble-fix-the-attract-demos-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-243",
+      "pids": [],
+      "started_at": "2026-11-26T00:50:00Z",
+      "files": [
+        "src/game/moby_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/particles_hand.c"
+      ],
+      "agent": "ac0d91188261b1a60",
+      "last_commit_at": "2026-11-26T00:50:00Z"
+    },
+    {
+      "issue": 267,
+      "branch": "fix/267-config-migration-a-draw-distance-200",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-267",
+      "pids": [],
+      "started_at": "2026-11-26T00:50:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "src/platform/vita/menu.c",
+        "src/platform/ps4/main.c",
+        "src/platform/ps4/menu.c",
+        "docs/vita-testing.md"
+      ],
+      "agent": "aaeff4f6d30e98e7c",
+      "last_commit_at": "2026-11-26T00:50:00Z"
+    },
+    {
+      "issue": 262,
+      "branch": "docs/262-docs-the-vcache-own-fields-include",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-262",
+      "pids": [],
+      "started_at": "2026-11-26T00:50:00Z",
+      "files": [
+        "docs/vita-testing.md",
+        "docs/host-build.md"
+      ],
+      "agent": "a037bc636be711875",
+      "last_commit_at": "2026-11-26T00:50:00Z"
+    }
+  ],
   "last_good": "5ac3c11d2c5fe5bd8168f8a8c3c1ad212f07ef87",
   "hardware_runs": [
     {
@@ -229,7 +274,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "attempts": {
     "161": 1,
     "261": 1,
-    "266": 1
+    "266": 1,
+    "243": 1,
+    "267": 1,
+    "262": 1
   },
   "blocked": [],
   "issues_filed": {
