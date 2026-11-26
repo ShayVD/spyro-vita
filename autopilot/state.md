@@ -78,6 +78,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "attract_demo_late_per_300": 162.6
       },
       "result": "D252: wobble fixes since 687ca1d cost nothing (busy 69.0 vs 69.1%); 2x held at 1x in Artisans (15.1-16.3 ms of 14.5) -> #259; attract demo 162.6 late -> #232"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-26",
+      "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
+      "sha1": "8dea8f5d542b1a7a14d1c0323931797e8bc28bcd",
+      "commit": "ded47d3",
+      "runs": "ap23a1-a4, s1, t1-t7, d1-d4, x1-x2 (runtime/autopilot/hw-session9.sh)",
+      "fps": {
+        "artisans_late_per_300": 0.5,
+        "toasty_late_per_300": 0.15,
+        "attract_demo_pictures_per_300": 218
+      },
+      "result": "D264: #259 gain 0.72 ms/vblank (Artisans still 1x: 15.4 of 14.5); #232 gain +24 pictures/300 in demos; #274 short path -0.4 ms walk and join, probes no gain; MAX 400 holds 60 fps"
     }
   ],
   "perf_candidates": [
@@ -270,22 +284,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": {
-    "target": "vita",
-    "since": "2026-11-26T09:12:00Z",
-    "commit": "ded47d3",
-    "step": "run",
-    "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
-    "sha1": "8dea8f5d542b",
-    "script": "runtime/autopilot/hw-session9.sh",
-    "issues": [
-      261,
-      259,
-      232,
-      274
-    ],
-    "status": "running; owner 2026-11-26: Yes, run it"
-  },
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
