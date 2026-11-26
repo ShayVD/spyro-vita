@@ -23,7 +23,11 @@ HW_SAVE_DIR=save
 # the host's picture and camera so runs compare with it, unless DEVICE_DEFAULTS=1 (later lines win;
 # config_version=6: main.c); no standby, dimming or screen off while it runs (vblank.c). The host's picture
 # includes the PS1's wobble (wobble=1, #177: the device's default is off); a run's persp=1 subpixel=1 after it
-# still turns the fix on, as before.
+# still turns the fix on, as before. The options menu writes config_version=7 since D260; this 6 (and a run
+# file's own 5 after it) stays, and a run's draw_distance=200 is still a developer's 200, not an older menu's
+# MAX: these base lines never write res, analog or cam_speed, three of the nine rows every menu has written
+# since D48, and a run file's lines include keys no menu row has (frames=, shot_every=, ...) (read_config,
+# D260).
 hw_config_base() {
   [ -n "$1" ] && grep -E '^disc=' "$1" || true
   [ "${REALTIME:-0}" = 1 ] || echo "realtime=0"
