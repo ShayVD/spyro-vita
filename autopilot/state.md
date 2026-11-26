@@ -9,23 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 266,
-      "branch": "feat/266-wobble-fix-toasty-s-2-envdraw-missed-a",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-266",
-      "pids": [],
-      "started_at": "2026-11-25T19:35:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "a0e592d88af82426e",
-      "last_commit_at": "2026-11-25T19:35:00Z",
-      "nudged_at": "2026-11-25T21:46:00Z"
-    }
-  ],
-  "last_good": "20d3514589db959121604783a5876ea91f152ad9",
+  "workers": [],
+  "last_good": "5ac3c11d2c5fe5bd8168f8a8c3c1ad212f07ef87",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
