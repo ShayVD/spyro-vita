@@ -9,8 +9,52 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
-  "last_good": "5ac3c11d2c5fe5bd8168f8a8c3c1ad212f07ef87",
+  "workers": [
+    {
+      "issue": 243,
+      "branch": "feat/243-wobble-fix-the-attract-demos-missed",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-243",
+      "pids": [],
+      "started_at": "2026-11-26T00:50:00Z",
+      "files": [
+        "src/game/moby_hand.c",
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/particles_hand.c"
+      ],
+      "agent": "ac0d91188261b1a60",
+      "last_commit_at": "2026-11-26T00:50:00Z"
+    },
+    {
+      "issue": 267,
+      "branch": "fix/267-config-migration-a-draw-distance-200",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-267",
+      "pids": [],
+      "started_at": "2026-11-26T00:50:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "src/platform/vita/menu.c",
+        "src/platform/ps4/main.c",
+        "src/platform/ps4/menu.c",
+        "docs/vita-testing.md"
+      ],
+      "agent": "aaeff4f6d30e98e7c",
+      "last_commit_at": "2026-11-26T00:50:00Z"
+    },
+    {
+      "issue": 268,
+      "branch": "docs/268-readme-max-adaptive-draws-up-to-4x-where",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-268",
+      "pids": [],
+      "started_at": "2026-11-26T01:15:00Z",
+      "files": [
+        "README.md"
+      ],
+      "agent": "a2a43d1d57ec59191",
+      "last_commit_at": "2026-11-26T01:15:00Z"
+    }
+  ],
+  "last_good": "67b47080b3796da837768453064a514e134ef688",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -229,7 +273,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "attempts": {
     "161": 1,
     "261": 1,
-    "266": 1
+    "266": 1,
+    "243": 1,
+    "267": 1,
+    "262": 1,
+    "268": 1
   },
   "blocked": [],
   "issues_filed": {
