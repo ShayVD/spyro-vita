@@ -80,7 +80,7 @@ static void FuzzParticles(u_int seed, int type) {
 Particle *func_80053570(int pRenderType) { return (Particle *)func_80053570_gen(pRenderType); }
 #else
 static Particle *Alloc(int type) {
-  Particle *end = g_Particles + PARTICLE_SLOTS, *p = g_ParticleAllocPtr, *next;
+  Particle *end = P32_GET(g_Particles) + PARTICLE_SLOTS, *p = P32_GET(g_ParticleAllocPtr), *next;
   int was;
   if (p == end) {
     /* Full: one of the last 256 slots, at random, is taken over. */
@@ -100,7 +100,7 @@ static Particle *Alloc(int type) {
     while (next != end && *State(next) >= 0)
       next++;
   }
-  g_ParticleAllocPtr = next;
+  P32_SET(g_ParticleAllocPtr , next);
   return p;
 }
 
@@ -118,12 +118,12 @@ Particle *func_80053570(int pRenderType) {
 void func_80053608(Particle *particle) { func_80053608_gen(particle); }
 #else
 static void Free(Particle *p) {
-  Particle *start = g_Particles, *end = start + PARTICLE_SLOTS, *last;
+  Particle *start = P32_GET(g_Particles), *end = start + PARTICLE_SLOTS, *last;
   if (p + 1 != end && *State(p + 1) != PARTICLE_END) {
     /* A slot among used ones: a hole. */
     *State(p) = PARTICLE_HOLE;
-    if (g_ParticleAllocPtr >= p)
-      g_ParticleAllocPtr = p;
+    if (P32_GET(g_ParticleAllocPtr) >= p)
+      P32_SET(g_ParticleAllocPtr , p);
     return;
   }
   /* The last used slot: the end moves back past the holes before it, to
@@ -133,8 +133,8 @@ static void Free(Particle *p) {
     while (*State(last) < 0 && last-- != start)
       ;
   last++;
-  if (g_ParticleAllocPtr >= last)
-    g_ParticleAllocPtr = last;
+  if (P32_GET(g_ParticleAllocPtr) >= last)
+    P32_SET(g_ParticleAllocPtr , last);
   *State(last) = PARTICLE_END;
 }
 

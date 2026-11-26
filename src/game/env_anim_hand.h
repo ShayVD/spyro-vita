@@ -40,10 +40,10 @@ static_assert(offsetof(TerrainCollision, m_Triangles) == 0x10, "TerrainCollision
 #define LQ_TEXTURE_SIZE 0x10
 #define HQ_TEXTURE_SIZE 0xA8
 static inline u8 *LQTexture(u32 i) {
-  return HPTR(u8, PSX_ADDR(g_Environment.m_LQTexturePointer) + i * LQ_TEXTURE_SIZE);
+  return HPTR(u8, PSX_ADDR(P32_GET(g_Environment.m_LQTexturePointer)) + i * LQ_TEXTURE_SIZE);
 }
 static inline u8 *HQTexture(u32 i) {
-  return HPTR(u8, PSX_ADDR(g_Environment.m_HQTexturePointer) + i * HQ_TEXTURE_SIZE);
+  return HPTR(u8, PSX_ADDR(P32_GET(g_Environment.m_HQTexturePointer)) + i * HQ_TEXTURE_SIZE);
 }
 
 /* An animated texture's frame: texture FROM's two copies over TO's, the

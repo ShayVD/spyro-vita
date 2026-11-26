@@ -88,13 +88,30 @@ int g_lod_stats;       /* this draw collects statistics */
  * after the world (the sky, particles, HUD: 31,604 at most), both measured
  * over the whole-game tour at 2x (port_lod_report "largest sector", "after
  * the world"; D49, measured again with the span as the room, #203), and
- * about 7.5 KB to spare. The far (low-poly) loop's sectors can be far
+ * about 7.5 KB to spare. At 4x throughout (#261, --lod-guards-only) the
+ * largest sector was 6,008 bytes and the most after the world 30,852: 8 KB
+ * to spare. The far (low-poly) loop's sectors can be far
  * bigger (57 KB for a background sector at 1x), but with the option on it
  * writes only less than at 1x: polygons inside the longer distance are
  * skipped, and sectors wholly inside it aren't listed. */
 #define ENV_MARGIN 0xB000
 #define FAIRY_CARD_BUF 0x600 /* the span's top under the HUD OT: present.c PortPolySpace (D61) */
 #define MOBY_SHARE 60 /* pass 2's mobys are drawn while the buffer is under this % */
+/* Pass 2's box at most (#261): r_moby rotates the moby's offset from the
+ * camera, /4, as 16-bit values (the asm's IR1-3), so a box past 0x7FFF lets
+ * in a moby whose offset wraps there and is drawn somewhere else. The
+ * original's own boxes never get there in play; the longer one could, at
+ * 2x already where an occlusion group puts m_CullingDistance at 0x28000. */
+#define BOX_MAX 0x7FFF
+/* Past 2x the near list is the first bound a longer distance meets (#261:
+ * the whole-game tour fills its 127 at 2.5x in level 60, at 3x in level 35,
+ * at 4x in 42 and 43, while at 2x it peaks at 125). So above 2x the limiter
+ * also keeps the list's fill: the scale grows past 2x only while the last
+ * draw's list is under NEAR_GROW sectors, and the part above 2x halves when
+ * it is over NEAR_HIGH, before the bound drops a sector. At 2x and below
+ * nothing changes. */
+#define NEAR_GROW 104
+#define NEAR_HIGH 116
 
 static int s_k = LOD_ONE; /* the limiter's scale for the next draw */
 static int s_hold;        /* draws before it may grow again */
@@ -104,13 +121,26 @@ static int s_level = -1, s_gamestate = -1;
 static int s_loaded; /* a save state was loaded: the next draw at full scale */
 static int s_demo_shown; /* the game's last draw was a shown attract-demo draw
                             (port_lod_draw_end): the limiter measures the demo */
+static int s_logic60; /* the last shown draw followed a 60 Hz update (logic60) */
+static int s_near; /* this draw's near-list sectors (with the option on) */
+
+/* The most the limiter's scale may reach (#261): the player's scale where
+ * a 60 Hz budget measures the draws (60 Hz logic in play and g_lod.budget
+ * on; on the Vita, dd_budget=auto, the time the game thread took), else at
+ * most 2x, the most that was ever drawn unmeasured (the title, 30 Hz). The
+ * hard bounds hold either way; --lod-guards-only (tests) takes the scale. */
+static int scale_top(void) {
+  if (g_lod.guards_only || g_lod.scale <= LOD_TWO || (s_logic60 && g_lod.budget > 0))
+    return g_lod.scale;
+  return LOD_TWO;
+}
 
 /* this draw's primitive buffer (draw_begin) */
 static u32 s_poly_lo, s_env_limit, s_moby_limit, s_env_last, s_env_end;
 static u32 s_rec2 = ~0u; /* the first draw record pass 2 wrote */
 
 static struct {
-  unsigned draws, cuts, near_full, env_cuts, moby_cuts, budget_cuts, budget_held;
+  unsigned draws, cuts, near_full, near_cuts, env_cuts, moby_cuts, budget_cuts, budget_held;
   unsigned long long used, k, extra;
   unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
@@ -129,7 +159,7 @@ static struct {
 /* The game's primitive buffer: 0x1C000 bytes (0x13000 in reduced-space
  * levels), up to where the HUD's mobys start. */
 static int buffer_cap(void) {
-  int cap = (int)((char *)g_Buffers.m_HigherPolyBuffer - (char *)g_Buffers.m_LowerPolyBuffer);
+  int cap = (int)((char *)P32_GET(g_Buffers.m_HigherPolyBuffer) - (char *)P32_GET(g_Buffers.m_LowerPolyBuffer));
   return cap <= 0 || cap > POLY_TOP ? POLY_TOP : cap;
 }
 
@@ -139,7 +169,7 @@ static int buffer_cap(void) {
  * buffer (#203). With it off (statistics only) the draw's own buffer, as
  * before. */
 static int draw_room(u32 lo) {
-  const u32 top = (u32)(uintptr_t)g_Buffers.m_HudOTStart - FAIRY_CARD_BUF;
+  const u32 top = (u32)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) - FAIRY_CARD_BUF;
   const int cap = buffer_cap();
   if (g_lod.scale <= LOD_ONE || top <= lo || top - lo < (u32)cap || top - lo > 2 * 0x1C000)
     return cap;
@@ -152,8 +182,8 @@ static int cull_distance(void) {
 }
 
 static int moby_index(u32 moby) {
-  u32 base = (u32)(uintptr_t)g_LevelMobys, i;
-  if (!g_LevelMobys || moby < base)
+  u32 base = (u32)(uintptr_t)P32_GET(g_LevelMobys), i;
+  if (!P32_GET(g_LevelMobys) || moby < base)
     return -1;
   i = (moby - base) / sizeof(Moby);
   return i < MAX_EXT && base + i * sizeof(Moby) == moby ? (int)i : -1;
@@ -197,6 +227,8 @@ u32 port_lod_moby_box(u32 t4, u32 moby) {
     s = c > t4 ? c : t4;
   if (i >= 0 && (s_ext[s_ext_cur ^ 1][i >> 5] >> (i & 31) & 1))
     s += GRACE;
+  if (s > BOX_MAX)
+    s = t4 > BOX_MAX ? t4 : BOX_MAX;
   return s;
 }
 
@@ -241,7 +273,7 @@ int port_lod_records_full(u32 record, u32 prim) {
 }
 
 int port_lod_lit_full(void) {
-  if ((u32)(uintptr_t)D_800757B0 <= s_moby_limit)
+  if ((u32)(uintptr_t)P32_GET(D_800757B0) <= s_moby_limit)
     return 0;
   s_st.moby_cuts++;
   return 1;
@@ -279,6 +311,9 @@ void port_lod_env_end(u32 fp) {
 /* func_800258F0, before a sector goes into the near list: 1 = the list is
  * one entry short of the next one, leave it out */
 int port_lod_near_full(u32 t7) {
+  const int n = (int)((t7 - ((u32)(uintptr_t)D_8006FCF4 + NEAR_LIST)) / 4) + 1;
+  if (n > s_near && n <= 0x80)
+    s_near = n;
   if (t7 < (u32)(uintptr_t)D_8006FCF4 + NEAR_END - 4)
     return 0;
   s_st.near_full++;
@@ -302,8 +337,8 @@ void lod_set_budget_hook(void (*fn)(void)) { s_budget_hook = fn; }
 #endif
 
 void port_lod_draw_begin(int shown) {
-  const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
-  u32 lo = (u32)(uintptr_t)port_poly_start(db->m_PolyBuf); /* D54 */
+  const DB *db = P32_GET(g_CurDB) == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
+  u32 lo = (u32)(uintptr_t)port_poly_start(P32_GET(db->m_PolyBuf)); /* D54 */
   int cap = buffer_cap(), room = draw_room(lo);
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
@@ -314,6 +349,7 @@ void port_lod_draw_begin(int shown) {
   s_env_last = 0; /* the world's first loop head starts the measure */
   s_env_end = 0;
   s_rec2 = ~0u;
+  s_near = 0;
 #ifndef RENDER_PRES
   if (s_budget_hook && shown && g_lod.scale > LOD_ONE)
     s_budget_hook(); /* the Vita's dd_budget=auto (lod_time.c, #212) */
@@ -321,7 +357,7 @@ void port_lod_draw_begin(int shown) {
   if (g_lod.scale <= LOD_ONE || !shown)
     return;
   if (g_lod.guards_only || s_loaded) {
-    s_k = g_lod.scale;
+    s_k = scale_top();
     s_hold = 0;
     s_level = g_LevelId;
     s_gamestate = g_Gamestate;
@@ -332,8 +368,8 @@ void port_lod_draw_begin(int shown) {
     s_k = LOD_ONE;
     s_hold = 60;
   }
-  if (s_k > g_lod.scale || s_k < LOD_ONE)
-    s_k = s_k < LOD_ONE ? LOD_ONE : g_lod.scale;
+  if (s_k > scale_top() || s_k < LOD_ONE)
+    s_k = s_k < LOD_ONE ? LOD_ONE : scale_top();
 #ifndef RENDER_PRES
   /* The demo rule (D224, #236): an attract demo at 16:9 draws its
    * presenter frames at 1x. There the game's own draws are the hidden 4:3
@@ -368,7 +404,6 @@ void port_lod_reset(void) {
  * The presenter's copy (lod_pres.c) never reads tick60's state, which is
  * the game thread's (D164, D167; tests/render_ctx link_check.sh, #194): it
  * has only the game's last decision, in the state it is handed. */
-static int s_logic60;
 #ifndef RENDER_PRES
 static int logic60(void) {
   return g_tick60_mode && tick60_built() && g_Gamestate == GS_Playing &&
@@ -396,9 +431,10 @@ static int logic60(void) {
  * is fixed (--lod-budget); the Vita's dd_budget=auto (#212) moves it every
  * logic frame from the game thread's measured time (lod_time.c, through
  * lod_set_budget), and the rule here stays the same. */
-static void limit(int used, int cap, int work, int budget) {
+static void limit(int used, int cap, int work, int budget, int near) {
   const int over = budget > 0 && work > budget, far_over = over && work > budget + budget / 8;
-  const int room = budget <= 0 || work < budget - budget / 8;
+  const int room = (budget <= 0 || work < budget - budget / 8) &&
+                   (s_k < LOD_TWO || near < NEAR_GROW); /* past 2x: the near list too */
   /* The budget's back-offs: over it while the buffer (or the world's bound)
    * is at most 80% full, so only the budget backs off. At 1x already (#200)
    * there is nothing left to take: the budget holds the longer distance at
@@ -416,9 +452,14 @@ static void limit(int used, int cap, int work, int budget) {
     s_k = LOD_ONE + (s_k - LOD_ONE) / 2;
     s_hold = 30;
     s_st.cuts++;
+  } else if (s_k > LOD_TWO && near > NEAR_HIGH) {
+    s_k = LOD_TWO + (s_k - LOD_TWO) / 2; /* the near list (#261) */
+    s_hold = 30;
+    s_st.cuts++;
+    s_st.near_cuts++;
   } else if (s_hold > 0) {
     s_hold--;
-  } else if (used < cap / 100 * 65 && room && s_k < g_lod.scale) {
+  } else if (used < cap / 100 * 65 && room && s_k < scale_top()) {
     s_k += LOD_ONE / 32;
   }
 }
@@ -432,10 +473,10 @@ void port_lod_draw_end(int shown) {
   s_last_60 = 0;
   s_demo_shown = shown && g_DemoMode != DEMO_MODE_NONE; /* the game's draws only:
                                      the presenter's never end here */
-  if (!shown || !g_CurDB || !(on || g_lod.stats))
+  if (!shown || !P32_GET(g_CurDB) || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
-  used = (int)((u32)(uintptr_t)D_800757B0 - s_poly_lo);
+  used = (int)((u32)(uintptr_t)P32_GET(D_800757B0) - s_poly_lo);
   cap = draw_room(s_poly_lo); /* the span with the option on (#203) */
   if (used < 0 || used > 0x100000)
     return;
@@ -446,13 +487,13 @@ void port_lod_draw_end(int shown) {
 #ifndef RENDER_PRES
     s_logic60 = logic60();
 #endif
-    limit(world_eff > used ? world_eff : used, cap, used, s_logic60 ? g_lod.budget : 0);
+    limit(world_eff > used ? world_eff : used, cap, used, s_logic60 ? g_lod.budget : 0, s_near);
     s_last_bytes = used;
     s_last_60 = s_logic60 && g_lod.budget > 0;
   }
-  if (s_env_end && (u32)(uintptr_t)D_800757B0 >= s_env_end &&
-      (u32)(uintptr_t)D_800757B0 - s_env_end > s_st.after_env_max)
-    s_st.after_env_max = (u32)(uintptr_t)D_800757B0 - s_env_end;
+  if (s_env_end && (u32)(uintptr_t)P32_GET(D_800757B0) >= s_env_end &&
+      (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end > s_st.after_env_max)
+    s_st.after_env_max = (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end;
   s_st.draws++;
   s_st.used += (unsigned)used;
   s_st.k += (unsigned)k;
@@ -532,7 +573,7 @@ void port_lod_report(char *out, unsigned len) {
              "%u draws at x%u.%02u average (lowest x%u.%02u); primitives %u KB average, "
              "%u KB peak of %u KB (%u%%); %u back-offs (%u for the budget, of them %u held at 1x); "
              "%u.%u extra mobys per draw; "
-             "near sectors peak %u of 127 (%u times full); moby records peak %u of 53; "
+             "near sectors peak %u of 127 (%u times full, %u back-offs); moby records peak %u of 53; "
              "largest sector %u bytes, after the world %u bytes; stopped early: world %u, "
              "mobys %u",
              s_st.draws, (unsigned)(s_st.k / d / 256),
@@ -540,7 +581,7 @@ void port_lod_report(char *out, unsigned len) {
              s_st.k_min % 256 * 100 / 256, (unsigned)(s_st.used / d / 1024),
              s_st.used_max / 1024, cap / 1024, s_st.used_max * 100 / cap, s_st.cuts, s_st.budget_cuts, s_st.budget_held,
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
-             s_st.near_full, s_st.records_max, s_st.sector_max, s_st.after_env_max,
+             s_st.near_full, s_st.near_cuts, s_st.records_max, s_st.sector_max, s_st.after_env_max,
              s_st.env_cuts, s_st.moby_cuts);
   if (s_bt.n && n > 0 && (unsigned)n + 1 < len) /* (no strlen: render_ctx_link) */
     budget_report(out + n, len - (unsigned)n);
@@ -556,7 +597,7 @@ void port_lod_report(char *out, unsigned len) {
   X(g_lod) X(g_lod_k) X(g_lod_pass) X(g_lod_stats) X(s_k) X(s_hold) X(s_ext)   \
   X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_demo_shown)        \
   X(s_poly_lo) X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end)      \
-  X(s_rec2) X(s_st) X(s_logic60) X(s_last_bytes) X(s_last_60) X(s_bt)
+  X(s_rec2) X(s_st) X(s_logic60) X(s_near) X(s_last_bytes) X(s_last_60) X(s_bt)
 #define LOD_SIZE(v) + sizeof v
 #define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
 #define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;

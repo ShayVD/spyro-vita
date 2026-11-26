@@ -11,31 +11,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 261,
-      "branch": "perf/261-draw-distance-max-adaptive-go-past-2x",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-261",
+      "issue": 266,
+      "branch": "feat/266-wobble-fix-toasty-s-2-envdraw-missed-a",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-266",
       "pids": [],
-      "started_at": "2026-11-25T18:45:00Z",
+      "started_at": "2026-11-25T19:35:00Z",
       "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/lod_pres.c",
-        "src/game/moby_cull_hand.c",
-        "src/game/mips2c_rt.h",
-        "tools/mips2c/hints.yaml",
-        "src/platform/vita/picture.c",
-        "src/platform/vita/lod_time.c",
-        "src/platform/ps4/picture_ps4.c",
-        "src/platform/linux32/main.c",
-        "docs/presentation.md",
-        "docs/host-build.md",
-        "docs/vita-testing.md"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
       ],
-      "agent": "ac32ce0b6bf3102a1",
-      "last_commit_at": "2026-11-25T18:45:00Z"
+      "agent": "a0e592d88af82426e",
+      "last_commit_at": "2026-11-25T19:35:00Z",
+      "nudged_at": "2026-11-25T21:46:00Z"
     }
   ],
-  "last_good": "4c8a009927d5bec754c74f56162f3f22572a19f5",
+  "last_good": "20d3514589db959121604783a5876ea91f152ad9",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -253,7 +243,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   ],
   "attempts": {
     "161": 1,
-    "261": 1
+    "261": 1,
+    "266": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -270,7 +261,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": null,
+  "hardware_pending": {
+    "asked_at": "2026-11-26T00:40:00Z",
+    "issue": 261,
+    "build": "runtime/autopilot/artifacts/vita/20d3514.vpk",
+    "routes": [
+      "Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t",
+      "Stone Hill + Artisans play at 400, shot_every=0, vs D252 ap19a",
+      "optional Toasty at 200 for A/B"
+    ],
+    "status": "waiting for the owner"
+  },
   "job": null,
   "batch": null,
   "lanes": [
@@ -283,8 +284,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-4c8a009",
-        "commit": "4c8a009927d5bec754c74f56162f3f22572a19f5"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+        "commit": "20d3514589db959121604783a5876ea91f152ad9"
       }
     }
   },
@@ -527,3 +528,7 @@ continue.
 - 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
 - 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
 - 2026-11-25T19:30:00Z merged #237 (D253): gate PASS (ctest 33/33); host missed 0 on every route but T (2 EnvDraw, #266); baseline base-4c8a009 (issue-237-1/fix1); next #266
+- 2026-11-25T19:35:00Z started #266 (T's 2 EnvDraw, the last host misses; decision D257) beside #261
+- 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
+- 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
+- 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches

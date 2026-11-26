@@ -877,7 +877,7 @@ void func_80017C84(Vector3D16 *pOut, Vector3D16 *pIn1, Vector3D16 *pIn2) { func_
 /* A terrain triangle's three corners in world units (A, then B and C from
  * its offsets: collision_hand.c's TRI_ fields), from m_Triangles. */
 static void TriUnpack(int pIndex, Vector3D *pOut) {
-  const u_int *w = (const u_int *)g_Environment.m_TerrainCollision->m_Triangles + pIndex * 3;
+  const u_int *w = (const u_int *)P32_GET(P32_GET(g_Environment.m_TerrainCollision)->m_Triangles) + pIndex * 3;
   int i;
   for (i = 0; i < 3; i++) {
     int a = w[i] & 0x3FFF;

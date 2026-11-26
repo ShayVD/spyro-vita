@@ -67,9 +67,9 @@ const char *port_level_name(int level, char *buf, size_t len) {
   if (world < 1 || world > 6 || n > 5 || level >= 65)
     snprintf(buf, len, "LEVEL %d", level);
   else if (n == 0 && world < 6)
-    snprintf(buf, len, "%s HOME", g_HomeworldNames[world - 1]);
+    snprintf(buf, len, "%s HOME", P32_GET(g_HomeworldNames[world - 1]));
   else
-    snprintf(buf, len, "%s", g_LevelNames[(world - 1) * 6 + n]);
+    snprintf(buf, len, "%s", P32_GET(g_LevelNames[(world - 1) * 6 + n]));
   return buf;
 }
 

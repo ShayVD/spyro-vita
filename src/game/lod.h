@@ -11,9 +11,12 @@ extern "C" {
 #endif
 
 #define LOD_ONE 256 /* scales are x256 */
+#define LOD_TWO 512 /* 2x: the most a draw takes where no 60 Hz budget measures
+                       it (lod.c scale_top, #261) */
 
 typedef struct {
-  int scale; /* LOD_ONE: off (the original distances); 384: 1.5x, 512: 2x */
+  int scale; /* LOD_ONE: off (the original distances); 384: 1.5x, 512: 2x;
+                 the menu's MAX (ADAPTIVE) is DD_MAX_PCT (picture.c, #261) */
   int stats; /* collect the numbers port_lod_report() logs */
   int guards_only; /* tests: no limiter and no reset at a new level, only the
                       hard bounds keep the buffer (host --lod-guards-only) */

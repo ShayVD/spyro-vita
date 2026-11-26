@@ -1978,3 +1978,52 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **PS4:** MAX adapts only through `lod.c`'s limiter (the buffers' limits and, with 60 Hz logic, the fixed 48 KB `LOD_BUDGET_60`); the timed budget (`lod_time.c`, D212) is the Vita's. The label is kept, as the owner asked for both targets.
 - **Checked** (`runtime/autopilot/runs/vita/issue-260-1/`): Vita build; PS4 build through the Mac SDK (the Docker `spyro-ps4` image is stale, #264); Vita3K 8 routes, 694 shots identical to `base-44e82e8` (checked by the coordinator); five menu runs with 100, 150 and 200 behave as above; counters within the same-VPK spread; gate host ctest 33/33 and `noassets`.
 
+
+## 2026-11-26 — draw distance MAX past 2x
+
+### D256. Draw distance MAX (ADAPTIVE) is 4x, and goes past 2x only where a 60 Hz budget measures the draw (#261, the owner's request, 2026-11-25)
+- **Why:** D252 showed 2x held only where the 60 Hz frame is light. The owner: "we could make the MAX option actually draw more than x2, up to max, if it can measure that and keep stable 60FPS and everything else".
+- **Measured** (host, the whole-game tour's 35 levels, 300 vblanks each, every draw at the scale with `--lod-guards-only`; `runtime/autopilot/runs/vita/issue-261-1/host/tour-final.txt`):
+  - What draws farther stops at `m_CullingDistance`: 0x28000 (5x) where the camera is in an occlusion group (201 of 268 drawing windows), 0x14000 (2.5x) elsewhere. The sky and the far list's cull don't change.
+  - Levels that gain per step (at least 0.5 moby, 0.5 near sector or 1 KB per draw): 30 from 2x to 2.5x, 24 from 2.5x to 3x, 14 from 3x to 4x (up to +12 mobys and +12 near sectors per draw; levels 22, 23, 40, 42 among them), 7 from 4x to 5x (only up to 4 far low-detail mobys and one near sector).
+  - The near list fills first (2.5x in level 60, 3x in 35, 4x in 42 and 43), then the primitive span (levels 40 and 41 at 4x), then the moby records (54 from 3x in 8 levels).
+- **What:**
+  - `DD_MAX_PCT` is 400 in `picture.c` and `picture_ps4.c`; `draw_distance=` stays a percent.
+  - `lod.c` `scale_top()`: the scale passes `LOD_TWO` (2x, `lod.h`) only after a shown draw that followed a 60 Hz update with `g_lod.budget > 0` (the Vita's timed `dd_budget=auto`, the PS4's fixed 48 KB). The title, 30 Hz logic and `dd_budget=0` stay at 2x at most; `--lod-guards-only` still takes the scale as given.
+  - Above 2x the limiter grows only while the last draw's near list is under 104 sectors (`NEAR_GROW`) and halves the part above 2x over 116 (`NEAR_HIGH`). At 2x and below nothing changes.
+  - Pass 2's moby box is capped at 0x7FFF (`BOX_MAX`): `moby_cull_hand.c` and `moby_hand.c` rotate the camera offset as s16, and the longer box passed 0x7FFF at 2x already in 16 of 35 levels (all 35 at 4x). No wrapped moby was drawn on the tour: pass 2's mobys per draw are the same with and without the cap at 2x, 3x and 4x.
+  - Every other product the scale enters is clamped at the culling distance and fits (`lod.c`'s comment). `ENV_MARGIN` holds at 4x: 36,860 of 45,056 bytes.
+- **Checked** (`runtime/autopilot/runs/vita/issue-261-1/`):
+  - Host FNV per polygon (D168) at 100%, 9 pairs: the `fnv.bin` files are byte-identical.
+  - Whole game (100,000 vblanks) at 1x, `--draw-distance 4` (average x1.81, peak 149 KB of 222) and 4x guards-only (peak 198 KB of 222, the world bound stopped 993 draws, no overrun): exit 0, traces and memory cards byte-identical.
+  - Host 60 Hz limiter at 4x: O60 x4.00 at 8,300, Stone Hill x3.77 at 9,200.
+  - Vita build; Vita3K 8 routes, shots identical to `base-4c8a009` (checked by the coordinator); at 400% owner60 reaches x4.00 and stone60 x3.5-3.7 where light, and the shots that differ show only a farther draw; gate host ctest 33/33 and `noassets`.
+- **Why 4x, not 5x:** from 4x to 5x the world's near list is the same to 0.1 sector in every level but 40, and each step costs game-thread time the budget would rather spend holding the scale. 500 is a one-line change that needs its own whole-game run.
+- **Open:** the hardware check (Toasty and Artisans at 400% against D252); a `draw_distance=200` saved by D255's MAX shows `200%` until a config migration maps it to the new MAX.
+
+## 2026-11-25 — ARM64 step O2
+
+### D258. ARM64 step O2: every use of a P32 slot goes through an accessor; in the offset model a slot is a 4-byte union that carries its type, and the linux64 and PC builds compile with it; no binary changes (2026-11-25)
+- **What:** the second step of D250's plan. Every read, write and step of a `P32F(T *)` slot is spelled with a macro of `src/compat/p32.h`: `P32_GET(x)`, `P32_SET(x, v)`, `P32_ADD`/`P32_SUB`, `P32_PREINC`/`PREDEC`/`POSTINC`/`POSTDEC`, and `P32_PATCH`/`P32_PATCH2` for the disc loaders' in-place fix-ups. On the Vita, linux32 and x86-64 (linux64, PS4, PC) each expands to the text that was there, so no binary changes.
+- **The offset model** (`SPYRO_P32_OFFSET`, on by default for aarch64 LP64, `-DSPYRO_P32_OFFSET=1` on x86-64 for the check): a slot is `union __attribute__((packed, aligned(4))) { unsigned p32_off; T p32_ty[0]; }`. The offset is from `spyro_p32_base` (O3/O4 define it), 0 is NULL. The zero-length array carries the slot's type at no size, so the accessors take no type argument: D250 had `P32_GET(T *, x)`, but the tool can't always write `T` at a site (anonymous structs, macro bodies). In this model the accessors are statement expressions that evaluate `x` once; the `P32_INIT_*` tables are filled by `P32_SET`.
+- **The rewriter**, `tools/ps4/p32_offset_rewrite.py` (`tools/tc python3 ... BUILD [--apply]`): streams clang's JSON AST of each linux64 unit (moby_update.c's is 1 GB) and finds every load (`LValueToRValue` of a slot), store, compound add/sub and increment/decrement of an lvalue whose type is a slot. It wraps the site's source range, never adding or removing a line. Where the range lies:
+  - in ordinary text: 3,970 sites;
+  - in a macro argument (the site is in the caller's text): 299;
+  - a whole macro use whose expansion is the slot (such as `SPYRO_MODEL`): 297;
+  - a strict part of one `#define` body: 9.
+  - 4,575 in all. Token-paste and nested-macro sites it lists instead of guessing; they are the hand edits.
+  - **The census overcounted:** D250's 7,300 counted reads of plain pointers *to* slots (a type ending in `*`, not in `__ptr32 __uptr`); the real total is about 4,600.
+- **Output:** the decomp's edits are `patches/spyro-1-p32off/` (after `spyro-1-ptr32`, `CMakeLists.txt`): `0001-p32-accessors-1.patch` (moby_update.c) and `-2.patch` (23 other files), split to stay under `check_no_assets.sh`'s 512 KiB; and `0002-p32-hand-accessors.patch`:
+  - the slot calls of `PATCH_POINTER`/`PATCH_POINTER2` in `loaders.c` become `P32_PATCH`/`P32_PATCH2` (the macros stay, as they also patch `int` words, which O3 handles);
+  - `SPYRO_FRAME` (`pete.c`), the overlay table's token-pasted stores (`overlay_pointers.c`), `moby_helpers.c`'s `m_Parent` store.
+  - The port's own C (about 30 files in `src/game`) is edited in place; by hand: `pres_snap.c`'s `REBASE_SLOT`, and the slots develop's PS4 merge added (`pres_snap.c`, `pres_draw.c`, `render_ctx_check.c`, 8 sites).
+- **A trap in the offset model:** two `P32F(T *)` spellings are two different anonymous union types, so a redeclaration or a prototype against its definition conflicts. They borrow the first declaration's type: `extern __typeof__(g_PalLevelNames) g_PalLevelNames;` (`draw.c`, `lod_pres.c`, `overlay_pointers.c`), or share a typedef (`MobyListSlot` in `moby_lists.h`, `T60MobySlot` in `tick60_rules.h`). An incompatible-pointer warning between two slot unions of one layout is harmless; one between a slot and anything else is a bug.
+- **The check**, `tools/ps4/p32_offset_check.py BUILD`: compiles every unit with `-fsyntax-only -DSPYRO_P32_OFFSET=1`; any error, or any incompatible-pointer warning with a slot on one side only, fails it. A missed site and an accessor on a non-slot are both compile errors there.
+- **Checks:**
+  - Offset check: linux64 166 units, PC Linux 174, 0 failures, 0 diagnostics.
+  - **Byte identity (O1's tip 3130ab1 against O2, same build directories, loaded sections):** Vita `spyro_vita.velf` and PS4 `spyro.elf` every section identical (pinned date and commit, as D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical except the `__TIME__` strings and the build-id that hashes them.
+  - **After the rebase onto develop** (the PS4 merge's new slots fixed): the same comparison, develop's 04d8d58 against O2 on top of it (04d8d58 has the source of 6605e48, the rebase's base), the same result (Vita and PS4 every section identical; the rest only the `__TIME__` strings and build-id). Offset check again: linux64 166 units, PC Linux 174, 0 diagnostics.
+  - `host_checks.sh` on O2's linux64 against O2's linux32 native-mem: demo, the 100,000-vblank tour, routes A and B; every trace, screenshot, audio file and memory card identical (`logs/o2-l64-*`, `logs/o2-l32n-*`, gitignored).
+  - `p32_lint.py`: 0 found. `tools/check_no_assets.sh`: passes. No hardware run.
+- **Left for O3:** pointer↔integer casts still truncate on ARM64 (the trial's 126 and 41, the `int` `PATCH_POINTER` words, `REBASE_SLOT`'s `uint32_t`); `spyro_p32_base` and the image under 4 GB; `src/platform/ps4` was not rewritten (it never builds for ARM64).
+- **Next free number:** D259 (D256 and D257 are the autopilot's #261 and #266 workers).

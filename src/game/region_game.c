@@ -172,8 +172,8 @@ int PortCutsceneAngle(int a0, int a1, int f, int n) {
  * show the moby somewhere it never is. */
 static void cutscene_mobys_at(Moby *mobys, int n, int t6) {
   int i;
-  for (i = 0; i < g_CutsceneLayout->m_MobyCount && i < n; i++) {
-    const int ppt = g_Models[1 + i]->m_Animations[0]->m_ProgressPerTick;
+  for (i = 0; i < P32_GET(g_CutsceneLayout)->m_MobyCount && i < n; i++) {
+    const int ppt = P32_GET(P32_GET(g_Models[1 + i])->m_Animations[0])->m_ProgressPerTick;
     /* the vblanks a frame lasts (func_8002BFE0's four cases), in sixths */
     const int span = 6 * (ppt == 16 ? 8 : ppt == 21 ? 6 : ppt == 32 ? 4 : 2);
     const int a = t6 / span, b = (t6 % span) * 64 / span;
@@ -184,8 +184,8 @@ static void cutscene_mobys_at(Moby *mobys, int n, int t6) {
     as->m_NextAnimation = (a + 1) / 50;
     as->m_NextFrame = (a + 1) % 50;
     as->m_FrameProgress = b;
-    CUT_UNPACK(v, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a]);
-    CUT_UNPACK(v2, g_CutsceneLayout->m_MobyData[i]->m_PackedPos[a + 1]);
+    CUT_UNPACK(v, P32_GET(P32_GET(g_CutsceneLayout)->m_MobyData[i])->m_PackedPos[a]);
+    CUT_UNPACK(v2, P32_GET(P32_GET(g_CutsceneLayout)->m_MobyData[i])->m_PackedPos[a + 1]);
     mobys[i].m_Position.x = (v.x * (64 - b) + v2.x * b) >> 6;
     mobys[i].m_Position.y = (v.y * (64 - b) + v2.y * b) >> 6;
     mobys[i].m_Position.z = (v.z * (64 - b) + v2.z * b) >> 6;
@@ -197,15 +197,15 @@ static void cutscene_mobys_at(Moby *mobys, int n, int t6) {
 int g_PalCutscenePlayed = -1;
 
 int PortCutscenePlay(void) {
-  const int t6 = PortCutsceneTime6(g_CutsceneLayout->m_CurrentTick);
+  const int t6 = PortCutsceneTime6(P32_GET(g_CutsceneLayout)->m_CurrentTick);
   const CutsceneCameraData *c0, *c1;
   int k, f;
   if (t6 < 0 || (g_Gamestate != GS_Cutscene && g_Gamestate != GS_TitleScreen))
     return 0;
   k = t6 / 12;
   f = t6 % 12;
-  c0 = &g_CutsceneLayout->m_CameraData[k];
-  c1 = k + 1 < g_CutsceneLayout->m_Duration ? c0 + 1 : c0;
+  c0 = &P32_GET(P32_GET(g_CutsceneLayout)->m_CameraData)[k];
+  c1 = k + 1 < P32_GET(g_CutsceneLayout)->m_Duration ? c0 + 1 : c0;
   if (PortCutsceneCut(&c0->m_Position.x, &c1->m_Position.x))
     f = 0; /* a cut: hold the shot until the next one starts */
   g_Camera.m_Position.x = c0->m_Position.x + (c1->m_Position.x - c0->m_Position.x) * f / 12;
@@ -214,7 +214,7 @@ int PortCutscenePlay(void) {
   g_Camera.m_Rotation.x = PortCutsceneAngle(c0->m_Rotation.x, c1->m_Rotation.x, f, 12);
   g_Camera.m_Rotation.y = PortCutsceneAngle(c0->m_Rotation.y, c1->m_Rotation.y, f, 12);
   g_Camera.m_Rotation.z = PortCutsceneAngle(c0->m_Rotation.z, c1->m_Rotation.z, f, 12);
-  cutscene_mobys_at(g_LevelMobys, 0x7FFFFFFF, t6);
+  cutscene_mobys_at(P32_GET(g_LevelMobys), 0x7FFFFFFF, t6);
   g_PalCutscenePlayed = t6;
   return 1;
 }

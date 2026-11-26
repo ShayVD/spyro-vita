@@ -118,13 +118,13 @@ uint32_t pres_snap_rebase(uint32_t a) {
   }
   return a;
 }
-#define REBASE_PTR(p) ((p) = (void *)(uintptr_t)pres_snap_rebase((uint32_t)(uintptr_t)(p)))
-
+/* every pointer rebased here is a P32 slot, read and written through the accessors (D258) */
+#define REBASE_SLOT(p) P32_SET(p, (void *)(uintptr_t)pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(p)))
 static int count_mobys(void) {
   int n = 0;
-  if (!in_arena(g_LevelMobys, sizeof(Moby)))
+  if (!in_arena(P32_GET(g_LevelMobys), sizeof(Moby)))
     return 0;
-  while (n < MAX_MOBYS && (signed char)g_LevelMobys[n].m_State != -1)
+  while (n < MAX_MOBYS && (signed char)P32_GET(g_LevelMobys)[n].m_State != -1)
     n++;
   return n;
 }
@@ -184,9 +184,9 @@ static void audit(int nmobys) {
   for (i = 0; i < g_pres_snap_nlabels; i++)
     audit_words(g_pres_snap_labels[i].name, g + g_pres_snap_labels[i].off, g_pres_snap_labels[i].len, 0);
   if (nmobys)
-    audit_words("moby", (const unsigned char *)g_LevelMobys, (uint32_t)nmobys * sizeof(Moby), sizeof(Moby));
-  if (in_arena(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE))
-    audit_words("particle space", g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE, 0x20);
+    audit_words("moby", (const unsigned char *)P32_GET(g_LevelMobys), (uint32_t)nmobys * sizeof(Moby), sizeof(Moby));
+  if (in_arena(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE))
+    audit_words("particle space", P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE, 0x20);
   /* the renderers' copies (render_ctx.h) the presenter takes from the game */
   audit_words("D_8006FCF4 (work area)", (const unsigned char *)D_8006FCF4, PRES_WORK, 0);
   audit_words("g_Glows", (const unsigned char *)g_Glows, PRES_GLOWS, 0x24);
@@ -242,20 +242,20 @@ int pres_snap_take(int blend) {
   memset(g_pres_regions, 0, sizeof g_pres_regions);
   /* the regions: the buffers (lower buffer to the world OT's end), the
    * mobys (up to the one that ends the array), the particle space */
-  if (in_arena(g_Buffers.m_LowerPolyBuffer, 1) && in_arena(g_Buffers.m_WorldOTStart, OT_BYTES) &&
-      (uintptr_t)g_Buffers.m_WorldOTStart > (uintptr_t)g_Buffers.m_LowerPolyBuffer) {
-    buf_lo = (uint32_t)(uintptr_t)g_Buffers.m_LowerPolyBuffer;
-    buf_len = (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart + OT_BYTES - buf_lo);
+  if (in_arena(P32_GET(g_Buffers.m_LowerPolyBuffer), 1) && in_arena(P32_GET(g_Buffers.m_WorldOTStart), OT_BYTES) &&
+      (uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) > (uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer)) {
+    buf_lo = (uint32_t)(uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer);
+    buf_len = (uint32_t)((uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) + OT_BYTES - buf_lo);
     if (buf_len <= AREA_MOBYS)
-      region(PRES_REGION_BUFFERS, g_Buffers.m_LowerPolyBuffer, buf_len, area);
+      region(PRES_REGION_BUFFERS, P32_GET(g_Buffers.m_LowerPolyBuffer), buf_len, area);
     else
       buf_len = 0;
   }
   nmobys = count_mobys();
-  if (nmobys || in_arena(g_LevelMobys, sizeof(Moby)))
-    region(PRES_REGION_MOBYS, g_LevelMobys, (uint32_t)(nmobys + 1) * sizeof(Moby), area + AREA_MOBYS);
-  if (in_arena(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE))
-    region(PRES_REGION_PARTICLES, g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE, area + AREA_PARTICLES);
+  if (nmobys || in_arena(P32_GET(g_LevelMobys), sizeof(Moby)))
+    region(PRES_REGION_MOBYS, P32_GET(g_LevelMobys), (uint32_t)(nmobys + 1) * sizeof(Moby), area + AREA_MOBYS);
+  if (in_arena(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE))
+    region(PRES_REGION_PARTICLES, P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE, area + AREA_PARTICLES);
   if (g_pres_audit)
     audit(nmobys);
   /* the labels (the whole region, mirror_take); then the mirror is a
@@ -263,16 +263,16 @@ int pres_snap_take(int blend) {
   mirror_take();
   /* the copies */
   if (g_pres_regions[PRES_REGION_MOBYS].len)
-    memcpy((void *)(area + AREA_MOBYS), g_LevelMobys, g_pres_regions[PRES_REGION_MOBYS].len);
+    memcpy((void *)(area + AREA_MOBYS), P32_GET(g_LevelMobys), g_pres_regions[PRES_REGION_MOBYS].len);
   if (g_pres_regions[PRES_REGION_PARTICLES].len) {
-    memcpy((void *)(area + AREA_PARTICLES), g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE);
+    memcpy((void *)(area + AREA_PARTICLES), P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE);
     /* the end word (D136): without it the presenter's walk went on past the
      * copy when every slot was in use, into the area's zeros and what lies
      * past them, and drew from a NULL texture table entry (the Vita's crash
      * in Gnasty Gnorc's fight, logs/t60-crash-20261110) */
-    if (in_arena(g_Buffers.m_ParticleSpaceStart, PARTICLE_SPACE + PARTICLE_END_WORD))
+    if (in_arena(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE + PARTICLE_END_WORD))
       memcpy((void *)(area + AREA_PARTICLES + PARTICLE_SPACE),
-             (const char *)g_Buffers.m_ParticleSpaceStart + PARTICLE_SPACE, PARTICLE_END_WORD);
+             (const char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + PARTICLE_SPACE, PARTICLE_END_WORD);
     else
       memset((void *)(area + AREA_PARTICLES + PARTICLE_SPACE), 0xFF, PARTICLE_END_WORD);
   }
@@ -289,11 +289,11 @@ int pres_snap_take(int blend) {
   /* the presenter's OTs start empty, as the game's do (func_80016784
    * clears every bucket it links) */
   if (buf_len)
-    memset((void *)(area + ((uint32_t)(uintptr_t)g_Buffers.m_HudOTStart - buf_lo)), 0,
-           (uint32_t)((uintptr_t)g_Buffers.m_WorldOTStart + OT_BYTES - (uintptr_t)g_Buffers.m_HudOTStart));
+    memset((void *)(area + ((uint32_t)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) - buf_lo)), 0,
+           (uint32_t)((uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) + OT_BYTES - (uintptr_t)P32_GET(g_Buffers.m_HudOTStart)));
   /* the pointers into the copies (the audit, --pres-audit, found which;
    * D125 has its table) */
-  REBASE_PTR(g_pres_snap_g_LevelMobys);
+  REBASE_SLOT(g_pres_snap_g_LevelMobys);
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Camera + 0xD0, 1, 0);     /* the camera's moby */
   pres_snap_fields((unsigned char *)&g_pres_snap_g_Spyro + 0x21C, 1, 0);     /* the moby Spyro uses */
   /* stage 7g (D128): the dragon rescue's mobys (the cutscene's Spyro and
@@ -305,12 +305,12 @@ int pres_snap_take(int blend) {
   if (g_pres_regions[PRES_REGION_PARTICLES].len) /* each particle's moby */
     pres_snap_fields((unsigned char *)(area + AREA_PARTICLES) + 0x18, PARTICLE_SPACE / 0x20, 0x20);
   for (i = 0; i < 2; i++) {
-    REBASE_PTR(g_pres_snap_g_DB[i].m_PolyBuf);
-    REBASE_PTR(g_pres_snap_g_DB[i].m_WorldOT);
-    REBASE_PTR(g_pres_snap_g_DB[i].m_HudOT);
+    REBASE_SLOT(g_pres_snap_g_DB[i].m_PolyBuf);
+    REBASE_SLOT(g_pres_snap_g_DB[i].m_WorldOT);
+    REBASE_SLOT(g_pres_snap_g_DB[i].m_HudOT);
   }
   region(PRES_REGION_MIRROR, game_labels(), g_pres_mirror_len, (uintptr_t)g_pres_mirror);
-  REBASE_PTR(g_pres_snap_g_CurDB);
+  REBASE_SLOT(g_pres_snap_g_CurDB);
   /* stage 7g (D128): the buffers' pointers the other gamestates' draws
    * take their primitives and the HUD's mobys from (the flight results,
    * the pause screens, the exits) onto the presenter's buffers and copies;
@@ -325,23 +325,23 @@ int pres_snap_take(int blend) {
     for (k = 0; k < sizeof fields / sizeof fields[0]; k++) {
       P32F(void *) p; /* the field's 4 bytes (a host pointer zeroed the next field, D245) */
       memcpy(&p, g_pres_snap_g_Buffers + fields[k], sizeof p);
-      REBASE_PTR(p);
+      REBASE_SLOT(p);
       memcpy(g_pres_snap_g_Buffers + fields[k], &p, sizeof p);
     }
   }
   g_pres_regions[PRES_REGION_MIRROR].len = 0;
-  g_pres_level_mobys = g_pres_snap_g_LevelMobys;
+  P32_SET(g_pres_level_mobys, P32_GET(g_pres_snap_g_LevelMobys));
   /* the particle list's pointer is the renderers' (render_ctx.h) */
   {
-    uint32_t p = (uint32_t)(uintptr_t)g_Particles;
+    uint32_t p = (uint32_t)(uintptr_t)P32_GET(g_Particles);
     p = pres_snap_rebase(p);
     memcpy(g_pres_particles, &p, 4);
   }
   if (!blend)
     return 1;
-  return port_present_blend_to(&g_pres_snap_g_Camera, &g_pres_snap_g_Spyro, g_pres_snap_g_LevelMobys,
+  return port_present_blend_to(&g_pres_snap_g_Camera, &g_pres_snap_g_Spyro, P32_GET(g_pres_snap_g_LevelMobys),
                                g_pres_regions[PRES_REGION_PARTICLES].len
-                                   ? (void *)(uintptr_t)pres_snap_rebase((uint32_t)(uintptr_t)g_Particles)
+                                   ? (void *)(uintptr_t)pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(g_Particles))
                                    : NULL);
 }
 #endif

@@ -102,12 +102,12 @@ void pres_ClearFrameBuffersPal(void) {}
  * limit 0x600 under the HUD OT. It is called only while a presentation
  * option is on, which the presenter needs. */
 void pres_PortPolySpace(void) {
-  const uint32_t lower = pres_snap_rebase((uint32_t)(uintptr_t)g_Buffers.m_LowerPolyBuffer);
-  const uint32_t top = pres_snap_rebase((uint32_t)(uintptr_t)g_Buffers.m_HudOTStart) - FAIRY_CARD_BUF;
+  const uint32_t lower = pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer));
+  const uint32_t top = pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart)) - FAIRY_CARD_BUF;
   memcpy(g_pres_prim_next, &lower, 4);
   memcpy(g_pres_prim_end, &top, 4);
-  g_pres_snap_D_800756FC = (void *)(uintptr_t)top;
-  g_pres_snap_g_HudMobys = (void *)(uintptr_t)top;
+  P32_SET(g_pres_snap_D_800756FC, (void *)(uintptr_t)top);
+  P32_SET(g_pres_snap_g_HudMobys, (void *)(uintptr_t)top);
 }
 
 /* present.c PortProjectionHook on the presenter's 16:9 switch */
@@ -168,14 +168,14 @@ static void records_begin(void) {
 
 static int sector_count(void) {
   const int n = g_Environment.m_SectorCount;
-  uintptr_t a = (uintptr_t)g_Environment.m_SectorPointer;
+  uintptr_t a = (uintptr_t)P32_GET(g_Environment.m_SectorPointer);
   if (n <= 0 || a < g_psx_arena_base || a - g_psx_arena_base >= PSX_MEM_SIZE)
     return 0;
   return n < PRES_SEEN ? n : PRES_SEEN;
 }
 
 static u32 sector_anims(int i) {
-  const u32 sec = MIPS_KUSEG(((const u32 *)g_Environment.m_SectorPointer)[i]);
+  const u32 sec = MIPS_KUSEG(((const u32 *)P32_GET(g_Environment.m_SectorPointer))[i]);
   const uintptr_t a = (uintptr_t)(sec + 0x18u);
   return a >= g_psx_arena_base && a - g_psx_arena_base < PSX_MEM_SIZE ? *(const u32 *)a : 0;
 }
