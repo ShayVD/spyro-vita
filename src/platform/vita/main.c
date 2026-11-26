@@ -261,6 +261,12 @@
  *       pres_prio=N     that thread's priority, 0x40 to 0xBF (default 0x9A,
  *                       behind the parse thread's 0x98; 0x96 is ahead of
  *                       it; #195)
+ *       pres_demo_inline=0  in an attract demo at 16:9, both presenter
+ *                       frames on that thread, the in-between one waited
+ *                       for before the real one starts (D211's order).
+ *                       Default 1 (#227, D222): the in-between frame inline
+ *                       on the game thread, only the real frame there
+ *                       (the same pictures; #232)
  *       vc_lazy=1       with persp or subpixel, the presenter's projections
  *                       worked out when first read (#193, #195; the same
  *                       pictures). Default 0 (#198): as it makes them; the
@@ -697,6 +703,8 @@ static void read_config(void) {
       g_vita_opts.pres_core = atoi(v);
     else if (!strcmp(line, "pres_prio")) /* #195 */
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
+    else if (!strcmp(line, "pres_demo_inline")) /* #227 (D222), #232 */
+      g_present_demo_inline = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy_logic")) { /* #196, #204: 0 to 3 */
@@ -1101,11 +1109,13 @@ int main(int argc, char **argv) {
   psx_vcache_set_lazy_logic(s_vc_lazy_logic);
   psx_vcache_set_repeat(s_vc_repeat);         /* #228, #259 */
   psx_vcache_set_fast_record(s_vc_fast_rec); /* #259 */
-  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
-           "vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d: the presenter's placement, the "
-           "projections' deferral and the record's form (#195, #193, D188, #259)",
+  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x "
+           "pres_demo_inline=%d vc_lazy=%d vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d: the "
+           "presenter's placement, the projections' deferral and the record's form (#195, "
+           "D222, #193, D188, #259)",
            g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
-           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic, s_vc_repeat, s_vc_fast_rec);
+           (unsigned)g_vita_pres_prio, g_present_demo_inline, s_vc_lazy, s_vc_lazy_logic,
+           s_vc_repeat, s_vc_fast_rec);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,
