@@ -11,30 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 261,
-      "branch": "perf/261-draw-distance-max-adaptive-go-past-2x",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-261",
-      "pids": [],
-      "started_at": "2026-11-25T18:45:00Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/game/lod_pres.c",
-        "src/game/moby_cull_hand.c",
-        "src/game/mips2c_rt.h",
-        "tools/mips2c/hints.yaml",
-        "src/platform/vita/picture.c",
-        "src/platform/vita/lod_time.c",
-        "src/platform/ps4/picture_ps4.c",
-        "src/platform/linux32/main.c",
-        "docs/presentation.md",
-        "docs/host-build.md",
-        "docs/vita-testing.md"
-      ],
-      "agent": "ac32ce0b6bf3102a1",
-      "last_commit_at": "2026-11-25T21:04:02Z"
-    },
-    {
       "issue": 266,
       "branch": "feat/266-wobble-fix-toasty-s-2-envdraw-missed-a",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-266",
@@ -49,7 +25,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "nudged_at": "2026-11-25T21:46:00Z"
     }
   ],
-  "last_good": "4c8a009927d5bec754c74f56162f3f22572a19f5",
+  "last_good": "20d3514589db959121604783a5876ea91f152ad9",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -298,8 +274,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-4c8a009",
-        "commit": "4c8a009927d5bec754c74f56162f3f22572a19f5"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+        "commit": "20d3514589db959121604783a5876ea91f152ad9"
       }
     }
   },
