@@ -2060,3 +2060,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Measured:** host D and D60 missed 2,511 → 0; every other host route stays 0. Vita3K: missed 0 in every window of all 8 routes; demo60 `vc.misses` −38%.
 - **Checked** (`runtime/autopilot/runs/vita/issue-243-A/`): host FNV per polygon (D168) on D, D60, T, S, P, Pf and Si, Pi, Pfi, S60, O60: 0 found-before changed, 0 became affine, 722 newly found on D and D60 (29 sprites drawn affine before and after now sit at their handed-over places); Vita build; Vita3K 8 routes, shots identical to `base-20d3514` (checked by the coordinator); counters the same apart from the timing-dependent ones; gate host ctest and `noassets`.
 - **Missed after this:** 0 on every host route (the 9 gameplay routes and the demo routes) and in every Vita3K window of the 8 routes.
+
+## 2026-11-26 — where Artisans' 60 Hz frame goes
+
+### D261. The vertex cache's record keeps a repeat's record in the entry and inlines the native record; in Artisans 2x costs the game thread no more than 1x (#259, 2026-11-26)
+- **Why:** hardware session 8 (D252) held 2x at 1x in Artisans: the game thread took 15.1–16.3 ms of the 14.5 ms budget (D219: 15.2).
+- **Where the time goes** (`runtime/autopilot/runs/vita/issue-259-A/`):
+  - At 11,400 the game thread worked out 5,128 projections a vblank at once (91% of 5,624); the walk on core 1 was 85% busy, so its idle rule took few. Over the 60 Hz windows the draw's ms follow those projections (about 2.5–2.8 µs each, the renderer included) better than they follow KB.
+  - Host Artisans with every projection worked out at once: the record is 79% of the renderers' time (qemu overstates it); per draw env 1,929 records (28% exact repeats), mobys 1,097, sky 418, Spyro 242, fx 51, particles 30. gprof: `rtp_apply` 16% self.
+  - The `expand 1094 ms` on the vcache and atlas lines is the render thread's vertex expand on core 2 (as D199 found), not game-thread time; core 2 has about 6.5 ms a vblank free.
+  - #225's divisions are on the walk (gprof 0.29% and 0.22%), not on the game thread.
+- **2x costs no more than 1x:** host Artisans with the budget off, x2.00 draws write 62–74 KB against 59–77 KB at 1x, record 7.71 M projections against 7.69 M and take the same time. The budget holds 1x there because the 1x frame is already over it.
+- **What** (`vcache.c`, `psx_vcache.h`, `prof_draw.c`, `main.c`):
+  - D221's repeat record (`Rp`) moves from the 96 KB `rp` array into an 8-byte `RpE` in candidate 3's place while an entry has at most three candidates: the generation's distance from the table's frame start (`rp_g0`) plus 1 in 15 bits, a clamped flag and the vertex; 0x7FFF generations or more past it keeps and skips nothing. Skipping only drops maths that changes nothing, so the answers are the same by construction (host O60 skips 3,750,225 against 3,750,239). `vc_repeat=0/1/2` (2 default; 1 is D221's array; covers #232's key).
+  - `ngte_vcache` inlines `find` and `rtp_apply` (`vc_fast_rec=0/1`, default 1): about 80 of some 450 ARM instructions per at-once record.
+  - Both keys are on the `threads:` line. New Vita line `draw vc N:` (each part's records a vblank: recorded / at once / kept); the host's `--prof-draw` prints the same at exit, from vblank `PROF_DRAW_FROM`. Host switches `VC_REPEAT`, `VC_FAST_REC`, `VC_LAZY_LOGIC`.
+- **Checked:** host FNV per polygon (D168) identical on 11 routes (S60, T, O60, D60, S, Si, P, Pi, Pf, Pfi, D) and on 4 with `VC_LAZY_LOGIC=0` against D221's path; Vita3K 8 routes, 694 shots identical to `base-20d3514` (checked by the coordinator); fixed counters the same, timing-dependent ones within a second base run's spread; Vita build (and with the keys, `vc_repeat=1 vc_fast_rec=0` shots identical); gate host ctest and `noassets`. No time claim from the host or Vita3K.
+- **Open:** the hardware A/B (`runs/vita/issue-259-A/hw/`: Artisans base, fix, base, fix and Toasty base, fix, with the owner's settings at MAX 400). Two larger options the owner decides: letting the distance grow where it writes no more than 1x even when 1x is over budget, and working out the kept projections on core 2.

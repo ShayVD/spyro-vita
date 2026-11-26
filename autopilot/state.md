@@ -9,26 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 259,
-      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
-      "pids": [],
-      "started_at": "2026-11-26T03:55:00Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/prof_draw.c",
-        "src/platform/linux32/prof_draw.c",
-        "src/platform/vita/lod_time.c",
-        "docs/presentation.md"
-      ],
-      "agent": "a986f5e471a4bb9db",
-      "last_commit_at": "2026-11-26T03:55:00Z"
-    }
-  ],
-  "last_good": "4947d649c52b5fffbf150f8cdd75e45b16d8cc3b",
+  "workers": [],
+  "last_good": "e744b314d32ffa9b560934782ee4e6cfa8452b48",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -242,6 +224,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "Should MAX (ADAPTIVE) draw past 2x?",
       "default_taken": "owner 2026-11-25: yes, up to the most it can measure and keep 60 fps stable; after #260",
       "switch": "draw_distance="
+    },
+    {
+      "at": "2026-11-26T07:10:00Z",
+      "issue": 271,
+      "question": "let MAX grow where extra distance writes no more than 1x when 1x is over budget",
+      "pick": "yes, behind dd_free, default off until a hardware A/B",
+      "status": "open"
+    },
+    {
+      "at": "2026-11-26T07:10:00Z",
+      "issue": 272,
+      "question": "work out kept vcache projections on core 2 (large restructure)",
+      "pick": "after #259 hardware A/B",
+      "status": "open"
     }
   ],
   "attempts": {
@@ -272,13 +268,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": {
-    "asked_at": "2026-11-26T00:40:00Z",
-    "issue": 261,
-    "build": "runtime/autopilot/artifacts/vita/20d3514.vpk",
+    "asked_at": "2026-11-26T07:10:00Z",
+    "issues": [
+      261,
+      259
+    ],
+    "builds": [
+      "runtime/autopilot/artifacts/vita/20d3514.vpk (#261 MAX 400)",
+      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-base-476b5fa.vpk",
+      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-259-fix2.vpk"
+    ],
     "routes": [
-      "Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t",
-      "Stone Hill + Artisans play at 400, shot_every=0, vs D252 ap19a",
-      "optional Toasty at 200 for A/B"
+      "#261: Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t; Stone Hill + Artisans play at 400 shot_every=0 vs D252 ap19a",
+      "#259: runs/vita/issue-259-A/hw/hw-session-259.sh: Artisans base, fix, base, fix (ap20-art) and Toasty base, fix (ap20-toasty), plus fix with persp=0 subpixel=0 and vc_lazy_logic=2"
     ],
     "status": "waiting for the owner"
   },
