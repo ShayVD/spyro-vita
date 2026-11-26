@@ -133,6 +133,11 @@ extern const PresentPresOut *g_present_pres;
 /* The host's --pres-write-check (stage 7g, D128): called before (0) and
  * after (1) each presenter frame drawn inline; NULL elsewhere. */
 extern void (*g_present_pres_watch)(int after);
+/* #227 (D222): in an attract demo at 16:9, 1 (default) draws the in-between
+ * frame inline on the game thread and gives the platform's worker only the
+ * 16:9 real frame; 0 gives the worker both (D211's order). The Vita's
+ * pres_demo_inline= (#232). */
+extern int g_present_demo_inline;
 
 /* Stage 7f's numbers since the last call (the platform's present line):
  * frames the presenter drew on the worker and inline, the worker's time,
