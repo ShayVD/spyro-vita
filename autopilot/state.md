@@ -314,6 +314,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
       "pr": 258,
       "merged_at": "2026-11-25T09:43:35Z"
+    },
+    {
+      "branch": "release/phase8-wobble-draw-distance-d264",
+      "commit": "31a47eb",
+      "pr": 275,
+      "merged_at": null
     }
   ]
 }
