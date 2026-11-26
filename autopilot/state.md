@@ -40,6 +40,18 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "aaeff4f6d30e98e7c",
       "last_commit_at": "2026-11-26T00:50:00Z"
+    },
+    {
+      "issue": 268,
+      "branch": "docs/268-readme-max-adaptive-draws-up-to-4x-where",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-268",
+      "pids": [],
+      "started_at": "2026-11-26T01:15:00Z",
+      "files": [
+        "README.md"
+      ],
+      "agent": "a2a43d1d57ec59191",
+      "last_commit_at": "2026-11-26T01:15:00Z"
     }
   ],
   "last_good": "67b47080b3796da837768453064a514e134ef688",
@@ -264,7 +276,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "266": 1,
     "243": 1,
     "267": 1,
-    "262": 1
+    "262": 1,
+    "268": 1
   },
   "blocked": [],
   "issues_filed": {
