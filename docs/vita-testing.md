@@ -552,6 +552,18 @@ At start-up the log says which renderer runs: `renderer: GPU (vitaGL, gpu=1)` th
 `gpu: GPU renderer ready (gpu=1)`. Anything else on a `gpu:` line (`shader compiler error`,
 `does not compile`, `using the software renderer`) is what to send back.
 
+Encore's `targets/vita/tools/hw_log.py` (`third_party/encore`) reads the 300-vblank lines through
+`tools/vita/hw_log.json`, its `--format` file: a window is a `vblank N:` line (pictures/s from P and
+T), with `late` and `pictures` from that line, `game_ms` and `busy` from `time N:`, `walk_ms` and
+`join_ms` from `parse N:`, and its scene is the level the last `where:` line before vblank N names.
+`hw_log.py summary` over one level's windows with `--drop-loads` gives `fps60_summary.py`'s late
+vblanks and busy %. Given several logs of one pad route (A runs, then `--vs` and the B runs) it prints
+each run's level changes, groups the runs by them and warns when an A/B spans route timings (hardware
+session 9; Encore kb `realtime-pad-route-splits-into-timings`):
+
+    python3 third_party/encore/targets/vita/tools/hw_log.py summary logs/hw-X1/spyro.log \
+      logs/hw-X2/spyro.log --vs logs/hw-X3/spyro.log --frames 11700-21000 --format tools/vita/hw_log.json
+
 ## Controls
 
 The PS1 pad maps one to one: ✕ ○ □ △, START, SELECT, L, R, the d-pad. The pad is reported as
