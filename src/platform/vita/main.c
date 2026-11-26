@@ -102,9 +102,9 @@
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=6 (2 at D45; 3: D68; 4: D150;
+ *                       with config_version=7 (2 at D45; 3: D68; 4: D150;
  *                       5: D153, tex_filter= and dynres= below; 6: #177,
- *                       wobble= below))
+ *                       wobble= below; 7: #267, draw_distance= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -297,10 +297,13 @@
  *                       (wobble, res, draw_distance are also options menu
  *                       rows: picture.c, D48)
  *       draw_distance=N the draw distance, percent: 100 (the default,
- *                       the original; the menu's NORMAL) or 200 (MAX
- *                       (ADAPTIVE), #260; 150 is still read): the world's
- *                       detail and the mobys, picture only (src/game/lod.c,
- *                       D49)
+ *                       the original; the menu's NORMAL) or 400 (MAX
+ *                       (ADAPTIVE), #261; 150 and 200 are still read): the
+ *                       world's detail and the mobys, picture only
+ *                       (src/game/lod.c, D49). A 200 in the block an older
+ *                       menu wrote (below config_version=7, every line
+ *                       after its config_version line a row's) was its
+ *                       MAX (2X before #260): read as 400 (#267)
  *       dd_budget=auto  with 60 Hz logic in play, the longer draw
  *                       distance's work budget follows the game thread's
  *                       measured time per logic frame (the default, #212;
@@ -512,10 +515,26 @@ int g_vita_config_pal60;
 const char *g_vita_config_rows_gone[5];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
+int vita_menu_key(const char *key);        /* menu.c (#267) */
+int vita_menu_last_value(const char *key); /* menu.c (#267) */
+
+/* #267: the rows every options menu has written since its DRAW DISTANCE
+ * row came (D48, with RESOLUTION; the others from D45-D47). The test tools'
+ * base lines write some of them (widescreen, interp, free_camera,
+ * cam_invert_x, cam_invert_y), never res, analog or cam_speed. */
+static const char *const k_menu_since_d48[] = {
+    "widescreen", "interp",       "res",          "draw_distance", "analog",
+    "free_camera", "cam_invert_x", "cam_invert_y", "cam_speed",
+};
+#define MENU_SINCE_D48_ALL ((1u << (sizeof k_menu_since_d48 / sizeof k_menu_since_d48[0])) - 1)
 
 static void read_config(void) {
   char line[512];
   int version = 1, version_max = 1, interp_line = 0, wobble_line = 0, i;
+  /* #267: the lines after the last config_version line are all the menu's
+   * rows' keys (tail_rows), and which of k_menu_since_d48 they hold */
+  int version_line = 0, tail_rows = 0;
+  unsigned tail_d48 = 0;
   /* #177: persp= and subpixel= lines, taken after the loop over wobble= */
   int pic_line[2] = {0, 0}, pic_value[2] = {0, 0};
   /* D153: the two keys whose menu rows are gone; taken after the loop, once
@@ -545,6 +564,16 @@ static void read_config(void) {
       interp_line = 1; /* D44, below */
     if (!strcmp(line, "wobble"))
       wobble_line = 1; /* #177, below */
+    if (!strcmp(line, "config_version")) { /* #267, below */
+      version_line = tail_rows = 1;
+      tail_d48 = 0;
+    } else if (!vita_menu_key(line)) {
+      tail_rows = 0;
+    } else {
+      for (i = 0; i < (int)(sizeof k_menu_since_d48 / sizeof k_menu_since_d48[0]); i++)
+        if (!strcmp(line, k_menu_since_d48[i]))
+          tail_d48 |= 1u << i;
+    }
     if (vita_menu_load(line, v))
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
     else if (!strcmp(line, "pal50"))
@@ -723,6 +752,27 @@ static void read_config(void) {
              "default since D150 (interp=4; change it in the menu, SELECT+START)",
              g_vita_opts.interp, g_vita_opts.interp == 1 ? 2 : 4);
     g_vita_opts.interp = 4;
+  }
+  /* The menu's MAX (ADAPTIVE) was 200 from #260 to #261 (D255; 2X from D49
+   * until #260), and is 400 (DD_MAX_PCT) since: a 200 that menu saved would
+   * show 200% and step to NORMAL. So a draw_distance=200 in the block an
+   * older menu wrote is read as today's MAX. The menu writes the file's other
+   * lines, then config_version=N, then every row's key and nothing else: here
+   * the last config_version line is below 7, and every line after it is a
+   * row's key (or a gone row's), with the nine rows every menu has written
+   * since D48 among them. The test tools put their run's lines (frames=,
+   * shot=, pad=, dd_budget=, ...) after their config_version line, or write
+   * none (the kit's v3k_run.sh), so a developer's 200 stays 200, as does a
+   * 200 with config_version=7 (the menu writes back a value it didn't
+   * change). */
+  if (version_line && version < 7 && tail_rows && tail_d48 == MENU_SINCE_D48_ALL &&
+      g_vita_opts.draw_distance == 200) {
+    const int max = vita_menu_last_value("draw_distance");
+    if (max > 200) {
+      vita_log("config: draw_distance=200 from the options menu before config_version=7 is its "
+               "MAX (ADAPTIVE): %d%% (#267)", max);
+      g_vita_opts.draw_distance = max;
+    }
   }
   if (g_vita_config_pal60)
     vita_log("config: pal60= is no longer read (D150): the PAL disc runs at US timing, and the "

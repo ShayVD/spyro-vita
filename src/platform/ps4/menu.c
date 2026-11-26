@@ -68,15 +68,44 @@ int ps4_menu_load(const char *key, const char *v) {
   return menu_opts_load(k_lists, NLISTS, key, v);
 }
 
+/* main.c's read_config (#267), as the Vita's: 1 a row's key; 2 a row an
+ * older menu wrote (persp and subpixel, before PSX WOBBLE); 0 neither.
+ * Loads nothing. */
+int ps4_menu_key(const char *key) {
+  int l, i;
+  for (l = 0; l < NLISTS; l++)
+    for (i = 0; i < k_lists[l]->n; i++)
+      if (k_lists[l]->opts[i].key && k_lists[l]->opts[i].value &&
+          !strcmp(k_lists[l]->opts[i].key, key))
+        return 1;
+  return !strcmp(key, "persp") || !strcmp(key, "subpixel") ? 2 : 0;
+}
+
+/* main.c's read_config (#267): the value of a named row's last name (the
+ * DRAW DISTANCE row's MAX (ADAPTIVE), picture_ps4.c's DD_MAX_PCT); -1 with
+ * no such row. */
+int ps4_menu_last_value(const char *key) {
+  int l, i;
+  for (l = 0; l < NLISTS; l++)
+    for (i = 0; i < k_lists[l]->n; i++) {
+      const MenuOption *o = &k_lists[l]->opts[i];
+      if (o->key && o->value && o->names && o->count > 0 && !strcmp(o->key, key))
+        return o->values ? o->values[o->count - 1] : o->count - 1;
+    }
+  return -1;
+}
+
 static void save(void) {
   /* NULL-terminated (vpk_config_rewrite): drop[1] with no NULL had it
    * read past the array, a crash closing the menu (GPU run 8); persp= and
-   * subpixel=, the rows before PSX WOBBLE, go too */
+   * subpixel=, the rows before PSX WOBBLE, go too. config_version=6: a
+   * draw_distance=200 here is 200%, not the MAX (ADAPTIVE) the menu wrote
+   * as 200 with 5 (main.c, read_config; #267) */
   static const char *const drop[] = {"config_version", "persp", "subpixel", NULL};
   char line[512] = "";
   size_t n = 0;
   int l, i;
-  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=5\n") != 0) {
+  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=6\n") != 0) {
     host_log("menu: cannot write %s", CONFIG);
     return;
   }
