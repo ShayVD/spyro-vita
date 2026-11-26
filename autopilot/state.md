@@ -40,22 +40,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "aaeff4f6d30e98e7c",
       "last_commit_at": "2026-11-26T00:50:00Z"
-    },
-    {
-      "issue": 262,
-      "branch": "docs/262-docs-the-vcache-own-fields-include",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-262",
-      "pids": [],
-      "started_at": "2026-11-26T00:50:00Z",
-      "files": [
-        "docs/vita-testing.md",
-        "docs/host-build.md"
-      ],
-      "agent": "a037bc636be711875",
-      "last_commit_at": "2026-11-26T00:50:00Z"
     }
   ],
-  "last_good": "5ac3c11d2c5fe5bd8168f8a8c3c1ad212f07ef87",
+  "last_good": "67b47080b3796da837768453064a514e134ef688",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
