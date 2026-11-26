@@ -43,10 +43,10 @@ uintptr_t psx_kuseg_host(uint32_t a);
 #endif
 #define PSX_KUSEG(p)                                                           \
   ((__typeof__(p))(                                                            \
-      (uint32_t)(uintptr_t)(p) - 1u < 0xFFFFu                                  \
-          ? (uintptr_t)g_psx_kernel_ram + (uint32_t)(uintptr_t)(p)             \
-      : (uint32_t)(uintptr_t)(p) - 0x10000u < 0x1F0000u                        \
-          ? PSX_KUSEG_RAM_((uint32_t)(uintptr_t)(p))                           \
+      (uint32_t)(uintptr_t)P32_ENC(p) - 1u < 0xFFFFu                           \
+          ? (uintptr_t)g_psx_kernel_ram + (uint32_t)(uintptr_t)P32_ENC(p)      \
+      : (uint32_t)(uintptr_t)P32_ENC(p) - 0x10000u < 0x1F0000u                 \
+          ? PSX_KUSEG_RAM_((uint32_t)(uintptr_t)P32_ENC(p))                    \
           : (uintptr_t)(p)))
 
 /* Packed and tagged addresses (decisions D97, D100): the native build's

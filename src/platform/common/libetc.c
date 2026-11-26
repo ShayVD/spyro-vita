@@ -30,13 +30,13 @@ int VSync(int mode) {
 }
 
 int VSyncCallback(void (*f)(void)) {
-  int old = (int)(intptr_t)vsync_callback;
+  int old = (int)(intptr_t)P32_ENC(vsync_callback);
   vsync_callback = f;
   return old;
 }
 
 int ResetCallback(void) {
-  int old = (int)(intptr_t)vsync_callback;
+  int old = (int)(intptr_t)P32_ENC(vsync_callback);
   vsync_callback = NULL;
   return old;
 }

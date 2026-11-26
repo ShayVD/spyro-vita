@@ -45,12 +45,12 @@ u32 mips2c_lwr(u32 old, u32 addr) {
 }
 
 void mips2c_swl(u32 v, u32 addr) {
-  u32 *p = (u32 *)(uintptr_t)(addr & ~3u), sh = (addr & 3u) * 8u;
+  u32 *p = (u32 *)P32_DEC((uintptr_t)(addr & ~3u)), sh = (addr & 3u) * 8u;
   *p = (*p & ~(0xFFFFFFFFu >> (24u - sh))) | (v >> (24u - sh));
 }
 
 void mips2c_swr(u32 v, u32 addr) {
-  u32 *p = (u32 *)(uintptr_t)(addr & ~3u), sh = (addr & 3u) * 8u;
+  u32 *p = (u32 *)P32_DEC((uintptr_t)(addr & ~3u)), sh = (addr & 3u) * 8u;
   *p = (*p & ~(0xFFFFFFFFu << sh)) | (v << sh);
 }
 

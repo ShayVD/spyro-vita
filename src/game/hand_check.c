@@ -52,7 +52,7 @@ static void sweep_begin(void) {
   u32 p = MIPS_KUSEG(*(u32 *)g_Particles);
   s_sweep_n = 0;
   for (;;) {
-    const s16 t = *(s16 *)(uintptr_t)p;
+    const s16 t = *(s16 *)P32_DEC((uintptr_t)p);
     if ((t >> 8) == -1 || s_sweep_n == SWEEP_MAX)
       break;
     if (t >= 0) {
@@ -60,11 +60,11 @@ static void sweep_begin(void) {
       if (getenv("SPYRO_SWEEP_ONLY")) /* one type only (tests) */
         type = (u8)atoi(getenv("SPYRO_SWEEP_ONLY"));
       s_sweep_at[s_sweep_n] = p;
-      memcpy(s_sweep_save[s_sweep_n], (const void *)(uintptr_t)p, 16);
-      *(u8 *)(uintptr_t)(p + 1) = type;
+      memcpy(s_sweep_save[s_sweep_n], (const void *)P32_DEC((uintptr_t)p), 16);
+      *(u8 *)P32_DEC((uintptr_t)(p + 1)) = type;
       if (type == 5)
-        *(u8 *)(uintptr_t)(p + 9) &= 0x7F;
-      if (type >= 5 && !((const u32 *)D_80076278)[*(u8 *)(uintptr_t)p]) {
+        *(u8 *)P32_DEC((uintptr_t)(p + 9)) &= 0x7F;
+      if (type >= 5 && !((const u32 *)D_80076278)[*(u8 *)P32_DEC((uintptr_t)p)]) {
         /* types 5 on draw from their subtype's texture table (D_80076278);
          * a subtype with none would have the asm read its texture words
          * from PS1 address 0x80000000, which the arena build maps onto its
@@ -75,16 +75,16 @@ static void sweep_begin(void) {
         for (k = 0; k < 64 && !((const u32 *)D_80076278)[k]; k++)
           ;
         if (k < 64)
-          *(u8 *)(uintptr_t)p = (u8)k;
+          *(u8 *)P32_DEC((uintptr_t)p) = (u8)k;
       }
       if (type == 4) {
         /* a 3D streak's two ends are view-space translations (+0x4, +0x8,
          * +0xC): another type's data never puts them on screen, so these
          * get a short streak in front of the camera, varied a little */
         const u32 d = s_sweep_turn & 0x3F;
-        *(u32 *)(uintptr_t)(p + 0x4) = d | (d << 16);
-        *(u32 *)(uintptr_t)(p + 0x8) = 0x200u | ((0x20u + d) << 16);
-        *(u32 *)(uintptr_t)(p + 0xC) = (0x18u + d) | (0x220u << 16);
+        *(u32 *)P32_DEC((uintptr_t)(p + 0x4)) = d | (d << 16);
+        *(u32 *)P32_DEC((uintptr_t)(p + 0x8)) = 0x200u | ((0x20u + d) << 16);
+        *(u32 *)P32_DEC((uintptr_t)(p + 0xC)) = (0x18u + d) | (0x220u << 16);
       }
       s_sweep_n++;
     }
@@ -95,7 +95,7 @@ static void sweep_begin(void) {
 static void sweep_end(void) {
   int i;
   for (i = 0; i < s_sweep_n; i++)
-    memcpy((void *)(uintptr_t)s_sweep_at[i], s_sweep_save[i], 16);
+    memcpy((void *)P32_DEC((uintptr_t)s_sweep_at[i]), s_sweep_save[i], 16);
 }
 
 static void (*s_log)(const char *fmt, ...);

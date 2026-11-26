@@ -56,7 +56,7 @@ extern char g_HudOT[];
 #define GPF0LM() m2c_gte_0x198003D() /* sf 1, lm 0 (the opcode's bit 19) */
 #define MVMVA_RT_IR() m2c_gte_0x49E012()
 
-#define S16(a) ((u32)(s32)*(const s16 *)(uintptr_t)(u32)(a))
+#define S16(a) ((u32)(s32)*(const s16 *)P32_DEC((uintptr_t)(u32)(a)))
 #define SRA(x, n) ((u32)((s32)(x) >> (n)))
 /* a pointer the game keeps in RAM, as an address the code can use */
 #define PTR(a) MIPS_KUSEG(a)
@@ -233,7 +233,7 @@ static u32 TurnedQuad(u32 prim, u32 p, u32 tex, u32 depth, u32 ot, s32 mac1, s32
 /* ===================================================================== */
 
 static u32 ParticlesDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
-  const u32 scr = SCRATCH_BASE, cam = ADDR_ND(g_Camera);
+  const u32 scr = P32_ENC(SCRATCH_BASE), cam = ADDR_ND(g_Camera);
   const u32 sin_tab = ADDR_ND(D_8006CBF8), tex_tab = ADDR_ND(D_80076278);
   u32 cx, cy, cz, lim, p, prim, ot, gp, i;
   PSync ps;
@@ -967,7 +967,7 @@ static u32 GlowsAndSparkles(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
  * to the centre, flat semi-transparent triangles (F3, additive), into the
  * HUD OT behind a draw mode packet. */
 static u32 DragonRing(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
-  const u32 cam = ADDR_ND(g_Camera), d = ADDR_ND(D_80076248), scr = SCRATCH_BASE;
+  const u32 cam = ADDR_ND(g_Camera), d = ADDR_ND(D_80076248), scr = P32_ENC(SCRATCH_BASE);
   const u32 cos_tab = ADDR_ND(D_8006CC78), sin_tab = ADDR_ND(D_8006CBF8);
   u32 centre, ang, o, radius, prim, hud, shade, in, out;
   /* native but for the last four points (render_hand.h's NgteSync) */

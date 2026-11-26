@@ -35,7 +35,7 @@ static void scratch_relocs(void) {
   P32F(uint32_t *) *r;
   for (r = s1_scratch_relocs; P32_GET(*r); r++)
 #if SPYRO_NATIVE_MEM
-    *P32_GET(*r) = (uint32_t)(uintptr_t)(g_psx_scratch + (*P32_GET(*r) & 0x3FFu));
+    *P32_GET(*r) = (uint32_t)(uintptr_t)P32_ENC((g_psx_scratch + (*P32_GET(*r) & 0x3FFu)));
 #else
     **r = (uint32_t)(uintptr_t)PSX_ARENA(0x80000000u + (**r & 0x3FFu));
 #endif

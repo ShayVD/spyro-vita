@@ -120,11 +120,11 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
  * g_psx_scratch (render_hand.h SCRATCH_BASE, D106). */
 #define MIPS_SCRATCH_HI ((u32)g_psx_arena_base)
 
-#define M_U8(a) (*(u8 *)(uintptr_t)(u32)(a))
+#define M_U8(a) (*(u8 *)P32_DEC((uintptr_t)(u32)(a)))
 #define M_S8(a) (*(s8 *)(uintptr_t)(u32)(a))
 #define M_U16(a) (*(u16 *)(uintptr_t)(u32)(a))
 #define M_S16(a) (*(s16 *)(uintptr_t)(u32)(a))
-#define M_U32(a) (*(u32 *)(uintptr_t)(u32)(a))
+#define M_U32(a) (*(u32 *)P32_DEC((uintptr_t)(u32)(a)))
 
 /* PS1 KUSEG RAM mirror: addresses below 2 MB are the arena (every memory
  * access in translated code goes through it, tools/mips2c). */
@@ -132,7 +132,7 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
 /* The native build (decisions D100) links no translated code and has no
  * aliases of PS1 RAM: the hand C's HPTR is a cast, and the addresses the
  * game packs or tags decode in psx_mem.h. */
-#define MIPS_KUSEG(a) ((u32)(a))
+#define MIPS_KUSEG(a) ((u32)P32_ENC(a))
 #elif SPYRO_ARENA_MOVED
 /* A moved arena (the Vita's, decisions D25; linux32's with SPYRO_ARENA_AT,
  * D97) is at some 16 MB-aligned 0x8Y000000, not 0x80000000, so two more

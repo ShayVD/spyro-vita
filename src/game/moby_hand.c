@@ -280,7 +280,7 @@ typedef struct {
  * as the vertices PsyCross would make of it: into the marker at the
  * bucket's tail, or as a marker linked in its place. */
 HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
-  u32 *b = (u32 *)(uintptr_t)bucket;
+  u32 *b = (u32 *)P32_DEC((uintptr_t)bucket);
   u32 last = b[0];
   b[0] = c->prim;
   if (last) {
@@ -298,7 +298,7 @@ HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
 }
 
 HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
-  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (g_nd.on && nd_take(kind, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -308,7 +308,7 @@ HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
 /* Link for a record built from values (D86, nd_open's r): the primitive's
  * stores after the face's last check are skipped. */
 HAND_INLINE void LinkRec(FaceCtx *c, u32 bucket, u32 size, u32 *r) {
-  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (nd_commit(r, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -967,13 +967,13 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
   n = s.anim->m_VertCount[s.detail < 0];
   if (!n)
     goto restore;
-  depth = n <= 0x80 ? (u32 *)(SCRATCH_BASE + SCRATCH_DEPTHS) : (u32 *)(D_8006FCF4 + TBL_BIG_DEPTHS);
+  depth = n <= 0x80 ? (u32 *)P32_DEC((P32_ENC(SCRATCH_BASE) + SCRATCH_DEPTHS)) : (u32 *)(D_8006FCF4 + TBL_BIG_DEPTHS);
   if (s.progress) {
     if (!TransformBlendN(&sync, FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
-                         n, s.progress, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip))
+                         n, s.progress, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), depth, s.clip))
       goto restore;
   } else if (
-      !TransformN(&P, &sync, FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip)
+      !TransformN(&P, &sync, FrameStreams(s.frame), n, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), depth, s.clip)
   ) {
     goto restore;
   }
@@ -982,7 +982,7 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
   FaceCtxBegin(&c, &s, prim);
   c.nvert = n;
   c.depth = (const u8 *)depth;
-  c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
+  c.xy = (const u8 *)P32_DEC((uintptr_t)P32_ENC(SCRATCH_BASE));
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
   for (faces++; faces != end;) {
     const u32 fw = faces[0];
@@ -1014,7 +1014,7 @@ static u32 MobyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   nd_begin();
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
-    const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
+    const MobyRecord *r = (const MobyRecord *)P32_DEC((uintptr_t)rec);
     if (PORT_LOD_RECORDS_FULL(rec, prim))
       break;
     if (!r->m_Flags)
@@ -1219,7 +1219,7 @@ typedef struct {
 } LitCtx;
 
 static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucket, u32 size) {
-  u32 *b = (u32 *)(uintptr_t)bucket;
+  u32 *b = (u32 *)P32_DEC((uintptr_t)bucket);
   u32 last = b[0];
   b[0] = c->prim;
   if (last) {
@@ -1238,7 +1238,7 @@ static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucke
 
 static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
                                                           int kind) {
-  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
+  if (g_nd.on && nd_take(kind, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) { /* as Link's */
     c->prim += size;
     return;
   }
@@ -1248,7 +1248,7 @@ static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket,
 /* LinkRec's (D86) */
 static inline __attribute__((always_inline)) void LitLinkRec(LitCtx *c, u32 bucket, u32 size,
                                                              u32 *r) {
-  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (nd_commit(r, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -1275,7 +1275,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, Ng
     AT32(p + 0x8) = xy[0];
     AT32(p + 0x10) = xy[1];
     AT32(p + 0x18) = xy[2];
-    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[2]) - c->zbias;
+    sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[2])) - c->zbias;
     AT32(p + 0x4) = col0 + 0x30000000u;
     if ((s32)sum <= 0)
       return;
@@ -1301,7 +1301,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, Ng
     AT32(p + 0x10) = xy[1];
     AT32(p + 0x18) = xy[2];
     AT32(p + 0x20) = xy[3];
-    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+    sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3])) - c->zbias;
     if ((s32)sum <= 0)
       return;
     if ((r = nd_open(4)) != NULL) {
@@ -1342,7 +1342,7 @@ static inline void LitFlat(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 m
   AT32(p + 0x10) = xy[2];
   AT32(p + 0x14) = xy[3];
   l = LightNormal(base, &n, &c->lc);
-  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+  sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3])) - c->zbias;
   if ((s32)sum <= 0)
     return;
   bucket = LIT_BUCKET(sum);
@@ -1393,7 +1393,7 @@ static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 
   AT32(p + 0xC) = xy[1];
   AT32(p + 0x10) = xy[2];
   AT32(p + 0x14) = xy[3];
-  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]);
+  sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1]));
   n = FaceNormal(&c->rot, cw);
   c1 = AT32(colours);
   c2 = AT32(colours + 4);
@@ -1432,7 +1432,7 @@ static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 
   }
   AT32(p) = tag;
   AT32(p + 0x4) = code - opaque + r + (g << 8) + (b << 16);
-  sum += LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]);
+  sum += P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3]));
   if ((s32)sum <= 0)
     return;
   LitLink(c, LIT_BUCKET(sum), size, size == 0x14 ? ND_K_F3 : ND_K_F4);
@@ -1447,7 +1447,7 @@ static inline u32 Abs32(u32 v) {
  * ended the list. */
 static int LitMoby(u32 moby, u32 *shadow) {
   u8 *const m = HPTR(u8, moby);
-  u32 *const scr = (u32 *)SCRATCH_BASE;
+  u32 *const scr = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   const u32 half = AT16(m + MOBY_RADIUS); /* radius | was drawn << 8 */
   const LitModel *model;
   u32 x, y, z, zone, angles, clip, dqa, drawn, zbias, n, i, all_out = ~0u, verts, model_addr;
@@ -1742,7 +1742,7 @@ static int LitMoby(u32 moby, u32 *shadow) {
 }
 
 static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
-  u32 *const scr = (u32 *)SCRATCH_BASE;
+  u32 *const scr = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   const u32 *cam = (const u32 *)g_Camera;
   const u32 *light = (const u32 *)D_800770C8;
   u32 list = PSX_ADDR(D_8006FCF4 + TBL_LIT);
@@ -2270,9 +2270,9 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
     goto restore;
   if (s.progress) {
     if (!SpecTransformBlend(&sync, FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
-                            n, s.progress, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip))
+                            n, s.progress, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), ent, s.clip))
       goto restore;
-  } else if (!SpecTransform(&sync, FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip)) {
+  } else if (!SpecTransform(&sync, FrameStreams(s.frame), n, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), ent, s.clip)) {
     goto restore;
   }
 
@@ -2283,7 +2283,7 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
   FaceCtxBegin(&c, &s, prim);
   c.nvert = n;
   c.depth = (const u8 *)ent;
-  c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
+  c.xy = (const u8 *)P32_DEC((uintptr_t)P32_ENC(SCRATCH_BASE));
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
   for (faces++; faces != end;) {
     const u32 fw = faces[0];
@@ -2313,7 +2313,7 @@ static u32 SpecDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   nd_begin();
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
-    const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
+    const MobyRecord *r = (const MobyRecord *)P32_DEC((uintptr_t)rec);
     if (PORT_LOD_RECORDS_FULL(rec, prim))
       break;
     if (!r->m_Flags)

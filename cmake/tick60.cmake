@@ -87,7 +87,8 @@ foreach(row ${ovl_rows})
       -- "${CMAKE_C_COMPILER}" ${OVL_CPP_FLAGS} -DOVERLAY_NAME=${ovl} -DIS_${ovl}
          -DSPYRO_TICK60=1 -include ${T60_RULES_H}
          "${S1_DIR}/src/overlays/${file}"
-    DEPENDS "${S1_DIR}/src/overlays/${file}" "${OVL_TOOL}" "${T60_RULES_H}"
+    DEPENDS "${S1_DIR}/src/overlays/${file}" "${OVL_TOOL}" "${T60_RULES_H}" "${SPYRO_P32_H}"
+            "${CMAKE_SOURCE_DIR}/src/compat/port_prefix.h"
     IMPLICIT_DEPENDS C "${S1_DIR}/src/overlays/${file}"
     COMMENT "tick60: overlay ${ovl}'s ${file}"
     VERBATIM)

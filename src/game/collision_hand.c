@@ -1294,14 +1294,14 @@ static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int p
           hit = m;
         if (arg5 & 1) {
           MobyPushOut(pPos, v, len2, limit);
-          return (int)(uintptr_t)m;
+          return (int)(uintptr_t)P32_ENC(m);
         }
         if (!(arg5 & 2))
-          return (int)(uintptr_t)hit;
+          return (int)(uintptr_t)P32_ENC(hit);
       }
     }
   }
-  return arg5 & 1 ? 0 : (int)(uintptr_t)hit;
+  return arg5 & 1 ? 0 : (int)(uintptr_t)P32_ENC(hit);
 }
 
 /* Whether a sphere at pPos of radius pRadius touches a moby's collision

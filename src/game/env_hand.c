@@ -72,7 +72,7 @@ extern char D_8006D3C8[]; /* triangle UV offsets */
 extern char D_8006D5C8[]; /* last list, triangle: seven GT3s */
 extern char D_8006D5E4[]; /* last list, quad: twelve GT3s */
 
-#define ADDR(sym) ((u32)(uintptr_t)(sym))
+#define ADDR(sym) ((u32)(uintptr_t)P32_ENC(sym))
 #define LISTS ADDR(D_8006FCF4)
 #define LIST_HIGH (LISTS + 0x1C00) /* high-poly sectors */
 #define LIST_4X4 (LISTS + 0x1E00)  /* polygons for 4x4 subdivision */

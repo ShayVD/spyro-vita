@@ -782,8 +782,8 @@ static void ScriptedControl(void) {
 }
 
 static Moby *ColMobyAt(int pApplyingDamage, int pCollide) {
-  return (Moby *)ColMoby(&g_Spyro.m_Position, SPYRO_RADIUS, (int *)&g_Spyro.m_DamageFlags, pApplyingDamage,
-                         NULL, pCollide);
+  return (Moby *)P32_DEC(ColMoby(&g_Spyro.m_Position, SPYRO_RADIUS, (int *)&g_Spyro.m_DamageFlags, pApplyingDamage,
+                         NULL, pCollide));
 }
 
 /* Moby collision at Spyro's position for this step, by state. Returns the
