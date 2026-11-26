@@ -114,6 +114,7 @@ static volatile int s_want_fs, s_want_vsync;
 static volatile unsigned s_want_serial;
 static unsigned s_want_done;
 static volatile int s_fs_now;
+static int s_fs_req; /* main thread: fullscreen as last asked of the window */
 
 static const char *k_vs =
     "#version 330 core\n"
@@ -223,7 +224,7 @@ int pc_video_init(void) {
                       * made current on the game thread (pc_video_game_context) */
     s_game_gl = pc_gap_gl_shared_context(s_gpu.window, s_gpu.context);
   s_vsync_on = vsync;
-  s_fs_now = g_pc_opts.fullscreen != 0;
+  s_fs_now = s_fs_req = g_pc_opts.fullscreen != 0;
   host_log("video: %s, %s; GL %s; window %dx%d%s, display at %d Hz, vsync %s",
            pc_gap_video_driver(), (const char *)p_glGetString(GL_RENDERER),
            (const char *)p_glGetString(GL_VERSION), g_pc_opts.win_w, g_pc_opts.win_h,
@@ -278,8 +279,14 @@ static void apply_wants(void) {
   if (w == s_want_done)
     return;
   s_want_done = w;
-  if (s_want_fs != pc_gap_is_fullscreen(s_gpu.window))
+  /* against the last request too: macOS animates into fullscreen, and the
+   * window's flag says windowed until it is done, so ON then OFF at once
+   * would otherwise leave it fullscreen */
+  if (s_want_fs != s_fs_req || s_want_fs != pc_gap_is_fullscreen(s_gpu.window)) {
     pc_gap_set_fullscreen(s_gpu.window, s_want_fs);
+    s_fs_req = s_want_fs;
+    host_log("video: fullscreen %s", s_want_fs ? "on" : "off");
+  }
   if (s_want_vsync != s_vsync_on && !(info->caps & ENC_CAP_HEADLESS)) {
     if (pc_gap_gl_set_swap_interval(s_want_vsync))
       s_vsync_on = s_want_vsync && pc_gap_gl_swap_interval_on();

@@ -152,6 +152,8 @@ static int set_opt(const char *key, const char *v) {
     parse_list(v, g_pc_opts.shots, &g_pc_opts.nshots);
   else if (!strcmp(key, "menu_test"))
     parse_list(v, g_pc_opts.menu_test, &g_pc_opts.nmenu_test);
+  else if (!strcmp(key, "menu_keys"))
+    snprintf(g_pc_opts.menu_keys, sizeof g_pc_opts.menu_keys, "%s", v);
   else if (!strcmp(key, "pad"))
     snprintf(g_pc_opts.pad, sizeof g_pc_opts.pad, "%s", v);
   else if (!strcmp(key, "disc"))

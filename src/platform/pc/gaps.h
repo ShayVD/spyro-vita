@@ -39,13 +39,13 @@ int pc_gap_gl_swap_interval_on(void);
  * the keys held now, which input.c takes back out. */
 uint16_t pc_gap_keyboard_psx(void);
 uint32_t pc_gap_backend_keyboard_bits(void);
-/* G13 the options menu (D266): whether Esc or F1 is held (the backend's map
+/* G15 the options menu (D266): whether Esc or F1 is held (the backend's map
  * has Esc as ENC_BTN_MENU, but not F1); and, on the main thread, the
  * window's fullscreen as the menu sets it (as F11 does) and as it is now. */
 int pc_gap_menu_key(void);
 void pc_gap_set_fullscreen(void *sdl_window, int on);
 int pc_gap_is_fullscreen(void *sdl_window);
-/* G14 video: the swap interval changed on the window's context (the menu's
+/* G16 video: the swap interval changed on the window's context (the menu's
  * VSYNC row); returns whether it took. Main thread. */
 int pc_gap_gl_set_swap_interval(int on);
 /* G8 a message box (no disc, no display) over the log line. */

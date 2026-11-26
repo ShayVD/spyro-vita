@@ -59,6 +59,7 @@ typedef struct {
   int menu_test[PC_MAX_SHOTS]; /* menu_test=V1,...: the menu opened at these vblanks and
                                   driven by menu.c's script, a shot at each step (tests) */
   int nmenu_test;
+  char menu_keys[256]; /* menu_keys=K1,K2,...: the buttons menu_test presses (menu.c) */
   char disc[1024]; /* --disc PATH: the game data's folder */
   char pad[1024];  /* pad=FILE: a pad script, ORed with the controls (pad.c) */
 } PcOpts;

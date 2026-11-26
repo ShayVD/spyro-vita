@@ -108,9 +108,39 @@ static int relayout(MenuRow *rows, const MenuOption **opts, int *sel) {
 /* menu_test=V: what a player would press, one button per 4 passes (pressed
  * for 2, released for 2), a shot of the window after each change:
  * WIDESCREEN off, then up past the first row to the last (the list
- * scrolls), then close. */
-static const uint32_t k_test[] = {0, B_DOWN, B_RIGHT, B_UP, B_UP, B_CIRCLE};
-#define NTEST (int)(sizeof k_test / sizeof k_test[0])
+ * scrolls), then close. menu_keys=K1,K2,... (up, down, left, right, cross,
+ * circle, triangle, start, select, menu, none) presses those instead. */
+#define MAX_TEST 64
+static uint32_t k_test[MAX_TEST] = {0, B_DOWN, B_RIGHT, B_UP, B_UP, B_CIRCLE};
+static int NTEST = 6;
+
+static void test_keys(void) {
+  static const struct {
+    const char *name;
+    uint32_t bit;
+  } k_names[] = {{"up", B_UP},         {"down", B_DOWN},         {"left", B_LEFT},
+                 {"right", B_RIGHT},   {"cross", B_CROSS},       {"circle", B_CIRCLE},
+                 {"triangle", B_TRIANGLE}, {"start", B_START},   {"select", B_SELECT},
+                 {"menu", B_MENU},     {"none", 0}};
+  char buf[sizeof g_pc_opts.menu_keys], *tok, *next;
+  size_t i;
+  if (!g_pc_opts.menu_keys[0])
+    return;
+  snprintf(buf, sizeof buf, "%s", g_pc_opts.menu_keys);
+  NTEST = 0;
+  k_test[NTEST++] = 0; /* what opened it is released first */
+  for (tok = buf; tok && *tok && NTEST < MAX_TEST; tok = next) {
+    if ((next = strchr(tok, ',')) != NULL)
+      *next++ = 0;
+    for (i = 0; i < sizeof k_names / sizeof k_names[0] && strcmp(tok, k_names[i].name); i++)
+      ;
+    if (i == sizeof k_names / sizeof k_names[0])
+      host_log("menu: menu_keys: no key %s", tok);
+    else
+      k_test[NTEST++] = k_names[i].bit;
+  }
+  g_pc_opts.menu_keys[0] = 0;
+}
 
 #define PASS_US 16667 /* the menu's pace: about 60 passes a second */
 
@@ -140,6 +170,7 @@ int pc_menu_service(void) {
       test_v = g_pc_opts.menu_test[i];
       g_pc_opts.menu_test[i] = 0;
       s_requested = test = 1;
+      test_keys();
       break;
     }
   if (!s_requested)
