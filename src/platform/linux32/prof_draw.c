@@ -4,8 +4,13 @@
  * comparing two builds or fast_render=0 against 1 on the same script
  * (decisions D72). The functions are wrapped at link time (CMakeLists.txt).
  * Each part counts its time once (the sky: D181), and since #200 the bytes
- * of primitives it wrote, so its cost per KB can be read off. */
+ * of primitives it wrote, so its cost per KB can be read off. Since #259
+ * it also counts the vertex cache's records the game thread made in each
+ * part (as the Vita's "draw vc" line), and PROF_DRAW_FROM=N in the
+ * environment counts only from vblank N on (a scene of a route: Artisans
+ * on the owner60 pad from 6,600). */
 #include "host.h"
+#include "psx_vcache.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,10 +28,26 @@ static unsigned s_calls[D_COUNT];
 /* #200: each part's primitives, the bytes the primitive pointer moved on */
 static uint64_t s_bytes[D_COUNT];
 
+/* #259: each part's vertex-cache records: recorded, worked out at once,
+ * kept for the walk, repeats skipped */
+enum { R_REC, R_ONCE, R_KEPT, R_REP, R_N };
+static uint64_t s_recs[D_COUNT][R_N];
+static int s_from = -1; /* PROF_DRAW_FROM (-1: not read yet) */
+
 typedef struct {
   uint64_t t;
   uint32_t prim;
+  unsigned rec[R_N];
 } Mark;
+
+/* counting yet (PROF_DRAW_FROM) */
+static int counting(void) {
+  if (s_from < 0) {
+    const char *const v = getenv("PROF_DRAW_FROM");
+    s_from = v ? atoi(v) : 0;
+  }
+  return host_vblank_count() >= s_from;
+}
 
 static uint64_t now_ns(void) {
   struct timespec t;
@@ -37,6 +58,7 @@ static uint64_t now_ns(void) {
 static Mark mark(void) {
   Mark m;
   m.prim = *(uint32_t *)D_800757B0;
+  psx_vcache_game_recs(m.rec);
   m.t = now_ns();
   return m;
 }
@@ -44,6 +66,12 @@ static Mark mark(void) {
 static void charge(int part, const Mark *m) {
   const uint64_t t = now_ns();
   const uint32_t prim = *(uint32_t *)D_800757B0 - m->prim;
+  unsigned r[R_N], k;
+  if (!counting())
+    return;
+  psx_vcache_game_recs(r);
+  for (k = 0; k < R_N; k++) /* (a frame's end inside the call starts the counts again) */
+    s_recs[part][k] += r[k] >= m->rec[k] ? r[k] - m->rec[k] : r[k];
   s_acc[part] += t - m->t;
   s_calls[part]++;
   if (prim < 0x100000) /* the HUD's mobys are drawn from the buffer's top */
@@ -118,8 +146,10 @@ uint32_t __wrap_func_8004EBA8(uint32_t a0, uint32_t a1, uint32_t a2,
   m = mark();
   r = __real_func_8004EBA8(a0, a1, a2, a3, a4, a5, a6, a7);
   t = now_ns();
-  s_skymain += t - m.t;
-  s_skymain_calls++;
+  if (counting()) {
+    s_skymain += t - m.t;
+    s_skymain_calls++;
+  }
   if (!s_in_cyclorama)
     charge(D_SKY, &m);
   return r;
@@ -134,6 +164,8 @@ void __wrap_GamestateUpdate(void) {
   }
   t = now_ns();
   __real_GamestateUpdate();
+  if (!counting())
+    return;
   s_acc[D_UPDATE] += now_ns() - t;
   s_calls[D_UPDATE]++;
 }
@@ -150,6 +182,13 @@ void host_prof_draw_report(void) {
     host_log("prof draw: %-9s %9.1f ms in %6u calls; %8llu KB of primitives", k_names[i],
              s_acc[i] / 1e6, s_calls[i], (unsigned long long)(s_bytes[i] / 1024));
   host_log("prof draw: renderers %9.1f ms", all / 1e6);
+  for (i = 0; i < D_COUNT; i++) /* #259 */
+    host_log("prof draw vc: %-9s %9llu records, %9llu worked out at once (%llu repeats skipped), "
+             "%9llu kept for the walk",
+             k_names[i], (unsigned long long)s_recs[i][R_REC], (unsigned long long)s_recs[i][R_ONCE],
+             (unsigned long long)s_recs[i][R_REP], (unsigned long long)s_recs[i][R_KEPT]);
+  if (s_from > 0)
+    host_log("prof draw: counted from vblank %d (PROF_DRAW_FROM)", s_from);
   host_log("prof draw: (sky main %9.1f ms in %6u calls, part of sky)", s_skymain / 1e6,
            s_skymain_calls);
 }
