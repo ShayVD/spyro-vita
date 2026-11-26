@@ -5532,8 +5532,14 @@ void psx_vcache_enable(int mode) {
     if (v && v[0] == '0')
       psx_vcache_set_overflow(0);
   }
-  { /* #259: VC_REPEAT=0/1/2 and VC_FAST_REC=0/1, the switches (host builds) */
-    const char *const r = getenv("VC_REPEAT"), *const f = getenv("VC_FAST_REC");
+  { /* #259: VC_REPEAT=0/1/2 and VC_FAST_REC=0/1, the switches, and
+     * VC_LAZY_LOGIC=0-3 (the host keeps every logic projection for its walk
+     * in place: 0 works each out at once on the record, as the Vita's game
+     * thread mostly does at 60 Hz) (host builds) */
+    const char *const r = getenv("VC_REPEAT"), *const f = getenv("VC_FAST_REC"),
+                      *const l = getenv("VC_LAZY_LOGIC");
+    if (l && l[0] >= '0' && l[0] <= '3')
+      psx_vcache_set_lazy_logic(l[0] - '0');
     if (r && r[0] >= '0' && r[0] <= '2')
       psx_vcache_set_repeat(r[0] - '0');
     if (f && (f[0] == '0' || f[0] == '1'))
