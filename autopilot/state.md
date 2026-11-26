@@ -26,22 +26,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a986f5e471a4bb9db",
       "last_commit_at": "2026-11-26T03:55:00Z"
-    },
-    {
-      "issue": 270,
-      "branch": "docs/270-docs-moby-sprites-on-the-vcache-hooked",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-270",
-      "pids": [],
-      "started_at": "2026-11-26T03:55:00Z",
-      "files": [
-        "docs/vita-testing.md",
-        "docs/host-build.md"
-      ],
-      "agent": "a73b1d80afb1c9fc3",
-      "last_commit_at": "2026-11-26T03:55:00Z"
     }
   ],
-  "last_good": "a1c8d8bfa79550bfc12ae8e2c4e7298eae19bc61",
+  "last_good": "4947d649c52b5fffbf150f8cdd75e45b16d8cc3b",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
