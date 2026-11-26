@@ -9,7 +9,35 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 244,
+      "branch": "feat/244-wobble-fix-the-vita-s-placement-gates",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-244",
+      "pids": [],
+      "started_at": "2026-11-26T07:20:00Z",
+      "files": [
+        "src/platform/common/vcache.c"
+      ],
+      "agent": "ace9979ee61066b15",
+      "last_commit_at": "2026-11-26T07:20:00Z"
+    },
+    {
+      "issue": 232,
+      "branch": "feat/232-config-keys-vc-repeat-and-pres-demo",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-232",
+      "pids": [],
+      "started_at": "2026-11-26T07:20:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "src/platform/vita/pres_thread.c",
+        "src/game/present.h",
+        "docs/presentation.md"
+      ],
+      "agent": "ac8059cf916479421",
+      "last_commit_at": "2026-11-26T07:20:00Z"
+    }
+  ],
   "last_good": "e744b314d32ffa9b560934782ee4e6cfa8452b48",
   "hardware_runs": [
     {
@@ -250,7 +278,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "268": 1,
     "269": 1,
     "259": 1,
-    "270": 1
+    "270": 1,
+    "244": 1,
+    "232": 1
   },
   "blocked": [],
   "issues_filed": {
