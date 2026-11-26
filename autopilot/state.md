@@ -287,7 +287,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "asked_at": "2026-11-26T07:10:00Z",
     "issues": [
       261,
-      259
+      259,
+      232,
+      274
     ],
     "builds": [
       "runtime/autopilot/artifacts/vita/20d3514.vpk (#261 MAX 400)",
@@ -296,7 +298,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     ],
     "routes": [
       "#261: Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t; Stone Hill + Artisans play at 400 shot_every=0 vs D252 ap19a",
-      "#259: runs/vita/issue-259-A/hw/hw-session-259.sh: Artisans base, fix, base, fix (ap20-art) and Toasty base, fix (ap20-toasty), plus fix with persp=0 subpixel=0 and vc_lazy_logic=2"
+      "#259: runs/vita/issue-259-A/hw/hw-session-259.sh: Artisans base, fix, base, fix (ap20-art) and Toasty base, fix (ap20-toasty), plus fix with persp=0 subpixel=0 and vc_lazy_logic=2",
+      "#232: runs/vita/issue-232-A/hw/hw-session-232.sh (attract demos real time, pres_demo_inline 1,0,1,0, ~20 min)",
+      "#274: runs/vita/issue-274-A/hw/hw-session-274.sh (Toasty real time, found_fast 2,0,1,2,0,1, ~40 min)"
     ],
     "status": "waiting for the owner"
   },
