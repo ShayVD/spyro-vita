@@ -254,29 +254,38 @@ typedef struct {
  * sectors share, a grid's corner projected again) has the same answer; while
  * its entry is valid with one point, that answer is already among its
  * candidates and is logged nowhere, so the repeat changes nothing and its
- * maths is skipped. 12 bytes. #259: kept in the entry's own candidates 2
- * and 3 while it has at most two (RP_ENTRY, the default), else in the
- * table's rp array (RP_ARRAY, D221's). */
+ * maths is skipped. 12 bytes, in the table's rp array (RP_ARRAY, D221's). */
 typedef struct {
   uint32_t g;
   int16_t vx, vy, vz;
   uint16_t clamped;
 } Rp;
+/* #259: the same in 8 bytes, kept in the entry itself where its candidate
+ * 3 would go, while it has at most three (RP_ENTRY, the default): in the
+ * lines its probe and candidates read, where D221's array cost a line of
+ * its own on every record. The generation is its distance from the table's
+ * frame's first (Table rp_g0) plus 1, in 15 bits (0: none), with the
+ * clamped flag above: a generation 0x7FFF or more past the frame's first
+ * keeps none and skips none, so a kept one names one generation exactly. */
+typedef struct {
+  uint16_t gc; /* RPE_G: the generation's distance + 1; RPE_CL: clamped */
+  int16_t vx, vy, vz;
+} RpE;
+#define RPE_G 0x7FFFu
+#define RPE_CL 0x8000u
 
 typedef struct {
   uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
   uint32_t tag;
-  /* #259: with RP_ENTRY, an entry with at most two candidates keeps its
-   * last projection worked out (Rp) where candidates 2 and 3 would go: in
-   * the lines its probe and candidates read anyway, where D221's rp array
-   * cost a line of its own on every record. Only candidates below T_N are
-   * ever read, and a third one written there ends it (rp_skip reads it
-   * only while T_N <= 2). */
+  /* #259: with RP_ENTRY, candidate 3's place holds the entry's RpE while
+   * it has at most three. Only candidates below T_N are ever read, and a
+   * fourth one written there ends it (rp_skip reads it only while
+   * T_N <= 3). */
   union {
     Cand c[VC_CANDS];
     struct {
-      Cand c01[2];
-      Rp rp;
+      Cand c012[3];
+      RpE rp;
     } e;
   };
 } Entry;
@@ -458,6 +467,10 @@ typedef struct {
   unsigned nx, nlost, xlc_line, nxlfar;
   Xlog *xl;
   int xl_tried;
+  /* #259 (last, as above): the generation (gte_native.h g_ngte_gen, the
+   * presenter's g_pres_ngte_gen) when this table's frame began, RpE's
+   * origin */
+  uint32_t rp_g0;
 } Table;
 
 /* #237: the frame's order, the places past the log too: how many, and
@@ -615,7 +628,7 @@ static int s_repeat = RP_ENTRY;
  * RP_ENTRY: the entry has no candidate, so its rp is free to write) */
 static inline void rp_clear(Table *tb, int i) {
   if (s_repeat == RP_ENTRY)
-    tb->s[i].e.rp.g = 0;
+    tb->s[i].e.rp.gc = 0;
   else if (s_repeat == RP_ARRAY)
     tb->rp[i].g = 0;
 }
@@ -1629,19 +1642,28 @@ static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, 
  * (Rp) while the entry is valid with one point: then it would change
  * nothing (rtp_point's note), and only its counts are kept. 1: skipped. */
 static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, int vy, int vz) {
-  const uint32_t tag = tb->s[i].tag;
-  const Rp *r;
-  /* (#259: the entry's tag first, which the record has just read; with
-   * RP_ENTRY the Rp is there only while T_N <= 2) */
-  if (!g || T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)) ||
-      (s_repeat == RP_ENTRY && T_N(tag) > 2))
+  const Entry *const e = &tb->s[i];
+  const uint32_t tag = e->tag;
+  int clamped;
+  /* (#259: the entry's tag first, which the record has just read) */
+  if (!g || T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)))
     return 0;
-  r = s_repeat == RP_ENTRY ? &tb->s[i].e.rp : &tb->rp[i];
-  if (r->g != g || r->vx != vx || r->vy != vy || r->vz != vz)
-    return 0;
+  if (s_repeat == RP_ENTRY) { /* its RpE, while T_N <= 3 and g is in the frame's window */
+    const RpE *const r = &e->e.rp;
+    const uint32_t d = g - tb->rp_g0;
+    if (T_N(tag) > 3 || d >= RPE_G || (r->gc & RPE_G) != d + 1 || r->vx != vx || r->vy != vy ||
+        r->vz != vz)
+      return 0;
+    clamped = (r->gc & RPE_CL) != 0;
+  } else {
+    const Rp *const r = &tb->rp[i];
+    if (r->g != g || r->vx != vx || r->vy != vy || r->vz != vz)
+      return 0;
+    clamped = r->clamped;
+  }
   if (k->rec)
     k->rec[VCR_WORKED]++;
-  if (r->clamped) {
+  if (clamped) {
     k->work[VCW_CLAMPED]++;
     k->st->clamped++;
   }
@@ -1649,16 +1671,20 @@ static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, i
 }
 /* ... and the one worked out, for the next */
 static inline void rp_keep(Table *tb, int i, uint32_t g, int vx, int vy, int vz, int clamped) {
-  Rp *r;
   if (s_repeat == RP_ENTRY) {
-    if (T_N(tb->s[i].tag) > 2) /* candidate 2 is a candidate: none kept (#259) */
+    Entry *const e = &tb->s[i];
+    const uint32_t d = g - tb->rp_g0;
+    if (T_N(e->tag) > 3) /* candidate 3 is a candidate: none kept (#259) */
       return;
-    r = &tb->s[i].e.rp;
-  } else
-    r = &tb->rp[i];
-  r->g = g;
-  r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
-  r->clamped = (uint16_t)clamped;
+    /* (past the window: none, so an older one isn't taken for it) */
+    e->e.rp.gc = d < RPE_G ? (uint16_t)((d + 1) | (clamped ? RPE_CL : 0)) : 0;
+    e->e.rp.vx = (int16_t)vx, e->e.rp.vy = (int16_t)vy, e->e.rp.vz = (int16_t)vz;
+  } else {
+    Rp *const r = &tb->rp[i];
+    r->g = g;
+    r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
+    r->clamped = (uint16_t)clamped;
+  }
 }
 
 /* tb's slot i's projections worked out, in their order (k: where their
@@ -5431,6 +5457,7 @@ static void pres_next(void) {
   r->tab->lc_line = 0;
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   lz_next(r->tab, s_lazy); /* #193 */
+  r->tab->rp_g0 = g_pres_ngte_gen; /* #259: RpE's origin */
   s_since_pres = 0;        /* (#179: the logic draw's then work theirs out at once) */
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
@@ -5478,6 +5505,7 @@ static void done_hook(void) {
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
+  r->tab->rp_g0 = g_ngte_gen; /* #259: RpE's origin */
   /* its projections kept for its walk (#179), unless the presenter draws
    * in-between frames */
   if (s_since_pres < 255)

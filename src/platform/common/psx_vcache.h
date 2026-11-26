@@ -63,9 +63,10 @@ void psx_vcache_set_lazy_logic(int mode);
 void psx_vcache_set_found_fast(int mode);
 /* #228: an exact repeat's maths skipped (vcache.c rp_skip): 0 never; 1
  * with the last projection worked out kept in each table's rp array
- * (D221); 2 (the default, #259) kept in the entry itself while it has at
- * most two candidates, so the record reads no line of another array. The
- * same answers in each; set before the cache records. */
+ * (D221); 2 (the default, #259) kept in the entry itself, in 8 bytes
+ * where its candidate 3 would go, while it has at most three, so the
+ * record reads no line of another array. The same answers in each; set
+ * before the cache records. */
 void psx_vcache_set_repeat(int mode);
 /* #259: the logic draw's native records take the record's find and maths
  * inlined: 1 (the default) or 0 (called, as before). The same code. */
