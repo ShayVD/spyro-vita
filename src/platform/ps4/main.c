@@ -206,10 +206,25 @@ static void parse_list(const char *v, int *out, int *n, int max) {
     out[(*n)++] = atoi(tok);
 }
 
+int ps4_menu_key(const char *key);        /* menu.c (#267) */
+int ps4_menu_last_value(const char *key); /* menu.c (#267) */
+
+/* #267, as the Vita's main.c: the rows the PS4's menu has written since its
+ * first save (D194) that a hand-written file rarely has all of */
+static const char *const k_menu_rows_d194[] = {
+    "widescreen", "interp",       "res",          "draw_distance", "analog",
+    "free_camera", "cam_invert_x", "cam_invert_y", "cam_speed",
+};
+#define MENU_ROWS_D194_ALL ((1u << (sizeof k_menu_rows_d194 / sizeof k_menu_rows_d194[0])) - 1)
+
 /* config.txt: key=value lines. The menu's rows (present_ps4.c, pad.c,
  * menu_game.c, savestate_ps4.c) take their own keys; the rest are here. */
 static void read_config(void) {
   char line[256];
+  /* #267: the last config_version line's value, and whether every line
+   * after it is a menu row's key, holding which of k_menu_rows_d194 */
+  int version = 0, version_line = 0, tail_rows = 0, i;
+  unsigned tail_rows_d194 = 0;
   FILE *f = fopen(PS4_DATA_DIR "/config.txt", "r");
   if (!f)
     return;
@@ -219,6 +234,17 @@ static void read_config(void) {
     if (line[0] == '#' || sscanf(line, " %63[a-z_0-9] = %159[^\r\n]", key, v) != 2)
       continue;
     n = atoi(v);
+    if (!strcmp(key, "config_version")) { /* #267, below */
+      version = n;
+      version_line = tail_rows = 1;
+      tail_rows_d194 = 0;
+    } else if (!ps4_menu_key(key)) {
+      tail_rows = 0;
+    } else {
+      for (i = 0; i < (int)(sizeof k_menu_rows_d194 / sizeof k_menu_rows_d194[0]); i++)
+        if (!strcmp(key, k_menu_rows_d194[i]))
+          tail_rows_d194 |= 1u << i;
+    }
     if (!strcmp(key, "frames"))
       g_ps4_opts.frames = n;
     else if (!strcmp(key, "stats"))
@@ -250,6 +276,21 @@ static void read_config(void) {
     host_log("config: %s=%s", key, v);
   }
   fclose(f);
+  /* The menu's MAX (ADAPTIVE) was 200 (2X before #260) until #261 made it
+   * 400 (DD_MAX_PCT): a 200 the menu saved then is read as today's MAX. The
+   * menu writes the other lines, then config_version=N, then every row's key
+   * and nothing else (vpk_menu_save): config_version=5 (or lower) last, only
+   * rows' keys after it, the nine above among them. A developer's 200
+   * elsewhere, or with config_version=6, stays 200. */
+  if (version_line && version < 6 && tail_rows && tail_rows_d194 == MENU_ROWS_D194_ALL &&
+      g_ps4_opts.draw_distance == 200) {
+    const int max = ps4_menu_last_value("draw_distance");
+    if (max > 200) {
+      host_log("config: draw_distance=200 from the options menu before config_version=6 is its "
+               "MAX (ADAPTIVE): %d%% (#267)", max);
+      g_ps4_opts.draw_distance = max;
+    }
+  }
 }
 
 static void no_disc(void) {

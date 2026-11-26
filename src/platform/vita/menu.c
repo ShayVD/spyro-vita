@@ -74,18 +74,53 @@ int vita_menu_load(const char *key, const char *v) {
   return menu_opts_load(k_lists, NLISTS, key, v);
 }
 
+/* main.c's read_config (#267): is `key` one the menu writes? 1 a row's key
+ * now; 2 the key of a row an older menu wrote, gone since (tex_filter and
+ * dynres: D153; persp and subpixel: #177; interp_budget: D75; pal60: D150);
+ * 0 neither. Loads nothing. */
+int vita_menu_key(const char *key) {
+  static const char *const k_gone[] = {"tex_filter", "dynres",        "persp",
+                                       "subpixel",   "interp_budget", "pal60"};
+  int l, i;
+  for (l = 0; l < NLISTS; l++)
+    for (i = 0; k_lists[l] && i < k_lists[l]->n; i++)
+      if (k_lists[l]->opts[i].key && k_lists[l]->opts[i].value &&
+          !strcmp(k_lists[l]->opts[i].key, key))
+        return 1;
+  for (i = 0; i < (int)(sizeof k_gone / sizeof k_gone[0]); i++)
+    if (!strcmp(k_gone[i], key))
+      return 2;
+  return 0;
+}
+
+/* main.c's read_config (#267): the value of a named row's last name (the
+ * DRAW DISTANCE row's MAX (ADAPTIVE), picture.c's DD_MAX_PCT); -1 with no
+ * such row. */
+int vita_menu_last_value(const char *key) {
+  int l, i;
+  for (l = 0; l < NLISTS; l++)
+    for (i = 0; k_lists[l] && i < k_lists[l]->n; i++) {
+      const MenuOption *o = &k_lists[l]->opts[i];
+      if (o->key && o->value && o->names && o->count > 0 && !strcmp(o->key, key))
+        return o->values ? o->values[o->count - 1] : o->count - 1;
+    }
+  return -1;
+}
+
 /* config.txt with the rows' keys replaced (other lines kept). */
 static void save(void) {
   const char *drop[12] = {"config_version"};
   char line[512] = "";
   size_t n = 0;
   int l, i, nd = 1;
-  /* config_version=6: this interp= is the player's (main.c, read_config;
+  /* config_version=7: this interp= is the player's (main.c, read_config;
    * D44, D150), and so is a 0 for the D68 switches: the stale ones go, and
    * D148's pal60= (D150), and a tex_filter= or dynres= line the rows gone
    * with D153 wrote (5: one written after it is a developer's), and an old
    * menu's persp= and subpixel= pair, the rows PSX WOBBLE replaced (#177;
-   * 6: the file has wobble=, and lines beside it are a developer's) */
+   * 6: the file has wobble=, and lines beside it are a developer's), and
+   * this draw_distance=200 is 200%, not the MAX (ADAPTIVE) an older menu
+   * wrote as 200 (#267; 7) */
   for (i = 0; i < 3; i++)
     if (g_vita_config_stale[i])
       drop[nd++] = g_vita_config_stale[i];
@@ -93,7 +128,7 @@ static void save(void) {
     drop[nd++] = "pal60";
   for (i = 0; i < 4 && g_vita_config_rows_gone[i]; i++)
     drop[nd++] = g_vita_config_rows_gone[i];
-  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=6\n") != 0) {
+  if (menu_opts_save(k_lists, NLISTS, CONFIG, drop, "config_version=7\n") != 0) {
     vita_log("menu: cannot write %s", CONFIG);
     return;
   }
@@ -283,6 +318,15 @@ int vita_menu_service(void) {
                       "UP/DOWN: CHOOSE  LEFT/RIGHT: CHANGE  O: CLOSE");
       vita_video_overlay(panel, MENU_PANEL_W, h);
       dirty = 0;
+      if (test && step <= 1) { /* menu_test: the rows as first shown, for the log (#267) */
+        char shown[640];
+        size_t k = 0;
+        for (i = 0; i < n && k < sizeof shown - 64; i++)
+          if (opts[i])
+            k += (size_t)snprintf(shown + k, sizeof shown - k, "%s%s: %s", k ? ", " : "",
+                                  rows[i].label, rows[i].value);
+        vita_log("menu: shown %s", shown);
+      }
     }
     if (open) {
       vita_video_force_redraw();
