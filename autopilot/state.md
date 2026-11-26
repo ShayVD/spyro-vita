@@ -545,3 +545,4 @@ continue.
 - 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
 - 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
 - 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
+- 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
