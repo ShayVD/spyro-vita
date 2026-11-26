@@ -250,7 +250,7 @@ static int same_word(u32 p, u32 g) {
   }
   if ((p ^ g) >> 24 == 0 && s_buf_hi) {
     /* a 24-bit link into the buffers: decode both as the walk does */
-    const u32 base = (u32)g_psx_arena_base;
+    const u32 base = (u32)(uintptr_t)P32_ENC((void *)g_psx_arena_base);
     const u32 ga = base + (((g & 0xFFFFFFu) - base) & 0xFFFFFFu);
     const u32 pa = base + (((p & 0xFFFFFFu) - base) & 0xFFFFFFu);
     if (ga - s_buf_lo <= s_buf_hi - s_buf_lo && pa == ga + s_delta)
@@ -555,7 +555,7 @@ static void compare(int k, u32 rp, u32 rg) {
     u32 j;
     for (j = 0; j < n4; j++)
       if (mp[j] != ap[j] && !same_word(mp[j], ap[j]))
-        bad(k, "memory", q->lo + j * 4 - (u32)g_psx_arena_base, ap[j], mp[j]);
+        bad(k, "memory", q->lo + j * 4 - (u32)(uintptr_t)P32_ENC((void *)g_psx_arena_base), ap[j], mp[j]);
   }
   /* the records */
   n = g_nd.base ? (u32)(g_nd.wp - g_nd.base) : 0;

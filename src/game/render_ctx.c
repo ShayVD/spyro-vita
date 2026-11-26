@@ -101,10 +101,10 @@ u32 pres_sector_copy(u32 sec) {
   s_sec_next = (at + len + 3u) & ~(uintptr_t)3u;
   if (g_pres_nsectors < PRES_SECTORS_MAX) {
     g_pres_sectors[g_pres_nsectors].sec = sec;
-    g_pres_sectors[g_pres_nsectors].copy = (u32)at;
+    g_pres_sectors[g_pres_nsectors].copy = (u32)(uintptr_t)P32_ENC((void *)at);
     g_pres_sectors[g_pres_nsectors++].len = len;
   }
-  return (u32)at;
+  return (u32)(uintptr_t)P32_ENC((void *)at); /* the copy's 32-bit address (D265) */
 }
 
 /* the area (arena.c) */

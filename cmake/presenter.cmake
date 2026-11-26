@@ -94,13 +94,22 @@ if(SPYRO_HOST STREQUAL "ps4" OR CMAKE_OBJCOPY MATCHES "llvm-objcopy")
     "${CMAKE_NM}" "${PRES_OBJ}.r" "${PRES_OBJ}.commons")
   set(PRES_KEEP_ARGS "--keep-global-symbols=${PRES_OBJ}.commons")
 endif()
+if(APPLE)
+  # macOS (D250 O4): no objcopy; tools/macho_syms.py makes the same edits
+  # (commons stay global there too)
+  set(PRES_LOCALIZE COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/macho_syms.py"
+    --keep-global-symbol GamestateDraw_pres --redefine-sym LoadImage=pres_LoadImage
+    "${PRES_OBJ}.r" "${PRES_OBJ}")
+else()
+  set(PRES_LOCALIZE COMMAND "${CMAKE_OBJCOPY}" --keep-global-symbol=GamestateDraw_pres ${PRES_KEEP_ARGS}
+    --redefine-sym LoadImage=pres_LoadImage "${PRES_OBJ}.r" "${PRES_OBJ}")
+endif()
 add_custom_command(OUTPUT "${PRES_OBJ}"
   COMMAND "${CMAKE_C_COMPILER}" ${PRES_LD_FLAGS} -r -nostdlib -o "${PRES_OBJ}.r"
     "$<JOIN:$<TARGET_OBJECTS:spyro_pres_decomp>,;>" "$<JOIN:$<TARGET_OBJECTS:spyro_pres_port>,;>"
     "$<JOIN:$<TARGET_OBJECTS:spyro_pres_ovl>,;>"
   ${PRES_KEEP_COMMONS}
-  COMMAND "${CMAKE_OBJCOPY}" --keep-global-symbol=GamestateDraw_pres ${PRES_KEEP_ARGS}
-    --redefine-sym LoadImage=pres_LoadImage "${PRES_OBJ}.r" "${PRES_OBJ}"
+  ${PRES_LOCALIZE}
   DEPENDS spyro_pres_decomp spyro_pres_port spyro_pres_ovl $<TARGET_OBJECTS:spyro_pres_decomp>
           $<TARGET_OBJECTS:spyro_pres_port> $<TARGET_OBJECTS:spyro_pres_ovl>
   COMMAND_EXPAND_LISTS
@@ -113,7 +122,7 @@ set(PRES_TABLE_C "${GEN_DIR}/pres_snap_table.c")
 add_custom_command(OUTPUT "${PRES_SYMS_S}" "${PRES_TABLE_C}"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py"
     --map "${SPYRO_PSX_MAP}" --names "${PRES_DIR}/pres_snap_names.h" --names "${PRES_NAMES}"
-    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}" ${SPYRO_COFF_ARG}
+    --asm "${PRES_SYMS_S}" --table "${PRES_TABLE_C}" ${SPYRO_COFF_ARG} ${SPYRO_MACHO_ARG}
   DEPENDS "${CMAKE_SOURCE_DIR}/tools/pres_snap_syms.py" "${PRES_DIR}/pres_snap_names.h" "${PRES_NAMES}" "${SPYRO_PSX_MAP}"
   COMMENT "presenter: the snapshot's labels (pres_snap_syms.S)")
 add_library(spyro_pres_snap OBJECT "${PRES_SYMS_S}" "${PRES_TABLE_C}")

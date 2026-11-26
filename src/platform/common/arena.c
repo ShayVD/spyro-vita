@@ -35,7 +35,13 @@ uintptr_t g_psx_arena_extra_at;
 #endif
 #endif
 #if !defined(__linux__) || SPYRO_NATIVE_MEM
+#if defined(__APPLE__)
+/* macOS (D250 O4) has no malloc.h or memalign */
+#include <stdlib.h>
+#define memalign(a, n) aligned_alloc((a), ((n) + (a) - 1) / (a) * (a))
+#else
 #include <malloc.h>
+#endif
 #endif
 
 #if defined(__linux__)

@@ -8,8 +8,10 @@
 cd "$(dirname "$0")/.."
 P=$1; B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
 # linux64's binary (D174) runs under qemu-x86_64, as linux32's under qemu-i386 (binfmt)
-case "$(file -b "$B" 2>/dev/null)" in *x86-64*) EMU=${EMU-qemu-x86_64} ;; esac
-run() { D=logs/$P-$1; shift; mkdir -p $D; tools/tc $EMU $B --disc $DISC --log $D/spyro.log --trace $D/trace.tsv --shot-dir $D $EXTRA "$@" > $D/stdout.txt 2>&1; echo "exit $?" >> $D/spyro.log; }
+# macOS's (D250 O4) runs on the Mac itself, not in tools/tc's container
+TC=tools/tc
+case "$(file -b "$B" 2>/dev/null)" in *Mach-O*) TC= ;; *x86-64*) EMU=${EMU-qemu-x86_64} ;; esac
+run() { D=logs/$P-$1; shift; mkdir -p $D; $TC $EMU $B --disc $DISC --log $D/spyro.log --trace $D/trace.tsv --shot-dir $D $EXTRA "$@" > $D/stdout.txt 2>&1; echo "exit $?" >> $D/spyro.log; }
 run demo --frames 12000 --shot-every 500 --wav logs/$P-demo/audio.wav --save logs/$P-demo/save &
 run whole --frames 100000 --pad tools/oracle/pads/newgame_host.txt --pad-after tools/oracle/pads/fairy_after.txt --save logs/$P-whole/save \
   --shot-every 1000 --tour 11,12,13,14,15,20,21,22,23,24,25,30,31,32,33,34,35,40,41,42,43,44,45,50,51,52,53,54,55,60,61,62,63,end2,64,end3,credits,levels,lives --tour-stay 300 &

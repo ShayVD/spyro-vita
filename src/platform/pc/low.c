@@ -6,15 +6,31 @@
  *  - Windows: the executable is not large-address-aware (CMakeLists.txt), so the whole process lies below 2 GB;
  *    lp64_low_image_win.c's probe says where memory lands. The disc's binary reads and pread come from
  *    third_party/encore/targets/pc/runtime/winposix.
- * main.c checks the image, the arena and the game stack against 2 GB; this file reports where things are. */
+ *  - macOS (D250 O4): the offset model (src/compat/p32.h): the game's memory lies within 4 GB above the
+ *    executable's Mach-O header, and __PAGEZERO covers the low 4 GB, so a pointer cut to 32 bits crashes there
+ *    too. src/platform/common/p32_image.c checks the image and stores the data image's offsets.
+ * main.c checks the image, the arena and the game stack against 2 GB (4 GB above the base on macOS); this file
+ * reports where things are. */
 #include "pc.h"
-#include "lp64_low_image.h"
 
 #include <stdint.h>
 #include <stdio.h>
 
 extern const void *psx_low_arena_end(void);
 static char s_report[320];
+
+#if defined(__APPLE__)
+#include "p32_image.h"
+
+int pc_low_reserved_pages(void) { return 0; /* __PAGEZERO */ }
+
+const char *pc_low_report(void) {
+  snprintf(s_report, sizeof s_report, "image %p-%p, arena end %p", (void *)spyro_p32_base,
+           (void *)p32_image_end(), psx_low_arena_end());
+  return s_report;
+}
+#else
+#include "lp64_low_image.h"
 
 int pc_low_reserved_pages(void) { return lp64_reserved_pages(); }
 
@@ -38,3 +54,4 @@ const char *pc_low_report(void) {
   return s_report;
 }
 #endif
+#endif /* !__APPLE__ */
