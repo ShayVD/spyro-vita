@@ -426,7 +426,7 @@ const char *savestate_label(const SaveStateInfo *info) {
     return "CREDITS";
   if (world < 0 || world > 5 || n > 5)
     return "?";
-  return n == 0 ? g_HomeworldNames[world] : g_LevelNames[world * 6 + n];
+  return n == 0 ? P32_GET(g_HomeworldNames[world]) : P32_GET(g_LevelNames[world * 6 + n]);
 }
 
 /* ---------- requests ---------- */

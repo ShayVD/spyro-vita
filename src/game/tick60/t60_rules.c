@@ -95,16 +95,16 @@ int t60_moby_begin(Moby *pMoby) {
  * (moby_lists_hand.c's Animate: T60_ANIM_LOWER, then T60_ANIM_UPPER; at
  * most one frame a tick, as the original's step); the others the
  * original's step, on the vblank that starts a tick. */
-void t60_moby_animate(P32F(Moby *) *pList) {
+void t60_moby_animate(T60MobySlot *pList) {
   P32F(Moby *) *a = s_t60_list60; P32F(Moby *) *b = s_t60_list30; Moby *m;
-  while ((m = *pList++)) {
+  while ((m = P32_GET(*pList++))) {
     if (t60_class_60(m->m_Class))
-      *a++ = m;
+      P32_SET(*a++ , m);
     else
-      *b++ = m;
+      P32_SET(*b++ , m);
   }
-  *a = NULL;
-  *b = NULL;
+  P32_SET(*a , NULL);
+  P32_SET(*b , NULL);
   if (s_t60_delta == 1) {
     func_800522C0(s_t60_list60, g_t60.upper ? T60_ANIM_UPPER : T60_ANIM_LOWER);
   } else { /* late: a whole tick's step, the original's way */

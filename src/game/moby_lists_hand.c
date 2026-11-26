@@ -90,12 +90,12 @@ static int NearSpyro(const Moby *m) {
 }
 
 static void UpdateList(void) {
-  P32F(Moby *) *out = UPDATE_LIST, *m;
+  P32F(Moby *) *out = UPDATE_LIST; Moby *m;
   int pod;
   memset(D_80077868, 0, sizeof D_80077868);
   /* The level's mobys drawn last frame or near Spyro. One in a pod isn't
    * listed: its pod is marked, and all the pod's mobys in use follow. */
-  for (m = g_LevelMobys; MobyState(m) != -1; m++) {
+  for (m = P32_GET(g_LevelMobys); MobyState(m) != -1; m++) {
     if (MobyState(m) < 0)
       continue;
     if (!m->m_WasDrawn && !NearSpyro(m))
@@ -104,7 +104,7 @@ static void UpdateList(void) {
     if (pod >= 0)
       D_80077868[pod] = 1;
     else
-      *out++ = m;
+      P32_SET(*out++ , m);
   }
   /* The marked pods' mobys: indices into the level's mobys, the last with
    * its top bit set. */
@@ -113,15 +113,15 @@ static void UpdateList(void) {
     int i;
     if (!D_80077868[pod])
       continue;
-    index = (const short *)g_MobyPods[pod];
+    index = (const short *)P32_GET(P32_GET(g_MobyPods)[pod]);
     do {
       i = *index++;
-      m = &g_LevelMobys[i & 0x7FFF];
+      m = &P32_GET(g_LevelMobys)[i & 0x7FFF];
       if (MobyState(m) >= 0)
-        *out++ = m;
+        P32_SET(*out++ , m);
     } while (i >= 0);
   }
-  *out = NULL;
+  P32_SET(*out , NULL);
 }
 
 #if HAND_SHADOW
@@ -160,7 +160,7 @@ void func_800521C0(void) { func_800521C0_gen(); }
 #else
 static void DrawLists(void) {
   P32F(Moby *) *shaded = DRAW_LIST; P32F(Moby *) *shiny = SHINY_LIST; P32F(Moby *) *lit = LIT_LIST; P32F(Moby *) **list; Moby *m;
-  for (m = g_LevelMobys;; m++) {
+  for (m = P32_GET(g_LevelMobys);; m++) {
     int sector;
     if (MobyState(m) < 0) {
       if (MobyState(m) == -1)
@@ -175,11 +175,11 @@ static void DrawLists(void) {
     if (sector != 0xFF && !D_800771C8[sector])
       m->m_WasDrawn = 0;
     else
-      *(*list)++ = m;
+      P32_SET(*(*list)++ , m);
   }
-  *shaded = NULL;
-  *shiny = NULL;
-  *lit = NULL;
+  P32_SET(*shaded , NULL);
+  P32_SET(*shiny , NULL);
+  P32_SET(*lit , NULL);
 }
 
 #if HAND_SHADOW
@@ -213,7 +213,7 @@ void func_800521C0(void) {
 #endif
 
 #if M2C_func_800522C0
-void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyList, pSpeedDiv); }
+void func_800522C0(MobyListSlot *pMobyList, u_int pSpeedDiv) { func_800522C0_gen(pMobyList, pSpeedDiv); }
 #else
 /* One moby's animation step. pSpeedDiv's low 5 bits shift the frame speed
  * down; negative is a catch-up step (a tick of more than two vblanks): it
@@ -255,8 +255,8 @@ static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
         return queue;
       flags = a->m_AnimationFlags | 4;
     }
-    model = g_Models[(u_short)m->m_Class];
-    anim = model->m_Animations[a->m_NextAnimation];
+    model = P32_GET(g_Models[(u_short)m->m_Class]);
+    anim = P32_GET(model->m_Animations[a->m_NextAnimation]);
     a->m_FrameProgress = progress & 0x3F;
     a->m_Frame = frame;
     a->m_NextFrame = frame + 1;
@@ -268,8 +268,8 @@ static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
   } else {
     /* The next animation starts, at its own speed; at speed 0 it holds
      * its frame. */
-    model = g_Models[(u_short)m->m_Class];
-    anim = model->m_Animations[a->m_NextAnimation];
+    model = P32_GET(g_Models[(u_short)m->m_Class]);
+    anim = P32_GET(model->m_Animations[a->m_NextAnimation]);
     a->m_FrameProgress = 0;
     a->m_Animation = a->m_NextAnimation;
     a->m_Frame = frame;
@@ -293,7 +293,7 @@ static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
 static void AnimateList(P32F(Moby *) *list, int speedDiv) {
   u_int *queue = SOUND_QUEUE, *q;
   Moby *m;
-  while ((m = *list++))
+  while ((m = P32_GET(*list++)))
     queue = Animate(m, speedDiv, queue);
   /* The frames' sounds, from each moby. */
   for (q = SOUND_QUEUE; q != queue; q += 2) {
@@ -310,7 +310,7 @@ static void AnimateList(P32F(Moby *) *list, int speedDiv) {
  * runs in a child, as for the shadow. */
 static void FuzzAnimate(P32F(Moby *) *list) {
   int n = HandFuzzBegin("func_800522C0", (u_int)(uintptr_t)list[0] ^ g_DeltaTime), k;
-  P32F(Moby *) *l, *m;
+  P32F(Moby *) *l; Moby *m;
   for (k = 0; k < n; k++) {
     u_int div = HandFuzzRand() % 3 | (k & 1 ? 0x80000000u : 0);
     for (l = list; (m = *l); l++) {
@@ -334,7 +334,7 @@ static void FuzzAnimate(P32F(Moby *) *list) {
 #endif
 
 /* The animation step of every moby on pMobyList. */
-void func_800522C0(P32F(Moby *) *pMobyList, u_int pSpeedDiv) {
+void func_800522C0(MobyListSlot *pMobyList, u_int pSpeedDiv) {
 #if HAND_SHADOW
   FuzzAnimate(pMobyList);
 #endif

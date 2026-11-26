@@ -207,7 +207,7 @@ static void Portals(void) {
   int i;
   SkyMatrices(&sky, &squash);
   for (i = 0; i < g_PortalCount; i++) {
-    Portal *portal = g_Portals[i];
+    Portal *portal = P32_GET(g_Portals[i]);
     Vector3D *screen = D_80078DD8, toCamera, middle;
     Outline o;
     int color, sector = portal->m_WorldSector, shift, dist, n, j, facing, thinX = 1, thinY = 1, sumX, sumY, fade;
@@ -216,7 +216,7 @@ static void Portals(void) {
     if (sector >= 0 && !D_800771C8[sector])
       continue;
     /* The sky's colour pulses towards white... */
-    color = ColorLerp(portal->m_Skybox->copyBgColor, 0xFFFFFF, Abs(Cos(g_LevelTicks * 16 + i * 512)) >> 1);
+    color = ColorLerp(P32_GET(portal->m_Skybox)->copyBgColor, 0xFFFFFF, Abs(Cos(g_LevelTicks * 16 + i * 512)) >> 1);
     /* ...and far away, with the low-poly world skipped, fades to this
      * level's sky. */
     VecSub(&toCamera, &portal->m_Center, &g_Camera.m_Position);
@@ -257,7 +257,7 @@ static void Portals(void) {
     o.minX = 0x13F8, o.minY = SCREEN_H, o.maxX = 0, o.maxY = 0, o.found = 0, o.edges = 0;
     sumX = sumY = 0;
     sumZ = 0;
-    D_80075798 = D_8006FCF4 + 0x800;
+    P32_SET(D_80075798 , D_8006FCF4 + 0x800);
     n = portal->m_PointCount;
     for (j = 0; j < n; j++) {
       const Vector3D *c = &screen[j], *q = &screen[NextPoint(j, n, facing)];
@@ -298,10 +298,10 @@ static void Portals(void) {
       if (dist < 0x4000) {
         if (dist > 0x3000) {
           D_8007575C = dist - 0x3000;
-          D_800757D4 = ColorLerp(portal->m_Skybox->copyBgColor, color, dist - 0x3000);
+          D_800757D4 = ColorLerp(P32_GET(portal->m_Skybox)->copyBgColor, color, dist - 0x3000);
           fill = (Color *)&D_800757D4;
         } else
-          fill = (Color *)&portal->m_Skybox->copyBgColor;
+          fill = (Color *)&P32_GET(portal->m_Skybox)->copyBgColor;
       }
       func_8004FEA0(fill);
     }
@@ -311,7 +311,7 @@ static void Portals(void) {
     /* Second pass, near: each point pushed 2 pixels out from the
      * outline's middle, and the sky behind it. */
     o.minX = SCREEN_W, o.minY = SCREEN_H, o.maxX = 0, o.maxY = 0, o.found = 0, o.edges = 0;
-    D_80075798 = D_8006FCF4 + 0x800;
+    P32_SET(D_80075798 , D_8006FCF4 + 0x800);
     for (j = 0; j < portal->m_PointCount; j++) {
       Vector3D *p = &screen[j];
       if (sumX < p->x)
@@ -340,10 +340,10 @@ static void Portals(void) {
     PublishBox(&o);
     if (dist > 0x3000) {
       D_8007575C = dist - 0x3000;
-      D_800757D4 = ColorLerp(portal->m_Skybox->copyBgColor, color, dist - 0x3000);
-      func_80050240(portal->m_Skybox, &sky, &squash);
+      D_800757D4 = ColorLerp(P32_GET(portal->m_Skybox)->copyBgColor, color, dist - 0x3000);
+      func_80050240(P32_GET(portal->m_Skybox), &sky, &squash);
     } else
-      func_8004F4BC(portal->m_Skybox, &sky, &squash);
+      func_8004F4BC(P32_GET(portal->m_Skybox), &sky, &squash);
   }
   /* Then the level's own sky, in the camera's occlusion group (-1: all). */
   func_8004EBA8(g_Camera.m_OcclusionGroup < g_Environment.m_OcclusionGroupCount ? g_Camera.m_OcclusionGroup : -1,

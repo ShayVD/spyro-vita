@@ -196,7 +196,7 @@ static u_int FuzzRand(void) {
 /* The moby collision grid: g_MobyCollisionChain points at its heads, one
  * per 8192-unit cell (32 per row), then a second grid 0x400 entries on;
  * each list runs through m_CollisionChainNext. */
-static inline P32F(Moby *) *MobyChain(int region) { return (P32F(Moby *) *)g_MobyCollisionChain + region; }
+static inline P32F(Moby *) *MobyChain(int region) { return (P32F(Moby *) *)P32_GET(g_MobyCollisionChain) + region; }
 
 /* A moby's cell: x and y >> 13 (as unsigned), 32 cells to a row. */
 static inline int MobyCell(const Moby *m) {
@@ -207,24 +207,24 @@ static inline int MobyCell(const Moby *m) {
  * on it). */
 static void ChainUnlink(Moby *m, int region) {
   P32F(Moby *) *link = MobyChain(region);
-  while (*link != m)
-    link = &(*link)->m_CollisionChainNext;
-  *link = m->m_CollisionChainNext;
+  while (P32_GET(*link) != m)
+    link = &P32_GET((*link))->m_CollisionChainNext;
+  P32_SET(*link , P32_GET(m->m_CollisionChainNext));
 }
 
 /* Puts m at the head of a cell's list. */
 static void ChainLink(Moby *m, int region) {
   P32F(Moby *) *head = MobyChain(region);
-  Moby *next = *head;
-  *head = m;
-  m->m_CollisionChainNext = next;
+  Moby *next = P32_GET(*head);
+  P32_SET(*head , m);
+  P32_SET(m->m_CollisionChainNext , next);
 }
 
 /* The collision model of a moby's animation frame: the frame word's bits
  * 21-23 pick one of the model's eight. */
 static void *FrameCollisionModel(const Model *model, int anim, int frame) {
-  u_int data = model->m_Animations[anim]->m_Frames[frame].m.m_Data;
-  return model->m_CollisionModels[(data >> 21) & 7];
+  u_int data = P32_GET(model->m_Animations[anim])->m_Frames[frame].m.m_Data;
+  return P32_GET(model->m_CollisionModels[(data >> 21) & 7]);
 }
 
 /* The moby's rotation matrix from its three 8-bit angles: RotVec8ToMatrix
@@ -255,8 +255,8 @@ static inline signed char *PropsState(u_char *end) { return (signed char *)end -
 /* Takes the slot at g_MobyAllocPtr and the props block below
  * g_PropsAllocPtr, and moves both on to the next free slot. */
 static Moby *Alloc(void) {
-  Moby *m = g_MobyAllocPtr, *next = m + 1;
-  u_char *props = (u_char *)g_PropsAllocPtr, *end;
+  Moby *m = P32_GET(g_MobyAllocPtr), *next = m + 1;
+  u_char *props = (u_char *)P32_GET(g_PropsAllocPtr), *end;
   int state;
   g_DynMobyCount++;
   state = *MobyState(m);
@@ -267,7 +267,7 @@ static Moby *Alloc(void) {
     while (*MobyState(next) >= 0)
       next++;
   }
-  g_MobyAllocPtr = next;
+  P32_SET(g_MobyAllocPtr , next);
   state = *PropsState(props);
   *PropsState(props) = 0;
   end = props - PROPS_SIZE;
@@ -277,8 +277,8 @@ static Moby *Alloc(void) {
     while (*PropsState(end) >= 0)
       end -= PROPS_SIZE;
   }
-  m->m_Props = props - PROPS_SIZE;
-  g_PropsAllocPtr = end;
+  P32_SET(m->m_Props , props - PROPS_SIZE);
+  P32_SET(g_PropsAllocPtr , end);
   return m;
 }
 
@@ -321,17 +321,17 @@ static void Free(Moby *pMoby) {
   u_char *end;
   if (pMoby->m_CollisionRegion >= 0)
     ChainUnlink(pMoby, pMoby->m_CollisionRegion);
-  if (g_DynMobys - pMoby > 0) {
+  if (P32_GET(g_DynMobys) - pMoby > 0) {
     *MobyState(pMoby) = SLOT_DEAD;
     return;
   }
   g_DynMobyCount--;
   slot = (Moby *)((u_char *)FreeSlot(MobyState(pMoby), sizeof(Moby)) - offsetof(Moby, m_State));
-  if (g_MobyAllocPtr - slot >= 0)
-    g_MobyAllocPtr = slot;
-  end = (u_char *)FreeSlot(PropsState((u_char *)pMoby->m_Props + PROPS_SIZE), -PROPS_SIZE) + 1;
-  if ((u_char *)g_PropsAllocPtr - end <= 0)
-    g_PropsAllocPtr = end;
+  if (P32_GET(g_MobyAllocPtr) - slot >= 0)
+    P32_SET(g_MobyAllocPtr , slot);
+  end = (u_char *)FreeSlot(PropsState((u_char *)P32_GET(pMoby->m_Props) + PROPS_SIZE), -PROPS_SIZE) + 1;
+  if ((u_char *)P32_GET(g_PropsAllocPtr) - end <= 0)
+    P32_SET(g_PropsAllocPtr , end);
 }
 
 void MobyFree(Moby *pMoby) {
@@ -353,11 +353,11 @@ void MobyFree(Moby *pMoby) { MobyFree_gen(pMoby); }
  * pointer), or none (region -1) when the model has none; then its rotation
  * matrix. */
 static void UpdateCollision(Moby *pMoby) {
-  const Model *model = g_Models[(u_short)pMoby->m_Class];
+  const Model *model = P32_GET(g_Models[(u_short)pMoby->m_Class]);
   const AnimationState *a = &pMoby->m_AnimationState;
-  void *first = model->m_CollisionModels[0];
-  pMoby->m_AnimationState.m_PerFrameProgress = model->m_Animations[a->m_Animation]->m_ProgressPerTick;
-  pMoby->m_CollisionGroup = FrameCollisionModel(model, a->m_Animation, a->m_Frame);
+  void *first = P32_GET(model->m_CollisionModels[0]);
+  pMoby->m_AnimationState.m_PerFrameProgress = P32_GET(model->m_Animations[a->m_Animation])->m_ProgressPerTick;
+  P32_SET(pMoby->m_CollisionGroup , FrameCollisionModel(model, a->m_Animation, a->m_Frame));
   pMoby->m_CollisionRegion = -1;
   if (first) {
     int region = MobyCell(pMoby) + (MEM_COLL_TAGGED(first) ? 0 : 0x400);
@@ -379,7 +379,7 @@ void MobyUpdateCollision(Moby *pMoby) { MobyUpdateCollision_gen(pMoby); }
 static void SetShaded(Moby *pMoby) {
   pMoby->m_Renderer.raw = 0;
   pMoby->m_AnimationState.m_PerFrameProgress = 0;
-  pMoby->m_CollisionGroup = NULL;
+  P32_SET(pMoby->m_CollisionGroup , NULL);
   pMoby->m_CollisionRegion = -1;
 }
 
@@ -399,11 +399,11 @@ void MobySetShaded(Moby *pMoby) { MobySetShaded_gen(pMoby); }
 static void UpdateProps(Moby *pMoby, int pFlags) {
   if (pFlags & UPDATE_PROP_COLLISION) {
     const AnimationState *a = &pMoby->m_AnimationState;
-    const Model *model = g_Models[(u_short)pMoby->m_Class];
+    const Model *model = P32_GET(g_Models[(u_short)pMoby->m_Class]);
     if (a->m_FrameProgress > 0)
-      pMoby->m_CollisionGroup = FrameCollisionModel(model, a->m_NextAnimation, a->m_NextFrame);
+      P32_SET(pMoby->m_CollisionGroup , FrameCollisionModel(model, a->m_NextAnimation, a->m_NextFrame));
     else
-      pMoby->m_CollisionGroup = FrameCollisionModel(model, a->m_Animation, a->m_Frame);
+      P32_SET(pMoby->m_CollisionGroup , FrameCollisionModel(model, a->m_Animation, a->m_Frame));
   }
   if (pFlags & UPDATE_PROP_CHAIN) {
     int region = pMoby->m_CollisionRegion, cell = MobyCell(pMoby) | (region & 0x400);
@@ -465,9 +465,9 @@ static void UnpackVertex(u_int w, int scale, int *x, int *y, int *z) {
  * borrows one from y) and placed at its position, the axes as
  * (IR3, -IR1, -IR2). The animation's scale is a signed byte here. */
 static void AnimatedVertex(Moby *pMoby, int pVertexIdx, Vector3D *pOut) {
-  const Model *model = g_Models[(u_short)pMoby->m_Class];
+  const Model *model = P32_GET(g_Models[(u_short)pMoby->m_Class]);
   const AnimationState *a = &pMoby->m_AnimationState;
-  const AnimationHeader *anim = model->m_Animations[a->m_Animation];
+  const AnimationHeader *anim = P32_GET(model->m_Animations[a->m_Animation]);
   const short *r = &pMoby->m_RotationMatrix.m[0][0];
   int scale = (signed char)anim->m_Scale, t = a->m_FrameProgress, x, y, z, vxy, vx, vy;
   gteRegs.CP2C.p[0].d = ((const u_int *)r)[0];
@@ -478,7 +478,7 @@ static void AnimatedVertex(Moby *pMoby, int pVertexIdx, Vector3D *pOut) {
   gteRegs.CP2C.p[5].d = gteRegs.CP2C.p[6].d = gteRegs.CP2C.p[7].d = 0;
   UnpackVertex(FrameVertices(anim, a->m_Frame)[pVertexIdx], scale, &x, &y, &z);
   if (t > 0) {
-    const AnimationHeader *next = model->m_Animations[a->m_NextAnimation];
+    const AnimationHeader *next = P32_GET(model->m_Animations[a->m_NextAnimation]);
     int nx, ny, nz;
     UnpackVertex(FrameVertices(next, a->m_NextFrame)[pVertexIdx], scale, &nx, &ny, &nz);
     z = ((0x40 - t) * S16(z) + t * S16(nz)) >> 6;
@@ -531,11 +531,11 @@ void MobyGetAnimatedVertex(Moby *pMoby, int pVertexIdx, Vector3D *pOutVector) {
  * plus the base word, or with bit 15 set an absolute position from two
  * entries, no base word; bit 14 picks the next step's). */
 static void SpyroVertex(int pVertex, Vector3D *pOut, int pAnimation, int pFrame) {
-  const AnimationHeader *anim = SPYRO_MODEL->m_Animations[pAnimation];
+  const AnimationHeader *anim = P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[pAnimation]);
   u_int frame = ((const u_int *)anim->m_Frames)[pFrame];
   int wide = (frame >> 21) & 1, x = 0, y = 0, z = 0;
   const u_char *data = (const u_char *)MEM_ANIM_HALF(frame);
-  const int *base = anim->m_AnimationVertices;
+  const int *base = P32_GET(anim->m_AnimationVertices);
   const short *entries = (const short *)(data + 0x18);
   const u_char *bytes = data + 0x18 + (((const u_int *)data)[2] >> 20);
   do {
@@ -598,9 +598,9 @@ void func_80052F38(int pVertex, Vector3D *pOut, int pAnimation, int pFrame) {
  * leaves the rotation, the quarter position (TR) and pSize (in RBK, its
  * spare register) in the GTE. */
 static void DeathSparks(Moby *pMoby, int pSize) {
-  const Model *model = g_Models[(u_short)pMoby->m_Class];
+  const Model *model = P32_GET(g_Models[(u_short)pMoby->m_Class]);
   const AnimationState *a = &pMoby->m_AnimationState;
-  const AnimationHeader *anim = model->m_Animations[a->m_Animation];
+  const AnimationHeader *anim = P32_GET(model->m_Animations[a->m_Animation]);
   const AnimationFrame *frame = &anim->m_Frames[a->m_Frame];
   const short *r = &pMoby->m_RotationMatrix.m[0][0];
   const u_int *words = FrameVertices(anim, a->m_Frame);

@@ -159,7 +159,7 @@ static struct {
 /* The game's primitive buffer: 0x1C000 bytes (0x13000 in reduced-space
  * levels), up to where the HUD's mobys start. */
 static int buffer_cap(void) {
-  int cap = (int)((char *)g_Buffers.m_HigherPolyBuffer - (char *)g_Buffers.m_LowerPolyBuffer);
+  int cap = (int)((char *)P32_GET(g_Buffers.m_HigherPolyBuffer) - (char *)P32_GET(g_Buffers.m_LowerPolyBuffer));
   return cap <= 0 || cap > POLY_TOP ? POLY_TOP : cap;
 }
 
@@ -169,7 +169,7 @@ static int buffer_cap(void) {
  * buffer (#203). With it off (statistics only) the draw's own buffer, as
  * before. */
 static int draw_room(u32 lo) {
-  const u32 top = (u32)(uintptr_t)g_Buffers.m_HudOTStart - FAIRY_CARD_BUF;
+  const u32 top = (u32)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) - FAIRY_CARD_BUF;
   const int cap = buffer_cap();
   if (g_lod.scale <= LOD_ONE || top <= lo || top - lo < (u32)cap || top - lo > 2 * 0x1C000)
     return cap;
@@ -182,8 +182,8 @@ static int cull_distance(void) {
 }
 
 static int moby_index(u32 moby) {
-  u32 base = (u32)(uintptr_t)g_LevelMobys, i;
-  if (!g_LevelMobys || moby < base)
+  u32 base = (u32)(uintptr_t)P32_GET(g_LevelMobys), i;
+  if (!P32_GET(g_LevelMobys) || moby < base)
     return -1;
   i = (moby - base) / sizeof(Moby);
   return i < MAX_EXT && base + i * sizeof(Moby) == moby ? (int)i : -1;
@@ -273,7 +273,7 @@ int port_lod_records_full(u32 record, u32 prim) {
 }
 
 int port_lod_lit_full(void) {
-  if ((u32)(uintptr_t)D_800757B0 <= s_moby_limit)
+  if ((u32)(uintptr_t)P32_GET(D_800757B0) <= s_moby_limit)
     return 0;
   s_st.moby_cuts++;
   return 1;
@@ -337,8 +337,8 @@ void lod_set_budget_hook(void (*fn)(void)) { s_budget_hook = fn; }
 #endif
 
 void port_lod_draw_begin(int shown) {
-  const DB *db = g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
-  u32 lo = (u32)(uintptr_t)port_poly_start(db->m_PolyBuf); /* D54 */
+  const DB *db = P32_GET(g_CurDB) == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
+  u32 lo = (u32)(uintptr_t)port_poly_start(P32_GET(db->m_PolyBuf)); /* D54 */
   int cap = buffer_cap(), room = draw_room(lo);
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
@@ -473,10 +473,10 @@ void port_lod_draw_end(int shown) {
   s_last_60 = 0;
   s_demo_shown = shown && g_DemoMode != DEMO_MODE_NONE; /* the game's draws only:
                                      the presenter's never end here */
-  if (!shown || !g_CurDB || !(on || g_lod.stats))
+  if (!shown || !P32_GET(g_CurDB) || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
-  used = (int)((u32)(uintptr_t)D_800757B0 - s_poly_lo);
+  used = (int)((u32)(uintptr_t)P32_GET(D_800757B0) - s_poly_lo);
   cap = draw_room(s_poly_lo); /* the span with the option on (#203) */
   if (used < 0 || used > 0x100000)
     return;
@@ -491,9 +491,9 @@ void port_lod_draw_end(int shown) {
     s_last_bytes = used;
     s_last_60 = s_logic60 && g_lod.budget > 0;
   }
-  if (s_env_end && (u32)(uintptr_t)D_800757B0 >= s_env_end &&
-      (u32)(uintptr_t)D_800757B0 - s_env_end > s_st.after_env_max)
-    s_st.after_env_max = (u32)(uintptr_t)D_800757B0 - s_env_end;
+  if (s_env_end && (u32)(uintptr_t)P32_GET(D_800757B0) >= s_env_end &&
+      (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end > s_st.after_env_max)
+    s_st.after_env_max = (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end;
   s_st.draws++;
   s_st.used += (unsigned)used;
   s_st.k += (unsigned)k;
