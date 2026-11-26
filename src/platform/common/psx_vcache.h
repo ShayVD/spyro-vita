@@ -639,6 +639,12 @@ typedef struct {
    * not by derive's order or resolve), and those that got no place there
    * either (that store full too, or no memory for it) */
   unsigned ord_x, ord_lost;
+  /* #266: vertices with no entry counted exempt (VCX_NO_PROJ) because
+   * their world polygon has a corner with no projection (#217's split point
+   * with an end behind the eye, or an own point with none): the polygon
+   * has no depth there, so it is drawn affine at its keys whatever the
+   * others find (counted in miss_none too) */
+  unsigned np_poly;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
