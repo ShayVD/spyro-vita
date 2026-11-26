@@ -21,24 +21,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "ace9979ee61066b15",
       "last_commit_at": "2026-11-26T07:20:00Z"
-    },
-    {
-      "issue": 232,
-      "branch": "feat/232-config-keys-vc-repeat-and-pres-demo",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-232",
-      "pids": [],
-      "started_at": "2026-11-26T07:20:00Z",
-      "files": [
-        "src/platform/vita/main.c",
-        "src/platform/vita/pres_thread.c",
-        "src/game/present.h",
-        "docs/presentation.md"
-      ],
-      "agent": "ac8059cf916479421",
-      "last_commit_at": "2026-11-26T07:20:00Z"
     }
   ],
-  "last_good": "e744b314d32ffa9b560934782ee4e6cfa8452b48",
+  "last_good": "dfa8b4f772437bf32179cabf7a03edf8f2bcf369",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
