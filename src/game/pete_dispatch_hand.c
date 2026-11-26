@@ -93,7 +93,7 @@ static void SpawnTrail(Vector3D *pPos) {
   pPos->y += (rand() & 0xFE) - 0x7F;
   VecCopy(&drift, &g_Spyro.m_Physics.m_TrueVelocity);
   VecShiftRight(&drift, 6);
-  g_SpawnParticle(1, 9, pPos, (int)&drift);
+  g_SpawnParticle(1, 9, pPos, (int)P32_ENC(&drift));
 }
 
 /* m_highestFlightPoint, the height flying speed is reckoned from, follows

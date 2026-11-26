@@ -189,15 +189,15 @@ static void make_header(Header *h) {
   snprintf(h->build, sizeof h->build, "%s %s %s", SPYRO_BUILD_ID, __DATE__, __TIME__);
   h->layout[0] = (uint32_t)g_psx_arena_base;
 #if SPYRO_NATIVE_MEM
-  h->layout[1] = (uint32_t)(uintptr_t)s1_labels;
-  h->layout[2] = (uint32_t)(uintptr_t)etext;
+  h->layout[1] = (uint32_t)(uintptr_t)P32_ENC(s1_labels);
+  h->layout[2] = (uint32_t)(uintptr_t)P32_ENC(etext);
 #else
   h->layout[1] = (uint32_t)(uintptr_t)etext;
   h->layout[2] = (uint32_t)(uintptr_t)_edata;
 #endif
-  h->layout[3] = (uint32_t)(uintptr_t)_end;
-  h->layout[4] = (uint32_t)(uintptr_t)&savestate_point;
-  h->layout[5] = (uint32_t)(uintptr_t)&GamestateDraw;
+  h->layout[3] = (uint32_t)(uintptr_t)P32_ENC(_end);
+  h->layout[4] = (uint32_t)(uintptr_t)P32_ENC(&savestate_point);
+  h->layout[5] = (uint32_t)(uintptr_t)P32_ENC(&GamestateDraw);
   h->vblank = psx_clock_count();
   h->gamestate = g_Gamestate;
   h->level = g_LevelId;
@@ -426,7 +426,7 @@ const char *savestate_label(const SaveStateInfo *info) {
     return "CREDITS";
   if (world < 0 || world > 5 || n > 5)
     return "?";
-  return n == 0 ? g_HomeworldNames[world] : g_LevelNames[world * 6 + n];
+  return n == 0 ? P32_GET(g_HomeworldNames[world]) : P32_GET(g_LevelNames[world * 6 + n]);
 }
 
 /* ---------- requests ---------- */

@@ -58,7 +58,7 @@ static u32 AllocGlow(u32 a0, u32 a1, u32 a2, u32 a3) {
     Glow *glow = &g_Glows[i];
     if (glow->m_VertexCount == 0) {
       glow->m_VertexCount = GLOW_DEFAULT_VERTS;
-      glow->m_Vertices = g_DefaultGlowVerts;
+      P32_SET(glow->m_Vertices , g_DefaultGlowVerts);
       glow->m_OtOffset = 0;
       return PSX_ADDR(glow);
     }
@@ -87,6 +87,6 @@ static u32 FreeAll(u32 a0, u32 a1, u32 a2, u32 a3) {
 /* v1, which the asm leaves as its last load or address, is dead at every
  * caller (all C; tools/oracle/ignore_ranges.txt). */
 HAND_UNIT_FN_V0(func_8005882C, FindSparkle)
-HAND_UNIT_FN_V0(func_80058AE8, AllocGlow)
+HAND_UNIT_FN_PTR(func_80058AE8, AllocGlow)
 HAND_UNIT_FN(func_80058B60, FreeGlow)
 HAND_UNIT_FN(func_80058B68, FreeAll)

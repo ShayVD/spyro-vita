@@ -203,7 +203,7 @@ Files the app writes:
 | `tex_filter=N` | GPU: smooth textures; 1: bilinear (cheap); 2: 3-point, N64 style (costs more GPU); 0, the default, keeps the PS1's sharp texels (decisions D39, D43). A developer's key since D153, when the menu's `TEX FILTER` row went: read only with `config_version=5` in the file (the test tools write it); a line from an older file isn't taken (the textures stay sharp), and the menu's next save drops it |
 | `wobble=1` | GPU: the PS1's wobble, its texture warping and whole-pixel vertices (`persp=0 subpixel=0`; the menu's `PSX WOBBLE` ON). Default `0` since #177 (D194, the owner's decision): the fix on, both halves (`persp=1 subpixel=1`), which runs the vertex cache (see `vcache` below). The test tools write `wobble=1` (see "Config files from before PSX WOBBLE" below) |
 | `persp=0`, `subpixel=0` | GPU: developers' keys since #177 (D194), on by default with `wobble=0`. `persp`: perspective-correct textures on 3D polygons (no PS1 texture warping; D39). `subpixel`: 3D vertices at their exact positions instead of whole pixels (no PS1 wobble; D39). A line wins over `wobble=` for its own half, wherever it is in the file; when the two halves agree, the menu's row shows them. The menu's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` until #177 |
-| `draw_distance=N` | experimental: the world's detail and the objects drawn further away, percent: `150` or `200` (default `100`, the original; D49, the menu's `DRAW DISTANCE (EXP.)`). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
+| `draw_distance=N` | the world's detail and the objects drawn further away, percent, 100 to 400: `400` (the menu's `DRAW DISTANCE` `MAX (ADAPTIVE)` since #261; past 2× only with 60 HZ in play, where `dd_budget` measures the draws), `200` (MAX from #260 to #261, 2X before) or `150` (no menu values: the row shows `200%` or `150%`, and left or right goes to `NORMAL`, the nearer; a `200` an older menu saved reads as `400`, see "Config files from before MAX was 4×" below); default `100`, the original (`NORMAL`; D49). Picture only; the game plays the same. Costs frame rate in open areas, see "Testing the draw distance" |
 | `dd_budget=auto` | with a longer draw distance and 60 Hz logic in play: the limiter keeps each draw under a work budget sized from the game thread's measured time per logic frame (the default since #212; `src/platform/vita/lod_time.c`). The time is the update plus the logic draw without its VSync waits (the walk's join included), against a target of 14.5 ms of the 16.7 ms frame; a frame over it cuts the budget at once, eight frames with 1 ms or more to spare let it grow 2 KB a frame, between 48 KB and the span the draw has. Needs `stats=1` (the default; else a fixed 48 KB). `dd_budget=1`: a fixed 48 KB of primitives, the default until #212 (D175). `dd_budget=N` (2-1024): a fixed N KB. `dd_budget=0`: no work budget, only the buffer's limits, as before #180. The start of the log says which (`picture: draw distance ... (dd_budget=...)`); the `lod` lines count the budget's back-offs, how many held the draw at 1x (#200), and with auto the budget and the time (`budget 61 KB (auto, 48-96 KB, worst 15.9 ms, 2.1 ms left; 3 over)` or `budget held at 1x: 15.2 ms used of 14.5, worst 17.0 ms (48-52 KB)`; the range and the worst frame since #224). No menu row |
 | `tex_cache=0` | GPU: decode textures from VRAM per pixel instead of the decoded atlas (`tex_cache=1`, the default, gives the same pixels faster; D41) |
 | `shader_cache=0` | GPU: compile every shader program at each start, as before #201. Default 1: a program compiled once is kept in `ux0:data/spyro/shader_cache/` (one `.bin` a program, from vitaGL's `glGetProgramBinary`; the installed vitaGL has no `HAVE_SHADER_CACHE`) and later starts load it instead of compiling (10 s of start-up on hardware before). A binary's key covers its sources and attribute bindings, the compiler's options, the vitaGL and vitashark libraries linked and the `libshacccg.suprx` found; the folder's `stamp` file holds the last three, and a different one empties the folder. A file that doesn't match or link is removed and the program compiled. The log: `gpu: shader cache ... stamp ...`, a `gpu: program N (...): loaded from the shader cache (hit)` or `compiled (cache miss)` line a program with its time, and the `gpu: shaders compiled in N ms: P programs, H from the shader cache ...` total. Deleting the folder is safe: the next start compiles and writes it again |
@@ -211,9 +211,11 @@ Files the app writes:
 | `state_test=V:save:N,V:load:N,...` | tests without a controller: save or load state slot N at vblank V (D51; up to 8) |
 | `bench=1` | GPU: measure the picture options (leave the game alone for ~4 minutes; `bench final` lines in the log; D41) |
 
-**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=6` since #177, D194; 5 since D153; 4 since D150) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS`: OFF, INTERPOLATED, 60 HZ; 60 HZ by default since D150, off before; `60 FPS (EXPERIMENTAL)` with ON, NO ANIM and CAMERA until D148; one row for every disc since D150, when D148's `PAL 60` row and `60 HZ LOGIC: US DISC ONLY` went), then `PSX WOBBLE` (OFF, the default: the fix on, no wobble; ON: the PS1's look; `wobble=`, D194), `RESOLUTION` (NATIVE, PS1; 2X–4X until D85) and `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X; D49). `PSX WOBBLE` replaced D48's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` rows with #177; `TEX FILTER` (D48) and `DYNAMIC RES` (D75) were rows here until D153. The three GPU rows are hidden with `gpu=0`. The default's shader programs compile at start-up; the first time a setting needing others is chosen (`PSX WOBBLE` ON, say), they compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
+**Options menu:** hold SELECT and press START, or tap the middle of the front touch screen, in any screen. The game stops while the menu is open. The rows are grouped under section headers (PICTURE, CONTROLS, GAME, SAVE); with more rows than fit, the list scrolls and arrows at the right show there is more. Up/down chooses a row, left/right (or ✕) changes it, ○ (or START, △) closes. Changes apply at once and every row is written back to `config.txt` (with `config_version=7` since #267; 6 since #177, D194; 5 since D153; 4 since D150) when the menu closes; other lines in the file stay as they were. Under PICTURE: widescreen (on by default), 60 fps (`60 FPS`: OFF, INTERPOLATED, 60 HZ; 60 HZ by default since D150, off before; `60 FPS (EXPERIMENTAL)` with ON, NO ANIM and CAMERA until D148; one row for every disc since D150, when D148's `PAL 60` row and `60 HZ LOGIC: US DISC ONLY` went), then `PSX WOBBLE` (OFF, the default: the fix on, no wobble; ON: the PS1's look; `wobble=`, D194), `RESOLUTION` (NATIVE, PS1; 2X–4X until D85) and `DRAW DISTANCE` (NORMAL, MAX (ADAPTIVE); #260: `DRAW DISTANCE (EXP.)` with three values from D49 until then). `PSX WOBBLE` replaced D48's `PERSPECTIVE TEXTURES` and `SUB-PIXEL VERTICES` rows with #177; `TEX FILTER` (D48) and `DYNAMIC RES` (D75) were rows here until D153. The three GPU rows are hidden with `gpu=0`. The default's shader programs compile at start-up; the first time a setting needing others is chosen (`PSX WOBBLE` ON, say), they compile: the menu pauses a few seconds (the log says how long). Under GAME (decisions D50): `SKIP INTRO LOGOS` (off by default, from the next start), then the game's own cheats as one-shot actions, never saved: `99 LIVES`, `LEVELS OPEN` (all levels and homeworlds open; kept in your save once you save), `CREDITS`, and `WARP TO` (choose a level) with `LEVEL WARP` (an unused developer cheat left in the game). Press ✕ once to ask and again to apply; the menu closes, the game opens its inventory and takes the cheat there, as if its code had been typed. The cheats work only in a level (playing, paused or in the inventory), never at the title or in a demo: there they read `IN A LEVEL`. The game never sees the buttons that open or close the menu. The rows are a table that each feature file adds to (decisions D45).
 
 **Config files from before PSX WOBBLE (#177, D194; `main.c`'s `read_config`):** an old menu's file has no `wobble=` line and every `config_version` line in it below 6, and has both `persp=` and `subpixel=` lines, as the old menu wrote every row. There `persp=1 subpixel=1` (the fix) and `persp=0 subpixel=0` (the old default) both read as today's default, `PSX WOBBLE` OFF, with a `config: persp=N subpixel=N without config_version=6 ...` line in the log, and the pair goes at the menu's next save. Any other mix in an old file (one line alone, or a 1 and a 0) is a developer's and is taken as written. Here the highest `config_version` line decides, not the last one (D68's, D150's and D153's checks still use the last): the test tools write `config_version=6` first, and a run file's own later `config_version=5` must not make it read as an old player file. With a `wobble=` line or `config_version=6`, `persp=` and `subpixel=` lines are always taken.
+
+**Config files from before MAX was 4× (#267; `main.c`'s `read_config`):** the menu's `MAX (ADAPTIVE)` was `draw_distance=200` from #260 to #261 (`2X` before #260), and is `400` since. A `200` the menu saved then is read as today's MAX, `400%`, with a `config: draw_distance=200 from the options menu before config_version=7 is its MAX (ADAPTIVE): 400% (#267)` line in the log, and the menu's next save writes `400` with `config_version=7`. Only the block the menu writes counts: it writes the file's other lines, then `config_version=N`, then every row's key and nothing after. So the `200` is read as MAX only when the file's last `config_version` line is below 7, every line after it is a menu row's key (or a gone row's: `tex_filter`, `dynres`, `persp`, `subpixel`, `interp_budget`, `pal60`), and those lines include the nine rows every menu has written since D48 (`widescreen`, `interp`, `res`, `draw_distance`, `analog`, `free_camera`, `cam_invert_x`, `cam_invert_y`, `cam_speed`). A developer's `200` stays `200%`: the test tools write their run's lines (`frames=`, `shot=`, `pad=`, `dd_budget=`) after their `config_version` line, or write none (the kit's `v3k_run.sh`, the autopilot's routes), and their base lines never write `res`, `analog` or `cam_speed`. So does a `200` with `config_version=7` (the menu writes back a value it didn't change), and any other value (`150` stays `150%`). The PS4 does the same with its own versions (its menu wrote `config_version=5`, 6 since #267). With `menu_test=`, the log's `menu: shown ...` line lists each row as first shown (`DRAW DISTANCE: MAX (ADAPTIVE)`).
 
 **The test tools keep the PS1's wobble, so runs compare with the host:** `tools/vita/hw.game`'s `hw_config_base` writes `config_version=6` and, with the host's lines, `wobble=1` (not with `DEVICE_DEFAULTS=1`, which gives the device's defaults: the fix on); its `v3k_config_base`, for the kit's `v3k_run.sh` (the autopilot's Vita3K routes), writes `realtime=0` and `wobble=1` (the same `REALTIME=1` and `DEVICE_DEFAULTS=1` exceptions); `tools/vita/vita3k_run.sh` writes `config_version=6` and `wobble=1` with its other host lines. A run's own `persp=1 subpixel=1` after them still turns the fix on (as `pause-ws-wobble`, `wobble60` and `owner60` do).
 
@@ -284,7 +286,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       couldn't give, because it's behind the eye (SZ3 0, MAC3 below 0). These are a glow's rim or a
       moby shadow's corner whose own point names such a projection, and since #217 (D220) a world
       split point with an end behind the eye (its key marked `HK_NOPROJ`). The PS1 still draws them
-      (a glow's centre clamped to x = −1024), so they're drawn as the PS1 draws them.
+      (a glow's centre clamped to x = −1024), so they're drawn as the PS1 draws them. Since #266
+      (D257) a world polygon with such a corner also counts its other vertices with no entry here
+      (`vcache world no projection:` below).
 
     `unmarked U` are in frames where no renderer told the cache its primitives (`psx_vc_ctx`,
     `psx_vcache.h`), so nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
@@ -301,7 +305,18 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     corners (#209, D207); a particle corner counts only where no other renderer placed the key.
     Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
     butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
-    (the windows to 6,600 and 6,900).
+    (the windows to 6,600 and 6,900). `moby sprites` (#243, D259): the corners of a moby's
+    screen-facing squares (`moby_hand.c` `DrawSprite`: a POLY_FT4 at its first vertex's
+    projection, sized by its depth; MobyDraw's and SpecDraw's, the attract demo explosion's
+    sparks), which handed nothing over before. Each corner is handed over as an offset from the
+    centre's projection (`VCD_MOBY_SPRITE`, the lowest priority, as `VCD_PARTICLES`: it gives way
+    to every other renderer's place and is no source for another), and the walk uses it only for
+    a MobyDraw or SpecDraw polygon that #197 wouldn't take (without that gate one 4×1-px sprite
+    #197 had found changed). Host demo routes D and D60 (`docs/host-build.md`): 2,276 by their
+    end, missed 2,511 → 0 (MobyDraw 2,508 and ParticlesDraw 3, the 3 by the four-corner anchor
+    in `vcache own points:` below); 0 on every gameplay route. Vita3K `demo60` and `toasty60`:
+    2,276 in the window to 5,100 (where MobyDraw's missed 2,508 were), 0 on the other routes;
+    `demo60`'s `vc.misses` −38%.
   - `vcache cut fraction:` (#215, D213; fallbacks #230, D248) `<hk_frac> vertices with no entry
     found at their cut's own fraction; <fr_kept> cuts placed so, <fr_nosrc> with an end not usable
     or more than 8 pixels off (#215); fallbacks: <fa_kept> places kept, <fa_seed> from a cut of a
@@ -352,8 +367,30 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       #217 (D220) the world's split pieces name their corners the same way. The points are kept
       per key and anchor (the polygon's first vertex; a world piece's corner number) in a
       per-table store. Two different points under one key and anchor leave neither (dead).
-    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows or EnvDraw polygon found from
-      them. These count in the hits, not in `hooked`.
+    - **Particles (#231, D251):** since D251 the step also takes ParticlesDraw's screen-facing
+      quads (`VCX_PARTICLES`). A quad names its centre (`VCD_SELF`, the last projection) under the
+      anchor of its first corner's key, and its four corner hand-overs add `VCD_OWN` with that
+      anchor (the centre's own point plus the corner's integer offset). This finds the corner that
+      two quads side by side (a ram's stars) share on one pixel: each quad hands it over from its
+      own centre's exact place, 0.2–0.5 px apart, so the hand-over drops the key (D182). The
+      hand-over itself is as before (`hk_place` ignores the anchor for an offset). On the host
+      (2x, 16:9) ParticlesDraw's missed went to 0: S 10 → 0, Si 20 → 0, S60 8 → 0.
+    - **Moby sprites and the four-corner anchor (#243, D259):** since D259 the step also takes
+      MobyDraw's and SpecDraw's quads (`DrawSprite`'s screen-facing squares, `moby sprites` on the
+      `vcache hooked:` line). A sprite names its centre (`VCD_SELF`: the record's projection of
+      its first vertex, `nvert - 1 - i0/4` vertices and `nspr` sprite projections back,
+      key-checked) and its corners as its own (`VCD_OWN`). Particle quads and sprites now anchor
+      their own points on all four corners' keys mixed (`VCD_QUAD_ANCHOR`, `psx_vcache.h`), not
+      the first corner's alone, and the walk mixes a quad's four keys the same way. Under one
+      first-corner key, two particle quads of different sizes (the attract demo's, key
+      (47,100) at vblank 5,456) named different centres, so their own points died: those were
+      the last 3 ParticlesDraw missed on host D and D60 and in Vita3K `demo60` and `toasty60`'s
+      window to 5,700. They went to 0.
+    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows, EnvDraw, (since D251)
+      ParticlesDraw or (since D259) MobyDraw or SpecDraw quad's polygon found from them. These
+      count in the hits, not in `hooked`. D251 added the particle quads' vertices: host S 133 →
+      143, Si 264 → 284, S60 215 → 223; T stayed 3,514. D259 added the sprites': host D and D60
+      552 → 784 (`own_kept` 128,742 → 134,498); S, Si, S60 and T unchanged.
     - `own_amb`: those of them whose key was ambiguous. They aren't counted in `resolved`.
     - `own_over`: that polygon's vertices that were already found but were drawn at their own
       point too, so all of its depths come from one projection.
@@ -364,11 +401,23 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
         corner that GridCorrect moved after its projection: 99% of it, about 60,000 a route on the
         host routes. Those corners are kept as their piece's own instead (`sp_moved` below), so
         #226 stopped counting them here.
-      - **What's left (#226's tags):** only world corners named in a frame whose order log is full
-        (`VC_LOG`, 8,192 projections). The cache can't name a projection the log never took. That
-        is 28 on host S (74 with `--interp`), in the vblanks 13,128–13,142 and 14,150–14,158, and 0
-        on P, Pf and T, at 30 Hz and with `--interp`. It's the same log-full limit that leaves
-        EnvDraw's 6 missed on S (D223, #237). Vita3K never fills the log.
+      - **Log-full frames, fixed by #237 (D253).** After #226 what was left was world corners
+        named in a frame whose order log is full (`VC_LOG`, 8,192 projections): the cache couldn't
+        name a projection the log never took. That was 28 on host S (74 with `--interp`), in the
+        vblanks 13,128–13,142 and 14,150–14,158, and 0 on P, Pf and T, at 30 Hz and with
+        `--interp`. From #231 (D251) the count also held the particle quads drawn in such frames
+        (their centres and corners): S 28 → 618 (590 more: 118 centres and 472 corners), Si 74 →
+        1,214. The same limit left EnvDraw's 6 missed on S and Si (D223). Since D253 such a frame
+        places its later projections past the log (`vcache order past the log:` below), so they're
+        named: S 618 → 0, Si 1,214 → 0, and the 6 missed went too. A projection with no place even
+        there (`ord_lost`) still leaves its namings here.
+      - **What's left since D253:** particle quads whose centre's own point is dead, because two
+        quads with one corner-0 pixel (so one anchor) name different centres under it: 16 each on
+        host S60 and T (D251; the same 16 after D253, in #237's runs). The hand-overs find those
+        polygons as before. 0 on host S, Si, P, Pf and O60 after D253. Vita3K never fills the log.
+        D259's four-corner anchor left S60's and T's 16 as they were (#243's runs). On host D and
+        D60 it went 68 → 72 with D259: sprite centres whose naming fails the key check, and every
+        one of those polygons is found anyway.
       - **Shadow fans, fixed.** A moby shadow's fan closes on a fifth corner word that repeats
         the first corner. Its nudged copy named the projection 0 back instead of 3 back, so it found
         nothing (62 on S, 591 on T). That never mattered, because the first corner's call holds
@@ -386,6 +435,19 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       where nothing else placed the key.
     - `hk_noproj`: split points with an end behind the eye. Their key is marked `HK_NOPROJ`, and
       their vertices are counted as exempt "no projection".
+  - `vcache world no projection:` (#266, D257) `<np_poly> vertices with no entry exempt because
+    their world polygon has a corner with no projection (drawn affine at its keys)`.
+    - **How it works:** an EnvDraw polygon with a corner that has no projection (a split point with
+      an end behind the eye, `hk_noproj`, or an own point that names none) has no depth there, so
+      it can't be drawn perspective-correct. The PS1 draws it affine at its keys, and so does the
+      port. Its other vertices with no entry (no entry and no hand-over found them) are counted as
+      exempt "no projection" (`VCX_NO_PROJ`) too, not missed. A counting change only: no answer,
+      place or depth changes.
+    - `np_poly`: those other vertices. In spite of the name, it counts vertices, not polygons.
+    - **Measured:** host T `np_poly` 2 (frames g6469 and g6475: a world GT3 whose other corner's
+      `Sp` record, D223, lies 2,641 / 3,317 px off its key, so drawing it there would put the
+      corner thousands of pixels from where the PS1 draws it). T's missed went 2 → 0 and its "no
+      projection" 832 → 834. 0 on host S. Vita3K `toasty60`'s window 14,400: EnvDraw missed 2 → 0.
   - `vcache world own:` (#229, D223) `<sp_found> vertices found from their piece's own split point
     or moved corner; <sp_kept> kept, <sp_full> not kept (full); <sp_wide> split points paired
     across 4x depths, <sp_moved> corners the grid moved; <sp_spread> world polygons found from
@@ -439,6 +501,25 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
         (`VCD_CENTRE`). The walk takes that point only for a shadow polygon whose centre nothing
         found and whose (centre, centre) point is missing or dead. Every earlier step, #216's own
         points included, leaves such a polygon unfound.
+  - `vcache order past the log:` (#237, D253) `<ord_x> projections of frames whose order log was
+    full (8192) placed past it, for the own points' names only; <ord_lost> with no place`.
+    - **How it works:** each table logs the frame's projections in order, `VC_LOG` (8,192) places.
+      The first time a table's log fills, it mallocs an `Xlog` store (84 KB: a `log[8192]` of its
+      own and its answers, `lc[8192]` and `lfar[512]`). The frame's later projections (not the
+      overflow's) take places `VC_LOG + n` there and are worked out at once, as before. Only the
+      own points' names read those places (`own_self`, `own_src`, `own_corner`, `sp_point`, the
+      walk's own entries...). Derive, `resolve` (still "log full" on the `vcache resolved:` line
+      for such a frame) and the cut fraction read the log alone, so every answer the log gave is
+      the same.
+    - `ord_x`: projections placed past the log. Host (2x, 16:9) S 9,991, Si 19,896; 0 on P, Pi, Pf,
+      Pfi, S60, T and O60. Only the host's 2x Stone Hill routes fill the log. Vita3K never does
+      (0 in every window of #237's eight routes), so it never allocates the store (free RAM
+      unchanged, `user 242688 KB`).
+    - `ord_lost`: projections with no place (`Xlog` full, or no memory). After one, an own point's
+      "p back" names no projection, as every projection past a full log did before D253. 0 on
+      every route.
+    - **Measured:** EnvDraw missed host S 6 → 0, Si 6 → 0 (frame g6742); `own_nosrc` S 618 → 0,
+      Si 1,214 → 0.
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
@@ -1038,14 +1119,14 @@ VITA_IP=127.0.0.1 VITA_FTP_PORT=2337 VITA_CMD_PORT=2338 HW_STATE=/tmp/fake-vita-
    ON, the first time) pauses a few seconds while its shaders compile; the
    log says `gpu: programs for ... compiled in N ms`. Any `don't compile` line is what to send back.
    Close the menu: the log's `menu: saved ...` line lists the values, and they come back after a restart.
-3. **Draw distance:** set `DRAW DISTANCE (EXP.)` to 2X and close the menu. Walk and glide around Artisans
+3. **Draw distance:** set `DRAW DISTANCE` to MAX (ADAPTIVE) and close the menu. Walk and glide around Artisans
    and one open level (Stone Hill or Town Square). Look at what appears in the distance and at the left and
    right edges: textured hills and walls should reach further, and gems and objects should appear sooner. A
    frame with a missing patch of scenery can happen (a hard bound stopped the world draw before the
    buffer ran out); note where.
 4. In the log, `lod N:` lines every 5 seconds:
-   - `x2.00 average` means the full distance held. Lower means the limiter backed off; it starts again
-     at 1x at each new level.
+   - `x4.00 average` means MAX's full distance held (since #261; at most `x2.00` at the title, in 30 Hz
+     play or with `dd_budget=0`). Lower means the limiter backed off; it starts again at 1x at each new level.
    - `N back-offs (M for the budget, of them H held at 1x)`: how many draws the limiter backed off
      after, how many of those only the 60 Hz budget caused (with 60 HZ in play; always 0 with
      `dd_budget=0` or at 30 Hz), and how many of those the budget held at 1x: the scene's own 1x draw

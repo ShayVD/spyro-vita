@@ -149,7 +149,7 @@ static void UpdateFlameOrigin(void) {
 
   /* The frame's data holds the head's position, packed 11:11:10 (z in
    * units of 2), 0x10 bytes in. Frame data offsets are KUSEG addresses / 2. */
-  frames = (SpyroAnimationFrame *)SPYRO_MODEL->m_Animations[g_Spyro.m_bodyAnimation]->m_Frames;
+  frames = (SpyroAnimationFrame *)P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[g_Spyro.m_bodyAnimation])->m_Frames;
   packed = *(u_int *)((u_char *)MEM_ANIM_HALF(frames[g_Spyro.m_bodyAnimationFrame].m_Data) + 0x10);
   offset.x = (int)packed >> 21;
   offset.y = (int)(packed << 11) >> 21;
@@ -174,11 +174,11 @@ static void FlamePathToWorld(Vector3D *pOut, FlamePathPoint *pPath, int pIndex) 
 /// unless it's the fairy kiss flame, and sparks along pSparkDir rotated by
 /// the GTE's current matrix (pFlameDir is overwritten with that).
 static void SpawnPuffEnd(Vector3D *pPos, Vector3D *pFlameDir, int pFlameClass, Vector3D *pSparkDir) {
-  g_SpawnParticle(1, pFlameClass, pPos, (int)pFlameDir);
+  g_SpawnParticle(1, pFlameClass, pPos, (int)P32_ENC(pFlameDir));
   if (!g_Flame.m_IsSuperFlame)
     g_SpawnParticle(4, 0x4E, pPos, 0);
   VecRotateByLastMatrix(pSparkDir, pFlameDir);
-  g_SpawnParticle(g_Flame.m_IsSuperFlame * 5 + 5, 0x4F, pPos, (int)pFlameDir);
+  g_SpawnParticle(g_Flame.m_IsSuperFlame * 5 + 5, 0x4F, pPos, (int)P32_ENC(pFlameDir));
 }
 
 /// @brief Updates the flame breath: the fairy kiss glow, new puffs, and each
@@ -280,7 +280,7 @@ void func_80048D10(int pDeltaTime) {
 
       if (!playedSound) {
         playedSound = 1;
-        PlaySound(g_Spu.m_SoundTable->spyroFlame, (Moby *)&g_Spyro, 4, NULL);
+        PlaySound(P32_GET(g_Spu.m_SoundTable)->spyroFlame, (Moby *)&g_Spyro, 4, NULL);
       }
     } else if (g_Flame.m_PuffAge[i] > pathLen && g_Flame.m_PuffAge[i] <= pathLen + pDeltaTime) {
       /* Just ran off the end of its path, this update: burst there. */
@@ -467,9 +467,9 @@ static void UpdateState3(void) {
   TickInvulnerability();
   if (g_Pad.m_NoMovementButtonPressed && g_Spyro.m_walkingState == 7) {
     ph->m_TargetSpeedAngle.m_Speed = 0;
-    if (D_80075804 != NULL)
-      ph->m_TargetSpeedAngle.m_RotZ = Atan2(D_80075804->m_Position.x - g_Spyro.m_Position.x,
-                                            D_80075804->m_Position.y - g_Spyro.m_Position.y, 1);
+    if (P32_GET(D_80075804) != NULL)
+      ph->m_TargetSpeedAngle.m_RotZ = Atan2(P32_GET(D_80075804)->m_Position.x - g_Spyro.m_Position.x,
+                                            P32_GET(D_80075804)->m_Position.y - g_Spyro.m_Position.y, 1);
   } else {
     func_8003D3B8(ph->unk_0x144);
   }
@@ -700,20 +700,20 @@ static void UpdateCharge(void) {
   if (g_Spyro.m_walkingState & 1) {
     SteerFromStick();
 
-    if (D_80075790 != NULL && g_Spyro.m_idleTimer < 120) {
+    if (P32_GET(D_80075790) != NULL && g_Spyro.m_idleTimer < 120) {
       Vector3D toTarget;
       int distance, turn;
 
       if (Abs(AngleDelta(ph->m_SpeedAngle.m_RotZ - g_Camera.m_Rotation.z)) >= 0x200) {
-        D_80075790 = NULL;
+        P32_SET(D_80075790 , NULL);
       } else {
-        VecSub(&toTarget, &D_80075790->m_Position, &g_Spyro.m_Position);
+        VecSub(&toTarget, &P32_GET(D_80075790)->m_Position, &g_Spyro.m_Position);
         distance = VecMagnitude(&toTarget, 1);
         turn = AngleDelta(Atan2(toTarget.x, toTarget.y, 1) - ph->m_SpeedAngle.m_RotZ);
         if (Abs(turn) < 0x200 && distance < 0x1800)
           func_8003D52C(ClampTurn(turn >> 2));
         else
-          D_80075790 = NULL;
+          P32_SET(D_80075790 , NULL);
       }
     }
 
@@ -821,7 +821,7 @@ static_assert(offsetof(Moby, m_Rotation.z) == 0x46, "Moby.m_Rotation.z");
  * whirlwind's props word 1. */
 static void UpdateWhirlwind(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
-  Moby *wind = g_Spyro.m_mobyInUseBySpyro;
+  Moby *wind = P32_GET(g_Spyro.m_mobyInUseBySpyro);
   Vector3D pull;
   int radius, rise, heading, along;
 
@@ -829,7 +829,7 @@ static void UpdateWhirlwind(void) {
   if (wind == NULL)
     return;
 
-  radius = wind->m_Class == 300 ? ((int *)wind->m_Props)[1] : 0x500;
+  radius = wind->m_Class == 300 ? ((int *)P32_GET(wind->m_Props))[1] : 0x500;
 
   if (g_Spyro.m_Position.z < D_80075668 + 0x400) {
     /* Bottom: rise gathers speed; aim at the centre. */
@@ -990,8 +990,8 @@ extern int g_PortalLevelId;
  * turning it with Spyro; m_walkingState 1 goes the other way. */
 static void UpdateCircleMoby(void) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
-  Moby *moby = g_Spyro.m_mobyInUseBySpyro;
-  int *props = (int *)moby->m_Props;
+  Moby *moby = P32_GET(g_Spyro.m_mobyInUseBySpyro);
+  int *props = (int *)P32_GET(moby->m_Props);
   Vector3D offset;
   int distance, around, step;
 
@@ -1614,7 +1614,7 @@ void func_80043FE4(int pDeltaTimeIndex) {
   SpyroPhysics *ph = &g_Spyro.m_Physics;
   int ticksInState;
 
-  g_ActivePad = (Gamepad *)&g_Pad.m_BufferedInputs[pDeltaTimeIndex];
+  P32_SET(g_ActivePad , (Gamepad *)&g_Pad.m_BufferedInputs[pDeltaTimeIndex]);
   ticksInState = g_Spyro.m_idleTimer + pDeltaTimeIndex;
   if (g_Gamestate == 0 && g_LevelId == 64 && g_Spyro.m_airTime == 0)
     g_Spyro.m_flyingAbility = 1; /* Gnasty's Loot */

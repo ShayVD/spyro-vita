@@ -58,7 +58,7 @@ extern char g_WorldOT[];
 #define GPF0() m2c_gte_0x190003D()       /* sf 0: IR0 times IR1-3 */
 #define GPL0() m2c_gte_0x1A0003E()       /* sf 0: MAC1-3 plus IR0 times IR1-3 */
 
-#define S8(a) ((u32)(s32)*(const s8 *)(uintptr_t)(u32)(a))
+#define S8(a) ((u32)(s32)*(const s8 *)P32_DEC((uintptr_t)(u32)(a)))
 
 /* The primitive at prim, about to go on the end of world OT bucket `slot`:
  * as a record (native_draw), else linked as it is (OtAppend). */
@@ -76,7 +76,7 @@ extern char g_WorldOT[];
 
 static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u32 spyro = ADDR_ND(g_Spyro), cam = ADDR_ND(g_Camera), sh = ADDR_ND(D_8007AA10);
-  const u32 scr = SCRATCH_BASE;
+  const u32 scr = P32_ENC(SCRATCH_BASE);
   u32 r0, r1, r2, r3, r4, sxy, sz, tilted, src, p, end, prim, ot, bias;
   u32 rgb, ctr;
   s32 dx, dy, dz;
@@ -150,8 +150,8 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       u32 fa, fb, k, w;
       ma = AT32(ma + ((af1 & 0xFF) << 2) + 0x24);
       mb = AT32(mb + ((af1 >> 8) << 2) + 0x24);
-      fa = MEM_ANIM_HALF(ma);
-      fb = MEM_ANIM_HALF(mb);
+      fa = MEM_ANIM_HALF_U32(ma);
+      fb = MEM_ANIM_HALF_U32(mb);
       AT32(scr + 0x0) = AT32(fa + 0x0);
       AT32(scr + 0x4) = AT32(fa + 0x4);
       AT32(scr + 0x8) = AT32(fb + 0x0);
@@ -187,7 +187,7 @@ static u32 SpyroShadow(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       const u32 af = AT8(spyro + 0x18), fr = AT8(spyro + 0x1E);
       u32 m = MIPS_KUSEG(AT32(models + (af << 2) + 0x38));
       m = AT32(m + (fr << 2) + 0x24);
-      src = MEM_ANIM_HALF(m);
+      src = MEM_ANIM_HALF_U32(m);
       p = scr + 1;
     }
     (void)p;
@@ -348,7 +348,7 @@ typedef struct {
 
 
 static u32 MobyShadows(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
-  const u32 scr = SCRATCH_BASE, cam = ADDR_ND(g_Camera);
+  const u32 scr = P32_ENC(SCRATCH_BASE), cam = ADDR_ND(g_Camera);
   u32 ent, last;
   NgteProj P = ngte_proj_get(); /* OFX, OFY, H, DQA, DQB; R and TR per moby */
   MsAnchor anchor;

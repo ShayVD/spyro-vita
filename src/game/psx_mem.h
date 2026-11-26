@@ -36,37 +36,54 @@ uintptr_t mem_audit(uintptr_t a, const char *file, int line);
 #if SPYRO_NATIVE_MEM
 /* The arena at any base (D100): N packed bits are the address's low N bits,
  * and the arena (2 MB) fits in 2^N bytes, so they decode relative to the
- * base. */
+ * base. In the offset model (D250 O3) a 32-bit game address is an offset
+ * from spyro_p32_base, so the bits are the offset's and decode relative to
+ * the arena's offset: MEM_ARENA_U32_. */
+#if SPYRO_P32_OFFSET
+#define MEM_ARENA_U32_ ((uint32_t)(g_psx_arena_base - (uintptr_t)spyro_p32_base))
+#else
+#define MEM_ARENA_U32_ ((uint32_t)g_psx_arena_base)
+#endif
 #define MEM_LOW_(bits, mask)                                                   \
-  (g_psx_arena_base + (((uint32_t)(bits) - (uint32_t)g_psx_arena_base) & (mask)))
+  (g_psx_arena_base + (((uint32_t)(bits) - MEM_ARENA_U32_) & (mask)))
 #define MEM_OT_NEXT(tag) MEM_AUDIT_(MEM_LOW_(tag, 0xFFFFFFu))
-#define MEM_OT_OFS(tag) (((uint32_t)(tag) - (uint32_t)g_psx_arena_base) & 0xFFFFFFu)
+#define MEM_OT_OFS(tag) (((uint32_t)(tag) - MEM_ARENA_U32_) & 0xFFFFFFu)
 #define MEM_ANIM21(w) MEM_AUDIT_(MEM_LOW_(w, 0x1FFFFFu))
 #define MEM_ANIM_HALF(w) MEM_AUDIT_(MEM_LOW_(((uint32_t)(w) << 11) >> 10, 0x3FFFFFu))
+/* ... as the 32-bit address the hand C keeps in a u32: in the offset model
+ * the offset (MEM_ANIM_HALF's is the host address), elsewhere the same */
+#if SPYRO_P32_OFFSET
+#define MEM_ANIM_HALF_U32(w) ((uint32_t)(MEM_ANIM_HALF(w) - (uintptr_t)spyro_p32_base))
+#else
+#define MEM_ANIM_HALF_U32(w) MEM_ANIM_HALF(w)
+#endif
 #define MEM_ADDR24(a) MEM_AUDIT_(MEM_LOW_(a, 0xFFFFFFu))
 /* The tags are bit 0 instead of bit 31 (the models and collision models
  * are word-aligned; loaders.c checks it), so they travel with the pointer
  * as before and nothing needs the arena above 2 GB. */
-#define MEM_COLL_PTR(p) ((uintptr_t)(p) & ~(uintptr_t)1)
+#define MEM_COLL_PTR(p) ((uintptr_t)P32_DEC(p) & ~(uintptr_t)1)
 #define MEM_COLL_TAGGED(p) ((int)((uintptr_t)(p) & 1))
-#define MEM_MODEL_PTR(w) ((uintptr_t)(w) & ~(uintptr_t)1)
+#define MEM_MODEL_PTR(w) ((uintptr_t)P32_DEC(w) & ~(uintptr_t)1)
 #define MEM_MODEL_SIMPLE(w) (!(w) || ((uintptr_t)(w) & 1))
 /* A g_Models[] word that code offsets before an access (the arena builds'
- * HPTR at that access maps a SimpleModel's alias): masked first here. */
-#define MEM_MODEL_AT(w) MEM_MODEL_PTR(w)
-#define MEM_SIMPLE_ADDR(a) ((uintptr_t)(a) | 1)
+ * HPTR at that access maps a SimpleModel's alias): masked first here. A
+ * 32-bit address, so in the offset model the offset (D250 O3), where
+ * MEM_MODEL_PTR's is the host address. */
+#define MEM_MODEL_AT(w) ((uintptr_t)P32_ENC(w) & ~(uintptr_t)1)
+#define MEM_SIMPLE_ADDR(a) ((uintptr_t)P32_ENC(a) | 1)
 /* OT tags the renderers build: an asm tag constant K (length << 24 |
  * 0x80000000), kept as is; a tag word linking to P, or (T 0, the chain's
  * first store) P itself; a chain's last tag. The arena may cross a 16 MB
  * line, so the link is P's low 24 bits, not an XOR with a fixed top byte. */
 #define MEM_TAG(k) ((uint32_t)(k))
 #define MEM_TAG_LINK(t, p)                                                     \
-  ((t) ? ((((uint32_t)(t) ^ 0x80000000u) & 0xFF000000u) | ((uint32_t)(p) & 0xFFFFFFu)) : (uint32_t)(p))
-#define MEM_TAG_LINK_AT(t, p, off) MEM_TAG_LINK(t, (uint32_t)(p) + (off))
+  ((t) ? ((((uint32_t)(t) ^ 0x80000000u) & 0xFF000000u) | ((uint32_t)P32_ENC(p) & 0xFFFFFFu))       \
+       : (uint32_t)P32_ENC(p))
+#define MEM_TAG_LINK_AT(t, p, off) MEM_TAG_LINK(t, (uint32_t)P32_ENC(p) + (off))
 #define MEM_TAG_END(t) (((uint32_t)(t) ^ 0x80000000u) & 0xFF000000u)
 /* A subdivision list's sector header: its offset >> 2, below any polygon
  * address. */
-#define MEM_SUBDIV_HDR(sec) (((uint32_t)(sec) - (uint32_t)g_psx_arena_base) >> 2)
+#define MEM_SUBDIV_HDR(sec) (((uint32_t)P32_ENC(sec) - MEM_ARENA_U32_) >> 2)
 #if RENDER_PRES
 /* the presenter's sector copies are after the arena (render_ctx.h): its
  * headers are offsets up to the 16 MB window's end; a polygon's address is
@@ -75,7 +92,7 @@ uintptr_t mem_audit(uintptr_t a, const char *file, int line);
 #else
 #define MEM_SUBDIV_IS_HDR(e) ((uint32_t)(e) < 0x80000u)
 #endif
-#define MEM_SUBDIV_SEC(e) MEM_AUDIT_((uint32_t)g_psx_arena_base + ((uint32_t)(e) << 2))
+#define MEM_SUBDIV_SEC(e) MEM_AUDIT_(MEM_ARENA_U32_ + ((uint32_t)(e) << 2))
 #else
 /* An OT link (a tag's low 24 bits) -> the primitive's address. */
 #define MEM_OT_NEXT(tag) MEM_AUDIT_(g_psx_arena_base | ((uint32_t)(tag) & 0xFFFFFFu))
@@ -86,6 +103,7 @@ uintptr_t mem_audit(uintptr_t a, const char *file, int line);
 /* A frame word holding the address halved into its low 21 bits (Spyro's
  * frames). */
 #define MEM_ANIM_HALF(w) MEM_AUDIT_(g_psx_arena_base + (((uint32_t)(w) << 11) >> 10))
+#define MEM_ANIM_HALF_U32(w) MEM_ANIM_HALF(w)
 /* An address the moby renderer kept shifted left by 8 (its face-save
  * list): the KUSEG alias puts the top byte back (mips2c_rt.h). */
 #define MEM_ADDR24(a) MEM_AUDIT_(MIPS_KUSEG((uint32_t)(a) | 0x80000000u))

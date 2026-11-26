@@ -189,7 +189,7 @@ static void ending(int idx) {
   *ram(A_SPYRO_HIDDEN) = 0;
   /* m_CurrentTick, offset 0. The word holds the game's pointer, a host
    * address already: with a moved arena (D97) it isn't a PS1 address. */
-  *(uint32_t *)(uintptr_t)*ram(A_CUTSCENE_LAYOUT) = 0;
+  *(uint32_t *)P32_DEC((uintptr_t)*ram(A_CUTSCENE_LAYOUT)) = 0;
 }
 
 int host_tour_done(void) { return s_i >= s_n && s_at < 0; }

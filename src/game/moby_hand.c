@@ -30,6 +30,7 @@
 #define RENDER_READABLE 1 /* render_hand.h: no GTE data registers, scratchpad or spill area (D124) */
 #include "render_hand.h"
 #include "region.h"
+#include "psx_vcache.h" /* PSX_VC_DERIVE (#243: the sprites) */
 
 extern char D_8006FCF4[];       /* the moby renderers' tables (TBL_*) */
 extern char D_800757B0[];       /* the primitive buffer's next free byte */
@@ -269,6 +270,9 @@ typedef struct {
   const u8 *xy;      /* sp: the screen positions or clip words */
   int clip;          /* s7's sign */
   NgteSync *sync;    /* native GTE commands pending, or 0: the register file */
+  /* #243, for the vertex cache: the record's vertices (each projected once,
+   * in order, before the faces) and the sprites' projections since */
+  u32 nvert, nspr;
 } FaceCtx;
 
 /* Put the next primitive (size bytes, an ND_K_* kind) at the end of a
@@ -276,7 +280,7 @@ typedef struct {
  * as the vertices PsyCross would make of it: into the marker at the
  * bucket's tail, or as a marker linked in its place. */
 HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
-  u32 *b = (u32 *)(uintptr_t)bucket;
+  u32 *b = (u32 *)P32_DEC((uintptr_t)bucket);
   u32 last = b[0];
   b[0] = c->prim;
   if (last) {
@@ -294,7 +298,7 @@ HAND_INLINE void LinkTo(FaceCtx *c, u32 bucket, u32 size) {
 }
 
 HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
-  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (g_nd.on && nd_take(kind, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -304,7 +308,7 @@ HAND_INLINE void Link(FaceCtx *c, u32 bucket, u32 size, int kind) {
 /* Link for a record built from values (D86, nd_open's r): the primitive's
  * stores after the face's last check are skipped. */
 HAND_INLINE void LinkRec(FaceCtx *c, u32 bucket, u32 size, u32 *r) {
-  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (nd_commit(r, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -561,6 +565,7 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
     const NgteProj P = ngte_proj_get();
     const NgteRtp o = ngte_rtps_w(&P, c->sync->v0xy, c->sync->v0z);
     NgteCol g;
+    c->nspr++; /* (#243: a projection the vertex cache counts) */
     col = COLOUR(c, (cw >> 17) & 0x7FC);
     d = (z << 2) + (fw & FACE_HIDDEN) - c->bias;
     if ((s32)d <= 0)
@@ -589,6 +594,29 @@ HAND_INLINE const u32 *DrawSprite(FaceCtx *c, const u32 *f, int wide) {
   AT16(p + 0x1A) = (u16)yb;
   AT16(p + 0x20) = (u16)xr;
   AT16(p + 0x22) = (u16)yb;
+  /* #243: for the vertex cache, as ParticlesDraw's screen-facing quads
+   * (#209, #231): each corner is the centre's exact place plus its offset
+   * from it, at the centre's depth (VCD_OFFSET; a sprite's corner gives way
+   * to every other renderer's). The quad names its centre by the
+   * projection that made it (VCD_SELF: the record's projection of its first
+   * vertex, nvert - 1 - i0 / 4 vertices and nspr sprites back) and its
+   * corners as its own (VCD_OWN), under all four corners' keys mixed. */
+  if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0)) {
+    const u32 k0 = (u16)(xr - w) | (u32)(u16)(yb - h) << 16, k1 = (u16)xr | (u32)(u16)(yb - h) << 16;
+    const u32 k2 = (u16)(xr - w) | (u32)(u16)yb << 16, k3 = (u16)xr | (u32)(u16)yb << 16;
+    const u32 an = VCD_QUAD_ANCHOR(k0, k1, k2, k3);
+    const s32 cxs = (s16)x, cys = (s16)y;
+    PSX_VC_DERIVE(VCD(VCD_ALIAS, VCD_MOBY_SPRITE) | VCD_SELF, xy, xy, an,
+                  (int)(c->nvert - 1u - (i0 >> 2) + c->nspr), 0);
+#define SPRITE_HO(k)                                                                               \
+  PSX_VC_DERIVE(VCD(VCD_OFFSET, VCD_MOBY_SPRITE) | VCD_OWN, (k), xy, an,                          \
+                (s32)(s16)(k) - cxs, (s32)(s16)((k) >> 16) - cys)
+    SPRITE_HO(k0);
+    SPRITE_HO(k1);
+    SPRITE_HO(k2);
+    SPRITE_HO(k3);
+#undef SPRITE_HO
+  }
   AT32(p) = 0x09000000u;
   Link(c, bucket, 0x28, ND_K_FT4);
   return next;
@@ -915,6 +943,7 @@ static inline void FaceCtxBegin(FaceCtx *c, const RecState *s, u32 prim) {
   }
   c->lowest = c->buckets + 0x900;
   c->highest = c->buckets;
+  c->nspr = 0;
 }
 
 /* Draw one moby; returns the primitive pointer after it. */
@@ -938,21 +967,22 @@ static u32 MobyDrawRecord(const MobyRecord *rec, u32 prim) {
   n = s.anim->m_VertCount[s.detail < 0];
   if (!n)
     goto restore;
-  depth = n <= 0x80 ? (u32 *)(SCRATCH_BASE + SCRATCH_DEPTHS) : (u32 *)(D_8006FCF4 + TBL_BIG_DEPTHS);
+  depth = n <= 0x80 ? (u32 *)P32_DEC((P32_ENC(SCRATCH_BASE) + SCRATCH_DEPTHS)) : (u32 *)(D_8006FCF4 + TBL_BIG_DEPTHS);
   if (s.progress) {
     if (!TransformBlendN(&sync, FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
-                         n, s.progress, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip))
+                         n, s.progress, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), depth, s.clip))
       goto restore;
   } else if (
-      !TransformN(&P, &sync, FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, depth, s.clip)
+      !TransformN(&P, &sync, FrameStreams(s.frame), n, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), depth, s.clip)
   ) {
     goto restore;
   }
 
   faces = PickFaces(&s, &c);
   FaceCtxBegin(&c, &s, prim);
+  c.nvert = n;
   c.depth = (const u8 *)depth;
-  c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
+  c.xy = (const u8 *)P32_DEC((uintptr_t)P32_ENC(SCRATCH_BASE));
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
   for (faces++; faces != end;) {
     const u32 fw = faces[0];
@@ -984,7 +1014,7 @@ static u32 MobyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   nd_begin();
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
-    const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
+    const MobyRecord *r = (const MobyRecord *)P32_DEC((uintptr_t)rec);
     if (PORT_LOD_RECORDS_FULL(rec, prim))
       break;
     if (!r->m_Flags)
@@ -1189,7 +1219,7 @@ typedef struct {
 } LitCtx;
 
 static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucket, u32 size) {
-  u32 *b = (u32 *)(uintptr_t)bucket;
+  u32 *b = (u32 *)P32_DEC((uintptr_t)bucket);
   u32 last = b[0];
   b[0] = c->prim;
   if (last) {
@@ -1208,7 +1238,7 @@ static inline __attribute__((always_inline)) void LitLinkTo(LitCtx *c, u32 bucke
 
 static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket, u32 size,
                                                           int kind) {
-  if (g_nd.on && nd_take(kind, *(u32 *)(uintptr_t)bucket, c->prim)) { /* as Link's */
+  if (g_nd.on && nd_take(kind, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) { /* as Link's */
     c->prim += size;
     return;
   }
@@ -1218,7 +1248,7 @@ static inline __attribute__((always_inline)) void LitLink(LitCtx *c, u32 bucket,
 /* LinkRec's (D86) */
 static inline __attribute__((always_inline)) void LitLinkRec(LitCtx *c, u32 bucket, u32 size,
                                                              u32 *r) {
-  if (nd_commit(r, *(u32 *)(uintptr_t)bucket, c->prim)) {
+  if (nd_commit(r, *(u32 *)P32_DEC((uintptr_t)bucket), c->prim)) {
     c->prim += size;
     return;
   }
@@ -1245,7 +1275,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, Ng
     AT32(p + 0x8) = xy[0];
     AT32(p + 0x10) = xy[1];
     AT32(p + 0x18) = xy[2];
-    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[2]) - c->zbias;
+    sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[2])) - c->zbias;
     AT32(p + 0x4) = col0 + 0x30000000u;
     if ((s32)sum <= 0)
       return;
@@ -1271,7 +1301,7 @@ static inline void LitGouraud(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, Ng
     AT32(p + 0x10) = xy[1];
     AT32(p + 0x18) = xy[2];
     AT32(p + 0x20) = xy[3];
-    sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+    sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3])) - c->zbias;
     if ((s32)sum <= 0)
       return;
     if ((r = nd_open(4)) != NULL) {
@@ -1312,7 +1342,7 @@ static inline void LitFlat(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 m
   AT32(p + 0x10) = xy[2];
   AT32(p + 0x14) = xy[3];
   l = LightNormal(base, &n, &c->lc);
-  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]) + LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]) - c->zbias;
+  sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1])) + P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3])) - c->zbias;
   if ((s32)sum <= 0)
     return;
   bucket = LIT_BUCKET(sum);
@@ -1363,7 +1393,7 @@ static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 
   AT32(p + 0xC) = xy[1];
   AT32(p + 0x10) = xy[2];
   AT32(p + 0x14) = xy[3];
-  sum = LIT_DEPTH(i[0]) + LIT_DEPTH(i[1]);
+  sum = P32_ENC(LIT_DEPTH(i[0])) + P32_ENC(LIT_DEPTH(i[1]));
   n = FaceNormal(&c->rot, cw);
   c1 = AT32(colours);
   c2 = AT32(colours + 4);
@@ -1402,7 +1432,7 @@ static inline void LitShiny(LitCtx *c, u32 cw, const u32 *i, const u32 *xy, u32 
   }
   AT32(p) = tag;
   AT32(p + 0x4) = code - opaque + r + (g << 8) + (b << 16);
-  sum += LIT_DEPTH(i[2]) + LIT_DEPTH(i[3]);
+  sum += P32_ENC(LIT_DEPTH(i[2])) + P32_ENC(LIT_DEPTH(i[3]));
   if ((s32)sum <= 0)
     return;
   LitLink(c, LIT_BUCKET(sum), size, size == 0x14 ? ND_K_F3 : ND_K_F4);
@@ -1417,7 +1447,7 @@ static inline u32 Abs32(u32 v) {
  * ended the list. */
 static int LitMoby(u32 moby, u32 *shadow) {
   u8 *const m = HPTR(u8, moby);
-  u32 *const scr = (u32 *)SCRATCH_BASE;
+  u32 *const scr = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   const u32 half = AT16(m + MOBY_RADIUS); /* radius | was drawn << 8 */
   const LitModel *model;
   u32 x, y, z, zone, angles, clip, dqa, drawn, zbias, n, i, all_out = ~0u, verts, model_addr;
@@ -1712,7 +1742,7 @@ static int LitMoby(u32 moby, u32 *shadow) {
 }
 
 static u32 LitDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
-  u32 *const scr = (u32 *)SCRATCH_BASE;
+  u32 *const scr = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   const u32 *cam = (const u32 *)g_Camera;
   const u32 *light = (const u32 *)D_800770C8;
   u32 list = PSX_ADDR(D_8006FCF4 + TBL_LIT);
@@ -2240,9 +2270,9 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
     goto restore;
   if (s.progress) {
     if (!SpecTransformBlend(&sync, FrameStreams(s.frame), FrameStreams(HPTR(const MobyFrame, rec->m_NextFrame)),
-                            n, s.progress, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip))
+                            n, s.progress, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), ent, s.clip))
       goto restore;
-  } else if (!SpecTransform(&sync, FrameStreams(s.frame), n, s.shift, (u32 *)SCRATCH_BASE, ent, s.clip)) {
+  } else if (!SpecTransform(&sync, FrameStreams(s.frame), n, s.shift, (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), ent, s.clip)) {
     goto restore;
   }
 
@@ -2251,8 +2281,9 @@ static u32 SpecDrawRecord(const MobyRecord *rec, u32 prim) {
   if (spec >> 24)
     spec = MetalBegin(spec);
   FaceCtxBegin(&c, &s, prim);
+  c.nvert = n;
   c.depth = (const u8 *)ent;
-  c.xy = (const u8 *)(uintptr_t)SCRATCH_BASE;
+  c.xy = (const u8 *)P32_DEC((uintptr_t)P32_ENC(SCRATCH_BASE));
   end = (const u32 *)((const u8 *)(faces + 1) + faces[0]);
   for (faces++; faces != end;) {
     const u32 fw = faces[0];
@@ -2282,7 +2313,7 @@ static u32 SpecDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   nd_begin();
   CTC2(*(u32 *)g_SkipLowPolyWorld, 29); /* ZSF3 */
   for (;; rec += sizeof(MobyRecord)) {
-    const MobyRecord *r = (const MobyRecord *)(uintptr_t)rec;
+    const MobyRecord *r = (const MobyRecord *)P32_DEC((uintptr_t)rec);
     if (PORT_LOD_RECORDS_FULL(rec, prim))
       break;
     if (!r->m_Flags)

@@ -1902,3 +1902,226 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - watchOS's `arm64_32` and Linux's AArch64 ILP32: they can't run Mac or ordinary Linux programs.
 - **Asked of the owner:** whether to start O1–O3: the rewrite and an ARM64 headless host, before any Mac code.
 - **Next free number (this branch):** D247.
+
+## 2026-11-25 — phase 8: ParticlesDraw's missed vertices
+
+### D251. With the fix on, a particle's screen-facing quad names its points by the projection that made them, and a quad's own points find what nothing else does (#231, 2026-11-25)
+- **Why:** after D248, ParticlesDraw kept 10 missed vertices on host S, 20 on Si and 8 on S60. #231 tagged every one (`diag231.py`, `classify231.py`, head 8a97c8d): two case-3 quads side by side (a ram's stars) share a corner's pixel. Each hands that corner over (VCD_OFFSET, D209) at its own centre's exact place plus an integer offset; the two places are 0.2–0.5 px apart, so the key is placed twice and D182 drops it. None were records whose probe ran out or `full` records, so #221's overflow isn't read for this renderer.
+- **What (D218's own-point pattern):**
+  - `particles_hand.c`, case 3: the quad names its centre `VCD(VCD_ALIAS, VCD_PARTICLES) | VCD_SELF` (the last projection, p 0) under the anchor of its first corner's key (`v0 - a3 - a2`, the walk's `xy[0]`); its four corner hand-overs add `VCD_OWN` with that anchor. `hk_place` ignores the anchor for an offset, so hk is as before.
+  - `vcache.c`: the walk's own-point step (#216) also takes `VCX_PARTICLES` polygons. It runs only for a polygon every earlier step left unfound, so no polygon found before can change. `psx_vcache.h`: a comment.
+  - Kept: D182, D205, D213, D218, D220, D223, D226, D227, D229, D230, D244, D248.
+- **Measured (host, 2x, 16:9; base 8a97c8d, fix 6d200a3):**
+
+  | Route | Missed before | Missed after | own_found | own_nosrc |
+  |---|---|---|---|---|
+  | S | 16 (ParticlesDraw 10, EnvDraw 6) | 6 (EnvDraw 6) | 133 → 143 | 28 → 618 |
+  | Si | 26 (ParticlesDraw 20, EnvDraw 6) | 6 (EnvDraw 6) | 264 → 284 | 74 → 1,214 |
+  | S60 | 8 (ParticlesDraw 8) | 0 | 215 → 223 | 0 → 16 |
+  | T | 2 (EnvDraw 2) | 2 | 3,514 | 0 → 16 |
+  | P, Pi, Pf, Pfi, O60 | 0 | 0 | same | 0 |
+
+  - `own_nosrc` rises by particle quads drawn in frames whose order log is full (`nlog` 8,192, #237's limit): on S all 590 (118 centres, 472 corners). On S60 and T, 16 each are quads whose centre's own point is dead because two quads share a corner-0 pixel; hk found those polygons as before.
+  - The attract demos (#243): Vita3K demo60 ParticlesDraw 142 / 239 → 0 / 3 (windows 5,400 / 5,700); host D60 381 → 3. The last 3 are two quads of different sizes with one first-corner key (0064002f).
+- **Checked** (`runtime/autopilot/runs/vita/issue-231-1/`):
+  - Host FNV per polygon (D168), base and fix from clean objects, 9 pairs: fnvcmp exit 0 on all; 0 polygons found before changed, 0 became affine; newly found S 9, Si 15, S60 8.
+  - Vita build exit 0 (`spyro-vita-231-fix1.vpk`, SHA-1 517827cf). Vita3K 8 routes exit 0 first try; shots identical to `base-29d857a` (title 10, pause-ws 91, pause-ws-wobble 91, wobble60 91, owner60 91, stone60 95, demo60 66, toasty60 150), checked again by the coordinator. stone60's window 8,100: `missed 8` → `missed 0`.
+  - Counters against `base-29d857a` and a second base run: draws, triangles, `vc.proj`, `vc.polys`, `vc.verts`, `vc.fallback` the same; `vc.misses` stone60 −6%; `vc.rec.probe`, `vc.lines` +0.1%. The timing-dependent `vc.invalid` and `vc.clamped` moved past the second base's spread (stone60 +25% / +21%): kept + once is the same 4,323 a frame, but 5% moved from kept to once (the hand-overs' extra calls shift the game thread's timing, as in D218).
+  - Gate: host build and ctest 33/33 (the first gate run timed out waiting in the Docker queue; the rerun passed), native linux32 build, noassets. Not run: the PC build. Vita hardware not touched.
+- **Left:** EnvDraw's 6 on S and Si and 2 on T (#237); #243's last 3 demo quads (an anchor mixing all four corner keys); docs for the `own_*` fields (#262).
+
+## 2026-11-25 — hardware session 8
+
+### D252. Hardware session 8: develop's 80b8450 on the Vita; the wobble fixes since session 7 cost nothing measurable, and 2x still holds at 1x in Artisans (2026-11-25)
+- **Run:** with the owner's yes ("vita is free for hw tests too", then "Yes, run it" for exactly `runtime/autopilot/hw-session8.sh`), ap19a, ap19b and ap19t on `80b8450.vpk` (SHA-1 0a83b443: D220–D230, D244, D248 since session 7's 687ca1d, plus main's PS4 P4/P5 and D247, D249). US disc, the owner's settings (16:9, 60 HZ, wobble fix on, draw distance 200%). Results in `runtime/hw-80b8450/RESULTS.md`; logs `logs/hw-ap19a`, `hw-ap19b`, `hw-ap19t` (gitignored).
+- **The wobble fixes' cost (ap19a against D219's AP18a, Stone Hill play 7,300–9,400, virtual vblanks):** busy 69.0% against 69.1%, worst 88% both. Nothing measurable.
+- **Toasty route, real time (ap19t against AP18t):** late per 300: title 0.0 (0.2), Artisans 1.0 (2.5), Toasty 0.2 (0.9). 60 fps holds in play.
+- **Draw distance 2x:** still held at 1x in Artisans (10,500–13,000: `15.1–16.3 ms used of 14.5`). At 11,400 the game thread takes 15.84 ms a vblank (env 7.91, mobys 4.49, sky 1.15) and the vertex cache's expand about 3.6 ms a frame. Toasty reaches x2.00 where the frame is light. Filed as #259.
+- **Attract demo:** 162.6 late per 300 (166.3): 117 ticks of 150, the presenter on the game thread 17.7 ms a tick. The owner wants the in-between frame kept and made to fit (#235); #232's `pres_demo_inline` key is the next A/B.
+- **ap19b isn't usable:** the stone60 route saves a shot every 100 frames, about 9 late vblanks each in real time (26–27 per 300 even on the title screen), as D219's AP18c. A real-time stone60 run needs `shot_every=0`.
+- **Left on the Vita:** 80b8450's eboot (read back 79d908b7, READBACK IDENTICAL).
+- **Next free number:** D253.
+
+## 2026-11-25 — the Docker queue moves to Encore
+
+### D254. `tools/docker/run.sh` becomes a shim over Encore's machine-wide Docker queue (2026-11-25)
+- **What:** Encore PR #101 (ShayVD/encore, merged at c17d2d4) moved this repo's queue (PRs #253, #255) into the kit as `tools/docker/run.sh` and `tools/docker/queue.py`, game-neutral, so kh1-vita and atv2-vita join the same queue. It is vendored in `third_party/encore-docker` (`tools/vendor.sh --dir third_party/encore-docker`, Encore c17d2d4), and `tools/docker/run.sh` now maps spyro's switches and execs the kit's copy: `SPYRO_DQ=0` or a `TC_PORT` → `ENCORE_DQ=0`, `SPYRO_DOCKER_HOST` → `ENCORE_DOCKER_HOST`, and `ENCORE_COLIMA_PROFILE=kh1fast` when neither the environment nor `~/.config/encore/docker.env` names a profile. `tools/tc`, `tools/pc/tc` and `tools/ps4/tc` are unchanged.
+- **Why its own directory:** `third_party/encore` (Encore 0e77e93) and `third_party/vita-port-kit` (31295be7) each pin one commit for every path they hold. Vendoring `tools/docker` into either would refresh `core/`, the PC backend or the Vita runtime modules too, an unrelated change with its own checks.
+- **What changes:** the lock is `~/.cache/encore/docker.lock` (tickets in `docker.lock.q/`), shared by every port on the machine. Until no spyro checkout has the old `run.sh`, the kit also queues for and holds the old `~/.cache/spyro-vita/docker.lock` (its `ENCORE_DOCKER_ALSO_LOCK` default), so an old worktree mid-run and a new one never run side by side. The VM choice reads the profile's mounts from its `colima.yaml` instead of assuming `~/Projects`, and understands `--volume=` and `--mount` as well as `-v`. Waiters print `encore docker queue:` instead of `spyro docker queue:`.
+- **Gone:** `SPYRO_DQ_LOCK`; a private lock is `ENCORE_DOCKER_LOCK`.
+- **Fallback, not `:=`:** the shim sets `kh1fast` only when the settings file doesn't name a profile, since the kit lets the environment win over the file; `: "${ENCORE_COLIMA_PROFILE:=kh1fast}"` would override a machine whose file names another profile.
+- **Next free number:** D255 (D253 is the autopilot's #237 worker).
+
+## 2026-11-25 — phase 8: frames whose order log is full
+
+### D253. With the fix on, a frame whose order log is full keeps placing its later projections past the log, for the own points' names only (#237, 2026-11-25)
+- **Why:** after D244 and D251, host S and Si kept 6 EnvDraw missed vertices each, all in frame g6742, where `nlog` reached `VC_LOG` (8,192). Projections after that had no order place (q = -1), so no own point could name them: world corners (S 28, #226's) and particle quads (S 590, Si 1,214, D251's) counted in `own_nosrc`. #229's `VC_LOG` 16,384 experiment fixed them but changed 50 / 124 found-before polygons, because derive's order and resolve then saw the later projections.
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - An `Xlog` store per table (its own `log[8192]`, `lc[8192]`, `lfar[512]`; 84 KB) is malloc'd the first time that table's log fills. Later non-overflow projections take places `VC_LOG + n` there (`xlog_put`), with their answers in Xlog's own `lc`/`lfar` (`xlog_answer`), and are worked out at once as before. With both stores full or no memory, a projection counts in `nlost`.
+  - Only the names read it (`ord_n()`, `ord_w()`; `res_place` hands places >= VC_LOG to `xres_place`): `own_end`, `log_point`, `own_src`, `own_corner`, `own_self` (its moved-corner branch now needs `!nlost` instead of a log not full), `end_noproj`, `own_point`, `sp_point` and the walk's own entries.
+  - Unchanged: `log_index`, `derive_place` and its named list, `resolve` (still RW_FULL on such frames) and `fr_src` read the log alone, so every answer the log gave is the same.
+  - New counters `ord_x`, `ord_lost` on a `vcache order past the log:` line. Static table +24 bytes.
+  - Kept: D182, D205, D213, D218, D221, D223, D251.
+- **Measured (host, 2x, 16:9; base 8812a8a, fix e2f2c41):** missed S 6 → 0, Si 6 → 0; `own_nosrc` S 618 → 0, Si 1,214 → 0; projections past the log S 9,991, Si 19,896, none lost. P, Pi, Pf, Pfi, S60 and O60 unchanged at 0 missed. T keeps 2 EnvDraw: not log-full (world GT3s with one corner behind the eye, exempt, and one with an Sp record; #266).
+- **Checked** (`runtime/autopilot/runs/vita/issue-237-1/`): host FNV per polygon (D168) on 9 pairs, 0 found-before changed, 0 became affine, newly found S 4, Si 4; Vita build; Vita3K 8 routes, shots identical to `base-7724255` (checked by the coordinator; toasty60 aborted once inside Vita3K at 14 s, the rerun passed); Vita3K never fills the log, free RAM unchanged (`user 242688 KB`); counters the same apart from the timing-dependent ones; gate host ctest 33/33, native build, `noassets`.
+- **Host missed after this:** 0 on every route but T (2, #266).
+
+## 2026-11-25 — the options menu's draw distance row
+
+### D255. The options menu's draw distance row is DRAW DISTANCE with NORMAL and MAX (ADAPTIVE), on the Vita and the PS4 (#260, the owner's decision, 2026-11-25)
+- **Why:** hardware session 8 (D252) showed 200% reaching x2.00 where the 60 Hz frame is light and holding at 1x where it isn't (Artisans, #259), with 60 fps kept. "2X" promised more than it gives, and 1.5X adds nothing now that the budget adapts (D212). The owner: "the mod menu option should be draw distance; normal or max (adaptive)".
+- **How:**
+  - `picture.c` and `picture_ps4.c` replace `DRAW DISTANCE (EXP.)` (OFF, 1.5X, 2X) with `DRAW DISTANCE`: NORMAL (100) and MAX (ADAPTIVE) (`DD_MAX_PCT`, 200). `DD_MAX_PCT` is one `#define` per target, used by the row and by the apply clamp, so #261 (MAX past 2x, the owner's request) raises it in one place.
+  - `draw_distance=` stays a percent. A loaded 150 (`bench.c`) shows `150%`; left or right goes to the nearest value, NORMAL on the tie (the kit's `vpk_menu_opt_change`), and the file keeps 150 until the row changes.
+  - The startup line drops "(experimental, D49)"; no user-facing text names 2X. Docs: README, `presentation.md`, `ps4-build.md`, `vita-testing.md`.
+  - The row fits the panel exactly: 31 characters, 552 of 592 pixels (rendered with the kit's `vpk_menu_panel_draw`).
+- **PS4:** MAX adapts only through `lod.c`'s limiter (the buffers' limits and, with 60 Hz logic, the fixed 48 KB `LOD_BUDGET_60`); the timed budget (`lod_time.c`, D212) is the Vita's. The label is kept, as the owner asked for both targets.
+- **Checked** (`runtime/autopilot/runs/vita/issue-260-1/`): Vita build; PS4 build through the Mac SDK (the Docker `spyro-ps4` image is stale, #264); Vita3K 8 routes, 694 shots identical to `base-44e82e8` (checked by the coordinator); five menu runs with 100, 150 and 200 behave as above; counters within the same-VPK spread; gate host ctest 33/33 and `noassets`.
+
+
+## 2026-11-26 — draw distance MAX past 2x
+
+### D256. Draw distance MAX (ADAPTIVE) is 4x, and goes past 2x only where a 60 Hz budget measures the draw (#261, the owner's request, 2026-11-25)
+- **Why:** D252 showed 2x held only where the 60 Hz frame is light. The owner: "we could make the MAX option actually draw more than x2, up to max, if it can measure that and keep stable 60FPS and everything else".
+- **Measured** (host, the whole-game tour's 35 levels, 300 vblanks each, every draw at the scale with `--lod-guards-only`; `runtime/autopilot/runs/vita/issue-261-1/host/tour-final.txt`):
+  - What draws farther stops at `m_CullingDistance`: 0x28000 (5x) where the camera is in an occlusion group (201 of 268 drawing windows), 0x14000 (2.5x) elsewhere. The sky and the far list's cull don't change.
+  - Levels that gain per step (at least 0.5 moby, 0.5 near sector or 1 KB per draw): 30 from 2x to 2.5x, 24 from 2.5x to 3x, 14 from 3x to 4x (up to +12 mobys and +12 near sectors per draw; levels 22, 23, 40, 42 among them), 7 from 4x to 5x (only up to 4 far low-detail mobys and one near sector).
+  - The near list fills first (2.5x in level 60, 3x in 35, 4x in 42 and 43), then the primitive span (levels 40 and 41 at 4x), then the moby records (54 from 3x in 8 levels).
+- **What:**
+  - `DD_MAX_PCT` is 400 in `picture.c` and `picture_ps4.c`; `draw_distance=` stays a percent.
+  - `lod.c` `scale_top()`: the scale passes `LOD_TWO` (2x, `lod.h`) only after a shown draw that followed a 60 Hz update with `g_lod.budget > 0` (the Vita's timed `dd_budget=auto`, the PS4's fixed 48 KB). The title, 30 Hz logic and `dd_budget=0` stay at 2x at most; `--lod-guards-only` still takes the scale as given.
+  - Above 2x the limiter grows only while the last draw's near list is under 104 sectors (`NEAR_GROW`) and halves the part above 2x over 116 (`NEAR_HIGH`). At 2x and below nothing changes.
+  - Pass 2's moby box is capped at 0x7FFF (`BOX_MAX`): `moby_cull_hand.c` and `moby_hand.c` rotate the camera offset as s16, and the longer box passed 0x7FFF at 2x already in 16 of 35 levels (all 35 at 4x). No wrapped moby was drawn on the tour: pass 2's mobys per draw are the same with and without the cap at 2x, 3x and 4x.
+  - Every other product the scale enters is clamped at the culling distance and fits (`lod.c`'s comment). `ENV_MARGIN` holds at 4x: 36,860 of 45,056 bytes.
+- **Checked** (`runtime/autopilot/runs/vita/issue-261-1/`):
+  - Host FNV per polygon (D168) at 100%, 9 pairs: the `fnv.bin` files are byte-identical.
+  - Whole game (100,000 vblanks) at 1x, `--draw-distance 4` (average x1.81, peak 149 KB of 222) and 4x guards-only (peak 198 KB of 222, the world bound stopped 993 draws, no overrun): exit 0, traces and memory cards byte-identical.
+  - Host 60 Hz limiter at 4x: O60 x4.00 at 8,300, Stone Hill x3.77 at 9,200.
+  - Vita build; Vita3K 8 routes, shots identical to `base-4c8a009` (checked by the coordinator); at 400% owner60 reaches x4.00 and stone60 x3.5-3.7 where light, and the shots that differ show only a farther draw; gate host ctest 33/33 and `noassets`.
+- **Why 4x, not 5x:** from 4x to 5x the world's near list is the same to 0.1 sector in every level but 40, and each step costs game-thread time the budget would rather spend holding the scale. 500 is a one-line change that needs its own whole-game run.
+- **Open:** the hardware check (Toasty and Artisans at 400% against D252); a `draw_distance=200` saved by D255's MAX shows `200%` until a config migration maps it to the new MAX.
+
+## 2026-11-25 — ARM64 step O2
+
+### D258. ARM64 step O2: every use of a P32 slot goes through an accessor; in the offset model a slot is a 4-byte union that carries its type, and the linux64 and PC builds compile with it; no binary changes (2026-11-25)
+- **What:** the second step of D250's plan. Every read, write and step of a `P32F(T *)` slot is spelled with a macro of `src/compat/p32.h`: `P32_GET(x)`, `P32_SET(x, v)`, `P32_ADD`/`P32_SUB`, `P32_PREINC`/`PREDEC`/`POSTINC`/`POSTDEC`, and `P32_PATCH`/`P32_PATCH2` for the disc loaders' in-place fix-ups. On the Vita, linux32 and x86-64 (linux64, PS4, PC) each expands to the text that was there, so no binary changes.
+- **The offset model** (`SPYRO_P32_OFFSET`, on by default for aarch64 LP64, `-DSPYRO_P32_OFFSET=1` on x86-64 for the check): a slot is `union __attribute__((packed, aligned(4))) { unsigned p32_off; T p32_ty[0]; }`. The offset is from `spyro_p32_base` (O3/O4 define it), 0 is NULL. The zero-length array carries the slot's type at no size, so the accessors take no type argument: D250 had `P32_GET(T *, x)`, but the tool can't always write `T` at a site (anonymous structs, macro bodies). In this model the accessors are statement expressions that evaluate `x` once; the `P32_INIT_*` tables are filled by `P32_SET`.
+- **The rewriter**, `tools/ps4/p32_offset_rewrite.py` (`tools/tc python3 ... BUILD [--apply]`): streams clang's JSON AST of each linux64 unit (moby_update.c's is 1 GB) and finds every load (`LValueToRValue` of a slot), store, compound add/sub and increment/decrement of an lvalue whose type is a slot. It wraps the site's source range, never adding or removing a line. Where the range lies:
+  - in ordinary text: 3,970 sites;
+  - in a macro argument (the site is in the caller's text): 299;
+  - a whole macro use whose expansion is the slot (such as `SPYRO_MODEL`): 297;
+  - a strict part of one `#define` body: 9.
+  - 4,575 in all. Token-paste and nested-macro sites it lists instead of guessing; they are the hand edits.
+  - **The census overcounted:** D250's 7,300 counted reads of plain pointers *to* slots (a type ending in `*`, not in `__ptr32 __uptr`); the real total is about 4,600.
+- **Output:** the decomp's edits are `patches/spyro-1-p32off/` (after `spyro-1-ptr32`, `CMakeLists.txt`): `0001-p32-accessors-1.patch` (moby_update.c) and `-2.patch` (23 other files), split to stay under `check_no_assets.sh`'s 512 KiB; and `0002-p32-hand-accessors.patch`:
+  - the slot calls of `PATCH_POINTER`/`PATCH_POINTER2` in `loaders.c` become `P32_PATCH`/`P32_PATCH2` (the macros stay, as they also patch `int` words, which O3 handles);
+  - `SPYRO_FRAME` (`pete.c`), the overlay table's token-pasted stores (`overlay_pointers.c`), `moby_helpers.c`'s `m_Parent` store.
+  - The port's own C (about 30 files in `src/game`) is edited in place; by hand: `pres_snap.c`'s `REBASE_SLOT`, and the slots develop's PS4 merge added (`pres_snap.c`, `pres_draw.c`, `render_ctx_check.c`, 8 sites).
+- **A trap in the offset model:** two `P32F(T *)` spellings are two different anonymous union types, so a redeclaration or a prototype against its definition conflicts. They borrow the first declaration's type: `extern __typeof__(g_PalLevelNames) g_PalLevelNames;` (`draw.c`, `lod_pres.c`, `overlay_pointers.c`), or share a typedef (`MobyListSlot` in `moby_lists.h`, `T60MobySlot` in `tick60_rules.h`). An incompatible-pointer warning between two slot unions of one layout is harmless; one between a slot and anything else is a bug.
+- **The check**, `tools/ps4/p32_offset_check.py BUILD`: compiles every unit with `-fsyntax-only -DSPYRO_P32_OFFSET=1`; any error, or any incompatible-pointer warning with a slot on one side only, fails it. A missed site and an accessor on a non-slot are both compile errors there.
+- **Checks:**
+  - Offset check: linux64 166 units, PC Linux 174, 0 failures, 0 diagnostics.
+  - **Byte identity (O1's tip 3130ab1 against O2, same build directories, loaded sections):** Vita `spyro_vita.velf` and PS4 `spyro.elf` every section identical (pinned date and commit, as D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical except the `__TIME__` strings and the build-id that hashes them.
+  - **After the rebase onto develop** (the PS4 merge's new slots fixed): the same comparison, develop's 04d8d58 against O2 on top of it (04d8d58 has the source of 6605e48, the rebase's base), the same result (Vita and PS4 every section identical; the rest only the `__TIME__` strings and build-id). Offset check again: linux64 166 units, PC Linux 174, 0 diagnostics.
+  - `host_checks.sh` on O2's linux64 against O2's linux32 native-mem: demo, the 100,000-vblank tour, routes A and B; every trace, screenshot, audio file and memory card identical (`logs/o2-l64-*`, `logs/o2-l32n-*`, gitignored).
+  - `p32_lint.py`: 0 found. `tools/check_no_assets.sh`: passes. No hardware run.
+- **Left for O3:** pointer↔integer casts still truncate on ARM64 (the trial's 126 and 41, the `int` `PATCH_POINTER` words, `REBASE_SLOT`'s `uint32_t`); `spyro_p32_base` and the image under 4 GB; `src/platform/ps4` was not rewritten (it never builds for ARM64).
+- **Next free number:** D259 (D256 and D257 are the autopilot's #261 and #266 workers).
+
+## 2026-11-26 — phase 8: Toasty's last two missed vertices
+
+### D257. With the fix on, a world polygon with a corner that has no projection counts its other no-entry vertices as exempt; nothing drawn changes (#266, 2026-11-26)
+- **Why:** after D253, host T kept 2 EnvDraw missed vertices, in frames g6469 and g6475 (Vita3K toasty60: 2 at window 14,400). Each was a world GT3 with one corner a split point with an end behind the eye (`HK_NOPROJ`, exempt by D220) and one corner whose Sp record (D223) lies 2,641 / 3,317 px off its key, with depth w 64 / 55 against the found corner's 1,669 / 1,643 (`runtime/autopilot/runs/vita/issue-266-1/host/diag-T-base.txt`). With no depth at the behind-the-eye corner the polygon can't be drawn perspective-correct; the PS1 draws it affine at its keys, and drawing it with the Sp point would put a corner thousands of pixels from there.
+- **What** (`vcache.c`, `psx_vcache.h`): in the walk's count of vertices with no entry, an EnvDraw polygon with a no-projection corner (`hk_noproj`, or an own point with none) counts its other no-entry vertices as `VCX_NO_PROJ` too. New counter `np_poly` on a `vcache world no projection:` line. A counting change only: no answer, place or depth changes. Kept: D182, D205, D213, D218, D220, D223, D251, D253.
+- **Measured:** host missed T 2 → 0 (no projection 832 → 834); S, Si, P, Pi, Pf, Pfi, S60 and O60 unchanged at 0. Vita3K toasty60 window 14,400: EnvDraw missed 2 → 0.
+- **Checked** (`runtime/autopilot/runs/vita/issue-266-1/`): host FNV per polygon (D168) on 9 pairs, every polygon identical; Vita build; Vita3K 8 routes, shots identical to `base-20d3514` (checked by the coordinator); counters the same apart from the timing-dependent ones (stone60's `vc.invalid` and `vc.clamped` sat past two base runs' spread in both fix runs, with `np_poly` 0 there); gate host ctest and `noassets`.
+- **Host missed after this:** 0 on every route (S, Si, P, Pi, Pf, Pfi, S60, T, O60). Left on Vita3K: the attract demo's MobyDraw 2,508 and ParticlesDraw 3 in demo60 and toasty60 (#243).
+
+## 2026-11-26 — an older menu's MAX
+
+### D260. A `draw_distance=200` that an older options menu saved is read as today's MAX (ADAPTIVE) (#267, 2026-11-26)
+- **Why:** the menu saved MAX (ADAPTIVE) as 200 from #260 to #261 (D255), and 2X as 200 before that. Since D256 MAX is 400, so a saved 200 showed `200%` and stepped to NORMAL.
+- **What:**
+  - The Vita menu writes `config_version=7`; the PS4 menu writes 6 (it wrote 5 since D194).
+  - `read_config` reads a 200 as the row's last value (`DD_MAX_PCT`, through `vita_menu_last_value` / `ps4_menu_last_value`) only inside the block the menu writes: the file's last `config_version` line is below 7 (below 6 on the PS4), every key line after it is a menu row's key, current or gone (`vita_menu_key` / `ps4_menu_key`), and those lines include the nine rows every menu has written since D48 (widescreen, interp, res, draw_distance, analog, free_camera, cam_invert_x, cam_invert_y, cam_speed).
+  - A developer's 200 stays 200: the test tools write their run's lines after their version line, or no version line (the kit's `v3k_run.sh`), and their base lines never write res, analog or cam_speed. A 200 with the new version stays 200 too.
+  - `menu_test` logs a `menu: shown` line with each row as first shown.
+- **Checked** (`runtime/autopilot/runs/vita/issue-267-A/`): Vita build; PS4 build through the Mac SDK (not run); host ctest 33/33; `noassets`. Five Vita3K menu runs: an old menu file with 200 loads at 400%, shows MAX (ADAPTIVE) and saves 400 with `config_version=7`; a version-7 file keeps 150 and 200; an old block followed by a developer's line keeps 200; owner60's lines keep 200. The 8 Vita3K routes: 694 shots identical to `base-20d3514` (checked by the coordinator); counters within the spread of two owner60 runs.
+
+## 2026-11-26 — phase 8: the attract demo's missed vertices
+
+### D259. With the fix on, a moby's screen-facing sprite hands its corners to the vertex cache, and a particle quad's or sprite's own points are anchored on all four corners (#243, 2026-11-26)
+- **Why:** after D257 host missed was 0 on every gameplay route, but the attract demo had 2,511 (Vita3K demo60 and toasty60: MobyDraw 2,508 at window 5,100, ParticlesDraw 3 at 5,700; host demo routes D and D60 the same). Tagged (`runtime/autopilot/runs/vita/issue-243-A/host/diag243.py`): MobyDraw was every corner of `moby_hand.c` `DrawSprite`'s POLY_FT4 squares (the demo explosion's sparks, vblanks 4,988–5,012, presenter frames), which handed nothing over; ParticlesDraw was two quads of different sizes with one first-corner key, whose own points died under one anchor (D251's leftover).
+- **What:**
+  - `DrawSprite` (MobyDraw and SpecDraw) hands each corner over as an offset from the centre's projection (`VCD_MOBY_SPRITE`, giving way to every other renderer, as `VCD_PARTICLES`), names the centre (`VCD_SELF`: the record's projection of its vertex, `nvert - 1 - i0/4` vertices and `nspr` sprite projections back, key-checked) and keeps the corners as its own (`VCD_OWN`).
+  - Particle quads and sprites use the anchor `VCD_QUAD_ANCHOR` (the four corner keys mixed); the walk mixes the same, and its own-point step also takes MobyDraw and SpecDraw quads.
+  - A sprite's hand-over is used only for a MobyDraw or SpecDraw polygon that #197 wouldn't take (without that gate one 4×1-px sprite #197 had found changed).
+  - New `moby sprites` count on the `vcache hooked:` line. Kept: D182, D205, D213, D218, D220, D221, D223, D226, D227, D251, D253, D257.
+- **Measured:** host D and D60 missed 2,511 → 0; every other host route stays 0. Vita3K: missed 0 in every window of all 8 routes; demo60 `vc.misses` −38%.
+- **Checked** (`runtime/autopilot/runs/vita/issue-243-A/`): host FNV per polygon (D168) on D, D60, T, S, P, Pf and Si, Pi, Pfi, S60, O60: 0 found-before changed, 0 became affine, 722 newly found on D and D60 (29 sprites drawn affine before and after now sit at their handed-over places); Vita build; Vita3K 8 routes, shots identical to `base-20d3514` (checked by the coordinator); counters the same apart from the timing-dependent ones; gate host ctest and `noassets`.
+- **Missed after this:** 0 on every host route (the 9 gameplay routes and the demo routes) and in every Vita3K window of the 8 routes.
+
+## 2026-11-26 — where Artisans' 60 Hz frame goes
+
+### D261. The vertex cache's record keeps a repeat's record in the entry and inlines the native record; in Artisans 2x costs the game thread no more than 1x (#259, 2026-11-26)
+- **Why:** hardware session 8 (D252) held 2x at 1x in Artisans: the game thread took 15.1–16.3 ms of the 14.5 ms budget (D219: 15.2).
+- **Where the time goes** (`runtime/autopilot/runs/vita/issue-259-A/`):
+  - At 11,400 the game thread worked out 5,128 projections a vblank at once (91% of 5,624); the walk on core 1 was 85% busy, so its idle rule took few. Over the 60 Hz windows the draw's ms follow those projections (about 2.5–2.8 µs each, the renderer included) better than they follow KB.
+  - Host Artisans with every projection worked out at once: the record is 79% of the renderers' time (qemu overstates it); per draw env 1,929 records (28% exact repeats), mobys 1,097, sky 418, Spyro 242, fx 51, particles 30. gprof: `rtp_apply` 16% self.
+  - The `expand 1094 ms` on the vcache and atlas lines is the render thread's vertex expand on core 2 (as D199 found), not game-thread time; core 2 has about 6.5 ms a vblank free.
+  - #225's divisions are on the walk (gprof 0.29% and 0.22%), not on the game thread.
+- **2x costs no more than 1x:** host Artisans with the budget off, x2.00 draws write 62–74 KB against 59–77 KB at 1x, record 7.71 M projections against 7.69 M and take the same time. The budget holds 1x there because the 1x frame is already over it.
+- **What** (`vcache.c`, `psx_vcache.h`, `prof_draw.c`, `main.c`):
+  - D221's repeat record (`Rp`) moves from the 96 KB `rp` array into an 8-byte `RpE` in candidate 3's place while an entry has at most three candidates: the generation's distance from the table's frame start (`rp_g0`) plus 1 in 15 bits, a clamped flag and the vertex; 0x7FFF generations or more past it keeps and skips nothing. Skipping only drops maths that changes nothing, so the answers are the same by construction (host O60 skips 3,750,225 against 3,750,239). `vc_repeat=0/1/2` (2 default; 1 is D221's array; covers #232's key).
+  - `ngte_vcache` inlines `find` and `rtp_apply` (`vc_fast_rec=0/1`, default 1): about 80 of some 450 ARM instructions per at-once record.
+  - Both keys are on the `threads:` line. New Vita line `draw vc N:` (each part's records a vblank: recorded / at once / kept); the host's `--prof-draw` prints the same at exit, from vblank `PROF_DRAW_FROM`. Host switches `VC_REPEAT`, `VC_FAST_REC`, `VC_LAZY_LOGIC`.
+- **Checked:** host FNV per polygon (D168) identical on 11 routes (S60, T, O60, D60, S, Si, P, Pi, Pf, Pfi, D) and on 4 with `VC_LAZY_LOGIC=0` against D221's path; Vita3K 8 routes, 694 shots identical to `base-20d3514` (checked by the coordinator); fixed counters the same, timing-dependent ones within a second base run's spread; Vita build (and with the keys, `vc_repeat=1 vc_fast_rec=0` shots identical); gate host ctest and `noassets`. No time claim from the host or Vita3K.
+- **Open:** the hardware A/B (`runs/vita/issue-259-A/hw/`: Artisans base, fix, base, fix and Toasty base, fix, with the owner's settings at MAX 400). Two larger options the owner decides: letting the distance grow where it writes no more than 1x even when 1x is over budget, and working out the kept projections on core 2.
+
+## 2026-11-26 — ARM64 step O3
+
+### D262. ARM64 step O3: linuxa64, the headless host on aarch64 in the offset model, matches linux32 byte for byte; every pointer↔32-bit-integer cast goes through P32_ENC/P32_DEC (2026-11-26)
+- **What:** the third step of D250's plan. `-DSPYRO_HOST=linuxa64` (`cmake/linuxa64.toolchain.cmake`) builds `src/platform/linux32` for aarch64 Linux with clang 19, natively in the arm64 host image (`tools/tc`, no qemu). `src/compat/p32.h` turns the offset model on for aarch64: each P32 slot is a 32-bit offset from `spyro_p32_base`.
+- **The image:** static and non-PIE, linked at 0x2_0123_0000 (`-Ttext-segment`), the base its start (`--defsym spyro_p32_base=__executable_start`).
+  - Above 4 GB, as macOS arm64 places its image, so a pointer cut to 32 bits points at nothing: `low_image.c` reserves the rest of the low 4 GB, as on linux64. Its start-up check is that the image, arena and game stack lie within 4 GB of the base and the image above 4 GB.
+  - Not 4 GB-aligned, as macOS slides its image. At 0x2_0000_0000 a pointer cut to 32 bits *is* its offset, so a missed encode hides; at 0x2_0123_0000 it shows. Both kinds of miss were found this way.
+- **The data image:** a symbolic word in the game's data (`.long D_800752C8`) can't hold an address above 4 GB. `tools/data2s.py --p32-offset` emits it as 0 plus an `{slot, target}` pair, as the PS4's `--pie` (D193), and `low_image.c` stores each word's offset before the game starts. A number with a comment after it (`0x1549D /* Artisans */`) is a number in this mode (in `--pie` it stays in the table, so the PS4's fpkg doesn't change).
+- **The casts:** `P32_ENC(p)` (pointer → 32-bit integer, the offset) and `P32_DEC(i)` (back), `(p)` and `(i)` on every other target. Each passes the other kind through (`__builtin_choose_expr`, `__builtin_classify_type`), so a macro that takes a pointer or an address can have them in its body.
+  - `p32_enc_` gives an offset only for a pointer in the 4 GB above the base. NULL, small constants and sentinels (`termPrim`'s 0xffffffff) keep their low 32 bits, as the 32-bit targets keep them.
+  - **The rewriter's `--casts` mode** (`tools/ps4/p32_offset_rewrite.py`, on a linuxa64 tree, every overlay variant with `--all-overlays`): a cast from a pointer to a 32-bit integer, directly or through `uintptr_t`, gets `P32_ENC` on its operand; one from a 32-bit integer to a pointer, directly or through `uintptr_t`, gets `P32_DEC`.
+    - It places a site only where it can be exact: in text, in one `#define` body, or a whole macro use whose expansion is the operand. Clang names the outer accessor's place for one nested in another's argument; those `(int)P32_GET(x)` casts are wrapped by a textual pass instead.
+    - The decomp's edits are `patches/spyro-1-p32cast/0002-p32-casts-1.patch`; the port's own C is edited in place.
+  - **By hand,** in the bodies of the port's address macros: `HPTR`, `AT32`/`AT16`/`AT8`, `PSX_ADDR`, `WORD_AT`, `ADDR`, `ADDR_ND`, `AT32_ND`, `MIPS_KUSEG`, `PSX_KUSEG`; the decomp's `PATCH_POINTER` (`0001-p32-hand-casts.patch`).
+- **The packed addresses** (`src/game/psx_mem.h`): OT links, animation frames and subdivision headers are an address's low bits, decoded relative to the arena. In the offset model they are the offset's low bits, decoded relative to the arena's offset (`MEM_ARENA_U32_`); PsyCross's `setaddr` encodes and `SPYRO_OT_NEXT` decodes the same way (`patches/PsyCross/0016`).
+  - A decoder's result is a host address where the code casts it to a pointer and a 32-bit address where the code keeps it in a `u32`: `MEM_MODEL_PTR` and `MEM_MODEL_AT`, `MEM_ANIM_HALF` and `MEM_ANIM_HALF_U32` (each the same text elsewhere).
+- **Across units** (`tools/ps4/p32_decl_check.py`): a variable that one unit declares as a slot and another as a pointer, or a function whose parameter or return is a pointer in one declaration and a 32-bit integer in another, compiles and links but disagrees at run time. It found:
+  - `gen/ovl_table.c`'s `extern void *g_OverlaySpacePointer` (`tools/overlays/port_overlays.py` now declares the slot in the offset model). On x86-64 it has always stored 8 bytes into the 4-byte label, the top half into the padding after it (0x800113A4), harmlessly.
+  - The hand C's entries (`render_hand.h` `HAND_RENDERER`, `HAND_UNIT_FN`): the decomp calls the sky's and the glows' with pointers, the entries take `u32`s, so a pointer arrived cut to 32 bits. They take `P32_ARG_T` (a 64-bit register in the offset model, encoded on entry; `unsigned int` elsewhere) and `func_80058AE8`, which the decomp declares returning a pointer, decodes its result (`HAND_UNIT_FN_PTR`).
+  - After them, only glibc's two `strerror_r`.
+- **The checking build** (`-DSPYRO_P32_CHECK=ON`): an encode of a value above 4 GB outside the image's window (a host pointer stored as a game address) stops with its file and line.
+- **Found on the way, not changed:** the overlays' preprocessing (`cmake/overlays.cmake` `OVL_CPP_FLAGS`) doesn't have `add_compile_definitions`' switches, so on every native build (linux64, PC, PS4, the Vita's native build) an overlay compiles the arena build's branch of `#if SPYRO_NATIVE_MEM` (`balloonist.c`'s model copy) and `psx_mem.h`'s arena decoders. linux64 still matches linux32 on every host check; a follow-up. Also: the overlays' preprocessing didn't depend on the headers it forces in (`p32.h`, `port_prefix.h`; Ninja ignores `IMPLICIT_DEPENDS`), so a change to them left stale overlay text; they are now `DEPENDS`.
+- **Checks:**
+  - `host_checks.sh` on linuxa64 against linux32 native-mem: demo, the 100,000-vblank tour, routes A and B. Against a fresh linux32 baseline from the final tree (`logs/o3fin-l32n-*`, `logs/o3fin-a64-*`, gitignored): every trace, screenshot, WAV and memory card identical, 279 files. linux32 itself matches O2's runs.
+  - The checking build: the same four runs, identical, and no stop (3,793 checks compiled in; `logs/o3fin-chk-*`).
+  - `p32_decl_check.py`: no slot/pointer mismatch in 685 names, no pointer/int32 mismatch in 3,945 functions but `strerror_r`.
+  - Byte identity: each target built from develop's 061931c and from O3, in the same build directories, loaded sections compared: Vita `spyro_vita.velf` and PS4 `spyro.elf` every section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
+  - Timing: the four host checks, wall time on the same Mac (the arm64 Docker VM): linuxa64 81 s natively, linux32 native-mem 499 s under qemu-i386. Not a measure of the offset model's cost (one is emulated); that waits for a native comparison on the Mac (O4).
+  - `p32_lint.py`: 0 found. O2's `p32_offset_check.py` on linux64 with O3's macros: 166 units, 0 diagnostics. `tools/check_no_assets.sh`: passes. No hardware run.
+- **Left for O4 (macOS arm64):** the image under 4 GB of a slid base (`_mh_execute_header`), the game stack in `.bss`, the toolchain and SDL3; `MEM_ARENA_U32_`'s arithmetic doesn't need the base aligned, but 16 MB alignment of the arena's offset is assumed by the OT's 24-bit links as before.
+- **Next free number:** D263.
+
+### D263. The vertex cache's placement gates find a renderer's primitives by their offset in the game's memory, the walk's copy's too (#244, 2026-11-26)
+- **Why:** D230 moved only the counters to the offset compare. On the Vita's native build the gates (#215, #217/#229, #221, #227, #243) still compared the low 24 bits, which never match a PS1 primitive the walk reads from walk.c's copy, so the portals' sky and faces were filed "outside". That let #215's `frac_hand` gate give a portal face's no-entry vertices a cut-fraction place, which the host refuses.
+- **How (`vcache.c`):** `cx_find` always maps the polygon through `cx_ofs` (the game walk's copy included) and compares against each range's offset form; the low-24 form and `cx_find_`'s switch are gone. Ranges that are not `ok` are skipped, as the counters already did.
+- **Found:** a diag VPK logged every gate lookup whose class changes: all were "outside" becoming PortalSkyPlain, PortalSkyFog or PortalFace. Only PortalFace at the `frac_hand` gate changes an outcome.
+- **Measured (Vita3K run totals):** stone60 cut-fraction finds 381 → 377, portal faces 213 → 217 (= host S60). Missed stays 0. Every other route's vcache totals are unchanged.
+- **Checks:** host FNV per polygon on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60): 0 changed, every host vcache line identical. Vita3K shots identical to base-20d3514 on all eight routes. `CAPTURE=1` grabs at stone60 6,460–6,800 and at the 64 frames the diag named: no cracks or wobble; the only interior differences are distant-texture timing that two runs of one VPK also show. Host ctest 33/33; native and Vita builds; noassets. Logs: `runtime/autopilot/runs/vita/issue-244-A`.
+- **Left:** `psx_vcache.h`'s comment near line 467 still says the gates compare the low 24 bits (outside #244's Files).
+
+### D264. Hardware session 9: the vertex-cache record path (#259), the demo presenter inline (#232) and the walk's short path (#274) gain on the console; MAX 400 holds 60 fps (#261) (2026-11-26)
+- **Run:** with the owner's yes ("vita is free for hw test if you want", then "Yes, run it" for exactly `runtime/autopilot/hw-session9.sh`), 18 runs ap23* on `ded47d3.vpk` (SHA-1 8dea8f5d; develop with D250–D261), each A/B by its config key on one VPK. The owner's settings at DRAW DISTANCE MAX = 400. Results in `runtime/hw-ded47d3/RESULTS.md`; logs `logs/hw-ap23*` (gitignored). Left on the Vita: ded47d3's eboot, read back 80c2353c, IDENTICAL.
+- **#259 (D261), gain:** Artisans play 6,900–9,000, virtual vblanks: game thread 9.83 / 9.77 ms per vblank with the new record path against 10.52 / 10.52 with `vc_repeat=1 vc_fast_rec=0` (busy 61.4% against 65.5%). Artisans still holds at 1x in its heaviest stretch (15.4 ms of 14.5 against 16.4). With the wobble fix off (`persp=0 subpixel=0`) the same play takes 5.02 ms: the vertex cache is ~4.8 ms a vblank of the game thread there. `vc_lazy_logic=2` changes nothing (9.81).
+- **#261 (D256), MAX 400:** Stone Hill play (virtual vblanks) busy 65.9% (worst 85) at x1.11–3.24, below session 8's 69.0% (88) at 200%. The Toasty route in real time: late per 300 Artisans 0.5, Toasty 0.1–0.2 (session 8: 1.0, 0.2) with distance x1.0–3.9. 60 fps holds in play.
+- **#274 (D226), gain for the short path:** the real-time Toasty runs fell into two route timings; within one, the walk on core 1 takes 6.96 ms per vblank with `found_fast=2` (twice), 6.92 with 1, 7.36 with 0, and the game thread's join 0.80 / 0.81 / 1.18 ms. The short path is worth ~0.4 ms of walk and join; the probes read up front (2 against 1) show nothing. Default 2 kept.
+- **#232 (D222), gain:** attract demos 4,500–6,300 in real time: 218.1 / 217.3 pictures per 300 inline (`pres_demo_inline=1`) against 194.1 / 194.3 with D211's order; late vblanks the same (190–191). Default 1 kept.
+- **Next:** Artisans at 2x needs ~0.9 ms more off the game thread; the vertex cache's ~4.8 ms is where it is (#271 draw-free distance and #272 projections on core 2 are the owner's open choices).

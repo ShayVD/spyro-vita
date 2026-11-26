@@ -61,6 +61,22 @@ void psx_vcache_set_lazy_logic(int mode);
  * up front; 1 that path without; 0 every polygon the whole path. The same
  * answers in each. */
 void psx_vcache_set_found_fast(int mode);
+/* #228: an exact repeat's maths skipped (vcache.c rp_skip): 0 never; 1
+ * with the last projection worked out kept in each table's rp array
+ * (D221); 2 (the default, #259) kept in the entry itself, in 8 bytes
+ * where its candidate 3 would go, while it has at most three, so the
+ * record reads no line of another array. The same answers in each; set
+ * before the cache records. */
+void psx_vcache_set_repeat(int mode);
+/* #259: the logic draw's native records take the record's find and maths
+ * inlined: 1 (the default) or 0 (called, as before). The same code. */
+void psx_vcache_set_fast_record(int on);
+/* #259: the game thread's records in the logic draw's frame so far: [0]
+ * recorded, [1] worked out at once (repeats skipped among them), [2] kept
+ * for the walk, [3] repeats skipped (since the start). The draw profiles
+ * (prof_draw.c) take each renderer's share from the difference across its
+ * call; the first three start again at the frame's end. */
+void psx_vcache_game_recs(unsigned out[4]);
 /* #221: a record whose probe runs out (VC_PROBE, 32 slots of the frame's
  * other keys; late in a busy frame, as the main sky's records come) makes
  * its entry in a small overflow apart from the table's slots, where before
@@ -108,8 +124,25 @@ enum { VCD_ALIAS = 0, VCD_LERP = 1, VCD_OFFSET = 2, VCD_PERSP = 3 };
  * since #209 ParticlesDraw hands over their corners, VCD_OFFSET from the
  * projected centre. A particle corner counts only where no other renderer
  * placed the key, gives way to any other's, and is no source for another
- * hand-over, so every point placed before stays as it was.) */
-enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES, VCD_WHO_N };
+ * hand-over, so every point placed before stays as it was. #231: two quads
+ * side by side share a corner's pixel, each at its own place, and the
+ * hand-over leaves that key with none; so the quad also names its centre
+ * (VCD_SELF) and its corners (VCD_OWN, the offset) under its first
+ * corner's key, as the glows do (#216, below), and the walk's own-point
+ * step takes a particle quad nothing else finds.) #243: two quads of
+ * different sizes with one first corner's key named both under one anchor,
+ * so neither was kept; their anchor is now VCD_QUAD_ANCHOR, all four
+ * corners' keys mixed.
+ * VCD_MOBY_SPRITE (#243): a moby's screen-facing square (moby_hand.c
+ * DrawSprite: a POLY_FT4 at its first vertex's projection, sized by its
+ * depth; MobyDraw's and SpecDraw's, the attract demo's sparks). Its
+ * corners are handed over as VCD_PARTICLES' are: an offset from the
+ * centre's projection, counted only where no other renderer placed the
+ * key, giving way to any other's and no source for another, with the
+ * centre named (VCD_SELF) and the corners its own (VCD_OWN) under
+ * VCD_QUAD_ANCHOR. */
+enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_PARTICLES,
+       VCD_MOBY_SPRITE, VCD_WHO_N };
 #define VCD(form, who) ((form) | (who) << 4)
 /* #215: a VCD_LERP cut's own fraction, or'ed into how: t / 4096 of the way
  * from a to b, as the clipper moved its integer ends (the sky through a
@@ -194,6 +227,12 @@ enum { VCD_SHADOWS, VCD_SKY_CLIP, VCD_GLOWS, VCD_ENV_SPLIT, VCD_PETE_CLIP, VCD_P
 #define VCD_PIECE_V(xy, uv, i)                                                                 \
   (((unsigned)(xy) ^ (unsigned)(unsigned short)(uv) * 0x9E3779B1u) *                          \
    (0x85EBCA77u + 0x40000000u * (unsigned)(i)))
+/* #243: a screen-facing quad's anchor (VCD_PARTICLES', VCD_MOBY_SPRITE's):
+ * its four corners' keys, k0..k3 in the primitive's order, mixed as
+ * VCD_PIECE_V mixes a world piece's (no u/v); the walk mixes a quad's
+ * vertices the same way (its order 0 1 3 2 is the primitive's) */
+#define VCD_QUAD_ANCHOR(k0, k1, k2, k3)                                                        \
+  (VCD_PIECE_V(k0, 0, 0) ^ VCD_PIECE_V(k1, 0, 1) ^ VCD_PIECE_V(k2, 0, 2) ^ VCD_PIECE_V(k3, 0, 3))
 /* #229: a grid point GridCorrect moved, named (VCD_SELF) under this anchor
  * once for every piece of its grid: a world quad drawn at once (not split)
  * finds its moved corner there */
@@ -629,6 +668,17 @@ typedef struct {
    * centre) was missing or dead, taken under VCD_CENTRE (counted in hits
    * and own_found too, when their polygon is found so) */
   unsigned own_centre;
+  /* #237: projections of frames whose order log was full (8,192) placed
+   * past it (vcache.c Xlog: read only by the own points and their names,
+   * not by derive's order or resolve), and those that got no place there
+   * either (that store full too, or no memory for it) */
+  unsigned ord_x, ord_lost;
+  /* #266: vertices with no entry counted exempt (VCX_NO_PROJ) because
+   * their world polygon has a corner with no projection (#217's split point
+   * with an end behind the eye, or an own point with none): the polygon
+   * has no depth there, so it is drawn affine at its keys whatever the
+   * others find (counted in miss_none too) */
+  unsigned np_poly;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);

@@ -104,7 +104,11 @@ fi
 # and both inverts), and the PS1's wobble (wobble=1: the Vita's default has
 # been the fix since #177; a given persp=1 subpixel=1 turns it on) unless a
 # config line given here turns them on (later lines win; config_version=6 so
-# a given interp=1, or a 0 for the D68 switches, counts: main.c).
+# a given interp=1, or a 0 for the D68 switches, counts: main.c). The options
+# menu writes config_version=7 since D260; this 6 stays, and a given
+# draw_distance=200 is still a developer's 200, not an older menu's MAX: these
+# base lines never write res, analog or cam_speed, three of the nine rows every
+# menu has written since D48 (read_config, D260).
 printf 'config_version=6\nwidescreen=0\ninterp=0\nfree_camera=0\ncam_invert_x=0\ncam_invert_y=0\nwobble=1\n' >> "$data/config.txt"
 for line in "$@"; do echo "$line" >> "$data/config.txt"; done
 rm -rf "$data/shots" "$data/spyro.log" "$data/spyro-prev.log" "$data/hold.req" "$data/hold.ack" "$data/audio.wav" "$data/save"

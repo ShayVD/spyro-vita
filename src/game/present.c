@@ -622,19 +622,19 @@ static int timed_vsync(int mode) {
 static int poly_space_on(void) { return port_present_active() || g_lod.scale > LOD_ONE; }
 
 void *port_poly_start(void *db_buf) {
-  return poly_space_on() ? (void *)g_Buffers.m_LowerPolyBuffer : db_buf; /* cast: p32.h */
+  return poly_space_on() ? (void *)P32_GET(g_Buffers.m_LowerPolyBuffer) : db_buf; /* cast: p32.h */
 }
 
 #define FAIRY_CARD_BUF 0x600 /* g_Buffers.m_HudOTStart - 0x600, func_800314B4 */
 
 void PortPolySpace(void) {
-  void *top = (char *)g_Buffers.m_HudOTStart - FAIRY_CARD_BUF;
+  void *top = (char *)P32_GET(g_Buffers.m_HudOTStart) - FAIRY_CARD_BUF;
   if (!poly_space_on())
     return;
-  D_800757B0 = g_Buffers.m_LowerPolyBuffer;
-  D_80075780 = top;
-  D_800756FC = top;
-  g_HudMobys = top;
+  P32_SET(D_800757B0 , P32_GET(g_Buffers.m_LowerPolyBuffer));
+  P32_SET(D_80075780 , top);
+  P32_SET(D_800756FC , top);
+  P32_SET(g_HudMobys , top);
 }
 
 /* The OT walked from a copy (walk.c, D71): the PS1 RAM a DrawOTag list can
@@ -656,9 +656,9 @@ int port_present_prim_ranges(PsxWalkRange *r, int max) {
   r[n].lo = OT_TERMINATOR_AT;
   r[n].hi = OT_TERMINATOR_AT + OT_TERMINATOR_LEN;
   n++;
-  if (in_arena(g_Buffers.m_LowerPolyBuffer, 1) && in_arena(D_800757B0, 1)) {
-    lo = (uint32_t)((uintptr_t)g_Buffers.m_LowerPolyBuffer - g_psx_arena_base);
-    hi = (uint32_t)((uintptr_t)D_800757B0 - g_psx_arena_base);
+  if (in_arena(P32_GET(g_Buffers.m_LowerPolyBuffer), 1) && in_arena(P32_GET(D_800757B0), 1)) {
+    lo = (uint32_t)((uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer) - g_psx_arena_base);
+    hi = (uint32_t)((uintptr_t)P32_GET(D_800757B0) - g_psx_arena_base);
     if (hi > lo) {
       r[n].lo = lo;
       r[n].hi = hi;
@@ -704,7 +704,7 @@ static int in_arena(const void *p, uint32_t len) {
 
 static unsigned char *sector_cache(int i) {
   unsigned char *sec =
-      (unsigned char *)(uintptr_t)((uint32_t *)g_Environment.m_SectorPointer)[i];
+      (unsigned char *)P32_DEC((uintptr_t)((uint32_t *)P32_GET(g_Environment.m_SectorPointer))[i]);
   return in_arena(sec + SECTOR_CACHE, 4) ? sec + SECTOR_CACHE : NULL;
 }
 
@@ -844,7 +844,7 @@ static int count_mobys_at(const Moby *mobys) {
   return n;
 }
 
-static int count_mobys(void) { return count_mobys_at(g_LevelMobys); }
+static int count_mobys(void) { return count_mobys_at(P32_GET(g_LevelMobys)); }
 
 static long long s_t_update;
 
@@ -875,7 +875,7 @@ void PortPresentBeforeUpdate(void) {
   }
   s_prev.nmobys = g_present.interp_mobys ? count_mobys() : 0;
   for (i = 0; i < s_prev.nmobys; i++) {
-    Moby *m = &g_LevelMobys[i];
+    Moby *m = &P32_GET(g_LevelMobys)[i];
     s_prev.mobys[i].cls = m->m_Class;
     s_prev.mobys[i].state = (signed char)m->m_State;
     s_prev.mobys[i].pos = m->m_Position;
@@ -883,9 +883,9 @@ void PortPresentBeforeUpdate(void) {
     s_prev.mobys[i].track = moby_track(m);
   }
   s_prev.have_particles = g_present.interp_anim &&
-                          in_arena(g_Particles, sizeof s_prev.particles);
+                          in_arena(P32_GET(g_Particles), sizeof s_prev.particles);
   if (s_prev.have_particles)
-    memcpy(s_prev.particles, g_Particles, sizeof s_prev.particles);
+    memcpy(s_prev.particles, P32_GET(g_Particles), sizeof s_prev.particles);
   g_present_stats.us_blend += now_us() - t;
 }
 
@@ -1115,7 +1115,7 @@ static void wide_state_out(void) {
   int i;
   memcpy(s_wide_flags, PSX_ARENA(SECTOR_FLAGS), sizeof s_wide_flags);
   s_wide_nsectors = 0;
-  if (in_arena(g_Environment.m_SectorPointer, 4) && g_Environment.m_SectorCount > 0 &&
+  if (in_arena(P32_GET(g_Environment.m_SectorPointer), 4) && g_Environment.m_SectorCount > 0 &&
       g_Environment.m_SectorCount <= MAX_SECTORS) {
     s_wide_nsectors = g_Environment.m_SectorCount;
     for (i = 0; i < s_wide_nsectors; i++) {
@@ -1486,7 +1486,7 @@ static int presenter_pass(int wide, int own_state, int blend, int check, int fil
   pres_draw_pool(&s_pw.nd_pool, &s_pw.nd_pool_cap);
   s_pn2d = 0;
   if (!check) { /* the presenter's PutDispEnv's, for the logic draw's (job_done checks it) */
-    s_job.expect = (g_CurDB == &g_DB[0] ? &g_DB[1] : &g_DB[0])->m_DispEnv;
+    s_job.expect = (P32_GET(g_CurDB) == &g_DB[0] ? &g_DB[1] : &g_DB[0])->m_DispEnv;
     currentDispEnv = s_job.expect;
   }
   if (async_check) {

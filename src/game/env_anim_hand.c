@@ -117,7 +117,7 @@ static u32 SetUp(u32 a0, u32 a1, u32 a2, u32 a3) {
   for (l = LIST_LOW_POLY; l <= LIST_HIGH_COLOR; l++)
     for (i = 0; i < lists[l].m_Count; i++) {
       const u8 *anim = (const u8 *)Anim(&lists[l], i);
-      const u32 *sectors = HPTR(const u32, PSX_ADDR(g_Environment.m_SectorPointer));
+      const u32 *sectors = HPTR(const u32, PSX_ADDR(P32_GET(g_Environment.m_SectorPointer)));
       HPTR(u8, sectors[*(const u16 *)(anim + 4)])[0x18 + (l - LIST_LOW_POLY)] = (u8)i;
     }
   /* A collision animation: its first triangle (+6) and count (+4), halves;
@@ -128,8 +128,8 @@ static u32 SetUp(u32 a0, u32 a1, u32 a2, u32 a3) {
     const u32 tris = *(const u32 *)(anim + 4), count = tris & 0xFFFF;
     const u32 frame = (*(const u32 *)(anim + 0xC + anim[2] * 8 + 4) >> 8) & 0xFF;
     const u32 data = PSX_ADDR(anim) + *(const u32 *)(anim + 8) + frame * count * 12;
-    const TerrainCollision *coll = HPTR(const TerrainCollision, PSX_ADDR(g_Environment.m_TerrainCollision));
-    CopyCollision((tris >> 16) * 12 + PSX_ADDR(coll->m_Triangles), data, data + count * 12);
+    const TerrainCollision *coll = HPTR(const TerrainCollision, PSX_ADDR(P32_GET(g_Environment.m_TerrainCollision)));
+    CopyCollision((tris >> 16) * 12 + PSX_ADDR(P32_GET(coll->m_Triangles)), data, data + count * 12);
   }
   return 0;
 }

@@ -1,6 +1,7 @@
 /* The presenter's thread (stage 7f, decisions D126): the in-between frame
- * (in every gamestate since 7g, D128) and the attract demos' 16:9 real
- * frame (#220) are drawn here, on a core of its own, beside the
+ * (in every gamestate since 7g, D128; not in an attract demo at 16:9 since
+ * #227, below) and the attract demos' 16:9 real frame (#220) are drawn
+ * here, on a core of its own, beside the
  * logic draw on the game thread (src/game/present.c's presenter, recording
  * into gpu_thread.c's buffers). Where (#195):
  *  - pres_core=1 (default): core 1, the mixer's, the XA reader's and the
@@ -16,9 +17,11 @@
  *
  * The game thread hands it one job a tick (vita_pres_post) and joins it
  * before the next update (vita_pres_wait, from port_present_pres_join).
- * In an attract demo at 16:9 it hands it two (#220): the in-between frame,
- * joined before the 16:9 real frame starts, and the real frame, joined
- * after the logic draw. */
+ * In an attract demo at 16:9 the in-between frame runs inline on the game
+ * thread and only the 16:9 real frame comes here, joined after the logic
+ * draw (#227, D222). pres_demo_inline=0 (main.c, #232) gives D211's order
+ * back: both come here (#220), the in-between frame joined before the real
+ * frame starts. */
 #include "vita.h"
 #include "../../game/present.h"
 
@@ -123,8 +126,12 @@ void vita_pres_init(void) {
   s_th = th;
   vita_log("pres: the presenter draws the in-between frame on its own thread, core %d, "
            "priority 0x%x, beside the logic draw (stage 7f, D126; every gamestate, D128; "
-           "pres_core=, pres_prio=, #195), and the attract demos' 16:9 frames (#220)",
-           s_core, s_prio);
+           "pres_core=, pres_prio=, #195), and the attract demos' 16:9 real frame (#220); "
+           "in those demos the in-between frame %s",
+           s_core, s_prio,
+           g_present_demo_inline ? "runs inline on the game thread (pres_demo_inline=1, #227)"
+                                 : "comes here too, joined before the real frame "
+                                   "(pres_demo_inline=0, D211)");
 }
 
 /* "pres" line: the presenter's frames, its thread's time, the game

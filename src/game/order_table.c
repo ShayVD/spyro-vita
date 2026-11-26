@@ -37,7 +37,7 @@ static void *audit_list(void *head) {
 /* sh to, 0(from); sb to >> 16, 2(from): the PS1 link, leaving the length byte. */
 static void link24(u32 *from, void *to) {
   unsigned char *p = (unsigned char *)from;
-  u32 a = (u32)(uintptr_t)to;
+  u32 a = (u32)(uintptr_t)P32_ENC(to);
   p[0] = (unsigned char)a;
   p[1] = (unsigned char)(a >> 8);
   p[2] = (unsigned char)(a >> 16);
@@ -46,15 +46,15 @@ static void link24(u32 *from, void *to) {
 /* func_80016784: link the OT's buckets (highest first), then the HUD OT,
  * then the terminator; clears every bucket. Returns the head for DrawOTag. */
 void *func_80016784(int size) {
-  u32 *base = g_WorldOT, *at = base + size * 2, *hud = g_HudOT;
+  u32 *base = P32_GET(g_WorldOT), *at = base + size * 2, *hud = P32_GET(g_HudOT);
   u32 *tail, *head, *next;
 
   nd_list_linked();
   for (;;) {
     if (at == base) {
       /* World OT empty: draw the HUD OT alone. */
-      tail = (u32 *)(uintptr_t)hud[0];
-      head = (u32 *)(uintptr_t)hud[1];
+      tail = (u32 *)P32_DEC((uintptr_t)hud[0]);
+      head = (u32 *)P32_DEC((uintptr_t)hud[1]);
       hud[0] = 0;
       if (!tail)
         return OT_TERMINATOR;
@@ -62,27 +62,27 @@ void *func_80016784(int size) {
       link24(tail, OT_TERMINATOR);
       return audit_list(head);
     }
-    tail = (u32 *)(uintptr_t)at[-2];
+    tail = (u32 *)P32_DEC((uintptr_t)at[-2]);
     at -= 2;
     if (tail)
       break;
   }
-  head = (u32 *)(uintptr_t)at[1];
+  head = (u32 *)P32_DEC((uintptr_t)at[1]);
   at[0] = 0;
   at[1] = 0;
   while (at != base) {
-    next = (u32 *)(uintptr_t)at[-1];
+    next = (u32 *)P32_DEC((uintptr_t)at[-1]);
     at -= 2;
     if (!next)
       continue;
     link24(tail, next);
-    tail = (u32 *)(uintptr_t)at[0];
+    tail = (u32 *)P32_DEC((uintptr_t)at[0]);
     at[1] = 0;
     at[0] = 0;
   }
   if (hud[1]) {
-    link24(tail, (void *)(uintptr_t)hud[1]);
-    tail = (u32 *)(uintptr_t)hud[0];
+    link24(tail, (void *)P32_DEC((uintptr_t)hud[1]));
+    tail = (u32 *)P32_DEC((uintptr_t)hud[0]);
     hud[1] = 0;
     hud[0] = 0;
   }
@@ -92,23 +92,23 @@ void *func_80016784(int size) {
 
 /* func_800168A0: append a primitive to world OT bucket pOTIndex. */
 void func_800168A0(void *pPoly, int pOTIndex) {
-  u32 *bucket = g_WorldOT + pOTIndex * 2;
-  u32 *tail = (u32 *)(uintptr_t)bucket[0];
-  bucket[0] = (u32)(uintptr_t)pPoly;
+  u32 *bucket = P32_GET(g_WorldOT) + pOTIndex * 2;
+  u32 *tail = (u32 *)P32_DEC((uintptr_t)bucket[0]);
+  bucket[0] = (u32)(uintptr_t)P32_ENC(pPoly);
   if (tail)
     link24(tail, pPoly);
   else
-    bucket[1] = (u32)(uintptr_t)pPoly;
+    bucket[1] = (u32)(uintptr_t)P32_ENC(pPoly);
 }
 
 /* func_800168DC: append a primitive to the HUD OT. Only C code calls it,
  * with 2D primitives: widescreen keeps their shape (present.c). */
 void func_800168DC(void *pPoly) {
-  u32 *tail = (u32 *)(uintptr_t)g_HudOT[0];
+  u32 *tail = (u32 *)P32_DEC((uintptr_t)P32_GET(g_HudOT)[0]);
   port_present_note_2d(pPoly);
-  g_HudOT[0] = (u32)(uintptr_t)pPoly;
+  P32_GET(g_HudOT)[0] = (u32)(uintptr_t)P32_ENC(pPoly);
   if (tail)
     link24(tail, pPoly);
   else
-    g_HudOT[1] = (u32)(uintptr_t)pPoly;
+    P32_GET(g_HudOT)[1] = (u32)(uintptr_t)P32_ENC(pPoly);
 }

@@ -215,7 +215,7 @@ is open. Up/down picks a row, left/right or ✕ changes it, ○ closes it. Setti
 | | 60 FPS (off / interpolated / 60 Hz). 60 Hz runs the game's logic itself at 60 Hz in play, so the game is 60 pictures a second of its own; menus, cutscenes and the attract demos stay at the game's 30 Hz with a blended picture in between. Interpolated keeps the game at 30 Hz and adds that blended picture everywhere. Off is the original 30 fps. 60 Hz starts or stops only when the game starts, so choosing it or leaving it asks whether to restart now or undo; ○ leaves it for the next start, and a 60 HZ LOGIC row says ON/OFF AT RESTART meanwhile | 60 Hz |
 | | PSX wobble (on: the PS1's warping textures and jittering vertices; off: perspective-correct textures and sub-pixel vertices) | off |
 | | Resolution (native / PS1) | native (960×544) |
-| | Draw distance (experimental: off / 1.5× / 2×) | off |
+| | Draw distance (normal / max (adaptive): further where the picture leaves room. With 60 FPS set to 60 Hz, in play it draws up to 4× the original distance, only as far as the frame keeps 60 fps; on the title, in cutscenes and with interpolated or off, up to 2×) | normal |
 | CONTROLS | Analog stick | on |
 | | Free camera (right stick) | on |
 | | Invert camera X / Invert camera Y | on / on |
@@ -308,12 +308,16 @@ in `licenses/`). Building it: [docs/ps4-build.md](docs/ps4-build.md).
   For the original's timing exactly, choose interpolated (still 60 pictures a second) or off.
   On hardware 60 fps holds in play in every level measured; the attract demo's flight scenes can
   still slip below it.
-- **2× draw distance is still experimental.** It reaches further only where the scene leaves room:
-  with 60 Hz in play, each picture keeps under a work budget, so where a scene is already heavy at the
-  original distance, 2× draws as 1× there instead of losing frames. Objects past the original
-  distance use their low-detail models. Scenes that drop frames at 60 Hz with the draw distance off
-  still drop them, and at 30 Hz or interpolated 2× can drop frames in big open levels. `dd_budget=0`
-  in `config.txt` turns the budget off (further, but more dropped frames). 1.5× costs less.
+- **Draw distance MAX (ADAPTIVE) reaches its full distance only where the scene leaves room.**
+  With 60 Hz in play, MAX draws up to 4× the original distance, but each picture keeps under a
+  work budget (on the Vita sized from the measured frame time), so it goes only as far as the frame
+  keeps 60 fps: where a scene is already heavy at the original distance, such as Artisans, it keeps
+  the original distance there instead of losing frames. On the title, in cutscenes and with 60 FPS
+  interpolated or off, nothing measures the frame, so MAX goes up to 2× and can drop frames in big
+  open levels. Objects past the original distance use their low-detail models. Scenes that drop
+  frames at 60 Hz on NORMAL still drop them. `dd_budget=0` in `config.txt` turns the budget off (up
+  to 2× everywhere, but more dropped frames). `draw_distance=150` in `config.txt` still works (the
+  menu then shows 150%).
 - **PSX WOBBLE OFF, the default, costs frames at 60 fps.** Its perspective-correct textures and
   sub-pixel vertices (measured on hardware, interpolated) still hold 60 fps in quiet levels such as
   Toasty and the title, but busy ones drop frames: in Stone Hill about one vblank in six is late.

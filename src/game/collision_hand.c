@@ -228,22 +228,22 @@ static inline int AxisOf(const Vector3D *v, int axis) { return axis == 0 ? v->x 
 #define MAX_CHAINS 4
 
 static int NearMobyChains(int x, int y, Moby **heads) {
-  P32F(Moby *) *grid = (P32F(Moby *) *)((u_char *)g_MobyCollisionChain + 0x1000);
+  P32F(Moby *) *grid = (P32F(Moby *) *)((u_char *)P32_GET(g_MobyCollisionChain) + 0x1000);
   int cell = ((u_int)x >> 13) + (((u_int)y >> 13) << 5);
   int dx = x & 0x1000 ? 1 : -1, dy, n = 0;
-  if (grid[cell])
-    heads[n++] = grid[cell];
+  if (P32_GET(grid[cell]))
+    heads[n++] = P32_GET(grid[cell]);
   if (((cell + dx) & -0x400) > 0) {
     dy = 0x20;
   } else {
-    if (grid[cell + dx])
-      heads[n++] = grid[cell + dx];
+    if (P32_GET(grid[cell + dx]))
+      heads[n++] = P32_GET(grid[cell + dx]);
     dy = y & 0x1000 ? 0x20 : -0x20;
   }
-  if (!(((cell + dy) & -0x400) > 0) && grid[cell + dy])
-    heads[n++] = grid[cell + dy];
-  if (!(((cell + dx + dy) & -0x400) > 0) && grid[cell + dx + dy])
-    heads[n++] = grid[cell + dx + dy];
+  if (!(((cell + dy) & -0x400) > 0) && P32_GET(grid[cell + dy]))
+    heads[n++] = P32_GET(grid[cell + dy]);
+  if (!(((cell + dx + dy) & -0x400) > 0) && P32_GET(grid[cell + dx + dy]))
+    heads[n++] = P32_GET(grid[cell + dx + dy]);
   return n;
 }
 
@@ -259,7 +259,7 @@ typedef struct {
 } CollisionModel;
 
 static inline const CollisionModel *MobyCollisionModel(const Moby *m) {
-  return (const CollisionModel *)MEM_COLL_PTR(m->m_CollisionGroup);
+  return (const CollisionModel *)MEM_COLL_PTR(P32_GET(m->m_CollisionGroup));
 }
 
 #define TRI_VERTEX_A(w) (((w) >> 24) & 0x3F)
@@ -299,7 +299,7 @@ static Vector3D MobyVertex(const Moby *m, u_int word, int scale) {
 /* The words of a moby's current animation frame (the 21-bit offset in
  * RAM that AnimationFrame packs) and the animation's scale. */
 static const u_int *MobyFrameWords(const Moby *m, int *scale) {
-  const AnimationHeader *anim = g_Models[(u_short)m->m_Class]->m_Animations[m->m_AnimationState.m_Animation];
+  const AnimationHeader *anim = P32_GET(P32_GET(g_Models[(u_short)m->m_Class])->m_Animations[m->m_AnimationState.m_Animation]);
   *scale = anim->m_Scale;
   return (const u_int *)MEM_ANIM21(anim->m_Frames[m->m_AnimationState.m_Frame].m.m_Data);
 }
@@ -330,7 +330,7 @@ static inline int AllOutside(int a, int b, int c, int lo, int hi) {
  * x by 4096-unit cells; the x level's entries index m_Blocks, lists of
  * triangle indices whose first entry has bit 15 set. */
 static const u_short *CellTriangles(const TerrainCollision *tc, int cx, int cy, int cz) {
-  const u_short *tree = tc->m_BlockTree, *node = tree;
+  const u_short *tree = P32_GET(tc->m_BlockTree), *node = tree;
   int c[3], i;
   c[0] = cz, c[1] = cy, c[2] = cx;
   for (i = 0; i < 3; i++) {
@@ -343,7 +343,7 @@ static const u_short *CellTriangles(const TerrainCollision *tc, int cx, int cy, 
     if (i < 2)
       node = (const u_short *)((const u_char *)tree + child);
     else
-      return tc->m_Blocks + child;
+      return P32_GET(tc->m_Blocks) + child;
   }
   return NULL;
 }
@@ -395,13 +395,13 @@ static void TerrainTriangle(const u_int *w, Vector3D *a, Vector3D *ca, Vector3D 
 
 /* The surface flags of terrain triangle i (0xFF past the flag table). */
 static inline int TerrainSurface(const TerrainCollision *tc, int i) {
-  return tc->m_FlagCount - i > 0 ? tc->m_Flags[i] : 0xFF;
+  return tc->m_FlagCount - i > 0 ? P32_GET(tc->m_Flags)[i] : 0xFF;
 }
 
 /* A moby triangle's surface: 0xFF if its low byte says so, else the
  * first word of the moby's properties. */
 static inline int MobySurface(const Moby *m, int word) {
-  return (word & 0xFF) == 0xFF ? 0xFF : *(const int *)m->m_Props;
+  return (word & 0xFF) == 0xFF ? 0xFF : *(const int *)P32_GET(m->m_Props);
 }
 
 /* The cells from cell a to cell b, at most one step apart per axis (the
@@ -515,12 +515,12 @@ static int TraceMobys(const Vector3D *from, const Vector3D *to, Moby **heads, in
   len = (d.x < 0 ? -d.x : d.x) + (d.y < 0 ? -d.y : d.y) + (d.z < 0 ? -d.z : d.z);
   for (i = 0; i < nheads; i++) {
     Moby *m;
-    for (m = heads[i]; m; m = m->m_CollisionChainNext) {
+    for (m = heads[i]; m; m = P32_GET(m->m_CollisionChainNext)) {
       const CollisionModel *model;
       const int *tri;
       Vector3D rel = Sub(&m->m_Position, from);
       int reach;
-      if (!m->m_CollisionGroup)
+      if (!P32_GET(m->m_CollisionGroup))
         continue;
       model = MobyCollisionModel(m);
       reach = model->m_Radius + len;
@@ -539,7 +539,7 @@ static int TraceMobys(const Vector3D *from, const Vector3D *to, Moby **heads, in
           continue;
         g_CollisionPoint = hit;
         g_CollisionNormal = n;
-        D_800757E4 = m;
+        P32_SET(D_800757E4 , m);
         g_CollisionTriangleIndex = -1;
       }
     }
@@ -550,8 +550,8 @@ static int TraceMobys(const Vector3D *from, const Vector3D *to, Moby **heads, in
 /* The ray against the level: the triangles of the cells of its two ends
  * (in 4096ths) that overlap its box (in 16ths). */
 static int TraceTerrain(const Vector3D *from, const Vector3D *to) {
-  const TerrainCollision *tc = g_Environment.m_TerrainCollision;
-  const u_int *triangles = tc->m_Triangles;
+  const TerrainCollision *tc = P32_GET(g_Environment.m_TerrainCollision);
+  const u_int *triangles = P32_GET(tc->m_Triangles);
   Vector3D d = Sub(to, from), n, hit;
   int f[3] = {from->x, from->y, from->z}, t[3] = {to->x, to->y, to->z};
   int ca_[3], cb_[3], cells[8][3], ncells, best = NO_HIT, i;
@@ -581,7 +581,7 @@ static int TraceTerrain(const Vector3D *from, const Vector3D *to) {
         continue;
       g_CollisionPoint = hit;
       g_CollisionNormal = n;
-      D_800757E4 = NULL;
+      P32_SET(D_800757E4 , NULL);
       g_CollisionTriangleIndex = idx;
     }
   }
@@ -743,12 +743,12 @@ static void SphereMobys(SphereQuery *q, Moby **heads, int nheads) {
   Vector3D v[MAX_MODEL_VERTICES], n, point;
   for (i = 0; i < nheads; i++) {
     Moby *m;
-    for (m = heads[i]; m; m = m->m_CollisionChainNext) {
+    for (m = heads[i]; m; m = P32_GET(m->m_CollisionChainNext)) {
       const CollisionModel *model;
       const int *tri;
       Vector3D rel = Sub(&m->m_Position, pos);
       int reach, dist2;
-      if (!m->m_CollisionGroup)
+      if (!P32_GET(m->m_CollisionGroup))
         continue;
       model = MobyCollisionModel(m);
       reach = model->m_Radius + r;
@@ -767,7 +767,7 @@ static void SphereMobys(SphereQuery *q, Moby **heads, int nheads) {
         if (!SphereTriangle(q, a, &ca, &ba, &n, &point, &dist2) || !SphereContactFound(q, &point, dist2))
           continue;
         g_CollisionNormal = n;
-        D_800757E4 = m;
+        P32_SET(D_800757E4 , m);
         g_CollisionTriangleIndex = -1;
         g_SurfaceBelowFlags = MobySurface(m, *tri);
       }
@@ -776,8 +776,8 @@ static void SphereMobys(SphereQuery *q, Moby **heads, int nheads) {
 }
 
 static void SphereTerrain(SphereQuery *q) {
-  const TerrainCollision *tc = g_Environment.m_TerrainCollision;
-  const u_int *triangles = tc->m_Triangles;
+  const TerrainCollision *tc = P32_GET(g_Environment.m_TerrainCollision);
+  const u_int *triangles = P32_GET(tc->m_Triangles);
   int p[3] = {q->pos->x, q->pos->y, q->pos->z}, r = q->radius;
   int ca_[3], cb_[3], cells[8][3], ncells, i, dist2;
   Vector3D n, point;
@@ -805,7 +805,7 @@ static void SphereTerrain(SphereQuery *q) {
       if (!SphereTriangle(q, &a, &ca, &ba, &n, &point, &dist2) || !SphereContactFound(q, &point, dist2))
         continue;
       g_CollisionNormal = n;
-      D_800757E4 = NULL;
+      P32_SET(D_800757E4 , NULL);
       g_CollisionTriangleIndex = idx;
       g_SurfaceBelowFlags = TerrainSurface(tc, idx);
     }
@@ -932,8 +932,8 @@ static inline int Straddles(int a, int c, int b, int p) {
  * and the occlusion group of the floor is kept instead of the collision
  * globals. */
 static void FloorTerrain(int x, int y, int z, int last, int *floor, int camera) {
-  const TerrainCollision *tc = g_Environment.m_TerrainCollision;
-  const u_int *triangles = tc->m_Triangles;
+  const TerrainCollision *tc = P32_GET(g_Environment.m_TerrainCollision);
+  const u_int *triangles = P32_GET(tc->m_Triangles);
   int start = *floor, cz;
   for (cz = z >> 8; cz != last; cz--) {
     const u_short *list;
@@ -965,11 +965,11 @@ static void FloorTerrain(int x, int y, int z, int last, int *floor, int camera) 
       if (camera) {
         if (REGION_IS(PAL)) /* PAL keeps the floor's normal too (PAL 0x800538B4, D134) */
           g_CollisionNormal = n;
-        D_80075844 = tc->m_TriangleOcclusionAssignment[idx];
+        D_80075844 = P32_GET(tc->m_TriangleOcclusionAssignment)[idx];
         continue;
       }
       g_CollisionNormal = n;
-      D_800757E4 = NULL;
+      P32_SET(D_800757E4 , NULL);
       g_CollisionTriangleIndex = idx;
       g_SurfaceBelowFlags = TerrainSurface(tc, idx);
     }
@@ -981,11 +981,11 @@ static void FloorMobys(const Vector3D *pos, Moby **heads, int nheads, int *floor
   int i, height;
   for (i = 0; i < nheads; i++) {
     Moby *m;
-    for (m = heads[i]; m; m = m->m_CollisionChainNext) {
+    for (m = heads[i]; m; m = P32_GET(m->m_CollisionChainNext)) {
       const CollisionModel *model;
       const int *tri;
       Vector3D rel;
-      if (!m->m_CollisionGroup)
+      if (!P32_GET(m->m_CollisionGroup))
         continue;
       model = MobyCollisionModel(m);
       rel.x = m->m_Position.x - pos->x, rel.y = m->m_Position.y - pos->y, rel.z = 0;
@@ -1007,7 +1007,7 @@ static void FloorMobys(const Vector3D *pos, Moby **heads, int nheads, int *floor
           continue;
         *floor = height;
         g_CollisionNormal = n;
-        D_800757E4 = m;
+        P32_SET(D_800757E4 , m);
         g_CollisionTriangleIndex = -1;
         g_SurfaceBelowFlags = MobySurface(m, *tri);
       }
@@ -1182,7 +1182,7 @@ static void MobyPushOut(Vector3D *pos, Vector3D d, int dist2, int limit) {
 #if !M2C_ColMoby
 static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int pApplyingDamage, Moby *pIgnoreMoby,
             int arg5) {
-  P32F(Moby *) *grid = (P32F(Moby *) *)g_MobyCollisionChain; P32F(Moby *) *slots[MAX_CHAINS];
+  P32F(Moby *) *grid = (P32F(Moby *) *)P32_GET(g_MobyCollisionChain); P32F(Moby *) *slots[MAX_CHAINS];
   Moby *hit = NULL;
   int x = pPos->x, y = pPos->y, nslots = 0, col, row, ncol, nrow, i;
   if ((x | y | pPos->z) < 0)
@@ -1213,13 +1213,13 @@ static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int p
 
   for (i = 0; i < nslots; i++) {
     Moby *m;
-    for (m = *slots[i]; m; m = m->m_CollisionChainNext) {
+    for (m = P32_GET(*slots[i]); m; m = P32_GET(m->m_CollisionChainNext)) {
       const CollisionModel *model;
       const u_int *e;
       u_int word = 0;
       Vector3D d;
       int dx2, dy2, dist2, reach;
-      if (m == pIgnoreMoby || !m->m_CollisionGroup)
+      if (m == pIgnoreMoby || !P32_GET(m->m_CollisionGroup))
         continue;
       model = MobyCollisionModel(m);
       d = Sub(&m->m_Position, pPos);
@@ -1294,14 +1294,14 @@ static int MobyVolumes(Vector3D *pPos, int pRadius, int *pReceivingDamage, int p
           hit = m;
         if (arg5 & 1) {
           MobyPushOut(pPos, v, len2, limit);
-          return (int)(uintptr_t)m;
+          return (int)(uintptr_t)P32_ENC(m);
         }
         if (!(arg5 & 2))
-          return (int)(uintptr_t)hit;
+          return (int)(uintptr_t)P32_ENC(hit);
       }
     }
   }
-  return arg5 & 1 ? 0 : (int)(uintptr_t)hit;
+  return arg5 & 1 ? 0 : (int)(uintptr_t)P32_ENC(hit);
 }
 
 /* Whether a sphere at pPos of radius pRadius touches a moby's collision

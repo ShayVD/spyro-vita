@@ -47,10 +47,18 @@ static void res_changed(void) {
     vita_gpu_rescale();
 }
 
-/* draw_distance= is a percentage: 100 (off), 150, 200 */
+/* The menu's MAX (ADAPTIVE), percent, and the most draw_distance= gives
+ * (#260): one place. 400 since #261: past 4x no level draws more (the
+ * whole-game tour, D256), and the scale passes 2x only where a 60 Hz budget
+ * measures the draws (lod.c scale_top); 200 until then. */
+#define DD_MAX_PCT 400
+
+/* draw_distance= is a percentage, 100 to DD_MAX_PCT: the menu's NORMAL (100,
+ * the original) and MAX (ADAPTIVE) (DD_MAX_PCT, #260); 150 and other values
+ * stay config.txt's and the benches' (bench.c). */
 void vita_picture_apply(void) {
   int pct = g_vita_opts.draw_distance;
-  pct = pct < 100 ? 100 : pct > 200 ? 200 : pct;
+  pct = pct < 100 ? 100 : pct > DD_MAX_PCT ? DD_MAX_PCT : pct;
   g_lod.scale = pct * LOD_ONE / 100;
   g_lod.stats = g_vita_opts.stats != 0 && pct > 100;
 }
@@ -67,7 +75,7 @@ void vita_picture_init(void) {
   s_wobble = g_vita_opts.wobble;
   vita_picture_apply();
   if (g_lod.scale > LOD_ONE)
-    vita_log("picture: draw distance %d%% (experimental, D49)", g_vita_opts.draw_distance);
+    vita_log("picture: draw distance %d%%", g_vita_opts.draw_distance);
 }
 
 /* One "lod" line per stats report while the draw distance is longer. The
@@ -84,18 +92,26 @@ void vita_picture_report(int vblank) {
 
 /* 2X-4X (supersampled) were removed: too slow on the Vita's GPU (D85) */
 static const char *const k_res_names[] = {"NATIVE", "PS1"};
-static const char *const k_dd_names[] = {"OFF", "1.5X", "2X"};
-static const int k_dd_values[] = {100, 150, 200};
+/* DRAW DISTANCE (#260, the owner's decision; "DRAW DISTANCE (EXP.)" with
+ * OFF, 1.5X and 2X until then): NORMAL is the original's, MAX (ADAPTIVE)
+ * DD_MAX_PCT where the frame leaves room (lod.c's limiter, with 60 Hz logic the
+ * budget lod_time.c sizes from measured time, D212). A value config.txt
+ * gives that isn't one of these (150) shows as "150%"; left or right then
+ * goes to the nearest, NORMAL on a tie (vpk_menu_opt_change), and only a
+ * change writes it back. */
+static const char *const k_dd_names[] = {"NORMAL", "MAX (ADAPTIVE)"};
+static const int k_dd_values[] = {100, DD_MAX_PCT};
 /* Labels and values fit the 640-pixel panel with "< >" round the value
- * (18 pixels a letter: at most 31 letters together). */
+ * (18 pixels a letter: at most 31 letters together; "DRAW DISTANCE" and
+ * "< MAX (ADAPTIVE) >" are 31, 552 of the 592 pixels between the margins). */
 static const MenuOption k_rows[] = {
     {.section = MENU_PICTURE, .label = "PSX WOBBLE", .key = "wobble",
      .value = &g_vita_opts.wobble, .names = g_menu_off_on, .count = 2,
      .on_change = wobble_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
      .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},
-    {.section = MENU_PICTURE, .label = "DRAW DISTANCE (EXP.)", .key = "draw_distance",
+    {.section = MENU_PICTURE, .label = "DRAW DISTANCE", .key = "draw_distance",
      .value = &g_vita_opts.draw_distance, .names = k_dd_names, .values = k_dd_values,
-     .count = 3, .fmt = "%d%%", .on_change = draw_distance_changed},
+     .count = 2, .fmt = "%d%%", .on_change = draw_distance_changed},
 };
 MENU_OPTION_LIST(g_menu_picture, k_rows);

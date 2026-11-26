@@ -102,9 +102,9 @@
  *                       (widescreen, interp, interp_budget and the other
  *                       menu rows can also be set in the game: hold SELECT
  *                       and press START; the menu writes them back here,
- *                       with config_version=6 (2 at D45; 3: D68; 4: D150;
+ *                       with config_version=7 (2 at D45; 3: D68; 4: D150;
  *                       5: D153, tex_filter= and dynres= below; 6: #177,
- *                       wobble= below))
+ *                       wobble= below; 7: #267, draw_distance= below))
  *                       (The in-between frame, and the attract demos'
  *                       16:9 frame, are the presenter's: the game's draw
  *                       code built a second time over a snapshot,
@@ -261,6 +261,12 @@
  *       pres_prio=N     that thread's priority, 0x40 to 0xBF (default 0x9A,
  *                       behind the parse thread's 0x98; 0x96 is ahead of
  *                       it; #195)
+ *       pres_demo_inline=0  in an attract demo at 16:9, both presenter
+ *                       frames on that thread, the in-between one waited
+ *                       for before the real one starts (D211's order).
+ *                       Default 1 (#227, D222): the in-between frame inline
+ *                       on the game thread, only the real frame there
+ *                       (the same pictures; #232)
  *       vc_lazy=1       with persp or subpixel, the presenter's projections
  *                       worked out when first read (#193, #195; the same
  *                       pictures). Default 0 (#198): as it makes them; the
@@ -271,6 +277,19 @@
  *                       kept while the walk has time (D188; the same
  *                       pictures; #196), 3 also a quota kept while the
  *                       walk runs, sized from its idle time (#204)
+ *       vc_repeat=N     with persp or subpixel, an exact repeat's maths
+ *                       skipped (#228): 0 never, 1 its record in each
+ *                       table's rp array (D221), 2 (default) in the entry
+ *                       itself (#259; the same pictures)
+ *       vc_fast_rec=N   with persp or subpixel, the logic draw's native
+ *                       record with its find and maths inlined: 1 (default)
+ *                       or 0 (called, as before #259; the same pictures)
+ *       found_fast=N    with persp or subpixel, the walk's lookup of a
+ *                       polygon whose vertices are all found: 2 (default)
+ *                       on its short path with each vertex's first probe
+ *                       read up front, 1 the short path alone, 0 the full
+ *                       body for every polygon (as before #233; D226; the
+ *                       same pictures; #274)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -296,9 +315,14 @@
  *                       developer's and is taken as written)
  *                       (wobble, res, draw_distance are also options menu
  *                       rows: picture.c, D48)
- *       draw_distance=N longer draw distance, percent: 150 or 200 (default
- *                       100: the original; experimental, D49): the world's
- *                       detail and the mobys, picture only (src/game/lod.c)
+ *       draw_distance=N the draw distance, percent: 100 (the default,
+ *                       the original; the menu's NORMAL) or 400 (MAX
+ *                       (ADAPTIVE), #261; 150 and 200 are still read): the
+ *                       world's detail and the mobys, picture only
+ *                       (src/game/lod.c, D49). A 200 in the block an older
+ *                       menu wrote (below config_version=7, every line
+ *                       after its config_version line a row's) was its
+ *                       MAX (2X before #260): read as 400 (#267)
  *       dd_budget=auto  with 60 Hz logic in play, the longer draw
  *                       distance's work budget follows the game thread's
  *                       measured time per logic frame (the default, #212;
@@ -417,6 +441,9 @@ extern int g_gpu_clear; /* gpu_soft.c, D111 */
 extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
 static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off since #198 */
 static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
+static int s_vc_repeat = 2;     /* vc_repeat= (#228, #259): psx_vcache_set_repeat */
+static int s_vc_fast_rec = 1;   /* vc_fast_rec= (#259): psx_vcache_set_fast_record */
+static int s_found_fast = 2;    /* found_fast= (#274): psx_vcache_set_found_fast (D226) */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -510,10 +537,26 @@ int g_vita_config_pal60;
 const char *g_vita_config_rows_gone[5];
 
 void pres_draw_want(void); /* src/game/pres/pres_draw.c */
+int vita_menu_key(const char *key);        /* menu.c (#267) */
+int vita_menu_last_value(const char *key); /* menu.c (#267) */
+
+/* #267: the rows every options menu has written since its DRAW DISTANCE
+ * row came (D48, with RESOLUTION; the others from D45-D47). The test tools'
+ * base lines write some of them (widescreen, interp, free_camera,
+ * cam_invert_x, cam_invert_y), never res, analog or cam_speed. */
+static const char *const k_menu_since_d48[] = {
+    "widescreen", "interp",       "res",          "draw_distance", "analog",
+    "free_camera", "cam_invert_x", "cam_invert_y", "cam_speed",
+};
+#define MENU_SINCE_D48_ALL ((1u << (sizeof k_menu_since_d48 / sizeof k_menu_since_d48[0])) - 1)
 
 static void read_config(void) {
   char line[512];
   int version = 1, version_max = 1, interp_line = 0, wobble_line = 0, i;
+  /* #267: the lines after the last config_version line are all the menu's
+   * rows' keys (tail_rows), and which of k_menu_since_d48 they hold */
+  int version_line = 0, tail_rows = 0;
+  unsigned tail_d48 = 0;
   /* #177: persp= and subpixel= lines, taken after the loop over wobble= */
   int pic_line[2] = {0, 0}, pic_value[2] = {0, 0};
   /* D153: the two keys whose menu rows are gone; taken after the loop, once
@@ -543,6 +586,16 @@ static void read_config(void) {
       interp_line = 1; /* D44, below */
     if (!strcmp(line, "wobble"))
       wobble_line = 1; /* #177, below */
+    if (!strcmp(line, "config_version")) { /* #267, below */
+      version_line = tail_rows = 1;
+      tail_d48 = 0;
+    } else if (!vita_menu_key(line)) {
+      tail_rows = 0;
+    } else {
+      for (i = 0; i < (int)(sizeof k_menu_since_d48 / sizeof k_menu_since_d48[0]); i++)
+        if (!strcmp(line, k_menu_since_d48[i]))
+          tail_d48 |= 1u << i;
+    }
     if (vita_menu_load(line, v))
       ; /* a menu row's key: widescreen, interp, interp_budget, ... (menu.c, D45) */
     else if (!strcmp(line, "pal50"))
@@ -657,11 +710,23 @@ static void read_config(void) {
       g_vita_opts.pres_core = atoi(v);
     else if (!strcmp(line, "pres_prio")) /* #195 */
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
+    else if (!strcmp(line, "pres_demo_inline")) /* #227 (D222), #232 */
+      g_present_demo_inline = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy_logic")) { /* #196, #204: 0 to 3 */
       const int m = atoi(v);
       s_vc_lazy_logic = m < 0 ? 0 : m > 3 ? 3 : m;
+    }
+    else if (!strcmp(line, "vc_repeat")) { /* #228, #259: 0 to 2 */
+      const int m = atoi(v);
+      s_vc_repeat = m < 0 ? 0 : m > 2 ? 2 : m;
+    }
+    else if (!strcmp(line, "vc_fast_rec")) /* #259 */
+      s_vc_fast_rec = atoi(v) != 0;
+    else if (!strcmp(line, "found_fast")) { /* #233 (D226), #274: 0 to 2 */
+      const int m = atoi(v);
+      s_found_fast = m < 0 ? 0 : m > 2 ? 2 : m;
     }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
@@ -721,6 +786,27 @@ static void read_config(void) {
              "default since D150 (interp=4; change it in the menu, SELECT+START)",
              g_vita_opts.interp, g_vita_opts.interp == 1 ? 2 : 4);
     g_vita_opts.interp = 4;
+  }
+  /* The menu's MAX (ADAPTIVE) was 200 from #260 to #261 (D255; 2X from D49
+   * until #260), and is 400 (DD_MAX_PCT) since: a 200 that menu saved would
+   * show 200% and step to NORMAL. So a draw_distance=200 in the block an
+   * older menu wrote is read as today's MAX. The menu writes the file's other
+   * lines, then config_version=N, then every row's key and nothing else: here
+   * the last config_version line is below 7, and every line after it is a
+   * row's key (or a gone row's), with the nine rows every menu has written
+   * since D48 among them. The test tools put their run's lines (frames=,
+   * shot=, pad=, dd_budget=, ...) after their config_version line, or write
+   * none (the kit's v3k_run.sh), so a developer's 200 stays 200, as does a
+   * 200 with config_version=7 (the menu writes back a value it didn't
+   * change). */
+  if (version_line && version < 7 && tail_rows && tail_d48 == MENU_SINCE_D48_ALL &&
+      g_vita_opts.draw_distance == 200) {
+    const int max = vita_menu_last_value("draw_distance");
+    if (max > 200) {
+      vita_log("config: draw_distance=200 from the options menu before config_version=7 is its "
+               "MAX (ADAPTIVE): %d%% (#267)", max);
+      g_vita_opts.draw_distance = max;
+    }
   }
   if (g_vita_config_pal60)
     vita_log("config: pal60= is no longer read (D150): the PAL disc runs at US timing, and the "
@@ -1032,11 +1118,16 @@ int main(int argc, char **argv) {
   vita_pres_init();  /* stage 7f (D126) */
   psx_vcache_set_lazy(s_vc_lazy);
   psx_vcache_set_lazy_logic(s_vc_lazy_logic);
-  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
-           "vc_lazy_logic=%d: the presenter's placement and the projections' deferral (#195, "
-           "#193, D188)",
+  psx_vcache_set_repeat(s_vc_repeat);         /* #228, #259 */
+  psx_vcache_set_fast_record(s_vc_fast_rec); /* #259 */
+  psx_vcache_set_found_fast(s_found_fast);   /* #233 (D226), #274 */
+  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x "
+           "pres_demo_inline=%d vc_lazy=%d vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d "
+           "found_fast=%d: the presenter's placement, the projections' deferral, the record's "
+           "form and the walk's lookup (#195, D222, #193, D188, #259, D226)",
            g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
-           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic);
+           (unsigned)g_vita_pres_prio, g_present_demo_inline, s_vc_lazy, s_vc_lazy_logic,
+           s_vc_repeat, s_vc_fast_rec, s_found_fast);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,

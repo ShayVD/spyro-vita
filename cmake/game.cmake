@@ -50,7 +50,7 @@ if(SPYRO_NATIVE_MEM)
   # linux64 (D174): the overlays' function pointers (overlay_pointers.h) are
   # the C's own 8-byte globals (src/game/p32_fnptrs.c), not their 4-byte
   # slots: a call through a __ptr32 function pointer miscompiles. The PS4 too.
-  if(SPYRO_HOST MATCHES "^(linux64|ps4|pc)$")
+  if(SPYRO_HOST MATCHES "^(linux64|linuxa64|ps4|pc)$")
     foreach(n g_SpawnMoby g_UpdateMoby g_FlightResultsUpdate D_8007567C g_SpawnParticle
               g_UpdateParticle D_800757A0 D_800758A8 D_8007574C D_800758D8 D_80075694
               D_800757A8 D_800758C4)
@@ -64,6 +64,11 @@ if(SPYRO_NATIVE_MEM)
   # the PS4's eboot is a PIE: no 32-bit absolute words (D193)
   if(SPYRO_HOST STREQUAL "ps4")
     list(APPEND S1_DATA_LAYOUT --pie)
+  endif()
+  # linuxa64's image is above 4 GB: its words are offsets, stored at start-up
+  # (low_image.c, D250 O3)
+  if(SPYRO_HOST STREQUAL "linuxa64")
+    list(APPEND S1_DATA_LAYOUT --p32-offset)
   endif()
 elseif(SPYRO_PSX_LAYOUT)
   set(S1_DATA_LAYOUT --map "${SPYRO_PSX_MAP}")

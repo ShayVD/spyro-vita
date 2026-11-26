@@ -9,25 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 231,
-      "branch": "feat/231-wobble-fix-particlesdraw-s-missed",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-231",
-      "pids": [],
-      "started_at": "2026-11-25T05:15:21Z",
-      "files": [
-        "src/game/particles_hand.c",
-        "src/game/particle_slots_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "aa6c03cf1d320f4e7",
-      "last_commit_at": "2026-11-25T06:36:13Z",
-      "nudged_at": "2026-11-25T09:26:00Z"
-    }
-  ],
-  "last_good": "29d857aebaad17fe28639c43b54a89f2086b74e5",
+  "workers": [],
+  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -81,6 +64,34 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "687ca1d",
       "runs": "AP18a-c, AP18o, AP18t (runtime/autopilot/hw-session7b.sh)",
       "result": "D219: dd_budget=auto x1.03-1.41 vs 48 KB x1.00-1.31, held at 1x by measured time (15.2 ms of 14.5); D216-D218 cost nothing; attract demo 166 late/300, game waits 12 ms/vblank on presenter worker (#227); 60 Hz Artisans/Toasty over 14.5 ms at 1x, Artisans sky +0.5 ms, late 2.5/0.9 per 300 (#228)"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-25",
+      "vpk": "runtime/autopilot/artifacts/vita/80b8450.vpk",
+      "sha1": "0a83b44352b88915627b76a5dcb87573cdbcc32c",
+      "commit": "80b8450",
+      "runs": "ap19a, ap19b, ap19t (runtime/autopilot/hw-session8.sh)",
+      "fps": {
+        "artisans_late_per_300": 1.0,
+        "toasty_late_per_300": 0.2,
+        "attract_demo_late_per_300": 162.6
+      },
+      "result": "D252: wobble fixes since 687ca1d cost nothing (busy 69.0 vs 69.1%); 2x held at 1x in Artisans (15.1-16.3 ms of 14.5) -> #259; attract demo 162.6 late -> #232"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-26",
+      "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
+      "sha1": "8dea8f5d542b1a7a14d1c0323931797e8bc28bcd",
+      "commit": "ded47d3",
+      "runs": "ap23a1-a4, s1, t1-t7, d1-d4, x1-x2 (runtime/autopilot/hw-session9.sh)",
+      "fps": {
+        "artisans_late_per_300": 0.5,
+        "toasty_late_per_300": 0.15,
+        "attract_demo_pictures_per_300": 218
+      },
+      "result": "D264: #259 gain 0.72 ms/vblank (Artisans still 1x: 15.4 of 14.5); #232 gain +24 pictures/300 in demos; #274 short path -0.4 ms walk and join, probes no gain; MAX 400 holds 60 fps"
     }
   ],
   "perf_candidates": [
@@ -215,10 +226,48 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "at 2x, pass-2 (far) mobys skip the vertex cache to save 2-3 ms?",
       "default": "keep the wobble fix on far mobys (no change)",
       "status": "open"
+    },
+    {
+      "issue": 260,
+      "question": "Draw distance option after D252 (2x held at 1x in heavy scenes)",
+      "default_taken": "owner 2026-11-25: keep it; the row is DRAW DISTANCE with NORMAL / MAX (ADAPTIVE)",
+      "switch": "draw_distance="
+    },
+    {
+      "issue": 261,
+      "question": "Should MAX (ADAPTIVE) draw past 2x?",
+      "default_taken": "owner 2026-11-25: yes, up to the most it can measure and keep 60 fps stable; after #260",
+      "switch": "draw_distance="
+    },
+    {
+      "at": "2026-11-26T07:10:00Z",
+      "issue": 271,
+      "question": "let MAX grow where extra distance writes no more than 1x when 1x is over budget",
+      "pick": "yes, behind dd_free, default off until a hardware A/B",
+      "status": "open"
+    },
+    {
+      "at": "2026-11-26T07:10:00Z",
+      "issue": 272,
+      "question": "work out kept vcache projections on core 2 (large restructure)",
+      "pick": "after #259 hardware A/B",
+      "status": "open"
     }
   ],
   "attempts": {
-    "161": 1
+    "161": 1,
+    "261": 1,
+    "266": 1,
+    "243": 1,
+    "267": 1,
+    "262": 1,
+    "268": 1,
+    "269": 1,
+    "259": 1,
+    "270": 1,
+    "244": 1,
+    "232": 1,
+    "274": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -248,8 +297,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-29d857a",
-        "commit": "29d857aebaad17fe28639c43b54a89f2086b74e5"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+        "commit": "20d3514589db959121604783a5876ea91f152ad9"
       }
     }
   },
@@ -264,7 +313,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "release/phase8-portal-sky-d248",
       "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
       "pr": 258,
-      "merged_at": null
+      "merged_at": "2026-11-25T09:43:35Z"
     }
   ]
 }
@@ -477,3 +526,23 @@ continue.
 - 2026-11-25T09:05:00Z retro 8 (interim, owner asked): +6 entries, 0 bumped, 0 signatures, coverage n/a, branch retro/spyro-vita-phase-8 (encore draft PR #92); main PR #258 (release/phase8-portal-sky-d248) open; #231 still in its FNV compare
 - 2026-11-25T09:26:00Z shared 5, vita 8: #231 no commit 2 h 48 but alive (S60 FNV pair writing), nudged; PR #258 open; Vita3K: none new, hardware: none
 - 2026-11-25T09:50:00Z merged origin/main into develop for PR #258 (D246 clash: ARM64 plan renumbered D250, #231 now D251; main's bare P32 respelled P32F); pushed on the owner's word before the merge builds finished; encore #92 merged 09:32; started encore sessions fnvcmp, docker queue, autopilot sync
+- 2026-11-25T10:25:00Z hardware session 8: owner yes ("Yes, run it") for runtime/autopilot/hw-session8.sh on 80b8450.vpk (SHA-1 0a83b443): ap19a, ap19b, ap19t, put-eboot
+- 2026-11-25T10:55:00Z hardware session 8 recorded (D252): busy 69.0% (69.1), Artisans 1.0 late, Toasty 0.2, 2x held at 1x in Artisans 15.1-16.3 ms of 14.5 -> filed #259; attract demo 162.6 late (#232 next); dispatch resumed; #231 still on its FNV pairs
+- 2026-11-25T11:10:00Z owner: keep draw distance, row DRAW DISTANCE NORMAL / MAX (ADAPTIVE): filed #260, worker started (no shared files with #231)
+- 2026-11-25T11:20:00Z owner: MAX (ADAPTIVE) should go past 2x where it keeps 60 fps: filed #261 (after #260, shares picture.c); told #260 to keep MAX in one constant
+- 2026-11-25T12:12:00Z #231 reported done (ParticlesDraw missed 0; shots identical vs base-29d857a, checked); gate 1 FAIL tests exit 124: the whole hour was Docker queue wait (ARM64 build, encore queue test, the #258 merge check), rerun with --timeout 9000; filed #262 (docs), noted #243's last 3
+- 2026-11-25T13:40:00Z merged #231 (D251): gate 2 PASS (ctest 33/33); ParticlesDraw missed 0 on host S/Si/P*/S60; host missed now S 6, Si 6, T 2 (all EnvDraw, #237); baseline base-44e82e8 (copy of issue-231-1/fix1); next #237
+- 2026-11-25T13:45:00Z started #237 (EnvDraw log-full frames; decision D253) beside #260
+- 2026-11-25T14:08:00Z #237 WIP e2f2c41 (a log-full frame's later projections placed past the log for names); #260 in its Vita3K/perf reruns; queue: ARM64 session
+- 2026-11-25T15:12:00Z #260 no commit 2 h 50 but alive (second ctest queued behind the ARM64 session), nudged; #237 in its routes/perf reruns
+- 2026-11-25T15:30:00Z #260 reported done (host ctest never ran: queue timeouts); shots identical vs base-44e82e8 (checked); gate running with --timeout 10800; decision D255 (D253 #237, D254 PR #263); filed #264 (stale spyro-ps4 image)
+- 2026-11-25T16:08:00Z #237 no commit 2 h 05, alive (host base build queued behind the ARM64 session), nudged; #260 gate queued for ctest
+- 2026-11-25T18:35:00Z merged #260 (D255): gate PASS (ctest 33/33); baseline base-7724255 (issue-260-1 routes, identical to base-44e82e8); next #261 (MAX past 2x) beside #237
+- 2026-11-25T18:45:00Z started #261 (MAX past 2x, measure first; decision D256) beside #237; no hardware run without the owner's yes
+- 2026-11-25T19:05:00Z #237 reported done (S/Si missed 0, own_nosrc 0; FNV 0 changed; shots identical vs base-7724255, checked); gate running (--timeout 14400); filed #266 (T's 2 EnvDraw, not log-full); docs note added to #262
+- 2026-11-25T19:30:00Z merged #237 (D253): gate PASS (ctest 33/33); host missed 0 on every route but T (2 EnvDraw, #266); baseline base-4c8a009 (issue-237-1/fix1); next #266
+- 2026-11-25T19:35:00Z started #266 (T's 2 EnvDraw, the last host misses; decision D257) beside #261
+- 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
+- 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
+- 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
+- 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
