@@ -54,9 +54,9 @@ extern char D_80077EA0[];   /* the portal's outline on screen: its edges */
 extern char D_8007AA00[];   /* the portal's box on screen: top, bottom, right, left */
 
 /* D_8006FCF4's lists */
-#define SEEN_SECTORS ((u32)(uintptr_t)D_8006FCF4)          /* pass 1, 0-ended */
-#define CLIP_STACK ((u32)(uintptr_t)D_8006FCF4 + 0x800u)   /* triangles waiting */
-#define FOG_COLOURS ((u32)(uintptr_t)D_8006FCF4 + 0x2800u) /* a sector's depth-cued colours */
+#define SEEN_SECTORS P32_DEC(((u32)(uintptr_t)P32_ENC(D_8006FCF4)))          /* pass 1, 0-ended */
+#define CLIP_STACK ((u32)(uintptr_t)P32_ENC(D_8006FCF4) + 0x800u)   /* triangles waiting */
+#define FOG_COLOURS P32_DEC(((u32)(uintptr_t)P32_ENC(D_8006FCF4) + 0x2800u)) /* a sector's depth-cued colours */
 
 /* A sky sector (words; sky_hand.c). */
 enum {
@@ -107,7 +107,7 @@ static void SetRotation(const u32 *m) {
  * SEEN_SECTORS, 0-ended. The view rotation, no translation. */
 static void SectorsInFront(const u32 *view, u32 count, u32 sectors) {
   const u32 *s = HPTR(const u32, sectors), *end = s + count;
-  u32 *out = (u32 *)SEEN_SECTORS;
+  u32 *out = (u32 *)P32_DEC(P32_ENC(SEEN_SECTORS));
   SetRotation(view);
   CTC2(0u, 5);
   CTC2(0u, 6);
@@ -169,7 +169,7 @@ static u32 ProjectSector(const NgteProj *P, const u32 *sector, const Box *box) {
   const s32 oz = (s32)sector[SEC_ORIGIN_Z] >> 16;
   const u32 n = sector[SEC_ORIGIN_Z] & 0xFFFF;
   const u32 *vert = sector + SEC_VERTICES;
-  u32 *scratch = (u32 *)SCRATCH_BASE, all = ~0u, i = 0;
+  u32 *scratch = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)), all = ~0u, i = 0;
   do {
     const u32 flags = ClipFlags(ProjectVertex(P, vert[i], ox, oy, oz).sxy, box);
     all &= flags;
@@ -186,7 +186,7 @@ static u32 ProjectSector(const NgteProj *P, const u32 *sector, const Box *box) {
 static void FogColours(const u32 *colours, u32 bytes) {
   const u32 fog = *(const u32 *)D_800757D4;
   const u32 *c = colours, *end = (const u32 *)((const u8 *)colours + bytes);
-  u32 *out = (u32 *)FOG_COLOURS;
+  u32 *out = (u32 *)P32_DEC(P32_ENC(FOG_COLOURS));
   CTC2(((fog >> 16) & 0xFF) << 4, 23); /* BFC */
   CTC2((fog & 0xFF) << 4, 21);         /* RFC */
   CTC2(((fog >> 8) & 0xFF) << 4, 22);  /* GFC */
@@ -279,9 +279,9 @@ static u32 PortalSlot(void) { return MIPS_KUSEG(*(u32 *)g_WorldOT) + (*(u32 *)D_
  * renderer otherwise, its chain into the world OT's last slot. */
 static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
   const u32 *cyc = (const u32 *)g_Cyclorama;
-  const u32 *visible = (const u32 *)SEEN_SECTORS;
+  const u32 *visible = (const u32 *)P32_DEC(P32_ENC(SEEN_SECTORS));
   const u32 limit = *(u32 *)D_80075780 - 0x400;
-  u32 *const scratch = (u32 *)SCRATCH_BASE;
+  u32 *const scratch = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   Chain ch;
   NgteProj P;
   (void)a0, (void)a1, (void)a2, (void)a3;
@@ -320,7 +320,7 @@ static u32 FogSky(u32 a0, u32 a1, u32 a2, u32 a3) {
          * the flat one moves; the same bytes end up in RAM */
         const u32 xy0 = (u32)((s32)f0 >> 5), xy1 = (u32)((s32)f1 >> 5), xy2 = (u32)((s32)f2 >> 5);
         const u32 i0 = tri[1] >> 20, i1 = (tri[1] >> 10) & 0x3FC, i2 = tri[1] & 0x3FC;
-        const u8 *fog = (const u8 *)FOG_COLOURS;
+        const u8 *fog = (const u8 *)P32_DEC(P32_ENC(FOG_COLOURS));
         AT32(MIPS_KUSEG(ch.prim) + 0x18) = xy2;
         /* flat when the three colour indices are the same (sky_hand.c) */
         EmitTriangle(&ch, i0 == i1 && i0 == i2, xy0, xy1, xy2, COLOUR(fog, i0), COLOUR(fog, i1), COLOUR(fog, i2));
@@ -537,8 +537,8 @@ static void ClipSky(Portal *o, Tri t, u32 edge, u32 ra) {
 static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
   const u32 *s = HPTR(const u32, sky);
   const u32 *box = (const u32 *)D_8007AA00;
-  u32 *const scratch = (u32 *)SCRATCH_BASE;
-  u32 list = SEEN_SECTORS;
+  u32 *const scratch = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
+  u32 list = P32_ENC(SEEN_SECTORS);
   Portal o;
   Box b;
   NgteProj P;
@@ -565,7 +565,7 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
     b.left = o.box.a2, b.top = o.box.a3, b.bottom = o.bottom;
     if (ProjectSector(&P, sector, &b) & 0xF)
       continue;
-    table = fog ? (const u8 *)FOG_COLOURS : (const u8 *)colours;
+    table = fog ? (const u8 *)P32_DEC(P32_ENC(FOG_COLOURS)) : (const u8 *)colours;
     tri = (const u32 *)((const u8 *)colours + (packed >> 14));
     end = (const u32 *)((const u8 *)tri + ((packed << 3) & 0xFFF8));
     for (; tri != end; tri += 2) {
@@ -576,14 +576,14 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
         continue;
       t = (Tri){{(u32)((s32)f0 >> 5), (u32)((s32)f1 >> 5), (u32)((s32)f2 >> 5)},
                 {WORD_AT(table, tri[1] >> 20), WORD_AT(table, (tri[1] >> 10) & 0x3FC), WORD_AT(table, tri[1] & 0x3FC)}};
-      ClipSky(&o, t, (u32)(uintptr_t)D_80077EA0, ra1);
+      ClipSky(&o, t, (u32)(uintptr_t)P32_ENC(D_80077EA0), ra1);
     }
     /* then the halves that waited, last first, each from the edge after
      * the one it waited at */
     for (;;) {
       u32 top = *(u32 *)D_80075798, p;
       Tri t;
-      if (top == CLIP_STACK)
+      if (top == P32_ENC(CLIP_STACK))
         break;
       top -= 0x1C;
       *(u32 *)D_80075798 = top;
@@ -591,7 +591,7 @@ static void PortalSky(u32 sky, u32 view, u32 proj, int fog, u32 ra1, u32 ra2) {
       t = (Tri){{AT32(p), AT32(p + 4), AT32(p + 8)}, {AT32(p + 0xC), AT32(p + 0x10), AT32(p + 0x14)}};
       ClipSky(&o, t, AT32(p + 0x18) + EDGE_SIZE, ra2);
     }
-    *(u32 *)D_80075798 = CLIP_STACK;
+    *(u32 *)D_80075798 = P32_ENC(CLIP_STACK);
   }
   ChainEnd(&o.ch, PortalSlot());
 }
@@ -713,13 +713,13 @@ static u32 PortalFace(u32 a0, u32 a1, u32 a2, u32 a3) {
   (void)a1;
 
   f.colour = ((*HPTR(const u32, a0) << 8) >> 8) | 0x20000000u;
-  f.queue = CLIP_STACK;
+  f.queue = P32_ENC(CLIP_STACK);
   f.prim = *(u32 *)D_800757B0;
   f.slot = PortalSlot();
   f.r.a2 = a2, f.r.a3 = a3;
   for (k = 0; k < 2; k++, tri += 3)
-    ClipFace(&f, tri[0], tri[1], tri[2], (u32)(uintptr_t)D_80077EA0);
-  for (next = CLIP_STACK; next != f.queue; next += 0x10) {
+    ClipFace(&f, tri[0], tri[1], tri[2], (u32)(uintptr_t)P32_ENC(D_80077EA0));
+  for (next = P32_ENC(CLIP_STACK); next != f.queue; next += 0x10) {
     const u32 p = MIPS_KUSEG(next);
     ClipFace(&f, AT32(p), AT32(p + 4), AT32(p + 8), AT32(p + 0xC));
   }

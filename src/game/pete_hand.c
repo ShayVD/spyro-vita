@@ -174,11 +174,11 @@ static void FlamePathToWorld(Vector3D *pOut, FlamePathPoint *pPath, int pIndex) 
 /// unless it's the fairy kiss flame, and sparks along pSparkDir rotated by
 /// the GTE's current matrix (pFlameDir is overwritten with that).
 static void SpawnPuffEnd(Vector3D *pPos, Vector3D *pFlameDir, int pFlameClass, Vector3D *pSparkDir) {
-  g_SpawnParticle(1, pFlameClass, pPos, (int)pFlameDir);
+  g_SpawnParticle(1, pFlameClass, pPos, (int)P32_ENC(pFlameDir));
   if (!g_Flame.m_IsSuperFlame)
     g_SpawnParticle(4, 0x4E, pPos, 0);
   VecRotateByLastMatrix(pSparkDir, pFlameDir);
-  g_SpawnParticle(g_Flame.m_IsSuperFlame * 5 + 5, 0x4F, pPos, (int)pFlameDir);
+  g_SpawnParticle(g_Flame.m_IsSuperFlame * 5 + 5, 0x4F, pPos, (int)P32_ENC(pFlameDir));
 }
 
 /// @brief Updates the flame breath: the fairy kiss glow, new puffs, and each

@@ -34,7 +34,9 @@ foreach(row ${ovl_rows})
       --classes "${cls}" --out "${out}" "${S1_DIR}"
       -- "${CMAKE_C_COMPILER}" ${OVL_CPP_FLAGS} -DOVERLAY_NAME=${ovl} -DIS_${ovl}
          "${S1_DIR}/src/overlays/${file}"
-    DEPENDS "${S1_DIR}/src/overlays/${file}" "${OVL_TOOL}"
+    # the headers forced in by -include: Ninja ignores IMPLICIT_DEPENDS
+    DEPENDS "${S1_DIR}/src/overlays/${file}" "${OVL_TOOL}" "${SPYRO_P32_H}"
+            "${CMAKE_SOURCE_DIR}/src/compat/port_prefix.h"
     IMPLICIT_DEPENDS C "${S1_DIR}/src/overlays/${file}"
     COMMENT "overlay ${ovl}: ${file}"
     VERBATIM)

@@ -1,0 +1,23 @@
+--- a/include/psx/libgpu.h
++++ b/include/psx/libgpu.h
+@@ -203,7 +203,10 @@
+  * anywhere, so its link is the address's low 24 bits, relative to the base
+  * (the port's src/game/psx_mem.h MEM_OT_NEXT). */
+ #ifndef SPYRO_OT_NEXT
+-#if SPYRO_NATIVE_MEM
++#if SPYRO_NATIVE_MEM && SPYRO_P32_OFFSET
++/* the offset model (the port's D250 O3): a link is the offset's low 24 bits */
++#define SPYRO_OT_NEXT(a)	(g_psx_arena_base + (((u_int)(a) - (u_int)(g_psx_arena_base - (uintptr_t)spyro_p32_base)) & 0xffffff))
++#elif SPYRO_NATIVE_MEM
+ #define SPYRO_OT_NEXT(a)	(g_psx_arena_base + (((u_int)(a) - (u_int)g_psx_arena_base) & 0xffffff))
+ #else
+ #define SPYRO_OT_NEXT(a)	(g_psx_arena_base | (a))
+@@ -211,7 +214,7 @@
+ #endif
+ #define nextPrim(p)  		(void *)SPYRO_OT_NEXT(((P_TAG *)(p))->addr)
+ 
+-#define setaddr(p, _addr)	(((P_TAG *)(p))->addr = (u_int)((u_int*)_addr))
++#define setaddr(p, _addr)	(((P_TAG *)(p))->addr = (u_int)P32_ENC((u_int*)_addr))
+ #define getaddr(p)   		(u_int)(((P_TAG *)(p))->addr)
+ 
+ #endif

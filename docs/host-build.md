@@ -1,4 +1,4 @@
-# Host debug build (linux32, and linux64)
+# Host debug build (linux32, linux64 and linuxa64)
 
 The 32-bit Linux build runs the whole game headless in Docker: virtual vblanks, a pad script, PNG screenshots, gdb. Decisions D14–D19 explain the choices.
 
@@ -155,6 +155,18 @@ What the 64-bit text needs, and the checks for it:
   `tools/tc sh -c 'i686-linux-gnu-readelf --debug-dump=info build/linux32-native/src/platform/linux32/spyro > build/layout64/l32n.txt; x86_64-linux-gnu-readelf --debug-dump=info build/linux64/src/platform/linux32/spyro > build/layout64/l64.txt'`, then `python3 tools/ps4/layout64.py build/layout64/l32n.txt build/layout64/l64.txt --host-only tools/ps4/layout64_host_only.txt`.
 - `tools/tc python3 tools/ps4/cast_audit.py build/linux64` (configured with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`) lists every pointer/integer cast, to read: exact for the game's addresses, wrong only for the host's.
 - clang 19 bugs to keep away from: a call through a `__ptr32` function pointer (wrong code or a crash), a `?:` mixing a `P32` and a normal pointer (it hangs: compiles run under `timeout 300`), a `P32` static initializer with an address (a crash).
+
+## linuxa64: the offset model on ARM64 (D250, D262)
+
+`-DSPYRO_HOST=linuxa64` builds the same headless host for aarch64 Linux with clang 19, natively in the arm64 host image: no qemu, so its checks run in about a minute. ARM64 has no `__ptr32`, so it uses the offset model of `src/compat/p32.h`: every P32 slot is a 32-bit offset from `spyro_p32_base`, the image's start. The image is static and non-PIE at 0x2_0123_0000, above 4 GB and not 4 GB-aligned, as macOS arm64 places it, so a pointer cut to 32 bits instead of encoded points at nothing (the low 4 GB is reserved, as on linux64).
+
+```bash
+tools/tc cmake -S . -B build/linuxa64 -G Ninja -DSPYRO_HOST=linuxa64 -DCMAKE_TOOLCHAIN_FILE=cmake/linuxa64.toolchain.cmake
+tools/tc cmake --build build/linuxa64 --target spyro
+BIN=build/linuxa64/src/platform/linux32/spyro tools/host_checks.sh PREFIX
+```
+
+Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. `-DSPYRO_P32_CHECK=ON` is the checking build: an encode of a host pointer (above 4 GB, outside the image) stops with its file and line. The checks of the model: `tools/ps4/p32_offset_check.py` (every slot use through an accessor, D258) and `tools/ps4/p32_decl_check.py BUILD` (a variable or function declared as a slot or pointer in one unit and otherwise in another). New code that turns a pointer into a 32-bit integer, or back, writes `P32_ENC(p)` / `P32_DEC(i)` on the cast's operand (`(u32)P32_ENC(p)`, `(T *)P32_DEC(i)`); `tools/ps4/p32_offset_rewrite.py --casts BUILD` finds the ones missed.
 
 ## Draw distance (D49)
 

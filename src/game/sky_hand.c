@@ -181,7 +181,7 @@ static u32 SkyDraw(u32 a0, u32 a1, u32 a2, u32 a3) {
   const s32 group = (s32)a0; /* an occlusion group, or -1 for all sectors */
   const u32 *proj = HPTR(const u32, a2);
   const u32 *visible = (const u32 *)D_8006FCF4;
-  u32 *const scratch = (u32 *)SCRATCH_BASE; /* each vertex's clip word */
+  u32 *const scratch = (u32 *)P32_DEC(P32_ENC(SCRATCH_BASE)); /* each vertex's clip word */
   const u32 limit = *(u32 *)D_80075780 - 0x400;
   u32 prim, first, prev_tag, tag = 0;
   NgteSync sync;

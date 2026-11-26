@@ -174,7 +174,7 @@ static void cutscene_trace_vblank(int vblank) {
     for (i = 0; i < P32_GET(g_CutsceneLayout)->m_MobyCount && i < 16; i++) {
       const Model *model = P32_GET(g_Models[1 + i]);
       int k, f;
-      if ((int)(uintptr_t)model >= 0)
+      if ((int)(uintptr_t)P32_ENC(model) >= 0)
         continue;
       for (k = 0; k < model->m_NumAnimations; k++) {
         const AnimationHeader *anim = P32_GET(model->m_Animations[k]);
@@ -244,7 +244,7 @@ void spyro_moby_dump(const char *path) {
   for (i = 1; i < MODEL_COUNT; i++) {
     const Model *model = P32_GET(g_Models[i]);
     int k;
-    if ((int)(uintptr_t)model >= 0 || model->m_NumAnimations <= 0)
+    if ((int)(uintptr_t)P32_ENC(model) >= 0 || model->m_NumAnimations <= 0)
       continue; /* none, or a SimpleModel (its word has bit 31 cleared) */
     fprintf(f, "# model %d anims %d:", i, model->m_NumAnimations);
     for (k = 0; k < model->m_NumAnimations && k < 64; k++)

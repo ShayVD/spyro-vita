@@ -527,7 +527,7 @@ static int parse_command(PsxGpuWalk *w, const u_int *c, int len) {
       w->override_h = (int)(c[1] >> 16 & 0xFFF);
       n = 2;
     } else if ((code & 0x0F) == 0x2) {
-      w->debug_text = (const char *)(uintptr_t)c[1];
+      w->debug_text = (const char *)P32_DEC((uintptr_t)c[1]);
       n = 2;
     }
     break;

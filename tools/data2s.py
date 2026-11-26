@@ -37,6 +37,11 @@ every symbolic word is emitted as 0 and listed in `s1_pie_words`, pairs of
 anything reads them (src/platform/ps4/main.c). The PS4 loads the image below
 2 GB (D180), so each address fits its 32 bits.
 
+The offset model (--p32-offset, linuxa64, D250 O3): the same table, but the
+image lies above 4 GB and every pointer in the game's memory is a 32-bit
+offset from spyro_p32_base (src/compat/p32.h), so start-up stores
+target - base in each word (src/platform/linux32/low_image.c).
+
 abscheck: a raw `.word` whose value lies in PS1 main RAM (0x80000000-0x801FFFFF)
 may be an unrelocated pointer. Each one must be listed in --allow (one
 `SYMBOL+0xOFFSET` per line, # comments) or the conversion fails.
@@ -62,11 +67,16 @@ image_chunks = []  # --image: (PS1 address, label, lines)
 host_labels = set()  # --image --host-label: slots renamed p32slot_NAME (D174)
 pie_words = []  # --pie: (slot label, target) for each symbolic word (D193)
 pie_mode = [False]
+offset_mode = [False]  # --p32-offset
 
 
 def word(w):
-    """A .long for w; under --pie a symbolic w becomes 0 and a pie_words entry."""
-    if not pie_mode[0] or re.match(r"^-?(0x[0-9A-Fa-f]+|\d+)$", w):
+    """A .long for w; under --pie a symbolic w becomes 0 and a pie_words entry.
+    Under --p32-offset a number followed by a comment (`0x1549D /* Artisans */`)
+    is a number too: start-up would take it for an address. (--pie keeps it in
+    the table, where the PS4 stores it unchanged: its fpkg stays as it is.)"""
+    bare = re.sub(r"/\*.*?\*/", "", w).strip() if offset_mode[0] else w
+    if not pie_mode[0] or re.match(r"^-?(0x[0-9A-Fa-f]+|\d+)$", bare):
         return f".long {w}"
     slot = f".Ls1pw{len(pie_words)}"
     pie_words.append((slot, w))
@@ -246,11 +256,16 @@ def main():
                          "(linux64's function pointers, D174)")
     ap.add_argument("--pie", action="store_true",
                     help="symbolic words as 0 and an s1_pie_words table (the PS4, D193)")
+    ap.add_argument("--p32-offset", action="store_true",
+                    help="as --pie, for the offset model: start-up stores each word's "
+                         "offset from spyro_p32_base (linuxa64, D250 O3)")
     ap.add_argument("--coff", action="store_true",
                     help="COFF assembly for Windows (the PC build, D241): no .type/.size or "
                          "GNU-stack note, COFF section flags")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
+    a.pie = a.pie or a.p32_offset
+    offset_mode[0] = a.p32_offset
     pie_mode[0] = a.pie
     host_labels.update(a.host_label)
     allow = set()
