@@ -9,24 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 243,
-      "branch": "feat/243-wobble-fix-the-attract-demos-missed",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-243",
-      "pids": [],
-      "started_at": "2026-11-26T00:50:00Z",
-      "files": [
-        "src/game/moby_hand.c",
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/particles_hand.c"
-      ],
-      "agent": "ac0d91188261b1a60",
-      "last_commit_at": "2026-11-26T03:02:31Z"
-    }
-  ],
-  "last_good": "8f25347b8b25bbbb7421a76fe2f52c5bbe2a82dc",
+  "workers": [],
+  "last_good": "a1c8d8bfa79550bfc12ae8e2c4e7298eae19bc61",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
