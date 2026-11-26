@@ -287,8 +287,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "target": "vita",
     "since": "2026-11-26T09:12:00Z",
     "commit": "ded47d3",
-    "step": "ask",
+    "step": "run",
     "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
+    "sha1": "8dea8f5d542b",
     "script": "runtime/autopilot/hw-session9.sh",
     "issues": [
       261,
@@ -296,7 +297,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       232,
       274
     ],
-    "status": "waiting for the owner yes on hw-session9.sh"
+    "status": "running; owner 2026-11-26: Yes, run it"
   },
   "job": null,
   "batch": null,
