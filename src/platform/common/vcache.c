@@ -4659,7 +4659,8 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
        * only where #197 below wouldn't take the polygon (its one vertex
        * with no entry and its ambiguous ones): every polygon found before
        * is found as it was. Only for the portal sky's polygons (or one the
-       * frame names no renderer for: Vita3K filed the sky's there): a
+       * frame names no renderer for: until #244 the Vita's gate filed the
+       * sky's there, and a portal face's too, which it then placed): a
        * place is a pixel's, and another renderer's vertex with no entry
        * may share it */
       if (pass && (!nnone || (n == 4 && nambig && nnone == 1 && !nhk && !inv &&
