@@ -9,7 +9,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 245,
+      "branch": "feat/245-wobble-fix-2d-hud-sprites-with-a-corner",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-245",
+      "started_at": "2026-11-26T22:47:15Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/game/order_table.c",
+        "src/game/present.c"
+      ],
+      "agent": "a09c5c3709dd43103"
+    }
+  ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
   "hardware_runs": [
     {
@@ -253,7 +267,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "work out kept vcache projections on core 2 (large restructure)",
       "pick": "after #259 hardware A/B",
       "status": "open"
-    }
+    },
+    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them."
   ],
   "attempts": {
     "161": 1,
@@ -277,11 +292,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 12,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
-    "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
-    "started_at": "2026-11-22T06:56:29Z",
-    "filed": 31,
+    "n": 13,
+    "target": "vita",
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+    "base_commit": "20d3514589db959121604783a5876ea91f152ad9",
+    "started_at": "2026-11-26T22:46:15Z",
+    "filed": 7,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -554,3 +570,4 @@ continue.
 - 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
 - 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
 - 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
+- 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set

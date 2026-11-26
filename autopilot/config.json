@@ -1,4 +1,5 @@
 {
+  "decisions_log": ["docs/decisions*.md"],
  "limits": {
   "workers": 5,
   "stall_hours": 2,
