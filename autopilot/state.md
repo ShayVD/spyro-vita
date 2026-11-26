@@ -261,7 +261,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": null,
+  "hardware_pending": {
+    "asked_at": "2026-11-26T00:40:00Z",
+    "issue": 261,
+    "build": "runtime/autopilot/artifacts/vita/20d3514.vpk",
+    "routes": [
+      "Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t",
+      "Stone Hill + Artisans play at 400, shot_every=0, vs D252 ap19a",
+      "optional Toasty at 200 for A/B"
+    ],
+    "status": "waiting for the owner"
+  },
   "job": null,
   "batch": null,
   "lanes": [
