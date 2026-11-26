@@ -229,6 +229,40 @@ def coff(lines):
     return out
 
 
+def macho(lines):
+    """The same assembly for Mach-O (macOS, D250 O4): C's names take a
+    leading underscore, local labels lose their dot, ELF's symbol types,
+    sizes and GNU-stack note go, the sections are named by segment."""
+    ident = re.compile(r"(?<![\w.$])([A-Za-z_][\w.]*)")
+    def syms(expr):
+        return ident.sub(lambda m: m.group(1) if m.group(1).startswith("Ls1") else "_" + m.group(1),
+                         expr.replace(".Ls1", "Ls1"))
+    out = []
+    for line in lines:
+        t = line.strip()
+        if t.startswith(".type ") or t.startswith(".size ") or "GNU-stack" in t:
+            continue
+        if t.startswith(".section "):
+            name = t.split()[1].split(",")[0]
+            line = ".section __TEXT,__const" if name == ".rodata" else f".section __DATA,{name.lstrip('.')}"
+        elif t.startswith(".globl ") or t.startswith(".set "):
+            d, rest = t.split(None, 1)
+            line = f"{d} {syms(rest)}"
+        elif t.startswith((".long ", ".quad ", ".word ", ".short ", ".byte ")):
+            d, rest = t.split(None, 1)
+            line = f"{d} {syms(re.sub(r'/[*].*?[*]/', '', rest))}"
+        else:
+            m = re.match(r"^(\.?[A-Za-z_][\w.]*):\s*(.*)$", t)
+            if m:  # a label, alone or before a directive
+                line = syms(m.group(1)) + ":"
+                if m.group(2):
+                    out.append(line)
+                    out += macho([m.group(2)])
+                    continue
+        out.append(line)
+    return out
+
+
 def read_map(path):
     """Symbol definitions in a GNU ld map: '   0x8006fcf4   D_8006FCF4'."""
     syms = {}
@@ -254,6 +288,8 @@ def main():
     ap.add_argument("--host-label", action="append", default=[],
                     help="--image: NAME's slot is renamed p32slot_NAME and NAME is the C's own "
                          "(linux64's function pointers, D174)")
+    ap.add_argument("--macho", action="store_true",
+                    help="Mach-O assembly for macOS (D250 O4): _ names, segment,section names")
     ap.add_argument("--pie", action="store_true",
                     help="symbolic words as 0 and an s1_pie_words table (the PS4, D193)")
     ap.add_argument("--p32-offset", action="store_true",
@@ -314,6 +350,8 @@ def main():
     lines.append('.section .note.GNU-stack,"",%progbits')
     if a.coff:
         lines = coff(lines)
+    if a.macho:
+        lines = macho(lines)
     with open(a.out, "w") as f:
         f.write("\n".join(lines) + "\n")
     return 0

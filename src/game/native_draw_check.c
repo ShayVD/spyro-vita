@@ -249,7 +249,7 @@ static void report(int k, int what, const Walked *a, const Walked *b) {
 
 /* the arena but the primitives [lo, hi) and the two OTs */
 static int ram_differ(const unsigned char *a, const unsigned char *b, u32 lo, u32 hi) {
-  const u32 base = (u32)g_psx_arena_base;
+  const u32 base = (u32)(uintptr_t)P32_ENC((void *)g_psx_arena_base);
   const u32 wot = MIPS_KUSEG(AT32_ND(ADDR_ND(g_WorldOT))) - base;
   const u32 hot = MIPS_KUSEG(AT32_ND(ADDR_ND(g_HudOT))) - base;
   u32 cut[3][2] = {{lo - base, hi - base}, {wot, wot + OT_SLOTS * 8}, {hot, hot + 8}};
@@ -328,7 +328,7 @@ u32 nd_check(const char *name, NdFn fn, u32 a0, u32 a1, u32 a2, u32 a3) {
    * compared below) */
   for (i = 0; i <= OT_SLOTS; i++)
     if (s_last0[i] != ND_END) {
-      const u32 at = MIPS_KUSEG(s_tail0[i]) - (u32)g_psx_arena_base;
+      const u32 at = MIPS_KUSEG(s_tail0[i]) - (u32)(uintptr_t)P32_ENC((void *)g_psx_arena_base);
       memcpy(s_ps1 + at, (const unsigned char *)g_psx_arena_base + at, 4);
     }
   if (ram_differ(s_ps1, (const unsigned char *)g_psx_arena_base, fp0, fp1) ||

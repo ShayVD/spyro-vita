@@ -97,7 +97,7 @@ static int in_arena(const void *p, uint32_t len) {
 static void region(int k, const void *lo, uint32_t len, uintptr_t to) {
   g_pres_regions[k].lo = (uint32_t)(uintptr_t)P32_ENC(lo);
   g_pres_regions[k].len = len;
-  g_pres_regions[k].to = (uint32_t)to;
+  g_pres_regions[k].to = (uint32_t)(uintptr_t)P32_ENC((void *)to); /* its 32-bit address (D263) */
 }
 
 /* A game address in a region moved onto its copy; a region's end too (a
@@ -245,7 +245,7 @@ int pres_snap_take(int blend) {
   if (in_arena(P32_GET(g_Buffers.m_LowerPolyBuffer), 1) && in_arena(P32_GET(g_Buffers.m_WorldOTStart), OT_BYTES) &&
       (uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) > (uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer)) {
     buf_lo = (uint32_t)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_LowerPolyBuffer));
-    buf_len = (uint32_t)((uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) + OT_BYTES - buf_lo);
+    buf_len = (uint32_t)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_WorldOTStart)) + OT_BYTES - buf_lo;
     if (buf_len <= AREA_MOBYS)
       region(PRES_REGION_BUFFERS, P32_GET(g_Buffers.m_LowerPolyBuffer), buf_len, area);
     else

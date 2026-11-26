@@ -54,7 +54,12 @@ extern int g_nd_direct_ok;
 int pc_low_reserved_pages(void);    /* low.c */
 const char *pc_low_report(void);    /* the same: what lies where */
 
-static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(4096)));
+#if defined(__APPLE__)
+#define STACK_ALIGN 16384 /* pthread_attr_setstack wants macOS's 16 KB pages */
+#else
+#define STACK_ALIGN 4096
+#endif
+static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(STACK_ALIGN)));
 
 PcOpts g_pc_opts = {.stats = 1, .analog = 1, .vsync = 1, .filter = 1, .widescreen = 1,
                     .interp = 1, .win_w = 1280, .win_h = 720,
@@ -79,7 +84,13 @@ void pc_exit(int code) {
   exit(code);
 }
 
+#if SPYRO_P32_OFFSET
+/* macOS (D250 O4): the offset model, within 4 GB above the base */
+#include "p32_image.h"
+static int low(const void *p, size_t len) { return p32_within(p, len); }
+#else
 static int low(const void *p, size_t len) { return (uintptr_t)p + len <= LOW_LIMIT; }
+#endif
 
 /* config.txt in the user folder, then the command line (which wins):
  * key=value lines, '#' comments; --key value or --key on the command line */
@@ -336,11 +347,26 @@ int main(int argc, char **argv) {
   const void *arena_end = psx_low_arena_end();
   EncPlatformConfig pcfg = {"spyro", "Spyro the Dragon", argc, argv};
   int rc;
+#if SPYRO_P32_OFFSET
+  {
+    char why[160];
+    if (p32_image_start(why, sizeof why) < 0) {
+      fprintf(stderr, "spyro: %s (the offset model, D250)\n", why);
+      return 1;
+    }
+  }
+  if (!low(arena_end, 0) || !low(s_game_stack, GAME_STACK) || !low((void *)&pc_exit, 0)) {
+    fprintf(stderr, "spyro: the game's memory must lie within 4 GB of the image (the offset model, D250): %s\n",
+            pc_low_report());
+    return 1;
+  }
+#else
   if (!low(arena_end, 0) || !low(s_game_stack, GAME_STACK) || !low((void *)&pc_exit, 0)) {
     fprintf(stderr, "spyro: the game's memory must lie below 2 GB (the low image, D174): %s\n",
             pc_low_report());
     return 1;
   }
+#endif
   if (parse_args(argc, argv) != 0)
     return 2;
   pc_crash_init();

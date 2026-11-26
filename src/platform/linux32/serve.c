@@ -273,6 +273,21 @@ void host_serve_vblank(int vblank) {
     s_t0.tv_sec -= (time_t)(ns / 1000000000LL);
     return;
   }
+#if defined(__APPLE__)
+  /* macOS (D250 O4) has no clock_nanosleep: sleep for what remains */
+  for (;;) {
+    struct timespec left;
+    long long d;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    d = (long long)(due.tv_sec - now.tv_sec) * 1000000000LL + (due.tv_nsec - now.tv_nsec);
+    if (d <= 0)
+      break;
+    left.tv_sec = (time_t)(d / 1000000000LL);
+    left.tv_nsec = (long)(d % 1000000000LL);
+    nanosleep(&left, NULL);
+  }
+#else
   while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &due, NULL) == EINTR)
     ;
+#endif
 }

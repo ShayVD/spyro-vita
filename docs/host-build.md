@@ -1,4 +1,4 @@
-# Host debug build (linux32, linux64 and linuxa64)
+# Host debug build (linux32, linux64, linuxa64 and macos)
 
 The 32-bit Linux build runs the whole game headless in Docker: virtual vblanks, a pad script, PNG screenshots, gdb. Decisions D14–D19 explain the choices.
 
@@ -167,6 +167,19 @@ BIN=build/linuxa64/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 ```
 
 Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. `-DSPYRO_P32_CHECK=ON` is the checking build: an encode of a host pointer (above 4 GB, outside the image) stops with its file and line. The checks of the model: `tools/ps4/p32_offset_check.py` (every slot use through an accessor, D258) and `tools/ps4/p32_decl_check.py BUILD` (a variable or function declared as a slot or pointer in one unit and otherwise in another). New code that turns a pointer into a 32-bit integer, or back, writes `P32_ENC(p)` / `P32_DEC(i)` on the cast's operand (`(u32)P32_ENC(p)`, `(T *)P32_DEC(i)`); `tools/ps4/p32_offset_rewrite.py --casts BUILD` finds the ones missed.
+
+## macos: the same host on the Mac itself (D250 O4, D263)
+
+`-DSPYRO_HOST=macos` builds linuxa64's headless host as a Mach-O program for arm64 macOS with Apple's clang, on the Mac directly (no Docker, no qemu). Its image is a PIE the kernel slides above `__PAGEZERO`'s 4 GB; the P32 base is its Mach-O header (`__mh_execute_header`), and `src/platform/common/p32_image.c` checks the image and stores the data image's offsets at start. The system's malloc stays: `__PAGEZERO` already keeps the low 4 GB empty. `--prof-draw` logs nothing there (ld64 has no `--wrap`).
+
+```bash
+cmake -S . -B build/macos -G Ninja -DSPYRO_HOST=macos -DCMAKE_TOOLCHAIN_FILE=cmake/macos.toolchain.cmake \
+    -DPython3_EXECUTABLE=/usr/bin/python3   # a Python with PyYAML (the system's has it)
+cmake --build build/macos --target spyro
+BIN=build/macos/src/platform/linux32/spyro tools/host_checks.sh PREFIX   # runs on the Mac, not in tools/tc
+```
+
+Its runs must give linux32 native-mem's files byte for byte, as linuxa64's do. `-DSPYRO_P32_CHECK=ON` is the checking build here too.
 
 ## Draw distance (D49)
 

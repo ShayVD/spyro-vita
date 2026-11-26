@@ -29,10 +29,12 @@ target_compile_options(encore_pc PRIVATE -O2 -Wall)
 target_link_libraries(encore_pc PUBLIC SDL3::SDL3-static)
 if(WIN32)
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_win.c" "${WINPOSIX_DIR}/enc_winposix.c")
+elseif(APPLE)
+  set(PC_ENCORE_SRCS) # the offset model: src/platform/common/p32_image.c (low.c)
 else()
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_dyn.c")
 endif()
-add_executable(spyro ${PC_SRCS} ${PC_ENCORE_SRCS}
+add_executable(spyro MACOSX_BUNDLE ${PC_SRCS} ${PC_ENCORE_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
   "${LINUX32_DIR}/savestate_host.c")
 set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -50,7 +52,11 @@ target_link_options(spyro PRIVATE ${SPYRO_LINK_FLAGS})
 # entries are pulled in by name (src/platform/linux32/CMakeLists.txt).
 foreach(f func_80050BD0 func_800258F0 func_8001F158 func_8001F798 func_800208FC func_80020F34
           func_80022A2C func_80023AC4 func_80059F8C func_80059A48 func_80058D64 func_8004EBA8)
-  target_link_options(spyro PRIVATE "-Wl,--undefined=${f}")
+  if(APPLE)
+    target_link_options(spyro PRIVATE "-Wl,-u,_${f}") # ld64's spelling, Mach-O's name
+  else()
+    target_link_options(spyro PRIVATE "-Wl,--undefined=${f}")
+  endif()
 endforeach()
 if(WIN32)
   # A fixed base of 0x400000, no ASLR, and not large-address-aware: the whole
@@ -59,6 +65,19 @@ if(WIN32)
   target_link_options(spyro PRIVATE -Wl,--image-base,0x400000 -Wl,--disable-dynamicbase
     -Wl,--disable-high-entropy-va "-Wl,-Xlink=-largeaddressaware:no" -static -mwindows)
   target_link_libraries(spyro PRIVATE pthread) # winpthreads (cdnative.c's worker, semaphores)
+elseif(APPLE)
+  # macOS (D250 O4): a PIE (every arm64 program), slid above __PAGEZERO's
+  # 4 GB; an app bundle, Spyro.app, signed ad hoc (the linker's own
+  # signature, kept by the bundle's re-sign below). SDL3 brings its frameworks.
+  include("${CMAKE_SOURCE_DIR}/cmake/version.cmake") # 01.22 -> 1.2.2
+  string(REGEX REPLACE "^0*([0-9]+)\\.([0-9])([0-9])$" "\\1.\\2.\\3" SPYRO_VERSION "${SPYRO_APP_VER}")
+  set_target_properties(spyro PROPERTIES OUTPUT_NAME Spyro
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    MACOSX_BUNDLE_BUNDLE_NAME "Spyro" MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.shayvd.spyro"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${SPYRO_VERSION}" MACOSX_BUNDLE_BUNDLE_VERSION "${SPYRO_VERSION}")
+  add_custom_command(TARGET spyro POST_BUILD
+    COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:spyro>"
+    COMMENT "Spyro.app: signed ad hoc")
 else()
   # non-PIE at 0x400000; the C++ runtime static (SDL's HIDAPI is C++-free,
   # the rest of the game C): only glibc, libm and libdl from the system

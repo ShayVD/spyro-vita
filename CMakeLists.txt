@@ -10,13 +10,14 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 
-set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, linuxa64, vita, ps4 or pc")
+set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, linuxa64, macos, vita, ps4 or pc")
 # linux64 (docs/ps4-plan.md P1, decisions D174): the headless host of
 # src/platform/linux32 built for x86-64 with clang, the PS4's data model, in
 # the low-image model (D173): pointer fields P32 (src/compat/p32.h), the
 # arena and the game thread's stack in the image, below 2 GB.
 # linuxa64 (D250 O3): the same host for aarch64, in the offset model.
-if(SPYRO_HOST MATCHES "^(linux32|linux64|linuxa64)$")
+# macos (D250 O4): linuxa64's host as a Mach-O program for arm64 macOS.
+if(SPYRO_HOST MATCHES "^(linux32|linux64|linuxa64|macos)$")
   set(SPYRO_HOST_LINUX ON)
   set(SPYRO_HOST_DIR linux32)
 else()
@@ -109,6 +110,11 @@ elseif(SPYRO_HOST STREQUAL "pc")
     # PsyQ's long is Windows' long (32 bits), but clang won't take a long *
     # for an int * as an error there: the same bytes, a warning
     set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
+  elseif(SPYRO_PC_TARGET MATCHES "apple")
+    # macOS on Apple silicon (D250 O4): the offset model (src/compat/p32.h),
+    # whose two spellings of a slot are one layout (as linuxa64's), Mach-O
+    set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
+    set(SPYRO_MACHO ON)
   endif()
   set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
       -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type
@@ -122,14 +128,20 @@ elseif(SPYRO_HOST STREQUAL "linux64")
   set(SPYRO_ARCH_FLAGS --target=x86_64-linux-gnu -fms-extensions)
   set(SPYRO_OPT_FLAGS -O1 -g -Wno-error=implicit-function-declaration -Wno-error=implicit-int
       -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
-elseif(SPYRO_HOST STREQUAL "linuxa64")
+elseif(SPYRO_HOST MATCHES "^(linuxa64|macos)$")
   # linux64's flags for aarch64 (D250 O3): no __ptr32, the offset model
   # (src/compat/p32.h). Two slot spellings are two unions of one layout, so
   # an incompatible-pointer warning between them is harmless (D258).
-  set(SPYRO_ARCH_FLAGS --target=aarch64-linux-gnu)
+  # macos (O4): the same for arm64 macOS, a Mach-O PIE (always PIC there).
+  if(SPYRO_HOST STREQUAL "macos")
+    set(SPYRO_ARCH_FLAGS --target=arm64-apple-macos${CMAKE_OSX_DEPLOYMENT_TARGET})
+    set(SPYRO_MACHO ON)
+  else()
+    set(SPYRO_ARCH_FLAGS --target=aarch64-linux-gnu)
+  endif()
   # the checking build (src/compat/p32.h): every encode of a host pointer
   # stops; in the arch flags so that the overlays' preprocessing has it too
-  option(SPYRO_P32_CHECK "linuxa64: stop at a host pointer stored as a game address" OFF)
+  option(SPYRO_P32_CHECK "linuxa64, macos: stop at a host pointer stored as a game address" OFF)
   if(SPYRO_P32_CHECK)
     list(APPEND SPYRO_ARCH_FLAGS -DSPYRO_P32_CHECK=1)
   endif()
@@ -140,8 +152,16 @@ else()
   set(SPYRO_ARCH_FLAGS -m32)
   set(SPYRO_OPT_FLAGS -O1 -g)
 endif()
-if(NOT DEFINED SPYRO_PIC_FLAGS)
+# Mach-O (macOS, D250 O4): every arm64 program is a PIE, its code PIC; the
+# data image's and the presenter's assembly in Mach-O's dialect
+if(SPYRO_MACHO)
+  set(SPYRO_MACHO_ARG --macho) # tools/data2s.py, pres_snap_syms.py, tick60_link.py
+elseif(NOT DEFINED SPYRO_PIC_FLAGS)
   set(SPYRO_PIC_FLAGS -fno-pic)
+endif()
+# The offset model's hosts (D250): linuxa64, macos and the PC on macOS
+if(SPYRO_HOST MATCHES "^(linuxa64|macos)$" OR (SPYRO_HOST STREQUAL "pc" AND SPYRO_PC_TARGET MATCHES "apple"))
+  set(SPYRO_OFFSET_HOST ON)
 endif()
 # The executable's link: static and non-PIE at 0x400000 on linux64, so the
 # whole image is low (D174); -m32 -no-pie on linux32.
@@ -156,6 +176,12 @@ elseif(SPYRO_HOST STREQUAL "linuxa64")
   # pointer cut to 32 bits isn't its offset either: a missed P32_ENC shows.
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static -Wl,-Ttext-segment=0x201230000
       -Wl,--defsym=spyro_p32_base=__executable_start)
+  set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
+elseif(SPYRO_HOST STREQUAL "macos")
+  # macos (D250 O4): a PIE, as every arm64 macOS program; the kernel slides
+  # it above __PAGEZERO's 4 GB. The P32 base is its Mach-O header
+  # (src/compat/p32.h), so the offsets are the image's own.
+  set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS})
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
 elseif(SPYRO_HOST STREQUAL "pc")
   # dynamic (SDL loads the system's display, GL and sound libraries) and
@@ -188,7 +214,7 @@ endif()
 # block from the heap (D106). The Vita's default since D106's hardware run
 # (-DSPYRO_NATIVE_MEM=OFF: the moved arena); linux32's stays the arena build,
 # the oracle replay's.
-if(SPYRO_HOST MATCHES "^(vita|linux64|linuxa64|ps4|pc)$")
+if(SPYRO_HOST MATCHES "^(vita|linux64|linuxa64|macos|ps4|pc)$")
   set(native_mem_default ON)
 else()
   set(native_mem_default OFF)
@@ -241,7 +267,7 @@ endif()
 # .bss arrays in the executable, which must lie below 2 GB (the decomp's
 # (int) casts sign-extend); a start-up check refuses to run otherwise.
 # linux64 (D174), the PS4 (D193) and the PC (D2xx).
-if(SPYRO_HOST MATCHES "^(linux64|linuxa64|ps4|pc)$")
+if(SPYRO_HOST MATCHES "^(linux64|linuxa64|macos|ps4|pc)$")
   if(NOT SPYRO_NATIVE_MEM)
     message(FATAL_ERROR "${SPYRO_HOST} needs SPYRO_NATIVE_MEM=ON (the low image, D174)")
   endif()

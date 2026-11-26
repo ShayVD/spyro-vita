@@ -162,7 +162,7 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
  * D_800757B0 with other types), the presenter's by its renaming */
 #define HAND_CX_STR_(x) #x
 #define HAND_CX_STR(x) HAND_CX_STR_(x)
-extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
+extern char hand_cx_prim_[] __asm__(SPYRO_ASM_LIT(HAND_CX_STR(D_800757B0)));
 #if RENDER_PRES
 #define HAND_VC_CTX pres_vc_ctx
 #else

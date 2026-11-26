@@ -2109,3 +2109,36 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `p32_lint.py`: 0 found. O2's `p32_offset_check.py` on linux64 with O3's macros: 166 units, 0 diagnostics. `tools/check_no_assets.sh`: passes. No hardware run.
 - **Left for O4 (macOS arm64):** the image under 4 GB of a slid base (`_mh_execute_header`), the game stack in `.bss`, the toolchain and SDL3; `MEM_ARENA_U32_`'s arithmetic doesn't need the base aligned, but 16 MB alignment of the arena's offset is assumed by the OT's 24-bit links as before.
 - **Next free number:** D263.
+
+## 2026-11-26 — ARM64 step O4
+
+### D263. ARM64 step O4: the game on macOS (Apple silicon), natively: a headless `macos` host that matches linux32 byte for byte, and `Spyro.app` (SDL3, OpenGL 4.1); the presenter's missed encodes (2026-11-26)
+- **What:** the fourth step of D250's plan, on the owner's go (2026-11-26). Two builds, both native on the Mac, both in the offset model (`src/compat/p32.h`):
+  - `-DSPYRO_HOST=macos` (`cmake/macos.toolchain.cmake`): linuxa64's headless host (`src/platform/linux32`) as a Mach-O program, Apple's clang 16, macOS 13 on. `tools/host_checks.sh` runs it on the Mac directly (no Docker, no qemu).
+  - `-DSPYRO_HOST=pc` with `cmake/pc-macos.toolchain.cmake`: the PC build as `Spyro.app`, on Encore's PC backend (D247), SDL 3.4.18 static (`tools/pc/sdl3_macos.sh`, the PC image's tag), signed ad hoc. Encore's GL request (3.3 core, forward-compatible) gets macOS's 4.1 core context, which takes the `#version 330` shaders as they are. It links only system frameworks.
+- **The image:** a PIE, as every arm64 macOS program; the kernel slides it above `__PAGEZERO`'s 4 GB, which keeps every host mapping out of the low 4 GB, so a pointer cut to 32 bits crashes there as linux64's reservation makes it. The P32 base is the executable's Mach-O header (`spyro_p32_base` is `__mh_execute_header`'s C name on Apple). The offsets are the image's own, so they don't change with the slide. The system's malloc stays.
+- **The offset model's start-up, shared** (`src/platform/common/p32_image.c`): the image check (above 4 GB, within 4 GB of its start; on macOS its end from the Mach-O segments, slid), the data image's offsets (`s1_pie_words`) and the checking build's stop, used by `low_image.c` (linuxa64, macos) and the PC's `main.c` on macOS. linuxa64's start-up moved there unchanged.
+- **What Mach-O needed** (none of it changes another target):
+  - Assembly: `tools/data2s.py --macho` and `pres_snap_syms.py --macho` (underscored names, `segment,section` names, `.zerofill` for the mirror, local labels without the dot).
+  - objcopy's symbol edits: `tools/macho_syms.py` makes the presenter's object keep only `GamestateDraw_pres` global and the 60 Hz rules' keep only `GamestateUpdate_60` (marks the others private extern, then `ld -r`, which makes them local; renames through the string table). `tools/tick60_link.py --macho` reads `nm -m`'s sections for its data checks.
+  - ld64: `-u _name` for `--undefined`; no `--wrap`, so `--prof-draw` logs nothing on macOS (`prof_draw.c`).
+  - `__asm__` labels through `SPYRO_ASM_LIT("name")` (p32.h: `__USER_LABEL_PREFIX__`, empty elsewhere, so the same string).
+  - `etext`/`_edata`/`_end`, the save state's layout stamp, as marks in the image (the Windows build's way).
+  - libc: no `malloc.h` (`aligned_alloc`), no `clock_nanosleep` (`serve.c` sleeps for what remains); the game thread's stack 16 KB-aligned (`pthread_attr_setstack` wants macOS's page size).
+  - A Python with PyYAML (`-DPython3_EXECUTABLE=/usr/bin/python3`: the system's has it, Homebrew's doesn't).
+- **The presenter's missed encodes:** the app crashed at its first in-between frame (`--interp`, on by default there). The presenter's sector copies and the snapshot's regions kept a host address in a `uintptr_t` and stored it in a 32-bit word with an integer cast, which keeps the low 32 bits instead of the offset. O3's cast pass looked only at pointer↔integer casts, and none of O3's checks ran the presenter (no `--interp` in `host_checks.sh`), so linuxa64 had the same faults. Fixed with `P32_ENC`/`P32_DEC` (each the same text elsewhere):
+  - `render_ctx.c` `pres_sector_copy`: the copy's address (returned, and in `g_pres_sectors`).
+  - `pres_snap.c` `region`: a region's copy (`to`); and the buffers' length, a host address less an offset.
+  - `pres_draw.c` `sector_anims`: a sector's 32-bit address read as a host address.
+  - `savestate.c`: the arena's base in the save state's layout stamp, which ASLR would change from run to run on macOS (a save state from one run refused by the next).
+  - The arena build's checks (`hand_check.c`, `render_ctx_check.c`, `native_draw_check.c`): the same, for completeness.
+  - `tools/ps4/p32_narrow_check.py BUILD [--widen]` lists, from clang's AST, every 64→32-bit integer conversion of a value that can be an address (and with `--widen` every 32-bit value widened into one), but those inside p32.h's accessors. After the fixes its lists are sizes, counts, time arithmetic and differences within the arena (19 and 14 sites, each read).
+- **Checks:**
+  - `host_checks.sh` against a fresh linux32 native-mem baseline from this tree (`logs/o4f-*`, gitignored): demo, the 100,000-vblank tour, routes A and B; every trace, screenshot, WAV and memory card identical, 279 files each, for macos, its checking build (no stop) and linuxa64 rebuilt. linux32 itself matches O3's runs.
+  - The same four with the presenter (`EXTRA="--interp --widescreen"`, `logs/o4fi-*`): macos, its checking build and linuxa64 identical to linux32's, 279 files each. Before the fixes the offset model crashed at the first in-between frame.
+  - Time for the four checks: macos 59 s on the Mac (M3), linuxa64 79 s in the arm64 Docker VM, linux32 native-mem 466 s under qemu-i386. The app, at 60 Hz with the GPU renderer at 2560×1440: 0.8 ms of game time per vblank, 60.0 vblanks a second.
+  - `Spyro.app`: starts with the disc's extracted files, plays the attract demo at 16:9 and 60 fps with the GPU renderer and sound (3,000 vblanks, screenshots right); links only system frameworks.
+  - Byte identity, each target built from develop's 99756fb and from O4 in the same build directories: Vita `spyro_vita.velf` and PS4 `spyro.elf` every loaded section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
+  - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
+- **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
+- **Next free number:** D264.
