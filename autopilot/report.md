@@ -176,3 +176,46 @@ centre (354 more exact sky-clip vertices, 281 affine polygons move; D191).
 - **Stopped** at about 14:15 UTC on the owner's word, while #230's first attempt was in its first diagnostics. That attempt had no commits and no edits, so its worktree and branch were removed and no attempt was counted.
 - **Open for the loop:** #219, #225, #230, #231, #232, #237, #243, #244, #245 and #247, plus #175 (`needs-owner`). Eight of them need `src/platform/common/vcache.c`, so only one worker can run at a time. Splitting that file per vertex class would let several run in parallel; it is a large restructure and waits for the owner's word.
 - **Vita3K:** 8 worker runs, 0 of Vita3K's own failures. **Hardware:** none.
+
+## Round 12 to the wrap-up (2026-11-25 to 2026-11-26)
+
+The owner's goal, "finish the wobble and draw distance (#211-#219) until there are no misses", is met: 0 missed
+vertices on every host route (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60) and in every Vita3K window of the eight
+routes. The loop stopped on the owner's word ("we should wrap up the loop", 2026-11-26) after hardware session 9.
+
+### What merged after #258
+
+| Issue | Decision | What |
+|---|---|---|
+| #231 | D251 | ParticlesDraw's missed vertices: a particle quad's own points |
+| #260 | D255 | Options menu DRAW DISTANCE: NORMAL / MAX (ADAPTIVE), Vita and PS4 |
+| #237 | D253 | A frame whose order log is full keeps naming its later projections |
+| #261 | D256 | MAX (ADAPTIVE) is 4x, past 2x only where the 60 Hz budget measures the draw |
+| #266 | D257 | A world polygon with a no-projection corner counts its other no-entry vertices exempt |
+| #262, #268, #269, #270 | - | Docs (vcache lines, README's MAX, tools/vita config_version 7, moby sprites) |
+| #267 | D260 | An older menu's draw_distance=200 loads as MAX (ADAPTIVE) |
+| #243 | D259 | A moby's screen-facing sprite hands its corners to the vertex cache |
+| #259 | D261 | The repeat's record kept in the entry, the native record inlined (keys vc_repeat, vc_fast_rec) |
+| #232 | D222 | Key pres_demo_inline=0/1 |
+| #274 | D226 | Key found_fast=0/1/2 |
+| #244 | D263 | The placement gates find primitives by offset, the walk's copy's too |
+
+### Hardware session 9 (D264, ded47d3.vpk, runtime/hw-ded47d3/RESULTS.md)
+
+| Scene | Measure | Now | Before |
+|---|---|---|---|
+| Artisans play (virtual) | game ms/vblank, new record path vs old | 9.80 | 10.52 |
+| Stone Hill play at 400 (virtual) | busy % (worst) | 65.9 (85) | 69.0 (88) at 200 |
+| Artisans, real time | late per 300 | 0.5 | 1.0 |
+| Toasty, real time, x1.0-3.9 | late per 300 | 0.1-0.2 | 0.2 |
+| Attract demos, real time | pictures per 300, inline vs D211 | 218 | 194 |
+| Toasty walk / join | ms/vblank, found_fast 2 vs 0 | 6.96 / 0.80 | 7.36 / 1.18 |
+
+### Open for the owner
+
+- #271 (needs-owner): let MAX grow where the extra distance writes no more than 1x. Pick: yes, behind a switch, off until hardware.
+- #272 (needs-owner): kept projections on core 2. A large restructure; pick: wait. The vertex cache is ~4.8 ms a
+  vblank of Artisans' game thread (D264), so this is where 2x in Artisans would come from.
+- #259 (open): Artisans still holds at 1x in its heaviest stretch, 15.4 ms of the 14.5 budget.
+- #251 (needs-owner): the Vita on Encore's platform interface. #264: the PS4 Docker image.
+- p2/p3 left: #245 (HUD sprites), #247, #225, #219.

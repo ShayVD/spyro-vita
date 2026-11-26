@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The offset model's integer narrowings (D250 O4, D263): every place a
+"""The offset model's integer narrowings (D250 O4, D265): every place a
 64-bit integer becomes a 32-bit one, in the units of a build of the offset
 model (linuxa64 or macos, configured with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON).
 
@@ -10,7 +10,7 @@ pointer and a 32-bit integer. A host address can also reach a 32-bit word
 through an integer: `uintptr_t at = ...; return (u32)at;`. In the offset
 model that keeps the address's low bits instead of its offset; the 32-bit
 targets lose nothing, and the low image's addresses are their own offsets,
-so only an offset-model run shows it (the presenter's sector copies, D263).
+so only an offset-model run shows it (the presenter's sector copies, D265).
 
 Each such cast or conversion is listed with its line, but those whose
 operand is a 32-bit value widened (`(u32)(uintptr_t)P32_ENC(p)`) and those

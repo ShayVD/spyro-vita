@@ -104,7 +104,7 @@ u32 pres_sector_copy(u32 sec) {
     g_pres_sectors[g_pres_nsectors].copy = (u32)(uintptr_t)P32_ENC((void *)at);
     g_pres_sectors[g_pres_nsectors++].len = len;
   }
-  return (u32)(uintptr_t)P32_ENC((void *)at); /* the copy's 32-bit address (D263) */
+  return (u32)(uintptr_t)P32_ENC((void *)at); /* the copy's 32-bit address (D265) */
 }
 
 /* the area (arena.c) */

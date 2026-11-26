@@ -97,7 +97,7 @@ static int in_arena(const void *p, uint32_t len) {
 static void region(int k, const void *lo, uint32_t len, uintptr_t to) {
   g_pres_regions[k].lo = (uint32_t)(uintptr_t)P32_ENC(lo);
   g_pres_regions[k].len = len;
-  g_pres_regions[k].to = (uint32_t)(uintptr_t)P32_ENC((void *)to); /* its 32-bit address (D263) */
+  g_pres_regions[k].to = (uint32_t)(uintptr_t)P32_ENC((void *)to); /* its 32-bit address (D265) */
 }
 
 /* A game address in a region moved onto its copy; a region's end too (a

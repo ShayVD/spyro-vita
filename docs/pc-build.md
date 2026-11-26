@@ -1,6 +1,6 @@
-# PC build (Linux, Windows, macOS; D240, D241, D242, D243, D263)
+# PC build (Linux, Windows, macOS; D240, D241, D242, D243, D265)
 
-**Status (2026-11-26):** macOS on Apple silicon builds and plays natively (D263; the owner's play is next). Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D243); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
+**Status (2026-11-26):** macOS on Apple silicon builds and plays natively (D265; the owner's play is next). Linux and Windows build and play (the US disc from boot to Artisans; Windows checked under Wine). CI builds both and starts each without a disc (Windows on a Windows runner). The GPU renderer draws the game at the window's resolution (`gpu=1`, the default, D243); the software rasterizer stays as `gpu=0`. Next: a person with a real GPU and gamepad.
 
 A native desktop build of the game: a window, keyboard and gamepads, sound, widescreen and 60 fps, from the player's own disc. It is the same code as every other build (the decomp, `src/game`, `src/platform/common`) with a small platform layer, `src/platform/pc/`, on **Encore's platform interface** (`encore/platform.h`, API 2, and its SDL3 PC backend `targets/pc/encore/enc_pc.c`, vendored; D247: window, GL context, input, audio, time, threads, folders) and **OpenGL 3.3 core** (the picture). What the interface can't say yet goes through `gaps.c`, the only file left that calls SDL ([below](#on-encores-platform-interface-d245)).
 
@@ -76,7 +76,7 @@ Cross-compiled in the same image with llvm-mingw (clang, the UCRT): one static `
 
 To try it on the Mac: `docker build` an image `FROM spyro-pc` with Debian's `wine` and run `wine build/pc-win/spyro.exe --disc 'Z:\work\disc\image'` under `tools/pc/xrun.sh` (Wine's GL is Mesa's llvmpipe there).
 
-### macOS (Apple silicon; D250 O4, D263)
+### macOS (Apple silicon; D250 O4, D265)
 
 ```bash
 tools/pc/sdl3_macos.sh                      # once: SDL 3.4.18, static, in build/sdl3-macos
@@ -88,7 +88,7 @@ build/pc-macos/Spyro.app/Contents/MacOS/Spyro --disc disc/image
 
 Native, on the Mac itself: Apple's clang (the Command Line Tools), macOS 13 or later, arm64 only. ARM64 has no `__ptr32`, so this build uses the offset model (`src/compat/p32.h`, D250): every P32 slot is a 32-bit offset from the executable's Mach-O header (`__mh_execute_header`), wherever the kernel slides it. `__PAGEZERO` covers the low 4 GB, so a pointer cut to 32 bits instead of encoded crashes, as the reservation does on Linux. `src/platform/common/p32_image.c` checks the image and stores the data image's offsets before the game starts. The window is SDL3's, with Encore's GL request (3.3 core, forward-compatible), which macOS answers with its 4.1 core context; the `#version 330` shaders run as they are. `Spyro.app` is signed ad hoc: Gatekeeper asks before the first start of a copy from elsewhere (right-click, Open).
 
-What Mach-O needed beyond Linux (D263): the data image's and the presenter's assembly in Mach-O's dialect (`tools/data2s.py --macho`, `pres_snap_syms.py --macho`: underscored names, `segment,section` names); `objcopy`'s symbol edits on the presenter's and the 60 Hz rules' objects done by `tools/macho_syms.py` (private extern, then `ld -r`, which makes them local); ld64's `-u` for `--undefined`; `__asm__` labels through `SPYRO_ASM_LIT` (Mach-O's underscore); `etext`/`_end` marks in the image; the game thread's stack aligned to 16 KB pages.
+What Mach-O needed beyond Linux (D265): the data image's and the presenter's assembly in Mach-O's dialect (`tools/data2s.py --macho`, `pres_snap_syms.py --macho`: underscored names, `segment,section` names); `objcopy`'s symbol edits on the presenter's and the 60 Hz rules' objects done by `tools/macho_syms.py` (private extern, then `ld -r`, which makes them local); ld64's `-u` for `--undefined`; `__asm__` labels through `SPYRO_ASM_LIT` (Mach-O's underscore); `etext`/`_end` marks in the image; the game thread's stack aligned to 16 KB pages.
 
 ## Encore
 

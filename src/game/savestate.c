@@ -187,7 +187,7 @@ static void make_header(Header *h) {
   h->format = FORMAT;
   h->header_size = sizeof *h;
   snprintf(h->build, sizeof h->build, "%s %s %s", SPYRO_BUILD_ID, __DATE__, __TIME__);
-  h->layout[0] = (uint32_t)(uintptr_t)P32_ENC((void *)g_psx_arena_base); /* macOS slides it (D263) */
+  h->layout[0] = (uint32_t)(uintptr_t)P32_ENC((void *)g_psx_arena_base); /* macOS slides it (D265) */
 #if SPYRO_NATIVE_MEM
   h->layout[1] = (uint32_t)(uintptr_t)P32_ENC(s1_labels);
   h->layout[2] = (uint32_t)(uintptr_t)P32_ENC(etext);

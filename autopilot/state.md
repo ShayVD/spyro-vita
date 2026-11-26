@@ -9,21 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 244,
-      "branch": "feat/244-wobble-fix-the-vita-s-placement-gates",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-244",
-      "pids": [],
-      "started_at": "2026-11-26T07:20:00Z",
-      "files": [
-        "src/platform/common/vcache.c"
-      ],
-      "agent": "ace9979ee61066b15",
-      "last_commit_at": "2026-11-26T07:20:00Z"
-    }
-  ],
-  "last_good": "44f7fc1d34a09e57288f3be5ced7d6c22d831325",
+  "workers": [],
+  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -91,6 +78,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "attract_demo_late_per_300": 162.6
       },
       "result": "D252: wobble fixes since 687ca1d cost nothing (busy 69.0 vs 69.1%); 2x held at 1x in Artisans (15.1-16.3 ms of 14.5) -> #259; attract demo 162.6 late -> #232"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-26",
+      "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
+      "sha1": "8dea8f5d542b1a7a14d1c0323931797e8bc28bcd",
+      "commit": "ded47d3",
+      "runs": "ap23a1-a4, s1, t1-t7, d1-d4, x1-x2 (runtime/autopilot/hw-session9.sh)",
+      "fps": {
+        "artisans_late_per_300": 0.5,
+        "toasty_late_per_300": 0.15,
+        "attract_demo_pictures_per_300": 218
+      },
+      "result": "D264: #259 gain 0.72 ms/vblank (Artisans still 1x: 15.4 of 14.5); #232 gain +24 pictures/300 in demos; #274 short path -0.4 ms walk and join, probes no gain; MAX 400 holds 60 fps"
     }
   ],
   "perf_candidates": [
@@ -283,27 +284,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": {
-    "asked_at": "2026-11-26T07:10:00Z",
-    "issues": [
-      261,
-      259,
-      232,
-      274
-    ],
-    "builds": [
-      "runtime/autopilot/artifacts/vita/20d3514.vpk (#261 MAX 400)",
-      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-base-476b5fa.vpk",
-      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-259-fix2.vpk"
-    ],
-    "routes": [
-      "#261: Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t; Stone Hill + Artisans play at 400 shot_every=0 vs D252 ap19a",
-      "#259: runs/vita/issue-259-A/hw/hw-session-259.sh: Artisans base, fix, base, fix (ap20-art) and Toasty base, fix (ap20-toasty), plus fix with persp=0 subpixel=0 and vc_lazy_logic=2",
-      "#232: runs/vita/issue-232-A/hw/hw-session-232.sh (attract demos real time, pres_demo_inline 1,0,1,0, ~20 min)",
-      "#274: runs/vita/issue-274-A/hw/hw-session-274.sh (Toasty real time, found_fast 2,0,1,2,0,1, ~40 min)"
-    ],
-    "status": "waiting for the owner"
-  },
+  "hardware_pending": null,
   "job": null,
   "batch": null,
   "lanes": [
@@ -333,6 +314,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
       "pr": 258,
       "merged_at": "2026-11-25T09:43:35Z"
+    },
+    {
+      "branch": "release/phase8-wobble-draw-distance-d264",
+      "commit": "31a47eb",
+      "pr": 275,
+      "merged_at": null
     }
   ]
 }
@@ -564,3 +551,5 @@ continue.
 - 2026-11-25T20:12:00Z #261 WIP ed54ce5 (MAX past 2x where a 60 Hz budget measures the draw), measuring T at 4x; #266 editing vcache.c
 - 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
 - 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
+- 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
+- 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
