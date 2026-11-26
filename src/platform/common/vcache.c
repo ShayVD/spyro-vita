@@ -334,6 +334,7 @@ typedef struct {
  * the low 24 bits, which in the native build (the Vita's, neither block
  * 16 MB-aligned) never matched a primitive read from the copy */
 #define VC_CX 128 /* ranges a frame */
+#define VC_HUD 512 /* #245: HUD OT primitives a frame (present.c's MAX_2D) */
 #define VC_FR 256 /* #215: cuts a frame placed at their own fraction (frac_hand) */
 /* #230: a cut's fallback place, in fr under its key with y's top nibble
  * flipped (as VCD_CENTRE), which no screen key has (fa_put) */
@@ -471,6 +472,13 @@ typedef struct {
    * presenter's g_pres_ngte_gen) when this table's frame began, RpE's
    * origin */
   uint32_t rp_g0;
+  /* #245 (last, as above): the HUD OT's primitives in this table's frame
+   * (hud_gen; psx_vcache_note_hud), [lo, hi) by lo ascending, nhud of
+   * them, and their span */
+  uint32_t hud_gen;
+  unsigned nhud;
+  uintptr_t hud_lo, hud_hi;
+  uintptr_t hud[VC_HUD][2];
 } Table;
 
 /* #237: the frame's order, the places past the log too: how many, and
@@ -514,6 +522,8 @@ static void table_clear(Table *t) {
   t->ov_gen = 0; /* #221 */
   t->cx_gen = 0;
   t->ncx = 0;
+  t->hud_gen = 0; /* #245 */
+  t->nhud = 0;
   t->stale = 0;
 }
 
@@ -809,6 +819,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   PsyX_Log("vcache order past the log: %u projections of frames whose order log was full "
            "(%u) placed past it, for the own points' names only; %u with no place (#237)",
            out->ord_x, VC_LOG, out->ord_lost);
+  /* #245 */
+  PsyX_Log("vcache HUD: %u polygons of the HUD OT (%u vertices) not looked up, drawn at their "
+           "integer places (#245)",
+           out->hud_polys, out->hud_verts);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -3455,6 +3469,84 @@ void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uin
   vc_ctx(VC_PRES, name, p0, p1, n0, n1, nb);
 }
 
+/* #245: a HUD OT primitive in the frame kind records (psx_vcache_note_hud):
+ * its words [prim, prim + its tag's length + 1), by address in order (they
+ * come nearly in order: an insertion). Whole addresses: the walk's copy's
+ * map back to the game's (hud_poly). */
+static void hud_note(int kind, const void *prim) {
+  Rec *const r = &s_rec[kind];
+  Table *const t = r->tab;
+  const uintptr_t lo = (uintptr_t)prim;
+  uintptr_t hi;
+  unsigned j;
+  if (!t || !prim)
+    return;
+  if (t->hud_gen != r->gen) {
+    t->hud_gen = r->gen;
+    t->nhud = 0;
+  }
+  if (t->nhud >= VC_HUD)
+    return;
+  hi = lo + 4u * (1u + (((const uint32_t *)prim)[0] >> 24));
+  for (j = t->nhud; j > 0 && t->hud[j - 1][0] >= lo; j--)
+    if (t->hud[j - 1][0] == lo) { /* (linked twice) */
+      if (t->hud[j - 1][1] < hi)
+        t->hud[j - 1][1] = hi;
+      goto span;
+    }
+  memmove(&t->hud[j + 1], &t->hud[j], (t->nhud - j) * sizeof t->hud[0]);
+  t->hud[j][0] = lo;
+  t->hud[j][1] = hi;
+  t->nhud++;
+span:
+  if (t->nhud == 1 || lo < t->hud_lo)
+    t->hud_lo = lo;
+  if (t->nhud == 1 || hi > t->hud_hi)
+    t->hud_hi = hi;
+}
+
+void psx_vcache_note_hud(const void *prim) {
+  if (g_psyxRtpDeriveHook)
+    hud_note(VC_LOGIC, prim);
+}
+
+void pres_vcache_note_hud(const void *prim) { hud_note(VC_PRES, prim); }
+
+/* the narrowed copies' pools (present.c): [base, base + size) */
+static uintptr_t s_hud_pool[2][2];
+void psx_vcache_hud_pool(int which, const void *pool, size_t bytes) {
+  if (which == 0 || which == 1) {
+    s_hud_pool[which][0] = (uintptr_t)pool;
+    s_hud_pool[which][1] = bytes;
+  }
+}
+
+/* the polygon whose first vertex's x is at p is a HUD OT primitive's, in
+ * tab's frame gen (or a narrowed copy's) */
+static int hud_poly(const Table *tab, uint32_t gen, const void *p) {
+  uintptr_t a = (uintptr_t)p, copy;
+  int lo, hi;
+  if (a - s_hud_pool[0][0] < s_hud_pool[0][1] || a - s_hud_pool[1][0] < s_hud_pool[1][1])
+    return 1;
+  if (!tab || tab->hud_gen != gen || !tab->nhud)
+    return 0;
+  copy = psx_gpu_game_walk()->copy;
+  if (copy && a - copy < PSX_MEM_SIZE)
+    a = a - copy + g_psx_arena_base;
+  if (a < tab->hud_lo || a >= tab->hud_hi)
+    return 0;
+  lo = 0;
+  hi = (int)tab->nhud - 1;
+  while (lo < hi) { /* the last primitive starting at or before a */
+    const int mid = (lo + hi + 1) >> 1;
+    if (tab->hud[mid][0] <= a)
+      lo = mid;
+    else
+      hi = mid - 1;
+  }
+  return tab->hud[lo][0] <= a && a < tab->hud[lo][1];
+}
+
 /* the context of the polygon whose first vertex's x is at p, in tab's
  * frame gen: the smallest range holding it, a record pool's before the
  * primitive buffer's; the primitive buffer's ranges by their offsets in
@@ -5334,6 +5426,28 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
     for (i = 0; i < n; i++) {
       uint32_t r = VREF_POLY;
       memcpy(&vertex[i].tcx, &r, sizeof r);
+    }
+    return;
+  }
+  if (hud_poly(pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].tab : s_rtab,
+               pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen, xy[0])) {
+    /* #245: a HUD OT polygon, not looked up: each vertex at its integer
+     * place, as one nothing finds */
+    for (i = 0; i < n; i++) {
+      uint32_t r = VREF_POLY;
+      memcpy(&vertex[i].tcx, &r, sizeof r);
+    }
+    st->hud_polys++;
+    st->hud_verts += (unsigned)n;
+    if (side && async)
+      side = s_pres_side ? s_pres_side + (side - g_vcache_side) : NULL;
+    if (side) {
+      for (i = 0; i < (n == 4 ? 6 : 3); i++) {
+        side[i].dx = side[i].dy = 0;
+        side[i].w = 1;
+      }
+    } else if (async) {
+      st->side_lost += n;
     }
     return;
   }
