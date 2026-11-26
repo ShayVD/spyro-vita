@@ -284,7 +284,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       couldn't give, because it's behind the eye (SZ3 0, MAC3 below 0). These are a glow's rim or a
       moby shadow's corner whose own point names such a projection, and since #217 (D220) a world
       split point with an end behind the eye (its key marked `HK_NOPROJ`). The PS1 still draws them
-      (a glow's centre clamped to x = −1024), so they're drawn as the PS1 draws them.
+      (a glow's centre clamped to x = −1024), so they're drawn as the PS1 draws them. Since #266
+      (D257) a world polygon with such a corner also counts its other vertices with no entry here
+      (`vcache world no projection:` below).
 
     `unmarked U` are in frames where no renderer told the cache its primitives (`psx_vc_ctx`,
     `psx_vcache.h`), so nothing says which. The class comes from the ranges of primitives (and `native_draw` records)
@@ -352,8 +354,18 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       #217 (D220) the world's split pieces name their corners the same way. The points are kept
       per key and anchor (the polygon's first vertex; a world piece's corner number) in a
       per-table store. Two different points under one key and anchor leave neither (dead).
-    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows or EnvDraw polygon found from
-      them. These count in the hits, not in `hooked`.
+    - **Particles (#231, D251):** since D251 the step also takes ParticlesDraw's screen-facing
+      quads (`VCX_PARTICLES`). A quad names its centre (`VCD_SELF`, the last projection) under the
+      anchor of its first corner's key, and its four corner hand-overs add `VCD_OWN` with that
+      anchor (the centre's own point plus the corner's integer offset). This finds the corner that
+      two quads side by side (a ram's stars) share on one pixel: each quad hands it over from its
+      own centre's exact place, 0.2–0.5 px apart, so the hand-over drops the key (D182). The
+      hand-over itself is as before (`hk_place` ignores the anchor for an offset). On the host
+      (2x, 16:9) ParticlesDraw's missed went to 0: S 10 → 0, Si 20 → 0, S60 8 → 0.
+    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows, EnvDraw or (since D251)
+      ParticlesDraw polygon found from them. These count in the hits, not in `hooked`. D251 added
+      the particle quads' vertices: host S 133 → 143, Si 264 → 284, S60 215 → 223; T stayed
+      3,514.
     - `own_amb`: those of them whose key was ambiguous. They aren't counted in `resolved`.
     - `own_over`: that polygon's vertices that were already found but were drawn at their own
       point too, so all of its depths come from one projection.
@@ -364,11 +376,20 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
         corner that GridCorrect moved after its projection: 99% of it, about 60,000 a route on the
         host routes. Those corners are kept as their piece's own instead (`sp_moved` below), so
         #226 stopped counting them here.
-      - **What's left (#226's tags):** only world corners named in a frame whose order log is full
-        (`VC_LOG`, 8,192 projections). The cache can't name a projection the log never took. That
-        is 28 on host S (74 with `--interp`), in the vblanks 13,128–13,142 and 14,150–14,158, and 0
-        on P, Pf and T, at 30 Hz and with `--interp`. It's the same log-full limit that leaves
-        EnvDraw's 6 missed on S (D223, #237). Vita3K never fills the log.
+      - **Log-full frames, fixed by #237 (D253).** After #226 what was left was world corners
+        named in a frame whose order log is full (`VC_LOG`, 8,192 projections): the cache couldn't
+        name a projection the log never took. That was 28 on host S (74 with `--interp`), in the
+        vblanks 13,128–13,142 and 14,150–14,158, and 0 on P, Pf and T, at 30 Hz and with
+        `--interp`. From #231 (D251) the count also held the particle quads drawn in such frames
+        (their centres and corners): S 28 → 618 (590 more: 118 centres and 472 corners), Si 74 →
+        1,214. The same limit left EnvDraw's 6 missed on S and Si (D223). Since D253 such a frame
+        places its later projections past the log (`vcache order past the log:` below), so they're
+        named: S 618 → 0, Si 1,214 → 0, and the 6 missed went too. A projection with no place even
+        there (`ord_lost`) still leaves its namings here.
+      - **What's left since D253:** particle quads whose centre's own point is dead, because two
+        quads with one corner-0 pixel (so one anchor) name different centres under it: 16 each on
+        host S60 and T (D251; the same 16 after D253, in #237's runs). The hand-overs find those
+        polygons as before. 0 on host S, Si, P, Pf and O60 after D253. Vita3K never fills the log.
       - **Shadow fans, fixed.** A moby shadow's fan closes on a fifth corner word that repeats
         the first corner. Its nudged copy named the projection 0 back instead of 3 back, so it found
         nothing (62 on S, 591 on T). That never mattered, because the first corner's call holds
@@ -386,6 +407,19 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       where nothing else placed the key.
     - `hk_noproj`: split points with an end behind the eye. Their key is marked `HK_NOPROJ`, and
       their vertices are counted as exempt "no projection".
+  - `vcache world no projection:` (#266, D257) `<np_poly> vertices with no entry exempt because
+    their world polygon has a corner with no projection (drawn affine at its keys)`.
+    - **How it works:** an EnvDraw polygon with a corner that has no projection (a split point with
+      an end behind the eye, `hk_noproj`, or an own point that names none) has no depth there, so
+      it can't be drawn perspective-correct. The PS1 draws it affine at its keys, and so does the
+      port. Its other vertices with no entry (no entry and no hand-over found them) are counted as
+      exempt "no projection" (`VCX_NO_PROJ`) too, not missed. A counting change only: no answer,
+      place or depth changes.
+    - `np_poly`: those other vertices. In spite of the name, it counts vertices, not polygons.
+    - **Measured:** host T `np_poly` 2 (frames g6469 and g6475: a world GT3 whose other corner's
+      `Sp` record, D223, lies 2,641 / 3,317 px off its key, so drawing it there would put the
+      corner thousands of pixels from where the PS1 draws it). T's missed went 2 → 0 and its "no
+      projection" 832 → 834. 0 on host S. Vita3K `toasty60`'s window 14,400: EnvDraw missed 2 → 0.
   - `vcache world own:` (#229, D223) `<sp_found> vertices found from their piece's own split point
     or moved corner; <sp_kept> kept, <sp_full> not kept (full); <sp_wide> split points paired
     across 4x depths, <sp_moved> corners the grid moved; <sp_spread> world polygons found from
@@ -439,6 +473,25 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
         (`VCD_CENTRE`). The walk takes that point only for a shadow polygon whose centre nothing
         found and whose (centre, centre) point is missing or dead. Every earlier step, #216's own
         points included, leaves such a polygon unfound.
+  - `vcache order past the log:` (#237, D253) `<ord_x> projections of frames whose order log was
+    full (8192) placed past it, for the own points' names only; <ord_lost> with no place`.
+    - **How it works:** each table logs the frame's projections in order, `VC_LOG` (8,192) places.
+      The first time a table's log fills, it mallocs an `Xlog` store (84 KB: a `log[8192]` of its
+      own and its answers, `lc[8192]` and `lfar[512]`). The frame's later projections (not the
+      overflow's) take places `VC_LOG + n` there and are worked out at once, as before. Only the
+      own points' names read those places (`own_self`, `own_src`, `own_corner`, `sp_point`, the
+      walk's own entries...). Derive, `resolve` (still "log full" on the `vcache resolved:` line
+      for such a frame) and the cut fraction read the log alone, so every answer the log gave is
+      the same.
+    - `ord_x`: projections placed past the log. Host (2x, 16:9) S 9,991, Si 19,896; 0 on P, Pi, Pf,
+      Pfi, S60, T and O60. Only the host's 2x Stone Hill routes fill the log. Vita3K never does
+      (0 in every window of #237's eight routes), so it never allocates the store (free RAM
+      unchanged, `user 242688 KB`).
+    - `ord_lost`: projections with no place (`Xlog` full, or no memory). After one, an own point's
+      "p back" names no projection, as every projection past a full log did before D253. 0 on
+      every route.
+    - **Measured:** EnvDraw missed host S 6 → 0, Si 6 → 0 (frame g6742); `own_nosrc` S 618 → 0,
+      Si 1,214 → 0.
   Since #181 (D178) each report takes the counters since the last one (`psx_vcache_stats_take`)
   instead of resetting them, so a window no longer carries over another's polygons.
 - `mixer N: M vblanks mixed, X ms each, worst Y ms; game thread waited W ms in K waits; E position
