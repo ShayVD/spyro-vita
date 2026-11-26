@@ -76,7 +76,7 @@ enum {
 };
 
 /* The work area, D_8006FCF4 */
-#define WORK ((u32)(uintptr_t)D_8006FCF4)
+#define WORK ((u32)(uintptr_t)P32_ENC(D_8006FCF4))
 enum {
   W_BUCKETS = 0x000,  /* depth buckets: last primitive, first (8 bytes) */
   W_BUCKETS_END = 0x900,
@@ -185,7 +185,7 @@ static void RotateMatrix(u32 m[5], u32 angles) {
 static u32 PartStreams(u32 *streams, u32 anim, u32 frame_no, int part, u32 *frame_out) {
   const u8 *hdr = HPTR(const u8, anim);
   u32 fw = ((const u32 *)(hdr + AN_FRAMES))[frame_no];
-  u32 frame = MEM_ANIM_HALF(fw);
+  u32 frame = MEM_ANIM_HALF_U32(fw);
   u32 data = frame + 0x18;
   u32 w2 = AT32(frame + 0x8);
   u32 deltas = *(const u32 *)(hdr + AN_DELTAS);
@@ -311,9 +311,9 @@ static inline void NameVertex(u32 sxy, u32 fp) {
  * starting from what the GTE held, and each part's last RTPS and INTPL go
  * back to the register file before the next part's matrix does. */
 static void PartVertices(u32 floor) {
-  u32 *rec = (u32 *)(WORK + W_PARTS);
+  u32 *rec = (u32 *)P32_DEC((P32_ENC(WORK) + W_PARTS));
   u32 info = rec[PR_INFO];
-  u32 fp = SCRATCH_BASE, sp = WORK + W_VERTS;
+  u32 fp = P32_ENC(SCRATCH_BASE), sp = P32_ENC(WORK) + W_VERTS;
   /* fast_render=3: the asm's first step transforms whatever V0 held into
    * a slot the run then writes again (a part 0 of two vertices aside,
    * which Spyro's models don't have); here it is skipped (dead) */
@@ -335,7 +335,7 @@ static void PartVertices(u32 floor) {
     if ((s32)info < 0)
       SetMatrix(rec + PR_MATRIX);
     P = ngte_proj_get();
-    last = SCRATCH_BASE + ((info >> 14) & 0x3FF) - 4;
+    last = P32_ENC(SCRATCH_BASE) + ((info >> 14) & 0x3FF) - 4;
     stop = fp + 4;
     StreamInit(&a, rec, PR_A, info & 0x1000);
     blend = info & 0xFFF;
@@ -436,7 +436,7 @@ static void PartVertices(u32 floor) {
 static void FloorHeights(const u8 *hdr, u32 floor) {
   const u8 *spyro = (const u8 *)g_Spyro;
   const u32 level = AT32(spyro + SP_POS + 8) - floor;
-  u32 g = WORK + W_VERTS;
+  u32 g = P32_ENC(WORK) + W_VERTS;
   int part;
 
   SetMatrix((const u32 *)(spyro + SP_MATRIX));
@@ -446,8 +446,8 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
      * plus it gives its y */
     const NgteMat m = ngte_rot_get();
     for (part = 0; part < 3; part++) {
-      const u32 end = WORK + W_VERTS + ((u32)hdr[AN_PART_END + part] << 4);
-      const u32 *joint = (const u32 *)(WORK + W_JOINTS + part * 12);
+      const u32 end = P32_ENC(WORK) + W_VERTS + ((u32)hdr[AN_PART_END + part] << 4);
+      const u32 *joint = (const u32 *)P32_DEC((P32_ENC(WORK) + W_JOINTS + part * 12));
       const NgteVec j = ngte_mvmva(&m, 0, 0, 0, (s16)(0u - joint[1]), (s16)(0u - joint[2]), (s16)joint[0]);
       CTC2((u32)j.mac1, 5);
       CTC2((u32)j.mac2, 6);
@@ -475,7 +475,7 @@ static void FloorHeights(const u8 *hdr, u32 floor) {
 static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
   const u32 *c = HPTR(const u32, colours);
   const u32 *end;
-  u32 out = WORK + W_COLOURS;
+  u32 out = P32_ENC(WORK) + W_COLOURS;
   u32 w;
 
   CTC2((filter << 4) & 0xFF0, 21);
@@ -492,7 +492,7 @@ static u32 FilterColours(const u8 *hdr, u32 colours, u32 filter) {
                     .rgb2;
     out += 4;
   } while (c != end);
-  return WORK + W_COLOURS;
+  return P32_ENC(WORK) + W_COLOURS;
 }
 
 /* The face loops' state: the primitive buffer, the colours, the depth
@@ -511,7 +511,7 @@ static inline u32 Bucket(const Faces *f, u32 sum, u32 w1) {
   sum += (u32)(SRA(w1, 28) << 2) << (f->shift & 31);
   if ((s32)sum <= 0)
     return 0;
-  return ((sum >> (f->shift & 31)) << 3) + WORK + W_BUCKETS;
+  return ((sum >> (f->shift & 31)) << 3) + P32_ENC(WORK) + W_BUCKETS;
 }
 
 /* A new primitive at the end of its bucket's chain: the first in a bucket
@@ -580,9 +580,9 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
   col1 = WORD_AT(f->colours, c1);
   col2 = WORD_AT(f->colours, (w1 << 1) & 0x7FC);
   col0 = (col0 & 0xFFFFFF) + 0x34000000u;
-  z0 = SZ_A(i0);
-  z1 = SZ_A(i1);
-  bucket = Bucket(f, z0 + (z0 >> 1) - f->bias + z1 + (z1 >> 1) + SZ_A(i2), w1);
+  z0 = P32_ENC(SZ_A(i0));
+  z1 = P32_ENC(SZ_A(i1));
+  bucket = Bucket(f, z0 + (z0 >> 1) - f->bias + z1 + (z1 >> 1) + P32_ENC(SZ_A(i2)), w1);
   if (!bucket)
     return;
   tail = AT32(bucket);
@@ -618,7 +618,7 @@ static void EmitGT3(Faces *f, u32 face, u32 w1, u32 i0, u32 i1, u32 i2, u32 c0, 
  * primitive's positions are written before the face is culled, as the asm
  * does (stray stores past the last primitive). */
 static void DrawFaces(Faces *f, u32 face, u32 end) {
-  const u32 *scr = (const u32 *)SCRATCH_BASE;
+  const u32 *scr = (const u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
   NgteSync sync;
   ngte_sync_init(&sync);
 
@@ -673,8 +673,8 @@ static void DrawFaces(Faces *f, u32 face, u32 end) {
       }
       /* asm 80024D98: POLY_GT4 */
       col0 = WORD_AT(f->colours, c0);
-      sum = SZ_A(i0) - f->bias + SZ_A(i1) + SZ_A(i2);
-      bucket = Bucket(f, sum + SZ_A(i3), w1);
+      sum = P32_ENC(SZ_A(i0)) - f->bias + P32_ENC(SZ_A(i1)) + P32_ENC(SZ_A(i2));
+      bucket = Bucket(f, sum + P32_ENC(SZ_A(i3)), w1);
       if (!bucket)
         continue;
       tail = AT32(bucket);
@@ -789,8 +789,8 @@ static void ClipHand(u32 prim, u32 n, const ClipPt *pt) {
  * cross). */
 static void ClipTriangle(Faces *f, u32 flags, u32 w1, u32 v0, u32 v1, u32 v2, u32 c0, u32 c1,
                          u32 c2, u32 uv0, u32 uv1, u32 uv2) {
-  const u32 *scr = (const u32 *)SCRATCH_BASE;
-  const u32 r0 = WORK + W_VERTS + v0, r1 = WORK + W_VERTS + v1, r2 = WORK + W_VERTS + v2;
+  const u32 *scr = (const u32 *)P32_DEC(P32_ENC(SCRATCH_BASE));
+  const u32 r0 = P32_ENC(WORK) + W_VERTS + v0, r1 = P32_ENC(WORK) + W_VERTS + v1, r2 = P32_ENC(WORK) + W_VERTS + v2;
   const u32 prim = f->prim;
   const u32 h0 = AT32(r0 + 4), h1 = AT32(r1 + 4), h2 = AT32(r2 + 4);
   u32 sum, z1, z2, xy0, xy1, xy2, col0, col1, col2, bucket, tail, out;
@@ -956,7 +956,7 @@ static void LinkBuckets(const Faces *f) {
   if ((s32)(f->hi - f->lo) < 0)
     return; /* nothing drawn */
   slot = (CFC2(14) << 3) + ((0x20u << (shift & 31)) - 8);
-  above = (s32)(WORK + 0x800 - f->hi);
+  above = (s32)(P32_ENC(WORK) + 0x800 - f->hi);
   skip = above >= 0 ? (u32)above << (shift & 31) : 0;
   slot -= (skip >> 8) << 3;
   if ((s32)slot < 0)
@@ -1008,7 +1008,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   const u8 *spyro = (const u8 *)g_Spyro;
   const u32 *models = HPTR(const u32, MEM_MODEL_AT(*(u32 *)g_Models)) + 0x38 / 4;
   const u32 *cam = (const u32 *)g_Camera;
-  u32 *const rec0 = (u32 *)(WORK + W_PARTS);
+  u32 *const rec0 = (u32 *)P32_DEC((P32_ENC(WORK) + W_PARTS));
   u32 *rec = rec0;
   u32 shift_a = 0, shift_b = 0, body_hdr = 0, body_a = 0, body_b = 0, blend0 = 0;
   u32 head[3], tail[3];
@@ -1115,7 +1115,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   CTC2(far, 15);
 
   {
-    u32 *joints = (u32 *)(WORK + W_JOINTS);
+    u32 *joints = (u32 *)P32_DEC((P32_ENC(WORK) + W_JOINTS));
     joints[0] = joints[1] = joints[2] = 0;
     joints[3] = head[0];
     joints[4] = head[1];
@@ -1169,11 +1169,11 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
       rec0[PR_WORDS + PR_MATRIX + part] = m[part];
       m[part] = saved[part];
     }
-    AT8((u32)(uintptr_t)(rec0 + PR_WORDS) + 3) = 0x80;
+    AT8((u32)(uintptr_t)P32_ENC((rec0 + PR_WORDS)) + 3) = 0x80;
     SetMatrix(saved);
     for (part = 0; part < 5; part++)
       rec0[2 * PR_WORDS + PR_MATRIX + part] = m[part];
-    AT8((u32)(uintptr_t)(rec0 + 2 * PR_WORDS) + 3) = 0x80;
+    AT8((u32)(uintptr_t)P32_ENC((rec0 + 2 * PR_WORDS)) + 3) = 0x80;
   }
   /* the tail's (D_800241A8) */
   angles = AT32(spyro + SP_ROTATION + 8);
@@ -1181,7 +1181,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     RotateMatrix(m, angles);
     for (part = 0; part < 5; part++)
       rec0[2 * PR_WORDS + PR_MATRIX + part] = m[part];
-    AT8((u32)(uintptr_t)(rec0 + 2 * PR_WORDS) + 3) = 0x80;
+    AT8((u32)(uintptr_t)P32_ENC((rec0 + 2 * PR_WORDS)) + 3) = 0x80;
     SetMatrix(saved);
   }
 
@@ -1199,8 +1199,8 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
     colours = FilterColours(hdr, colours, filter);
 
   /* asm 80024C30: the faces */
-  f.lo = WORK + W_BUCKETS_END;
-  f.hi = WORK + W_BUCKETS;
+  f.lo = P32_ENC(WORK) + W_BUCKETS_END;
+  f.hi = P32_ENC(WORK) + W_BUCKETS;
   f.bias = CFC2(15) << 2;
   f.shift = CFC2(13) + 4;
   f.prim = *(u32 *)D_800757B0;
@@ -1208,7 +1208,7 @@ static u32 SpyroDraw(u32 a0_, u32 a1_, u32 a2_, u32 a3_) {
   {
     u32 faces = AT32(hdr + AN_FACES);
     const u8 *list = HPTR(const u8, faces);
-    u32 start = (u32)(uintptr_t)list + 4;
+    u32 start = (u32)(uintptr_t)P32_ENC(list) + 4;
     u32 end = start + *(const u32 *)list;
     if (!floor)
       DrawFaces(&f, start, end);

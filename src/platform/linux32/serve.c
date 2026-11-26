@@ -163,7 +163,7 @@ static int serve_audio(int fd, const char *path) {
 }
 
 static void *conn_thread(void *arg) {
-  int fd = (int)(intptr_t)arg, one = 1;
+  int fd = (int)(intptr_t)P32_ENC(arg), one = 1;
   char req[2048];
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
   for (;;) { /* keep-alive: one request at a time */
@@ -203,7 +203,7 @@ done:
 }
 
 static void *accept_thread(void *arg) {
-  int ls = (int)(intptr_t)arg;
+  int ls = (int)(intptr_t)P32_ENC(arg);
   for (;;) {
     pthread_t t;
     int fd = accept(ls, NULL, NULL);
@@ -213,7 +213,7 @@ static void *accept_thread(void *arg) {
       host_log("serve: accept failed (%d)", errno);
       return NULL;
     }
-    if (pthread_create(&t, NULL, conn_thread, (void *)(intptr_t)fd) == 0)
+    if (pthread_create(&t, NULL, conn_thread, (void *)P32_DEC((intptr_t)fd)) == 0)
       pthread_detach(t);
     else
       close(fd);
@@ -236,7 +236,7 @@ int host_serve_start(int port) {
     close(ls);
     return -1;
   }
-  if (pthread_create(&t, NULL, accept_thread, (void *)(intptr_t)ls) != 0)
+  if (pthread_create(&t, NULL, accept_thread, (void *)P32_DEC((intptr_t)ls)) != 0)
     return -1;
   pthread_detach(t);
   clock_gettime(CLOCK_MONOTONIC, &s_t0);

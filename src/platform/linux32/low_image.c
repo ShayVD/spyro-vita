@@ -154,9 +154,20 @@ __attribute__((constructor)) static void low_image_trap(void) {
   }
 }
 
+#if SPYRO_P32_OFFSET
+/* linuxa64 (D250 O3): a P32 slot is an offset from spyro_p32_base, the
+ * image's start (CMakeLists.txt), so the game's memory must lie within 4 GB
+ * of it; and the image itself lies above 4 GB, as on macOS arm64, so that a
+ * pointer cut to 32 bits instead of encoded points at nothing. */
+static int low(const void *p, size_t len) {
+  return (uintptr_t)p >= (uintptr_t)spyro_p32_base &&
+         (uintptr_t)p + len - (uintptr_t)spyro_p32_base <= TRAP_LIMIT;
+}
+#else
 static int low(const void *p, size_t len) {
   return (uintptr_t)p + len <= LOW_LIMIT;
 }
+#endif
 
 struct game_args {
   int argc;
@@ -175,9 +186,53 @@ static void *game_thread(void *arg) {
   return NULL;
 }
 
+#if SPYRO_P32_CHECK
+/* the checking build's stop (src/compat/p32.h): a host pointer encoded */
+void p32_check_fail_(unsigned long long p, const char *file, int line) {
+  fprintf(stderr, "spyro: %s:%d: a host pointer (0x%llx) stored as a 32-bit game address "
+                  "(the offset model's check, D250)\n", file, line, p);
+  abort();
+}
+#endif
+
+#if SPYRO_P32_OFFSET
+/* The data image's pointer words (tools/data2s.py --p32-offset): {slot,
+ * target} pairs, ending {0, 0}; each word becomes target's offset from the
+ * base, as P32_SET stores it. Before anything reads the game's data. */
+extern const uint64_t s1_pie_words[];
+static int p32_fill_words(void) {
+  int n = 0;
+  for (const uint64_t *w = s1_pie_words; w[0]; w += 2, n++) {
+    if (!low((const void *)(uintptr_t)w[1], 0) || !low((const void *)(uintptr_t)w[0], 4)) {
+      fprintf(stderr, "spyro: data word %d: slot 0x%llx, target 0x%llx\n", n,
+              (unsigned long long)w[0], (unsigned long long)w[1]);
+      return -1;
+    }
+    *(uint32_t *)(uintptr_t)w[0] = (uint32_t)(w[1] - (uintptr_t)spyro_p32_base);
+  }
+  return n;
+}
+#endif
+
 int main(int argc, char **argv) {
   void *probe = malloc(16);
   const void *arena_end = psx_low_arena_end();
+#if SPYRO_P32_OFFSET
+  if ((uintptr_t)__executable_start < TRAP_LIMIT || !low(_end, 0) || !low(arena_end, 0) ||
+      !low(s_game_stack, GAME_STACK)) {
+    fprintf(stderr,
+            "spyro: the game's memory must lie above 4 GB and within 4 GB of the image's start "
+            "(the offset model, D250): image %p-%p, arena end %p, game stack %p-%p\n",
+            (void *)__executable_start, (void *)_end, arena_end, (void *)s_game_stack,
+            (void *)(s_game_stack + GAME_STACK));
+    return 1;
+  }
+  int words = p32_fill_words();
+  if (words < 0) {
+    fprintf(stderr, "spyro: a data word's slot or target lies outside the image (D250)\n");
+    return 1;
+  }
+#else
   if (!low(_end, 0) || !low(arena_end, 0) || !low(s_game_stack, GAME_STACK)) {
     fprintf(stderr,
             "spyro: the game's memory must lie below 2 GB (the low image, D174): image "
@@ -186,6 +241,7 @@ int main(int argc, char **argv) {
             (void *)(s_game_stack + GAME_STACK));
     return 1;
   }
+#endif
   if ((uintptr_t)probe < TRAP_LIMIT)
     fprintf(stderr, "spyro: warning: malloc gave %p, below 4 GB: stray host pointers would "
                     "alias low memory instead of crashing\n", probe);

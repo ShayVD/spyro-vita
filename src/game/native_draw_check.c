@@ -66,8 +66,8 @@ static int stat_index(const char *name) {
 /* slot i: the world OT's buckets 0..OT_SLOTS-1, then the HUD OT's one */
 static u32 *slot_at(int i) {
   if (i == OT_SLOTS)
-    return (u32 *)(uintptr_t)MIPS_KUSEG(AT32_ND(ADDR_ND(g_HudOT)));
-  return (u32 *)(uintptr_t)MIPS_KUSEG(AT32_ND(ADDR_ND(g_WorldOT))) + i * 2;
+    return (u32 *)P32_DEC((uintptr_t)MIPS_KUSEG(AT32_ND(ADDR_ND(g_HudOT))));
+  return (u32 *)P32_DEC((uintptr_t)MIPS_KUSEG(AT32_ND(ADDR_ND(g_WorldOT)))) + i * 2;
 }
 
 static void slots_save(void) {
@@ -129,7 +129,7 @@ static int collect(Seq *q) {
     }
     if (sl[0] == s_tail0[slot])
       continue;
-    p = s_tail0[slot] ? link_of(s_tail0[slot]) : (u32 *)(uintptr_t)MIPS_KUSEG(sl[1]);
+    p = s_tail0[slot] ? link_of(s_tail0[slot]) : (u32 *)P32_DEC((uintptr_t)MIPS_KUSEG(sl[1]));
     for (;;) {
       const u32 len = p[0] >> 24;
       if (q->count == MAX_PACKETS || q->n + len + 1 > q->cap || ++guard > 0x40000)
@@ -138,9 +138,9 @@ static int collect(Seq *q) {
       memcpy(q->words + q->n, p, (len + 1) * 4);
       q->words[q->n] &= 0xFF000000u;
       q->n += len + 1;
-      if ((u32)(uintptr_t)p == MIPS_KUSEG(sl[0]))
+      if ((u32)(uintptr_t)P32_ENC(p) == MIPS_KUSEG(sl[0]))
         break;
-      p = link_of((u32)(uintptr_t)p);
+      p = link_of((u32)(uintptr_t)P32_ENC(p));
     }
   }
   return q->count;

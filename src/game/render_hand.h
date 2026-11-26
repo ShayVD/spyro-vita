@@ -28,25 +28,25 @@
  * host pointer. The game's own pointers are arena addresses already; this
  * maps the KUSEG mirror (and on the Vita its other aliases) as MIPS_KUSEG
  * does, once per pointer instead of once per access. */
-#define HPTR(type, a) ((type *)(uintptr_t)MIPS_KUSEG(a))
+#define HPTR(type, a) ((type *)P32_DEC((uintptr_t)MIPS_KUSEG(a)))
 /* The arena address of a host pointer, as the game stores it. */
-#define PSX_ADDR(p) ((u32)(uintptr_t)(p))
+#define PSX_ADDR(p) ((u32)(uintptr_t)P32_ENC(p))
 
 /* Words, halves and bytes at an arena address the code computed itself
  * (a primitive it is writing, the working memory, a list it walks). */
-#define AT32(a) (*(u32 *)(uintptr_t)(u32)(a))
-#define AT16(a) (*(u16 *)(uintptr_t)(u32)(a))
-#define AT8(a) (*(u8 *)(uintptr_t)(u32)(a))
+#define AT32(a) (*(u32 *)P32_DEC((uintptr_t)(u32)P32_ENC(a)))
+#define AT16(a) (*(u16 *)P32_DEC((uintptr_t)(u32)P32_ENC(a)))
+#define AT8(a) (*(u8 *)P32_DEC((uintptr_t)(u32)P32_ENC(a)))
 /* The word BYTES bytes into a table (the asm's byte offsets into word
  * tables: vertex, colour and clip-word indices come pre-multiplied by 4). */
-#define WORD_AT(base, bytes) (*(const u32 *)((const u8 *)(base) + (bytes)))
+#define WORD_AT(base, bytes) (*(const u32 *)((const u8 *)P32_DEC(base) + (bytes)))
 
 /* A renderer's working memory, where the asm used the PS1 scratchpad: its
  * own (g_render_work, render_rc.c; the presenter's g_pres_scratch,
  * render_ctx_names.h). Nothing reads it across calls (the poison audit,
  * D124), so it is a buffer, not state. */
 extern unsigned char g_render_work[1024];
-#define SCRATCH_BASE ((u32)(uintptr_t)g_render_work)
+#define SCRATCH_BASE ((u32)(uintptr_t)P32_ENC(g_render_work))
 
 /* The GTE's maths on C values (D80, D124). */
 #include "gte_native.h"
@@ -118,7 +118,7 @@ u32 hand_check_rc_v0(const char *name, HandFn unit, HandFn rc, u32 a0, u32 a1, u
 extern int g_render_ctx_check;
 #ifndef RENDER_CTX_FN
 #define RENDER_CTX_FN
-typedef u32 (*RenderCtxFn)(u32, u32, u32, u32);
+typedef u32 (*RenderCtxFn)(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T);
 #endif
 u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 a0, u32 a1, u32 a2,
                      u32 a3);
@@ -181,7 +181,9 @@ extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
 #if RENDER_PRES
 #define HAND_RENDERER(name, hand)                                              \
   HAND_CX(hand)                                                                \
-  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand##_cx(a0, a1, a2, a3); }
+  u32 name##_pres(P32_ARG_T a0, P32_ARG_T a1, P32_ARG_T a2, P32_ARG_T a3) {                \
+    return hand##_cx(P32_ARG(a0), P32_ARG(a1), P32_ARG(a2), P32_ARG(a3));                  \
+  }
 #elif SPYRO_NATIVE_MEM
 /* The native build (D100) links no mips2c unit: the hand C always, and no
  * stack arguments (only the units read them). */
@@ -191,10 +193,10 @@ extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
                         : hand(a0, a1, a2, a3))
 #define HAND_RENDERER(name, hand)                                              \
   HAND_CX(hand)                                                                \
-  u32 name##_pres(u32, u32, u32, u32);                                         \
-  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+  u32 name##_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T);                 \
+  u32 name(P32_ARG_T a0, P32_ARG_T a1, P32_ARG_T a2, P32_ARG_T a3, u32 a4, u32 a5, u32 a6, u32 a7) { \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
-    return HAND_PICK(name, hand##_cx, a0, a1, a2, a3);                              \
+    return HAND_PICK(name, hand##_cx, P32_ARG(a0), P32_ARG(a1), P32_ARG(a2), P32_ARG(a3));    \
   }
 #else
 #define HAND_PICK(name, hand, a0, a1, a2, a3)                                  \
@@ -247,13 +249,24 @@ extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
 #define HAND_UNIT_FN_(name, hand, check) /* not in the presenter's builds */
 #define HAND_UNIT_FN_RC_(name, hand, v0)                                       \
   HAND_CX(hand)                                                                \
-  u32 name##_pres(u32 a0, u32 a1, u32 a2, u32 a3) { return hand##_cx(a0, a1, a2, a3); }
+  u32 name##_pres(P32_ARG_T a0, P32_ARG_T a1, P32_ARG_T a2, P32_ARG_T a3) {                \
+    return hand##_cx(P32_ARG(a0), P32_ARG(a1), P32_ARG(a2), P32_ARG(a3));                  \
+  }
 #elif SPYRO_NATIVE_MEM
 #define HAND_UNIT_FN_(name, hand, check)                                       \
-  u32 name(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {   \
+  u32 name(P32_ARG_T a0, P32_ARG_T a1, P32_ARG_T a2, P32_ARG_T a3, u32 a4, u32 a5, u32 a6, u32 a7) { \
     (void)a4, (void)a5, (void)a6, (void)a7;                                    \
-    return hand(a0, a1, a2, a3);                                               \
+    return hand(P32_ARG(a0), P32_ARG(a1), P32_ARG(a2), P32_ARG(a3));                       \
   }
+/* an entry the decomp declares returning a pointer (func_80058AE8): in the
+ * offset model the hand C's 32-bit address is decoded (D250 O3) */
+#if SPYRO_P32_OFFSET
+#define HAND_UNIT_FN_PTR(name, hand)                                           \
+  void *name(P32_ARG_T a0, P32_ARG_T a1, P32_ARG_T a2, P32_ARG_T a3, u32 a4, u32 a5, u32 a6, u32 a7) { \
+    (void)a4, (void)a5, (void)a6, (void)a7;                                    \
+    return P32_DEC(hand(P32_ARG(a0), P32_ARG(a1), P32_ARG(a2), P32_ARG(a3)));             \
+  }
+#endif
 #define HAND_UNIT_FN_RC_(name, hand, v0) HAND_CX(hand) HAND_UNIT_FN_(name, hand##_cx, 0)
 #else
 #define HAND_UNIT_FN_ENTRIES(name, pick)                                       \
@@ -283,6 +296,9 @@ extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
     g_render_shadow ? (v0 ? render_shadow_v0 : render_shadow)(#name, name##_gen__m2c, hand, a0, a1, a2, a3) \
     : g_hand_check  ? (v0 ? hand_check_rc_v0 : hand_check_rc)(#name, name##_gen__m2c, hand, a0, a1, a2, a3) \
                     : hand(a0, a1, a2, a3))
+#endif
+#ifndef HAND_UNIT_FN_PTR
+#define HAND_UNIT_FN_PTR(name, hand) HAND_UNIT_FN_V0(name, hand)
 #endif
 
 /* RENDER_READABLE (each renderer file defines it before including this,

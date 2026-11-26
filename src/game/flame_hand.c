@@ -42,7 +42,7 @@ extern char g_WorldOT[];
 #define NCLIP() m2c_gte_0x1400006()
 #define MVMVA_RT_IR() m2c_gte_0x49E012() /* sf 1: the rotation times IR1-3 */
 
-#define S16(a) ((u32)(s32)*(const s16 *)(uintptr_t)(u32)(a))
+#define S16(a) ((u32)(s32)*(const s16 *)P32_DEC((uintptr_t)(u32)(a)))
 #define SEXT16(x) ((u32)((s32)((x) << 16) >> 16))
 
 /* Link the primitive at prim into world OT slot `slot` (the asm's OtAppend:

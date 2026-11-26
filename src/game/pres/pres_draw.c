@@ -102,12 +102,12 @@ void pres_ClearFrameBuffersPal(void) {}
  * limit 0x600 under the HUD OT. It is called only while a presentation
  * option is on, which the presenter needs. */
 void pres_PortPolySpace(void) {
-  const uint32_t lower = pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer));
-  const uint32_t top = pres_snap_rebase((uint32_t)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart)) - FAIRY_CARD_BUF;
+  const uint32_t lower = pres_snap_rebase((uint32_t)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_LowerPolyBuffer)));
+  const uint32_t top = pres_snap_rebase((uint32_t)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_HudOTStart))) - FAIRY_CARD_BUF;
   memcpy(g_pres_prim_next, &lower, 4);
   memcpy(g_pres_prim_end, &top, 4);
-  P32_SET(g_pres_snap_D_800756FC, (void *)(uintptr_t)top);
-  P32_SET(g_pres_snap_g_HudMobys, (void *)(uintptr_t)top);
+  P32_SET(g_pres_snap_D_800756FC, (void *)P32_DEC((uintptr_t)top));
+  P32_SET(g_pres_snap_g_HudMobys, (void *)P32_DEC((uintptr_t)top));
 }
 
 /* present.c PortProjectionHook on the presenter's 16:9 switch */

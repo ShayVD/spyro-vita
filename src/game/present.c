@@ -704,7 +704,7 @@ static int in_arena(const void *p, uint32_t len) {
 
 static unsigned char *sector_cache(int i) {
   unsigned char *sec =
-      (unsigned char *)(uintptr_t)((uint32_t *)P32_GET(g_Environment.m_SectorPointer))[i];
+      (unsigned char *)P32_DEC((uintptr_t)((uint32_t *)P32_GET(g_Environment.m_SectorPointer))[i]);
   return in_arena(sec + SECTOR_CACHE, 4) ? sec + SECTOR_CACHE : NULL;
 }
 

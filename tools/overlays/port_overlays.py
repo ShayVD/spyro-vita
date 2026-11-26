@@ -82,9 +82,15 @@ def cmd_table(s1, psx_map, out):
         raise SystemExit(f"main_BSS_END not in {psx_map}")
     lines += ["", "#if SPYRO_NATIVE_MEM && PSX_BSS_END != 0x%08Xu" % bss_end,
               "#error psx_arena.h PSX_BSS_END is not psx.map's main_BSS_END (D106)", "#endif"]
-    lines += ["", "extern void *g_OverlaySpacePointer;", "",
+    # g_OverlaySpacePointer is the decomp's 4-byte slot: in the offset model
+    # (D250 O3) a P32F union holding an offset, stored through P32_SET.
+    # Elsewhere the declaration stays the plain pointer it has always been
+    # here (an 8-byte store on x86-64, whose top half lands in the padding
+    # after the label), so those binaries don't change.
+    lines += ["", "#if SPYRO_P32_OFFSET", "extern P32F(void *) g_OverlaySpacePointer;", "#else",
+              "extern void *g_OverlaySpacePointer;", "#endif", "",
               "void psx_overlays_init(void) {",
-              f"  g_OverlaySpacePointer = PSX_ARENA(0x{bss_end:08X}); /* main_BSS_END */"]
+              f"  P32_SET(g_OverlaySpacePointer, PSX_ARENA(0x{bss_end:08X})); /* main_BSS_END */"]
     lines += [f"  Terminator_{n} = PSX_ARENA(0x{a:08X});" for n, a in rows]
     lines += ["}", ""]
     with open(out, "w") as f:
