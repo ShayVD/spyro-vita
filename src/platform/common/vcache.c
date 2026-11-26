@@ -326,20 +326,20 @@ typedef struct {
 #define HK_NOPROJ(h) (!(h)->placed && (h)->low && !(h)->dead)
 
 /* A renderer context's primitives in a frame (#211, psx_vcache.h VCX_*):
- * [lo, hi), the low 24 bits of the primitive buffer's addresses (the walk
- * may read a copy in another 16 MB window, walk.c) when w24, else a record
- * pool's whole addresses (native_draw). #222: the counters' form, olo (for
- * hi - lo bytes, if ok): a w24 range's offset in the game's memory
- * (cx_ofs), which the native build's copy keeps where its low 24 bits
- * don't (neither block is 16 MB-aligned there); the placement's gates keep
- * lo/hi, as before */
+ * [lo, hi), when w24 the primitive buffer's offsets in the game's memory
+ * (cx_ofs, #222: the walk may read them from walk.c's copy, whose
+ * addresses map to the same offsets; usable only if ok, both ends in one
+ * block), else a record pool's whole addresses (native_draw). #244: the
+ * counters and the placement's gates alike; until #244 the gates compared
+ * the low 24 bits, which in the native build (the Vita's, neither block
+ * 16 MB-aligned) never matched a primitive read from the copy */
 #define VC_CX 128 /* ranges a frame */
 #define VC_FR 256 /* #215: cuts a frame placed at their own fraction (frac_hand) */
 /* #230: a cut's fallback place, in fr under its key with y's top nibble
  * flipped (as VCD_CENTRE), which no screen key has (fa_put) */
 #define FR_ALT(key) VCD_CORNER(key, 15u)
 typedef struct {
-  uintptr_t lo, hi, olo;
+  uintptr_t lo, hi;
   uint8_t cx, w24, ok;
 } Cx;
 
@@ -3384,7 +3384,8 @@ unsigned psx_vcache_gen_stale(int kind, int cx) {
 }
 #endif
 
-/* #222: where the counters look for a primitive at a: its offset in the
+/* #222: where the counters (#244: and the placement's gates) look for a
+ * primitive at a: its offset in the
  * game's memory (psx_arena.h), whether the walk reads it there or in
  * walk.c's copy (copy, the game walk's; 0: none); anything else (present.c's
  * narrowed HUD copies, a buffer of the presenter's own) by its low 24 bits,
@@ -3401,13 +3402,11 @@ static uintptr_t cx_ofs(uintptr_t a, uintptr_t copy) {
   return (a & 0xFFFFFFu) | CX_FAR;
 }
 
-static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24, uintptr_t olo,
-                   int ok) {
+static void cx_add(Table *t, int cx, uintptr_t lo, uintptr_t hi, int w24, int ok) {
   if (t->ncx < VC_CX) {
     Cx *const c = &t->cx[t->ncx++];
     c->lo = lo;
     c->hi = hi;
-    c->olo = olo;
     c->cx = (uint8_t)cx;
     c->w24 = (uint8_t)w24;
     c->ok = (uint8_t)ok;
@@ -3430,21 +3429,19 @@ static void vc_ctx(int kind, const char *name, uintptr_t p0, uintptr_t p1, uintp
     t->ncx = 0;
   }
   cx = cx_of_name(kind, name);
-  /* the primitive buffer, by its addresses' offsets in their 16 MB window
-   * (the HUD's mobys are drawn from the buffer's top: no forward move) */
+  /* the primitive buffer, by its offsets in the game's memory (#222), if
+   * both ends are in one block (cx_ofs; the HUD's mobys are drawn from the
+   * buffer's top: no forward move) */
   if (p1 > p0 && p1 - p0 < 0x100000u && (p0 >> 24) == ((p1 - 1) >> 24)) {
-    /* #222: and by its offset in the game's memory, if both ends are in
-     * one block (cx_ofs) */
     const uintptr_t o0 = cx_ofs(p0, 0);
-    cx_add(t, cx, p0 & 0xFFFFFFu, ((p1 - 1) & 0xFFFFFFu) + 1, 1, o0,
-           cx_ofs(p1 - 1, 0) - o0 == p1 - 1 - p0);
+    cx_add(t, cx, o0, o0 + (p1 - p0), 1, cx_ofs(p1 - 1, 0) - o0 == p1 - 1 - p0);
   }
   /* native_draw's records: the cursor's move, or from the start of a pool
    * begun in the call */
   if (n1 > n0 && n1 - n0 < 0x1000000u)
-    cx_add(t, cx, n0, n1, 0, n0, 1);
+    cx_add(t, cx, n0, n1, 0, 1);
   else if (n1 != n0 && nb && n1 > nb)
-    cx_add(t, cx, nb, n1, 0, nb, 1);
+    cx_add(t, cx, nb, n1, 0, 1);
 }
 
 void psx_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uintptr_t n1,
@@ -3460,24 +3457,25 @@ void pres_vc_ctx(const char *name, uintptr_t p0, uintptr_t p1, uintptr_t n0, uin
 
 /* the context of the polygon whose first vertex's x is at p, in tab's
  * frame gen: the smallest range holding it, a record pool's before the
- * primitive buffer's. ofs (#222, the counters'): the primitive buffer's
- * ranges by their offsets in the game's memory, the polygon's in the game
- * walk's copy too (cx_ofs); 0 (the placement's gates, cx_find): by their
- * low 24 bits, as before #222 */
-static int cx_find_(const Table *tab, uint32_t gen, const void *p, int ofs) {
+ * primitive buffer's; the primitive buffer's ranges by their offsets in
+ * the game's memory, the polygon's in the game walk's copy too (cx_ofs:
+ * #222's counters; #244: the placement's gates too, which until then
+ * compared the low 24 bits and so, on the Vita, filed a primitive the walk
+ * read from the copy, the portals' sky and faces, outside) */
+static int cx_find(const Table *tab, uint32_t gen, const void *p) {
   const uintptr_t a = (uintptr_t)p;
-  const uintptr_t a24 = ofs ? cx_ofs(a, psx_gpu_game_walk()->copy) : a & 0xFFFFFFu;
-  uintptr_t best = ~(uintptr_t)0;
+  uintptr_t ao, best = ~(uintptr_t)0;
   int cx = VCX_OUTSIDE, rank = 2; /* the best hit's w24 (a pool's, 0, first) */
   unsigned i;
   if (!tab || tab->cx_gen != gen || !tab->ncx)
     return VCX_UNMARKED;
+  ao = cx_ofs(a, psx_gpu_game_walk()->copy);
   for (i = 0; i < tab->ncx; i++) {
     const Cx *const c = &tab->cx[i];
-    const uintptr_t x = c->w24 ? a24 : a, lo = ofs ? c->olo : c->lo, hi = lo + (c->hi - c->lo);
-    if (ofs && !c->ok)
+    const uintptr_t x = c->w24 ? ao : a;
+    if (!c->ok)
       continue;
-    if (x >= lo && x < hi &&
+    if (x >= c->lo && x < c->hi &&
         (c->w24 < rank || (c->w24 == rank && c->hi - c->lo < best))) {
       best = c->hi - c->lo;
       cx = c->cx;
@@ -3485,9 +3483,6 @@ static int cx_find_(const Table *tab, uint32_t gen, const void *p, int ofs) {
     }
   }
   return cx;
-}
-static int cx_find(const Table *tab, uint32_t gen, const void *p) {
-  return cx_find_(tab, gen, p, 0);
 }
 
 /* the report's words for the vertices left with no entry (#211): "missed
@@ -5203,7 +5198,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
   }
   if (nnone && !der) { /* not found: no entry */
     const uint32_t gen = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].gen : s_rgen;
-    const int cx = cx_find_(ptab, gen, xy[0], 1); /* (#222: by offset, the copy's too) */
+    const int cx = cx_find(ptab, gen, xy[0]); /* (#222: by offset, the copy's too) */
     st->miss_none += (unsigned)nnone;
     if (cx == VCX_ENV) { /* #217: a world split point with an end behind the eye, exempt too */
       for (i = 0; i < n; i++)
