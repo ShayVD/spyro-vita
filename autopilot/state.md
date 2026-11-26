@@ -9,7 +9,38 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
+  "workers": [
+    {
+      "issue": 259,
+      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
+      "pids": [],
+      "started_at": "2026-11-26T03:55:00Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "src/platform/linux32/prof_draw.c",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md"
+      ],
+      "agent": "a986f5e471a4bb9db",
+      "last_commit_at": "2026-11-26T03:55:00Z"
+    },
+    {
+      "issue": 270,
+      "branch": "docs/270-docs-moby-sprites-on-the-vcache-hooked",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-270",
+      "pids": [],
+      "started_at": "2026-11-26T03:55:00Z",
+      "files": [
+        "docs/vita-testing.md",
+        "docs/host-build.md"
+      ],
+      "agent": "a73b1d80afb1c9fc3",
+      "last_commit_at": "2026-11-26T03:55:00Z"
+    }
+  ],
   "last_good": "a1c8d8bfa79550bfc12ae8e2c4e7298eae19bc61",
   "hardware_runs": [
     {
@@ -234,7 +265,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "267": 1,
     "262": 1,
     "268": 1,
-    "269": 1
+    "269": 1,
+    "259": 1,
+    "270": 1
   },
   "blocked": [],
   "issues_filed": {
