@@ -2036,3 +2036,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Measured:** host missed T 2 → 0 (no projection 832 → 834); S, Si, P, Pi, Pf, Pfi, S60 and O60 unchanged at 0. Vita3K toasty60 window 14,400: EnvDraw missed 2 → 0.
 - **Checked** (`runtime/autopilot/runs/vita/issue-266-1/`): host FNV per polygon (D168) on 9 pairs, every polygon identical; Vita build; Vita3K 8 routes, shots identical to `base-20d3514` (checked by the coordinator); counters the same apart from the timing-dependent ones (stone60's `vc.invalid` and `vc.clamped` sat past two base runs' spread in both fix runs, with `np_poly` 0 there); gate host ctest and `noassets`.
 - **Host missed after this:** 0 on every route (S, Si, P, Pi, Pf, Pfi, S60, T, O60). Left on Vita3K: the attract demo's MobyDraw 2,508 and ParticlesDraw 3 in demo60 and toasty60 (#243).
+
+## 2026-11-26 — an older menu's MAX
+
+### D260. A `draw_distance=200` that an older options menu saved is read as today's MAX (ADAPTIVE) (#267, 2026-11-26)
+- **Why:** the menu saved MAX (ADAPTIVE) as 200 from #260 to #261 (D255), and 2X as 200 before that. Since D256 MAX is 400, so a saved 200 showed `200%` and stepped to NORMAL.
+- **What:**
+  - The Vita menu writes `config_version=7`; the PS4 menu writes 6 (it wrote 5 since D194).
+  - `read_config` reads a 200 as the row's last value (`DD_MAX_PCT`, through `vita_menu_last_value` / `ps4_menu_last_value`) only inside the block the menu writes: the file's last `config_version` line is below 7 (below 6 on the PS4), every key line after it is a menu row's key, current or gone (`vita_menu_key` / `ps4_menu_key`), and those lines include the nine rows every menu has written since D48 (widescreen, interp, res, draw_distance, analog, free_camera, cam_invert_x, cam_invert_y, cam_speed).
+  - A developer's 200 stays 200: the test tools write their run's lines after their version line, or no version line (the kit's `v3k_run.sh`), and their base lines never write res, analog or cam_speed. A 200 with the new version stays 200 too.
+  - `menu_test` logs a `menu: shown` line with each row as first shown.
+- **Checked** (`runtime/autopilot/runs/vita/issue-267-A/`): Vita build; PS4 build through the Mac SDK (not run); host ctest 33/33; `noassets`. Five Vita3K menu runs: an old menu file with 200 loads at 400%, shows MAX (ADAPTIVE) and saves 400 with `config_version=7`; a version-7 file keeps 150 and 200; an old block followed by a developer's line keeps 200; owner60's lines keep 200. The 8 Vita3K routes: 694 shots identical to `base-20d3514` (checked by the coordinator); counters within the spread of two owner60 runs.

@@ -24,25 +24,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "ac0d91188261b1a60",
       "last_commit_at": "2026-11-26T00:50:00Z"
-    },
-    {
-      "issue": 267,
-      "branch": "fix/267-config-migration-a-draw-distance-200",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-267",
-      "pids": [],
-      "started_at": "2026-11-26T00:50:00Z",
-      "files": [
-        "src/platform/vita/main.c",
-        "src/platform/vita/menu.c",
-        "src/platform/ps4/main.c",
-        "src/platform/ps4/menu.c",
-        "docs/vita-testing.md"
-      ],
-      "agent": "aaeff4f6d30e98e7c",
-      "last_commit_at": "2026-11-26T00:50:00Z"
     }
   ],
-  "last_good": "b7e564e9fd69ac77c54a334a327d1d0930fa16dd",
+  "last_good": "daa0e16a926a940535cc9e597c91ae027962b938",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
