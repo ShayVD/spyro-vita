@@ -118,6 +118,7 @@ add_custom_command(OUTPUT "${T60_OBJ}"
     "$<JOIN:$<TARGET_OBJECTS:spyro_t60_ovl>,;>"
   COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/tick60_link.py"
     --nm "${CMAKE_NM}" --objcopy "${CMAKE_OBJCOPY}" --entry GamestateUpdate=GamestateUpdate_60
+    ${SPYRO_MACHO_ARG}
     --report "${T60_OBJ}.txt" "${T60_OBJ}.r" "${T60_OBJ}"
   DEPENDS spyro_t60_decomp spyro_t60_port spyro_t60_ovl $<TARGET_OBJECTS:spyro_t60_decomp>
           $<TARGET_OBJECTS:spyro_t60_port> $<TARGET_OBJECTS:spyro_t60_ovl>

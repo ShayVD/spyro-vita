@@ -18,6 +18,14 @@
 
 int g_host_prof_draw;
 
+#if defined(__APPLE__)
+/* macOS (D250 O4): ld64 has no --wrap, so no renderer is timed */
+void host_prof_draw_report(void) {
+  if (g_host_prof_draw)
+    host_log("prof draw: not on macOS (no link-time wrapping)");
+}
+#else
+
 extern char D_800757B0[]; /* the primitive buffer's next free byte (a word) */
 
 enum { D_UPDATE, D_ENV, D_MOBYS, D_PETE, D_FX, D_PARTICLES, D_SKY, D_COUNT };
@@ -192,3 +200,4 @@ void host_prof_draw_report(void) {
   host_log("prof draw: (sky main %9.1f ms in %6u calls, part of sky)", s_skymain / 1e6,
            s_skymain_calls);
 }
+#endif /* !__APPLE__ */

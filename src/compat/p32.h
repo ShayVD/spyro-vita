@@ -37,6 +37,13 @@
 #ifndef SPYRO_P32_H
 #define SPYRO_P32_H
 
+/* A C name's assembly name, for __asm__ labels: SPYRO_ASM_LIT("name").
+ * Mach-O puts an underscore before C's names (macOS, D250 O4); elsewhere
+ * the prefix is empty and this is the literal. */
+#define SPYRO_ASM_STR_(x) #x
+#define SPYRO_ASM_STR(x) SPYRO_ASM_STR_(x)
+#define SPYRO_ASM_LIT(s) SPYRO_ASM_STR(__USER_LABEL_PREFIX__) s
+
 /* The offset model (D250, D258): every P32 slot is a 32-bit offset from
  * spyro_p32_base, 0 for NULL. The default on AArch64; SPYRO_P32_OFFSET=1
  * selects it on x86-64 too, where it is O2's completeness check: the slot is
@@ -53,7 +60,12 @@
 
 #if SPYRO_P32_OFFSET
 #define SPYRO_P32 1
-extern char spyro_p32_base[];
+#if defined(__APPLE__)
+/* macOS (D250 O4): the executable's Mach-O header, where the kernel slid it */
+extern char spyro_p32_base[] __asm__("__mh_execute_header");
+#else
+extern char spyro_p32_base[]; /* the image's start (CMakeLists.txt) */
+#endif
 /* Macros, not functions: the overlays' units are preprocessed and then
  * compiled with this header forced in again (cmake/overlays.cmake), where
  * a function would be defined twice. */

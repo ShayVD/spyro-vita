@@ -144,7 +144,7 @@ extern u32 g_m2c_prof[M2C_PROF_WORDS];
  * before any game code) so GCC keeps it in a register instead of reloading
  * it after every store; always_inline because GCC stops inlining in the
  * largest translated units. */
-extern const uintptr_t g_psx_arena_base_ro __asm__("g_psx_arena_base");
+extern const uintptr_t g_psx_arena_base_ro __asm__(SPYRO_ASM_LIT("g_psx_arena_base"));
 static inline __attribute__((always_inline)) u32 mips2c_kuseg(u32 a) {
   const u32 base = (u32)g_psx_arena_base_ro;
   if ((a & 0x7FE00000u) == 0 || ((a ^ base) & 0x7FE00000u) == 0)
@@ -283,7 +283,7 @@ static inline __attribute__((always_inline)) void m2c_ctc2(unsigned int value, i
  * value than 0 runs the hand C. Set once at start, before any game code,
  * so it's read through a const alias like the arena base. */
 extern int g_fast_render;
-extern const int g_fast_render_ro __asm__("g_fast_render");
+extern const int g_fast_render_ro __asm__(SPYRO_ASM_LIT("g_fast_render"));
 
 /* GTE commands (fps plan C5): every translated call has a literal opcode,
  * and gte_inline.h has a function for each, straight-line code with the

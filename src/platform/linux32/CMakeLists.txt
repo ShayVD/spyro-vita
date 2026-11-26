@@ -19,24 +19,34 @@ target_link_libraries(spyro PRIVATE spyro_game spyro_platform_linux32
 target_include_directories(spyro PRIVATE "${CMAKE_SOURCE_DIR}/src/game")
 target_compile_options(spyro PRIVATE ${SPYRO_HOST_FLAGS})
 target_link_options(spyro PRIVATE ${SPYRO_LINK_FLAGS}) # -m32 -no-pie; linux64: -static -no-pie
-# --prof-draw (prof_draw.c): the renderers GamestateDraw calls, timed
-target_link_options(spyro PRIVATE
-  -Wl,--wrap=GamestateUpdate,--wrap=func_800258F0,--wrap=func_8001F158
-  -Wl,--wrap=func_8001F798,--wrap=func_800208FC,--wrap=func_80020F34
-  -Wl,--wrap=func_80022A2C,--wrap=func_80023AC4,--wrap=func_80059F8C
-  -Wl,--wrap=func_80059A48,--wrap=func_80058D64,--wrap=func_80058BA8
-  -Wl,--wrap=func_800573C8,--wrap=func_80050BD0,--wrap=func_8004EBA8
-  # The cyclorama set-up's hand C (cyclorama_hand.c, D94) is reached only
-  # through its wrapper, from a library linked after the game's: pull it in.
-  -Wl,--undefined=func_80050BD0)
-if(SPYRO_NATIVE_MEM)
-  # Without the mips2c units (D100) the renderers' hand C is reached only
-  # through these wrappers too.
+if(APPLE)
+  # macOS (D250 O4): ld64 has no --wrap (prof_draw.c is a stub there); the
+  # renderers' hand C, reached only through linux32's wrappers elsewhere, is
+  # pulled in by name
+  foreach(f func_80050BD0 func_800258F0 func_8001F158 func_8001F798 func_800208FC func_80020F34
+            func_80022A2C func_80023AC4 func_80059F8C func_80059A48 func_80058D64 func_8004EBA8)
+    target_link_options(spyro PRIVATE "-Wl,-u,_${f}")
+  endforeach()
+else()
+  # --prof-draw (prof_draw.c): the renderers GamestateDraw calls, timed
   target_link_options(spyro PRIVATE
-    -Wl,--undefined=func_800258F0,--undefined=func_8001F158,--undefined=func_8001F798
-    -Wl,--undefined=func_800208FC,--undefined=func_80020F34,--undefined=func_80022A2C
-    -Wl,--undefined=func_80023AC4,--undefined=func_80059F8C,--undefined=func_80059A48
-    -Wl,--undefined=func_80058D64,--undefined=func_8004EBA8)
+    -Wl,--wrap=GamestateUpdate,--wrap=func_800258F0,--wrap=func_8001F158
+    -Wl,--wrap=func_8001F798,--wrap=func_800208FC,--wrap=func_80020F34
+    -Wl,--wrap=func_80022A2C,--wrap=func_80023AC4,--wrap=func_80059F8C
+    -Wl,--wrap=func_80059A48,--wrap=func_80058D64,--wrap=func_80058BA8
+    -Wl,--wrap=func_800573C8,--wrap=func_80050BD0,--wrap=func_8004EBA8
+    # The cyclorama set-up's hand C (cyclorama_hand.c, D94) is reached only
+    # through its wrapper, from a library linked after the game's: pull it in.
+    -Wl,--undefined=func_80050BD0)
+  if(SPYRO_NATIVE_MEM)
+    # Without the mips2c units (D100) the renderers' hand C is reached only
+    # through these wrappers too.
+    target_link_options(spyro PRIVATE
+      -Wl,--undefined=func_800258F0,--undefined=func_8001F158,--undefined=func_8001F798
+      -Wl,--undefined=func_800208FC,--undefined=func_80020F34,--undefined=func_80022A2C
+      -Wl,--undefined=func_80023AC4,--undefined=func_80059F8C,--undefined=func_80059A48
+      -Wl,--undefined=func_80058D64,--undefined=func_8004EBA8)
+  endif()
 endif()
 if(SPYRO_LOW_IMAGE)
   # linux64 (D174): main() is low_image.c's, which checks the low image and
