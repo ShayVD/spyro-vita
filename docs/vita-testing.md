@@ -305,7 +305,18 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
     corners (#209, D207); a particle corner counts only where no other renderer placed the key.
     Of the Vita3K routes only `stone60` (#210) draws them: the stars round Spyro when the ram
     butts him (the windows to 7,800 and 8,100), as its portal walk and fly-in give the merged cuts
-    (the windows to 6,600 and 6,900).
+    (the windows to 6,600 and 6,900). `moby sprites` (#243, D259): the corners of a moby's
+    screen-facing squares (`moby_hand.c` `DrawSprite`: a POLY_FT4 at its first vertex's
+    projection, sized by its depth; MobyDraw's and SpecDraw's, the attract demo explosion's
+    sparks), which handed nothing over before. Each corner is handed over as an offset from the
+    centre's projection (`VCD_MOBY_SPRITE`, the lowest priority, as `VCD_PARTICLES`: it gives way
+    to every other renderer's place and is no source for another), and the walk uses it only for
+    a MobyDraw or SpecDraw polygon that #197 wouldn't take (without that gate one 4×1-px sprite
+    #197 had found changed). Host demo routes D and D60 (`docs/host-build.md`): 2,276 by their
+    end, missed 2,511 → 0 (MobyDraw 2,508 and ParticlesDraw 3, the 3 by the four-corner anchor
+    in `vcache own points:` below); 0 on every gameplay route. Vita3K `demo60` and `toasty60`:
+    2,276 in the window to 5,100 (where MobyDraw's missed 2,508 were), 0 on the other routes;
+    `demo60`'s `vc.misses` −38%.
   - `vcache cut fraction:` (#215, D213; fallbacks #230, D248) `<hk_frac> vertices with no entry
     found at their cut's own fraction; <fr_kept> cuts placed so, <fr_nosrc> with an end not usable
     or more than 8 pixels off (#215); fallbacks: <fa_kept> places kept, <fa_seed> from a cut of a
@@ -364,10 +375,22 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
       own centre's exact place, 0.2–0.5 px apart, so the hand-over drops the key (D182). The
       hand-over itself is as before (`hk_place` ignores the anchor for an offset). On the host
       (2x, 16:9) ParticlesDraw's missed went to 0: S 10 → 0, Si 20 → 0, S60 8 → 0.
-    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows, EnvDraw or (since D251)
-      ParticlesDraw polygon found from them. These count in the hits, not in `hooked`. D251 added
-      the particle quads' vertices: host S 133 → 143, Si 264 → 284, S60 215 → 223; T stayed
-      3,514.
+    - **Moby sprites and the four-corner anchor (#243, D259):** since D259 the step also takes
+      MobyDraw's and SpecDraw's quads (`DrawSprite`'s screen-facing squares, `moby sprites` on the
+      `vcache hooked:` line). A sprite names its centre (`VCD_SELF`: the record's projection of
+      its first vertex, `nvert - 1 - i0/4` vertices and `nspr` sprite projections back,
+      key-checked) and its corners as its own (`VCD_OWN`). Particle quads and sprites now anchor
+      their own points on all four corners' keys mixed (`VCD_QUAD_ANCHOR`, `psx_vcache.h`), not
+      the first corner's alone, and the walk mixes a quad's four keys the same way. Under one
+      first-corner key, two particle quads of different sizes (the attract demo's, key
+      (47,100) at vblank 5,456) named different centres, so their own points died: those were
+      the last 3 ParticlesDraw missed on host D and D60 and in Vita3K `demo60` and `toasty60`'s
+      window to 5,700. They went to 0.
+    - `own_found`: vertices of a GlowsAndSparkles, MobyShadows, EnvDraw, (since D251)
+      ParticlesDraw or (since D259) MobyDraw or SpecDraw quad's polygon found from them. These
+      count in the hits, not in `hooked`. D251 added the particle quads' vertices: host S 133 →
+      143, Si 264 → 284, S60 215 → 223; T stayed 3,514. D259 added the sprites': host D and D60
+      552 → 784 (`own_kept` 128,742 → 134,498); S, Si, S60 and T unchanged.
     - `own_amb`: those of them whose key was ambiguous. They aren't counted in `resolved`.
     - `own_over`: that polygon's vertices that were already found but were drawn at their own
       point too, so all of its depths come from one projection.
@@ -392,6 +415,9 @@ The log has two kinds of line every 300 vblanks (5 seconds at full speed):
         quads with one corner-0 pixel (so one anchor) name different centres under it: 16 each on
         host S60 and T (D251; the same 16 after D253, in #237's runs). The hand-overs find those
         polygons as before. 0 on host S, Si, P, Pf and O60 after D253. Vita3K never fills the log.
+        D259's four-corner anchor left S60's and T's 16 as they were (#243's runs). On host D and
+        D60 it went 68 → 72 with D259: sprite centres whose naming fails the key check, and every
+        one of those polygons is found anyway.
       - **Shadow fans, fixed.** A moby shadow's fan closes on a fifth corner word that repeats
         the first corner. Its nudged copy named the projection 0 back instead of 3 back, so it found
         nothing (62 on S, 591 on T). That never mattered, because the first corner's call holds
