@@ -9,21 +9,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 244,
-      "branch": "feat/244-wobble-fix-the-vita-s-placement-gates",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-244",
-      "pids": [],
-      "started_at": "2026-11-26T07:20:00Z",
-      "files": [
-        "src/platform/common/vcache.c"
-      ],
-      "agent": "ace9979ee61066b15",
-      "last_commit_at": "2026-11-26T07:20:00Z"
-    }
-  ],
-  "last_good": "44f7fc1d34a09e57288f3be5ced7d6c22d831325",
+  "workers": [],
+  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
