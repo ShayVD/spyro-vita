@@ -23,7 +23,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/game/particles_hand.c"
       ],
       "agent": "ac0d91188261b1a60",
-      "last_commit_at": "2026-11-26T00:50:00Z"
+      "last_commit_at": "2026-11-26T03:02:31Z"
     }
   ],
   "last_good": "8f25347b8b25bbbb7421a76fe2f52c5bbe2a82dc",
