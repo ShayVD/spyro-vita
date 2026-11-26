@@ -21,6 +21,19 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "ace9979ee61066b15",
       "last_commit_at": "2026-11-26T07:20:00Z"
+    },
+    {
+      "issue": 274,
+      "branch": "feat/274-config-key-found-fast-0-1-2-d226-s",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-274",
+      "pids": [],
+      "started_at": "2026-11-26T08:00:00Z",
+      "files": [
+        "src/platform/vita/main.c",
+        "docs/presentation.md"
+      ],
+      "agent": "a14aa74f30a0fffb1",
+      "last_commit_at": "2026-11-26T08:00:00Z"
     }
   ],
   "last_good": "dfa8b4f772437bf32179cabf7a03edf8f2bcf369",
@@ -265,7 +278,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "259": 1,
     "270": 1,
     "244": 1,
-    "232": 1
+    "232": 1,
+    "274": 1
   },
   "blocked": [],
   "issues_filed": {
