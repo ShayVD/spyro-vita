@@ -24,21 +24,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "ac0d91188261b1a60",
       "last_commit_at": "2026-11-26T00:50:00Z"
-    },
-    {
-      "issue": 269,
-      "branch": "docs/269-tools-vita-comments-still-call-config",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-269",
-      "pids": [],
-      "started_at": "2026-11-26T03:00:00Z",
-      "files": [
-        "tools/vita/"
-      ],
-      "agent": "ac769a56ba5a66944",
-      "last_commit_at": "2026-11-26T03:00:00Z"
     }
   ],
-  "last_good": "daa0e16a926a940535cc9e597c91ae027962b938",
+  "last_good": "8f25347b8b25bbbb7421a76fe2f52c5bbe2a82dc",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
