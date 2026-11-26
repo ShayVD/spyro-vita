@@ -49,8 +49,8 @@
 
 #include <stddef.h>
 
-#define AT32_ND(a) (*(u32 *)(uintptr_t)(u32)(a))
-#define ADDR_ND(sym) ((u32)(uintptr_t)(sym))
+#define AT32_ND(a) (*(u32 *)P32_DEC((uintptr_t)(u32)P32_ENC(a)))
+#define ADDR_ND(sym) ((u32)(uintptr_t)P32_ENC(sym))
 
 /* config: native_draw=1 (host --native-draw): the renderers' records, which
  * need fast_render=2. native_draw=2 (host --native-draw 2, D92): the
@@ -200,8 +200,8 @@ static inline void nd_ot_append(u32 slot, u32 prim) {
   AT32_ND(slot) = prim;
   if (tail) {
     u32 t = MIPS_KUSEG(tail);
-    *(u16 *)(uintptr_t)t = (u16)prim;
-    *(u8 *)(uintptr_t)(t + 2) = (u8)(prim >> 16);
+    *(u16 *)P32_DEC((uintptr_t)t) = (u16)prim;
+    *(u8 *)P32_DEC((uintptr_t)(t + 2)) = (u8)(prim >> 16);
   } else {
     AT32_ND(slot + 4) = prim;
   }
@@ -408,8 +408,8 @@ typedef struct {
 static inline void nd_chain_link(NdChain *c, u32 prim) {
   if (c->tail) {
     const u32 t = MIPS_KUSEG(c->tail);
-    *(u16 *)(uintptr_t)t = (u16)prim;
-    *(u8 *)(uintptr_t)(t + 2) = (u8)(prim >> 16);
+    *(u16 *)P32_DEC((uintptr_t)t) = (u16)prim;
+    *(u8 *)P32_DEC((uintptr_t)(t + 2)) = (u8)(prim >> 16);
   } else {
     c->head = prim;
   }

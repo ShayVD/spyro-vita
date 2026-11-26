@@ -10,12 +10,13 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 
-set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, vita, ps4 or pc")
+set(SPYRO_HOST "linux32" CACHE STRING "Host to build: linux32, linux64, linuxa64, vita, ps4 or pc")
 # linux64 (docs/ps4-plan.md P1, decisions D174): the headless host of
 # src/platform/linux32 built for x86-64 with clang, the PS4's data model, in
 # the low-image model (D173): pointer fields P32 (src/compat/p32.h), the
 # arena and the game thread's stack in the image, below 2 GB.
-if(SPYRO_HOST STREQUAL "linux32" OR SPYRO_HOST STREQUAL "linux64")
+# linuxa64 (D250 O3): the same host for aarch64, in the offset model.
+if(SPYRO_HOST MATCHES "^(linux32|linux64|linuxa64)$")
   set(SPYRO_HOST_LINUX ON)
   set(SPYRO_HOST_DIR linux32)
 else()
@@ -50,7 +51,7 @@ include(cmake/prepare.cmake)
 # in patches/spyro-1-region-matching; D135, tools/regions/retune.py patch),
 # then the 60 Hz rules' class sites written on the region's text (D144).
 spyro_prepare(spyro-1 "${CMAKE_SOURCE_DIR}/third_party/spyro-1"
-              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60;${CMAKE_SOURCE_DIR}/patches/spyro-1-ptr32;${CMAKE_SOURCE_DIR}/patches/spyro-1-p32off" S1_DIR)
+              "${CMAKE_SOURCE_DIR}/patches/spyro-1-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-region;${CMAKE_SOURCE_DIR}/patches/spyro-1-region-port;${CMAKE_SOURCE_DIR}/patches/spyro-1-tick60;${CMAKE_SOURCE_DIR}/patches/spyro-1-ptr32;${CMAKE_SOURCE_DIR}/patches/spyro-1-p32off;${CMAKE_SOURCE_DIR}/patches/spyro-1-p32cast" S1_DIR)
 spyro_prepare(PsyCross "${CMAKE_SOURCE_DIR}/third_party/PsyCross"
               "${CMAKE_SOURCE_DIR}/patches/PsyCross" PSYCROSS_DIR)
 
@@ -121,6 +122,20 @@ elseif(SPYRO_HOST STREQUAL "linux64")
   set(SPYRO_ARCH_FLAGS --target=x86_64-linux-gnu -fms-extensions)
   set(SPYRO_OPT_FLAGS -O1 -g -Wno-error=implicit-function-declaration -Wno-error=implicit-int
       -Wno-error=incompatible-function-pointer-types -Wno-error=return-type)
+elseif(SPYRO_HOST STREQUAL "linuxa64")
+  # linux64's flags for aarch64 (D250 O3): no __ptr32, the offset model
+  # (src/compat/p32.h). Two slot spellings are two unions of one layout, so
+  # an incompatible-pointer warning between them is harmless (D258).
+  set(SPYRO_ARCH_FLAGS --target=aarch64-linux-gnu)
+  # the checking build (src/compat/p32.h): every encode of a host pointer
+  # stops; in the arch flags so that the overlays' preprocessing has it too
+  option(SPYRO_P32_CHECK "linuxa64: stop at a host pointer stored as a game address" OFF)
+  if(SPYRO_P32_CHECK)
+    list(APPEND SPYRO_ARCH_FLAGS -DSPYRO_P32_CHECK=1)
+  endif()
+  set(SPYRO_OPT_FLAGS -O1 -g -Wno-error=implicit-function-declaration -Wno-error=implicit-int
+      -Wno-error=incompatible-function-pointer-types -Wno-error=return-type
+      -Wno-error=incompatible-pointer-types)
 else()
   set(SPYRO_ARCH_FLAGS -m32)
   set(SPYRO_OPT_FLAGS -O1 -g)
@@ -132,6 +147,15 @@ endif()
 # whole image is low (D174); -m32 -no-pie on linux32.
 if(SPYRO_HOST STREQUAL "linux64")
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static) # static: non-PIE (objects -fno-pic)
+  set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
+elseif(SPYRO_HOST STREQUAL "linuxa64")
+  # linuxa64 (D250 O3): static and non-PIE, but above 4 GB, as macOS arm64
+  # places its image, so a pointer cut to 32 bits points at nothing
+  # (low_image.c reserves the rest of the low 4 GB). The P32 base is the
+  # image's start, and not 4 GB-aligned (macOS slides its image), so a
+  # pointer cut to 32 bits isn't its offset either: a missed P32_ENC shows.
+  set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static -Wl,-Ttext-segment=0x201230000
+      -Wl,--defsym=spyro_p32_base=__executable_start)
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
 elseif(SPYRO_HOST STREQUAL "pc")
   # dynamic (SDL loads the system's display, GL and sound libraries) and
@@ -164,7 +188,7 @@ endif()
 # block from the heap (D106). The Vita's default since D106's hardware run
 # (-DSPYRO_NATIVE_MEM=OFF: the moved arena); linux32's stays the arena build,
 # the oracle replay's.
-if(SPYRO_HOST MATCHES "^(vita|linux64|ps4|pc)$")
+if(SPYRO_HOST MATCHES "^(vita|linux64|linuxa64|ps4|pc)$")
   set(native_mem_default ON)
 else()
   set(native_mem_default OFF)
@@ -217,7 +241,7 @@ endif()
 # .bss arrays in the executable, which must lie below 2 GB (the decomp's
 # (int) casts sign-extend); a start-up check refuses to run otherwise.
 # linux64 (D174), the PS4 (D193) and the PC (D2xx).
-if(SPYRO_HOST MATCHES "^(linux64|ps4|pc)$")
+if(SPYRO_HOST MATCHES "^(linux64|linuxa64|ps4|pc)$")
   if(NOT SPYRO_NATIVE_MEM)
     message(FATAL_ERROR "${SPYRO_HOST} needs SPYRO_NATIVE_MEM=ON (the low image, D174)")
   endif()

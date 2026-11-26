@@ -9,8 +9,21 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
-  "last_good": "e744b314d32ffa9b560934782ee4e6cfa8452b48",
+  "workers": [
+    {
+      "issue": 244,
+      "branch": "feat/244-wobble-fix-the-vita-s-placement-gates",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-244",
+      "pids": [],
+      "started_at": "2026-11-26T07:20:00Z",
+      "files": [
+        "src/platform/common/vcache.c"
+      ],
+      "agent": "ace9979ee61066b15",
+      "last_commit_at": "2026-11-26T07:20:00Z"
+    }
+  ],
+  "last_good": "44f7fc1d34a09e57288f3be5ced7d6c22d831325",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -250,7 +263,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "268": 1,
     "269": 1,
     "259": 1,
-    "270": 1
+    "270": 1,
+    "244": 1,
+    "232": 1,
+    "274": 1
   },
   "blocked": [],
   "issues_filed": {
@@ -268,21 +284,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": {
-    "asked_at": "2026-11-26T07:10:00Z",
+    "target": "vita",
+    "since": "2026-11-26T09:12:00Z",
+    "commit": "ded47d3",
+    "step": "run",
+    "vpk": "runtime/autopilot/artifacts/vita/ded47d3.vpk",
+    "sha1": "8dea8f5d542b",
+    "script": "runtime/autopilot/hw-session9.sh",
     "issues": [
       261,
-      259
+      259,
+      232,
+      274
     ],
-    "builds": [
-      "runtime/autopilot/artifacts/vita/20d3514.vpk (#261 MAX 400)",
-      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-base-476b5fa.vpk",
-      "runtime/autopilot/runs/vita/issue-259-A/spyro-vita-259-fix2.vpk"
-    ],
-    "routes": [
-      "#261: Toasty real time at draw_distance=400 dd_budget=auto vs D252 ap19t; Stone Hill + Artisans play at 400 shot_every=0 vs D252 ap19a",
-      "#259: runs/vita/issue-259-A/hw/hw-session-259.sh: Artisans base, fix, base, fix (ap20-art) and Toasty base, fix (ap20-toasty), plus fix with persp=0 subpixel=0 and vc_lazy_logic=2"
-    ],
-    "status": "waiting for the owner"
+    "status": "running; owner 2026-11-26: Yes, run it"
   },
   "job": null,
   "batch": null,

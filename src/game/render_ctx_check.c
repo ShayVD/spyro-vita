@@ -149,9 +149,9 @@ static int s_sec_pair0 = MAX_PAIRS; /* the sectors the presenter animated: s_pai
 
 static void pair(const void *lo, u32 len, const void *to) {
   if (s_npairs < MAX_PAIRS && len) {
-    s_pairs[s_npairs].lo = (u32)(uintptr_t)lo;
+    s_pairs[s_npairs].lo = (u32)(uintptr_t)P32_ENC(lo);
     s_pairs[s_npairs].len = len;
-    s_pairs[s_npairs].to = (u32)(uintptr_t)to;
+    s_pairs[s_npairs].to = (u32)(uintptr_t)P32_ENC(to);
     s_npairs++;
   }
 }
@@ -181,7 +181,7 @@ static int sector_count(void) {
 }
 static u32 sector_anims(int i) {
   const u32 sec = MIPS_KUSEG(((const u32 *)P32_GET(g_Environment.m_SectorPointer))[i]);
-  return in_arena_ptr((const void *)(uintptr_t)(sec + 0x18u), 4) ? *(const u32 *)(uintptr_t)(sec + 0x18u) : 0;
+  return in_arena_ptr((const void *)P32_DEC((uintptr_t)(sec + 0x18u)), 4) ? *(const u32 *)P32_DEC((uintptr_t)(sec + 0x18u)) : 0;
 }
 
 /* The regions the mirror stands in for (moved by s_delta), then the
@@ -193,9 +193,9 @@ static void set_pairs(void) {
   s_delta = (u32)(m - g_psx_arena_base);
   s_buf_lo = s_buf_hi = 0;
   if (in_arena_ptr(P32_GET(g_Buffers.m_LowerPolyBuffer), 1) && in_arena_ptr(P32_GET(g_Buffers.m_WorldOTStart), OT_BYTES)) {
-    s_buf_lo = (u32)(uintptr_t)P32_GET(g_Buffers.m_LowerPolyBuffer);
-    s_buf_hi = (u32)(uintptr_t)P32_GET(g_Buffers.m_WorldOTStart) + OT_BYTES;
-    pair((void *)(uintptr_t)s_buf_lo, s_buf_hi - s_buf_lo, (void *)(uintptr_t)(s_buf_lo + s_delta));
+    s_buf_lo = (u32)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_LowerPolyBuffer));
+    s_buf_hi = (u32)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_WorldOTStart)) + OT_BYTES;
+    pair((void *)P32_DEC((uintptr_t)s_buf_lo), s_buf_hi - s_buf_lo, (void *)P32_DEC((uintptr_t)(s_buf_lo + s_delta)));
   }
   if (P32_GET(g_LevelMobys) && in_arena_ptr(P32_GET(g_LevelMobys), 1)) {
     const u32 len = (u32)(count_mobys() + 1) * sizeof(Moby);
@@ -452,14 +452,14 @@ static void set_presenter(void) {
    * pointers relocated */
   (void)m;
   for (i = 0; i < (u32)s_mirror_pairs; i++)
-    memcpy((void *)(uintptr_t)s_pairs[i].to, (void *)(uintptr_t)s_pairs[i].lo, s_pairs[i].len);
+    memcpy((void *)P32_DEC((uintptr_t)s_pairs[i].to), (void *)P32_DEC((uintptr_t)s_pairs[i].lo), s_pairs[i].len);
   /* and the word past the particle space: the -1 loaders.c puts in a 257th
    * slot, where the particles' walk stops when all 256 are in use (D136) */
   if (in_arena_ptr(P32_GET(g_Buffers.m_ParticleSpaceStart), PARTICLE_SPACE + 4))
     memcpy((char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + PARTICLE_SPACE + s_delta,
            (char *)P32_GET(g_Buffers.m_ParticleSpaceStart) + PARTICLE_SPACE, 4);
   if (s_buf_hi) {
-    u32 *ot = (u32 *)(uintptr_t)((u32)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) + s_delta);
+    u32 *ot = (u32 *)P32_DEC((uintptr_t)((u32)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_HudOTStart)) + s_delta));
     for (i = 0; i < (8 + OT_BYTES) / 4; i++)
       ot[i] = reloc(ot[i]);
   }
@@ -522,7 +522,7 @@ static void set_presenter(void) {
     memcpy(s_lod_pres + i, &w, 4);
   }
   pres_lod_state_set(s_lod_pres);
-  P32_SET(g_pres_level_mobys, P32_GET(g_LevelMobys) ? (Moby *)(uintptr_t)reloc((u32)(uintptr_t)P32_GET(g_LevelMobys)) : NULL);
+  P32_SET(g_pres_level_mobys, P32_GET(g_LevelMobys) ? (Moby *)P32_DEC((uintptr_t)reloc((u32)(uintptr_t)P32_ENC(P32_GET(g_LevelMobys)))) : NULL);
 }
 
 static void compare(int k, u32 rp, u32 rg) {
@@ -551,7 +551,7 @@ static void compare(int k, u32 rp, u32 rg) {
     bad(k, "buffer full", 0, *(u32 *)L_FULL, *(u32 *)g_pres_prim_full);
   for (i = 0; i < (u32)s_mirror_pairs; i++) {
     const Pair *q = &s_pairs[i];
-    const u32 *mp = (const u32 *)(uintptr_t)q->to, *ap = (const u32 *)(uintptr_t)q->lo, n4 = q->len / 4;
+    const u32 *mp = (const u32 *)P32_DEC((uintptr_t)q->to), *ap = (const u32 *)P32_DEC((uintptr_t)q->lo), n4 = q->len / 4;
     u32 j;
     for (j = 0; j < n4; j++)
       if (mp[j] != ap[j] && !same_word(mp[j], ap[j]))
@@ -576,8 +576,8 @@ static void compare(int k, u32 rp, u32 rg) {
       bad(k, "sector animations", (u32)l * 4u, sector_anims(l), g_pres_sec_anims[l]);
   /* each animated copy against the sector the game animated */
   for (l = 0; s_env_call && l < g_pres_nsectors; l++)
-    cmp_words(k, "animated sector", (const void *)(uintptr_t)g_pres_sectors[l].copy,
-              (const void *)(uintptr_t)g_pres_sectors[l].sec, g_pres_sectors[l].len & ~3u);
+    cmp_words(k, "animated sector", (const void *)P32_DEC((uintptr_t)g_pres_sectors[l].copy),
+              (const void *)P32_DEC((uintptr_t)g_pres_sectors[l].sec), g_pres_sectors[l].len & ~3u);
   if (g_pres_sector_misses + g_pres_face_misses != s_misses)
     bad(k, "sectors or faces with no room", 0, s_misses, g_pres_sector_misses + g_pres_face_misses);
   pres_lod_state_get(s_lod_pres);
@@ -624,8 +624,8 @@ u32 render_ctx_check(const char *name, RenderCtxFn logic, RenderCtxFn pres, u32 
     int i;
     s_sec_pair0 = s_npairs;
     for (i = 0; i < g_pres_nsectors && s_env_call; i++)
-      pair((void *)(uintptr_t)g_pres_sectors[i].sec, g_pres_sectors[i].len,
-           (void *)(uintptr_t)g_pres_sectors[i].copy);
+      pair((void *)P32_DEC((uintptr_t)g_pres_sectors[i].sec), g_pres_sectors[i].len,
+           (void *)P32_DEC((uintptr_t)g_pres_sectors[i].copy));
   }
   compare(k, rp, rg);
   s_in = 0;

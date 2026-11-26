@@ -30,20 +30,20 @@
 /* the presenter builds' entries (render_hand.h HAND_RENDERER) */
 #ifndef RENDER_CTX_FN
 #define RENDER_CTX_FN
-typedef u32 (*RenderCtxFn)(u32, u32, u32, u32);
+typedef u32 (*RenderCtxFn)(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T);
 #endif
-u32 func_800258F0_pres(u32, u32, u32, u32); /* the environment */
-u32 func_8001F798_pres(u32, u32, u32, u32); /* the mobys */
-u32 func_80022A2C_pres(u32, u32, u32, u32); /* the lit mobys */
-u32 func_80020F34_pres(u32, u32, u32, u32); /* the specular mobys */
-u32 func_8004EBA8_pres(u32, u32, u32, u32); /* the sky */
-u32 func_80023AC4_pres(u32, u32, u32, u32); /* Spyro */
-u32 func_80059A48_pres(u32, u32, u32, u32); /* Spyro's shadow */
-u32 func_80059F8C_pres(u32, u32, u32, u32); /* the mobys' shadows */
-u32 func_80058D64_pres(u32, u32, u32, u32); /* the flame */
-u32 func_800573C8_pres(u32, u32, u32, u32); /* the particles */
-u32 func_80058BA8_pres(u32, u32, u32, u32); /* the glows and sparkles */
-u32 func_80058864_pres(u32, u32, u32, u32); /* the dragon rescue's ring */
+u32 func_800258F0_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the environment */
+u32 func_8001F798_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the mobys */
+u32 func_80022A2C_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the lit mobys */
+u32 func_80020F34_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the specular mobys */
+u32 func_8004EBA8_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the sky */
+u32 func_80023AC4_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* Spyro */
+u32 func_80059A48_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* Spyro's shadow */
+u32 func_80059F8C_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the mobys' shadows */
+u32 func_80058D64_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the flame */
+u32 func_800573C8_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the particles */
+u32 func_80058BA8_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the glows and sparkles */
+u32 func_80058864_pres(P32_ARG_T, P32_ARG_T, P32_ARG_T, P32_ARG_T); /* the dragon rescue's ring */
 
 /* ---- the presenter's state (render_ctx_names.h maps the game's names) ---- */
 /* the control registers (CP2C); the data half is a view the shared

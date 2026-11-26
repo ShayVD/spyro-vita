@@ -281,7 +281,7 @@ static u_int *Animate(Moby *m, int speedDiv, u_int *queue) {
   }
   /* The asm stores the moby in the queue's next slot before it knows
    * whether the frame has a sound. */
-  queue[1] = (u_int)(uintptr_t)m;
+  queue[1] = (u_int)(uintptr_t)P32_ENC(m);
   sound = (signed char)(anim->m_Frames[frame].m.m_Data >> 24);
   if (sound >= 0) {
     queue[0] = model->m_Sounds[sound];
@@ -297,7 +297,7 @@ static void AnimateList(P32F(Moby *) *list, int speedDiv) {
     queue = Animate(m, speedDiv, queue);
   /* The frames' sounds, from each moby. */
   for (q = SOUND_QUEUE; q != queue; q += 2) {
-    Moby *from = (Moby *)(uintptr_t)q[1];
+    Moby *from = (Moby *)P32_DEC((uintptr_t)q[1]);
     PlaySound(q[0], from, 8, &from->m_SoundChannel);
   }
 }

@@ -1,0 +1,1075 @@
+--- a/include/common.h
++++ b/include/common.h
+@@ -22,7 +22,7 @@
+ 
+ /* clang-format on */
+ 
+-#define OFFSET(type, field) ((u_int) & (((type *)0)->field))
++#define OFFSET(type, field) ((u_int) P32_ENC(& (((type *)0)->field)))
+ 
+ // Different from setUVWH, that one calculates the UVs based on the input
+ // this one reuses them (i.e. u3=u1, v3=v2)
+--- a/src/4BEF8.c
++++ b/src/4BEF8.c
+@@ -62,7 +62,7 @@
+   P32_SET(g_Buffers.m_SharedAnimations ,
+       (void *)(PSX_ADDR(0x80200000) - peteData->m_DataSize - _stacksize));
+ 
+-  Memcpy(P32_GET(g_Buffers.m_SharedAnimations), (void *)((int)peteData + 0x800),
++  Memcpy(P32_GET(g_Buffers.m_SharedAnimations), (void *)P32_DEC(((int)P32_ENC(peteData) + 0x800)),
+          peteData->m_DataSize);
+ 
+   for (i = 0; i < 64; i++) {
+--- a/src/gamestates/draw.c
++++ b/src/gamestates/draw.c
+@@ -351,7 +351,7 @@
+     spacing.z = 5120;
+     func_pal_8001BD5C(text, &pos, &spacing, 18, 11);
+     mobys--;
+-    for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++    for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+       mobys->m_Rotation.z =
+           COSINE_8((g_DragonCutscene.unk_0x50 * 2 + i * 12) & 0xFF) >> 7;
+       mobys--;
+@@ -381,7 +381,7 @@
+   pos.z = 3072;
+   func_80017FE4(name, &pos, 26, 2);
+   mobys--;
+-  for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++  for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+     mobys->m_Rotation.z =
+         COSINE_8((g_DragonCutscene.unk_0x50 * 2 + i * 12) & 0xFF) >> 7;
+     mobys--;
+@@ -447,7 +447,7 @@
+ #endif
+   }
+   mobys--;
+-  for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++  for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+     mobys->m_Rotation.z = COSINE_8((g_LevelTicks * 4 + i * 12) & 0xFF) >> 7;
+     mobys--;
+   }
+@@ -744,7 +744,7 @@
+         }
+ #endif
+         mobys--;
+-        for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++        for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+           mobys->m_Rotation.z =
+               COSINE_8(g_Hud.m_GemSteadyTicks * 4 + (i * 12) & 0xFF) >> 7;
+           P32_SET(*shaded_mobys++ , mobys);
+@@ -879,7 +879,7 @@
+     mobys = P32_GET(g_HudMobys);
+     func_pal_8001BD5C(textbuffer, &vec1, &vec2, 16, 11);
+     mobys--;
+-    for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++    for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+       mobys->m_Rotation.z =
+           COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+       mobys--;
+@@ -929,7 +929,7 @@
+       }
+       mobys--;
+       vec1.y -= 2;
+-      for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++      for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+         mobys->m_Rotation.z =
+             COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+         mobys--;
+@@ -979,7 +979,7 @@
+       mobys = P32_GET(g_HudMobys);
+       func_pal_8001BD5C(textbuffer, &vec1, nullptr, 20, 11);
+       mobys--;
+-      for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++      for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+         mobys->m_Rotation.z =
+             COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+         mobys--;
+@@ -1076,7 +1076,7 @@
+   mobys = P32_GET(g_HudMobys);
+   func_800181AC(textbuffer, &vec1, &vec2, 18, 2);
+   mobys--;
+-  for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++  for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+     mobys->m_Rotation.z = COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+     mobys--;
+   }
+@@ -1118,7 +1118,7 @@
+     mobys = P32_GET(g_HudMobys);
+     func_800181AC(textbuffer, &vec1, &vec2, 18, 2);
+     mobys--;
+-    for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++    for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+       mobys->m_Rotation.z =
+           COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+       mobys--;
+@@ -1167,7 +1167,7 @@
+     mobys = P32_GET(g_HudMobys);
+     func_80017FE4(textbuffer, &vec1, 20, 2);
+     mobys--;
+-    for (i = 0; (int)P32_GET(g_HudMobys) <= (int)mobys; i++) {
++    for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(mobys); i++) {
+       mobys->m_Rotation.z =
+           COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7;
+       mobys--;
+@@ -2046,7 +2046,7 @@
+             P32_GET(PAL_DATA(g_PalHomeworldNames, 0x800753F0)[g_Language * 6 + D_80075744]),
+             &position, &nameSpacing, 21, 11);
+         endMoby--;
+-        for (i = 0; (int)P32_GET(g_HudMobys) <= (int)endMoby; i++) {
++        for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(endMoby); i++) {
+           endMoby->m_Rotation.z =
+               COSINE_8((D_800758B8 * 8 + i * 12) & 0xFF) >> 7;
+           endMoby--;
+@@ -2149,7 +2149,7 @@
+             if (D_80075744 * 6 + i == g_LevelIndex) {
+               int j;
+               endMoby--;
+-              for (j = 0; (int)endMoby >= (int)P32_GET(g_HudMobys); ++j) {
++              for (j = 0; (int)P32_ENC(endMoby) >= (int)P32_ENC(P32_GET(g_HudMobys)); ++j) {
+                 endMoby->m_Rotation.z =
+                     (COSINE_8((D_800758B8 * 8 + j * 12) & 0xFF) * 3) >> 9;
+                 endMoby--;
+@@ -2699,7 +2699,7 @@
+           if (D_80075744 * 6 + i == g_LevelIndex) {
+             int j;
+             endMoby--;
+-            for (j = 0; (int)endMoby >= (int)P32_GET(g_HudMobys); ++j) {
++            for (j = 0; (int)P32_ENC(endMoby) >= (int)P32_ENC(P32_GET(g_HudMobys)); ++j) {
+               endMoby->m_Rotation.z =
+                   (COSINE_8((D_800758B8 * 8 + j * 12) & 0xFF) * 3) >> 9;
+               endMoby--;
+@@ -2995,7 +2995,7 @@
+               P32_GET(PAL_DATA(g_PalPressStartText, 0x80074D24)[g_Language]),
+               &position, &spacing, 18, 11);
+           curMoby--;
+-          for (i = 0; (int)curMoby >= (int)P32_GET(g_HudMobys); ++i) {
++          for (i = 0; (int)P32_ENC(curMoby) >= (int)P32_ENC(P32_GET(g_HudMobys)); ++i) {
+             curMoby->m_Rotation.z =
+                 COSINE_8((g_GameOverTicks * 4 + i * 12) & 0xFF) * 3 >> 9;
+             curMoby--;
+@@ -4051,7 +4051,7 @@
+       }
+ 
+       rotOff = 0;
+-      while ((int)(--curMoby) >= (int)P32_GET(g_HudMobys)) {
++      while ((int)P32_ENC((--curMoby)) >= (int)P32_ENC(P32_GET(g_HudMobys))) {
+         curMoby->m_Rotation.z =
+             COSINE_8(((D_800777E8.unk_0x04 * 2) + rotOff) & 0xFF) >> 7;
+         rotOff += 12;
+@@ -4231,7 +4231,7 @@
+     }
+ 
+     i = 0;
+-    while ((int)(--curMoby) >= (int)P32_GET(g_HudMobys)) {
++    while ((int)P32_ENC((--curMoby)) >= (int)P32_ENC(P32_GET(g_HudMobys))) {
+       int l = g_TitlescreenState.m_Tick - 140 - i;
+ 
+       if (l < 56) {
+@@ -4342,7 +4342,7 @@
+     func_pal_8001BD5C(P32_GET(PAL_DATA(g_PalReturningHomeText, 0x80074D9C)[g_Language]),
+                       &position, &spacing, 18, 11);
+     curMoby--;
+-    for (rotOff = 0; (int)P32_GET(g_HudMobys) <= (int)curMoby; rotOff++) {
++    for (rotOff = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(curMoby); rotOff++) {
+       curMoby->m_Rotation.z =
+           COSINE_8(((g_CreditsTimer * 2) + rotOff * 12) & 0xFF) >> 7;
+       curMoby--;
+@@ -4369,7 +4369,7 @@
+     rotOff = 0;
+ 
+     // Wtf are these int casts?
+-    while ((int)(--curMoby) >= (int)P32_GET(g_HudMobys)) {
++    while ((int)P32_ENC((--curMoby)) >= (int)P32_ENC(P32_GET(g_HudMobys))) {
+       curMoby->m_Rotation.z =
+           COSINE_8(((g_CreditsTimer * 2) + rotOff) & 0xFF) >> 7;
+       rotOff += 12;
+--- a/src/gamestates/init.c
++++ b/src/gamestates/init.c
+@@ -97,7 +97,7 @@
+   // Restores the VRAM that it overwrote for the background
+   // PAL: its 256 lines (D139)
+   setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
+-  LoadImage(&rect, (u_long *)((int)P32_GET(g_Buffers.m_HudOTStart) - RV(115200, 0x20200, 115200)));
++  LoadImage(&rect, (u_long *)P32_DEC(((int)P32_ENC(P32_GET(g_Buffers.m_HudOTStart)) - RV(115200, 0x20200, 115200))));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+@@ -188,7 +188,7 @@
+   // Restores the VRAM that it overwrote for the background
+   // PAL: its 256 lines (D139)
+   setRECT(&rect, 512, 0, 256, RV(225, 257, 225));
+-  LoadImage(&rect, (u_long *)((int)P32_GET(g_Buffers.m_HudOTStart) - RV(115200, 0x20200, 115200)));
++  LoadImage(&rect, (u_long *)P32_DEC(((int)P32_ENC(P32_GET(g_Buffers.m_HudOTStart)) - RV(115200, 0x20200, 115200))));
+   DrawSync(0);
+ 
+   g_Gamestate = GS_Playing;
+--- a/src/gamestates/update.c
++++ b/src/gamestates/update.c
+@@ -789,7 +789,7 @@
+     P32_SET(g_Cyclorama.m_Sectors , (void *)pSkyData);
+     for (sectorIndex = 0; sectorIndex < g_Cyclorama.m_SectorCount;
+          sectorIndex++) {
+-      *(int *)pSkyData = (int)pSkyBase + *(int *)pSkyData;
++      *(int *)pSkyData = (int)P32_ENC(pSkyBase) + *(int *)pSkyData;
+       pSkyData += 4;
+     }
+ 
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -229,7 +229,7 @@
+   // Necessary for match. Doesn't emit any assembly.
+   // Could there have been an alignment macro here?
+   // alternatively, use pData++, pData--;
+-  pData = (char *)(((int)pData + 3) & ~3);
++  pData = (char *)P32_DEC((((int)P32_ENC(pData) + 3) & ~3));
+ 
+   COMPONENT_END(pData); //! Sound table
+ 
+@@ -250,9 +250,9 @@
+ 
+   // This got added after July, it sets all level animations to null
+   for (j = 0; j < 46 /*?*/; ++j) {
+-    if ((u_int)P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[j]) <
+-            (u_int)P32_GET(g_Buffers.m_SharedAnimations) ||
+-        (int)P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[j]) == -1) {
++    if ((u_int)P32_ENC(P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[j])) <
++            (u_int)P32_ENC(P32_GET(g_Buffers.m_SharedAnimations)) ||
++        (int)P32_ENC(P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[j])) == -1) {
+       P32_SET(P32_GET(SPYRO_MODEL)->m_Animations[j] , nullptr);
+     }
+   }
+@@ -278,7 +278,7 @@
+     frame_data_size = P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_NumFrames *
+                       sizeof(SpyroAnimationFrame);
+     past_frame_data =
+-        (int)((AnimationHeader *)data)->m_Frames + frame_data_size;
++        (int)P32_ENC(((AnimationHeader *)data)->m_Frames) + frame_data_size;
+ 
+     P32_PATCH(
+         P32_GET(P32_GET(SPYRO_MODEL)->m_Animations[animation_index])->m_AnimationVertices,
+@@ -315,9 +315,9 @@
+ #if SPYRO_NATIVE_MEM
+     // Spyro port (D100): the tag is bit 0, which a model's address never
+     // has (psx_mem.h MEM_MODEL_SIMPLE), not bit 31
+-    if ((u_int)pModel & 3)
++    if ((u_int)P32_ENC(pModel) & 3)
+       PortFatal("SimpleModel %p not word-aligned", (void *)pModel);
+-    return (Model *)((u_int)pModel | 1);
++    return (Model *)P32_DEC(((u_int)P32_ENC(pModel) | 1));
+ #else
+     return (Model *)((u_int)pModel & 0x7FFFFFFF); // Unset the top bit to
+                                                   // indicate it's a SimpleModel
+@@ -333,11 +333,11 @@
+       // Spyro port (D100): the offset's top bit becomes the pointer's bit 0
+       // (psx_mem.h MEM_COLL_TAGGED), so the arena may sit below 2 GB
+       {
+-        u_int off = (u_int)P32_GET(m->m_CollisionModels[i]);
+-        u_int at = (u_int)m + (off & 0x7FFFFFFF);
++        u_int off = (u_int)P32_ENC(P32_GET(m->m_CollisionModels[i]));
++        u_int at = (u_int)P32_ENC(m) + (off & 0x7FFFFFFF);
+         if (at & 3)
+           PortFatal("collision model %08x not word-aligned", at);
+-        P32_SET(m->m_CollisionModels[i] , (void *)(at | off >> 31));
++        P32_SET(m->m_CollisionModels[i] , (void *)P32_DEC((at | off >> 31)));
+       }
+ #else
+       PATCH_POINTER(m->m_CollisionModels[i], (u_int)m & 0x7FFFFFFF);
+@@ -348,7 +348,7 @@
+   P32_PATCH(m->m_Data, pModel);
+ 
+   for (i = 0; i < m->m_NumAnimations; ++i) {
+-    if ((int)P32_GET(m->m_Animations[i]) == -1) {
++    if ((int)P32_ENC(P32_GET(m->m_Animations[i])) == -1) {
+       continue;
+     }
+ 
+@@ -368,7 +368,7 @@
+       for (k = 0; k < P32_GET(m->m_Animations[i])->m_NumFrames; ++k, ++p) {
+         lower = *p & 0x1fffff;
+         *p = *p & 0xffe00000;
+-        lower = ((int)(lower + (u_int)P32_GET(m->m_Data)) >> 1) & 0x1fffff;
++        lower = ((int)(lower + (u_int)P32_ENC(P32_GET(m->m_Data))) >> 1) & 0x1fffff;
+         *p = *p + lower;
+       }
+     } else {
+@@ -380,13 +380,13 @@
+ #if SPYRO_NATIVE_MEM
+         // Spyro port (D100): the address's low 21 bits (psx_mem.h
+         // MEM_ANIM21); with the arena not 2 MB-aligned the sum may carry
+-        *p = (*p & 0xffe00000) | ((*p + (u_int)P32_GET(m->m_Data)) & 0x1fffff);
++        *p = (*p & 0xffe00000) | ((*p + (u_int)P32_ENC(P32_GET(m->m_Data))) & 0x1fffff);
+ #else
+         *p += (u_int)m->m_Data & 0x1fffff;
+ #endif
+         ++p;
+         if ((*p & 0xffff) != 0) {
+-          *p += (((int)P32_GET(m->m_Data) - (int)p + 4) >> 2) & 0xffff;
++          *p += (((int)P32_ENC(P32_GET(m->m_Data)) - (int)P32_ENC(p) + 4) >> 2) & 0xffff;
+         }
+       }
+     }
+@@ -672,7 +672,7 @@
+   *(data - 1) = 0xFF; // Terminate the props
+ 
+   g_DynMobyMax =
+-      ((u_int)P32_GET(g_DynMobySpaceEnd) - (u_int)P32_GET(g_DynMobys)) /
++      ((u_int)P32_ENC(P32_GET(g_DynMobySpaceEnd)) - (u_int)P32_ENC(P32_GET(g_DynMobys))) /
+       (sizeof(Moby) + 24 /* Every dynamic Moby gets 24 bytes of props space */);
+ 
+   data = data + *(int *)data; // Skip past the Moby props data
+@@ -1057,7 +1057,7 @@
+     // Compute space of the original model buffer
+     // (up to Moby class 250, the Crystal Dragon, which is always the last one)
+ #if SPYRO_NATIVE_MEM
+-    modelSpaceLeft = (int)MEM_MODEL_PTR(P32_GET(g_Models[250])) - (int)P32_GET(g_Buffers.m_ModelData); // D100
++    modelSpaceLeft = (int)MEM_MODEL_PTR(P32_GET(g_Models[250])) - (int)P32_ENC(P32_GET(g_Buffers.m_ModelData)); // D100
+ #else
+     modelSpaceLeft = (int)g_Models[250] - (int)g_Buffers.m_ModelData;
+ #endif
+@@ -1121,8 +1121,8 @@
+       // First load SPU data into SPU RAM, synchronously...
+       SpuSetTransferStartAddr(0x80000 -
+                               g_DragonCutscene.m_Header.m_SpuData.m_Length);
+-      SpuWrite((void *)((int)P32_GET(g_Buffers.m_ModelData) +
+-                        g_DragonCutscene.m_Header.m_SpuData.m_Offset),
++      SpuWrite((void *)P32_DEC(((int)P32_ENC(P32_GET(g_Buffers.m_ModelData)) +
++                        g_DragonCutscene.m_Header.m_SpuData.m_Offset)),
+                g_DragonCutscene.m_Header.m_SpuData.m_Length);
+ 
+       while (!SpuIsTransferCompleted(0))
+@@ -1396,7 +1396,7 @@
+ 
+       // Patch the cyclorama sector pointer into their new place
+       for (j = 0; j < g_Cyclorama.m_SectorCount; ++j) {
+-        *dest++ = (int)pointerOffsetNew + *dest - (int)pointerOffsetOld;
++        *dest++ = (int)P32_ENC(pointerOffsetNew) + *dest - (int)P32_ENC(pointerOffsetOld);
+       }
+ 
+     } else {
+@@ -1417,7 +1417,7 @@
+ 
+       // Patch the cyclorama sector pointer into their new place
+       for (j = 0; j < g_Cyclorama.m_SectorCount; ++j) {
+-        *dest++ = (int)pointerOffsetNew + *dest - (int)pointerOffsetOld;
++        *dest++ = (int)P32_ENC(pointerOffsetNew) + *dest - (int)P32_ENC(pointerOffsetOld);
+       }
+     }
+ 
+--- a/src/moby_helpers.c
++++ b/src/moby_helpers.c
+@@ -1554,7 +1554,7 @@
+     }
+   }
+ 
+-  weights = (short *)((u_int)(pIndex << 2) + (u_int)table);
++  weights = (short *)P32_DEC(((u_int)(pIndex << 2) + (u_int)P32_ENC(table)));
+ 
+   VecMult(&vec1, pVec1, weights[0]);
+   VecMult(&vec2, pVec2, weights[1]);
+@@ -2570,7 +2570,7 @@
+       particleParams[0] = rand() & 3;
+       particleParams[1] = rand() & 3;
+       particleParams[2] = 0x14;
+-      (*g_SpawnParticle)(1, 1, &pMoby->m_Position, (int)particleParams);
++      (*g_SpawnParticle)(1, 1, &pMoby->m_Position, (int)P32_ENC(particleParams));
+     }
+   } else {
+     // Fragment finished - spawn end particles and deactivate
+--- a/src/overlays/balloonist.c
++++ b/src/overlays/balloonist.c
+@@ -616,10 +616,10 @@
+       Memcpy(&g_SonyImage.m_WorldFarQueued[106], P32_GET(D_800777E8.m_BalloonMoby),
+              0x58);
+       P32_SET(D_800777E8.m_BalloonMoby , (Moby *)&g_SonyImage.m_WorldFarQueued[106]);
+-      if ((u_int)P32_GET(g_Buffers.m_LowerPolyBuffer) < PSX_ADDR(0x80200000)) {
+-        dataBuffer = (int *)((int)P32_GET(g_Cyclorama.m_Sectors) - 0x400c);
++      if ((u_int)P32_ENC(P32_GET(g_Buffers.m_LowerPolyBuffer)) < PSX_ADDR(0x80200000)) {
++        dataBuffer = (int *)P32_DEC(((int)P32_ENC(P32_GET(g_Cyclorama.m_Sectors)) - 0x400c));
+       } else {
+-        dataBuffer = (int *)0x801FE000;
++        dataBuffer = (int *)P32_DEC(0x801FE000);
+       }
+ #if SPYRO_NATIVE_MEM
+       // Spyro port (D100): the model's address with the tag bit cleared
+@@ -627,15 +627,15 @@
+       ptrDiff = ((int)dataBuffer - (int)MEM_MODEL_PTR(g_Models[416]));
+ #else
+       Memcpy(dataBuffer, P32_GET(g_Models[416]), 0x4000);
+-      ptrDiff = ((int)dataBuffer - (int)P32_GET(g_Models[416]));
++      ptrDiff = ((int)P32_ENC(dataBuffer) - (int)P32_ENC(P32_GET(g_Models[416])));
+ #endif
+       P32_SET(g_Models[416] , (Model *)dataBuffer);
+       P32_SET(P32_GET(g_Models[416])->m_Animations[0] ,
+-          (AnimationHeader *)((int)P32_GET(P32_GET(g_Models[416])->m_Animations[0]) + ptrDiff));
++          (AnimationHeader *)P32_DEC(((int)P32_ENC(P32_GET(P32_GET(g_Models[416])->m_Animations[0])) + ptrDiff)));
+       P32_SET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Faces ,
+-          (void *)((int)P32_GET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Faces) + ptrDiff));
++          (void *)P32_DEC(((int)P32_ENC(P32_GET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Faces)) + ptrDiff)));
+       P32_SET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Colors ,
+-          (void *)((int)P32_GET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Colors) + ptrDiff));
++          (void *)P32_DEC(((int)P32_ENC(P32_GET(P32_GET(P32_GET(g_Models[416])->m_Animations[0])->m_Colors)) + ptrDiff)));
+ #if SPYRO_NATIVE_MEM
+       // Spyro port (D100): the 21-bit frame pointer moves without carrying
+       // into the frame word's other fields (psx_mem.h MEM_ANIM21)
+@@ -815,7 +815,7 @@
+         vec2.z = 0x1400;
+         func_pal_8001BD5C(buffer, &vec1, &vec2, 0x12, 0xb);
+         hudmobyptr--;
+-        for (i = 0; (int)P32_GET(g_HudMobys) <= (int)hudmobyptr; i++) {
++        for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(hudmobyptr); i++) {
+           hudmobyptr->m_Rotation.z =
+               COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
+           hudmobyptr--;
+@@ -869,11 +869,11 @@
+             vec1.y += 18;
+           }
+           if (D_800777E8.unk_0x04 < 80) {
+-            if ((int)P32_GET(g_HudMobys) <= (int)(hudmobyptr - D_800777E8.unk_0x04))
++            if ((int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC((hudmobyptr - D_800777E8.unk_0x04)))
+               P32_SET(g_HudMobys , hudmobyptr - D_800777E8.unk_0x04);
+           }
+           hudmobyptr--;
+-          for (i = 0; (int)P32_GET(g_HudMobys) <= (int)hudmobyptr; i++) {
++          for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(hudmobyptr); i++) {
+             hudmobyptr->m_Rotation.z =
+                 COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
+             hudmobyptr--;
+@@ -1065,7 +1065,7 @@
+       vec2.z = 0x1400;
+       func_800181AC(buffer, &vec1, &vec2, 0x12, 0xb);
+       hudmobyptr--;
+-      for (i = 0; (int)P32_GET(g_HudMobys) <= (int)hudmobyptr; i++) {
++      for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(hudmobyptr); i++) {
+         hudmobyptr->m_Rotation.z =
+             COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
+         hudmobyptr--;
+@@ -1093,11 +1093,11 @@
+           vec1.y += 0x12;
+         }
+         if (D_800777E8.unk_0x04 < 80) {
+-          if ((int)P32_GET(g_HudMobys) <= (int)(hudmobyptr - D_800777E8.unk_0x04))
++          if ((int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC((hudmobyptr - D_800777E8.unk_0x04)))
+             P32_SET(g_HudMobys , hudmobyptr - D_800777E8.unk_0x04);
+         }
+         hudmobyptr--;
+-        for (i = 0; (int)P32_GET(g_HudMobys) <= (int)hudmobyptr; i++) {
++        for (i = 0; (int)P32_ENC(P32_GET(g_HudMobys)) <= (int)P32_ENC(hudmobyptr); i++) {
+           hudmobyptr->m_Rotation.z =
+               COSINE_8((D_800777E8.unk_0x04 * 4 + (i * 12) & 0xff)) >> 8;
+           hudmobyptr--;
+--- a/src/overlays/moby_update.c
++++ b/src/overlays/moby_update.c
+@@ -4650,7 +4650,7 @@
+             int *linkedProps = P32_GET(P32_GET(g_LevelMobys)[props->m_0x0c].m_Props);
+ 
+             if (linkedProps[1] == 1) {
+-              PathData *path = (PathData *)linkedProps[0];
++              PathData *path = (PathData *)P32_DEC(linkedProps[0]);
+               int angle = ANGLE_FROM(moby->m_Position, PATH_CUR_POS(path));
+               MobyRotateToAngle(moby, angle, 4, 8, 1);
+             }
+@@ -4886,7 +4886,7 @@
+           VecCopy(&particlePosition, &particleVelocity);
+           VecShiftLeft(&particlePosition, 2);
+           VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++          g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+         }
+         MobyFree(moby);
+         continue;
+@@ -5068,7 +5068,7 @@
+           for (i = 0; i < 5; i++) {
+             particleVelocity.x += (rand() & 0xF) - 8;
+             particleVelocity.y += (rand() & 0xF) - 8;
+-            g_SpawnParticle(1, 74, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 74, &particlePosition, (int)P32_ENC(&particleVelocity));
+           }
+         }
+ 
+@@ -5140,7 +5140,7 @@
+ #if SPYRO_NATIVE_MEM
+           if (!MEM_COLL_TAGGED(candidate->m_CollisionGroup)) { // D100
+ #else
+-          if ((int)P32_GET(candidate->m_CollisionGroup) >= 0) {
++          if ((int)P32_ENC(P32_GET(candidate->m_CollisionGroup)) >= 0) {
+ #endif
+             continue;
+           }
+@@ -7085,7 +7085,7 @@
+           particleVelocity.x = rand() & 3;
+           particleVelocity.y = rand() & 3;
+           particleVelocity.z = 20;
+-          g_SpawnParticle(1, 1, &moby->m_Position, (int)&particleVelocity);
++          g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&particleVelocity));
+         }
+         T60_TICK_END_DO(props->m_Lifetime--); // 60 Hz: a duration, at the tick's end (the m_Lifetime > 0 test then frees it on a tick's start, as the original)
+       } else {
+@@ -7176,7 +7176,7 @@
+             VecCopy(&particlePosition, &particleVelocity);
+             VecShiftLeft(&particlePosition, 2);
+             VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-            g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+           }
+ 
+           MobyPlaySound(moby, 0, 0);
+@@ -10467,7 +10467,7 @@
+         work.x = 0;
+         work.y = 0;
+         work.z = 0;
+-        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)&work)); // 60 Hz: the smoke trail, once a tick
++        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&work))); // 60 Hz: the smoke trail, once a tick
+         VecCopy(&work, &moby->m_Position);
+ 
+         moby->m_Position.x += T60_SHARE(props->m_0x00); // 60 Hz: shares of the tick's move
+@@ -10506,7 +10506,7 @@
+           VecCopy(&particlePosition, &particleVelocity);
+           VecShiftLeft(&particlePosition, 2);
+           VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++          g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+         }
+         g_SpawnParticle(10, 70, &moby->m_Position, 0x10);
+         MobyFree(moby);
+@@ -10621,7 +10621,7 @@
+                 particlePosition.y += RandRange(-400, 400);
+                 particlePosition.z += RandRange(-400, 400);
+                 g_SpawnParticle(1, 1, &particlePosition,
+-                                (int)&particleVelocity);
++                                (int)P32_ENC(&particleVelocity));
+               }
+ 
+               fragment->m_ScaleOverride = RandRange(0, 12) + 36;
+@@ -11702,7 +11702,7 @@
+         props->m_0x08 = AngleLerpClamped(ANGLE_FROM_SPYRO(moby->m_Position),
+                                          g_Spyro.m_bodyRotation.z, 0x20, 0x40);
+         moby->m_DamageFlags = 0;
+-        if (P32_GET(props->m_0x38) != 0 && P32_GET(props->m_0x38) != (Moby *)-1 &&
++        if (P32_GET(props->m_0x38) != 0 && P32_GET(props->m_0x38) != (Moby *)P32_DEC(-1) &&
+             P32_GET(props->m_0x38)->m_Class == 176 && P32_GET(props->m_0x38)->m_Substate == 0 &&
+             P32_GET(props->m_0x38)->m_State < 0x80) {
+           P32_GET(props->m_0x38)->m_Substate = 1;
+@@ -11822,7 +11822,7 @@
+             P32_GET(props->m_0x38)->m_UpdateDistance = 0xFF;
+           }
+         }
+-        if (P32_GET(props->m_0x38) != 0 && P32_GET(props->m_0x38) != (Moby *)-1 &&
++        if (P32_GET(props->m_0x38) != 0 && P32_GET(props->m_0x38) != (Moby *)P32_DEC(-1) &&
+             P32_GET(props->m_0x38)->m_Substate == 0) {
+           func_800529E4(moby, UPDATE_PROP_ROTMATRIX);
+           MobyGetAnimatedVertex(moby, 0, &P32_GET(props->m_0x38)->m_Position);
+@@ -11851,7 +11851,7 @@
+             childProps->m_0x0a = RT(0x8C, 0x75);
+             childProps->m_0x0c = ANGLE_FROM(moby->m_Position, target);
+             P32_GET(props->m_0x38)->m_Substate = 1;
+-            P32_SET(props->m_0x38 , (Moby *)-1);
++            P32_SET(props->m_0x38 , (Moby *)P32_DEC(-1));
+           }
+         }
+         if (g_AnimationFinished) {
+@@ -12045,7 +12045,7 @@
+             color.x = 128;
+             color.y = 112;
+             color.z = 64;
+-            g_SpawnParticle(1, 17, vec_particle, (int)&color);
++            g_SpawnParticle(1, 17, vec_particle, (int)P32_ENC(&color));
+           }
+         }
+       } else {
+@@ -12186,7 +12186,7 @@
+         }
+ 
+         VecNull(&velocity);
+-        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)&velocity)); // 60 Hz: the trail, once a tick
++        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&velocity))); // 60 Hz: the trail, once a tick
+         break;
+       }
+ 
+@@ -12201,7 +12201,7 @@
+           VecCopy(&position, &velocity);
+           VecShiftLeft(&position, 2);
+           VecAdd(&position, &position, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &position, (int)&velocity);
++          g_SpawnParticle(1, 13, &position, (int)P32_ENC(&velocity));
+         }
+ 
+         MobyFree(moby);
+@@ -12270,9 +12270,9 @@
+         velocity.x = 0;
+         velocity.y = 0;
+         velocity.z = RT(12, 15);
+-        g_SpawnParticle(1, 1, &moby->m_Position, (int)&velocity);
++        g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&velocity));
+         velocity.z = -RT(0x30, 0x39);
+-        g_SpawnParticle(4, 79, &moby->m_Position, (int)&velocity);
++        g_SpawnParticle(4, 79, &moby->m_Position, (int)P32_ENC(&velocity));
+         MobyFree(moby);
+         break;
+       }
+@@ -14175,7 +14175,7 @@
+         oldPosition.x = 0;
+         oldPosition.y = 0;
+         oldPosition.z = 0;
+-        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)&oldPosition)); // 60 Hz: smoke trail once a tick
++        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&oldPosition))); // 60 Hz: smoke trail once a tick
+         moby->m_Rotation.x += T60_SHARE8(props->m_0x0d); // 60 Hz: tumble, u_char holding +-7..15
+         moby->m_Rotation.y += T60_SHARE8(props->m_0x0e);
+         moby->m_Rotation.z += T60_SHARE8(props->m_0x0f);
+@@ -14217,7 +14217,7 @@
+           VecCopy(&particlePosition, &particleVelocity);
+           VecShiftLeft(&particlePosition, 2);
+           VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++          g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+         }
+         g_SpawnParticle(10, 70, &moby->m_Position, 0x10);
+         MobyFree(moby);
+@@ -16018,7 +16018,7 @@
+         // Only enable Moby collision radius once the delay has elapsed
+         mobyCollisionRadius = TICK_TIMER(props->m_MobyCollisionDelay) ? 300 : 0;
+ 
+-        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)&zeroVelocity)); // 60 Hz: trail particle once a tick
++        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&zeroVelocity))); // 60 Hz: trail particle once a tick
+ 
+         // Enter explosion state upon collision with Mobys/Environment, Spyro
+         // or expiration of lifetime
+@@ -16058,7 +16058,7 @@
+           VecCopy(&particlePosition, &particleVelocity);
+           VecShiftLeft(&particlePosition, 2);
+           VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++          g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+         }
+ 
+         g_SpawnParticle(10, 70, &moby->m_Position, 0x10);
+@@ -17094,12 +17094,12 @@
+             Vector3D particlePosition;
+ 
+             MobyGetAnimatedVertex(moby, 0, &particlePosition);
+-            T60_TICK_DO(g_SpawnParticle(1, 29, &particlePosition, (int)moby)); // 60 Hz: once a tick (g_GameTick & 1 holds for both vblanks)
++            T60_TICK_DO(g_SpawnParticle(1, 29, &particlePosition, (int)P32_ENC(moby))); // 60 Hz: once a tick (g_GameTick & 1 holds for both vblanks)
+           } else {
+             Vector3D particlePosition;
+ 
+             MobyGetAnimatedVertex(moby, 1, &particlePosition);
+-            T60_TICK_DO(g_SpawnParticle(1, 29, &particlePosition, (int)moby)); // 60 Hz: once a tick
++            T60_TICK_DO(g_SpawnParticle(1, 29, &particlePosition, (int)P32_ENC(moby))); // 60 Hz: once a tick
+           }
+         }
+ 
+@@ -17311,7 +17311,7 @@
+ #if SPYRO_NATIVE_MEM
+                 MEM_COLL_TAGGED(iter2->m_CollisionGroup)) { // D100
+ #else
+-                (int)P32_GET(iter2->m_CollisionGroup) < 0) {
++                (int)P32_ENC(P32_GET(iter2->m_CollisionGroup)) < 0) {
+ #endif
+               VecSub(&delta, &iter->m_Position, &moby->m_Position);
+               distance = ABS2(delta.x) + ABS2(delta.y);
+@@ -18738,7 +18738,7 @@
+         if (T60_TICK_AND((g_GameTick & 1) != 0)) { // 60 Hz: the gem's trail on odd ticks, once a tick
+           VecNull(&particleVelocity);
+           g_SpawnParticle(1, 0, &P32_GET(props->m_0x0c)->m_Position,
+-                          (int)&particleVelocity);
++                          (int)P32_ENC(&particleVelocity));
+         }
+       }
+ 
+@@ -18882,7 +18882,7 @@
+           for (i = 0; T60_TICK_AND(i < 5); i++) { // 60 Hz: the fuse's 5 particles (and their rand()s) once a tick
+             particleVelocity.x += (rand() & 0xF) - 8;
+             particleVelocity.y += (rand() & 0xF) - 8;
+-            g_SpawnParticle(1, 74, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 74, &particlePosition, (int)P32_ENC(&particleVelocity));
+           }
+         }
+ 
+@@ -18953,7 +18953,7 @@
+ #if SPYRO_NATIVE_MEM
+             if (!MEM_COLL_TAGGED(candidate2->m_CollisionGroup) && // D100
+ #else
+-            if ((int)P32_GET(candidate2->m_CollisionGroup) >= 0 &&
++            if ((int)P32_ENC(P32_GET(candidate2->m_CollisionGroup)) >= 0 &&
+ #endif
+                 candidate2->m_Class != 417) {
+               continue;
+@@ -20159,7 +20159,7 @@
+         zeroVelocity.x = 0;
+         zeroVelocity.y = 0;
+         zeroVelocity.z = 0;
+-        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)&zeroVelocity)); // 60 Hz: smoke trail once a tick
++        T60_TICK_DO(g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&zeroVelocity))); // 60 Hz: smoke trail once a tick
+         break;
+       }
+ 
+@@ -20180,7 +20180,7 @@
+           VecCopy(&particlePosition, &particleVelocity);
+           VecShiftLeft(&particlePosition, 2);
+           VecAdd(&particlePosition, &particlePosition, &moby->m_Position);
+-          g_SpawnParticle(1, 13, &particlePosition, (int)&particleVelocity);
++          g_SpawnParticle(1, 13, &particlePosition, (int)P32_ENC(&particleVelocity));
+         }
+ 
+         g_SpawnParticle(10, 70, &moby->m_Position, 0x10);
+@@ -20983,7 +20983,7 @@
+ 
+         if (props->m_0x08 >= 0) {
+           if (!(props->m_0x10 == 2 && moby->m_Substate != 0) && T60_TICK_AND((rand() & 1))) { // 60 Hz: the particle roll once a tick
+-            g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x08]);
++            g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x08]));
+           }
+         }
+ 
+@@ -21114,7 +21114,7 @@
+ 
+             if (envAnimState2 < 3) {
+               if (TICK_TIMER(props->m_0x14)) {
+-                if (((PathData *)linkedProps[3])->m_CurrentNode == 7) {
++                if (((PathData *)P32_DEC(linkedProps[3]))->m_CurrentNode == 7) {
+                   props->m_0x14 = RT(300, 250);
+                   EnvAnimSetFlags(9, ENV_ANIM_FLAG_UNPAUSE, 0);
+                   linkedProps[0] = 8;
+@@ -22317,7 +22317,7 @@
+ 
+           if (P32_GET(g_LevelMobys)[props->m_0x08].m_State < 0x80) {
+             g_SpawnParticle(5, 4, &P32_GET(g_LevelMobys)[props->m_0x08].m_Position,
+-                            (int)&P32_GET(g_LevelMobys)[props->m_0x08]);
++                            (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x08]));
+           }
+ 
+           props->m_0x00 = RT(0x20, 0x1B);
+@@ -22585,7 +22585,7 @@
+           RotVec8ToMatrix(&moby->m_Rotation, &matrix, 0);
+           VecRotateByMatrix(&matrix, &vector, &vector);
+           VecAdd(&vector, &vector, &moby->m_Position);
+-          T60_TICK_DO(g_SpawnParticle(3, 4, &vector, (int)&P32_GET(g_LevelMobys)[props->m_0x08])); // 60 Hz: the beam particle once a tick
++          T60_TICK_DO(g_SpawnParticle(3, 4, &vector, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x08]))); // 60 Hz: the beam particle once a tick
+         }
+ 
+         if (g_AnimationFinished) {
+@@ -23793,7 +23793,7 @@
+         distance = OctDistance(&g_Spyro.m_Position,
+                                (Vector3D *)((u_char *)P32_GET(props->m_0x08) + 0x18));
+         if (distance < 0x2000 && props->m_0x0c != 0 && T60_TICK_AND((rand() & 1) != 0)) { // 60 Hz: the particle roll once a tick
+-          g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x0c]);
++          g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x0c]));
+         }
+ 
+         envAnimState = EnvAnimGetState(props->m_0x00);
+@@ -23821,7 +23821,7 @@
+ 
+       case 1:
+         if (props->m_0x0c >= 0 && T60_TICK_AND((rand() & 1) != 0)) { // 60 Hz: the particle roll once a tick
+-          g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x0c]);
++          g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x0c]));
+         }
+         EnvAnimSetFlags(props->m_0x00, ENV_ANIM_FLAG_UNPAUSE, 0);
+         break;
+@@ -23836,7 +23836,7 @@
+             OctDistance(&g_Spyro.m_Position,
+                         (Vector3D *)((u_char *)P32_GET(props->m_0x08) + 0x18)) <
+                 0x2000) {
+-          g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x0c]);
++          g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x0c]));
+         }
+         break;
+ 
+@@ -23863,7 +23863,7 @@
+ 
+       case 4:
+         if (props->m_0x0c >= 0 && T60_TICK_AND((rand() & 1) != 0)) { // 60 Hz: the particle roll once a tick
+-          g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x0c]);
++          g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x0c]));
+         }
+         EnvAnimSetFlags(props->m_0x00, ENV_ANIM_FLAG_UNPAUSE, 0);
+         if (g_AnimationFinished) {
+@@ -24590,7 +24590,7 @@
+                               &vel[1]);
+             vel[1].x += (rand() & 0xF) - 8;
+             vel[1].y += (rand() & 0xF) - 8;
+-            g_SpawnParticle(1, 74, &vel[0], (int)&vel[1]);
++            g_SpawnParticle(1, 74, &vel[0], (int)P32_ENC(&vel[1]));
+           }
+           count = props->m_Timer / 40 + 1;
+ 
+@@ -24614,7 +24614,7 @@
+                               &vel[1]);
+             param.x = (rand() & 7) + 0x10;
+             param.y = (rand() & 7) + 6;
+-            g_SpawnParticle(1, 16, &vel[0], (int)&param);
++            g_SpawnParticle(1, 16, &vel[0], (int)P32_ENC(&param));
+             if (moby->m_SoundChannel == 0x7F) {
+               MobyPlaySound(moby, 0, 0);
+             }
+@@ -25431,7 +25431,7 @@
+ #endif
+             Vector3D zero;
+             VecNull(&zero);
+-            g_SpawnParticle(1, 0, &P32_GET(props->m_0x00)->m_Position, (int)&zero);
++            g_SpawnParticle(1, 0, &P32_GET(props->m_0x00)->m_Position, (int)P32_ENC(&zero));
+           }
+         }
+ 
+@@ -25497,7 +25497,7 @@
+             particleVelocity.y = SINE_8(i * 43) >> 7;
+             particleVelocity.z = 16;
+ 
+-            g_SpawnParticle(1, 0, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 0, &particlePosition, (int)P32_ENC(&particleVelocity));
+           }
+ 
+           MobyFree(P32_GET(props->m_0x00));
+@@ -27642,7 +27642,7 @@
+             particlePosition.x += (rand() & 0x1FF) - 0x100;
+             particlePosition.y += (rand() & 0x1FF) - 0x100;
+             particlePosition.z += (rand() & 0x1FF) - 0x100;
+-            g_SpawnParticle(1, 1, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 1, &particlePosition, (int)P32_ENC(&particleVelocity));
+           }
+           if (g_AnimationFinished) {
+             moby->m_AnimationState.m_Frame = RF(0xF, 0xD);
+@@ -28097,7 +28097,7 @@
+           vertices[0].x = COSINE_8(moby->m_Rotation.z) >> 5;
+           vertices[0].y = SINE_8(moby->m_Rotation.z) >> 5;
+           vertices[0].z = 0x20;
+-          g_SpawnParticle(1, 14, &moby->m_Position, (int)&vertices[0]);
++          g_SpawnParticle(1, 14, &moby->m_Position, (int)P32_ENC(&vertices[0]));
+         }
+       }
+ 
+@@ -28124,7 +28124,7 @@
+ #if SPYRO_NATIVE_MEM
+               iter->m_CollisionGroup != 0 && MEM_COLL_TAGGED(iter->m_CollisionGroup)) { // D100
+ #else
+-              P32_GET(iter->m_CollisionGroup) != 0 && (int)P32_GET(iter->m_CollisionGroup) < 0) {
++              P32_GET(iter->m_CollisionGroup) != 0 && (int)P32_ENC(P32_GET(iter->m_CollisionGroup)) < 0) {
+ #endif
+             VecSub(&vec, &iter->m_Position, &moby->m_Position);
+             dist = ABS2(vec.x) + ABS2(vec.y);
+@@ -28563,7 +28563,7 @@
+                             &particleVelocity, &particleVelocity);
+           particleVelocity.x += (rand() & 0xF) - 8;
+           particleVelocity.y += (rand() & 0xF) - 8;
+-          T60_TICK_DO(g_SpawnParticle(1, 74, &particlePosition, (int)&particleVelocity)); // 60 Hz: fuse spark once a tick
++          T60_TICK_DO(g_SpawnParticle(1, 74, &particlePosition, (int)P32_ENC(&particleVelocity))); // 60 Hz: fuse spark once a tick
+ 
+           if (moby->m_SoundChannel == 0x7F) {
+             MobyPlaySound(moby, 0, 0);
+@@ -28590,7 +28590,7 @@
+             particleVelocity.z = -0x12 - ((props->m_0x10 - 0x5A) >> 2);
+             VecRotateByMatrix((MATRIX *)&moby->m_RotationMatrix,
+                               &particleVelocity, &particleVelocity);
+-            g_SpawnParticle(1, 0, &particlePosition, (int)&particleVelocity);
++            g_SpawnParticle(1, 0, &particlePosition, (int)P32_ENC(&particleVelocity));
+ 
+             if (moby->m_Rotation.x < 0x80) {
+               moby->m_Rotation.x = -((props->m_0x10 - 0x5A) >> 5);
+@@ -28668,7 +28668,7 @@
+         moby->m_Rotation.y = -Atan2Fast(delta.z, magnitude);
+         VecAdd(&moby->m_Position, &moby->m_Position, &delta);
+         VecNull(&delta);
+-        g_SpawnParticle(1, 0, &moby->m_Position, (int)&delta);
++        g_SpawnParticle(1, 0, &moby->m_Position, (int)P32_ENC(&delta));
+         break;
+       }
+       }
+@@ -29340,7 +29340,7 @@
+           vec.x = (COSINE_8(i << 5) >> 8) * 3;
+           vec.y = (SINE_8(i << 5) >> 8) * 3;
+           vec.z = 0x18;
+-          g_SpawnParticle(1, 0, &moby->m_Position, (int)&vec);
++          g_SpawnParticle(1, 0, &moby->m_Position, (int)P32_ENC(&vec));
+         }
+ 
+         g_SpawnParticle(16, 70, &moby->m_Position, 0x18);
+@@ -29352,7 +29352,7 @@
+         // Bug: Rather than passing the address of m_SoundChannel, it is passed
+         // as a value Cast to prevent compiler warning
+         PlaySound(P32_GET(g_Models[moby->m_Class])->m_Sounds[2], moby, 8,
+-                  (u_char *)(int)moby->m_SoundChannel);
++                  (u_char *)P32_DEC((int)moby->m_SoundChannel));
+         MobyFree(moby);
+       }
+       break;
+@@ -30613,7 +30613,7 @@
+           particleVelocity.y = rand() & 3;
+           particleVelocity.z = 0x14;
+ 
+-          g_SpawnParticle(1, 1, &moby->m_Position, (int)&particleVelocity);
++          g_SpawnParticle(1, 1, &moby->m_Position, (int)P32_ENC(&particleVelocity));
+         }
+ 
+         T60_TICK_DO(props->m_Lifetime--); // 60 Hz: a duration, once a tick
+@@ -31266,7 +31266,7 @@
+ 
+       case 2: {
+         if (T60_TICK_AND((g_GameTick & 1) != 0)) { // 60 Hz: g_GameTick holds over both vblanks; the particle once a tick
+-          g_SpawnParticle(1, 8, moby, (int)&P32_GET(g_LevelMobys)[props->m_0x30]);
++          g_SpawnParticle(1, 8, moby, (int)P32_ENC(&P32_GET(g_LevelMobys)[props->m_0x30]));
+         }
+ 
+         status = EnvAnimGetState(props->m_0x10);
+--- a/src/overlays/particle_spawn.c
++++ b/src/overlays/particle_spawn.c
+@@ -38,7 +38,7 @@
+       func_80017BFC(&particle->m_Data.m_RotatedQuad.m_Position,
+                     (Vector3D *)spawnParam);
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+-                    (Vector3D *)extraParam);
++                    (Vector3D *)P32_DEC(extraParam));
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+       particle->m_Data.m_RotatedQuad.m_Size = 24;
+       particle->m_Data.m_RotatedQuad.m_Rotation = rand();
+@@ -60,7 +60,7 @@
+       func_80017BFC(&particle->m_Data.m_RotatedQuad.m_Position,
+                     (Vector3D *)spawnParam);
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+-                    (Vector3D *)extraParam);
++                    (Vector3D *)P32_DEC(extraParam));
+ 
+       // TODO: hack
+       gamestate = g_Gamestate;
+@@ -308,7 +308,7 @@
+ 
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20], &position);
+ 
+-      particle->m_Data.m_Raw[26] = (Moby *)extraParam - P32_GET(g_LevelMobys);
++      particle->m_Data.m_Raw[26] = (Moby *)P32_DEC(extraParam) - P32_GET(g_LevelMobys);
+       particle->m_Data.m_Raw[27] = 0;
+ 
+       particle->m_Data.m_Quad.m_Width = (rand() & 15) + 24;
+@@ -347,7 +347,7 @@
+       func_80017BFC(&particle->m_Data.m_RotatedQuad.m_Position,
+                     (Vector3D *)spawnParam);
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+-                    (Vector3D *)extraParam);
++                    (Vector3D *)P32_DEC(extraParam));
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+       particle->m_Data.m_RotatedQuad.m_Size = 24;
+       particle->m_Data.m_RotatedQuad.m_Rotation = rand();
+@@ -448,7 +448,7 @@
+       func_80017BFC(&particle->m_Data.m_RotatedQuad.m_Position,
+                     (Vector3D *)spawnParam);
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+-                    (Vector3D *)extraParam);
++                    (Vector3D *)P32_DEC(extraParam));
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+       particle->m_Data.m_RotatedQuad.m_Size = 24;
+       particle->m_Data.m_RotatedQuad.m_Rotation = rand();
+@@ -473,7 +473,7 @@
+         func_80017BFC(&particle->m_Data.m_RotatedQuad.m_Position,
+                       (Vector3D *)spawnParam);
+         func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+-                      (Vector3D *)extraParam);
++                      (Vector3D *)P32_DEC(extraParam));
+ 
+         *(short *)&particle->m_Data.m_Raw[26] = 0;
+         particle->m_Data.m_RotatedQuad.m_Size = 64;
+@@ -535,9 +535,9 @@
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[20],
+                     (Vector3D *)spawnParam + 1);
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+-      particle->m_Data.m_RotatedQuad.m_Size = ((int *)extraParam)[0];
++      particle->m_Data.m_RotatedQuad.m_Size = ((int *)P32_DEC(extraParam))[0];
+       particle->m_Data.m_RotatedQuad.m_Rotation = rand();
+-      particle->m_Data.m_RotatedQuad.m_Color.r = ((int *)extraParam)[1] * 8;
++      particle->m_Data.m_RotatedQuad.m_Color.r = ((int *)P32_DEC(extraParam))[1] * 8;
+       particle->m_Data.m_RotatedQuad.m_Color.g =
+           particle->m_Data.m_RotatedQuad.m_Color.r;
+       particle->m_Data.m_RotatedQuad.m_Color.b =
+@@ -559,9 +559,9 @@
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+       particle->m_Data.m_RotatedQuad.m_Size = 24;
+       particle->m_Data.m_RotatedQuad.m_Rotation = rand();
+-      particle->m_Data.m_RotatedQuad.m_Color.r = ((int *)extraParam)[0];
+-      particle->m_Data.m_RotatedQuad.m_Color.g = ((int *)extraParam)[1];
+-      particle->m_Data.m_RotatedQuad.m_Color.b = ((int *)extraParam)[2];
++      particle->m_Data.m_RotatedQuad.m_Color.r = ((int *)P32_DEC(extraParam))[0];
++      particle->m_Data.m_RotatedQuad.m_Color.g = ((int *)P32_DEC(extraParam))[1];
++      particle->m_Data.m_RotatedQuad.m_Color.b = ((int *)P32_DEC(extraParam))[2];
+       particle->m_Data.m_RotatedQuad.m_Color.s = PRIM_STP(PRIM_POLY_FT4);
+       particle->m_Data.m_RotatedQuad.m_OtOffset = 4;
+       particle->m_Data.m_RotatedQuad.m_TextureIndex = 0;
+@@ -837,7 +837,7 @@
+       int *props;
+       // spawnParam is the Haunted Wizard Moby (204) that is spawning this
+       // particle
+-      props = P32_GET(((Moby *)extraParam)->m_Props);
++      props = P32_GET(((Moby *)P32_DEC(extraParam))->m_Props);
+ 
+       particle = func_80053570(3);
+       particle->m_Class = pClass;
+@@ -850,7 +850,7 @@
+       particle->m_Data.m_Quad.m_Position.y += (rand() & 126) - 63;
+       particle->m_Data.m_Quad.m_Position.z += (rand() & 126) - 63;
+ 
+-      particle->m_Data.m_Raw[20] = ((Moby *)extraParam) - P32_GET(g_LevelMobys);
++      particle->m_Data.m_Raw[20] = ((Moby *)P32_DEC(extraParam)) - P32_GET(g_LevelMobys);
+       particle->m_Data.m_Raw[21] = props[15];
+       particle->m_Data.m_Raw[22] = 0;
+       *(short *)&particle->m_Data.m_Raw[26] = 0;
+@@ -1071,7 +1071,7 @@
+       particle->m_Data.m_Point.m_Position.z =
+           (((Vector3D *)spawnParam)->z >> 2) + (rand() & 15) - 8;
+ 
+-      P32_SET(*(P32F(PathData *) *)&particle->m_Data.m_Raw[20] , (PathData *)extraParam);
++      P32_SET(*(P32F(PathData *) *)&particle->m_Data.m_Raw[20] , (PathData *)P32_DEC(extraParam));
+       *(int *)&particle->m_Data.m_Raw[24] = 0;
+       particle->m_Data.m_Point.m_OtOffset = 2;
+ 
+@@ -1288,7 +1288,7 @@
+       func_80017BFC(&particle->m_Data.m_Point.m_Position,
+                     (Vector3D *)spawnParam);
+       func_80017BFC((Vector3D16 *)&particle->m_Data.m_Raw[12],
+-                    (Vector3D *)extraParam);
++                    (Vector3D *)P32_DEC(extraParam));
+ 
+       particle->m_Data.m_Point.m_Color.r = 255;
+       particle->m_Data.m_Point.m_Color.g = 255;
+@@ -1410,7 +1410,7 @@
+       particle->m_Timer = rand() & 15;
+       particle->m_WasRendered = 1;
+       func_80017BFC(&particle->m_Data.m_Line.m_End, (Vector3D *)spawnParam);
+-      VecAdd(&particleOffset, (Vector3D *)spawnParam, (Vector3D *)extraParam);
++      VecAdd(&particleOffset, (Vector3D *)spawnParam, (Vector3D *)P32_DEC(extraParam));
+ 
+       particleOffset.x += (rand() & 63) - 32;
+       particleOffset.y += (rand() & 63) - 32;
+--- a/src/overlays/particle_update.c
++++ b/src/overlays/particle_update.c
+@@ -910,7 +910,7 @@
+ 
+         moby = &P32_GET(g_LevelMobys)[particle->m_Data.m_Raw[20]];
+         props = (int *)P32_GET(moby->m_Props);
+-        path = (PathData *)props[particle->m_Data.m_Raw[21] + 1];
++        path = (PathData *)P32_DEC(props[particle->m_Data.m_Raw[21] + 1]);
+         moby = &P32_GET(g_LevelMobys)[props[particle->m_Data.m_Raw[21] + 8]];
+ 
+         func_80017C24(&position, &particle->m_Data.m_Quad.m_Position);
+--- a/src/pete.c
++++ b/src/pete.c
+@@ -1787,9 +1787,9 @@
+       VecRotateByLastMatrix(&D_8006E238[2], &direction);
+ 
+       if (g_SpyroFlame.unk_9c != 0) {
+-        g_SpawnParticle(1, 1, &particleStart, (int)&direction);
++        g_SpawnParticle(1, 1, &particleStart, (int)P32_ENC(&direction));
+       } else {
+-        g_SpawnParticle(1, 0, &particleStart, (int)&direction);
++        g_SpawnParticle(1, 0, &particleStart, (int)P32_ENC(&direction));
+       }
+ 
+       VecRotateByMatrix(&g_Spyro.m_headRotationMatrix, &D_8006E238[1],
+@@ -1798,9 +1798,9 @@
+       VecRotateByLastMatrix(&D_8006E238[3], &direction);
+ 
+       if (g_SpyroFlame.unk_9c != 0) {
+-        g_SpawnParticle(1, 1, &particleStart, (int)&direction);
++        g_SpawnParticle(1, 1, &particleStart, (int)P32_ENC(&direction));
+       } else {
+-        g_SpawnParticle(1, 0, &particleStart, (int)&direction);
++        g_SpawnParticle(1, 0, &particleStart, (int)P32_ENC(&direction));
+       }
+     } else if ((g_Pad.m_Down & PAD_CIRCLE) && g_Spyro.unk_0x1a0 >= RT(44, 36)) {
+       g_Spyro.unk_0x1a0 = -1;

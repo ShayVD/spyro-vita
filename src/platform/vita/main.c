@@ -261,6 +261,12 @@
  *       pres_prio=N     that thread's priority, 0x40 to 0xBF (default 0x9A,
  *                       behind the parse thread's 0x98; 0x96 is ahead of
  *                       it; #195)
+ *       pres_demo_inline=0  in an attract demo at 16:9, both presenter
+ *                       frames on that thread, the in-between one waited
+ *                       for before the real one starts (D211's order).
+ *                       Default 1 (#227, D222): the in-between frame inline
+ *                       on the game thread, only the real frame there
+ *                       (the same pictures; #232)
  *       vc_lazy=1       with persp or subpixel, the presenter's projections
  *                       worked out when first read (#193, #195; the same
  *                       pictures). Default 0 (#198): as it makes them; the
@@ -278,6 +284,12 @@
  *       vc_fast_rec=N   with persp or subpixel, the logic draw's native
  *                       record with its find and maths inlined: 1 (default)
  *                       or 0 (called, as before #259; the same pictures)
+ *       found_fast=N    with persp or subpixel, the walk's lookup of a
+ *                       polygon whose vertices are all found: 2 (default)
+ *                       on its short path with each vertex's first probe
+ *                       read up front, 1 the short path alone, 0 the full
+ *                       body for every polygon (as before #233; D226; the
+ *                       same pictures; #274)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -431,6 +443,7 @@ static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off
 static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
 static int s_vc_repeat = 2;     /* vc_repeat= (#228, #259): psx_vcache_set_repeat */
 static int s_vc_fast_rec = 1;   /* vc_fast_rec= (#259): psx_vcache_set_fast_record */
+static int s_found_fast = 2;    /* found_fast= (#274): psx_vcache_set_found_fast (D226) */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -697,6 +710,8 @@ static void read_config(void) {
       g_vita_opts.pres_core = atoi(v);
     else if (!strcmp(line, "pres_prio")) /* #195 */
       g_vita_pres_prio = (int)strtol(v, NULL, 0);
+    else if (!strcmp(line, "pres_demo_inline")) /* #227 (D222), #232 */
+      g_present_demo_inline = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy")) /* #195 */
       s_vc_lazy = atoi(v) != 0;
     else if (!strcmp(line, "vc_lazy_logic")) { /* #196, #204: 0 to 3 */
@@ -709,6 +724,10 @@ static void read_config(void) {
     }
     else if (!strcmp(line, "vc_fast_rec")) /* #259 */
       s_vc_fast_rec = atoi(v) != 0;
+    else if (!strcmp(line, "found_fast")) { /* #233 (D226), #274: 0 to 2 */
+      const int m = atoi(v);
+      s_found_fast = m < 0 ? 0 : m > 2 ? 2 : m;
+    }
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
@@ -1101,11 +1120,14 @@ int main(int argc, char **argv) {
   psx_vcache_set_lazy_logic(s_vc_lazy_logic);
   psx_vcache_set_repeat(s_vc_repeat);         /* #228, #259 */
   psx_vcache_set_fast_record(s_vc_fast_rec); /* #259 */
-  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
-           "vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d: the presenter's placement, the "
-           "projections' deferral and the record's form (#195, #193, D188, #259)",
+  psx_vcache_set_found_fast(s_found_fast);   /* #233 (D226), #274 */
+  vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x "
+           "pres_demo_inline=%d vc_lazy=%d vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d "
+           "found_fast=%d: the presenter's placement, the projections' deferral, the record's "
+           "form and the walk's lookup (#195, D222, #193, D188, #259, D226)",
            g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
-           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic, s_vc_repeat, s_vc_fast_rec);
+           (unsigned)g_vita_pres_prio, g_present_demo_inline, s_vc_lazy, s_vc_lazy_logic,
+           s_vc_repeat, s_vc_fast_rec, s_found_fast);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,

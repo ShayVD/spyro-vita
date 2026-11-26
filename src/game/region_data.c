@@ -144,7 +144,7 @@ int region_data_load(const RegionMap *m, const unsigned char *exe, int size, int
         if (memchr(s_loaded.copy[0] + (v - b0->addr), 0, b0->addr + b0->size - v))
           st->strings_ok++;
       }
-      wr32(c + off, (uint32_t)(uintptr_t)(s_loaded.copy[j] + (v - m->blocks[j].addr)));
+      wr32(c + off, (uint32_t)(uintptr_t)P32_ENC((s_loaded.copy[j] + (v - m->blocks[j].addr))));
       st->relocs++;
     }
     /* words left alone that look like pointers into the executable's code */

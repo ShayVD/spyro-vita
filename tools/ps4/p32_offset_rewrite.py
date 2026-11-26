@@ -35,6 +35,28 @@ import argparse, collections, difflib, json, os, re, shlex, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+MODE = ["slots"]  # or "casts" (--casts, O3)
+CASTS = ("CStyleCastExpr", "ImplicitCastExpr")
+# --casts leaves these alone: the host's allocator and the arena's set-up
+# deal in the host's own addresses
+HOST_SIDE = ("/src/platform/linux32/low_image.c", "/src/platform/common/arena.c")
+SMALL = {"int", "unsigned int", "short", "unsigned short", "char", "signed char", "unsigned char",
+         "_Bool"}
+
+
+def small_int(t):
+    """a 32-bit or narrower integer type (LP64: long and its kin are 64)"""
+    t = re.sub(r"\b(const|volatile)\b", "", t or "").strip()
+    return t.startswith("enum ") or t in SMALL
+
+
+def ty_of(d):
+    t = d.get("type")
+    if not isinstance(t, dict):
+        return ""
+    return t.get("desugaredQualType") or t.get("qualType", "")
+
+
 def is_slot(ty):
     """A slot's type is printed with its outermost pointer's qualifiers last:
     'Moby * __ptr32 __uptr'. A pointer to a slot ('Moby * __ptr32 __uptr *')
@@ -47,7 +69,9 @@ class Unit:
         self.d, self.src, self.cmd = d, src, cmd
 
 
-def units(build):
+def units(build, all_overlays=False):
+    """all_overlays: each overlay source once per overlay that builds it (its
+    IS_<ovl> branches), not once in all"""
     out, seen = [], set()
     with open(os.path.join(build, "compile_commands.json")) as f:
         cc = json.load(f)
@@ -84,9 +108,10 @@ def units(build):
                 continue
             args = shlex.split(m.group(1))
             src = args[-1]
-            if src in done:
+            key = (src, tuple(args)) if all_overlays else src
+            if key in done:
                 continue
-            done.add(src)
+            done.add(key)
             args = [a for a in args if a != "-E"]
             out.append(Unit(build, src, args))
     return out
@@ -105,7 +130,7 @@ def scan(u):
     last = [None]
     stack = []  # [key, dict or None (a list)]
     KEEP = {"kind", "castKind", "opcode", "isPostfix", "offset", "file", "tokLen", "qualType",
-            "isMacroArgExpansion"}
+            "desugaredQualType", "isMacroArgExpansion", "name", "storageClass"}
     LOCS = ("begin", "end", "loc", "spellingLoc", "expansionLoc")
 
     def bare(d):
@@ -130,11 +155,49 @@ def scan(u):
                 if parent is not None and "_child" not in parent:
                     r = d["range"]
                     if isinstance(r, dict) and "begin" in r and "end" in r:
-                        parent["_child"] = (d["kind"], norm(r["begin"]), norm(r["end"]), d.get("_child"))
+                        parent["_child"] = (d["kind"], norm(r["begin"]), norm(r["end"]), d.get("_child"),
+                                            d.get("castKind"), ty_of(d))
         return d
+
+    def cast_site(d):
+        """--casts: a cast between a pointer and a 32-bit integer; the site
+        is the operand that P32_ENC or P32_DEC wraps"""
+        ck, c = d.get("castKind"), d.get("_child")
+        if d["kind"] not in CASTS or c is None:
+            return None
+        sp = norm(d["range"]["begin"])[0] if isinstance(d.get("range"), dict) and "begin" in d["range"] else None
+        if isinstance(sp, tuple) and sp[0] and sp[0].endswith("/src/compat/p32.h"):
+            return None  # P32_ENC/P32_DEC's own casts
+        if ck == "PointerToIntegral" and small_int(ty_of(d)):
+            return ("enc", c[1], c[2], c[3])  # (int)p
+        if (ck == "IntegralCast" and small_int(ty_of(d)) and c[0] in CASTS and c[4] == "PointerToIntegral"
+                and c[3] is not None):
+            g = c[3]
+            return ("enc", g[1], g[2], g[3])  # (u32)(uintptr_t)p
+        if ck == "IntegralToPointer":
+            if small_int(c[5]):
+                return ("dec", c[1], c[2], c[3])  # (T *)i
+            if c[0] in CASTS and c[4] == "IntegralCast" and c[3] is not None and small_int(c[3][5]):
+                return ("dec", c[1], c[2], c[3])  # (T *)(uintptr_t)i
+        return None
 
     def node(d):
         kind = d["kind"]
+        if MODE[0] == "decls":
+            # p32_decl_check.py: a variable declared at file scope
+            if kind == "VarDecl" and d.get("name") and not any(
+                    x[1] is not None and x[1].get("kind") in ("FunctionDecl", "BlockDecl") for x in stack):
+                b = norm(d["range"]["begin"])[1] if isinstance(d.get("range"), dict) and "begin" in d["range"] else None
+                sites.append(("decl", d["name"], ty_of(d), d.get("storageClass", ""), b))
+            elif kind == "FunctionDecl" and d.get("name"):
+                b = norm(d["range"]["begin"])[1] if isinstance(d.get("range"), dict) and "begin" in d["range"] else None
+                sites.append(("func", d["name"], ty_of(d), d.get("storageClass", ""), b))
+            return
+        if MODE[0] == "casts":
+            site = cast_site(d)
+            if site:
+                sites.append(site)
+            return
         ty = d.get("type", {}).get("qualType", "") if isinstance(d.get("type"), dict) else ""
         k = None
         if kind == "ImplicitCastExpr" and d.get("castKind") == "LValueToRValue" and is_slot(ty):
@@ -263,6 +326,7 @@ class Source:
                 return o
 
 
+WRAP = {"load": "P32_GET(", "enc": "P32_ENC(", "dec": "P32_DEC("}
 PREFIX = {"store": "P32_SET(", "add": "P32_ADD(", "sub": "P32_SUB(", "preinc": "P32_PREINC(",
           "predec": "P32_PREDEC(", "postinc": "P32_POSTINC(", "postdec": "P32_POSTDEC("}
 
@@ -310,6 +374,25 @@ def locate(k, b, e, sources):
     return None, "macro"
 
 
+def whole(loc, sources, start):
+    """--casts: a "use" placement wraps a whole macro use, so the operand must
+    begin (start) or end there too: in ordinary text, in one of p32.h's
+    accessors, or at the start or end of a #define's body"""
+    if not isinstance(loc, tuple) or not loc[0]:
+        return False
+    if loc[0].endswith("/src/compat/p32.h"):
+        return True
+    src = sources.get(loc[0])
+    if src is None:
+        return False
+    d = src.define_at(loc[1])
+    if d is None:
+        return True
+    if start:
+        return src.skip_ws(d[2]) == loc[1]
+    return src.text[loc[1] + loc[2]:d[1]].strip(" \t\r\n\\") == ""
+
+
 def plan(sites, sources):
     """edits per file: (offset, end, order, text) replacing text[offset:end];
     and the sites that are listed instead"""
@@ -331,6 +414,15 @@ def plan(sites, sources):
                     where, why = (w[0], w[1], w[2], "arg"), None
                     break
                 c = c[3]
+        if where is not None and MODE[0] == "casts" and where[3] == "use" and not (
+                whole(b[0], sources, True) and whole(e[0], sources, False)):
+            where, why = None, "part of a macro"
+        if (where is not None and MODE[0] == "casts" and where[3] == "use" and isinstance(b[0], tuple)
+                and b[0][0] and b[0][0].endswith("/src/compat/p32.h")
+                and not sources[where[0]].text.startswith("P32_GET(", where[1])):
+            # an accessor nested in another's argument: clang names the outer
+            # one's place; the textual pass (cast_text) takes `(int)P32_GET(`
+            where, why = None, "nested accessor"
         if where is None:
             listed.append((k, b, e, why))
             continue
@@ -340,8 +432,8 @@ def plan(sites, sources):
         done.add((k, fb, ob, oe))
         s = sources[fb]
         span = oe - ob
-        if k == "load":
-            edits[fb] += [(ob, ob, (1, -span), "P32_GET("), (oe, oe, (0, span), ")")]
+        if k in WRAP:
+            edits[fb] += [(ob, ob, (1, -span, k), WRAP[k]), (oe, oe, (0, span, k), ")")]
         elif k in ("store", "add", "sub"):
             # the operator: the first `=`/`+=`/`-=` at depth 0 after the LHS
             op = {"store": "=", "add": "+=", "sub": "-="}[k]
@@ -381,6 +473,35 @@ def plan(sites, sources):
     return edits, listed, how
 
 
+CAST_GET = re.compile(r"\((?:int|u_int|u32|s32|unsigned int|unsigned|uint32_t|int32_t|short|u_short|u16|s16)\)"
+                      r"\s*(?:\(uintptr_t\)\s*)?(?=P32_GET\()")
+
+
+def cast_text(text):
+    """--casts: `(int)P32_GET(x)` is always a pointer cut to 32 bits; wrap the
+    accessor: `(int)P32_ENC(P32_GET(x))`. Only text is inserted, so no line
+    moves."""
+    out, pos, n = [], 0, 0
+    for m in CAST_GET.finditer(text):
+        o = m.end()
+        depth, e = 0, text.index("(", o)  # P32_GET's own paren
+        while e < len(text):
+            c = text[e]
+            depth += c == "("
+            depth -= c == ")"
+            e += 1
+            if depth == 0:
+                break
+        nxt = text[e:e + 2].lstrip()
+        if nxt[:1] in (".", "[", "(") or text[e:].lstrip().startswith("->"):
+            continue  # the cast is on a member or element of it, not the pointer
+        out += [text[pos:o], "P32_ENC(", text[o:e], ")"]
+        pos = e
+        n += 1
+    out.append(text[pos:])
+    return "".join(out), n
+
+
 def apply(text, eds):
     """apply edits (offset, end, order, text): at one offset, closing text
     (order 0, the inner site's first) comes before opening text (order 1, the
@@ -403,10 +524,16 @@ def main():
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--list", help="every site, and why a listed one isn't rewritten")
+    ap.add_argument("--casts", action="store_true",
+                    help="O3: the casts between pointers and 32-bit integers, on a linuxa64 BUILD")
+    ap.add_argument("--all-overlays", action="store_true",
+                    help="parse each overlay source once per overlay (every IS_<ovl> branch)")
     a = ap.parse_args()
+    if a.casts:
+        MODE[0] = "casts"
     build = os.path.abspath(a.build)
     s1 = os.path.join(build, "patched", "spyro-1")
-    us = units(build)
+    us = units(build, a.all_overlays)
     print(f"{len(us)} units", file=sys.stderr)
     allsites, failed = set(), []
     with ThreadPoolExecutor(a.jobs) as ex:
@@ -420,6 +547,8 @@ def main():
 
     def mine(f):
         f = os.path.normpath(f)
+        if MODE[0] == "casts" and f.endswith(HOST_SIDE):
+            return False  # the host's own memory: never offsets
         return f.startswith(s1 + "/") or (f.startswith(ROOT + "/src/") and "/build" not in f
                                            and not f.endswith("/src/compat/p32.h"))
 
@@ -434,7 +563,8 @@ def main():
         f = x[1][1][0] if isinstance(x[1][1], tuple) else ""
         return "decomp" if f and f.startswith(s1) else "src"
     by = collections.Counter((org(x), x[0]) for x in sites)
-    kinds = ["load", "store", "add", "sub", "preinc", "predec", "postinc", "postdec"]
+    kinds = (["enc", "dec"] if a.casts else
+             ["load", "store", "add", "sub", "preinc", "predec", "postinc", "postdec"])
     for o in ("decomp", "src"):
         print(f"{o:7s}", " ".join(f"{k}={by[(o, k)]}" for k in kinds if by[(o, k)]))
     print(f"rewritten: {sum(how.values())} sites in {len(edits)} files ({dict(how)}); listed: {len(listed)}")
@@ -454,9 +584,28 @@ def main():
                     f.write(f"{b}\t{k}\t{why}\n")
 
     patch = collections.OrderedDict()
-    for fn in sorted(edits):
+    todo = set(edits)
+    if a.casts:
+        # the textual pass: every file of ours with `(int)P32_GET(`
+        for top in (s1, os.path.join(ROOT, "src")):
+            for d, _, fs in os.walk(top):
+                for f in fs:
+                    fn = os.path.join(d, f)
+                    if f.endswith((".c", ".h")) and mine(fn):
+                        try:
+                            t = open(fn, encoding="latin-1").read()
+                        except OSError:
+                            continue
+                        if CAST_GET.search(t):
+                            todo.add(fn)
+                            sources.setdefault(fn, Source(fn))
+    ntext = 0
+    for fn in sorted(todo):
         s = sources[fn]
-        new = apply(s.text, edits[fn])
+        new = apply(s.text, edits.get(fn, []))
+        if a.casts:
+            new, k = cast_text(new)
+            ntext += k
         assert new.count("\n") == s.text.count("\n"), fn
         if not a.apply:
             continue
@@ -466,13 +615,16 @@ def main():
         else:
             with open(fn, "w", encoding="latin-1") as f:
                 f.write(new)
+    if a.casts:
+        print(f"textual pass: {ntext} `(int)P32_GET(` casts wrapped")
     if a.apply:
         # whole files packed into parts under tools/check_no_assets.sh's
         # 512 KiB limit (moby_update.c's alone is ~490 KB)
-        d = os.path.join(ROOT, "patches", "spyro-1-p32off")
+        d = os.path.join(ROOT, "patches", "spyro-1-p32cast" if a.casts else "spyro-1-p32off")
+        stem = "0002-p32-casts" if a.casts else "0001-p32-accessors"
         os.makedirs(d, exist_ok=True)
         for old_part in os.listdir(d):
-            if old_part.startswith("0001-p32-accessors"):
+            if old_part.startswith(stem):
                 os.remove(os.path.join(d, old_part))
         parts, cur, size = [], [], 0
         for rel, lines in sorted(patch.items(), key=lambda kv: -sum(map(len, kv[1]))):
@@ -485,7 +637,7 @@ def main():
         if cur:
             parts.append(cur)
         for i, files in enumerate(parts, 1):
-            with open(os.path.join(d, f"0001-p32-accessors-{i}.patch"), "w", encoding="latin-1") as f:
+            with open(os.path.join(d, f"{stem}-{i}.patch"), "w", encoding="latin-1") as f:
                 for rel in sorted(files):
                     f.writelines(patch[rel])
 

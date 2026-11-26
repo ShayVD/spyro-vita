@@ -90,14 +90,14 @@ void pres_sectors_reset(void) {
   g_pres_nsectors = 0;
 }
 u32 pres_sector_copy(u32 sec) {
-  const u32 h = *(const u32 *)(uintptr_t)(sec + 0x14);
+  const u32 h = *(const u32 *)P32_DEC((uintptr_t)(sec + 0x14));
   const u32 len = 0x1Cu + (h >> 24) * 4u + (h & 0xFFu) * 4u + ((h >> 8) & 0xFFu) * 8u + ((h >> 16) & 0xFFu) * 16u;
   uintptr_t at = s_sec_next;
   if (!at || at + len > g_psx_arena_extra_at + PRES_AREA) {
     g_pres_sector_misses++;
     return 0;
   }
-  memcpy((void *)at, (const void *)(uintptr_t)sec, len);
+  memcpy((void *)at, (const void *)P32_DEC((uintptr_t)sec), len);
   s_sec_next = (at + len + 3u) & ~(uintptr_t)3u;
   if (g_pres_nsectors < PRES_SECTORS_MAX) {
     g_pres_sectors[g_pres_nsectors].sec = sec;

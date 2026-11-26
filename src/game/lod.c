@@ -169,7 +169,7 @@ static int buffer_cap(void) {
  * buffer (#203). With it off (statistics only) the draw's own buffer, as
  * before. */
 static int draw_room(u32 lo) {
-  const u32 top = (u32)(uintptr_t)P32_GET(g_Buffers.m_HudOTStart) - FAIRY_CARD_BUF;
+  const u32 top = (u32)(uintptr_t)P32_ENC(P32_GET(g_Buffers.m_HudOTStart)) - FAIRY_CARD_BUF;
   const int cap = buffer_cap();
   if (g_lod.scale <= LOD_ONE || top <= lo || top - lo < (u32)cap || top - lo > 2 * 0x1C000)
     return cap;
@@ -182,7 +182,7 @@ static int cull_distance(void) {
 }
 
 static int moby_index(u32 moby) {
-  u32 base = (u32)(uintptr_t)P32_GET(g_LevelMobys), i;
+  u32 base = (u32)(uintptr_t)P32_ENC(P32_GET(g_LevelMobys)), i;
   if (!P32_GET(g_LevelMobys) || moby < base)
     return -1;
   i = (moby - base) / sizeof(Moby);
@@ -245,7 +245,7 @@ u32 port_lod_moby_drawn(u32 moby) {
 /* At a culling loop's end: 1 = start pass 2 now (there is room for a
  * record); 0 = return (pass 2 just ended, or none). */
 int port_lod_moby_pass2(int room, u32 records_end) {
-  u32 used = records_end - ((u32)(uintptr_t)D_8006FCF4 + 0x1600);
+  u32 used = records_end - ((u32)(uintptr_t)P32_ENC(D_8006FCF4) + 0x1600);
   if (used / 0x38 > s_st.records_max && used < 0x1000)
     s_st.records_max = used / 0x38;
   if (g_lod_pass) {
@@ -273,7 +273,7 @@ int port_lod_records_full(u32 record, u32 prim) {
 }
 
 int port_lod_lit_full(void) {
-  if ((u32)(uintptr_t)P32_GET(D_800757B0) <= s_moby_limit)
+  if ((u32)(uintptr_t)P32_ENC(P32_GET(D_800757B0)) <= s_moby_limit)
     return 0;
   s_st.moby_cuts++;
   return 1;
@@ -311,10 +311,10 @@ void port_lod_env_end(u32 fp) {
 /* func_800258F0, before a sector goes into the near list: 1 = the list is
  * one entry short of the next one, leave it out */
 int port_lod_near_full(u32 t7) {
-  const int n = (int)((t7 - ((u32)(uintptr_t)D_8006FCF4 + NEAR_LIST)) / 4) + 1;
+  const int n = (int)((t7 - ((u32)(uintptr_t)P32_ENC(D_8006FCF4) + NEAR_LIST)) / 4) + 1;
   if (n > s_near && n <= 0x80)
     s_near = n;
-  if (t7 < (u32)(uintptr_t)D_8006FCF4 + NEAR_END - 4)
+  if (t7 < (u32)(uintptr_t)P32_ENC(D_8006FCF4) + NEAR_END - 4)
     return 0;
   s_st.near_full++;
   s_k = LOD_ONE; /* and back to the original distances at once */
@@ -324,7 +324,7 @@ int port_lod_near_full(u32 t7) {
 
 /* func_800258F0, sector loop done: t7 is the near list's end */
 void port_lod_env_lists(u32 t7) {
-  u32 n = (t7 - ((u32)(uintptr_t)D_8006FCF4 + NEAR_LIST)) / 4;
+  u32 n = (t7 - ((u32)(uintptr_t)P32_ENC(D_8006FCF4) + NEAR_LIST)) / 4;
   if (n > s_st.near_max && n < 0x400)
     s_st.near_max = n;
 }
@@ -338,7 +338,7 @@ void lod_set_budget_hook(void (*fn)(void)) { s_budget_hook = fn; }
 
 void port_lod_draw_begin(int shown) {
   const DB *db = P32_GET(g_CurDB) == &g_DB[0] ? &g_DB[1] : &g_DB[0]; /* GamestateDraw's */
-  u32 lo = (u32)(uintptr_t)port_poly_start(P32_GET(db->m_PolyBuf)); /* D54 */
+  u32 lo = (u32)(uintptr_t)P32_ENC(port_poly_start(P32_GET(db->m_PolyBuf))); /* D54 */
   int cap = buffer_cap(), room = draw_room(lo);
   g_lod_pass = 0;
   g_lod_k = LOD_ONE;
@@ -476,7 +476,7 @@ void port_lod_draw_end(int shown) {
   if (!shown || !P32_GET(g_CurDB) || !(on || g_lod.stats))
     return;
   s_ext_cur ^= 1;
-  used = (int)((u32)(uintptr_t)P32_GET(D_800757B0) - s_poly_lo);
+  used = (int)((u32)(uintptr_t)P32_ENC(P32_GET(D_800757B0)) - s_poly_lo);
   cap = draw_room(s_poly_lo); /* the span with the option on (#203) */
   if (used < 0 || used > 0x100000)
     return;
@@ -491,9 +491,9 @@ void port_lod_draw_end(int shown) {
     s_last_bytes = used;
     s_last_60 = s_logic60 && g_lod.budget > 0;
   }
-  if (s_env_end && (u32)(uintptr_t)P32_GET(D_800757B0) >= s_env_end &&
-      (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end > s_st.after_env_max)
-    s_st.after_env_max = (u32)(uintptr_t)P32_GET(D_800757B0) - s_env_end;
+  if (s_env_end && (u32)(uintptr_t)P32_ENC(P32_GET(D_800757B0)) >= s_env_end &&
+      (u32)(uintptr_t)P32_ENC(P32_GET(D_800757B0)) - s_env_end > s_st.after_env_max)
+    s_st.after_env_max = (u32)(uintptr_t)P32_ENC(P32_GET(D_800757B0)) - s_env_end;
   s_st.draws++;
   s_st.used += (unsigned)used;
   s_st.k += (unsigned)k;

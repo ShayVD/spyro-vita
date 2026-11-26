@@ -1,0 +1,11 @@
+--- a/src/loaders.c
++++ b/src/loaders.c
+@@ -1057,7 +1057,7 @@
+     // Compute space of the original model buffer
+     // (up to Moby class 250, the Crystal Dragon, which is always the last one)
+ #if SPYRO_NATIVE_MEM
+-    modelSpaceLeft = (int)MEM_MODEL_PTR(P32_GET(g_Models[250])) - (int)P32_ENC(P32_GET(g_Buffers.m_ModelData)); // D100
++    modelSpaceLeft = (int)MEM_MODEL_AT(P32_GET(g_Models[250])) - (int)P32_ENC(P32_GET(g_Buffers.m_ModelData)); // D100
+ #else
+     modelSpaceLeft = (int)g_Models[250] - (int)g_Buffers.m_ModelData;
+ #endif
