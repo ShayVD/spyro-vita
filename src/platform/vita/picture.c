@@ -48,8 +48,10 @@ static void res_changed(void) {
 }
 
 /* The menu's MAX (ADAPTIVE), percent, and the most draw_distance= gives
- * (#260): one place, so a longer MAX (#261) changes only this. */
-#define DD_MAX_PCT 200
+ * (#260): one place. 400 since #261: past 4x no level draws more (the
+ * whole-game tour, D256), and the scale passes 2x only where a 60 Hz budget
+ * measures the draws (lod.c scale_top); 200 until then. */
+#define DD_MAX_PCT 400
 
 /* draw_distance= is a percentage, 100 to DD_MAX_PCT: the menu's NORMAL (100,
  * the original) and MAX (ADAPTIVE) (DD_MAX_PCT, #260); 150 and other values
