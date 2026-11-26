@@ -247,11 +247,49 @@ typedef struct {
 #define T_GEN(t) ((t) >> T_GEN_SHIFT)
 #define VC_GEN_END (1u << 23)      /* a table's frames count 1 to this, then from 1 again */
 
+/* #228: the last projection an entry's maths was worked out for at once
+ * this frame (rtp_point): its registers' generation (gte_native.h NgteProj
+ * gen; 0: none, or the entry made since) and vertex, and whether it was
+ * clamped. A projection the same in each (an exact repeat: a point two
+ * sectors share, a grid's corner projected again) has the same answer; while
+ * its entry is valid with one point, that answer is already among its
+ * candidates and is logged nowhere, so the repeat changes nothing and its
+ * maths is skipped. 12 bytes, in the table's rp array (RP_ARRAY, D221's). */
+typedef struct {
+  uint32_t g;
+  int16_t vx, vy, vz;
+  uint16_t clamped;
+} Rp;
+/* #259: the same in 8 bytes, kept in the entry itself where its candidate
+ * 3 would go, while it has at most three (RP_ENTRY, the default): in the
+ * lines its probe and candidates read, where D221's array cost a line of
+ * its own on every record. The generation is its distance from the table's
+ * frame's first (Table rp_g0) plus 1, in 15 bits (0: none), with the
+ * clamped flag above: a generation 0x7FFF or more past the frame's first
+ * keeps none and skips none, so a kept one names one generation exactly. */
+typedef struct {
+  uint16_t gc; /* RPE_G: the generation's distance + 1; RPE_CL: clamped */
+  int16_t vx, vy, vz;
+} RpE;
+#define RPE_G 0x7FFFu
+#define RPE_CL 0x8000u
+
 typedef struct {
   uint32_t key; /* SXY2: (SY << 16) | (SX & 0xFFFF) */
   uint32_t tag;
-  Cand c[VC_CANDS];
+  /* #259: with RP_ENTRY, candidate 3's place holds the entry's RpE while
+   * it has at most three. Only candidates below T_N are ever read, and a
+   * fourth one written there ends it (rp_skip reads it only while
+   * T_N <= 3). */
+  union {
+    Cand c[VC_CANDS];
+    struct {
+      Cand c012[3];
+      RpE rp;
+    } e;
+  };
 } Entry;
+_Static_assert(sizeof(Entry) == 40, "an entry stays 40 bytes (#159)");
 
 /* A key with no entry whose position a polygon derived (#183): the same
  * for every polygon of the frame that uses it, so they don't crack apart.
@@ -318,20 +356,6 @@ typedef struct {
   uint8_t dead, placed;
   int32_t ox, oy;
 } Ow;
-
-/* #228: the last projection each entry's maths was worked out for at once
- * this frame (rtp_point): its registers' generation (gte_native.h NgteProj
- * gen; 0: none, or the entry made since) and vertex, and whether it was
- * clamped. A projection the same in each (an exact repeat: a point two
- * sectors share, a grid's corner projected again) has the same answer; while
- * its entry is valid with one point, that answer is already among its
- * candidates and is logged nowhere, so the repeat changes nothing and its
- * maths is skipped. 12 bytes an entry, apart from the 40 the probe reads. */
-typedef struct {
-  uint32_t g;
-  int16_t vx, vy, vz;
-  uint16_t clamped;
-} Rp;
 
 /* #229: a world point kept as its piece's own (psx_vcache.h VCD_EDGE): a
  * split point under its piece's anchor and edge, moved to each GT3 that
@@ -428,7 +452,8 @@ typedef struct {
    * them */
   Ow ow[VC_OW];
   /* #228 (last, as above): each entry's last projection worked out at once,
-   * by the slot (Rp) */
+   * by the slot (Rp), with RP_ARRAY (D221's place); RP_ENTRY (#259) keeps
+   * it in the entry instead */
   Rp rp[VC_SIZE + VC_OV];
   /* #229 (last, as above): the world's points kept as their piece's own */
   Sp sp[VC_SP];
@@ -442,6 +467,10 @@ typedef struct {
   unsigned nx, nlost, xlc_line, nxlfar;
   Xlog *xl;
   int xl_tried;
+  /* #259 (last, as above): the generation (gte_native.h g_ngte_gen, the
+   * presenter's g_pres_ngte_gen) when this table's frame began, RpE's
+   * origin */
+  uint32_t rp_g0;
 } Table;
 
 /* #237: the frame's order, the places past the log too: how many, and
@@ -590,7 +619,19 @@ static void gc_line(void);
 #define VC_GEN_CHECK 0
 #endif
 
-static int s_repeat = 1;     /* psx_vcache_set_repeat (#228) */
+/* psx_vcache_set_repeat (#228): RP_OFF, RP_ARRAY (D221: the table's rp
+ * array) or RP_ENTRY (#259, the default: in the entry, rp_skip). Set before
+ * the cache records, not while it does. */
+enum { RP_OFF, RP_ARRAY, RP_ENTRY };
+static int s_repeat = RP_ENTRY;
+/* a new entry (find, ov_find): no projection worked out under it yet (with
+ * RP_ENTRY: the entry has no candidate, so its rp is free to write) */
+static inline void rp_clear(Table *tb, int i) {
+  if (s_repeat == RP_ENTRY)
+    tb->s[i].e.rp.gc = 0;
+  else if (s_repeat == RP_ARRAY)
+    tb->rp[i].g = 0;
+}
 
 /* #221: the overflow (VC_OV entries after the table's slots, ov_find): on
  * by default. At ~60% of the slots late in a busy frame (Stone Hill at 2x
@@ -668,7 +709,7 @@ static void cost_line(void) {
     const unsigned zv = __atomic_load_n(&s_rp_lz_hits, __ATOMIC_RELAXED);
     PsyX_Log("vcache repeats: the logic draw's %u of %u projections worked out at once by name "
              "were exact repeats of their entry's last, their maths skipped; the presenter's %u "
-             "of %u; %u kept ones as they were worked out (rp=%d, #228)",
+             "of %u; %u kept ones as they were worked out (rp=%d, #228; 2: in the entry, #259)",
              h[0], n[0], h[1], n[1], zv - zl, s_repeat);
     zl = zv;
   }
@@ -804,7 +845,8 @@ static inline uint32_t hash(uint32_t key) { return (key * 0x9E3779B1u) >> (32 - 
 
 /* The entry for key in r's frame, or a free one for it (gen set, state 0),
  * or -1 when the probe is exhausted. */
-static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch *t) {
+static inline __attribute__((always_inline)) int find_in(Rec *r, int kind, uint32_t key, int add,
+                                                         unsigned *probes, Touch *t) {
   Entry *const s = r->tab->s;
   const uint32_t gen = r->gen;
   uint32_t i = hash(key), n;
@@ -816,7 +858,7 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
         return -1;
       s[i].key = key;
       s[i].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
-      r->tab->rp[i].g = 0; /* #228: no projection worked out under it yet */
+      rp_clear(r->tab, (int)i); /* #228: no projection worked out under it yet */
       r->count++;
       return (int)i;
     }
@@ -824,6 +866,10 @@ static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch
       return (int)i;
   }
   return -1;
+}
+/* (#259: find_in inlined in the logic draw's native record, find elsewhere) */
+static int find(Rec *r, int kind, uint32_t key, int add, unsigned *probes, Touch *t) {
+  return find_in(r, kind, key, add, probes, t);
 }
 
 /* #221: key's entry in tb's frame gen in the overflow (s[VC_SIZE...]), or
@@ -845,7 +891,7 @@ static int ov_find(Table *tb, uint32_t gen, uint32_t key, int add, int kind, uns
     return -1;
   tb->s[fr].key = key;
   tb->s[fr].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
-  tb->rp[fr].g = 0;
+  rp_clear(tb, fr);
   tb->last[fr] = VC_NOSEQ;
   tb->ov_gen = gen;
   return fr;
@@ -1124,8 +1170,9 @@ static inline void pt_ngte(Pt *a, const NgteProj *p, const NgteRtp *o, int vx, i
  * its counts go. tp: the lines it touches, which the caller adds to the
  * cost. Returns whether the projection was clamped (its answer's, for the
  * repeat's record, #228). */
-static int rtp_apply(Table *tb, const Sink *k, const Pt *a, uint32_t key, int sz, int sf, int i,
-                     int q, Touch *tp) {
+static inline __attribute__((always_inline)) int rtp_apply_in(Table *tb, const Sink *k,
+                                                              const Pt *a, uint32_t key, int sz,
+                                                              int sf, int i, int q, Touch *tp) {
   unsigned *const cost = k->cost, *const work = k->work;
   VCacheStats *const st = k->st;
   const int sx = (short)(key & 0xFFFF), sy = (short)(key >> 16), h = a->h;
@@ -1251,6 +1298,12 @@ done:
   if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
     log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
   return clamped;
+}
+/* (#259: rtp_apply_in inlined in the logic draw's native record, rtp_apply
+ * elsewhere: the same code) */
+static int rtp_apply(Table *tb, const Sink *k, const Pt *a, uint32_t key, int sz, int sf, int i,
+                     int q, Touch *tp) {
+  return rtp_apply_in(tb, k, a, key, sz, sf, i, q, tp);
 }
 
 /* Projections worked out when they're needed (#193, #179).
@@ -1412,8 +1465,15 @@ static unsigned s_qstat[QS_N];
 
 void psx_vcache_set_lazy(int on) { s_lazy = on != 0; }
 /* #228: skip an exact repeat's maths (on by default; 0 works every one out) */
-void psx_vcache_set_repeat(int on);
-void psx_vcache_set_repeat(int on) { s_repeat = on != 0; }
+void psx_vcache_game_recs(unsigned out[4]) {
+  out[0] = s_acc[0].work[VCW_PROJ];
+  out[1] = s_acc[0].rec[VCR_ONCE];
+  out[2] = s_acc[0].rec[VCR_KEPT];
+  out[3] = s_rp_hits[VC_LOGIC];
+}
+void psx_vcache_set_repeat(int mode) {
+  s_repeat = mode <= 0 ? RP_OFF : mode == 1 ? RP_ARRAY : RP_ENTRY;
+}
 void psx_vcache_set_lazy_logic(int mode) { s_lazy_logic = mode < 0 ? 0 : mode > 3 ? 3 : mode; }
 
 /* The game thread, at the end of a frame that kept (done_hook, records:
@@ -1582,14 +1642,28 @@ static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, 
  * (Rp) while the entry is valid with one point: then it would change
  * nothing (rtp_point's note), and only its counts are kept. 1: skipped. */
 static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, int vy, int vz) {
-  const Rp *const r = &tb->rp[i];
-  const uint32_t tag = tb->s[i].tag;
-  if (!g || r->g != g || r->vx != vx || r->vy != vy || r->vz != vz ||
-      T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)))
+  const Entry *const e = &tb->s[i];
+  const uint32_t tag = e->tag;
+  int clamped;
+  /* (#259: the entry's tag first, which the record has just read) */
+  if (!g || T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)))
     return 0;
+  if (s_repeat == RP_ENTRY) { /* its RpE, while T_N <= 3 and g is in the frame's window */
+    const RpE *const r = &e->e.rp;
+    const uint32_t d = g - tb->rp_g0;
+    if (T_N(tag) > 3 || d >= RPE_G || (r->gc & RPE_G) != d + 1 || r->vx != vx || r->vy != vy ||
+        r->vz != vz)
+      return 0;
+    clamped = (r->gc & RPE_CL) != 0;
+  } else {
+    const Rp *const r = &tb->rp[i];
+    if (r->g != g || r->vx != vx || r->vy != vy || r->vz != vz)
+      return 0;
+    clamped = r->clamped;
+  }
   if (k->rec)
     k->rec[VCR_WORKED]++;
-  if (r->clamped) {
+  if (clamped) {
     k->work[VCW_CLAMPED]++;
     k->st->clamped++;
   }
@@ -1597,10 +1671,20 @@ static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, i
 }
 /* ... and the one worked out, for the next */
 static inline void rp_keep(Table *tb, int i, uint32_t g, int vx, int vy, int vz, int clamped) {
-  Rp *const r = &tb->rp[i];
-  r->g = g;
-  r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
-  r->clamped = (uint16_t)clamped;
+  if (s_repeat == RP_ENTRY) {
+    Entry *const e = &tb->s[i];
+    const uint32_t d = g - tb->rp_g0;
+    if (T_N(e->tag) > 3) /* candidate 3 is a candidate: none kept (#259) */
+      return;
+    /* (past the window: none, so an older one isn't taken for it) */
+    e->e.rp.gc = d < RPE_G ? (uint16_t)((d + 1) | (clamped ? RPE_CL : 0)) : 0;
+    e->e.rp.vx = (int16_t)vx, e->e.rp.vy = (int16_t)vy, e->e.rp.vz = (int16_t)vz;
+  } else {
+    Rp *const r = &tb->rp[i];
+    r->g = g;
+    r->vx = (int16_t)vx, r->vy = (int16_t)vy, r->vz = (int16_t)vz;
+    r->clamped = (uint16_t)clamped;
+  }
 }
 
 /* tb's slot i's projections worked out, in their order (k: where their
@@ -1655,7 +1739,8 @@ static inline void lz_need(const Table *tab, const Sink *k, int e) {
 static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink *k,
                                                            const int *proj, const NgteProj *np,
                                                            const NgteRtp *o, int vx, int vy,
-                                                           int vz, uint32_t key, int sz, int sf) {
+                                                           int vz, uint32_t key, int sz, int sf,
+                                                           int fast) {
   unsigned *const cost = k->cost;
   Rec *const rec = &s_rec[kind];
   Table *const tb = rec->tab;
@@ -1666,7 +1751,8 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   k->work[VCW_PROJ]++;
   /* The entry first (made if it's new): a key already ambiguous stays so,
    * whatever this projection is, so it needs none of the maths below. */
-  i = find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
+  i = fast ? find_in(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t)
+           : find(rec, kind, key, 1, &cost[VCC_REC_PROBES], &t);
   if (i < 0 && s_ov && rec->count < VC_MAX &&
       (i = ov_find(tb, rec->gen, key, 1, kind, &cost[VCC_REC_PROBES])) >= 0) {
     /* #221: the probe ran out; its entry in the overflow, worked out at
@@ -1748,7 +1834,8 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
       pt_np(&a, np, vx, vy, vz);
     else
       pt_words(&a, proj, vx, vy, vz);
-    clamped = rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
+    clamped = fast ? rtp_apply_in(tb, k, &a, key, sz, sf, i, q, &t)
+                   : rtp_apply(tb, k, &a, key, sz, sf, i, q, &t);
     if (np && s_repeat) /* #228: the entry's last, for a repeat */
       rp_keep(tb, i, np->gen, vx, vy, vz, clamped);
   }
@@ -1765,7 +1852,7 @@ static void rtp_hook(int idx, int sf) {
   const int proj[PROJ_N] = {C2_R11, C2_R12, C2_R13, C2_R21, C2_R22, C2_R23, C2_R31, C2_R32, C2_R33,
                             C2_TRX, C2_TRY, C2_TRZ, C2_OFX, C2_OFY, (unsigned short)C2_H};
   rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2,
-            (unsigned short)C2_SZ3, sf);
+            (unsigned short)C2_SZ3, sf, 0);
 }
 
 /* The same projection given as values (D89), for whatever calls the value
@@ -1773,7 +1860,7 @@ static void rtp_hook(int idx, int sf) {
  * records (sky_hand.c), call ngte_vcache (below) instead; the hook being
  * set still says that the cache records. */
 static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
-  rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1);
+  rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1, 0);
 }
 
 /* The registers' generations (gte_native.h NgteProj gen, #205): the game's
@@ -1781,6 +1868,15 @@ static void rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int
  * on its own thread. */
 unsigned g_ngte_gen;
 unsigned g_pres_ngte_gen;
+
+/* #259: the logic draw's native records (below, every renderer's RTPS and
+ * RTPT on the game thread, the 60 Hz frame's bottleneck in Artisans) take
+ * find's and rtp_apply's bodies inlined (find_in, rtp_apply_in): no call
+ * with ten arguments and a Pt built on the stack for each projection. The
+ * same code, so the same answers. 1 (the default) or 0 (as before:
+ * psx_vcache_set_fast_record). */
+static int s_fast_rec = 1;
+void psx_vcache_set_fast_record(int on) { s_fast_rec = on != 0; }
 
 /* The hand renderers' native RTPS and RTPT (gte_native.h, fast_render=2,
  * D80, D89; #205): the registers by pointer and the sums and SZ3 the GTE
@@ -1792,8 +1888,12 @@ void ngte_vcache(const NgteProj *p, unsigned int vxy, unsigned int vz, const Ngt
   if (__builtin_expect(s_gc != 0, 0))
     gc_check(VC_LOGIC, p, vxy, vz, __builtin_return_address(0));
 #endif
-  rtp_point(VC_LOGIC, &k_game, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
-            ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
+  if (s_fast_rec) /* #259 */
+    rtp_point(VC_LOGIC, &k_game, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
+              ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1, 1);
+  else
+    rtp_point(VC_LOGIC, &k_game, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
+              ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1, 0);
 }
 
 /* the presenter's counts: its thread's, or the game thread's inline */
@@ -1810,7 +1910,7 @@ static void pres_sink(Sink *k) {
 static void pres_rtp_value_hook(const int *proj, int vx, int vy, int vz, unsigned int sxy, int sz3) {
   Sink k;
   pres_sink(&k);
-  rtp_point(VC_PRES, &k, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1);
+  rtp_point(VC_PRES, &k, proj, NULL, NULL, vx, vy, vz, sxy, sz3, 1, 0);
 }
 
 /* The presenter's renderers' native RTPS and RTPT (its build's ngte_vcache,
@@ -1825,7 +1925,7 @@ void pres_vcache_ngte(const NgteProj *p, unsigned int vxy, unsigned int vz, cons
 #endif
   pres_sink(&k);
   rtp_point(VC_PRES, &k, NULL, p, (o->flag & NGTE_NO_SUMS) ? NULL : o, ngte_vx(vxy),
-            ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1);
+            ngte_vy(vxy), ngte_vz(vz), o->sxy, (int)o->sz3, 1, 0);
 }
 
 /* ratio(a, b) < 4, exactly (depths > 0; times 4 isn't rounded) */
@@ -5357,6 +5457,7 @@ static void pres_next(void) {
   r->tab->lc_line = 0;
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   lz_next(r->tab, s_lazy); /* #193 */
+  r->tab->rp_g0 = g_pres_ngte_gen; /* #259: RpE's origin */
   s_since_pres = 0;        /* (#179: the logic draw's then work theirs out at once) */
   if (++r->gen == VC_GEN_END) {
     table_clear(r->tab);
@@ -5404,6 +5505,7 @@ static void done_hook(void) {
   r->tab->idx_gen = 0;
   r->tab->lc_line = 0;
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
+  r->tab->rp_g0 = g_ngte_gen; /* #259: RpE's origin */
   /* its projections kept for its walk (#179), unless the presenter draws
    * in-between frames */
   if (s_since_pres < 255)
@@ -5457,6 +5559,19 @@ void psx_vcache_enable(int mode) {
     const char *const v = getenv("VC_OVERFLOW");
     if (v && v[0] == '0')
       psx_vcache_set_overflow(0);
+  }
+  { /* #259: VC_REPEAT=0/1/2 and VC_FAST_REC=0/1, the switches, and
+     * VC_LAZY_LOGIC=0-3 (the host keeps every logic projection for its walk
+     * in place: 0 works each out at once on the record, as the Vita's game
+     * thread mostly does at 60 Hz) (host builds) */
+    const char *const r = getenv("VC_REPEAT"), *const f = getenv("VC_FAST_REC"),
+                      *const l = getenv("VC_LAZY_LOGIC");
+    if (l && l[0] >= '0' && l[0] <= '3')
+      psx_vcache_set_lazy_logic(l[0] - '0');
+    if (r && r[0] >= '0' && r[0] <= '2')
+      psx_vcache_set_repeat(r[0] - '0');
+    if (f && (f[0] == '0' || f[0] == '1'))
+      psx_vcache_set_fast_record(f[0] == '1');
   }
 #endif
   g_psyxRtpHook = mode >= 2 ? rtp_hook : NULL;

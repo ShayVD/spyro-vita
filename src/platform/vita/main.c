@@ -271,6 +271,13 @@
  *                       kept while the walk has time (D188; the same
  *                       pictures; #196), 3 also a quota kept while the
  *                       walk runs, sized from its idle time (#204)
+ *       vc_repeat=N     with persp or subpixel, an exact repeat's maths
+ *                       skipped (#228): 0 never, 1 its record in each
+ *                       table's rp array (D221), 2 (default) in the entry
+ *                       itself (#259; the same pictures)
+ *       vc_fast_rec=N   with persp or subpixel, the logic draw's native
+ *                       record with its find and maths inlined: 1 (default)
+ *                       or 0 (called, as before #259; the same pictures)
  *       tex_filter=N    with gpu=1, filter textures after the palette lookup:
  *                       1 bilinear (the GPU's own, cheap), 2 3-point (N64
  *                       style, by hand, slower) (default 0: off; D43;
@@ -422,6 +429,8 @@ extern int g_gpu_clear; /* gpu_soft.c, D111 */
 extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
 static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off since #198 */
 static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
+static int s_vc_repeat = 2;     /* vc_repeat= (#228, #259): psx_vcache_set_repeat */
+static int s_vc_fast_rec = 1;   /* vc_fast_rec= (#259): psx_vcache_set_fast_record */
 void nd_init(void (*log)(const char *fmt, ...));
 
 /* src/game/port.c: the data labels' pointers into the arena (D25). */
@@ -694,6 +703,12 @@ static void read_config(void) {
       const int m = atoi(v);
       s_vc_lazy_logic = m < 0 ? 0 : m > 3 ? 3 : m;
     }
+    else if (!strcmp(line, "vc_repeat")) { /* #228, #259: 0 to 2 */
+      const int m = atoi(v);
+      s_vc_repeat = m < 0 ? 0 : m > 2 ? 2 : m;
+    }
+    else if (!strcmp(line, "vc_fast_rec")) /* #259 */
+      s_vc_fast_rec = atoi(v) != 0;
     else if (!strcmp(line, "interp_budget")) /* a menu row until D75 */
       g_vita_opts.interp_budget = atoi(v);
     else if (!strcmp(line, "gpu_meter"))
@@ -1084,11 +1099,13 @@ int main(int argc, char **argv) {
   vita_pres_init();  /* stage 7f (D126) */
   psx_vcache_set_lazy(s_vc_lazy);
   psx_vcache_set_lazy_logic(s_vc_lazy_logic);
+  psx_vcache_set_repeat(s_vc_repeat);         /* #228, #259 */
+  psx_vcache_set_fast_record(s_vc_fast_rec); /* #259 */
   vita_log("threads: parse_thread=%d pres_thread=%d pres_core=%d pres_prio=0x%x vc_lazy=%d "
-           "vc_lazy_logic=%d: the presenter's placement and the projections' deferral (#195, "
-           "#193, D188)",
+           "vc_lazy_logic=%d vc_repeat=%d vc_fast_rec=%d: the presenter's placement, the "
+           "projections' deferral and the record's form (#195, #193, D188, #259)",
            g_vita_opts.parse_thread, g_vita_opts.pres_thread, g_vita_opts.pres_core,
-           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic);
+           (unsigned)g_vita_pres_prio, s_vc_lazy, s_vc_lazy_logic, s_vc_repeat, s_vc_fast_rec);
   nd_init(vita_log);
   vita_log("native_draw=%d nd_fast=%d nd_ab=%d nd_direct=%d: %s", g_native_draw, g_nd_fast,
            g_nd_ab, g_nd_direct,

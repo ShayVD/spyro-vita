@@ -61,6 +61,22 @@ void psx_vcache_set_lazy_logic(int mode);
  * up front; 1 that path without; 0 every polygon the whole path. The same
  * answers in each. */
 void psx_vcache_set_found_fast(int mode);
+/* #228: an exact repeat's maths skipped (vcache.c rp_skip): 0 never; 1
+ * with the last projection worked out kept in each table's rp array
+ * (D221); 2 (the default, #259) kept in the entry itself, in 8 bytes
+ * where its candidate 3 would go, while it has at most three, so the
+ * record reads no line of another array. The same answers in each; set
+ * before the cache records. */
+void psx_vcache_set_repeat(int mode);
+/* #259: the logic draw's native records take the record's find and maths
+ * inlined: 1 (the default) or 0 (called, as before). The same code. */
+void psx_vcache_set_fast_record(int on);
+/* #259: the game thread's records in the logic draw's frame so far: [0]
+ * recorded, [1] worked out at once (repeats skipped among them), [2] kept
+ * for the walk, [3] repeats skipped (since the start). The draw profiles
+ * (prof_draw.c) take each renderer's share from the difference across its
+ * call; the first three start again at the frame's end. */
+void psx_vcache_game_recs(unsigned out[4]);
 /* #221: a record whose probe runs out (VC_PROBE, 32 slots of the frame's
  * other keys; late in a busy frame, as the main sky's records come) makes
  * its entry in a small overflow apart from the table's slots, where before

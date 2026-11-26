@@ -10,8 +10,14 @@
  * pointer's move across each wrapped call, as the host's --prof-draw does
  * since #200), logged as a "draw kb N:" line after the "draw N:" line, so a
  * hardware log gives each part's ms per KB. With 60 Hz logic the update is
- * GamestateUpdate_60, wrapped too since #223 (below). */
+ * GamestateUpdate_60, wrapped too since #223 (below). Since #259 each part
+ * also counts the vertex cache's records the game thread made in it
+ * (psx_vcache_game_recs' difference across the call), logged as a "draw vc
+ * N:" line: projections recorded, worked out at once and kept for the
+ * walk, so a hardware log gives each part's ms per projection and the
+ * record's share of the game thread. */
 #include "vita.h"
+#include "psx_vcache.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <stdint.h>
@@ -28,9 +34,15 @@ static uint64_t s_bytes[D_COUNT];
 
 extern P32F(void *) D_800757B0; /* the primitive buffer's next free byte */
 
+/* #259: each part's vertex-cache records on the game thread: recorded,
+ * worked out at once, kept for the walk, repeats skipped */
+enum { R_REC, R_ONCE, R_KEPT, R_REP, R_N };
+static uint64_t s_recs[D_COUNT][R_N];
+
 typedef struct {
   uint64_t t;
   uint32_t prim;
+  unsigned rec[R_N];
 } Mark;
 /* nd_ab=1 (D91, D92): the same, by the way (native_draw 0, 1 or 2) the list being
  * built is counted under */
@@ -46,6 +58,7 @@ static uint32_t prim_at(void) { return (uint32_t)(uintptr_t)D_800757B0; }
 static Mark mark(void) {
   Mark m;
   m.prim = prim_at();
+  psx_vcache_game_recs(m.rec);
   m.t = now_us();
   return m;
 }
@@ -54,6 +67,10 @@ static void charge(int part, const Mark *m) {
   const uint64_t us = now_us() - m->t;
   const uint32_t prim = prim_at() - m->prim;
   const int v = nd_ab_slot();
+  unsigned r[R_N], k;
+  psx_vcache_game_recs(r);
+  for (k = 0; k < R_N; k++) /* (a frame's end inside the call starts the counts again) */
+    s_recs[part][k] += r[k] >= m->rec[k] ? r[k] - m->rec[k] : r[k];
   s_acc[part] += us;
   s_calls[part]++;
   if (prim < 0x100000) /* the HUD's mobys are drawn from the buffer's top */
@@ -147,7 +164,7 @@ void __wrap_GamestateUpdate_60(void) {
 
 /* vblank.c, with the other reports. */
 void prof_draw_report(int vblank, int vblanks) {
-  char buf[256];
+  char buf[384]; /* (#259: the "draw vc" line reaches ~220 bytes) */
   int i, n;
   if (vblanks <= 0)
     return;
@@ -171,6 +188,23 @@ void prof_draw_report(int vblank, int vblanks) {
                   (unsigned)(tenths / 10), (unsigned)(tenths % 10));
   }
   vita_log("%s", buf);
+  /* "draw vc" (#259): each part's vertex-cache records on the game thread
+   * per vblank, as recorded/at once/kept (the repeats skipped are among
+   * those at once: the line's end gives them for all the parts) */
+  {
+    uint64_t rep = 0;
+    n = snprintf(buf, sizeof buf, "draw vc %d: per vblank records/at once/kept", vblank);
+    for (i = 0; i < D_COUNT; i++) {
+      n += snprintf(buf + n, sizeof buf - n, " %s %u/%u/%u", k_names[i],
+                    (unsigned)(s_recs[i][R_REC] / (unsigned)vblanks),
+                    (unsigned)(s_recs[i][R_ONCE] / (unsigned)vblanks),
+                    (unsigned)(s_recs[i][R_KEPT] / (unsigned)vblanks));
+      rep += s_recs[i][R_REP];
+    }
+    snprintf(buf + n, sizeof buf - n, "; repeats skipped %u (#259)", (unsigned)(rep / (unsigned)vblanks));
+    vita_log("%s", buf);
+    memset(s_recs, 0, sizeof s_recs);
+  }
   memset(s_acc, 0, sizeof s_acc);
   s_skymain = 0;
   memset(s_calls, 0, sizeof s_calls);
