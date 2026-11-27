@@ -1,5 +1,5 @@
 # Encore (formerly vita-port-kit), vendored by tools/vendor.sh: do not edit these files here; change Encore and re-vendor.
-commit 098d34b485fa9172bc08c268254f85f67c6f6cfe
+commit d265f963afa2fb0f742773792b22193efe1044fb
 path lp64/runtime/low_image
 path targets/pc/runtime/winposix
 path core
@@ -11,3 +11,10 @@ path targets/vita/runtime/audioout
 path targets/vita/runtime/touch
 path targets/vita/runtime/perfcount
 path targets/vita/runtime/vcount
+path lp64/runtime/p32
+path lp64/runtime/p32_image
+path lp64/tools
+path lp64/cmake
+path targets/pc/cmake
+path targets/pc/macos
+path targets/pc/tools

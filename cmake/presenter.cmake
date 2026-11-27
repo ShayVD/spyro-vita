@@ -95,9 +95,9 @@ if(SPYRO_HOST STREQUAL "ps4" OR CMAKE_OBJCOPY MATCHES "llvm-objcopy")
   set(PRES_KEEP_ARGS "--keep-global-symbols=${PRES_OBJ}.commons")
 endif()
 if(APPLE)
-  # macOS (D250 O4): no objcopy; tools/macho_syms.py makes the same edits
+  # macOS (D250 O4): no objcopy; Encore's macho_syms.py makes the same edits (D279)
   # (commons stay global there too)
-  set(PRES_LOCALIZE COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/tools/macho_syms.py"
+  set(PRES_LOCALIZE COMMAND Python3::Interpreter "${CMAKE_SOURCE_DIR}/third_party/encore/lp64/tools/macho_syms.py"
     --keep-global-symbol GamestateDraw_pres --redefine-sym LoadImage=pres_LoadImage
     "${PRES_OBJ}.r" "${PRES_OBJ}")
 else()

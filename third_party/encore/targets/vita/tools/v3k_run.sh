@@ -3,12 +3,16 @@
 # line, Vita3K ends, or a timeout, and collect the log, shots and save folder:
 #   HW_GAME=tools/vita/hw.game targets/vita/tools/v3k_run.sh OUT_DIR [TIMEOUT_S] [config line]...
 # The game's settings are the hw.game the hardware tools read (hw.game.example): HW_DATA, HW_LOG, HW_STOP_RE,
-# HW_HANG_RE, HW_VPK, HW_PAD_NAME, HW_SAVE_DIR, HW_TIMEOUT. An optional hook in it, v3k_config_base, prints the
+# HW_HANG_RE, HW_FAIL_RE, HW_VPK, HW_PAD_NAME, HW_SAVE_DIR, HW_TIMEOUT. An optional hook in it, v3k_config_base, prints the
 # run's first config.txt lines (default: realtime=0, unless REALTIME=1). The game repo's root is GAME_ROOT, else
 # the git top level of HW_GAME's folder.
 # PAD=FILE plays a pad script (copied to HW_DATA/HW_PAD_NAME, pad= added); SAVE=DIR starts the save folder from a
 # copy; VPK=FILE runs another build; CAPTURE=1 grabs the Vita3K window (macOS) at each hold.req the game writes,
 # as OUT_DIR/win-V.png, answering hold.ack (the game's shot_hold protocol, spyro-vita docs/vita-testing.md).
+# OUT_DIR/capture.log says which grabs failed: "shot V: no capture (R)" (1 no window; 2 a one-colour grab that is
+# not the game's frame). A one-colour grab whose colour is the game's own VRAM shot of that vblank (the shots folder's
+# PNG whose name's digits are V, every pixel that colour: a real black fade) is a capture: "shot V: single-colour
+# capture (R,G,B), as the VRAM shot NAME". V3K_WINDOW names another grabber (the tests' fake; nothing is raised).
 # KEYS=FILE (macOS) plays a key script into this run's Vita3K as keyboard events (v3k_keys.swift: wait, log RE,
 # press cross, press select+l1, down/up lstick-up), which Vita3K's keyboard map turns into buttons and sticks: the
 # real controller path, which PAD= bypasses (use one or the other). The script is checked before the lock; the
@@ -30,7 +34,9 @@
 # a minute old (a run killed as it took it), is taken over; takeovers are serialised by a second lock (.reap), so
 # two waiters never both take it. After the stop line Vita3K gets about 3 s to exit by itself. Vita3K is stopped and
 # reaped however the script ends (only SIGKILL can leave it). OUT_DIR/v3k-run.txt: result, seconds, VPK, SHA-1.
-# Exit: 0 the stop line; 2 Vita3K ended without it (a crash); 3 the timeout (a hang); 4 HW_HANG_RE seen; 1 setup.
+# Exit: 0 the stop line; 2 Vita3K ended without it (a crash); 3 the timeout (a hang); 4 HW_HANG_RE seen; 1 setup;
+# 7 HW_FAIL_RE seen (optional: a line the game writes when the route's goal was missed; the run stops at once, and
+# the line wins over a stop line found in the same look; v3k-run.txt has result=fail_line and fail_line=THE LINE).
 # Vita3K is not a Vita: its timing is not evidence (targets/vita/docs/gotchas.md 24).
 # From spyro-vita tools/vita/vita3k_run.sh @ bb62f38, the game's paths and names made settings and the result an
 # exit code; DISC= and GRAB= stay spyro-vita's.
@@ -42,6 +48,7 @@ shift
 HW_GAME=$(cd "$(dirname "$HW_GAME")" && pwd)/$(basename "$HW_GAME")
 HW_COLLECT=()
 HW_HANG_RE=
+HW_FAIL_RE=
 HW_PAD_NAME=pad.txt
 HW_SAVE_DIR= # as hw_run.sh: no save folder unless the game names one
 HW_TIMEOUT=600
@@ -207,8 +214,8 @@ if [ -f "$cfg_src" ]; then
 fi
 winid=
 if [ "${CAPTURE:-0}" = 1 ]; then
-  winid="${TMPDIR:-/tmp}/v3k_window"
-  if [ ! "$winid" -nt "$tools/v3k_window.swift" ]; then # built to a temporary name: runs share it
+  winid=${V3K_WINDOW:-"${TMPDIR:-/tmp}/v3k_window"}
+  if [ -z "${V3K_WINDOW:-}" ] && [ ! "$winid" -nt "$tools/v3k_window.swift" ]; then # built to a temporary name: runs share it
     if ! swiftc -O -o "$winid.$$" "$tools/v3k_window.swift"; then
       rm -f "$winid.$$"; echo "v3k_run: warning: swiftc could not build the window grabber; CAPTURE=1 needs it"; exit 1
     fi
@@ -220,6 +227,26 @@ fi
 # A .vpk argument installs (over an older install) and runs it.
 "$vita3k" --frontend sdl ${cfgarg[@]+"${cfgarg[@]}"} -w "$vpk" > "$out/vita3k.txt" 2>&1 &
 pid=$!
+# one_colour V "one-colour R G B A": succeeds (saying so) when the game's VRAM shot of vblank V is all R,G,B (each
+# channel within 4, the grabber's own limit) and the grab was opaque; else fails saying why
+one_colour() {
+  local v=$1 word r g b a more f n shot= rgb
+  read -r word r g b a more <<< "$2"
+  [ "$word" = one-colour ] && [ -n "$a" ] && [ -z "$more" ] || { echo "the grabber gave no colour"; return 1; }
+  rgb="$r,$g,$b"
+  [ "$a" -ge 250 ] 2>/dev/null || { echo "a transparent grab ($rgb alpha $a)"; return 1; }
+  for f in "$data/shots/"*.png; do
+    [ -f "$f" ] || continue
+    n=$(basename "$f" .png | tr -dc 0-9)
+    [ -n "$n" ] && [ "$((10#$n))" = "$((10#$v))" ] && { shot=$f; break; }
+  done
+  [ -n "$shot" ] || { echo "one colour ($rgb) and no VRAM shot of $v to compare"; return 1; }
+  if python3 "$tools/shots_cmp.py" --one-colour "$rgb" "$shot" --tol 4 > /dev/null 2>&1; then
+    echo "$rgb, as the VRAM shot $(basename "$shot")"
+  else
+    echo "one colour ($rgb), but the VRAM shot $(basename "$shot") is not"; return 1
+  fi
+}
 if [ -n "$winid" ]; then
   ( while :; do
       if [ -f "$data/hold.req" ]; then
@@ -228,13 +255,20 @@ if [ -n "$winid" ]; then
         rm -f "$data/hold.req"
         # no grab, or a blank one: the window wasn't drawn (covered by another); bring this Vita3K forward and
         # try once more
-        r=0; "$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log" || r=$?
+        r=0; c=$("$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log") || r=$?
         if [ $r != 0 ]; then
-          osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
+          [ -n "${V3K_WINDOW:-}" ] || osascript -e \
+            "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
             > /dev/null 2>> "$out/capture.log" || true
-          sleep 1; r=0; "$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log" || r=$?
+          sleep 1; r=0; c=$("$winid" "$out/win-$v.png" "$pid" 2>> "$out/capture.log") || r=$?
         fi
-        [ $r = 0 ] || echo "shot $v: no capture ($r)" >> "$out/capture.log"
+        if [ $r = 2 ]; then # one colour: the game's frame when its own VRAM shot of V is that colour too
+          why=$(one_colour "$v" "$c") && r=0
+          if [ $r = 0 ]; then echo "shot $v: single-colour capture ($why)" >> "$out/capture.log"
+          else echo "shot $v: no capture (2): $why" >> "$out/capture.log"; fi
+        elif [ $r != 0 ]; then
+          echo "shot $v: no capture ($r)" >> "$out/capture.log"
+        fi
         : > "$data/hold.ack"
       fi
       sleep 0.05
@@ -262,11 +296,14 @@ if [ -n "$keys" ]; then
 fi
 result=timeout
 t=0
+failed() { [ -n "$HW_FAIL_RE" ] && grep -Eq -e "$HW_FAIL_RE" "$log" 2>/dev/null; }
 while :; do
+  if failed; then result=fail_line; break; fi
   if grep -Eq -e "$HW_STOP_RE" "$log" 2>/dev/null; then result=stop; break; fi
   if [ -n "$HW_HANG_RE" ] && grep -Eq -e "$HW_HANG_RE" "$log" 2>/dev/null; then result=hang_line; break; fi
   if ! kill -0 "$pid" 2>/dev/null; then
-    if grep -Eq -e "$HW_STOP_RE" "$log" 2>/dev/null; then result=stop; else result=exited; fi
+    if failed; then result=fail_line
+    elif grep -Eq -e "$HW_STOP_RE" "$log" 2>/dev/null; then result=stop; else result=exited; fi
     break
   fi
   [ "$t" -ge "$timeout" ] && break
@@ -287,6 +324,11 @@ for name in ${HW_COLLECT[@]+"${HW_COLLECT[@]}"}; do
 done
 sha=$( (sha1sum "$vpk" 2>/dev/null || shasum "$vpk") | cut -d' ' -f1)
 printf 'result=%s\nseconds=%s\nvpk=%s\nvpk_sha1=%s\n' "$result" "$t" "$vpk" "$sha" > "$out/v3k-run.txt"
+if [ "$result" = fail_line ]; then
+  fline=$(grep -E -m 1 -e "$HW_FAIL_RE" "$out/$HW_LOG" 2>/dev/null || true)
+  echo "fail_line=$fline" >> "$out/v3k-run.txt"
+  echo "v3k_run: the fail line (HW_FAIL_RE): $fline"
+fi
 if [ -n "$keys" ]; then
   echo "keys=$keys_rc" >> "$out/v3k-run.txt"
   [ "$keys_rc" = 0 ] || echo "v3k_run: warning: the key script did not play to its end (keys=$keys_rc, $out/keys.log)"
@@ -297,4 +339,5 @@ case $result in
   exited) exit 2 ;;
   timeout) exit 3 ;;
   hang_line) exit 4 ;;
+  fail_line) exit 7 ;;
 esac

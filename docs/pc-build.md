@@ -80,7 +80,7 @@ To try it on the Mac: `docker build` an image `FROM spyro-pc` with Debian's `win
 ### macOS (Apple silicon; D250 O4, D265)
 
 ```bash
-tools/pc/sdl3_macos.sh                      # once: SDL 3.4.18, static, in build/sdl3-macos
+third_party/encore/targets/pc/tools/sdl3_macos.sh   # once: SDL 3.4.18, static, in build/sdl3-macos
 cmake -S . -B build/pc-macos -G Ninja -DSPYRO_HOST=pc -DCMAKE_TOOLCHAIN_FILE=cmake/pc-macos.toolchain.cmake \
     -DPython3_EXECUTABLE=/usr/bin/python3   # a Python with PyYAML (the system's has it)
 cmake --build build/pc-macos                # -> build/pc-macos/Spyro.app
@@ -89,7 +89,7 @@ build/pc-macos/Spyro.app/Contents/MacOS/Spyro --disc disc/image
 
 Native, on the Mac itself: Apple's clang (the Command Line Tools), macOS 13 or later, arm64 only. ARM64 has no `__ptr32`, so this build uses the offset model (`src/compat/p32.h`, D250): every P32 slot is a 32-bit offset from the executable's Mach-O header (`__mh_execute_header`), wherever the kernel slides it. `__PAGEZERO` covers the low 4 GB, so a pointer cut to 32 bits instead of encoded crashes, as the reservation does on Linux. `src/platform/common/p32_image.c` checks the image and stores the data image's offsets before the game starts. The window is SDL3's, with Encore's GL request (3.3 core, forward-compatible), which macOS answers with its 4.1 core context; the `#version 330` shaders run as they are. `Spyro.app` is signed ad hoc: Gatekeeper asks before the first start of a copy from elsewhere (right-click, Open).
 
-What Mach-O needed beyond Linux (D265): the data image's and the presenter's assembly in Mach-O's dialect (`tools/data2s.py --macho`, `pres_snap_syms.py --macho`: underscored names, `segment,section` names); `objcopy`'s symbol edits on the presenter's and the 60 Hz rules' objects done by `tools/macho_syms.py` (private extern, then `ld -r`, which makes them local); ld64's `-u` for `--undefined`; `__asm__` labels through `SPYRO_ASM_LIT` (Mach-O's underscore); `etext`/`_end` marks in the image; the game thread's stack aligned to 16 KB pages.
+What Mach-O needed beyond Linux (D265): the data image's and the presenter's assembly in Mach-O's dialect (`tools/data2s.py --macho` through Encore's `asm_macho.py`, `pres_snap_syms.py --macho`: underscored names, `segment,section` names); `objcopy`'s symbol edits on the presenter's and the 60 Hz rules' objects done by Encore's `lp64/tools/macho_syms.py` (private extern, then `ld -r`, which makes them local); ld64's `-u` for `--undefined`; `__asm__` labels through `SPYRO_ASM_LIT` (Encore's `LP64_ASM_LIT`: Mach-O's underscore); `etext`/`_end` marks in the image; the game thread's stack aligned to 16 KB pages.
 
 ### Linux on ARM (aarch64; D250 O5, D266)
 

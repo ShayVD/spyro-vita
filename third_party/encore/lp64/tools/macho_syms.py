@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""objcopy's symbol edits for a Mach-O relocatable object (macOS, D250 O4).
+"""objcopy's symbol edits for a Mach-O relocatable object (macOS arm64; lp64/docs/low-image.md, "macOS").
 
-Apple's tools have no objcopy, and llvm-objcopy can't localize Mach-O
-symbols. The presenter's and the 60 Hz rules' objects (cmake/presenter.cmake,
-tools/tick60_link.py) need three edits, done here on the symbol table:
+Apple's tools have no objcopy, and llvm-objcopy can't localize Mach-O symbols. A port that links part of itself into
+one relocatable object and hides that object's internals (spyro-vita's presenter and its 60 Hz rules: one global
+kept, every other made local, a few renamed) does the three edits here, on the symbol table:
 
   macho_syms.py [--localize-symbols FILE] [--keep-global-symbol NAME]...
-                [--redefine-sym OLD=NEW]... --ld LD IN.o OUT.o
+                [--redefine-sym OLD=NEW]... [--ld LD] [--arch ARCH] IN.o OUT.o
 
-  --localize-symbols FILE  every defined global named in FILE becomes local
+  --localize-symbols FILE  every defined global named in FILE (one a line) becomes local
   --keep-global-symbol N   every defined global but the N's becomes local
-                           (commons and undefined symbols stay as they are,
-                           as GNU objcopy leaves them)
+                           (commons and undefined symbols stay as they are, as GNU objcopy leaves them)
   --redefine-sym OLD=NEW   a symbol, defined or not, renamed
 
-Names are C's (no leading underscore). A symbol to localize is marked
-private extern (N_PEXT) and the object linked again with `ld -r`, which turns
-private externs into local symbols; renames append the new name to the
-string table, which the relink then rewrites in order.
+Names are C's (no leading underscore). A symbol to localize is marked private extern (N_PEXT) and the object linked
+again with `ld -r`, which turns private externs into local symbols (kb `ld64-no-wrap-defsym-and-ld-r-localises`);
+renames append the new name to the string table, which the relink then rewrites in order.
+
+From spyro-vita tools/macho_syms.py @ 36d9e07 (MIT; D265), unchanged but this text.
 """
 import argparse
 import os
