@@ -9,7 +9,7 @@ so the build needs nothing new. The output is the same on every run.
                                OUTDIR/bg.png (840x500), OUTDIR/startup.png (280x158)
 
 The PNGs are written 8-bit indexed (palette), as the Vita wants sce_sys art,
-by vita-port-kit's livearea_png.py, which also checks them (`check`) and
+by Encore's livearea_png.py, which also checks them (`check`) and
 converts the player's own art instead of this (`from DIR OUTDIR`: the build
 passes disc/livearea, gitignored, made by tools/vita/livearea_local.sh, if
 it's there, else assets/livearea, the committed official art, D59).
@@ -314,10 +314,10 @@ def make_bg():
 
 # ---------------------------------------------------------------- PNG
 # The PNG half (quantize, the indexed PNG writer, --check, --from) is
-# vita-port-kit's livearea_png.py now (third_party/vita-port-kit/vita/tools).
+# Encore's livearea_png.py now (third_party/encore/targets/vita/tools).
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "third_party", "vita-port-kit", "vita", "tools"))
+                                "..", "..", "third_party", "encore", "targets", "vita", "tools"))
 import livearea_png  # noqa: E402
 
 

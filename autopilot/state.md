@@ -11,49 +11,20 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 283,
-      "branch": "refactor/283-vita-on-encore-s-platform-interface",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
-      "started_at": "2026-11-27T06:29:03Z",
+      "issue": 259,
+      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
+      "started_at": "2026-11-27T07:29:51Z",
       "files": [
-        "src/platform/vita/video.c",
-        "src/platform/vita/present_vita.c",
-        "src/platform/vita/pres_thread.c",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/CMakeLists.txt"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "src/platform/linux32/prof_draw.c",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md",
+        "src/platform/vita/main.c"
       ],
-      "agent": "ae596b6969b225d80"
-    },
-    {
-      "issue": 294,
-      "branch": "refactor/294-remove-third-party-vita-port-kit-move",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-294",
-      "started_at": "2026-11-27T06:29:10Z",
-      "files": [
-        "src/platform/common/menu_opts.h",
-        "src/platform/common/menu_panel.h",
-        "src/platform/common/psx_audio_ring.h",
-        "src/platform/common/psx_cdimage.h",
-        "src/platform/common/psx_pbp.h",
-        "src/platform/vita/vita_pc.h",
-        "src/platform/ps4/main.c",
-        "src/platform/ps4/menu.c",
-        "tests/audio/",
-        "tests/vcount/",
-        "tools/ci/build_vpk.sh",
-        "tools/vita/hw-routes/stone60.cfg",
-        "tools/vita/hw.game",
-        "tools/vita/hw_check.sh",
-        "tools/vita/hw_ftp.py",
-        "tools/vita/hw_mock.py",
-        "tools/vita/hw_run.sh",
-        "tools/vita/livearea_local.sh",
-        "tools/vita/make_livearea.py",
-        ".github/workflows/build.yml",
-        "assets/livearea/README.md",
-        "third_party/vita-port-kit/"
-      ],
-      "agent": "a2b6e27067f813f6d"
+      "agent": "a7b715a9f3ac4ffcb"
     }
   ],
   "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
@@ -309,7 +280,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "pick": "after #259 hardware A/B",
       "status": "open"
     },
-    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them."
+    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them.",
+    "2026-11-27 08:40: owner: wait for the remaining work (#283 gate, #259 attempt 2) to finish, dispatch nothing new, then stop the loop, run the retro (Encore draft PR) and open the release PR to main."
   ],
   "attempts": {
     "161": 1,
@@ -377,7 +349,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "release/phase8-wobble-draw-distance-d264",
       "commit": "31a47eb",
       "pr": 275,
-      "merged_at": null
+      "merged_at": "2026-11-26T10:51:04Z"
     }
   ]
 }
@@ -622,3 +594,8 @@ continue.
 - 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
 - 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
 - 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
+- 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
+- 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
+- 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
+- 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
+- 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.

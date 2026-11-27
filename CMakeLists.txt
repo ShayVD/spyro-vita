@@ -115,6 +115,14 @@ elseif(SPYRO_HOST STREQUAL "pc")
     # whose two spellings of a slot are one layout (as linuxa64's), Mach-O
     set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
     set(SPYRO_MACHO ON)
+  elseif(SPYRO_PC_TARGET MATCHES "aarch64")
+    # Linux on ARM (D250 O5): the offset model as on macOS, an ELF image
+    # linked as linuxa64's (below); the checking build as linuxa64's
+    set(SPYRO_PC_EXTRA_FLAGS -Wno-error=incompatible-pointer-types)
+    option(SPYRO_P32_CHECK "linuxa64, macos, the PC on aarch64: stop at a host pointer stored as a game address" OFF)
+    if(SPYRO_P32_CHECK)
+      list(APPEND SPYRO_ARCH_FLAGS -DSPYRO_P32_CHECK=1)
+    endif()
   endif()
   set(SPYRO_OPT_FLAGS -O2 -g -fno-vectorize -Wno-error=implicit-function-declaration
       -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=return-type
@@ -159,8 +167,9 @@ if(SPYRO_MACHO)
 elseif(NOT DEFINED SPYRO_PIC_FLAGS)
   set(SPYRO_PIC_FLAGS -fno-pic)
 endif()
-# The offset model's hosts (D250): linuxa64, macos and the PC on macOS
-if(SPYRO_HOST MATCHES "^(linuxa64|macos)$" OR (SPYRO_HOST STREQUAL "pc" AND SPYRO_PC_TARGET MATCHES "apple"))
+# The offset model's hosts (D250): linuxa64, macos and the PC on macOS and
+# on Linux aarch64
+if(SPYRO_HOST MATCHES "^(linuxa64|macos)$" OR (SPYRO_HOST STREQUAL "pc" AND SPYRO_PC_TARGET MATCHES "apple|aarch64"))
   set(SPYRO_OFFSET_HOST ON)
 endif()
 # The executable's link: static and non-PIE at 0x400000 on linux64, so the
@@ -188,6 +197,15 @@ elseif(SPYRO_HOST STREQUAL "pc")
   # non-PIE at 0x400000 on Linux; a fixed base of 0x400000 on Windows
   # (src/platform/pc/CMakeLists.txt)
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS})
+  if(SPYRO_PC_TARGET MATCHES "aarch64")
+    # Linux on ARM (D250 O5): non-PIE above 4 GB at linuxa64's address, the
+    # P32 base the image's start, but dynamic (src/platform/pc/low.c
+    # reserves the low 4 GB before any library loads). -z separate-code: GNU
+    # ld for aarch64 otherwise puts the whole image in one RWX segment at
+    # this address; with it, R, R+X and R+W segments as on x86-64.
+    list(APPEND SPYRO_LINK_FLAGS -Wl,-Ttext-segment=0x201230000 -Wl,--defsym=spyro_p32_base=__executable_start
+         -Wl,-z,separate-code)
+  endif()
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS} ${SPYRO_PC_RELOC_LD_FLAGS})
 elseif(SPYRO_HOST STREQUAL "ps4")
   # the presenter's and tick60's relocatable links (the eboot's own link is

@@ -279,7 +279,7 @@ static void read_config(void) {
   /* The menu's MAX (ADAPTIVE) was 200 (2X before #260) until #261 made it
    * 400 (DD_MAX_PCT): a 200 the menu saved then is read as today's MAX. The
    * menu writes the other lines, then config_version=N, then every row's key
-   * and nothing else (vpk_menu_save): config_version=5 (or lower) last, only
+   * and nothing else (enc_menu_save): config_version=5 (or lower) last, only
    * rows' keys after it, the nine above among them. A developer's 200
    * elsewhere, or with config_version=6, stays 200. */
   if (version_line && version < 6 && tail_rows && tail_rows_d194 == MENU_ROWS_D194_ALL &&

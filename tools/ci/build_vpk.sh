@@ -41,9 +41,9 @@ cmake -S . -B "$out" -G Ninja -DSPYRO_HOST=vita \
   -DPython3_EXECUTABLE="$(command -v python3)" ${SPYRO_CMAKE_ARGS:-}
 cmake --build "$out"
 
-# What went into the VPK, and the Vita's rules for it (vita-port-kit's
+# What went into the VPK, and the Vita's rules for it (Encore's
 # livearea_png.py: eboot.bin, param.sfo, template.xml and the three sce_sys
 # PNGs present, not empty, 8-bit indexed at their sizes).
 python3 -m zipfile -l "$out/spyro-vita.vpk"
-python3 third_party/vita-port-kit/vita/tools/livearea_png.py vpk "$out/spyro-vita.vpk" --livearea
+python3 third_party/encore/targets/vita/tools/livearea_png.py vpk "$out/spyro-vita.vpk" --livearea
 echo "VPK OK: $out/spyro-vita.vpk"
