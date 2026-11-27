@@ -692,6 +692,8 @@ void port_lod_report(char *out, unsigned len) {
   X(s_rec2) X(s_st) X(s_logic60) X(s_near) X(s_last_bytes) X(s_last_60) X(s_bt)  \
   X(s_ref_bytes) X(s_ref_ok) X(s_ref_recs) X(s_rec_mark)
 #define LOD_SIZE(v) + sizeof v
+/* D282: the presenter's copies (pres_draw.c lod_begin) hold LOD_STATE_MAX */
+static_assert(0 LOD_STATE(LOD_SIZE) <= LOD_STATE_MAX, "lod.c's state outgrew LOD_STATE_MAX (lod.h)");
 #define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
 #define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;
 unsigned port_lod_state_size(void) { return 0 LOD_STATE(LOD_SIZE); }

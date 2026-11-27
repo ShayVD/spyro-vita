@@ -318,12 +318,13 @@ in `licenses/`). Building it: [docs/ps4-build.md](docs/ps4-build.md).
   frames at 60 Hz on NORMAL still drop them. `dd_budget=0` in `config.txt` turns the budget off (up
   to 2× everywhere, but more dropped frames). `draw_distance=150` in `config.txt` still works (the
   menu then shows 150%).
-- **PSX WOBBLE OFF, the default, costs frames at 60 fps.** Its perspective-correct textures and
+- **WOBBLE FIX ON, the default, costs frames at 60 fps.** Its perspective-correct textures and
   sub-pixel vertices (measured on hardware, interpolated) still hold 60 fps in quiet levels such as
   Toasty and the title, but busy ones drop frames: in Stone Hill about one vblank in six is late.
-  Turning PSX WOBBLE on gives those frames back, with the PS1's wobble.
+  Turning WOBBLE FIX off gives those frames back, with the PS1's wobble. (The row was called PSX
+  WOBBLE before, with ON meaning the PS1's wobble; your `config.txt` reads the same either way.)
 - **The first start-up takes a few seconds longer** while the GPU's shader programs compile,
-  since the wobble fix is on from the start. Turning PSX WOBBLE on for the first time in a
+  since the wobble fix is on from the start. Turning WOBBLE FIX off for the first time in a
   session pauses the menu for a moment while its programs compile, once per start-up.
 - **Opening the game's pause or inventory screen hitches for a moment.** The game copies the frame
   for the menu's background, and the GPU renderer has to rebuild that copy on the CPU.

@@ -304,8 +304,9 @@
  *                       config_version=5 in the file, as dynres= is
  *       wobble=1        with gpu=1, the PS1's wobble: persp and subpixel
  *                       below both off. Default 0 (#177, the owner's
- *                       decision): both on, no wobble. The menu's PSX WOBBLE
- *                       row, which replaced their two rows (picture.c)
+ *                       decision): both on, no wobble. The menu's WOBBLE FIX
+ *                       row (OFF is wobble=1; PSX WOBBLE, ON for wobble=1,
+ *                       until D282), which replaced their two rows (picture.c)
  *       persp=1         with gpu=1, perspective-correct textures on polygons
  *                       the GTE projected (D39)
  *       subpixel=1      with gpu=1, those polygons' vertices at their exact
@@ -857,7 +858,7 @@ static void read_config(void) {
     vita_log("config: persp=%d subpixel=%d without config_version=6 is from the menu's two rows "
              "before PSX WOBBLE (#177): %s",
              pic_value[0], pic_value[1],
-             pic_value[0] ? "PSX WOBBLE OFF" : "the old default, read as today's: PSX WOBBLE OFF");
+             pic_value[0] ? "WOBBLE FIX ON" : "the old default, read as today's: WOBBLE FIX ON");
   } else {
     if (pic_line[0])
       g_vita_opts.persp = pic_value[0];

@@ -182,8 +182,11 @@ static u32 sector_anims(int i) {
 
 /* LOD's state as the game's port_lod_draw_begin(1) leaves it for a
  * shown draw (the game's state is put back), its buffer addresses moved onto
- * the presenter's */
-static unsigned char s_lod_game[512], s_lod[512];
+ * the presenter's. LOD_STATE_MAX (lod.h; lod.c static_asserts the state fits):
+ * until D282 these were 512 bytes, and #271 made the state 516 where 64-bit
+ * fields are 8-aligned, so on the Vita and the PC the return below was taken
+ * every frame and the in-between frames stayed at 1x. */
+static unsigned char s_lod_game[LOD_STATE_MAX], s_lod[LOD_STATE_MAX];
 static void lod_begin(void) {
   const unsigned n = port_lod_state_size();
   unsigned i;

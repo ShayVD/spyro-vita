@@ -78,7 +78,14 @@ void port_lod_reset(void);
 /* One line of statistics since the last call (empty when nothing was drawn
  * with the option on); resets them. */
 void port_lod_report(char *out, unsigned len);
-/* All of lod.c's state, for the presenter's copy (lod_pres.c, D123) */
+/* All of lod.c's state, for the presenter's copy (lod_pres.c, D123).
+ * LOD_STATE_MAX bounds it on every target: lod.c static_asserts it, and
+ * pres_draw.c's lod_begin sizes its copies by it. Until D282 those copies were
+ * 512 bytes and lod_begin returned silently when the state was bigger: #271's
+ * fields made it 516 bytes where 64-bit fields are 8-aligned (the Vita, the PC,
+ * the PS4; 512 on the i686 host), so the presenter's frames kept a 1x draw
+ * distance and the 60 fps in-between frames flashed against the real ones. */
+#define LOD_STATE_MAX 1024
 unsigned port_lod_state_size(void);
 void port_lod_state_get(unsigned char *p);
 void port_lod_state_set(const unsigned char *p);
