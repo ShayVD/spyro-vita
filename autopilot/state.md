@@ -62,7 +62,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "tools/gdb_run.sh",
         "docs/host-build.md"
       ],
-      "agent": "a5c39f9290a1b230e"
+      "agent": "a5c39f9290a1b230e",
+      "reported": true
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
