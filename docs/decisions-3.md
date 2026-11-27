@@ -2157,7 +2157,24 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Byte identity, each target built from develop's 99756fb and from O4 in the same build directories: Vita `spyro_vita.velf` and PS4 `spyro.elf` every loaded section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
   - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
-- **Next free number:** D266 (taken by D265's successors below; see `autopilot/decision-claims.md`).
+
+### D266. ARM64 step O5: the PC build for Linux on aarch64, in the offset model; its base is the image's start above 4 GB, linuxa64's, not D250's base 0 (2026-11-26)
+- **What:** the fifth step of D250's plan. `-DSPYRO_HOST=pc` with `cmake/pc-linux-arm64.toolchain.cmake` builds the PC build (D240, D243, D247: SDL3, OpenGL 3.3 core, Encore's PC backend) for aarch64 Linux, in the offset model (`src/compat/p32.h`; `SPYRO_P32_OFFSET` is already on for every aarch64 target). It is built in a new arm64 image, `tools/docker/pc-arm64.Dockerfile` (`spyro-pc-arm64`: the x86-64 image's Debian 12, clang 19 and SDL 3.4.18 static, without the Windows half), run by `PC_ARCH=arm64 tools/pc/tc`, natively on an Apple silicon Mac's Docker VM. `docs/pc-build.md` "Linux on ARM".
+- **The base: not D250's 0.** D250 named "base 0" for Linux on ARM: link the image low and non-PIE, so a decode is only the zero-extending load. Taken instead: linuxa64's (D262), non-PIE at 0x2_0123_0000, above 4 GB and not 4 GB-aligned, the base `__executable_start` (`-Wl,-Ttext-segment=0x201230000 -Wl,--defsym=spyro_p32_base=__executable_start`). Why:
+  - With base 0 a pointer cut to 32 bits *is* its offset, so a missed `P32_ENC` works by accident on this target and breaks on macOS. O3 chose its address for exactly that (both kinds of miss were found that way), and O4's presenter misses were found because macOS's base isn't 0. One more target that hides misses buys nothing.
+  - The same layout as linuxa64, so the headless host's checks (`host_checks.sh`, the checking build) describe the PC build's memory too, and `src/platform/common/p32_image.c`'s start-up (the image above 4 GB and within 4 GB of its start, the data image's offsets) runs as it is, as on macOS.
+  - The cost D250 measured is one `add` of a base kept in a register; base 0 would save only that.
+- **Dynamic, unlike linuxa64:** SDL loads the display, GL and sound libraries at run time, so the executable is dynamic and non-PIE, as the x86-64 PC build. The low 4 GB is reserved from `.preinit_array` before any library loads (`src/platform/pc/low.c`), the reservation Encore's `lp64_low_image_dyn.c` makes on x86-64; that file refuses other architectures (`#error`), and the vendored copy is not edited here, so `low.c` has an aarch64 copy (spyro's own code: Encore's file came from spyro's `low_linux.c`), with the kernel's page size (4, 16 or 64 KB on aarch64) instead of 4 KB. `LP64_LOW_TRAP=0` skips it. glibc's malloc stays (its heap follows the image, above 4 GB).
+- **`-z separate-code`:** GNU ld for aarch64 put the whole image in one RWX LOAD segment at that address (its warning "a LOAD segment with RWX permissions"); with the flag it is R, R+X and R+W segments, as the x86-64 build's.
+- **Other changes, each for aarch64 only:** `crash.c` reads the faulting `pc` and `sp` (x86-64's `REG_RIP`/`REG_RSP` through a macro, the same text there); the game thread's `.bss` stack is 64 KB-aligned (`main.c`); `-DSPYRO_P32_CHECK=ON` is the checking build, as linuxa64's and macOS's. CI: a `pc-arm64` job on `ubuntu-24.04-arm` builds the image and the game and starts it without a disc under Xvfb, as the x86-64 job does.
+- **Checks** (logs gitignored: `logs/o5-*`):
+  - Builds and starts in `spyro-pc-arm64` under Xvfb (Mesa llvmpipe, GL 4.5 core): `image 0x201230000-0x203851b78`, 1,048,560 pages below 4 GB reserved, `video: x11, llvmpipe`, the GPU renderer ready. No sound device in the container (`audio: off`), as in the x86-64 image.
+  - The play route (`tools/pc/routes/play.pad`, `virtual=1`, 14,000 vblanks, shots at 4,000, 5,200, 9,000, 12,500 and 13,900: the attract demo, New Game into Artisans, play, the flight into a portal), with `gpu=1` and `gpu=0`, plain and checking build: every run exits 0, no checking-build stop, no fault.
+  - **Against the x86-64 PC build** (the same route and options, amd64 image under Rosetta): with `gpu=1` the shots at 4,000 to 12,500 are the same frames, 3 to 6 pixels of 921,600 more than 20% apart (llvmpipe's float rounding on the two architectures). With `gpu=0` every pixel differs a little (the window's linear scale-up of the 512×240 frame) and at 5,200 and 9,000 none by 20%. The shots that differ more (4,000 with `gpu=0`; 13,900 with both, the flight into the portal) show the same scene a few frames apart: the disc is read on a worker thread in real time (`cdnative.c`) and polled once per virtual vblank, so a load that ends a vblank earlier or later shifts what follows. `virtual=1` makes the vblanks deterministic, not the disc. The same arm64 binary run twice (`logs/o5-run-a64b-*`) measures that spread: with `gpu=1` all five shots identical; with `gpu=0` identical but 12,500 and 13,900, which differ between the two runs by as much as they differ from x86-64's (532 and 54,338 pixels more than 20% apart). The x86-64 runs under Rosetta and the checking build are slower in real time, so their loads land on other vblanks more often (the checking build's attract demo at 5,200 is a few frames from the plain build's).
+  - Byte identity, PC Linux and PC Windows x86-64 built from develop's 11e3d47 and from O5 in the same build directories: every loaded section identical but the `__TIME__` string and the build-id (Linux: `.rodata` 5 bytes, the time; Windows: `.rdata` 4 bytes, the time, and `.buildid`). Vita, PS4, linux32, linux64, linuxa64 and macos compile no changed file and none of the changed CMake branches (each tests `SPYRO_PC_TARGET` for `aarch64`); the macOS PC build's conditions (`APPLE OR …aarch64`, `apple|aarch64`) and `low.c`'s and `main.c`'s new `#elif`s leave its text as it was. Not rebuilt.
+  - `p32_decl_check.py build/pc-linux-arm64`: 176 units, no slot/pointer mismatch in 735 names, no pointer/int32 mismatch in 8,351 functions but glibc's `strerror_r` (as O3 and O4). The executable's segments: R, R+X, R+W, at 0x2_0123_0000 (`logs/o5-a64-segments.txt`). `tools/check_no_assets.sh`: passes. No hardware run.
+- **Not verified:** a real ARM Linux desktop with a GPU (a Raspberry Pi 5, an ARM laptop, Asahi Linux with its 16 KB pages): only llvmpipe under Xvfb in Docker; Wayland; sound (no device in the container); gamepads; a kernel with 39-bit virtual addresses (0x2_0123_0000 is below its 512 GB, so it should load); the owner's play.
+- **Found, not changed:** linuxa64 (static, the same `-Ttext-segment`) likely has the same single RWX segment; `-z separate-code` there would change its binary, so it is left for a follow-up. Encore's `lp64_low_image_dyn.c` could take aarch64 (its logic has nothing x86-specific but the 4 KB page) and retire `low.c`'s copy.
 
 ### D269. The vertex cache skips the HUD OT's polygons: 2D primitives made by hand stay at their integer places (#245, 2026-11-27)
 - **Why:** D230 found that 2D primitives the game's C links into the HUD OT (`func_800168DC`) can have a corner on the same integer pixel as a 3D projection behind them. The vertex cache then gave that corner the projection's sub-pixel place, a nudge of under a pixel that changed as the scene moved. Seen on the title menu's borders (`TitlescreenDrawSprite`, corner (256,137)) and the screen copy (`func_8001A40C`, corner (128,8)).
@@ -2243,5 +2260,39 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - There is no switch: the check only does work when the bit is missing.
 - **Checked:** a binary set to 0644 runs through tc, ctest and `host_checks.sh` with exactly one restore line, and the exit codes pass through. Host ctest 33/33.
 - **Not done:** options 3 (a Docker volume for `build/`) and 4 (virtiofs on the default VM). tc already runs on the kh1fast profile, which is virtiofs (#253). `docs/host-build.md` still calls the mount reverse-sshfs in one place.
+- **Next free number:** see D274.
+
+### D274. The vertex cache is prepared for #272's core-2 helper with no change of behaviour (#296, D270 step 1, 2026-11-27)
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - An entry's tag and the order log's words are relaxed atomics where another thread may touch them (`VC_TAG_LD/ST`, `VC_LOG_LD/ST`). `log_answer` does a relaxed load and store instead of `|=`.
+  - The far and lfar slots are taken by relaxed `__atomic_fetch_add`; past the cap a slot reads as full, as before. A new `VCacheStats.far_full` is printed on a new `vcache far:` line.
+  - The cost model's `lc_line` belongs to the writing thread (`Sink`). `Table` keeps a placeholder in its place, so `far`'s offset and the cost lines don't move.
+  - `LzRec.pad` is `ent`, and a static assert keeps the record at 16 bytes.
+  - `lz_flush` stops at `Lazy.cov`, which stays NULL until the helper allocates it.
+  - `lz_need`'s slow path is `lz_collect`, and `rp_skip` takes a flag mask.
+  - No thread and no switch.
+  - The `vc_lazy_logic=2` comment now says it keeps no more (D270).
+- **Measured:**
+  - Host FNV per polygon `--strict` is identical on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60; 8.6-28.2 M polygons each). `far_full` is 0 on every host route, and every host vcache line is identical, the cost lines included.
+  - Vita3K shots are identical to base-20d3514 on all 8 routes, and a second run of owner60 and stone60 is identical too.
+  - Every deterministic counter is +0.0%. The timing counters stay within two develop-head runs.
+- **Checks:** host ctest 38/38 (with the helper race tests), the Vita build (also on the merged branch), noassets.
+- **Next:** #272, the helper itself and `vc_helper=0/1/2` (D270 steps 2-4). `far_full` on the platform's vcache line and as a perfcount key comes with its step 3.
+- **Next free number:** see D276 (D275 is claimed by PR #290, renumbered from D266).
+
+### D276. `third_party/vita-port-kit` is removed; everything that used it now uses `third_party/encore` and Encore's `enc_` names (#294, #251 step 1b, 2026-11-27)
+- **What:**
+  - #251's outside-files patch was applied as it was. It covers the common headers (`menu_opts.h`, `menu_panel.h`, `psx_audio_ring.h`, `psx_cdimage.h`), `vita_pc.h`, `tests/audio`, `tests/vcount`, the hardware wrappers' paths in `tools/vita/*`, `tools/ci/build_vpk.sh`, CI and the LiveArea notes.
+  - The leftover comments were updated, and `git rm -r third_party/vita-port-kit` removed 69 files.
+  - The change is paths only: each shim was a `#define` to the same `enc_` name.
+- **Measured:** against develop, the Vita ELF has identical `.text`, `.data` and `.bss`, and 12 `.rodata` bytes differ, all build stamps. 395 of 397 objects are identical.
+- **Checks:**
+  - Host ctest 38/38. The macOS native, pc-linux and PS4 builds pass (the PS4 pkg passes `oelf_check`).
+  - The `hw_mock` wrapper answers on 127.0.0.1; nothing ran on the Vita.
+  - The gate's Vita build on the merged branch passes.
+- **Still naming vita-port-kit, on purpose or harmlessly:**
+  - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
+  - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
+  - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 

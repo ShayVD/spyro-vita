@@ -291,6 +291,21 @@ typedef struct {
 } Entry;
 _Static_assert(sizeof(Entry) == 40, "an entry stays 40 bytes (#159)");
 
+/* #296 (D270 step 1, docs/vcache-core2.md): an entry's tag is read and
+ * written as a relaxed atomic where another thread may touch the entry at
+ * once: the probes (find_in, look, ov_find), the walk's prefetch and fast
+ * path, and the commit (set_state, add_cand, rtp_apply_in, lz_add, rp_skip,
+ * rp_keep, lz_flush, lz_need). With #272's helper on core 2 the game
+ * thread's and the walk's probes read the tags of entries the helper is
+ * writing, for the key and generation only, which never change while an
+ * entry is current. The same instructions on both targets (ldr/str, mov);
+ * only the compiler's freedom to merge or split the accesses goes. The log's
+ * words (Table log, below) the same way. */
+#define VC_TAG_LD(e) __atomic_load_n(&(e)->tag, __ATOMIC_RELAXED)
+#define VC_TAG_ST(e, v) __atomic_store_n(&(e)->tag, (uint32_t)(v), __ATOMIC_RELAXED)
+#define VC_LOG_LD(tb, r) ((unsigned)__atomic_load_n(&(tb)->log[r], __ATOMIC_RELAXED))
+#define VC_LOG_ST(tb, r, v) __atomic_store_n(&(tb)->log[r], (uint16_t)(v), __ATOMIC_RELAXED)
+
 /* A key with no entry whose position a polygon derived (#183): the same
  * for every polygon of the frame that uses it, so they don't crack apart.
  * dx, dy: pixels from the key's pixel centre; slot: the entry + 1 of the
@@ -420,7 +435,9 @@ typedef struct {
    * is the entry's first projection or the first's point again: candidate
    * 0's position at one of the candidates' depths there. */
   Cand lc[VC_LOG];
-  unsigned lc_line; /* the cost model's: the line of lc last written, + 1 (0: none this frame) */
+  /* (#296: lc_line, the cost model's line of lc last written, is the
+   * writing thread's now: Sink lc_line) */
+  unsigned lc_line_unused; /* (kept so the cost model's lines of the rest stay where they were) */
   /* the exact positions (pixels from the pixel centre) of this table's
    * frame's candidates that don't fit an int16 (#178): only indexed by the
    * frame's own entries, so never cleared */
@@ -486,7 +503,7 @@ typedef struct {
  * past VC_LOG, and only with xl. */
 static inline unsigned ord_n(const Table *tb) { return tb->nlog + tb->nx; }
 static inline unsigned ord_w(const Table *tb, unsigned r) {
-  return __builtin_expect(r < VC_LOG, 1) ? tb->log[r] : tb->xl->log[r - VC_LOG];
+  return __builtin_expect(r < VC_LOG, 1) ? VC_LOG_LD(tb, r) : tb->xl->log[r - VC_LOG];
 }
 
 /* A frame's table: the projections of one kind of frame (VC_LOGIC, VC_PRES)
@@ -567,14 +584,25 @@ typedef struct {
   unsigned *work, *cost;
   VCacheStats *st;
   unsigned *rec;
+  /* #296 (D270): the cost model's line of a table's lc last written, + 1 (0:
+   * none since it was reset), the writing thread's own (it was the table's
+   * until #296): with #272's helper a third thread writes lc. Reset where
+   * the table's was, by its own thread: the game thread's as its frame
+   * begins (done_hook), the walk's as it starts (psx_vcache_frame_use), the
+   * presenter's in pres_next. Only the cost counters can move, and only
+   * where two threads wrote one table's lc, which is timing already. */
+  unsigned *lc_line;
 } Sink;
 typedef struct {
   unsigned work[VCW_N], cost[VCC_N], rec[VCR_N];
   VCacheStats st;
+  unsigned lc_line; /* #296: Sink lc_line */
 } __attribute__((aligned(64))) Acc;
 static Acc s_acc[2]; /* [0] the game thread's (the logic draw's records), [1] its walk's */
 unsigned g_vcache_rec[2][VCR_N];
-#define SINK_ACC(side) {s_acc[side].work, s_acc[side].cost, &s_acc[side].st, s_acc[side].rec}
+#define SINK_ACC(side)                                                                             \
+  {s_acc[side].work, s_acc[side].cost, &s_acc[side].st, s_acc[side].rec, &s_acc[side].lc_line}
+static unsigned s_pres_lc_line; /* #296: the presenter's Sink lc_line (one frame at a time) */
 
 static void acc_add(unsigned *to, unsigned *from, size_t n) {
   size_t i;
@@ -823,6 +851,10 @@ static void sum_report(const VCacheStats k[2], VCacheStats *out) {
   PsyX_Log("vcache HUD: %u polygons of the HUD OT (%u vertices) not looked up, drawn at their "
            "integer places (#245)",
            out->hud_polys, out->hud_verts);
+  /* #296 */
+  PsyX_Log("vcache far: far_full %u: candidates and clamped places out of an int16's range not "
+           "kept, a frame's far (%u) or lfar (%u) array full (#296)",
+           out->far_full, VC_FAR, VC_LFAR);
 }
 
 /* (the host's, on the game thread with no other: the counts of the frame
@@ -867,11 +899,11 @@ static inline __attribute__((always_inline)) int find_in(Rec *r, int kind, uint3
   for (n = 0; n < VC_PROBE; n++, i = (i + 1) & (VC_SIZE - 1)) {
     ++*probes;
     touch(t, i * sizeof(Entry), 8); /* key, tag */
-    if (T_GEN(s[i].tag) != gen) {
+    if (T_GEN(VC_TAG_LD(&s[i])) != gen) {
       if (!add || r->count >= VC_MAX)
         return -1;
       s[i].key = key;
-      s[i].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
+      VC_TAG_ST(&s[i], gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0));
       rp_clear(r->tab, (int)i); /* #228: no projection worked out under it yet */
       r->count++;
       return (int)i;
@@ -895,7 +927,7 @@ static int ov_find(Table *tb, uint32_t gen, uint32_t key, int add, int kind, uns
   int i, fr = -1;
   for (i = VC_SIZE; i < (int)(VC_SIZE + VC_OV); i++) {
     ++*probes;
-    if (T_GEN(tb->s[i].tag) != gen) {
+    if (T_GEN(VC_TAG_LD(&tb->s[i])) != gen) {
       if (fr < 0)
         fr = i;
     } else if (tb->s[i].key == key)
@@ -904,7 +936,7 @@ static int ov_find(Table *tb, uint32_t gen, uint32_t key, int add, int kind, uns
   if (!add || fr < 0)
     return -1;
   tb->s[fr].key = key;
-  tb->s[fr].tag = gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0);
+  VC_TAG_ST(&tb->s[fr], gen << T_GEN_SHIFT | (kind == VC_PRES ? T_SRC : 0));
   rp_clear(tb, fr);
   tb->last[fr] = VC_NOSEQ;
   tb->ov_gen = gen;
@@ -926,7 +958,7 @@ static inline __attribute__((always_inline)) int look(int pres, uint32_t key, un
     const Entry *const e = &s_rtab->s[i];
     ++*probes;
     touch(t, i * sizeof(Entry), 8); /* key, tag */
-    if (T_GEN(e->tag) != s_rgen)
+    if (T_GEN(VC_TAG_LD(e)) != s_rgen)
       return -1;
     if (e->key == key)
       return (int)i;
@@ -982,15 +1014,17 @@ static inline void cand_pos(const Table *t, const Cand *c, float *x, float *y) {
  * already there), -1 = no room, or the key can't be used (#178: a clamped
  * projection and another point under it). The same point at the same depth
  * is kept once. Its position: dx, dy (1/256 pixel), or dy FAR_MARK and the
- * exact px, py (pixels), which go to the far array when kept. */
+ * exact px, py (pixels), which go to the far array when kept. k: where its
+ * counts go (#296: the far array full, far_full). */
 static int add_cand(Table *tb, Entry *s, int16_t dx, int16_t dy, float px, float py, float w,
-                    int clamped, unsigned *cost, Touch *t) {
+                    int clamped, const Sink *k, Touch *t) {
+  unsigned *const cost = k->cost;
   Cand *const c = s->c;
-  const unsigned n = T_N(s->tag);
+  const unsigned n = T_N(VC_TAG_LD(s));
   const int far = dy == FAR_MARK;
   int reuse = -1; /* a far candidate at this position: its index */
   unsigned j;
-  if (clamped && (s->tag & T_MULTI))
+  if (clamped && (VC_TAG_LD(s) & T_MULTI))
     return -1; /* different points already share the key */
   for (j = 0; j < n; j++) {
     int differ;
@@ -1008,21 +1042,28 @@ static int add_cand(Table *tb, Entry *s, int16_t dx, int16_t dy, float px, float
         reuse = (uint16_t)c[j].dx;
     }
     if (differ) { /* more than 1/8 pixel apart: not one point */
-      if (clamped || (s->tag & T_CLAMP))
+      if (clamped || (VC_TAG_LD(s) & T_CLAMP))
         return -1; /* a clamped point's key: the prims can't be told apart (#178) */
-      s->tag |= T_MULTI;
+      VC_TAG_ST(s, VC_TAG_LD(s) | T_MULTI);
     } else if (same_depth(w, c[j].w, &cost[VCC_REC_DIV])) {
       if (clamped)
-        s->tag |= T_CLAMP;
+        VC_TAG_ST(s, VC_TAG_LD(s) | T_CLAMP);
       return 0;
     }
   }
   if (n == VC_CANDS)
     return -1;
   if (far && reuse < 0) {
-    if (tb->nfar >= VC_FAR)
+    /* #296 (D270): a slot by a relaxed fetch_add, as #272's helper and the
+     * walk may take them in one table at once; its contents are written by
+     * the thread that took it before the entry is handed on. The count may
+     * run past the cap, which reads as full until the table's reset. */
+    const unsigned f = __atomic_fetch_add(&tb->nfar, 1u, __ATOMIC_RELAXED);
+    if (f >= VC_FAR) {
+      k->st->far_full++;
       return -1;
-    reuse = (int)tb->nfar++;
+    }
+    reuse = (int)f;
     tb->far[reuse][0] = px;
     tb->far[reuse][1] = py;
     touch(t, offsetof(Table, far) + (size_t)reuse * sizeof tb->far[0], sizeof tb->far[0]);
@@ -1030,39 +1071,56 @@ static int add_cand(Table *tb, Entry *s, int16_t dx, int16_t dy, float px, float
   c[n].dx = far ? (int16_t)reuse : dx;
   c[n].dy = dy;
   c[n].w = w;
-  s->tag += 1u << 2; /* n + 1 */
+  VC_TAG_ST(s, VC_TAG_LD(s) + (1u << 2)); /* n + 1 */
   if (clamped)
-    s->tag |= T_CLAMP;
+    VC_TAG_ST(s, VC_TAG_LD(s) | T_CLAMP);
   return 0;
 }
 
-static inline void set_state(Entry *s, unsigned state) { s->tag = (s->tag & ~3u) | state; }
+static inline void set_state(Entry *s, unsigned state) {
+  VC_TAG_ST(s, (VC_TAG_LD(s) & ~3u) | state);
+}
 
 /* A projection's own answer at its log place q (Table lc, #181). A clamped
  * one's too (#192), flagged LOG_CL: its exact position as a candidate's, or
  * dy FAR_MARK and dx its index in lfar (px, py), so resolve can tell it
  * from the key's other points by the frame's order (w 0 when lfar is
- * full). */
+ * full). k: where its counts go.
+ *
+ * #296 (D270): the place's word is written by the entry's holder only, a
+ * relaxed load and store (not |=), and an lfar slot is taken by a relaxed
+ * fetch_add, as add_cand's far slots: the count may run past the cap, which
+ * reads as full (far_full) until the table's reset. */
 static void xlog_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
                         float px, float py, float w, float w_alt, unsigned *cost);
 static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
-                              float px, float py, float w, float w_alt, unsigned *cost) {
+                              float px, float py, float w, float w_alt, const Sink *k) {
+  unsigned *const cost = k->cost;
+  unsigned lw;
   Cand *l;
+  int keep;
   if (__builtin_expect(q >= (int)VC_LOG, 0)) { /* #237: a place past the log */
     xlog_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
     return;
   }
   l = &tb->lc[q];
-  tb->log[q] |= LOG_LC;
-  if (state == E_VALID && (fy != FAR_MARK || tb->nlfar < VC_LFAR)) {
-    if (clamped)
-      tb->log[q] |= LOG_CL;
-    if (fy == FAR_MARK) {
-      tb->lfar[tb->nlfar][0] = px;
-      tb->lfar[tb->nlfar][1] = py;
-      fx = (int16_t)tb->nlfar++;
+  lw = VC_LOG_LD(tb, q) | LOG_LC;
+  keep = state == E_VALID;
+  if (keep && fy == FAR_MARK) {
+    const unsigned f = __atomic_fetch_add(&tb->nlfar, 1u, __ATOMIC_RELAXED);
+    if (f < VC_LFAR) {
+      tb->lfar[f][0] = px;
+      tb->lfar[f][1] = py;
+      fx = (int16_t)f;
       cost[VCC_REC_LINES]++; /* a model: a line each */
+    } else {
+      k->st->far_full++;
+      keep = 0;
     }
+  }
+  if (keep) {
+    if (clamped)
+      lw |= LOG_CL;
     l->dx = fx;
     l->dy = fy;
     l->w = w_alt > 0 ? -w : w;
@@ -1070,8 +1128,9 @@ static inline void log_answer(Table *tb, int q, unsigned state, int clamped, int
     l->dx = l->dy = 0;
     l->w = 0;
   }
-  if ((unsigned)q / 4 + 1 != tb->lc_line) { /* a model: written in order, 4 a line */
-    tb->lc_line = (unsigned)q / 4 + 1;
+  VC_LOG_ST(tb, q, lw);
+  if ((unsigned)q / 4 + 1 != *k->lc_line) { /* a model: written in order, 4 a line */
+    *k->lc_line = (unsigned)q / 4 + 1;
     cost[VCC_REC_LINES]++;
   }
 }
@@ -1194,7 +1253,7 @@ static inline __attribute__((always_inline)) int rtp_apply_in(Table *tb, const S
   const int64_t mx = a->mx, my = a->my, mz = a->mz; /* the 44-bit sums (Pt) */
   float x, y, z, r, iz, isz, ox, oy, ex, ey, gx, gy, qd, px = 0, py = 0, w = 0, w_alt = 0;
   Entry *const s = &tb->s[i];
-  const unsigned prev = T_STATE(s->tag);
+  const unsigned prev = T_STATE(VC_TAG_LD(s));
   unsigned state = E_INVALID;
   int16_t fx = 0, fy = 0;
   int ix, iy, clamped = 0, amb;
@@ -1270,7 +1329,7 @@ static inline __attribute__((always_inline)) int rtp_apply_in(Table *tb, const S
 done:
   if (amb) { /* #181: only its answer */
     if (q >= 0)
-      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
+      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
     return clamped;
   }
   if (state == E_INVALID)
@@ -1293,24 +1352,24 @@ done:
       set_state(s, E_AMBIGUOUS);
     }
     if (q >= 0) /* #181 */
-      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
+      log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
     return clamped;
   }
   /* Another projection under this key: the same point again (shared by
    * several polygons), the same point at another scale, or a different
    * point on the same pixel. Each is a candidate; each polygon picks. */
   touch(tp, (size_t)i * sizeof(Entry) + offsetof(Entry, c),
-        sizeof(Cand) * (T_N(s->tag) < VC_CANDS ? T_N(s->tag) + 1u : VC_CANDS));
-  if (add_cand(tb, s, fx, fy, px, py, w, clamped, cost, tp) ||
-      (w_alt > 0 && add_cand(tb, s, fx, fy, px, py, w_alt, clamped, cost, tp))) {
+        sizeof(Cand) * (T_N(VC_TAG_LD(s)) < VC_CANDS ? T_N(VC_TAG_LD(s)) + 1u : VC_CANDS));
+  if (add_cand(tb, s, fx, fy, px, py, w, clamped, k, tp) ||
+      (w_alt > 0 && add_cand(tb, s, fx, fy, px, py, w_alt, clamped, k, tp))) {
     st->ambiguous++;
     set_state(s, E_AMBIGUOUS);
   }
   /* #181: a key with different points (or none usable) keeps each
    * projection's own answer after its first; under any other, every
    * projection is the first's point at one of the candidates' depths */
-  if (prev != 0 && q >= 0 && (T_STATE(s->tag) != E_VALID || (s->tag & T_MULTI)))
-    log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, cost);
+  if (prev != 0 && q >= 0 && (T_STATE(VC_TAG_LD(s)) != E_VALID || (VC_TAG_LD(s) & T_MULTI)))
+    log_answer(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
   return clamped;
 }
 /* (#259: rtp_apply_in inlined in the logic draw's native record, rtp_apply
@@ -1374,8 +1433,10 @@ typedef struct {
   uint16_t next;      /* the entry's one before, + 1 (0: its first; #179: the list is kept
                          newest first and turned round as it's worked out) */
   uint16_t proj;      /* its registers (Lazy proj), LZ_SF: sf set */
-  uint16_t pad;
+  uint16_t ent;       /* #296 (D270): its entry (the table's slot), so the store names it in
+                         record order (#272's helper walks rec[] in order) */
 } LzRec; /* 16 bytes */
+_Static_assert(sizeof(LzRec) == 16, "a kept projection stays 16 bytes (D270)");
 #define LZ_SF 0x8000u
 #define LZ_PROJ 1024 /* different registers a frame: models, sectors, the sky */
 /* a kept projection's registers: their words (PROJ_*) and, last, their
@@ -1387,6 +1448,11 @@ typedef struct Lazy {
   unsigned n, nproj;
   int proj[LZ_PROJ][PROJ_ROW];
   uint16_t head[VC_SIZE + VC_OV]; /* each pending entry's list (its newest), + 1 */
+  /* #296 (D270, docs/vcache-core2.md): each entry's records up to cov - 1
+   * are worked out (0: none), so a flush stops there (lz_flush). #272's
+   * helper (step 2) allocates it with its claim words; until then, and with
+   * vc_helper=0, it is NULL: every record is above it, as before. */
+  uint16_t *cov;
 } Lazy;
 static int s_lazy = 1;       /* psx_vcache_set_lazy */
 static int s_lazy_logic = 1; /* psx_vcache_set_lazy_logic */
@@ -1570,6 +1636,8 @@ static void lz_next(Table *tb, int lazy) {
   if (lazy && !tb->lz && !tb->lz_tried) { /* its store, once */
     tb->lz_tried = 1;
     tb->lz = malloc(sizeof *tb->lz);
+    if (tb->lz)
+      tb->lz->cov = NULL; /* #296: no helper (D270 step 2 allocates it) */
   }
   tb->lazy = lazy && tb->lz;
   if (tb->lz)
@@ -1643,9 +1711,10 @@ static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, 
   r->q = (uint16_t)q;
   r->next = 0;
   r->proj = (uint16_t)(p | (sf ? LZ_SF : 0));
+  r->ent = (uint16_t)i; /* #296 */
   *lines += (lz->n & 1) == 0;
-  r->next = s->tag & T_PEND ? lz->head[i] : 0;
-  s->tag |= T_PEND;
+  r->next = VC_TAG_LD(s) & T_PEND ? lz->head[i] : 0;
+  VC_TAG_ST(s, VC_TAG_LD(s) | T_PEND);
   lz->head[i] = (uint16_t)++lz->n;
   *lines += 1;
   return 1;
@@ -1654,13 +1723,17 @@ static int lz_add(Table *tb, int i, int q, const int *proj, const NgteProj *np, 
 /* #228: slot i's projection with registers of generation g (sf set) and
  * vertex vx, vy, vz is an exact repeat of the last one worked out under it
  * (Rp) while the entry is valid with one point: then it would change
- * nothing (rtp_point's note), and only its counts are kept. 1: skipped. */
-static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, int vy, int vz) {
+ * nothing (rtp_point's note), and only its counts are kept. 1: skipped.
+ * mask (#296, D270): the tag's flags that rule a skip out, T_MULTI | T_PEND
+ * here (projections still pending); #272's helper passes T_MULTI, as it
+ * never clears T_PEND. */
+static inline int rp_skip(Table *tb, const Sink *k, int i, uint32_t g, int vx, int vy, int vz,
+                          uint32_t mask) {
   const Entry *const e = &tb->s[i];
-  const uint32_t tag = e->tag;
+  const uint32_t tag = VC_TAG_LD(e);
   int clamped;
   /* (#259: the entry's tag first, which the record has just read) */
-  if (!g || T_STATE(tag) != E_VALID || (tag & (T_MULTI | T_PEND)))
+  if (!g || T_STATE(tag) != E_VALID || (tag & mask))
     return 0;
   if (s_repeat == RP_ENTRY) { /* its RpE, while T_N <= 3 and g is in the frame's window */
     const RpE *const r = &e->e.rp;
@@ -1688,7 +1761,7 @@ static inline void rp_keep(Table *tb, int i, uint32_t g, int vx, int vy, int vz,
   if (s_repeat == RP_ENTRY) {
     Entry *const e = &tb->s[i];
     const uint32_t d = g - tb->rp_g0;
-    if (T_N(e->tag) > 3) /* candidate 3 is a candidate: none kept (#259) */
+    if (T_N(VC_TAG_LD(e)) > 3) /* candidate 3 is a candidate: none kept (#259) */
       return;
     /* (past the window: none, so an older one isn't taken for it) */
     e->e.rp.gc = d < RPE_G ? (uint16_t)((d + 1) | (clamped ? RPE_CL : 0)) : 0;
@@ -1703,14 +1776,25 @@ static inline void rp_keep(Table *tb, int i, uint32_t g, int vx, int vy, int vz,
 
 /* tb's slot i's projections worked out, in their order (k: where their
  * counts go). The reader has just found the entry, so its first line isn't
- * counted again. */
+ * counted again.
+ *
+ * #296 (D270): only the records above cov[i] (Lazy cov), the ones nobody
+ * has worked out yet: the list is walked from head while a record's index
+ * + 1 is above it, not to its end, since below cov the links are the
+ * helper's (#272) and may have been turned round. Without cov (NULL, no
+ * helper) every record is above 0, so it runs to the end as before. Its
+ * own records are still turned round in place: nobody else reads them
+ * while the entry is the owner's. */
 static void lz_flush(Table *tb, const Sink *k, int i) {
   Lazy *const lz = tb->lz;
   Entry *const s = &tb->s[i];
+  const unsigned cov = lz->cov ? lz->cov[i] : 0;
   unsigned r = lz->head[i], o = 0;
   Touch t = {(uint32_t)((size_t)i * sizeof(Entry) / 32), 0};
-  s->tag &= ~T_PEND;
-  while (r) { /* oldest first */
+  VC_TAG_ST(s, VC_TAG_LD(s) & ~T_PEND);
+  if (lz->cov)
+    lz->cov[i] = (uint16_t)r; /* (written here, read by nobody else while it is the owner's) */
+  while (r > cov) { /* oldest first */
     LzRec *const z = &lz->rec[r - 1];
     const unsigned nx = z->next;
     z->next = (uint16_t)o;
@@ -1724,7 +1808,7 @@ static void lz_flush(Table *tb, const Sink *k, int i) {
     /* #228: a native projection's registers kept by generation (lz_add,
      * same_ngte: the words are that generation's); 0 for the words' */
     const uint32_t g = s_repeat && (z->proj & LZ_SF) ? (uint32_t)w[PROJ_GEN] : 0;
-    if (g && rp_skip(tb, k, i, g, z->vx, z->vy, z->vz))
+    if (g && rp_skip(tb, k, i, g, z->vx, z->vy, z->vz, T_MULTI | T_PEND))
       __atomic_fetch_add(&s_rp_lz_hits, 1, __ATOMIC_RELAXED);
     else {
       Pt a;
@@ -1739,10 +1823,17 @@ static void lz_flush(Table *tb, const Sink *k, int i) {
   k->cost[VCC_REC_LINES] += t.n;
 }
 
-/* entry e of table tab, read next: its pending projections first */
+/* lz_need's slow path (#296, D270): entry e has projections pending. With
+ * #272's helper (step 2) its claim word decides who works them out
+ * (docs/vcache-core2.md, "The owner side"); without the helper's arrays
+ * (vc_helper=0, and until step 2) the owner does, as before. */
+static void lz_collect(Table *tb, const Sink *k, int e) { lz_flush(tb, k, e); }
+
+/* entry e of table tab, read next: its pending projections first (the fast
+ * path: T_PEND clear, nothing pending) */
 static inline void lz_need(const Table *tab, const Sink *k, int e) {
-  if (__builtin_expect((tab->s[e].tag & T_PEND) != 0, 0))
-    lz_flush((Table *)tab, k, e);
+  if (__builtin_expect((VC_TAG_LD(&tab->s[e]) & T_PEND) != 0, 0))
+    lz_collect((Table *)tab, k, e);
 }
 
 /* One projection recorded: its registers as words (proj), or a native
@@ -1781,7 +1872,7 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
   }
   if (!ov && tb->nlog < VC_LOG) { /* its place in the frame's order (#183) */
     q = (int)tb->nlog++;
-    tb->log[q] = (uint16_t)i;
+    VC_LOG_ST(tb, q, i);
     cost[VCC_REC_LINES] += (q & 15) == 0; /* written in order: a line every 16 */
   } else if (!ov) { /* #237: the log full, a place past it (worked out at once, as before) */
     q = xlog_put(tb, i, cost);
@@ -1833,7 +1924,7 @@ static inline __attribute__((always_inline)) void rtp_point(int kind, const Sink
    * registers are kept by generation as the store's (same_ngte, #205). */
   if (np && np->gen && s_repeat) {
     s_rp_tried[kind]++;
-    if (rp_skip(tb, k, i, np->gen, vx, vy, vz)) {
+    if (rp_skip(tb, k, i, np->gen, vx, vy, vz, T_MULTI | T_PEND)) {
       s_rp_hits[kind]++;
       cost[VCC_REC_LINES] += t.n;
       return;
@@ -1916,6 +2007,7 @@ static void pres_sink(Sink *k) {
   k->cost = COST(k->work);
   k->st = &g_vcache_stats[VC_PRES];
   k->rec = NULL;
+  k->lc_line = &s_pres_lc_line; /* #296 */
 }
 
 /* The presenter's renderers' native RTPS (render_ctx.c pres_ngte_vcache,
@@ -2506,10 +2598,10 @@ static int fr_src(Rec *rec, int kind, const Sink *k, uint32_t key, float *x, flo
       unsigned r = tb->nlog;
       float wv;
       int alt, cl;
-      while (r > lo && LOG_E(tb->log[--r]) != (unsigned)i)
+      while (r > lo && LOG_E(VC_LOG_LD(tb, --r)) != (unsigned)i)
         ;
       cost[VCC_REC_LINES] += (tb->nlog - r) / 16 + 1; /* a model: the log read backwards */
-      if (LOG_E(tb->log[r]) != (unsigned)i || !res_place(tb, s, r, x, y, &wv, &alt, &cl) || cl)
+      if (LOG_E(VC_LOG_LD(tb, r)) != (unsigned)i || !res_place(tb, s, r, x, y, &wv, &alt, &cl) || cl)
         return -1;
       if (wv > 0) { /* its own answer */
         n = 0;
@@ -3916,10 +4008,11 @@ static void log_index(Table *tab, uint32_t gen, unsigned *cost) {
   if (tab->idx_gen == gen)
     return;
   for (r = 0; r < tab->nlog; r++)
-    tab->last[LOG_E(tab->log[r])] = VC_NOSEQ;
+    tab->last[LOG_E(VC_LOG_LD(tab, r))] = VC_NOSEQ;
   for (r = 0; r < tab->nlog; r++) {
-    tab->prev[r] = tab->last[LOG_E(tab->log[r])];
-    tab->last[LOG_E(tab->log[r])] = (uint16_t)r;
+    const unsigned e = LOG_E(VC_LOG_LD(tab, r)); /* (#296: one relaxed load) */
+    tab->prev[r] = tab->last[e];
+    tab->last[e] = (uint16_t)r;
   }
   tab->idx_gen = gen;
   /* a model: the log read twice and prev written in order, an entry's
@@ -4029,7 +4122,7 @@ static void derive_place(Table *tab, uint32_t gen, short *const *xy, const uint3
         }
       }
     if (one != VC_NOSEQ && !conflict) {
-      const uint32_t k2 = LOG_E(tab->log[one]);
+      const uint32_t k2 = LOG_E(VC_LOG_LD(tab, one));
       uint32_t tag;
       lz_need(tab, lk, (int)k2); /* #193 */
       tag = tab->s[k2].tag;
@@ -4191,7 +4284,7 @@ static int derive(int pres, Table *tab, uint32_t gen, short *const *xy, const Ca
     unsigned en2[4], nc = 0, j, q;
     Cand c[VC_CANDS];
     for (j = 0; j < nnamed; j++) {
-      const unsigned r = named[j], k2 = LOG_E(tab->log[r]);
+      const unsigned r = named[j], k2 = LOG_E(VC_LOG_LD(tab, r));
       const Entry *const s2 = &tab->s[k2];
       float x, y, w;
       int alt, cl, rk;
@@ -4347,7 +4440,7 @@ static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, fl
                      int *alt, int *cl) {
   if (__builtin_expect(r >= VC_LOG, 0)) /* #237: a place past the log: xl's */
     return xres_place(tab, en, r, x, y, w, alt, cl);
-  if (!(tab->log[r] & LOG_LC)) { /* the first, or the first's point again */
+  if (!(VC_LOG_LD(tab, r) & LOG_LC)) { /* the first, or the first's point again */
     if (!T_N(en->tag))
       return 0;
     cand_pos(tab, &en->c[0], x, y);
@@ -4374,7 +4467,7 @@ static int res_place(const Table *tab, const Entry *en, unsigned r, float *x, fl
       *x = l->dx * (1.0f / 256);
       *y = l->dy * (1.0f / 256);
     }
-    *cl = (tab->log[r] & LOG_CL) != 0;
+    *cl = (VC_LOG_LD(tab, r) & LOG_CL) != 0;
   }
   return 1;
 }
@@ -4659,7 +4752,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
   /* where the maths of projections worked out here goes (#179): the
    * presenter's as its lookups', the logic draw's walk's own block (the
    * game thread's when it walks inside DrawOTag) */
-  const Sink lk = pres ? (Sink){work, cost, st, NULL}
+  const Sink lk = pres ? (Sink){work, cost, st, NULL, &s_pres_lc_line}
                        : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
 
   for (i = 0; i < n; i++) {
@@ -4681,7 +4774,7 @@ static __attribute__((noinline)) void poly_full(void *vertex_, short *const *xy,
     }
     if (k >= 0)
       lz_need(tab, &lk, k); /* the projections kept under it (#193, #179) */
-    tag = k >= 0 ? tab->s[k].tag : 0;
+    tag = k >= 0 ? VC_TAG_LD(&tab->s[k]) : 0;
     ptab = tab;
     ref[i] = VREF_POLY;
     if (k >= 0 && T_STATE(tag) == E_VALID && T_N(tag)) {
@@ -5457,7 +5550,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
   }
   {
     /* where the kept projections' maths goes: poly_full's lk */
-    const Sink lk = pres ? (Sink){work, cost, st, NULL}
+    const Sink lk = pres ? (Sink){work, cost, st, NULL, &s_pres_lc_line}
                          : s_rtab ? (Sink)SINK_ACC(1) : (Sink)SINK_ACC(0);
     uint32_t keys[4];
     for (i = 0; i < n; i++)
@@ -5470,11 +5563,11 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
        * hardware can tell, hence mode 1 without it. */
       const Table *const lt = pres || !s_rtab ? s_rec[pres ? VC_PRES : VC_LOGIC].tab : s_rtab;
       uint32_t w0, w1, w2, w3 = 0;
-      w0 = lt->s[hash(keys[0])].tag;
-      w1 = lt->s[hash(keys[1])].tag;
-      w2 = lt->s[hash(keys[2])].tag;
+      w0 = VC_TAG_LD(&lt->s[hash(keys[0])]);
+      w1 = VC_TAG_LD(&lt->s[hash(keys[1])]);
+      w2 = VC_TAG_LD(&lt->s[hash(keys[2])]);
       if (n == 4)
-        w3 = lt->s[hash(keys[3])].tag;
+        w3 = VC_TAG_LD(&lt->s[hash(keys[3])]);
       __asm__ volatile("" : : "r"(w0), "r"(w1), "r"(w2), "r"(w3));
     }
     for (i = 0; i < n; i++) {
@@ -5487,7 +5580,7 @@ void psx_vcache_poly(void *vertex_, short *const *xy, int n, VCacheVert *side) {
         return;
       }
       lz_need(tab, &lk, k); /* (#193, #179) */
-      tag = tab->s[k].tag;
+      tag = VC_TAG_LD(&tab->s[k]);
       if (T_STATE(tag) != E_VALID || !T_N(tag)) {
         poly_full(vertex_, xy, n, side);
         return;
@@ -5564,7 +5657,7 @@ static void pres_next(void) {
   r->tab->nlfar = 0;
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
-  r->tab->lc_line = 0;
+  s_pres_lc_line = 0; /* #296: the presenter's Sink lc_line, as the table's was */
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   lz_next(r->tab, s_lazy); /* #193 */
   r->tab->rp_g0 = g_pres_ngte_gen; /* #259: RpE's origin */
@@ -5613,7 +5706,7 @@ static void done_hook(void) {
   r->tab->nlfar = 0;
   r->tab->nlog = 0;
   r->tab->idx_gen = 0;
-  r->tab->lc_line = 0;
+  s_acc[0].lc_line = 0; /* #296: the game thread's Sink lc_line, as the table's was */
   r->tab->nx = r->tab->nlost = r->tab->xlc_line = r->tab->nxlfar = 0; /* #237 */
   r->tab->rp_g0 = g_ngte_gen; /* #259: RpE's origin */
   /* its projections kept for its walk (#179), unless the presenter draws
@@ -5638,6 +5731,8 @@ void psx_vcache_frame_take(PsxVcacheFrame *f) {
 void psx_vcache_frame_use(const PsxVcacheFrame *f) {
   if (!f && s_rtab)
     acc_publish(1); /* the walk's end: its counts (#179) */
+  if (f)
+    s_acc[1].lc_line = 0; /* #296: the walk's Sink lc_line, by its own thread as it starts */
   s_rtab = f ? (const Table *)f->tab : NULL;
   if (s_lazy_logic == LZ_QUOTA) { /* #204: the quota's clock, on the walk's thread */
     if (f)
