@@ -2157,4 +2157,44 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Byte identity, each target built from develop's 99756fb and from O4 in the same build directories: Vita `spyro_vita.velf` and PS4 `spyro.elf` every loaded section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
   - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
-- **Next free number:** D266.
+- **Next free number:** D266 (taken by D265's successors below; see `autopilot/decision-claims.md`).
+
+### D269. The vertex cache skips the HUD OT's polygons: 2D primitives made by hand stay at their integer places (#245, 2026-11-27)
+- **Why:** D230 found that 2D primitives the game's C links into the HUD OT (`func_800168DC`) can have a corner on the same integer pixel as a 3D projection behind them. The vertex cache then gave that corner the projection's sub-pixel place, a nudge of under a pixel that changed as the scene moved. Seen on the title menu's borders (`TitlescreenDrawSprite`, corner (256,137)) and the screen copy (`func_8001A40C`, corner (128,8)).
+- **How:**
+  - `present.c` `port_present_note_2d` and `pres_note_2d`, which `func_800168DC` already calls, note each HUD primitive into the vertex-cache table of the frame being recorded (`psx_vcache_note_hud`, `pres_vcache_note_hud`; in 4:3 too). `Table` gains `hud_gen`, `nhud`, `hud_lo/hi` and `hud[512]`, sorted by address.
+  - The narrowed copies' pools are registered (`psx_vcache_hud_pool`).
+  - `psx_vcache_poly` asks `hud_poly()` before any lookup: a pool range check, the frame's span, then a binary search; a walk-copy address maps back to the game's.
+  - A HUD polygon is answered as one nothing finds (`VREF_POLY`, side `{0, 0, 1}`). It takes no hand-over or `frac_hand`, and is counted on a new `vcache HUD:` line instead of "outside".
+- **Measured:**
+  - Host FNV per polygon on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60), base d7f5213: every changed polygon is a HUD-OT one (362 on S, 725 on Si, 3 on D). They are the named borders and screen copy, plus the title menu's boxes, a full-width fade and a demo text box. No other polygon changed.
+  - Host "outside the renderers" goes to 0 on every route (S 18,126 to 0). The other vcache lines are unchanged apart from slightly fewer kept projections worked out.
+  - Vita3K shots identical to base-20d3514 on all 8 routes. vc.misses falls (owner60 -71%, demo60 -99.5%). stone60's timing counters are within two develop-head runs' spread.
+- **Checks:** host ctest 33/33, Vita build, noassets. The gate's 3,600 s host-test step timed out after its ctest passed (Docker queue waits), so the coordinator judged it a pass. Logs: `runtime/autopilot/runs/vita/issue-245-1` (local).
+- **Next free number:** see D270.
+
+### D270. The vertex cache's kept projections move to a helper on core 2 under a per-entry claim; the design and its race test come first (#282, 2026-11-27)
+- **Why:**
+  - Artisans at 60 Hz is held at 1x: the game thread takes 15.4 ms of the 14.5 ms budget (D264).
+  - It works out 91% of its projections at once (D261), at 1.28-1.40 µs each on hardware (session 9, ap23a1 against ap23x1).
+  - The walk on core 1 is too busy to take more, and core 2 has about 6.5 ms a vblank free (D261, unverified: the render line's "busy" includes the swap's wait).
+  - The owner asked for the design before the code (2026-11-26).
+- **What:** the design is `docs/vcache-core2.md`; the implementation is #272.
+  - **Scope:** only the logic draw's tables, and only in lazy frames. The helper takes kept projections only, in store order (`LzRec.pad` becomes `ent`).
+  - **Claim:** a 16-bit claim word per entry plus `cov[e]`, in `Lazy` (`Entry` stays 40 bytes). The game thread publishes `pub` with a release store every 32 keeps.
+  - **Taking and handing back:** the helper takes an entry with a relaxed CAS below the `pub` it acquired, and hands it back with a release store. Owners take entries back through `lz_collect` with an acquire CAS.
+  - **No waiting:** the game thread's keeps and at-once records never wait.
+  - **Atomics:** `nfar` and `nlfar` become relaxed fetch_adds, with a `far_full` counter.
+  - **Before a table records again:** a seq_cst stop/inside handshake.
+  - **When the helper is behind:** past a 512-record backlog, the game thread works out at once, as today.
+  - **Memory order:** checked against arm-vita-eabi-gcc 15.2 and clang i686.
+  - **Switch:** `vc_helper=0/1/2` (0 = today's code and the default until a hardware A/B; 2 = keep everything with the helper idle, to measure a kept projection's cost).
+- **Checked:** `tests/vcache/test_vcache_helper.c`: three threads over Artisans-shaped frames.
+  - Host ctest 38/38 (`vcache_helper_race`, `vcache_helper_race_stress`; 1.85 M projections).
+  - Every projection is worked out exactly once, and every entry and log place equals the single-thread answer.
+  - Three mutants are caught.
+  - ThreadSanitizer is clean on native arm64 (the i686 toolchain can't link it). Native stress: 12.3 M projections.
+- **Found:** `vc_lazy_logic=2` keeps no more than the default (125,184 against 125,290 per 300 vblanks), so D264's result says nothing about keeping everything.
+- **Expected:** 1.5-3 ms a vblank off the game thread, where 0.9 ms is needed. Measure `vc_helper=2` on hardware first.
+- **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
+

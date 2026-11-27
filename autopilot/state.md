@@ -11,17 +11,58 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 245,
-      "branch": "feat/245-wobble-fix-2d-hud-sprites-with-a-corner",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-245",
-      "started_at": "2026-11-26T22:47:15Z",
+      "issue": 271,
+      "branch": "perf/271-draw-distance-let-max-grow-where-the",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-271",
+      "started_at": "2026-11-27T01:06:50Z",
       "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/order_table.c",
-        "src/game/present.c"
+        "src/game/lod.c",
+        "src/game/lod.h",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md"
       ],
-      "agent": "a09c5c3709dd43103"
+      "agent": "adeea5a2e1b159678",
+      "reported": true
+    },
+    {
+      "issue": 251,
+      "branch": "feat/251-the-vita-build-on-encore-s-platform",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-251",
+      "started_at": "2026-11-27T01:07:09Z",
+      "files": [
+        "third_party/encore/",
+        "third_party/vita-port-kit/",
+        "src/platform/vita/CMakeLists.txt",
+        "cmake/platform_common.cmake",
+        "src/platform/vita/audio.c",
+        "src/platform/vita/picture.c",
+        "src/platform/vita/vblank.c",
+        "src/platform/vita/perfcount.c",
+        "src/platform/vita/pad.c",
+        "src/platform/common/cdimage.c",
+        "src/platform/common/menu_opts.c",
+        "src/platform/common/pbp.c"
+      ],
+      "agent": "aedc22d51c6092653",
+      "reported": true
+    },
+    {
+      "issue": 175,
+      "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
+      "started_at": "2026-11-27T03:45:41Z",
+      "files": [
+        "tools/tc",
+        "tools/host_checks.sh",
+        "tools/fast_render_ab.sh",
+        "tools/mixer_ab.sh",
+        "tools/native_draw_ab.sh",
+        "tools/pres_check_ab.sh",
+        "tools/step.sh",
+        "tools/gdb_run.sh",
+        "docs/host-build.md"
+      ],
+      "agent": "a5c39f9290a1b230e"
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
@@ -302,7 +343,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 251,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-251.gate.log",
+    "started_at": "2026-11-27T04:23:44Z"
+  },
   "batch": null,
   "lanes": [
     5
@@ -571,3 +619,7 @@ continue.
 - 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
 - 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
 - 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set
+- 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
+- 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
+- 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
+- 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.

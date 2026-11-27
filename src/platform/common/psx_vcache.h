@@ -9,6 +9,7 @@
 #ifndef PSX_VCACHE_H
 #define PSX_VCACHE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -317,6 +318,20 @@ extern int psx_vcache_polys;
 void psx_vcache_poly(void *vertex, short *const *xy, int n, VCacheVert *side);
 void psx_vcache_poly_ref(void *vertex, short *const *xy, int n);
 
+/* #245: the HUD OT's primitives (order_table.c func_800168DC: 2D, made by
+ * the game's C on screen by hand), noted as they are linked, so the walk's
+ * lookups skip their polygons: no vertex of theirs takes a projection's
+ * place (a corner on the pixel of a 3D vertex behind it took that vertex's
+ * sub-pixel place, D230), and each is drawn at its integer place, as its
+ * corners nothing finds already were. The logic draw's (present.c
+ * port_present_note_2d) and the presenter's (pres_note_2d) into their own
+ * frame's table, as the renderer contexts; pools: the narrowed copies the
+ * walk parses in their place (present.c squeeze, 0 the logic draw's, 1 the
+ * presenter's), all of them HUD primitives. */
+void psx_vcache_note_hud(const void *prim);
+void pres_vcache_note_hud(const void *prim);
+void psx_vcache_hud_pool(int which, const void *pool, size_t bytes);
+
 /* DrawOTag (libgpu.c, and the presenter's, present.c) as it returns, drawn
  * or skipped: the next frame's projections begin (nothing with mode 0). */
 void psx_vcache_ot_done(void);
@@ -463,8 +478,8 @@ extern unsigned g_vcache_rec[2][VCR_N];
  * 16 MB window. #222: for the counters, by its offset in the game's memory
  * (psx_arena.h), the copy's too: the native build's (the Vita's) blocks
  * aren't 16 MB-aligned, so there a primitive the walk read from the copy
- * (the portals' sky) was filed outside. The placement's renderer gates
- * (#215, #217, #221, #227) still compare the low 24 bits. So the class
+ * (the portals' sky) was filed outside; #244: the placement's renderer
+ * gates (#215, #217, #221, #227) compare the same offsets. So the class
  * comes from what the frame recorded, not from the walk's timing. Classes:
  *  - a known renderer's (VCX_ENV...VCX_PORTAL_SKY_FOG) or another marked
  *    one's (VCX_OTHER): missed;
@@ -473,7 +488,8 @@ extern unsigned g_vcache_rec[2][VCR_N];
  *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
  *    the game's own C into the HUD OT, order_table.c func_800168DC; #222:
  *    in some a vertex shares a pixel with a projection and is found, e.g.
- *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene):
+ *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene;
+ *    #245: the HUD OT's polygons are no longer looked up, hud_polys):
  *    exempt;
  *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
  *    cache), so nothing says which;
@@ -679,6 +695,9 @@ typedef struct {
    * has no depth there, so it is drawn affine at its keys whatever the
    * others find (counted in miss_none too) */
   unsigned np_poly;
+  /* #245: polygons of the HUD OT (psx_vcache_note_hud) not looked up,
+   * and their vertices (each drawn at its integer place) */
+  unsigned hud_polys, hud_verts;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
