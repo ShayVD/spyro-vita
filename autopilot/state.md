@@ -26,38 +26,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "reported": true
     },
     {
-      "issue": 294,
-      "branch": "refactor/294-remove-third-party-vita-port-kit-move",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-294",
-      "started_at": "2026-11-27T06:29:10Z",
-      "files": [
-        "src/platform/common/menu_opts.h",
-        "src/platform/common/menu_panel.h",
-        "src/platform/common/psx_audio_ring.h",
-        "src/platform/common/psx_cdimage.h",
-        "src/platform/common/psx_pbp.h",
-        "src/platform/vita/vita_pc.h",
-        "src/platform/ps4/main.c",
-        "src/platform/ps4/menu.c",
-        "tests/audio/",
-        "tests/vcount/",
-        "tools/ci/build_vpk.sh",
-        "tools/vita/hw-routes/stone60.cfg",
-        "tools/vita/hw.game",
-        "tools/vita/hw_check.sh",
-        "tools/vita/hw_ftp.py",
-        "tools/vita/hw_mock.py",
-        "tools/vita/hw_run.sh",
-        "tools/vita/livearea_local.sh",
-        "tools/vita/make_livearea.py",
-        ".github/workflows/build.yml",
-        "assets/livearea/README.md",
-        "third_party/vita-port-kit/"
-      ],
-      "agent": "a2b6e27067f813f6d",
-      "reported": true
-    },
-    {
       "issue": 259,
       "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
@@ -363,11 +331,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_pending": null,
   "job": {
     "kind": "gate",
-    "issue": 294,
+    "issue": 283,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-294.gate.log",
-    "started_at": "2026-11-27T07:39:37Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-283.gate.log",
+    "started_at": "2026-11-27T07:56:28Z"
   },
   "batch": null,
   "lanes": [
@@ -648,3 +616,4 @@ continue.
 - 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
 - 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
 - 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
+- 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
