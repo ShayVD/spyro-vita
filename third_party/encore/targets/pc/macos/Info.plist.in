@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Spyro.app's Info.plist (macOS, D250 O4): CMake fills the ${...} names -->
+<!-- A macOS app bundle's Info.plist (targets/pc/README.md "macOS"): CMake fills the ${...} names (MACOSX_BUNDLE_*). From spyro-vita src/platform/pc/Info.plist.in @ 36d9e07 (MIT; D265) -->
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>

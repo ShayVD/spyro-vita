@@ -29,11 +29,13 @@ target_compile_options(encore_pc PRIVATE -O2 -Wall)
 target_link_libraries(encore_pc PUBLIC SDL3::SDL3-static)
 if(WIN32)
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_win.c" "${WINPOSIX_DIR}/enc_winposix.c")
-elseif(APPLE OR SPYRO_PC_TARGET MATCHES "aarch64")
-  # the offset model: src/platform/common/p32_image.c; Linux on ARM's low
-  # 4 GB reserved by low.c (Encore's lp64_low_image_dyn.c is x86-64 only)
+elseif(APPLE)
+  # the offset model: src/platform/common/p32_image.c; __PAGEZERO keeps the
+  # low 4 GB empty
   set(PC_ENCORE_SRCS)
 else()
+  # x86-64 Linux, and Linux on ARM (the offset model, D279: Encore's copy
+  # takes aarch64 now): the low 4 GB reserved before any library loads
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_dyn.c")
 endif()
 add_executable(spyro MACOSX_BUNDLE ${PC_SRCS} ${PC_ENCORE_SRCS}
@@ -77,7 +79,7 @@ elseif(APPLE)
   include("${CMAKE_SOURCE_DIR}/cmake/version.cmake") # 01.22 -> 1.2.2
   string(REGEX REPLACE "^0*([0-9]+)\\.([0-9])([0-9])$" "\\1.\\2.\\3" SPYRO_VERSION "${SPYRO_APP_VER}")
   set_target_properties(spyro PROPERTIES OUTPUT_NAME Spyro
-    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    MACOSX_BUNDLE_INFO_PLIST "${ENCORE_DIR}/targets/pc/macos/Info.plist.in"
     MACOSX_BUNDLE_BUNDLE_NAME "Spyro" MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.shayvd.spyro"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${SPYRO_VERSION}" MACOSX_BUNDLE_BUNDLE_VERSION "${SPYRO_VERSION}")
   add_custom_command(TARGET spyro POST_BUILD
