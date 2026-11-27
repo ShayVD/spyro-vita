@@ -1097,7 +1097,7 @@ static inline void set_state(Entry *s, unsigned state) {
 static void xlog_answer(Table *tb, int q, unsigned state, int clamped, int16_t fx, int16_t fy,
                         float px, float py, float w, float w_alt, unsigned *cost);
 /* (#259: cnt, a constant: the cost model's lines counted; 0 in the lean
- * record, FR_LEAN) */
+ * record, FR_LEAN, which takes it inlined; log_answer, below, elsewhere) */
 static inline __attribute__((always_inline)) void log_answer_in(Table *tb, int q, unsigned state,
                                                               int clamped, int16_t fx, int16_t fy,
                                                               float px, float py, float w,
@@ -1142,7 +1142,15 @@ static inline __attribute__((always_inline)) void log_answer_in(Table *tb, int q
     cost[VCC_REC_LINES]++;
   }
 }
-
+/* rtp_apply_in's: inlined and uncounted in the lean record, called as
+ * before elsewhere (the compiler kept it out of line before #259's lean
+ * record: noinline keeps it so) */
+#define LOG_ANSWER(cnt, ...) ((cnt) ? log_answer(__VA_ARGS__) : log_answer_in(__VA_ARGS__, 0))
+static __attribute__((noinline)) void log_answer(Table *tb, int q, unsigned state, int clamped,
+                                                 int16_t fx, int16_t fy, float px, float py,
+                                                 float w, float w_alt, const Sink *k) {
+  log_answer_in(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k, 1);
+}
 
 /* #237: log_answer at a place past the log, in xl: its own lc and far
  * places, so the log's (and lfar's, whatever order the lazy store works
@@ -1341,7 +1349,7 @@ static inline __attribute__((always_inline)) int rtp_apply_in(Table *tb, const S
 done:
   if (amb) { /* #181: only its answer */
     if (q >= 0)
-      log_answer_in(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k, cnt);
+      LOG_ANSWER(cnt, tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
     return clamped;
   }
   if (state == E_INVALID)
@@ -1364,7 +1372,7 @@ done:
       set_state(s, E_AMBIGUOUS);
     }
     if (q >= 0) /* #181 */
-      log_answer_in(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k, cnt);
+      LOG_ANSWER(cnt, tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
     return clamped;
   }
   /* Another projection under this key: the same point again (shared by
@@ -1382,7 +1390,7 @@ done:
    * projection's own answer after its first; under any other, every
    * projection is the first's point at one of the candidates' depths */
   if (prev != 0 && q >= 0 && (T_STATE(VC_TAG_LD(s)) != E_VALID || (VC_TAG_LD(s) & T_MULTI)))
-    log_answer_in(tb, q, state, clamped, fx, fy, px, py, w, w_alt, k, cnt);
+    LOG_ANSWER(cnt, tb, q, state, clamped, fx, fy, px, py, w, w_alt, k);
   return clamped;
 }
 /* (#259: rtp_apply_in inlined in the logic draw's native record, rtp_apply
@@ -2040,13 +2048,11 @@ static inline void pend_flush(void) {
  * and gte_inline.h's commands (the mips2c units and the hand renderers'
  * register-file code at fast_render 1 and 2, D89). */
 static void rtp_hook(int idx, int sf) {
-  pend_flush(); /* #259 (FR_AHEAD) */
-  {
   const int proj[PROJ_N] = {C2_R11, C2_R12, C2_R13, C2_R21, C2_R22, C2_R23, C2_R31, C2_R32, C2_R33,
                             C2_TRX, C2_TRY, C2_TRZ, C2_OFX, C2_OFY, (unsigned short)C2_H};
+  pend_flush(); /* #259 (FR_AHEAD) */
   rtp_point(VC_LOGIC, &k_game, proj, NULL, NULL, V_X(idx), V_Y(idx), V_Z(idx), C2_SXY2,
             (unsigned short)C2_SZ3, sf, 0, 1);
-  }
 }
 
 /* The same projection given as values (D89), for whatever calls the value
