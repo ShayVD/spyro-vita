@@ -2355,7 +2355,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
   - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
   - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
-### D277 — the Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2)
+### D277. The Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2, 2026-11-27)
 - **What:** `encore_vita` is linked (`enc_vita.c` with core's `enc_common.c`, `enc_event.c`, `enc_blit.c`). `video.c` calls `enc_platform_init` with gpu=1 on the main thread before the render thread starts. `gpu_gl.c` opens `ENC_GFX_GLES` (960x544, stretch, 60 Hz, vsync) after `vglInit` and checks `core_swaps` is 0; each `vglSwapBuffers` sits between `enc_video_gpu_begin` and `enc_video_present`, so the game keeps `vglInit` and `vglSwapBuffers` and the backend paces at the display's 60 Hz. `gl_quit` closes the video. The backend's `vpk_log_*` go to `spyro.log`, which closes G14.
 - **G6:** every GL call, `vglInit` and the Encore video calls are on the render thread: no second context.
 - **Gaps:**
@@ -2365,7 +2365,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checked:** Vita build exit 0 (`.text` +8 KB, `.bss` +85 KB for the backend's state); 8 Vita3K routes identical to base-e603aaa (685 shots, 0 invalid accesses); presenter lines the same apart from timing-dependent join waits; only timing counters move; host ctest 38/38; macOS native and noassets pass; gate PASS and a Vita build on the merged branch (`runs/vita/issue-283-1/`).
 - **Not checked:** hardware pacing and the extra threads on a real Vita.
 
-### D278 — two switchable same-answer cuts to the vertex cache's native record (#259 attempt 2)
+### D278. Two switchable same-answer cuts to the vertex cache's native record: `vc_fast_rec` lean and ahead (#259, 2026-11-27)
 - **What:** `vc_fast_rec` becomes a bit field (1 = the default, D261's record; Vita `vc_fast_rec=0..7`, host `VC_FAST_REC`). Bit 2 (lean) drops D168's cost-model counting from the game thread's records (the `touch()` line loops, probe, division, store-line and worked counts; `VCW_PROJ`, the `draw vc` line and the vcache lines still count). Bit 4 (ahead) runs each native record one late, after the next one has prefetched three lines of its entry, so the miss overlaps the previous record's work; the inputs wait in `Pend`, and `pend_flush` runs at every game-thread reader of the logic table, so the table sees the same records in the same order.
 - **Why:** hardware session 9 puts an at-once record at ~1.25 µs (~550 cycles for ~400 instructions at 444 MHz), so memory waits are a large part of it; the vertex cache is ~46% of the game thread in Artisans' heaviest frames, and 2x at 60 Hz needs ~0.9 ms.
 - **Checked:** host FNV per polygon `--strict` identical on 30 pairs (default, 7 with and without lazy logic, 3, 5, 0); Vita3K shots identical to base-e603aaa on all 8 routes with the default and on owner60, stone60 and toasty60 with 7; fixed counters +0.0%; host ctest 38/38; gate PASS and a Vita build on the merged branch. Host `--prof-draw`: lean -3.0-3.5% renderer time; qemu cannot show the prefetch (ahead +1-6% there).
