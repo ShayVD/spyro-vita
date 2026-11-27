@@ -9,3 +9,4 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D269 #245 HUD OT skip (2026-11-27T03:51:23Z)
 - D270 #282 core-2 helper design (2026-11-27T04:22:02Z)
 - D271 #251 step 1 Vita modules from third_party/encore (2026-11-27T04:51:37Z)
+- D272 #271 dd_free (2026-11-27T05:11:07Z)
