@@ -342,6 +342,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "31a47eb",
       "pr": 275,
       "merged_at": "2026-11-26T10:51:04Z"
+    },
+    {
+      "branch": "release/phase8-round13-encore-d278",
+      "commit": "af1b951ebd3dcc8c36153f3386ec406daa285141",
+      "pr": 298,
+      "merged_at": null
     }
   ]
 }
@@ -594,3 +600,4 @@ continue.
 - 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
 - 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
 - 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.
+- 2026-11-27T10:05Z stop on the owner's plan: #283 (D277) and #259 (D278) merged; retro 8c is Encore draft PR #151; release PR #298 to main (host ctest 38/38 on 266a2b0). Loop stopped; resume with #284-#288, #295, #297, #272, #247, #225, #219 and the two hardware A/Bs (#259, #271).
