@@ -101,12 +101,20 @@ static const char *const k_res_names[] = {"NATIVE", "PS1"};
  * change writes it back. */
 static const char *const k_dd_names[] = {"NORMAL", "MAX (ADAPTIVE)"};
 static const int k_dd_values[] = {100, DD_MAX_PCT};
+/* WOBBLE FIX (D282; PSX WOBBLE from #177 until then): the row is named after
+ * the fix, so ON is the fix (wobble=0) and OFF the PS1's wobble (wobble=1).
+ * The key and its values stay as they were, so every config.txt reads as
+ * before; only the row's name and the order of its values changed. The owner
+ * played with PSX WOBBLE: ON, read it as the fix on, and saw the textures
+ * still stretch into place. */
+static const char *const k_fix_names[] = {"OFF", "ON"};
+static const int k_fix_values[] = {1, 0}; /* wobble= for OFF, ON */
 /* Labels and values fit the 640-pixel panel with "< >" round the value
  * (18 pixels a letter: at most 31 letters together; "DRAW DISTANCE" and
  * "< MAX (ADAPTIVE) >" are 31, 552 of the 592 pixels between the margins). */
 static const MenuOption k_rows[] = {
-    {.section = MENU_PICTURE, .label = "PSX WOBBLE", .key = "wobble",
-     .value = &g_vita_opts.wobble, .names = g_menu_off_on, .count = 2,
+    {.section = MENU_PICTURE, .label = "WOBBLE FIX", .key = "wobble",
+     .value = &g_vita_opts.wobble, .names = k_fix_names, .values = k_fix_values, .count = 2,
      .on_change = wobble_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_vita_opts.gpu_res,
      .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},

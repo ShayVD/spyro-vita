@@ -78,9 +78,14 @@ static const char *const k_res_names[] = {"NATIVE", "PS1"};
  * the 640-pixel panel takes (the Vita's picture.c). */
 static const char *const k_dd_names[] = {"NORMAL", "MAX (ADAPTIVE)"};
 static const int k_dd_values[] = {100, DD_MAX_PCT};
+/* WOBBLE FIX (D282, as the Vita's picture.c; PSX WOBBLE until then): ON is
+ * the fix (wobble=0), OFF the PS1's wobble (wobble=1); the key and its values
+ * are unchanged. */
+static const char *const k_fix_names[] = {"OFF", "ON"};
+static const int k_fix_values[] = {1, 0};
 static const MenuOption k_rows[] = {
-    {.section = MENU_PICTURE, .label = "PSX WOBBLE", .key = "wobble",
-     .value = &g_ps4_opts.wobble, .names = g_menu_off_on, .count = 2,
+    {.section = MENU_PICTURE, .label = "WOBBLE FIX", .key = "wobble",
+     .value = &g_ps4_opts.wobble, .names = k_fix_names, .values = k_fix_values, .count = 2,
      .on_change = gpu_changed, .visible = gpu_shown},
     {.section = MENU_PICTURE, .label = "RESOLUTION", .key = "res", .value = &g_ps4_opts.gpu_res,
      .names = k_res_names, .count = 2, .on_change = res_changed, .visible = gpu_shown},
