@@ -2,8 +2,8 @@
  * the Vita's, D30, D45, D245): hold SELECT and press START on a gamepad
  * (Back + Start) or on the keyboard (Backspace or Tab, then Enter), or press
  * Esc or F1, or a gamepad's guide button. The game stops where it is (the
- * menu runs inside its VSync wait, vblank.c) and the panel (vita-port-kit's
- * vpk_menu_panel, through src/platform/common/menu_panel.h) is shown over
+ * menu runs inside its VSync wait, vblank.c) and the panel (Encore's
+ * enc_menu_panel, D276, through src/platform/common/menu_panel.h) is shown over
  * the last picture (video.c). The rows are the common table (menu_opts.h):
  * menu_rows.c's PICTURE and CONTROLS, and the PS4's menu_game.c's GAME
  * (skipping the logos, the cheats). Changes apply at once (or, for the
