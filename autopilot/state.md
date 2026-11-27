@@ -593,3 +593,4 @@ continue.
 - 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.
 - 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
 - 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
+- 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.

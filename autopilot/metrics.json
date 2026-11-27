@@ -2,12 +2,12 @@
   "game": "spyro-vita",
   "phases": {
     "8": {
-      "attempts": 81,
-      "ended": "2026-11-26T11:00:00+00:00",
-      "hours": 167.18,
-      "issues_closed": 80,
-      "kb_hits": 0,
-      "kb_new": 9,
+      "attempts": 92,
+      "ended": "2026-11-27T09:57:12+00:00",
+      "hours": 190.13,
+      "issues_closed": 89,
+      "kb_hits": 9,
+      "kb_new": 13,
       "started": "2026-11-19T11:49:28+00:00"
     }
   },
