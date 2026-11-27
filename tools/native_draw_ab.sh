@@ -44,6 +44,10 @@ cd "$(dirname "$0")/.."
 P=$1; shift
 [ $# -gt 0 ] || set -- demo gems wsi vc lod routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=${MODE:-chk}; FR=${FR:-3}
+# Issue #175: on colima's sshfs mount a built binary can lose its execute bit
+# after the link; give it back right before running (tools/tc checks again in
+# the container), with one line on stderr when it had to.
+xbit() { [ ! -f "$1" ] || [ -x "$1" ] || { chmod +x "$1"; echo "restored execute bit: $1" >&2; }; }
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
@@ -82,6 +86,7 @@ run() { # NAME MODE
   esac
   fr=3
   [ "$m" = n0 ] || fr=$FR
+  xbit "$B"
   tools/tc $B --disc $DISC --fast-render $fr --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra $args > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt

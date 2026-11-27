@@ -24,13 +24,4 @@ $cc "${flags[@]}" -DENC_CONFORMANCE_MAIN "${inc[@]}" "${src[@]}" -lpthread -o "$
 ENC_HOST_ROOT="$o/root2" ${run[@]+"${run[@]}"} "$o/conformance" 2> "$o/log2" || { cat "$o/log2"; exit 1; }
 echo "conformance (standalone): ok"
 # the portable modules (targets/vita/runtime/test/run_host_tests.sh runs the same tests through the old vpk_ paths)
-c=$k/core/src t=$k/core/test
-$cc "${flags[@]}" -I"$k/core/include" "$c/enc_ring.c" "$t/ring_test.c" -o "$o/ring" && ${run[@]+"${run[@]}"} "$o/ring"
-$cc "${flags[@]}" -I"$k/core/include" "$c/enc_audio_ring.c" "$t/audio_ring_test.c" -lm -o "$o/audio_ring" && ${run[@]+"${run[@]}"} "$o/audio_ring" | tail -n 1
-mkdir -p "$o/disc" && $cc "${flags[@]}" -I"$k/core/include" "$c/enc_discimage.c" "$t/discimage_test.c" -o "$o/discimage" && ${run[@]+"${run[@]}"} "$o/discimage" "$o/disc"
-for m in 1 2; do # 1: no cue-first pass, 2: a cue's first track even if it is audio
-  $cc "${flags[@]}" -DDISCIMAGE_MUTANT=$m -I"$k/core/include" "$c/enc_discimage.c" "$t/discimage_test.c" -o "$o/discimage_mutant"
-  if ${run[@]+"${run[@]}"} "$o/discimage_mutant" "$o/disc" > /dev/null; then echo "discimage_test: mutant $m passed"; exit 1; else echo "discimage_test: mutant $m fails, as it must"; fi
-done
-mkdir -p "$o/menu.d" && $cc "${flags[@]}" -I"$k/core/include" "$c/enc_menu.c" "$c/enc_menu_panel.c" "$t/menu_test.c" -o "$o/menu" && ${run[@]+"${run[@]}"} "$o/menu" "$o/menu.d"
-mkdir -p "$o/cfg" && $cc "${flags[@]}" -I"$k/core/include" "$c/enc_config.c" "$t/config_test.c" -o "$o/cfg/config" && (cd "$o/cfg" && ${run[@]+"${run[@]}"} ./config)
+"$k/core/test/run_module_tests.sh" "$@"

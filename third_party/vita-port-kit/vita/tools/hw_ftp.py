@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Vita side of vita-port-kit's hw_run.sh and hw_check.sh: vitacompanion's
+"""The Vita side of Encore's hw_run.sh and hw_check.sh: vitacompanion's
 FTP server (port 1337) and its command port (1338). Standard library only.
 From spyro-vita tools/vita/hw_ftp.py @ e365217 (its decision D77; kh1-decomp
 carried a copy), the game's paths made settings.

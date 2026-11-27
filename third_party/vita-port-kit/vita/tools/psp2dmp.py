@@ -27,7 +27,7 @@ Format: an ELF32 core (ET_CORE) whose PT_NOTE segments hold notes named after ta
 THREAD_REG_INFO, ...: u32 version, u32 count, entries) and whose PT_LOAD segments hold the stacks. The table
 offsets are facts learned from spyro-vita sessions' small readers (logs/s8e/dumpthreads.py, dumpstack.py),
 vita-parse-core and psp2_core_parse (MIT; the fault registers), checked on spyro-vita's dumps; no code was taken. Written for
-vita-port-kit (spyro-vita's lessons, item P9: kit-lessons E §3.6, §8.5). Python 3, stdlib only.
+Encore (spyro-vita's lessons, item P9: kit-lessons E §3.6, §8.5). Python 3, stdlib only.
 """
 import bisect, collections, gzip, os, re, shutil, struct, subprocess, sys
 

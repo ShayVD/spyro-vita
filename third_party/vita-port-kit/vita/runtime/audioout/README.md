@@ -1,27 +1,15 @@
 # audioout
 
-Sound out of the Vita: a ring between the mixer and the device (`vpk_audio_ring`, portable C) and the output
-thread that feeds an `sceAudioOut` port from it (`vpk_audio_out`).
+Sound out of the Vita: a ring between the mixer and the device (`enc_audio_ring` in `core/`, portable C) and the
+output thread that feeds an `sceAudioOut` port from it (`vpk_audio_out`).
 
 ## The ring
 
-One producer thread (the mixer), one consumer (the output thread), no locks. Two ways to play it, set by
-`VpkAudioRingConfig.rate_control`:
-
-- **0, plain.** The consumer takes what is there, up to a grain, and pads the rest with silence (counted in
-  `underruns`). For a mixer that is paced by the output: it mixes while `vpk_audio_ring_level` is below its lead
-  and waits otherwise, so its samples come at the device's own rate. kh1-decomp works this way (its IOP sound
-  driver ticks and mixes 64 ms ahead of a 48 kHz port).
-- **1, held level.** For a producer paced by another clock: a game that pushes a vblank's samples each vblank runs
-  on the display's 59.94 Hz, while the port plays 44,100 or 48,000 frames a second by its own clock. A ring that only
-  passes frames on runs dry by about 1 ms a second whatever its size. So the consumer plays at a rate within 0.5% of
-  1, linearly interpolated, set by a slow controller that holds the ring's low point at `low` frames. When the ring
-  runs out (a load stops the game) it plays silence until it holds `prime` again and drops what is above that;
-  above `max` it drops back to `prime`. spyro-vita works this way, with `{16384, 1, 2304, 3840, 6615, 16384,
-  2.0f}` at 44.1 kHz and 735 frames a vblank.
-
-`vpk_audio_ring_clear` drops what was pushed so far (a save state was loaded). The buffer is inside the struct
-(`VPK_AUDIO_RING_MAX_FRAMES` frames, 64 KiB); `cfg.frames` may use less of it.
+The ring moved to `core/` (roadmap E4) as `enc_audio_ring` ([`core/docs/audio_ring.md`](../../../../core/docs/audio_ring.md)):
+`core/include/encore/audio_ring.h`, `core/src/enc_audio_ring.c`. `vpk_audio_ring.h` and `vpk_audio_ring.c` here keep
+the old path and names for games built before the move (they include core's; [`NEEDS`](NEEDS) lists what
+`tools/vendor.sh` vendors with this directory). The output thread below takes a `VpkAudioRing`, which is an
+`EncAudioRing`.
 
 ## The output thread
 
@@ -36,6 +24,5 @@ volume (the mod menu's), `vpk_audio_out_close` releases the port.
 held level's constants became the config; the code is otherwise spyro-vita's, and its simulation gives the same
 numbers.
 
-**Tests:** `test/audio_ring_test.c` is spyro-vita's model of the Vita's clocks (59.94, 60 and 60.1 Hz, loads) for
-the held level, plus the plain ring's cases; `test/audio_out_test.c` runs the output thread's step against fakes of
-`sceAudioOut` (`../test/fake_psp2/`). Both run from `../test/run_host_tests.sh`.
+**Tests:** the ring's are in `core/test/audio_ring_test.c`; `test/audio_out_test.c` runs the output thread's step against fakes of
+`sceAudioOut` (`../test/fake_psp2/`). It runs from `../test/run_host_tests.sh`.

@@ -13,12 +13,12 @@
  * difference (the game's vblanks follow the display's 59.94 Hz, the port
  * plays 44,100 frames a second), so it runs dry only when the game stops:
  * "dry" is then the times it ran out, "cut" the times it dropped back to
- * its level. The port and its thread are vita-port-kit's vpk_audio_out
- * (third_party/vita-port-kit/vita/runtime/audioout, D107). */
+ * its level. The port and its thread are Encore's vpk_audio_out
+ * (third_party/encore/targets/vita/runtime/audioout, D107). */
 #include "vita.h"
 #include "psx_audio_ring.h"
 #include "psx_spu.h"
-#include "../../../third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.h"
+#include "../../../third_party/encore/targets/vita/runtime/audioout/vpk_audio_out.h"
 
 #include <SDL2/SDL.h>
 #include <psp2/audioout.h>

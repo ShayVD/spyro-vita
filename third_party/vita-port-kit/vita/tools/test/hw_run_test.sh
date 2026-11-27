@@ -5,7 +5,7 @@
 # after a run killed with SIGKILL and after a cut-off eboot.bin upload, --put-eboot, HW_NO_INSTALL=1, and the lock: hw_ftp.py
 # and hw_check.sh while another live PID holds it, a lock wait that times out, a stale lock. Needs python3,
 # unzip, zip, shasum.
-#   vita/tools/test/hw_run_test.sh
+#   targets/vita/tools/test/hw_run_test.sh
 set -euo pipefail
 tools=$(cd "$(dirname "$0")/.." && pwd)
 w=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/hw_run_test.XXXXXX")" && pwd) # no // (a TMPDIR ending in /)
@@ -199,6 +199,18 @@ rc=0; (unset VITA_IP VPK; HW_GAME=$w/ggame/tools/vita/hw.game "$tools/hw_run.sh"
 check "hw_run reads hw.env and finds HW_VPK from the game's root" "[ $rc = 0 ] && grep -q 'frames= reached' '$w/out-git/hw-run.txt'"
 check "the run's account names the commit" "grep -q \"app: eboot.bin (.*, test.vpk, $(git -C "$w/ggame" rev-parse --short HEAD), eboot SHA-1 \" '$w/out-git/hw-run.txt'"
 check "hw-run.env: HEAD= the checkout's commit" "grep -qx \"HEAD=$(git -C "$w/ggame" rev-parse HEAD)\" '$w/out-git/hw-run.env'"
+kill $mock; wait $mock 2>/dev/null || true
+
+# A new title's first run: no HW_DATA on the Vita yet (the app makes it at its first start), and its log in a
+# folder of HW_DATA (log/test.log), as Encore's platform interface writes it
+echo "a new title, no data folder yet, its log in log/:"
+cp -R "$w/game" "$w/fgame"
+sed -i.bak 's|^HW_LOG=.*|HW_LOG=log/test.log|' "$w/fgame/tools/vita/hw.game"
+HW_GAME=$w/fgame/tools/vita/hw.game start_mock 1.08 fresh
+mkdir -p "$w/vita-fresh/ux0/data"
+rc=0; HW_GAME=$w/fgame/tools/vita/hw.game "$tools/hw_run.sh" "$w/out-fresh" 30 frames=1200 > "$w/run-fresh.txt" 2>&1 || rc=$?
+check "the run makes HW_DATA, fetches log/test.log and reaches frames=" \
+  "[ $rc = 0 ] && [ -d '$w/vita-fresh/ux0/data/testgame' ] && grep -q 'frames: stop' '$w/out-fresh/log/test.log' && grep -q 'frames= reached' '$w/out-fresh/hw-run.txt'"
 kill $mock; wait $mock 2>/dev/null || true
 
 [ $fails = 0 ] && echo "hw_run_test: ok" || { echo "hw_run_test: $fails failed (logs in $w)"; trap - EXIT; exit 1; }

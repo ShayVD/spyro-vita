@@ -4,7 +4,7 @@
 # one of another build: the right ELF is picked by size, the crashed thread's PC and LR are named with the load base
 # subtracted, --stack finds the return addresses, --title the title id. All written here; no game bytes, no ARM
 # toolchain. The mutant (PSP2DMP_MUTANT=1: the load base not subtracted) must fail. Needs python3 only.
-#   vita/tools/test/psp2dmp_test.sh
+#   targets/vita/tools/test/psp2dmp_test.sh
 set -euo pipefail
 tools=$(cd "$(dirname "$0")/.." && pwd)
 w=$(mktemp -d "${TMPDIR:-/tmp}/psp2dmp_test.XXXXXX")

@@ -68,12 +68,18 @@
 #include "graphics.h"
 #include "moby.h"
 #ifndef RENDER_PRES
+#include "psx_vcache.h" /* the game's copy only (records, dd_free #271) */
 #include "tick60.h" /* the game's copy only (logic60) */
 #endif
 
 extern char D_8006FCF4[];
 
-LodConfig g_lod = {LOD_ONE, 0, 0, LOD_BUDGET_60};
+/* dd_free's default (#271): on; a build with -DSPYRO_DD_FREE_DEFAULT=0
+ * starts with it off (the A/B checks of dd_free=0 on every target) */
+#ifndef SPYRO_DD_FREE_DEFAULT
+#define SPYRO_DD_FREE_DEFAULT 1
+#endif
+LodConfig g_lod = {LOD_ONE, 0, 0, LOD_BUDGET_60, SPYRO_DD_FREE_DEFAULT};
 int g_lod_k = LOD_ONE; /* this draw's scale */
 int g_lod_pass;        /* r_moby's pass 2 is running */
 int g_lod_stats;       /* this draw collects statistics */
@@ -123,6 +129,13 @@ static int s_demo_shown; /* the game's last draw was a shown attract-demo draw
                             (port_lod_draw_end): the limiter measures the demo */
 static int s_logic60; /* the last shown draw followed a 60 Hz update (logic60) */
 static int s_near; /* this draw's near-list sectors (with the option on) */
+/* dd_free (#271, g_lod.grow_free): the last 1x draw's work with a 60 Hz
+ * budget (the bytes of primitives it wrote and the vertex-cache records the
+ * game thread made in it), valid in s_ref_ok until a new level, gamestate
+ * or save state; and this draw's record count at its start (the game's copy
+ * only: the presenter's never measures). */
+static int s_ref_bytes, s_ref_ok;
+static unsigned s_ref_recs, s_rec_mark;
 
 /* The most the limiter's scale may reach (#261): the player's scale where
  * a 60 Hz budget measures the draws (60 Hz logic in play and g_lod.budget
@@ -141,6 +154,9 @@ static u32 s_rec2 = ~0u; /* the first draw record pass 2 wrote */
 
 static struct {
   unsigned draws, cuts, near_full, near_cuts, env_cuts, moby_cuts, budget_cuts, budget_held;
+  unsigned free_ok, free_cuts; /* dd_free (#271): draws over the budget let
+                                  through, and back-offs past the 1x draw */
+  unsigned long long recs; /* ... and the records of the draws limit() saw */
   unsigned long long used, k, extra;
   unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
@@ -334,6 +350,20 @@ void port_lod_env_lists(u32 t7) {
 #ifndef RENDER_PRES
 static void (*s_budget_hook)(void); /* lod_set_budget_hook (#212) */
 void lod_set_budget_hook(void (*fn)(void)) { s_budget_hook = fn; }
+
+/* dd_free (#271): the vertex-cache records the game thread has made, a
+ * count that only grows: those published at each frame's end
+ * (g_vcache_work's projections, never reset) plus the frame's so far
+ * (psx_vcache_game_recs' recorded, which a frame's end moves into the
+ * other), so a draw's records are the difference across it wherever the
+ * frame's end falls. Only the game thread records (the walk works out what
+ * it kept; the presenter's records go to its own counters). With no vertex
+ * cache both stay 0 and only the bytes compare. */
+static unsigned records_now(void) {
+  unsigned r[4];
+  psx_vcache_game_recs(r);
+  return __atomic_load_n(&g_vcache_work[VCW_PROJ], __ATOMIC_RELAXED) + r[0];
+}
 #endif
 
 void port_lod_draw_begin(int shown) {
@@ -356,17 +386,23 @@ void port_lod_draw_begin(int shown) {
 #endif
   if (g_lod.scale <= LOD_ONE || !shown)
     return;
+#ifndef RENDER_PRES
+  if (g_lod.grow_free)
+    s_rec_mark = records_now(); /* dd_free (#271) */
+#endif
   if (g_lod.guards_only || s_loaded) {
     s_k = scale_top();
     s_hold = 0;
     s_level = g_LevelId;
     s_gamestate = g_Gamestate;
     s_loaded = 0;
+    s_ref_ok = 0;
   } else if (g_LevelId != s_level || g_Gamestate != s_gamestate) {
     s_level = g_LevelId;
     s_gamestate = g_Gamestate;
     s_k = LOD_ONE;
     s_hold = 60;
+    s_ref_ok = 0;
   }
   if (s_k > scale_top() || s_k < LOD_ONE)
     s_k = s_k < LOD_ONE ? LOD_ONE : scale_top();
@@ -430,11 +466,49 @@ static int logic60(void) {
  * draws as 1x: it spends only the time the scene leaves. The host's budget
  * is fixed (--lod-budget); the Vita's dd_budget=auto (#212) moves it every
  * logic frame from the game thread's measured time (lod_time.c, through
- * lod_set_budget), and the rule here stays the same. */
-static void limit(int used, int cap, int work, int budget, int near) {
-  const int over = budget > 0 && work > budget, far_over = over && work > budget + budget / 8;
-  const int room = (budget <= 0 || work < budget - budget / 8) &&
-                   (s_k < LOD_TWO || near < NEAR_GROW); /* past 2x: the near list too */
+ * lod_set_budget), and the rule here stays the same.
+ *
+ * dd_free (#271, g_lod.grow_free, on by default; the owner's decision of
+ * 2026-11-26: MAX draws at least 1x and farther wherever it can). Where the
+ * original's own draw is over the budget, the budget alone holds 1x, even
+ * where a longer distance writes no more: in Artisans at 60 Hz the 1x frame
+ * is over the Vita's 14.5 ms, and on the host, with the budget off, 2x
+ * writes 62-74 KB a draw against 59-77 KB at 1x and records as many
+ * projections (D261), the record being what the game thread's time follows
+ * (D261: 2.5-2.8 us a projection worked out at once). So a draw over the
+ * budget is compared with the last 1x draw instead (k the drawn scale,
+ * `recs` the vertex-cache records the game thread made in it): a 1x draw
+ * becomes the reference and is let through; a longer one writing no more
+ * bytes and no more records than the reference is let through too, so the
+ * scale grows (by the rules above: the buffer's, the near list's, the hold,
+ * 1/32 a draw); one writing more of either backs off at once as if over the
+ * budget, with the reference as the budget (over it the extra halves, over
+ * 9/8 of it, in bytes or records, it goes and the next 1x draw is the new
+ * reference). A draw under the budget takes the budget's rules alone. With
+ * no reference yet (a save state loaded at full scale) the budget's rules
+ * hold. 0 is the rule before #271. */
+static void limit(int used, int cap, int work, int budget, int near, int k, unsigned recs) {
+  int over = budget > 0 && work > budget, far_over = over && work > budget + budget / 8;
+  int room = (budget <= 0 || work < budget - budget / 8) &&
+             (s_k < LOD_TWO || near < NEAR_GROW); /* past 2x: the near list too */
+  if (g_lod.grow_free && budget > 0) {
+    s_st.recs += recs;
+    if (k <= LOD_ONE) { /* the reference: the last 1x draw */
+      s_ref_bytes = work;
+      s_ref_recs = recs;
+      s_ref_ok = 1;
+    }
+    if (over && s_ref_ok) {
+      if (k <= LOD_ONE || (work <= s_ref_bytes && recs <= s_ref_recs)) {
+        over = far_over = 0; /* let through: no more than 1x writes */
+        room = s_k < LOD_TWO || near < NEAR_GROW;
+        s_st.free_ok++;
+      } else { /* past the 1x draw: back off, the reference as the budget */
+        far_over = work > s_ref_bytes + s_ref_bytes / 8 || recs > s_ref_recs + s_ref_recs / 8;
+        s_st.free_cuts++;
+      }
+    }
+  }
   /* The budget's back-offs: over it while the buffer (or the world's bound)
    * is at most 80% full, so only the budget backs off. At 1x already (#200)
    * there is nothing left to take: the budget holds the longer distance at
@@ -487,7 +561,13 @@ void port_lod_draw_end(int shown) {
 #ifndef RENDER_PRES
     s_logic60 = logic60();
 #endif
-    limit(world_eff > used ? world_eff : used, cap, used, s_logic60 ? g_lod.budget : 0, s_near);
+    unsigned recs = 0; /* the vertex cache's records in this draw (dd_free, #271) */
+#ifndef RENDER_PRES
+    if (g_lod.grow_free)
+      recs = records_now() - s_rec_mark;
+#endif
+    limit(world_eff > used ? world_eff : used, cap, used, s_logic60 ? g_lod.budget : 0, s_near,
+          k, recs);
     s_last_bytes = used;
     s_last_60 = s_logic60 && g_lod.budget > 0;
   }
@@ -550,13 +630,12 @@ int lod_set_budget(int bytes, int used_us, int target_us) {
  * highest, #224), the longest frame, the time the average frame left under
  * the target (or over it), and the frames over it, each of which cut the
  * budget at once. */
-static void budget_report(char *out, unsigned len) {
+static int budget_report(char *out, unsigned len) {
   const unsigned n = s_bt.n, avg = (unsigned)(s_bt.used / n), t = s_bt.target;
   if (s_st.budget_held * 2 > s_st.draws)
-    snprintf(out, len, "; budget held at 1x: %u.%u ms used of %u.%u, worst %u.%u ms (%u-%u KB)",
+    return snprintf(out, len, "; budget held at 1x: %u.%u ms used of %u.%u, worst %u.%u ms (%u-%u KB)",
              MS10(avg), MS10(t), MS10(s_bt.worst), s_bt.lo / 1024, s_bt.hi / 1024);
-  else
-    snprintf(out, len, "; budget %u KB (auto, %u-%u KB, worst %u.%u ms, %u.%u ms %s; %u over)",
+  return snprintf(out, len, "; budget %u KB (auto, %u-%u KB, worst %u.%u ms, %u.%u ms %s; %u over)",
              (unsigned)(s_bt.budget / n / 1024), s_bt.lo / 1024, s_bt.hi / 1024,
              MS10(s_bt.worst), MS10(avg > t ? avg - t : t - avg), avg > t ? "over" : "left",
              s_bt.over);
@@ -583,8 +662,21 @@ void port_lod_report(char *out, unsigned len) {
              (unsigned)(s_st.extra / d), (unsigned)(s_st.extra * 10 / d % 10), s_st.near_max,
              s_st.near_full, s_st.near_cuts, s_st.records_max, s_st.sector_max, s_st.after_env_max,
              s_st.env_cuts, s_st.moby_cuts);
-  if (s_bt.n && n > 0 && (unsigned)n + 1 < len) /* (no strlen: render_ctx_link) */
-    budget_report(out + n, len - (unsigned)n);
+  if (s_bt.n && n > 0 && (unsigned)n + 1 < len) { /* (no strlen: render_ctx_link) */
+    const int b = budget_report(out + n, len - (unsigned)n);
+    n = b > 0 ? n + b : n;
+  }
+  /* dd_free (#271): only in a window where it let a draw over the budget
+   * through or backed off past the 1x draw, so dd_free=0's lines (and a
+   * window with no draw over the budget) are as before. F of the draws were
+   * over the budget and let through (no more than the last 1x draw wrote),
+   * P backed off past it; then that reference's bytes and records, and the
+   * window's records a draw. About 70 bytes: the line stays under 600
+   * (budget_report). */
+  if ((s_st.free_ok || s_st.free_cuts) && n > 0 && (unsigned)n + 1 < len)
+    snprintf(out + n, len - (unsigned)n, "; free %u, past 1x %u (1x %u KB %u rec; %u rec/draw)",
+             s_st.free_ok, s_st.free_cuts, (unsigned)s_ref_bytes / 1024, s_ref_recs,
+             (unsigned)(s_st.recs / d));
   memset(&s_st, 0, sizeof s_st);
   memset(&s_bt, 0, sizeof s_bt);
 }
@@ -597,7 +689,8 @@ void port_lod_report(char *out, unsigned len) {
   X(g_lod) X(g_lod_k) X(g_lod_pass) X(g_lod_stats) X(s_k) X(s_hold) X(s_ext)   \
   X(s_ext_cur) X(s_level) X(s_gamestate) X(s_loaded) X(s_demo_shown)        \
   X(s_poly_lo) X(s_env_limit) X(s_moby_limit) X(s_env_last) X(s_env_end)      \
-  X(s_rec2) X(s_st) X(s_logic60) X(s_near) X(s_last_bytes) X(s_last_60) X(s_bt)
+  X(s_rec2) X(s_st) X(s_logic60) X(s_near) X(s_last_bytes) X(s_last_60) X(s_bt)  \
+  X(s_ref_bytes) X(s_ref_ok) X(s_ref_recs) X(s_rec_mark)
 #define LOD_SIZE(v) + sizeof v
 #define LOD_GET(v) memcpy(p, &v, sizeof v), p += sizeof v;
 #define LOD_SET(v) memcpy(&v, p, sizeof v), p += sizeof v;

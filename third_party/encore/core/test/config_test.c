@@ -15,9 +15,11 @@ static void take(char *k, char *v, void *user) {
     n++;
 }
 
-int main(void) {
-    const char *path = "config_test.txt";
-    FILE *f = fopen(path, "w");
+int main(int argc, char **argv) { /* argv[1]: the directory to write in (default: the current one) */
+    char path[512];
+    FILE *f;
+    snprintf(path, sizeof path, "%s/config_test.txt", argc > 1 ? argv[1] : ".");
+    f = fopen(path, "w");
     fputs("# a comment=1\nwide=1\nno equals here\nvolume=40  \r\niso=ux0:data/x/a=b.iso\nempty=\n frames=5\n", f);
     fclose(f);
     CHECK(enc_config_read(path, take, 0) == 1);

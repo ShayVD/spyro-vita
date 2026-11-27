@@ -1,11 +1,11 @@
-# vita/cmake
+# targets/vita/cmake
 
 `VpkApp.cmake`: `vpk_add_app()` packs a linked executable target as a VPK, after checking it still defines the two
 process parameters (`vpk_check_procparams.cmake`). It runs the same commands as `../tools/vpk_pack.py`, the helper for
 games built by make or scripts, so a game can move between the two without its VPK changing.
 
 ```cmake
-include(${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake)   # after vitasdk's toolchain file
+include(${CMAKE_SOURCE_DIR}/third_party/encore/targets/vita/cmake/VpkApp.cmake)   # after vitasdk's toolchain file
 vpk_add_app(my_game VPK "${CMAKE_BINARY_DIR}/my-game.vpk"
   TITLE_ID ABCD00001 VERSION 01.00 NAME "My Game"
   FILE "${art}/icon0.png" sce_sys/icon0.png

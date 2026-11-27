@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# The port autopilot's gate runner for the Vita: one route of a game in Vita3K, behind the one contract every
+# target's runner keeps (playbooks/port-autopilot/targets.md):
+#   ap_gate info --target vita
+#   ap_gate run  --target vita --game tools/vita/hw.game OUT TIMEOUT [KEY=VALUE]...
+# `run` is v3k_run.sh with HW_GAME = --game and VPK = $ARTIFACT (when set); PAD and KEYS (macOS: a key script played
+# through Vita3K's keyboard map, tools/README.md) pass through. It leaves in OUT the
+# shots (*.png), run.log (a copy of the game's HW_LOG) and run.txt, besides v3k_run.sh's own files.
+# Invalid memory accesses: Vita3K logs a read or write of unmapped memory ("Invalid read of uint32_t at address:
+# 0x0") and carries on with zeros where a Vita would fault, so a run can reach its stop line and still be wrong
+# (kb vita3k-invalid-access-does-not-fail-run). The runner counts those lines in Vita3K's output (vita3k.txt), prints
+# the count and the most frequent addresses, writes invalid_accesses=N to run.txt, and fails a run that reached its
+# stop line with any (exit 6). AP_GATE_INVALID_FAIL=0 reports them without failing (exit 0 as before);
+# AP_GATE_INVALID_RE overrides the pattern (an extended regex).
+# Where: Vita3K follows each invalid access and each guest exception with a CPU dump ("PC: 0x..., SP: 0x..., LR:
+# 0x..."). With the build's unstripped ELF (HW_ELF in the game file, relative to the game repo; the environment's
+# wins, and with ARTIFACT= only the environment's counts, as it must be that build's ELF) v3k_where.py names each
+# site's PC and LR by the nearest function; without one the runner prints the first three dumps as they are.
+# Exit: 0 stop line, 1 setup, 2 crash, 3 hang (timeout), 4 hang line, 5 the Vita3K lock is busy (defer), 6 the stop
+# line, but Vita3K logged invalid memory accesses (with AP_GATE_INVALID_FAIL=1, the default).
+set -uo pipefail
+tools=$(cd "$(dirname "$0")" && pwd)
+cmd=${1:-}; [ $# -gt 0 ] && shift
+target=vita game=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --target) target=$2; shift 2 ;;
+    --game) game=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+case $cmd in
+  info)
+    printf '{"target": "%s", "status": "ready", "artifact": "vpk", "log": "run.log", "runs_on": "Vita3K"}\n' "$target"
+    exit 0 ;;
+  run) ;;
+  *) echo "usage: ap_gate info --target T | run --target T --game FILE OUT TIMEOUT [KEY=VALUE]..." >&2; exit 1 ;;
+esac
+out=${1:-}; timeout=${2:-}
+[ -n "$out" ] && [[ $timeout =~ ^[0-9]+$ ]] || { echo "ap_gate: run needs OUT and TIMEOUT" >&2; exit 1; }
+shift 2
+[ -n "$game" ] && [ -f "$game" ] || { echo "ap_gate: --game must name the game's hw.game" >&2; exit 1; }
+mkdir -p "$out"
+[ -z "${ARTIFACT:-}" ] || export VPK=$ARTIFACT
+# in the background, so a TERM to this runner reaches v3k_run.sh, which then puts the owner's files back
+HW_GAME=$game bash "$tools/v3k_run.sh" "$out" "$timeout" "$@" > "$out/ap_gate.txt" 2>&1 &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null; wait "$child"; exit 143' TERM INT HUP
+rc=0; wait "$child" || rc=$?
+trap - TERM INT HUP
+cat "$out/ap_gate.txt"
+if [ "$rc" = 1 ] && grep -q "held by PID" "$out/ap_gate.txt"; then rc=5; fi
+# shellcheck disable=SC1090
+HW_LOG=$( (. "$game" >/dev/null 2>&1; echo "${HW_LOG:-}") )
+[ -n "$HW_LOG" ] && [ -f "$out/$HW_LOG" ] && cp "$out/$HW_LOG" "$out/run.log"
+if [ -f "$out/v3k-run.txt" ]; then
+  sed -e 's/^vpk=/artifact=/' -e 's/^vpk_sha1=/artifact_sha1=/' "$out/v3k-run.txt" > "$out/run.txt"
+  echo "target=$target" >> "$out/run.txt"
+fi
+# Invalid memory accesses in Vita3K's own output (only a run that started Vita3K has one).
+if [ -f "$out/vita3k.txt" ]; then
+  re=${AP_GATE_INVALID_RE:-'Invalid (read|write) of uint[0-9]+_t at addr'}
+  n=$(grep -Ec -e "$re" "$out/vita3k.txt" || true)
+  echo "ap_gate: invalid memory accesses: $n"
+  if [ "$n" != 0 ]; then
+    echo "ap_gate: most frequent addresses (count, the data address read or written):"
+    grep -E -e "$re" "$out/vita3k.txt" | grep -Eo 'addr(ess)?: *0x[0-9a-fA-F]+' | sed 's/.*: *//' | sort | uniq -c \
+      | sort -rn | head -n 8 | sed 's/^ */  /'
+    grep -E -m 3 -e "$re" "$out/vita3k.txt" | sed 's/^/  first: /'
+  fi
+  [ -f "$out/run.txt" ] && echo "invalid_accesses=$n" >> "$out/run.txt"
+  # where: Vita3K's CPU dumps (after each invalid access or guest exception), named from the build's ELF
+  pcs=$(grep -E -m 3 'PC: 0x[0-9a-fA-F]+' "$out/vita3k.txt" || true)
+  if [ -n "$pcs" ]; then
+    # shellcheck disable=SC1090
+    elf=${HW_ELF:-} why=""
+    if [ -z "$elf" ]; then
+      if [ -n "${ARTIFACT:-}" ]; then why="ARTIFACT= runs another build: set HW_ELF to that build's ELF"
+      else elf=$( (. "$game" >/dev/null 2>&1; echo "${HW_ELF:-}") ); fi
+    fi
+    if [ -n "$elf" ]; then
+      case $elf in /*) ;; *)
+        groot=${GAME_ROOT:-$(git -C "$(dirname "$game")" rev-parse --show-toplevel 2>/dev/null ||
+          (cd "$(dirname "$game")/../.." && pwd))}
+        elf=$groot/$elf ;;
+      esac
+      [ -f "$elf" ] || { why="no ELF at $elf (HW_ELF)"; elf=""; }
+    else
+      why=${why:-"set HW_ELF in the game file to name them"}
+    fi
+    where=""
+    [ -z "$elf" ] || where=$(python3 "$tools/v3k_where.py" "$out/vita3k.txt" --elf "$elf" ${AP_GATE_NM:+--nm "$AP_GATE_NM"} 2>&1) ||
+      { why="v3k_where.py: $where"; where=""; }
+    if [ -n "$where" ]; then
+      echo "ap_gate: where (count, Vita3K's PC and LR named from $elf; a PC may be its translated block's start):"
+      printf '%s\n' "$where" | sed 's/^/  /'
+      printf '%s\n' "$where" > "$out/where.txt"
+    else
+      echo "ap_gate: Vita3K's CPU dumps, unnamed ($why):"
+      printf '%s\n' "$pcs" | sed 's/^/  /'
+    fi
+  fi
+  if [ "$n" != 0 ] && [ "$rc" = 0 ] && [ "${AP_GATE_INVALID_FAIL:-1}" != 0 ]; then
+    echo "ap_gate: FAIL: the stop line was reached, but Vita3K logged $n invalid memory accesses (exit 6;" \
+         "AP_GATE_INVALID_FAIL=0 only reports them)"
+    rc=6
+  fi
+fi
+exit "$rc"

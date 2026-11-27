@@ -1,6 +1,6 @@
 # cmake -DNM=<arm-vita-eabi-nm> -DELF=<linked elf> -DSTAMP=<file> -P vpk_check_procparams.cmake
 # Fails unless the ELF defines sceUserMainThreadStackSize and _newlib_heap_size_user (VpkApp.cmake's step 1; the
-# same check as vita/tools/vpk_pack.py). Writes STAMP when they are there.
+# same check as targets/vita/tools/vpk_pack.py). Writes STAMP when they are there.
 file(REMOVE "${STAMP}")
 execute_process(COMMAND "${NM}" "${ELF}" OUTPUT_VARIABLE syms RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
@@ -16,6 +16,6 @@ endforeach()
 if(lost)
   list(JOIN lost " " lost)
   message(FATAL_ERROR "vpk: ${lost} missing from ${ELF} (dropped by LTO? define them with VPK_PROCESS_PARAMS, "
-                      "vita/runtime/procparam, which marks them used)")
+                      "targets/vita/runtime/procparam, which marks them used)")
 endif()
 file(WRITE "${STAMP}" "ok\n")
