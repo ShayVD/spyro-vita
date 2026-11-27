@@ -2196,5 +2196,20 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - ThreadSanitizer is clean on native arm64 (the i686 toolchain can't link it). Native stress: 12.3 M projections.
 - **Found:** `vc_lazy_logic=2` keeps no more than the default (125,184 against 125,290 per 300 vblanks), so D264's result says nothing about keeping everything.
 - **Expected:** 1.5-3 ms a vblank off the game thread, where 0.9 ms is needed. Measure `vc_helper=2` on hardware first.
+- **Next free number:** see D271.
+
+### D271. The Vita build takes its Encore modules from `third_party/encore` (#251 step 1, 2026-11-27)
+- **What:**
+  - Encore 098d34b4 is vendored with `tools/vendor.sh --dir third_party/encore`, beside the PC's paths. The new paths are `targets/vita/{encore,cmake,tools}` and `targets/vita/runtime/{audioout,touch,perfcount,vcount}`; `VENDORED` lists all 11.
+  - The `vpk_` runtime modules (audio out, touch, perfcount, vcount) come from `targets/vita/runtime`.
+  - The sound ring, the disc image layer, the menu and its panel come from `core/src/enc_*.c` (`cmake/platform_common.cmake`). `cdimage.c` and `pbp.c` call `enc_dimg_*`.
+  - `VpkApp.cmake` and `livearea_png.py` come from `targets/vita`.
+- **Same code apart from perfcount:**
+  - The eboot's `.text`, `.rodata` and `.data` sizes are unchanged, and 394 of 397 objects have the same code.
+  - The only module change is Encore's `VPK_PC_MAX` raised from 32 to 64 (from kh1-vita): perfcount's tables grow by 1 KB of `.bss`, which moves the `.bss` addresses after them.
+  - All 8 Vita3K routes give shots identical to base-20d3514. Host ctest 33/33; the macOS native and pc-linux builds pass.
+  - The gate rebuilt the Vita target on the branch after merging #245: exit 0.
+- **Why vita-port-kit stays for now:** it is re-vendored at the same commit as E4's compat shims, because the common headers, the host tests, the hardware wrappers and CI still include it. Its removal is #294, paths only. The worker's patch for it was never built, because the session's permission check refused the apply.
+- **Next:** #283 (video in GLES mode), then #284-#288, one area each.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 
