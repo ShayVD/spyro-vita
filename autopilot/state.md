@@ -11,37 +11,61 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 271,
-      "branch": "perf/271-draw-distance-let-max-grow-where-the",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-271",
-      "started_at": "2026-11-27T01:06:50Z",
+      "issue": 296,
+      "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
+      "started_at": "2026-11-27T05:04:36Z",
       "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/platform/vita/lod_time.c",
-        "docs/presentation.md"
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
       ],
-      "agent": "adeea5a2e1b159678",
+      "agent": "afde2755bd6a5d91f",
       "reported": true
     },
     {
-      "issue": 175,
-      "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
-      "started_at": "2026-11-27T03:45:41Z",
+      "issue": 283,
+      "branch": "refactor/283-vita-on-encore-s-platform-interface",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
+      "started_at": "2026-11-27T06:29:03Z",
       "files": [
-        "tools/tc",
-        "tools/host_checks.sh",
-        "tools/fast_render_ab.sh",
-        "tools/mixer_ab.sh",
-        "tools/native_draw_ab.sh",
-        "tools/pres_check_ab.sh",
-        "tools/step.sh",
-        "tools/gdb_run.sh",
-        "docs/host-build.md"
+        "src/platform/vita/video.c",
+        "src/platform/vita/present_vita.c",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/CMakeLists.txt"
       ],
-      "agent": "a5c39f9290a1b230e",
-      "reported": true
+      "agent": "ae596b6969b225d80"
+    },
+    {
+      "issue": 294,
+      "branch": "refactor/294-remove-third-party-vita-port-kit-move",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-294",
+      "started_at": "2026-11-27T06:29:10Z",
+      "files": [
+        "src/platform/common/menu_opts.h",
+        "src/platform/common/menu_panel.h",
+        "src/platform/common/psx_audio_ring.h",
+        "src/platform/common/psx_cdimage.h",
+        "src/platform/common/psx_pbp.h",
+        "src/platform/vita/vita_pc.h",
+        "src/platform/ps4/main.c",
+        "src/platform/ps4/menu.c",
+        "tests/audio/",
+        "tests/vcount/",
+        "tools/ci/build_vpk.sh",
+        "tools/vita/hw-routes/stone60.cfg",
+        "tools/vita/hw.game",
+        "tools/vita/hw_check.sh",
+        "tools/vita/hw_ftp.py",
+        "tools/vita/hw_mock.py",
+        "tools/vita/hw_run.sh",
+        "tools/vita/livearea_local.sh",
+        "tools/vita/make_livearea.py",
+        ".github/workflows/build.yml",
+        "assets/livearea/README.md",
+        "third_party/vita-port-kit/"
+      ],
+      "agent": "a2b6e27067f813f6d"
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
@@ -220,6 +244,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
       "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
       "issue": 212
+    },
+    {
+      "title": "Hardware A/B for #271 (dd_free=1 vs 0): MAX grows over the 60 Hz budget where a draw writes no more than 1x",
+      "expected": "no more late vblanks per 300 with dd_free=1 in Artisans and Toasty, at x2.00 where 1x was held",
+      "issue": 271,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
     }
   ],
   "owner_decisions": [
@@ -323,12 +356,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": {
-    "kind": "gate",
-    "issue": 271,
-    "step": 1,
+    "kind": "baseline",
+    "issue": 0,
+    "step": 2,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-271.gate.log",
-    "started_at": "2026-11-27T04:53:42Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r13.log",
+    "started_at": "2026-11-27T06:28:27Z"
   },
   "batch": null,
   "lanes": [
@@ -603,3 +636,7 @@ continue.
 - 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
 - 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
 - 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
+- 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
+- 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
+- 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
+- 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).

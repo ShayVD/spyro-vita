@@ -40,6 +40,10 @@ B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}; M=
 IB=${I_BIN:-$B}
 nd=; [ "${ND:-0}" = 1 ] && nd=--native-draw
 [ -n "${FR:-}" ] && nd="$nd --fast-render $FR"
+# Issue #175: on colima's sshfs mount a built binary can lose its execute bit
+# after the link; give it back right before running (tools/tc checks again in
+# the container), with one line on stderr when it had to.
+xbit() { [ ! -f "$1" ] || [ -x "$1" ] || { chmod +x "$1"; echo "restored execute bit: $1" >&2; }; }
 run() { # NAME MODE
   n=$1; m=$2; D=logs/$P-$n-$m
   rm -rf $D; mkdir -p $D
@@ -60,6 +64,7 @@ run() { # NAME MODE
   *) echo "unknown scenario $n"; exit 2;;
   esac
   bin=$B; [ $m = i ] && bin=$IB
+  xbit "$bin"
   tools/tc timeout ${STALL:-14400} $bin --disc $DISC --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra $args > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt

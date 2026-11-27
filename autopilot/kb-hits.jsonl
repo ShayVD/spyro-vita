@@ -5,3 +5,6 @@
 {"date": "2026-11-27", "id": "vita-vcount-16-bit-wraps", "note": "vcount header byte-identical through the move; vcount and vcount_mutant tests pass", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#251"}
 {"date": "2026-11-27", "id": "shared-hook-needs-guard-on-every-branch", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
 {"date": "2026-11-27", "id": "audio-held-level-for-vblank-paced-mixer", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
+{"date": "2026-11-27", "id": "emulator-broken-frame-check-console-shots", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#271"}
+{"date": "2026-11-27", "id": "colima-sshfs-loses-ld-execute-bit", "note": "re-check right before running, inside the container, with link_exec.sh's 5-try loop", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
+{"date": "2026-11-27", "id": "colima-sshfs-no-chown-stale-attrs", "note": "tc checks inside the container, not only from the Mac", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
