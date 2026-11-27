@@ -68,7 +68,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "agent": "a2b6e27067f813f6d"
     }
   ],
-  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
+  "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -355,14 +355,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 2,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r13.log",
-    "started_at": "2026-11-27T06:28:27Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     5
@@ -374,8 +367,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
-        "commit": "20d3514589db959121604783a5876ea91f152ad9"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-e603aaa",
+        "commit": "e603aaa7036fd47a059218dd50c3b6722ec2357d"
       }
     }
   },
