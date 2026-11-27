@@ -19,7 +19,53 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/common/vcache.c",
         "src/platform/common/psx_vcache.h"
       ],
-      "agent": "afde2755bd6a5d91f"
+      "agent": "afde2755bd6a5d91f",
+      "reported": true
+    },
+    {
+      "issue": 283,
+      "branch": "refactor/283-vita-on-encore-s-platform-interface",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
+      "started_at": "2026-11-27T06:29:03Z",
+      "files": [
+        "src/platform/vita/video.c",
+        "src/platform/vita/present_vita.c",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/CMakeLists.txt"
+      ],
+      "agent": "ae596b6969b225d80"
+    },
+    {
+      "issue": 294,
+      "branch": "refactor/294-remove-third-party-vita-port-kit-move",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-294",
+      "started_at": "2026-11-27T06:29:10Z",
+      "files": [
+        "src/platform/common/menu_opts.h",
+        "src/platform/common/menu_panel.h",
+        "src/platform/common/psx_audio_ring.h",
+        "src/platform/common/psx_cdimage.h",
+        "src/platform/common/psx_pbp.h",
+        "src/platform/vita/vita_pc.h",
+        "src/platform/ps4/main.c",
+        "src/platform/ps4/menu.c",
+        "tests/audio/",
+        "tests/vcount/",
+        "tools/ci/build_vpk.sh",
+        "tools/vita/hw-routes/stone60.cfg",
+        "tools/vita/hw.game",
+        "tools/vita/hw_check.sh",
+        "tools/vita/hw_ftp.py",
+        "tools/vita/hw_mock.py",
+        "tools/vita/hw_run.sh",
+        "tools/vita/livearea_local.sh",
+        "tools/vita/make_livearea.py",
+        ".github/workflows/build.yml",
+        "assets/livearea/README.md",
+        "third_party/vita-port-kit/"
+      ],
+      "agent": "a2b6e27067f813f6d"
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
@@ -312,10 +358,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "job": {
     "kind": "baseline",
     "issue": 0,
-    "step": 1,
+    "step": 2,
     "pid": 0,
     "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r13.log",
-    "started_at": "2026-11-27T05:26:43Z"
+    "started_at": "2026-11-27T06:28:27Z"
   },
   "batch": null,
   "lanes": [
@@ -593,3 +639,4 @@ continue.
 - 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
 - 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
 - 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
+- 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
