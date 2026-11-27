@@ -10,7 +10,7 @@ with it is `tests/vcache/test_vcache_helper.c`. Nothing here changes game code y
 - **Fallback:** when the helper is behind, the game thread works the projection out itself, exactly as today.
 - **Switch:** `vc_helper=0` keeps today's code paths.
 - **Expected:** about 1.5–3 ms a vblank off the game thread in Artisans' heaviest 60 Hz stretch. It needs 0.9 ms (D264: 15.4 ms of 14.5).
-- **Race test:** under ctest, 60 + 30 iterations of six frames each, about 4.3 M projections in all. Every projection is worked out exactly once, and every entry and log place matches a single thread's answer. Three mutants fail as they should, and ThreadSanitizer is clean on a native run.
+- **Race test:** under ctest, 60 + 30 iterations of six frames each under qemu-i386, 1.85 M projections in all. Every projection is worked out exactly once, and every entry and log place matches a single thread's answer. Three mutants fail as they should, and ThreadSanitizer is clean on a native run.
 
 ## Where the time is
 
