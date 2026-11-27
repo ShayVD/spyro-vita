@@ -16,3 +16,4 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D276 #294 vita-port-kit removed (2026-11-27T07:54:33Z)
 - D277 #283 Vita video through Encore's platform interface (2026-11-27T09:42:23Z)
 - D278 #259 vc_fast_rec lean and ahead record modes (2026-11-27T09:54:30Z)
+- D279 re-vendor Encore's ARM64 offset model (Encore #148) (2026-11-27T09:54:46Z)
