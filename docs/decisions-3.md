@@ -2232,5 +2232,16 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The reference is one 1x draw and isn't refreshed while the scale stays up (in owner60 it stayed at 85 KB through 6,900-8,700).
   - The hardware A/B (late vblanks per 300, `dd_free=1, 0, 0, 1` on the owner60 and o-toasty pads in real time) waits for #295 and the owner's yes.
 - The baseline is rebuilt after this merge, because pictures changed as intended.
+- **Next free number:** see D273.
+
+### D273. The tools that run a built binary restore a missing execute bit first (#175, the owner's option 2, 2026-11-26)
+- **Why:** on colima's sshfs mount, a binary's execute bit can be lost after `cmake/link_exec.sh` has checked it (D136, #174). The binary then fails with exit 126 until it is rebuilt.
+- **What:** right before running a binary, the tools check its execute bit. If it is missing, they `chmod +x` it, up to 5 tries, and log one `restored execute bit: PATH` line.
+  - `tools/tc` checks inside the container, where the stat is fresh: every ELF executable argument, and with `ctest`, every `add_test` path.
+  - `host_checks.sh` and the A/B scripts (`fast_render_ab.sh`, `mixer_ab.sh`, `native_draw_ab.sh`, `pres_check_ab.sh`) check `BIN` on the Mac first, once before parallel runs.
+  - `gdb_run.sh` checks inside the container.
+  - There is no switch: the check only does work when the bit is missing.
+- **Checked:** a binary set to 0644 runs through tc, ctest and `host_checks.sh` with exactly one restore line, and the exit codes pass through. Host ctest 33/33.
+- **Not done:** options 3 (a Docker volume for `build/`) and 4 (virtiofs on the default VM). tc already runs on the kh1fast profile, which is virtiofs (#253). `docs/host-build.md` still calls the mount reverse-sshfs in one place.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 
