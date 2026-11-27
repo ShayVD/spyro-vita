@@ -2243,5 +2243,23 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - There is no switch: the check only does work when the bit is missing.
 - **Checked:** a binary set to 0644 runs through tc, ctest and `host_checks.sh` with exactly one restore line, and the exit codes pass through. Host ctest 33/33.
 - **Not done:** options 3 (a Docker volume for `build/`) and 4 (virtiofs on the default VM). tc already runs on the kh1fast profile, which is virtiofs (#253). `docs/host-build.md` still calls the mount reverse-sshfs in one place.
+- **Next free number:** see D274.
+
+### D274. The vertex cache is prepared for #272's core-2 helper with no change of behaviour (#296, D270 step 1, 2026-11-27)
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - An entry's tag and the order log's words are relaxed atomics where another thread may touch them (`VC_TAG_LD/ST`, `VC_LOG_LD/ST`). `log_answer` does a relaxed load and store instead of `|=`.
+  - The far and lfar slots are taken by relaxed `__atomic_fetch_add`; past the cap a slot reads as full, as before. A new `VCacheStats.far_full` is printed on a new `vcache far:` line.
+  - The cost model's `lc_line` belongs to the writing thread (`Sink`). `Table` keeps a placeholder in its place, so `far`'s offset and the cost lines don't move.
+  - `LzRec.pad` is `ent`, and a static assert keeps the record at 16 bytes.
+  - `lz_flush` stops at `Lazy.cov`, which stays NULL until the helper allocates it.
+  - `lz_need`'s slow path is `lz_collect`, and `rp_skip` takes a flag mask.
+  - No thread and no switch.
+  - The `vc_lazy_logic=2` comment now says it keeps no more (D270).
+- **Measured:**
+  - Host FNV per polygon `--strict` is identical on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60; 8.6-28.2 M polygons each). `far_full` is 0 on every host route, and every host vcache line is identical, the cost lines included.
+  - Vita3K shots are identical to base-20d3514 on all 8 routes, and a second run of owner60 and stone60 is identical too.
+  - Every deterministic counter is +0.0%. The timing counters stay within two develop-head runs.
+- **Checks:** host ctest 38/38 (with the helper race tests), the Vita build (also on the merged branch), noassets.
+- **Next:** #272, the helper itself and `vc_helper=0/1/2` (D270 steps 2-4). `far_full` on the platform's vcache line and as a perfcount key comes with its step 3.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 
