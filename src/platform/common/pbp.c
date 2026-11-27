@@ -1257,7 +1257,7 @@ int psx_pbp_source(void *user, int lba, unsigned char raw[PSX_PBP_SECTOR]) {
   return psx_pbp_read_sectors(user, lba, 1, raw);
 }
 
-static int collect_entry(void *user, const VpkDiscEntry *e) {
+static int collect_entry(void *user, const EncDimgEntry *e) {
   Collect *c = user;
   Entry *f;
   const char *s;
@@ -1365,19 +1365,19 @@ static void remove_written(const char *out_dir, const Files *files, int upto) {
 /* The tree into files, sorted by LBA. */
 static int list_files(PsxPbp *p, Files *files, PsxPbpError *err) {
   unsigned char raw[PSX_PBP_SECTOR];
-  VpkDisc d;
+  EncDimg d;
   Collect c = {p, files, err};
   int r;
   files->n = 0;
   if (sector_data(p, 16, raw) != 0 || raw[24] != 1 || memcmp(raw + 25, "CD001", 5) != 0)
     return fail(err, PSX_PBP_ERR_BLOCK, "no CD file system at sector 16: not a PlayStation disc image");
   memset(&d, 0, sizeof d);
-  if (vpk_disc_open_source(&d, psx_pbp_source, p, psx_pbp_sectors(p)) != 0)
+  if (enc_dimg_open_source(&d, psx_pbp_source, p, psx_pbp_sectors(p)) != 0)
     return fail(err, PSX_PBP_ERR_UNREADABLE, "out of memory");
   if (err)
     err->code = PSX_PBP_OK;
-  r = vpk_disc_walk(&d, collect_entry, &c);
-  vpk_disc_close(&d);
+  r = enc_dimg_walk(&d, collect_entry, &c);
+  enc_dimg_close(&d);
   if (r != 0) {
     if (!err || err->code == PSX_PBP_OK) /* the walker's own refusal: a directory it won't read */
       return fail(err, PSX_PBP_ERR_BLOCK, "the disc's file list can't be read (sector %d): too deep, too long or damaged", d.bad_lba);

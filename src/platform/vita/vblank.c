@@ -1,6 +1,6 @@
 /* Vita time (decisions D28). By default the game's vblanks follow the
  * display's own counter (sceDisplayGetVcount, widened from its 16 bits by
- * vita-port-kit's vpk_vcount.h, D90): VSync(0) waits for the next
+ * Encore's vpk_vcount.h, targets/vita/runtime/vcount, D90): VSync(0) waits for the next
  * real vblank if the game is early, and if it is late runs every vblank it
  * missed (pad, CD, SPU, the game's VSync callback), as the PS1's interrupt
  * would have, so the game's delta time keeps its speed and the audio stays

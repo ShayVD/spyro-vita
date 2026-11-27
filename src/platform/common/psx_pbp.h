@@ -96,8 +96,8 @@ void psx_pbp_stats(const PsxPbp *p, PsxPbpStats *out);
  * and block cache, a copy of the table (nothing is decrypted again). */
 int psx_pbp_clone(const PsxPbp *p, PsxPbp **out);
 
-/* The disc's file table is the ISO9660 tree, walked by vita-port-kit's reader
- * over these sectors (vpk_disc_open_source, D158), as for an image: this is
+/* The disc's file table is the ISO9660 tree, walked by Encore's reader
+ * over these sectors (enc_dimg_open_source, D158), as for an image: this is
  * the source to open it with (user: the PsxPbp). */
 int psx_pbp_source(void *user, int lba, unsigned char raw[PSX_PBP_SECTOR]);
 

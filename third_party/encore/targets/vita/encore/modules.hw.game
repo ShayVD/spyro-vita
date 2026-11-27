@@ -1,0 +1,13 @@
+# The modules app (build_modules.sh) for v3k_run.sh, and for hw_run.sh on a Vita (with the owner's yes):
+#   HW_GAME=targets/vita/encore/modules.hw.game targets/vita/tools/v3k_run.sh OUT_DIR
+HW_TITLE_ID=ENCR00002
+HW_NAME="Encore modules"
+HW_DATA=ux0:data/encoremod
+HW_LOG=log/encoremod.log
+HW_STOP_RE='encore modules: [0-9]+ failed'
+HW_VPK=build/vita-modules/encore_modules.vpk
+HW_ELF=build/vita-modules/encore_modules.elf
+HW_TIMEOUT=300
+HW_NAMES=(disc menu cfg)
+HW_COLLECT=()
+HW_SAVE_DIR=

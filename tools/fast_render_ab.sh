@@ -22,6 +22,10 @@ P=$1; shift
 [ $# -gt 0 ] || set -- gems demo wsi lod routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
 set -f; FAST=${FAST:-0 3}; FA=${FAST% *}; FB=${FAST#* }; set +f
+# Issue #175: on colima's sshfs mount a built binary can lose its execute bit
+# after the link; give it back right before running (tools/tc checks again in
+# the container), with one line on stderr when it had to.
+xbit() { [ ! -f "$1" ] || [ -x "$1" ] || { chmod +x "$1"; echo "restored execute bit: $1" >&2; }; }
 run() { # NAME FAST args...
   D=logs/$P-$1-f$2; n=$1; f=$2; shift 2
   rm -rf $D; mkdir -p $D
@@ -31,6 +35,7 @@ run() { # NAME FAST args...
   extra="--save $D/save"
   [ "$f" = "$FB" ] && extra="$extra ${EXTRA_B:-}"
   case $n in demo) extra="$extra --wav $D/audio.wav";; esac
+  xbit "$B"
   tools/tc $B --disc $DISC --fast-render $f --prof-draw --log $D/spyro.log --trace $D/trace.tsv \
     --shot-dir $D $extra "$@" > $D/stdout.txt 2>&1
   echo "exit $?" >> $D/stdout.txt
