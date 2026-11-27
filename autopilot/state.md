@@ -11,18 +11,68 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 296,
-      "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
-      "started_at": "2026-11-27T05:04:36Z",
+      "issue": 283,
+      "branch": "refactor/283-vita-on-encore-s-platform-interface",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
+      "started_at": "2026-11-27T06:29:03Z",
+      "files": [
+        "src/platform/vita/video.c",
+        "src/platform/vita/present_vita.c",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/CMakeLists.txt"
+      ],
+      "agent": "ae596b6969b225d80"
+    },
+    {
+      "issue": 294,
+      "branch": "refactor/294-remove-third-party-vita-port-kit-move",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-294",
+      "started_at": "2026-11-27T06:29:10Z",
+      "files": [
+        "src/platform/common/menu_opts.h",
+        "src/platform/common/menu_panel.h",
+        "src/platform/common/psx_audio_ring.h",
+        "src/platform/common/psx_cdimage.h",
+        "src/platform/common/psx_pbp.h",
+        "src/platform/vita/vita_pc.h",
+        "src/platform/ps4/main.c",
+        "src/platform/ps4/menu.c",
+        "tests/audio/",
+        "tests/vcount/",
+        "tools/ci/build_vpk.sh",
+        "tools/vita/hw-routes/stone60.cfg",
+        "tools/vita/hw.game",
+        "tools/vita/hw_check.sh",
+        "tools/vita/hw_ftp.py",
+        "tools/vita/hw_mock.py",
+        "tools/vita/hw_run.sh",
+        "tools/vita/livearea_local.sh",
+        "tools/vita/make_livearea.py",
+        ".github/workflows/build.yml",
+        "assets/livearea/README.md",
+        "third_party/vita-port-kit/"
+      ],
+      "agent": "a2b6e27067f813f6d"
+    },
+    {
+      "issue": 259,
+      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
+      "started_at": "2026-11-27T07:29:51Z",
       "files": [
         "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "src/platform/linux32/prof_draw.c",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md",
+        "src/platform/vita/main.c"
       ],
-      "agent": "afde2755bd6a5d91f"
+      "agent": "a7b715a9f3ac4ffcb"
     }
   ],
-  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
+  "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -309,14 +359,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "baseline",
-    "issue": 0,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r13.log",
-    "started_at": "2026-11-27T05:26:43Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     5
@@ -328,8 +371,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
-        "commit": "20d3514589db959121604783a5876ea91f152ad9"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-e603aaa",
+        "commit": "e603aaa7036fd47a059218dd50c3b6722ec2357d"
       }
     }
   },
@@ -593,3 +636,6 @@ continue.
 - 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
 - 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
 - 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
+- 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
+- 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
+- 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).

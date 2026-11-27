@@ -11,3 +11,4 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D271 #251 step 1 Vita modules from third_party/encore (2026-11-27T04:51:37Z)
 - D272 #271 dd_free (2026-11-27T05:11:07Z)
 - D273 #175 execute-bit re-check (2026-11-27T05:24:58Z)
+- D274 #296 vcache prepared for the core-2 helper (2026-11-27T07:01:32Z)

@@ -50,8 +50,11 @@ void psx_vcache_enable(int mode);
 void psx_vcache_set_lazy(int on);
 /* The logic draw's too (#179), worked out by its walk: 1 (the default)
  * while the presenter draws no in-between frames (60 Hz logic, or 30 fps)
- * and the last frame's walk has ended, 2 always, 0 never (each one at
- * once on the game thread, as before). 3 (#204): as 1, but a quota of each
+ * and the last frame's walk has ended; 2 makes every frame lazy, in-between
+ * frames too (vcache.c lz_next), but keeps no more: the keep rule is still
+ * the walk-idle one (D270, `vc_lazy_logic=2` kept 125,184 per 300 vblanks
+ * against 1's 125,290); 0 never (each one at once on the game thread, as
+ * before). 3 (#204): as 1, but a quota of each
  * frame's first projections, sized from the walk's idle time before the
  * game thread's last projections in recent frames (vcache.c LZ_QUOTA); a
  * `vcache quota:` line with the cost lines. The same answers in each. */
@@ -698,6 +701,12 @@ typedef struct {
   /* #245: polygons of the HUD OT (psx_vcache_note_hud) not looked up,
    * and their vertices (each drawn at its integer place) */
   unsigned hud_polys, hud_verts;
+  /* #296 (D270): candidates (#178) and clamped log places (#192) out of an
+   * int16's range not kept because the frame's far or lfar array was full
+   * (VC_FAR, VC_LFAR: 1,024 each). Which one is turned away then depends on
+   * the order the slots are taken in, which #272's helper makes timing; the
+   * host routes' same-answers gate needs it at 0. The `vcache far:` line. */
+  unsigned far_full;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
