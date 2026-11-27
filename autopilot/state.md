@@ -295,7 +295,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "pick": "after #259 hardware A/B",
       "status": "open"
     },
-    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them."
+    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them.",
+    "2026-11-27 08:40: owner: wait for the remaining work (#283 gate, #259 attempt 2) to finish, dispatch nothing new, then stop the loop, run the retro (Encore draft PR) and open the release PR to main."
   ],
   "attempts": {
     "161": 1,
@@ -370,7 +371,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "branch": "release/phase8-wobble-draw-distance-d264",
       "commit": "31a47eb",
       "pr": 275,
-      "merged_at": null
+      "merged_at": "2026-11-26T10:51:04Z"
     }
   ]
 }
@@ -618,3 +619,4 @@ continue.
 - 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
 - 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
 - 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
+- 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
