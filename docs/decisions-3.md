@@ -2158,3 +2158,30 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
 - **Next free number:** D266.
+
+## 2026-11-27 — #281
+
+### D267. The offset model's `HAND_CX` decodes the primitive pointer's P32 slot; `host_checks.sh` gets a vertex-cache run and `p32_narrow_check.py --raw` (#281) (2026-11-27)
+- **What the owner saw:** `Spyro.app` (D265) with the GPU renderer showed gaps between polygons and textures snapping into place; with `--gpu 0` none. That is the PS1 wobble D39's perspective and sub-pixel fix removes, back in the offset model (`SPYRO_P32_OFFSET`: linuxa64, macos, the PC build on macOS).
+- **Cause:** `src/game/render_hand.h` `HAND_CX` read the primitive pointer `D_800757B0`, a P32 slot, as a plain word (`*(u32 *)hand_cx_prim_`) and handed it to `psx_vc_ctx` / `pres_vc_ctx` as the renderer's range. On the 32-bit targets and linux64's low image the word is the address; in the offset model it is the offset from `spyro_p32_base`, which `vcache.c` `cx_ofs` doesn't find in the arena. Every renderer's range became `CX_FAR`, its polygons were filed outside, and each fallback gated on the renderer (own points #216, moby sprites D259, world pieces #229, the sky's overflow #221) found nothing: those vertices were drawn at the PS1's integer places.
+- **Fix:** `HAND_CX_PRIM()`, `(uintptr_t)P32_DEC(*(u32 *)hand_cx_prim_)`, for both reads. Elsewhere `P32_DEC(i)` is `(i)`, so the text compiles as before. `vcache.c` is not touched.
+- **The class:** D265's narrowing check lists 64→32-bit conversions; this was a 32-bit word read through a cast pointer and widened, implicitly (an initialiser, a `uintptr_t` argument). `tools/ps4/p32_narrow_check.py BUILD --raw` now lists those (a raw read in a macro by the macro's line). On `build/macos`, all 375 units (`--all`): 0 sites with the fix; with the old header, `env_hand.c` alone gives render_hand.h:173 and :176. The other hooks the renderers call (`PSX_VC_DERIVE`'s `a`, `b`) take screen keys, not addresses.
+- **The check that missed it:** `host_checks.sh` compared only the software renderer's pictures, which don't use the cache's answers. It now also runs the attract demo D (`--frames 7000 --draw-distance 2 --interp --vcache --widescreen`) and writes its `vcache` lines to `logs/PREFIX-vcache/vcache.txt`.
+- **Measured** (D, `grep vcache` of `spyro.log`, logs `logs/run281-{l32n,mac,a64,l64}-vc/`, gitignored), after the fix:
+
+  | `vcache` line | linux32 native-mem | macos, linuxa64 (before) | macos, linuxa64, linux64 (after) |
+  |---|---|---|---|
+  | own points: found from their renderer's own point | 784 | 0 | 784 |
+  | hooked: moby sprites | 2276 | 0 | 2276 |
+  | world own: from their piece's own split point | 13 | 0 | 13 |
+  | overflow: SkyDraw vertices found there | 10 | 0 | 10 |
+  | derived: exempt, outside the renderers | 22697 | 25667 | 22697 |
+  | resolved: left ambiguous | 31 | 187 | 31 |
+  | polygons with all vertices found (per frame) | 1167 | 1166 | 1167 |
+
+  Every line of the three 64-bit hosts' `vcache.txt` is the same (macos = linuxa64 = linux64). Against linux32, four lines differ: the cost model's (`vcache cost`, `vcache records`: divisions and table lines), `repeats` (2,344,997 against 2,344,995) and `resolved`'s first count (66,605 against 66,603). linux64 is not the offset model and differs the same way, so this is linux32's x87 (i686 without SSE: D168's note on the host's x87), not P32. linux32 native-mem's run is the same as O4's at f0d6416, line for line.
+- **Checks:**
+  - `host_checks.sh` on macos and linuxa64 (`logs/run281-{mac,a64}-*`): demo, whole, routeA, routeB identical to D265's linux32 native-mem baseline (`o4f-l32n-*`), 279 files each; their `vcache.txt` the same as each other and as linux64's run.
+  - Byte identity, each target built with the old header and the new in the same build directory: Vita `spyro_vita.velf` every program segment identical (the 23 objects that include render_hand.h differ only in `.debug*`, the header four lines longer; `env_hand.c.obj` without them identical); PS4 `spyro.elf` every program segment identical.
+  - `tools/check_no_assets.sh`: passes. No hardware run; the owner checks `Spyro.app` by eye.
+- **Next free number:** D268.
