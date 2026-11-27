@@ -2261,9 +2261,9 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Every deterministic counter is +0.0%. The timing counters stay within two develop-head runs.
 - **Checks:** host ctest 38/38 (with the helper race tests), the Vita build (also on the merged branch), noassets.
 - **Next:** #272, the helper itself and `vc_helper=0/1/2` (D270 steps 2-4). `far_full` on the platform's vcache line and as a perfcount key comes with its step 3.
-- **Next free number:** see D275.
+- **Next free number:** see D276 (D275 is claimed by PR #290, renumbered from D266).
 
-### D275. `third_party/vita-port-kit` is removed; everything that used it now uses `third_party/encore` and Encore's `enc_` names (#294, #251 step 1b, 2026-11-27)
+### D276. `third_party/vita-port-kit` is removed; everything that used it now uses `third_party/encore` and Encore's `enc_` names (#294, #251 step 1b, 2026-11-27)
 - **What:**
   - #251's outside-files patch was applied as it was. It covers the common headers (`menu_opts.h`, `menu_panel.h`, `psx_audio_ring.h`, `psx_cdimage.h`), `vita_pc.h`, `tests/audio`, `tests/vcount`, the hardware wrappers' paths in `tools/vita/*`, `tools/ci/build_vpk.sh`, CI and the LiveArea notes.
   - The leftover comments were updated, and `git rm -r third_party/vita-port-kit` removed 69 files.
