@@ -25,18 +25,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "reported": true
     },
     {
-      "issue": 282,
-      "branch": "perf/282-design-the-core-2-helper-for-the-vertex",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-282",
-      "started_at": "2026-11-27T01:07:00Z",
-      "files": [
-        "docs/vcache-core2.md",
-        "tests/vcache/"
-      ],
-      "agent": "add909816f646b64a",
-      "reported": true
-    },
-    {
       "issue": 251,
       "branch": "feat/251-the-vita-build-on-encore-s-platform",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-251",
@@ -357,11 +345,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_pending": null,
   "job": {
     "kind": "gate",
-    "issue": 282,
+    "issue": 251,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-282.gate.log",
-    "started_at": "2026-11-27T03:53:57Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-251.gate.log",
+    "started_at": "2026-11-27T04:23:44Z"
   },
   "batch": null,
   "lanes": [
@@ -634,3 +622,4 @@ continue.
 - 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
 - 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
 - 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
+- 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.

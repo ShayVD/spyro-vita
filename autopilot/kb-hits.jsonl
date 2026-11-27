@@ -1,3 +1,4 @@
 {"date": "2026-11-27", "id": "ps1-wobble-fix-name-screen-points-by-projection", "note": "hand-made HUD screen points must not take a projection's place; they stay exempt, now counted on their own `vcache HUD:` line", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#245"}
 {"date": "2026-11-27", "id": "emulator-broken-frame-check-console-shots", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#245"}
 {"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "11 host FNV pairs from clean objects, with a HUD byte added so every changed polygon is shown to be a HUD one", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#245"}
+{"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "the race test hashes each entry and log place with FNV against a single thread; the doc names the 11-route FNV `--strict` gate for #272", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#282"}
