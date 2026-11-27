@@ -4,9 +4,10 @@
 #   cmake -S . -B build/vita -G Ninja -DSPYRO_HOST=vita \
 #       -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake
 #   cmake --build build/vita      -> build/vita/spyro-vita.vpk
-# Packed by vita-port-kit's vpk_add_app (third_party/vita-port-kit/vita/cmake/
+# Packed by Encore's vpk_add_app (third_party/encore/targets/vita/cmake/
 # VpkApp.cmake): the toolchain file above sets the vita-* tools it runs.
-include("${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/cmake/VpkApp.cmake")
+set(ENCORE_VITA "${CMAKE_SOURCE_DIR}/third_party/encore/targets/vita")
+include("${ENCORE_VITA}/cmake/VpkApp.cmake")
 
 set(VITA_APP_NAME "Spyro Vita")
 set(VITA_TITLEID "SPYV00001")
@@ -48,21 +49,59 @@ set_source_files_properties("${LINUX32_DIR}/gpu_soft.c" PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/gpu_soft_names.h")
 add_executable(spyro_vita ${VITA_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_out.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/touch/vpk_touch.c"
-  # the work counters' lines (perfcount.c, D165)
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/perfcount/vpk_perfcount.c")
+  # Encore's Vita modules (third_party/encore/targets/vita/runtime, vendored):
+  # the sound port and its thread (audio.c, D107), the touch panels (pad.c,
+  # D109) and the work counters' lines (perfcount.c, D165)
+  "${ENCORE_VITA}/runtime/audioout/vpk_audio_out.c"
+  "${ENCORE_VITA}/runtime/touch/vpk_touch.c"
+  "${ENCORE_VITA}/runtime/perfcount/vpk_perfcount.c")
 if(SPYRO_UNSAFE)
   target_compile_definitions(spyro_vita PRIVATE SPYRO_UNSAFE=1)
 endif()
+# Encore's platform interface on the Vita (#251): its Vita backend
+# (enc_vita.c) and the core files it calls, as encore_vita with plain flags,
+# as Encore's own build_conformance.sh builds it (the PC's encore_pc, D247).
+# So far the game takes its video from it, in GLES mode (#283: video.c,
+# gpu_gl.c). enc_co.c isn't built (coroutines: unused, and its ucontext isn't
+# vendored). The backend logs through three vpk_log calls that video.c
+# implements into the game's own log; their header is Encore's
+# targets/vita/runtime/log/vpk_log.h once that is vendored, until then the
+# same three declarations written here.
+set(ENCORE_CORE "${CMAKE_SOURCE_DIR}/third_party/encore/core")
+set(ENC_VITA_LOG "${ENCORE_VITA}/runtime/log")
+if(NOT EXISTS "${ENC_VITA_LOG}/vpk_log.h")
+  set(ENC_VITA_LOG "${CMAKE_CURRENT_BINARY_DIR}/encore_log")
+  file(CONFIGURE OUTPUT "${ENC_VITA_LOG}/vpk_log.h" @ONLY CONTENT [=[
+/* Written by src/platform/vita/CMakeLists.txt: the calls of Encore's
+ * targets/vita/runtime/log/vpk_log.h that enc_vita.c makes (that directory
+ * isn't vendored yet), with its signatures. src/platform/vita/video.c
+ * defines them. */
+#ifndef VPK_LOG_H
+#define VPK_LOG_H
+int vpk_log_open(const char *path, const char *first_line);
+void vpk_log_write(const void *buf, int n);
+int vpk_log_flush(void);
+#endif
+]=])
+endif()
+add_library(encore_vita STATIC
+  "${ENCORE_VITA}/encore/enc_vita.c"
+  "${ENCORE_CORE}/src/enc_common.c"
+  "${ENCORE_CORE}/src/enc_event.c"
+  "${ENCORE_CORE}/src/enc_blit.c")
+target_include_directories(encore_vita PUBLIC "${ENCORE_CORE}/include" "${ENC_VITA_LOG}"
+  PRIVATE "${ENCORE_VITA}/runtime/audioout" "${ENCORE_VITA}/runtime/touch"
+  "${ENCORE_VITA}/runtime/vcount")
+target_compile_options(encore_vita PRIVATE -std=gnu99 -O2 -Wall -Wextra -Wno-unused-parameter)
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/vcount")
+  "${ENCORE_VITA}/runtime/vcount")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
-# and the vitaGL stack for the GPU renderer (D35).
-target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common
+# and the vitaGL stack for the GPU renderer (D35); Encore's backend before
+# the stubs it calls.
+target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common encore_vita
   SDL2 vitaGL vitashark SceShaccCgExt mathneon taihen_stub SceShaccCg_stub
   SceDisplay_stub SceCtrl_stub SceAudio_stub SceAudioIn_stub SceSysmodule_stub
   SceGxm_stub SceCommonDialog_stub SceAppMgr_stub SceAppUtil_stub SceTouch_stub
@@ -118,7 +157,7 @@ endif()
 
 # Bubble icon and LiveArea (decisions D55): original art drawn by
 # tools/vita/make_livearea.py at build time, checked for the Vita's PNG rules
-# (8-bit indexed, these sizes) by vita-port-kit's livearea_png.py before it's
+# (8-bit indexed, these sizes) by Encore's livearea_png.py before it's
 # packed.
 # The art in SPYRO_LIVEAREA_DIR is converted (D59): disc/livearea (gitignored,
 # tools/vita/livearea_local.sh) when it's there, else assets/livearea, the
@@ -136,7 +175,7 @@ set(LA_DIR "${CMAKE_CURRENT_BINARY_DIR}/livearea")
 set(LA_PNGS "${LA_DIR}/icon0.png" "${LA_DIR}/bg.png" "${LA_DIR}/startup.png")
 set(LA_LOCAL "${SPYRO_LIVEAREA_DIR}/icon0.png" "${SPYRO_LIVEAREA_DIR}/bg.png"
   "${SPYRO_LIVEAREA_DIR}/startup.png")
-set(LA_PNG "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/tools/livearea_png.py")
+set(LA_PNG "${ENCORE_VITA}/tools/livearea_png.py")
 set(LA_MAKE "${CMAKE_SOURCE_DIR}/tools/vita/make_livearea.py")
 set(LA_ARGS "${LA_MAKE}" "${LA_DIR}")
 set(LA_DEPS "")

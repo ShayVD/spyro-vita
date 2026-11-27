@@ -1,8 +1,8 @@
 #!/bin/sh
 # The player's own LiveArea art (decisions D59): scales and crops two images
 # into disc/livearea/ at the sizes the Vita wants, as 8-bit RGB PNGs. The
-# Vita build converts them to indexed PNGs (vita-port-kit's livearea_png.py
-# from, third_party/vita-port-kit/vita/tools) and packs
+# Vita build converts them to indexed PNGs (Encore's livearea_png.py
+# from, third_party/encore/targets/vita/tools) and packs
 # them instead of the original art. disc/ is gitignored: never commit this.
 #
 #   tools/vita/livearea_local.sh LOGO TITLE [GATE]

@@ -79,6 +79,14 @@ void vita_lod_time_init(void) {
   else
     vita_log("picture: draw distance with no 60 Hz budget, only the buffer's limits "
              "(dd_budget=0, D175)");
+  /* dd_free (#271): this file's budget sets where it starts (a draw over the
+   * budget); lod.c's limit() compares that draw with the last 1x draw */
+  if (g_lod.budget)
+    vita_log("picture: draw distance over the 60 Hz budget %s (dd_free=%d, #271)",
+             g_lod.grow_free ? "still grows while each draw writes no more KB and vertex-cache "
+                               "records than the last 1x draw"
+                             : "holds the extra distance back, as before #271",
+             g_lod.grow_free);
 }
 
 /* lod.c, at the start of every shown draw with the option on: the frame

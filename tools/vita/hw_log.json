@@ -1,0 +1,11 @@
+{
+ "scene_re": "\\[\\s*(?P<at>\\d+)\\] vita where: (?P<scene>level \\d+|.+?)(?: \\(level \\d+\\))?, gamestate",
+ "shown_re": "",
+ "window_re": "vita vblank (?P<frame>\\d+): \\d+ vblanks in (?P<ms>\\d+) ms \\([\\d.]+ per second\\), (?P<pictures>\\d+) pictures, (?P<late>\\d+) vblanks late",
+ "metrics": {
+  "game_ms": "vita time (?P<frame>\\d+): per vblank ms game (?P<value>[\\d.]+)",
+  "busy": "vita time (?P<frame>\\d+): .*; busy (?P<value>\\d+)%",
+  "walk_ms": "vita parse (?P<frame>\\d+): .*?, busy (?P<value>[\\d.]+) ms per vblank",
+  "join_ms": "vita parse (?P<frame>\\d+): .*waited for the walk (?P<value>[\\d.]+) ms per vblank"
+ }
+}

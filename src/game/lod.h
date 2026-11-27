@@ -25,6 +25,13 @@ typedef struct {
                  the buffer's limits; the Vita's dd_budget=0, the host's
                  --lod-budget 0, #185). With the Vita's dd_budget=auto
                  (#212) lod_set_budget sets it every logic frame */
+  int grow_free; /* dd_free (#271, the owner's decision of 2026-11-26; on by
+                    default): with a 60 Hz budget, a draw over it still lets
+                    the scale grow while it writes no more bytes of
+                    primitives and no more vertex-cache records than the
+                    last 1x draw, and backs off as soon as it writes more.
+                    0 (the Vita's dd_free=0, the host's --dd-free 0): the
+                    budget alone, as before #271 */
 } LodConfig;
 
 #define LOD_BUDGET_60 0xC000 /* 48 KB: the default budget (lod.c, #180), and the

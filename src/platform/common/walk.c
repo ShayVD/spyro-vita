@@ -41,7 +41,13 @@
 #if defined(__linux__)
 #include <sys/mman.h>
 #else
+#if defined(__APPLE__)
+/* macOS (D250 O4) has no malloc.h or memalign */
+#include <stdlib.h>
+#define memalign(a, n) aligned_alloc((a), ((n) + (a) - 1) / (a) * (a))
+#else
 #include <malloc.h>
+#endif
 #endif
 
 #define MAX_RANGES 8

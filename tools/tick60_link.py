@@ -50,6 +50,37 @@ def nm(tool, obj):
     return syms
 
 
+def nm_macho(tool, obj):
+    """nm's types from Mach-O's `nm -m` (macOS, D250 O4), C's names: the
+    sections ELF's letters stand for. __DATA,__const holds tables of
+    addresses (read-only once loaded, as ELF's .data.rel.ro): r."""
+    out = subprocess.run([tool, "-m", obj], check=True, stdout=subprocess.PIPE,
+                         universal_newlines=True).stdout
+    syms = []
+    for line in out.splitlines():
+        m = re.match(r"^\s*[0-9a-f]*\s*\(([^)]*)\)\s+(.*?)\s*(\S+)$", line)
+        if not m:
+            continue
+        sect, attrs, name = m.groups()
+        if not name.startswith("_"):
+            continue  # the assembler's own labels (ltmp0, l_.str)
+        ext = attrs.startswith("external") or "private external" in attrs
+        if sect == "undefined":
+            continue
+        if sect == "common":
+            t = "C"
+        elif sect == "__TEXT,__text":
+            t = "T"
+        elif sect.startswith("__TEXT,") or sect == "__DATA,__const":
+            t = "R"
+        elif sect.startswith("__DATA,"):
+            t = "D"
+        else:
+            t = "S"
+        syms.append((name[1:], t if ext else t.lower()))
+    return syms
+
+
 def relro_names(tool, obj):
     """Names defined in a .data.rel.ro section (nm's System V format)."""
     out = subprocess.run([tool, "--format=sysv", obj], check=True, stdout=subprocess.PIPE,
@@ -68,12 +99,14 @@ def main():
     ap.add_argument("--objcopy", required=True)
     ap.add_argument("--entry", action="append", required=True)
     ap.add_argument("--report")
+    ap.add_argument("--macho", action="store_true",
+                    help="a Mach-O object (macOS, D250 O4): nm -m, tools/macho_syms.py")
     ap.add_argument("inp")
     ap.add_argument("out")
     a = ap.parse_args()
     entries = dict(e.split("=", 1) for e in a.entry)
     allowed = [re.compile(p) for p in ALLOWED.split()]
-    syms = nm(a.nm, a.inp)
+    syms = nm_macho(a.nm, a.inp) if a.macho else nm(a.nm, a.inp)
     funcs, defined, own, ro, common = [], [], [], [], []
     for name, t in syms:
         if t in "T":
@@ -108,9 +141,13 @@ def main():
     loc = a.out + ".localize"
     with open(loc, "w") as f:
         f.write("\n".join(funcs) + "\n")
-    cmd = [a.objcopy, "--localize-symbols=" + loc]
+    if a.macho:
+        cmd = [sys.executable, __file__.replace("tick60_link.py", "macho_syms.py"),
+               "--localize-symbols", loc]
+    else:
+        cmd = [a.objcopy, "--localize-symbols=" + loc]
     for old, new in entries.items():
-        cmd.append(f"--redefine-sym={old}={new}")
+        cmd += ["--redefine-sym", f"{old}={new}"] if a.macho else [f"--redefine-sym={old}={new}"]
     subprocess.run(cmd + [a.inp, a.out], check=True)
     if a.report:
         with open(a.report, "w") as f:

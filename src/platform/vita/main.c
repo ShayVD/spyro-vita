@@ -282,8 +282,13 @@
  *                       table's rp array (D221), 2 (default) in the entry
  *                       itself (#259; the same pictures)
  *       vc_fast_rec=N   with persp or subpixel, the logic draw's native
- *                       record with its find and maths inlined: 1 (default)
- *                       or 0 (called, as before #259; the same pictures)
+ *                       record, bits: 1 (default) its find and maths
+ *                       inlined (0: called, as before #259); 2 without the
+ *                       cost model's counts (vc.div, vc.probe, vc.lines and
+ *                       the vc.rec ones of the game thread stay 0); 4 each
+ *                       record done one late, after the next prefetched its
+ *                       entry (#259 attempt 2); any nonzero includes 1. The
+ *                       same pictures in each
  *       found_fast=N    with persp or subpixel, the walk's lookup of a
  *                       polygon whose vertices are all found: 2 (default)
  *                       on its short path with each vertex's first probe
@@ -722,8 +727,10 @@ static void read_config(void) {
       const int m = atoi(v);
       s_vc_repeat = m < 0 ? 0 : m > 2 ? 2 : m;
     }
-    else if (!strcmp(line, "vc_fast_rec")) /* #259 */
-      s_vc_fast_rec = atoi(v) != 0;
+    else if (!strcmp(line, "vc_fast_rec")) { /* #259: 0 to 7 (vcache.c FR_*) */
+      const int m = atoi(v);
+      s_vc_fast_rec = m < 0 ? 0 : m > 7 ? 7 : m;
+    }
     else if (!strcmp(line, "found_fast")) { /* #233 (D226), #274: 0 to 2 */
       const int m = atoi(v);
       s_found_fast = m < 0 ? 0 : m > 2 ? 2 : m;

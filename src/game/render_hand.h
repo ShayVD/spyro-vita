@@ -162,7 +162,11 @@ static inline void hand_args_pop(u32 sp) { g_mips_sp = sp; }
  * D_800757B0 with other types), the presenter's by its renaming */
 #define HAND_CX_STR_(x) #x
 #define HAND_CX_STR(x) HAND_CX_STR_(x)
-extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
+extern char hand_cx_prim_[] __asm__(SPYRO_ASM_LIT(HAND_CX_STR(D_800757B0)));
+/* #281: the word is a P32 slot, so its host address is the decoded word (in
+ * the offset model, SPYRO_P32_OFFSET, the word is the offset from
+ * spyro_p32_base; elsewhere P32_DEC passes it through, the same code) */
+#define HAND_CX_PRIM() ((uintptr_t)P32_DEC(*(u32 *)hand_cx_prim_))
 #if RENDER_PRES
 #define HAND_VC_CTX pres_vc_ctx
 #else
@@ -170,10 +174,10 @@ extern char hand_cx_prim_[] __asm__(HAND_CX_STR(D_800757B0));
 #endif
 #define HAND_CX(hand)                                                          \
   static u32 hand##_cx(u32 a0, u32 a1, u32 a2, u32 a3) {                       \
-    const uintptr_t p0_ = *(u32 *)hand_cx_prim_, n0_ = (uintptr_t)g_nd.wp;        \
+    const uintptr_t p0_ = HAND_CX_PRIM(), n0_ = (uintptr_t)g_nd.wp;              \
     const u32 r_ = hand(a0, a1, a2, a3);                                       \
     if (__builtin_expect(g_psyxRtpDeriveHook != 0, 0))                         \
-      HAND_VC_CTX(#hand, p0_, *(u32 *)hand_cx_prim_, n0_, (uintptr_t)g_nd.wp,     \
+      HAND_VC_CTX(#hand, p0_, HAND_CX_PRIM(), n0_, (uintptr_t)g_nd.wp,           \
                   (uintptr_t)g_nd.base);                                       \
     return r_;                                                                 \
   }

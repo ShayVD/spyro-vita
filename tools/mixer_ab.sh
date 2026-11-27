@@ -16,6 +16,10 @@ P=$1; shift
 [ $# -gt 0 ] || set -- demo gems routeA routeB
 B=${BIN:-build/linux32/src/platform/linux32/spyro}; DISC=${DISC:-disc/files}
 set -f; MIX=${MIX:-1 3}; MA=${MIX% *}; MB=${MIX#* }; set +f
+# Issue #175: on colima's sshfs mount a built binary can lose its execute bit
+# after the link; give it back right before running (tools/tc checks again in
+# the container), with one line on stderr when it had to.
+xbit() { [ ! -f "$1" ] || [ -x "$1" ] || { chmod +x "$1"; echo "restored execute bit: $1" >&2; }; }
 run() { # NAME MIXER args...
   D=logs/$P-$1-m$2; n=$1; m=$2; shift 2
   rm -rf $D; mkdir -p $D
@@ -29,6 +33,7 @@ run() { # NAME MIXER args...
 }
 scenario() { # NAME args...
   n=$1; shift
+  xbit "$B"
   run $n $MA "$@" & run $n $MB "$@" & wait
   a=logs/$P-$n-m$MA; b=logs/$P-$n-m$MB; same=0; diff=0
   for x in $(cd $a && find . -type f ! -name spyro.log ! -name stdout.txt | sort); do

@@ -220,7 +220,7 @@ extern char D_80077DD8[];
 static void rc_mask(u32 sp) {
   const uintptr_t base = g_psx_arena_base;
   const uintptr_t spill = (uintptr_t)D_80077DD8;
-  const uintptr_t stack = (uintptr_t)(sp - 0x1000u);
+  const uintptr_t stack = (uintptr_t)P32_DEC(sp - 0x1000u); /* a 32-bit address (D265) */
   if (spill >= base && spill + 0xC8 <= base + PSX_MEM_SIZE)
     memcpy(s_reg + (spill - base), s_before + (spill - base), 0xC8);
   if (sp && stack >= base && stack + 0x1000 <= base + PSX_MEM_SIZE)

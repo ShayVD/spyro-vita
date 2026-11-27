@@ -1,4 +1,6 @@
 {
+  "build_dirs": ["build/", "out/", "/logs/", "/disc"],
+  "decisions_log": ["docs/decisions*.md"],
  "limits": {
   "workers": 5,
   "stall_hours": 2,

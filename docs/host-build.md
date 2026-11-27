@@ -1,4 +1,4 @@
-# Host debug build (linux32, linux64 and linuxa64)
+# Host debug build (linux32, linux64, linuxa64 and macos)
 
 The 32-bit Linux build runs the whole game headless in Docker: virtual vblanks, a pad script, PNG screenshots, gdb. Decisions D14–D19 explain the choices.
 
@@ -80,9 +80,16 @@ virtiofs rather than the reverse-sshfs the next section describes; the link laun
 
 ## ctest, the mutant tests and the bind mount (D170)
 
-`tools/tc` mounts the worktree at `/work` (`docker run -v`), and with colima that mount is reverse-sshfs. Two things here follow from that, plus one about time.
+`tools/tc` mounts the worktree at `/work` (`docker run -v`), and with colima that mount is reverse-sshfs. Three things here follow from that, plus one about time.
 
 **The link launcher.** GNU ld makes its output executable only after writing and closing it (a stat, then a chmod). On the mount that chmod is now and then lost, and the binary stays mode 0644; qemu-i386 then refuses to run it (#163: 1 of 60 parallel gcc links). So every linux32 link goes through `cmake/link_exec.sh` (`RULE_LAUNCH_LINK`, set in `CMakeLists.txt` inside `if(SPYRO_HOST STREQUAL "linux32")`; the Vita build never uses it). It runs the link and keeps its exit code. For anything but a `.a`, `.so` or `.so.*` it then checks the execute bit and, if it's gone, sets it again with `chmod +x` (with the umask, as ld does): up to 5 tries, sleeping 1 s after a chmod that errors. A build log line `link_exec.sh: OUT lost its execute bit after the link (try N), setting it` is the race, caught. `still has no execute bit after the link` fails the link (exit 1); build again. Don't add `chmod` steps to targets: the launcher covers every link.
+
+**Before a run, too (#175).** The bit can also go after the launcher's check: #174's worker found the game binary at 0644 with no `link_exec.sh` line in the log, and docker refused to start it (exit 126). So the tools that run a built binary check it again right before they run it, and `chmod +x` it if the bit is missing, with one line `restored execute bit: PATH` on stderr when they had to (nothing when the bit is there):
+- `tools/tc` does it inside the container, where the stat is fresh, before it execs the command: for every argument that is an ELF executable (`e_type` EXEC or DYN, not a `.so`), so `tools/tc build/linux32/.../spyro`, `tools/tc qemu-x86_64 BIN` and `tools/tc timeout N BIN` are all covered; and with `tools/tc ctest`, for every path in the `add_test` lines of the test folder's `CTestTestfile.cmake` files (the test binaries and `spyro`). Up to 5 tries; `could not restore execute bit: PATH` if it still has none (the run then fails as before). The command itself runs as before (`exec`: same exit code, tty, signals). `tools/tc` with no command (a shell) skips the check.
+- `tools/host_checks.sh`, `tools/fast_render_ab.sh`, `tools/mixer_ab.sh`, `tools/native_draw_ab.sh` and `tools/pres_check_ab.sh` check `BIN` (and `I_BIN`) on the Mac first, with the same line, then run it through `tools/tc`, which checks again in the container. `host_checks.sh` and `mixer_ab.sh` check once before their parallel runs, so a missing bit gives one line, not one a run; this also covers a macOS binary, which `host_checks.sh` runs on the Mac.
+- `tools/gdb_run.sh` (run inside `tools/tc`) checks its `spyro` before starting `qemu-i386`. `tools/step.sh` runs no binary (it talks to a running `spyro --step`).
+
+A `restored execute bit` line in a log is the race, caught; the run's results are as good as any other run's.
 
 **Mutant tests.** A mutant is a build (or a run) with one deliberate error that its check must catch. Each one is registered with `spyro_mutant_test(NAME REGEX)` (`tests/CMakeLists.txt`), which sets ctest's `PASS_REGULAR_EXPRESSION`: the test passes only if its output matches REGEX, whatever the exit code. Don't use `WILL_FAIL`: it passes on any failure, including a binary that never ran, so the check can't fail (#163's `gte_native_mutant3`). To add one:
 
@@ -167,6 +174,21 @@ BIN=build/linuxa64/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 ```
 
 Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. `-DSPYRO_P32_CHECK=ON` is the checking build: an encode of a host pointer (above 4 GB, outside the image) stops with its file and line. The checks of the model: `tools/ps4/p32_offset_check.py` (every slot use through an accessor, D258) and `tools/ps4/p32_decl_check.py BUILD` (a variable or function declared as a slot or pointer in one unit and otherwise in another). New code that turns a pointer into a 32-bit integer, or back, writes `P32_ENC(p)` / `P32_DEC(i)` on the cast's operand (`(u32)P32_ENC(p)`, `(T *)P32_DEC(i)`); `tools/ps4/p32_offset_rewrite.py --casts BUILD` finds the ones missed.
+
+## macos: the same host on the Mac itself (D250 O4, D265)
+
+`-DSPYRO_HOST=macos` builds linuxa64's headless host as a Mach-O program for arm64 macOS with Apple's clang, on the Mac directly (no Docker, no qemu). Its image is a PIE the kernel slides above `__PAGEZERO`'s 4 GB; the P32 base is its Mach-O header (`__mh_execute_header`), and `src/platform/common/p32_image.c` checks the image and stores the data image's offsets at start. The system's malloc stays: `__PAGEZERO` already keeps the low 4 GB empty. `--prof-draw` logs nothing there (ld64 has no `--wrap`).
+
+```bash
+cmake -S . -B build/macos -G Ninja -DSPYRO_HOST=macos -DCMAKE_TOOLCHAIN_FILE=cmake/macos.toolchain.cmake \
+    -DPython3_EXECUTABLE=/usr/bin/python3   # a Python with PyYAML (the system's has it)
+cmake --build build/macos --target spyro
+BIN=build/macos/src/platform/linux32/spyro tools/host_checks.sh PREFIX   # runs on the Mac, not in tools/tc
+```
+
+Its runs must give linux32 native-mem's files byte for byte, as linuxa64's do. `-DSPYRO_P32_CHECK=ON` is the checking build here too.
+
+The software renderer's pictures don't use the vertex cache's answers, so `tools/host_checks.sh` also runs the attract demo with the cache (`PREFIX-vcache`, D below) and keeps its counters in `vcache.txt`. linux64, linuxa64 and macos give the same file; linux32's x87 floats differ in four lines (the `vcache cost` and `vcache records` figures, `repeats`, and `resolved`'s first count), so compare an offset-model build's against linux64's, or against linux32's but for those (D267: the offset model's `HAND_CX` handed the cache the primitive pointer's offset, and only the counters showed it). `tools/ps4/p32_narrow_check.py BUILD --raw` lists the 32-bit words read through a cast pointer (`*(u32 *)p`) and widened to 64 bits, where a P32 slot's word wants `P32_DEC`.
 
 ## Draw distance (D49)
 

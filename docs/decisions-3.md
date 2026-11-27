@@ -2125,3 +2125,250 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **#274 (D226), gain for the short path:** the real-time Toasty runs fell into two route timings; within one, the walk on core 1 takes 6.96 ms per vblank with `found_fast=2` (twice), 6.92 with 1, 7.36 with 0, and the game thread's join 0.80 / 0.81 / 1.18 ms. The short path is worth ~0.4 ms of walk and join; the probes read up front (2 against 1) show nothing. Default 2 kept.
 - **#232 (D222), gain:** attract demos 4,500–6,300 in real time: 218.1 / 217.3 pictures per 300 inline (`pres_demo_inline=1`) against 194.1 / 194.3 with D211's order; late vblanks the same (190–191). Default 1 kept.
 - **Next:** Artisans at 2x needs ~0.9 ms more off the game thread; the vertex cache's ~4.8 ms is where it is (#271 draw-free distance and #272 projections on core 2 are the owner's open choices).
+
+## 2026-11-26 — ARM64 step O4
+
+### D265. ARM64 step O4: the game on macOS (Apple silicon), natively: a headless `macos` host that matches linux32 byte for byte, and `Spyro.app` (SDL3, OpenGL 4.1); the presenter's missed encodes (2026-11-26)
+- **What:** the fourth step of D250's plan, on the owner's go (2026-11-26). Two builds, both native on the Mac, both in the offset model (`src/compat/p32.h`):
+  - `-DSPYRO_HOST=macos` (`cmake/macos.toolchain.cmake`): linuxa64's headless host (`src/platform/linux32`) as a Mach-O program, Apple's clang 16, macOS 13 on. `tools/host_checks.sh` runs it on the Mac directly (no Docker, no qemu).
+  - `-DSPYRO_HOST=pc` with `cmake/pc-macos.toolchain.cmake`: the PC build as `Spyro.app`, on Encore's PC backend (D247), SDL 3.4.18 static (`tools/pc/sdl3_macos.sh`, the PC image's tag), signed ad hoc. Encore's GL request (3.3 core, forward-compatible) gets macOS's 4.1 core context, which takes the `#version 330` shaders as they are. It links only system frameworks.
+- **The image:** a PIE, as every arm64 macOS program; the kernel slides it above `__PAGEZERO`'s 4 GB, which keeps every host mapping out of the low 4 GB, so a pointer cut to 32 bits crashes there as linux64's reservation makes it. The P32 base is the executable's Mach-O header (`spyro_p32_base` is `__mh_execute_header`'s C name on Apple). The offsets are the image's own, so they don't change with the slide. The system's malloc stays.
+- **The offset model's start-up, shared** (`src/platform/common/p32_image.c`): the image check (above 4 GB, within 4 GB of its start; on macOS its end from the Mach-O segments, slid), the data image's offsets (`s1_pie_words`) and the checking build's stop, used by `low_image.c` (linuxa64, macos) and the PC's `main.c` on macOS. linuxa64's start-up moved there unchanged.
+- **What Mach-O needed** (none of it changes another target):
+  - Assembly: `tools/data2s.py --macho` and `pres_snap_syms.py --macho` (underscored names, `segment,section` names, `.zerofill` for the mirror, local labels without the dot).
+  - objcopy's symbol edits: `tools/macho_syms.py` makes the presenter's object keep only `GamestateDraw_pres` global and the 60 Hz rules' keep only `GamestateUpdate_60` (marks the others private extern, then `ld -r`, which makes them local; renames through the string table). `tools/tick60_link.py --macho` reads `nm -m`'s sections for its data checks.
+  - ld64: `-u _name` for `--undefined`; no `--wrap`, so `--prof-draw` logs nothing on macOS (`prof_draw.c`).
+  - `__asm__` labels through `SPYRO_ASM_LIT("name")` (p32.h: `__USER_LABEL_PREFIX__`, empty elsewhere, so the same string).
+  - `etext`/`_edata`/`_end`, the save state's layout stamp, as marks in the image (the Windows build's way).
+  - libc: no `malloc.h` (`aligned_alloc`), no `clock_nanosleep` (`serve.c` sleeps for what remains); the game thread's stack 16 KB-aligned (`pthread_attr_setstack` wants macOS's page size).
+  - A Python with PyYAML (`-DPython3_EXECUTABLE=/usr/bin/python3`: the system's has it, Homebrew's doesn't).
+- **The presenter's missed encodes:** the app crashed at its first in-between frame (`--interp`, on by default there). The presenter's sector copies and the snapshot's regions kept a host address in a `uintptr_t` and stored it in a 32-bit word with an integer cast, which keeps the low 32 bits instead of the offset. O3's cast pass looked only at pointer↔integer casts, and none of O3's checks ran the presenter (no `--interp` in `host_checks.sh`), so linuxa64 had the same faults. Fixed with `P32_ENC`/`P32_DEC` (each the same text elsewhere):
+  - `render_ctx.c` `pres_sector_copy`: the copy's address (returned, and in `g_pres_sectors`).
+  - `pres_snap.c` `region`: a region's copy (`to`); and the buffers' length, a host address less an offset.
+  - `pres_draw.c` `sector_anims`: a sector's 32-bit address read as a host address.
+  - `savestate.c`: the arena's base in the save state's layout stamp, which ASLR would change from run to run on macOS (a save state from one run refused by the next).
+  - The arena build's checks (`hand_check.c`, `render_ctx_check.c`, `native_draw_check.c`): the same, for completeness.
+  - `tools/ps4/p32_narrow_check.py BUILD [--widen]` lists, from clang's AST, every 64→32-bit integer conversion of a value that can be an address (and with `--widen` every 32-bit value widened into one), but those inside p32.h's accessors. After the fixes its lists are sizes, counts, time arithmetic and differences within the arena (19 and 14 sites, each read).
+- **Checks:**
+  - `host_checks.sh` against a fresh linux32 native-mem baseline from this tree (`logs/o4f-*`, gitignored): demo, the 100,000-vblank tour, routes A and B; every trace, screenshot, WAV and memory card identical, 279 files each, for macos, its checking build (no stop) and linuxa64 rebuilt. linux32 itself matches O3's runs.
+  - The same four with the presenter (`EXTRA="--interp --widescreen"`, `logs/o4fi-*`): macos, its checking build and linuxa64 identical to linux32's, 279 files each. Before the fixes the offset model crashed at the first in-between frame.
+  - Time for the four checks: macos 59 s on the Mac (M3), linuxa64 79 s in the arm64 Docker VM, linux32 native-mem 466 s under qemu-i386. The app, at 60 Hz with the GPU renderer at 2560×1440: 0.8 ms of game time per vblank, 60.0 vblanks a second.
+  - `Spyro.app`: starts with the disc's extracted files, plays the attract demo at 16:9 and 60 fps with the GPU renderer and sound (3,000 vblanks, screenshots right); links only system frameworks.
+  - Byte identity, each target built from develop's 99756fb and from O4 in the same build directories: Vita `spyro_vita.velf` and PS4 `spyro.elf` every loaded section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
+  - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
+- **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
+
+### D266. ARM64 step O5: the PC build for Linux on aarch64, in the offset model; its base is the image's start above 4 GB, linuxa64's, not D250's base 0 (2026-11-26)
+- **What:** the fifth step of D250's plan. `-DSPYRO_HOST=pc` with `cmake/pc-linux-arm64.toolchain.cmake` builds the PC build (D240, D243, D247: SDL3, OpenGL 3.3 core, Encore's PC backend) for aarch64 Linux, in the offset model (`src/compat/p32.h`; `SPYRO_P32_OFFSET` is already on for every aarch64 target). It is built in a new arm64 image, `tools/docker/pc-arm64.Dockerfile` (`spyro-pc-arm64`: the x86-64 image's Debian 12, clang 19 and SDL 3.4.18 static, without the Windows half), run by `PC_ARCH=arm64 tools/pc/tc`, natively on an Apple silicon Mac's Docker VM. `docs/pc-build.md` "Linux on ARM".
+- **The base: not D250's 0.** D250 named "base 0" for Linux on ARM: link the image low and non-PIE, so a decode is only the zero-extending load. Taken instead: linuxa64's (D262), non-PIE at 0x2_0123_0000, above 4 GB and not 4 GB-aligned, the base `__executable_start` (`-Wl,-Ttext-segment=0x201230000 -Wl,--defsym=spyro_p32_base=__executable_start`). Why:
+  - With base 0 a pointer cut to 32 bits *is* its offset, so a missed `P32_ENC` works by accident on this target and breaks on macOS. O3 chose its address for exactly that (both kinds of miss were found that way), and O4's presenter misses were found because macOS's base isn't 0. One more target that hides misses buys nothing.
+  - The same layout as linuxa64, so the headless host's checks (`host_checks.sh`, the checking build) describe the PC build's memory too, and `src/platform/common/p32_image.c`'s start-up (the image above 4 GB and within 4 GB of its start, the data image's offsets) runs as it is, as on macOS.
+  - The cost D250 measured is one `add` of a base kept in a register; base 0 would save only that.
+- **Dynamic, unlike linuxa64:** SDL loads the display, GL and sound libraries at run time, so the executable is dynamic and non-PIE, as the x86-64 PC build. The low 4 GB is reserved from `.preinit_array` before any library loads (`src/platform/pc/low.c`), the reservation Encore's `lp64_low_image_dyn.c` makes on x86-64; that file refuses other architectures (`#error`), and the vendored copy is not edited here, so `low.c` has an aarch64 copy (spyro's own code: Encore's file came from spyro's `low_linux.c`), with the kernel's page size (4, 16 or 64 KB on aarch64) instead of 4 KB. `LP64_LOW_TRAP=0` skips it. glibc's malloc stays (its heap follows the image, above 4 GB).
+- **`-z separate-code`:** GNU ld for aarch64 put the whole image in one RWX LOAD segment at that address (its warning "a LOAD segment with RWX permissions"); with the flag it is R, R+X and R+W segments, as the x86-64 build's.
+- **Other changes, each for aarch64 only:** `crash.c` reads the faulting `pc` and `sp` (x86-64's `REG_RIP`/`REG_RSP` through a macro, the same text there); the game thread's `.bss` stack is 64 KB-aligned (`main.c`); `-DSPYRO_P32_CHECK=ON` is the checking build, as linuxa64's and macOS's. CI: a `pc-arm64` job on `ubuntu-24.04-arm` builds the image and the game and starts it without a disc under Xvfb, as the x86-64 job does.
+- **Checks** (logs gitignored: `logs/o5-*`):
+  - Builds and starts in `spyro-pc-arm64` under Xvfb (Mesa llvmpipe, GL 4.5 core): `image 0x201230000-0x203851b78`, 1,048,560 pages below 4 GB reserved, `video: x11, llvmpipe`, the GPU renderer ready. No sound device in the container (`audio: off`), as in the x86-64 image.
+  - The play route (`tools/pc/routes/play.pad`, `virtual=1`, 14,000 vblanks, shots at 4,000, 5,200, 9,000, 12,500 and 13,900: the attract demo, New Game into Artisans, play, the flight into a portal), with `gpu=1` and `gpu=0`, plain and checking build: every run exits 0, no checking-build stop, no fault.
+  - **Against the x86-64 PC build** (the same route and options, amd64 image under Rosetta): with `gpu=1` the shots at 4,000 to 12,500 are the same frames, 3 to 6 pixels of 921,600 more than 20% apart (llvmpipe's float rounding on the two architectures). With `gpu=0` every pixel differs a little (the window's linear scale-up of the 512×240 frame) and at 5,200 and 9,000 none by 20%. The shots that differ more (4,000 with `gpu=0`; 13,900 with both, the flight into the portal) show the same scene a few frames apart: the disc is read on a worker thread in real time (`cdnative.c`) and polled once per virtual vblank, so a load that ends a vblank earlier or later shifts what follows. `virtual=1` makes the vblanks deterministic, not the disc. The same arm64 binary run twice (`logs/o5-run-a64b-*`) measures that spread: with `gpu=1` all five shots identical; with `gpu=0` identical but 12,500 and 13,900, which differ between the two runs by as much as they differ from x86-64's (532 and 54,338 pixels more than 20% apart). The x86-64 runs under Rosetta and the checking build are slower in real time, so their loads land on other vblanks more often (the checking build's attract demo at 5,200 is a few frames from the plain build's).
+  - Byte identity, PC Linux and PC Windows x86-64 built from develop's 11e3d47 and from O5 in the same build directories: every loaded section identical but the `__TIME__` string and the build-id (Linux: `.rodata` 5 bytes, the time; Windows: `.rdata` 4 bytes, the time, and `.buildid`). Vita, PS4, linux32, linux64, linuxa64 and macos compile no changed file and none of the changed CMake branches (each tests `SPYRO_PC_TARGET` for `aarch64`); the macOS PC build's conditions (`APPLE OR …aarch64`, `apple|aarch64`) and `low.c`'s and `main.c`'s new `#elif`s leave its text as it was. Not rebuilt.
+  - `p32_decl_check.py build/pc-linux-arm64`: 176 units, no slot/pointer mismatch in 735 names, no pointer/int32 mismatch in 8,351 functions but glibc's `strerror_r` (as O3 and O4). The executable's segments: R, R+X, R+W, at 0x2_0123_0000 (`logs/o5-a64-segments.txt`). `tools/check_no_assets.sh`: passes. No hardware run.
+- **Not verified:** a real ARM Linux desktop with a GPU (a Raspberry Pi 5, an ARM laptop, Asahi Linux with its 16 KB pages): only llvmpipe under Xvfb in Docker; Wayland; sound (no device in the container); gamepads; a kernel with 39-bit virtual addresses (0x2_0123_0000 is below its 512 GB, so it should load); the owner's play.
+- **Found, not changed:** linuxa64 (static, the same `-Ttext-segment`) likely has the same single RWX segment; `-z separate-code` there would change its binary, so it is left for a follow-up. Encore's `lp64_low_image_dyn.c` could take aarch64 (its logic has nothing x86-specific but the 4 KB page) and retire `low.c`'s copy.
+
+## 2026-11-27 — #281
+
+### D267. The offset model's `HAND_CX` decodes the primitive pointer's P32 slot; `host_checks.sh` gets a vertex-cache run and `p32_narrow_check.py --raw` (#281) (2026-11-27)
+- **What the owner saw:** `Spyro.app` (D265) with the GPU renderer showed gaps between polygons and textures snapping into place; with `--gpu 0` none. That is the PS1 wobble D39's perspective and sub-pixel fix removes, back in the offset model (`SPYRO_P32_OFFSET`: linuxa64, macos, the PC build on macOS).
+- **Cause:** `src/game/render_hand.h` `HAND_CX` read the primitive pointer `D_800757B0`, a P32 slot, as a plain word (`*(u32 *)hand_cx_prim_`) and handed it to `psx_vc_ctx` / `pres_vc_ctx` as the renderer's range. On the 32-bit targets and linux64's low image the word is the address; in the offset model it is the offset from `spyro_p32_base`, which `vcache.c` `cx_ofs` doesn't find in the arena. Every renderer's range became `CX_FAR`, its polygons were filed outside, and each fallback gated on the renderer (own points #216, moby sprites D259, world pieces #229, the sky's overflow #221) found nothing: those vertices were drawn at the PS1's integer places.
+- **Fix:** `HAND_CX_PRIM()`, `(uintptr_t)P32_DEC(*(u32 *)hand_cx_prim_)`, for both reads. Elsewhere `P32_DEC(i)` is `(i)`, so the text compiles as before. `vcache.c` is not touched.
+- **The class:** D265's narrowing check lists 64→32-bit conversions; this was a 32-bit word read through a cast pointer and widened, implicitly (an initialiser, a `uintptr_t` argument). `tools/ps4/p32_narrow_check.py BUILD --raw` now lists those (a raw read in a macro by the macro's line). On `build/macos`, all 375 units (`--all`): 0 sites with the fix; with the old header, `env_hand.c` alone gives render_hand.h:173 and :176. The other hooks the renderers call (`PSX_VC_DERIVE`'s `a`, `b`) take screen keys, not addresses.
+- **The check that missed it:** `host_checks.sh` compared only the software renderer's pictures, which don't use the cache's answers. It now also runs the attract demo D (`--frames 7000 --draw-distance 2 --interp --vcache --widescreen`) and writes its `vcache` lines to `logs/PREFIX-vcache/vcache.txt`.
+- **Measured** (D, `grep vcache` of `spyro.log`, logs `logs/run281-{l32n,mac,a64,l64}-vc/`, gitignored), after the fix:
+
+  | `vcache` line | linux32 native-mem | macos, linuxa64 (before) | macos, linuxa64, linux64 (after) |
+  |---|---|---|---|
+  | own points: found from their renderer's own point | 784 | 0 | 784 |
+  | hooked: moby sprites | 2276 | 0 | 2276 |
+  | world own: from their piece's own split point | 13 | 0 | 13 |
+  | overflow: SkyDraw vertices found there | 10 | 0 | 10 |
+  | derived: exempt, outside the renderers | 22697 | 25667 | 22697 |
+  | resolved: left ambiguous | 31 | 187 | 31 |
+  | polygons with all vertices found (per frame) | 1167 | 1166 | 1167 |
+
+  Every line of the three 64-bit hosts' `vcache.txt` is the same (macos = linuxa64 = linux64). Against linux32, four lines differ: the cost model's (`vcache cost`, `vcache records`: divisions and table lines), `repeats` (2,344,997 against 2,344,995) and `resolved`'s first count (66,605 against 66,603). linux64 is not the offset model and differs the same way, so this is linux32's x87 (i686 without SSE: D168's note on the host's x87), not P32. linux32 native-mem's run is the same as O4's at f0d6416, line for line.
+- **Checks:**
+  - `host_checks.sh` on macos and linuxa64 (`logs/run281-{mac,a64}-*`): demo, whole, routeA, routeB identical to D265's linux32 native-mem baseline (`o4f-l32n-*`), 279 files each; their `vcache.txt` the same as each other and as linux64's run.
+  - Byte identity, each target built with the old header and the new in the same build directory: Vita `spyro_vita.velf` every program segment identical (the 23 objects that include render_hand.h differ only in `.debug*`, the header four lines longer; `env_hand.c.obj` without them identical); PS4 `spyro.elf` every program segment identical.
+  - `tools/check_no_assets.sh`: passes. No hardware run; the owner checks `Spyro.app` by eye.
+
+### D268. The PC's waiting frames follow the presenter's queue, as the Vita's render thread's do (#280, 2026-11-26)
+- **Seen:** the owner's play of `Spyro.app` (D265) stuttered on the level-loading screen, with either renderer; `spyro.log` showed ~550 pictures filed per 300 vblanks there and only ~107 shown, while the vblank clock held 60 and the sound had no trims.
+- **Cause:** on the loading screen each game tick lasts one vblank, and the presenter still files two frames a tick (the in-between frame and the real one), so two a vblank. Its queue (`present.c`, QUEUE 4) fills; each new frame drops the oldest and moves the rest up a vblank (`reserve`), and the new one is due 4 vblanks ahead. The Vita's render thread applies that drop to the frames it holds (`gpu_thread.c` `rt_file`: `f->dropped`, the dues moved up), so it shows the queue's head at every vblank. `src/platform/pc/frames.c` ignored `f->dropped`: its frames kept the dues they were filed with, two per vblank, all 4 ahead, and its ring of 8 slots, reused oldest-filed first, overwrote most of them before they came due. Logged in the load (temporary logging, not kept): every commit due `count + 4`, two per vblank.
+- **Fix (`frames.c` only):** each ring slot remembers the presenter's slot it holds (`pslot`, -1 for a PS1 display post). Before a presenter frame is filed (`follow_queue`), the waiting frames (filed after the newest the main thread took, not held) follow `rt_file`: the dropped one goes, one waiting in the new frame's slot goes (the slot was filed again), and unless the frames are by time (D148, `f->fixed`) the rest are due a vblank sooner. A GPU commit with nothing captured still follows the drop. Half the loading screen's frames are still never shown: two are filed per vblank and one can be.
+- **Not changed:** `present.c` (the Vita and PS4 share it) and the Vita, whose render thread already does this; the PS4 and the headless host don't compile `frames.c`. The Vita was checked by reading the code only.
+- **Checks (macOS, `Spyro.app`, `--frames --stats 2 --pad tools/pc/routes/play.pad`; the attract demo's load at ~3,600–4,200 and New Game's at ~6,900–7,500; shown per 300 refreshes):**
+  - Before, GPU renderer: 60, 179 (attract), 104, 188 (New Game). After: 298, 290, 298, 295.
+  - Before, `--gpu 0`: 61, 159 (New Game). After: 281, 264. The software rasterizer's game-thread time swings from run to run on this Mac with other sessions running, before and after alike.
+  - Normal play unchanged (≈ 285–297 shown per 300).
+  - Linux (`build/pc-linux/spyro` in the PC image under Rosetta, Xvfb and llvmpipe, `--gpu 0`; shown / refreshes): before, the attract load 31 / 408 and 221 / 363, New Game's 56 / 380 and 193 / 399; after, 251 / 293, 228 / 265, 253 / 311, 247 / 296, the same ratio as normal play in that setup (272 / 338, 233 / 269; Xvfb's refreshes aren't a 60 Hz vsync). With the GPU renderer, llvmpipe draws only 45–91 refreshes per 300 vblanks there, which says nothing about the timing (in New Game's load: 91 refreshes, 91 new pictures).
+  - `tools/host_checks.sh`: not run; the headless host doesn't compile `src/platform/pc/`. No hardware run.
+
+### D269. The vertex cache skips the HUD OT's polygons: 2D primitives made by hand stay at their integer places (#245, 2026-11-27)
+- **Why:** D230 found that 2D primitives the game's C links into the HUD OT (`func_800168DC`) can have a corner on the same integer pixel as a 3D projection behind them. The vertex cache then gave that corner the projection's sub-pixel place, a nudge of under a pixel that changed as the scene moved. Seen on the title menu's borders (`TitlescreenDrawSprite`, corner (256,137)) and the screen copy (`func_8001A40C`, corner (128,8)).
+- **How:**
+  - `present.c` `port_present_note_2d` and `pres_note_2d`, which `func_800168DC` already calls, note each HUD primitive into the vertex-cache table of the frame being recorded (`psx_vcache_note_hud`, `pres_vcache_note_hud`; in 4:3 too). `Table` gains `hud_gen`, `nhud`, `hud_lo/hi` and `hud[512]`, sorted by address.
+  - The narrowed copies' pools are registered (`psx_vcache_hud_pool`).
+  - `psx_vcache_poly` asks `hud_poly()` before any lookup: a pool range check, the frame's span, then a binary search; a walk-copy address maps back to the game's.
+  - A HUD polygon is answered as one nothing finds (`VREF_POLY`, side `{0, 0, 1}`). It takes no hand-over or `frac_hand`, and is counted on a new `vcache HUD:` line instead of "outside".
+- **Measured:**
+  - Host FNV per polygon on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60), base d7f5213: every changed polygon is a HUD-OT one (362 on S, 725 on Si, 3 on D). They are the named borders and screen copy, plus the title menu's boxes, a full-width fade and a demo text box. No other polygon changed.
+  - Host "outside the renderers" goes to 0 on every route (S 18,126 to 0). The other vcache lines are unchanged apart from slightly fewer kept projections worked out.
+  - Vita3K shots identical to base-20d3514 on all 8 routes. vc.misses falls (owner60 -71%, demo60 -99.5%). stone60's timing counters are within two develop-head runs' spread.
+- **Checks:** host ctest 33/33, Vita build, noassets. The gate's 3,600 s host-test step timed out after its ctest passed (Docker queue waits), so the coordinator judged it a pass. Logs: `runtime/autopilot/runs/vita/issue-245-1` (local).
+- **Next free number:** see D270.
+
+### D270. The vertex cache's kept projections move to a helper on core 2 under a per-entry claim; the design and its race test come first (#282, 2026-11-27)
+- **Why:**
+  - Artisans at 60 Hz is held at 1x: the game thread takes 15.4 ms of the 14.5 ms budget (D264).
+  - It works out 91% of its projections at once (D261), at 1.28-1.40 µs each on hardware (session 9, ap23a1 against ap23x1).
+  - The walk on core 1 is too busy to take more, and core 2 has about 6.5 ms a vblank free (D261, unverified: the render line's "busy" includes the swap's wait).
+  - The owner asked for the design before the code (2026-11-26).
+- **What:** the design is `docs/vcache-core2.md`; the implementation is #272.
+  - **Scope:** only the logic draw's tables, and only in lazy frames. The helper takes kept projections only, in store order (`LzRec.pad` becomes `ent`).
+  - **Claim:** a 16-bit claim word per entry plus `cov[e]`, in `Lazy` (`Entry` stays 40 bytes). The game thread publishes `pub` with a release store every 32 keeps.
+  - **Taking and handing back:** the helper takes an entry with a relaxed CAS below the `pub` it acquired, and hands it back with a release store. Owners take entries back through `lz_collect` with an acquire CAS.
+  - **No waiting:** the game thread's keeps and at-once records never wait.
+  - **Atomics:** `nfar` and `nlfar` become relaxed fetch_adds, with a `far_full` counter.
+  - **Before a table records again:** a seq_cst stop/inside handshake.
+  - **When the helper is behind:** past a 512-record backlog, the game thread works out at once, as today.
+  - **Memory order:** checked against arm-vita-eabi-gcc 15.2 and clang i686.
+  - **Switch:** `vc_helper=0/1/2` (0 = today's code and the default until a hardware A/B; 2 = keep everything with the helper idle, to measure a kept projection's cost).
+- **Checked:** `tests/vcache/test_vcache_helper.c`: three threads over Artisans-shaped frames.
+  - Host ctest 38/38 (`vcache_helper_race`, `vcache_helper_race_stress`; 1.85 M projections).
+  - Every projection is worked out exactly once, and every entry and log place equals the single-thread answer.
+  - Three mutants are caught.
+  - ThreadSanitizer is clean on native arm64 (the i686 toolchain can't link it). Native stress: 12.3 M projections.
+- **Found:** `vc_lazy_logic=2` keeps no more than the default (125,184 against 125,290 per 300 vblanks), so D264's result says nothing about keeping everything.
+- **Expected:** 1.5-3 ms a vblank off the game thread, where 0.9 ms is needed. Measure `vc_helper=2` on hardware first.
+- **Next free number:** see D271.
+
+### D271. The Vita build takes its Encore modules from `third_party/encore` (#251 step 1, 2026-11-27)
+- **What:**
+  - Encore 098d34b4 is vendored with `tools/vendor.sh --dir third_party/encore`, beside the PC's paths. The new paths are `targets/vita/{encore,cmake,tools}` and `targets/vita/runtime/{audioout,touch,perfcount,vcount}`; `VENDORED` lists all 11.
+  - The `vpk_` runtime modules (audio out, touch, perfcount, vcount) come from `targets/vita/runtime`.
+  - The sound ring, the disc image layer, the menu and its panel come from `core/src/enc_*.c` (`cmake/platform_common.cmake`). `cdimage.c` and `pbp.c` call `enc_dimg_*`.
+  - `VpkApp.cmake` and `livearea_png.py` come from `targets/vita`.
+- **Same code apart from perfcount:**
+  - The eboot's `.text`, `.rodata` and `.data` sizes are unchanged, and 394 of 397 objects have the same code.
+  - The only module change is Encore's `VPK_PC_MAX` raised from 32 to 64 (from kh1-vita): perfcount's tables grow by 1 KB of `.bss`, which moves the `.bss` addresses after them.
+  - All 8 Vita3K routes give shots identical to base-20d3514. Host ctest 33/33; the macOS native and pc-linux builds pass.
+  - The gate rebuilt the Vita target on the branch after merging #245: exit 0.
+- **Why vita-port-kit stays for now:** it is re-vendored at the same commit as E4's compat shims, because the common headers, the host tests, the hardware wrappers and CI still include it. Its removal is #294, paths only. The worker's patch for it was never built, because the session's permission check refused the apply.
+- **Next:** #283 (video in GLES mode), then #284-#288, one area each.
+- **Next free number:** see D272.
+
+### D272. MAX draws at least 1x and grows over the 60 Hz budget wherever a draw writes no more than the last 1x draw (#271, the owner's decision of 2026-11-26)
+- **Why:** the owner said MAX means at least 1x, drawing farther wherever it can. Until now, where the 1x frame was already over the 60 Hz budget (Artisans at 15.1-16.3 ms of 14.5, D252), the limiter held 1x. That was so even though #259 measured that 2x there writes no more (host, budget off: 62-74 KB against 59-77 KB, records 7.71 M against 7.69 M).
+- **What** (`src/game/lod.c` `limit()`, `LodConfig.grow_free`, default `SPYRO_DD_FREE_DEFAULT` = 1):
+  - With a 60 Hz budget on (fixed or timed), every 1x draw becomes the reference: its bytes and the vertex-cache records the game thread made in it (`records_now()`).
+  - A draw over the budget is let through if it is the 1x draw, or if it writes no more of either than the reference. The usual growth rules then apply.
+  - A draw that writes more backs off at once, with the reference as the budget: the extra distance halves, or past 9/8 of the reference the scale drops to 1x.
+  - The reference is dropped at a new level, a new gamestate or a loaded save state.
+  - The lod line gets a `free` suffix only in windows where the rule acted. `lod_time.c` logs the mode at start-up.
+- **Measured (Vita3K, against base-20d3514):**
+  - A build with default 0 gives shots and lod lines identical to base on owner60, stone60 and toasty60.
+  - With the rule on, Artisans 6,900-7,800 and Toasty 13,500-14,100 go from 1x held to x2.00, with about as many records (−8% to +3%) and up to 3-5 KB more a draw. Stone Hill reaches x1.12-1.16.
+  - Shots differ only in those stretches: owner60 11, stone60 4, toasty60 15. The other five routes are identical.
+  - The host gives the same lod numbers.
+- **Checks:** host ctest 33/33, Vita build (also on the merged branch), noassets.
+- **Open:**
+  - The runtime key (`dd_free=` on the Vita, `--dd-free` on the host) is #295. The worker's patch for it was outside its files, and the session's permission check refused to let the worker apply it.
+  - The reference is one 1x draw and isn't refreshed while the scale stays up (in owner60 it stayed at 85 KB through 6,900-8,700).
+  - The hardware A/B (late vblanks per 300, `dd_free=1, 0, 0, 1` on the owner60 and o-toasty pads in real time) waits for #295 and the owner's yes.
+- The baseline is rebuilt after this merge, because pictures changed as intended.
+- **Next free number:** see D273.
+
+### D273. The tools that run a built binary restore a missing execute bit first (#175, the owner's option 2, 2026-11-26)
+- **Why:** on colima's sshfs mount, a binary's execute bit can be lost after `cmake/link_exec.sh` has checked it (D136, #174). The binary then fails with exit 126 until it is rebuilt.
+- **What:** right before running a binary, the tools check its execute bit. If it is missing, they `chmod +x` it, up to 5 tries, and log one `restored execute bit: PATH` line.
+  - `tools/tc` checks inside the container, where the stat is fresh: every ELF executable argument, and with `ctest`, every `add_test` path.
+  - `host_checks.sh` and the A/B scripts (`fast_render_ab.sh`, `mixer_ab.sh`, `native_draw_ab.sh`, `pres_check_ab.sh`) check `BIN` on the Mac first, once before parallel runs.
+  - `gdb_run.sh` checks inside the container.
+  - There is no switch: the check only does work when the bit is missing.
+- **Checked:** a binary set to 0644 runs through tc, ctest and `host_checks.sh` with exactly one restore line, and the exit codes pass through. Host ctest 33/33.
+- **Not done:** options 3 (a Docker volume for `build/`) and 4 (virtiofs on the default VM). tc already runs on the kh1fast profile, which is virtiofs (#253). `docs/host-build.md` still calls the mount reverse-sshfs in one place.
+- **Next free number:** see D274.
+
+### D274. The vertex cache is prepared for #272's core-2 helper with no change of behaviour (#296, D270 step 1, 2026-11-27)
+- **What** (`vcache.c`, `psx_vcache.h`):
+  - An entry's tag and the order log's words are relaxed atomics where another thread may touch them (`VC_TAG_LD/ST`, `VC_LOG_LD/ST`). `log_answer` does a relaxed load and store instead of `|=`.
+  - The far and lfar slots are taken by relaxed `__atomic_fetch_add`; past the cap a slot reads as full, as before. A new `VCacheStats.far_full` is printed on a new `vcache far:` line.
+  - The cost model's `lc_line` belongs to the writing thread (`Sink`). `Table` keeps a placeholder in its place, so `far`'s offset and the cost lines don't move.
+  - `LzRec.pad` is `ent`, and a static assert keeps the record at 16 bytes.
+  - `lz_flush` stops at `Lazy.cov`, which stays NULL until the helper allocates it.
+  - `lz_need`'s slow path is `lz_collect`, and `rp_skip` takes a flag mask.
+  - No thread and no switch.
+  - The `vc_lazy_logic=2` comment now says it keeps no more (D270).
+- **Measured:**
+  - Host FNV per polygon `--strict` is identical on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60; 8.6-28.2 M polygons each). `far_full` is 0 on every host route, and every host vcache line is identical, the cost lines included.
+  - Vita3K shots are identical to base-20d3514 on all 8 routes, and a second run of owner60 and stone60 is identical too.
+  - Every deterministic counter is +0.0%. The timing counters stay within two develop-head runs.
+- **Checks:** host ctest 38/38 (with the helper race tests), the Vita build (also on the merged branch), noassets.
+- **Next:** #272, the helper itself and `vc_helper=0/1/2` (D270 steps 2-4). `far_full` on the platform's vcache line and as a perfcount key comes with its step 3.
+- **Next free number:** see D276 (D275 is claimed by PR #290, renumbered from D266).
+
+### D275. The options menu on PC (Linux, Windows, macOS): the Vita's and PS4's menu, opened by SELECT+START, Esc or F1, drawn by the GL presenter, its rows config.txt's keys (#279, 2026-11-26)
+
+**Context.** The Vita and PS4 have the in-game options menu (D30, D45, D245). The PC builds had none: settings came only from `config.txt` and the command line, and the owner found no way to change one while playing `Spyro.app` (D265).
+
+**Decision.** `src/platform/pc/menu.c` is the PS4's `menu.c` on the PC layer, and `menu_rows.c` holds the PC's rows, all through the shared table and panel (`menu_opts.h`, `menu_panel.h`):
+- **Opening:** SELECT+START from any source (a gamepad's Back + Start, the keyboard's Backspace/Tab + Enter, a `pad=` script), or Esc, F1 or a gamepad's guide button (`pc_gap_menu_key`, gap G15; Esc is also the backend's `ENC_BTN_MENU`, but F1 isn't in its map). `pad.c` passes the pad through `pc_menu_filter` after the script is ORed in, so the game never sees the combo or what closed the menu until it is released.
+- **Pausing:** the menu runs inside `psx_platform_vsync` (`vblank.c`, a three-line hook before the clock's wait), and afterwards the clock is resynced (`psx_clock_resync`), as on the PS4: no catch-up after the pause.
+- **Drawing:** the panel goes to `video.c` (`pc_video_overlay`), which draws it on the main thread as a second textured quad over the last picture, at the largest whole multiple of 640 px that fits 95% of the window (sharp text), scaled down in a window smaller than that.
+- **Rows:** PICTURE (FULLSCREEN, WIDESCREEN, 60 FPS, VSYNC, FILTER, RENDERER, PERSPECTIVE, SUB-PIXEL, RESOLUTION, DRAW DISTANCE), CONTROLS (the PS4's camera rows) and GAME (the PS4's `menu_game.c` built as it is: SKIP INTRO LOGOS, the cheats). Each row's key is the one `config.txt` already had (`fullscreen`, `vsync`, `gpu`, `persp`, `res`, ...), so `set_opt` reads them as before, and keys it doesn't know go to the rows (`pc_menu_load`).
+- **Applying:** at once where the PC can do it. FULLSCREEN and VSYNC are applied on the main thread at its next picture (SDL's window and swap interval, gaps G15 and G16). Fullscreen is compared with the last request as well as the window's flag: macOS animates into fullscreen and the flag says windowed until it is done, so ON then OFF in quick succession had left the window fullscreen. PERSPECTIVE and SUB-PIXEL are `gpu_gl.c`'s vertex expansion, so they change at once when either was on at start (the vertex cache is recording then). RESOLUTION re-makes the targets (`rescale`), and DRAW DISTANCE sets `g_lod.scale`. RENDERER and 60 Hz logic (D130, read once at start) wait for the next start, and a NEXT START row says so. The PC has no QUIT NOW: the player closes the window. 60 Hz logic (`interp=4`) is new on PC: `pc_menu_init` sets `g_tick60_mode` as the PS4 does, on the US disc and PAL at US timing.
+- **Saving:** on close, `menu_opts_save` writes every row's key to `config.txt` in the user folder and keeps the other lines (`window=`, comments).
+- **Not included:** save states (the SAVE rows). The PC's save-state glue is linux32's, which doesn't tell `gpu_gl.c` that VRAM was replaced, so a loaded state would draw from stale textures. That is a follow-up.
+
+**Checked** (macOS, `Spyro.app` built natively from this branch, the US disc's extracted files, `virtual=1`, a scratch user folder through `ENC_PC_ROOT`):
+- `menu_test=700` opens the menu over the intro, turns WIDESCREEN off, scrolls up past the first row to the last GAME row and closes after 547 ms. Each step is a PNG of the window with the panel over the paused picture. `config.txt` gets every row's key after its own lines (a comment and `window=` kept). The next start, without the menu, reads `widescreen=0` and draws 4:3.
+- `menu_keys=` (added here) steps through every PICTURE row: FULLSCREEN on and off, VSYNC off, FILTER nearest, PERSPECTIVE off, RESOLUTION 1X, DRAW DISTANCE MAX. The log shows each applied at once (`video: vsync off`, `gpu: persp=0 subpixel=1`, `gpu: res=1` and the targets re-made at 1×, `picture: draw distance 400%`), and the picture after closing is the PS1's pixels scaled by nearest neighbour. The next start reads them all back (`vsync off`, `persp=0 subpixel=1, res=1`, `draw distance 400%`).
+- That run found the fullscreen race (above): ON then OFF 67 ms apart left the window fullscreen (2940×1838). After the fix the same keys, twice, leave it windowed (2560×1440).
+- A `pad=` script (SELECT, then SELECT+START at vblank 606, the bits a gamepad's Back + Start give) opens the menu, and the game reads `0000` while they are held. No script closes a menu the pad opened, so that run was stopped.
+- Not checked: Esc, F1, Backspace/Tab + Enter and a real gamepad on the live window. No one was at the Mac to approve driving its keyboard; the owner's try of `Spyro.app` checks them. They go through the same `pc_menu_filter` and in-menu loop as the scripted runs.
+- PC Linux and Windows: both build in the `spyro-pc` Docker image (clang 19, MinGW-w64), no warning in `src/platform/pc`. The Linux build ran under Xvfb (llvmpipe, `gpu=0`, 640×480): `menu_test=700 menu_keys=down,right,down,down,down,right,circle` turned WIDESCREEN off and FILTER to nearest (the GPU rows hidden with the software renderer, the panel scaled down to the window); the next start read `widescreen=0` and `filter=0`, with the file's own comment line kept. The Windows build was not run.
+- The Vita, PS4, linux32 and macos/linuxa64 headless builds compile no changed file (`src/platform/pc` is added only for `SPYRO_HOST=pc`, and the PS4's `menu_game.c`, which the PC now also compiles, is unchanged), so their binaries and `tools/host_checks.sh` are unchanged by construction; they were not rebuilt. `tools/check_no_assets.sh` passes. No hardware run.
+- **Next free number:** see D276.
+
+### D276. `third_party/vita-port-kit` is removed; everything that used it now uses `third_party/encore` and Encore's `enc_` names (#294, #251 step 1b, 2026-11-27)
+- **What:**
+  - #251's outside-files patch was applied as it was. It covers the common headers (`menu_opts.h`, `menu_panel.h`, `psx_audio_ring.h`, `psx_cdimage.h`), `vita_pc.h`, `tests/audio`, `tests/vcount`, the hardware wrappers' paths in `tools/vita/*`, `tools/ci/build_vpk.sh`, CI and the LiveArea notes.
+  - The leftover comments were updated, and `git rm -r third_party/vita-port-kit` removed 69 files.
+  - The change is paths only: each shim was a `#define` to the same `enc_` name.
+- **Measured:** against develop, the Vita ELF has identical `.text`, `.data` and `.bss`, and 12 `.rodata` bytes differ, all build stamps. 395 of 397 objects are identical.
+- **Checks:**
+  - Host ctest 38/38. The macOS native, pc-linux and PS4 builds pass (the PS4 pkg passes `oelf_check`).
+  - The `hw_mock` wrapper answers on 127.0.0.1; nothing ran on the Vita.
+  - The gate's Vita build on the merged branch passes.
+- **Still naming vita-port-kit, on purpose or harmlessly:**
+  - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
+  - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
+  - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
+### D277. The Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2, 2026-11-27)
+- **What:** `encore_vita` is linked (`enc_vita.c` with core's `enc_common.c`, `enc_event.c`, `enc_blit.c`). `video.c` calls `enc_platform_init` with gpu=1 on the main thread before the render thread starts. `gpu_gl.c` opens `ENC_GFX_GLES` (960x544, stretch, 60 Hz, vsync) after `vglInit` and checks `core_swaps` is 0; each `vglSwapBuffers` sits between `enc_video_gpu_begin` and `enc_video_present`, so the game keeps `vglInit` and `vglSwapBuffers` and the backend paces at the display's 60 Hz. `gl_quit` closes the video. The backend's `vpk_log_*` go to `spyro.log`, which closes G14.
+- **G6:** every GL call, `vglInit` and the Encore video calls are on the render thread: no second context.
+- **Gaps:**
+  - `targets/vita/runtime/log` is not vendored yet: `CMakeLists.txt` writes a stopgap `vpk_log.h` with Encore's exact three declarations into the build folder (#297 vendors it and drops the stopgap; the worker's `vendor.sh` run was refused by the session's permission check).
+  - `enc_platform_init` also sets sceCtrl's wide analog mode, calls `vpk_touch_init` again, starts sceMotion sampling and a power-callback thread waking every 100 ms, and creates an empty `ux0:data/spyro/log/`, though only video uses Encore so far (moves to `main.c` with #284).
+  - `EncVideoConfig` cannot express the 224-of-240-line picture box; gpu=0 stays outside the interface.
+- **Checked:** Vita build exit 0 (`.text` +8 KB, `.bss` +85 KB for the backend's state); 8 Vita3K routes identical to base-e603aaa (685 shots, 0 invalid accesses); presenter lines the same apart from timing-dependent join waits; only timing counters move; host ctest 38/38; macOS native and noassets pass; gate PASS and a Vita build on the merged branch (`runs/vita/issue-283-1/`).
+- **Not checked:** hardware pacing and the extra threads on a real Vita.
+
+### D278. Two switchable same-answer cuts to the vertex cache's native record: `vc_fast_rec` lean and ahead (#259, 2026-11-27)
+- **What:** `vc_fast_rec` becomes a bit field (1 = the default, D261's record; Vita `vc_fast_rec=0..7`, host `VC_FAST_REC`). Bit 2 (lean) drops D168's cost-model counting from the game thread's records (the `touch()` line loops, probe, division, store-line and worked counts; `VCW_PROJ`, the `draw vc` line and the vcache lines still count). Bit 4 (ahead) runs each native record one late, after the next one has prefetched three lines of its entry, so the miss overlaps the previous record's work; the inputs wait in `Pend`, and `pend_flush` runs at every game-thread reader of the logic table, so the table sees the same records in the same order.
+- **Why:** hardware session 9 puts an at-once record at ~1.25 µs (~550 cycles for ~400 instructions at 444 MHz), so memory waits are a large part of it; the vertex cache is ~46% of the game thread in Artisans' heaviest frames, and 2x at 60 Hz needs ~0.9 ms.
+- **Checked:** host FNV per polygon `--strict` identical on 30 pairs (default, 7 with and without lazy logic, 3, 5, 0); Vita3K shots identical to base-e603aaa on all 8 routes with the default and on owner60, stone60 and toasty60 with 7; fixed counters +0.0%; host ctest 38/38; gate PASS and a Vita build on the merged branch. Host `--prof-draw`: lean -3.0-3.5% renderer time; qemu cannot show the prefetch (ahead +1-6% there).
+- **Default:** stays 1 until the hardware A/B (`runtime/autopilot/runs/vita/issue-259-2/hw/`: Artisans owner60 under virtual vblanks with 1, 7, 3, 5, 7, 1, 5, 3 at MAX 400; Toasty real time 1 then 7) shows whether 3, 5 or 7 takes the ~0.9 ms; if none does, the remaining lever is #272 (kept projections on core 2). #259 stays open for that A/B.
+
+- **Next free number:** take one with `autopilot.py claim-decision`.

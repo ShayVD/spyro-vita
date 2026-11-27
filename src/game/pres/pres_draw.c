@@ -176,7 +176,7 @@ static int sector_count(void) {
 
 static u32 sector_anims(int i) {
   const u32 sec = MIPS_KUSEG(((const u32 *)P32_GET(g_Environment.m_SectorPointer))[i]);
-  const uintptr_t a = (uintptr_t)(sec + 0x18u);
+  const uintptr_t a = (uintptr_t)P32_DEC(sec + 0x18u); /* a 32-bit address (D265) */
   return a >= g_psx_arena_base && a - g_psx_arena_base < PSX_MEM_SIZE ? *(const u32 *)a : 0;
 }
 

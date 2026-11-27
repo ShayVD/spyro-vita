@@ -1460,6 +1460,28 @@ void pc_gpu_picture_shown(int slot) {
   glFlush();
 }
 
+/* the menu (D275), on the game thread between frames: perspective and
+ * sub-pixel are the vertices' expansion (expand), so they change at once
+ * where the vcache's projections are recorded (s_vc, either on at start);
+ * with both off at start, at the next start */
+int pc_gpu_set_options(int persp, int subpixel) {
+  if (!s_vc)
+    return 0;
+  s_persp = persp != 0;
+  s_subpixel = subpixel != 0;
+  host_log("gpu: persp=%d subpixel=%d", s_persp, s_subpixel);
+  return 1;
+}
+
+/* the menu (D275): res=N, every target drawn again at the new scale */
+void pc_gpu_set_res(int res) {
+  if (res == s_res)
+    return;
+  s_res = res;
+  rescale();
+  host_log("gpu: res=%s%d", s_res ? "" : "window", s_res);
+}
+
 /* game thread, with its context current: 0 = ok */
 int pc_gpu_init(void) {
   if (pc_gl_load() != 0)

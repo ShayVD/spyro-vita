@@ -139,6 +139,7 @@ static u_int s_sub_pool[MAX_SUBST_WORDS];
 static PsxGpuSubst s_sub = {0, s_sub_at, s_sub_words};
 
 void port_present_note_2d(void *prim) {
+  psx_vcache_note_hud(prim); /* #245: its polygons not looked up (4:3 too) */
   if (s_record_2d && s_n2d < MAX_2D)
     s_2d[s_n2d++] = prim;
 }
@@ -287,6 +288,7 @@ static int squeeze(void *const *notes, int nnotes, uintptr_t *at, const u_int **
 
 static void squeeze_2d(void) {
   subst_clear();
+  psx_vcache_hud_pool(0, s_sub_pool, sizeof s_sub_pool); /* #245: HUD primitives' copies */
   g_present_stats.squeezed_2d += squeeze(s_2d, s_n2d, s_sub_at, s_sub_words, s_sub_pool, &s_sub.n);
   if (s_sub.n)
     psx_gpu_game_walk()->subst = &s_sub;
@@ -1247,6 +1249,7 @@ static int alloc_walk(void) {
 
 /* order_table.c's note, in the presenter's build */
 void pres_note_2d(void *prim) {
+  pres_vcache_note_hud(prim); /* #245, as port_present_note_2d's */
   if (s_job.wide && s_pn2d < MAX_2D)
     s_p2d[s_pn2d++] = prim;
 }
@@ -1316,6 +1319,7 @@ void pres_DrawOTag(u_long *p) {
   s_pw.subst = NULL;
   s_psub.n = 0;
   if (j->wide) {
+    psx_vcache_hud_pool(1, s_psub_pool, sizeof s_psub_pool); /* #245 */
     j->squeezed += squeeze(s_p2d, s_pn2d, s_psub_at, s_psub_words, s_psub_pool, &s_psub.n);
     if (s_psub.n)
       s_pw.subst = &s_psub;

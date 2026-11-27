@@ -10,7 +10,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "game": "spyro",
   "phase": 5,
   "workers": [],
-  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
+  "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -186,9 +186,28 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
       "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
       "issue": 212
+    },
+    {
+      "title": "Hardware A/B for #271 (dd_free=1 vs 0): MAX grows over the 60 Hz budget where a draw writes no more than 1x",
+      "expected": "no more late vblanks per 300 with dd_free=1 in Artisans and Toasty, at x2.00 where 1x was held",
+      "issue": 271,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
+    },
+    {
+      "title": "#259 vc_fast_rec lean/ahead record modes (D278)",
+      "expected": "3, 5 or 7 takes ~0.9 ms off the Artisans game thread at 2x",
+      "issue": 259,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "runs/vita/issue-259-2/hw/hw-session-259-2.sh: Artisans owner60 virtual vblanks vc_fast_rec 1,7,3,5,7,1,5,3 at MAX 400; Toasty real time 1 then 7; win = game ms below mode 1 by more than the two mode-1 runs spread"
     }
   ],
   "owner_decisions": [
+    "2026-11-26: owner answered the open decisions before the next loop: #271 MAX is at least 1x and draws farther wherever it can, so grow where the extra distance costs nothing even when 1x is over budget (default on as MAX's behaviour, off switch dd_free=0, hardware A/B for the owner's yes); #272 yes, design issue first (claim protocol + host race test) then implement; #251 yes, in this loop, one area per PR in the PC's order; #175 option 2 (re-check the execute bit in the tools that run binaries). Loop to run all remaining issues; #264, #276, #279-#281 go to their own sessions.",
     "2026-11-22: owner asked to fix the known wobble-fix and draw-distance issues and loop until fully fixed; filed #211-#219 (phase-8). Done = missed (non-exempt) wobble vertices at 0 on host routes S/P/Pf, 2x holding at 60 Hz on the owner's settings on hardware.",
     "2026-11-21 07:05: round 9 ended (all phase-8 issues merged, D175-D197 (with D194, D195, D196)). owner60 vs base-3ba4fd2: vc.misses -97.8%, gl.draws -6.0%, vc.proj -7.2%, vc.lines +13.5% -> no gain by rule (rounds_without_gain 1). Round 10 opened; its investigation needs hardware numbers (FPS only from hardware), so the loop pauses for the owner's yes on a hardware session.",
     "2026-11-21 02:45: coordinator: #196 rescoped to this repo (vc_lazy_logic= key, docs). Raising the vendored kit's VPK_PC_MAX would need a change in ../vita-port-kit and a re-vendor (VENDORED: change the kit, re-vendor); left for the owner.",
@@ -206,7 +225,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     {
       "issue": 175,
       "question": "colima's sshfs mount loses execute bits after the link: keep the launcher, re-check in the run tools, build/ on a Docker volume, or colima virtiofs?",
-      "default_taken": "none started; pick is option 2 (re-check in the tools that run binaries), waiting for the owner",
+      "default_taken": "owner 2026-11-26: option 2 (re-check in the tools that run binaries)",
       "switch": "none"
     },
     {
@@ -252,7 +271,9 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "work out kept vcache projections on core 2 (large restructure)",
       "pick": "after #259 hardware A/B",
       "status": "open"
-    }
+    },
+    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them.",
+    "2026-11-27 08:40: owner: wait for the remaining work (#283 gate, #259 attempt 2) to finish, dispatch nothing new, then stop the loop, run the retro (Encore draft PR) and open the release PR to main."
   ],
   "attempts": {
     "161": 1,
@@ -276,11 +297,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 12,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
-    "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
-    "started_at": "2026-11-22T06:56:29Z",
-    "filed": 31,
+    "n": 13,
+    "target": "vita",
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+    "base_commit": "20d3514589db959121604783a5876ea91f152ad9",
+    "started_at": "2026-11-26T22:46:15Z",
+    "filed": 7,
     "investigated": true
   },
   "rounds_without_gain": 0,
@@ -297,8 +319,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
-        "commit": "20d3514589db959121604783a5876ea91f152ad9"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-e603aaa",
+        "commit": "e603aaa7036fd47a059218dd50c3b6722ec2357d"
       }
     }
   },
@@ -314,6 +336,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "bf43540d16729645fa3752161bca6c62276f0cb3",
       "pr": 258,
       "merged_at": "2026-11-25T09:43:35Z"
+    },
+    {
+      "branch": "release/phase8-wobble-draw-distance-d264",
+      "commit": "31a47eb",
+      "pr": 275,
+      "merged_at": "2026-11-26T10:51:04Z"
     }
   ]
 }
@@ -546,3 +574,23 @@ continue.
 - 2026-11-25T21:14:00Z #261 WIP 84dbc5a (docs), host T at 4x holding the queue since 20:10; #266 uncommitted vcache.c edits, waiting on the queue
 - 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
 - 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
+- 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
+- 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set
+- 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
+- 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
+- 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
+- 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
+- 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
+- 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
+- 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
+- 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
+- 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
+- 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
+- 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
+- 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
+- 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
+- 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
+- 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.
+- 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
+- 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
+- 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.

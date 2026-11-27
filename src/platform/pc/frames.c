@@ -12,7 +12,15 @@
  *    presenter off), vblank.c files the PS1 display as it is then.
  * The main thread shows, at each display refresh, the newest picture whose
  * due vblank the clock has reached (pc_vblank_now). A ring of RING buffers
- * under a mutex; the writer never reuses the one the main thread holds. */
+ * under a mutex; the writer never reuses the one the main thread holds.
+ *
+ * The presenter's frames waiting here follow present.c's queue as the
+ * Vita's render thread does (gpu_thread.c rt_file): when its queue was full
+ * and it dropped its oldest frame for a new one, that frame goes here too
+ * and the rest are due a vblank sooner (#280, D268). Without that, a run of
+ * ticks a vblank long (the level-loading screen: a real and an in-between
+ * frame each vblank) kept every frame due four vblanks ahead, two per
+ * vblank, and the ring's eight slots were reused before most came due. */
 #include "pc.h"
 #include "host.h"
 #include "../../game/present.h"
@@ -37,6 +45,7 @@ typedef struct {
   uint32_t *rgba;
   int w, h, wide, due;
   int gpu;      /* a GPU picture (gpu_gl.c's texture for this slot), not rgba */
+  int pslot;    /* the presenter's slot (PresentFrame.slot), -1: the PS1 display */
   unsigned seq; /* 0: empty */
 } Slot;
 
@@ -139,9 +148,31 @@ static int acquire(void) {
   return best;
 }
 
-/* game thread: slot i (written) filed as due */
-static void publish(int i, int w, int h, int wide, int gpu, int due) {
+/* under s_mu: the presenter's frame f, about to be filed, in present.c's
+ * queue: the frame it dropped for f goes, never shown, and (unless by time,
+ * D148) the others waiting move up a vblank; a frame waiting in f's slot
+ * is older than f and gone from that queue too (gpu_thread.c rt_file).
+ * Waiting: filed after the newest the main thread took. */
+static void follow_queue(const PresentFrame *f) {
+  int i;
+  for (i = 0; i < RING; i++) {
+    Slot *s = &s_ring[i];
+    if (!s->seq || s->seq <= s_taken_seq || s->pslot < 0 || i == s_held)
+      continue;
+    if (s->pslot == f->dropped || s->pslot == f->slot)
+      s->seq = 0;
+    else if (f->dropped >= 0 && !f->fixed)
+      s->due--;
+  }
+}
+
+/* game thread: slot i (written) filed as due; f: the presenter's frame, or
+ * NULL (the PS1 display) */
+static void publish(int i, int w, int h, int wide, int gpu, int due, const PresentFrame *f) {
   enc_mutex_lock(s_mu);
+  if (f)
+    follow_queue(f);
+  s_ring[i].pslot = f ? f->slot : -1;
   s_ring[i].w = w;
   s_ring[i].h = h;
   s_ring[i].wide = wide;
@@ -155,10 +186,10 @@ static void publish(int i, int w, int h, int wide, int gpu, int due) {
 }
 
 /* game thread: src (w x h, wide) filed as due */
-static void post(const uint32_t *src, int w, int h, int wide, int due) {
+static void post(const uint32_t *src, int w, int h, int wide, int due, const PresentFrame *f) {
   int i = acquire();
   memcpy(s_ring[i].rgba, src, (size_t)w * h * 4);
-  publish(i, w, h, wide, 0, due);
+  publish(i, w, h, wide, 0, due, f);
 }
 
 void pc_frames_post_display(int due) {
@@ -167,7 +198,7 @@ void pc_frames_post_display(int due) {
     int i = acquire();
     if (pc_gpu_display(i, &w, &h) == 0) {
       s_display_posts++;
-      publish(i, w, h, 0, 1, due);
+      publish(i, w, h, 0, 1, due, NULL);
       pc_gpu_picture_end();
       return;
     }
@@ -176,7 +207,7 @@ void pc_frames_post_display(int due) {
   }
   copy_display(s_pending, &w, &h);
   s_display_posts++;
-  post(s_pending, w, h, 0, due);
+  post(s_pending, w, h, 0, due, NULL);
 }
 
 /* present.c's platform capture (present.h PresentCapture) */
@@ -192,14 +223,18 @@ static void cap_capture(int x, int y, int w, int h) {
 
 static void cap_commit(const PresentFrame *f) {
   if (g_pc_gpu) {
-    if (s_pend_slot < 0)
+    if (s_pend_slot < 0) { /* nothing captured: still the queue's drop */
+      enc_mutex_lock(s_mu);
+      follow_queue(f);
+      enc_mutex_unlock(s_mu);
       return;
-    publish(s_pend_slot, s_pend_w, s_pend_h, f->wide, 1, f->due);
+    }
+    publish(s_pend_slot, s_pend_w, s_pend_h, f->wide, 1, f->due, f);
     s_pend_slot = -1;
     pc_gpu_picture_end();
     return;
   }
-  post(s_pending, s_pend_w, s_pend_h, f->wide, f->due);
+  post(s_pending, s_pend_w, s_pend_h, f->wide, f->due, f);
 }
 
 static const PresentCapture k_capture = {cap_capture, cap_commit, NULL};

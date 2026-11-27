@@ -9,6 +9,7 @@
 #ifndef PSX_VCACHE_H
 #define PSX_VCACHE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -49,8 +50,11 @@ void psx_vcache_enable(int mode);
 void psx_vcache_set_lazy(int on);
 /* The logic draw's too (#179), worked out by its walk: 1 (the default)
  * while the presenter draws no in-between frames (60 Hz logic, or 30 fps)
- * and the last frame's walk has ended, 2 always, 0 never (each one at
- * once on the game thread, as before). 3 (#204): as 1, but a quota of each
+ * and the last frame's walk has ended; 2 makes every frame lazy, in-between
+ * frames too (vcache.c lz_next), but keeps no more: the keep rule is still
+ * the walk-idle one (D270, `vc_lazy_logic=2` kept 125,184 per 300 vblanks
+ * against 1's 125,290); 0 never (each one at once on the game thread, as
+ * before). 3 (#204): as 1, but a quota of each
  * frame's first projections, sized from the walk's idle time before the
  * game thread's last projections in recent frames (vcache.c LZ_QUOTA); a
  * `vcache quota:` line with the cost lines. The same answers in each. */
@@ -68,9 +72,12 @@ void psx_vcache_set_found_fast(int mode);
  * record reads no line of another array. The same answers in each; set
  * before the cache records. */
 void psx_vcache_set_repeat(int mode);
-/* #259: the logic draw's native records take the record's find and maths
- * inlined: 1 (the default) or 0 (called, as before). The same code. */
-void psx_vcache_set_fast_record(int on);
+/* #259: the logic draw's native records, bits: 1 (the default) the
+ * record's find and maths inlined (0: called, as before D261); 2 without
+ * the cost model's counts (divisions, probes, lines: diagnostics only);
+ * 4 each record done one late, after the next has prefetched its entry.
+ * Any nonzero mode includes 1. The same answers in each (vcache.c FR_*). */
+void psx_vcache_set_fast_record(int mode);
 /* #259: the game thread's records in the logic draw's frame so far: [0]
  * recorded, [1] worked out at once (repeats skipped among them), [2] kept
  * for the walk, [3] repeats skipped (since the start). The draw profiles
@@ -317,6 +324,20 @@ extern int psx_vcache_polys;
 void psx_vcache_poly(void *vertex, short *const *xy, int n, VCacheVert *side);
 void psx_vcache_poly_ref(void *vertex, short *const *xy, int n);
 
+/* #245: the HUD OT's primitives (order_table.c func_800168DC: 2D, made by
+ * the game's C on screen by hand), noted as they are linked, so the walk's
+ * lookups skip their polygons: no vertex of theirs takes a projection's
+ * place (a corner on the pixel of a 3D vertex behind it took that vertex's
+ * sub-pixel place, D230), and each is drawn at its integer place, as its
+ * corners nothing finds already were. The logic draw's (present.c
+ * port_present_note_2d) and the presenter's (pres_note_2d) into their own
+ * frame's table, as the renderer contexts; pools: the narrowed copies the
+ * walk parses in their place (present.c squeeze, 0 the logic draw's, 1 the
+ * presenter's), all of them HUD primitives. */
+void psx_vcache_note_hud(const void *prim);
+void pres_vcache_note_hud(const void *prim);
+void psx_vcache_hud_pool(int which, const void *pool, size_t bytes);
+
 /* DrawOTag (libgpu.c, and the presenter's, present.c) as it returns, drawn
  * or skipped: the next frame's projections begin (nothing with mode 0). */
 void psx_vcache_ot_done(void);
@@ -463,8 +484,8 @@ extern unsigned g_vcache_rec[2][VCR_N];
  * 16 MB window. #222: for the counters, by its offset in the game's memory
  * (psx_arena.h), the copy's too: the native build's (the Vita's) blocks
  * aren't 16 MB-aligned, so there a primitive the walk read from the copy
- * (the portals' sky) was filed outside. The placement's renderer gates
- * (#215, #217, #221, #227) still compare the low 24 bits. So the class
+ * (the portals' sky) was filed outside; #244: the placement's renderer
+ * gates (#215, #217, #221, #227) compare the same offsets. So the class
  * comes from what the frame recorded, not from the walk's timing. Classes:
  *  - a known renderer's (VCX_ENV...VCX_PORTAL_SKY_FOG) or another marked
  *    one's (VCX_OTHER): missed;
@@ -473,7 +494,8 @@ extern unsigned g_vcache_rec[2][VCR_N];
  *    renderer's range: the HUD's text and boxes, fades, borders, drawn by
  *    the game's own C into the HUD OT, order_table.c func_800168DC; #222:
  *    in some a vertex shares a pixel with a projection and is found, e.g.
- *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene):
+ *    the title menu's borders, TitlescreenDrawSprite, over the 3D scene;
+ *    #245: the HUD OT's polygons are no longer looked up, hud_polys):
  *    exempt;
  *  - VCX_UNMARKED: the frame has no range at all (no renderer told the
  *    cache), so nothing says which;
@@ -679,6 +701,15 @@ typedef struct {
    * has no depth there, so it is drawn affine at its keys whatever the
    * others find (counted in miss_none too) */
   unsigned np_poly;
+  /* #245: polygons of the HUD OT (psx_vcache_note_hud) not looked up,
+   * and their vertices (each drawn at its integer place) */
+  unsigned hud_polys, hud_verts;
+  /* #296 (D270): candidates (#178) and clamped log places (#192) out of an
+   * int16's range not kept because the frame's far or lfar array was full
+   * (VC_FAR, VC_LFAR: 1,024 each). Which one is turned away then depends on
+   * the order the slots are taken in, which #272's helper makes timing; the
+   * host routes' same-answers gate needs it at 0. The `vcache far:` line. */
+  unsigned far_full;
 } __attribute__((aligned(64))) VCacheStats; /* each kind's own lines (#193) */
 extern VCacheStats g_vcache_stats[2];
 void psx_vcache_stats_reset(void);
