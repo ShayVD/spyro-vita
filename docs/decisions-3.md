@@ -2261,5 +2261,21 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Every deterministic counter is +0.0%. The timing counters stay within two develop-head runs.
 - **Checks:** host ctest 38/38 (with the helper race tests), the Vita build (also on the merged branch), noassets.
 - **Next:** #272, the helper itself and `vc_helper=0/1/2` (D270 steps 2-4). `far_full` on the platform's vcache line and as a perfcount key comes with its step 3.
+- **Next free number:** see D275.
+
+### D275. `third_party/vita-port-kit` is removed; everything that used it now uses `third_party/encore` and Encore's `enc_` names (#294, #251 step 1b, 2026-11-27)
+- **What:**
+  - #251's outside-files patch was applied as it was. It covers the common headers (`menu_opts.h`, `menu_panel.h`, `psx_audio_ring.h`, `psx_cdimage.h`), `vita_pc.h`, `tests/audio`, `tests/vcount`, the hardware wrappers' paths in `tools/vita/*`, `tools/ci/build_vpk.sh`, CI and the LiveArea notes.
+  - The leftover comments were updated, and `git rm -r third_party/vita-port-kit` removed 69 files.
+  - The change is paths only: each shim was a `#define` to the same `enc_` name.
+- **Measured:** against develop, the Vita ELF has identical `.text`, `.data` and `.bss`, and 12 `.rodata` bytes differ, all build stamps. 395 of 397 objects are identical.
+- **Checks:**
+  - Host ctest 38/38. The macOS native, pc-linux and PS4 builds pass (the PS4 pkg passes `oelf_check`).
+  - The `hw_mock` wrapper answers on 127.0.0.1; nothing ran on the Vita.
+  - The gate's Vita build on the merged branch passes.
+- **Still naming vita-port-kit, on purpose or harmlessly:**
+  - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
+  - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
+  - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 
