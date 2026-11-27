@@ -11,21 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 283,
-      "branch": "refactor/283-vita-on-encore-s-platform-interface",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
-      "started_at": "2026-11-27T06:29:03Z",
-      "files": [
-        "src/platform/vita/video.c",
-        "src/platform/vita/present_vita.c",
-        "src/platform/vita/pres_thread.c",
-        "src/platform/vita/gpu_gl.c",
-        "src/platform/vita/CMakeLists.txt"
-      ],
-      "agent": "ae596b6969b225d80",
-      "reported": true
-    },
-    {
       "issue": 259,
       "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
@@ -330,14 +315,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 283,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-283.gate.log",
-    "started_at": "2026-11-27T07:56:28Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     5
@@ -620,3 +598,4 @@ continue.
 - 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
 - 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
 - 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
+- 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.
