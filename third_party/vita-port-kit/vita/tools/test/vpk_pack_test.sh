@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vpk_pack.py and vita/cmake/VpkApp.cmake on three tiny apps (needs vitasdk, cmake and ninja; no game data):
+# vpk_pack.py and targets/vita/cmake/VpkApp.cmake on three tiny apps (needs vitasdk, cmake and ninja; no game data):
 #   good  VPK_PROCESS_PARAMS: both pack, and give the same param.sfo values and file list; safe by default,
 #         unsafe with --unsafe / UNSAFE (the eboot.bin's authority ID), nothing else in the VPK changed
 #   bad   no process parameters at all (newlib still leaves an undefined weak _newlib_heap_size_user): both refuse
@@ -9,13 +9,13 @@
 #         overlaps" (vpk_pack.py warns first and names the fix); linked with it (SCE_HEADROOM, VPK_SCE_HEADROOM or
 #         the flag by hand) both pack, the link line has the flag and arm-vita-eabi-nm shows the symbol
 set -euo pipefail
-KIT="$(cd "$(dirname "$0")/../../.." && pwd)"
+KIT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 : "${VITASDK:=/usr/local/vitasdk}"
 export VITASDK
 B="$VITASDK/bin"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-PACK="python3 $KIT/vita/tools/vpk_pack.py"
+PACK="python3 $KIT/targets/vita/tools/vpk_pack.py"
 fail() { echo "FAIL: $*"; exit 1; }
 
 cat > "$T/good.c" <<'EOF'
@@ -39,15 +39,15 @@ int main(void) { return pad[0]; }
 EOF
 for app in good bad lto; do
   lto=""; [[ $app == lto ]] && lto=-flto
-  "$B/arm-vita-eabi-gcc" -O2 $lto -I"$KIT/vita/runtime/procparam" -Wl,-q "$T/$app.c" -o "$T/$app.elf"
+  "$B/arm-vita-eabi-gcc" -O2 $lto -I"$KIT/targets/vita/runtime/procparam" -Wl,-q "$T/$app.c" -o "$T/$app.elf"
 done
 # tight: one link to measure, then the padding that leaves 500 bytes
 gap() { python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import vpk_pack; print(vpk_pack.text_gap(sys.argv[2]))' \
-  "$KIT/vita/tools" "$1"; }
-"$B/arm-vita-eabi-gcc" -O2 -DPAD=1 -I"$KIT/vita/runtime/procparam" -Wl,-q "$T/tight.c" -o "$T/probe.elf"
+  "$KIT/targets/vita/tools" "$1"; }
+"$B/arm-vita-eabi-gcc" -O2 -DPAD=1 -I"$KIT/targets/vita/runtime/procparam" -Wl,-q "$T/tight.c" -o "$T/probe.elf"
 PAD=$(( $(gap "$T/probe.elf") - 500 + 1 ))
-"$B/arm-vita-eabi-gcc" -O2 -DPAD=$PAD -I"$KIT/vita/runtime/procparam" -Wl,-q "$T/tight.c" -o "$T/tight.elf"
-"$B/arm-vita-eabi-gcc" -O2 -DPAD=$PAD -I"$KIT/vita/runtime/procparam" -Wl,-q -Wl,--defsym=__sce_headroom=0x4000 \
+"$B/arm-vita-eabi-gcc" -O2 -DPAD=$PAD -I"$KIT/targets/vita/runtime/procparam" -Wl,-q "$T/tight.c" -o "$T/tight.elf"
+"$B/arm-vita-eabi-gcc" -O2 -DPAD=$PAD -I"$KIT/targets/vita/runtime/procparam" -Wl,-q -Wl,--defsym=__sce_headroom=0x4000 \
   "$T/tight.c" -o "$T/tight_h.elf"
 [[ $(gap "$T/tight.elf") == 500 ]] || fail "tight: gap $(gap "$T/tight.elf"), not 500"
 
@@ -99,7 +99,7 @@ cp "$T/good.c" "$T/bad.c" "$T/lto.c" "$T/tight.c" "$T/cm/"
 cat > "$T/cm/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.20)
 project(vpktest C)
-include("$KIT/vita/cmake/VpkApp.cmake")
+include("$KIT/targets/vita/cmake/VpkApp.cmake")
 set(CMAKE_C_FLAGS "-O2")
 set(sys "$T/py/sce_sys")
 set(app \${APP})
@@ -118,7 +118,7 @@ if(UNSAFE_ARG)
   list(APPEND extra UNSAFE)
 endif()
 add_executable(\${app} \${src}.c)
-target_include_directories(\${app} PRIVATE "$KIT/vita/runtime/procparam")
+target_include_directories(\${app} PRIVATE "$KIT/targets/vita/runtime/procparam")
 target_compile_definitions(\${app} PRIVATE PAD=$PAD)
 target_link_options(\${app} PRIVATE -Wl,-q)
 add_custom_target(art)

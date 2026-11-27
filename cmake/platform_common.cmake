@@ -2,12 +2,14 @@
 # files, software SPU, XA. No OS window/GPU headers here.
 file(GLOB PLATFORM_COMMON_SRCS CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/src/platform/common/*.c")
-# vita-port-kit's portable modules (third_party/vita-port-kit, vendored: D107, D108, D110)
+# Encore's portable modules (third_party/encore/core, vendored: D107, D108,
+# D110; the enc_ names since Encore's E4, #251): the sound ring, the disc
+# image layer and the options menu with its panel.
 list(APPEND PLATFORM_COMMON_SRCS
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_ring.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/discimage/vpk_discimage.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/modmenu/vpk_menu.c"
-  "${CMAKE_SOURCE_DIR}/third_party/vita-port-kit/vita/runtime/modmenu/vpk_menu_panel.c"
+  "${CMAKE_SOURCE_DIR}/third_party/encore/core/src/enc_audio_ring.c"
+  "${CMAKE_SOURCE_DIR}/third_party/encore/core/src/enc_discimage.c"
+  "${CMAKE_SOURCE_DIR}/third_party/encore/core/src/enc_menu.c"
+  "${CMAKE_SOURCE_DIR}/third_party/encore/core/src/enc_menu_panel.c"
   # tiny-AES-c (kokke's upstream, vendored, the Unlicense) for the PS1 Classics
   # EBOOT's PGD header (pbp.c, D157): AES-128 (its header's own setting), the
   # ECB block functions only. aes128.c, the one file that includes its header,

@@ -1,0 +1,37 @@
+# A game's settings for Encore's relink.py, kept in the game repo (tools/vita/relink.game; --game or RELINK_GAME
+# names another). relink.py reads the plain KEY=VALUE lines (quotes stripped, no expansions) and runs the hooks in
+# bash, from the worker's checkout, with RELINK_FROM (the finished build), RELINK_REPO, RELINK_GAME (this file) and
+# RELINK_EBOOT_ONLY (0 or 1) set. Paths in RELINK_ELF / _EBOOT / _VPK / _COMPILE_DB are relative to RELINK_OUT.
+
+# where the build writes (relative to the repo's root); relink.py fills it with a clone of --from
+RELINK_OUT=build/vita
+# the unstripped ELF (required), the eboot.bin and the VPK the build makes there
+RELINK_ELF=mygame.elf
+RELINK_EBOOT=eboot.bin
+RELINK_VPK=mygame.vpk
+# optional: a compile_commands.json the build leaves in RELINK_OUT (CMake's CMAKE_EXPORT_COMPILE_COMMANDS=ON). With
+# it relink.py compiles each changed file with the build's own command and then calls relink_link; without it, it
+# calls relink_build.
+RELINK_COMPILE_DB=
+# extended regexes over repo-relative paths (the defaults shown): sources are compiled again, headers send every
+# source that includes them, ignored paths do not matter to the build
+RELINK_SOURCES='\.(c|cc|cpp|cxx|m|s|S)$'
+RELINK_HEADERS='\.(h|hh|hpp|hxx|inc|inl)$'
+RELINK_IGNORE='\.md$|^docs/'
+# what a relink cannot cover: the build's own scripts, linker scripts, tables it reads, and the headers it forces in
+# with -include (the #include scan does not see those). A changed path here, or one that matches none of the above,
+# is refused with exit 3 (--force relinks anyway).
+RELINK_FULL='^(CMakeLists\.txt|Makefile|tools/)|\.ld$'
+# with --mode hardlink: files of the build (relative to RELINK_OUT) the build only reads, hard-linked rather than
+# copied (a disc image, an SDK copy). Nothing the build writes may match.
+RELINK_SHARED=
+
+# Hooks (bash functions):
+#   relink_build OUT LIST  without RELINK_COMPILE_DB: the game's build run on OUT, compiling the files listed in LIST
+#                          (one repo-relative path a line), any source whose object is missing and the generated
+#                          ones, reusing every other object; then its map, link and package steps as the full build
+#                          runs them. kh1-vita's wraps tools/vita/build.py and skips the compiles it does not need.
+#   relink_link OUT        with RELINK_COMPILE_DB: the link and package steps only (the compiles are done)
+#   relink_built_rev FROM  optional: print the commit the build in FROM was made from (default: the HEAD of FROM's
+#                          git checkout). kh1-vita's reads it from the build's report, matched by the ELF's SHA-256.
+relink_link() { cmake --build "$1" --target mygame.vpk; }

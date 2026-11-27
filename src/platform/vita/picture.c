@@ -97,7 +97,7 @@ static const char *const k_res_names[] = {"NATIVE", "PS1"};
  * DD_MAX_PCT where the frame leaves room (lod.c's limiter, with 60 Hz logic the
  * budget lod_time.c sizes from measured time, D212). A value config.txt
  * gives that isn't one of these (150) shows as "150%"; left or right then
- * goes to the nearest, NORMAL on a tie (vpk_menu_opt_change), and only a
+ * goes to the nearest, NORMAL on a tie (enc_menu_opt_change), and only a
  * change writes it back. */
 static const char *const k_dd_names[] = {"NORMAL", "MAX (ADAPTIVE)"};
 static const int k_dd_values[] = {100, DD_MAX_PCT};

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fnprof.py, present_trace.py, launch_token.py and embed_pad.py on synthetic logs, symbol tables and scripts. No
 game bytes, no ARM toolchain (a fake nm stands in; embed_pad's header is compiled with the host cc when there is one).
-  python3 vita/tools/test/profiling_tools_test.py
+  python3 targets/vita/tools/test/profiling_tools_test.py
 """
 import contextlib
 import importlib.util

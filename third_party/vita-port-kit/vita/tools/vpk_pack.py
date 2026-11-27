@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pack a linked Vita ELF into a VPK, refusing a link that lost its process parameters. Standard library only.
-From kh1-decomp tools/vita/build.py @ 85befa4a (package(), png_icon() and the link guard); vita/cmake/VpkApp.cmake
+From kh1-decomp tools/vita/build.py @ 85befa4a (package(), png_icon() and the link guard); targets/vita/cmake/VpkApp.cmake
 runs the same commands for CMake games (spyro-vita).
 
     vpk_pack.py pack --elf APP.elf --vpk OUT.vpk --title-id ABCD00001 --version 01.00 --name "Title"
@@ -8,11 +8,15 @@ runs the same commands for CMake games (spyro-vita).
     vpk_pack.py check APP.elf        the process-parameter check alone, and the room after the text segment
     vpk_pack.py show OUT.vpk         param.sfo's values, whether the eboot.bin is a safe or an unsafe app, and the
                                      file list (name, size, crc32): diff two builds' output
+    vpk_pack.py require OUT.vpk PATH...   exit 1 unless every PATH is in the VPK and not empty (a PATH ending in /
+                                     needs a file below it): the files a build makes from the disc image, which a
+                                     build without the disc leaves out with no error (gotchas 28; kh1-vita's Gummi
+                                     VU1 programs). Any build's VPK, CMake or not.
 
 The steps are vita-elf-create, vita-make-fself -s -c, vita-mksfoex with APP_VER, TITLE_ID and ATTRIBUTE2=12 (the
 extended memory budget), and vita-pack-vpk with the sce_sys files. Before them the ELF must still define
 sceUserMainThreadStackSize and _newlib_heap_size_user: the SDK reads both by name, nothing in the app refers to
-them, so LTO drops them unless they are marked used (vita/runtime/procparam's VPK_PROCESS_PARAMS), and the app then
+them, so LTO drops them unless they are marked used (targets/vita/runtime/procparam's VPK_PROCESS_PARAMS), and the app then
 starts with a 256 KiB main stack and stops at launch without a log.
 
 vita-elf-create puts its SCE data (module info, import tables: a few KB) after the text segment, and the data segment
@@ -30,7 +34,7 @@ folder and packs them, for a game with no art of its own. --file SRC=DEST adds a
 sce_sys/icon0.png ...). vitasdk comes from $VITASDK (default /usr/local/vitasdk).
 
 As a module: check_procparams(), text_gap(), sce_headroom(), pack(), placeholder_livearea(), read_sfo(),
-self_authority(), show().
+self_authority(), show(), missing().
 """
 import argparse
 import os
@@ -45,7 +49,7 @@ PROCPARAMS = ("sceUserMainThreadStackSize", "_newlib_heap_size_user")
 ATTRIBUTE2 = 12
 HEADROOM = 0x4000  # what gotchas 17 links with (spyro-vita D32)
 HEADROOM_FIX = ("link with -Wl,--defsym=__sce_headroom=0x%x (vitasdk's linker script keeps that much room after the "
-                "text segment; VpkApp.cmake: SCE_HEADROOM 0x%x; vita/docs/gotchas.md 17)" % (HEADROOM, HEADROOM))
+                "text segment; VpkApp.cmake: SCE_HEADROOM 0x%x; targets/vita/docs/gotchas.md 17)" % (HEADROOM, HEADROOM))
 
 
 class PackError(Exception):
@@ -56,7 +60,7 @@ def sdk_bin(vitasdk=None):
     sdk = vitasdk or os.environ.get("VITASDK", "/usr/local/vitasdk")
     b = os.path.join(sdk, "bin")
     if not os.path.exists(os.path.join(b, "vita-elf-create")):
-        raise PackError("no vitasdk at %s (set VITASDK; vita/tools/get_vitasdk.sh fetches one)" % sdk)
+        raise PackError("no vitasdk at %s (set VITASDK; targets/vita/tools/get_vitasdk.sh fetches one)" % sdk)
     return b + os.sep
 
 
@@ -145,7 +149,7 @@ def pack(elf, vpk, title_id, version, name, files=(), work=None, b=None, unsafe=
     lost = check_procparams(elf, b)
     if lost:
         raise PackError("%s missing from the link (dropped by LTO? define them with VPK_PROCESS_PARAMS, "
-                        "vita/runtime/procparam, which marks them used)" % " ".join(lost))
+                        "targets/vita/runtime/procparam, which marks them used)" % " ".join(lost))
     gap = text_gap(elf)
     if gap is not None and gap < HEADROOM:
         sys.stderr.write("vpk: warning: %s's text segment ends %d bytes before its data segment; vita-elf-create "
@@ -222,6 +226,22 @@ def show(vpk):
     return lines
 
 
+def missing(vpk, paths):
+    """the paths the VPK lacks: absent, empty, or (ending in /) with no file below"""
+    with zipfile.ZipFile(vpk) as z:
+        sizes = {i.filename: i.file_size for i in z.infolist() if not i.is_dir()}
+    out = []
+    for p in paths:
+        p = p.lstrip("/")
+        if p.endswith("/"):
+            ok = any(n.startswith(p) and s for n, s in sizes.items())
+        else:
+            ok = sizes.get(p, 0) > 0
+        if not ok:
+            out.append(p)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -237,6 +257,9 @@ def main():
     p.add_argument("--unsafe", action="store_true", help="an unsafe app: vita-make-fself without -s")
     sub.add_parser("check").add_argument("elf")
     sub.add_parser("show").add_argument("vpk")
+    r = sub.add_parser("require")
+    r.add_argument("vpk")
+    r.add_argument("paths", nargs="+")
     a = ap.parse_args()
     try:
         if a.cmd == "check":
@@ -252,6 +275,13 @@ def main():
                          "" if gap >= HEADROOM else " (under 16 KiB: %s)" % HEADROOM_FIX))
         elif a.cmd == "show":
             print("\n".join(show(a.vpk)))
+        elif a.cmd == "require":
+            lost = missing(a.vpk, a.paths)
+            if lost:
+                print("vpk: %s lacks %s (a disc-derived file the build left out? see targets/vita/docs/gotchas.md 28)"
+                      % (a.vpk, " ".join(lost)), file=sys.stderr)
+                return 1
+            print("vpk: %s has %s" % (a.vpk, " ".join(a.paths)))
         else:
             files = []
             work = a.work or os.path.dirname(os.path.abspath(a.vpk))
@@ -266,6 +296,9 @@ def main():
             print("vpk: %s" % a.vpk)
     except PackError as e:
         print("vpk: %s" % e)
+        return 1
+    except (OSError, zipfile.BadZipFile) as e:
+        print("vpk: %s" % e, file=sys.stderr)
         return 1
     return 0
 
