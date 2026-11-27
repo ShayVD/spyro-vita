@@ -2176,6 +2176,32 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not verified:** a real ARM Linux desktop with a GPU (a Raspberry Pi 5, an ARM laptop, Asahi Linux with its 16 KB pages): only llvmpipe under Xvfb in Docker; Wayland; sound (no device in the container); gamepads; a kernel with 39-bit virtual addresses (0x2_0123_0000 is below its 512 GB, so it should load); the owner's play.
 - **Found, not changed:** linuxa64 (static, the same `-Ttext-segment`) likely has the same single RWX segment; `-z separate-code` there would change its binary, so it is left for a follow-up. Encore's `lp64_low_image_dyn.c` could take aarch64 (its logic has nothing x86-specific but the 4 KB page) and retire `low.c`'s copy.
 
+## 2026-11-27 — #281
+
+### D267. The offset model's `HAND_CX` decodes the primitive pointer's P32 slot; `host_checks.sh` gets a vertex-cache run and `p32_narrow_check.py --raw` (#281) (2026-11-27)
+- **What the owner saw:** `Spyro.app` (D265) with the GPU renderer showed gaps between polygons and textures snapping into place; with `--gpu 0` none. That is the PS1 wobble D39's perspective and sub-pixel fix removes, back in the offset model (`SPYRO_P32_OFFSET`: linuxa64, macos, the PC build on macOS).
+- **Cause:** `src/game/render_hand.h` `HAND_CX` read the primitive pointer `D_800757B0`, a P32 slot, as a plain word (`*(u32 *)hand_cx_prim_`) and handed it to `psx_vc_ctx` / `pres_vc_ctx` as the renderer's range. On the 32-bit targets and linux64's low image the word is the address; in the offset model it is the offset from `spyro_p32_base`, which `vcache.c` `cx_ofs` doesn't find in the arena. Every renderer's range became `CX_FAR`, its polygons were filed outside, and each fallback gated on the renderer (own points #216, moby sprites D259, world pieces #229, the sky's overflow #221) found nothing: those vertices were drawn at the PS1's integer places.
+- **Fix:** `HAND_CX_PRIM()`, `(uintptr_t)P32_DEC(*(u32 *)hand_cx_prim_)`, for both reads. Elsewhere `P32_DEC(i)` is `(i)`, so the text compiles as before. `vcache.c` is not touched.
+- **The class:** D265's narrowing check lists 64→32-bit conversions; this was a 32-bit word read through a cast pointer and widened, implicitly (an initialiser, a `uintptr_t` argument). `tools/ps4/p32_narrow_check.py BUILD --raw` now lists those (a raw read in a macro by the macro's line). On `build/macos`, all 375 units (`--all`): 0 sites with the fix; with the old header, `env_hand.c` alone gives render_hand.h:173 and :176. The other hooks the renderers call (`PSX_VC_DERIVE`'s `a`, `b`) take screen keys, not addresses.
+- **The check that missed it:** `host_checks.sh` compared only the software renderer's pictures, which don't use the cache's answers. It now also runs the attract demo D (`--frames 7000 --draw-distance 2 --interp --vcache --widescreen`) and writes its `vcache` lines to `logs/PREFIX-vcache/vcache.txt`.
+- **Measured** (D, `grep vcache` of `spyro.log`, logs `logs/run281-{l32n,mac,a64,l64}-vc/`, gitignored), after the fix:
+
+  | `vcache` line | linux32 native-mem | macos, linuxa64 (before) | macos, linuxa64, linux64 (after) |
+  |---|---|---|---|
+  | own points: found from their renderer's own point | 784 | 0 | 784 |
+  | hooked: moby sprites | 2276 | 0 | 2276 |
+  | world own: from their piece's own split point | 13 | 0 | 13 |
+  | overflow: SkyDraw vertices found there | 10 | 0 | 10 |
+  | derived: exempt, outside the renderers | 22697 | 25667 | 22697 |
+  | resolved: left ambiguous | 31 | 187 | 31 |
+  | polygons with all vertices found (per frame) | 1167 | 1166 | 1167 |
+
+  Every line of the three 64-bit hosts' `vcache.txt` is the same (macos = linuxa64 = linux64). Against linux32, four lines differ: the cost model's (`vcache cost`, `vcache records`: divisions and table lines), `repeats` (2,344,997 against 2,344,995) and `resolved`'s first count (66,605 against 66,603). linux64 is not the offset model and differs the same way, so this is linux32's x87 (i686 without SSE: D168's note on the host's x87), not P32. linux32 native-mem's run is the same as O4's at f0d6416, line for line.
+- **Checks:**
+  - `host_checks.sh` on macos and linuxa64 (`logs/run281-{mac,a64}-*`): demo, whole, routeA, routeB identical to D265's linux32 native-mem baseline (`o4f-l32n-*`), 279 files each; their `vcache.txt` the same as each other and as linux64's run.
+  - Byte identity, each target built with the old header and the new in the same build directory: Vita `spyro_vita.velf` every program segment identical (the 23 objects that include render_hand.h differ only in `.debug*`, the header four lines longer; `env_hand.c.obj` without them identical); PS4 `spyro.elf` every program segment identical.
+  - `tools/check_no_assets.sh`: passes. No hardware run; the owner checks `Spyro.app` by eye.
+
 ### D268. The PC's waiting frames follow the presenter's queue, as the Vita's render thread's do (#280, 2026-11-26)
 - **Seen:** the owner's play of `Spyro.app` (D265) stuttered on the level-loading screen, with either renderer; `spyro.log` showed ~550 pictures filed per 300 vblanks there and only ~107 shown, while the vblank clock held 60 and the sound had no trims.
 - **Cause:** on the loading screen each game tick lasts one vblank, and the presenter still files two frames a tick (the in-between frame and the real one), so two a vblank. Its queue (`present.c`, QUEUE 4) fills; each new frame drops the oldest and moves the rest up a vblank (`reserve`), and the new one is due 4 vblanks ahead. The Vita's render thread applies that drop to the frames it holds (`gpu_thread.c` `rt_file`: `f->dropped`, the dues moved up), so it shows the queue's head at every vblank. `src/platform/pc/frames.c` ignored `f->dropped`: its frames kept the dues they were filed with, two per vblank, all 4 ahead, and its ring of 8 slots, reused oldest-filed first, overwrote most of them before they came due. Logged in the load (temporary logging, not kept): every commit due `count + 4`, two per vblank.
@@ -2329,5 +2355,5 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
   - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
   - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
-- **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
+- **Next free number:** take one with `autopilot.py claim-decision`.
 

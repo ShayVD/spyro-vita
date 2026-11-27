@@ -188,6 +188,8 @@ BIN=build/macos/src/platform/linux32/spyro tools/host_checks.sh PREFIX   # runs 
 
 Its runs must give linux32 native-mem's files byte for byte, as linuxa64's do. `-DSPYRO_P32_CHECK=ON` is the checking build here too.
 
+The software renderer's pictures don't use the vertex cache's answers, so `tools/host_checks.sh` also runs the attract demo with the cache (`PREFIX-vcache`, D below) and keeps its counters in `vcache.txt`. linux64, linuxa64 and macos give the same file; linux32's x87 floats differ in four lines (the `vcache cost` and `vcache records` figures, `repeats`, and `resolved`'s first count), so compare an offset-model build's against linux64's, or against linux32's but for those (D267: the offset model's `HAND_CX` handed the cache the primitive pointer's offset, and only the counters showed it). `tools/ps4/p32_narrow_check.py BUILD --raw` lists the 32-bit words read through a cast pointer (`*(u32 *)p`) and widened to 64 bits, where a P32 slot's word wants `P32_DEC`.
+
 ## Draw distance (D49)
 
 Optional, off by default (`docs/presentation.md` "Draw distance"):
