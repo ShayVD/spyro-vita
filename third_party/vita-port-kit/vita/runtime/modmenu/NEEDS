@@ -1,4 +1,0 @@
-core/include/encore/menu.h
-core/include/encore/menu_panel.h
-core/src/enc_menu.c
-core/src/enc_menu_panel.c

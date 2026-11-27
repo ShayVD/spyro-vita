@@ -1,7 +1,7 @@
-# spyro-vita's settings for vita-port-kit's hardware-run tools (third_party/vita-port-kit/vita/tools; the wrappers
+# spyro-vita's settings for Encore's hardware-run tools (third_party/encore/targets/vita/tools; the wrappers
 # tools/vita/hw_run.sh, hw_check.sh, hw_ftp.py and hw_mock.py set HW_GAME to this file). Sourced by bash; the plain
 # KEY=VALUE lines are also read by hw_ftp.py and hw_mock.py. Settings and hooks:
-# third_party/vita-port-kit/vita/tools/hw.game.example. The runner itself is decision D77's.
+# third_party/encore/targets/vita/tools/hw.game.example. The runner itself is decision D77's.
 HW_TITLE_ID=SPYV00001
 HW_NAME="Spyro Vita"
 HW_DATA=ux0:data/spyro
@@ -39,7 +39,7 @@ hw_config_base() {
   echo "keep_awake=1"
 }
 
-# vita-port-kit's v3k_run.sh (the autopilot's Vita3K routes): virtual vblanks unless REALTIME=1, and the PS1's
+# Encore's v3k_run.sh (the autopilot's Vita3K routes): virtual vblanks unless REALTIME=1, and the PS1's
 # wobble (wobble=1) unless DEVICE_DEFAULTS=1, so the routes keep the pictures they had before #177 made the fix
 # the default; a route's persp=1 subpixel=1 still turns it on. Nothing else: the routes' other settings are the
 # device's, as before.

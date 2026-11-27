@@ -2,7 +2,7 @@
  * Vita's menu.c with the DualShock 4: hold the touch pad's click (the PS1's
  * SELECT, pad.c) and press OPTIONS (START), or, with touch_menu=1, tap the
  * touch pad. The game stops where it is (the menu runs inside its VSync
- * wait, vblank.c) and the panel (vita-port-kit's vpk_menu_panel, through
+ * wait, vblank.c) and the panel (Encore's enc_menu_panel, through
  * src/platform/common/menu_panel.h) is shown over the last picture. The
  * rows are the common table (menu_opts.h): present_ps4.c's and picture_ps4.c's
  * PICTURE rows,
@@ -96,7 +96,7 @@ int ps4_menu_last_value(const char *key) {
 }
 
 static void save(void) {
-  /* NULL-terminated (vpk_config_rewrite): drop[1] with no NULL had it
+  /* NULL-terminated (enc_config_rewrite): drop[1] with no NULL had it
    * read past the array, a crash closing the menu (GPU run 8); persp= and
    * subpixel=, the rows before PSX WOBBLE, go too. config_version=6: a
    * draw_distance=200 here is 200%, not the MAX (ADAPTIVE) the menu wrote

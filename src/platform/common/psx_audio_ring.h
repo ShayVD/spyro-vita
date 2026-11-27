@@ -14,13 +14,13 @@
  * made (audio.wav) don't change; only what the device plays is resampled.
  *
  * One producer and one consumer thread, no locks. Portable C, so the host
- * tests it (tests/audio). The ring is vita-port-kit's vpk_audio_ring
- * (third_party/vita-port-kit/vita/runtime/audioout, D107) with this game's
+ * tests it (tests/audio). The ring is Encore's enc_audio_ring
+ * (third_party/encore/core, D107) with this game's
  * level settings below; these names map to it. */
 #ifndef PSX_AUDIO_RING_H
 #define PSX_AUDIO_RING_H
 
-#include "../../../third_party/vita-port-kit/vita/runtime/audioout/vpk_audio_ring.h"
+#include "../../../third_party/encore/core/include/encore/audio_ring.h"
 
 #define PSX_AUDIO_RING_FRAMES 16384 /* a power of two */
 #define PSX_AUDIO_RING_LOW 2304     /* frames: the low point held (a 512-frame grain, two late vblanks and some) */
@@ -28,26 +28,26 @@
 #define PSX_AUDIO_RING_MAX 6615     /* frames: ~150 ms; above it, back to PRIME */
 #define PSX_AUDIO_RING_WINDOW 16384 /* frames played between the controller's steps: ~0.37 s */
 #define PSX_AUDIO_RING_RISE 2.0f    /* frames a grain: a dip of a vblank is forgotten in ~4 s */
-#define PSX_AUDIO_RING_NO_CUT VPK_AUDIO_RING_NO_CUT
+#define PSX_AUDIO_RING_NO_CUT ENC_AUDIO_RING_NO_CUT
 
-typedef VpkAudioRing PsxAudioRing;
+typedef EncAudioRing PsxAudioRing;
 
 static inline void psx_audio_ring_init(PsxAudioRing *r) {
-  static const VpkAudioRingConfig c = {PSX_AUDIO_RING_FRAMES, 1, PSX_AUDIO_RING_LOW, PSX_AUDIO_RING_PRIME,
+  static const EncAudioRingConfig c = {PSX_AUDIO_RING_FRAMES, 1, PSX_AUDIO_RING_LOW, PSX_AUDIO_RING_PRIME,
                                        PSX_AUDIO_RING_MAX, PSX_AUDIO_RING_WINDOW, PSX_AUDIO_RING_RISE};
-  vpk_audio_ring_init(r, &c);
+  enc_audio_ring_init(r, &c);
 }
 /* The producer: frames of s16 stereo in. */
 static inline void psx_audio_ring_push(PsxAudioRing *r, const short *pcm, int frames) {
-  (void)vpk_audio_ring_push(r, pcm, frames);
+  (void)enc_audio_ring_push(r, pcm, frames);
 }
 /* The producer: drop everything pushed so far (a save state was loaded). */
-#define psx_audio_ring_clear vpk_audio_ring_clear
+#define psx_audio_ring_clear enc_audio_ring_clear
 /* The consumer: the next frames to play. */
 static inline void psx_audio_ring_pull(PsxAudioRing *r, short (*out)[2], int frames) {
-  (void)vpk_audio_ring_pull(r, out, frames);
+  (void)enc_audio_ring_pull(r, out, frames);
 }
 /* frames read per frame played, in parts per million from 1 */
-#define psx_audio_ring_ppm vpk_audio_ring_ppm
+#define psx_audio_ring_ppm enc_audio_ring_ppm
 
 #endif
