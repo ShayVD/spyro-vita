@@ -306,7 +306,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "investigated": true
   },
   "rounds_without_gain": 0,
-  "hardware_pending": null,
+  "hardware_pending": {
+    "target": "vita",
+    "since": "2026-11-27T14:50:56Z",
+    "commit": "bb41e76",
+    "step": "run",
+    "script": "runtime/autopilot/runs/vita/issue-259-2/hw/hw-session-259-2.sh",
+    "vpk_sha1": "9c6d2d063045"
+  },
   "job": null,
   "batch": null,
   "lanes": [
@@ -601,3 +608,4 @@ continue.
 - 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
 - 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.
 - 2026-11-27T10:05Z stop on the owner's plan: #283 (D277) and #259 (D278) merged; retro 8c is Encore draft PR #151; release PR #298 to main (host ctest 38/38 on 266a2b0). Loop stopped; resume with #284-#288, #295, #297, #272, #247, #225, #219 and the two hardware A/Bs (#259, #271).
+- 2026-11-27T14:51Z hw: the owner said "Yes, run #259"; running runs/vita/issue-259-2/hw/hw-session-259-2.sh as prepared (VPK 9c6d2d063045, 10 runs, ~1 h); hw_check ready.
