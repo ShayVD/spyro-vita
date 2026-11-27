@@ -12,3 +12,5 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D272 #271 dd_free (2026-11-27T05:11:07Z)
 - D273 #175 execute-bit re-check (2026-11-27T05:24:58Z)
 - D274 #296 vcache prepared for the core-2 helper (2026-11-27T07:01:32Z)
+- D275 #290 PC options menu (#279), renumbered from D266 (2026-11-27T07:45:51Z)
+- D276 #294 vita-port-kit removed (2026-11-27T07:54:33Z)
