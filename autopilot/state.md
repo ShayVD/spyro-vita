@@ -9,25 +9,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [
-    {
-      "issue": 259,
-      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
-      "started_at": "2026-11-27T07:29:51Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/platform/vita/prof_draw.c",
-        "src/platform/linux32/prof_draw.c",
-        "src/platform/vita/lod_time.c",
-        "docs/presentation.md",
-        "src/platform/vita/main.c"
-      ],
-      "agent": "a7b715a9f3ac4ffcb",
-      "reported": true
-    }
-  ],
+  "workers": [],
   "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
   "hardware_runs": [
     {
@@ -213,6 +195,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "status": "queued",
       "target": "vita",
       "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
+    },
+    {
+      "title": "#259 vc_fast_rec lean/ahead record modes (D278)",
+      "expected": "3, 5 or 7 takes ~0.9 ms off the Artisans game thread at 2x",
+      "issue": 259,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "runs/vita/issue-259-2/hw/hw-session-259-2.sh: Artisans owner60 virtual vblanks vc_fast_rec 1,7,3,5,7,1,5,3 at MAX 400; Toasty real time 1 then 7; win = game ms below mode 1 by more than the two mode-1 runs spread"
     }
   ],
   "owner_decisions": [
@@ -316,14 +307,7 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": {
-    "kind": "gate",
-    "issue": 259,
-    "step": 1,
-    "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-259.gate.log",
-    "started_at": "2026-11-27T09:48:10Z"
-  },
+  "job": null,
   "batch": null,
   "lanes": [
     5
@@ -358,6 +342,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "31a47eb",
       "pr": 275,
       "merged_at": "2026-11-26T10:51:04Z"
+    },
+    {
+      "branch": "release/phase8-round13-encore-d278",
+      "commit": "af1b951ebd3dcc8c36153f3386ec406daa285141",
+      "pr": 298,
+      "merged_at": null
     }
   ]
 }
@@ -608,3 +598,6 @@ continue.
 - 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
 - 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.
 - 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
+- 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
+- 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.
+- 2026-11-27T10:05Z stop on the owner's plan: #283 (D277) and #259 (D278) merged; retro 8c is Encore draft PR #151; release PR #298 to main (host ctest 38/38 on 266a2b0). Loop stopped; resume with #284-#288, #295, #297, #272, #247, #225, #219 and the two hardware A/Bs (#259, #271).

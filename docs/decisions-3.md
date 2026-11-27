@@ -2355,7 +2355,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
   - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
   - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
-### D277 — the Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2)
+### D277. The Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2, 2026-11-27)
 - **What:** `encore_vita` is linked (`enc_vita.c` with core's `enc_common.c`, `enc_event.c`, `enc_blit.c`). `video.c` calls `enc_platform_init` with gpu=1 on the main thread before the render thread starts. `gpu_gl.c` opens `ENC_GFX_GLES` (960x544, stretch, 60 Hz, vsync) after `vglInit` and checks `core_swaps` is 0; each `vglSwapBuffers` sits between `enc_video_gpu_begin` and `enc_video_present`, so the game keeps `vglInit` and `vglSwapBuffers` and the backend paces at the display's 60 Hz. `gl_quit` closes the video. The backend's `vpk_log_*` go to `spyro.log`, which closes G14.
 - **G6:** every GL call, `vglInit` and the Encore video calls are on the render thread: no second context.
 - **Gaps:**
@@ -2364,6 +2364,12 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `EncVideoConfig` cannot express the 224-of-240-line picture box; gpu=0 stays outside the interface.
 - **Checked:** Vita build exit 0 (`.text` +8 KB, `.bss` +85 KB for the backend's state); 8 Vita3K routes identical to base-e603aaa (685 shots, 0 invalid accesses); presenter lines the same apart from timing-dependent join waits; only timing counters move; host ctest 38/38; macOS native and noassets pass; gate PASS and a Vita build on the merged branch (`runs/vita/issue-283-1/`).
 - **Not checked:** hardware pacing and the extra threads on a real Vita.
+
+### D278. Two switchable same-answer cuts to the vertex cache's native record: `vc_fast_rec` lean and ahead (#259, 2026-11-27)
+- **What:** `vc_fast_rec` becomes a bit field (1 = the default, D261's record; Vita `vc_fast_rec=0..7`, host `VC_FAST_REC`). Bit 2 (lean) drops D168's cost-model counting from the game thread's records (the `touch()` line loops, probe, division, store-line and worked counts; `VCW_PROJ`, the `draw vc` line and the vcache lines still count). Bit 4 (ahead) runs each native record one late, after the next one has prefetched three lines of its entry, so the miss overlaps the previous record's work; the inputs wait in `Pend`, and `pend_flush` runs at every game-thread reader of the logic table, so the table sees the same records in the same order.
+- **Why:** hardware session 9 puts an at-once record at ~1.25 µs (~550 cycles for ~400 instructions at 444 MHz), so memory waits are a large part of it; the vertex cache is ~46% of the game thread in Artisans' heaviest frames, and 2x at 60 Hz needs ~0.9 ms.
+- **Checked:** host FNV per polygon `--strict` identical on 30 pairs (default, 7 with and without lazy logic, 3, 5, 0); Vita3K shots identical to base-e603aaa on all 8 routes with the default and on owner60, stone60 and toasty60 with 7; fixed counters +0.0%; host ctest 38/38; gate PASS and a Vita build on the merged branch. Host `--prof-draw`: lean -3.0-3.5% renderer time; qemu cannot show the prefetch (ahead +1-6% there).
+- **Default:** stays 1 until the hardware A/B (`runtime/autopilot/runs/vita/issue-259-2/hw/`: Artisans owner60 under virtual vblanks with 1, 7, 3, 5, 7, 1, 5, 3 at MAX 400; Toasty real time 1 then 7) shows whether 3, 5 or 7 takes the ~0.9 ms; if none does, the remaining lever is #272 (kept projections on core 2). #259 stays open for that A/B.
 
 ### D279. The offset model comes from Encore: spyro switches to its copy of `lp64_p32.h`, `p32_image`, the aarch64 reservation, the Mach-O tools and four toolchains, with no other change (2026-11-27)
 - **Why:** Encore PR #148 (merged at d265f96) moved O1–O5 and #281 into the kit, game-free: D249, D250, D258, D262, D265, D266, D267, taken from develop at 36d9e07. This is the second half of Encore's `extract-to-kit`: the game uses the kit's copy, and behaviour stays the same.
@@ -2400,5 +2406,6 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **`p32_decl_check.py build/rv-linux64`:** 0 slot/pointer mismatches. There are 11 pointer/int32 mismatches: glibc's `strerror_r`, and the hand renderers' and particle code's entries, whose `P32_ARG_T` is `unsigned int` on linux64. The same 11 come from spyro's checker and the fixed kit one. This change doesn't affect them: that text and linux64's binary are unchanged. The D262 run on linux64 reported only `strerror_r`; the other 10 deserve a look of their own.
   - `tools/check_no_assets.sh`: passes.
   - **Not run:** the checking build (`-DSPYRO_P32_CHECK=ON`), ctest, Vita3K and hardware. The Vita binary is identical.
+
 - **Next free number:** take one with `autopilot.py claim-decision`.
 

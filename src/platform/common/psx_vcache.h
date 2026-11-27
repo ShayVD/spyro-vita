@@ -72,9 +72,12 @@ void psx_vcache_set_found_fast(int mode);
  * record reads no line of another array. The same answers in each; set
  * before the cache records. */
 void psx_vcache_set_repeat(int mode);
-/* #259: the logic draw's native records take the record's find and maths
- * inlined: 1 (the default) or 0 (called, as before). The same code. */
-void psx_vcache_set_fast_record(int on);
+/* #259: the logic draw's native records, bits: 1 (the default) the
+ * record's find and maths inlined (0: called, as before D261); 2 without
+ * the cost model's counts (divisions, probes, lines: diagnostics only);
+ * 4 each record done one late, after the next has prefetched its entry.
+ * Any nonzero mode includes 1. The same answers in each (vcache.c FR_*). */
+void psx_vcache_set_fast_record(int mode);
 /* #259: the game thread's records in the logic draw's frame so far: [0]
  * recorded, [1] worked out at once (repeats skipped among them), [2] kept
  * for the walk, [3] repeats skipped (since the start). The draw profiles
