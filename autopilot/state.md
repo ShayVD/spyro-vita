@@ -24,7 +24,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "docs/presentation.md",
         "src/platform/vita/main.c"
       ],
-      "agent": "a7b715a9f3ac4ffcb"
+      "agent": "a7b715a9f3ac4ffcb",
+      "reported": true
     }
   ],
   "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
@@ -315,7 +316,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 259,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-259.gate.log",
+    "started_at": "2026-11-27T09:48:10Z"
+  },
   "batch": null,
   "lanes": [
     5
@@ -599,3 +607,4 @@ continue.
 - 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
 - 2026-11-27T08:34Z vita 8: owner: finish #283 and #259, dispatch nothing more, then stop, retro, release PR. #275 recorded merged.
 - 2026-11-27T09:43Z vita 8: merged #283 (D277); waiting for #259 attempt 2, then stop, retro, release PR.
+- 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
